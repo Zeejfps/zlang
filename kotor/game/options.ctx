@@ -37,6 +37,7 @@ namespace options {
         height: u32,
         size_given: bool,       // --size: the window is that size, whatever the settings file says
         settings: []u8,         // the options file (the graphics options, the sound ...): ours, never the install's
+        settings_given: bool,   // --settings: a hidden run takes its key bindings from the file too (else the defaults)
         gfx: bool,              // a hidden run takes the graphics options from the settings file too (a picture of an option)
         run_script: []u8,       // a script to run once the module is entered (tests: --run-script k_act_mispaz)
         sound_device: bool,     // a hidden run opens the sound device too (SDL_AUDIODRIVER=disk to measure it without speakers)
@@ -49,7 +50,7 @@ namespace options {
             module = "", game = "F:/Steam/steamapps/common/swkotor", headless = false, no_render = false, engine_only = false, mute = false, speed = 1, load = "",
             frames = 0, dt = 0.0, input = "", shots = [Shot{ frame = 0, path = "" }; 16], shot_count = 0, range_from = 0, range_to = 0, range_dir = "", loading_dir = "",
             log = "", saves = "kotor/out/saves", report = false, seed = 1, width = 1280, height = 720, run_script = "",
-            size_given = false, settings = "kotor/out/kotor-settings.ini", gfx = false, sound_device = false, cinema = false, stall_ms = 0,
+            size_given = false, settings = "kotor/out/kotor-settings.ini", settings_given = false, gfx = false, sound_device = false, cinema = false, stall_ms = 0,
         }
     }
 
@@ -131,6 +132,7 @@ namespace options {
             } else if slice::eq_bytes{ a, b = "--settings" } and has {
                 i = i + 1
                 o.settings = args[i]
+                o.settings_given = true
             } else if slice::eq_bytes{ a, b = "--gfx" } {
                 o.gfx = true
             } else if slice::eq_bytes{ a, b = "--sound-device" } {

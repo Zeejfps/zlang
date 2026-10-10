@@ -53,6 +53,8 @@ namespace frontend {
         // [Movies]
         disable_movies: bool,
         movies_seen: [64]bool,      // [Movies Shown]: rows of movies.2da the player has seen
+        // [Keymapping] (keymap.ctx): the keys the file gives, -1 for the rest, which take the defaults
+        keymap: Keymap,
     }
 
     // Our defaults, for a missing file or key. Mostly the original's, but the graphics differ on purpose
@@ -74,7 +76,7 @@ namespace frontend {
             status_summary = true, hide_ingame_gui = false, small_fonts = false, hide_unequippable = false,
             pause_end_round = false, pause_enemy_sighted = true, pause_mine_sighted = true, pause_party_killed = true,
             pause_action_menu = false, pause_triggers = true,
-            disable_movies = false, movies_seen = [false; 64],
+            disable_movies = false, movies_seen = [false; 64], keymap = no_keymap{},
         }
     }
 
@@ -175,6 +177,7 @@ namespace frontend {
             pause_triggers = get_bool{ data, section = a, key = "New Target Selected", fallback = d.pause_triggers },
             disable_movies = get_bool{ data, section = "Movies", key = "Disable Movies", fallback = d.disable_movies },
             movies_seen = read_seen{ data },
+            keymap = read_keymap{ data },
         }
     }
 
@@ -319,6 +322,7 @@ namespace frontend {
             if s.movies_seen[i] { try @fmt(&b, "Movie {}=1\n", i) }
             i = i + 1
         }
+        try write_keymap{ &b, km = s.keymap }
     }
 
     // Writes the options to `path`.

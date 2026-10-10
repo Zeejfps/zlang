@@ -597,6 +597,7 @@ namespace gui {
         let mut r: usize = 0
         while r < @as(usize, c.row_count) {
             free_string{ &g, s = c.rows[r].text }
+            free_string{ &g, s = c.rows[r].aside }
             r = r + 1
         }
         c.row_count = 0
@@ -621,9 +622,18 @@ namespace gui {
             c.rows = try alloc::resize(Row, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = c.rows, count = n }
         }
         let copy = try copy_string{ &g, s = text }
-        c.rows[@as(usize, c.row_count)] = Row{ text = copy, user, color = white_color{}, has_color = false, icon = no_img{}, enabled = true, checked = false, frame = 0, hex = no_img{}, count = 0 }
+        c.rows[@as(usize, c.row_count)] = Row{ text = copy, user, color = white_color{}, has_color = false, icon = no_img{}, enabled = true, checked = false, frame = 0, hex = no_img{}, count = 0, aside = slice::empty(u8){} }
         c.row_count = c.row_count + 1
         return @as(i32, c.row_count) - 1
+    }
+
+    // Gives row `row` a second text, drawn right-aligned in it (copied).
+    fn list_set_aside { mut g: Gui, panel: u32, tag: []u8, row: i32, text: []u8 } -> ! {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        if row < 0 or row >= @as(i32, c.row_count) { return }
+        let copy = try copy_string{ &g, s = text }
+        free_string{ &g, s = c.rows[@as(usize, row)].aside }
+        c.rows[@as(usize, row)].aside = copy
     }
 
     fn list_set_color { mut g: Gui, panel: u32, tag: []u8, row: i32, color: render::Color } {

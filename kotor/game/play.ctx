@@ -143,6 +143,8 @@ namespace play {
         // HOOK(ingame): the HUD and the in-game menus (docs/design/hud.md).
         let screen_now = gpu::screen_size{ dev }
         let ui = try ingame::make{ &w, &dev, mixer, scratch = texture_scratch, width = @as(i32, screen_now.width), height = @as(i32, screen_now.height), settings = opts.settings, gui_scale = disp.live.gui_scale }
+        // A hidden run's input scripts are written for the default keys, whatever the player bound; --settings asks for the file's.
+        if opts.headless and not opts.settings_given { ingame::use_default_keys{ ui } }
         ambience::tune_gui{ g = &ui.gui, m = mixer, w = &w, bias = amb.bias }
         if ingame::options_front{ ui } is some{ value = fe } {
             fe.settings = disp.live
@@ -1019,20 +1021,20 @@ namespace play {
             // Behind the loading screen nothing is clicked or typed (a key let go still lets go of the walk).
             if loading_up {
                 if e is quit | close { quit = true }
-                if e is key{ down, keycode } { if not down { apply_key{ keys = &keys, keycode, down = false, minigame = false } } }
+                if e is key{ down, keycode } { if not down { apply_key{ keys = &keys, km = ui.keys, keycode, down = false, minigame = false } } }
                 continue
             }
             // A key let go always lets go of the walk, whoever else sees the event (a menu opened while W
             // was down would otherwise keep the leader walking when it closes).
             if e is key{ down, keycode } {
-                if not down { apply_key{ keys = &keys, keycode, down = false, minigame = mg_game::active{ w = &w } } }
+                if not down { apply_key{ keys = &keys, km = ui.keys, keycode, down = false, minigame = mg_game::active{ w = &w } } }
             }
             // HOOK(minigames): a minigame has no HUD, menus or quick saves: the mouse and Escape are
             // its own, the other keys go straight to the game's keys.
             if mg_game::active{ w = &w } {
-                if mg_game::handle_event{ m = &mg_mouse, ev = e } { continue }
+                if mg_game::handle_event{ m = &mg_mouse, km = ui.keys, ev = e } { continue }
                 if e is key{ down, repeat, keycode } {
-                    if not repeat { apply_key{ keys = &keys, keycode, down, minigame = true } }
+                    if not repeat { apply_key{ keys = &keys, km = ui.keys, keycode, down, minigame = true } }
                     continue
                 }
             }
@@ -1041,20 +1043,21 @@ namespace play {
             match e {
                 quit | close => { quit = true }
                 key{ down, repeat, keycode } => {
-                    if down and not repeat and keycode == sdl::key::F1 + 3 { want_save = "QUICKSAVE" }
-                    if down and not repeat and keycode == sdl::key::F1 + 4 { want_load = "000000 - QUICKSAVE" }
-                    if not repeat { apply_key{ keys = &keys, keycode, down, minigame = false } }
+                    if down and not repeat and frontend::key_is{ km = ui.keys, slot = frontend::ACT_QUICKSAVE, keycode } { want_save = "QUICKSAVE" }
+                    if down and not repeat and frontend::key_is{ km = ui.keys, slot = frontend::ACT_QUICKLOAD, keycode } { want_load = "000000 - QUICKSAVE" }
+                    if not repeat { apply_key{ keys = &keys, km = ui.keys, keycode, down, minigame = false } }
                 }
                 else => {}
             }
         }
     }
 
-    // The held keys the world reads each frame (keymap.2da's ICPC rows): W and S forward and back, A and D
-    // strafe, Z and C turn the camera, B walks. The 2DA's defaults are the other way round (Z and C strafe,
-    // A and D turn); ours swaps them, as the install's swkotor.ini puts strafe on A and D. In a minigame A
-    // and D steer, with the arrows. The arrows, R and Space are a minigame's (ICMiniGame) and nothing in the
-    // world's: there R runs the target's default action and Space pauses (lib/ingame).
+    // The held keys the world reads each frame, by the bindings (lib/frontend/keymap.ctx; the defaults named
+    // here): keymap.2da's ICPC rows W and S forward and back (280), A and D strafe (281), Z and C turn the
+    // camera (284), B walks (265). The 2DA's defaults put strafe on Z and C and the camera on A and D; ours
+    // swaps them. In a minigame (ICMiniGame) W and S (282) and the up and down arrows (285) drive, A and D
+    // (283) and the left and right arrows (286) steer, Space (217) fires; in the world Space pauses (lib/ingame).
+    // A key let go lets go of whatever it holds, in either class.
     // The leader's free-look video effect (CSWCCreature::GetFreeLookEffect 0x00610490): appearance.2da
     // `FreeLookEffect` of the appearance the model shows, -1 when blank or with no leader.
     fn free_look_effect { w: *world::World } -> i32 {
@@ -1074,15 +1077,17 @@ namespace play {
         world::set_orientation{ o, v = math::Vec3{ x = o.orientation.x * c - o.orientation.y * s, y = o.orientation.x * s + o.orientation.y * c, z = 0.0 } }
     }
 
-    fn apply_key { mut keys: ctl::Keys, keycode: i32, down: bool, minigame: bool } {
-        if keycode == 'w' or (minigame and keycode == sdl::key::UP) { keys.forward = down }
-        else if keycode == 's' or (minigame and keycode == sdl::key::DOWN) { keys.back = down }
-        else if (minigame and keycode == 'a') or keycode == 'z' or (minigame and keycode == sdl::key::LEFT) { keys.turn_left = down }
-        else if (minigame and keycode == 'd') or keycode == 'c' or (minigame and keycode == sdl::key::RIGHT) { keys.turn_right = down }
-        else if keycode == 'a' { keys.strafe_left = down }
-        else if keycode == 'd' { keys.strafe_right = down }
-        else if keycode == 'b' { keys.walk = down }
-        else if minigame and (keycode == 'r' or keycode == sdl::key::SPACE) { if down { keys.action = true } }
+    fn apply_key { mut keys: ctl::Keys, km: frontend::Keymap, keycode: i32, down: bool, minigame: bool } {
+        let world = not minigame or not down
+        let mg = minigame or not down
+        if (world and frontend::key_is{ km, slot = frontend::ACT_FORWARD, keycode }) or (mg and (frontend::key_is{ km, slot = frontend::ACT_MG_UP, keycode } or frontend::key_is{ km, slot = frontend::ACT_ARROW_UP, keycode })) { keys.forward = down }
+        if (world and frontend::key_is{ km, slot = frontend::ACT_BACK, keycode }) or (mg and (frontend::key_is{ km, slot = frontend::ACT_MG_DOWN, keycode } or frontend::key_is{ km, slot = frontend::ACT_ARROW_DOWN, keycode })) { keys.back = down }
+        if (world and frontend::key_is{ km, slot = frontend::ACT_CAMERA_LEFT, keycode }) or (mg and (frontend::key_is{ km, slot = frontend::ACT_MG_LEFT, keycode } or frontend::key_is{ km, slot = frontend::ACT_ARROW_LEFT, keycode })) { keys.turn_left = down }
+        if (world and frontend::key_is{ km, slot = frontend::ACT_CAMERA_RIGHT, keycode }) or (mg and (frontend::key_is{ km, slot = frontend::ACT_MG_RIGHT, keycode } or frontend::key_is{ km, slot = frontend::ACT_ARROW_RIGHT, keycode })) { keys.turn_right = down }
+        if world and frontend::key_is{ km, slot = frontend::ACT_STRAFE_LEFT, keycode } { keys.strafe_left = down }
+        if world and frontend::key_is{ km, slot = frontend::ACT_STRAFE_RIGHT, keycode } { keys.strafe_right = down }
+        if world and frontend::key_is{ km, slot = frontend::ACT_WALK, keycode } { keys.walk = down }
+        if minigame and down and frontend::key_is{ km, slot = frontend::ACT_MG_SHOOT, keycode } { keys.action = true }
     }
 
     // Play's own scripted words: keys, the leader's moves, saves and loads, and the conversation and

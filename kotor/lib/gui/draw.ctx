@@ -613,6 +613,9 @@ namespace gui {
     fn item_frame_color { frame: u8, hot: bool } -> render::Color {
         if frame == FRAME_NEW { return render::Color{ r = 0.95, g = 0.0, b = 0.85, a = 1.0 } }
         if frame == FRAME_REFUSED { return render::Color{ r = 0.74, g = 0.11, b = 0.0, a = 1.0 } }
+        if frame == FRAME_MARKED { return render::Color{ r = 0.95, g = 0.0, b = 0.85, a = 1.0 } }
+        if frame == FRAME_LOCKED { return render::Color{ r = 0.35, g = 0.35, b = 0.35, a = 1.0 } }
+        if frame == FRAME_WAITING { return color_hilight{} }
         return if hot { color_hilight{} } else { color_menu{} }
     }
 
@@ -659,6 +662,7 @@ namespace gui {
             b.tinted = true
             b.color = item_frame_color{ frame = row.frame, hot = lit }
             if not lit { row_alpha = alpha * c.row_frame_alpha * (if row.frame == FRAME_NEW { 0.5 } else { 1.0 }) }
+            if row.frame == FRAME_WAITING { row_alpha = alpha * g.pulse_border }
         }
         if c.entry_rows {
             draw_entry_row{ &g, &frame, c, pc, row, b, lit, x, y, w, alpha, row_alpha, clip }
@@ -677,11 +681,16 @@ namespace gui {
         }
         let mut col = pc.text.color
         if row.has_color { col = row.color }
-        if lit and pc.kind == K_BUTTON and not row.has_color { col = color_hilight{} }
+        if (lit or row.frame == FRAME_WAITING) and pc.kind == K_BUTTON and not row.has_color { col = color_hilight{} }
         if not row.enabled { col = color_disabled{} }
-        if lit and pc.kind == K_BUTTON { col = mul_alpha{ c = col, a = g.pulse_border } }
+        if (lit or row.frame == FRAME_WAITING) and pc.kind == K_BUTTON { col = mul_alpha{ c = col, a = g.pulse_border } }
         col = mul_alpha{ c = col, a = alpha }
         draw_text_in{ &g, &frame, t = pc.text, text = row.text, color = col, x = ax, y = a.y, w = aw, h = a.h, clip }
+        if row.aside.len > 0 {
+            let mut t = pc.text
+            t.align = (t.align & 0xFFFFFFF8) | A_RIGHT
+            draw_text_in{ &g, &frame, t, text = row.aside, color = col, x = ax, y = a.y, w = aw, h = a.h, clip }
+        }
     }
 
     // An item entry (CSWGuiItemEntry: SetExtent 0x006b5270, Render 0x006b4d40), whatever the slot's

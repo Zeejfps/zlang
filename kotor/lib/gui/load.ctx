@@ -423,6 +423,7 @@ namespace gui {
             let mut r: usize = 0
             while r < @as(usize, cs[i].row_count) {
                 free_string{ &g, s = cs[i].rows[r].text }
+                free_string{ &g, s = cs[i].rows[r].aside }
                 r = r + 1
             }
             if cs[i].rows.len > 0 {

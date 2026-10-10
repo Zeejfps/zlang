@@ -1,0 +1,21 @@
+# From `cantina`, with --settings of the file keymap_remap.txt wrote: I walks, W does not; Default and Accept on
+# the remapping screen put W back (and I on Inventory), and W walks again.
+#   sh kotor/tools/ingame/keymap.sh
+1 ui bot off
+5 ui pos
+10 keydown i
+50 keyup i
+55 ui pos
+60 keydown w
+100 keyup w
+105 ui pos
+110 key escape
+120 ui clicktag BTN_GAMEPLAY
+130 ui clicktag BTN_KEYMAP
+140 ui clicktag BTN_Default
+150 ui clicktag BTN_Accept
+160 key escape
+170 key escape
+180 keydown w
+220 keyup w
+225 ui pos

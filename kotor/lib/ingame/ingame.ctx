@@ -61,6 +61,9 @@ namespace ingame {
         tbox: TutorialBox,                  // the tutorial pop-up while it is up (tutorial_ui.ctx)
         fade_busy: bool,                    // a screen fade runs (the loop says so each frame): the status summary waits
         frame_dt: f32,                      // the frame's own delta, without the ticks a --speed run skipped (the loop sets it)
+        keys: frontend::Keymap,             // the key bindings (lib/frontend/keymap.ctx): the options file's, the defaults filling the rest
+        key_defaults: frontend::Keymap,     // the defaults (keymap.2da with our strafe / camera swap)
+        keys_follow_settings: bool,         // the bindings follow the options file (off: the defaults, for headless runs)
     }
 
     // What the camera takes from the mouse each frame (CameraInputMouseYaw, movement.md 2.3).
@@ -88,6 +91,7 @@ namespace ingame {
         w.rules.settings.auto_level = saved.auto_level_up
         w.rules.settings.difficulty = saved.difficulty
         if mixer != null { gui::set_mixer{ &g, mixer } }
+        let key_defaults = frontend::default_keymap{ fs = &w.fs, rm = w.rm.*, heap = w.heap }
         let mut h = try hud::open{ &g, &w, &dev }
         h.floating.enabled = saved.floating_numbers
         w.tut.on = saved.tutorial_popups
@@ -104,6 +108,7 @@ namespace ingame {
             psel_wait = false, psel_exit = resref::empty{}, psel_force1 = -1, psel_force2 = -1, psel_paused = false,
             mine_quiet = 1000.0, combat_movement = saved.combat_movement, wiping = false, notice_box = msgbox::blank{},
             summary = new_summary{ on = saved.status_summary }, fade_busy = false, frame_dt = 0.0, tbox = no_tutorial_box{},
+            keys = frontend::complete_keymap{ raw = saved.keymap, defaults = key_defaults }, key_defaults, keys_follow_settings = true,
         }
         let mut p = try alloc::new(Ingame, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = ui }
         p.menus.equip.hide_unequippable = saved.hide_unequippable
@@ -252,13 +257,16 @@ namespace ingame {
         // Keys first: the menu keys, Escape and pause work with or without a menu open, and a menu
         // (a full-screen panel) would otherwise take every key.
         if ev is key{ down, repeat, keycode } {
-            if keycode == sdl::key::LSHIFT or keycode == sdl::key::RSHIFT {
+            // The key remapping screen waits for a key: it takes the next one, whatever it is bound to.
+            if down and options_panel::capture_key{ s = &ui.menus.options, g = &ui.gui, keycode } { return true }
+            let km = ui.keys
+            if frontend::key_is{ km, slot = frontend::ACT_ALT_LEFT, keycode } or frontend::key_is{ km, slot = frontend::ACT_ALT_RIGHT, keycode } {
                 ui.shift_held = down
                 ui.hud.alternate = down
             }
-            if keycode == sdl::key::LCTRL or keycode == sdl::key::RCTRL { ui.ctrl_held = down }
+            if frontend::key_is{ km, slot = frontend::ACT_LOOK_LEFT, keycode } or frontend::key_is{ km, slot = frontend::ACT_LOOK_RIGHT, keycode } { ui.ctrl_held = down }
             // ToolTips (T, action 225): while it is held the tooltip delay is 0 (SetTooltipKeyHeld 0x005f4be0).
-            if keycode == 't' { gui::set_tooltip_key{ g = &ui.gui, held = down } }
+            if frontend::key_is{ km, slot = frontend::ACT_TOOLTIPS, keycode } { gui::set_tooltip_key{ g = &ui.gui, held = down } }
             if down and not repeat {
                 if handle_key{ &ui, &w, &dev, keycode } { return true }
             }
@@ -279,16 +287,20 @@ namespace ingame {
         return false
     }
 
-    // The game's keys (keymap.2da's defaults, docs/mechanics/controls.md): menus on U I P K J L M O, Escape
-    // closes the open menu or opens the options, Q and E step through the menus or the targets, Space and
-    // Pause pause, Tab changes the leader, V asks about solo mode, 1-3 and 4-7 run the target block's and the
-    // self slots' choices (with Shift they step to the next choice), R the target's default action, F leaves
-    // combat, Y drops the last queued action. True when the key was used.
+    // The game's keys, by the bindings (`ui.keys`, docs/mechanics/controls.md; the defaults named here): menus
+    // on U I P K J L M O, Escape closes the open menu or opens the options, Q and E step through the menus or
+    // the targets, Space and Pause pause, Tab changes the leader, V asks about solo mode, 1-3 and 4-7 run the
+    // target block's and the self slots' choices (with Shift they step to the next choice), R the target's
+    // default action, F leaves combat, Y drops the last queued action. True when the key was used.
     fn handle_key { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, keycode: i32 } -> bool {
+        let km = ui.keys
+        let is_escape = frontend::key_is{ km, slot = frontend::ACT_GUI, keycode }
+        let is_pause_key = frontend::key_is{ km, slot = frontend::ACT_PAUSE_KEY, keycode }
+        let menu_key = menu_of_key{ km, keycode }
         // Free look (Caps Lock, only with nothing queued for the leader and the game running) and the keys that
         // leave it: the same key, a menu key, Escape, pause, Q and E (HandleInputAction 0xd0, 0xd1-0xd8, 0xe0,
         // 0xcc/0xcd, 0xdf).
-        if keycode == sdl::key::CAPSLOCK {
+        if frontend::key_is{ km, slot = frontend::ACT_FREELOOK, keycode } {
             if ui.freelook {
                 ui.freelook = false
             } else if not ui.hud_hidden and ui.menu == NO_MENU and not gui::is_modal_open{ g = &ui.gui } and not clock_paused_by_player{ w = &w } {
@@ -300,32 +312,33 @@ namespace ingame {
         if ui.freelook {
             // Q, E, Tab and V only end free look (Tab with its sound); a menu key, Escape and Pause end it and go
             // on to do their own work.
-            let only_ends = keycode == 'q' or keycode == 'e' or keycode == sdl::key::TAB or keycode == 'v'
-            if only_ends or menu_of_key{ keycode } >= 0 or keycode == sdl::key::ESCAPE or keycode == sdl::key::PAUSE {
+            let is_tab = frontend::key_is{ km, slot = frontend::ACT_CHANGE_CHAR, keycode }
+            let only_ends = frontend::key_is{ km, slot = frontend::ACT_SELECT_PREV, keycode } or frontend::key_is{ km, slot = frontend::ACT_SELECT_NEXT, keycode } or is_tab or frontend::key_is{ km, slot = frontend::ACT_PARTY_ACTIVE, keycode }
+            if only_ends or menu_key >= 0 or is_escape or is_pause_key {
                 ui.freelook = false
                 set_hud_hidden{ &ui, hidden = w.conversation.active }
-                if keycode == sdl::key::TAB { gui::play_sound{ g = &ui.gui, n = 6 } }
+                if is_tab { gui::play_sound{ g = &ui.gui, n = 6 } }
                 if only_ends { return true }
             }
         }
         // The menu keys and Escape while the leader is down (client party member 0 dying, 0x005f2ed0): during the
         // party wipe they start a 0.5 s fade to black (0x005f2f20); otherwise the menu keys do nothing and Escape
         // says "You can't access the Start Menu while controlling an unconscious character." (42628).
-        if menu_of_key{ keycode } >= 0 or keycode == sdl::key::ESCAPE {
+        if menu_key >= 0 or is_escape {
             if ui.wiping {
                 outbox::post{ out = &w.out, note = outbox::Note::fade{ out = true, wait = 0.0, length = 0.5, color = math::vec3::zero{} } }
                 return true
             }
             let lead = party::leader{ w = &w }
             if lead != obj::INVALID and hud::is_down{ w = &w, id = lead } and not ui.hud_hidden and not gui::is_modal_open{ g = &ui.gui } {
-                if keycode == sdl::key::ESCAPE and not msgbox::is_open{ b = ui.notice_box } {
+                if is_escape and not msgbox::is_open{ b = ui.notice_box } {
                     ui.notice_box = msgbox::show_strref{ g = &ui.gui, &w, &dev, strref = 42628, cancel = false, what = 0, item = 0 }
                 }
                 return true
             }
         }
         if ui.hud_hidden or gui::is_modal_open{ g = &ui.gui } { return false }
-        if keycode == sdl::key::ESCAPE {
+        if is_escape {
             // A panel in a sub-mode (the equipment's slot selection) takes Escape as its Cancel.
             if ui.menu != NO_MENU and panel_escape{ &ui, &w, &dev } { return true }
             if ui.menu != NO_MENU {
@@ -337,14 +350,14 @@ namespace ingame {
             }
             return true
         }
-        let n = menu_of_key{ keycode }
+        let n = menu_key
         if n >= 0 {
             if ui.menu == n { close_menu{ &ui, &w } } else { open_menu{ &ui, &w, &dev, n } }
             return true
         }
         // ChangeChar works in the world and in the menus (ICPC and ICPCGUI); a menu shows the new leader.
         // GUI sound 6 whether or not anyone took the lead (HandleInputAction 0xce).
-        if keycode == sdl::key::TAB {
+        if frontend::key_is{ km, slot = frontend::ACT_CHANGE_CHAR, keycode } {
             if cycle_leader{ &w } {
                 if ui.menu != NO_MENU { fill_panel{ &ui, &w, &dev, n = ui.menu, panel = ui.menu_panel } }
             }
@@ -352,33 +365,42 @@ namespace ingame {
             return true
         }
         if ui.menu != NO_MENU {
-            if keycode == 'q' or keycode == 'e' {
-                let step = if keycode == 'e' { 1 } else { MENU_COUNT - 1 }
+            let next = frontend::key_is{ km, slot = frontend::ACT_NEXT_MENU, keycode }
+            if next or frontend::key_is{ km, slot = frontend::ACT_PREV_MENU, keycode } {
+                let step = if next { 1 } else { MENU_COUNT - 1 }
                 open_menu{ &ui, &w, &dev, n = (ui.menu + step) % MENU_COUNT }
                 return true
             }
             return false
         }
-        if keycode == 'q' or keycode == 'e' {
-            hud::cycle_target{ &w, forward = keycode == 'e' }
+        let next_target = frontend::key_is{ km, slot = frontend::ACT_SELECT_NEXT, keycode }
+        if next_target or frontend::key_is{ km, slot = frontend::ACT_SELECT_PREV, keycode } {
+            hud::cycle_target{ &w, forward = next_target }
             ui.turn_to = w.target
             return true
         }
-        if keycode == 'r' {
+        if frontend::key_is{ km, slot = frontend::ACT_DEFAULT_ACTION, keycode } {
             return hud::run_default{ h = &ui.hud, &w }
         }
-        if keycode >= '1' and keycode <= '3' {
+        let target_slot = if frontend::key_is{ km, slot = frontend::ACT_TARGET_LEFT, keycode } { 0 }
+            else if frontend::key_is{ km, slot = frontend::ACT_TARGET_MIDDLE, keycode } { 1 }
+            else if frontend::key_is{ km, slot = frontend::ACT_TARGET_RIGHT, keycode } { 2 } else { -1 }
+        if target_slot >= 0 {
             // The target block's three slots (keymap.2da: TargetLeft/Middle/RightAct).
-            let k = @as(usize, keycode - '1')
+            let k = @as(usize, target_slot)
             if ui.shift_held {
                 hud::cycle_slot{ h = &ui.hud, g = &ui.gui, &w, &dev, k, forward = true }
                 return true
             }
             return hud::use_slot{ h = &ui.hud, g = &ui.gui, &w, k }
         }
-        if keycode >= '4' and keycode <= '7' {
+        let self_slot = if frontend::key_is{ km, slot = frontend::ACT_SELF_POWER, keycode } { 0 }
+            else if frontend::key_is{ km, slot = frontend::ACT_SELF_MEDICAL, keycode } { 1 }
+            else if frontend::key_is{ km, slot = frontend::ACT_SELF_OTHER, keycode } { 2 }
+            else if frontend::key_is{ km, slot = frontend::ACT_SELF_MINES, keycode } { 3 } else { -1 }
+        if self_slot >= 0 {
             // The four self slots: 4 friendly powers, 5 medical items, 6 other items, 7 mines.
-            let k: usize = if keycode == '4' { 0 } else if keycode == '5' { 1 } else if keycode == '6' { 2 } else { 3 }
+            let k = @as(usize, self_slot)
             if ui.shift_held {
                 selfslots::cycle{ s = &ui.selfs, g = &ui.gui, &w, &dev, panel = ui.hud.panel, k, forward = true }
             } else {
@@ -386,33 +408,33 @@ namespace ingame {
             }
             return true
         }
-        if keycode == sdl::key::SPACE or keycode == sdl::key::PAUSE {
+        if frontend::key_is{ km, slot = frontend::ACT_PAUSE, keycode } or is_pause_key {
             // Pausing offers the pause's tutorial, which takes the place of GUI sound 6 (HandleInputAction 0xe0).
             let pausing = not clock_paused_by_player{ w = &w }
             set_player_pause{ &ui, &w, &dev, on = pausing }
             if not pausing or not world::offer_plain_tutorial{ &w, id = world::TUT_PAUSE } { gui::play_sound{ g = &ui.gui, n = 6 } }
             return true
         }
-        if keycode == 'v' {
+        if frontend::key_is{ km, slot = frontend::ACT_PARTY_ACTIVE, keycode } {
             ask_solo{ &ui, &w, &dev, for_stealth = false }
             return true
         }
-        if keycode == 'f' {
+        if frontend::key_is{ km, slot = frontend::ACT_CANCEL_COMBAT, keycode } {
             hud::disengage{ h = &ui.hud, &w }
             return true
         }
-        if keycode == 'y' {
+        if frontend::key_is{ km, slot = frontend::ACT_CLEAR_ONE, keycode } {
             // Its tutorial first (0x00688790), whose close does the clear.
             if not world::offer_plain_tutorial{ &w, id = world::TUT_CLEAR_ONE } { hud::clear_one{ &w } }
             return true
         }
         // keymap.2da: X the weapon flourish (action 242).
-        if keycode == 'x' {
+        if frontend::key_is{ km, slot = frontend::ACT_FLOURISH, keycode } {
             fight::flourish{ &w, id = party::leader{ w = &w } }
             return true
         }
         // keymap.2da: G stealth (action 264).
-        if keycode == 'g' {
+        if frontend::key_is{ km, slot = frontend::ACT_STEALTH, keycode } {
             request_stealth{ &ui, &w, &dev, from_key = true }
             return true
         }
@@ -693,6 +715,13 @@ namespace ingame {
         auto_pause{ &ui, &w, &dev, reason = text }
     }
 
+    // The default key bindings from now on, whatever the options file says (hidden runs: their input scripts
+    // are written for the defaults).
+    fn use_default_keys { mut ui: Ingame } {
+        ui.keys = ui.key_defaults
+        ui.keys_follow_settings = false
+    }
+
     // ---- the frame
 
     // One frame after the world's: the GUI's clocks, the HUD from the world, then what the panels
@@ -719,6 +748,7 @@ namespace ingame {
             ui.summary.on = st.status_summary
             ui.menus.equip.hide_unequippable = st.hide_unequippable
             w.tut.on = st.tutorial_popups
+            if ui.keys_follow_settings { ui.keys = frontend::complete_keymap{ raw = st.keymap, defaults = ui.key_defaults } }
         }
         hud::tick_tutorial{ h = &ui.hud, real_dt = ui.frame_dt }
         hud::watch_member_falls{ &w }

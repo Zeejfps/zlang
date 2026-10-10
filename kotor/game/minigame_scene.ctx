@@ -67,7 +67,7 @@ namespace mg_game {
 
     // Takes the events that are the turret's: relative mouse motion, the left button and the fire
     // key held. True if it used the event.
-    fn handle_event { mut m: Mouse, ev: sdl::Event } -> bool {
+    fn handle_event { mut m: Mouse, km: frontend::Keymap, ev: sdl::Event } -> bool {
         match ev {
             mouse_motion{ dx, dy } => {
                 m.dx = m.dx + dx
@@ -82,9 +82,9 @@ namespace mg_game {
             }
             key{ down, repeat, keycode } => {
                 // the key still goes to the game's keys; this only remembers it is held
-                if keycode == sdl::key::SPACE { m.fire_key = down }
-                // Escape pauses and resumes (the original's PauseMinigame, which is its Pause: the banner shows)
-                if keycode == sdl::key::ESCAPE {
+                if frontend::key_is{ km, slot = frontend::ACT_MG_SHOOT, keycode } { m.fire_key = down }
+                // Escape pauses and resumes (the original's PauseMinigame, row 253, which is its Pause: the banner shows)
+                if frontend::key_is{ km, slot = frontend::ACT_PAUSE_MINIGAME, keycode } {
                     if down and not repeat { m.paused = not m.paused }
                     return true
                 }

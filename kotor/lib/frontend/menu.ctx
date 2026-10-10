@@ -81,6 +81,7 @@ namespace frontend {
         load_panel: u32,                    // that loading screen (0 when none)
         tutorials_allowed: bool,            // someone is playing: character generation's tutorial pop-ups may show
         tutorial_shown: [6]u8,              // the ones character generation showed, for the new game's shown set
+        keys: KeyScreen,                    // the key remapping screen (keymap_panel.ctx)
     }
 
     // A front end with the options from `config_path` (the defaults if there is no such file).
@@ -103,7 +104,7 @@ namespace frontend {
             player = null, tables = null, audio_clock = true, from_menu = false,
             scene = null, scene_failed = false, cg = null,
             music = mix::Handle{ slot = 0, id = 0 }, music_bytes = slice::empty(u8){}, music_started = false,
-            hint_game = 0, hint_story = 0, cg_wait = false, load_panel = 0, tutorials_allowed = false, tutorial_shown = [0; 6],
+            hint_game = 0, hint_story = 0, cg_wait = false, load_panel = 0, tutorials_allowed = false, tutorial_shown = [0; 6], keys = new_key_screen{},
         }
         fe.config_len = copy_into{ dst = fe.config_path[..], src = config_path }
         fe.start_len = copy_into{ dst = fe.start_module[..], src = "end_m01aa" }
@@ -137,6 +138,7 @@ namespace frontend {
         if screen == SCR_SOUND { return "optsound" }
         if screen == SCR_SOUND_ADV { return "optsoundadv" }
         if screen == SCR_MOUSE { return "optmouse" }
+        if screen == SCR_KEYMAP { return "optkeymapping" }
         if screen == SCR_LOAD or screen == SCR_SAVE { return "saveload" }
         if screen == SCR_SAVENAME { return "savename" }
         return "titlemovie"
@@ -186,7 +188,7 @@ namespace frontend {
         gui::close{ &g, id = top.panel }
         fe.depth = fe.depth - 1
         if top.screen == SCR_LOAD or top.screen == SCR_SAVE { release_shot{ &fe, &dev } }
-        if (top.screen >= SCR_OPTIONS and top.screen <= SCR_MOUSE and top.screen != SCR_RESOLUTION) or top.screen == SCR_GRAPHICS_FX { persist{ &fe, &fs } }
+        if (top.screen >= SCR_OPTIONS and top.screen <= SCR_MOUSE and top.screen != SCR_RESOLUTION) or top.screen == SCR_GRAPHICS_FX or top.screen == SCR_KEYMAP { persist{ &fe, &fs } }
         let under = fe.stack[fe.depth - 1]
         if under.screen == SCR_GRAPHICS { sync_graphics{ &fe, &g, p = under.panel } iferr {} }
         gui::play_sound{ &g, n = 5 }
@@ -225,7 +227,6 @@ namespace frontend {
             gui::set_checked{ &g, panel = p, tag = "CB_REVERSE", on = s.reverse_minigame_y }
             gui::set_checked{ &g, panel = p, tag = "CB_DISABLEMOVE", on = s.combat_movement }
             try show_difficulty{ &g, p, d = s.difficulty }
-            gui::set_enabled{ &g, panel = p, tag = "BTN_KEYMAP", enabled = false }
             gui::set_focus{ &g, panel = p, tag = "BTN_DIFFICULTY" }
         } else if screen == SCR_FEEDBACK {
             try fill_feedback{ &fe, &g, p }
@@ -260,6 +261,8 @@ namespace frontend {
         } else if screen == SCR_SOUND_ADV {
             gui::set_checked{ &g, panel = p, tag = "CB_FORCESOFTWARE", on = s.force_software }
             try show_choice{ &g, p, tag = "BTN_EAX", which = CH_EAX, v = if s.eax { 1 } else { 0 } }
+        } else if screen == SCR_KEYMAP {
+            try open_keymap{ &fe, &g, &fs, p }
         } else if screen == SCR_MOUSE {
             gui::set_value{ &g, panel = p, tag = "SLI_MOUSESEN", value = s.mouse_sensitivity }
             gui::set_checked{ &g, panel = p, tag = "CB_REVBUTTONS", on = s.reverse_buttons }

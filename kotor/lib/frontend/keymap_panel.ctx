@@ -1,0 +1,258 @@
+// The key remapping screen (optkeymapping.gui, CSWGuiOptionsKeyMapping 0x006edc90; docs/re/gui.md, "Key
+// mapping"), opened by the Gameplay options' Keyboard Configuration button. It lists keymap.2da's rows of
+// one page (Movement, Game, Mini Games: the filter buttons) by their SortPos, each with its key. A click on
+// a row waits for a key (the row pulses): Escape stops waiting, a key bindablekeys.2da does not allow is
+// ignored, any other becomes the row's and is taken from every other row sharing an input class with it.
+// Default puts every row back to the defaults, Accept keeps the changed rows in the options file, Cancel
+// and Escape forget them.
+namespace frontend {
+    const SCR_KEYMAP: u32 = 17
+
+    const KEY_LIST: []u8 = "LST_EventList"
+    const STRREF_NONE_SET: u32 = 48144          // "None Set" (0x005f4df0)
+
+    // A row of the list (the original's entry, 0x006ec630).
+    struct KeyEntry {
+        slot: i32,                  // keymap.ctx's slot
+        page: i32,                  // Page: 0 movement, 1 game, 2 minigames
+        sort: i32,                  // SortPos
+        strref: u32,                // ActionStrRef, the action's name
+        locked: bool,               // ForceDisplay: shown, never remapped (Escape, Pause)
+        classes: u32,               // the input classes: ICPC 1, ICMiniGame 2, ICPCGUI 4, ICDialog 8, ICFreeLook 16, ICMovie 32
+        current: i32,               // the key now
+        pending: i32,               // the key it will have on Accept
+        changed: bool,
+    }
+
+    struct KeyScreen {
+        entries: [80]KeyEntry, count: usize,
+        defaults: Keymap,
+        bindable: [110]bool,        // bindablekeys.2da's Bindable, by key code
+        names: [110]u32,            // and its KeyNameStrRef
+        page: i32,
+        waiting: i32,               // the entry waiting for a key, -1 none
+        panel: u32,
+    }
+
+    fn new_key_screen {} -> KeyScreen {
+        let e = KeyEntry{ slot = 0, page = 0, sort = 0, strref = 0, locked = false, classes = 0, current = 0, pending = 0, changed = false }
+        return KeyScreen{ entries = [e; 80], count = 0, defaults = no_keymap{}, bindable = [false; 110], names = [0; 110], page = 0, waiting = -1, panel = 0 }
+    }
+
+    // Builds the entries from keymap.2da and the bindings now (0x006ed930, 0x006ed610, 0x006ec7d0), and shows
+    // the Movement page.
+    fn open_keymap { mut fe: Front, mut g: gui::Gui, mut fs: Fs, p: u32 } -> ! {
+        let k = &fe.keys
+        k.panel = p
+        k.page = 0
+        k.waiting = -1
+        k.count = 0
+        let rm = g.rm
+        k.defaults = default_keymap{ &fs, rm, heap = fe.heap }
+        let now = complete_keymap{ raw = fe.settings.keymap, defaults = k.defaults }
+        read_bindable{ k, &fs, rm, heap = fe.heap } iferr {}
+        let bytes = try res::load{ &fs, rm, name = "keymap", kind = restype::Type::twoda, realloc = heap::alloc, heap = fe.heap } ifnull { return }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = fe.heap, mem = bytes, count = 0 }
+        let t = try twoda::parse{ data = bytes, realloc = heap::alloc, heap = fe.heap }
+        defer twoda::free{ t, realloc = heap::alloc, heap = fe.heap }
+        // The original's order before sorting: the two-key rows, B before A, then Action200..Action265.
+        let mut row = 280
+        while row <= 286 {
+            add_entry{ k, t, slot = slot_of{ row, part = 2 }, now }
+            add_entry{ k, t, slot = slot_of{ row, part = 1 }, now }
+            row = row + 1
+        }
+        row = 200
+        while row < 266 {
+            add_entry{ k, t, slot = slot_of{ row, part = 0 }, now }
+            row = row + 1
+        }
+        gui::set_click_rows{ &g, panel = p, tag = KEY_LIST }
+        show_filter{ &g, p, page = 0 }
+        try fill_keymap{ &fe, &g }
+    }
+
+    // An entry for the row of `slot`, when the row is remappable or forced on the list and not disabled.
+    fn add_entry { mut k: KeyScreen, t: twoda::Table, slot: i32, now: Keymap } {
+        let mut buf: [12]u8
+        let label = slot_label{ slot, into = buf[..] }
+        let row = twoda::find_row{ t, label } ifnull { return }
+        let remappable = (twoda::get_int{ t, row, column = "ReMappable" } ifnull 0) != 0
+        let forced = (twoda::get_int{ t, row, column = "ForceDisplay" } ifnull 0) != 0
+        let disabled = (twoda::get_int{ t, row, column = "Disabled" } ifnull 0) == 1
+        if (not remappable and not forced) or disabled { return }
+        let mut classes: u32 = 0
+        let flags: [6][]u8 = ["ICPC", "ICMiniGame", "ICPCGUI", "ICDialog", "ICFreeLook", "ICMovie"]
+        let mut i: usize = 0
+        while i < 6 {
+            if (twoda::get_int{ t, row, column = flags[i] } ifnull 0) == 1 { classes = classes | (@as(u32, 1) << @trunc(u32, i)) }
+            i = i + 1
+        }
+        let code = @as(i32, now.codes[@as(usize, slot)])
+        k.entries[k.count] = KeyEntry{
+            slot, page = twoda::get_int{ t, row, column = "Page" } ifnull 0, sort = twoda::get_int{ t, row, column = "SortPos" } ifnull -1,
+            strref = @as(u32, twoda::get_int{ t, row, column = "ActionStrRef" } ifnull 0), locked = forced, classes,
+            current = code, pending = code, changed = false,
+        }
+        k.count = k.count + 1
+    }
+
+    fn read_bindable { mut k: KeyScreen, mut fs: Fs, rm: res::Manager, heap: *mut heap::Heap } -> ! {
+        let bytes = try res::load{ &fs, rm, name = "bindablekeys", kind = restype::Type::twoda, realloc = heap::alloc, heap } ifnull { return }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap, mem = bytes, count = 0 }
+        let t = try twoda::parse{ data = bytes, realloc = heap::alloc, heap }
+        defer twoda::free{ t, realloc = heap::alloc, heap }
+        // Row n is key code n + 6 ("KEY%d" of the code less 6, 0x006eda80).
+        let mut r: usize = 0
+        while r < twoda::rows{ t } and r + 6 < 110 {
+            k.bindable[r + 6] = (twoda::get_int{ t, row = r, column = "Bindable" } ifnull 0) != 0
+            k.names[r + 6] = @as(u32, twoda::get_int{ t, row = r, column = "KeyNameStrRef" } ifnull 0)
+            r = r + 1
+        }
+    }
+
+    // The filter buttons: the shown page's text in the hilight yellow, the others' in the menu blue (0x006ed390).
+    fn show_filter { mut g: gui::Gui, p: u32, page: i32 } {
+        let tags: [3][]u8 = ["BTN_Filter_Move", "BTN_Filter_Game", "BTN_Filter_Mini"]
+        let mut i: usize = 0
+        while i < 3 {
+            gui::set_text_color{ &g, panel = p, tag = tags[i], color = if @as(i32, i) == page { gui::color_hilight{} } else { gui::color_menu{} } }
+            i = i + 1
+        }
+    }
+
+    // The list: the page's entries by SortPos, a tie in the entries' order (0x006ecfd0).
+    fn fill_keymap { mut fe: Front, mut g: gui::Gui } -> ! {
+        let k = &fe.keys
+        let p = k.panel
+        gui::list_clear{ &g, panel = p, tag = KEY_LIST }
+        let mut taken = [false; 80]
+        while true {
+            let mut best: i32 = -1
+            let mut i: usize = 0
+            while i < k.count {
+                let e = k.entries[i]
+                if not taken[i] and e.page == k.page and (best < 0 or e.sort < k.entries[@as(usize, best)].sort) { best = @as(i32, i) }
+                i = i + 1
+            }
+            if best < 0 { break }
+            taken[@as(usize, best)] = true
+            try add_row{ k, &g, p, at = @as(usize, best) }
+        }
+    }
+
+    fn add_row { k: *KeyScreen, mut g: gui::Gui, p: u32, at: usize } -> ! {
+        let e = k.entries[at]
+        let name = try gui::tlk_text{ &g, strref = e.strref }
+        defer gui::free_string{ &g, s = name }
+        let r = try gui::list_add{ &g, panel = p, tag = KEY_LIST, text = name, user = @as(i64, at) }
+        try show_key{ k, &g, p, r, at }
+    }
+
+    // A row's key and look: the key's name ("None Set" for none), magenta when changed, grey when locked,
+    // yellow and pulsing while it waits for a key.
+    fn show_key { k: *KeyScreen, mut g: gui::Gui, p: u32, r: i32, at: usize } -> ! {
+        let e = k.entries[at]
+        let plain = if e.pending > 0 and e.pending < CODE_COUNT { plain_key_name{ code = e.pending } } else { "" }
+        if plain.len > 0 {
+            try gui::list_set_aside{ &g, panel = p, tag = KEY_LIST, row = r, text = plain }
+        } else {
+            let strref = if e.pending > 0 and e.pending < CODE_COUNT and k.names[@as(usize, e.pending)] != 0 { k.names[@as(usize, e.pending)] } else { STRREF_NONE_SET }
+            let key = try gui::tlk_text{ &g, strref }
+            defer gui::free_string{ &g, s = key }
+            try gui::list_set_aside{ &g, panel = p, tag = KEY_LIST, row = r, text = key }
+        }
+        let frame = if k.waiting == @as(i32, at) { gui::FRAME_WAITING } else if e.locked { gui::FRAME_LOCKED } else if e.changed { gui::FRAME_MARKED } else { gui::FRAME_FILE }
+        gui::list_set_frame{ &g, panel = p, tag = KEY_LIST, row = r, frame }
+        gui::list_set_enabled{ &g, panel = p, tag = KEY_LIST, row = r, enabled = not e.locked }
+    }
+
+    // The keymap screen's events: a row clicked waits for a key, the filters, Default, Accept, Cancel.
+    fn keymap_event { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } {
+        if ev.kind == gui::EventKind::row_activated {
+            let at = ev.user
+            if at < 0 or at >= @as(i64, fe.keys.count) or fe.keys.entries[@as(usize, at)].locked { return }
+            fe.keys.waiting = @as(i32, at)
+            fill_keymap{ &fe, &g } iferr {}
+            return
+        }
+        if ev.kind != gui::EventKind::activate { return }
+        let page = if tag_is{ ev, tag = "BTN_Filter_Move" } { 0 } else if tag_is{ ev, tag = "BTN_Filter_Game" } { 1 } else if tag_is{ ev, tag = "BTN_Filter_Mini" } { 2 } else { -1 }
+        if page >= 0 {
+            fe.keys.page = page
+            fe.keys.waiting = -1
+            show_filter{ &g, p = fe.keys.panel, page }
+            fill_keymap{ &fe, &g } iferr {}
+            return
+        }
+        if tag_is{ ev, tag = "BTN_Default" } {
+            // Every row that can be remapped, on every page (0x006ed2d0, 0x006eccc0).
+            let k = &fe.keys
+            let mut i: usize = 0
+            while i < k.count {
+                if not k.entries[i].locked {
+                    let d = @as(i32, k.defaults.codes[@as(usize, k.entries[i].slot)])
+                    k.entries[i].pending = d
+                    k.entries[i].changed = k.entries[i].current != d
+                }
+                i = i + 1
+            }
+            k.waiting = -1
+            fill_keymap{ &fe, &g } iferr {}
+            return
+        }
+        if tag_is{ ev, tag = "BTN_Accept" } {
+            // The changed rows become the bindings and go to the options file (0x006ed310, 0x006ece60).
+            let mut i: usize = 0
+            while i < fe.keys.count {
+                let e = fe.keys.entries[i]
+                if not e.locked and e.changed { fe.settings.keymap.codes[@as(usize, e.slot)] = @trunc(i16, e.pending) }
+                i = i + 1
+            }
+            fe.keys.waiting = -1
+            gui::play_sound{ &g, n = 0 }
+            close_top{ &fe, &g, &fs, &dev }
+            return
+        }
+        if tag_is{ ev, tag = "BTN_Cancel" } {
+            fe.keys.waiting = -1
+            close_top{ &fe, &g, &fs, &dev }
+        }
+    }
+
+    // A key pressed while a row waits for one (0x006ee040): Escape stops waiting, a key that cannot be bound
+    // is ignored, any other is the row's. True when the screen took the key.
+    fn capture_key { mut fe: Front, mut g: gui::Gui, keycode: i32 } -> bool {
+        let at = fe.keys.waiting
+        if at < 0 or top_screen{ fe = &fe } != SCR_KEYMAP { return false }
+        let code = code_of_keycode{ keycode }
+        if code == CODE_ESCAPE {
+            fe.keys.waiting = -1
+            gui::play_sound{ &g, n = 0 }
+            fill_keymap{ &fe, &g } iferr {}
+            return true
+        }
+        if code <= 0 or code >= CODE_COUNT or not fe.keys.bindable[@as(usize, code)] { return true }
+        assign_key{ k = &fe.keys, at = @as(usize, at), code }
+        fe.keys.waiting = -1
+        gui::play_sound{ &g, n = 0 }
+        fill_keymap{ &fe, &g } iferr {}
+        return true
+    }
+
+    // Gives entry `at` the key `code`, taking it from every other entry that shares an input class and has
+    // it (0x006edbd0, 0x006ed1e0).
+    fn assign_key { mut k: KeyScreen, at: usize, code: i32 } {
+        let classes = k.entries[at].classes
+        let mut i: usize = 0
+        while i < k.count {
+            if i != at and (k.entries[i].classes & classes) != 0 and k.entries[i].pending == code {
+                k.entries[i].pending = 0
+                k.entries[i].changed = true
+            }
+            i = i + 1
+        }
+        k.entries[at].pending = code
+        k.entries[at].changed = k.entries[at].current != code
+    }
+}

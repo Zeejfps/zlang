@@ -16,7 +16,7 @@ with `key NAME`, `keydown NAME`, `keyup NAME`, `mouse move|down|up|click [left|r
 (each is an SDL event on SDL's own queue, `game/inject.ctx`), and read `ui pos`, `ui anims`, `ui pick`, `ui
 info`, `ui hover`, `ui list` (screen boxes of what can be picked) and the screenshots.
 
-## The key table (keymap.2da, defaults; the install's `[Keymapping]` is the same)
+## The key table (keymap.2da, defaults; ours swap strafe and camera rotation)
 
 A key code in the ini is the game's own: letters A..Z = 51..76, digits 1..9 = 77..85, so W = 73, S = 69, Z = 76,
 C = 53, A = 51, D = 54, Q = 67, E = 55, R = 68, F = 56, G = 57, B = 52, V = 72, X = 74, Y = 75, T = 70.
@@ -25,10 +25,23 @@ copy stops at `Action264`: it has no B row). Rows `Action200`..`Action265` are e
 rows `Action280A/B`..`Action286A/B` pair two keys into one axis event (`SetupKeymapping` 0x005eeb10, which
 reads `[Keymapping]` first and writes the 2DA's default only for a missing entry). The install's
 `swkotor.ini` has the 2DA's codes for every row except two: `Action281A/B` = 51 / 54 (strafe on A / D) and
-`Action284A/B` = 0 / 0 (camera rotation unbound), a remap; the table gives the defaults. Ours: the keys are
-fixed (`lib/ingame/ingame.ctx` `handle_key`, `game/play.ctx` `apply_key`) at these defaults except that strafe
-and camera rotation swap (strafe on A / D as the install's ini has it, rotation on Z / C; the user's choice);
-`[Keymapping]` is not read and the options' keymap button is disabled.
+`Action284A/B` = 0 / 0 (camera rotation unbound), a remap; the table gives the defaults.
+
+Ours: the bindings are read from **our options file** (`kotor/out/kotor-settings.ini` or `--settings FILE`),
+never from the install's `swkotor.ini`: its `[Keymapping]` section has the original's format
+(`Action204=67`, `Action280A=73`, the codes above, 0 for no key), each entry it gives is used and every
+missing one takes the default (`lib/frontend/keymap.ctx`). The defaults are keymap.2da's `Language0`
+(a `Disabled` row gets no key, as `SetupKeymapping` skips it) except that strafe and camera rotation swap:
+`Action281A/B` = A / D (51 / 54) strafe, `Action284A/B` = Z / C (76 / 53) rotate the camera (the user's
+choice). The file holds only what the remapping screen changed (the original writes every default back
+to its ini; ours keeps the file to what the player chose). Every key the game reads goes through the
+bindings (`ingame::handle_key`, `menu_of_key`, `play.ctx` `apply_key` and the quick save / load keys,
+the minigames' fire and pause keys in `minigame_scene.ctx`). A hidden (`--headless`, `--no-render`) run
+without `--settings` uses the defaults whatever the file says, so the input scripts keep their keys. The
+options' Keyboard Configuration button opens the remapping screen ([../re/gui.md](../re/gui.md), "Key
+mapping"): matches. Not bound to the table: the conversation's reply keys 1-9 (`Dialog1..9`, not
+remappable; ours also take the keypad's) and the GUI's own Enter, arrows and Escape, which the original
+hard-wires too.
 World is the row's ICPC flag, Menus its ICPCGUI flag; the free-look (ICFreelook) and minigame flags are named
 where they matter.
 
@@ -38,6 +51,7 @@ where they matter.
 | A / D | strafe left / right (281; default Z / C) | yes | | ours: swapped with rotation (A / D steer in minigames) |
 | Z / C | rotate camera left / right (284; default A / D) | yes | | ours: swapped with strafe |
 | Arrows | minigames only (285, 286); MoveForward.. (200-203) are disabled | no | | matches (arrows do nothing in the world) |
+| W / S, A / D, arrows, Space, Escape in a minigame | drive, steer, fire (282, 283, 285, 286, 217 MGshoot), pause (253) | | | matches; fixed: Z / C no longer steer and R no longer fires in a minigame (they are not ICMiniGame rows) |
 | B (held) | walk modifier "Run / Walk" (265) | yes | | matches |
 | Q / E | previous / next target (204, 205); in menus previous / next menu (243, 244) | yes | yes | matches (in free look they only end it: `tools/camcheck/scripts/freelook.txt`, the target stays); in combat mode with no hostile in view they cycle every entry (see Mouse) |
 | Tab | change leader (206) | yes | yes | matches (in free look it only ends it: `tools/camcheck/scripts/freelook.txt`; GUI sound 6 with nobody to take the lead: fixed, by reading) |

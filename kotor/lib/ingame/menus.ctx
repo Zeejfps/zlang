@@ -70,17 +70,17 @@ namespace ingame {
         return -1
     }
 
-    // The menu key of the original's keymap.2da: U equipment, I inventory, P character, K abilities,
-    // J messages, L journal, M map, O options. -1 for any other key.
-    fn menu_of_key { keycode: i32 } -> i32 {
-        if keycode == 'u' { return MENU_EQUIP }
-        if keycode == 'i' { return MENU_INVENTORY }
-        if keycode == 'p' { return MENU_CHARACTER }
-        if keycode == 'k' { return MENU_ABILITIES }
-        if keycode == 'j' { return MENU_MESSAGES }
-        if keycode == 'l' { return MENU_JOURNAL }
-        if keycode == 'm' { return MENU_MAP }
-        if keycode == 'o' { return MENU_OPTIONS }
+    // The menu of a menu key (keymap.2da rows 209-216; by default U equipment, I inventory, P character,
+    // K abilities, J messages, L journal, M map, O options). -1 for any other key.
+    fn menu_of_key { km: frontend::Keymap, keycode: i32 } -> i32 {
+        if frontend::key_is{ km, slot = frontend::ACT_EQUIP, keycode } { return MENU_EQUIP }
+        if frontend::key_is{ km, slot = frontend::ACT_EQUIP + 1, keycode } { return MENU_INVENTORY }
+        if frontend::key_is{ km, slot = frontend::ACT_EQUIP + 2, keycode } { return MENU_CHARACTER }
+        if frontend::key_is{ km, slot = frontend::ACT_EQUIP + 3, keycode } { return MENU_ABILITIES }
+        if frontend::key_is{ km, slot = frontend::ACT_EQUIP + 4, keycode } { return MENU_MESSAGES }
+        if frontend::key_is{ km, slot = frontend::ACT_EQUIP + 5, keycode } { return MENU_JOURNAL }
+        if frontend::key_is{ km, slot = frontend::ACT_EQUIP + 6, keycode } { return MENU_MAP }
+        if frontend::key_is{ km, slot = frontend::ACT_OPTIONS, keycode } { return MENU_OPTIONS }
         return -1
     }
 

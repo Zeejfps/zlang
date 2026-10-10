@@ -40,6 +40,10 @@ namespace gui {
     const FRAME_ITEM: u8 = 1            // menu blue, yellow when hilighted
     const FRAME_NEW: u8 = 2             // magenta, the normal frame half transparent
     const FRAME_REFUSED: u8 = 3         // the creature cannot wear it: red-orange, hilighted or not
+    // The key remapping screen's entries (lib/frontend/keymap_panel.ctx, 0x006ec6e0, 0x006ec770, 0x006ed480).
+    const FRAME_MARKED: u8 = 4          // a changed binding: magenta, at full strength
+    const FRAME_LOCKED: u8 = 5          // shown but not remappable: grey
+    const FRAME_WAITING: u8 = 6         // waiting for a key: yellow, pulsing
 
     // An item entry (CSWGuiItemEntry 0x006b5270 and the store's and upgrade bench's copies of it) is
     // always this tall, whatever the prototype says: a square box this wide at the left holds the
@@ -102,6 +106,7 @@ namespace gui {
         frame: u8,                      // item rows (CSWGuiItemEntry): FRAME_*, how the row's frames are tinted; 0 keeps the file's colours
         hex: Img,                       // item entries: the hexagon frame behind the icon (lbl_hex_3, _6 or _7 by the stack)
         count: i32,                     // item entries: the stack size, printed in the box's corner when 2 or more
+        aside: []mut u8,                // owned; drawn right-aligned in the row (the key remapping screen's key), empty for none
     }
 
     struct Control {

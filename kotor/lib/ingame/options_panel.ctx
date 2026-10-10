@@ -49,6 +49,12 @@ namespace options_panel {
         s.config_len = n
     }
 
+    // A key while the key remapping screen waits for one: the screen takes it (frontend::capture_key).
+    fn capture_key { mut s: State, mut g: gui::Gui, keycode: i32 } -> bool {
+        let fe = s.fe ifnull { return false }
+        return frontend::capture_key{ fe, &g, keycode }
+    }
+
     // Whether a save or a load was chosen and not yet taken: the menu closes itself then, so that
     // the saved picture is the game's frame and a load starts from a clear screen.
     fn has_request { s: *State } -> bool {

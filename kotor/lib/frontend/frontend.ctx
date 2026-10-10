@@ -121,6 +121,8 @@ namespace frontend {
             }
             return true
         }
+        // The key remapping screen waits for a key.
+        if ev is key{ down, keycode } and down and capture_key{ &fe, &g, keycode } { return true }
         return gui::handle_event{ &g, ev, scale_x, scale_y }
     }
 

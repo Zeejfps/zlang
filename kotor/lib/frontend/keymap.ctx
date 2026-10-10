@@ -1,0 +1,258 @@
+// The key bindings: which key runs each of keymap.2da's actions (docs/mechanics/controls.md, "The key
+// table"). A binding is the original's key code (letters A..Z = 51..76, the bindablekeys.2da row plus 6,
+// 0 for none). Our options file keeps them under [Keymapping] as swkotor.ini does (`Action280A=73`);
+// missing entries take the defaults, keymap.2da's `Language0` (SetupKeymapping 0x005eeb10) except for
+// the strafe and camera rows, whose keys are swapped (ours: strafe on A / D, the camera on Z / C).
+//
+//   let raw = settings.keymap                                  // from the file; -1 where it says nothing
+//   let km = frontend::complete_keymap{ raw, defaults = frontend::default_keymap{ &fs, rm, heap } }
+//   if frontend::key_is{ km, slot = frontend::ACT_FORWARD, keycode } { ... }
+namespace frontend {
+    // A slot per action: rows Action200..Action265 are slots 0..65 (row - 200), the two-key rows
+    // Action280A/B..Action286A/B slots 66..79 (A then B).
+    const KEY_SLOTS: usize = 80
+    const ACT_SELECT_PREV: i32 = 4
+    const ACT_SELECT_NEXT: i32 = 5
+    const ACT_CHANGE_CHAR: i32 = 6
+    const ACT_PARTY_ACTIVE: i32 = 7          // solo mode
+    const ACT_FREELOOK: i32 = 8
+    const ACT_EQUIP: i32 = 9                 // 9..16 the menus: equipment, inventory, character, abilities, messages, journal, map, options
+    const ACT_OPTIONS: i32 = 16
+    const ACT_MG_SHOOT: i32 = 17
+    const ACT_QUICKSAVE: i32 = 18
+    const ACT_LOOK_LEFT: i32 = 19            // Ctrl: look about
+    const ACT_LOOK_RIGHT: i32 = 20
+    const ACT_ALT_LEFT: i32 = 21             // Shift: alternate actions
+    const ACT_ALT_RIGHT: i32 = 22
+    const ACT_GUI: i32 = 23                  // Escape: the options menu, close a menu
+    const ACT_PAUSE_KEY: i32 = 24
+    const ACT_TOOLTIPS: i32 = 25
+    const ACT_TARGET_LEFT: i32 = 26
+    const ACT_TARGET_MIDDLE: i32 = 28
+    const ACT_TARGET_RIGHT: i32 = 30
+    const ACT_SELF_POWER: i32 = 32
+    const ACT_SELF_MEDICAL: i32 = 34
+    const ACT_SELF_MINES: i32 = 36
+    const ACT_SELF_OTHER: i32 = 38
+    const ACT_DEFAULT_ACTION: i32 = 39
+    const ACT_CANCEL_COMBAT: i32 = 40
+    const ACT_PAUSE: i32 = 41                // Space
+    const ACT_FLOURISH: i32 = 42
+    const ACT_PREV_MENU: i32 = 43
+    const ACT_NEXT_MENU: i32 = 44
+    const ACT_CLEAR_ONE: i32 = 45
+    const ACT_PAUSE_MINIGAME: i32 = 53
+    const ACT_QUICKLOAD: i32 = 63
+    const ACT_STEALTH: i32 = 64
+    const ACT_WALK: i32 = 65
+    const ACT_FORWARD: i32 = 66              // 280 A / B
+    const ACT_BACK: i32 = 67
+    const ACT_STRAFE_LEFT: i32 = 68          // 281 A / B
+    const ACT_STRAFE_RIGHT: i32 = 69
+    const ACT_MG_UP: i32 = 70                // 282 A / B
+    const ACT_MG_DOWN: i32 = 71
+    const ACT_MG_LEFT: i32 = 72              // 283 A / B
+    const ACT_MG_RIGHT: i32 = 73
+    const ACT_CAMERA_LEFT: i32 = 74          // 284 A / B
+    const ACT_CAMERA_RIGHT: i32 = 75
+    const ACT_ARROW_UP: i32 = 76             // 285 A / B (minigames)
+    const ACT_ARROW_DOWN: i32 = 77
+    const ACT_ARROW_LEFT: i32 = 78           // 286 A / B
+    const ACT_ARROW_RIGHT: i32 = 79
+
+    // Key codes the swap uses.
+    const CODE_A: i16 = 51
+    const CODE_C: i16 = 53
+    const CODE_D: i16 = 54
+    const CODE_Z: i16 = 76
+    const CODE_ESCAPE: i32 = 31
+    const CODE_COUNT: i32 = 110              // codes 6..109 name keys (0x005f4df0)
+
+    struct Keymap { codes: [80]i16 }        // per slot: the key code, 0 none, -1 not given (a file's)
+
+    fn no_keymap {} -> Keymap { return Keymap{ codes = [-1; 80] } }
+
+    // The 2DA row and part (0 a one-key row, 1 the A key, 2 the B key: the original's numbering) of a slot.
+    fn slot_row { slot: i32 } -> i32 { return if slot < 66 { 200 + slot } else { 280 + (slot - 66) / 2 } }
+    fn slot_part { slot: i32 } -> i32 { return if slot < 66 { 0 } else { 1 + (slot - 66) % 2 } }
+
+    fn slot_of { row: i32, part: i32 } -> i32 {
+        if part == 0 { return if row >= 200 and row < 266 { row - 200 } else { -1 } }
+        if row < 280 or row > 286 { return -1 }
+        return 66 + (row - 280) * 2 + (part - 1)
+    }
+
+    // The slot's row label and ini key, "Action204" or "Action280A" (the original's "Action%d%c", 0x006ec120).
+    fn slot_label { slot: i32, into: []mut u8 } -> []u8 {
+        let pre: []u8 = "Action"
+        slice::copy(u8){ dst = into[..pre.len], src = pre }
+        let row = slot_row{ slot }
+        into[6] = '0' + @trunc(u8, row / 100)
+        into[7] = '0' + @trunc(u8, (row / 10) % 10)
+        into[8] = '0' + @trunc(u8, row % 10)
+        let part = slot_part{ slot }
+        if part == 0 { return into[..9] }
+        into[9] = if part == 1 { 'A' } else { 'B' }
+        return into[..10]
+    }
+
+    // [Keymapping] of an options file's text: what it gives, -1 elsewhere.
+    fn read_keymap { data: []u8 } -> Keymap {
+        let mut km = no_keymap{}
+        let mut slot: i32 = 0
+        while slot < 80 {
+            let mut buf: [12]u8
+            let key = slot_label{ slot, into = buf[..] }
+            let v = get_int{ data, section = "Keymapping", key, fallback = -1 }
+            if v >= 0 and v < CODE_COUNT { km.codes[@as(usize, slot)] = @trunc(i16, v) }
+            slot = slot + 1
+        }
+        return km
+    }
+
+    // The entries a file gives, as [Keymapping] lines.
+    fn write_keymap { mut b: utf8::Builder(heap::Heap), km: Keymap } -> ! {
+        try @fmt(&b, "\n[Keymapping]\n")
+        let mut slot: i32 = 0
+        while slot < 80 {
+            let c = km.codes[@as(usize, slot)]
+            if c >= 0 {
+                let mut buf: [12]u8
+                let key = slot_label{ slot, into = buf[..] }
+                try @fmt(&b, "{}={}\n", key, c)
+            }
+            slot = slot + 1
+        }
+    }
+
+    // The defaults: keymap.2da's Language0 for every row it has that is not Disabled (a disabled row
+    // gets no key, as SetupKeymapping skips it), with our swap of the strafe (281) and camera (284)
+    // rows. Nothing bound when the table cannot be read.
+    fn default_keymap { mut fs: Fs, rm: res::Manager, heap: *mut heap::Heap } -> Keymap {
+        let mut km = Keymap{ codes = [0; 80] }
+        let bytes = (res::load{ &fs, rm, name = "keymap", kind = restype::Type::twoda, realloc = heap::alloc, heap } iferr { return km }) ifnull { return km }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap, mem = bytes, count = 0 }
+        let t = twoda::parse{ data = bytes, realloc = heap::alloc, heap } iferr { return km }
+        defer twoda::free{ t, realloc = heap::alloc, heap }
+        let mut slot: i32 = 0
+        while slot < 80 {
+            let mut buf: [12]u8
+            let label = slot_label{ slot, into = buf[..] }
+            if twoda::find_row{ t, label } is some{ value = row } {
+                let disabled = (twoda::get_int{ t, row, column = "Disabled" } ifnull 0) != 0
+                let code = twoda::get_int{ t, row, column = "Language0" } ifnull 0
+                if not disabled and code > 0 and code < CODE_COUNT { km.codes[@as(usize, slot)] = @trunc(i16, code) }
+            }
+            slot = slot + 1
+        }
+        apply_swap{ &km }
+        return km
+    }
+
+    // Ours (the user's choice, docs/mechanics/controls.md): strafe on A / D, the camera on Z / C, where the
+    // 2DA has strafe on Z / C and the camera on A / D.
+    fn apply_swap { mut km: Keymap } {
+        km.codes[@as(usize, ACT_STRAFE_LEFT)] = CODE_A
+        km.codes[@as(usize, ACT_STRAFE_RIGHT)] = CODE_D
+        km.codes[@as(usize, ACT_CAMERA_LEFT)] = CODE_Z
+        km.codes[@as(usize, ACT_CAMERA_RIGHT)] = CODE_C
+    }
+
+    // `raw`'s entries where it gives them, the defaults' elsewhere.
+    fn complete_keymap { raw: Keymap, defaults: Keymap } -> Keymap {
+        let mut km = defaults
+        let mut i: usize = 0
+        while i < 80 {
+            if raw.codes[i] >= 0 { km.codes[i] = raw.codes[i] }
+            i = i + 1
+        }
+        return km
+    }
+
+    // True when `keycode` (SDL's) is the key bound to `slot`.
+    fn key_is { km: Keymap, slot: i32, keycode: i32 } -> bool {
+        if slot < 0 or slot >= 80 { return false }
+        let c = km.codes[@as(usize, slot)]
+        return c > 0 and @as(i32, c) == code_of_keycode{ keycode }
+    }
+
+    // The game's key code of an SDL keycode (DirectInput's key, as bindablekeys.2da lists them), 0 for
+    // a key the game has no code for.
+    fn code_of_keycode { keycode: i32 } -> i32 {
+        if keycode >= 'a' and keycode <= 'z' { return 51 + (keycode - 'a') }
+        if keycode >= '1' and keycode <= '9' { return 77 + (keycode - '1') }
+        if keycode == '0' { return 86 }
+        if keycode == sdl::key::RETURN { return 6 }
+        if keycode == sdl::key::TAB { return 30 }
+        if keycode == sdl::key::ESCAPE { return 31 }
+        if keycode == sdl::key::SPACE { return 87 }
+        if keycode == sdl::key::BACKSPACE { return 96 }
+        if keycode == sdl::key::DELETE { return 37 }
+        if keycode == '-' { return 94 }
+        if keycode == '=' { return 95 }
+        if keycode == '[' { return 97 }
+        if keycode == ']' { return 98 }
+        if keycode == ';' { return 99 }
+        if keycode == '\'' { return 100 }
+        if keycode == '`' { return 101 }
+        if keycode == '\\' { return 102 }
+        if keycode == ',' { return 103 }
+        if keycode == '.' { return 104 }
+        if keycode == '/' { return 105 }
+        if (keycode & 0x40000000) == 0 { return 0 }
+        let sc = keycode & 0x3FFFFFFF
+        if sc >= 58 and sc <= 69 { return 39 + (sc - 58) }         // F1..F12
+        if sc >= 89 and sc <= 97 { return 11 + (sc - 89) }         // keypad 1..9
+        if sc >= 104 and sc <= 106 { return 91 + (sc - 104) }      // F13..F15
+        if sc == 57 { return 89 }                                  // Caps Lock
+        if sc == 70 { return 38 }                                  // Print Screen
+        if sc == 72 { return 90 }                                  // Pause
+        if sc == 73 { return 36 }                                  // Insert
+        if sc == 74 { return 32 }                                  // Home
+        if sc == 75 { return 34 }                                  // Page Up
+        if sc == 77 { return 33 }                                  // End
+        if sc == 78 { return 35 }                                  // Page Down
+        if sc == 79 { return 8 }                                   // arrows: right, left, down, up
+        if sc == 80 { return 7 }
+        if sc == 81 { return 10 }
+        if sc == 82 { return 9 }
+        if sc == 84 { return 108 }                                 // keypad / * - + Enter
+        if sc == 85 { return 106 }
+        if sc == 86 { return 22 }
+        if sc == 87 { return 23 }
+        if sc == 88 { return 88 }
+        if sc == 98 { return 20 }                                  // keypad 0 and .
+        if sc == 99 { return 21 }
+        if sc == 133 { return 107 }                                // keypad ,
+        if sc == 224 { return 28 }                                 // left / right Ctrl, Shift, Alt
+        if sc == 228 { return 29 }
+        if sc == 225 { return 24 }
+        if sc == 229 { return 25 }
+        if sc == 226 { return 26 }
+        if sc == 230 { return 27 }
+        return 0
+    }
+
+    // A key's name for the codes bindablekeys.2da gives no string (its keynamestrref 0), else "".
+    fn plain_key_name { code: i32 } -> []u8 {
+        if code == 91 { return "F13" }
+        if code == 92 { return "F14" }
+        if code == 93 { return "F15" }
+        if code == 94 { return "-" }
+        if code == 95 { return "=" }
+        if code == 96 { return "Backspace" }
+        if code == 97 { return "[" }
+        if code == 98 { return "]" }
+        if code == 99 { return ";" }
+        if code == 100 { return "'" }
+        if code == 101 { return "`" }
+        if code == 102 { return "\\" }
+        if code == 103 { return "," }
+        if code == 104 { return "." }
+        if code == 105 { return "/" }
+        if code == 106 { return "Num *" }
+        if code == 107 { return "Num ," }
+        if code == 108 { return "Num /" }
+        return ""
+    }
+}

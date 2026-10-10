@@ -1062,8 +1062,35 @@ structure; per-option mapping skimmed)
 | Feedback | 0x006e2a70 / 0x007581e8 | `optfeedback` | `LB_OPTIONS` of check-box rows built by 0x006e1300 (one toggle handler per row, 0x006de550..0x006de780), `BTN_DEFAULT` 0x006e0100 (resets the feedback options, 0x0061d950, and refreshes the rows) |
 | Gameplay | 0x006e69a0 / 0x00758e00 | `optgameplay` | difficulty (`BTN_DIFFICULTY` with left/right 0x2f/0x30, `BTN_DIFFLEFT`/`RIGHT`: 0x006e68e0/0x006e6930), `CB_LEVELUP` 0x006e62a0, `CB_INVERTCAM` 0x006e6330, `CB_AUTOSAVE` 0x006e62e0, `CB_REVERSE` 0x006e6380, `CB_DISABLEMOVE` 0x006e63d0, `SLI_MOUSESEN`/`LBL_MOUSESEN` (no handler set here), `BTN_KEYMAP` 0x006e6420, `BTN_MOUSE` 0x006e64a0 (both `AddPanel(…, 3, 1)`), `BTN_DEFAULT` 0x006e68b0 |
 | Auto-pause | 0x006e76a0 / 0x00758ee0 | `optautopause` | `CB_ENDROUND`, `CB_ENEMYSIGHTED`, `CB_MINESIGHTED`, `CB_PARTYKILLED`, `CB_ACTIONMENU`, `CB_TRIGGERS`, `LB_DETAILS`, `BTN_DEFAULT` 0x006e7570 |
-| Key mapping | 0x006edc90 / 0x00759358 | `OPTKeyMapping` (`optkeyentry.gui` is never loaded) | `LST_EventList`, `BTN_Filter_Move/Game/Mini` (0x006ed390/0x006ed3e0/0x006ed430), `BTN_Default` 0x006ed2d0, `BTN_Accept` 0x006ed310, `BTN_Cancel` |
+| Key mapping | 0x006edc90 / 0x00759358 | `OPTKeyMapping` (`optkeyentry.gui` is never loaded) | `LST_EventList`, `BTN_Filter_Move/Game/Mini` (0x006ed390/0x006ed3e0/0x006ed430), `BTN_Default` 0x006ed2d0, `BTN_Accept` 0x006ed310, `BTN_Cancel`; opened by the Gameplay panel's `BTN_KEYMAP` (0x006e6420, a 0xf34-byte panel, `AddPanel(…, 3, 1)`); see "Key mapping" below |
 
+
+#### Key mapping (CSWGuiOptionsKeyMapping, optkeymapping.gui)
+
+The Gameplay panel's Keyboard Configuration button (`BTN_KEYMAP`, 0x006e6420) builds the panel on its
+release and adds it as a modal full-screen panel. Ours: `lib/frontend/keymap_panel.ctx`. (high unless noted)
+
+| Address | What |
+|---|---|
+| 0x006edc90 | Constructor: loads `OPTKeyMapping`, binds `LBL_Title`, `BTN_Default`, `BTN_Accept`, `BTN_Cancel`, the three filter buttons and `LST_EventList`; colours the Movement filter's text yellow; builds the entries (0x006ed930), lists page 0 (0x006ecfd0) and makes the list the active control. The input's capture flag (`g_pExoInput`, +4 → +0x3a8) is cleared |
+| 0x006ed930 | The entries, in this order: for each two-key row `Action280`..`Action286` the B key then the A key, then `Action200`..`Action265` (0x006ed610 for each) |
+| 0x006ed610 | One entry (0x3b8 bytes, 0x006ec630: a button with a child for the key's text): row label `Action%d` or `Action%d%c` (0x006ec120), part 0 single, 1 A, 2 B. Kept when `ReMappable` or `ForceDisplay` is set and `Disabled` is not 1; a `ForceDisplay` row is locked (0x006ec770: +0x3a4 = 1, grey border 0x007a2384, text 0x007a2408); `SortPos` at +0x3b4 |
+| 0x006ec7d0 | Fills an entry: the button text is `ActionStrRef`, `DescStrRef` goes to its help fields, `Page` at +0x3ac, the class mask at +0x3a8 from `ICPC` 1, `ICMiniGame` 2, `ICPCGUI` 4, `ICDialog` 8, `ICFreeLook` 16, `ICMovie` 32; the key's text is the bound key's name (0x005f4df0: DirectInput's own key name for codes 6..109) or 48144 "None Set" |
+| 0x006ecfd0 | The list for a page: the entries whose `Page` is the filter (0 Movement, 1 Game, 2 Mini Games), inserted before the first with a larger `SortPos` (a stable sort) |
+| 0x006ed390 / 0x006ed3e0 / 0x006ed430 | The filters: page 0 / 1 / 2, that button's text yellow (`g_vGuiMenuHilightTextColor`), the others' 0x007a2390, then the list again |
+| 0x006ed5e0 | An entry's activate (0x27): an unlocked entry starts waiting (0x006ed480) |
+| 0x006ed480 | Waiting: the previous entry stops pulsing, the new one's border turns yellow and pulses, the list is locked, +0xf2c = 1 and the input's capture flag is set. Gaining hilight on another entry (0x006ed5c0) stops waiting |
+| 0x006ee040 | Each frame while waiting: the captured key (0x005df630). Escape (31) stops waiting with GUI sound 0; otherwise 0x006edbd0 tries it: 0 (taken) plays sound 0 and stops waiting; 2 (`Bindable` 0 in bindablekeys.2da row `KEY%d` of the code less 6, 0x006eda80) keeps waiting, the key ignored |
+| 0x006edbd0 / 0x006ed1e0 | Taking a key: every other entry (on every page) that shares a class bit with this one and has the key loses it (code 0, marked changed); this entry's pending code becomes the key, changed when it differs from the bound one; changed entries' borders are magenta (0x007a23fc, 0x006ec6e0). A "conflict" result 1 exists but 0x006ed1e0 always returns 0 |
+| 0x006ed2d0 / 0x006eccc0 | Default: every unlocked entry's pending code becomes its row's `Language0` (all pages), changed when it differs |
+| 0x006ed310 / 0x006ece60 | Accept: each unlocked changed entry is written into the live key table (the event's A or B key) and to `swkotor.ini` `[Keymapping]`; sound 0; the panel closes |
+| 0x006ec510 | HandleInputEvent: 0x28 (Escape when not waiting) and 0x2e close the panel without keeping anything, sound 0. `BTN_Cancel` is `OnButtonCancel` |
+
+Ours differs in: the key names are bindablekeys.2da's `KeyNameStrRef` strings (a few keys it gives no string
+get a name of ours), drawn right-aligned in the row (`gui::list_set_aside`; the original's child text's
+placement was not read); the defaults are ours (keymap.2da's with strafe and camera rotation swapped,
+[../mechanics/controls.md](../mechanics/controls.md)); the bindings go to our options file. Hovering
+another row does not stop the wait (ours: clicking another row moves it). (high)
 
 ### 10.2 Character generation and level-up
 

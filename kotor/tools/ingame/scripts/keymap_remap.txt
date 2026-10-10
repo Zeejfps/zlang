@@ -1,0 +1,23 @@
+# From `cantina`, with --settings of an empty file: the options menu, Gameplay, Keyboard Configuration; a click
+# on Move Forward waits for a key, I takes it (and leaves Inventory with none: they share the ICPC class), the
+# filters, Accept; then I walks the leader forward and W does nothing (`ui pos` before and after each).
+#   sh kotor/tools/ingame/keymap.sh
+1 ui bot off
+5 ui pos
+10 key escape
+20 ui clicktag BTN_GAMEPLAY
+30 ui clicktag BTN_KEYMAP
+50 ui click 640 245
+70 key i
+90 ui clicktag BTN_Filter_Game
+110 ui clicktag BTN_Filter_Move
+120 ui clicktag BTN_Accept
+130 key escape
+140 key escape
+150 ui pos
+160 keydown i
+200 keyup i
+210 ui pos
+220 keydown w
+260 keyup w
+270 ui pos

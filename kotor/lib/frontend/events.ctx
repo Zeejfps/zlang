@@ -562,6 +562,10 @@ namespace frontend {
             }
             return Outcome::running
         }
+        if screen == SCR_KEYMAP {
+            keymap_event{ &fe, &g, &fs, &dev, ev }
+            return Outcome::running
+        }
         // The options panels.
         if ev.kind == gui::EventKind::value_changed and ev.control >= 0 {
             // A row of the feedback list is a check box too.
@@ -619,6 +623,7 @@ namespace frontend {
             if next != 0 { open_screen{ &fe, &g, &fs, &dev, screen = next } iferr {} }
         } else if screen == SCR_GAMEPLAY {
             if tag_is{ ev, tag = "BTN_MOUSE" } { open_screen{ &fe, &g, &fs, &dev, screen = SCR_MOUSE } iferr {} }
+            else if tag_is{ ev, tag = "BTN_KEYMAP" } { open_screen{ &fe, &g, &fs, &dev, screen = SCR_KEYMAP } iferr {} }
             else { change_choice{ &fe, &g, p, screen, tag = ev.tag } iferr {} }
         } else if screen == SCR_GRAPHICS {
             if tag_is{ ev, tag = "BTN_RESOLUTION" } { open_screen{ &fe, &g, &fs, &dev, screen = SCR_RESOLUTION } iferr {} }
