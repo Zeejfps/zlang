@@ -8,6 +8,10 @@
 // shots), and every item with emitters keeps its particles.
 namespace mg_game {
     const MAX_ITEMS: usize = 256
+    // The speed blur's strength per unit of the run's ratio. Ours: the original's blur is a
+    // feedback of the last frames (ratio = how much of them stays), ours a radial blur whose
+    // strength 0.35 is the haste's; the script default 0.75 gives about that.
+    const BLUR_SCALE: f32 = 0.5
 
     enum ItemKind: u8 { model, gun, bullet }
 
@@ -29,11 +33,12 @@ namespace mg_game {
     }
 
     // `ended`: a script called EndGame (the Hawk was lost); the loop stops, there being no end-game
-    // screen or start screen to go back to yet.
-    struct Stage { ready: bool, items: []mut Item, count: usize, anims: []mut Anim, music_started: bool, relative_mouse: bool, ended: bool, paused: bool }
+    // screen or start screen to go back to yet. `pause_panel`: the `pause` banner while paused, 0
+    // when not shown. `blur`: the speed blur drawn now, easing toward what the run asks for.
+    struct Stage { ready: bool, items: []mut Item, count: usize, anims: []mut Anim, music_started: bool, relative_mouse: bool, ended: bool, paused: bool, pause_panel: u32, blur: f32 }
 
     fn make_stage {} -> Stage {
-        return Stage{ ready = false, items = slice::empty(Item){}, count = 0, anims = slice::empty(Anim){}, music_started = false, relative_mouse = false, ended = false, paused = false }
+        return Stage{ ready = false, items = slice::empty(Item){}, count = 0, anims = slice::empty(Anim){}, music_started = false, relative_mouse = false, ended = false, paused = false, pause_panel = 0, blur = 0.0 }
     }
 
     // Whether the world is in a minigame area with a run.
@@ -41,10 +46,11 @@ namespace mg_game {
 
     // What the player does with the mouse and the fire keys between frames, whether Escape has
     // paused the game, and whether a gunner (turret) or racer (swoop) bot plays (headless tests:
-    // `FRAME gunner` or `FRAME racer` in the input script).
-    struct Mouse { dx: i32, dy: i32, fire_key: bool, fire_button: bool, auto: bool, paused: bool }
+    // `FRAME gunner` or `FRAME racer` in the input script). `reverse_y`: the Reverse Minigame YAxis
+    // option (play.ctx sets it from the options each frame).
+    struct Mouse { dx: i32, dy: i32, fire_key: bool, fire_button: bool, auto: bool, paused: bool, reverse_y: bool }
 
-    fn make_mouse {} -> Mouse { return Mouse{ dx = 0, dy = 0, fire_key = false, fire_button = false, auto = false, paused = false } }
+    fn make_mouse {} -> Mouse { return Mouse{ dx = 0, dy = 0, fire_key = false, fire_button = false, auto = false, paused = false, reverse_y = false } }
 
     // The input script's lines for a minigame (play.ctx hands each line to every owner in turn):
     // `gunner`, `mouse DX DY` (the mouse moves by those counts) and `pause`. True if `word` is one.
@@ -77,7 +83,7 @@ namespace mg_game {
             key{ down, repeat, keycode } => {
                 // the key still goes to the game's keys; this only remembers it is held
                 if keycode == sdl::key::SPACE { m.fire_key = down }
-                // Escape pauses and resumes (the original's PauseMinigame; its pause menu is not built)
+                // Escape pauses and resumes (the original's PauseMinigame, which is its Pause: the banner shows)
                 if keycode == sdl::key::ESCAPE {
                     if down and not repeat { m.paused = not m.paused }
                     return true
@@ -330,6 +336,12 @@ namespace mg_game {
         }
         mouse.dx = 0
         mouse.dy = 0
+        // Reverse Minigame YAxis turns the vertical axis over, the keys' and the mouse's alike
+        // (client options +8 bit 3; only the turret has a vertical axis).
+        if mouse.reverse_y {
+            input.y = -input.y
+            input.aim_y = -input.aim_y
+        }
         if mouse.auto {
             input = if run.area.kind == mg::TURRET { mg::gunner_input{ run } } else { mg::racer_input{ run } }
         }
@@ -471,6 +483,30 @@ namespace mg_game {
         amb.started = amb.started + 1
     }
 
+    // ---- pause
+
+    // Pauses or resumes: time stands still, the sounds hold, and the `pause` banner shows as the
+    // player's pause shows it (PauseMinigame is handled as Pause, `HandleInputAction` 0x00621210
+    // case 0xfd). The turret gives the pointer back while paused (the original stops recentring it).
+    fn set_paused { mut stage: Stage, mut sdl: sdl::Sdl, mut w: world::World, mut dev: gpu::Device, mut g: gui::Gui, mixer: *mut mix::Mixer, on: bool } {
+        stage.paused = on
+        mix::set_group_paused{ m = mixer, group = mix::Group::sfx, paused = on }
+        mix::set_group_paused{ m = mixer, group = mix::Group::music, paused = on }
+        if stage.relative_mouse { sdl::set_relative_mouse{ &sdl, on = not on } iferr {} }
+        if on and stage.pause_panel == 0 {
+            let p = gui::open{ &g, fs = &w.fs, &dev, name = "pause", mode = gui::Mode::placed, modal = false } iferr { 0 }
+            stage.pause_panel = p
+            let pp = gui::find_panel{ &g, id = p } ifnull { return }
+            pp.x = (g.ui_w - pp.w) / 2
+            pp.y = g.ui_h / 6
+            gui::place{ &g, p = pp }
+            gui::set_strref{ &g, panel = p, tag = "LBL_PAUSEREASON", strref = ingame::REASON_PAUSED } iferr {}
+        } else if not on and stage.pause_panel != 0 {
+            gui::close{ &g, id = stage.pause_panel }
+            stage.pause_panel = 0
+        }
+    }
+
     // One whole frame of a minigame, in place of the ordinary frame (game/play.ctx calls it where
     // the step begins): the world, the run and its scripts, the sound, the picture. Returns true
     // when a module change is pending: nothing was drawn and the ordinary frame must go on.
@@ -478,15 +514,11 @@ namespace mg_game {
         mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut dev: gpu::Device, mut frame: render::Frame,
         mut sc: scene::Scene, mut stage: Stage, mut amb: ambience::Ambience, mixer: *mut mix::Mixer, adev: ?*mut audio::Device,
         silent: []mut i16, rate: u32, opts: options::Options, keys: ctl::Keys, mut mouse: Mouse, dt: f32, frame_no: u64, shot_heap: *mut arena::Arena,
-        mut dview: dlgview::View, mut g: gui::Gui,
+        mut dview: dlgview::View, mut g: gui::Gui, mut disp: display::Display,
     } -> !bool {
         // paused: time stands still, the picture stays, the sounds hold
         let dt = if mouse.paused { 0.0 } else { dt }
-        if mouse.paused != stage.paused {
-            stage.paused = mouse.paused
-            mix::set_group_paused{ m = mixer, group = mix::Group::sfx, paused = mouse.paused }
-            mix::set_group_paused{ m = mixer, group = mix::Group::music, paused = mouse.paused }
-        }
+        if mouse.paused != stage.paused { set_paused{ &stage, &sdl, &w, &dev, &g, mixer, on = mouse.paused } }
         clock::advance{ c = &w.clock, seconds = dt }
         world::tick{ &w, &vm, engine }
         let run = w.minigame ifnull { return true }
@@ -503,6 +535,10 @@ namespace mg_game {
         if mouse.paused { run.input = mg::Input{ x = 0.0, y = 0.0, fire = false, aim_x = 0.0, aim_y = 0.0 } }
         step{ &w, &vm, engine, dt }
         if w.transition != null {
+            if stage.paused {
+                mouse.paused = false
+                set_paused{ &stage, &sdl, &w, &dev, &g, mixer, on = false }
+            }
             if stage.relative_mouse {
                 sdl::set_relative_mouse{ &sdl, on = false } iferr {}
                 stage.relative_mouse = false
@@ -546,12 +582,19 @@ namespace mg_game {
         if speed::picture_wanted{ opts, frame_no, saving = false } {
             render::begin_frame{ &frame, time = sc.time }
             let mut view = render::make_view{ camera = cam }
+            // SWMG_SetSpeedBlurEffect: the renderer's speed blur (0x0044f0a0 on, 0x0044f0b0 off,
+            // 0x0044f130 the ratio), drawn as the haste's radial blur (the Frame Buffer Effects
+            // option, as there) at the run's ratio, eased in and out as the haste's is.
+            let want = if run.blur_on { math::clamp{ x = run.blur_ratio, lo = 0.0, hi = 1.0 } * BLUR_SCALE } else { 0.0 }
+            stage.blur = stage.blur + (want - stage.blur) * math::min{ a = 1.0, b = dt * 4.0 }
+            view.blur = stage.blur
             view.ambient = sc.ambient
             view.fog = sc.fog
             let vi = render::add_view{ &frame, view } ifnull { 0 }
             scene::draw{ &sc, w = &w, &frame, view = vi }
             draw_stage{ sc = &sc, &stage, &frame, view = vi }
             dlgview::draw{ v = &dview, frame = &frame }
+            if stage.pause_panel != 0 { gui::draw_lone_panel{ &g, &frame, id = stage.pause_panel } }
             gpu::submit{ &dev, frame = &frame } iferr err{ error } {
                 _ = @fmt(&w.io, "kotor: submit failed: {}\n", error)
                 return true
@@ -562,7 +605,11 @@ namespace mg_game {
             if opts.shots[s].frame == frame_no { try play::screenshot{ &w, &dev, heap = shot_heap, path = opts.shots[s].path, frame_no } }
             s = s + 1
         }
-        if not opts.headless { gpu::present{ &dev, &sdl } }
+        if not opts.headless {
+            gpu::present{ &dev, &sdl }
+            display::limit_frame{ d = &disp, &sdl, fps = disp.applied.frame_limit }
+            display::rest{ d = &disp, &sdl }
+        }
         arena::reset{ heap = w.scratch }
         return false
     }

@@ -135,6 +135,8 @@ namespace pz_game {
             gui::draw{ g = &ui.gui, &frame }
             gpu::submit{ &dev, frame = &frame } iferr { closed = true }
             gpu::present{ &dev, &sdl }
+            display::limit_frame{ d = &disp, &sdl, fps = disp.applied.frame_limit }
+            display::rest{ d = &disp, &sdl }
         }
         pazaak::end_session{ s = &s, g = &ui.gui }
         if s.done { conclude{ &w, &vm, engine, r, result = s.result } }

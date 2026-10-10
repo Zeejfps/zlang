@@ -382,7 +382,14 @@ namespace play {
                 want_save = ""
                 w.autosave_due = false
                 if mg_stage.ended { quit = true }
-                let leaving = try mg_game::frame{ &sdl, &w, &vm, engine, &dev, &frame, &sc, stage = &mg_stage, &amb, mixer, adev, silent, rate, opts, keys, mouse = &mg_mouse, dt, frame_no, shot_heap = &scene_arena, dview = &dview, g = &ui.gui }
+                // The minigame's frame draws its own picture from the first, so the loading screen it entered
+                // under is not seen; left up, it would keep every key and the mouse from the minigame.
+                if loading::is_up{ l = ld } {
+                    loading::hide{ l = ld }
+                    last = sdl::counter{ &sdl }
+                }
+                mg_mouse.reverse_y = ingame::reverse_minigame_y{ ui }    // HOOK(ingame)
+                let leaving = try mg_game::frame{ &sdl, &w, &vm, engine, &dev, &frame, &sc, stage = &mg_stage, &amb, mixer, adev, silent, rate, opts, keys, mouse = &mg_mouse, dt, frame_no, shot_heap = &scene_arena, dview = &dview, g = &ui.gui, disp = &disp }
                 if not leaving { continue }
             }
             // 3-6. The world. The party wipe's slow motion sets the game speed first (gameloop.md 6.6).

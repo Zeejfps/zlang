@@ -46,6 +46,7 @@ namespace ingame {
         mouse_look: bool,                   // the "Mouse Look" option: Lookabout then gives the cursor back
         mouse_sens: i32,                    // "Mouse Sensitivity", 0..100
         reverse_buttons: bool,              // "Reverse Mouse Buttons": left and right swap
+        reverse_minigame_y: bool,           // "Reverse Minigame YAxis": the turret's vertical axis turned over (game/minigame_scene.ctx)
         autopause: bool,                    // the auto-pause triggers run (a person is playing: off in headless runs)
         ap_enemy: bool, ap_mine: bool, ap_party: bool, ap_target: bool, ap_round: bool, ap_action_menu: bool,    // [Autopause Options]
         party_alive: i32,                   // party members on their feet last frame
@@ -96,7 +97,7 @@ namespace ingame {
             width, height, gui_scale, menu = NO_MENU, menu_panel = 0, top_panel = 0, menus = new_menus{},
             pause_panel = 0, hud_hidden = false, screens = screens::new{}, bot = bot::new{},
             shift_held = false, ctrl_held = false, solo_box = msgbox::blank{}, solo_pause = false, focus_paused = false, run_script = resref::empty{},
-            right_held = false, look_x = 0, look_y = 0, looking = false, freelook = false, turn_to = obj::INVALID, mouse_look = saved.mouse_look, mouse_sens = saved.mouse_sensitivity, reverse_buttons = saved.reverse_buttons,
+            right_held = false, look_x = 0, look_y = 0, looking = false, freelook = false, turn_to = obj::INVALID, mouse_look = saved.mouse_look, mouse_sens = saved.mouse_sensitivity, reverse_buttons = saved.reverse_buttons, reverse_minigame_y = saved.reverse_minigame_y,
             autopause = false, ap_enemy = saved.pause_enemy_sighted, ap_mine = saved.pause_mine_sighted, ap_party = saved.pause_party_killed,
             ap_target = saved.pause_triggers, ap_round = saved.pause_end_round, ap_action_menu = saved.pause_action_menu,
             party_alive = 0, ap_cooldown = 0.0, pause_reason = REASON_PAUSED, auto_paused = false,
@@ -541,6 +542,9 @@ namespace ingame {
     // The "Combat Movement" option: whether the keys may break the leader's orders in combat mode.
     fn combat_movement { ui: *Ingame } -> bool { return ui.combat_movement }
 
+    // The "Reverse Minigame YAxis" option.
+    fn reverse_minigame_y { ui: *Ingame } -> bool { return ui.reverse_minigame_y }
+
     // The party wipe began or ended (game/death.ctx): while it runs the menu keys and Escape fade out.
     fn set_wiping { mut ui: Ingame, on: bool } { ui.wiping = on }
 
@@ -699,6 +703,7 @@ namespace ingame {
             ui.mouse_look = st.mouse_look
             ui.mouse_sens = st.mouse_sensitivity
             ui.reverse_buttons = st.reverse_buttons
+            ui.reverse_minigame_y = st.reverse_minigame_y
             ui.combat_movement = st.combat_movement
             ui.ap_enemy = st.pause_enemy_sighted
             ui.ap_mine = st.pause_mine_sighted

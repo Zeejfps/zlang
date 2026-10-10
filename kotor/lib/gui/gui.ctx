@@ -389,6 +389,16 @@ namespace gui {
         }
     }
 
+    // A UI pass with panel `id` alone, for a caller whose other panels must stay off the screen (a
+    // minigame's pause banner: the HUD's panels are still open under it).
+    fn draw_lone_panel { mut g: Gui, mut frame: render::Frame, id: u32 } {
+        if g.hidden { return }
+        let p = find_panel{ &g, id } ifnull { return }
+        if p.removing or p.hidden { return }
+        render::begin_ui{ &frame, width = @as(f32, g.ui_w), height = @as(f32, g.ui_h), target = null }
+        draw_panel{ &g, &frame, p, screen = rect_of{ x = 0, y = 0, w = g.ui_w, h = g.ui_h }, overlay = false }
+    }
+
     fn has_overlay { mut g: Gui } -> bool {
         let ps = list::items{ list = g.panels }
         let mut i: usize = 0

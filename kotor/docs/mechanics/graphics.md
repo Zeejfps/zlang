@@ -60,7 +60,7 @@ dark, while ordinary shadows stay as they are. Original and Smooth, and Original
 
 Also read from the file, not on a panel: `Refresh Rate` (ours: Hz for full screen, 0 the display's highest; the
 original's key is `RefreshRate`) and `Frame Limit` (frames a second at most, 0 none; the loop sleeps a millisecond at a
-time, then spins for the last 1/600 s; the minigames' own loops do not use it).
+time, then spins for the last 1/600 s; the swoop, turret and pazaak loops use it too).
 
 The description pane on the right of the two panels, empty before, shows the original's own text, as the original's
 does for the control under the pointer (`0x006dee40`, `0x006df390`): the string after each label in `dialog.tlk`
@@ -152,4 +152,4 @@ does for the control under the pointer (`0x006dee40`, `0x006df390`): the string 
   Frame Buffer Effects; the speed blur is ours to the original's description.
 - Shadows only from creatures, onto the walkmesh floor; no placeable or door shadows, none onto walls.
 - Untested here: exclusive full screen on a second monitor, Retina/Windows-scaled HiDPI, macOS and Linux windows.
-- The minigame loops ignore Frame Limit; the movie player draws to the render size, scaled by `present`.
+- The movie player draws to the render size, scaled by `present`.

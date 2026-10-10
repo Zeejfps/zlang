@@ -223,9 +223,7 @@ world's generic routines answer "no such object" for them.
 
 **Not done (the swoop's):**
 
-- The bike's lean (`BankL_01..10`) and the speed blur and heat distortion (`blur_on` is recorded,
-  nothing draws it); particle emitters in the models; the gear sounds on the bike's own models.
-- The pause menu (Escape pauses and resumes, nothing more).
+- The bike's lean (`BankL_01..10`) and the heat distortion; particle emitters in the models; the gear sounds on the bike's own models.
 - The Tatooine ground near the bike is black in `tat_m17mg` (the far desert is right): a room
   material, not the minigame; the missing engine routines the race scripts call
   (`SoundObjectSetVolume`, `SoundObjectSetFixedVariance`, `ShowTutorialWindow`) are the engine
@@ -257,7 +255,11 @@ included). Keys turn at `MovementPerSec` (100 degrees a second) with the lateral
 and adds its counts per frame divided by 20 and clamped to 1, of a full-speed turn (the original's
 rule), on the axes the ARE's `Mouse` struct names (x for yaw, y for pitch). Our choices: moving the
 mouse right turns right and up aims up (the original's sign is not in the survey); `Reverse
-Minigame YAxis` is not read.
+Minigame YAxis` turns the keys' and the mouse's vertical axis over (`mg_game::read_input`).
+Escape pauses: time and the sounds stop, the `pause` banner shows (`pause.gui`, as the player's
+pause shows it) and the turret gives the pointer back until it resumes. `SWMG_SetSpeedBlurEffect`
+draws the haste's radial speed blur at half the script's ratio (the original's is a feedback
+trail: re/minigames-swoop-turret.md, section 5).
 
 ### Guns, bullets and hits
 
@@ -326,7 +328,7 @@ and fire by hand, `FRAME pause` pauses (the picture holds).
 ### Not done
 
 - The original's bark text during the sequence (the HUD is hidden in a minigame, so "Incoming
-  fighters!" shows nowhere), the `Alarm01` sound's positioning, `Reverse Minigame YAxis`.
+  fighters!" shows nowhere), the `Alarm01` sound's positioning.
 - The hit tests are boxes, not the mesh's AABB tree; a held trigger repeats; the turn rate of the
   mouse has no setting.
 - A start screen for `EndGame`.

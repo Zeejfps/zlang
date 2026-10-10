@@ -449,5 +449,13 @@ renderer features. The HUD models are children of the camera model, so they foll
 4. Enemy aim error: ours scales it by the distance (`Inaccuracy * distance * random`); the original by the player's `Sphere_Radius` (4.5).
 5. Obstacles' OnHeartbeat is not run (the swoop obstacles have no scripts).
 
-**Still open**: the pause menu (Escape toggles pause, `pause.gui` is not shown); the speed blur (`SWMG_SetSpeedBlurEffect` is recorded in the run, the view
-does not draw it); the hit geometry of 4.7.
+**Still open**: the hit geometry of 4.7; the speed blur is drawn as ours, not as the original's (below).
+
+**PauseMinigame** (Escape, action 253) is the same case as Pause (224) in `CClientExoAppInternal::HandleInputAction` (`0x00621210`):
+it toggles the player's pause (`RequestPause`), so the `pause` banner shows, plays GUI sound 6 and, the first time, tutorial popup 6.
+Ours shows the banner (the minigame's own pause; no sound or tutorial).
+
+**Speed blur**: `0x0044f0a0` / `0x0044f0b0` set the flag `0x007a6880`; the ratio `0x0078d43c` is read by the screen pass `0x00433970`,
+which blends the new picture with a texture of the last ones by that ratio (a feedback trail, not a radial blur). Besides
+`SWMG_SetSpeedBlurEffect` only `0x006a14e0` turns it on. Ours draws it as the haste's radial blur at strength `ratio * 0.5` (0.375
+at the scripts' 0.75), under the Frame Buffer Effects option.
