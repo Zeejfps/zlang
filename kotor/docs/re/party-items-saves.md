@@ -196,7 +196,8 @@ content name, and reading stops there), `PORTRAIT0..2`; a fully read row gets fl
 save panel the rows of slots 0 and 1 are dropped (the quick save and autosave cannot be
 overwritten from it) and a "new save" row (strref 1590, flags `|= 0x44`) is put first, numbered the
 highest listed number + 1, at least 2; `+0x68` keeps the first free number the scan found (1.1).
-In the load panel an empty list closes the panel and shows strref 42491. Hilighting a row (event 0)
+In the load panel an empty list closes the panel and shows strref 42491. Delete (gui.md, "Save and load") removes the
+selected row's folder (`CExoResMan::RemoveDirectory` `0x00409480`) and builds the list again. Hilighting a row (event 0)
 runs `0x006c89d0`: a row not fully read (flag 0x01 clear: the New Slot row) or corrupt (0x02) clears
 the planet and area labels, the portraits and the picture, puts "New Slot" (1590) in
 `LBL_SCREENSHOT` as text and disables `BTN_DELETE`; any other enables Delete, splits `AREANAME` at its

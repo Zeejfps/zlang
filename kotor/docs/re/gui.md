@@ -1021,7 +1021,23 @@ it already exists) and mounted for the screenshots.
   go to the client's save call (0x005ed670); the server empties the folder and writes it anew
   (party-items-saves.md 1.1 and 1.3). The quick save and autosave rows (numbers 0 and 1) are not
   in the save list, so the panel never writes over them.
-- **Delete**: asks 1592, then 0x006c8900.
+- **Delete** (`BTN_DELETE`, both modes, from the main menu and in game; never disabled or hidden by
+  the panel; also event 0x29 on a save row, the pad's X): `OnDelete` 0x006caa90 acts on a press
+  (the event's value non-zero): the in-game GUI's message box (`CGuiInGame+0x98`) in confirm mode
+  with 1592 ("Are you sure you want to delete the save game?"), callback 0x006c8900 with the
+  control. On Yes (box +0x64 bit 0) it takes the list's selected row (`GetSelectedItem`
+  0x0041a5d0), builds its folder `SAVES:%06d - %s` from the row's number (+0x1c8) and folder name
+  (+0x1e0; 0x006c8250), and calls `CExoResMan::RemoveDirectory` 0x00409480 (path, 1, 1:
+  `CleanDirectoryRecursive` 0x00408e90 empties it, files and subfolders, and removes it). Then it
+  keeps the old selected index (list +0x2c6), refills the list (`PopulateList`, which in load mode
+  closes the panel and says 42491 when no save is left), selects `min(old index, rows - 1)`
+  (`SetSelectedIndex` 0x0041c040, no sound) and makes the list the active control again. Any row
+  can go: the quick save and the autosave in load mode, any manual save. On the New Slot row (save
+  mode) it asks too and finds no folder (an empty name): nothing goes. (high) Ours: Delete is
+  enabled while the hilighted row is one of our saves (New Slot too, as above) and disabled on the
+  install's, which are never removed; the folder must be a direct child of our saves directory
+  named `NNNNNN - ...`, and our directory outside the install (`delete_save`); a subfolder is
+  removed only if it is empty or a link (ours have none).
 
 `CSWGuiSaveName` (constructor 0x006cae70, 0x690 bytes, vtable 0x007576d0: `EDITBOX`,
 `LBL_TITLE`, `BTN_OK` → 0x006c9d50, `BTN_CANCEL` → 0x006c8470; centred dialog). What saving and

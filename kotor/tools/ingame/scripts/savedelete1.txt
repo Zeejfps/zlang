@@ -1,0 +1,11 @@
+# Delete in the save lists (savedelete.sh), first run: two manual saves made through Save Game's "New Slot".
+1 ui bot off
+5 save QUICKSAVE
+10 ui menu options
+15 ui clicktag BTN_SAVEGAME
+20 ui clickctl LB_GAMES 0
+30 ui key return
+40 ui menu options
+45 ui clicktag BTN_SAVEGAME
+50 ui clickctl LB_GAMES 0
+60 ui key return

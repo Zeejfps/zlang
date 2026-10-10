@@ -196,6 +196,90 @@ namespace frontend {
         return e
     }
 
+    // Removes save `e`'s folder and what it holds, as the panel's Delete does (FUN_006c8900:
+    // CExoResMan::RemoveDirectory 0x00409480 on "SAVES:%06d - %s" empties the folder and removes
+    // it). Only a save of ours goes, never the install's: `e` must have been listed from `own`, its
+    // folder a direct child of it named as a save's (`NNNNNN - Name`), and `own` must lie outside
+    // the install (`install` is its Saves/). A subfolder (ours have none) is not entered: it goes
+    // only if it is empty or a link, so a stray one keeps the folder. False when the folder is
+    // still there. `scratch` holds the listing and is reset after.
+    fn delete_save { mut fs: Fs, mut scratch: arena::Arena, own: []u8, install: []u8, e: *SaveEntry } -> bool {
+        if not e.ours or e.new_slot or own.len == 0 { return false }
+        let folder = e.folder[..e.folder_len]
+        if folder_number{ name = folder } < 0 { return false }
+        let mut i: usize = 0
+        while i < folder.len {
+            if folder[i] == '/' or folder[i] == '\\' or folder[i] == ':' { return false }
+            i = i + 1
+        }
+        let mut pb: [300]u8
+        let dir = join_path{ into = pb[..], a = own, b = folder, c = "" }
+        if not slice::eq_bytes{ a = e.path[..e.path_len], b = dir } { return false }
+        defer arena::reset{ heap = &scratch }
+        if install.len > 0 {
+            let mine = fs::make_absolute(arena::Arena){ &fs, heap = &scratch, realloc = arena::alloc, path = own } iferr { return false }
+            let game = fs::make_absolute(arena::Arena){ &fs, heap = &scratch, realloc = arena::alloc, path = parent_dir{ path = install } } iferr { return false }
+            if lies_within{ path = mine, dir = game } { return false }
+        }
+        let names = fs::list(arena::Arena){ &fs, heap = &scratch, realloc = arena::alloc, path = dir } iferr { return false }
+        i = 0
+        while i < names.len {
+            let mut fb: [400]u8
+            let file = join_path{ into = fb[..], a = dir, b = names[i], c = "" }
+            match fs::remove{ &fs, path = file } {
+                ok => {}
+                fs::is_directory => { fs::remove_dir{ &fs, path = file } iferr {} }
+                else => {}
+            }
+            i = i + 1
+        }
+        fs::remove_dir{ &fs, path = dir } iferr { return false }
+        return true
+    }
+
+    // `path` without its last part ("a/b/Saves" -> "a/b"); "." when it has one part.
+    fn parent_dir { path: []u8 } -> []u8 {
+        let mut n = path.len
+        while n > 0 and (path[n - 1] == '/' or path[n - 1] == '\\') { n = n - 1 }
+        while n > 0 and path[n - 1] != '/' and path[n - 1] != '\\' { n = n - 1 }
+        while n > 1 and (path[n - 1] == '/' or path[n - 1] == '\\') { n = n - 1 }
+        return if n == 0 { "." } else { path[..n] }
+    }
+
+    // Whether absolute `path` is `dir` or inside it, comparing as Windows does: letters in either
+    // case, '\\' and '/' alike, repeated separators as one. A ".." part is not resolved, so a path
+    // with one counts as inside (it could lead anywhere).
+    fn lies_within { path: []u8, dir: []u8 } -> bool {
+        let mut i: usize = 0
+        while i + 1 < path.len {
+            let at_part = i == 0 or path[i - 1] == '/' or path[i - 1] == '\\'
+            let ends = i + 2 == path.len or path[i + 2] == '/' or path[i + 2] == '\\'
+            if at_part and ends and path[i] == '.' and path[i + 1] == '.' { return true }
+            i = i + 1
+        }
+        let mut end = dir.len
+        while end > 1 and (dir[end - 1] == '/' or dir[end - 1] == '\\') { end = end - 1 }
+        let mut a: usize = 0
+        let mut b: usize = 0
+        while b < end {
+            if a >= path.len { return false }
+            let ca = path[a]
+            let cb = dir[b]
+            let sa = ca == '/' or ca == '\\'
+            let sb = cb == '/' or cb == '\\'
+            if sa and sb {
+                while a < path.len and (path[a] == '/' or path[a] == '\\') { a = a + 1 }
+                while b < end and (dir[b] == '/' or dir[b] == '\\') { b = b + 1 }
+                continue
+            }
+            if sa or sb { return false }
+            if ascii::to_lower{ c = ca } != ascii::to_lower{ c = cb } { return false }
+            a = a + 1
+            b = b + 1
+        }
+        return a == path.len or path[a] == '/' or path[a] == '\\'
+    }
+
     fn free_saves { heap: *mut heap::Heap, list: SaveList } {
         _ = alloc::resize(SaveEntry, heap::Heap){ realloc = heap::alloc, heap, mem = list.entries, count = 0 }
     }

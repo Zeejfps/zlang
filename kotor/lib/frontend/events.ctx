@@ -66,8 +66,8 @@ namespace frontend {
     const SAVE_ROW_HEIGHT: i32 = 42
 
     // Fills the list: Load Game shows ours and the install's saves, Save Game ours with "New Slot"
-    // first (list_saves). The install's saves are read-only here: nothing deletes them, so the
-    // Delete button is hidden in both.
+    // first (list_saves). Delete is in both, as the original's (OnDelete 0x006caa90), enabled
+    // while the hilighted row is ours (show_save): the install's saves are read-only here.
     fn fill_saves { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, p: u32, for_save: bool } -> ! {
         if fe.saves_loaded {
             free_saves{ heap = fe.heap, list = fe.saves }
@@ -80,7 +80,8 @@ namespace frontend {
         fe.saves_loaded = true
         try gui::set_strref{ &g, panel = p, tag = "LBL_PANELNAME", strref = if for_save { 1588 } else { 1585 } }
         try gui::set_strref{ &g, panel = p, tag = "BTN_SAVELOAD", strref = if for_save { 1587 } else { 1589 } }
-        gui::set_visible{ &g, panel = p, tag = "BTN_DELETE", visible = false }
+        gui::set_enabled{ &g, panel = p, tag = "BTN_DELETE", enabled = false }
+        fe.shown_row = -1
         // Saving needs no selection (the "New Slot" row is the one); loading needs a save picked.
         gui::set_enabled{ &g, panel = p, tag = "BTN_SAVELOAD", enabled = for_save }
         gui::list_clear{ &g, panel = p, tag = "LB_GAMES" }
@@ -156,6 +157,10 @@ namespace frontend {
         if row < 0 or @as(usize, row) >= fe.saves.count { return }
         let e = fe.saves.entries[@as(usize, row)]
         gui::set_enabled{ &g, panel = p, tag = "BTN_SAVELOAD", enabled = for_save or not e.corrupt }
+        // The original's Delete is never disabled; ours is for the install's saves, which it must
+        // not remove. New Slot keeps it, as in the original: 1592 is asked, and nothing is there.
+        gui::set_enabled{ &g, panel = p, tag = "BTN_DELETE", enabled = e.ours }
+        fe.shown_row = row
         release_shot{ &fe, &dev }
         let tags: [3][]u8 = ["LBL_PM1", "LBL_PM2", "LBL_PM3"]
         // The picture's text in saveload.gui's own blue (a "Cheat Used" before may have made it yellow).
@@ -288,6 +293,52 @@ namespace frontend {
         let id = try gui::message_box{ &g, &fs, &dev, text, cancel = true }
         fe.stack[fe.depth] = Entry{ screen = SCR_OVERWRITE, panel = id }
         fe.depth = fe.depth + 1
+    }
+
+    // Delete was pressed (CSWGuiSaveLoad::OnDelete 0x006caa90): "Are you sure you want to delete
+    // this saved game?" (1592) for the row whose details are shown, the hilighted one.
+    fn ask_delete { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } -> ! {
+        let row = fe.shown_row
+        if row < 0 or @as(usize, row) >= fe.saves.count or not fe.saves.entries[@as(usize, row)].ours { return }
+        if fe.depth >= 10 { return }
+        let text = try gui::tlk_text{ &g, strref = 1592 }
+        defer gui::free_string{ &g, s = text }
+        let id = try gui::message_box{ &g, &fs, &dev, text, cancel = true }
+        fe.pick_delete = row
+        fe.stack[fe.depth] = Entry{ screen = SCR_DELETEASK, panel = id }
+        fe.depth = fe.depth + 1
+    }
+
+    // Yes to 1592 (FUN_006c8900): the save's folder goes with what it holds (delete_save; New Slot
+    // has none), the list is filled again and the row at the deleted one's place hilighted, or the
+    // last row. A Load Game list left empty closes and says "You have no Saved Games." (42491), as
+    // PopulateList 0x006cc160 does.
+    fn delete_picked { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } -> ! {
+        let under = fe.stack[fe.depth - 1]
+        if under.screen != SCR_LOAD and under.screen != SCR_SAVE { return }
+        let row = fe.pick_delete
+        fe.pick_delete = -1
+        if row < 0 or @as(usize, row) >= fe.saves.count { return }
+        let e = fe.saves.entries[@as(usize, row)]
+        if not e.new_slot {
+            _ = delete_save{ &fs, scratch = &g.cache.scratch, own = fe.own_saves[..fe.own_saves_len], install = fe.saves_dir[..fe.saves_dir_len], e = &e }
+        }
+        let for_save = under.screen == SCR_SAVE
+        try fill_saves{ &fe, &g, &fs, &dev, p = under.panel, for_save }
+        if fe.saves.count == 0 {
+            close_top{ &fe, &g, &fs, &dev }
+            if fe.depth >= 10 { return }
+            let text = try gui::tlk_text{ &g, strref = 42491 }
+            defer gui::free_string{ &g, s = text }
+            let id = try gui::message_box{ &g, &fs, &dev, text, cancel = false }
+            fe.stack[fe.depth] = Entry{ screen = SCR_NOSAVES, panel = id }
+            fe.depth = fe.depth + 1
+            return
+        }
+        let last = @as(i32, fe.saves.count) - 1
+        let pick = if row < last { row } else { last }
+        gui::list_select{ &g, panel = under.panel, tag = "LB_GAMES", row = pick }
+        try show_save{ &fe, &g, &fs, &dev, p = under.panel, row = pick, for_save }
     }
 
     // The name box was just opened: an edit box (code makes it one: the file has a label) with the
@@ -633,6 +684,9 @@ namespace frontend {
         if screen == SCR_LOAD or screen == SCR_SAVE {
             let saving = screen == SCR_SAVE
             if ev.kind == gui::EventKind::row_selected or ev.kind == gui::EventKind::row_hover {
+                // The row the pointer hilights becomes the selected one, so the hilight stays on it
+                // when the pointer goes on to Load, Save or Delete, which act on it.
+                if ev.kind == gui::EventKind::row_hover { gui::list_select{ &g, panel = p, tag = "LB_GAMES", row = ev.row } }
                 show_save{ &fe, &g, &fs, &dev, p, row = ev.row, for_save = saving } iferr {}
             } else if ev.kind == gui::EventKind::row_activated {
                 if saving { begin_save_name{ &fe, &g, &fs, &dev, row = ev.row } } else { return begin_load{ &fe, &g, &fs, &dev, row = ev.row } }
@@ -641,8 +695,22 @@ namespace frontend {
                     let row = gui::list_selected{ &g, panel = p, tag = "LB_GAMES" }
                     if saving { begin_save_name{ &fe, &g, &fs, &dev, row } } else { return begin_load{ &fe, &g, &fs, &dev, row } }
                 }
+                if tag_is{ ev, tag = "BTN_DELETE" } { ask_delete{ &fe, &g, &fs, &dev } iferr {} }
                 if tag_is{ ev, tag = "BTN_BACK" } { close_top{ &fe, &g, &fs, &dev } }
             }
+            return Outcome::running
+        }
+        if screen == SCR_DELETEASK {
+            if ev.kind == gui::EventKind::activate and tag_is{ ev, tag = "BTN_OK" } {
+                close_top{ &fe, &g, &fs, &dev }
+                delete_picked{ &fe, &g, &fs, &dev } iferr {}
+            } else if ev.kind == gui::EventKind::activate and tag_is{ ev, tag = "BTN_CANCEL" } {
+                close_top{ &fe, &g, &fs, &dev }
+            }
+            return Outcome::running
+        }
+        if screen == SCR_NOSAVES {
+            if ev.kind == gui::EventKind::activate and tag_is{ ev, tag = "BTN_OK" } { close_top{ &fe, &g, &fs, &dev } }
             return Outcome::running
         }
         if screen == SCR_OVERWRITE {

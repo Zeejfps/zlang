@@ -1,0 +1,17 @@
+# Delete in the save lists (savedelete.sh), second run (from the same checkpoint, our saves directory
+# holding the first run's two saves): in Save Game the newer save hilighted (the pointer over its row),
+# Delete pressed, 1592 answered Yes, the list again; then Load Game's list with the install's autosave
+# hilighted, whose Delete is disabled.
+1 ui bot off
+70 ui menu options
+75 ui clicktag BTN_SAVEGAME
+80 ui movectl LB_GAMES 1
+82 ui ctl BTN_DELETE
+85 ui clickctl BTN_DELETE
+90 ui clicktag BTN_OK
+96 ui ctl BTN_DELETE
+96 ui ctl LB_GAMES
+98 ui clicktag BTN_BACK
+102 ui clicktag BTN_LOADGAME
+106 ui movectl LB_GAMES ~Auto_Save
+108 ui ctl BTN_DELETE

@@ -282,8 +282,16 @@ if frontend::take_display_change{ &fe } { apply fe.settings (resolution, full sc
   for a save that cannot be read. The details have no time, as in the original. Loading returns
   `load_game` with the save's folder as a path (`save::find_save` resolves it, ours or the
   install's); in game (`Front.in_game`) it first asks "The current game will not be saved.
-  Continue with load?" (32155, a message box kept on the screen stack as `SCR_LOADASK`). Delete is
-  hidden: the install is never written, and std has no way to remove a directory for ours.
+  Continue with load?" (32155, a message box kept on the screen stack as `SCR_LOADASK`). The row the
+  pointer hilights becomes the selected one, so Load, Save and Delete act on the row whose details
+  show.
+- **Delete** (both lists): enabled while the hilighted row is one of our saves (and on New Slot, as
+  the original's), disabled on the install's, which are never removed (ours). It asks "Are you sure
+  you want to delete the save game?" (1592, `SCR_DELETEASK`); Yes removes the save's folder and its
+  files (`delete_save`: only a direct child of our saves directory named `NNNNNN - ...`, our
+  directory outside the install; `fs::remove` each file, then `fs::remove_dir`), fills the list
+  again and hilights the row at the deleted one's place, or the last. A Load Game list left empty
+  closes and says 42491 (`SCR_NOSAVES`), as the original's.
 - **Save Game** (in game only, from the options menu; `SCR_SAVE`): the same screen in save mode:
   our manual saves, newest first, with a "New Slot" row first (hilighted). A click (or Save) on New Slot
   opens `savename.gui` over it (`make_edit` on `EDITBOX`) with "Game N - Hh Mm" (dialog.tlk 1594);
@@ -326,8 +334,8 @@ yellow; `draw_menu_check` puts the ring in a 25x25 square at the left and the la
 - **Unbound controls**: the generic loader creates every control in a file. Controls the original's
   code never binds (the main menu's `LBL_BW`, `LBL_LUCAS`, the debug warp) are hidden by the screen's
   code, not by the loader. `guiview` shows files unhidden.
-- **Delete in the save lists is hidden** because the install is read-only for us and std cannot
-  remove a directory (our own saves could otherwise be deleted; the original asks 1592).
+- **Delete in the save lists is disabled on the install's saves**, which are read-only for us; the
+  original's Delete is never disabled.
 - **The save lists put the manual saves newest first**; the original's run oldest first (by folder
   name).
 - **The movie list and the options descriptions** are as complete as the data allows; the original's
