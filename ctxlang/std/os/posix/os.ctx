@@ -91,6 +91,7 @@ namespace os {
     extern fn lseek { mut fs: Fs, fd: i32, offset: i64, whence: i32 } -> i64
     extern fn unlink { mut fs: Fs, path: *u8 } -> i32
     extern fn mkdir { mut fs: Fs, path: *u8, mode: u32 } -> i32
+    extern fn rmdir { mut fs: Fs, path: *u8 } -> i32
     #c::symbol{ name = "rename" }
     extern fn c_rename { mut fs: Fs, from: *u8, to: *u8 } -> i32
     extern fn getcwd { mut fs: Fs, buf: *mut u8, size: usize } -> ?*u8
@@ -177,6 +178,12 @@ namespace os {
         let mut buf: [4096]u8
         let p = c_path{ path, buf = buf[..] } ifnull { return failed{ code = sys::ENAMETOOLONG } }
         if mkdir{ &fs, path = p, mode = 511 } < 0 { return failed{ code = sys::errno{ &fs }.* } }     // 0777, less the umask
+    }
+
+    fn remove_dir { mut fs: Fs, path: []u8 } -> fs::Error! {
+        let mut buf: [4096]u8
+        let p = c_path{ path, buf = buf[..] } ifnull { return failed{ code = sys::ENAMETOOLONG } }
+        if rmdir{ &fs, path = p } < 0 { return failed{ code = sys::errno{ &fs }.* } }
     }
 
     fn rename { mut fs: Fs, from: []u8, to: []u8 } -> fs::Error! {
@@ -395,6 +402,7 @@ namespace os {
         if code == 21 { return fs::is_directory }                   // EISDIR
         if code == 17 { return fs::exists }                         // EEXIST
         if code == 20 { return fs::not_directory }                  // ENOTDIR
+        if code == sys::ENOTEMPTY { return fs::not_empty }
         if code == 9 { return fs::bad_file }                        // EBADF
         return fs::other{ code = @as(i64, code) }
     }

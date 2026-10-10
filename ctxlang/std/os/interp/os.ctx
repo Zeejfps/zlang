@@ -105,6 +105,7 @@ namespace os {
     fn file_size { mut fs: Fs, path: []u8 } -> fs::Error!u64 { return try no_files(u64){} }
     fn remove { mut fs: Fs, path: []u8 } -> fs::Error! { _ = try no_files(bool){} }
     fn make_dir { mut fs: Fs, path: []u8 } -> fs::Error! { _ = try no_files(bool){} }
+    fn remove_dir { mut fs: Fs, path: []u8 } -> fs::Error! { _ = try no_files(bool){} }
     fn rename { mut fs: Fs, from: []u8, to: []u8 } -> fs::Error! { _ = try no_files(bool){} }
     fn working_dir { mut fs: Fs, into: []mut u8 } -> fs::Error!usize { return try no_files(usize){} }
     fn dir_open { mut fs: Fs, path: []u8 } -> fs::Error!Dir { return try no_files(Dir){} }

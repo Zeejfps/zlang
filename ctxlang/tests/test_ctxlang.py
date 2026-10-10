@@ -7220,6 +7220,27 @@ class Fs(Base):
 """, [self.dir, self.path('sub'), self.path('missing')])
         self.assertEqual((out, code), ('true\ntrue\na.ctx\nb.txt\nc\nsub\n', 0))
 
+    def test_remove_dir(self):
+        with open(self.path('file.txt'), 'w') as f:
+            f.write('x')
+        out, code = self.run_fs("""
+    let dir = args[0]
+    fs::make_dir{ &fs, path = dir } iferr { return 1 }
+    _ = fs::write_all{ &fs, path = args[1], bytes = "x" } iferr { return 2 }
+    let full = match fs::remove_dir{ &fs, path = dir } { ok => { false } fs::not_empty => { true } else => { false } }
+    io::println_bool{ &io, n = full }
+    fs::remove{ &fs, path = args[1] } iferr { return 3 }
+    io::println_bool{ &io, n = match fs::remove_dir{ &fs, path = dir } { ok => { true } err => { false } } }
+    let gone = match fs::remove_dir{ &fs, path = dir } { ok => { false } fs::not_found => { true } else => { false } }
+    io::println_bool{ &io, n = gone }
+    let file = match fs::remove_dir{ &fs, path = args[2] } { ok => { false } fs::not_directory => { true } else => { false } }
+    io::println_bool{ &io, n = file }
+    return 0
+""", [self.path('sub'), os.path.join(self.path('sub'), 'in.txt'), self.path('file.txt')])
+        self.assertEqual((out, code), ('true\ntrue\ntrue\ntrue\n', 0))
+        self.assertFalse(os.path.exists(self.path('sub')))
+        self.assertTrue(os.path.exists(self.path('file.txt')))
+
     def test_read_all_and_write_all(self):
         src, dst = self.path('in.txt'), self.path('out.txt')
         with open(src, 'wb') as f:

@@ -34,6 +34,7 @@ namespace sys {
 
     // The errno for a path that is too long.
     const ENAMETOOLONG: i32 = 36
+    const ENOTEMPTY: i32 = 39
 
     // The offset of d_name, the entry's name, in the struct dirent readdir returns: glibc's and
     // musl's, on every 64-bit architecture.

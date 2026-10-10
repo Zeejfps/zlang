@@ -25,13 +25,14 @@ namespace fs {
     error is_directory
     error exists                // open with Mode::create, and the file is already there
     error not_directory         // a directory in the path is a file
+    error not_empty             // remove_dir, and the directory holds entries
     error bad_file              // the file is closed
     error other{ code: i64 }    // the OS's error number
 
     // What the platform's layer (std/os) may fail with, on every platform: each of its file
     // functions declares this set (spec §8, Errors, rule 14), whichever of it the OS can give.
     // It is open (rule 15): an OS can fail in new ways, so a match on it has an `else`.
-    type Error = error(not_found, permission_denied, is_directory, exists, not_directory, bad_file, other, ..)
+    type Error = error(not_found, permission_denied, is_directory, exists, not_directory, not_empty, bad_file, other, ..)
 
     union Mode {
         read,       // an existing file
@@ -105,6 +106,15 @@ namespace fs {
     fn make_dir { mut fs: Fs, path: []u8 } -> ! {
         if path.len == 0 { return not_found }
         try os::make_dir{ &fs, path }
+    }
+
+    // Deletes directory `path`, which must be empty: it fails with `not_empty` while the
+    // directory holds anything, and with `not_directory` if `path` is a file. Removing a tree
+    // is the caller's to do (list it, remove what is in it, then it), so a wrong path costs at
+    // most an empty directory.
+    fn remove_dir { mut fs: Fs, path: []u8 } -> ! {
+        if path.len == 0 { return not_found }
+        try os::remove_dir{ &fs, path }
     }
 
     // Renames the file at `from` to `to`, replacing any file at `to`. Where both are in one

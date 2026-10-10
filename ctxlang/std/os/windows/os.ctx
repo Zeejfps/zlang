@@ -106,6 +106,7 @@ namespace os {
     extern fn GetFileAttributesExW { mut fs: Fs, name: *u16, level: i32, mut data: FileData } -> i32
     extern fn DeleteFileW { mut fs: Fs, name: *u16 } -> i32
     extern fn CreateDirectoryW { mut fs: Fs, name: *u16, security: ?*u8 } -> i32
+    extern fn RemoveDirectoryW { mut fs: Fs, name: *u16 } -> i32
     extern fn MoveFileExW { mut fs: Fs, from: *u16, to: *u16, flags: u32 } -> i32
     extern fn GetCurrentDirectoryW { mut fs: Fs, size: u32, buf: *mut u16 } -> u32
     extern fn FindFirstFileW { mut fs: Fs, name: *u16, mut data: FindData } -> u64
@@ -204,6 +205,12 @@ namespace os {
         let mut buf: [32768]u16
         let p = wide_path{ &fs, path, buf = buf[..] } ifnull { return too_long{} }
         if CreateDirectoryW{ &fs, name = p, security = null } == 0 { return failed{ code = GetLastError{ &fs } } }
+    }
+
+    fn remove_dir { mut fs: Fs, path: []u8 } -> fs::Error! {
+        let mut buf: [32768]u16
+        let p = wide_path{ &fs, path, buf = buf[..] } ifnull { return too_long{} }
+        if RemoveDirectoryW{ &fs, name = p } == 0 { return failed{ code = GetLastError{ &fs } } }
     }
 
     fn rename { mut fs: Fs, from: []u8, to: []u8 } -> fs::Error! {
@@ -756,6 +763,7 @@ namespace os {
         if code == 5 { return fs::permission_denied }               // access denied
         if code == 80 or code == 183 { return fs::exists }          // file, already exists
         if code == 267 { return fs::not_directory }                 // directory name invalid
+        if code == 145 { return fs::not_empty }                     // directory not empty
         if code == 6 { return fs::bad_file }                        // invalid handle
         return fs::other{ code = @as(i64, code) }
     }

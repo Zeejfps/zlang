@@ -34,6 +34,7 @@ namespace sys {
 
     // The errno for a path that is too long.
     const ENAMETOOLONG: i32 = 63
+    const ENOTEMPTY: i32 = 66
 
     // The offset of d_name, the entry's name, in the struct dirent readdir returns: arm64's,
     // with 64-bit inode numbers. x86_64's readdir returns the older struct, with d_name at 8,
