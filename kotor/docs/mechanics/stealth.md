@@ -69,7 +69,7 @@ shows, solo mode, combat, the area's stealth XP, and who sees or hears the creat
 | `TB_SOLO` and V ask 37889 (on), 37891 (off) or 37892 (off while the leader hides: "...will take you out of Stealth Mode"); OK turns solo mode over and runs `k_sup_solo` (not shipped); turning it off takes the party out of stealth | SetMode, `0x005f2a20`, SetSoloMode `0x00565500` | matches | `solo_box` |
 | The box only with a companion, no conversation, no load or pending area transition, the leader on its feet (else the refusal sound); the game pauses while it is up (unless the player had paused); it closes itself if a conversation starts, a load or transition begins, or the leader falls | ShowSoloModeConfirm `0x0062e550`, the box's Render | matches (pause by the player pause, as the original's TogglePlayerPause) | `solo_box` (`solo_box_off.png` shows the pause) |
 | In solo mode companions stay where they are: k_ai_master's heartbeat does not send them after the leader and stops one that follows | k_ai_master (GetSoloMode), party-items-saves.md 3.7 | script (GetSoloMode now answers the flag; the follow action's steps answer FOLLOWLEADER to GetCurrentAction, which the script asks) | `solo_box` vs `solo_control` |
-| Tab still changes the leader in solo mode; the straggler teleport is off | `0x005f7960`, gameloop.md 6.7 | matches (Tab unchanged); the teleport is not built | by reading |
+| Tab still changes the leader in solo mode; the straggler teleport is off | `0x005f7960`, gameloop.md 6.7 | matches (Tab unchanged; the teleport: `fight::update_party`, off in solo mode) | `tools/combat/straggle1.txt` (the Duros 120 m off goes back), `straggle2.txt` (solo: he stays) |
 | The first companion to join a hiding player turns solo mode on; the last to leave turns it off (directly: stealth stays) | AddPartyMember `0x00565620`, RemovePartyMember `0x00565560` | matches | by reading |
 | Stealth is per creature: only the leader is toggled by the HUD, and with companions only in solo mode | `0x0060f4b0`, `0x004f2a50` | matches | `solo_box` |
 
@@ -136,4 +136,3 @@ keep the stealth XP pool. Matches (`save_hiding` / `load_hiding`).
 - The stealth pace (appearance DriveAnimWalk, not the walk rate).
 - 8001's picture.
 - Rest ending stealth (no party rest yet).
-- The straggler teleport that solo mode turns off (not built).

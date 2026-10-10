@@ -1,0 +1,10 @@
+# straggle1.txt in solo mode (V, then OK in the box): the Duros stays 120 m away when Carth gets up.
+2 ui join duros
+10 keydown v
+11 keyup v
+14 ui clickctl BTN_OK
+20 ui stealth
+40 ui shove 1 120 0
+60 ui damage carth 100
+70 ui party
+400 ui party

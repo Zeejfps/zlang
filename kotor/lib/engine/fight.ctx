@@ -2052,14 +2052,14 @@ namespace fight {
                     _ = @fmt(&w.io, "{} gets up\n", id)
                 }
             }
-            // Unless solo mode is on, a member more than 40 m from the leader goes back to a free
-            // spot within 5 m of its formation place (ours: rt_party's formation point; the client
-            // party's formation offsets were not read).
+            // Unless solo mode is on (gameloop.md 6.7), a member more than 40 m from the leader goes
+            // back to a free spot within 5 m of its place in the client party: its follow point on
+            // the leader's trail (entry +0x28, trail.ctx).
             if index > 0 and not w.party.solo {
                 if world::object{ w = &w, id } is some{ value = so } {
                     if math::vec3::distance{ a = so.position, b = lead_at } > 40.0 {
-                        let spot = rt_party::formation_point{ w = &w, index }
-                        place_free{ &w, id, near = spot.position }
+                        let spot = trail::follow_point{ w = &w, id } ifnull lead_at
+                        place_free{ &w, id, near = spot }
                         if w.log.combat {
                             world::prefix{ w = &w }
                             _ = @fmt(&w.io, "{} back to formation\n", id)

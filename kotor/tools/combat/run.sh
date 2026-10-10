@@ -16,6 +16,8 @@
 #   bash1     bunk       1000  a locked non-plot door bashed open through the block
 #   gren2     uppercity  300   Carth as grenadier (Scripts panel style 4) throws a frag grenade at two troopers (checked by grenade.sh)
 #   gren1     uppercity  130   Carth targeted (empty block), then a frag grenade thrown at a hostile trooper (checked by grenade.sh)
+#   straggle1 uppercity  500   Carth down, the Duros 120 m off: when Carth gets up the Duros is put back near the party (`back to formation`)
+#   straggle2 uppercity  500   the same in solo mode: no `back to formation`
 #   provoke1  uppercity  600   a dark Jedi turned hostile with a buff on itself as its first order attacks once the buff is cast
 #   engage1   uppercity  620   paused after an enemy is sighted, the block's attack puts the leader in combat mode at once
 #                              (checked by engage.sh)
