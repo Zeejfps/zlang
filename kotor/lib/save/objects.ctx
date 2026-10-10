@@ -165,6 +165,8 @@ namespace save {
         try put_byte{ &b, owner = s, label = "GoodEvil", v = @trunc(u8, c.good_evil) }
         try put_byte{ &b, owner = s, label = "PerceptionRange", v = @trunc(u8, c.perception_range) }
         try put_bool{ &b, owner = s, label = "IsPC", v = c.is_pc }
+        // The creaturespeed row as resolved (SaveStats 0x005b1b90 writes stats +0x194).
+        try put_byte{ &b, owner = s, label = "MovementRate", v = @trunc(u8, c.movement_rate) }
         // The AI style the Scripts button sets (WriteStatsToGff: INT "AIState" from stats +0x13a).
         try put_int{ &b, owner = s, label = "AIState", v = c.ai_style }
         try put_bool{ &b, owner = s, label = "CreatnScrptFird", v = c.spawn_fired }

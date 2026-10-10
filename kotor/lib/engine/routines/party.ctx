@@ -113,6 +113,8 @@ namespace rt_party {
         w.party.templates[s] = o.template
         set_joining_xp{ &w, s, level = @as(i32, c.hit_dice) }
         join_party_side{ &w, o, c }
+        // A companion moves at PC_Movement, creaturespeed row 0, whatever its blueprint says (0x00564300).
+        tmpl::set_rate{ &w, c, row = 0 }
         return true
     }
 
@@ -355,6 +357,8 @@ namespace rt_party {
         // brought by the party selection never heard the leader's GEN_I_WAS_ATTACKED and sat
         // out every fight it was not ordered into. One already in the world keeps its flag.
         if made { c.spawn_fired = false }
+        // Its AVAILNPC file was written at PC_Movement (AddAvailableNPCByObject 0x00564300 sets row 0 first).
+        tmpl::set_rate{ &w, c, row = 0 }
         o.area = w.area
         o.commandable = true
         actions::clear_all{ &w, id }

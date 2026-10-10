@@ -221,6 +221,10 @@ namespace tmpl {
         script{ doc, s, o, label = "ScriptOnBlocked", slot = obj::Slot::blocked }
         script{ doc, s, o, label = "ScriptEndDialogu", slot = obj::Slot::end_dialogue }
         fight::read_creature{ &w, o, c, doc, s }
+        // The creaturespeed row: a save's BYTE MovementRate (the row as resolved), else the blueprint's INT WalkRate
+        // (ReadStatsFromGff 0x005afce0, movement.md 3.1).
+        let rate = gff::get_number{ doc = doc.*, s, label = "MovementRate" } ifnull (gff::get_number{ doc = doc.*, s, label = "WalkRate" } ifnull @as(i64, c.movement_rate))
+        c.movement_rate = if rate < 0 { 7 } else { @trunc(u32, rate) }
         set_movement{ &w, c }
         // Items: equipped (struct id = 1 << slot) and carried.
         let equipped = gff::get_list{ doc = doc.*, s, label = "Equip_ItemList" } ifnull slice::empty(u32){}
@@ -293,19 +297,33 @@ namespace tmpl {
         let camspace = twoda::get_float{ t, row, column = "cameraspace" } ifnull 0.0
         c.camspace = if camspace > 0.0 { camspace } else { c.creperspace }
         c.height = twoda::get_float{ t, row, column = "height" } ifnull c.height
-        let rate = twoda::get_string{ t, row, column = "moverate" } ifnull "NORM"
+        set_rate{ &w, c, row = c.movement_rate }
+    }
+
+    // The creature's rates from a creaturespeed.2da row (CSWSCreatureStats::SetMovementRate 0x005a5680, movement.md 3.1):
+    // row 7 (DEFAULT) is the row whose 2daname is the appearance's MOVERATE, PLAYER (0) when none matches, and the resolved
+    // row is what the creature keeps (and a save writes). Row 1 (NOMOVE) leaves it unable to move (movement::can_move).
+    fn set_rate { mut w: world::World, c: *mut obj::Creature, row: u32 } {
         let speeds = w.tables.creaturespeed
         let n = twoda::rows{ t = speeds }
-        let mut i: usize = 0
-        while i < n {
-            let name = twoda::get_string{ t = speeds, row = i, column = "2daname" } ifnull ""
-            if ci::eq{ a = name, b = rate } {
-                c.walk_rate = twoda::get_float{ t = speeds, row = i, column = "walkrate" } ifnull c.walk_rate
-                c.run_rate = twoda::get_float{ t = speeds, row = i, column = "runrate" } ifnull c.run_rate
-                return
+        let mut r = @as(usize, row)
+        if row == 7 {
+            r = 0
+            let rate = twoda::get_string{ t = w.tables.appearance, row = @as(usize, c.appearance), column = "moverate" } ifnull ""
+            let mut i: usize = 0
+            while i < n {
+                let name = twoda::get_string{ t = speeds, row = i, column = "2daname" } ifnull ""
+                if rate.len > 0 and ci::eq{ a = name, b = rate } {
+                    r = i
+                    break
+                }
+                i = i + 1
             }
-            i = i + 1
         }
+        if r >= n { return }
+        c.movement_rate = @as(u32, r)
+        c.walk_rate = twoda::get_float{ t = speeds, row = r, column = "walkrate" } ifnull c.walk_rate
+        c.run_rate = twoda::get_float{ t = speeds, row = r, column = "runrate" } ifnull c.run_rate
     }
 
     // ---- items (UTI)

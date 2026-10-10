@@ -561,33 +561,16 @@ namespace rt_crea {
         try nwvm::push_int{ &vm, v = world::standing{ w = &w, from = os.faction, toward = ot.faction } }
     }
 
-    // int GetCreatureMovmentType(object oidCreature): the creaturespeed.2da row (MOVEMENT_SPEED_*) of
-    // the creature's rate: the player's own character is 0 (PC_Movement), any other the row whose
-    // 2daname is its appearance's moverate (Normal, 4, when the table has none), and an object that
-    // is not a creature is MOVEMENT_SPEED_IMMOBILE (1). Effects that slow or hold it do not show.
+    // int GetCreatureMovmentType(object oidCreature): the creaturespeed.2da row (MOVEMENT_SPEED_*) the creature moves at,
+    // as resolved when it was read (row 7 turned into its appearance's; 0x0053efa0 reads stats +0x194), and
+    // MOVEMENT_SPEED_IMMOBILE (1) for an object that is not a creature. Effects that slow or hold it do not show.
     fn get_creature_movement_type { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetCreatureMovmentType, argc, i = 0 }
         let c = creature_of{ w = &w, id } ifnull {
             try nwvm::push_int{ &vm, v = 1 }
             return
         }
-        if c.is_pc {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
-        }
-        let rate = twoda::get_string{ t = w.tables.appearance, row = @as(usize, c.appearance), column = "moverate" } ifnull "NORM"
-        let speeds = w.tables.creaturespeed
-        let n = twoda::rows{ t = speeds }
-        let mut i: usize = 0
-        while i < n {
-            let name = twoda::get_string{ t = speeds, row = i, column = "2daname" } ifnull ""
-            if ci::eq{ a = name, b = rate } {
-                try nwvm::push_int{ &vm, v = @as(i32, i) }
-                return
-            }
-            i = i + 1
-        }
-        try nwvm::push_int{ &vm, v = 4 }
+        try nwvm::push_int{ &vm, v = @as(i32, c.movement_rate) }
     }
 
     // void AddMultiClass(int nClassType, object oSource): a new class on the creature, at level 0

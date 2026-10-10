@@ -492,8 +492,7 @@ namespace modload {
         if obj::creature{ o } is some{ value = c } {
             c.is_pc = true
             c.spawn_fired = tmpl::hench_spawn_fired{ o, c }
-            c.walk_rate = twoda::get_float{ t = w.tables.creaturespeed, row = 0, column = "walkrate" } ifnull 3.2
-            c.run_rate = twoda::get_float{ t = w.tables.creaturespeed, row = 0, column = "runrate" } ifnull 5.4
+            tmpl::set_rate{ &w, c, row = 0 }
         }
         o.ai_level = 4
         w.pc = o.id
@@ -549,8 +548,7 @@ namespace modload {
             if obj::creature{ o } is some{ value = c } {
                 c.is_pc = true
                 c.spawn_fired = tmpl::hench_spawn_fired{ o, c }
-                c.walk_rate = twoda::get_float{ t = w.tables.creaturespeed, row = 0, column = "walkrate" } ifnull 3.2
-                c.run_rate = twoda::get_float{ t = w.tables.creaturespeed, row = 0, column = "runrate" } ifnull 5.4
+                tmpl::set_rate{ &w, c, row = 0 }
             }
             o.area = w.area
             o.ai_level = 4
@@ -573,8 +571,7 @@ namespace modload {
         o.hp_max = 20
         tmpl::set_movement{ &w, c }
         // The PC runs at PC_Movement (creaturespeed row 0).
-        c.walk_rate = twoda::get_float{ t = w.tables.creaturespeed, row = 0, column = "walkrate" } ifnull 3.2
-        c.run_rate = twoda::get_float{ t = w.tables.creaturespeed, row = 0, column = "runrate" } ifnull 5.4
+        tmpl::set_rate{ &w, c, row = 0 }
         c.abilities = [14, 14, 14, 12, 12, 12]
         // The scripts the original's player has (the henchman set; chargen writes the same).
         obj::set_script{ o, slot = obj::Slot::heartbeat, name = resref::truncate{ name = "k_hen_heartbt01" } }

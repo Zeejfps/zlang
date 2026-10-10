@@ -112,8 +112,7 @@ namespace save {
         if obj::creature{ o } is some{ value = c } {
             c.is_pc = true
             c.spawn_fired = tmpl::hench_spawn_fired{ o, c }
-            c.walk_rate = twoda::get_float{ t = w.tables.creaturespeed, row = 0, column = "walkrate" } ifnull 3.2
-            c.run_rate = twoda::get_float{ t = w.tables.creaturespeed, row = 0, column = "runrate" } ifnull 5.4
+            tmpl::set_rate{ &w, c, row = 0 }
         }
         o.ai_level = 4
         movement::place{ &w, id = o.id, at }

@@ -194,6 +194,7 @@ namespace obj {
         portrait: u32,
         soundset: u32,
         is_pc: bool,
+        movement_rate: u32,                 // creaturespeed.2da row (7, DEFAULT, resolved through appearance.2da MOVERATE on read)
         walk_rate: f32,                     // m/s (creaturespeed.2da, movement.md 3.1)
         run_rate: f32,
         perspace: f32,                      // appearance.2da PERSPACE
@@ -635,7 +636,7 @@ namespace obj {
     fn make_creature { heap: *mut heap::Heap } -> Creature {
         return Creature{
             appearance = 0, gender = 0, race = 6, subrace = 0, body_variation = 0, texture_variation = 1,
-            portrait = 0, soundset = 0xFFFFFFFF, is_pc = false, walk_rate = 1.7, run_rate = 5.4,
+            portrait = 0, soundset = 0xFFFFFFFF, is_pc = false, movement_rate = 7, walk_rate = 1.7, run_rate = 5.4,
             perspace = 0.35, creperspace = 0.4, camspace = 0.4, height = 1.6, equipped = [INVALID; 20],
             inventory = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },
             abilities = [10; 6], hit_dice = 1, disguise = 0, classes = [0; 3], class_levels = [0; 3], good_evil = 50,
