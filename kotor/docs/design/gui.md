@@ -263,7 +263,10 @@ if frontend::take_display_change{ &fe } { apply fe.settings (resolution, full sc
 - **Load Game** (`saveload.gui`): lists our saves directory (`set_own_saves`, the engine's `--saves`)
   and the install's `Saves/` (folder `NNNNNN - Name`; 0 quick save, 1 autosave, 2+ manual) in the
   original's order, by number: quick and auto first (ours hide the install's of the same number),
-  then the manual saves, oldest first (a save written over keeps its place). Each row's `savenfo.res` (name, area as "Planet - Place", play time, up to three party
+  then the manual saves, oldest first (a save written over keeps its place). A row reads as the
+  original's (`make_row_text`): "Game N - Hh Mm" over the save's name for a manual save (dialog.tlk
+  48519), "Quick Save - HH MM" and "Auto Save - HH MM" for the others (47991 / 1593 and 48205), the
+  time being `TIMEPLAYED`; the details beside the list have no time, as in the original. Each row's `savenfo.res` (name, area as "Planet - Place", play time, up to three party
   portraits) and `Screen.tga` give the details. A click selects and shows them, a second click or
   Load returns `load_game` with the save's folder as a path (`save::find_save` resolves it, ours or
   the install's). Delete is hidden: the install is never written.

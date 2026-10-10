@@ -983,7 +983,13 @@ modal) and starts the menu music (`mus_theme_cult`, 0x005f9af0). The game reads 
 
 `HandleInputEvent` (0x006c86d0): back (0x28, 0x2d, 0x2e) plays the click and marks the panel for
 deletion; opened from the main menu it re-shows the main menu, otherwise it pops the modal
-panel. The list is filled by 0x006cc160: one row per directory in `SAVES:`, each row taking 0x27
+panel. The list is filled by 0x006cc160: one row per directory in `SAVES:` (by folder name,
+ascending: party-items-saves.md 1.5), its text set by 0x006c9780 from the row's number and
+`TIMEPLAYED` (hours = seconds / 3600, minutes = seconds / 60 mod 60): number 0 "Quick Save"
+(47991) and number 1 "Auto Save" (1593), each followed by 48205 " - <CUSTOM0>H <CUSTOM1>M"
+(hours, minutes); any other number 48519 "Game <CUSTOM0> - <CUSTOM1>h <CUSTOM2>m\n<CUSTOM3>"
+(number − 1, hours, minutes, `SAVEGAMENAME`), two lines. The details (0x006c89d0) show no time:
+the play time is only in the rows. Each row takes 0x27
 → `OnLoad`/`OnSave`, 0x29 → `OnDelete` and 0 → the details (shown at once for the first row). In
 save mode rows numbered 0 and 1 are left out and a "New Slot" row (1590) goes first, numbered one
 above the highest save (at least 2). In load mode with no saves the panel closes the same way as

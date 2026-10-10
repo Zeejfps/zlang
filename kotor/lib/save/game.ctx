@@ -209,7 +209,10 @@ namespace save {
         _ = try fs::write_all{ fs = &w.fs, path = try staged_in{ &w, folder, name = SAVE_FILES[0] }, bytes = image }
         let globals_bytes = try write_globals(arena::Arena){ realloc = arena::alloc, heap = w.scratch, g = &w.globals }
         _ = try fs::write_all{ fs = &w.fs, path = try staged_in{ &w, folder, name = SAVE_FILES[1] }, bytes = globals_bytes }
-        let played = @trunc(u32, @as(u64, w.played_seconds))
+        // GetPlayedSeconds (0x00563bf0) rounds to the second, and saving the party table folds the
+        // session into the total and restarts its clock: the next save counts from the rounded value.
+        let played = if w.played_seconds > 0.0 { @trunc(u32, @as(u64, w.played_seconds + 0.5)) } else { 0 }
+        w.played_seconds = @as(f64, played)
         let party_bytes = try write_party_table(arena::Arena){ realloc = arena::alloc, heap = w.scratch, w = &w, played_seconds = played }
         _ = try fs::write_all{ fs = &w.fs, path = try staged_in{ &w, folder, name = SAVE_FILES[2] }, bytes = party_bytes }
         let info_bytes = try write_info(arena::Arena){ realloc = arena::alloc, heap = w.scratch, info = info_now{ &w, save_name, played } }

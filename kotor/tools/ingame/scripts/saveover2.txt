@@ -1,7 +1,7 @@
 # Save Game over a save (saveover.sh, second run, loaded from the save the first made): the list (New Slot,
 # then the save with its play time), the save picked and Save asks 1591, Yes opens the name box with the
 # save's name, which is replaced by "Second save", and Enter saves over it; then the list again: the one save,
-# renamed, its play time grown.
+# renamed, its play time grown; and Load Game's list (the quick save, then the save).
 1 ui bot off
 100 ui menu options
 105 ui clicktag BTN_SAVEGAME
@@ -28,3 +28,5 @@
 130 ui key return
 140 ui menu options
 145 ui clicktag BTN_SAVEGAME
+152 ui clicktag BTN_BACK
+156 ui clicktag BTN_LOADGAME

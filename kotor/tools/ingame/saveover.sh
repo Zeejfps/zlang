@@ -1,11 +1,13 @@
 #!/bin/sh
 # Saving over a save from the Save Game list (docs/re/gui.md "Save and load", docs/re/party-items-saves.md 1.1):
-# saveover1.txt saves the cantina checkpoint to "New Slot" with the default name; a stray file is put in the
-# new folder; saveover2.txt loads that save, plays on, picks it in the list, answers Yes to 1591 and renames it.
-# FAIL (exit 1) unless there is still exactly one save folder, its SAVEGAMENAME and TIMEPLAYED changed (the time
-# grown by the second run's frames before the save, at the fixed headless step), the stray file and no staged
-# file is left, and the lists showed the save's row with its play time. Pictures in kotor/out/saveover:
-# list1.png (the list before), confirm.png (1591), name.png (the name box), list2.png (the list after).
+# saveover1.txt quick-saves the cantina checkpoint, then saves it to "New Slot" with the default name; a stray
+# file is put in the new folder; saveover2.txt loads that save, plays on, picks it in the list, answers Yes to
+# 1591 and renames it. FAIL (exit 1) unless the folders are still the quick save and the one manual save, its
+# SAVEGAMENAME and TIMEPLAYED changed (the time grown by the second run's frames before the save, at the fixed
+# headless step), and neither the stray file nor a staged one is left. Pictures in kotor/out/saveover:
+# list1.png (the Save Game list before), confirm.png (1591), name.png (the name box with the save's name),
+# list2.png (the list after: "Game 1 - 0h 31m" and the new name), load.png (Load Game: "Quick Save - 0H 31M",
+# then ours and the install's saves by number, each with its play time).
 #
 #   EXE=kotor/out/kotor.exe sh kotor/tools/ingame/saveover.sh      (from the repository root; about 20 s)
 export PATH=/g/Dev/msys64/mingw64/bin:$PATH
@@ -24,12 +26,13 @@ if [ ! -f "$folder/savenfo.res" ]; then echo "FAIL the first run made no $folder
 name1=$(nfo "$folder" SAVEGAMENAME)
 time1=$(nfo "$folder" TIMEPLAYED)
 echo stray > "$folder/stray.txt"
-$exe --load "$folder" --headless --saves $saves --frames 150 --input kotor/tools/ingame/scripts/saveover2.txt --log objects \
-  --screenshot-at 108:$out/list1.png --screenshot-at 118:$out/confirm.png --screenshot-at 121:$out/name.png --screenshot-at 149:$out/list2.png > $out/run2.log 2>&1
+$exe --load "$folder" --headless --saves $saves --frames 162 --input kotor/tools/ingame/scripts/saveover2.txt --log objects \
+  --screenshot-at 108:$out/list1.png --screenshot-at 118:$out/confirm.png --screenshot-at 121:$out/name.png --screenshot-at 149:$out/list2.png \
+  --screenshot-at 160:$out/load.png > $out/run2.log 2>&1
 name2=$(nfo "$folder" SAVEGAMENAME)
 time2=$(nfo "$folder" TIMEPLAYED)
-count=$(ls $saves | grep -c '^[0-9][0-9][0-9][0-9][0-9][0-9] - ')
-[ "$count" = 1 ] || { echo "FAIL $count save folders after saving over the one: $(ls $saves | xargs)"; fail=1; }
+folders=$(ls $saves | grep '^[0-9][0-9][0-9][0-9][0-9][0-9] - ' | tr '\n' '|')
+[ "$folders" = "000000 - QUICKSAVE|000002 - Game1|" ] || { echo "FAIL save folders after saving over the manual one: $folders"; fail=1; }
 [ "$name2" = "Second save" ] || { echo "FAIL SAVEGAMENAME '$name2' after the save over '$name1', want 'Second save'"; fail=1; }
 # The save is made at frame 130 of the second run, 1/30 s a frame: about 4 s more than the first save.
 grown=$(( ${time2:-0} - ${time1:-0} ))

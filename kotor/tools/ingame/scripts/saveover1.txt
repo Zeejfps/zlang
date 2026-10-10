@@ -1,6 +1,7 @@
 # Save Game to a new slot (saveover.sh, first run): the options menu, Save Game, "New Slot", Save, and the
-# default name accepted with Enter.
+# default name accepted with Enter. A quick save first, for the Load Game list's rows.
 1 ui bot off
+5 save QUICKSAVE
 10 ui menu options
 15 ui clicktag BTN_SAVEGAME
 20 ui clickctl LB_GAMES 0

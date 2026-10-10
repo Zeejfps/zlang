@@ -89,7 +89,9 @@ namespace frontend {
                 defer gui::free_string{ &g, s = title }
                 _ = try gui::list_add{ &g, panel = p, tag = "LB_GAMES", text = if title.len > 0 { title } else { e.label[..e.label_len] }, user = @as(i64, i) }
             } else {
-                _ = try gui::list_add{ &g, panel = p, tag = "LB_GAMES", text = e.label[..e.label_len], user = @as(i64, i) }
+                let mut tb: [200]u8
+                let text = try make_row_text{ &g, e = &fe.saves.entries[i], into = tb[..] }
+                _ = try gui::list_add{ &g, panel = p, tag = "LB_GAMES", text, user = @as(i64, i) }
             }
             gui::list_set_color{ &g, panel = p, tag = "LB_GAMES", row = @as(i32, i), color = gui::color_menu{} }
             i = i + 1
@@ -97,6 +99,39 @@ namespace frontend {
         if for_save and fe.saves.count > 0 { gui::list_select{ &g, panel = p, tag = "LB_GAMES", row = 0 } }
         try gui::set_text{ &g, panel = p, tag = "LBL_PLANETNAME", text = "" }
         try gui::set_text{ &g, panel = p, tag = "LBL_AREANAME", text = "" }
+    }
+
+    // Writes into `into` a save's row as the original's list shows it (0x006c9780): a manual save
+    // is "Game N - Hh Mm" with its name on a second line (dialog.tlk 48519; N one under the folder's
+    // number), the quick save and the autosave their name (47991, 1593) and " - HH MM" (48205), the
+    // time being TIMEPLAYED. A save whose savenfo.res cannot be read shows its folder's name.
+    fn make_row_text { mut g: gui::Gui, e: *SaveEntry, into: []mut u8 } -> ![]u8 {
+        if e.corrupt { return into[..copy_into{ dst = into, src = e.label[..e.label_len] }] }
+        let hours = @as(i32, e.seconds / 3600)
+        let minutes = @as(i32, (e.seconds / 60) % 60)
+        let manual = e.number >= 2
+        let mut nb: [12]u8
+        let mut k: u32 = 0
+        if manual {
+            try gui::set_token{ &g, name = "CUSTOM0", value = nb[..put_int{ into = nb[..], at = 0, n = e.number - 1 }] }
+            k = 1
+        }
+        let names: [4][]u8 = ["CUSTOM0", "CUSTOM1", "CUSTOM2", "CUSTOM3"]
+        try gui::set_token{ &g, name = names[k], value = nb[..put_int{ into = nb[..], at = 0, n = hours }] }
+        try gui::set_token{ &g, name = names[k + 1], value = nb[..put_int{ into = nb[..], at = 0, n = minutes }] }
+        let mut n: usize = 0
+        if manual {
+            try gui::set_token{ &g, name = "CUSTOM3", value = e.label[..e.label_len] }
+        } else {
+            let title = try gui::tlk_text{ &g, strref = if e.number == 0 { 47991 } else { 1593 } }
+            defer gui::free_string{ &g, s = title }
+            n = copy_into{ dst = into, src = if title.len > 0 { title } else { e.label[..e.label_len] } }
+        }
+        let time = try gui::tlk_text{ &g, strref = if manual { 48519 } else { 48205 } }
+        defer gui::free_string{ &g, s = time }
+        if time.len == 0 { return into[..copy_into{ dst = into, src = e.label[..e.label_len] }] }
+        n = n + copy_into{ dst = into[n..], src = time }
+        return into[..n]
     }
 
     // Shows the details of the highlighted save: area, time, party and the screenshot.
