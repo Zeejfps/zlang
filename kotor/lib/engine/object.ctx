@@ -293,6 +293,8 @@ namespace obj {
         droppable: bool,                    // Dropable: it goes into the body bag when its owner dies
         infinite: bool,                     // a store's stock that never runs out (item flag bit 2)
         fresh: bool,                        // the party got it and has not looked at it yet (item flag bit 7, "new")
+        spent_props: u32,                   // properties (by index) whose per-minute use is spent: Useable 0 until it recharges
+        spent_at_ms: u64,                   // the world time (w.clock) of that use
     }
 
     enum DoorState: u8 { closed, open1, open2, destroyed }

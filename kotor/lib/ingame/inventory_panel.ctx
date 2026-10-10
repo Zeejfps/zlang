@@ -32,10 +32,11 @@ namespace inventory_panel {
         box: u32,               // the refusal message box, 0 when none
         seen: [64]u32,          // the new items whose description was shown: no longer new when the screen closes
         nseen: usize,
+        would_use: bool,        // a click on the picked row would use its item (the Use Item button's colour, with the cooldown)
     }
 
     fn new {} -> State {
-        return State{ opened = false, who = obj::INVALID, filter = FILTER_ALL, picked = obj::INVALID, box = 0, seen = [obj::INVALID; 64], nseen = 0 }
+        return State{ opened = false, who = obj::INVALID, filter = FILTER_ALL, picked = obj::INVALID, box = 0, seen = [obj::INVALID; 64], nseen = 0, would_use = false }
     }
 
     // The panel was just added, or the leader changed and it must be filled again.
@@ -56,6 +57,11 @@ namespace inventory_panel {
     // Every frame while the panel is shown.
     fn update { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, dt: f32 } {
         if items::notice_done{ &g, box = s.box } { s.box = 0 }
+        // CSWGuiInventory.Render (0x006b4bb0): Use Item is lit while the picked row's click would use the item and
+        // the item cooldown is not running.
+        let mut lit = s.would_use
+        if hud::ruled_of{ w = &w, id = s.who } is some{ value = f } { lit = lit and f.item_ms <= 0 }
+        gui::set_text_color{ &g, panel, tag = "BTN_USEITEM", color = if lit { gui::color_menu{} } else { gui::color_disabled{} } }
     }
 
     // One of the panel's GUI events (BTN_EXIT, Escape and the BTN_CHANGE buttons are the
@@ -210,7 +216,7 @@ namespace inventory_panel {
         return c.rows[@as(usize, row)].user
     }
 
-    // A row was chosen: its description, and the use button's colour says whether it is usable.
+    // A row was chosen: its description, and whether its click would use the item (the use button's colour, update).
     fn pick { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32, user: i64 } -> !bool {
         let id = if user > 0 { @as(u32, user) } else { obj::INVALID }
         s.picked = id
@@ -219,8 +225,7 @@ namespace inventory_panel {
             s.nseen = s.nseen + 1
         }
         try items::show_description{ &g, &w, panel, tag = "LB_DESCRIPTION", id = if id == obj::INVALID { 0 } else { id } }
-        let can = id != obj::INVALID and usable{ &s, &w, id }
-        gui::set_text_color{ &g, panel, tag = "BTN_USEITEM", color = if can { gui::color_menu{} } else { gui::color_disabled{} } }
+        s.would_use = id != obj::INVALID and refusal{ &s, &w, id } == 0
         return true
     }
 
@@ -231,9 +236,10 @@ namespace inventory_panel {
     fn use_picked { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> !bool {
         let id = s.picked
         if id == obj::INVALID or not world::is_valid{ w = &w, id } { return false }
-        if not usable{ &s, &w, id } {
-            let slots = items::equipable_slots{ w = &w, id }
-            s.box = items::notice{ &g, &w, &dev, strref = if slots != 0 { 42485 } else { 42486 } }
+        // The row's own refusal first (its click handler), then OnUseItem's.
+        let refused = refusal{ &s, &w, id }
+        if refused != 0 {
+            s.box = items::notice{ &g, &w, &dev, strref = refused }
             return false
         }
         // In combat only one item may be used each round (OnUseItem: 42409).
@@ -245,22 +251,24 @@ namespace inventory_panel {
                 }
             }
         }
-        let kind = items::base_int{ w = &w, id, column = "itemtype", fallback = 0 }
-        if kind == TYPE_MEDPAC or kind == TYPE_REPAIR_KIT {
-            let v = hud::vitality_of{ w = &w, id = s.who }
-            if v.hp >= v.hp_max {
-                s.box = items::notice{ &g, &w, &dev, strref = 42499 }
-                return false
-            }
-        }
-        if kind == TYPE_RECOVERY_KIT and not any_injured{ &w } {
-            s.box = items::notice{ &g, &w, &dev, strref = 48494 }
-            return false
-        }
         items::use_item{ &w, who = s.who, item = id }
         gui::play_sound{ &g, n = 11 }
         try fill_numbers{ &s, &g, &w, panel }
         return try refill{ &s, &g, &w, &dev, panel }
+    }
+
+    // What a click on the item's row says instead of using it, in the original's order (re/gui.md "Row click"),
+    // 0 when it uses it: 42485 / 42486 the creature cannot use it here, 42499 a medpac or repair kit at full
+    // vitality, 48494 a recovery kit with nobody hurt.
+    fn refusal { mut s: State, mut w: world::World, id: u32 } -> u32 {
+        if not usable{ &s, &w, id } { return if items::equipable_slots{ w = &w, id } != 0 { 42485 } else { 42486 } }
+        let kind = items::base_int{ w = &w, id, column = "itemtype", fallback = 0 }
+        if kind == TYPE_MEDPAC or kind == TYPE_REPAIR_KIT {
+            let v = hud::vitality_of{ w = &w, id = s.who }
+            if v.hp >= v.hp_max { return 42499 }
+        }
+        if kind == TYPE_RECOVERY_KIT and not any_injured{ &w } { return 48494 }
+        return 0
     }
 
     // Whether any party member has lost hit points.

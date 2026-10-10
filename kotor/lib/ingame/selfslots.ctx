@@ -4,8 +4,8 @@
 // usable item, a mine. A click does the selected entry on the leader.
 //
 // What the RE settles: the slot controls, the cycling, the dimmed icon of an entry that cannot be
-// used now (alpha 0.25), the refusal messages with their reason codes (shown for 5 seconds in the
-// combat message bar), the description of the hovered slot's entry in LBL_ACTIONDESC, the
+// used now (alpha 0.25), the refusal messages with their reason codes (shown for 5 seconds in
+// LBL_ACTIONDESC, fading over the last 2.5), the description of the hovered slot's entry there, the
 // request being the leader's own, replacing its queued actions out of combat mode and going behind
 // them in it (use_slot), and the blink. What it does not
 // (UpdateActionMenus, 0x00689d80, is read for its frame only): which powers and items make up
@@ -17,7 +17,9 @@
 //   - items: the other carried items with such an ability the leader can use (stims, shields);
 //     grenades and the like (range L, M) are the target block's, not these;
 //   - mines: the original's rule (0x00616520): trap kits (itemtype 28 with a Trap property) for a
-//     leader who can use Demolitions, named "<kit> (self)"; a click lays one (traps::lay_mine).
+//     leader who can use Demolitions; a click lays one (traps::lay_mine).
+// Every item entry is named "<item> (self)" (0x006193a0). Where the area's RestrictMode is set only plot
+// items are listed, and the worn items are not scanned (0x006197d0).
 // An entry shows dimmed with its reason when the leader cannot use it now: not enough Force
 // points, armour or a weapon the power forbids, a medical item at full vitality, a recovery kit
 // with the party unhurt, the leader dead.
@@ -49,7 +51,8 @@ namespace selfslots {
     const TYPE_RECOVERY_KIT: i32 = 47
 
     // One choice: a power (spells.2da row in `id`, icon from the table) or an item (its object id).
-    struct Entry { id: u32, icon: [24]u8, icon_len: usize, strref: u32, usable: bool, reason: i32 }
+    // `dim`: the icon is drawn at 0.25 (an unusable entry, or a mine while the leader is down, which a click still lays).
+    struct Entry { id: u32, icon: [24]u8, icon_len: usize, strref: u32, usable: bool, reason: i32, dim: bool }
 
     struct Slot {
         entries: [12]Entry,
@@ -61,16 +64,18 @@ namespace selfslots {
     struct State {
         slots: [4]Slot,
         wait: f32,                  // seconds to the next rebuild
-        message: f32,               // seconds the refusal stays up
+        message: f32,               // seconds the refusal stays up in the description label
+        reason: i32,                // and which one it is
         blink: [4]f32,              // seconds left of each slot's blink
         hover: i32,                 // the slot under the pointer, -1 none
         shown_leader: u32,
-        labelled: bool,             // the description label shows one of these slots' entries
+        desc_bottom: i32,           // where the description label's bottom lies in the panel (its height follows its text); -1 not read yet
+        desc_panel: u32,            // the panel that was read from
         queued: bool,               // a choice was used in combat mode: an auto-pause banner says "Action added to queue." (ingame)
     }
 
     fn empty_entry {} -> Entry {
-        return Entry{ id = obj::INVALID, icon = [0; 24], icon_len = 0, strref = 0, usable = false, reason = R_OK }
+        return Entry{ id = obj::INVALID, icon = [0; 24], icon_len = 0, strref = 0, usable = false, reason = R_OK, dim = false }
     }
 
     fn empty_slot {} -> Slot {
@@ -78,7 +83,7 @@ namespace selfslots {
     }
 
     fn new {} -> State {
-        return State{ slots = [empty_slot{}; 4], wait = 0.0, message = 0.0, blink = [0.0; 4], hover = -1, shown_leader = obj::INVALID, labelled = false, queued = false }
+        return State{ slots = [empty_slot{}; 4], wait = 0.0, message = 0.0, reason = R_OK, blink = [0.0; 4], hover = -1, shown_leader = obj::INVALID, desc_bottom = -1, desc_panel = 0, queued = false }
     }
 
     // ---- the lists
@@ -93,6 +98,7 @@ namespace selfslots {
         e.strref = strref
         e.usable = usable
         e.reason = reason
+        e.dim = not usable
         sl.entries[sl.count] = e
         sl.count = sl.count + 1
     }
@@ -159,49 +165,57 @@ namespace selfslots {
         let mut reason = R_OK
         if not alive { reason = R_DEAD }
         else if kind == TYPE_MEDPAC or kind == TYPE_REPAIR_KIT {
+            // A poisoned leader at full vitality may still use one (0x006193a0: server creature +0x9e0).
             let v = hud::vitality_of{ w = &w, id = leader }
-            if v.hp >= v.hp_max { reason = R_FULL }
+            if v.hp >= v.hp_max and not hud::is_poisoned{ w = &w, id = leader } { reason = R_FULL }
         } else if kind == TYPE_RECOVERY_KIT and not any_injured{ w = &w } { reason = R_FULL }
         let mut buf: [40]u8
         let icon = items::icon_name{ w = &w, id, into = buf[..] }
         push{ sl = &out[k], id, icon, strref = 0, usable = reason == R_OK, reason }
     }
 
-    // Slots 1 and 2: the party's items with such an ability, and what the leader wears on the arms and belt.
+    // Slots 1 and 2: what the leader wears on the arms and belt first (only where the area's RestrictMode is 0),
+    // then the party's items with such an ability (0x006197d0).
     fn fill_items { mut w: world::World, leader: u32, mut out: [4]Slot } {
-        let ids = list::items{ list = w.bag }
         let mut k: usize = 0
+        if hud::allows_combat{ w = &w } {
+            if hud::creature_of{ w = &w, id = leader } is some{ value = c } {
+                let cells: [3]usize = [obj::SLOT_LEFT_ARM, obj::SLOT_RIGHT_ARM, obj::SLOT_BELT]
+                while k < cells.len {
+                    let id = c.equipped[cells[k]]
+                    k = k + 1
+                    if id != obj::INVALID and world::is_valid{ w = &w, id } { add_item{ &w, leader, id, worn = true, out = &out } }
+                }
+            }
+        }
+        let ids = list::items{ list = w.bag }
+        k = 0
         while k < ids.len {
             let id = ids[k]
             k = k + 1
             if world::is_valid{ w = &w, id } { add_item{ &w, leader, id, worn = false, out = &out } }
         }
-        if hud::creature_of{ w = &w, id = leader } is some{ value = c } {
-            let cells: [3]usize = [obj::SLOT_LEFT_ARM, obj::SLOT_RIGHT_ARM, obj::SLOT_BELT]
-            k = 0
-            while k < cells.len {
-                let id = c.equipped[cells[k]]
-                k = k + 1
-                if id != obj::INVALID and world::is_valid{ w = &w, id } { add_item{ &w, leader, id, worn = true, out = &out } }
-            }
-        }
     }
 
     // Slot 3: the trap kits in the bag (0x006197d0 with 0x00616520: itemtype 28 with a Trap property,
-    // a leader who can use Demolitions and the item). Never dimmed: a kit that cannot be laid is not
-    // listed.
+    // a leader who can use Demolitions and the item; only plot kits where the area's RestrictMode is set).
+    // Always usable, with no refusal: a kit that cannot be laid is not listed; the icon is drawn at 0.25 while
+    // the leader is dead or dying (UpdateActionMenus 0x00689d80), and a click lays it all the same.
     fn fill_mines { mut w: world::World, leader: u32, mut out: [4]Slot } {
         if not traps::can_use_demolitions{ w = &w, who = leader } { return }
+        let down = hud::is_down{ w = &w, id = leader }
         let ids = list::items{ list = w.bag }
         let mut k: usize = 0
         while k < ids.len {
             let id = ids[k]
             k = k + 1
             // (CanUseItem passes for every kit: none has a limiting property, and items::can_use wants a CastSpell one.)
-            if not world::is_valid{ w = &w, id } or not traps::is_kit{ w = &w, item = id } { continue }
+            if not world::is_valid{ w = &w, id } or not traps::is_kit{ w = &w, item = id } or items::is_restricted{ w = &w, id } { continue }
             let mut buf: [40]u8
             let icon = items::icon_name{ w = &w, id, into = buf[..] }
+            if out[3].count >= MAX { continue }
             push{ sl = &out[3], id, icon, strref = 0, usable = true, reason = R_OK }
+            out[3].entries[out[3].count - 1].dim = down
         }
     }
 
@@ -221,7 +235,7 @@ namespace selfslots {
             let e = &sl.entries[i]
             i = i + 1
             h = @wrap_mul(h ^ e.id, 16777619)
-            h = @wrap_mul(h ^ (if e.usable { 1 } else { 2 }), 16777619)
+            h = @wrap_mul(h ^ (if e.usable { 1 } else { 2 }) ^ (if e.dim { 4 } else { 0 }), 16777619)
             h = @wrap_mul(h ^ @as(u32, e.reason), 16777619)
         }
         return h
@@ -262,7 +276,7 @@ namespace selfslots {
         let img = if k == 0 { gui::resolve_img{ &g, fs = &w.fs, &dev, name = e.icon[..e.icon_len] } } else { items::icon_of{ &g, &w, &dev, id = e.id } }
         if img.ok { gui::set_picture{ &g, panel, tag = lbl, texture = img.tex, w = img.w, h = img.h } } else { gui::clear_picture{ &g, panel, tag = lbl } }
         if gui::find_control{ &g, panel, tag = lbl } is some{ value = c } {
-            c.border.tinted = not e.usable
+            c.border.tinted = e.dim
             c.border.color = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = 0.25 }
         }
     }
@@ -273,38 +287,58 @@ namespace selfslots {
         return items::name_of{ w = &w, id = e.id }
     }
 
+    // The description label, as 0x00686e20 sets it every frame: while a refusal's 5 s run, its message, fading
+    // out over the last 2.5 s; else the hovered slot's selected entry, "<name>" for a power and "<item> (self)"
+    // for an item (0x006193a0, dialog.tlk 38005), with " (N)" for a stack of two or more; else nothing.
     fn show_description { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32 } {
-        let k = s.hover
-        let shown = k >= 0 and s.slots[@as(usize, k)].count > 0
-        // The label is shared with the target block's slots: only take it down when it was ours.
-        if not shown and not s.labelled { return }
-        s.labelled = shown
+        let mut b = items::new_text{ w = &w }
+        defer list::free{ list = &b.bytes }
+        let mut alpha: f32 = 1.0
+        if s.message > 0.0 and s.reason > 0 and s.reason < 7 {
+            if s.message * 0.4 < 1.0 { alpha = s.message * 0.4 }
+            _ = @fmt(&b, "{}", world::string_by_strref{ w = &w, strref = REASON_TEXT[@as(usize, s.reason)] })
+        } else if s.hover >= 0 and s.slots[@as(usize, s.hover)].count > 0 {
+            let k = @as(usize, s.hover)
+            let sl = &s.slots[k]
+            let e = sl.entries[index_of{ sl, id = sl.selected }]
+            _ = @fmt(&b, "{}", entry_name{ &w, k, e })
+            if k != 0 {
+                _ = @fmt(&b, " ({})", world::string_by_strref{ w = &w, strref = 38005 })
+                let stack = items::stack_of{ w = &w, id = e.id }
+                if stack > 1 { _ = @fmt(&b, " ({})", stack) }
+            }
+        }
+        set_description{ &s, &g, panel, text = utf8::view{ b }.bytes, alpha }
+    }
+
+    // SetActionDescription (0x00685560): the text, the label's height fitted to it with its bottom kept where
+    // the file puts it, the background given the same box. An empty text leaves nothing to see.
+    fn set_description { mut s: State, mut g: gui::Gui, panel: u32, text: []u8, alpha: f32 } {
+        let c = gui::find_control{ &g, panel, tag = "LBL_ACTIONDESC" } ifnull { return }
+        if s.desc_bottom < 0 or s.desc_panel != panel {
+            s.desc_bottom = c.y + c.h
+            s.desc_panel = panel
+        }
+        let shown = text.len > 0
+        if not slice::eq_bytes{ a = c.text.text, b = text } {
+            gui::set_text{ &g, panel, tag = "LBL_ACTIONDESC", text } iferr {}
+            let h = gui::text_height{ &g, panel, tag = "LBL_ACTIONDESC" }
+            let lc = gui::find_control{ &g, panel, tag = "LBL_ACTIONDESC" } ifnull { return }
+            let x = lc.x
+            let wide = lc.w
+            gui::set_extent{ &g, panel, tag = "LBL_ACTIONDESC", x, y = s.desc_bottom - h, w = wide, h }
+            gui::set_extent{ &g, panel, tag = "LBL_ACTIONDESCBG", x, y = s.desc_bottom - h, w = wide, h }
+        }
         gui::set_visible{ &g, panel, tag = "LBL_ACTIONDESC", visible = shown }
         gui::set_visible{ &g, panel, tag = "LBL_ACTIONDESCBG", visible = shown }
-        if not shown { return }
-        let sl = &s.slots[@as(usize, k)]
-        let e = sl.entries[index_of{ sl, id = sl.selected }]
-        // "Name (N)" for a stack of two or more (0x00686e20: the format "%s (%d)"); a mine's entry
-        // reads "<kit> (self)" before that (0x006193a0, dialog.tlk 38005).
-        let name = entry_name{ &w, k = @as(usize, k), e }
-        let stack = if k == 0 { 1 } else { items::stack_of{ w = &w, id = e.id } }
-        if stack > 1 or k == 3 {
-            let mut b = items::new_text{ w = &w }
-            defer list::free{ list = &b.bytes }
-            _ = @fmt(&b, "{}", name)
-            if k == 3 { _ = @fmt(&b, " ({})", world::string_by_strref{ w = &w, strref = 38005 }) }
-            if stack > 1 { _ = @fmt(&b, " ({})", stack) }
-            gui::set_text{ &g, panel, tag = "LBL_ACTIONDESC", text = utf8::view{ b }.bytes } iferr {}
-            return
-        }
-        gui::set_text{ &g, panel, tag = "LBL_ACTIONDESC", text = name } iferr {}
+        if gui::find_control{ &g, panel, tag = "LBL_ACTIONDESC" } is some{ value = lc } { lc.text.color.a = lc.text.file_color.a * alpha }
     }
 
     // ---- every frame
 
     // Rebuilds the lists from the leader and the bag now and then and refreshes the slots that
     // changed; runs the blinks and takes the refusal message down.
-    fn update { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, dt: f32, combat_message: bool } {
+    fn update { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, dt: f32 } {
         let leader = party::leader{ w = &w }
         s.wait = s.wait - dt
         if s.wait <= 0.0 or leader != s.shown_leader {
@@ -329,7 +363,6 @@ namespace selfslots {
                 k = k + 1
             }
             s.shown_leader = leader
-            show_description{ &s, &g, &w, panel }
         }
         let mut buf: [24]u8
         let mut k: usize = 0
@@ -349,13 +382,8 @@ namespace selfslots {
             }
             k = k + 1
         }
-        if s.message > 0.0 {
-            s.message = s.message - dt
-            if s.message <= 0.0 and not combat_message {
-                gui::set_visible{ &g, panel, tag = "LBL_CMBTMSGBG", visible = false }
-                gui::set_visible{ &g, panel, tag = "LBL_CMBTMODEMSG", visible = false }
-            }
-        }
+        if s.message > 0.0 { s.message = s.message - dt }
+        show_description{ &s, &g, &w, panel }
     }
 
     // ---- events
@@ -370,12 +398,10 @@ namespace selfslots {
         return -1
     }
 
-    // The refusal in the message bar.
-    fn say_reason { mut s: State, mut g: gui::Gui, panel: u32, reason: i32 } {
+    // The refusal: the description label says it for 5 s (show_description).
+    fn say_reason { mut s: State, reason: i32 } {
         if reason <= 0 or reason >= 7 { return }
-        gui::set_strref{ &g, panel, tag = "LBL_CMBTMODEMSG", strref = REASON_TEXT[@as(usize, reason)] } iferr {}
-        gui::set_visible{ &g, panel, tag = "LBL_CMBTMSGBG", visible = true }
-        gui::set_visible{ &g, panel, tag = "LBL_CMBTMODEMSG", visible = true }
+        s.reason = reason
         s.message = MESSAGE_SECONDS
     }
 
@@ -389,7 +415,7 @@ namespace selfslots {
         if sl.count == 0 { return }
         let e = sl.entries[index_of{ sl, id = sl.selected }]
         if not e.usable {
-            say_reason{ &s, &g, panel, reason = e.reason }
+            say_reason{ &s, reason = e.reason }
             gui::play_sound{ &g, n = 2 }
             return
         }

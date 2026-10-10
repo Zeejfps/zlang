@@ -328,6 +328,7 @@ namespace tmpl {
         i.stack = @trunc(u32, number{ doc, s, label = "StackSize", default = @as(i64, i.stack) })
         i.charges = @trunc(u32, number{ doc, s, label = "Charges", default = @as(i64, i.charges) })
         i.identified = flag{ doc, s, label = "Identified", default = i.identified }
+        i.fresh = flag{ doc, s, label = "NewItem", default = i.fresh }
         try fight::read_item{ &w, i, doc, s }
     }
 

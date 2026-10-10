@@ -495,6 +495,15 @@ namespace gui {
         return layout{ font, text = c.text.text, width, lines = g.lines }
     }
 
+    // How tall the control's text is at its own width: its lines times its font's height (0 for no text or font).
+    fn text_height { mut g: Gui, panel: u32, tag: []u8 } -> i32 {
+        let c = find_control{ &g, panel, tag } ifnull { return 0 }
+        if c.text.text.len == 0 or c.text.font < 0 or @as(usize, c.text.font) >= g.fonts.len { return 0 }
+        let font = list::items{ list = g.fonts }[@as(usize, c.text.font)].font
+        let n = layout{ font, text = c.text.text, width = c.w, lines = g.lines }
+        return lines_height{ font, count = n }
+    }
+
     // A confirmation or notice (confirm.gui): `text` over OK and, if `cancel`, Cancel. Modal,
     // centred. The owner takes the activate events of BTN_OK / BTN_CANCEL and closes the panel.
     fn message_box { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, text: []u8, cancel: bool } -> !u32 {

@@ -259,6 +259,8 @@ namespace save {
         try put_byte{ &b, owner = s, label = "Charges", v = @trunc(u8, i.charges) }
         try put_bool{ &b, owner = s, label = "Identified", v = i.identified }
         try put_bool{ &b, owner = s, label = "NonEquippable", v = i.non_equippable }
+        // Item flag bit 7 (SaveItem 0x0055ccd0): still new to the party after a load.
+        try put_bool{ &b, owner = s, label = "NewItem", v = i.fresh }
         // Whether the item goes into its owner's body bag (gff-save.md "ItemList/Dropable"): without it every
         // creature in a loaded game dies with its loot gone.
         try put_bool{ &b, owner = s, label = "Dropable", v = i.droppable }

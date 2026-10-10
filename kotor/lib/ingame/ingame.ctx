@@ -749,7 +749,7 @@ namespace ingame {
             ui.turn_to = ui.hud.swing_to
             ui.hud.swing_to = obj::INVALID
         }
-        selfslots::update{ s = &ui.selfs, g = &ui.gui, &w, &dev, panel = ui.hud.panel, dt, combat_message = ui.hud.combat }
+        selfslots::update{ s = &ui.selfs, g = &ui.gui, &w, &dev, panel = ui.hud.panel, dt }
         let events = gui::take_events{ g = &ui.gui }
         let mut i: usize = 0
         while i < events.len {

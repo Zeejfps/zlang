@@ -91,7 +91,7 @@ Save and load: disarm 148 in `detect_disarm.txt`'s way, `save NAME`, then `--loa
 
 | Behaviour | Evidence | Status | Test |
 |---|---|---|---|
-| The HUD's fourth self slot ("Activate Mine", 48295) lists the bag's trap kits (itemtype 28 passing CanUseItem; a kit with a Trap property also needs it usable and a leader who can use Demolitions; non-plot kits are dropped where the area's RestrictMode is set), named "<kit> (self)" (38005), the item's own icon; the entry's usable flag is never cleared (no refusal reason), but its icon is drawn at 0.25 while the leader is dead or dying | 0x00619db0, 0x006197d0, 0x00616520, 0x006193a0, UpdateActionMenus 0x00689d80 | open: ours never dims it and ignores RestrictMode (the worn items the original also scans are never kits; every shipped kit has a Trap property) | `recover_lay.txt` |
+| The HUD's fourth self slot ("Activate Mine", 48295) lists the bag's trap kits (itemtype 28 passing CanUseItem; a kit with a Trap property also needs it usable and a leader who can use Demolitions; non-plot kits are dropped where the area's RestrictMode is set), named "<kit> (self)" (38005), the item's own icon; the entry's usable flag is never cleared (no refusal reason), but its icon is drawn at 0.25 while the leader is dead or dying | 0x00619db0, 0x006197d0, 0x00616520, 0x006193a0, UpdateActionMenus 0x00689d80 | matches (ours never dimmed it and ignored RestrictMode; the worn items the original also scans are never kits; every shipped kit has a Trap property) | `recover_lay.txt` |
 | A click lays the kit at the leader's feet: SETTRAP with the leader as the target and no point, in place of its queue; refused with 15 of the party's mines in the area or without Demolitions | 0x0060f590, UseItem property 46 branch, 0x005089d0 | matches | `recover_lay.txt`, `enemy_mine.txt` |
 | 2 s of `setmine` (10140), `gui_minearm` 750 ms in; Demolitions (+2 with more than 4 base ranks) + 20 or d20 against traps.2da SetDC: success lays it; a miss by 10 or less (or any miss taking 20) lays nothing and keeps the kit; a worse miss (in combat) still lays it | SETTRAP | matches (ours would also lay on a worse miss taking 20, which the kits' SetDC of 15 to 25 never allows) | `recover_lay.txt` (35 vs 15), `enemy_mine.txt` (19 vs 15, in combat) |
 | The new mine: a 4 x 4 m trigger at the setter's feet, the setter's faction, CreatorId and SetByPlayerParty, the type's TrapName and TrapScript, detect and disarm DCs = the roll's total + the type's mods, detectable, disarmable, one-shot; the kit is spent (one off the stack, only from the party's bag); sound set 0x13 on success, 0x18 on a failure (also a worse miss that laid it) | SETTRAP | matches | `recover_lay.txt` |
@@ -115,9 +115,6 @@ are open: no shipped script calls them.
 ## Known gaps
 
 - No action-timer bar: the original's client drops the message too (0x00654a30).
-- The self slot's description label (175 px wide in mipc28x6) wraps "Minor Frag Mine (self)" onto two lines
-  and our GUI shows the last, "(self)"; the original fits the label's height to the text, anchored at the
-  bottom (`SetActionDescription` 0x00685560): a label-fitting question for the GUI.
 - The combat log words the trap rolls with 1405, not the original's 1408 (section 4).
 - Laying a mine ends our stealth; the original keeps it (section 6).
 - Crossing a trap's outline does not set it off here (section 5).

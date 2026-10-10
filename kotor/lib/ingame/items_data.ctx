@@ -491,6 +491,13 @@ namespace items {
         return false
     }
 
+    // Whether the area's RestrictMode (area +0x2b0) keeps the item from use: the item test 0x00616520 refuses
+    // every non-plot item there, before anything else.
+    fn is_restricted { w: *world::World, id: u32 } -> bool {
+        let o = world::object{ w, id } ifnull { return false }
+        return not o.plot and not hud::allows_combat{ w }
+    }
+
     // The self slot that lists the item for `who`, 0 when the item is not usable from the inventory or the
     // HUD (docs/re/gui.md "Action menus"; the original's test is 0x00616520, called with every category by
     // the inventory's Useable filter and its row click, and per category by the HUD's lists):
@@ -499,8 +506,10 @@ namespace items {
     //     (disguises, energy shields, droid devices, plot serums), a droid utility, droid shield or
     //     forearm shield (12, 13, 20) only while worn; grenades and the rest are not usable from here;
     //   3 mine: ItemType 28 with the Trap property, for a creature with the Demolitions skill.
-    // And CanUseItem passes (limits, proficiency): `can_use`, except that a mine has no ability.
+    // And CanUseItem passes (limits, proficiency): `can_use`, except that a mine has no ability. Where the area's
+    // RestrictMode is set only plot items pass (`is_restricted`).
     fn self_slot_of { mut w: world::World, who: u32, id: u32, worn: bool } -> usize {
+        if is_restricted{ w = &w, id } { return 0 }
         let kind = base_int{ w = &w, id, column = "itemtype", fallback = 0 }
         if kind == 28 {
             let ri = rules_item_of{ w = &w, id } ifnull { return 0 }

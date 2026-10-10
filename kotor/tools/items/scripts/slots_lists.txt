@@ -1,5 +1,7 @@
-# The HUD's self slots after the original's list rules: stims and a worn energy shield in the second slot,
-# medpacs in the first, grenades in neither.
+# The HUD's self slots after the original's list rules: stims and a worn energy shield in the second slot (the
+# worn forearm bands first), medpacs in the first, grenades in neither. Each item entry reads "<item> (self)",
+# with " (N)" for a stack (the description label, its height fitted to the text); at full vitality a click on the
+# medpac slot says "Full Health" there for 5 s.
 4 ui giveitem g_i_frarmbnds01 1 equip
 4 ui giveitem g_i_adrnaline001 3
 4 ui giveitem g_w_fraggren01 4
@@ -7,8 +9,14 @@
 4 ui giveitem g_i_drdshld001
 4 ui stat hp 6
 40 ui movectl BTN_ACTION2
+42 ui ctl LBL_ACTIONDESC
 60 ui clickctl BTN_ACTIONDOWN2
 70 ui movectl BTN_ACTION2
+72 ui ctl LBL_ACTIONDESC
 80 ui clickctl BTN_ACTIONDOWN2
 90 ui movectl BTN_ACTION2
 100 ui movectl BTN_ACTION1
+102 ui ctl LBL_ACTIONDESC
+104 ui stat hp 22
+112 ui clickctl BTN_ACTION1
+125 ui ctl LBL_ACTIONDESC

@@ -1,0 +1,8 @@
+# An item the party has not looked at yet stays new through a save (the item's NewItem field): after the load the
+# "New Items" filter still lists the pistol.
+4 ui giveitem g_w_blstrpstl001
+20 save NEWITEM
+40 load kotor/out/items/saves_new_saved/000002 - Game1
+80 ui key i
+100 ui clickctl BTN_QUESTITEMS
+110 ui ctl LB_ITEMS ~Blaster_Pistol

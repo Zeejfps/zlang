@@ -1,0 +1,10 @@
+# The inventory's Use Item button is lit only while the pointed-at row's click would use the item
+# (CSWGuiInventory.Render): dim for a medpac at full vitality, lit once the leader is hurt.
+5 ui stat hp 22
+10 ui key i
+20 ui movectl LB_ITEMS ~Medpac
+24 ui ctl BTN_USEITEM
+30 ui stat hp 6
+32 ui movectl LB_ITEMS 0
+40 ui movectl LB_ITEMS ~Medpac
+44 ui ctl BTN_USEITEM

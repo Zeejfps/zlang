@@ -23,6 +23,9 @@ expect() {
 }
 
 expect inv_click    bunk inv_click.txt        220 "leader hp 18 of 22" "Medpac x1"
+expect inv_button   bunk inv_button.txt        50 "BTN_USEITEM.* colour 0.0 0.33 0.49" "BTN_USEITEM.* colour 0.0 0.66 0.98"
+rm -rf kotor/out/items/saves_new_saved
+expect new_saved    bunk new_saved.txt         120 "ctl: LB_ITEMS in inventory .* rows 1 "
 expect equip_prev   bunk equip_preview.txt    160 "worn 1: 202 Clothing" "worn 1: 288 Combat Suit" "worn 1: 289 Heavy Combat Suit"
 expect grenade      uppercity grenade.txt     300 "hp -11" "Frag Grenade x3"
 expect security     bunk security2.txt        260 "\*success\* : (Take 20 + 5 = 25 vs. DC 12)"

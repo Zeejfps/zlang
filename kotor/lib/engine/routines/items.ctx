@@ -113,9 +113,24 @@ namespace rt_item {
         while k < @as(usize, ri.nprops) {
             let p = ri.props[k]
             k = k + 1
-            if @as(i32, p.name) == rules::ip::CAST_SPELL and rules::prop_active{ item = ri, p = &p } { return @as(i32, p.subtype) }
+            if @as(i32, p.name) == rules::ip::CAST_SPELL and rules::prop_active{ item = ri, p = &p } {
+                // The item test (0x00616520) refuses an item whose first power is spent for now.
+                if is_recharging{ w, it, at = k - 1, p = &p } { return -1 }
+                return @as(i32, p.subtype)
+            }
         }
         return -1
+    }
+
+    // Whether property `at` of the item waits out its per-minute use (iprp_chargecost rows 14 to 18: 1 to 5
+    // minutes of world time; CSWSItem::AIUpdate 0x0055cb60 makes it Useable again). The wait is not saved: a
+    // load makes every such property usable, as InitUsesPerDay does.
+    fn is_recharging { w: *world::World, it: *obj::Item, at: usize, p: *rules::Prop } -> bool {
+        if at >= 32 or (it.spent_props & (@as(u32, 1) << @as(u32, at))) == 0 { return false }
+        if p.cost_value < 14 or p.cost_value > 18 { return false }
+        let now = clock::now_ms{ c = w.clock }
+        if now < it.spent_at_ms { return false }
+        return now - it.spent_at_ms < @as(u64, p.cost_value - 13) * 60000
     }
 
     // Puts `item` in the inventory of `o`, joining a stack of the same blueprint that has room for
@@ -190,11 +205,13 @@ namespace rt_item {
         _ = remove_from_inventory{ &w, o = holder, item }
     }
 
-    // The item's use of `spell` is spent as the cast begins (party-items-saves.md 5.10): a single-use
-    // property (iprp_chargecost row 1: medpacs, stims, grenades) takes one from the stack and the
-    // item goes with the last one; an "n charges per use" row (2..6) takes 7 - row charges. Uses per
-    // day and per minute are not counted, so those items stay free (HOOK: the property's UsesPerDay
-    // is read but never spent).
+    // The item's use of `spell` is spent (party-items-saves.md 5.10, ConsumePropertyUse 0x0055de20): a
+    // single-use property (iprp_chargecost row 1: medpacs, stims, grenades) takes one from the stack and the
+    // item goes with the last one; an "n charges per use" row (2..6) takes 7 - row charges when there are that
+    // many, and when no charged power is left that the charges can pay for, the item goes too (not a stim,
+    // medpac or recovery kit) provided its last usable property is such a spent power; a per-minute row
+    // (14..18) is spent until 1 to 5 minutes of world time pass (`is_recharging`). Uses per day (8..12) are
+    // in no shipped item's data and stay free (HOOK).
     fn spend_use { mut w: world::World, item: u32, spell: i32 } {
         let io = world::object{ w = &w, id = item } ifnull { return }
         let it = obj::item{ o = io } ifnull { return }
@@ -216,11 +233,39 @@ namespace rt_item {
                 }
             } else if p.cost_value >= 2 and p.cost_value <= 6 {
                 let spent = @as(u32, 7 - p.cost_value)
-                it.charges = if it.charges > spent { it.charges - spent } else { 0 }
+                if it.charges >= spent { it.charges = it.charges - spent }
                 ri.charges = @as(i32, it.charges)
+                if charges_ran_out{ w = &w, it, ri } {
+                    notices::item_lost{ &w, who = it.possessor, item }
+                    forget_item{ &w, item }
+                    world::destroy{ &w, id = item }
+                }
+            } else if p.cost_value >= 14 and p.cost_value <= 18 and k - 1 < 32 {
+                it.spent_props = it.spent_props | (@as(u32, 1) << @as(u32, k - 1))
+                it.spent_at_ms = clock::now_ms{ c = w.clock }
             }
             return
         }
+    }
+
+    // After a charged use: no charged CastSpell power can be paid any more, the item's last usable property is
+    // one of them, and it is not a stim, medpac or recovery kit (ConsumePropertyUse's test of the last property
+    // it walked, then of the others).
+    fn charges_ran_out { w: *world::World, it: *obj::Item, ri: *rules::Item } -> bool {
+        let kind = twoda::get_int{ t = w.tables.baseitems, row = @as(usize, it.base), column = "itemtype" } ifnull 0
+        if kind == 25 or kind == 45 or kind == 47 { return false }
+        let mut last_spent = false
+        let mut k: usize = 0
+        while k < @as(usize, ri.nprops) {
+            let p = ri.props[k]
+            k = k + 1
+            if not rules::is_usable_property{ name = @as(i32, p.name) } { continue }
+            let charged = @as(i32, p.name) == rules::ip::CAST_SPELL and p.cost_value >= 2 and p.cost_value <= 6
+            let payable = charged and it.charges >= @as(u32, 7 - p.cost_value)
+            if payable { return false }
+            last_spent = charged
+        }
+        return last_spent
     }
 
     fn cursor_of { w: *world::World, o: *obj::Object } -> usize {
