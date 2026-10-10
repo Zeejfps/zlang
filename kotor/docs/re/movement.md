@@ -154,14 +154,15 @@ frame there is a player creature, calls slot 10, **`CSWCPlayerControl::Update(dt
    - `K` (`CSWCCreature::GetAcceleration` `0x00610590`): the same block's `+0x58`, or 15.0 in
      stealth; 25.0 when there is no creature. When `vmax < 1.8`, `K` is scaled by `vmax / 1.8`.
      (high for the code, low for where `+0x58` comes from)
-7. **Moving**: only when the frame's displacement `|Δp|` is above 0.033 m (`|Δp|²` >
-   0.001089; any displacement when `vmax` ≥ 5000). The creature's facing, flattened and
+7. **Moving**: whenever the frame's displacement `|Δp|` is above 0 (`|Δp|²` > 0); the floor is
+   0.033 m (`|Δp|²` > 0.001089) only when `vmax` ≥ 5000, a debug speed (the asm at `0x0067a395`
+   compares GetMaxSpeed with 5000.0 at `0x00743fdc` and loads 0.0 from `0x0073d700` when it is
+   below; an earlier reading had the two the other way round). The creature's facing, flattened and
    normalised, is set on the client creature, and the step is `|Δp|` taken **along that
    facing** (not along `v`). The client moves only when the new speed |v| is above 1.0 m/s and
    finite: `CSWCCreature::MoveDirect(pos + facing·|Δp|)` (1.3). If that fails, the remembered
    facing is cleared. After the attempt, `0x0060b920` runs for the party leader: it leaves
-   free-look and clears the chase camera's turn-toward-object. The 0.033 m gate is per frame, so
-   at high frame rates slow speeds do not move at all (med, needs a runtime check).
+   free-look and clears the chase camera's turn-toward-object. (high)
 8. Otherwise (no step this frame), in combat mode (camera mode 6), a leader that is not busy
    turns to face the current target (client `+0x2b4`) when that is a creature whose reputation
    towards it is 10 or less (hostile), by at most 900 °/s · dt (`0x007a25f4`), on the server
