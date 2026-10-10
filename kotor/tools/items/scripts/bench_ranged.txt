@@ -1,21 +1,36 @@
 # The upgrade bench for a blaster, by pointer clicks: a category, a row of the item list (one click on a row that is
 # not selected takes it to the bench), two slots filled and one emptied again, Assemble. The party's stock follows
 # (scope x2 to x1, energy cell given back, hair trigger used) and the upgrades are on the blaster (bits 16 and 19).
-#   LOG=actions sh kotor/tools/items/run.sh bench_ranged module:ebo_m12aa kotor/tools/items/scripts/bench_ranged.txt 330
+# Carth is available but not in the area: the list starts with his blaster (FillItemList lists the worn items of every
+# available companion, made for the bench), and he is gone again once the bench closes, and listed again when it opens.
+# The count box gives how many of the hilit slot's upgrade the party holds (2 scopes, 1 once one is in).
+#   LOG=actions sh kotor/tools/items/run.sh bench_ranged module:ebo_m12aa kotor/tools/items/scripts/bench_ranged.txt 380
 4 ui giveitem g_w_blstrpstl005
 4 ui giveitem g_w_blstrrfl005
 4 ui giveitem g_i_upgrade001 2
 4 ui giveitem g_i_upgrade002
 4 ui giveitem g_i_upgrade004
+4 ui avail 2
 60 ui bench
 90 ui clickctl BTN_RANGED
-120 ui clickctl LB_ITEMS 1
+110 ui ctl LB_ITEMS
+110 ui ctl LB_ITEMS ~Carth
+112 ui where carth
+120 ui clickctl LB_ITEMS 2
 150 ui ctl BTN_UPGRADE43
 150 ui ctl BTN_UPGRADE31
+150 ui ctl LBL_UPGRADE_COUNT
 170 ui clickctl BTN_UPGRADE41
+180 ui ctl LBL_UPGRADE_COUNT
 190 ui clickctl BTN_UPGRADE42
 210 ui clickctl BTN_UPGRADE44
 230 ui clickctl BTN_UPGRADE42
 250 ui clickctl BTN_ASSEMBLE
 270 ui ctl LB_ITEMS
 280 ui inv
+290 ui clickctl BTN_BACK
+300 ui clickctl BTN_BACK
+310 ui where carth
+320 ui bench
+340 ui clickctl BTN_RANGED
+360 ui ctl LB_ITEMS ~Carth

@@ -91,6 +91,9 @@ namespace ups {
         loaded: bool,
         preview_up: [25]u32,
         preview_col: [7]u32,
+        // companions who are not in the area, made for the bench from their AVAILNPC file (or
+        // blueprint) and kept again when it closes; OBJECT_INVALID for the others
+        borrowed: [9]u32,
     }
 
     fn new {} -> State {
@@ -103,6 +106,7 @@ namespace ups {
         s.slot_worn = -1
         s.preview_up = [obj::INVALID; 25]
         s.preview_col = [obj::INVALID; 7]
+        s.borrowed = [obj::INVALID; 9]
         return s
     }
 }

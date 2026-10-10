@@ -1,6 +1,6 @@
 # The upgrade bench with nothing to upgrade (a party that wears no upgradeable item): every category is dead. The button
-# is disabled and its picture is hidden (the original flips the label's visible bit), a click on it does nothing, and
-# Close leaves.
+# stays enabled (CSWGuiUpgradeSelect::OnPanelAdded only dims its text) and its picture is hidden (the original flips the
+# label's visible bit), a click on it opens nothing (the categories stay), and Close leaves.
 #   LOG=actions sh kotor/tools/items/run.sh bench_empty module:ebo_m12aa kotor/tools/items/scripts/bench_empty.txt 200
 60 ui bench
 90 ui ctl BTN_RANGED

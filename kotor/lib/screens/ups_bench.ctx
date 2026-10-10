@@ -35,7 +35,7 @@ namespace ups {
         if item != obj::INVALID and world::is_valid{ w = &w, id = item } {
             s.category = category_of{ s = &s, w = &w, item }
             if s.category != CAT_NONE {
-                try take_item{ &s, &g, &w, &dev, item, owner = holder_of{ w = &w, item }, slot = worn_slot_of{ w = &w, item } }
+                try take_item{ &s, &g, &w, &dev, item, owner = holder_of{ s = &s, w = &w, item }, slot = worn_slot_of{ s = &s, w = &w, item } }
                 return
             }
         }
@@ -52,25 +52,133 @@ namespace ups {
         s.list = 0
         s.sel = 0
         drop_previews{ &s, &w }
+        return_companions{ &s, &w }
         gui::play_sound{ &g, n = 5 }
         s.open = false
     }
 
     // Who wears the item, or OBJECT_INVALID when it is in the bag.
-    fn holder_of { w: *world::World, item: u32 } -> u32 {
-        let members = party::members{ w }
+    fn holder_of { s: *State, w: *world::World, item: u32 } -> u32 {
+        let mut who: [11]u32
+        let n = wearers{ s, w, out = &who }
         let mut m: usize = 0
-        while m < members.len {
-            if equip::slot_of_item{ w, id = members[m], item } >= 0 { return members[m] }
+        while m < n {
+            if equip::slot_of_item{ w, id = who[m], item } >= 0 { return who[m] }
             m = m + 1
         }
         return obj::INVALID
     }
 
-    fn worn_slot_of { w: *world::World, item: u32 } -> i32 {
-        let who = holder_of{ w, item }
+    fn worn_slot_of { s: *State, w: *world::World, item: u32 } -> i32 {
+        let who = holder_of{ s, w, item }
         if who == obj::INVALID { return -1 }
         return equip::slot_of_item{ w, id = who, item }
+    }
+
+    // ---- the wearers
+
+    // The creatures whose worn items the bench lists (FillItemList 0x006c5b90, AddCreatureItems
+    // 0x006c4960): the player's creature (the one the player controls), then every NPC slot 0 to
+    // 8 that is available and selectable, in the party or not, in the area or not
+    // (borrow_companions). Ours also lists the player's own character when another member leads,
+    // and each creature once.
+    fn wearers { s: *State, w: *world::World, mut out: [11]u32 } -> usize {
+        let mut n: usize = 0
+        if world::is_valid{ w, id = w.pc } {
+            out[n] = w.pc
+            n = n + 1
+        }
+        if w.player != w.pc and party::is_member{ w, id = w.player } {
+            out[n] = w.player
+            n = n + 1
+        }
+        let mut k: usize = 0
+        while k < 9 {
+            let id = companion{ s, w, n = k }
+            k = k + 1
+            if id == obj::INVALID or listed_already{ who = out[..n], id } { continue }
+            out[n] = id
+            n = n + 1
+        }
+        return n
+    }
+
+    fn listed_already { who: []u32, id: u32 } -> bool {
+        let mut i: usize = 0
+        while i < who.len {
+            if who[i] == id { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // NPC slot `n`'s creature when the slot is available and selectable: the one in the area, else
+    // the one the bench made.
+    fn companion { s: *State, w: *world::World, n: usize } -> u32 {
+        if not w.party.available[n] or not w.party.selectable[n] { return obj::INVALID }
+        if world::is_valid{ w, id = w.party.npcs[n] } { return w.party.npcs[n] }
+        return if world::is_valid{ w, id = s.borrowed[n] } { s.borrowed[n] } else { obj::INVALID }
+    }
+
+    // GetNPCObject (0x00564700) with its make flag, as FillItemList calls it: a companion who is
+    // available but not in the area is made for the bench from what was kept of it (AVAILNPC<n>),
+    // else from its blueprint. The world stands still while the bench is up; return_companions
+    // keeps it again and removes it when the bench closes.
+    fn borrow_companions { mut s: State, mut w: world::World } {
+        party::prune{ &w }
+        let mut n: usize = 0
+        while n < 9 {
+            if s.borrowed[n] == obj::INVALID and w.party.available[n] and w.party.selectable[n] and not world::is_valid{ w = &w, id = w.party.npcs[n] } {
+                s.borrowed[n] = make_companion{ &w, n }
+            }
+            n = n + 1
+        }
+    }
+
+    fn make_companion { mut w: world::World, n: usize } -> u32 {
+        let kept = save::npc_from_store{ &w, slot = n } iferr { null }
+        if kept is some{ value = id } { return id }
+        if resref::is_empty{ r = w.party.templates[n] } { return obj::INVALID }
+        let mut blueprint = w.party.templates[n]
+        let made = tmpl::spawn{ &w, kind = obj::Kind::creature, template = resref::bytes{ r = &blueprint }, position = math::vec3::zero{}, orientation = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 } } iferr err{ error } {
+            _ = @fmt(&w.io, "kotor: upgrade bench: companion {}: {}\n", n, error)
+            return obj::INVALID
+        }
+        return made
+    }
+
+    // The companions the bench made go back to their AVAILNPC files (SaveNPCState), with whatever
+    // the bench changed on them, and leave the world with what they wear and carry.
+    fn return_companions { mut s: State, mut w: world::World } {
+        let mut n: usize = 0
+        while n < 9 {
+            let id = s.borrowed[n]
+            s.borrowed[n] = obj::INVALID
+            if world::is_valid{ w = &w, id } {
+                w.party.npcs[n] = id
+                save::save_npc{ &w, slot = n } iferr err{ error } { _ = @fmt(&w.io, "kotor: upgrade bench: {}\n", error) }
+                w.party.npcs[n] = obj::INVALID
+                drop_creature{ &w, id }
+            }
+            n = n + 1
+        }
+    }
+
+    fn drop_creature { mut w: world::World, id: u32 } {
+        if hud::creature_of{ w = &w, id } is some{ value = c } {
+            let mut e: usize = 0
+            while e < obj::EQUIP_SLOTS {
+                if c.equipped[e] != obj::INVALID { world::destroy{ &w, id = c.equipped[e] } }
+                e = e + 1
+            }
+            let mut k = c.inventory.len
+            while k > 0 {
+                k = k - 1
+                let items = list::items{ list = c.inventory }
+                if k < items.len { world::destroy{ &w, id = items[k] } }
+            }
+        }
+        world::destroy{ &w, id }
     }
 
     // ---- upgradesel
@@ -80,16 +188,17 @@ namespace ups {
         gui::ensure_backdrop{ &g, fs = &w.fs, &dev, kind = 0 }
         s.mode = MODE_CATEGORIES
         s.hot = 0
+        borrow_companions{ &s, &w }
         let mut first: i32 = -1
         let mut c: i32 = 1
         while c <= 4 {
             let n = collect{ &s, w = &w, category = c }
             let tag = CAT_TAGS[@as(usize, c - 1)]
-            gui::set_enabled{ &g, panel = s.sel, tag, enabled = n > 0 }
+            // CSWGuiUpgradeSelect::OnPanelAdded (0x006c4520) leaves the button enabled (it still
+            // hilights; OnCategory opens nothing for it), dims its text and flips the visible bit of
+            // the category's picture: a category the party has nothing for shows no picture, so
+            // nobody takes it for a button that answers.
             gui::set_text_color{ &g, panel = s.sel, tag, color = if n > 0 { gui::color_menu{} } else { gui::color_disabled{} } }
-            // CSWGuiUpgradeSelect::OnPanelAdded also flips the visible bit of the category's picture
-            // (0x006c4520): a category the party has nothing for shows no picture, so nobody takes it
-            // for a button that does not answer.
             gui::set_visible{ &g, panel = s.sel, tag = CAT_ICON_LABELS[@as(usize, c - 1)], visible = n > 0 }
             if n > 0 and first < 0 { first = c }
             c = c + 1
@@ -100,20 +209,21 @@ namespace ups {
         }
     }
 
-    // The upgradeable items of a category: what the party's members wear, then the party's bag.
+    // The upgradeable items of a category: what the wearers wear, then the party's bag.
     fn collect { mut s: State, w: *world::World, category: i32 } -> usize {
         s.nlisted = 0
-        let members = party::members{ w }
+        let mut who: [11]u32
+        let nwho = wearers{ s = &s, w, out = &who }
         let mut m: usize = 0
-        while m < members.len {
-            if hud::creature_of{ w, id = members[m] } is some{ value = c } {
+        while m < nwho {
+            if hud::creature_of{ w, id = who[m] } is some{ value = c } {
                 let mut slot: usize = 0
                 while slot < obj::EQUIP_SLOTS {
                     let id = c.equipped[slot]
                     slot = slot + 1
                     if id == obj::INVALID or not world::is_valid{ w, id } or s.nlisted >= MAX_ITEMS { continue }
                     if category_of{ s = &s, w, item = id } == category {
-                        s.listed[s.nlisted] = Listed{ item = id, owner = members[m], slot = @as(i32, slot - 1) }
+                        s.listed[s.nlisted] = Listed{ item = id, owner = who[m], slot = @as(i32, slot - 1) }
                         s.nlisted = s.nlisted + 1
                     }
                 }
@@ -254,14 +364,15 @@ namespace ups {
             if two_hands and hand == obj::SLOT_RIGHT_WEAPON { take_partner{ &s, &w, owner, hand } }
             if not equip::unequip_item{ &w, id = owner, slot = hand } { return }
             if two_hands and hand == obj::SLOT_LEFT_WEAPON { take_partner{ &s, &w, owner, hand } }
-            // Off the hand it went to the bag, where it may have merged into a stack of its twin.
-            unit = if world::is_valid{ w = &w, id = item } { xfer::take_one{ &w, item } } else { bag_unit_like{ &w, template, bits } }
+            // Off the hand it went to the bag (a companion outside the party: its own inventory),
+            // where it may have merged into a stack of its twin.
+            unit = if world::is_valid{ w = &w, id = item } { xfer::take_one{ &w, item } } else { bag_unit_like{ &w, holder = owner, template, bits } }
         } else {
             unit = xfer::take_one{ &w, item }
         }
         if unit == obj::INVALID { return }
-        let pc = world::object{ w = &w, id = w.player } ifnull { return }
-        _ = rt_item::remove_from_inventory{ &w, o = pc, item = unit }
+        let from = world::object{ w = &w, id = if owner != obj::INVALID { owner } else { w.player } } ifnull { return }
+        _ = rt_item::remove_from_inventory{ &w, o = from, item = unit }
         if world::object{ w = &w, id = unit } is some{ value = io } {
             if obj::item{ o = io } is some{ value = it } { it.possessor = obj::INVALID }
         }
@@ -393,8 +504,9 @@ namespace ups {
             }
             dim = not upgrade_available{ s = &s, w = &w, row = @as(usize, slot.fixed) }
         } else {
+            // A lightsaber's empty power slot is never dimmed (FUN_006c3aa0 dims only the typed
+            // slots of the other items).
             generic = "i_powerc"
-            dim = not any_power_available{ s = &s, w = &w }
         }
         let img = if preview != obj::INVALID { items::icon_of{ &g, &w, &dev, id = preview } } else { gui::resolve_img{ &g, fs = &w.fs, &dev, name = generic } }
         if img.ok { gui::set_picture{ &g, panel = p, tag = lbl, texture = img.tex, w = img.w, h = img.h } } else { gui::clear_picture{ &g, panel = p, tag = lbl } }
@@ -402,15 +514,6 @@ namespace ups {
             c.border.tinted = dim
             c.border.color = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = 0.25 }
         }
-    }
-
-    fn any_power_available { s: *State, w: *world::World } -> bool {
-        let mut r: usize = 0
-        while r < ROWS {
-            if type_of_row{ s, row = r } == 0 and (s.bits & (@as(u32, 1) << @as(u32, r))) == 0 and upgrade_available{ s, w, row = r } { return true }
-            r = r + 1
-        }
-        return false
     }
 
     fn desc_tag { s: *State } -> []u8 { return if s.lightsaber { "LB_DESC_LS" } else { "LB_DESC" } }
@@ -456,7 +559,8 @@ namespace ups {
         let strref: u32 = if slot.type_ >= 1 and slot.type_ <= 9 { SLOT_NAME_STR[@as(usize, slot.type_)] } else { 0 }
         try gui::set_text{ &g, panel = p, tag = "LBL_SLOTNAME", text = if strref != 0 { world::string_by_strref{ w = &w, strref } } else { "" } }
         try gui::set_text{ &g, panel = p, tag = "LBL_UPGRADES", text = world::string_by_strref{ w = &w, strref = STR_UPGRADES } }
-        try gui::set_text{ &g, panel = p, tag = "LBL_UPGRADE_COUNT", text = "" }
+        // The count box: how many of the slot's upgrade the party holds (asm 0x006c3d43-0x006c3d88).
+        try chargen::set_number{ &g, panel = p, tag = "LBL_UPGRADE_COUNT", n = if slot.fixed >= 0 { held_count{ s = &s, w = &w, row = @as(usize, slot.fixed) } } else { 0 } }
         let mut b = items::new_text{ w = &w }
         defer list::free{ list = &b.bytes }
         if slot.fixed >= 0 { try slot_property_text{ &s, &w, &b, row = slot.fixed } }

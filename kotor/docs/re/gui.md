@@ -2903,13 +2903,16 @@ In detail (high unless noted):
 - **Categories** (`OnPanelAdded` 0x006c4520). It counts the categories of the PC's and every available selectable NPC's equipped items
   (`FUN_006c2ab0`) and of the party inventory; for each category (lightsaber 1, ranged 2, melee 3, armour 4, in the order of the buttons
   and of the picture labels `LBL_LSABER`, `LBL_RANGED`, `LBL_MELEE`, `LBL_ARMOR`) it sets the **picture label's visible bit** (flag +0x44
-  bit 1) to "has items" and the button's text colour to the menu or the disabled colour. With an item given (`ShowUpgradeScreen(item)`) it
+  bit 1) to "has items" and the button's text colour to the menu or the disabled colour; the button itself stays enabled (it still
+  hilights). The NPCs are slots 0 to 8 (`IsNPCAvailable` and `GetNPCSelectable`), each through `GetNPCObject(slot, 0, 1)`, which makes
+  the creature of a companion who is not in the area. With an item given (`ShowUpgradeScreen(item)`) it
   stores the item (+0xc38) and its category in the item panel and adds that panel at once. Hilighting a category button (event 0,
   `FUN_006c2bd0`) remembers it in +0x1154 and colours `BTN_UPGRADEITEMS` normal when the category has items, disabled (and +0x1154 = 0)
   otherwise. `OnCategory` 0x006c2b60 (0x27, 0x2d; sound 0 for 0x2d) takes the control, or for `BTN_UPGRADEITEMS` the last hilit category
   button (+0x1154), and opens the items panel when the category has items.
 - **Items panel**. `FillItemList` 0x006c5b90 makes one entry per upgradeable item: the PC's equipped items, those of each available
-  selectable NPC (`AddCreatureItems` 0x006c4960: slot bits 0 to 17), then the inventory's. Each entry is a `CSWGuiItemEntry` (0x3a4 bytes)
+  selectable NPC slot 0 to 8 in slot order, in the party or not (`GetNPCObject(slot, 0, 1)`; `AddCreatureItems` 0x006c4960: equipment
+  slot bits 0 to 17), then the inventory's. The PC is the player list's creature; no NPC is skipped for having been listed already. Each entry is a `CSWGuiItemEntry` (0x3a4 bytes)
   with handlers 0 (`FUN_006c4880`: the description of the item in the right box), 0x27 and 0x2d (`OnUpgradeItem`): a click on a row takes
   it. `BTN_UPGRADEITEM` (+0x8a4) acts on the list's selected entry. `OnUpgradeItem` 0x006c2df0: a loose item leaves the inventory (one
   unit of a stack: `SplitItem`), a worn one is unequipped; for a weapon in the right (0x10) or left (0x20) hand with the other hand filled

@@ -169,22 +169,28 @@ K1 has no lab station: the data has no panel for one (a K2 feature).
   ranged, 8 and 9 armour); an upgradeable weapon or armour blueprint carries every property any upgrade
   could give, each tagged with its row, and `Upgrades` bit n installs row n (rules: `prop_active`). The
   category of an item is the type of its first tagged property's row.
-- `upgradesel`: the four categories, enabled by what the party's members wear and the bag holds;
-  clicking one (or Upgrade Items on the hilighted one) opens `upgradeitems`: those items, the worn marked.
-  `ShowUpgradeScreen(item)` goes straight to the bench.
+- `upgradesel`: the four categories, dimmed (text colour, picture hidden; the button stays enabled and a
+  click opens nothing) when nothing the wearers wear or the bag holds is of them. The wearers are the
+  leader and every available, selectable companion: one who is not in the area is made for the bench
+  from its AVAILNPC file (or blueprint), kept out of the area, and written back and removed when the
+  bench closes (`borrow_companions` / `return_companions`). Clicking a category (or Upgrade Items on the
+  hilighted one) opens `upgradeitems`: those items, the worn marked. `ShowUpgradeScreen(item)` goes
+  straight to the bench.
 - Picking an item takes it out of play: a worn one comes off, a stack gives one unit. `upgrade` shows its
   slots: a lightsaber has two power-crystal slots and the colour crystal, a ranged weapon four typed
   slots, a melee weapon three, armour two. An installed upgrade shows its item's icon; an empty typed
-  slot the one that would fit, dimmed when the party has none; an empty power slot the generic icon.
+  slot the one that would fit, dimmed when the party has none; an empty power slot the generic icon,
+  never dimmed. Pointing at a typed slot puts the party's count of its upgrade in `LBL_UPGRADE_COUNT`.
   Clicking an installed slot removes it, an empty typed slot installs the upgrade from the bag, a power
   or colour slot opens a list (`LB_ITEMS`) of the crystals the party has (colour: others than the
   current one).
 - The session is a **ledger**: the item's bits and two sets of rows (to take from the party, to give back)
-  change on the bench and nothing else does. Assemble makes it true (`consume_one`, `create_item`; a new
-  colour crystal replaces the saber with the upcrystals row's saber of the same kind, keeping the upgrade
-  bits and the stolen flag) and puts the item back where it came from (`equip::equip_item`, else the bag);
-  Cancel restores the item as it was. An install that stops the wearer using the item asks 42489 and
-  undoes itself on Cancel.
+  change on the bench and nothing else does, except that a new colour crystal replaces the saber at once
+  with the upcrystals row's saber of the same kind, keeping the upgrade bits and the stolen flag
+  (`swap_saber`; the first saber is kept aside). Assemble makes the ledger true (`consume_one`,
+  `create_item`) and puts the item back where it came from (`equip::equip_item`, else the bag); Cancel
+  restores the item as it was (the first saber). An install in a typed slot that stops the wearer using
+  the item asks 42489 and undoes itself on Cancel; a crystal never asks.
 
 ## Galaxy map (`galaxymap`)
 

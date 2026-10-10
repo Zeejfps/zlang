@@ -48,6 +48,31 @@ namespace ups {
         return n
     }
 
+    // What a slot's count box says (OnSlotHilighted 0x006c3c30): the stack of the first bag item
+    // that is upgrade row `row`, 0 for none. The original moves the units at each click; ours does
+    // at Assemble, so the bench's own moves are counted in here as they would have left the bag.
+    fn held_count { s: *State, w: *world::World, row: usize } -> i32 {
+        if row >= ROWS { return 0 }
+        let template = template_of_row{ s, row }
+        let ids = list::items{ list = w.bag }
+        let mut first: i32 = 0
+        let mut second: i32 = 0
+        let mut k: usize = 0
+        while k < ids.len and second == 0 {
+            if world::object{ w, id = ids[k] } is some{ value = o } {
+                if resref::matches{ r = o.template, name = template } {
+                    let n = if obj::item{ o } is some{ value = it } { @as(i32, it.stack) } else { 1 }
+                    if first == 0 { first = n } else { second = n }
+                }
+            }
+            k = k + 1
+        }
+        // A unit taken from a stack of one leaves the next stack first; one given back joins the first.
+        if s.consume[row] { return if first > 1 { first - 1 } else { second } }
+        if s.give[row] { return first + 1 }
+        return first
+    }
+
     // Takes one unit of the upgrade item made from `template` out of the party's inventory and
     // destroys it. False when there is none.
     fn consume_one { mut w: world::World, template: []u8 } -> bool {
@@ -66,11 +91,12 @@ namespace ups {
         return false
     }
 
-    // One unit of the party's bag that is the item remembered by template and installed upgrades: a
-    // weapon that came off a dual wielder may have merged into a stack with its twin. OBJECT_INVALID
-    // when the bag has none.
-    fn bag_unit_like { mut w: world::World, template: resref::ResRef, bits: u32 } -> u32 {
-        let ids = list::items{ list = w.bag }
+    // One unit of the inventory of `holder` (the party's bag for the party) that is the item
+    // remembered by template and installed upgrades: a weapon that came off a dual wielder may have
+    // merged into a stack with its twin. OBJECT_INVALID when there is none.
+    fn bag_unit_like { mut w: world::World, holder: u32, template: resref::ResRef, bits: u32 } -> u32 {
+        let l = party::inventory_of{ &w, id = holder } ifnull { &w.bag }
+        let ids = list::items{ list = l.* }
         let mut k: usize = 0
         while k < ids.len {
             let id = ids[k]

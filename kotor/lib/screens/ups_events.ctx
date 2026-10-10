@@ -142,16 +142,46 @@ namespace ups {
                 }
                 if s.col_give[@as(usize, row)] { s.col_give[@as(usize, row)] = false } else { s.col_consume[@as(usize, row)] = true }
                 s.colour_new = if row == s.colour_now { -1 } else { row }
+                swap_saber{ &s, &w }
             } else {
+                // No CanEquipItem question here: OnUpgradeChosen asks only OnSlotClicked's.
                 if slot.row != NO_ROW { remove_row{ &s, row = @as(usize, slot.row) } }
-                if row >= 0 {
-                    install_row{ &s, row = @as(usize, row) }
-                    try check_wearer{ &s, &g, &w, &dev, row = @as(usize, row) }
-                }
+                if row >= 0 { install_row{ &s, row = @as(usize, row) } }
             }
             gui::play_sound{ &g, n = 11 }
         }
         try fill_bench{ &s, &g, &w, &dev }
+    }
+
+    // A new colour crystal replaces the saber at once by the upcrystals.2da saber of that colour and
+    // kind, keeping its upgrades and its stolen flag (OnUpgradeChosen 0x006c5510); the saber the
+    // bench opened on is kept aside for Cancel. Going back to the first colour takes that one back.
+    fn swap_saber { mut s: State, mut w: world::World } {
+        if s.colour_new < 0 {
+            if s.original == obj::INVALID { return }
+            world::destroy{ &w, id = s.item }
+            s.item = s.original
+            s.original = obj::INVALID
+            return
+        }
+        let t = twoda::get_string{ t = s.crystals_t, row = @as(usize, s.colour_new), column = saber_column{ w = &w, item = s.item } } ifnull ""
+        let fresh = make_preview{ &w, template = t }
+        if fresh == obj::INVALID { return }
+        set_bits{ &w, item = fresh, bits = s.bits }
+        let first = if s.original != obj::INVALID { s.original } else { s.item }
+        if items::item_of{ w = &w, id = first } is some{ value = old } {
+            if items::item_of{ w = &w, id = fresh } is some{ value = nw } {
+                if old.rules is some{ value = ro } {
+                    if nw.rules is some{ value = rn } { rn.stolen = ro.stolen }
+                }
+            }
+        }
+        if s.original == obj::INVALID { s.original = s.item } else { world::destroy{ &w, id = s.item } }
+        s.item = fresh
+        if w.log.actions {
+            let o = world::object{ w = &w, id = fresh } ifnull { return }
+            _ = @fmt(&w.io, "upgrade bench: the saber is now {}\n", o.tag)
+        }
     }
 
     // ---- leaving
@@ -163,7 +193,17 @@ namespace ups {
             let how: []u8 = if assemble { "assembled" } else { "cancelled" }
             _ = @fmt(&w.io, "upgrade bench: {} {}, upgrades {} (were {})\n", items::name_of{ w = &w, id = s.item }, how, if assemble { s.bits } else { s.orig_bits }, s.orig_bits)
         }
-        if assemble { settle{ &s, &g, &w } } else { set_bits{ &w, item = s.item, bits = s.orig_bits } }
+        if assemble {
+            settle{ &s, &g, &w }
+        } else {
+            // OnCancel restores the backup item: the saber the bench opened on, whatever colour came since.
+            if s.original != obj::INVALID {
+                world::destroy{ &w, id = s.item }
+                s.item = s.original
+                s.original = obj::INVALID
+            }
+            set_bits{ &w, item = s.item, bits = s.orig_bits }
+        }
         put_back_item{ &s, &w }
         let back = s.item
         s.item = obj::INVALID
@@ -180,8 +220,8 @@ namespace ups {
         }
     }
 
-    // The upgrade items the ledger names leave or enter the party's stock, and a new colour
-    // crystal replaces the saber.
+    // The upgrade items the ledger names leave or enter the party's stock (a new colour crystal
+    // replaced the saber when it was chosen: swap_saber).
     fn settle { mut s: State, mut g: gui::Gui, mut w: world::World } {
         let mut r: usize = 0
         while r < ROWS {
@@ -197,24 +237,6 @@ namespace ups {
             r = r + 1
         }
         set_bits{ &w, item = s.item, bits = s.bits }
-        if s.colour_new >= 0 {
-            // The saber is replaced by the one of the new colour that has the same kind, keeping
-            // the upgrades (CSWGuiUpgrade 0x006c5510).
-            let t = twoda::get_string{ t = s.crystals_t, row = @as(usize, s.colour_new), column = saber_column{ w = &w, item = s.item } } ifnull ""
-            let fresh = make_preview{ &w, template = t }
-            if fresh != obj::INVALID {
-                set_bits{ &w, item = fresh, bits = s.bits }
-                if items::item_of{ w = &w, id = s.item } is some{ value = old } {
-                    if items::item_of{ w = &w, id = fresh } is some{ value = nw } {
-                        if old.rules is some{ value = ro } {
-                            if nw.rules is some{ value = rn } { rn.stolen = ro.stolen }
-                        }
-                    }
-                }
-                s.original = s.item
-                s.item = fresh
-            }
-        }
     }
 
     // Whether the bag holds the item itself (a unit split off a stack is not in it).
@@ -249,7 +271,7 @@ namespace ups {
             wear_or_bag{ &s, &w, item = s.item, hand }
             return
         }
-        let other = bag_unit_like{ &w, template = s.partner_template, bits = s.partner_bits }
+        let other = bag_unit_like{ &w, holder = s.owner, template = s.partner_template, bits = s.partner_bits }
         let fits = equip::may_equip{ w = &w, id = s.owner, item = s.item, mask = @as(u32, 1) << @as(u32, s.slot_worn) }
         s.partner = false
         if hand == obj::SLOT_RIGHT_WEAPON {
