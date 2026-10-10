@@ -219,6 +219,10 @@ namespace events {
         if e.kind == PLAYER_ENTER { o.ctx.entering = e.objects[0] }
         if e.kind == PLAYER_EXIT { o.ctx.exiting = e.objects[0] }
         if e.kind == PATH_BLOCKED { o.ctx.blocker = e.objects[0] }
+        // A trap trigger keeps the disarmer for GetLastDisarmed (+0x2a4).
+        if e.kind == DISARM {
+            if obj::trigger{ o } is some{ value = t } { t.trap.last_disarmed = caller }
+        }
         if e.kind == SPELL_CAST_AT {
             o.ctx.last_spell_caster = e.objects[0]
             o.ctx.last_spell = e.ints[0]

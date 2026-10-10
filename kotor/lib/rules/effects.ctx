@@ -711,6 +711,30 @@ namespace rules {
         return n
     }
 
+    // 0x004f5f70, as setting a trap does: the creature's normal invisibility (type 1) and sanctuary
+    // effects go, each with its link. Returns how many effects left.
+    fn remove_invisibility_and_sanctuary { tables: *Tables, mut c: Creature, mut ev: Events } -> i32 {
+        let before = take_snapshot{ c = &c }
+        let mut n = 0
+        let mut i: usize = 0
+        while i < @as(usize, c.nfx) {
+            let e = &c.fx[i]
+            if (e.kind == fx::INVISIBILITY and e.ints[0] == 1) or e.kind == fx::SANCTUARY {
+                if e.id != 0 {
+                    n = n + remove_by_id_quiet{ c = &c, id = e.id, ev = &ev }
+                } else {
+                    remove_one{ c = &c, index = i, ev = &ev }
+                    n = n + 1
+                }
+                i = 0
+                continue
+            }
+            i = i + 1
+        }
+        report_changes{ tables, c = &c, before, ev = &ev }
+        return n
+    }
+
     // RemoveEffectsByCreator: what an item's removal does to the effects it made.
     fn remove_effects_by_creator { tables: *Tables, mut c: Creature, creator: u32, only_dur: i32, mut ev: Events } -> i32 {
         let before = take_snapshot{ c = &c }

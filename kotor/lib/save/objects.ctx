@@ -409,6 +409,8 @@ namespace save {
         try put_bool{ &b, owner, label = "SetByPlayerParty", v = t.party_set }
         try put_bool{ &b, owner, label = "TrapDisarmable", v = t.disarmable }
         try put_bool{ &b, owner, label = "TrapDetectable", v = t.detectable }
+        try put_string{ &b, owner, label = "KeyName", v = t.key }
+        try put_bool{ &b, owner, label = "AutoRemoveKey", v = t.auto_remove_key }
         try put_bool{ &b, owner, label = "PartyDetected", v = t.detected }
         try put_bool{ &b, owner, label = "TrapFlagged", v = t.flagged }
     }

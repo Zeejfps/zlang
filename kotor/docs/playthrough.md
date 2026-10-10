@@ -140,8 +140,8 @@ nothing by mouse; the unlock animation was reset by the fighter one frame in (no
 KeyRequired and KeyName were never read (every locked container opened at DC 1); the failure and key messages were
 sound-set placeholders ("Attack Grunt - not actual text to be translated"); keys did nothing; the block kept a stale
 Security icon once the lock was open. Now: a Security character walks up, works the lock for 1.5 s with the lockpick
-sound, the roll is on the feedback log ("Leia Tana attempts Security on Footlocker : *success* : (Take 20 + 5 = 25
-vs. DC 8)", a d20 in combat), the door opens or the container shows its loot; a failed roll leaves it locked with the
+sound, the roll is on the feedback log ("Leia Tana success Security: 25 (roll 20 + Security 5) vs. DC 8",
+dialog.tlk 1408, a d20 in combat), the door opens or the container shows its loot; a failed roll leaves it locked with the
 roll as the only message; a key-only lock says so; a 0-rank character is not offered Security and hears "Locked";
 a key in the bag opens the lock. The engine's own log line (`--log actions`) has the parts (ranks, key ability, feat,
 roll, DC). Not modelled: the sound-set barks (unlock success and failure, "locked"), AutoRemoveKey, XP (the engine gives none;

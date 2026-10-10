@@ -29,6 +29,16 @@ namespace rt_obj {
         else if routine == nwscript::GetNearestObject { try get_nearest_object{ &w, &vm, argc } }
         else if routine == nwscript::GetNearestObjectToLocation { try get_nearest_object_to_location{ &w, &vm, argc } }
         else if routine == nwscript::GetTrapBaseType { try get_trap_base_type{ &w, &vm, argc } }
+        else if routine == nwscript::GetTrapDisarmable or routine == nwscript::GetTrapDetectable or routine == nwscript::GetTrapFlagged or
+            routine == nwscript::GetTrapOneShot or routine == nwscript::GetTrapDisarmDC or routine == nwscript::GetTrapDetectDC or
+            routine == nwscript::GetIsTrapped { try get_trap_int{ &w, &vm, argc, routine } }
+        else if routine == nwscript::GetTrapDetectedBy { try get_trap_detected_by{ &w, &vm, argc } }
+        else if routine == nwscript::GetTrapCreator { try get_trap_creator{ &w, &vm, argc } }
+        else if routine == nwscript::GetTrapKeyTag { try get_trap_key_tag{ &w, &vm, argc } }
+        else if routine == nwscript::SetTrapDetectedBy { try set_trap_detected_by{ &w, &vm, argc } }
+        else if routine == nwscript::SetTrapDisabled { try set_trap_disabled{ &w, &vm, argc } }
+        else if routine == nwscript::GetLastDisarmed { try get_last_disarmed{ &w, &vm } }
+        else if routine == nwscript::GetLastTrapDetected { try nwvm::push_object{ &vm, id = obj::INVALID } }
         else { return false }
         return true
     }
@@ -498,8 +508,7 @@ namespace rt_obj {
     }
 
     // int GetTrapBaseType(object oTrapObject): TRAP_BASE_TYPE_*, the traps.2da row of the trap on a
-    // door, placeable or trigger. Traps are not loaded yet: the row sits in the object's context
-    // (trap_type, -1 for none) for whoever reads TrapType from the blueprint to set.
+    // door, placeable or trigger: the row sits in the object's context (trap_type, -1 for none).
     fn get_trap_base_type { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetTrapBaseType, argc, i = 0 }
         let o = world::object{ w = &w, id } ifnull {
@@ -507,5 +516,94 @@ namespace rt_obj {
             return
         }
         try nwvm::push_int{ &vm, v = o.ctx.trap_type }
+    }
+
+    // The trap routines (one handler, 0x0054c0e0, and GetIsTrapped 0x0053a000) read a door's,
+    // placeable's or trigger's trap fields; only triggers carry traps here (traps.ctx), so anything
+    // else answers as an object without one: 0, OBJECT_INVALID, "".
+    fn trap_of { w: *world::World, id: u32 } -> ?*mut traps::Trap {
+        let o = world::object{ w, id } ifnull { return null }
+        let t = obj::trigger{ o } ifnull { return null }
+        return &t.trap
+    }
+
+    // int GetTrapDisarmable, GetTrapDetectable, GetTrapFlagged, GetTrapOneShot, GetTrapDisarmDC,
+    // GetTrapDetectDC, GetIsTrapped(object oTrapObject).
+    fn get_trap_int { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let id = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let mut v: i32 = 0
+        if trap_of{ w = &w, id } is some{ value = t } {
+            v = if routine == nwscript::GetTrapDisarmable { if t.disarmable { 1 } else { 0 } }
+                else if routine == nwscript::GetTrapDetectable { if t.detectable { 1 } else { 0 } }
+                else if routine == nwscript::GetTrapFlagged { if t.flagged { 1 } else { 0 } }
+                else if routine == nwscript::GetTrapOneShot { if t.one_shot { 1 } else { 0 } }
+                else if routine == nwscript::GetTrapDisarmDC { t.disarm_dc }
+                else if routine == nwscript::GetTrapDetectDC { t.detect_dc }
+                else { if t.armed { 1 } else { 0 } }
+        }
+        try nwvm::push_int{ &vm, v }
+    }
+
+    // int GetTrapDetectedBy(object oTrapObject, object oCreature). The original keeps a list of who
+    // found it; ours knows only whether the party did, so a party member answers that.
+    fn get_trap_detected_by { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetTrapDetectedBy, argc, i = 0 }
+        let who = try nwarg::object{ &vm, routine = nwscript::GetTrapDetectedBy, argc, i = 1 }
+        let mut v: i32 = 0
+        if trap_of{ w = &w, id } is some{ value = t } {
+            if t.detected and traps::is_party{ w = &w, id = who } { v = 1 }
+        }
+        try nwvm::push_int{ &vm, v }
+    }
+
+    // object GetTrapCreator(object oTrapObject): who laid it, OBJECT_INVALID for the module's own.
+    fn get_trap_creator { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetTrapCreator, argc, i = 0 }
+        let mut v = obj::INVALID
+        if trap_of{ w = &w, id } is some{ value = t } { v = t.creator }
+        try nwvm::push_object{ &vm, id = v }
+    }
+
+    // string GetTrapKeyTag(object oTrapObject): its KeyName.
+    fn get_trap_key_tag { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetTrapKeyTag, argc, i = 0 }
+        let mut key: []u8 = ""
+        if trap_of{ w = &w, id } is some{ value = t } { key = t.key }
+        try nwvm::push_string{ &vm, s = key }
+    }
+
+    // int SetTrapDetectedBy(object oTrap, object oDetector): oDetector has found it; 1 when both are
+    // there. Ours: a party member's find is the party's (an NPC's is kept nowhere).
+    fn set_trap_detected_by { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::SetTrapDetectedBy, argc, i = 0 }
+        let who = try nwarg::object{ &vm, routine = nwscript::SetTrapDetectedBy, argc, i = 1 }
+        let mut v: i32 = 0
+        let found = world::object{ w = &w, id = who }
+        if found != null and obj::creature{ o = found } != null {
+            if trap_of{ w = &w, id } is some{ value = t } {
+                if traps::is_party{ w = &w, id = who } { t.detected = true }
+                v = 1
+            }
+        }
+        try nwvm::push_int{ &vm, v }
+    }
+
+    // void SetTrapDisabled(object oTrap): an armed trap is disarmed as by the script's caller
+    // (DISARM to it, then it goes 1 ms later).
+    fn set_trap_disabled { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::SetTrapDisabled, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull { return }
+        let t = traps::of{ o } ifnull { return }
+        let self = nwvm::self_object{ vm }
+        events::post{ &w, delay_ms = 0, caller = self, target = id, payload = events::Payload::script{ e = events::script_event{ kind = events::DISARM, object = self } } }
+        traps::remove{ &w, id, base = t.base, position = o.position, exploded = false }
+    }
+
+    // object GetLastDisarmed(): on a trap trigger, who disarmed it last (a DISARM event's caller, or
+    // the creature that carried its key).
+    fn get_last_disarmed { mut w: world::World, mut vm: nwvm::Vm } -> ! {
+        let mut v = obj::INVALID
+        if trap_of{ w = &w, id = nwvm::self_object{ vm } } is some{ value = t } { v = t.last_disarmed }
+        try nwvm::push_object{ &vm, id = v }
     }
 }

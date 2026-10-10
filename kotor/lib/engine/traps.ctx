@@ -25,12 +25,18 @@ namespace traps {
         party_set: bool,            // SetByPlayerParty: laid by the player's party
         detected: bool,             // found by the party (one member's success is the party's)
         flagged: bool,              // FLAGTRAP: everyone near finds it, the party sees it
+        key: []mut u8,              // KeyName: a creature carrying an item of this tag disarms it; heap
+        auto_remove_key: bool,      // AutoRemoveKey: that key goes when it does
+        last_disarmed: u32,         // GetLastDisarmed: who disarmed it with the key (+0x2a4)
     }
 
+    // A field missing from every layer reads 0, TrapDetectable and TrapDisarmable included
+    // (LoadTrigger 0x0058da80); TrapOneShot alone defaults to 1.
     fn none {} -> Trap {
         return Trap{
-            armed = false, base = -1, detectable = true, detect_dc = 0, disarmable = true, disarm_dc = 0,
+            armed = false, base = -1, detectable = false, detect_dc = 0, disarmable = false, disarm_dc = 0,
             one_shot = true, creator = obj::INVALID, party_set = false, detected = false, flagged = false,
+            key = slice::empty(u8){}, auto_remove_key = false, last_disarmed = obj::INVALID,
         }
     }
 
@@ -47,6 +53,7 @@ namespace traps {
         t.party_set = flag{ doc, s, label = "SetByPlayerParty", default = t.party_set }
         t.detected = flag{ doc, s, label = "PartyDetected", default = t.detected }
         t.flagged = flag{ doc, s, label = "TrapFlagged", default = t.flagged }
+        t.auto_remove_key = flag{ doc, s, label = "AutoRemoveKey", default = t.auto_remove_key }
         if t.base == 255 { t.base = -1 }        // the BYTE's "none"
         if t.base >= 0 and @as(usize, t.base) < twoda::rows{ t = table } {
             t.detect_dc = twoda::get_int{ t = table, row = @as(usize, t.base), column = "detectdcmod" } ifnull 0
@@ -80,6 +87,38 @@ namespace traps {
         let name = twoda::get_string{ t = w.tables.traps, row = @as(usize, trap.base), column = "model" } ifnull ""
         if name.len == 0 { return "v_mnfrag" }
         return name
+    }
+
+    // The point of trigger `o`'s outline nearest to `from` on the ground plane (0x0058c8a0); the
+    // trigger's position when it has no outline.
+    fn nearest_outline_point { o: *obj::Object, from: math::Vec3 } -> math::Vec3 {
+        let t = obj::trigger{ o } ifnull { return o.position }
+        let n = t.polygon.len
+        if n == 0 { return o.position }
+        let mut best = t.polygon[0]
+        let mut best_d: f32 = 1.0e30
+        let mut i: usize = 0
+        while i < n {
+            let a = t.polygon[i]
+            let b = t.polygon[(i + 1) % n]
+            let ex = b.x - a.x
+            let ey = b.y - a.y
+            let len2 = ex * ex + ey * ey
+            let mut s: f32 = 0.0
+            if len2 > 0.000001 { s = ((from.x - a.x) * ex + (from.y - a.y) * ey) / len2 }
+            if s < 0.0 { s = 0.0 }
+            if s > 1.0 { s = 1.0 }
+            let p = math::Vec3{ x = a.x + ex * s, y = a.y + ey * s, z = a.z + (b.z - a.z) * s }
+            let dx = from.x - p.x
+            let dy = from.y - p.y
+            let d = dx * dx + dy * dy
+            if d < best_d {
+                best_d = d
+                best = p
+            }
+            i = i + 1
+        }
+        return best
     }
 
     // Whether a creature at `at` stands on the trap trigger `o` (CSWSTrigger::InTrigger 0x0058ce40).
@@ -211,8 +250,8 @@ namespace traps {
     // A creature stepped on the trap (OBJECT_ENTER within a metre of it). It goes off unless the
     // creature is immune to traps, of the trap's faction, or not hostile to the one who laid it (the
     // trap itself when nobody did): reputation 10 or less sets it off. Whether anyone had found the
-    // trap does not matter. A trap with a KeyName is disarmed by a creature carrying its key: no
-    // shipped trap has one, so that branch is not here.
+    // trap does not matter. A creature carrying the trap's key disarms it instead (no shipped trap
+    // has a KeyName).
     fn entered { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, who: u32 } {
         let o = world::object{ w = &w, id } ifnull { return }
         let trap = of{ o } ifnull { return }
@@ -224,7 +263,42 @@ namespace traps {
         }
         let source = world::object{ w = &w, id = trap.creator } ifnull o
         if victim.faction == o.faction or world::standing{ w = &w, from = victim.faction, toward = source.faction } > 10 { return }
+        if disarm_with_key{ &w, &vm, engine, id, who } { return }
         spring{ &w, &vm, engine, id, who }
+    }
+
+    // OnTrapEntered's key branch (0x0058d570): an item tagged with the KeyName in the creature's bag
+    // or worn disarms the trap: with AutoRemoveKey the key goes, the creature becomes the trap's last
+    // disarmer, OnDisarm runs as the trap, and the trap is gone. Ours: an empty KeyName matches
+    // nothing (the original may match an item with an empty tag; no shipped trap has a KeyName).
+    fn disarm_with_key { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, who: u32 } -> bool {
+        let o = world::object{ w = &w, id } ifnull { return false }
+        let trap = of{ o } ifnull { return false }
+        if trap.key.len == 0 { return false }
+        let me = world::object{ w = &w, id = who } ifnull { return false }
+        let ids = rt_item::inventory_of{ &w, o = me }
+        let mut k: usize = 0
+        while k < ids.len {
+            let it = world::object{ w = &w, id = ids[k] }
+            k = k + 1
+            if it == null or not ci::eq{ a = it.tag, b = trap.key } { continue }
+            if trap.auto_remove_key {
+                rt_item::forget_item{ &w, item = ids[k - 1] }
+                world::destroy{ &w, id = ids[k - 1] }
+            }
+            trap.last_disarmed = who
+            trap.armed = false
+            let base = trap.base
+            let position = o.position
+            if w.log.events {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "trap {} ({}) disarmed by {} with its key\n", id, o.tag, who)
+            }
+            _ = scripts::run_slot{ &w, &vm, engine, id, slot = obj::Slot::disarm }
+            remove{ &w, id, base, position, exploded = false }
+            return true
+        }
+        return false
     }
 
     // The trap goes off under `who`: the victim is told, OnTrapTriggered runs as the trap (the type's
@@ -298,9 +372,11 @@ namespace traps {
         return of{ o } != null and can_use_demolitions{ w, who }
     }
 
-    // A trap its creator works on, or a party trap a party member works on, needs no roll.
-    fn is_own { w: *world::World, trap: *Trap, who: u32 } -> bool {
+    // A trap its creator works on, or a party trap a party member disables or recovers, needs no
+    // roll; flagging and examining skip it only for the creator (`creator_only`).
+    fn is_own { w: *world::World, trap: *Trap, who: u32, creator_only: bool } -> bool {
         if trap.creator == who { return true }
+        if creator_only { return false }
         return (trap.party_set or is_party{ w, id = trap.creator }) and trap.creator != obj::INVALID and is_party{ w, id = who }
     }
 
@@ -321,6 +397,7 @@ namespace traps {
     const NAME_RECOVER: u32 = 1531
     const NAME_EXAMINE: u32 = 1532
     const NAME_NONE: u32 = 0xFFFFFFFF          // flagging names none
+    const NAME_DEMOLITIONS: u32 = 324          // the skill's name in the line
 
     // The worker's sound set entries for a mine laid and for a failure.
     const VOICE_MINE_SET: u32 = 0x13
@@ -341,7 +418,8 @@ namespace traps {
         let me = world::object{ w = &w, id } ifnull { return actions::Status::failed }
         let kind = a.kind
         let kneels = kind == actions::Kind::disable_trap or kind == actions::Kind::recover_trap
-        if doors::approach{ &w, id, target, a } { return actions::Status::done }
+        // Disable and recover stop within the use range + 0.25, flag and examine within the use range.
+        if doors::approach_within{ &w, id, target, a, extra = if kneels { 0.25 } else { 0.0 } } { return actions::Status::done }
         let now = clock::now_ms{ c = w.clock }
         if a.phase < 2 {
             a.phase = 2
@@ -362,7 +440,7 @@ namespace traps {
         let c = obj::creature{ o = me } ifnull { return actions::Status::failed }
         let f = c.fighter ifnull { return actions::Status::failed }
         let trap = of{ o } ifnull { return actions::Status::failed }
-        let own = is_own{ w = &w, trap, who = id }
+        let own = is_own{ w = &w, trap, who = id, creator_only = not kneels }
         let dc = if kind == actions::Kind::recover_trap { trap.disarm_dc + 10 } else if kind == actions::Kind::flag_trap { trap.disarm_dc - 5 } else if kind == actions::Kind::examine_trap { trap.disarm_dc - 7 } else { trap.disarm_dc }
         let mut check = rules::disarm_trap_check{ tables = w.rules, c = &f.c, disarm_dc = dc, own_trap = own, in_combat = c.in_combat, rng = &w.dice }
         // Only disabling has the cap of 35.
@@ -372,7 +450,7 @@ namespace traps {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "demolitions: {} works ({}) on {} ({}): {} against DC {} (own {}): {}\n", me.tag, @as(u32, kind), target, o.tag, check.total, check.dc, own, check.success)
         }
-        doors::say_skill_roll{ &w, me, target = o, check, in_combat = c.in_combat, what }
+        doors::say_skill_roll{ &w, me, target = o, check, in_combat = c.in_combat, what, skill = NAME_DEMOLITIONS }
         let base = trap.base
         let position = o.position
         if check.success {
@@ -516,13 +594,19 @@ namespace traps {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "demolitions: {} sets a mine (row {}): {} against DC {}: {}\n", me.tag, row, check.total, check.dc, check.success)
         }
-        doors::say_skill_roll{ &w, me, target = me, check, in_combat = c.in_combat, what = NAME_SET }
-        let lays = check.success or check.total < check.dc - 10
+        doors::say_skill_roll{ &w, me, target = me, check, in_combat = c.in_combat, what = NAME_SET, skill = NAME_DEMOLITIONS }
+        // Every attempt, laid or not, takes off the setter's normal invisibility and sanctuary; its
+        // stealth stays (SETTRAP 0x00519e30).
+        fight::sync_flags{ w = &w, o = me, f }
+        rules::clear_events{ ev = &w.rev }
+        _ = rules::remove_invisibility_and_sanctuary{ tables = w.rules, c = &f.c, ev = &w.rev }
+        fight::drain{ &w, id }
+        // A miss by more than 10 still lays it, but only on a d20 roll: taking 20, any miss fails.
+        let lays = check.success or (c.in_combat and check.total < check.dc - 10)
         if not lays {
             fight::bark{ &w, id, first = VOICE_FAILED, count = 1, chance_in = 1, quiet = false }
             return actions::Status::done
         }
-        c.stealth = false
         let feet = me.position
         let made = lay{ &w, setter = id, row, at = feet, score = check.total }
         if made == obj::INVALID { return actions::Status::failed }
@@ -561,6 +645,7 @@ namespace traps {
         t.trap = Trap{
             armed = true, base = row, detectable = true, detect_dc = score + detect_mod, disarmable = true, disarm_dc = score + disarm_mod,
             one_shot = true, creator = setter, party_set, detected = false, flagged = false,
+            key = slice::empty(u8){}, auto_remove_key = false, last_disarmed = obj::INVALID,
         }
         if w.log.objects {
             world::prefix{ w = &w }

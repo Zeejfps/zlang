@@ -459,6 +459,12 @@ namespace tmpl {
         script{ doc, s, o, label = "OnDisarm", slot = obj::Slot::disarm }
         script{ doc, s, o, label = "OnClick", slot = obj::Slot::click }
         traps::read{ doc, s, t = &t.trap, trigger_type = t.trigger_type, table = w.tables.traps }
+        let key = gff::get_string{ doc = doc.*, s, label = "KeyName" }
+        if key != null {
+            let copy = try obj::copy_bytes{ heap = w.heap, s = key }
+            obj::free_bytes{ heap = w.heap, s = t.trap.key }
+            t.trap.key = copy
+        }
     }
 
     // The GIT's Geometry list: points relative to the trigger's position, into area space.

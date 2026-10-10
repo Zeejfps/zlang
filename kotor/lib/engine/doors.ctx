@@ -35,6 +35,11 @@ namespace doors {
                 return UsePoint{ point = h, range = radius + USE_EXTRA }
             }
         }
+        // A trap is worked on from the nearest point of its outline, at the radius + 0.5 (GetUseRange
+        // 0x004ee440, 0x0058c8a0); the disable and recover actions add 0.25 to it.
+        if traps::of{ o = target } != null {
+            return UsePoint{ point = traps::nearest_outline_point{ o = target, from = actor.position }, range = radius + 0.5 }
+        }
         return UsePoint{ point = target.position, range = radius + USE_EXTRA + 0.5 }
     }
 
@@ -339,37 +344,46 @@ namespace doors {
         }
     }
 
-    // The roll of a Security check as the original's combat log words it (dialog.tlk 1405, "<CUSTOM0>
-    // attempts <CUSTOM1> on <CUSTOM2> : *<CUSTOM3>* : (<CUSTOM4> <CUSTOM5> <CUSTOM6> = <CUSTOM7><CUSTOM8>)"):
-    // "Leia Tana attempts Security on Door : *success* : (Take 20 + 5 = 25 vs. DC 1)". Said to the player
-    // when the one who rolled is the player's.
+    // The roll of a Security check in the combat log (below). Taking 20 against a DC of 60 or more
+    // (result 5, "success not possible") shows no line: the client's case skips it.
     fn say_roll { mut w: world::World, me: *obj::Object, target: *obj::Object, check: rules::SkillCheck, in_combat: bool } {
-        say_skill_roll{ &w, me, target, check, in_combat, what = 329 }
+        if not check.success and not in_combat and check.dc >= 60 { return }
+        say_skill_roll{ &w, me, target, check, in_combat, what = STRREF_SECURITY, skill = STRREF_SECURITY }
     }
 
-    // The same line for another use of a skill, named by dialog.tlk `what` (the trap actions name
-    // theirs: 1529 "Disable Mine", 1531 "Recover Mine", 1530 "Set Mine", 1532 "Examine Mine").
-    fn say_skill_roll { mut w: world::World, me: *obj::Object, target: *obj::Object, check: rules::SkillCheck, in_combat: bool, what: u32 } {
+    const STRREF_SECURITY: u32 = 329           // "Security": the action and the skill's name
+    const STRREF_SKILL_ROLL: u32 = 1408
+
+    // A skill roll in the combat log (combat message 9, the client's case 0x0065b4a0), dialog.tlk 1408
+    // "<CUSTOM0> <CUSTOM1> <CUSTOM2>: <CUSTOM3> (roll <CUSTOM4> <CUSTOM5> <CUSTOM6> <CUSTOM7>) vs. DC
+    // <CUSTOM8>" with the actor, "success" (1392) or "failure" (1393), the action `what` (329 Security;
+    // the trap actions' 1529 "Disable Mine", 1531 "Recover Mine", 1530 "Set Mine", 1532 "Examine
+    // Mine"; none for flagging), the roll plus the rank, the roll, the rank's sign, the skill's name
+    // `skill`, the rank without its sign, and the DC: "Leia Tana success Security: 25 (roll 20 +
+    // Security 5) vs. DC 12". The rank carries the item bonus (a security spike's). Said to the player
+    // when the one who rolled is the player's; `target` names no part of it.
+    fn say_skill_roll { mut w: world::World, me: *obj::Object, target: *obj::Object, check: rules::SkillCheck, in_combat: bool, what: u32, skill: u32 } {
+        _ = target
+        _ = in_combat
         if not is_player_side{ w = &w, id = me.id } { return }
         let mut b = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } }
         defer list::free{ list = &b.bytes }
-        let template = world::string_by_strref{ w = &w, strref = 1405 }
+        let rank = check.total - check.roll
+        let template = world::string_by_strref{ w = &w, strref = STRREF_SKILL_ROLL }
         let mut i: usize = 0
         while i < template.len {
             if i + 9 <= template.len and template[i] == 60 and template[i + 8] == 62 and slice::eq_bytes{ a = template[i..i + 7], b = "<CUSTOM" } {
                 let hole = template[i + 7]
                 i = i + 9
                 if hole == 48 { _ = @fmt(&b, "{}", name_text{ w = &w, o = me }) }
-                else if hole == 49 { _ = @fmt(&b, "{}", world::string_by_strref{ w = &w, strref = what }) }
-                else if hole == 50 { _ = @fmt(&b, "{}", name_text{ w = &w, o = target }) }
-                else if hole == 51 { _ = @fmt(&b, "{}", world::string_by_strref{ w = &w, strref = result_strref{ check, in_combat } }) }
-                else if hole == 52 {
-                    if in_combat { _ = @fmt(&b, "{}", check.roll) } else { _ = @fmt(&b, "{}", world::string_by_strref{ w = &w, strref = 1409 }) }
-                }
-                else if hole == 53 { _ = @fmt(&b, "+") }
-                else if hole == 54 { _ = @fmt(&b, "{}", check.total - check.roll) }
-                else if hole == 55 { _ = @fmt(&b, "{}", check.total) }
-                else if hole == 56 { _ = @fmt(&b, " {} DC {}", world::string_by_strref{ w = &w, strref = 1395 }, check.dc) }
+                else if hole == 49 { _ = @fmt(&b, "{}", world::string_by_strref{ w = &w, strref = if check.success { 1392 } else { 1393 } }) }
+                else if hole == 50 { if what != 0xFFFFFFFF { _ = @fmt(&b, "{}", world::string_by_strref{ w = &w, strref = what }) } }
+                else if hole == 51 { _ = @fmt(&b, "{}", check.roll + rank) }
+                else if hole == 52 { _ = @fmt(&b, "{}", check.roll) }
+                else if hole == 53 { if rank < 0 { _ = @fmt(&b, "-") } else { _ = @fmt(&b, "+") } }
+                else if hole == 54 { _ = @fmt(&b, "{}", world::string_by_strref{ w = &w, strref = skill }) }
+                else if hole == 55 { _ = @fmt(&b, "{}", if rank < 0 { 0 - rank } else { rank }) }
+                else if hole == 56 { _ = @fmt(&b, "{}", check.dc) }
                 continue
             }
             _ = list::push{ list = &b.bytes, item = template[i] }
@@ -377,14 +391,6 @@ namespace doors {
         }
         let line = utf8::view{ b }
         outbox::post{ out = &w.out, note = outbox::Note::feedback{ strref = 0xFFFFFFFF, text = outbox::keep_text{ out = &w.out, s = line.bytes } } }
-    }
-
-    // The word for a Security check's outcome: success, failure, or (taking 20 against a DC of 60 or
-    // more, which nothing can beat) "success not possible" (AIActionOpenLock's result codes 1, 3, 5).
-    fn result_strref { check: rules::SkillCheck, in_combat: bool } -> u32 {
-        if check.success { return 1392 }
-        if not in_combat and check.dc >= 60 { return 1397 }
-        return 1393
     }
 
     // An object's name as the player reads it.

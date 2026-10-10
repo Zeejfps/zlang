@@ -536,6 +536,7 @@ namespace world {
             trigger{ t } => {
                 obj::free_bytes{ heap = w.heap, s = t.linked_to }
                 obj::free_bytes{ heap = w.heap, s = t.transition_name.text }
+                obj::free_bytes{ heap = w.heap, s = t.trap.key }
                 list::free{ list = &t.inside }
                 _ = alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = t.polygon, count = 0 }
                 _ = alloc::resize(obj::Trigger, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(t, 1), count = 0 }
