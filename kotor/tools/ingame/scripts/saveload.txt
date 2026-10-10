@@ -19,10 +19,10 @@
 142 ui type Endar Spire
 # Enter accepts: the menus close and the game is saved
 147 ui key return
-# Load Game: the merged list, the new save is the first manual one
+# Load Game: the merged list (quick save, auto save, then the manual saves, oldest first)
 155 ui menu options
 158 ui click 500 247
-# the third row (quick save, auto save, then the newest manual save)
+# the third row: the oldest manual save
 165 ui click 512 341
 # Load
 170 ui click 640 544

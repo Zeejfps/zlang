@@ -3,9 +3,11 @@
 // the area, the play time, the party's portraits, and Screen.tga for the picture. Folders are
 // `NNNNNN - Name`: 0 is the quick save, 1 the autosave, manual saves are 2 and up.
 //
-// The Load Game list merges both directories: quick and auto saves first (ours hide the install's
-// of the same number), then the manual saves, newest number first (on a tie ours first). The Save
-// Game list is ours only, manual saves only, with a "New Slot" row first.
+// The Load Game list merges both directories in the original's order, by folder name, which is by
+// number (PopulateList 0x006cc160 takes the directory list sorted by name, GetDirectoryList
+// 0x005e6640): the quick save, the autosave (ours hide the install's of the same number), then the
+// manual saves, oldest number first (on a tie ours first). The Save Game list is ours only, manual
+// saves only, with a "New Slot" row first.
 namespace frontend {
     struct SaveEntry {
         number: i32,
@@ -112,20 +114,10 @@ namespace frontend {
         }
     }
 
-    // Quick save, auto save, then the manual saves.
-    fn rank_of { e: *SaveEntry } -> i32 {
-        if e.new_slot { return -1 }
-        if e.number == 0 { return 0 }
-        if e.number == 1 { return 1 }
-        return 2
-    }
-
-    // Whether `a` is listed before `b`.
+    // Whether `a` is listed before `b`: New Slot, then by number.
     fn listed_before { a: *SaveEntry, b: *SaveEntry } -> bool {
-        let ra = rank_of{ e = a }
-        let rb = rank_of{ e = b }
-        if ra != rb { return ra < rb }
-        if ra == 2 and a.number != b.number { return a.number > b.number }
+        if a.new_slot != b.new_slot { return a.new_slot }
+        if a.number != b.number { return a.number < b.number }
         return a.ours and not b.ours
     }
 

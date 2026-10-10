@@ -176,7 +176,12 @@ been written and cleared (1.8). It produces a save that **re-enters the target m
 ### 1.5 The save list
 
 `CSWGuiSaveLoad::PopulateList` (`0x006cc160`, gui.md) first empties `TEMP:`, then builds one row per
-folder; each row reads its folder with `0x006c8e50`: number = the integer before `" - "`, folder
+folder, in the order of `CExoBase::GetDirectoryList(SAVES:, 0xffff, directories, 1)` (`0x005e6640` →
+`0x005e8cf0`): with the last argument 1 each directory name is inserted before the first listed one
+that is not smaller (byte compare of the lower-cased names, `0x005e5580`), so the rows run by folder
+name, ascending: the quick save, the autosave, then the manual saves oldest number first (a last
+argument of 2 orders files, not directories, by write time; not used here). The list box keeps that order (`SetItems`
+`0x0041c1d0`). Each row reads its folder with `0x006c8e50`: number = the integer before `" - "`, folder
 name = the rest; if a file `CORRUPT` exists the row is flagged corrupt (flags `|= 3`) and nothing
 else is read; otherwise, with the folder mounted, from `savenfo.res`: `AREANAME`, `LASTMODULE`,
 `TIMEPLAYED`, `SAVEGAMENAME` ("Old Save Game" when missing), `CHEATUSED` (flag 0x80),
