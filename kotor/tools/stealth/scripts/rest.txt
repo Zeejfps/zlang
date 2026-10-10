@@ -1,0 +1,9 @@
+# Rest ends stealth (CSWSCreature::Rest 0x004fd1e0 with 0x004eb1b0(0xf); start: module:end_m01ab, 90 frames). No key or
+# button of the original rests, so `ui rest` stands for the player's rest command. Expect `rest: ID true` and stealth off.
+6 ui stat stealth 10
+6 ui giveitem g_i_belt010 1 equip
+40 hush
+60 ui clickctl TB_STEALTH
+64 ui stealth
+70 ui rest
+72 ui stealth

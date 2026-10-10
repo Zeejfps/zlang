@@ -1,0 +1,5 @@
+# Rest is refused with an enemy in sight within 30 m (start: uppercity, 90 frames): a hostile trooper 7 m off, then
+# `ui rest`. Expect `rest: ID false` (the actions log says why: an enemy is near).
+30 ui foe g_sithtroop01 7 -4
+31 cam toward g_sithtroop01
+50 ui rest

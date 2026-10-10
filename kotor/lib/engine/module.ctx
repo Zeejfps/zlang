@@ -175,6 +175,7 @@ namespace modload {
         try tmpl::read_name{ &w, doc, s, label = "Name", into = &o.name }
         a.camera_style = @trunc(u32, tmpl::number{ doc, s, label = "CameraStyle", default = 0 })
         a.restrict_mode = @trunc(u32, tmpl::number{ doc, s, label = "RestrictMode", default = 0 })
+        a.no_rest = (tmpl::number{ doc, s, label = "NoRest", default = 0 } & 0xff) != 0
         a.unescapable = tmpl::flag{ doc, s, label = "Unescapable", default = false }
         a.is_night = tmpl::flag{ doc, s, label = "IsNight", default = false }
         a.dyn_ambient = @trunc(u32, tmpl::number{ doc, s, label = "DynAmbientColor", default = 0 })

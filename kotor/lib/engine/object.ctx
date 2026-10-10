@@ -427,6 +427,7 @@ namespace obj {
         env_audio: i32,
         camera_style: u32,                  // camerastyle.2da row
         restrict_mode: u32,
+        no_rest: bool,                      // ARE NoRest (area +0xb0): the player may not rest here
         unescapable: bool,
         is_night: bool,
         dyn_ambient: u32,                   // DynAmbientColor, 0x00BBGGRR

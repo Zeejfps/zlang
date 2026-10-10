@@ -39,6 +39,7 @@ namespace actions {
         open_lock = 0x26,
         lock = 0x27,
         use_object = 0x28,
+        rest = 0x2a,
         move_away_from_location = 0x2c,
         random_walk = 0x2d,
         jump_to_object = 0x30,
@@ -289,6 +290,8 @@ namespace actions {
             follow => { return follow{ &w, id, a, leader = false } }
             follow_leader => { return follow{ &w, id, a, leader = true } }
             random_walk => { return random_walk{ &w, id, a } }
+            // REST (0x2a, 0x005140e0) is done at once: Rest (party::rest) did the work when it queued it.
+            rest => { return Status::done }
             attack_object => { return fight::attack_object{ &w, id, a } }
             pickup_item => { return equip::pickup_action{ &w, id, a } }
             equip_item => { return equip::equip_action{ &w, id, a } }

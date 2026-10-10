@@ -5,10 +5,18 @@
 //   FRAME ui stealth            prints the leader's stealth mode, whether the toggle would show, solo
 //                               mode, the party, the area's stealth XP and who perceives the leader
 //   FRAME ui stealth TAG        the same about the creature with TAG
+//   FRAME ui rest [TAG]         the leader (or TAG) rests as the player's rest command would (party::rest;
+//                               no key or button of the original sends one); prints `rest: ID true|false`
 namespace test_stealth {
     fn run { mut ui: ingame::Ingame, mut w: world::World, mut dev: gpu::Device, cmd: []u8, args: []u8 } -> bool {
         _ = ui
         _ = dev
+        if ci::eq{ a = cmd, b = "rest" } {
+            let who = text::first_word{ s = args }
+            let rester = if who.len > 0 { world::object_by_tag{ w = &w, tag = who, nth = 0 } } else { party::leader{ w = &w } }
+            _ = @fmt(&w.io, "rest: {} {}\n", rester, party::rest{ &w, id = rester })
+            return true
+        }
         if not ci::eq{ a = cmd, b = "stealth" } { return false }
         let tag = text::first_word{ s = args }
         let id = if tag.len > 0 { world::object_by_tag{ w = &w, tag, nth = 0 } } else { party::leader{ w = &w } }

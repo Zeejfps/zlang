@@ -138,8 +138,7 @@ the shimmer, detection by the original's sight and hearing contests (Awareness a
 against Stealth and a d10 + 10 hide roll, each rolled again every 20 s; ours draws the rolls from a hash), what
 ends it (attack, combat, one's own powers, taking off the belt, conversations and transitions; doors and using
 objects do not), the stealth XP pool and routines, the combat log's spot line, save and load. Open: the stealth
-pace and walk animation (we use the walk rate and the ordinary walk), rest ending
-stealth (no party rest).
+pace and walk animation (we use the walk rate and the ordinary walk).
 
 ## 9. The upgrade bench (workbench)
 

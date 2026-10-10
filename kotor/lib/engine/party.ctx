@@ -254,6 +254,50 @@ namespace party {
         return w.party.members[0] == id
     }
 
+    // Rest (CSWSCreature::Rest 0x004fd1e0, the player's rest command, input message 0xd; actions.md 3.13,
+    // rules.md): nothing for a dead or downed creature; for the player's creature, refused where the area
+    // forbids it (feedback 0x36) and, for anyone, with an enemy in sight within 30 m (0x004f2de0, feedback
+    // 0xba). Otherwise its actions are cleared and, unless it is the player's creature in the middle of a
+    // fight (the battle-music countdown +0x384, feedback 0x11; ours: in combat), it leaves stealth
+    // (0x004eb1b0 with 0xf), the module hears PLAYER_REST (with feedback 0x12) when it is the player's, and
+    // REST is queued. The client formats those four feedback ids with string 0, so nothing is printed.
+    // The original's client sends no rest message (no key or button does), so only `ui rest` calls this.
+    // Returns whether it rested.
+    fn rest { mut w: world::World, id: u32 } -> bool {
+        let o = world::object{ w = &w, id } ifnull { return false }
+        let c = obj::creature{ o } ifnull { return false }
+        if c.dead or fight::is_down{ w = &w, id } { return false }
+        let player = id == leader{ w = &w } or id == w.player
+        if player {
+            if world::object{ w = &w, id = o.area } is some{ value = ao } {
+                if obj::area{ o = ao } is some{ value = a } {
+                    if a.no_rest { return refuse_rest{ &w, id, why = "the area forbids it" } }
+                }
+            }
+        }
+        if fight::nearest_enemy{ w = &w, o, range = 30.0 } != obj::INVALID { return refuse_rest{ &w, id, why = "an enemy is near" } }
+        actions::clear_all{ &w, id }
+        if player and c.in_combat { return refuse_rest{ &w, id, why = "in combat" } }
+        stealth::leave{ &w, id }
+        if player {
+            events::post{ &w, delay_ms = 0, caller = id, target = w.module, payload = events::Payload::script{ e = events::script_event{ kind = events::PLAYER_REST, object = id } } }
+        }
+        _ = actions::add{ &w, id, action = actions::make{ kind = actions::Kind::rest }, force = false }
+        if w.log.actions {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "rest {}: rests\n", id)
+        }
+        return true
+    }
+
+    fn refuse_rest { mut w: world::World, id: u32, why: []u8 } -> bool {
+        if w.log.actions {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "rest {}: refused ({})\n", id, why)
+        }
+        return false
+    }
+
     // Makes a member the leader (first), the one keyboard control moves (w.pc follows it).
     fn set_leader { mut w: world::World, id: u32 } {
         if not is_member{ w = &w, id } { _ = add{ &w, id } }

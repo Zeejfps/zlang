@@ -445,7 +445,7 @@ namespace world {
                 return obj::Ext::area{ a = try alloc::new(obj::Area, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Area{
                     resref = resref::empty{}, name = obj::Name{ strref = 0xFFFFFFFF, text = slice::empty(u8){} },
                     music_day = 0, music_night = 0, music_battle = 0, music_delay = 0, ambient_day = 0, ambient_night = 0,
-                    ambient_day_volume = 0, ambient_night_volume = 0, env_audio = 0, camera_style = 0, restrict_mode = 0,
+                    ambient_day_volume = 0, ambient_night_volume = 0, env_audio = 0, camera_style = 0, restrict_mode = 0, no_rest = false,
                     unescapable = false, is_night = false, dyn_ambient = 0, sun_ambient = 0, sun_diffuse = 0, fog_on = false,
                     fog_near = 99.0, fog_far = 100.0, fog_color = 0, load_screen = 0, last_heartbeat = 0,
                     shadow_opacity = 128,

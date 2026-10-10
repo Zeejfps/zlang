@@ -1400,7 +1400,10 @@ then move itself to the Neutral faction) ⇒ 2; routine 379 queues it, 476/762 a
 only for a caller whose stats `+0x6c` is clear. REST (0x2a) returns 2 at once; resting itself
 (`0x004fd1e0`: refused in an area that forbids it, feedback 0x36, with an enemy within 30 m, 0xba,
 or while the player character's battle-music countdown runs, 0x11) happens when it is queued, and
-clearing it cancels the rest (module event PLAYER_REST with 3). The stubs 0x29, 0x2b, 0x36 fail.
+clearing it cancels the rest (module event PLAYER_REST with 3). The rest command is input message 0xd, but
+no client code sends it (there is no `SendPlayerToServerInput` for it, and no key or button rests), and the
+client formats feedback 0x11, 0x12, 0x36 and 0xba with string 0 (`FormatFeedbackMessage` `0x005fcd10`): empty.
+Ours: `party::rest` (test command `ui rest`), with the player's fight countdown taken as being in combat. (high) The stubs 0x29, 0x2b, 0x36 fail.
 0x10 (`0x00513f60`, "wait while the round is active") and 0x24 (`0x00510c20`, encounter despawn:
 tell the encounter, destroy self after 5000 ms, commandable off) have handlers but no queuer.
 
