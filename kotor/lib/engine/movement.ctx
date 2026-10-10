@@ -67,6 +67,13 @@ namespace movement {
             world::set_animation{ o = back, id = obj::ANIM_STAND, speed = 1.0 }
             return actions::Status::done
         }
+        // A creature that may not move (an entangled, stunned, paralysed or sleeping one; one of creaturespeed's
+        // Immobile row) fails the move (AIActionMoveToPoint 0x0051f4f0 step 5: AI state mask bit 2).
+        if not can_move{ c } {
+            stop{ &w, id }
+            world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
+            return actions::Status::failed
+        }
         if distance_2d{ a = o.position, b = goal } <= range and not (follower and lead_speed > 0.1) {
             stop{ &w, id }
             world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
@@ -202,6 +209,15 @@ namespace movement {
         cross_volumes{ &w, id, from, to = here }
         if follower { settle_follow_gait{ &w, o, c, moved = distance_2d{ a = from, b = here }, dt = dt_ms / 1000.0, pace, scale } }
         return actions::Status::running
+    }
+
+    // Whether the creature may move: its AI state mask's bit 2, which the crowd-control states, Entangle and
+    // creaturespeed's Immobile row (SetMovementRate 0x005a5680) clear (rules.md, AI state mask).
+    fn can_move { c: *obj::Creature } -> bool {
+        if c.movement_rate == 1 { return false }
+        let f = c.fighter ifnull { return true }
+        if not f.loaded { return true }
+        return rules::can_move{ c = &f.c }
     }
 
     // The pace of a party member following the leader (CSWSCreature::UpdateFollowLeader, movement.md 6.2). `to_go` is
