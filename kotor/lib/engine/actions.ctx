@@ -439,24 +439,53 @@ namespace actions {
         return Status::done
     }
 
-    // RANDOMWALK (actions.md 3.1): walk to a random reachable point within 10 m, pause 1 to 3 s,
-    // and again, until the queue is cleared.
+    // RANDOMWALK (actions.md 3.1, AIActionRandomWalk 0x00515ac0): param 0 the home point, where the creature stood when
+    // ActionRandomWalk queued it (a save's three floats are read too). Each run drops the rest of the queue, then walks
+    // to home + (-7..7, -7..7) whole metres, waits 3 s and runs again, until the queue is cleared: the walker stays
+    // within 7 m of home. A target the straight walk does not reach is brought nearer by a quarter at a time (back to
+    // the whole way below 30 %), 21 tries; none, or one under 1 m, and the creature only waits. A creature far from
+    // the player (AI level 0) waits 15 s and does not walk.
     fn random_walk { mut w: world::World, id: u32, a: *mut Action } -> Status {
         let o = world::object{ w = &w, id } ifnull { return Status::failed }
-        let angle = @as(f32, world::random{ &w } % 3600) * 0.1
-        let radius = 2.0 + @as(f32, world::random{ &w } % 80) * 0.1
-        let dir = obj::direction_of{ degrees = angle }
-        let goal = math::vec3::add_scaled{ a = o.position, b = dir, s = radius }
-        let copy = a.*
+        let mut home = o.position
+        if a.params[0] is vector{ v } { home = v }
+        else if a.params[0] is float and a.params[1] is float { home = math::Vec3{ x = float_param{ a, i = 0 }, y = float_param{ a, i = 1 }, z = float_param{ a, i = 2 } } }
+        clear_queue{ &w, o }
+        let mut copy = make{ kind = Kind::random_walk }
+        copy.group = a.group
+        copy.params[0] = Param::vector{ v = home }
         add_front{ &w, id, action = copy }
         let mut pause = make{ kind = Kind::wait }
-        pause.params[0] = Param::float{ v = 1.0 + @as(f32, world::random{ &w } % 20) * 0.1 }
+        pause.group = a.group
+        pause.params[0] = Param::float{ v = if o.ai_level < 1 { 15.0 } else { 3.0 } }
         add_front{ &w, id, action = pause }
-        let mut move = make{ kind = Kind::move_to_point }
-        move.params[0] = Param::vector{ v = goal }
-        move.params[1] = Param::int{ v = 0 }
-        move.params[2] = Param::float{ v = 0.5 }
-        add_front{ &w, id, action = move }
+        if o.ai_level < 1 { return Status::done }
+        let dx = @as(f32, @as(i32, world::random{ &w } % 15) - 7)
+        let dy = @as(f32, @as(i32, world::random{ &w } % 15) - 7)
+        let mut goal = math::Vec3{ x = home.x + dx, y = home.y + dy, z = o.position.z }
+        goal.z = walkmap::height{ m = &w.walk, x = goal.x, y = goal.y, z = o.position.z + 2.0 } ifnull o.position.z
+        let to = math::vec3::sub{ a = goal, b = o.position }
+        let full = math::vec3::length{ v = to }
+        if full < 0.0001 { return Status::done }
+        let dir = math::vec3::scale{ v = to, s = 1.0 / full }
+        let mut d = full
+        let mut tries: i32 = 20
+        while true {
+            let at = math::vec3::add_scaled{ a = o.position, b = dir, s = d }
+            if paths::clear{ w = &w, a = o.position, b = at } {
+                let mut move = make{ kind = Kind::move_to_point }
+                move.group = a.group
+                move.params[0] = Param::vector{ v = at }
+                move.params[1] = Param::int{ v = 0 }
+                move.params[2] = Param::float{ v = 0.0 }
+                add_front{ &w, id, action = move }
+                return Status::done
+            }
+            d = d * 0.75
+            if d < full * 0.3 { d = full }
+            if d < 1.0 or tries < 0 { return Status::done }
+            tries = tries - 1
+        }
         return Status::done
     }
 

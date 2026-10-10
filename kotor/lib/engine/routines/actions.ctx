@@ -20,7 +20,7 @@ namespace rt_act {
         else if routine == nwscript::ActionOpenDoor { try door_action{ &w, &vm, argc, routine, kind = actions::Kind::open_door } }
         else if routine == nwscript::ActionCloseDoor { try door_action{ &w, &vm, argc, routine, kind = actions::Kind::close_door } }
         else if routine == nwscript::ActionStartConversation { try action_start_conversation{ &w, &vm, argc } }
-        else if routine == nwscript::ActionRandomWalk { _ = actions::add{ &w, id = self_of{ vm = &vm }, action = actions::make{ kind = actions::Kind::random_walk }, force = false } }
+        else if routine == nwscript::ActionRandomWalk { action_random_walk{ &w, &vm } }
         else if routine == nwscript::ActionForceFollowObject { try force_follow{ &w, &vm, argc } }
         else if routine == nwscript::ActionInteractObject { try door_action{ &w, &vm, argc, routine, kind = actions::Kind::use_object } }
         else if routine == nwscript::ActionUseSkill { try action_use_skill{ &w, &vm, argc } }
@@ -31,6 +31,15 @@ namespace rt_act {
     }
 
     fn self_of { vm: *nwvm::Vm } -> u32 { return nwvm::self_object{ vm = vm.* } }
+
+    // ActionRandomWalk(): the walker's home is where it stands now (0x0052d440).
+    fn action_random_walk { mut w: world::World, mut vm: nwvm::Vm } {
+        let me = self_of{ vm = &vm }
+        let o = world::object{ w = &w, id = me } ifnull { return }
+        let mut a = actions::make{ kind = actions::Kind::random_walk }
+        a.params[0] = actions::Param::vector{ v = o.position }
+        _ = actions::add{ &w, id = me, action = a, force = false }
+    }
 
     // void ActionDoCommand(action aActionToDo): dropped on a non-commandable object.
     fn action_do_command { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
