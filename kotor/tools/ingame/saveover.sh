@@ -1,13 +1,13 @@
 #!/bin/sh
 # Saving over a save from the Save Game list (docs/re/gui.md "Save and load", docs/re/party-items-saves.md 1.1):
 # saveover1.txt quick-saves the cantina checkpoint, then saves it to "New Slot" with the default name; a stray
-# file is put in the new folder; saveover2.txt loads that save, plays on, picks it in the list, answers Yes to
+# file is put in the new folder; saveover2.txt loads that save, plays on, clicks it in the list, answers Yes to
 # 1591 and renames it. FAIL (exit 1) unless the folders are still the quick save and the one manual save, its
 # SAVEGAMENAME and TIMEPLAYED changed (the time grown by the second run's frames before the save, at the fixed
 # headless step), and neither the stray file nor a staged one is left. Pictures in kotor/out/saveover:
 # list1.png (the Save Game list before), confirm.png (1591), name.png (the name box with the save's name),
 # list2.png (the list after: "Game 1 - 0h 31m" and the new name), load.png (Load Game: "Quick Save - 0H 31M",
-# then ours and the install's saves by number, each with its play time).
+# then ours and the install's manual saves newest first, each with its play time).
 #
 #   EXE=kotor/out/kotor.exe sh kotor/tools/ingame/saveover.sh      (from the repository root; about 20 s)
 export PATH=/g/Dev/msys64/mingw64/bin:$PATH

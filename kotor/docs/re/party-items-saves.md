@@ -178,10 +178,15 @@ been written and cleared (1.8). It produces a save that **re-enters the target m
 `CSWGuiSaveLoad::PopulateList` (`0x006cc160`, gui.md) first empties `TEMP:`, then builds one row per
 folder, in the order of `CExoBase::GetDirectoryList(SAVES:, 0xffff, directories, 1)` (`0x005e6640` →
 `0x005e8cf0`): with the last argument 1 each directory name is inserted before the first listed one
-that is not smaller (byte compare of the lower-cased names, `0x005e5580`), so the rows run by folder
-name, ascending: the quick save, the autosave, then the manual saves oldest number first (a last
-argument of 2 orders files, not directories, by write time; not used here). The list box keeps that order (`SetItems`
-`0x0041c1d0`). Each row reads its folder with `0x006c8e50`: number = the integer before `" - "`, folder
+that is not smaller (`0x005e5580` is `>=` on the lower-cased names' bytes, called with the listed
+name as `this`; the insert `0x005e8c60` shifts the rest down), so the rows run by folder name,
+ascending: the quick save, the autosave, then the manual saves oldest number first (a last argument
+of 2 orders files, not directories, by write time; not used here). The list box keeps that order
+(`SetItems` `0x0041c1d0` appends the rows in turn; `UpdateLayout` `0x0041b140` lays them out top
+down from the first visible one). Rechecked on the new decompile: nothing reverses it. **Ours
+differs**: the player, who knows the game, expects the manual saves newest first, so
+`lib/frontend/saves.ctx` lists the quick save, the autosave, then the manual saves by number,
+highest first. Each row reads its folder with `0x006c8e50`: number = the integer before `" - "`, folder
 name = the rest; if a file `CORRUPT` exists the row is flagged corrupt (flags `|= 3`) and nothing
 else is read; otherwise, with the folder mounted, from `savenfo.res`: `AREANAME`, `LASTMODULE`,
 `TIMEPLAYED`, `SAVEGAMENAME` ("Old Save Game" when missing), `CHEATUSED` (flag 0x80),
@@ -191,9 +196,15 @@ content name, and reading stops there), `PORTRAIT0..2`; a fully read row gets fl
 save panel the rows of slots 0 and 1 are dropped (the quick save and autosave cannot be
 overwritten from it) and a "new save" row (strref 1590, flags `|= 0x44`) is put first, numbered the
 highest listed number + 1, at least 2; `+0x68` keeps the first free number the scan found (1.1).
-In the load panel an empty list closes the panel and shows strref 42491. Selecting a row shows
-`Screen.tga` from the mounted folder, or the `SCREENSHOT` resource for autosave rows, and "Cheat
-Used" for flag 0x80 (`0x006c89d0`). (high)
+In the load panel an empty list closes the panel and shows strref 42491. Hilighting a row (event 0)
+runs `0x006c89d0`: a row not fully read (flag 0x01 clear: the New Slot row) or corrupt (0x02) clears
+the planet and area labels, the portraits and the picture, puts "New Slot" (1590) in
+`LBL_SCREENSHOT` as text and disables `BTN_DELETE`; any other enables Delete, splits `AREANAME` at its
+first `-` (planet = what is before it less one character, area = what is after it less one; no `-`:
+all of it is the planet), sets the three portraits, and shows `Screen.tga` from the mounted folder,
+or the `SCREENSHOT` resource for autosave rows (flags 0x18), with the label's text empty or "Cheat
+Used" in the menu hilight colour for flag 0x80. In the load panel the Load button's text goes grey
+for a row needing missing live content (flag 0x20). (high)
 
 ### 1.6 Loading a normal save
 

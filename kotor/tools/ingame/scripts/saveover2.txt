@@ -1,12 +1,11 @@
 # Save Game over a save (saveover.sh, second run, loaded from the save the first made): the list (New Slot,
-# then the save with its play time), the save picked and Save asks 1591, Yes opens the name box with the
+# then the save with its play time), a click on the save asks 1591, Yes opens the name box with the
 # save's name, which is replaced by "Second save", and Enter saves over it; then the list again: the one save,
 # renamed, its play time grown; and Load Game's list (the quick save, then the save).
 1 ui bot off
 100 ui menu options
 105 ui clicktag BTN_SAVEGAME
 110 ui clickctl LB_GAMES 1
-115 ui clicktag BTN_SAVELOAD
 120 ui clicktag BTN_OK
 122 ui key backspace
 122 ui key backspace

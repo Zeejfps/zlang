@@ -261,17 +261,30 @@ if frontend::take_display_change{ &fe } { apply fe.settings (resolution, full sc
   adds its 3D views after the panels, and Cancel returns to the main menu. A program that links
   `lib/frontend` also links `lib/rules` and `lib/chargen`.
 - **Load Game** (`saveload.gui`): lists our saves directory (`set_own_saves`, the engine's `--saves`)
-  and the install's `Saves/` (folder `NNNNNN - Name`; 0 quick save, 1 autosave, 2+ manual) in the
-  original's order, by number: quick and auto first (ours hide the install's of the same number),
-  then the manual saves, oldest first (a save written over keeps its place). A row reads as the
-  original's (`make_row_text`): "Game N - Hh Mm" over the save's name for a manual save (dialog.tlk
-  48519), "Quick Save - HH MM" and "Auto Save - HH MM" for the others (47991 / 1593 and 48205), the
-  time being `TIMEPLAYED`; the details beside the list have no time, as in the original. Each row's `savenfo.res` (name, area as "Planet - Place", play time, up to three party
-  portraits) and `Screen.tga` give the details. A click selects and shows them, a second click or
-  Load returns `load_game` with the save's folder as a path (`save::find_save` resolves it, ours or
-  the install's). Delete is hidden: the install is never written.
+  and the install's `Saves/` (folder `NNNNNN - Name`; 0 quick save, 1 autosave, 2+ manual): quick
+  and auto first (ours hide the install's of the same number), then the manual saves **newest
+  first** by number (a new save takes the highest number + 1; a save written over keeps its
+  place). The original lists the folders by name, so its manual saves run oldest first; newest
+  first is ours, as the user asked ([re/party-items-saves.md](../re/party-items-saves.md) 1.5). A
+  row reads as the original's (`make_row_text`): "Game N - Hh Mm" over the save's name for a manual
+  save (dialog.tlk 48519), "Quick Save - HH MM" and "Auto Save - HH MM" for the others (47991 / 1593
+  and 48205), the time being `TIMEPLAYED`, in the prototype's font and blue, centred (the font's
+  small capitals are its own; nothing is upper-cased). The rows are buttons as in the original
+  (`set_click_rows`): menu-blue frames, the hilighted row's frame and text yellow and pulsing
+  (`set_hilight_pulses`, `FRAME_ITEM`); the first row is hilighted when the screen opens and its
+  details shown; the pointer over a row hilights it and shows its details (`row_hover`); one click
+  loads it. Up/Down move the selection, Enter or Load take the selected row. The details:
+  `savenfo.res` `AREANAME` cut at its first '-' into `LBL_PLANETNAME` / `LBL_AREANAME`, up to three
+  party portraits, and `Screen.tga` (an autosave with `PCAUTOSAVE`, which has none in the
+  install's, shows its `SCREENSHOT` resource, the module's loading screen); "Cheat Used" in yellow
+  over the picture for `CHEATUSED`; "New Slot" (1590) in the picture's box for the New Slot row and
+  for a save that cannot be read. The details have no time, as in the original. Loading returns
+  `load_game` with the save's folder as a path (`save::find_save` resolves it, ours or the
+  install's); in game (`Front.in_game`) it first asks "The current game will not be saved.
+  Continue with load?" (32155, a message box kept on the screen stack as `SCR_LOADASK`). Delete is
+  hidden: the install is never written, and std has no way to remove a directory for ours.
 - **Save Game** (in game only, from the options menu; `SCR_SAVE`): the same screen in save mode:
-  our manual saves with a "New Slot" row first (selected). Save (or a second click) on New Slot
+  our manual saves, newest first, with a "New Slot" row first (hilighted). A click (or Save) on New Slot
   opens `savename.gui` over it (`make_edit` on `EDITBOX`) with "Game N - Hh Mm" (dialog.tlk 1594);
   on a save it first asks "Are you sure you want to overwrite the save game?" (1591, a message box
   kept on the screen stack as `SCR_OVERWRITE`), and OK opens the name box with that save's name.
@@ -312,7 +325,10 @@ yellow; `draw_menu_check` puts the ring in a 25x25 square at the left and the la
 - **Unbound controls**: the generic loader creates every control in a file. Controls the original's
   code never binds (the main menu's `LBL_BW`, `LBL_LUCAS`, the debug warp) are hidden by the screen's
   code, not by the loader. `guiview` shows files unhidden.
-- **Delete in Load Game is hidden** because the install is read-only for us.
+- **Delete in the save lists is hidden** because the install is read-only for us and std cannot
+  remove a directory (our own saves could otherwise be deleted; the original asks 1592).
+- **The save lists put the manual saves newest first**; the original's run oldest first (by folder
+  name).
 - **The movie list and the options descriptions** are as complete as the data allows; the original's
   per-option description strings are not in the files.
 

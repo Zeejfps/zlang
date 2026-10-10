@@ -19,6 +19,7 @@ namespace frontend {
     const SCR_SAVE: u32 = 14                // the Save Game list (saveload.gui in save mode); in game only
     const SCR_SAVENAME: u32 = 15            // its name box (savename.gui), over it
     const SCR_OVERWRITE: u32 = 18           // "Are you sure you want to overwrite the save game?" (a message box), over the Save Game list
+    const SCR_LOADASK: u32 = 19             // "The current game will not be saved. Continue with load?" (a message box), over the in-game Load Game list
 
     // What the engine does next.
     union Outcome {
@@ -43,6 +44,8 @@ namespace frontend {
         save_name: [64]u8, save_len: usize, // the name the Save Game screen was given: take_save_request
         save_slot: i32,                     // with it, the manual save it writes over (-1: a new slot)
         pick_slot: i32,                     // the save the name box is for (-1: a new slot), until it is accepted
+        pick_load: i32,                     // the Load Game row the 32155 box is for
+        in_game: bool,                      // the screens are the in-game options menu's (a game is running), not the main menu's
         name_default: [64]u8, name_default_len: usize,  // what the name box starts with
         settings: Settings,
         config_path: [256]u8, config_len: usize,
@@ -91,7 +94,7 @@ namespace frontend {
     fn make { mut fs: Fs, heap: *mut heap::Heap, game: []u8, config_path: []u8 } -> Front {
         let mut fe = Front{
             heap, game, own_saves = [0; 300], own_saves_len = 0, played_seconds = 0,
-            save_name = [0; 64], save_len = 0, save_slot = -1, pick_slot = -1, name_default = [0; 64], name_default_len = 0,
+            save_name = [0; 64], save_len = 0, save_slot = -1, pick_slot = -1, pick_load = -1, in_game = false, name_default = [0; 64], name_default_len = 0,
             settings = load_settings{ &fs, heap, path = config_path },
             config_path = [0; 256], config_len = 0, stack = [Entry{ screen = 0, panel = 0 }; 10], depth = 0,
             saves = SaveList{ entries = slice::empty(SaveEntry){}, count = 0 }, saves_loaded = false, shot = null,

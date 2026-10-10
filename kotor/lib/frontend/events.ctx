@@ -81,6 +81,12 @@ namespace frontend {
         // Saving needs no selection (the "New Slot" row is the one); loading needs a save picked.
         gui::set_enabled{ &g, panel = p, tag = "BTN_SAVELOAD", enabled = for_save }
         gui::list_clear{ &g, panel = p, tag = "LB_GAMES" }
+        // The rows are buttons (CSWGuiSaveLoadEntry): the pointer hilights one and shows its
+        // details (event 0), a click loads it or saves over it (0x27, OnLoad / OnSave); their
+        // frames are the menu blue, the hilighted one yellow and pulsing (the constructor
+        // 0x006cc680 recolours the prototype's BORDER and HILIGHT); the text is the file's blue.
+        gui::set_click_rows{ &g, panel = p, tag = "LB_GAMES" }
+        gui::set_hilight_pulses{ &g, panel = p, tag = "LB_GAMES" }
         let mut i: usize = 0
         while i < fe.saves.count {
             let e = fe.saves.entries[i]
@@ -93,12 +99,16 @@ namespace frontend {
                 let text = try make_row_text{ &g, e = &fe.saves.entries[i], into = tb[..] }
                 _ = try gui::list_add{ &g, panel = p, tag = "LB_GAMES", text, user = @as(i64, i) }
             }
-            gui::list_set_color{ &g, panel = p, tag = "LB_GAMES", row = @as(i32, i), color = gui::color_menu{} }
+            gui::list_set_frame{ &g, panel = p, tag = "LB_GAMES", row = @as(i32, i), frame = gui::FRAME_ITEM }
             i = i + 1
         }
-        if for_save and fe.saves.count > 0 { gui::list_select{ &g, panel = p, tag = "LB_GAMES", row = 0 } }
         try gui::set_text{ &g, panel = p, tag = "LBL_PLANETNAME", text = "" }
         try gui::set_text{ &g, panel = p, tag = "LBL_AREANAME", text = "" }
+        // The list is the active control with its first row hilighted and that row's details shown.
+        if fe.saves.count > 0 {
+            gui::list_select{ &g, panel = p, tag = "LB_GAMES", row = 0 }
+            try show_save{ &fe, &g, &fs, &dev, p, row = 0, for_save }
+        }
     }
 
     // Writes into `into` a save's row as the original's list shows it (0x006c9780): a manual save
@@ -141,8 +151,12 @@ namespace frontend {
         gui::set_enabled{ &g, panel = p, tag = "BTN_SAVELOAD", enabled = for_save or not e.corrupt }
         release_shot{ &fe, &dev }
         let tags: [3][]u8 = ["LBL_PM1", "LBL_PM2", "LBL_PM3"]
-        if e.new_slot {
-            // Nothing is saved there yet.
+        // The picture's text in saveload.gui's own blue (a "Cheat Used" before may have made it yellow).
+        gui::set_text_color{ &g, panel = p, tag = "LBL_SCREENSHOT", color = render::Color{ r = 0.0, g = 0.63671875, b = 0.95703125, a = 1.0 } }
+        if e.new_slot or e.corrupt {
+            // Nothing (readable) is saved there: the picture's box says "New Slot" (1590), as the
+            // original's does for both (0x006c89d0).
+            try gui::set_strref{ &g, panel = p, tag = "LBL_SCREENSHOT", strref = 1590 }
             try gui::set_text{ &g, panel = p, tag = "LBL_PLANETNAME", text = "" }
             try gui::set_text{ &g, panel = p, tag = "LBL_AREANAME", text = "" }
             gui::clear_picture{ &g, panel = p, tag = "LBL_SCREENSHOT" }
@@ -153,22 +167,33 @@ namespace frontend {
             }
             return
         }
-        // The area is saved as "Planet - Place"; the panel has a label for each half.
+        // A save made with cheats says so over its picture, in the menu yellow.
+        try gui::set_text{ &g, panel = p, tag = "LBL_SCREENSHOT", text = if e.cheat { "Cheat Used" } else { "" } }
+        if e.cheat { gui::set_text_color{ &g, panel = p, tag = "LBL_SCREENSHOT", color = gui::color_hilight{} } }
+        // The area is saved as "Planet - Place"; the panel has a label for each half. The original
+        // cuts at the first '-', dropping the character before it and the one after.
         let area = e.area[..e.area_len]
-        let dash = ci::find{ s = area, needle = " - " }
+        let dash = ci::find{ s = area, needle = "-" }
         if dash != null {
-            try gui::set_text{ &g, panel = p, tag = "LBL_PLANETNAME", text = area[..dash] }
-            try gui::set_text{ &g, panel = p, tag = "LBL_AREANAME", text = area[dash + 3..] }
+            let d: usize = dash
+            try gui::set_text{ &g, panel = p, tag = "LBL_PLANETNAME", text = area[..(if d > 0 { d - 1 } else { 0 })] }
+            try gui::set_text{ &g, panel = p, tag = "LBL_AREANAME", text = area[(if d + 2 < area.len { d + 2 } else { area.len })..] }
         } else {
             try gui::set_text{ &g, panel = p, tag = "LBL_PLANETNAME", text = "" }
             try gui::set_text{ &g, panel = p, tag = "LBL_AREANAME", text = area }
         }
-        let shot = load_screenshot{ &fs, &dev, heap = fe.heap, scratch = &g.cache.scratch, folder = e.path[..e.path_len] } iferr { null }
-        fe.shot = shot
-        if shot != null {
-            gui::set_picture{ &g, panel = p, tag = "LBL_SCREENSHOT", texture = shot, w = 256.0, h = 256.0 }
+        let shot_name = resref::bytes{ r = &e.shot_res }
+        if shot_name.len > 0 {
+            let img = gui::resolve_img{ &g, &fs, &dev, name = shot_name }
+            if img.ok { gui::set_picture{ &g, panel = p, tag = "LBL_SCREENSHOT", texture = img.tex, w = img.w, h = img.h } } else { gui::clear_picture{ &g, panel = p, tag = "LBL_SCREENSHOT" } }
         } else {
-            gui::clear_picture{ &g, panel = p, tag = "LBL_SCREENSHOT" }
+            let shot = load_screenshot{ &fs, &dev, heap = fe.heap, scratch = &g.cache.scratch, folder = e.path[..e.path_len] } iferr { null }
+            fe.shot = shot
+            if shot != null {
+                gui::set_picture{ &g, panel = p, tag = "LBL_SCREENSHOT", texture = shot, w = 256.0, h = 256.0 }
+            } else {
+                gui::clear_picture{ &g, panel = p, tag = "LBL_SCREENSHOT" }
+            }
         }
         let mut k: usize = 0
         while k < 3 {
@@ -180,6 +205,25 @@ namespace frontend {
             }
             k = k + 1
         }
+    }
+
+    // Load was chosen on `row` (CSWGuiSaveLoad::OnLoad 0x006cc0e0): from the main menu the save
+    // loads at once; in game the original first asks "The current game will not be saved.
+    // Continue with load?" (32155) and loads on Yes.
+    fn begin_load { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, row: i32 } -> Outcome {
+        let out = load_outcome{ &fe, row }
+        if row < 0 or @as(usize, row) >= fe.saves.count { return out }
+        let e = fe.saves.entries[@as(usize, row)]
+        if e.corrupt or e.new_slot { return out }
+        if not fe.in_game { return out }
+        if fe.depth >= 10 { return Outcome::running }
+        let text = gui::tlk_text{ &g, strref = 32155 } iferr { return out }
+        defer gui::free_string{ &g, s = text }
+        let id = gui::message_box{ &g, &fs, &dev, text, cancel = true } iferr { return out }
+        fe.pick_load = row
+        fe.stack[fe.depth] = Entry{ screen = SCR_LOADASK, panel = id }
+        fe.depth = fe.depth + 1
+        return Outcome::running
     }
 
     fn load_outcome { fe: *Front, row: i32 } -> Outcome {
@@ -581,14 +625,14 @@ namespace frontend {
         }
         if screen == SCR_LOAD or screen == SCR_SAVE {
             let saving = screen == SCR_SAVE
-            if ev.kind == gui::EventKind::row_selected {
+            if ev.kind == gui::EventKind::row_selected or ev.kind == gui::EventKind::row_hover {
                 show_save{ &fe, &g, &fs, &dev, p, row = ev.row, for_save = saving } iferr {}
             } else if ev.kind == gui::EventKind::row_activated {
-                if saving { begin_save_name{ &fe, &g, &fs, &dev, row = ev.row } } else { return load_outcome{ &fe, row = ev.row } }
+                if saving { begin_save_name{ &fe, &g, &fs, &dev, row = ev.row } } else { return begin_load{ &fe, &g, &fs, &dev, row = ev.row } }
             } else if ev.kind == gui::EventKind::activate {
                 if tag_is{ ev, tag = "BTN_SAVELOAD" } {
                     let row = gui::list_selected{ &g, panel = p, tag = "LB_GAMES" }
-                    if saving { begin_save_name{ &fe, &g, &fs, &dev, row } } else { return load_outcome{ &fe, row } }
+                    if saving { begin_save_name{ &fe, &g, &fs, &dev, row } } else { return begin_load{ &fe, &g, &fs, &dev, row } }
                 }
                 if tag_is{ ev, tag = "BTN_BACK" } { close_top{ &fe, &g, &fs, &dev } }
             }
@@ -598,6 +642,15 @@ namespace frontend {
             if ev.kind == gui::EventKind::activate and tag_is{ ev, tag = "BTN_OK" } {
                 close_top{ &fe, &g, &fs, &dev }
                 open_screen{ &fe, &g, &fs, &dev, screen = SCR_SAVENAME } iferr {}
+            } else if ev.kind == gui::EventKind::activate and tag_is{ ev, tag = "BTN_CANCEL" } {
+                close_top{ &fe, &g, &fs, &dev }
+            }
+            return Outcome::running
+        }
+        if screen == SCR_LOADASK {
+            if ev.kind == gui::EventKind::activate and tag_is{ ev, tag = "BTN_OK" } {
+                close_top{ &fe, &g, &fs, &dev }
+                return load_outcome{ &fe, row = fe.pick_load }
             } else if ev.kind == gui::EventKind::activate and tag_is{ ev, tag = "BTN_CANCEL" } {
                 close_top{ &fe, &g, &fs, &dev }
             }

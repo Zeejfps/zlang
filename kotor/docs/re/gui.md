@@ -975,7 +975,7 @@ modal) and starts the menu music (`mus_theme_cult`, 0x005f9af0). The game reads 
 | Tag | Role |
 |---|---|
 | `LBL_PANELNAME` | "Load Game" (1585) or "Save Game" (1588) |
-| `LB_GAMES` | the saves; rows use the menu blue/yellow text colours and a pulsing hilight; the active control |
+| `LB_GAMES` | the saves; the active control. The constructor gives its prototype the menu blue `BORDER` colour (button +0x90) and the menu yellow `HILIGHT` colour (+0x104) and sets the `HILIGHT` pulsing (`SetPulsing(1,1,0)` on +0xf4); the text keeps the file's blue (0, 0.67, 0.99) and turns yellow while hilighted, as any button's (`SetHilighted` 0x00418e00) |
 | `LBL_SCREENSHOT`, `LBL_PLANETNAME`, `LBL_AREANAME`, `LBL_PM1..3` | details of the hilighted save (screenshot, planet, area, party members; 0x006c89d0) |
 | `BTN_SAVELOAD` | "Load" (1589) or "Save" (1587): `OnLoad` 0x006cc0e0 or `OnSave` 0x006cbb60 on 0x27 (the `OnButtonAccept` registered first is replaced: a control keeps one handler per event, `SetEventHandler` 0x0041ab20) |
 | `BTN_DELETE` | `OnDelete` 0x006caa90 on 0x27 (replaces the `OnButtonX` registered first) |
@@ -984,13 +984,23 @@ modal) and starts the menu music (`mus_theme_cult`, 0x005f9af0). The game reads 
 `HandleInputEvent` (0x006c86d0): back (0x28, 0x2d, 0x2e) plays the click and marks the panel for
 deletion; opened from the main menu it re-shows the main menu, otherwise it pops the modal
 panel. The list is filled by 0x006cc160: one row per directory in `SAVES:` (by folder name,
-ascending: party-items-saves.md 1.5), its text set by 0x006c9780 from the row's number and
+ascending, so manual saves oldest first: party-items-saves.md 1.5; ours lists them newest first), each
+a `CSWGuiSaveLoadEntry` (0x248 bytes, ctor 0x006cb940, vtable 0x00757740: a `CSWGuiButton` with
+the plain button `Render` 0x00417ab0, no drawing of its own) copied from the `PROTOITEM` (a button
+246×50, `border2c`/`border1c` frames of dimension 4, `dialogfont16x16` centred, alignment 18). The
+list (272×323 at 48,83, `PADDING` 5, scroll bar on the left) shows 323 / (50 + 5) = 5 rows and
+stretches them to fill its height (`UpdateLayout` 0x0041b140: the spare 43 pixels shared out, 8
+each and 1 more for the first 3). The row's text is set by 0x006c9780 from the row's number and
 `TIMEPLAYED` (hours = seconds / 3600, minutes = seconds / 60 mod 60): number 0 "Quick Save"
 (47991) and number 1 "Auto Save" (1593), each followed by 48205 " - <CUSTOM0>H <CUSTOM1>M"
 (hours, minutes); any other number 48519 "Game <CUSTOM0> - <CUSTOM1>h <CUSTOM2>m\n<CUSTOM3>"
-(number − 1, hours, minutes, `SAVEGAMENAME`), two lines. The details (0x006c89d0) show no time:
-the play time is only in the rows. Each row takes 0x27
-→ `OnLoad`/`OnSave`, 0x29 → `OnDelete` and 0 → the details (shown at once for the first row). In
+(number − 1, hours, minutes, `SAVEGAMENAME`), two lines; the small capitals are the font's
+glyphs, nothing is upper-cased. The details (0x006c89d0, party-items-saves.md 1.5) show no time:
+the play time is only in the rows. Each row takes 0x27 → `OnLoad`/`OnSave`, 0x29 → `OnDelete` and
+0 (hilight: the pointer over it, or the keys) → the details (also run at once for the first folder
+read). The rows being buttons, one click on a row selects it and sends 0x27, so it loads (or saves
+over) at once, like the item lists' rows; `OnLoad` 0x006cc0e0 and `OnSave` take the list's selected
+row, which is also what the `BTN_SAVELOAD` button acts on. In
 save mode rows numbered 0 and 1 are left out and a "New Slot" row (1590) goes first, numbered one
 above the highest save (at least 2). In load mode with no saves the panel closes the same way as
 back and the message box says 42491 ("You have no Saved Games."). `TEMP:` is created (emptied if

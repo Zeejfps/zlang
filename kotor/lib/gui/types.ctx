@@ -150,6 +150,7 @@ namespace gui {
         row_frame_alpha: f32,           // item rows: the alpha of a row's normal frame (the equipment screen's slot view draws none)
         entry_rows: bool,               // the rows are item entries (ENTRY_BOX): an icon box at the left, the frames beside it
         entry_font: i32,                // item entries: fnt_d16x16's slot for the stack count, -1 none
+        hilight_pulses: bool,           // the hilighted row's frame pulses (the save lists: CSWGuiSaveLoad's constructor 0x006cc680 sets its prototype's HILIGHT pulsing)
         click_rows: bool,               // item lists: a click on a row activates it (the rows are buttons in the original) and hovering one says so (row_hover)
         inert_rows: bool,               // the rows are shown, not chosen: the pointer and the keys pass them by, a click does nothing, the list still scrolls (the loot panel's own items)
         hover_row: i32,                 // -1 none

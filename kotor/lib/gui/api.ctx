@@ -373,6 +373,13 @@ namespace gui {
         c.click_rows = true
     }
 
+    // Has the hilighted row's frame pulse, as the save lists' do (CSWGuiSaveLoad's constructor
+    // 0x006cc680 sets its prototype's HILIGHT pulsing).
+    fn set_hilight_pulses { mut g: Gui, panel: u32, tag: []u8 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        c.hilight_pulses = true
+    }
+
     // Turns a list's rows inert (shown, never hilighted, selected or activated; the list still scrolls) or back.
     fn set_inert_rows { mut g: Gui, panel: u32, tag: []u8, inert: bool } {
         let c = find_control{ &g, panel, tag } ifnull { return }

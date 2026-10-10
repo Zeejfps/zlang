@@ -3,11 +3,11 @@
 // the area, the play time, the party's portraits, and Screen.tga for the picture. Folders are
 // `NNNNNN - Name`: 0 is the quick save, 1 the autosave, manual saves are 2 and up.
 //
-// The Load Game list merges both directories in the original's order, by folder name, which is by
-// number (PopulateList 0x006cc160 takes the directory list sorted by name, GetDirectoryList
-// 0x005e6640): the quick save, the autosave (ours hide the install's of the same number), then the
-// manual saves, oldest number first (on a tie ours first). The Save Game list is ours only, manual
-// saves only, with a "New Slot" row first.
+// Both lists show the quick save, the autosave (ours hide the install's of the same number), then
+// the manual saves newest first, by number (a new save takes the highest number + 1; on a tie ours
+// first). The original's PopulateList 0x006cc160 lists the folders by name, ascending, so its
+// manual saves run oldest first (party-items-saves.md 1.5); newest first is ours, as asked. The
+// Save Game list is ours only, manual saves only, with a "New Slot" row first.
 namespace frontend {
     struct SaveEntry {
         number: i32,
@@ -18,6 +18,8 @@ namespace frontend {
         seconds: u32,
         portraits: [3]resref::ResRef, portrait_count: usize,
         corrupt: bool,
+        cheat: bool,                            // CHEATUSED: the details say "Cheat Used"
+        shot_res: resref::ResRef,               // an autosave's SCREENSHOT (PCAUTOSAVE): its picture, a resource
         path: [300]u8, path_len: usize,         // the folder: what save::find_save resolves
         ours: bool,                             // from our saves directory, not the install's
         new_slot: bool,                         // the Save Game list's "New Slot" row (no folder)
@@ -114,10 +116,14 @@ namespace frontend {
         }
     }
 
-    // Whether `a` is listed before `b`: New Slot, then by number.
+    // Whether `a` is listed before `b`: New Slot, the quick save, the autosave, then the manual
+    // saves newest (highest number) first.
     fn listed_before { a: *SaveEntry, b: *SaveEntry } -> bool {
         if a.new_slot != b.new_slot { return a.new_slot }
-        if a.number != b.number { return a.number < b.number }
+        if a.number != b.number {
+            if a.number < 2 or b.number < 2 { return a.number < b.number }
+            return a.number > b.number
+        }
         return a.ours and not b.ours
     }
 
@@ -137,6 +143,8 @@ namespace frontend {
 
     fn read_save { mut fs: Fs, heap: *mut heap::Heap, dir: []u8, folder: []u8, number: i32, ours: bool } -> SaveEntry {
         let mut e: SaveEntry
+        e.cheat = false
+        e.shot_res = resref::empty{}
         e.number = number
         e.ours = ours
         e.folder_len = copy_into{ dst = e.folder[..], src = folder }
@@ -160,6 +168,12 @@ namespace frontend {
         e.area_len = copy_into{ dst = e.area[..], src = gff::get_string{ doc, s = root, label = "AREANAME" } ifnull "" }
         e.module_len = copy_into{ dst = e.module[..], src = gff::get_string{ doc, s = root, label = "LASTMODULE" } ifnull "" }
         e.seconds = gff::get_dword{ doc, s = root, label = "TIMEPLAYED" } ifnull 0
+        e.cheat = (gff::get_number{ doc, s = root, label = "CHEATUSED" } ifnull 0) != 0
+        // An autosave made on a module change has no Screen.tga: the original shows its SCREENSHOT,
+        // the module's loading screen (0x006c89d0, flags 0x18).
+        let auto = (gff::get_number{ doc, s = root, label = "PCAUTOSAVE" } ifnull 0) != 0 or (gff::get_number{ doc, s = root, label = "REBOOTAUTOSAVE" } ifnull 0) != 0
+        e.shot_res = resref::empty{}
+        if auto { e.shot_res = resref::truncate{ name = gff::get_string{ doc, s = root, label = "SCREENSHOT" } ifnull "" } }
         if number == 0 {
             e.label_len = copy_into{ dst = e.label[..], src = "Quick Save" }
         } else if number == 1 {

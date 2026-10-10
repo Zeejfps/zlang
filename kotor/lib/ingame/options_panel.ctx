@@ -109,6 +109,7 @@ namespace options_panel {
         // for it keeps close_top from refusing.
         fe.stack[0] = frontend::Entry{ screen = frontend::SCR_MAIN, panel = 0 }
         fe.depth = 1
+        fe.in_game = true
         frontend::set_own_saves{ fe, dir = w.gip.root }
         s.fe = fe
     }
