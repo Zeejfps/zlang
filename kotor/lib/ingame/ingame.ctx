@@ -195,11 +195,11 @@ namespace ingame {
         return ui.menus.options.quit
     }
 
-    // The options menu's Save Game, once: the name to save under (a new slot; "QUICKSAVE" and
-    // "AUTOSAVE" are the game's own slots) for save::save_named. The menus closed themselves when
-    // it was chosen, so the frame that is then saved is the game's. The bytes stay valid until the
-    // next request.
-    fn take_save_request { mut ui: Ingame } -> ?[]u8 {
+    // The options menu's Save Game, once: the name to save under and the manual save it writes
+    // over (save::save_over), or slot -1 for a new one (save::save_named). The menus closed
+    // themselves when it was chosen, so the frame that is then saved is the game's. The name's
+    // bytes stay valid until the next request.
+    fn take_save_request { mut ui: Ingame } -> ?options_panel::SaveRequest {
         return options_panel::take_save{ s = &ui.menus.options }
     }
 

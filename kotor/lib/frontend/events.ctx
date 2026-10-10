@@ -176,20 +176,32 @@ namespace frontend {
         fe.name_default_len = n
     }
 
-    // Save was pressed (or the row activated) on `row`: asks for the name, starting with the
-    // default for a new slot or the name of the save that is being replaced. The original asks
-    // "Are you sure you want to overwrite" (1591) for an existing one and writes over it; the game
-    // layer here only makes new slots (save::save_named), so the old save stays and there is
-    // nothing to confirm.
+    // Save was pressed (or the row activated) on `row` (CSWGuiSaveLoad::OnSave 0x006cbb60). A new
+    // slot asks for the name at once, starting with the default. An existing save first asks
+    // "Are you sure you want to overwrite the save game?" (1591); Yes asks for the name starting
+    // with the save's own, and the game is then written over that save (save::save_over).
     fn begin_save_name { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, row: i32 } {
         if row < 0 or @as(usize, row) >= fe.saves.count { return }
         let e = fe.saves.entries[@as(usize, row)]
         if e.new_slot {
             make_default_name{ &fe }
-        } else {
-            fe.name_default_len = copy_into{ dst = fe.name_default[..], src = e.label[..e.label_len] }
+            fe.pick_slot = -1
+            open_screen{ &fe, &g, &fs, &dev, screen = SCR_SAVENAME } iferr {}
+            return
         }
-        open_screen{ &fe, &g, &fs, &dev, screen = SCR_SAVENAME } iferr {}
+        fe.name_default_len = copy_into{ dst = fe.name_default[..], src = e.label[..e.label_len] }
+        fe.pick_slot = e.number
+        ask_overwrite{ &fe, &g, &fs, &dev } iferr {}
+    }
+
+    // The 1591 box over the Save Game list, a screen of the stack so that its answer comes here.
+    fn ask_overwrite { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } -> ! {
+        if fe.depth >= 10 { return }
+        let text = try gui::tlk_text{ &g, strref = 1591 }
+        defer gui::free_string{ &g, s = text }
+        let id = try gui::message_box{ &g, &fs, &dev, text, cancel = true }
+        fe.stack[fe.depth] = Entry{ screen = SCR_OVERWRITE, panel = id }
+        fe.depth = fe.depth + 1
     }
 
     // The name box was just opened: an edit box (code makes it one: the file has a label) with the
@@ -215,6 +227,7 @@ namespace frontend {
         let c = gui::find_control{ &g, panel = p, tag = "EDITBOX" } ifnull { return }
         let typed = trim_spaces{ s = c.text.text }
         fe.save_len = copy_into{ dst = fe.save_name[..], src = if typed.len > 0 { typed } else { fe.name_default[..fe.name_default_len] } }
+        fe.save_slot = fe.pick_slot
         close_top{ &fe, &g, &fs, &dev }
         close_top{ &fe, &g, &fs, &dev }
     }
@@ -543,6 +556,15 @@ namespace frontend {
                     if saving { begin_save_name{ &fe, &g, &fs, &dev, row } } else { return load_outcome{ &fe, row } }
                 }
                 if tag_is{ ev, tag = "BTN_BACK" } { close_top{ &fe, &g, &fs, &dev } }
+            }
+            return Outcome::running
+        }
+        if screen == SCR_OVERWRITE {
+            if ev.kind == gui::EventKind::activate and tag_is{ ev, tag = "BTN_OK" } {
+                close_top{ &fe, &g, &fs, &dev }
+                open_screen{ &fe, &g, &fs, &dev, screen = SCR_SAVENAME } iferr {}
+            } else if ev.kind == gui::EventKind::activate and tag_is{ ev, tag = "BTN_CANCEL" } {
+                close_top{ &fe, &g, &fs, &dev }
             }
             return Outcome::running
         }

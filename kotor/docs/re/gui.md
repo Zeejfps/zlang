@@ -996,7 +996,11 @@ it already exists) and mounted for the screenshots.
   `OPTIONS:OPT` is missing or empty), else the message box shows 47989 with the shortfall in MB;
   overwriting a save asks 1591 first (its space test only fails on a 32-bit overflow, so in
   practice there is none). Then 0x006cb820 opens `CSWGuiSaveName` (modal), pre-filled with the
-  old name when overwriting.
+  old name when overwriting. Its OK ends in `DoSave` (0x006c8790): the row's number (the old
+  save's, or the New Slot row's), folder name `Game%d` of the number minus 1, and the typed name
+  go to the client's save call (0x005ed670); the server empties the folder and writes it anew
+  (party-items-saves.md 1.1 and 1.3). The quick save and autosave rows (numbers 0 and 1) are not
+  in the save list, so the panel never writes over them.
 - **Delete**: asks 1592, then 0x006c8900.
 
 `CSWGuiSaveName` (constructor 0x006cae70, 0x690 bytes, vtable 0x007576d0: `EDITBOX`,

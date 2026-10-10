@@ -579,7 +579,12 @@ each frame:
   and reads the saved IFO/GIT (`UseTemplates` 0: no blueprints, no OnEnter for its creatures),
   then `save::restore_party` brings the members back next to the player. `save::save_game{ &w,
   slot, folder_name, save_name, screen }` writes `%06d - <name>/` (SAVEGAME.sav, GLOBALVARS.res,
-  PARTYTABLE.res, savenfo.res, Screen.tga; 0 QUICKSAVE, 1 AUTOSAVE, 2+ manual);
+  PARTYTABLE.res, savenfo.res, Screen.tga; 0 QUICKSAVE, 1 AUTOSAVE, 2+ manual). A folder that is
+  there already is written over: each file goes beside the old one as `<file>.new` first (a
+  failure removes those and leaves the old save whole), then the renames replace the old files
+  and anything else in the folder is removed. `save::save_named` picks the slot by name (a new
+  manual save takes the next number), `save::save_over{ &w, slot, name, ... }` writes over manual
+  save `slot` in its own folder (the Save Game list's choice of an existing save);
   `save::load_game{ &w, &vm, engine, folder }` replaces the game in progress, reads globals and
   the party table, and enters LASTMODULE with `w.restoring` (the player and the companions where
   the save says). `save::find_save` looks in our directory, then the install's Saves/. Play:

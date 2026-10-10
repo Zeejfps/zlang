@@ -268,12 +268,16 @@ if frontend::take_display_change{ &fe } { apply fe.settings (resolution, full sc
   Load returns `load_game` with the save's folder as a path (`save::find_save` resolves it, ours or
   the install's). Delete is hidden: the install is never written.
 - **Save Game** (in game only, from the options menu; `SCR_SAVE`): the same screen in save mode:
-  our manual saves with a "New Slot" row first (selected). Save (or a second click) opens
-  `savename.gui` over it (`make_edit` on `EDITBOX`) with "Game N - Hh Mm" (dialog.tlk 1594) for a
-  new slot or the chosen save's name; OK or Enter makes the request (`take_save_request`, a name
-  for `save::save_named`) and the screens close. Overwriting makes a new slot (the old save stays),
-  so the original's "Are you sure you want to overwrite" (1591) is not asked. The options menu
-  closes itself on a save or load request, so the saved picture is the game's frame.
+  our manual saves with a "New Slot" row first (selected). Save (or a second click) on New Slot
+  opens `savename.gui` over it (`make_edit` on `EDITBOX`) with "Game N - Hh Mm" (dialog.tlk 1594);
+  on a save it first asks "Are you sure you want to overwrite the save game?" (1591, a message box
+  kept on the screen stack as `SCR_OVERWRITE`), and OK opens the name box with that save's name.
+  OK or Enter in the name box makes the request (`take_save_request`: the name, and in
+  `Front.save_slot` the number of the save written over or -1; in game
+  `options_panel::SaveRequest`, which play.ctx hands to `save::save_over` or `save::save_named`)
+  and the screens close. The quick and auto saves are not in this list (the original leaves them
+  out too), so they cannot be written over from it. The options menu closes itself on a save or
+  load request, so the saved picture is the game's frame.
 - **Movies** (`titlemovie.gui`): rows of `movies.2da` whose `alwaysshow` is 1 or that the player
   has seen (`[Movies Shown]` in our settings file); activating one plays it over the menu.
 - **Options**: `optionsmain` opens `optgameplay`, `optfeedback`, `optautopause`, `optgraphics`

@@ -76,7 +76,7 @@ namespace save {
     }
 
     // A save asked for by name: QUICKSAVE (slot 0), AUTOSAVE (slot 1), anything else a new manual
-    // save in the next slot, its folder `Game<slot>` and `name` what the player typed.
+    // save in the next slot, its folder `Game<slot - 1>` and `name` what the player typed.
     fn save_named { mut w: world::World, name: []u8, screen: []u8, width: u32, height: u32 } -> ! {
         if ci::eq{ a = name, b = "QUICKSAVE" } {
             try save_game{ &w, slot = 0, folder_name = "QUICKSAVE", save_name = "Quick Save", screen, width, height }
@@ -87,30 +87,99 @@ namespace save {
             return
         }
         let slot = next_slot{ &w }
-        let mut buf: [16]u8 = ['G', 'a', 'm', 'e', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-        let mut digits: [8]u8
+        let mut buf: [16]u8
+        try save_game{ &w, slot, folder_name = make_game_name{ slot, into = buf[..] }, save_name = name, screen, width, height }
+    }
+
+    // The Save Game list's choice of an existing manual save (CSWGuiSaveLoad::DoSave 0x006c8790):
+    // the game is written over save number `slot` (2 and up), in that save's own folder, under
+    // `name`. Should the folder be gone, it is made as a new one would be.
+    fn save_over { mut w: world::World, slot: u32, name: []u8, screen: []u8, width: u32, height: u32 } -> ! {
+        if slot < 2 {
+            try save_named{ &w, name, screen, width, height }
+            return
+        }
+        let mut buf: [64]u8
+        let mut n = find_own_folder{ &w, slot, into = buf[..] }
+        if n == 0 { n = make_game_name{ slot, into = buf[..] }.len }
+        try save_game{ &w, slot, folder_name = buf[..n], save_name = name, screen, width, height }
+    }
+
+    // "Game<slot - 1>" into `into`: the folder name of manual save `slot` (the install's
+    // "000002 - Game1").
+    fn make_game_name { slot: u32, into: []mut u8 } -> []u8 {
+        let prefix: [4]u8 = ['G', 'a', 'm', 'e']
+        let mut n: usize = 0
+        while n < 4 and n < into.len {
+            into[n] = prefix[n]
+            n = n + 1
+        }
+        let mut digits: [10]u8
         let mut d: usize = 0
-        let mut v = slot - 1          // the install's "000002 - Game1": the game number is one less
-        while v > 0 and d < 8 {
+        let mut v = if slot > 0 { slot - 1 } else { 0 }
+        if v == 0 {
+            digits[0] = '0'
+            d = 1
+        }
+        while v > 0 and d < 10 {
             digits[d] = @trunc(u8, '0' + v % 10)
             v = v / 10
             d = d + 1
         }
-        let mut n: usize = 4
-        while d > 0 {
+        while d > 0 and n < into.len {
             d = d - 1
-            buf[n] = digits[d]
+            into[n] = digits[d]
             n = n + 1
         }
-        try save_game{ &w, slot, folder_name = buf[..n], save_name = name, screen, width, height }
+        return into[..n]
+    }
+
+    // Copies into `into` the name after `NNNNNN - ` of the folder of save `slot` in our saves
+    // directory; its length, 0 when there is none.
+    fn find_own_folder { mut w: world::World, slot: u32, into: []mut u8 } -> usize {
+        let names = fs::list(arena::Arena){ fs = &w.fs, heap = w.scratch, realloc = arena::alloc, path = w.gip.root } iferr { return 0 }
+        let mut i: usize = 0
+        while i < names.len {
+            let n = names[i]
+            i = i + 1
+            if n.len <= 9 or n[6] != ' ' or n[7] != '-' or n[8] != ' ' { continue }
+            let mut v: u32 = 0
+            let mut k: usize = 0
+            let mut digits = true
+            while k < 6 {
+                if n[k] < '0' or n[k] > '9' { digits = false }
+                v = v * 10 + @as(u32, n[k] - '0')
+                k = k + 1
+            }
+            if not digits or v != slot or n.len - 9 > into.len { continue }
+            slice::copy(u8){ dst = into[..n.len - 9], src = n[9..] }
+            return n.len - 9
+        }
+        return 0
     }
 
     fn file_in { mut w: world::World, folder: []u8, name: []u8 } -> ![]mut u8 {
         return try path::join(arena::Arena){ realloc = arena::alloc, heap = w.scratch, dir = folder, name }
     }
 
+    // The files a save folder holds, as save_game writes them; Screen.tga only with a picture.
+    const SAVE_FILES: [5][]u8 = ["SAVEGAME.sav", "GLOBALVARS.res", "PARTYTABLE.res", "savenfo.res", "Screen.tga"]
+
+    // Where save file `name` is written before it takes its name: beside it, `.new` added.
+    fn staged_in { mut w: world::World, folder: []u8, name: []u8 } -> ![]mut u8 {
+        let mut buf: [64]u8
+        let ext: [4]u8 = ['.', 'n', 'e', 'w']
+        slice::copy(u8){ dst = buf[..name.len], src = name }
+        slice::copy(u8){ dst = buf[name.len..name.len + 4], src = ext[..] }
+        return try file_in{ &w, folder, name = buf[..name.len + 4] }
+    }
+
     // Saves the game into slot `slot` (folder `%06d - folder_name`), `save_name` as the player
-    // typed it; `screen` is the last frame (RGBA8, top row first; empty for none).
+    // typed it; `screen` is the last frame (RGBA8, top row first; empty for none). A folder that
+    // is there already is written over, and nothing of the old save stays, as RequestSaveGame
+    // (0x004b58a0) empties it first. Here every file is first written beside the old one under a
+    // staging name, so that a save failing part way leaves the old save whole; only then do the
+    // new files take their names and the old save's others go.
     fn save_game { mut w: world::World, slot: u32, folder_name: []u8, save_name: []u8, screen: []u8, width: u32, height: u32 } -> ! {
         try save_module_state{ &w }
         try keep_party{ &w }
@@ -123,23 +192,68 @@ namespace save {
         let folder = try obj::copy_bytes{ heap = w.heap, s = local }
         defer obj::free_bytes{ heap = w.heap, s = folder }
         make_dirs{ fs = &w.fs, path = folder }
+        write_staged{ &w, folder, save_name, screen, width, height } iferr err{ error } {
+            drop_staged{ &w, folder }
+            return error
+        }
+        try publish_staged{ &w, folder, shot = screen.len > 0 }
+        world::prefix{ w = &w }
+        _ = @fmt(&w.io, "saved {}\n", folder)
+    }
+
+    // Writes the save's files, each under its staging name.
+    fn write_staged { mut w: world::World, folder: []u8, save_name: []u8, screen: []u8, width: u32, height: u32 } -> ! {
         // SAVEGAME.sav: the game in progress, as it is now.
         let image = try store_image{ st = &w.gip }
         defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = image, count = 0 }
-        _ = try fs::write_all{ fs = &w.fs, path = try file_in{ &w, folder, name = "SAVEGAME.sav" }, bytes = image }
+        _ = try fs::write_all{ fs = &w.fs, path = try staged_in{ &w, folder, name = SAVE_FILES[0] }, bytes = image }
         let globals_bytes = try write_globals(arena::Arena){ realloc = arena::alloc, heap = w.scratch, g = &w.globals }
-        _ = try fs::write_all{ fs = &w.fs, path = try file_in{ &w, folder, name = "GLOBALVARS.res" }, bytes = globals_bytes }
+        _ = try fs::write_all{ fs = &w.fs, path = try staged_in{ &w, folder, name = SAVE_FILES[1] }, bytes = globals_bytes }
         let played = @trunc(u32, @as(u64, w.played_seconds))
         let party_bytes = try write_party_table(arena::Arena){ realloc = arena::alloc, heap = w.scratch, w = &w, played_seconds = played }
-        _ = try fs::write_all{ fs = &w.fs, path = try file_in{ &w, folder, name = "PARTYTABLE.res" }, bytes = party_bytes }
+        _ = try fs::write_all{ fs = &w.fs, path = try staged_in{ &w, folder, name = SAVE_FILES[2] }, bytes = party_bytes }
         let info_bytes = try write_info(arena::Arena){ realloc = arena::alloc, heap = w.scratch, info = info_now{ &w, save_name, played } }
-        _ = try fs::write_all{ fs = &w.fs, path = try file_in{ &w, folder, name = "savenfo.res" }, bytes = info_bytes }
+        _ = try fs::write_all{ fs = &w.fs, path = try staged_in{ &w, folder, name = SAVE_FILES[3] }, bytes = info_bytes }
         if screen.len > 0 {
             let tga = try write_screenshot(arena::Arena){ realloc = arena::alloc, heap = w.scratch, rgba = screen, width, height }
-            _ = try fs::write_all{ fs = &w.fs, path = try file_in{ &w, folder, name = "Screen.tga" }, bytes = tga }
+            _ = try fs::write_all{ fs = &w.fs, path = try staged_in{ &w, folder, name = SAVE_FILES[4] }, bytes = tga }
         }
-        world::prefix{ w = &w }
-        _ = @fmt(&w.io, "saved {}\n", folder)
+    }
+
+    // Removes a failed save's staged files; the old save's are untouched.
+    fn drop_staged { mut w: world::World, folder: []u8 } {
+        let mut i: usize = 0
+        while i < SAVE_FILES.len {
+            let p = staged_in{ &w, folder, name = SAVE_FILES[i] } iferr { return }
+            fs::remove{ fs = &w.fs, path = p } iferr {}
+            i = i + 1
+        }
+    }
+
+    // Gives the staged files their names (each rename replaces the old file whole), then removes
+    // every other file in the folder: the old save's picture when this one has none, a CORRUPT
+    // marker, a staged file left by a save that was cut short.
+    fn publish_staged { mut w: world::World, folder: []u8, shot: bool } -> ! {
+        let count: usize = if shot { SAVE_FILES.len } else { SAVE_FILES.len - 1 }
+        let mut i: usize = 0
+        while i < count {
+            try fs::rename{ fs = &w.fs, from = try staged_in{ &w, folder, name = SAVE_FILES[i] }, to = try file_in{ &w, folder, name = SAVE_FILES[i] } }
+            i = i + 1
+        }
+        let names = fs::list(arena::Arena){ fs = &w.fs, heap = w.scratch, realloc = arena::alloc, path = folder } iferr { return }
+        let mut k: usize = 0
+        while k < names.len {
+            let n = names[k]
+            k = k + 1
+            let mut keep = false
+            i = 0
+            while i < count {
+                if ci::eq{ a = n, b = SAVE_FILES[i] } { keep = true }
+                i = i + 1
+            }
+            if keep { continue }
+            fs::remove{ fs = &w.fs, path = try file_in{ &w, folder, name = n } } iferr {}
+        }
     }
 
     // savenfo's fields for the game now: the area's name, the module (upper case, as the

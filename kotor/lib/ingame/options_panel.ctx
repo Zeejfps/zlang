@@ -30,14 +30,18 @@ namespace options_panel {
         box: u32,                           // the message box on screen, 0 when none
         box_for: u32,
         save_req: [64]u8, save_len: usize,  // the name a game is to be saved under, once chosen
+        save_slot: i32,                     // the manual save it writes over, -1 for a new one
         load_req: [300]u8, load_len: usize, // the folder (a path) of the save to load, once chosen
         config: [256]u8, config_len: usize, // the options file
     }
 
+    // A Save Game choice: the name, and the number of the manual save written over (-1: a new one).
+    struct SaveRequest { name: []u8, slot: i32 }
+
     fn new {} -> State {
         return State{
             opened = false, quit = false, fe = null, box = 0, box_for = BOX_NONE,
-            save_req = [0; 64], save_len = 0, load_req = [0; 300], load_len = 0,
+            save_req = [0; 64], save_len = 0, save_slot = -1, load_req = [0; 300], load_len = 0,
             config = [0; 256], config_len = 0,
         }
     }
@@ -61,13 +65,13 @@ namespace options_panel {
         return s.save_len > 0 or s.load_len > 0
     }
 
-    // The name to save the game under, once (null when none was chosen). The bytes stay in the
+    // What to save the game as, once (null when nothing was chosen). The name's bytes stay in the
     // state, valid until the next request.
-    fn take_save { mut s: State } -> ?[]u8 {
+    fn take_save { mut s: State } -> ?SaveRequest {
         if s.save_len == 0 { return null }
         let n = s.save_len
         s.save_len = 0
-        return s.save_req[..n]
+        return SaveRequest{ name = s.save_req[..n], slot = s.save_slot }
     }
 
     // The folder (a path save::find_save resolves) of the save to load, once (null when none).
@@ -191,7 +195,10 @@ namespace options_panel {
             }
         }
         // Save Game was answered with a name.
-        if s.save_len == 0 { s.save_len = frontend::take_save_request{ fe, into = s.save_req[..] } }
+        if s.save_len == 0 {
+            s.save_len = frontend::take_save_request{ fe, into = s.save_req[..] }
+            s.save_slot = fe.save_slot
+        }
     }
 
     // The message box was answered.

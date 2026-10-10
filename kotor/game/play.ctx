@@ -170,6 +170,7 @@ namespace play {
         let mut cinema = cine::make{}            // the films, the credits and the end of the game that scripts asked for (game/cine.ctx)
         let mut wipe = death::make{}            // the party wipe's slow motion, camera, box and fade (game/death.ctx)
         let mut want_save: []u8 = ""            // a save asked for this frame: its folder name
+        let mut want_slot: i32 = -1             // the manual save it writes over (Save Game list), or -1: a new one or QUICKSAVE / AUTOSAVE
         let mut sw_module: [24]u8 = [0; 24]     // `savewhen MODULE NAME`: the save waits for the story to be in MODULE and quiet for 2 s
         let mut sw_name: [24]u8 = [0; 24]
         let mut sw_quest: [24]u8 = [0; 24]      // ... and the journal quest in it has reached this entry
@@ -355,7 +356,10 @@ namespace play {
             w.played_seconds = w.played_seconds + @as(f64, lived)
             w.autosave_ms = w.autosave_ms + @as(f64, lived) * 1000.0
             // No saving between the party's fall and the main menu.
-            if wipe.active { want_save = "" }
+            if wipe.active {
+                want_save = ""
+                want_slot = -1
+            }
             // An autosave wanted by a transition or a script, once the area is in place.
             if w.autosave_due and w.transition == null and w.arrival == 0 and want_save.len == 0 and not wipe.active and not loading::is_up{ l = ld } {
                 w.autosave_due = false
@@ -621,7 +625,10 @@ namespace play {
             if ingame::take_exit_script{ ui } is some{ value = exit_script } { _ = scripts::run{ &w, &vm, engine, name = exit_script, self = obj::INVALID } }    // HOOK(ingame)
             if ingame::take_script_request{ ui } is some{ value = script } { _ = scripts::run{ &w, &vm, engine, name = script, self = obj::INVALID } }    // HOOK(ingame)
             // The options menu's Save Game and Load Game (the menus have closed themselves).
-            if ingame::take_save_request{ ui } is some{ value = n } { want_save = n }    // HOOK(ingame)
+            if ingame::take_save_request{ ui } is some{ value = r } {    // HOOK(ingame)
+                want_save = r.name
+                want_slot = r.slot
+            }
             if ingame::take_load_request{ ui } is some{ value = n } { want_load = n }    // HOOK(ingame)
             // 11. Sound at the camera, in the mode the screen calls for.
             // The window losing activation suspends every sound (modes 5 and 6) whatever the mode.
@@ -725,12 +732,19 @@ namespace play {
                 _ = gpu::read_screen{ &dev, into = pixels } iferr { size }
                 // RequestSaveGame (0x004b58a0) pushes sound mode 3 and DoSaveGame (0x004b3110) pops it: nothing plays while the save is written.
                 let mode_before = enter_sound_mode{ &w, a = &amb, mode = ambience::MODE_MOVIE }
-                save::save_named{ &w, name = want_save, screen = pixels, width = size.width, height = size.height } iferr err{ error } {
-                    _ = @fmt(&w.io, "kotor: save failed: {}\n", error)
+                if want_slot >= 2 {
+                    save::save_over{ &w, slot = @as(u32, want_slot), name = want_save, screen = pixels, width = size.width, height = size.height } iferr err{ error } {
+                        _ = @fmt(&w.io, "kotor: save failed: {}\n", error)
+                    }
+                } else {
+                    save::save_named{ &w, name = want_save, screen = pixels, width = size.width, height = size.height } iferr err{ error } {
+                        _ = @fmt(&w.io, "kotor: save failed: {}\n", error)
+                    }
                 }
                 _ = enter_sound_mode{ &w, a = &amb, mode = mode_before }
                 _ = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &scene_arena, mem = pixels, count = 0 }
                 want_save = ""
+                want_slot = -1
             }
             if not opts.headless {
                 gpu::present{ &dev, &sdl }
