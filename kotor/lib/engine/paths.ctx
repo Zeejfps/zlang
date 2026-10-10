@@ -1,6 +1,6 @@
 // Path planning for server-side moves (docs/re/movement.md 4.3-4.7): the straight walk when it is clear;
 // otherwise, in an area with a PTH graph, the original's path-point planner (CSWSArea::PlotPathPointRoute
-// 0x004c2200): the path points nearest the start and the goal found
+// 0x004c2200): an unsafe start or goal moved to the nearest safe spot within 2 m, the path points nearest them found
 // in growing windows, the graph searched depth first with a deepening cost bound, then string pulling (skip route
 // points while the straight walk past them is clear; ours, in place of the original's three straightening passes and
 // corner rounding). Without PTH points or a route, the farthest clear point along the straight line (the original's
@@ -92,7 +92,7 @@ namespace paths {
 
     // A route for creature `id` from `from` to `goal` into `out` (the points to walk to, the goal last); false when even
     // the fallback has nowhere to go. Scratch memory for the search comes from w.scratch. `adjusted` says the route ends
-    // at another point than the goal asked for (one nearer the start, when nobody can walk up to the goal).
+    // at another point than the goal asked for (the nearest safe spot, when nobody can stand on the goal).
     fn plan { mut w: world::World, id: u32, from: math::Vec3, goal: math::Vec3, out: *mut list::List(math::Vec3, heap::Heap), adjusted: *mut bool } -> bool {
         adjusted.* = false
         list::clear{ list = out }
@@ -119,37 +119,33 @@ namespace paths {
         return true
     }
 
+    // Whether creature `id` may stand at `p` (IsPositionSafe 0x004be5e0, as movement::safe_spot tests it).
+    fn is_safe { w: *world::World, id: u32, p: math::Vec3 } -> bool {
+        return movement::safe_spot{ w, id, at = p, radius = 0.0, need_line = false } != null
+    }
+
     fn route { mut w: world::World, id: u32, g: pth::Graph, from: math::Vec3, goal_asked: math::Vec3, out: *mut list::List(math::Vec3, heap::Heap), adjusted: *mut bool } -> bool {
-        let start = from
+        // An unsafe start or goal is replaced by the nearest safe spot within 2 m that a straight walk from it reaches
+        // (state 1; FindNearestSafePosition 0x004be860); the creature is moved to its new start. None: they stay.
+        let mut start = from
+        if not is_safe{ w = &w, id, p = from } {
+            if movement::safe_spot{ w = &w, id, at = from, radius = 2.0, need_line = true } is some{ value = p } {
+                start = p
+                if movement::distance_2d{ a = p, b = from } > 0.0001 { movement::place{ &w, id, at = p } }
+            }
+        }
         let mut goal = goal_asked
+        if not is_safe{ w = &w, id, p = goal } {
+            if movement::safe_spot{ w = &w, id, at = goal, radius = 2.0, need_line = true } is some{ value = p } {
+                goal = p
+                adjusted.* = movement::distance_2d{ a = p, b = goal_asked } > 0.0001
+            }
+        }
         let s = nearest_point{ w = &w, g, at = start, goal = false } ifnull {
             if w.log.actions { _ = @fmt(&w.io, "route: no clear path point near the start ({} points)\n", g.points.len) }
             return false
         }
-        // A goal nobody can walk up to (the middle of a closed door, a placeable) is replaced by the nearest point
-        // toward the start that a path point reaches, up to 3 m back (ours, for the original's nearest safe spot).
-        let mut t_found = nearest_point{ w = &w, g, at = goal, goal = true }
-        if t_found == null {
-            let dx = from.x - goal.x
-            let dy = from.y - goal.y
-            let d = math::sqrtf{ x = dx * dx + dy * dy }
-            let mut back: f32 = 0.5
-            while t_found == null and back <= 3.0 and d > back {
-                let cx = goal.x + dx / d * back
-                let cy = goal.y + dy / d * back
-                let f = walkmap::floor{ m = &w.walk, x = cx, y = cy, z = from.z + 2.0 }
-                if f != null {
-                    let c = math::Vec3{ x = cx, y = cy, z = f.z }
-                    t_found = nearest_point{ w = &w, g, at = c, goal = true }
-                    if t_found != null {
-                        goal = c
-                        adjusted.* = true
-                    }
-                }
-                back = back + 0.5
-            }
-        }
-        let t = t_found ifnull {
+        let t = nearest_point{ w = &w, g, at = goal, goal = true } ifnull {
             if w.log.actions { _ = @fmt(&w.io, "route: no clear path point near the goal {} {} {} from {} {} {} ({} points)\n", goal.x, goal.y, goal.z, start.x, start.y, start.z, g.points.len) }
             return false
         }
