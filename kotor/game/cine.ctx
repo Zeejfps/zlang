@@ -320,6 +320,7 @@ namespace cine {
                 break
             }
             if speed::picture_wanted{ opts, frame_no, saving = false } {
+                display::fit_movie{ d = &disp, &dev, &sdl, on = true }
                 let size = gpu::screen_size{ dev }
                 render::begin_frame{ &frame, time = 0.0 }
                 movie::draw{ p = &pl, &frame, width = @as(f32, size.width), height = @as(f32, size.height) }
@@ -335,6 +336,7 @@ namespace cine {
             }
             if state == movie::State::finished { break }
         }
+        display::fit_movie{ d = &disp, &dev, &sdl, on = false }
         world::prefix{ w = &w }
         let how: []u8 = match ended {
             finished => { "finished" }

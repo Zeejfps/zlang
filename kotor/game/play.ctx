@@ -933,6 +933,7 @@ namespace play {
                 }
                 quit => { done = true }
             }
+            display::fit_movie{ d = &disp, &dev, &sdl, on = fe.player != null }
             render::begin_frame{ &frame, time = 0.0 }
             frontend::draw{ &fe, &g, &frame, target = gpu::screen_size{ dev } }
             gpu::submit{ &dev, frame = &frame } iferr { done = true }

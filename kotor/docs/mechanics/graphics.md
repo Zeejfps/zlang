@@ -91,7 +91,9 @@ does for the control under the pointer (`0x006dee40`, `0x006df390`): the string 
   top left and the action slots bottom right at any size or aspect. Backdrops of the store, pazaak and map are drawn at
   their own resolution, centred, with black round them (docs/design/gui.md).
 - **Main menu and movies**: the 3D scene fills the 800x600 panel's rectangle (letterboxed black on a wide window);
-  movies keep their aspect with bars (lib/frontend/movie).
+  movies keep their aspect with bars (lib/frontend/movie). A movie draws at the drawable's size even in a borderless
+  window that renders below the desktop's resolution (`display::fit_movie` makes the screen the drawable's size while
+  one plays and puts the render size back after), so it is not scaled up from the lower render size.
 - **Resize, focus, minimise**: a resized window makes the device follow the drawable and every interface (the front
   end, the HUD, the conversation panels, the pazaak table, the loading screen) lays itself out again; the GL context
   and every resource are kept (the window is never remade). A minimised window is not drawn into and the loop rests.
@@ -155,4 +157,3 @@ does for the control under the pointer (`0x006dee40`, `0x006df390`): the string 
   Frame Buffer Effects; the speed blur is ours to the original's description.
 - Shadows only from creatures, onto the walkmesh floor; no placeable or door shadows, none onto walls.
 - Untested here: exclusive full screen on a second monitor, Retina/Windows-scaled HiDPI, macOS and Linux windows.
-- The movie player draws to the render size, scaled by `present`.

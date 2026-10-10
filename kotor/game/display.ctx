@@ -148,6 +148,19 @@ namespace display {
         return want.width != had.width or want.height != had.height
     }
 
+    // A movie draws at the drawable's size, not at a lower render size that present would scale up (a borderless
+    // window rendering below the desktop's resolution): `on` while one plays, then off to go back to the render size.
+    // An offscreen run keeps its size.
+    fn fit_movie { mut d: Display, mut dev: gpu::Device, mut sdl: sdl::Sdl, on: bool } {
+        if d.hidden { return }
+        let want = if on { gpu::drawable_size{ &sdl, dev } } else { d.render }
+        if want.width < 64 or want.height < 64 { return }
+        let had = gpu::screen_size{ dev }
+        if want.width != had.width or want.height != had.height {
+            gpu::resize{ &dev, width = want.width, height = want.height } iferr {}
+        }
+    }
+
     // The window was resized (by the player, or by a mode change). True if the render size changed.
     fn on_resized { mut d: Display, mut dev: gpu::Device, mut sdl: sdl::Sdl } -> bool {
         return follow{ &d, &dev, &sdl, s = d.applied }
