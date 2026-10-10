@@ -3,7 +3,11 @@
 // programmed effect 1426 lays the texture fx_tex_stealth over the creature's model (0x006a1220):
 // a 2x2 flipbook cycling at 8 frames a second, blended additively (its TXI), so the creature
 // shows as a moving shimmer with the room through it. With frame-buffer effects on, the original
-// takes VFX_DUR_DISTORTION (8000) instead, a screen-space ripple we do not draw.
+// takes VFX_DUR_DISTORTION (8000) instead (0x00613930; 0x0061d750 swaps them when the option
+// changes): programmed effect 1800 hides the model and marks its shape for the screen pass that
+// redraws the picture there through the scene's rippling `distortiontex` (0x004331d0). The look
+// material carries both (render::Material.distort): the backend draws the distortion while the
+// option is on and the shimmer while it is off, so the swap needs no scene work.
 namespace scene {
     const LOOK_TEXTURE: []u8 = "fx_tex_stealth"
 
@@ -28,6 +32,7 @@ namespace scene {
         m.diffuse = e.texture
         m.blend = render::Blend::additive
         m.lit = false
+        m.distort = true
         if e.frames_x * e.frames_y > 1 {
             let fps = if e.props.fps > 0.0 { e.props.fps } else { 8.0 }
             let frame = @as(u32, math::floorf{ x = sc.time * fps })

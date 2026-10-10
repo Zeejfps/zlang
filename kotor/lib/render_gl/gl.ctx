@@ -688,6 +688,7 @@ namespace gl {
 
     // capabilities for enable and disable
     const DEPTH_TEST: u32 = 0x0B71
+    const DEPTH_CLAMP: u32 = 0x864F
     const STENCIL_TEST: u32 = 0x0B90
     const BLEND: u32 = 0x0BE2
     const CULL_FACE: u32 = 0x0B44

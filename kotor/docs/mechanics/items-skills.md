@@ -139,7 +139,7 @@ against Stealth and a d10 + 10 hide roll, each rolled again every 20 s; ours dra
 ends it (attack, combat, one's own powers, taking off the belt, conversations and transitions; doors and using
 objects do not), the stealth XP pool and routines, the combat log's spot line, save and load. Open: the stealth
 pace and walk animation (we use the walk rate and the ordinary walk), a hostile item ability ends ours only through
-the combat it starts with a creature (one used at a point keeps it), the frame-buffer distortion look, rest ending
+the combat it starts with a creature (one used at a point keeps it), rest ending
 stealth (no party rest), the straggler teleport that solo mode turns off.
 
 ## 9. The upgrade bench (workbench)

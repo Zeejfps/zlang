@@ -316,7 +316,7 @@ fn draw_materials { mut dev: gpu::Device, mut frame: render::Frame, a: Assets, t
     let tube_index = render::add_draw{ &frame, draw = tube } ifnull { 0 }
     render::add_shadow{ &frame, shadow = render::Shadow{
         draw = tube_index, light = v3{ x = -2.0, y = -1.5, z = 7.0 }, directional = false,
-        plane = math::plane::from_normal_point{ n = up, p = math::vec3::zero{} }, strength = 0.55,
+        reach = 12.0, strength = 0.55,
     } }
     render::add_box_lines{ &frame, view = vi, box = math::aabb::make{ min = v3{ x = 2.6, y = -1.4, z = 0.0 }, max = v3{ x = 3.4, y = -0.0, z = 2.1 } }, color = render::rgba{ r = 1.0, g = 1.0, b = 0.2, a = 1.0 }, depth_test = true }
 
@@ -983,15 +983,14 @@ fn draw_ingame {
         }
         l = l + 1
     }
-    let floor = math::plane::from_normal_point{ n = v3{ x = 0.0, y = 0.0, z = 1.0 }, p = feet }
     let mut d = first
     while d < body_end {
-        render::add_shadow{ &frame, shadow = render::Shadow{ draw = d, light, directional = false, plane = floor, strength = 0.5 } }
+        render::add_shadow{ &frame, shadow = render::Shadow{ draw = d, light, directional = false, reach = 20.0, strength = 0.5 } }
         d = d + 1
     }
     d = head_first
     while d < head_end {
-        render::add_shadow{ &frame, shadow = render::Shadow{ draw = d, light, directional = false, plane = floor, strength = 0.5 } }
+        render::add_shadow{ &frame, shadow = render::Shadow{ draw = d, light, directional = false, reach = 20.0, strength = 0.5 } }
         d = d + 1
     }
     try gpu::submit{ &dev, frame = &frame }

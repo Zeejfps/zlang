@@ -1,0 +1,169 @@
+// GLSL 410 sources of the original look's stencil shadows and frame-buffer passes (orig_fx.ctx).
+namespace glsl {
+    // A shadow volume from each triangle of a caster that faces the light: the triangle itself pushed a little off
+    // the surface (so a lit face never darkens itself), the same triangle swept to the volume's end, and the three
+    // sides between them, every face wound outward. A closed volume per triangle needs no neighbours, so the
+    // models' open and overlapping meshes count right: inside two volumes is still inside a shadow. The vertices
+    // come from SCENE_VS (skinning, dangly offsets), world space in v_world.
+    const VOLUME_GS: [47]c::String = [
+        "#version 410 core\n",
+        "layout(triangles) in;\n",
+        "layout(triangle_strip, max_vertices = 18) out;\n",
+        "layout(std140) uniform Frame {\n",
+        "    mat4 u_view_proj;\n",
+        "    mat4 u_view;\n",
+        "    vec4 u_eye;\n",
+        "    vec4 u_ambient;\n",
+        "    vec4 u_fog_color;\n",
+        "    vec4 u_fog;\n",
+        "};\n",
+        // xyz the light's position (w 1) or the direction it travels (w 0); u_reach as render::Shadow.reach.
+        "uniform vec4 u_light;\n",
+        "uniform float u_reach;\n",
+        "in vec3 v_world[];\n",
+        "vec3 away(vec3 p) {\n",
+        "    return u_light.w > 0.5 ? normalize(p - u_light.xyz) : normalize(u_light.xyz);\n",
+        "}\n",
+        "vec3 far_end(vec3 p, vec3 d) {\n",
+        "    if (u_light.w > 0.5) {\n",
+        "        return u_light.xyz + d * max(u_reach, length(p - u_light.xyz) + 0.05);\n",
+        "    }\n",
+        "    return p + d * u_reach;\n",
+        "}\n",
+        "void put(vec3 p) {\n",
+        "    gl_Position = u_view_proj * vec4(p, 1.0);\n",
+        "    EmitVertex();\n",
+        "}\n",
+        "void side(vec3 a, vec3 b, vec3 ea, vec3 eb) {\n",
+        "    put(a); put(ea); put(b); put(eb);\n",
+        "    EndPrimitive();\n",
+        "}\n",
+        "void main() {\n",
+        "    vec3 p0 = v_world[0]; vec3 p1 = v_world[1]; vec3 p2 = v_world[2];\n",
+        "    vec3 n = cross(p1 - p0, p2 - p0);\n",
+        "    vec3 to_light = u_light.w > 0.5 ? u_light.xyz - (p0 + p1 + p2) / 3.0 : -u_light.xyz;\n",
+        "    if (dot(n, to_light) <= 0.0) { return; }\n",
+        "    vec3 d0 = away(p0); vec3 d1 = away(p1); vec3 d2 = away(p2);\n",
+        "    vec3 a0 = p0 + d0 * 0.02; vec3 a1 = p1 + d1 * 0.02; vec3 a2 = p2 + d2 * 0.02;\n",
+        "    vec3 e0 = far_end(p0, d0); vec3 e1 = far_end(p1, d1); vec3 e2 = far_end(p2, d2);\n",
+        "    put(a0); put(a1); put(a2);\n",
+        "    EndPrimitive();\n",
+        "    put(e0); put(e2); put(e1);\n",
+        "    EndPrimitive();\n",
+        "    side(a0, a1, e0, e1);\n",
+        "    side(a1, a2, e1, e2);\n",
+        "    side(a2, a0, e2, e0);\n",
+        "}\n",
+    ]
+
+    const VOLUME_FS: [5]c::String = [
+        "#version 410 core\n",
+        "layout(location = 0) out vec4 o_color;\n",
+        "void main() {\n",
+        "    o_color = vec4(0.0);\n",
+        "}\n",
+    ]
+
+    // A flat colour over the whole viewport (where the stencil lets it): the hard shadows' darkening, the soft
+    // shadows' mask.
+    const FLAT_FS: [6]c::String = [
+        "#version 410 core\n",
+        "uniform vec4 u_color;\n",
+        "layout(location = 0) out vec4 o_color;\n",
+        "void main() {\n",
+        "    o_color = u_color;\n",
+        "}\n",
+    ]
+
+    // A smaller copy: the mean of 4x4 taps over the footprint of each pixel of the target, through u_mode's
+    // function: 0 the alpha alone (the soft shadows' mask), 1 the glow's bright pass, 2 the colour as it is. The
+    // bright pass is the
+    // original's ramps (0x00427c90): red from 234/255, green and blue from 216/255, rising to 0.7 at white.
+    const REDUCE_FS: [27]c::String = [
+        "#version 410 core\n",
+        "uniform sampler2D u_tex;\n",
+        "uniform vec2 u_texel;\n",
+        "uniform int u_mode;\n",
+        "in vec2 v_uv;\n",
+        "layout(location = 0) out vec4 o_color;\n",
+        "vec4 pass_of(vec4 c) {\n",
+        "    if (u_mode == 0) { return vec4(c.a); }\n",
+        "    if (u_mode == 2) { return c; }\n",
+        "    float r = clamp((c.r - 234.0 / 255.0) / (21.0 / 255.0), 0.0, 1.0);\n",
+        "    float g = clamp((c.g - 216.0 / 255.0) / (39.0 / 255.0), 0.0, 1.0);\n",
+        "    float b = clamp((c.b - 216.0 / 255.0) / (39.0 / 255.0), 0.0, 1.0);\n",
+        "    return vec4(vec3(r, g, b) * 0.7, 1.0);\n",
+        "}\n",
+        "void main() {\n",
+        "    vec2 step = u_texel / 4.0;\n",
+        "    vec2 base = v_uv - u_texel * 0.5 + step * 0.5;\n",
+        "    vec4 sum = vec4(0.0);\n",
+        "    for (int y = 0; y < 4; y++) {\n",
+        "        for (int x = 0; x < 4; x++) {\n",
+        "            sum += pass_of(texture(u_tex, base + vec2(float(x), float(y)) * step));\n",
+        "        }\n",
+        "    }\n",
+        "    o_color = sum / 16.0;\n",
+        "}\n",
+        "\n",
+        "\n",
+    ]
+
+    // A nine-tap Gaussian along u_dir (one texel of the source, horizontal or vertical).
+    const BLUR9_FS: [14]c::String = [
+        "#version 410 core\n",
+        "uniform sampler2D u_tex;\n",
+        "uniform vec2 u_dir;\n",
+        "in vec2 v_uv;\n",
+        "layout(location = 0) out vec4 o_color;\n",
+        "void main() {\n",
+        "    float w[5] = float[](0.2270, 0.1945, 0.1216, 0.0540, 0.0162);\n",
+        "    vec4 sum = texture(u_tex, v_uv) * w[0];\n",
+        "    for (int i = 1; i < 5; i++) {\n",
+        "        sum += (texture(u_tex, v_uv + u_dir * float(i)) + texture(u_tex, v_uv - u_dir * float(i))) * w[i];\n",
+        "    }\n",
+        "    o_color = sum;\n",
+        "}\n",
+        "\n",
+    ]
+
+    // A small target drawn back over the viewport: u_mode 0 the soft shadows (black, the mask's alpha times
+    // u_strength), 1 the glow (its colour, added).
+    const SPREAD_FS: [13]c::String = [
+        "#version 410 core\n",
+        "uniform sampler2D u_tex;\n",
+        "uniform int u_mode;\n",
+        "uniform float u_strength;\n",
+        "in vec2 v_uv;\n",
+        "layout(location = 0) out vec4 o_color;\n",
+        "void main() {\n",
+        "    vec4 c = texture(u_tex, v_uv);\n",
+        "    if (u_mode == 0) { o_color = vec4(0.0, 0.0, 0.0, c.a * u_strength); }\n",
+        "    else { o_color = vec4(c.rgb * u_strength, 1.0); }\n",
+        "}\n",
+        "\n",
+        "\n",
+    ]
+
+    // The distortion: the picture so far, where the stencil marks a distorting surface, drawn again shifted by the
+    // original's procedural `distortiontex` (proceduretype ringtexdistort, 0x00460a90): rings about the middle of
+    // a small square, sin(60 r + 25 phase) at distance r from it, the phase advancing a radian a second, tiled every
+    // ten pixels as the screen pass tiles it (0x004331d0). Ours shifts along the ring's radius; u_amount is the
+    // largest shift in pixels (the original's offset matrix was not read).
+    const DISTORT_FS: [14]c::String = [
+        "#version 410 core\n",
+        "uniform sampler2D u_tex;\n",
+        "uniform float u_amount;\n",
+        "uniform float u_phase;\n",
+        "in vec2 v_uv;\n",
+        "layout(location = 0) out vec4 o_color;\n",
+        "void main() {\n",
+        "    vec2 p = (floor(mod(gl_FragCoord.xy, 10.0)) + 1.0) / 10.0 - 0.5;\n",
+        "    float r = length(p);\n",
+        "    vec2 dir = r > 0.0001 ? p / r : vec2(0.0);\n",
+        "    vec2 shift = dir * sin(60.0 * r + 25.0 * u_phase) * u_amount;\n",
+        "    vec2 texel = 1.0 / vec2(textureSize(u_tex, 0));\n",
+        "    o_color = vec4(texture(u_tex, v_uv + shift * texel).rgb, 1.0);\n",
+        "}\n",
+    ]
+}

@@ -96,7 +96,7 @@ in every shipped area), no facing term, no 6 m grace and the hider's size. Each 
 | Behaviour | Evidence | Status | Test |
 |---|---|---|---|
 | A hiding creature is drawn with `fx_tex_stealth` over its model and over the item in its head slot: an additive 2x2 flipbook at 8 frames a second (its TXI), so it shows as a moving shimmer with the room through it | VFX_DUR_STEALTH_FIELD 8002, programmed effect 1426 (`0x006a5000`, `0x006a1220`) | matches (we draw the texture in place of the model's own, the weapons included; how the original blends it with the model, and whether its weapons take it with the model, was not read) | `walk_past_walk.png` |
-| With the "frame buffer effects" option the original takes VFX_DUR_DISTORTION (8000) instead, a screen-space ripple | `0x00613930`, `0x0061d750` | open: no frame-buffer effects yet | |
+| With the "frame buffer effects" option the original takes VFX_DUR_DISTORTION (8000) instead, a screen-space ripple: the model is not drawn, its shape is marked in the stencil and the picture redrawn there through the rippling `distortiontex` (programmed effect 1800, `0x004331d0`) | `0x00613930`, `0x0061d750` | matches in kind (the look material carries both and the renderer draws the distortion while the option is on, so the swap is live; the ripple's strength is ours; the enhanced renderer keeps the shimmer) | `walk_past` with `gfx original 1` |
 | VFX_DUR_STEALTH_PULSE (2000) is a script's effect; its programmed effect 2000 is outside the ranges the client's dispatcher draws | `0x006a5000` | matches (nothing drawn) | |
 
 ## 5. Stealth XP
@@ -129,12 +129,12 @@ keep the stealth XP pool. Matches (`save_hiding` / `load_hiding`).
 - The walk-only limit and the shimmer are read from the creature's stealth flag instead of an effect and a
   visual effect on the creature: the same behaviour, nothing for scripts to see in either case.
 - The stealth rolls come from a hash of the creature and the 20 s period, not `rand()`.
-- The 8000 frame-buffer picture and 8001's picture are not drawn; 8001's sound is played.
+- 8001's picture is not drawn; its sound is played.
 
 ## Open items
 
 - The stealth pace (appearance DriveAnimWalk, not the walk rate).
 - A hostile item ability used at a point ends stealth in the original, not in ours.
-- Frame-buffer effects (VFX 8000 distortion, 8001's picture).
+- 8001's picture.
 - Rest ending stealth (no party rest yet).
 - The straggler teleport that solo mode turns off (not built).

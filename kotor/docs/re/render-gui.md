@@ -405,6 +405,37 @@ Anti-aliasing is not read by this loader. 0x0061d710 (options +0x44, called from
 0x0044f2f0. That checks that a multisample pixel format with that sample count exists, then stores
 the count in 0x007a6888 (the previous one in 0x0078d440).
 
+Shadow volumes (`CAurScene::RenderSoftShadows` 0x00451a50, run by RenderPasses when the Shadows flag is set): with
+a stencil buffer, and when the scene's shadow light (`scene+0x270`, then `+0x1c`; its position at `+0x94`, its radius
+`+0x58`, or `+0x60` when positive) hangs more than 1.75 m above `scene+0xb0`, it draws the volumes with colour and
+depth writes off (scene slot 63, 0x00450550), then the darkening (slot 64, 0x00450730). 0x00450550 walks the scene's
+models (0x007fbfcc, count 0x007fbfd0) and takes those whose model classification (model `+0x50`) has bit 2 or 5 set
+(character 0x04, placeable 0x20: no doors, no rooms), that are shown (`+0xc2`, `+0x166`), optionally within a
+distance of the scene's focus (0x0078e3cc, 0x0078e3c8), and within the light's radius; 0x0044ff50 / 0x00474710 then
+call each part's volume slot. `CAurPartTriMesh::RenderShadowVolume` 0x00474220 draws a mesh only when its shadow
+or beaming byte is set (mesh `+0x187`, `+0x188`: MDL trimesh offsets 311 and 312, mdl.md). The stencil is cleared to
+2^(bits-1) - 1 (RenderPasses), and 0x00450730 draws a black fan of ten points, a disc about the light at the focus's
+height of radius sqrt(r^2 - dz^2) (50 m when the radius is larger), depth test off, where the stencil is above the
+cleared value, alpha-blended at the area's opacity. Slot 48 (0x00450b50), drawn after it, draws the models with the
+stencil set to a mark (REPLACE), so the shadows lie only on what was drawn before them: the rooms. With Soft Shadows
+(and the pbuffer path), 0x0042d1c0 first copies the screen to a texture and clears the colour, the disc is drawn
+into the cleared picture as a mask, and 0x0042d9a0 copies the mask into a 512 x 512 pbuffer, puts the picture back,
+blurs the mask in a second pbuffer (0x0042bf80) and lays it over the picture (SRC_ALPHA, ONE_MINUS_SRC_ALPHA).
+(high for the order and the tests, med for the meaning of `+0x270`)
+
+Frame-buffer effects (`Render_ApplyScreenEffects` 0x00437520, every frame of a scene with `+0xd4`; its passes by
+argument bit, each behind a flag that holds 1 and that nothing writes): 0x10 the speed blur (0x00433da0, 0x004337a0);
+1 0x004340f0 (not read); 2 the glow 0x0042cc60: the screen is drawn into a 512 x 512 pbuffer through stage 1, three
+dependent lookups of 256-entry ramps built by `GL_CreateEffectTargets` 0x00427c90 (red 0 below 234, then
+(i - 234) / 21 * 178.5; green and blue 0 below 216, then (i - 216) / 39 * 178.5), reduced to 256, 128 and 64
+(0x0042b5d0), one level blurred (0x0042bf80) and added back (SRC_ALPHA, ONE); 0x20 (only while a model is marked for
+it, 0x007fbfc4) the distortion 0x004331d0: a full-screen quad, where the stencil marks, reads the screen copy through
+a texture-shader offset by the scene's `distortiontex` (`scene[0x3a]`), whose texture coordinates run 0..w/10 and
+0..h/10, so it repeats every ten pixels; 4 the film noise (0x00432ad0, twice). `distortiontex` is the procedural
+`ringtexdistort` (0x00460a90, vtable 0x0073edac): each texel at distance r from the middle of the square holds
+sin(60 r + 25 phase) * 0.03 + 0.5 in red and green, the phase advancing by the frame time (a radian a second).
+(med: the offset matrix of the texture shader, stage 100 of 0x004299c0, was not read)
+
 Frame-buffer effects copy the screen into a 512x512 pbuffer target bound as a texture rectangle or
 a 2D texture (0x00426cc0). They then run passes in pbuffers of 64, 128, 256 and 512 square
 (0x00427c90), in 0x0042b370-0x0042d9a0, 0x00432780-0x00433970 and 0x00435bd0. Each pass makes the

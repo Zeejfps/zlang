@@ -1,0 +1,434 @@
+// The original look's stencil shadows and the Frame Buffer Effects option's glow and distortion
+// (docs/mechanics/graphics.md, docs/re/render-gui.md "Shadow volumes" and "Frame-buffer effects").
+//
+// Shadows: the volumes of the frame's render::Shadow entries are counted into the stencil (depth-fail, so a camera
+// inside a volume still counts right), then every pixel the stencil marks is darkened once by the area's opacity.
+// The original draws the rooms, then the shadows, then the models over them (CAurScene::RenderPasses 0x004514f0:
+// slot 49, slot 47, slot 48 with the stencil set to a mark), so a shadow never darkens a creature or a placeable,
+// its own caster included. Ours draws the opaque surfaces together and keeps the same rule with the stencil's top
+// bit: the models' pixels set it (draw_mesh), the volumes count in the seven bits below it, and only pixels with the
+// bit clear are darkened.
+// Soft Shadows, as the original's pbuffer pass (0x0042d1c0, 0x0042d9a0): the marked pixels become a mask in the
+// screen's alpha, which is copied into a 512 x 512 square, blurred there and laid over the picture.
+//
+// Glow (the "per pixel flares" of dialog.tlk 47957; Render_ApplyScreenEffects 0x00437520, pass 0x0042cc60): the bright
+// part of the picture (the original's ramps) gathered into a 512 square, then a 256 one, blurred and added back.
+//
+// Distortion (VFX_DUR_DISTORTION 8000's programmed effect 1800, pass 0x004331d0): surfaces whose material asks for it
+// are marked in the stencil instead of drawn, and the picture is drawn again over the marked pixels through rippling
+// rings.
+namespace gpu {
+    const SMALL_SIZE: i32 = 512
+    const GLOW_SIZE: i32 = 256
+    // The largest shift of the distortion, in pixels of a 720-line picture (scaled with the height).
+    const DISTORT_PIXELS: f32 = 5.0
+    // How strongly the glow is added back.
+    const GLOW_GAIN: f32 = 1.0
+
+    struct OrigFx {
+        volume: ScenePrograms,      // SCENE_VS, VOLUME_GS, VOLUME_FS
+        light: i32, reach: i32,
+        flat: u32, flat_color: i32,
+        reduce: u32, reduce_texel: i32, reduce_mode: i32,
+        blur: u32, blur_dir: i32,
+        spread: u32, spread_mode: i32, spread_strength: i32,
+        distort: u32, distort_amount: i32, distort_phase: i32,
+        made: bool,                 // the small targets below
+        small: [2]gl::Target,       // SMALL_SIZE squares: the soft shadows' mask, the glow's bright pass
+        glow: [2]gl::Target,        // GLOW_SIZE squares: the glow, blurred
+        mark: bool,                 // the opaque draws being drawn set MODEL_MARK on the models' pixels
+        effects: bool,              // the view being drawn takes the glow and the distortion (a screen view drawn the
+                                    //   original's way with Frame Buffer Effects on): it marks distorting surfaces
+    }
+
+    fn no_orig_fx {} -> OrigFx {
+        let none = gl::Target{ framebuffer = 0, color = 0, depth_stencil = 0, width = 0, height = 0 }
+        return OrigFx{
+            volume = no_scene_program{}, light = -1, reach = -1, flat = 0, flat_color = -1,
+            reduce = 0, reduce_texel = -1, reduce_mode = -1, blur = 0, blur_dir = -1,
+            spread = 0, spread_mode = -1, spread_strength = -1, distort = 0, distort_amount = -1, distort_phase = -1,
+            made = false, small = [none; 2], glow = [none; 2], mark = false, effects = false,
+        }
+    }
+
+    // A program of `stages`, or 0 with the driver's log in dev.log[..log_len].
+    fn link_staged { mut dev: Device, stages: []gl::Stage, mut log_len: usize } -> u32 {
+        return gl::link_stages{ gl = &dev.gl, stages, log = dev.log } iferr err{ error } {
+            let n = match error {
+                gl::compile_failed{ log_len = k } | gl::link_failed{ log_len = k } => { k }
+            }
+            log_len = if n < dev.log.len { n } else { dev.log.len }
+            0
+        }
+    }
+
+    fn make_orig_fx_programs { mut dev: Device } -> ! {
+        let scene_vs = glsl::SCENE_VS
+        let post_vs = glsl::POST_VS
+        let volume_gs = glsl::VOLUME_GS
+        let volume_fs = glsl::VOLUME_FS
+        let flat_fs = glsl::FLAT_FS
+        let reduce_fs = glsl::REDUCE_FS
+        let blur_fs = glsl::BLUR9_FS
+        let spread_fs = glsl::SPREAD_FS
+        let distort_fs = glsl::DISTORT_FS
+        let mut n: usize = 0
+        let vol_stages: [3]gl::Stage = [
+            gl::Stage{ kind = gl::VERTEX_SHADER, source = scene_vs[..] },
+            gl::Stage{ kind = gl::GEOMETRY_SHADER, source = volume_gs[..] },
+            gl::Stage{ kind = gl::FRAGMENT_SHADER, source = volume_fs[..] },
+        ]
+        let volume = link_staged{ &dev, stages = vol_stages[..], log_len = &n }
+        if volume == 0 { return shader_failed{ log = dev.log[..n] } }
+        bind_frame_block{ &dev, program = volume }
+        dev.ofx.volume = scene_locations{ &dev, program = volume }
+        dev.ofx.light = dev.gl.get_uniform_location{ program = volume, name = "u_light" }
+        dev.ofx.reach = dev.gl.get_uniform_location{ program = volume, name = "u_reach" }
+
+        let flat_stages: [2]gl::Stage = [gl::Stage{ kind = gl::VERTEX_SHADER, source = post_vs[..] }, gl::Stage{ kind = gl::FRAGMENT_SHADER, source = flat_fs[..] }]
+        let flat = link_staged{ &dev, stages = flat_stages[..], log_len = &n }
+        if flat == 0 { return shader_failed{ log = dev.log[..n] } }
+        dev.ofx.flat = flat
+        dev.ofx.flat_color = dev.gl.get_uniform_location{ program = flat, name = "u_color" }
+
+        let reduce_stages: [2]gl::Stage = [gl::Stage{ kind = gl::VERTEX_SHADER, source = post_vs[..] }, gl::Stage{ kind = gl::FRAGMENT_SHADER, source = reduce_fs[..] }]
+        let reduce = link_staged{ &dev, stages = reduce_stages[..], log_len = &n }
+        if reduce == 0 { return shader_failed{ log = dev.log[..n] } }
+        dev.ofx.reduce = reduce
+        dev.ofx.reduce_texel = dev.gl.get_uniform_location{ program = reduce, name = "u_texel" }
+        dev.ofx.reduce_mode = dev.gl.get_uniform_location{ program = reduce, name = "u_mode" }
+
+        let blur_stages: [2]gl::Stage = [gl::Stage{ kind = gl::VERTEX_SHADER, source = post_vs[..] }, gl::Stage{ kind = gl::FRAGMENT_SHADER, source = blur_fs[..] }]
+        let blur = link_staged{ &dev, stages = blur_stages[..], log_len = &n }
+        if blur == 0 { return shader_failed{ log = dev.log[..n] } }
+        dev.ofx.blur = blur
+        dev.ofx.blur_dir = dev.gl.get_uniform_location{ program = blur, name = "u_dir" }
+
+        let spread_stages: [2]gl::Stage = [gl::Stage{ kind = gl::VERTEX_SHADER, source = post_vs[..] }, gl::Stage{ kind = gl::FRAGMENT_SHADER, source = spread_fs[..] }]
+        let spread = link_staged{ &dev, stages = spread_stages[..], log_len = &n }
+        if spread == 0 { return shader_failed{ log = dev.log[..n] } }
+        dev.ofx.spread = spread
+        dev.ofx.spread_mode = dev.gl.get_uniform_location{ program = spread, name = "u_mode" }
+        dev.ofx.spread_strength = dev.gl.get_uniform_location{ program = spread, name = "u_strength" }
+
+        let distort_stages: [2]gl::Stage = [gl::Stage{ kind = gl::VERTEX_SHADER, source = post_vs[..] }, gl::Stage{ kind = gl::FRAGMENT_SHADER, source = distort_fs[..] }]
+        let distort = link_staged{ &dev, stages = distort_stages[..], log_len = &n }
+        if distort == 0 { return shader_failed{ log = dev.log[..n] } }
+        dev.ofx.distort = distort
+        dev.ofx.distort_amount = dev.gl.get_uniform_location{ program = distort, name = "u_amount" }
+        dev.ofx.distort_phase = dev.gl.get_uniform_location{ program = distort, name = "u_phase" }
+
+        dev.gl.use_program{ program = reduce }
+        set_unit{ &dev, program = reduce, name = "u_tex", unit = 0 }
+        dev.gl.use_program{ program = blur }
+        set_unit{ &dev, program = blur, name = "u_tex", unit = 0 }
+        dev.gl.use_program{ program = spread }
+        set_unit{ &dev, program = spread, name = "u_tex", unit = 0 }
+        dev.gl.use_program{ program = distort }
+        set_unit{ &dev, program = distort, name = "u_tex", unit = 0 }
+        dev.gl.use_program{ program = 0 }
+    }
+
+    fn free_orig_fx { mut dev: Device } {
+        dev.gl.delete_program{ program = dev.ofx.volume.id }
+        dev.gl.delete_program{ program = dev.ofx.flat }
+        dev.gl.delete_program{ program = dev.ofx.reduce }
+        dev.gl.delete_program{ program = dev.ofx.blur }
+        dev.gl.delete_program{ program = dev.ofx.spread }
+        dev.gl.delete_program{ program = dev.ofx.distort }
+        if dev.ofx.made {
+            gl::free_target{ gl = &dev.gl, t = dev.ofx.small[0] }
+            gl::free_target{ gl = &dev.gl, t = dev.ofx.small[1] }
+            gl::free_target{ gl = &dev.gl, t = dev.ofx.glow[0] }
+            gl::free_target{ gl = &dev.gl, t = dev.ofx.glow[1] }
+            dev.ofx.made = false
+        }
+    }
+
+    fn ensure_small_targets { mut dev: Device } -> ! {
+        if dev.ofx.made { return }
+        dev.ofx.small[0] = try gl::make_target{ gl = &dev.gl, width = SMALL_SIZE, height = SMALL_SIZE }
+        dev.ofx.small[1] = try gl::make_target{ gl = &dev.gl, width = SMALL_SIZE, height = SMALL_SIZE }
+        dev.ofx.glow[0] = try gl::make_target{ gl = &dev.gl, width = GLOW_SIZE, height = GLOW_SIZE }
+        dev.ofx.glow[1] = try gl::make_target{ gl = &dev.gl, width = GLOW_SIZE, height = GLOW_SIZE }
+        dev.ofx.made = true
+    }
+
+    // ---- shadows
+
+    // The stencil bit of a model's pixel (a creature, a placeable, a door, what they carry): shadows skip it.
+    const MODEL_MARK: u32 = 0x80
+    const COUNT_BITS: u32 = 0x7F
+
+    fn is_model { kind: render::DrawKind } -> bool {
+        return kind == render::DrawKind::creature or kind == render::DrawKind::object or kind == render::DrawKind::effect
+    }
+
+    // Before the opaque draws of a view that may show shadows: draw_mesh turns the stencil on for the models, which then
+    // write MODEL_MARK where they show. (The view's clear left the stencil 0.)
+    fn begin_model_marks { mut dev: Device } {
+        dev.ofx.mark = dev.shadows
+        if not dev.shadows { return }
+        dev.gl.stencil_mask{ mask = MODEL_MARK }
+        dev.gl.stencil_func{ func = gl::ALWAYS, ref = @as(i32, MODEL_MARK), mask = 0xFF }
+        dev.gl.stencil_op{ fail = gl::KEEP, zfail = gl::KEEP, zpass = gl::REPLACE }
+    }
+
+    // The frame's shadows in view `index`: their volumes into the stencil, then the marked pixels darkened (softened
+    // by the Soft Shadows option in a view of the whole screen drawn the original's way).
+    fn draw_shadows { mut dev: Device, frame: *render::Frame, index: u32 } -> ! {
+        if not dev.shadows { return }
+        let mut strength: f32 = -1.0
+        let mut s: u32 = 0
+        while s < frame.shadow_count {
+            let sh = frame.shadows[s]
+            s = s + 1
+            if sh.draw < frame.draw_count and frame.draws[sh.draw].view == index {
+                strength = sh.strength
+                break
+            }
+        }
+        if strength < 0.0 { return }
+        draw_volumes{ &dev, frame, index }
+        let v = frame.views[index]
+        if dev.soft_shadows and not dev.in_fx and v.target == null and v.viewport == null {
+            try soften_shadows{ &dev, strength }
+        } else {
+            darken_shadows{ &dev, strength }
+        }
+        set_stencil{ &dev, on = false }
+        timer_mark{ &dev, name = "shadows" }
+    }
+
+    // Depth-fail counting: a volume's back faces behind the picture add one, its front faces behind it take one away,
+    // so a pixel inside a volume ends non-zero wherever the camera is. Depth clamping keeps a far end beyond the far
+    // plane closed.
+    fn draw_volumes { mut dev: Device, frame: *render::Frame, index: u32 } {
+        let p = dev.ofx.volume
+        use_program{ &dev, program = p.id }
+        let id = math::mat4::identity{}
+        dev.gl.uniform_matrix4fv{ location = p.post, count = 1, transpose = gl::FALSE, value = &id.m[0] }
+        set_blend{ &dev, blend = render::Blend::opaque }
+        set_depth{ &dev, test = true, write = false }
+        set_cull{ &dev, on = false }
+        set_offset{ &dev, on = false }
+        set_stencil{ &dev, on = true }
+        dev.gl.color_mask{ red = gl::FALSE, green = gl::FALSE, blue = gl::FALSE, alpha = gl::FALSE }
+        dev.gl.enable{ cap = gl::DEPTH_CLAMP }
+        dev.gl.depth_func{ func = gl::LESS }
+        // The counts wrap in the seven low bits; the mark above them stays.
+        dev.gl.stencil_mask{ mask = COUNT_BITS }
+        dev.gl.stencil_func{ func = gl::ALWAYS, ref = 0, mask = 0xFF }
+        dev.gl.stencil_op_separate{ face = gl::BACK, sfail = gl::KEEP, dpfail = gl::INCR_WRAP, dppass = gl::KEEP }
+        dev.gl.stencil_op_separate{ face = gl::FRONT, sfail = gl::KEEP, dpfail = gl::DECR_WRAP, dppass = gl::KEEP }
+        let mut s: u32 = 0
+        while s < frame.shadow_count {
+            let sh = frame.shadows[s]
+            s = s + 1
+            if sh.draw >= frame.draw_count { continue }
+            let draw = frame.draws[sh.draw]
+            if draw.view != index { continue }
+            let w: f32 = if sh.directional { 0.0 } else { 1.0 }
+            dev.gl.uniform4f{ location = dev.ofx.light, v0 = sh.light.x, v1 = sh.light.y, v2 = sh.light.z, v3 = w }
+            dev.gl.uniform1f{ location = dev.ofx.reach, v0 = sh.reach }
+            draw_bare_mesh{ &dev, frame, draw, p }
+        }
+        dev.gl.stencil_op{ fail = gl::KEEP, zfail = gl::KEEP, zpass = gl::KEEP }
+        dev.gl.depth_func{ func = gl::LEQUAL }
+        dev.gl.disable{ cap = gl::DEPTH_CLAMP }
+        dev.gl.color_mask{ red = gl::TRUE, green = gl::TRUE, blue = gl::TRUE, alpha = gl::TRUE }
+    }
+
+    // A draw's mesh with program `p` and none of its material: the transform, the bones, the dangly offsets.
+    fn draw_bare_mesh { mut dev: Device, frame: *render::Frame, draw: render::Draw, p: ScenePrograms } {
+        let mi = mesh_slot{ dev, m = draw.mesh }
+        if mi == NO_SLOT { return }
+        let mesh = dev.meshes[mi]
+        if mesh.mode != gl::TRIANGLES { return }
+        bind_vao{ &dev, vao = mesh.vao }
+        dev.gl.uniform_matrix4fv{ location = p.model, count = 1, transpose = gl::FALSE, value = &draw.transform.m[0] }
+        let bones = if draw.bone_count > MAX_BONES { MAX_BONES } else { draw.bone_count }
+        let palette_ok = bones > 0 and draw.bones + bones <= frame.bone_count
+        dev.gl.uniform1i{ location = p.bone_count, v0 = if palette_ok { @as(i32, bones) } else { 0 } }
+        if palette_ok {
+            dev.gl.uniform_matrix4fv{ location = p.bones, count = @as(i32, bones), transpose = gl::FALSE, value = &frame.bones[draw.bones].m[0] }
+        }
+        dev.gl.uniform4f{ location = p.dangle, v0 = draw.dangle.x, v1 = draw.dangle.y, v2 = draw.dangle.z, v3 = draw.material.inflate }
+        let first = if draw.first < mesh.index_count { draw.first } else { mesh.index_count }
+        let count = if draw.count == 0 or first + draw.count > mesh.index_count { mesh.index_count - first } else { draw.count }
+        if count == 0 { return }
+        dev.gl.draw_elements{ mode = mesh.mode, count = @as(i32, count), kind = gl::UNSIGNED_SHORT, offset = @as(usize, first) * 2 }
+        dev.stats.draws = dev.stats.draws + 1
+    }
+
+    // A full-viewport triangle with the flat program over the shadowed pixels: a count but no model mark. A first
+    // triangle, drawing nothing, marks the pixels with no count as if models (the test then needs one comparison:
+    // below the mark).
+    fn fill_marked { mut dev: Device, color: render::Color, alpha_only: bool } {
+        use_program{ &dev, program = dev.ofx.flat }
+        set_depth{ &dev, test = false, write = false }
+        set_cull{ &dev, on = false }
+        set_stencil{ &dev, on = true }
+        bind_vao{ &dev, vao = dev.ui_vao }
+        dev.gl.color_mask{ red = gl::FALSE, green = gl::FALSE, blue = gl::FALSE, alpha = gl::FALSE }
+        dev.gl.stencil_mask{ mask = 0xFF }
+        dev.gl.stencil_func{ func = gl::EQUAL, ref = @as(i32, MODEL_MARK), mask = COUNT_BITS }
+        dev.gl.stencil_op{ fail = gl::KEEP, zfail = gl::KEEP, zpass = gl::REPLACE }
+        dev.gl.draw_arrays{ mode = gl::TRIANGLES, first = 0, count = 3 }
+        let rgb: u8 = if alpha_only { gl::FALSE } else { gl::TRUE }
+        dev.gl.color_mask{ red = rgb, green = rgb, blue = rgb, alpha = gl::TRUE }
+        dev.gl.uniform4f{ location = dev.ofx.flat_color, v0 = color.r, v1 = color.g, v2 = color.b, v3 = color.a }
+        dev.gl.stencil_func{ func = gl::GREATER, ref = @as(i32, MODEL_MARK), mask = 0xFF }
+        dev.gl.stencil_op{ fail = gl::KEEP, zfail = gl::KEEP, zpass = gl::KEEP }
+        dev.gl.draw_arrays{ mode = gl::TRIANGLES, first = 0, count = 3 }
+    }
+
+    fn darken_shadows { mut dev: Device, strength: f32 } {
+        set_blend{ &dev, blend = render::Blend::alpha }
+        fill_marked{ &dev, color = render::Color{ r = 0.0, g = 0.0, b = 0.0, a = strength }, alpha_only = false }
+    }
+
+    // The marked pixels as a mask in the screen's alpha (nothing else reads it), copied out, shrunk into the
+    // 512 square, blurred there, and laid over the picture as black at the mask's strength.
+    fn soften_shadows { mut dev: Device, strength: f32 } -> ! {
+        try ensure_small_targets{ &dev }
+        dev.gl.color_mask{ red = gl::FALSE, green = gl::FALSE, blue = gl::FALSE, alpha = gl::TRUE }
+        dev.gl.clear_color{ red = 0.0, green = 0.0, blue = 0.0, alpha = 0.0 }
+        dev.gl.clear{ mask = gl::COLOR_BUFFER_BIT }
+        set_blend{ &dev, blend = render::Blend::opaque }
+        fill_marked{ &dev, color = render::Color{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 }, alpha_only = true }
+        dev.gl.color_mask{ red = gl::TRUE, green = gl::TRUE, blue = gl::TRUE, alpha = gl::TRUE }
+        try copy_screen{ &dev }
+        dev.state = unknown_state{}
+        reduce_into{ &dev, from = dev.fx.color, from_w = dev.screen.width, from_h = dev.screen.height, into = dev.ofx.small[0], mode = 0 }
+        blur_twice{ &dev, a = dev.ofx.small[0], b = dev.ofx.small[1] }
+        let screen = screen_fbo{ &dev }
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = screen }
+        dev.gl.viewport{ x = 0, y = 0, width = dev.screen.width, height = dev.screen.height }
+        spread_over{ &dev, from = dev.ofx.small[0].color, mode = 0, strength, blend = render::Blend::alpha }
+        // The screen's alpha back to opaque, as the rest of the frame leaves it.
+        dev.gl.color_mask{ red = gl::FALSE, green = gl::FALSE, blue = gl::FALSE, alpha = gl::TRUE }
+        dev.gl.clear_color{ red = 0.0, green = 0.0, blue = 0.0, alpha = 1.0 }
+        dev.gl.clear{ mask = gl::COLOR_BUFFER_BIT }
+        dev.gl.color_mask{ red = gl::TRUE, green = gl::TRUE, blue = gl::TRUE, alpha = gl::TRUE }
+        dev.gl.depth_mask{ flag = gl::TRUE }
+        dev.state = unknown_state{}
+    }
+
+    // `from` (from_w by from_h) into the small target `into`, 4x4 taps per pixel through REDUCE_FS's mode.
+    fn reduce_into { mut dev: Device, from: u32, from_w: i32, from_h: i32, into: gl::Target, mode: i32 } {
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = into.framebuffer }
+        dev.gl.viewport{ x = 0, y = 0, width = into.width, height = into.height }
+        set_blend{ &dev, blend = render::Blend::opaque }
+        set_depth{ &dev, test = false, write = false }
+        set_cull{ &dev, on = false }
+        set_stencil{ &dev, on = false }
+        use_program{ &dev, program = dev.ofx.reduce }
+        dev.gl.uniform2f{ location = dev.ofx.reduce_texel, v0 = 1.0 / @as(f32, into.width), v1 = 1.0 / @as(f32, into.height) }
+        dev.gl.uniform1i{ location = dev.ofx.reduce_mode, v0 = mode }
+        bind_unit{ &dev, unit = 0, target = gl::TEXTURE_2D, name = from }
+        bind_vao{ &dev, vao = dev.ui_vao }
+        dev.gl.draw_arrays{ mode = gl::TRIANGLES, first = 0, count = 3 }
+    }
+
+    // A two-pass Gaussian of a's picture, through b, back into a.
+    fn blur_twice { mut dev: Device, a: gl::Target, b: gl::Target } {
+        use_program{ &dev, program = dev.ofx.blur }
+        bind_vao{ &dev, vao = dev.ui_vao }
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = b.framebuffer }
+        dev.gl.viewport{ x = 0, y = 0, width = b.width, height = b.height }
+        dev.gl.uniform2f{ location = dev.ofx.blur_dir, v0 = 1.0 / @as(f32, a.width), v1 = 0.0 }
+        bind_unit{ &dev, unit = 0, target = gl::TEXTURE_2D, name = a.color }
+        dev.gl.draw_arrays{ mode = gl::TRIANGLES, first = 0, count = 3 }
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = a.framebuffer }
+        dev.gl.viewport{ x = 0, y = 0, width = a.width, height = a.height }
+        dev.gl.uniform2f{ location = dev.ofx.blur_dir, v0 = 0.0, v1 = 1.0 / @as(f32, b.height) }
+        bind_unit{ &dev, unit = 0, target = gl::TEXTURE_2D, name = b.color }
+        dev.gl.draw_arrays{ mode = gl::TRIANGLES, first = 0, count = 3 }
+    }
+
+    // A small target's picture over the bound framebuffer's viewport.
+    fn spread_over { mut dev: Device, from: u32, mode: i32, strength: f32, blend: render::Blend } {
+        set_blend{ &dev, blend }
+        set_depth{ &dev, test = false, write = false }
+        set_cull{ &dev, on = false }
+        set_stencil{ &dev, on = false }
+        use_program{ &dev, program = dev.ofx.spread }
+        dev.gl.uniform1i{ location = dev.ofx.spread_mode, v0 = mode }
+        dev.gl.uniform1f{ location = dev.ofx.spread_strength, v0 = strength }
+        bind_unit{ &dev, unit = 0, target = gl::TEXTURE_2D, name = from }
+        bind_vao{ &dev, vao = dev.ui_vao }
+        dev.gl.draw_arrays{ mode = gl::TRIANGLES, first = 0, count = 3 }
+    }
+
+    // ---- frame-buffer effects
+
+    // The glow: the screen so far, its bright part in the 512 square, shrunk to the 256 one, blurred, added back.
+    fn glow_screen { mut dev: Device } -> ! {
+        try ensure_small_targets{ &dev }
+        try copy_screen{ &dev }
+        dev.state = unknown_state{}
+        reduce_into{ &dev, from = dev.fx.color, from_w = dev.screen.width, from_h = dev.screen.height, into = dev.ofx.small[0], mode = 1 }
+        reduce_into{ &dev, from = dev.ofx.small[0].color, from_w = SMALL_SIZE, from_h = SMALL_SIZE, into = dev.ofx.glow[0], mode = 2 }
+        blur_twice{ &dev, a = dev.ofx.glow[0], b = dev.ofx.glow[1] }
+        let screen = screen_fbo{ &dev }
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = screen }
+        dev.gl.viewport{ x = 0, y = 0, width = dev.screen.width, height = dev.screen.height }
+        spread_over{ &dev, from = dev.ofx.glow[0].color, mode = 1, strength = GLOW_GAIN, blend = render::Blend::additive }
+        dev.gl.depth_mask{ flag = gl::TRUE }
+        dev.state = unknown_state{}
+    }
+
+    // Whether a draw is a distortion the view marks instead of drawing.
+    fn distorted { dev: Device, draw: render::Draw } -> bool {
+        return dev.ofx.effects and draw.material.distort
+    }
+
+    // The view's distorting surfaces marked in the stencil (where the picture shows them), then the screen copied and
+    // drawn back over the marks through the ripples.
+    fn distort_view { mut dev: Device, frame: *render::Frame, index: u32 } -> ! {
+        let mut any = false
+        let mut d: u32 = 0
+        while d < frame.draw_count {
+            let draw = frame.draws[d]
+            d = d + 1
+            if draw.view != index or not draw.material.distort { continue }
+            if not any {
+                any = true
+                dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = screen_fbo{ &dev } }
+                use_program{ &dev, program = dev.cur.id }
+                set_identity_post{ &dev }
+                set_blend{ &dev, blend = render::Blend::opaque }
+                set_depth{ &dev, test = true, write = false }
+                set_cull{ &dev, on = false }
+                set_offset{ &dev, on = false }
+                set_stencil{ &dev, on = true }
+                dev.gl.color_mask{ red = gl::FALSE, green = gl::FALSE, blue = gl::FALSE, alpha = gl::FALSE }
+                dev.gl.stencil_mask{ mask = 0xFF }
+                dev.gl.clear_stencil{ s = 0 }
+                dev.gl.clear{ mask = gl::STENCIL_BUFFER_BIT }
+                dev.gl.stencil_func{ func = gl::ALWAYS, ref = 1, mask = 0xFF }
+                dev.gl.stencil_op{ fail = gl::KEEP, zfail = gl::KEEP, zpass = gl::REPLACE }
+            }
+            draw_bare_mesh{ &dev, frame, draw, p = dev.cur }
+        }
+        if not any { return }
+        dev.gl.color_mask{ red = gl::TRUE, green = gl::TRUE, blue = gl::TRUE, alpha = gl::TRUE }
+        dev.gl.stencil_op{ fail = gl::KEEP, zfail = gl::KEEP, zpass = gl::KEEP }
+        try copy_screen{ &dev }
+        dev.state = unknown_state{}
+        use_program{ &dev, program = dev.ofx.distort }
+        dev.gl.uniform1f{ location = dev.ofx.distort_amount, v0 = DISTORT_PIXELS * @as(f32, dev.screen.height) / 720.0 }
+        bind_unit{ &dev, unit = 0, target = gl::TEXTURE_2D, name = dev.fx.color }
+        dev.gl.uniform1f{ location = dev.ofx.distort_phase, v0 = frame.time }
+        set_blend{ &dev, blend = render::Blend::opaque }
+        set_depth{ &dev, test = false, write = false }
+        set_stencil{ &dev, on = true }
+        dev.gl.stencil_func{ func = gl::EQUAL, ref = 1, mask = 0xFF }
+        bind_vao{ &dev, vao = dev.ui_vao }
+        dev.gl.draw_arrays{ mode = gl::TRIANGLES, first = 0, count = 3 }
+        set_stencil{ &dev, on = false }
+        dev.gl.depth_mask{ flag = gl::TRUE }
+        dev.state = unknown_state{}
+    }
+}

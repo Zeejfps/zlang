@@ -318,6 +318,7 @@ namespace gpu {
         try ensure_fx_targets{ &dev }
         let t = dev.fxt
         dev.in_fx = true
+        dev.ofx.effects = false
         dev.cur = dev.scene_fx
         dev.cur_particle = dev.particle_fx
         let mapped = try render_shadows{ &dev, frame, index }
@@ -404,7 +405,7 @@ namespace gpu {
         dev.cur = dev.scene
         dev.cur_particle = dev.particle
         dev.state = unknown_state{}
-        try screen_passes{ &dev, v, time = frame.time }
+        try screen_passes{ &dev, frame, index }
     }
 
     // With multisampling, the opaque surfaces' depth and normals copied to the textures passes read (a blit takes one

@@ -285,6 +285,10 @@ namespace render {
         uv_offset: math::Vec2,
         uv_cell: bool,              // wrap uv0 into 0..1 first (a flipbook cell of an atlas)
         sort: i32,                  // among transparent surfaces, lower draws first (the MDL transparency hint)
+        // A screen distortion (the Frame Buffer Effects option's VFX_DUR_DISTORTION): with the option on the surface
+        // is not drawn; the picture behind its shape is drawn again through moving ripples. With the option off it is
+        // drawn as the rest of the material says.
+        distort: bool,
     }
 
     fn make_material {} -> Material {
@@ -293,7 +297,7 @@ namespace render {
             blend = Blend::opaque, color = white{}, selfillum = math::vec3::zero{},
             lit = true, fog = true, two_sided = false, decal = false, env_amount = 1.0, inflate = 0.0,
             uv_scale = math::Vec2{ x = 1.0, y = 1.0 }, uv_offset = math::Vec2{ x = 0.0, y = 0.0 }, uv_cell = false,
-            sort = 0,
+            sort = 0, distort = false,
         }
     }
 
@@ -487,10 +491,11 @@ namespace render {
         }
     }
 
-    // A creature's shadow: draw `draw`'s mesh squashed onto `plane` along the light from
-    // `light` (a position, or with `directional` a direction the light travels), darkening what
-    // is there by `strength`, each pixel once.
-    struct Shadow { draw: u32, light: math::Vec3, directional: bool, plane: math::Plane, strength: f32 }
+    // A shadow draw `draw`'s mesh casts (the original's stencil shadow volumes): the space its faces that look
+    // at the light hide from it, swept from `light` (a position, or with `directional` the direction the light
+    // travels) until `reach` metres from the light (from the mesh for a directional light). Whatever the view
+    // shows inside it is darkened by `strength`, each pixel once however many volumes cover it.
+    struct Shadow { draw: u32, light: math::Vec3, directional: bool, reach: f32, strength: f32 }
 
     // How an emitter's particles face.
     enum Facing: u8 {

@@ -539,21 +539,19 @@ namespace visual {
         }
     }
 
-    // The shadow a creature casts (the Shadows option draws it, the Soft Shadows option softens it): onto the floor
-    // under it, from the nearest light of the room that reaches it, else from the sun overhead and a little to one
-    // side. The area's ShadowOpacity is how dark it is. Null: not a creature, or no floor under it.
+    // The shadow volumes a creature or a placeable casts (the Shadows option draws them, Soft Shadows softens them):
+    // the original casts from the models whose classification is character or placeable (0x00450550: a weapon in a
+    // hand is a placeable model; doors and rooms cast nothing), from the scene's shadow light, within its radius
+    // (re/render-gui.md, "Shadow volumes"). Ours takes for each caster the nearest light that reaches it and hangs
+    // at least 0.5 m above its feet, else the sun overhead and a little to one side. The area's ShadowOpacity is how
+    // dark the shadow is. Null: not a caster.
     fn shadow_of { w: *world::World, o: *obj::Object, frame: *render::Frame } -> ?render::Shadow {
-        if obj::creature{ o } == null { return null }
-        let f = walkmap::floor{ m = &w.walk, x = o.position.x, y = o.position.y, z = o.position.z } ifnull { return null }
-        let room = list::at{ list = w.walk.rooms, i = @as(usize, f.room) }
-        let mesh = room.mesh ifnull { return null }
-        if @as(usize, f.face) >= mesh.planes.len { return null }
-        let plane = mesh.planes[@as(usize, f.face)]
+        if obj::creature{ o } == null and obj::placeable{ o } == null { return null }
         let mut opacity: f32 = 0.5
         if world::object{ w, id = w.area } is some{ value = ao } {
             if obj::area{ o = ao } is some{ value = a } { opacity = @as(f32, a.shadow_opacity) / 255.0 }
         }
-        // The nearest light that reaches the creature.
+        // The nearest light that reaches the caster.
         let mut best: i32 = -1
         let mut best_d: f32 = 1000000.0
         let mut k: u32 = 0
@@ -567,10 +565,14 @@ namespace visual {
             k = k + 1
         }
         if best >= 0 {
-            return render::Shadow{ draw = 0, light = frame.lights[@as(u32, best)].position, directional = false, plane, strength = opacity }
+            let l = frame.lights[@as(u32, best)]
+            return render::Shadow{ draw = 0, light = l.position, directional = false, reach = l.radius, strength = opacity }
         }
-        return render::Shadow{ draw = 0, light = math::Vec3{ x = 0.5, y = 0.35, z = -0.8 }, directional = true, plane, strength = opacity }
+        return render::Shadow{ draw = 0, light = math::Vec3{ x = 0.5, y = 0.35, z = -0.8 }, directional = true, reach = SUN_SHADOW_REACH, strength = opacity }
     }
+
+    // How far a shadow from the sun reaches past its caster: the floor under it and a wall beside it.
+    const SUN_SHADOW_REACH: f32 = 6.0
 
     // Where a visual puts the node called `hook` in world space, looked for in its parts in order
     // (the body's `Impact` or `headhook`, then a weapon's `bullethook`); `which` picks the nth part

@@ -180,7 +180,9 @@ The users: `arturo` on caustics, waterfalls and light beams (`lma_caus01`, `lda_
 height maps (`lmg_water01b`, `lqa_waterbmp`, `lun_noiseb`, `plc_water01b`) and two colour textures;
 `random` and `ringtexdistort` on `filmnoisetex` and `distortiontex`, standalone TXIs with no image,
 which the engine creates by name (*exe*: both names sit next to `c_focusgob` in the strings), for
-screen effects. How each generator works is not known; it needs RE of `swkotor.exe`. Until then a
+screen effects. `ringtexdistort` is known (re/render-gui.md, "Frame-buffer effects": rings of
+sin(60 r + 25 phase) about the square's middle in red and green), and the original-look renderer
+computes it in its distortion pass; the others need RE of `swkotor.exe`. Until then a
 renderer can show the stored image unanimated (`arturo`, `water`) and a static noise texture for the
 two image-less ones.
 

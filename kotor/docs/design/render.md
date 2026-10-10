@@ -115,7 +115,7 @@ material can then show it: GUI 3D views (the main menu's character), portraits, 
 | `Draw` | a mesh (or an index range of it), a transform, a `Material`, a bone palette range, a dangly displacement, a bounding sphere |
 | bones | matrices appended with `add_bones`, referred to by a draw's `bones`/`bone_count` |
 | `Light` | a point light: position, colour (times its multiplier), radius |
-| `Shadow` | a draw to squash onto a plane along a light, and how dark |
+| `Shadow` | a draw whose shadow volume to sweep from a light, how far, and how dark |
 | `Emitter` + `Particle`s | a texture with a sprite grid, a blend, how particles face, their space; each particle's position, size, angle, colour, cell, direction |
 | `Line`, `Tri` | debug geometry in world space, depth-tested or on top |
 | `Quad` | a 2D rectangle: UVs, colour, an image (none, a texture, or a video frame's YUV planes), blend, clip rectangle, angle |
@@ -186,10 +186,12 @@ model, one displacement per mesh per frame; the seam only applies it.
 its bounding sphere most strongly; each falls off as (1 − d/radius)². The game puts in the frame
 only the lights that should touch dynamic objects (the room's light nodes, by priority).
 
-**Shadows**: planar, as cheap creature shadows on the floor: the draw's own vertices (skinned the
-same way) projected onto the plane along the light, darkening each pixel once (the stencil
-counts). The game picks the plane (the walkmesh face under the creature) and the light. The
-original uses stencil shadow volumes and soft shadows (re/render-gui.md); this is the first step.
+**Shadows**: stencil shadow volumes, as the original's: a geometry shader sweeps every triangle of
+the draw's mesh (skinned the same way) that faces the light into a closed prism, the prisms are
+counted into the stencil (depth-fail), and every counted pixel that is not a model's (creatures,
+objects and effects mark the stencil's top bit as they draw) is darkened once. Soft Shadows blurs
+that mask in a 512 x 512 target. The game picks the light and the reach. `Material.distort` asks
+for the Frame Buffer Effects' screen distortion instead of the surface (lib/render_gl/orig_fx.ctx).
 
 **Particles**: one emitter is one batch. Facing: `camera` (MDL `Normal`, `Linked`), `emitter_plane` (lie in the
 emitter's own X/Y plane: `Billboard_to_Local_Z`), `world_plane` (lie flat in the world's X/Y plane:
@@ -260,7 +262,7 @@ the install (11,536 + 5,602, 0 failures) and writes a contact sheet and single t
   particle grid order (cell i counted from v = 0, as TXI flipbooks are), fog for additive
   surfaces (faded to black). RE of the renderer's material setup (re/render-gui.md, part render
   0x00474220 and DrawIndexed variants) would settle them.
-- Not yet: stencil shadow volumes, lightsaber blade geometry (the engine builds it; game side), the original's
-  lens flares and film noise. Done since: multisampled screen and target buffers, the brightness curve in `present`,
-  soft shadows by area-light sampling, a view's speed blur, anisotropy and v-sync switched live, window kinds and the
+- Not yet: lightsaber blade geometry (the engine builds it; game side), the original's film noise outside the
+  video effects. Done since: multisampled screen and target buffers, the brightness curve in `present`, stencil
+  shadow volumes and their blurred soft shadows, the glow and the stealth distortion, a view's speed blur, anisotropy and v-sync switched live, window kinds and the
   screen scaled to the window with its aspect kept ([../mechanics/graphics.md](../mechanics/graphics.md)).
