@@ -178,7 +178,8 @@ finds the BIF copy; no special case. Another model, `mainmenu_model`, is in the 
   100 steps of 0.1 s, the original's first render (above);
 - the camera is `pose.world[camera node]` inverted, `perspective(fov, viewport w / h, 0.1, 10000)`;
 - the ambient-only light is a flat ambient term (colour x multiplier) and the others are frame
-  lights; the original lights through up to three GL lights per object with quadratic attenuation,
+  lights, with the light node's shadow flag (which only the enhanced renderer's shadow maps read, and
+  a GUI scene's draws cast none); the original lights through up to three GL lights per object with quadratic attenuation,
   and gives the ambient-only one that attenuation too (the code in `FUN_004a2a00` sets the light's
   ambient to its colour); ours is brighter away from the light (med);
 - the view clears its viewport to black (the room);
@@ -194,7 +195,14 @@ finds the BIF copy; no special case. Another model, `mainmenu_model`, is in the 
   which is what the original does: re/particles.md), sorted by `render_order`, at the full `size` as
   the original draws it. Nothing bounces (a GUI scene has nothing to bounce off), and `Explosion`
   emits like a Fountain (no animation of these models says `detonate`);
-- not done: the room model, fog, the shadow of `AuroraLight01`.
+- the room `gui3D_room`, fog and shadows are not drawn, and need not be: the room is a black box
+  around the scene, the same picture as the black clear; the scene's fog stays off (the constructor
+  zeroes the switch at scene `+0x60` and the GUI code never sets it: `CSWGui3DScene`'s constructor
+  calls scene slot 8, `0x005c8650`, which returns at once, and slot 35, `0x0044f800`, which only sets
+  `+0xd8`); and the shadow pass (`CAurScene::RenderSoftShadows`) runs only with a current room (scene
+  `+0xd4`), which a GUI scene never gets: only slot 31 (`0x00452c90`) and the debug override in
+  `0x0046e5c0` set it, and `AddRoom` (`0x00456f30`) does not. So `AuroraLight01`'s shadow flag casts
+  nothing in the original either (med: from the code, no runtime check).
 
 Checked by running `kotor/tools/ctxc run kotor/tools/gui3dview` (pictures in `kotor/out/gui/`):
 Malak in a dark red robe and dark cape with a pale mask, arms crossed, on the left; the dark

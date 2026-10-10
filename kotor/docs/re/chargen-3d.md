@@ -231,8 +231,10 @@ does.
 
 Not done: the idle's random start and fidgets (we loop `pause1`, the main panel's `evil` /
 `neutral` / `good`; the game plays no pose on the creature in character generation, see "The main
-panel and alignment"), the portrait step's `pause2` / `listen` every 1 to 4 s, the lights' shadow
-flag, the room model.
+panel and alignment"), the portrait step's `pause2` / `listen` every 1 to 4 s. The lights carry their
+shadow flag (gui3d), and the room model is not drawn: neither changes the picture, since a GUI scene
+has no current room, so the original draws no shadows in it, and the room is a black box like the
+clear (re/gui3d.md, "What lib/frontend/gui3d does").
 
 Checked with `kotor/tools/ctxc run kotor/tools/chargenview` (pictures in `kotor/out/chargen/`):
 class selection shows a lit full-length figure, centred, head and shoes inside the frame; the main
