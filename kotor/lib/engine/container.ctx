@@ -4,7 +4,7 @@
 //
 //   container::begin_opening{ &w, placeable }       USEOBJECT's first pass: the lid lifts, the panel waits
 //   container::open{ &w, placeable, user }            USEOBJECT's last step
-//   container::take{ &w, placeable, item }           one item to the party
+//   container::take{ &w, placeable, item }           one item to the party (Get Items takes them one by one)
 //   container::close{ &w, placeable, take_all }      the panel's Close or Get Items
 namespace container {
     const ANIM_OPEN: u32 = 10075
@@ -24,27 +24,29 @@ namespace container {
         p.user = user
         p.opening = false
         play{ &w, o, p, anim = ANIM_OPEN }
+        if w.log.objects {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "placeable {} {} opens its inventory\n", o.id, o.tag)
+        }
         events::post{ &w, delay_ms = 0, caller = user, target = placeable, payload = events::Payload::script{ e = events::script_event{ kind = events::OPEN, object = user } } }
         outbox::post{ out = &w.out, note = outbox::Note::open_container{ placeable, user } }
         return true
     }
 
-    // The original's wait for the lid when no client tells it how long (0x0057e8c0 with no client twin).
-    const OPENING_MS: u64 = 500
-
     // USEOBJECT's first pass for the party (actions.md 3.5): the lid opens (10075) and the action
-    // waits for max(close2open, the Opened sound) before the panel comes up. The presentation, which
-    // knows both lengths, lengthens the wait (`hold_opening`); without one it is 0.5 s.
+    // waits before the panel comes up. The original waits for max(close2open, the Opened sound), 0.5 s
+    // with no client. Ours, for a snappier loot panel (docs/mechanics/items-skills.md section 4): no wait of
+    // our own and none for the sound; only a lid the presentation plays (close2open, at double speed)
+    // holds the panel for its length (`hold_opening`), so a body bag or a corpse shows it at once.
     fn begin_opening { mut w: world::World, placeable: u32 } {
         let o = world::object{ w = &w, id = placeable } ifnull { return }
         let p = obj::placeable{ o } ifnull { return }
         play{ &w, o, p, anim = ANIM_OPEN }
         p.opening = true
-        p.opening_until = clock::now_ms{ c = w.clock } + OPENING_MS
+        p.opening_until = clock::now_ms{ c = w.clock }
     }
 
-    // The presentation started something `ms` long for an opening container (its close2open, its
-    // Opened sound): the panel waits for it.
+    // The presentation started the opening container's close2open, `ms` long as it plays: the panel waits for it.
     fn hold_opening { mut w: world::World, placeable: u32, ms: u64 } {
         let o = world::object{ w = &w, id = placeable } ifnull { return }
         let p = obj::placeable{ o } ifnull { return }
@@ -81,7 +83,7 @@ namespace container {
         o.dirty = o.dirty | obj::DIRTY_ANIMATION
     }
 
-    // The player takes one item out (the panel's row): it goes into the party's inventory and the
+    // One item out for Get Items (the panel's rows take nothing on their own): it goes into the party's inventory and the
     // container's OnInvDisturbed hears it (type removed, the item), unless the container is a bag
     // that vanishes when emptied. False when the item is not in the container.
     fn take { mut w: world::World, placeable: u32, item: u32 } -> bool {

@@ -641,9 +641,8 @@ namespace ambience {
                 p.squared = positional
                 _ = mix::play{ m = a.m, bytes, p } iferr { mix::Handle{ slot = 0, id = 0 } }
                 a.started = a.started + 1
-                // An opening container's panel waits for its Opened sound too (the length
-                // PlayVoiceStream returns to USEOBJECT, 0x0057e8c0).
-                if object != obj::INVALID { container::hold_opening{ &w, placeable = object, ms = length_ms{ bytes } } }
+                // The original's USEOBJECT (0x0057e8c0) also waits for an opening container's Opened sound;
+                // ours does not (container::begin_opening).
             }
             sound_object{ id, play, volume } => {
                 if volume >= 0 {

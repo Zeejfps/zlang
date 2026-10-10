@@ -1580,7 +1580,8 @@ which input): in the container view, accept (input 0x27, also 0x2d) sends the cl
 take-all set when the container was non-empty on opening; cancel (0x28 / 0x2e) sends it with
 take-all 0; 0x29 (`BTN_GIVEITEMS`) switches to the give view (`ShowGiveItems` `0x006b8410`, the
 party inventory), where clicking a row (`0x006b7170`) sends GIVEITEM (input message 6/0x24) for
-the party leader with a count of 1, or a chosen count while the alternate-action key is held
+the party leader with a count of 1, or while the alternate-action key is held the row's name read as a number
+(0x006b4fe0: 0 for any item name; there is no count dialog)
 (GIVEITEM is actions.md's). **There is no taking of a single item**: the container view's rows get
 no click handler (`ShowContainerItems` `0x006b8130`), so the panel only takes everything; PICKUPITEM
 (Inventory message 0xc/5 → `AddPickUpItemAction`) is not a way round it, since

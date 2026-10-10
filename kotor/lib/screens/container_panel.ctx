@@ -1,6 +1,7 @@
 // The loot panel (container.gui, docs/re/gui.md "CSWGuiContainer"): what a chest, a footlocker or
-// a body holds. A row takes that item; Get Items takes everything and closes; Switch To lists the
-// party's items to put in; Close leaves the rest. The moves are lib/engine/container.ctx's.
+// a body holds. Its rows are only shown (ShowContainerItems 0x006b8130 gives them no click handler):
+// Get Items takes everything and closes; Switch To lists the party's non-plot items, a click on one
+// puts one in; Close leaves the rest. The moves are lib/engine/container.ctx's.
 namespace container_panel {
     const STR_PLACE_ITEMS: u32 = 392         // the file's own title: items available to place in the container
 
@@ -19,7 +20,6 @@ namespace container_panel {
     fn begin { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, placeable: u32 } -> ! {
         if s.open { return }
         s.panel = try gui::open{ &g, fs = &w.fs, &dev, name = "container", mode = gui::Mode::dialog, modal = true }
-        gui::set_click_rows{ &g, panel = s.panel, tag = "LB_ITEMS" }      // a click on an item takes it
         s.placeable = placeable
         s.giving = false
         s.open = true
@@ -64,10 +64,9 @@ namespace container_panel {
             }
             return true
         }
-        if ev.kind == gui::EventKind::row_activated and slice::eq_bytes{ a = ev.tag, b = "LB_ITEMS" } and ev.user > 0 {
-            let item = @as(u32, ev.user)
-            let moved = if s.giving { container::give{ &w, placeable = s.placeable, item } } else { container::take{ &w, placeable = s.placeable, item } }
-            if moved { gui::play_sound{ &g, n = 9 } }
+        if ev.kind == gui::EventKind::row_activated and slice::eq_bytes{ a = ev.tag, b = "LB_ITEMS" } and ev.user > 0 and s.giving {
+            // A give row (0x006b7170): the leader puts one of the item in.
+            if container::give{ &w, placeable = s.placeable, item = @as(u32, ev.user) } { gui::play_sound{ &g, n = 9 } }
             fill{ &s, &g, &w, &dev } iferr err{ error } { _ = @fmt(&w.io, "kotor: container panel: {}\n", error) }
             return true
         }
@@ -85,15 +84,20 @@ namespace container_panel {
         gui::set_enabled{ &g, panel = p, tag = "BTN_OK", enabled = not s.giving }
         gui::set_text_color{ &g, panel = p, tag = "BTN_OK", color = if s.giving { gui::color_disabled{} } else { gui::color_menu{} } }
         gui::list_clear{ &g, panel = p, tag = "LB_ITEMS" }
+        // The container's own rows are inert (no row handler); the give rows are buttons.
+        gui::set_inert_rows{ &g, panel = p, tag = "LB_ITEMS", inert = not s.giving }
+        if s.giving { gui::set_click_rows{ &g, panel = p, tag = "LB_ITEMS" } }
         let source: []u32 = if s.giving { list::items{ list = w.bag } } else { held{ w = &w, placeable = s.placeable } }
         let mut k: usize = 0
         while k < source.len {
             let id = source[k]
             k = k + 1
             if not world::is_valid{ w = &w, id } { continue }
+            // ShowGiveItems 0x006b8410 leaves the plot items out.
+            if s.giving and (if world::object{ w = &w, id } is some{ value = o } { o.plot } else { true }) { continue }
             _ = try items::add_row{ &g, &w, &dev, panel = p, tag = "LB_ITEMS", id, equipped = false, rows = items::ENTRY }
         }
-        if gui::list_count{ &g, panel = p, tag = "LB_ITEMS" } > 0 { gui::list_select{ &g, panel = p, tag = "LB_ITEMS", row = 0 } }
+        if s.giving and gui::list_count{ &g, panel = p, tag = "LB_ITEMS" } > 0 { gui::list_select{ &g, panel = p, tag = "LB_ITEMS", row = 0 } }
     }
 
     fn held { w: *world::World, placeable: u32 } -> []u32 {

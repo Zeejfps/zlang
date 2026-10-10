@@ -232,7 +232,7 @@ namespace gui {
             let c = list::at{ list = hp.controls, i = @as(usize, g.hover.control) }
             if c.kind == K_LIST {
                 let r = row_at{ p = hp, c, lx = x - hp.sx, ly = y - hp.sy }
-                if r != c.hover_row {
+                if r != c.hover_row and not c.inert_rows {
                     c.hover_row = r
                     if r >= 0 { play_sound{ &g, n = c.hover_sound } }
                     if r >= 0 and c.click_rows and c.rows[@as(usize, r)].enabled {
@@ -379,7 +379,7 @@ namespace gui {
                         g.press_on_selected = g.press_on_selected and k == c.cell_focus
                         c.cell_focus = k
                     }
-                    if r >= 0 and c.rows[@as(usize, r)].enabled { set_selected_row{ &g, p, ci = h.control, row = r } }
+                    if r >= 0 and c.rows[@as(usize, r)].enabled and not c.inert_rows { set_selected_row{ &g, p, ci = h.control, row = r } }
                 }
             }
         }
@@ -550,7 +550,7 @@ namespace gui {
             move_cell_focus{ &g, p, ci, dir }
             return true
         }
-        if c.kind == K_LIST and c.text_mode and (dir == DIR_UP or dir == DIR_DOWN) {
+        if c.kind == K_LIST and (c.text_mode or c.inert_rows) and (dir == DIR_UP or dir == DIR_DOWN) {
             // Up and down scroll a tall text a line, with the list's move sound (0x0041ce20).
             if scroll_list{ &g, p, ci, delta = if dir == DIR_UP { -1 } else { 1 } } { play_sound{ &g, n = c.hover_sound } }
             return true

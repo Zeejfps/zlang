@@ -1,13 +1,17 @@
-# The loot panel both ways: Switch To lists the party's items, one click puts one in the footlocker; switched
-# back, one click takes it out again. Plot items cannot be put in.
+# The loot panel both ways: Switch To lists the party's non-plot items (a plot droid shield is left out: 3 rows),
+# one click puts one in the footlocker; switched back, the container's rows take nothing when clicked
+# (ShowContainerItems gives them no handler: the locker still holds its 1 item), and Get Items takes it all.
+4 ui giveitem g_i_drdshld001
+5 ui plot g_i_drdshld001 1
 20 ui loot end_locker01
 40 ui ctl BTN_GIVEITEMS
 42 ui clickctl BTN_GIVEITEMS
-50 ui clickctl LB_ITEMS 2
+46 ui ctl LB_ITEMS
+50 ui clickctl LB_ITEMS ~Medpac
 60 ui bag
-62 ui containers
 64 ui clickctl BTN_GIVEITEMS
 70 ui clickctl LB_ITEMS 0
+74 ui containers
 80 ui bag
 82 ui log 5
 90 ui clickctl BTN_OK

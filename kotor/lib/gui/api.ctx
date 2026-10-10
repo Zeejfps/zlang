@@ -359,6 +359,17 @@ namespace gui {
         c.click_rows = true
     }
 
+    // Turns a list's rows inert (shown, never hilighted, selected or activated; the list still scrolls) or back.
+    fn set_inert_rows { mut g: Gui, panel: u32, tag: []u8, inert: bool } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        c.inert_rows = inert
+        c.click_rows = c.click_rows and not inert
+        if inert {
+            c.hover_row = -1
+            c.selected_row = -1
+        }
+    }
+
     // Makes the list box show one wrapped text instead of rows (message boxes, descriptions). A
     // text taller than the box scrolls by lines (the wheel, the scroll bar, up and down); a new
     // text starts at the top, as the original's ClearItems (0x00419a90) puts it back there.

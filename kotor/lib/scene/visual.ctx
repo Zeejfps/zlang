@@ -446,7 +446,8 @@ namespace visual {
     // close, animloopN). A change between states plays the client's transition first (0x0063e930:
     // to open close2open, from open open2close, to off or from on on2off, to on or from off off2on,
     // the later rule winning) and then loops the new state; a placeable first seen in a state shows it
-    // at once. An opening container's panel waits for its close2open (container::hold_opening).
+    // at once. A container's close2open and open2close play at double speed (ours, for a snappier loot
+    // panel), and an opening container's panel waits for the close2open (container::hold_opening).
     fn animate_placeable { mut sc: scene::Scene, mut w: world::World, v: *mut scene::Visual, o: *obj::Object, anim: u32 } {
         if v.state == anim { return }
         let first = v.state == 0xFFFFFFFF
@@ -472,16 +473,21 @@ namespace visual {
             _ = @fmt(&w.io, "placeable {} {} plays {}{}{}\n", o.id, o.tag, via, sep, name)
         }
         let looping = animname::loops{ id = anim } or anim == container::ANIM_OPEN or anim == container::ANIM_CLOSE or anim == ANIM_ON or anim == ANIM_OFF
-        if via.len > 0 and scene::play{ &sc, &w, part = v.first, name = via, looping = false, speed = 1.0, transition = 0.0 } {
+        let lid = anim == container::ANIM_OPEN or from == container::ANIM_OPEN
+        let speed: f32 = if lid { LID_SPEED } else { 1.0 }
+        if via.len > 0 and scene::play{ &sc, &w, part = v.first, name = via, looping = false, speed, transition = 0.0 } {
             set_next{ sc = &sc, part = v.first, name }
             if anim == container::ANIM_OPEN {
-                let seconds = scene::length_of{ &sc, &w, part = v.first, name = via }
+                let seconds = scene::length_of{ &sc, &w, part = v.first, name = via } / LID_SPEED
                 container::hold_opening{ &w, placeable = o.id, ms = @as(u64, seconds * 1000.0 + 0.5) }
             }
             return
         }
         _ = scene::play{ &sc, &w, part = v.first, name, looping, speed = 1.0, transition = 0.0 }
     }
+
+    // How fast a container's lid opens and closes (ours: the original plays them at 1).
+    const LID_SPEED: f32 = 2.0
 
     const ANIM_ON: u32 = 10073
     const ANIM_OFF: u32 = 10074

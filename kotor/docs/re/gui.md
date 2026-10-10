@@ -2825,7 +2825,7 @@ script reads the selected planet (`GetSelectedPlanet`) and does the travel. (hig
 | 0x006b8770 | `CSWGuiContainer::Update` | rebuilds the give-items list when flagged | med |
 | 0x006b92f0 | `CSWGuiContainer::HandleInputEvent` | events below | high |
 | 0x006b8130 | `CSWGuiContainer::ShowContainerItems` | stores the container id and the byte, lists the placeable's items (its repository +0x36c), title 393 "Container Inventory" (byte non-zero) or 394 "Container is Empty" (byte 0) | med |
-| 0x006b8410 | `CSWGuiContainer::ShowGiveItems` | lists the party inventory's non-plot items, title 392 "Items Available to Place in Container"; a row's 0x27/0x2d (0x006b7170) has the leader put one of it into the container (0x0060eea0; a count from 0x006b4fe0 while the alternate-action key is held) and sets bits 1 and 2 | med |
+| 0x006b8410 | `CSWGuiContainer::ShowGiveItems` | lists the party inventory's non-plot items, title 392 "Items Available to Place in Container"; a row's 0x27/0x2d (0x006b7170) has the leader put one of it into the container (0x0060eea0) and sets bits 1 and 2; while the alternate-action key is held the count is 0x006b4fe0's: the row's own text (`CSWGuiItemEntry` +0x16c, the item's name) read with `AsINT`, 1 when empty, so 0 for any item name (what GIVEITEM makes of 0 needs a runtime check) | med |
 | 0x00677630 | `SendContainerClose` | client-to-server message (type 0x19, subtype 2) with the container id and a take-all flag | med |
 
 Controls: `LBL_MESSAGE` (title), `LB_ITEMS`, `BTN_OK` (take all), `BTN_GIVEITEMS`, `BTN_CANCEL`;

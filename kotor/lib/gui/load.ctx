@@ -207,6 +207,7 @@ namespace gui {
         c.hover_row = -1
         c.text_mode = false
         c.click_rows = false
+        c.inert_rows = false
         c.row_frame_alpha = 1.0
         c.entry_rows = false
         c.entry_font = -1
