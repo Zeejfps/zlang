@@ -21,16 +21,17 @@ namespace ctl {
     }
 
     struct Control {
-        vx: f32,                    // velocity, m/s
+        vx: f32,                    // velocity, m/s, in the input's frame (x to the right, y ahead), not the world's
         vy: f32,
         moved_speed: f32,           // the speed the last frame moved at (the client creature's +0x3b0, SetMoveSpeed): 0 unless above 1 m/s
+        busy_wait: f32,             // seconds the keys still wait before they may break the leader's orders (client +0x2a4); <= 0: none
         min_turn: f32,              // degrees per second (camerastyle MinTurnRate, MaxTurnRate)
         max_turn: f32,
         last: u32,                  // the creature moved last frame: when the leader changes, the old one stops
         combat_movement: bool,      // the "Combat Movement" option: in combat mode the keys may break the leader's orders
     }
 
-    fn new {} -> Control { return Control{ vx = 0.0, vy = 0.0, moved_speed = 0.0, min_turn = 150.0, max_turn = 1500.0, last = obj::INVALID, combat_movement = true } }
+    fn new {} -> Control { return Control{ vx = 0.0, vy = 0.0, moved_speed = 0.0, busy_wait = -1.0, min_turn = 150.0, max_turn = 1500.0, last = obj::INVALID, combat_movement = true } }
 
     fn set_style { mut ctl: Control, t: twoda::Table, row: u32 } {
         ctl.min_turn = twoda::get_float{ t, row = @as(usize, row), column = "minturnrate" } ifnull 150.0
@@ -86,16 +87,36 @@ namespace ctl {
             ix = ix * 0.5
             iy = iy * 0.5
         }
-        // A leader with orders in combat mode does not hear the keys unless the Combat Movement option is on
-        // (ProcessInput 0x006227e0, movement.md 1.4).
-        if o.actions.len > 0 and c.combat_mode and not ctl.combat_movement {
-            ix = 0.0
-            iy = 0.0
+        // A leader with orders (ProcessInput 0x006227e0, movement.md 1.4). In combat mode he does not hear the keys unless
+        // the Combat Movement option is on. Otherwise keys that come wait 0.3 s, unheard; when the wait runs out they are
+        // let through for that frame, and a commandable leader whose velocity (its larger component) is then above
+        // 0.25 m/s has his orders cancelled (CancelServerActions), else another 0.1 s wait starts. So held keys break
+        // an order after about 0.4 s at 30 frames a second.
+        if o.actions.len > 0 {
+            if c.combat_mode and not ctl.combat_movement {
+                ix = 0.0
+                iy = 0.0
+                ctl.busy_wait = -1.0
+            } else if ix == 0.0 and iy == 0.0 {
+                ctl.busy_wait = -1.0
+            } else if ctl.busy_wait <= 0.0 {
+                ctl.busy_wait = 0.3
+            }
+            if ctl.busy_wait > 0.0 {
+                ctl.busy_wait = ctl.busy_wait - step
+                if ctl.busy_wait > 0.0 {
+                    ix = 0.0
+                    iy = 0.0
+                } else if o.commandable {
+                    if math::max{ a = math::abs{ x = ctl.vx }, b = math::abs{ x = ctl.vy } } <= 0.25 {
+                        ctl.busy_wait = 0.1
+                    } else {
+                        fight::cancel_actions{ &w, id }
+                    }
+                }
+            }
         }
         let has_input = ix != 0.0 or iy != 0.0
-        // Otherwise input cancels whatever the leader was doing (movement.md 1.4, CancelServerActions; ours: at once,
-        // where the original waits 0.3 s first).
-        if has_input and o.actions.len > 0 { fight::cancel_actions{ &w, id } }
         let o2 = world::object{ w = &w, id } ifnull { return }
         let c2 = obj::creature{ o = o2 } ifnull { return }
         let fx = -math::sinf{ x = yaw }
@@ -140,8 +161,8 @@ namespace ctl {
             let mut k: f32 = if c2.stealth { 15.0 } else if accl > 0.0 { accl } else { 50.0 }
             if vmax < 1.8 { k = k * vmax / 1.8 }
             let decay = math::expf{ x = -step * k / vmax }
-            ctl.vx = ux * vmax + (ctl.vx - ux * vmax) * decay
-            ctl.vy = uy * vmax + (ctl.vy - uy * vmax) * decay
+            ctl.vx = ix * vmax + (ctl.vx - ix * vmax) * decay
+            ctl.vy = iy * vmax + (ctl.vy - iy * vmax) * decay
         }
         let v = math::sqrtf{ x = ctl.vx * ctl.vx + ctl.vy * ctl.vy }
         c2.speed = v
