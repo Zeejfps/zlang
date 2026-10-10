@@ -1,0 +1,9 @@
+# From `uppercity` (Carth follows): two Sith troopers 5 m behind the leader, 0.6 m either side of his line,
+# come for him and Carth together. Each attacker must stop at its target's circle and walk round the other attacker,
+# not onto its spot: no two creatures' circles may overlap (check.sh adds a `ui gaps` line every 3 frames) and both
+# troopers must have attacked.
+1 ui bot off
+2 ui sethp pc 300
+3 ui sethp carth 300
+5 ui foe g_sithtroop01 -5 0.6
+5 ui foe g_sithtroop02 -5 -0.6

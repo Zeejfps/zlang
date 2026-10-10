@@ -10,7 +10,8 @@ decompiled functions named in the lines (`python kotor/tools/py/rex.py fn ADDR`)
 The code: [lib/engine/movement.ctx](../../lib/engine/movement.ctx) (MOVETOPOINT's walk, the speeds, the follower's
 pace, safe spots), [lib/engine/paths.ctx](../../lib/engine/paths.ctx) (the planner), [lib/engine/walkmap.ctx](../../lib/engine/walkmap.ctx)
 (the walkmesh queries), [lib/engine/trail.ctx](../../lib/engine/trail.ctx) (the leader's trail), [lib/engine/actions.ctx](../../lib/engine/actions.ctx)
-(jumps, FOLLOW, RANDOMWALK), [lib/scene/control.ctx](../../lib/scene/control.ctx) (the leader under the keys).
+(jumps, FOLLOW, RANDOMWALK), [lib/engine/crowd.ctx](../../lib/engine/crowd.ctx) (creatures in each other's way: the circle
+test, pushing aside, detours), [lib/scene/control.ctx](../../lib/scene/control.ctx) (the leader under the keys).
 
 ## How these were tested
 
@@ -22,6 +23,8 @@ pace, safe spots), [lib/engine/paths.ctx](../../lib/engine/paths.ctx) (the plann
   where both stand.
 - The stealth scenarios (`sh kotor/tools/stealth/check.sh`) for the hider's pace; the Endar Spire replay and the
   apartment checkpoint's for the story.
+- `sh kotor/tools/crowd/check.sh`: creatures in each other's way (no two circles overlap, the leader slides round a
+  trooper, Carth walks round one, two attackers stand apart); `ui gaps` prints the closest pair near the leader.
 
 ## 1. Speeds
 
@@ -49,7 +52,7 @@ pace, safe spots), [lib/engine/paths.ctx](../../lib/engine/paths.ctx) (the plann
 | Within range but without a line of sight: the range is taken as 0, so the creature walks onto the point | `0x0051f4f0` step 2 | open (low) | |
 | Within 0.1 m: set exactly on the point when safe | step 6 | open (low): ours stops where it is | |
 | A planner failure ends the action at once | step 7 | ours: six tries, a frame apart (`GIVE_UP`) | |
-| A step blocked by a wall or a placeable ends the move (status 1); after six blocked steps in a row (only reachable through detours) the move gives up | `StepAlongPath` step 4 | ours: the move plans again from where it stands, up to six times in a row | |
+| A step blocked by a wall or a placeable ends the move (status 1); after six blocked steps in a row (only reachable through detours) the move gives up | `StepAlongPath` step 4 | ours for walls and placeables: the move plans again from where it stands, up to six times in a row; matches for creatures (section 4) | |
 | A forced move's timeout jumps: JUMPTOOBJECT to its target (nearest safe spot within 20 m), else JUMPTOPOINT with a 1 m search (the point only if free; else no jump) | `0x004edba0`, actions.md 3.1 step 3 | fixed: ours set the creature on the target's own position | |
 | A move to a trap trigger stops 0.5 m outside its nearest edge | `0x0051f4f0` step 4, `0x0058c8a0` | open (low) | |
 
@@ -57,7 +60,7 @@ pace, safe spots), [lib/engine/paths.ctx](../../lib/engine/paths.ctx) (the plann
 
 | Behaviour | Evidence | Status | Test |
 |---|---|---|---|
-| Straight line first, then the PTH graph between the nearest reachable path points, else a local grid; links crossed by a placeable's or a static door's walkmesh are dropped | `PlotAreaPath` `0x004c3260`, `PlotPathPointRoute` `0x004c2200`, `GetPathPointSuccessors` `0x004bdb00` | matches in kind (A* over the PTH, `paths::route`); a static door is not dropped from the graph (open, low: its walkmesh still stops the walk) | |
+| Straight line first, then the PTH graph between the nearest reachable path points, else a local grid; links crossed by a placeable's or a static door's walkmesh are dropped | `PlotAreaPath` `0x004c3260`, `PlotPathPointRoute` `0x004c2200`, `GetPathPointSuccessors` `0x004bdb00` | matches (`paths::route`, `paths::search`: the nearest path points in growing windows, the depth-first search with a deepening bound, a creature on a link costed as the dog-leg round it); a static door is not dropped from the graph (open, low: its walkmesh still stops the walk) | |
 | Stop short: the planner aims range − 0.001 short of the goal | step 2 | matches (the walk stops `range` short) | |
 | No path: the farthest clear point on the straight line | step 6 | matches | |
 | Every walk test sweeps the creature's PERSPACE circle against the walls (`CheckSegmentClearance`) | `TestWalkLine` `0x004bcb70` | **open (medium)**: ours tests the centre line only (`walkmap::walk_segment`), so creatures cut corners and door frames with half their body; needs a clearance test against non-walkable edges, then the planner's samples and the PTH legs re-checked | |
@@ -69,9 +72,9 @@ pace, safe spots), [lib/engine/paths.ctx](../../lib/engine/paths.ctx) (the plann
 
 | Behaviour | Evidence | Status | Test |
 |---|---|---|---|
-| A creature's circle (both CREPERSPACEs + 0.01) blocks a walk; dead and dying ones do not | `TestSegmentAgainstCreatures` `0x004bc590`, `CheckStepCollision` `0x00512fd0` | **open (high)**: ours lets creatures walk through each other (Carth and a Duros follower 0.17 m apart in the `taris_street` gait run) | gait `taris_street` |
-| A neutral, idle, non-party creature in the way is pushed aside (to the nearest safe spot) | `PushCreatureAside` `0x004f6390`, `CanPushCreature` `0x004f62a0` | open (high, with the above) | |
-| Otherwise a detour round the blocker (side coordinated between two creatures), `k_def_pathfail01` for a hostile blocker, feedback 47859 for the player | `ResolveBlockingCreature` `0x005d0840` | open (high, with the above) | |
+| A creature's circle (both CREPERSPACEs + 0.01) blocks a step; dead and dying ones do not, nor one the mover already stands in (so overlapping creatures can walk apart); the move's own target blocks too, and reaching it is arrival | `TestSegmentAgainstCreatures` `0x004bc590`, `0x004bba40`, `CheckStepCollision` `0x00512fd0`, `StepAlongPath` step 4 | fixed (`crowd::first_blocker` in `movement::move_to_point` and under the keys); ours: a creature more than 2 m above or below does not count | `crowd/check.sh` (block1, pair1: no overlap), gait `taris_street` |
+| A neutral, idle, non-party creature in the way is pushed aside: sideways off the step's line by both CREPERSPACEs + 0.1, to the nearest safe spot within 5 m it can walk to, else within 4 m of a point 1 m behind the mover; the player's own creature neither pushes nor is pushed | `PushCreatureAside` `0x004f6390`, `CanPushCreature` `0x004f62a0`, `FUN_004a98b0` | fixed (`crowd::push_aside`) | gait `taris_street` (`crowd: ... pushes ... aside` lines) |
+| Otherwise, for a creature it has not walked round yet (or one that moved since): a hostile blocker makes the mover run `k_def_pathfail01` (a commandable mover stops); else a detour along a hexagon round the blocker (edges at both CREPERSPACEs + 0.2), the better side (clear, then blocked by a creature, then walled), two movers agreeing on the side (facing each other: the same value; the same way: the other); a path ending inside it ends the move; no side: `k_def_pathfail01` and the move ends, feedback 47859 for the player. The one it walked round, still on its spot, ends the move; six blocked steps end it | `ResolveBlockingCreature` `0x005d0840`, `FUN_005cf1f0` (the hexagon), `StepAlongPath` step 4 | fixed (`crowd::resolve`, `movement::blocked_by`); ours: the side the detour took is kept for the next (the original's flag looks flipped after a win of the first side; not certain) | `crowd/check.sh` block1 (Carth's detour) |
 | A closed door's walkmesh in the way sends PATH_BLOCKED (OnBlocked, which opens it) on every blocked step and ends the move | `CheckStepCollision` | ours: told at most once a second; a move with a timeout waits for the door instead of ending | Dantooine replay (Bastila's legs) |
 | A trigger the move targets is clicked on arrival; an area-transition door in use range is clicked when open, else PATH_BLOCKED | `UpdateMovement` step 12 | matches in kind (lib/engine/doors.ctx) | |
 
@@ -87,5 +90,5 @@ pace, safe spots), [lib/engine/paths.ctx](../../lib/engine/paths.ctx) (the plann
 | Behaviour | Evidence | Status | Test |
 |---|---|---|---|
 | ActionRandomWalk: home = where the walker stood; each leg home ± (−7..7) m, walked, 3 s wait, the rest of the queue dropped; far from the player (AI level 0) a 15 s wait and no walk | `AIActionRandomWalk` `0x00515ac0` | fixed: ours aimed each leg from wherever the walker was, so walkers drifted (the Undercity's rakghouls up to 130 m in five minutes; now within 10 m) | fresh tar_m04aa, 9000 frames |
-| FOLLOWLEADER: the trail, the formation point, the pace | movement.md 6 | matches in kind (movement.md 6.2 "Ours"); the order comes after a second of an idle queue (`FOLLOW_IDLE_MS`, ours) | combat `straggle1`, `straggle2`, `companions` |
+| FOLLOWLEADER: the trail, the formation point (the nearest safe spot within 3 m of the follow point when someone stands on it), the pace; the order is the heartbeat's (`k_hen_heartbt01`), held from then on, and the member steps from the leader's first move | movement.md 6 | matches in kind (movement.md 6.2 "Ours") | combat `straggle1`, `straggle2`, `companions`; `crowd/check.sh` |
 | ActionForceFollowObject: the follow point is the leader's position plus the offset; a new move when that point moved by the party table's PrimaryRange (5 m); waits 0.25 s (0.025 s for party members) | FOLLOW `0x005132e0` | open (low): ours moves when farther than max(fDist, 1) + 0.5, after a 0.25 s wait | |

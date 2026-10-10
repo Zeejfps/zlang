@@ -197,7 +197,23 @@ and the move fails (0) unless that result is 1: (high for the loop, med for the 
 - −3 (a creature): the blocker, when it is found, is pushed aside (`PushCreatureAside`, 4.9) and
   the test is repeated; if still blocked and the creature's own spot is not safe, it is moved to the
   nearest safe point within 1.0 m and the test is repeated once more. A result that is still
-  −1/−2/−3 goes through the slide handling above.
+  −1/−2/−3 goes through the slide handling above. Neither does anything for the player's creature:
+  `CanPushCreature` refuses a mover that is the player's creature, and a 1 m search tries only the
+  spot itself (4.8). The creature test reports an edge too (`FUN_004bc0e0`): the point where the
+  step first meets the circle, the circle's outward normal there and the tangent through it, so the
+  leader slides round another creature as along a wall. (high)
+
+The test's hit report (`FUN_004bb570` fills it): a flag that an edge was hit, a point on the edge,
+its normal in the floor plane (the slide puts the target `T` at `T − n((T − A)·n)`, on the edge's
+line), and a vertex flag. The reversal test compares, for the edge just hit and the one before, the
+sign of the step's backward direction dotted with the edge's direction (`n` turned by `Z ×`); the
+sideways steps go along `Z ×` the first step's direction, to the side given by the sign of
+`n.x·d.y − n.y·d.x`. (med for the signs)
+
+Ours (`ctl::move_direct`): the same loop, six tests of `walkmap::step_to` and `crowd::first_blocker`;
+a wall's edge comes from `walkmap::wall_hit` (the border of the floor face the walk leaves, or of
+the door's or placeable's walkmesh face it enters, crossed between the last good sample and the
+first bad one; at a vertex when the crossing is within 1 cm of an end).
 
 On success the server is told first through `CServerExoApp::MoveCreatureFromClient`
 (`0x004aead0` → `0x004b6cc0`), which runs the trigger bookkeeping for the segment (section 5);
@@ -1153,12 +1169,16 @@ Both planners finish the same way (`FinishPathPointRoute` `0x004c17a0` time-slic
    that the straight walk between P + c·(A−P)/|A−P| and P + c·(B−P)/|B−P| is clear, and replace P
    by those two points (`CutCorner` `0x004be3a0`); then try to cut the two new corners once more.
 
-Ours (`paths::route`): A* over the graph in place of the iterative-deepening search, skipping an edge
-that an active placeable's walkmesh stands on (`walkmap::meets_placeable`; the original does the same
-in `GetPathPointSuccessors`, which drops a link crossed by a placeable's or a static door's walkmesh,
-4.5, so a placeable created after the PTH was authored, such as Calo Nord's landspeeders across the
-Tatooine camp road, is routed round there too), then string pulling over the route, each shortcut
-tested with the walkmesh and every placed mesh.
+Ours (`paths::route`, `paths::search`): state 1 as above (`movement::safe_spot` for an unsafe start or
+goal within 2 m, `paths::nearest_point` for the windows), then the depth-first search with the deepening
+bound, the visited table kept across passes, the successors nearest the goal first and a creature on a
+link costed as the dog-leg round it (`paths::link_cost`); an edge that an active placeable's walkmesh
+stands on is skipped (`walkmap::meets_placeable`; so a placeable created after the PTH was authored, such
+as Calo Nord's landspeeders across the Tatooine camp road, is routed round). A search runs at once rather
+than a time slice a frame, so its end differs: 4096 expansions in a pass end it, and so does a pass that cut
+no branch for the bound (a bigger bound finds nothing new), where the original retries until its 100 planner
+calls are spent. Then string pulling over the route, each shortcut tested with the walkmesh and every placed
+mesh (not the three passes and the corner rounding of 4.7), and no grid planner for the legs.
 
 ### 4.8 Safe positions
 
@@ -1183,8 +1203,12 @@ tested with the walkmesh and every placed mesh.
   skipping the path state's owner (`+0x2c`), the move's target (`+0x30`), `+0x34`, dead creatures (vtable
   `+0x94`) and dying ones (`GetIsDying`); with the push flag (its fifth argument) also the ones the owner
   may push aside (`CanPushCreature`). A creature blocks when the segment passes within the owner's
-  CREPERSPACE (path state `+8`) + 0.01 + its own CREPERSPACE of its centre. (high for the skips and the
-  radius, med for the segment geometry)
+  CREPERSPACE (path state `+8`) + 0.01 + its own CREPERSPACE of its centre (the distance from the
+  segment's line strictly below that, and the chord's x range meeting the segment's). `FUN_004bba40`
+  then lets two cases through: a creature whose circle the segment's start already lies in (3D distance
+  at most that radius: creatures that overlap can walk apart), and, when its seventh argument is 1, one
+  that stands within both circles of the move's target (a crowd round the target). (high for the skips
+  and the radius, med for the segment geometry)
   Radii used: 2.0 (planner ends), 1.0 (the client's direct control, point only), 0.5 (DRIVEDIRECT,
   point only), 3.0 (formation moves), 5.0 (pushing; also `AIUpdate`), 20.0 (JumpToPoint's default,
   see actions.md). (med)
@@ -1207,7 +1231,9 @@ the creature being walked to blocks: (high)
    creature, not hostile (reputation above 9), not player-controlled (`+0xa88`), has an empty
    action queue, is out of combat (`+0x4e0`) and its combat round is not paused for an attack
    (`+0x958`); and the global switch `0x007a1b34` is off. The other creature is placed off the
-   mover's segment, at the closest point plus (both CREPERSPACE + 0.1) sideways, moved to the
+   mover's segment, at the closest point of the step's line (`FUN_004a98b0`, not clamped to the
+   step, so a creature ahead goes sideways, not forward) plus (both CREPERSPACE + 0.1) sideways
+   (the mover stands at that closest point while the spot is looked for), moved to the
    nearest safe point within 5 m that a clear object sweep from its old spot reaches; failing that,
    the nearest safe spot from 1 m behind the mover, searched within 4 m (`0x004c0fa0`); failing
    that, no push. Then the step is retested. (med)
@@ -1228,6 +1254,33 @@ the creature being walked to blocks: (high)
   `k_def_pathfail01` runs (with that creature) but the detour stands; if both sides are blocked by
   something other than a creature, `k_def_pathfail01` runs and the move stops.
 - After six consecutive blocked steps the move ends anyway (3.4).
+
+The detour's shape (`FUN_005cf1f0`): not a circle but a hexagon whose edges touch it, corners at
+radius / cos 30° (0.866025) round the blocker's centre, the first corner pointing back along the
+mover's facing and the others 60° on, clockwise seen from above, each at the walkmesh's height. The
+path's first and last waypoints are tested against it (`FUN_005cfc70`; only the last one's answer is
+used: the goal inside it gives −2). `FUN_005d0160` finds where the path goes in and out, `FUN_005d0690`
+builds a side's corners, `FUN_005d0770` tests them (1 clear, else the creature in the way, or none:
+walled), `FUN_005cecc0` splices the winner in and moves the next-waypoint index back to the splice when
+it was past it. The side flag is flipped before the second side is built and is not flipped back when
+the first side wins, so the value the mover keeps is the other side's (read in the decompile; whether
+that is how it plays needs a runtime check). Return: 1 detour, 0 none, −2 goal taken. In
+`StepAlongPath` a result of 0 clears the avoided creature, plays the idle animation and, for the
+player's creature, shows 47859; the blocker's side is set as above.
+
+`k_def_pathfail01` itself: for anyone but party member 0 it runs `k_ai_master` (`ExecuteScript`) on
+the mover, whose path-blocked handler goes for `GetFoundEnemyCreature`; for the player's creature it
+does nothing. (high, from the script's code)
+
+Ours (`lib/engine/crowd.ctx`, `movement::blocked_by`): every step of a MOVETOPOINT (scripts' moves, AI
+approaches, followers) and of the leader under the keys tests the creatures as above (ours: one more than
+2 m above or below does not count), pushes aside as above, and on a creature still in the way counts the
+blocked step and follows `StepAlongPath` step 4 and the detour as described, with the side kept as the one
+taken (not the flipped value); a move that ends is done, as the original's MOVETOPOINT node is removed;
+`k_def_pathfail01` is posted to run at once (`GetFoundEnemyCreature` answers the blocker). The detour's
+test leaves out the move's target as the walk tests do. Not done: the planner's own walk tests (the straight
+line, the string pulling) do not test creatures, so a path is planned through a creature and walked round it
+on contact.
 
 **No path at all**: the planner returns 3; AIActionMoveToPoint ends the action (a Force move
 teleports the creature to the destination instead; actions.md). Paths are never re-planned because
@@ -1471,9 +1524,12 @@ record nearest B that it can walk straight to (within 15 m), along the records t
 else a planned path (state 0). d is the path still to walk less the 0.5 m; the rules above give the speed, the
 smoothed speed (kept in `follow_speed`, 0 whenever the follower stops), the cycle and its rate. The follow state
 machine's states are not reproduced one by one, and the creature walks its path rather than moving halfway to
-C each frame. The order to follow still comes from `ai::wake_follower` (leader over 4 m away, queue empty for a
-second), not from the first step the leader takes as in the original, so a follower starts a few metres behind
-where the original's would be and walks or runs in by the same rules.
+C each frame. The order to follow comes from the member's heartbeat script, as in the original (`k_hen_heartbt01`
+through `k_ai_master`, every 3 to 4.2 s, when it sees no enemy and has no other order), and is held from then on;
+the member steps as soon as the leader moves (FOLLOWLEADER queues its move when the leader's speed is above
+0.1 m/s and the follower is off its formation point, else when it is more than half a metre off). A formation
+point someone stands on gives way to the nearest safe spot within 3 m of the follow point. A follower's moves
+are MOVETOPOINTs, so they meet other creatures as every walker does (4.9).
 
 There is **no teleport** of a far follower in this code: it pathfinds instead (state 0); the only
 direct placement is step 4's hop onto C, which stays within about a frame's walk. Script and

@@ -15,6 +15,7 @@ and [re/actions.md](../re/actions.md) 3.1-3.3. Severity is how much a player wou
 | medium | Speeds from the wrong creaturespeed row: blueprints that name their own (Immobile crew and victims, Slow Jawas, Fast gizka and droids, Larrim's VFAST) moved at their appearance's; companions walked at NORM's 1.7 m/s instead of PC_Movement's 3.2 | `MovementRate`, else `WalkRate`, resolved and saved; companions on row 0 (`AddAvailableNPCByObject` 0x00564300) | 07ef92e |
 | medium | Hiders walked at 3.2 m/s (the party's walk rate) instead of their appearance's DriveAnimWalk, 1.6-1.9 m/s | `movement::walk_pace` for the keys, scripted moves and followers | dbaaae6 |
 | medium | An entangled enemy (adhesive grenade) walked up to its target; an Immobile creature walked scripted moves | MOVETOPOINT fails when the can-move bit is clear | 45f6dea |
+| high | Creatures walked through each other: followers stood 0.17 m apart, attackers ended on one spot, the leader ran through everyone | every step of a move and of the keys tests the other creatures' circles (`crowd::first_blocker`, `CheckStepCollision` 0x00512fd0); an idle neutral is pushed aside (`PushCreatureAside` 0x004f6390); a creature that stays gets a detour round its hexagon, `k_def_pathfail01` for a hostile one, the move's end when it stays put or after six blocked steps (`ResolveBlockingCreature` 0x005d0840, `StepAlongPath` step 4); the leader slides round a creature as along a wall (`MoveDirect` 0x00614b90); a taken formation point gives way to the nearest safe spot within 3 m | e88cd0a, 9f9ed6c |
 | low | Every creature's first move after loading ramped up over a second | the speed factor starts at 1.0 (0x004cfcb0) | acf63dd |
 
 All verified headless: the fresh-module gait logs (`--module tar_m02aa`, `tar_m04aa`), `ui jump carth` from
@@ -30,11 +31,25 @@ apartment. `kotor/tools/playthrough/10_endar_spire.txt` queues one more reply fo
 tar_m02aa at frame 40,172 again (0 faults). The checkpoints after `bunk` should be made again
 (`kotor/tools/checkpoints/make.sh`) so that their creatures carry the speed rows.
 
+Item 1 of the open list, creatures walking through each other, closed in October 2026 together with the parity
+pass's movement rows (the leader's turn from standstill, MoveDirect's slides, the 0.3 s wait before keys break an
+order, the heartbeat's FOLLOWLEADER alone, the depth-first path-point search, the growing windows, the safe start and
+goal; mechanics/controls.md). Verified headless: `sh kotor/tools/crowd/check.sh` (block1, pair1), the Endar Spire
+replay (0 faults, reaches tar_m02aa at frame 40,171, no `companion idle`), combat (companions, engage, queue, keep,
+clicked, grenade, straggle1/2), gait, autotarget, stealth, items, camcheck (17/17), freelook and combat_cam. The
+apartment checkpoint's replay reaches the Undercity at frame 30,742 instead of 26,472 (24 faults, the base build's
+27): the leader, held at a Lower City door by the Vulkars he now cannot walk through, meets the Davik agents' scene
+with Canderous and a Sith patrol's talk on the way. The checkpoints were remade (`make.sh`): from `undercity` on
+they sit about 4,000 frames later in the story than before (`mission` is now before Mission's conversation, as
+`42_mission.txt` says, `gate` before the gate rather than past it); `combat/clicked.sh` read its troopers' ids from
+the checkpoint's numbering and now takes them from the log; `items` `new_saved` fails with any freshly made `bunk`
+(the base build too: the checkpoint now carries five unseen items).
+
 ## Open, by severity
 
 | Severity | Difference | What a fix needs |
 |---|---|---|
-| high | Creatures walk through each other: no creature circle in the walk tests, no pushing aside, no detours, no `k_def_pathfail01` for a hostile in the way (followers overlap: Carth and a Duros 0.17 m apart in the `taris_street` gait run; attackers converge on one spot) | `TestSegmentAgainstCreatures` (both CREPERSPACEs + 0.01, skipping dead and dying ones, the mover and its target) in the step test; `CanPushCreature`/`PushCreatureAside` for idle neutrals; `ResolveBlockingCreature`'s arc detour with the side coordinated between two movers; the 6-blocked-steps give-up. Big: every scripted scene and fight changes, so it wants the story replays rerun and likely the checkpoints remade. Start with blocking + detour for MOVETOPOINT only, leave the followers' trail alone |
+| low | The planner's own walk tests (the straight line, the string pulling) leave creatures out, so a path is planned through a creature and walked round it on contact; the original's `TestWalkLine` tests them (`+0x210` aside) | `crowd::first_blocker` in `paths::clear` for the planner's mover |
 | medium | No PERSPACE clearance against walls: creatures cut corners and door frames with half their body | a clearance test against the non-walkable edges of the faces near the segment (`CheckSegmentClearance` 0x005972b0, not yet read: needs RE first), used by `walkmap::step_to` and the planner; then recheck the narrow places (the Endar Spire's doors, the Ebon Hawk) |
 | low | ActionMoveToObject goes to the object's centre and stops at fRange (the original: max(fRange, use range), a door's or placeable's use point, a creature reached at range + 0.1 with a clear line) | in `routines/actions.ctx` `move_to_object`: the use point and range from `doors::use_point` (with CREPERSPACE for creatures) |
 | low | No corner rounding (cos 0.9 cut), no 1 m subdivision | `RoundPathCorners` after the string pulling in `paths::route` |
@@ -44,7 +59,7 @@ tar_m02aa at frame 40,172 again (0 faults). The checkpoints after `bunk` should 
 | low | ActionForceFollowObject's follow point and PrimaryRange (5 m) re-move rule | `actions::follow` (not FOLLOWLEADER) |
 | low | Static doors are not dropped from the PTH graph | `paths::route`'s edge test: count a static door's walkmesh |
 
-Deliberate (ours, kept): FOLLOWLEADER queued after a second of an idle queue (`FOLLOW_IDLE_MS`); a moved-on
-blocked step plans again (up to six times) where the original ends the move; a closed door says PATH_BLOCKED
+Deliberate (ours, kept): a step blocked by a wall or a placeable (not a creature) plans again (up to six times)
+where the original ends the move; a closed door says PATH_BLOCKED
 at most once a second and a move with a timeout waits for it; the planner's six tries; heights by STEP_UP and
 STEP_DOWN with seams bridged.

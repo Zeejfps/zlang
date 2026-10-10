@@ -11,6 +11,8 @@
 //   FRAME ui shield TAG ROW        an energy shield (forceshields.2da ROW) on a creature (TAG pc: the player)
 //   FRAME ui heal                 the party at full health, Min1HP off (test setup after the bot's god mode)
 //   FRAME ui grantfeat ID          gives the leader a feat (test setup: Power Attack 28, Flurry 11 ...)
+//   FRAME ui hold TAG SECONDS      an order to wait for a creature, so nobody may push it aside (tools/crowd)
+//   FRAME ui gaps                  the closest pair of creatures near the leader, and every pair that overlaps
 namespace test_combat {
     fn run { mut ui: ingame::Ingame, mut w: world::World, mut dev: gpu::Device, cmd: []u8, args: []u8 } -> bool {
         if ci::eq{ a = cmd, b = "clickon" } {
@@ -104,6 +106,72 @@ namespace test_combat {
                 o.ai_level = 1
                 _ = @fmt(&w.io, "spawn {} {} tag {} at {} {} hp {}\n", template, id, o.tag, o.position.x, o.position.y, o.hp)
             }
+            return true
+        }
+        if ci::eq{ a = cmd, b = "hold" } {
+            // Test setup: `ui hold TAG SECONDS` gives a creature an order to wait, so no walker may push it aside
+            // (CanPushCreature wants an empty queue): a blocker that stays put.
+            let mut words = text::words{ s = args }
+            let tag = text::next_word{ &words } ifnull { return true }
+            let secs = text::scan_f32{ s = text::next_word{ &words } ifnull "30" } ifnull 30.0
+            let id = world::object_by_tag{ w = &w, tag, nth = 0 }
+            let mut a = actions::make{ kind = actions::Kind::wait }
+            a.params[0] = actions::Param::float{ v = secs }
+            _ = actions::add{ &w, id, action = a, force = false }
+            return true
+        }
+        if ci::eq{ a = cmd, b = "gaps" } {
+            // Test check: how close the living creatures within 12 m of the leader stand, each pair's distance less
+            // both CREPERSPACEs (below 0: their circles overlap, which a step never makes): `gaps N closest G TAG TAG
+            // overlaps K`, then `  overlap TAG TAG G` for each overlapping pair.
+            let lo = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return true }
+            let all = list::items{ list = w.objects.all }
+            let mut near: [64]u32
+            let mut n: usize = 0
+            let mut i: usize = 0
+            while i < all.len and n < 64 {
+                let o = all[i]
+                i = i + 1
+                if o.destroyed or o.kind != obj::Kind::creature or o.area != lo.area { continue }
+                let c = obj::creature{ o } ifnull { continue }
+                if c.dead or fight::is_down{ w = &w, id = o.id } { continue }
+                if movement::distance_2d{ a = o.position, b = lo.position } > 12.0 { continue }
+                near[n] = o.id
+                n = n + 1
+            }
+            let mut best: f32 = 1000.0
+            let mut ba = obj::INVALID
+            let mut bb = obj::INVALID
+            let mut overlaps: u32 = 0
+            i = 0
+            while i < n {
+                let mut j = i + 1
+                while j < n {
+                    let a = world::object{ w = &w, id = near[i] } ifnull { break }
+                    let b = world::object{ w = &w, id = near[j] } ifnull { break }
+                    j = j + 1
+                    let ac = obj::creature{ o = a } ifnull { continue }
+                    let bc = obj::creature{ o = b } ifnull { continue }
+                    let dz = a.position.z - b.position.z
+                    if dz > 2.0 or dz < -2.0 { continue }
+                    let g = movement::distance_2d{ a = a.position, b = b.position } - ac.creperspace - bc.creperspace
+                    if g < best {
+                        best = g
+                        ba = a.id
+                        bb = b.id
+                    }
+                    if g < -0.02 {
+                        overlaps = overlaps + 1
+                        _ = @fmt(&w.io, "  overlap {} {} {} {}\n", a.tag, b.tag, g, a.id)
+                    }
+                }
+                i = i + 1
+            }
+            let mut na: []u8 = "-"
+            let mut nb: []u8 = "-"
+            if world::object{ w = &w, id = ba } is some{ value = ta } { na = ta.tag }
+            if world::object{ w = &w, id = bb } is some{ value = tb } { nb = tb.tag }
+            _ = @fmt(&w.io, "gaps {} closest {} {} {} overlaps {}\n", n, best, na, nb, overlaps)
             return true
         }
         if ci::eq{ a = cmd, b = "faction" } {
