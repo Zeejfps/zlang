@@ -166,8 +166,11 @@ Endar Spire's screens and lamps instead.
   ShadowOpacity × (how much the surface faces the sun, or the point light's falloff) × occlusion, at most 85%; a
   dim sun's shadows are fainter (× its brightness × 2, at most 1). Creatures and objects take the second sun map
   (a building or a tree shades them) and the point maps, each on the light it belongs to. Low: 9 bilinear compares.
-  Soft: a 12-tap blocker search, then 16 compares over a penumbra that widens with the caster-to-receiver distance
-  (PCSS; a sun of about a degree, a 0.15 m lamp), rotated per pixel. With the Shadows level Planar the original's
+  Soft: a blocker search of the centre texel and 12 taps around it, then 16 compares over a penumbra that widens
+  with the caster-to-receiver distance (PCSS; a sun of about a degree, a 0.15 m lamp), rotated per pixel. When the
+  search finds no blocker the pixel takes one bilinear compare at its centre rather than full light: the sun's
+  nearest tap is 2 texels out, so without the centre a thin caster (a rail, a limb) was missed and its shadow
+  sparkled as the rotation changed. With the Shadows level Planar the original's
   stencil volumes are drawn instead (hard in an enhanced view: their Soft Shadows blur is the original look's).
 - **Cost** (RTX 4090, 1280x720 timer marks): the maps 0.2 ms on Tatooine's Anchorhead (sun), 0.19 / 0.33 ms in
   Taris's Upper City (1 / 3 lights); receiving is part of the opaque pass (+0.02-0.1 ms).
