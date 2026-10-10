@@ -104,7 +104,7 @@ namespace ctl {
         let scale = fight::speed_scale{ o = o2 }
         // In stealth (or another walk-only limit) the leader walks (movement.md 1.2, GetMaxSpeed).
         let walking = stealth::walk_only{ c = c2 }
-        let rated = (if walking { c2.walk_rate } else { c2.run_rate }) * scale
+        let rated = if walking { movement::walk_pace{ w = &w, c = c2, scale } } else { c2.run_rate * scale }
         // The leader is driven by the keys, and its top speed and push come from the appearance it shows (the
         // client creature's block, GetMaxSpeed 0x00679510: appearance.2da DriveMaxSpeed and DriveAccl), not from its
         // rate: every humanoid row says 5.4 and 50, the Envirosuit (row 181, EffectDisguise in the airlocks of

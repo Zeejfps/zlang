@@ -175,15 +175,15 @@ namespace movement {
         }
         c.moving = true
         let scale = fight::speed_scale{ o }
-        let rate = (if run { c.run_rate } else { c.walk_rate }) * scale
+        let rate = if run { c.run_rate * scale } else { walk_pace{ w = &w, c, scale } }
         let mut pace = Pace{ speed = 0.0, base = 0.0 }
         let mut s: f32 = 0.0
         if follower {
             let to_go = math::max{ a = remaining{ from = o.position, path = list::items{ list = c.path }, next = c.path_next } - range, b = 0.0 }
             pace = follow_pace{ c, lead_speed, to_go, scale }
             if stealth::walk_only{ c } {
-                pace.speed = math::min{ a = pace.speed, b = c.walk_rate * scale }
-                pace.base = math::min{ a = pace.base, b = c.walk_rate * scale }
+                pace.speed = math::min{ a = pace.speed, b = walk_pace{ w = &w, c, scale } }
+                pace.base = math::min{ a = pace.base, b = walk_pace{ w = &w, c, scale } }
             }
             s = pace.speed * dt_ms / 1000.0
         } else {
@@ -273,6 +273,19 @@ namespace movement {
         cross_volumes{ &w, id, from, to = here }
         if follower { settle_follow_gait{ &w, o, c, moved = distance_2d{ a = from, b = here }, dt = dt_ms / 1000.0, pace, scale } }
         return actions::Status::running
+    }
+
+    // A creature's walking speed, m/s (CSWSCreature::GetWalkRate 0x004f1b20): its walk rate times the speed effects' factor;
+    // in stealth the appearance's DriveAnimWalk read as m/s (2 when the column is 0), which the speed effects do not
+    // change: the pace the client holds the hidden leader to as well (GetMaxSpeed 0x00679510, movement.md 3.1). The
+    // party's walk rate is PC_Movement's 3.2 m/s, a hider walks at 1.6 to 1.9.
+    fn walk_pace { w: *world::World, c: *obj::Creature, scale: f32 } -> f32 {
+        if c.stealth {
+            let row = @as(usize, if c.disguise != 0 { c.disguise } else { c.appearance })
+            let d = twoda::get_float{ t = w.tables.appearance, row, column = "driveanimwalk" } ifnull 0.0
+            return if d > 0.0 { d } else { 2.0 }
+        }
+        return c.walk_rate * scale
     }
 
     // Whether the creature may move: its AI state mask's bit 2, which the crowd-control states, Entangle and

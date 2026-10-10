@@ -1,4 +1,4 @@
-# Stealth through the HUD, then a walk past the Sith of end_m01ab (start: module:end_m01ab, 600 frames).
+# Stealth through the HUD, then a walk past the Sith of end_m01ab (start: module:end_m01ab, 1000 frames: a hider walks at its DriveAnimWalk).
 # Expect: TB_STEALTH shows once the belt is on, the click enters stealth (the "begin stealth" line,
 # the shimmer in the picture), the leader walks, and no Sith attacks; end_sith03 may hear it (heard,
 # not seen). walk_control.txt is the same walk without stealth: end_sith03 and the soldiers attack.
@@ -11,5 +11,5 @@
 64 ui stealth
 70 ui goto end_sithsol01
 300 ui stealth
-600 ui stealth
-600 ui pos
+1000 ui stealth
+1000 ui pos
