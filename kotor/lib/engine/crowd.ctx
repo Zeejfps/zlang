@@ -1,0 +1,414 @@
+// Creatures in each other's way (docs/re/movement.md 4.8-4.9): the circle every walking creature keeps clear of
+// the others, the idle bystander a walker pushes aside, and the detour round one that stays in the way.
+//
+//   crowd::first_blocker{ w = &w, o, c, from, to, skip, skip2, pushable }  the first creature whose circle a step meets
+//   crowd::push_aside{ &w, mover, other, from, to }                           an idle neutral moved off the step
+//   crowd::resolve{ &w, id, blocker, target, here }                           a detour spliced into the mover's path
+namespace crowd {
+    // The detour keeps this much more than the two circles from the blocker (g_fAvoidanceMargin 0x007a2274).
+    const AVOID_MARGIN: f32 = 0.2
+    // cos 30 degrees: the detour's hexagon has its edges at the avoidance radius, its corners farther out.
+    const COS30: f32 = 0.866025
+    // A creature this far above or below the step is on another floor (ours: the original's test is flat).
+    const HEIGHT: f32 = 2.0
+    // ResolveBlockingCreature's results: a detour was spliced in, none was found, the path ends inside the
+    // blocker's circle (its goal is taken).
+    const DETOUR: i32 = 1
+    const NONE: i32 = 0
+    const OCCUPIED: i32 = -2
+
+    // Where a step meets a creature's circle: the creature, the point, and the circle's outward normal there (the
+    // edge the leader's keys slide along, FUN_004bc0e0).
+    struct Hit { id: u32, point: math::Vec3, normal: math::Vec3 }
+
+    // The first creature, along the step from `from` to `to`, whose circle the step enters
+    // (CSWSArea::TestSegmentAgainstCreatures 0x004bc590): every living creature of the area but the mover and `skip`
+    // and `skip2` (dead ones and party members who are down do not count); a step blocks when it passes within the mover's
+    // CREPERSPACE + 0.01 + the other's CREPERSPACE of the other's centre. One whose circle the mover already stands in
+    // does not block, so creatures that ended up overlapping can walk apart (0x004bba40). With `pushable` the ones the
+    // mover may push aside are left out too.
+    fn first_blocker { w: *world::World, o: *obj::Object, c: *obj::Creature, from: math::Vec3, to: math::Vec3, skip: u32, skip2: u32, pushable: bool } -> ?Hit {
+        let all = list::items{ list = w.objects.all }
+        let dx = to.x - from.x
+        let dy = to.y - from.y
+        let len2 = dx * dx + dy * dy
+        let mut best: ?Hit = null
+        let mut best_t: f32 = 2.0
+        let mut i: usize = 0
+        while i < all.len {
+            let other = all[i]
+            i = i + 1
+            if other.id == o.id or other.id == skip or other.id == skip2 or other.destroyed or other.kind != obj::Kind::creature or other.area != o.area { continue }
+            let oc = obj::creature{ o = other } ifnull { continue }
+            if oc.dead { continue }
+            let dz = other.position.z - from.z
+            if dz > HEIGHT or dz < -HEIGHT { continue }
+            let r = c.creperspace + 0.01 + oc.creperspace
+            let px = other.position.x - from.x
+            let py = other.position.y - from.y
+            if px * px + py * py + dz * dz <= r * r { continue }
+            let mut t: f32 = 0.0
+            if len2 > 0.0000001 { t = math::clamp{ x = (px * dx + py * dy) / len2, lo = 0.0, hi = 1.0 } }
+            let cx = dx * t - px
+            let cy = dy * t - py
+            if cx * cx + cy * cy >= r * r { continue }
+            if fight::is_down{ w, id = other.id } { continue }
+            if pushable and can_push{ w, mover = o, other } { continue }
+            // Where the step enters the circle: the smaller root of |from + t d - centre| = r.
+            let mut enter: f32 = 0.0
+            if len2 > 0.0000001 {
+                let b = px * dx + py * dy
+                let disc = b * b - len2 * (px * px + py * py - r * r)
+                enter = math::clamp{ x = (b - math::sqrtf{ x = math::max{ a = disc, b = 0.0 } }) / len2, lo = 0.0, hi = 1.0 }
+            }
+            if enter >= best_t { continue }
+            best_t = enter
+            let hx = from.x + dx * enter
+            let hy = from.y + dy * enter
+            let mut nx = hx - other.position.x
+            let mut ny = hy - other.position.y
+            let nl = math::sqrtf{ x = nx * nx + ny * ny }
+            if nl > 0.000001 {
+                nx = nx / nl
+                ny = ny / nl
+            } else {
+                nx = -dx
+                ny = -dy
+            }
+            best = Hit{ id = other.id, point = math::Vec3{ x = hx, y = hy, z = from.z }, normal = math::Vec3{ x = nx, y = ny, z = 0.0 } }
+        }
+        return best
+    }
+
+    // Whether `mover` may push `other` aside (CSWSCreature::CanPushCreature 0x004f62a0): neither is the creature the
+    // player controls, and `other` is a bystander: not hostile toward the mover (standing above 9), not in the
+    // player's party, nothing in its action queue, out of combat and not pausing its round for an attack.
+    fn can_push { w: *world::World, mover: *obj::Object, other: *obj::Object } -> bool {
+        if mover.id == w.pc or other.id == w.pc or other.id == w.player { return false }
+        if party::is_member{ w, id = other.id } { return false }
+        if world::standing{ w, from = mover.faction, toward = other.faction } <= 9 { return false }
+        if other.actions.len > 0 { return false }
+        let oc = obj::creature{ o = other } ifnull { return false }
+        if oc.in_combat { return false }
+        if oc.fighter is some{ value = f } { if f.round.paused { return false } }
+        return true
+    }
+
+    // Moves the bystander `other` off the mover's step from `from` to `to` (CSWSCreature::PushCreatureAside
+    // 0x004f6390): sideways from the point of the step's line nearest it (FUN_004a98b0, not clamped to the step, so
+    // one ahead goes aside, not forward) by both CREPERSPACEs + 0.1, to the nearest safe spot within 5 m that it can
+    // walk straight to from where it stood (the mover counted as standing at that nearest point); else the nearest
+    // safe spot within 4 m of a point 1 m behind the mover; else nowhere, and false.
+    fn push_aside { mut w: world::World, mover: u32, other: u32, from: math::Vec3, to: math::Vec3 } -> bool {
+        let o = world::object{ w = &w, id = mover } ifnull { return false }
+        let c = obj::creature{ o } ifnull { return false }
+        let t = world::object{ w = &w, id = other } ifnull { return false }
+        let tc = obj::creature{ o = t } ifnull { return false }
+        if not can_push{ w = &w, mover = o, other = t } { return false }
+        let dx = to.x - from.x
+        let dy = to.y - from.y
+        let len2 = dx * dx + dy * dy
+        let mut s: f32 = 0.0
+        if len2 > 0.0000001 { s = ((t.position.x - from.x) * dx + (t.position.y - from.y) * dy) / len2 }
+        let near = math::Vec3{ x = from.x + dx * s, y = from.y + dy * s, z = from.z }
+        let mut ax = t.position.x - near.x
+        let mut ay = t.position.y - near.y
+        let al = math::sqrtf{ x = ax * ax + ay * ay }
+        if al > 0.000001 {
+            ax = ax / al
+            ay = ay / al
+        } else {
+            // Right on the step: to its left.
+            let l = math::sqrtf{ x = len2 }
+            ax = if l > 0.000001 { -dy / l } else { 1.0 }
+            ay = if l > 0.000001 { dx / l } else { 0.0 }
+        }
+        let reach = tc.creperspace + 0.1 + c.creperspace
+        let want = math::Vec3{ x = near.x + ax * reach, y = near.y + ay * reach, z = t.position.z }
+        let was = t.position
+        let home = o.position
+        o.position = near
+        let mut spot = movement::safe_spot{ w = &w, id = other, at = want, radius = 5.0, need_line = true }
+        if spot is some{ value = p } { if not paths::clear{ w = &w, a = was, b = p } { spot = null } }
+        if spot == null {
+            let f = trail::facing_of{ o }
+            let behind = math::Vec3{ x = from.x - f.x, y = from.y - f.y, z = from.z }
+            spot = movement::safe_spot{ w = &w, id = other, at = behind, radius = 4.0, need_line = true }
+        }
+        o.position = home
+        let p = spot ifnull { return false }
+        if w.log.actions {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "crowd: {} pushes {} aside to {} {}\n", mover, other, p.x, p.y)
+        }
+        movement::place{ &w, id = other, at = p }
+        return true
+    }
+
+    // A detour round the creature `blocker` that stopped `id`'s step at `here` (CPathAvoidance::ResolveBlockingCreature
+    // 0x005d0840). A hostile blocker (its standing toward the mover below 11) makes the mover run k_def_pathfail01
+    // with the blocker as GetFoundEnemyCreature, and a commandable mover stops there (NONE). Otherwise: a hexagon round
+    // the blocker whose edges lie both CREPERSPACEs + 0.2 from its centre, its first corner pointing back along the
+    // mover's facing; a path that ends inside it has its goal taken (OCCUPIED); else the stretch of the path inside
+    // it is replaced by the corners on one side or the other, whichever is better (clear beats blocked by a creature,
+    // which beats blocked by the walkmesh or an object; a tie keeps the mover's side). When both sides are walled
+    // off the mover runs k_def_pathfail01 and stops (NONE); when the chosen side meets a hostile, k_def_pathfail01
+    // runs with it and the detour stands.
+    fn resolve { mut w: world::World, id: u32, blocker: u32, target: u32, here: math::Vec3 } -> i32 {
+        let o = world::object{ w = &w, id } ifnull { return NONE }
+        let c = obj::creature{ o } ifnull { return NONE }
+        let b = world::object{ w = &w, id = blocker } ifnull { return NONE }
+        let bc = obj::creature{ o = b } ifnull { return NONE }
+        c.avoided = blocker
+        c.avoided_at = b.position
+        if fight::is_hostile_to{ w = &w, o = b, other = id } {
+            path_failed{ &w, id, enemy = blocker }
+            let again = world::object{ w = &w, id } ifnull { return NONE }
+            if again.commandable { return NONE }
+        }
+        let o2 = world::object{ w = &w, id } ifnull { return NONE }
+        let c2 = obj::creature{ o = o2 } ifnull { return NONE }
+        let b2 = world::object{ w = &w, id = blocker } ifnull { return NONE }
+        // The hexagon's corners, clockwise seen from above from the one behind the blocker as the mover sees it.
+        let face = trail::facing_of{ o = o2 }
+        let radius = (c2.creperspace + bc.creperspace + AVOID_MARGIN) / COS30
+        let mut hex: [6]math::Vec3
+        let mut k: usize = 0
+        while k < 6 {
+            let a = -math::PI / 3.0 * @as(f32, k)
+            let ca = math::cosf{ x = a }
+            let sa = math::sinf{ x = a }
+            let vx = -face.x * ca + face.y * sa
+            let vy = -face.x * sa - face.y * ca
+            let mut p = math::Vec3{ x = b2.position.x + vx * radius, y = b2.position.y + vy * radius, z = here.z }
+            p.z = walkmap::height{ m = &w.walk, x = p.x, y = p.y, z = here.z + 0.5 } ifnull here.z
+            hex[k] = p
+            k = k + 1
+        }
+        // The path from here: where it goes into the hexagon and where it comes out.
+        let path = list::items{ list = c2.path }
+        let mut pts = list::new(math::Vec3, arena::Arena){ realloc = arena::alloc, heap = w.scratch }
+        list::push{ list = &pts, item = here } iferr { return NONE }
+        let mut j = c2.path_next
+        while j < path.len {
+            list::push{ list = &pts, item = path[j] } iferr { return NONE }
+            j = j + 1
+        }
+        let line = list::items{ list = pts }
+        let cross = crossings{ hex, line }
+        if not cross.found { return NONE }
+        if cross.ends_inside { return OCCUPIED }
+        // The two sides: the corners after the edge it goes in by, in order, up to the edge it comes out by; or
+        // the other way round.
+        let ahead = side_corners{ hex, enter = cross.enter_edge, leave = cross.leave_edge, forward = true }
+        let back = side_corners{ hex, enter = cross.enter_edge, leave = cross.leave_edge, forward = false }
+        let mine = if c2.avoid_side { back } else { ahead }
+        let theirs = if c2.avoid_side { ahead } else { back }
+        let rate_mine = rate{ w = &w, o = o2, c = c2, blocker, target, here, s = mine, exit = cross.exit }
+        let rate_theirs = rate{ w = &w, o = o2, c = c2, blocker, target, here, s = theirs, exit = cross.exit }
+        let mut use = mine
+        let mut met = rate_mine.met
+        if rate_theirs.score > rate_mine.score {
+            c2.avoid_side = not c2.avoid_side
+            use = theirs
+            met = rate_theirs.met
+        } else if rate_mine.score == 0 {
+            path_failed{ &w, id, enemy = obj::INVALID }
+            return NONE
+        }
+        // The new path: the corners, the way out, and the rest of the old path.
+        let mut out = list::new(math::Vec3, arena::Arena){ realloc = arena::alloc, heap = w.scratch }
+        k = 0
+        while k < use.count {
+            list::push{ list = &out, item = use.corners[k] } iferr { return NONE }
+            k = k + 1
+        }
+        list::push{ list = &out, item = cross.exit } iferr { return NONE }
+        j = cross.leave_segment + 1
+        while j < line.len {
+            list::push{ list = &out, item = line[j] } iferr { return NONE }
+            j = j + 1
+        }
+        let o3 = world::object{ w = &w, id } ifnull { return NONE }
+        let c3 = obj::creature{ o = o3 } ifnull { return NONE }
+        list::clear{ list = &c3.path }
+        let fresh = list::items{ list = out }
+        k = 0
+        while k < fresh.len {
+            list::push{ list = &c3.path, item = fresh[k] } iferr { return NONE }
+            k = k + 1
+        }
+        c3.path_next = 0
+        if w.log.actions {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "crowd: {} walks round {} on side {} ({} corners)\n", id, blocker, if c3.avoid_side { 1 } else { 0 }, use.count)
+        }
+        if met != obj::INVALID {
+            let m = world::object{ w = &w, id = met }
+            if m != null and fight::is_hostile_to{ w = &w, o = m, other = id } { path_failed{ &w, id, enemy = met } }
+        }
+        return DETOUR
+    }
+
+    // k_def_pathfail01 run by the mover, `enemy` its GetFoundEnemyCreature (path state +0x264).
+    fn path_failed { mut w: world::World, id: u32, enemy: u32 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        o.ctx.found_enemy = enemy
+        if w.log.actions {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "crowd: {} runs k_def_pathfail01 (enemy {})\n", id, enemy)
+        }
+        events::post{ &w, delay_ms = 0, caller = id, target = id, payload = events::Payload::run_script{ name = resref::truncate{ name = "k_def_pathfail01" } } }
+    }
+
+    struct Crossing {
+        found: bool,
+        ends_inside: bool,
+        enter_edge: usize,      // the hexagon edge (corner k to corner k + 1) the path goes in by
+        leave_edge: usize,      // and comes out by
+        leave_segment: usize,   // the path's segment (point i to i + 1) it comes out on
+        exit: math::Vec3,       // where
+    }
+
+    // Where the polyline `line` first goes into the convex hexagon and where it next comes out (each segment clipped
+    // against the six edges' half-planes).
+    fn crossings { hex: [6]math::Vec3, line: []math::Vec3 } -> Crossing {
+        let mut r = Crossing{ found = false, ends_inside = false, enter_edge = 0, leave_edge = 0, leave_segment = 0, exit = math::vec3::zero{} }
+        let mut inside = false
+        let mut s: usize = 0
+        while s + 1 < line.len {
+            let a = line[s]
+            let b = line[s + 1]
+            let clip = clip_segment{ hex, a, b }
+            if clip.hit {
+                if not inside {
+                    inside = true
+                    r.found = true
+                    r.enter_edge = clip.enter_edge
+                    if clip.t0 <= 0.0 {
+                        // Starting inside: the edge whose side of the hexagon the start is on.
+                        r.enter_edge = nearest_edge{ hex, p = a }
+                    }
+                }
+                if clip.t1 < 1.0 {
+                    r.leave_edge = clip.leave_edge
+                    r.leave_segment = s
+                    r.exit = math::Vec3{ x = a.x + (b.x - a.x) * clip.t1, y = a.y + (b.y - a.y) * clip.t1, z = a.z + (b.z - a.z) * clip.t1 }
+                    return r
+                }
+            } else if inside {
+                // A segment wholly outside after one that ended inside cannot happen with a convex hexagon.
+                break
+            }
+            s = s + 1
+        }
+        if inside { r.ends_inside = true }
+        return r
+    }
+
+    struct Clip { hit: bool, t0: f32, t1: f32, enter_edge: usize, leave_edge: usize }
+
+    // The part of the segment a -> b inside the hexagon, as [t0, t1] (Cyrus-Beck), with the edges that bound it.
+    fn clip_segment { hex: [6]math::Vec3, a: math::Vec3, b: math::Vec3 } -> Clip {
+        let mut r = Clip{ hit = false, t0 = 0.0, t1 = 1.0, enter_edge = 0, leave_edge = 0 }
+        let dx = b.x - a.x
+        let dy = b.y - a.y
+        let mut k: usize = 0
+        while k < 6 {
+            let p = hex[k]
+            let q = hex[(k + 1) % 6]
+            // The corners run clockwise: the inside is on each edge's right.
+            let ex = q.x - p.x
+            let ey = q.y - p.y
+            // Positive inside.
+            let at = -(ex * (a.y - p.y) - ey * (a.x - p.x))
+            let rate = -(ex * dy - ey * dx)
+            if rate == 0.0 {
+                if at < 0.0 { return r }
+            } else {
+                let t = -at / rate
+                if rate > 0.0 {
+                    if t > r.t0 {
+                        r.t0 = t
+                        r.enter_edge = k
+                    }
+                } else {
+                    if t < r.t1 {
+                        r.t1 = t
+                        r.leave_edge = k
+                    }
+                }
+            }
+            k = k + 1
+        }
+        r.hit = r.t0 < r.t1
+        return r
+    }
+
+    // The hexagon edge nearest a point inside it.
+    fn nearest_edge { hex: [6]math::Vec3, p: math::Vec3 } -> usize {
+        let mut best: usize = 0
+        let mut best_d: f32 = 1000000000.0
+        let mut k: usize = 0
+        while k < 6 {
+            let a = hex[k]
+            let b = hex[(k + 1) % 6]
+            let d = bwm::edge_side{ a, b, x = p.x, y = p.y }
+            let dd = if d < 0.0 { -d } else { d }
+            if dd < best_d {
+                best_d = dd
+                best = k
+            }
+            k = k + 1
+        }
+        return best
+    }
+
+    struct Side { corners: [6]math::Vec3, count: usize }
+
+    // The corners passed going round from edge `enter` to edge `leave`: forward, corners enter + 1 ... leave; back,
+    // corners enter, enter - 1 ... leave + 1.
+    fn side_corners { hex: [6]math::Vec3, enter: usize, leave: usize, forward: bool } -> Side {
+        let mut s = Side{ corners = [math::vec3::zero{}; 6], count = 0 }
+        if enter == leave { return s }
+        if forward {
+            let mut k = (enter + 1) % 6
+            while s.count < 6 {
+                s.corners[s.count] = hex[k]
+                s.count = s.count + 1
+                if k == leave { break }
+                k = (k + 1) % 6
+            }
+        } else {
+            let mut k = enter
+            while s.count < 6 {
+                s.corners[s.count] = hex[k]
+                s.count = s.count + 1
+                if k == (leave + 1) % 6 { break }
+                k = (k + 5) % 6
+            }
+        }
+        return s
+    }
+
+    struct Rating { score: u32, met: u32 }
+
+    // How good a detour is (FUN_005d0770): 2 when every leg is a clear walk, 1 when a creature (other than the
+    // blocker or the move's target, which the walk tests leave out) is in the way, 0 when the walkmesh or a placed
+    // walkmesh is.
+    fn rate { w: *world::World, o: *obj::Object, c: *obj::Creature, blocker: u32, target: u32, here: math::Vec3, s: Side, exit: math::Vec3 } -> Rating {
+        let mut from = here
+        let mut met = obj::INVALID
+        let mut k: usize = 0
+        while k <= s.count {
+            let to = if k < s.count { s.corners[k] } else { exit }
+            k = k + 1
+            if not paths::clear{ w, a = from, b = to } { return Rating{ score = 0, met = obj::INVALID } }
+            if met == obj::INVALID {
+                if first_blocker{ w, o, c, from, to, skip = blocker, skip2 = target, pushable = false } is some{ value = h } { met = h.id }
+            }
+            from = to
+        }
+        return Rating{ score = if met == obj::INVALID { 2 } else { 1 }, met }
+    }
+}

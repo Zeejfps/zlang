@@ -85,6 +85,8 @@ namespace movement {
         c.moving = false
         c.speed = 0.0
         c.follow_speed = 0.0
+        c.avoided = obj::INVALID
+        c.blocked_steps = 0
     }
 
     // MOVETOPOINT (actions.md 3.1): params 0 the point, 1 run (int), 2 range, 3 the target object
@@ -154,6 +156,7 @@ namespace movement {
         if c.path.len == 0 or c.path_next >= c.path.len or distance_2d{ a = c.path_goal, b = goal } >= 2.0 {
             c.path_next = 0
             c.path_goal = goal
+            c.blocked_steps = 0
             let planned = if follower { trail::route{ &w, id, from = o.position, goal, out = &c.path, adjusted = &c.path_adjusted } }
                 else { paths::plan{ &w, from = o.position, goal, out = &c.path, adjusted = &c.path_adjusted } }
             if not planned {
@@ -262,6 +265,24 @@ namespace movement {
                 }
                 break
             }
+            // Another creature's circle (CheckStepCollision 0x00512fd0, movement.md 4.9): an idle bystander is pushed
+            // aside and the step tried again; one that stays in the way stops the step. The move's own target counts
+            // too (the original clears it from the test), so a creature walked to is reached at its circle.
+            let dest = math::Vec3{ x = to.x, y = to.y, z }
+            let mut hit = crowd::first_blocker{ w = &w, o, c, from = here, to = dest, skip = obj::INVALID, skip2 = obj::INVALID, pushable = false }
+            if hit is some{ value = h } {
+                if crowd::push_aside{ &w, mover = id, other = h.id, from = here, to = dest } {
+                    let o2 = world::object{ w = &w, id } ifnull { return actions::Status::failed }
+                    let c2 = obj::creature{ o = o2 } ifnull { return actions::Status::failed }
+                    hit = crowd::first_blocker{ w = &w, o = o2, c = c2, from = here, to = dest, skip = obj::INVALID, skip2 = obj::INVALID, pushable = false }
+                }
+            }
+            if hit is some{ value = h } {
+                let o2 = world::object{ w = &w, id } ifnull { return actions::Status::failed }
+                world::set_position{ o = o2, p = here }
+                cross_volumes{ &w, id, from, to = here }
+                return blocked_by{ &w, id, blocker = h.id, target, here }
+            }
             a.phase = 0
             world::set_orientation{ o, v = math::Vec3{ x = p.x - here.x, y = p.y - here.y, z = 0.0 } }
             here = math::Vec3{ x = to.x, y = to.y, z }
@@ -273,6 +294,52 @@ namespace movement {
         cross_volumes{ &w, id, from, to = here }
         if follower { settle_follow_gait{ &w, o, c, moved = distance_2d{ a = from, b = here }, dt = dt_ms / 1000.0, pace, scale } }
         return actions::Status::running
+    }
+
+    // A step that another creature stopped (StepAlongPath 0x00516630 step 4, movement.md 3.4). The blocked steps since the
+    // path was planned are counted: the sixth ends the move. The move's own target ends it as arrived. A creature it has
+    // not made a detour for yet, or one that has moved since, gets one (crowd::resolve): the mover stays put this frame
+    // and walks the detour from the next; when there is none the move ends (the player's own creature is told "The
+    // path to your target is blocked.", 47859), and when the blocker stands on the path's end it ends too. The creature
+    // it made the detour for, still on its spot, ends the move. Two creatures avoiding each other agree on the side:
+    // the blocker takes the mover's side value when they face each other (each steps to its own right or left), the
+    // other one when they face the same way. An ended move is done, as the original's MOVETOPOINT node is removed.
+    fn blocked_by { mut w: world::World, id: u32, blocker: u32, target: u32, here: math::Vec3 } -> actions::Status {
+        let o = world::object{ w = &w, id } ifnull { return actions::Status::failed }
+        let c = obj::creature{ o } ifnull { return actions::Status::failed }
+        c.blocked_steps = c.blocked_steps + 1
+        if w.log.actions {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "move {}: blocked by creature {} at {} {} (step {})\n", id, blocker, here.x, here.y, c.blocked_steps)
+        }
+        if c.blocked_steps >= GIVE_UP or blocker == target { return end_blocked{ &w, id } }
+        let b = world::object{ w = &w, id = blocker } ifnull { return end_blocked{ &w, id } }
+        let dx = b.position.x - c.avoided_at.x
+        let dy = b.position.y - c.avoided_at.y
+        let dz = b.position.z - c.avoided_at.z
+        if blocker == c.avoided and dx * dx + dy * dy + dz * dz <= 0.00001 { return end_blocked{ &w, id } }
+        let r = crowd::resolve{ &w, id, blocker, target, here }
+        let o2 = world::object{ w = &w, id } ifnull { return actions::Status::failed }
+        let c2 = obj::creature{ o = o2 } ifnull { return actions::Status::failed }
+        if r == crowd::NONE {
+            c2.avoided = obj::INVALID
+            if id == w.pc { doors::tell{ &w, who = id, strref = 47859 } }
+            return end_blocked{ &w, id }
+        }
+        if world::object{ w = &w, id = blocker } is some{ value = b2 } {
+            if obj::creature{ o = b2 } is some{ value = bc } {
+                let same_way = o2.orientation.x * b2.orientation.x + o2.orientation.y * b2.orientation.y >= 0.0
+                bc.avoid_side = if same_way { not c2.avoid_side } else { c2.avoid_side }
+            }
+        }
+        if r == crowd::OCCUPIED { return end_blocked{ &w, id } }
+        return actions::Status::running
+    }
+
+    fn end_blocked { mut w: world::World, id: u32 } -> actions::Status {
+        stop{ &w, id }
+        if world::object{ w = &w, id } is some{ value = o } { world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 } }
+        return actions::Status::done
     }
 
     // A creature's walking speed, m/s (CSWSCreature::GetWalkRate 0x004f1b20): its walk rate times the speed effects' factor;

@@ -169,7 +169,10 @@ namespace trail {
         let floor = walkmap::floor{ m = &w.walk, x, y, z = m.p.z + 0.5 } ifnull { return m.p }
         let f = math::Vec3{ x, y, z = floor.z }
         if not paths::clear{ w, a = m.p, b = f } { return m.p }
-        return f
+        // A spot someone else stands on (or a placeable's walkmesh covers) is not safe: the nearest safe one within
+        // 3 m of the follow point instead (MoveToFormationPoint, movement.md 6.2 state 0).
+        if movement::safe_spot{ w, id, at = f, radius = 0.0, need_line = false } != null { return f }
+        return movement::safe_spot{ w, id, at = m.p, radius = 3.0, need_line = false } ifnull m.p
     }
 
     // A follower's way to its formation point (UpdateFollowLeader's states, movement.md 6.2): straight
