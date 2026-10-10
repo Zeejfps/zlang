@@ -1561,6 +1561,7 @@ namespace play {
         let s = gpu::shadow_info{ dev }
         world::prefix{ w = &w }
         _ = @fmt(&w.io, "shadows: maps {} volumes {} cut {} sun {} fallback {} lights {}", s.maps, s.volumes, s.cut, s.sun, s.fallback, s.lights)
+        if s.sun { _ = @fmt(&w.io, " sun_dir {} {} {}", s.sun_dir.x, s.sun_dir.y, s.sun_dir.z) }
         let mut k: u32 = 0
         while k < s.lights and k < 5 {
             _ = @fmt(&w.io, " ({} {} {} w {})", s.light[k].x, s.light[k].y, s.light[k].z, s.weight[k])

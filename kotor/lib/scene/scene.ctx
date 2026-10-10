@@ -97,6 +97,7 @@ namespace scene {
         field: Field,                   // what the probes are cast against, and the probes
         sun_state: u8,                  // the area's sun (sun.ctx): 0 not looked for yet, 1 found, 2 none
         sun_at: math::Vec3,
+        sun_dir: math::Vec3,                // the direction its light takes, in steps (sun.ctx); zero: none yet
         sun_color: math::Vec3,
         shadow_opacity: f32,            // the ARE's ShadowOpacity, 0..1
         grade: ?render::Texture,        // the planet's colour grade (atmosphere.ctx): a lookup table on the GPU, made when first asked for
@@ -129,7 +130,7 @@ namespace scene {
             time = 0.0, current_room = -1, ambient = math::Vec3{ x = 0.35, y = 0.35, z = 0.35 }, fog = render::no_fog{},
             drawn_rooms = 0, drawn_objects = 0, look = no_look{}, grass = grass::none{},
             room_light = false, field = no_field{ arena },
-            sun_state = 0, sun_at = math::vec3::zero{}, sun_color = math::vec3::zero{}, shadow_opacity = 0.5,
+            sun_state = 0, sun_at = math::vec3::zero{}, sun_dir = math::vec3::zero{}, sun_color = math::vec3::zero{}, shadow_opacity = 0.5,
             grade = null, grade_state = 0, hfog = render::no_height_fog{}, hfog_state = 0,
             emitters_on = true, fx_frame = 0, fx_time = -1.0, fx_dt = 0.0, drawn_emitters = 0, drawn_particles = 0,
         }

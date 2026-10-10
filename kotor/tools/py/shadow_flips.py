@@ -6,12 +6,14 @@ A mode flip is a frame whose shadows switch between the shadow maps and the orig
 view's shadows change softness, direction and darkness at once). A pop is a frame where a light's map appears or
 goes at a weight above 0.25 (a shadow that comes or goes in one frame instead of fading), or the overhead fallback
 jumps by more than 0.25, except on a frame whose lights were chosen afresh (`cut true`: a new area, a camera
-cut). Exits 1 when either count is above its limit (default: no limit).
+cut). A sun turn is a frame whose sun direction differs from the last (each one re-samples the sun's map: shadow
+edges crawl when it happens every frame). Exits 1 when either count is above its limit (default: no limit).
 """
 import re
 import sys
 
 LINE = re.compile(r"^\[(\d+) [^\]]*\] shadows: maps (\w+) volumes (\w+)(?: cut (\w+))? sun (\w+) fallback ([-\d.e]+) lights (\d+)(.*)$")
+SUN_DIR = re.compile(r"sun_dir ([-\d.e]+) ([-\d.e]+) ([-\d.e]+)")
 LIGHT = re.compile(r"\(([-\d.e]+) ([-\d.e]+) ([-\d.e]+) w ([-\d.e]+)\)")
 
 
@@ -31,7 +33,8 @@ def main():
         max_pops = int(args[i + 1])
         del args[i:i + 2]
     prev = None
-    frames = mode = pops = cuts = 0
+    frames = mode = pops = cuts = sun_turns = 0
+    prev_sun = None
     examples = []
     for line in open(args[0], encoding="utf-8", errors="replace"):
         m = LINE.match(line.strip())
@@ -46,6 +49,11 @@ def main():
         }
         if m.group(4) == "true":
             cuts += 1
+        sd = SUN_DIR.search(line)
+        if sd:
+            if prev_sun is not None and sd.groups() != prev_sun:
+                sun_turns += 1
+            prev_sun = sd.groups()
         if prev is not None and m.group(4) == "true":
             # The lights chosen afresh (a new area, a camera cut): the whole picture changes anyway.
             if state["mode"] != prev["mode"] and "none" not in (state["mode"], prev["mode"]):
@@ -65,7 +73,7 @@ def main():
                 pops += 1
                 examples.append(f"{frame}: fallback {prev['fallback']:.2f} -> {state['fallback']:.2f}")
         prev = state
-    print(f"{frames} frames: {mode} mode flips (maps <-> volumes), {pops} shadow pops, {cuts} cuts")
+    print(f"{frames} frames: {mode} mode flips (maps <-> volumes), {pops} shadow pops, {cuts} cuts, {sun_turns} sun turns")
     for e in examples[:12]:
         print("  " + e)
     bad = (max_mode is not None and mode > max_mode) or (max_pops is not None and pops > max_pops)

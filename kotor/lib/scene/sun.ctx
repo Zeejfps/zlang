@@ -1,10 +1,14 @@
 // The area's sun, for the enhanced renderer (render::Sun: shadow maps, light shafts). The ARE has no sun direction;
 // the rooms' models carry the light their lightmaps were baked from: an outdoor area's rooms have one light that casts
 // shadows and reaches hundreds of metres from far overhead (Dantooine's grove: radius 2000 m, 270 m up; Kashyyyk's
-// Shadowlands: 800 m). That light is the sun; its light travels from where it hangs. Areas the ARE calls interior or
-// underground have none (the Star Map's ruins hold a large dim light that is no sun).
+// Shadowlands: 800 m). That light is the sun; its light travels from where it hangs to the camera's subject, so the
+// dynamic shadows fall the way the baked ones do there (across a grove the direction turns 20 degrees). It moves in
+// steps of SUN_STEP: a direction that followed the subject continuously turned the shadow map's texel grid with every
+// step the leader took, and the sun's shadow edges crawled; a step moves an edge about one texel, once. Areas the ARE
+// calls interior or underground have none (the Star Map's ruins hold a large dim light that is no sun).
 namespace scene {
     const SUN_REACH: f32 = 100.0        // a shadow-casting light that reaches this far is a sun
+    const SUN_STEP: f32 = 0.99985       // cos 1 degree: how far the subject's direction strays before the sun's follows
 
     // The sun as seen from `at` (the camera's subject), found the first time it is asked for in an area.
     fn sun_of { mut sc: Scene, w: *world::World, at: math::Vec3 } -> render::Sun {
@@ -12,7 +16,9 @@ namespace scene {
         if sc.sun_state != 1 { return render::no_sun{} }
         let d = math::vec3::sub{ a = at, b = sc.sun_at }
         if math::vec3::length_sq{ v = d } < 1.0 { return render::no_sun{} }
-        return render::Sun{ on = true, direction = math::vec3::normalize{ v = d }, color = sc.sun_color, strength = sc.shadow_opacity, light = 0 }
+        let wanted = math::vec3::normalize{ v = d }
+        if math::vec3::dot{ a = wanted, b = sc.sun_dir } < SUN_STEP { sc.sun_dir = wanted }
+        return render::Sun{ on = true, direction = sc.sun_dir, color = sc.sun_color, strength = sc.shadow_opacity, light = 0 }
     }
 
     // One log line, with a screenshot: the area's flags and sun.
@@ -42,6 +48,7 @@ namespace scene {
 
     fn find_sun { mut sc: Scene, w: *world::World } {
         sc.sun_state = 2
+        sc.sun_dir = math::vec3::zero{}
         sc.shadow_opacity = 0.5
         let ao = world::object{ w, id = w.area } ifnull { return }
         let a = obj::area{ o = ao } ifnull { return }

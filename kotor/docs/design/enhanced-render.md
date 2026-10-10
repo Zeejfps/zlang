@@ -135,7 +135,11 @@ Endar Spire's screens and lamps instead.
   area has one shadow-casting light that reaches 100 m or more from far overhead (the grove: 2000 m from 270 m up,
   Anchorhead, the Shadowlands, the ruins' exterior). `lib/scene/sun.ctx` finds it (not in interior areas, nor
   underground ones unless natural) and the view's sun travels from it to the camera's subject; dynamic shadows then
-  fall the way the baked ones do. `scene::mark_sun` tells the backend which frame light it is.
+  fall the way the baked ones do. It follows the subject in 1-degree steps (it changes only when the subject's
+  direction has strayed a degree from it): turned every frame, the sun map's texel grid turned under the scene as the
+  leader walked and the shadow edges crawled (Anchorhead: 7.6 degrees over a 6 s walk, a new grid every frame; now 8
+  steps). The map's up vector changes from z to x only past |z| 0.96 and back below 0.94. `scene::mark_sun` tells the
+  backend which frame light it is.
 - **Point lights**: the shadow-casting frame lights (not the sun) that light this view's casters near the camera's
   subject most (Σ over the casters of (1 − d/r)² × brightness, nearer casters more; a caster counts fully within
   8.4 m of the subject and not at all past 12 m, and a light fully from 0.75 m above it, not below 0.25 m, so no
