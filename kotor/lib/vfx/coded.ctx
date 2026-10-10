@@ -1,0 +1,126 @@
+// The engine-coded visual effects (visualeffects.2da `progfx_impact` / `progfx_duration`) that are
+// neither a texture layer (1401-1426, aura.ctx) nor a beam (600-699, beam.ctx): what the original's
+// start and stop ladders (`0x006a54d0` / `0x006a56f0`, re/render-gui.md "Engine-coded visual
+// effects") do for the codes the table uses.
+//
+//   1200-1202  a power failing or being resisted: `v_fizzle_imp` on the target's `headconjure`
+//              (1200) or `handconjure` (1201), `v_fresist_imp` on its `impact` node turned to face
+//              the source (1202); they play `impact` (`0x006a0800`, `0x006a2e10`).
+//   1601-1602  the speed blur (`0x006a14e0` / `0x006a1570`): every record counts in a global; the
+//              first, when it is on the player, turns the Frame Buffer Effects' speed blur on at the
+//              ratio 0.75, and any record's stop turns it off.
+//   1700-1702  the medal and Revan's masks (`0x006a0860`, `0x006a4680`): a model on a hook the row
+//              cannot name.
+//
+// Not drawn (no stock script applies them, or their models are missing): 1500 (the camera push of
+// rows 1020 and 1022, whose only uses in k_inc_force are commented out), 1100 and 900-902 (models
+// absent), 1800 outside stealth (stealth_look.ctx draws it for a hiding creature).
+namespace vfx {
+    const MAX_BLURS: usize = 8
+
+    // The speed blur's ratio while it is on (`0x006a14e0` passes 0.75 to the renderer's 0x0044f130).
+    const SPEED_BLUR_RATIO: f32 = 0.75
+
+    // How long a fizzle at the head or a resisted flash lasts: the 1000 ms a state-1 record gets
+    // when its code is not 1201 (`0x006a5fc0`).
+    const CODED_FLASH: f32 = 1.0
+
+    // A speed-blur record: the object and the row held there (0 free).
+    struct BlurRecord { object: u32, hold: i32 }
+
+    fn no_blur {} -> BlurRecord { return BlurRecord{ object = obj::INVALID, hold = 0 } }
+
+    // The row's coded effects as it is applied to `object` (by `source`): its impact code always,
+    // its duration code when the effect stays (`lasting`; held until `release_coded`).
+    fn coded_for_row {
+        mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, row: usize, effect: i32, object: u32, source: u32, lasting: bool,
+    } {
+        let t = w.tables.visualeffects
+        start_coded{ &v, &sc, &w, &dev, code = progfx_code{ t, row, column = "progfx_impact" }, object, source, hold = 0 }
+        if lasting {
+            start_coded{ &v, &sc, &w, &dev, code = progfx_code{ t, row, column = "progfx_duration" }, object, source, hold = effect }
+            return
+        }
+        // A duration row played once (`fx visual`; the original keeps no duration code then): its look for a
+        // few seconds, as aura_for_row does.
+        let kind = twoda::get_string{ t, row, column = "type_fd" } ifnull ""
+        if kind.len > 0 and kind[0] == 'D' {
+            start_coded{ &v, &sc, &w, &dev, code = progfx_code{ t, row, column = "progfx_duration" }, object, source, hold = 0 }
+        }
+    }
+
+    fn start_coded {
+        mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, code: i32, object: u32, source: u32, hold: i32,
+    } {
+        if code == 1200 or code == 1201 {
+            let hook: []u8 = if code == 1200 { "headconjure" } else { "handconjure" }
+            // 1201 lasts its model's `impact` animation, 1200 the second every other flash gets.
+            let life = if code == 1201 { 0.0 } else { CODED_FLASH }
+            _ = spawn_follow{ &v, &sc, &w, &dev, model = "v_fizzle_imp", object, hook, which = 0, anim = "impact", life } iferr { null }
+            return
+        }
+        if code == 1202 {
+            let at = hook_point{ sc = &sc, w = &w, id = object, hook = "impact", which = 0, fallback = 1.2 }
+            let mut facing = math::vec3::zero{}
+            if world::object{ w = &w, id = source } is some{ value = s } {
+                facing = math::Vec3{ x = s.position.x - at.x, y = s.position.y - at.y, z = 0.0 }
+            }
+            _ = spawn_still{ &v, &sc, &w, &dev, model = "v_fresist_imp", at, facing, anim = "impact", life = CODED_FLASH } iferr { null }
+            return
+        }
+        if (code == 1601 or code == 1602) and hold != 0 {
+            start_blur{ &v, w = &w, object, hold }
+            return
+        }
+        if code >= 1700 and code <= 1702 {
+            let models: [3][]u8 = ["v_medal_dur", "v_revmask1_dur", "v_revmask2_dur"]
+            let hooks: [3][]u8 = ["medalhook", "revmask1hook", "revmask2hook"]
+            let k = @as(usize, code - 1700)
+            if hold != 0 {
+                _ = spawn_hold{ &v, &sc, &w, &dev, model = models[k], object, hook = hooks[k], effect = hold } iferr { null }
+            } else {
+                _ = spawn_follow{ &v, &sc, &w, &dev, model = models[k], object, hook = hooks[k], which = 0, anim = "impact", life = AURA_ONCE } iferr { null }
+            }
+        }
+    }
+
+    // A speed-blur record begins: the first of all of them turns the blur on when it is the player's.
+    fn start_blur { mut v: Vfx, mut w: world::World, object: u32, hold: i32 } {
+        let mut live: usize = 0
+        let mut spare: ?usize = null
+        let mut i: usize = 0
+        while i < MAX_BLURS {
+            if v.blurs[i].hold != 0 { live = live + 1 } else if spare == null { spare = i }
+            i = i + 1
+        }
+        let slot = spare ifnull {
+            v.dropped = v.dropped + 1
+            return
+        }
+        v.blurs[slot] = BlurRecord{ object, hold }
+        if live == 0 and object == w.pc { v.blur_on = true }
+        if w.log.trace {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "vfx speed blur record on {} ({} live), blur {}\n", object, live + 1, v.blur_on)
+        }
+    }
+
+    // The row `effect` ended on `object`: its blur record goes, and the blur with it (any stop turns
+    // it off, as `0x006a1570` does).
+    fn release_coded { mut v: Vfx, effect: i32, object: u32 } {
+        let mut i: usize = 0
+        while i < MAX_BLURS {
+            let b = &v.blurs[i]
+            i = i + 1
+            if b.hold != 0 and b.hold == effect and b.object == object {
+                v.blurs[i - 1] = no_blur{}
+                v.blur_on = false
+            }
+        }
+    }
+
+    // The speed blur's ratio this frame (0 off): the frame's view eases toward it.
+    fn speed_blur { v: *Vfx } -> f32 {
+        return if v.blur_on { SPEED_BLUR_RATIO } else { 0.0 }
+    }
+}

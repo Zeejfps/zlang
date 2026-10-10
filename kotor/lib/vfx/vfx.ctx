@@ -76,6 +76,8 @@ namespace vfx {
         fx: [MAX_FX]Fx,
         auras: [MAX_AURAS]Aura,         // texture shells over creatures (aura.ctx)
         aura_count: u32,                // auras begun, which also orders them
+        blurs: [MAX_BLURS]BlurRecord,   // the speed blur's records (coded.ctx)
+        blur_on: bool,
         time: f32,
         rng: u32,
         started: u32,                   // effects begun, for the report
@@ -83,7 +85,7 @@ namespace vfx {
     }
 
     fn make {} -> Vfx {
-        return Vfx{ fx = [no_fx{}; MAX_FX], auras = [no_aura{}; MAX_AURAS], aura_count = 0, time = 0.0, rng = 0x2F6E2B1, started = 0, dropped = 0 }
+        return Vfx{ fx = [no_fx{}; MAX_FX], auras = [no_aura{}; MAX_AURAS], aura_count = 0, blurs = [no_blur{}; MAX_BLURS], blur_on = false, time = 0.0, rng = 0x2F6E2B1, started = 0, dropped = 0 }
     }
 
     // The scene was released: its parts and arrays are gone with the area's arena.
@@ -98,6 +100,9 @@ namespace vfx {
             v.auras[i] = no_aura{}
             i = i + 1
         }
+        // The area's objects are gone, and their records' stops turned the blur off.
+        v.blurs = [no_blur{}; MAX_BLURS]
+        v.blur_on = false
     }
 
     fn random { mut v: Vfx } -> f32 {

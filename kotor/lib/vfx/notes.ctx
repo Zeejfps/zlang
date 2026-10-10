@@ -61,7 +61,7 @@ namespace vfx {
 
     // A visualeffects.2da row playing on an object (riding its node) for the effect model's animation.
     fn visual_on {
-        mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, effect: i32, object: u32,
+        mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, effect: i32, object: u32, source: u32,
     } {
         let row = effect_row{ t = w.tables.visualeffects, effect } ifnull { return }
         let model = effect_model{ t = w.tables.visualeffects, row }
@@ -69,6 +69,7 @@ namespace vfx {
             _ = spawn_follow{ &v, &sc, &w, &dev, model, object, hook = effect_node{ t = w.tables.visualeffects, row, effect }, which = 0, anim = "impact", life = 0.0 } iferr { null }
         }
         aura_for_row{ &v, &sc, &w, &dev, row, effect, object, lasting = false }
+        coded_for_row{ &v, &sc, &w, &dev, row, effect, object, source, lasting = false }
     }
 
     // A duration visual (visualeffects.2da Type_FD D) held on an object until it is released: its
@@ -82,6 +83,7 @@ namespace vfx {
             _ = spawn_hold{ &v, &sc, &w, &dev, model, object, hook = effect_node{ t = w.tables.visualeffects, row, effect }, effect } iferr { null }
         }
         aura_for_row{ &v, &sc, &w, &dev, row, effect, object, lasting = true }
+        coded_for_row{ &v, &sc, &w, &dev, row, effect, object, source = obj::INVALID, lasting = true }
     }
 
     // A visualeffects.2da row playing at a point.
@@ -102,7 +104,7 @@ namespace vfx {
             }
             lightsaber{ id, forced, powered, transition } => { scene::set_saber{ sc = &sc, id, forced, powered } }
             visual{ effect, target, source, position } => {
-                if target != obj::INVALID { visual_on{ &v, &sc, &w, &dev, effect, object = target } }
+                if target != obj::INVALID { visual_on{ &v, &sc, &w, &dev, effect, object = target, source } }
                 else { visual_at{ &v, &sc, &w, &dev, effect, at = position, facing = math::vec3::zero{} } }
             }
             beam{ style, source, target, part, seconds } => { start_beam{ &v, &sc, &w, &dev, style, source, target, part, seconds } }
@@ -115,6 +117,7 @@ namespace vfx {
             visual_release{ effect, target } => {
                 release{ &v, effect, object = target }
                 release_aura{ &v, &w, effect, object = target }
+                release_coded{ &v, effect, object = target }
             }
             effect_model{ model, object, hook, position, life } => {
                 var_model_fx{ &v, &sc, &w, &dev, model, object, hook, position, life }
@@ -146,7 +149,10 @@ namespace vfx {
         }
     }
 
-    // A thrown lightsaber: the item's own model, blade out, flying from one point to another.
+    // A thrown lightsaber: the item's own model flying from one point to another, playing `throwout`
+    // (looping), which lights its blades and spins it (code 1300, `0x006a30e0`: the projectile plays
+    // its animation 3, `throwout` in the projectile's table `0x006ea550`); a model without it shows
+    // its blades `powered`.
     fn fly_saber {
         mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device,
         item: u32, from: math::Vec3, to: math::Vec3, flight: f32,
@@ -166,7 +172,11 @@ namespace vfx {
         name[i + 1] = @trunc(u8, '0' + (n / 100) % 10)
         name[i + 2] = @trunc(u8, '0' + (n / 10) % 10)
         name[i + 3] = @trunc(u8, '0' + n % 10)
-        _ = spawn_bolt{ &v, &sc, &w, &dev, model = name[..i + 4], from, to, flight, end_effect = 0 } iferr { null }
+        let made = spawn_bolt{ &v, &sc, &w, &dev, model = name[..i + 4], from, to, flight, end_effect = 0 } iferr { null }
+        let slot = made ifnull { return }
+        let model = scene::loaded_at{ sc = &sc, i = v.fx[slot].loaded }.model
+        let anim: []u8 = if mdl::find_animation{ model, name = "throwout" } != null { "throwout" } else { "powered" }
+        begin{ &v, &sc, &w, slot, anim, life = v.fx[slot].flight, kind = Kind::bolt, looping = true, strict = true }
     }
 
     // Where an object's node is in the world, else `fallback` metres above its feet.

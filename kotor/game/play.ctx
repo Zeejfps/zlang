@@ -183,7 +183,7 @@ namespace play {
         let mut tenth_total: [10]f64 = [0.0; 10]       // the passes' wall time by tenth of a run of known length (--frames)
         let mut tenth_count: [10]u64 = [0; 10]
         let mut owed = speed::Owed{ dt = 0.0, clock_dt = 0.0 }    // --speed: the presentation's time to catch up
-        let mut speed_blur: f32 = 0.0              // the Frame Buffer Effects option's speed blur while the leader is hasted, eased in and out
+        let mut speed_blur: f32 = 0.0              // the Frame Buffer Effects option's speed blur (programmed effect 1601 on the leader, lib/vfx/coded.ctx), eased in and out
         let mut fxh = fxhud::make{}                 // the GPU Timing option's lines over the picture
         let mut fcs = focus::make{}                 // depth of field in conversations (game/focus.ctx)
         while not quit {
@@ -666,7 +666,7 @@ namespace play {
                 let size = gpu::screen_size{ dev }
                 render::begin_frame{ &frame, time = sc.time }
                 let mut view = render::make_view{ camera = cam::render_camera{ c = &camera, aspect = @as(f32, size.width) / @as(f32, size.height) } }
-                speed_blur = speed_blur + (math::max{ a = leader_haste{ w = &w }, b = disp.test_blur } - speed_blur) * math::min{ a = 1.0, b = dt * 4.0 }
+                speed_blur = speed_blur + (math::max{ a = vfx::speed_blur{ v = &vx } * mg_game::BLUR_SCALE, b = disp.test_blur } - speed_blur) * math::min{ a = 1.0, b = dt * 4.0 }
                 view.blur = speed_blur
                 view.video = dlgview::video_effect_of{ w = &w }
                 view.ambient = sc.ambient
@@ -988,14 +988,6 @@ namespace play {
             display::tell{ d = &disp, fe }
             frontend::refresh_display_texts{ fe, g = &ui.gui }
         }
-    }
-
-    // The speed blur's strength while the leader is hasted (Force Speed, Burst of Speed ...), else 0: what it eases toward.
-    fn leader_haste { w: *world::World } -> f32 {
-        let o = world::object{ w, id = w.pc } ifnull { return 0.0 }
-        let f = fight::of{ o } ifnull { return 0.0 }
-        // Faster than it walks: haste, Burst of Speed, Force Speed (the rules clamp the factor to 1.5).
-        return if f.c.stats.speed_factor > 1.2 { 0.35 } else { 0.0 }
     }
 
     // How high above the leader's feet the camera looks (ours: a humanoid's head; the original

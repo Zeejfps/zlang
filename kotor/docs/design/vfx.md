@@ -185,16 +185,23 @@ Blaster rifles shoot red bolts, ion weapons blue, disruptors white (ammunitionty
   (`castsound`, `v_useforce`) at the caster; the impact script runs then (docs/mechanics/force.md).
 - **Duration visuals** (`visual_hold{ effect, target }` / `visual_release`): a visualeffects.2da row with Type_FD D
   (the stun's stars, VFX_DUR_STUN 2002) is a model riding the object's `Impact` node with its animation looping,
-  kept until its effect leaves (`vfx::spawn_hold`, `vfx::release`); those without a model (programmed effects:
-  shields, auras, the hold cage, speed streaks) show nothing.
+  kept until its effect leaves (`vfx::spawn_hold`, `vfx::release`); those without a model show their engine-coded
+  `progfx` codes: the texture layers 1401-1426 (aura.ctx, above) and, in `lib/vfx/coded.ctx`, the speed blur 1601/1602
+  (VFX_DUR_SPEED: every record counts, the first on the player turns the Frame Buffer Effects' speed blur on at the
+  ratio 0.75, which `game/play.ctx` eases the view's blur toward, any stop turns it off), the fizzle and resisted flashes
+  1200-1202 (`v_fizzle_imp` at the caster's `handconjure`, `v_fresist_imp` at the target's `impact` facing the caster;
+  the rules emit rows 4036/4037 for EffectForceFizzle and EffectForceResisted) and the medal and masks 1700-1702 on
+  `medalhook`/`revmask1hook`/`revmask2hook`. Both renderers draw them (models, the aura material, the view's blur).
 - **Beams** (`lib/vfx/beam.ctx`, note `beam{ style, source, target, part, seconds }`, posted when an `EffectBeam` leaf
   is applied): as the original (render-gui.md, codes 600-699), the model of the row's `progfx_duration` code
   (608 `v_lightns_dur` .. 621 `v_fshock_dur`) rides the effector's node (`handconjure`, `impact` or `headconjure`
   by the body part) playing only `cast01`, which the models lack, so their geometry's sizes hold (their `impact`
   animation would shrink the bolt away in 0.07 s); its Lightning emitters end at the target's `impact` node
   (`Fx.aim_object`). The effect ends with the beam's time or its `beam_end`.
-- **Thrown saber** (`saber_leg{ item, from, to, flight_ms }`): the saber item's model flies each leg as a bolt
-  (without its blade).
+- **Thrown saber** (`saber_leg{ item, from, to, flight_ms }`): the saber item's model flies each leg as a bolt playing
+  its `throwout` animation looped (blades lit, spinning about `Dummy01`), as the original's code 1300 plays the
+  projectile's animation 3 (`0x006a30e0`, table `0x006ea550`: 1 `travel01`, 2 `impact01`, 3 `throwout`,
+  4 `throwback`); a model without it shows `powered`.
 
 ## Adding an effect later
 
@@ -336,9 +343,9 @@ last clash, which proved nothing.
   The aura's loop sound (`soundduration`) and its cessation sound (`soundcessastion`, `gen_shieldbluoff`)
   are the engine's (`hold_visual` plays the impact sound only). A hold row with both an impact and a
   duration code starts with its duration code (the original shows the impact one for a second first:
-  only row 1003, both 1401). The engine-coded codes other than 1401-1426 (beams 608-621, the fizzle
-  and resist models 1201/1202, the medal and Revan masks 1700-1702, the player's camera and
-  full-screen effects, the vision modes) are not drawn.
+  only row 1003, both 1401). The engine-coded codes not drawn: 1500 (the camera push, rows 1020/1022, which no stock script
+  applies), 1800 outside stealth (VFX_DUR_DISTORTION applied by a script), and the codes no row uses (tints, lights,
+  vision modes, texture swaps).
 - World emitters: particles behave as the original's world-space ones ("Particles in the world"), born in clumps,
   per metre moved for spawn type 1 and with `inheritvel`'s inherited speed, both from the emitter's move less its
   owner's under `inherit_local` (re/particles.md). Lightning and `p2p` emitters aim at their reference child in the

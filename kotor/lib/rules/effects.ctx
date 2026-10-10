@@ -537,6 +537,16 @@ namespace rules {
         if e.kind == fx::FORCE_SHIELD {
             apply_force_shield{ env, c = &c, e = &e, rng = &rng, ev = &ev }
         }
+        // A resisted power and a fizzle are a visual effect each (OnApplyForceResisted 0x004ded00: row 4037,
+        // VFX_COM_FORCE_RESISTED, from the power's caster; OnApplyForceFizzle 0x004dede0: row 4036), played once.
+        if e.kind == fx::FORCE_RESISTED {
+            emit{ ev = &ev, kind = ev::VISUAL_ON, a = 4037, b = 1, who = e.objects[0] }
+            return dropped{}
+        }
+        if e.kind == fx::FORCE_FIZZLE {
+            emit{ ev = &ev, kind = ev::VISUAL_ON, a = 4036, b = 1, who = e.creator }
+            return dropped{}
+        }
         if e.kind == fx::VISUALEFFECT {
             emit{ ev = &ev, kind = ev::VISUAL_ON, a = e.ints[0], b = if e.dur == dur::INSTANT { 1 } else { 0 }, who = e.creator }
             if e.dur == dur::INSTANT { return dropped{} }
