@@ -343,14 +343,14 @@ namespace rt_act {
     // toggles stealth mode (stealth::toggle: no stealth unit needed here), Security opens the
     // target's lock (unlock_with_security). Demolitions queues a trap action on the target (subskill
     // 100 FLAGTRAP, 101 RECOVERTRAP, 102 EXAMINETRAP, else DISABLETRAP; disable and recover refuse a
-    // trap that is not disarmable: AddTrapActions 0x004f9da0). Treat Injury (HEAL: medpacs and poisons
-    // are not modelled) is not done; the rest are not usable on a target.
+    // trap that is not disarmable: AddTrapActions 0x004f9da0). Treat Injury queues HEAL with the item
+    // (0x004f0900; heal below); the rest are not usable on a target.
     fn action_use_skill { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let r = nwscript::ActionUseSkill
         let skill = try nwarg::int{ &vm, routine = r, argc, i = 0 }
         let target = try nwarg::object{ &vm, routine = r, argc, i = 1 }
         let sub = try nwarg::int{ &vm, routine = r, argc, i = 2 }
-        _ = try nwarg::object{ &vm, routine = r, argc, i = 3 }
+        let item = try nwarg::object{ &vm, routine = r, argc, i = 3 }
         let me = self_of{ vm = &vm }
         let o = world::object{ w = &w, id = me } ifnull { return }
         if not o.commandable { return }
@@ -369,9 +369,108 @@ namespace rt_act {
             let mut a = actions::make{ kind }
             a.params[0] = actions::Param::object{ id = target }
             _ = actions::add{ &w, id = me, action = a, force = false }
+        } else if skill == rules::skill::TREAT_INJURY {
+            let mut a = actions::make{ kind = actions::Kind::heal }
+            a.params[0] = actions::Param::object{ id = target }
+            a.params[1] = actions::Param::object{ id = item }
+            _ = actions::add{ &w, id = me, action = a, force = false }
         } else if w.log.actions {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "ActionUseSkill {} on {}: not implemented\n", skill, target)
         }
+    }
+
+    const ANIM_HEAL: u32 = 10017                // the 2 s animation HEAL plays (PLAYANIMATION 10017, 2.0)
+    const STRREF_TREAT_INJURY: u32 = 330        // "Treat Injury": the skill roll's action and skill (message ints 0 and 6, 0x14a)
+
+    // HEAL (0x38, 0x00517a60; actions.md 3.13): params 0 the creature to heal, 1 the medical item.
+    // Fails for a dead or downed healer, a target that is not a creature or an item that is gone. The
+    // healer walks up, plays 10017 for 2 s, then rolls Treat Injury + 20 (d20 in combat) against the
+    // target's first poison or disease (its effects are in type order, poison 0x23 last): poison.2da's
+    // Save_DC or disease.2da's Subs_Save, at least 1 (KOTOR's poison.2da has no Save_DC column, so a
+    // poison's DC is 1), and removes it when the total reaches the DC. With nothing to cure and the target
+    // at full HP the action fails (feedback 0x37 and 0x38, which the client prints as nothing). Otherwise
+    // the roll goes to the combat log, one item of the stack is used up when the healer carries it, and
+    // the target is healed roll + rank with visual 1001.
+    fn heal { mut w: world::World, id: u32, a: *mut actions::Action } -> actions::Status {
+        let me = world::object{ w = &w, id } ifnull { return actions::Status::failed }
+        if fight::is_down{ w = &w, id } { return actions::Status::failed }
+        let target = actions::object_param{ a, i = 0 }
+        let item = actions::object_param{ a, i = 1 }
+        let t = world::object{ w = &w, id = target } ifnull { return actions::Status::failed }
+        let tc = obj::creature{ o = t } ifnull { return actions::Status::failed }
+        let io = world::object{ w = &w, id = item } ifnull { return actions::Status::failed }
+        if io.destroyed { return actions::Status::failed }
+        if target != id and doors::approach{ &w, id, target, a } { return actions::Status::done }
+        let now = clock::now_ms{ c = w.clock }
+        if a.phase < 2 {
+            a.phase = 2
+            a.started = now
+            let dir = math::vec3::sub{ a = t.position, b = me.position }
+            if dir.x * dir.x + dir.y * dir.y > 0.0001 { world::set_orientation{ o = me, v = math::Vec3{ x = dir.x, y = dir.y, z = 0.0 } } }
+            world::set_animation{ o = me, id = ANIM_HEAL, speed = 1.0 }
+            return actions::Status::running
+        }
+        if clock::elapsed_since{ now, then = a.started } < 2000 { return actions::Status::running }
+        world::set_animation{ o = me, id = obj::ANIM_STAND, speed = 1.0 }
+        let c = obj::creature{ o = me } ifnull { return actions::Status::failed }
+        let f = c.fighter ifnull { return actions::Status::failed }
+        let tf = tc.fighter ifnull { return actions::Status::failed }
+        // The first poison or disease on the target.
+        let mut cure: u64 = 0
+        let mut found = false
+        let mut dc: i32 = 0
+        let mut k: usize = 0
+        while k < @as(usize, tf.c.nfx) {
+            let e = tf.c.fx[k]
+            k = k + 1
+            if e.kind > rules::fx::POISON { break }
+            if e.kind != rules::fx::POISON and e.kind != rules::fx::DISEASE { continue }
+            found = true
+            cure = e.id
+            if e.kind == rules::fx::POISON {
+                dc = rules::cell_int{ t = rules::raw_table{ tables = w.rules, which = rules::Tab::poison }, row = @as(usize, e.ints[0]), col = "Save_DC", dflt = 0 }
+            }
+            if dc < 1 { dc = 1 }
+            break
+        }
+        if not found and t.hp >= t.hp_max {
+            if w.log.actions {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "heal {} on {}: nothing to treat\n", id, target)
+            }
+            return actions::Status::failed
+        }
+        let check = rules::treat_injury_check{ tables = w.rules, c = &f.c, dc, in_combat = c.in_combat, rng = &w.dice }
+        if found and check.success {
+            fight::sync_flags{ w = &w, o = t, f = tf }
+            rules::clear_events{ ev = &w.rev }
+            _ = rules::remove_effect_id{ tables = w.rules, c = &tf.c, id = cure, ev = &w.rev }
+            fight::drain{ &w, id = target }
+        }
+        doors::say_skill_roll{ &w, me, target = t, check, in_combat = c.in_combat, what = STRREF_TREAT_INJURY, skill = STRREF_TREAT_INJURY }
+        // One of the stack is used up when the healer carries it (its inventory: the party's bag for a member).
+        if party::inventory_of{ &w, id } is some{ value = inv } {
+            let held = list::items{ list = inv.* }
+            let mut h: usize = 0
+            while h < held.len {
+                if held[h] == item {
+                    rt_item::use_up_one{ &w, item }
+                    break
+                }
+                h = h + 1
+            }
+        }
+        let mut e = rules::fx::make_heal{ amount = check.total }
+        rules::fx::set_creator{ e = &e, creator = id, spell_id = -1 }
+        _ = fight::apply{ &w, target, e }
+        let mut v = rules::fx::make_visual_effect{ vfx = 1001, miss = false }
+        rules::fx::set_creator{ e = &v, creator = id, spell_id = -1 }
+        _ = fight::apply{ &w, target, e = v }
+        if w.log.actions {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "heal {} on {} with {}: roll {} total {} against DC {} (cure {}), healed {}\n", id, target, item, check.roll, check.total, dc, found and check.success, check.total)
+        }
+        return actions::Status::done
     }
 }

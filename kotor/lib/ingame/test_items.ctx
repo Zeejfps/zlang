@@ -66,6 +66,31 @@ namespace test_items {
             else if hud::creature_of{ w = &w, id = leader } is some{ value = c } { c.gold = @trunc(u32, n) }
         } else if ci::eq{ a = cmd, b = "inv" } {
             dump{ &w, leader }
+        } else if ci::eq{ a = cmd, b = "treat" } {
+            // `ui treat TAG ITEMTAG`: the leader treats TAG with the first item tagged ITEMTAG in the party's bag
+            // (HEAL, as ActionUseSkill(SKILL_TREAT_INJURY, oTarget, 0, oItem) queues it).
+            let mut words = text::words{ s = args }
+            let tag = text::next_word{ &words } ifnull { return true }
+            let itag = text::next_word{ &words } ifnull { return true }
+            let mut item = obj::INVALID
+            let bag = list::items{ list = w.bag }
+            let mut k: usize = 0
+            while k < bag.len and item == obj::INVALID {
+                if world::object{ w = &w, id = bag[k] } is some{ value = io } { if ci::eq{ a = io.tag, b = itag } { item = bag[k] } }
+                k = k + 1
+            }
+            let mut a = actions::make{ kind = actions::Kind::heal }
+            a.params[0] = actions::Param::object{ id = world::object_by_tag{ w = &w, tag, nth = 0 } }
+            a.params[1] = actions::Param::object{ id = item }
+            _ = actions::add{ &w, id = leader, action = a, force = false }
+        } else if ci::eq{ a = cmd, b = "poison" } {
+            // `ui poison TAG ROW`: a poison.2da ROW effect on TAG from the leader (its Fortitude save may refuse it).
+            let mut words = text::words{ s = args }
+            let tag = text::next_word{ &words } ifnull { return true }
+            let row = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+            let mut e = rules::fx::make_poison{ poison_row = row }
+            rules::fx::set_creator{ e = &e, creator = leader, spell_id = -1 }
+            _ = fight::apply{ &w, target = world::object_by_tag{ w = &w, tag, nth = 0 }, e }
         } else if ci::eq{ a = cmd, b = "getglobal" } {
             // `ui getglobal NAME`: a number global's value.
             let name = text::first_word{ s = args }

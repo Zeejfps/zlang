@@ -45,6 +45,7 @@ namespace actions {
         jump_to_object = 0x30,
         face_point = 0x31,
         follow = 0x37,
+        heal = 0x38,
         follow_leader = 0x3d,
         bark = 0x3e,
     }
@@ -292,6 +293,7 @@ namespace actions {
             random_walk => { return random_walk{ &w, id, a } }
             // REST (0x2a, 0x005140e0) is done at once: Rest (party::rest) did the work when it queued it.
             rest => { return Status::done }
+            heal => { return rt_act::heal{ &w, id, a } }
             attack_object => { return fight::attack_object{ &w, id, a } }
             pickup_item => { return equip::pickup_action{ &w, id, a } }
             equip_item => { return equip::equip_action{ &w, id, a } }

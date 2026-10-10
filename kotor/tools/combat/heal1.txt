@@ -1,0 +1,16 @@
+# HEAL (0x38, 0x00517a60): the leader treats a hurt, poisoned Carth with a medpac (start: uppercity, 400 frames). Expect
+# the walk up, 2 s of animation 10017, a Treat Injury line in the combat log (take 20 out of combat), the poison gone
+# (`ui fx carth`), Carth healed 20 + rank, one medpac fewer; then a second treat of a Carth at full HP with nothing to
+# cure fails ("nothing to treat") and spends nothing.
+5 ui stat treat 4
+6 ui giveitem g_i_medeqpmnt01 2
+10 ui damage carth 15
+12 ui poison carth 1
+14 ui fx carth
+15 ui inv
+20 ui treat carth g_i_medeqpmnt01
+200 ui fx carth
+200 ui inv
+200 ui log 4
+220 ui treat carth g_i_medeqpmnt01
+400 ui inv

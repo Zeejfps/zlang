@@ -1379,7 +1379,10 @@ poison (0x23) and disease (5) effects only the first in its list (sorted by type
 Save_DC or disease.2da Subs_Save (at least 1), and removed when roll + rank ≥ DC; nothing to cure
 ⇒ feedback 0x37, and with full HP also 0x38 ⇒ 3; otherwise the roll is reported (message 0x14a with roll, rank, DC, take-20 flag and outcome),
 one item of the stack is consumed (the last one destroyed), the target is healed roll + rank
-(effect 0x27) with visual 1001 (effect 0x1e) ⇒ 2.
+(effect 0x27) with visual 1001 (effect 0x1e) ⇒ 2. poison.2da has no `Save_DC` column (its DC column is
+`dc_save`), so the lookup fails and a poison's DC is 1: any treatment cures it. The roll message's ints 0 and 6 are
+0x14a = 330, dialog.tlk "Treat Injury" (Security's is 0x149 = 329), the skill-roll line of 3.9. Feedback 0x37 and
+0x38 are formatted with string 0 (nothing shown). Ours: `rt_act::heal`. (high)
 
 **COUNTERSPELL (0x32, `0x00514270`)**, queued by `0x004fce90` from the player input only: actor dead
 or knocked out, or target creature gone, dead or knocked out ⇒ 3; target in no area ⇒ 1. Target
