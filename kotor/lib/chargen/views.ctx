@@ -63,6 +63,8 @@ namespace chargen {
         let p = preview3d::make{
             &fs, &dev, buf = mem, rm = g.rm, models, mats = g.cache,
             appearance_2da = st.data.appearance.t, heads_2da = st.data.heads.t, appearance, head = -1, female, kind, alignment = 50,
+            // Each preview its own idle draws, from the run's seed without taking from its draws.
+            seed = @wrap_add(st.rng.state, @wrap_mul(@as(u32, which) + 1, 2654435761)),
         } iferr {
             free_bytes{ b = mem, heap = st.heap }
             return

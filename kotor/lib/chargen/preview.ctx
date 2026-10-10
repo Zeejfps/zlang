@@ -9,7 +9,7 @@
 //   portrait step    Kind::head  cghead_light, `camerahookm` / `camerahookf` raised the same way
 //
 //   let mut p = try preview3d::make{ &fs, &dev, buf, rm, &models, &mats, appearance_2da, heads_2da,
-//       appearance = 138, head = -1, female = false, kind = preview3d::Kind::body, alignment = 50 }
+//       appearance = 138, head = -1, female = false, kind = preview3d::Kind::body, alignment = 50, seed = 1 }
 //   each frame:  preview3d::update{ preview = &p, dt };  preview3d::turn{ preview = &p, radians };
 //                _ = preview3d::add_to_frame{ preview = &p, frame = &frame, viewport }
 //   another portrait or class:
@@ -21,10 +21,10 @@
 //
 // `appearance` is an appearance.2da row, `head` a heads.2da row (-1: the appearance's own
 // `normalhead`), `female` picks the portrait camera's hook, `alignment` (0..100) the main panel's
-// pose and light. A player's creature is a B-type body in the clothes the original puts on every
+// light, `seed` the idle's draws. A player's creature is a B-type body in the clothes the original puts on every
 // chargen creature (body variation 2, texture variation 1: modelb with texb + 01, the basic
-// clothing's body, not modela's underwear), the head on its `headhook`, idle `pause1` (the main
-// panel: `evil`, `neutral` or `good`).
+// clothing's body, not modela's underwear), the head on its `headhook`, and the idle: pause1 or
+// pause2 with fidgets (the portrait step: pause2 or listen). make_with's creature loops a pose.
 //
 // Who owns what: `buf` (4 MB is plenty: the light scene takes 0.1 MB, a creature 0.15 MB; memory
 // from mem::reserve stays uncommitted until used) belongs to the preview, split in two arenas: one
@@ -52,7 +52,18 @@ namespace preview3d {
         materials: []mut render::Material,      // by Model.meshes index
         pose: mdl_anim::Pose,
         player: mdl_anim::Player,
+        idles: [IDLE_COUNT]?mdl_anim::Binding,  // by IDLES index: what character generation's idle plays (bind_idles)
+        queued: ?mdl_anim::Binding,             // the loop that follows the one-shot playing now
     }
+
+    // The animations character generation's idle draws from (docs/re/chargen-3d.md, "Idle"): the two
+    // pauses, the six fidgets (`rand() % 6`) and the portrait step's `listen`.
+    const IDLES: [9][]u8 = ["pause1", "pause2", "greeting", "hturnl", "hturnr", "pausebrd", "pausesh", "pause3", "listen"]
+    const IDLE_COUNT: usize = 9
+    const IDLE_PAUSE1: usize = 0
+    const IDLE_PAUSE2: usize = 1
+    const IDLE_FIDGET: usize = 2
+    const IDLE_LISTEN: usize = 8
 
     struct Preview {
         kind: Kind,
@@ -67,6 +78,13 @@ namespace preview3d {
         head: ?Part,
         camera_height: f32,                     // the creature's camera hook, how far up the camera goes
         yaw: f32,                               // what turn added
+        // FUN_006100f0's play_pose: the sheet and level-up panel loop the alignment's pose; character
+        // generation passes 0 and runs the idle instead (pause1 / pause2 with fidgets, the portrait
+        // step's pause2 / listen).
+        play_pose: bool,
+        rng: ltr::Rng,                          // the idle's draws (the original's rand())
+        idle_elapsed: f32,                      // seconds since the last fidget (creature +0x390)
+        idle_wait: f32,                         // seconds until the next (+0x394; the portrait step's +0x1230 counts down)
     }
 
     // What the creature is made of, by name: what `make_with` takes from a caller that works the
@@ -84,9 +102,11 @@ namespace preview3d {
         mut fs: Fs, mut dev: gpu::Device, buf: alloc::Bytes, rm: res::Manager,
         mut models: mdl_cache::Cache, mut mats: material::Cache,
         appearance_2da: twoda::Table, heads_2da: twoda::Table,
-        appearance: i32, head: i32, female: bool, kind: Kind, alignment: i32,
+        appearance: i32, head: i32, female: bool, kind: Kind, alignment: i32, seed: u32,
     } -> !Preview {
         let mut p = try make_scene{ &fs, &dev, buf, rm, &models, &mats, appearance_2da, heads_2da, female, kind, alignment, camera_node = "" }
+        p.play_pose = false
+        p.rng = ltr::seed_rng{ seed }
         build_creature{ preview = &p, &fs, &dev, rm, &models, &mats, appearance, head } iferr err{ error } {
             free{ preview = &p, &dev }
             return error
@@ -143,6 +163,7 @@ namespace preview3d {
         let mut p = Preview{
             kind, female, alignment, appearance_2da, heads_2da, light, fixed, creature,
             body = null, head = null, camera_height = 0.0, yaw = 0.0,
+            play_pose = true, rng = ltr::seed_rng{ seed = 0 }, idle_elapsed = 0.0, idle_wait = 0.0,
         }
         // The original's 3D controls fill no colour (docs/re/gui3d.md): the panel shows around the scene.
         p.light.clear = null
@@ -247,9 +268,10 @@ namespace preview3d {
         } }
     }
 
-    // The kind's own loop: pause1 in the selection and portrait screens, the main panel's pose by
-    // alignment (FUN_006100f0: evil below 40, neutral below 60, else good).
+    // The kind's own loop: the main panel's pose by alignment (FUN_006100f0: evil below 40, neutral
+    // below 60, else good) when it plays the pose, else pause1 (the idle then takes over).
     fn pose_of { preview: *Preview } -> []u8 {
+        if not preview.play_pose { return "pause1" }
         return match preview.kind {
             main => { if preview.alignment < 40 { "evil" } else if preview.alignment < 60 { "neutral" } else { "good" } }
             else => { "pause1" }
@@ -290,6 +312,126 @@ namespace preview3d {
             }
         }
         preview.camera_height = camera_height_of{ preview = &preview }
+        if not preview.play_pose { try start_idle{ &preview, &fs, &models } }
+    }
+
+    // Character generation's idle from the start. The selection and main panel's creature
+    // (FUN_0060f7c0 with `initial`): pause1 or pause2 at random, from a random 0 to 99 % of the
+    // body's length, the head at the same time, looping; the first fidget in 10 to 30 s. The portrait
+    // step's (FUN_006f8ad0) plays pause1 from its start, as load_part did; its first pause2 / listen
+    // comes on the next update (the countdown is 0, and set_appearance does not reset it).
+    fn start_idle { mut preview: Preview, mut fs: Fs, mut models: mdl_cache::Cache } -> ! {
+        try bind_idles{ &preview, &fs, &models }
+        if preview.kind == Kind::head { return }
+        let pause = if roll{ &preview } % 2 == 0 { IDLE_PAUSE1 } else { IDLE_PAUSE2 }
+        preview.idle_wait = next_fidget_wait{ &preview }
+        preview.idle_elapsed = 0.0
+        let percent = roll{ &preview } % 100
+        let mut at: f32 = 0.0
+        match &preview.body {
+            some{ &value } => {
+                match value.idles[pause] {
+                    some{ value = b } => { at = b.animation.length * @as(f32, percent) * 0.01 }
+                    null => {}
+                }
+            }
+            null => {}
+        }
+        play_idle{ &preview, which = pause, at }
+    }
+
+    fn roll { mut preview: Preview } -> u32 { return ltr::roll_rand{ rng = &preview.rng } }
+
+    // 10.0 to 30.0 s: (rand() % 201 + 100) * 100 ms.
+    fn next_fidget_wait { mut preview: Preview } -> f32 {
+        return @as(f32, (roll{ &preview } % 201 + 100) * 100) * 0.001
+    }
+
+    // Binds the idle's animations to the body and head once, so the fidgets every few seconds take
+    // no more of the creature's arena.
+    fn bind_idles { mut preview: Preview, mut fs: Fs, mut models: mdl_cache::Cache } -> ! {
+        match &preview.body {
+            some{ &value } => { try bind_part_idles{ part = &value, &fs, &models, heap = &preview.creature } }
+            null => {}
+        }
+        match &preview.head {
+            some{ &value } => { try bind_part_idles{ part = &value, &fs, &models, heap = &preview.creature } }
+            null => {}
+        }
+    }
+
+    fn bind_part_idles { mut part: Part, mut fs: Fs, mut models: mdl_cache::Cache, mut heap: arena::Arena } -> ! {
+        let mut i: usize = 0
+        while i < IDLE_COUNT {
+            part.idles[i] = null
+            let found = find_loop{ &fs, &models, m = part.model, name = IDLES[i] }
+            if found != null {
+                part.idles[i] = try mdl_anim::bind{ realloc = arena::alloc, heap = &heap, model = part.model, animation = found.animation }
+            }
+            i = i + 1
+        }
+    }
+
+    // Loops idle `which` on body and head from `at` seconds in (flags 2).
+    fn play_idle { mut preview: Preview, which: usize, at: f32 } {
+        match &preview.body {
+            some{ &value } => { loop_part{ part = &value, which, at } }
+            null => {}
+        }
+        match &preview.head {
+            some{ &value } => { loop_part{ part = &value, which, at } }
+            null => {}
+        }
+    }
+
+    fn loop_part { mut part: Part, which: usize, at: f32 } {
+        let b = part.idles[which] ifnull { return }
+        mdl_anim::play{ player = &part.player, binding = b, looping = true, speed = 1.0, transition = 0.0 }
+        mdl_anim::seek{ player = &part.player, time = at }
+        part.queued = null
+    }
+
+    // Plays `once` (flags 0x21) and then loops `then` (flags 0x60) on body and head. A part that
+    // lacks `once` (pausebrd and pausesh are not in the player skeletons) keeps what it plays: the
+    // loop would queue behind a loop that never ends (ours: the original's queueing is not decoded).
+    fn fidget { mut preview: Preview, once: usize, then: usize } {
+        match &preview.body {
+            some{ &value } => { fidget_part{ part = &value, once, then } }
+            null => {}
+        }
+        match &preview.head {
+            some{ &value } => { fidget_part{ part = &value, once, then } }
+            null => {}
+        }
+    }
+
+    fn fidget_part { mut part: Part, once: usize, then: usize } {
+        let b = part.idles[once] ifnull { return }
+        mdl_anim::play{ player = &part.player, binding = b, looping = false, speed = 1.0, transition = -1.0 }
+        part.queued = part.idles[then]
+    }
+
+    // The idle's clock. The selection and main panel (FUN_0060f7c0): when the wait runs out, a new
+    // pause1 or pause2 and one of six fidgets (rand() % 6), the fidget once and then the pause, and
+    // a new wait of 10 to 30 s. The portrait step (FUN_006f8c60): when its countdown reaches 0,
+    // pause2 or listen once and then pause1, and a new wait of 1.00 to 3.99 s.
+    fn step_idle { mut preview: Preview, dt: f32 } {
+        if preview.play_pose or preview.body == null { return }
+        if preview.kind == Kind::head {
+            preview.idle_wait = preview.idle_wait - dt
+            if preview.idle_wait > 0.0 { return }
+            let once = if roll{ &preview } % 2 == 0 { IDLE_PAUSE2 } else { IDLE_LISTEN }
+            fidget{ &preview, once, then = IDLE_PAUSE1 }
+            preview.idle_wait = @as(f32, roll{ &preview } % 300) * 0.01 + 1.0
+            return
+        }
+        preview.idle_elapsed = preview.idle_elapsed + dt
+        if preview.idle_elapsed < preview.idle_wait { return }
+        let pause = if roll{ &preview } % 2 == 0 { IDLE_PAUSE1 } else { IDLE_PAUSE2 }
+        let once = IDLE_FIDGET + @as(usize, roll{ &preview } % 6)
+        fidget{ &preview, once, then = pause }
+        preview.idle_elapsed = 0.0
+        preview.idle_wait = next_fidget_wait{ &preview }
     }
 
     // The creature's camera hook: the z of its `camerahook` node (the body models have one), else
@@ -358,12 +500,13 @@ namespace preview3d {
             }
             i = i + 1
         }
-        return Part{ model = m, gpu = g, materials, pose, player }
+        return Part{ model = m, gpu = g, materials, pose, player, idles = [null; IDLE_COUNT], queued = null }
     }
 
     // Moves the light scene (mist) and the creature's idle on by `dt` seconds.
     fn update { mut preview: Preview, dt: f32 } {
         gui3d::update{ scene = &preview.light, dt }
+        step_idle{ &preview, dt }
         let instance = instance_of{ preview = &preview }
         match &preview.body {
             some{ &value } => { step_part{ part = &value, dt, transform = instance } }
@@ -377,6 +520,15 @@ namespace preview3d {
 
     fn step_part { mut part: Part, dt: f32, transform: math::Mat4 } {
         mdl_anim::advance{ player = &part.player, dt, on_event = mdl_anim::ignore_event }
+        match part.queued {
+            some{ value = b } => {
+                if mdl_anim::is_done{ player = part.player } {
+                    mdl_anim::play{ player = &part.player, binding = b, looping = true, speed = 1.0, transition = -1.0 }
+                    part.queued = null
+                }
+            }
+            null => {}
+        }
         mdl_anim::evaluate{ model = part.model, player = part.player, pose = part.pose }
         mdl_anim::swing{ model = part.model, pose = part.pose, transform, dt }
     }

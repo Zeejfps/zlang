@@ -82,7 +82,7 @@ fn run {
 
     let mut preview = try preview3d::make{
         &fs, &dev, buf = preview_pages, rm, &models, &mats, appearance_2da, heads_2da,
-        appearance = opts.appearance, head = opts.head, female = opts.female, kind = opts.kind, alignment = opts.alignment,
+        appearance = opts.appearance, head = opts.head, female = opts.female, kind = opts.kind, alignment = opts.alignment, seed = 1,
     }
     defer preview3d::free{ &preview, &dev }
     _ = @fmt(&io, "appearance {}: {} textures ({} missing); light scene {} bytes, creature {} bytes\n",

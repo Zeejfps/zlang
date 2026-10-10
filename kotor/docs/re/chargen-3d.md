@@ -225,13 +225,20 @@ floats off the neck by the body's root offset, worst on the female bodies.
 and head models, texture replacements, pose) and a camera node, which is how the in-game character
 sheet and the level-up panel (lib/screens/lvl_view.ctx) show a creature as dressed, with the dark
 side's textures (re/gui.md, "CSWGuiCharacter", `FUN_00698150`) and the T3-M4 / HK-47 / Zaalbar hooks
-and droid `pause1`. A pose the model lacks loops `pause1` (ours: what the original's creature does
-then is not traced). Alignments 95 to 99 play `good` on the light model, as the original's fallback
-does.
+and droid `pause1`; those loop the alignment's pose (`play_pose` 1). A pose the model lacks loops
+`pause1` (ours: what the original's creature does then is not traced). Alignments 95 to 99 play
+`good` on the light model, as the original's fallback does.
 
-Not done: the idle's random start and fidgets (we loop `pause1`, the main panel's `evil` /
-`neutral` / `good`; the game plays no pose on the creature in character generation, see "The main
-panel and alignment"), the portrait step's `pause2` / `listen` every 1 to 4 s. The lights carry their
+`make` is character generation's (`play_pose` 0): its creature plays no pose but the idle above.
+The selection's and main panel's creature starts `pause1` or `pause2` at a random 0 to 99 % of the
+body's length and every 10 to 30 s plays one of the six fidgets once, then the new pause looping;
+the portrait step's plays `pause1` and, from its first update on, `pause2` or `listen` once and then
+`pause1` every 1.00 to 3.99 s. The draws are MSVC's `rand()` (`ltr::Rng`) seeded per preview from
+the run's seed. The idle's animations are bound once per creature (`Part.idles`) and the loop after a
+one-shot waits in `Part.queued` until the one-shot ends, which is our reading of flags 0x21 then 0x60.
+A fidget the model lacks (`pausebrd`, `pausesh` on the player skeletons) changes nothing (ours). The
+main panel's creature is built anew where the original keeps the selection's, so it starts the idle
+afresh. The lights carry their
 shadow flag (gui3d), and the room model is not drawn: neither changes the picture, since a GUI scene
 has no current room, so the original draws no shadows in it, and the room is a black box like the
 clear (re/gui3d.md, "What lib/frontend/gui3d does").
@@ -239,6 +246,6 @@ clear (re/gui3d.md, "What lib/frontend/gui3d does").
 Checked with `kotor/tools/ctxc run kotor/tools/chargenview` (pictures in `kotor/out/chargen/`):
 class selection shows a lit full-length figure, centred, head and shoes inside the frame; the main
 panel adds white mist (neutral), red clouds and sparks (evil) or blue clouds (good) around the
-feet, with the pose changing; the portrait step shows the head and the top of the shoulders, the
+feet, the creature keeping its idle; the portrait step shows the head and the top of the shoulders, the
 head to the right of the middle, seen from the creature's front right as the hook's orientation
 says.
