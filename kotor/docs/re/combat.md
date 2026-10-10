@@ -1627,5 +1627,7 @@ the lead to decide.
   client function `0x00616890`.
 - Damage reduction details (slot 41) and resistance bookkeeping (slot 42) are only skimmed.
 - The client formatter `0x00656d20` is described for types 2, 3, 4, 0x12, 0x14..0x17, 0x19 and 0x1a
-  (section 10); still to describe: 0xb and the other types (1, 5..10, 0xc..0x11, 0x13, 0x1b).
+  (section 10), 9 (the skill roll, 1408: [traps.md](../mechanics/traps.md) 4) and 0x10 (the spot line, case
+  `0x0065e46d`: [stealth.md](../mechanics/stealth.md) 3); still to describe: 0xb and the other types (1, 5..8,
+  10, 0xc..0xf, 0x11, 0x13, 0x1b).
 - Seven attack records are constructed but only five are used.

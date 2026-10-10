@@ -63,9 +63,12 @@ namespace perception {
         let t = world::object{ w = &w, id = target } ifnull { return }
         let tc = obj::creature{ o = t } ifnull { return }
         let d = math::vec3::distance{ a = v.position, b = t.position }
-        let mut heard = d <= vc.hearing_range and not tc.dead
-        let mut seen = d <= vc.sight_range and clear_line{ w = &w, a = v.position, b = t.position }
-        let hidden = tc.stealth and not (party::is_member{ w = &w, id = viewer } and party::is_member{ w = &w, id = target })
+        // Party members always see and hear each other, whatever the range, line or stealth
+        // (0x00502ac0, the client party's test after the contests).
+        let both_party = party::is_member{ w = &w, id = viewer } and party::is_member{ w = &w, id = target }
+        let mut heard = both_party or (d <= vc.hearing_range and not tc.dead)
+        let mut seen = both_party or (d <= vc.sight_range and clear_line{ w = &w, a = v.position, b = t.position })
+        let hidden = tc.stealth and not both_party
         if hidden {
             if seen { seen = stealth::spots{ &w, viewer, target } }
             if heard { heard = stealth::hears{ &w, viewer, target } }
@@ -89,7 +92,10 @@ namespace perception {
         } else {
             list::push{ list = &vc.perceived, item = obj::Perceived{ id = target, seen, heard } } iferr {}
         }
-        if seen and not was_seen { stealth::noticed{ &w, viewer, target } }
+        if seen and not was_seen {
+            stealth::noticed{ &w, viewer, target }
+            if hidden { fight_log::spotted{ &w, viewer, target } }
+        }
         if hidden and w.log.actions and ((seen and not was_seen) or (heard and not was_heard)) {
             world::prefix{ w = &w }
             let how: []u8 = if seen and not was_seen { "sees" } else { "hears" }

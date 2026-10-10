@@ -97,7 +97,7 @@ frames, so setup and click are spaced out.
 
 | Behaviour | Evidence | Status | Test |
 |---|---|---|---|
-| A locked door or container offers Security in the target block's middle slot when the leader can use the skill and the lock wants no key (a door's left slot has Bash when it is not plot and combat is allowed); a click walks up, kneels 1.5 s, rolls Security + spike bonus + (20 out of combat, d20 in combat) against OpenLockDC, the roll goes to the combat log worded with dialog.tlk 1408 ("<name> <success or failure> Security: ... (roll ...) vs. DC <DC>"), the door opens | actions.md 3.7, rules.md 5.2, 0x00684410 (doors), client skill-roll case 0x0065b4a0 | matches for the middle slot, the walk, the roll and the opening; open: our line uses the attack-roll wording 1405 (`Player attempts Security on Door : *success* : (Take 20 + 5 = 25 vs. DC 12)`) | `security2.txt` |
+| A locked door or container offers Security in the target block's middle slot when the leader can use the skill and the lock wants no key (a door's left slot has Bash when it is not plot and combat is allowed); a click walks up, kneels 1.5 s, rolls Security + spike bonus + (20 out of combat, d20 in combat) against OpenLockDC, the roll goes to the combat log worded with dialog.tlk 1408 ("<name> <success or failure> Security: ... (roll ...) vs. DC <DC>"; none when taking 20 cannot reach a DC of 60 or more), the door opens | actions.md 3.7, rules.md 5.2, 0x00684410 (doors), client skill-roll case 0x0065b4a0 | matches (`Player success Security: 25 (roll 20 + Security 5) vs. DC 12`; the rank shown carries the spike's bonus) | `security2.txt` |
 | Failure: the roll is the only message; key-only locks say so; keys open; AutoRemoveKey | playthrough.md "Lock picking" | matches (earlier lead; the Endar Spire replay runs the bridge door) | replay |
 
 ## 7. Skills in play
@@ -127,24 +127,20 @@ Demolitions, a second click and R take the default; Disable and Recover walk up,
 (20, or d20 in combat) against the disarm DC (Disable above 35 impossible, Recover + 10; the mine's creator, and a
 party member on a mine the party laid, need no roll); a hostile mine within 1 m goes off under the party ("You
 triggered a Mine!", the type's script does the damage through the rules, explosion, one-shot removal); a party
-mine hurts only others; the HUD's mine slot lists trap kits and lays one (SetDC roll, kit spent). Open: the MINE
-SIGHTED auto-pause (ours also wants the mine's box on the screen), where the worker stops (ours: within its radius
-+ 1.25 m of the mine's centre), flag and examine (ours skips their roll on any party mine; what the client shows
-for Examine), the combat log's wording of the rolls (ours 1405, the original 1408), laying a mine ends our stealth
-(the original keeps it), a step across a trap's outline does not set it off here, trap script routines nothing
-calls.
+mine hurts only others; the HUD's mine slot lists trap kits and lays one (SetDC roll, kit spent; the setter keeps
+its stealth); the MINE SIGHTED auto-pause; the worker stops at the mine's outline; the combat log's 1408 lines; the
+trap script routines. Open: what the client shows for Examine, a step across a trap's outline does not set it off
+here.
 
 **Stealth ([stealth.md](stealth.md); `sh kotor/tools/stealth/check.sh`).** Matches: TB_STEALTH and G (only with
 Stealth ranks and a stealth unit worn, in an area that allows it), the solo-mode box when companions are about,
 the shimmer, detection by the original's sight and hearing contests (Awareness and a d20 look or listen roll
 against Stealth and a d10 + 10 hide roll, each rolled again every 20 s; ours draws the rolls from a hash), what
 ends it (attack, combat, one's own powers, taking off the belt, conversations and transitions; doors and using
-objects do not), the stealth XP pool and routines, save and load. Open: the stealth pace and walk animation (we
-use the walk rate and the ordinary walk), laying a mine ends ours, a hostile item ability ends ours only through the combat it starts with a creature (one
-used at a point keeps it), entering
-stealth during a conversation is not refused, a stealth XP countdown kept while the area's pool is off, a save's
-RestrictMode, the frame-buffer distortion look, the combat log's spot line, rest ending stealth (no party rest),
-the straggler teleport that solo mode turns off.
+objects do not), the stealth XP pool and routines, the combat log's spot line, save and load. Open: the stealth
+pace and walk animation (we use the walk rate and the ordinary walk), a hostile item ability ends ours only through
+the combat it starts with a creature (one used at a point keeps it), the frame-buffer distortion look, rest ending
+stealth (no party rest), the straggler teleport that solo mode turns off.
 
 ## 9. The upgrade bench (workbench)
 
@@ -194,9 +190,6 @@ whether the control is visible and enabled); `LOG=actions` adds a line `upgrade 
   across saves (section 4).
 - Ours, on purpose: a container's lid plays at double speed and the loot panel waits only for it, not for the
   Opened sound (section 4).
-- Skill rolls in the combat log: ours words them with 1405, the original formats its combat message 9 with 1408
-  (the trap actions, [traps.md](traps.md) 4; the Security roll goes through the same message, `AIActionOpenLock`
-  0x0057d9d0).
 - Mines, stealth: see their docs.
 - The equipment list leaves out unwearable rows only when the "Hide Unequippable" option is on; ours reads the option but does not use it. The hexagonal frames (`lbl_hex_3/6/7`) around the rows' pictures are not drawn.
 

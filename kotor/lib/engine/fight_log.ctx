@@ -25,6 +25,9 @@ namespace fight_log {
     const T_DAMAGES: u32 = 1403             // "<CUSTOM0> damages <CUSTOM1> for <CUSTOM2> damage"
     const T_DAMAGED: u32 = 1402             // "<CUSTOM0> damaged: <CUSTOM2>" (no attacker known)
     const T_KILLED: u32 = 1407              // "<CUSTOM0> killed <CUSTOM1>: <CUSTOM2> XP"
+    const T_SPOTTED: u32 = 38023            // "<CUSTOM0> successfully detects <CUSTOM1>: ...": red in the log
+    const T_AWARENESS: u32 = 42123          // "<CUSTOM0> Awareness Breakdown: ..."
+    const T_STEALTH: u32 = 42122            // "<CUSTOM0> Stealth Breakdown: ..."
 
     // outbox floating_text kinds (FUN_006027c0's jump table).
     const FLOAT_DAMAGE: i32 = 0
@@ -36,10 +39,11 @@ namespace fight_log {
     // Whether a feedback note's strref marks a combat line, and the red summary among them.
     fn is_combat_line { strref: u32 } -> bool {
         return strref == T_SUMMARY or strref == T_ATTACK or strref == T_THREAT or strref == T_DEFENSE or strref == T_DAMAGE or
-            strref == T_EFFECT or strref == T_DEFLECT or strref == T_DAMAGES or strref == T_DAMAGED or strref == T_KILLED
+            strref == T_EFFECT or strref == T_DEFLECT or strref == T_DAMAGES or strref == T_DAMAGED or strref == T_KILLED or
+            strref == T_SPOTTED or strref == T_AWARENESS or strref == T_STEALTH
     }
 
-    fn is_summary { strref: u32 } -> bool { return strref == T_SUMMARY }
+    fn is_summary { strref: u32 } -> bool { return strref == T_SUMMARY or strref == T_SPOTTED }
 
     // The client's <CUSTOM2> as the last combat line left it: "<target> damaged: <CUSTOM2>" (1402)
     // fills only <CUSTOM0> and <CUSTOM1>, so the original prints whatever an earlier line put there.
@@ -518,6 +522,59 @@ namespace fight_log {
         let o = world::object{ w, id } ifnull { return null }
         if obj::creature{ o } == null { return null }
         return o
+    }
+
+    // ---- a hider spotted
+
+    // The sight contest found a hider (0x004f1fd0 sends feedback 0x10 through 0x004ec7a0 to the
+    // players in the viewer's faction and area when the viewer is a player's, else in the target's;
+    // no distance limit). The client's case 0x10 makes three lines: the red "<viewer> successfully
+    // detects <target>: awareness N vs. stealth M" (38023), the awareness breakdown (42123 and its
+    // parts 42125..42129, each when not 0) and the stealth breakdown (42122). The stealth line's
+    // standing-still part shows the target's term but is tested on the viewer's, as in the client.
+    fn spotted { mut w: world::World, viewer: u32, target: u32 } {
+        let terms = stealth::sight_terms{ &w, viewer, target } ifnull { return }
+        let about = if doors::is_player_side{ w = &w, id = viewer } { viewer } else { target }
+        let me = world::object{ w = &w, id = w.pc } ifnull { return }
+        let ao = world::object{ w = &w, id = about } ifnull { return }
+        if me.area != ao.area or not on_players_side{ w = &w, id = about } { return }
+        let v = world::object{ w = &w, id = viewer } ifnull { return }
+        let t = world::object{ w = &w, id = target } ifnull { return }
+        let aware = stealth::awareness_total{ t = terms }
+        let hide = stealth::stealth_total{ t = terms }
+        let mut b = new_line{ w = &w }
+        defer list::free{ list = &b.bytes }
+        expand_template{ w = &w, &b, strref = T_SPOTTED, holes = [
+            Hole::text{ s = doors::name_text{ w = &w, o = v } }, Hole::text{ s = doors::name_text{ w = &w, o = t } },
+            Hole::num{ v = aware }, Hole::num{ v = hide }, Hole::none,
+        ] }
+        post_line{ &w, strref = T_SPOTTED, line = utf8::view{ b }.bytes, copies = 1 }
+        list::clear{ list = &b.bytes }
+        expand_template{ w = &w, &b, strref = T_AWARENESS, holes = [
+            Hole::text{ s = doors::name_text{ w = &w, o = v } }, Hole::num{ v = aware }, Hole::num{ v = terms.spot_roll },
+            Hole::num{ v = terms.awareness }, Hole::none,
+        ] }
+        spot_part{ w = &w, &b, strref = 42125, v = terms.viewer_still }
+        spot_part{ w = &w, &b, strref = 42126, v = terms.distance }
+        spot_part{ w = &w, &b, strref = 42127, v = terms.rear }
+        spot_part{ w = &w, &b, strref = 42128, v = terms.run }
+        spot_part{ w = &w, &b, strref = 42129, v = terms.combat }
+        post_line{ &w, strref = T_AWARENESS, line = utf8::view{ b }.bytes, copies = 1 }
+        list::clear{ list = &b.bytes }
+        expand_template{ w = &w, &b, strref = T_STEALTH, holes = [
+            Hole::text{ s = doors::name_text{ w = &w, o = t } }, Hole::num{ v = hide }, Hole::num{ v = terms.hide_roll },
+            Hole::num{ v = terms.stealth }, Hole::none,
+        ] }
+        if terms.viewer_still != 0 { spot_part{ w = &w, &b, strref = 42125, v = terms.target_still } }
+        post_line{ &w, strref = T_STEALTH, line = utf8::view{ b }.bytes, copies = 1 }
+        remember_custom2_number{ &w, v = terms.hide_roll }
+    }
+
+    // " + <part>" when the term is not 0 ("standing still modifier 5").
+    fn spot_part { w: *world::World, mut b: utf8::Builder(heap::Heap), strref: u32, v: i32 } {
+        if v == 0 { return }
+        put_text{ &b, s = " + " }
+        put_part{ w, &b, strref, v }
     }
 
     // A kill's experience (AwardKillXP 0x004fb1e0: "<killer> killed <victim>: N XP" to the killer's

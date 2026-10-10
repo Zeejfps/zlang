@@ -134,11 +134,13 @@ namespace stealth {
     }
 
     // UseSkill(Stealth) and the HUD's request (SetActivity mode 1, 0x004f2a50): out if in, in if
-    // out, unless dead, down, without the skill, or in combat (then the player is told).
+    // out, unless dead, down, in a conversation, without the skill, or in combat (then the player is
+    // told).
     fn toggle { mut w: world::World, id: u32 } {
         let o = world::object{ w = &w, id } ifnull { return }
         let c = obj::creature{ o } ifnull { return }
         if c.dead { return }
+        if dlg::is_participant{ s = &w.conversation, id } { return }
         let f = c.fighter ifnull { return }
         if f.c.down { return }
         if not has_skill{ w = &w, f } { return }
@@ -212,30 +214,51 @@ namespace stealth {
     // party watching the leader, 10 less in combat, 5 less while the target stands still, 5 more
     // while the viewer does, and a point less per 3 m beyond 6 m. Seen at 1 or more.
     fn spots { mut w: world::World, viewer: u32, target: u32 } -> bool {
-        let v = world::object{ w = &w, id = viewer } ifnull { return true }
-        let vc = obj::creature{ o = v } ifnull { return true }
-        let vf = vc.fighter ifnull { return true }
-        let t = world::object{ w = &w, id = target } ifnull { return true }
-        let tc = obj::creature{ o = t } ifnull { return true }
-        let tf = tc.fighter ifnull { return true }
+        let terms = sight_terms{ &w, viewer, target } ifnull { return true }
+        return awareness_total{ t = terms } >= 1 + stealth_total{ t = terms }
+    }
+
+    // The sight contest's terms, as the spot line in the combat log shows them (0x004f1fd0 sends
+    // them as feedback 0x10). The awareness side: the spot roll, Awareness, +5 while the viewer
+    // stands still, the distance, -5 from behind, -10 in combat; the stealth side: the hiding roll,
+    // Stealth, +5 while the target stands still. `run` is always 0 (the original sends 0 too).
+    struct SightTerms {
+        spot_roll: i32, awareness: i32, viewer_still: i32, distance: i32, rear: i32, run: i32, combat: i32,
+        hide_roll: i32, stealth: i32, target_still: i32,
+    }
+
+    fn awareness_total { t: SightTerms } -> i32 { return t.spot_roll + t.awareness + t.viewer_still + t.distance + t.rear + t.run + t.combat }
+    fn stealth_total { t: SightTerms } -> i32 { return t.hide_roll + t.stealth + t.target_still }
+
+    // Null when there is no contest: the viewer sees the target outright.
+    fn sight_terms { mut w: world::World, viewer: u32, target: u32 } -> ?SightTerms {
+        let v = world::object{ w = &w, id = viewer } ifnull { return null }
+        let vc = obj::creature{ o = v } ifnull { return null }
+        let vf = vc.fighter ifnull { return null }
+        let t = world::object{ w = &w, id = target } ifnull { return null }
+        let tc = obj::creature{ o = t } ifnull { return null }
+        let tf = tc.fighter ifnull { return null }
         // True seeing (vision bit 4) sees through it; see invisible does not (0x004f1fd0).
-        if (vf.c.stats.vision & 4) != 0 { return true }
+        if (vf.c.stats.vision & 4) != 0 { return null }
         let rank = hiding_rank{ w = &w, vf, tc }
-        if rank == 0 { return true }
-        let mut score = awareness{ w = &w, vf, tf } + vc.stealth_rolls.spot - rank - tc.stealth_rolls.hide_sight
+        if rank == 0 { return null }
+        let mut terms = SightTerms{
+            spot_roll = vc.stealth_rolls.spot, awareness = awareness{ w = &w, vf, tf }, viewer_still = 0, distance = 0, rear = 0,
+            run = 0, combat = 0, hide_roll = tc.stealth_rolls.hide_sight, stealth = rank, target_still = 0,
+        }
         if not party::is_member{ w = &w, id = viewer } and (target == w.pc or target == w.player) {
             let dx = t.position.x - v.position.x
             let dy = t.position.y - v.position.y
             let len = math::sqrtf{ x = dx * dx + dy * dy }
             let cos = if len > 0.001 { (dx * v.orientation.x + dy * v.orientation.y) / len } else { 1.0 }
-            if cos < -0.707 { score = score - 5 }
+            if cos < -0.707 { terms.rear = -5 }
         }
-        if vc.in_combat { score = score - 10 }
-        if not is_moving{ animation = t.animation } { score = score - 5 }
-        if not is_moving{ animation = v.animation } { score = score + 5 }
+        if vc.in_combat { terms.combat = -10 }
+        if not is_moving{ animation = t.animation } { terms.target_still = 5 }
+        if not is_moving{ animation = v.animation } { terms.viewer_still = 5 }
         let third = math::vec3::distance{ a = v.position, b = t.position } / 3.0
-        if third > 2.0 { score = score - @as(i32, math::floorf{ x = third }) }
-        return score >= 1
+        if third > 2.0 { terms.distance = 0 - @as(i32, math::floorf{ x = third }) }
+        return terms
     }
 
     // Whether `viewer`, which has the target in hearing range, hears it (0x004fb4b0, the routine the
@@ -342,7 +365,11 @@ namespace stealth {
         if c.stealth_rolls.xp_ms == 0 { return }
         let ao = world::object{ w = &w, id = o.area } ifnull { return }
         let a = obj::area{ o = ao } ifnull { return }
-        if not a.stealth_xp_enabled { return }
+        // A pool switched off drops the countdown (AIUpdate 0x004fe210): it is not charged later.
+        if not a.stealth_xp_enabled {
+            c.stealth_rolls.xp_ms = 0
+            return
+        }
         let step = @as(i64, math::floorf{ x = w.clock.dt * 1000.0 })
         if c.stealth_rolls.xp_ms != XP_AT_ONCE and c.stealth_rolls.xp_ms > step {
             c.stealth_rolls.xp_ms = c.stealth_rolls.xp_ms - step

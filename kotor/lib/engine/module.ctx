@@ -56,6 +56,7 @@ namespace modload {
 
         try load_layout{ &w, area = area_text }
 
+        let are_restrict = a.restrict_mode
         let git = try world::read_gff{ &w, name = area_text, kind = restype::Type::git }
         if git != null { try read_git{ &w, doc = &git } }
         if from_save {
@@ -64,6 +65,13 @@ namespace modload {
             tmpl::read_locals{ doc = &ifo, s = gff::ROOT, o = mo }
             if w.restoring { try restore_player{ &w, doc = &ifo } }
             save::read_event_queue{ &w, doc = &ifo, s = gff::ROOT }
+        }
+        // A save's RestrictMode that is set and differs from the ARE's takes the party out of
+        // stealth (LoadProperties 0x00507490); ours once the party is back.
+        if world::object{ w = &w, id = w.area } is some{ value = ro } {
+            if obj::area{ o = ro } is some{ value = ra } {
+                if ra.restrict_mode != 0 and ra.restrict_mode != are_restrict { stealth::leave_party{ &w } }
+            }
         }
         if w.log.module {
             world::prefix{ w = &w }
@@ -255,6 +263,7 @@ namespace modload {
                 a.ambient_day_volume = @trunc(i32, tmpl::number{ doc, s = props, label = "AmbientSndDayVol", default = 0 })
                 a.ambient_night_volume = @trunc(i32, tmpl::number{ doc, s = props, label = "AmbientSndNitVol", default = 0 })
                 a.env_audio = @trunc(i32, tmpl::number{ doc, s = props, label = "EnvAudio", default = 0 })
+                a.restrict_mode = @trunc(u32, tmpl::number{ doc, s = props, label = "RestrictMode", default = @as(i64, a.restrict_mode) })
                 // The stealth XP pool as saved (LoadProperties 0x00507490: the current amount
                 // never above the maximum).
                 a.stealth_xp_max = @trunc(i32, tmpl::number{ doc, s = props, label = "StealthXPMax", default = @as(i64, a.stealth_xp_max) })
