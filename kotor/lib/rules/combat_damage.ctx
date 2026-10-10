@@ -171,7 +171,9 @@ namespace rules {
             if v > 0 {
                 let flags = @as(i32, 1) << @as(u32, s)
                 if mitigate {
+                    let raw = v
                     v = apply_damage_immunity{ c = &def, amount = v, flags }
+                    if not simulate { tell_immunity{ ev = &ev, before = raw, after = v, flags } }
                     v = apply_damage_resistance{ c = &def, amount = v, flags, simulate, ev = &ev }
                     if v < 0 { v = 0 }
                 }

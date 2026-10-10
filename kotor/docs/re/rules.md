@@ -707,7 +707,10 @@ Types outside DamageFlags (electrical, dark side, acid, universal for every row)
 Immunity is applied before and reduction after, as for any resistance (combat.md 6.1), and the
 same call then takes 2 off for Improved Toughness and 2 for Wookiee Endurance (combat.md 6.4). The
 combat log gets feedback 0x42 with the points absorbed and the points left (0x3f when the
-resistance has no limit); we do not print it. (high for the arithmetic, med for the messages)
+resistance has no limit): with a weapon hit (bFeedback) they are added to the attack's record and
+printed with its lines, otherwise sent to the damaged creature and to the attacker
+(`SendFeedbackMessage`); ours prints them (`fight_log::numbered`). (high for the arithmetic, med for
+the messages)
 
 **A missed bolt.** `GetCanDeflectProjectile` (`0x005b78e0`) has a second branch, taken by
 `ResolveRangedAttack` for a ranged attack that missed (result 4-6) and whose defender is not a

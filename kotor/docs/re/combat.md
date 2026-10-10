@@ -1515,7 +1515,15 @@ killer is not a creature), tok1 the victim's, tok2 the XP. (high)
 
 **Type 0xb, numbered feedback** (`CSWSCreature::SendFeedbackMessage` `0x004ede10`, `feedbacktext.2da`
 rows; the 62 callers are immunity, resistance, trap, lock and inventory messages) has its own inner
-switch (the message id) and is not covered here.
+switch (the message id); the client's text is made by `FormatFeedbackMessage` (`0x005fcd10`, a switch
+of 168 cases, each setting <CUSTOMn> tokens and reading one dialog.tlk template). The damage-mitigation
+ones: 0x3e (`DoDamageImmunity` `0x004cf160`) 1458 "<name> is immune to <word>", the word a template
+with an empty <CUSTOM0>: 1423 physical for any of the three physical bits, else by the lowest set bit
+from 8 up 1422 universal, 1440 acid, 1441 cold, 1442 light side, 1443 electrical, 1444 fire, 1445 dark
+side, 1446 sonic, 1447 ion, 1448 energy, 41902 poison; 0x3f 1454 "<name> resists <n> damage" and
+0x42 1456 "... Damage Resistance absorbs <n> damage : <m> points remaining" (`DoDamageResistance`
+`0x004d0e40`); 0x40 1455 and 0x43 1457 the same for Damage Reduction (`0x004d09e0`). (high for the
+strrefs, read from the switch)
 
 ### 10.4 Floating numbers
 

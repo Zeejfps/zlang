@@ -276,7 +276,7 @@ namespace rules {
         const DEATH: i32 = 3            // a: killing blow was melee, b: spectacular, who: the killer
         const RESURRECT: i32 = 4        // a: HP to set (1)
         const MAX_HP_CHANGED: i32 = 5   // a: old max, b: new max; the engine keeps the HP deficit
-        const FEEDBACK: i32 = 6         // a: the engine's feedback message number, who: the other party
+        const FEEDBACK: i32 = 6         // a: the engine's feedback message number, b, c: its numbers, who: the other party
         const CLEAR_ACTIONS: i32 = 7    // a state effect took hold: ClearAllActions, abort the combat round
         const COMMANDABLE: i32 = 8      // a: 1 the creature may be given actions, 0 not
         const STATE: i32 = 9            // a: the crowd-control state now active (0 none)
@@ -293,7 +293,17 @@ namespace rules {
         const KNOCKDOWN: i32 = 20       // the engine plays the animation
     }
 
-    struct Event { kind: i32, a: i32, b: i32, who: u32 }
+    struct Event { kind: i32, a: i32, b: i32, c: i32, who: u32 }
+
+    // The numbered feedback messages of damage mitigation (SendFeedbackMessage 0x004ede10; the client's
+    // FormatFeedbackMessage 0x005fcd10 turns them into dialog.tlk lines).
+    namespace feedback {
+        const IMMUNE: i32 = 0x3e            // DoDamageImmunity: b the points absorbed, c the damage type flags
+        const RESISTS: i32 = 0x3f           // DoDamageResistance without a limit: b the points absorbed
+        const REDUCES: i32 = 0x40           // DoDamageReduction without a limit: b the points absorbed
+        const RESISTS_LEFT: i32 = 0x42      // DoDamageResistance with a limit: b absorbed, c the points left
+        const REDUCES_LEFT: i32 = 0x43      // DoDamageReduction with a limit: b absorbed, c the points left
+    }
     struct Events { len: i32, lost: i32, items: [EVENTS_MAX]Event }
 
     // ---- items (party-items-saves.md 4.6)

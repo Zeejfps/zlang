@@ -58,8 +58,19 @@ namespace rules {
             ev.lost = ev.lost + 1
             return
         }
-        ev.items[@as(usize, ev.len)] = Event{ kind, a, b, who }
+        ev.items[@as(usize, ev.len)] = Event{ kind, a, b, c = 0, who }
         ev.len = ev.len + 1
+    }
+
+    // A numbered feedback message with two numbers (ev::FEEDBACK, a = `id`).
+    fn emit_feedback { mut ev: Events, id: i32, b: i32, c: i32 } {
+        emit{ ev = &ev, kind = ev::FEEDBACK, a = id, b, who = OBJECT_INVALID }
+        if ev.len > 0 and ev.items[@as(usize, ev.len - 1)].kind == ev::FEEDBACK and ev.items[@as(usize, ev.len - 1)].a == id { ev.items[@as(usize, ev.len - 1)].c = c }
+    }
+
+    // DoDamageImmunity's feedback (0x3e) when an immunity took something off a hit of `flags`.
+    fn tell_immunity { mut ev: Events, before: i32, after: i32, flags: i32 } {
+        if after < before { emit_feedback{ ev = &ev, id = feedback::IMMUNE, b = before - after, c = flags } }
     }
 
     // ---- damage mitigation (combat.md 6.4)
@@ -171,15 +182,23 @@ namespace rules {
         let mut absorbed = best_amount
         let limit = c.fx[@as(usize, best)].ints[2]
         let drain = if vulnerable { 2 * amount } else { amount }
+        let mut left = 0
         if limit > 0 {
             if limit - drain < 1 {
                 absorbed = limit
                 if not simulate { remove_spent{ c = &c, index = @as(usize, best), ev = &ev } }
-            } else if not simulate {
-                c.fx[@as(usize, best)].ints[2] = limit - drain
+            } else {
+                left = limit - drain
+                if not simulate { c.fx[@as(usize, best)].ints[2] = left }
             }
         }
         if absorbed > amount { absorbed = amount }
+        // The combat log: "<who> resists N damage" (0x3f) for a resistance without a limit, "<who> : Damage
+        // Resistance absorbs N damage : M points remaining" (0x42) for an energy shield.
+        if not simulate and amount > 0 {
+            if limit > 0 { emit_feedback{ ev = &ev, id = feedback::RESISTS_LEFT, b = absorbed, c = left } }
+            else { emit_feedback{ ev = &ev, id = feedback::RESISTS, b = absorbed, c = 0 } }
+        }
         return amount - absorbed
     }
 
@@ -202,21 +221,29 @@ namespace rules {
         if power >= e.ints[1] { return amount }
         let mut absorbed = best_amount
         let limit = e.ints[2]
+        let mut left = 0
         if limit > 0 {
             if limit - amount < 1 {
                 absorbed = limit
                 if not simulate { remove_one{ c = &c, index = @as(usize, best), ev = &ev } }
-            } else if not simulate {
-                c.fx[@as(usize, best)].ints[2] = limit - amount
+            } else {
+                left = limit - amount
+                if not simulate { c.fx[@as(usize, best)].ints[2] = left }
             }
         }
         if absorbed > amount { absorbed = amount }
+        // The combat log (DoDamageReduction 0x004d09e0): 0x40 without a limit, 0x43 with the points left.
+        if not simulate and amount > 0 {
+            if limit > 0 { emit_feedback{ ev = &ev, id = feedback::REDUCES_LEFT, b = absorbed, c = left } }
+            else { emit_feedback{ ev = &ev, id = feedback::REDUCES, b = absorbed, c = 0 } }
+        }
         return amount - absorbed
     }
 
     // Immunity, then resistance, then reduction, never below 0 (combat.md 6.1).
     fn mitigate_damage { mut c: Creature, amount: i32, flags: i32, power: i32, simulate: bool, mut ev: Events } -> i32 {
         let mut d = apply_damage_immunity{ c = &c, amount, flags }
+        if not simulate { tell_immunity{ ev = &ev, before = amount, after = d, flags } }
         if d < 0 { d = 0 }
         d = apply_damage_resistance{ c = &c, amount = d, flags, simulate, ev = &ev }
         d = apply_damage_reduction{ c = &c, amount = d, power, simulate, ev = &ev }

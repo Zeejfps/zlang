@@ -54,6 +54,10 @@ namespace fight {
         stun_save: rules::SaveResult,   // that save: a failure stuns (the summary's stun clause, fight_log)
         nfx: i32,
         fx: [rules::MAX_COMBAT_FX]rules::CombatEffect,
+        // The defender's immunity, resistance and reduction messages of the hit (rules::feedback): the
+        // original adds them to the attack's record (+0xa0), so they come out with the attack's lines.
+        nnotes: i32,
+        notes: [4]rules::Event,
     }
 
     struct Round {
@@ -124,7 +128,7 @@ namespace fight {
         let mut damage: rules::DamageRoll
         let mut roll: rules::AttackRoll
         let stun_save = rules::SaveResult{ result = 1, roll = 0, bonus = 0, base = 0, dc = 0 }
-        return Impact{ at_ms = 0, fire_ms = 0, hand = 0, target = obj::INVALID, attack = false, hit = false, result = 0, roll, killing = false, ranged = false, reaction = NO_ROW, cutscene = false, first = false, damage, stun_tried = false, stun_save, nfx = 0, fx }
+        return Impact{ at_ms = 0, fire_ms = 0, hand = 0, target = obj::INVALID, attack = false, hit = false, result = 0, roll, killing = false, ranged = false, reaction = NO_ROW, cutscene = false, first = false, damage, stun_tried = false, stun_save, nfx = 0, fx, nnotes = 0, notes = [rules::Event{ kind = 0, a = 0, b = 0, c = 0, who = obj::INVALID }; 4] }
     }
 
     fn no_round {} -> Round {
@@ -310,6 +314,27 @@ namespace fight {
         }
     }
 
+    // Moves the damage-mitigation messages a hit's resolution left in the events into the impact, whose
+    // log lines print them (fight_log::attack).
+    fn take_notes { mut w: world::World, mut imp: Impact } {
+        let mut kept: i32 = 0
+        let mut i: i32 = 0
+        while i < w.rev.len {
+            let e = w.rev.items[@as(usize, i)]
+            i = i + 1
+            if e.kind == rules::ev::FEEDBACK and fight_log::is_mitigation{ id = e.a } {
+                if imp.nnotes < 4 {
+                    imp.notes[@as(usize, imp.nnotes)] = e
+                    imp.nnotes = imp.nnotes + 1
+                }
+                continue
+            }
+            w.rev.items[@as(usize, kept)] = e
+            kept = kept + 1
+        }
+        w.rev.len = kept
+    }
+
     fn handle { mut w: world::World, id: u32, e: rules::Event } {
         let o = world::object{ w = &w, id } ifnull { return }
         let k = e.kind
@@ -372,8 +397,12 @@ namespace fight {
         } else if k == rules::ev::FEEDBACK {
             if w.log.combat {
                 world::prefix{ w = &w }
-                _ = @fmt(&w.io, "feedback {} ({}) to {}\n", e.a, e.b, id)
+                _ = @fmt(&w.io, "feedback {} ({}, {}) to {}\n", e.a, e.b, e.c, id)
             }
+            // Damage mitigation outside a weapon hit (OnApplyDamage's non-combat damage): to the damaged
+            // creature's player (the attacker's copy needs the damage's creator, which the rules' event
+            // does not carry).
+            if fight_log::is_mitigation{ id = e.a } { fight_log::numbered{ &w, about = id, other = e.who, e } }
         }
     }
 
@@ -1352,6 +1381,7 @@ namespace fight {
             if carries[k] {
                 rules::clear_events{ ev = &w.rev }
                 let res = rules::resolve_attack{ tables = w.rules, rng = &w.dice, atk = &f.c, def, ev = &w.rev, sit = &sit, attack_index = attack, combat_feat = feat, simulate = false }
+                take_notes{ &w, imp = &imp }
                 drain{ &w, id = target }
                 imp.hit = res.hit
                 imp.result = res.roll.result
