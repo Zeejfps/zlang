@@ -1534,8 +1534,10 @@ dropped) and the auto-target below all use it.
    again with both flags 0, so the camera never moves for it, with one exception: a target set through
    `SetTarget` (`0x005f4a20`) with its "new" bit (`+0x37c` bit 0, cleared at the end of every pass) gets
    `(1, 0)` on the next pass. The server sets it that way when a combat round moves the attack to a new
-   enemy (`0x005b6980`), so the camera turns to the new foe in combat mode; a click sets it without the
-   bit.
+   enemy (`0x005b6980`); the turn in `SelectTarget` fetches the controller of type `0x106a` (the chase
+   camera), which `StartCombatCamera` (`0x00641540`) has replaced in combat mode, so nothing turns
+   (the condition on combat mode in `SelectTarget` only ever finds a chase camera out of it). A click sets
+   it without the bit.
 
 **While the game is paused** (any pause bit, the player's or an auto-pause; high, read from the asm).
 `UpdateSelectableObjects(float fDelta)` and `ProcessInput(float)` are both handed `g_fFrameDelta`

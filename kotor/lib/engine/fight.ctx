@@ -2643,6 +2643,29 @@ namespace fight {
     const MSG_ENGAGED: u32 = 48208
     const MSG_CLOSING: u32 = 42477
 
+    // The weapon flourish (the X key, action 242, 0x005f4460) for a living creature holding one melee
+    // weapon, a two-handed or double one, or two (stance digits 2..4): its weapons power up and it is
+    // in combat (SetCombatState(1, 2), so a lightsaber lights), and standing it plays g<d>w1 for 1.5 s
+    // (10158 through the client's table: rows 132, 173, 214). Moving, the original plays the overlay
+    // G<d>F1 (10157) over the walk; ours draws no overlays, so the walk goes on alone.
+    fn flourish { mut w: world::World, id: u32 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        if c.dead or is_down{ w = &w, id } { return }
+        let s = stance{ w = &w, c }
+        if s < 2 or s > 4 { return }
+        set_combat{ &w, id, bark = false, attacked = false }
+        if w.log.combat {
+            let how: []u8 = if c.moving { "moving" } else { "still" }
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "{} flourishes its weapon (stance {}, {})\n", id, s, how)
+        }
+        if c.moving { return }
+        let rows: [3]i32 = [132, 173, 214]
+        play_row{ &w, o, row = rows[@as(usize, s - 2)] }
+        if of{ o } is some{ value = f } { f.react_ms = 1500 }
+    }
+
     fn say_combat_message { mut w: world::World, id: u32, strref: u32 } {
         if not party::is_member{ w = &w, id } { return }
         let o = world::object{ w = &w, id } ifnull { return }

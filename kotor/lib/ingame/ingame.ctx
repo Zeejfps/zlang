@@ -406,6 +406,11 @@ namespace ingame {
             if not world::offer_plain_tutorial{ &w, id = world::TUT_CLEAR_ONE } { hud::clear_one{ &w } }
             return true
         }
+        // keymap.2da: X the weapon flourish (action 242).
+        if keycode == 'x' {
+            fight::flourish{ &w, id = party::leader{ w = &w } }
+            return true
+        }
         // keymap.2da: G stealth (action 264).
         if keycode == 'g' {
             request_stealth{ &ui, &w, &dev, from_key = true }

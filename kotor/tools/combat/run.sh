@@ -10,6 +10,7 @@
 #   feat1     uppercity  450   the target block's combat feats queued by clicks (Critical Strike, Flurry, Power Attack)
 #   rapid1    uppercity  250   a blaster from 18 m: Power Blast / Rapid Shot in the block, two shots, no approach
 #   retarget1 uppercity  850   three troopers: the leader turns on the next foe after each kill
+#   flourish1 uppercity  160   the X key: a long sword flourished (g2w1, combat state), a rifle not
 #   down1     uppercity  400   Carth down (die1, dead1), the foe killed, Carth up 5 s later (getupdead1)
 #   med1      uppercity  600   a wounded trooper uses its medpac (k_ai_master talents)
 #   bash1     bunk       1000  a locked non-plot door bashed open through the block

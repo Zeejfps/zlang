@@ -1,0 +1,7 @@
+# The X key (action 242): out of a fight, a leader with a long sword flourishes it (stance 2, g2w1) and is
+# in combat (reason 2) for 8 s; with a blaster rifle in the hands nothing happens.
+20 ui giveitem g_w_lngswrd01 1 equip
+40 ui key x
+50 ui fight
+120 ui giveitem g_w_blstrrfl001 1 equip
+140 ui key x
