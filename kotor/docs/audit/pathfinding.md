@@ -23,12 +23,12 @@ All verified headless: the fresh-module gait logs (`--module tar_m02aa`, `tar_m0
 apartment checkpoint's replay (to the Undercity, the same 26-27 instruction-budget faults in k_ai_master as
 before the audit).
 
-Note for the Endar Spire replay: with the companions' new walking pace the fights' timing moves and Trask
-offers his medpac tutorial ("How do I use a medpac?") after the welding fight, which takes one of the
-replay's queued replies; Carth's apartment conversation then ends without k_ptar_addcarth, and the replay no
-longer leaves the apartment for tar_m02aa within 41,000 frames. The queued replies of
-`kotor/tools/playthrough/10_endar_spire.txt` (and `kotor/tools/checkpoints/make.sh`'s checkpoints after
-`apartment`) need one more `1` before that conversation when the checkpoints are next made.
+Note for the Endar Spire replay: with the new speeds the fights' timing moves and Trask offers his medpac
+tutorial ("How do I use a medpac?") after the welding droid's fight, which took one of the replay's queued
+replies, so Carth's apartment conversation ended without k_ptar_addcarth and the replay stayed in the
+apartment. `kotor/tools/playthrough/10_endar_spire.txt` queues one more reply for it; the replay reaches
+tar_m02aa at frame 40,172 again (0 faults). The checkpoints after `bunk` should be made again
+(`kotor/tools/checkpoints/make.sh`) so that their creatures carry the speed rows.
 
 ## Open, by severity
 
