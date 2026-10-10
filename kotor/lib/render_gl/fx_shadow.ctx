@@ -38,6 +38,7 @@ namespace gpu {
         point_pos: [3]math::Vec4,           // position, radius
         point_mat: [18]math::Mat4,
         point_strength: f32,
+        volumes: bool,                      // the last enhanced view drew the original's volumes instead
     }
 
     fn no_shadows {} -> ShadowState {
@@ -46,7 +47,7 @@ namespace gpu {
             size = 0, atlas = 0, fbo = 0, sampler_cmp = 0, sampler_raw = 0, program = 0, loc = no_scene_program{},
             sun = false, sun_light = 0, sun_mat = [id; 2], sun_dir = math::vec3::zero{}, sun_strength = 0.0, sun_texel = 0.0, sun_soft = 0.0,
             points = 0, point_light = [0; 3], point_pos = [math::Vec4{ x = 0.0, y = 0.0, z = 0.0, w = 1.0 }; 3], point_mat = [id; 18],
-            point_strength = 0.0,
+            point_strength = 0.0, volumes = false,
         }
     }
 
@@ -392,6 +393,18 @@ namespace gpu {
             dev.gl.uniform_matrix4fv{ location = loc.point_mat, count = @as(i32, s.points) * 6, transpose = gl::FALSE, value = &s.point_mat[0].m[0] }
             dev.gl.uniform4fv{ location = loc.point_pos, count = @as(i32, s.points), value = &s.point_pos[0].x }
         }
+    }
+
+    fn shadow_info { dev: Device } -> render::ShadowInfo {
+        let s = dev.shadow
+        let mut info = render::ShadowInfo{ maps = s.sun or s.points > 0, volumes = s.volumes, sun = s.sun, fallback = 0.0, lights = s.points, light = [math::vec3::zero{}; 4], weight = [0.0; 4] }
+        let mut k: u32 = 0
+        while k < s.points and k < 4 {
+            info.light[k] = math::Vec3{ x = s.point_pos[k].x, y = s.point_pos[k].y, z = s.point_pos[k].z }
+            info.weight[k] = 1.0
+            k = k + 1
+        }
+        return info
     }
 
     // Which shadow map each of a draw's lights takes (the sun 0, point light k + 1, none -1), for set_lights.

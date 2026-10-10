@@ -15,10 +15,11 @@ namespace elog {
         trace: bool,            // every fighting creature's action, animation, hit points and target, every few frames; the vfx (not in `all`)
         gait: bool,             // every frame, a walking or running creature's speed, cycle rate and place (lib/scene/visual.ctx; not in `all`)
         sound: bool,            // the mixer's steals and refusals, sound-device underruns, a summary at the end (lib/scene/ambience.ctx; not in `all`)
+        shadows: bool,          // every drawn frame, how the enhanced view's shadows were drawn: maps or volumes, which lights (game/play.ctx; not in `all`)
     }
 
     fn quiet {} -> Log {
-        return Log{ scripts = false, routines = false, events = false, actions = false, objects = false, module = true, combat = false, dialog = false, trace = false, gait = false, sound = false }
+        return Log{ scripts = false, routines = false, events = false, actions = false, objects = false, module = true, combat = false, dialog = false, trace = false, gait = false, sound = false, shadows = false }
     }
 
     // Turns on the logs a comma-separated list names (`scripts,routines`, `all`).
@@ -39,6 +40,7 @@ namespace elog {
                 if ci::eq{ a = word, b = "trace" } { l.trace = true }
                 if ci::eq{ a = word, b = "gait" } { l.gait = true }
                 if ci::eq{ a = word, b = "sound" } { l.sound = true }
+                if ci::eq{ a = word, b = "shadows" } { l.shadows = true }
                 start = i + 1
             }
             i = i + 1

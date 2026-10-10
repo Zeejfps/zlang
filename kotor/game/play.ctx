@@ -692,6 +692,7 @@ namespace play {
                     _ = @fmt(&w.io, "kotor: submit failed: {}\n", error)
                     return 1
                 }
+                if w.log.shadows { log_shadows{ &w, dev } }
             }
             let mut s: usize = 0
             while s < opts.shot_count {
@@ -1553,5 +1554,18 @@ namespace play {
         let image = png::Image{ width = size.width, height = size.height, rgba = pixels }
         try png::save{ fs = &w.fs, realloc = arena::alloc, &heap, path, image, alpha = false, bottom_up = false }
         _ = @fmt(&w.io, "frame {}: wrote {} ({}x{})\n", frame_no, path, size.width, size.height)
+    }
+
+    // One `--log shadows` line for the frame just drawn: how its enhanced view's shadows came out.
+    fn log_shadows { mut w: world::World, dev: gpu::Device } {
+        let s = gpu::shadow_info{ dev }
+        world::prefix{ w = &w }
+        _ = @fmt(&w.io, "shadows: maps {} volumes {} sun {} fallback {} lights {}", s.maps, s.volumes, s.sun, s.fallback, s.lights)
+        let mut k: u32 = 0
+        while k < s.lights and k < 4 {
+            _ = @fmt(&w.io, " ({} {} {} w {})", s.light[k].x, s.light[k].y, s.light[k].z, s.weight[k])
+            k = k + 1
+        }
+        _ = @fmt(&w.io, "\n")
     }
 }

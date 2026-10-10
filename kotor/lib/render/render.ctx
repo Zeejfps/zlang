@@ -69,6 +69,11 @@ namespace render {
     // What the last submit drew.
     struct Stats { draws: u32, triangles: u32, culled: u32, state_changes: u32, quads: u32, particles: u32, ui_draws: u32 }
 
+    // How the last enhanced view's shadows were drawn (the `--log shadows` line): `maps` its shadow maps, `volumes`
+    // the original's stencil volumes instead, `sun` a sun map, `fallback` the weight of the overhead map drawn where
+    // no light casts, and the point lights' maps: each light's place and how far it has faded in (0..1).
+    struct ShadowInfo { maps: bool, volumes: bool, sun: bool, fallback: f32, lights: u32, light: [4]math::Vec3, weight: [4]f32 }
+
     // ---- textures
 
     enum PixelFormat: u8 { grey8, rgb8, rgba8, dxt1, dxt5 }

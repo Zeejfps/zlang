@@ -9,6 +9,7 @@ namespace render_contract {
         let open: fn{ mut sdl: sdl::Sdl, realloc: alloc::Fn(arena::Arena), mut heap: arena::Arena, config: render::Config } -> !gpu::Device = gpu::open
         let describe: fn{ dev: gpu::Device } -> render::Info = gpu::describe
         let get_stats: fn{ dev: gpu::Device } -> render::Stats = gpu::get_stats
+        let shadow_info: fn{ dev: gpu::Device } -> render::ShadowInfo = gpu::shadow_info
         let screen_size: fn{ dev: gpu::Device } -> render::Size = gpu::screen_size
         let messages: fn{ dev: gpu::Device } -> []u8 = gpu::messages
         let clear_messages: fn{ mut dev: gpu::Device } = gpu::clear_messages
