@@ -692,7 +692,7 @@ namespace play {
                     _ = @fmt(&w.io, "kotor: submit failed: {}\n", error)
                     return 1
                 }
-                if w.log.shadows { log_shadows{ &w, dev } }
+                if w.log.shadows { log_shadows{ &w, dev, sc = &sc } }
             }
             let mut s: usize = 0
             while s < opts.shot_count {
@@ -1556,12 +1556,14 @@ namespace play {
         _ = @fmt(&w.io, "frame {}: wrote {} ({}x{})\n", frame_no, path, size.width, size.height)
     }
 
-    // One `--log shadows` line for the frame just drawn: how its enhanced view's shadows came out.
-    fn log_shadows { mut w: world::World, dev: gpu::Device } {
+    // One `--log shadows` line for the frame just drawn: how its enhanced view's shadows came out, and where the
+    // light the shadow volumes are cast from is (scene::Scene.volume_at; `none`: from overhead).
+    fn log_shadows { mut w: world::World, dev: gpu::Device, sc: *scene::Scene } {
         let s = gpu::shadow_info{ dev }
         world::prefix{ w = &w }
         _ = @fmt(&w.io, "shadows: maps {} volumes {} cut {} sun {} fallback {} lights {}", s.maps, s.volumes, s.cut, s.sun, s.fallback, s.lights)
         if s.sun { _ = @fmt(&w.io, " sun_dir {} {} {}", s.sun_dir.x, s.sun_dir.y, s.sun_dir.z) }
+        if sc.volume_light >= 0 { _ = @fmt(&w.io, " volume_light {} {} {}", sc.volume_at.x, sc.volume_at.y, sc.volume_at.z) } else { _ = @fmt(&w.io, " volume_light none") }
         let mut k: u32 = 0
         while k < s.lights and k < 5 {
             _ = @fmt(&w.io, " ({} {} {} w {})", s.light[k].x, s.light[k].y, s.light[k].z, s.weight[k])

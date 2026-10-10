@@ -526,7 +526,7 @@ namespace visual {
         let n = part_transforms{ sc, v, o, out = transforms[..] }
         // A creature in stealth mode, its weapons too, wears the stealth texture.
         let look = if scene::is_hiding{ o } { scene::look_material{ sc } } else { null }
-        let cast = shadow_of{ w, o, frame = &frame }
+        let cast = shadow_of{ sc, w, o, frame = &frame }
         let kind = if obj::creature{ o } != null { render::DrawKind::creature } else { render::DrawKind::object }
         let ambient = if v.lit { render::add_ambient{ &frame, cube = v.light } } else { 0 }
         let mut i: usize = 0
@@ -542,33 +542,57 @@ namespace visual {
     // The shadow volumes a creature or a placeable casts (the Shadows option draws them, Soft Shadows softens them):
     // the original casts from the models whose classification is character or placeable (0x00450550: a weapon in a
     // hand is a placeable model; doors and rooms cast nothing), from the scene's shadow light, within its radius
-    // (re/render-gui.md, "Shadow volumes"). Ours takes for each caster the nearest light that reaches it and hangs
-    // at least 0.5 m above its feet, else the sun overhead and a little to one side. The area's ShadowOpacity is how
-    // dark the shadow is. Null: not a caster.
-    fn shadow_of { w: *world::World, o: *obj::Object, frame: *render::Frame } -> ?render::Shadow {
+    // (re/render-gui.md, "Shadow volumes"). Ours casts every caster's from the one light pick_volume_light chose for
+    // the frame, when it reaches the caster and hangs at least 0.5 m above its feet, else from the sun overhead and a
+    // little to one side (the original casts nothing there). The area's ShadowOpacity is how dark the shadow is.
+    // Null: not a caster.
+    fn shadow_of { sc: *scene::Scene, w: *world::World, o: *obj::Object, frame: *render::Frame } -> ?render::Shadow {
         if obj::creature{ o } == null and obj::placeable{ o } == null { return null }
         let mut opacity: f32 = 0.5
         if world::object{ w, id = w.area } is some{ value = ao } {
             if obj::area{ o = ao } is some{ value = a } { opacity = @as(f32, a.shadow_opacity) / 255.0 }
         }
-        // The nearest light that reaches the caster.
+        if sc.volume_light >= 0 and @as(u32, sc.volume_light) < frame.light_count {
+            let l = frame.lights[@as(u32, sc.volume_light)]
+            if math::vec3::distance{ a = l.position, b = o.position } < l.radius and l.position.z > o.position.z + 0.5 {
+                return render::Shadow{ draw = 0, light = l.position, directional = false, reach = l.radius, strength = opacity }
+            }
+        }
+        return render::Shadow{ draw = 0, light = math::Vec3{ x = 0.5, y = 0.35, z = -0.8 }, directional = true, reach = SUN_SHADOW_REACH, strength = opacity }
+    }
+
+    // The scene's shadow light for the frame, as the original has one (scene+0x270; which light it is was not found):
+    // the shadow-casting light (Light.shadow) that reaches the leader (else the camera's subject) most deeply, at least
+    // 0.5 m above it. The light chosen in the last frame stays while it still reaches, unless another reaches 1.25
+    // times as deeply: per caster nearest lights flipped a shadow's direction where two lights were equally near, and
+    // a light chosen afresh every frame flipped every shadow at once.
+    fn pick_volume_light { mut sc: scene::Scene, w: *world::World, frame: *render::Frame, view: u32 } {
+        let mut at = frame.views[view].camera.eye
+        if world::object{ w, id = w.pc } is some{ value = pc } { at = pc.position }
         let mut best: i32 = -1
-        let mut best_d: f32 = 1000000.0
+        let mut best_s: f32 = 0.0
+        let mut kept: i32 = -1
+        let mut kept_s: f32 = 0.0
         let mut k: u32 = 0
         while k < frame.light_count {
             let l = frame.lights[k]
-            let d = math::vec3::length{ v = math::vec3::sub{ a = l.position, b = o.position } }
-            if d < l.radius and d < best_d and l.position.z > o.position.z + 0.5 {
-                best = @as(i32, k)
-                best_d = d
-            }
             k = k + 1
+            if not l.shadow or l.radius <= 0.0 or l.position.z <= at.z + 0.5 { continue }
+            let d = math::vec3::distance{ a = l.position, b = at }
+            if d >= l.radius { continue }
+            let s = 1.0 - d / l.radius
+            if s > best_s {
+                best = @as(i32, k - 1)
+                best_s = s
+            }
+            if sc.volume_light >= 0 and math::vec3::distance{ a = l.position, b = sc.volume_at } < 0.25 {
+                kept = @as(i32, k - 1)
+                kept_s = s
+            }
         }
-        if best >= 0 {
-            let l = frame.lights[@as(u32, best)]
-            return render::Shadow{ draw = 0, light = l.position, directional = false, reach = l.radius, strength = opacity }
-        }
-        return render::Shadow{ draw = 0, light = math::Vec3{ x = 0.5, y = 0.35, z = -0.8 }, directional = true, reach = SUN_SHADOW_REACH, strength = opacity }
+        if kept >= 0 and best_s < kept_s * 1.25 { best = kept }
+        sc.volume_light = best
+        if best >= 0 { sc.volume_at = frame.lights[@as(u32, best)].position }
     }
 
     // How far a shadow from the sun reaches past its caster: the floor under it and a wall beside it.

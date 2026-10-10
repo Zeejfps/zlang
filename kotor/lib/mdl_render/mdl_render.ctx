@@ -239,11 +239,13 @@ namespace mdl_render {
             }
             if mesh.dangly != null and i - 1 < pose.swings.len { d.dangle = pose.swings[i - 1].offset }
             d.kind = if mesh.saber != null { render::DrawKind::effect } else { kind }
-            d.casts = mesh.shadow and mesh.saber == null and (kind == render::DrawKind::creature or kind == render::DrawKind::object)
+            // A part its animation hides (or has faded past half) casts neither a shadow map's shadow nor a volume.
+            let shown = mat.color.a >= 0.5
+            d.casts = mesh.shadow and shown and mesh.saber == null and (kind == render::DrawKind::creature or kind == render::DrawKind::object)
             d.ambient = ambient
             if render::add_draw{ &frame, draw = d } is some{ value = index } {
                 added = added + 1
-                if cast is some{ value = c } and mesh.shadow {
+                if cast is some{ value = c } and mesh.shadow and shown {
                     let mut sh = c
                     sh.draw = index
                     render::add_shadow{ &frame, shadow = sh }

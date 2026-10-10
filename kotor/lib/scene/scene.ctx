@@ -98,6 +98,8 @@ namespace scene {
         sun_state: u8,                  // the area's sun (sun.ctx): 0 not looked for yet, 1 found, 2 none
         sun_at: math::Vec3,
         sun_dir: math::Vec3,                // the direction its light takes, in steps (sun.ctx); zero: none yet
+        volume_light: i32,              // the frame light the shadow volumes are cast from (visual.ctx, shadow_of); -1 none
+        volume_at: math::Vec3,          // where it is, to keep it from frame to frame
         sun_color: math::Vec3,
         shadow_opacity: f32,            // the ARE's ShadowOpacity, 0..1
         grade: ?render::Texture,        // the planet's colour grade (atmosphere.ctx): a lookup table on the GPU, made when first asked for
@@ -130,7 +132,7 @@ namespace scene {
             time = 0.0, current_room = -1, ambient = math::Vec3{ x = 0.35, y = 0.35, z = 0.35 }, fog = render::no_fog{},
             drawn_rooms = 0, drawn_objects = 0, look = no_look{}, grass = grass::none{},
             room_light = false, field = no_field{ arena },
-            sun_state = 0, sun_at = math::vec3::zero{}, sun_dir = math::vec3::zero{}, sun_color = math::vec3::zero{}, shadow_opacity = 0.5,
+            sun_state = 0, sun_at = math::vec3::zero{}, sun_dir = math::vec3::zero{}, volume_light = -1, volume_at = math::vec3::zero{}, sun_color = math::vec3::zero{}, shadow_opacity = 0.5,
             grade = null, grade_state = 0, hfog = render::no_height_fog{}, hfog_state = 0,
             emitters_on = true, fx_frame = 0, fx_time = -1.0, fx_dt = 0.0, drawn_emitters = 0, drawn_particles = 0,
         }
@@ -598,6 +600,7 @@ namespace scene {
         }
         draw_references{ &sc, w, &frame, view, sight }
         mark_sun{ sc = &sc, &frame, view }
+        visual::pick_volume_light{ &sc, w, frame = &frame, view }
         // Grass stands on the floor of the rooms it is seen in: it comes with them (the eye and the way it looks are the view's).
         let cam = frame.views[view].camera
         let forward = math::Vec3{ x = -cam.view.m[2], y = -cam.view.m[6], z = -cam.view.m[10] }
