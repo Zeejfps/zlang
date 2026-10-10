@@ -144,6 +144,7 @@ namespace world {
         tokens: tokens::Table,              // SetCustomToken: <CUSTOMnnn> texts, for the whole session
         last_acquired: u32,                 // GetModuleItemAcquired: the item the last transfer gave a creature
         last_acquired_from: u32,            // GetModuleItemAcquiredFrom: who had it (OBJECT_INVALID: the ground)
+        last_equipped: u32,                 // GetLastItemEquipped: the item the last equip put on
         last_activated: u32,                // GetItemActivated: the item whose ability was last used (the module's OnActivateItem)
         last_activator: u32,                // GetItemActivator: who used it
         last_activated_target: u32,         // GetItemActivatedTarget: on whom (OBJECT_INVALID: on itself or the ground)
@@ -217,7 +218,7 @@ namespace world {
             heartbeats = map::new(u32, u64, heap::Heap){ realloc = heap::alloc, heap, hash = map::hash_u32, eq = map::eq_u32 },
             cursor_area = 0, cursor_shape = 0, shape_walk = list::new(u32, heap::Heap){ realloc = heap::alloc, heap }, minigame = null,
             conversation = dlg::new_state{},
-            cursor_inside = 0, tokens = tokens::new{ heap }, last_acquired = obj::INVALID, last_acquired_from = obj::INVALID,
+            cursor_inside = 0, tokens = tokens::new{ heap }, last_acquired = obj::INVALID, last_acquired_from = obj::INVALID, last_equipped = obj::INVALID,
             last_activated = obj::INVALID, last_activator = obj::INVALID, last_activated_target = obj::INVALID,
             rules = try alloc::new(rules::Tables, heap::Heap){ realloc = heap::alloc, heap, value = blank_rules },
             dice = rules::seed_rng{ seed }, fx_ids = rules::EffectIds{ next = 1 }, rev = blank_events,

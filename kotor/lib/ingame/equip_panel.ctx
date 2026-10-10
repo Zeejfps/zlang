@@ -34,6 +34,7 @@ namespace equip_panel {
         saved_from: [obj::EQUIP_SLOTS]resref::ResRef,     // and the blueprints they came from, to find one that was merged into a stack
         shown: i64,             // the row whose item is on now (a preview), NO_PICK none
         states: [MAX_ROWS]u8,   // per row of the list as it was built: items::FITS, REFUSED or PAIR
+        hide_unequippable: bool, // the Hide Unequippable option (Feedback): the lists leave out what the creature cannot wear
     }
 
     const MAX_ROWS: usize = 520
@@ -42,7 +43,7 @@ namespace equip_panel {
         return State{
             opened = false, who = obj::INVALID, slot = items::SLOTS, selecting = false, picked = NO_PICK, box = 0,
             picked_row = -1, saved = [obj::INVALID; obj::EQUIP_SLOTS], saved_from = [resref::empty{}; obj::EQUIP_SLOTS], shown = NO_PICK,
-            states = [items::FITS; MAX_ROWS],
+            states = [items::FITS; MAX_ROWS], hide_unequippable = false,
         }
     }
 
@@ -306,7 +307,9 @@ namespace equip_panel {
     }
 
     // The list of what could go in the slot: "None", the worn item, then every carried item that
-    // fits the creature's kind. Items it cannot wear now are red. Selects the worn item's row.
+    // fits the creature's kind. Items it cannot wear now are red, or left out with the Hide Unequippable
+    // option on (OnSlotHilighted 0x006b9470: CanEquipItem or CheckProficiencies refuses; the other hand's
+    // weapon rule does not hide). Selects the worn item's row.
     fn fill_slot_list { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> !bool {
         gui::list_clear{ &g, panel, tag = "LB_ITEMS" }
         if s.slot >= items::SLOTS {
@@ -333,9 +336,10 @@ namespace equip_panel {
             let id = carried[k]
             k = k + 1
             if (items::equipable_slots{ w = &w, id } & items::mask_of{ index }) == 0 or not items::race_ok{ w = &w, who = s.who, item = id } { continue }
-            let row = try items::add_row{ &g, &w, &dev, panel, tag = "LB_ITEMS", id, equipped = false, rows = items::ENTRY }
             // The state is fixed when the list is built (OnSlotHilighted), not when a row is pointed at.
             let state = items::row_state{ w = &w, who = s.who, item = id, index }
+            if s.hide_unequippable and state == items::REFUSED { continue }
+            let row = try items::add_row{ &g, &w, &dev, panel, tag = "LB_ITEMS", id, equipped = false, rows = items::ENTRY }
             if row >= 0 and @as(usize, row) < MAX_ROWS { s.states[@as(usize, row)] = state }
             if state != items::FITS { gui::list_set_frame{ &g, panel, tag = "LB_ITEMS", row, frame = gui::FRAME_REFUSED } }
         }

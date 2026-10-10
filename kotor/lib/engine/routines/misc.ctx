@@ -47,6 +47,7 @@ namespace rt_misc {
             nwscript::ActionGiveItem => { try give_item{ &w, &vm, argc, routine } }
             nwscript::GiveItem => { try give_item{ &w, &vm, argc, routine } }
             nwscript::GetNumStackedItems => { try get_num_stacked_items{ &w, &vm, argc } }
+            nwscript::GetLastItemEquipped => { try nwvm::push_object{ &vm, id = live_or_invalid{ w = &w, id = w.last_equipped } } }
             nwscript::GetModuleItemAcquired => { try nwvm::push_object{ &vm, id = live_or_invalid{ w = &w, id = w.last_acquired } } }
             nwscript::GetModuleItemAcquiredFrom => { try nwvm::push_object{ &vm, id = live_or_invalid{ w = &w, id = w.last_acquired_from } } }
             nwscript::SetItemNonEquippable => { try set_item_non_equippable{ &w, &vm, argc } }

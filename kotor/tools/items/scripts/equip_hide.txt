@@ -1,0 +1,11 @@
+# The Hide Unequippable option: the body slot's list leaves out the Jedi robe a soldier cannot wear (OnSlotHilighted),
+# then lists it again (red) when the option is off.
+4 ui giveitem g_a_jedirobe01
+6 ui hideunequip on
+10 ui key u
+30 ui clickctl BTN_INV_BODY
+40 ui ctl LB_ITEMS ~Jedi
+42 ui clickctl BTN_BACK
+50 ui hideunequip off
+60 ui clickctl BTN_INV_BODY
+70 ui ctl LB_ITEMS ~Jedi

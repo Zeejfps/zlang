@@ -121,12 +121,24 @@ namespace equip {
         }
         if not available_to{ &w, id, item, it } { return false }
         if c.equipped[slot] == item { return true }
+        let mut done = false
+        let mut ruled = false
         if c.fighter is some{ value = f } {
             if f.loaded {
-                if it.rules is some{ value = ri } { return equip_ruled{ &w, o, c, f, io, it, ri, slot } }
+                if it.rules is some{ value = ri } {
+                    ruled = true
+                    done = equip_ruled{ &w, o, c, f, io, it, ri, slot }
+                }
             }
         }
-        return equip_plain{ &w, o, c, io, it, slot }
+        if not ruled { done = equip_plain{ &w, o, c, io, it, slot } }
+        // EquipItem's last step (party-items-saves.md 4.6, step 8): script event 38 to the module, whose
+        // OnEquipItem then runs with GetLastItemEquipped answering the item.
+        if done {
+            w.last_equipped = item
+            events::post{ &w, delay_ms = 0, caller = id, target = w.module, payload = events::Payload::script{ e = events::script_event{ kind = events::EQUIP_ITEM, object = item } } }
+        }
+        return done
     }
 
     fn equip_ruled {

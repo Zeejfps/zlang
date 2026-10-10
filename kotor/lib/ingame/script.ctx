@@ -163,6 +163,11 @@ namespace ingame {
                 ui.summary.on = ci::eq{ a = word, b = "on" }
                 if options_front{ &ui } is some{ value = fe } { fe.settings.status_summary = ui.summary.on }
             }
+        } else if ci::eq{ a = cmd, b = "hideunequip" } {
+            // `ui hideunequip on|off`: the "Hide Unequippable" option (the equipment lists).
+            let on = ci::eq{ a = text::next_word{ &words } ifnull "on", b = "on" }
+            ui.menus.equip.hide_unequippable = on
+            if options_front{ &ui } is some{ value = fe } { fe.settings.hide_unequippable = on }
         } else if ci::eq{ a = cmd, b = "close" } {
             close_menu{ &ui, &w }
         } else if ci::eq{ a = cmd, b = "target" } {

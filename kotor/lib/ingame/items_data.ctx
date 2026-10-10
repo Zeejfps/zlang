@@ -346,7 +346,7 @@ namespace items {
     // The damage a hand does, lowest and highest, as the equipment screen counts it
     // (CSWGuiEquip::UpdateStats and FUN_005a9e10): the weapon's dice at their lowest (one a die)
     // and highest, the wielder's Strength modifier for a melee weapon, Weapon Specialization +2,
-    // then the damage effects (item properties and spells), each end at least 1. A bare hand does
+    // then the damage effects (effect_damage), each end at least 1. A bare hand does
     // 1 to 2 for a small creature, 1 to 1 for a medium one, plus Strength. `boosted`: the effects
     // raised an end (the numbers are green).
     struct DamageRange { lo: i32, hi: i32, boosted: bool }
@@ -376,44 +376,95 @@ namespace items {
                     }
                 }
             }
-            // The effects: increases add their amount (a flat 1 to 5, or the dice of a larger
-            // iprp_damagecost row), decreases take away theirs, each side capped at 36.
-            let wtype: i32 = if off_hand { 2 } else { 1 }
-            let mut up_lo: i32 = 0
-            let mut up_hi: i32 = 0
-            let mut down: i32 = 0
-            let mut i: usize = 0
-            while i < @as(usize, f.c.nfx) {
-                let e = &f.c.fx[i]
-                i = i + 1
-                let is_up = e.kind == rules::fx::DAMAGE_INCREASE
-                if not is_up and e.kind != rules::fx::DAMAGE_DECREASE { continue }
-                if e.ints[1] == 0 or not rules::combat_hand_admits{ hand = e.ints[5], wtype } { continue }
-                let row = e.ints[0]
-                if not is_up {
-                    down = down + row
-                    continue
-                }
-                let d = rules::damage_row_dice{ tables = w.rules, row }
-                if d.count > 0 {
-                    up_lo = up_lo + d.count
-                    up_hi = up_hi + d.count * d.die
-                } else {
-                    up_lo = up_lo + row
-                    up_hi = up_hi + row
-                }
-            }
-            if up_lo > 36 { up_lo = 36 }
-            if up_hi > 36 { up_hi = 36 }
-            if down > 36 { down = 36 }
-            gain_lo = up_lo - down
-            gain_hi = up_hi - down
+            let fx = effect_damage{ w, f, off_hand }
+            gain_hi = fx.hi
+            gain_lo = fx.hi + fx.lo_extra
         }
         let plain_lo = if lo < 1 { 1 } else { lo }
         let plain_hi = if hi < 1 { 1 } else { hi }
         let with_lo = if lo + gain_lo < 1 { 1 } else { lo + gain_lo }
         let with_hi = if hi + gain_hi < 1 { 1 } else { hi + gain_hi }
         return DamageRange{ lo = with_lo, hi = with_hi, boosted = with_lo > plain_lo or with_hi > plain_hi }
+    }
+
+    struct EffectRange { hi: i32, lo_extra: i32 }
+
+    // GetTotalEffectBonus(damage) as the equipment screen asks it (FUN_005a9e10: no target, dice at their
+    // highest, the hand's attack type 1 or 2): DAMAGE_INCREASE and DAMAGE_DECREASE effects with a damage type
+    // whose hand admits this one and with no race or alignment limit (there is no target to match). Effects
+    // made for a hand (item properties) add their increases and take the biggest decrease of each damage
+    // type; the others (spells, scripts) count the best rank of each spell and set of damage types. The
+    // increases and the decreases are each capped at 36, the result being their difference (`hi`, added to
+    // both ends); `lo_extra` brings the lowest end of a hand-made dice increase down to one a die (uncapped).
+    fn effect_damage { w: *world::World, f: *fight::Fighter, off_hand: bool } -> EffectRange {
+        let wtype: i32 = if off_hand { 2 } else { 1 }
+        let vs = rules::no_versus{}
+        let mut plus: i32 = 0
+        let mut extra: i32 = 0
+        let mut dec: [15]i32 = [0; 15]
+        let mut grp_spell: [16]i32 = [0; 16]
+        let mut grp_flags: [16]i32 = [0; 16]
+        let mut grp_row: [16]i32 = [0; 16]
+        let mut grp_up: [16]bool = [false; 16]
+        let mut ngrp: usize = 0
+        let mut i: usize = 0
+        while i < @as(usize, f.c.nfx) {
+            let e = &f.c.fx[i]
+            i = i + 1
+            let is_up = e.kind == rules::fx::DAMAGE_INCREASE
+            if not is_up and e.kind != rules::fx::DAMAGE_DECREASE { continue }
+            let flags = e.ints[1]
+            if flags == 0 or not rules::combat_hand_admits{ hand = e.ints[5], wtype } { continue }
+            if not rules::admits{ race_param = e.ints[2], align_param = e.ints[4], vs } { continue }
+            let row = e.ints[0]
+            if e.ints[5] != 0 {
+                if is_up {
+                    let d = rules::damage_row_dice{ tables = w.rules, row }
+                    if row >= 6 and d.count > 0 {
+                        plus = plus + d.count * d.die
+                        extra = extra + d.count - d.count * d.die
+                    } else if row > 0 { plus = plus + row }
+                } else {
+                    let ds = rules::combat_get_damage_slot{ flags }
+                    if row > dec[ds] { dec[ds] = row }
+                }
+                continue
+            }
+            let mut found = false
+            let mut g: usize = 0
+            while g < ngrp and e.spell_id != -1 {
+                if grp_up[g] == is_up and grp_spell[g] == e.spell_id and grp_flags[g] == flags {
+                    found = true
+                    if rules::combat_get_row_rank{ tables = w.rules, row } > rules::combat_get_row_rank{ tables = w.rules, row = grp_row[g] } { grp_row[g] = row }
+                    break
+                }
+                g = g + 1
+            }
+            if not found and ngrp < 16 {
+                grp_spell[ngrp] = e.spell_id
+                grp_flags[ngrp] = flags
+                grp_row[ngrp] = row
+                grp_up[ngrp] = is_up
+                ngrp = ngrp + 1
+            }
+        }
+        let mut minus: i32 = 0
+        let mut k: usize = 0
+        while k < 15 {
+            minus = minus + dec[k]
+            k = k + 1
+        }
+        k = 0
+        while k < ngrp {
+            let row = grp_row[k]
+            let d = rules::damage_row_dice{ tables = w.rules, row }
+            let v = if row >= 6 and d.count > 0 { d.count * d.die } else if row > 0 { row } else { 0 }
+            if grp_up[k] { plus = plus + v } else { minus = minus + v }
+            k = k + 1
+        }
+        if plus > 36 { plus = 36 }
+        if minus > 36 { minus = 36 }
+        return EffectRange{ hi = plus - minus, lo_extra = extra }
     }
 
     // The damage text of a hand, "3-8" (the original's "%d-%d"); returns whether it is boosted.

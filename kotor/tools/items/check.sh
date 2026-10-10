@@ -38,6 +38,7 @@ expect slots        bunk slots_lists.txt      110
 expect equip_flow   bunk equip_flow.txt       215 "LB_ITEMS in equip.* enabled false rows" "LB_ITEMS in equip.* enabled true rows" "worn 4: 289 Long Sword"
 expect equip_dual   bunk equip_dual.txt       125 "worn 5: 289 Long Sword" "worn 4: 280 Blaster Rifle"
 expect equip_damage bunk equip_damage.txt     200 "LBL_ATKL.* text '5-16'" "LBL_ATKL.* text '1-11'" "LBL_TOHITR.* text '0' " "LBL_TOHITR.* text '+3' colour 0.28"
+expect equip_hide   bunk equip_hide.txt        80 "ctl: LB_ITEMS has no row like 'Jedi'" "ctl: LB_ITEMS in equip .* rows 3 "
 expect bench_empty  module:ebo_m12aa bench_empty.txt   200 "ctl: LBL_RANGED .* visible false" "ctl: BTN_RANGED .* enabled false" "ctl: no shown control BTN_RANGED"
 expect bench_ranged module:ebo_m12aa bench_ranged.txt  330 "assembled, upgrades 589824 (were 0)" "Scope x1" "Improved Energy Cell x1"
 expect bench_saber  module:ebo_m12aa bench_saber.txt   400 "assembled, upgrades 2 (were 0)" "Crystal, Blue x1" "tag g_w_lghtsbr02"

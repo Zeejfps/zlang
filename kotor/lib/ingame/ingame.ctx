@@ -105,6 +105,7 @@ namespace ingame {
             summary = new_summary{ on = saved.status_summary }, fade_busy = false, frame_dt = 0.0, tbox = no_tutorial_box{},
         }
         let mut p = try alloc::new(Ingame, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = ui }
+        p.menus.equip.hide_unequippable = saved.hide_unequippable
         options_panel::set_config{ s = &p.menus.options, path = settings }
         // The option screens' state exists from the start, so the engine can tell it what the display offers.
         try options_panel::make_front{ s = &p.menus.options, &w }
@@ -706,6 +707,7 @@ namespace ingame {
             ui.ap_round = st.pause_end_round
             ui.ap_action_menu = st.pause_action_menu
             ui.summary.on = st.status_summary
+            ui.menus.equip.hide_unequippable = st.hide_unequippable
             w.tut.on = st.tutorial_popups
         }
         hud::tick_tutorial{ h = &ui.hud, real_dt = ui.frame_dt }
