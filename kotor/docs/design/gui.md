@@ -270,7 +270,8 @@ if frontend::take_display_change{ &fe } { apply fe.settings (resolution, full sc
   save (dialog.tlk 48519), "Quick Save - HH MM" and "Auto Save - HH MM" for the others (47991 / 1593
   and 48205), the time being `TIMEPLAYED`, in the prototype's font and blue, centred (the font's
   small capitals are its own; nothing is upper-cased). The rows are buttons as in the original
-  (`set_click_rows`): menu-blue frames, the hilighted row's frame and text yellow and pulsing
+  (`set_click_rows`), made 42 tall as the original's code makes them (`set_row_height`), so six show,
+  stretched to 48, each over a slot painted in the panel's picture: menu-blue frames, the hilighted row's frame and text yellow and pulsing
   (`set_hilight_pulses`, `FRAME_ITEM`); the first row is hilighted when the screen opens and its
   details shown; the pointer over a row hilights it and shows its details (`row_hover`); one click
   loads it. Up/Down move the selection, Enter or Load take the selected row. The details:

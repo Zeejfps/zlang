@@ -373,6 +373,14 @@ namespace gui {
         c.click_rows = true
     }
 
+    // Gives the list's rows `height` pixels before the list stretches them to fill its height, in
+    // place of the prototype's: a panel that makes its rows with an extent of its own (the save
+    // lists' 42, CSWGuiSaveLoad::PopulateList 0x006cc160) and not the PROTOITEM's.
+    fn set_row_height { mut g: Gui, panel: u32, tag: []u8, height: i32 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        c.row_height = height
+    }
+
     // Has the hilighted row's frame pulse, as the save lists' do (CSWGuiSaveLoad's constructor
     // 0x006cc680 sets its prototype's HILIGHT pulsing).
     fn set_hilight_pulses { mut g: Gui, panel: u32, tag: []u8 } {

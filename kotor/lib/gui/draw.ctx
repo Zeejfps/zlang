@@ -422,6 +422,7 @@ namespace gui {
         if c.cell_art.on { return CELL_ROW_H }
         // The list's row height is its tallest row's (UpdateLayout 0x0041b140), and an item entry is always ENTRY_BOX tall.
         if c.entry_rows { return ENTRY_BOX }
+        if c.row_height > 0 { return c.row_height }
         if c.proto < 0 { return 16 }
         let pc = list::at{ list = p.controls, i = @as(usize, c.proto) }
         return if pc.h > 0 { pc.h } else { 16 }

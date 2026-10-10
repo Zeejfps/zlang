@@ -987,10 +987,14 @@ panel. The list is filled by 0x006cc160: one row per directory in `SAVES:` (by f
 ascending, so manual saves oldest first: party-items-saves.md 1.5; ours lists them newest first), each
 a `CSWGuiSaveLoadEntry` (0x248 bytes, ctor 0x006cb940, vtable 0x00757740: a `CSWGuiButton` with
 the plain button `Render` 0x00417ab0, no drawing of its own) copied from the `PROTOITEM` (a button
-246×50, `border2c`/`border1c` frames of dimension 4, `dialogfont16x16` centred, alignment 18). The
-list (272×323 at 48,83, `PADDING` 5, scroll bar on the left) shows 323 / (50 + 5) = 5 rows and
-stretches them to fill its height (`UpdateLayout` 0x0041b140: the spare 43 pixels shared out, 8
-each and 1 more for the first 3). The row's text is set by 0x006c9780 from the row's number and
+246×50, `border2c`/`border1c` frames of dimension 4, `dialogfont16x16` centred, alignment 18), but
+each made 42 tall: PopulateList hands every new entry the extent (0, 0, 0, 42) with the prototype's
+text and borders (button vtable +0x98 0x00418d80 → +0x9c 0x00417970, which takes the given extent),
+not the PROTOITEM's 50. The list (272×323 at 48,83, `PADDING` 5, scroll bar on the left) so shows
+323 / (42 + 5) = 6 rows and stretches them to 48 (`UpdateLayout` 0x0041b140: the spare 36 pixels
+shared out, 6 each), one row every 53 pixels from y 5: each over one of the 6 slots painted in the
+panel's `lbl_saveload`, the painted lines between them. (Taking the PROTOITEM's 50 gives 5 rows of
+58-59, which put the painted lines through the rows.) The row's text is set by 0x006c9780 from the row's number and
 `TIMEPLAYED` (hours = seconds / 3600, minutes = seconds / 60 mod 60): number 0 "Quick Save"
 (47991) and number 1 "Auto Save" (1593), each followed by 48205 " - <CUSTOM0>H <CUSTOM1>M"
 (hours, minutes); any other number 48519 "Game <CUSTOM0> - <CUSTOM1>h <CUSTOM2>m\n<CUSTOM3>"
