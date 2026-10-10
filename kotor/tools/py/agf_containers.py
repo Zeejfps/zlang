@@ -70,7 +70,8 @@ OVERRIDES = {
 }
 
 ITEM_ROW = re.compile(r'\{ id: "([a-z0-9_]+)",(?: itemTypeId: "[a-z0-9_]+",)? '
-                      r'name: ("(?:[^"\\]|\\.)*"), description: "(?:[^"\\]|\\.)*", basePrice: (\d+)')
+                      r'name: ("(?:[^"\\]|\\.)*"), description: ')
+PRICE_ROW = re.compile(r'\{ itemDefinitionId: "([a-z0-9_]+)", basePrice: (\d+) \}')
 
 
 def item_value(u):
@@ -87,15 +88,19 @@ def txt(v):
 
 
 def framework_items(agf):
-    """name (lower case) -> ids, and id -> price, from the seeded item definitions."""
-    by_name, prices = defaultdict(list), {}
+    """name (lower case) -> ids, from the seeded item definitions, and id -> price, from the
+    tradable items; an item that isn't tradable, as a plot item isn't, is worth 0."""
+    src_dir = os.path.join(agf, 'apps', 'kotor', 'src')
+    by_name, prices = defaultdict(list), defaultdict(int)
     for f in ('items.ts', 'upgrades.ts'):
-        src = open(os.path.join(agf, 'apps', 'kotor', 'src', f), encoding='utf-8').read()
-        for item_id, name, price in ITEM_ROW.findall(src):
+        src = open(os.path.join(src_dir, f), encoding='utf-8').read()
+        for item_id, name in ITEM_ROW.findall(src):
             name = json.loads(name).lower()
             if item_id not in by_name[name]:
                 by_name[name].append(item_id)
-            prices[item_id] = int(price)
+    src = open(os.path.join(src_dir, 'tradableItems.ts'), encoding='utf-8').read()
+    for item_id, price in PRICE_ROW.findall(src):
+        prices[item_id] = int(price)
     return by_name, prices
 
 

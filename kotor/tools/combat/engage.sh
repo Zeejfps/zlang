@@ -25,7 +25,7 @@ ck=kotor/out/checkpoints
 mkdir -p $out
 if [ ! -d $ck/uppercity ]; then echo "no checkpoint $ck/uppercity: run sh kotor/tools/checkpoints/make.sh first"; exit 2; fi
 rm -rf $out/saves_engage
-$exe --load $ck/uppercity --no-render --speed 8 --saves $out/saves_engage --input kotor/tools/combat/engage1.txt --frames 620 --log combat,objects > $out/engage1.log 2>&1
+$exe --load $ck/uppercity --no-render --speed 8 --saves $out/saves_engage --input kotor/tools/combat/engage1.txt --frames 760 --log combat,objects > $out/engage1.log 2>&1
 log=$out/engage1.log
 fail=0
 

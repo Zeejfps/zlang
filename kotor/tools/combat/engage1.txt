@@ -27,3 +27,4 @@
 200 ui fight
 300 ui fight
 600 ui fight
+720 ui fight
