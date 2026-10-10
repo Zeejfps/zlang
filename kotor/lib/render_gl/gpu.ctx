@@ -1713,7 +1713,7 @@ namespace gpu {
         set_cull{ &dev, on = not m.two_sided }
         set_offset{ &dev, on = m.decal }
         if m.decal { dev.gl.polygon_offset{ factor = -1.0, units = -2.0 } }
-        set_stencil{ &dev, on = dev.ofx.mark and is_model{ kind = draw.kind } }
+        mark_draw{ &dev, kind = draw.kind }
         bind_vao{ &dev, vao = mesh.vao }
 
         dev.gl.uniform_matrix4fv{ location = dev.cur.model, count = 1, transpose = gl::FALSE, value = &draw.transform.m[0] }

@@ -6,8 +6,9 @@
 // The original draws the rooms, then the shadows, then the models over them (CAurScene::RenderPasses 0x004514f0:
 // slot 49, slot 47, slot 48 with the stencil set to a mark), so a shadow never darkens a creature or a placeable,
 // its own caster included. Ours draws the opaque surfaces together and keeps the same rule with the stencil's top
-// bit: the models' pixels set it (draw_mesh), the volumes count in the seven bits below it, and only pixels with the
-// bit clear are darkened.
+// bit: every opaque surface that wins the depth test writes it, set by a model and clear by anything else (a wall in
+// front of a creature drawn before it clears the creature's mark), the volumes count in the seven bits below it, and
+// only pixels with the bit clear are darkened, the soft shadows' blurred edge included.
 // Soft Shadows, as the original's pbuffer pass (0x0042d1c0, 0x0042d9a0): the marked pixels become a mask in the
 // screen's alpha, which is copied into a 512 x 512 square, blurred there and laid over the picture.
 //
@@ -36,7 +37,8 @@ namespace gpu {
         made: bool,                 // the small targets below
         small: [2]gl::Target,       // SMALL_SIZE squares: the soft shadows' mask, the glow's bright pass
         glow: [2]gl::Target,        // GLOW_SIZE squares: the glow, blurred
-        mark: bool,                 // the opaque draws being drawn set MODEL_MARK on the models' pixels
+        mark: bool,                 // the opaque draws being drawn write MODEL_MARK: set on the models' pixels, clear elsewhere
+        mark_ref: i32,              // the stencil reference they write now
         effects: bool,              // the view being drawn takes the glow and the distortion (a screen view drawn the
                                     //   original's way with Frame Buffer Effects on): it marks distorting surfaces
     }
@@ -47,7 +49,7 @@ namespace gpu {
             volume = no_scene_program{}, light = -1, reach = -1, flat = 0, flat_color = -1,
             reduce = 0, reduce_texel = -1, reduce_mode = -1, blur = 0, blur_dir = -1,
             spread = 0, spread_mode = -1, spread_strength = -1, distort = 0, distort_amount = -1, distort_phase = -1,
-            made = false, small = [none; 2], glow = [none; 2], mark = false, effects = false,
+            made = false, small = [none; 2], glow = [none; 2], mark = false, mark_ref = 0, effects = false,
         }
     }
 
@@ -164,14 +166,26 @@ namespace gpu {
         return kind == render::DrawKind::creature or kind == render::DrawKind::object or kind == render::DrawKind::effect
     }
 
-    // Before the opaque draws of a view that may show shadows: draw_mesh turns the stencil on for the models, which then
-    // write MODEL_MARK where they show. (The view's clear left the stencil 0.)
+    // Before the opaque draws of a view that may show shadows: draw_mesh turns the stencil on for every opaque draw,
+    // which writes MODEL_MARK where it wins the depth test, set for a model and clear for anything else (mark_draw).
+    // (The view's clear left the stencil 0.)
     fn begin_model_marks { mut dev: Device } {
         dev.ofx.mark = dev.shadows
         if not dev.shadows { return }
         dev.gl.stencil_mask{ mask = MODEL_MARK }
         dev.gl.stencil_func{ func = gl::ALWAYS, ref = @as(i32, MODEL_MARK), mask = 0xFF }
         dev.gl.stencil_op{ fail = gl::KEEP, zfail = gl::KEEP, zpass = gl::REPLACE }
+        dev.ofx.mark_ref = @as(i32, MODEL_MARK)
+    }
+
+    // The stencil for one opaque draw while the marks are written (draw_mesh).
+    fn mark_draw { mut dev: Device, kind: render::DrawKind } {
+        set_stencil{ &dev, on = dev.ofx.mark }
+        if not dev.ofx.mark { return }
+        let r: i32 = if is_model{ kind } { @as(i32, MODEL_MARK) } else { 0 }
+        if r == dev.ofx.mark_ref { return }
+        dev.gl.stencil_func{ func = gl::ALWAYS, ref = r, mask = 0xFF }
+        dev.ofx.mark_ref = r
     }
 
     // The frame's shadows in view `index`: their volumes into the stencil, then the marked pixels darkened (softened
@@ -283,29 +297,50 @@ namespace gpu {
         dev.gl.draw_arrays{ mode = gl::TRIANGLES, first = 0, count = 3 }
     }
 
+    // The shadowed pixels' alpha to 1 (a count, no model mark), leaving the stencil as it is for the composite: every
+    // counted pixel, then the models' back to 0.
+    fn mask_marked { mut dev: Device } {
+        use_program{ &dev, program = dev.ofx.flat }
+        set_depth{ &dev, test = false, write = false }
+        set_cull{ &dev, on = false }
+        set_stencil{ &dev, on = true }
+        bind_vao{ &dev, vao = dev.ui_vao }
+        dev.gl.stencil_op{ fail = gl::KEEP, zfail = gl::KEEP, zpass = gl::KEEP }
+        dev.gl.stencil_func{ func = gl::NOTEQUAL, ref = 0, mask = COUNT_BITS }
+        dev.gl.uniform4f{ location = dev.ofx.flat_color, v0 = 0.0, v1 = 0.0, v2 = 0.0, v3 = 1.0 }
+        dev.gl.draw_arrays{ mode = gl::TRIANGLES, first = 0, count = 3 }
+        dev.gl.stencil_func{ func = gl::NOTEQUAL, ref = 0, mask = MODEL_MARK }
+        dev.gl.uniform4f{ location = dev.ofx.flat_color, v0 = 0.0, v1 = 0.0, v2 = 0.0, v3 = 0.0 }
+        dev.gl.draw_arrays{ mode = gl::TRIANGLES, first = 0, count = 3 }
+    }
+
     fn darken_shadows { mut dev: Device, strength: f32 } {
         set_blend{ &dev, blend = render::Blend::alpha }
         fill_marked{ &dev, color = render::Color{ r = 0.0, g = 0.0, b = 0.0, a = strength }, alpha_only = false }
     }
 
     // The marked pixels as a mask in the screen's alpha (nothing else reads it), copied out, shrunk into the
-    // 512 square, blurred there, and laid over the picture as black at the mask's strength.
+    // 512 square, blurred there, and laid over the picture as black at the mask's strength, but not over a model:
+    // the blur spreads the mask past the shadow's edge, onto the creature that casts it.
     fn soften_shadows { mut dev: Device, strength: f32 } -> ! {
         try ensure_small_targets{ &dev }
+        // Making the targets leaves the last one bound: back to the picture, whose stencil holds the counts.
+        let screen = screen_fbo{ &dev }
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = screen }
+        dev.gl.viewport{ x = 0, y = 0, width = dev.screen.width, height = dev.screen.height }
         dev.gl.color_mask{ red = gl::FALSE, green = gl::FALSE, blue = gl::FALSE, alpha = gl::TRUE }
         dev.gl.clear_color{ red = 0.0, green = 0.0, blue = 0.0, alpha = 0.0 }
         dev.gl.clear{ mask = gl::COLOR_BUFFER_BIT }
         set_blend{ &dev, blend = render::Blend::opaque }
-        fill_marked{ &dev, color = render::Color{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 }, alpha_only = true }
+        mask_marked{ &dev }
         dev.gl.color_mask{ red = gl::TRUE, green = gl::TRUE, blue = gl::TRUE, alpha = gl::TRUE }
         try copy_screen{ &dev }
         dev.state = unknown_state{}
         reduce_into{ &dev, from = dev.fx.color, from_w = dev.screen.width, from_h = dev.screen.height, into = dev.ofx.small[0], mode = 0 }
         blur_twice{ &dev, a = dev.ofx.small[0], b = dev.ofx.small[1] }
-        let screen = screen_fbo{ &dev }
         dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = screen }
         dev.gl.viewport{ x = 0, y = 0, width = dev.screen.width, height = dev.screen.height }
-        spread_over{ &dev, from = dev.ofx.small[0].color, mode = 0, strength, blend = render::Blend::alpha }
+        spread_over{ &dev, from = dev.ofx.small[0].color, mode = 0, strength, blend = render::Blend::alpha, models = false }
         // The screen's alpha back to opaque, as the rest of the frame leaves it.
         dev.gl.color_mask{ red = gl::FALSE, green = gl::FALSE, blue = gl::FALSE, alpha = gl::TRUE }
         dev.gl.clear_color{ red = 0.0, green = 0.0, blue = 0.0, alpha = 1.0 }
@@ -347,12 +382,17 @@ namespace gpu {
         dev.gl.draw_arrays{ mode = gl::TRIANGLES, first = 0, count = 3 }
     }
 
-    // A small target's picture over the bound framebuffer's viewport.
-    fn spread_over { mut dev: Device, from: u32, mode: i32, strength: f32, blend: render::Blend } {
+    // A small target's picture over the bound framebuffer's viewport; not over the models' pixels unless `models`.
+    fn spread_over { mut dev: Device, from: u32, mode: i32, strength: f32, blend: render::Blend, models: bool } {
         set_blend{ &dev, blend }
         set_depth{ &dev, test = false, write = false }
         set_cull{ &dev, on = false }
-        set_stencil{ &dev, on = false }
+        set_stencil{ &dev, on = not models }
+        if not models {
+            dev.gl.stencil_mask{ mask = 0xFF }
+            dev.gl.stencil_func{ func = gl::EQUAL, ref = 0, mask = @as(u32, MODEL_MARK) }
+            dev.gl.stencil_op{ fail = gl::KEEP, zfail = gl::KEEP, zpass = gl::KEEP }
+        }
         use_program{ &dev, program = dev.ofx.spread }
         dev.gl.uniform1i{ location = dev.ofx.spread_mode, v0 = mode }
         dev.gl.uniform1f{ location = dev.ofx.spread_strength, v0 = strength }
@@ -374,7 +414,7 @@ namespace gpu {
         let screen = screen_fbo{ &dev }
         dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = screen }
         dev.gl.viewport{ x = 0, y = 0, width = dev.screen.width, height = dev.screen.height }
-        spread_over{ &dev, from = dev.ofx.glow[0].color, mode = 1, strength = GLOW_GAIN, blend = render::Blend::additive }
+        spread_over{ &dev, from = dev.ofx.glow[0].color, mode = 1, strength = GLOW_GAIN, blend = render::Blend::additive, models = true }
         dev.gl.depth_mask{ flag = gl::TRUE }
         dev.state = unknown_state{}
     }
