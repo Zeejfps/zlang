@@ -445,6 +445,19 @@ namespace rt_talent {
     fn queue_cast {
         mut w: world::World, me: u32, spell: i32, target: u32, location: math::Vec3, cheat: i32, instant: i32, item: u32,
     } {
+        // A Force power paid for is checked for its points when it is ordered, not again (AddCastSpellActions,
+        // the routines' 0x005a5550; actions.md 3.13): the payment at the end of the conjuration floors the pool.
+        if cheat == 0 and item == obj::INVALID and is_force_power{ w = &w, spell } {
+            if fighter_of{ w = &w, id = me } is some{ value = f } {
+                if not rules::has_enough_force_points{ tables = w.rules, c = &f.c, spell } {
+                    if w.log.actions or w.log.combat {
+                        world::prefix{ w = &w }
+                        _ = @fmt(&w.io, "{} cannot order {}: not enough Force points ({})\n", me, spell, f.c.fp + f.c.temp_fp)
+                    }
+                    return
+                }
+            }
+        }
         let mut a = actions::make{ kind = actions::Kind::cast_spell }
         a.params[0] = actions::Param::int{ v = spell }
         a.params[1] = actions::Param::object{ id = target }

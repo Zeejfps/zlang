@@ -33,6 +33,7 @@ expect security_sp  bunk security_spike.txt   260 "success Security: 32 (roll 20
 expect consumables  bunk consumables2.txt     620 "^fx [0-9]* : 7 effects" "leader hp 22 of 22"
 expect props        bunk props_effects.txt     60 "^fx [0-9]* : 3 effects" "^fx [0-9]* : 0 effects"
 expect medpac_tut   bunk medpac_tutorial.txt  220 "leader hp 18 of 22"
+expect one_item     bunk one_item_round3.txt  320 "ctl: LB_MESSAGE in confirm "
 expect container    bunk container_give.txt   120 "LB_ITEMS in container.* rows 3 " "tag end_locker01 items 1 " "Medpac x2"
 expect slots        bunk slots_lists.txt      130 "LBL_ACTIONDESC.* text 'Full Health'" "LBL_ACTIONDESC.* size 175 32 .* text 'Adrenal Strength (self) (3)'" "LBL_ACTIONDESC.* size 175 16 .* text 'Medpac (self) (2)'"
 expect equip_flow   bunk equip_flow.txt       215 "LB_ITEMS in equip.* enabled false rows" "LB_ITEMS in equip.* enabled true rows" "worn 4: 289 Long Sword"

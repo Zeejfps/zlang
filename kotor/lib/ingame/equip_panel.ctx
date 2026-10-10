@@ -518,6 +518,11 @@ namespace equip_panel {
                 if swap.equipped == obj::INVALID { return false }
             }
         }
+        // A change kept in combat after being attacked costs a round entry (equip::spend_round).
+        if c.equipped[index] != s.saved[index] {
+            let on = c.equipped[index] != obj::INVALID
+            equip::spend_round{ &w, id = s.who, item = if on { c.equipped[index] } else { s.saved[index] }, slot = index, on }
+        }
         return try end_selection{ &s, &g, &w, &dev, panel }
     }
 

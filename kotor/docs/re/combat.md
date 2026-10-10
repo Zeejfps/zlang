@@ -1097,6 +1097,10 @@ The effect-type 0x26 apply handler (registered by `0x004e4a10`). (high unless ma
    and a creature that is not debilitated: with no electrical (slot 7) or dark-side (slot 9) damage
    it plays 10302; with either, and only while idle (animation 10000/10001), its round is paused
    for int 16 ms (unless already paused) and it plays 10023; otherwise no reaction animation.
+   The concentration test runs for any damage, combat or not, but never succeeds in the shipped
+   game: `CSWSpell +0x134` is zeroed by the constructor (`0x0059b310`, `param_1[0x4d] = 0`) and
+   neither `CSWSpellArray::Load` (`0x0059ba20`, no write at that offset) nor anything else sets it
+   (med: static reading).
 5. **OnDamaged** (`ScriptDamaged` `+0x250`) runs immediately unless the creature is the PC
    (`+0x9d4`), dead, down, or the current party leader (`CSWPartyTable::IsCreatureLeader`
    `0x00563a00`).

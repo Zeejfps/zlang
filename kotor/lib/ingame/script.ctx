@@ -175,10 +175,11 @@ namespace ingame {
             let nth = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
             w.target = world::object_by_tag{ w = &w, tag, nth }
         } else if ci::eq{ a = cmd, b = "combat" } {
-            // Puts the leader in combat (the server's state; there is no combat yet) and combat mode, and queues
-            // an attack on TAG.
+            // Puts the leader in combat (the server's state, as if attacked: combat reason 1; there is no combat
+            // yet) and combat mode, and queues an attack on TAG.
             let c = hud::creature_of{ w = &w, id = party::leader{ w = &w } } ifnull { return }
             c.in_combat = true
+            c.combat_attacked = true
             c.combat_mode = true
             let tag = text::next_word{ &words } ifnull { return }
             let mut a = actions::make{ kind = actions::Kind::attack_object }

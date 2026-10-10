@@ -1,8 +1,0 @@
-# In combat the inventory allows one item per round: after a medpac from the HUD, Use Item says so (42409).
-20 ui stat hp 5
-24 ui combat 1
-40 ui clickctl BTN_ACTION1
-50 ui key i
-60 ui stat hp 5
-80 ui clickctl LB_ITEMS 3
-90 ui inv

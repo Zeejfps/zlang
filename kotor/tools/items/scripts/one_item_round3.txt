@@ -1,8 +1,16 @@
-# In combat the inventory allows one item per round: after a medpac from the HUD, Use Item says so (42409).
+# In combat after being attacked the inventory allows one item a round (OnUseItem 0x006b25e0, 0x004efe30): a
+# medpac from the HUD neither starts nor checks the 3 s cooldown, the first click on the inventory's medpac uses
+# it and starts the cooldown, a second click within the 3 s is told 42409
+# ("Each party member can only use one item per round during combat": the box's row is found by its words).
 20 ui combat 1
 30 ui stat hp 5
-60 ui clickctl BTN_ACTION1
-65 ui hp
-70 ui key i
+35 ui clickctl BTN_ACTION1
+50 ui stat hp 5
+60 ui key i
+70 ui movectl LB_ITEMS 3
+80 ui clickctl LB_ITEMS 3
 90 ui clickctl LB_ITEMS 3
-100 ui inv
+95 ui ctl LB_MESSAGE ~one_item_per_round
+100 ui key return
+110 ui key escape
+300 ui inv

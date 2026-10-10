@@ -14,8 +14,9 @@
 // rebuilds a creature's models when its armour or weapon ids change (scene/visual.ctx
 // signature_of).
 //
-// Not done: the mid-combat equip that costs a combat round slot (actions.md 3.13), the module's
-// OnEquipItem event, splitting one item off an equipped stack.
+// A change of equipment by the player in combat after being attacked costs 1.5 s of the creature's
+// round (spend_round). Not done: the module's OnEquipItem event, splitting one item off an equipped
+// stack.
 namespace equip {
     // The mask the rules use for an engine slot (1 << slot).
     fn mask_of { slot: usize } -> u32 { return @as(u32, 1) << @trunc(u32, slot) }
@@ -280,20 +281,63 @@ namespace equip {
         return rules::is_debilitated{ c = &f.c }
     }
 
-    fn equip_action { mut w: world::World, id: u32, a: *actions::Action } -> actions::Status {
+    // Param 3 (ours) holds the action on for that many ms once the change is made: a combat round's
+    // equip entry (spend_round).
+    fn equip_action { mut w: world::World, id: u32, a: *mut actions::Action } -> actions::Status {
+        if a.phase == 1 { return holding{ w = &w, a } }
         let slot = actions::int_param{ a, i = 1 }
         if slot < 0 or helpless{ w = &w, id } { return actions::Status::failed }
-        if equip_item{ &w, id, item = actions::object_param{ a, i = 0 }, slot = @as(usize, slot) } { return actions::Status::done }
-        return actions::Status::failed
+        let item = actions::object_param{ a, i = 0 }
+        let on = if world::object{ w = &w, id } is some{ value = o } { if obj::creature{ o } is some{ value = c } { c.equipped[@as(usize, slot)] == item } else { false } } else { false }
+        if not on and not equip_item{ &w, id, item, slot = @as(usize, slot) } { return actions::Status::failed }
+        return hold{ w = &w, a }
     }
 
-    fn unequip_action { mut w: world::World, id: u32, a: *actions::Action } -> actions::Status {
+    fn unequip_action { mut w: world::World, id: u32, a: *mut actions::Action } -> actions::Status {
+        if a.phase == 1 { return holding{ w = &w, a } }
         if helpless{ w = &w, id } { return actions::Status::failed }
         let slot = slot_of_item{ w = &w, id, item = actions::object_param{ a, i = 0 } }
-        if slot < 0 { return actions::Status::done }
-        if unequip_item{ &w, id, slot = @as(usize, slot) } { return actions::Status::done }
-        return actions::Status::failed
+        if slot >= 0 and not unequip_item{ &w, id, slot = @as(usize, slot) } { return actions::Status::failed }
+        return hold{ w = &w, a }
     }
+
+    fn hold { w: *world::World, a: *mut actions::Action } -> actions::Status {
+        if actions::int_param{ a, i = 3 } <= 0 { return actions::Status::done }
+        a.phase = 1
+        a.started = clock::now_ms{ c = w.clock }
+        return actions::Status::running
+    }
+
+    fn holding { w: *world::World, a: *mut actions::Action } -> actions::Status {
+        let elapsed = clock::elapsed_since{ now = clock::now_ms{ c = w.clock }, then = a.started }
+        if elapsed < @as(u64, @as(u32, actions::int_param{ a, i = 3 })) { return actions::Status::running }
+        return actions::Status::done
+    }
+
+    // The player changed what creature `id` wears in slot `slot` (`item` now there, or taken off when
+    // `on` is false). In combat after being attacked (+0x4e0 with +0xac0 = 1) AddEquipItemActions /
+    // AddUnequipActions make the change a combat-round entry that keeps the round busy 1500 ms
+    // (0x004d3c30 / 0x004d3ce0, actions.md 3.13): ours queues an EQUIPITEM / UNEQUIPITEM behind the
+    // creature's orders that holds it that long. The panel has already made the change (it previews
+    // live), so the action finds it done and only spends the time; the original makes it as the entry
+    // comes up.
+    fn spend_round { mut w: world::World, id: u32, item: u32, slot: usize, on: bool } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        if not fight::is_attacked{ c } or item == obj::INVALID { return }
+        let mut a = actions::make{ kind = if on { actions::Kind::equip_item } else { actions::Kind::unequip_item } }
+        a.params[0] = actions::Param::object{ id = item }
+        a.params[1] = actions::Param::int{ v = @as(i32, slot) }
+        a.params[2] = actions::Param::int{ v = 0 }
+        a.params[3] = actions::Param::int{ v = ROUND_ENTRY_MS }
+        _ = actions::add{ &w, id, action = a, force = false }
+        if w.log.actions {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "equip: {} spends 1.5 s of its round on slot {}\n", id, slot)
+        }
+    }
+
+    const ROUND_ENTRY_MS: i32 = 1500
 
     // ---- picking things up (actions.md 3.8, PICKUPITEM)
 

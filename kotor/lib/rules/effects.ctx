@@ -835,10 +835,12 @@ namespace rules {
 
     // regeneration.2da: row 0 in combat, row 1 out of it; percent of the maximum per second. Only
     // party members the player controls regenerate, and only while alive. Accumulates fractions.
-    fn regenerate_pools { tables: *Tables, mut c: Creature, dt_ms: i32, in_combat: bool, alive: bool } -> i32 {
+    fn regenerate_pools { tables: *Tables, mut c: Creature, dt_ms: i32, attacked: bool, alive: bool } -> i32 {
         if not alive or not c.party { return 0 }
         let t = raw_table{ tables, which = Tab::regeneration }
-        let row = if in_combat { 0 } else { 1 }
+        // Row 0 InCombat only for a creature in combat after being attacked (combat reason 1); out of
+        // combat and in a fight it started (reason 2) row 1 OutOfCombat (AIUpdate 0x004fe210).
+        let row = if attacked { 0 } else { 1 }
         let hr = twoda::get_float{ t, row, column = "healthregen" } ifnull 0.0
         let fr = twoda::get_float{ t, row, column = "forceregen" } ifnull 0.0
         let dt = @as(f32, dt_ms) / 1000.0

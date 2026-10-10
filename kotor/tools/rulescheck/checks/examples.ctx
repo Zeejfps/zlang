@@ -348,11 +348,11 @@ namespace check {
         fr.party = true
         rules::recompute{ tables, c = &fr }
         fr.fp = 0
-        _ = rules::regenerate_pools{ tables, c = &fr, dt_ms = 3000, in_combat = false, alive = true }
+        _ = rules::regenerate_pools{ tables, c = &fr, dt_ms = 3000, attacked = false, alive = true }
         expect_true{ &io, &r, name = "FP regeneration: 1 % of max FP 100 per second gives 2 or 3 in 3 s (single-precision fractions)", cond = fr.fp >= 2 and fr.fp <= 3 }
         let before_combat = fr.fp
-        _ = rules::regenerate_pools{ tables, c = &fr, dt_ms = 3000, in_combat = true, alive = true }
-        expect_eq{ &io, &r, name = "FP regeneration: none in combat", got = @as(i64, fr.fp), want = @as(i64, before_combat) }
+        _ = rules::regenerate_pools{ tables, c = &fr, dt_ms = 3000, attacked = true, alive = true }
+        expect_eq{ &io, &r, name = "FP regeneration: none in combat after being attacked (combat reason 1, AIUpdate 0x004fe210)", got = @as(i64, fr.fp), want = @as(i64, before_combat) }
 
         // Alignment mastery: +3 to the class's ability at the light extreme, +50 Force points for a
         // dark Consular, one copy only, gone again in the middle.

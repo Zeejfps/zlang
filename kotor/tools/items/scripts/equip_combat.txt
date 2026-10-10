@@ -1,0 +1,11 @@
+# In combat after being attacked a change of weapon in the equipment screen is a combat-round entry
+# (AddEquipItemActions, actions.md 3.13): the leader's queue holds an EQUIPITEM for 1.5 s after the
+# screen closes.
+4 ui giveitem g_w_lngswrd01
+8 ui combat 1
+10 ui key u
+30 ui clickctl BTN_INV_WEAP_R
+40 ui movectl LB_ITEMS ~Long_Sword
+50 ui clickctl LB_ITEMS ~Long_Sword
+60 ui inv
+70 ui key escape

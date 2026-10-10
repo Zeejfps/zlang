@@ -11,8 +11,9 @@
 //   force_power_dc{ c } -> i32 / DC_NO_CASTER              5 + level + WIS + CHA + Force Focus (3.5)
 //   caster_level{ tables, c, spell, override_level, from_class } -> i32
 //   equipped_type_mask{ tables, c } -> u32                 armour classes 0x01-0x20, lightsabers 0x40
-//   can_cast_spell{ tables, c, spell, alive, from_item } -> i32   a cast::* reason code (3.3)
-//   begin_cast{ tables, mut c, spell, alive, from_item } -> CastStart   the check, then the payment
+//   can_cast_spell{ tables, c, spell, alive, from_item } -> i32   a cast::* reason code (3.3): may it be ordered
+//   can_keep_casting{ tables, c, spell, alive } -> i32   the cast action's own checks (no Force points)
+//   begin_cast{ tables, mut c, spell, alive, from_item } -> CastStart   the action's checks, then the payment
 //   resist_force{ tables, target, spell, caster_level, mut rng } -> i32  resist::* (3.6)
 //   spell_phase_times{ tables, spell } -> PhaseTimes       conjuration, cast and catch lengths (ms)
 //   can_learn_force_power{ tables, c, spell, class, level_before, total_to_gain, pending } -> bool
@@ -178,12 +179,27 @@ namespace rules {
         return mask
     }
 
-    // The checks of AIActionCastSpell (0x00514af0) in the order the action makes them, then the
-    // two the payment step adds. `alive` is false for a dead or dying caster; `from_item` is a
-    // talent cast from class slot 0xfe (an item property or a feat), which pays nothing and needs
-    // no class. A power the caster does not know is the action queue's concern, not checked here.
-    // ENTANGLED comes last: the cast begins, pays, and is then interrupted (begin_cast does this).
+    // Whether a cast may be ordered: the checks of AIActionCastSpell (0x00514af0, can_keep_casting)
+    // and those made when the cast is queued (AddCastSpellActions, the routines' known-spell test
+    // 0x005a5550): a class slot and the Force points. `alive` is false for a dead or dying caster;
+    // `from_item` is a talent cast from class slot 0xfe (an item property or a feat), which pays
+    // nothing and needs no class. A power the caster does not know is the action queue's concern,
+    // not checked here. ENTANGLED comes last: the cast begins, pays, and is then interrupted.
     fn can_cast_spell { tables: *Tables, c: *Creature, spell: i32, alive: bool, from_item: bool } -> i32 {
+        let action = can_keep_casting{ tables, c, spell, alive }
+        if action != cast::OK and action != cast::ENTANGLED { return action }
+        if not from_item {
+            if c.nclasses < 1 { return cast::NO_CLASS }
+            if not has_enough_force_points{ tables, c, spell } { return cast::NOT_ENOUGH_FP }
+        }
+        return action
+    }
+
+    // The checks the cast action itself makes on its frames (AIActionCastSpell 0x00514af0, actions.md
+    // 3.13), in its order: a live caster, the spell row, the equipment masks; then the entangle the
+    // payment step finds. The Force points are not among them: they were checked when the cast was
+    // ordered, and the payment floors the pool at 0 (PayForcePowerCost 0x004eddd0).
+    fn can_keep_casting { tables: *Tables, c: *Creature, spell: i32, alive: bool } -> i32 {
         if not alive { return cast::DEAD }
         let row = get_spell{ tables, row = spell } ifnull { return cast::NO_SUCH_SPELL }
         if not row.valid or row.user_type == -2 { return cast::NO_SUCH_SPELL }
@@ -192,10 +208,6 @@ namespace rules {
         let require = @trunc(u32, row.require_items)
         if (mask & forbid) != 0 { return cast::FORBIDDEN_EQUIPMENT }
         if (mask & require) != require { return cast::MISSING_EQUIPMENT }
-        if not from_item {
-            if c.nclasses < 1 { return cast::NO_CLASS }
-            if not has_enough_force_points{ tables, c, spell } { return cast::NOT_ENOUGH_FP }
-        }
         if has_effect_kind{ c, kind = fx::ENTANGLE } { return cast::ENTANGLED }
         return cast::OK
     }
@@ -206,10 +218,11 @@ namespace rules {
         interrupted: bool,      // entangled: no impact follows (feedback 0x41)
     }
 
-    // PayForcePowerCost (0x004eddd0) at the first frame of the action: the checks, then the Force
-    // points are spent (not for item or feat talents), and an entangled caster loses them anyway.
+    // PayForcePowerCost (0x004eddd0) at the end of the conjuration: the action's checks, then the Force
+    // points are spent (not for item or feat talents), down to 0 when they no longer cover the cost (the
+    // payment cannot fail), and an entangled caster loses them anyway.
     fn begin_cast { tables: *Tables, mut c: Creature, spell: i32, alive: bool, from_item: bool } -> CastStart {
-        let reason = can_cast_spell{ tables, c = &c, spell, alive, from_item }
+        let reason = can_keep_casting{ tables, c = &c, spell, alive }
         if reason != cast::OK and reason != cast::ENTANGLED {
             return CastStart{ reason, paid = false, interrupted = false }
         }

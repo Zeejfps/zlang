@@ -242,16 +242,26 @@ namespace inventory_panel {
             s.box = items::notice{ &g, &w, &dev, strref = refused }
             return false
         }
-        // In combat only one item may be used each round (OnUseItem: 42409).
+        // One item a round from the inventory (OnUseItem 0x006b25e0): while the 3 s cooldown runs, a player
+        // creature in combat after being attacked (combat reason 1) is told 42409.
         if hud::creature_of{ w = &w, id = s.who } is some{ value = c } {
-            if c.in_combat and hud::ruled_of{ w = &w, id = s.who } is some{ value = f } {
+            if fight::is_attacked{ c } and hud::ruled_of{ w = &w, id = s.who } is some{ value = f } {
                 if f.item_ms > 0 {
+                    if w.log.actions {
+                        world::prefix{ w = &w }
+                        _ = @fmt(&w.io, "inventory: {} may use one item a round (42409, {} ms left)\n", s.who, f.item_ms)
+                    }
                     s.box = items::notice{ &g, &w, &dev, strref = 42409 }
                     return false
                 }
             }
         }
         items::use_item{ &w, who = s.who, item = id }
+        // The use in combat starts the cooldown (0x004efe30), whatever the reason; the HUD's and the target
+        // block's uses (ITEMCASTSPELL) neither start nor check it.
+        if hud::creature_of{ w = &w, id = s.who } is some{ value = c } {
+            if c.in_combat and hud::ruled_of{ w = &w, id = s.who } is some{ value = f } { f.item_ms = fight::ITEM_COOLDOWN_MS }
+        }
         gui::play_sound{ &g, n = 11 }
         try fill_numbers{ &s, &g, &w, panel }
         return try refill{ &s, &g, &w, &dev, panel }

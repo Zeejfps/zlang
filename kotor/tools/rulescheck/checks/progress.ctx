@@ -245,9 +245,11 @@ namespace check {
         expect_true{ &io, &r, name = "begin_cast: pays", cond = ok.paid and not ok.interrupted and ok.reason == rules::cast::OK }
         expect_eq{ &io, &r, name = "begin_cast: Force points spent again", got = c.fp, want = 80 }
         c.fp = 3
+        // The points were checked when the cast was ordered; the payment cannot fail and floors the pool
+        // at 0 (PayForcePowerCost 0x004eddd0, rules.md 3.2).
         let poor = rules::begin_cast{ tables, c = &c, spell = push, alive = true, from_item = false }
-        expect_true{ &io, &r, name = "begin_cast: too poor to pay", cond = not poor.paid and poor.reason == rules::cast::NOT_ENOUGH_FP }
-        expect_eq{ &io, &r, name = "begin_cast: nothing spent", got = c.fp, want = 3 }
+        expect_true{ &io, &r, name = "begin_cast: too poor still pays", cond = poor.paid and poor.reason == rules::cast::OK }
+        expect_eq{ &io, &r, name = "begin_cast: the pool floors at 0", got = c.fp, want = 0 }
     }
 
     // ---- (a) ResistForce

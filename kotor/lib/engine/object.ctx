@@ -224,6 +224,9 @@ namespace obj {
         path_adjusted: bool,                        // the path ends at the nearest reachable point of an unreachable goal
         moving: bool,
         in_combat: bool,                    // the server's combat state (SetCombatState 0x004f2610, +0x4e0): 8 s from the last hostile act
+        // The combat's reason (+0xac0): true for 1, put into combat by being attacked (it stays until combat is
+        // left), false for 2, attacking or reacting. Meaningful only while in_combat (fight::is_attacked).
+        combat_attacked: bool,
         // The client creature's combat mode (CSWCCreature +0x440 bit 0, SetCombatMode 0x00610a10): the leader's
         // drives the HUD's combat bar, the combat camera and reticle, hostile-only Q / E; hud::update_combat_modes.
         combat_mode: bool,
@@ -638,7 +641,7 @@ namespace obj {
             perception_range = 11, spawn_fired = false, last_heartbeat = 0, heartbeat_interval = 3000,
             speed = 0.0, speed_factor = 0.1, follow_speed = 0.0,
             path = list::new(math::Vec3, heap::Heap){ realloc = heap::alloc, heap },
-            path_next = 0, path_goal = math::vec3::zero{}, path_adjusted = false, moving = false, in_combat = false, combat_mode = false, dead = false,
+            path_next = 0, path_goal = math::vec3::zero{}, path_adjusted = false, moving = false, in_combat = false, combat_attacked = false, combat_mode = false, dead = false,
             triggers = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },
             perceived = list::new(Perceived, heap::Heap){ realloc = heap::alloc, heap },
             sight_range = 0.0, hearing_range = 0.0, last_perception = 0, idle_since = 0,
