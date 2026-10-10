@@ -45,9 +45,10 @@ namespace hud {
 
     // The pictures of the block that follow what the target is (UpdateReticles calls FUN_006859e0 for any target
     // every frame): the slots' frames are red for a hostile target and blue otherwise (lbl_miscroll_h / _f), the
-    // health bar red, blue, or green when poisoned (enemy_bar / friend_bar / poison_bar).
+    // health bar red, blue, or green when poisoned (enemy_bar / friend_bar / poison_bar). Hostile is the reticle's
+    // own answer, so a target that died stays red while the keep runs.
     fn set_look { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, id: u32 } {
-        let hostile = is_hostile{ w = &w, id }
+        let hostile = is_foe{ w = &w, id }
         let poisoned = is_poisoned{ w = &w, id }
         let look: i32 = (if hostile { 1 } else { 0 }) + (if poisoned { 2 } else { 0 })
         if look == h.look { return }
@@ -105,14 +106,21 @@ namespace hud {
 
     // Builds the block for a new target: its name, its health and the slots' lists.
     fn build_block { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, id: u32 } {
-        h.lists[0] = keep_choice{ old = h.lists[0], new = attack_slot{ w = &w, id } }
-        // The middle slot holds the leader's Force powers against a hostile creature; the right one the
-        // party's grenades (item_slots.ctx).
-        h.lists[1] = middle_actions{ h = &h, w = &w, id }
-        h.lists[2] = grenade_actions{ w = &w, target = id }
-        let mut middle = h.lists[1]
-        split_mine{ left = &h.lists[0], middle = &middle, w = &w, id }
-        h.lists[1] = middle
+        if is_dead_or_dying{ w = &w, id } {
+            // A creature that died offers nothing, though the original's block still lists the hostile actions
+            // over it while the 1.5 s keep runs (GetTargetKind 0x0060fcc0 answers 4 for every creature then, and
+            // FUN_00619c20's builders never look at the target): ours shows only its name and bar, as asked.
+            h.lists = [empty_list{}; 3]
+        } else {
+            h.lists[0] = keep_choice{ old = h.lists[0], new = attack_slot{ w = &w, id } }
+            // The middle slot holds the leader's Force powers against a hostile creature; the right one the
+            // party's grenades (item_slots.ctx).
+            h.lists[1] = middle_actions{ h = &h, w = &w, id }
+            h.lists[2] = grenade_actions{ w = &w, target = id }
+            let mut middle = h.lists[1]
+            split_mine{ left = &h.lists[0], middle = &middle, w = &w, id }
+            h.lists[1] = middle
+        }
         gui::set_text{ &g, panel = h.panel, tag = "LBL_NAME", text = block_name{ &h, &w, id } } iferr {}
         let mut k: usize = 0
         while k < 3 {
@@ -192,6 +200,10 @@ namespace hud {
         if h.shown_target != w.target {
             build_block{ &h, &g, &w, &dev, id = w.target }
             h.shown_target = w.target
+        } else if is_dead_or_dying{ w = &w, id = w.target } {
+            // It died under the block: its choices go at once, the name and the bar stay while it is kept.
+            if has_slots{ &h } { build_block{ &h, &g, &w, &dev, id = w.target } }
+            set_look{ &h, &g, &w, &dev, id = w.target }
         } else {
             // What the leader can do to the target changed under it (a lock picked or locked, a key found,
             // the last grenade thrown, Force points spent or regained, a power learned).

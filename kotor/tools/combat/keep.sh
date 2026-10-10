@@ -4,7 +4,10 @@
 # The original (UpdateSelectableObjects 0x005fa5a0, client +0x378) keeps the dead target as the HUD target for 1.5 s
 # while a hostile creature is in the selectable list and the leader is in combat mode, and the leader's combat mode is
 # held while that runs (0x005f3ad0). FAIL and exit status 1 unless the target leaves the corpse 1.3 to 2.2 s after the
-# death (the corpse must first leave the list: the death animation) and the leader's combat mode does not end before.
+# death (the corpse must first leave the list: the death animation) and the leader's combat mode does not end before,
+# or unless the kept corpse's target block offers nothing (`ui fight` at tick 190, its last fight line: the name and
+# the bar only; ours drops the hostile actions the original still lists then, docs/re/gui.md "What the target block
+# offers"). For pictures: --screenshot-at 163 (alive, Attack) and 170 (dead, name and bar), without --speed.
 #
 #   sh kotor/tools/combat/keep.sh            (EXE=kotor/out/kotor.exe; run from the repository root; about 4 seconds)
 #
@@ -29,5 +32,10 @@ else
   if [ $gap -lt 39 ] || [ $gap -gt 66 ]; then echo "FAIL the dead target was kept $gap ticks (want 39-66: 1.5 s after it leaves the list)"; fail=1; fi
   if [ -n "$off" ] && [ "$off" -lt "$left" ]; then echo "FAIL the leader left combat mode at tick $off, before the keep ended at $left"; fail=1; fi
 fi
-if [ $fail = 0 ]; then echo "ok   keep: died at tick $died, kept as the target until $left, combat mode until ${off:-the end}"; fi
+kept=$(grep -a '^fight leader' $log | tail -1)
+case "$kept" in
+  *" target 633 "*"block [] [] []") ;;
+  *) echo "FAIL the kept corpse's block is not empty: ${kept##* block }"; fail=1 ;;
+esac
+if [ $fail = 0 ]; then echo "ok   keep: died at tick $died, kept as the target until $left with an empty block, combat mode until ${off:-the end}"; fi
 exit $fail

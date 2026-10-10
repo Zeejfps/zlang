@@ -1546,6 +1546,17 @@ used on the leader, and mines. Ours (`hud::attack_slot`, `middle_actions`, `gren
 the table; the keep timer is `w.target_keep` (hud::pick_target), and `hud::is_foe` makes every creature kind 4
 while it runs.
 
+So, read statically, the original's block over a just-killed enemy still lists the feats, Attack, the powers
+and the grenades for the 1.5 s of the keep (nothing in `Refresh`, `FUN_00619c20`, `0x00619950`, `0x00619b10`,
+`0x006191f0`, `0x006198e0` or the block's placement `FUN_00686090` asks whether the target is dead), in the
+hostile look (red frames, `ENEMY_BAR`, `hostilereticle2` / `combatreticle`: `UpdateReticles` passes its own
+hostile answer, keep included, to `FUN_006859e0`), and the target moves on when the keep ends. **Ours
+deliberately differs** (the user's report: action icons over a dying enemy): `hud::build_block` gives a dead
+or dying creature three empty lists from the moment it dies, so its block is the name and the (empty) health
+bar only, and the keys 1-3 do nothing on it; the reticle, the red look, the keep and the target change are
+the original's. A dead creature is never hovered or picked (`GetIsSelectableTarget`), and a body bag is a
+placeable, so neither is touched. `tools/combat/keep.sh` checks the kept corpse's block is empty.
+
 ##### The target block's drawing
 
 `CSWGuiTargetInfo::Render` (`0x00685ed0`, only while the block's flag `+0x1aec` bit 0 is set) pushes a

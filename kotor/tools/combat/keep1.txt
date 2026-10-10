@@ -7,3 +7,5 @@
 40 ui clickon g_sithtroop01
 42 ui clickon g_sithtroop01
 44 ui fight
+150 ui fight
+190 ui fight
