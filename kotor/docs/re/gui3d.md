@@ -70,9 +70,12 @@ The particles are stepped inside `CAurScene::Render`, not by the object update. 
 (`0x004509b0`, scene slot `+0x110`) steps each emitter that is drawn (`0x00494da0`) with
 min(frame delta, 0.1 s) and then draws it. And on the scene's **first** render (the frame counter
 at scene `+0x50`, zeroed by `CAurScene::CAurScene`, still 0) `0x004511f0` runs every emitter of
-the scene's objects and of the scene itself through `0x00494da0` **100 times with dt 0.1 s**:
-10 s of simulation, so the mist (life 10 s) is at its steady state in the first picture. (med:
-static reading, needs a runtime check)
+the scene's rooms and of the scene's own list (`+0x94`) through `0x00494da0` **100 times with dt
+0.1 s**: 10 s of simulation, so the mist (life 10 s) is at its steady state in the first picture.
+The model's emitters are on that list: `CAurScene::AddObject` (slot 44, `0x00455670`) walks an
+object's node tree with `0x004531a0` when it has a model (object `+0x58`, set by the object's
+constructor `0x00449cc0`) and appends each node's emitter (node slot `+0x34`) to `+0x94` once.
+(high for the code; med until a runtime check)
 
 **Field of view: vertical, in degrees, 22.70; the aspect is the viewport's.** It is the argument
 `fovy` of `gluPerspective`. The model confirms it: `Plane01` (the backdrop, texture `loadscreen3`)
@@ -170,8 +173,9 @@ finds the BIF copy; no special case. Another model, `mainmenu_model`, is in the 
 `gui3d::load` / `update` / `add_to_frame` / `free` (gui3d.ctx; particles.ctx):
 
 - the model, its light nodes, pose and animation (`default` looped, started at 0, plus an optional
-  warm-up that the main menu sets to 1.0 s) come through `mdl_cache`, `mdl_anim`, `mdl_render` and
-  `material`;
+  warm-up of the animation alone that the main menu sets to 1.0 s, the original's one-second object
+  update) come through `mdl_cache`, `mdl_anim`, `mdl_render` and `material`; then every emitter runs
+  100 steps of 0.1 s, the original's first render (above);
 - the camera is `pose.world[camera node]` inverted, `perspective(fov, viewport w / h, 0.1, 10000)`;
 - the ambient-only light is a flat ambient term (colour x multiplier) and the others are frame
   lights; the original lights through up to three GL lights per object with quadratic attenuation,
@@ -183,18 +187,14 @@ finds the BIF copy; no special case. Another model, `mainmenu_model`, is in the 
   colour **before** the texture multiplies it (GL emission), so a fully emissive surface shows its
   texture as it is. Other values still go through the seam's rule. Worth a fix in the seam's
   shader (`rgb = base.rgb * (light + selfillum)`) for the render lead;
-- emitters are simulated on the CPU, in the emitter node's space (the original keeps particles in
-  world space; the same for an emitter that does not move), drawn one batch per emitter in the
-  facing of their render mode (`Billboard_to_World_Z` lies flat on the ground, which is what the
-  original does: re/particles.md), sorted by `render_order`, at the full `size` as the original
-  draws it. Where ours differs from the notes above (`particles.ctx`): births are a continuous
-  accumulation of `rate x dt` with the random part uniform in +-m_fRandomBirthRate, not the
-  original's clumps; the start offset reaches xsize / 100 and ysize / 100 metres each way, twice
-  the original's size / 200 (worth a fix); the scene is warmed up 1 s, while the original's first
-  render runs the emitters 10 s (above);
-- not done: the room model, fog, the shadow of `AuroraLight01`, the `p2p` flag, bounce;
-  of the other update types `Single` keeps its one particle, `Lightning` stays quiet and
-  `Explosion` emits like a Fountain.
+- emitters are simulated on the CPU as particles.md describes (births in clumps, per metre for spawn
+  type 1, the size / 200 start offset, world-space particles, `inherit*`, `inheritvel`, `p2p` toward
+  the emitter's reference child, Lightning bolts), stored in the emitter node's space, drawn one batch
+  per emitter in the facing of their render mode (`Billboard_to_World_Z` lies flat on the ground,
+  which is what the original does: re/particles.md), sorted by `render_order`, at the full `size` as
+  the original draws it. Nothing bounces (a GUI scene has nothing to bounce off), and `Explosion`
+  emits like a Fountain (no animation of these models says `detonate`);
+- not done: the room model, fog, the shadow of `AuroraLight01`.
 
 Checked by running `kotor/tools/ctxc run kotor/tools/gui3dview` (pictures in `kotor/out/gui/`):
 Malak in a dark red robe and dark cape with a pale mask, arms crossed, on the left; the dark

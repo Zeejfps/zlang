@@ -14,7 +14,9 @@ namespace gui3d {
     // orientation in the original), which does not follow its velocity; `tail` is where a
     // Motion_Blur particle's streak ends, trailing behind `pos`. `still`: it bounced to a stop on a
     // surface and is no longer moved. `jag`: a Lightning point's throw off its curve (lightning.ctx).
-    struct Puff { pos: math::Vec3, vel: math::Vec3, age: f32, life: f32, angle: f32, frame: f32, aim: math::Vec3, tail: math::Vec3, still: bool, jag: math::Vec3 }
+    // `inh`: the speed it took from its emitter's move at birth (`inheritvel`), which fades by
+    // (1 - dt) each step and is not pulled by gravity.
+    struct Puff { pos: math::Vec3, vel: math::Vec3, age: f32, life: f32, angle: f32, frame: f32, aim: math::Vec3, tail: math::Vec3, still: bool, jag: math::Vec3, inh: math::Vec3 }
 
     // Where a bouncing particle's step (from, to: world space) first meets the world: the point and
     // the face's unit normal there, null for none.
@@ -32,7 +34,9 @@ namespace gui3d {
         texture: ?render::Texture,
         puffs: []mut Puff,                  // live ones first, `live` of them
         live: u32,
-        owed: f32,                          // births carried to the next step (a fraction of one)
+        timer: f32,                         // a Fountain's seconds since its last births (spawn type 0)
+        trail: math::Vec3,                  // a per-metre Fountain's (spawn type 1) way from its last birth to where it is, world
+        motion: Motion,                     // the emitter's move over its last step, for the births of that step
         rng: u32,
         out: []mut render::Particle,        // the live ones as the seam takes them
         seen: u32,                          // a world emitter: the scene frame it was last stepped in, 0 never (lib/scene/emitters.ctx)
@@ -42,15 +46,25 @@ namespace gui3d {
         last: math::Mat4,                   // the emitter node's matrix to world space at its last step (when `placed`)
         owner_at: math::Vec3,               // and its owner's (the model's) world position then
         placed: bool,                       // stepped at least once since it was made or reset
+        warm: bool,                         // a world emitter there at the scene's first picture: it runs 10 s ahead on its first step
     }
 
     // An emitter's state over the arrays given: nothing alive.
     fn emitting_over { index: u32, texture: ?render::Texture, puffs: []mut Puff, out: []mut render::Particle, node_turn: math::Quat } -> Emitting {
         return Emitting{
-            emitter = index, texture, puffs, live = 0, owed = 0.0, rng = 0x2545F491 + 7919 * (index + 1), out, seen = 0,
+            emitter = index, texture, puffs, live = 0, timer = 0.0, trail = math::vec3::zero{}, motion = no_motion{}, rng = 0x2545F491 + 7919 * (index + 1), out, seen = 0,
             latch = false, aim = null, bolt = no_bolt{ node_turn },
-            last = math::mat4::identity{}, owner_at = math::vec3::zero{}, placed = false,
+            last = math::mat4::identity{}, owner_at = math::vec3::zero{}, placed = false, warm = false,
         }
+    }
+
+    // The emitter as it was made: nothing alive, no births owed, not yet stepped (a pooled effect reused).
+    fn restart { mut em: Emitting } {
+        em.live = 0
+        em.timer = 0.0
+        em.trail = math::vec3::zero{}
+        em.motion = no_motion{}
+        em.placed = false
     }
 
     // ---- random numbers (xorshift32: the stream matters only for variety)
@@ -77,7 +91,9 @@ namespace gui3d {
     // with some slack for the random part of the rate.
     fn capacity_for { e: *mdl::Emitter, props: mdl::EmitterProps } -> usize {
         if e.update == mdl::EmitterUpdate::lightning { return LIGHTNING_POINTS }
-        let rate = math::max{ a = props.birthrate, b = 0.0 } + math::max{ a = props.random_birthrate, b = 0.0 }
+        let mut rate = math::max{ a = props.birthrate, b = 0.0 } + math::max{ a = props.random_birthrate, b = 0.0 }
+        // A per-metre emitter's births a second: a blaster bolt flies at 42 m/s.
+        if e.spawn_type == 1 { rate = math::max{ a = props.birthrate, b = 0.0 } * 50.0 }
         let need = rate * math::max{ a = props.life_exp, b = 0.0 } * 1.25 + 8.0
         let n = math::clamp{ x = need, lo = 8.0, hi = @as(f32, MAX_PUFFS) }
         return @as(usize, n)
@@ -99,10 +115,10 @@ namespace gui3d {
 
     // One step of `dt` seconds: the old die, the rest move, new ones are born. A Single emitter keeps
     // one particle while its birth rate is at least 1 (whole particles: the original truncates),
-    // which ages to the end of its curves and stays there; the others give birth `birthrate` times a
-    // second. `world` is the emitter node's matrix to world space, where gravity pulls down (world -Z),
-    // `owner` its model's position in the world, and `ground` says where a bouncing particle meets
-    // something.
+    // which ages to the end of its curves and stays there; a Fountain gives birth up to `birthrate`
+    // times a second, in clumps, or `birthrate` times a metre moved (spawn type 1). `world` is the
+    // emitter node's matrix to world space, where gravity pulls down (world -Z), `owner` its model's
+    // position in the world, and `ground` says where a bouncing particle meets something.
     fn step_emitting {
         mut em: Emitting, e: *mdl::Emitter, props: mdl::EmitterProps, dt: f32, world: math::Mat4, owner: math::Vec3,
         ground: &fn{ from: math::Vec3, to: math::Vec3 } -> ?Contact,
@@ -112,6 +128,7 @@ namespace gui3d {
             return
         }
         if dt <= 0.0 { return }
+        em.motion = motion_of{ em = &em, flags = e.flags, world, owner, dt }
         let moved = carry_of{ &em, flags = e.flags, world, owner }
         let single = e.update == mdl::EmitterUpdate::single
         let blur = e.render == mdl::EmitterRender::motion_blur
@@ -124,6 +141,13 @@ namespace gui3d {
         let to_local = math::mat4::inverse_affine{ m = world }
         let down = math::mat4::transform_dir{ m = to_local, v = math::Vec3{ x = 0.0, y = 0.0, z = -1.0 } }
         let pull = props.mass * GRAVITY * dt
+        // A point-to-point emitter's particles move toward its target (em.aim), and not at all without one
+        // (0x00494d40): they are still born and age.
+        let p2p = (e.flags & EMIT_P2P) != 0
+        let mut goal = no_goal{}
+        if p2p {
+            if em.aim is some{ value = a } { goal = goal_of{ em = &em, props, aim = a, world } }
+        }
         let mut i: u32 = 0
         while i < em.live {
             let mut p = em.puffs[i]
@@ -150,7 +174,13 @@ namespace gui3d {
             }
             p.angle = p.angle + props.particle_rot * dt
             if moved.on { carry{ &p, c = moved } }
-            if p.still {
+            if p.still or (p2p and not goal.on) {
+                em.puffs[i] = p
+                i = i + 1
+                continue
+            }
+            if p2p {
+                step_p2p{ &p, e, props, g = goal, world, to_local, dt, ground }
                 em.puffs[i] = p
                 i = i + 1
                 continue
@@ -158,9 +188,10 @@ namespace gui3d {
             // The original moves a particle and then lets gravity (the controller `mass`, in g) pull
             // its velocity down: a negative mass rises (smoke, flames).
             let from = p.pos
-            p.pos = math::vec3::add_scaled{ a = p.pos, b = p.vel, s = dt }
+            p.pos = math::vec3::add_scaled{ a = p.pos, b = math::vec3::add{ a = p.vel, b = p.inh }, s = dt }
             if bounces { bounce{ &p, from, world, to_local, bounce_co = props.bounce_co, dt, ground } }
             if not p.still { p.vel = math::vec3::add_scaled{ a = p.vel, b = down, s = pull } }
+            p.inh = math::vec3::scale{ v = p.inh, s = 1.0 - dt }
             em.puffs[i] = p
             i = i + 1
         }
@@ -172,16 +203,96 @@ namespace gui3d {
             }
             return
         }
-        let mut rate = props.birthrate
-        if props.random_birthrate > 0.0 {
-            rate = rate + (2.0 * rng_unit{ s = &em.rng } - 1.0) * props.random_birthrate
+        // A Fountain (0x00496e40) gives nothing while int(birthrate) < 1 (its timer and way stand).
+        if props.birthrate < 1.0 { return }
+        if e.spawn_type == 1 {
+            births_per_metre{ &em, e, props, world }
+            return
         }
-        if rate < 0.0 { rate = 0.0 }
-        em.owed = em.owed + rate * dt
-        while em.owed >= 1.0 {
-            em.owed = em.owed - 1.0
-            if @as(usize, em.live) < em.puffs.len { spawn{ &em, e, props } }
+        // Births come in clumps: once the timer reaches 1/birthrate, int(b * timer) mod (int(b) + 1)
+        // at once, b the birth rate give or take a whole random part, and the rest of the timer is
+        // dropped. So at 30 frames a second a rate of 20 gives 15 a second.
+        em.timer = em.timer + dt
+        if em.timer < 1.0 / props.birthrate { return }
+        let mut b = props.birthrate
+        let spread: u32 = if props.random_birthrate > 0.0 { @as(u32, math::floorf{ x = props.random_birthrate + 0.5 }) } else { 0 }
+        if spread > 0 {
+            let k = @as(f32, rng_next{ s = &em.rng } % spread)
+            b = if (rng_next{ s = &em.rng } & 1) == 0 { b + k } else { b - k }
+            if b < 0.0 { b = 0.0 }
         }
+        let n = @as(u32, b * em.timer) % (@as(u32, b) + 1)
+        em.timer = 0.0
+        let mut k: u32 = 0
+        while k < n and @as(usize, em.live) < em.puffs.len {
+            spawn{ &em, e, props }
+            k = k + 1
+        }
+    }
+
+    // Spawn type 1 (0x00496e40): births by the metre moved, not by the second: int(birthrate x the way
+    // since the last birth), spaced 1/birthrate m apart along it when xsize and ysize are both 0 (else at
+    // the emitter, offset as any birth), the rest of the way kept for the next step. A still emitter gives
+    // nothing.
+    fn births_per_metre { mut em: Emitting, e: *mdl::Emitter, props: mdl::EmitterProps, world: math::Mat4 } {
+        let m = em.motion
+        if not m.on { return }
+        let way = math::vec3::add{ a = math::vec3::sub{ a = m.to, b = m.from }, b = em.trail }
+        let len = math::vec3::length{ v = way }
+        let u = if len > 0.0 { math::vec3::scale{ v = way, s = 1.0 / len } } else { math::vec3::zero{} }
+        let gap = 1.0 / props.birthrate
+        // The last birth's place: the way starts there.
+        let start = math::vec3::sub{ a = m.from, b = em.trail }
+        let n = @as(u32, props.birthrate * len)
+        let on_path = props.x_size == 0.0 and props.y_size == 0.0
+        let to_local = math::mat4::inverse_affine{ m = world }
+        let mut i: u32 = 0
+        while i < n and @as(usize, em.live) < em.puffs.len {
+            spawn{ &em, e, props }
+            if on_path {
+                // The emitter's only particle goes where the way starts.
+                let along = if em.live < 2 { 0.0 } else { @as(f32, i + 1) * gap }
+                let at = math::mat4::transform_point{ m = to_local, p = math::vec3::add_scaled{ a = start, b = u, s = along } }
+                em.puffs[em.live - 1].pos = at
+                em.puffs[em.live - 1].tail = at
+            }
+            i = i + 1
+        }
+        em.trail = math::vec3::sub{ a = way, b = math::vec3::scale{ v = u, s = @as(f32, n) * gap } }
+    }
+
+    // The emitter's move over a step, world space: from its last position (plus its owner's move under
+    // `inherit_local`, which then does not count as its own: 0x00494da0) to where it is, and its Z axis
+    // then and now. `on` is false on its first step.
+    struct Motion { on: bool, from: math::Vec3, to: math::Vec3, z_from: math::Vec3, z_to: math::Vec3, dt: f32 }
+
+    fn no_motion {} -> Motion {
+        let z = math::vec3::zero{}
+        return Motion{ on = false, from = z, to = z, z_from = z, z_to = z, dt = 0.0 }
+    }
+
+    fn motion_of { em: *Emitting, flags: u32, world: math::Mat4, owner: math::Vec3, dt: f32 } -> Motion {
+        let up = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }
+        let to = math::mat4::get_translation{ m = world }
+        let z_to = math::vec3::normalize{ v = math::mat4::transform_dir{ m = world, v = up } }
+        if not em.placed { return Motion{ on = false, from = to, to, z_from = z_to, z_to, dt } }
+        let mut from = math::mat4::get_translation{ m = em.last }
+        if (flags & EMIT_INHERIT_LOCAL) != 0 { from = math::vec3::add{ a = from, b = math::vec3::sub{ a = owner, b = em.owner_at } } }
+        let z_from = math::vec3::normalize{ v = math::mat4::transform_dir{ m = em.last, v = up } }
+        return Motion{ on = true, from, to, z_from, z_to, dt }
+    }
+
+    // MDL emitter flag: a particle takes on its emitter's move at birth.
+    const EMIT_INHERITVEL: u32 = 0x80
+
+    // The speed a particle born at `at` (world) takes from its emitter's last move (0x0048d9e0): the
+    // emitter's velocity plus the turn of its Z axis times the particle's distance from it, over the step.
+    fn inherited { m: Motion, at: math::Vec3 } -> math::Vec3 {
+        if not m.on { return math::vec3::zero{} }
+        let per = if m.dt > 0.0 { 1.0 / m.dt } else { 0.01 }
+        let dist = math::vec3::length{ v = math::vec3::sub{ a = m.to, b = at } }
+        let v = math::vec3::scale{ v = math::vec3::sub{ a = m.to, b = m.from }, s = per }
+        return math::vec3::add_scaled{ a = v, b = math::vec3::sub{ a = m.z_to, b = m.z_from }, s = dist * per }
     }
 
     // MDL emitter flags that carry particles with their emitter (0x00492450).
@@ -241,9 +352,117 @@ namespace gui3d {
         if not c.rigid {
             p.pos = math::mat4::transform_point{ m = c.move, p = p.pos }
             p.vel = math::mat4::transform_dir{ m = c.move, v = p.vel }
+            p.inh = math::mat4::transform_dir{ m = c.move, v = p.inh }
         }
         p.pos = math::vec3::add{ a = p.pos, b = c.by }
         p.tail = math::vec3::add{ a = p.tail, b = c.by }
+    }
+
+    // MDL emitter flags: point-to-point (toward the target node), and its Bezier variant.
+    const EMIT_P2P: u32 = 0x1
+    const EMIT_P2P_SEL: u32 = 0x2
+
+    // A point-to-point emitter's step, world space: its target this step (the target node's position, moved
+    // by up to targetsize/2 m along each axis at random, the same for every particle of the step), the
+    // target node's Z axis, and the emitter's position and Z axis.
+    struct Goal { on: bool, at: math::Vec3, z: math::Vec3, from: math::Vec3, from_z: math::Vec3 }
+
+    fn no_goal {} -> Goal {
+        let z = math::vec3::zero{}
+        return Goal{ on = false, at = z, z, from = z, from_z = z }
+    }
+
+    fn goal_of { mut em: Emitting, props: mdl::EmitterProps, aim: math::Mat4, world: math::Mat4 } -> Goal {
+        let up = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }
+        let mut at = math::mat4::get_translation{ m = aim }
+        // rand % int(targetsize * 50) hundredths of a metre either way (0x00493ae0, 0x00492ea0).
+        let span = if props.target_size > 0.0 { @as(u32, props.target_size * 50.0) } else { 0 }
+        if span > 0 {
+            at.x = at.x + jitter{ s = &em.rng, span }
+            at.y = at.y + jitter{ s = &em.rng, span }
+            at.z = at.z + jitter{ s = &em.rng, span }
+        }
+        return Goal{
+            on = true, at, z = math::vec3::normalize{ v = math::mat4::transform_dir{ m = aim, v = up } },
+            from = math::mat4::get_translation{ m = world }, from_z = math::vec3::normalize{ v = math::mat4::transform_dir{ m = world, v = up } },
+        }
+    }
+
+    fn jitter { mut s: u32, span: u32 } -> f32 {
+        let k = @as(f32, rng_next{ &s } % span) * 0.01
+        return if (rng_next{ &s } & 1) == 0 { -k } else { k }
+    }
+
+    // One step of a point-to-point particle (already carried through its emitter's move), as the original's
+    // 0x00493ae0 (`p2p`) and 0x00492ea0 (`p2p_sel`), in world space:
+    //   p2p: it dies (its age set to its life) once within `threshold` of the target, before or during the
+    //     step; else its velocity is slowed by drag^dt and it is pulled toward the target at `grav` m/s2, and
+    //     it faces the way it moved;
+    //   p2p_sel: it moves by its velocity and is then drawn onto the cubic Bezier from the emitter (handle
+    //     p2p_bezier2 m along the emitter's Z) to the target (handle p2p_bezier3 m along the target's Z), at
+    //     its age / lifeExp along it, by (t^3)^combinetime (all the way when combinetime is 0).
+    // Then both add the inherited speed, let gravity (mass) pull, and bounce: off a surface its velocity is
+    // reflected and scaled by bounce_co, and it sits 5 mm off it (2.5 cm, and stops, once slower than
+    // sqrt(0.5) m/s).
+    fn step_p2p {
+        mut p: Puff, e: *mdl::Emitter, props: mdl::EmitterProps, g: Goal, world: math::Mat4, to_local: math::Mat4, dt: f32,
+        ground: &fn{ from: math::Vec3, to: math::Vec3 } -> ?Contact,
+    } {
+        let at = math::mat4::transform_point{ m = world, p = p.pos }
+        let mut v = math::mat4::transform_dir{ m = world, v = p.vel }
+        let mut to = math::vec3::add_scaled{ a = at, b = v, s = dt }
+        let near = props.threshold * props.threshold
+        if (e.flags & EMIT_P2P_SEL) != 0 {
+            let t = if props.life_exp > 0.0 { math::min{ a = p.age / props.life_exp, b = 1.0 } } else { 1.0 }
+            let u = 1.0 - t
+            let h1 = math::vec3::add_scaled{ a = g.from, b = g.from_z, s = props.p2p_bezier2 }
+            let h2 = math::vec3::add_scaled{ a = g.at, b = g.z, s = props.p2p_bezier3 }
+            let mut b = math::vec3::scale{ v = g.from, s = u * u * u }
+            b = math::vec3::add_scaled{ a = b, b = h1, s = 3.0 * u * u * t }
+            b = math::vec3::add_scaled{ a = b, b = h2, s = 3.0 * u * t * t }
+            b = math::vec3::add_scaled{ a = b, b = g.at, s = t * t * t }
+            let k = math::powf{ x = t * t * t, y = props.combine_time }
+            to = math::vec3::add{ a = math::vec3::scale{ v = to, s = 1.0 - k }, b = math::vec3::scale{ v = b, s = k } }
+        } else {
+            let d = math::vec3::sub{ a = g.at, b = at }
+            if math::vec3::length_sq{ v = d } <= near {
+                p.age = p.life
+                return
+            }
+            v = math::vec3::scale{ v, s = math::powf{ x = math::max{ a = props.drag, b = 0.0 }, y = dt } }
+            let a = math::vec3::scale{ v = math::vec3::normalize{ v = d }, s = props.grav * dt }
+            to = math::vec3::add_scaled{ a = to, b = a, s = dt }
+            v = math::vec3::add{ a = v, b = a }
+            let way = math::vec3::sub{ a = to, b = at }
+            if math::vec3::length_sq{ v = way } > 0.0 {
+                p.aim = math::mat4::transform_dir{ m = to_local, v = math::vec3::normalize{ v = way } }
+            }
+            if math::vec3::length_sq{ v = math::vec3::sub{ a = g.at, b = closest_on{ a = at, b = to, p = g.at } } } <= near { p.age = p.life }
+        }
+        to = math::vec3::add_scaled{ a = to, b = math::mat4::transform_dir{ m = world, v = p.inh }, s = dt }
+        v.z = v.z - dt * props.mass * GRAVITY
+        if (e.flags & EMIT_BOUNCE) != 0 {
+            if ground{ from = at, to } is some{ value = c } {
+                v = math::vec3::scale{ v = math::vec3::sub{ a = v, b = math::vec3::scale{ v = c.normal, s = 2.0 * math::vec3::dot{ a = v, b = c.normal } } }, s = props.bounce_co }
+                to = math::vec3::add_scaled{ a = c.at, b = c.normal, s = 0.005 }
+                if math::vec3::length_sq{ v } < 0.5 {
+                    p.still = true
+                    to = math::vec3::add_scaled{ a = to, b = c.normal, s = 0.02 }
+                }
+            }
+        }
+        p.pos = math::mat4::transform_point{ m = to_local, p = to }
+        p.vel = math::mat4::transform_dir{ m = to_local, v }
+        p.inh = math::vec3::scale{ v = p.inh, s = math::abs{ x = 1.0 - dt } }
+    }
+
+    // The point of the segment a..b nearest to p.
+    fn closest_on { a: math::Vec3, b: math::Vec3, p: math::Vec3 } -> math::Vec3 {
+        let ab = math::vec3::sub{ a = b, b = a }
+        let l = math::vec3::length_sq{ v = ab }
+        if l <= 0.0 { return a }
+        let t = math::clamp{ x = math::vec3::dot{ a = math::vec3::sub{ a = p, b = a }, b = ab } / l, lo = 0.0, hi = 1.0 }
+        return math::vec3::add_scaled{ a, b = ab, s = t }
     }
 
     // Births `birthrate` particles (at least one) at once from an Explosion emitter: its burst on the
@@ -316,9 +535,16 @@ namespace gui3d {
         let at = math::Vec3{ x, y, z = 0.0 }
         // lifeExp -1: the particle stays as long as the effect does, at its starting size and colour.
         let life = if props.life_exp < 0.0 { 1.0e9 } else { math::max{ a = props.life_exp, b = 0.01 } }
+        // With `inheritvel` it takes on the emitter's move (em.last is where the emitter is now: its
+        // step has been taken).
+        let mut inh = math::vec3::zero{}
+        if (e.flags & EMIT_INHERITVEL) != 0 {
+            let w = math::mat4::transform_point{ m = em.last, p = at }
+            inh = math::mat4::transform_dir{ m = math::mat4::inverse_affine{ m = em.last }, v = inherited{ m = em.motion, at = w } }
+        }
         em.puffs[em.live] = Puff{
             pos = at, vel = math::vec3::scale{ v = dir, s = speed },
-            age = 0.0, life, angle = 0.0, frame, aim = dir, tail = at, still = false, jag = math::vec3::zero{},
+            age = 0.0, life, angle = 0.0, frame, aim = dir, tail = at, still = false, jag = math::vec3::zero{}, inh,
         }
         em.live = em.live + 1
     }
@@ -360,6 +586,8 @@ namespace gui3d {
     //   Aligned_to_Particle_Dir: `dir` is the direction it was sent in, kept as it flies;
     //   the others: `dir` is the way it moves now.
     fn fill_particles { mut em: Emitting, e: *mdl::Emitter, props: mdl::EmitterProps } -> u32 {
+        // A point-to-point emitter without a target draws nothing (0x0049b680).
+        if (e.flags & EMIT_P2P) != 0 and e.update != mdl::EmitterUpdate::lightning and em.aim == null { return 0 }
         if e.render == mdl::EmitterRender::linked { return fill_ribbons{ &em, e, props } }
         let blur = e.render == mdl::EmitterRender::motion_blur
         let aimed = e.render == mdl::EmitterRender::aligned_to_particle_dir

@@ -156,7 +156,12 @@ for emitters: they are stepped while the scene is drawn, and only those that are
 - **Warm-up.** On the scene's first render (frame counter scene `+0x50` still 0) `0x004511f0` steps
   every emitter of every room (room `+0x58`, emitters `+0x24`/`+0x28`) and of the scene's own list
   (`+0x94`/`+0x98`) 100 times by 0.1 s: the rooms' smoke and mist are 10 s along in the first picture.
-  The objects' emitters are not in those lists and start empty.
+  The scene's own list holds the emitters of every object added to it with a model: `CAurScene::AddObject`
+  (slot 44, `0x00455670`) walks the object's node tree (`0x004531a0`) when object `+0x58` (its model, set
+  by the constructor `0x00449cc0`) is set and appends each node's emitter (node slot `+0x34`) once
+  (`0x0046bd10` adds only what is not there yet); `RemoveObject` (slot 45, `0x00453900`) takes them off
+  again. So the objects already in the scene at its first render are 10 s along too (read 2026-10-09;
+  high for the code, med for which objects the client adds before the first render).
 - **Detonate.** An Explosion emitter registers `Detonate` on its owning model (above); the handler
   (`0x0048d770`) sets the latch `+0x1f6`, which the Explosion update consumes, so a latch set while the
   emitter is not drawn waits for its next step.
@@ -196,6 +201,37 @@ and the particles are stepped, before any births of the frame.
   stepped from the next; destroyed when it becomes 0). It is never removed by age: with a positive
   lifeExp it ages and stays at its end values, or restarts at age 0 once past lifeExp when the
   node's `loop` flag (header +180) is set; with a negative lifeExp it is drawn at its start values.
+
+## Point-to-point emitters (`p2p`, flag 0x1; read 2026-10-09)
+
+A `p2p` emitter aims at a target, the same one a Lightning emitter takes (`+0x1e4`, its first reference child,
+`0x0049b240`): 127 of the 131 `p2p` emitters in the data have one (rooms' smoke and bugs on Tatooine, Kashyyyk,
+Manaan and the Unknown World, `plc_buzzbugs`, `plc_smk01`, `plc_endcorps`, `plc_dripwatr`, the Force powers'
+`Bfuel` streaks); `m45ac_bmap`'s fighters and the Ebon Hawk minigame's `plume` emitters have none. Without a
+target the Fountain update still ages and births its particles but `0x00494d40` does not move them, and nothing
+is drawn (below). With one, `0x00494d40` steps them with one of two functions instead of `0x00492450`. Both
+first move the target by `rand % int(targetsize * 50)` hundredths of a metre either way on each axis (once a
+step, for every particle), carry each particle by the `inherit*` flags as `0x00492450` does, and end like it:
+the inherited speed is added, then velocity.z -= dt * mass * 9.81, the inherited speed is multiplied by (1 - dt),
+and with `bounce` a ray from the particle's old position to its new one (scene slot `+0x38`) reflects the
+velocity about the surface and scales it by bounce_co (all of it, not only the upward part), and puts the particle
+5 mm off the surface; slower than sqrt(0.5) m/s it freezes there, 2.5 cm off. `affectedByWind` (0x4) adds the
+scene's wind (scene slot `+0xd0`) to the new position.
+
+- **`p2p` without `p2p_sel`** (`0x00493ae0`, 111 emitters): a particle within `threshold` (`+0xa4`) of the target
+  has its age set to lifeExp (it dies) and is not moved. Otherwise, from position P with velocity v:
+  N = P + v * dt; v *= drag^dt (`+0x64`); a = grav (`+0x74`) * unit(target - P); N += a * dt * dt; v += a * dt.
+  The particle's direction `+0x48` becomes unit(N - P), and when the target lies within `threshold` of the
+  segment P..N (`0x004ab360`) its age is set to lifeExp.
+- **`p2p_sel`** (`0x00492ea0`, 16 emitters: the flame thrower's and sniper sight's Linked ribbons, the swoop
+  bike's wake, `plc_dripwatr`, `mgf_gear02`): N = P + v * dt, then N = N * (1 - k) + B * k with k =
+  (t^3)^combinetime (`+0x60`; 1 when combinetime is 0), t = age / lifeExp (at most 1), and B the cubic Bezier
+  at t from the emitter's position (handle: plus p2p_bezier2 `+0x80` along the emitter's world Z axis) to the
+  target (handle: plus p2p_bezier3 `+0x84` along the target's own Z axis). The velocity is not changed by the
+  curve.
+
+`0x00494da0` also writes the distance from the emitter to its target to `+0xd0`, which the view test
+(`0x0046a730`) takes as the emitter's radius (above).
 
 ## Drawing (`0x0049b680` picks, `0x0048f040` draws quads)
 

@@ -4,8 +4,8 @@
 //   kotor/tools/ctxc run kotor/tools/gui3dview -- --at 0 4 8 --size 800x600 --size 1280x720
 //
 // Options: --game DIR, --model NAME (mainmenu), --camera NODE (camerahook), --anim NAME
-// (default), --fov DEGREES (22.7, vertical), --warm SECONDS (simulated before the first frame;
-// 0: the original runs 1), --at T... (animation times in seconds, ascending; 0 4 8), --size WxH
+// (default), --fov DEGREES (22.7, vertical), --warm SECONDS (the animation's advance before the
+// first frame, after which the emitters run 10 s as the original's first render does; the original's 1), --at T... (animation times in seconds, ascending; 0 4 8), --size WxH
 // (repeat for several; 800x600 and 1280x720), --out DIR (kotor/out/gui).
 //
 // The scene is stepped at 30 steps a second up to each time, then drawn into a viewport

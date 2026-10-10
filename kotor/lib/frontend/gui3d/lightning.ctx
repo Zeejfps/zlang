@@ -263,7 +263,7 @@ namespace gui3d {
     fn set_point { mut em: Emitting, i: u32, at: math::Vec3, dt: f32, fresh: bool } {
         let p = &em.puffs[i]
         if fresh {
-            p.* = Puff{ pos = at, vel = math::vec3::zero{}, age = 0.0, life = 1.0, angle = 0.0, frame = 0.0, aim = math::vec3::zero{}, tail = at, still = false, jag = math::vec3::zero{} }
+            p.* = Puff{ pos = at, vel = math::vec3::zero{}, age = 0.0, life = 1.0, angle = 0.0, frame = 0.0, aim = math::vec3::zero{}, tail = at, still = false, jag = math::vec3::zero{}, inh = math::vec3::zero{} }
         } else {
             p.pos = at
             p.age = p.age + dt
@@ -508,6 +508,18 @@ namespace gui3d {
     // The node a Lightning emitter's bolt runs to unless its owner says otherwise: its first child that is a
     // reference node (an `fx_ref` dummy where the bolt ends; a beam hangs it on its target instead, and the
     // original's `_EmitterTarget` event, 0x0049b240, takes the emitter's target from such a child).
+    // Whether an emitter aims at a target node (Emitting.aim): a Lightning or a point-to-point one.
+    fn targeted { e: *mdl::Emitter } -> bool {
+        return e.update == mdl::EmitterUpdate::lightning or (e.flags & EMIT_P2P) != 0
+    }
+
+    // The target of emitter `e` of a model placed by `instance` in pose `pose_world`: its reference child's
+    // matrix to world space (null without one).
+    fn target_of { model: *mdl::Model, e: *mdl::Emitter, pose_world: []math::Mat4, instance: math::Mat4 } -> ?math::Mat4 {
+        let node = bolt_end_node{ model, e } ifnull { return null }
+        return math::mat4::mul{ a = instance, b = pose_world[node] }
+    }
+
     fn bolt_end_node { model: *mdl::Model, e: *mdl::Emitter } -> ?u32 {
         let node = &model.nodes[e.node]
         let mut i: usize = 0

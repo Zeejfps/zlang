@@ -105,6 +105,9 @@ namespace mg_game {
         let mut e: usize = 0
         while e < emitting.len {
             emitting[e] = try gui3d::make_emitting{ fs = &w.fs, dev = &dev, heap = sc.arena, mats = &sc.materials, rm = w.rm.*, model, index = @as(u32, e) }
+            // The objects there before the first picture run 10 s ahead in it, as every emitter on the
+            // original's scene list does (docs/re/particles.md, "Which emitters run").
+            emitting[e].warm = not stage.ready
             e = e + 1
         }
         let i = stage.count
@@ -394,7 +397,7 @@ namespace mg_game {
                         }
                         let mut e: usize = 0
                         while e < it.emitting.len {
-                            it.emitting[e].live = 0
+                            gui3d::restart{ em = &it.emitting[e] }
                             e = e + 1
                         }
                     }
@@ -418,6 +421,15 @@ namespace mg_game {
                 let mut e: usize = 0
                 while e < it.emitting.len {
                     let world = math::mat4::mul{ a = it.instance, b = p.pose.world[model.emitters[e].node] }
+                    if gui3d::targeted{ e = &model.emitters[e] } { it.emitting[e].aim = gui3d::target_of{ model, e = &model.emitters[e], pose_world = p.pose.world, instance = it.instance } }
+                    if it.emitting[e].warm {
+                        it.emitting[e].warm = false
+                        let mut k: u32 = 0
+                        while k < 100 {
+                            gui3d::step_emitting{ em = &it.emitting[e], e = &model.emitters[e], props = p.pose.emitters[e], dt = gui3d::MAX_STEP, world, owner = math::mat4::get_translation{ m = it.instance }, ground = gui3d::no_contact }
+                            k = k + 1
+                        }
+                    }
                     gui3d::step_emitting{ em = &it.emitting[e], e = &model.emitters[e], props = p.pose.emitters[e], dt = math::min{ a = dt, b = gui3d::MAX_STEP }, world, owner = math::mat4::get_translation{ m = it.instance }, ground = gui3d::no_contact }
                     e = e + 1
                 }

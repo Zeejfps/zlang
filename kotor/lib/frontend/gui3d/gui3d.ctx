@@ -49,8 +49,8 @@ namespace gui3d {
 
     // Loads `model` and everything it needs: textures, meshes on the GPU, the pose, `animation`
     // (looped from its first frame; "" or one the model lacks leaves the bind pose), emitters.
-    // `warm_up` seconds are simulated first, as the original does by updating its scene by one
-    // second once it has made it (the mist is then already drifting in the first frame).
+    // The animation is advanced `warm_up` seconds first, as the original updates its model by one
+    // second once it has made it, and the emitters then run 10 s, as its first render does.
     fn load {
         mut fs: Fs, mut dev: gpu::Device, mut heap: arena::Arena, rm: res::Manager,
         mut models: mdl_cache::Cache, mut mats: material::Cache,
@@ -97,11 +97,19 @@ namespace gui3d {
             clear = render::Color{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 }, ambient = math::vec3::zero{},
             instance = math::mat4::identity{}, emitting, time = 0.0, draws = 0, particles = 0,
         }
+        // The original updates the model once by a second (the animation alone), and its scene's first
+        // render runs every emitter of the scene's objects 100 times by 0.1 s (0x004511f0; the model's
+        // emitters are on the scene's list once it is added, 0x004531a0): the mist is 10 s along.
         let step: f32 = 1.0 / 30.0
         let mut left = warm_up
         while left > 0.0 {
-            update{ &scene, dt = math::min{ a = step, b = left } }
+            pose_scene{ scene = &scene, dt = math::min{ a = step, b = left } }
             left = left - step
+        }
+        i = 0
+        while i < 100 {
+            step_emitters{ scene = &scene, dt = MAX_STEP }
+            i = i + 1
         }
         scene.time = 0.0
         return scene
@@ -122,16 +130,27 @@ namespace gui3d {
     }
 
     fn step_scene { mut scene: Scene, dt: f32 } {
+        pose_scene{ &scene, dt }
+        step_emitters{ &scene, dt }
+        scene.time = scene.time + dt
+    }
+
+    // The animation, the pose and dangly meshes by `dt`.
+    fn pose_scene { mut scene: Scene, dt: f32 } {
         mdl_anim::advance{ player = &scene.player, dt, on_event = mdl_anim::ignore_event }
         mdl_anim::evaluate{ model = scene.model, player = scene.player, pose = scene.pose }
         mdl_anim::swing{ model = scene.model, pose = scene.pose, transform = scene.instance, dt }
+    }
+
+    fn step_emitters { mut scene: Scene, dt: f32 } {
         let mut i: usize = 0
         while i < scene.emitting.len {
-            let world = math::mat4::mul{ a = scene.instance, b = scene.pose.world[scene.model.emitters[i].node] }
+            let e = &scene.model.emitters[i]
+            let world = math::mat4::mul{ a = scene.instance, b = scene.pose.world[e.node] }
+            if targeted{ e } { scene.emitting[i].aim = target_of{ model = scene.model, e, pose_world = scene.pose.world, instance = scene.instance } }
             step_emitting{ em = &scene.emitting[i], e = &scene.model.emitters[i], props = scene.pose.emitters[i], dt, world, owner = math::mat4::get_translation{ m = scene.instance }, ground = no_contact }
             i = i + 1
         }
-        scene.time = scene.time + dt
     }
 
     // Adds the scene to `frame` as a view over `viewport` (pixels of the target, origin top left,

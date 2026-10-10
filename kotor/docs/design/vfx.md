@@ -54,8 +54,7 @@ distances). The simulation is the original's where it was read:
 gravity is the controller `mass` (smoke and flames have a negative one and rise), a particle starts turned to 0
 and spins by `particleRot`, a `Single` emitter keeps exactly one particle while `birthrate` is at least 1, and a
 sprite sheet steps through its cells at `fps`. A particle stays where it is in the world when its emitter moves,
-unless the emitter's flags carry it (below, "Particles in the world"). Not done: chunk models (debris), `bounce`,
-wind, point-to-point emitters other than Lightning.
+unless the emitter's flags carry it (below, "Particles in the world"). Not done: chunk models (debris), wind.
 
 A `Lightning` emitter (gui3d `lightning.ctx`) is a chain of points from the emitter to its target (`Emitting.aim`, the
 target node's matrix to world space, set by the owner each step: a beam's target's `impact` node, else the `fx_ref`
@@ -247,9 +246,12 @@ emitters run"):
   by the time since the frame before (at most 0.1 s), and one that is not drawn stands still until it is seen again;
 - what is drawn: the emitters of the rooms visible from the leader's room (VIS) and of the visuals drawn in them,
   each only while its origin lies inside the view (the original's point cull: smoke whose source is just off screen
-  goes with it);
+  goes with it; a `p2p` emitter's point grows to a sphere reaching its target);
 - a room's emitters run 10 s ahead (100 steps of 0.1 s) the first time they are drawn, as the original does for
-  every room at the area's first picture; an object's start empty;
+  every room at the area's first picture, and so do those of an object whose visual was made by the first picture
+  (`Emitting.warm`: the original's scene list holds every added object's emitters); later objects' start empty;
+- a Lightning or `p2p` emitter aims at its node's reference child (`gui3d::target_of`, each step; an effect's beam
+  at its target creature); a `p2p` one without such a child is neither moved nor drawn;
 - an `Explosion` emitter bursts when its part's animation says `detonate` (rooms and objects alike; the latch waits
   for the emitter's next step), and gives no other birth;
 - they are `effect` emitters, so the Emitters option drops them, and with the option off they are not stepped either
@@ -294,7 +296,21 @@ position, and
   (`gui3d::no_contact`). A resting particle keeps its render mode's facing (the original lays it along the
   surface normal: not done);
 - a birth's offset is within xsize/200 and ysize/200 m either way and its tilt off +Z up to `spread`/2 (both
-  were twice the original's).
+  were twice the original's);
+- a Fountain gives birth in clumps (`em.timer`): nothing while int(birthrate) < 1, and once 1/birthrate s have
+  passed, int(b * timer) mod (int(b) + 1) at once, b the rate give or take a whole random part. Its real rate
+  depends on the frame time as the original's does (30 frames a second: 20 a second gives 15). It used to be a
+  continuous `rate * dt` with the fraction carried, which also let rates below 1 emit;
+- spawn type 1 (29 emitters: the saber flourishes' Linked trails, Force jump, heal and stun impacts, the swoop bike's
+  wake, `w_laserfire`) gives birth by the metre the emitter moved (`em.motion`, `em.trail`), spaced 1/birthrate m
+  apart along its way when it has no xsize/ysize; a still one gives nothing;
+- `inheritvel` (0x80; 9 emitters, `v_damageman`, `v_damagetat`, `m12ab_01a`) gives a newborn particle the
+  emitter's velocity plus its Z axis's turn times the particle's distance, over the step (`Puff.inh`), which fades
+  by (1 - dt) a step;
+- a `p2p` emitter's particles go to its target (`gui3d::step_p2p`): pulled at `grav` with `drag` and dying within
+  `threshold` of it, or (`p2p_sel`) drawn onto a Bezier from the emitter to the target by their age. The red
+  `Bfuel` streaks of Fear, Horror and Insanity now pour into the victim's head: `kotor/tools/py/force_run.py
+  --powers 16 --target g_sithtroop01 --dist 6 --frames 100 --shots 70,78,86` (Fear), `kotor/out/frc/pw_16_86.png`.
 
 `sh kotor/tools/gfx/duel_sparks.sh EXE` checks the duel (from the `bunk` checkpoint) twice: a camera in the
 duel's room takes three shots at clashes, each with at least 100 of the sparks' bright cores (190 to 490: the
@@ -323,11 +339,10 @@ last clash, which proved nothing.
   only row 1003, both 1401). The engine-coded codes other than 1401-1426 (beams 608-621, the fizzle
   and resist models 1201/1202, the medal and Revan masks 1700-1702, the player's camera and
   full-screen effects, the vision modes) are not drawn.
-- World emitters: particles behave as the original's world-space ones ("Particles in the world"). Not done: the
-  original takes the emitter's previous position, for the per-metre spawn type and `inheritvel`, less its owner's
-  move under `inherit_local` (neither is done here). A room's
-  or placeable's Lightning emitter (`plc_endcorps`, `m45ac_bmap`) aims at its reference child; the menus' and
-  minigames' scenes give theirs no target, so they stay quiet. A model's particles draw with depth writes off,
+- World emitters: particles behave as the original's world-space ones ("Particles in the world"), born in clumps,
+  per metre moved for spawn type 1 and with `inheritvel`'s inherited speed, both from the emitter's move less its
+  owner's under `inherit_local` (re/particles.md). Lightning and `p2p` emitters aim at their reference child in the
+  world, the menus' and the minigames' scenes alike. A model's particles draw with depth writes off,
   punch-through ones too, as the original's (grass, ours alone as an emitter, keeps them);
   only `animloop1` plays on a room, so emitters keyed in `animloop2`/`animloop3` are not animated.
 - Not done: footsteps, melee blood (the game has none), thrown grenades and Force
