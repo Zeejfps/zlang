@@ -280,6 +280,99 @@ namespace walkmap {
         return walk_segment{ m, from, to, spacing = SAMPLE * 0.2, bridge = true, leave = true }
     }
 
+    // The edge a blocked straight walk ran into (the walk test's hit report, which CSWCCreature::MoveDirect 0x00614b90
+    // slides along, movement.md 1.3): the point where the walk crosses it, the edge's normal in the floor plane
+    // pointing back toward the walker, and whether that point is at one of the edge's ends. The edge is the floor
+    // face's border the walk leaves it by (a wall, a ledge), or the border of the door's or placeable's walkmesh face
+    // it walks into. Null when the walk is not blocked or no crossed edge is found.
+    struct Edge { point: math::Vec3, normal: math::Vec3, vertex: bool }
+
+    // How near an edge's end its crossing counts as at a vertex.
+    const VERTEX_SLACK: f32 = 0.01
+
+    fn wall_hit { m: *Map, from: math::Vec3, to: math::Vec3 } -> ?Edge {
+        let dx = to.x - from.x
+        let dy = to.y - from.y
+        let len = math::sqrtf{ x = dx * dx + dy * dy }
+        let n = if len <= SAMPLE { 1 } else { @as(u32, math::ceilf{ x = len / SAMPLE }) }
+        let mut good = from
+        let mut i: u32 = 1
+        while i <= n {
+            let t = @as(f32, i) / @as(f32, n)
+            let p = math::Vec3{ x = from.x + dx * t, y = from.y + dy * t, z = good.z }
+            let mut off = true
+            let mut fz = good.z
+            if floor{ m, x = p.x, y = p.y, z = good.z } is some{ value = found } {
+                off = found.z < good.z - STEP_DOWN
+                fz = found.z
+            }
+            if off {
+                // The floor face under the last good point, and its border the walk crosses.
+                let f = floor{ m, x = good.x, y = good.y, z = good.z } ifnull { return null }
+                let mesh = list::items{ list = m.rooms }[@as(usize, f.room)].mesh ifnull { return null }
+                return crossed_edge{ c = bwm::face_corners{ w = mesh, face = @as(usize, f.face) }, a = good, b = p }
+            }
+            let here = math::Vec3{ x = p.x, y = p.y, z = fz }
+            if blocked{ m, x = p.x, y = p.y, z = here.z } {
+                // The placed walkmesh face it walks into.
+                let placed = list::items{ list = m.placed }
+                let mut k: usize = 0
+                while k < placed.len {
+                    let pl = &placed[k]
+                    k = k + 1
+                    if not pl.active { continue }
+                    let mut f: usize = 0
+                    while f < pl.mesh.faces.len {
+                        let face = f
+                        f = f + 1
+                        if pl.mesh.flat[face] { continue }
+                        let mat = pl.mesh.materials[face]
+                        if mat < m.walkable.len and m.walkable[mat] { continue }
+                        let c = bwm::face_corners{ w = pl.mesh, face }
+                        if not bwm::is_over_triangle{ c, x = p.x, y = p.y } { continue }
+                        if crossed_edge{ c, a = good, b = here } is some{ value = e } { return e }
+                    }
+                }
+                return null
+            }
+            good = here
+            i = i + 1
+        }
+        return null
+    }
+
+    // Which edge of the triangle `c` the segment a -> b crosses (seen from above), the crossing and the normal toward a.
+    fn crossed_edge { c: [3]math::Vec3, a: math::Vec3, b: math::Vec3 } -> ?Edge {
+        let mut k: usize = 0
+        while k < 3 {
+            let p = c[k]
+            let q = c[(k + 1) % 3]
+            k = k + 1
+            let ex = q.x - p.x
+            let ey = q.y - p.y
+            let sx = b.x - a.x
+            let sy = b.y - a.y
+            let den = sx * ey - sy * ex
+            if den == 0.0 { continue }
+            // a + s (b - a) = p + u (q - p)
+            let s = ((p.x - a.x) * ey - (p.y - a.y) * ex) / den
+            let u = ((p.x - a.x) * sy - (p.y - a.y) * sx) / den
+            if s < 0.0 or s > 1.0 or u < 0.0 or u > 1.0 { continue }
+            let el = math::sqrtf{ x = ex * ex + ey * ey }
+            if el < 0.000001 { continue }
+            let mut nx = -ey / el
+            let mut ny = ex / el
+            if nx * (a.x - p.x) + ny * (a.y - p.y) < 0.0 {
+                nx = -nx
+                ny = -ny
+            }
+            let at = math::Vec3{ x = a.x + sx * s, y = a.y + sy * s, z = a.z }
+            let vertex = u * el <= VERTEX_SLACK or (1.0 - u) * el <= VERTEX_SLACK
+            return Edge{ point = at, normal = math::Vec3{ x = nx, y = ny, z = 0.0 }, vertex }
+        }
+        return null
+    }
+
     fn walk_segment { m: *Map, from: math::Vec3, to: math::Vec3, spacing: f32, bridge: bool, leave: bool } -> ?f32 {
         let dx = to.x - from.x
         let dy = to.y - from.y

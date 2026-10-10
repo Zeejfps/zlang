@@ -147,19 +147,20 @@ namespace ctl {
         let v = math::sqrtf{ x = ctl.vx * ctl.vx + ctl.vy * ctl.vy }
         c2.speed = v
         if v > 1.0 {
-            // Move along the facing by |v| dt (movement.md 1.2 step 7), sliding along what blocks.
+            // Move along the facing by |v| dt (movement.md 1.2 step 7; any distance: the 0.033 m floor is only for a
+            // debug speed of 5000 m/s or more), sliding along what blocks (MoveDirect). A failed move leaves the
+            // velocity as it was: the leader runs on the spot against a wall. A leader with orders, one who cannot
+            // move or one who is helpless is not moved (MoveDirect reports success without moving).
             let d = v * step
             let from = o2.position
             let dx = o2.orientation.x
             let dy = o2.orientation.y
             let to = math::Vec3{ x = from.x + dx * d, y = from.y + dy * d, z = from.z }
-            let moved = slide{ &w, from, to }
-            if moved != null {
-                world::set_position{ o = o2, p = moved }
-                movement::cross_volumes{ &w, id, from, to = moved }
-            } else {
-                ctl.vx = 0.0
-                ctl.vy = 0.0
+            if o2.actions.len == 0 and movement::can_move{ c = c2 } {
+                if move_direct{ &w, id, from, to } is some{ value = moved } {
+                    if world::object{ w = &w, id } is some{ value = om } { world::set_position{ o = om, p = moved } }
+                    movement::cross_volumes{ &w, id, from, to = moved }
+                }
             }
             let o3 = world::object{ w = &w, id } ifnull { return }
             // The creature walks or runs for the AI update that follows (ai::update_creature puts a
@@ -178,19 +179,56 @@ namespace ctl {
         }
     }
 
-    // Where a step from `from` toward `to` ends: the whole step, else its x or y part alone
-    // (ours, for the original's six slide attempts along the edge it hit), else null.
-    fn slide { mut w: world::World, from: math::Vec3, to: math::Vec3 } -> ?math::Vec3 {
-        let z = walkmap::step_to{ m = &w.walk, from, to }
-        if z != null { return math::Vec3{ x = to.x, y = to.y, z } }
-        let tx = math::Vec3{ x = to.x, y = from.y, z = from.z }
-        let zx = walkmap::step_to{ m = &w.walk, from, to = tx }
-        let ty = math::Vec3{ x = from.x, y = to.y, z = from.z }
-        let zy = walkmap::step_to{ m = &w.walk, from, to = ty }
-        let dx = math::abs{ x = to.x - from.x }
-        let dy = math::abs{ x = to.y - from.y }
-        if zx != null and (zy == null or dx >= dy) { return math::Vec3{ x = tx.x, y = tx.y, z = zx } }
-        if zy != null { return math::Vec3{ x = ty.x, y = ty.y, z = zy } }
+    // Where the leader's step from `from` toward `to` ends (CSWCCreature::MoveDirect 0x00614b90, movement.md 1.3): up to six
+    // walk tests. A clear one is the move. A blocked one reports the edge it hit: a wall's or a ledge's, a door's or a
+    // placeable's walkmesh, or another creature's circle (its tangent where the step meets it; the player's creature
+    // pushes nobody aside, and its own spot is not moved, as the original's 1 m search tries only the spot itself).
+    // Away from a corner the target is put on that edge's line, so the leader slides along it; at a corner it becomes
+    // a 0.06 m step to the side. From the second try a slide whose edge turns back against the last one's ends the
+    // move, or at a corner becomes a 0.03 m step to the side. Null: no move this frame.
+    fn move_direct { mut w: world::World, id: u32, from: math::Vec3, to: math::Vec3 } -> ?math::Vec3 {
+        let o = world::object{ w = &w, id } ifnull { return null }
+        let c = obj::creature{ o } ifnull { return null }
+        let sx = to.x - from.x
+        let sy = to.y - from.y
+        let sl = math::sqrtf{ x = sx * sx + sy * sy }
+        if sl < 0.000001 { return null }
+        let dir_x = sx / sl
+        let dir_y = sy / sl
+        let mut target = to
+        let mut last_nx: f32 = 0.0
+        let mut last_ny: f32 = 0.0
+        let mut tries: u32 = 0
+        while tries < 6 {
+            tries = tries + 1
+            let mut edge: ?walkmap::Edge = null
+            let z = walkmap::step_to{ m = &w.walk, from, to = target }
+            if z != null {
+                let dest = math::Vec3{ x = target.x, y = target.y, z }
+                let hit = crowd::first_blocker{ w = &w, o, c, from, to = dest, skip = obj::INVALID, skip2 = obj::INVALID, pushable = false } ifnull { return dest }
+                edge = walkmap::Edge{ point = hit.point, normal = hit.normal, vertex = false }
+            } else {
+                edge = walkmap::wall_hit{ m = &w.walk, from, to = target }
+            }
+            // No edge reported: the same target is tried again.
+            let e = edge ifnull { continue }
+            // Which way the edge runs (its normal turned left), seen walking back from the target.
+            let along_now = dir_x * e.normal.y - dir_y * e.normal.x
+            let along_before = dir_x * last_ny - dir_y * last_nx
+            // The side a corner's sideways step goes to.
+            let side: f32 = if e.normal.x * dir_y - e.normal.y * dir_x <= 0.0 { 1.0 } else { -1.0 }
+            if tries >= 2 and ((along_now > 0.0 and along_before < 0.0) or (along_now < 0.0 and along_before > 0.0)) {
+                if not e.vertex { return null }
+                target = math::Vec3{ x = from.x - dir_y * 0.03 * side, y = from.y + dir_x * 0.03 * side, z = from.z }
+            } else if e.vertex {
+                target = math::Vec3{ x = from.x - dir_y * 0.06 * side, y = from.y + dir_x * 0.06 * side, z = from.z }
+            } else {
+                let into = (target.x - e.point.x) * e.normal.x + (target.y - e.point.y) * e.normal.y
+                target = math::Vec3{ x = target.x - e.normal.x * into, y = target.y - e.normal.y * into, z = from.z }
+            }
+            last_nx = e.normal.x
+            last_ny = e.normal.y
+        }
         return null
     }
 }
