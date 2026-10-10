@@ -173,7 +173,14 @@ Endar Spire's screens and lamps instead.
   sparkled as the rotation changed. With the Shadows level Planar the original's
   stencil volumes are drawn instead (hard in an enhanced view: their Soft Shadows blur is the original look's).
 - **Cost** (RTX 4090, 1280x720 timer marks): the maps 0.2 ms on Tatooine's Anchorhead (sun), 0.19 / 0.33 ms in
-  Taris's Upper City (1 / 3 lights); receiving is part of the opaque pass (+0.02-0.1 ms).
+  Taris's Upper City (1 / 3 lights); receiving is part of the opaque pass (+0.02-0.1 ms). Holding still costs a
+  little: over the Endar Spire bridge replay (64 timed frames of corridors, the GPU shared with a running game, so
+  noisy) the shadow passes' median went from 0.039 ms (maps, or volumes where no light qualified) to 0.091 ms
+  (lights fading out keep their maps for 0.4 s, and the overhead map replaces the volumes); scoring the lights
+  scans the view's casters once instead of once per light.
+- **Checking**: `--log shadows` prints each drawn frame's choice (maps or volumes, a cut, the sun's direction, each
+  point light's place and weight, the volume light), `kotor/tools/py/shadow_flips.py` counts its flips, pops and
+  turns, and `kotor/tools/gfx/shadow_flicker.sh` fails on any (docs/testing.md).
 - **Pictures**: `kotor/out/fx/t/tat_sm_cmp.png` (Anchorhead: planar, low, soft), `up_sm_cmp.png` (Upper City),
   `bridge_sm_cmp.png` (the Endar Spire bridge: the planar shadows' dark band gone).
 
