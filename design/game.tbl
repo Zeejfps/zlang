@@ -50,16 +50,17 @@ context World {
 
 // A `for` with several bindings joins them on their key columns, which must
 // have the same type. This visits only entities with both a Position and a Velocity.
-// Loop variables are references to the rows, so assigning writes back.
+// `mut p` is a reference to the row, so assigning writes back.
+// `v` is read-only.
 fn movement(world: World, dt: float) {
-    for p in world.positions, v in world.velocities {
+    for mut p in world.positions, v in world.velocities {
         p.x += v.dx * dt;
         p.y += v.dy * dt;
     }
 }
 
 fn poison(world: World) {
-    for h in world.healths where h.hp > 0 {
+    for mut h in world.healths where h.hp > 0 {
         h.hp -= 1;
     }
 }
@@ -76,9 +77,11 @@ fn reap(world: World) {
 // joining on the missile's own key. Because of `cascade`, a Homing row
 // exists only while its target does, but the target may have no Position;
 // then this missile is skipped.
+// `t` is read-only, so it sees the target as it was before this pass,
+// even when a rock targets itself and `t` is the same row as `p`.
 fn home(world: World, dt: float) {
     for h in world.homings,
-        p in world.positions,
+        mut p in world.positions,
         t in world.positions by h.target
     {
         p.x += (t.x - p.x) * dt;

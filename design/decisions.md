@@ -28,6 +28,10 @@ One line per decision, newest last. The samples are the spec; this file records 
 - `?T` is an optional T, either a T or `none`. The `?` comes first so the first token of a type says what kind of type it is, and function types need no precedence rule: `?fn() -> int` is an optional function, `fn() -> ?int` returns an optional. Like `<`, it appears only in types.
 - Optionals are unwrapped by binding, never by flow analysis: `if let t = x { … } else { … }`, or `let t = x else { continue; };` to bind or leave the block. `x ?? default` supplies a fallback. The bound name is a plain `T`, scoped to where it was bound. There is no narrowing after `if x != none` and no force-unwrap `!`.
 - A `for` binding written `t in table by k` matches the row whose key is `k`, instead of joining on the shared key, so a loop can follow a reference (`t in world.positions by h.target`). If no row has that key, the loop skips that combination. Only bindings over a whole table without `by` take part in the implicit key join. Outside loops, `table.get(k)` returns `?T`.
+- A `for` binding is read-only unless written `mut`: `for mut p in world.positions, v in world.velocities`. A `mut` binding is a reference, so `p.x += …` writes to the row. A read-only binding behaves as a copy taken when it is bound; the compiler only really copies when a `mut` binding in the same loop shares its table, so it can never see a half-written row. Two `mut` bindings on one table in one loop are an error, because they could be the same row. Outside loops, `update(id, …)` writes a single row.
+- References exist only as `mut` loop bindings and cannot leave the loop: they cannot be stored, returned or captured by a closure. That makes them safe without lifetimes or a borrow checker, as with Swift's `inout`.
+- Inserts and deletes inside a loop are deferred until the loop ends, so a reference never points at a row that has gone.
+- A function's reads and writes are collected from its body and the functions it calls (`mut` bindings, `update`, `insert` and `delete` write; everything else reads). Headers do not declare them. The scheduler uses these sets to run systems in parallel when neither writes a table the other uses.
 
 ## Open
 
@@ -41,9 +45,7 @@ One line per decision, newest last. The samples are the spec; this file records 
 
 7. **Composite keys:** may a table have two `key` columns (a relation like `table Follows { follower: id<User> key; followed: id<User> key; }`)? If so, how do joins pick which key to match?
 8. **Joins:** several bindings in one `for` join on their key columns, and `_ in world.players` filters by a tag. Do we also need `without` (entities *lacking* a component)?
-9. **Rows, references or copies:** the ECS loops write through loop variables (`p.x += …`), but `todo.tbl` uses `update(id, done: true)`. Keep one way or both?
-10. **Changes during iteration:** a `delete` inside a loop is deferred until the loop ends. Should that be the rule, an error, or something to make explicit?
-11. **Scheduling:** should systems declare what they read and write (for example `uses World.positions mut`) so they can run in parallel? This connects to #2.
+11. **Hidden access:** a closure called through a variable hides what it reads and writes. Treat such a call as touching everything, or give closure types an access declaration? And should a header be able to declare access, checked by the compiler, for systems that must stay parallel?
 
 ### From GUI (`todo_ui.tbl`)
 
