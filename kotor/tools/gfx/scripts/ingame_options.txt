@@ -1,2 +1,0 @@
-# The in-game options menu (apartment checkpoint, 1280x720).
-5 ui menu options
