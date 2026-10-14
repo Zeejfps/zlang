@@ -89,10 +89,14 @@ fn home(world: World, dt: float) {
     }
 }
 
-// `_` joins on a table without binding its row. Here it filters to players.
+// `_ in` joins on a table without binding its row, so it keeps only players.
+// `_ not in` keeps only entities without a row there.
 fn report(world: World) {
     for p in world.positions, _ in world.players {
         print("player {p.entity} at {p.x}, {p.y}");
+    }
+    for p in world.positions, _ not in world.players {
+        print("thing {p.entity} at {p.x}, {p.y}");
     }
 }
 
