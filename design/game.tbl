@@ -72,12 +72,15 @@ fn reap(world: World) {
     }
 }
 
-// Because of `cascade`, a Homing row exists only while its target does.
-// The target may still have no Position, so `get` returns `?Position`,
-// and `let … else` binds the row or skips this entity.
+// `by h.target` matches the Position whose key is the target, instead of
+// joining on the missile's own key. Because of `cascade`, a Homing row
+// exists only while its target does, but the target may have no Position;
+// then this missile is skipped.
 fn home(world: World, dt: float) {
-    for h in world.homings, p in world.positions {
-        let t = world.positions.get(h.target) else { continue; };
+    for h in world.homings,
+        p in world.positions,
+        t in world.positions by h.target
+    {
         p.x += (t.x - p.x) * dt;
         p.y += (t.y - p.y) * dt;
     }

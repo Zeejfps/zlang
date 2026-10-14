@@ -27,6 +27,7 @@ One line per decision, newest last. The samples are the spec; this file records 
 - Columns holding an `id<T>` choose what happens when its row is deleted: `cascade` deletes the referring row, `clear` sets the column empty, and with no modifier the id goes stale. Key columns always cascade. The policy is per column, not per table, because one table can hold several references (`Follows`). Going stale is the default because it costs nothing; `cascade` and `clear` make the compiler keep a reverse index for that column only. Cascades stay inside one context.
 - `?T` is an optional T, either a T or `none`. The `?` comes first so the first token of a type says what kind of type it is, and function types need no precedence rule: `?fn() -> int` is an optional function, `fn() -> ?int` returns an optional. Like `<`, it appears only in types.
 - Optionals are unwrapped by binding, never by flow analysis: `if let t = x { … } else { … }`, or `let t = x else { continue; };` to bind or leave the block. `x ?? default` supplies a fallback. The bound name is a plain `T`, scoped to where it was bound. There is no narrowing after `if x != none` and no force-unwrap `!`.
+- A `for` binding written `t in table by k` matches the row whose key is `k`, instead of joining on the shared key, so a loop can follow a reference (`t in world.positions by h.target`). If no row has that key, the loop skips that combination. Only bindings over a whole table without `by` take part in the implicit key join. Outside loops, `table.get(k)` returns `?T`.
 
 ## Open
 
