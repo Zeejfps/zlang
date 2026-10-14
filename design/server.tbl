@@ -2,6 +2,9 @@
 // GET /links lists links, POST /links?slug=…&url=… adds one,
 // and GET /{slug} redirects to the link's url.
 
+use tables::{get, insert, update};
+use strings;
+use http;
 use http::{Request, Response};
 
 // The key is a string the client picks, not a generated id.

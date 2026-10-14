@@ -1,0 +1,16 @@
+// std/strings.tbl: operations on `str`, a built-in type.
+
+fn count_bytes(s: str) -> int builtin;
+fn starts_with(s: str, prefix: str) -> bool builtin;
+
+// The part of `s` from byte `start` to the end.
+fn slice(s: str, start: int) -> str builtin;
+
+// Ordinary code over the builtins above.
+fn strip_prefix(s: str, prefix: str) -> ?str {
+    if !starts_with(s, prefix) {
+        return none;
+    }
+    let n = count_bytes(prefix);
+    return slice(s, n);
+}

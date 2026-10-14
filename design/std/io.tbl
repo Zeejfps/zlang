@@ -1,0 +1,4 @@
+// std/io.tbl: console input and output.
+
+// Writes `s` and a newline to standard output.
+fn print(s: str) builtin;

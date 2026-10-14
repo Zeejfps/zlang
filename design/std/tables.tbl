@@ -1,0 +1,45 @@
+// std/tables.tbl: operations on `table<T>`.
+// `table<T>`, `id<T>`, `key<T>` and `patch<T>` are built-in types. Everything
+// a program does with a table goes through a function declared here.
+//
+//   key<T>    the type of T's key column: key<Position> is id<Entity>,
+//             key<Link> is str, key<Todo> is the implicit id<Todo>.
+//   patch<T>  T's non-key columns, each optional. A column left out
+//             is left unchanged.
+//
+// `builtin` means the compiler supplies the body; the signature is still
+// ordinary. Builtins are where reads and writes bottom out: insert, update
+// and delete write `t`, and everything else here only reads.
+
+// Adds a row and returns its key. An implicit `id` is generated, so it is not
+// one of the fields; any other key is passed by name like the other columns.
+// Inside a loop over `t`, the row appears when the loop ends.
+fn insert<T>(t: table<T>, ..row: T) -> key<T> builtin;
+
+// Changes the named columns of the row with key `k`; the key itself can't be
+// changed, because `patch<T>` has no key column. Does nothing if no row has `k`.
+fn update<T>(t: table<T>, k: key<T>, ..changes: patch<T>) builtin;
+
+// Removes the row with key `k`, then applies each `cascade` and `clear`
+// that points at it. Inside a loop over `t`, it happens when the loop ends.
+fn delete<T>(t: table<T>, k: key<T>) builtin;
+
+// Reads the row count kept by the table, without visiting the rows.
+fn count<T>(t: table<T>) -> int builtin;
+
+// The rest is ordinary code.
+
+// `by k` visits the row whose key is `k`, if there is one.
+fn get<T>(t: table<T>, k: key<T>) -> ?T {
+    for row in t by k {
+        return row;
+    }
+    return none;
+}
+
+fn has<T>(t: table<T>, k: key<T>) -> bool {
+    for _ in t by k {
+        return true;
+    }
+    return false;
+}

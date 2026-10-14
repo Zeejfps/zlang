@@ -1,0 +1,6 @@
+// std/lists.tbl: operations on `list<T>`, a built-in type.
+
+fn count<T>(l: list<T>) -> int builtin;
+
+// The item at index `i`, or none if `i` is out of range.
+fn get<T>(l: list<T>, i: int) -> ?T builtin;

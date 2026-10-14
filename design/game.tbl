@@ -2,6 +2,9 @@
 // An entity is a row in the Entity table. Components are tables keyed by
 // that row's id. Systems are plain functions that query across those tables.
 
+use tables::{insert, delete};
+use io::{print};
+
 // No columns of its own. With no key column, it gets an implicit
 // `id: id<Entity> key`, so its rows exist only to give out ids.
 table Entity {}
@@ -117,9 +120,9 @@ fn spawn_rock(world: World, ..p: Point) -> id<Entity> {
 fn main() {
     let world = World();
 
-    // `insert`, `update`, `delete` and `get` are built in; the table comes first.
-    // Inserting into a table with an implicit id returns the new id.
-    // The key is a column like any other, so it is passed by name.
+    // `insert` returns the row's key: a new id for an Entity, which has an
+    // implicit one. Position's key is a column like any other, so it is
+    // passed by name, and that is what `insert` returns there.
     let hero = insert(world.entities);
     insert(world.positions, entity: hero, x: 0.0, y: 0.0);
     insert(world.velocities, entity: hero, dx: 1.0, dy: 0.5);

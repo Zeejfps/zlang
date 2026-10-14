@@ -1,12 +1,20 @@
 // todo.tbl: a small command-line todo app.
 // This file is the spec. When the design changes, this file changes with it.
 
+// Nothing is in scope unless it is declared here or imported; only keywords
+// and built-in types are always there. `use lists;` makes `lists::count`
+// available; `use tables::{count};` makes `count` available on its own.
+use tables::{insert, update, count};
+use lists;
+use clock::{Time, now};
+use io::{print};
+
 // `table Todo` declares a schema; `table<Todo>` is a table of Todo rows.
 // With no `key` column, each row gets an implicit `id: id<Todo> key`.
 table Todo {
     text: str required;
     done: bool = false;
-    created: time required;
+    created: Time required;
 }
 
 // A projection is a struct-like shape. One declared `from` a table
@@ -30,10 +38,9 @@ context App {
 
 // `insert` and `update` take the table, then columns as named arguments.
 // Leaving out a `required` column is a missing-argument error.
-// `clock::now` is `now` in the `clock` namespace. A namespace never shares
-// a name with a type, so it can't be called `time`.
+// `insert` returns the new row's key, here its generated id.
 fn add(app: App, text: str) -> id<Todo> {
-    let created = clock::now();
+    let created = now();
     return insert(app.todos, text: text, created: created);
 }
 
@@ -50,6 +57,7 @@ fn open_lines(app: App) -> list<TodoLine> {
 fn stats(app: App) -> Stats {
     let total = count(app.todos);
     let open_todos = from t in app.todos where !t.done;
+    // `count` is already tables::count, so the list one stays qualified.
     let open = lists::count(open_todos);
     // Projections and contexts are constructed with call syntax and named arguments.
     return Stats(total: total, open: open);

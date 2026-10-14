@@ -1,6 +1,8 @@
 // todo_ui.tbl: a declarative UI over the todo app in todo.tbl.
 
 use todo::{App, Todo, TodoLine, add, stats};
+use tables::{update};
+use ui;
 use ui::{column, row, text, text_input, button, checkbox};
 
 fn set_done(app: App, id: id<Todo>, done: bool) {
