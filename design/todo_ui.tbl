@@ -1,9 +1,10 @@
 // todo_ui.tbl: a declarative UI over the todo app in todo.tbl.
 
-use todo { App, Todo, TodoLine, add, stats };
+use todo::{App, Todo, TodoLine, add, stats};
+use ui::{column, row, text, text_input, button, checkbox};
 
 fn set_done(app: App, id: id<Todo>, done: bool) {
-    app.todos.update(id, done: done);
+    update(app.todos, id, done: done);
 }
 
 // A view's body declares elements rather than running steps.
@@ -48,5 +49,6 @@ view TodoRow(app: App, line: TodoLine) {
 fn main() {
     let app = App();
     add(app, "try the ui");
-    ui.run(TodoScreen(app));
+    let screen = TodoScreen(app);
+    ui::run(screen);
 }

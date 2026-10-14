@@ -28,14 +28,17 @@ context App {
     todos: table<Todo>;
 }
 
-// `insert` and `update` take columns as named arguments.
+// `insert` and `update` take the table, then columns as named arguments.
 // Leaving out a `required` column is a missing-argument error.
+// `clock::now` is `now` in the `clock` namespace. A namespace never shares
+// a name with a type, so it can't be called `time`.
 fn add(app: App, text: str) -> id<Todo> {
-    return app.todos.insert(text: text, created: now());
+    let created = clock::now();
+    return insert(app.todos, text: text, created: created);
 }
 
 fn complete(app: App, id: id<Todo>) {
-    app.todos.update(id, done: true);
+    update(app.todos, id, done: true);
 }
 
 fn open_lines(app: App) -> list<TodoLine> {
@@ -45,8 +48,9 @@ fn open_lines(app: App) -> list<TodoLine> {
 }
 
 fn stats(app: App) -> Stats {
-    let total = app.todos.count();
-    let open = (from t in app.todos where !t.done).count();
+    let total = count(app.todos);
+    let open_todos = from t in app.todos where !t.done;
+    let open = lists::count(open_todos);
     // Projections and contexts are constructed with call syntax and named arguments.
     return Stats(total: total, open: open);
 }

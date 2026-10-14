@@ -69,7 +69,7 @@ fn poison(world: World) {
 // A delete inside the loop is deferred until the loop ends.
 fn reap(world: World) {
     for h in world.healths where h.hp <= 0 {
-        world.entities.delete(h.entity);
+        delete(world.entities, h.entity);
     }
 }
 
@@ -109,26 +109,27 @@ projection Point from Position {
 // `..p: Point` takes Point's fields as named parameters, and `p` is the
 // assembled value in the body. Callers pass `x:` and `y:`, or `..some_point`.
 fn spawn_rock(world: World, ..p: Point) -> id<Entity> {
-    let e = world.entities.insert();
-    world.positions.insert(entity: e, ..p);
+    let e = insert(world.entities);
+    insert(world.positions, entity: e, ..p);
     return e;
 }
 
 fn main() {
     let world = World();
 
+    // `insert`, `update`, `delete` and `get` are built in; the table comes first.
     // Inserting into a table with an implicit id returns the new id.
     // The key is a column like any other, so it is passed by name.
-    let hero = world.entities.insert();
-    world.positions.insert(entity: hero, x: 0.0, y: 0.0);
-    world.velocities.insert(entity: hero, dx: 1.0, dy: 0.5);
-    world.healths.insert(entity: hero, hp: 3, max: 3);
-    world.players.insert(entity: hero);
+    let hero = insert(world.entities);
+    insert(world.positions, entity: hero, x: 0.0, y: 0.0);
+    insert(world.velocities, entity: hero, dx: 1.0, dy: 0.5);
+    insert(world.healths, entity: hero, hp: 3, max: 3);
+    insert(world.players, entity: hero);
 
     // When reap deletes the hero, `cascade` deletes this Homing row.
     // The rock itself stays; it just stops homing.
     let rock = spawn_rock(world, x: 5.0, y: 5.0);
-    world.homings.insert(entity: rock, target: hero);
+    insert(world.homings, entity: rock, target: hero);
 
     let dt = 1.0 / 60.0;
     for frame in 0..5 {
