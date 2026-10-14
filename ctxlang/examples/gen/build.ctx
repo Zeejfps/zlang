@@ -1,0 +1,14 @@
+// The build program for examples/gen, which generates code for its executable:
+// `ctxc run examples/gen -- teal red`.
+//
+// tools/ is a library of the build program's (`#build::sources`, spec §19), not the
+// executable's: enums::generate writes an enum and its names as ctxlang source, and gen_file
+// gives the executable that source as color.ctx, in ctxc's build directory.
+#build::sources{ dir = "tools" }
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "colors", root = "src" }
+    let mut buf: [65536]u8
+    let mut heap = arena::new{ buf = buf[..] }
+    let names: [4][]u8 = ["red", "green", "blue", "teal"]
+    build::gen_file{ &b, exe, name = "color", text = enums::generate{ &heap, space = "color", name = "Color", variants = names[..] } }
+}

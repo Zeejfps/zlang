@@ -8,12 +8,15 @@
 // PATH is a .ctx file, or a directory: one program of all its .ctx files, or, if it has a
 // build.ctx, the executables its build program describes (spec §19), of which `run` runs the
 // first and `exe` writes the first to OUT. A build program is compiled and run first, with
-// CTX_BUILD_OUT naming the file for its graph (std/build.ctx).
+// CTX_BUILD_OUT naming the file for its graph (std/build.ctx). It is build.ctx and the .ctx files
+// under each directory a `#build::sources` on its `fn build` names, which the driver reads from
+// build.ctx's syntax tree before compiling it.
 //
 // ctxc finds std/ and ctxc/rt/ in its home: CTX_HOME if set, else the first directory holding
-// both above its executable, else above the working directory. The C compiler is `cc`, or CTX_CC
-// (split at spaces, so `zig cc` works), with the flags tools/toolchain.py uses, run with its own
-// directory first on PATH, as toolchain.py runs it.
+// both above its executable, else above the working directory. The C compiler is `cc`, or CTX_CC:
+// the file it names, spaces and all, or else its words split at spaces, so `zig cc` works. It
+// runs with the flags tools/toolchain.py uses, and its own directory first on PATH, as
+// toolchain.py runs it.
 //
 // An executable's C is in units (emit::units, ctxc/emit_c.ctx): one for a small program, and for a
 // big one units of about 256 KiB of C each (or CTX_UNIT_SIZE bytes), grouped by the files that
@@ -33,6 +36,10 @@
 //       EXE-HASH                 the executable (EXE-HASH.exe on Windows), HASH being of its
 //                                units' and the link flags; older files of EXE are removed
 //       build/                   the build program's, the same way, and its graph
+//       gen/EXE/NAME.ctx         the files build::gen_file gives executable EXE, for a person to
+//                                open; EXE is compiled from the driver's copy of their text.
+//                                Written again only when their text changes; other .ctx files
+//                                there are removed
 //
 // So a unit whose C, runtime, compiler and flags haven't changed since it was built isn't
 // compiled again, nor linked if no unit changed: the front end runs, and the C compiler doesn't.
@@ -58,17 +65,29 @@ namespace drive {
     const UNIT_SIZE: usize = 262144
 
     // Where things are, and what the C compiler is and the environment entries it runs with: runs
-    // is HOME/build/run, work the program's directory in it, and rt a hash of the runtime's
-    // sources. unit is about how many bytes of C a unit has, and jobs how many C compilers run at
-    // once.
-    struct Driver { home: []u8, runs: []u8, work: []u8, std: [][]u8, os: build::Os, cc: [][]u8, cc_env: [][]u8, rt: u64, unit: usize, jobs: u32 }
+    // is HOME/build/run, work the program's directory in it, program its name, and rt a hash of
+    // the runtime's sources. unit is about how many bytes of C a unit has, and jobs how many C
+    // compilers run at once.
+    struct Driver { home: []u8, runs: []u8, work: []u8, program: []u8, std: [][]u8, os: build::Os, cc: [][]u8, cc_env: [][]u8, rt: u64, unit: usize, jobs: u32 }
 
     // A C compiler compiling a unit, into o_tmp, from its C in c_tmp, to be renamed to o and c.
     struct Job { child: proc::Child, c_tmp: []u8, o_tmp: []u8, c: []u8, o: []u8 }
 
     // An executable to build: its root and the directories added to it, its optimization level,
-    // and the C compiler flags its build program gave.
-    struct Target { name: []u8, root: []u8, dirs: Strs, level: u8, paths: Strs, libs: Strs }
+    // the C compiler flags its build program gave, and the files it generates for it.
+    struct Target { name: []u8, root: []u8, dirs: Strs, level: u8, paths: Strs, libs: Strs, gens: list::List(Gen, Heap) }
+
+    // A file build::gen_file gives an executable: NAME.ctx, holding text, and once written, its
+    // path, where errors in it point.
+    struct Gen { name: []u8, text: []u8, path: []u8 }
+
+    // Why describing or compiling a program failed, which `ctxc graph` tells its caller: errors
+    // ctxc reported in the program (`errors`), its build program's exit code (`exited`), or
+    // anything else, as a C compiler or a file that failed (`failed`).
+    union Why { failed, errors, exited{ code: i32 } }
+
+    // A directory `#build::sources` names, and where its literal is in build.ctx.
+    struct Source { dir: []u8, at: u32 }
 
     // An executable's files, each by its path as a person would write it, and by a key that is
     // the same for every path to the file (`key_of`), to find one reached twice.
@@ -88,71 +107,22 @@ namespace drive {
             return 1
         }
         let mut heap = arena::new{ buf = pages }
-        let home = find_home{ &fs, &proc, &heap } ifnull {
-            io::eprintln{ &io, s = "ctxc: cannot find std/ and ctxc/rt/; set CTX_HOME to the directory that holds them" }
-            return 1
-        }
-        let kind = kind_of{ &fs, path }
-        if kind == 0 {
-            cannot{ &io, path, what = "cannot read" }
-            return 1
-        }
-        let os = proc::os{ &proc }
-        let full = absolute{ &io, &fs, &heap, path } ifnull { return 1 }
-        let program = stem{ path = base{ path = full } }
-        let build_dir = join{ &heap, a = home, b = "build" }
-        let runs = join{ &heap, a = build_dir, b = "run" }
-        let work = join{ &heap, a = runs, b = tagged{ &heap, name = program, n = mix{ h = FNV_BASIS, bytes = fold{ &heap, s = full, os } } } }
-        if not made{ &io, &fs, path = build_dir } or not made{ &io, &fs, path = runs } or not made{ &io, &fs, path = work } { return 1 }
-        let std = std_files{ &io, &fs, &heap, home, os, interp = false } ifnull { return 1 }
-        let rt = runtime_hash{ &io, &fs, &heap, home } ifnull { return 1 }
-        let cc = compiler{ &fs, &proc, &heap, os }
-        let d = Driver{
-            home, runs, work, std, os, cc, cc_env = cc_env{ &proc, &heap, cc = cc[0], os }, rt,
-            unit = unit_size{ &proc }, jobs = proc::processors{ &proc },
-        }
-
+        let d = setup{ &io, &fs, &proc, &heap, path } ifnull { return 1 }
         let mut targets = list::new(Target){ realloc = arena::alloc, &heap }
-        let build_file = normalize{ &heap, path = join{ &heap, a = path, b = "build.ctx" } }
-        if kind == 2 and kind_of{ &fs, path = build_file } == 1 {
-            let code = build_program{ &io, &fs, &mem, &proc, &heap, d, dir = path, build_file, &targets }
-            if code != 0 { return code }
-            if targets.len == 0 {
-                cannot{ &io, path = build_file, what = "describes no executable" }
-                return 1
-            }
-            // An executable's files are named after it.
-            let ts = list::items{ list = targets }
-            let mut k: usize = 1
-            while k < ts.len {
-                let mut j: usize = 0
-                while j < k {
-                    if slice::eq_bytes{ a = ts[j].name, b = ts[k].name } {
-                        cannot{ &io, path = build_file, what = "describes two executables of the same name" }
-                        return 1
-                    }
-                    j = j + 1
-                }
-                k = k + 1
-            }
-        } else {
-            let root: []u8 = if kind == 2 { "." } else { path }
-            add_target{ &targets, &heap, name = program, root }
-        }
+        let mut why = Why::failed
+        let code = describe{ &io, &fs, &mem, &proc, &heap, d, path, &targets, &why }
+        if code != 0 { return code }
 
         let mut first: []u8 = ""
         let mut i: usize = 0
         while i < targets.len {
             let t = list::items{ list = targets }[i]
-            let mut files = one{ &heap, s = path }
-            if kind == 2 {
-                files = target_files{ &io, &fs, &heap, os, dir = path, t } ifnull { return 1 }
-            }
+            let files = program_files{ &io, &fs, &heap, d, path, t } ifnull { return 1 }
             let mut flags = list::new([]u8){ realloc = arena::alloc, &heap }
             add_all{ xs = &flags, ys = list::items{ list = t.paths } }
             add_all{ xs = &flags, ys = list::items{ list = t.libs } }
             let out: []u8 = if i == 0 and not run { args[3] } else { "" }
-            let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = work, name = t.name, files, level = t.level, flags = list::items{ list = flags }, out } ifnull { return 1 }
+            let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = d.work, name = t.name, files, gens = list::items{ list = t.gens }, level = t.level, flags = list::items{ list = flags }, out, &why } ifnull { return 1 }
             if i == 0 { first = exe }
             i = i + 1
         }
@@ -162,6 +132,196 @@ namespace drive {
         try! list::push{ list = &argv, item = first }
         if args.len > 3 { add_all{ xs = &argv, ys = args[3..] } }
         return started{ &io, r = proc::run{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} }, what = first }
+    }
+
+    // `ctxc graph DIR GEN LIST`: runs the build program of directory DIR as `run` does, generated
+    // files and all, and writes what it describes for tools/toolchain.py, which builds the
+    // executables itself. Each executable's generated files go to GEN/EXE/NAME-HASH.ctx, HASH
+    // being of the text: two runs with different text never share a file, the same text keeps
+    // its path, and so what the caller compiles, and its C, from run to run, and no file is
+    // removed, so errors in one name a file a person can open. LIST has a record per line, its
+    // fields separated by a tab:
+    //
+    //   status ok     the first record, or the only one when it failed: `status errors`, errors
+    //                 ctxc reported in the program; `status exited N`, the build program's exit
+    //                 code, 134 if it panicked; `status failed`, anything else, as a C compiler
+    //   exe NAME      an executable, which the records after it describe
+    //   level N       its optimization level, 0 to 3
+    //   file PATH     one of its files, by its absolute path, generated ones in GEN
+    //   flag FLAG     a flag that links it: -LDIR, with DIR absolute, -lLIB, or -framework
+    //                 and then the framework's NAME
+    //
+    // The build program's output is ctxc's, and errors are reported as `run` reports them.
+    fn graph { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> i32 {
+        if args.len != 4 {
+            io::eprintln{ &io, s = "usage: ctxc graph DIR GEN LIST" }
+            return 2
+        }
+        let path = trim_slash{ path = args[1] }
+        let gen = trim_slash{ path = args[2] }
+        let list_file = args[3]
+        let pages = mem::reserve{ &mem, size = 16777216 } ifnull {
+            io::eprintln{ &io, s = "out of memory" }
+            return 1
+        }
+        let mut heap = arena::new{ buf = pages }
+        let mut why = Why::failed
+        let mut text = list::new(u8){ realloc = arena::alloc, &heap }
+        let done = describe_all{ &io, &fs, &mem, &proc, &heap, path, gen, &text, &why }
+        let all = if done { cat{ &heap, a = "status\tok\n", b = list::items{ list = text } } } else { status_line{ &heap, why } }
+        match fs::write_all{ &fs, path = list_file, bytes = all } {
+            ok => {}
+            err => {
+                cannot{ &io, path = list_file, what = "cannot write" }
+                return 1
+            }
+        }
+        return if done { 0 } else { 1 }
+    }
+
+    // LIST's status record for a graph that failed, why.
+    fn status_line { mut heap: Heap, why: Why } -> []u8 {
+        match why {
+            errors => { return "status\terrors\n" }
+            failed => { return "status\tfailed\n" }
+            exited{ code } => {
+                let mut digits: [20]u8
+                return cat{ &heap, a = "status\texited\t", b = cat{ &heap, a = utf8::fmt_i64{ n = code, into = digits[..] }.bytes, b = "\n" } }
+            }
+        }
+    }
+
+    // For `graph`: describes the program at path into text, writing generated files to gen.
+    // False after saying why it can't, and setting why.
+    fn describe_all { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, path: []u8, gen: []u8, mut text: list::List(u8, Heap), mut why: Why } -> bool {
+        let d = setup{ &io, &fs, &proc, &heap, path } ifnull { return false }
+        if kind_of{ &fs, path = join{ &heap, a = path, b = "build.ctx" } } != 1 {
+            cannot{ &io, path, what = "has no build program" }
+            why = Why::errors
+            return false
+        }
+        let mut targets = list::new(Target){ realloc = arena::alloc, &heap }
+        if describe{ &io, &fs, &mem, &proc, &heap, d, path, &targets, &why } != 0 { return false }
+        let ts = list::items{ list = targets }
+        let mut i: usize = 0
+        while i < ts.len {
+            let t = ts[i]
+            let digit: [1]u8 = [t.level + '0']
+            add_bytes{ xs = &text, s = cat{ &heap, a = cat{ &heap, a = "exe\t", b = t.name }, b = cat{ &heap, a = "\nlevel\t", b = digit[..] } } }
+            let files = program_files{ &io, &fs, &heap, d, path, t } ifnull {
+                why = Why::errors
+                return false
+            }
+            let gens = list::items{ list = t.gens }
+            let at = join{ &heap, a = gen, b = t.name }
+            if gens.len > 0 and (not made{ &io, &fs, path = gen } or not made{ &io, &fs, path = at }) { return false }
+            let mut copies = list::new([]u8){ realloc = arena::alloc, &heap }
+            add_all{ xs = &copies, ys = files }
+            let mut k: usize = 0
+            while k < gens.len {
+                let name = cat{ &heap, a = gens[k].name, b = cat{ &heap, a = "-", b = hex{ &heap, n = mix{ h = FNV_BASIS, bytes = gens[k].text } } } }
+                let copy = join{ &heap, a = at, b = cat{ &heap, a = name, b = ".ctx" } }
+                if not write_changed{ &io, &fs, &heap, path = copy, text = gens[k].text } { return false }
+                try! list::push{ list = &copies, item = copy }
+                k = k + 1
+            }
+            let xs = list::items{ list = copies }
+            k = 0
+            while k < xs.len {
+                let full = absolute{ &io, &fs, &heap, path = xs[k] } ifnull { return false }
+                add_bytes{ xs = &text, s = cat{ &heap, a = "\nfile\t", b = full } }
+                k = k + 1
+            }
+            let ps = list::items{ list = t.paths }
+            k = 0
+            while k < ps.len {
+                let full = absolute{ &io, &fs, &heap, path = ps[k][2..] } ifnull { return false }
+                add_bytes{ xs = &text, s = cat{ &heap, a = "\nflag\t-L", b = full } }
+                k = k + 1
+            }
+            let ls = list::items{ list = t.libs }
+            k = 0
+            while k < ls.len {
+                add_bytes{ xs = &text, s = cat{ &heap, a = "\nflag\t", b = ls[k] } }
+                k = k + 1
+            }
+            add_bytes{ xs = &text, s = "\n" }
+            i = i + 1
+        }
+        return true
+    }
+
+    // The driver for the program at path: ctxc's home, the program's directory in HOME/build/run,
+    // std's files, the runtime's hash and the C compiler. Null after saying why there is none.
+    fn setup { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, path: []u8 } -> ?Driver {
+        let home = find_home{ &fs, &proc, &heap } ifnull {
+            io::eprintln{ &io, s = "ctxc: cannot find std/ and ctxc/rt/; set CTX_HOME to the directory that holds them" }
+            return null
+        }
+        if kind_of{ &fs, path } == 0 {
+            cannot{ &io, path, what = "cannot read" }
+            return null
+        }
+        let os = proc::os{ &proc }
+        let full = absolute{ &io, &fs, &heap, path } ifnull { return null }
+        let program = stem{ path = base{ path = full } }
+        let build_dir = join{ &heap, a = home, b = "build" }
+        let runs = join{ &heap, a = build_dir, b = "run" }
+        let work = join{ &heap, a = runs, b = tagged{ &heap, name = program, n = mix{ h = FNV_BASIS, bytes = fold{ &heap, s = full, os } } } }
+        if not made{ &io, &fs, path = build_dir } or not made{ &io, &fs, path = runs } or not made{ &io, &fs, path = work } { return null }
+        let std = std_files{ &io, &fs, &heap, home, os, interp = false } ifnull { return null }
+        let rt = runtime_hash{ &io, &fs, &heap, home } ifnull { return null }
+        let cc = compiler{ &fs, &proc, &heap, os }
+        return Driver{
+            home, runs, work, program, std, os, cc, cc_env = cc_env{ &proc, &heap, cc = cc[0], os }, rt,
+            unit = unit_size{ &proc }, jobs = proc::processors{ &proc },
+        }
+    }
+
+    // Adds the executables to build from the program at path to targets: those its build program
+    // describes, their generated files written (`generate`), if it is a directory with a
+    // build.ctx, or else the program itself. Returns 0, or an exit code after saying why not,
+    // and setting why.
+    fn describe { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, path: []u8, mut targets: list::List(Target, Heap), mut why: Why } -> i32 {
+        let kind = kind_of{ &fs, path }
+        let build_file = normalize{ &heap, path = join{ &heap, a = path, b = "build.ctx" } }
+        if kind != 2 or kind_of{ &fs, path = build_file } != 1 {
+            let root: []u8 = if kind == 2 { "." } else { path }
+            add_target{ &targets, &heap, name = d.program, root }
+            return 0
+        }
+        let code = build_program{ &io, &fs, &mem, &proc, &heap, d, dir = path, build_file, &targets, &why }
+        if code != 0 { return code }
+        why = Why::errors
+        if targets.len == 0 {
+            cannot{ &io, path = build_file, what = "describes no executable" }
+            return 1
+        }
+        // An executable's files are named after it, and Windows' names ignore case.
+        let ts = list::items{ list = targets }
+        let mut k: usize = 1
+        while k < ts.len {
+            let mut j: usize = 0
+            while j < k {
+                if slice::eq_bytes{ a = fold{ &heap, s = ts[j].name, os = d.os }, b = fold{ &heap, s = ts[k].name, os = d.os } } {
+                    cannot{ &io, path = build_file, what = "describes two executables of the same name" }
+                    return 1
+                }
+                j = j + 1
+            }
+            k = k + 1
+        }
+        // generate's errors are the program's, but for a file it can't write.
+        if not generate{ &io, &fs, &heap, d, build_file, targets, &why } { return 1 }
+        why = Why::failed
+        return 0
+    }
+
+    // Target t's files, but for those it generates: path itself, a file, or those target_files
+    // finds in the directory.
+    fn program_files { mut io: Io, mut fs: Fs, mut heap: Heap, d: Driver, path: []u8, t: Target } -> ?[][]u8 {
+        if kind_of{ &fs, path } != 2 { return one{ &heap, s = path } }
+        return target_files{ &io, &fs, &heap, os = d.os, dir = path, t }
     }
 
     // `ctxc interp [--env NAME=VALUE | --env NAME]... PATH [-- ARGS...]`: finds std and PATH's
@@ -228,7 +388,7 @@ namespace drive {
             env = kept
             k = k + 2
         }
-        return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = std.len, mode = Mode::interp, out = stem{ path = base{ path } }, argv, env = list::items{ list = env }, stack, size = 0, made = &units }
+        return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = std.len, mode = Mode::interp, out = stem{ path = base{ path } }, argv, env = list::items{ list = env }, stack, size = 0, made = &units, texts = slice::empty([]u8){} }
     }
 
     // About how many bytes of C a unit has: CTX_UNIT_SIZE, or UNIT_SIZE.
@@ -249,40 +409,76 @@ namespace drive {
     }
 
     // Compiles and runs dir's build program, and adds the executables its graph describes.
-    fn build_program { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, dir: []u8, build_file: []u8, mut targets: list::List(Target, Heap) } -> i32 {
+    fn build_program { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, dir: []u8, build_file: []u8, mut targets: list::List(Target, Heap), mut why: Why } -> i32 {
         let work = join{ &heap, a = d.work, b = "build" }
         if not made{ &io, &fs, path = work } { return 1 }
-        let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = work, name = "build", files = one{ &heap, s = build_file }, level = 1, flags = slice::empty([]u8){}, out = "" } ifnull { return 1 }
+        let files = gather_build_files{ &io, &fs, &heap, os = d.os, dir, build_file } ifnull {
+            why = Why::errors
+            return 1
+        }
+        let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = work, name = "build", files, gens = slice::empty(Gen){}, level = 1, flags = slice::empty([]u8){}, out = "", &why } ifnull { return 1 }
         let graph = claim{ &io, &fs, &heap, base = join{ &heap, a = work, b = "graph" }, ext = ".txt" } ifnull { return 1 }
         defer _ = fs::remove{ &fs, path = graph }
         let mut env = list::new([]u8){ realloc = arena::alloc, &heap }
         try! list::push{ list = &env, item = cat{ &heap, a = "CTX_BUILD_OUT=", b = graph } }
         let ran = started{ &io, r = proc::run{ &proc, argv = one{ &heap, s = exe }, env = list::items{ list = env } }, what = exe }
-        if ran != 0 { return ran }
-        let text = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = graph } iferr {
-            cannot{ &io, path = graph, what = "cannot read" }
-            return 1
+        if ran != 0 {
+            why = Why::exited{ code = ran }
+            return ran
         }
+        let text = read_whole{ &io, &fs, &mem, path = graph } ifnull { return 1 }
         // One record per line, its fields separated by tabs: exe ID NAME ROOT, sources ID DIR,
-        // optimize ID LEVEL, link ID LIB, framework ID NAME, libpath ID PATH. Ids count from 0
-        // in the order of exe records.
-        let mut start: usize = 0
+        // optimize ID LEVEL, link ID LIB, framework ID NAME, libpath ID PATH, and gen ID NAME
+        // SIZE, whose line SIZE bytes of text and a line break follow. Ids count from 0 in the
+        // order of exe records. A graph whose last record has no line break was cut short.
         let mut i: usize = 0
         while i < text.len {
-            if text[i] == '\n' {
-                let ok = record{ &heap, &targets, dir, line = text[start..i] }
-                if not ok {
-                    cannot{ &io, path = graph, what = "is not a build graph" }
-                    return 1
-                }
-                start = i + 1
+            let mut end = i
+            while end < text.len and text[end] != '\n' { end = end + 1 }
+            if end == text.len {
+                cannot{ &io, path = graph, what = "is not a build graph" }
+                why = Why::errors
+                return 1
             }
-            i = i + 1
+            i = record{ &heap, &targets, dir, text, at = i, end } ifnull {
+                cannot{ &io, path = graph, what = "is not a build graph" }
+                why = Why::errors
+                return 1
+            }
         }
         return 0
     }
 
-    fn record { mut heap: Heap, mut targets: list::List(Target, Heap), dir: []u8, line: []u8 } -> bool {
+    // The file at path, in memory from mem::pages of its size, which lasts as long as ctxc does:
+    // the graph, which holds the text of every generated file, may be far larger than the
+    // driver's heap. Null after saying why it can't be read.
+    fn read_whole { mut io: Io, mut fs: Fs, mut mem: Mem, path: []u8 } -> ?[]u8 {
+        let size = fs::size{ &fs, path } iferr {
+            cannot{ &io, path, what = "cannot read" }
+            return null
+        }
+        if size == 0 { return slice::empty(u8){} }
+        let n = @as(usize, size)
+        let buf = mem::pages{ &mem, size = n } ifnull {
+            io::eprintln{ &io, s = "out of memory" }
+            return null
+        }
+        let file = fs::open{ &fs, path, mode = fs::Mode::read } iferr {
+            cannot{ &io, path, what = "cannot read" }
+            return null
+        }
+        defer _ = fs::close{ &fs, file }
+        let got = fs::read_at{ &fs, file, offset = 0, into = buf[..n] } iferr {
+            cannot{ &io, path, what = "cannot read" }
+            return null
+        }
+        return buf[..got]
+    }
+
+    // Adds the record text[at..end] to targets. Returns where the next record starts; null if it
+    // isn't one.
+    fn record { mut heap: Heap, mut targets: list::List(Target, Heap), dir: []u8, text: []u8, at: usize, end: usize } -> ?usize {
+        let line = text[at..end]
         let mut fields = list::new([]u8){ realloc = arena::alloc, &heap }
         let mut start: usize = 0
         let mut i: usize = 0
@@ -294,21 +490,32 @@ namespace drive {
             i = i + 1
         }
         let f = list::items{ list = fields }
-        if f.len < 3 { return false }
+        if f.len < 3 { return null }
         let id = utf8::parse_u64{ s = utf8::String{ bytes = f[1] } }
-        if id == null { return false }
+        if id == null { return null }
         let kind = f[0]
         if slice::eq_bytes{ a = kind, b = "exe" } {
-            if f.len != 4 or id != targets.len { return false }
+            if f.len != 4 or id != targets.len or not is_exe_name{ name = f[2] } { return null }
             add_target{ &targets, &heap, name = f[2], root = f[3] }
-            return true
+            return end + 1
         }
-        if f.len != 3 or id >= targets.len { return false }
+        if slice::eq_bytes{ a = kind, b = "gen" } {
+            if f.len != 4 or id >= targets.len or not is_file_name{ name = f[2] } { return null }
+            let size = utf8::parse_u64{ s = utf8::String{ bytes = f[3] } } ifnull { return null }
+            if size >= text.len - end - 1 { return null }
+            let from = end + 1
+            let to = from + @as(usize, size)
+            if text[to] != '\n' { return null }
+            let t = list::at{ list = targets, i = @as(usize, id) }
+            try! list::push{ list = &t.gens, item = Gen{ name = f[2], text = text[from..to], path = "" } }
+            return to + 1
+        }
+        if f.len != 3 or id >= targets.len { return null }
         let t = list::at{ list = targets, i = @as(usize, id) }
         if slice::eq_bytes{ a = kind, b = "sources" } {
             try! list::push{ list = &t.dirs, item = f[2] }
         } else if slice::eq_bytes{ a = kind, b = "optimize" } {
-            if f[2].len != 1 or f[2][0] < '0' or f[2][0] > '3' { return false }
+            if f[2].len != 1 or f[2][0] < '0' or f[2][0] > '3' { return null }
             t.level = f[2][0] - '0'
         } else if slice::eq_bytes{ a = kind, b = "link" } {
             try! list::push{ list = &t.libs, item = cat{ &heap, a = "-l", b = f[2] } }
@@ -318,15 +525,320 @@ namespace drive {
         } else if slice::eq_bytes{ a = kind, b = "libpath" } {
             try! list::push{ list = &t.paths, item = cat{ &heap, a = "-L", b = place{ &heap, dir, rel = f[2] } } }
         } else {
-            return false
+            return null
+        }
+        return end + 1
+    }
+
+    // Whether name can be an executable's, as build::exe checks: ASCII letters, digits, `_`, `-`
+    // and `.`, so that folding ASCII's case finds every name Windows takes for the same, but not
+    // ending in `.`, which Windows drops. The driver checks names where they leave the graph too,
+    // since they name the directories it writes in.
+    fn is_exe_name { name: []u8 } -> bool {
+        if name.len == 0 or name[name.len - 1] == '.' { return false }
+        let mut i: usize = 0
+        while i < name.len {
+            let c = name[i]
+            if not (ascii::is_alnum{ c } or c == '_' or c == '-' or c == '.') { return false }
+            i = i + 1
         }
         return true
+    }
+
+    // Whether name can be a generated file's, as build::gen_file checks: ASCII letters, digits,
+    // `_` and `-`, so that it names a file in its directory on every platform, but not `build`
+    // in any case, since a file named build.ctx is never an executable's.
+    fn is_file_name { name: []u8 } -> bool {
+        if name.len == 0 { return false }
+        let word: []u8 = "build"
+        let mut build = name.len == word.len
+        let mut i: usize = 0
+        while i < name.len {
+            let c = name[i]
+            if not (ascii::is_alnum{ c } or c == '_' or c == '-') { return false }
+            if build and ascii::to_lower{ c } != word[i] { build = false }
+            i = i + 1
+        }
+        return not build
+    }
+
+    // ---- a build program's files
+
+    // The build program's files: build.ctx, then those under each directory a
+    // `#build::sources{ dir }` on its `fn build` names (std/build.ctx), found as add_sources's
+    // are for an executable. The driver reads the attribute from build.ctx's syntax tree, before
+    // there is a program to check, so `dir` must be a string literal; the checker checks the
+    // attribute again when it compiles the build program, as any other. Null after reporting why
+    // there are none.
+    fn gather_build_files { mut io: Io, mut fs: Fs, mut heap: Heap, os: build::Os, dir: []u8, build_file: []u8 } -> ?[][]u8 {
+        let mut found = Found{
+            paths = list::new([]u8){ realloc = arena::alloc, &heap },
+            keys = list::new([]u8){ realloc = arena::alloc, &heap },
+        }
+        let key = key_of{ &io, &fs, &heap, path = build_file, os } ifnull { return null }
+        add_found{ &found, path = build_file, key }
+        let text = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = build_file } iferr {
+            cannot{ &io, path = build_file, what = "cannot read" }
+            return null
+        }
+        let mut diags = diag::new{ &heap }
+        let lexed = lexer::lex{ text, file = 0, &heap, &diags }
+        let tree = parser::parse{ text, file = 0, tokens = lexed.tokens, &heap, &diags }
+        // What didn't parse, the compile reports.
+        if diags.errors > 0 { return list::items{ list = found.paths } }
+        let mut sources = list::new(Source){ realloc = arena::alloc, &heap }
+        if not find_sources{ &io, &heap, path = build_file, text, decls = tree.decls, top = true, &sources } { return null }
+        let xs = list::items{ list = sources }
+        let mut i: usize = 0
+        while i < xs.len {
+            let at = place{ &heap, dir, rel = xs[i].dir }
+            if kind_of{ &fs, path = at } != 2 {
+                report_at{ &io, &heap, path = build_file, text, at = xs[i].at, msg = cat{ &heap, a = "no directory ", b = at } }
+                return null
+            }
+            let n = add_files{ &io, &fs, &heap, os, &found, dir = at, deep = true } ifnull { return null }
+            if n == 0 {
+                report_at{ &io, &heap, path = build_file, text, at = xs[i].at, msg = cat{ &heap, a = cat{ &heap, a = "no .ctx files in ", b = at }, b = " or below" } }
+                return null
+            }
+            i = i + 1
+        }
+        return list::items{ list = found.paths }
+    }
+
+    // Adds to sources the `dir` of each `#build::sources` on a top-level `fn build` among decls,
+    // and looks for others in namespaces and on capabilities' fields. False after reporting one
+    // elsewhere, or one whose `dir` isn't a string literal that isn't empty.
+    fn find_sources { mut io: Io, mut heap: Heap, path: []u8, text: []u8, decls: []syntax::Decl, top: bool, mut sources: list::List(Source, Heap) } -> bool {
+        let misplaced: []u8 = "`build::sources` applies only to the build program's `fn build`"
+        let mut i: usize = 0
+        while i < decls.len {
+            let x = decls[i]
+            let mut entry = false
+            if x.k is func{ name, external } { entry = top and not external and slice::eq_bytes{ a = name.text, b = "build" } }
+            let mut k: usize = 0
+            while k < x.attrs.len {
+                let a = x.attrs[k]
+                if is_sources{ a } {
+                    if not entry {
+                        report_at{ &io, &heap, path, text, at = a.span.start, msg = misplaced }
+                        return false
+                    }
+                    let s = sources_dir{ a }
+                    if s.dir.len == 0 {
+                        report_at{ &io, &heap, path, text, at = s.at, msg = "`build::sources` takes `dir`, a string literal that isn't empty" }
+                        return false
+                    }
+                    try! list::push{ list = &sources, item = s }
+                }
+                k = k + 1
+            }
+            match x.k {
+                space{ decls = inner } => {
+                    if not find_sources{ &io, &heap, path, text, decls = inner, top = false, &sources } { return false }
+                }
+                cap{ fields } => {
+                    if fields != null {
+                        let mut j: usize = 0
+                        while j < fields.len {
+                            let attrs = fields[j].attrs
+                            let mut m: usize = 0
+                            while m < attrs.len {
+                                if is_sources{ a = attrs[m] } {
+                                    report_at{ &io, &heap, path, text, at = attrs[m].span.start, msg = misplaced }
+                                    return false
+                                }
+                                m = m + 1
+                            }
+                            j = j + 1
+                        }
+                    }
+                }
+                else => {}
+            }
+            i = i + 1
+        }
+        return true
+    }
+
+    // Whether a is `#build::sources{ ... }`, as it is written.
+    fn is_sources { a: syntax::Attr } -> bool {
+        let braced{ callee } = a.value.k else { return false }
+        let path{ segs } = callee.k else { return false }
+        return segs.len == 2 and segs[0].targs == null and segs[1].targs == null
+               and slice::eq_bytes{ a = segs[0].name.text, b = "build" } and slice::eq_bytes{ a = segs[1].name.text, b = "sources" }
+    }
+
+    // The `dir` of `#build::sources{ dir = "..." }`, and where it is; an empty dir, if it isn't
+    // a string literal that isn't empty, where `dir` is or else where the attribute is.
+    fn sources_dir { a: syntax::Attr } -> Source {
+        let missing = Source{ dir = "", at = a.span.start }
+        let braced{ items } = a.value.k else { return missing }
+        let mut i: usize = 0
+        while i < items.len {
+            let it = items[i]
+            if not it.spread and slice::eq_bytes{ a = it.name.text, b = "dir" } {
+                let str{ bytes } = it.value.k else { return Source{ dir = "", at = it.value.at } }
+                return Source{ dir = bytes, at = it.value.at }
+            }
+            i = i + 1
+        }
+        return missing
+    }
+
+    // "PATH:LINE:COL: error: MSG" for offset `at` in path's text, as the front end reports an
+    // error (main.ctx, `error`).
+    fn report_at { mut io: Io, mut heap: Heap, path: []u8, text: []u8, at: u32, msg: []u8 } {
+        let p = source::position{ text, lines = source::line_starts{ text, &heap }, offset = at }
+        let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+        _ = @fmt(&b, "{}:{}:{}: error: {}\n", path, p.line, p.col, msg)
+        io::write{ &io, to = io::Stream::err, bytes = utf8::view{ b }.bytes }
+    }
+
+    // ---- generated files
+
+    // Writes the files build::gen_file gives each executable to WORK/gen/EXE/NAME.ctx, for a
+    // person to open where errors in them point, and sets their paths. An executable is
+    // compiled from the text the driver holds, not from the file, so another ctxc building the
+    // same program at once can't change what this one compiles. A file whose text hasn't
+    // changed isn't written again. False after saying why it can't.
+    fn generate { mut io: Io, mut fs: Fs, mut heap: Heap, d: Driver, build_file: []u8, targets: list::List(Target, Heap), mut why: Why } -> bool {
+        let top = join{ &heap, a = d.work, b = "gen" }
+        let ts = list::items{ list = targets }
+        let mut i: usize = 0
+        while i < ts.len {
+            let t = ts[i]
+            let gens = list::items{ list = t.gens }
+            if gens.len > 0 {
+                let at = join{ &heap, a = top, b = t.name }
+                if not made{ &io, &fs, path = top } or not made{ &io, &fs, path = at } {
+                    why = Why::failed
+                    return false
+                }
+                let mut k: usize = 0
+                while k < gens.len {
+                    let file = cat{ &heap, a = gens[k].name, b = ".ctx" }
+                    let mut j: usize = 0
+                    while j < k {
+                        if slice::eq_bytes{ a = fold{ &heap, s = gens[j].name, os = d.os }, b = fold{ &heap, s = gens[k].name, os = d.os } } {
+                            let what = cat{ &heap, a = cat{ &heap, a = "gives executable ", b = t.name }, b = cat{ &heap, a = " two files named ", b = file } }
+                            cannot{ &io, path = build_file, what = utf8::String{ bytes = what } }
+                            return false
+                        }
+                        j = j + 1
+                    }
+                    // As a person would write it, as errors in it name it.
+                    let path = normalize{ &heap, path = join{ &heap, a = at, b = file } }
+                    if not write_changed{ &io, &fs, &heap, path, text = gens[k].text } {
+                        why = Why::failed
+                        return false
+                    }
+                    gens[k].path = path
+                    k = k + 1
+                }
+            }
+            i = i + 1
+        }
+        remove_stale{ &fs, &heap, os = d.os, top, ts }
+        return true
+    }
+
+    // Removes what earlier builds generated that this one doesn't: from each directory in top
+    // (WORK/gen), the .ctx files that aren't its executable's generated files now, looking no
+    // deeper, and then the directory, if its executable generates none and it is empty; and top,
+    // if nothing is generated. These are copies for a person (`generate`), and only ctxc writes
+    // in its build directory, so a link planted there, which this would follow, is out of scope.
+    fn remove_stale { mut fs: Fs, mut heap: Heap, os: build::Os, top: []u8, ts: []Target } {
+        let dirs = fs::list{ &fs, &heap, realloc = arena::alloc, path = top } iferr { return }
+        let mut any = false
+        let mut i: usize = 0
+        while i < dirs.len {
+            let at = join{ &heap, a = top, b = dirs[i] }
+            let mut gens: []Gen = slice::empty(Gen){}
+            let mut k: usize = 0
+            while k < ts.len {
+                if slice::eq_bytes{ a = fold{ &heap, s = ts[k].name, os }, b = fold{ &heap, s = dirs[i], os } } { gens = list::items{ list = ts[k].gens } }
+                k = k + 1
+            }
+            if gens.len > 0 { any = true }
+            match fs::list{ &fs, &heap, realloc = arena::alloc, path = at } {
+                ok{ value = names } => {
+                    let mut j: usize = 0
+                    while j < names.len {
+                        let file = join{ &heap, a = at, b = names[j] }
+                        if ends_with{ s = names[j], suffix = ".ctx" } and not generates{ &heap, gens, file = names[j], os } and kind_of{ &fs, path = file } == 1 {
+                            _ = fs::remove{ &fs, path = file }
+                        }
+                        j = j + 1
+                    }
+                    if gens.len == 0 { _ = fs::remove_dir{ &fs, path = at } }
+                }
+                err => {}
+            }
+            i = i + 1
+        }
+        if not any { _ = fs::remove_dir{ &fs, path = top } }
+    }
+
+    // Whether file is NAME.ctx for one of gens.
+    fn generates { mut heap: Heap, gens: []Gen, file: []u8, os: build::Os } -> bool {
+        let name = fold{ &heap, s = stem{ path = file }, os }
+        let mut i: usize = 0
+        while i < gens.len {
+            if slice::eq_bytes{ a = fold{ &heap, s = gens[i].name, os }, b = name } { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // Writes text to the file at path unless it holds that already: through a file of its own,
+    // renamed into place. Unlike an object's, a generated file's name doesn't say what it holds,
+    // so a rename that fails is a failure unless the file holds the text after all, as another
+    // ctxc building the same program may have written it. False after saying why it can't.
+    fn write_changed { mut io: Io, mut fs: Fs, mut heap: Heap, path: []u8, text: []u8 } -> bool {
+        if holds{ &fs, path, text } { return true }
+        let tmp = claim{ &io, &fs, &heap, base = path, ext = ".tmp" } ifnull { return false }
+        match fs::write_all{ &fs, path = tmp, bytes = text } {
+            ok => {}
+            err => {
+                cannot{ &io, path = tmp, what = "cannot write" }
+                _ = fs::remove{ &fs, path = tmp }
+                return false
+            }
+        }
+        match fs::rename{ &fs, from = tmp, to = path } {
+            ok => { return true }
+            err => {}
+        }
+        _ = fs::remove{ &fs, path = tmp }
+        if holds{ &fs, path, text } { return true }
+        cannot{ &io, path, what = "cannot write" }
+        return false
+    }
+
+    // Whether the file at path holds text, read a piece at a time, since text may be large.
+    fn holds { mut fs: Fs, path: []u8, text: []u8 } -> bool {
+        let size = fs::size{ &fs, path } iferr { return false }
+        if size != text.len { return false }
+        let file = fs::open{ &fs, path, mode = fs::Mode::read } iferr { return false }
+        defer _ = fs::close{ &fs, file }
+        let mut buf: [65536]u8
+        let mut at: usize = 0
+        while at < text.len {
+            let n = fs::read{ &fs, file, into = buf[..] } iferr { return false }
+            if n == 0 or n > text.len - at or not slice::eq_bytes{ a = buf[..n], b = text[at..at + n] } { return false }
+            at = at + n
+        }
+        // and nothing after it, should the file have grown since its size was read
+        let more = fs::read{ &fs, file, into = buf[..1] } iferr { return false }
+        return more == 0
     }
 
     // ---- an executable's files
 
     // Target t's files, for the build program in dir: its root's .ctx files, then those under
-    // each directory added to it, each file once. Null after saying why there are none.
+    // each directory added to it, each file once, but for those it generates. Its root may have
+    // none if it generates some. Null after saying why there are none.
     fn target_files { mut io: Io, mut fs: Fs, mut heap: Heap, os: build::Os, dir: []u8, t: Target } -> ?[][]u8 {
         let mut found = Found{
             paths = list::new([]u8){ realloc = arena::alloc, &heap },
@@ -334,7 +846,7 @@ namespace drive {
         }
         let root = place{ &heap, dir, rel = t.root }
         let n = add_files{ &io, &fs, &heap, os, &found, dir = root, deep = false } ifnull { return null }
-        if n == 0 {
+        if n == 0 and t.gens.len == 0 {
             cannot{ &io, path = root, what = "no .ctx files in directory" }
             return null
         }
@@ -405,18 +917,30 @@ namespace drive {
 
     // ---- compiling
 
-    // Builds the program of files, with std's, into an executable: `out`, or if out is empty
-    // dir/NAME-HASH, which stays to be run again while HASH is the same. Each unit of its C is
-    // compiled into dir/NAME-HASH.o unless that is there, its C going to dir/NAME-HASH.c. Returns
-    // the executable; null after saying why there is none.
-    fn compile { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, dir: []u8, name: []u8, files: [][]u8, level: u8, flags: [][]u8, out: []u8 } -> ?[]u8 {
+    // Builds the program of files and gens, with std's, into an executable: `out`, or if out is
+    // empty dir/NAME-HASH, which stays to be run again while HASH is the same. Each unit of its C
+    // is compiled into dir/NAME-HASH.o unless that is there, its C going to dir/NAME-HASH.c.
+    // Returns the executable; null after saying why there is none, and setting why to errors if
+    // the program has errors.
+    fn compile { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, dir: []u8, name: []u8, files: [][]u8, gens: []Gen, level: u8, flags: [][]u8, out: []u8, mut why: Why } -> ?[]u8 {
         let base = join{ &heap, a = dir, b = name }
         let mut paths = list::new([]u8){ realloc = arena::alloc, &heap }
         add_all{ xs = &paths, ys = d.std }
         add_all{ xs = &paths, ys = files }
+        // A generated file is compiled from the text the driver holds, under its path.
+        let mut texts = list::new([]u8){ realloc = arena::alloc, &heap }
+        let mut k: usize = 0
+        while k < gens.len {
+            try! list::push{ list = &paths, item = gens[k].path }
+            try! list::push{ list = &texts, item = gens[k].text }
+            k = k + 1
+        }
         let mut units: [][]u8 = slice::empty([]u8){}
-        let code = analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = d.std.len, mode = Mode::units, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = d.unit, made = &units }
-        if code != 0 { return null }
+        let code = analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = d.std.len, mode = Mode::units, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = d.unit, made = &units, texts = list::items{ list = texts } }
+        if code != 0 {
+            why = Why::errors
+            return null
+        }
 
         // A unit's HASH is of its C, the runtime, the compiler, the flags and the program's name;
         // the executable's, of its units' and the link flags.
@@ -882,12 +1406,15 @@ namespace drive {
                and kind_of{ &fs, path = join{ &heap, a = dir, b = "ctxc/rt/ctxrt.c" } } == 1
     }
 
-    // The C compiler's command: CTX_CC split at spaces, or `cc`. A bare name found on PATH
-    // becomes the path it is found at.
+    // The C compiler's command: CTX_CC as it is, if it names a file, so a path may hold spaces;
+    // else CTX_CC split at spaces (`zig cc`), or `cc`. A bare name found on PATH becomes the path
+    // it is found at.
     fn compiler { mut fs: Fs, mut proc: Proc, mut heap: Heap, os: build::Os } -> [][]u8 {
         let mut words = list::new([]u8){ realloc = arena::alloc, &heap }
         let set = proc::env{ &proc, name = "CTX_CC" }
-        if set != null {
+        if set != null and set.len > 0 and kind_of{ &fs, path = set } == 1 {
+            try! list::push{ list = &words, item = set }
+        } else if set != null {
             let mut start: usize = 0
             let mut i: usize = 0
             while i <= set.len {
@@ -1013,6 +1540,7 @@ namespace drive {
             dirs = list::new([]u8){ realloc = arena::alloc, &heap },
             paths = list::new([]u8){ realloc = arena::alloc, &heap },
             libs = list::new([]u8){ realloc = arena::alloc, &heap },
+            gens = list::new(Gen){ realloc = arena::alloc, &heap },
         }
     }
 
@@ -1161,6 +1689,14 @@ namespace drive {
         let mut xs = list::new([]u8){ realloc = arena::alloc, &heap }
         try! list::push{ list = &xs, item = s }
         return list::items{ list = xs }
+    }
+
+    fn add_bytes { mut xs: list::List(u8, Heap), s: []u8 } {
+        let mut i: usize = 0
+        while i < s.len {
+            try! list::push{ list = &xs, item = s[i] }
+            i = i + 1
+        }
     }
 
     fn add_all { mut xs: Strs, ys: [][]u8 } {

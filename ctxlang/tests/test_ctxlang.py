@@ -9417,6 +9417,9 @@ class CtxcDriver(Base):
         import tempfile
         d = tempfile.mkdtemp(prefix='ctxdrive-', dir=os.path.join(ROOT, 'build'))
         self.addCleanup(shutil.rmtree, d, True)
+        # and the files build_project's build program generates (toolchain.build_project)
+        import hashlib
+        self.addCleanup(shutil.rmtree, os.path.join(ROOT, 'build', 'cbackend', 'gen', hashlib.sha256(d.encode()).hexdigest()[:16]), True)
         for name, text in files.items():
             path = os.path.join(d, name)
             os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -9574,6 +9577,266 @@ fn build { mut b: Build } {
             f.write('fn build { mut b: Build } {\n    _ = build::exe{ &b, name = "t", root = "." }\n    _ = build::exe{ &b, name = "t", root = "sub" }\n}\n')
         code, _, err = self.ctxc('run', tool, cwd=d)
         self.assertEqual((code, err), (1, f'{tool}/build.ctx: describes two executables of the same name\n'))
+
+    def test_build_program_sources(self):
+        # `#build::sources` on `fn build` makes the files under a directory the build program's,
+        # as add_sources makes them an executable's: at any depth, each once, none named
+        # build.ctx. They aren't the executable's.
+        d, tool = self.tool_project("""
+#build::sources{ dir = "../../lib/a" }
+#build::sources{ dir = "../../lib/a/deeper" }
+#build::sources{ dir = "../..//lib/./b" }
+fn build { mut b: Build } {
+    io::println_i64{ io = &b, n = x::n{} + y::n{} + z::n{} }
+    _ = build::exe{ &b, name = "t", root = "sub" }
+}
+""")
+        self.assertEqual(self.ctxc('run', tool, cwd=d), (0, '321\n', ''))
+        with open(os.path.join(d, tool, 'sub', 'main.ctx'), 'w') as f:
+            f.write('fn main {} { _ = x::n{} }\n')
+        code, _, err = self.ctxc('run', tool, cwd=d)
+        self.assertEqual(code, 1)
+        self.assertIn(f'{tool}/sub/main.ctx:1:', err)
+
+    def both(self, d):
+        """`ctxc run` of the program in directory d, from d, and toolchain.build_project's build
+        of it, which has `ctxc graph` read the build program: (exit code, stdout, stderr), and
+        what build_project's first executable printed or the exception it raised."""
+        from toolchain import build_project, run_exe
+        got = self.ctxc('run', '.', cwd=d)
+        try:
+            [(_, exe), *_] = build_project(d, out=io.StringIO(), err=io.StringIO())
+        except Exception as e:
+            return got, e
+        out = io.StringIO()
+        run_exe(exe, out=out)
+        return got, out.getvalue()
+
+    def test_build_program_source_errors(self):
+        # Errors in `#build::sources` are at their positions in build.ctx. The driver reads the
+        # attribute before the checker runs, so `dir` is a literal; the checker checks the rest.
+        # `ctxc graph`, for toolchain.build_project, reports the same.
+        from toolchain import CompileError
+        cases = [
+            ('#build::sources{ dir = "../../lib/missing" }\nfn build { mut b: Build } {}\n',
+             'no directory ../../lib/missing', 1, 24),
+            ('#build::sources{ dir = "../../lib/empty" }\nfn build { mut b: Build } {}\n',
+             'no .ctx files in ../../lib/empty or below', 1, 24),
+            ('namespace n {\n    #build::sources{ dir = "../../lib/a" }\n    fn build {} {}\n}\nfn build { mut b: Build } {}\n',
+             "`build::sources` applies only to the build program's `fn build`", 2, 5),
+            ('#build::sources{ dir = "../../lib/a" }\nstruct S {}\nfn build { mut b: Build } {}\n',
+             "`build::sources` applies only to the build program's `fn build`", 1, 1),
+            ('const D: []u8 = "../../lib/a"\n#build::sources{ dir = D }\nfn build { mut b: Build } {}\n',
+             "`build::sources` takes `dir`, a string literal that isn't empty", 2, 24),
+            ('#build::sources\nfn build { mut b: Build } {}\n',
+             "`build::sources` takes `dir`, a string literal that isn't empty", 1, 1),
+            ('#build::sources{ dir = "" }\nfn build { mut b: Build } {}\n',
+             "`build::sources` takes `dir`, a string literal that isn't empty", 1, 24),
+            ('#build::sources{ dir = "../../lib/a", deep = true }\nfn build { mut b: Build } {}\n',
+             'struct `sources` has no field `deep`', 1, 39),
+        ]
+        d, tool = self.tool_project('')
+        for build, msg, line, col in cases:
+            with open(os.path.join(d, tool, 'build.ctx'), 'w') as f:
+                f.write(build)
+            (code, _, err), raised = self.both(os.path.join(d, tool))
+            self.assertEqual((code, err.split('\n')[0]), (1, f'build.ctx:{line}:{col}: error: {msg}'), build)
+            self.assertIsInstance(raised, CompileError, build)
+            self.assertEqual((raised.msg, raised.pos), (msg, (line, col, 'build.ctx')), build)
+
+    def test_build_program_source_forms(self):
+        # The driver reads the attribute from build.ctx's syntax tree: with any spacing, a
+        # trailing comma or comment, and not in a comment.
+        build = """/* #build::sources{ dir = "missing" } */
+#build::sources { dir = "tools", }      // the generator
+// #build::sources{ dir = "missing" }
+fn build { mut b: Build } {
+    build::gen_file{ &b, exe = build::exe{ &b, name = "t", root = "src" }, name = "answer", text = tools::text{} }
+}
+"""
+        d = self.project({'build.ctx': build,
+                          'tools/text.ctx': 'namespace tools { fn text {} -> []u8 { return "const ANSWER: i64 = 42\\n" } }\n',
+                          'src/main.ctx': 'fn main { mut io: Io } { io::println_i64{ &io, n = ANSWER } }\n'})
+        self.assertEqual(self.both(d), ((0, '42\n', ''), '42\n'))
+
+    def test_bad_graphs(self):
+        from toolchain import CompileError
+        # The driver checks the graph where names leave it, and rejects one cut short before it
+        # writes or removes anything.
+        d = self.project({'src/main.ctx': 'fn main { mut io: Io } { io::println_i64{ &io, n = keep::n{} } }\n',
+                          'plain/main.ctx': 'fn main { mut io: Io } { io::println{ &io, s = "plain" } }\n'})
+        self.gen_build(d, [('keep', 'namespace keep { fn n {} -> i64 { return 5 } }\\n')])
+        self.assertEqual(self.both(d), ((0, '5\n', ''), '5\n'))
+        keep = os.path.join(self.work_dir('.', cwd=d), 'gen', 't', 'keep.ctx')
+        self.assertTrue(os.path.exists(keep))
+        for graph in ['exe\t0\tt\tsrc',                                   # cut short
+                      'exe\t0\tt\tsrc\ngen\t0\tx',                        # cut short in a gen record
+                      'exe\t0\tt\tsrc\ngen\t0\tx\t99\nab\n',              # its size past the end
+                      'exe\t0\tt\tsrc\ngen\t0\tx\t2\nabX\n',              # no line break after its text
+                      'exe\t0\tt\tsrc\ngen\t0\tx\t-1\n\n',                # a negative size
+                      'exe\t0\tt\tsrc\ngen\t0\t../x\t0\n\n',              # a path for a name
+                      'exe\t0\tt\tsrc\ngen\t0\tBuild\t0\n\n',             # build.ctx
+                      'exe\t0\t../../victim\tsrc\ngen\t0\tx\t0\n\n',      # an executable's path
+                      'exe\t0\tt.\tsrc\n',                                # which Windows calls t
+                      'exe\t0\tt\\xc3\\xa9\tsrc\n']:                     # not ASCII
+            text = graph.replace('\t', '\\t').replace('\n', '\\n')
+            with open(os.path.join(d, 'build.ctx'), 'w') as f:
+                f.write('fn build { mut fs: Fs, mut proc: Proc } {\n'
+                        '    let path = proc::env{ &proc, name = "CTX_BUILD_OUT" } ifnull { return }\n'
+                        f'    _ = fs::write_all{{ &fs, path, bytes = "{text}" }}\n'
+                        '}\n')
+            (code, _, err), raised = self.both(d)
+            self.assertEqual(code, 1, graph)
+            self.assertTrue(err.endswith(': is not a build graph\n'), (graph, err))
+            self.assertIsInstance(raised, CompileError, graph)
+            self.assertIn('is not a build graph', raised.msg, graph)
+            self.assertTrue(os.path.exists(keep), graph)
+        # Two files of one name, and on Windows, whose names ignore case, two executables whose
+        # names differ only in case.
+        self.gen_build(d, [('x', ''), ('y', ''), ('x', '')])
+        (code, _, err), raised = self.both(d)
+        self.assertEqual((code, err, raised.msg), (1, 'build.ctx: gives executable t two files named x.ctx\n',
+                                                   'build.ctx: gives executable t two files named x.ctx'))
+        with open(os.path.join(d, 'build.ctx'), 'w') as f:
+            f.write('fn build { mut b: Build } {\n    _ = build::exe{ &b, name = "t", root = "src" }\n    _ = build::exe{ &b, name = "T", root = "plain" }\n}\n')
+        (code, _, err), raised = self.both(d)
+        if os.name == 'nt':
+            self.assertEqual((code, err, raised.msg), (1, 'build.ctx: describes two executables of the same name\n',
+                                                       'build.ctx: describes two executables of the same name'))
+        else:
+            self.assertEqual((code, raised), (0, 'plain\n'))
+
+    GEN_BUILD = """
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "t", root = "src" }
+%s}
+"""
+
+    def gen_build(self, d, gens):
+        """Writes d/build.ctx, generating a file NAME.ctx for t of each (NAME, TEXT) in gens."""
+        calls = ''.join(f'    build::gen_file{{ &b, exe, name = "{name}", text = "{text}" }}\n' for name, text in gens)
+        with open(os.path.join(d, 'build.ctx'), 'w', encoding='utf-8', newline='') as f:
+            f.write(self.GEN_BUILD % calls)
+
+    def test_generated_files(self):
+        # build::gen_file's files join the executable, from the program's build directory. One
+        # whose text is the same isn't written again, so its C isn't compiled again; those this
+        # build doesn't generate are removed.
+        d = self.project({'src/main.ctx': 'fn main { mut io: Io } { io::println_i64{ &io, n = one::n{} + two::n{} } }\n',
+                          'plain/main.ctx': 'fn main { mut io: Io } { io::println{ &io, s = "plain" } }\n'})
+        one = ('one', 'namespace one { fn n {} -> i64 { return 1 } }\\n')
+        self.gen_build(d, [one, ('two', 'namespace two { fn n {} -> i64 { return 2 } }\\n')])
+        env, logged = self.logging_cc(d)
+        self.assertEqual(self.ctxc('run', d, env=env), (0, '3\n', ''))
+        gen = os.path.join(self.work_dir(d), 'gen', 't')
+        self.assertEqual(sorted(os.listdir(gen)), ['one.ctx', 'two.ctx'])
+        with open(os.path.join(gen, 'one.ctx'), encoding='utf-8', newline='') as f:
+            self.assertEqual(f.read(), 'namespace one { fn n {} -> i64 { return 1 } }\n')
+        logged()
+        stamp = os.stat(os.path.join(gen, 'one.ctx')).st_mtime_ns
+        self.assertEqual(self.ctxc('run', d, env=env), (0, '3\n', ''))
+        self.assertEqual(logged(), [])
+        self.assertEqual(os.stat(os.path.join(gen, 'one.ctx')).st_mtime_ns, stamp)
+        # two.ctx goes; three.ctx comes; one.ctx stays as it was.
+        self.gen_build(d, [one, ('three', 'namespace two { fn n {} -> i64 { return 20 } }\\n')])
+        self.assertEqual(self.ctxc('run', d, env=env), (0, '21\n', ''))
+        self.assertEqual(sorted(os.listdir(gen)), ['one.ctx', 'three.ctx'])
+        self.assertEqual(os.stat(os.path.join(gen, 'one.ctx')).st_mtime_ns, stamp)
+        # The executable is compiled from what the build program generates, not from the
+        # directory, whose other .ctx files go; nothing else there is touched, nor anything
+        # below it.
+        os.makedirs(os.path.join(gen, 'below'))
+        for name in ['mine.ctx', 'notes.txt', os.path.join('below', 'deeper.ctx')]:
+            with open(os.path.join(gen, name), 'w') as f:
+                f.write('not ctxlang\n')
+        self.assertEqual(self.ctxc('run', d, env=env), (0, '21\n', ''))
+        self.assertEqual(sorted(os.listdir(gen)), ['below', 'notes.txt', 'one.ctx', 'three.ctx'])
+        self.assertEqual(os.listdir(os.path.join(gen, 'below')), ['deeper.ctx'])
+        # An executable that generates nothing has no directory, once it is empty.
+        with open(os.path.join(d, 'build.ctx'), 'w') as f:
+            f.write('fn build { mut b: Build } { _ = build::exe{ &b, name = "t", root = "plain" } }\n')
+        self.assertEqual(self.ctxc('run', d, env=env), (0, 'plain\n', ''))
+        self.assertEqual(sorted(os.listdir(gen)), ['below', 'notes.txt'])
+        shutil.rmtree(gen)
+        self.assertEqual(self.ctxc('run', d, env=env), (0, 'plain\n', ''))
+        self.assertFalse(os.path.exists(os.path.dirname(gen)))
+
+    def test_generated_executables(self):
+        # An executable may be made of generated files alone. Through `ctxc graph`, generated
+        # files are named by their text's hash and kept, so the same text keeps its path, and an
+        # error in one names a file that is there.
+        from toolchain import CompileError, build_project
+        d = self.project({'empty/notes.txt': ''})
+        main = 'fn main {{ mut io: Io }} {{ io::println_i64{{ &io, n = {} }} }}\\n'
+        with open(os.path.join(d, 'build.ctx'), 'w') as f:
+            f.write('fn build { mut b: Build } {\n'
+                    '    build::gen_file{ &b, exe = build::exe{ &b, name = "t", root = "empty" }, name = "main", text = "%s" }\n'
+                    '}\n' % main.format(6))
+        self.assertEqual(self.both(d), ((0, '6\n', ''), '6\n'))
+        first = build_project(d)
+        self.assertEqual(build_project(d), first)
+        with open(os.path.join(d, 'build.ctx'), 'w') as f:
+            f.write('fn build { mut b: Build } {\n'
+                    '    build::gen_file{ &b, exe = build::exe{ &b, name = "t", root = "empty" }, name = "main", text = "%s" }\n'
+                    '}\n' % main.format('true'))
+        (code, _, err), raised = self.both(d)
+        self.assertEqual(code, 1)
+        self.assertIsInstance(raised, CompileError)
+        self.assertEqual(raised.msg, 'expected i64, got bool')
+        self.assertTrue(os.path.isfile(raised.pos[2]), raised.pos)
+        # With nothing generated, the root's lack of files is an error again.
+        with open(os.path.join(d, 'build.ctx'), 'w') as f:
+            f.write('fn build { mut b: Build } { _ = build::exe{ &b, name = "t", root = "empty" } }\n')
+        (code, _, err), raised = self.both(d)
+        self.assertEqual((code, err), (1, 'empty: no .ctx files in directory\n'))
+        self.assertEqual(raised.msg, 'empty: no .ctx files in directory')
+
+    def test_large_generated_files(self):
+        # A generator may write megabytes: the graph and generated text don't live in the
+        # driver's heap.
+        d = self.project({
+            'build.ctx': """
+fn build { mut b: Build, mut mem: Mem } {
+    let exe = build::exe{ &b, name = "t", root = "src" }
+    let mut heap = arena::new{ buf = mem::reserve{ &mem, size = 67108864 } ifnull { return } }
+    let mut text = utf8::builder{ realloc = arena::alloc, &heap }
+    let mut i: u64 = 0
+    while i < 80000 {
+        _ = @fmt(&text, "// a line of a generated file a few megabytes long, number {}\\n", i)
+        i = i + 1
+    }
+    _ = @fmt(&text, "const BIG: i64 = 7\\n")
+    build::gen_file{ &b, exe, name = "big", text = utf8::view{ b = text }.bytes }
+}
+""",
+            'src/main.ctx': 'fn main { mut io: Io } { io::println_i64{ &io, n = BIG } }\n'})
+        self.assertEqual(self.both(d), ((0, '7\n', ''), '7\n'))
+        self.assertGreater(os.path.getsize(os.path.join(self.work_dir('.', cwd=d), 'gen', 't', 'big.ctx')), 4 << 20)
+
+    def test_generated_file_errors(self):
+        # An error in a generated file is at its path in the build directory, which a person
+        # can open.
+        d = self.project({'src/main.ctx': 'fn main { mut io: Io } { io::println_i64{ &io, n = bad::n{} } }\n'})
+        self.gen_build(d, [('bad', 'namespace bad { fn n {} -> i64 { return true } }\\n')])
+        code, _, err = self.ctxc('run', d)
+        gen = os.path.join(self.work_dir(d), 'gen', 't', 'bad.ctx').replace('\\', '/')
+        self.assertEqual((code, err.split('\n')[0]), (1, f'{gen}:1:41: error: expected i64, got bool'))
+        # A file the driver can't replace is an error, though it compiles its own copy.
+        self.gen_build(d, [('bad', 'namespace bad { fn n {} -> i64 { return 3 } }\\n')])
+        os.remove(os.path.join(self.work_dir(d), 'gen', 't', 'bad.ctx'))
+        os.makedirs(os.path.join(self.work_dir(d), 'gen', 't', 'bad.ctx'))
+        self.assertEqual(self.ctxc('run', d), (1, '', f'{gen}: cannot write\n'))
+        os.rmdir(os.path.join(self.work_dir(d), 'gen', 't', 'bad.ctx'))
+        # A build program never sees the files it generates, though they are there.
+        self.gen_build(d, [('own', 'namespace own { fn n {} -> i64 { return 4 } }\\n')])
+        with open(os.path.join(d, 'src', 'main.ctx'), 'w') as f:
+            f.write('fn main { mut io: Io } { io::println_i64{ &io, n = own::n{} } }\n')
+        self.assertEqual(self.ctxc('run', d)[:2], (0, '4\n'))
+        with open(os.path.join(d, 'build.ctx'), 'a') as f:
+            f.write('fn peek {} -> i64 { return own::n{} }\n')
+        code, _, err = self.ctxc('run', d)
+        self.assertEqual(code, 1)
+        self.assertTrue(err.startswith(f'{d}/build.ctx:6:'.replace('\\', '/')), err)
 
     def test_skips_unchanged_builds(self):
         import re
@@ -9960,6 +10223,9 @@ class BuildPrograms(Base):
         import tempfile
         d = tempfile.mkdtemp(prefix='ctxproj-', dir=os.path.join(ROOT, 'build'))
         self.addCleanup(shutil.rmtree, d, True)
+        # and the files build_project's build program generates (toolchain.build_project)
+        import hashlib
+        self.addCleanup(shutil.rmtree, os.path.join(ROOT, 'build', 'cbackend', 'gen', hashlib.sha256(d.encode()).hexdigest()[:16]), True)
         for name, text in files.items():
             path = os.path.join(d, name)
             os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -10038,8 +10304,10 @@ fn build { mut b: Build } {
     build::link{ &b, exe, lib = "m" }
     build::framework{ &b, exe, name = "Cocoa" }
     build::lib_path{ &b, exe, path = "/opt/lib" }
+    build::gen_file{ &b, exe, name = "g", text = "a\\tb\\nc" }
 }
-""", "exe\t0\tdemo\tsrc\nsources\t0\t../lib\noptimize\t0\t2\nlink\t0\tm\nframework\t0\tCocoa\nlibpath\t0\t/opt/lib\n")
+""", "exe\t0\tdemo\tsrc\nsources\t0\t../lib\noptimize\t0\t2\nlink\t0\tm\nframework\t0\tCocoa\nlibpath\t0\t/opt/lib\n"
+     "gen\t0\tg\t5\na\tb\nc\n")
 
     def test_sources_and_optimization(self):
         # toolchain.build_project reads the records as ctxc's driver does (CtxcDriver).
@@ -10073,15 +10341,41 @@ fn build { mut b: Build } {
         d = self.project({'build.ctx': 'fn build { mut b: Build } {\n    _ = build::exe{ &b, name = "x", root = "nothing" }\n}\n'})
         with self.assertRaises(CompileError) as cm:
             build_project(d)
-        self.assertEqual((cm.exception.msg, cm.exception.pos), ('no .ctx files in directory', (0, 0, 'nothing')))
+        self.assertEqual((cm.exception.msg, cm.exception.pos), ('nothing: cannot list', None))
         self.assertPanic('fn build { mut b: Build } { build::link{ &b, exe = build::Exe{ id = 3 }, lib = "m" } }',
                          'build: no executable 3')
-        self.assertPanic('fn build { mut b: Build } { _ = build::exe{ &b, name = "a/b", root = "." } }',
-                         'build: a name cannot hold a slash, a backslash or a double quote')
+        for name in ['a/b', 'a b', '\\xc3\\xa9']:
+            self.assertPanic('fn build { mut b: Build } { _ = build::exe{ &b, name = "%s", root = "." } }' % name,
+                             'build: a name can hold only ASCII letters, digits, _, - and .')
         self.assertPanic('fn build { mut b: Build } { build::optimize{ &b, exe = build::exe{ &b, name = "a", root = "." }, level = 4 } }',
                          'build: optimization level 4 is not 0, 1, 2 or 3')
         self.assertPanic('fn build { mut b: Build } { build::add_sources{ &b, exe = build::exe{ &b, name = "a", root = "." }, dir = "" } }',
                          'build: empty directory')
+        for name in ['..', 't.']:
+            self.assertPanic('fn build { mut b: Build } { _ = build::exe{ &b, name = "%s", root = "." } }' % name,
+                             'build: a name cannot end in .')
+        self.assertPanic('fn build { mut b: Build } { build::gen_file{ &b, exe = build::exe{ &b, name = "a", root = "." }, name = "Build", text = "" } }',
+                         'build: a file name cannot be build')
+        for name in ['a.ctx', '../a', 'a/b', 'a b']:
+            self.assertPanic('fn build { mut b: Build } { build::gen_file{ &b, exe = build::exe{ &b, name = "a", root = "." }, name = "%s", text = "" } }' % name,
+                             'build: a file name can hold only ASCII letters, digits, _ and -')
+        self.assertPanic('fn build { mut b: Build } { build::gen_file{ &b, exe = build::exe{ &b, name = "a", root = "." }, name = "", text = "" } }',
+                         'build: empty file name')
+
+    def test_build_program_fails(self):
+        # Through `ctxc graph`, a build program that exits with 1 isn't a compile error, and its
+        # output reaches out and err either way.
+        from toolchain import build_project
+        d = self.project({'build.ctx': 'fn build { mut b: Build } -> i32 {\n    io::println{ io = &b, s = "said" }\n    return 1\n}\n'})
+        out = io.StringIO()
+        with self.assertRaises(RuntimeError) as cm:
+            build_project(d, out=out, err=io.StringIO())
+        self.assertEqual((str(cm.exception), out.getvalue()), ('build.ctx exited with 1', 'said\n'))
+        d = self.project({'build.ctx': 'fn build { mut b: Build } {\n    io::println{ io = &b, s = "said" }\n    @panic("broken")\n}\n'})
+        out = io.StringIO()
+        with self.assertRaises(Panic) as cm:
+            build_project(d, out=out, err=io.StringIO())
+        self.assertEqual((cm.exception.msg, cm.exception.pos, out.getvalue()), ('broken', (3, 5, 'build.ctx'), 'said\n'))
 
     def test_entry_errors(self):
         self.assertCompileError('fn main { mut b: Build } {}',

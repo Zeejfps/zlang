@@ -16,8 +16,10 @@ written as mainN.ctx, and its positions have no file (None).
 
     exes = build_project(DIR)                     a directory with a build.ctx (spec §19)
 
-build_project compiles and runs DIR/build.ctx, the build program, which records what to build in
-a file named by CTX_BUILD_OUT; then it builds each executable that names, with its libraries.
+build_project has the native ctxc's `ctxc graph DIR GEN LIST` compile and run DIR's build
+program, as `ctxc run` does, and list each executable it describes with its files (generated ones
+included, in build/cbackend/gen) and link flags; then it builds each one as any program, with its
+libraries.
 
 run_sources also runs each program in ctxc's interpreter (`ctxc interp`), and raises DiffMismatch
 unless its stdout, stderr, exit code and panic are the compiled program's: a second
@@ -542,60 +544,56 @@ def log(status, reason, detail=''):
 # ---- build programs (spec §19)
 
 def build_project(directory, out=None, err=None):
-    """Builds the program in directory from its build.ctx. Returns [(name, executable)], in the
-    order the build program named them. Raises CompileError for an error in build.ctx or in an
-    executable's files (named relative to directory), Panic if the build program panics, and
-    RuntimeError if it fails otherwise or the C compiler does. The build program's own output
-    goes to out and err."""
+    """Builds the program in directory from its build program (spec §19). `ctxc graph` does
+    what `ctxc run` does first: it compiles and runs the build program, checks what it describes
+    and writes the files it generates, here under build/cbackend/gen, in a directory of the
+    project's, named by their text's hash, so that the same text keeps its path, and what it
+    compiles to stays cached, and runs with other text never share a file. Then each executable
+    it lists is built as build_files builds any program. Returns [(name, executable)], in the
+    order the build program named them. Raises CompileError for an error ctxc reports in the
+    build program or an executable's files, Panic if the build program panics, and RuntimeError
+    if it exits with another code than 0 or anything else fails, as the C compiler. The build
+    program's output and ctxc's go to out and err."""
+    import tempfile
     d = os.path.abspath(directory)
-    program = build_files(['build.ctx'], cwd=d, name='build')
-    graph = os.path.join(CACHE, f'graph-{os.getpid()}-{threading.get_ident()}.txt')
+    gen = os.path.join(CACHE, 'gen', hashlib.sha256(d.encode()).hexdigest()[:16])
+    os.makedirs(os.path.dirname(gen), exist_ok=True)         # ctxc makes gen if it writes there
+    fd, listed = tempfile.mkstemp(prefix='graph-', suffix='.txt', dir=CACHE)
+    os.close(fd)
     try:
-        code = run_exe(program, out=out, err=err, name='build', env={'CTX_BUILD_OUT': graph}, cwd=d)
-        if code != 0:
-            raise RuntimeError(f'build.ctx exited with {code}')
-        with open(graph, encoding='utf-8') as f:
-            records = [line.rstrip('\n').split('\t') for line in f if line.strip()]
-    except FileNotFoundError:
-        records = []
+        cc, _ = compiler()
+        # A CTX_CC that names a file is the compiler, spaces and all (drive.ctx, `compiler`).
+        env = dict(os.environ, CTX_HOME=ROOT, CTX_STACK=CTXC_STACK, CTX_CC=' '.join(cc) if len(cc) > 1 else cc[0])
+        r = subprocess.run([native_ctxc(), 'graph', '.', gen, listed], cwd=d, capture_output=True, env=env)
+        with open(listed, encoding='utf-8') as f:
+            records = [line.split('\t') for line in f.read().splitlines()]
     finally:
-        if os.path.exists(graph):
-            os.remove(graph)
-    exes = {}                       # id -> [name, root, dirs, level, paths, libs]
-    for r in records:
-        kind, i = r[0], int(r[1])
+        os.remove(listed)
+    status = records[0][1:] if records and records[0][0] == 'status' else ['failed']
+    if status == ['exited', '134']:
+        # The build program's panic, as report reads one from the program itself: raises Panic.
+        report(subprocess.CompletedProcess(r.args, 134, r.stdout, r.stderr), out, err, 'build', None)
+    write(out if out is not None else sys.stdout, r.stdout)
+    write(err if err is not None else sys.stderr, r.stderr)
+    text = r.stderr.decode('utf-8', 'replace')
+    if status == ['errors']:
+        raise first_error(text)
+    if status[0] == 'exited':
+        raise RuntimeError(f'build.ctx exited with {status[1]}')
+    if status != ['ok']:
+        raise RuntimeError(f'ctxc graph failed ({r.returncode}): {text.strip()}')
+    exes = []                           # [name, level, files, flags]
+    for kind, value in records[1:]:
         if kind == 'exe':
-            exes[i] = [r[2], r[3], [], 1, [], []]
-        elif kind == 'sources':
-            exes[i][2].append(r[2])
-        elif kind == 'optimize':
-            exes[i][3] = int(r[2])
-        elif kind == 'libpath':
-            exes[i][4] += ['-L', os.path.join(d, r[2])]
-        elif kind == 'link':
-            exes[i][5].append('-l' + r[2])
-        elif kind == 'framework':
-            exes[i][5] += ['-framework', r[2]]
+            exes.append([value, 1, [], []])
+        elif kind == 'level':
+            exes[-1][1] = int(value)
+        elif kind == 'file':
+            exes[-1][2].append(value)
+        elif kind == 'flag':
+            exes[-1][3].append(value)
     built = []
-    for name, root, dirs, level, paths, libs in exes.values():
-        # As ctxc's driver finds them (ctxc/drive.ctx): the root's .ctx files, then those under
-        # each added directory, at any depth, each file once and none named build.ctx.
-        files, seen = [], set()
-
-        def add(paths):
-            for p in paths:
-                key = os.path.normcase(os.path.abspath(p))
-                if os.path.basename(p) != 'build.ctx' and key not in seen:
-                    seen.add(key)
-                    files.append(os.path.relpath(p, d).replace(os.sep, '/'))
-            return paths
-
-        if not add(sorted(glob.glob(os.path.join(d, root, '*.ctx')))):
-            raise CompileError('no .ctx files in directory', (0, 0, root))
-        for sub in dirs:
-            if not add(sorted(glob.glob(os.path.join(d, sub, '**', '*.ctx'), recursive=True))):
-                raise CompileError('no .ctx files in directory or below', (0, 0, sub))
+    for name, level, files, flags in exes:
         cflags = [f'-O{level}' if f == '-O1' else f for f in CFLAGS]
-        built.append((name, build_files(files, cwd=d, name=name, flags=paths + libs, cflags=cflags)))
+        built.append((name, build_files(files, cwd=d, name=name, flags=flags, cflags=cflags)))
     return built
-

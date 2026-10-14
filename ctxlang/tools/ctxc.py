@@ -3,7 +3,8 @@
     python tools/ctxc.py PROGRAM [-o EXE] [--c FILE.c] [--run [args...]]
 
 PROGRAM is a .ctx file or a directory of them. A directory with a build.ctx is built as its build
-program says (spec §19): -o, --c and --run then apply to the first executable it names. A native ctxc (tools/toolchain.py builds it from
+program says (spec §19), which the native ctxc below runs (`ctxc graph`), generated files and
+all: -o, --c and --run then apply to the first executable it names. A native ctxc (tools/toolchain.py builds it from
 this platform's bootstrap on first use) checks the program and writes C with `ctxc build`, and gcc or
 clang (or zig cc, with CTX_CC=zig) builds it with ctxc/rt/ctxrt.c, and ctxfloat.c if it uses floats
 as text. Builds are cached in

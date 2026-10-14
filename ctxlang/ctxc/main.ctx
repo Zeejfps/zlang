@@ -9,6 +9,10 @@
 //                                               directory, maybe with a build.ctx) with the C
 //                                               compiler and runs it (drive.ctx)
 //   ctxc exe PATH -o OUT                        builds it into the executable OUT
+//   ctxc graph DIR GEN LIST                     runs DIR's build program as `run` does, and
+//                                               writes what it describes to LIST and its
+//                                               generated files to GEN, for
+//                                               tools/toolchain.py (drive.ctx)
 //   ctxc interp [--env N=V | --env N]... PATH [-- ARGS...]
 //                                               checks the program at PATH as `run` does, and
 //                                               runs it in the interpreter (eval.ctx), in ctxc's
@@ -40,6 +44,9 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> 
     if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "exe" } {
         return drive::command{ run = false, .. }
     }
+    if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "graph" } {
+        return drive::graph{ .. }
+    }
     if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "interp" } {
         return drive::interp{ .. }
     }
@@ -64,7 +71,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> 
     if args.len == 3 and slice::eq_bytes{ a = args[0], b = "c" } {
         to_c = true
     } else if args.len != 2 or not slice::eq_bytes{ a = args[0], b = "roundtrip" } {
-        io::eprintln{ &io, s = "usage: ctxc run PATH [-- ARGS...] | ctxc exe PATH -o OUT | ctxc interp PATH [-- ARGS...] | ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c | ctxc tokens|syntax FILE... | ctxc recover FILE FROM TO | ctxc decls|ir STD... -- FILE... | ctxc build OUT.c STD... -- FILE..." }
+        io::eprintln{ &io, s = "usage: ctxc run PATH [-- ARGS...] | ctxc exe PATH -o OUT | ctxc graph DIR GEN LIST | ctxc interp PATH [-- ARGS...] | ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c | ctxc tokens|syntax FILE... | ctxc recover FILE FROM TO | ctxc decls|ir STD... -- FILE... | ctxc build OUT.c STD... -- FILE..." }
         return 2
     }
     let path = args[1]
@@ -185,7 +192,7 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
     }
     let out: []u8 = if mode == Mode::build { args[1] } else { "" }
     let mut units: [][]u8 = slice::empty([]u8){}
-    return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = split - first, mode, out, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, made = &units }
+    return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = split - first, mode, out, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, made = &units, texts = slice::empty([]u8){} }
 }
 
 // Checks the program of `paths`, std's files first, and acts on it as `mode` says: for build,
@@ -193,11 +200,19 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
 // (emit::units), which live as long as ctxc does; for interp, runs it with args `argv`, as the
 // program named `out`, letting its calls take `stack` bytes of ctxc's stack. A const computed by
 // running code (comptime.ctx) may take half of ctxc's stack, and CTX_CONST_FUEL steps if that is
-// set.
-fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8, std_files: usize, mode: Mode, out: []u8, argv: [][]u8, env: [][]u8, stack: u64, size: usize, mut made: [][]u8 } -> i32 {
+// set. The last texts.len files aren't read: their text is texts', as the driver has it for the
+// files a build program generates, so what is compiled is the driver's, whatever another ctxc
+// does to the file meanwhile.
+fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8, std_files: usize, mode: Mode, out: []u8, argv: [][]u8, env: [][]u8, stack: u64, size: usize, mut made: [][]u8, texts: [][]u8 } -> i32 {
+    let given = paths.len - texts.len               // paths[given..] are texts'
     let mut total: u64 = 0
     let mut i: usize = 0
     while i < paths.len {
+        if i >= given {
+            total = total + texts[i - given].len
+            i = i + 1
+            continue
+        }
         let ok{ value = size } = fs::size{ &fs, path = paths[i] } else {
             cannot{ &io, path = paths[i], what = "cannot read" }
             return 1
@@ -215,6 +230,11 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8
     i = 0
     while i < paths.len {
         let path = paths[i]
+        if i >= given {
+            add_file{ &files, &heap, &diags, name = path, text = texts[i - given] }
+            i = i + 1
+            continue
+        }
         let ok{ value = text } = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } else {
             cannot{ &io, path, what = "cannot read" }
             return 1

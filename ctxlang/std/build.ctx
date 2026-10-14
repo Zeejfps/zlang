@@ -21,6 +21,19 @@
 // Names, roots, directories, libraries and paths are bytes without tabs or line breaks. Paths
 // are relative to the directory build.ctx is in, and may leave it with `..`. A file named
 // build.ctx is never one of an executable's files.
+//
+// A build program may be more than build.ctx: `#build::sources` on its `fn build` adds the .ctx
+// files under a directory to it, as add_sources does to an executable, so a code generator can
+// be a library several build programs share. `gen_file` gives an executable a file of ctxlang
+// source the build program wrote, which the driver keeps in its build directory:
+//
+//   #build::sources{ dir = "../lib/tables" }
+//   fn build { mut b: Build } {
+//       let exe = build::exe{ &b, name = "demo", root = "src" }
+//       let mut buf: [65536]u8
+//       let mut heap = arena::new{ buf = buf[..] }
+//       build::gen_file{ &b, exe, name = "squares", text = tables::squares{ &heap, n = 16 } }
+//   }
 
 // Permission to describe a build: only a build program's `fn build` receives one. It includes
 // the console, where the build's graph goes without CTX_BUILD_OUT.
@@ -33,17 +46,27 @@ namespace build {
     // The operating system the build is for: the one it runs on, for now.
     enum Os: u32 { windows, macos, linux }
 
+    // On a build program's `fn build`: the .ctx files under directory `dir` are the build
+    // program's too, as add_sources adds them to an executable (spec §19). The driver reads it
+    // before it compiles the build program, so `dir` is a string literal.
+    struct sources { dir: []u8 }
+
     // An executable `name`, from the .ctx files in directory `root`, but not in its
-    // subdirectories. A name is also the name of its files, so it can't hold `/`, `\` or `"`.
+    // subdirectories. A name is also the name of its files, so it is ASCII letters, digits, `_`,
+    // `-` and `.`, whose case Windows folds as ASCII does, and doesn't end in `.`, which Windows
+    // drops from a file's name.
     fn exe { mut b: Build, name: []u8, root: []u8 } -> Exe {
         field{ s = name, what = "name" }
         field{ s = root, what = "root" }
-        // A name names the executable's files, and is the C string its panics print.
+        // A name names the executable's files and the directory of its generated ones, and is
+        // the C string its panics print.
         let mut i: usize = 0
         while i < name.len {
-            if name[i] == '/' or name[i] == '\\' or name[i] == '"' { rt::fail{ msg = "build: a name cannot hold a slash, a backslash or a double quote" } }
+            let c = name[i]
+            if not (ascii::is_alnum{ c } or c == '_' or c == '-' or c == '.') { rt::fail{ msg = "build: a name can hold only ASCII letters, digits, _, - and ." } }
             i = i + 1
         }
+        if name[name.len - 1] == '.' { rt::fail{ msg = "build: a name cannot end in ." } }
         let g = &b.graph
         let exe = Exe{ id = g.exes }
         g.exes = g.exes + 1
@@ -57,6 +80,38 @@ namespace build {
         check{ &b, exe }
         field{ s = dir, what = "directory" }
         record{ &b, kind = "sources", exe, a = dir, more = "" }
+    }
+
+    // Gives exe a file of ctxlang source, `text`, as if it were in one of its directories: the
+    // driver writes it to NAME.ctx in the program's build directory, where errors in it point,
+    // and rewrites it only when the text changes. A name is ASCII letters, digits, `_` and `-`,
+    // but not `build` (a file named build.ctx is never an executable's), and one executable
+    // can't have two files of one name. The build program itself never sees the files it
+    // generates.
+    fn gen_file { mut b: Build, exe: Exe, name: []u8, text: []u8 } {
+        check{ &b, exe }
+        field{ s = name, what = "file name" }
+        let mut i: usize = 0
+        while i < name.len {
+            let c = name[i]
+            if not (ascii::is_alnum{ c } or c == '_' or c == '-') { rt::fail{ msg = "build: a file name can hold only ASCII letters, digits, _ and -" } }
+            i = i + 1
+        }
+        let word: []u8 = "build"
+        let mut same = name.len == word.len
+        i = 0
+        while same and i < name.len {
+            same = ascii::to_lower{ c = name[i] } == word[i]
+            i = i + 1
+        }
+        if same { rt::fail{ msg = "build: a file name cannot be build" } }
+        // The text follows its record's line, which gives its size.
+        let mut digits: [20]u8
+        record{ &b, kind = "gen", exe, a = name, more = utf8::fmt_u64{ n = text.len, into = digits[..] }.bytes }
+        let g = &b.graph
+        write{ &b, g, s = text }
+        write{ &b, g, s = "\n" }
+        if g.file != 0 { _ = fflush{ &b, file = g.file } }
     }
 
     // Compiles exe's C at optimization level `level`, 0 to 3 (`-O0` to `-O3`), instead of 1.
@@ -101,6 +156,7 @@ namespace build {
     // CTX_BUILD_OUT names (ctxc/drive.ctx reads it), or to standard output without it:
     //   exe ID NAME ROOT    sources ID DIR    optimize ID LEVEL
     //   link ID LIB    framework ID NAME    libpath ID PATH
+    //   gen ID NAME SIZE, then SIZE bytes of text and a line break
 
     // build's state for the whole program (spec §15, rule 13): what the build program has
     // described.

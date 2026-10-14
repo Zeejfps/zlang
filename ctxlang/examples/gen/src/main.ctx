@@ -1,0 +1,22 @@
+// Names colors, from an enum the build program generated (build.ctx): without arguments, every
+// color; with them, each argument's color, or exits with 1 at the first that isn't one.
+fn main { mut io: Io, args: Args } -> i32 {
+    if args.len == 0 {
+        let mut i: usize = 0
+        while i < color::ALL.len {
+            _ = @fmt(&io, "{} {}\n", i, color::name{ v = color::ALL[i] })
+            i = i + 1
+        }
+        return 0
+    }
+    let mut i: usize = 0
+    while i < args.len {
+        let c = color::parse{ s = args[i] } ifnull {
+            _ = @fmt(&io, "{}: not a color\n", args[i])
+            return 1
+        }
+        _ = @fmt(&io, "{} is a color: {}\n", args[i], @as(u32, c))
+        i = i + 1
+    }
+    return 0
+}

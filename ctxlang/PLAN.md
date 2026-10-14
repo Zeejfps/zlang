@@ -125,8 +125,9 @@ Generated code is written out as real `.ctx` files and compiled in a later step,
 into the compile that is running. Errors in generated code point at files a person can open, and a
 generator can't observe its own output.
 
-1. **Generated files and cross-compiling.** `build::gen_file` writes a file under `build/gen/`
-   that joins the program's file list. `build::os` is the host's for now.
+1. **Cross-compiling, and build programs that fail.** `build::os` is the host's for now: building
+   for another platform needs std's layer for it, its C compiler, and a build program run on the
+   host but describing the target.
    - **`build` and `main` return `!` or `!i32`.** Writing files and checking sources can fail, and
      a build program should pass that up with `try`, as Zig's `build.zig` does, not panic with
      `try!` or handle every failure where it happens. §19 gives `build` main's rules, so `main`
@@ -143,6 +144,31 @@ generator can't observe its own output.
    build program the checked declarations as data: structs, unions, fields, layouts and
    attributes. That data is the `Analysis`, read-only trees plus side tables, so no separate
    reflection format is needed.
+
+*Done: generated files, and build programs of several files* (spec §19, rules 12 and 13;
+ctxc/drive.ctx, std/build.ctx, `examples/gen`). `#build::sources{ dir }` on `fn build` adds a
+directory's files to the build program, so a generator is a library build programs share. It is
+std's attribute, not the compiler's: the driver, which already speaks std's build graph, reads it
+from build.ctx's syntax tree before compiling it, and the checker checks it as any other.
+`build::gen_file{ &b, exe, name, text }` sends the text through the graph, after its record's
+line, and the driver writes HOME/build/run/PROGRAM-HASH/gen/EXE/NAME.ctx only when it changed,
+for a person to open, but compiles its own copy of the text under that path, so two ctxcs
+building one program can't change what the other compiles. Each executable's directory there
+loses its other `.ctx` files. A `Build` still writes no file, and the driver checks names again
+where they leave the graph. The build program's own files never include them. `ctxc graph DIR
+GEN LIST` does all of this for `tools/toolchain.py`'s `build_project`, which reads the executables'
+files and flags, and how the build went, from LIST and compiles them itself, so Python parses no
+ctxlang. Its generated files are GEN/EXE/NAME-HASH.ctx, HASH being of the text, so the same text
+keeps its path and its cached C, and runs with other text never share a file.
+
+*Later, for 3.1:*
+- The driver reads `#build::sources` as written: a `dir` from a const isn't one, and a namespace
+  `build` of the program's own, which would shadow std's for the checker, doesn't hide it.
+- Only build.ctx's `fn build` names directories: a library of the build program's can't name
+  those it needs itself.
+- Windows device names (`CON`, `NUL` and the like) aren't refused as executables' names.
+- `build_project`'s generated files under build/cbackend/gen are never removed, as the rest of
+  that cache isn't.
 
 *Later, for compile-time consts* (spec §14; `ctxc/eval.ctx`, `comptime.ctx`):
 - Array lengths, enum values and attributes take only folded consts, since they are needed while
