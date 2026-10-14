@@ -5,6 +5,7 @@ One line per decision, newest last. The samples are the spec; this file records 
 - `todo.tbl`: general purpose (tables, projections, contexts)
 - `game.tbl`: ECS (keyed tables, joins, systems)
 - `todo_ui.tbl`: declarative GUI (views, state, events)
+- `server.tbl`: HTTP server (string keys, optionals, concurrent requests)
 
 ## Settled
 
@@ -65,3 +66,10 @@ One line per decision, newest last. The samples are the spec; this file records 
 
 21. **`restrict`:** add a modifier that makes a delete fail while something still refers to the row ("can't delete a customer who has orders")? Useful for business data, awkward with deferred deletes in games. Left out until a sample needs it.
 22. **Optional chaining:** add `x?.field` (empty if `x` is), or wait until a sample needs it?
+
+### From HTTP (`server.tbl`)
+
+23. **Concurrent requests:** handlers share one context. Does each request run as a transaction, so `follow` can't lose a hit when two requests read `hits` at once, or must the program ask for that (say, an atomic `update(slug, hits += 1)`)?
+24. **Duplicate keys:** what does `insert` do when the key is taken: fail, return an optional, or replace the row? `add_link` checks with `get` first, which races with another request.
+25. **Mutable locals:** the sample writes `let mut body`, matching `mut` loop bindings. Are locals read-only unless written `mut`?
+26. **Errors:** every failure here becomes a `Response` through `let … else`. Is that enough, or does the language need a result type with propagation?

@@ -1,0 +1,77 @@
+// server.tbl: a link shortener served over HTTP.
+// GET /links lists links, POST /links?slug=…&url=… adds one,
+// and GET /{slug} redirects to the link's url.
+
+use http { Request, Response };
+
+// The key is a string the client picks, not a generated id.
+table Link {
+    slug: str key;
+    url: str required;
+    hits: int = 0;
+}
+
+context Store {
+    links: table<Link>;
+}
+
+fn route(store: Store, req: Request) -> Response {
+    if req.path == "/links" {
+        if req.method == "POST" {
+            return add_link(store, req);
+        }
+        return list_links(store);
+    }
+    if req.method != "GET" {
+        return Response(status: 405);
+    }
+    // `strip_prefix` returns `?str`, so `if let` tests and binds at once.
+    if let slug = req.path.strip_prefix("/") {
+        return follow(store, slug);
+    }
+    return Response(status: 404);
+}
+
+// Each `let … else` either binds a plain `str` or answers the request.
+fn add_link(store: Store, req: Request) -> Response {
+    let slug = req.query("slug") else {
+        return Response(status: 400, body: "missing slug");
+    };
+    let url = req.query("url") else {
+        return Response(status: 400, body: "missing url");
+    };
+    if let taken = store.links.get(slug) {
+        return Response(status: 409, body: "{slug} already points to {taken.url}");
+    }
+    store.links.insert(slug: slug, url: url);
+    return Response(status: 201);
+}
+
+// A str key is looked up and updated like any other key.
+// Two requests for the same slug at once could both read 4 and write 5.
+fn follow(store: Store, slug: str) -> Response {
+    let link = store.links.get(slug) else {
+        return Response(status: 404, body: "no link named {slug}");
+    };
+    store.links.update(slug, hits: link.hits + 1);
+    return Response(status: 302, location: link.url);
+}
+
+// Locals are read-only unless written `mut`, like loop bindings.
+fn list_links(store: Store) -> Response {
+    let mut body = "";
+    for l in store.links {
+        body += "{l.slug} -> {l.url} ({l.hits} hits)\n";
+    }
+    return Response(body: body);
+}
+
+fn main() {
+    let store = Store();
+    store.links.insert(slug: "home", url: "https://example.com");
+
+    // The closure runs once per request, and requests may run at the same time.
+    http.serve(port: 8080, handle: fn(req: Request) -> Response {
+        return route(store, req);
+    });
+}
