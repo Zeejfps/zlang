@@ -1628,7 +1628,7 @@ namespace check {
             return
         }
         let mine = types::func{ s = &c.ty, fields = list::items{ list = rest }, ret = gr, bound = false, external = false }
-        if not fn_accepts{ &c, g = mine, s } or not types::unify{ s = &c.ty, a = gr, b = sr } {
+        if not fn_accepts{ &c, g = mine, s, thunk = true } or not types::unify{ s = &c.ty, a = gr, b = sr } {
             coerce_node{ &c, e, at, t }
             return
         }
@@ -6963,7 +6963,7 @@ namespace check {
                     if ae != ee { return Coercion::fail }
                     if ee { return if types::unify{ s = &c.ty, a = x, b = y } { Coercion::same } else { Coercion::fail } }
                     if ab and not eb { return Coercion::fail }
-                    return if fn_accepts{ &c, g = x, s = y } { Coercion::same } else { Coercion::fail }
+                    return if fn_accepts{ &c, g = x, s = y, thunk = true } { Coercion::same } else { Coercion::fail }
                 }
             }
             else => {}
@@ -6972,8 +6972,10 @@ namespace check {
         return Coercion::fail
     }
 
-    // §5: whether function type g is accepted where s is expected, bound-ness aside.
-    fn fn_accepts { mut c: Checker, g: Id, s: Id } -> bool {
+    // §5: whether function type g is accepted where s is expected, bound-ness aside. With
+    // thunk, a read-only field of g may be `mut` in s: a thunk reads it through the pointer it
+    // is given (lower::widen_fn). A callback's fields are C's parameters, which match exactly.
+    fn fn_accepts { mut c: Checker, g: Id, s: Id, thunk: bool } -> bool {
         match types::get{ s = c.ty, id = g } {
             func{ fields = gf, ret = gr } => {
                 match types::get{ s = c.ty, id = s } {
@@ -6982,7 +6984,7 @@ namespace check {
                         while i < gf.len {
                             let f = gf[i]
                             let h = types::find_field{ fields = sf, name = f.name }
-                            if h == null or h.mutable != f.mutable or not types::unify{ s = &c.ty, a = f.ty, b = h.ty } { return false }
+                            if h == null or (f.mutable != h.mutable and (f.mutable or not thunk)) or not types::unify{ s = &c.ty, a = f.ty, b = h.ty } { return false }
                             i = i + 1
                         }
                         return types::unify{ s = &c.ty, a = gr, b = sr } or widens_result{ &c, from = gr, into = sr }
@@ -7451,7 +7453,7 @@ namespace check {
                     return types::ERROR
                 }
                 let own = types::func{ s = &c.ty, fields = x.fields, ret = x.ret, bound = false, external = false }
-                if fn_accepts{ &c, g = own, s = want } { return want }
+                if fn_accepts{ &c, g = own, s = want, thunk = false } { return want }
             }
             if external { return types::func{ s = &c.ty, fields = x.fields, ret = x.ret, bound = false, external = true } }
         }

@@ -28,9 +28,10 @@ namespace lower {
     // fields, and the copies kept, read-only params after the value, if they have.
     struct Carry { callee: u32, frm: Id, to: Id, kept: []types::Field }
 
-    // A thunk of function type `to` whose `!T` may fail with any error (spec §5): it calls
-    // instance callee, or with callee NONE its first param, a function value of type frm, and
-    // renumbers the error into to's (widening).
+    // A thunk of function type `to` (spec §5): it calls instance callee, or with callee NONE its
+    // first param, a function value of type frm, reading each field frm takes read-only and to
+    // has `mut` through its pointer, and renumbers the error into to's if its `!T` may fail with
+    // more (widening).
     struct Widen { callee: u32, frm: Id, to: Id }
 
     struct Lower {
@@ -1329,8 +1330,23 @@ namespace lower {
         return norm{ &l, t = ra } != norm{ &l, t = rb }
     }
 
-    // Function value x, of type frm, as a `to` whose `!T` may fail with any error (spec §5): a
-    // thunk calls it and renumbers its error (widening). A named function, or a bind of one,
+    // Whether function type a takes a field read-only that b has `mut` (spec §5): a call
+    // through b passes its pointer, which a thunk reads.
+    fn reads { l: Lower, a: Id, b: Id } -> bool {
+        let func{ fields = fa } = get{ l, t = a } else { return false }
+        let func{ fields = fb } = get{ l, t = b } else { return false }
+        let mut i: usize = 0
+        while i < fa.len {
+            let h = types::find_field{ fields = fb, name = fa[i].name }
+            if h != null and h.mutable and not fa[i].mutable { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // Function value x, of type frm, as a `to` whose `!T` may fail with any error, or that has
+    // `mut` a field x takes read-only (spec §5): a thunk calls it, reading such a field through
+    // its pointer, and renumbers its error (widening). A named function, or a bind of one,
     // gets a thunk that calls it directly and takes to's other fields too: it is a value with no
     // record of its own, as the function was, or the bind of it. Any other value is held by a
     // bind of a thunk that calls it through its code.
@@ -1389,8 +1405,9 @@ namespace lower {
     }
 
     // Widening thunk inst.widen as a function. Its context is to's fields after its callee's
-    // own, or after the value it calls (`fn`, which no field can be named). It passes its callee
-    // the fields it takes, by name, and returns the result with the error renumbered.
+    // own, or after the value it calls (`fn`, which no field can be named), each `mut` if to's
+    // is. It passes its callee the fields it takes, by name, a read-only one it has `mut` read
+    // through its pointer, and returns the result with the error renumbered.
     fn widening { mut l: Lower, id: u32, inst: Inst } -> ir::Func {
         let w = inst.widen ifnull { @panic("lower: a widening thunk that isn't one") }
         let d = check::get_decl{ c = l.c.*, d = inst.decl }
@@ -1417,7 +1434,9 @@ namespace lower {
             cr = if q.targs.len == 0 { x.ret } else { types::subst{ s = &l.c.ty, t = x.ret, decl = q.decl, args = q.targs } }
             let mut i: usize = 0
             while i < takes.len {
-                add_field{ xs = &ctx, f = takes[i] }
+                let f = takes[i]
+                let h = types::find_field{ fields = tf, name = f.name }
+                add_field{ xs = &ctx, f = types::Field{ name = f.name, mutable = f.mutable or (h != null and h.mutable), ty = f.ty } }
                 i = i + 1
             }
             try! utf8::push{ &b, s = str{ s = inst_name{ l, x, targs = q.targs } } }
@@ -1438,12 +1457,12 @@ namespace lower {
             try! list::push{ list = &l.locals, item = ir::Local{ name = f.name, ty = st } }
             i = i + 1
         }
+        let mut body = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
         let mut args = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
         i = 0
         while i < takes.len {
             let s = types::field_index{ fields = fs, name = takes[i].name } ifnull { @panic("lower: a widening thunk without a field its callee takes") }
-            let at = tid{ &l, t = arg_type{ &l, f = takes[i], ptrs = true } }
-            add_arg{ xs = &args, a = ir::Arg{ index = @as(u32, i), value = mk{ ty = at, k = ir::ExprKind::local{ slot = @as(u32, s) } } } }
+            add_arg{ xs = &args, a = ir::Arg{ index = @as(u32, i), value = taken{ &l, f = takes[i], own = fs[s], slot = @as(u32, s), &body } } }
             i = i + 1
         }
         let ct = tid{ &l, t = cr }
@@ -1453,14 +1472,29 @@ namespace lower {
         } else {
             mk{ ty = ct, k = ir::ExprKind::call{ callee = w.callee, args = list::items{ list = args } } }
         }
-        let r = res_remap{ &l, x = call, frm = types::prune{ s = l.c.ty, t = cr }, to = types::prune{ s = l.c.ty, t = tr } }
-        let mut body = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
+        let mut r = call
+        if norm{ &l, t = cr } != norm{ &l, t = tr } { r = res_remap{ &l, x = call, frm = types::prune{ s = l.c.ty, t = cr }, to = types::prune{ s = l.c.ty, t = tr } } }
         try! list::push{ list = &body, item = ir::Stmt::ret{ value = r } }
         return ir::Func{
             id, name = utf8::view{ b }.bytes, symbol = "", params = list::items{ list = params }, ret = tid{ &l, t = tr },
             locals = list::items{ list = l.locals }, body = ir::Block{ stmts = list::items{ list = body }, result = null },
             unit = unit_of{ l, x = d }, at = d.syn.span.start,
         }
+    }
+
+    // A thunk's argument for field f of what it calls, from its own param `own` in slot: the
+    // param, or for a read-only f that it has `mut`, the value read through its pointer (§5)
+    // into a local of body's, first: the callee sees the value the argument had (§14, rule 6),
+    // which another argument may point into.
+    fn taken { mut l: Lower, f: types::Field, own: types::Field, slot: u32, mut body: list::List(ir::Stmt, Heap) } -> ir::Expr {
+        let at = tid{ &l, t = arg_type{ &l, f = own, ptrs = true } }
+        let v = mk{ ty = at, k = ir::ExprKind::local{ slot } }
+        if f.mutable or not own.mutable { return v }
+        let ft = tid{ &l, t = f.ty }
+        let z = temp{ &l, ty = ft }
+        let init = mk{ ty = ft, k = ir::ExprKind::deref{ ptr = box{ l, e = v }, pos = ir::Pos{ line = 0, col = 0, file = 0 } } }
+        try! list::push{ list = &body, item = ir::Stmt::define{ slot = z, init } }
+        return mk{ ty = ft, k = ir::ExprKind::local{ slot = z } }
     }
 
     // ---- run functions that carry capabilities (spec §15, rule 14)
@@ -1601,7 +1635,9 @@ namespace lower {
             let at = tid{ &l, t = arg_type{ &l, f, ptrs = true } }
             let mut v = mk{ ty = at, k = ir::ExprKind::capref }
             let s = types::field_index{ fields = fs, name = f.name }
-            if s != null and (s >= first_kept + w.kept.len or not f.mutable) {
+            if s != null and s >= first_kept + w.kept.len {
+                v = taken{ &l, f, own = fs[s], slot = @as(u32, s), &body }
+            } else if s != null and not f.mutable {
                 v = mk{ ty = at, k = ir::ExprKind::local{ slot = @as(u32, s) } }
             } else if s != null {
                 let ct = tid{ &l, t = f.ty }
@@ -1903,7 +1939,7 @@ namespace lower {
         match get{ l, t = a } {
             func => {
                 if get{ l, t = b } is func {
-                    if widens{ &l, a, b } { return widen_fn{ &l, x, frm = a, to = b } }
+                    if widens{ &l, a, b } or reads{ l, a, b } { return widen_fn{ &l, x, frm = a, to = b } }
                     return mk{ ty = tid{ &l, t = b }, k = ir::ExprKind::fnconv{ e = box{ l, e = x } } }
                 }
             }

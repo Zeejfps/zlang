@@ -6983,6 +6983,130 @@ fn main { mut io: Io } {
 """, 'ok 3\ntoo big 20\nok 6\nok 9\nok 13\nok 18\nok 7\nerr empty\nok 8\nsay hi\n'
             'say failed: empty\nwalk 100\nwalk err deep{ depth = 9 }\ndown err deep{ depth = 0 }\n')
 
+    def test_function_values_read_mut_fields(self):
+        # A field a function takes read-only may be `mut` in the type it converts to (§5): the
+        # value reads it through the pointer it is given, when it is called. A scalar, a struct
+        # over 32 bytes (passed by reference), through a name, a bind, a struct field, a `&fn`
+        # local, a generic function, a `?`, a function value and a bind of one, with a widened
+        # error and with a dropped field.
+        self.assertOutput("""
+struct Big { a: i64, b: i64, c: i64, d: i64, e: i64 }
+struct H { f: fn{ mut a: i64 } -> i64 }
+error neg{ n: i64 }
+
+fn tens { a: i64 } -> i64 { return a * 10 }
+fn add { k: i64, a: i64 } -> i64 { return a + k }
+fn total { b: Big } -> i64 { return b.a + b.b + b.c + b.d + b.e }
+fn second(T) { x: T, y: T } -> T { return y }
+fn positive { a: i64 } -> !i64 {
+    if a < 0 { return neg{ n = a } }
+    return a
+}
+fn step { mut n: i64, a: i64 } { n = n + a }
+
+fn each { mut a: i64, f: &fn{ mut a: i64 } -> i64 } -> i64 { return f{ &a } }
+fn each_big { mut b: Big, f: &fn{ mut b: Big } -> i64 } -> i64 {
+    b.e = b.e + 100
+    return f{ &b }
+}
+fn show { mut io: Io, r: !i64 } {
+    match r {
+        ok{ value } => { _ = @fmt(&io, "ok {}\\n", value) }
+        err{ error } => { _ = @fmt(&io, "err {}\\n", error) }
+    }
+}
+
+fn main { mut io: Io } {
+    let mut x: i64 = 5
+    let f: fn{ mut a: i64 } -> i64 = tens
+    _ = @fmt(&io, "{} ", f{ a = &x })
+    x = 7
+    _ = @fmt(&io, "{}\\n", f{ a = &x })
+    _ = @fmt(&io, "{} {}\\n", each{ a = &x, f = tens }, each{ a = &x, f = add{ k = 1, _ } })
+    let h = H{ f = tens }
+    let g: &fn{ mut a: i64 } -> i64 = add{ k = 2, _ }
+    _ = @fmt(&io, "{} {}\\n", h.f{ a = &x }, g{ a = &x })
+    let mut big = Big{ a = 1, b = 2, c = 3, d = 4, e = 5 }
+    let t: fn{ mut b: Big } -> i64 = total
+    _ = @fmt(&io, "{} {} {}\\n", t{ b = &big }, each_big{ b = &big, f = total }, big.e)
+    let s: fn{ mut x: i64, y: i64 } -> i64 = second(i64)
+    let si: fn{ x: i64, mut y: i64 } -> i64 = second
+    _ = @fmt(&io, "{} {}\\n", s{ x = &x, y = 3 }, si{ x = 1, y = &x })
+    let p: fn{ mut a: i64 } -> !i64 = positive
+    show{ &io, r = p{ a = &x } }
+    let mut m: i64 = -3
+    show{ &io, r = p{ a = &m } }
+    let d: fn{ mut a: i64, extra: u8 } -> i64 = tens
+    let o: ?fn{ mut a: i64 } -> i64 = tens
+    if o != null { _ = @fmt(&io, "{} {}\\n", d{ a = &m, extra = 1 }, o{ a = &m }) }
+    let v: fn{ a: i64 } -> i64 = tens
+    let w: fn{ mut a: i64 } -> i64 = v
+    let kv: fn{ k: i64, a: i64 } -> i64 = add
+    let kb: &fn{ mut a: i64, extra: u8 } -> i64 = kv{ k = 100, _ }
+    let pv = positive
+    let pw: fn{ mut a: i64, extra: u8 } -> !i64 = pv
+    _ = @fmt(&io, "{} {} ", w{ a = &x }, kb{ a = &x, extra = 0 })
+    show{ &io, r = pw{ a = &m, extra = 0 } }
+    let mut n: i64 = 0
+    let both: fn{ mut n: i64, mut a: i64 } = step
+    both{ &n, a = &x }
+    let sb: &fn{ mut a: i64 } = step{ &n, _ }
+    sb{ a = &x }
+    _ = @fmt(&io, "{} {}\\n", n, x)
+}
+""", '50 70\n70 8\n70 9\n15 115 105\n3 7\nok 7\nerr neg{ n = -3 }\n-30 -30\n70 107 err neg{ n = -3 }\n14 7\n')
+
+    def test_function_values_read_mut_fields_snapshot(self):
+        # The converted value passes what it reads as the argument's value (§14, rule 6): a
+        # struct over 32 bytes, which another argument points into, is a copy, as in a direct
+        # call. Through a name, a function value, and a bind of one.
+        self.assertOutput("""
+struct Big { a: i64, b: i64, c: i64, d: i64, e: i64 }
+
+fn inspect { b: Big, p: *mut i64 } -> i64 {
+    p.* = 99
+    return b.a
+}
+
+fn inspect_io { mut io: Io, b: Big, p: *mut i64 } -> i64 {
+    p.* = 99
+    return b.a
+}
+
+fn main { mut io: Io } {
+    let mut big = Big{ a = 1, b = 2, c = 3, d = 4, e = 5 }
+    _ = @fmt(&io, "{} ", inspect{ b = big, p = &big.a })
+    big.a = 1
+    let f: fn{ mut b: Big, p: *mut i64 } -> i64 = inspect
+    _ = @fmt(&io, "{} ", f{ b = &big, p = &big.a })
+    big.a = 1
+    let v: fn{ b: Big, p: *mut i64 } -> i64 = inspect
+    let w: fn{ mut b: Big, p: *mut i64 } -> i64 = v
+    _ = @fmt(&io, "{} ", w{ b = &big, p = &big.a })
+    big.a = 1
+    let k: fn{ mut io: Io, b: Big, p: *mut i64 } -> i64 = inspect_io
+    let kb: &fn{ mut b: Big, p: *mut i64 } -> i64 = k{ &io, _ }
+    _ = @fmt(&io, "{} {}\\n", kb{ b = &big, p = &big.a }, big.a)
+}
+""", '1 1 1 1 99\n')
+
+    def test_function_values_read_mut_fields_errors(self):
+        # Only a read-only field converts to a `mut` one: not the other way, nor to another type.
+        for body, msg, pos in [
+            ('fn bump { mut n: i64 } {}\nfn main {} { let f: fn{ n: i64 } = bump }',
+             'expected fn{ n: i64 }, got fn{ mut n: i64 }', (2, 36)),
+            ('fn bump { mut n: i64, by: i64 } {}\nfn main {} { let f: &fn{ n: i64 } = bump{ by = 1, _ } }',
+             'expected &fn{ n: i64 }, got &fn{ mut n: i64 }', (2, 41)),
+            ('fn read { n: i64 } {}\nfn main {} { let f: fn{ mut n: i32 } = read }',
+             'expected fn{ mut n: i32 }, got fn{ n: i64 }', (2, 40)),
+            ('fn read { n: i64 } {}\nfn main {} { let f: fn{ mut n: i64 } = read{ _ } }',
+             'expected fn{ mut n: i64 }, got &fn{ n: i64 }', (2, 44)),
+        ]:
+            with self.assertRaises(CompileError, msg=body) as cm:
+                run(body)
+            self.assertIn(msg, cm.exception.msg, body)
+            self.assertEqual(cm.exception.pos[:2], pos, body)
+
     def test_error_needs_a_name(self):
         # `error` begins a declaration only before a name: elsewhere it is a name itself.
         self.assertOutput("""
@@ -10094,6 +10218,9 @@ fn main { mut io: Io } {
              "a C function pointer (extern fn{ n: i64 } -> i64) can't be used as a ctxlang fn{ n: i64 } -> i64", 3, 32),
             (h + 'fn main {} { let f: extern fn{ n: i32 } -> i64 = labs }',
              'expected extern fn{ n: i32 } -> i64, got extern fn{ n: i64 } -> i64', 2, 50),
+            # A `mut` field is C's pointer: a read-only one isn't read through it, as §5's is.
+            (h + 'fn main {} { let f: extern fn{ mut n: i64 } -> i64 = labs }',
+             'expected extern fn{ mut n: i64 } -> i64, got extern fn{ n: i64 } -> i64', 2, 54),
             (h + 'fn main {} { let f: extern fn{ n: i64 } -> i64 = labs\n  let g = f{ _ } }',
              "a C function pointer can't be bound with `_`: call it with every field", 3, 12),
             ('fn main {} { let x: i32 = 5\n  let f = @cast(extern fn{}, x) }', '@cast needs a pointer or extern fn argument', 2, 30),
@@ -10214,6 +10341,9 @@ fn main { mut io: Io } {
              'expected extern fn{ n: i64 } -> i64, got extern fn{ n: i64 }', 3, 50),
             ('#c::callback\nfn g { mut n: i64 } {}\nfn main {} { let f: extern fn{ n: i64 } = g }',
              'expected extern fn{ n: i64 }, got extern fn{ mut n: i64 }', 3, 43),
+            # Nor the other way: C's pointer isn't read for a read-only field, as §5's is.
+            ('#c::callback\nfn g { n: i64 } {}\nfn main {} { let f: extern fn{ mut n: i64 } = g }',
+             'expected extern fn{ mut n: i64 }, got extern fn{ n: i64 }', 3, 47),
             # Only the name converts: a fn value has no C function behind it.
             ('#c::callback\nfn g { n: i64 } {}\nfn main {} { let h = g\n  let f: extern fn{ n: i64 } = h }',
              "a ctxlang function can't be passed as a C function pointer (extern fn{ n: i64 }): only an extern fn or a `#c::callback` fn can", 4, 32),
@@ -10731,6 +10861,51 @@ fn main { mut io: Io, mut threads: Threads } -> i32 {
     return 0
 }
 ''', '6\n')
+
+    def test_a_run_fn_reads_a_mut_field(self):
+        """A run function that takes a field read-only where `run`'s type has it `mut` reads it
+        through the pointer (§5), with the capabilities it carries or without."""
+        self.assertOutput('''
+#spawn
+fn go { run: fn{ mut n: u32 } } {
+    let mut k: u32 = 4
+    run{ n = &k }
+    k = 9
+    run{ n = &k }
+}
+
+fn show { mut io: Io, n: u32 } { io::println_u64{ &io, n = @as(u64, n) } }
+fn ignore { n: u32 } {}
+
+fn main { mut io: Io } {
+    go{ run = show }
+    let v: fn{ mut io: Io, n: u32 } = show
+    go{ run = v }
+    go{ run = ignore }
+}
+''', '4\n9\n4\n9\n')
+
+    def test_a_run_fn_reads_a_snapshot(self):
+        """What a carrying thunk reads through the pointer is a copy, which another argument
+        pointing into the struct (over 32 bytes) doesn't change (§14, rule 6)."""
+        self.assertOutput('''
+struct Big { a: i64, b: i64, c: i64, d: i64, e: i64 }
+
+fn inspect { mut io: Io, b: Big, p: *mut i64 } -> i64 {
+    p.* = 99
+    return b.a
+}
+
+#spawn
+fn go { run: fn{ mut b: Big, p: *mut i64 } -> i64 } -> i64 {
+    let mut big = Big{ a = 1, b = 2, c = 3, d = 4, e = 5 }
+    return run{ b = &big, p = &big.a }
+}
+
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = go{ run = inspect } }
+}
+''', '1\n')
 
     def test_atomics(self):
         self.assertOutput('''
