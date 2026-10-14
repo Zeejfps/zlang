@@ -5,36 +5,41 @@
 // A bare id type. It has no columns, only identity.
 id Entity;
 
-// `key Entity` makes each row's `id` an Entity, so rows in different
-// tables that share an id belong to the same entity.
-// (A table without `key`, like Todo, gets its own `Id<Todo>`.)
-table Position key Entity {
+// `key` marks the column that identifies a row. Rows in different tables
+// with the same `entity` belong to the same entity.
+// (A table without a key column, like Todo, gets an implicit `id: Id<Todo> key`.)
+table Position {
+    entity: Entity key;
     x: float;
     y: float;
 }
 
-table Velocity key Entity {
+table Velocity {
+    entity: Entity key;
     dx: float;
     dy: float;
 }
 
-table Health key Entity {
+table Health {
+    entity: Entity key;
     hp: int required;
     max: int required;
 }
 
-// A tag: a table with no columns. Whether a row exists is the data.
-table Player key Entity {}
-
-context World {
-    positions: Table<Position>;
-    velocities: Table<Velocity>;
-    healths: Table<Health>;
-    players: Table<Player>;
+// A tag: a table with only a key. Whether a row exists is the data.
+table Player {
+    entity: Entity key;
 }
 
-// A `for` with several bindings joins them on their shared key, so this
-// visits only entities that have both a Position and a Velocity.
+context World {
+    positions: table<Position>;
+    velocities: table<Velocity>;
+    healths: table<Health>;
+    players: table<Player>;
+}
+
+// A `for` with several bindings joins them on their key columns, which must
+// have the same type. This visits only entities with both a Position and a Velocity.
 // Loop variables are references to the rows, so assigning writes back.
 fn movement(world: World, dt: float) {
     for p in world.positions, v in world.velocities {
@@ -52,33 +57,40 @@ fn poison(world: World) {
 // A despawn inside the loop is deferred until the loop ends.
 fn reap(world: World) {
     for h in world.healths where h.hp <= 0 {
-        world.despawn(h.id);
+        world.despawn(h.entity);
     }
 }
 
 // `_` joins on a table without binding its row. Here it filters to players.
 fn report(world: World) {
     for p in world.positions, _ in world.players {
-        print("player {p.id} at {p.x}, {p.y}");
+        print("player {p.entity} at {p.x}, {p.y}");
     }
 }
 
-// `..p: Position` takes Position's columns as named parameters, and `p` is
-// the assembled value in the body. Callers pass `x:` and `y:`, or `..some_pos`.
-fn spawn_rock(world: World, ..p: Position) -> Entity {
+// Position without its key, for callers that don't have an entity yet.
+projection Point from Position {
+    x;
+    y;
+}
+
+// `..p: Point` takes Point's fields as named parameters, and `p` is the
+// assembled value in the body. Callers pass `x:` and `y:`, or `..some_point`.
+fn spawn_rock(world: World, ..p: Point) -> Entity {
     let e = world.spawn();
-    world.positions.insert(e, ..p);
+    world.positions.insert(entity: e, ..p);
     return e;
 }
 
 fn main() {
     let world = World();
 
+    // The key is a column like any other, so it is passed by name.
     let hero = world.spawn();
-    world.positions.insert(hero, x: 0.0, y: 0.0);
-    world.velocities.insert(hero, dx: 1.0, dy: 0.5);
-    world.healths.insert(hero, hp: 3, max: 3);
-    world.players.insert(hero);
+    world.positions.insert(entity: hero, x: 0.0, y: 0.0);
+    world.velocities.insert(entity: hero, dx: 1.0, dy: 0.5);
+    world.healths.insert(entity: hero, hp: 3, max: 3);
+    world.players.insert(entity: hero);
 
     spawn_rock(world, x: 5.0, y: 5.0);
 
