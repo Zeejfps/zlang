@@ -63,17 +63,24 @@ fn report(world: World) {
     }
 }
 
+// `..p: Position` takes Position's columns as named parameters, and `p` is
+// the assembled value in the body. Callers pass `x:` and `y:`, or `..some_pos`.
+fn spawn_rock(world: World, ..p: Position) -> Entity {
+    let e = world.spawn();
+    world.positions.insert(e, ..p);
+    return e;
+}
+
 fn main() {
-    let world = World {};
+    let world = World();
 
     let hero = world.spawn();
-    world.positions.insert(hero, Position { x: 0.0, y: 0.0 });
-    world.velocities.insert(hero, Velocity { dx: 1.0, dy: 0.5 });
-    world.healths.insert(hero, Health { hp: 3, max: 3 });
+    world.positions.insert(hero, x: 0.0, y: 0.0);
+    world.velocities.insert(hero, dx: 1.0, dy: 0.5);
+    world.healths.insert(hero, hp: 3, max: 3);
     world.players.insert(hero);
 
-    let rock = world.spawn();
-    world.positions.insert(rock, Position { x: 5.0, y: 5.0 });
+    spawn_rock(world, x: 5.0, y: 5.0);
 
     for frame in 0..5 {
         movement(world, 1.0 / 60.0);

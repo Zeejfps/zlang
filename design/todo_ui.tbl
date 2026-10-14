@@ -3,7 +3,7 @@
 use todo { App, Todo, TodoLine, add, stats };
 
 fn set_done(app: App, id: Id<Todo>, done: bool) {
-    app.todos.update(id, { done: done });
+    app.todos.update(id, done: done);
 }
 
 // A view's body declares elements rather than running steps.
@@ -13,6 +13,8 @@ view TodoScreen(app: App) {
     state draft: str = "";
     state show_done: bool = false;
 
+    // A call that begins a statement can take a trailing block of children.
+    // In a header like `for x in items() {`, the `{` is always the loop body.
     column(gap: 8) {
         row(gap: 4) {
             text_input(value: draft, on_change: fn(s: str) { draft = s; });
@@ -44,7 +46,7 @@ view TodoRow(app: App, line: TodoLine) {
 }
 
 fn main() {
-    let app = App {};
+    let app = App();
     add(app, "try the ui");
     ui.run(TodoScreen(app));
 }
