@@ -1,0 +1,50 @@
+// todo_ui.tbl: a declarative UI over the todo app in todo.tbl.
+
+use todo { App, Todo, TodoLine, add, stats };
+
+fn set_done(app: App, id: Id<Todo>, done: bool) {
+    app.todos.update(id, { done: done });
+}
+
+// A view's body declares elements rather than running steps.
+// The view re-runs when anything it read changes: a table, its state, or an argument.
+view TodoScreen(app: App) {
+    // State lives as long as this view is on screen.
+    state draft: str = "";
+    state show_done: bool = false;
+
+    column(gap: 8) {
+        row(gap: 4) {
+            text_input(value: draft, on_change: fn(s: str) { draft = s; });
+            button("Add", on_click: fn() {
+                add(app, draft);
+                draft = "";
+            });
+        }
+
+        checkbox("Show done", value: show_done, on_change: fn(b: bool) { show_done = b; });
+
+        // `for` and `if` work in views too. Each pass emits its elements.
+        for t in app.todos where show_done || !t.done {
+            // A Todo row is passed where a TodoLine is expected.
+            TodoRow(app, t);
+        }
+
+        let s = stats(app);
+        text("{s.open} of {s.total} open");
+    }
+}
+
+// Views compose like functions.
+view TodoRow(app: App, line: TodoLine) {
+    row(gap: 4) {
+        checkbox(value: line.done, on_change: fn(b: bool) { set_done(app, line.id, b); });
+        text(line.text, strike: line.done);
+    }
+}
+
+fn main() {
+    let app = App {};
+    add(app, "try the ui");
+    ui.run(TodoScreen(app));
+}

@@ -1,0 +1,84 @@
+// game.tbl: a tiny ECS-style simulation.
+// Entities are ids. Components are tables keyed by that id.
+// Systems are plain functions that query across those tables.
+
+// A bare id type. It has no columns, only identity.
+id Entity;
+
+// `key Entity` makes each row's `id` an Entity, so rows in different
+// tables that share an id belong to the same entity.
+// (A table without `key`, like Todo, gets its own `Id<Todo>`.)
+table Position key Entity {
+    x: float;
+    y: float;
+}
+
+table Velocity key Entity {
+    dx: float;
+    dy: float;
+}
+
+table Health key Entity {
+    hp: int required;
+    max: int required;
+}
+
+// A tag: a table with no columns. Whether a row exists is the data.
+table Player key Entity {}
+
+context World {
+    positions: Table<Position>;
+    velocities: Table<Velocity>;
+    healths: Table<Health>;
+    players: Table<Player>;
+}
+
+// A `for` with several bindings joins them on their shared key, so this
+// visits only entities that have both a Position and a Velocity.
+// Loop variables are references to the rows, so assigning writes back.
+fn movement(world: World, dt: float) {
+    for p in world.positions, v in world.velocities {
+        p.x += v.dx * dt;
+        p.y += v.dy * dt;
+    }
+}
+
+fn poison(world: World) {
+    for h in world.healths where h.hp > 0 {
+        h.hp -= 1;
+    }
+}
+
+// A despawn inside the loop is deferred until the loop ends.
+fn reap(world: World) {
+    for h in world.healths where h.hp <= 0 {
+        world.despawn(h.id);
+    }
+}
+
+// `_` joins on a table without binding its row. Here it filters to players.
+fn report(world: World) {
+    for p in world.positions, _ in world.players {
+        print("player {p.id} at {p.x}, {p.y}");
+    }
+}
+
+fn main() {
+    let world = World {};
+
+    let hero = world.spawn();
+    world.positions.insert(hero, Position { x: 0.0, y: 0.0 });
+    world.velocities.insert(hero, Velocity { dx: 1.0, dy: 0.5 });
+    world.healths.insert(hero, Health { hp: 3, max: 3 });
+    world.players.insert(hero);
+
+    let rock = world.spawn();
+    world.positions.insert(rock, Position { x: 5.0, y: 5.0 });
+
+    for frame in 0..5 {
+        movement(world, 1.0 / 60.0);
+        poison(world);
+        reap(world);
+        report(world);
+    }
+}

@@ -1,0 +1,64 @@
+// todo.tbl: a small command-line todo app.
+// This file is the spec. When the design changes, this file changes with it.
+
+// A table holds rows. Every row gets an implicit `id: Id<Todo>`.
+table Todo {
+    text: str required;
+    done: bool = false;
+    created: time required;
+}
+
+// A projection is a struct-like shape. One declared `from` a table
+// takes its columns by name, types included.
+projection TodoLine from Todo {
+    id;
+    text;
+    done;
+}
+
+// A projection declared without `from` is a plain struct.
+projection Stats {
+    total: int;
+    open: int;
+}
+
+// A context bundles the tables (and other state) that a program runs against.
+context App {
+    todos: Table<Todo>;
+}
+
+fn add(app: App, text: str) -> Id<Todo> {
+    return app.todos.insert(Todo { text: text, created: now() });
+}
+
+fn complete(app: App, id: Id<Todo>) {
+    app.todos.update(id, { done: true });
+}
+
+fn open_lines(app: App) -> list<TodoLine> {
+    return from t in app.todos
+           where !t.done
+           select TodoLine;
+}
+
+fn stats(app: App) -> Stats {
+    let total = app.todos.count();
+    let open = (from t in app.todos where !t.done).count();
+    return Stats { total: total, open: open };
+}
+
+fn main() {
+    let app = App {};
+
+    let milk = add(app, "buy milk");
+    add(app, "write the sample");
+    add(app, "argue about syntax");
+    complete(app, milk);
+
+    for line in open_lines(app) {
+        print("[{line.id}] {line.text}");
+    }
+
+    let s = stats(app);
+    print("{s.open} of {s.total} open");
+}
