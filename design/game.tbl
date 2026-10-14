@@ -77,8 +77,8 @@ fn reap(world: World) {
 // joining on the missile's own key. Because of `cascade`, a Homing row
 // exists only while its target does, but the target may have no Position;
 // then this missile is skipped.
-// `t` is read-only, so it sees the target as it was before this pass,
-// even when a rock targets itself and `t` is the same row as `p`.
+// `t` is read-only, a copy taken when it is bound, so writing `p` never
+// changes it, even when a rock targets itself and both are the same row.
 fn home(world: World, dt: float) {
     for h in world.homings,
         mut p in world.positions,
