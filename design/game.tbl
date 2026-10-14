@@ -27,6 +27,13 @@ table Health {
     max: int required;
 }
 
+// `cascade`: when the target is deleted, this row is deleted too.
+// Without it, a stale `target` would be safe but point at nothing.
+table Homing {
+    entity: id<Entity> key;
+    target: id<Entity> cascade;
+}
+
 // A tag: a table with only a key. Whether a row exists is the data.
 table Player {
     entity: id<Entity> key;
@@ -38,6 +45,7 @@ context World {
     velocities: table<Velocity>;
     healths: table<Health>;
     players: table<Player>;
+    homings: table<Homing>;
 }
 
 // A `for` with several bindings joins them on their key columns, which must
@@ -61,6 +69,17 @@ fn poison(world: World) {
 fn reap(world: World) {
     for h in world.healths where h.hp <= 0 {
         world.entities.delete(h.entity);
+    }
+}
+
+// Because of `cascade`, a Homing row exists only while its target does.
+// The target may still have no Position, so `get` returns `?Position`,
+// and `let … else` binds the row or skips this entity.
+fn home(world: World, dt: float) {
+    for h in world.homings, p in world.positions {
+        let t = world.positions.get(h.target) else { continue; };
+        p.x += (t.x - p.x) * dt;
+        p.y += (t.y - p.y) * dt;
     }
 }
 
@@ -96,10 +115,15 @@ fn main() {
     world.healths.insert(entity: hero, hp: 3, max: 3);
     world.players.insert(entity: hero);
 
-    spawn_rock(world, x: 5.0, y: 5.0);
+    // When reap deletes the hero, `cascade` deletes this Homing row.
+    // The rock itself stays; it just stops homing.
+    let rock = spawn_rock(world, x: 5.0, y: 5.0);
+    world.homings.insert(entity: rock, target: hero);
 
+    let dt = 1.0 / 60.0;
     for frame in 0..5 {
-        movement(world, 1.0 / 60.0);
+        movement(world, dt);
+        home(world, dt);
         poison(world);
         reap(world);
         report(world);
