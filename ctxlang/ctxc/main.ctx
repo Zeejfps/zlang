@@ -192,7 +192,7 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
     }
     let out: []u8 = if mode == Mode::build { args[1] } else { "" }
     let mut units: [][]u8 = slice::empty([]u8){}
-    return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = split - first, mode, out, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, made = &units, texts = slice::empty([]u8){} }
+    return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = split - first, extras = slice::empty([]u8){}, mode, out, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, made = &units, texts = slice::empty([]u8){} }
 }
 
 // Checks the program of `paths`, std's files first, and acts on it as `mode` says: for build,
@@ -202,19 +202,21 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
 // running code (comptime.ctx) may take half of ctxc's stack, and CTX_CONST_FUEL steps if that is
 // set. The last texts.len files aren't read: their text is texts', as the driver has it for the
 // files a build program generates, so what is compiled is the driver's, whatever another ctxc
-// does to the file meanwhile.
-fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8, std_files: usize, mode: Mode, out: []u8, argv: [][]u8, env: [][]u8, stack: u64, size: usize, mut made: [][]u8, texts: [][]u8 } -> i32 {
+// does to the file meanwhile. If the program is a build program (`builds`), extras are std's
+// files too, after paths' (drive.ctx, `build_extras`).
+fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8, std_files: usize, extras: [][]u8, mode: Mode, out: []u8, argv: [][]u8, env: [][]u8, stack: u64, size: usize, mut made: [][]u8, texts: [][]u8 } -> i32 {
     let given = paths.len - texts.len               // paths[given..] are texts'
     let mut total: u64 = 0
     let mut i: usize = 0
-    while i < paths.len {
-        if i >= given {
+    while i < paths.len + extras.len {
+        if i >= given and i < paths.len {
             total = total + texts[i - given].len
             i = i + 1
             continue
         }
-        let ok{ value = size } = fs::size{ &fs, path = paths[i] } else {
-            cannot{ &io, path = paths[i], what = "cannot read" }
+        let path = if i < paths.len { paths[i] } else { extras[i - paths.len] }
+        let ok{ value = size } = fs::size{ &fs, path } else {
+            cannot{ &io, path, what = "cannot read" }
             return 1
         }
         total = total + size
@@ -227,22 +229,65 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8
     let mut heap = arena::new{ buf = pages }
     let mut diags = diag::new{ &heap }
     let mut files = list::new(check::File){ realloc = arena::alloc, &heap }
+    let mut read = list::new([]u8){ realloc = arena::alloc, &heap }
     i = 0
     while i < paths.len {
         let path = paths[i]
+        let mut text: []u8 = ""
         if i >= given {
-            add_file{ &files, &heap, &diags, name = path, text = texts[i - given] }
-            i = i + 1
-            continue
+            text = texts[i - given]
+        } else {
+            text = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } iferr {
+                cannot{ &io, path, what = "cannot read" }
+                return 1
+            }
         }
-        let ok{ value = text } = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } else {
-            cannot{ &io, path, what = "cannot read" }
-            return 1
-        }
-        add_file{ &files, &heap, &diags, name = path, text }
+        try! list::push{ list = &read, item = text }
         i = i + 1
     }
-    let mut c = check::new{ files = list::items{ list = files }, std_files, &heap, &diags }
+    let all = list::items{ list = read }
+    // The program's files are parsed with diagnostics of their own until it is known whether it
+    // is a build program, whose files come after the extras.
+    let mut own = diag::new{ &heap }
+    i = 0
+    while i < paths.len {
+        if i < std_files {
+            add_file{ &files, &heap, &diags, name = paths[i], text = all[i] }
+        } else {
+            add_file{ &files, &heap, diags = &own, name = paths[i], text = all[i] }
+        }
+        i = i + 1
+    }
+    let mut std_count = std_files
+    if extras.len > 0 and builds{ files = list::items{ list = files }[std_files..] } {
+        files.len = std_files
+        i = 0
+        while i < extras.len {
+            let ok{ value = text } = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = extras[i] } else {
+                cannot{ &io, path = extras[i], what = "cannot read" }
+                return 1
+            }
+            add_file{ &files, &heap, &diags, name = extras[i], text }
+            i = i + 1
+        }
+        std_count = std_files + extras.len
+        i = std_files
+        while i < paths.len {
+            add_file{ &files, &heap, &diags, name = paths[i], text = all[i] }
+            i = i + 1
+        }
+    } else {
+        let errors = diags.errors + own.errors
+        let ds = diag::items{ diags = own }
+        i = 0
+        while i < ds.len {
+            diag::add{ &diags, d = ds[i] }
+            i = i + 1
+        }
+        diags.errors = errors
+        diags.dropped = diags.dropped + own.dropped
+    }
+    let mut c = check::new{ files = list::items{ list = files }, std_files = std_count, &heap, &diags }
     c.stack = drive::host_stack{ &proc } / 2
     let fuel = proc::env{ &proc, name = "CTX_CONST_FUEL" }
     if fuel != null {
@@ -343,6 +388,26 @@ fn error { mut out: utf8::Builder(arena::Arena), c: check::Checker, d: diag::Dia
         _ = @fmt(&out, "{}:{}:{}", check::str{ s = f.name }, p.line, p.col)
     }
     _ = @fmt(&out, ": error: {}\n", d.msg)
+}
+
+// Whether the program of files is a build program (spec §19, rule 2): one whose entry is a
+// top-level `fn build`, with no top-level `fn main`.
+fn builds { files: []check::File } -> bool {
+    let mut build = false
+    let mut i: usize = 0
+    while i < files.len {
+        let decls = files[i].tree.decls
+        let mut k: usize = 0
+        while k < decls.len {
+            if decls[k].k is func{ name, external } and not external {
+                if slice::eq_bytes{ a = name.text, b = "main" } { return false }
+                if slice::eq_bytes{ a = name.text, b = "build" } { build = true }
+            }
+            k = k + 1
+        }
+        i = i + 1
+    }
+    return build
 }
 
 // Lexes and parses a file into the program's list, where its index is its file id.

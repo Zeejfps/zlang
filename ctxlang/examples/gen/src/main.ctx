@@ -1,5 +1,6 @@
 // Names colors, from an enum the build program generated (build.ctx): without arguments, every
-// color; with them, each argument's color, or exits with 1 at the first that isn't one.
+// color, and what a Paint holds, from a fn the build program generated from Paint's declaration;
+// with them, each argument's color, or exits with 1 at the first that isn't one.
 fn main { mut io: Io, args: Args } -> i32 {
     if args.len == 0 {
         let mut i: usize = 0
@@ -7,6 +8,7 @@ fn main { mut io: Io, args: Args } -> i32 {
             _ = @fmt(&io, "{} {}\n", i, color::name{ v = color::ALL[i] })
             i = i + 1
         }
+        fields::Paint{ &io }
         return 0
     }
     let mut i: usize = 0
@@ -20,3 +22,9 @@ fn main { mut io: Io, args: Args } -> i32 {
     }
     return 0
 }
+
+// Marks a struct whose fields the build program describes: an attribute is a struct (spec §18).
+struct describe {}
+
+#describe
+struct Paint { color: Color, coats: u32, name: []u8 }

@@ -140,10 +140,16 @@ generator can't observe its own output.
      the program's. The same goes for 6.5's `@expect`. One answer: the runtime prints primitives
      and `strlit` in C, and `_` for anything else, as a converted literal's error is printed
      (spec §18). A first version may print only the name, as `try!` does.
-2. **Reflection: `build::check`.** Runs the front end on an executable's sources and gives the
-   build program the checked declarations as data: structs, unions, fields, layouts and
-   attributes. That data is the `Analysis`, read-only trees plus side tables, so no separate
-   reflection format is needed.
+2. **Reflection: the checked program.** `build::declarations` (below) gives a build program its
+   executables' declarations as the parser sees them. What it can't give is what only the
+   checker knows: names resolved, types as types, layouts, and attributes' values folded, the
+   `Analysis`. A build program decides an executable's files while it runs and can't run ctxc,
+   so it parses for itself, with ctxc's parser in it. *Direction:* ctxc's checker answers
+   instead, either over a two-way channel between ctxc and the running build program (it asks
+   for an executable as it is so far, ctxc checks it and replies), or by running build programs
+   in ctxc's interpreter (eval.ctx), where the build program's calls can reach the checker
+   directly. Either gives the `Analysis` without a second copy of the front end in every build
+   program.
 
 *Done: generated files, and build programs of several files* (spec §19, rules 12 and 13;
 ctxc/drive.ctx, std/build.ctx, `examples/gen`). `#build::sources{ dir }` on `fn build` adds a
@@ -160,6 +166,36 @@ GEN LIST` does all of this for `tools/toolchain.py`'s `build_project`, which rea
 files and flags, and how the build went, from LIST and compiles them itself, so Python parses no
 ctxlang. Its generated files are GEN/EXE/NAME-HASH.ctx, HASH being of the text, so the same text
 keeps its path and its cached C, and runs with other text never share a file.
+
+*Done: declarations* (spec §19, rules 14 to 16; std/build/declarations.ctx, `examples/gen`).
+`build::declarations{ &b, &fs, &mem, &heap, realloc, exe }` parses exe's files as they are at
+the call, its root's and the directories `add_sources` gave it so far, found from build.ctx's
+directory as the driver finds them (`CTX_BUILD_DIR`, which the driver sets, in ASCII with `%XX`
+for other bytes, since C's getenv is the ANSI code page's on Windows and std's UTF-8 environment
+needs a `Proc`), and never its
+generated files. std's build state remembers each executable's root and directories for it. The
+result is a data model of its own (`Decl`, `Field`, `Variant`, `Attr`, `Diagnostic`), not ctxc's
+syntax trees: types are spelled one way, values are their tokens as written, so string
+literals keep their text, and attributes aren't folded, but a string, integer or bool literal's value is there too. The parser recovers, so the
+declarations around a syntax error are there with the errors. ctxc adds std/build/'s
+files and ctxc's lexer and parser (`drive::FRONT`) to std's files for a build program only, one
+whose entry is `fn build` however it is built (`analyze` parses the program's files first to
+tell), so they are std's to the checker: `namespace build` joins std's, and a library's `namespace parser`
+shadows ctxc's. That checks about 3,100 more lines in every build program: `ctxc run` of a
+trivial one, cached, went from about 77 ms to 128 ms on Windows, and its first build from 645 ms
+to 690 ms; one that calls `declarations` compiles the parser too (examples/gen: about 1.4 s the
+first time, 154 ms cached).
+
+*Later, for 3.2:*
+- Only a capability's fields have attributes; step 3 (attributes on any field) fills `Field.attrs`
+  for structs', unions' and errors' fields too, and `declarations` needs no change for it.
+- Not in the model yet: a capability's inclusions (`..Base`), whether its field is a C variable
+  or a static, which generic parameters are error sets (`E: error`), and a fn's body.
+- A declaration with a syntax error in it is there as far as it parsed, beside the error.
+- The ctxc front end is in every build program, used or not: the driver could add it only to
+  build programs whose tokens name `declarations`, if 50 ms a run matters.
+- std remembers at most 64 KiB of roots and directories (`build::Known`); a build that gives
+  more panics at `declarations`, not before.
 
 *Later, for 3.1:*
 - The driver reads `#build::sources` as written: a `dir` from a const isn't one, and a namespace
@@ -319,11 +355,11 @@ alone; step 5 gives programs a test framework of their own. None blocks the othe
      `std.testing.allocator` does.
    - **No `cfg(test)`.** Lowering starts from `main`, so tests never reach a normal build.
    - **The compiler knows nothing of tests.** `#test` is std's attribute, and a build program
-     finds the tests with `build::check` (3.2) and writes a runner `main` with `build::gen_file`
+     finds the tests with `build::declarations` (3.2) and writes a runner `main` with `build::gen_file`
      (3.1). Only `@expect` is the compiler's. A test that expects a panic runs in its own
      process, with `proc::spawn`.
    - *Needs* 3.1 and 3.2. It is a first real user of
-     `build::check`, next to the JSON generator.
+     `build::declarations`, next to the JSON generator.
    - *Considered:* finding tests by name (Go's `TestXxx`) is magic by name; `test "name" { }`
      blocks (Zig) are syntax an attribute already gives; fixtures by parameter name (pytest) are
      hidden injection that capabilities make explicit; mocks that patch code at run time (Jest)

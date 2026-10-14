@@ -3,12 +3,17 @@
 //
 // tools/ is a library of the build program's (`#build::sources`, spec §19), not the
 // executable's: enums::generate writes an enum and its names as ctxlang source, and gen_file
-// gives the executable that source as color.ctx, in ctxc's build directory.
+// gives the executable that source as color.ctx, in ctxc's build directory. describe::generate
+// reads the executable's own declarations (build::declarations) and writes fields.ctx, with a
+// fn for each struct marked `#describe` that prints its fields.
 #build::sources{ dir = "tools" }
-fn build { mut b: Build } {
+fn build { mut b: Build, mut fs: Fs, mut mem: Mem } {
     let exe = build::exe{ &b, name = "colors", root = "src" }
-    let mut buf: [65536]u8
-    let mut heap = arena::new{ buf = buf[..] }
+    let pages = mem::reserve{ &mem, size = 1073741824 } ifnull { @panic("out of memory") }
+    let mut heap = arena::new{ buf = pages }
     let names: [4][]u8 = ["red", "green", "blue", "teal"]
     build::gen_file{ &b, exe, name = "color", text = enums::generate{ &heap, space = "color", name = "Color", variants = names[..] } }
+    // src's files, which color.ctx, being generated, isn't one of
+    let found = try! build::declarations{ &b, &fs, &mem, &heap, realloc = arena::alloc, exe }
+    build::gen_file{ &b, exe, name = "fields", text = describe::generate{ &heap, decls = found.decls } }
 }

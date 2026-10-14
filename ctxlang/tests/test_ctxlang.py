@@ -10045,6 +10045,396 @@ fn main { mut io: Io, mut c: count::C } {
         self.assertEqual(len(works), 4)
         self.assertTrue(all(os.path.isdir(w) for w in works), works)
 
+    # ---- build::declarations (spec §19, rules 14 to 16)
+
+    # A build program's fn that prints what build::declarations found, a line for each thing.
+    SHOW = r"""
+const KINDS: [10][]u8 = ["struct", "union", "extern union", "enum", "fn", "extern fn", "const", "type", "capability", "error"]
+
+fn show { mut io: Io, found: build::Declarations } {
+    let mut i: usize = 0
+    while i < found.files.len {
+        _ = @fmt(&io, "file {}\n", found.files[i])
+        i = i + 1
+    }
+    i = 0
+    while i < found.decls.len {
+        let d = found.decls[i]
+        _ = @fmt(&io, "{} ", KINDS[@as(usize, d.kind)])
+        if d.path.len > 0 { _ = @fmt(&io, "{}::", d.path) }
+        _ = @fmt(&io, "{}", d.name)
+        let mut k: usize = 0
+        while k < d.generics.len {
+            let sep: []u8 = if k == 0 { "(" } else { ", " }
+            _ = @fmt(&io, "{}{}", sep, d.generics[k])
+            k = k + 1
+        }
+        if d.generics.len > 0 { _ = @fmt(&io, ")") }
+        if d.ty.len > 0 { _ = @fmt(&io, " : {}", d.ty) }
+        if d.value.len > 0 { _ = @fmt(&io, " = {}", d.value) }
+        if d.result.len > 0 { _ = @fmt(&io, " -> {}", d.result) }
+        _ = @fmt(&io, " @ {}:{}:{}\n", d.file, d.line, d.col)
+        show_attrs{ &io, attrs = d.attrs, indent = "  " }
+        show_fields{ &io, fields = d.fields, indent = "  " }
+        k = 0
+        while k < d.variants.len {
+            let v = d.variants[k]
+            _ = @fmt(&io, "  | {}", v.name)
+            if v.payload { _ = @fmt(&io, "{{}}") }
+            if v.value.len > 0 { _ = @fmt(&io, " = {}", v.value) }
+            _ = @fmt(&io, "\n")
+            show_fields{ &io, fields = v.fields, indent = "    " }
+            k = k + 1
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < found.diags.len {
+        let x = found.diags[i]
+        _ = @fmt(&io, "error {}:{}:{}: {}\n", x.file, x.line, x.col, x.message)
+        i = i + 1
+    }
+}
+
+fn show_fields { mut io: Io, fields: []build::Field, indent: []u8 } {
+    let mut i: usize = 0
+    while i < fields.len {
+        show_attrs{ &io, attrs = fields[i].attrs, indent }
+        let m: []u8 = if fields[i].mutable { "mut " } else { "" }
+        _ = @fmt(&io, "{}{}{}: {}\n", indent, m, fields[i].name, fields[i].ty)
+        i = i + 1
+    }
+}
+
+fn show_attrs { mut io: Io, attrs: []build::Attr, indent: []u8 } {
+    let mut i: usize = 0
+    while i < attrs.len {
+        _ = @fmt(&io, "{}#{}", indent, attrs[i].name)
+        let fs = attrs[i].fields
+        let mut k: usize = 0
+        while k < fs.len {
+            _ = @fmt(&io, " {}={} ", fs[k].name, fs[k].value)
+            match fs[k].literal {
+                other => { _ = @fmt(&io, "(?)") }
+                string{ bytes } => { _ = @fmt(&io, "(s {})", bytes) }
+                integer{ negative, value } => {
+                    let sign: []u8 = if negative { "-" } else { "" }
+                    _ = @fmt(&io, "(i {}{})", sign, value)
+                }
+                boolean{ value } => { _ = @fmt(&io, "(b {})", value) }
+            }
+            k = k + 1
+        }
+        _ = @fmt(&io, "\n")
+        i = i + 1
+    }
+}
+"""
+
+    FIND = 'try! build::declarations{ &b, &fs, &mem, &heap, realloc = arena::alloc, exe }'
+
+    def reflecting(self, body, top=''):
+        """A build program whose fn build runs body, with `heap` an arena to give declarations
+        and `show` to print what it finds."""
+        return (top + 'fn build { mut b: Build, mut io: Io, mut fs: Fs, mut mem: Mem } {\n'
+                '    let pages = mem::reserve{ &mem, size = 1073741824 } ifnull { return }\n'
+                '    let mut heap = arena::new{ buf = pages }\n' + body + '}\n' + self.SHOW)
+
+    def graph(self, d, path='.'):
+        """`ctxc graph` of the program at path, from d: it runs the build program without building
+        the executables, whose files needn't compile. (exit code, stdout, stderr)."""
+        self.work_dir(path, cwd=d)
+        return self.ctxc('graph', path, os.path.join(d, 'graph-gen'), os.path.join(d, 'graph.txt'), cwd=d)
+
+    def test_declarations(self):
+        # Every kind of declaration, as written: generics, a fn's context with `mut`, a union's
+        # variants and their payloads, an enum's values, attributes, on a capability's fields
+        # too, and namespaces, nested and across files. Types are spelled one way; values and
+        # attributes' fields are their text, with what a literal holds.
+        d = self.project({
+            'build.ctx': self.reflecting(f"""
+    let exe = build::exe{{ &b, name = "t", root = "src" }}
+    show{{ &io, found = {self.FIND} }}
+"""),
+            'src/a.ctx': """// game's components
+namespace game {
+    #ecs::component
+    struct Pos(T) { x: T, /* across */ y: list::List( T,
+        T ) }
+
+    namespace world {
+        #ecs::system{ every = 2, name = "mo\\"ve", on = true, key = 'k', neg = -3, off = OFF + 1, }
+        #inline
+        fn step(T, E: error) { mut pos: Pos(T), vel: *mut [4 * 2]f32, f: &fn{ a: i32, mut b: E!u8 } -> ?*u8 } -> E!i32 { return 0 }
+    }
+}
+""",
+            'src/b.ctx': """namespace game {
+    namespace world { union Shape(T) { circle{ r: T, at: [2]T }, dot, empty{} } }
+    enum Color: u8 { red, green = 1 + /* two */ 2, blue }
+    const N: [2]i32 = [1,   2]   // the comment isn't the value's
+    type Slot(T) = ?[]mut T
+    capability Gl {
+        ..Base,
+        clear: extern fn{ mask: u32 },
+        #c::symbol{ name = "gl_env" }
+        extern env: *u8,
+    }
+    capability Plain
+    error bad{ code: i64 }
+    error plain
+    extern fn puts { s: c::String } -> i32
+    extern union Bits { i: u32, f: f32 }
+}
+fn main {} {}
+""",
+        })
+        code, out, err = self.graph(d)
+        self.assertEqual((code, err), (0, ''))
+        self.assertEqual(out, """file src/a.ctx
+file src/b.ctx
+struct game::Pos(T) @ src/a.ctx:4:5
+  #ecs::component
+  x: T
+  y: list::List(T, T)
+fn game::world::step(T, E) -> E!i32 @ src/a.ctx:10:9
+  #ecs::system every=2 (i 2) name="mo\\"ve" (s mo"ve) on=true (b true) key='k' (i 107) neg=-3 (i -3) off=OFF + 1 (?)
+  #inline
+  mut pos: Pos(T)
+  vel: *mut [4 * 2]f32
+  f: &fn{ a: i32, mut b: E!u8 } -> ?*u8
+union game::world::Shape(T) @ src/b.ctx:2:23
+  | circle{}
+    r: T
+    at: [2]T
+  | dot
+  | empty{}
+enum game::Color : u8 @ src/b.ctx:3:5
+  | red
+  | green = 1 + 2
+  | blue
+const game::N : [2]i32 = [1, 2] @ src/b.ctx:4:5
+type game::Slot(T) : ?[]mut T @ src/b.ctx:5:5
+capability game::Gl @ src/b.ctx:6:5
+  clear: extern fn{ mask: u32 }
+  #c::symbol name="gl_env" (s gl_env)
+  env: *u8
+capability game::Plain @ src/b.ctx:12:5
+error game::bad @ src/b.ctx:13:5
+  code: i64
+error game::plain @ src/b.ctx:14:5
+extern fn game::puts -> i32 @ src/b.ctx:15:5
+  s: c::String
+extern union game::Bits @ src/b.ctx:16:5
+  i: u32
+  f: f32
+fn main @ src/b.ctx:18:1
+""")
+
+    def test_declarations_files(self):
+        # The executable's files as they are at the call, found as the driver finds them: its
+        # root's, but not its subdirectories', and each added directory's at any depth, each
+        # file once, never one named build.ctx nor a generated one. Paths are relative to
+        # build.ctx's directory, and name files from the working directory.
+        d = self.project({
+            'app/build.ctx': self.reflecting(f"""
+    let exe = build::exe{{ &b, name = "t", root = "src" }}
+    build::gen_file{{ &b, exe, name = "made", text = "struct Made {{}}\\n" }}
+    build::add_sources{{ &b, exe, dir = "../lib/a" }}
+    build::add_sources{{ &b, exe, dir = "../lib/a/deeper/" }}
+    show{{ &io, found = {self.FIND} }}
+    build::add_sources{{ &b, exe, dir = "../lib/b" }}
+    show{{ &io, found = {self.FIND} }}
+    let other = build::exe{{ &b, name = "u", root = "../lib/b" }}
+    show{{ &io, found = try! build::declarations{{ &b, &fs, &mem, &heap, realloc = arena::alloc, exe = other }} }}
+"""),
+            'app/src/main.ctx': 'struct Main {}\n',
+            'app/src/sub/hidden.ctx': 'struct Hidden {}\n',
+            'lib/a/x.ctx': 'struct X {}\n',
+            'lib/a/build.ctx': 'not ctxlang: a file named build.ctx is never a source\n',
+            'lib/a/deeper/y.ctx': 'struct Y {}\n',
+            'lib/b/z.ctx': 'struct Z {}\n',
+        })
+        code, out, err = self.graph(d, 'app')
+        self.assertEqual((code, err), (0, ''))
+        self.assertEqual(out, """file app/src/main.ctx
+file lib/a/x.ctx
+file lib/a/deeper/y.ctx
+struct Main @ app/src/main.ctx:1:1
+struct X @ lib/a/x.ctx:1:1
+struct Y @ lib/a/deeper/y.ctx:1:1
+file app/src/main.ctx
+file lib/a/x.ctx
+file lib/a/deeper/y.ctx
+file lib/b/z.ctx
+struct Main @ app/src/main.ctx:1:1
+struct X @ lib/a/x.ctx:1:1
+struct Y @ lib/a/deeper/y.ctx:1:1
+struct Z @ lib/b/z.ctx:1:1
+file lib/b/z.ctx
+struct Z @ lib/b/z.ctx:1:1
+""")
+        # From build.ctx's own directory, the same files have other paths.
+        code, out, err = self.graph(os.path.join(d, 'app'))
+        self.assertEqual((code, err), (0, ''))
+        self.assertEqual(out.split('\n')[:3], ['file src/main.ctx', 'file ../lib/a/x.ctx', 'file ../lib/a/deeper/y.ctx'])
+
+    def test_declarations_with_syntax_errors(self):
+        # The parser recovers: what parsed around an error is there, and the errors are too,
+        # at their positions. Names may refer to anything; nothing is resolved.
+        d = self.project({
+            'build.ctx': self.reflecting(f"""
+    let exe = build::exe{{ &b, name = "t", root = "src" }}
+    show{{ &io, found = {self.FIND} }}
+"""),
+            'src/a.ctx': 'struct Before { a: gen::NotYet }\nfn broken { x: i32 } -> {}\nstruct After { b: u8 }\nconst C: i32 = = 1\n',
+            'src/b.ctx': 'struct Fine {}\n',
+        })
+        code, out, err = self.graph(d)
+        self.assertEqual((code, err), (0, ''))
+        self.assertEqual(out, """file src/a.ctx
+file src/b.ctx
+struct Before @ src/a.ctx:1:1
+  a: gen::NotYet
+fn broken @ src/a.ctx:2:1
+  x: i32
+struct After @ src/a.ctx:3:1
+  b: u8
+const C : i32 @ src/a.ctx:4:1
+struct Fine @ src/b.ctx:1:1
+error src/a.ctx:2:25: expected a type, found '{'
+error src/a.ctx:4:16: expected an expression, found '='
+""")
+
+    def test_declarations_use_their_own_parser(self):
+        # ctxc's parser is std's in a build program, so a library of the program's may have a
+        # namespace of the same name: it shadows ctxc's, in the checker and in C. An ordinary
+        # program has neither.
+        d = self.project({
+            'build.ctx': self.reflecting(f"""
+    io::println_i64{{ &io, n = parser::parse{{}} + syntax::Decl{{ n = 1 }}.n }}
+    let exe = build::exe{{ &b, name = "t", root = "src" }}
+    let found = {self.FIND}
+    show{{ &io, found }}
+    build::gen_file{{ &b, exe, name = "count", text = counted{{ &heap, n = found.decls.len }} }}
+""", top='#build::sources{ dir = "tools" }\n'),
+            'tools/parser.ctx': 'namespace parser { fn parse {} -> i64 { return 7 } }\n'
+                                'namespace syntax { struct Decl { n: i64 } }\n'
+                                'fn counted { mut heap: arena::Arena, n: usize } -> []u8 {\n'
+                                '    let mut b = utf8::builder{ realloc = arena::alloc, &heap }\n'
+                                '    _ = @fmt(&b, "const COUNT: usize = {}\\n", n)\n'
+                                '    return utf8::view{ b }.bytes\n'
+                                '}\n',
+            'src/main.ctx': 'fn main { mut io: Io } { io::println_u64{ &io, n = COUNT } }\n',
+        })
+        self.assertEqual(self.both(d), ((0, '8\nfile src/main.ctx\nfn main @ src/main.ctx:1:1\n  mut io: Io\n1\n', ''), '1\n'))
+        plain = self.project({'main.ctx': 'fn main { mut io: Io } { let d: build::Decl }\n',
+                              'other.ctx': 'fn other {} -> syntax::File { return parser::parse{} }\n'})
+        code, _, err = self.ctxc('run', plain)
+        self.assertEqual(code, 1)
+        self.assertIn('/main.ctx:1:40: error: no type or namespace `Decl` in `build`\n', err)
+        self.assertIn('/other.ctx:1:16: error: unknown type or namespace `syntax`\n', err)
+        self.assertIn('/other.ctx:1:38: error: unknown type or namespace `parser`\n', err)
+
+    def test_declarations_remember_so_much(self):
+        # std remembers each executable's directories in a buffer of its own: a build that gives
+        # more can't call declarations, and one that doesn't call it is fine.
+        d = self.project({
+            'build.ctx': self.reflecting(f"""
+    let exe = build::exe{{ &b, name = "t", root = "src" }}
+    let mut i: usize = 0
+    while i < 2000 {{
+        build::add_sources{{ &b, exe, dir = "a/directory/whose/path/is/long/enough" }}
+        i = i + 1
+    }}
+    show{{ &io, found = {self.FIND} }}
+"""),
+            'src/main.ctx': 'fn main {} {}\n',
+        })
+        code, _, err = self.graph(d)
+        self.assertEqual(code, 1)
+        self.assertIn('panic: build: too many directories for build::declarations to remember', err)
+
+    def test_declarations_keep_literals(self):
+        # Text is the lexer's tokens with one space between them: a string literal is as it is
+        # written, `//` and spaces and all, and a multi-line one keeps its lines.
+        d = self.project({
+            'build.ctx': self.reflecting(f"""
+    let exe = build::exe{{ &b, name = "t", root = "src" }}
+    show{{ &io, found = {self.FIND} }}
+"""),
+            'src/a.ctx': r"""const URL: []u8 =
+    \\https://example.com  // not a comment
+    \\  two  spaces
+#doc{ text =
+    \\one // line
+    \\two
+, n = 1 /* gone */ +
+    2, s = "a  //b" }   // gone
+struct Doc {}
+""",
+        })
+        code, out, err = self.graph(d)
+        self.assertEqual((code, err), (0, ''))
+        self.assertEqual(out, r"""file src/a.ctx
+const URL : []u8 = \\https://example.com  // not a comment
+    \\  two  spaces @ src/a.ctx:1:1
+struct Doc @ src/a.ctx:9:1
+  #doc text=\\one // line
+    \\two (s one // line
+two) n=1 + 2 (?) s="a  //b" (s a  //b)
+""")
+
+    def test_build_program_as_a_file(self):
+        # A program whose entry is `fn build` is a build program however ctxc is asked to build
+        # it (spec §19, rule 2), so it has build::declarations as a file too. Run that way, its
+        # graph goes to standard output, and its paths are from the working directory. A program
+        # with a `main` isn't one, whatever else it declares.
+        d = self.project({
+            'app/build.ctx': self.reflecting(f"""
+    let exe = build::exe{{ &b, name = "t", root = "src" }}
+    show{{ &io, found = {self.FIND} }}
+"""),
+            'app/src/main.ctx': 'struct Main {}\n',
+            'plain.ctx': 'fn build {} { let d: build::Decl }\nfn main {} {}\n',
+        })
+        app = os.path.join(d, 'app')
+        self.assertEqual(self.ctxc('run', 'build.ctx', cwd=app),
+                         (0, 'exe\t0\tt\tsrc\nfile src/main.ctx\nstruct Main @ src/main.ctx:1:1\n', ''))
+        self.assertEqual(self.ctxc('exe', 'build.ctx', '-o', os.path.join(d, 'built'), cwd=app)[0], 0)
+        code, _, err = self.ctxc('interp', 'build.ctx', cwd=app)
+        self.assertNotIn('error:', err)
+        code, _, err = self.ctxc('run', 'plain.ctx', cwd=d)
+        self.assertEqual((code, err), (1, 'plain.ctx:1:29: error: no type or namespace `Decl` in `build`\n'))
+
+    def test_declarations_from_a_directory_not_ascii(self):
+        # The driver names build.ctx's directory to the build program in ASCII, so std's C
+        # getenv, which gives the ANSI code page's bytes on Windows, reads it as it is.
+        d = self.project({
+            'café/build.ctx': self.reflecting(f"""
+    let exe = build::exe{{ &b, name = "t", root = "src" }}
+    show{{ &io, found = {self.FIND} }}
+"""),
+            'café/src/main.ctx': 'struct Main {}\n',
+        })
+        code, out, err = self.ctxc('graph', 'café', os.path.join(d, 'graph-gen'), os.path.join(d, 'graph.txt'), cwd=d)
+        self.work_dir('café', cwd=d)
+        self.assertEqual((code, out, err), (0, 'file café/src/main.ctx\nstruct Main @ café/src/main.ctx:1:1\n', ''))
+
+    @unittest.skipIf(os.name == 'nt', 'a file name with a backslash')
+    def test_declarations_name_files_as_the_driver_does(self):
+        # A file's path is its directory's and its name, which isn't normalized, as the
+        # driver's errors name it: `\` is part of a name on POSIX.
+        d = self.project({
+            'build.ctx': self.reflecting(f"""
+    let exe = build::exe{{ &b, name = "t", root = "src" }}
+    show{{ &io, found = {self.FIND} }}
+"""),
+            'src/a\\b.ctx': 'struct AB {}\n',
+        })
+        code, out, err = self.graph(d)
+        self.assertEqual((code, out, err), (0, 'file src/a\\b.ctx\nstruct AB @ src/a\\b.ctx:1:1\n', ''))
+
 
 class Interp(Base):
     """`ctxc interp` (ctxc/eval.ctx): main run in the interpreter over the IR. Every program the

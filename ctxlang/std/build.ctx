@@ -34,6 +34,9 @@
 //       let mut heap = arena::new{ buf = buf[..] }
 //       build::gen_file{ &b, exe, name = "squares", text = tables::squares{ &heap, n = 16 } }
 //   }
+//
+// A generator may read the executable's own declarations first: `declarations`, which only a
+// build program has (std/build/declarations.ctx), parses its files as they are so far.
 
 // Permission to describe a build: only a build program's `fn build` receives one. It includes
 // the console, where the build's graph goes without CTX_BUILD_OUT.
@@ -71,6 +74,7 @@ namespace build {
         let exe = Exe{ id = g.exes }
         g.exes = g.exes + 1
         record{ &b, kind = "exe", exe, a = name, more = root }
+        remember{ &b, exe, path = root }
         return exe
     }
 
@@ -80,6 +84,7 @@ namespace build {
         check{ &b, exe }
         field{ s = dir, what = "directory" }
         record{ &b, kind = "sources", exe, a = dir, more = "" }
+        remember{ &b, exe, path = dir }
     }
 
     // Gives exe a file of ctxlang source, `text`, as if it were in one of its directories: the
@@ -159,8 +164,9 @@ namespace build {
     //   gen ID NAME SIZE, then SIZE bytes of text and a line break
 
     // build's state for the whole program (spec §15, rule 13): what the build program has
-    // described.
-    capability State { static graph: Graph }
+    // described, what `declarations` needs to know of it, and the memory `declarations` parses
+    // in, kept for its next call (std/build/declarations.ctx).
+    capability State { static graph: Graph, static known: Known, static scratch: alloc::Bytes }
 
     // How many executables, and once `opened`, the C library's FILE for CTX_BUILD_OUT, or 0 for
     // standard output.
@@ -172,6 +178,27 @@ namespace build {
     extern fn fopen { mut b: Build, path: c::String, mode: c::String } -> u64
     extern fn fwrite { mut b: Build, bytes: *u8, size: usize, count: usize, file: u64 } -> usize
     extern fn fflush { mut b: Build, file: u64 } -> i32
+
+    // Each executable's root and the directories added to it so far, for `declarations`: lines
+    // "ID\tPATH\n", in the order they came. A build that gives more than fit can't call
+    // `declarations`, which `full` says; one that never calls it loses nothing.
+    struct Known { len: usize, full: bool, bytes: [65536]u8 }
+
+    fn remember { mut b: Build, exe: Exe, path: []u8 } {
+        let k = &b.known
+        let mut digits: [20]u8
+        let id = utf8::fmt_u64{ n = exe.id, into = digits[..] }.bytes
+        let n = id.len + path.len + 2
+        if k.full or n > k.bytes.len - k.len {
+            k.full = true
+            return
+        }
+        slice::copy(u8){ dst = k.bytes[k.len..k.len + id.len], src = id }
+        k.bytes[k.len + id.len] = '\t'
+        slice::copy(u8){ dst = k.bytes[k.len + id.len + 1..k.len + n - 1], src = path }
+        k.bytes[k.len + n - 1] = '\n'
+        k.len = k.len + n
+    }
 
     fn record { mut b: Build, kind: []u8, exe: Exe, a: []u8, more: []u8 } {
         let g = &b.graph

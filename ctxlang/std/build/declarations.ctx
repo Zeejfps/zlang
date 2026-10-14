@@ -1,0 +1,624 @@
+// std: build's declarations. A build program reads its executables' declarations (spec §19).
+//
+// This directory is std's for build programs alone: ctxc adds its files, with ctxc's lexer and
+// parser (ctxc/source.ctx, diag.ctx, lexer.ctx, syntax.ctx, parser.ctx), to std's files when it
+// compiles a program whose entry is `fn build` (ctxc/main.ctx, `builds`), and to no other. So they are in std's
+// scope: this namespace joins std's `build`, and a namespace of the program's named like one of
+// ctxc's (`parser`, `syntax`) shadows it, as one named `list` does std's (spec §10, rule 4).
+//
+//   fn build { mut b: Build, mut fs: Fs, mut mem: Mem } {
+//       let exe = build::exe{ &b, name = "game", root = "src" }
+//       let pages = mem::reserve{ &mem, size = 1073741824 } ifnull { @panic("out of memory") }
+//       let mut heap = arena::new{ buf = pages }
+//       let found = try! build::declarations{ &b, &fs, &mem, &heap, realloc = arena::alloc, exe }
+//       // found.decls: each struct, union, enum, fn, ... of src's files, with its attributes and
+//       // fields as written; found.diags: their syntax errors
+//   }
+//
+// What it gives is declarations as the parser sees them, not as the checker does: nothing is
+// resolved, so a type may name what the build program has yet to generate. Its data is its own,
+// not ctxc's syntax trees, so a generator doesn't depend on ctxc's insides.
+
+namespace build {
+    // What `declarations` finds: each declaration of the files, in the order of the files and
+    // within each, those in namespaces where they are; the files' syntax errors; and the files.
+    struct Declarations { decls: []Decl, diags: []Diagnostic, files: [][]u8 }
+
+    // What a Decl is declared with: `struct`, `union`, `extern union`, `enum`, `fn`, `extern fn`,
+    // `const`, `type`, `capability` or `error` (spec §1).
+    enum Kind: u8 { structure, tagged_union, extern_union, enumeration, function, extern_function, constant, alias, capability_type, error }
+
+    // A declaration, as written. A type is spelled one way (`*mut T`, `fn{ a: T } -> R`), and a
+    // value is its tokens as written, with one space between two that anything came between,
+    // so a string literal keeps its text. Positions count from 1, as errors' do.
+    struct Decl {
+        kind: Kind,
+        name: []u8,
+        path: []u8,                 // the namespaces around it, as `game::world`; empty at the top
+        generics: [][]u8,           // its generic parameters' names
+        attrs: []Attr,
+        fields: []Field,            // a struct's, an extern union's, a capability's or an error's,
+                                    // or a fn's context
+        variants: []Variant,        // a union's or an enum's
+        ty: []u8,                   // a const's type, what a `type` names, or an enum's base type
+        value: []u8,                // a const's value
+        result: []u8,               // a fn's `-> R`; empty without one
+        file: []u8,                 // its file, by its path from the working directory
+        line: u32,                  // where its keyword is
+        col: u32,
+    }
+
+    // A field. Only a fn's context has `mut` ones, and only a capability's may have attributes.
+    struct Field { name: []u8, ty: []u8, mutable: bool, attrs: []Attr }
+
+    // A union's variant, with `payload` if it has braces (`v{}` too), or an enum's, with `value`
+    // its `= e` if it has one.
+    struct Variant { name: []u8, fields: []Field, payload: bool, value: []u8 }
+
+    // `#name` or `#name{ field = value, ... }`, name being the path as written, `ecs::system`.
+    // Attributes aren't folded here, as the checker folds them (spec §18): a value is its text.
+    struct Attr { name: []u8, fields: []AttrField }
+
+    // A field of an attribute: its value as written, and as a literal if it is one.
+    struct AttrField { name: []u8, value: []u8, literal: Literal }
+
+    // A string literal's bytes, an integer's or a character's value, or a bool's. `other` is
+    // any other expression, such as a const's name.
+    union Literal { other, string{ bytes: []u8 }, integer{ negative: bool, value: u64 }, boolean{ value: bool } }
+
+    // A syntax error in one of the files: `declarations` still gives what parsed around it.
+    struct Diagnostic { file: []u8, line: u32, col: u32, message: []u8 }
+
+    // The declarations of exe's files as they are now: those of its root and of the directories
+    // `add_sources` gave it before this call, found as the driver finds them (spec §19, rule 5),
+    // but never its generated files. The result is in memory from `realloc`, and holds the
+    // files' text. Parsing takes memory of its own, from mem::reserve, which it keeps for the
+    // next call: how much the parser needs varies too much with the code to take it from
+    // realloc. Fails with fs's errors for a directory or file it can't read, or
+    // alloc::out_of_memory.
+    fn declarations(S) { mut b: Build, mut fs: Fs, mut mem: Mem, mut heap: S, realloc: alloc::Fn(S), exe: Exe } -> !Declarations {
+        check{ &b, exe }
+        if b.known.full { rt::fail{ msg = "build: too many directories for build::declarations to remember" } }
+        let mut w = reflect::Walk{
+            realloc, heap = &heap, text = "", lines = slice::empty(u32){}, toks = slice::empty(tok::Token){}, file = "",
+            paths = list::new([]u8){ realloc, &heap }, keys = list::new([]u8){ realloc, &heap },
+            decls = list::new(Decl){ realloc, &heap }, diags = list::new(Diagnostic){ realloc, &heap },
+        }
+        // Paths are relative to build.ctx's directory, which the driver names; or else the
+        // working directory, where it is when a person runs the build program. The driver
+        // writes it as ASCII (ctxc/drive.ctx, `escaped`), since C's getenv gives the ANSI code
+        // page's bytes on Windows, and std's UTF-8 environment needs a Proc.
+        let mut dir: []u8 = "."
+        let set = getenv{ &b, name = "CTX_BUILD_DIR" }
+        if set is some{ value } and c::len{ s = value } > 0 { dir = try reflect::unescaped{ &w, s = c::bytes{ s = value } } }
+        // The root, which is the first line of exe's, then each directory.
+        let known = b.known.bytes[..b.known.len]
+        let mut root = true
+        let mut i: usize = 0
+        while i < known.len {
+            let mut tab = i
+            while known[tab] != '\t' { tab = tab + 1 }
+            let mut end = tab
+            while known[end] != '\n' { end = end + 1 }
+            if utf8::parse_u64{ s = utf8::String{ bytes = known[i..tab] } } is some{ value } and value == @as(u64, exe.id) {
+                try reflect::add_files{ &fs, &w, dir = try reflect::place{ &w, dir, rel = known[tab + 1..end] }, deep = not root }
+                root = false
+            }
+            i = end + 1
+        }
+        let paths = list::items{ list = w.paths }
+        let texts = try alloc::resize([]u8, S){ realloc, &heap, mem = slice::empty([]u8){}, count = paths.len }
+        let mut largest: usize = 0
+        i = 0
+        while i < paths.len {
+            texts[i] = try fs::read_all{ &fs, &heap, realloc, path = paths[i] }
+            if texts[i].len > largest { largest = texts[i].len }
+            i = i + 1
+        }
+        // The parser panics if its arena runs out, and takes from 20 bytes a byte of source to
+        // over 600, for code of nothing but `x;`. Memory from mem::reserve costs address space
+        // until the arena reaches it, so it can be ample, as ctxc's own is (ctxc/main.ctx).
+        let need = 67108864 + largest * 1024
+        if b.scratch.len < need { b.scratch = mem::reserve{ &mem, size = need } ifnull { return alloc::out_of_memory } }
+        let mut scratch = arena::new{ buf = b.scratch }
+        i = 0
+        while i < paths.len {
+            arena::reset{ heap = &scratch }
+            let text = texts[i]
+            let mut diags = diag::new{ heap = &scratch }
+            let lexed = lexer::lex{ text, file = 0, heap = &scratch, &diags }
+            let tree = parser::parse{ text, file = 0, tokens = lexed.tokens, heap = &scratch, &diags }
+            w.text = text
+            w.lines = source::line_starts{ text, heap = &scratch }
+            w.toks = lexed.tokens
+            w.file = paths[i]
+            try reflect::walk{ &w, xs = tree.decls, path = "" }
+            let ds = diag::items{ diags }
+            let mut k: usize = 0
+            while k < ds.len {
+                let p = source::position{ text, lines = w.lines, offset = ds[k].span.start }
+                let message = try reflect::copy{ &w, s = ds[k].msg.bytes }
+                try list::push{ list = &w.diags, item = Diagnostic{ file = w.file, line = p.line, col = p.col, message } }
+                k = k + 1
+            }
+            i = i + 1
+        }
+        return Declarations{ decls = list::items{ list = w.decls }, diags = list::items{ list = w.diags }, files = paths }
+    }
+
+    namespace reflect {
+        // What `declarations` gathers, in memory from realloc: the files, by their paths and by
+        // keys the same for every path to a file, as the driver keeps them (ctxc/drive.ctx,
+        // `Found`); and the declarations and errors of the file whose text, line starts and tokens
+        // it is reading.
+        struct Walk(S) {
+            realloc: alloc::Fn(S), heap: *mut S,
+            text: []u8, lines: []u32, toks: []tok::Token, file: []u8,
+            paths: list::List([]u8, S), keys: list::List([]u8, S),
+            decls: list::List(Decl, S), diags: list::List(Diagnostic, S),
+        }
+
+        // ---- the files, as the driver finds them (ctxc/drive.ctx, `target_files`)
+
+        // Adds the .ctx files in dir, but none named build.ctx, and if deep those in its
+        // subdirectories, at any depth; each file once. A file's path is dir and its name, as
+        // the driver's (`add_tree`) is, so it names the file as the driver's errors do: only a
+        // directory's path is normalized, by `place`.
+        fn add_files(S) { mut fs: Fs, mut w: Walk(S), dir: []u8, deep: bool } -> ! {
+            let full = try fs::make_absolute{ &fs, heap = w.heap, realloc = w.realloc, path = dir }
+            try add_tree{ &fs, &w, dir, key = try fold{ &w, s = try normalize{ &w, path = full } }, deep }
+        }
+
+        fn add_tree(S) { mut fs: Fs, mut w: Walk(S), dir: []u8, key: []u8, deep: bool } -> ! {
+            let names = try fs::list{ &fs, heap = w.heap, realloc = w.realloc, path = dir }
+            let mut below = list::new([]u8){ realloc = w.realloc, heap = w.heap }
+            let mut i: usize = 0
+            while i < names.len {
+                let n = names[i]
+                let p = try join{ &w, a = dir, b = n }
+                if ends_with{ s = n, suffix = ".ctx" } {
+                    if not slice::eq_bytes{ a = n, b = "build.ctx" } {
+                        try add_found{ &w, path = p, key = try join{ &w, a = key, b = try fold{ &w, s = n } } }
+                    }
+                } else if deep and is_dir{ &fs, path = p } {
+                    try list::push{ list = &below, item = n }
+                }
+                i = i + 1
+            }
+            let subs = list::items{ list = below }
+            i = 0
+            while i < subs.len {
+                try add_tree{ &fs, &w, dir = try join{ &w, a = dir, b = subs[i] }, key = try join{ &w, a = key, b = try fold{ &w, s = subs[i] } }, deep }
+                i = i + 1
+            }
+        }
+
+        fn add_found(S) { mut w: Walk(S), path: []u8, key: []u8 } -> ! {
+            let keys = list::items{ list = w.keys }
+            let mut i: usize = 0
+            while i < keys.len {
+                if slice::eq_bytes{ a = keys[i], b = key } { return }
+                i = i + 1
+            }
+            try list::push{ list = &w.paths, item = path }
+            try list::push{ list = &w.keys, item = key }
+        }
+
+        fn is_dir { mut fs: Fs, path: []u8 } -> bool {
+            match fs::size{ &fs, path } {
+                ok => { return false }
+                fs::is_directory => { return true }
+                else => { return false }
+            }
+        }
+
+        // Where rel, relative to directory dir unless it is absolute, is (`place` in the driver).
+        fn place(S) { mut w: Walk(S), dir: []u8, rel: []u8 } -> ![]u8 {
+            if fs::is_absolute{ path = rel } { return try normalize{ &w, path = rel } }
+            return try normalize{ &w, path = try join{ &w, a = dir, b = rel } }
+        }
+
+        // path as a person would write it, as the driver's `normalize` does: components joined
+        // by `/`, none empty or `.`, each `..` taking away the one before it where there is
+        // one, and a root kept.
+        fn normalize(S) { mut w: Walk(S), path: []u8 } -> ![]u8 {
+            let mut out = list::new(u8){ realloc = w.realloc, heap = w.heap }
+            let mut i: usize = 0
+            if path.len >= 2 and path[1] == ':' and ascii::is_alpha{ c = path[0] } {
+                try list::push{ list = &out, item = path[0] }
+                try list::push{ list = &out, item = ':' }
+                i = 2
+            }
+            let rooted = i < path.len and separator{ c = path[i] }
+            if rooted {
+                try list::push{ list = &out, item = '/' }
+                if i == 0 and path.len >= 2 and separator{ c = path[1] } { try list::push{ list = &out, item = '/' } }
+            }
+            let mut parts = list::new([]u8){ realloc = w.realloc, heap = w.heap }
+            let mut ups: usize = 0          // leading `..`s, which no later one takes away
+            while i < path.len {
+                if separator{ c = path[i] } {
+                    i = i + 1
+                    continue
+                }
+                let start = i
+                while i < path.len and not separator{ c = path[i] } { i = i + 1 }
+                let part = path[start..i]
+                if slice::eq_bytes{ a = part, b = "." } { continue }
+                if slice::eq_bytes{ a = part, b = ".." } {
+                    if parts.len > ups {
+                        _ = list::pop{ list = &parts }
+                        continue
+                    }
+                    if rooted { continue }
+                    ups = ups + 1
+                }
+                try list::push{ list = &parts, item = part }
+            }
+            let xs = list::items{ list = parts }
+            let mut k: usize = 0
+            while k < xs.len {
+                if k > 0 { try list::push{ list = &out, item = '/' } }
+                try put{ out = &out, s = xs[k] }
+                k = k + 1
+            }
+            if out.len == 0 { try list::push{ list = &out, item = '.' } }
+            return list::items{ list = out }
+        }
+
+        fn separator { c: u8 } -> bool {
+            return c == '/' or c == '\\'
+        }
+
+        fn join(S) { mut w: Walk(S), a: []u8, b: []u8 } -> ![]u8 {
+            let mut out = list::new(u8){ realloc = w.realloc, heap = w.heap }
+            try put{ out = &out, s = a }
+            if a.len > 0 and a[a.len - 1] != '/' { try list::push{ list = &out, item = '/' } }
+            try put{ out = &out, s = b }
+            return list::items{ list = out }
+        }
+
+        // s in lower case on Windows, whose file names ignore case; s elsewhere.
+        fn fold(S) { mut w: Walk(S), s: []u8 } -> ![]u8 {
+            if os::OS != Os::windows { return s }
+            let out = try alloc::resize(u8, S){ realloc = w.realloc, heap = w.heap, mem = slice::empty(u8){}, count = s.len }
+            let mut i: usize = 0
+            while i < s.len {
+                out[i] = ascii::to_lower{ c = s[i] }
+                i = i + 1
+            }
+            return out
+        }
+
+        fn ends_with { s: []u8, suffix: []u8 } -> bool {
+            return s.len >= suffix.len and slice::eq_bytes{ a = s[s.len - suffix.len..], b = suffix }
+        }
+
+        // ---- declarations
+
+        // Adds the declarations among xs, and those of the namespaces among them, whose names
+        // `path` gets. One whose name didn't parse is left out.
+        fn walk(S) { mut w: Walk(S), xs: []syntax::Decl, path: []u8 } -> ! {
+            let mut i: usize = 0
+            while i < xs.len {
+                let x = xs[i]
+                i = i + 1
+                match x.k {
+                    space{ name, decls } => {
+                        if name.text.len > 0 {
+                            let inner = if path.len == 0 { name.text } else { try join_with{ &w, a = path, sep = "::", b = name.text } }
+                            try walk{ &w, xs = decls, path = inner }
+                        }
+                    }
+                    error => {}
+                    else => { try add{ &w, x, path } }
+                }
+            }
+        }
+
+        fn add(S) { mut w: Walk(S), x: syntax::Decl, path: []u8 } -> ! {
+            let at = source::position{ text = w.text, lines = w.lines, offset = x.span.start }
+            let mut d = Decl{
+                kind = Kind::structure, name = "", path, generics = slice::empty([]u8){}, attrs = try attrs{ &w, xs = x.attrs },
+                fields = slice::empty(Field){}, variants = slice::empty(Variant){}, ty = "", value = "", result = "",
+                file = w.file, line = at.line, col = at.col,
+            }
+            match x.k {
+                func{ name, tparams, params, ret, external } => {
+                    d.kind = if external { Kind::extern_function } else { Kind::function }
+                    d.name = name.text
+                    d.generics = try names{ &w, xs = tparams }
+                    d.fields = try context{ &w, xs = params }
+                    if ret is some{ value } { d.result = try type_text{ &w, t = value } }
+                }
+                record{ name, tparams, fields, untagged } => {
+                    d.kind = if untagged { Kind::extern_union } else { Kind::structure }
+                    d.name = name.text
+                    d.generics = try names{ &w, xs = tparams }
+                    d.fields = try field_list{ &w, xs = fields }
+                }
+                sum{ name, tparams, variants } => {
+                    d.kind = Kind::tagged_union
+                    d.name = name.text
+                    d.generics = try names{ &w, xs = tparams }
+                    let out = try alloc::resize(Variant, S){ realloc = w.realloc, heap = w.heap, mem = slice::empty(Variant){}, count = variants.len }
+                    let mut k: usize = 0
+                    while k < variants.len {
+                        let v = variants[k]
+                        let xs = v.fields ifnull { slice::empty(syntax::Field){} }
+                        out[k] = Variant{ name = v.name.text, fields = try field_list{ &w, xs }, payload = v.fields != null, value = "" }
+                        k = k + 1
+                    }
+                    d.variants = out
+                }
+                enumeration{ name, base, variants } => {
+                    d.kind = Kind::enumeration
+                    d.name = name.text
+                    d.ty = try type_text{ &w, t = base }
+                    let out = try alloc::resize(Variant, S){ realloc = w.realloc, heap = w.heap, mem = slice::empty(Variant){}, count = variants.len }
+                    let mut k: usize = 0
+                    while k < variants.len {
+                        let v = variants[k]
+                        let mut value: []u8 = ""
+                        if v.value is some{ value = e } { value = try squeeze{ &w, span = e.span } }
+                        out[k] = Variant{ name = v.name.text, fields = slice::empty(Field){}, payload = false, value }
+                        k = k + 1
+                    }
+                    d.variants = out
+                }
+                alias{ name, tparams, ty } => {
+                    d.kind = Kind::alias
+                    d.name = name.text
+                    d.generics = try names{ &w, xs = tparams }
+                    d.ty = try type_text{ &w, t = ty }
+                }
+                constant{ name, ty, value } => {
+                    d.kind = Kind::constant
+                    d.name = name.text
+                    d.ty = try type_text{ &w, t = ty }
+                    d.value = try squeeze{ &w, span = value.span }
+                }
+                cap{ name, fields } => {
+                    d.kind = Kind::capability_type
+                    d.name = name.text
+                    if fields is some{ value } { d.fields = try field_list{ &w, xs = value } }
+                }
+                fault{ name, fields } => {
+                    d.kind = Kind::error
+                    d.name = name.text
+                    if fields is some{ value } { d.fields = try field_list{ &w, xs = value } }
+                }
+                else => { return }
+            }
+            if d.name.len == 0 { return }
+            try list::push{ list = &w.decls, item = d }
+        }
+
+        fn names(S) { mut w: Walk(S), xs: []syntax::Name } -> ![][]u8 {
+            let out = try alloc::resize([]u8, S){ realloc = w.realloc, heap = w.heap, mem = slice::empty([]u8){}, count = xs.len }
+            let mut i: usize = 0
+            while i < xs.len {
+                out[i] = xs[i].text
+                i = i + 1
+            }
+            return out
+        }
+
+        // A fn's context fields.
+        fn context(S) { mut w: Walk(S), xs: []syntax::Param } -> ![]Field {
+            let out = try alloc::resize(Field, S){ realloc = w.realloc, heap = w.heap, mem = slice::empty(Field){}, count = xs.len }
+            let mut i: usize = 0
+            while i < xs.len {
+                out[i] = Field{ name = xs[i].name.text, ty = try type_text{ &w, t = xs[i].ty }, mutable = xs[i].mutable, attrs = slice::empty(Attr){} }
+                i = i + 1
+            }
+            return out
+        }
+
+        fn field_list(S) { mut w: Walk(S), xs: []syntax::Field } -> ![]Field {
+            let out = try alloc::resize(Field, S){ realloc = w.realloc, heap = w.heap, mem = slice::empty(Field){}, count = xs.len }
+            let mut i: usize = 0
+            while i < xs.len {
+                out[i] = Field{ name = xs[i].name.text, ty = try type_text{ &w, t = xs[i].ty }, mutable = false, attrs = try attrs{ &w, xs = xs[i].attrs } }
+                i = i + 1
+            }
+            return out
+        }
+
+        // Attributes, whose values the parser makes braced literals of a path (parser.ctx,
+        // `attributes`).
+        fn attrs(S) { mut w: Walk(S), xs: []syntax::Attr } -> ![]Attr {
+            let out = try alloc::resize(Attr, S){ realloc = w.realloc, heap = w.heap, mem = slice::empty(Attr){}, count = xs.len }
+            let mut n: usize = 0
+            let mut i: usize = 0
+            while i < xs.len {
+                let braced{ callee, items } = xs[i].value.k else {
+                    i = i + 1
+                    continue
+                }
+                let path{ segs } = callee.k else {
+                    i = i + 1
+                    continue
+                }
+                let mut name = list::new(u8){ realloc = w.realloc, heap = w.heap }
+                try put_segs{ &w, out = &name, segs }
+                let fields = try alloc::resize(AttrField, S){ realloc = w.realloc, heap = w.heap, mem = slice::empty(AttrField){}, count = items.len }
+                let mut k: usize = 0
+                while k < items.len {
+                    let it = items[k]
+                    fields[k] = AttrField{ name = it.name.text, value = try squeeze{ &w, span = it.value.span }, literal = try literal{ &w, e = it.value } }
+                    k = k + 1
+                }
+                out[n] = Attr{ name = list::items{ list = name }, fields }
+                n = n + 1
+                i = i + 1
+            }
+            return out[..n]
+        }
+
+        fn literal(S) { mut w: Walk(S), e: syntax::Expr } -> !Literal {
+            match e.k {
+                str{ bytes } => { return Literal::string{ bytes = try copy{ &w, s = bytes } } }
+                int{ negative, value } => {
+                    let n = value ifnull { return Literal::other }
+                    return Literal::integer{ negative, value = n }
+                }
+                boolean{ value } => { return Literal::boolean{ value } }
+                else => { return Literal::other }
+            }
+        }
+
+        // ---- text
+
+        // A type as text: its parts as written, spelled the one way (`*mut T`, `?T`, `[]u8`,
+        // `[N]T`, `list::List(T, S)`, `&fn{ a: T } -> R`, `E!T`), so a generator can compare it.
+        fn type_text(S) { mut w: Walk(S), t: syntax::TypeExpr } -> ![]u8 {
+            let mut out = list::new(u8){ realloc = w.realloc, heap = w.heap }
+            try put_type{ &w, &out, t }
+            return list::items{ list = out }
+        }
+
+        fn put_type(S) { mut w: Walk(S), mut out: list::List(u8, S), t: syntax::TypeExpr } -> ! {
+            match t.k {
+                error => {}
+                path{ segs } => { try put_segs{ &w, &out, segs } }
+                ptr{ mutable, elem } => {
+                    try put{ &out, s = if mutable { "*mut " } else { "*" } }
+                    try put_type{ &w, &out, t = elem.* }
+                }
+                opt{ elem } => {
+                    try put{ &out, s = "?" }
+                    try put_type{ &w, &out, t = elem.* }
+                }
+                slice{ mutable, elem } => {
+                    try put{ &out, s = if mutable { "[]mut " } else { "[]" } }
+                    try put_type{ &w, &out, t = elem.* }
+                }
+                array{ n, elem } => {
+                    try put{ &out, s = "[" }
+                    try put{ &out, s = try squeeze{ &w, span = n.span } }
+                    try put{ &out, s = "]" }
+                    try put_type{ &w, &out, t = elem.* }
+                }
+                func{ bound, params, ret, external } => {
+                    try put{ &out, s = if bound { "&fn{" } else if external { "extern fn{" } else { "fn{" } }
+                    let mut i: usize = 0
+                    while i < params.len {
+                        try put{ &out, s = if i == 0 { " " } else { ", " } }
+                        if params[i].mutable { try put{ &out, s = "mut " } }
+                        try put{ &out, s = params[i].name.text }
+                        try put{ &out, s = ": " }
+                        try put_type{ &w, &out, t = params[i].ty }
+                        i = i + 1
+                    }
+                    try put{ &out, s = if params.len > 0 { " }" } else { "}" } }
+                    if ret != null {
+                        try put{ &out, s = " -> " }
+                        try put_type{ &w, &out, t = ret.* }
+                    }
+                }
+                fail{ elem, set } => {
+                    if set != null { try put_type{ &w, &out, t = set.* } }
+                    try put{ &out, s = "!" }
+                    if elem != null { try put_type{ &w, &out, t = elem.* } }
+                }
+            }
+        }
+
+        // `a::b(T, S)`, and an open error set's `..` (`error(a, ..)`).
+        fn put_segs(S) { mut w: Walk(S), mut out: list::List(u8, S), segs: []syntax::Seg } -> ! {
+            let mut i: usize = 0
+            while i < segs.len {
+                if i > 0 { try put{ &out, s = "::" } }
+                try put{ &out, s = segs[i].name.text }
+                if segs[i].targs is some{ value = targs } {
+                    try put{ &out, s = "(" }
+                    let mut k: usize = 0
+                    while k < targs.len {
+                        if k > 0 { try put{ &out, s = ", " } }
+                        try put_type{ &w, &out, t = targs[k] }
+                        k = k + 1
+                    }
+                    if segs[i].rest { try put{ &out, s = if targs.len > 0 { ", .." } else { ".." } } }
+                    try put{ &out, s = ")" }
+                }
+                i = i + 1
+            }
+        }
+
+        // The text of span's tokens, the lexer's, with one space where anything came between
+        // two of them, spaces, line breaks or comments, and none at either end. A token is as
+        // written, so a string literal keeps its text, a multi-line one its lines.
+        fn squeeze(S) { mut w: Walk(S), span: source::Span } -> ![]u8 {
+            let mut out = list::new(u8){ realloc = w.realloc, heap = w.heap }
+            // The first token at or after span's start: tokens are in order, and ends with eof.
+            let mut lo: usize = 0
+            let mut hi = w.toks.len
+            while lo < hi {
+                let mid = lo + (hi - lo) / 2
+                if w.toks[mid].span.start < span.start { lo = mid + 1 } else { hi = mid }
+            }
+            let mut at = span.start
+            let mut i = lo
+            while i < w.toks.len and w.toks[i].kind != tok::Kind::eof and w.toks[i].span.end <= span.end {
+                let t = w.toks[i].span
+                if t.start > at and out.len > 0 { try list::push{ list = &out, item = ' ' } }
+                try put{ &out, s = w.text[@as(usize, t.start)..@as(usize, t.end)] }
+                at = t.end
+                i = i + 1
+            }
+            return list::items{ list = out }
+        }
+
+        // s with each `%` and two hexadecimal digits the byte they spell (ctxc/drive.ctx,
+        // `escaped`).
+        fn unescaped(S) { mut w: Walk(S), s: []u8 } -> ![]u8 {
+            let mut out = list::new(u8){ realloc = w.realloc, heap = w.heap }
+            let mut i: usize = 0
+            while i < s.len {
+                if s[i] == '%' and i + 2 < s.len and is_hex{ c = s[i + 1] } and is_hex{ c = s[i + 2] } {
+                    try list::push{ list = &out, item = hex_value{ c = s[i + 1] } * 16 + hex_value{ c = s[i + 2] } }
+                    i = i + 3
+                } else {
+                    try list::push{ list = &out, item = s[i] }
+                    i = i + 1
+                }
+            }
+            return list::items{ list = out }
+        }
+
+        fn is_hex { c: u8 } -> bool {
+            return ascii::is_digit{ c } or (c >= 'A' and c <= 'F') or (c >= 'a' and c <= 'f')
+        }
+
+        fn hex_value { c: u8 } -> u8 {
+            if ascii::is_digit{ c } { return c - '0' }
+            return ascii::to_upper{ c } - 'A' + 10
+        }
+
+        // a, sep and b, in one piece.
+        fn join_with(S) { mut w: Walk(S), a: []u8, sep: []u8, b: []u8 } -> ![]u8 {
+            let mut out = list::new(u8){ realloc = w.realloc, heap = w.heap }
+            try put{ &out, s = a }
+            try put{ &out, s = sep }
+            try put{ &out, s = b }
+            return list::items{ list = out }
+        }
+
+        // s in memory from realloc, as everything in a Decl is: the parser's memory is reused.
+        fn copy(S) { mut w: Walk(S), s: []u8 } -> ![]u8 {
+            let out = try alloc::resize(u8, S){ realloc = w.realloc, heap = w.heap, mem = slice::empty(u8){}, count = s.len }
+            slice::copy(u8){ dst = out, src = s }
+            return out
+        }
+
+        fn put(S) { mut out: list::List(u8, S), s: []u8 } -> ! {
+            try list::reserve{ list = &out, extra = s.len }
+            let mut i: usize = 0
+            while i < s.len {
+                try list::push{ list = &out, item = s[i] }
+                i = i + 1
+            }
+        }
+    }
+}
