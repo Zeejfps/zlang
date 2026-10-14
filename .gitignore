@@ -1,0 +1,9 @@
+.DS_Store
+
+# Rider / ReSharper per-user settings
+*.DotSettings.user
+
+# Claude Code local settings
+**/.claude/settings.local.json
+
+databricks_mcp.log
