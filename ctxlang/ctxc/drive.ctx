@@ -658,8 +658,8 @@ namespace drive {
     }
 
     // Adds to sources the `dir` of each `#build::sources` on a top-level `fn build` among decls,
-    // and looks for others in namespaces and on capabilities' fields. False after reporting one
-    // elsewhere, or one whose `dir` isn't a string literal that isn't empty.
+    // and looks for others in namespaces and on fields. False after reporting one elsewhere, or
+    // one whose `dir` isn't a string literal that isn't empty.
     fn find_sources { mut io: Io, mut heap: Heap, path: []u8, text: []u8, decls: []syntax::Decl, top: bool, mut sources: list::List(Source, Heap) } -> bool {
         let misplaced: []u8 = "`build::sources` applies only to the build program's `fn build`"
         let mut i: usize = 0
@@ -684,32 +684,58 @@ namespace drive {
                 }
                 k = k + 1
             }
+            let mut on_field: ?u32 = null
             match x.k {
                 space{ decls = inner } => {
                     if not find_sources{ &io, &heap, path, text, decls = inner, top = false, &sources } { return false }
                 }
-                cap{ fields } => {
-                    if fields != null {
-                        let mut j: usize = 0
-                        while j < fields.len {
-                            let attrs = fields[j].attrs
-                            let mut m: usize = 0
-                            while m < attrs.len {
-                                if is_sources{ a = attrs[m] } {
-                                    report_at{ &io, &heap, path, text, at = attrs[m].span.start, msg = misplaced }
-                                    return false
-                                }
-                                m = m + 1
-                            }
-                            j = j + 1
-                        }
+                cap{ fields } => { if fields != null { on_field = find_field_sources{ fields } } }
+                record{ fields } => { on_field = find_field_sources{ fields } }
+                fault{ fields } => { if fields != null { on_field = find_field_sources{ fields } } }
+                sum{ variants } => {
+                    let mut j: usize = 0
+                    while j < variants.len and on_field == null {
+                        if variants[j].fields is some{ value } { on_field = find_field_sources{ fields = value } }
+                        j = j + 1
+                    }
+                }
+                func{ params } => {
+                    let mut j: usize = 0
+                    while j < params.len and on_field == null {
+                        on_field = find_attr_sources{ xs = params[j].attrs }
+                        j = j + 1
                     }
                 }
                 else => {}
             }
+            if on_field is some{ value } {
+                report_at{ &io, &heap, path, text, at = value, msg = misplaced }
+                return false
+            }
             i = i + 1
         }
         return true
+    }
+
+    // Where the first `#build::sources` on one of fields is, if one has it.
+    fn find_field_sources { fields: []syntax::Field } -> ?u32 {
+        let mut i: usize = 0
+        while i < fields.len {
+            let at = find_attr_sources{ xs = fields[i].attrs }
+            if at != null { return at }
+            i = i + 1
+        }
+        return null
+    }
+
+    // Where the first `#build::sources` among xs is, if there is one.
+    fn find_attr_sources { xs: []syntax::Attr } -> ?u32 {
+        let mut i: usize = 0
+        while i < xs.len {
+            if is_sources{ a = xs[i] } { return xs[i].span.start }
+            i = i + 1
+        }
+        return null
     }
 
     // Whether a is `#build::sources{ ... }`, as it is written.

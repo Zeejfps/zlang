@@ -48,7 +48,7 @@ namespace build {
         col: u32,
     }
 
-    // A field. Only a fn's context has `mut` ones, and only a capability's may have attributes.
+    // A field, with its attributes (spec §18). Only a fn's context has `mut` ones.
     struct Field { name: []u8, ty: []u8, mutable: bool, attrs: []Attr }
 
     // A union's variant, with `payload` if it has braces (`v{}` too), or an enum's, with `value`
@@ -409,7 +409,7 @@ namespace build {
             let out = try alloc::resize(Field, S){ realloc = w.realloc, heap = w.heap, mem = slice::empty(Field){}, count = xs.len }
             let mut i: usize = 0
             while i < xs.len {
-                out[i] = Field{ name = xs[i].name.text, ty = try type_text{ &w, t = xs[i].ty }, mutable = xs[i].mutable, attrs = slice::empty(Attr){} }
+                out[i] = Field{ name = xs[i].name.text, ty = try type_text{ &w, t = xs[i].ty }, mutable = xs[i].mutable, attrs = try attrs{ &w, xs = xs[i].attrs } }
                 i = i + 1
             }
             return out

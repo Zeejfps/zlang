@@ -51,13 +51,14 @@ namespace syntax {
     // fields[..at].
     struct Include { span: Span, ty: TypeExpr, at: usize }
 
-    // A context field, of a function or a function type.
-    struct Param { span: Span, mutable: bool, name: Name, ty: TypeExpr }
+    // A context field, of a function or a function type. A function's may have attributes, on
+    // the lines before its span, as a declaration does; a function type's never do.
+    struct Param { span: Span, attrs: []Attr, mutable: bool, name: Name, ty: TypeExpr }
 
-    // A struct field or a field of a union variant's payload. In a capability's braces, an
-    // external one, `extern name: T`, is a C variable (§15), a static one, `static name: T`, is
-    // a static, and a field may have attributes, on the lines before its span, as a declaration
-    // does.
+    // A field of a struct, an extern union, a union variant's payload, an error or a capability,
+    // with its attributes, on the lines before its span, as a declaration has. In a capability's
+    // braces, an external one, `extern name: T`, is a C variable (§15), and a static one,
+    // `static name: T`, is a static.
     struct Field { span: Span, attrs: []Attr, name: Name, ty: TypeExpr, external: bool, stat: bool }
 
     // A variant without a payload has null fields, and `v{}` has none.

@@ -186,9 +186,20 @@ trivial one, cached, went from about 77 ms to 128 ms on Windows, and its first b
 to 690 ms; one that calls `declarations` compiles the parser too (examples/gen: about 1.4 s the
 first time, 154 ms cached).
 
+*Done: attributes on fields* (spec §18, Attributes, rule 1; ctxc/parser.ctx, check.ctx). Any
+declaration's field may have attributes, on the lines before it, as a capability's could: a
+struct's, an extern union's, a union variant's payload's, an error's, and a fn's or extern fn's
+context's (`syntax::Param` gained `attrs`), for generators such as an ECS's `#ecs::key` on a
+component's field or `#ecs::by{ ... }` on a system's. A function type's fields declare nothing, so
+the parser rejects them there, and a union's or an enum's variants themselves have none. The
+checker checks them as a declaration's, and the attributes the compiler acts on are errors on
+them, as on a declaration they don't apply to; the driver looks for `build::sources` on them
+too. Nothing else reads them, so the IR and C are the same byte for byte as with their lines
+blank, and `declarations` copies a fn's context fields' as it did the rest.
+
 *Later, for 3.2:*
-- Only a capability's fields have attributes; step 3 (attributes on any field) fills `Field.attrs`
-  for structs', unions' and errors' fields too, and `declarations` needs no change for it.
+- A union's and an enum's variants have no attributes of their own: `Variant` would need `attrs`
+  as `Field` has, when a generator wants them.
 - Not in the model yet: a capability's inclusions (`..Base`), whether its field is a C variable
   or a static, which generic parameters are error sets (`E: error`), and a fn's body.
 - A declaration with a syntax error in it is there as far as it parsed, beside the error.

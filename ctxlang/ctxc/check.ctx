@@ -1787,8 +1787,9 @@ namespace check {
 
     // ---- attributes (§18; PLAN.md stage 3 gives them to generators)
 
-    // Every declaration's attributes, each checked as a const literal of the struct it names.
-    // The compiler acts on std's `c::symbol` and `c::callback` and ignores the rest.
+    // Every declaration's attributes, and its fields', each checked as a const literal of the
+    // struct it names. The compiler acts on std's `c::symbol` and `c::callback` and ignores the
+    // rest.
     fn attributes { mut c: Checker } {
         let mut f: usize = 0
         while f < c.files.len {
@@ -1831,9 +1832,71 @@ namespace check {
                 cap{ fields } => {
                     if fields != null { field_attributes{ &c, x, file, fields, ns, symbol_decl, callback_decl } }
                 }
+                record{ fields } => { check_data_fields{ &c, fields, ns, symbol_decl, callback_decl } }
+                sum{ variants } => {
+                    let mut v: usize = 0
+                    while v < variants.len {
+                        let fields = variants[v].fields
+                        if fields != null { check_data_fields{ &c, fields, ns, symbol_decl, callback_decl } }
+                        v = v + 1
+                    }
+                }
+                fault{ fields } => {
+                    if fields != null { check_data_fields{ &c, fields, ns, symbol_decl, callback_decl } }
+                }
+                func{ params } => {
+                    let mut p: usize = 0
+                    while p < params.len {
+                        check_data_attrs{ &c, attrs = params[p].attrs, ns, symbol_decl, callback_decl }
+                        p = p + 1
+                    }
+                }
                 else => {}
             }
             i = i + 1
+        }
+    }
+
+    // The attributes of the fields of a struct, an extern union, a union's variant or an error.
+    fn check_data_fields { mut c: Checker, fields: []syntax::Field, ns: u32, symbol_decl: u32, callback_decl: u32 } {
+        let mut i: usize = 0
+        while i < fields.len {
+            check_data_attrs{ &c, attrs = fields[i].attrs, ns, symbol_decl, callback_decl }
+            i = i + 1
+        }
+    }
+
+    // The attributes of a field that isn't a capability's: of a struct, an extern union, a
+    // union's variant, an error or a fn's context. They are data alone (§18, rule 3), so one the
+    // compiler acts on is misplaced there, as it is on a declaration it doesn't apply to.
+    fn check_data_attrs { mut c: Checker, attrs: []syntax::Attr, ns: u32, symbol_decl: u32, callback_decl: u32 } {
+        let mut k: usize = 0
+        while k < attrs.len {
+            let a = attrs[k]
+            let which = compiler_attr{ c, a, ns }
+            if which != null {
+                use_attr{ &c, a, which }
+                match which {
+                    stack_limit => {
+                        error{ &c, at = a.span, msg = "`stack_limit` applies only to a capability's static, `static name: usize`" }
+                    }
+                    thread_local => {
+                        error{ &c, at = a.span, msg = "`thread_local` applies only to a capability's static, `static name: T`" }
+                    }
+                    else => {
+                        errorf{ &c, at = a.span, msg = @fmt("`{}` applies only to a fn", str{ s = attr_name{ a = which } }) }
+                    }
+                }
+            } else if attribute{ &c, a, ns } is record{ ty } {
+                let rd = record_decl{ c, t = ty }
+                if rd == NONE {
+                } else if rd == symbol_decl {
+                    error{ &c, at = a.span, msg = "`c::symbol` on a field applies only to a capability's C variable, `extern name: T`" }
+                } else if rd == callback_decl {
+                    error{ &c, at = a.span, msg = "`c::callback` applies only to a fn" }
+                }
+            }
+            k = k + 1
         }
     }
 

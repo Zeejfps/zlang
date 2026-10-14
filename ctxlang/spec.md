@@ -21,6 +21,7 @@ fn name(Generics) { field: T, mut field: T, ... } -> R { body }
 4. `-> R` may be omitted. The function then returns no value.
 5. Two fields in one context can't share a name.
 6. A `mut x: T` field holds a `*mut T`. Inside the function, `x` is the place of type `T` it points to, and `&x` gives the `*mut T`.
+7. A context field may have attributes, on the lines before it (§18).
 
 ## 3. Calls
 
@@ -132,6 +133,7 @@ Name{ field = expr, field, ... }
 
 1. A struct literal supplies every field exactly once. Punning works as in calls.
 2. A field may have type `fn{C} -> R` but not `&fn{C} -> R` (§6).
+3. A field may have attributes, on the lines before it (§18), as a variant's payload's and an error's may.
 
 ## 8. Unions
 
@@ -880,10 +882,26 @@ extern fn glfwPollEvents { mut glfw: Glfw }      // a capability says who may ca
 
 ### Attributes
 
-1. `#path` or `#path{ field = e, ... }`, on its own line before a declaration or a capability's field, is an **attribute** of it. Either may have several.
+1. `#path` or `#path{ field = e, ... }`, on its own line before a declaration or a declaration's field, is an **attribute** of it: a field of a struct, an extern union, a union variant's payload, an error, a capability or a fn's or extern fn's context. Any of them may have several. A field's attributes are for build programs (§19, rule 14): except for a capability's (§15, rules 12 and 13), they change nothing the program compiles to. A function type's fields (`fn{ ... } -> R`, §5) declare nothing and can't have attributes, nor can a union's or an enum's variants themselves.
+
+```
+struct Pos {
+    #ecs::key
+    #ecs::cascade{ depth = 2 }
+    x: f32,
+    y: f32,
+}
+
+fn movement {
+    #ecs::by{ name = "pos" }
+    mut pos: Pos,
+    dt: f32,
+} { ... }
+```
+
 2. `path` names a struct, and the braces are a literal of it, checked as a const's initializer is and folded (§14): it can't call a function or use a const that isn't folded. `#path` alone means `#path{}`. A field of a number type or `bool` may be left out, and is then 0 or `false`: `#c::callback` is `#c::callback{ any_thread = false }`.
 3. Attributes are data. The compiler acts on those of std's `c` namespace (`c::symbol` on an extern fn or a C variable, `c::callback` on a fn) and ignores the rest; a build program reads them as written with `build::declarations` (§19, rule 14), and their checked values later (PLAN.md, stage 3). ctxc's driver reads std's `build::sources` on a build program's `fn build` before compiling it (§19, rule 12); to the checker it is data, as any other.
-4. The compiler declares `convert` (Literal conversions, below), `write` (§13, Formatting), `start` and `panic` (§15, Entry point), `stack_limit` and `thread_local` (§15, rule 13) and `spawn` (§15, rule 14) itself. They have no namespace, and a declaration of the same name shadows one.
+4. The compiler declares `convert` (Literal conversions, below), `write` (§13, Formatting), `start` and `panic` (§15, Entry point), `stack_limit` and `thread_local` (§15, rule 13) and `spawn` (§15, rule 14) itself. They have no namespace, and a declaration of the same name shadows one. These, `c::symbol` and `c::callback` are errors anywhere they mean nothing, a field that isn't a capability's included.
 
 ### Extern functions
 
@@ -980,7 +998,7 @@ fn build { mut b: Build } {
 11. A build writes only under ctxc's home, in `build/run`, in a directory of the program's own, which its absolute path names: ctxcs building different programs at once don't meet. A big program's C is several units, grouped by the files that declare their functions, which are compiled at once; a unit whose C, runtime, C compiler and flags are the same as when it was last built isn't compiled again, so an edit recompiles only the units of the files it touched (ctxc/drive.ctx, ctxc/emit_c.ctx).
 12. `#build::sources{ dir }` on the build program's `fn build` makes the `.ctx` files under directory `dir` its files too, besides build.ctx, found as rule 5 finds an executable's, with paths as rule 8 says. So a code generator can be a library of its own, which build programs share. `fn build` may have several. They are the build program's files only, not its executables'. ctxc reads the attribute (std's `build::sources`, §17) from build.ctx before it compiles the build program, so `dir` must be a string literal; one that names no directory, or one without `.ctx` files, and the attribute on anything else in build.ctx, are errors at their positions.
 13. `build::gen_file{ &b, exe, name, text }` gives the executable a file of ctxlang source, `NAME.ctx`, that holds `text`, as if it were in one of its directories. ctxc writes it in the program's build directory (rule 11), as `gen/EXE/NAME.ctx`, never in the source tree, and errors in it name that path; the executable is compiled from ctxc's own copy of the text, so another ctxc building the same program at once can't change what it compiles. It is written only when its text changed; the other `.ctx` files in its executable's directory are removed, and the directory of an executable that generates none, once it is empty. One executable can't have two files of one name, nor on Windows names that differ only in case. The build program never sees the files it generates: they are only its executables'. A `Build` writes no file itself: the text goes to ctxc with the build's description (std/build.ctx), and ctxc writes it.
-14. `build::declarations{ &b, &fs, &mem, &heap, realloc, exe }` gives the declarations of exe's files as they are at the call: its root's, and those of the directories `add_sources` gave it before, found as rule 5 finds them, with paths as rule 8 says; never its generated files, so a generator never sees its own output. It parses them and checks nothing: a `build::Decl` is a struct, union, extern union, enum, fn, extern fn, const, type, capability or error (its `kind`), with its name, the namespaces around it (`path`, as `game::world`), its generic parameters' names, its attributes, its fields (a fn's context fields, with `mut`), its variants, its types and values as text, and its file and position. A type is spelled one way (`*mut T`, `list::List(T, S)`, `&fn{ a: T } -> R`), and anything else written, an attribute's field too, is its tokens as written, with one space between two that anything came between, so a string literal, multi-line or not, keeps its text; a string, integer, character or bool literal's value is there as well. Nothing is resolved, so a name may be one the build program has yet to generate.
+14. `build::declarations{ &b, &fs, &mem, &heap, realloc, exe }` gives the declarations of exe's files as they are at the call: its root's, and those of the directories `add_sources` gave it before, found as rule 5 finds them, with paths as rule 8 says; never its generated files, so a generator never sees its own output. It parses them and checks nothing: a `build::Decl` is a struct, union, extern union, enum, fn, extern fn, const, type, capability or error (its `kind`), with its name, the namespaces around it (`path`, as `game::world`), its generic parameters' names, its attributes, its fields (a fn's context fields, with `mut`), each with its attributes, its variants, its types and values as text, and its file and position. A type is spelled one way (`*mut T`, `list::List(T, S)`, `&fn{ a: T } -> R`), and anything else written, an attribute's field too, is its tokens as written, with one space between two that anything came between, so a string literal, multi-line or not, keeps its text; a string, integer, character or bool literal's value is there as well. Nothing is resolved, so a name may be one the build program has yet to generate.
 15. A syntax error doesn't stop it: the declarations around it are there, and the errors are in `diags`, by file, line and column. It fails with `fs`'s errors for a directory or file it can't read, and with `alloc::out_of_memory`. Its result is in memory from `realloc`; parsing takes memory of its own, from `mem::reserve`, which it keeps for its next call.
 16. A build program has what `declarations` needs with std: std/build/'s files and ctxc's lexer and parser (ctxc/source.ctx, diag.ctx, lexer.ctx, syntax.ctx and parser.ctx) are among std's files (§17) in it, and in no other program. Any program whose entry is `fn build` (rule 2) is one, however ctxc builds it: `ctxc run build.ctx` runs one as a program of its own, whose graph goes to standard output and whose paths are from the working directory. So `declarations` is in std's `build`, and a namespace of the program's named like one of ctxc's (`parser`, `syntax`, `lexer`, `tok`, `source`, `diag`) shadows it (§10, rule 4).
 

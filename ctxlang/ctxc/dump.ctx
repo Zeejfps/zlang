@@ -236,14 +236,7 @@ namespace tree {
     fn decl { mut d: Dumper, x: syntax::Decl } {
         let at = x.span.start
         let untyped: []syntax::Name = slice::empty(syntax::Name){}
-        let mut i: usize = 0
-        while i < x.attrs.len {
-            line{ &d, at = x.attrs[i].span.start, s = "attr" }
-            d.depth = d.depth + 1
-            expr{ &d, e = x.attrs[i].value }
-            d.depth = d.depth - 1
-            i = i + 1
-        }
+        attr_list{ &d, xs = x.attrs }
         match x.k {
             error => { line{ &d, at, s = "invalid" } }
             func{ name = n, tparams, params, ret, body, external } => {
@@ -360,10 +353,23 @@ namespace tree {
         }
     }
 
+    // The attributes of a declaration or a field, each on the lines before it.
+    fn attr_list { mut d: Dumper, xs: []syntax::Attr } {
+        let mut i: usize = 0
+        while i < xs.len {
+            line{ &d, at = xs[i].span.start, s = "attr" }
+            d.depth = d.depth + 1
+            expr{ &d, e = xs[i].value }
+            d.depth = d.depth - 1
+            i = i + 1
+        }
+    }
+
     fn param_list { mut d: Dumper, xs: []syntax::Param } {
         let mut i: usize = 0
         while i < xs.len {
             let f = xs[i]
+            attr_list{ &d, xs = f.attrs }
             start{ &d, at = f.span.start }
             put{ &d, s = if f.mutable { "field mut " } else { "field " } }
             name{ &d, n = f.name }
@@ -377,14 +383,7 @@ namespace tree {
         let mut i: usize = 0
         while i < xs.len {
             let f = xs[i]
-            let mut k: usize = 0
-            while k < f.attrs.len {
-                line{ &d, at = f.attrs[k].span.start, s = "attr" }
-                d.depth = d.depth + 1
-                expr{ &d, e = f.attrs[k].value }
-                d.depth = d.depth - 1
-                k = k + 1
-            }
+            attr_list{ &d, xs = f.attrs }
             start{ &d, at = f.span.start }
             put{ &d, s = if f.external { "extern field " } else if f.stat { "static field " } else { "field " } }
             name{ &d, n = f.name }

@@ -8536,6 +8536,190 @@ fn main { mut io: Io } {
 """, "1\n")
 
 
+class FieldAttributes(Base):
+    """Attributes on a declaration's fields (spec §18, Attributes, rule 1): a struct's, an extern
+    union's, a union variant's payload's, an error's and a fn's context's, as on a capability's.
+    They are data, checked as a declaration's are, and change nothing the program compiles to."""
+
+    ATTRS = """
+namespace ecs {
+    struct key {}
+    struct cascade { depth: i32, deep: bool }
+    struct by { name: []u8, n: u32 }
+}
+const DEPTH: i32 = 2 + 1
+"""
+
+    PROGRAM = ATTRS + """
+struct Pos {
+    #ecs::key
+    #ecs::cascade{ depth = DEPTH, deep = true }
+    x: i32,
+    #ecs::cascade{ depth = -1 }
+    y: i32,
+}
+
+union Shape {
+    circle{
+        #ecs::by{ name = "r" }
+        r: i32
+    },
+    dot,
+}
+
+namespace parse {
+    error bad{
+        #ecs::key
+        at: usize
+    }
+}
+
+extern union Bits {
+    #ecs::key
+    i: u32,
+    f: f32,
+}
+
+fn step {
+    #ecs::by{ name = "pos", n = 1 }
+    #ecs::key
+    mut pos: Pos,
+    #ecs::cascade
+    by: i32,
+} -> !i32 {
+    if by < 0 { return parse::bad{ at = 0 } }
+    pos.x = pos.x + by
+    return pos.x
+}
+
+#ecs::key
+extern fn abs {
+    #ecs::key
+    n: i32
+} -> i32
+
+fn main { mut io: Io } {
+    let mut p = Pos{ x = 1, y = 2 }
+    let n = step{ pos = &p, by = 3 } iferr { 0 }
+    let s = Shape::circle{ r = abs{ n = -4 } }
+    if s is circle{ r } { io::println_i64{ &io, n = @as(i64, n + r) } }
+}
+"""
+
+    def assertFieldError(self, src, msg, line, col):
+        with self.assertRaises(CompileError) as cm:
+            run(src)
+        self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), src)
+
+    def test_fields_take_attributes(self):
+        # Several on one field, with braces or without, and number and bool fields left out (0
+        # and false); on a variant's payload, an error's and an extern union's fields, and on
+        # a fn's and an extern fn's context fields, `mut` ones too.
+        self.assertOutput(self.PROGRAM, "8\n")
+
+    def test_same_program(self):
+        # Field attributes are data alone: the IR and the C are the same, byte for byte, as with
+        # their lines left blank, so that every position stays where it was.
+        import toolchain
+        blank = '\n'.join('' if line.startswith(' ') and line.strip().startswith('#') else line
+                          for line in self.PROGRAM.split('\n'))
+        self.assertEqual(blank.count('#'), 1)
+        self.assertEqual(toolchain.ir_sources([(self.PROGRAM, 'main.ctx')]), toolchain.ir_sources([(blank, 'main.ctx')]))
+        texts = []
+        for src in (self.PROGRAM, blank):
+            d, files = toolchain.write_program([(src, 'main.ctx')])
+            c = os.path.join(d, 'main.c')
+            self.assertEqual(toolchain.ctxc_build(toolchain.native_ctxc(), c, list(files), cwd=d), (0, ''))
+            with open(c, 'rb') as f:
+                texts.append(f.read())
+        self.assertEqual(texts[0], texts[1])
+
+    def test_syntax_errors(self):
+        for src, msg, line, col in [
+            # each on its own line, before a field
+            ('struct K {}\nstruct S {\n    #K a: i32\n}', 'an attribute goes on its own line, before a field', 3, 8),
+            ('struct K {}\nfn f {\n    #K mut a: i32\n} {}', 'an attribute goes on its own line, before a field', 3, 8),
+            ('struct K {}\nstruct S {\n    a: i32,\n    #K\n}', "expected a field after an attribute, found '}'", 5, 1),
+            ('struct K {}\nerror e{\n    #K\n    ..Io\n}', "expected a field after an attribute, found '..'", 4, 5),
+            ('struct S {\n    #5\n    a: i32\n}', "expected a struct name after '#', found '5'", 2, 6),
+            ('struct S {\n    #a.b\n    a: i32\n}', 'an attribute is a struct name or a struct literal', 2, 6),
+            # a function type's fields declare nothing
+            ('struct K {}\ntype F = fn{\n    #K\n    a: i32\n}', "a function type's fields can't have attributes: only a declaration's fields can", 3, 5),
+            ('struct K {}\ntype F = &fn{\n    #K\n    a: i32\n} -> i32', "a function type's fields can't have attributes: only a declaration's fields can", 3, 5),
+            ('struct K {}\nstruct S { f: extern fn{\n    #K\n    a: i32\n} }', "a function type's fields can't have attributes: only a declaration's fields can", 3, 5),
+            ('struct K {}\nfn f {\n    #K\n    g: fn{\n        #K\n        a: i32\n    }\n} {}',
+             "a function type's fields can't have attributes: only a declaration's fields can", 5, 9),
+            # nor do a union's or an enum's variants themselves
+            ('struct K {}\nunion U {\n    #K\n    a\n}', "expected a name, found '#'", 3, 5),
+            ('struct K {}\nenum E: u8 {\n    #K\n    a\n}', "expected a name, found '#'", 3, 5),
+        ]:
+            self.assertFieldError(src + '\nfn main {} {}', msg, line, col)
+
+    def test_errors(self):
+        for src, msg, line, col in [
+            # checked as a declaration's attributes are
+            ('struct S {\n    #ecs::nope\n    a: i32\n}', '`nope` not found in namespace `ecs`', 2, 11),
+            ('fn f {\n    #Nope\n    a: i32\n} {}', 'unknown name `Nope`', 2, 6),
+            ('union U { v{\n    #ecs::cascade{ dpth = 1 }\n    a: i32 } }', 'struct `cascade` has no field `dpth`', 2, 20),
+            ('error e{\n    #ecs::by\n    a: i32 }', 'struct `by` is missing `name`', 2, 6),
+            ('extern fn f {\n    #ecs::by{ name = 1 }\n    a: i32 }', 'expected []u8, got {integer}', 2, 22),
+            ('union W { a{ x: i32 } }\nstruct S {\n    #W::a{ x = 1 }\n    a: i32\n}', 'an attribute must be a struct literal', 3, 10),
+            ('fn g {} -> i32 { return 1 }\nstruct S {\n    #ecs::cascade{ depth = g{} }\n    a: i32\n}',
+             'an attribute cannot call a function', 3, 29),
+            ('fn three {} -> i32 { return 3 }\nconst N: i32 = three{}\nstruct S {\n    #ecs::cascade{ depth = N }\n    a: i32\n}',
+             "an attribute can't use `N`: its value is computed by running code", 4, 18),
+            # the attributes the compiler acts on mean nothing on these fields
+            ('struct S {\n    #convert\n    a: i32\n}', '`convert` applies only to a fn', 2, 5),
+            ('fn f {\n    #write\n    a: i32\n} {}', '`write` applies only to a fn', 2, 5),
+            ('union U { v{\n    #start\n    a: i32 } }', '`start` applies only to a fn', 2, 5),
+            ('error e{\n    #panic\n    a: i32 }', '`panic` applies only to a fn', 2, 5),
+            ('extern fn f {\n    #spawn\n    a: i32 }', '`spawn` applies only to a fn', 2, 5),
+            ('struct S {\n    #stack_limit\n    a: usize\n}',
+             "`stack_limit` applies only to a capability's static, `static name: usize`", 2, 5),
+            ('fn f {\n    #thread_local\n    a: i32\n} {}',
+             "`thread_local` applies only to a capability's static, `static name: T`", 2, 5),
+            ('extern union X {\n    #c::symbol{ name = "x" }\n    a: i32\n}',
+             "`c::symbol` on a field applies only to a capability's C variable, `extern name: T`", 2, 5),
+            ('extern fn f {\n    #c::symbol{ name = "x" }\n    a: i32 }',
+             "`c::symbol` on a field applies only to a capability's C variable, `extern name: T`", 2, 5),
+            ('fn f {\n    #c::callback\n    a: i32\n} {}', '`c::callback` applies only to a fn', 2, 5),
+            ('struct S {\n    #convert{ x = 1 }\n    a: i32\n}', '`convert` takes no fields', 2, 15),
+        ]:
+            self.assertFieldError(self.ATTRS + src + '\nfn main {} {}', msg, line + 7, col)
+
+    def test_recovery(self):
+        # The recovery test (ctxc/recover.ctx) on every token of a program with field
+        # attributes: each damaged copy parses to a well-formed tree, attributes' spans before
+        # their fields'. A malformed one recovers as before a declaration (CtxcDriver).
+        import subprocess
+        import toolchain
+        d, files = toolchain.write_program([(self.PROGRAM, 'main.ctx')])
+        r = subprocess.run([toolchain.native_ctxc(), 'recover', 'main.ctx', '0', '100000'], cwd=d, capture_output=True)
+        self.assertEqual((r.returncode, r.stdout.decode().split()[0]), (0, 'done'), r.stdout.decode())
+
+    def test_capability_fields_unchanged(self):
+        # A capability's field still takes `thread_local` on a static (and `c::symbol` on a C
+        # variable, `stack_limit` on a static: Capabilities), and any other as data, beside a
+        # struct's.
+        self.assertOutput(self.ATTRS + """
+capability Counter {
+    #thread_local
+    #ecs::key
+    static n: i64,
+}
+struct S {
+    #ecs::key
+    n: i64,
+}
+fn main { mut io: Io, mut counter: Counter } {
+    counter.n = counter.n + S{ n = 5 }.n
+    io::println_i64{ &io, n = counter.n }
+}
+""", "5\n")
+        self.assertFieldError('capability O {\n    #c::symbol{ name = "x" }\n    f: extern fn{}\n}\nfn main {} {}',
+                              "`c::symbol` on a capability's field applies only to a C variable, `extern name: T`", 2, 5)
+
+
 class NullablePointers(Base):
     """`?*T` is a plain pointer whose null is the address 0 (spec §8, Optional), so it has C's
     layout and crosses into C (§18)."""
@@ -9626,6 +9810,13 @@ fn build { mut b: Build } {
              "`build::sources` applies only to the build program's `fn build`", 2, 5),
             ('#build::sources{ dir = "../../lib/a" }\nstruct S {}\nfn build { mut b: Build } {}\n',
              "`build::sources` applies only to the build program's `fn build`", 1, 1),
+            # nor on any field, `fn build`'s own context's included
+            ('struct S {\n    #build::sources{ dir = "../../lib/a" }\n    x: i32\n}\nfn build { mut b: Build } {}\n',
+             "`build::sources` applies only to the build program's `fn build`", 2, 5),
+            ('union U { v{\n    #build::sources{ dir = "../../lib/a" }\n    x: i32 } }\nfn build { mut b: Build } {}\n',
+             "`build::sources` applies only to the build program's `fn build`", 2, 5),
+            ('fn build {\n    #build::sources{ dir = "../../lib/a" }\n    mut b: Build\n} {}\n',
+             "`build::sources` applies only to the build program's `fn build`", 2, 5),
             ('const D: []u8 = "../../lib/a"\n#build::sources{ dir = D }\nfn build { mut b: Build } {}\n',
              "`build::sources` takes `dir`, a string literal that isn't empty", 2, 24),
             ('#build::sources\nfn build { mut b: Build } {}\n',
@@ -10230,6 +10421,99 @@ extern union game::Bits @ src/b.ctx:16:5
   f: f32
 fn main @ src/b.ctx:18:1
 """)
+
+    def test_declarations_field_attributes(self):
+        # A field's attributes, as written, on a struct's, a union variant's payload's, an
+        # error's, an extern union's and a fn's or extern fn's context fields, as on a
+        # capability's. Names needn't resolve: the build program checks nothing.
+        d = self.project({
+            'build.ctx': self.reflecting(f"""
+    let exe = build::exe{{ &b, name = "t", root = "src" }}
+    show{{ &io, found = {self.FIND} }}
+"""),
+            'src/a.ctx': """struct Pos {
+    #ecs::key
+    #ecs::cascade{ depth = 2, deep = true }
+    x: i32,
+    y: i32,
+}
+union Shape { circle{
+    #ecs::by{ name = "r" }
+    r: f32 }, dot }
+error bad{
+    #ecs::key
+    at: usize
+}
+extern union Bits {
+    #ecs::key
+    i: u32,
+    f: f32,
+}
+#ecs::system
+fn step {
+    #ecs::by{ name = "pos", n = -1 }
+    mut pos: Pos,
+    #ecs::key
+    dt: f32,
+} {}
+extern fn abs {
+    #ecs::key
+    n: i32
+} -> i32
+""",
+        })
+        code, out, err = self.graph(d)
+        self.assertEqual((code, err), (0, ''))
+        self.assertEqual(out, """file src/a.ctx
+struct Pos @ src/a.ctx:1:1
+  #ecs::key
+  #ecs::cascade depth=2 (i 2) deep=true (b true)
+  x: i32
+  y: i32
+union Shape @ src/a.ctx:7:1
+  | circle{}
+    #ecs::by name="r" (s r)
+    r: f32
+  | dot
+error bad @ src/a.ctx:10:1
+  #ecs::key
+  at: usize
+extern union Bits @ src/a.ctx:14:1
+  #ecs::key
+  i: u32
+  f: f32
+fn step @ src/a.ctx:20:1
+  #ecs::system
+  #ecs::by name="pos" (s pos) n=-1 (i -1)
+  mut pos: Pos
+  #ecs::key
+  dt: f32
+extern fn abs -> i32 @ src/a.ctx:26:1
+  #ecs::key
+  n: i32
+""")
+
+    def test_declarations_field_attribute_errors(self):
+        # A malformed attribute before a field is a syntax error as one before a declaration
+        # is: its declaration is there as far as it parsed, and the next ones are whole.
+        d = self.project({
+            'build.ctx': self.reflecting(f"""
+    let exe = build::exe{{ &b, name = "t", root = "src" }}
+    show{{ &io, found = {self.FIND} }}
+"""),
+            'src/a.ctx': 'struct Before {\n    #ecs::key\n    a: i32,\n    #5\n    b: i32\n}\n'
+                         'fn broken {\n    #ecs::key b: i32\n} {}\n'
+                         'struct After {\n    #ecs::key\n    c: u8\n}\n',
+        })
+        code, out, err = self.graph(d)
+        self.assertEqual((code, err), (0, ''))
+        # A field whose name didn't parse is there with an empty one, beside the error.
+        self.assertEqual(out, 'file src/a.ctx\n'
+                              'struct Before @ src/a.ctx:1:1\n  #ecs::key\n  a: i32\n  : \n'
+                              'fn broken @ src/a.ctx:7:1\n  : \n'
+                              'struct After @ src/a.ctx:10:1\n  #ecs::key\n  c: u8\n'
+                              "error src/a.ctx:4:6: expected a struct name after '#', found '5'\n"
+                              'error src/a.ctx:8:15: an attribute goes on its own line, before a field\n')
 
     def test_declarations_files(self):
         # The executable's files as they are at the call, found as the driver finds them: its

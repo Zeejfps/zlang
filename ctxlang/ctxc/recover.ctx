@@ -318,6 +318,7 @@ namespace recover {
         let mut i: usize = 0
         while i < xs.len {
             let f = xs[i]
+            field_attrs{ &c, xs = f.attrs, at = f.span.start, lo, hi }
             within{ &c, span = f.span, lo, hi }
             name{ &c, n = f.name, lo = f.span.start, hi = f.span.end }
             type_expr{ &c, t = f.ty, lo = f.span.start, hi = f.span.end }
@@ -325,18 +326,23 @@ namespace recover {
         }
     }
 
+    // The attributes of a field that starts at `at`, all before it.
+    fn field_attrs { mut c: Check, xs: []syntax::Attr, at: u32, lo: u32, hi: u32 } {
+        let mut k: usize = 0
+        while k < xs.len {
+            let a = xs[k]
+            within{ &c, span = a.span, lo, hi }
+            if a.span.end > at { fail{ &c, msg = "an attribute after its field's start" } }
+            expr{ &c, e = a.value, lo = a.span.start, hi = a.span.end }
+            k = k + 1
+        }
+    }
+
     fn field_list { mut c: Check, xs: []syntax::Field, lo: u32, hi: u32 } {
         let mut i: usize = 0
         while i < xs.len {
             let f = xs[i]
-            let mut k: usize = 0
-            while k < f.attrs.len {
-                let at = f.attrs[k]
-                within{ &c, span = at.span, lo, hi }
-                if at.span.end > f.span.start { fail{ &c, msg = "an attribute after its field's start" } }
-                expr{ &c, e = at.value, lo = at.span.start, hi = at.span.end }
-                k = k + 1
-            }
+            field_attrs{ &c, xs = f.attrs, at = f.span.start, lo, hi }
             within{ &c, span = f.span, lo, hi }
             name{ &c, n = f.name, lo = f.span.start, hi = f.span.end }
             type_expr{ &c, t = f.ty, lo = f.span.start, hi = f.span.end }

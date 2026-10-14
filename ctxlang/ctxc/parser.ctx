@@ -85,7 +85,7 @@ namespace parser {
             if body_as_context{ p } {
                 failf{ &p, msg = @fmt("a function's context comes before its body: write `fn {} {{}} {{ ... }}`", utf8::String{ bytes = name.text }) }
             }
-            let params = ctx_fields{ &p }
+            let params = ctx_fields{ &p, decl = true }
             let ret: ?syntax::TypeExpr = if accept{ &p, k = tok::Kind::arrow } { type_expr{ &p } } else { null }
             d = syntax::DeclKind::func{ name, tparams = tps.names, tsets = tps.sets, params, ret, body = block{ &p }, external = false }
         } else if k == tok::Kind::kw_extern and kind{ p, ahead = 1 } == tok::Kind::kw_union {
@@ -99,7 +99,7 @@ namespace parser {
             expect{ &p, k = tok::Kind::kw_fn }
             let name = ident{ &p }
             if next_is{ p, k = tok::Kind::lparen } { fail{ &p, msg = "an extern fn cannot have generic parameters" } }
-            let params = ctx_fields{ &p }
+            let params = ctx_fields{ &p, decl = true }
             let ret: ?syntax::TypeExpr = if accept{ &p, k = tok::Kind::arrow } { type_expr{ &p } } else { null }
             if next_is{ p, k = tok::Kind::lbrace } and not nl{ p } { fail{ &p, msg = "an extern fn has no body: C provides it" } }
             let at = prev_end{ p }
@@ -169,7 +169,8 @@ namespace parser {
         return syntax::Decl{ id, span = span_from{ p, start }, attrs, k = d }
     }
 
-    // The attributes before a declaration, or before a capability's field: `#path` or
+    // The attributes before a declaration, or before a field of one (a struct's, an extern
+    // union's, a union variant's, an error's, a capability's or a fn's context's): `#path` or
     // `#path{ field = value, ... }`, each on its own line. A bare `#path` gets empty braces, so
     // every attribute is a literal.
     fn attributes { mut p: Parser, field: bool } -> []syntax::Attr {
@@ -209,7 +210,7 @@ namespace parser {
         if xs.len > 0 and not p.bad {
             let k = kind{ p, ahead = 0 }
             if field {
-                if k != tok::Kind::ident and k != tok::Kind::kw_extern { expected{ &p, what = "a field after an attribute" } }
+                if k != tok::Kind::ident and k != tok::Kind::kw_extern and k != tok::Kind::kw_mut { expected{ &p, what = "a field after an attribute" } }
             } else if not is_decl_start{ k } and not at_error_decl{ p } {
                 expected{ &p, what = "a declaration after an attribute" }
             }
@@ -218,12 +219,12 @@ namespace parser {
     }
 
     // Whether the `{ ... }` here, where a function's context belongs, is its body instead: it
-    // doesn't start like a context (`}`, `mut` or `name:`), it is closed, and neither a body nor
-    // `->` follows it.
+    // doesn't start like a context (`}`, `mut`, `name:` or an attribute's `#`), it is closed, and
+    // neither a body nor `->` follows it.
     fn body_as_context { p: Parser } -> bool {
         if not next_is{ p, k = tok::Kind::lbrace } { return false }
         let first = kind{ p, ahead = 1 }
-        if first == tok::Kind::rbrace or first == tok::Kind::kw_mut
+        if first == tok::Kind::rbrace or first == tok::Kind::kw_mut or first == tok::Kind::hash
            or (first == tok::Kind::ident and kind{ p, ahead = 2 } == tok::Kind::colon) {
             return false
         }
@@ -281,33 +282,42 @@ namespace parser {
         return TParams{ names = list::items{ list = xs }, sets = list::items{ list = sets } }
     }
 
-    // `{ mut name: T, ... }`, the context of a function or function type.
-    fn ctx_fields { mut p: Parser } -> []syntax::Param {
+    // `{ mut name: T, ... }`, the context of a function, whose fields may have attributes, or of
+    // a function type (decl false), whose fields declare nothing and so have none.
+    fn ctx_fields { mut p: Parser, decl: bool } -> []syntax::Param {
         let mut xs = list::new(syntax::Param){ realloc = arena::alloc, heap = p.heap }
         expect{ &p, k = tok::Kind::lbrace }
         while more{ p, close = tok::Kind::rbrace } {
+            let mut attrs: []syntax::Attr = slice::empty(syntax::Attr){}
+            if decl {
+                attrs = attributes{ &p, field = true }
+            } else if next_is{ p, k = tok::Kind::hash } {
+                fail{ &p, msg = "a function type's fields can't have attributes: only a declaration's fields can" }
+            }
             let start = p.i
             let mutable = accept{ &p, k = tok::Kind::kw_mut }
             let name = ident{ &p }
             expect{ &p, k = tok::Kind::colon }
             let ty = type_expr{ &p }
-            try! list::push{ list = &xs, item = syntax::Param{ span = span_from{ p, start }, mutable, name, ty } }
+            try! list::push{ list = &xs, item = syntax::Param{ span = span_from{ p, start }, attrs, mutable, name, ty } }
             if not accept{ &p, k = tok::Kind::comma } { break }
         }
         expect{ &p, k = tok::Kind::rbrace }
         return list::items{ list = xs }
     }
 
-    // `{ name: T, ... }`, of a struct or a union variant.
+    // `{ name: T, ... }`, of a struct, an extern union, a union variant or an error, each field
+    // with its attributes.
     fn plain_fields { mut p: Parser } -> []syntax::Field {
         let mut xs = list::new(syntax::Field){ realloc = arena::alloc, heap = p.heap }
         expect{ &p, k = tok::Kind::lbrace }
         while more{ p, close = tok::Kind::rbrace } {
+            let attrs = attributes{ &p, field = true }
             let start = p.i
             let name = ident{ &p }
             expect{ &p, k = tok::Kind::colon }
             let ty = type_expr{ &p }
-            try! list::push{ list = &xs, item = syntax::Field{ span = span_from{ p, start }, attrs = slice::empty(syntax::Attr){}, name, ty, external = false, stat = false } }
+            try! list::push{ list = &xs, item = syntax::Field{ span = span_from{ p, start }, attrs, name, ty, external = false, stat = false } }
             if not accept{ &p, k = tok::Kind::comma } { break }
         }
         expect{ &p, k = tok::Kind::rbrace }
@@ -408,7 +418,7 @@ namespace parser {
             let bound = accept{ &p, k = tok::Kind::amp }
             let external = accept{ &p, k = tok::Kind::kw_extern }
             skip{ &p }
-            let params = ctx_fields{ &p }
+            let params = ctx_fields{ &p, decl = false }
             let ret: ?*syntax::TypeExpr = if accept{ &p, k = tok::Kind::arrow } { box{ &p, value = type_expr{ &p } } } else { null }
             t = syntax::TypeKind::func{ bound, params, ret, external }
         } else if k == tok::Kind::ident {
