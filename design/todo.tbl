@@ -2,7 +2,7 @@
 // This file is the spec. When the design changes, this file changes with it.
 
 // `table Todo` declares a schema; `table<Todo>` is a table of Todo rows.
-// With no `key` column, each row gets an implicit `id: Id<Todo> key`.
+// With no `key` column, each row gets an implicit `id: id<Todo> key`.
 table Todo {
     text: str required;
     done: bool = false;
@@ -30,11 +30,11 @@ context App {
 
 // `insert` and `update` take columns as named arguments.
 // Leaving out a `required` column is a missing-argument error.
-fn add(app: App, text: str) -> Id<Todo> {
+fn add(app: App, text: str) -> id<Todo> {
     return app.todos.insert(text: text, created: now());
 }
 
-fn complete(app: App, id: Id<Todo>) {
+fn complete(app: App, id: id<Todo>) {
     app.todos.update(id, done: true);
 }
 

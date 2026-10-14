@@ -1,37 +1,39 @@
 // game.tbl: a tiny ECS-style simulation.
-// Entities are ids. Components are tables keyed by that id.
-// Systems are plain functions that query across those tables.
+// An entity is a row in the Entity table. Components are tables keyed by
+// that row's id. Systems are plain functions that query across those tables.
 
-// A bare id type. It has no columns, only identity.
-id Entity;
+// No columns of its own. With no key column, it gets an implicit
+// `id: id<Entity> key`, so its rows exist only to give out ids.
+table Entity {}
 
-// `key` marks the column that identifies a row. Rows in different tables
-// with the same `entity` belong to the same entity.
-// (A table without a key column, like Todo, gets an implicit `id: Id<Todo> key`.)
+// `key` marks the column that identifies a row. Here the key is also
+// an Entity's id, so rows in different tables with the same `entity`
+// belong to the same entity.
 table Position {
-    entity: Entity key;
+    entity: id<Entity> key;
     x: float;
     y: float;
 }
 
 table Velocity {
-    entity: Entity key;
+    entity: id<Entity> key;
     dx: float;
     dy: float;
 }
 
 table Health {
-    entity: Entity key;
+    entity: id<Entity> key;
     hp: int required;
     max: int required;
 }
 
 // A tag: a table with only a key. Whether a row exists is the data.
 table Player {
-    entity: Entity key;
+    entity: id<Entity> key;
 }
 
 context World {
+    entities: table<Entity>;
     positions: table<Position>;
     velocities: table<Velocity>;
     healths: table<Health>;
@@ -54,10 +56,11 @@ fn poison(world: World) {
     }
 }
 
-// A despawn inside the loop is deferred until the loop ends.
+// Deleting an Entity also deletes every row in the context keyed by its id.
+// A delete inside the loop is deferred until the loop ends.
 fn reap(world: World) {
     for h in world.healths where h.hp <= 0 {
-        world.despawn(h.entity);
+        world.entities.delete(h.entity);
     }
 }
 
@@ -76,8 +79,8 @@ projection Point from Position {
 
 // `..p: Point` takes Point's fields as named parameters, and `p` is the
 // assembled value in the body. Callers pass `x:` and `y:`, or `..some_point`.
-fn spawn_rock(world: World, ..p: Point) -> Entity {
-    let e = world.spawn();
+fn spawn_rock(world: World, ..p: Point) -> id<Entity> {
+    let e = world.entities.insert();
     world.positions.insert(entity: e, ..p);
     return e;
 }
@@ -85,8 +88,9 @@ fn spawn_rock(world: World, ..p: Point) -> Entity {
 fn main() {
     let world = World();
 
+    // Inserting into a table with an implicit id returns the new id.
     // The key is a column like any other, so it is passed by name.
-    let hero = world.spawn();
+    let hero = world.entities.insert();
     world.positions.insert(entity: hero, x: 0.0, y: 0.0);
     world.velocities.insert(entity: hero, dx: 1.0, dy: 0.5);
     world.healths.insert(entity: hero, hp: 3, max: 3);

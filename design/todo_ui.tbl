@@ -2,7 +2,7 @@
 
 use todo { App, Todo, TodoLine, add, stats };
 
-fn set_done(app: App, id: Id<Todo>, done: bool) {
+fn set_done(app: App, id: id<Todo>, done: bool) {
     app.todos.update(id, done: done);
 }
 
