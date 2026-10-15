@@ -1197,17 +1197,23 @@ namespace parser {
                 bind = true
             } else if accept{ &p, k = tok::Kind::amp } {
                 let name = ident{ &p }
-                let path = name_path{ &p, name = again{ &p, n = name } }
-                let value = syntax::Expr{
-                    id = new_id{ &p }, span = span_from{ p, start = s }, at = it.span.start,
-                    k = syntax::ExprKind::addr{ e = box{ &p, value = path } },
+                if at_place_tail{ p } {
+                    try! list::push{ list = &items, item = long_pun{ &p, s, name } }
+                } else {
+                    let path = name_path{ &p, name = again{ &p, n = name } }
+                    let value = syntax::Expr{
+                        id = new_id{ &p }, span = span_from{ p, start = s }, at = it.span.start,
+                        k = syntax::ExprKind::addr{ e = box{ &p, value = path } },
+                    }
+                    try! list::push{ list = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = true, spread = false } }
                 }
-                try! list::push{ list = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = true, spread = false } }
             } else {
                 let name = ident{ &p }
                 if accept{ &p, k = tok::Kind::assign } {
                     let value = expr{ &p }
                     try! list::push{ list = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = false, spread = false } }
+                } else if at_place_tail{ p } {
+                    try! list::push{ list = &items, item = long_pun{ &p, s, name } }
                 } else {
                     let value = name_path{ &p, name = again{ &p, n = name } }
                     try! list::push{ list = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = true, spread = false } }
@@ -1218,6 +1224,34 @@ namespace parser {
         expect{ &p, k = tok::Kind::rbrace }
         let k = syntax::ExprKind::braced{ callee = c, items = list::items{ list = items }, forward, bind }
         return syntax::Expr{ id = new_id{ &p }, span = span_from{ p, start }, at = t.span.start, k }
+    }
+
+    // At a `.` or `[` after a pun's name: the pun is of a longer place, as `&g.rng`.
+    fn at_place_tail { p: Parser } -> bool {
+        return next_is{ p, k = tok::Kind::dot } or (next_is{ p, k = tok::Kind::lbracket } and not p.toks[p.i].nl)
+    }
+
+    // A pun of a longer place than a name, from token s: an error, since a pun names its field
+    // only by a name. It says what to write, the place's last name as the field's when it ends
+    // in one (`rng = &g.rng`), and gives the item that would be, named so.
+    fn long_pun { mut p: Parser, s: usize, name: syntax::Name } -> syntax::Item {
+        p.i = s
+        let value = expr{ &p }
+        let text = utf8::String{ bytes = p.text[value.span.start..value.span.end] }
+        let mut place = value
+        match value.k {
+            addr{ e } => { place = e.* }
+            else => {}
+        }
+        let mut field = name
+        match place.k {
+            field{ name = last } => {
+                field = last
+                failf_at{ &p, msg = @fmt("a pun is a name alone: write `{} = {}`", utf8::String{ bytes = last.text }, text), t = p.toks[s] }
+            }
+            else => { failf_at{ &p, msg = @fmt("a pun is a name alone: write the field's name, as `name = {}`", text), t = p.toks[s] } }
+        }
+        return syntax::Item{ span = span_from{ p, start = s }, name = again{ &p, n = field }, value, pun = false, spread = false }
     }
 
     // The same name as another node: a pun's item name and its value are two uses of it.

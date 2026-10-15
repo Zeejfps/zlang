@@ -7932,7 +7932,10 @@ namespace check {
             if it.spread {
                 // a capability literal's, which cap_lit checks
             } else if types::find_field{ fields, name = it.name.text } == null {
-                errorf{ &c, at = it.span, msg = @fmt("{} has no field `{}`", what, str{ s = it.name.text }) }
+                let mut b = message{ c }
+                try! @fmt(&b, "{} has no field `{}`", what, str{ s = it.name.text })
+                if it.pun { try! pun_hint{ c, items, fields, it, b = &b } }
+                error{ &c, at = it.span, msg = utf8::view{ b } }
             } else {
                 let mut k: usize = 0
                 while k < i {
@@ -7942,6 +7945,37 @@ namespace check {
                     }
                     k = k + 1
                 }
+            }
+            i = i + 1
+        }
+    }
+
+    // After "has no field `x`" for a pun it, `x` or `&x`: what to write instead, with each field
+    // nothing supplies that is `mut` if it is `&x` and read-only if not, or with each field
+    // nothing supplies if none is.
+    fn pun_hint { c: Checker, items: []syntax::Item, fields: []types::Field, it: syntax::Item, mut b: utf8::Builder(Heap) } -> ! {
+        let addr = it.value.k is addr
+        let mut fit: usize = 0
+        let mut open: usize = 0
+        let mut i: usize = 0
+        while i < fields.len {
+            if not given{ items, name = fields[i].name } {
+                open = open + 1
+                if fields[i].mutable == addr { fit = fit + 1 }
+            }
+            i = i + 1
+        }
+        if open == 0 { return }
+        let text = str{ s = source_text{ c, span = it.value.span } }
+        try utf8::push{ &b, s = ": write " }
+        let mut n: usize = 0
+        i = 0
+        while i < fields.len {
+            let f = fields[i]
+            if not given{ items, name = f.name } and (fit == 0 or f.mutable == addr) {
+                if n > 0 { try utf8::push{ &b, s = " or " } }
+                try @fmt(&b, "`{} = {}`", str{ s = f.name }, text)
+                n = n + 1
             }
             i = i + 1
         }
