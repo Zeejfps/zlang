@@ -13,34 +13,6 @@ routines, scene, saves), **data** (resources and formats), **audio**, **dialog**
 as the write-ups gave them. Ranking by count understates #26: it is the one entry that gives a
 wrong answer instead of a compile error.
 
-Checked against ctxc at `2076e06`. Fixed since the write-ups and so not listed: integer `match`;
-read-only arguments too big to copy, now passed by reference; `@fmt` writers onto an `Io` for
-every hole type, `c::String` included, and a `[]u8` writer into a `utf8::Builder`; multi-line
-string literals (`2cf7326`); slices of const arrays (`549e1b5`); `fs::seek` and `read_at`
-(`c0b8b45`); `else` at the start of a line; `&p.*` as an argument; `error` as the type of any
-error; a callee's fresh allocation returned though an argument viewed a local, and `try` of a
-call whose errors' payloads only ever hold literals (the escape check's flow summaries, spec §14
-rule 2). Fixed after the check: a string literal with no type expected is a `[]u8`, not a
-`[N]u8`, so `if c { "yes" } else { "no" }` joins; a `let`'s or a const's type may be `[_]T`, its
-length the initializer's; and an array literal where a slice is expected is a view of its array,
-static when every element is a constant and a hidden local otherwise, so `pages = [1, 2, 3]` is
-a `[]u32` argument. Optionals that don't narrow (a `let mut`, a field) unwrap with `if let`
-(`7bc9525`), and the error where one is used as its `T` says so (`6a31c62`); a `?T` compares
-with a `T`, which narrows it (`1f66e0d`); and testing a narrowed one as an optional says it
-isn't null there (`8357131`). A struct's field may have a default that a literal ending in `..`
-takes (`02abd47`), and every type whose bytes all zero are a value of it has that as its zero
-value, enums' and unions' included, with an empty slice a const (`7c6eb91e`): what remains of
-naming every field is a pointer, a function or a list, which have no zero value by design.
-A number's bits as another type of its size are `@trunc` between integers, which keeps every
-bit, and std's `math::f32_from_bits` and the like for floats (`e6da31a7`), so `@as(u32, -1)` and
-a pointer `@cast` are no longer the ways to it.
-Overflow can be handled instead of panicking: `count * 16 ifoverflow { return truncated }`
-(`fff522fc`, spec §11 Overflow), which KOTOR's parsers use for sizes from a header in place of
-widening to u64 (`f1d25a36`), and ctxc's evaluator and constant folding in place of sign tests
-(`571196bf`). Arithmetic that wraps is `+%`, `-%` and `*%` (`1d4a6293`), for a format's RNG or an
-IDCT and for hot code that needs no check, such as the VM's indices; ctxc (`c7201d40`) and KOTOR
-(`2243de06`) use them, and `@wrap_*` are gone.
-
 ## Ranked
 
 1. **Punning `&x` needs the callee's field name, and `&a.b` doesn't pun at all.** `deal_hand{
