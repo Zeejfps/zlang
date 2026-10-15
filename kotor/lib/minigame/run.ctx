@@ -51,30 +51,30 @@ namespace mg {
     struct Run {
         area: *mut Area,
         objs: [255]Obj,
-        count: usize,
+        count: usize = 0,
         rails: []mut Rail,
-        time: f32,
+        time: f32 = 0.0,
         // the player's progress and steering
-        speed: f32, min_speed: f32, max_speed: f32, accel: f32,
-        offset: math::Vec3, velocity: math::Vec3,
-        origin: math::Vec3,             // the centre of the tunnel (SetPlayerOrigin)
+        speed: f32 = 100.0, min_speed: f32 = 100.0, max_speed: f32 = 100.0, accel: f32 = 0.0,
+        offset: math::Vec3 = math::vec3::zero{}, velocity: math::Vec3 = math::vec3::zero{},
+        origin: math::Vec3 = math::vec3::zero{}, // the centre of the tunnel (SetPlayerOrigin)
         tunnel_pos: math::Vec3, tunnel_neg: math::Vec3, tunnel_infinite: [3]bool,
         lateral_accel: f32,
         invincibility: f32,             // seconds the player is safe after a hit (SetPlayerInvincibility)
-        input: Input,
-        fire_cooldown: f32,
+        input: Input = Input{ x = 0.0, y = 0.0, fire = false, aim_x = 0.0, aim_y = 0.0 },
+        fire_cooldown: f32 = 0.0,
         // for the scripts
-        events: [64]Event, event_count: usize,
-        requests: [64]Request, request_count: usize,
-        last_follower_hit: u32, last_obstacle_hit: u32, last_hp_change: i32,
-        last_bullet_damage: i32, last_bullet_target: u32, last_bullet_shooter: u32,
-        blur_on: bool, blur_ratio: f32,
-        started: bool,
+        events: [64]Event = [Event{ slot = 0, object = 0, value = 0 }; 64], event_count: usize = 0,
+        requests: [64]Request = [Request{ object = 0, name = [0; 28], name_len = 0, looping = false, queue = false, overlay = false, remove = false, gun = -1 }; 64], request_count: usize = 0,
+        last_follower_hit: u32 = 0, last_obstacle_hit: u32 = 0, last_hp_change: i32 = 0,
+        last_bullet_damage: i32 = 0, last_bullet_target: u32 = 0, last_bullet_shooter: u32 = 0,
+        blur_on: bool = false, blur_ratio: f32 = 0.75,
+        started: bool = false,
         // the turret (turret.ctx)
         gears: []mut Gear,              // by object slot: the player's and each enemy's models' gun mounts and hit meshes
-        bullets: [96]Bullet, bullet_serial: u32,
-        sounds: [32]Sound, sound_count: usize,
-        rng: u32,
+        bullets: [96]Bullet, bullet_serial: u32 = 0,
+        sounds: [32]Sound = [Sound{ name = resref::empty{}, volume = 0.0, positional = false, position = math::vec3::zero{} }; 32], sound_count: usize = 0,
+        rng: u32 = 0x2545F491,
     }
 
     fn id_of { n: usize } -> u32 { return ID_BASE + @as(u32, n) }
@@ -157,19 +157,11 @@ namespace mg {
     } -> !*mut Run {
         let rails = try alloc::resize(Rail, S){ realloc, &heap, mem = slice::empty(Rail){}, count = 1 + area.enemies.len }
         let mut run = Run{
-            area, objs = [no_obj{}; 255], count = 0, rails, time = 0.0,
-            speed = 100.0, min_speed = 100.0, max_speed = 100.0, accel = 0.0,
-            offset = math::vec3::zero{}, velocity = math::vec3::zero{}, origin = math::vec3::zero{},
+            area, objs = [no_obj{}; 255], rails,
             tunnel_pos = area.player.tunnel_pos, tunnel_neg = area.player.tunnel_neg, tunnel_infinite = area.player.tunnel_infinite,
             lateral_accel = area.lateral_accel, invincibility = area.player.invincibility,
-            input = Input{ x = 0.0, y = 0.0, fire = false, aim_x = 0.0, aim_y = 0.0 }, fire_cooldown = 0.0,
-            events = [Event{ slot = 0, object = 0, value = 0 }; 64], event_count = 0,
-            requests = [Request{ object = 0, name = [0; 28], name_len = 0, looping = false, queue = false, overlay = false, remove = false, gun = -1 }; 64], request_count = 0,
-            last_follower_hit = 0, last_obstacle_hit = 0, last_hp_change = 0,
-            last_bullet_damage = 0, last_bullet_target = 0, last_bullet_shooter = 0, blur_on = false, blur_ratio = 0.75, started = false,
-            gears = slice::empty(Gear){}, bullets = [no_bullet{}; 96], bullet_serial = 0,
-            sounds = [Sound{ name = resref::empty{}, volume = 0.0, positional = false, position = math::vec3::zero{} }; 32], sound_count = 0,
-            rng = 0x2545F491,
+            gears = slice::empty(Gear){}, bullets = [no_bullet{}; 96],
+            ..
         }
         let gears = try alloc::resize(Gear, S){ realloc, &heap, mem = slice::empty(Gear){}, count = 1 + area.enemies.len }
         run.gears = gears

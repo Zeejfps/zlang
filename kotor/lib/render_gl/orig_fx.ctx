@@ -28,28 +28,27 @@ namespace gpu {
 
     struct OrigFx {
         volume: ScenePrograms,      // SCENE_VS, VOLUME_GS, VOLUME_FS
-        light: i32, reach: i32,
-        flat: u32, flat_color: i32,
-        reduce: u32, reduce_texel: i32, reduce_mode: i32,
-        blur: u32, blur_dir: i32,
-        spread: u32, spread_mode: i32, spread_strength: i32,
-        distort: u32, distort_amount: i32, distort_phase: i32,
-        made: bool,                 // the small targets below
+        light: i32 = -1, reach: i32 = -1,
+        flat: u32 = 0, flat_color: i32 = -1,
+        reduce: u32 = 0, reduce_texel: i32 = -1, reduce_mode: i32 = -1,
+        blur: u32 = 0, blur_dir: i32 = -1,
+        spread: u32 = 0, spread_mode: i32 = -1, spread_strength: i32 = -1,
+        distort: u32 = 0, distort_amount: i32 = -1, distort_phase: i32 = -1,
+        made: bool = false,         // the small targets below
         small: [2]gl::Target,       // SMALL_SIZE squares: the soft shadows' mask, the glow's bright pass
         glow: [2]gl::Target,        // GLOW_SIZE squares: the glow, blurred
-        mark: bool,                 // the opaque draws being drawn write MODEL_MARK: set on the models' pixels, clear elsewhere
-        mark_ref: i32,              // the stencil reference they write now
-        effects: bool,              // the view being drawn takes the glow and the distortion (a screen view drawn the
+        mark: bool = false,         // the opaque draws being drawn write MODEL_MARK: set on the models' pixels, clear elsewhere
+        mark_ref: i32 = 0,          // the stencil reference they write now
+        effects: bool = false,      // the view being drawn takes the glow and the distortion (a screen view drawn the
                                     //   original's way with Frame Buffer Effects on): it marks distorting surfaces
     }
 
     fn no_orig_fx {} -> OrigFx {
         let none = gl::Target{ framebuffer = 0, color = 0, depth_stencil = 0, width = 0, height = 0 }
         return OrigFx{
-            volume = no_scene_program{}, light = -1, reach = -1, flat = 0, flat_color = -1,
-            reduce = 0, reduce_texel = -1, reduce_mode = -1, blur = 0, blur_dir = -1,
-            spread = 0, spread_mode = -1, spread_strength = -1, distort = 0, distort_amount = -1, distort_phase = -1,
-            made = false, small = [none; 2], glow = [none; 2], mark = false, mark_ref = 0, effects = false,
+            volume = no_scene_program{},
+            small = [none; 2], glow = [none; 2],
+            ..
         }
     }
 

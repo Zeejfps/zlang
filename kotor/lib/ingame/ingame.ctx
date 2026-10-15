@@ -15,55 +15,55 @@ namespace ingame {
         cache: *mut material::Cache,        // the GUI's textures: panels, portraits, icons
         gui: gui::Gui,                      // shared with whoever else shows panels in game
         hud: hud::Hud,
-        selfs: selfslots::State,            // the HUD's four self action slots
+        selfs: selfslots::State = selfslots::new{}, // the HUD's four self action slots
         text: utf8::Builder(heap::Heap),    // scratch for formatted text
         width: i32, height: i32,            // the render size in pixels
         gui_scale: f32,                     // the GUI Scale option: 0 fits the window, 1 the original's pixels
-        menu: i32,                          // the open menu (MENU_*), NO_MENU
-        menu_panel: u32,                    // its panel and the tab bar's, 0 when none
-        top_panel: u32,
+        menu: i32 = NO_MENU,                // the open menu (MENU_*), NO_MENU
+        menu_panel: u32 = 0,                // its panel and the tab bar's, 0 when none
+        top_panel: u32 = 0,
         menus: Menus,
-        pause_panel: u32,                   // the "PAUSED" banner, 0 when not shown
+        pause_panel: u32 = 0,               // the "PAUSED" banner, 0 when not shown
         screens: screens::State,            // the store, loot, level-up, workbench and galaxy map panels (lib/screens)
-        hud_hidden: bool,
-        psel_wait: bool,                    // ShowPartySelectionGUI asked: the screen opens when no conversation is up
-        psel_exit: resref::ResRef,          // its exit script, forced slots
-        psel_force1: i32, psel_force2: i32,
-        psel_paused: bool,                  // the party selection screen holds the menu pause (it is up even with no menu)
-        bot: bot::Bot,                      // the headless test player (bot.ctx); off unless a script turns it on
-        shift_held: bool,                   // Shift (AlternateActions): with a slot's key it steps through the slot's choices
-        ctrl_held: bool,                    // Ctrl (Lookabout): the camera follows the mouse (lib/scene/camera, play.ctx)
-        solo_box: msgbox::Box,              // "Do you wish to turn Solo Mode on?", up while the question is asked
-        solo_pause: bool,                   // the box paused the game and must unpause it
-        focus_paused: bool,                 // the window lost the focus and the game was running: it resumes on return
-        run_script: resref::ResRef,         // a script the loop should run when it can (no caller), empty when none
-        right_held: bool,                   // the right mouse button is down (Lookabout too)
-        look_x: i32,                        // mouse counts since the camera last asked, while the mouse turns it
-        looking: bool,                      // the mouse is turning the camera (cursor hidden)
-        freelook: bool,                     // free look (Caps Lock): the eye in the leader's head, the HUD hidden
-        look_y: i32,                        // mouse counts up and down since the camera last asked (free look's pitch)
-        turn_to: u32,                       // Q or E picked this object: the camera should swing round to it
+        hud_hidden: bool = false,
+        psel_wait: bool = false,            // ShowPartySelectionGUI asked: the screen opens when no conversation is up
+        psel_exit: resref::ResRef = resref::empty{}, // its exit script, forced slots
+        psel_force1: i32 = -1, psel_force2: i32 = -1,
+        psel_paused: bool = false,          // the party selection screen holds the menu pause (it is up even with no menu)
+        bot: bot::Bot = bot::new{},         // the headless test player (bot.ctx); off unless a script turns it on
+        shift_held: bool = false,           // Shift (AlternateActions): with a slot's key it steps through the slot's choices
+        ctrl_held: bool = false,            // Ctrl (Lookabout): the camera follows the mouse (lib/scene/camera, play.ctx)
+        solo_box: msgbox::Box = msgbox::blank{}, // "Do you wish to turn Solo Mode on?", up while the question is asked
+        solo_pause: bool = false,           // the box paused the game and must unpause it
+        focus_paused: bool = false,         // the window lost the focus and the game was running: it resumes on return
+        run_script: resref::ResRef = resref::empty{}, // a script the loop should run when it can (no caller), empty when none
+        right_held: bool = false,           // the right mouse button is down (Lookabout too)
+        look_x: i32 = 0,                    // mouse counts since the camera last asked, while the mouse turns it
+        looking: bool = false,              // the mouse is turning the camera (cursor hidden)
+        freelook: bool = false,             // free look (Caps Lock): the eye in the leader's head, the HUD hidden
+        look_y: i32 = 0,                    // mouse counts up and down since the camera last asked (free look's pitch)
+        turn_to: u32 = obj::INVALID,        // Q or E picked this object: the camera should swing round to it
         mouse_look: bool,                   // the "Mouse Look" option: Lookabout then gives the cursor back
         mouse_sens: i32,                    // "Mouse Sensitivity", 0..100
         reverse_buttons: bool,              // "Reverse Mouse Buttons": left and right swap
         reverse_minigame_y: bool,           // "Reverse Minigame YAxis": the turret's vertical axis turned over (game/minigame_scene.ctx)
-        autopause: bool,                    // the auto-pause triggers run (a person is playing: off in headless runs)
+        autopause: bool = false,            // the auto-pause triggers run (a person is playing: off in headless runs)
         ap_enemy: bool, ap_mine: bool, ap_party: bool, ap_target: bool, ap_round: bool, ap_action_menu: bool,    // [Autopause Options]
-        party_alive: i32,                   // party members on their feet last frame
-        ap_cooldown: f32,                   // seconds before "Party Member Down" may pause again
-        pause_reason: u32,                  // the banner's text (dialog.tlk) for the next pause
-        auto_paused: bool,                  // the pause is an auto-pause (client +0x384 bit 0): cleared with the pause
-        mine_quiet: f32,                    // seconds no hostile mine has been in sight (mine_watch.ctx)
+        party_alive: i32 = 0,               // party members on their feet last frame
+        ap_cooldown: f32 = 0.0,             // seconds before "Party Member Down" may pause again
+        pause_reason: u32 = REASON_PAUSED,  // the banner's text (dialog.tlk) for the next pause
+        auto_paused: bool = false,          // the pause is an auto-pause (client +0x384 bit 0): cleared with the pause
+        mine_quiet: f32 = 1000.0,           // seconds no hostile mine has been in sight (mine_watch.ctx)
         combat_movement: bool,              // the "Combat Movement" option (lib/scene/control.ctx reads it)
-        wiping: bool,                       // the party-wipe sequence runs (game/death.ctx): menu keys fade out
-        notice_box: msgbox::Box,            // a box with only OK (42628, the leader is down), up until answered
+        wiping: bool = false,               // the party-wipe sequence runs (game/death.ctx): menu keys fade out
+        notice_box: msgbox::Box = msgbox::blank{}, // a box with only OK (42628, the leader is down), up until answered
         summary: Summary,                   // the status summary's events and its panel (summary_ui.ctx)
         tbox: TutorialBox,                  // the tutorial pop-up while it is up (tutorial_ui.ctx)
-        fade_busy: bool,                    // a screen fade runs (the loop says so each frame): the status summary waits
-        frame_dt: f32,                      // the frame's own delta, without the ticks a --speed run skipped (the loop sets it)
+        fade_busy: bool = false,            // a screen fade runs (the loop says so each frame): the status summary waits
+        frame_dt: f32 = 0.0,                // the frame's own delta, without the ticks a --speed run skipped (the loop sets it)
         keys: frontend::Keymap,             // the key bindings (lib/frontend/keymap.ctx): the options file's, the defaults filling the rest
         key_defaults: frontend::Keymap,     // the defaults (keymap.2da with our strafe / camera swap)
-        keys_follow_settings: bool,         // the bindings follow the options file (off: the defaults, for headless runs)
+        keys_follow_settings: bool = true,  // the bindings follow the options file (off: the defaults, for headless runs)
     }
 
     // What the camera takes from the mouse each frame (CameraInputMouseYaw, movement.md 2.3).
@@ -96,19 +96,17 @@ namespace ingame {
         h.floating.enabled = saved.floating_numbers
         w.tut.on = saved.tutorial_popups
         let ui = Ingame{
-            heap = w.heap, cache, gui = g, hud = h, selfs = selfslots::new{},
+            heap = w.heap, cache, gui = g, hud = h,
             text = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } },
-            width, height, gui_scale, menu = NO_MENU, menu_panel = 0, top_panel = 0, menus = new_menus{},
-            pause_panel = 0, hud_hidden = false, screens = screens::new{}, bot = bot::new{},
-            shift_held = false, ctrl_held = false, solo_box = msgbox::blank{}, solo_pause = false, focus_paused = false, run_script = resref::empty{},
-            right_held = false, look_x = 0, look_y = 0, looking = false, freelook = false, turn_to = obj::INVALID, mouse_look = saved.mouse_look, mouse_sens = saved.mouse_sensitivity, reverse_buttons = saved.reverse_buttons, reverse_minigame_y = saved.reverse_minigame_y,
-            autopause = false, ap_enemy = saved.pause_enemy_sighted, ap_mine = saved.pause_mine_sighted, ap_party = saved.pause_party_killed,
+            width, height, gui_scale, menus = new_menus{},
+            mouse_look = saved.mouse_look, mouse_sens = saved.mouse_sensitivity, reverse_buttons = saved.reverse_buttons, reverse_minigame_y = saved.reverse_minigame_y,
+            ap_enemy = saved.pause_enemy_sighted, ap_mine = saved.pause_mine_sighted, ap_party = saved.pause_party_killed,
             ap_target = saved.pause_triggers, ap_round = saved.pause_end_round, ap_action_menu = saved.pause_action_menu,
-            party_alive = 0, ap_cooldown = 0.0, pause_reason = REASON_PAUSED, auto_paused = false,
-            psel_wait = false, psel_exit = resref::empty{}, psel_force1 = -1, psel_force2 = -1, psel_paused = false,
-            mine_quiet = 1000.0, combat_movement = saved.combat_movement, wiping = false, notice_box = msgbox::blank{},
-            summary = new_summary{ on = saved.status_summary }, fade_busy = false, frame_dt = 0.0, tbox = no_tutorial_box{},
-            keys = frontend::complete_keymap{ raw = saved.keymap, defaults = key_defaults }, key_defaults, keys_follow_settings = true,
+            combat_movement = saved.combat_movement,
+            summary = new_summary{ on = saved.status_summary }, tbox = no_tutorial_box{},
+            keys = frontend::complete_keymap{ raw = saved.keymap, defaults = key_defaults }, key_defaults,
+            screens = screens::new{},
+            ..
         }
         let mut p = try alloc::new(Ingame, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = ui }
         p.menus.equip.hide_unequippable = saved.hide_unequippable

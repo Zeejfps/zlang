@@ -365,42 +365,42 @@ namespace rules {
     // here is "with effects" unless it says otherwise; getters that depend on the other party
     // (attack bonus versus a race, AC versus an attacker) are functions, not fields.
     struct Stats {
-        level: i32,                     // total character level
-        size: i32,                      // creaturesize.2da row
-        abil: [6]i32,                   // ability scores: base + effects, never below 3
-        abil_mod: [6]i32,               // (score - 10) / 2 rounded down
-        bab: i32,                       // base attack bonus
-        save_base: [3]i32,              // fort, reflex, will: class + feats + ability + template bonus, no effects
-        save_effect: [3]i32,            // effects that apply to every kind of save
-        max_hp: i32,
-        max_fp: i32,
-        skill: [NUM_SKILLS]i32,         // GetSkillRank without a versus
+        level: i32 = 0,                 // total character level
+        size: i32 = 3,                  // creaturesize.2da row
+        abil: [6]i32 = [10; 6],         // ability scores: base + effects, never below 3
+        abil_mod: [6]i32 = [0; 6],      // (score - 10) / 2 rounded down
+        bab: i32 = 0,                   // base attack bonus
+        save_base: [3]i32 = [0; 3],     // fort, reflex, will: class + feats + ability + template bonus, no effects
+        save_effect: [3]i32 = [0; 3],   // effects that apply to every kind of save
+        max_hp: i32 = 0,
+        max_fp: i32 = 0,
+        skill: [NUM_SKILLS]i32 = [0; NUM_SKILLS], // GetSkillRank without a versus
         // Armour class pieces (combat.md 5): the unconditional ones
-        ac_natural: i32,
-        ac_armour: i32,
-        ac_shield: i32,
-        ac_deflection: i32,
-        ac_dodge: i32,                  // dodge bonuses minus penalties, before the cap of 10
-        ac_armour_bonus: i32,           // the best unconditional armour, shield and deflection
-        ac_shield_bonus: i32,           // bonuses alone (penalties not taken off), as the versus
-        ac_deflection_bonus: i32,       // pass and touch attacks read them
-        ac_class: i32,                  // acbonus.2da
-        force_resistance: i32,
-        speed_factor: f32,              // movement rate multiplier, clamped to [0.125, 1.5]
+        ac_natural: i32 = 0,
+        ac_armour: i32 = 0,
+        ac_shield: i32 = 0,
+        ac_deflection: i32 = 0,
+        ac_dodge: i32 = 0,              // dodge bonuses minus penalties, before the cap of 10
+        ac_armour_bonus: i32 = 0,       // the best unconditional armour, shield and deflection
+        ac_shield_bonus: i32 = 0,       // bonuses alone (penalties not taken off), as the versus
+        ac_deflection_bonus: i32 = 0,   // pass and touch attacks read them
+        ac_class: i32 = 0,              // acbonus.2da
+        force_resistance: i32 = 0,
+        speed_factor: f32 = 1.0,        // movement rate multiplier, clamped to [0.125, 1.5]
         // The crowd-control state and what it allows (rules.md 1.10)
-        state: i32,                     // highest active SETSTATE number, 0 free
-        ai_mask: i32,                   // 0xffff when free; bit 2 may move, 0x84 may attack
-        vision: i32,                    // bits: 1 see invisible, 2 ultravision, 4 true seeing, 8 blind, 0x10 darkness
-        assured_hit: bool,
-        assured_deflection: bool,
-        deflection_returns: bool,
-        walk_only: bool,
-        extra_attacks: i32,             // MODIFYNUMATTACKS, 0..2
+        state: i32 = 0,                 // highest active SETSTATE number, 0 free
+        ai_mask: i32 = 0xffff,          // 0xffff when free; bit 2 may move, 0x84 may attack
+        vision: i32 = 0,                // bits: 1 see invisible, 2 ultravision, 4 true seeing, 8 blind, 0x10 darkness
+        assured_hit: bool = false,
+        assured_deflection: bool = false,
+        deflection_returns: bool = false,
+        walk_only: bool = false,
+        extra_attacks: i32 = 0,         // MODIFYNUMATTACKS, 0..2
         temp_hp_pool: i32,
-        poisoned: bool,
-        attack_misc: i32,               // flat attack penalties of states: entangled -2, slow -2
-        entangled: bool,
-        dirty: bool,                    // an effect or an item changed since the last recompute
+        poisoned: bool = false,
+        attack_misc: i32 = 0,           // flat attack penalties of states: entangled -2, slow -2
+        entangled: bool = false,
+        dirty: bool = false,            // an effect or an item changed since the last recompute
     }
 
     struct Creature {

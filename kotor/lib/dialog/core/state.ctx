@@ -50,116 +50,97 @@ namespace dlg {
     struct TagEntry { tag: [32]u8, len: usize, id: u32 }
 
     struct State {
-        active: bool,
+        active: bool = false,
         d: Dialog,                  // valid while active
-        name: resref::ResRef,
-        owner: u32,
-        other: u32,                 // "the PC": the player's side (+0x7c)
-        private: bool,
-        gender: u32,                // of the player's creature: picks male or female text
-        saved_ai_level: i32,
+        name: resref::ResRef = resref::empty{},
+        owner: u32 = obj::INVALID,
+        other: u32 = obj::INVALID,  // "the PC": the player's side (+0x7c)
+        private: bool = false,
+        gender: u32 = 0,            // of the player's creature: picks male or female text
+        saved_ai_level: i32 = 0,
         // BeginConversation's hand-off from the target's ON_DIALOGUE event, and the "pending"
         // flag of CGuiInGame (set when a conversation is ordered, cleared when it ends).
-        event_pending: bool,
-        event_resref: resref::ResRef,
-        event_private: bool,
-        pending: bool,
-        pending_since: u64,         // world ms the pending flag was set, so a lost order can be given up
-        last_resref: resref::ResRef,    // GetLastConversation
+        event_pending: bool = false,
+        event_resref: resref::ResRef = resref::empty{},
+        event_private: bool = false,
+        pending: bool = false,
+        pending_since: u64 = 0,     // world ms the pending flag was set, so a lost order can be given up
+        last_resref: resref::ResRef = resref::empty{}, // GetLastConversation
         // The walk through the graph.
-        entry: i32,                 // the current entry, -1 none (+0x70)
-        chosen: i32,                // the chosen link of its replies, -1 none (+0x74)
-        step: Step,
-        step_entry: u32,
-        node_end_ms: u64,
-        wait_flags: u32,
-        paused: bool,
-        end_flag: bool,             // ends normally (+0x6c)
-        ending: bool,               // leave once nothing is pending and the voice is done (+0x60)
-        end_ran: bool,              // the normal end's scripts have run
-        skip: bool,                 // the player asked to skip the line (+0x1f4)
-        pick: i32,                  // the reply the player picked, for the next pump; -1 none
-        scripted: [256]Scripted,    // headless tests: replies to pick, in order, as lists open (`ui replies 1 ~hunting_licenses`)
-        scripted_count: usize,
-        scripted_pos: usize,
-        scripted_default: u8,       // headless tests: the reply to pick once the queue is used up (`ui autoreply 1`); 0 waits for the player
-        vo_cut: bool,
+        entry: i32 = -1,            // the current entry, -1 none (+0x70)
+        chosen: i32 = -1,           // the chosen link of its replies, -1 none (+0x74)
+        step: Step = Step::none,
+        step_entry: u32 = 0,
+        node_end_ms: u64 = 0,
+        wait_flags: u32 = 0,
+        paused: bool = false,
+        end_flag: bool = false,     // ends normally (+0x6c)
+        ending: bool = false,       // leave once nothing is pending and the voice is done (+0x60)
+        end_ran: bool = false,      // the normal end's scripts have run
+        skip: bool = false,         // the player asked to skip the line (+0x1f4)
+        pick: i32 = -1,             // the reply the player picked, for the next pump; -1 none
+        scripted: [256]Scripted = [Scripted{ n = 0, len = 0, text = [0; 30] }; 256], // headless tests: replies to pick, in order, as lists open (`ui replies 1 ~hunting_licenses`)
+        scripted_count: usize = 0,
+        scripted_pos: usize = 0,
+        scripted_default: u8 = 0,   // headless tests: the reply to pick once the queue is used up (`ui autoreply 1`); 0 waits for the player
+        vo_cut: bool = false,
         // The presentation's side.
-        client: bool,               // a view is attached and answers the flags below
-        hold: bool,                 // the view keeps the ended conversation's picture up a moment (another may follow): the HUD stays away
-        scene_ready: bool,
-        vo_playing: bool,           // set when a voiced line starts; the view clears it at the end
-        vo_stop: bool,              // asks the view to stop the voice
-        vo_virtual_end: u64,        // with no view: when the voice is taken to have ended
-        anim_busy: bool,
-        camera_busy: bool,
-        fade_busy: bool,
+        client: bool = false,       // a view is attached and answers the flags below
+        hold: bool = false,         // the view keeps the ended conversation's picture up a moment (another may follow): the HUD stays away
+        scene_ready: bool = false,
+        vo_playing: bool = false,   // set when a voiced line starts; the view clears it at the end
+        vo_stop: bool = false,      // asks the view to stop the voice
+        vo_virtual_end: u64 = 0,    // with no view: when the voice is taken to have ended
+        anim_busy: bool = false,
+        camera_busy: bool = false,
+        fade_busy: bool = false,
         line: Line,
         choices: Choices,
         // Speaker and listener bookkeeping (5.2).
-        speaker: u32,
-        listener: u32,
-        prev_speaker: u32,
-        prev_listener: u32,
-        lines_shown: u32,
+        speaker: u32 = obj::INVALID,
+        listener: u32 = obj::INVALID,
+        prev_speaker: u32 = obj::INVALID,
+        prev_listener: u32 = obj::INVALID,
+        lines_shown: u32 = 0,
         // The 19-entry camera angle cycle (9.1).
-        cycle: i32,
-        first_entry: bool,
-        first_replies: bool,
+        cycle: i32 = 0,
+        first_entry: bool = true,
+        first_replies: bool = true,
         // Who takes part, and tags resolved so far.
-        participants: [16]u32,
-        participant_count: usize,
-        tags: [16]TagEntry,
-        tag_count: usize,
-        ignore: [4]resref::ResRef,  // AnimList participants that don't hold the scene up
-        ignore_count: usize,
-        use_leader: bool,           // the replies are spoken by the party leader
-        locked_orientation: [8]u32,
-        locked_head: [8]u32,
-        locked_orientation_count: usize,
-        locked_head_count: usize,
-        static_camera: i32,         // SetDialogPlaceableCamera's id, -1 none
-        cameras: [50]dlgcam::Static,    // the area's CameraList (a list of 51 or more is ignored)
-        camera_count: usize,
-        hold_fade_in: bool,         // HoldWorldFadeInForDialog
+        participants: [16]u32 = [obj::INVALID; 16],
+        participant_count: usize = 0,
+        tags: [16]TagEntry = [TagEntry{ tag = [0; 32], len = 0, id = obj::INVALID }; 16],
+        tag_count: usize = 0,
+        ignore: [4]resref::ResRef = [resref::empty{}; 4], // AnimList participants that don't hold the scene up
+        ignore_count: usize = 0,
+        use_leader: bool = false,   // the replies are spoken by the party leader
+        locked_orientation: [8]u32 = [obj::INVALID; 8],
+        locked_head: [8]u32 = [obj::INVALID; 8],
+        locked_orientation_count: usize = 0,
+        locked_head_count: usize = 0,
+        static_camera: i32 = -1,    // SetDialogPlaceableCamera's id, -1 none
+        cameras: [50]dlgcam::Static = [dlgcam::Static{ id = -1, position = math::vec3::zero{}, orientation = math::quat::identity{}, pitch = 0.0, height = 0.0, fov = 55.0, mic_range = 0.0 }; 50], // the area's CameraList (a list of 51 or more is ignored)
+        camera_count: usize = 0,
+        hold_fade_in: bool = false, // HoldWorldFadeInForDialog
         // The video effect on the 3D view (9.6, the client's +0x3a8): the videoeffects.2da row, -2 none, and what it
         // switched on. It outlives conversations (EnableVideoEffect works outside one); a conversation's end clears it.
-        video_effect: i32,
-        video_noise: bool,          // EnableScanNoise
-        video_saturate: bool,       // EnableSaturation, with the two below
-        video_modulation: math::Vec3,
-        video_saturation: f32,
-        outcome: Outcome,
-        ended_serial: u32,          // counts finished conversations, for the view
-        started_serial: u32,
-        nodes_shown: u32,
-        scripts_run: u32,
+        video_effect: i32 = -2,
+        video_noise: bool = false,  // EnableScanNoise
+        video_saturate: bool = false, // EnableSaturation, with the two below
+        video_modulation: math::Vec3 = math::Vec3{ x = 1.0, y = 1.0, z = 1.0 },
+        video_saturation: f32 = 1.0,
+        outcome: Outcome = Outcome::normal,
+        ended_serial: u32 = 0,      // counts finished conversations, for the view
+        started_serial: u32 = 0,
+        nodes_shown: u32 = 0,
+        scripts_run: u32 = 0,
     }
 
     fn new_state {} -> State {
         return State{
-            active = false, d = empty_dialog{}, name = resref::empty{}, owner = obj::INVALID, other = obj::INVALID,
-            private = false, gender = 0, saved_ai_level = 0,
-            event_pending = false, event_resref = resref::empty{}, event_private = false, pending = false, pending_since = 0,
-            last_resref = resref::empty{},
-            entry = -1, chosen = -1, step = Step::none, step_entry = 0, node_end_ms = 0, wait_flags = 0,
-            paused = false, end_flag = false, ending = false, end_ran = false, skip = false, pick = -1, scripted = [Scripted{ n = 0, len = 0, text = [0; 30] }; 256], scripted_count = 0, scripted_pos = 0, scripted_default = 0, vo_cut = false,
-            client = false, hold = false, scene_ready = false, vo_playing = false, vo_stop = false, vo_virtual_end = 0,
-            anim_busy = false, camera_busy = false, fade_busy = false,
+            d = empty_dialog{},
             line = no_line{}, choices = no_choices{},
-            speaker = obj::INVALID, listener = obj::INVALID, prev_speaker = obj::INVALID, prev_listener = obj::INVALID,
-            lines_shown = 0, cycle = 0, first_entry = true, first_replies = true,
-            participants = [obj::INVALID; 16], participant_count = 0,
-            tags = [TagEntry{ tag = [0; 32], len = 0, id = obj::INVALID }; 16], tag_count = 0,
-            ignore = [resref::empty{}; 4], ignore_count = 0, use_leader = false,
-            locked_orientation = [obj::INVALID; 8], locked_head = [obj::INVALID; 8],
-            locked_orientation_count = 0, locked_head_count = 0,
-            static_camera = -1,
-            cameras = [dlgcam::Static{ id = -1, position = math::vec3::zero{}, orientation = math::quat::identity{}, pitch = 0.0, height = 0.0, fov = 55.0, mic_range = 0.0 }; 50],
-            camera_count = 0, hold_fade_in = false,
-            video_effect = -2, video_noise = false, video_saturate = false, video_modulation = math::Vec3{ x = 1.0, y = 1.0, z = 1.0 }, video_saturation = 1.0,
-            outcome = Outcome::normal, ended_serial = 0, started_serial = 0,
-            nodes_shown = 0, scripts_run = 0,
+            ..
         }
     }
 

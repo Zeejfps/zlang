@@ -322,12 +322,8 @@ namespace rules {
     // reads the modifiers), then the pieces that need them.
     fn recompute { tables: *Tables, mut c: Creature } {
         let mut s = Stats{
-            level = 0, size = 3, abil = [10; 6], abil_mod = [0; 6], bab = 0, save_base = [0; 3], save_effect = [0; 3],
-            max_hp = 0, max_fp = 0, skill = [0; NUM_SKILLS], ac_natural = 0, ac_armour = 0, ac_shield = 0,
-            ac_deflection = 0, ac_dodge = 0, ac_armour_bonus = 0, ac_shield_bonus = 0, ac_deflection_bonus = 0, ac_class = 0, force_resistance = 0, speed_factor = 1.0, state = 0,
-            ai_mask = 0xffff, vision = 0, assured_hit = false, assured_deflection = false,
-            deflection_returns = false, walk_only = false, extra_attacks = 0, temp_hp_pool = c.temp_hp,
-            poisoned = false, attack_misc = 0, entangled = false, dirty = false,
+            temp_hp_pool = c.temp_hp,
+            ..
         }
         s.level = total_level{ c = &c }
         s.size = creature_size{ tables, c = &c }

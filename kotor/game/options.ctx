@@ -12,45 +12,43 @@ namespace options {
     struct Shot { frame: u64, path: []u8 }
 
     struct Options {
-        module: []u8,
-        game: []u8,
-        headless: bool,
-        no_render: bool,        // the whole game loop, but a frame is drawn only for a screenshot or a save's picture
-        engine_only: bool,      // just lib/engine's world loop: no scene, no conversations' view, no input script
-        load: []u8,             // start from this save (a folder of ours, a path, or one of the install's) instead of a module or the front end
-        mute: bool,             // the mixer skips the music and the effects (no one hears them); voice-overs still play
-        speed: u32,             // world ticks per loop iteration (--no-render): the presentation catches up once per N
-        frames: u64,            // 0: until quit
-        dt: f32,                // fixed step (headless); 0: real time
-        input: []u8,            // the scripted input file, "" none
-        shots: [16]Shot,
-        shot_count: usize,
-        range_from: u64,        // --screenshot-range FROM:TO:DIR: every frame from FROM to TO is written to DIR/fNNNNN.png (tests of cuts and flashes)
-        range_to: u64,
-        range_dir: []u8,
-        loading_dir: []u8,      // --screenshot-loading DIR: every loading-screen frame is written to DIR/lNNNN.png (drawn even with --no-render)
-        log: []u8,
-        saves: []u8,            // our saves directory (never the install's)
-        report: bool,
-        seed: u32,
-        width: u32,
-        height: u32,
-        size_given: bool,       // --size: the window is that size, whatever the settings file says
+        module: []u8 = "",
+        game: []u8 = "F:/Steam/steamapps/common/swkotor",
+        headless: bool = false,
+        no_render: bool = false, // the whole game loop, but a frame is drawn only for a screenshot or a save's picture
+        engine_only: bool = false, // just lib/engine's world loop: no scene, no conversations' view, no input script
+        load: []u8 = "",        // start from this save (a folder of ours, a path, or one of the install's) instead of a module or the front end
+        mute: bool = false,     // the mixer skips the music and the effects (no one hears them); voice-overs still play
+        speed: u32 = 1,         // world ticks per loop iteration (--no-render): the presentation catches up once per N
+        frames: u64 = 0,        // 0: until quit
+        dt: f32 = 0.0,          // fixed step (headless); 0: real time
+        input: []u8 = "",       // the scripted input file, "" none
+        shots: [16]Shot = [Shot{ frame = 0, path = "" }; 16],
+        shot_count: usize = 0,
+        range_from: u64 = 0,    // --screenshot-range FROM:TO:DIR: every frame from FROM to TO is written to DIR/fNNNNN.png (tests of cuts and flashes)
+        range_to: u64 = 0,
+        range_dir: []u8 = "",
+        loading_dir: []u8 = "", // --screenshot-loading DIR: every loading-screen frame is written to DIR/lNNNN.png (drawn even with --no-render)
+        log: []u8 = "",
+        saves: []u8 = "kotor/out/saves", // our saves directory (never the install's)
+        report: bool = false,
+        seed: u32 = 1,
+        width: u32 = 1280,
+        height: u32 = 720,
+        size_given: bool = false, // --size: the window is that size, whatever the settings file says
         settings: []u8,         // the options file (the graphics options, the sound ...): ours, never the install's
-        settings_given: bool,   // --settings: a hidden run takes its key bindings from the file too (else the defaults)
-        gfx: bool,              // a hidden run takes the graphics options from the settings file too (a picture of an option)
-        run_script: []u8,       // a script to run once the module is entered (tests: --run-script k_act_mispaz)
-        sound_device: bool,     // a hidden run opens the sound device too (SDL_AUDIODRIVER=disk to measure it without speakers)
-        stall_ms: u32,          // --stall MS: every 15th pass sleeps MS ms more (slow frames, for the sound check: tools/sndrun)
-        cinema: bool,           // a hidden run shows the films and the credits and goes back to the main menu, as a window does (game/cine.ctx)
+        settings_given: bool = false, // --settings: a hidden run takes its key bindings from the file too (else the defaults)
+        gfx: bool = false,      // a hidden run takes the graphics options from the settings file too (a picture of an option)
+        run_script: []u8 = "",  // a script to run once the module is entered (tests: --run-script k_act_mispaz)
+        sound_device: bool = false, // a hidden run opens the sound device too (SDL_AUDIODRIVER=disk to measure it without speakers)
+        stall_ms: u32 = 0,      // --stall MS: every 15th pass sleeps MS ms more (slow frames, for the sound check: tools/sndrun)
+        cinema: bool = false,   // a hidden run shows the films and the credits and goes back to the main menu, as a window does (game/cine.ctx)
     }
 
     fn defaults {} -> Options {
         return Options{
-            module = "", game = "F:/Steam/steamapps/common/swkotor", headless = false, no_render = false, engine_only = false, mute = false, speed = 1, load = "",
-            frames = 0, dt = 0.0, input = "", shots = [Shot{ frame = 0, path = "" }; 16], shot_count = 0, range_from = 0, range_to = 0, range_dir = "", loading_dir = "",
-            log = "", saves = "kotor/out/saves", report = false, seed = 1, width = 1280, height = 720, run_script = "",
-            size_given = false, settings = "kotor/out/kotor-settings.ini", settings_given = false, gfx = false, sound_device = false, cinema = false, stall_ms = 0,
+            settings = "kotor/out/kotor-settings.ini",
+            ..
         }
     }
 

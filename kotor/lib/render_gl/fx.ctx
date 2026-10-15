@@ -22,26 +22,21 @@ namespace gpu {
 
     // The enhanced views' targets, the size of the screen, made when first needed and again when it changes.
     struct FxTargets {
-        made: bool, width: i32, height: i32, samples: i32,
-        color: u32,                 // RGBA16F: the scene's light, unclamped
-        normal: u32,                // RGB10_A2: view-space normal, alpha the share of the light occlusion darkens
-        depth: u32,                 // DEPTH24_STENCIL8
-        scene_fbo: u32,             // color, normal, depth: drawn into without multisampling; the resolved copy with it
-        color_fbo: u32,             // color alone: passes that blend into the picture
-        ms_fbo: u32, ms_color: u32, ms_normal: u32, ms_depth: u32,     // the multisampled twins (samples > 0)
-        bloom: [6]u32, bloom_fbo: [6]u32, bloom_w: [6]i32, bloom_h: [6]i32,
-        ldr: u32, ldr_fbo: u32,     // RGBA8: the tone-mapped picture, for the edge filter that follows
-        refl: u32, ms_refl: u32,    // RGBA16F: the environment map's share of each opaque pixel (rgb) and its weight (a), for reflections
-        copy: u32, copy_fbo: u32,   // RGBA16F: the opaque surfaces' light, copied for the reflections to read
+        made: bool = false, width: i32 = 0, height: i32 = 0, samples: i32 = 0,
+        color: u32 = 0,             // RGBA16F: the scene's light, unclamped
+        normal: u32 = 0,            // RGB10_A2: view-space normal, alpha the share of the light occlusion darkens
+        depth: u32 = 0,             // DEPTH24_STENCIL8
+        scene_fbo: u32 = 0,         // color, normal, depth: drawn into without multisampling; the resolved copy with it
+        color_fbo: u32 = 0,         // color alone: passes that blend into the picture
+        ms_fbo: u32 = 0, ms_color: u32 = 0, ms_normal: u32 = 0, ms_depth: u32 = 0, // the multisampled twins (samples > 0)
+        bloom: [6]u32 = [0; 6], bloom_fbo: [6]u32 = [0; 6], bloom_w: [6]i32 = [0; 6], bloom_h: [6]i32 = [0; 6],
+        ldr: u32 = 0, ldr_fbo: u32 = 0, // RGBA8: the tone-mapped picture, for the edge filter that follows
+        refl: u32 = 0, ms_refl: u32 = 0, // RGBA16F: the environment map's share of each opaque pixel (rgb) and its weight (a), for reflections
+        copy: u32 = 0, copy_fbo: u32 = 0, // RGBA16F: the opaque surfaces' light, copied for the reflections to read
     }
 
     fn no_fx_targets {} -> FxTargets {
-        return FxTargets{
-            made = false, width = 0, height = 0, samples = 0, color = 0, normal = 0, depth = 0, scene_fbo = 0, color_fbo = 0,
-            ms_fbo = 0, ms_color = 0, ms_normal = 0, ms_depth = 0,
-            bloom = [0; 6], bloom_fbo = [0; 6], bloom_w = [0; 6], bloom_h = [0; 6], ldr = 0, ldr_fbo = 0,
-            refl = 0, ms_refl = 0, copy = 0, copy_fbo = 0,
-        }
+        return FxTargets{ .. }
     }
 
     // ---- the options

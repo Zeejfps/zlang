@@ -271,61 +271,61 @@ namespace gui {
         heap: *mut heap::Heap,
         rm: res::Manager,
         cache: *mut material::Cache,
-        tlk: ?*tlk::Table,
-        mixer: ?*mut mix::Mixer,
+        tlk: ?*tlk::Table = null,
+        mixer: ?*mut mix::Mixer = null,
         fonts: list::List(FontSlot, heap::Heap),
         panels: list::List(*mut Panel, heap::Heap),
         tokens: list::List(Token, heap::Heap),
-        next_panel: u32,
+        next_panel: u32 = 1,
         // the window and the GUI's pixel space (the window divided by scale)
         win_w: i32, win_h: i32,
-        scale: f32,
+        scale: f32 = 1.0,
         ui_w: i32, ui_h: i32,
-        small_fonts: bool,
+        small_fonts: bool = false,
         // the pointer
         mouse_x: i32, mouse_y: i32,
-        buttons: u32,
-        hover: Ref,
-        capture: Ref,
-        capture_button: i32,
-        capture_part: i32,
-        press_on_selected: bool,        // the press that began this capture landed on the already selected row
-        capture_y: i32,                 // a scroll thumb drag: the pointer's y at the press
-        capture_value: i32,             // ... and the list's scroll position then
-        press_x: i32, press_y: i32,     // where the last press was
-        drag: Ref,                      // the control being dragged (the manager's +0x54); panel 0 none
-        cursor: u32,
-        cursor_visible: bool,
-        hidden: bool,                   // draws and takes nothing (a movie plays over everything)
+        buttons: u32 = 0,
+        hover: Ref = Ref{ panel = 0, control = -1 },
+        capture: Ref = Ref{ panel = 0, control = -1 },
+        capture_button: i32 = 0,
+        capture_part: i32 = 0,
+        press_on_selected: bool = false, // the press that began this capture landed on the already selected row
+        capture_y: i32 = 0,             // a scroll thumb drag: the pointer's y at the press
+        capture_value: i32 = 0,         // ... and the list's scroll position then
+        press_x: i32 = 0, press_y: i32 = 0, // where the last press was
+        drag: Ref = Ref{ panel = 0, control = -1 }, // the control being dragged (the manager's +0x54); panel 0 none
+        cursor: u32 = 0,
+        cursor_visible: bool = true,
+        hidden: bool = false,           // draws and takes nothing (a movie plays over everything)
         cursors: [CURSORS]CursorSlot,
         // clocks
-        time: f32,
-        pulse_border: f32,
-        pulse_list: f32,
-        hover_time: f32,                // how long the pointer has rested on the hovered control, -1 stopped
-        tooltip_delay: f32,
-        tooltips: bool,
-        tooltip_key: bool,              // the ToolTips key (T) is held: no delay
-        tooltip_ref: Ref,
-        key_repeat: f32,
+        time: f32 = 0.0,
+        pulse_border: f32 = 1.0,
+        pulse_list: f32 = 1.0,
+        hover_time: f32 = -1.0,         // how long the pointer has rested on the hovered control, -1 stopped
+        tooltip_delay: f32 = 1.0,
+        tooltips: bool = true,
+        tooltip_key: bool = false,      // the ToolTips key (T) is held: no delay
+        tooltip_ref: Ref = Ref{ panel = 0, control = -1 },
+        key_repeat: f32 = 0.0,
         // backdrop textures by resolution tag and kind, loaded when first needed
         backdrops: [6]Img,
-        backdrop_for: [6]i32,
+        backdrop_for: [6]i32 = [-1, -1, -1, -1, -1, -1],
         // sounds
         sounds: [SOUNDS]Sound,
-        sound_volume: f32,
-        sound_priority: u8,     // the mixer's priority and play group of the clicks (set_sound_class)
-        sound_group: u8,
+        sound_volume: f32 = 1.0,
+        sound_priority: u8 = 128, // the mixer's priority and play group of the clicks (set_sound_class)
+        sound_group: u8 = mix::NO_GROUP,
         // events for the owner
         events: list::List(Event, heap::Heap),
-        dropped_events: u32,
+        dropped_events: u32 = 0,
         // an arrow a cell list took, for the focused control once the owner has seen the list's
         // events (clear_events): the original's panels pass it on after showing the new cell
-        pass_panel: u32,                // 0 none
-        pass_dir: usize,
+        pass_panel: u32 = 0,            // 0 none
+        pass_dir: usize = 0,
         // scratch for text layout
         lines: []mut Line,
         // numbers for the tools
-        quads_drawn: u32,
+        quads_drawn: u32 = 0,
     }
 }

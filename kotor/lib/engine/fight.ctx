@@ -96,29 +96,29 @@ namespace fight {
     struct Fighter {
         c: rules::Creature,
         round: Round,
-        loaded: bool,                   // the rules creature came from a GFF
-        combat_ms: i32,                 // time left in combat; 0 out of combat
-        stirs: u32,                     // hostile acts that stirred it up (the battle-music countdown 0x004f3580); ambience counts them
-        react_ms: i32,                  // a reaction animation plays this much longer
-        variant: u32,                   // alternates animation ids so a row can replay
-        killer: u32,                    // GetLastKiller
-        last_damage: i32,               // GetTotalDamageDealt
-        damage_types: [15]i32,          // GetDamageDealtByType: the last hit's damage by type slot
-        quiet_damage: bool,             // a weapon hit's damage is being applied: its effects say "no feedback" (int 0x15)
-        file_hp: i32,                   // the GFF's CurrentHitPoints, adopted by equip_loaded
-        has_file_hp: bool,
-        dying_ms: i32,                  // > 0: the die animation plays, then dead
-        voice_ms: i32,                  // > 0: it has just grunted
-        ready_ms: i32,                  // > 0: a cutscene attack was just made, so the weapon stays up
-        item_ms: i32,                   // the inventory's item cooldown (+0xab0): 3 s from an inventory use in combat
+        loaded: bool = false,           // the rules creature came from a GFF
+        combat_ms: i32 = 0,             // time left in combat; 0 out of combat
+        stirs: u32 = 0,                 // hostile acts that stirred it up (the battle-music countdown 0x004f3580); ambience counts them
+        react_ms: i32 = 0,              // a reaction animation plays this much longer
+        variant: u32 = 0,               // alternates animation ids so a row can replay
+        killer: u32 = obj::INVALID,     // GetLastKiller
+        last_damage: i32 = 0,           // GetTotalDamageDealt
+        damage_types: [15]i32 = [0; 15], // GetDamageDealtByType: the last hit's damage by type slot
+        quiet_damage: bool = false,     // a weapon hit's damage is being applied: its effects say "no feedback" (int 0x15)
+        file_hp: i32 = 0,               // the GFF's CurrentHitPoints, adopted by equip_loaded
+        has_file_hp: bool = false,
+        dying_ms: i32 = 0,              // > 0: the die animation plays, then dead
+        voice_ms: i32 = 0,              // > 0: it has just grunted
+        ready_ms: i32 = 0,              // > 0: a cutscene attack was just made, so the weapon stays up
+        item_ms: i32 = 0,               // the inventory's item cooldown (+0xab0): 3 s from an inventory use in combat
         // The engaged pair (3.1): these outlive the round, as in the original, where only
         // StartCombatRound sets them and a master's EndCombatRound clears its slave's.
-        engaged: bool,                  // Engaged +0x9b8: this round is paired with another creature's
-        master: bool,                   // Master +0x9bc: this creature drives the pair
-        master_id: u32,                 // MasterID +0x9c0 (a master's own id)
-        slave_id: u32,                  // +0x9c4, on the master's side
-        wait_ms: i32,                   // ours: how long an attack has waited for its round to be started
-        duel_last: i32,                 // the client's last duel attack variant (0..4), so two in a row differ
+        engaged: bool = false,          // Engaged +0x9b8: this round is paired with another creature's
+        master: bool = false,           // Master +0x9bc: this creature drives the pair
+        master_id: u32 = obj::INVALID,  // MasterID +0x9c0 (a master's own id)
+        slave_id: u32 = obj::INVALID,   // +0x9c4, on the master's side
+        wait_ms: i32 = 0,               // ours: how long an attack has waited for its round to be started
+        duel_last: i32 = -1,            // the client's last duel attack variant (0..4), so two in a row differ
         knock: Knock,
         saber: SaberThrow,
     }
@@ -138,7 +138,7 @@ namespace fight {
     fn new_fighter { heap: *mut heap::Heap } -> !*mut Fighter {
         let mut c: rules::Creature
         c.loaded_hp = -1
-        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, stirs = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], quiet_damage = false, file_hp = 0, has_file_hp = false, dying_ms = 0, voice_ms = 0, ready_ms = 0, engaged = false, master = false, master_id = obj::INVALID, slave_id = obj::INVALID, wait_ms = 0, duel_last = -1, knock = no_knock{}, saber = no_saber{}, item_ms = 0 }
+        let f = Fighter{ c, round = no_round{}, knock = no_knock{}, saber = no_saber{}, .. }
         return try alloc::new(Fighter, heap::Heap){ realloc = heap::alloc, heap, value = f }
     }
 

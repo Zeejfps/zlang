@@ -185,124 +185,124 @@ namespace obj {
     const EQUIP_SLOTS: usize = 20
 
     struct Creature {
-        appearance: u32,                    // appearance.2da row
-        gender: u32,
-        race: u32,
-        subrace: u32,
-        body_variation: u8,
-        texture_variation: u8,
-        portrait: u32,
-        soundset: u32,
-        is_pc: bool,
-        movement_rate: u32,                 // creaturespeed.2da row (7, DEFAULT, resolved through appearance.2da MOVERATE on read)
-        walk_rate: f32,                     // m/s (creaturespeed.2da, movement.md 3.1)
-        run_rate: f32,
-        perspace: f32,                      // appearance.2da PERSPACE
-        creperspace: f32,
-        camspace: f32,                      // appearance.2da CAMERASPACE, else CREPERSPACE: the circle the chase camera stays out of
-        height: f32,
-        equipped: [20]u32,                  // item ids by equipment slot; INVALID: empty
+        appearance: u32 = 0,                // appearance.2da row
+        gender: u32 = 0,
+        race: u32 = 6,
+        subrace: u32 = 0,
+        body_variation: u8 = 0,
+        texture_variation: u8 = 1,
+        portrait: u32 = 0,
+        soundset: u32 = 0xFFFFFFFF,
+        is_pc: bool = false,
+        movement_rate: u32 = 7,             // creaturespeed.2da row (7, DEFAULT, resolved through appearance.2da MOVERATE on read)
+        walk_rate: f32 = 1.7,               // m/s (creaturespeed.2da, movement.md 3.1)
+        run_rate: f32 = 5.4,
+        perspace: f32 = 0.35,               // appearance.2da PERSPACE
+        creperspace: f32 = 0.4,
+        camspace: f32 = 0.4,                // appearance.2da CAMERASPACE, else CREPERSPACE: the circle the chase camera stays out of
+        height: f32 = 1.6,
+        equipped: [20]u32 = [INVALID; 20],  // item ids by equipment slot; INVALID: empty
         inventory: list::List(u32, heap::Heap),
         // Placeholder stats until lib/rules (HOOK(rules): stats: rules::Creature).
-        abilities: [6]u8,
-        hit_dice: u32,
-        disguise: u32,                      // an EffectDisguise's appearance.2da row (0: none): what the creature looks like
-        classes: [3]u32,
-        class_levels: [3]u32,
-        good_evil: u32,
-        perception_range: u32,
+        abilities: [6]u8 = [10; 6],
+        hit_dice: u32 = 1,
+        disguise: u32 = 0,                  // an EffectDisguise's appearance.2da row (0: none): what the creature looks like
+        classes: [3]u32 = [0; 3],
+        class_levels: [3]u32 = [0; 3],
+        good_evil: u32 = 50,
+        perception_range: u32 = 11,
         // AI timers (gameloop.md 2.4).
-        spawn_fired: bool,
-        last_heartbeat: u64,                // world ms
-        heartbeat_interval: u32,            // ms: 3000 + rand() % 1200
+        spawn_fired: bool = false,
+        last_heartbeat: u64 = 0,            // world ms
+        heartbeat_interval: u32 = 3000,     // ms: 3000 + rand() % 1200
         // Movement (movement.md 3).
-        speed: f32,                         // current speed, m/s: drives walk/run animation
-        speed_factor: f32,                  // GetSpeedFactor's f_prev: 1 when the creature is made (0x004cfcb0), so its first move starts at full speed
-        follow_speed: f32,                  // a follower's smoothed speed, m/s (UpdateFollowLeader's +0x48): picks its walk or run cycle and sets the cycle's pace
+        speed: f32 = 0.0,                   // current speed, m/s: drives walk/run animation
+        speed_factor: f32 = 1.0,            // GetSpeedFactor's f_prev: 1 when the creature is made (0x004cfcb0), so its first move starts at full speed
+        follow_speed: f32 = 0.0,            // a follower's smoothed speed, m/s (UpdateFollowLeader's +0x48): picks its walk or run cycle and sets the cycle's pace
         path: list::List(math::Vec3, heap::Heap),   // waypoints still to walk
-        path_next: usize,
-        path_goal: math::Vec3,                      // where the path was planned to
-        path_adjusted: bool,                        // the path ends at the nearest reachable point of an unreachable goal
+        path_next: usize = 0,
+        path_goal: math::Vec3 = math::vec3::zero{}, // where the path was planned to
+        path_adjusted: bool = false,                // the path ends at the nearest reachable point of an unreachable goal
         // The creature a move is walking round (CPathfindInformation +0x244..+0x268, movement.md 4.9; lib/engine/crowd.ctx):
-        avoided: u32,                               // the one it last made a detour for (+0x254)
-        avoided_at: math::Vec3,                     // where that one stood then (+0x258)
-        avoid_side: bool,                           // the side of the next detour (+0x244)
-        blocked_steps: u32,                         // blocked steps since the path was planned (+0x268): six end the move
-        moving: bool,
-        in_combat: bool,                    // the server's combat state (SetCombatState 0x004f2610, +0x4e0): 8 s from the last hostile act
+        avoided: u32 = INVALID,                     // the one it last made a detour for (+0x254)
+        avoided_at: math::Vec3 = math::vec3::zero{}, // where that one stood then (+0x258)
+        avoid_side: bool = false,                   // the side of the next detour (+0x244)
+        blocked_steps: u32 = 0,                     // blocked steps since the path was planned (+0x268): six end the move
+        moving: bool = false,
+        in_combat: bool = false,            // the server's combat state (SetCombatState 0x004f2610, +0x4e0): 8 s from the last hostile act
         // The combat's reason (+0xac0): true for 1, put into combat by being attacked (it stays until combat is
         // left), false for 2, attacking or reacting. Meaningful only while in_combat (fight::is_attacked).
-        combat_attacked: bool,
+        combat_attacked: bool = false,
         // The client creature's combat mode (CSWCCreature +0x440 bit 0, SetCombatMode 0x00610a10): the leader's
         // drives the HUD's combat bar, the combat camera and reticle, hostile-only Q / E; hud::update_combat_modes.
-        combat_mode: bool,
-        dead: bool,
+        combat_mode: bool = false,
+        dead: bool = false,
         triggers: list::List(u32, heap::Heap),      // the triggers it stands in
         // Perception (gameloop.md 2.4): who it sees and hears, its ranges, the full pass's timer.
         perceived: list::List(Perceived, heap::Heap),
-        sight_range: f32,                           // 0 until first computed
-        hearing_range: f32,
-        last_perception: u64,
+        sight_range: f32 = 0.0,                     // 0 until first computed
+        hearing_range: f32 = 0.0,
+        last_perception: u64 = 0,
         // Appended by routines/creature.ctx and items.ctx.
-        xp: u32,                            // GetXP/SetXP (stats +0x68)
-        gold: u32,                          // GetGold (UTC Gold); the party purse is HOOK(party)
-        inv_cursor: usize,                  // GetFirstItemInInventory/GetNextItemInInventory
-        listening: bool,                    // SetListening
-        listen_text: [4][32]u8,             // SetListenPattern: up to four patterns
-        listen_len: [4]u8,
-        listen_number: [4]i32,
-        listen_count: u8,
-        destroyable: bool,                  // SetIsDestroyable (the caller's corpse fades or stays)
-        raiseable: bool,
-        selectable_dead: bool,
+        xp: u32 = 0,                        // GetXP/SetXP (stats +0x68)
+        gold: u32 = 0,                      // GetGold (UTC Gold); the party purse is HOOK(party)
+        inv_cursor: usize = 0,              // GetFirstItemInInventory/GetNextItemInInventory
+        listening: bool = false,            // SetListening
+        listen_text: [4][32]u8 = [[0; 32]; 4], // SetListenPattern: up to four patterns
+        listen_len: [4]u8 = [0; 4],
+        listen_number: [4]i32 = [0; 4],
+        listen_count: u8 = 0,
+        destroyable: bool = true,           // SetIsDestroyable (the caller's corpse fades or stays)
+        raiseable: bool = true,
+        selectable_dead: bool = false,
         // Appended by routines/combat.ctx: what the combat queries answer until the combat rules
         // (lib/rules) keep them (HOOK(rules)).
-        attack_target: u32,                 // GetAttackTarget (CSWSCreature +0x504)
-        attempted_target: u32,              // GetAttemptedAttackTarget (+0x50c)
-        attacked_by: u32,                   // "going to be attacked by" (+0x520): set on the player's character or the leader by AddAttackActions
-        clicked_target: u32,                // the player's attack order on another than the attempted target (+0x510, set by the attack input 0x005254c0; read by fight::can_engage)
-        combat_message: u32,                // the party member's combat message (client party record +0x84, 0x006345e0): what the bar shows while it is the leader (hud)
-        last_hostile_actor: u32,            // GetLastHostileActor
-        last_hostile_target: u32,           // GetLastHostileTarget
-        last_attack_action: i32,            // GetLastAttackAction (ACTION_*; +0x544)
-        last_force_power: i32,              // GetLastForcePowerUsed (spells.2da row, -1 none)
-        last_combat_feat: i32,              // GetLastCombatFeatUsed (feat.2da row, -1 none)
-        last_attack_result: i32,            // GetLastAttackResult (ATTACK_RESULT_*)
-        force_power_ok: bool,               // GetWasForcePowerSuccessful
-        ai_style: i32,                      // GetNPCAIStyle (NPC_AISTYLE_*)
-        party_ai_style: i32,                // GetPartyAIStyle, kept on the player's character (the party table is HOOK(party))
-        fighter: ?*mut fight::Fighter,      // the rules creature and the combat round (heap; lib/engine/fight.ctx)
-        blocked_ms: u64,                    // when a closed door last sent it PATH_BLOCKED (movement.ctx)
+        attack_target: u32 = INVALID,       // GetAttackTarget (CSWSCreature +0x504)
+        attempted_target: u32 = INVALID,    // GetAttemptedAttackTarget (+0x50c)
+        attacked_by: u32 = INVALID,         // "going to be attacked by" (+0x520): set on the player's character or the leader by AddAttackActions
+        clicked_target: u32 = INVALID,      // the player's attack order on another than the attempted target (+0x510, set by the attack input 0x005254c0; read by fight::can_engage)
+        combat_message: u32 = 48208,        // the party member's combat message (client party record +0x84, 0x006345e0): what the bar shows while it is the leader (hud)
+        last_hostile_actor: u32 = INVALID,  // GetLastHostileActor
+        last_hostile_target: u32 = INVALID, // GetLastHostileTarget
+        last_attack_action: i32 = 65535,    // GetLastAttackAction (ACTION_*; +0x544)
+        last_force_power: i32 = -1,         // GetLastForcePowerUsed (spells.2da row, -1 none)
+        last_combat_feat: i32 = -1,         // GetLastCombatFeatUsed (feat.2da row, -1 none)
+        last_attack_result: i32 = 0,        // GetLastAttackResult (ATTACK_RESULT_*)
+        force_power_ok: bool = false,       // GetWasForcePowerSuccessful
+        ai_style: i32 = 0,                  // GetNPCAIStyle (NPC_AISTYLE_*)
+        party_ai_style: i32 = 0,            // GetPartyAIStyle, kept on the player's character (the party table is HOOK(party))
+        fighter: ?*mut fight::Fighter = null, // the rules creature and the combat round (heap; lib/engine/fight.ctx)
+        blocked_ms: u64 = 0,                // when a closed door last sent it PATH_BLOCKED (movement.ctx)
         // Appended by routines/effects.ctx.
-        fx_cursor: usize,                   // GetFirstEffect/GetNextEffect: the next index into the rules' effect list
+        fx_cursor: usize = 0,               // GetFirstEffect/GetNextEffect: the next index into the rules' effect list
         // Appended by routines/creature.ctx and actions.ctx.
-        head: i32,                          // DuplicateHeadAppearance: a heads.2da row to show instead of the appearance's own, -1 none
-        stealth: bool,                      // stealth mode is on (lib/engine/stealth.ctx)
-        stealth_rolls: stealth::Rolls,      // its stealth and awareness rolls, its stealth-XP countdown
+        head: i32 = -1,                     // DuplicateHeadAppearance: a heads.2da row to show instead of the appearance's own, -1 none
+        stealth: bool = false,              // stealth mode is on (lib/engine/stealth.ctx)
+        stealth_rolls: stealth::Rolls = stealth::no_rolls{}, // its stealth and awareness rolls, its stealth-XP countdown
         // Appended by traps.ctx.
-        trap_search_ms: u64,                // when it last looked for traps (DoTrapDetection's timer)
+        trap_search_ms: u64 = 0,            // when it last looked for traps (DoTrapDetection's timer)
     }
 
     // One creature another perceives (gameloop.md 2.4).
     struct Perceived { id: u32, seen: bool, heard: bool }
 
     struct Item {
-        base: u32,                          // baseitems.2da row
-        model_variation: u32,
-        body_variation: u32,
-        texture_variation: u32,
-        stack: u32,
-        charges: u32,
-        possessor: u32,
-        identified: bool,
-        equipped_slot: i32,                 // -1: not equipped
-        non_equippable: bool,               // SetItemNonEquippable: the equip checks refuse it
-        rules: ?*mut rules::Item,           // the item as the rules see it (heap; fight::read_item)
-        droppable: bool,                    // Dropable: it goes into the body bag when its owner dies
-        infinite: bool,                     // a store's stock that never runs out (item flag bit 2)
-        fresh: bool,                        // the party got it and has not looked at it yet (item flag bit 7, "new")
-        spent_props: u32,                   // properties (by index) whose per-minute use is spent: Useable 0 until it recharges
-        spent_at_ms: u64,                   // the world time (w.clock) of that use
+        base: u32 = 0,                      // baseitems.2da row
+        model_variation: u32 = 1,
+        body_variation: u32 = 1,
+        texture_variation: u32 = 1,
+        stack: u32 = 1,
+        charges: u32 = 0,
+        possessor: u32 = obj::INVALID,
+        identified: bool = true,
+        equipped_slot: i32 = -1,            // -1: not equipped
+        non_equippable: bool = false,       // SetItemNonEquippable: the equip checks refuse it
+        rules: ?*mut rules::Item = null,    // the item as the rules see it (heap; fight::read_item)
+        droppable: bool = false,            // Dropable: it goes into the body bag when its owner dies
+        infinite: bool = false,             // a store's stock that never runs out (item flag bit 2)
+        fresh: bool = false,                // the party got it and has not looked at it yet (item flag bit 7, "new")
+        spent_props: u32 = 0,               // properties (by index) whose per-minute use is spent: Useable 0 until it recharges
+        spent_at_ms: u64 = 0,               // the world time (w.clock) of that use
     }
 
     enum DoorState: u8 { closed, open1, open2, destroyed }
@@ -327,28 +327,28 @@ namespace obj {
     }
 
     struct Placeable {
-        appearance: u32,                    // placeables.2da row
-        open: bool,
-        on: bool,                           // active (`on`/`off` animations)
-        useable: bool,
-        has_inventory: bool,
-        party_interact: bool,
-        static: bool,
-        locked: bool,
-        lockable: bool,
-        key_required: bool,                 // only its key opens it; Security cannot
+        appearance: u32 = 0,                // placeables.2da row
+        open: bool = false,
+        on: bool = false,                   // active (`on`/`off` animations)
+        useable: bool = false,
+        has_inventory: bool = false,
+        party_interact: bool = false,
+        static: bool = false,
+        locked: bool = false,
+        lockable: bool = false,
+        key_required: bool = false,         // only its key opens it; Security cannot
         key: []mut u8,
-        open_dc: u32,                       // OpenLockDC / CloseLockDC, as on a door
-        close_dc: u32,
-        auto_remove_key: bool,
+        open_dc: u32 = 0,                   // OpenLockDC / CloseLockDC, as on a door
+        close_dc: u32 = 0,
+        auto_remove_key: bool = false,
         inventory: list::List(u32, heap::Heap),
-        walk: i32,
-        model: resref::ResRef,              // placeables modelname
-        anim: u32,                          // the placeable's own animation state (10073..)
-        die_when_empty: bool,               // DieWhenEmpty: a body bag vanishes once it is emptied
-        user: u32,                          // who has the container open (OBJECT_INVALID: nobody)
-        opening: bool,                      // the party's USEOBJECT is waiting for the lid (+0x450, actions.md 3.5)
-        opening_until: u64,                 // world ms when that wait ends (the presentation lengthens it)
+        walk: i32 = -1,
+        model: resref::ResRef = resref::empty{}, // placeables modelname
+        anim: u32 = obj::ANIM_STAND,        // the placeable's own animation state (10073..)
+        die_when_empty: bool = false,       // DieWhenEmpty: a body bag vanishes once it is emptied
+        user: u32 = obj::INVALID,           // who has the container open (OBJECT_INVALID: nobody)
+        opening: bool = false,              // the party's USEOBJECT is waiting for the lid (+0x450, actions.md 3.5)
+        opening_until: u64 = 0,             // world ms when that wait ends (the presentation lengthens it)
     }
 
     struct Trigger {
@@ -365,25 +365,25 @@ namespace obj {
     struct Waypoint { has_map_note: bool, map_note_enabled: bool, map_note: Name }
 
     struct Sound {
-        active: bool,
-        continuous: bool,
-        looping: bool,
-        positional: bool,
-        random: bool,
-        random_position: bool,
-        interval: u32,                      // ms
-        interval_variation: u32,
-        volume: u32,                        // 0..127
-        volume_variation: u32,
-        pitch_variation: f32,
-        elevation: f32,
-        min_distance: f32,
-        max_distance: f32,
-        random_range_x: f32,
-        random_range_y: f32,
-        priority: u32,                      // prioritygroups.2da row
+        active: bool = false,
+        continuous: bool = false,
+        looping: bool = false,
+        positional: bool = false,
+        random: bool = false,
+        random_position: bool = false,
+        interval: u32 = 0,                  // ms
+        interval_variation: u32 = 0,
+        volume: u32 = 127,                  // 0..127
+        volume_variation: u32 = 0,
+        pitch_variation: f32 = 0.0,
+        elevation: f32 = 0.0,
+        min_distance: f32 = 1.0,
+        max_distance: f32 = 10.0,
+        random_range_x: f32 = 0.0,
+        random_range_y: f32 = 0.0,
+        priority: u32 = 0,                  // prioritygroups.2da row
         sounds: []mut resref::ResRef,           // heap
-        fixed_variance: f32,                // SoundObjectSetFixedVariance: a constant pitch multiplier, 0 none
+        fixed_variance: f32 = 0.0,          // SoundObjectSetFixedVariance: a constant pitch multiplier, 0 none
     }
 
     // An encounter (UTE + the GIT's polygon and spawn points): creatures it spawns when the party
@@ -419,44 +419,44 @@ namespace obj {
     struct Grass { texture: resref::ResRef, density: f32, quad_size: f32, prob: [4]f32, wind: i32 }
 
     struct Area {
-        resref: resref::ResRef,
+        resref: resref::ResRef = resref::empty{},
         name: Name,
-        music_day: i32,
-        music_night: i32,
-        music_battle: i32,
-        music_delay: i32,                   // ms
-        ambient_day: i32,
-        ambient_night: i32,
-        ambient_day_volume: i32,
-        ambient_night_volume: i32,
-        env_audio: i32,
-        camera_style: u32,                  // camerastyle.2da row
-        restrict_mode: u32,
-        no_rest: bool,                      // ARE NoRest (area +0xb0): the player may not rest here
-        unescapable: bool,
-        is_night: bool,
-        dyn_ambient: u32,                   // DynAmbientColor, 0x00BBGGRR
-        sun_ambient: u32,
-        sun_diffuse: u32,
-        fog_on: bool,
-        fog_near: f32,
-        fog_far: f32,
-        fog_color: u32,
-        grass: Grass,
-        shadow_opacity: u32,                // ShadowOpacity, 0..255: how dark creatures' shadows are
-        load_screen: u32,
-        last_heartbeat: u64,
-        transition_token: u8,               // gameloop.md 5.2
-        transition_pending: u8,
+        music_day: i32 = 0,
+        music_night: i32 = 0,
+        music_battle: i32 = 0,
+        music_delay: i32 = 0,               // ms
+        ambient_day: i32 = 0,
+        ambient_night: i32 = 0,
+        ambient_day_volume: i32 = 0,
+        ambient_night_volume: i32 = 0,
+        env_audio: i32 = 0,
+        camera_style: u32 = 0,              // camerastyle.2da row
+        restrict_mode: u32 = 0,
+        no_rest: bool = false,              // ARE NoRest (area +0xb0): the player may not rest here
+        unescapable: bool = false,
+        is_night: bool = false,
+        dyn_ambient: u32 = 0,               // DynAmbientColor, 0x00BBGGRR
+        sun_ambient: u32 = 0,
+        sun_diffuse: u32 = 0,
+        fog_on: bool = false,
+        fog_near: f32 = 99.0,
+        fog_far: f32 = 100.0,
+        fog_color: u32 = 0,
+        grass: Grass = obj::Grass{ texture = resref::empty{}, density = 0.0, quad_size = 1.0, prob = [0.25; 4], wind = 0 },
+        shadow_opacity: u32 = 128,          // ShadowOpacity, 0..255: how dark creatures' shadows are
+        load_screen: u32 = 0,
+        last_heartbeat: u64 = 0,
+        transition_token: u8 = 0,           // gameloop.md 5.2
+        transition_pending: u8 = 0,
         // The stealth XP bonus (a script-side system: the scripts set all of it, AwardStealthXP pays
         // the current amount to the party and switches it off).
-        stealth_xp_max: i32,
-        stealth_xp_current: i32,
-        stealth_xp_decrement: i32,
-        stealth_xp_enabled: bool,
-        flags: u32,                         // ARE Flags: 1 interior, 2 underground, 4 natural
-        listen_mod: i32,                    // ARE ModListenCheck: added to hearing a creature that hides
-        minigame: ?*mut mg::Area,               // the ARE's MiniGame struct (lib/minigame); null for every other area. Module memory
+        stealth_xp_max: i32 = 0,
+        stealth_xp_current: i32 = 0,
+        stealth_xp_decrement: i32 = 0,
+        stealth_xp_enabled: bool = false,
+        flags: u32 = 0,                     // ARE Flags: 1 interior, 2 underground, 4 natural
+        listen_mod: i32 = 0,                // ARE ModListenCheck: added to hearing a creature that hides
+        minigame: ?*mut mg::Area = null,        // the ARE's MiniGame struct (lib/minigame); null for every other area. Module memory
     }
 
     struct Module {
@@ -639,28 +639,11 @@ namespace obj {
     // The creature data's defaults.
     fn make_creature { heap: *mut heap::Heap } -> Creature {
         return Creature{
-            appearance = 0, gender = 0, race = 6, subrace = 0, body_variation = 0, texture_variation = 1,
-            portrait = 0, soundset = 0xFFFFFFFF, is_pc = false, movement_rate = 7, walk_rate = 1.7, run_rate = 5.4,
-            perspace = 0.35, creperspace = 0.4, camspace = 0.4, height = 1.6, equipped = [INVALID; 20],
             inventory = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },
-            abilities = [10; 6], hit_dice = 1, disguise = 0, classes = [0; 3], class_levels = [0; 3], good_evil = 50,
-            perception_range = 11, spawn_fired = false, last_heartbeat = 0, heartbeat_interval = 3000,
-            speed = 0.0, speed_factor = 1.0, follow_speed = 0.0,
             path = list::new(math::Vec3, heap::Heap){ realloc = heap::alloc, heap },
-            path_next = 0, path_goal = math::vec3::zero{}, path_adjusted = false,
-            avoided = INVALID, avoided_at = math::vec3::zero{}, avoid_side = false, blocked_steps = 0, moving = false, in_combat = false, combat_attacked = false, combat_mode = false, dead = false,
             triggers = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },
             perceived = list::new(Perceived, heap::Heap){ realloc = heap::alloc, heap },
-            sight_range = 0.0, hearing_range = 0.0, last_perception = 0,
-            xp = 0, gold = 0, inv_cursor = 0, listening = false, listen_text = [[0; 32]; 4],
-            listen_len = [0; 4], listen_number = [0; 4], listen_count = 0,
-            destroyable = true, raiseable = true, selectable_dead = false,
-            attack_target = INVALID, attempted_target = INVALID, attacked_by = INVALID, clicked_target = INVALID, combat_message = 48208, last_hostile_actor = INVALID,
-            last_hostile_target = INVALID, last_attack_action = 65535, last_force_power = -1,
-            last_combat_feat = -1, last_attack_result = 0, force_power_ok = false, ai_style = 0,
-            party_ai_style = 0, blocked_ms = 0, fighter = null, fx_cursor = 0, head = -1, stealth = false,
-            trap_search_ms = 0,
-            stealth_rolls = stealth::no_rolls{},
+            ..
         }
     }
 }

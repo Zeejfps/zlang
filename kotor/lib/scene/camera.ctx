@@ -7,32 +7,32 @@ namespace cam {
     struct Style { distance: f32, pitch: f32, height: f32, fov: f32 }
 
     struct Camera {
-        style: Style,
-        yaw: f32,               // radians; 0 looks along +y, forward = (-sin yaw, cos yaw)
-        rate: f32,              // degrees per second, the rotate keys' integrator
-        h: f32,                 // the current horizontal distance to the look-at point
-        hold: f32,              // seconds left in which the camera does not ease back out after a wall or a creature moved it in
-        started: bool,
-        eye: math::Vec3,
-        look: math::Vec3,
-        dir: math::Vec3,
-        up: math::Vec3,         // +Z, except while a conversation camera rolls it (lib/dialog)
+        style: Style = Style{ distance = 6.25, pitch = 80.0, height = 3.5, fov = 55.0 },
+        yaw: f32 = 0.0,         // radians; 0 looks along +y, forward = (-sin yaw, cos yaw)
+        rate: f32 = 0.0,        // degrees per second, the rotate keys' integrator
+        h: f32 = 3.2,           // the current horizontal distance to the look-at point
+        hold: f32 = 0.0,        // seconds left in which the camera does not ease back out after a wall or a creature moved it in
+        started: bool = false,
+        eye: math::Vec3 = math::vec3::zero{},
+        look: math::Vec3 = math::vec3::zero{},
+        dir: math::Vec3 = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 },
+        up: math::Vec3 = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, // +Z, except while a conversation camera rolls it (lib/dialog)
         stops: [64]bool,        // surface materials a camera ray stops at: all but triggers (30)
-        freelook: bool,         // the eye is in the leader's head (free look): yaw is the leader's, pitch the mouse's
-        fl_pitch: f32,          // free look's pitch in degrees, up positive
-        turn_to: u32,           // an object the camera is swinging round to show (target cycling), obj::INVALID when none
-        turn_rate: f32,         // that swing's easing rate per second, 2.5 to 7.5
-        combat: bool,           // the combat camera (combat mode): rigid at row 8's distance, no swing, no creature clip
-        fl_rate: f32,           // free look's tilt integrator (W / S), degrees per second
-        fl_up: f32,             // the area's FL_LOOKUP and FL_LOOKDOWN, degrees
-        fl_down: f32,
-        fl_row: u32,            // the camerastyle row they came from
-        shake_left: f32,        // the shake (StartCameraShake): milliseconds of it left, 0 when none
-        shake_total: f32,       // its whole length, milliseconds
-        shake_delay: f32,       // milliseconds before it starts
-        shake_yaw: f32,         // this frame's offsets, degrees (render_camera adds them)
-        shake_pitch: f32,
-        seed: u32,              // the shake's coin (ours: an LCG for the original's rand)
+        freelook: bool = false, // the eye is in the leader's head (free look): yaw is the leader's, pitch the mouse's
+        fl_pitch: f32 = 0.0,    // free look's pitch in degrees, up positive
+        turn_to: u32 = obj::INVALID, // an object the camera is swinging round to show (target cycling), obj::INVALID when none
+        turn_rate: f32 = 2.5,   // that swing's easing rate per second, 2.5 to 7.5
+        combat: bool = false,   // the combat camera (combat mode): rigid at row 8's distance, no swing, no creature clip
+        fl_rate: f32 = 0.0,     // free look's tilt integrator (W / S), degrees per second
+        fl_up: f32 = 15.0,      // the area's FL_LOOKUP and FL_LOOKDOWN, degrees
+        fl_down: f32 = 20.0,
+        fl_row: u32 = 0xFFFFFFFF, // the camerastyle row they came from
+        shake_left: f32 = 0.0,  // the shake (StartCameraShake): milliseconds of it left, 0 when none
+        shake_total: f32 = 0.0, // its whole length, milliseconds
+        shake_delay: f32 = 0.0, // milliseconds before it starts
+        shake_yaw: f32 = 0.0,   // this frame's offsets, degrees (render_camera adds them)
+        shake_pitch: f32 = 0.0,
+        seed: u32 = 0x2545F491, // the shake's coin (ours: an LCG for the original's rand)
     }
 
     // The time constant of the camera's return to its distance (ours; the original halves the error every frame).
@@ -53,10 +53,8 @@ namespace cam {
         let mut stops = [true; 64]
         stops[30] = false
         return Camera{
-            style = Style{ distance = 6.25, pitch = 80.0, height = 3.5, fov = 55.0 }, yaw = 0.0, rate = 0.0, h = 3.2, hold = 0.0,
-            started = false, freelook = false, fl_pitch = 0.0, turn_to = obj::INVALID, turn_rate = 2.5,
-            combat = false, fl_rate = 0.0, fl_up = 15.0, fl_down = 20.0, fl_row = 0xFFFFFFFF,
-            shake_left = 0.0, shake_total = 0.0, shake_delay = 0.0, shake_yaw = 0.0, shake_pitch = 0.0, seed = 0x2545F491, eye = math::vec3::zero{}, look = math::vec3::zero{}, dir = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, up = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, stops,
+            stops,
+            ..
         }
     }
 

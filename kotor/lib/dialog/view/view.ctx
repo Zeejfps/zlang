@@ -37,57 +37,57 @@ namespace dlgview {
     struct View {
         heap: *mut heap::Heap,
         m: *mut mix::Mixer,
-        up: bool,                   // a conversation is being presented
-        holding: bool,              // it has ended, and its picture stays up for HOLD_SECONDS in case another follows
-        hold_left: f32,
-        cutscene: bool,             // the presented conversation is an animated cutscene (the kind that hands over to the next)
-        carry_bars: bool,           // the next `begin` is a hand-over: the bars are in already
-        seen_started: u32,
-        seen_ended: u32,
-        seen_line: u32,
-        seen_choices: u32,
-        wait: f32,                  // seconds spent waiting for the scene to be ready
+        up: bool = false,           // a conversation is being presented
+        holding: bool = false,      // it has ended, and its picture stays up for HOLD_SECONDS in case another follows
+        hold_left: f32 = 0.0,
+        cutscene: bool = false,     // the presented conversation is an animated cutscene (the kind that hands over to the next)
+        carry_bars: bool = false,   // the next `begin` is a hand-over: the bars are in already
+        seen_started: u32 = 0,
+        seen_ended: u32 = 0,
+        seen_line: u32 = 0,
+        seen_choices: u32 = 0,
+        wait: f32 = 0.0,            // seconds spent waiting for the scene to be ready
         // The camera.
-        mode: Mode,
-        rig: dlgcam::Rig,
-        have_rig: bool,
-        speaker: u32,
-        listener: u32,
-        angle: u32,
-        cam_height: f32,
-        tar_height: f32,
-        pull_back: f32,
-        fov: f32,                   // the line's own field of view, 0 for the default
-        static_id: i32,
-        seen_static: i32,           // the last SetDialogPlaceableCamera id taken
-        blocked: bool,              // the framed shot hit a wall: the plain close-up for this line
-        log_shot: bool,             // the next applied camera is written to the log (--log dialog), once per line
-        sides: [4]SideEntry,
-        side_count: usize,
-        side_next: usize,
+        mode: Mode = Mode::none,
+        rig: dlgcam::Rig = dlgcam::Rig{ eye = math::vec3::zero{}, forward = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, up = dlgcam::zup{}, fov = dlgcam::FOV },
+        have_rig: bool = false,
+        speaker: u32 = obj::INVALID,
+        listener: u32 = obj::INVALID,
+        angle: u32 = 0,
+        cam_height: f32 = 0.0,
+        tar_height: f32 = 0.0,
+        pull_back: f32 = 0.0,
+        fov: f32 = 0.0,             // the line's own field of view, 0 for the default
+        static_id: i32 = -1,
+        seen_static: i32 = -1,      // the last SetDialogPlaceableCamera id taken
+        blocked: bool = false,      // the framed shot hit a wall: the plain close-up for this line
+        log_shot: bool = false,     // the next applied camera is written to the log (--log dialog), once per line
+        sides: [4]SideEntry = [SideEntry{ a = obj::INVALID, b = obj::INVALID, side = 1.0 }; 4],
+        side_count: usize = 0,
+        side_next: usize = 0,
         stops: [64]bool,            // surface materials a camera ray stops at
-        saved_fov: f32,
-        overriding: bool,
-        camera_model: CameraModel,
-        swaps: [8]Swap,
-        swap_count: usize,
-        stunt_next: usize,          // the next of the dialogue's stunt models to put on
+        saved_fov: f32 = dlgcam::FOV,
+        overriding: bool = false,
+        camera_model: CameraModel = CameraModel{ loaded = false, part = 0, node = 0, model = null },
+        swaps: [8]Swap = [Swap{ id = obj::INVALID, visual = 0, original = 0, active = false }; 8],
+        swap_count: usize = 0,
+        stunt_next: usize = 0,      // the next of the dialogue's stunt models to put on
         // Animations the view set, so they are put back.
-        cast: [16]u32,
-        cast_count: usize,
+        cast: [16]u32 = [obj::INVALID; 16],
+        cast_count: usize = 0,
         // The voice.
         voice: mix::Handle,
         voice_bytes: []mut u8,
-        voice_speaker: u32,
-        voice_delay: f32,           // seconds the device buffers beyond what the mixer has played
+        voice_speaker: u32 = obj::INVALID,
+        voice_delay: f32 = 0.0,     // seconds the device buffers beyond what the mixer has played
         lip_bytes: []mut u8,
-        lip_elapsed: f32,
+        lip_elapsed: f32 = 0.0,
         track: lipsync::Track,      // the mouth of the line that speaks
-        track_on: bool,
+        track_on: bool = false,
         ambient: mix::Handle,       // the dialogue's AmbientTrack
         ambient_bytes: []mut u8,
         // The panels.
-        panels: dlgpanel::Panels,
+        panels: dlgpanel::Panels = dlgpanel::make{},
     }
 
     fn make { heap: *mut heap::Heap, m: *mut mix::Mixer } -> View {
@@ -95,20 +95,13 @@ namespace dlgview {
         stops[30] = false
         let none = mix::Handle{ slot = 0, id = 0 }
         return View{
-            heap, m, up = false, holding = false, hold_left = 0.0, cutscene = false, carry_bars = false, seen_started = 0, seen_ended = 0, seen_line = 0, seen_choices = 0, wait = 0.0,
-            mode = Mode::none, rig = dlgcam::Rig{ eye = math::vec3::zero{}, forward = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, up = dlgcam::zup{}, fov = dlgcam::FOV },
-            have_rig = false, speaker = obj::INVALID, listener = obj::INVALID, angle = 0, cam_height = 0.0, tar_height = 0.0,
-            pull_back = 0.0, fov = 0.0, static_id = -1, seen_static = -1, blocked = false, log_shot = false,
-            sides = [SideEntry{ a = obj::INVALID, b = obj::INVALID, side = 1.0 }; 4], side_count = 0, side_next = 0,
-            stops, saved_fov = dlgcam::FOV, overriding = false,
-            camera_model = CameraModel{ loaded = false, part = 0, node = 0, model = null },
-            swaps = [Swap{ id = obj::INVALID, visual = 0, original = 0, active = false }; 8], swap_count = 0, stunt_next = 0,
-            cast = [obj::INVALID; 16], cast_count = 0,
-            voice = none, voice_bytes = slice::empty(u8){}, voice_speaker = obj::INVALID, voice_delay = 0.0,
-            lip_bytes = slice::empty(u8){}, lip_elapsed = 0.0,
-            track = lipsync::make_track{ lip = lip::Lip{ length = 0.0, count = 0, keys = slice::empty(u8){} } }, track_on = false,
+            heap, m,
+            stops,
+            voice = none, voice_bytes = slice::empty(u8){},
+            lip_bytes = slice::empty(u8){},
+            track = lipsync::make_track{ lip = lip::Lip{ length = 0.0, count = 0, keys = slice::empty(u8){} } },
             ambient = none, ambient_bytes = slice::empty(u8){},
-            panels = dlgpanel::make{},
+            ..
         }
     }
 

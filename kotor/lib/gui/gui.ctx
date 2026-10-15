@@ -16,22 +16,18 @@ namespace gui {
         let mut sounds: [SOUNDS]Sound
         let mut backdrops: [6]Img
         let mut g = Gui{
-            heap, rm, cache, tlk = null, mixer = null,
+            heap, rm, cache,
             fonts = list::new(FontSlot, heap::Heap){ realloc = heap::alloc, heap },
             panels = list::new(*mut Panel, heap::Heap){ realloc = heap::alloc, heap },
             tokens = list::new(Token, heap::Heap){ realloc = heap::alloc, heap },
-            next_panel = 1,
-            win_w = width, win_h = height, scale = 1.0, ui_w = width, ui_h = height, small_fonts = false,
-            mouse_x = width / 2, mouse_y = height / 2, buttons = 0,
-            hover = Ref{ panel = 0, control = -1 }, capture = Ref{ panel = 0, control = -1 }, capture_button = 0, capture_part = 0, press_on_selected = false, capture_y = 0, capture_value = 0,
-            press_x = 0, press_y = 0, drag = Ref{ panel = 0, control = -1 },
-            cursor = 0, cursor_visible = true, hidden = false, cursors,
-            time = 0.0, pulse_border = 1.0, pulse_list = 1.0, hover_time = -1.0, tooltip_delay = 1.0, tooltips = true, tooltip_key = false,
-            tooltip_ref = Ref{ panel = 0, control = -1 }, key_repeat = 0.0,
-            backdrops, backdrop_for = [-1, -1, -1, -1, -1, -1],
-            sounds, sound_volume = 1.0, sound_priority = 128, sound_group = mix::NO_GROUP,
+            win_w = width, win_h = height, ui_w = width, ui_h = height,
+            mouse_x = width / 2, mouse_y = height / 2,
+            cursors,
+            backdrops,
+            sounds,
             events = list::new(Event, heap::Heap){ realloc = heap::alloc, heap },
-            dropped_events = 0, pass_panel = 0, pass_dir = 0, lines, quads_drawn = 0,
+            lines,
+            ..
         }
         return g
     }

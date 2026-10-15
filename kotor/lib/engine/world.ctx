@@ -85,92 +85,92 @@ namespace world {
         rm: *mut res::Manager,
         mod_arena: *mut arena::Arena,       // module memory: reset when the module is left
         scratch: *mut arena::Arena,         // frame memory: reset after each frame
-        clock: clock::Clock,
+        clock: clock::Clock = clock::new{},
         objects: obj::Table,
-        module: u32,
-        area: u32,
-        pc: u32,                            // the player's character (the party's main character)
-        party: party::Party,
-        target: u32,                        // the selected object (HUD picking), obj::INVALID none
-        hover: u32,                         // the object under the cursor
-        target_keep: f32,                   // the client's 1.5 s keep of a target that died (+0x378, hud::pick_target); while it runs every creature is a foe to the HUD (hud::is_foe)
-        aim_id: u32,                        // the object `aim` belongs to: the target, once the scene has found where its reticle hangs
-        aim: math::Vec3,                    // that point in the world (the model's head_g / lookathook node), for the HUD's reticle
-        repute: [32][32]u8,                 // repute.2da standings, faction by faction (0..100)
-        repute_rows: usize,
-        arrival: u32,                       // frames until the PC is placed (gameloop.md 5.5)
+        module: u32 = obj::INVALID,
+        area: u32 = obj::INVALID,
+        pc: u32 = obj::INVALID,             // the player's character (the party's main character)
+        party: party::Party = party::new{},
+        target: u32 = obj::INVALID,         // the selected object (HUD picking), obj::INVALID none
+        hover: u32 = obj::INVALID,          // the object under the cursor
+        target_keep: f32 = 0.0,             // the client's 1.5 s keep of a target that died (+0x378, hud::pick_target); while it runs every creature is a foe to the HUD (hud::is_foe)
+        aim_id: u32 = obj::INVALID,         // the object `aim` belongs to: the target, once the scene has found where its reticle hangs
+        aim: math::Vec3 = math::vec3::zero{}, // that point in the world (the model's head_g / lookathook node), for the HUD's reticle
+        repute: [32][32]u8 = [[50; 32]; 32], // repute.2da standings, faction by faction (0..100)
+        repute_rows: usize = 0,
+        arrival: u32 = 0,                   // frames until the PC is placed (gameloop.md 5.5)
         queue: events::Queue,
         scripts: scripts::Cache,
         values: values::Store,
         walk: walkmap::Map,
-        layout: ?lyt::Layout,
-        paths: ?pth::Graph,                 // the area's path points (module memory)
-        vis: ?vis::Vis,
+        layout: ?lyt::Layout = null,
+        paths: ?pth::Graph = null,          // the area's path points (module memory)
+        vis: ?vis::Vis = null,
         tables: Tables,
-        tlk: ?tlk::Table,                   // dialog.tlk (game/main loads it)
+        tlk: ?tlk::Table = null,            // dialog.tlk (game/main loads it)
         globals: globals::Globals,
         gip: save::Store,                   // the game in progress: visited modules' states (lib/save)
-        calendar_set: bool,                 // the clock's calendar came from a new game or a save
-        restoring: bool,                    // the module being entered comes from a loaded save
-        played_seconds: f64,                // time played (real time in game; PT_PLAYEDSECONDS)
-        last_menu: i32,                     // the in-game menu shown last, 0..7 (CGuiInGame +0x2c; PT_LAST_GUI_PNL)
-        load_hints: [2]u8,                  // the loading screen's next gameplay and story hint rows (savenfo GAMEPLAYHINT, STORYHINT)
+        calendar_set: bool = false,         // the clock's calendar came from a new game or a save
+        restoring: bool = false,            // the module being entered comes from a loaded save
+        played_seconds: f64 = 0.0,          // time played (real time in game; PT_PLAYEDSECONDS)
+        last_menu: i32 = 0,                 // the in-game menu shown last, 0..7 (CGuiInGame +0x2c; PT_LAST_GUI_PNL)
+        load_hints: [2]u8 = [0; 2],         // the loading screen's next gameplay and story hint rows (savenfo GAMEPLAYHINT, STORYHINT)
         player_blueprint: []mut u8,         // character creation's player (UTC GFF bytes, heap); empty: the default
-        autosave_due: bool,                 // an AUTOSAVE is wanted (a transition or DoSinglePlayerAutoSave)
-        journal: journal::Journal,          // the player's quests (AddJournalQuestEntry; JNL_Entries)
-        player: u32,                        // the player character (w.pc is whoever the player controls: the leader)
+        autosave_due: bool = false,         // an AUTOSAVE is wanted (a transition or DoSinglePlayerAutoSave)
+        journal: journal::Journal = journal::new_journal{}, // the player's quests (AddJournalQuestEntry; JNL_Entries)
+        player: u32 = obj::INVALID,         // the player character (w.pc is whoever the player controls: the leader)
         bag: list::List(u32, heap::Heap),   // the party's shared inventory (party::inventory_of); items' possessor = w.player
-        journal_sort: i32,                  // JNL_SortOrder
-        autosave_ms: f64,                   // real ms since the last save (the 15 min timer, gameloop.md 5.7)
+        journal_sort: i32 = 0,              // JNL_SortOrder
+        autosave_ms: f64 = 0.0,             // real ms since the last save (the 15 min timer, gameloop.md 5.7)
         out: outbox::Outbox,
-        transition: ?Transition,
-        arrival_waypoint: [64]u8,           // where the PC arrives in the module being entered
-        arrival_waypoint_len: usize,
+        transition: ?Transition = null,
+        arrival_waypoint: [64]u8 = [0; 64], // where the PC arrives in the module being entered
+        arrival_waypoint_len: usize = 0,
         rng: Rng,
         noise: Rng,                         // presentation picks (which of two hit sounds) kept off `rng`, so they never shift the game's sequence
-        stats: Stats,
-        routes: [772]?routines::Category,   // each routine's category file, found by its first call (routines::categories)
-        log: elog::Log,
+        stats: Stats = Stats{ calls = [0; 772], missing = [0; 772], unbalanced = [false; 772], script_runs = 0, faults = 0, events = 0, objects_made = 0, party_rounds = 0, member_rounds = [0; 13], member_joined = [0; 13], member_joined_own = [0; 13] },
+        routes: [772]?routines::Category = [null; 772], // each routine's category file, found by its first call (routines::categories)
+        log: elog::Log = elog::quiet{},
         doomed: list::List(u32, heap::Heap),   // destroyed this frame, removed by sweep
-        module_frame: bool,                 // module and area heartbeats alternate frames
-        autopause_asked: i32,               // the first auto-pause reason (lib/engine/autopause.ctx) the interface has not taken yet, 0 none
-        serial: u32,                        // action serial numbers
+        module_frame: bool = false,         // module and area heartbeats alternate frames
+        autopause_asked: i32 = 0,           // the first auto-pause reason (lib/engine/autopause.ctx) the interface has not taken yet, 0 none
+        serial: u32 = 0,                    // action serial numbers
         heartbeats: map::Map(u32, u64, heap::Heap),   // last heartbeat of doors, placeables, triggers
-        cursor_area: usize,                 // GetNextObjectInArea: where in objects.all to go on from
-        cursor_shape: usize,                // GetNextObjectInShape: the next place in shape_walk
+        cursor_area: usize = 0,             // GetNextObjectInArea: where in objects.all to go on from
+        cursor_shape: usize = 0,            // GetNextObjectInShape: the next place in shape_walk
         shape_walk: list::List(u32, heap::Heap),    // GetFirstObjectInShape's matches in ascending x (routines/objects.ctx)
         // Appended by routines/misc.ctx.
-        cursor_inside: usize,               // GetNextInPersistentObject: where in the trigger's list to go on from
+        cursor_inside: usize = 0,           // GetNextInPersistentObject: where in the trigger's list to go on from
         tokens: tokens::Table,              // SetCustomToken: <CUSTOMnnn> texts, for the whole session
-        last_acquired: u32,                 // GetModuleItemAcquired: the item the last transfer gave a creature
-        last_acquired_from: u32,            // GetModuleItemAcquiredFrom: who had it (OBJECT_INVALID: the ground)
-        last_equipped: u32,                 // GetLastItemEquipped: the item the last equip put on
-        last_activated: u32,                // GetItemActivated: the item whose ability was last used (the module's OnActivateItem)
-        last_activator: u32,                // GetItemActivator: who used it
-        last_activated_target: u32,         // GetItemActivatedTarget: on whom (OBJECT_INVALID: on itself or the ground)
+        last_acquired: u32 = obj::INVALID,  // GetModuleItemAcquired: the item the last transfer gave a creature
+        last_acquired_from: u32 = obj::INVALID, // GetModuleItemAcquiredFrom: who had it (OBJECT_INVALID: the ground)
+        last_equipped: u32 = obj::INVALID,  // GetLastItemEquipped: the item the last equip put on
+        last_activated: u32 = obj::INVALID, // GetItemActivated: the item whose ability was last used (the module's OnActivateItem)
+        last_activator: u32 = obj::INVALID, // GetItemActivator: who used it
+        last_activated_target: u32 = obj::INVALID, // GetItemActivatedTarget: on whom (OBJECT_INVALID: on itself or the ground)
         // The rules (lib/rules): their tables, the dice (the C runtime's rand(), as the world's),
         // the effect id counter and the event buffer every rules call fills (fight::drain).
         rules: *mut rules::Tables,
         dice: rules::Rng,
-        fx_ids: rules::EffectIds,
+        fx_ids: rules::EffectIds = rules::EffectIds{ next = 1 },
         rev: rules::Events,
         conversation: dlg::State,           // the running conversation (lib/dialog)
-        minigame: ?*mut mg::Run,              // the swoop race or turret in progress, set up by the game loop (game/minigame.ctx); the SWMG_ routines' state
+        minigame: ?*mut mg::Run = null,       // the swoop race or turret in progress, set up by the game loop (game/minigame.ctx); the SWMG_ routines' state
         // Appended by routines/presentation.ctx: state of the screens the presentation owns, which the
         // routines answer from until it takes over (it writes `subscreen` and clears `credits_running`).
-        credits_running: bool,              // StartCreditSequence ran and the credits are not over (IsCreditSequenceInProgress)
-        button_mash: bool,                  // SetButtonMashCheck / GetButtonMashCheck (the combat tutorial)
+        credits_running: bool = false,      // StartCreditSequence ran and the credits are not over (IsCreditSequenceInProgress)
+        button_mash: bool = false,          // SetButtonMashCheck / GetButtonMashCheck (the combat tutorial)
         tut: Tutorials,                     // the tutorial pop-ups' offers (tutorial.ctx)
-        subscreen: i32,                     // GetSubScreenID: SUBSCREEN_ID_* of the in-game screen showing (0: none)
-        party_watch: fight::PartyWatch,     // UpdatePartyDeath's clocks: downed members get up after the fight (fight.ctx)
-        messages: msglog::Log,              // Messages > Feedback and Dialog (msglog.ctx): the save keeps it with the party table
-        log_tokens: fight_log::Tokens,      // the combat log's <CUSTOM2> as the client last had it (fight_log.ctx)
-        heads: [8]HeadPoint,                // where the floating labels hang: the scene finds these objects' head_g nodes
+        subscreen: i32 = 0,                 // GetSubScreenID: SUBSCREEN_ID_* of the in-game screen showing (0: none)
+        party_watch: fight::PartyWatch = fight::new_party_watch{}, // UpdatePartyDeath's clocks: downed members get up after the fight (fight.ctx)
+        messages: msglog::Log = msglog::new{}, // Messages > Feedback and Dialog (msglog.ctx): the save keeps it with the party table
+        log_tokens: fight_log::Tokens = fight_log::no_tokens{}, // the combat log's <CUSTOM2> as the client last had it (fight_log.ctx)
+        heads: [8]HeadPoint = [HeadPoint{ id = obj::INVALID, at = math::vec3::zero{}, found = false }; 8], // where the floating labels hang: the scene finds these objects' head_g nodes
         corpses: list::List(Corpse, heap::Heap),   // bodies the world let go of that still show (corpses.ctx)
-        corpse_ring: [4]u32,                // the area's latest corpses (0x006056b0's ring), INVALID for an empty slot
-        ring_read: u8,
-        ring_write: u8,
-        object_text: ObjectText,            // a line the target block shows in place of an object's name ("Locked")
+        corpse_ring: [4]u32 = [obj::INVALID; 4], // the area's latest corpses (0x006056b0's ring), INVALID for an empty slot
+        ring_read: u8 = 0,
+        ring_write: u8 = 0,
+        object_text: ObjectText = ObjectText{ id = obj::INVALID, strref = 0, until_ms = 0 }, // a line the target block shows in place of an object's name ("Locked")
         // HOOK(party): the party table
     }
 
@@ -194,39 +194,24 @@ namespace world {
         let globals = try globals::make{ heap, table = tables.globalcat }
         let w = World{
             fs, io, heap, rm, mod_arena = module_arena, scratch,
-            clock = clock::new{},
             objects = obj::new_table{ heap },
-            module = obj::INVALID, area = obj::INVALID, pc = obj::INVALID, arrival = 0,
-            party = party::new{}, target = obj::INVALID, hover = obj::INVALID, target_keep = 0.0, aim_id = obj::INVALID, aim = math::vec3::zero{},
-            repute = [[50; 32]; 32], repute_rows = 0,
             queue = events::new_queue{ heap },
             scripts = scripts::new_cache{ heap },
             values = values::new{ heap },
             walk = walkmap::empty{ heap },
-            layout = null, paths = null, vis = null,
-            tables, tlk = null, globals, gip = try save::new_store{ heap, root = saves }, calendar_set = false, restoring = false, played_seconds = 0.0, load_hints = [0; 2], last_menu = 0, player_blueprint = slice::empty(u8){}, autosave_due = false, journal = journal::new_journal{}, journal_sort = 0, player = obj::INVALID, bag = list::new(u32, heap::Heap){ realloc = heap::alloc, heap }, autosave_ms = 0.0,
+            tables, globals, gip = try save::new_store{ heap, root = saves }, player_blueprint = slice::empty(u8){}, bag = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },
             out = outbox::new{ heap },
-            transition = null,
-            arrival_waypoint = [0; 64], arrival_waypoint_len = 0,
             rng = Rng{ state = seed }, noise = Rng{ state = seed },
-            stats = Stats{ calls = [0; 772], missing = [0; 772], unbalanced = [false; 772], script_runs = 0, faults = 0, events = 0, objects_made = 0, party_rounds = 0, member_rounds = [0; 13], member_joined = [0; 13], member_joined_own = [0; 13] },
-            routes = [null; 772],
-            log = elog::quiet{},
             doomed = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },
-            module_frame = false, autopause_asked = 0,
-            serial = 0,
             heartbeats = map::new(u32, u64, heap::Heap){ realloc = heap::alloc, heap, hash = map::hash_u32, eq = map::eq_u32 },
-            cursor_area = 0, cursor_shape = 0, shape_walk = list::new(u32, heap::Heap){ realloc = heap::alloc, heap }, minigame = null,
-            conversation = dlg::new_state{},
-            cursor_inside = 0, tokens = tokens::new{ heap }, last_acquired = obj::INVALID, last_acquired_from = obj::INVALID, last_equipped = obj::INVALID,
-            last_activated = obj::INVALID, last_activator = obj::INVALID, last_activated_target = obj::INVALID,
+            shape_walk = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },
+            tokens = tokens::new{ heap },
             rules = try alloc::new(rules::Tables, heap::Heap){ realloc = heap::alloc, heap, value = blank_rules },
-            dice = rules::seed_rng{ seed }, fx_ids = rules::EffectIds{ next = 1 }, rev = blank_events,
-            credits_running = false, button_mash = false, tut = no_tutorials{}, subscreen = 0, party_watch = fight::new_party_watch{},
-            messages = msglog::new{}, log_tokens = fight_log::no_tokens{},
-            heads = [HeadPoint{ id = obj::INVALID, at = math::vec3::zero{}, found = false }; 8],
-            corpses = list::new(Corpse, heap::Heap){ realloc = heap::alloc, heap }, corpse_ring = [obj::INVALID; 4], ring_read = 0, ring_write = 0,
-            object_text = ObjectText{ id = obj::INVALID, strref = 0, until_ms = 0 },
+            dice = rules::seed_rng{ seed }, rev = blank_events,
+            tut = no_tutorials{},
+            corpses = list::new(Corpse, heap::Heap){ realloc = heap::alloc, heap },
+            conversation = dlg::new_state{},
+            ..
         }
         let p = try alloc::new(World, heap::Heap){ realloc = heap::alloc, heap, value = w }
         try rules::load_tables{ fs = &f, rm = rm.*, heap = heap, out = p.rules }
@@ -393,10 +378,9 @@ namespace world {
             }
             placeable => {
                 return obj::Ext::placeable{ p = try alloc::new(obj::Placeable, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Placeable{
-                    appearance = 0, open = false, on = false, useable = false, has_inventory = false, party_interact = false,
-                    static = false, locked = false, lockable = false, key_required = false, key = slice::empty(u8){}, open_dc = 0, close_dc = 0, auto_remove_key = false,
-                    inventory = list::new(u32, heap::Heap){ realloc = heap::alloc, heap = h }, walk = -1,
-                    model = resref::empty{}, anim = obj::ANIM_STAND, die_when_empty = false, user = obj::INVALID, opening = false, opening_until = 0,
+                    key = slice::empty(u8){},
+                    inventory = list::new(u32, heap::Heap){ realloc = heap::alloc, heap = h },
+                    ..
                 } } }
             }
             trigger => {
@@ -408,10 +392,7 @@ namespace world {
                 } } }
             }
             item => {
-                return obj::Ext::item{ i = try alloc::new(obj::Item, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Item{
-                    base = 0, model_variation = 1, body_variation = 1, texture_variation = 1, stack = 1, charges = 0,
-                    possessor = obj::INVALID, identified = true, equipped_slot = -1, non_equippable = false, rules = null, droppable = false, infinite = false, fresh = false, spent_props = 0, spent_at_ms = 0,
-                } } }
+                return obj::Ext::item{ i = try alloc::new(obj::Item, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Item{ .. } } }
             }
             waypoint => {
                 return obj::Ext::waypoint{ wp = try alloc::new(obj::Waypoint, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Waypoint{
@@ -420,10 +401,8 @@ namespace world {
             }
             sound => {
                 return obj::Ext::sound{ s = try alloc::new(obj::Sound, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Sound{
-                    active = false, continuous = false, looping = false, positional = false, random = false,
-                    random_position = false, interval = 0, interval_variation = 0, volume = 127, volume_variation = 0,
-                    pitch_variation = 0.0, elevation = 0.0, min_distance = 1.0, max_distance = 10.0, random_range_x = 0.0,
-                    random_range_y = 0.0, priority = 0, sounds = slice::empty(resref::ResRef){}, fixed_variance = 0.0,
+                    sounds = slice::empty(resref::ResRef){},
+                    ..
                 } } }
             }
             encounter => {
@@ -443,15 +422,8 @@ namespace world {
             }
             area => {
                 return obj::Ext::area{ a = try alloc::new(obj::Area, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Area{
-                    resref = resref::empty{}, name = obj::Name{ strref = 0xFFFFFFFF, text = slice::empty(u8){} },
-                    music_day = 0, music_night = 0, music_battle = 0, music_delay = 0, ambient_day = 0, ambient_night = 0,
-                    ambient_day_volume = 0, ambient_night_volume = 0, env_audio = 0, camera_style = 0, restrict_mode = 0, no_rest = false,
-                    unescapable = false, is_night = false, dyn_ambient = 0, sun_ambient = 0, sun_diffuse = 0, fog_on = false,
-                    fog_near = 99.0, fog_far = 100.0, fog_color = 0, load_screen = 0, last_heartbeat = 0,
-                    shadow_opacity = 128,
-                    grass = obj::Grass{ texture = resref::empty{}, density = 0.0, quad_size = 1.0, prob = [0.25; 4], wind = 0 },
-                    transition_token = 0, transition_pending = 0,
-                    stealth_xp_max = 0, stealth_xp_current = 0, stealth_xp_decrement = 0, stealth_xp_enabled = false, flags = 0, listen_mod = 0, minigame = null,
+                    name = obj::Name{ strref = 0xFFFFFFFF, text = slice::empty(u8){} },
+                    ..
                 } } }
             }
             module => {

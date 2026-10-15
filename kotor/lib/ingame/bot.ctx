@@ -22,37 +22,37 @@ namespace bot {
     const STUCK_TICKS: u32 = 240                // decisions on one stop before it gives up on it
 
     struct Bot {
-        on: bool,
-        unlock: bool,
-        god: bool,                              // keeps the leader at 1 hit point at least, module after module
-        sight: bool,                            // fights only what it has a clear line to
-        party: bool,                            // accepts a party selection screen
-        party_wait: u32,                        // ticks it has been open
-        route: [64][40]u8,
-        lens: [64]u8,
-        count: usize,
-        next: usize,
-        tick: u32,
-        waiting: u32,                           // decisions spent on the current stop
-        foe: u32,                               // the one it last ordered an attack on
-        foe_dist: f32,                          // how far that one was at the last decision
-        foe_stalled: u32,                       // decisions in a row that left it no nearer the foe: a closed door between
-        far_pos: math::Vec3,                    // where the leader stood when a foe farther than eight metres was first the nearest
-        foe_skips: [8]u32,                      // the foes it gave up on (in another room: the walk to them fails), left alone from then on
-        foe_skip_n: usize,
-        stalled: u32,                           // decisions in a row that left it no nearer the stop: a closed door in the way
-        last_dist: f32,
-        area: u32,                              // the area it last decided in (0 before the first decision)
-        talked: bool,                           // the current stop is a `@TAG` and the leader has been told to talk to it
-        clicked: usize,                         // 1 + the route index of the transition door it clicked last (0 none)
-        seen_open: bool,                        // the door of the current stop has been seen open (one the story shuts again is passed, not opened twice)
-        trans_stop: bool,                       // the current stop is a trigger that starts an area transition (crossing it is reaching it)
-        best: f32,                              // the nearest the leader has been to the current stop: a long walk is not a stuck one
+        on: bool = false,
+        unlock: bool = false,
+        god: bool = false,                      // keeps the leader at 1 hit point at least, module after module
+        sight: bool = false,                    // fights only what it has a clear line to
+        party: bool = false,                    // accepts a party selection screen
+        party_wait: u32 = 0,                    // ticks it has been open
+        route: [64][40]u8 = [[0; 40]; 64],
+        lens: [64]u8 = [0; 64],
+        count: usize = 0,
+        next: usize = 0,
+        tick: u32 = 0,
+        waiting: u32 = 0,                       // decisions spent on the current stop
+        foe: u32 = obj::INVALID,                // the one it last ordered an attack on
+        foe_dist: f32 = 0.0,                    // how far that one was at the last decision
+        foe_stalled: u32 = 0,                   // decisions in a row that left it no nearer the foe: a closed door between
+        far_pos: math::Vec3 = math::Vec3{ x = 0.0, y = 0.0, z = 0.0 }, // where the leader stood when a foe farther than eight metres was first the nearest
+        foe_skips: [8]u32 = [obj::INVALID; 8],  // the foes it gave up on (in another room: the walk to them fails), left alone from then on
+        foe_skip_n: usize = 0,
+        stalled: u32 = 0,                       // decisions in a row that left it no nearer the stop: a closed door in the way
+        last_dist: f32 = 0.0,
+        area: u32 = 0,                          // the area it last decided in (0 before the first decision)
+        talked: bool = false,                   // the current stop is a `@TAG` and the leader has been told to talk to it
+        clicked: usize = 0,                     // 1 + the route index of the transition door it clicked last (0 none)
+        seen_open: bool = false,                // the door of the current stop has been seen open (one the story shuts again is passed, not opened twice)
+        trans_stop: bool = false,               // the current stop is a trigger that starts an area transition (crossing it is reaching it)
+        best: f32 = 1000000.0,                  // the nearest the leader has been to the current stop: a long walk is not a stuck one
         tour: Tour,                             // the area's own route, when `bot tour` made one
     }
 
     fn new {} -> Bot {
-        return Bot{ on = false, unlock = false, god = false, sight = false, party = false, party_wait = 0, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, foe_dist = 0.0, foe_stalled = 0, far_pos = math::Vec3{ x = 0.0, y = 0.0, z = 0.0 }, foe_skips = [obj::INVALID; 8], foe_skip_n = 0, seen_open = false, stalled = 0, last_dist = 0.0, area = 0, talked = false, clicked = 0, trans_stop = false, best = 1000000.0, tour = new_tour{} }
+        return Bot{ tour = new_tour{}, .. }
     }
 
     // The `bot ...` input line, after the word `bot`.

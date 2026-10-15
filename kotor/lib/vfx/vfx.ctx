@@ -22,53 +22,50 @@ namespace vfx {
     enum Kind: u8 { still, follow, bolt, arc }
 
     struct Fx {
-        live: bool,
-        used: bool,                     // the slot holds a part and particle arrays (reusable for the same model)
-        loaded: usize,                  // scene.loaded: the model
-        part: usize,                    // scene.parts: its pose and animation
+        live: bool = false,
+        used: bool = false,             // the slot holds a part and particle arrays (reusable for the same model)
+        loaded: usize = 0,              // scene.loaded: the model
+        part: usize = 0,                // scene.parts: its pose and animation
         emitting: []mut gui3d::Emitting,
-        kind: Kind,
-        age: f32,                       // seconds since its first step (that one shows it as born)
-        fresh: bool,                    // not stepped yet: its first frame is its birth, however long the step was
-        life: f32,                      // seconds the emitters keep being fed
-        hold: i32,                      // a duration visual (visualeffects.2da id) kept until it is released, 0 none
-        stopped: bool,                  // past its life: the particles die out
-        detonate: bool,                 // the animation's `detonate` event fired this step
+        kind: Kind = Kind::still,
+        age: f32 = 0.0,                 // seconds since its first step (that one shows it as born)
+        fresh: bool = false,            // not stepped yet: its first frame is its birth, however long the step was
+        life: f32 = 0.0,                // seconds the emitters keep being fed
+        hold: i32 = 0,                  // a duration visual (visualeffects.2da id) kept until it is released, 0 none
+        stopped: bool = false,          // past its life: the particles die out
+        detonate: bool = false,         // the animation's `detonate` event fired this step
         // still
-        at: math::Vec3,
-        facing: math::Vec3,             // the way +Y points (zero: unrotated)
+        at: math::Vec3 = math::vec3::zero{},
+        facing: math::Vec3 = math::vec3::zero{}, // the way +Y points (zero: unrotated)
         // follow
-        object: u32,
-        hook: [24]u8,
-        hook_len: usize,
-        which: usize,                   // the nth part with that node (a second weapon's hook)
+        object: u32 = obj::INVALID,
+        hook: [24]u8 = [0; 24],
+        hook_len: usize = 0,
+        which: usize = 0,               // the nth part with that node (a second weapon's hook)
         // bolt
-        from: math::Vec3,
-        to: math::Vec3,
-        flight: f32,
-        end_effect: i32,                // a visualeffects.2da row played where the bolt ends, 0 none
+        from: math::Vec3 = math::vec3::zero{},
+        to: math::Vec3 = math::vec3::zero{},
+        flight: f32 = 0.0,
+        end_effect: i32 = 0,            // a visualeffects.2da row played where the bolt ends, 0 none
         // arc: each leg falls from where the last one ended (`from` for the first) to its end in its time
-        legs: [4]math::Vec3,
-        leg_time: [4]f32,
-        leg_count: usize,
-        leg: usize,
-        leg_age: f32,
+        legs: [4]math::Vec3 = [math::vec3::zero{}; 4],
+        leg_time: [4]f32 = [0.0; 4],
+        leg_count: usize = 0,
+        leg: usize = 0,
+        leg_age: f32 = 0.0,
         // where it stands this frame
-        matrix: math::Mat4,
-        dir: math::Vec3,                // a bolt's direction of flight
-        speed: f32,                     // a bolt's metres per second
+        matrix: math::Mat4 = math::mat4::identity{},
+        dir: math::Vec3 = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, // a bolt's direction of flight
+        speed: f32 = 0.0,               // a bolt's metres per second
         // a beam (beam.ctx): its Lightning emitters end at this object's `impact` node; obj::INVALID none
-        aim_object: u32,
-        beam: i32,                      // the beam's visualeffects.2da id, 0 none
+        aim_object: u32 = obj::INVALID,
+        beam: i32 = 0,                  // the beam's visualeffects.2da id, 0 none
     }
 
     fn no_fx {} -> Fx {
         return Fx{
-            live = false, used = false, loaded = 0, part = 0, emitting = slice::empty(gui3d::Emitting){}, kind = Kind::still, age = 0.0, fresh = false, life = 0.0, hold = 0,
-            stopped = false, detonate = false, at = math::vec3::zero{}, facing = math::vec3::zero{}, object = obj::INVALID, hook = [0; 24], hook_len = 0,
-            which = 0, from = math::vec3::zero{}, to = math::vec3::zero{}, flight = 0.0, end_effect = 0,
-            legs = [math::vec3::zero{}; 4], leg_time = [0.0; 4], leg_count = 0, leg = 0, leg_age = 0.0, matrix = math::mat4::identity{},
-            dir = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, speed = 0.0, aim_object = obj::INVALID, beam = 0,
+            emitting = slice::empty(gui3d::Emitting){},
+            ..
         }
     }
 

@@ -80,38 +80,38 @@ namespace scene {
         parts: list::List(Part, arena::Arena),
         rooms: list::List(Room, arena::Arena),
         room_refs: list::List(RoomRef, arena::Arena),  // parents before their children
-        seed: u32,                      // the reference models' coin (ours: an LCG for the original's rand)
+        seed: u32 = 0x2545F491,         // the reference models' coin (ours: an LCG for the original's rand)
         ray_trees: list::List(RayTree, arena::Arena),   // per room mesh, for the camera's rays (raytree.ctx)
-        ray_trees_built: bool,
+        ray_trees_built: bool = false,
         visuals: list::List(Visual, arena::Arena),
         by_id: map::Map(u32, usize, arena::Arena),
-        time: f32,
-        current_room: i32,
-        ambient: math::Vec3,
-        fog: render::Fog,
-        drawn_rooms: u32,
-        drawn_objects: u32,
+        time: f32 = 0.0,
+        current_room: i32 = -1,
+        ambient: math::Vec3 = math::Vec3{ x = 0.35, y = 0.35, z = 0.35 },
+        fog: render::Fog = render::no_fog{},
+        drawn_rooms: u32 = 0,
+        drawn_objects: u32 = 0,
         look: Look,                     // a creature in stealth mode's texture (stealth_look.ctx)
         grass: grass::Field,            // the area's grass (grass.ctx); `grass.on` is the Grass option, set by the owner
-        room_light: bool,               // the Room Light option (set by the owner): visuals take the light around them (probes.ctx)
+        room_light: bool = false,       // the Room Light option (set by the owner): visuals take the light around them (probes.ctx)
         field: Field,                   // what the probes are cast against, and the probes
-        sun_state: u8,                  // the area's sun (sun.ctx): 0 not looked for yet, 1 found, 2 none
-        sun_at: math::Vec3,
-        sun_dir: math::Vec3,                // the direction its light takes, in steps (sun.ctx); zero: none yet
-        volume_light: i32,              // the frame light the shadow volumes are cast from (visual.ctx, shadow_of); -1 none
-        volume_at: math::Vec3,          // where it is, to keep it from frame to frame
-        sun_color: math::Vec3,
-        shadow_opacity: f32,            // the ARE's ShadowOpacity, 0..1
-        grade: ?render::Texture,        // the planet's colour grade (atmosphere.ctx): a lookup table on the GPU, made when first asked for
-        grade_state: u8,                // 0 not made yet, 1 made, 2 none
-        hfog: render::HeightFog,        // the area's height fog (atmosphere.ctx)
-        hfog_state: u8,                 // 0 not looked for yet, 1 found, 2 none
-        emitters_on: bool,              // the Emitters option (set by the owner): the world's emitters run and draw (emitters.ctx)
-        fx_frame: u32,                  // frames drawn so far (a new scene time), for stepping each emitter once a frame
-        fx_time: f32,                   // the scene time of the last of them
-        fx_dt: f32,                     // and how long before it the one before was drawn
-        drawn_emitters: u32,            // the world emitters the last draw showed, and their particles (the screenshot log)
-        drawn_particles: u32,
+        sun_state: u8 = 0,              // the area's sun (sun.ctx): 0 not looked for yet, 1 found, 2 none
+        sun_at: math::Vec3 = math::vec3::zero{},
+        sun_dir: math::Vec3 = math::vec3::zero{}, // the direction its light takes, in steps (sun.ctx); zero: none yet
+        volume_light: i32 = -1,         // the frame light the shadow volumes are cast from (visual.ctx, shadow_of); -1 none
+        volume_at: math::Vec3 = math::vec3::zero{}, // where it is, to keep it from frame to frame
+        sun_color: math::Vec3 = math::vec3::zero{},
+        shadow_opacity: f32 = 0.5,      // the ARE's ShadowOpacity, 0..1
+        grade: ?render::Texture = null, // the planet's colour grade (atmosphere.ctx): a lookup table on the GPU, made when first asked for
+        grade_state: u8 = 0,            // 0 not made yet, 1 made, 2 none
+        hfog: render::HeightFog = render::no_height_fog{}, // the area's height fog (atmosphere.ctx)
+        hfog_state: u8 = 0,             // 0 not looked for yet, 1 found, 2 none
+        emitters_on: bool = true,       // the Emitters option (set by the owner): the world's emitters run and draw (emitters.ctx)
+        fx_frame: u32 = 0,              // frames drawn so far (a new scene time), for stepping each emitter once a frame
+        fx_time: f32 = -1.0,            // the scene time of the last of them
+        fx_dt: f32 = 0.0,               // and how long before it the one before was drawn
+        drawn_emitters: u32 = 0,        // the world emitters the last draw showed, and their particles (the screenshot log)
+        drawn_particles: u32 = 0,
     }
 
     fn make { arena: *mut arena::Arena, heap: *mut heap::Heap, scratch: alloc::Bytes, rm: res::Manager } -> Scene {
@@ -125,16 +125,13 @@ namespace scene {
             missing_anims = map::new([]u8, u32, arena::Arena){ realloc = arena::alloc, heap = arena, hash = map::hash_bytes, eq = slice::eq_bytes },
             parts = list::new(Part, arena::Arena){ realloc = arena::alloc, heap = arena },
             rooms = list::new(Room, arena::Arena){ realloc = arena::alloc, heap = arena },
-            room_refs = list::new(RoomRef, arena::Arena){ realloc = arena::alloc, heap = arena }, seed = 0x2545F491,
-            ray_trees = list::new(RayTree, arena::Arena){ realloc = arena::alloc, heap = arena }, ray_trees_built = false,
+            room_refs = list::new(RoomRef, arena::Arena){ realloc = arena::alloc, heap = arena },
+            ray_trees = list::new(RayTree, arena::Arena){ realloc = arena::alloc, heap = arena },
             visuals = list::new(Visual, arena::Arena){ realloc = arena::alloc, heap = arena },
             by_id = map::new(u32, usize, arena::Arena){ realloc = arena::alloc, heap = arena, hash = map::hash_u32, eq = map::eq_u32 },
-            time = 0.0, current_room = -1, ambient = math::Vec3{ x = 0.35, y = 0.35, z = 0.35 }, fog = render::no_fog{},
-            drawn_rooms = 0, drawn_objects = 0, look = no_look{}, grass = grass::none{},
-            room_light = false, field = no_field{ arena },
-            sun_state = 0, sun_at = math::vec3::zero{}, sun_dir = math::vec3::zero{}, volume_light = -1, volume_at = math::vec3::zero{}, sun_color = math::vec3::zero{}, shadow_opacity = 0.5,
-            grade = null, grade_state = 0, hfog = render::no_height_fog{}, hfog_state = 0,
-            emitters_on = true, fx_frame = 0, fx_time = -1.0, fx_dt = 0.0, drawn_emitters = 0, drawn_particles = 0,
+            look = no_look{}, grass = grass::none{},
+            field = no_field{ arena },
+            ..
         }
     }
 

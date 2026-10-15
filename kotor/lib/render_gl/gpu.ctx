@@ -78,53 +78,53 @@ namespace gpu {
         targets: []mut TargetSlot,
         screen: gl::Target,
         screen_ms: MsBuffers,       // the screen's multisampled twin (samples > 0)
-        samples: i32,               // the anti-aliasing option: 0 off, else 2, 4 or 8 samples
+        samples: i32 = 0,           // the anti-aliasing option: 0 off, else 2, 4 or 8 samples
         max_samples: i32,
-        shadows: bool,              // the Shadows and Soft Shadows options: whether the frame's shadows are drawn, and softened
-        soft_shadows: bool,
-        particles: bool,            // the Emitters option: whether the frame's emitters are drawn
-        screen_effects: bool,       // the Frame Buffer Effects option: effects that read the picture so far
-        gamma: f32,                 // the brightness option's exponent; 1 leaves the picture alone
+        shadows: bool = true,       // the Shadows and Soft Shadows options: whether the frame's shadows are drawn, and softened
+        soft_shadows: bool = false,
+        particles: bool = true,     // the Emitters option: whether the frame's emitters are drawn
+        screen_effects: bool = true, // the Frame Buffer Effects option: effects that read the picture so far
+        gamma: f32 = 1.0,           // the brightness option's exponent; 1 leaves the picture alone
         scene: ScenePrograms,
-        ui: UiProgram,
+        ui: UiProgram = UiProgram{ id = 0, screen = -1, image = -1 },
         particle: ParticleProgram,
-        debug: DebugProgram,
-        post: PostProgram,
-        blur: BlurProgram,
-        video: VideoProgram,
+        debug: DebugProgram = DebugProgram{ id = 0 },
+        post: PostProgram = PostProgram{ id = 0, exponent = -1 },
+        blur: BlurProgram = BlurProgram{ id = 0, strength = -1 },
+        video: VideoProgram = VideoProgram{ id = 0, red = -1, green = -1, blue = -1, noise = -1, seed = -1, cells = -1 },
         fx: gl::Target,             // a copy of the screen for the effects that read it (made when first needed)
-        fx_made: bool,
-        frame_ubo: u32,
-        white: u32,                 // a 1x1 white 2D texture and a black cube, bound where a material
-        black_cube: u32,            //   has no map, so every sampler has something complete
-        stream: u32,                // the vertex buffer streamed data goes through, a ring of STREAM_RING bytes
-        stream_at: usize,           // where the next streamed draw's data goes in it
-        ui_vao: u32,
-        particle_vao: u32,
-        debug_vao: u32,
+        fx_made: bool = false,
+        frame_ubo: u32 = 0,
+        white: u32 = 0,             // a 1x1 white 2D texture and a black cube, bound where a material
+        black_cube: u32 = 0,        //   has no map, so every sampler has something complete
+        stream: u32 = 0,            // the vertex buffer streamed data goes through, a ring of STREAM_RING bytes
+        stream_at: usize = 0,       // where the next streamed draw's data goes in it
+        ui_vao: u32 = 0,
+        particle_vao: u32 = 0,
+        debug_vao: u32 = 0,
         scratch: []mut f32,         // STREAM_FLOATS, where streamed data is assembled
         sort: []mut SortItem,       // SORT_ITEMS, and as many again to merge through
         sort_tmp: []mut SortItem,
         state: State,
-        stats: render::Stats,
+        stats: render::Stats = render::Stats{ draws = 0, triangles = 0, culled = 0, state_changes = 0, quads = 0, particles = 0, ui_draws = 0 },
         anisotropy: f32,            // the anisotropic filtering level textures get (0: the driver has none)
         max_anisotropy: f32,
         log: []mut u8,              // for the driver's shader logs
         // The enhanced renderer (fx.ctx): the options, its programs and targets, and which programs draw now.
-        enhance: render::Enhance,
+        enhance: render::Enhance = render::original_look{},
         scene_fx: ScenePrograms,
         particle_fx: ParticleProgram,
         fxp: FxPrograms,
         fxt: FxTargets,
         cur: ScenePrograms,         // the scene program of the view being drawn: `scene`, or `scene_fx` for an enhanced view
         cur_particle: ParticleProgram,
-        in_fx: bool,                // the view being drawn is an enhanced one
+        in_fx: bool = false,        // the view being drawn is an enhanced one
         timer: Timer,               // GPU time per pass (timing.ctx)
         atmos: AtmosPrograms,       // fx_atmos.ctx
         aa: AaPrograms,             // fx_aa.ctx
         shadow: ShadowState,        // fx_shadow.ctx
         scene_tess: ScenePrograms,  // fx_tess.ctx: the scene program with PN-triangle tessellation
-        tess_level: i32,
+        tess_level: i32 = -1,
         aos: AoState,               // fx_ao.ctx
         dof: DofState,              // fx_dof.ctx
         ssr: SsrState,              // fx_ssr.ctx
@@ -178,27 +178,21 @@ namespace gpu {
             textures = try alloc::resize(TexSlot, S){ realloc, &heap, mem = slice::empty(TexSlot){}, count = config.max_textures },
             meshes = try alloc::resize(MeshSlot, S){ realloc, &heap, mem = slice::empty(MeshSlot){}, count = config.max_meshes },
             targets = try alloc::resize(TargetSlot, S){ realloc, &heap, mem = slice::empty(TargetSlot){}, count = config.max_targets },
-            screen, screen_ms = no_ms{}, samples = 0, max_samples = if max_samples > 8 { 8 } else { max_samples }, gamma = 1.0,
-            shadows = true, soft_shadows = false, particles = true, screen_effects = true,
+            screen, screen_ms = no_ms{}, max_samples = if max_samples > 8 { 8 } else { max_samples },
             scene = no_scene_program{},
-            ui = UiProgram{ id = 0, screen = -1, image = -1 },
             particle = no_particle_program{},
-            debug = DebugProgram{ id = 0 },
-            post = PostProgram{ id = 0, exponent = -1 },
-            blur = BlurProgram{ id = 0, strength = -1 },
-            video = VideoProgram{ id = 0, red = -1, green = -1, blue = -1, noise = -1, seed = -1, cells = -1 }, fx = screen, fx_made = false,
-            frame_ubo = 0, white = 0, black_cube = 0, stream = 0, stream_at = 0, ui_vao = 0, particle_vao = 0, debug_vao = 0,
+            fx = screen,
             scratch = try alloc::resize(f32, S){ realloc, &heap, mem = slice::empty(f32){}, count = STREAM_FLOATS },
             sort = try alloc::resize(SortItem, S){ realloc, &heap, mem = slice::empty(SortItem){}, count = SORT_ITEMS },
             sort_tmp = try alloc::resize(SortItem, S){ realloc, &heap, mem = slice::empty(SortItem){}, count = SORT_ITEMS },
             state = unknown_state{},
-            stats = render::Stats{ draws = 0, triangles = 0, culled = 0, state_changes = 0, quads = 0, particles = 0, ui_draws = 0 },
             anisotropy = if aniso { math::min{ a = 8.0, b = max_aniso } } else { 0.0 }, max_anisotropy = max_aniso,
             log = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = 8192 },
-            enhance = render::original_look{}, scene_fx = no_scene_program{}, particle_fx = no_particle_program{},
+            scene_fx = no_scene_program{}, particle_fx = no_particle_program{},
             fxp = no_fx_programs{}, fxt = no_fx_targets{}, cur = no_scene_program{}, cur_particle = no_particle_program{},
-            in_fx = false, timer = no_timer{}, atmos = no_atmos_programs{}, aa = no_aa_programs{}, shadow = no_shadows{}, scene_tess = no_scene_program{}, tess_level = -1, aos = no_ao{}, dof = no_dof{}, ssr = no_ssr{}, ofx = no_orig_fx{},
+            timer = no_timer{}, atmos = no_atmos_programs{}, aa = no_aa_programs{}, shadow = no_shadows{}, scene_tess = no_scene_program{}, aos = no_ao{}, dof = no_dof{}, ssr = no_ssr{}, ofx = no_orig_fx{},
             pointer = no_pointer_state{ pixels = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = POINTER_BYTES * 2 } },
+            ..
         }
         clear_tables{ &dev }
         try make_programs{ &dev }

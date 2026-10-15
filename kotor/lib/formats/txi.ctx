@@ -30,63 +30,63 @@ namespace txi {
 
     struct Txi {
         // blending and sampling
-        blending: Blending,
-        decal: bool,
-        mipmap: bool,
-        filter: bool,                   // false: nearest-texel sampling
-        clamp: i32,                     // bit 0: clamp u, bit 1: clamp v
-        downsamplemin: i32,
-        downsamplemax: i32,
-        alphamean: ?f32,                // overrides the TPC header's mean alpha
-        gamma: f32,
-        cube: bool,
+        blending: Blending = Blending::default,
+        decal: bool = false,
+        mipmap: bool = true,
+        filter: bool = true,            // false: nearest-texel sampling
+        clamp: i32 = 0,                 // bit 0: clamp u, bit 1: clamp v
+        downsamplemin: i32 = 0,
+        downsamplemax: i32 = 15,
+        alphamean: ?f32 = null,         // overrides the TPC header's mean alpha
+        gamma: f32 = 1.0,
+        cube: bool = false,
         // environment and bump maps (empty resrefs: none)
-        envmaptexture: resref::ResRef,
-        bumpyshinytexture: resref::ResRef,
-        bumpmaptexture: resref::ResRef,
-        isbumpmap: bool,
-        bumpmapscaling: f32,
-        isdiffusebumpmap: bool,
-        isspecularbumpmap: bool,
-        specularcolor: ?Color,
-        wateralpha: ?f32,
+        envmaptexture: resref::ResRef = resref::empty{},
+        bumpyshinytexture: resref::ResRef = resref::empty{},
+        bumpmaptexture: resref::ResRef = resref::empty{},
+        isbumpmap: bool = false,
+        bumpmapscaling: f32 = 1.0,
+        isdiffusebumpmap: bool = false,
+        isspecularbumpmap: bool = false,
+        specularcolor: ?Color = null,
+        wateralpha: ?f32 = null,
         // read by the engine but used by no shipped texture: the number given, if any
-        envmapalpha: ?f32,
-        isenvironmentmapped: ?f32,
-        bumpintensity: ?f32,
-        diffusebumpintensity: ?f32,
-        specularbumpintensity: ?f32,
-        useglobalalpha: ?f32,
-        temporary: ?f32,
-        maptexelstopixels: ?f32,
-        renderbmlmtype: ?f32,
+        envmapalpha: ?f32 = null,
+        isenvironmentmapped: ?f32 = null,
+        bumpintensity: ?f32 = null,
+        diffusebumpintensity: ?f32 = null,
+        specularbumpintensity: ?f32 = null,
+        useglobalalpha: ?f32 = null,
+        temporary: ?f32 = null,
+        maptexelstopixels: ?f32 = null,
+        renderbmlmtype: ?f32 = null,
         // flipbooks
-        proceduretype: Procedure,
-        numx: i32,
-        numy: i32,
-        fps: i32,
+        proceduretype: Procedure = Procedure::none,
+        numx: i32 = 1,
+        numy: i32 = 1,
+        fps: i32 = 0,
         // procedural textures
-        defaultwidth: i32,
-        defaultheight: i32,
-        channelscale: [4]f32,           // R, G, B, A
-        channeltranslate: [4]f32,
-        distort: f32,
-        distortionamplitude: f32,
-        speed: f32,
-        arturowidth: i32,
-        arturoheight: i32,
-        waterwidth: i32,
-        waterheight: i32,
-        distortangle: ?f32,             // unused by the shipped textures, like the next two
-        anglecyclespeed: ?f32,
-        forcecyclespeed: ?f32,
+        defaultwidth: i32 = 0,
+        defaultheight: i32 = 0,
+        channelscale: [4]f32 = [1.0, 1.0, 1.0, 1.0], // R, G, B, A
+        channeltranslate: [4]f32 = [0.0, 0.0, 0.0, 0.0],
+        distort: f32 = 0.0,
+        distortionamplitude: f32 = 0.0,
+        speed: f32 = 0.0,
+        arturowidth: i32 = 0,
+        arturoheight: i32 = 0,
+        waterwidth: i32 = 0,
+        waterheight: i32 = 0,
+        distortangle: ?f32 = null,      // unused by the shipped textures, like the next two
+        anglecyclespeed: ?f32 = null,
+        forcecyclespeed: ?f32 = null,
         // fonts
-        numchars: i32,
-        fontheight: f32,                // cell height / 100 texels
-        baselineheight: f32,
-        texturewidth: f32,              // texture width / 100
-        spacingr: f32,
-        spacingb: f32,
+        numchars: i32 = 0,
+        fontheight: f32 = 0.0,          // cell height / 100 texels
+        baselineheight: f32 = 0.0,
+        texturewidth: f32 = 0.0,        // texture width / 100
+        spacingr: f32 = 0.0,
+        spacingb: f32 = 0.0,
         upperleftcoords: []mut Coord,   // glyph i's corners; as many as the block's lines
         lowerrightcoords: []mut Coord,
     }
@@ -95,22 +95,8 @@ namespace txi {
     // values where KOTOR's are unknown: gamma 1, downsamplemax 15).
     fn defaults {} -> Txi {
         return Txi{
-            blending = Blending::default, decal = false, mipmap = true, filter = true, clamp = 0,
-            downsamplemin = 0, downsamplemax = 15, alphamean = null, gamma = 1.0, cube = false,
-            envmaptexture = resref::empty{}, bumpyshinytexture = resref::empty{}, bumpmaptexture = resref::empty{},
-            isbumpmap = false, bumpmapscaling = 1.0, isdiffusebumpmap = false, isspecularbumpmap = false,
-            specularcolor = null, wateralpha = null,
-            envmapalpha = null, isenvironmentmapped = null, bumpintensity = null, diffusebumpintensity = null,
-            specularbumpintensity = null, useglobalalpha = null, temporary = null, maptexelstopixels = null,
-            renderbmlmtype = null,
-            proceduretype = Procedure::none, numx = 1, numy = 1, fps = 0,
-            defaultwidth = 0, defaultheight = 0,
-            channelscale = [1.0, 1.0, 1.0, 1.0], channeltranslate = [0.0, 0.0, 0.0, 0.0],
-            distort = 0.0, distortionamplitude = 0.0, speed = 0.0,
-            arturowidth = 0, arturoheight = 0, waterwidth = 0, waterheight = 0,
-            distortangle = null, anglecyclespeed = null, forcecyclespeed = null,
-            numchars = 0, fontheight = 0.0, baselineheight = 0.0, texturewidth = 0.0, spacingr = 0.0, spacingb = 0.0,
             upperleftcoords = slice::empty(Coord){}, lowerrightcoords = slice::empty(Coord){},
+            ..
         }
     }
 

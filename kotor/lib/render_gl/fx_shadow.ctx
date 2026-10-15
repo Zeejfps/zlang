@@ -48,46 +48,46 @@ namespace gpu {
     }
 
     struct ShadowState {
-        size: i32,                          // the atlas's side: 0 not made
-        atlas: u32,
-        fbo: u32,
-        sampler_cmp: u32,                   // the atlas with depth comparison and bilinear filtering (unit 5)
-        sampler_raw: u32,                   // the atlas's depths as they are (unit 6), for the soft shadows' blocker search
-        program: u32,
+        size: i32 = 0,                      // the atlas's side: 0 not made
+        atlas: u32 = 0,
+        fbo: u32 = 0,
+        sampler_cmp: u32 = 0,               // the atlas with depth comparison and bilinear filtering (unit 5)
+        sampler_raw: u32 = 0,               // the atlas's depths as they are (unit 6), for the soft shadows' blocker search
+        program: u32 = 0,
         loc: ScenePrograms,
         // The view being drawn:
-        sun: bool,
-        sun_light: u32,                     // the frame light that is the sun, + 1
+        sun: bool = false,
+        sun_light: u32 = 0,                 // the frame light that is the sun, + 1
         sun_mat: [2]math::Mat4,             // world to atlas (uv, depth): moving casters, everything
-        sun_dir: math::Vec3,
-        sun_strength: f32,
-        sun_texel: f32,                     // metres per texel of the sun's maps
-        sun_soft: f32,                      // penumbra width in atlas uv per unit of depth difference
-        points: u32,                        // point lights with a map this view
-        point_light: [5]u32,                // their frame lights (NO_LIGHT: fading out, gone from the frame)
-        point_pos: [5]math::Vec4,           // position, radius
-        point_weight: [5]f32,               // how far each has faded in
+        sun_dir: math::Vec3 = math::vec3::zero{},
+        sun_strength: f32 = 0.0,
+        sun_texel: f32 = 0.0,               // metres per texel of the sun's maps
+        sun_soft: f32 = 0.0,                // penumbra width in atlas uv per unit of depth difference
+        points: u32 = 0,                    // point lights with a map this view
+        point_light: [5]u32 = [0; 5],       // their frame lights (NO_LIGHT: fading out, gone from the frame)
+        point_pos: [5]math::Vec4 = [math::Vec4{ x = 0.0, y = 0.0, z = 0.0, w = 1.0 }; 5], // position, radius
+        point_weight: [5]f32 = [0.0; 5],    // how far each has faded in
         point_mat: [30]math::Mat4,
-        point_strength: f32,
-        volumes: bool,                      // the last enhanced view drew the original's volumes instead
+        point_strength: f32 = 0.0,
+        volumes: bool = false,              // the last enhanced view drew the original's volumes instead
         // Kept from view to view:
         track: [5]ShadowTrack,
-        fallback: f32,                      // the overhead map's weight (fading as the point lights do)
-        last_time: f32,                     // the last view's Frame.time
-        last_eye: math::Vec3,               // and its camera's eye
-        timed: bool,                        // last_time holds one
-        cut: bool,                          // this view's choice was taken at once (snap)
-        up_x: bool,                         // the sun's map is turned about the world's x (a sun nearly overhead)
+        fallback: f32 = 0.0,                // the overhead map's weight (fading as the point lights do)
+        last_time: f32 = 0.0,               // the last view's Frame.time
+        last_eye: math::Vec3 = math::vec3::zero{}, // and its camera's eye
+        timed: bool = false,                // last_time holds one
+        cut: bool = false,                  // this view's choice was taken at once (snap)
+        up_x: bool = false,                 // the sun's map is turned about the world's x (a sun nearly overhead)
     }
 
     fn no_shadows {} -> ShadowState {
         let id = math::mat4::identity{}
         return ShadowState{
-            size = 0, atlas = 0, fbo = 0, sampler_cmp = 0, sampler_raw = 0, program = 0, loc = no_scene_program{},
-            sun = false, sun_light = 0, sun_mat = [id; 2], sun_dir = math::vec3::zero{}, sun_strength = 0.0, sun_texel = 0.0, sun_soft = 0.0,
-            points = 0, point_light = [0; 5], point_pos = [math::Vec4{ x = 0.0, y = 0.0, z = 0.0, w = 1.0 }; 5], point_weight = [0.0; 5],
-            point_mat = [id; 30], point_strength = 0.0, volumes = false,
-            track = [no_track{}; 5], fallback = 0.0, last_time = 0.0, last_eye = math::vec3::zero{}, timed = false, cut = false, up_x = false,
+            loc = no_scene_program{},
+            sun_mat = [id; 2],
+            point_mat = [id; 30],
+            track = [no_track{}; 5],
+            ..
         }
     }
 

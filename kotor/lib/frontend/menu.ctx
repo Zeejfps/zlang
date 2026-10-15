@@ -41,80 +41,69 @@ namespace frontend {
     struct Front {
         heap: *mut heap::Heap,
         game: []u8,                         // the install, for Saves/
-        own_saves: [300]u8, own_saves_len: usize,   // our saves directory (set_own_saves), listed with the install's
-        played_seconds: u32,                // the game's play time, for the default save name (in game)
-        save_name: [64]u8, save_len: usize, // the name the Save Game screen was given: take_save_request
-        save_slot: i32,                     // with it, the manual save it writes over (-1: a new slot)
-        pick_slot: i32,                     // the save the name box is for (-1: a new slot), until it is accepted
-        pick_load: i32,                     // the Load Game row the 32155 box is for
-        pick_delete: i32,                   // the save list's row the 1592 box is for
-        shown_row: i32,                     // the save list's row whose details are shown (the hilighted one): what Delete acts on
-        in_game: bool,                      // the screens are the in-game options menu's (a game is running), not the main menu's
-        name_default: [64]u8, name_default_len: usize,  // what the name box starts with
+        own_saves: [300]u8 = [0; 300], own_saves_len: usize = 0, // our saves directory (set_own_saves), listed with the install's
+        played_seconds: u32 = 0,            // the game's play time, for the default save name (in game)
+        save_name: [64]u8 = [0; 64], save_len: usize = 0, // the name the Save Game screen was given: take_save_request
+        save_slot: i32 = -1,                // with it, the manual save it writes over (-1: a new slot)
+        pick_slot: i32 = -1,                // the save the name box is for (-1: a new slot), until it is accepted
+        pick_load: i32 = -1,                // the Load Game row the 32155 box is for
+        pick_delete: i32 = -1,              // the save list's row the 1592 box is for
+        shown_row: i32 = -1,                // the save list's row whose details are shown (the hilighted one): what Delete acts on
+        in_game: bool = false,              // the screens are the in-game options menu's (a game is running), not the main menu's
+        name_default: [64]u8 = [0; 64], name_default_len: usize = 0, // what the name box starts with
         settings: Settings,
-        config_path: [256]u8, config_len: usize,
-        stack: [10]Entry, depth: usize,
-        saves: SaveList, saves_loaded: bool,
-        shot: ?render::Texture,             // the selected save's screenshot
-        display_pending: bool,              // resolution, fullscreen or vsync changed: the engine applies it
+        config_path: [256]u8 = [0; 256], config_len: usize = 0,
+        stack: [10]Entry = [Entry{ screen = 0, panel = 0 }; 10], depth: usize = 0,
+        saves: SaveList, saves_loaded: bool = false,
+        shot: ?render::Texture = null,      // the selected save's screenshot
+        display_pending: bool = false,      // resolution, fullscreen or vsync changed: the engine applies it
         // What the display offers, for the resolution list (set_display_info): every mode, the desktop's, and the
         // room a window has; and the size the game renders at now, for the UI Scale button's "Auto (175%)".
-        modes: [192]render::DisplayMode, mode_count: usize,
-        desktop: render::DisplayMode,
-        usable_w: i32, usable_h: i32,
-        render_w: i32, render_h: i32,
-        max_samples: i32, max_anisotropy: f32,  // the device's limits: the Advanced panel offers the steps within them
-        rows: [192]render::DisplayMode, row_count: usize,      // the rows the resolution list shows
-        sound_pending: bool,
-        play_request: [24]u8, play_len: usize,      // a movie the player picked in the movie list
-        start_module: [16]u8, start_len: usize,
-        saves_dir: [300]u8, saves_dir_len: usize,
+        modes: [192]render::DisplayMode = [render::DisplayMode{ width = 0, height = 0, refresh = 0 }; 192], mode_count: usize = 0,
+        desktop: render::DisplayMode = render::DisplayMode{ width = 1920, height = 1080, refresh = 60 },
+        usable_w: i32 = 1920, usable_h: i32 = 1080,
+        render_w: i32 = 1280, render_h: i32 = 720,
+        max_samples: i32 = 8, max_anisotropy: f32 = 16.0, // the device's limits: the Advanced panel offers the steps within them
+        rows: [192]render::DisplayMode = [render::DisplayMode{ width = 0, height = 0, refresh = 0 }; 192], row_count: usize = 0,  // the rows the resolution list shows
+        sound_pending: bool = true,
+        play_request: [24]u8 = [0; 24], play_len: usize = 0,  // a movie the player picked in the movie list
+        start_module: [16]u8 = [0; 16], start_len: usize = 0,
+        saves_dir: [300]u8 = [0; 300], saves_dir_len: usize = 0,
         snapshot: Settings,                 // the options when an Advanced panel opened, for its Cancel
         // the start-up movies and the movie list
-        stage: u32,
-        queue: [4][24]u8, queue_lens: [4]usize, queue_count: usize, queue_at: usize,
-        player: ?*mut movie::Player,
-        tables: ?*bink_tables::Tables,
-        audio_clock: bool,
-        from_menu: bool,                    // the movie playing was picked from the movie list
+        stage: u32 = 0,
+        queue: [4][24]u8 = [[0; 24]; 4], queue_lens: [4]usize = [0; 4], queue_count: usize = 0, queue_at: usize = 0,
+        player: ?*mut movie::Player = null,
+        tables: ?*bink_tables::Tables = null,
+        audio_clock: bool = true,
+        from_menu: bool = false,            // the movie playing was picked from the movie list
         // the 3D background of the main menu
-        scene: ?*mut MenuScene,
-        scene_failed: bool,
+        scene: ?*mut MenuScene = null,
+        scene_failed: bool = false,
         // character generation, while the player is making a character
-        cg: ?*mut chargen::State,
+        cg: ?*mut chargen::State = null,
         // the menu's music
-        music: mix::Handle,
+        music: mix::Handle = mix::Handle{ slot = 0, id = 0 },
         music_bytes: []mut u8,
-        music_started: bool,
-        hint_game: u32, hint_story: u32,    // the loading screen's round-robin hint counters
-        cg_wait: bool,                      // New Game was picked: character generation starts after the next frame, behind its loading screen
-        load_panel: u32,                    // that loading screen (0 when none)
-        tutorials_allowed: bool,            // someone is playing: character generation's tutorial pop-ups may show
-        tutorial_shown: [6]u8,              // the ones character generation showed, for the new game's shown set
+        music_started: bool = false,
+        hint_game: u32 = 0, hint_story: u32 = 0, // the loading screen's round-robin hint counters
+        cg_wait: bool = false,              // New Game was picked: character generation starts after the next frame, behind its loading screen
+        load_panel: u32 = 0,                // that loading screen (0 when none)
+        tutorials_allowed: bool = false,    // someone is playing: character generation's tutorial pop-ups may show
+        tutorial_shown: [6]u8 = [0; 6],     // the ones character generation showed, for the new game's shown set
         keys: KeyScreen,                    // the key remapping screen (keymap_panel.ctx)
     }
 
     // A front end with the options from `config_path` (the defaults if there is no such file).
     fn make { mut fs: Fs, heap: *mut heap::Heap, game: []u8, config_path: []u8 } -> Front {
         let mut fe = Front{
-            heap, game, own_saves = [0; 300], own_saves_len = 0, played_seconds = 0,
-            save_name = [0; 64], save_len = 0, save_slot = -1, pick_slot = -1, pick_load = -1, pick_delete = -1, shown_row = -1, in_game = false, name_default = [0; 64], name_default_len = 0,
+            heap, game,
             settings = load_settings{ &fs, heap, path = config_path },
-            config_path = [0; 256], config_len = 0, stack = [Entry{ screen = 0, panel = 0 }; 10], depth = 0,
-            saves = SaveList{ entries = slice::empty(SaveEntry){}, count = 0 }, saves_loaded = false, shot = null,
-            display_pending = false, sound_pending = true,
-            modes = [render::DisplayMode{ width = 0, height = 0, refresh = 0 }; 192], mode_count = 0,
-            desktop = render::DisplayMode{ width = 1920, height = 1080, refresh = 60 }, usable_w = 1920, usable_h = 1080,
-            render_w = 1280, render_h = 720, max_samples = 8, max_anisotropy = 16.0,
-            rows = [render::DisplayMode{ width = 0, height = 0, refresh = 0 }; 192], row_count = 0,
-            play_request = [0; 24], play_len = 0, start_module = [0; 16], start_len = 0,
-            saves_dir = [0; 300], saves_dir_len = 0,
+            saves = SaveList{ entries = slice::empty(SaveEntry){}, count = 0 },
             snapshot = default_settings{},
-            stage = 0, queue = [[0; 24]; 4], queue_lens = [0; 4], queue_count = 0, queue_at = 0,
-            player = null, tables = null, audio_clock = true, from_menu = false,
-            scene = null, scene_failed = false, cg = null,
-            music = mix::Handle{ slot = 0, id = 0 }, music_bytes = slice::empty(u8){}, music_started = false,
-            hint_game = 0, hint_story = 0, cg_wait = false, load_panel = 0, tutorials_allowed = false, tutorial_shown = [0; 6], keys = new_key_screen{},
+            music_bytes = slice::empty(u8){},
+            keys = new_key_screen{},
+            ..
         }
         fe.config_len = copy_into{ dst = fe.config_path[..], src = config_path }
         fe.start_len = copy_into{ dst = fe.start_module[..], src = "end_m01aa" }
