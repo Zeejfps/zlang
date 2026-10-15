@@ -243,13 +243,13 @@ namespace bink {
             i = i + n
         }
         let end_of_index: u64 = start + 4 * index.len
-        let first: u64 = index[0] & 0xFFFFFFFE
+        let first: u64 = index[0] & ~1
         if first < end_of_index { return bad_frame{ frame = 0 } }
         let mut largest: usize = 0
         let mut f: usize = 0
         while f + 1 < index.len {
-            let a = index[f] & 0xFFFFFFFE
-            let b = index[f + 1] & 0xFFFFFFFE
+            let a = index[f] & ~1
+            let b = index[f + 1] & ~1
             if b < a { return bad_frame{ frame = @trunc(u32, f) } }
             let size: usize = b - a
             if size > MAX_FRAME_BYTES { return bad_frame{ frame = @trunc(u32, f) } }
@@ -280,8 +280,8 @@ namespace bink {
     fn read_frame { mut fs: Fs, mut m: Movie } -> !?[]u8 {
         let f = m.frame
         if f >= m.header.frames { return null }
-        let start: u64 = m.index[f] & 0xFFFFFFFE
-        let end: u64 = m.index[f + 1] & 0xFFFFFFFE
+        let start: u64 = m.index[f] & ~1
+        let end: u64 = m.index[f + 1] & ~1
         if start < m.pos { return bad_frame{ frame = f } }
         // Bytes between frames (none in KOTOR's files) are read past.
         while m.pos < start {

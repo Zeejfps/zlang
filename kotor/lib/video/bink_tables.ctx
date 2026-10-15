@@ -208,6 +208,6 @@ namespace bink_tables {
             c = table[(c ^ bytes[i]) & 0xFF] ^ (c >> 8)
             i = i + 1
         }
-        return c ^ 0xFFFFFFFF
+        return ~c
     }
 }

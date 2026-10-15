@@ -30,7 +30,7 @@ namespace rules {
         if feat < 0 or feat >= 256 { return }
         let w = @as(usize, feat) >> 5
         let b = @as(u32, feat) & 31
-        c.feats[w] = c.feats[w] & ((@as(u32, 1) << b) ^ 0xffffffff)
+        c.feats[w] = c.feats[w] & ~(@as(u32, 1) << b)
     }
 
     fn knows_power { c: *Creature, spell: i32 } -> bool {
@@ -51,7 +51,7 @@ namespace rules {
         if spell < 0 or spell >= 256 { return }
         let w = @as(usize, spell) >> 5
         let b = @as(u32, spell) & 31
-        c.powers[w] = c.powers[w] & ((@as(u32, 1) << b) ^ 0xffffffff)
+        c.powers[w] = c.powers[w] & ~(@as(u32, 1) << b)
     }
 
     // ---- levels and classes

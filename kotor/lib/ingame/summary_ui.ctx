@@ -75,7 +75,7 @@ namespace ingame {
     }
 
     fn clear_summary { mut s: Summary } {
-        s.flags = s.flags & (0xffffffff ^ SUM_DATA)
+        s.flags = s.flags & ~SUM_DATA
         s.light = 0
         s.dark = 0
         s.credits = 0

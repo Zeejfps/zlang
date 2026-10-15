@@ -479,7 +479,7 @@ namespace gui {
         let mut ghost: Control = c.*
         ghost.x = c.x + dx
         ghost.y = c.y + dy
-        ghost.flags = clear_bits{ f = ghost.flags, bits = F_HILIGHT }
+        ghost.flags = ghost.flags & ~F_HILIGHT
         draw_control{ &g, &frame, p, c = &ghost, alpha = p.alpha, clip = screen }
         if c.drag_with >= 0 and @as(usize, c.drag_with) < p.controls.len {
             let w = list::at{ list = p.controls, i = @as(usize, c.drag_with) }

@@ -130,7 +130,7 @@ namespace gui {
 
     fn set_visible { mut g: Gui, panel: u32, tag: []u8, visible: bool } {
         let c = find_control{ &g, panel, tag } ifnull { return }
-        c.flags = if visible { c.flags | F_VISIBLE } else { clear_bits{ f = c.flags, bits = F_VISIBLE } }
+        c.flags = if visible { c.flags | F_VISIBLE } else { c.flags & ~F_VISIBLE }
     }
 
     // Moves and resizes a control, in the panel's pixels as the file gives them. Hit tests and
@@ -162,7 +162,7 @@ namespace gui {
             c.flags = c.flags | F_ENABLED
             c.text.color = c.text.file_color
         } else {
-            c.flags = clear_bits{ f = c.flags, bits = F_ENABLED | F_HILIGHT }
+            c.flags = c.flags & ~(F_ENABLED | F_HILIGHT)
             c.text.color = color_disabled{}
         }
     }
@@ -177,7 +177,7 @@ namespace gui {
         let i = find_by_tag{ p, tag }
         if i < 0 { return }
         let c = list::at{ list = p.controls, i = @as(usize, i) }
-        c.flags = if on { c.flags | F_DRAGGABLE } else { clear_bits{ f = c.flags, bits = F_DRAGGABLE } }
+        c.flags = if on { c.flags | F_DRAGGABLE } else { c.flags & ~F_DRAGGABLE }
         c.drag_with = if with.len > 0 { find_by_tag{ p, tag = with } } else { -1 }
     }
 
@@ -185,13 +185,13 @@ namespace gui {
     // pointer does; its text is left alone.
     fn set_hilighted { mut g: Gui, panel: u32, tag: []u8, on: bool } {
         let c = find_control{ &g, panel, tag } ifnull { return }
-        c.flags = if on { c.flags | F_HILIGHT } else { clear_bits{ f = c.flags, bits = F_HILIGHT } }
+        c.flags = if on { c.flags | F_HILIGHT } else { c.flags & ~F_HILIGHT }
     }
 
     // Whether the pointer passes through the control: no hover, no click, no keyboard focus.
     fn set_click_through { mut g: Gui, panel: u32, tag: []u8, through: bool } {
         let c = find_control{ &g, panel, tag } ifnull { return }
-        c.flags = if through { c.flags | F_NO_HIT } else { clear_bits{ f = c.flags, bits = F_NO_HIT } }
+        c.flags = if through { c.flags | F_NO_HIT } else { c.flags & ~F_NO_HIT }
     }
 
     fn set_value { mut g: Gui, panel: u32, tag: []u8, value: i32 } {
@@ -211,7 +211,7 @@ namespace gui {
 
     fn set_checked { mut g: Gui, panel: u32, tag: []u8, on: bool } {
         let c = find_control{ &g, panel, tag } ifnull { return }
-        c.flags = if on { c.flags | F_CHECKED } else { clear_bits{ f = c.flags, bits = F_CHECKED } }
+        c.flags = if on { c.flags | F_CHECKED } else { c.flags & ~F_CHECKED }
     }
 
     fn is_checked { mut g: Gui, panel: u32, tag: []u8 } -> bool {
@@ -433,7 +433,7 @@ namespace gui {
         c.parent = -1
         c.x = x
         c.y = y
-        c.flags = clear_bits{ f = c.flags, bits = F_HILIGHT | F_DRAGGABLE }
+        c.flags = c.flags & ~(F_HILIGHT | F_DRAGGABLE)
         c.drag_with = -1
         c.text.text = ""
         c.text.buf = slice::empty(u8){}

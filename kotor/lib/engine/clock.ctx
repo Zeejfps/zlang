@@ -33,7 +33,7 @@ namespace clock {
     const PAUSE_ENGINE: u32 = 4
 
     fn set_pause { mut c: Clock, bit: u32, on: bool } {
-        c.pause_bits = if on { c.pause_bits | bit } else { c.pause_bits & (bit ^ 0xFFFFFFFF) }
+        c.pause_bits = if on { c.pause_bits | bit } else { c.pause_bits & ~bit }
         c.paused = c.pause_bits != 0
     }
 

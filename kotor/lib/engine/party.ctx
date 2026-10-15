@@ -61,7 +61,7 @@ namespace party {
     fn set_planet_flag { mut w: world::World, planet: i32, bit: u32, on: bool } {
         if planet < 0 or planet >= PLANETS { return }
         let m = @as(u32, 1) << (bit + @as(u32, planet))
-        w.party.planet_mask = if on { w.party.planet_mask | m } else { w.party.planet_mask & (m ^ 0xFFFFFFFF) }
+        w.party.planet_mask = if on { w.party.planet_mask | m } else { w.party.planet_mask & ~m }
     }
 
     // The credits cap, for the purse and a creature's own gold alike.

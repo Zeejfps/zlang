@@ -542,7 +542,7 @@ namespace obj {
         if index < 0 or index >= 96 { return }
         let i = @as(usize, index)
         let bit: u32 = 1 << @as(u32, i % 32)
-        if value { l.bools[i / 32] = l.bools[i / 32] | bit } else { l.bools[i / 32] = l.bools[i / 32] & (bit ^ 0xFFFFFFFF) }
+        if value { l.bools[i / 32] = l.bools[i / 32] | bit } else { l.bools[i / 32] = l.bools[i / 32] & ~bit }
     }
     fn local_number { l: Locals, index: i32 } -> i32 {
         if index < 0 or index >= 8 { return 0 }

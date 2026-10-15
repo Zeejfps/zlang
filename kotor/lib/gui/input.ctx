@@ -141,10 +141,10 @@ namespace gui {
                 c.flags = c.flags | F_PULSE_TEXT
             }
         } else {
-            c.flags = clear_bits{ f = c.flags, bits = F_HILIGHT }
+            c.flags = c.flags & ~F_HILIGHT
             if c.kind == Kind::button and c.text.present and (c.flags & F_ENABLED) != 0 {
                 c.text.color = c.text.file_color
-                if not c.text.file_pulsing { c.flags = clear_bits{ f = c.flags, bits = F_PULSE_TEXT } }
+                if not c.text.file_pulsing { c.flags = c.flags & ~F_PULSE_TEXT }
             }
         }
     }
@@ -475,7 +475,7 @@ namespace gui {
     fn on_release { mut g: Gui, x: i32, y: i32, button: i32 } -> bool {
         g.mouse_x = x
         g.mouse_y = y
-        g.buttons = clear_bits{ f = g.buttons, bits = @as(u32, button) }
+        g.buttons = g.buttons & ~@as(u32, button)
         if g.capture.panel == 0 { return top_modal{ &g } != null }
         let cap = g.capture
         g.capture = Ref{ panel = 0, control = -1 }

@@ -653,7 +653,7 @@ namespace gui {
         if menu_check {
             let mut fl = F_ENABLED
             if lit { fl = fl | F_HILIGHT }
-            if not row.enabled { fl = clear_bits{ f = fl, bits = F_ENABLED } }
+            if not row.enabled { fl = fl & ~F_ENABLED }
             draw_menu_check{ &g, &frame, b, t = pc.text, text = row.text, flags = fl, x, y, w, h, alpha, clip }
             return
         }
@@ -690,7 +690,7 @@ namespace gui {
         draw_text_in{ &g, &frame, t = pc.text, text = row.text, color = col, x = ax, y = a.y, w = aw, h = a.h, clip }
         if row.aside.len > 0 {
             let mut t = pc.text
-            t.align = (t.align & 0xFFFFFFF8) | A_RIGHT
+            t.align = (t.align & ~(A_LEFT | A_CENTRE | A_RIGHT)) | A_RIGHT
             draw_text_in{ &g, &frame, t, text = row.aside, color = col, x = ax, y = a.y, w = aw, h = a.h, clip }
         }
     }

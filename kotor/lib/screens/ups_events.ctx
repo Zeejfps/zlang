@@ -41,7 +41,7 @@ namespace ups {
 
     // Takes it out again: the unit goes back to the party (at Assemble), or was never taken.
     fn remove_row { mut s: State, row: usize } {
-        s.bits = s.bits & ((@as(u32, 1) << @as(u32, row)) ^ 0xFFFFFFFF)
+        s.bits = s.bits & ~(@as(u32, 1) << @as(u32, row))
         if s.consume[row] { s.consume[row] = false } else { s.give[row] = true }
     }
 

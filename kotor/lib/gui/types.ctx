@@ -78,7 +78,6 @@ namespace gui {
     const A_MIDDLE: u32 = 16
     const A_BOTTOM: u32 = 32
 
-    fn clear_bits { f: u32, bits: u32 } -> u32 { return f & (4294967295 ^ bits) }
 
     // A texture and its size in pixels. ok is false for a name the install doesn't have (the
     // engine draws nothing for those). `additive` is what the texture's TXI asks for: the GUI's quad

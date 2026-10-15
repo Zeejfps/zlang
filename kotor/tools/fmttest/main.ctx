@@ -189,7 +189,7 @@ fn check_malformed { mut io: Io, mut t: Tally, mut scratch: arena::Arena } {
     let mut i: usize = 0
     while i < good.len {
         slice::copy(u8){ dst = copy, src = good }
-        copy[i] = copy[i] ^ 0xFF
+        copy[i] = ~copy[i]
         _ = match gff::parse{ data = copy, realloc = arena::alloc, heap = &scratch } { ok => { true } err => { false } }
         scratch.used = mark
         i = i + 1

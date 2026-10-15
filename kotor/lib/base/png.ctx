@@ -36,13 +36,13 @@ namespace png {
     // The CRC of `bytes`, continuing one that has seen what came before: start from 0.
     fn crc32 { crc: u32, bytes: []u8 } -> u32 {
         let table = CRC_TABLE
-        let mut c = crc ^ 0xFFFFFFFF
+        let mut c = ~crc
         let mut i: usize = 0
         while i < bytes.len {
             c = table[(c ^ bytes[i]) & 0xFF] ^ (c >> 8)
             i = i + 1
         }
-        return c ^ 0xFFFFFFFF
+        return ~c
     }
 
     // Adler-32 (zlib's), continuing: start from 1.
@@ -118,7 +118,7 @@ namespace png {
                 let n = if raw - done > BLOCK { BLOCK } else { raw - done }
                 put_u8{ &w, n = if done + n == raw { 1 } else { 0 } }     // BFINAL, BTYPE 00
                 put_u16_le{ &w, n = @as(u16, n) }
-                put_u16_le{ &w, n = @as(u16, n) ^ 0xFFFF }
+                put_u16_le{ &w, n = ~@as(u16, n) }
                 left_in_block = n
             }
             // The raw byte at `done`: a row's filter byte or one of its pixels' channels.
