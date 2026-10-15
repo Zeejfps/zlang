@@ -320,7 +320,7 @@ namespace bot {
                 advance{ &b }
                 return
             }
-        } else if dist < (if obj::trigger{ o = t } is some{ value = tr } { 0.6 } else { REACH + 0.25 }) and not outside_trigger{ t, me } {    // a trigger counts only when stood in, near its middle
+        } else if dist < (if let tr = obj::trigger{ o = t } { 0.6 } else { REACH + 0.25 }) and not outside_trigger{ t, me } {    // a trigger counts only when stood in, near its middle
             if talk and not b.talked {
                 b.talked = true
                 let mut a = actions::make{ kind = actions::Kind::dialog_object }

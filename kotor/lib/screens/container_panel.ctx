@@ -94,7 +94,7 @@ namespace container_panel {
             k = k + 1
             if not world::is_valid{ w = &w, id } { continue }
             // ShowGiveItems 0x006b8410 leaves the plot items out.
-            if s.giving and (if world::object{ w = &w, id } is some{ value = o } { o.plot } else { true }) { continue }
+            if s.giving and (if let o = world::object{ w = &w, id } { o.plot } else { true }) { continue }
             _ = try items::add_row{ &g, &w, &dev, panel = p, tag = "LB_ITEMS", id, equipped = false, rows = items::ENTRY }
         }
         if s.giving and gui::list_count{ &g, panel = p, tag = "LB_ITEMS" } > 0 { gui::list_select{ &g, panel = p, tag = "LB_ITEMS", row = 0 } }

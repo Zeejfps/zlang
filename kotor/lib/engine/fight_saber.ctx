@@ -53,9 +53,9 @@ namespace fight {
             if start > s.t_ms + dt { break }
             let end = if s.legs < s.count { s.hit_ms[leg] } else { s.end_ms }
             let mut from = o.position
-            if s.legs > 0 { if world::object{ w = &w, id = s.target[leg - 1] } is some{ value = fo } { from = fo.position } }
+            if s.legs > 0 { if let fo = world::object{ w = &w, id = s.target[leg - 1] } { from = fo.position } }
             let mut to = o.position
-            if s.legs < s.count { if world::object{ w = &w, id = s.target[leg] } is some{ value = to_o } { to = to_o.position } }
+            if s.legs < s.count { if let to_o = world::object{ w = &w, id = s.target[leg] } { to = to_o.position } }
             let item = held
             outbox::post{ out = &w.out, note = outbox::Note::saber_leg{ item, from = math::Vec3{ x = from.x, y = from.y, z = from.z + 1.0 }, to = math::Vec3{ x = to.x, y = to.y, z = to.z + 1.0 }, flight_ms = end - start } }
             s.legs = s.legs + 1
