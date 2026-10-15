@@ -70,17 +70,22 @@ a pointer `@cast` are no longer the ways to it.
    ?*mdl::Model`, 7 declarations) and two std externs would use it. *Hit by 8:* glspike,
    engine (about 5), data (5), dialog (7), gui (3), hud, minigames (7), models (2).
 
-3. **Checked arithmetic costs in code that must be exact or fast.** Every `+` and `@as` is
-   checked. Arithmetic that must wrap as the format's C does is `@wrap_add(@wrap_mul(state,
-   214013), 2531011)`, and an IDCT butterfly 35 `@wrap_*` calls; a VM's indices, already
-   bounds-checked, needed `@wrap_*` to go from 184 to 450 million instructions a second.
-   `@as(usize, x)` from a `u32` and `@as(i32, f)` from a float call out-of-line checkers
-   (`ctx_as_u`, `ctx_f2i_u`), which took about 20% of the audio decoder. u32 size arithmetic on a
-   hostile count panics instead of failing the range check. The other way, const folding detects
-   i64 overflow by hand: `@checked_add` and the like, returning `?T`, would do it, and PLAN.md
-   3.3's evaluator needs it on every operation. A wrapping type or block, an inline lossless
-   widening, and rounding float conversions would help. *Hit by 6:* ctxc, audio, minigames,
-   models (about 60 reads), script (75), video (about 50).
+3. **Checked arithmetic costs in code that must be exact or fast.** Every integer `+ - *` and `@as`
+   to an integer is checked. Arithmetic that must wrap as the format's C does is
+   `@wrap_add(@wrap_mul(state, 214013), 2531011)`, and an IDCT butterfly 35 `@wrap_*` calls; a VM's
+   indices, already bounds-checked, needed `@wrap_*` to go from 184 to 450 million instructions a
+   second: a checked `+` is inline, an `add` and a branch, but the branch is on every operation,
+   and can keep gcc from vectorizing (a test loop's checked adds stayed scalar). `@as(i32, f)` from
+   a float is inline too (`823c678f`; it was an out-of-line call that took about 20% of the audio
+   decoder) but still two compares (an `f32` widened to double first), and no integer conversion
+   rounds or clamps instead, so the Bink audio rounds by adding 1.5 * 2^52 and reading the bits.
+   u32 size arithmetic on a hostile count panics instead of failing the range check. The other way,
+   the compile-time evaluator detects overflow by hand (`signed_arith` in ctxc/eval.ctx, a sign
+   test per operation and a division for `*`). `ifoverflow` (`fff522fc`, spec §11 Overflow) now
+   does both: `count * 16 ifoverflow { return too_big{ count } }` takes the arithmetic and `@as`
+   written before it. A wrapping type or block and rounding float conversions would help. A
+   lossless widening (`@as(usize, x)` from a `u32`) costs nothing now. *Hit by 6:* ctxc, audio,
+   minigames, models (about 60 reads), script (75), video (about 50).
 
 4. **Allocation needs helpers every program writes.** `alloc::resize` from an arena returns the
    bytes it held before (after `reset`, or where `read_all` grew a buffer), though spec §11 says
