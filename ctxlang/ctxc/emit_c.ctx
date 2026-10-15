@@ -404,7 +404,7 @@ namespace emit {
         let mut h: u32 = 2166136261
         let mut i: usize = 0
         while i < bytes.len {
-            h = @wrap_mul(h ^ @as(u32, bytes[i]), 16777619)
+            h = (h ^ @as(u32, bytes[i])) *% 16777619
             i = i + 1
         }
         return h

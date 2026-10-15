@@ -174,7 +174,7 @@ namespace map {
         let mut h: u64 = 14695981039346656037
         let mut i: usize = 0
         while i < key.len {
-            h = @wrap_mul(@wrap_add(h, @as(u64, key[i])), 1099511628211)
+            h = (h +% @as(u64, key[i])) *% 1099511628211
             i = i + 1
         }
         return h
@@ -189,7 +189,7 @@ namespace map {
     // The slot where probing for key starts. Fibonacci hashing: the top bits of hash * 2^64/phi,
     // which spreads even an identity hash across the table. Needs a nonzero capacity.
     fn home(K, V, S) { m: Map(K, V, S), key: K } -> usize {
-        let h = @wrap_mul(m.hash{ key }, 11400714819323198485)
+        let h = m.hash{ key } *% 11400714819323198485
         let cap = @as(u64, m.slots.len)
         return @as(usize, h / (18446744073709551615 / cap + 1))   // divides by 2^64 / cap
     }

@@ -288,7 +288,7 @@ namespace types {
     }
 
     fn mix { h: u64, n: u64 } -> u64 {
-        return @wrap_mul(h ^ n, 1099511628211) ^ (h >> 29)
+        return (h ^ n) *% 1099511628211 ^ (h >> 29)
     }
 
     fn flag { b: bool } -> u64 { return if b { 1 } else { 0 } }

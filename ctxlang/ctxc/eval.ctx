@@ -194,7 +194,7 @@ namespace eval {
     }
 
     fn hash_key { key: Key } -> u64 {
-        return @wrap_add(@wrap_mul(@wrap_add(@wrap_mul(key.a, 1099511628211), key.b), 1099511628211), @as(u64, key.kind))
+        return (key.a *% 1099511628211 +% key.b) *% 1099511628211 +% @as(u64, key.kind)
     }
 
     fn eq_key { a: Key, b: Key } -> bool {
@@ -952,7 +952,7 @@ namespace eval {
                     fail{ &m, msg = "eval: pointer arithmetic on a non-pointer" }
                     return halt
                 }
-                return @wrap_add(vp, @wrap_mul(vn, size{ ts = m.types, t = elem }))
+                return vp +% vn *% size{ ts = m.types, t = elem }
             }
             isnull{ e } => { return if try is_null{ &m, x = e.* } { 1 } else { 0 } }
             notnull{ e } => { return if try is_null{ &m, x = e.* } { 0 } else { 1 } }
@@ -975,9 +975,9 @@ namespace eval {
                 let va = try scalar{ &m, x = a.* }
                 let vb = try scalar{ &m, x = b.* }
                 let r = match op {
-                    add  => { @wrap_add(va, vb) }
-                    sub  => { @wrap_sub(va, vb) }
-                    else => { @wrap_mul(va, vb) }
+                    add  => { va +% vb }
+                    sub  => { va -% vb }
+                    else => { va *% vb }
                 }
                 return extend{ v = r, p = prim{ ts = m.types, t = x.ty } }
             }
@@ -1012,8 +1012,8 @@ namespace eval {
         }
         let old = try get{ &m, a = p, t = elem }
         let r = match op {
-            add => { @wrap_add(old, v) }
-            subtract => { @wrap_sub(old, v) }
+            add => { old +% v }
+            subtract => { old -% v }
             else => { v }
         }
         try store{ &m, a = p, n, v = r }
@@ -1063,7 +1063,7 @@ namespace eval {
                 let ptr = try load{ &m, a = s, n = 8 }
                 let n = try load{ &m, a = s + 8, n = 8 }
                 try bounds{ &m, i = k, n, pos }
-                return @wrap_add(ptr, @wrap_mul(k, size{ ts = m.types, t = x.ty }))
+                return ptr +% k *% size{ ts = m.types, t = x.ty }
             }
             payload{ base, variant, field } => {
                 let b = try base_of{ &m, x = base.* }
@@ -1120,7 +1120,7 @@ namespace eval {
         }
         let ptr = try load{ &m, a = s, n = 8 }
         let r = try temp{ &m, t }
-        try store{ &m, a = r, n = 8, v = @wrap_add(ptr, @wrap_mul(l, elem_size{ ts = m.types, t })) }
+        try store{ &m, a = r, n = 8, v = ptr +% l *% elem_size{ ts = m.types, t } }
         try store{ &m, a = r + 8, n = 8, v = h - l }
         return r
     }
@@ -1884,7 +1884,7 @@ namespace eval {
             overflow{ &m, pos }
             return halt
         }
-        return @wrap_sub(0, v)
+        return 0 -% v
     }
 
     // a SHIFT b, of type p, by a count of type cp, as ctx_shcount_i and ctx_shcount_u check it.
@@ -2021,7 +2021,7 @@ namespace eval {
 
     // An integer literal of type p: its magnitude, negated if negative.
     fn int_bits { negative: bool, n: u64, p: ir::Prim } -> u64 {
-        return extend{ v = if negative { @wrap_sub(0, n) } else { n }, p }
+        return extend{ v = if negative { 0 -% n } else { n }, p }
     }
 
     // v's low bits for p, sign-extended if p is signed.

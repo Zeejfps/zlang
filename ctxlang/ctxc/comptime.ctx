@@ -368,7 +368,7 @@ namespace comptime {
         if p == types::Prim::f64 { return check::Val::float{ ty, value = eval::f64_of{ v } } }
         if p == types::Prim::f32 { return check::Val::float{ ty, value = @as(f64, eval::f32_of{ v }) } }
         if types::signed{ p } {
-            if n == 64 and v >= 9223372036854775808 { return check::Val::int{ ty, negative = true, magnitude = @wrap_sub(@as(u64, 0), v) } }
+            if n == 64 and v >= 9223372036854775808 { return check::Val::int{ ty, negative = true, magnitude = 0 -% v } }
             if n < 64 and v >= @as(u64, 1) << @trunc(u32, n - 1) {
                 return check::Val::int{ ty, negative = true, magnitude = (@as(u64, 1) << @trunc(u32, n)) - v }
             }

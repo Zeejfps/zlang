@@ -2836,7 +2836,7 @@ namespace check {
         if op == tok::Kind::amp { return x & y }
         if op == tok::Kind::pipe { return x | y }
         if op == tok::Kind::caret { return x ^ y }
-        let r = if op == tok::Kind::plus { @wrap_add(x, y) } else if op == tok::Kind::minus { @wrap_sub(x, y) } else { @wrap_mul(x, y) }
+        let r = if op == tok::Kind::plus { x +% y } else if op == tok::Kind::minus { x -% y } else { x *% y }
         let over = if op == tok::Kind::plus {
             (x >= 0) == (y >= 0) and (r >= 0) != (x >= 0)
         } else if op == tok::Kind::minus {
@@ -3671,7 +3671,7 @@ namespace check {
         if wrapping{ op } {
             let u = bits_of{ n = p }
             let v = bits_of{ n = q }
-            let r = if op == tok::Kind::plus_wrap { @wrap_add(u, v) } else if op == tok::Kind::minus_wrap { @wrap_sub(u, v) } else { @wrap_mul(u, v) }
+            let r = if op == tok::Kind::plus_wrap { u +% v } else if op == tok::Kind::minus_wrap { u -% v } else { u *% v }
             return wrapped{ ty = t, p = prim, x = r }
         }
         if op == tok::Kind::slash or op == tok::Kind::percent {
@@ -3768,11 +3768,11 @@ namespace check {
 
     // n's two's complement bits, which an integer of any type up to 64 bits has sign-extended.
     fn bits_of { n: Num } -> u64 {
-        return if n.negative { @wrap_sub(0, n.magnitude) } else { n.magnitude }
+        return if n.negative { 0 -% n.magnitude } else { n.magnitude }
     }
 
     fn from_bits { x: u64, signed: bool } -> Num {
-        if signed and x >= 9223372036854775808 { return Num{ negative = true, magnitude = @wrap_sub(0, x) } }
+        if signed and x >= 9223372036854775808 { return Num{ negative = true, magnitude = 0 -% x } }
         return Num{ negative = false, magnitude = x }
     }
 
@@ -5066,8 +5066,8 @@ namespace check {
     // n's order among the integers of a type, signed or not, as an unsigned number.
     fn int_key { n: ir::Int, s: bool } -> u64 {
         if not s { return n.value }
-        if n.negative { return @wrap_sub(9223372036854775808, n.value) }
-        return @wrap_add(9223372036854775808, n.value)
+        if n.negative { return 9223372036854775808 -% n.value }
+        return 9223372036854775808 +% n.value
     }
 
     fn sign { n: ir::Int } -> utf8::String {

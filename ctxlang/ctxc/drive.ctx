@@ -1428,7 +1428,7 @@ namespace drive {
         let mut x = h
         let mut i: usize = 0
         while i < bytes.len {
-            x = @wrap_mul(x ^ @as(u64, bytes[i]), FNV_PRIME)
+            x = (x ^ @as(u64, bytes[i])) *% FNV_PRIME
             i = i + 1
         }
         return x
@@ -1439,7 +1439,7 @@ namespace drive {
         let mut x = h
         let mut i: usize = 0
         while i < xs.len {
-            x = @wrap_mul(mix{ h = x, bytes = xs[i] }, FNV_PRIME)
+            x = mix{ h = x, bytes = xs[i] } *% FNV_PRIME
             i = i + 1
         }
         return x
@@ -1450,7 +1450,7 @@ namespace drive {
         let mut v = n
         let mut i = 0
         while i < 8 {
-            x = @wrap_mul(x ^ (v & 255), FNV_PRIME)
+            x = (x ^ (v & 255)) *% FNV_PRIME
             v = v >> 8
             i = i + 1
         }
