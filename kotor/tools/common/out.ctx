@@ -2,9 +2,9 @@
 //
 //   _ = @fmt(&io, "{} entries in {}\n", n, path)
 //
-// std has writers only into a utf8::Builder (kotor/FRICTION.md, "No @fmt straight to standard
-// output"). These go away when std's io gets its own; glspike keeps its own copy, so a program
-// must not add both directories.
+// std had writers only into a utf8::Builder when these were written; std's io has its own now
+// (ctxlang/std/io.ctx), and these go away when the tools move to them. glspike keeps its own
+// copy, so a program must not add both directories.
 namespace out {
     #write
     fn put_text { mut io: Io, s: strlit } { io::write{ &io, to = io::Stream::out, bytes = s.bytes } }

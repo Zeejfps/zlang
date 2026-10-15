@@ -90,7 +90,7 @@ namespace mdl_render {
             c = c + 1
         }
         // From the allocator, not the stack: what create_mesh fails with may be taken to hold
-        // its arguments' addresses (docs/friction/models.md).
+        // its arguments' addresses (ctxlang/FRICTION.md #4).
         let indices = try alloc::resize(u16, S){ realloc, &heap, mem = slice::empty(u16){}, count = 36 }
         let mut n: usize = 0
         let halves: [2]u16 = [0, 2]

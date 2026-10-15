@@ -34,7 +34,7 @@ itself; a field with no writer is `_`, and std's padded writers keep their `push
 *Later, if wanted:* if patterns nest (a payload's fields, literal values), `_` comes in as a
 wildcard inside a pattern (`os{ code = _ }`), and `else` stays the whole-arm default. Optional
 chaining (`a?.b`) needs no lambdas, but nothing in FRICTION.md asks for it yet. `==` between a `?T`
-and a `T` (FRICTION #8) would follow Swift: `T` widens to `?T`, two nulls are equal, and `!=` is
+and a `T` (FRICTION #3) would follow Swift: `T` widens to `?T`, two nulls are equal, and `!=` is
 `==`'s negation, so `null != x` is true. `is` (spec §8) covers enums, and only three integer
 comparisons in ctxc would use it; one of them (`d != null and d != NONE`) shows how `!=` would
 mislead.
@@ -374,7 +374,7 @@ alone; step 3 gives programs a test framework of their own. None blocks the othe
    - **`@expect(c)`**, a builtin: on failure it records the condition's text and, for a
      comparison, both sides, and the test goes on. With no sink of the program's, the compiler
      prints them as 3.1's `main -> !` prints an error's fields, which needs settling first. ctxlang has no macros or
-     generic printing (FRICTION #6), so a library `assert_eq` couldn't show the values.
+     generic printing (FRICTION #36), so a library `assert_eq` couldn't show the values.
    - **Leaks.** A std counting allocator fails a test that doesn't free what it took, as Zig's
      `std.testing.allocator` does.
    - **No `cfg(test)`.** Lowering starts from `main`, so tests never reach a normal build.
@@ -415,7 +415,7 @@ cc -std=gnu11 -O1 -w -fwrapv -fno-optimize-sibling-calls -Ictxc/rt bootstrap/ctx
 - `python -m unittest discover tests` runs all tests through the native ctxc. They pass on
   Windows (gcc), Linux (gcc) and macOS arm64 (Apple clang).
 - Python is left in development only: `tests/` and `tools/`. Stage 6 moves them to ctxlang.
-- Friction found while writing ctxc is logged in [FRICTION.md](FRICTION.md).
+- Friction found while writing ctxc, and the KOTOR port, is logged in [FRICTION.md](FRICTION.md).
 
 ### Changing the language
 

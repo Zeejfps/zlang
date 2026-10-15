@@ -22,10 +22,10 @@ saves, minigames, music and movies.
 1. **Language.** Everything the game runs is ctxlang. Start with
    [docs/ctxlang-quickref.md](docs/ctxlang-quickref.md) and the existing code in `kotor/lib/`;
    read `ctxlang/spec.md` sections when you need the exact rule (the quick reference names
-   them), and `ctxlang/std/*.ctx` for std's APIs. The compiler is young: when it gets in your way, log it in [FRICTION.md](FRICTION.md)
+   them), and `ctxlang/std/*.ctx` for std's APIs. The compiler is young: when it gets in your way, log it in [ctxlang/FRICTION.md](../ctxlang/FRICTION.md)
    (what you wrote, what you had to write instead, how often). Changing the language (ctxc, std,
    runtime) is allowed when it is a must or greatly helps; follow `ctxlang/PLAN.md`, "Changing the
-   language" (new feature first, used only after `python tools/fixpoint.py --update` refreshes the
+   language" (new feature first, used only after `./ctxc0 run tools/fixpoint.ctx -- --update` refreshes the
    bootstraps), keep `python -m unittest discover tests` passing (run from `ctxlang/`), and add a
    test for every language change. Language work happens on its own branch or worktree, never
    mixed into game commits.
@@ -96,12 +96,13 @@ fn build { mut b: Build } {
 - `@size_of` and `@offset_of(T, field)` check bindings' structs against C's layouts.
 
 Testing the game (fast headless runs, checkpoints, the module smoke test, the conversation sweep): [docs/testing.md](docs/testing.md).
+Gaps in the shell, the test tools and the game's framework that cost time: [docs/tooling-gaps.md](docs/tooling-gaps.md).
 
 ## Layout
 
 ```
 kotor/
-  AGENTS.md PLAN.md FRICTION.md README.md
+  AGENTS.md PLAN.md README.md
   build.ctx          the game executable
   game/              fn main and the top-level loop
   lib/<area>/        one directory per subsystem, normally one namespace each (below)

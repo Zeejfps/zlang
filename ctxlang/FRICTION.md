@@ -1,115 +1,296 @@
 # Language friction
 
-Points that came up while writing ctxc in ctxlang. Each one is evidence for a spec change; §16
-numbers refer to spec.md's open questions. Resolved items are removed; git history has them.
+Where ctxlang got in the way: while writing ctxc, and while porting KOTOR (kotor/). Each entry is
+evidence for a spec or std change: what was wanted, what was written instead, and how often.
+Resolved entries are removed, saying which commit fixed them; git history has them.
 
-Items are numbered by how much fixing them would pay off, most first: how often ctxc hits them
-today, and whether they cost lines or correctness. Counts are from ctxc's source as of the
-errors and capability-variable work (`e19f1fe`).
+Entries are ranked by how often they are hit: first by how many of the 17 write-ups this file
+merges hit them, then by how many sites they cost. The write-ups are ctxc's own list and the
+KOTOR port's, by subsystem: **ctxc**, **glspike** (the platform and GL spike), **engine** (world,
+routines, scene, saves), **data** (resources and formats), **audio**, **dialog**, **gui**, **hud**
+(HUD and in-game menus), **chargen**, **minigames**, **models**, **render**, **rules**,
+**screens**, **script** (NCS and the VM), **video** (Bink) and **walk** (walkmeshes). Counts are
+as the write-ups gave them. Ranking by count understates #31: it is the one entry that gives a
+wrong answer instead of a compile error.
 
-- **1. A diagnostic takes three lines.** `let mut b = message{ c }`, then
-  `try! @fmt(&b, ...)`, then `error{ &c, at, msg = utf8::view{ b } }`. This was 24
-  times in `check.ctx` when first noted, and 197 before PLAN.md 1.3. *Mostly solved:* `@fmt`
-  without a sink is a writer (spec §13), which check's `errorf` and the parser's `failf` take, so
-  163 of those sites are one line (`errorf{ &c, at, msg = @fmt("...", args) }`). About 50 keep a
-  builder: reports through `flow_error` and `escape_error`, which take a `utf8::String`, and
-  messages built from more than one `@fmt` or with a loop between.
-- **2. A read-only argument can be copied before a later argument changes it.** Arguments are
-  evaluated in order, so `types::prune{ s = c.ty, t = expr{ &c, e } }` copies the type store,
-  then `expr` adds a type to the real one, and `prune` indexes the stale copy out of bounds.
-  §3.1 only checks overlap between arguments of one call, not a `&c` inside a nested one. The
-  fix is a local first (`check::typed`). Still silent: `show{ n = c.n, z = bump{ &c } }` passes
-  the old `c.n` with no error. Rare, but the only item here that gives a wrong answer instead of
-  a compile error. A rule that rejects this, or evaluates nested calls before plain arguments,
-  would have caught eight such calls.
-- **3. No methods** (§16 Q4). `list::push{ list = &xs, item }` everywhere: ctxc makes about 580
-  `list::` and `map::` calls, and 150 `slice::` ones. `xs.push{ item }` would shrink code a lot.
-  *Partly:* slices are built in (spec §12), so `slice::get{ s = xs, i }` is now `xs[i]`.
-- **4. A `?Union` takes two steps to match.** `map::get` returns `?Entry`, so code tests for
-  `null` and then matches the value; ctxc calls `map::get` about 100 times. A pattern that goes
-  through `some`, or `match` arms that list a `?U`'s variants next to `null`, would take one.
-  `ifnull` (spec §8) helps when the missing case leaves, but not when it is one arm among the
-  variants. *Solved in the language:* `e is P` (spec §8, Is) tests for one variant and sees
-  through a `?U`, as let-else now does. ctxc's call sites still take two steps.
-- **5. No checked arithmetic.** Const folding detects i64 overflow by hand, with `@wrap_*` and
-  sign tests (`check::arith`). `@checked_add` and the like, returning `?T`, would do it. This
-  matters more now: PLAN.md 3.3's compile-time evaluator runs IR and must detect overflow on
-  every integer operation.
-- **6. No structural equality or hashing.** Interning types in a `map::Map` keyed by a union
-  took a hand-written `hash` and `eq` (`types.ctx`, about 90 lines). `eq` is a match inside a
-  match for each variant. Derived `==` for structs and unions without pointers, or a builtin
-  `@hash`, would remove this. Still: `p == q` on a struct is "P has no built-in equality".
-  PLAN.md 3.2's reflection could derive them in a build program instead.
-- **7. Narrowing skips `let mut` locals** (spec §8). A `?T` local that a loop reassigns has to be
-  copied (`let q = p`) before it can be narrowed or matched (`check::const_decl`). Spec §8 rule 3
-  now says so; about ten copies in ctxc.
-- **8. An optional can't be compared with a value.** `map::get{ m = c.access, key } ==
-  Access::field` is an error ("cannot compare ?A with A"), so it takes a local and
-  `x != null and x == Access::field` (`check::access_is`). With #7, a `let mut` optional needs a
-  copy even for that. `==` between `?T` and `T` meaning "is some and equal" would do. *Partly:*
-  `is` (spec §8) covers an enum (`x is field`); `?T == T` itself is under PLAN.md stage 1's
-  *Later*, since only three integer comparisons in ctxc would use it.
-- **9. An inferred slice type is too mutable.** `let mut bs = list::items{ list = xs }` gives `bs`
-  the type `[]mut T`, so a later `bs = f{}` with a `[]T` result is an error. The same goes for an
-  empty slice: `let mut fields = slice::empty(types::Field){}` can't later take a
-  `[]types::Field`. ctxc annotates about 30 such locals. Inferring the type from every
-  assignment, as literals are (spec §11 Literals), would fix it.
-- **10. Exclusivity blocks "context plus one field".** `f{ &e, xs = &e.list }` is rejected ("two
-  mut references to `e` in one call"). ctxc settled on an idiom: a struct holds its heap as a
-  `*mut` (`Parser.heap`, `Checker.heap`), which §3.1 doesn't track, and lists that a helper
-  pushes to are locals. Split borrows would still remove the idiom.
-- **11. An `if` of literals has no type as a `@fmt` hole** (spec §11 Literals). `@fmt(&b, "{}",
-  if m { "mut " } else { "" })` makes two arrays of different lengths ("branches have different
-  types: [4]u8 and [0]u8"). The hole needs a typed `let` first. A hole could expect a
-  `strlit`, as a bare literal hole now does. Literal conversions kept the rule (a literal branch
-  takes the type of one next to it), and `#write` didn't change it: a hole expects no type.
-- **12. A parameter name can defeat punning.** `utf8::push_char`, `push_u64` and the rest call
-  their builder `b`, so a builder named `out` must be passed as `b = &out`, not `&out`: about 30
-  times, mostly in `dump.ctx`. `@fmt` has replaced most direct pushes, which shrank this. A std
-  convention (name a builder `b` everywhere, or name the field after its role) would help.
-- **13. A pattern can't bind a mutable local.** Calling through a capability's field needs a
-  mutable capability, and `let ... else` bindings are read-only (spec §11, Let-else). *Mostly
-  solved:* `ifnull` (spec §8, Optional) unwraps into any `let`, so examples/glfw has
-  `let mut gl = gl::load_2_0{ ... } ifnull { ... }`. Only a pattern's own bindings are still
-  read-only (`let some{ value = mut g } = ...` is a syntax error), and PLAN.md 1.1
-  (`let p = e else { ... }`) would take the rest.
-- **14. Float-to-float `@as` reads as fallible, and the spec says it is.** §13 says `@as` "panics
-  if the value isn't representable in T", but `@as(f32, 1e300)` gives `inf` without panicking.
-  Only five such conversions in ctxc and std, so this is a spec fix: say float to float rounds
-  (and overflows to infinity), or give it a separate conversion.
-- **15. No `@min` or `@max`.** ctxc writes them out by hand, in only a few places. A generic std
-  function can't compare an opaque `T` (§9), so they would have to be builtins, and the builtin
-  set stays small: they stay written out unless a way to constrain `T` to numbers comes along.
-- **16. `null` can't name a variant.** A union for types can't have a `null` variant, so it is
-  `nil` (`types::Type`, and `syntax::ExprKind` before it). Cosmetic, and one place.
-- **17. Enum from an index is a chain of compares** (implementation). `@as(Kind, base + i)`, the
-  lexer's keyword and operator lookup, lowers to a `switch` with one case per variant (62 for
-  `tok::Kind`, `lower::to_enum`), which the C backend emits as a chain. An enum whose values are
-  contiguous could lower to one range check instead. With the C compiler in between, this is
-  unlikely to show in a profile; the front end's time hasn't been profiled (PLAN.md, Known gaps).
-  The lexer now indexes tables of kinds that consts compute while compiling (`tok::KEYWORD_KINDS`,
-  `OP_KINDS`); other `@as` to an enum still lower to the chain.
-- **18. A typed function value can't be cast** (from writing threads, std/thread.ctx). A thread's
-  start record holds its run function, of type `fn{ data: *mut T }` for any `T`, and a non-generic
-  callback reads it: the value goes through a pointer cast,
-  `@cast(*fn{ data: *mut u8 }, &run).*`, since `@cast` takes pointers and C function pointers
-  only. It works because every `fn` value is one pointer whatever its fields' types, which a cast
-  of `fn` values whose fields differ only in pointer types could say outright. One place.
-- **19. `&p` punning takes a name only** (from writing threads). threads.md's draft wrote
-  `mutex::lock{ &shared.lock }`, which reads well and doesn't parse as a field: it is
-  `mutex::lock{ mutex = &shared.lock }`. Every call on a lock or a condition inside a struct pays
-  the field's name.
+Checked against ctxc at `2076e06`. Fixed since the write-ups and so not listed: integer `match`;
+read-only arguments too big to copy, now passed by reference; `@fmt` writers onto an `Io` for
+every hole type, `c::String` included, and a `[]u8` writer into a `utf8::Builder`; multi-line
+string literals (`2cf7326`); slices of const arrays (`549e1b5`); `fs::seek` and `read_at`
+(`c0b8b45`); `else` at the start of a line; `&p.*` as an argument; `error` as the type of any
+error; a callee's fresh allocation returned though an argument viewed a local, and `try` of a
+call whose errors' payloads only ever hold literals (the escape check's flow summaries, spec §14
+rule 2).
 
-- **20. Locking a structure needs `mut`** (from the game's mixer thread, kotor/lib/audio/mix.ctx).
-  A query that only reads a shared structure (`mix::is_playing{ m: *Mixer, h }`, `played`,
-  `feed_room`) must still lock the structure's mutex, which takes `mut mutex: Mutex`, so the fn
-  became `mut m: Mixer`: its signature no longer says it changes nothing. Four fns there. A
-  read-only `*T` that may still lock its mutex field (a lock as interior mutability) would say it.
-- **21. No scoped lock** (same place). Every public fn of the mixer starts with
-  `mutex::lock{ mutex = &m.lock }` and `defer mutex::unlock{ mutex = &m.lock }`: 21 pairs, each
-  naming the lock twice. A `mutex::hold` that unlocks at the scope's end needs something like a
-  destructor; a block form (`with`-like) would do.
-- **22. The mutex isn't fair, and std doesn't say so** (same place). Windows' slim locks let a
-  thread that unlocks and locks again at once keep the lock: mixtest's stress check, a thread
-  rendering block after block, let the other thread in 97 times in 3,000 blocks, and about 1,000
-  times once it yielded between blocks. Worth a line in std's `mutex` comment.
+## Ranked
+
+1. **Punning `&x` needs the callee's field name, and `&a.b` doesn't pun at all.** `deal_hand{
+   &g.rng, &g.player, deck }` is "expected '}', found '.'"; `next{ &fs, &movie }` for a field `m`
+   is "has no field `movie`". Written `rng = &g.rng`, `m = &movie`. The messages point at the
+   argument and don't suggest the fix, so each file's first compile trips on it, one call at a
+   time; a library whose fns take `mut p: Panels` makes callers name their value `p`. A std
+   convention (name a builder `b`) shrinks it; punning a place's last name (`&g.rng` fills
+   `rng`), or a hint in the error, would remove most of it. *Hit by 12:* ctxc (about 30, and
+   `mutex::lock{ &shared.lock }`), engine (about 40), data (about 40), dialog (about 36), gui
+   (about 25), hud (about 40), chargen (4), minigames (about 46), rules (about 40), screens (about
+   15), script (8), video (8).
+
+2. **String literals are arrays, so their `if` and their `let` don't make a `[]u8`.** `if c {
+   "yes" } else { "no" }` is "branches have different types: [3]u8 and [2]u8", and as an `@fmt`
+   hole "no writer of [4]u8"; `let pre = "gui_"` is a `[4]u8` that `slice::copy{ src = pre }`
+   refuses; `["a", "bb"]` is an error, so an array of names counts its length by hand
+   (`[20][]u8`, no `[_]`); `pages = [1, 2, 3]` isn't a `[]u32` argument. Written `let s: []u8 =
+   if ...` first, or an `either{ c, a, b }` helper. Literal conversions kept the rule (a literal
+   branch takes the type of one beside it); a hole could expect a `strlit`, and a literal in a
+   plain `let` or a branch could be a `[]u8`. *Hit by 12:* ctxc, glspike (5), engine, data (1),
+   dialog (12), gui (11), hud (2), minigames (3), render (about 5), screens (4), video, walk (1).
+
+3. **Optionals narrow only in a `let`.** A `let mut` optional (an accumulator, a lazily opened
+   manager) and a field (`w.minigame`, `w.tlk`, a field through a `mut` parameter) don't narrow
+   after `!= null`, and narrowing turns `x` into a pointer that `is some{ ... }` can't test. A `?T`
+   can't be compared with a `T` either (`map::get{ ... } == Access::field`). Written a copy (`let
+   q = p`), a `match` with `some{ value }`, or a `found: bool` beside a dummy value. Spec §8 rule
+   3 says so; `?T == T` is under PLAN.md stage 1's *Later*. *Hit by 9:* ctxc (about ten copies,
+   and three comparisons), engine (6), data (2), dialog (about 10), models (3), rules (5), walk
+   (2, and two helpers comparing optionals), minigames (2), hud.
+
+4. **The escape check ties a lookup's or a read's result to a local key or path.** A call's
+   result counts as derived from its read-only arguments: `map::at{ m, key = k[..] }` with `k` a
+   local array, `fs::read_all{ path = buf[..n] }`, `font::load{ name = buf[..] }`,
+   `twoda::get_string{ column = buf[..] }` and a bound lookup by a name copied to a local all
+   return values "holding the address of local" the key, though they point into the map, the
+   heap or the cache. So do a by-pointer argument (`build{ doc = &doc, bytes }`) and an
+   out-pointer (`numkeys = &n`). Written: keys and paths copied to the heap first and freed with
+   a `defer`, maps holding an index into a list of pointers, const tables of column names,
+   `mut` fields (which don't count). The flow summaries fixed fresh allocations and literal-only
+   errors; a lookup still borrows its key because a map's entry is found through it. A way for a
+   field to say the result doesn't borrow it (`read_all`'s path, `map::get`'s key) would do.
+   *Hit by 8:* glspike, engine (about 5), data (5), dialog (7), gui (3), hud, minigames (7),
+   models (2).
+
+5. **A struct is built with every field named, and some have no zero value.** A literal names
+   every field (`Stats`: 35, `chargen::State`: 40, `Run`: about 30 lines), so a field added to a
+   struct that many places build breaks them all, and an agent that can't edit those files puts
+   the state somewhere it doesn't belong. `let mut x: T` zero-initialises only if every field has
+   a zero value, which an enum, a pointer, a function or a `list::List` doesn't: a struct holding
+   one needs a `new` that spells every field, an enum array a made-up filler variant, and the GUI
+   chose `K_*` `u8` constants over an enum to keep `Control` zero-initialisable. Defaults for
+   fields or a spread (`Stats{ speed_factor = 1.0, ..zero }`), and an enum's first variant as its
+   zero, would do. *Hit by 7:* engine (2), gui, rules, chargen, minigames (3 structs), screens,
+   audio (3).
+
+6. **No bit casts.** An f32 or i32 from its bits, and back, goes through a local and a pointer
+   cast (`let b = bits; return @cast(*f32, &b).*`); `@as(u32, -1)` for a "none" value panics at
+   run time (it crashed a save), so lib/save has a `bits{ v }` helper; the Bink audio rounds
+   float to int through `@cast(*u64, &f).*`. An `@bitcast(T, x)` for same-size numbers would say
+   it. *Hit by 6:* engine (a save crash), data (once per pair, lib/base/le.ctx), render (2),
+   script (4 helpers, about 15 uses), video, walk (2).
+
+7. **Checked arithmetic costs in code that must be exact or fast.** Every `+` and `@as` is
+   checked. Arithmetic that must wrap as the format's C does is `@wrap_add(@wrap_mul(state,
+   214013), 2531011)`, and an IDCT butterfly 35 `@wrap_*` calls; a VM's indices, already
+   bounds-checked, needed `@wrap_*` to go from 184 to 450 million instructions a second.
+   `@as(usize, x)` from a `u32` and `@as(i32, f)` from a float call out-of-line checkers
+   (`ctx_as_u`, `ctx_f2i_u`), which took about 20% of the audio decoder. u32 size arithmetic on a
+   hostile count panics instead of failing the range check. The other way, const folding detects
+   i64 overflow by hand: `@checked_add` and the like, returning `?T`, would do it, and PLAN.md
+   3.3's evaluator needs it on every operation. A wrapping type or block, an inline lossless
+   widening, and rounding float conversions would help. *Hit by 6:* ctxc, audio, minigames,
+   models (about 60 reads), script (75), video (about 50).
+
+8. **Allocation needs helpers every program writes.** `alloc::resize` from an arena returns the
+   bytes it held before (after `reset`, or where `read_all` grew a buffer), though spec §11 says
+   no memory is uninitialised: the first model corpus run panicked on a "fresh" counter array,
+   so the parser zeroes every array it allocates. A typed allocation is `alloc::resize(T, S){
+   realloc, &heap, mem = slice::empty(T){}, count }`, so parsers grew a `make(T)`. `list::items`
+   is the first `len` of a `cap` allocation, so a list returned as a slice is resized first to be
+   freed rightly (`lists::take`, written three times). `fs::list`'s result can't be freed: it is
+   two allocations, the outer read-only, and a `*T` can't go back to `*mut T`, so slices that
+   will be freed are `[]mut` from allocation to free though nothing writes them. No arena mark
+   and restore. A zeroing `alloc::make`, `list::take`, `fs::list_free` and an arena mark would
+   serve every parser. *Hit by 5:* models (about 30), walk (28), data (14, and 8 fields), render
+   (1), gui (1).
+
+9. **`@fmt` formats only by type.** There are no width, padding, hex or fixed-point specs
+   (`{:<16}`, `{:08x}`, `%18.9f`), so a program writes a wrapper type and a writer for each
+   (`world::Pad3`, `Fixed`, `Right`, `Pad`, `Hex`) or pads by hand; std's padded writers
+   (`utf8::push_padded`, `push_hex`) are for a `Builder` only. A sink of the program's own needs
+   a writer per exact type (a `u16` hole had none). Every `@fmt` onto the console needs `_ =`
+   though its writers can't fail (35 in the spike). std's float writer prints 100.0 as `1e+02`.
+   *Hit by 5:* glspike (35), engine (2), audio (3 writers), data (1), script (about 15, and six
+   writers).
+
+10. **Small `!T` forms that don't exist.** `_ = f{} iferr {}` (discarding a failing call's value)
+    is "this branch must end in a value", so it is `iferr { return }` or `iferr 0`; on a bare `!`
+    it is the reverse, `f{} iferr {}` without the `_ =`. `if f{} is ok` is "`is` cannot test a
+    `!T`", so it is a `match` with `ok => { true } err => { false }`. `return try f{}` in a function
+    returning a bare `!` is "expression has no value", so it is `try f{}` then `return`. *Hit by 5:*
+    engine (20), data (24, 5 and 1), audio (2 and 2), script (3), video (4).
+
+11. **Exclusivity blocks a context and a part of it in one call.** `f{ &e, xs = &e.list }` is two
+    mut references to `e`, and so is a bind beside a `&` of what it holds (`routines::call{
+    &world, _ }` then `tick{ &world, ..., engine }`). Written: a struct holds its heap as a `*mut`
+    (`Parser.heap`), the World and the VM stub live behind raw `*mut` pointers the checker doesn't
+    track, and `fs = &w.fs` goes only in calls without `&w`. Sound, but it is the checker worked
+    around for the program's central object. Split borrows would remove it. *Hit by 5:* ctxc,
+    engine, hud, screens (about ten calls), script (7 fns).
+
+12. **Sources come by directory, and a directory is one flat namespace.** `build::add_sources`
+    takes a directory and `build::exe` one without its subdirectories, so a tool can't pick one
+    file (the dialog panels and lip sync moved to directories of their own), and one half-written
+    file breaks every build that adds its directory (each rules agent built from a private copy).
+    A directory's files share one namespace with no file-private names, so two agents writing
+    `put_*` helpers coordinate names by message; a file can't keep private state either, so every
+    cache goes in `World`, the file every agent needs; `mdl` is one 1,500-line file because a
+    namespace is a file's. *Hit by 5:* engine (2), dialog (2), models, rules, script.
+
+13. **No math in std, and none while compiling.** No `cos`, `sin`, `sqrt`, `pow`, `ceil` or
+    `trunc` (std's math has `is_nan` and the like): the Bink audio declares libm's as extern fns,
+    and MP3's const tables, which run while compiling and can't call one, carry their own f64
+    cosine series and Newton roots (60 lines). No integer `@min` or `@max`: `if a < b { a } else {
+    b }` by hand, and a generic std one can't compare an opaque `T` (§9). *Hit by 5:* ctxc, audio,
+    video, rules, render (about 6).
+
+14. **Signed and unsigned integers don't mix.** Game data is signed (-1 for none, modifiers) and
+    every table is indexed by `usize`, which an `i32` isn't (`a[i]` is "expected usize"), and
+    neither widens to the other: every lookup is `a[@as(usize, i)]` after a range check, and a
+    `usize` going into an `i64` payload `@as(i64, f)`. A typed integer const doesn't convert where
+    its value fits (`@as(i32, gl::LINEAR)`), and `@as(i64, b)` refuses a `bool`, so counting is `if
+    b { 1 } else { 0 }`. An index that takes any integer type with its bounds check, and consts
+    that convert as literals do, would remove most. *Hit by 4:* glspike (11), rules (about 150,
+    and about 60 bools), walk (84), video.
+
+15. **No bitwise not.** Clearing a flag is `f & (4294967295 ^ bits)` or `x & 0xFFFFFFFE`; `~`
+    would say it. *Hit by 4:* gui (8), rules (4), screens (3), video.
+
+16. **`iferr` and `ifnull` don't chain, and bind tighter than comparison.** A `!?T` wants `f{}
+    iferr { return } ifnull { return }`, which is "expected a newline or ';' after statement,
+    found 'ifnull'", so it is two statements; with parentheses it groups right to left. `x ==
+    f{} ifnull y` is `x == (f{} ifnull y)`. *Hit by 4:* engine, data (3), dialog (9), gui (2).
+
+17. **A condition continued on the next line must break after the operator.** `if a\n or b {`
+    is a parse error, since a call's `}` ending a line starts the block, and the error points at
+    the wrong place. *Hit by 3:* data (1), rules (2), script (1).
+
+18. **Enums only compare for equality, and their count isn't a constant.** Sorting by an enum is
+    `@as(u8, a.class) >= @as(u8, b.class)`; `@as(usize, Class::last) + 1` isn't folded, so a
+    tally array's length is a hand-kept `const CLASS_COUNT: usize = 56`, checked against the enum
+    at run time. `@as(Kind, n)` lowers to one compare per variant, which the C backend emits as a
+    chain (62 for `tok::Kind`; the lexer now indexes const tables instead); a contiguous enum
+    could be one range check. *Hit by 3:* ctxc, data (1), walk (1).
+
+19. **Small syntax.** A bare `{ ... }` block isn't a statement, so each section became a fn;
+    `defer if c { ... }` is a parse error, so it is `defer { if c { ... } }`; a match arm that is
+    one expression needs braces (`a => { "A" }`); `try f{}.x` parses as `try (f{}.x)`, against
+    the spec's own example. *Hit by 3:* dialog (2), minigames (1), render (2).
+
+20. **Some errors don't point at the cause.** A build.ctx missing one source directory gives
+    "unknown type or namespace mg" at every use (thirty errors) instead of one saying no file
+    declares `namespace mg`; a file in the middle of a merge gives nine syntax errors at `<<`
+    with no hint of a conflict; finding that a `mut heap: Heap` field takes `&heap.*` from a
+    `*mut Heap` took three tries. *Hit by 3:* engine, hud, chargen.
+
+21. **A `&fn` can't be a struct field, and bind records are never freed.** The VM's engine bind
+    travels as its own context field beside `mut w` and `mut vm` (about 15 engine fns, 6 in
+    ncsrun); ExecuteScript binds a new engine per call and leaks its record, and the scene binds
+    `mdl_cache::get` once per (model, animation). *Hit by 2:* engine, script.
+
+22. **Changing a shared fn's signature breaks callers nobody on the task owns.** No default
+    arguments, so a helper that gains an input edits every call site, in other owners' files; no
+    visibility, so callers show up only as build errors; a fn that starts returning a pointer into
+    `w` needs `mut w`, which spreads to every caller up to the routine. *Hit by 2:* engine (2),
+    hud.
+
+23. **`is` is a keyword,** so `let is = gff::get_struct{ ... }` and `fn is{ a, b }` are "expected a
+    name, found 'is'", far from the cause. *Hit by 2:* gui (1), render (1).
+
+24. **Hex literals aren't in the spec.** The lexer takes `0xFFFFFFFF`, `0b` and `_` separators,
+    but §11 Literals shows only decimal, so drafts wrote `4294967295`. *Hit by 2:* glspike, walk.
+
+25. **No methods** (§16 Q4). `list::push{ list = &xs, item }` everywhere: ctxc makes about 580
+    `list::` and `map::` calls and 150 `slice::` ones. `xs.push{ item }` would shrink code a lot.
+    *Partly:* slices are built in (spec §12), so `slice::get{ s = xs, i }` is `xs[i]`. *Hit by 1:*
+    ctxc (about 730).
+
+26. **A GL function is written three times:** a capability field with its C type, then `name =
+    @cast(_, try proc{ get_proc, name = "glName" })` in the loader, the C name the field's in
+    another case. An attribute on the field (`#c::symbol{ name = "glClear" }`; fields carry
+    attributes since `304f48d`) and a generator over `build::declarations` would make a binding
+    one line per function. *Hit by 1:* glspike (132 loader lines).
+
+27. **No `for` loop.** Every loop over a block is `let mut i: usize = 0; while i < 8 { ...; i = i
+    + 1 }`: three lines of bookkeeping, and a class of forgotten increments. *Hit by 1:* video
+    (about 70 in bink_video.ctx).
+
+28. **A diagnostic takes three lines** in ctxc. *Mostly solved:* `@fmt` without a sink is a writer
+    (spec §13), so 163 of 197 sites are one line (`errorf{ &c, at, msg = @fmt("...", args) }`).
+    About 50 keep a builder: reports through `flow_error` and `escape_error`, which take a
+    `utf8::String`, and messages built from more than one `@fmt` or with a loop between. *Hit by
+    1:* ctxc (about 50).
+
+29. **An inferred slice type is too mutable.** `let mut bs = list::items{ list = xs }` gives `bs`
+    `[]mut T`, so a later `bs = f{}` with a `[]T` result is an error; the same for
+    `slice::empty(T){}`. Inferring the type from every assignment, as literals are, would fix it.
+    *Hit by 1:* ctxc (about 30).
+
+30. **No scoped lock.** Every public fn of the mixer starts with `mutex::lock{ mutex = &m.lock }`
+    and `defer mutex::unlock{ mutex = &m.lock }`, naming the lock twice. A block form (`with`-like)
+    would do without destructors. *Hit by 1:* audio (21 pairs, kotor/lib/audio/mix.ctx).
+
+31. **A read-only argument can be copied before a later argument changes it.** Arguments are
+    evaluated in order, so `types::prune{ s = c.ty, t = expr{ &c, e } }` copies the type store,
+    then `expr` adds a type to the real one, and `prune` indexes the stale copy out of bounds.
+    §3.1 checks overlap between one call's arguments only, not a `&c` inside a nested call. The
+    fix is a local first (`check::typed`). Still silent: `show{ n = c.n, z = bump{ &c } }` passes
+    the old `c.n`. A rule that rejects this, or evaluates nested calls before plain arguments,
+    would have caught eight such calls. *Hit by 1:* ctxc (8). The only entry that gives a wrong
+    answer.
+
+32. **Float-to-float `@as` reads as fallible, and the spec says it is.** §13 says `@as` "panics if
+    the value isn't representable in T", but `@as(f32, 1e300)` gives `inf`. A spec fix: say float
+    to float rounds (and overflows to infinity), or give it a separate conversion. *Hit by 1:*
+    ctxc (5).
+
+33. **A `mut` argument can't be a temporary.** `f{ x = g{} }` for a `mut x` has no place to point
+    to, so it is `let mut tmp = g{}` first. *Hit by 1:* rules (4).
+
+34. **Locking a structure needs `mut`.** A query that only reads a shared structure
+    (`mix::is_playing`, `played`, `feed_room`) must lock its mutex, which takes `mut mutex`, so it
+    takes `mut m: Mixer` and its signature no longer says it changes nothing. A read-only `*T`
+    that may still lock its mutex field would say it. *Hit by 1:* audio (4 fns).
+
+35. **No tuples.** `let (a, b) = if two { (x, y) } else { (z, w) }` is two `let`s on the same
+    condition, and an `(item, index)` result a small struct with every field named (`ItemSpell`,
+    `Pick`, `Swap`). *Hit by 1:* engine (2 entries).
+
+36. **No structural equality or hashing.** Interning types in a map keyed by a union took a
+    hand-written `hash` and `eq` (`types.ctx`, about 90 lines), `eq` a match inside a match per
+    variant; `p == q` on a struct is "P has no built-in equality". Derived `==` for structs and
+    unions without pointers, a builtin `@hash`, or PLAN.md 3.2's reflection deriving them in a
+    build program would remove it. *Hit by 1:* ctxc.
+
+37. **A `mut` struct field is a pointer, and the C is built with `-fno-strict-aliasing`,** so gcc
+    reloads the bit reader's fields after every store through any pointer: about 10% of the Bink
+    audio decoder, worked around with a local copy (`let mut rd = r`, `defer r = rd`).
+    Restrict-qualifying `mut` context fields (§3.1 already forbids two overlapping ones) would let
+    gcc keep them in registers. *Hit by 1:* video.
+
+38. **A pattern can't bind a mutable local.** *Mostly solved:* `ifnull` unwraps into any `let`,
+    including `let mut`. A pattern's own bindings are still read-only (`let some{ value = mut g }
+    = ...` is a syntax error), and PLAN.md 1.1 would take the rest. *Hit by 1:* ctxc.
+
+39. **No pointer from an integer.** GL takes buffer offsets as `const void *`; the binding
+    declares them `offset: usize`, which works only because 64-bit ABIs pass the two alike.
+    *Hit by 1:* glspike.
+
+40. **A typed function value can't be cast.** A thread's start record holds `fn{ data: *mut T }`
+    for any `T`, read through `@cast(*fn{ data: *mut u8 }, &run).*`, since `@cast` takes pointers
+    only. Every `fn` value is one pointer, which a cast of `fn` values whose fields differ only in
+    pointer types could say outright. *Hit by 1:* ctxc (std/thread.ctx).
+
+41. **`null` can't name a variant,** so `types::Type`'s is `nil`. Cosmetic. *Hit by 1:* ctxc.
+
+42. **The mutex isn't fair, and std doesn't say so.** Windows' slim locks let a thread that
+    unlocks and locks again keep the lock: mixtest let the other thread in 97 times in 3,000
+    blocks, and about 1,000 once it yielded between blocks. Worth a line in std's `mutex` comment.
+    *Hit by 1:* audio.

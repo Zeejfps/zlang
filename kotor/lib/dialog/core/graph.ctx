@@ -110,7 +110,7 @@ namespace dlg {
         let mut key = name
         let text = resref::bytes{ r = &key }
         // The name goes to the heap first: a result read through a name in a local would be tied
-        // to the local (friction/engine.md).
+        // to the local (ctxlang/FRICTION.md #4).
         let kept = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = text.len }
         defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = kept, count = 0 }
         slice::copy(u8){ dst = kept, src = text }
