@@ -137,16 +137,16 @@ namespace fs {
         let mut dir: [32768]u8
         let n = if os::is_absolute{ path } { 0 } else { try os::working_dir{ &fs, into = dir[..] } }
         let sep: usize = if n > 0 and path.len > 0 and dir[n - 1] != '/' and dir[n - 1] != '\\' { 1 } else { 0 }
-        let out = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = n + sep + path.len }
+        let out = try alloc::make(u8, S){ realloc, &heap, count = n + sep + path.len }
         slice::copy(u8){ dst = out[..n], src = dir[..n] }
         if sep == 1 { out[n] = '/' }
         slice::copy(u8){ dst = out[n + sep..], src = path }
         return out
     }
 
-    // The names of directory `path`'s entries, without "." and "..", sorted by their bytes. They
-    // are in memory from `realloc`, in two allocations: the names' bytes, and the slice of them.
-    fn list(S) { mut fs: Fs, mut heap: S, realloc: alloc::Fn(S), path: []u8 } -> ![][]u8 {
+    // The names of directory `path`'s entries, without "." and "..", sorted by their bytes, in one
+    // allocation from `realloc`: the slice of them, then their bytes. Free it with `list_free`.
+    fn list(S) { mut fs: Fs, mut heap: S, realloc: alloc::Fn(S), path: []u8 } -> ![]mut []u8 {
         if path.len == 0 { return not_found }
         let mut dir = try os::dir_open{ &fs, path }
         defer os::dir_close{ &fs, &dir }
@@ -171,23 +171,28 @@ namespace fs {
             buf[n + name.len] = 0
             n = n + name.len + 1
         }
-        buf = buf[..n]
         let mut count: usize = 0
         let mut i: usize = 0
-        while i < buf.len {
+        while i < n {
             if buf[i] == 0 { count = count + 1 }
             i = i + 1
         }
-        let names = alloc::resize([]u8, S){ realloc, &heap, mem = slice::empty([]u8){}, count } iferr err{ error } {
+        // The slice first, for its alignment, then the bytes, so that list_free frees one block.
+        let table = count * @size_of([]u8)
+        let all = realloc{ &heap, mem = slice::empty(u8){}, new = table + n, align = @align_of([]u8) } ifnull {
             _ = realloc{ &heap, mem = buf, new = 0, align = 1 }
-            return error
+            return alloc::out_of_memory
         }
+        let bytes = all[table..]
+        slice::copy(u8){ dst = bytes, src = buf[..n] }
+        _ = realloc{ &heap, mem = buf, new = 0, align = 1 }
+        let names = slice::cast(u8, []u8){ s = all[..table] }
         let mut start: usize = 0
         let mut k: usize = 0
         i = 0
-        while i < buf.len {
-            if buf[i] == 0 {
-                names[k] = buf[start..i]
+        while i < n {
+            if bytes[i] == 0 {
+                names[k] = bytes[start..i]
                 k = k + 1
                 start = i + 1
             }
@@ -195,6 +200,17 @@ namespace fs {
         }
         sort{ names }
         return names
+    }
+
+    // Frees the names `list` gave, to the `realloc` and `heap` it took them from.
+    fn list_free(S) { mut heap: S, realloc: alloc::Fn(S), names: []mut []u8 } {
+        let mut size = names.len * @size_of([]u8)
+        let mut i: usize = 0
+        while i < names.len {
+            size = size + names[i].len + 1
+            i = i + 1
+        }
+        _ = realloc{ &heap, mem = @slice(@cast(*mut u8, names.ptr), size), new = 0, align = @align_of([]u8) }
     }
 
     // Reads the whole file at `path` into memory from `realloc`. The caller owns the result:

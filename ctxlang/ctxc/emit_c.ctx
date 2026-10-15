@@ -352,7 +352,7 @@ namespace emit {
     fn unique { heap: *mut ir::Heap, mut taken: map::Map([]u8, u32, ir::Heap), base: []u8 } -> []u8 {
         let mut name = base
         let mut n: u64 = 0
-        let digits = try! alloc::resize(u8, ir::Heap){ realloc = arena::alloc, heap, mem = slice::empty(u8){}, count = 20 }
+        let digits = try! alloc::make(u8, ir::Heap){ realloc = arena::alloc, heap, count = 20 }
         while map::has{ m = taken, key = name } {
             n = n + 1
             name = cat{ heap, a = cat{ heap, a = base, b = "_" }, b = utf8::fmt_u64{ n, into = digits }.bytes }
@@ -411,7 +411,7 @@ namespace emit {
     }
 
     fn cat { heap: *mut ir::Heap, a: []u8, b: []u8 } -> []u8 {
-        let out = try! alloc::resize(u8, ir::Heap){ realloc = arena::alloc, heap, mem = slice::empty(u8){}, count = a.len + b.len }
+        let out = try! alloc::make(u8, ir::Heap){ realloc = arena::alloc, heap, count = a.len + b.len }
         slice::copy{ dst = out[..a.len], src = a }
         slice::copy{ dst = out[a.len..], src = b }
         return out
@@ -577,7 +577,7 @@ namespace emit {
     // Sorts functions by file, then position, then C name: a merge sort, since a big program has
     // tens of thousands.
     fn sort { e: E, xs: []mut u32 } {
-        let tmp = try! alloc::resize(u32, ir::Heap){ realloc = arena::alloc, heap = e.heap, mem = slice::empty(u32){}, count = xs.len }
+        let tmp = try! alloc::make(u32, ir::Heap){ realloc = arena::alloc, heap = e.heap, count = xs.len }
         let mut width: usize = 1
         while width < xs.len {
             let mut lo: usize = 0

@@ -65,6 +65,17 @@ namespace list {
         return list.items[..list.len]
     }
 
+    // The items in an allocation of exactly their number, which can be freed as one
+    // (`alloc::resize{ ..., mem = items, count = 0 }`), where `items` is the first `len` of a larger
+    // one. The list is left empty, owning nothing. Fails with alloc::out_of_memory, leaving list as
+    // it was.
+    fn take(T, S) { mut list: List(T, S) } -> ![]mut T {
+        let out = try alloc::resize{ realloc = list.realloc, heap = list.heap, mem = list.items, count = list.len }
+        list.items = slice::empty(T){}
+        list.len = 0
+        return out
+    }
+
     fn clear(T, S) { mut list: List(T, S) } {
         list.len = 0
     }

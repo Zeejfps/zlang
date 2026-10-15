@@ -168,7 +168,7 @@ namespace types {
 
     fn copy(T) { s: Store, xs: []T } -> []T {
         if xs.len == 0 { return xs }
-        let out = try! alloc::resize(T){ realloc = arena::alloc, heap = s.heap, mem = slice::empty(T){}, count = xs.len }
+        let out = try! alloc::make(T){ realloc = arena::alloc, heap = s.heap, count = xs.len }
         slice::copy{ dst = out, src = xs }
         return out
     }

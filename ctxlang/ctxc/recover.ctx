@@ -40,10 +40,10 @@ namespace recover {
             if w > widest { widest = w }
             i = i + 1
         }
-        let buf = try! alloc::resize{ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = text.len + widest + 1 }
+        let buf = try! alloc::make(u8){ realloc = arena::alloc, &heap, count = text.len + widest + 1 }
         let mut count: u32 = 0
         let mut failures: u32 = 0
-        let mark = heap.used
+        let mark = arena::mark{ heap }
         let mut j = from
         let last = if to < toks.len - 1 { to } else { toks.len - 1 }      // not the eof token
         while j < last {
@@ -51,7 +51,7 @@ namespace recover {
             let e = @as(usize, toks[j].span.end)
             let mut how: u8 = 0
             while how < 3 {
-                heap.used = mark
+                arena::restore{ &heap, to = mark }
                 let mut n: usize = 0
                 if how == 0 {
                     n = put{ buf, at = 0, bytes = text[..s] }
@@ -111,7 +111,7 @@ namespace recover {
         let lexed = lexer::lex{ text, file = 0, &heap, &diags }
         let tree = parser::parse{ text, file = 0, tokens = lexed.tokens, &heap, &diags }
         if diags.errors > diag::CAP { return "more errors than the cap" }
-        let seen = try! alloc::resize{ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = @as(usize, tree.ids) }
+        let seen = try! alloc::make(u8){ realloc = arena::alloc, &heap, count = @as(usize, tree.ids) }
         slice::fill{ s = seen, v = 0 }
         let mut c = Check{ ids = tree.ids, seen, problem = null }
         let mut i: usize = 0

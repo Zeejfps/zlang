@@ -18,7 +18,7 @@ LIB = LIST_SRC[:LIST_SRC.index('fn main {')]
 MAIN_SETUP = """
 fn main { mut io: Io } {
     let mut mem: [4096]u8
-    let mut heap = arena::Arena{ buf = @slice(&mem[0], mem.len), used = 0 }
+    let mut heap = arena::Arena{ buf = @slice(&mem[0], mem.len), used = 0, handed = 0 }
     let mut nums = list::new(i32){ realloc = arena::alloc, &heap }
     let mut total = 0
 %s
@@ -136,7 +136,7 @@ fn main {} { _ = make{} }
     def test_escape_return(self):
         extra = """fn make_arena {} -> arena::Arena {
     let mut mem: [64]u8
-    return arena::Arena{ buf = @slice(&mem[0], mem.len), used = 0 }
+    return arena::Arena{ buf = @slice(&mem[0], mem.len), used = 0, handed = 0 }
 }
 """
         self.lib_error('', 'returned value holds the address of local `mem`', extra)
@@ -149,7 +149,7 @@ fn main {} { _ = make{} }
     def test_not_caught_wrong_instance(self):
         self.assertOutput(LIB + MAIN_SETUP % """
     let mut mem2: [256]u8
-    let mut other = arena::Arena{ buf = @slice(&mem2[0], mem2.len), used = 0 }
+    let mut other = arena::Arena{ buf = @slice(&mem2[0], mem2.len), used = 0, handed = 0 }
     _ = list::push{ list = &nums, item = 1 }
     io::println_u64{ &io, n = nums.len }""", '1\n')
 
@@ -1562,7 +1562,7 @@ fn main { mut io: Io } {
     def test_a_full_slice_still_isnt_a_const(self):
         self.assertCompileError('''
 fn ones { mut heap: arena::Arena } -> []i32 { return try! alloc::resize(i32, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(i32){}, count = 2 } }
-fn make {} -> []i32 { let mut mem: [64]u8; let mut heap = arena::Arena{ buf = mem[..], used = 0 }; return ones{ &heap } }
+fn make {} -> []i32 { let mut mem: [64]u8; let mut heap = arena::Arena{ buf = mem[..], used = 0, handed = 0 }; return ones{ &heap } }
 const S: []i32 = make{}
 fn main {} {}
 ''', "can't hold")
@@ -8369,6 +8369,17 @@ fn main { mut io: Io } {
                                 '`defer` takes a call, an assignment, `_ = e` or a block')
 
 
+# An allocator that counts the bytes live, over an arena: frees must give back exactly what
+# was handed out for the count to come back to 0.
+COUNTED = """
+struct Counted { a: arena::Arena, live: usize }
+fn counted { mut heap: Counted, mem: alloc::Bytes, new: usize, align: usize } -> ?alloc::Bytes {
+    let out = arena::alloc{ heap = &heap.a, mem, new, align } ifnull { return null }
+    heap.live = heap.live + new - mem.len
+    return out
+}
+"""
+
 FS_MAIN = """
 fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
     let mut mem: [65536]u8
@@ -8429,6 +8440,25 @@ class Fs(Base):
     }
 """, [self.dir, self.path('sub'), self.path('missing')])
         self.assertEqual((out, code), ('true\ntrue\na.ctx\nb.txt\nc\nsub\n', 0))
+
+    def test_list_free(self):
+        # One allocation, which list_free gives back whole; an empty directory allocates nothing.
+        for name in ['bb', 'a', 'ccc']:
+            with open(self.path(name), 'w') as f:
+                f.write('x')
+        os.mkdir(self.path('empty'))
+        out, code = self.run_fs("""
+    let mut c = Counted{ a = heap, live = 0 }
+    let names = fs::list{ &fs, heap = &c, realloc = counted, path = args[0] } iferr { return 1 }
+    _ = @fmt(&io, "{} {} {}\\n", names.len, names[0], c.live)
+    fs::list_free{ heap = &c, realloc = counted, names }
+    let none = fs::list{ &fs, heap = &c, realloc = counted, path = args[1] } iferr { return 2 }
+    _ = @fmt(&io, "{} {}\\n", none.len, c.live)
+    fs::list_free{ heap = &c, realloc = counted, names = none }
+    _ = @fmt(&io, "{}\\n", c.live)
+    return 0
+""", [self.dir, self.path('empty')], extra=COUNTED)
+        self.assertEqual((out, code), ('4 a 79\n0 0\n0\n', 0))
 
     def test_remove_dir(self):
         with open(self.path('file.txt'), 'w') as f:
@@ -8775,6 +8805,62 @@ fn main { mut mem: Mem } { }
     return 0
 """, extra='struct Empty {}\n')
         self.assertIn('alloc::new: T is zero-sized', cm.exception.msg)
+
+    def test_arena_hands_out_zeros(self):
+        # §11 Initialization: memory a program hasn't written is zero, even where the arena
+        # handed it out before a reset or a restore, and past what a resize keeps.
+        out, _ = self.run_mem("""
+    let mut buf: [256]u8
+    let mut heap = arena::new{ buf = buf[..] }
+    let a = alloc::make(u32, arena::Arena){ realloc = arena::alloc, &heap, count = 8 } iferr { return 1 }
+    slice::fill(u32){ s = a, v = 7 }
+    arena::reset{ &heap }
+    let b = alloc::make(u32, arena::Arena){ realloc = arena::alloc, &heap, count = 8 } iferr { return 2 }
+    let m = arena::mark{ heap }
+    let c = alloc::make(u32, arena::Arena){ realloc = arena::alloc, &heap, count = 4 } iferr { return 3 }
+    slice::fill(u32){ s = c, v = 9 }
+    arena::restore{ &heap, to = m }
+    let mut d = alloc::make(u32, arena::Arena){ realloc = arena::alloc, &heap, count = 2 } iferr { return 4 }
+    d[0] = 5
+    d[1] = 6
+    d = alloc::resize(u32, arena::Arena){ realloc = arena::alloc, &heap, mem = d, count = 6 } iferr { return 5 }
+    _ = @fmt(&io, "{} {} {} {} {} {} {}\\n", b[0], b[7], d[0], d[1], d[2], d[5], heap.used)
+    return 0
+""")
+        self.assertEqual(out, '0 0 5 6 0 0 64\n')
+
+    def test_arena_restore_past_the_mark(self):
+        with self.assertRaises(Panic) as cm:
+            self.run_mem("""
+    let mut buf: [64]u8
+    let mut heap = arena::new{ buf = buf[..] }
+    _ = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 8 } iferr { return 1 }
+    let m = arena::mark{ heap }
+    arena::reset{ &heap }
+    arena::restore{ &heap, to = m }
+    return 0
+""")
+        self.assertIn('arena::restore: the arena was reset or restored past this mark', cm.exception.msg)
+
+    def test_list_take(self):
+        # The items in an allocation of their size, which frees as one: nothing is left live.
+        out, _ = self.run_mem("""
+    let mut buf: [1024]u8
+    let mut c = Counted{ a = arena::new{ buf = buf[..] }, live = 0 }
+    let mut xs = list::new(u16){ realloc = counted, heap = &c }
+    list::push{ list = &xs, item = 3 } iferr { return 1 }
+    list::push{ list = &xs, item = 4 } iferr { return 2 }
+    list::push{ list = &xs, item = 5 } iferr { return 3 }
+    list::push{ list = &xs, item = 6 } iferr { return 4 }
+    list::push{ list = &xs, item = 7 } iferr { return 5 }
+    let before = c.live
+    let items = list::take{ list = &xs } iferr { return 6 }
+    _ = @fmt(&io, "{} {} {} {} {}\\n", before, c.live, items.len, items[4], xs.len)
+    _ = alloc::resize(u16, Counted){ realloc = counted, heap = &c, mem = items, count = 0 }
+    _ = @fmt(&io, "{}\\n", c.live)
+    return 0
+""", extra=COUNTED)
+        self.assertEqual(out, '16 10 5 7 0\n0\n')
 
     def test_builder_push_floats(self):
         out, _ = self.run_mem("""

@@ -227,9 +227,7 @@ namespace map {
         let mut cap: usize = 8
         while (m.len + 1) * 2 > cap { cap = cap * 2 }
         let old = m.slots
-        m.slots = try alloc::resize{
-            realloc = m.realloc, heap = m.heap, mem = slice::empty(Slot(K, V)){}, count = cap,
-        }
+        m.slots = try alloc::make(Slot(K, V)){ realloc = m.realloc, heap = m.heap, count = cap }
         slice::fill{ s = m.slots, v = Slot::empty }
         m.used = m.len
         let mut i: usize = 0

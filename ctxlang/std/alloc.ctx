@@ -7,7 +7,8 @@ namespace alloc {
     //   mem.len == 0  -> allocate `new` bytes
     //   new == 0      -> free `mem`, return an empty slice
     //   otherwise     -> resize `mem` to `new` bytes, keeping its contents
-    // The result's address is a multiple of `align`. Returns null on failure.
+    // The result's address is a multiple of `align`, and its bytes past the ones kept are zero:
+    // memory a program hasn't written holds zero (spec §11, Initialization). Returns null on failure.
     // Byte-level, so one allocator serves every element type.
     type Fn(S) = fn{ mut heap: S, mem: Bytes, new: usize, align: usize } -> ?Bytes
 
@@ -24,6 +25,14 @@ namespace alloc {
             align = @align_of(T),
         } ifnull { return out_of_memory }
         return slice::cast(u8, T){ s = bytes }
+    }
+
+    // `count` T's, each its zero value, as memory a program hasn't written holds: counters, tables
+    // filled in later. Fails with out_of_memory. Free it with `resize` to 0.
+    //
+    //   let counts = try alloc::make(u32, Arena){ realloc = arena::alloc, &heap, count = 256 }
+    fn make(T, S) { realloc: Fn(S), mut heap: S, count: usize } -> ![]mut T {
+        return resize(T, S){ realloc, &heap, mem = slice::empty(T){}, count }
     }
 
     // One T, initialized to `value`, for building trees and other linked structures:

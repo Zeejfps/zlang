@@ -108,7 +108,7 @@ namespace build {
             i = end + 1
         }
         let paths = list::items{ list = w.paths }
-        let texts = try alloc::resize([]u8, S){ realloc, &heap, mem = slice::empty([]u8){}, count = paths.len }
+        let texts = try alloc::make([]u8, S){ realloc, &heap, count = paths.len }
         let mut largest: usize = 0
         i = 0
         while i < paths.len {
@@ -282,7 +282,7 @@ namespace build {
         // s in lower case on Windows, whose file names ignore case; s elsewhere.
         fn fold(S) { mut w: Walk(S), s: []u8 } -> ![]u8 {
             if os::OS != Os::windows { return s }
-            let out = try alloc::resize(u8, S){ realloc = w.realloc, heap = w.heap, mem = slice::empty(u8){}, count = s.len }
+            let out = try alloc::make(u8, S){ realloc = w.realloc, heap = w.heap, count = s.len }
             let mut i: usize = 0
             while i < s.len {
                 out[i] = ascii::to_lower{ c = s[i] }
@@ -342,7 +342,7 @@ namespace build {
                     d.kind = Kind::tagged_union
                     d.name = name.text
                     d.generics = try names{ &w, xs = tparams }
-                    let out = try alloc::resize(Variant, S){ realloc = w.realloc, heap = w.heap, mem = slice::empty(Variant){}, count = variants.len }
+                    let out = try alloc::make(Variant, S){ realloc = w.realloc, heap = w.heap, count = variants.len }
                     let mut k: usize = 0
                     while k < variants.len {
                         let v = variants[k]
@@ -356,7 +356,7 @@ namespace build {
                     d.kind = Kind::enumeration
                     d.name = name.text
                     d.ty = try type_text{ &w, t = base }
-                    let out = try alloc::resize(Variant, S){ realloc = w.realloc, heap = w.heap, mem = slice::empty(Variant){}, count = variants.len }
+                    let out = try alloc::make(Variant, S){ realloc = w.realloc, heap = w.heap, count = variants.len }
                     let mut k: usize = 0
                     while k < variants.len {
                         let v = variants[k]
@@ -396,7 +396,7 @@ namespace build {
         }
 
         fn names(S) { mut w: Walk(S), xs: []syntax::Name } -> ![][]u8 {
-            let out = try alloc::resize([]u8, S){ realloc = w.realloc, heap = w.heap, mem = slice::empty([]u8){}, count = xs.len }
+            let out = try alloc::make([]u8, S){ realloc = w.realloc, heap = w.heap, count = xs.len }
             let mut i: usize = 0
             while i < xs.len {
                 out[i] = xs[i].text
@@ -407,7 +407,7 @@ namespace build {
 
         // A fn's context fields.
         fn context(S) { mut w: Walk(S), xs: []syntax::Param } -> ![]Field {
-            let out = try alloc::resize(Field, S){ realloc = w.realloc, heap = w.heap, mem = slice::empty(Field){}, count = xs.len }
+            let out = try alloc::make(Field, S){ realloc = w.realloc, heap = w.heap, count = xs.len }
             let mut i: usize = 0
             while i < xs.len {
                 out[i] = Field{ name = xs[i].name.text, ty = try type_text{ &w, t = xs[i].ty }, mutable = xs[i].mutable, attrs = try attrs{ &w, xs = xs[i].attrs }, value = "" }
@@ -417,7 +417,7 @@ namespace build {
         }
 
         fn field_list(S) { mut w: Walk(S), xs: []syntax::Field } -> ![]Field {
-            let out = try alloc::resize(Field, S){ realloc = w.realloc, heap = w.heap, mem = slice::empty(Field){}, count = xs.len }
+            let out = try alloc::make(Field, S){ realloc = w.realloc, heap = w.heap, count = xs.len }
             let mut i: usize = 0
             while i < xs.len {
                 let value: []u8 = if let x = xs[i].default { try squeeze{ &w, span = x.span } } else { "" }
@@ -430,7 +430,7 @@ namespace build {
         // Attributes, whose values the parser makes braced literals of a path (parser.ctx,
         // `attributes`).
         fn attrs(S) { mut w: Walk(S), xs: []syntax::Attr } -> ![]Attr {
-            let out = try alloc::resize(Attr, S){ realloc = w.realloc, heap = w.heap, mem = slice::empty(Attr){}, count = xs.len }
+            let out = try alloc::make(Attr, S){ realloc = w.realloc, heap = w.heap, count = xs.len }
             let mut n: usize = 0
             let mut i: usize = 0
             while i < xs.len {
@@ -444,7 +444,7 @@ namespace build {
                 }
                 let mut name = list::new(u8){ realloc = w.realloc, heap = w.heap }
                 try put_segs{ &w, out = &name, segs }
-                let fields = try alloc::resize(AttrField, S){ realloc = w.realloc, heap = w.heap, mem = slice::empty(AttrField){}, count = items.len }
+                let fields = try alloc::make(AttrField, S){ realloc = w.realloc, heap = w.heap, count = items.len }
                 let mut k: usize = 0
                 while k < items.len {
                     let it = items[k]
@@ -609,7 +609,7 @@ namespace build {
 
         // s in memory from realloc, as everything in a Decl is: the parser's memory is reused.
         fn copy(S) { mut w: Walk(S), s: []u8 } -> ![]u8 {
-            let out = try alloc::resize(u8, S){ realloc = w.realloc, heap = w.heap, mem = slice::empty(u8){}, count = s.len }
+            let out = try alloc::make(u8, S){ realloc = w.realloc, heap = w.heap, count = s.len }
             slice::copy(u8){ dst = out, src = s }
             return out
         }

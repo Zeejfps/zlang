@@ -232,7 +232,7 @@ fn cannot { mut io: Io, path: []u8, what: []u8 } {
 }
 
 fn cat { mut heap: Heap, a: []u8, b: []u8 } -> []u8 {
-    let out = try! alloc::resize(u8, Heap){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = a.len + b.len }
+    let out = try! alloc::make(u8, Heap){ realloc = arena::alloc, &heap, count = a.len + b.len }
     slice::copy{ dst = out[..a.len], src = a }
     slice::copy{ dst = out[a.len..], src = b }
     return out

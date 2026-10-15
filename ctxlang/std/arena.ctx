@@ -1,17 +1,24 @@
-// std: arena. A bump allocator over a caller-provided buffer.
+// std: arena. A bump allocator over a caller-provided buffer. It hands out the buffer's bytes as
+// they are the first time, so give it memory that holds zeros, as new memory does (mem::pages,
+// mem::reserve, a new array); what it hands out again, after a `reset` or `restore`, it zeroes.
 //
 //   let mut mem: [4096]u8
 //   let mut heap = arena::new{ buf = mem[..] }
 //   let mut xs = list::new(i32){ realloc = arena::alloc, &heap }
 
 namespace arena {
-    struct Arena { buf: alloc::Bytes, used: usize }
-
-    fn new { buf: alloc::Bytes } -> Arena {
-        return Arena{ buf, used = 0 }
+    struct Arena {
+        buf: alloc::Bytes,
+        used: usize,
+        handed: usize,      // the end of the bytes ever handed out: past it, buf is as it was given
     }
 
-    // Has type alloc::Fn(Arena).
+    fn new { buf: alloc::Bytes } -> Arena {
+        return Arena{ buf, used = 0, handed = 0 }
+    }
+
+    // Has type alloc::Fn(Arena). What it hands out past `mem`'s bytes is zero, though the arena
+    // may have handed it out before a `reset` or `restore`.
     fn alloc { mut heap: Arena, mem: alloc::Bytes, new: usize, align: usize } -> ?alloc::Bytes {
         if new == 0 { return slice::empty(u8){} }                              // individual frees are no-ops
         if new <= mem.len { return mem[..new] }                                // shrink in place
@@ -32,12 +39,33 @@ namespace arena {
         let out = heap.buf[start..end]
         heap.used = end
         slice::copy{ dst = out, src = mem }
+        // Only bytes handed out before can hold anything but zeros.
+        if heap.handed > start + mem.len {
+            let dirty = if heap.handed < end { heap.handed - start } else { new }
+            slice::fill(u8){ s = out[mem.len..dirty], v = 0 }
+        }
+        if end > heap.handed { heap.handed = end }
         return out
     }
 
     // Frees everything allocated so far.
     fn reset { mut heap: Arena } {
         heap.used = 0
+    }
+
+    // A point to go back to with `restore`, which frees everything allocated after it: scratch
+    // memory for one item of many.
+    //
+    //   let m = arena::mark{ heap }
+    //   defer arena::restore{ &heap, to = m }
+    fn mark { heap: Arena } -> usize {
+        return heap.used
+    }
+
+    // Frees everything allocated since `mark` gave `to`. Panics if more than that was freed since.
+    fn restore { mut heap: Arena, to: usize } {
+        if to > heap.used { @panic("arena::restore: the arena was reset or restored past this mark") }
+        heap.used = to
     }
 
     // Bytes still available, ignoring alignment padding.

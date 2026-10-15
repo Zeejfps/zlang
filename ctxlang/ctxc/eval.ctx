@@ -2270,7 +2270,7 @@ namespace eval {
 
     // n bytes of host memory, zeroed: a param's or a result's.
     fn host_bytes { mut m: M, n: u64 } -> []mut u8 {
-        let b = try! alloc::resize(u8, Heap){ realloc = arena::alloc, heap = m.heap, mem = slice::empty(u8){}, count = @as(usize, n) }
+        let b = try! alloc::make(u8, Heap){ realloc = arena::alloc, heap = m.heap, count = @as(usize, n) }
         slice::fill(u8){ s = b, v = 0 }
         return b
     }
@@ -2322,7 +2322,7 @@ namespace eval {
     // a literal's conversion does, doesn't pay for a whole region.
     fn region { mut m: M, n: u64, writable: bool } -> !u32 {
         let size = if n > CHUNK { n } else { CHUNK }
-        let bytes = alloc::resize(u8, Heap){ realloc = arena::alloc, heap = m.heap, mem = slice::empty(u8){}, count = @as(usize, size) } iferr {
+        let bytes = alloc::make(u8, Heap){ realloc = arena::alloc, heap = m.heap, count = @as(usize, size) } iferr {
             fail{ &m, msg = "out of memory" }
             return halt
         }

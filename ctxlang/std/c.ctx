@@ -68,7 +68,7 @@ namespace c {
             if bytes[i] == 0 { return has_nul{ at = i } }
             i = i + 1
         }
-        let mem = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = bytes.len + 1 }
+        let mem = try alloc::make(u8, S){ realloc, &heap, count = bytes.len + 1 }
         slice::copy(u8){ dst = mem[..bytes.len], src = bytes }
         mem[bytes.len] = 0
         return String{ ptr = mem.ptr }

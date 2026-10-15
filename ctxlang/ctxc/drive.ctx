@@ -1331,7 +1331,7 @@ namespace drive {
     // A new, empty file BASE.N EXT, for the first N from 0 that no file has: no other ctxc writes
     // to it, even one building the same program. Null after saying why there is none.
     fn claim { mut io: Io, mut fs: Fs, mut heap: Heap, base: []u8, ext: []u8 } -> ?[]u8 {
-        let digits = try! alloc::resize(u8, Heap){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = 20 }
+        let digits = try! alloc::make(u8, Heap){ realloc = arena::alloc, &heap, count = 20 }
         let mut n: u64 = 0
         while n < 1000 {
             let p = cat{ &heap, a = cat{ &heap, a = base, b = "." }, b = cat{ &heap, a = utf8::fmt_u64{ n, into = digits }.bytes, b = ext } }
@@ -1459,7 +1459,7 @@ namespace drive {
 
     // n as 16 hexadecimal digits.
     fn hex { mut heap: Heap, n: u64 } -> []u8 {
-        let out = try! alloc::resize(u8, Heap){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = 16 }
+        let out = try! alloc::make(u8, Heap){ realloc = arena::alloc, &heap, count = 16 }
         let mut v = n
         let mut k: usize = 16
         while k > 0 {
@@ -1670,7 +1670,7 @@ namespace drive {
     // s in lower case on Windows, whose file names ignore case; s elsewhere.
     fn fold { mut heap: Heap, s: []u8, os: build::Os } -> []u8 {
         if os != build::Os::windows { return s }
-        let out = try! alloc::resize(u8, Heap){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = s.len }
+        let out = try! alloc::make(u8, Heap){ realloc = arena::alloc, &heap, count = s.len }
         let mut i: usize = 0
         while i < s.len {
             out[i] = ascii::to_lower{ c = s[i] }
@@ -1743,7 +1743,7 @@ namespace drive {
     }
 
     fn cat { mut heap: Heap, a: []u8, b: []u8 } -> []u8 {
-        let out = try! alloc::resize(u8, Heap){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = a.len + b.len }
+        let out = try! alloc::make(u8, Heap){ realloc = arena::alloc, &heap, count = a.len + b.len }
         slice::copy{ dst = out[..a.len], src = a }
         slice::copy{ dst = out[a.len..], src = b }
         return out

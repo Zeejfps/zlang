@@ -125,7 +125,7 @@ fn copy { mut heap: arena::Arena, s: []u8 } -> ![]mut u8 {
     return out
 }
 fn load { mut heap: arena::Arena } -> ![]mut u8 { let buf: [3]u8 = [1,2,3]; return try copy{ &heap, s = buf[..] } }
-fn main {} { let mut mem: [1024]u8; let mut heap = arena::Arena{ buf = mem[..], used = 0 }; _ = load{ &heap } }
+fn main {} { let mut mem: [1024]u8; let mut heap = arena::Arena{ buf = mem[..], used = 0, handed = 0 }; _ = load{ &heap } }
 ''')
 case('narrowed_optional_retains_borrow', False, '''
 fn unwrap { s: ?[]u8 } -> []u8 { if s != null { return s }; return "" }
@@ -170,7 +170,7 @@ fn get { m: map::Map([]u8, []u8, arena::Arena) } -> ?[]u8 { let k: [3]u8 = [1,2,
 fn at { m: map::Map([]u8, i64, arena::Arena) } -> ?*mut i64 { let k: [3]u8 = [1,2,3]; return map::at{ m, key = k[..] } }
 fn main {} {
     let mut mem: [4096]u8
-    let mut heap = arena::Arena{ buf = mem[..], used = 0 }
+    let mut heap = arena::Arena{ buf = mem[..], used = 0, handed = 0 }
     _ = get{ m = map::new([]u8, []u8, arena::Arena){ realloc = arena::alloc, &heap, hash = map::hash_bytes, eq = slice::eq_bytes } }
     _ = at{ m = map::new([]u8, i64, arena::Arena){ realloc = arena::alloc, &heap, hash = map::hash_bytes, eq = slice::eq_bytes } }
 }
@@ -189,7 +189,7 @@ fn load { mut fs: Fs, mut heap: arena::Arena } -> ![]u8 {
 }
 fn main { mut fs: Fs } {
     let mut mem: [4096]u8
-    let mut heap = arena::Arena{ buf = mem[..], used = 0 }
+    let mut heap = arena::Arena{ buf = mem[..], used = 0, handed = 0 }
     _ = load{ &fs, &heap }
 }
 ''')

@@ -136,7 +136,7 @@ namespace comptime {
     // that there is none.
     fn scratch { mut c: check::Checker, at: source::Span, what: []u8 } -> ?alloc::Bytes {
         if c.scratch.len == 0 {
-            c.scratch = alloc::resize(u8, Heap){ realloc = arena::alloc, heap = c.heap, mem = slice::empty(u8){}, count = SCRATCH } iferr {
+            c.scratch = alloc::make(u8, Heap){ realloc = arena::alloc, heap = c.heap, count = SCRATCH } iferr {
                 report{ &c, at, what, msg = "couldn't be computed while compiling: out of memory" }
                 return null
             }
@@ -445,7 +445,7 @@ namespace comptime {
 
     // bytes, copied out of the interpreter's memory, which the next const reuses.
     fn keep { c: check::Checker, bytes: []u8 } -> []u8 {
-        let out = try! alloc::resize(u8, Heap){ realloc = arena::alloc, heap = c.heap, mem = slice::empty(u8){}, count = bytes.len }
+        let out = try! alloc::make(u8, Heap){ realloc = arena::alloc, heap = c.heap, count = bytes.len }
         slice::copy(u8){ dst = out, src = bytes }
         return out
     }
