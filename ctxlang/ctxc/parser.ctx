@@ -1406,7 +1406,7 @@ namespace parser {
 
     const ANY: u32 = 4294967295
 
-    const BUILTINS: [20]Builtin = [
+    const BUILTINS: [_]Builtin = [
         Builtin{ name = "size_of",  types = 1, lo = 0, hi = 0, usage = "@size_of(T)" },
         Builtin{ name = "align_of", types = 1, lo = 0, hi = 0, usage = "@align_of(T)" },
         Builtin{ name = "offset_of", types = 1, lo = 1, hi = 1, usage = "@offset_of(T, field)" },
@@ -1415,9 +1415,6 @@ namespace parser {
         Builtin{ name = "cast",     types = 1, lo = 1, hi = 1, usage = "@cast(*U, q)" },
         Builtin{ name = "addr",     types = 0, lo = 1, hi = 1, usage = "@addr(q)" },
         Builtin{ name = "slice",    types = 0, lo = 2, hi = 2, usage = "@slice(p, n)" },
-        Builtin{ name = "wrap_add", types = 0, lo = 2, hi = 2, usage = "@wrap_add(a, b)" },
-        Builtin{ name = "wrap_sub", types = 0, lo = 2, hi = 2, usage = "@wrap_sub(a, b)" },
-        Builtin{ name = "wrap_mul", types = 0, lo = 2, hi = 2, usage = "@wrap_mul(a, b)" },
         Builtin{ name = "panic",    types = 0, lo = 0, hi = 1, usage = "@panic() or @panic(\"reason\")" },
         Builtin{ name = "fmt",      types = 0, lo = 1, hi = ANY, usage = "@fmt(b, \"format\", args...) or @fmt(\"format\", args...)" },
         Builtin{ name = "atomic_load", types = 0, lo = 2, hi = 2, usage = "@atomic_load(p, order)" },

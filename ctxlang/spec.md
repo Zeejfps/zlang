@@ -700,14 +700,13 @@ A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are buil
 | `@cast(*U, q)`, `@cast(*mut U, q)`, `@cast(extern fn{C} -> R, q)` | the target | Reinterprets `q`, a pointer or a C function pointer (§12), as a pointer or a C function pointer. Unchecked, except that a `*T` can't be cast to a `*mut U`, and `q` can't be optional: check it for `null` first. |
 | `@slice(p, n)` | `[]T`, or `[]mut T` for a `*mut T` | The slice of `n: usize` elements starting at pointer `p: *T`. Unchecked. |
 | `@addr(q)` | `usize` | The address of pointer `q` as an integer. |
-| `@wrap_add(a, b)`, `@wrap_sub(a, b)`, `@wrap_mul(a, b)` | type of `a` | Integer arithmetic that wraps instead of panicking. `a` and `b` have the same integer type. |
 | `@panic()`, `@panic("reason")` | none | Stops the program. Never returns. It ends a path for return and assignment checks. The reason must be a string literal. The program's `#panic` fn reports it with the panic's location (§15, Entry point), so no capability is needed. |
 | `@fmt(b, "format", args...)`, `@fmt("format", args...)` | `!`; a writer | Writes text into a sink, now or when called (below). |
 | `@atomic_load(p, order)` | `T` | The `T` that `p: *T` (or `*mut T`) points to, read atomically (Atomics, below). |
 | `@atomic_store(p, value, order)` | none | Stores `value` through `p: *mut T` atomically. |
 | `@atomic_exchange(p, value, order)` | `T` | Stores `value` through `p: *mut T` and gives the value it replaced, in one step. |
 | `@atomic_compare_exchange(p, expected, desired, order)` | `?T` | Stores `desired` through `p: *mut T` if it holds `expected`, in one step: `null` if it stored, else the value it found. |
-| `@atomic_add(p, value, order)`, `@atomic_subtract(p, value, order)` | `T` | Adds `value` to, or subtracts it from, the integer `p: *mut T` points to, in one step, wrapping as `@wrap_add` does; gives the value before. |
+| `@atomic_add(p, value, order)`, `@atomic_subtract(p, value, order)` | `T` | Adds `value` to, or subtracts it from, the integer `p: *mut T` points to, in one step, wrapping as `+%` does; gives the value before. |
 | `@fence(order)` | none | Orders the memory accesses around it as `order` says, without one of its own. |
 
 ### Formatting

@@ -3026,12 +3026,7 @@ namespace lower {
             return mk{ ty, k = ir::ExprKind::trunc{ e = box{ l, e = ex{ &l, e = args[0] } } } }
         }
         if check::atomic_name{ n = name } { return atomic{ &l, name, args, t } }
-        // @wrap_add, @wrap_sub, @wrap_mul
-        let op = if slice::eq_bytes{ a = name, b = "wrap_add" } { ir::ArithOp::add } else if slice::eq_bytes{ a = name, b = "wrap_sub" } { ir::ArithOp::sub } else { ir::ArithOp::mul }
-        let ty = tid{ &l, t }
-        let x = ex{ &l, e = args[0] }
-        let y = ex{ &l, e = args[1] }
-        return mk{ ty, k = ir::ExprKind::wrap{ op, a = box{ l, e = x }, b = box{ l, e = y } } }
+        @panic("lower: a builtin the parser doesn't know")
     }
 
     // An atomic (spec §13): the pointer, the values as the pointer's T, and the order, a

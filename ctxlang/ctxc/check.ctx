@@ -9398,13 +9398,7 @@ namespace check {
             if not (types::get{ s = c.ty, id = pt } is ptr | error) { error{ &c, at = expr_at{ e = args[0] }, msg = "@addr needs a pointer argument" } }
             return types::USIZE
         }
-        // @wrap_add, @wrap_sub, @wrap_mul
-        let lt = expr{ &c, e = args[0], exp }
-        let rt = expr{ &c, e = args[1], exp = lt }
-        if not types::unify{ s = &c.ty, a = lt, b = rt } or not is_int{ c, t = lt } {
-            errorf{ &c, at, msg = @fmt("@{} needs two integers of the same type", str{ s = n }) }
-        }
-        return lt
+        @panic("check: a builtin the parser doesn't know")
     }
 
     fn is_enum { c: Checker, t: Id } -> bool {

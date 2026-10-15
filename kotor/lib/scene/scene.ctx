@@ -248,7 +248,7 @@ namespace scene {
         let have = map::get{ m = sc.bindings, key }
         if have != null { return have }
         if map::get{ m = sc.missing_anims, key } != null { return null }
-        // One bind record per (model, animation) the scene ever binds (ctxlang/FRICTION.md #17).
+        // One bind record per (model, animation) the scene ever binds (ctxlang/FRICTION.md #16).
         let mut found: ?mdl_anim::Found = null
         if source != null { found = mdl_anim::find{ model = source, name, lookup = mdl_cache::get{ fs = &w.fs, cache = &sc.models, _ } } }
         if found == null { found = mdl_anim::find{ model, name, lookup = mdl_cache::get{ fs = &w.fs, cache = &sc.models, _ } } }

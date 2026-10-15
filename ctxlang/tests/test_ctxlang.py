@@ -321,7 +321,7 @@ fn main { mut io: Io } {
         self.assertOutput("""
 fn main { mut io: Io } {
     let x: u8 = 250
-    io::println_u64{ &io, n = @wrap_add(x, 10) }
+    io::println_u64{ &io, n = x +% 10 }
     io::println_i64{ &io, n = @trunc(i8, 200) }
     io::println_i64{ &io, n = @as(i32, 3.9) }
     io::println_i64{ &io, n = @as(i32, -3.9) }
@@ -1691,8 +1691,8 @@ class Bodies(Base):
              '@slice needs a pointer, got i32', 2, 20),
             ('fn f { n: i32 } {\n    let a = @addr(n)\n}',
              '@addr needs a pointer argument', 2, 19),
-            ('fn f { a: i32, b: i64 } {\n    let c = @wrap_add(a, b)\n}',
-             '@wrap_add needs two integers of the same type', 2, 13),
+            ('fn f { a: i32, b: f64 } {\n    let c = a +% b\n}',
+             'operands of `+%` have incompatible types: i32 and f64; convert one with @as', 2, 15),
             ('fn w { mut n: i32 } -> ! {\n    return @fmt(&n, "x")\n}',
              '@fmt has no writer to i32: no `#write` fn it sees has a sink of that type', 2, 17),
             (B + '    let s = "x"\n    return @fmt(&b, s)\n}',
@@ -1782,7 +1782,7 @@ class Bodies(Base):
             # ptr arithmetic
             'fn main {} {\n    let a: [3]i32 = [1, 2, 3]\n    let p = @cast(*i32, &a)\n    let q = p + 2\n    _ = q.* + p[1]\n}',
             # builtins
-            'enum E: u8 { a, b }\nfn main {} {\n    let n: i64 = 300\n    let x = @as(f64, n)\n    let y = @trunc(u8, n)\n    let e = @as(E, 1)\n    let k = @as(u32, e)\n    let w = @wrap_add(y, @as(u8, 250))\n    let v = @wrap_sub(y, w)\n    let m = @wrap_mul(y, v)\n    let s = @size_of(i64) + @align_of(u32)\n    let mut arr: [4]u8 = [0; 4]\n    let sl = @slice(&arr[0], 2)\n    sl[0] = 1\n    let addr = @addr(&arr)\n    let bp = @cast(*u8, &arr)\n    _ = addr + s + @as(usize, m) + @as(usize, k) + @as(usize, bp.*)\n    _ = x\n}',
+            'enum E: u8 { a, b }\nfn main {} {\n    let n: i64 = 300\n    let x = @as(f64, n)\n    let y = @trunc(u8, n)\n    let e = @as(E, 1)\n    let k = @as(u32, e)\n    let w = y +% @as(u8, 250)\n    let v = y -% w\n    let m = y *% v\n    let s = @size_of(i64) + @align_of(u32)\n    let mut arr: [4]u8 = [0; 4]\n    let sl = @slice(&arr[0], 2)\n    sl[0] = 1\n    let addr = @addr(&arr)\n    let bp = @cast(*u8, &arr)\n    _ = addr + s + @as(usize, m) + @as(usize, k) + @as(usize, bp.*)\n    _ = x\n}',
             'fn f { n: i32 } -> i32 {\n    if n < 0 { @panic("negative") }\n    if n > 100 { @panic() }\n    return n\n}\nfn main {} {\n    _ = f{ n = 1 }\n}',
             # @fmt with padding, hex, characters and functions as writers in holes
             'struct D { y: u32 }\nfn w_d { mut b: utf8::Builder(arena::Arena), d: D } -> ! {\n    return @fmt(&b, "{}", utf8::push_uint{ n = d.y, width = 4, zero = true, _ })\n}\nfn main {} {\n    let mut mem: [256]u8\n    let mut heap = arena::new{ buf = mem[..] }\n    let mut b = utf8::builder{ realloc = arena::alloc, &heap }\n    let d = D{ y = 7 }\n    let name: utf8::String = "ab"\n    _ = @fmt(&b, "[{}] {} {} {} {} {} {} {{}}", utf8::push_int{ n = 42, width = 5, zero = false, _ }, utf8::write_hex{ n = 255, _ }, utf8::push_hex{ n = 48879, width = 8, zero = true, _ }, utf8::write_char{ c = 65, _ }, utf8::push_padded{ s = name, width = 6, zero = false, _ }, true, w_d{ d, _ })\n}',
@@ -2537,8 +2537,8 @@ fn main { mut io: Io } { two{} }
 
     def test_dropped_builtin_result_is_an_error(self):
         self.assertCompileError("""
-fn main { mut io: Io } { let x: u8 = 1; @wrap_add(x, x) }
-""", 'the result of `@wrap_add` (u8) is unused')
+fn main { mut io: Io } { let x: u8 = 1; @trunc(u8, x) }
+""", 'the result of `@trunc` (u8) is unused')
 
     def test_dropped_in_statement_branch(self):
         self.assertCompileError("""
@@ -2645,8 +2645,10 @@ class Builtins(Base):
                                 'wrong number of arguments: @size_of(T)')
         self.assertCompileError('fn main { mut io: Io } { @panic("a", "b") }',
                                 'wrong number of arguments: @panic() or @panic("reason")')
-        self.assertCompileError('fn main { mut io: Io } { let x = @wrap_add(1) }',
-                                'wrong number of arguments: @wrap_add(a, b)')
+        self.assertCompileError('fn main { mut io: Io } { let x = @trunc(u8) }',
+                                'wrong number of arguments: @trunc(T, x)')
+        self.assertCompileError('fn main { mut io: Io } { let x = @wrap_add(1, 2) }',
+                                'unknown builtin `@wrap_add`')
 
     def test_parentheses_required(self):
         self.assertCompileError('fn main { mut io: Io } { @panic }', "expected '(' after @panic")
@@ -9164,7 +9166,7 @@ fn main { mut io: Io } {
     let big: i64 = -9223372036854775807 - 1
     io::println_i64{ &io, n = big % -1 }
     io::println_i64{ &io, n = -7 / 2 }
-    io::println_u64{ &io, n = @wrap_mul(@as(u64, 3), 18446744073709551615) }
+    io::println_u64{ &io, n = @as(u64, 3) *% 18446744073709551615 }
     io::println_i64{ &io, n = @trunc(i8, 300) }
     io::println_i64{ &io, n = @as(i64, 2.9) }
 }
