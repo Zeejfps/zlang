@@ -165,7 +165,7 @@ namespace material {
         let found = res::find_texture{ rm, name } ifnull { return missing_entry{ key } }
         let bytes = try res::read{ &fs, rm, loc = found.loc, realloc = arena::alloc, heap = &cache.scratch }
         let mut t: tex::Texture
-        let mut txi: []u8 = ""
+        let mut txi = ""
         if found.kind == restype::Type::tpc {
             t = try tex::read_tpc{ realloc = arena::alloc, heap = &cache.scratch, bytes }
             txi = t.txi

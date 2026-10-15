@@ -150,7 +150,7 @@ namespace equip_panel {
 
     // Which slot button a BTN_INV_<slot> or LBL_INV_<slot> tag is: 0..8, or items::SLOTS.
     fn slot_of_tag { tag: []u8 } -> usize {
-        let prefix: []u8 = "BTN_INV_"
+        let prefix = "BTN_INV_"
         if tag.len <= prefix.len or not slice::eq_bytes{ a = tag[..prefix.len], b = prefix } { return items::SLOTS }
         let mut s: usize = 0
         while s < items::SLOTS {
@@ -274,8 +274,8 @@ namespace equip_panel {
         try @fmt(&b, "{}", items::defense_of{ w = &w, who = s.who })
         try gui::set_text{ &g, panel, tag = "LBL_DEF", text = utf8::view{ b }.bytes }
         let hands: [2]usize = [obj::SLOT_LEFT_WEAPON, obj::SLOT_RIGHT_WEAPON]
-        let damage_tags: [2][]u8 = ["LBL_ATKL", "LBL_ATKR"]
-        let hit_tags: [2][]u8 = ["LBL_TOHITL", "LBL_TOHITR"]
+        let damage_tags = ["LBL_ATKL", "LBL_ATKR"]
+        let hit_tags = ["LBL_TOHITL", "LBL_TOHITR"]
         let right = c.equipped[obj::SLOT_RIGHT_WEAPON]
         let double = right != obj::INVALID and items::base_int{ w = &w, id = right, column = "weaponwield", fallback = 0 } == 3
         let mut k: usize = 0

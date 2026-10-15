@@ -35,7 +35,7 @@ namespace frontend {
         let mut row = twoda::find_row{ t, label = name }
         if row == null {
             let mut own: [40]u8
-            let prefix: []u8 = "load_"
+            let prefix = "load_"
             slice::copy(u8){ dst = own[..prefix.len], src = prefix }
             let n = if name.len < own.len - prefix.len { name.len } else { own.len - prefix.len }
             slice::copy(u8){ dst = own[prefix.len..prefix.len + n], src = name[..n] }
@@ -60,7 +60,7 @@ namespace frontend {
         // PickLoadScreenHint (0x005f4760): the counter is the next row to show (a save keeps it); a
         // row that doesn't read (past the end, or an empty cell: the story column stops at row 36)
         // starts the column over at row 0.
-        let column: []u8 = if story { "storyhint" } else { "gameplayhint" }
+        let column = if story { "storyhint" } else { "gameplayhint" }
         let mut row = @as(usize, if story { fe.hint_story } else { fe.hint_game })
         let mut strref = twoda::get_int{ t, row, column }
         if strref == null {

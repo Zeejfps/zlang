@@ -648,7 +648,7 @@ namespace rt_fx {
             }
             if w.log.combat {
                 world::prefix{ w = &w }
-                let outcome: []u8 = if res.kept { "kept" } else if res.refused { "refused" } else { "done" }
+                let outcome = if res.kept { "kept" } else if res.refused { "refused" } else { "done" }
                 _ = @fmt(&w.io, "effect {} ({} leaves, id {}, duration {} {} s, spell {}) on {}: {}\n", g.items[0].kind, g.len, g.items[0].id, kind, seconds, spell, target, outcome)
             }
         } else {

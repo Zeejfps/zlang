@@ -9,7 +9,7 @@ const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let mut game: []u8 = DEFAULT_GAME
     let mut all = false
-    let mut names: [2][]u8 = ["", ""]
+    let mut names = ["", ""]
     let mut n: usize = 0
     let mut i: usize = 0
     while i < args.len {
@@ -70,7 +70,7 @@ fn dump { mut io: Io, mut fs: Fs, mut rm: res::Manager, mut h: heap::Heap, modul
         _ = @fmt(&io, "{} ({}): no MiniGame struct\n", area, module)
         return 1
     }
-    let kind: []u8 = if a.kind == mg::SWOOP { "swoop" } else { "turret" }
+    let kind = if a.kind == mg::SWOOP { "swoop" } else { "turret" }
     _ = @fmt(&io, "{} ({}): {}  clip {}..{}  fov {}  movement {}/s  lateral {}  inertia {} bumping {} plane {} dof {}  music '{}'\n",
         area, module, kind, a.near_clip, a.far_clip, a.fov, a.movement_per_sec, a.lateral_accel, a.use_inertia, a.do_bumping,
         a.bump_plane, a.dof, resref::bytes{ r = &a.music })

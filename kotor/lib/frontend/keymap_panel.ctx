@@ -82,7 +82,7 @@ namespace frontend {
         let disabled = (twoda::get_int{ t, row, column = "Disabled" } ifnull 0) == 1
         if (not remappable and not forced) or disabled { return }
         let mut classes: u32 = 0
-        let flags: [6][]u8 = ["ICPC", "ICMiniGame", "ICPCGUI", "ICDialog", "ICFreeLook", "ICMovie"]
+        let flags = ["ICPC", "ICMiniGame", "ICPCGUI", "ICDialog", "ICFreeLook", "ICMovie"]
         let mut i: usize = 0
         while i < 6 {
             if (twoda::get_int{ t, row, column = flags[i] } ifnull 0) == 1 { classes = classes | (@as(u32, 1) << @trunc(u32, i)) }
@@ -113,7 +113,7 @@ namespace frontend {
 
     // The filter buttons: the shown page's text in the hilight yellow, the others' in the menu blue (0x006ed390).
     fn show_filter { mut g: gui::Gui, p: u32, page: i32 } {
-        let tags: [3][]u8 = ["BTN_Filter_Move", "BTN_Filter_Game", "BTN_Filter_Mini"]
+        let tags = ["BTN_Filter_Move", "BTN_Filter_Game", "BTN_Filter_Mini"]
         let mut i: usize = 0
         while i < 3 {
             gui::set_text_color{ &g, panel = p, tag = tags[i], color = if @as(i32, i) == page { gui::color_hilight{} } else { gui::color_menu{} } }

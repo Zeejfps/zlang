@@ -14,7 +14,7 @@ namespace save {
 
     fn put_rules_creature { mut b: Builder, owner: u32, o: *obj::Object, c: *rules::Creature } -> ! {
         let s = owner
-        let labels: [6][]u8 = ["Str", "Dex", "Con", "Int", "Wis", "Cha"]
+        let labels = ["Str", "Dex", "Con", "Int", "Wis", "Cha"]
         let mut k: usize = 0
         while k < 6 {
             try put_byte{ &b, owner = s, label = labels[k], v = @trunc(u8, bits{ v = c.abil[k] }) }

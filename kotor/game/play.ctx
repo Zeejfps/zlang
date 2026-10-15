@@ -37,7 +37,7 @@ namespace play {
         disp.live = live
         if (first_change & display::CHANGED_TEXTURES) != 0 { mount_packs{ &w, quality = live.texture_quality } }
         if not opts.headless { display::report{ d = &disp, &sdl, io = &w.io } }
-        let pointer_by: []u8 = if live.hardware_mouse { "the OS draws the pointer with the game's pictures" } else { "the game draws its own pointer" }
+        let pointer_by = if live.hardware_mouse { "the OS draws the pointer with the game's pictures" } else { "the game draws its own pointer" }
         _ = @fmt(&w.io, "display: EnableHardwareMouse={}: {}, AllowWindowedMode={}\n", if live.hardware_mouse { 1 } else { 0 }, pointer_by, if live.allow_windowed { 1 } else { 0 })
         let mut frame = try render::make_frame(arena::Arena){ realloc = arena::alloc, heap = &device_arena, cap = render::default_capacity{} }
         // Sound: a device when there is a window; headless, the mixer runs on without one (as the
@@ -114,7 +114,7 @@ namespace play {
         try scene::load_area{ &sc, &w, &dev }
         loading::step{ l = ld, &w, &dev, &sdl, &frame, opts, percent = 75 }
         let mut camera = cam::new{}
-        let mut test_camera: []u8 = ""       // `FRAME cam ...`: a camera for pictures (see place_test_camera)
+        let mut test_camera = ""       // `FRAME cam ...`: a camera for pictures (see place_test_camera)
         let mut camera_row: u32 = 0xFFFFFFFF    // the camerastyle.2da row the camera uses
         let mut control = ctl::new{}
         let mut was_freelook = false            // last frame's free look and conversation: RestoreDefaultCamera's moments
@@ -169,7 +169,7 @@ namespace play {
         let menu_allowed = not opts.headless or opts.cinema     // a hidden run ends instead, unless --cinema
         let mut cinema = cine::make{}            // the films, the credits and the end of the game that scripts asked for (game/cine.ctx)
         let mut wipe = death::make{}            // the party wipe's slow motion, camera, box and fade (game/death.ctx)
-        let mut want_save: []u8 = ""            // a save asked for this frame: its folder name
+        let mut want_save = ""            // a save asked for this frame: its folder name
         let mut want_slot: i32 = -1             // the manual save it writes over (Save Game list), or -1: a new one or QUICKSAVE / AUTOSAVE
         let mut sw_module: [24]u8 = [0; 24]     // `savewhen MODULE NAME`: the save waits for the story to be in MODULE and quiet for 2 s
         let mut sw_name: [24]u8 = [0; 24]
@@ -181,7 +181,7 @@ namespace play {
         let mut sw_quiet: u32 = 0
         let mut sw_need: u32 = 60               // quiet ticks to wait: 60 (2 s), or 5 for `savewhen MODULE NAME soon`
         let mut sw_on = false
-        let mut want_load: []u8 = ""            // a load asked for: a folder (ours, then the install's)
+        let mut want_load = ""            // a load asked for: a folder (ours, then the install's)
         let mut real_total: f64 = 0.0
         let mut real_worst: f32 = 0.0
         let mut seen_underruns: u32 = match adev { some{ value } => { audio::underruns{ dev = value } } null => { 0 } }
@@ -414,7 +414,7 @@ namespace play {
             fight::trace{ &w }
             // EndGame: after its wait the story is over, and the main menu is next.
             if cine::end_due{ c = &cinema, dt = w.clock.dt } {
-                let where_to: []u8 = if menu_allowed { "to the main menu" } else { "the run ends (hidden run)" }
+                let where_to = if menu_allowed { "to the main menu" } else { "the run ends (hidden run)" }
                 _ = @fmt(&w.io, "EndGame: {}\n", where_to)
                 quit = true
                 to_menu = menu_allowed
@@ -863,14 +863,14 @@ namespace play {
         let freq = sdl::counter_frequency{ &sdl }
         let mut last = sdl::counter{ &sdl }
         let mut inputs = inject::new_inputs{}      // the scripted pointer and keys, for driving the menus in tests
-        let mut chosen: []u8 = ""
+        let mut chosen = ""
         let mut done = false
         while not done {
             frame_no = frame_no + 1
             if opts.frames > 0 and frame_no > opts.frames { break }
             // The script's lines for this frame first: a scripted click is put on SDL's queue and read back below.
             let mut forced = false
-            let mut forced_player: []u8 = ""            // `newgame FILE`: the player blueprint to start with (tests)
+            let mut forced_player = ""            // `newgame FILE`: the player blueprint to start with (tests)
             while next_line < script.len and script[next_line].frame <= frame_no {
                 let line = script[next_line]
                 if ci::eq{ a = line.word, b = "newgame" } {

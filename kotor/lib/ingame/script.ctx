@@ -126,7 +126,7 @@ namespace ingame {
                         _ = @fmt(&w.io, " blocked by room {} face {} material {} at {} m", blk.index, blk.face, blk.material, blk.t)
                     } else if blk.what == 2 {
                         let owner = world::object{ w = &w, id = list::items{ list = w.walk.placed }[blk.index].owner } ifnull { continue }
-                        let mut note: []u8 = ""
+                        let mut note = ""
                         if owner.ext is door{ d } { note = if d.state == obj::DoorState::closed { " (closed)" } else { " (open)" } }
                         _ = @fmt(&w.io, " blocked by the mesh of {}{}", owner.tag, note)
                     }
@@ -544,7 +544,7 @@ namespace ingame {
 
     // A menu by name or number; -1 for neither.
     fn menu_by_name { name: []u8 } -> i32 {
-        let names: [8][]u8 = ["equip", "inventory", "character", "abilities", "messages", "journal", "map", "options"]
+        let names = ["equip", "inventory", "character", "abilities", "messages", "journal", "map", "options"]
         let mut i: usize = 0
         while i < 8 {
             if ci::eq{ a = name, b = names[i] } { return @as(i32, i) }

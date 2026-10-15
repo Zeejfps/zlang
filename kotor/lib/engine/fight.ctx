@@ -1051,7 +1051,7 @@ namespace fight {
         }
         if w.log.combat and engaged {
             world::prefix{ w = &w }
-            let role: []u8 = if master { "master" } else { "slave" }
+            let role = if master { "master" } else { "slave" }
             let other_tag: []u8 = if world::object{ w = &w, id = target } is some{ value = t } { t.tag } else { "" }
             _ = @fmt(&w.io, "{} ({}) engages {} ({}) as {}\n", id, o.tag, target, other_tag, role)
         }
@@ -1414,7 +1414,7 @@ namespace fight {
                 imp.fx = kept.items
                 // The target's reaction (3.3): damage on a hit, else a parry (melee) or a dodge. It
                 // is played only paired with an engaged attack, as the attack begins (below).
-                let column: []u8 = if res.hit { "damage" } else if ranged { "dodge" } else { "parry" }
+                let column = if res.hit { "damage" } else if ranged { "dodge" } else { "parry" }
                 imp.reaction = combat_cell{ w = &w, row, prefix = column, n = ts } ifnull NO_ROW
                 last_reaction = imp.reaction
                 attack = attack + 1
@@ -1624,7 +1624,7 @@ namespace fight {
         if not script or cutscene_round { return }
         if w.log.combat {
             world::prefix{ w = &w }
-            let state: []u8 = if target_alive { "alive" } else { "gone" }
+            let state = if target_alive { "alive" } else { "gone" }
             _ = @fmt(&w.io, "{} ends its round (target {} {})\n", id, target, state)
         }
         // The leader runs no OnEndRound (3.5 step 7): it asks for the end-of-round auto-pause while
@@ -2413,7 +2413,7 @@ namespace fight {
     // highballistic 3, accelerating 5, spiral 6, linked 7, bounce 8, burst 9, grenade 11, test 50, else 0.
     fn projectile_path { w: *world::World, spell: i32 } -> i32 {
         let name = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "projtype" } ifnull ""
-        let names: [10][]u8 = ["homing", "ballistic", "highballistic", "accelerating", "spiral", "linked", "bounce", "burst", "grenade", "test"]
+        let names = ["homing", "ballistic", "highballistic", "accelerating", "spiral", "linked", "bounce", "burst", "grenade", "test"]
         let codes: [10]i32 = [1, 2, 3, 5, 6, 7, 8, 9, 11, 50]
         let mut i: usize = 0
         while i < 10 {
@@ -2656,7 +2656,7 @@ namespace fight {
         if s < 2 or s > 4 { return }
         set_combat{ &w, id, bark = false, attacked = false }
         if w.log.combat {
-            let how: []u8 = if c.moving { "moving" } else { "still" }
+            let how = if c.moving { "moving" } else { "still" }
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "{} flourishes its weapon (stance {}, {})\n", id, s, how)
         }

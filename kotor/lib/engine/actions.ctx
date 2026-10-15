@@ -530,8 +530,8 @@ namespace actions {
         if not t.commandable or w.conversation.active {
             if w.log.actions {
                 world::prefix{ w = &w }
-                let why1: []u8 = if t.commandable { "" } else { "not commandable" }
-                let why2: []u8 = if w.conversation.active { "a conversation is on" } else { "" }
+                let why1 = if t.commandable { "" } else { "not commandable" }
+                let why2 = if w.conversation.active { "a conversation is on" } else { "" }
                 _ = @fmt(&w.io, "talk {} to {}: refused ({}{})\n", id, target, why1, why2)
             }
             w.conversation.pending = w.conversation.active

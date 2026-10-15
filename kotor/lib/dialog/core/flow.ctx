@@ -176,7 +176,7 @@ namespace dlg {
         if oo.ai_level < 3 { oo.ai_level = 3 }
         if w.log.dialog {
             world::prefix{ w = &w }
-            let kind: []u8 = if w.conversation.d.animated_cut { " animated" } else { "" }
+            let kind = if w.conversation.d.animated_cut { " animated" } else { "" }
             _ = @fmt(&w.io, "dialog start {} owner={} ({}) other={} type={} entries={} replies={}{}\n",
                 resname, owner, oo.tag, other, w.conversation.d.conversation_type, w.conversation.d.entries.len,
                 w.conversation.d.replies.len, kind)
@@ -429,7 +429,7 @@ namespace dlg {
     fn apply_quest { mut w: world::World, n: *Node } {
         if n.quest.len > 0 {
             let changed = rt_misc::set_quest_state{ &w, tag = n.quest, state = @as(i32, n.quest_entry), allow_lower = false, xp_icon = true }
-            let how: []u8 = if changed { "changed" } else { "kept" }
+            let how = if changed { "changed" } else { "kept" }
             if w.log.dialog {
                 world::prefix{ w = &w }
                 _ = @fmt(&w.io, "dialog journal {} entry {} ({})\n", n.quest, n.quest_entry, how)
@@ -537,7 +537,7 @@ namespace dlg {
         w.conversation.listener = listener
         if w.log.dialog {
             world::prefix{ w = &w }
-            let how: []u8 = if ch.auto { " (auto)" } else { "" }
+            let how = if ch.auto { " (auto)" } else { "" }
             _ = @fmt(&w.io, "dialog replies {}{}:", ch.count, how)
             let mut k: usize = 0
             while k < ch.count {
@@ -603,7 +603,7 @@ namespace dlg {
         w.conversation.nodes_shown = w.conversation.nodes_shown + 1
         if w.log.dialog {
             world::prefix{ w = &w }
-            let how: []u8 = if spoken { " (continue)" } else { " (chosen)" }
+            let how = if spoken { " (continue)" } else { " (chosen)" }
             _ = @fmt(&w.io, "dialog reply {} \"{}\"{}\n", node, log_text{ w = &w, text = text_of{ w = &w, n, gender = w.conversation.gender } }, how)
         }
     }
@@ -837,7 +837,7 @@ namespace dlg {
         }
         if w.log.dialog {
             world::prefix{ w = &w }
-            let how: []u8 = if normal { "normal" } else { "aborted" }
+            let how = if normal { "normal" } else { "aborted" }
             _ = @fmt(&w.io, "dialog end {} ({}), {} nodes shown, {} scripts run\n", w.conversation.name,
                 how, w.conversation.nodes_shown, w.conversation.scripts_run)
         }

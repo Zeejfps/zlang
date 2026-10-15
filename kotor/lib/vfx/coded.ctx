@@ -53,7 +53,7 @@ namespace vfx {
         mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, code: i32, object: u32, source: u32, hold: i32,
     } {
         if code == 1200 or code == 1201 {
-            let hook: []u8 = if code == 1200 { "headconjure" } else { "handconjure" }
+            let hook = if code == 1200 { "headconjure" } else { "handconjure" }
             // 1201 lasts its model's `impact` animation, 1200 the second every other flash gets.
             let life = if code == 1201 { 0.0 } else { CODED_FLASH }
             _ = spawn_follow{ &v, &sc, &w, &dev, model = "v_fizzle_imp", object, hook, which = 0, anim = "impact", life } iferr { null }
@@ -73,8 +73,8 @@ namespace vfx {
             return
         }
         if code >= 1700 and code <= 1702 {
-            let models: [3][]u8 = ["v_medal_dur", "v_revmask1_dur", "v_revmask2_dur"]
-            let hooks: [3][]u8 = ["medalhook", "revmask1hook", "revmask2hook"]
+            let models = ["v_medal_dur", "v_revmask1_dur", "v_revmask2_dur"]
+            let hooks = ["medalhook", "revmask1hook", "revmask2hook"]
             let k = @as(usize, code - 1700)
             if hold != 0 {
                 _ = spawn_hold{ &v, &sc, &w, &dev, model = models[k], object, hook = hooks[k], effect = hold } iferr { null }

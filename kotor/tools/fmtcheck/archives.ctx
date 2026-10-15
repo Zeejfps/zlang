@@ -11,7 +11,7 @@ namespace archive_check {
 
     fn run { mut io: Io, mut fs: Fs, mut h: heap::Heap, game: []u8, verbose: bool } -> u64 {
         let mut st = Stats{ archives = 0, identical = 0, masked = 0, saves = 0, saves_identical = 0, failed = 0 }
-        let dirs: [3][]u8 = ["texturepacks", "lips", "modules"]
+        let dirs = ["texturepacks", "lips", "modules"]
         let mut d: usize = 0
         while d < dirs.len {
             let dir = res::find_in{ &fs, h = &h, dir = game, name = dirs[d] } iferr { null }

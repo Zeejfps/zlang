@@ -11,9 +11,9 @@ const DEFAULT_SAVE: []u8 = "F:/Steam/steamapps/common/swkotor/saves/000002 - Gam
 struct Report { checks: u32, failures: u32 }
 
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
-    let mut game: []u8 = "F:/Steam/steamapps/common/swkotor"
+    let mut game = "F:/Steam/steamapps/common/swkotor"
     let mut save_dir: []u8 = DEFAULT_SAVE
-    let mut out_dir: []u8 = "kotor/out/savetest"
+    let mut out_dir = "kotor/out/savetest"
     let mut i: usize = 0
     while i < args.len {
         let a = args[i]
@@ -254,7 +254,7 @@ fn test_info { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut r: Report, save_di
     let mut portraits_ok = info.portrait_count > 0
     let mut p: usize = 0
     while p < 3 {
-        let label: []u8 = if p == 0 { "PORTRAIT0" } else if p == 1 { "PORTRAIT1" } else { "PORTRAIT2" }
+        let label = if p == 0 { "PORTRAIT0" } else if p == 1 { "PORTRAIT1" } else { "PORTRAIT2" }
         let in_file = gff::get_resref{ doc, s = root, label }
         if p < info.portrait_count { portraits_ok = portraits_ok and in_file != null and resref::matches{ r = info.portraits[p], name = gff::get_resref{ doc, s = root, label } ifnull "" } }
         else { portraits_ok = portraits_ok and in_file == null }
@@ -289,7 +289,7 @@ fn test_info { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut r: Report, save_di
 
 // The global whose value is packed n-th of its kind in a GLOBALVARS file (the file's name order).
 fn nth_global { g: *globals::Globals, doc: *gff::Doc, kind: globals::Type, n: usize } -> ?*mut globals::Global {
-    let label: []u8 = match kind {
+    let label = match kind {
         boolean => { "CatBoolean" }
         number => { "CatNumber" }
         location => { "CatLocation" }

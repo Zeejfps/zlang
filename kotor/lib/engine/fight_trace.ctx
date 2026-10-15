@@ -31,8 +31,8 @@ namespace fight {
             let mut buf: [34]u8
             let name = trace_anim{ w = &w, id = o.animation, into = buf[..] }
             let front: u32 = if o.actions.len > 0 { @as(u32, list::items{ list = o.actions }[0].kind) } else { 0 }
-            let state: []u8 = if c.dead { " dead" } else if f.dying_ms > 0 { " dying" } else if f.c.down { " down" } else { "" }
-            let scripted: []u8 = if f.round.cutscene { " cutscene" } else { "" }
+            let state = if c.dead { " dead" } else if f.dying_ms > 0 { " dying" } else if f.c.down { " down" } else { "" }
+            let scripted = if f.round.cutscene { " cutscene" } else { "" }
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "trace {} {} at {} {} anim {} ({}) hp {}/{} target {} act {} round {}/{} fired {}/{}{}{}\n",
                 o.id, o.tag, o.position.x, o.position.y, o.animation, name, o.hp, o.hp_max, c.attack_target, front,

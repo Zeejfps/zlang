@@ -55,7 +55,7 @@ namespace galaxy {
         }
         // The Xbox Live planets have no art in the install: their buttons never show.
         let mut live: usize = 0
-        let live_tags: [5][]u8 = ["LBL_Live01", "LBL_Live02", "LBL_Live03", "LBL_Live04", "LBL_Live05"]
+        let live_tags = ["LBL_Live01", "LBL_Live02", "LBL_Live03", "LBL_Live04", "LBL_Live05"]
         while live < 5 {
             gui::set_visible{ &g, panel = s.panel, tag = live_tags[live], visible = false }
             live = live + 1

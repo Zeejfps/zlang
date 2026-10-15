@@ -30,9 +30,9 @@ namespace rules {
         let mut out: ShieldRow
         if row < 0 or @as(usize, row) >= twoda::rows{ t } { return out }
         let r = @as(usize, row)
-        let apps: [4][]u8 = ["appearance_01", "appearance_02", "appearance_03", "appearance_04"]
-        let auras: [4][]u8 = ["visualeffect_01", "visualeffect_02", "visualeffect_03", "visualeffect_04"]
-        let mut aura: []u8 = "visualeffectdef"
+        let apps = ["appearance_01", "appearance_02", "appearance_03", "appearance_04"]
+        let auras = ["visualeffect_01", "visualeffect_02", "visualeffect_03", "visualeffect_04"]
+        let mut aura = "visualeffectdef"
         let mut k: usize = 0
         while k < 4 {
             let a = cell_int{ t, row = r, col = apps[k], dflt = -1 }

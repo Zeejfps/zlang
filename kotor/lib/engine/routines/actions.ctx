@@ -334,8 +334,8 @@ namespace rt_act {
         }
         if w.log.actions {
             let sk = rules::skill::SECURITY
-            let mode: []u8 = if c.in_combat { "d20" } else { "take-20" }
-            let verdict: []u8 = if check.success { "unlocked" } else { "failed" }
+            let mode = if c.in_combat { "d20" } else { "take-20" }
+            let verdict = if check.success { "unlocked" } else { "failed" }
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "security: {} on {} ({}): ranks {} key-ability {} feat {} spike {} + {} {} = {} against DC {}: {}\n", me.tag, t.tag, t.id, f.c.skills[@as(usize, sk)],
                 f.c.stats.abil_mod[@as(usize, w.rules.skills[@as(usize, sk)].key_ability)], rules::skill_feat_bonus{ c = &f.c, skill = sk }, spike_bonus,

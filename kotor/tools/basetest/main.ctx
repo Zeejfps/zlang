@@ -23,7 +23,7 @@ fn expect { mut io: Io, mut t: Tally, ok: bool, what: strlit } {
 }
 
 fn check_le { mut io: Io, mut t: Tally } {
-    let data: []u8 = "\x01\x02\x03\x04\xff\xff\xff\xff\x00\x00\x80\x3f"
+    let data = "\x01\x02\x03\x04\xff\xff\xff\xff\x00\x00\x80\x3f"
     expect{ &io, &t, ok = (le::get_u16{ data, at = 0 } iferr 0) == 0x0201, what = "get_u16" }
     expect{ &io, &t, ok = (le::get_u32{ data, at = 0 } iferr 0) == 0x04030201, what = "get_u32" }
     expect{ &io, &t, ok = (le::get_i32{ data, at = 4 } iferr 0) == -1, what = "get_i32 -1" }

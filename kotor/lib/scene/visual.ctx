@@ -136,7 +136,7 @@ namespace visual {
         let kind = cell{ t, row, column = "modeltype" }
         let mut envmap = cell{ t, row, column = "envmap" }
         if ci::eq{ a = envmap, b = "default" } { envmap = "" }
-        let mut body_name: []u8 = ""
+        let mut body_name = ""
         let mut texture: [24]u8
         let mut texture_len: usize = 0
         let is_b = ci::eq{ a = kind, b = "b" }
@@ -416,8 +416,8 @@ namespace visual {
             } else { set_next{ sc = &sc, part, name = "closed" } }
             return
         }
-        let opening: []u8 = if state == 2 { "opening2" } else { "opening1" }
-        let opened: []u8 = if state == 2 { "opened2" } else { "opened1" }
+        let opening = if state == 2 { "opening2" } else { "opening1" }
+        let opened = if state == 2 { "opened2" } else { "opened1" }
         if first or not scene::play{ &sc, &w, part, name = opening, looping = false, speed = 1.0, transition = 0.0 } {
             _ = scene::play{ &sc, &w, part, name = opened, looping = true, speed = 1.0, transition = 0.0 }
         } else { set_next{ sc = &sc, part, name = opened } }
@@ -458,7 +458,7 @@ namespace visual {
             _ = scene::play{ &sc, &w, part = v.first, name = "default", looping = true, speed = 1.0, transition = 0.0 }
             return
         }
-        let mut via: []u8 = ""
+        let mut via = ""
         if not first {
             if anim == container::ANIM_OPEN { via = "close2open" }
             if from == container::ANIM_OPEN { via = "open2close" }
@@ -468,7 +468,7 @@ namespace visual {
             if from == ANIM_ON { via = "on2off" }
         }
         if w.log.objects {
-            let sep: []u8 = if via.len > 0 { " then " } else { "" }
+            let sep = if via.len > 0 { " then " } else { "" }
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "placeable {} {} plays {}{}{}\n", o.id, o.tag, via, sep, name)
         }

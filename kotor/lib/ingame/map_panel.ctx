@@ -89,7 +89,7 @@ namespace map_panel {
 
     // The selected note's text in LBL_MapNote (empty with no notes).
     fn show_note { mut s: State, mut g: gui::Gui, w: *world::World, panel: u32 } {
-        let mut text: []u8 = ""
+        let mut text = ""
         if s.note_at >= 0 and @as(usize, s.note_at) < s.note_count {
             let o = world::object{ w, id = s.notes[@as(usize, s.note_at)] }
             if o != null {

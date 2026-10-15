@@ -58,7 +58,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> 
     }
     let mut heap = arena::new{ buf = pages }
     let host = os_name{ os = proc::os{ &proc } }
-    let exe: []u8 = if slice::eq_bytes{ a = host, b = "windows" } { ".exe" } else { "" }
+    let exe = if slice::eq_bytes{ a = host, b = "windows" } { ".exe" } else { "" }
     if not made{ &io, &fs, path = "build" } or not made{ &io, &fs, path = "build/fixpoint" } { return 1 }
 
     let ctxc1 = cat{ &heap, a = OUT, b = cat{ &heap, a = "ctxc1", b = exe } }

@@ -127,7 +127,7 @@ namespace ups {
         let ar = alloc::new(arena::Arena, heap::Heap){ realloc = heap::alloc, heap, value = arena::new{ buf = smem } } iferr { return null }
         let mut camera: [32]u8
         let mut camera_len: usize = 0
-        let mut camera_node: []u8 = "camerahook"
+        let mut camera_node = "camerahook"
         let mut rotate: [32]u8
         let mut rotate_len: usize = 0
         let mut hook: i32 = -1
@@ -153,7 +153,7 @@ namespace ups {
         }
         // The rig's backdrop plane fills the view; nothing is cleared under it.
         rig.clear = null
-        let anim: []u8 = if s.category == CAT_ARMOUR { "neutral" } else if powered_item{ w = &w, item = s.item } { "powered" } else { "" }
+        let anim = if s.category == CAT_ARMOUR { "neutral" } else if powered_item{ w = &w, item = s.item } { "powered" } else { "" }
         let part = preview3d::load_part{
             fs = &w.fs, &dev, heap = ar, rm = w.rm.*, models, mats = g.cache,
             name = n.model[..n.model_len], body_texture = n.texture[..n.texture_len], animation = anim, parent = null,
@@ -163,7 +163,7 @@ namespace ups {
         }
         if w.log.actions {
             let held: []u8 = if hook >= 0 { rotate[..rotate_len] } else { "turned by the panel" }
-            let shown: []u8 = if part != null { "shown" } else { "no model" }
+            let shown = if part != null { "shown" } else { "no model" }
             _ = @fmt(&w.io, "upgrade bench: item view {} on {} ({}), {}\n", n.model[..n.model_len], camera[..camera_len], held, shown)
         }
         return alloc::new(View, heap::Heap){ realloc = heap::alloc, heap, value = View{

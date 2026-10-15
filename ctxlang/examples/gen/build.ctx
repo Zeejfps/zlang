@@ -11,7 +11,7 @@ fn build { mut b: Build, mut fs: Fs, mut mem: Mem } {
     let exe = build::exe{ &b, name = "colors", root = "src" }
     let pages = mem::reserve{ &mem, size = 1073741824 } ifnull { @panic("out of memory") }
     let mut heap = arena::new{ buf = pages }
-    let names: [4][]u8 = ["red", "green", "blue", "teal"]
+    let names = ["red", "green", "blue", "teal"]
     build::gen_file{ &b, exe, name = "color", text = enums::generate{ &heap, space = "color", name = "Color", variants = names[..] } }
     // src's files, which color.ctx, being generated, isn't one of
     let found = try! build::declarations{ &b, &fs, &mem, &heap, realloc = arena::alloc, exe }

@@ -13,7 +13,7 @@ namespace describe {
                 _ = @fmt(&b, "    fn {} {{ mut io: Io }} {{\n        io::println{{ &io, s = \"{} {{", d.name, d.name)
                 let mut k: usize = 0
                 while k < d.fields.len {
-                    let sep: []u8 = if k == 0 { " " } else { ", " }
+                    let sep = if k == 0 { " " } else { ", " }
                     _ = @fmt(&b, "{}{}: {}", sep, d.fields[k].name, d.fields[k].ty)
                     k = k + 1
                 }

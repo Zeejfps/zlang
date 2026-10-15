@@ -191,7 +191,7 @@ namespace ambience {
             let mut new_name = name_of{ a = &a, tag = e.tag }
             if e.group {
                 let mut old_name = name_of{ a = &a, tag = e.old_tag }
-                let what: []u8 = if e.stolen { "interrupted" } else { "held back by" }
+                let what = if e.stolen { "interrupted" } else { "held back by" }
                 _ = @fmt(&w.io, "sound group: {} {} {} (its play group full)\n", resref::bytes{ r = &new_name }, what, resref::bytes{ r = &old_name })
             } else if e.stolen {
                 let mut old_name = name_of{ a = &a, tag = e.old_tag }
@@ -422,8 +422,8 @@ namespace ambience {
     // the row names. One plays at a time.
     fn play_stinger { mut a: Ambience, mut w: world::World, row: i32 } {
         if row <= 0 { return }
-        let mut names: [3][]u8 = ["", "", ""]
-        let columns: [3][]u8 = ["stinger1", "stinger2", "stinger3"]
+        let mut names = ["", "", ""]
+        let columns = ["stinger1", "stinger2", "stinger3"]
         let mut n: usize = 0
         let mut i: usize = 0
         while i < 3 {
@@ -628,7 +628,7 @@ namespace ambience {
                 if w.log.sound {
                     world::prefix{ w = &w }
                     let mut shown = name
-                    let missing: []u8 = if bytes.len == 0 { " (missing)" } else { "" }
+                    let missing = if bytes.len == 0 { " (missing)" } else { "" }
                     _ = @fmt(&w.io, "sound play {} row {}{}\n", resref::bytes{ r = &shown }, group, missing)
                 }
                 if bytes.len == 0 { return }

@@ -98,7 +98,7 @@ namespace perception {
         }
         if hidden and w.log.actions and ((seen and not was_seen) or (heard and not was_heard)) {
             world::prefix{ w = &w }
-            let how: []u8 = if seen and not was_seen { "sees" } else { "hears" }
+            let how = if seen and not was_seen { "sees" } else { "hears" }
             _ = @fmt(&w.io, "stealth: {} ({}) {} {} ({}) hiding\n", v.tag, viewer, how, t.tag, target)
         }
         let mut e = events::script_event{ kind = events::PERCEPTION, object = target }

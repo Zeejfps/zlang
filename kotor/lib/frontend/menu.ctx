@@ -328,7 +328,7 @@ namespace frontend {
     // A choice button and its arrows (the files name them BTN_XLEFT, BTN_XRIGHT, or BTN_X_RIGHT) enabled or greyed.
     fn enable_choice { mut g: gui::Gui, p: u32, tag: []u8, on: bool } {
         gui::set_enabled{ &g, panel = p, tag, enabled = on }
-        let sides: [4][]u8 = ["LEFT", "RIGHT", "_LEFT", "_RIGHT"]
+        let sides = ["LEFT", "RIGHT", "_LEFT", "_RIGHT"]
         let mut name: [40]u8
         let mut i: usize = 0
         while i < 4 {
@@ -366,7 +366,7 @@ namespace frontend {
     fn fill_feedback { mut fe: Front, mut g: gui::Gui, p: u32 } -> ! {
         gui::list_clear{ &g, panel = p, tag = "LB_OPTIONS" }
         let s = fe.settings
-        let names: [6][]u8 = ["Floating Numbers", "Tutorial Popups", "Status Summary", "Subtitles", "Mini Map", "Tooltips"]
+        let names = ["Floating Numbers", "Tutorial Popups", "Status Summary", "Subtitles", "Mini Map", "Tooltips"]
         let vals: [6]bool = [s.floating_numbers, s.tutorial_popups, s.status_summary, s.subtitles, s.minimap, s.tooltips]
         let mut i: usize = 0
         while i < 6 {

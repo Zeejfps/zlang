@@ -138,7 +138,7 @@ fn load_table { mut fs: Fs, mut h: heap::Heap, rm: res::Manager, name: []u8 } ->
 
 // KIND_APPEARANCE[_hHEAD][_tDEGREES].png
 fn file_name { into: []mut u8, opts: Options } -> []u8 {
-    let kind: []u8 = match opts.kind {
+    let kind = match opts.kind {
         body => { "body" }
         head => { "head" }
         main => { "main" }

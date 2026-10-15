@@ -42,7 +42,7 @@ namespace test_sheet {
 
     // The skills.2da row of a skill name used by `ui stat`, -1 for none.
     fn skill_by_name { name: []u8 } -> i32 {
-        let names: [8][]u8 = ["computer", "demolitions", "stealth", "awareness", "persuade", "repair", "security", "treat"]
+        let names = ["computer", "demolitions", "stealth", "awareness", "persuade", "repair", "security", "treat"]
         let mut k: usize = 0
         while k < 8 {
             if ci::eq{ a = name, b = names[k] } { return @as(i32, k) }
@@ -56,7 +56,7 @@ namespace test_sheet {
         let o = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return false }
         let c = obj::creature{ o } ifnull { return false }
         let n = @as(i32, text::scan_decimal{ s = value })
-        let names: [6][]u8 = ["str", "dex", "con", "int", "wis", "cha"]
+        let names = ["str", "dex", "con", "int", "wis", "cha"]
         let mut k: usize = 0
         let mut is_ability = false
         while k < 6 {

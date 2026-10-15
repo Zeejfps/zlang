@@ -167,8 +167,8 @@ namespace test_combat {
                 }
                 i = i + 1
             }
-            let mut na: []u8 = "-"
-            let mut nb: []u8 = "-"
+            let mut na = "-"
+            let mut nb = "-"
             if world::object{ w = &w, id = ba } is some{ value = ta } { na = ta.tag }
             if world::object{ w = &w, id = bb } is some{ value = tb } { nb = tb.tag }
             _ = @fmt(&w.io, "gaps {} closest {} {} {} overlaps {}\n", n, best, na, nb, overlaps)
@@ -320,7 +320,7 @@ namespace test_combat {
             let mut e: usize = 0
             while e < l.count {
                 let en = l.entries[e]
-                let mark: []u8 = if e == l.selected { "*" } else { "" }
+                let mark = if e == l.selected { "*" } else { "" }
                 _ = @fmt(&w.io, "{}{}:{}", mark, @as(u32, en.act), en.icon[..en.icon_len])
                 e = e + 1
                 if e < l.count { _ = @fmt(&w.io, " ") }

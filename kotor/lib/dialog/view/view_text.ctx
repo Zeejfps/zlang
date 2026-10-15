@@ -54,7 +54,7 @@ namespace dlgview {
             i = i + 1
             // "CUSTOM" and the number's digits.
             let mut name: [16]u8
-            let prefix: []u8 = "CUSTOM"
+            let prefix = "CUSTOM"
             let mut n: usize = 0
             while n < prefix.len {
                 name[n] = prefix[n]

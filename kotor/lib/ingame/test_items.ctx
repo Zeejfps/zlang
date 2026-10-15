@@ -137,7 +137,7 @@ namespace test_items {
             let tag = text::next_word{ &words } ifnull { return true }
             // The row is a number, or `~some_words` (underscores are spaces): the first row whose text has them.
             let mut like_buf: [40]u8
-            let mut like: []u8 = ""
+            let mut like = ""
             let mut row: i32 = -1
             if text::next_word{ &words } is some{ value = n } {
                 if n.len > 1 and n[0] == '~' {

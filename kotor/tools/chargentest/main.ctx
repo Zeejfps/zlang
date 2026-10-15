@@ -160,7 +160,7 @@ fn run {
         } else if slice::eq_bytes{ a = name, b = "shot" } {
             try one_frame{ &io, &fs, &sdl, &dev, &frame, &g, &fe, mixer }
             let mut file: [80]u8
-            let pre: []u8 = "menu_"
+            let pre = "menu_"
             let mut n = frontend::copy_into{ dst = file[..], src = pre }
             n = n + frontend::copy_into{ dst = file[n..], src = arg }
             n = n + frontend::copy_into{ dst = file[n..], src = ".png" }

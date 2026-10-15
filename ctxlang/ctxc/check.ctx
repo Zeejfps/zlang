@@ -1295,7 +1295,7 @@ namespace check {
     // `build` may take a `Build`.
     fn check_main { mut c: Checker } {
         let mut m = root_fn{ c, name = "main" }
-        let mut entry: []u8 = "main"
+        let mut entry = "main"
         if m == NONE {
             m = root_fn{ c, name = "build" }
             entry = "build"
@@ -1553,7 +1553,7 @@ namespace check {
         let own: usize = if @as(usize, file) < c.std_files { 0 } else { 1 }
         let had = if which == Attribute::start { c.starts[own] } else { c.panics[own] }
         if had != NONE {
-            let whose: []u8 = if own == 0 { "std's" } else { "the program's" }
+            let whose = if own == 0 { "std's" } else { "the program's" }
             errorf{ &c, at = a.span, msg = @fmt("a second `{}` fn: `{}` is {} already", str{ s = name }, str{ s = get_decl{ c, d = had }.name.text }, str{ s = whose }) }
             return
         }
@@ -1968,7 +1968,7 @@ namespace check {
             return
         }
         if c.limit_caps[own] != NONE {
-            let whose: []u8 = if own == 0 { "std's" } else { "the program's" }
+            let whose = if own == 0 { "std's" } else { "the program's" }
             errorf{ &c, at = a.span, msg = @fmt("a second `stack_limit` static: `{}` is {} already", str{ s = c.limit_names[own] }, str{ s = whose }) }
             return
         }
@@ -2085,7 +2085,7 @@ namespace check {
     // The name a `c::symbol` attribute a gives, from its fields, or null after reporting that
     // it isn't a C identifier.
     fn symbol_name { mut c: Checker, a: syntax::Attr, fields: []Val } -> ?[]u8 {
-        let mut name: []u8 = ""
+        let mut name = ""
         if fields.len == 1 and fields[0] is sbytes{ bytes } { name = bytes }
         if not c_ident{ s = name } {
             errorf{ &c, at = a.span, msg = @fmt("`{}` is not a C identifier", str{ s = name }) }
@@ -4100,7 +4100,7 @@ namespace check {
     }
 
     fn while_stmt { mut c: Checker, label: ?syntax::Name, cond: syntax::Expr, body: syntax::Block, at: source::Span, k: u64 } {
-        let mut name: []u8 = ""
+        let mut name = ""
         if label != null {
             name = label.text
             let loops = list::items{ list = c.loops }
@@ -4515,7 +4515,7 @@ namespace check {
         while i < arms.len {
             let arm = arms[i]
             let mut first: []u32 = slice::empty(u32){}
-            let mut first_name: []u8 = ""
+            let mut first_name = ""
             if arm.pats.len == 0 {
                 if i != arms.len - 1 {
                     error{ &c, at = arm.span, msg = "`else` must be the last arm" }
@@ -8264,7 +8264,7 @@ namespace check {
     }
 
     fn fix { mut c: Checker, n: u32, by: syntax::Expr } {
-        let mut path: []u8 = ""
+        let mut path = ""
         if by.k is path{ segs } { path = path_text{ c, segs }.bytes }
         list::at{ list = c.ty.vars, i = n }.fixed = types::Fixed{ at = expr_at{ e = by }, path }
     }
@@ -8460,7 +8460,7 @@ namespace check {
     // there is none, after reporting why if report.
     fn offset_of { mut c: Checker, t: Id, arg: syntax::Expr, report: bool } -> ?u64 {
         let st = types::prune{ s = c.ty, t }
-        let mut name: []u8 = ""
+        let mut name = ""
         if arg.k is path{ segs } {
             if segs.len == 1 and segs[0].targs == null { name = segs[0].name.text }
         }
@@ -8631,7 +8631,7 @@ namespace check {
     // ---- atomics (§13): @atomic_load and the rest, and @fence
 
     fn atomic_name { n: []u8 } -> bool {
-        let p: []u8 = "atomic_"
+        let p = "atomic_"
         return (n.len > p.len and slice::eq_bytes{ a = n[..p.len], b = p }) or slice::eq_bytes{ a = n, b = "fence" }
     }
 
@@ -9488,7 +9488,7 @@ namespace check {
         let mut listed = list::new(u32){ realloc = arena::alloc, heap = c.heap }
         let mut spans = list::new(source::Span){ realloc = arena::alloc, heap = c.heap }
         let mut rest: ?source::Span = null
-        let mut rest_word: []u8 = "else"
+        let mut rest_word = "else"
         let mut has_else = false
         let mut results = list::new(State){ realloc = arena::alloc, heap = c.heap }
         let mut bs = list::new(Branch){ realloc = arena::alloc, heap = c.heap }
@@ -9498,7 +9498,7 @@ namespace check {
             let arm = arms[i]
             let skip = bare and i == 0
             let mut first: []u32 = slice::empty(u32){}
-            let mut first_name: []u8 = ""
+            let mut first_name = ""
             if arm.pats.len == 0 {
                 if i != arms.len - 1 {
                     error{ &c, at = arm.span, msg = "`else` must be the last arm" }

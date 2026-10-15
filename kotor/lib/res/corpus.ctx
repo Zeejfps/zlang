@@ -24,7 +24,7 @@ namespace corpus {
             defer res::free_bytes{ h, b = chitin }
             try walk_key{ &fs, &w, game, path = chitin, want, visit }
         }
-        let subdirs: [4][]u8 = ["texturepacks", "modules", "lips", "rims"]
+        let subdirs = ["texturepacks", "modules", "lips", "rims"]
         let mut d: usize = 0
         while d < subdirs.len {
             let dir = try res::find_in{ &fs, h, dir = game, name = subdirs[d] }

@@ -228,7 +228,7 @@ namespace gff_check {
 
     fn setting_name { i: usize } -> []u8 {
         if i == UNEXPLAINED { return "unexplained" }
-        let names: [18][]u8 = [
+        let names = [
             "dfs/second/field", "dfs/second/move", "dfs/struct/field", "dfs/struct/move", "dfs/move/field", "dfs/move/move",
             "elements/second/field", "elements/second/move", "elements/struct/field", "elements/struct/move", "elements/move/field", "elements/move/move",
             "keep/second/field", "keep/second/move", "keep/struct/field", "keep/struct/move", "keep/move/field", "keep/move/move",
@@ -242,14 +242,14 @@ namespace gff_check {
         _ = @fmt(&io, "gff: byte-identical in the engine save layout (dfs/second/field): {}\n", st.engine_identical)
         _ = @fmt(&io, "gff: byte-identical with some setting: {}, reproduced by none: {}\n", st.explained, st.copies - st.parse_failed - st.explained)
         _ = @fmt(&io, "gff: by setting (order/fi/li):\n")
-        let sources: [2][]u8 = ["shipped", "save"]
+        let sources = ["shipped", "save"]
         let mut src: usize = 0
         while src < 2 {
             let mut i: usize = 0
             while i < SETTINGS {
                 let c = st.classes[src][i]
                 if c.n > 0 {
-                    let late: []u8 = if i >= 18 and i != UNEXPLAINED { " + fields appended later" } else { "" }
+                    let late = if i >= 18 and i != UNEXPLAINED { " + fields appended later" } else { "" }
                     _ = @fmt(&io, "  {} {}{} {}:", sources[src], setting_name{ i }, late, c.n)
                     let mut k: u32 = 0
                     while k < c.ntags {

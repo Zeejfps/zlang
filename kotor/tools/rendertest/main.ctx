@@ -64,7 +64,7 @@ fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut 
         return
     }
     defer res::close{ &fs, &rm }
-    let names: [3][]u8 = ["fnt_d16x16", "dialogfont16x16", "fnt_galahad14"]
+    let names = ["fnt_d16x16", "dialogfont16x16", "fnt_galahad14"]
     let mut k: usize = 0
     while k < 3 {
         let found = font::load{ &fs, &dev, &h, rm, name = names[k], variant = true, glyphs = glyphs[k * 256..(k + 1) * 256] } iferr err{ error } {
@@ -86,14 +86,14 @@ fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut 
     let mut models = mdl_cache::new{ rm, keep = &heap }
     try draw_room{ &io, &fs, &dev, &frame, &heap, &models, &cache, rm, dir = opts.out_dir }
     try draw_bastila{ &io, &fs, &dev, &frame, &heap, &models, &cache, rm, dir = opts.out_dir }
-    let first: [4][]u8 = ["p_hk47", "c_drdastro", "w_lghtsbr_001", ""]
+    let first = ["p_hk47", "c_drdastro", "w_lghtsbr_001", ""]
     let first_views: [4]u32 = [0, 0, 1, 0]
     try draw_gallery{ &io, &fs, &dev, &frame, &heap, &models, &cache, rm, a = assets, dir = opts.out_dir, names = first, views = first_views, name = "gallery.png" }
     // Alpha on real data: a bump-mapped skin that must stay solid (c_rancor), punch-through fur
     // (p_zaalbar), a body whose texture alpha blends at its edges (p_bastilabb), an astromech
     // whose alpha is its reflection mask (c_drdastro); then Dantooine's bushes and leaves, blended
     // by alpha without a keyword, from inside m14aa_01a.
-    let second: [4][]u8 = ["c_rancor", "p_zaalbar", "p_bastilabb", "c_drdastro"]
+    let second = ["c_rancor", "p_zaalbar", "p_bastilabb", "c_drdastro"]
     let second_views: [4]u32 = [1, 0, 0, 1]
     try draw_gallery{ &io, &fs, &dev, &frame, &heap, &models, &cache, rm, a = assets, dir = opts.out_dir, names = second, views = second_views, name = "alpha.png" }
     try draw_inside{ &io, &fs, &dev, &frame, &heap, &models, &cache, rm, dir = opts.out_dir, room_name = "m14aa_01a", yaw = 0.0, name = "foliage.png" }
@@ -560,7 +560,7 @@ fn draw_ui { mut dev: gpu::Device, mut frame: render::Frame, a: Assets, fonts: [
 
     // Text in each font, then larger, then a line cut off by its clipping box.
     let mut y: f32 = 28.0
-    let lines: [3][]u8 = [
+    let lines = [
         "fnt_d16x16(b): The quick brown fox jumps over the lazy dog. 0123456789",
         "dialogfont16x16: Taris, Dantooine, Kashyyyk, Manaan, Korriban!",
         "fnt_galahad14: KNIGHTS OF THE OLD REPUBLIC (ctxlang)",
@@ -737,7 +737,7 @@ fn draw_bastila {
     let lookup = mdl_cache::get{ &fs, cache = &models, _ }
 
     render::begin_frame{ &frame, time = 0.0 }
-    let names: [3][]u8 = ["", "pause1", "run"]
+    let names = ["", "pause1", "run"]
     let times: [3]f32 = [0.0, 0.5, 0.2]
     let w = @as(f32, WIDTH) / 3.0
     let mut k: usize = 0

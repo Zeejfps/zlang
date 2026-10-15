@@ -44,7 +44,7 @@ fn str_is { s: ?[]u8, want: []u8 } -> bool {
 
 fn check_text_2da { mut io: Io, mut t: Tally, mut scratch: arena::Arena } {
     // The column line names the columns after the row labels' own.
-    let src: []u8 = "2DA V2.0\r\n\r\nDEFAULT: 7\r\n   Name  \"Value\"\tHex\r\n0 first \"two words\" 0x10\r\n1 ****  ****  010\r\nRow2 short\r\n\r\n"
+    let src = "2DA V2.0\r\n\r\nDEFAULT: 7\r\n   Name  \"Value\"\tHex\r\n0 first \"two words\" 0x10\r\n1 ****  ****  010\r\nRow2 short\r\n\r\n"
     let tb = twoda::parse{ data = src, realloc = arena::alloc, heap = &scratch } iferr err{ error } {
         _ = @fmt(&io, "FAIL: text 2da parse: {}\n", error)
         t.failed = t.failed + 1
@@ -63,7 +63,7 @@ fn check_text_2da { mut io: Io, mut t: Tally, mut scratch: arena::Arena } {
 
     // Binary: the engine's octal %i; NUL separators accepted.
     // Columns a, b ended by NULs; rows 0, 1; cells "", "010", "x", "0x1F".
-    let bin: []u8 = "2DA V2.b\na\x00b\x00\x00\x02\x00\x00\x000\x001\x00\x00\x00\x01\x00\x05\x00\x07\x00\x0c\x00\x00010\x00x\x000x1F\x00"
+    let bin = "2DA V2.b\na\x00b\x00\x00\x02\x00\x00\x000\x001\x00\x00\x00\x01\x00\x05\x00\x07\x00\x0c\x00\x00010\x00x\x000x1F\x00"
     let tb2 = twoda::parse{ data = bin, realloc = arena::alloc, heap = &scratch } iferr err{ error } {
         _ = @fmt(&io, "FAIL: binary 2da parse: {}\n", error)
         t.failed = t.failed + 1
@@ -78,7 +78,7 @@ fn check_text_2da { mut io: Io, mut t: Tally, mut scratch: arena::Arena } {
 
 fn check_vis { mut io: Io, mut t: Tally, mut scratch: arena::Arena } {
     // As in end_m01aa: room 10 lists 04a, 04a does not list 10; room 09 has no entry, room 11 is nowhere.
-    let src: []u8 = "m01aa_04a 1\r\n  m01aa_05a\r\nM01aa_10 2\r\n  M01aa_04a\r\n  m01aa_09\r\n"
+    let src = "m01aa_04a 1\r\n  m01aa_05a\r\nM01aa_10 2\r\n  M01aa_04a\r\n  m01aa_09\r\n"
     let v = vis::parse{ data = src, realloc = arena::alloc, heap = &scratch } iferr err{ error } {
         _ = @fmt(&io, "FAIL: vis parse: {}\n", error)
         t.failed = t.failed + 1

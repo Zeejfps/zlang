@@ -85,7 +85,7 @@ fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut 
     }
     defer gui3d::free{ &scene, &dev }
     let load_ms = @as(f32, sdl::counter{ &sdl } - t0) / freq * 1000.0
-    let playing: []u8 = if scene.playing { "playing" } else { "not found" }
+    let playing = if scene.playing { "playing" } else { "not found" }
     _ = @fmt(&io, "{}: loaded in {} ms, {} meshes, {} emitters, {} textures ({} missing), animation {}\n", opts.model, load_ms,
         scene.model.meshes.len, scene.model.emitters.len, mats.loaded, mats.missing, playing)
 

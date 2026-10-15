@@ -36,7 +36,7 @@ namespace rules {
     const TAB_COUNT: usize = 35
 
     fn tab_name { t: Tab } -> []u8 {
-        let s: []u8 = match t {
+        let s = match t {
             xptable => { "xptable" }
             plot => { "plot" }
             npc => { "npc" }

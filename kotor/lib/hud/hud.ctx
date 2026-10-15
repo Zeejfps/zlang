@@ -350,7 +350,7 @@ namespace hud {
         let fresh = wd.id != id
         if fresh {
             // The controls a member's widget always shows.
-            let always: [5][]u8 = ["BTN_CHAR", "LBL_CHAR", "PB_VIT", "PB_FORCE", "LBL_BACK"]
+            let always = ["BTN_CHAR", "LBL_CHAR", "PB_VIT", "PB_FORCE", "LBL_BACK"]
             let mut k: usize = 0
             while k < 5 {
                 gui::set_visible{ &g, panel, tag = tag_n{ into = buf[..], prefix = always[k], n = n + 1 }, visible = true }

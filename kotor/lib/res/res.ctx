@@ -858,7 +858,7 @@ namespace res {
     // An archive `stem` in `dir` with the first extension of .nwm, .mod, .sav, .erf, .hak that
     // exists, as the engine's ERF opener tries them.
     fn find_archive { mut fs: Fs, h: *mut heap::Heap, dir: []u8, stem: []u8 } -> !?alloc::Bytes {
-        let exts: [5][]u8 = [".nwm", ".mod", ".sav", ".erf", ".hak"]
+        let exts = [".nwm", ".mod", ".sav", ".erf", ".hak"]
         let mut i: usize = 0
         while i < exts.len {
             // The name is on the heap: find_in's result would hold a stack buffer's address.

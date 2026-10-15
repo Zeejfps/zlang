@@ -119,7 +119,7 @@ namespace partysel_panel {
         let none = Slot{ name = "", portrait = "", level = 1 }
         let doc = world::read_gff{ &w, name = template_of{ w = &w, n }, kind = restype::Type::utc } iferr { return none }
         let d = doc ifnull { return none }
-        let mut name: []u8 = ""
+        let mut name = ""
         let ls = gff::get_locstring{ doc = d, s = gff::ROOT, label = "FirstName" }
         if ls != null { name = world::string_by_strref{ w = &w, strref = @trunc(u32, ls.strref) } }
         let pid = gff::get_number{ doc = d, s = gff::ROOT, label = "PortraitId" } ifnull 0

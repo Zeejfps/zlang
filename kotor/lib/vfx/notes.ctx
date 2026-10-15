@@ -24,7 +24,7 @@ namespace vfx {
 
     // The model a visual effect shows when it hits: the impact node's, else the root's.
     fn effect_model { t: twoda::Table, row: usize } -> []u8 {
-        let columns: [6][]u8 = ["imp_impact_node", "imp_root_m_node", "imp_headcon_node", "imp_root_s_node", "imp_root_l_node", "imp_root_h_node"]
+        let columns = ["imp_impact_node", "imp_root_m_node", "imp_headcon_node", "imp_root_s_node", "imp_root_l_node", "imp_root_h_node"]
         let mut c: usize = 0
         while c < 6 {
             let m = twoda::get_string{ t, row, column = columns[c] } ifnull ""
@@ -49,7 +49,7 @@ namespace vfx {
     fn effect_node { t: twoda::Table, row: usize, effect: i32 } -> []u8 {
         let impact = twoda::get_string{ t, row, column = "imp_impact_node" } ifnull ""
         if impact.len > 0 { return effect_hook{ effect } }
-        let roots: [4][]u8 = ["imp_root_m_node", "imp_root_s_node", "imp_root_l_node", "imp_root_h_node"]
+        let roots = ["imp_root_m_node", "imp_root_s_node", "imp_root_l_node", "imp_root_h_node"]
         let mut c: usize = 0
         while c < 4 {
             let m = twoda::get_string{ t, row, column = roots[c] } ifnull ""
@@ -128,7 +128,7 @@ namespace vfx {
             mine_gone{ model, position, exploded } => {
                 // The mine's last moments where it lay: its explosion, or its light going out (lib/engine/traps.ctx).
                 let mut m = model
-                let anim: []u8 = if exploded { "activate" } else { "deactivate" }
+                let anim = if exploded { "activate" } else { "deactivate" }
                 _ = spawn_still{ &v, &sc, &w, &dev, model = resref::bytes{ r = &m }, at = position, facing = math::vec3::zero{}, anim, life = 0.0 } iferr { null }
             }
             else => {}
@@ -175,7 +175,7 @@ namespace vfx {
         let made = spawn_bolt{ &v, &sc, &w, &dev, model = name[..i + 4], from, to, flight, end_effect = 0 } iferr { null }
         let slot = made ifnull { return }
         let model = scene::loaded_at{ sc = &sc, i = v.fx[slot].loaded }.model
-        let anim: []u8 = if mdl::find_animation{ model, name = "throwout" } != null { "throwout" } else { "powered" }
+        let anim = if mdl::find_animation{ model, name = "throwout" } != null { "throwout" } else { "powered" }
         begin{ &v, &sc, &w, slot, anim, life = v.fx[slot].flight, kind = Kind::bolt, looping = true, strict = true }
     }
 

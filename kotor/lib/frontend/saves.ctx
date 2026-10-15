@@ -183,7 +183,7 @@ namespace frontend {
         } else {
             e.label_len = copy_into{ dst = e.label[..], src = folder }
         }
-        let keys: [3][]u8 = ["PORTRAIT0", "PORTRAIT1", "PORTRAIT2"]
+        let keys = ["PORTRAIT0", "PORTRAIT1", "PORTRAIT2"]
         let mut k: usize = 0
         while k < 3 {
             let pr = gff::get_resref{ doc, s = root, label = keys[k] } ifnull ""

@@ -88,11 +88,11 @@ namespace fight {
     // conj*/cast* head, hand and ground models), on the caster's head, hands and feet.
     fn spell_visuals { mut w: world::World, id: u32, spell: i32, cast: bool } {
         let o = world::object{ w = &w, id } ifnull { return }
-        let head: []u8 = if cast { "castheadvisual" } else { "conjheadvisual" }
-        let hand: []u8 = if cast { "casthandvisual" } else { "conjhandvisual" }
-        let ground: []u8 = if cast { "castgrndvisual" } else { "conjgrndvisual" }
+        let head = if cast { "castheadvisual" } else { "conjheadvisual" }
+        let hand = if cast { "casthandvisual" } else { "conjhandvisual" }
+        let ground = if cast { "castgrndvisual" } else { "conjgrndvisual" }
         let columns: [3][]u8 = [head, hand, ground]
-        let hooks: [3][]u8 = ["headhook", "handconjure", ""]
+        let hooks = ["headhook", "handconjure", ""]
         let mut k: usize = 0
         while k < 3 {
             let model = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = columns[k] } ifnull ""
@@ -168,7 +168,7 @@ namespace fight {
     // (metal, wood, stone...). Empty for any other object or a blank cell: no sound. The original's
     // "stone" and "wood" come from three client creature flags nothing in the game sets (3.15).
     fn hit_column { mut w: world::World, t: *obj::Object, into: []mut u8 } -> []u8 {
-        let mut kind: []u8 = ""
+        let mut kind = ""
         if obj::creature{ o = t } is some{ value = tc } {
             if tc.fighter is some{ value = tf } {
                 if rules::has_force_shield{ c = &tf.c } { kind = "forcefield" }
@@ -278,7 +278,7 @@ namespace fight {
         let o = world::object{ w = &w, id } ifnull { return }
         let c = obj::creature{ o } ifnull { return }
         if ci::starts_with{ s = name, prefix = "swing" } {
-            let base: []u8 = if ci::eq{ a = name, b = "swinglong" } { "swinglong" } else if ci::eq{ a = name, b = "swingtwirl" } { "swingtwirl" } else { "swingshort" }
+            let base = if ci::eq{ a = name, b = "swinglong" } { "swinglong" } else if ci::eq{ a = name, b = "swingtwirl" } { "swingtwirl" } else { "swingshort" }
             let mut col: [16]u8
             let mut n: usize = 0
             while n < base.len { col[n] = base[n]; n = n + 1 }
@@ -290,7 +290,7 @@ namespace fight {
             let st = sound_type_of{ w = &w, c }
             if st < 0 { return }
             let surface = surface_at{ w = &w, at = o.position }
-            let column: []u8 = if surface == 10 { "fallmetal" } else if surface == 1 or surface == 3 or surface == 12 or surface == 13 or surface == 14 { "falldirt" } else if surface == 6 or surface == 17 { "fallwater" } else { "fallhard" }
+            let column = if surface == 10 { "fallmetal" } else if surface == 1 or surface == 3 or surface == 12 or surface == 13 or surface == 14 { "falldirt" } else if surface == 6 or surface == 17 { "fallwater" } else { "fallhard" }
             let sound = twoda::get_string{ t = w.tables.appearancesndset, row = @as(usize, st), column } ifnull ""
             say{ &w, name = sound, at = o.position, source = id }
         }

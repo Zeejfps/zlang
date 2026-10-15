@@ -108,11 +108,11 @@ namespace frontend {
     // The settings in the text of an options file; anything missing keeps its default.
     fn parse_settings { data: []u8 } -> Settings {
         let d = default_settings{}
-        let g: []u8 = "Graphics Options"
-        let s: []u8 = "Sound Options"
-        let o: []u8 = "Game Options"
-        let a: []u8 = "Autopause Options"
-        let x: []u8 = "Enhanced Graphics"
+        let g = "Graphics Options"
+        let s = "Sound Options"
+        let o = "Game Options"
+        let a = "Autopause Options"
+        let x = "Enhanced Graphics"
         return Settings{
             width = clamp_i{ v = get_int{ data, section = g, key = "Width", fallback = d.width }, lo = 640, hi = 16384 },
             height = clamp_i{ v = get_int{ data, section = g, key = "Height", fallback = d.height }, lo = 480, hi = 16384 },
@@ -191,7 +191,7 @@ namespace frontend {
         let mut i: usize = 0
         while i < 64 {
             let mut key: [12]u8
-            let pre: []u8 = "Movie "
+            let pre = "Movie "
             slice::copy(u8){ dst = key[..pre.len], src = pre }
             let mut n = pre.len
             if i >= 10 {

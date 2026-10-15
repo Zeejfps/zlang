@@ -187,8 +187,8 @@ namespace save {
             event => {
                 let mut e = values::no_event{}
                 e.kind = @trunc(i32, number_at{ doc, s, label = "EventType", default = 0 })
-                let names: [4][]u8 = ["Int0", "Int1", "Int2", "Int3"]
-                let objs: [4][]u8 = ["Obj0", "Obj1", "Obj2", "Obj3"]
+                let names = ["Int0", "Int1", "Int2", "Int3"]
+                let objs = ["Obj0", "Obj1", "Obj2", "Obj3"]
                 let mut i: usize = 0
                 while i < 4 {
                     e.ints[i] = @trunc(i32, number_at{ doc, s, label = names[i], default = 0 })

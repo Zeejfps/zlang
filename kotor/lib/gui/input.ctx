@@ -23,7 +23,7 @@ namespace gui {
             return
         }
         let mut id: i32 = -1
-        let mut tag: []u8 = ""
+        let mut tag = ""
         if ci >= 0 and @as(usize, ci) < p.controls.len {
             let c = list::at{ list = p.controls, i = @as(usize, ci) }
             id = c.id

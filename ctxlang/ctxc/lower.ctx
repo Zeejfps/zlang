@@ -942,7 +942,7 @@ namespace lower {
     // isn't ASCII as a \xNN escape, as ctxi's backslashreplace writes it.
     fn panic_stmt { mut l: Lower, e: syntax::Expr, args: []syntax::Expr } -> ir::Stmt {
         let p = epos{ &l, e }
-        let mut msg: []u8 = "@panic()"
+        let mut msg = "@panic()"
         if args.len > 0 and args[0].k is str{ bytes } { msg = escaped{ l, bytes } }
         return ir::Stmt::panic{ pos = p, msg }
     }

@@ -49,7 +49,7 @@ namespace gui {
             let mut up: u32 = 0
             while up < 2 {
                 let mut buf: [24]u8
-                let pre: []u8 = "gui_mp_"
+                let pre = "gui_mp_"
                 slice::copy(u8){ dst = buf[..pre.len], src = pre }
                 slice::copy(u8){ dst = buf[pre.len..pre.len + stem.len], src = stem }
                 buf[pre.len + stem.len] = if up == 0 { 'u' } else { 'd' }
@@ -679,7 +679,7 @@ namespace gui {
         if row < 0 or row >= @as(i32, c.row_count) { return }
         c.entry_rows = true
         if c.entry_font < 0 { c.entry_font = font_slot{ &g, &fs, &dev, name = "fnt_d16x16" } }
-        let name: []u8 = if count < 2 { "lbl_hex_3" } else if count < 100 { "lbl_hex_6" } else { "lbl_hex_7" }
+        let name = if count < 2 { "lbl_hex_3" } else if count < 100 { "lbl_hex_6" } else { "lbl_hex_7" }
         c.rows[@as(usize, row)].hex = resolve_img{ &g, &fs, &dev, name }
         c.rows[@as(usize, row)].count = count
     }

@@ -486,7 +486,7 @@ fn check_faces { mut r: Report, label: []u8, name: []u8, m: mdl::Mesh } {
         let len = math::vec3::length{ v = cr }
         if len > 0.00000001 {
             let d = math::vec3::dot{ a = math::vec3::scale{ v = cr, s = 1.0 / len }, b = f.normal }
-            let which: []u8 = if d > 0.99 { "face normal along (v1-v0)x(v2-v0)" } else if d < -0.99 { "face normal opposite (v1-v0)x(v2-v0)" } else { "face normal other" }
+            let which = if d > 0.99 { "face normal along (v1-v0)x(v2-v0)" } else if d < -0.99 { "face normal opposite (v1-v0)x(v2-v0)" } else { "face normal other" }
             count{ &r, which = 2, kind = which, model = label, detail = @fmt("{} face {}", name, i) }
             if math::abs{ x = math::vec3::length{ v = f.normal } - 1.0 } > 0.01 {
                 fail{ &r, kind = "face-normal-not-unit", model = label, detail = @fmt("{} face {}", name, i) }

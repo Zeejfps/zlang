@@ -291,7 +291,7 @@ namespace cine {
             return Ended::finished
         }
         world::prefix{ w = &w }
-        let locked: []u8 = if item.skippable { "" } else { ", not skippable" }
+        let locked = if item.skippable { "" } else { ", not skippable" }
         _ = @fmt(&w.io, "movie {} start: {}x{}, {} frames, sound {}{}\n", name, pl.movie.header.width, pl.movie.header.height, pl.movie.header.frames,
             pl.has_audio, locked)
         let freq = sdl::counter_frequency{ &sdl }
@@ -338,13 +338,13 @@ namespace cine {
         }
         display::fit_movie{ d = &disp, &dev, &sdl, on = false }
         world::prefix{ w = &w }
-        let how: []u8 = match ended {
+        let how = match ended {
             finished => { "finished" }
             skipped => { "skipped" }
             window_closed => { "window closed" }
             cut => { "cut by --frames" }
         }
-        let broken: []u8 = if pl.failed { ", a frame could not be decoded" } else { "" }
+        let broken = if pl.failed { ", a frame could not be decoded" } else { "" }
         _ = @fmt(&w.io, "movie {} end: {} after {} s, {} pictures shown, {} dropped{}\n", name, how, @as(f32, pl.time), pl.stats.shown, pl.stats.dropped, broken)
         movie::close(heap::Heap){ fs = &w.fs, &dev, realloc = heap::alloc, heap = w.heap, p = &pl }
         return ended
@@ -524,7 +524,7 @@ namespace cine {
         }
         if playing_song { mix::stop{ m = mixer, h = music, fade = 0.5 } }
         world::prefix{ w = &w }
-        let how: []u8 = if ended == Ended::skipped { " (skipped)" } else { "" }
+        let how = if ended == Ended::skipped { " (skipped)" } else { "" }
         _ = @fmt(&w.io, "credits end: after {} s{}\n", offset, how)
         return ended
     }

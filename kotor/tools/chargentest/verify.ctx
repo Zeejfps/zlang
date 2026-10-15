@@ -82,7 +82,7 @@ fn verify_player { mut io: Io, mut fs: Fs, h: *mut heap::Heap, rm: res::Manager,
     let pr = @as(usize, portrait)
     check{ &io, &r, what = "portrait is for the player", got = num{ t = portraits, row = pr, col = "forpc" }, want = 1 }
     check{ &io, &r, what = "portrait's sex is the gender", got = num{ t = portraits, row = pr, col = "sex" }, want = c.gender }
-    let body_col: []u8 = if class == 0 { "appearance_l" } else if class == 1 { "appearancenumber" } else { "appearance_s" }
+    let body_col = if class == 0 { "appearance_l" } else if class == 1 { "appearancenumber" } else { "appearance_s" }
     check{ &io, &r, what = "body is the portrait's for the class", got = c.appearance, want = num{ t = portraits, row = pr, col = body_col } }
     let sound = @as(i32, gff::get_number{ doc, s = gff::ROOT, label = "SoundSetFile" } ifnull -1)
     check{ &io, &r, what = "sound set", got = sound, want = if c.gender == 1 { 83 } else { 85 } }

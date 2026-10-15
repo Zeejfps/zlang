@@ -133,7 +133,7 @@ fn survey { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut cache: mdl_cache::Cac
         let label = cell{ t = app, row, column = "label" }
         let r = row
         row = row + 1
-        let mut name: []u8 = ""
+        let mut name = ""
         let is_head = ci::eq{ a = kind, b = "b" }
         if is_head {
             let hr = twoda::get_int{ t = app, row = r, column = "normalhead" } ifnull { continue }
@@ -166,9 +166,9 @@ fn survey { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut cache: mdl_cache::Cac
         } else {
             if is_head { st.heads_without = st.heads_without + 1 } else { st.bodies_without = st.bodies_without + 1 }
             if lines < 400 {
-                let what: []u8 = if is_head { "head" } else { "body" }
+                let what = if is_head { "head" } else { "body" }
                 // Four to a line, to keep the output short.
-                let sep: []u8 = if lines % 4 == 0 { "\n  " } else { "  " }
+                let sep = if lines % 4 == 0 { "\n  " } else { "  " }
                 _ = @fmt(&io, "{}{} {}({})", sep, what, name, label)
                 lines = lines + 1
             }

@@ -488,7 +488,7 @@ namespace ups {
         gui::set_visible{ &g, panel = p, tag = lbl, visible = true }
         gui::set_visible{ &g, panel = p, tag = slot_button{ s = &s, k }, visible = true }
         let mut preview: u32 = obj::INVALID
-        let mut generic: []u8 = ""
+        let mut generic = ""
         let mut dim = false
         if slot.kind == KIND_COLOUR {
             let c = if s.colour_new >= 0 { s.colour_new } else { s.colour_now }
@@ -576,8 +576,8 @@ namespace ups {
         refresh_view{ &s, &g, &w, &dev }
         let ls = s.lightsaber
         let pick = s.choosing
-        let layout_ls: [4][]u8 = ["LB_DESC_LS", "LBL_DESCBG_LS", "3D_MODEL_LS", "LBL_LSSLOTNAME"]
-        let layout_other: [7][]u8 = ["LB_DESC", "LBL_DESCBG", "3D_MODEL", "LBL_SLOTNAME", "LBL_UPGRADES", "LBL_UPGRADE_COUNT", "LBL_PROPERTY"]
+        let layout_ls = ["LB_DESC_LS", "LBL_DESCBG_LS", "3D_MODEL_LS", "LBL_LSSLOTNAME"]
+        let layout_other = ["LB_DESC", "LBL_DESCBG", "3D_MODEL", "LBL_SLOTNAME", "LBL_UPGRADES", "LBL_UPGRADE_COUNT", "LBL_PROPERTY"]
         let mut i: usize = 0
         while i < 4 {
             gui::set_visible{ &g, panel = p, tag = layout_ls[i], visible = ls and (i < 2 or not pick) }

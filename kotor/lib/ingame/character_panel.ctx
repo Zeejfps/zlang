@@ -67,8 +67,8 @@ namespace character_panel {
         try sheet::say{ &g, &b, panel, tag = "LBL_NAME", text = hud::name_of{ w = &w, id } }
 
         // Class and level: one line per class slot; the second line hides for a single class.
-        let class_tags: [2][]u8 = ["LBL_CLASS1", "LBL_CLASS2"]
-        let level_tags: [2][]u8 = ["LBL_LEVEL1", "LBL_LEVEL2"]
+        let class_tags = ["LBL_CLASS1", "LBL_CLASS2"]
+        let level_tags = ["LBL_LEVEL1", "LBL_LEVEL2"]
         let mut k: usize = 0
         while k < 2 {
             let has = k < v.nclasses

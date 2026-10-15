@@ -134,7 +134,7 @@ namespace frontend {
             try gui::set_token{ &g, name = "CUSTOM0", value = nb[..put_int{ into = nb[..], at = 0, n = e.number - 1 }] }
             k = 1
         }
-        let names: [4][]u8 = ["CUSTOM0", "CUSTOM1", "CUSTOM2", "CUSTOM3"]
+        let names = ["CUSTOM0", "CUSTOM1", "CUSTOM2", "CUSTOM3"]
         try gui::set_token{ &g, name = names[k], value = nb[..put_int{ into = nb[..], at = 0, n = hours }] }
         try gui::set_token{ &g, name = names[k + 1], value = nb[..put_int{ into = nb[..], at = 0, n = minutes }] }
         let mut n: usize = 0
@@ -162,7 +162,7 @@ namespace frontend {
         gui::set_enabled{ &g, panel = p, tag = "BTN_DELETE", enabled = e.ours }
         fe.shown_row = row
         release_shot{ &fe, &dev }
-        let tags: [3][]u8 = ["LBL_PM1", "LBL_PM2", "LBL_PM3"]
+        let tags = ["LBL_PM1", "LBL_PM2", "LBL_PM3"]
         // The picture's text in saveload.gui's own blue (a "Cheat Used" before may have made it yellow).
         gui::set_text_color{ &g, panel = p, tag = "LBL_SCREENSHOT", color = render::Color{ r = 0.0, g = 0.63671875, b = 0.95703125, a = 1.0 } }
         if e.new_slot or e.corrupt {

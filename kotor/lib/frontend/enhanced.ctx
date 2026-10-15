@@ -123,7 +123,7 @@ namespace frontend {
                 gui::set_extent{ &g, panel = p, tag = FX_RIGHT[r], x = 288, y, w = 20, h = 20 }
                 r = r + 1
             }
-            let originals: [12][]u8 = [
+            let originals = [
                 "BTN_TEXQUAL", "BTN_TEXQUALLEFT", "BTN_TEXQUALRIGHT", "BTN_ANTIALIAS", "BTN_ANTIALIASLEFT", "BTN_ANTIALIASRIGHT",
                 "BTN_ANISOTROPY", "BTN_ANISOTROPYLEFT", "BTN_ANISOTROPYRIGHT", "CB_FRAMEBUFF", "CB_SOFTSHADOWS", "CB_VSYNC",
             ]

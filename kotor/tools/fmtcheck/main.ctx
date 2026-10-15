@@ -177,7 +177,7 @@ fn check_twoda { mut io: Io, t: *mut Twoda, mut scratch: arena::Arena, copy: cor
     if p < data.len and data[p] == 0 and p > 9 { t.nul_separated = t.nul_separated + 1 }
     // Every cell must read back (the getters never fail on a parsed table), and the content goes
     // into the sum the Python model checks.
-    let nul: []u8 = "\x00"
+    let nul = "\x00"
     let mut crc: u32 = 0
     let mut c: usize = 0
     while c < table.columns.len {

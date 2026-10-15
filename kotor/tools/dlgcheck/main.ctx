@@ -34,7 +34,7 @@ struct Totals {
 
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let mut game: []u8 = DEFAULT_GAME
-    let mut only: []u8 = ""
+    let mut only = ""
     let mut i: usize = 0
     while i < args.len {
         let has = i + 1 < args.len

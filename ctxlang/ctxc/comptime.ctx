@@ -47,7 +47,7 @@ namespace comptime {
     // or for a !T its value, since an error is a compile error at the literal, printed as @fmt
     // prints one. Null after reporting why it has none.
     fn literal { mut c: check::Checker, f: u32, e: syntax::Expr, bytes: []u8 } -> ?check::Val {
-        let what: []u8 = "string literal"
+        let what = "string literal"
         let at = check::expr_at{ e }
         // The same bytes convert the same way.
         let mut kb = list::new(u8){ realloc = arena::alloc, heap = c.heap }
@@ -383,7 +383,7 @@ namespace comptime {
         }
         let region = p >> eval::SHIFT
         let regions = list::items{ list = r.m.regions }
-        let mut what: []u8 = "a pointer"
+        let mut what = "a pointer"
         if region == @as(u64, eval::STACK) {
             what = "a pointer to the stack"
         } else if region > @as(u64, eval::STACK) and region < @as(u64, regions.len) {

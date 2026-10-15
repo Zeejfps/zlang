@@ -88,7 +88,7 @@ namespace build {
         // working directory, where it is when a person runs the build program. The driver
         // writes it as ASCII (ctxc/drive.ctx, `escaped`), since C's getenv gives the ANSI code
         // page's bytes on Windows, and std's UTF-8 environment needs a Proc.
-        let mut dir: []u8 = "."
+        let mut dir = "."
         let set = getenv{ &b, name = "CTX_BUILD_DIR" }
         if set is some{ value } and c::len{ s = value } > 0 { dir = try reflect::unescaped{ &w, s = c::bytes{ s = value } } }
         // The root, which is the first line of exe's, then each directory.
@@ -359,7 +359,7 @@ namespace build {
                     let mut k: usize = 0
                     while k < variants.len {
                         let v = variants[k]
-                        let mut value: []u8 = ""
+                        let mut value = ""
                         if v.value is some{ value = e } { value = try squeeze{ &w, span = e.span } }
                         out[k] = Variant{ name = v.name.text, fields = slice::empty(Field){}, payload = false, value }
                         k = k + 1

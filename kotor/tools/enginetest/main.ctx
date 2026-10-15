@@ -3,13 +3,13 @@
 //
 //   enginetest [--module M] [--game DIR] [--frames N] [--dt S] [--log LIST] [--report] [--seed N]
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
-    let mut module: []u8 = "end_m01aa"
-    let mut game: []u8 = "F:/Steam/steamapps/common/swkotor"
+    let mut module = "end_m01aa"
+    let mut game = "F:/Steam/steamapps/common/swkotor"
     let mut frames: u64 = 300
     let mut dt: f32 = 1.0 / 30.0
-    let mut log: []u8 = ""
+    let mut log = ""
     let mut report = false
-    let mut replies: []u8 = ""
+    let mut replies = ""
     let mut seed: u32 = 1
     let mut i: usize = 0
     while i < args.len {

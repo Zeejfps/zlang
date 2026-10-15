@@ -30,7 +30,7 @@ namespace test_screens {
                 let mut k: usize = 0
                 while k < stock.len {
                     let it = items::item_of{ w = &w, id = stock[k] }
-                    let tail: []u8 = if it != null and it.infinite { " infinite" } else { "" }
+                    let tail = if it != null and it.infinite { " infinite" } else { "" }
                     _ = @fmt(&w.io, "  {} {} value {} buy {} sell {}{}\n", stock[k], items::name_of{ w = &w, id = stock[k] },
                         store::value_of{ w = &w, item = stock[k] }, store::buy_price{ w = &w, store = id, item = stock[k] },
                         store::sell_price{ w = &w, store = id, item = stock[k] }, tail)

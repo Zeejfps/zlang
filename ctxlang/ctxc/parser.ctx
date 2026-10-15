@@ -957,7 +957,7 @@ namespace parser {
         let field = made_name{ &p, at = here, text = "value" }
         try! list::push{ list = &binders, item = syntax::Binder{ span = here, by_ref = false, field, local = null } }
         let mut pats = list::new(syntax::Pattern){ realloc = arena::alloc, heap = p.heap }
-        let has: []u8 = if is_null { "some" } else { "ok" }
+        let has = if is_null { "some" } else { "ok" }
         try! list::push{ list = &pats, item = syntax::Pattern{ span = here, quals = no_quals, variant = made_name{ &p, at = here, text = has }, binders = list::items{ list = binders }, value = null, upto = null } }
         let value = name_path{ &p, name = made_name{ &p, at = here, text = "value" } }
         let some_body = one{ &p, s = syntax::Stmt{ id = new_id{ &p }, span = here, k = syntax::StmtKind::eval{ e = value } } }

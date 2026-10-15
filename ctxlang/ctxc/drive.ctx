@@ -129,7 +129,7 @@ namespace drive {
         let code = describe{ &io, &fs, &mem, &proc, &heap, d, path, &targets, &why }
         if code != 0 { return code }
 
-        let mut first: []u8 = ""
+        let mut first = ""
         let mut i: usize = 0
         while i < targets.len {
             let t = list::items{ list = targets }[i]
@@ -505,7 +505,7 @@ namespace drive {
     // what std uses to read the environment as UTF-8 needs a Proc, which a build program
     // needn't hold (std/build/declarations.ctx, `build_dir`).
     fn escaped { mut heap: Heap, s: []u8 } -> []u8 {
-        let digits: []u8 = "0123456789ABCDEF"
+        let digits = "0123456789ABCDEF"
         let mut out = list::new(u8){ realloc = arena::alloc, &heap }
         let mut i: usize = 0
         while i < s.len {
@@ -623,7 +623,7 @@ namespace drive {
     // in any case, since a file named build.ctx is never an executable's.
     fn is_file_name { name: []u8 } -> bool {
         if name.len == 0 { return false }
-        let word: []u8 = "build"
+        let word = "build"
         let mut build = name.len == word.len
         let mut i: usize = 0
         while i < name.len {
@@ -683,7 +683,7 @@ namespace drive {
     // and looks for others in namespaces and on fields. False after reporting one elsewhere, or
     // one whose `dir` isn't a string literal that isn't empty.
     fn find_sources { mut io: Io, mut heap: Heap, path: []u8, text: []u8, decls: []syntax::Decl, top: bool, mut sources: list::List(Source, Heap) } -> bool {
-        let misplaced: []u8 = "`build::sources` applies only to the build program's `fn build`"
+        let misplaced = "`build::sources` applies only to the build program's `fn build`"
         let mut i: usize = 0
         while i < decls.len {
             let x = decls[i]
@@ -1060,7 +1060,7 @@ namespace drive {
         }
         let hash = hex{ &heap, n = x }
         try! list::push{ list = &keep, item = hash }
-        let suffix: []u8 = if d.os == build::Os::windows { ".exe" } else { "" }
+        let suffix = if d.os == build::Os::windows { ".exe" } else { "" }
         let exe = if out.len > 0 { out } else { cat{ &heap, a = cat{ &heap, a = cat{ &heap, a = base, b = "-" }, b = hash }, b = suffix } }
         if out.len == 0 and kind_of{ &fs, path = exe } == 1 { return exe }
 
@@ -1127,11 +1127,11 @@ namespace drive {
         }
         if not good { return null }
         let rt_obj = runtime_object{ &io, &fs, &proc, &heap, d, rt, cflags, name = "ctxrt" } ifnull { return null }
-        let mut float_obj: []u8 = ""
+        let mut float_obj = ""
         if uses_float{ units } {
             float_obj = runtime_object{ &io, &fs, &proc, &heap, d, rt, cflags, name = "ctxfloat" } ifnull { return null }
         }
-        let mut thread_obj: []u8 = ""
+        let mut thread_obj = ""
         if uses_threads{ units } {
             thread_obj = runtime_object{ &io, &fs, &proc, &heap, d, rt, cflags, name = "ctxthread" } ifnull { return null }
         }
@@ -1145,7 +1145,7 @@ namespace drive {
         try! list::push{ list = &argv, item = "-o" }
         try! list::push{ list = &argv, item = into }
         // Many objects go in a response file: Windows takes a command line of 32K characters.
-        let mut rsp: []u8 = ""
+        let mut rsp = ""
         if objs.len > 64 {
             rsp = claim{ &io, &fs, &heap, base, ext = ".rsp" } ifnull { return null }
             let ok = fs::write_all{ &fs, path = rsp, bytes = quoted{ &heap, xs = list::items{ list = objs } } } else {
@@ -1397,7 +1397,7 @@ namespace drive {
     // A hash of the runtime's sources, which every executable is compiled with.
     fn runtime_hash { mut io: Io, mut fs: Fs, mut heap: Heap, home: []u8 } -> ?u64 {
         let mut h = FNV_BASIS
-        let names: [4][]u8 = ["ctxc/rt/ctxrt.c", "ctxc/rt/ctxrt.h", "ctxc/rt/ctxfloat.c", "ctxc/rt/ctxthread.c"]
+        let names = ["ctxc/rt/ctxrt.c", "ctxc/rt/ctxrt.h", "ctxc/rt/ctxfloat.c", "ctxc/rt/ctxthread.c"]
         let mut i: usize = 0
         while i < names.len {
             let p = join{ &heap, a = home, b = names[i] }
@@ -1490,7 +1490,7 @@ namespace drive {
             if up.len == dir.len { break }
             dir = up
         }
-        let mut here: []u8 = "."
+        let mut here = "."
         let mut i = 0
         while i < 16 {
             if is_home{ &fs, &heap, dir = here } { return here }
@@ -1564,7 +1564,7 @@ namespace drive {
         if dir.len == 0 { return slice::empty([]u8){} }
         let entry = cat{ &heap, a = "PATH=", b = dir }
         let rest = proc::env{ &proc, name = "PATH" } ifnull { return one{ &heap, s = entry } }
-        let sep: []u8 = if os == build::Os::windows { ";" } else { ":" }
+        let sep = if os == build::Os::windows { ";" } else { ":" }
         return one{ &heap, s = cat{ &heap, a = cat{ &heap, a = entry, b = sep }, b = rest } }
     }
 
@@ -1573,7 +1573,7 @@ namespace drive {
     // interpreter, its own layer, std/os/interp, and os's target.ctx.
     fn std_files { mut io: Io, mut fs: Fs, mut heap: Heap, home: []u8, os: build::Os, interp: bool } -> ?[][]u8 {
         let std_dir = join{ &heap, a = home, b = "std" }
-        let layer: []u8 = match os { windows => { "os/windows" } macos => { "os/macos" } linux => { "os/linux" } }
+        let layer = match os { windows => { "os/windows" } macos => { "os/macos" } linux => { "os/linux" } }
         let top = ctx_files{ &io, &fs, &heap, dir = std_dir } ifnull { return null }
         let mut all = list::new([]u8){ realloc = arena::alloc, &heap }
         add_all{ xs = &all, ys = top }

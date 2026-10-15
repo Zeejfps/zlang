@@ -334,8 +334,8 @@ namespace movie {
     // extension keeps it. (Memory from the allocator, not a buffer on the stack: the movie
     // would count as derived from a local, and `open` couldn't return it.)
     fn movie_path(S) { realloc: alloc::Fn(S), mut heap: S, game: []u8, name: []u8 } -> !alloc::Bytes {
-        let dir: []u8 = "movies/"
-        let ext: []u8 = if text::find_byte{ s = name, c = '.' } == null { ".bik" } else { "" }
+        let dir = "movies/"
+        let ext = if text::find_byte{ s = name, c = '.' } == null { ".bik" } else { "" }
         let sep: usize = if game.len > 0 and game[game.len - 1] != '/' and game[game.len - 1] != '\\' { 1 } else { 0 }
         let n = game.len + sep + dir.len + name.len + ext.len
         let out = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = n }

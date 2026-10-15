@@ -210,7 +210,7 @@ namespace ingame {
     // makes that member the leader (the panels show the leader). A button with no member hides.
     fn fill_change_buttons { mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } {
         let ids = party_ids_of{ w = &w }
-        let tags: [2][]u8 = ["BTN_CHANGE1", "BTN_CHANGE2"]
+        let tags = ["BTN_CHANGE1", "BTN_CHANGE2"]
         let mut k: usize = 0
         while k < 2 {
             let has = k + 1 < ids.len

@@ -154,7 +154,7 @@ namespace fight_log {
         if n == 0 { return }
         if w.log.combat {
             world::prefix{ w = &w }
-            let tag: []u8 = if is_summary{ strref } { " (red)" } else { "" }
+            let tag = if is_summary{ strref } { " (red)" } else { "" }
             _ = @fmt(&w.io, "log{}: {}\n", tag, line[..n])
         }
         let kept = outbox::keep_text{ out = &w.out, s = line[..n] }

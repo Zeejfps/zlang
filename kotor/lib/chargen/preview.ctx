@@ -140,9 +140,9 @@ namespace preview3d {
         let half = buf.len / 2
         let mut fixed = arena::new{ buf = buf[..half] }
         let creature = arena::new{ buf = buf[half..] }
-        let mut model: []u8 = "cgbody_light"
-        let mut node: []u8 = "camerahook"
-        let mut animation: []u8 = "default"
+        let mut model = "cgbody_light"
+        let mut node = "camerahook"
+        let mut animation = "default"
         match kind {
             body => {}
             head => {
@@ -237,7 +237,7 @@ namespace preview3d {
         if appearance < 0 or @as(usize, appearance) >= twoda::rows{ t } { return no_appearance }
         let row = @as(usize, appearance)
         let is_b = ci::eq{ a = cell{ t, row, column = "modeltype" }, b = "b" }
-        let mut body_name: []u8 = ""
+        let mut body_name = ""
         let mut texture: [24]u8
         let mut texture_len: usize = 0
         if is_b {
@@ -252,7 +252,7 @@ namespace preview3d {
             let racetex = cell{ t, row, column = "racetex" }
             if racetex.len > 0 and racetex.len < 24 { put_bytes{ into = texture[..], at = &texture_len, s = racetex } }
         }
-        let mut head_name: []u8 = ""
+        let mut head_name = ""
         if is_b {
             let mut head_row = head
             if head_row < 0 {

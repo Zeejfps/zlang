@@ -1552,7 +1552,7 @@ namespace eval {
     // Whether C symbol s is one of std/os/interp's externs (ctx_interp_*), or the runtime's
     // that std's start calls (ctx_pages_set), which `host` runs.
     fn is_host { s: []u8 } -> bool {
-        let p: []u8 = "ctx_interp_"
+        let p = "ctx_interp_"
         return (s.len > p.len and slice::eq_bytes{ a = s[..p.len], b = p }) or slice::eq_bytes{ a = s, b = "ctx_pages_set" }
             or slice::eq_bytes{ a = s, b = "ctx_ends_set" } or slice::eq_bytes{ a = s, b = "ctx_here_name" }
             or slice::eq_bytes{ a = s, b = "ctx_thread_begin" }

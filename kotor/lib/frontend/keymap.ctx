@@ -84,7 +84,7 @@ namespace frontend {
 
     // The slot's row label and ini key, "Action204" or "Action280A" (the original's "Action%d%c", 0x006ec120).
     fn slot_label { slot: i32, into: []mut u8 } -> []u8 {
-        let pre: []u8 = "Action"
+        let pre = "Action"
         slice::copy(u8){ dst = into[..pre.len], src = pre }
         let row = slot_row{ slot }
         into[6] = '0' + @trunc(u8, row / 100)

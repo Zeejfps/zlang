@@ -251,7 +251,7 @@ namespace ingame {
         ui.text.bytes.len = 0
         if prefix != 0 { _ = @fmt(&ui.text, "{}", world::string_by_strref{ w = &w, strref = prefix }) }
         let src = world::string_by_strref{ w = &w, strref }
-        let token: []u8 = "<CUSTOM0>"
+        let token = "<CUSTOM0>"
         let mut at: usize = 0
         while at < src.len {
             if at + token.len <= src.len and slice::eq_bytes{ a = src[at..at + token.len], b = token } {

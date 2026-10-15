@@ -92,7 +92,7 @@ fn run {
         try dlgpanel::open{ &p, &g, &fs, &dev, computer = false, computer_type = 0 }
         try dlgpanel::set_line{ &p, &g, speaker = "Carth", text = LINE }
         dlgpanel::update{ &p, &g, dt = 0.033 }
-        try shot{ &io, &fs, &dev, &heap, &frame, &g, p, rig, name = either{ first = si == 0, a = "cin_800x600.png", b = "cin_1280x720.png" } }
+        try shot{ &io, &fs, &dev, &heap, &frame, &g, p, rig, name = if si == 0 { "cin_800x600.png" } else { "cin_1280x720.png" } }
         end_scene{ &p, &g }
         si = si + 1
     }
@@ -109,7 +109,7 @@ fn run {
         try show_replies{ &p, &g, &fs, &dev, &sdl }
         point_at_row{ &p, &g, row = 1 }
         dlgpanel::update{ &p, &g, dt = 0.033 }
-        try shot{ &io, &fs, &dev, &heap, &frame, &g, p, rig, name = either{ first = si == 0, a = "replies_800x600.png", b = "replies_1280x720.png" } }
+        try shot{ &io, &fs, &dev, &heap, &frame, &g, p, rig, name = if si == 0 { "replies_800x600.png" } else { "replies_1280x720.png" } }
         end_scene{ &p, &g }
         si = si + 1
     }
@@ -124,7 +124,7 @@ fn run {
         try show_computer_replies{ &p, &g }
         point_at_row{ &p, &g, row = 1 }
         dlgpanel::update{ &p, &g, dt = 0.033 }
-        try shot{ &io, &fs, &dev, &heap, &frame, &g, p, rig, name = either{ first = skin == 0, a = "computer_skin0.png", b = "computer_skin1.png" } }
+        try shot{ &io, &fs, &dev, &heap, &frame, &g, p, rig, name = if skin == 0 { "computer_skin0.png" } else { "computer_skin1.png" } }
         end_scene{ &p, &g }
         skin = skin + 1
     }
@@ -239,7 +239,7 @@ fn pick_text { pk: dlgpanel::Pick, buf: []mut u8 } -> []u8 {
         none => { return "none" }
         skip => { return "skip" }
         reply{ index } => {
-            let pre: []u8 = "reply "
+            let pre = "reply "
             slice::copy(u8){ dst = buf[..pre.len], src = pre }
             buf[pre.len] = '1' + @as(u8, index)
             return buf[..pre.len + 1]
@@ -252,7 +252,7 @@ fn expect { mut io: Io, what: []u8, pk: dlgpanel::Pick, want: []u8 } -> bool {
     let mut buf: [16]u8
     let got = pick_text{ pk, buf = buf[..] }
     let ok = slice::eq_bytes{ a = got, b = want }
-    _ = @fmt(&io, "  {} {}: {} (want {})\n", either{ first = ok, a = "ok  ", b = "FAIL" }, what, got, want)
+    _ = @fmt(&io, "  {} {}: {} (want {})\n", if ok { "ok  " } else { "FAIL" }, what, got, want)
     return ok
 }
 
@@ -399,12 +399,6 @@ fn end_scene { mut p: dlgpanel::Panels, mut g: gui::Gui } {
     dlgpanel::close{ &p, &g }
     gui::update{ &g, dt = 0.0 }
     gui::clear_events{ &g }
-}
-
-// `a` or `b` as bytes (a typed result for what `if` of string literals can't give a call argument).
-fn either { first: bool, a: []u8, b: []u8 } -> []u8 {
-    if first { return a }
-    return b
 }
 
 fn make_dir { mut fs: Fs, path: []u8 } {

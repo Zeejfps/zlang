@@ -30,7 +30,7 @@ namespace msgbox {
         let mut b = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } }
         defer list::free{ list = &b.bytes }
         let src = world::string_by_strref{ w = &w, strref }
-        let token: []u8 = "<CUSTOM0>"
+        let token = "<CUSTOM0>"
         let mut i: usize = 0
         while i < src.len {
             if i + token.len <= src.len and slice::eq_bytes{ a = src[i..i + token.len], b = token } {

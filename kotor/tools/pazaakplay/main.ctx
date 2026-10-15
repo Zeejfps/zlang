@@ -336,7 +336,7 @@ fn bot_move { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut g: gui::Gui, mut
     let m = w.s.m
     if not pazaak::can_choose{ m } { return }
     let t = pazaak::total_of{ s = m.g.player }
-    let mut tag: []u8 = "BTN_XTEXT"
+    let mut tag = "BTN_XTEXT"
     let mut tb: [16]u8
     if t > 20 and m.phase == pazaak::Phase::choose {
         let mut i: usize = 0

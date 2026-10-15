@@ -44,7 +44,7 @@ namespace hud {
     const MENU_KEYS: [8][]u8 = ["U", "I", "P", "K", "J", "L", "M", "O"]
 
     fn set_tooltips { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut text: utf8::Builder(heap::Heap) } {
-        let tags: [8][]u8 = ["BTN_EQU", "BTN_INV", "BTN_CHAR", "BTN_ABI", "BTN_MSG", "BTN_JOU", "BTN_MAP", "BTN_OPT"]
+        let tags = ["BTN_EQU", "BTN_INV", "BTN_CHAR", "BTN_ABI", "BTN_MSG", "BTN_JOU", "BTN_MAP", "BTN_OPT"]
         let mut k: usize = 0
         while k < 8 {
             list::clear{ list = &text.bytes }
@@ -53,7 +53,7 @@ namespace hud {
             k = k + 1
         }
         let more: [3]u32 = [48019, 48035, 247]
-        let more_tags: [3][]u8 = ["TB_PAUSE", "TB_SOLO", "TB_STEALTH"]
+        let more_tags = ["TB_PAUSE", "TB_SOLO", "TB_STEALTH"]
         k = 0
         while k < 3 {
             gui::set_tooltip{ &g, panel = h.panel, tag = more_tags[k], text = world::string_by_strref{ w = &w, strref = more[k] } } iferr {}

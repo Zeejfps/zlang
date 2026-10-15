@@ -100,7 +100,7 @@ fn sweep_one { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, name
         return
     }
     let mut owner = find_owner{ w = &w, name }
-    let mut how: []u8 = "object"
+    let mut how = "object"
     if owner == obj::INVALID {
         owner = standin_owner{ w = &w }
         how = "standin"

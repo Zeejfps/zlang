@@ -234,7 +234,7 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8
     i = 0
     while i < paths.len {
         let path = paths[i]
-        let mut text: []u8 = ""
+        let mut text = ""
         if i >= given {
             text = texts[i - given]
         } else {

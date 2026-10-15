@@ -23,7 +23,7 @@ namespace rules {
     fn combat_get_difficulty_setting { tables: *Tables, row: usize } -> i32 {
         let t = raw_table{ tables, which = Tab::diffsettings }
         let d = tables.settings.difficulty
-        let col: []u8 = if d <= 0 { "easy" } else if d == 1 { "normal" } else { "hardcore" }
+        let col = if d <= 0 { "easy" } else if d == 1 { "normal" } else { "hardcore" }
         return cell_int{ t, row, col, dflt = 0 }
     }
 

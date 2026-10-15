@@ -567,7 +567,7 @@ namespace rt_obj {
     // string GetTrapKeyTag(object oTrapObject): its KeyName.
     fn get_trap_key_tag { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetTrapKeyTag, argc, i = 0 }
-        let mut key: []u8 = ""
+        let mut key = ""
         if trap_of{ w = &w, id } is some{ value = t } { key = t.key }
         try nwvm::push_string{ &vm, s = key }
     }

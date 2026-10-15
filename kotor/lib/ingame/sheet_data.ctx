@@ -232,7 +232,7 @@ namespace sheet {
             if level > 0 {
                 let code = twoda::get_string{ t = classes, row = @as(usize, c.classes[slot]), column = "featgain" } ifnull ""
                 let mut buf: [24]u8
-                let suffix: []u8 = "_granted"
+                let suffix = "_granted"
                 if code.len > 0 and code.len + suffix.len <= buf.len {
                     slice::copy(u8){ dst = buf[..code.len], src = code }
                     slice::copy(u8){ dst = buf[code.len..code.len + suffix.len], src = suffix }

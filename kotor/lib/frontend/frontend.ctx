@@ -16,7 +16,7 @@ namespace frontend {
     fn queue_startup { mut fe: Front } {
         fe.queue_count = 0
         fe.queue_at = 0
-        let names: [3][]u8 = ["leclogo", "biologo", "legal"]
+        let names = ["leclogo", "biologo", "legal"]
         let mut i: usize = 0
         while i < 3 {
             fe.queue_lens[i] = copy_into{ dst = fe.queue[i][..], src = names[i] }

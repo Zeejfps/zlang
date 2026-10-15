@@ -1074,7 +1074,7 @@ namespace walkcheck {
                 if info.failure == failures and (n > 0 or info.expect > 0) {
                     let differs = info.expect >= 0 and @as(i64, n) != info.expect
                     if differs { s.surprises = s.surprises + 1 }
-                    let tag: []u8 = if differs { "DIFF" } else { "    " }
+                    let tag = if differs { "DIFF" } else { "    " }
                     _ = @fmt(&con, "{} {} {}", tag, pad{ n }, info.text)
                     if info.expect >= 0 { _ = @fmt(&con, " (bwm.md: {})", info.expect) }
                     if t.seen[i] {
@@ -1143,7 +1143,7 @@ namespace walkcheck {
     }
     #write
     fn put_table { mut c: Con, t: bwm::Table } {
-        let name: []u8 = match t {
+        let name = match t {
             header => { "header" }
             vertices => { "vertices" }
             faces => { "faces" }

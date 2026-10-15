@@ -14,8 +14,8 @@ const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
 
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let mut game: []u8 = DEFAULT_GAME
-    let mut module: []u8 = "tar_m03mg"
-    let mut area: []u8 = "m03mg"
+    let mut module = "tar_m03mg"
+    let mut area = "m03mg"
     let mut speed: f32 = 150.0
     let mut steer: f32 = 0.0
     let mut seconds: f32 = 30.0

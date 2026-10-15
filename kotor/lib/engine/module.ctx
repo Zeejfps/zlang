@@ -311,7 +311,7 @@ namespace modload {
         let orientation = if bearing_kind { obj::direction_of_bearing{ bearing } } else {
             math::Vec3{ x = tmpl::real{ doc, s, label = "XOrientation", default = 0.0 }, y = tmpl::real{ doc, s, label = "YOrientation", default = 1.0 }, z = 0.0 }
         }
-        let field: []u8 = if kind == obj::Kind::store { "ResRef" } else { "TemplateResRef" }
+        let field = if kind == obj::Kind::store { "ResRef" } else { "TemplateResRef" }
         let template = gff::get_resref{ doc = doc.*, s, label = field } ifnull ""
         let mut id: u32 = 0
         // A saved GIT holds every object whole with its runtime id (gff-save.md): no blueprint.
@@ -596,7 +596,7 @@ namespace modload {
     // Whether a door or trigger leads to another module, and where.
     fn link_of { o: *obj::Object } -> ?world::Transition {
         let mut t = world::Transition{ module = resref::empty{}, waypoint = [0; 64], waypoint_len = 0 }
-        let mut to: []u8 = ""
+        let mut to = ""
         if obj::door{ o } is some{ value = d } {
             if d.linked_flags == 0 { return null }
             t.module = d.linked_to_module

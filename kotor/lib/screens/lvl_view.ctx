@@ -104,7 +104,7 @@ namespace lvl {
         let mut look = look_of{ &w, c, names = &names } ifnull { return null }
         // FUN_006100f0 knows three party members by tag: the droids pause instead of posing, and
         // each of the three has its own camera hook in charrec_light.
-        let mut camera_node: []u8 = ""
+        let mut camera_node = ""
         if slice::eq_bytes{ a = o.tag, b = "t3m4" } {
             camera_node = "camerahookt"
             look.pose = "pause1"

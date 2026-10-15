@@ -78,7 +78,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut sdl: sdl::Sd
             i = i + 1
         }
     } else {
-        let subdirs: [4][]u8 = ["streamwaves", "streamsounds", "streammusic", "launcher"]
+        let subdirs = ["streamwaves", "streamsounds", "streammusic", "launcher"]
         let mut i: usize = 0
         while i < 4 {
             let dir = join{ heap = &walk_heap, a = opts.game, b = subdirs[i] }
@@ -294,8 +294,8 @@ fn compare_ref {
         let h = mp3::read_header{ b = stream.bytes[start..end] } ifnull { return }
         start = start + h.size
     }
-    let mp3_path: []u8 = "kotor/out/sndcheck/ref.mp3"
-    let pcm_path: []u8 = "kotor/out/sndcheck/ref.pcm"
+    let mp3_path = "kotor/out/sndcheck/ref.mp3"
+    let pcm_path = "kotor/out/sndcheck/ref.pcm"
     _ = fs::write_all{ &fs, path = mp3_path, bytes = stream.bytes[start..end] } iferr err{ error } {
         c.ref_failed = c.ref_failed + 1
         _ = @fmt(&io, "REF {}: can't write {}: {}\n", path, mp3_path, error)

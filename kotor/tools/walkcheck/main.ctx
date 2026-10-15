@@ -12,7 +12,7 @@ const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
 
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let mut game = DEFAULT_GAME
-    let mut extract: []u8 = ""
+    let mut extract = ""
     let mut i: usize = 0
     while i < args.len {
         if i + 1 < args.len and slice::eq_bytes{ a = args[i], b = "--game" } {

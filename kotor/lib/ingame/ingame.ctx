@@ -629,7 +629,7 @@ namespace ingame {
             // "<Pause>" is the key's name.
             let raw = world::string_by_strref{ w = &w, strref = reason }
             ui.text.bytes.len = 0
-            let token: []u8 = "<Pause>"
+            let token = "<Pause>"
             let mut at: usize = 0
             while at < raw.len {
                 if at + token.len <= raw.len and slice::eq_bytes{ a = raw[at..at + token.len], b = token } {

@@ -293,7 +293,7 @@ fn report { mut io: Io, stats: Stats } {
     _ = @fmt(&io, "tpc kind: plain {}, cube {}, flipbook {}   (tpc.md: 11226, 189, 121)\n", s.kind[0][0], s.kind[0][1], s.kind[0][2])
     _ = @fmt(&io, "tpc full mip chains: plain {}, cube {}, flipbook frames {}   (tpc.md: 8375 plain, 189 cube; a frame always has one)\n",
         s.full_chains[0], s.full_chains[1], s.full_chains[2])
-    let kinds: [3][]u8 = ["plain", "cube", "flipbook"]
+    let kinds = ["plain", "cube", "flipbook"]
     let mut k: usize = 0
     while k < 3 {
         _ = @fmt(&io, "tpc levels per image, {}:", kinds[k])

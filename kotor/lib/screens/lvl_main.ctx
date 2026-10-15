@@ -279,7 +279,7 @@ namespace lvl {
     // Opens the step panel `k` over the list; for the feats, `bonus` asks for the bonus pass.
     fn open_step { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, k: i32, bonus: bool } -> ! {
         if s.step != 0 { return }
-        let name: []u8 = if k == STEP_ATTRIBUTES { "abchrgen" } else if k == STEP_SKILLS { "skchrgen" } else if k == STEP_FEATS { "ftchrgen" } else { "pwrlvlup" }
+        let name = if k == STEP_ATTRIBUTES { "abchrgen" } else if k == STEP_SKILLS { "skchrgen" } else if k == STEP_FEATS { "ftchrgen" } else { "pwrlvlup" }
         s.step = try gui::open{ &g, fs = &w.fs, &dev, name, mode = gui::Mode::full_screen, modal = true }
         s.step_kind = k
         gui::ensure_backdrop{ &g, fs = &w.fs, &dev, kind = 0 }

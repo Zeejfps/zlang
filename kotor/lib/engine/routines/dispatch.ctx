@@ -100,7 +100,7 @@ namespace routines {
     fn log_call { mut w: world::World, vm: *nwvm::Vm, routine: u16, argc: u8, sp: u32, done: bool } {
         let r = nwscript::ROUTINES[@as(usize, routine)]
         world::prefix{ w = &w }
-        let mark: []u8 = if done { "" } else { " (missing)" }
+        let mark = if done { "" } else { " (missing)" }
         if vm.sp == 0 or r.ret == nwscript::Type::void {
             _ = @fmt(&w.io, "routine {}/{}{}\n", r.name, argc, mark)
             return

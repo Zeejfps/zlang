@@ -247,7 +247,7 @@ namespace io {
     }
 
     fn emit_bool { mut io: Io, to: Stream, v: bool } {
-        let s: []u8 = if v { "true" } else { "false" }
+        let s = if v { "true" } else { "false" }
         write{ &io, to, bytes = s }
     }
 

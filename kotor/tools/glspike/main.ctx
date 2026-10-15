@@ -68,7 +68,7 @@ fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, opts
         let mut debug = found
         gl::start_debug{ &gl, &debug, log = &debug_log }
     }
-    let state: []u8 = if found != null { "on" } else { "absent" }
+    let state = if found != null { "on" } else { "absent" }
     _ = @fmt(&io, "KHR_debug: {}\n", state)
 
     let scene = try make_scene{ &gl, log }
@@ -111,7 +111,7 @@ fn describe { mut io: Io, mut gl: gl::Gl, mut sdl: sdl::Sdl } {
     _ = @fmt(&io, "GLSL: {}\n", gl::string{ &gl, name = gl::SHADING_LANGUAGE_VERSION })
     let profile = gl::get_int{ &gl, pname = gl::CONTEXT_PROFILE_MASK }
     let flags = gl::get_int{ &gl, pname = gl::CONTEXT_FLAGS }
-    let kind: []u8 = if (profile & gl::CONTEXT_CORE_PROFILE_BIT) != 0 { "core" } else { "compatibility" }
+    let kind = if (profile & gl::CONTEXT_CORE_PROFILE_BIT) != 0 { "core" } else { "compatibility" }
     _ = @fmt(&io, "context: {}.{}, {} profile, forward-compatible {}, debug {}\n",
         gl::get_int{ &gl, pname = gl::MAJOR_VERSION }, gl::get_int{ &gl, pname = gl::MINOR_VERSION },
         kind,
@@ -574,7 +574,7 @@ fn check_events { mut io: Io, mut sdl: sdl::Sdl, win: sdl::GlWindow } -> ! {
         if not ok { return bad_event{ step } }
         step = step + 1
     }
-    let how: []u8 = if resized { "a resize from SDL" } else { "no resize from SDL (hidden window)" }
+    let how = if resized { "a resize from SDL" } else { "no resize from SDL (hidden window)" }
     _ = @fmt(&io, "events: {}; pushed key, text, button and wheel read back\n", how)
 }
 
@@ -616,13 +616,13 @@ fn show { mut io: Io, mut sdl: sdl::Sdl, mut gl: gl::Gl, win: sdl::GlWindow, sce
                 text{ bytes, len } => { _ = @fmt(&io, "event: text \"{}\"\n", bytes[..len]) }
                 mouse_motion => { motions = motions + 1 }
                 mouse_button{ down, button, clicks, x, y } => {
-                    let how: []u8 = if down { "down" } else { "up" }
+                    let how = if down { "down" } else { "up" }
                     _ = @fmt(&io, "event: mouse button {} {} x{} at {},{}\n", button, how, clicks, x, y)
                 }
                 mouse_wheel{ dx, dy } => { _ = @fmt(&io, "event: wheel {} {}\n", dx, dy) }
                 resized{ width, height } => { _ = @fmt(&io, "event: resized to {}x{}\n", width, height) }
                 focus{ gained } => {
-                    let how: []u8 = if gained { "gained" } else { "lost" }
+                    let how = if gained { "gained" } else { "lost" }
                     _ = @fmt(&io, "event: focus {}\n", how)
                 }
                 minimized => { _ = @fmt(&io, "event: minimized\n") }

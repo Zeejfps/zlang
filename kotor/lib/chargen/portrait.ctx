@@ -4,7 +4,7 @@ namespace chargen {
     // The appearance row a portrait gives for a class: Soldier the large build, Scout the medium,
     // Scoundrel the small.
     fn portrait_appearance { d: *Data, row: i32, class: i32 } -> i32 {
-        let col: []u8 = if class == 0 { "appearance_l" } else if class == 1 { "appearancenumber" } else { "appearance_s" }
+        let col = if class == 0 { "appearance_l" } else if class == 1 { "appearancenumber" } else { "appearance_s" }
         return twoda::get_int{ t = d.portraits.t, row = @as(usize, row), column = col } ifnull 0
     }
 

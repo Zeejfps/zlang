@@ -335,7 +335,7 @@ namespace rt_core {
             n = n + 1
         }
         if exp_bits == 255 {
-            let word: []u8 = if frac == 0 { "inf" } else { "nan" }
+            let word = if frac == 0 { "inf" } else { "nan" }
             n = append{ into = body[..], used = n, s = word }
         } else {
             // f = m * 2^e. Its digits, least significant first, are those of m * 2^e (e >= 0) or
@@ -466,7 +466,7 @@ namespace rt_core {
         let prepend = try nwarg::int{ &vm, routine = r, argc, i = 1 }
         if w.log.scripts {
             world::prefix{ w = &w }
-            let head: []u8 = if prepend != 0 { "PRINTVECTOR:" } else { "" }
+            let head = if prepend != 0 { "PRINTVECTOR:" } else { "" }
             _ = @fmt(&w.io, "print: {}({}, {}, {})\n", head, v.x, v.y, v.z)
         }
     }

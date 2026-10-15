@@ -131,7 +131,7 @@ namespace chargen {
 
     // classes.2da's recommended score of ability `ability` (rules order) for the class.
     fn class_score { d: *Data, class: i32, ability: usize } -> i32 {
-        let col: []u8 = if ability == 0 { "str" } else if ability == 1 { "dex" } else if ability == 2 { "con" }
+        let col = if ability == 0 { "str" } else if ability == 1 { "dex" } else if ability == 2 { "con" }
             else if ability == 3 { "int" } else if ability == 4 { "wis" } else { "cha" }
         return twoda::get_int{ t = d.classes.t, row = @as(usize, class), column = col } ifnull 10
     }

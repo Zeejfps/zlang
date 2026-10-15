@@ -3,7 +3,7 @@
 fn expect { mut io: Io, mut rep: Report, ok: bool, head: []u8, what: []u8, value: f32 } {
     rep.checks = rep.checks + 1
     if not ok { rep.failed = rep.failed + 1 }
-    let tag: []u8 = if ok { "PASS" } else { "FAIL" }
+    let tag = if ok { "PASS" } else { "FAIL" }
     _ = @fmt(&io, "{} {}: {} ({})\n", tag, head, what, fixed{ x = value, places = 5, _ })
 }
 

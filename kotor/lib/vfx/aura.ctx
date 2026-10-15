@@ -117,7 +117,7 @@ namespace vfx {
         // blending keyword is blended by its alpha.
         a.blend = if t.props.blend == render::Blend::opaque { render::Blend::alpha } else { t.props.blend }
         if w.log.trace {
-            let how: []u8 = if hold != 0 { "held" } else { "timed" }
+            let how = if hold != 0 { "held" } else { "timed" }
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "vfx aura {} (code {}, {}x{} at {} fps) on {} {}\n", name, code, a.cols, a.rows, a.fps, object, how)
         }

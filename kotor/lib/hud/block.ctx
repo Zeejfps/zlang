@@ -54,13 +54,13 @@ namespace hud {
         if look == h.look { return }
         h.look = look
         let mut buf: [24]u8
-        let frame: []u8 = if hostile { "lbl_miscroll_h" } else { "lbl_miscroll_f" }
+        let frame = if hostile { "lbl_miscroll_h" } else { "lbl_miscroll_f" }
         let mut k: usize = 0
         while k < 3 {
             gui::set_fill{ &g, fs = &w.fs, &dev, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "BTN_TARGET", n = k }, name = frame }
             k = k + 1
         }
-        let bar: []u8 = if poisoned { "poison_bar" } else if hostile { "enemy_bar" } else { "friend_bar" }
+        let bar = if poisoned { "poison_bar" } else if hostile { "enemy_bar" } else { "friend_bar" }
         gui::set_fill{ &g, fs = &w.fs, &dev, panel = h.panel, tag = "PB_HEALTH", name = bar }
     }
 
@@ -398,7 +398,7 @@ namespace hud {
         if w.hover == w.target and (h.shown_target != w.target or h.lists[0].count == 0) { return }
         let o = world::object{ w = &w, id = w.hover } ifnull { return }
         let b = box_on_screen{ p = h.projector, o } ifnull { return }
-        let name: []u8 = if is_hostile{ w = &w, id = w.hover } { "hostilereticle" } else { "friendlyreticle" }
+        let name = if is_hostile{ w = &w, id = w.hover } { "hostilereticle" } else { "friendlyreticle" }
         let img = gui::resolve_img{ &g, fs = &w.fs, &dev, name }
         if not img.ok { return }
         let at = aim_point{ h = &h, w = &w, o, b }

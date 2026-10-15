@@ -384,7 +384,7 @@ namespace gl {
     // counts the message as dropped when the log is full.
     #c::callback
     fn on_debug_message { severity: u32, length: i32, message: *u8, log: *mut DebugLog } {
-        let prefix: []u8 = if severity == DEBUG_SEVERITY_HIGH { "high: " }
+        let prefix = if severity == DEBUG_SEVERITY_HIGH { "high: " }
             else if severity == DEBUG_SEVERITY_MEDIUM { "medium: " }
             else if severity == DEBUG_SEVERITY_LOW { "low: " } else { "note: " }
         let mut n: usize = 0

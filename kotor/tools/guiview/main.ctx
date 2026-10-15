@@ -203,7 +203,7 @@ fn fake_rows { mut g: gui::Gui, id: u32, spec: []u8 } {
     let mut i: i64 = 0
     while i < n {
         let mut b: [32]u8
-        let t: []u8 = "Row number "
+        let t = "Row number "
         slice::copy(u8){ dst = b[..t.len], src = t }
         b[t.len] = '0' + @trunc(u8, (i / 10) % 10)
         b[t.len + 1] = '0' + @trunc(u8, i % 10)

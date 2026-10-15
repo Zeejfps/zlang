@@ -91,7 +91,7 @@ namespace stealth {
         let at = o.position
         if w.log.actions {
             world::prefix{ w = &w }
-            let what: []u8 = if on { "enters" } else { "leaves" }
+            let what = if on { "enters" } else { "leaves" }
             _ = @fmt(&w.io, "stealth: {} ({}) {} stealth mode\n", o.tag, id, what)
         }
         if on {

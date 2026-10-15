@@ -295,7 +295,7 @@ namespace display {
         d.alt_enter = false
         let s = &d.live
         if not s.allow_windowed {
-            let what: []u8 = if s.window_mode != 0 { "minimised" } else { "nothing (a window)" }
+            let what = if s.window_mode != 0 { "minimised" } else { "nothing (a window)" }
             _ = @fmt(&io, "display: Alt+Enter without AllowWindowedMode: {}\n", what)
             if s.window_mode != 0 { gpu::minimize_window{ &dev, &sdl } }
             return false
@@ -328,7 +328,7 @@ namespace display {
     // One line for the log: what the window and the render are now.
     fn report { d: *Display, mut sdl: sdl::Sdl, mut io: Io } {
         let kind = mode_name{ mode = d.applied.window_mode }
-        let pointer: []u8 = if d.applied.hardware_mouse and not d.hidden { "shown with the game's pictures (EnableHardwareMouse)" } else if sdl::cursor_hidden{ &sdl } { "hidden" } else { "SHOWN" }
+        let pointer = if d.applied.hardware_mouse and not d.hidden { "shown with the game's pictures (EnableHardwareMouse)" } else if sdl::cursor_hidden{ &sdl } { "hidden" } else { "SHOWN" }
         _ = @fmt(&io, "display: {} window {}x{}, drawable {}x{}, rendering {}x{}, desktop {}x{}@{}, {} modes, gui scale {}, OS pointer {}, shown {}x{} at {},{}\n", kind,
             d.window.width, d.window.height, d.drawable.width, d.drawable.height, d.render.width, d.render.height,
             d.desktop.width, d.desktop.height, d.desktop.refresh, d.mode_count, d.applied.gui_scale, pointer,

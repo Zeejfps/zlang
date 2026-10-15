@@ -20,7 +20,7 @@ namespace gui {
     // Row `id`'s page `page` (tutorial.2da MessageN), null past the last.
     fn tutorial_page { t: twoda::Table, id: i32, page: i32 } -> ?u32 {
         if id < 0 or page < 0 or page >= TUT_PAGES { return null }
-        let names: [3][]u8 = ["message0", "message1", "message2"]
+        let names = ["message0", "message1", "message2"]
         let v = twoda::get_int{ t, row = @as(usize, id), column = names[@as(usize, page)] } ifnull { return null }
         return @as(u32, v)
     }

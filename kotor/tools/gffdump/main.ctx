@@ -19,8 +19,8 @@ const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
 
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let mut game: []u8 = DEFAULT_GAME
-    let mut module: []u8 = ""
-    let mut save: []u8 = ""
+    let mut module = ""
+    let mut save = ""
     let mut i: usize = 0
     let mut names: [64][]u8
     let mut n: usize = 0
@@ -160,7 +160,7 @@ fn dump_struct { mut io: Io, doc: gff::Doc, s: u32, depth: u32 } {
             resref{ v } => { _ = @fmt(&io, "CResRef = {}\n", quoted{ b = v, _ }) }
             void{ v } => {
                 let shown: []u8 = if v.len > 32 { v[..32] } else { v }
-                let more: []u8 = if v.len > 32 { "..." } else { "" }
+                let more = if v.len > 32 { "..." } else { "" }
                 _ = @fmt(&io, "VOID = <{} bytes> {}{}\n", v.len, hex_bytes{ b = shown, _ }, more)
             }
             locstring{ v } => {
@@ -203,7 +203,7 @@ fn quoted { mut io: Io, b: []u8 } -> ! {
             else if c == '"' { io::write{ &io, to = io::Stream::out, bytes = "\\\"" } }
             else if c == '\\' { io::write{ &io, to = io::Stream::out, bytes = "\\\\" } }
             else {
-                let digits: []u8 = "0123456789abcdef"
+                let digits = "0123456789abcdef"
                 let esc: [4]u8 = ['\\', 'x', digits[c >> 4], digits[c & 15]]
                 io::write{ &io, to = io::Stream::out, bytes = esc[..] }
             }
@@ -216,7 +216,7 @@ fn quoted { mut io: Io, b: []u8 } -> ! {
 }
 
 fn hex_bytes { mut io: Io, b: []u8 } -> ! {
-    let digits: []u8 = "0123456789abcdef"
+    let digits = "0123456789abcdef"
     let mut i: usize = 0
     while i < b.len {
         let pair: [2]u8 = [digits[b[i] >> 4], digits[b[i] & 15]]
