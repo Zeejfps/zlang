@@ -1824,88 +1824,50 @@ namespace eval {
             return f32_bits{ x = match op { add => { x + y } sub => { x - y } mul => { x * y } div => { x / y } rem => { @as(f32, @as(f64, x) % @as(f64, y)) } } }
         }
         if signed{ p } { return try signed_arith{ &m, op, p, a, b, pos } }
-        let w = bit_width{ p }
-        let hi = max_of{ p }
-        match op {
-            add => {
-                let r = @wrap_add(a, b)
-                if r < a or r > hi {
-                    overflow{ &m, pos }
-                    return halt
-                }
-                return r
-            }
-            sub => {
-                if b > a {
-                    overflow{ &m, pos }
-                    return halt
-                }
-                return a - b
-            }
-            mul => {
-                let r = @wrap_mul(a, b)
-                if (w == 64 and a != 0 and r / a != b) or r > hi {
-                    overflow{ &m, pos }
-                    return halt
-                }
-                return r
-            }
+        // In a u64, as signed_arith in an i64.
+        let r = match op {
+            add => { a + b ifoverflow { return too_big{ &m, pos } } }
+            sub => { a - b ifoverflow { return too_big{ &m, pos } } }
+            mul => { a * b ifoverflow { return too_big{ &m, pos } } }
             div => {
                 try nonzero{ &m, b, pos }
-                return a / b
+                a / b
             }
             rem => {
                 try nonzero{ &m, b, pos }
-                return a % b
+                a % b
             }
         }
+        if r > max_of{ p } { return too_big{ &m, pos } }
+        return r
     }
 
+    // In an i64, whose overflow is p's when p is 64 bits wide. A narrower p's result is exact
+    // there, and must still fit p.
     fn signed_arith { mut m: M, op: ir::ArithOp, p: ir::Prim, a: u64, b: u64, pos: ir::Pos } -> !u64 {
         let x = @trunc(i64, a)
         let y = @trunc(i64, b)
-        let wide = bit_width{ p } == 64
-        let lo = min_of{ p }
-        let hi = @trunc(i64, max_of{ p })
-        let mut r: i64 = 0
-        let mut bad = false
-        match op {
-            add => {
-                r = @wrap_add(x, y)
-                bad = if wide { (x >= 0) == (y >= 0) and (r >= 0) != (x >= 0) } else { r < lo or r > hi }
-            }
-            sub => {
-                r = @wrap_sub(x, y)
-                bad = if wide { (x >= 0) != (y >= 0) and (r >= 0) != (x >= 0) } else { r < lo or r > hi }
-            }
-            mul => {
-                // narrower than 64 bits, the product is exact in an i64
-                r = @wrap_mul(x, y)
-                if wide {
-                    bad = x != 0 and ((x == -1 and y == lo) or (y == -1 and x == lo) or (x != -1 and r / x != y))
-                } else {
-                    bad = r < lo or r > hi
-                }
-            }
+        let r = match op {
+            add => { x + y ifoverflow { return too_big{ &m, pos } } }
+            sub => { x - y ifoverflow { return too_big{ &m, pos } } }
+            mul => { x * y ifoverflow { return too_big{ &m, pos } } }
             div => {
                 try nonzero{ &m, b, pos }
-                if x == lo and y == -1 {
-                    overflow{ &m, pos }
-                    return halt
-                }
-                r = x / y
+                x / y ifoverflow { return too_big{ &m, pos } }
             }
             rem => {
                 try nonzero{ &m, b, pos }
-                if y == -1 { return 0 }
-                r = x % y
+                x % y
             }
         }
-        if bad {
-            overflow{ &m, pos }
-            return halt
-        }
+        if r < min_of{ p } or r > @trunc(i64, max_of{ p }) { return too_big{ &m, pos } }
         return @trunc(u64, r)
+    }
+
+    // An integer operation's result that doesn't fit its type.
+    fn too_big { mut m: M, pos: ir::Pos } -> !u64 {
+        overflow{ &m, pos }
+        return halt
     }
 
     fn nonzero { mut m: M, b: u64, pos: ir::Pos } -> ! {

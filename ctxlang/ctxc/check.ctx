@@ -3732,8 +3732,7 @@ namespace check {
     // a + b, or null if its magnitude is past a u64's.
     fn num_add { a: Num, b: Num } -> ?Num {
         if a.negative == b.negative {
-            let m = @wrap_add(a.magnitude, b.magnitude)
-            if m < a.magnitude { return null }
+            let m = a.magnitude + b.magnitude ifoverflow { return null }
             return Num{ negative = a.negative and m != 0, magnitude = m }
         }
         if a.magnitude >= b.magnitude {
@@ -3743,9 +3742,9 @@ namespace check {
         return Num{ negative = b.negative, magnitude = b.magnitude - a.magnitude }
     }
 
+    // a * b, or null as num_add.
     fn num_mul { a: Num, b: Num } -> ?Num {
-        if a.magnitude != 0 and b.magnitude > 18446744073709551615 / a.magnitude { return null }
-        let m = a.magnitude * b.magnitude
+        let m = a.magnitude * b.magnitude ifoverflow { return null }
         return Num{ negative = a.negative != b.negative and m != 0, magnitude = m }
     }
 
