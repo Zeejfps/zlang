@@ -261,7 +261,7 @@ namespace eval {
         let mut file = m.name
         let mut line: u32 = 0
         let mut col: u32 = 0
-        if pos is some{ value = p } {
+        if let p = pos {
             if p.file < m.p.files.len and m.p.files[p.file].len > 0 { file = m.p.files[p.file] }
             line = p.line
             col = p.col

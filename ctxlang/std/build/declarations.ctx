@@ -329,7 +329,7 @@ namespace build {
                     d.name = name.text
                     d.generics = try names{ &w, xs = tparams }
                     d.fields = try context{ &w, xs = params }
-                    if ret is some{ value } { d.result = try type_text{ &w, t = value } }
+                    if let value = ret { d.result = try type_text{ &w, t = value } }
                 }
                 record{ name, tparams, fields, untagged } => {
                     d.kind = if untagged { Kind::extern_union } else { Kind::structure }
@@ -360,7 +360,7 @@ namespace build {
                     while k < variants.len {
                         let v = variants[k]
                         let mut value = ""
-                        if v.value is some{ value = e } { value = try squeeze{ &w, span = e.span } }
+                        if let e = v.value { value = try squeeze{ &w, span = e.span } }
                         out[k] = Variant{ name = v.name.text, fields = slice::empty(Field){}, payload = false, value }
                         k = k + 1
                     }
@@ -381,12 +381,12 @@ namespace build {
                 cap{ name, fields } => {
                     d.kind = Kind::capability_type
                     d.name = name.text
-                    if fields is some{ value } { d.fields = try field_list{ &w, xs = value } }
+                    if let value = fields { d.fields = try field_list{ &w, xs = value } }
                 }
                 fault{ name, fields } => {
                     d.kind = Kind::error
                     d.name = name.text
-                    if fields is some{ value } { d.fields = try field_list{ &w, xs = value } }
+                    if let value = fields { d.fields = try field_list{ &w, xs = value } }
                 }
                 else => { return }
             }
@@ -531,7 +531,7 @@ namespace build {
             while i < segs.len {
                 if i > 0 { try put{ &out, s = "::" } }
                 try put{ &out, s = segs[i].name.text }
-                if segs[i].targs is some{ value = targs } {
+                if let targs = segs[i].targs {
                     try put{ &out, s = "(" }
                     let mut k: usize = 0
                     while k < targs.len {

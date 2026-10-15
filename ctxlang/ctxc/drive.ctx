@@ -717,7 +717,7 @@ namespace drive {
                 sum{ variants } => {
                     let mut j: usize = 0
                     while j < variants.len and on_field == null {
-                        if variants[j].fields is some{ value } { on_field = find_field_sources{ fields = value } }
+                        if let value = variants[j].fields { on_field = find_field_sources{ fields = value } }
                         j = j + 1
                     }
                 }
@@ -730,7 +730,7 @@ namespace drive {
                 }
                 else => {}
             }
-            if on_field is some{ value } {
+            if let value = on_field {
                 report_at{ &io, &heap, path, text, at = value, msg = misplaced }
                 return false
             }

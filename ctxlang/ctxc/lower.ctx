@@ -68,7 +68,7 @@ namespace lower {
         let h = check::panic_fn{ c }
         let panic = if h == NONE { NONE } else { fn_id{ &l, decl = h, targs = no_ids{} } }
         let v = check::stack_limit{ c }
-        let limit = if v is some{ value } { static_of{ &l, v = value } } else { NONE }
+        let limit = if let value = v { static_of{ &l, v = value } } else { NONE }
         let p = finish{ &l, main, start, panic, stack_limit = limit, adapters = true }
         if l.failed { @panic("lower: a const or literal without a value") }
         return p
@@ -233,7 +233,7 @@ namespace lower {
             while i < s.params.len {
                 let q = s.params[i]
                 if slice::eq_bytes{ a = q.name, b = "main" } and not cap_type{ l, t = q.ty } {
-                    if value is some{ value = v } { try! list::push{ list = &given, item = Given{ name = q.name, value = v } } }
+                    if let v = value { try! list::push{ list = &given, item = Given{ name = q.name, value = v } } }
                 } else if not cap_type{ l, t = q.ty } {
                     let slot = @as(u32, a.locals.len)
                     try! list::push{ list = &params, item = q }
