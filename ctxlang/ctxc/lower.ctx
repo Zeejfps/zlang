@@ -2188,6 +2188,19 @@ namespace lower {
                 let ty = tid{ &l, t }
                 return mk{ ty, k = ir::ExprKind::lnot{ e = box{ l, e = ex{ &l, e = x.* } } } }
             }
+            bnot{ e = x } => {
+                // ~x is x ^ all ones: -1 if signed, 2^N - 1 if unsigned.
+                let ty = tid{ &l, t }
+                let p = types::prim_of{ s = l.c.ty, t } ifnull { @panic("lower: ~ of a non-integer") }
+                let w = types::bits{ p }
+                let ones = if types::signed{ p } {
+                    ir::ExprKind::int{ negative = true, value = 1 }
+                } else {
+                    ir::ExprKind::int{ negative = false, value = 18446744073709551615 >> (64 - w) }
+                }
+                let v = ex{ &l, e = x.* }
+                return mk{ ty, k = ir::ExprKind::bits{ op = ir::BitOp::bit_xor, a = box{ l, e = v }, b = box{ l, e = mk{ ty, k = ones } } } }
+            }
             binary{ op, a, b } => { return binary{ &l, e, op, a = a.*, b = b.*, t } }
             braced{ callee, items, bind } => { return braced{ &l, e, callee = callee.*, items, bind, t } }
             array | repeat => {

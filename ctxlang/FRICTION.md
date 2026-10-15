@@ -10,7 +10,7 @@ KOTOR port's, by subsystem: **ctxc**, **glspike** (the platform and GL spike), *
 routines, scene, saves), **data** (resources and formats), **audio**, **dialog**, **gui**, **hud**
 (HUD and in-game menus), **chargen**, **minigames**, **models**, **render**, **rules**,
 **screens**, **script** (NCS and the VM), **video** (Bink) and **walk** (walkmeshes). Counts are
-as the write-ups gave them. Ranking by count understates #27: it is the one entry that gives a
+as the write-ups gave them. Ranking by count understates #26: it is the one entry that gives a
 wrong answer instead of a compile error.
 
 Checked against ctxc at `2076e06`. Fixed since the write-ups and so not listed: integer `match`;
@@ -139,90 +139,87 @@ IDCT and for hot code that needs no check, such as the VM's indices; ctxc (`c720
     that convert as literals do, would remove most. *Hit by 4:* glspike (11), rules (about 150,
     and about 60 bools), walk (84), video.
 
-10. **No bitwise not.** Clearing a flag is `f & (4294967295 ^ bits)` or `x & 0xFFFFFFFE`; `~`
-    would say it. *Hit by 4:* gui (8), rules (4), screens (3), video.
-
-11. **`iferr` and `ifnull` don't chain, and bind tighter than comparison.** A `!?T` wants `f{}
+10. **`iferr` and `ifnull` don't chain, and bind tighter than comparison.** A `!?T` wants `f{}
     iferr { return } ifnull { return }`, which is "expected a newline or ';' after statement,
     found 'ifnull'", so it is two statements; with parentheses it groups right to left. `x ==
     f{} ifnull y` is `x == (f{} ifnull y)`. *Hit by 4:* engine, data (3), dialog (9), gui (2).
 
-12. **A condition continued on the next line must break after the operator.** `if a\n or b {`
+11. **A condition continued on the next line must break after the operator.** `if a\n or b {`
     is a parse error, since a call's `}` ending a line starts the block, and the error points at
     the wrong place. *Hit by 3:* data (1), rules (2), script (1).
 
-13. **Enums only compare for equality, and their count isn't a constant.** Sorting by an enum is
+12. **Enums only compare for equality, and their count isn't a constant.** Sorting by an enum is
     `@as(u8, a.class) >= @as(u8, b.class)`; `@as(usize, Class::last) + 1` isn't folded, so a
     tally array's length is a hand-kept `const CLASS_COUNT: usize = 56`, checked against the enum
     at run time. `@as(Kind, n)` lowers to one compare per variant, which the C backend emits as a
     chain (62 for `tok::Kind`; the lexer now indexes const tables instead); a contiguous enum
     could be one range check. *Hit by 3:* ctxc, data (1), walk (1).
 
-14. **Small syntax.** A bare `{ ... }` block isn't a statement, so each section became a fn;
+13. **Small syntax.** A bare `{ ... }` block isn't a statement, so each section became a fn;
     `defer if c { ... }` is a parse error, so it is `defer { if c { ... } }`; a match arm that is
     one expression needs braces (`a => { "A" }`); `try f{}.x` parses as `try (f{}.x)`, against
     the spec's own example. *Hit by 3:* dialog (2), minigames (1), render (2).
 
-15. **Some errors don't point at the cause.** A build.ctx missing one source directory gives
+14. **Some errors don't point at the cause.** A build.ctx missing one source directory gives
     "unknown type or namespace mg" at every use (thirty errors) instead of one saying no file
     declares `namespace mg`; a file in the middle of a merge gives nine syntax errors at `<<`
     with no hint of a conflict; finding that a `mut heap: Heap` field takes `&heap.*` from a
     `*mut Heap` took three tries. *Hit by 3:* engine, hud, chargen.
 
-16. **A `&fn` can't be a struct field, and bind records are never freed.** The VM's engine bind
+15. **A `&fn` can't be a struct field, and bind records are never freed.** The VM's engine bind
     travels as its own context field beside `mut w` and `mut vm` (about 15 engine fns, 6 in
     ncsrun); ExecuteScript binds a new engine per call and leaks its record, and the scene binds
     `mdl_cache::get` once per (model, animation). *Hit by 2:* engine, script.
 
-17. **Changing a shared fn's signature breaks callers nobody on the task owns.** No default
+16. **Changing a shared fn's signature breaks callers nobody on the task owns.** No default
     arguments, so a helper that gains an input edits every call site, in other owners' files; no
     visibility, so callers show up only as build errors; a fn that starts returning a pointer into
     `w` needs `mut w`, which spreads to every caller up to the routine. *Hit by 2:* engine (2),
     hud.
 
-18. **`is` is a keyword,** so `let is = gff::get_struct{ ... }` and `fn is{ a, b }` are "expected a
+17. **`is` is a keyword,** so `let is = gff::get_struct{ ... }` and `fn is{ a, b }` are "expected a
     name, found 'is'", far from the cause. *Hit by 2:* gui (1), render (1).
 
-19. **Hex literals aren't in the spec.** The lexer takes `0xFFFFFFFF`, `0b` and `_` separators,
+18. **Hex literals aren't in the spec.** The lexer takes `0xFFFFFFFF`, `0b` and `_` separators,
     but §11 Literals shows only decimal, so drafts wrote `4294967295`. *Hit by 2:* glspike, walk.
 
-20. **Float-to-integer conversion can only check.** `@as(i32, f)` is inline (`823c678f`; it was an
+19. **Float-to-integer conversion can only check.** `@as(i32, f)` is inline (`823c678f`; it was an
     out-of-line call that took about 20% of the audio decoder) but still two compares (an `f32`
     widened to double first), and no integer conversion rounds or clamps instead, so the Bink audio
     clamps by hand and rounds by adding 1.5 * 2^52 and reading the bits. A conversion that rounds
     or clamps, never panicking, would say it. *Hit by 2:* audio, video.
 
-21. **No methods** (§16 Q4). `list::push{ list = &xs, item }` everywhere: ctxc makes about 580
+20. **No methods** (§16 Q4). `list::push{ list = &xs, item }` everywhere: ctxc makes about 580
     `list::` and `map::` calls and 150 `slice::` ones. `xs.push{ item }` would shrink code a lot.
     *Partly:* slices are built in (spec §12), so `slice::get{ s = xs, i }` is `xs[i]`. *Hit by 1:*
     ctxc (about 730).
 
-22. **A GL function is written three times:** a capability field with its C type, then `name =
+21. **A GL function is written three times:** a capability field with its C type, then `name =
     @cast(_, try proc{ get_proc, name = "glName" })` in the loader, the C name the field's in
     another case. An attribute on the field (`#c::symbol{ name = "glClear" }`; fields carry
     attributes since `304f48d`) and a generator over `build::declarations` would make a binding
     one line per function. *Hit by 1:* glspike (132 loader lines).
 
-23. **No `for` loop.** Every loop over a block is `let mut i: usize = 0; while i < 8 { ...; i = i
+22. **No `for` loop.** Every loop over a block is `let mut i: usize = 0; while i < 8 { ...; i = i
     + 1 }`: three lines of bookkeeping, and a class of forgotten increments. *Hit by 1:* video
     (about 70 in bink_video.ctx).
 
-24. **A diagnostic takes three lines** in ctxc. *Mostly solved:* `@fmt` without a sink is a writer
+23. **A diagnostic takes three lines** in ctxc. *Mostly solved:* `@fmt` without a sink is a writer
     (spec §13), so 163 of 197 sites are one line (`errorf{ &c, at, msg = @fmt("...", args) }`).
     About 50 keep a builder: reports through `flow_error` and `escape_error`, which take a
     `utf8::String`, and messages built from more than one `@fmt` or with a loop between. *Hit by
     1:* ctxc (about 50).
 
-25. **An inferred slice type is too mutable.** `let mut bs = list::items{ list = xs }` gives `bs`
+24. **An inferred slice type is too mutable.** `let mut bs = list::items{ list = xs }` gives `bs`
     `[]mut T`, so a later `bs = f{}` with a `[]T` result is an error; the same for
     `slice::empty(T){}`. Inferring the type from every assignment, as literals are, would fix it.
     *Hit by 1:* ctxc (about 30).
 
-26. **No scoped lock.** Every public fn of the mixer starts with `mutex::lock{ mutex = &m.lock }`
+25. **No scoped lock.** Every public fn of the mixer starts with `mutex::lock{ mutex = &m.lock }`
     and `defer mutex::unlock{ mutex = &m.lock }`, naming the lock twice. A block form (`with`-like)
     would do without destructors. *Hit by 1:* audio (21 pairs, kotor/lib/audio/mix.ctx).
 
-27. **A read-only argument can be copied before a later argument changes it.** Arguments are
+26. **A read-only argument can be copied before a later argument changes it.** Arguments are
     evaluated in order, so `types::prune{ s = c.ty, t = expr{ &c, e } }` copies the type store,
     then `expr` adds a type to the real one, and `prune` indexes the stale copy out of bounds.
     §3.1 checks overlap between one call's arguments only, not a `&c` inside a nested call. The
@@ -231,56 +228,56 @@ IDCT and for hot code that needs no check, such as the VM's indices; ctxc (`c720
     would have caught eight such calls. *Hit by 1:* ctxc (8). The only entry that gives a wrong
     answer.
 
-28. **Float-to-float `@as` reads as fallible, and the spec says it is.** §13 says `@as` "panics if
+27. **Float-to-float `@as` reads as fallible, and the spec says it is.** §13 says `@as` "panics if
     the value isn't representable in T", but `@as(f32, 1e300)` gives `inf`. A spec fix: say float
     to float rounds (and overflows to infinity), or give it a separate conversion. *Hit by 1:*
     ctxc (5).
 
-29. **A `mut` argument can't be a temporary.** `f{ x = g{} }` for a `mut x` has no place to point
+28. **A `mut` argument can't be a temporary.** `f{ x = g{} }` for a `mut x` has no place to point
     to, so it is `let mut tmp = g{}` first. *Hit by 1:* rules (4).
 
-30. **Locking a structure needs `mut`.** A query that only reads a shared structure
+29. **Locking a structure needs `mut`.** A query that only reads a shared structure
     (`mix::is_playing`, `played`, `feed_room`) must lock its mutex, which takes `mut mutex`, so it
     takes `mut m: Mixer` and its signature no longer says it changes nothing. A read-only `*T`
     that may still lock its mutex field would say it. *Hit by 1:* audio (4 fns).
 
-31. **No tuples.** `let (a, b) = if two { (x, y) } else { (z, w) }` is two `let`s on the same
+30. **No tuples.** `let (a, b) = if two { (x, y) } else { (z, w) }` is two `let`s on the same
     condition, and an `(item, index)` result a small struct with every field named (`ItemSpell`,
     `Pick`, `Swap`). *Hit by 1:* engine (2 entries).
 
-32. **No structural equality or hashing.** Interning types in a map keyed by a union took a
+31. **No structural equality or hashing.** Interning types in a map keyed by a union took a
     hand-written `hash` and `eq` (`types.ctx`, about 90 lines), `eq` a match inside a match per
     variant; `p == q` on a struct is "P has no built-in equality". Derived `==` for structs and
     unions without pointers, a builtin `@hash`, or PLAN.md 3.2's reflection deriving them in a
     build program would remove it. *Hit by 1:* ctxc.
 
-33. **A `mut` struct field is a pointer, and the C is built with `-fno-strict-aliasing`,** so gcc
+32. **A `mut` struct field is a pointer, and the C is built with `-fno-strict-aliasing`,** so gcc
     reloads the bit reader's fields after every store through any pointer: about 10% of the Bink
     audio decoder, worked around with a local copy (`let mut rd = r`, `defer r = rd`).
     Restrict-qualifying `mut` context fields (§3.1 already forbids two overlapping ones) would let
     gcc keep them in registers. *Hit by 1:* video.
 
-34. **A pattern can't bind a mutable local.** *Mostly solved:* `ifnull` unwraps into any `let`,
+33. **A pattern can't bind a mutable local.** *Mostly solved:* `ifnull` unwraps into any `let`,
     including `let mut`. A pattern's own bindings are still read-only (`let some{ value = mut g }
     = ...` is a syntax error), and PLAN.md 1.1 would take the rest. *Hit by 1:* ctxc.
 
-35. **No pointer from an integer.** GL takes buffer offsets as `const void *`; the binding
+34. **No pointer from an integer.** GL takes buffer offsets as `const void *`; the binding
     declares them `offset: usize`, which works only because 64-bit ABIs pass the two alike.
     *Hit by 1:* glspike.
 
-36. **A typed function value can't be cast.** A thread's start record holds `fn{ data: *mut T }`
+35. **A typed function value can't be cast.** A thread's start record holds `fn{ data: *mut T }`
     for any `T`, read through `@cast(*fn{ data: *mut u8 }, &run).*`, since `@cast` takes pointers
     only. Every `fn` value is one pointer, which a cast of `fn` values whose fields differ only in
     pointer types could say outright. *Hit by 1:* ctxc (std/thread.ctx).
 
-37. **`null` can't name a variant,** so `types::Type`'s is `nil`. Cosmetic. *Hit by 1:* ctxc.
+36. **`null` can't name a variant,** so `types::Type`'s is `nil`. Cosmetic. *Hit by 1:* ctxc.
 
-38. **The mutex isn't fair, and std doesn't say so.** Windows' slim locks let a thread that
+37. **The mutex isn't fair, and std doesn't say so.** Windows' slim locks let a thread that
     unlocks and locks again keep the lock: mixtest let the other thread in 97 times in 3,000
     blocks, and about 1,000 once it yielded between blocks. Worth a line in std's `mutex` comment.
     *Hit by 1:* audio.
 
-39. **An array length or enum value can't use every folded const.** §14 says they can use any
+38. **An array length or enum value can't use every folded const.** §14 says they can use any
     folded const, but ctxc's early folder for them (`const_int`, check.ctx) works in untyped i64
     and knows only literals, consts, unary `-` and the plain binary operators. So `const N: usize =
     @size_of(u32)` or `const N: u8 = 255 +% 2`, both folded, is "an array length must be a

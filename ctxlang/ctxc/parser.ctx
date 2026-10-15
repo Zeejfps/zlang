@@ -1140,6 +1140,11 @@ namespace parser {
             let e = box{ &p, value = prefix{ &p } }
             return expr_from{ &p, start, k = syntax::ExprKind::lnot{ e } }
         }
+        if k == tok::Kind::tilde {
+            skip{ &p }
+            let e = box{ &p, value = prefix{ &p } }
+            return expr_from{ &p, start, k = syntax::ExprKind::bnot{ e } }
+        }
         if k == tok::Kind::kw_try {
             skip{ &p }
             let panics = accept{ &p, k = tok::Kind::bang }       // `try!`: `!` never starts an expression

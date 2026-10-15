@@ -518,6 +518,7 @@ namespace recover {
             }
             neg{ e = x } => { expr{ &c, e = x.*, lo = a, hi = b } }
             lnot{ e = x } => { expr{ &c, e = x.*, lo = a, hi = b } }
+            bnot{ e = x } => { expr{ &c, e = x.*, lo = a, hi = b } }
             addr{ e = x } => { expr{ &c, e = x.*, lo = a, hi = b } }
             binary{ a = x, b = y } => {
                 expr{ &c, e = x.*, lo = a, hi = b }

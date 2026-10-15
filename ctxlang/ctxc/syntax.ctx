@@ -153,6 +153,7 @@ namespace syntax {
         braced{ callee: *Expr, items: []Item, forward: bool, bind: bool },  // at the `{`
         neg{ e: *Expr },
         lnot{ e: *Expr },
+        bnot{ e: *Expr },                               // ~e
         addr{ e: *Expr },
         binary{ op: tok::Kind, a: *Expr, b: *Expr },    // at the operator; `and`, `or` too
         array{ elems: []Expr },

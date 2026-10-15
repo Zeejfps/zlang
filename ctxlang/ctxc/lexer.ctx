@@ -31,6 +31,7 @@ namespace tok {
         lt, gt, plus, minus, star, slash, percent, amp, pipe, caret, question,
         hash,                       // # before an attribute
         bang,                       // ! before a result type
+        tilde,                      // ~
     }
 
     const KEYWORDS: [_][]u8 = [
@@ -44,7 +45,7 @@ namespace tok {
     const OPS: [_][]u8 = [
         "->", "=>", "::", "..", "==", "!=", "<=", ">=", "<<", ">>", "+%", "-%", "*%",
         "{", "}", "(", ")", "[", "]", ",", ";", ":", ".", "=", "<", ">",
-        "+", "-", "*", "/", "%", "&", "|", "^", "?", "#", "!",
+        "+", "-", "*", "/", "%", "&", "|", "^", "?", "#", "!", "~",
     ]
 
     struct Token {
@@ -68,7 +69,7 @@ namespace tok {
     fn op { i: usize } -> Kind { return OP_KINDS[i] }
 
     const KEYWORD_KINDS: [30]Kind = keyword_kinds{}
-    const OP_KINDS: [37]Kind = op_kinds{}
+    const OP_KINDS: [38]Kind = op_kinds{}
 
     fn keyword_kinds {} -> [30]Kind {
         let mut out: [30]Kind = [Kind::eof; 30]
@@ -80,8 +81,8 @@ namespace tok {
         return out
     }
 
-    fn op_kinds {} -> [37]Kind {
-        let mut out: [37]Kind = [Kind::eof; 37]
+    fn op_kinds {} -> [38]Kind {
+        let mut out: [38]Kind = [Kind::eof; 38]
         let mut i: usize = 0
         while i < out.len {
             out[i] = @as(Kind, @as(usize, Kind::arrow) + i)

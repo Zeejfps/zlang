@@ -56,6 +56,7 @@ function: can't be stored in a struct or returned), `extern fn{C} -> R` (C funct
 
 - Integer `+ - *` panic on overflow; use `+%`, `-%`, `*%` for hashes and CRCs. Shifts never
   overflow. `/` by zero panics.
+- `~x` flips an integer's bits: `flags & ~F_VISIBLE` clears a flag.
 - `e ifoverflow x` gives x where the arithmetic and `@as` written in e overflow, for counts from a
   file: `count * 16 ifoverflow { return truncated }`. A call's arguments in e aren't covered.
 - No implicit int→float or signed↔unsigned: `@as(f32, n)` (checked), `@trunc(u8, n)` (low

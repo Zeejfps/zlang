@@ -762,6 +762,10 @@ namespace tree {
                 line{ &d, at, s = "not" }
                 sub{ &d, e = x.* }
             }
+            bnot{ e = x } => {
+                line{ &d, at, s = "bnot" }
+                sub{ &d, e = x.* }
+            }
             addr{ e = x } => {
                 line{ &d, at, s = "addr" }
                 sub{ &d, e = x.* }
@@ -1362,6 +1366,10 @@ namespace decls {
             }
             lnot{ e = x } => {
                 head = "not"
+                one = x.*
+            }
+            bnot{ e = x } => {
+                head = "bnot"
                 one = x.*
             }
             trye{ e = x, panics } => {

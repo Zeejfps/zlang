@@ -455,7 +455,7 @@ Precedence, tightest first:
 | Level | Operators | Notes |
 |---|---|---|
 | postfix | `.f` `.*` `[i]` `[lo..hi]` `{ ... }` `::x` `(G)` | left to right |
-| prefix | `&` `-` `not` `try` | `try`: §8, Errors; `not e is P` is `not (e is P)` |
+| prefix | `&` `-` `~` `not` `try` | `try`: §8, Errors; `not e is P` is `not (e is P)` |
 | multiplicative | `*` `/` `%` `*%` | left to right |
 | additive | `+` `-` `+%` `-%` | left to right |
 | shift | `<<` `>>` | left to right |
@@ -469,7 +469,7 @@ Precedence, tightest first:
 
 1. Arithmetic and comparison apply to two operands of the same numeric type, after widening (below). If the operand types differ, the one that widens to the other is converted. If neither widens to the other, it is an error. Use `@as` or `@trunc` (§13).
 2. Integer `+ - *` panic on overflow, unless an `ifoverflow` covers them (Overflow, below). `/` and `%` panic on a zero divisor. `+%`, `-%` and `*%` are the same arithmetic modulo 2^N, for an N-bit type: they wrap instead of overflowing, as a hash, a random number generator or a format's C does (`state *% 214013 +% 2531011`), and cost no check where nothing can overflow. They apply to two operands of the same integer type, after widening as in rule 1.
-3. `&`, `|` and `^` apply to two operands of the same integer type, after widening as in rule 1. They act on the two's complement bits and never panic.
+3. `&`, `|` and `^` apply to two operands of the same integer type, after widening as in rule 1, and `~` to one integer, whose bits it flips: `flags & ~SELECTED` clears a flag. They act on the two's complement bits and never panic.
 4. `a << n` and `a >> n` shift integer `a` by `n` bits. The result has `a`'s type. `n` may have any integer type and doesn't widen to or from `a`'s. A count below 0, or at or above `a`'s width in bits, panics. `<<` drops the bits shifted out, so it never overflows: `x << 1` wraps where `x * 2` panics. `>>` is arithmetic for signed types (it copies the sign bit) and logical for unsigned ones.
 5. `==` and `!=` work on numbers, `bool`, pointers (by address) and two values of one enum (§12, Enums), and on `?T` against `null`. A `?T`, for a `T` of those types, also compares with a `T` or another such optional: a null equals only a null, and two values compare as their `T`s do, after widening as in rule 1. So `x == 3` is false and `x != 3` true where `x` is null. Each operand is evaluated once, left to right. `x == v` narrows `x` (§8, Optional, rule 4). Other types have no built-in equality: a `??T` compares only with `null`.
 6. `and`, `or` and `not` take and give `bool`. Conditions must be `bool`.
@@ -484,7 +484,7 @@ let n = @as(u32, len) ifoverflow 0
 let total = a * b + c ifoverflow 0                  // covers the * and the +
 ```
 
-1. `e` covers its own operation if it is an integer `+`, `-` or `*`, a signed integer `/`, a unary `-` of an integer, or an `@as` to an integer type; and if it is one of these or another integer operator (an unsigned `/`, `%`, `&`, `|`, `^`, `<<`, `>>`, `+%`, `-%`, `*%`), what its operands cover, in turn. Nothing else is covered: not a call's arguments, an index, a comparison's operands, nor what a nested `ifoverflow` covers, which is its own. Parentheses change nothing.
+1. `e` covers its own operation if it is an integer `+`, `-` or `*`, a signed integer `/`, a unary `-` of an integer, or an `@as` to an integer type; and if it is one of these or another integer operator (an unsigned `/`, `%`, `&`, `|`, `^`, `~`, `<<`, `>>`, `+%`, `-%`, `*%`), what its operands cover, in turn. Nothing else is covered: not a call's arguments, an index, a comparison's operands, nor what a nested `ifoverflow` covers, which is its own. Parentheses change nothing.
 2. An operation overflows when its result isn't a value of its type: `+`, `-`, `*` and unary `-` past the type's range, `/` of the type's minimum by -1, and an `@as` whose value isn't representable in the type (a float's after rounding toward zero; NaN and the infinities never are). A covered operation that overflows doesn't panic. A zero divisor, a shift count out of range, and an operation nothing covers still panic. `%` never overflows: `MIN % -1` is 0.
 3. `e` is evaluated as it is without `ifoverflow`, left to right, up to the operation that overflows. What it evaluated stays done, and the rest of it isn't evaluated: in `f{} * g{} + h{} ifoverflow 0`, if the `*` overflows, `f` and `g` have run and `h` doesn't.
 4. It is an error if `e` covers nothing, as in `x ifoverflow 0`, or `a * b < n ifoverflow false`, which is `a * b < (n ifoverflow false)` (above).

@@ -822,6 +822,85 @@ fn main {} {
 """, 'nothing before `ifoverflow` can overflow')
 
 
+class BitwiseNot(Base):
+    """§11 Expressions, rule 3: `~`, an integer's bits flipped."""
+
+    def test_flips_bits(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let a: u8 = 5
+    let b: i32 = 5
+    let z: u64 = 0
+    let m: i64 = -1
+    _ = @fmt(&io, "{} {} {} {} {}\\n", ~a, ~b, ~z, ~m, ~~a)
+}
+""", '250 -6 18446744073709551615 0 5\n')
+
+    def test_clears_a_flag(self):
+        self.assertOutput("""
+const SELECTED: u32 = 4
+fn main { mut io: Io } {
+    let mut f: u32 = 7
+    f = f & ~SELECTED
+    let g: u16 = 65535
+    _ = @fmt(&io, "{} {}\\n", f, g & ~1)
+}
+""", '3 65534\n')
+
+    def test_precedence(self):
+        # A prefix operator, as `-` is: `~x + 1` is `(~x) + 1`, which is -x.
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let x: i32 = 9
+    _ = @fmt(&io, "{} {} {}\\n", ~x + 1, -~x, ~(x + 1))
+}
+""", '-9 10 -11\n')
+
+    def test_constants_fold(self):
+        # Folded while compiling (§14), at the type's width.
+        self.assertOutput("""
+const MASK: u32 = ~1
+const LOW: i8 = ~127
+const ALL: u16 = ~0
+const SHIFTED: u8 = ~(1 << 7)
+fn main { mut io: Io } { _ = @fmt(&io, "{} {} {} {}\\n", MASK, LOW, ALL, SHIFTED) }
+""", '4294967294 -128 65535 127\n')
+
+    def test_array_length(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let a: [~-4]u8 = [0; 3]
+    _ = @fmt(&io, "{}\\n", a.len)
+}
+""", '3\n')
+
+    def test_integers_only(self):
+        for e, msg in [('~f', 'unary `~` needs an integer, got f64'), ('~true', 'unary `~` needs an integer, got bool')]:
+            with self.subTest(e=e):
+                self.assertCompileError("""
+fn main {} {
+    let f: f64 = 1.5
+    _ = %s
+}
+""" % e, msg)
+
+    def test_with_ifoverflow(self):
+        # `~` never overflows, but ifoverflow covers what its operand covers.
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let a: u8 = 0
+    let b: u8 = 200
+    _ = @fmt(&io, "{} {}\\n", ~a * 2 ifoverflow 7, ~(b * 2) ifoverflow 9)
+}
+""", '7 9\n')
+        self.assertCompileError("""
+fn main {} {
+    let a: u8 = 250
+    _ = ~a ifoverflow 0
+}
+""", 'nothing before `ifoverflow` can overflow')
+
+
 class Lexer(Base):
     def assertLexError(self, src, msg, line, col):
         with self.assertRaises(CompileError) as cm:
