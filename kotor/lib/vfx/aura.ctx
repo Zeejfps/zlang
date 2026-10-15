@@ -29,7 +29,7 @@ namespace vfx {
     const AURA_MESHES: usize = 48
 
     // The textures of the codes 1401 to 1426, in order. The original's switch has no 13.
-    const AURA_TEXTURES: [26][]u8 = [
+    const AURA_TEXTURES: [_][]u8 = [
         "fx_tex_01", "fx_tex_02", "fx_tex_03", "fx_tex_04", "fx_tex_05", "fx_tex_06", "fx_tex_07", "fx_tex_08",
         "fx_tex_09", "fx_tex_10", "fx_tex_11", "fx_tex_12", "fx_tex_14", "fx_tex_15", "fx_tex_16", "fx_tex_17",
         "fx_tex_18", "fx_tex_19", "fx_tex_20", "fx_tex_21", "fx_tex_22", "fx_tex_23", "fx_tex_24", "fx_tex_25",

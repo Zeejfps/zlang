@@ -163,7 +163,7 @@ namespace save {
     }
 
     // The files a save folder holds, as save_game writes them; Screen.tga only with a picture.
-    const SAVE_FILES: [5][]u8 = ["SAVEGAME.sav", "GLOBALVARS.res", "PARTYTABLE.res", "savenfo.res", "Screen.tga"]
+    const SAVE_FILES: [_][]u8 = ["SAVEGAME.sav", "GLOBALVARS.res", "PARTYTABLE.res", "savenfo.res", "Screen.tga"]
 
     // Where save file `name` is written before it takes its name: beside it, `.new` added.
     fn staged_in { mut w: world::World, folder: []u8, name: []u8 } -> ![]mut u8 {

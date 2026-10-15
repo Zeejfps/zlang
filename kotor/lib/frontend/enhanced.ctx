@@ -8,23 +8,23 @@ namespace frontend {
 
     const FX_ROWS: usize = 15
 
-    const FX_TAGS: [15][]u8 = [
+    const FX_TAGS: [_][]u8 = [
         "BTN_FX0", "BTN_FX1", "BTN_FX2", "BTN_FX3", "BTN_FX4", "BTN_FX5", "BTN_FX6", "BTN_FX7",
         "BTN_FX8", "BTN_FX9", "BTN_FX10", "BTN_FX11", "BTN_FX12", "BTN_FX13", "BTN_FX14",
     ]
-    const FX_LEFT: [15][]u8 = [
+    const FX_LEFT: [_][]u8 = [
         "BTN_FX0LEFT", "BTN_FX1LEFT", "BTN_FX2LEFT", "BTN_FX3LEFT", "BTN_FX4LEFT", "BTN_FX5LEFT", "BTN_FX6LEFT", "BTN_FX7LEFT",
         "BTN_FX8LEFT", "BTN_FX9LEFT", "BTN_FX10LEFT", "BTN_FX11LEFT", "BTN_FX12LEFT", "BTN_FX13LEFT", "BTN_FX14LEFT",
     ]
-    const FX_RIGHT: [15][]u8 = [
+    const FX_RIGHT: [_][]u8 = [
         "BTN_FX0RIGHT", "BTN_FX1RIGHT", "BTN_FX2RIGHT", "BTN_FX3RIGHT", "BTN_FX4RIGHT", "BTN_FX5RIGHT", "BTN_FX6RIGHT", "BTN_FX7RIGHT",
         "BTN_FX8RIGHT", "BTN_FX9RIGHT", "BTN_FX10RIGHT", "BTN_FX11RIGHT", "BTN_FX12RIGHT", "BTN_FX13RIGHT", "BTN_FX14RIGHT",
     ]
-    const FX_LABELS: [15][]u8 = [
+    const FX_LABELS: [_][]u8 = [
         "Original Look", "Bloom", "Room Light", "Shadows", "Occlusion", "Lightmaps", "Focus Blur", "Reflections",
         "Light Shafts", "Height Fog", "Colour Grade", "Edge AA", "Foliage AA", "Tessellation", "GPU Timing",
     ]
-    const FX_DESC: [15][]u8 = [
+    const FX_DESC: [_][]u8 = [
         "ORIGINAL LOOK: Every enhancement off: the game as the original draws it, pixel for pixel. The other options keep their settings for when it is off again.",
         "BLOOM: Light brighter than white glows: lightsaber blades, blaster bolts, holograms, screens, the Star Maps and bright lamps. The picture keeps the original's colours; only the brightest light is softened.\n\nLOW: a smaller glow, for slower graphics cards.",
         "ROOM LIGHT: Characters and objects take the light of the room around them, as its lightmaps show it: darker in shadow, tinted by coloured walls and lit from below by a bright floor, instead of one flat light for the whole area.",

@@ -41,7 +41,7 @@ namespace hud {
 
     // The menu buttons' tooltips are the menu's name and the key that opens it (docs/re/gui.md).
     const MENU_TIPS: [8]u32 = [48219, 48220, 48225, 48224, 48223, 48218, 48221, 48222]
-    const MENU_KEYS: [8][]u8 = ["U", "I", "P", "K", "J", "L", "M", "O"]
+    const MENU_KEYS: [_][]u8 = ["U", "I", "P", "K", "J", "L", "M", "O"]
 
     fn set_tooltips { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut text: utf8::Builder(heap::Heap) } {
         let tags = ["BTN_EQU", "BTN_INV", "BTN_CHAR", "BTN_ABI", "BTN_MSG", "BTN_JOU", "BTN_MAP", "BTN_OPT"]

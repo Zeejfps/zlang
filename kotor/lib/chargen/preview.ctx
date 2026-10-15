@@ -58,7 +58,7 @@ namespace preview3d {
 
     // The animations character generation's idle draws from (docs/re/chargen-3d.md, "Idle"): the two
     // pauses, the six fidgets (`rand() % 6`) and the portrait step's `listen`.
-    const IDLES: [9][]u8 = ["pause1", "pause2", "greeting", "hturnl", "hturnr", "pausebrd", "pausesh", "pause3", "listen"]
+    const IDLES: [_][]u8 = ["pause1", "pause2", "greeting", "hturnl", "hturnr", "pausebrd", "pausesh", "pause3", "listen"]
     const IDLE_COUNT: usize = 9
     const IDLE_PAUSE1: usize = 0
     const IDLE_PAUSE2: usize = 1
@@ -174,7 +174,7 @@ namespace preview3d {
     // `alignN` with N = alignment / 5 + 1. The model has align1 to align19: for 95 to 99 the
     // original finds no align20 and plays the creature's pose name instead, `good`.
     // Constants: gui3d::load's errors carry names, which may not point into a local.
-    const LIGHT_ALIGN: [19][]u8 = [
+    const LIGHT_ALIGN: [_][]u8 = [
         "align1", "align2", "align3", "align4", "align5", "align6", "align7", "align8", "align9", "align10",
         "align11", "align12", "align13", "align14", "align15", "align16", "align17", "align18", "align19",
     ]

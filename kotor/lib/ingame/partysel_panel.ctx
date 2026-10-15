@@ -22,8 +22,8 @@ namespace partysel_panel {
 
     // npc.2da's rows: the creature tag of each companion, and the blueprint the game spawns one
     // from. (The tag column of npc.2da is the tag the creature carries, "Cand" for Canderous.)
-    const TAGS: [9][]u8 = ["Bastila", "Cand", "Carth", "HK47", "Jolee", "Juhani", "Mission", "T3M3", "Zaalbar"]
-    const TEMPLATES: [9][]u8 = ["p_bastilla", "p_cand", "p_carth", "p_hk47", "p_jolee", "p_juhani", "p_mission", "p_t3m4", "p_zaalbar"]
+    const TAGS: [_][]u8 = ["Bastila", "Cand", "Carth", "HK47", "Jolee", "Juhani", "Mission", "T3M3", "Zaalbar"]
+    const TEMPLATES: [_][]u8 = ["p_bastilla", "p_cand", "p_carth", "p_hk47", "p_jolee", "p_juhani", "p_mission", "p_t3m4", "p_zaalbar"]
 
 
     struct State {

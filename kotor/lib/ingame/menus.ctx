@@ -57,7 +57,7 @@ namespace ingame {
     }
 
     // The tab buttons of the bar and the HUD's buttons, in menu order.
-    const TAB_TAGS: [8][]u8 = ["BTN_EQU", "BTN_INV", "BTN_CHAR", "BTN_ABI", "BTN_MSG", "BTN_JOU", "BTN_MAP", "BTN_OPT"]
+    const TAB_TAGS: [_][]u8 = ["BTN_EQU", "BTN_INV", "BTN_CHAR", "BTN_ABI", "BTN_MSG", "BTN_JOU", "BTN_MAP", "BTN_OPT"]
 
     // Which menu a button tag opens (-1: none). The HUD's minimap button opens the map.
     fn menu_of_tag { tag: []u8 } -> i32 {

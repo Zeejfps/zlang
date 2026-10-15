@@ -49,10 +49,10 @@ namespace equip_panel {
 
     // Controls of the slot view that selection mode hides: the portrait (the description lies
     // where it and the slots are) and the slot's name. The numbers below stay and update.
-    const SLOT_VIEW: [4][]u8 = ["LBL_PORT_BORD", "LBL_PORTRAIT", "LBL_TXTBAR", "LBL_SLOTNAME"]
+    const SLOT_VIEW: [_][]u8 = ["LBL_PORT_BORD", "LBL_PORTRAIT", "LBL_TXTBAR", "LBL_SLOTNAME"]
 
     // The numbers of the stats bar: the "cannot equip" text takes their place when the pointed-at item does not fit.
-    const NUMBERS: [10][]u8 = ["LBL_ATTACK_INFO", "LBL_DEF_INFO", "LBL_VITALITY", "LBL_DEF", "LBL_ATKL", "LBL_ATKR", "LBL_TOHITL", "LBL_TOHITR", "LBL_DAMAGE", "LBL_TOHIT"]
+    const NUMBERS: [_][]u8 = ["LBL_ATTACK_INFO", "LBL_DEF_INFO", "LBL_VITALITY", "LBL_DEF", "LBL_ATKL", "LBL_ATKR", "LBL_TOHITL", "LBL_TOHITR", "LBL_DAMAGE", "LBL_TOHIT"]
 
     fn show_numbers { mut g: gui::Gui, panel: u32, visible: bool } {
         let mut k: usize = 0

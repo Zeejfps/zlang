@@ -180,7 +180,7 @@ namespace ups {
     }
 
     // The rig's camera hooks, as constants: gui3d::load's errors carry the name it was given.
-    const CAMERA_HOOKS: [17][]u8 = [
+    const CAMERA_HOOKS: [_][]u8 = [
         "camerahook0", "camerahook0a", "camerahook1", "camerahook2", "camerahook3", "camerahook4", "camerahook4a",
         "camerahook5", "camerahook31", "camerahook32", "camerahook33", "camerahook34", "camerahook35", "camerahook36",
         "camerahook39", "camerahook40", "camerahook41",

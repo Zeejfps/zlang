@@ -1,7 +1,7 @@
 // Level up: opening the panels, the steps list, the numbers on maincg, and applying the level.
 namespace lvl {
-    const STEP_TAGS: [5][]u8 = ["BTN_STEPNAME1", "BTN_STEPNAME2", "BTN_STEPNAME3", "BTN_STEPNAME4", "BTN_STEPNAME5"]
-    const NUM_TAGS: [5][]u8 = ["LBL_NUM1", "LBL_NUM2", "LBL_NUM3", "LBL_NUM4", "LBL_NUM5"]
+    const STEP_TAGS: [_][]u8 = ["BTN_STEPNAME1", "BTN_STEPNAME2", "BTN_STEPNAME3", "BTN_STEPNAME4", "BTN_STEPNAME5"]
+    const NUM_TAGS: [_][]u8 = ["LBL_NUM1", "LBL_NUM2", "LBL_NUM3", "LBL_NUM4", "LBL_NUM5"]
 
     const STR_LEVEL_UP: u32 = 1071
     const STR_SURE_CANCEL: u32 = 48541
@@ -9,7 +9,7 @@ namespace lvl {
 
     // The ability labels of maincg in the panel's order (STR DEX CON WIS INT CHA), and the rules'
     // index of each.
-    const AB_LABEL: [6][]u8 = ["STR_AB_LBL", "DEX_AB_LBL", "CON_AB_LBL", "WIS_AB_LBL", "INT_AB_LBL", "CHA_AB_LBL"]
+    const AB_LABEL: [_][]u8 = ["STR_AB_LBL", "DEX_AB_LBL", "CON_AB_LBL", "WIS_AB_LBL", "INT_AB_LBL", "CHA_AB_LBL"]
 
     fn creature_of { w: *world::World, id: u32 } -> ?*mut fight::Fighter {
         let o = world::object{ w, id } ifnull { return null }

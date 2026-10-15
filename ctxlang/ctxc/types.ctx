@@ -15,7 +15,7 @@ namespace types {
 
     enum Prim: u8 { i8, i16, i32, i64, u8, u16, u32, u64, usize, f32, f64, bool }
 
-    const PRIM_NAMES: [12][]u8 = [
+    const PRIM_NAMES: [_][]u8 = [
         "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "usize", "f32", "f64", "bool",
     ]
 

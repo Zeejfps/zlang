@@ -1,7 +1,7 @@
 // The bench panels: opening, the category and item lists, and the slots of one item.
 namespace ups {
-    const CAT_TAGS: [4][]u8 = ["BTN_LIGHTSABER", "BTN_RANGED", "BTN_MELEE", "BTN_ARMOR"]
-    const CAT_ICON_LABELS: [4][]u8 = ["LBL_LSABER", "LBL_RANGED", "LBL_MELEE", "LBL_ARMOR"]
+    const CAT_TAGS: [_][]u8 = ["BTN_LIGHTSABER", "BTN_RANGED", "BTN_MELEE", "BTN_ARMOR"]
+    const CAT_ICON_LABELS: [_][]u8 = ["LBL_LSABER", "LBL_RANGED", "LBL_MELEE", "LBL_ARMOR"]
 
     fn report { mut w: world::World, text: []u8 } {
         _ = @fmt(&w.io, "kotor: upgrade bench: {}\n", text)
@@ -414,10 +414,10 @@ namespace ups {
         gui::set_focus{ &g, panel = s.bench, tag = slot_button{ s = &s, k = 0 } }
     }
 
-    const SLOT_LABEL3: [3][]u8 = ["LBL_UPGRADE31", "LBL_UPGRADE32", "LBL_UPGRADE33"]
-    const SLOT_BTN3: [3][]u8 = ["BTN_UPGRADE31", "BTN_UPGRADE32", "BTN_UPGRADE33"]
-    const SLOT_LABEL4: [4][]u8 = ["LBL_UPGRADE41", "LBL_UPGRADE42", "LBL_UPGRADE43", "LBL_UPGRADE44"]
-    const SLOT_BTN4: [4][]u8 = ["BTN_UPGRADE41", "BTN_UPGRADE42", "BTN_UPGRADE43", "BTN_UPGRADE44"]
+    const SLOT_LABEL3: [_][]u8 = ["LBL_UPGRADE31", "LBL_UPGRADE32", "LBL_UPGRADE33"]
+    const SLOT_BTN3: [_][]u8 = ["BTN_UPGRADE31", "BTN_UPGRADE32", "BTN_UPGRADE33"]
+    const SLOT_LABEL4: [_][]u8 = ["LBL_UPGRADE41", "LBL_UPGRADE42", "LBL_UPGRADE43", "LBL_UPGRADE44"]
+    const SLOT_BTN4: [_][]u8 = ["BTN_UPGRADE41", "BTN_UPGRADE42", "BTN_UPGRADE43", "BTN_UPGRADE44"]
 
     // CSWGuiUpgrade::FUN_006c3aa0 (0x006c3aa0): the lightsaber and the melee weapons use the row of three
     // slot controls, the ranged weapons and the armour the row of four.
@@ -433,7 +433,7 @@ namespace ups {
     // g_aUpgradeSlots (0x00756fb0) by upgrade type 1 to 9: the slot's name in dialog.tlk and the
     // picture of the slot while it is empty.
     const SLOT_NAME_STR: [10]u32 = [0, 32493, 32494, 32495, 32487, 32488, 32489, 32490, 32491, 32492]
-    const SLOT_ICON: [10][]u8 = ["", "i_vcell", "i_durasteel", "i_imp_eng", "i_scope", "i_energy", "i_beam", "i_hair", "i_armorrein", "i_armorrein"]
+    const SLOT_ICON: [_][]u8 = ["", "i_vcell", "i_durasteel", "i_imp_eng", "i_scope", "i_energy", "i_beam", "i_hair", "i_armorrein", "i_armorrein"]
     const STR_UPGRADES: u32 = 42026
 
     // The slot a button tag names, -1 for none.

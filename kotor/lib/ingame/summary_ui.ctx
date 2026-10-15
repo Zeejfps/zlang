@@ -21,8 +21,8 @@ namespace ingame {
 
     // The rows, top to bottom (icon label, description label); 6 is the net shift, whose controls the file
     // lacks.
-    const SUM_ROWS: [9][]u8 = ["LBL_JOURNAL", "LBL_CREDITS", "LBL_XP", "LBL_STEALTH", "LBL_DARKSIDE", "LBL_LIGHTSIDE", "LBL_NETSHIFT", "LBL_RECEIVED", "LBL_LOST"]
-    const SUM_DESCS: [9][]u8 = ["LBL_JOURNAL_DESC", "LBL_CREDITS_DESC", "LBL_XP_DESC", "LBL_STEALTH_DESC", "LBL_DARKSIDE_DESC", "LBL_LIGHTSIDE_DESC", "LBL_NETSHIFT_DESC", "LBL_RECEIVED_DESC", "LBL_LOST_DESC"]
+    const SUM_ROWS: [_][]u8 = ["LBL_JOURNAL", "LBL_CREDITS", "LBL_XP", "LBL_STEALTH", "LBL_DARKSIDE", "LBL_LIGHTSIDE", "LBL_NETSHIFT", "LBL_RECEIVED", "LBL_LOST"]
+    const SUM_DESCS: [_][]u8 = ["LBL_JOURNAL_DESC", "LBL_CREDITS_DESC", "LBL_XP_DESC", "LBL_STEALTH_DESC", "LBL_DARKSIDE_DESC", "LBL_LIGHTSIDE_DESC", "LBL_NETSHIFT_DESC", "LBL_RECEIVED_DESC", "LBL_LOST_DESC"]
 
     struct Summary {
         flags: u32,

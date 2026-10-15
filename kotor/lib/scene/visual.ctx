@@ -8,8 +8,8 @@ namespace visual {
     error no_model{ name: []u8 }
 
     // appearance.2da's per-letter columns, a to j.
-    const MODEL_COLUMNS: [10][]u8 = ["modela", "modelb", "modelc", "modeld", "modele", "modelf", "modelg", "modelh", "modeli", "modelj"]
-    const TEX_COLUMNS: [10][]u8 = ["texa", "texb", "texc", "texd", "texe", "texf", "texg", "texh", "texi", "texj"]
+    const MODEL_COLUMNS: [_][]u8 = ["modela", "modelb", "modelc", "modeld", "modele", "modelf", "modelg", "modelh", "modeli", "modelj"]
+    const TEX_COLUMNS: [_][]u8 = ["texa", "texb", "texc", "texd", "texe", "texf", "texg", "texh", "texi", "texj"]
 
     // The object's visual, made now; its index in Scene.visuals, or null when it shows nothing.
     fn create { mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, o: *obj::Object } -> !?usize {

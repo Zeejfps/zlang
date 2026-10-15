@@ -61,8 +61,8 @@ namespace drive {
     type Strs = list::List([]u8, Heap)
 
     // An executable's optimization level (build::optimize) replaces -O1.
-    const CFLAGS: [6][]u8 = ["-std=gnu11", "-O1", "-w", "-fwrapv", "-fno-optimize-sibling-calls", "-fno-strict-aliasing"]
-    const LEVELS: [4][]u8 = ["-O0", "-O1", "-O2", "-O3"]
+    const CFLAGS: [_][]u8 = ["-std=gnu11", "-O1", "-w", "-fwrapv", "-fno-optimize-sibling-calls", "-fno-strict-aliasing"]
+    const LEVELS: [_][]u8 = ["-O0", "-O1", "-O2", "-O3"]
 
     // FNV-1a, 64 bits: what names a build's files.
     const FNV_BASIS: u64 = 14695981039346656037
@@ -77,7 +77,7 @@ namespace drive {
 
     // ctxc's lexer and parser, which a build program has with std's files (`build_extras`): what
     // parser.ctx needs, and nothing but std.
-    const FRONT: [5][]u8 = ["ctxc/source.ctx", "ctxc/diag.ctx", "ctxc/lexer.ctx", "ctxc/syntax.ctx", "ctxc/parser.ctx"]
+    const FRONT: [_][]u8 = ["ctxc/source.ctx", "ctxc/diag.ctx", "ctxc/lexer.ctx", "ctxc/syntax.ctx", "ctxc/parser.ctx"]
 
     // Where things are, and what the C compiler is and the environment entries it runs with: runs
     // is HOME/build/run, work the program's directory in it, program its name, and rt a hash of

@@ -306,7 +306,7 @@ namespace hud {
     }
 
     // The target marker's pictures (UpdateReticles 0x0068a310).
-    const MARKS: [5][]u8 = ["friendlyreticle2", "hostilereticle2", "combatreticle", "friendlyarrow", "hostilearrow"]
+    const MARKS: [_][]u8 = ["friendlyreticle2", "hostilereticle2", "combatreticle", "friendlyarrow", "hostilearrow"]
     const MARK_FRIENDLY: u8 = 0
     const MARK_HOSTILE: u8 = 1
     const MARK_COMBAT: u8 = 2

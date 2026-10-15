@@ -6,7 +6,7 @@ namespace chargen {
 
     // The panel lists STR DEX CON WIS INT CHA; the rules keep STR DEX CON INT WIS CHA.
     const UI_STAT: [6]usize = [0, 1, 2, 4, 3, 5]
-    const AB_TAG: [6][]u8 = ["STR", "DEX", "CON", "WIS", "INT", "CHA"]
+    const AB_TAG: [_][]u8 = ["STR", "DEX", "CON", "WIS", "INT", "CHA"]
     const AB_DESC: [6]u32 = [222, 223, 224, 225, 226, 227]
 
     // Points a score costs to go up by one: 1 below 14, 2 for 14 and 15, 3 from 16 (0x006f8670).

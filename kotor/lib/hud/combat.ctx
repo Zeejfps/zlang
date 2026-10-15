@@ -2,7 +2,7 @@
 // combat the bar at the bottom centre shows the queue of its attack actions and the Disengage
 // button, and the message bar at the top announces combat mode for a few seconds.
 namespace hud {
-    const COMBAT_TAGS: [8][]u8 = [
+    const COMBAT_TAGS: [_][]u8 = [
         "LBL_COMBATBG1", "LBL_COMBATBG2", "LBL_COMBATBG3", "BTN_CLEARALL", "BTN_CLEARONE", "BTN_CLEARONE2",
         "LBL_QUEUE0", "LBL_QUEUE1",
     ]

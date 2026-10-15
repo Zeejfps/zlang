@@ -12,7 +12,7 @@ namespace abilities_panel {
     const TAB_SKILLS: i32 = 0
     const TAB_POWERS: i32 = 1
     const TAB_FEATS: i32 = 2
-    const TAB_TAGS: [3][]u8 = ["BTN_SKILLS", "BTN_POWERS", "BTN_FEATS"]
+    const TAB_TAGS: [_][]u8 = ["BTN_SKILLS", "BTN_POWERS", "BTN_FEATS"]
 
     // The three info lines' captions (dialog.tlk): skills show the rank, the bonus from the key
     // attribute and feats, and the total; powers show the base cost, what the alignment adds or
@@ -25,7 +25,7 @@ namespace abilities_panel {
     const STR_LIGHT_SIDE: u32 = 41891
     const STR_COST_PER_USE: u32 = 41905
 
-    const INFO_TAGS: [7][]u8 = ["LBL_INFOBG", "LBL_SKILLRANK", "LBL_RANKVAL", "LBL_BONUS", "LBL_BONUSVAL", "LBL_TOTAL", "LBL_TOTALVAL"]
+    const INFO_TAGS: [_][]u8 = ["LBL_INFOBG", "LBL_SKILLRANK", "LBL_RANKVAL", "LBL_BONUS", "LBL_BONUSVAL", "LBL_TOTAL", "LBL_TOTALVAL"]
 
     struct State {
         opened: bool,

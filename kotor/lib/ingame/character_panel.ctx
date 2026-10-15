@@ -16,9 +16,9 @@ namespace character_panel {
     const TURN_REPEAT: f32 = 0.1
     const TURN_STEP: f32 = 0.17453293
     // The label tags of the six attributes and their modifiers, in STR DEX CON INT WIS CHA order.
-    const ABIL_TAGS: [6][]u8 = ["LBL_STR", "LBL_DEX", "LBL_CON", "LBL_INT", "LBL_WIS", "LBL_CHA"]
-    const MOD_TAGS: [6][]u8 = ["LBL_STR_MOD", "LBL_DEX_MOD", "LBL_CON_MOD", "LBL_INT_MOD", "LBL_WIS_MOD", "LBL_CHA_MOD"]
-    const SAVE_TAGS: [3][]u8 = ["LBL_FORTITUDE_STAT", "LBL_REFLEX_STAT", "LBL_WILL_STAT"]
+    const ABIL_TAGS: [_][]u8 = ["LBL_STR", "LBL_DEX", "LBL_CON", "LBL_INT", "LBL_WIS", "LBL_CHA"]
+    const MOD_TAGS: [_][]u8 = ["LBL_STR_MOD", "LBL_DEX_MOD", "LBL_CON_MOD", "LBL_INT_MOD", "LBL_WIS_MOD", "LBL_CHA_MOD"]
+    const SAVE_TAGS: [_][]u8 = ["LBL_FORTITUDE_STAT", "LBL_REFLEX_STAT", "LBL_WILL_STAT"]
 
     struct State {
         opened: bool,

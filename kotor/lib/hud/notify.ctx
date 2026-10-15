@@ -14,7 +14,7 @@ namespace hud {
     const NOTE_ITEM_RECEIVED: usize = 7
     const NOTE_ITEM_LOST: usize = 8
 
-    const NOTE_TAGS: [9][]u8 = [
+    const NOTE_TAGS: [_][]u8 = [
         "LBL_JOURNAL", "LBL_CASH", "LBL_PLOTXP", "LBL_STEALTHXP", "LBL_DARKSHIFT", "LBL_LIGHTSHIFT", "", "LBL_ITEMRCVD", "LBL_ITEMLOST",
     ]
 

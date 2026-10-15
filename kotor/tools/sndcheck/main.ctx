@@ -59,7 +59,7 @@ struct Check {
     nworst: usize,
 }
 
-const CLASS_NAMES: [6][]u8 = ["riffstub/mp3", "none/pcm", "mp3pad/pcm", "mp3pad/ima-adpcm", "none/ima-adpcm", "other"]
+const CLASS_NAMES: [_][]u8 = ["riffstub/mp3", "none/pcm", "mp3pad/pcm", "mp3pad/ima-adpcm", "none/ima-adpcm", "other"]
 
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut sdl: sdl::Sdl, args: Args } -> i32 {
     let opts = parse_args{ &io, args } ifnull { return 2 }

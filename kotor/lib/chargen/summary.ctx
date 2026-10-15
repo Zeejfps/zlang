@@ -1,17 +1,17 @@
 // The main panel (maincg): the character so far (docs/re/chargen.md B). The panel is shared with
 // the level-up screen; the old/new columns of that one are never made here.
 namespace chargen {
-    const AB_LABEL: [6][]u8 = ["STR_AB_LBL", "DEX_AB_LBL", "CON_AB_LBL", "WIS_AB_LBL", "INT_AB_LBL", "CHA_AB_LBL"]
+    const AB_LABEL: [_][]u8 = ["STR_AB_LBL", "DEX_AB_LBL", "CON_AB_LBL", "WIS_AB_LBL", "INT_AB_LBL", "CHA_AB_LBL"]
     const AB_LABEL_STAT: [6]usize = [0, 1, 2, 4, 3, 5]
 
     // Controls of the level-up panel that character generation never creates.
-    const UNMADE: [16][]u8 = [
+    const UNMADE: [_][]u8 = [
         "OLD_FORT_LBL", "OLD_REFL_LBL", "OLD_WILL_LBL", "FORT_ARROW_LBL", "WILL_ARROW_LBL", "REFL_ARROW_LBL",
         "OLD_VIT_LBL", "OLD_DEF_LBL", "NEW_VIT_LBL", "NEW_DEF_LBL", "VIT_ARROW_LBL", "DEF_ARROW_LBL",
         "OLD_LBL", "NEW_LBL", "LBL_LEVEL", "LBL_LEVEL_VAL",
     ]
 
-    const VALUE_LABELS: [11][]u8 = [
+    const VALUE_LABELS: [_][]u8 = [
         "STR_AB_LBL", "DEX_AB_LBL", "CON_AB_LBL", "WIS_AB_LBL", "INT_AB_LBL", "CHA_AB_LBL",
         "LBL_DEF", "LBL_VIT", "NEW_FORT_LBL", "NEW_REFL_LBL", "NEW_WILL_LBL",
     ]

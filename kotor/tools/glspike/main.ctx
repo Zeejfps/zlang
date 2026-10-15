@@ -163,7 +163,7 @@ struct Scene {
     clamped: u32,
 }
 
-const MESH_VS: [17]c::String = [
+const MESH_VS: [_]c::String = [
     "#version 410 core\n",
     "layout(std140) uniform Frame {\n",
     "    mat4 view;\n",
@@ -183,7 +183,7 @@ const MESH_VS: [17]c::String = [
     "}\n",
 ]
 
-const MESH_FS: [17]c::String = [
+const MESH_FS: [_]c::String = [
     "#version 410 core\n",
     "layout(std140) uniform Frame {\n",
     "    mat4 view;\n",
@@ -203,7 +203,7 @@ const MESH_FS: [17]c::String = [
     "}\n",
 ]
 
-const SKY_VS: [13]c::String = [
+const SKY_VS: [_]c::String = [
     "#version 410 core\n",
     "layout(std140) uniform Frame {\n",
     "    mat4 view;\n",
@@ -219,7 +219,7 @@ const SKY_VS: [13]c::String = [
     "}\n",
 ]
 
-const SKY_FS: [7]c::String = [
+const SKY_FS: [_]c::String = [
     "#version 410 core\n",
     "uniform samplerCube sky;\n",
     "in vec3 v_dir;\n",

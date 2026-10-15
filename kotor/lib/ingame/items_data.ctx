@@ -11,11 +11,11 @@ namespace items {
     // ---- the slots of the equip screen, in the order of the original's table (g_aEquipSlots)
 
     const SLOTS: usize = 9
-    const SLOT_TAGS: [9][]u8 = ["WEAP_L", "WEAP_R", "HEAD", "ARM_L", "ARM_R", "BODY", "HANDS", "IMPLANT", "BELT"]
+    const SLOT_TAGS: [_][]u8 = ["WEAP_L", "WEAP_R", "HEAD", "ARM_L", "ARM_R", "BODY", "HANDS", "IMPLANT", "BELT"]
     // The creature's equipment index (obj::SLOT_*) of each.
     const SLOT_OF: [9]usize = [5, 4, 0, 7, 8, 1, 3, 9, 10]
     // The empty-slot picture: `i` + this, or `id` + this for a droid.
-    const SLOT_ICONS: [9][]u8 = ["weap_l", "weap_r", "head", "forearm_l", "forearm_r", "armor", "hands", "implant", "belt"]
+    const SLOT_ICONS: [_][]u8 = ["weap_l", "weap_r", "head", "forearm_l", "forearm_r", "armor", "hands", "implant", "belt"]
     const SLOT_NAMES: [9]u32 = [31378, 31379, 31375, 31376, 31377, 31380, 31383, 31388, 31382]
     const SLOT_NAMES_DROID: [9]u32 = [31378, 31379, 41810, 41814, 41814, 41813, 41811, 41811, 41812]
 

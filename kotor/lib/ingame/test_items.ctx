@@ -18,7 +18,7 @@
 //                                              player makes, with the panels' own hit test deciding what it hits
 //   FRAME ui ctl TAG                            prints where the control is (GUI pixels) and whether it is shown
 namespace test_items {
-    const STOCK: [22][]u8 = [
+    const STOCK: [_][]u8 = [
         "g_w_blstrpstl001", "g_w_blstrpstl002", "g_w_hvyblstr01", "g_w_blstrrfl001", "g_w_stunbaton01", "g_w_qtrstaff01",
         "g_w_vbroswrd01", "g_w_lghtsbr01", "g_a_class4001", "g_a_class5001", "g_a_jedirobe01", "g_i_mask01",
         "g_i_gauntlet01", "g_i_frarmbnds01", "g_i_belt001", "g_i_implant101", "g_i_medeqpmnt01", "g_i_adrnaline001",

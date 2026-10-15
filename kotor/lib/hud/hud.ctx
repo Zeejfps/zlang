@@ -83,7 +83,7 @@ namespace hud {
     }
 
     // The HUD controls of the floating target block.
-    const BLOCK_TAGS: [16][]u8 = [
+    const BLOCK_TAGS: [_][]u8 = [
         "LBL_NAMEBG", "LBL_NAME", "LBL_HEALTHBG", "PB_HEALTH",
         "BTN_TARGET0", "BTN_TARGET1", "BTN_TARGET2",
         "BTN_TARGETUP0", "BTN_TARGETUP1", "BTN_TARGETUP2",
@@ -93,7 +93,7 @@ namespace hud {
 
     // Controls that show only when the game gives them something to show (a state, an event, a
     // party member); they start hidden and the update turns them on.
-    const STARTS_HIDDEN: [27][]u8 = [
+    const STARTS_HIDDEN: [_][]u8 = [
         "LBL_ARROW_MARGIN", "LBL_MAP", "LBL_ARROW",
         "LBL_CMBTMODEMSG", "LBL_CMBTMSGBG", "LBL_COMBATBG1", "LBL_COMBATBG2", "LBL_COMBATBG3",
         "LBL_QUEUE0", "LBL_QUEUE1", "LBL_QUEUE2", "LBL_QUEUE3",
@@ -200,7 +200,7 @@ namespace hud {
 
     // ---- party widgets
 
-    const WIDGET_TAGS: [11][]u8 = [
+    const WIDGET_TAGS: [_][]u8 = [
         "BTN_CHAR", "LBL_CHAR", "PB_VIT", "PB_FORCE", "LBL_BACK", "LBL_LEVELUP", "LBL_LVLUPBG",
         "LBL_DEBILATATED", "LBL_DISABLE", "LBL_CMBTEFCTRED", "LBL_CMBTEFCTINC",
     ]

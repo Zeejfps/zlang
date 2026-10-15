@@ -180,7 +180,7 @@ namespace walkcheck {
     }
 
     const TYPES: [3]restype::Type = [restype::Type::wok, restype::Type::pwk, restype::Type::dwk]
-    const EXTS: [3][]u8 = ["wok", "pwk", "dwk"]
+    const EXTS: [_][]u8 = ["wok", "pwk", "dwk"]
 
     fn run_install { mut io: Io, mut fs: Fs, mut heap: arena::Arena, rm: res::Manager } -> !Summary {
         let mut con = Con{ io }

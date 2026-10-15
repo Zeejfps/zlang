@@ -32,7 +32,7 @@ namespace tok {
         bang,                       // ! before a result type
     }
 
-    const KEYWORDS: [29][]u8 = [
+    const KEYWORDS: [_][]u8 = [
         "fn", "struct", "union", "enum", "type", "const", "namespace", "let", "mut",
         "if", "else", "while", "break", "continue", "match", "return", "defer",
         "and", "or", "not", "true", "false", "null", "extern", "capability", "ifnull",
@@ -40,7 +40,7 @@ namespace tok {
     ]
 
     // Two characters before one, so the longest match wins.
-    const OPS: [34][]u8 = [
+    const OPS: [_][]u8 = [
         "->", "=>", "::", "..", "==", "!=", "<=", ">=", "<<", ">>",
         "{", "}", "(", ")", "[", "]", ",", ";", ":", ".", "=", "<", ">",
         "+", "-", "*", "/", "%", "&", "|", "^", "?", "#", "!",

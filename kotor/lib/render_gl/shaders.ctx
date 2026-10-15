@@ -10,7 +10,7 @@ namespace glsl {
 
     // Meshes: rigid, skinned (a bone palette of up to 32) and dangly, and the planar shadows,
     // which run the same vertices through `u_post`.
-    const SCENE_VS: [70]c::String = [
+    const SCENE_VS: [_]c::String = [
         "#version 410 core\n",
         "layout(std140) uniform Frame {\n",
         "    mat4 u_view_proj;\n",
@@ -87,7 +87,7 @@ namespace glsl {
 
     // u_maps: diffuse, lightmap, envmap (1 cube, 2 sphere), bumpmap.
     // u_mode: blend (0 opaque, 1 punch, 2 alpha, 3 additive, 4 alpha_depth), lit, fog, shadow.
-    const SCENE_FS: [105]c::String = [
+    const SCENE_FS: [_]c::String = [
         "#version 410 core\n",
         "layout(std140) uniform Frame {\n",
         "    mat4 u_view_proj;\n",
@@ -203,7 +203,7 @@ namespace glsl {
     ]
 
     // 2D quads, one instance each: rect (x, y, w, h), uv (u0, v0, u1, v1), colour, angle.
-    const UI_VS: [19]c::String = [
+    const UI_VS: [_]c::String = [
         "#version 410 core\n",
         "uniform vec2 u_screen;\n",
         "layout(location = 0) in vec4 a_rect;\n",
@@ -235,7 +235,7 @@ namespace glsl {
     // a GUI scale that magnifies a border's edge texture (1.5 on an 8-texel strip drawn 9 pixels
     // thick) lets the linear filter reach across the rim to the texture's opposite side and draws
     // that side's line inside the border, a seam along the inner edge of every button.
-    const UI_FS: [24]c::String = [
+    const UI_FS: [_]c::String = [
         "#version 410 core\n",
         "uniform sampler2D u_tex;\n",
         "uniform sampler2D u_tex_u;\n",
@@ -266,7 +266,7 @@ namespace glsl {
     // u_emit: facing (0 camera, 1 axis, 2 plane, 3 velocity, 4 emitter plane, 5 world plane, 6 upright,
     // 7 tangent, 8 ribbon), grid x, grid y. A ribbon's instance is the quad from its row to the next, whose
     // position, size and direction come in as a_next_* (the same rows one further on).
-    const PARTICLE_VS: [85]c::String = [
+    const PARTICLE_VS: [_]c::String = [
         "#version 410 core\n",
         "layout(std140) uniform Frame {\n",
         "    mat4 u_view_proj;\n",
@@ -357,7 +357,7 @@ namespace glsl {
     ]
 
     // u_mode: blend, fog, textured.
-    const PARTICLE_FS: [33]c::String = [
+    const PARTICLE_FS: [_]c::String = [
         "#version 410 core\n",
         "layout(std140) uniform Frame {\n",
         "    mat4 u_view_proj;\n",
@@ -394,7 +394,7 @@ namespace glsl {
     ]
 
     // Debug lines and triangles: a world position and a colour per vertex.
-    const DEBUG_VS: [16]c::String = [
+    const DEBUG_VS: [_]c::String = [
         "#version 410 core\n",
         "layout(std140) uniform Frame {\n",
         "    mat4 u_view_proj;\n",
@@ -413,7 +413,7 @@ namespace glsl {
         "}\n",
     ]
 
-    const DEBUG_FS: [6]c::String = [
+    const DEBUG_FS: [_]c::String = [
         "#version 410 core\n",
         "in vec4 v_color;\n",
         "layout(location = 0) out vec4 o_color;\n",
@@ -425,7 +425,7 @@ namespace glsl {
     // The last step, screen to window: one triangle that covers the viewport. u_exponent is the
     // brightness option's gamma curve (the original loads it into the display's gamma ramp,
     // out = in ^ exponent, so it darkens or lightens everything on screen, movies included).
-    const POST_VS: [9]c::String = [
+    const POST_VS: [_]c::String = [
         "#version 410 core\n",
         "out vec2 v_uv;\n",
         "void main() {\n",
@@ -438,7 +438,7 @@ namespace glsl {
     ]
 
     // Speed blur: the picture sampled along the line to the centre, more toward the edges (a view's `blur`).
-    const BLUR_FS: [15]c::String = [
+    const BLUR_FS: [_]c::String = [
         "#version 410 core\n",
         "uniform sampler2D u_tex;\n",
         "uniform float u_strength;\n",
@@ -459,7 +459,7 @@ namespace glsl {
     // A video effect (render::VideoEffect, videoeffects.2da): a grain of u_noise at most, in cells of u_cells across the
     // picture that change with u_seed, added to the picture (the original adds its 32x32 `filmnoisetex`, of 0..0.02,
     // tiled 7.5 times over the screen), then each channel the dot product of its row with the colour.
-    const VIDEO_FS: [17]c::String = [
+    const VIDEO_FS: [_]c::String = [
         "#version 410 core\n",
         "uniform sampler2D u_tex;\n",
         "uniform vec3 u_red;\n",
@@ -479,7 +479,7 @@ namespace glsl {
         "\n",
     ]
 
-    const POST_FS: [10]c::String = [
+    const POST_FS: [_]c::String = [
         "#version 410 core\n",
         "uniform sampler2D u_tex;\n",
         "uniform float u_exponent;\n",

@@ -227,7 +227,7 @@ fn select_row { mut g: gui::Gui, id: u32, spec: []u8 } {
 
 // ---- what the loader doesn't know
 
-const KNOWN_LABELS: [63][]u8 = [
+const KNOWN_LABELS: [_][]u8 = [
     "CONTROLS", "CONTROLTYPE", "ID", "TAG", "Obj_ParentID", "PARENTID", "EXTENT", "LEFT", "TOP", "WIDTH", "HEIGHT",
     "BORDER", "HILIGHT", "SELECTED", "HILIGHTSELECTED", "PROGRESS", "CORNER", "EDGE", "FILL", "FILLSTYLE",
     "DIMENSION", "INNEROFFSET", "COLOR", "PULSING", "TEXT", "ALIGNMENT", "FONT", "STRREF", "MOVETO", "UP", "DOWN",

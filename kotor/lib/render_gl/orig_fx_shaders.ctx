@@ -5,7 +5,7 @@ namespace glsl {
     // sides between them, every face wound outward. A closed volume per triangle needs no neighbours, so the
     // models' open and overlapping meshes count right: inside two volumes is still inside a shadow. The vertices
     // come from SCENE_VS (skinning, dangly offsets), world space in v_world.
-    const VOLUME_GS: [47]c::String = [
+    const VOLUME_GS: [_]c::String = [
         "#version 410 core\n",
         "layout(triangles) in;\n",
         "layout(triangle_strip, max_vertices = 18) out;\n",
@@ -56,7 +56,7 @@ namespace glsl {
         "}\n",
     ]
 
-    const VOLUME_FS: [5]c::String = [
+    const VOLUME_FS: [_]c::String = [
         "#version 410 core\n",
         "layout(location = 0) out vec4 o_color;\n",
         "void main() {\n",
@@ -66,7 +66,7 @@ namespace glsl {
 
     // A flat colour over the whole viewport (where the stencil lets it): the hard shadows' darkening, the soft
     // shadows' mask.
-    const FLAT_FS: [6]c::String = [
+    const FLAT_FS: [_]c::String = [
         "#version 410 core\n",
         "uniform vec4 u_color;\n",
         "layout(location = 0) out vec4 o_color;\n",
@@ -79,7 +79,7 @@ namespace glsl {
     // function: 0 the alpha alone (the soft shadows' mask), 1 the glow's bright pass, 2 the colour as it is. The
     // bright pass is the
     // original's ramps (0x00427c90): red from 234/255, green and blue from 216/255, rising to 0.7 at white.
-    const REDUCE_FS: [27]c::String = [
+    const REDUCE_FS: [_]c::String = [
         "#version 410 core\n",
         "uniform sampler2D u_tex;\n",
         "uniform vec2 u_texel;\n",
@@ -110,7 +110,7 @@ namespace glsl {
     ]
 
     // A nine-tap Gaussian along u_dir (one texel of the source, horizontal or vertical).
-    const BLUR9_FS: [14]c::String = [
+    const BLUR9_FS: [_]c::String = [
         "#version 410 core\n",
         "uniform sampler2D u_tex;\n",
         "uniform vec2 u_dir;\n",
@@ -129,7 +129,7 @@ namespace glsl {
 
     // A small target drawn back over the viewport: u_mode 0 the soft shadows (black, the mask's alpha times
     // u_strength), 1 the glow (its colour, added).
-    const SPREAD_FS: [13]c::String = [
+    const SPREAD_FS: [_]c::String = [
         "#version 410 core\n",
         "uniform sampler2D u_tex;\n",
         "uniform int u_mode;\n",
@@ -150,7 +150,7 @@ namespace glsl {
     // a small square, sin(60 r + 25 phase) at distance r from it, the phase advancing a radian a second, tiled every
     // ten pixels as the screen pass tiles it (0x004331d0). Ours shifts along the ring's radius; u_amount is the
     // largest shift in pixels (the original's offset matrix was not read).
-    const DISTORT_FS: [14]c::String = [
+    const DISTORT_FS: [_]c::String = [
         "#version 410 core\n",
         "uniform sampler2D u_tex;\n",
         "uniform float u_amount;\n",
