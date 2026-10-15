@@ -935,7 +935,7 @@ class ConstInitializers(Base):
             ('union U(T) { a, b{ x: T } }\nconst A: bool = U::a == U::a', 'U(_) has no built-in equality', 2, 22),
             ('const A: i32 = 1.5', 'expected i32, got {float}', 1, 16),
             ('const A: [3]u8 = [7; 4]', 'expected [3]u8, got [4]u8', 1, 18),
-            ('struct S { a: i32 }\nconst A: S = S{ .. }', '`..` is not allowed in a literal', 2, 15),
+            ('struct S { a: i32 }\nconst A: S = S{ .. }', '`..` takes fields from their defaults, and struct `S` has none', 2, 15),
             ('const A: u8 = N\nconst N: i64 = 3', 'expected u8, got i64', 1, 15),
             ('const A: utf8::String = "\\xff"', 'string literal: utf8::invalid{ at = 0 }', 1, 25),
         ]:
@@ -1019,6 +1019,121 @@ fn main { mut io: Io } {
     io::println_i64{ &io, n = Z[3] }
 }
 """, "5000000000200\n3.3000001907348633\n1073741816\n-128\n5000000000200\n199\n200\n")
+
+
+class StructDefaults(Base):
+    """A struct's field defaults (spec §7, rule 4): consts that a literal ending in `..` takes
+    the fields it leaves out from, and nothing else does."""
+
+    def assertDefaultError(self, src, msg, line, col):
+        with self.assertRaises(CompileError) as cm:
+            run(src + '\nfn main {} {}')
+        self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), src)
+
+    def test_literals_take_defaults(self):
+        self.assertOutput('''
+enum Class: u8 { soldier, scout }
+const BASE: f32 = 0.5
+struct Vec { x: f32, y: f32 }
+fn twice { n: i32 } -> i32 { return n * 2 }
+struct Stats {
+    str: i32,
+    speed: f32 = BASE * 2.0,
+    class: Class = Class::scout,
+    target: ?*i32 = null,
+    name: []u8 = "nobody",
+    at: Vec = Vec{ x = 1.0, y = 2.0 },
+    level: i32 = twice{ n = 21 },
+}
+const HERO: Stats = Stats{ str = 18, name = "hero", .. }
+fn show { mut io: Io, s: Stats } {
+    let c: []u8 = if s.class == Class::scout { "scout" } else { "soldier" }
+    let t: []u8 = if s.target == null { "none" } else { "some" }
+    _ = @fmt(&io, "{} {} {} {} {} {} {} {}\\n", s.str, s.speed, c, t, s.name, s.at.x, s.at.y, s.level)
+}
+fn main { mut io: Io } {
+    show{ &io, s = Stats{ str = 10, .. } }
+    let n: i32 = 7
+    show{ &io, s = Stats{ str = 11, class = Class::soldier, target = &n, .. } }
+    show{ &io, s = HERO }
+    // Every field supplied: `..` takes none.
+    show{ &io, s = Stats{ str = 1, speed = 0.0, class = Class::soldier, target = null, name = "x", at = Vec{ x = 0.0, y = 0.0 }, level = 0, .. } }
+}
+''', """10 1.0 scout none nobody 1.0 2.0 42
+11 1.0 soldier some nobody 1.0 2.0 42
+18 1.0 scout none hero 1.0 2.0 42
+1 0.0 soldier none x 0.0 0.0 0
+""")
+
+    def test_zero_values_ignore_defaults(self):
+        # Defaults are for literals: a `let` without one, like any memory, starts at zero.
+        self.assertOutput('''
+struct S { a: i32 = 5, b: bool = true }
+fn main { mut io: Io } {
+    let mut s: S
+    _ = @fmt(&io, "{} {}\\n", s.a, s.b)
+    s = S{ .. }
+    _ = @fmt(&io, "{} {}\\n", s.a, s.b)
+}
+''', "0 false\n5 true\n")
+
+    def test_attributes(self):
+        # An attribute is a struct literal: `..` takes its defaults, and a number left out of
+        # one is 0 only if it has none.
+        self.assertOutput('''
+struct tag { n: i32 = 3, name: []u8 = "t", flag: bool }
+#tag{ .. }
+fn f {} {}
+#tag{ n = 4, flag = true, .. }
+fn g {} {}
+fn main { mut io: Io } { f{}; g{}; _ = @fmt(&io, "ok\\n") }
+''', "ok\n")
+
+    def test_generic_structs(self):
+        # A field whose type doesn't mention a generic parameter may have one.
+        self.assertOutput('''
+struct Box(T) { value: T, count: usize = 3 }
+fn main { mut io: Io } {
+    let a = Box{ value = "a", .. }
+    let b = Box(i32){ value = 4, count = 9, .. }
+    _ = @fmt(&io, "{} {} {} {}\\n", a.value, a.count, b.value, b.count)
+}
+''', "a 3 4 9\n")
+
+    def test_defaults_resolve_in_the_structs_namespace(self):
+        self.assertOutput('''
+namespace game {
+    const START: i32 = 100
+    struct Run { score: i32 = START + 1 }
+}
+const START: i32 = 0
+fn main { mut io: Io } {
+    let r = game::Run{ .. }
+    _ = @fmt(&io, "{}\\n", r.score)
+}
+''', "101\n")
+
+    def test_errors(self):
+        for src, msg, line, col in [
+            ('struct S { a: i32, b: i32 = 2 }\nconst A: S = S{ a = 1 }',
+             'struct `S` is missing `b`: `..` at the end takes it from its default', 2, 15),
+            ('struct S { a: i32 = 1, b: i32 = 2 }\nconst A: S = S{}',
+             'struct `S` is missing `a`, `b`: `..` at the end takes them from their defaults', 2, 15),
+            ('struct S { a: i32, b: i32 = 2 }\nconst A: S = S{}',
+             'struct `S` is missing `a`, `b` (`..` at the end takes `b` from its default)', 2, 15),
+            ('struct S { a: i32, b: i32 = 2 }\nconst A: S = S{ .. }', 'struct `S` is missing `a`', 2, 15),
+            ('struct S { a: i32 = true }', 'expected i32, got bool', 1, 21),
+            ('struct S { a: i32, b: i32 = a }', 'unknown name `a`', 1, 29),
+            ('struct S { a: []i32 = slice::empty(i32){} }',
+             "const `S::a` can't hold a pointer: it would point to memory that doesn't outlive compiling", 1, 40),
+            ('struct S(T) { a: ?T = null }', "field `a` can't have a default: its type mentions a generic parameter", 1, 23),
+            ('union U { a{ x: i32 = 1 } }', "a union variant's field can't have a default: only a struct's can", 1, 23),
+            ('error bad{ x: i32 = 1 }', "an error's field can't have a default: only a struct's can", 1, 21),
+            ('extern union U { x: i32 = 1, y: f32 }', "an extern union's field can't have a default: only a struct's can", 1, 27),
+            ('union U { a{ x: i32 } }\nconst A: U = U::a{ .. }', '`..` takes fields from their defaults, and variant `a` has none', 2, 18),
+            ('struct tag { n: i32 = 3 }\n#tag\nfn f {} {}', 'struct `tag` is missing `n`: `..` at the end takes it from its default', 2, 2),
+        ]:
+            self.assertDefaultError(src, msg, line, col)
 
 
 class Bodies(Base):
@@ -9005,7 +9120,7 @@ fn main {} -> i32 { return @trunc(i32, long_abs{ n = 3 }) }
             ('extern f {}\nfn main {} {}', "expected 'fn', found 'f'", 1, 8),
             ('#5\nfn main {} {}', "expected a struct name after '#', found '5'", 1, 2),
             ('#a.b\nfn main {} {}', 'an attribute is a struct name or a struct literal', 1, 2),
-            ('#S{ .. }\nfn main {} {}', 'an attribute is a struct name or a struct literal', 1, 2),
+            ('#S{ _ }\nfn main {} {}', 'an attribute is a struct name or a struct literal', 1, 2),
             ('#c::symbol{ name = "a" } fn f {} {}\nfn main {} {}',
              'an attribute goes on its own line, before a declaration', 1, 26),
             ('fn main {} {}\n#c::symbol{ name = "a" }\n', 'expected a declaration after an attribute, found end of file', 3, 1),
@@ -10943,7 +11058,9 @@ fn show_fields { mut io: Io, fields: []build::Field, indent: []u8 } {
     while i < fields.len {
         show_attrs{ &io, attrs = fields[i].attrs, indent }
         let m: []u8 = if fields[i].mutable { "mut " } else { "" }
-        _ = @fmt(&io, "{}{}{}: {}\n", indent, m, fields[i].name, fields[i].ty)
+        _ = @fmt(&io, "{}{}{}: {}", indent, m, fields[i].name, fields[i].ty)
+        if fields[i].value.len > 0 { _ = @fmt(&io, " = {}", fields[i].value) }
+        _ = @fmt(&io, "\n")
         i = i + 1
     }
 }
@@ -11002,7 +11119,7 @@ fn show_attrs { mut io: Io, attrs: []build::Attr, indent: []u8 } {
 namespace game {
     #ecs::component
     struct Pos(T) { x: T, /* across */ y: list::List( T,
-        T ) }
+        T ), n: u8 = 2 +   /* three */ 1 }
 
     namespace world {
         #ecs::system{ every = 2, name = "mo\\"ve", on = true, key = 'k', neg = -3, off = OFF + 1, }
@@ -11039,6 +11156,7 @@ struct game::Pos(T) @ src/a.ctx:4:5
   #ecs::component
   x: T
   y: list::List(T, T)
+  n: u8 = 2 + 1
 fn game::world::step(T, E) -> E!i32 @ src/a.ctx:10:9
   #ecs::system every=2 (i 2) name="mo\\"ve" (s mo"ve) on=true (b true) key='k' (i 107) neg=-3 (i -3) off=OFF + 1 (?)
   #inline

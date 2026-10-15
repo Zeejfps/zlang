@@ -69,6 +69,7 @@ namespace check {
         spawn:    bool,                 // a fn with a valid `#spawn` (§15, rule 14)
         includes: []u32,                // what a capability includes, directly or not (§15)
         vars:     []mut CVar,           // a capability's C variables, its own and included ones
+        defaults: []u32,                // a struct's: by field, the const holding its default, or NONE; empty if none has one
     }
 
     // A capability's C variable (§15): `extern name: T` reads the C symbol `name`, or the one
@@ -191,6 +192,7 @@ namespace check {
         local_of:  map::Map(u64, u32, Heap),          // the local a `let` or a binder's field declares
         is_vars:   map::Map(u64, []u32, Heap),        // the locals an `is` binds, by its key
         forwards:  map::Map(u64, []Forward, Heap),    // what `..` supplies to a call
+        filled:    map::Map(u64, []u32, Heap),        // the fields a struct literal's `..` takes from their defaults
         site_of:   map::Map(u64, u32, Heap),          // an @fmt's site, by its key
         holds:     map::Map(u64, []Place, Heap),      // the places a bind holds
         int_cases: map::Map(u64, [][]ir::Range, Heap),  // by arm, a match's (by its scrutinee) or `is`'s integer patterns
@@ -422,6 +424,7 @@ namespace check {
             local_of = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             is_vars = map::new(u64, []u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             forwards = map::new(u64, []Forward){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            filled = map::new(u64, []u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             site_of = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             holds = map::new(u64, []Place){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             int_cases = map::new(u64, [][]ir::Range){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
@@ -610,15 +613,22 @@ namespace check {
                     add_name{ &c, ns, values = true, name, e = Entry::decl{ i = d }, at = x.span }
                     push{ xs = &c.consts, n = d }
                 }
-                record{ name, tparams } => {
+                record{ name, tparams, fields, untagged } => {
                     let d = declare{ &c, kind = Kind::record, x, file, name, tparams, ns }
                     add_name{ &c, ns, values = false, name, e = Entry::decl{ i = d }, at = x.span }
                     push{ xs = &c.structs, n = d }
+                    if untagged { no_defaults{ &c, fields, what = "an extern union's" } } else { declare_defaults{ &c, d, file, fields, tparams, ns } }
                 }
-                sum{ name, tparams } => {
+                sum{ name, tparams, variants } => {
                     let d = declare{ &c, kind = Kind::sum, x, file, name, tparams, ns }
                     add_name{ &c, ns, values = false, name, e = Entry::decl{ i = d }, at = x.span }
                     push{ xs = &c.unions, n = d }
+                    let mut k: usize = 0
+                    while k < variants.len {
+                        let fs = variants[k].fields
+                        if fs != null { no_defaults{ &c, fields = fs, what = "a union variant's" } }
+                        k = k + 1
+                    }
                 }
                 enumeration{ name } => {
                     let d = declare{ &c, kind = Kind::enumeration, x, file, name, tparams = no_names{}, ns }
@@ -635,7 +645,8 @@ namespace check {
                     add_name{ &c, ns, values = false, name, e = Entry::decl{ i = d }, at = x.span }
                     if fields != null { push{ xs = &c.caps, n = d } }
                 }
-                fault{ name } => {
+                fault{ name, fields } => {
+                    if fields != null { no_defaults{ &c, fields, what = "an error's" } }
                     let d = declare{ &c, kind = Kind::fault, x, file, name, tparams = no_names{}, ns }
                     if slice::eq_bytes{ a = name.text, b = "ok" } or slice::eq_bytes{ a = name.text, b = "err" } {
                         errorf{ &c, at = name.span, msg = @fmt("an error can't be named `{}`: a match on a `!T` has the arms `ok` and `err`", str{ s = name.text }) }
@@ -664,6 +675,100 @@ namespace check {
         return slice::empty(syntax::Name){}
     }
 
+    // A struct's field defaults (§7, rule 4): each is a const of its own, `Struct::field`, in the
+    // struct's namespace but named by no path, which a literal's `..` reads.
+    fn declare_defaults { mut c: Checker, d: u32, file: u32, fields: []syntax::Field, tparams: []syntax::Name, ns: u32 } {
+        let mut out = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        let mut any = false
+        let mut i: usize = 0
+        while i < fields.len {
+            let f = fields[i]
+            let mut k = NONE
+            if let value = f.default {
+                if type_mentions{ te = f.ty, names = tparams } {
+                    errorf{ &c, at = expr_at{ e = value }, msg = @fmt("field `{}` can't have a default: its type mentions a generic parameter", str{ s = f.name.text }) }
+                } else {
+                    let mut b = message{ c }
+                    try! @fmt(&b, "{}::{}", str{ s = get_decl{ c, d }.name.text }, str{ s = f.name.text })
+                    let name = syntax::Name{ id = f.name.id, span = f.name.span, text = utf8::view{ b }.bytes }
+                    let x = syntax::Decl{ id = f.default_id, span = f.span, attrs = slice::empty(syntax::Attr){}, k = syntax::DeclKind::constant{ name, ty = f.ty, value } }
+                    k = declare{ &c, kind = Kind::constant, x, file, name, tparams = no_names{}, ns }
+                    push{ xs = &c.consts, n = k }
+                    any = true
+                }
+            }
+            try! list::push{ list = &out, item = k }
+            i = i + 1
+        }
+        if any { list::at{ list = c.decls, i = d }.defaults = list::items{ list = out } }
+    }
+
+    // Only a struct's field may have a default (§7, rule 4).
+    fn no_defaults { mut c: Checker, fields: []syntax::Field, what: []u8 } {
+        let mut i: usize = 0
+        while i < fields.len {
+            if let value = fields[i].default {
+                errorf{ &c, at = expr_at{ e = value }, msg = @fmt("{} field can't have a default: only a struct's can", str{ s = what }) }
+            }
+            i = i + 1
+        }
+    }
+
+    // Whether type te names one of names, a generic parameter, as a path of its own.
+    fn type_mentions { te: syntax::TypeExpr, names: []syntax::Name } -> bool {
+        match te.k {
+            path{ segs } => {
+                let mut i: usize = 0
+                while i < segs.len {
+                    if segs.len == 1 and segs[i].targs == null {
+                        let mut k: usize = 0
+                        while k < names.len {
+                            if slice::eq_bytes{ a = names[k].text, b = segs[i].name.text } { return true }
+                            k = k + 1
+                        }
+                    }
+                    if let ts = segs[i].targs {
+                        let mut k: usize = 0
+                        while k < ts.len {
+                            if type_mentions{ te = ts[k], names } { return true }
+                            k = k + 1
+                        }
+                    }
+                    i = i + 1
+                }
+                return false
+            }
+            ptr{ elem } => { return type_mentions{ te = elem.*, names } }
+            opt{ elem } => { return type_mentions{ te = elem.*, names } }
+            slice{ elem } => { return type_mentions{ te = elem.*, names } }
+            array{ elem } => { return type_mentions{ te = elem.*, names } }
+            func{ params, ret } => {
+                let mut i: usize = 0
+                while i < params.len {
+                    if type_mentions{ te = params[i].ty, names } { return true }
+                    i = i + 1
+                }
+                if let r = ret { return type_mentions{ te = r.*, names } }
+                return false
+            }
+            fail{ elem, set } => {
+                if let x = elem { if type_mentions{ te = x.*, names } { return true } }
+                if let x = set { return type_mentions{ te = x.*, names } }
+                return false
+            }
+            else => { return false }
+        }
+    }
+
+    // The const holding field i's default, of struct type t (§7, rule 4), or NONE.
+    fn field_default { c: Checker, t: Id, i: usize } -> u32 {
+        if types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is record{ decl } {
+            let ds = get_decl{ c, d = decl }.defaults
+            if i < ds.len { return ds[i] }
+        }
+        return NONE
+    }
+
     fn declare { mut c: Checker, kind: Kind, x: syntax::Decl, file: u32, name: syntax::Name, tparams: []syntax::Name, ns: u32 } -> u32 {
         let d = @as(u32, c.decls.len)
         let item = Decl{
@@ -671,6 +776,7 @@ namespace check {
             fields = slice::empty(types::Field){}, variants = slice::empty(Variant){},
             ret = types::VOID, ty = types::ERROR, values = slice::empty(i64){}, symbol = "",
             callback = false, any_thread = false, spawn = false, includes = slice::empty(u32){}, vars = slice::empty(CVar){},
+            defaults = slice::empty(u32){},
         }
         try! list::push{ list = &c.decls, item }
         try! map::put{ m = &c.decl_of, key = key{ file, id = x.id }, value = d }
@@ -3435,6 +3541,14 @@ namespace check {
                     break
                 }
             }
+            if found == NONE and index == NONE and defaulted{ c, e, i } {
+                let d = field_default{ c, t, i }
+                let v = const_value{ &c, d, at = expr_at{ e } }
+                if v == null { return null }
+                add_val{ xs = &out, v = retype{ c, v, t = types::prune{ s = c.ty, t = fields[i].ty } } }
+                i = i + 1
+                continue
+            }
             if found == NONE {
                 // An attribute's field left out (zero_field): false or 0.
                 let ft = types::prune{ s = c.ty, t = fields[i].ty }
@@ -3455,6 +3569,12 @@ namespace check {
         }
         if index == NONE { return Val::record{ ty = t, fields = list::items{ list = out } } }
         return Val::variant{ ty = t, index, fields = list::items{ list = out } }
+    }
+
+    // Whether struct literal e's `..` takes field i from its default.
+    fn defaulted { c: Checker, e: syntax::Expr, i: usize } -> bool {
+        let xs = map::get{ m = c.filled, key = expr_key{ e } } ifnull { return false }
+        return has_id{ xs, n = @as(u32, i) }
     }
 
     fn fold_binary { mut c: Checker, e: syntax::Expr, op: tok::Kind, a: syntax::Expr, b: syntax::Expr, t: Id } -> ?Val {
@@ -8411,7 +8531,7 @@ namespace check {
             return untagged_lit{ &c, e, t, fields = struct_fields{ &c, t }, what = utf8::view{ b }, items, forward, bind }
         }
         try! @fmt(&b, "struct `{}`", str{ s = get_decl{ c, d = decl }.name.text })
-        return fields_lit{ &c, e, t, fields = struct_fields{ &c, t }, what = utf8::view{ b }, items, spread = slice::empty(types::Field){}, forward, bind }
+        return fields_lit{ &c, e, t, fields = struct_fields{ &c, t }, what = utf8::view{ b }, items, spread = slice::empty(types::Field){}, defaults = get_decl{ c, d = decl }.defaults, forward, bind }
     }
 
     // A capability with fields (§15): only a function of the namespace that declares it, which
@@ -8479,7 +8599,7 @@ namespace check {
         }
         let mut b = message{ c }
         try! @fmt(&b, "capability `{}`", str{ s = x.name.text })
-        return fields_lit{ &c, e, t, fields = x.fields, what = utf8::view{ b }, items, spread = list::items{ list = spread }, forward, bind }
+        return fields_lit{ &c, e, t, fields = x.fields, what = utf8::view{ b }, items, spread = list::items{ list = spread }, defaults = slice::empty(u32){}, forward, bind }
     }
 
     // An extern union's literal (§12, Untagged unions) sets exactly one field; the rest of its
@@ -8514,7 +8634,7 @@ namespace check {
         let t = types::errs{ s = &c.ty, owner = NONE, one = decl }
         let mut b = message{ c }
         try! @fmt(&b, "error `{}`", q)
-        return fields_lit{ &c, e, t, fields, what = utf8::view{ b }, items, spread = slice::empty(types::Field){}, forward, bind }
+        return fields_lit{ &c, e, t, fields, what = utf8::view{ b }, items, spread = slice::empty(types::Field){}, defaults = slice::empty(u32){}, forward, bind }
     }
 
     fn variant_lit { mut c: Checker, e: syntax::Expr, ut: Id, vi: u32, items: []syntax::Item, forward: bool, bind: bool, exp: Id } -> Id {
@@ -8528,30 +8648,50 @@ namespace check {
         no_spread{ &c, e, items }
         let mut b = message{ c }
         try! @fmt(&b, "variant `{}`", str{ s = v.name })
-        return fields_lit{ &c, e, t = ut, fields, what = utf8::view{ b }, items, spread = slice::empty(types::Field){}, forward, bind }
+        return fields_lit{ &c, e, t = ut, fields, what = utf8::view{ b }, items, spread = slice::empty(types::Field){}, defaults = slice::empty(u32){}, forward, bind }
     }
 
-    // A literal's items, and the fields its spreads supply (a capability's, §15).
-    fn fields_lit { mut c: Checker, e: syntax::Expr, t: Id, fields: []types::Field, what: utf8::String, items: []syntax::Item, spread: []types::Field, forward: bool, bind: bool } -> Id {
+    // A literal's items, the fields its spreads supply (a capability's, §15), and with `..` the
+    // fields it takes from their defaults (a struct's, §7), by field: the const or NONE.
+    fn fields_lit { mut c: Checker, e: syntax::Expr, t: Id, fields: []types::Field, what: utf8::String, items: []syntax::Item, spread: []types::Field, defaults: []u32, forward: bool, bind: bool } -> Id {
         set_literal{ &c, e, literal = true }
-        if forward or bind {
-            let word: utf8::String = if forward { ".." } else { "_" }
-            errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` is not allowed in a literal", word) }
+        if bind {
+            error{ &c, at = expr_at{ e }, msg = "`_` is not allowed in a literal" }
+        } else if forward and defaults.len == 0 {
+            errorf{ &c, at = expr_at{ e }, msg = @fmt("`..` takes fields from their defaults, and {} has none", what) }
         }
         supplied{ &c, items, fields, what }
         let mut missing = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
+        let mut defaulted = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
+        let mut filled = list::new(u32){ realloc = arena::alloc, heap = c.heap }
         let mut i: usize = 0
         while i < fields.len {
-            if not given{ items, name = fields[i].name } and types::find_field{ fields = spread, name = fields[i].name } == null and not (c.in_attr and zero_field{ c, t = fields[i].ty }) {
+            let has = i < defaults.len and defaults[i] != NONE
+            if given{ items, name = fields[i].name } or types::find_field{ fields = spread, name = fields[i].name } != null {
+                // supplied
+            } else if has and forward {
+                try! list::push{ list = &filled, item = @as(u32, i) }
+            } else if has or not (c.in_attr and zero_field{ c, t = fields[i].ty }) {
+                // An attribute's number or bool left out is 0 or false, unless it has a default.
                 add_field{ xs = &missing, f = fields[i] }
+                if has { add_field{ xs = &defaulted, f = fields[i] } }
             }
             i = i + 1
         }
+        if filled.len > 0 { try! map::put{ m = &c.filled, key = expr_key{ e }, value = list::items{ list = filled } } }
         let gone = list::items{ list = missing }
         if gone.len > 0 {
             let mut b = message{ c }
             try! @fmt(&b, "{} is missing ", what)
             try! names{ fields = gone, &b }
+            let dft = list::items{ list = defaulted }
+            if dft.len > 0 and dft.len == gone.len {
+                try! utf8::push{ &b, s = if dft.len == 1 { ": `..` at the end takes it from its default" } else { ": `..` at the end takes them from their defaults" } }
+            } else if dft.len > 0 {
+                try! utf8::push{ &b, s = " (`..` at the end takes " }
+                try! names{ fields = dft, &b }
+                try! utf8::push{ &b, s = if dft.len == 1 { " from its default)" } else { " from their defaults)" } }
+            }
             error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
         }
         i = 0

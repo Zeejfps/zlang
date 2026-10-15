@@ -70,9 +70,13 @@ isn't null there (`8357131`).
    the state somewhere it doesn't belong. `let mut x: T` zero-initialises only if every field has
    a zero value, which an enum, a pointer, a function or a `list::List` doesn't: a struct holding
    one needs a `new` that spells every field, an enum array a made-up filler variant, and the GUI
-   chose `K_*` `u8` constants over an enum to keep `Control` zero-initialisable. Defaults for
-   fields or a spread (`Stats{ speed_factor = 1.0, ..zero }`), and an enum's first variant as its
-   zero, would do. *Hit by 7:* engine (2), gui, rules, chargen, minigames (3 structs), screens,
+   chose `K_*` `u8` constants over an enum to keep `Control` zero-initialisable. *Partly:* a
+   struct's field may have a default, a const (`speed_factor: f32 = 1.0`, `kind: Class =
+   Class::soldier`, `target: ?*T = null`), and a literal ending in `..` takes the fields it
+   leaves out from theirs (spec §7, rule 4), so a field added with a default breaks no literal
+   that has `..`. Defaults are for literals only: a struct with an enum, a pointer, a function or
+   a list still has no zero value, and a `[]T` field can't have one, a const holding no slice but
+   a string's. An enum's first variant as its zero would do the rest. *Hit by 7:* engine (2), gui, rules, chargen, minigames (3 structs), screens,
    audio (3).
 
 4. **No bit casts.** An f32 or i32 from its bits, and back, goes through a local and a pointer

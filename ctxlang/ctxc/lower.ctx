@@ -2349,6 +2349,15 @@ namespace lower {
         return types::slice{ s = &l.c.ty, elem = types::U8, mutable = false }
     }
 
+    // Const d's value, of type t: a reference to it if it is an aggregate, else the value itself.
+    fn const_ex { mut l: Lower, d: u32, t: Id, at: source::Span } -> ir::Expr {
+        if get{ l, t } is array | record | sum | opt | slice {
+            let ty = tid{ &l, t }
+            return mk{ ty, k = ir::ExprKind::constref{ id = const_id{ &l, d, at } } }
+        }
+        return value{ &l, v = const_val{ &l, d, at } }
+    }
+
     fn path_ex { mut l: Lower, e: syntax::Expr, t: Id } -> ir::Expr {
         let r = map::get{ m = l.c.refs, key = check::expr_key{ e } }
         if r == null { @panic("lower: a path that didn't resolve") }
@@ -2359,14 +2368,7 @@ namespace lower {
                 let ts = T_all{ &l, ts = targs }
                 return mk{ ty, k = ir::ExprKind::fnref{ callee = fn_id{ &l, decl, targs = ts } } }
             }
-            constant{ decl } => {
-                let at = check::expr_at{ e }
-                if get{ l, t } is array | record | sum | opt | slice {
-                    let ty = tid{ &l, t }
-                    return mk{ ty, k = ir::ExprKind::constref{ id = const_id{ &l, d = decl, at } } }
-                }
-                return value{ &l, v = const_val{ &l, d = decl, at } }
-            }
+            constant{ decl } => { return const_ex{ &l, d = decl, t, at = check::expr_at{ e } } }
             enumval{ ty, index } => {
                 let d = enum_decl{ l, t = ty }
                 let v = check::get_decl{ c = l.c.*, d }.values[index]
@@ -2788,7 +2790,8 @@ namespace lower {
             let fields = check::struct_fields{ c = l.c, t = types::prune{ s = l.c.ty, t } }
             let ty = tid{ &l, t }
             if has_spread{ items } { return spread_lit{ &l, e, items, fields, ty } }
-            return mk{ ty, k = ir::ExprKind::record{ items = item_args{ &l, e, items, fields, ptrs = false } } }
+            let args = item_args{ &l, e, items, fields, ptrs = false }
+            return mk{ ty, k = ir::ExprKind::record{ items = default_args{ &l, e, t, fields, args } } }
         }
         if r is func{ decl, targs } {
             let ts = T_all{ &l, ts = targs }
@@ -2808,6 +2811,27 @@ namespace lower {
         let args = item_args{ &l, e, items, fields, ptrs = true }
         if bind { return mk{ ty, k = ir::ExprKind::dbind{ callee = box{ l, e = c }, args } } }
         return mk{ ty, k = ir::ExprKind::dcall{ callee = box{ l, e = c }, args } }
+    }
+
+    // A struct literal's args, then those of the fields its `..` takes from their defaults (§7):
+    // each its default's const.
+    fn default_args { mut l: Lower, e: syntax::Expr, t: Id, fields: []types::Field, args: []ir::Arg } -> []ir::Arg {
+        let filled = map::get{ m = l.c.filled, key = check::expr_key{ e } } ifnull { return args }
+        let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i < args.len {
+            add_arg{ xs = &out, a = args[i] }
+            i = i + 1
+        }
+        i = 0
+        while i < filled.len {
+            let fi = @as(usize, filled[i])
+            let d = check::field_default{ c = l.c.*, t, i = fi }
+            let x = const_ex{ &l, d, t = fields[fi].ty, at = check::expr_at{ e } }
+            add_arg{ xs = &out, a = ir::Arg{ index = filled[i], value = x } }
+            i = i + 1
+        }
+        return list::items{ list = out }
     }
 
     fn has_spread { items: []syntax::Item } -> bool {

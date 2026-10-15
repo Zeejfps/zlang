@@ -48,8 +48,9 @@ namespace build {
         col: u32,
     }
 
-    // A field, with its attributes (spec §18). Only a fn's context has `mut` ones.
-    struct Field { name: []u8, ty: []u8, mutable: bool, attrs: []Attr }
+    // A field, with its attributes (spec §18). Only a fn's context has `mut` ones, and only a
+    // struct's has a default (spec §7), its `= e` as written in `value`; empty without one.
+    struct Field { name: []u8, ty: []u8, mutable: bool, attrs: []Attr, value: []u8 }
 
     // A union's variant, with `payload` if it has braces (`v{}` too), or an enum's, with `value`
     // its `= e` if it has one.
@@ -409,7 +410,7 @@ namespace build {
             let out = try alloc::resize(Field, S){ realloc = w.realloc, heap = w.heap, mem = slice::empty(Field){}, count = xs.len }
             let mut i: usize = 0
             while i < xs.len {
-                out[i] = Field{ name = xs[i].name.text, ty = try type_text{ &w, t = xs[i].ty }, mutable = xs[i].mutable, attrs = try attrs{ &w, xs = xs[i].attrs } }
+                out[i] = Field{ name = xs[i].name.text, ty = try type_text{ &w, t = xs[i].ty }, mutable = xs[i].mutable, attrs = try attrs{ &w, xs = xs[i].attrs }, value = "" }
                 i = i + 1
             }
             return out
@@ -419,7 +420,8 @@ namespace build {
             let out = try alloc::resize(Field, S){ realloc = w.realloc, heap = w.heap, mem = slice::empty(Field){}, count = xs.len }
             let mut i: usize = 0
             while i < xs.len {
-                out[i] = Field{ name = xs[i].name.text, ty = try type_text{ &w, t = xs[i].ty }, mutable = false, attrs = try attrs{ &w, xs = xs[i].attrs } }
+                let value: []u8 = if let x = xs[i].default { try squeeze{ &w, span = x.span } } else { "" }
+                out[i] = Field{ name = xs[i].name.text, ty = try type_text{ &w, t = xs[i].ty }, mutable = false, attrs = try attrs{ &w, xs = xs[i].attrs }, value }
                 i = i + 1
             }
             return out

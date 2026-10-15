@@ -192,8 +192,9 @@ namespace parser {
                     value = syntax::Expr{ id = new_id{ &p }, span = e.span, at = e.span.start, k }
                     ok = true
                 }
-                braced{ callee, forward, bind } => {
-                    if callee.k is path { ok = not forward and not bind }
+                // `..` takes fields from their defaults, as in any struct literal (§7).
+                braced{ callee, bind } => {
+                    if callee.k is path { ok = not bind }
                 }
                 else => {}
             }
@@ -306,8 +307,9 @@ namespace parser {
         return list::items{ list = xs }
     }
 
-    // `{ name: T, ... }`, of a struct, an extern union, a union variant or an error, each field
-    // with its attributes.
+    // `{ name: T, name: T = e, ... }`, of a struct, an extern union, a union variant or an error,
+    // each field with its attributes and maybe a default, which only a struct's may have (the
+    // checker says so).
     fn plain_fields { mut p: Parser } -> []syntax::Field {
         let mut xs = list::new(syntax::Field){ realloc = arena::alloc, heap = p.heap }
         expect{ &p, k = tok::Kind::lbrace }
@@ -317,7 +319,13 @@ namespace parser {
             let name = ident{ &p }
             expect{ &p, k = tok::Kind::colon }
             let ty = type_expr{ &p }
-            try! list::push{ list = &xs, item = syntax::Field{ span = span_from{ p, start }, attrs, name, ty, external = false, stat = false } }
+            let mut default: ?syntax::Expr = null
+            let mut default_id: u32 = 0
+            if accept{ &p, k = tok::Kind::assign } {
+                default = expr{ &p }
+                default_id = new_id{ &p }
+            }
+            try! list::push{ list = &xs, item = syntax::Field{ span = span_from{ p, start }, attrs, name, ty, external = false, stat = false, default, default_id } }
             if not accept{ &p, k = tok::Kind::comma } { break }
         }
         expect{ &p, k = tok::Kind::rbrace }
@@ -344,7 +352,7 @@ namespace parser {
                 let name = ident{ &p }
                 expect{ &p, k = tok::Kind::colon }
                 let ty = type_expr{ &p }
-                try! list::push{ list = &xs, item = syntax::Field{ span = span_from{ p, start }, attrs, name, ty, external, stat } }
+                try! list::push{ list = &xs, item = syntax::Field{ span = span_from{ p, start }, attrs, name, ty, external, stat, default = null, default_id = 0 } }
             }
             if not accept{ &p, k = tok::Kind::comma } { break }
         }

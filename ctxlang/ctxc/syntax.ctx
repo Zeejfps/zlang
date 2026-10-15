@@ -58,8 +58,9 @@ namespace syntax {
     // A field of a struct, an extern union, a union variant's payload, an error or a capability,
     // with its attributes, on the lines before its span, as a declaration has. In a capability's
     // braces, an external one, `extern name: T`, is a C variable (§15), and a static one,
-    // `static name: T`, is a static.
-    struct Field { span: Span, attrs: []Attr, name: Name, ty: TypeExpr, external: bool, stat: bool }
+    // `static name: T`, is a static. A struct's field may have a default, `name: T = e` (§7):
+    // the checker makes it a const of its own, a declaration with the id default_id.
+    struct Field { span: Span, attrs: []Attr, name: Name, ty: TypeExpr, external: bool, stat: bool, default: ?Expr, default_id: u32 }
 
     // A variant without a payload has null fields, and `v{}` has none.
     struct Variant { span: Span, name: Name, fields: ?[]Field }
