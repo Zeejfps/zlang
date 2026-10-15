@@ -334,7 +334,7 @@ namespace fight_log {
         let mut d = total
         if party::is_member{ w, id = t.id } or t.id == w.player {
             let table = rules::raw_table{ tables = w.rules, which = rules::Tab::difficultyopt }
-            if twoda::get_float{ t = table, row = @as(usize, w.rules.settings.difficulty), column = "multiplier" } is some{ value = m } {
+            if let m = twoda::get_float{ t = table, row = @as(usize, w.rules.settings.difficulty), column = "multiplier" } {
                 d = @as(i32, @as(f32, total) * m)
             }
         }
@@ -499,7 +499,7 @@ namespace fight_log {
         // DoDamageResistance notes 2 for Improved Toughness and Wookiee Endurance whenever a creature
         // with the feat mitigates an attack's damage.
         if not d.forced {
-            if fight::of{ o = target } is some{ value = tf } {
+            if let tf = fight::of{ o = target } {
                 if rules::has_feat{ c = &tf.c, feat = rules::feat::IMPROVED_TOUGHNESS } { put_text{ b = &parts, s = " - " }; put_part{ w, b = &parts, strref = 42433, v = 2 } }
                 if rules::has_feat{ c = &tf.c, feat = rules::feat::WOOKIEE_ENDURANCE } { put_text{ b = &parts, s = " - " }; put_part{ w, b = &parts, strref = 42434, v = 2 } }
             }
@@ -530,7 +530,7 @@ namespace fight_log {
         if copies == 0 { return }
         let mut b = new_line{ w = &w }
         defer list::free{ list = &b.bytes }
-        if known is some{ value = a } {
+        if let a = known {
             expand_template{ w = &w, &b, strref = T_DAMAGES, holes = [
                 Hole::text{ s = doors::name_text{ w = &w, o = a } }, Hole::text{ s = doors::name_text{ w = &w, o = t } },
                 Hole::num{ v = amount }, Hole::none, Hole::none,
@@ -649,8 +649,8 @@ namespace fight_log {
         floating{ &w, object = victim, kind = FLOAT_XP, amount = xp }
         let v = world::object{ w = &w, id = victim } ifnull { return }
         let mut by = killer
-        if world::object{ w = &w, id = killer } is some{ value = ko } {
-            if obj::trigger{ o = ko } is some{ value = tr } {
+        if let ko = world::object{ w = &w, id = killer } {
+            if let tr = obj::trigger{ o = ko } {
                 if tr.trap.creator != obj::INVALID { by = tr.trap.creator }
             }
         }

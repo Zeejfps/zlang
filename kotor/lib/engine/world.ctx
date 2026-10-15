@@ -519,7 +519,7 @@ namespace world {
                 list::free{ list = &c.path }
                 list::free{ list = &c.triggers }
                 list::free{ list = &c.perceived }
-                if c.fighter is some{ value = f } { fight::free_fighter{ heap = w.heap, f } }
+                if let f = c.fighter { fight::free_fighter{ heap = w.heap, f } }
                 _ = alloc::resize(obj::Creature, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(c, 1), count = 0 }
             }
             door{ d } => {
@@ -542,7 +542,7 @@ namespace world {
                 _ = alloc::resize(obj::Trigger, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(t, 1), count = 0 }
             }
             item{ i } => {
-                if i.rules is some{ value = ri } { _ = alloc::resize(rules::Item, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(ri, 1), count = 0 } }
+                if let ri = i.rules { _ = alloc::resize(rules::Item, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(ri, 1), count = 0 } }
                 _ = alloc::resize(obj::Item, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(i, 1), count = 0 }
             }
             waypoint{ wp } => {
@@ -606,7 +606,7 @@ namespace world {
     fn set_animation { o: *mut obj::Object, id: u32, speed: f32 } {
         if o.animation == id and o.anim_speed == speed and o.anim_cycles == 0.0 { return }
         // A dead creature keeps to its dead pose (CSWSCreature::SetAnimation, fight::is_dead_pose).
-        if obj::creature{ o } is some{ value = c } {
+        if let c = obj::creature{ o } {
             if c.dead and not fight::is_dead_pose{ id } { return }
         }
         o.animation = id

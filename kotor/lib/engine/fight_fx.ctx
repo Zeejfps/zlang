@@ -80,7 +80,7 @@ namespace fight {
         let row = twoda::find_row{ t = w.tables.visualeffects, label = label[..n] } ifnull { return }
         let sound = twoda::get_string{ t = w.tables.visualeffects, row, column = "soundimpact" } ifnull ""
         let mut at = position
-        if world::object{ w = &w, id = target } is some{ value = o } { at = chest_of{ o } }
+        if let o = world::object{ w = &w, id = target } { at = chest_of{ o } }
         say{ &w, name = sound, at, source = target }
     }
 
@@ -111,7 +111,7 @@ namespace fight {
             if sound.len > 0 and not ci::eq{ a = sound, b = "****" } { say{ &w, name = sound, at = chest_of{ o }, source = id } }
         } else {
             let mut gender: bool = false
-            if obj::creature{ o } is some{ value = c } { gender = c.gender == 1 }
+            if let c = obj::creature{ o } { gender = c.gender == 1 }
             let columns: [2][]u8 = ["conjsoundvfx", if gender { "conjsoundfemale" } else { "conjsoundmale" }]
             let mut n: usize = 0
             while n < 2 {
@@ -169,8 +169,8 @@ namespace fight {
     // "stone" and "wood" come from three client creature flags nothing in the game sets (3.15).
     fn hit_column { mut w: world::World, t: *obj::Object, into: []mut u8 } -> []u8 {
         let mut kind = ""
-        if obj::creature{ o = t } is some{ value = tc } {
-            if tc.fighter is some{ value = tf } {
+        if let tc = obj::creature{ o = t } {
+            if let tf = tc.fighter {
                 if rules::has_force_shield{ c = &tf.c } { kind = "forcefield" }
             }
             let st = if kind.len == 0 { sound_type_of{ w = &w, c = tc } } else { -1 }
@@ -179,8 +179,8 @@ namespace fight {
                 if own.len < 12 { kind = own }
             }
             if kind.len == 0 {
-                if world::object{ w = &w, id = tc.equipped[obj::SLOT_BODY] } is some{ value = armor } {
-                    if obj::item{ o = armor } is some{ value = it } {
+                if let armor = world::object{ w = &w, id = tc.equipped[obj::SLOT_BODY] } {
+                    if let it = obj::item{ o = armor } {
                         let s = twoda::get_string{ t = w.tables.baseitems, row = @as(usize, it.base), column = "armortype" } ifnull ""
                         if s.len < 12 { kind = s }
                     }
@@ -207,8 +207,8 @@ namespace fight {
     // creature's own weapon sounds (appearancesndset.2da, 0 unarmed).
     fn weapon_sound_row { w: *world::World, c: *obj::Creature } -> usize {
         let item = c.equipped[obj::SLOT_RIGHT_WEAPON]
-        if world::object{ w, id = item } is some{ value = io } {
-            if obj::item{ o = io } is some{ value = it } {
+        if let io = world::object{ w, id = item } {
+            if let it = obj::item{ o = io } {
                 return @as(usize, twoda::get_int{ t = w.tables.baseitems, row = @as(usize, it.base), column = "weaponmattype" } ifnull 0)
             }
         }

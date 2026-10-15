@@ -448,7 +448,7 @@ namespace rt_talent {
         // A Force power paid for is checked for its points when it is ordered, not again (AddCastSpellActions,
         // the routines' 0x005a5550; actions.md 3.13): the payment at the end of the conjuration floors the pool.
         if cheat == 0 and item == obj::INVALID and is_force_power{ w = &w, spell } {
-            if fighter_of{ w = &w, id = me } is some{ value = f } {
+            if let f = fighter_of{ w = &w, id = me } {
                 if not rules::has_enough_force_points{ tables = w.rules, c = &f.c, spell } {
                     if w.log.actions or w.log.combat {
                         world::prefix{ w = &w }
@@ -476,10 +476,10 @@ namespace rt_talent {
         if t.kind == nwconst::TALENT_TYPE_SPELL {
             let mut item = t.item
             if item == obj::INVALID {
-                if world::object{ w = &w, id = me } is some{ value = o } {
-                    if obj::creature{ o } is some{ value = c } {
+                if let o = world::object{ w = &w, id = me } {
+                    if let c = obj::creature{ o } {
                         // A spell that is not a known power comes from a carried item.
-                        if f is some{ value = rf } {
+                        if let rf = f {
                             if not rules::knows_power{ c = &rf.c, spell = t.id } {
                                 let carried = item_spell_of{ &w, id = me, c, spell = t.id }
                                 item = carried.item
@@ -491,7 +491,7 @@ namespace rt_talent {
             queue_cast{ &w, me, spell = t.id, target, location, cheat = 0, instant = 0, item }
         } else if t.kind == nwconst::TALENT_TYPE_FEAT {
             let mut feat = t.id
-            if f is some{ value = rf } { feat = best_of_chain{ w = &w, f = rf, feat } }
+            if let rf = f { feat = best_of_chain{ w = &w, f = rf, feat } }
             if is_combat_feat{ feat } {
                 queue_feat_attack{ &w, me, feat, target }
             } else if w.log.actions {

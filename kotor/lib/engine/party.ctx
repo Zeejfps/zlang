@@ -173,9 +173,9 @@ namespace party {
     fn inventory_of { mut w: world::World, id: u32 } -> ?*mut list::List(u32, heap::Heap) {
         if id == w.player or is_member{ w = &w, id } { return &w.bag }
         let o = world::object{ w = &w, id } ifnull { return null }
-        if obj::creature{ o } is some{ value = c } { return &c.inventory }
-        if obj::placeable{ o } is some{ value = p } { return &p.inventory }
-        if obj::store{ o } is some{ value = st } { return &st.stock }
+        if let c = obj::creature{ o } { return &c.inventory }
+        if let p = obj::placeable{ o } { return &p.inventory }
+        if let st = obj::store{ o } { return &st.stock }
         return null
     }
 
@@ -207,8 +207,8 @@ namespace party {
             if holds{ w = &w, item } { continue }
             if xfer::absorb{ &w, l = &w.bag, item } { continue }
             list::push{ list = &w.bag, item } iferr { continue }
-            if world::object{ w = &w, id = item } is some{ value = io } {
-                if obj::item{ o = io } is some{ value = it } { it.possessor = w.player }
+            if let io = world::object{ w = &w, id = item } {
+                if let it = obj::item{ o = io } { it.possessor = w.player }
             }
         }
         list::clear{ list = &c.inventory }
@@ -269,8 +269,8 @@ namespace party {
         if c.dead or fight::is_down{ w = &w, id } { return false }
         let player = id == leader{ w = &w } or id == w.player
         if player {
-            if world::object{ w = &w, id = o.area } is some{ value = ao } {
-                if obj::area{ o = ao } is some{ value = a } {
+            if let ao = world::object{ w = &w, id = o.area } {
+                if let a = obj::area{ o = ao } {
                     if a.no_rest { return refuse_rest{ &w, id, why = "the area forbids it" } }
                 }
             }

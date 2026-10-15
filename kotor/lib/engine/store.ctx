@@ -115,11 +115,11 @@ namespace store {
         let mut k: usize = 0
         while k < stock.len {
             if xfer::stacks_together{ w = &w, a = stock[k], b = unit } {
-                if world::object{ w = &w, id = stock[k] } is some{ value = so } {
-                    if obj::item{ o = so } is some{ value = si } {
+                if let so = world::object{ w = &w, id = stock[k] } {
+                    if let si = obj::item{ o = so } {
                         if not si.infinite {
                             si.stack = si.stack + 1
-                            if si.rules is some{ value = ri } { ri.stack = @as(i32, si.stack) }
+                            if let ri = si.rules { ri.stack = @as(i32, si.stack) }
                         }
                         world::destroy{ &w, id = unit }
                         return price

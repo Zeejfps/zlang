@@ -302,7 +302,7 @@ namespace walkmap {
             let p = math::Vec3{ x = from.x + dx * t, y = from.y + dy * t, z = good.z }
             let mut off = true
             let mut fz = good.z
-            if floor{ m, x = p.x, y = p.y, z = good.z } is some{ value = found } {
+            if let found = floor{ m, x = p.x, y = p.y, z = good.z } {
                 off = found.z < good.z - STEP_DOWN
                 fz = found.z
             }
@@ -330,7 +330,7 @@ namespace walkmap {
                         if mat < m.walkable.len and m.walkable[mat] { continue }
                         let c = bwm::face_corners{ w = pl.mesh, face }
                         if not bwm::is_over_triangle{ c, x = p.x, y = p.y } { continue }
-                        if crossed_edge{ c, a = good, b = here } is some{ value = e } { return e }
+                        if let e = crossed_edge{ c, a = good, b = here } { return e }
                     }
                 }
                 return null

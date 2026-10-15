@@ -81,7 +81,7 @@ namespace rt_pres {
     fn sound_object { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, play: bool } -> ! {
         let id = try nwarg::object{ &vm, routine, argc, i = 0 }
         let o = world::object{ w = &w, id } ifnull { return }
-        if obj::sound{ o } is some{ value = s } { s.active = play }
+        if let s = obj::sound{ o } { s.active = play }
         outbox::post{ out = &w.out, note = outbox::Note::sound_object{ id, play, volume = -1 } }
     }
 

@@ -45,8 +45,8 @@ namespace report {
         _ = @fmt(&w.io, "party attack rounds:")
         let mut i: usize = 0
         while i < team.len {
-            if world::object{ w = &w, id = team[i] } is some{ value = o } {
-                if obj::creature{ o } is some{ value = c } {
+            if let o = world::object{ w = &w, id = team[i] } {
+                if let c = obj::creature{ o } {
                     let mut name: []u8 = o.tag
                     if name.len == 0 { name = "player" }
                     if i > 0 { _ = @fmt(&w.io, ",") }
@@ -58,8 +58,8 @@ namespace report {
         _ = @fmt(&w.io, "\n")
         i = 0
         while i < team.len {
-            if world::object{ w = &w, id = team[i] } is some{ value = o } {
-                if obj::creature{ o } is some{ value = c } {
+            if let o = world::object{ w = &w, id = team[i] } {
+                if let c = obj::creature{ o } {
                     let slot = party::stat_slot{ w = &w, id = team[i] }
                     let own = w.stats.member_rounds[slot] - w.stats.member_joined_own[slot]
                     let others = w.stats.party_rounds - w.stats.member_joined[slot] - own

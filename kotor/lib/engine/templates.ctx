@@ -170,7 +170,7 @@ namespace tmpl {
         // 0x00500350: Listening, ExpressionList of ExpressionId / ExpressionString): without them
         // a loaded companion no longer hears GEN_I_WAS_ATTACKED and stands out of every fight.
         c.listening = flag{ doc, s, label = "Listening", default = c.listening }
-        if gff::get_list{ doc = doc.*, s, label = "ExpressionList" } is some{ value = exprs } {
+        if let exprs = gff::get_list{ doc = doc.*, s, label = "ExpressionList" } {
             c.listen_count = 0
             let mut x: usize = 0
             while x < exprs.len and x < 4 {
@@ -238,7 +238,7 @@ namespace tmpl {
             c.equipped[@as(usize, slot)] = item
             let io = world::object{ w = &w, id = item }
             if io != null {
-                if obj::item{ o = io } is some{ value = it } { it.equipped_slot = slot }
+                if let it = obj::item{ o = io } { it.equipped_slot = slot }
             }
         }
         let carried = gff::get_list{ doc = doc.*, s, label = "ItemList" } ifnull slice::empty(u32){}
@@ -262,7 +262,7 @@ namespace tmpl {
             let o = world::add_object{ &w, kind = obj::Kind::item, id = if fresh { saved_id } else { 0 }, character = false } iferr { return null }
             o.ai_level = -1
             read{ &w, o, doc, s } iferr { return null }
-            if obj::item{ o } is some{ value = it } {
+            if let it = obj::item{ o } {
                 it.possessor = possessor
                 it.droppable = (gff::get_number{ doc = doc.*, s, label = "Dropable" } ifnull 0) != 0
             }
@@ -272,8 +272,8 @@ namespace tmpl {
         if name.len == 0 { return null }
         let id = spawn_item{ &w, template = name, possessor } iferr { return null }
         // The list element says whether it drops (a blueprint's own flag is not used for this).
-        if world::object{ w = &w, id } is some{ value = io } {
-            if obj::item{ o = io } is some{ value = it } { it.droppable = (gff::get_number{ doc = doc.*, s, label = "Dropable" } ifnull 0) != 0 }
+        if let io = world::object{ w = &w, id } {
+            if let it = obj::item{ o = io } { it.droppable = (gff::get_number{ doc = doc.*, s, label = "Dropable" } ifnull 0) != 0 }
         }
         return id
     }

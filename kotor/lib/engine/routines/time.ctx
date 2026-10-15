@@ -61,7 +61,7 @@ namespace rt_time {
         let mut dusk: u32 = 18
         let mo = world::object{ w, id = w.module }
         if mo != null {
-            if obj::module{ o = mo } is some{ value = m } {
+            if let m = obj::module{ o = mo } {
                 dawn = m.dawn_hour
                 dusk = m.dusk_hour
             }

@@ -68,8 +68,8 @@ namespace modload {
         }
         // A save's RestrictMode that is set and differs from the ARE's takes the party out of
         // stealth (LoadProperties 0x00507490); ours once the party is back.
-        if world::object{ w = &w, id = w.area } is some{ value = ro } {
-            if obj::area{ o = ro } is some{ value = ra } {
+        if let ro = world::object{ w = &w, id = w.area } {
+            if let ra = obj::area{ o = ro } {
                 if ra.restrict_mode != 0 and ra.restrict_mode != are_restrict { stealth::leave_party{ &w } }
             }
         }
@@ -87,7 +87,7 @@ namespace modload {
             i = i + 1
             // The client's creatures are made afresh for a module, out of combat mode (unloading the client's module,
             // 0x005f8290, also clears client+0x320).
-            if obj::creature{ o } is some{ value = c } { c.combat_mode = false }
+            if let c = obj::creature{ o } { c.combat_mode = false }
             if o.kind != obj::Kind::creature or o.id == w.pc { continue }
             // A loaded save's creatures stand inside their triggers already (no OnEnter for them).
             if w.restoring { movement::settle_volumes{ &w, id = o.id } }
@@ -211,7 +211,7 @@ namespace modload {
         // the four minigame areas carry a MiniGame struct (docs/design/minigames.md)
         a.minigame = null
         let setup = try mg::read_are(arena::Arena){ doc = doc.*, realloc = arena::alloc, heap = w.mod_arena }
-        if setup is some{ value = m } { a.minigame = try alloc::new(mg::Area, arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, value = m } }
+        if let m = setup { a.minigame = try alloc::new(mg::Area, arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, value = m } }
         tmpl::script{ doc, s, o, label = "OnEnter", slot = obj::Slot::enter }
         tmpl::script{ doc, s, o, label = "OnExit", slot = obj::Slot::exit }
         tmpl::script{ doc, s, o, label = "OnHeartbeat", slot = obj::Slot::heartbeat }
@@ -254,7 +254,7 @@ namespace modload {
         let props = gff::get_struct{ doc = doc.*, s, label = "AreaProperties" }
         let ao = world::object{ w = &w, id = w.area }
         if props != null and ao != null {
-            if obj::area{ o = ao } is some{ value = a } {
+            if let a = obj::area{ o = ao } {
                 a.music_day = @trunc(i32, tmpl::number{ doc, s = props, label = "MusicDay", default = 0 })
                 a.music_night = @trunc(i32, tmpl::number{ doc, s = props, label = "MusicNight", default = 0 })
                 a.music_battle = @trunc(i32, tmpl::number{ doc, s = props, label = "MusicBattle", default = 0 })
@@ -341,7 +341,7 @@ namespace modload {
         try tmpl::read{ &w, o, doc, s }
         o.position = position
         if kind == obj::Kind::trigger {
-            if obj::trigger{ o } is some{ value = t } { try tmpl::read_geometry{ &w, t, doc, s, origin = position } }
+            if let t = obj::trigger{ o } { try tmpl::read_geometry{ &w, t, doc, s, origin = position } }
         }
         if kind == obj::Kind::door or kind == obj::Kind::placeable { try place_walkmesh{ &w, id, bearing } }
         if whole { save::read_actions{ &w, doc, s, id } }
@@ -359,11 +359,11 @@ namespace modload {
         let mut n: usize = 0
         let mut model = resref::empty{}
         let mut kind = restype::Type::pwk
-        if obj::door{ o } is some{ value = d } {
+        if let d = obj::door{ o } {
             model = d.model
             kind = restype::Type::dwk
         }
-        if obj::placeable{ o } is some{ value = p } { model = p.model }
+        if let p = obj::placeable{ o } { model = p.model }
         if resref::is_empty{ r = model } { return }
         let text = resref::bytes{ r = &model }
         while n < text.len and n < 20 {
@@ -378,11 +378,11 @@ namespace modload {
         let raw = try bwm::parse(arena::Arena){ realloc = arena::alloc, heap = w.scratch, bytes }
         let placed = try bwm::transform_placed(arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, w = raw, at = bwm::Placement{ position = o.position, bearing } }
         let index = try walkmap::add_placed{ m = &w.walk, placed = walkmap::Placed{ owner = id, mesh = placed, active = true, door = kind == restype::Type::dwk } }
-        if obj::door{ o } is some{ value = d } {
+        if let d = obj::door{ o } {
             d.walk = index
             walkmap::set_active{ m = &w.walk, index, active = d.state == obj::DoorState::closed }
         }
-        if obj::placeable{ o } is some{ value = p } { p.walk = index }
+        if let p = obj::placeable{ o } { p.walk = index }
     }
 
     // The player arrives (gameloop.md 5.5 steps 7-11): the PC is made if there is none, placed
@@ -405,8 +405,8 @@ namespace modload {
         let bag = list::items{ list = w.bag }
         let mut bi: usize = 0
         while bi < bag.len {
-            if world::object{ w = &w, id = bag[bi] } is some{ value = bo } {
-                if obj::item{ o = bo } is some{ value = bit } { bit.possessor = w.player }
+            if let bo = world::object{ w = &w, id = bag[bi] } {
+                if let bit = obj::item{ o = bo } { bit.possessor = w.player }
             }
             bi = bi + 1
         }
@@ -447,8 +447,8 @@ namespace modload {
         // The companions come back next to the player (RestoreParty, 3.3); not in a minigame,
         // where the player is a vehicle.
         let mut minigame = false
-        if world::object{ w = &w, id = w.area } is some{ value = mao } {
-            if obj::area{ o = mao } is some{ value = ma } { minigame = ma.minigame != null }
+        if let mao = world::object{ w = &w, id = w.area } {
+            if let ma = obj::area{ o = mao } { minigame = ma.minigame != null }
         }
         if not minigame {
             save::restore_party{ &w, at_saved = from_save } iferr err{ error } {
@@ -489,7 +489,7 @@ namespace modload {
         o.position = math::Vec3{ x = tmpl::real{ doc, s, label = "XPosition", default = 0.0 }, y = tmpl::real{ doc, s, label = "YPosition", default = 0.0 }, z = tmpl::real{ doc, s, label = "ZPosition", default = 0.0 } }
         world::set_orientation{ o, v = math::Vec3{ x = tmpl::real{ doc, s, label = "XOrientation", default = 0.0 }, y = tmpl::real{ doc, s, label = "YOrientation", default = 1.0 }, z = 0.0 } }
         try tmpl::read{ &w, o, doc, s }
-        if obj::creature{ o } is some{ value = c } {
+        if let c = obj::creature{ o } {
             c.is_pc = true
             c.spawn_fired = tmpl::hench_spawn_fired{ o, c }
             tmpl::set_rate{ &w, c, row = 0 }
@@ -511,7 +511,7 @@ namespace modload {
             i = i + 1
             if o.ai_level == 0 and o.kind != obj::Kind::item { o.ai_level = 1 }
             if o.kind == obj::Kind::placeable {
-                if obj::placeable{ o } is some{ value = p } {
+                if let p = obj::placeable{ o } {
                     if p.static { o.ai_level = 0 }
                 }
             }
@@ -545,7 +545,7 @@ namespace modload {
             w.player = o.id
             try tmpl::read{ &w, o, doc = &doc, s = gff::ROOT }
             try world::set_tag{ &w, o, tag = "" }
-            if obj::creature{ o } is some{ value = c } {
+            if let c = obj::creature{ o } {
                 c.is_pc = true
                 c.spawn_fired = tmpl::hench_spawn_fired{ o, c }
                 tmpl::set_rate{ &w, c, row = 0 }
@@ -597,11 +597,11 @@ namespace modload {
     fn link_of { o: *obj::Object } -> ?world::Transition {
         let mut t = world::Transition{ module = resref::empty{}, waypoint = [0; 64], waypoint_len = 0 }
         let mut to = ""
-        if obj::door{ o } is some{ value = d } {
+        if let d = obj::door{ o } {
             if d.linked_flags == 0 { return null }
             t.module = d.linked_to_module
             to = d.linked_to
-        } else if obj::trigger{ o } is some{ value = tr } {
+        } else if let tr = obj::trigger{ o } {
             t.module = tr.linked_to_module
             to = tr.linked_to
         } else { return null }
@@ -674,8 +674,8 @@ namespace modload {
             // area spawns none of them (enter_area), so leaving it keeps what the module before it kept: the party
             // that left Davik's estate boards the Ebon Hawk after the turret.
             let mut minigame = false
-            if world::object{ w = &w, id = w.area } is some{ value = mao } {
-                if obj::area{ o = mao } is some{ value = ma } { minigame = ma.minigame != null }
+            if let mao = world::object{ w = &w, id = w.area } {
+                if let ma = obj::area{ o = mao } { minigame = ma.minigame != null }
             }
             if not minigame {
                 save::keep_party{ &w } iferr err{ error } {
@@ -695,8 +695,8 @@ namespace modload {
         let bag = list::items{ list = w.bag }
         let mut b: usize = 0
         while b < bag.len {
-            if world::object{ w = &w, id = bag[b] } is some{ value = bo } {
-                if obj::item{ o = bo } is some{ value = bi } { bi.possessor = w.player }
+            if let bo = world::object{ w = &w, id = bag[b] } {
+                if let bi = obj::item{ o = bo } { bi.possessor = w.player }
             }
             b = b + 1
         }
@@ -707,7 +707,7 @@ namespace modload {
             let o = all[i]
             i = i + 1
             if o.id == w.pc or o.destroyed { continue }
-            if obj::item{ o } is some{ value = it } {
+            if let it = obj::item{ o } {
                 if it.possessor == w.pc or it.possessor == w.player { continue }
             }
             o.destroyed = true
@@ -728,7 +728,7 @@ namespace modload {
         let pc = world::object{ w = &w, id = w.pc }
         if pc != null {
             pc.area = obj::INVALID
-            if obj::creature{ o = pc } is some{ value = c } { list::clear{ list = &c.triggers } }
+            if let c = obj::creature{ o = pc } { list::clear{ list = &c.triggers } }
         }
         arena::reset{ heap = w.mod_arena }
     }
@@ -749,7 +749,7 @@ namespace modload {
         // An autosave on arrival (gameloop.md 5.7): modulesave.2da AutoSaveOnEnter of the target
         // says force (always), no (never) or yes (when the 15 min timer is due); no row: always.
         let row = twoda::find_row{ t = w.tables.modulesave, label = kept }
-        if row is some{ value = r } {
+        if let r = row {
             let how = twoda::get_string{ t = w.tables.modulesave, row = r, column = "autosaveonenter" } ifnull "yes"
             if ci::eq{ a = how, b = "force" } { w.autosave_due = true }
             else if ci::eq{ a = how, b = "yes" } and w.autosave_ms >= 900000.0 { w.autosave_due = true }

@@ -90,7 +90,7 @@ namespace crowd {
         if other.actions.len > 0 { return false }
         let oc = obj::creature{ o = other } ifnull { return false }
         if oc.in_combat { return false }
-        if oc.fighter is some{ value = f } { if f.round.paused { return false } }
+        if let f = oc.fighter { if f.round.paused { return false } }
         return true
     }
 
@@ -129,7 +129,7 @@ namespace crowd {
         let home = o.position
         o.position = near
         let mut spot = movement::safe_spot{ w = &w, id = other, at = want, radius = 5.0, need_line = true }
-        if spot is some{ value = p } { if not paths::clear{ w = &w, a = was, b = p } { spot = null } }
+        if let p = spot { if not paths::clear{ w = &w, a = was, b = p } { spot = null } }
         if spot == null {
             let f = trail::facing_of{ o }
             let behind = math::Vec3{ x = from.x - f.x, y = from.y - f.y, z = from.z }
@@ -405,7 +405,7 @@ namespace crowd {
             k = k + 1
             if not paths::clear{ w, a = from, b = to } { return Rating{ score = 0, met = obj::INVALID } }
             if met == obj::INVALID {
-                if first_blocker{ w, o, c, from, to, skip = blocker, skip2 = target, pushable = false } is some{ value = h } { met = h.id }
+                if let h = first_blocker{ w, o, c, from, to, skip = blocker, skip2 = target, pushable = false } { met = h.id }
             }
             from = to
         }

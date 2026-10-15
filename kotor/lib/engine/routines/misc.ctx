@@ -84,7 +84,7 @@ namespace rt_misc {
             nwscript::GetItemActivator => { try nwvm::push_object{ &vm, id = w.last_activator } }
             nwscript::GetItemActivatedTarget => { try nwvm::push_object{ &vm, id = w.last_activated_target } }
             nwscript::GetItemActivatedTargetLocation => {
-                let at = if world::object{ w = &w, id = w.last_activated_target } is some{ value = t } { t.position } else if world::object{ w = &w, id = w.last_activator } is some{ value = a } { a.position } else { math::vec3::zero{} }
+                let at = if let t = world::object{ w = &w, id = w.last_activated_target } { t.position } else if let a = world::object{ w = &w, id = w.last_activator } { a.position } else { math::vec3::zero{} }
                 try rt_obj::push_location{ &w, &vm, l = values::Location{ position = at, facing = 0.0, area = w.area } }
             }
             // ---- cutscene verbs
@@ -206,7 +206,7 @@ namespace rt_misc {
             return
         }
         let mut has = o.kind == obj::Kind::creature or o.kind == obj::Kind::store
-        if obj::placeable{ o } is some{ value = p } { has = p.has_inventory }
+        if let p = obj::placeable{ o } { has = p.has_inventory }
         try nwvm::push_int{ &vm, v = flag{ b = has } }
     }
 
@@ -475,7 +475,7 @@ namespace rt_misc {
         let old = world::object{ w = &w, id = from }
         let mut old_creature = false
         if old != null {
-            if obj::creature{ o = old } is some{ value = oc } {
+            if let oc = obj::creature{ o = old } {
                 old_creature = true
                 if it.equipped_slot >= 0 and it.equipped_slot < @as(i32, obj::EQUIP_SLOTS) {
                     // Taken off (the rules lose its effects), into the inventory it leaves next.
@@ -494,12 +494,12 @@ namespace rt_misc {
                 world::prefix{ w = &w }
                 _ = @fmt(&w.io, "item {} ({}) in the party's bag names {} as its possessor\n", item, io.tag, from)
             }
-            if world::object{ w = &w, id = w.player } is some{ value = po } { _ = rt_item::remove_from_inventory{ &w, o = po, item } }
+            if let po = world::object{ w = &w, id = w.player } { _ = rt_item::remove_from_inventory{ &w, o = po, item } }
         }
         it.equipped_slot = -1
         it.possessor = obj::INVALID
         if rt_item::is_credits{ w = &w, base = it.base } {
-            if obj::creature{ o = target } is some{ value = receiver } {
+            if let receiver = obj::creature{ o = target } {
                 if party::is_member{ w = &w, id = to } {
                     party::add_gold{ &w, n = @as(i64, it.stack) }
                 } else {

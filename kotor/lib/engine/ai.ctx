@@ -48,7 +48,7 @@ namespace ai {
         // and the state flags every action needs (combat.md 8.2), so what its heartbeat queues (the
         // follow order of k_hen_heartbt01) never runs and it stays on the floor.
         if fight::is_down{ w = &w, id } {
-            if world::object{ w = &w, id } is some{ value = down } { if down.actions.len > 0 { actions::clear_all{ &w, id } } }
+            if let down = world::object{ w = &w, id } { if down.actions.len > 0 { actions::clear_all{ &w, id } } }
             return
         }
         // Getting up off the floor (getupdead) comes before walking off.
@@ -105,13 +105,13 @@ namespace ai {
         let id = if w.module_frame { w.module } else { w.area }
         let o = world::object{ w = &w, id } ifnull { return }
         let mut due = false
-        if obj::module{ o } is some{ value = m } {
+        if let m = obj::module{ o } {
             if clock::elapsed_since{ now, then = m.last_heartbeat } >= OBJECT_HEARTBEAT_MS {
                 due = m.last_heartbeat != 0
                 m.last_heartbeat = if now == 0 { 1 } else { now }
             }
         }
-        if obj::area{ o } is some{ value = a } {
+        if let a = obj::area{ o } {
             if clock::elapsed_since{ now, then = a.last_heartbeat } >= OBJECT_HEARTBEAT_MS {
                 due = a.last_heartbeat != 0
                 a.last_heartbeat = if now == 0 { 1 } else { now }

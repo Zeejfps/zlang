@@ -348,7 +348,7 @@ namespace actions {
         if elapsed < length {
             world::set_animation{ o, id = anim, speed = if speed == 0.0 { 1.0 } else { speed } }
             // A placeable's scene visual plays its state (the Star Map's dome, a computer's screen).
-            if obj::placeable{ o } is some{ value = p } {
+            if let p = obj::placeable{ o } {
                 objsound::placeable_animated{ &w, id, from = p.anim, to = anim }
                 p.anim = anim
             }
@@ -418,7 +418,7 @@ namespace actions {
         let mut dist = if leader { 2.0 } else { math::max{ a = float_param{ a, i = 1 }, b = 1.0 } }
         let mut goal = t.position
         if leader {
-            if trail::formation_point{ w = &w, id } is some{ value = f } {
+            if let f = trail::formation_point{ w = &w, id } {
                 goal = f
                 dist = FORMATION_RANGE
             }
@@ -427,7 +427,7 @@ namespace actions {
         // 6.2); while he stands it keeps still within half a metre of its range.
         let mut slack: f32 = 0.5
         if leader {
-            if obj::creature{ o = t } is some{ value = lc } { if lc.speed > 0.1 { slack = 0.0 } }
+            if let lc = obj::creature{ o = t } { if lc.speed > 0.1 { slack = 0.0 } }
         }
         if movement::distance_2d{ a = o.position, b = goal } <= dist + slack { return Status::running }
         let copy = a.*
@@ -523,8 +523,8 @@ namespace actions {
         // (k_punk_bast_ud2 throws the party back and starts the talk after the Bastila duel on a fixed delay that the fall's
         // length can overrun by a frame).
         let mut lying = false
-        if obj::creature{ o = t } is some{ value = c } {
-            if c.fighter is some{ value = f } { lying = f.knock.active }
+        if let c = obj::creature{ o = t } {
+            if let f = c.fighter { lying = f.knock.active }
         }
         if lying and not w.conversation.active { return Status::running }
         if not t.commandable or w.conversation.active {

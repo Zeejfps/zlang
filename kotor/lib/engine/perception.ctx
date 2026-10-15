@@ -154,7 +154,7 @@ namespace perception {
             let mesh = rooms[i].mesh
             i = i + 1
             if mesh == null { continue }
-            if bwm::cast_ray{ w = mesh, ray, max_t = len, stops = blocks[..] } is some{ value = hit } {
+            if let hit = bwm::cast_ray{ w = mesh, ray, max_t = len, stops = blocks[..] } {
                 return Block{ what = 1, index = i - 1, face = hit.face, material = mesh.materials[@as(usize, hit.face)], t = hit.t }
             }
         }

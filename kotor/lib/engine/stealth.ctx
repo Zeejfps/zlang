@@ -72,8 +72,8 @@ namespace stealth {
         let c = obj::creature{ o } ifnull { return false }
         if c.dead { return false }
         let f = c.fighter ifnull { return false }
-        if world::object{ w, id = w.area } is some{ value = ao } {
-            if obj::area{ o = ao } is some{ value = a } {
+        if let ao = world::object{ w, id = w.area } {
+            if let a = obj::area{ o = ao } {
                 if a.restrict_mode != 0 { return false }
             }
         }
@@ -276,8 +276,8 @@ namespace stealth {
         if rank == 0 { return true }
         let mut flags: u32 = 0
         let mut listen_mod: i32 = 0
-        if world::object{ w = &w, id = v.area } is some{ value = ao } {
-            if obj::area{ o = ao } is some{ value = a } {
+        if let ao = world::object{ w = &w, id = v.area } {
+            if let a = obj::area{ o = ao } {
                 flags = a.flags
                 listen_mod = a.listen_mod
             }
@@ -327,7 +327,7 @@ namespace stealth {
             let mesh = rooms[i].mesh
             i = i + 1
             if mesh == null { continue }
-            if bwm::cast_ray{ w = mesh, ray, max_t = best, stops = blocks[..] } is some{ value = hit } {
+            if let hit = bwm::cast_ray{ w = mesh, ray, max_t = best, stops = blocks[..] } {
                 if hit.t < best {
                     best = hit.t
                     found = true

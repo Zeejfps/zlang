@@ -228,26 +228,26 @@ namespace rt_swmg {
                     try nwvm::push_string{ &vm, s = resref::bytes{ r = &m } }
                 }
             }
-            nwscript::SWMG_SetGunBankBulletModel => { if bank_of{ run = &run, id, index = a.ints[1] } is some{ value = b } { b.bullet_model = resref::truncate{ name = a.strs[2] } } }
-            nwscript::SWMG_SetGunBankGunModel => { if bank_of{ run = &run, id, index = a.ints[1] } is some{ value = b } { b.gun_model = resref::truncate{ name = a.strs[2] } } }
+            nwscript::SWMG_SetGunBankBulletModel => { if let b = bank_of{ run = &run, id, index = a.ints[1] } { b.bullet_model = resref::truncate{ name = a.strs[2] } } }
+            nwscript::SWMG_SetGunBankGunModel => { if let b = bank_of{ run = &run, id, index = a.ints[1] } { b.gun_model = resref::truncate{ name = a.strs[2] } } }
             nwscript::SWMG_GetGunBankDamage => { try nwvm::push_int{ &vm, v = match bank_of{ run = &run, id, index = a.ints[1] } { some{ value } => { @as(i32, value.damage) } null => { 0 } } } }
             nwscript::SWMG_GetGunBankTimeBetweenShots => { try nwvm::push_float{ &vm, v = match bank_of{ run = &run, id, index = a.ints[1] } { some{ value } => { value.rate_of_fire } null => { 0.0 } } } }
             nwscript::SWMG_GetGunBankLifespan => { try nwvm::push_float{ &vm, v = match bank_of{ run = &run, id, index = a.ints[1] } { some{ value } => { value.lifespan } null => { 0.0 } } } }
             nwscript::SWMG_GetGunBankSpeed => { try nwvm::push_float{ &vm, v = match bank_of{ run = &run, id, index = a.ints[1] } { some{ value } => { value.speed } null => { 0.0 } } } }
             nwscript::SWMG_GetGunBankTarget => { try nwvm::push_int{ &vm, v = match bank_of{ run = &run, id, index = a.ints[1] } { some{ value } => { @as(i32, value.target_type) } null => { 0 } } } }
-            nwscript::SWMG_SetGunBankDamage => { if bank_of{ run = &run, id, index = a.ints[1] } is some{ value = b } { b.damage = @as(u32, a.ints[2]) } }
-            nwscript::SWMG_SetGunBankTimeBetweenShots => { if bank_of{ run = &run, id, index = a.ints[1] } is some{ value = b } { b.rate_of_fire = a.floats[2] } }
-            nwscript::SWMG_SetGunBankLifespan => { if bank_of{ run = &run, id, index = a.ints[1] } is some{ value = b } { b.lifespan = a.floats[2] } }
-            nwscript::SWMG_SetGunBankSpeed => { if bank_of{ run = &run, id, index = a.ints[1] } is some{ value = b } { b.speed = a.floats[2] } }
-            nwscript::SWMG_SetGunBankTarget => { if bank_of{ run = &run, id, index = a.ints[1] } is some{ value = b } { b.target_type = @as(u32, a.ints[2]) } }
+            nwscript::SWMG_SetGunBankDamage => { if let b = bank_of{ run = &run, id, index = a.ints[1] } { b.damage = @as(u32, a.ints[2]) } }
+            nwscript::SWMG_SetGunBankTimeBetweenShots => { if let b = bank_of{ run = &run, id, index = a.ints[1] } { b.rate_of_fire = a.floats[2] } }
+            nwscript::SWMG_SetGunBankLifespan => { if let b = bank_of{ run = &run, id, index = a.ints[1] } { b.lifespan = a.floats[2] } }
+            nwscript::SWMG_SetGunBankSpeed => { if let b = bank_of{ run = &run, id, index = a.ints[1] } { b.speed = a.floats[2] } }
+            nwscript::SWMG_SetGunBankTarget => { if let b = bank_of{ run = &run, id, index = a.ints[1] } { b.target_type = @as(u32, a.ints[2]) } }
             nwscript::SWMG_GetGunBankHorizontalSpread => { try nwvm::push_float{ &vm, v = match bank_of{ run = &run, id, index = a.ints[1] } { some{ value } => { value.horiz_spread } null => { 0.0 } } } }
             nwscript::SWMG_GetGunBankVerticalSpread => { try nwvm::push_float{ &vm, v = match bank_of{ run = &run, id, index = a.ints[1] } { some{ value } => { value.vert_spread } null => { 0.0 } } } }
             nwscript::SWMG_GetGunBankSensingRadius => { try nwvm::push_float{ &vm, v = match bank_of{ run = &run, id, index = a.ints[1] } { some{ value } => { value.sensing_radius } null => { 0.0 } } } }
             nwscript::SWMG_GetGunBankInaccuracy => { try nwvm::push_float{ &vm, v = match bank_of{ run = &run, id, index = a.ints[1] } { some{ value } => { value.inaccuracy } null => { 0.0 } } } }
-            nwscript::SWMG_SetGunBankHorizontalSpread => { if bank_of{ run = &run, id, index = a.ints[1] } is some{ value = b } { b.horiz_spread = a.floats[2] } }
-            nwscript::SWMG_SetGunBankVerticalSpread => { if bank_of{ run = &run, id, index = a.ints[1] } is some{ value = b } { b.vert_spread = a.floats[2] } }
-            nwscript::SWMG_SetGunBankSensingRadius => { if bank_of{ run = &run, id, index = a.ints[1] } is some{ value = b } { b.sensing_radius = a.floats[2] } }
-            nwscript::SWMG_SetGunBankInaccuracy => { if bank_of{ run = &run, id, index = a.ints[1] } is some{ value = b } { b.inaccuracy = a.floats[2] } }
+            nwscript::SWMG_SetGunBankHorizontalSpread => { if let b = bank_of{ run = &run, id, index = a.ints[1] } { b.horiz_spread = a.floats[2] } }
+            nwscript::SWMG_SetGunBankVerticalSpread => { if let b = bank_of{ run = &run, id, index = a.ints[1] } { b.vert_spread = a.floats[2] } }
+            nwscript::SWMG_SetGunBankSensingRadius => { if let b = bank_of{ run = &run, id, index = a.ints[1] } { b.sensing_radius = a.floats[2] } }
+            nwscript::SWMG_SetGunBankInaccuracy => { if let b = bank_of{ run = &run, id, index = a.ints[1] } { b.inaccuracy = a.floats[2] } }
             // ---- per-object sounds (no shipped script touches them): nothing is kept
             nwscript::SWMG_GetSoundFrequency | nwscript::SWMG_GetSoundFrequencyIsRandom | nwscript::SWMG_GetSoundVolume => { try nwvm::push_int{ &vm, v = 0 } }
             else => {}

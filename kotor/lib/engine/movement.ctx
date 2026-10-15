@@ -37,14 +37,14 @@ namespace movement {
         while r < radius {
             let mut x = at.x - r
             while x <= at.x + r {
-                if try_spot{ w, o, c, x, y = at.y - r, from = start, line } is some{ value = p } { return p }
-                if try_spot{ w, o, c, x, y = at.y + r, from = start, line } is some{ value = p } { return p }
+                if let p = try_spot{ w, o, c, x, y = at.y - r, from = start, line } { return p }
+                if let p = try_spot{ w, o, c, x, y = at.y + r, from = start, line } { return p }
                 x = x + step
             }
             let mut y = at.y - r + step
             while y <= at.y + r - step {
-                if try_spot{ w, o, c, x = at.x - r, y, from = start, line } is some{ value = p } { return p }
-                if try_spot{ w, o, c, x = at.x + r, y, from = start, line } is some{ value = p } { return p }
+                if let p = try_spot{ w, o, c, x = at.x - r, y, from = start, line } { return p }
+                if let p = try_spot{ w, o, c, x = at.x + r, y, from = start, line } { return p }
                 y = y + step
             }
             r = r + step
@@ -107,8 +107,8 @@ namespace movement {
             let t = world::object{ w = &w, id = target } ifnull { return actions::Status::failed }
             goal = t.position
             if follower {
-                if obj::creature{ o = t } is some{ value = lc } { lead_speed = lc.speed }
-                if trail::formation_point{ w = &w, id } is some{ value = f } { goal = f }
+                if let lc = obj::creature{ o = t } { lead_speed = lc.speed }
+                if let f = trail::formation_point{ w = &w, id } { goal = f }
             }
         }
         let run = actions::int_param{ a, i = 1 } != 0 and not stealth::walk_only{ c }
@@ -128,7 +128,7 @@ namespace movement {
             // 1 m search, which takes the point only if nobody stands there: else the creature stays and the move is over.
             let spot = if target != obj::INVALID { safe_spot{ w = &w, id, at = goal, radius = 20.0, need_line = true } }
                 else { safe_spot{ w = &w, id, at = goal, radius = 1.0, need_line = true } }
-            if spot is some{ value = p } { place{ &w, id, at = p } }
+            if let p = spot { place{ &w, id, at = p } }
             let back = world::object{ w = &w, id } ifnull { return actions::Status::done }
             world::set_animation{ o = back, id = obj::ANIM_STAND, speed = 1.0 }
             return actions::Status::done
@@ -270,14 +270,14 @@ namespace movement {
             // too (the original clears it from the test), so a creature walked to is reached at its circle.
             let dest = math::Vec3{ x = to.x, y = to.y, z }
             let mut hit = crowd::first_blocker{ w = &w, o, c, from = here, to = dest, skip = obj::INVALID, skip2 = obj::INVALID, pushable = false }
-            if hit is some{ value = h } {
+            if let h = hit {
                 if crowd::push_aside{ &w, mover = id, other = h.id, from = here, to = dest } {
                     let o2 = world::object{ w = &w, id } ifnull { return actions::Status::failed }
                     let c2 = obj::creature{ o = o2 } ifnull { return actions::Status::failed }
                     hit = crowd::first_blocker{ w = &w, o = o2, c = c2, from = here, to = dest, skip = obj::INVALID, skip2 = obj::INVALID, pushable = false }
                 }
             }
-            if hit is some{ value = h } {
+            if let h = hit {
                 let o2 = world::object{ w = &w, id } ifnull { return actions::Status::failed }
                 world::set_position{ o = o2, p = here }
                 cross_volumes{ &w, id, from, to = here }
@@ -326,8 +326,8 @@ namespace movement {
             if id == w.pc { doors::tell{ &w, who = id, strref = 47859 } }
             return end_blocked{ &w, id }
         }
-        if world::object{ w = &w, id = blocker } is some{ value = b2 } {
-            if obj::creature{ o = b2 } is some{ value = bc } {
+        if let b2 = world::object{ w = &w, id = blocker } {
+            if let bc = obj::creature{ o = b2 } {
                 let same_way = o2.orientation.x * b2.orientation.x + o2.orientation.y * b2.orientation.y >= 0.0
                 bc.avoid_side = if same_way { not c2.avoid_side } else { c2.avoid_side }
             }
@@ -338,7 +338,7 @@ namespace movement {
 
     fn end_blocked { mut w: world::World, id: u32 } -> actions::Status {
         stop{ &w, id }
-        if world::object{ w = &w, id } is some{ value = o } { world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 } }
+        if let o = world::object{ w = &w, id } { world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 } }
         return actions::Status::done
     }
 
@@ -519,7 +519,7 @@ namespace movement {
             let o = list::items{ list = w.objects.all }[i]
             i = i + 1
             if o.destroyed { continue }
-            if obj::encounter{ o } is some{ value = e } {
+            if let e = obj::encounter{ o } {
                 if id == w.pc and e.active and not e.spawned and inside_polygon{ poly = e.polygon, x = to.x, y = to.y } {
                     encounter_spawn{ &w, id = o.id }
                     events::post{ &w, delay_ms = 0, caller = id, target = o.id, payload = events::Payload::script{ e = events::script_event{ kind = events::OBJECT_ENTER, object = id } } }
@@ -529,7 +529,7 @@ namespace movement {
             // The party leader walking through an open transition door raises CLICKED on it
             // (movement.md 5.1: a transition door's volume); other doors have none.
             if id == w.pc and o.kind == obj::Kind::door {
-                if obj::door{ o } is some{ value = door } {
+                if let door = obj::door{ o } {
                     if door.state != obj::DoorState::closed and modload::link_of{ o } != null {
                         if distance_2d{ a = o.position, b = to } < 0.7 and distance_2d{ a = o.position, b = from } >= 0.7 {
                             events::post{ &w, delay_ms = 0, caller = id, target = o.id, payload = events::Payload::script{ e = events::script_event{ kind = events::CLICKED, object = id } } }

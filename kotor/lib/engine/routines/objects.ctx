@@ -293,7 +293,7 @@ namespace rt_obj {
     // not an item in someone's pack.
     fn placed { o: *obj::Object } -> bool {
         if o.destroyed or o.kind == obj::Kind::module or o.kind == obj::Kind::area { return false }
-        if obj::item{ o } is some{ value = it } {
+        if let it = obj::item{ o } {
             if it.possessor != obj::INVALID { return false }
         }
         return true
@@ -532,7 +532,7 @@ namespace rt_obj {
     fn get_trap_int { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
         let id = try nwarg::object{ &vm, routine, argc, i = 0 }
         let mut v: i32 = 0
-        if trap_of{ w = &w, id } is some{ value = t } {
+        if let t = trap_of{ w = &w, id } {
             v = if routine == nwscript::GetTrapDisarmable { if t.disarmable { 1 } else { 0 } }
                 else if routine == nwscript::GetTrapDetectable { if t.detectable { 1 } else { 0 } }
                 else if routine == nwscript::GetTrapFlagged { if t.flagged { 1 } else { 0 } }
@@ -550,7 +550,7 @@ namespace rt_obj {
         let id = try nwarg::object{ &vm, routine = nwscript::GetTrapDetectedBy, argc, i = 0 }
         let who = try nwarg::object{ &vm, routine = nwscript::GetTrapDetectedBy, argc, i = 1 }
         let mut v: i32 = 0
-        if trap_of{ w = &w, id } is some{ value = t } {
+        if let t = trap_of{ w = &w, id } {
             if t.detected and traps::is_party{ w = &w, id = who } { v = 1 }
         }
         try nwvm::push_int{ &vm, v }
@@ -560,7 +560,7 @@ namespace rt_obj {
     fn get_trap_creator { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetTrapCreator, argc, i = 0 }
         let mut v = obj::INVALID
-        if trap_of{ w = &w, id } is some{ value = t } { v = t.creator }
+        if let t = trap_of{ w = &w, id } { v = t.creator }
         try nwvm::push_object{ &vm, id = v }
     }
 
@@ -568,7 +568,7 @@ namespace rt_obj {
     fn get_trap_key_tag { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetTrapKeyTag, argc, i = 0 }
         let mut key = ""
-        if trap_of{ w = &w, id } is some{ value = t } { key = t.key }
+        if let t = trap_of{ w = &w, id } { key = t.key }
         try nwvm::push_string{ &vm, s = key }
     }
 
@@ -580,7 +580,7 @@ namespace rt_obj {
         let mut v: i32 = 0
         let found = world::object{ w = &w, id = who }
         if found != null and obj::creature{ o = found } != null {
-            if trap_of{ w = &w, id } is some{ value = t } {
+            if let t = trap_of{ w = &w, id } {
                 if traps::is_party{ w = &w, id = who } { t.detected = true }
                 v = 1
             }
@@ -603,7 +603,7 @@ namespace rt_obj {
     // the creature that carried its key).
     fn get_last_disarmed { mut w: world::World, mut vm: nwvm::Vm } -> ! {
         let mut v = obj::INVALID
-        if trap_of{ w = &w, id = nwvm::self_object{ vm } } is some{ value = t } { v = t.last_disarmed }
+        if let t = trap_of{ w = &w, id = nwvm::self_object{ vm } } { v = t.last_disarmed }
         try nwvm::push_object{ &vm, id = v }
     }
 }

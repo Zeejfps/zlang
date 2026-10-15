@@ -71,7 +71,7 @@ namespace equip {
             k = k + 1
         }
         let io = world::object{ w = &w, id } ifnull { return }
-        if obj::item{ o = io } is some{ value = it } { it.equipped_slot = -1 }
+        if let it = obj::item{ o = io } { it.equipped_slot = -1 }
         // AddItem merges: a pistol taken off joins the pistols in the bag.
         _ = rt_item::add_merged{ &w, o, item = id }
     }
@@ -124,9 +124,9 @@ namespace equip {
         if c.equipped[slot] == item { return true }
         let mut done = false
         let mut ruled = false
-        if c.fighter is some{ value = f } {
+        if let f = c.fighter {
             if f.loaded {
-                if it.rules is some{ value = ri } {
+                if let ri = it.rules {
                     ruled = true
                     done = equip_ruled{ &w, o, c, f, io, it, ri, slot }
                 }
@@ -226,7 +226,7 @@ namespace equip {
         let mut moved_left = false
         let mut before: i32 = 0
         let mut ruled: ?*mut fight::Fighter = null
-        if c.fighter is some{ value = f } {
+        if let f = c.fighter {
             if f.loaded {
                 let mask = mask_of{ slot }
                 fight::sync_flags{ w = &w, o, f }
@@ -249,11 +249,11 @@ namespace equip {
             let left = c.equipped[obj::SLOT_LEFT_WEAPON]
             c.equipped[obj::SLOT_RIGHT_WEAPON] = left
             c.equipped[obj::SLOT_LEFT_WEAPON] = obj::INVALID
-            if world::object{ w = &w, id = left } is some{ value = lo } {
-                if obj::item{ o = lo } is some{ value = li } { li.equipped_slot = @as(i32, obj::SLOT_RIGHT_WEAPON) }
+            if let lo = world::object{ w = &w, id = left } {
+                if let li = obj::item{ o = lo } { li.equipped_slot = @as(i32, obj::SLOT_RIGHT_WEAPON) }
             }
         }
-        if ruled is some{ value = rf } {
+        if let rf = ruled {
             fight::drain{ &w, id }
             follow_max_hp{ o, f = rf, before }
         }
@@ -288,7 +288,7 @@ namespace equip {
         let slot = actions::int_param{ a, i = 1 }
         if slot < 0 or helpless{ w = &w, id } { return actions::Status::failed }
         let item = actions::object_param{ a, i = 0 }
-        let on = if world::object{ w = &w, id } is some{ value = o } { if obj::creature{ o } is some{ value = c } { c.equipped[@as(usize, slot)] == item } else { false } } else { false }
+        let on = if let o = world::object{ w = &w, id } { if let c = obj::creature{ o } { c.equipped[@as(usize, slot)] == item } else { false } } else { false }
         if not on and not equip_item{ &w, id, item, slot = @as(usize, slot) } { return actions::Status::failed }
         return hold{ w = &w, a }
     }
@@ -357,7 +357,7 @@ namespace equip {
         if mine and source == obj::INVALID { return actions::Status::done }
         if it.possessor != obj::INVALID and it.possessor != source { return actions::Status::failed }
         let at = if source != obj::INVALID {
-            if world::object{ w = &w, id = source } is some{ value = so } { so.position } else { return actions::Status::failed }
+            if let so = world::object{ w = &w, id = source } { so.position } else { return actions::Status::failed }
         } else { io.position }
         let now = clock::now_ms{ c = w.clock }
         if a.phase == 0 {

@@ -56,8 +56,8 @@ namespace rt_item {
     fn add_to_inventory { mut w: world::World, o: *mut obj::Object, item: u32 } -> bool {
         let l = party::inventory_of{ &w, id = o.id } ifnull { return false }
         list::push{ list = l, item } iferr { return false }
-        if world::object{ w = &w, id = item } is some{ value = io } {
-            if obj::item{ o = io } is some{ value = it } {
+        if let io = world::object{ w = &w, id = item } {
+            if let it = obj::item{ o = io } {
                 it.possessor = if o.id == w.player or party::is_member{ w = &w, id = o.id } { w.player } else { o.id }
             }
         }
@@ -96,7 +96,7 @@ namespace rt_item {
         let it = obj::item{ o = io } ifnull { return }
         if it.stack > 1 {
             it.stack = it.stack - 1
-            if it.rules is some{ value = ri } { ri.stack = @as(i32, it.stack) }
+            if let ri = it.rules { ri.stack = @as(i32, it.stack) }
             return
         }
         notices::item_lost{ &w, who = it.possessor, item }
@@ -151,7 +151,7 @@ namespace rt_item {
                 if oi.base != it.base or oi.model_variation != it.model_variation or oi.charges != it.charges { continue }
                 if oi.stack + it.stack > most { continue }
                 oi.stack = oi.stack + it.stack
-                if oi.rules is some{ value = ri } { ri.stack = @as(i32, oi.stack) }
+                if let ri = oi.rules { ri.stack = @as(i32, oi.stack) }
                 world::destroy{ &w, id = item }
                 return other.id
             }
@@ -340,7 +340,7 @@ namespace rt_item {
         }
         // A creature's worn and wielded items count too, after the inventory (0x0053a390 asks the 18 equipment slots in turn).
         if found == obj::INVALID {
-            if obj::creature{ o } is some{ value = c } {
+            if let c = obj::creature{ o } {
                 let mut slot: usize = 0
                 while slot < obj::EQUIP_SLOTS {
                     let worn = world::object{ w = &w, id = c.equipped[slot] }
@@ -472,7 +472,7 @@ namespace rt_item {
             // The party's credits are the purse (party-items-saves.md 3.6).
             if party_holder {
                 party::add_gold{ &w, n = @as(i64, it.stack) }
-            } else if obj::creature{ o = holder } is some{ value = c } {
+            } else if let c = obj::creature{ o = holder } {
                 c.gold = add_gold{ have = c.gold, n = @as(i64, it.stack) }
             }
             world::destroy{ &w, id }
@@ -582,7 +582,7 @@ namespace rt_item {
         if destroy != 0 { return }
         let me = nwvm::self_object{ vm }
         let caller = world::object{ w = &w, id = me } ifnull { return }
-        if obj::creature{ o = caller } is some{ value = cc } {
+        if let cc = obj::creature{ o = caller } {
             if party::is_member{ w = &w, id = me } {
                 party::add_gold{ &w, n = @as(i64, amount) }
                 notices::credits_changed{ &w, who = me, n = @as(i64, amount) }
@@ -602,7 +602,7 @@ namespace rt_item {
             try nwvm::push_int{ &vm, v = 0 }
             return
         }
-        if obj::creature{ o } is some{ value = c } {
+        if let c = obj::creature{ o } {
             try nwvm::push_int{ &vm, v = if party::is_member{ w = &w, id } { w.party.gold } else { @as(i32, c.gold) } }
             return
         }
@@ -699,9 +699,9 @@ namespace rt_item {
         let id = try nwarg::object{ &vm, routine = nwscript::GetItemHasItemProperty, argc, i = 0 }
         let name = try nwarg::int{ &vm, routine = nwscript::GetItemHasItemProperty, argc, i = 1 }
         let mut has = 0
-        if world::object{ w = &w, id } is some{ value = io } {
-            if obj::item{ o = io } is some{ value = it } {
-                if it.rules is some{ value = ri } {
+        if let io = world::object{ w = &w, id } {
+            if let it = obj::item{ o = io } {
+                if let ri = it.rules {
                     if rules::has_property{ item = ri, name } { has = 1 }
                 }
             }
@@ -716,7 +716,7 @@ namespace rt_item {
         let o = world::object{ w = &w, id = me } ifnull { return }
         let c = obj::creature{ o } ifnull { return }
         let mut best_ac: i32 = 0
-        if base_row_of{ w = &w, item = c.equipped[obj::SLOT_BODY] } is some{ value = worn } { best_ac = worn.base_ac }
+        if let worn = base_row_of{ w = &w, item = c.equipped[obj::SLOT_BODY] } { best_ac = worn.base_ac }
         let mut best = obj::INVALID
         let ids = inventory_of{ &w, o }
         let mut k: usize = 0

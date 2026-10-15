@@ -152,7 +152,7 @@ namespace rt_party {
         let mut ok = false
         if party::valid_slot{ n } and template.len > 0 and not w.party.available[@as(usize, n)] {
             let found = world::read_gff{ &w, name = template, kind = restype::Type::utc } iferr { null }
-            if found is some{ value = doc } {
+            if let doc = found {
                 let s = @as(usize, n)
                 forget_slot_state{ &w, s }
                 w.party.available[s] = true
@@ -242,7 +242,7 @@ namespace rt_party {
             try save::park_player{ &w }
         } else {
             try save::save_npc{ &w, slot = @as(usize, cur) }
-            if obj::creature{ o = from } is some{ value = fc } { fc.is_pc = false }
+            if let fc = obj::creature{ o = from } { fc.is_pc = false }
             w.party.npcs[@as(usize, cur)] = obj::INVALID
         }
         // Every other member is kept and despawned.
@@ -289,8 +289,8 @@ namespace rt_party {
         let bag = list::items{ list = w.bag }
         let mut b: usize = 0
         while b < bag.len {
-            if world::object{ w = &w, id = bag[b] } is some{ value = bo } {
-                if obj::item{ o = bo } is some{ value = bi } { bi.possessor = next }
+            if let bo = world::object{ w = &w, id = bag[b] } {
+                if let bi = obj::item{ o = bo } { bi.possessor = next }
             }
             b = b + 1
         }
@@ -336,7 +336,7 @@ namespace rt_party {
         if made {
             // The companion as it was last kept (AVAILNPC<n>), else its blueprint.
             let kept = save::npc_from_store{ &w, slot = s } iferr { null }
-            if kept is some{ value = k } { id = k }
+            if let k = kept { id = k }
         }
         if not world::is_valid{ w = &w, id } {
             if resref::is_empty{ r = w.party.templates[s] } { return obj::INVALID }
@@ -487,7 +487,7 @@ namespace rt_party {
         let id = spawn_available{ &w, n, l }
         if id == obj::INVALID { return obj::INVALID }
         if not join_party{ &w, n, id } { return obj::INVALID }
-        if world::object{ w = &w, id } is some{ value = o } {
+        if let o = world::object{ w = &w, id } {
             world::set_orientation{ o, v = obj::direction_of{ degrees = l.facing } }
         }
         return id

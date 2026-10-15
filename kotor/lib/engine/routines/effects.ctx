@@ -510,7 +510,7 @@ namespace rt_fx {
         let id = try nwarg::object{ &vm, routine = r, argc, i = 1 }
         let mut found = 0
         if spell >= 0 {
-            if fighter_of{ &w, id } is some{ value = f } {
+            if let f = fighter_of{ &w, id } {
                 let mut i: usize = 0
                 while i < @as(usize, f.c.nfx) {
                     if f.c.fx[i].spell_id == spell { found = 1 }
@@ -533,7 +533,7 @@ namespace rt_fx {
     fn get_is_poisoned { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetIsPoisoned, argc, i = 0 }
         let mut poisoned = 0
-        if fighter_of{ &w, id } is some{ value = f } {
+        if let f = fighter_of{ &w, id } {
             if rules::has_effect_kind{ c = &f.c, kind = rules::fx::POISON } { poisoned = 1 }
         }
         try nwvm::push_int{ &vm, v = poisoned }
@@ -547,9 +547,9 @@ namespace rt_fx {
         let kind = try nwarg::int{ &vm, routine = r, argc, i = 1 }
         let versus = try nwarg::object{ &vm, routine = r, argc, i = 2 }
         let mut immune = 0
-        if fighter_of{ &w, id } is some{ value = f } {
+        if let f = fighter_of{ &w, id } {
             let mut vs = rules::no_versus{}
-            if fighter_of{ &w, id = versus } is some{ value = other } { vs = rules::versus_creature{ c = &other.c } }
+            if let other = fighter_of{ &w, id = versus } { vs = rules::versus_creature{ c = &other.c } }
             if rules::has_immunity{ c = &f.c, kind, vs } { immune = 1 }
         }
         try nwvm::push_int{ &vm, v = immune }
@@ -563,7 +563,7 @@ namespace rt_fx {
         let h = try nwarg::engine{ &vm, routine = r, argc, i = 1, kind = nwvm::EngineType::effect }
         let g = values::effect{ s = &w.values, handle = h }
         let mut immune = 0
-        if fighter_of{ &w, id } is some{ value = f } {
+        if let f = fighter_of{ &w, id } {
             let mut i: usize = 0
             while i < @as(usize, g.len) {
                 if rules::immune_to_effect{ tables = w.rules, c = &f.c, e = &g.items[i], vs = rules::no_versus{} } != 0 { immune = 1 }
@@ -632,7 +632,7 @@ namespace rt_fx {
         rules::fx::set_group_timing{ g = &g, dur = kind, seconds }
         // A Force power's impact script applies its effects with the power's id (fight::impact).
         let mut spell = NO_SPELL
-        if world::object{ w = &w, id = creator } is some{ value = co } { spell = co.ctx.spell_id }
+        if let co = world::object{ w = &w, id = creator } { spell = co.ctx.spell_id }
         rules::fx::set_group_creator{ g = &g, creator, spell_id = spell }
         if obj::creature{ o } is some {
             let res = fight::apply_group{ &w, target, g = &g }
@@ -738,13 +738,13 @@ namespace rt_fx {
         o.hp = -1
         let id = o.id
         if o.kind != obj::Kind::door and o.kind != obj::Kind::placeable { return }
-        if obj::door{ o } is some{ value = d } {
+        if let d = obj::door{ o } {
             doors::set_door_state{ &w, id, state = obj::DoorState::destroyed }
             if d.linked_flags == 1 or d.linked_flags == 2 {
                 let other = world::object_by_tag{ w = &w, tag = d.linked_to, nth = 0 }
                 if other != id {
-                    if world::object{ w = &w, id = other } is some{ value = lo } {
-                        if obj::door{ o = lo } is some{ value = ld } {
+                    if let lo = world::object{ w = &w, id = other } {
+                        if let ld = obj::door{ o = lo } {
                             if ld.state != obj::DoorState::destroyed { kill{ &w, o = lo, killer } }
                         }
                     }

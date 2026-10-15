@@ -176,7 +176,7 @@ namespace events {
             destroy{ death } => {
                 // Only DestroyObject queues this for an item (a used-up one goes at once): one a party creature
                 // holds is an item lost to the status summary (the item's EventHandler 0x0055ee10, event data 1).
-                if obj::item{ o } is some{ value = it } {
+                if let it = obj::item{ o } {
                     if notices::is_party{ w = &w, id = it.possessor } {
                         notices::summary{ &w, kind = notices::SUMMARY_ITEM_LOST, value = 0 }
                     }
@@ -221,7 +221,7 @@ namespace events {
         if e.kind == PATH_BLOCKED { o.ctx.blocker = e.objects[0] }
         // A trap trigger keeps the disarmer for GetLastDisarmed (+0x2a4).
         if e.kind == DISARM {
-            if obj::trigger{ o } is some{ value = t } { t.trap.last_disarmed = caller }
+            if let t = obj::trigger{ o } { t.trap.last_disarmed = caller }
         }
         if e.kind == SPELL_CAST_AT {
             o.ctx.last_spell_caster = e.objects[0]
@@ -257,8 +257,8 @@ namespace events {
         if (o.kind == obj::Kind::module or o.kind == obj::Kind::area) and e.kind == HEARTBEAT {
             // A SIGNAL_EVENT heartbeat to the module or area also restarts its timer (gameloop.md 2.6).
             let now = clock::now_ms{ c = w.clock }
-            if obj::module{ o } is some{ value = m } { m.last_heartbeat = now }
-            if obj::area{ o } is some{ value = a } { a.last_heartbeat = now }
+            if let m = obj::module{ o } { m.last_heartbeat = now }
+            if let a = obj::area{ o } { a.last_heartbeat = now }
         }
         // A creature with no dialogue script, or "default", runs the stock one, which calls
         // BeginConversation (re/dialogue.md 2.4). Placeables and doors that are made to start a

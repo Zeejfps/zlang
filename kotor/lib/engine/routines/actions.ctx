@@ -89,7 +89,7 @@ namespace rt_act {
         let id = animname::from_script{ constant, kind = o.kind }
         if seconds < 0.0 or o.kind != obj::Kind::creature {
             world::set_animation{ o, id, speed }
-            if obj::placeable{ o } is some{ value = p } {
+            if let p = obj::placeable{ o } {
                 objsound::placeable_animated{ &w, id = me, from = p.anim, to = id }
                 p.anim = id
             }
@@ -460,7 +460,7 @@ namespace rt_act {
         }
         doors::say_skill_roll{ &w, me, target = t, check, in_combat = c.in_combat, what = STRREF_TREAT_INJURY, skill = STRREF_TREAT_INJURY }
         // One of the stack is used up when the healer carries it (its inventory: the party's bag for a member).
-        if party::inventory_of{ &w, id } is some{ value = inv } {
+        if let inv = party::inventory_of{ &w, id } {
             let held = list::items{ list = inv.* }
             let mut h: usize = 0
             while h < held.len {

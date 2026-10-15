@@ -97,23 +97,23 @@ namespace rt_crea {
     // ---- the fields of a creature
 
     fn race_of { c: *obj::Creature } -> i32 {
-        if rules_of{ c } is some{ value = f } { return f.c.race }
+        if let f = rules_of{ c } { return f.c.race }
         return @as(i32, c.race)
     }
 
     fn subrace_of { c: *obj::Creature } -> i32 {
-        if rules_of{ c } is some{ value = f } { return f.c.subrace }
+        if let f = rules_of{ c } { return f.c.subrace }
         return @as(i32, c.subrace)
     }
 
     fn gender_of { c: *obj::Creature } -> i32 {
-        if rules_of{ c } is some{ value = f } { return f.c.gender }
+        if let f = rules_of{ c } { return f.c.gender }
         return @as(i32, c.gender)
     }
 
     // The total level.
     fn hit_dice_of { c: *obj::Creature } -> i32 {
-        if rules_of{ c } is some{ value = f } {
+        if let f = rules_of{ c } {
             if f.c.stats.level > 0 { return f.c.stats.level }
         }
         return @as(i32, c.hit_dice)
@@ -121,12 +121,12 @@ namespace rt_crea {
 
     // 0 (dark) .. 100 (light).
     fn good_evil_of { c: *obj::Creature } -> i32 {
-        if rules_of{ c } is some{ value = f } { return f.c.good_evil }
+        if let f = rules_of{ c } { return f.c.good_evil }
         return @as(i32, c.good_evil)
     }
 
     fn xp_of { c: *obj::Creature } -> i32 {
-        if rules_of{ c } is some{ value = f } { return f.c.xp }
+        if let f = rules_of{ c } { return f.c.xp }
         return @as(i32, c.xp)
     }
 
@@ -161,7 +161,7 @@ namespace rt_crea {
 
     // CREATURE_SIZE_*: the rules' size (appearance.2da's category), medium without them.
     fn size_of { w: *world::World, c: *obj::Creature } -> i32 {
-        if rules_of{ c } is some{ value = f } { return f.c.stats.size }
+        if let f = rules_of{ c } { return f.c.stats.size }
         return rules::size_of_appearance{ tables = w.rules, appearance = @as(i32, c.appearance) }
     }
 
@@ -178,7 +178,7 @@ namespace rt_crea {
             return
         }
         let mut v = none
-        if rules_of{ c } is some{ value = f } {
+        if let f = rules_of{ c } {
             v = rules_class_stat{ w = &w, f, routine, n, none }
         } else if routine == nwscript::GetClassByPosition {
             if n >= 1 and n <= 3 and c.class_levels[@as(usize, n - 1)] > 0 { v = @as(i32, c.classes[@as(usize, n - 1)]) }
@@ -234,7 +234,7 @@ namespace rt_crea {
 
     fn ability_score { c: *obj::Creature, kind: i32 } -> i32 {
         if kind < 0 or kind >= 6 { return 0 }
-        if rules_of{ c } is some{ value = f } { return f.c.stats.abil[@as(usize, kind)] }
+        if let f = rules_of{ c } { return f.c.stats.abil[@as(usize, kind)] }
         return @as(i32, c.abilities[@as(usize, kind)])
     }
 
@@ -251,7 +251,7 @@ namespace rt_crea {
             try nwvm::push_int{ &vm, v = 0 }
             return
         }
-        if rules_of{ c } is some{ value = f } {
+        if let f = rules_of{ c } {
             try nwvm::push_int{ &vm, v = f.c.stats.abil_mod[@as(usize, kind)] }
             return
         }
@@ -281,8 +281,8 @@ namespace rt_crea {
             try nwvm::push_int{ &vm, v = -1 }
             return
         }
-        if obj::creature{ o } is some{ value = c } {
-            if rules_of{ c } is some{ value = f } {
+        if let c = obj::creature{ o } {
+            if let f = rules_of{ c } {
                 try nwvm::push_int{ &vm, v = rules::armor_class_sheet{ tables = w.rules, c = &f.c } }
             } else {
                 try nwvm::push_int{ &vm, v = 10 }
@@ -317,7 +317,7 @@ namespace rt_crea {
     fn roll_save { mut w: world::World, id: u32, which: i32, dc: i32, save_type: i32, versus: u32, me: u32 } -> i32 {
         let f = fighter_of{ w = &w, id } ifnull { return 0 }
         let mut vs = rules::no_versus{}
-        if fighter_of{ w = &w, id = versus } is some{ value = vf } { vs = rules::versus_creature{ c = &vf.c } }
+        if let vf = fighter_of{ w = &w, id = versus } { vs = rules::versus_creature{ c = &vf.c } }
         let power = casting_power{ w = &w, me }
         let res = rules::saving_throw{ c = &f.c, which, dc, save_type, vs, force_power = power, rng = &w.dice }
         if w.log.combat {
@@ -389,7 +389,7 @@ namespace rt_crea {
             return
         }
         let mut level = 10
-        if obj::creature{ o = so } is some{ value = sc } { level = hit_dice_of{ c = sc } }
+        if let sc = obj::creature{ o = so } { level = hit_dice_of{ c = sc } }
         let me = world::object{ w = &w, id = nwvm::self_object{ vm } }
         let mut spell = -1
         if me != null { spell = me.ctx.spell_id }
@@ -653,7 +653,7 @@ namespace rt_crea {
         let c = obj::creature{ o } ifnull { return }
         let v = if to < 0 { 0 } else if to > 100 { 100 } else { to }
         c.good_evil = @as(u32, v)
-        if rules_of{ c } is some{ value = f } {
+        if let f = rules_of{ c } {
             f.c.good_evil = v
             fight::sync_flags{ w = &w, o, f }
             rules::clear_events{ ev = &w.rev }
@@ -707,7 +707,7 @@ namespace rt_crea {
             let c = creature_of{ w = &w, id } ifnull { continue }
             let slot = party::slot_of{ w = &w, id }
             let share = rules::npc_percent_xp{ tables = w.rules, row = slot }
-            if rules_of{ c } is some{ value = f } {
+            if let f = rules_of{ c } {
                 _ = rules::add_experience{ tables = w.rules, c = &f.c, xp = amount, percent_xp = share }
                 c.xp = @as(u32, f.c.xp)
             } else {
@@ -737,7 +737,7 @@ namespace rt_crea {
         let c = creature_of{ w = &w, id } ifnull { return }
         if amount <= xp_of{ c } { return }
         c.xp = @as(u32, amount)
-        if rules_of{ c } is some{ value = f } { f.c.xp = amount }
+        if let f = rules_of{ c } { f.c.xp = amount }
     }
 
     // ---- names
@@ -751,7 +751,7 @@ namespace rt_crea {
             return
         }
         let mut name = o.name
-        if obj::area{ o } is some{ value = a } { name = a.name }
+        if let a = obj::area{ o } { name = a.name }
         if name.strref != 0xFFFFFFFF {
             let text = world::string_by_strref{ w = &w, strref = name.strref }
             if text.len > 0 {

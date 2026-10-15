@@ -23,8 +23,8 @@ namespace xfer {
         it.texture_variation = si.texture_variation
         it.non_equippable = si.non_equippable
         o.plot = src.plot
-        if it.rules is some{ value = ri } {
-            if si.rules is some{ value = sr } {
+        if let ri = it.rules {
+            if let sr = si.rules {
                 ri.upgrades = sr.upgrades
                 ri.stolen = sr.stolen
                 ri.charges = sr.charges
@@ -44,7 +44,7 @@ namespace xfer {
         let one = copy_item{ &w, item, stack = 1 }
         if one == obj::INVALID { return obj::INVALID }
         it.stack = it.stack - 1
-        if it.rules is some{ value = ri } { ri.stack = @as(i32, it.stack) }
+        if let ri = it.rules { ri.stack = @as(i32, it.stack) }
         return one
     }
 
@@ -127,7 +127,7 @@ namespace xfer {
 
     fn set_stack { it: *mut obj::Item, n: u32 } {
         it.stack = n
-        if it.rules is some{ value = ri } { ri.stack = @as(i32, n) }
+        if let ri = it.rules { ri.stack = @as(i32, n) }
     }
 
     // Whether two items would share a stack (CSWSItem::CompareItem).

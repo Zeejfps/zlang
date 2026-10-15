@@ -39,9 +39,9 @@ namespace objsound {
     // The row of the object's own appearance, whatever lies there.
     fn own_row_of { w: *world::World, o: *obj::Object } -> ?usize {
         let mut row: ?i32 = null
-        if obj::door{ o } is some{ value = d } {
+        if let d = obj::door{ o } {
             row = twoda::get_int{ t = w.tables.genericdoors, row = @as(usize, d.appearance), column = "soundapptype" }
-        } else if obj::placeable{ o } is some{ value = p } {
+        } else if let p = obj::placeable{ o } {
             row = twoda::get_int{ t = w.tables.placeables, row = @as(usize, p.appearance), column = "soundapptype" }
         }
         let r = row ifnull { return null }

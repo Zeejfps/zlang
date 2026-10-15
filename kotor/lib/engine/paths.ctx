@@ -129,14 +129,14 @@ namespace paths {
         // (state 1; FindNearestSafePosition 0x004be860); the creature is moved to its new start. None: they stay.
         let mut start = from
         if not is_safe{ w = &w, id, p = from } {
-            if movement::safe_spot{ w = &w, id, at = from, radius = 2.0, need_line = true } is some{ value = p } {
+            if let p = movement::safe_spot{ w = &w, id, at = from, radius = 2.0, need_line = true } {
                 start = p
                 if movement::distance_2d{ a = p, b = from } > 0.0001 { movement::place{ &w, id, at = p } }
             }
         }
         let mut goal = goal_asked
         if not is_safe{ w = &w, id, p = goal } {
-            if movement::safe_spot{ w = &w, id, at = goal, radius = 2.0, need_line = true } is some{ value = p } {
+            if let p = movement::safe_spot{ w = &w, id, at = goal, radius = 2.0, need_line = true } {
                 goal = p
                 adjusted.* = movement::distance_2d{ a = p, b = goal_asked } > 0.0001
             }

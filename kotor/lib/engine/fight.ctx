@@ -349,7 +349,7 @@ namespace fight {
             died{ &w, id, killer = e.who, melee = e.a != 0 }
         } else if k == rules::ev::RESURRECT {
             o.hp = e.a
-            if obj::creature{ o } is some{ value = c } { c.dead = false }
+            if let c = obj::creature{ o } { c.dead = false }
             // One lying on the floor gets up with the get-up of the way it fell (getupdead after die
             // and dead, getupdead1 after die1 and dead1; animations.2da rows 381, 382).
             let row = row_of_animation{ id = o.animation }
@@ -380,7 +380,7 @@ namespace fight {
             outbox::post{ out = &w.out, note = outbox::Note::visual_release{ effect = e.a, target = id } }
         } else if k == rules::ev::APPEARANCE {
             // A disguise (EffectDisguise, the Sand People Clothing's property) puts another appearance on; 0 takes it off.
-            if obj::creature{ o } is some{ value = c } { c.disguise = @as(u32, e.a) }
+            if let c = obj::creature{ o } { c.disguise = @as(u32, e.a) }
         } else if k == rules::ev::STATE {
             state_changed{ &w, id, after = e.a, before = e.b }
         } else if k == rules::ev::FORCE_PUSH {
@@ -503,7 +503,7 @@ namespace fight {
                 world::prefix{ w = &w }
                 _ = @fmt(&w.io, "{} is down\n", id)
             }
-            if world::object{ w = &w, id = w.module } is some{ value = mo } {
+            if let mo = world::object{ w = &w, id = w.module } {
                 mo.ctx.last_player_died = id
                 events::post{ &w, delay_ms = 0, caller = id, target = w.module, payload = events::Payload::script{ e = events::script_event{ kind = events::DEATH, object = killer } } }
             }
@@ -562,8 +562,8 @@ namespace fight {
         }
         events::post{ &w, delay_ms = 0, caller = who, target = id, payload = events::Payload::script{ e = events::script_event{ kind = events::DEATH, object = who } } }
         actions::clear_all{ &w, id = who }
-        if world::object{ w = &w, id = who } is some{ value = a } {
-            if obj::creature{ o = a } is some{ value = ac } { if ac.attack_target == id { ac.attack_target = obj::INVALID } }
+        if let a = world::object{ w = &w, id = who } {
+            if let ac = obj::creature{ o = a } { if ac.attack_target == id { ac.attack_target = obj::INVALID } }
         }
     }
 
@@ -611,7 +611,7 @@ namespace fight {
             if m == null { continue }
             let mf = of{ o = m } ifnull { continue }
             let given = rules::add_experience{ tables = w.rules, c = &mf.c, xp, percent_xp = 100 }
-            if obj::creature{ o = m } is some{ value = mc } { mc.xp = @as(u32, mf.c.xp) }
+            if let mc = obj::creature{ o = m } { mc.xp = @as(u32, mf.c.xp) }
             _ = given
         }
         if w.log.combat {
@@ -629,7 +629,7 @@ namespace fight {
     // faction-mates join (pull_in).
     fn enter_combat { mut w: world::World, id: u32, other: u32 } {
         let o = world::object{ w = &w, id } ifnull { return }
-        if obj::creature{ o } is some{ value = c } {
+        if let c = obj::creature{ o } {
             if c.dead { return }
             if other == id or is_hostile_to{ w = &w, o, other } { set_combat{ &w, id, bark = true, attacked = is_targeted_by{ w = &w, id, who = other } } }
         }
@@ -671,7 +671,7 @@ namespace fight {
         if o.faction == NEUTRAL_FACTION {
             c.in_combat = false
             c.attack_target = obj::INVALID
-            if c.fighter is some{ value = f } { f.combat_ms = 0 }
+            if let f = c.fighter { f.combat_ms = 0 }
             return
         }
         let was = c.in_combat
@@ -682,7 +682,7 @@ namespace fight {
         // 0x004fe210 drops it every update while +0xac0 is 1), attackers as their attack does
         // (AIActionCombat): an attacker that signals itself as it walks up stays hidden until its swing.
         if attacked { stealth::leave{ &w, id } }
-        if c.fighter is some{ value = f } { f.combat_ms = COMBAT_MS }
+        if let f = c.fighter { f.combat_ms = COMBAT_MS }
         if bark and not was { bark{ &w, id, first = VOICE_BATTLE, count = 6, chance_in = 1, quiet = false } }
     }
 
@@ -713,7 +713,7 @@ namespace fight {
             let range = if party { 30.0 } else { mc.sight_range }
             if doors::distance_2d{ a = m.position, b = o.position } > range { continue }
             set_combat{ &w, id = m.id, bark = false, attacked = is_targeted_by{ w = &w, id = m.id, who = other } }
-            if mc.fighter is some{ value = mf } { mf.stirs = mf.stirs + 1 }
+            if let mf = mc.fighter { mf.stirs = mf.stirs + 1 }
         }
     }
 
@@ -860,7 +860,7 @@ namespace fight {
     fn play_row { mut w: world::World, o: *mut obj::Object, row: i32 } {
         if row < 0 { return }
         let mut flip: u32 = 0
-        if of{ o } is some{ value = ff } {
+        if let ff = of{ o } {
             ff.variant = ff.variant ^ 1
             flip = ff.variant
         }
@@ -938,12 +938,12 @@ namespace fight {
     fn reach { w: *world::World, o: *obj::Object, t: *obj::Object, ranged: bool } -> f32 {
         let mut mine: f32 = 0.5
         let mut theirs: f32 = 0.5
-        if obj::creature{ o } is some{ value = c } {
+        if let c = obj::creature{ o } {
             mine = c.perspace
             if ranged {
                 let mut range: f32 = 0.0
-                if world::object{ w, id = c.equipped[obj::SLOT_RIGHT_WEAPON] } is some{ value = iv } {
-                    if obj::item{ o = iv } is some{ value = it } {
+                if let iv = world::object{ w, id = c.equipped[obj::SLOT_RIGHT_WEAPON] } {
+                    if let it = obj::item{ o = iv } {
                         range = twoda::get_float{ t = w.tables.baseitems, row = @as(usize, it.base), column = "maxattackrange" } ifnull 0.0
                     }
                 }
@@ -951,7 +951,7 @@ namespace fight {
                 return range
             }
         }
-        if obj::creature{ o = t } is some{ value = tc } { theirs = tc.perspace }
+        if let tc = obj::creature{ o = t } { theirs = tc.perspace }
         if t.kind != obj::Kind::creature { theirs = 1.0 }
         return mine + theirs + 0.7
     }
@@ -1025,9 +1025,9 @@ namespace fight {
             f.master_id = id
             if engaged {
                 f.slave_id = target
-                if world::object{ w = &w, id = target } is some{ value = so } {
-                    if obj::creature{ o = so } is some{ value = sc } {
-                        if sc.fighter is some{ value = sf } {
+                if let so = world::object{ w = &w, id = target } {
+                    if let sc = obj::creature{ o = so } {
+                        if let sf = sc.fighter {
                             sf.master_id = id
                             sf.slave_id = target
                             sf.round.timer_ms = 0
@@ -1045,14 +1045,14 @@ namespace fight {
         f.round.cutscene = cutscene
         f.round.feat = if feat > 0 { feat } else { 0 }
         // Face the target (SetInteractTarget).
-        if world::object{ w = &w, id = target } is some{ value = t } {
+        if let t = world::object{ w = &w, id = target } {
             let dir = math::vec3::sub{ a = t.position, b = o.position }
             if dir.x * dir.x + dir.y * dir.y > 0.0001 { world::set_orientation{ o, v = math::Vec3{ x = dir.x, y = dir.y, z = 0.0 } } }
         }
         if w.log.combat and engaged {
             world::prefix{ w = &w }
             let role = if master { "master" } else { "slave" }
-            let other_tag: []u8 = if world::object{ w = &w, id = target } is some{ value = t } { t.tag } else { "" }
+            let other_tag: []u8 = if let t = world::object{ w = &w, id = target } { t.tag } else { "" }
             _ = @fmt(&w.io, "{} ({}) engages {} ({}) as {}\n", id, o.tag, target, other_tag, role)
         }
     }
@@ -1104,7 +1104,7 @@ namespace fight {
         if target == id or c.dead { return actions::Status::failed }
         let t = world::object{ w = &w, id = target } ifnull { return actions::Status::done }
         if t.area != o.area { return actions::Status::done }
-        if obj::creature{ o = t } is some{ value = tc } {
+        if let tc = obj::creature{ o = t } {
             if tc.dead { return actions::Status::done }
             let tf = tc.fighter ifnull { return actions::Status::done }
             if tf.c.down { return actions::Status::done }
@@ -1206,7 +1206,7 @@ namespace fight {
         let mut target_beast = false
         let mut target_melee = false
         let mut is_object = false
-        if obj::creature{ o = t } is some{ value = tc } {
+        if let tc = obj::creature{ o = t } {
             let tf = tc.fighter ifnull { return }
             sync_flags{ w = &w, o = t, f = tf }
             ts = stance{ w = &w, c = tc }
@@ -1342,9 +1342,9 @@ namespace fight {
         f.round.atk_ms = 0
         let mut pf: ?*mut Fighter = null
         if engaged and not is_object {
-            if obj::creature{ o = t } is some{ value = pc } { pf = pc.fighter }
+            if let pc = obj::creature{ o = t } { pf = pc.fighter }
         }
-        if pf is some{ value = p } {
+        if let p = pf {
             p.round.paused = true
             if f.master {
                 p.round.paused_by = p.master_id
@@ -1440,9 +1440,9 @@ namespace fight {
         // shielded), its own round is engaged, it holds no lightsaber and is not casting. No other
         // impact makes the target react: combat hits never flinch.
         shorten_round{ r = &f.round, len = ATTACK_MS }
-        if pf is some{ value = p } {
+        if let p = pf {
             let mut helpless = false
-            if obj::creature{ o = t } is some{ value = hc } { helpless = hc.dead or p.dying_ms > 0 or rules::is_debilitated{ c = &p.c } }
+            if let hc = obj::creature{ o = t } { helpless = hc.dead or p.dying_ms > 0 or rules::is_debilitated{ c = &p.c } }
             let mut answer = NO_ROW
             let mut answers = false
             if not ranged {
@@ -1484,8 +1484,8 @@ namespace fight {
     }
 
     fn holds_saber { c: *rules::Creature } -> bool {
-        if rules::equipped_item{ c, mask = rules::slot::RIGHT } is some{ value = r } { if rules::combat_is_lightsaber{ item = r } { return true } }
-        if rules::equipped_item{ c, mask = rules::slot::LEFT } is some{ value = l } { if rules::combat_is_lightsaber{ item = l } { return true } }
+        if let r = rules::equipped_item{ c, mask = rules::slot::RIGHT } { if rules::combat_is_lightsaber{ item = r } { return true } }
+        if let l = rules::equipped_item{ c, mask = rules::slot::LEFT } { if rules::combat_is_lightsaber{ item = l } { return true } }
         return false
     }
 
@@ -1549,7 +1549,7 @@ namespace fight {
             tb.ctx.last_attacker = id
             tbc.last_hostile_actor = id
             if not imp.cutscene { enter_combat{ &w, id = imp.target, other = id } }
-            let downed = if tbc.fighter is some{ value = tf } { tf.c.down } else { false }
+            let downed = if let tf = tbc.fighter { tf.c.down } else { false }
             if not downed {
                 events::post{ &w, delay_ms = 0, caller = id, target = imp.target, payload = events::Payload::script{ e = events::script_event{ kind = events::MELEE_ATTACKED, object = id } } }
             }
@@ -1558,14 +1558,14 @@ namespace fight {
         // The damage first (rules.md: make_damage_effects, applied before the attack's other effects).
         if imp.hit {
             let dmg = rules::make_damage_effects{ roll = &imp.damage, creator = id }
-            if of{ o = t } is some{ value = tf } { tf.quiet_damage = true }
+            if let tf = of{ o = t } { tf.quiet_damage = true }
             let mut d: i32 = 0
             while d < dmg.len {
                 _ = apply{ &w, target = imp.target, e = dmg.items[@as(usize, d)] }
                 d = d + 1
             }
-            if world::object{ w = &w, id = imp.target } is some{ value = back } {
-                if of{ o = back } is some{ value = tf } { tf.quiet_damage = false }
+            if let back = world::object{ w = &w, id = imp.target } {
+                if let tf = of{ o = back } { tf.quiet_damage = false }
             }
         }
         let mut k: i32 = 0
@@ -1610,11 +1610,11 @@ namespace fight {
         f.round.attacks = 0
         if c.dead or f.c.down { return }
         let mut target_alive = false
-        if world::object{ w = &w, id = target } is some{ value = tv } {
+        if let tv = world::object{ w = &w, id = target } {
             if tv.kind == obj::Kind::door or tv.kind == obj::Kind::placeable { target_alive = tv.hp >= 1 and not tv.plot }
-            if obj::creature{ o = tv } is some{ value = tc } {
+            if let tc = obj::creature{ o = tv } {
                 target_alive = not tc.dead
-                if tc.fighter is some{ value = tf } { if tf.c.down { target_alive = false } }
+                if let tf = tc.fighter { if tf.c.down { target_alive = false } }
             }
         }
         if not target_alive {
@@ -1660,8 +1660,8 @@ namespace fight {
         if next == obj::INVALID {
             // No enemy left in reach: the leader stands (animation 10000) and leaves combat mode at
             // once rather than keep the ready stance until its combat state runs out.
-            if world::object{ w = &w, id } is some{ value = back } {
-                if obj::creature{ o = back } is some{ value = c } { c.in_combat = false }
+            if let back = world::object{ w = &w, id } {
+                if let c = obj::creature{ o = back } { c.in_combat = false }
                 world::set_animation{ o = back, id = obj::ANIM_STAND, speed = 1.0 }
             }
             if w.log.combat {
@@ -1681,8 +1681,8 @@ namespace fight {
             }
             i = i + 1
         }
-        if world::object{ w = &w, id } is some{ value = back } {
-            if obj::creature{ o = back } is some{ value = c } { c.attempted_target = next }
+        if let back = world::object{ w = &w, id } {
+            if let c = obj::creature{ o = back } { c.attempted_target = next }
         }
         drop_clicked{ &w, id, target = next }
         if w.target == target or w.target == obj::INVALID { w.target = next }
@@ -1722,8 +1722,8 @@ namespace fight {
         let s = stance{ w, c }
         if is_ranged_stance{ s } or (s == 0 and is_ranged_item{ w, item = c.equipped[obj::SLOT_RIGHT_WEAPON] }) {
             let mut range: f32 = 0.0
-            if world::object{ w, id = c.equipped[obj::SLOT_RIGHT_WEAPON] } is some{ value = iv } {
-                if obj::item{ o = iv } is some{ value = it } {
+            if let iv = world::object{ w, id = c.equipped[obj::SLOT_RIGHT_WEAPON] } {
+                if let it = obj::item{ o = iv } {
                     range = twoda::get_float{ t = w.tables.baseitems, row = @as(usize, it.base), column = "maxattackrange" } ifnull 0.0
                 }
             }
@@ -1794,9 +1794,9 @@ namespace fight {
         let over = -left
         finish_pause{ &w, id, f, overshoot = over }
         if f.round.started and f.master and f.engaged {
-            if world::object{ w = &w, id = f.slave_id } is some{ value = so } {
-                if obj::creature{ o = so } is some{ value = sc } {
-                    if sc.fighter is some{ value = sf } {
+            if let so = world::object{ w = &w, id = f.slave_id } {
+                if let sc = obj::creature{ o = so } {
+                    if let sf = sc.fighter {
                         if sf.master_id == id and sf.round.started { finish_pause{ &w, id = f.slave_id, f = sf, overshoot = over } }
                     }
                 }
@@ -1804,9 +1804,9 @@ namespace fight {
         }
         if not f.round.started { return }
         // The round's target is dead or down: the round is over.
-        if world::object{ w = &w, id = f.round.target } is some{ value = tv } {
-            if obj::creature{ o = tv } is some{ value = tc } {
-                let down = if tc.fighter is some{ value = tf } { tf.c.down } else { false }
+        if let tv = world::object{ w = &w, id = f.round.target } {
+            if let tc = obj::creature{ o = tv } {
+                let down = if let tf = tc.fighter { tf.c.down } else { false }
                 if tc.dead or down { end_round{ &w, id, script = true } }
             }
         }
@@ -2037,12 +2037,12 @@ namespace fight {
             k = k + 1
             if is_down{ w = &w, id } {
                 // Moved to a free spot within 5 m of where it lies (0x004aeb60), then raised.
-                if world::object{ w = &w, id } is some{ value = lo } { place_free{ &w, id, near = lo.position } }
+                if let lo = world::object{ w = &w, id } { place_free{ &w, id, near = lo.position } }
                 let mut e = rules::fx::make_resurrection{}
                 rules::fx::set_creator{ e = &e, creator = id, spell_id = -1 }
                 _ = apply{ &w, target = id, e }
-                if world::object{ w = &w, id } is some{ value = o } {
-                    if of{ o } is some{ value = f } {
+                if let o = world::object{ w = &w, id } {
+                    if let f = of{ o } {
                         f.dying_ms = 0
                         sync_flags{ w = &w, o, f }
                     }
@@ -2056,7 +2056,7 @@ namespace fight {
             // back to a free spot within 5 m of its place in the client party: its follow point on
             // the leader's trail (entry +0x28, trail.ctx).
             if index > 0 and not w.party.solo {
-                if world::object{ w = &w, id } is some{ value = so } {
+                if let so = world::object{ w = &w, id } {
                     if math::vec3::distance{ a = so.position, b = lead_at } > 40.0 {
                         let spot = trail::follow_point{ w = &w, id } ifnull lead_at
                         place_free{ &w, id, near = spot }
@@ -2075,7 +2075,7 @@ namespace fight {
     // directions each; with none, `near` itself. The creature is put there.
     fn place_free { mut w: world::World, id: u32, near: math::Vec3 } {
         let o = world::object{ w = &w, id } ifnull { return }
-        let mine = if obj::creature{ o } is some{ value = c } { c.perspace } else { 0.5 }
+        let mine = if let c = obj::creature{ o } { c.perspace } else { 0.5 }
         let mut best = near
         let mut found = false
         let mut ring: i32 = 0
@@ -2128,10 +2128,10 @@ namespace fight {
         let row: usize = if r.len == 0 { 1 } else if r[0] == 'P' or r[0] == 'T' { 1 } else if r[0] == 'S' { 2 } else if r[0] == 'M' { 3 } else if r[0] == 'L' { 4 } else if r[0] == 'W' { 19 } else { 2 }
         let base = twoda::get_float{ t = w.tables.ranges, row, column = "primaryrange" } ifnull 10.0
         let mut mine: f32 = 0.0
-        if obj::creature{ o = caster } is some{ value = c } { mine = c.perspace - 0.1 }
+        if let c = obj::creature{ o = caster } { mine = c.perspace - 0.1 }
         let mut theirs: f32 = 0.0
-        if world::object{ w, id = target } is some{ value = t } {
-            if obj::creature{ o = t } is some{ value = tc } { theirs = tc.perspace - 0.1 }
+        if let t = world::object{ w, id = target } {
+            if let tc = obj::creature{ o = t } { theirs = tc.perspace - 0.1 }
         }
         return base + mine + theirs
     }
@@ -2195,9 +2195,9 @@ namespace fight {
             // The action fails at once when the caster is dead or its equipment forbids the power
             // (the Force points were checked when the cast was ordered and are paid at the end of
             // the conjuration).
-            if of{ o } is some{ value = f } {
+            if let f = of{ o } {
                 sync_flags{ w = &w, o, f }
-                let alive = if obj::creature{ o } is some{ value = c } { not c.dead } else { true }
+                let alive = if let c = obj::creature{ o } { not c.dead } else { true }
                 let reason = rules::can_keep_casting{ tables = w.rules, c = &f.c, spell, alive }
                 if reason != rules::cast::OK and reason != rules::cast::ENTANGLED {
                     if w.log.combat {
@@ -2222,10 +2222,10 @@ namespace fight {
             a.unclearable = used != obj::INVALID
             let dir = math::vec3::sub{ a = at, b = o.position }
             if dir.x * dir.x + dir.y * dir.y > 0.0001 { world::set_orientation{ o, v = math::Vec3{ x = dir.x, y = dir.y, z = 0.0 } } }
-            if obj::creature{ o } is some{ value = c } {
+            if let c = obj::creature{ o } {
                 if target != obj::INVALID and target != id {
                     c.last_hostile_target = target
-                    if world::object{ w = &w, id = target } is some{ value = t } {
+                    if let t = world::object{ w = &w, id = target } {
                         if t.kind == obj::Kind::creature and world::standing{ w = &w, from = o.faction, toward = t.faction } <= 10 {
                             enter_combat{ &w, id, other = target }
                             enter_combat{ &w, id = target, other = id }
@@ -2264,9 +2264,9 @@ namespace fight {
         if a.phase == 1 {
             if elapsed < conj_ms { return actions::Status::running }
             // The first frame past the conjuration: pay, then cast and let the power land.
-            if of{ o } is some{ value = f } {
+            if let f = of{ o } {
                 sync_flags{ w = &w, o, f }
-                let alive = if obj::creature{ o } is some{ value = c } { not c.dead } else { true }
+                let alive = if let c = obj::creature{ o } { not c.dead } else { true }
                 let start = rules::begin_cast{ tables = w.rules, c = &f.c, spell, alive, from_item = free }
                 if start.reason != rules::cast::OK and start.reason != rules::cast::ENTANGLED {
                     if w.log.combat {
@@ -2302,7 +2302,7 @@ namespace fight {
                 fire{ &w, &vm, engine, id, spell, target = if flies { obj::INVALID } else { target }, at }
                 // A droid utility device's tail plays only its loop (11002) until the end.
                 if rt_item::item_type_of{ w = &w, id = used_item } == 12 {
-                    if world::object{ w = &w, id } is some{ value = uo } { play_row{ &w, o = uo, row = ROW_DEVICE_LOOP } }
+                    if let uo = world::object{ w = &w, id } { play_row{ &w, o = uo, row = ROW_DEVICE_LOOP } }
                 }
                 rt_item::spend_use{ &w, item = used_item, spell }
             }
@@ -2314,8 +2314,8 @@ namespace fight {
         // In the original every cast starts or joins a round (actions.md CASTSPELL), so a creature a
         // script has just turned on the party, whose first order is a buff on itself (the dark Sith
         // of the Star Forge's Bastila duel), is told the round is over and goes for its enemy.
-        if world::object{ w = &w, id } is some{ value = done_o } {
-            if obj::creature{ o = done_o } is some{ value = c } {
+        if let done_o = world::object{ w = &w, id } {
+            if let c = obj::creature{ o = done_o } {
                 let leader = id == party::leader{ w = &w }
                 if not c.dead and not is_down{ w = &w, id } and not leader {
                     events::post{ &w, delay_ms = 0, caller = id, target = id, payload = events::Payload::script{ e = events::script_event{ kind = events::END_COMBAT_ROUND, object = target } } }
@@ -2324,7 +2324,7 @@ namespace fight {
                 // After a spell round the leader's renewed attack needs the target within its attack
                 // range + 2 m (0x005b6980 with 0x004ffad0, centre to centre).
                 if leader and done_o.actions.len == 0 and is_live_enemy{ w = &w, who = done_o, target } {
-                    if world::object{ w = &w, id = target } is some{ value = tv } {
+                    if let tv = world::object{ w = &w, id = target } {
                         if math::vec3::distance{ a = done_o.position, b = tv.position } <= retarget_range{ w = &w, o = done_o } { resume_attack{ &w, id, target } }
                     }
                 }
@@ -2338,7 +2338,7 @@ namespace fight {
         let t = world::object{ w, id = target } ifnull { return false }
         let tc = obj::creature{ o = t } ifnull { return false }
         if tc.dead { return false }
-        if tc.fighter is some{ value = tf } { if tf.c.down { return false } }
+        if let tf = tc.fighter { if tf.c.down { return false } }
         return world::standing{ w, from = who.faction, toward = t.faction } <= 10
     }
 
@@ -2389,7 +2389,7 @@ namespace fight {
         let known = kind == 6 or kind == 20 or kind == 25 or kind == 26 or kind == 45 or kind == 47
         if not known { play_row{ &w, o, row = ROW_ITEM_OTHER }; return }
         if not is_humanoid{ w = &w, o } {
-            if obj::creature{ o } is some{ value = c } { play_ready{ &w, o, c } }
+            if let c = obj::creature{ o } { play_ready{ &w, o, c } }
             return
         }
         if kind == 6 { play_row{ &w, o, row = if near { 58 } else { 57 } }; return }
@@ -2476,7 +2476,7 @@ namespace fight {
     // context set on it and the target told who cast what at it.
     fn impact { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, spell: i32, target: u32, at: math::Vec3 } {
         let name = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "impactscript" } ifnull ""
-        if world::object{ w = &w, id = target } is some{ value = t } {
+        if let t = world::object{ w = &w, id = target } {
             t.ctx.last_spell = spell
             t.ctx.last_spell_caster = id
         }
@@ -2487,7 +2487,7 @@ namespace fight {
         if name.len > 0 and not ci::eq{ a = name, b = "****" } {
             _ = scripts::run{ &w, &vm, engine, name = resref::truncate{ name }, self = id }
         }
-        if world::object{ w = &w, id } is some{ value = back } {
+        if let back = world::object{ w = &w, id } {
             back.ctx.spell_id = -1
             back.ctx.spell_target = obj::INVALID
         }
@@ -2555,7 +2555,7 @@ namespace fight {
         world::set_name{ &w, name = &bag.name, strref = @as(u32, name), text = "" } iferr {}
         bag.plot = not corpse
         let bag_id = bag.id
-        if obj::placeable{ o = bag } is some{ value = p } {
+        if let p = obj::placeable{ o = bag } {
             p.appearance = @as(u32, look)
             p.useable = true
             p.has_inventory = true
@@ -2568,8 +2568,8 @@ namespace fight {
                 let item = drops[k]
                 k = k + 1
                 list::push{ list = &p.inventory, item } iferr { continue }
-                if world::object{ w = &w, id = item } is some{ value = io } {
-                    if obj::item{ o = io } is some{ value = it } {
+                if let io = world::object{ w = &w, id = item } {
+                    if let it = obj::item{ o = io } {
                         it.possessor = bag_id
                         it.equipped_slot = -1
                     }
@@ -2577,8 +2577,8 @@ namespace fight {
             }
         }
         // Its items are the bag's now: the creature lets go of them.
-        if world::object{ w = &w, id } is some{ value = back } {
-            if obj::creature{ o = back } is some{ value = bc } {
+        if let back = world::object{ w = &w, id } {
+            if let bc = obj::creature{ o = back } {
                 let mut keep = list::new(u32, heap::Heap){ realloc = heap::alloc, heap = w.heap }
                 let own = list::items{ list = bc.inventory }
                 k = 0
@@ -2634,7 +2634,7 @@ namespace fight {
         c.combat_mode = false
         c.attack_target = obj::INVALID
         c.attempted_target = obj::INVALID
-        if c.fighter is some{ value = f } { f.combat_ms = 0 }
+        if let f = c.fighter { f.combat_ms = 0 }
         if others { clear_attackers{ &w, id } }
     }
 
@@ -2663,7 +2663,7 @@ namespace fight {
         if c.moving { return }
         let rows: [3]i32 = [132, 173, 214]
         play_row{ &w, o, row = rows[@as(usize, s - 2)] }
-        if of{ o } is some{ value = f } { f.react_ms = 1500 }
+        if let f = of{ o } { f.react_ms = 1500 }
     }
 
     fn say_combat_message { mut w: world::World, id: u32, strref: u32 } {
@@ -2686,6 +2686,6 @@ namespace fight {
         let c = obj::creature{ o } ifnull { return }
         c.attack_target = obj::INVALID
         c.attempted_target = obj::INVALID
-        if c.fighter is some{ value = f } { f.round.target = obj::INVALID }
+        if let f = c.fighter { f.round.target = obj::INVALID }
     }
 }

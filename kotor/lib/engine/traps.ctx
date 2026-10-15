@@ -258,7 +258,7 @@ namespace traps {
         let victim = world::object{ w = &w, id = who } ifnull { return }
         let c = obj::creature{ o = victim } ifnull { return }
         if c.dead { return }
-        if c.fighter is some{ value = f } {
+        if let f = c.fighter {
             if rules::has_immunity{ c = &f.c, kind = rules::imm::TRAP, vs = rules::no_versus{} } { return }
         }
         let source = world::object{ w = &w, id = trap.creator } ifnull o
@@ -334,7 +334,7 @@ namespace traps {
     // (`deactivate`): the client's delete reasons 1 and 2.
     fn remove { mut w: world::World, id: u32, base: i32, position: math::Vec3, exploded: bool } {
         let o = world::object{ w = &w, id } ifnull { return }
-        if obj::trigger{ o } is some{ value = t } { t.trap.armed = false }
+        if let t = obj::trigger{ o } { t.trap.armed = false }
         let model = cell{ w = &w, row = base, column = "model" }
         outbox::post{ out = &w.out, note = outbox::Note::mine_gone{ model = resref::truncate{ name = if model.len == 0 { "v_mnfrag" } else { model } }, position, exploded } }
         let sound = cell{ w = &w, row = base, column = "explosionsound" }
@@ -510,7 +510,7 @@ namespace traps {
             let o = all[i]
             i = i + 1
             if o.destroyed or o.area != area { continue }
-            if of{ o } is some{ value = t } { if t.party_set { n = n + 1 } }
+            if let t = of{ o } { if t.party_set { n = n + 1 } }
         }
         return n
     }
@@ -543,7 +543,7 @@ namespace traps {
         let target = actions::object_param{ a, i = 1 }
         let me = world::object{ w = &w, id } ifnull { return actions::Status::failed }
         let mut at = actions::vector_param{ a, i = 2 }
-        if world::object{ w = &w, id = target } is some{ value = t } { at = t.position }
+        if let t = world::object{ w = &w, id = target } { at = t.position }
         if at.x == 0.0 and at.y == 0.0 and at.z == 0.0 { return actions::Status::failed }
         let row = kit_row{ w = &w, item }
         if row < 0 { return actions::Status::failed }
@@ -660,7 +660,7 @@ namespace traps {
         let it = obj::item{ o = io } ifnull { return }
         if it.stack > 1 {
             it.stack = it.stack - 1
-            if it.rules is some{ value = ri } { ri.stack = @as(i32, it.stack) }
+            if let ri = it.rules { ri.stack = @as(i32, it.stack) }
             return
         }
         rt_item::forget_item{ &w, item }

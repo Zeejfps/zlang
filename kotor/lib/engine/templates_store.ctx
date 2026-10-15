@@ -19,8 +19,8 @@ namespace tmpl {
             let e = entries[k]
             k = k + 1
             let item = item_of{ &w, doc, s = e, label = "InventoryRes", possessor = o.id } ifnull { continue }
-            if world::object{ w = &w, id = item } is some{ value = io } {
-                if obj::item{ o = io } is some{ value = it } { it.infinite = (gff::get_number{ doc = doc.*, s = e, label = "Infinite" } ifnull 0) != 0 }
+            if let io = world::object{ w = &w, id = item } {
+                if let it = obj::item{ o = io } { it.infinite = (gff::get_number{ doc = doc.*, s = e, label = "Infinite" } ifnull 0) != 0 }
             }
             // AddItem merges identical items into one stack (an infinite one stays single).
             if xfer::absorb{ &w, l = &st.stock, item } { continue }
@@ -50,8 +50,8 @@ namespace tmpl {
         let mut i: usize = 0
         while i < ids.len {
             // No longer held, so destroying it does not edit the list being walked.
-            if world::object{ w = &w, id = ids[i] } is some{ value = io } {
-                if obj::item{ o = io } is some{ value = it } { it.possessor = obj::INVALID }
+            if let io = world::object{ w = &w, id = ids[i] } {
+                if let it = obj::item{ o = io } { it.possessor = obj::INVALID }
             }
             world::destroy{ &w, id = ids[i] }
             i = i + 1
