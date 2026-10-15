@@ -12,7 +12,7 @@ namespace gff {                                   // namespaces may span files (
     error truncated{ at: usize }                  // errors are values (§8 Errors)
     error bad_type{ kind: u32 }
 
-    struct Field { label: []u8, kind: u32, value: u64 }
+    struct Field { label: []u8, kind: u32, value: u64 = 0 }   // `= 0`: a default (§7)
     union Value { int{ v: i64 }, text{ s: []u8 }, none }      // tagged union (§8)
     enum Kind: u32 { byte, char, word = 2 }                    // integer enum (§12)
 
@@ -28,7 +28,14 @@ namespace gff {                                   // namespaces may span files (
 
 - **Calls name every field:** `gff::parse{ realloc, &heap, bytes = data }`. `x` alone means
   `x = x`; `&x` passes `x` to a `mut` field (§3). Order doesn't matter. A trailing `..` fills
-  the rest from same-named locals.
+  the rest from same-named locals (in a struct literal it means defaults instead, below).
+- **Struct literals name every field** (§7), but a field may declare a default and a literal
+  ending in `..` takes the fields it leaves out from theirs: `Stats{ str = 10, .. }` for
+  `struct Stats { str: i32, speed: f32 = 1.0, class: Class = Class::soldier, target: ?*T = null }`.
+  Without `..` every field is named, defaults or not. A default is a const: numbers, bools,
+  `null`, enum values, strings, consts, compile-time calls, and structs and arrays of those; not
+  a slice (`slice::empty` too), a pointer or a function. Give a new field a default where one
+  makes sense, so the literals that end in `..` keep compiling. Attributes take `..` too.
 - **`mut` fields** are pointers to the caller's place; inside, use them as values. Pass `&local`
   (needs `let mut local`). Two `&` of overlapping places in one call is an error (§3.1).
 - **Big read-only arguments are passed by reference** (§14.6): a struct, union or array over
@@ -51,7 +58,7 @@ function: can't be stored in a struct or returned), `extern fn{C} -> R` (C funct
   bits), `@cast(*T, p)` for pointers. `@as(_, x)` takes the type from the context.
 - Integer literals take their type from use; float literals default to `f64`. Hex `0x1F`.
 - Structs/unions/arrays are values: assignment copies. `let mut x: T` zero-initialises if
-  every field has a zero value.
+  every field has a zero value; field defaults don't apply there, only in literals.
 
 ## Control flow (§11)
 
