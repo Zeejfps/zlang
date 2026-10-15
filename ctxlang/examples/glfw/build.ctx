@@ -1,4 +1,4 @@
-// The build program for examples/glfw: `python tools/ctxc.py examples/glfw --run`.
+// The build program for examples/glfw: `ctxc run examples/glfw`.
 fn build { mut b: Build } {
     let exe = build::exe{ &b, name = "glfw-demo", root = "src" }
     match build::os{ &b } {

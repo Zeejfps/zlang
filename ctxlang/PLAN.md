@@ -17,7 +17,7 @@ interpreter ctxc replaced, is at `8436f4d`.
 | 3 | [Metaprogramming](#3-metaprogramming) | in progress | |
 | 4 | [Literal conversions](#4-literal-conversions) | in progress | |
 | 5 | [Language server](#5-language-server) | planned | |
-| 6 | [Tools in ctxlang](#6-tools-in-ctxlang) | planned | 3.1, 3.2 for 6.5 |
+| 6 | [Tools in ctxlang](#6-tools-in-ctxlang) | planned | 3.1, 3.2 for 6.4 |
 
 ## Stages
 
@@ -154,7 +154,7 @@ generator can't observe its own output.
      pick their exit codes, as ctxc and the examples do, keep `-> i32`.
    - *To settle first:* the error can't be printed "as `@fmt` prints it": `@fmt` writes through a
      sink's `#write` fns (spec §13), and the compiler names no sink, so the runtime has none of
-     the program's. The same goes for 6.5's `@expect`. One answer: the runtime prints primitives
+     the program's. The same goes for 6.4's `@expect`. One answer: the runtime prints primitives
      and `strlit` in C, and `_` for anything else, as a converted literal's error is printed
      (spec §18). A first version may print only the name, as `try!` does.
 2. **Reflection: the checked program.** `build::declarations` (below) gives a build program its
@@ -340,25 +340,23 @@ definition, hover and completion work on `ctxc/` itself. The editor-query fixtur
 ### 6. Tools in ctxlang
 
 Python is left in development only: about 8,100 lines in `tests/` and `tools/`. ctxc and std have
-none, and `ctxc run` and `exe` drive a build themselves. Steps 1–4 replace the Python and stand
-alone; step 5 gives programs a test framework of their own. None blocks the other stages.
+none, and `ctxc run` and `exe` drive a build themselves. Steps 1–3 replace the Python and stand
+alone; step 4 gives programs a test framework of their own. None blocks the other stages.
 
-1. **Remove `tools/ctxc.py`.** `ctxc run` and `ctxc exe` do what it does. The examples' header
-   comments, spec.md's list of examples and "Working on ctxc" name it, and move to `ctxc run`.
-2. **`fixpoint.py` in ctxlang.** It builds ctxc with itself twice, compares the C, and with
+1. **`fixpoint.py` in ctxlang.** It builds ctxc with itself twice, compares the C, and with
    `--update` writes the three bootstraps: a few `proc::run` calls and file compares.
-3. **Tests as files.** The 454 tests are programs in Python strings (`tests/test_ctxlang.py`).
+2. **Tests as files.** The 454 tests are programs in Python strings (`tests/test_ctxlang.py`).
    Each becomes a `.ctx` file, or a directory for a multi-file program, that states its
    expected output, exit code, panic or first error in a header comment, and a ctxlang runner
    builds, runs and checks them. Then ctxc, the recovery corpus and stage 5's editor-query
    fixtures all read the same files, and `tools/toolchain.py`'s harness (building ctxc from the
    bootstrap, caching by hash, mapping positions back) moves into the runner. Do this before
    stage 5.
-4. **`corpus.py` and `recover.py` in ctxlang.** Both run many processes at once, with
+3. **`corpus.py` and `recover.py` in ctxlang.** Both run many processes at once, with
    `proc::spawn` and `wait`, which the driver's parallel compiles use too. With tests as files,
    the corpus is mostly the test directory itself.
-5. **`#test` functions** for std, ctxc's internals and programs, next to the code they test. The
-   compiler's own suite stays as files (6.3): a program can't catch its own compile error.
+4. **`#test` functions** for std, ctxc's internals and programs, next to the code they test. The
+   compiler's own suite stays as files (6.2): a program can't catch its own compile error.
    ```
    #test
    fn reads_config { mut fs: Fs } -> ! {
@@ -399,12 +397,12 @@ and fuzzing (`#fuzz` over a `[]u8` input), both built in as Go has them.
 ## Working on ctxc
 
 ```
-cc -std=gnu11 -O1 -w -fwrapv -fno-optimize-sibling-calls -Ictxc/rt bootstrap/ctxc.linux.c ctxc/rt/ctxrt.c ctxc/rt/ctxfloat.c -lm -o ctxc
-./ctxc run examples/wordcount.ctx -- spec.md             # a file
-./ctxc run examples/json -- examples/json/sample.json    # a directory
-./ctxc run examples/glfw                                 # a directory with a build program
-./ctxc exe examples/list.ctx -o list
-./ctxc interp examples/list.ctx                          # main in the interpreter, no C compiler
+cc -std=gnu11 -O1 -w -fwrapv -fno-optimize-sibling-calls -Ictxc/rt bootstrap/ctxc.linux.c ctxc/rt/ctxrt.c ctxc/rt/ctxfloat.c -lm -o ctxc0
+./ctxc0 run examples/wordcount.ctx -- spec.md            # a file
+./ctxc0 run examples/json -- examples/json/sample.json   # a directory
+./ctxc0 run examples/glfw                                # a directory with a build program
+./ctxc0 exe examples/list.ctx -o list
+./ctxc0 interp examples/list.ctx                         # main in the interpreter, no C compiler
 ```
 
 - On macOS the bootstrap is `bootstrap/ctxc.macos.c`, and on Windows `bootstrap/ctxc.windows.c`. ctxc finds std/ and ctxc/rt/ through
@@ -413,9 +411,9 @@ cc -std=gnu11 -O1 -w -fwrapv -fno-optimize-sibling-calls -Ictxc/rt bootstrap/ctx
   whose C, runtime, compiler and flags haven't changed isn't compiled again: `ctxc run` of an
   unchanged small program takes about 40 ms, the front end included (drive.ctx). `ctxc build`
   writes one file, as the bootstraps are.
-- That ctxc is the bootstrap's; `tools/toolchain.py` builds the current source's into
+- ctxc0 is the bootstrap's. `./ctxc0 exe ctxc -o ctxc1` builds the current source's with it
+  (about 3 s), for `./ctxc1 run`. `tools/toolchain.py` builds its own for the tests, into
   `build/ctxc` (about 7 s the first time, cached after).
-- `python tools/ctxc.py PROGRAM --run [args...]` compiles and runs a program with it.
 - `python -m unittest discover tests` runs all tests through the native ctxc. They pass on
   Windows (gcc), Linux (gcc) and macOS arm64 (Apple clang).
 - Python is left in development only: `tests/` and `tools/`. Stage 6 moves them to ctxlang.

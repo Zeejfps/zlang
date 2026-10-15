@@ -1,6 +1,6 @@
 # ctxlang: spec draft
 
-Examples: [examples/list.ctx](examples/list.ctx) (lists, allocators, bound functions), [examples/wordcount.ctx](examples/wordcount.ctx) (files, arguments, maps), [examples/json](examples/json) (a JSON parser and printer, as a program of several files: `python tools/ctxc.py examples/json --run FILE`), [examples/glfw](examples/glfw) (a build program, §19, and a binding of a C library, §18: `python tools/ctxc.py examples/glfw --run`), [examples/sdl](examples/sdl) (SDL2's events through an extern union, §12), [examples/gen](examples/gen) (a build program that generates part of its executable with a library of its own, from the executable's own declarations too, §19: `ctxc run examples/gen`).
+Examples: [examples/list.ctx](examples/list.ctx) (lists, allocators, bound functions), [examples/wordcount.ctx](examples/wordcount.ctx) (files, arguments, maps), [examples/json](examples/json) (a JSON parser and printer, as a program of several files: `ctxc run examples/json -- FILE`), [examples/glfw](examples/glfw) (a build program, §19, and a binding of a C library, §18: `ctxc run examples/glfw`), [examples/sdl](examples/sdl) (SDL2's events through an extern union, §12), [examples/gen](examples/gen) (a build program that generates part of its executable with a library of its own, from the executable's own declarations too, §19: `ctxc run examples/gen`).
 
 ## 1. Top level
 
