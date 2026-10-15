@@ -2,7 +2,7 @@
 // to compile apart and link.
 //
 //   let text = emit::program{ heap = &heap, p = prog }                  // one C file
-//   let units = emit::units{ &heap, p = prog, size = 262144 }            // several
+//   let units = emit::units{ &heap, p = prog, size = 262144, copy = 32 } // several
 //
 // Mapping (the plan's table):
 //   types        each TypeId is a typedef tN. [N]T is struct { T a[N]; }, so arrays copy as values;
@@ -10,9 +10,10 @@
 //                struct { uint32_t tag; union { struct {...} vI; ... } p; }, except a ?*T, which
 //                is the pointer itself, null being 0. Layouts are checked against the IR's with
 //                _Static_assert.
-//   functions    f_NAME, after the function's name (below). Slot i is lI; a `mut` param's slot
-//                is a pointer, and so is a read-only struct, union or array param over BYREF
-//                bytes, whose uses are (*lI) (spec §14.6). A call passes such an argument's
+//   functions    f_NAME, after the function's name (below), static but for one that another
+//                unit names (Units, below). Slot i is lI; a `mut` param's slot is a pointer,
+//                and so is a read-only struct, union or array param over BYREF bytes, whose
+//                uses are (*lI) (spec §14.6). A call passes such an argument's
 //                place if nothing could change it during the call, or a copy (`pass`).
 //   extern fns   eN calls xN, a prototype whose assembler name is the C symbol, so that no
 //                header's declaration of the symbol can clash with it. Capabilities aren't
@@ -52,6 +53,14 @@
 // can keep its object. Only a function with a body and a callback have names that other units
 // see, made from the function's name (`prepare`), which don't move when other code changes.
 // `units` groups the functions by the file that declares them (`group`).
+//
+// C inlines a call only within a unit, and inlines an extern function less than a static one, so
+// a program whose functions were all extern ran as much as 20% slower split than as one file,
+// whose functions are static. So (`share`) a function no other unit names is static in its own,
+// and one of fewer than `copy` statements and expressions that another unit calls is copied into
+// it, static, with the small ones it calls in turn, as a C header's inline functions are; only
+// the rest are extern. A unit's C then depends on its copies too, and on which of its functions
+// other units name: an edit to a small function recompiles the units that call it as well.
 
 namespace emit {
     type Out = ir_print::Out
@@ -79,8 +88,9 @@ namespace emit {
     struct Callback { callee: u32, ty: ir::TypeId }
 
     // A function's C, with markers: its body, the bind records it makes, which go before it, and
-    // the types of its expressions, whose definitions it needs whether or not it names them.
-    struct Body { text: ir::Bytes, aux: ir::Bytes, uses: []u32 }
+    // the types of its expressions, whose definitions it needs whether or not it names them, and
+    // how many statements and expressions it writes, which say whether it is small (`share`).
+    struct Body { text: ir::Bytes, aux: ir::Bytes, uses: []u32, nodes: u32 }
 
     // Names numbered within a unit, in the order it first uses them: ids[i], for the IR's id i,
     // is the unit's number + 1, or 0 if the unit hasn't used it; order holds the IR's ids by
@@ -94,6 +104,7 @@ namespace emit {
         aux:      Out,                              // records, placed before the function
         f:        ir::Func,                         // the function being emitted
         temp:     u32,                              // the next _tK
+        nodes:    u32,                              // the statements and expressions written for the function
         sites:    u32,                              // the next bind record
         loops:    u32,                              // the loops around what is being written
         given:    Given,                            // what takes the value being written (Records)
@@ -118,6 +129,8 @@ namespace emit {
         bodies:   list::List(Body, ir::Heap),       // by function id
         entry_text: ir::Bytes,                      // int main, with the file table
         unit_of:  list::List(u32, ir::Heap),        // by function id: its unit
+        exported: list::List(u32, ir::Heap),        // by function id: 1 if another unit names it (`share`)
+        copied:   list::List(u32, ir::Heap),        // by function id: 1 + the unit being written, if it has a copy
         unit:     u32,                              // the unit being written
         marks:    list::List(u8, ir::Heap),         // by type id, in the unit: 1 typedef'd, 2 defined
         lt: Locals, lc: Locals, lq: Locals, lv: Locals, lf: Locals,     // types, code types,
@@ -140,13 +153,14 @@ namespace emit {
             if e.p.fns[i].symbol.len == 0 { try! list::push{ list = &fs, item = @as(u32, i) } }
             i = i + 1
         }
-        return unit_text{ &e, fns = list::items{ list = fs }, entry = true, unit = 0, title = false }
+        return unit_text{ &e, fns = list::items{ list = fs }, copies = slice::empty(u32){}, entry = true, unit = 0, title = false }
     }
 
     // The program as units to compile apart and link, of about `size` bytes of function bodies
-    // each, and a last one with `int main`. A program of less than twice that is one unit, as
-    // `program` writes it.
-    fn units { mut heap: ir::Heap, p: ir::Program, size: usize } -> [][]u8 {
+    // each, and a last one with `int main`, each with copies of the functions of fewer than
+    // `copy` statements and expressions it calls in others (`share`). A program of less than
+    // twice `size` is one unit, as `program` writes it.
+    fn units { mut heap: ir::Heap, p: ir::Program, size: usize, copy: usize } -> [][]u8 {
         let mut e = start{ heap = &heap, p }
         let mut out = list::new([]u8){ realloc = arena::alloc, &heap }
         let mut total: usize = 0
@@ -175,17 +189,20 @@ namespace emit {
             from = to
             k = k + 1
         }
+        let c = share{ &e, g, copy }
         from = 0
         k = 0
         while k < g.ends.len {
             let to = list::items{ list = g.ends }[k]
-            let text = unit_text{ &e, fns = list::items{ list = g.fns }[from..to], entry = false, unit = @as(u32, k), title = true }
+            let first: usize = if k == 0 { 0 } else { list::items{ list = c.ends }[k - 1] }
+            let copies = list::items{ list = c.fns }[first..list::items{ list = c.ends }[k]]
+            let text = unit_text{ &e, fns = list::items{ list = g.fns }[from..to], copies, entry = false, unit = @as(u32, k), title = true }
             try! list::push{ list = &out, item = text }
             from = to
             k = k + 1
         }
         let none = slice::empty(u32){}
-        try! list::push{ list = &out, item = unit_text{ &e, fns = none, entry = true, unit = @as(u32, k), title = true } }
+        try! list::push{ list = &out, item = unit_text{ &e, fns = none, copies = none, entry = true, unit = @as(u32, k), title = true } }
         return list::items{ list = out }
     }
 
@@ -196,7 +213,7 @@ namespace emit {
             o = ir_print::out{ heap, types = p.types },
             aux = ir_print::out{ heap, types = p.types },
             f = p.fns[p.main],
-            temp = 0, sites = 0, loops = 0, given = Given::other, stacked = false,
+            temp = 0, nodes = 0, sites = 0, loops = 0, given = Given::other, stacked = false,
             slots = list::new(u32){ realloc = arena::alloc, heap },
             confined = list::new(u8){ realloc = arena::alloc, heap },
             depth = 0,
@@ -214,6 +231,8 @@ namespace emit {
             bodies = list::new(Body){ realloc = arena::alloc, heap },
             entry_text = "",
             unit_of = zeros{ heap, n = p.fns.len, value = 0 },
+            exported = zeros{ heap, n = p.fns.len, value = 0 },
+            copied = zeros{ heap, n = p.fns.len, value = 0 },
             unit = 0,
             marks = list::new(u8){ realloc = arena::alloc, heap },
             lt = locals{ heap, n = 0 }, lc = locals{ heap, n = 0 }, lq = locals{ heap, n = 0 },
@@ -236,8 +255,9 @@ namespace emit {
             let f = p.fns[i]
             e.o = ir_print::out{ heap, types = p.types }
             e.aux = ir_print::out{ heap, types = p.types }
+            e.nodes = 0
             if f.symbol.len == 0 { function{ &e, f } }
-            try! list::push{ list = &e.bodies, item = Body{ text = list::items{ list = e.o.bytes }, aux = list::items{ list = e.aux.bytes }, uses = list::items{ list = e.uses } } }
+            try! list::push{ list = &e.bodies, item = Body{ text = list::items{ list = e.o.bytes }, aux = list::items{ list = e.aux.bytes }, uses = list::items{ list = e.uses }, nodes = e.nodes } }
             e.uses = list::new(u32){ realloc = arena::alloc, heap }
             i = i + 1
         }
@@ -467,6 +487,75 @@ namespace emit {
         return g
     }
 
+    // Which functions each unit has a copy of, as Groups do (unit k's are
+    // fns[ends[k - 1]..ends[k]]), and which other units name (E.exported). A unit that calls a function of fewer than `copy`
+    // nodes (statements and expressions, Body.nodes) in another unit gets a copy of it, static,
+    // and of those that calls in turn: C can then inline it there as it would in one unit. Any
+    // other function a unit names in another, by a call, a bind or a function value's thunk, is
+    // exported, as are those main's unit calls; the rest are static in their own unit, so C may
+    // inline them and drop them (`resolve`).
+    fn share { mut e: E, g: Groups, copy: usize } -> Groups {
+        let heap = e.heap
+        let mut c = Groups{ fns = list::new(u32){ realloc = arena::alloc, heap }, ends = list::new(usize){ realloc = arena::alloc, heap } }
+        let mut seen = zeros{ heap, n = e.p.fns.len, value = 0 }     // 1 + the unit that has it, its own or a copy
+        let mut from: usize = 0
+        let mut k: usize = 0
+        while k < g.ends.len {
+            let to = list::items{ list = g.ends }[k]
+            let own = list::items{ list = g.fns }[from..to]
+            let unit = @as(u32, k)
+            let mut j: usize = 0
+            while j < own.len {
+                list::items{ list = seen }[own[j]] = unit + 1
+                j = j + 1
+            }
+            // Its own functions, then the copies they make, in the order it names them.
+            let start = c.fns.len
+            j = 0
+            while j < own.len + (c.fns.len - start) {
+                let f = if j < own.len { own[j] } else { list::items{ list = c.fns }[start + j - own.len] }
+                let b = list::items{ list = e.bodies }[f]
+                reach{ &e, src = b.aux, unit, copy, seen = list::items{ list = seen }, copies = &c.fns }
+                reach{ &e, src = b.text, unit, copy, seen = list::items{ list = seen }, copies = &c.fns }
+                j = j + 1
+            }
+            _ = end_unit{ g = &c }
+            from = to
+            k = k + 1
+        }
+        reach{ &e, src = e.entry_text, unit = @as(u32, k), copy = 0, seen = list::items{ list = seen }, copies = &c.fns }
+        return c
+    }
+
+    // For each function with a body that src names and unit `unit` doesn't have (seen[f] is 1 +
+    // the unit that has it): a copy for the unit if src calls it and it is smaller than `copy`,
+    // else exported. A thunk's or a bind's target is named by its function's text.
+    fn reach { mut e: E, src: ir::Bytes, unit: u32, copy: usize, seen: []mut u32, mut copies: list::List(u32, ir::Heap) } {
+        let mut i: usize = 0
+        while i < src.len {
+            if src[i] != MARK {
+                i = i + 1
+                continue
+            }
+            let kind = src[i + 1]
+            let mut j = i + 2
+            let mut id: u32 = 0
+            while src[j] != END {
+                id = id * 10 + @as(u32, src[j] - '0')
+                j = j + 1
+            }
+            i = j + 1
+            if (kind == 'f' or kind == 'g' or kind == 'h') and e.p.fns[id].symbol.len == 0 and seen[id] != unit + 1 {
+                if kind == 'f' and @as(usize, list::items{ list = e.bodies }[id].nodes) < copy {
+                    seen[id] = unit + 1
+                    try! list::push{ list = &copies, item = id }
+                } else {
+                    list::items{ list = e.exported }[id] = 1
+                }
+            }
+        }
+    }
+
     fn end_unit { mut g: Groups } -> usize {
         try! list::push{ list = &g.ends, item = g.fns.len }
         return 0
@@ -534,9 +623,9 @@ namespace emit {
         return a.len < b.len
     }
 
-    // A unit's C: functions fns, and main if entry. With a title, its first line names the files
-    // its functions are in.
-    fn unit_text { mut e: E, fns: []u32, entry: bool, unit: u32, title: bool } -> ir::Bytes {
+    // A unit's C: functions fns, copies of functions of other units (`share`), and main if
+    // entry. With a title, its first line names the files its own functions are in.
+    fn unit_text { mut e: E, fns: []u32, copies: []u32, entry: bool, unit: u32, title: bool } -> ir::Bytes {
         let heap = e.heap
         let types = e.p.types
         clear_unit{ &e }
@@ -544,8 +633,13 @@ namespace emit {
         e.assembling = true
         let mut body = ir_print::out{ heap, types }
         let mut i: usize = 0
-        while i < fns.len {
-            let b = list::items{ list = e.bodies }[fns[i]]
+        while i < copies.len {
+            list::items{ list = e.copied }[copies[i]] = unit + 1
+            i = i + 1
+        }
+        i = 0
+        while i < fns.len + copies.len {
+            let b = list::items{ list = e.bodies }[if i < fns.len { fns[i] } else { copies[i - fns.len] }]
             rewrite{ &e, src = b.aux, into = &body }
             rewrite{ &e, src = b.text, into = &body }
             let mut k: usize = 0
@@ -789,6 +883,11 @@ namespace emit {
             ir_print::bytes{ o = &into, b = list::items{ list = e.snames }[id] }
         } else if kind == 's' {
             if not e.split { ir_print::text{ o = &into, a = "static " } }
+        } else if kind == 'l' {
+            // Function id's linkage: static but for one of this unit that another names (`share`).
+            let mine = list::items{ list = e.unit_of }[id] == e.unit
+            let copy = list::items{ list = e.copied }[id] == e.unit + 1
+            if not e.split or copy or (mine and list::items{ list = e.exported }[id] == 0) { ir_print::text{ o = &into, a = "static " } }
         } else {
             @panic("emit: an unknown marker")
         }
@@ -1169,9 +1268,10 @@ namespace emit {
         put{ &e, a = ";\n\n" }
     }
 
-    // `R f_NAME(P l0, ...)`, static in a program of one unit; an extern fn's `static R eN(...)`.
+    // `R f_NAME(P l0, ...)`, static unless another unit names it (`resolve`); an extern fn's
+    // `static R eN(...)`.
     fn signature { mut e: E, f: ir::Func } {
-        if f.symbol.len > 0 { put{ &e, a = "static " } } else { mark_id{ &e, kind = 's', id = 0 } }
+        if f.symbol.len > 0 { put{ &e, a = "static " } } else { mark_id{ &e, kind = 'l', id = f.id } }
         tn{ &e, t = f.ret }
         ch{ &e, c = ' ' }
         mark_id{ &e, kind = 'f', id = f.id }
@@ -1485,6 +1585,7 @@ namespace emit {
     }
 
     fn stmt { mut e: E, s: ir::Stmt } {
+        e.nodes = e.nodes + 1
         match s {
             define{ slot, init } => {
                 target{ &e, slot }
@@ -1828,6 +1929,7 @@ namespace emit {
     // ---- expressions
 
     fn expr { mut e: E, x: ir::Expr } {
+        e.nodes = e.nodes + 1
         use{ &e, t = x.ty }
         let given = e.given
         e.given = Given::other

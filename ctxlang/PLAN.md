@@ -79,6 +79,19 @@ one function, which recompiles its unit alone. Unit sizes from 128 KiB to 1 MiB 
 9 s. gcc's own `-flto=auto` doesn't help on Windows, where lto-wrapper runs its jobs one after
 another.
 
+Then a function no other unit names became static, and one of fewer than 32 statements and
+expressions that another unit calls is copied into it, static (emit_c.ctx, `share`). C inlines
+only within a unit, and inlines into extern functions less than into static ones, so a split
+program ran as slowly as one file of extern functions: examples/arena's generated version 21%
+behind its hand-written one at `build::optimize` level 2, where one file is 5% behind, and ctxc
+built by `ctxc exe` 7% slower than as one file. Now the arena's three versions run within 2% of
+one file or faster, and ctxc within 1.5%, for 16 to 46% more C (KOTOR's 22.9 MB is 26.6 MB), a
+full build of KOTOR in 11.6 s instead of 10.2, and rebuilds as fast as before but for an edit
+to a small function, which recompiles the units that copy it (7 of KOTOR's 101 for
+`le::get_u32`: 4.0 s instead of 3.5). A limit of 48 gained nothing more, and made KOTOR's
+`ci::eq` a copy in 65 units; `-flto` over the old units was as fast at run time, but every link
+of KOTOR took 54 s.
+
 *Later, for the driver* (ctxc/drive.ctx), if they get in the way:
 - The front end runs on every `ctxc run`, changed or not: 1.9 s for 99K lines, now the largest
   part of a rebuild. A hash of the sources and of ctxc itself could skip it too; checking and
@@ -90,6 +103,10 @@ another.
 - A file's units are its functions by a hash of their names; files smaller than a unit share one
   with the next files of their directory, so one that grows past a boundary moves the files after
   it into other units.
+- Copies are chosen by size alone, counted in the IR rather than in what C would inline. A big
+  function called once from another unit, as a generated ECS runner calls its system, still
+  isn't inlined there; grouping functions into units by who calls whom, a generated file's with
+  the files it calls, would let it be.
 - A file reached twice is found by its absolute path, without looking at links, so a file
   reached through a symbolic link or a junction and directly is compiled twice.
 - A C compiler replaced in place by another version isn't noticed: removing build/run starts

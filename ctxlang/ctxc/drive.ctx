@@ -23,7 +23,10 @@
 // An executable's C is in units (emit::units, ctxc/emit_c.ctx): one for a small program, and for a
 // big one units of about 256 KiB of C each (or CTX_UNIT_SIZE bytes), grouped by the files that
 // declare their functions, and one with `int main`. The units are compiled at once, as many at a
-// time as there are processors, and linked.
+// time as there are processors, and linked. A function no other unit names is static, and one of
+// fewer than 32 statements and expressions (or CTX_COPY_SIZE; 0 for none) that another unit calls
+// is copied into it, static, so that C can inline it there as in one file; at optimization level
+// 0, which inlines nothing, it isn't.
 //
 // What a build writes goes under HOME/build/run. Each program has a directory of its own there,
 // named after it and a hash of its absolute path, so ctxcs building different programs at once
@@ -45,11 +48,12 @@
 //
 // So a unit whose C, runtime, compiler and flags haven't changed since it was built isn't
 // compiled again, nor linked if no unit changed: the front end runs, and the C compiler doesn't.
-// A unit's C depends only on its own functions and what they use, so an edit recompiles the
-// units of the files it touched. A C compiler replaced in place by another version goes
-// unnoticed; removing build/run starts afresh. Files are written under names no other ctxc writes
-// to (`claim`) and renamed into place, so two ctxcs building the same program at once at worst do
-// the work twice.
+// A unit's C depends only on its own functions, what they use and the copies it holds, so an edit
+// recompiles the units of the files it touched, those that copy a small function it changed, and
+// those with a function it starts or stops calling from another unit. A C compiler replaced in
+// place by another version goes unnoticed; removing build/run starts afresh. Files are written
+// under names no other ctxc writes to (`claim`) and renamed into place, so two ctxcs building the
+// same program at once at worst do the work twice.
 
 namespace drive {
     type Heap = arena::Arena
@@ -66,6 +70,10 @@ namespace drive {
     // About how many bytes of C a unit has, unless CTX_UNIT_SIZE says otherwise.
     const UNIT_SIZE: usize = 262144
 
+    // A function of fewer statements and expressions than this, called from another unit, is
+    // copied into it (emit::units), unless CTX_COPY_SIZE says otherwise.
+    const COPY_SIZE: usize = 32
+
     // ctxc's lexer and parser, which a build program has with std's files (`build_extras`): what
     // parser.ctx needs, and nothing but std.
     const FRONT: [5][]u8 = ["ctxc/source.ctx", "ctxc/diag.ctx", "ctxc/lexer.ctx", "ctxc/syntax.ctx", "ctxc/parser.ctx"]
@@ -73,8 +81,9 @@ namespace drive {
     // Where things are, and what the C compiler is and the environment entries it runs with: runs
     // is HOME/build/run, work the program's directory in it, program its name, and rt a hash of
     // the runtime's sources; extras are what a build program has with std's files. unit is
-    // about how many bytes of C a unit has, and jobs how many C compilers run at once.
-    struct Driver { home: []u8, runs: []u8, work: []u8, program: []u8, std: [][]u8, extras: [][]u8, os: build::Os, cc: [][]u8, cc_env: [][]u8, rt: u64, unit: usize, jobs: u32 }
+    // about how many bytes of C a unit has, copy how small a function another unit calls must be
+    // to be copied into it, and jobs how many C compilers run at once.
+    struct Driver { home: []u8, runs: []u8, work: []u8, program: []u8, std: [][]u8, extras: [][]u8, os: build::Os, cc: [][]u8, cc_env: [][]u8, rt: u64, unit: usize, copy: usize, jobs: u32 }
 
     // A C compiler compiling a unit, into o_tmp, from its C in c_tmp, to be renamed to o and c.
     struct Job { child: proc::Child, c_tmp: []u8, o_tmp: []u8, c: []u8, o: []u8 }
@@ -281,7 +290,7 @@ namespace drive {
         let cc = compiler{ &fs, &proc, &heap, os }
         return Driver{
             home, runs, work, program, std, extras, os, cc, cc_env = cc_env{ &proc, &heap, cc = cc[0], os }, rt,
-            unit = unit_size{ &proc }, jobs = proc::processors{ &proc },
+            unit = unit_size{ &proc }, copy = copy_size{ &proc }, jobs = proc::processors{ &proc },
         }
     }
 
@@ -396,7 +405,7 @@ namespace drive {
             env = kept
             k = k + 2
         }
-        return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = std.len, extras, mode = Mode::interp, out = stem{ path = base{ path } }, argv, env = list::items{ list = env }, stack, size = 0, made = &units, texts = slice::empty([]u8){} }
+        return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = std.len, extras, mode = Mode::interp, out = stem{ path = base{ path } }, argv, env = list::items{ list = env }, stack, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){} }
     }
 
     // About how many bytes of C a unit has: CTX_UNIT_SIZE, or UNIT_SIZE.
@@ -404,6 +413,14 @@ namespace drive {
         let set = proc::env{ &proc, name = "CTX_UNIT_SIZE" } ifnull { return UNIT_SIZE }
         let n = utf8::parse_u64{ s = utf8::String{ bytes = set } } ifnull { return UNIT_SIZE }
         if n == 0 { return UNIT_SIZE }
+        return @as(usize, n)
+    }
+
+    // How small a function is copied into the units that call it: CTX_COPY_SIZE, 0 for none, or
+    // COPY_SIZE.
+    fn copy_size { mut proc: Proc } -> usize {
+        let set = proc::env{ &proc, name = "CTX_COPY_SIZE" } ifnull { return COPY_SIZE }
+        let n = utf8::parse_u64{ s = utf8::String{ bytes = set } } ifnull { return COPY_SIZE }
         return @as(usize, n)
     }
 
@@ -1013,7 +1030,7 @@ namespace drive {
             k = k + 1
         }
         let mut units: [][]u8 = slice::empty([]u8){}
-        let code = analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = d.std.len, extras = d.extras, mode = Mode::units, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = d.unit, made = &units, texts = list::items{ list = texts } }
+        let code = analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = d.std.len, extras = d.extras, mode = Mode::units, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = d.unit, copy = if level == 0 { 0 } else { d.copy }, made = &units, texts = list::items{ list = texts } }
         if code != 0 {
             why = Why::errors
             return null

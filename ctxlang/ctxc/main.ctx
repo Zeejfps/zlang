@@ -192,11 +192,12 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
     }
     let out: []u8 = if mode == Mode::build { args[1] } else { "" }
     let mut units: [][]u8 = slice::empty([]u8){}
-    return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = split - first, extras = slice::empty([]u8){}, mode, out, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, made = &units, texts = slice::empty([]u8){} }
+    return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = split - first, extras = slice::empty([]u8){}, mode, out, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){} }
 }
 
 // Checks the program of `paths`, std's files first, and acts on it as `mode` says: for build,
-// writes it as C to `out`; for units, sets `made` to its C in units of about `size` bytes
+// writes it as C to `out`; for units, sets `made` to its C in units of about `size` bytes, each
+// with copies of the functions of fewer than `copy` statements and expressions it calls in others
 // (emit::units), which live as long as ctxc does; for interp, runs it with args `argv`, as the
 // program named `out`, letting its calls take `stack` bytes of ctxc's stack. A const computed by
 // running code (comptime.ctx) may take half of ctxc's stack, and CTX_CONST_FUEL steps if that is
@@ -204,7 +205,7 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
 // files a build program generates, so what is compiled is the driver's, whatever another ctxc
 // does to the file meanwhile. If the program is a build program (`builds`), extras are std's
 // files too, after paths' (drive.ctx, `build_extras`).
-fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8, std_files: usize, extras: [][]u8, mode: Mode, out: []u8, argv: [][]u8, env: [][]u8, stack: u64, size: usize, mut made: [][]u8, texts: [][]u8 } -> i32 {
+fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8, std_files: usize, extras: [][]u8, mode: Mode, out: []u8, argv: [][]u8, env: [][]u8, stack: u64, size: usize, copy: usize, mut made: [][]u8, texts: [][]u8 } -> i32 {
     let given = paths.len - texts.len               // paths[given..] are texts'
     let mut total: u64 = 0
     let mut i: usize = 0
@@ -300,7 +301,7 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8
             return interpret{ &io, &heap, p = lower::program{ &c }, name = out, argv, env, stack }
         }
         if diags.errors == 0 and mode == Mode::units {
-            made = emit::units{ &heap, p = lower::program{ &c }, size }
+            made = emit::units{ &heap, p = lower::program{ &c }, size, copy }
             return 0
         }
         if diags.errors == 0 {
