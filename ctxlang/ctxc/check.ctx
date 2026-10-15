@@ -60,13 +60,13 @@ namespace check {
         tsets:    []bool,               // which of a function's tparams are error sets, `E: error` (§9)
         fields:   []types::Field,
         variants: []Variant,
-        ret:      Id,
-        ty:       Id,
+        ret:      Id = types::VOID,
+        ty:       Id = types::ERROR,
         values:   []i64,                // an enum's, one per variant
-        symbol:   []u8,                 // an extern fn's C symbol
-        callback: bool,                 // a fn with `#c::callback`: C may call it (§18)
-        any_thread: bool,               // and `any_thread = true`: from any thread, holding no capability
-        spawn:    bool,                 // a fn with a valid `#spawn` (§15, rule 14)
+        symbol:   []u8 = "",            // an extern fn's C symbol
+        callback: bool = false,         // a fn with `#c::callback`: C may call it (§18)
+        any_thread: bool = false,       // and `any_thread = true`: from any thread, holding no capability
+        spawn:    bool = false,         // a fn with a valid `#spawn` (§15, rule 14)
         includes: []u32,                // what a capability includes, directly or not (§15)
         vars:     []mut CVar,           // a capability's C variables, its own and included ones
         defaults: []u32,                // a struct's: by field, the const holding its default, or NONE; empty if none has one
@@ -148,39 +148,39 @@ namespace check {
         type_of:   map::Map(u64, Id, Heap),      // a TypeExpr's type
         layouts:   map::Map(Id, Layout, Heap),
         busy:      map::Map(Id, bool, Heap),     // layouts being computed
-        main:      u32,                          // NONE unless `main` is valid
+        main:      u32 = NONE,                   // NONE unless `main` is valid
         converts:  list::List(u32, Heap),        // the fns with a valid `#convert`, in order
         writers:   list::List(u32, Heap),        // the fns with a valid `#write`, in order
         // The fns with a valid `#start` or `#panic` (§15): std's and the program's, each NONE
         // without one. The program's replaces std's (start_fn, panic_fn).
-        starts:    [2]u32,
-        panics:    [2]u32,
+        starts:    [2]u32 = [NONE, NONE],
+        panics:    [2]u32 = [NONE, NONE],
         // The statics with a valid `#stack_limit` (§15, rule 13): std's and the program's, each
         // a capability's decl and the static's name, NONE without one. The program's replaces
         // std's (stack_limit).
-        limit_caps:  [2]u32,
-        limit_names: [2][]u8,
-        cstr_decl: u32,                          // c::String, for its C layout, or NONE
-        calling:   u64,                          // the callee being checked, whose field may be a capability's
+        limit_caps:  [2]u32 = [NONE, NONE],
+        limit_names: [2][]u8 = ["", ""],
+        cstr_decl: u32 = NONE,                   // c::String, for its C layout, or NONE
+        calling:   u64 = NO_CALLEE,              // the callee being checked, whose field may be a capability's
         // The body being checked: a const's initializer or a function's body.
         sc:        Scope,
-        ret:       Id,
+        ret:       Id = types::VOID,
         lits:      list::List(syntax::Expr, Heap),    // literals, whose types are settled at the end
         gvars:     list::List(GVar, Heap),            // generic arguments to infer
         fmts:      list::List(syntax::Expr, Heap),    // the body's @fmt calls, whose writers are settled at the end
         vars:      list::List(Var, Heap),             // the locals of every body, by index
         scope:     list::List(Binding, Heap),         // what is in scope, innermost last
         marks:     list::List(usize, Heap),           // where each open scope starts in `scope`
-        depth:     u32,                               // open scopes, less the context's
-        loop_depth: u32,
+        depth:     u32 = 0,                           // open scopes, less the context's
+        loop_depth: u32 = 0,
         loops:     list::List(Loop, Heap),            // the enclosing loops, innermost last
-        loop_base: usize,                             // loops[..loop_base] are outside the defer
-        defers:    u32,                               // `defer` bodies around the statement
-        dead:      bool,                              // the flow state: see State
+        loop_base: usize = 0,                         // loops[..loop_base] are outside the defer
+        defers:    u32 = 0,                           // `defer` bodies around the statement
+        dead:      bool = false,                      // the flow state: see State
         defs:      []u32,
         maybe:     []u32,
-        body_errors: usize,                           // errors before the body
-        flow_errors: usize,                           // flow errors in the body
+        body_errors: usize = 0,                       // errors before the body
+        flow_errors: usize = 0,                       // flow errors in the body
         // Side tables for expressions and statements, keyed by key{ file, id }.
         expr_ty:   map::Map(u64, Id, Heap),           // an expression's type; a branch value's too
         convs:     map::Map(u64, Conv, Heap),         // an implicit conversion of its value
@@ -200,7 +200,7 @@ namespace check {
         // body), and the jump names it.
         loop_ids:  map::Map(u64, u32, Heap),          // a `while` statement's id
         jump_ids:  map::Map(u64, u32, Heap),          // the id of the loop a jump targets
-        label_ids: u32,                               // ids given in this body
+        label_ids: u32 = 0,                           // ids given in this body
         first_var: map::Map(u32, u32, Heap),          // a function's first local: its first context field
         // Const values (§14): a const whose initializer checked is foldable if folding can
         // compute it, and its value is computed after every initializer has been checked. One
@@ -210,10 +210,10 @@ namespace check {
         evaluated: map::Map(u32, bool, Heap),
         values:    map::Map(u32, Val, Heap),
         folding:   list::List(u32, Heap),             // consts being computed, for cycles
-        unfolded:  u32,                               // an evaluated const that folding met, or NONE
-        can_eval:  bool,                              // whether evaluated consts can be computed yet
-        fuel:      u64,                               // the steps evaluating a const may take
-        stack:     u64,                               // the bytes of ctxc's stack its calls may take
+        unfolded:  u32 = NONE,                        // an evaluated const that folding met, or NONE
+        can_eval:  bool = false,                      // whether evaluated consts can be computed yet
+        fuel:      u64 = comptime::FUEL,              // the steps evaluating a const may take
+        stack:     u64 = comptime::STACK,             // the bytes of ctxc's stack its calls may take
         scratch:   alloc::Bytes,                      // the interpreter's memory, for one const at a time
         // Literal conversions (PLAN.md 4.4): a literal where a T is expected is the result of
         // the conversion to T, which runs once the bodies are checked, as an evaluated const.
@@ -231,38 +231,38 @@ namespace check {
         view_values: map::Map(u64, Val, Heap),        // their views, once folded
         // While the value of an `if` or `match` branch is checked, the depth of the block around
         // the outermost such `if` or `match`, which a view's hidden local gets; NONE otherwise.
-        value_depth: u32,
+        value_depth: u32 = NONE,
         // The sets of Var.derived and Var.held.
         derived:   list::List([]u32, Heap),
         held:      list::List([]Place, Heap),
         // Errors (§8, Errors): their declarations, numbered in this order, and each function's
         // set, inferred from what flows into it while its body is checked (infer_sets).
         faults:    list::List(u32, Heap),
-        fn_decl:   u32,                               // the function whose body is checked, or NONE
+        fn_decl:   u32 = NONE,                        // the function whose body is checked, or NONE
         flows:     map::Map(u32, Flow, Heap),         // by function
         sets:      map::Map(u32, []u32, Heap),        // by function, once inferred
         pending:   list::List(Pending, Heap),         // matches on errors, finished once they are
         // Inferred sets that flow into a declared one (§8, Errors, rule 14), checked once they
         // are inferred (check_declared); conv_at is where the conversion being checked is.
         declared:  list::List(Declared, Heap),
-        conv_at:   source::Span,
+        conv_at:   source::Span = source::Span{ file = 0, start = 0, end = 0 },
         open_sets: map::Map(u32, bool, Heap),         // the inferred sets an open one joined (rule 15)
         pat_errs:  map::Map(u64, u32, Heap),          // the error a pattern names, by its name's key
-        borrow_ready: bool,
+        borrow_ready: bool = false,
         borrows: map::Map(u32, Borrow, Heap),
         borrow_busy: map::Map(u32, bool, Heap),
-        borrow_error: bool,
-        borrow_success: bool,
+        borrow_error: bool = false,
+        borrow_success: bool = false,
         escapes:   list::List(Escape, Heap),          // escape errors that wait on the sets
         sites:     list::List(Site, Heap),            // every @fmt, whose set is owned by SITE + its index
         fault_writers: map::Map(u64, []Writer, Heap), // an error hole's field writers, by fault_key
-        ptr_faults: bool,                             // whether some error's payload holds a pointer
+        ptr_faults: bool = false,                     // whether some error's payload holds a pointer
         thread_locals: list::List(CVar, Heap),        // the `#thread_local` statics, by owner and name
         // Threads (§15, rule 14): whether the call being checked is to a `#spawn` fn, and what
         // a run function passed to one takes beyond its field's type, by the argument's key.
-        spawning:  bool,
+        spawning:  bool = false,
         carries:   map::Map(u64, []Forward, Heap),
-        in_attr:   bool,                              // checking an attribute's literal (§18, Attributes)
+        in_attr:   bool = false,                      // checking an attribute's literal (§18, Attributes)
     }
 
     // What flows into a function's error set: the errors it returns (atoms), the functions whose
@@ -393,27 +393,17 @@ namespace check {
             type_of = map::new(u64, Id){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             layouts = map::new(Id, Layout){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             busy = map::new(Id, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
-            main = NONE,
-            starts = [NONE, NONE],
-            panics = [NONE, NONE],
-            limit_caps = [NONE, NONE],
-            limit_names = ["", ""],
             converts = ids{ &heap },
             writers = ids{ &heap },
-            cstr_decl = NONE,
-            calling = NO_CALLEE,
             sc = Scope{ ns = ROOT, owner = NONE, names = no_names{}, args = slice::empty(Id){} },
-            ret = types::VOID,
             lits = list::new(syntax::Expr){ realloc = arena::alloc, &heap },
             gvars = list::new(GVar){ realloc = arena::alloc, &heap },
             fmts = list::new(syntax::Expr){ realloc = arena::alloc, &heap },
             vars = list::new(Var){ realloc = arena::alloc, &heap },
             scope = list::new(Binding){ realloc = arena::alloc, &heap },
             marks = list::new(usize){ realloc = arena::alloc, &heap },
-            depth = 0, loop_depth = 0,
             loops = list::new(Loop){ realloc = arena::alloc, &heap },
-            loop_base = 0, defers = 0, dead = false,
-            defs = slice::empty(u32){}, maybe = slice::empty(u32){}, body_errors = 0, flow_errors = 0,
+            defs = slice::empty(u32){}, maybe = slice::empty(u32){},
             expr_ty = map::new(u64, Id){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             convs = map::new(u64, Conv){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             refs = map::new(u64, PathRef){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
@@ -430,14 +420,12 @@ namespace check {
             int_cases = map::new(u64, [][]ir::Range){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             loop_ids = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             jump_ids = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
-            label_ids = 0,
             first_var = map::new(u32, u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             foldable = map::new(u32, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             evaluated = map::new(u32, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             values = map::new(u32, Val){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             folding = ids{ &heap },
-            unfolded = NONE, can_eval = false,
-            fuel = comptime::FUEL, stack = comptime::STACK, scratch = slice::empty(u8){},
+            scratch = slice::empty(u8){},
             lit_convs = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             lit_list = list::new(syntax::Expr){ realloc = arena::alloc, &heap },
             lit_default = map::new(u64, bool){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
@@ -448,28 +436,23 @@ namespace check {
             views = map::new(u64, View){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             view_list = list::new(syntax::Expr){ realloc = arena::alloc, &heap },
             view_values = map::new(u64, Val){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
-            value_depth = NONE,
             derived = list::new([]u32){ realloc = arena::alloc, &heap },
             held = list::new([]Place){ realloc = arena::alloc, &heap },
             faults = ids{ &heap },
-            fn_decl = NONE,
             flows = map::new(u32, Flow){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             declared = list::new(Declared){ realloc = arena::alloc, &heap },
             open_sets = map::new(u32, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
-            conv_at = source::Span{ file = 0, start = 0, end = 0 },
             sets = map::new(u32, []u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             pending = list::new(Pending){ realloc = arena::alloc, &heap },
             pat_errs = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
-            borrow_ready = false, borrow_error = false, borrow_success = false,
             borrows = map::new(u32, Borrow){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             borrow_busy = map::new(u32, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             escapes = list::new(Escape){ realloc = arena::alloc, &heap },
             sites = list::new(Site){ realloc = arena::alloc, &heap },
             fault_writers = map::new(u64, []Writer){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
-            ptr_faults = false,
             thread_locals = list::new(CVar){ realloc = arena::alloc, &heap },
-            spawning = false, in_attr = false,
             carries = map::new(u64, []Forward){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            ..
         }
         _ = space{ &c, name = "", parent = NONE }
         _ = space{ &c, name = "", parent = UNIVERSE }
@@ -774,9 +757,10 @@ namespace check {
         let item = Decl{
             kind, name, ns, qual = qualify{ c, ns, name = name.text }, syn = x, tparams, tsets = slice::empty(bool){},
             fields = slice::empty(types::Field){}, variants = slice::empty(Variant){},
-            ret = types::VOID, ty = types::ERROR, values = slice::empty(i64){}, symbol = "",
-            callback = false, any_thread = false, spawn = false, includes = slice::empty(u32){}, vars = slice::empty(CVar){},
+            values = slice::empty(i64){},
+            includes = slice::empty(u32){}, vars = slice::empty(CVar){},
             defaults = slice::empty(u32){},
+            ..
         }
         try! list::push{ list = &c.decls, item }
         try! map::put{ m = &c.decl_of, key = key{ file, id = x.id }, value = d }

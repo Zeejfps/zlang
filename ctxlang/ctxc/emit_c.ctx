@@ -103,20 +103,20 @@ namespace emit {
         o:        Out,                              // where text goes now
         aux:      Out,                              // records, placed before the function
         f:        ir::Func,                         // the function being emitted
-        temp:     u32,                              // the next _tK
-        nodes:    u32,                              // the statements and expressions written for the function
-        sites:    u32,                              // the next bind record
-        loops:    u32,                              // the loops around what is being written
-        given:    Given,                            // what takes the value being written (Records)
-        stacked:  bool,                             // the function borrows records (CTX_RECORDS)
+        temp:     u32 = 0,                          // the next _tK
+        nodes:    u32 = 0,                          // the statements and expressions written for the function
+        sites:    u32 = 0,                          // the next bind record
+        loops:    u32 = 0,                          // the loops around what is being written
+        given:    Given = Given::other,             // what takes the value being written (Records)
+        stacked:  bool = false,                     // the function borrows records (CTX_RECORDS)
         slots:    list::List(u32, ir::Heap),        // its records in its frame, by site: SLOT_ADAPTER for an adapter's
         confined: list::List(u8, ir::Heap),         // by local: UNSEEN, CONFINED or LOOSE (confine)
-        depth:    u32,                              // indentation
+        depth:    u32 = 0,                          // indentation
         scopes:   list::List(Scope, ir::Heap),
-        static_init: bool,                          // writing a const's static initializer
-        split:    bool,                             // several units: functions are global
-        direct:   bool,                             // writing types with their unit's names
-        assembling: bool,                           // writing a unit, not a function
+        static_init: bool = false,                  // writing a const's static initializer
+        split:    bool = false,                     // several units: functions are global
+        direct:   bool = false,                     // writing types with their unit's names
+        assembling: bool = false,                   // writing a unit, not a function
         names:    list::List([]u8, ir::Heap),       // by function id: the C name of one with a body
         files:    list::List(u32, ir::Heap),        // by IR file: its id in positions
         thunks:   list::List(u32, ir::Heap),        // by function id: its value's type, or NONE
@@ -127,11 +127,11 @@ namespace emit {
         uses:     list::List(u32, ir::Heap),        // the types of the function being emitted
         used:     list::List(u32, ir::Heap),        // by type id: 1 + the last function using it
         bodies:   list::List(Body, ir::Heap),       // by function id
-        entry_text: ir::Bytes,                      // int main, with the file table
+        entry_text: ir::Bytes = "",                 // int main, with the file table
         unit_of:  list::List(u32, ir::Heap),        // by function id: its unit
         exported: list::List(u32, ir::Heap),        // by function id: 1 if another unit names it (`share`)
         copied:   list::List(u32, ir::Heap),        // by function id: 1 + the unit being written, if it has a copy
-        unit:     u32,                              // the unit being written
+        unit:     u32 = 0,                          // the unit being written
         marks:    list::List(u8, ir::Heap),         // by type id, in the unit: 1 typedef'd, 2 defined
         lt: Locals, lc: Locals, lq: Locals, lv: Locals, lf: Locals,     // types, code types,
         lg: Locals, la: Locals, lk: Locals, lb: Locals, ld: Locals,     // consts, C variables,
@@ -214,12 +214,9 @@ namespace emit {
             o = ir_print::out{ heap, types = p.types },
             aux = ir_print::out{ heap, types = p.types },
             f = p.fns[p.main],
-            temp = 0, nodes = 0, sites = 0, loops = 0, given = Given::other, stacked = false,
             slots = list::new(u32){ realloc = arena::alloc, heap },
             confined = list::new(u8){ realloc = arena::alloc, heap },
-            depth = 0,
             scopes = list::new(Scope){ realloc = arena::alloc, heap },
-            static_init = false, split = false, direct = false, assembling = false,
             names = list::new([]u8){ realloc = arena::alloc, heap },
             files = list::new(u32){ realloc = arena::alloc, heap },
             thunks = zeros{ heap, n = p.fns.len, value = NONE },
@@ -230,16 +227,15 @@ namespace emit {
             uses = list::new(u32){ realloc = arena::alloc, heap },
             used = zeros{ heap, n = p.types.len, value = 0 },
             bodies = list::new(Body){ realloc = arena::alloc, heap },
-            entry_text = "",
             unit_of = zeros{ heap, n = p.fns.len, value = 0 },
             exported = zeros{ heap, n = p.fns.len, value = 0 },
             copied = zeros{ heap, n = p.fns.len, value = 0 },
-            unit = 0,
             marks = list::new(u8){ realloc = arena::alloc, heap },
             lt = locals{ heap, n = 0 }, lc = locals{ heap, n = 0 }, lq = locals{ heap, n = 0 },
             lv = locals{ heap, n = 0 }, lf = locals{ heap, n = 0 }, lg = locals{ heap, n = 0 },
             la = locals{ heap, n = 0 }, lk = locals{ heap, n = 0 }, lb = locals{ heap, n = 0 },
             ld = locals{ heap, n = 0 }, lqd = locals{ heap, n = 0 },
+            ..
         }
         let mut i: usize = 0
         while i < p.files.len {

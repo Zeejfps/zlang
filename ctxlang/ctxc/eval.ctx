@@ -107,29 +107,29 @@ namespace eval {
         name:     []u8,                         // the program's, for a panic without a position
         emulate:  bool,
         fuel:     u64,
-        depth:    u32,
+        depth:    u32 = 0,
         // Each nested call takes some of ctxc's own stack: `budget` bytes of it from `host`,
         // where it stood when the run began.
         budget:   u64,
-        host:     u64,
+        host:     u64 = 0,
         regions:  list::List(Region, Heap),
-        sp:       u64,                          // the stack's top
-        floor:    u64,                          // where a statement's end may take sp back to
+        sp:       u64 = 0,                      // the stack's top
+        floor:    u64 = 0,                      // where a statement's end may take sp back to
         // The function running: its frame, its locals' offsets and types, and where `return`
         // puts its value.
-        frame:    u64,
+        frame:    u64 = 0,
         offs:     []u64,
         locals:   []ir::Local,
-        res:      Addr,
-        flow:     Flow,
+        res:      Addr = 0,
+        flow:     Flow = Flow::none,
         defers:   list::List(ir::Block, Heap),  // the deferred bodies reached, innermost last
         argv:     list::List(Addr, Heap),       // calls' args, by param, as a stack
         frames:   list::List(Frame, Heap),      // by function id
         codes:    list::List(Code, Heap),
         known:    map::Map(Key, Addr, Heap),
-        statics:  u32,                          // the region static data is going into
-        chunk:    u32,                          // the region the heap is going into
-        cap:      Addr,                         // what a `mut` capability points to: emit_c's cap[1]
+        statics:  u32 = 0,                      // the region static data is going into
+        chunk:    u32 = 0,                      // the region the heap is going into
+        cap:      Addr = 0,                     // what a `mut` capability points to: emit_c's cap[1]
         cells:    list::List(Addr, Heap),       // by static: its zeroed memory once used, or 0
         // Threads, which std/os/interp runs one at a time, each to its end when it starts: the
         // `#thread_local` statics' cells of the threads it interrupted (thread_enter), the
@@ -138,47 +138,42 @@ namespace eval {
         saved:    list::List(Addr, Heap),
         names:    list::List([]u8, Heap),
         ids:      list::List(u64, Heap),
-        next_id:  u64,
-        ends:     Addr,
+        next_id:  u64 = 2,
+        ends:     Addr = 0,
         // The platform, as std/os/interp reaches it: the environment's "KEY=VALUE" entries,
         // and as the program sees them once asked for (0 before); and whether standard output
         // and error are in binary mode, not translating "\n" on Windows.
         env:      [][]u8,
-        environ:  Addr,
-        binary:   bool,
+        environ:  Addr = 0,
+        binary:   bool = false,
         out:      list::List(u8, Heap),
         chunks:   list::List(Chunk, Heap),
         literals: list::List(Literal, Heap),
-        stop:     Outcome,
-        why:      Why,
+        stop:     Outcome = Outcome::failed{ msg = "" },
+        why:      Why = Why::none,
     }
 
     // A machine for p, from whose functions run{ ... } and main{ ... } run, in memory from heap.
     // `stack` is how much of ctxc's own stack they may take: calls nest only as deep as it holds.
     fn machine { heap: *mut Heap, p: ir::Program, name: []u8, emulate: bool, fuel: u64, stack: u64 } -> M {
         let mut m = M{
-            p, types = p.types, heap, name, emulate, fuel, depth = 0, budget = stack, host = 0,
+            p, types = p.types, heap, name, emulate, fuel, budget = stack,
             regions = list::new(Region){ realloc = arena::alloc, heap },
-            sp = 0, floor = 0, frame = 0,
-            offs = slice::empty(u64){}, locals = slice::empty(ir::Local){}, res = 0,
-            flow = Flow::none,
+            offs = slice::empty(u64){}, locals = slice::empty(ir::Local){},
             defers = list::new(ir::Block){ realloc = arena::alloc, heap },
             argv = list::new(Addr){ realloc = arena::alloc, heap },
             frames = list::new(Frame){ realloc = arena::alloc, heap },
             codes = list::new(Code){ realloc = arena::alloc, heap },
             known = map::new(Key, Addr){ realloc = arena::alloc, heap, hash = hash_key, eq = eq_key },
-            statics = 0, chunk = 0, cap = 0,
             cells = list::new(Addr){ realloc = arena::alloc, heap },
             saved = list::new(Addr){ realloc = arena::alloc, heap },
             names = list::new([]u8){ realloc = arena::alloc, heap },
             ids = list::new(u64){ realloc = arena::alloc, heap },
-            next_id = 2, ends = 0,
-            env = slice::empty([]u8){}, environ = 0, binary = false,
+            env = slice::empty([]u8){},
             out = list::new(u8){ realloc = arena::alloc, heap },
             chunks = list::new(Chunk){ realloc = arena::alloc, heap },
             literals = list::new(Literal){ realloc = arena::alloc, heap },
-            stop = Outcome::failed{ msg = "" },
-            why = Why::none,
+            ..
         }
         let none = slice::empty(u8){}
         try! list::push{ list = &m.regions, item = Region{ bytes = none, used = 0, writable = false } }
