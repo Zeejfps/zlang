@@ -1586,7 +1586,7 @@ namespace emit {
                 loop{ label } => {
                     match stop {
                         loop => { return }
-                        label{ id } => { if label != null and label == id { return } }
+                        label{ id } => { if label == id { return } }
                         else => {}
                     }
                 }

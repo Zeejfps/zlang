@@ -596,9 +596,7 @@ namespace eval {
 
     // Whether a jump to `target` (null: the innermost loop) is to a loop labeled `label`.
     fn stops { target: ?u32, label: ?u32 } -> bool {
-        if target == null { return true }
-        if label == null { return false }
-        return target == label
+        return target == null or target == label
     }
 
     // The arm of `arms` for the union at k, or the one k points to if `through`, with its

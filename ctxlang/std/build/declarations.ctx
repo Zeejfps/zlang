@@ -100,7 +100,7 @@ namespace build {
             while known[tab] != '\t' { tab = tab + 1 }
             let mut end = tab
             while known[end] != '\n' { end = end + 1 }
-            if utf8::parse_u64{ s = utf8::String{ bytes = known[i..tab] } } is some{ value } and value == @as(u64, exe.id) {
+            if utf8::parse_u64{ s = utf8::String{ bytes = known[i..tab] } } == @as(u64, exe.id) {
                 try reflect::add_files{ &fs, &w, dir = try reflect::place{ &w, dir, rel = known[tab + 1..end] }, deep = not root }
                 root = false
             }
