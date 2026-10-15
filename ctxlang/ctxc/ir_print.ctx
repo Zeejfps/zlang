@@ -547,17 +547,18 @@ namespace ir_print {
             addr{ place }             => { head{ &o, e, a = "addr" }; sub{ &o, e = place, depth } }
             seq{ first, then }        => { head{ &o, e, a = "seq" }; sub{ &o, e = first, depth }; sub{ &o, e = then, depth } }
             with{ slot, init, body }  => { head{ &o, e, a = "with" }; spaced{ &o, n = slot }; sub{ &o, e = init, depth }; sub{ &o, e = body, depth } }
-            neg{ e = x, pos }         => { head{ &o, e, a = "neg" }; sub{ &o, e = x, depth }; position{ &o, p = pos } }
+            neg{ e = x, pos, trap }   => { head{ &o, e, a = "neg" }; sub{ &o, e = x, depth }; position{ &o, p = pos }; trap_id{ &o, trap } }
             lnot{ e = x }             => { unary{ &o, a = "not", ty = e.ty, e = x, depth } }
             land{ a, b }              => { binary{ &o, tag = "and", ty = e.ty, a, b, depth } }
             lor{ a, b }               => { binary{ &o, tag = "or", ty = e.ty, a, b, depth } }
-            arith{ op, a, b, pos }    => {
+            arith{ op, a, b, pos, trap } => {
                 head{ &o, e, a = "arith" }
                 char{ &o, c = ' ' }
                 arith_op{ &o, op }
                 sub{ &o, e = a, depth }
                 sub{ &o, e = b, depth }
                 position{ &o, p = pos }
+                trap_id{ &o, trap }
             }
             bits{ op, a, b }          => {
                 head{ &o, e, a = "bits" }
@@ -621,6 +622,13 @@ namespace ir_print {
                 char{ &o, c = ' ' }
                 block{ &o, b = els, depth }
             }
+            ovf{ trap, e = x, els }   => {
+                head{ &o, e, a = "ovf" }
+                spaced{ &o, n = trap }
+                sub{ &o, e = x, depth }
+                char{ &o, c = ' ' }
+                block{ &o, b = els, depth }
+            }
             matchx{ scrut, through, arms } => {
                 head{ &o, e, a = "matchx" }
                 sub{ &o, e = scrut, depth }
@@ -635,7 +643,7 @@ namespace ir_print {
                 char{ &o, c = ' ' }
                 case_list{ &o, cases, depth }
             }
-            convert{ e = x, pos }     => { head{ &o, e, a = "as" }; sub{ &o, e = x, depth }; position{ &o, p = pos } }
+            convert{ e = x, pos, trap } => { head{ &o, e, a = "as" }; sub{ &o, e = x, depth }; position{ &o, p = pos }; trap_id{ &o, trap } }
             trunc{ e = x }            => { unary{ &o, a = "trunc", ty = e.ty, e = x, depth } }
             wrap{ op, a, b }          => {
                 head{ &o, e, a = "wrap" }
@@ -746,6 +754,11 @@ namespace ir_print {
         spaced{ &o, n = p.line }
         spaced{ &o, n = p.col }
         spaced{ &o, n = p.file }
+    }
+
+    // An arith's, neg's or convert's trap, after its position, if it has one (ir::NO_TRAP).
+    fn trap_id { mut o: Out, trap: u32 } {
+        if trap != ir::NO_TRAP { spaced{ &o, n = trap } }
     }
 
     fn opt_id { mut o: Out, id: ?u32 } {

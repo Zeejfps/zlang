@@ -152,6 +152,11 @@ namespace ir {
 
     // ---- expressions
 
+    // An arith, neg or convert (`@as`) whose trap isn't NO_TRAP doesn't panic when its value
+    // doesn't fit its type: it leaves for the `ovf` with that trap, which holds it. Trap ids are
+    // unique in a program. The text form writes one after the position, only if there is one.
+    const NO_TRAP: u32 = 0xFFFFFFFF
+
     union ArithOp { add, sub, mul, div, rem }
     union BitOp { bit_and, bit_or, bit_xor }                    // (bits T and|or|xor E E)
     union ShiftOp { shl, shr }
@@ -187,11 +192,11 @@ namespace ir {
         addr{ place: *Expr },
         seq{ first: *Expr, then: *Expr },
         with{ slot: u32, init: *Expr, body: *Expr },            // (with T SLOT INIT BODY): body, after slot = init
-        neg{ e: *Expr, pos: Pos },
+        neg{ e: *Expr, pos: Pos, trap: u32 },
         lnot{ e: *Expr },                                       // (not T E)
         land{ a: *Expr, b: *Expr },                             // (and T E E)
         lor{ a: *Expr, b: *Expr },                              // (or T E E)
-        arith{ op: ArithOp, a: *Expr, b: *Expr, pos: Pos },
+        arith{ op: ArithOp, a: *Expr, b: *Expr, pos: Pos, trap: u32 },
         bits{ op: BitOp, a: *Expr, b: *Expr },
         shift{ op: ShiftOp, a: *Expr, b: *Expr, pos: Pos },     // b: any integer type
         cmp{ op: CmpOp, a: *Expr, b: *Expr },
@@ -211,9 +216,13 @@ namespace ir {
         array{ elems: []Expr },
         repeat{ elem: *Expr },
         ifx{ c: *Expr, then: Block, els: Block },
+        // (ovf T TRAP E BLOCK): e, unless an arith, neg or convert in it whose trap is TRAP
+        // overflows (§11, Overflow); then the block, whose result is the value. Those ops are
+        // never inside a block of e, so leaving e for the block leaves no block.
+        ovf{ trap: u32, e: *Expr, els: Block },
         matchx{ scrut: *Expr, through: bool, arms: []Arm },
         switchx{ scrut: *Expr, cases: []Case },
-        convert{ e: *Expr, pos: Pos },                          // (as T E POS)
+        convert{ e: *Expr, pos: Pos, trap: u32 },               // (as T E POS TRAP?)
         trunc{ e: *Expr },
         wrap{ op: ArithOp, a: *Expr, b: *Expr },
         cast{ e: *Expr },

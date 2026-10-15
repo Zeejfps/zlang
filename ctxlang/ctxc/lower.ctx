@@ -58,6 +58,10 @@ namespace lower {
         slots:     map::Map(u32, u32, Heap),       // by the checker's Var
         locals:    list::List(ir::Local, Heap),
         failed:    bool,                           // a const or converted literal it met has no value, and said why
+        // Each `ifoverflow` being lowered, by its key: its trap (ir::NO_TRAP), which the
+        // operations it covers (check's traps) leave for. Trap ids are unique in the program.
+        trap_ids:  map::Map(u64, u32, Heap),
+        traps:     u32,
     }
 
     fn program { mut c: check::Checker } -> ir::Program {
@@ -108,6 +112,8 @@ namespace lower {
             slots = map::new(u32, u32){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u32, eq = map::eq_u32 },
             locals = list::new(ir::Local){ realloc = arena::alloc, heap = c.heap },
             failed = false,
+            trap_ids = map::new(u64, u32){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u64, eq = map::eq_u64 },
+            traps = 0,
         }
     }
 
@@ -1862,6 +1868,24 @@ namespace lower {
         return mk{ ty, k = ir::ExprKind::ifx{ c = box{ l, e = c }, then, els } }
     }
 
+    // `x ifoverflow els`: an ovf with a trap of its own, which the operations of x it covers
+    // leave for (trap_of).
+    fn ovf_expr { mut l: Lower, e: syntax::Expr, x: syntax::Expr, els: syntax::Block, t: Id } -> ir::Expr {
+        let ty = tid{ &l, t }
+        let trap = l.traps
+        l.traps = l.traps + 1
+        try! map::put{ m = &l.trap_ids, key = check::expr_key{ e }, value = trap }
+        let v = conv{ &l, e = x, to = t }
+        let b = value_block{ &l, b = els, t }
+        return mk{ ty, k = ir::ExprKind::ovf{ trap, e = box{ l, e = v }, els = b } }
+    }
+
+    // The trap e leaves for if it overflows: its `ifoverflow`'s, or ir::NO_TRAP to panic.
+    fn trap_of { l: Lower, e: syntax::Expr } -> u32 {
+        let region = map::get{ m = l.c.traps, key = check::expr_key{ e } } ifnull { return ir::NO_TRAP }
+        return map::get{ m = l.trap_ids, key = region } ifnull { ir::NO_TRAP }
+    }
+
     fn match_expr { mut l: Lower, x: syntax::Match, t: Id } -> ir::Expr {
         let ty = tid{ &l, t }
         let scrut = ex{ &l, e = x.scrut.* }
@@ -2158,7 +2182,7 @@ namespace lower {
             neg{ e = x } => {
                 let ty = tid{ &l, t }
                 let v = ex{ &l, e = x.* }
-                return mk{ ty, k = ir::ExprKind::neg{ e = box{ l, e = v }, pos = epos{ &l, e } } }
+                return mk{ ty, k = ir::ExprKind::neg{ e = box{ l, e = v }, pos = epos{ &l, e }, trap = trap_of{ l, e } } }
             }
             lnot{ e = x } => {
                 let ty = tid{ &l, t }
@@ -2173,6 +2197,7 @@ namespace lower {
             builtin{ name, targ, args } => { return builtin{ &l, e, name = name.text, targ, args, t } }
             ifx{ x } => { return if_expr{ &l, x, t } }
             matchx{ x } => { return match_expr{ &l, x, t } }
+            overflow{ e = x, els } => { return ovf_expr{ &l, e, x = x.*, els, t } }
             trye{ e = x, panics } => {
                 let scrut = ex{ &l, e = x.* }
                 return mk{ ty = tid{ &l, t }, k = ir::ExprKind::matchx{ scrut = box{ l, e = scrut }, through = false, arms = try_arms{ &l, x = x.*, value = true, panics, pos = epos{ &l, e } } } }
@@ -2685,7 +2710,7 @@ namespace lower {
         let ty = tid{ &l, t }
         let x = conv{ &l, e = a, to = t }
         let y = conv{ &l, e = b, to = t }
-        return mk{ ty, k = ir::ExprKind::arith{ op = arith_op{ op }, a = box{ l, e = x }, b = box{ l, e = y }, pos = epos{ &l, e } } }
+        return mk{ ty, k = ir::ExprKind::arith{ op = arith_op{ op }, a = box{ l, e = x }, b = box{ l, e = y }, pos = epos{ &l, e }, trap = trap_of{ l, e } } }
     }
 
     // `a == b` or `a != b` with a ?T on one side or both (§11, Expressions, rule 5): equal when
@@ -2993,7 +3018,7 @@ namespace lower {
             }
             let ty = tid{ &l, t }
             let x = ex{ &l, e = args[0] }
-            return mk{ ty, k = ir::ExprKind::convert{ e = box{ l, e = x }, pos = epos{ &l, e } } }
+            return mk{ ty, k = ir::ExprKind::convert{ e = box{ l, e = x }, pos = epos{ &l, e }, trap = trap_of{ l, e } } }
         }
         if slice::eq_bytes{ a = name, b = "trunc" } {
             let ty = tid{ &l, t }

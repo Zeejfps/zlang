@@ -19,8 +19,8 @@ namespace tok {
         kw_fn, kw_struct, kw_union, kw_enum, kw_type, kw_const, kw_namespace, kw_let, kw_mut,
         kw_if, kw_else, kw_while, kw_break, kw_continue, kw_match, kw_return, kw_defer,
         kw_and, kw_or, kw_not, kw_true, kw_false, kw_null, kw_extern, kw_capability, kw_ifnull,
-        kw_iferr, kw_try, kw_is,
-        arrow,                      // ->
+        kw_iferr, kw_try, kw_is, kw_ifoverflow,
+        arrow,                     // ->
         fat_arrow,                  // =>
         colons,                     // ::
         dots,                       // ..
@@ -36,7 +36,7 @@ namespace tok {
         "fn", "struct", "union", "enum", "type", "const", "namespace", "let", "mut",
         "if", "else", "while", "break", "continue", "match", "return", "defer",
         "and", "or", "not", "true", "false", "null", "extern", "capability", "ifnull",
-        "iferr", "try", "is",
+        "iferr", "try", "is", "ifoverflow",
     ]
 
     // Two characters before one, so the longest match wins.
@@ -54,7 +54,7 @@ namespace tok {
 
     fn is_keyword { kind: Kind } -> bool {
         let n = @as(u8, kind)
-        return n >= @as(u8, Kind::kw_fn) and n <= @as(u8, Kind::kw_is)
+        return n >= @as(u8, Kind::kw_fn) and n <= @as(u8, Kind::kw_ifoverflow)
     }
 
     fn is_op { kind: Kind } -> bool {
@@ -66,11 +66,11 @@ namespace tok {
     fn keyword { i: usize } -> Kind { return KEYWORD_KINDS[i] }
     fn op { i: usize } -> Kind { return OP_KINDS[i] }
 
-    const KEYWORD_KINDS: [29]Kind = keyword_kinds{}
+    const KEYWORD_KINDS: [30]Kind = keyword_kinds{}
     const OP_KINDS: [34]Kind = op_kinds{}
 
-    fn keyword_kinds {} -> [29]Kind {
-        let mut out: [29]Kind = [Kind::eof; 29]
+    fn keyword_kinds {} -> [30]Kind {
+        let mut out: [30]Kind = [Kind::eof; 30]
         let mut i: usize = 0
         while i < out.len {
             out[i] = @as(Kind, @as(usize, Kind::kw_fn) + i)

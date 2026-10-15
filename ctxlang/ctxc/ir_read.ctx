@@ -461,7 +461,8 @@ namespace ir_read {
             let op = arith_op{ &r }
             let a = try sub{ &r }
             let b = try sub{ &r }
-            k = ir::ExprKind::arith{ op, a, b, pos = pos{ &r } }
+            let at = pos{ &r }
+            k = ir::ExprKind::arith{ op, a, b, pos = at, trap = trap{ &r } }
         } else if spells{ s = tag, lit = "bits" } {
             let op = bit_op{ &r }
             let a = try sub{ &r }
@@ -528,6 +529,10 @@ namespace ir_read {
             let c = try sub{ &r }
             let then = try block{ &r }
             k = ir::ExprKind::ifx{ c, then, els = try block{ &r } }
+        } else if spells{ s = tag, lit = "ovf" } {
+            let trap = id32{ &r }
+            let e = try sub{ &r }
+            k = ir::ExprKind::ovf{ trap, e, els = try block{ &r } }
         } else if spells{ s = tag, lit = "matchx" } {
             let scrut = try sub{ &r }
             let through = flag{ &r }
@@ -540,10 +545,12 @@ namespace ir_read {
             k = ir::ExprKind::dcall{ callee, args = try args{ &r } }
         } else if spells{ s = tag, lit = "as" } {
             let e = try sub{ &r }
-            k = ir::ExprKind::convert{ e, pos = pos{ &r } }
+            let at = pos{ &r }
+            k = ir::ExprKind::convert{ e, pos = at, trap = trap{ &r } }
         } else if spells{ s = tag, lit = "neg" } {
             let e = try sub{ &r }
-            k = ir::ExprKind::neg{ e, pos = pos{ &r } }
+            let at = pos{ &r }
+            k = ir::ExprKind::neg{ e, pos = at, trap = trap{ &r } }
         } else if spells{ s = tag, lit = "float" } {
             k = ir::ExprKind::float{ value = float{ &r, ty } }
         } else if spells{ s = tag, lit = "array" } {
@@ -700,6 +707,12 @@ namespace ir_read {
     }
 
     // ---- atoms
+
+    // An arith's, neg's or convert's trap, after its position: ir::NO_TRAP if there is none.
+    fn trap { mut r: Reader } -> u32 {
+        if more{ &r, close = ')' } { return id32{ &r } }
+        return ir::NO_TRAP
+    }
 
     fn pos { mut r: Reader } -> ir::Pos {
         let line = id32{ &r }

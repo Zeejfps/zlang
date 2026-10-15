@@ -809,6 +809,13 @@ namespace tree {
             }
             ifx{ x } => { if_node{ &d, at, x } }
             matchx{ x } => { match_node{ &d, at, x } }
+            overflow{ e = x, els } => {
+                line{ &d, at, s = "ifoverflow" }
+                d.depth = d.depth + 1
+                expr{ &d, e = x.* }
+                block{ &d, b = els }
+                d.depth = d.depth - 1
+            }
             trye{ e = x, panics } => {
                 line{ &d, at, s = if panics { "try!" } else { "try" } }
                 sub{ &d, e = x.* }
@@ -1316,6 +1323,13 @@ namespace decls {
             matchx{ x } => {
                 try! @fmt(&out, "match {}\n", t)
                 match_parts{ &out, c, x, depth = d + 1, value = true }
+                return
+            }
+            overflow{ e = x, els } => {
+                try! @fmt(&out, "ifoverflow {}\n", t)
+                expr{ &out, c, e = x.*, depth = d + 1 }
+                line{ &out, depth = d + 1, s = "else" }
+                block{ &out, c, b = els, depth = d + 2, value = true }
                 return
             }
             int => { head = "int" }

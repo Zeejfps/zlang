@@ -151,6 +151,10 @@ namespace eval {
         literals: list::List(Literal, Heap),
         stop:     Outcome = Outcome::failed{ msg = "" },
         why:      Why = Why::none,
+        // The trap of the arith, neg or convert being done, and the trap an overflowing one
+        // left for, with `halt`, to be caught by the ovf with that trap (ir::NO_TRAP for none).
+        trap:     u32 = ir::NO_TRAP,
+        trapped:  u32 = ir::NO_TRAP,
     }
 
     // A machine for p, from whose functions run{ ... } and main{ ... } run, in memory from heap.
@@ -853,6 +857,19 @@ namespace eval {
                 try block{ &m, b = if go { then } else { els }, res = r }
                 return r
             }
+            ovf{ trap, e, els } => {
+                let r = try temp{ &m, t = x.ty }
+                match value{ &m, x = e.* } {
+                    ok{ value = v } => { try copy{ &m, dst = r, src = v, n = size{ ts = m.types, t = x.ty } } }
+                    leave => { return leave }
+                    halt => {
+                        if m.trapped != trap { return halt }
+                        m.trapped = ir::NO_TRAP
+                        try block{ &m, b = els, res = r }
+                    }
+                }
+                return r
+            }
             matchx{ scrut, through, arms } => {
                 let r = try temp{ &m, t = x.ty }
                 let k = try value{ &m, x = scrut.* }
@@ -884,8 +901,10 @@ namespace eval {
             }
             saddr{ id } => { return try static_at{ &m, id } }
             capref => { return try cap{ &m } }
-            neg{ e, pos } => {
+            neg{ e, pos, trap } => {
                 let v = try scalar{ &m, x = e.* }
+                m.trap = trap
+                defer m.trap = ir::NO_TRAP
                 return try negate{ &m, p = prim{ ts = m.types, t = x.ty }, v, pos }
             }
             lnot{ e } => {
@@ -900,9 +919,11 @@ namespace eval {
                 if try truth{ &m, x = a.* } { return 1 }
                 return if try truth{ &m, x = b.* } { 1 } else { 0 }
             }
-            arith{ op, a, b, pos } => {
+            arith{ op, a, b, pos, trap } => {
                 let va = try scalar{ &m, x = a.* }
                 let vb = try scalar{ &m, x = b.* }
+                m.trap = trap
+                defer m.trap = ir::NO_TRAP
                 return try arith{ &m, op, p = prim{ ts = m.types, t = x.ty }, a = va, b = vb, pos }
             }
             bits{ op, a, b } => {
@@ -944,8 +965,10 @@ namespace eval {
                 return v
             }
             ptraddr{ e } => { return try scalar{ &m, x = e.* } }
-            convert{ e, pos } => {
+            convert{ e, pos, trap } => {
                 let v = try scalar{ &m, x = e.* }
+                m.trap = trap
+                defer m.trap = ir::NO_TRAP
                 return try as{ &m, v, from = prim{ ts = m.types, t = e.ty }, to = prim{ ts = m.types, t = x.ty }, pos }
             }
             wrap{ op, a, b } => {
@@ -1761,7 +1784,16 @@ namespace eval {
     }
 
     fn overflow { mut m: M, pos: ir::Pos } {
+        if trapping{ &m } { return }
         panic_at{ &m, pos, msg = "integer overflow" }
+    }
+
+    // Whether the operation overflowing is one an `ifoverflow` covers: then, rather than
+    // panicking, the halt its caller returns leaves for the ovf that holds it.
+    fn trapping { mut m: M } -> bool {
+        if m.trap == ir::NO_TRAP { return false }
+        m.trapped = m.trap
+        return true
     }
 
     fn fail { mut m: M, msg: []u8 } {
@@ -1976,6 +2008,7 @@ namespace eval {
                 ok = d > -1.0 and d < limit
                 if ok { return @as(u64, d) }
             }
+            if trapping{ &m } { return halt }
             let mut text: [32]u8
             try! @fmt(&b, "@as: {} is not representable in {}", utf8::fmt_f64{ n = d, into = text[..] }, prim_name{ p = to })
             panic_at{ &m, pos, msg = utf8::view{ b }.bytes }
@@ -1994,6 +2027,7 @@ namespace eval {
                 hi = @trunc(i64, max_of{ p = to })
             }
             if x < lo or x > hi {
+                if trapping{ &m } { return halt }
                 try! @fmt(&b, "@as: {} is not representable in {}", x, prim_name{ p = to })
                 panic_at{ &m, pos, msg = utf8::view{ b }.bytes }
                 return halt
@@ -2001,6 +2035,7 @@ namespace eval {
             return extend{ v, p = to }
         }
         if v > max_of{ p = to } {
+            if trapping{ &m } { return halt }
             try! @fmt(&b, "@as: {} is not representable in {}", v, prim_name{ p = to })
             panic_at{ &m, pos, msg = utf8::view{ b }.bytes }
             return halt

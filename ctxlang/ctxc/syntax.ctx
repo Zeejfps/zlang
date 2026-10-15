@@ -160,6 +160,7 @@ namespace syntax {
         builtin{ name: Name, targ: ?*TypeExpr, args: []Expr },   // the name without `@`
         ifx{ x: If },
         matchx{ x: Match },                             // `ifnull` and `iferr` too, at the operator
+        overflow{ e: *Expr, els: Block },               // `e ifoverflow x`, at the operator; els is x's block, or x alone
         trye{ e: *Expr, panics: bool },                 // try e, or try! e if panics
         isx{ e: *Expr, pats: []Pattern },               // `e is a | b`, at the `is`
     }

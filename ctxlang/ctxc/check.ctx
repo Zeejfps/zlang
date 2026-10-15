@@ -166,6 +166,7 @@ namespace check {
         sc:        Scope,
         ret:       Id = types::VOID,
         lits:      list::List(syntax::Expr, Heap),    // literals, whose types are settled at the end
+        ovfs:      list::List(syntax::Expr, Heap),    // `ifoverflow`s, whose coverage is settled at the end
         gvars:     list::List(GVar, Heap),            // generic arguments to infer
         fmts:      list::List(syntax::Expr, Heap),    // the body's @fmt calls, whose writers are settled at the end
         vars:      list::List(Var, Heap),             // the locals of every body, by index
@@ -196,6 +197,7 @@ namespace check {
         site_of:   map::Map(u64, u32, Heap),          // an @fmt's site, by its key
         holds:     map::Map(u64, []Place, Heap),      // the places a bind holds
         int_cases: map::Map(u64, [][]ir::Range, Heap),  // by arm, a match's (by its scrutinee) or `is`'s integer patterns
+        traps:     map::Map(u64, u64, Heap),          // an operation an `ifoverflow` covers: that ifoverflow's key
         // A loop that a jump from an inner loop leaves or repeats has an id (1, 2, ... in each
         // body), and the jump names it.
         loop_ids:  map::Map(u64, u32, Heap),          // a `while` statement's id
@@ -397,6 +399,7 @@ namespace check {
             writers = ids{ &heap },
             sc = Scope{ ns = ROOT, owner = NONE, names = no_names{}, args = slice::empty(Id){} },
             lits = list::new(syntax::Expr){ realloc = arena::alloc, &heap },
+            ovfs = list::new(syntax::Expr){ realloc = arena::alloc, &heap },
             gvars = list::new(GVar){ realloc = arena::alloc, &heap },
             fmts = list::new(syntax::Expr){ realloc = arena::alloc, &heap },
             vars = list::new(Var){ realloc = arena::alloc, &heap },
@@ -418,6 +421,7 @@ namespace check {
             site_of = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             holds = map::new(u64, []Place){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             int_cases = map::new(u64, [][]ir::Range){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            traps = map::new(u64, u64){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             loop_ids = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             jump_ids = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             first_var = map::new(u32, u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
@@ -3097,6 +3101,7 @@ namespace check {
         c.ret = ret
         c.fn_decl = NONE
         list::clear{ list = &c.lits }
+        list::clear{ list = &c.ovfs }
         list::clear{ list = &c.gvars }
         list::clear{ list = &c.fmts }
         list::clear{ list = &c.scope }
@@ -3135,6 +3140,15 @@ namespace check {
         i = 0
         while i < fs.len {
             fmt_calls{ &c, e = fs[i] }
+            i = i + 1
+        }
+        // A `/` counted as signed while its type wasn't known may be unsigned now.
+        let os = list::items{ list = c.ovfs }
+        i = 0
+        while i < os.len {
+            if os[i].k is overflow{ e = x } {
+                if cover{ &c, e = x.*, region = expr_key{ e = os[i] } } == 0 { nothing_covered{ &c, e = os[i] } }
+            }
             i = i + 1
         }
         i = 0
@@ -4466,6 +4480,65 @@ namespace check {
             if els != null and s2.dead { assume{ &c, facts = f.yes, after_if = true } }
         }
         return types::NO_TYPE
+    }
+
+    // `x ifoverflow els` (§11, Overflow): x, unless an operation it covers (cover) overflows,
+    // and then els, a branch as for `if`. The handler may run after any of x's covered
+    // operations, so it starts from the state before x, with what x assigns maybe assigned.
+    fn check_overflow { mut c: Checker, e: syntax::Expr, x: syntax::Expr, els: syntax::Block, exp: Id } -> Id {
+        let s0 = save{ c }
+        let t = expr{ &c, e = x, exp }
+        let s1 = save{ c }
+        let n = cover{ &c, e = x, region = expr_key{ e } }
+        if t != types::ERROR and n == 0 { nothing_covered{ &c, e } }
+        if n > 0 { try! list::push{ list = &c.ovfs, item = e } }
+        restore{ &c, s = State{ defs = s0.defs, maybe = s1.maybe, dead = s0.dead } }
+        let mut bs = list::new(Branch){ realloc = arena::alloc, heap = c.heap }
+        add_branch{ xs = &bs, b = Branch{ t, value = Value::expr{ e = x } } }
+        add_branch{ xs = &bs, b = value_block{ &c, b = els, vars = slice::empty(u32){}, facts = slice::empty(Fact){}, exp = t } }
+        let s2 = save{ c }
+        restore{ &c, s = merge{ c, xs = two_states{ c, a = s1, b = s2 } } }
+        if t == types::ERROR or n == 0 { return types::ERROR }
+        return join{ &c, at = expr_at{ e }, bs = list::items{ list = bs }, exp = t, may_leave = false }
+    }
+
+    fn nothing_covered { mut c: Checker, e: syntax::Expr } {
+        error{ &c, at = expr_at{ e }, msg = "nothing before `ifoverflow` can overflow: it covers the integer `+`, `-`, `*` and `/`, unary `-` and `@as` to an integer written before it, and the operands of those in turn" }
+    }
+
+    // The operations of e that the `ifoverflow` whose key is region covers, recorded in
+    // c.traps, and how many: e's if it is an integer `+`, `-`, `*`, a signed `/`, a unary `-` or
+    // an `@as` to an integer, and those of the operands of these and of the other integer
+    // operators (`%`, `&`, `|`, `^`, `<<`, `>>`), in turn. Anything else is evaluated as usual: a
+    // call's arguments, an index, a nested `ifoverflow`.
+    fn cover { mut c: Checker, e: syntax::Expr, region: u64 } -> u32 {
+        let t = type_of_expr{ c, e }
+        if t == types::ERROR or not is_int{ c, t } { return 0 }
+        match e.k {
+            binary{ op, a, b } => {
+                let mut n: u32 = 0
+                if op == tok::Kind::plus or op == tok::Kind::minus or op == tok::Kind::star or (op == tok::Kind::slash and signed_type{ c, t }) {
+                    try! map::put{ m = &c.traps, key = expr_key{ e }, value = region }
+                    n = 1
+                } else if op == tok::Kind::slash {
+                    _ = map::remove{ m = &c.traps, key = expr_key{ e } }
+                } else if not (op == tok::Kind::slash or op == tok::Kind::percent or op == tok::Kind::amp or op == tok::Kind::pipe
+                               or op == tok::Kind::caret or op == tok::Kind::shl or op == tok::Kind::shr) {
+                    return 0
+                }
+                return n + cover{ &c, e = a.*, region } + cover{ &c, e = b.*, region }
+            }
+            neg{ e = x } => {
+                try! map::put{ m = &c.traps, key = expr_key{ e }, value = region }
+                return 1 + cover{ &c, e = x.*, region }
+            }
+            builtin{ name, args } => {
+                if not slice::eq_bytes{ a = name.text, b = "as" } or args.len != 1 { return 0 }
+                try! map::put{ m = &c.traps, key = expr_key{ e }, value = region }
+                return 1 + cover{ &c, e = args[0], region }
+            }
+            else => { return 0 }
+        }
     }
 
     fn two_states { c: Checker, a: State, b: State } -> []State {
@@ -6305,6 +6378,11 @@ namespace check {
             }
             ifx{ x } => { out = borrow_if_value{ &c, &b, x } }
             matchx{ x } => { out = borrow_match_value{ &c, &b, x } }
+            overflow{ e = x, els } => {
+                out = borrow_expr{ &c, &b, e = x.* }
+                borrow_block{ &c, &b, block = els }
+                out = borrow_merge{ c, a = out, b = borrow_branch{ &c, &b, block = els } }
+            }
             trye{ e = x, panics } => {
                 out = borrow_expr{ &c, &b, e = x.* }
                 if not panics { b.err = set_union{ c, a = b.err, b = out.err } }
@@ -6639,6 +6717,7 @@ namespace check {
             }
             ifx{ x } => { return derives_if{ &c, x } }
             matchx{ x } => { return derives_match{ &c, x } }
+            overflow{ e = x, els } => { return set_union{ c, a = derives{ &c, e = x.* }, b = derives_block{ &c, b = els } } }
             trye{ e = x } => {
                 let saved = c.borrow_error
                 let saved_success = c.borrow_success
@@ -6777,6 +6856,7 @@ namespace check {
                 }
                 return out
             }
+            overflow{ els } => { return held_block{ c, b = els } }
             else => {}
         }
         return none
@@ -7204,6 +7284,10 @@ namespace check {
             }
             ifx{ x } => { scan_if{ &c, sc, x } }
             matchx{ x } => { scan_match{ &c, sc, x } }
+            overflow{ e = x, els } => {
+                scan{ &c, sc, e = x.* }
+                scan_stmts{ &c, sc, xs = els.stmts }
+            }
             trye{ e = x } => { scan{ &c, sc, e = x.* } }
             isx{ e = x } => { scan{ &c, sc, e = x.* } }
             else => {}
@@ -7803,6 +7887,7 @@ namespace check {
             }
             ifx{ x } => { return check_if{ &c, x, at = expr_at{ e }, exp, value = true, may_leave = false } }
             matchx{ x } => { return check_match{ &c, x, at = expr_at{ e }, exp, value = true, may_leave = false } }
+            overflow{ e = x, els } => { return check_overflow{ &c, e, x = x.*, els, exp } }
             trye{ e = x, panics } => { return try_expr{ &c, e, x = x.*, panics } }
             isx{ e = x, pats } => { return check_is{ &c, e, x = x.*, pats } }
         }

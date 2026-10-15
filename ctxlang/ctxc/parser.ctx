@@ -1004,9 +1004,18 @@ namespace parser {
     // `e ifnull x` and `e iferr x`, right to left: a match on e marked is_ifnull or is_iferr
     // (syntax::Match). x is a block, or an expression of this level or tighter. After `iferr`,
     // `err{ binders }` before a block binds the error, as after a let-else's `else`.
+    // `e ifoverflow x` is at the same level, an ExprKind::overflow.
     fn null_expr { mut p: Parser } -> syntax::Expr {
         let start = p.i
         let e = bin_expr{ &p, level = 0 }
+        if next_is{ p, k = tok::Kind::kw_ifoverflow } {
+            // `e ifoverflow x`: x as after `ifnull`
+            let id = new_id{ &p }
+            let op = take{ &p }
+            let els = if next_is{ p, k = tok::Kind::lbrace } { block{ &p } } else { null_value{ &p } }
+            let k = syntax::ExprKind::overflow{ e = box{ &p, value = e }, els }
+            return syntax::Expr{ id, span = span_from{ p, start }, at = op.span.start, k }
+        }
         let is_null = next_is{ p, k = tok::Kind::kw_ifnull }
         if not is_null and not next_is{ p, k = tok::Kind::kw_iferr } { return e }
         let id = new_id{ &p }

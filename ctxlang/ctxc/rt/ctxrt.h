@@ -234,7 +234,14 @@ ctx_fn *ctx_adapt(ctx_fn *inner, void (*code)(void));
         if (SIGNED && b == (T)-1) return 0;                                                       \
         return a % b;                                                                             \
     }                                                                                             \
-    static inline T ctx_neg_##S(T a, CTX_POS) { T r; if (__builtin_sub_overflow((T)0, a, &r)) CTX_OVERFLOW(); return r; }
+    static inline T ctx_neg_##S(T a, CTX_POS) { T r; if (__builtin_sub_overflow((T)0, a, &r)) CTX_OVERFLOW(); return r; } \
+    /* a / b into *r, or 1 if it overflows (an `ifoverflow` covers it): still a panic for 0 */  \
+    static inline int ctx_div_ovf_##S(T a, T b, T *r, CTX_POS) {                                 \
+        if (b == 0) ctx_panic(line, col, file, "division by zero");                             \
+        if (SIGNED && a == (T)(MIN) && b == (T)-1) return 1;                                      \
+        *r = a / b;                                                                               \
+        return 0;                                                                                 \
+    }
 
 CTX_INT_OPS(int8_t, i8, INT8_MIN, 1)
 CTX_INT_OPS(int16_t, i16, INT16_MIN, 1)
@@ -268,32 +275,45 @@ static inline void ctx_range(uint64_t lo, uint64_t hi, uint64_t n, CTX_POS) {
 
 // ---- @as
 
+// Whether an integer is in [lo, hi]: what an `ifoverflow` that covers the @as tests.
+static inline int ctx_fits_s(int64_t v, int64_t lo, int64_t hi) { return v >= lo && v <= hi; }
+static inline int ctx_fits_u(uint64_t v, uint64_t hi) { return v <= hi; }
+
 // An integer into [lo, hi], or "@as: V is not representable in DST".
 static inline int64_t ctx_as_s(int64_t v, int64_t lo, int64_t hi, const char *dst, CTX_POS) {
-    if (v < lo || v > hi) ctx_panic_as_s(v, dst, line, col, file);
+    if (!ctx_fits_s(v, lo, hi)) ctx_panic_as_s(v, dst, line, col, file);
     return v;
 }
 
 static inline uint64_t ctx_as_u(uint64_t v, uint64_t hi, const char *dst, CTX_POS) {
-    if (v > hi) ctx_panic_as_u(v, dst, line, col, file);
+    if (!ctx_fits_u(v, hi)) ctx_panic_as_u(v, dst, line, col, file);
     return v;
 }
 
 // A float, truncated toward zero, into [lo, hi]. NaN and infinities panic. Keep the checks
 // visible to the caller's optimizer; only a failed conversion needs the runtime's number
 // formatting and diagnostics.
-static inline int64_t ctx_f2i_s(double v, int64_t lo, int64_t hi, const char *dst, CTX_POS) {
+// Whether trunc(v) is in [lo, hi], or [0, hi]: false for NaN and the infinities.
+static inline int ctx_f2i_fits_s(double v, int64_t lo, int64_t hi) {
     // Is trunc(v) at least lo? lo - 1 is exact except for INT64_MIN, with no double between
     // INT64_MIN - 1 and INT64_MIN. The comparisons also reject NaN before the C cast.
     int low_ok = lo == INT64_MIN ? v >= -9223372036854775808.0 : v > (double)lo - 1.0;
-    if (!(low_ok && v < (double)hi + 1.0)) ctx_f2i_fail(v, dst, line, col, file);
+    return low_ok && v < (double)hi + 1.0;
+}
+
+static inline int ctx_f2i_fits_u(double v, uint64_t hi) {
+    // hi + 1 is 2^8, 2^16, 2^32 or 2^64: exact as a double. Values in (-1, 0) truncate to 0.
+    double limit = hi == UINT64_MAX ? 18446744073709551616.0 : (double)hi + 1.0;
+    return v > -1.0 && v < limit;
+}
+
+static inline int64_t ctx_f2i_s(double v, int64_t lo, int64_t hi, const char *dst, CTX_POS) {
+    if (!ctx_f2i_fits_s(v, lo, hi)) ctx_f2i_fail(v, dst, line, col, file);
     return (int64_t)v;
 }
 
 static inline uint64_t ctx_f2i_u(double v, uint64_t hi, const char *dst, CTX_POS) {
-    // hi + 1 is 2^8, 2^16, 2^32 or 2^64: exact as a double. Values in (-1, 0) truncate to 0.
-    double limit = hi == UINT64_MAX ? 18446744073709551616.0 : (double)hi + 1.0;
-    if (!(v > -1.0 && v < limit)) ctx_f2i_fail(v, dst, line, col, file);
+    if (!ctx_f2i_fits_u(v, hi)) ctx_f2i_fail(v, dst, line, col, file);
     return (uint64_t)v;
 }
 

@@ -533,6 +533,219 @@ fn main { mut io: Io } { let x = r{ n = 0 } }
 """, out=io.StringIO(), stack_size=1 << 20)
 
 
+class Overflow(Base):
+    """§11 Overflow: `e ifoverflow x`, x where an operation e covers overflows."""
+
+    def test_covered_operations(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let a: u8 = 200
+    let b: u8 = 100
+    let c: i32 = -2147483648
+    _ = @fmt(&io, "{} {} {}\\n", a + b ifoverflow 0, a - b ifoverflow 0, a * 2 ifoverflow 255)
+    _ = @fmt(&io, "{} {} {}\\n", -c ifoverflow 1, c / -1 ifoverflow 2, c % -1)
+    let u: u32 = 5
+    let zero: u32 = 0
+    _ = @fmt(&io, "{} {}\\n", -u ifoverflow 42, -zero ifoverflow 42)
+    let w: u8 = 7
+    _ = @fmt(&io, "{} {}\\n", (w << 1) + 250 ifoverflow 1, a * b + 1 - 1 ifoverflow 3)
+}
+""", '0 100 255\n1 2 0\n42 0\n1 3\n')
+
+    def test_conversions(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let c: i32 = -2147483648
+    let big: u64 = 5000000000
+    let f: f64 = 1e20
+    let nan = 0.0 / 0.0
+    _ = @fmt(&io, "{} {} {}\\n", @as(u8, c) ifoverflow 3, @as(u32, big) ifoverflow 4, @as(i64, big) ifoverflow 5)
+    _ = @fmt(&io, "{} {} {} {}\\n", @as(i32, f) ifoverflow 6, @as(i32, nan) ifoverflow 7, @as(i8, 127.75) ifoverflow 8, @as(u32, -0.75) ifoverflow 9)
+}
+""", '3 4 5000000000\n6 7 127 0\n')
+
+    def test_stops_at_the_overflow(self):
+        # The first tick has run when the * overflows; the second doesn't.
+        self.assertOutput("""
+fn tick { mut n: i32 } -> i32 {
+    n = n + 1
+    return 7
+}
+
+fn main { mut io: Io } {
+    let mut n: i32 = 0
+    let r = tick{ &n } * 1000000000 + tick{ &n } ifoverflow -1
+    _ = @fmt(&io, "{} {}\\n", r, n)
+    let s = tick{ &n } * 2 + tick{ &n } ifoverflow -1
+    _ = @fmt(&io, "{} {}\\n", s, n)
+}
+""", '-1 1\n21 3\n')
+
+    def test_handler_leaves(self):
+        self.assertOutput("""
+fn size_of { count: u32 } -> ?u32 {
+    return count * 16 ifoverflow { return null }
+}
+
+fn count { xs: []i32 } -> i32 {
+    let mut n: i32 = 0
+    let mut i: usize = 0
+    while i < xs.len {
+        let sq = xs[i] * xs[i] ifoverflow { i = i + 1; continue }
+        if sq > 0 { n = n + 1 }
+        i = i + 1
+    }
+    return n
+}
+
+fn main { mut io: Io } {
+    let xs: [_]i32 = [3, 100000, 4]
+    _ = @fmt(&io, "{} {} {}\\n", size_of{ count = 3 } ifnull 0, size_of{ count = 300000000 } == null, count{ xs = xs[..] })
+}
+""", '48 true 2\n')
+
+    def test_covers_only_its_own(self):
+        # A call's argument, an index and a nested ifoverflow are evaluated as usual.
+        self.assertOutput("""
+fn twice(T) { x: T } -> T { return x }
+fn main { mut io: Io } {
+    let a: u8 = 200
+    let big: u32 = 4000000000
+    _ = @fmt(&io, "{} {}\\n", (a + a ifoverflow 9) + 1 ifoverflow 0, twice(u32){ x = big } * 3 ifoverflow 7)
+}
+""", '10 7\n')
+        self.assertPanic("""
+fn id { n: u8 } -> u8 { return n }
+fn main { mut io: Io } {
+    let a: u8 = 200
+    _ = @fmt(&io, "{}\\n", id{ n = a + a } + 1 ifoverflow 0)
+}
+""", 'integer overflow')
+        self.assertPanic("""
+fn main { mut io: Io } {
+    let a: i32 = 5
+    let z: i32 = 0
+    _ = @fmt(&io, "{}\\n", a / z ifoverflow 0)
+}
+""", 'division by zero')
+
+    def test_in_a_defer(self):
+        # A defer's body is written at each exit, with labels of its own each time.
+        self.assertOutput("""
+fn run { mut io: Io, a: i32 } {
+    defer _ = @fmt(&io, "{}\\n", a * a ifoverflow -1)
+    if a > 0 { return }
+    _ = @fmt(&io, "body\\n")
+}
+fn main { mut io: Io } {
+    run{ &io, a = 70000 }
+    run{ &io, a = 0 }
+}
+""", '-1\nbody\n0\n')
+
+    def test_constants(self):
+        self.assertOutput("""
+const BIG: i64 = 9223372036854775807 + 1 ifoverflow -1
+fn main { mut io: Io } { _ = @fmt(&io, "{}\\n", BIG) }
+""", '-1\n')
+        self.assertCompileError("""
+const N: usize = 3 * 4 ifoverflow 1
+fn main { mut io: Io } { let a: [N]u8 = [0; N] }
+""", 'an array length must be a compile-time integer constant')
+
+    def test_covers_nothing(self):
+        for e in ['x ifoverflow 0', 'x * x < 9 ifoverflow false', 'f * f ifoverflow 0.0', 'x & x ifoverflow 0']:
+            with self.subTest(e=e):
+                self.assertCompileError("""
+fn main { mut io: Io } {
+    let x: i32 = 5
+    let f: f64 = 2.0
+    _ = %s
+}
+""" % e, 'nothing before `ifoverflow` can overflow')
+
+    def test_initialization(self):
+        # The handler may run before or after what e assigns.
+        src = """
+fn main { mut io: Io } {
+    let a: i32 = 5
+    let x: i32
+    let y = a * (if a > 3 { x = 1; 2 } else { x = 2; 3 }) ifoverflow %s
+    _ = @fmt(&io, "{} {}\\n", x, y)
+}
+"""
+        self.assertCompileError(src % '0', '`x` may be read before it is assigned')
+        self.assertCompileError(src % '{ x = 9; 0 }', '`x` may be assigned more than once')
+
+    def test_nested_regions(self):
+        # A callee's ifoverflow is its own; the fallback isn't covered.
+        src = """
+fn inner { a: i32 } -> i32 { return a * a ifoverflow 5 }
+fn main { mut io: Io } {
+    let a: i32 = 100000
+    _ = @fmt(&io, "{} {}\\n", inner{ a } * 1000000000 ifoverflow 9, inner{ a } + 1 ifoverflow 9)
+    %s
+}
+"""
+        self.assertOutput(src % '', '9 6\n')
+        self.assertPanic(src % '_ = a * a ifoverflow a * a', 'integer overflow')
+
+    def test_unsigned_division(self):
+        # An unsigned `/` can't overflow, but what its operands cover is covered, once the
+        # types of the literals are settled.
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let a: u32 = 4000000000
+    let b: u32 = 2
+    _ = @fmt(&io, "{}\\n", (a + a) / b ifoverflow 7)
+}
+""", '7\n')
+        for decl in ['let a = 4', 'let a: u32 = 4']:
+            with self.subTest(decl=decl):
+                self.assertCompileError("""
+fn main {} {
+    %s
+    let b = a / 2 ifoverflow 0
+    let c: u32 = b
+    _ = c
+}
+""" % decl, 'nothing before `ifoverflow` can overflow')
+
+    def test_handler_borrows(self):
+        # The handler's return, and its value, count where the function's result comes from.
+        self.assertCompileError("""
+fn pick { p: *i32 } -> ?*i32 {
+    let n: i32 = 2147483647
+    _ = n + 1 ifoverflow { return p }
+    return null
+}
+fn leak {} -> ?*i32 {
+    let x: i32 = 42
+    return pick{ p = &x }
+}
+fn main {} { _ = leak{} }
+""", 'returned value holds the address of local `x`')
+        self.assertCompileError("""
+error bad{ p: *i32 }
+fn failure { p: *i32 } -> !i32 { return bad{ p } }
+fn leak {} -> !i32 {
+    let x: i32 = 42
+    let n: i32 = 50000
+    return n * n ifoverflow failure{ p = &x }
+}
+fn main {} { _ = leak{} }
+""", 'returned value holds the address of local `x`')
+
+    def test_widens_to_the_handler(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let a: i32 = 50000
+    let b: i64 = a * a ifoverflow @as(i64, 1) << 40
+    _ = @fmt(&io, "{}\\n", b)
+}
+""", '1099511627776\n')
+
+
 class Lexer(Base):
     def assertLexError(self, src, msg, line, col):
         with self.assertRaises(CompileError) as cm:
@@ -8669,6 +8882,25 @@ fn main { mut io: Io } {
         from toolchain import ir_sources
         for path in ('examples/list.ctx', 'examples/wordcount.ctx', 'examples/json', 'examples/glfw/src'):
             self.assertIn('(main ', ir_sources(read_program(os.path.join(ROOT, path))))
+
+    def test_overflow_ir(self):
+        text = self.ir("""
+fn main {} -> i32 {
+    let a: i32 = 5
+    return a * a + 1 ifoverflow -1
+}
+""")
+        self.assertRegex(text, r'\(ovf \d+ (\d+) \(arith \d+ add \(arith \d+ mul .*? \1\) .*? \1\) ')
+        import tempfile
+        import subprocess
+        from toolchain import native_ctxc
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, 'p.ir')
+            with open(path, 'w', encoding='utf-8', newline='') as f:
+                f.write(text)
+            r = subprocess.run([native_ctxc(), 'roundtrip', path], capture_output=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.decode(), text)
 
     def test_ctxc_roundtrip(self):
         import tempfile

@@ -2075,9 +2075,24 @@ namespace emit {
                 expr{ &e, x = body.* }
                 put{ &e, a = "; })" }
             }
-            neg{ e = a, pos } => {
+            neg{ e = a, pos, trap } => {
                 let p = prim_of{ e, t = x.ty } ifnull { @panic("emit: neg of a non-number") }
-                if is_float{ p } {
+                if trap != ir::NO_TRAP and not is_float{ p } {
+                    // `({ tT _tK; if (__builtin_sub_overflow((tT)0, A, &_tK)) goto ctx_trap_N; _tK; })`
+                    let k = fresh{ &e }
+                    put{ &e, a = "({ " }
+                    result_var{ &e, t = x.ty, k }
+                    put{ &e, a = "if (__builtin_sub_overflow(" }
+                    cast_open{ &e, t = x.ty }
+                    put{ &e, a = "0)), " }
+                    expr{ &e, x = a.* }
+                    put{ &e, a = ", &" }
+                    tmp{ &e, k }
+                    put{ &e, a = ")) " }
+                    goto_trap{ &e, trap }
+                    tmp{ &e, k }
+                    put{ &e, a = "; })" }
+                } else if is_float{ p } {
                     put{ &e, a = "(-(" }
                     expr{ &e, x = a.* }
                     put{ &e, a = "))" }
@@ -2099,7 +2114,7 @@ namespace emit {
             // C's && and || already go left to right, and must not evaluate b early.
             land{ a, b } => { logical{ &e, a = a.*, op = " && ", b = b.* } }
             lor{ a, b }  => { logical{ &e, a = a.*, op = " || ", b = b.* } }
-            arith{ op, a, b, pos } => { arith{ &e, t = x.ty, op, a = a.*, b = b.*, pos } }
+            arith{ op, a, b, pos, trap } => { arith{ &e, t = x.ty, op, a = a.*, b = b.*, pos, trap } }
             bits{ op, a, b } => {
                 cast_open{ &e, t = x.ty }
                 match op {
@@ -2199,6 +2214,33 @@ namespace emit {
                 tmp{ &e, k = res }
                 put{ &e, a = "; })" }
             }
+            ovf{ trap, e = a, els } => {
+                // `({ __label__ ctx_trap_N, ctx_done_N; tT _tR; _tR = A; goto ctx_done_N;
+                // ctx_trap_N: { ... _tR = ...; } ctx_done_N: ; _tR; })`: what A covers jumps
+                // out of the statement expressions it is in to ctx_trap_N, which GNU C allows.
+                // The labels are local, so a block written twice (a defer's) declares its own.
+                let res = fresh{ &e }
+                put{ &e, a = "({ __label__ " }
+                trap_label{ &e, trap, done = false }
+                put{ &e, a = ", " }
+                trap_label{ &e, trap, done = true }
+                put{ &e, a = "; " }
+                result_var{ &e, t = x.ty, k = res }
+                tmp{ &e, k = res }
+                put{ &e, a = " = " }
+                expr{ &e, x = a.* }
+                put{ &e, a = "; goto " }
+                trap_label{ &e, trap, done = true }
+                put{ &e, a = "; " }
+                trap_label{ &e, trap, done = false }
+                put{ &e, a = ": " }
+                value_block{ &e, b = els, res }
+                ch{ &e, c = ' ' }
+                trap_label{ &e, trap, done = true }
+                put{ &e, a = ": ; " }
+                tmp{ &e, k = res }
+                put{ &e, a = "; })" }
+            }
             matchx{ scrut, through, arms } => {
                 let res = fresh{ &e }
                 let k = fresh{ &e }
@@ -2227,7 +2269,7 @@ namespace emit {
                 tmp{ &e, k = res }
                 put{ &e, a = "; })" }
             }
-            convert{ e = a, pos } => { as{ &e, t = x.ty, a = a.*, pos } }
+            convert{ e = a, pos, trap } => { as{ &e, t = x.ty, a = a.*, pos, trap } }
             wrap{ op, a, b } => {
                 let tt = temps2{ &e, a = a.*, b = b.* }
                 cast_open{ &e, t = x.ty }
@@ -2285,8 +2327,43 @@ namespace emit {
         close_temps{ &e, tt }
     }
 
-    fn arith { mut e: E, t: ir::TypeId, op: ir::ArithOp, a: ir::Expr, b: ir::Expr, pos: ir::Pos } {
+    fn arith { mut e: E, t: ir::TypeId, op: ir::ArithOp, a: ir::Expr, b: ir::Expr, pos: ir::Pos, trap: u32 } {
         let p = prim_of{ e, t } ifnull { @panic("emit: arithmetic on a non-number") }
+        if trap != ir::NO_TRAP and not is_float{ p } {
+            // `({ tT _tK; if (__builtin_add_overflow(A, B, &_tK)) goto ctx_trap_N; _tK; })`,
+            // or ctx_div_ovf_S(A, B, &_tK, pos), which still panics on a zero divisor
+            let tt = temps2{ &e, a, b }
+            let k = fresh{ &e }
+            put{ &e, a = "({ " }
+            result_var{ &e, t, k }
+            put{ &e, a = "if (" }
+            match op {
+                add => { put{ &e, a = "__builtin_add_overflow(" } }
+                sub => { put{ &e, a = "__builtin_sub_overflow(" } }
+                mul => { put{ &e, a = "__builtin_mul_overflow(" } }
+                div => {
+                    put{ &e, a = "ctx_div_ovf_" }
+                    suffix{ &e, p }
+                    ch{ &e, c = '(' }
+                }
+                rem => { @panic("emit: a trapped %") }
+            }
+            operand{ &e, x = a, tt, i = 0 }
+            put{ &e, a = ", " }
+            operand{ &e, x = b, tt, i = 1 }
+            put{ &e, a = ", &" }
+            tmp{ &e, k }
+            if op is div {
+                put{ &e, a = ", " }
+                position{ &e, p = pos }
+            }
+            put{ &e, a = ")) " }
+            goto_trap{ &e, trap }
+            tmp{ &e, k }
+            put{ &e, a = "; })" }
+            close_temps{ &e, tt }
+            return
+        }
         if is_float{ p } {
             match op {
                 add => { infix{ &e, a, op = " + ", b } }
@@ -2473,9 +2550,54 @@ namespace emit {
     }
 
     // @as between numbers: range-checked for integer results.
-    fn as { mut e: E, t: ir::TypeId, a: ir::Expr, pos: ir::Pos } {
+    fn as { mut e: E, t: ir::TypeId, a: ir::Expr, pos: ir::Pos, trap: u32 } {
         let dst = prim_of{ e, t } ifnull { @panic("emit: @as to a non-number") }
         let src = prim_of{ e, t = a.ty } ifnull { @panic("emit: @as of a non-number") }
+        if trap != ir::NO_TRAP and not is_float{ p = dst } {
+            // `({ sT _tK = A; if (!FITS) goto ctx_trap_N; (tT)(_tK); })`, FITS testing what
+            // the checks below test (ctxrt.h)
+            let k = fresh{ &e }
+            put{ &e, a = "({ " }
+            declare{ &e, t = a.ty, k }
+            expr{ &e, x = a }
+            put{ &e, a = "; if (!" }
+            let sd = is_signed{ p = dst }
+            if is_float{ p = src } {
+                if sd { put{ &e, a = "ctx_f2i_fits_s((double)(" } } else { put{ &e, a = "ctx_f2i_fits_u((double)(" } }
+                tmp{ &e, k }
+                put{ &e, a = "), " }
+                if sd {
+                    limit{ &e, p = dst, low = true }
+                    put{ &e, a = ", " }
+                }
+                limit{ &e, p = dst, low = false }
+            } else if is_signed{ p = src } {
+                put{ &e, a = "ctx_fits_s((int64_t)(" }
+                tmp{ &e, k }
+                put{ &e, a = "), " }
+                if sd {
+                    limit{ &e, p = dst, low = true }
+                    put{ &e, a = ", " }
+                    limit{ &e, p = dst, low = false }
+                } else if dst_is_u64{ p = dst } {
+                    put{ &e, a = "0, INT64_MAX" }
+                } else {
+                    put{ &e, a = "0, " }
+                    limit{ &e, p = dst, low = false }
+                }
+            } else {
+                put{ &e, a = "ctx_fits_u((uint64_t)(" }
+                tmp{ &e, k }
+                put{ &e, a = "), " }
+                limit{ &e, p = dst, low = false }
+            }
+            put{ &e, a = ")) " }
+            goto_trap{ &e, trap }
+            cast_open{ &e, t }
+            tmp{ &e, k }
+            put{ &e, a = ")); })" }
+            return
+        }
         if is_float{ p = dst } {
             cast_open{ &e, t }
             if not is_float{ p = src } { put{ &e, a = "(double)" } }
@@ -3051,6 +3173,10 @@ namespace emit {
             ifx{ c, then, els } => {
                 c_expr{ &e, x = c.*, taken = false }
                 c_block{ &e, b = then }
+                c_block{ &e, b = els }
+            }
+            ovf{ e = a, els } => {
+                c_expr{ &e, x = a.*, taken = false }
                 c_block{ &e, b = els }
             }
             matchx{ scrut, arms } => {
@@ -3994,6 +4120,19 @@ namespace emit {
         ch{ &e, c = ' ' }
         tmp{ &e, k }
         put{ &e, a = "; " }
+    }
+
+    // `goto ctx_trap_N; `: an operation an `ifoverflow` covers, overflowing.
+    fn goto_trap { mut e: E, trap: u32 } {
+        put{ &e, a = "goto " }
+        trap_label{ &e, trap, done = false }
+        put{ &e, a = "; " }
+    }
+
+    // ctx_trap_N, where an ovf's operations go when one overflows, or ctx_done_N, its end.
+    fn trap_label { mut e: E, trap: u32, done: bool } {
+        put{ &e, a = if done { "ctx_done_" } else { "ctx_trap_" } }
+        num{ &e, n = trap }
     }
 
     fn tmp { mut e: E, k: u32 } {

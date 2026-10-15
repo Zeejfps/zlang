@@ -545,6 +545,10 @@ namespace recover {
             }
             ifx{ x } => { if_node{ &c, x, lo = a, hi = b } }
             matchx{ x } => { match_node{ &c, x, lo = a, hi = b } }
+            overflow{ e = x, els } => {
+                expr{ &c, e = x.*, lo = a, hi = b }
+                block{ &c, x = els, lo = a, hi = b }
+            }
             trye{ e = x } => { expr{ &c, e = x.*, lo = a, hi = b } }
             isx{ e = x, pats } => {
                 expr{ &c, e = x.*, lo = a, hi = b }

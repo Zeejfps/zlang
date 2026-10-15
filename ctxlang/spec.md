@@ -462,17 +462,34 @@ Precedence, tightest first:
 | bitwise and | `&` | left to right |
 | bitwise xor | `^` | left to right |
 | bitwise or | `\|` | left to right |
-| ifnull | `ifnull` `iferr` | right to left; the right side may be a block (§8, Optional, Errors) |
+| ifnull | `ifnull` `iferr` `ifoverflow` | right to left; the right side may be a block (§8, Optional, Errors; Overflow, below) |
 | comparison | `==` `!=` `<` `<=` `>` `>=` `is` | don't chain: `a < b < c` is an error; `is`: §8, Is |
 | and | `and` | short-circuit |
 | or | `or` | short-circuit |
 
 1. Arithmetic and comparison apply to two operands of the same numeric type, after widening (below). If the operand types differ, the one that widens to the other is converted. If neither widens to the other, it is an error. Use `@as` or `@trunc` (§13).
-2. Integer `+ - *` panic on overflow. `/` and `%` panic on a zero divisor. Use `@wrap_*` (§13) for wrapping arithmetic.
+2. Integer `+ - *` panic on overflow, unless an `ifoverflow` covers them (Overflow, below). `/` and `%` panic on a zero divisor. Use `@wrap_*` (§13) for wrapping arithmetic.
 3. `&`, `|` and `^` apply to two operands of the same integer type, after widening as in rule 1. They act on the two's complement bits and never panic.
 4. `a << n` and `a >> n` shift integer `a` by `n` bits. The result has `a`'s type. `n` may have any integer type and doesn't widen to or from `a`'s. A count below 0, or at or above `a`'s width in bits, panics. `<<` drops the bits shifted out, so it never overflows: `x << 1` wraps where `x * 2` panics. `>>` is arithmetic for signed types (it copies the sign bit) and logical for unsigned ones.
 5. `==` and `!=` work on numbers, `bool`, pointers (by address) and two values of one enum (§12, Enums), and on `?T` against `null`. A `?T`, for a `T` of those types, also compares with a `T` or another such optional: a null equals only a null, and two values compare as their `T`s do, after widening as in rule 1. So `x == 3` is false and `x != 3` true where `x` is null. Each operand is evaluated once, left to right. `x == v` narrows `x` (§8, Optional, rule 4). Other types have no built-in equality: a `??T` compares only with `null`.
 6. `and`, `or` and `not` take and give `bool`. Conditions must be `bool`.
+
+### Overflow
+
+`e ifoverflow x` is `e`'s value, unless an operation `e` covers overflows. Then `e` stops there, and the value is `x`'s. `x` is an expression, or a block that gives a value or leaves, as after `ifnull` (§8, Optional, rule 7).
+
+```
+let size = count * 16 ifoverflow { return too_big{ count } }
+let n = @as(u32, len) ifoverflow 0
+let total = a * b + c ifoverflow 0                  // covers the * and the +
+```
+
+1. `e` covers its own operation if it is an integer `+`, `-` or `*`, a signed integer `/`, a unary `-` of an integer, or an `@as` to an integer type; and if it is one of these or another integer operator (an unsigned `/`, `%`, `&`, `|`, `^`, `<<`, `>>`), what its operands cover, in turn. Nothing else is covered: not a call's arguments, an index, a comparison's operands, nor what a nested `ifoverflow` covers, which is its own. Parentheses change nothing.
+2. An operation overflows when its result isn't a value of its type: `+`, `-`, `*` and unary `-` past the type's range, `/` of the type's minimum by -1, and an `@as` whose value isn't representable in the type (a float's after rounding toward zero; NaN and the infinities never are). A covered operation that overflows doesn't panic. A zero divisor, a shift count out of range, and an operation nothing covers still panic. `%` never overflows: `MIN % -1` is 0.
+3. `e` is evaluated as it is without `ifoverflow`, left to right, up to the operation that overflows. What it evaluated stays done, and the rest of it isn't evaluated: in `f{} * g{} + h{} ifoverflow 0`, if the `*` overflows, `f` and `g` have run and `h` doesn't.
+4. It is an error if `e` covers nothing, as in `x ifoverflow 0`, or `a * b < n ifoverflow false`, which is `a * b < (n ifoverflow false)` (above).
+5. The value's type is as for an `if` expression whose branches are `e` and `x` (If and match expressions): `e`'s, unless `x` gives a type `e`'s widens to. `e`'s arithmetic is in its own type either way.
+6. `x` may run after any of `e`'s covered operations, so a local `e` assigns may be assigned there (Initialization).
 
 ### Widening
 
@@ -678,7 +695,7 @@ A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are buil
 | `@size_of(T)` | `usize` | The size of `T` in bytes. |
 | `@align_of(T)` | `usize` | The required alignment of `T`. A power of two. |
 | `@offset_of(T, f)` | `usize` | The offset in bytes of field `f` of struct `T` from its start, as C's `offsetof`: 0 for an extern union's. `f` is a field's name. |
-| `@as(T, x)` | `T` | Converts number `x` to numeric type `T`. Panics if the value isn't representable in `T`. Float to integer rounds toward zero and panics on NaN. Integer to float rounds to nearest. Also converts between an enum and an integer type (§12, Enums). |
+| `@as(T, x)` | `T` | Converts number `x` to numeric type `T`. Panics if the value isn't representable in `T`, unless an `ifoverflow` covers it (§11, Overflow). Float to integer rounds toward zero and panics on NaN. Integer to float rounds to nearest. Also converts between an enum and an integer type (§12, Enums). |
 | `@trunc(T, x)` | `T` | Converts integer `x` to integer type `T`, keeping the low bits. |
 | `@cast(*U, q)`, `@cast(*mut U, q)`, `@cast(extern fn{C} -> R, q)` | the target | Reinterprets `q`, a pointer or a C function pointer (§12), as a pointer or a C function pointer. Unchecked, except that a `*T` can't be cast to a `*mut U`, and `q` can't be optional: check it for `null` first. |
 | `@slice(p, n)` | `[]T`, or `[]mut T` for a `*mut T` | The slice of `n: usize` elements starting at pointer `p: *T`. Unchecked. |
@@ -745,7 +762,7 @@ match @atomic_compare_exchange(&slot.state, 0, 1, atomic::Order::acquire_release
 ## 14. Memory
 
 1. Static memory holds read-only string literal bytes, with the hidden zero after them (§11 Literals), the immutable backing storage of const array views (§12, Slices) and of array literals' static views (§11, Literals, rule 4), and capabilities' statics (§15, rule 13), the only static memory a program writes, reached only through their capabilities. `const NAME: T = e` declares a constant, whose value is computed while compiling. `e` may be any expression of type `T`, calls included. A const has no context, so it holds no capability (§15), and nothing it runs reaches outside the program. A const is a value, not a place, so `&C` is an error. Slicing an array in a const exposes read-only storage that lives until the program ends. The compiler may duplicate that storage; pointer identity between separately obtained const views is not guaranteed.
-   - An `e` made of literals, folded consts, enum values, operators, `@size_of`, `@align_of`, `@offset_of`, and struct, union and array literals of these is **folded** before the bodies are checked. What would panic at run time is an error at the operation.
+   - An `e` made of literals, folded consts, enum values, operators but `ifoverflow`, `@size_of`, `@align_of`, `@offset_of`, and struct, union and array literals of these is **folded** before the bodies are checked. What would panic at run time is an error at the operation.
    - Any other `e`, one that uses a const that isn't folded included, is **run** once every body is checked and the error sets are inferred, the first time its value is needed. What stops it is an error at the const: a panic, with its message and position; too many steps, or too deep a recursion; or calling an extern fn (§18), since none can run while compiling.
    - A const whose value needs its own, directly or through the functions it calls, is an error.
    - The value may hold no pointer, slice or function value, except a `[]u8`, a `strlit` or a `*u8` that points into a string literal's bytes (part of them is fine; a `*u8` is followed by the rest of them and the hidden zero), or a struct over one, such as `utf8::String` or `c::String`, or a static view of an array literal (§11, Literals, rule 4) that is folded, or an empty slice of any type, which points to nothing. Const array views may be consumed during compile-time evaluation, but cannot themselves be stored in a const's value: the evaluator does not preserve references to their backing storage in its result.
