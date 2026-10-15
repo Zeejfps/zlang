@@ -55,10 +55,14 @@ isn't null there (`8357131`).
    `mut` fields (which don't count). *Partly:* the flow summaries fixed fresh allocations and
    literal-only errors, and map lookups and reads by path borrow nothing since an extern fn or
    an unbound fn value (`map`'s `hash` and `eq`, the OS's file calls) is taken to store an
-   argument only where it reaches a mutable place that holds a pointer. A lookup through a
-   `&fn` still borrows its key, as does an extern's pointer result: an attribute saying a
-   field's value doesn't flow to the result would do. *Hit by 8:* glspike, engine (about 5),
-   data (5), dialog (7), gui (3), hud, minigames (7), models (2).
+   argument only where it reaches a mutable place that holds a pointer (`712e40a`; KOTOR's
+   copies went in `40e80d0`). An out-pointer to a number borrows nothing. Still tied: a lookup
+   through a fn value or `&fn` whose result holds a pointer, an extern's pointer result, and a
+   value read through a pointer to a local (`read_info{ doc = &info_doc }` in lib/save, which
+   copies the module name). A `#noescape` field attribute, checked on a body and part of a fn
+   type, was weighed and put off: only KOTOR's model lookup (`&fn{ name: []u8 } ->
+   ?*mdl::Model`, 7 declarations) and two std externs would use it. *Hit by 8:* glspike,
+   engine (about 5), data (5), dialog (7), gui (3), hud, minigames (7), models (2).
 
 3. **A struct is built with every field named, and some have no zero value.** A literal names
    every field (`Stats`: 35, `chargen::State`: 40, `Run`: about 30 lines), so a field added to a
