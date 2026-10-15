@@ -682,6 +682,39 @@ namespace types {
         return false
     }
 
+    // Whether t mentions a generic parameter, of any declaration.
+    fn has_params { s: Store, t: Id } -> bool {
+        match get{ s, id = prune{ s, t } } {
+            param => { return true }
+            ptr{ elem } => { return has_params{ s, t = elem } }
+            slice{ elem } => { return has_params{ s, t = elem } }
+            opt{ elem } => { return has_params{ s, t = elem } }
+            array{ elem } => { return has_params{ s, t = elem } }
+            record{ args } => { return any_params{ s, ts = args } }
+            sum{ args } => { return any_params{ s, ts = args } }
+            res{ ok, errs } => { return has_params{ s, t = ok } or has_params{ s, t = errs } }
+            func{ fields, ret } => {
+                if has_params{ s, t = ret } { return true }
+                let mut i: usize = 0
+                while i < fields.len {
+                    if has_params{ s, t = fields[i].ty } { return true }
+                    i = i + 1
+                }
+                return false
+            }
+            else => { return false }
+        }
+    }
+
+    fn any_params { s: Store, ts: []Id } -> bool {
+        let mut i: usize = 0
+        while i < ts.len {
+            if has_params{ s, t = ts[i] } { return true }
+            i = i + 1
+        }
+        return false
+    }
+
     // Whether t is, or holds as an element or generic argument, a bound function type.
     fn has_bound_fn { s: Store, t: Id } -> bool {
         match get{ s, id = prune{ s, t } } {

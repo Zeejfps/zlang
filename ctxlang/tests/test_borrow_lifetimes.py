@@ -163,6 +163,70 @@ fn load {} -> []u8 { let buf: [3]u8 = [1,2,3]; return try! fresh{ s = buf[..] } 
 fn main {} { _ = load{} }
 ''')
 
+# A callee ctxc can't see into, a fn value or an extern fn, can store a pointer only where it
+# reaches a mutable place that holds one: a lookup's key and a read's path stay the caller's.
+case('map_lookup_ignores_key', True, '''
+fn get { m: map::Map([]u8, []u8, arena::Arena) } -> ?[]u8 { let k: [3]u8 = [1,2,3]; return map::get{ m, key = k[..] } }
+fn at { m: map::Map([]u8, i64, arena::Arena) } -> ?*mut i64 { let k: [3]u8 = [1,2,3]; return map::at{ m, key = k[..] } }
+fn main {} {
+    let mut mem: [4096]u8
+    let mut heap = arena::Arena{ buf = mem[..], used = 0 }
+    _ = get{ m = map::new([]u8, []u8, arena::Arena){ realloc = arena::alloc, &heap, hash = map::hash_bytes, eq = slice::eq_bytes } }
+    _ = at{ m = map::new([]u8, i64, arena::Arena){ realloc = arena::alloc, &heap, hash = map::hash_bytes, eq = slice::eq_bytes } }
+}
+''')
+case('fn_value_lookup_ignores_key', True, '''
+struct T { items: [][]u8, h: fn{ key: []u8 } -> u64 }
+fn get { t: T, key: []u8 } -> []u8 { if t.h{ key } == 0 { return "none" }; return t.items[0] }
+fn hb { key: []u8 } -> u64 { return 1 }
+fn load { t: T } -> []u8 { let buf: [3]u8 = [1,2,3]; return get{ t, key = buf[..] } }
+fn main {} { let items: [1][]u8 = ["okay"]; _ = load{ t = T{ items = items[..], h = hb } } }
+''')
+case('read_all_ignores_path', True, '''
+fn load { mut fs: Fs, mut heap: arena::Arena } -> ![]u8 {
+    let p: [5]u8 = [110,111,110,101,0]
+    return try fs::read_all{ &fs, &heap, realloc = arena::alloc, path = p[..4] }
+}
+fn main { mut fs: Fs } {
+    let mut mem: [4096]u8
+    let mut heap = arena::Arena{ buf = mem[..], used = 0 }
+    _ = load{ &fs, &heap }
+}
+''')
+case('extern_store_through_pointer', False, '''
+extern fn keep { slot: *mut []u8, s: []u8 }
+fn stored { slot: *mut []u8, s: []u8 } -> []u8 { keep{ slot, s }; return slot.* }
+fn leak { slot: *mut []u8 } -> []u8 { let buf: [3]u8 = [1,2,3]; return stored{ slot, s = buf[..] } }
+fn main {} { let mut x: []u8 = "a"; _ = leak{ slot = &x } }
+''')
+case('fn_value_store_through_pointer', False, '''
+fn keep { slot: *mut []u8, s: []u8 } { slot.* = s }
+fn stored { f: fn{ slot: *mut []u8, s: []u8 }, slot: *mut []u8, s: []u8 } -> []u8 { f{ slot, s }; return slot.* }
+fn leak { slot: *mut []u8 } -> []u8 { let buf: [3]u8 = [1,2,3]; return stored{ f = keep, slot, s = buf[..] } }
+fn main {} { let mut x: []u8 = "a"; _ = leak{ slot = &x } }
+''')
+case('generic_fn_value_store_through_pointer', False, '''
+struct T(K) { h: fn{ key: K, s: []u8 }, items: [][]u8 }
+fn get(K) { t: T(K), key: K, s: []u8 } -> []u8 { t.h{ key, s }; return t.items[0] }
+fn keep { key: *mut []u8, s: []u8 } { key.* = s }
+fn leak { items: [][]u8, slot: *mut []u8 } -> []u8 {
+    let buf: [3]u8 = [1,2,3]
+    return get{ t = T(*mut []u8){ h = keep, items }, key = slot, s = buf[..] }
+}
+fn main {} { let items: [1][]u8 = ["okay"]; let mut x: []u8 = "a"; _ = leak{ items = items[..], slot = &x } }
+''')
+case('generic_fn_value_store_two_calls_deep', False, '''
+struct T(K) { h: fn{ key: K, s: []u8 }, items: [][]u8 }
+fn call(K) { t: T(K), key: K, s: []u8 } { t.h{ key, s } }
+fn get(K) { t: T(K), key: K, s: []u8 } -> []u8 { call{ t, key, s }; return t.items[0] }
+fn keep { key: *mut []u8, s: []u8 } { key.* = s }
+fn leak { items: [][]u8, slot: *mut []u8 } -> []u8 {
+    let buf: [3]u8 = [1,2,3]
+    return get{ t = T(*mut []u8){ h = keep, items }, key = slot, s = buf[..] }
+}
+fn main {} { let items: [1][]u8 = ["okay"]; let mut x: []u8 = "a"; _ = leak{ items = items[..], slot = &x } }
+''')
+
 review_cases={
 'direct_projection':"""error bad{ p: *i32 }
 struct Last { r: !*i32 }

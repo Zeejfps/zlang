@@ -52,11 +52,13 @@ isn't null there (`8357131`).
    heap or the cache. So do a by-pointer argument (`build{ doc = &doc, bytes }`) and an
    out-pointer (`numkeys = &n`). Written: keys and paths copied to the heap first and freed with
    a `defer`, maps holding an index into a list of pointers, const tables of column names,
-   `mut` fields (which don't count). The flow summaries fixed fresh allocations and literal-only
-   errors; a lookup still borrows its key because a map's entry is found through it. A way for a
-   field to say the result doesn't borrow it (`read_all`'s path, `map::get`'s key) would do.
-   *Hit by 8:* glspike, engine (about 5), data (5), dialog (7), gui (3), hud, minigames (7),
-   models (2).
+   `mut` fields (which don't count). *Partly:* the flow summaries fixed fresh allocations and
+   literal-only errors, and map lookups and reads by path borrow nothing since an extern fn or
+   an unbound fn value (`map`'s `hash` and `eq`, the OS's file calls) is taken to store an
+   argument only where it reaches a mutable place that holds a pointer. A lookup through a
+   `&fn` still borrows its key, as does an extern's pointer result: an attribute saying a
+   field's value doesn't flow to the result would do. *Hit by 8:* glspike, engine (about 5),
+   data (5), dialog (7), gui (3), hud, minigames (7), models (2).
 
 3. **A struct is built with every field named, and some have no zero value.** A literal names
    every field (`Stats`: 35, `chargen::State`: 40, `Run`: about 30 lines), so a field added to a

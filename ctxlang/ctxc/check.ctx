@@ -5636,8 +5636,10 @@ namespace check {
 
     // Direct-call summaries use parameter indexes, never stack-local indexes. Pointer stores
     // are a deliberately broad effect: their origins taint every pointer-bearing output and
-    // every later caller output, without trying to model aliases or heap lifetimes.
-    struct BorrowWrite { ty: Id, origins: []u32 }
+    // every later caller output, without trying to model aliases or heap lifetimes. A `via`
+    // write is one an opaque callee may make through a value of type ty (borrow_opaque), still
+    // pending on a generic parameter: it taints nothing until a call decides it (borrow_via).
+    struct BorrowWrite { ty: Id, origins: []u32, via: bool }
     struct Borrow { ok: []u32, err: []u32, writes: []BorrowWrite }
     struct BorrowValue { ok: []u32, err: []u32 }
     struct BorrowBody {
@@ -5661,8 +5663,109 @@ namespace check {
     fn borrow_unknown { c: Checker, fields: []types::Field } -> Borrow {
         let all = borrow_all{ c, fields }
         let mut writes = list::new(BorrowWrite){ realloc = arena::alloc, heap = c.heap }
-        try! list::push{ list = &writes, item = BorrowWrite{ ty = types::STRLIT, origins = all } }
+        try! list::push{ list = &writes, item = BorrowWrite{ ty = types::STRLIT, origins = all, via = false } }
         return Borrow{ ok = all, err = all, writes = list::items{ list = writes } }
+    }
+
+    // A callee without a body ctxc can see, an extern fn or an unbound fn value: its result may
+    // hold any read-only argument (§14), but it can store one only into a mutable place it
+    // reaches, through its `mut` fields or a `*mut` or `[]mut` in an argument. Each field is a
+    // write through its type, made only if that type reaches such a place (borrow_via).
+    fn borrow_opaque { mut c: Checker, fields: []types::Field } -> Borrow {
+        let all = borrow_all{ c, fields }
+        let mut writes = list::new(BorrowWrite){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while all.len > 0 and i < fields.len {
+            let f = fields[i]
+            let ty = if f.mutable { types::ptr{ s = &c.ty, elem = f.ty, mutable = true } } else { f.ty }
+            try! list::push{ list = &writes, item = BorrowWrite{ ty, origins = all, via = true } }
+            i = i + 1
+        }
+        return Borrow{ ok = all, err = all, writes = list::items{ list = writes } }
+    }
+
+    // Whether a value of type t reaches a mutable place that can hold a pointer: through a `*mut`
+    // or a `[]mut` to one, at any depth. A bound function may hold one (§6), and a generic
+    // parameter or an unknown type may be one.
+    fn reaches_ptr_place { mut c: Checker, t: Id, seen: []u32 } -> bool {
+        if t == types::NO_TYPE { return false }
+        let x = types::prune{ s = c.ty, t }
+        match types::get{ s = c.ty, id = x } {
+            ptr{ elem, mutable } | slice{ elem, mutable } => {
+                if mutable and contains_ptr{ &c, t = elem, seen = no_vars{} } { return true }
+                return reaches_ptr_place{ &c, t = elem, seen }
+            }
+            param | var => { return true }
+            func{ bound } => { return bound }
+            opt{ elem } => { return reaches_ptr_place{ &c, t = elem, seen } }
+            array{ elem } => { return reaches_ptr_place{ &c, t = elem, seen } }
+            record{ decl } => {
+                if has_id{ xs = seen, n = decl } { return false }
+                let inner = set_add{ c, xs = seen, n = decl }
+                let fs = struct_fields{ &c, t = x }
+                let mut i: usize = 0
+                while i < fs.len {
+                    if reaches_ptr_place{ &c, t = fs[i].ty, seen = inner } { return true }
+                    i = i + 1
+                }
+                return false
+            }
+            sum{ decl } => {
+                if has_id{ xs = seen, n = decl } { return false }
+                let inner = set_add{ c, xs = seen, n = decl }
+                let vs = variants_of{ &c, t = x }
+                let mut i: usize = 0
+                while i < vs.len {
+                    let fs = vs[i].fields
+                    if fs != null {
+                        let mut j: usize = 0
+                        while j < fs.len {
+                            if reaches_ptr_place{ &c, t = fs[j].ty, seen = inner } { return true }
+                            j = j + 1
+                        }
+                    }
+                    i = i + 1
+                }
+                return false
+            }
+            res{ ok, errs } => { return reaches_ptr_place{ &c, t = ok, seen } or reaches_ptr_place{ &c, t = errs, seen } }
+            // A payload's pointers are taken as reaching one.
+            errs | eset => { return contains_ptr{ &c, t = x, seen = no_vars{} } }
+            else => { return false }
+        }
+    }
+
+    // A write an opaque callee may make through a value of type t: none if t reaches no mutable
+    // place that can hold a pointer, pending while t mentions a generic parameter, and otherwise
+    // made, as a pointer store is. Returns whether it is made.
+    fn borrow_via { mut c: Checker, mut b: BorrowBody, t: Id, xs: []u32 } -> bool {
+        if xs.len == 0 { return false }
+        if types::has_params{ s = c.ty, t } {
+            // Without its variables, so that a caller's subst reaches the parameters under them.
+            borrow_record{ &c, &b, t = types::zonk{ s = &c.ty, t }, xs, via = true }
+            return false
+        }
+        if not reaches_ptr_place{ &c, t, seen = no_vars{} } { return false }
+        borrow_write{ &c, &b, t = types::STRLIT, xs }
+        return true
+    }
+
+    // A summary as one call sees it: its pending writes, decided with the call's type
+    // arguments, taint its outputs as made writes do. One still pending in a generic caller
+    // counts as made.
+    fn borrow_resolve { mut c: Checker, s: Borrow, decl: u32, targs: []Id } -> Borrow {
+        let mut made = no_vars{}
+        let mut i: usize = 0
+        while i < s.writes.len {
+            let w = s.writes[i]
+            if w.via {
+                let t = types::subst{ s = &c.ty, t = w.ty, decl, args = targs }
+                if types::has_params{ s = c.ty, t } or reaches_ptr_place{ &c, t, seen = no_vars{} } { made = set_union{ c, a = made, b = w.origins } }
+            }
+            i = i + 1
+        }
+        if made.len == 0 { return s }
+        return Borrow{ ok = set_union{ c, a = s.ok, b = made }, err = set_union{ c, a = s.err, b = made }, writes = s.writes }
     }
 
     fn infer_borrows { mut c: Checker } {
@@ -5678,6 +5781,7 @@ namespace check {
         let known = map::get{ m = c.borrows, key = d }
         if known != null { return known }
         let x = get_decl{ c, d }
+        if x.kind == Kind::external { return borrow_opaque{ &c, fields = x.fields } }
         if x.kind != Kind::func or map::has{ m = c.borrow_busy, key = d } { return borrow_unknown{ c, fields = x.fields } }
         let func{ body } = x.syn.k else { return borrow_unknown{ c, fields = x.fields } }
         try! map::put{ m = &c.borrow_busy, key = d, value = true }
@@ -5704,7 +5808,7 @@ namespace check {
         let ws = list::items{ list = b.writes }
         i = 0
         while i < ws.len {
-            taint = set_union{ c, a = taint, b = ws[i].origins }
+            if not ws[i].via { taint = set_union{ c, a = taint, b = ws[i].origins } }
             i = i + 1
         }
         let mut out = Borrow{ ok = b.ok, err = b.err, writes = ws }
@@ -5730,17 +5834,21 @@ namespace check {
 
     fn borrow_write { mut c: Checker, mut b: BorrowBody, t: Id, xs: []u32 } {
         if xs.len == 0 or not contains_ptr{ &c, t, seen = no_vars{} } { return }
+        borrow_record{ &c, &b, t, xs, via = false }
+    }
+
+    fn borrow_record { mut c: Checker, mut b: BorrowBody, t: Id, xs: []u32, via: bool } {
         let ws = list::items{ list = b.writes }
         let mut i: usize = 0
         while i < ws.len {
-            if ws[i].ty == t {
+            if ws[i].ty == t and ws[i].via == via {
                 let now = set_union{ c, a = ws[i].origins, b = xs }
                 list::at{ list = b.writes, i }.origins = now
                 return
             }
             i = i + 1
         }
-        try! list::push{ list = &b.writes, item = BorrowWrite{ ty = t, origins = xs } }
+        try! list::push{ list = &b.writes, item = BorrowWrite{ ty = t, origins = xs, via } }
     }
 
     fn borrow_origins { c: Checker, v: BorrowValue } -> []u32 { return set_union{ c, a = v.ok, b = v.err } }
@@ -5919,18 +6027,31 @@ namespace check {
             targs = ts
             summary = borrow_fn{ &c, d }
         }
-        if d == NONE { borrow_write{ &c, &b, t = types::STRLIT, xs = captured } }
+        if d == NONE {
+            // A bound function stores into the places it holds (§6), which its type doesn't show.
+            if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e = callee } } } is func{ bound } {
+                if not bound { summary = borrow_opaque{ &c, fields } }
+            }
+            borrow_write{ &c, &b, t = types::STRLIT, xs = captured }
+        }
         let args = list::items{ list = actual }
+        // A pending write made here taints the call's outputs, as the callee's made ones do.
+        let mut made = captured
         i = 0
         while i < summary.writes.len {
             let w = summary.writes[i]
             let t = if d == NONE { w.ty } else { types::subst{ s = &c.ty, t = w.ty, decl = d, args = targs } }
-            borrow_write{ &c, &b, t, xs = borrow_map_args{ &c, xs = w.origins, actual = args } }
+            let xs = borrow_map_args{ &c, xs = w.origins, actual = args }
+            if not w.via {
+                borrow_write{ &c, &b, t, xs }
+            } else if borrow_via{ &c, &b, t, xs } {
+                made = set_union{ c, a = made, b = xs }
+            }
             i = i + 1
         }
         let out = BorrowValue{
-            ok = set_union{ c, a = captured, b = borrow_map_args{ &c, xs = summary.ok, actual = args } },
-            err = set_union{ c, a = captured, b = borrow_map_args{ &c, xs = summary.err, actual = args } },
+            ok = set_union{ c, a = made, b = borrow_map_args{ &c, xs = summary.ok, actual = args } },
+            err = set_union{ c, a = made, b = borrow_map_args{ &c, xs = summary.err, actual = args } },
         }
         // Only a declared !T summary distinguishes success from failure. A generic T
         // instantiated as !U carries an ordinary value, which may itself be either variant.
@@ -6065,7 +6186,10 @@ namespace check {
     }
 
     fn direct_borrow { mut c: Checker, callee: syntax::Expr } -> ?Borrow {
-        if map::get{ m = c.refs, key = expr_key{ e = callee } } is func{ decl } { return map::get{ m = c.borrows, key = decl } }
+        if map::get{ m = c.refs, key = expr_key{ e = callee } } is func{ decl, targs } {
+            let s = map::get{ m = c.borrows, key = decl } ifnull { return null }
+            return borrow_resolve{ &c, s, decl, targs }
+        }
         return null
     }
     fn borrow_field { fields: []types::Field, summary: ?Borrow, name: []u8, err: bool, success: bool } -> bool {
