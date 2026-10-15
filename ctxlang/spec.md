@@ -171,6 +171,7 @@ match e {
 7. If the scrutinee is `&p`, no place that overlaps `p` (§3.1) may be accessed inside an arm except through that arm's bindings. For other pointer scrutinees this isn't checked.
 8. `match` is a statement, and can also be an expression (§11, If and match expressions).
 9. To take one variant apart and leave on any other, use `let` with a pattern (§11, Let-else). To test for one, use `is` (§8, Is).
+10. A union's zero value is its first variant, with every payload field zero, if those fields all have zero values (§11, Initialization).
 
 ### Match on integers
 
@@ -537,7 +538,7 @@ step  := .field | [index]
 
 1. `let x: T` without an initializer: `x` must be assigned exactly once on every path before it is read. An assignment inside a loop is allowed only if no path leads from it back to the loop's next iteration, for example because a `break` follows it.
 2. `let mut x: T` without an initializer: if `T` has a zero value, `x` starts as that value. Otherwise `x` must be assigned on every path before it is read.
-3. Zero values:
+3. Zero values: a type has one exactly when its bytes all zero are a value of it, which is what memory a program hasn't written holds (a `let` without an initializer, a static, an allocation).
 
 | Type | Zero value |
 |---|---|
@@ -547,7 +548,9 @@ step  := .field | [index]
 | `[N]T` | every element zero, if `T` has a zero value |
 | `[]T`, `[]mut T` | the empty slice |
 | struct | every field zero, if every field type has a zero value; field defaults don't apply (§7, rule 5) |
-| `*T`, `*mut T`, `strlit`, user-defined unions, enums, `fn{C} -> R`, `&fn{C} -> R`, capability types | none |
+| enum | its variant whose value is 0 (the first, unless values are given), if it has one |
+| union | its first variant, with every payload field zero, if they all have zero values |
+| `*T`, `*mut T`, `strlit`, `fn{C} -> R`, `&fn{C} -> R`, capability types | none: zero bytes are no value of these (a pointer is never null) |
 
 4. Reading a variable before it is assigned is a compile error. There is no way to declare uninitialized memory.
 
@@ -606,7 +609,7 @@ let i = @as(usize, k)       // 40
 1. An enum is an integer type with named values. `T`, its base type, is one of `i8`..`i64`, `u8`..`u64` and `usize`. An enum has `T`'s size, alignment and representation.
 2. Variants have no payload. The first variant's value is 0, and each later one's is one more than the variant before it, unless `= e` gives it a value. `e` is a compile-time integer constant (§14). It is an error if a value doesn't fit in `T`, or if two variants have the same value.
 3. An enum can't have generic parameters.
-4. `Name::v` is variant `v`'s value, of type `Name`. An enum converts implicitly to and from no other type (§11, Widening), and has no zero value (§11, Initialization).
+4. `Name::v` is variant `v`'s value, of type `Name`. An enum converts implicitly to and from no other type (§11, Widening), and its zero value is its variant whose value is 0, if it has one (§11, Initialization).
 5. `==` and `!=` compare two values of the same enum. No other operator applies to enums.
 6. `match` takes an enum scrutinee as it takes a union one (§8, Match): arms list variants, the arms must be exhaustive, and patterns have no bindings. So does `is` (§8, Is): `k is lbrace | rbrace`. The scrutinee can't be a pointer to an enum: match on `p.*`. `let` with a pattern (§11, Let-else) doesn't apply to enums.
 7. `@as(U, x)` gives the value of enum `x` in integer type `U`, and panics if it doesn't fit. `@as(E, n)` gives the variant of enum `E` whose value is integer `n`, and panics if there is none (§13).
@@ -745,7 +748,7 @@ match @atomic_compare_exchange(&slot.state, 0, 1, atomic::Order::acquire_release
    - An `e` made of literals, folded consts, enum values, operators, `@size_of`, `@align_of`, `@offset_of`, and struct, union and array literals of these is **folded** before the bodies are checked. What would panic at run time is an error at the operation.
    - Any other `e`, one that uses a const that isn't folded included, is **run** once every body is checked and the error sets are inferred, the first time its value is needed. What stops it is an error at the const: a panic, with its message and position; too many steps, or too deep a recursion; or calling an extern fn (§18), since none can run while compiling.
    - A const whose value needs its own, directly or through the functions it calls, is an error.
-   - The value may hold no pointer, slice or function value, except a `[]u8`, a `strlit` or a `*u8` that points into a string literal's bytes (part of them is fine; a `*u8` is followed by the rest of them and the hidden zero), or a struct over one, such as `utf8::String` or `c::String`, or a static view of an array literal (§11, Literals, rule 4) that is folded. Const array views may be consumed during compile-time evaluation, but cannot themselves be stored in a const's value: the evaluator does not preserve references to their backing storage in its result.
+   - The value may hold no pointer, slice or function value, except a `[]u8`, a `strlit` or a `*u8` that points into a string literal's bytes (part of them is fine; a `*u8` is followed by the rest of them and the hidden zero), or a struct over one, such as `utf8::String` or `c::String`, or a static view of an array literal (§11, Literals, rule 4) that is folded, or an empty slice of any type, which points to nothing. Const array views may be consumed during compile-time evaluation, but cannot themselves be stored in a const's value: the evaluator does not preserve references to their backing storage in its result.
    - An array length (§12) or an enum's value can use only a folded const: they are needed before anything can run.
 2. Locals and context fields live on the stack.
 3. Memory not on the stack comes from `mem::pages`, which needs the `Mem` capability (§15), or from an allocator function over memory the caller provides. It is accessed only through pointers and slices.

@@ -1460,6 +1460,7 @@ namespace decls {
                 dump::put{ &out, s = "view " }
                 value{ &out, c, v = array.* }
             }
+            empty => { dump::put{ &out, s = "empty" } }
         }
     }
 

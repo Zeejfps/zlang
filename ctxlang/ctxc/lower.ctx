@@ -2480,6 +2480,8 @@ namespace lower {
             sbytes{ ty, bytes } => { return mk{ ty = tid{ &l, t = ty }, k = ir::ExprKind::sbytes{ bytes } } }
             cstr{ ty, bytes } => { return mk{ ty = tid{ &l, t = ty }, k = ir::ExprKind::cstr{ bytes } } }
             nil{ ty } => { return mk{ ty = tid{ &l, t = ty }, k = ir::ExprKind::nil } }
+            // A slice's zero value: a record of its pointer and length that sets neither.
+            empty{ ty } => { return mk{ ty = tid{ &l, t = ty }, k = ir::ExprKind::record{ items = slice::empty(ir::Arg){} } } }
             record{ ty, fields } => {
                 let id = tid{ &l, t = ty }
                 return mk{ ty = id, k = ir::ExprKind::record{ items = value_args{ &l, xs = fields } } }

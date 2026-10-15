@@ -538,6 +538,7 @@ namespace check {
         each{ &c, xs = c.caps, what = Phase::caps }
         each{ &c, xs = c.unions, what = Phase::unions }
         each{ &c, xs = c.enums, what = Phase::enums }
+        check_statics{ &c }
         each{ &c, xs = c.aliases, what = Phase::aliases }
         each{ &c, xs = c.faults, what = Phase::faults }
         each{ &c, xs = c.consts, what = Phase::consts }
@@ -988,15 +989,44 @@ namespace check {
         list::at{ list = c.decls, i = d }.includes = list::items{ list = incl }
     }
 
+    // A static starts as its type's zero value (§15, rule 13), which for an enum or a union
+    // depends on its variants, resolved after the capabilities.
+    fn check_statics { mut c: Checker } {
+        let ds = list::items{ list = c.caps }
+        let mut i: usize = 0
+        while i < ds.len {
+            let d = ds[i]
+            let x = get_decl{ c, d }
+            if x.syn.k is cap{ fields } {
+                let fs = fields ifnull { slice::empty(syntax::Field){} }
+                let mut k: usize = 0
+                while k < fs.len {
+                    let f = fs[k]
+                    let mut j: usize = 0
+                    while f.stat and j < x.vars.len {
+                        let v = x.vars[j]
+                        if v.stat and v.owner == d and slice::eq_bytes{ a = v.name, b = f.name.text } {
+                            if v.ty != types::ERROR and not has_zero{ &c, t = v.ty, depth = 0 } {
+                                errorf{ &c, at = f.span, msg = @fmt("capability `{}`'s static `{}` can't have type {}: it has no zero value to start as", str{ s = x.name.text }, str{ s = f.name.text }, tstr{ c, t = v.ty }) }
+                            }
+                            break
+                        }
+                        j = j + 1
+                    }
+                    k = k + 1
+                }
+            }
+            i = i + 1
+        }
+    }
+
     // `extern name: T` in capability d's braces (§15): the C variable `name`, of a type C has;
     // or `static name: T`, a static, of a type with a zero value, which it starts as.
     fn add_cvar { mut c: Checker, d: u32, f: syntax::Field, sc: Scope, out: []types::Field, from: []u32, mut vars: list::List(CVar, Heap), mut vfrom: list::List(u32, Heap) } {
         let x = get_decl{ c, d }
         let t = rtype{ &c, te = f.ty, sc, allow_bound = false }
         if f.stat {
-            if t != types::ERROR and not has_zero{ &c, t, depth = 0 } {
-                errorf{ &c, at = f.span, msg = @fmt("capability `{}`'s static `{}` can't have type {}: it has no zero value to start as", str{ s = x.name.text }, str{ s = f.name.text }, tstr{ c, t }) }
-            }
+            // check_statics, once enums and unions are resolved, says whether t has a zero value
         } else if not c_variable{ c, t } {
             errorf{ &c, at = f.span, msg = @fmt("capability `{}`'s C variable `{}` can't have type {}: C has no equivalent of it", str{ s = x.name.text }, str{ s = f.name.text }, tstr{ c, t }) }
         }
@@ -3303,6 +3333,7 @@ namespace check {
         array{ ty: Id, elems: []Val },
         repeat{ ty: Id, elem: *Val },           // N copies, N from the array type
         view{ ty: Id, array: *Val },            // a []T viewing a static array: an array literal's (View)
+        empty{ ty: Id },                        // an empty slice of any element type: its zero value
     }
 
     struct Num { negative: bool, magnitude: u64 }
@@ -3924,7 +3955,9 @@ namespace check {
         return key{ file = n.span.file, id = n.id }
     }
 
-    // Whether t has a zero value (§11, Initialization). depth stops a struct that holds itself.
+    // Whether t has a zero value (§11, Initialization): what its bytes all zero are, a value of
+    // its. An enum's is its variant 0, and a union's its first variant, with a zero payload.
+    // depth stops a struct that holds itself.
     fn has_zero { mut c: Checker, t: Id, depth: u32 } -> bool {
         if depth > 64 { return false }
         let x = types::prune{ s = c.ty, t }
@@ -3933,6 +3966,26 @@ namespace check {
             array{ elem } => { return has_zero{ &c, t = elem, depth = depth + 1 } }
             record => {
                 let fs = struct_fields{ &c, t = x }
+                let mut i: usize = 0
+                while i < fs.len {
+                    if not has_zero{ &c, t = fs[i].ty, depth = depth + 1 } { return false }
+                    i = i + 1
+                }
+                return true
+            }
+            enumeration{ decl } => {
+                let vs = get_decl{ c, d = decl }.values
+                let mut i: usize = 0
+                while i < vs.len {
+                    if vs[i] == 0 { return true }
+                    i = i + 1
+                }
+                return false
+            }
+            sum => {
+                let vs = variants_of{ &c, t = x }
+                if vs.len == 0 { return false }
+                let fs = vs[0].fields ifnull { return true }
                 let mut i: usize = 0
                 while i < fs.len {
                     if not has_zero{ &c, t = fs[i].ty, depth = depth + 1 } { return false }

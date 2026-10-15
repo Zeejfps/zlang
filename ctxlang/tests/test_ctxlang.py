@@ -1124,8 +1124,8 @@ fn main { mut io: Io } {
             ('struct S { a: i32, b: i32 = 2 }\nconst A: S = S{ .. }', 'struct `S` is missing `a`', 2, 15),
             ('struct S { a: i32 = true }', 'expected i32, got bool', 1, 21),
             ('struct S { a: i32, b: i32 = a }', 'unknown name `a`', 1, 29),
-            ('struct S { a: []i32 = slice::empty(i32){} }',
-             "const `S::a` can't hold a pointer: it would point to memory that doesn't outlive compiling", 1, 40),
+            ('fn g {} {}\nstruct S { f: fn{} = g }',
+             "const `S::f` can't hold a function value: it would point to memory that doesn't outlive compiling", 2, 22),
             ('struct S(T) { a: ?T = null }', "field `a` can't have a default: its type mentions a generic parameter", 1, 23),
             ('union U { a{ x: i32 = 1 } }', "a union variant's field can't have a default: only a struct's can", 1, 23),
             ('error bad{ x: i32 = 1 }', "an error's field can't have a default: only a struct's can", 1, 21),
@@ -1134,6 +1134,70 @@ fn main { mut io: Io } {
             ('struct tag { n: i32 = 3 }\n#tag\nfn f {} {}', 'struct `tag` is missing `n`: `..` at the end takes it from its default', 2, 2),
         ]:
             self.assertDefaultError(src, msg, line, col)
+
+
+class ZeroValues(Base):
+    """Every type whose bytes all zero are a value of its has that as its zero value (spec
+    §11, Initialization): an enum's variant 0, a union's first variant, and so a struct holding
+    either. And an empty slice of any type is a const (§14), so a default (§7)."""
+
+    def test_enums_and_unions(self):
+        self.assertOutput('''
+enum Kind: u8 { none, panel, button }
+enum Late: i32 { a = -1, zero = 0, b = 1 }
+union Shape { dot, circle{ r: f32 } }
+union Box { full{ n: i32, on: bool }, empty }
+union Opt(T) { none, some{ v: T } }
+struct Control { kind: Kind, shape: Shape, id: i32 }
+capability Store { static last: Kind }
+fn name { k: Kind } -> []u8 { match k { none => { return "none" } panel => { return "panel" } button => { return "button" } } }
+fn show { mut io: Io, s: Store } {
+    let mut k: Kind
+    let mut l: Late
+    let mut sh: Shape
+    let mut b: Box
+    let mut o: Opt(*i32)
+    let mut c: Control
+    let mut many: [3]Kind
+    let lz: []u8 = if l == Late::zero { "zero" } else { "other" }
+    let sd: []u8 = if sh is dot { "dot" } else { "circle" }
+    _ = @fmt(&io, "{} {} {}\\n", name{ k }, lz, sd)
+    match b { full{ n, on } => { _ = @fmt(&io, "full {} {}\\n", n, on) } empty => {} }
+    let on: []u8 = if o is none { "none" } else { "some" }
+    _ = @fmt(&io, "{} {} {} {}\\n", on, name{ k = c.kind }, c.id, name{ k = many[2] })
+    _ = @fmt(&io, "{}\\n", name{ k = s.last })
+}
+fn main { mut io: Io, s: Store } { show{ &io, s } }
+''', "none zero dot\nfull 0 false\nnone none 0 none\nnone\n")
+
+    def test_still_none(self):
+        # Zero bytes aren't a value of these: an enum without a variant 0, a union whose first
+        # variant holds a pointer, and what holds one of them.
+        for src in [
+            'enum E: u8 { a = 1, b }\nfn main {} { let mut e: E\n let f = e }',
+            'union U { p{ to: *i32 }, none }\nfn main {} { let mut u: U\n let v = u }',
+            'enum E: u8 { a = 1 }\nstruct S { e: E }\nfn main {} { let mut s: S\n let t = s }',
+        ]:
+            self.assertCompileError(src, 'may be read before it is assigned')
+
+    def test_empty_slices(self):
+        self.assertOutput('''
+struct Pt { x: i32 }
+const NONE: []Pt = slice::empty(Pt){}
+struct Bag { items: []i32 = slice::empty(i32){}, points: []Pt = NONE, name: []u8 = "", n: i32 }
+fn main { mut io: Io } {
+    let b = Bag{ n = 2, .. }
+    _ = @fmt(&io, "{} {} {} {} {}\\n", b.items.len, b.points.len, b.name.len, b.n, NONE.len)
+}
+''', "0 0 0 2 0\n")
+
+    def test_a_full_slice_still_isnt_a_const(self):
+        self.assertCompileError('''
+fn ones { mut heap: arena::Arena } -> []i32 { return try! alloc::resize(i32, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(i32){}, count = 2 } }
+fn make {} -> []i32 { let mut mem: [64]u8; let mut heap = arena::Arena{ buf = mem[..], used = 0 }; return ones{ &heap } }
+const S: []i32 = make{}
+fn main {} {}
+''', "can't hold")
 
 
 class Bodies(Base):
@@ -1696,7 +1760,7 @@ fn main { mut io: Io } {
             (ENUM + 'fn f {} { let k = Kind::ident{} }', '`Kind::ident` is an enum value; write it without braces'),
             (ENUM + 'fn f {} { let k = @as(Kind, 1.5) }', '@as to an enum takes an integer'),
             (ENUM + 'fn f {} { let x = @as(f64, Kind::ident) }', '@as converts an enum to an integer type'),
-            (ENUM + 'fn f {} { let mut k: Kind\n let j = k }', '`k` may be read before it is assigned'),
+            ('enum Late: u8 { a = 1, b }\nfn f {} { let mut k: Late\n let j = k }', '`k` may be read before it is assigned'),
             (ENUM + 'fn f { k: Kind } { let ident = k else { return } }',
              'a `let` pattern needs a union or optional value, got Kind'),
         ]:

@@ -281,6 +281,9 @@ namespace comptime {
             }
             slice{ elem, mutable } => {
                 if types::prune{ s = c.ty, t = elem } == types::U8 and not mutable { return view{ &c, &r, ty, a } }
+                // An empty slice points to nothing, so it outlives compiling (§14).
+                let len = word{ &r, a = a + 8 } ifnull { return unread{ &c, r } }
+                if len == 0 { return check::Val::empty{ ty } }
                 let ptr = word{ &r, a } ifnull { return unread{ &c, r } }
                 return pointer{ &c, r, t = ty, p = ptr }
             }
