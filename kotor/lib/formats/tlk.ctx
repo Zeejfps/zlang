@@ -56,7 +56,7 @@ namespace tlk {
         let language = try le::get_u32{ data, at = 8 }
         let count = try le::get_u32{ data, at = 12 }
         let strings_at = try le::get_u32{ data, at = 16 }
-        let table_end = @as(u64, count) * @as(u64, ENTRY_SIZE) + @as(u64, HEADER_SIZE)
+        let table_end = @as(usize, count) * ENTRY_SIZE + HEADER_SIZE ifoverflow { return truncated }
         if table_end > data.len or @as(usize, strings_at) > data.len { return truncated }
         return Table{ data, owned = slice::empty(u8){}, language, count, strings_at }
     }

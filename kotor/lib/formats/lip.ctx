@@ -58,9 +58,8 @@ namespace lip {
         if not slice::eq_bytes{ a = data[..8], b = "LIP V1.0" } { return bad_magic }
         let length = try le::get_f32{ data, at = 8 }
         let count = try le::get_u32{ data, at = 12 }
-        if @as(u64, data.len) != @as(u64, HEADER_SIZE) + @as(u64, count) * @as(u64, KEY_SIZE) {
-            return bad_size{ size = data.len, count }
-        }
+        let size = HEADER_SIZE + @as(usize, count) * KEY_SIZE ifoverflow { return bad_size{ size = data.len, count } }
+        if data.len != size { return bad_size{ size = data.len, count } }
         if not (length >= 0.0) { return bad_length }               // NaN fails every comparison
         let keys = data[HEADER_SIZE..]
         let mut prev: f32 = 0.0

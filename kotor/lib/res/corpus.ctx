@@ -157,7 +157,8 @@ namespace corpus {
             let mut head: [120]u8
             let n = try fs::read_at{ &fs, file, offset = 0, into = head[..] }
             let hd = try rim::parse_header{ data = head[..n] }
-            if @as(u64, hd.count) * 32 > @as(u64, size) { return rim::bad_table }
+            let table = hd.count * 32 ifoverflow { return rim::bad_table }
+            if table > size { return rim::bad_table }
             let keys = try res::read_block{ &fs, h, file, offset = hd.keys_at, len = @as(usize, hd.count) * rim::KEY }
             defer res::free_bytes{ h, b = keys }
             return try rim::parse_members{ h = hd, keys, base = 0, size, realloc = heap::alloc, heap = h }

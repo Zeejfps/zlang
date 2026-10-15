@@ -110,10 +110,12 @@ namespace gff {
             h[k] = try le::get_u32{ data, at = 8 + 4 * k }
             k = k + 1
         }
-        let sizes: [6]u64 = [12 * @as(u64, h[1]), 12 * @as(u64, h[3]), 16 * @as(u64, h[5]), h[7], h[9], h[11]]
+        // Each section is at h[2k], h[2k + 1] entries of this many bytes.
+        let unit: [6]u32 = [12, 12, 16, 1, 1, 1]
         k = 0
         while k < 6 {
-            if @as(u64, h[2 * k]) + sizes[k] > @as(u64, data.len) { return bad_section{ section = @trunc(u32, k) } }
+            let end = h[2 * k] + h[2 * k + 1] * unit[k] ifoverflow { return bad_section{ section = @trunc(u32, k) } }
+            if end > data.len { return bad_section{ section = @trunc(u32, k) } }
             k = k + 1
         }
         if h[1] < 1 { return no_root }

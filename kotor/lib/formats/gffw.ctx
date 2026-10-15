@@ -607,24 +607,24 @@ namespace gffw {
 
         // The file: header, then structs, fields, labels, field data, field indices, list indices.
         let nl = b.labels.len
-        let so: u64 = 56
-        let fo = so + 12 * @as(u64, ns)
-        let lo = fo + 12 * @as(u64, nf)
-        let dof = lo + 16 * @as(u64, nl)
-        let fio = dof + @as(u64, b.data.len)
-        let lio = fio + 4 * @as(u64, fi.len)
-        let total = lio + 4 * @as(u64, li.len)
-        if total > 4294967295 { return too_big }
+        // Every offset and size is a u32.
+        let so: u32 = 56
+        let fo = so + 12 * @as(u32, ns) ifoverflow { return too_big }
+        let lo = fo + 12 * @as(u32, nf) ifoverflow { return too_big }
+        let dof = lo + 16 * @as(u32, nl) ifoverflow { return too_big }
+        let fio = dof + @as(u32, b.data.len) ifoverflow { return too_big }
+        let lio = fio + 4 * @as(u32, fi.len) ifoverflow { return too_big }
+        let total = lio + 4 * @as(u32, li.len) ifoverflow { return too_big }
         let mut out = list::new(u8, S){ realloc = b.realloc, heap = b.heap }
         let mut ok = false
         defer { if not ok { list::free{ list = &out } } }
         try list::reserve{ list = &out, extra = @as(usize, total) }
         try le::put_bytes{ &out, bytes = b.tag[..] }
         try le::put_bytes{ &out, bytes = "V3.2" }
-        let heads: [12]u64 = [so, @as(u64, ns), fo, @as(u64, nf), lo, @as(u64, nl), dof, @as(u64, b.data.len), fio, 4 * @as(u64, fi.len), lio, 4 * @as(u64, li.len)]
+        let heads: [12]u32 = [so, @as(u32, ns), fo, @as(u32, nf), lo, @as(u32, nl), dof, @as(u32, b.data.len), fio, lio - fio, lio, total - lio]
         let mut k: usize = 0
         while k < 12 {
-            try le::put_u32{ &out, v = @trunc(u32, heads[k]) }
+            try le::put_u32{ &out, v = heads[k] }
             k = k + 1
         }
         s = 0

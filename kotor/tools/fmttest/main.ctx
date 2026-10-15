@@ -195,6 +195,15 @@ fn check_malformed { mut io: Io, mut t: Tally, mut scratch: arena::Arena } {
         i = i + 1
     }
     expect{ &io, &t, ok = true, what = "corrupted GFFs don't panic" }
+    // A count whose size overflows is the parser's error, not a panic.
+    slice::copy(u8){ dst = copy, src = good }
+    copy[12] = 0xFF; copy[13] = 0xFF; copy[14] = 0xFF; copy[15] = 0xFF        // the struct count
+    let huge_gff = match gff::parse{ data = copy, realloc = arena::alloc, heap = &scratch } { ok => { false } gff::bad_section => { true } else => { false } }
+    expect{ &io, &t, ok = huge_gff, what = "a GFF section past 4 GiB is bad_section" }
+    let huge_lip = match lip::parse{ data = "LIP V1.0\x00\x00\x80\x3F\xFF\xFF\xFF\xFF" } { ok => { false } lip::bad_size => { true } else => { false } }
+    expect{ &io, &t, ok = huge_lip, what = "a LIP of 4 billion keys is bad_size" }
+    let huge_tlk = match tlk::parse{ data = "TLK V3.0\x00\x00\x00\x00\xFF\xFF\xFF\xFF\x14\x00\x00\x00" } { ok => { false } tlk::truncated => { true } else => { false } }
+    expect{ &io, &t, ok = huge_tlk, what = "a TLK of 4 billion entries is truncated" }
     let cut_2da = match twoda::parse{ data = "2DA V2.b\nlabel\t\x00\x05\x00\x00\x00", realloc = arena::alloc, heap = &scratch } { ok => { false } err => { true } }
     expect{ &io, &t, ok = cut_2da, what = "truncated 2DA is an error" }
     let cut_erf = match erf::parse{ data = "MOD V1.0\x00\x00", realloc = arena::alloc, heap = &scratch } { ok => { false } err => { true } }

@@ -153,14 +153,15 @@ namespace twoda {
             p = skip_name{ data, p } ifnull { return truncated }
             r = r + 1
         }
-        let ncells = @as(u64, nrows) * @as(u64, ncols)
-        if ncells * 2 + 2 > @as(u64, data.len - p) { return truncated }
+        let ncells = @as(usize, nrows) * ncols ifoverflow { return truncated }
+        let offsets = ncells * 2 + 2 ifoverflow { return truncated }
+        if offsets > data.len - p { return truncated }
         let offsets_at = p
-        let pool = data[p + @as(usize, ncells) * 2 + 2..]
+        let pool = data[p + offsets..]
 
         let columns = try alloc::resize([]u8, S){ realloc, &heap, mem = slice::empty([]u8){}, count = ncols }
         let labels = try alloc::resize([]u8, S){ realloc, &heap, mem = slice::empty([]u8){}, count = nrows }
-        let cells = try alloc::resize(u32, S){ realloc, &heap, mem = slice::empty(u32){}, count = @as(usize, ncells) }
+        let cells = try alloc::resize(u32, S){ realloc, &heap, mem = slice::empty(u32){}, count = ncells }
         fill_names{ data, at = names_at, into = columns }
         fill_names{ data, at = labels_at, into = labels }
         let mut k: usize = 0

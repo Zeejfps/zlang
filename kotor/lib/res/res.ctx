@@ -612,7 +612,8 @@ namespace res {
         let got = try fs::read_at{ &fs, file, offset = base, into = head[..] }
         let hd = try erf::parse_header{ data = head[..got] }
         let n = @as(usize, hd.count)
-        if @as(u64, n) * 32 > @as(u64, size) { return erf::bad_table }
+        let table = n * 32 ifoverflow { return erf::bad_table }
+        if table > size { return erf::bad_table }
         let keys = try read_block{ &fs, h, file, offset = @as(u64, base) + hd.keys_at, len = n * erf::KEY }
         defer free_bytes{ h, b = keys }
         let resources = try read_block{ &fs, h, file, offset = @as(u64, base) + hd.resources_at, len = n * erf::RESOURCE }
@@ -648,7 +649,8 @@ namespace res {
         let got = try fs::read_at{ &fs, file, offset = 0, into = head[..] }
         let hd = try rim::parse_header{ data = head[..got] }
         let n = @as(usize, hd.count)
-        if @as(u64, n) * 32 > @as(u64, size) { return rim::bad_table }
+        let table = n * 32 ifoverflow { return rim::bad_table }
+        if table > size { return rim::bad_table }
         let keys = try read_block{ &fs, h, file, offset = hd.keys_at, len = n * rim::KEY }
         defer free_bytes{ h, b = keys }
         return try rim::parse_members{ h = hd, keys, base = 0, size, realloc = heap::alloc, heap = h }
