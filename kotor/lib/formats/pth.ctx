@@ -23,8 +23,8 @@ namespace pth {
     fn read(S) { doc: gff::Doc, realloc: alloc::Fn(S), mut heap: S } -> !Graph {
         let points = gff::get_list{ doc, s = gff::ROOT, label = "Path_Points" } ifnull { return bad_schema{ point = 0 } }
         let links = gff::get_list{ doc, s = gff::ROOT, label = "Path_Conections" } ifnull { return bad_schema{ point = 0 } }
-        let ps = try alloc::resize(Point, S){ realloc, &heap, mem = slice::empty(Point){}, count = points.len }
-        let ls = alloc::resize(u32, S){ realloc, &heap, mem = slice::empty(u32){}, count = links.len } iferr err{ error } {
+        let ps = try alloc::make(Point, S){ realloc, &heap, count = points.len }
+        let ls = alloc::make(u32, S){ realloc, &heap, count = links.len } iferr err{ error } {
             _ = alloc::resize(Point, S){ realloc, &heap, mem = ps, count = 0 }
             return error
         }

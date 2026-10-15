@@ -42,9 +42,9 @@ namespace walkmap {
     // The material tables from surfacemat.2da (kept in the session heap).
     fn load_materials { mut m: Map, heap: *mut heap::Heap, table: twoda::Table } -> ! {
         let n = twoda::rows{ t = table }
-        m.walkable = try alloc::resize(bool, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(bool){}, count = n }
-        m.sees = try alloc::resize(bool, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(bool){}, count = n }
-        m.grass = try alloc::resize(bool, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(bool){}, count = n }
+        m.walkable = try alloc::make(bool, heap::Heap){ realloc = heap::alloc, heap, count = n }
+        m.sees = try alloc::make(bool, heap::Heap){ realloc = heap::alloc, heap, count = n }
+        m.grass = try alloc::make(bool, heap::Heap){ realloc = heap::alloc, heap, count = n }
         let mut i: usize = 0
         while i < n {
             m.walkable[i] = (twoda::get_int{ t = table, row = i, column = "walk" } ifnull 0) != 0

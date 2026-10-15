@@ -72,7 +72,7 @@ namespace gui3d {
         mdl_anim::evaluate{ model = m, player, pose }
 
         let g = try mdl_render::upload{ &dev, realloc = arena::alloc, heap = &heap, model = m }
-        let materials = try alloc::resize(render::Material, arena::Arena){ realloc = arena::alloc, heap = &heap, mem = slice::empty(render::Material){}, count = m.meshes.len }
+        let materials = try alloc::make(render::Material, arena::Arena){ realloc = arena::alloc, heap = &heap, count = m.meshes.len }
         let mut i: usize = 0
         while i < materials.len {
             let mesh = m.meshes[i]
@@ -85,7 +85,7 @@ namespace gui3d {
             i = i + 1
         }
 
-        let emitting = try alloc::resize(Emitting, arena::Arena){ realloc = arena::alloc, heap = &heap, mem = slice::empty(Emitting){}, count = m.emitters.len }
+        let emitting = try alloc::make(Emitting, arena::Arena){ realloc = arena::alloc, heap = &heap, count = m.emitters.len }
         i = 0
         while i < emitting.len {
             emitting[i] = try make_emitting{ &fs, &dev, heap = &heap, &mats, rm, model = m, index = @as(u32, i) }

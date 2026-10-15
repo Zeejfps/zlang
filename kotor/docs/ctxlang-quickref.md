@@ -118,14 +118,19 @@ let mut h = heap::new{ &mem }                                    // kotor/lib/ba
 let mut xs = list::new(u32){ realloc = heap::alloc, heap = &h }
 try list::push{ list = &xs, item = 7 }                           // fails with alloc::out_of_memory
 let items = list::items{ list = xs }                             // []u32 view
+let owned = try list::take{ list = &xs }                         // []mut u32 that frees as one
+let counts = try alloc::make(u32, heap::Heap){ realloc = heap::alloc, heap = &h, count = 64 }   // zeroed
 let mut m = map::new(resref::ResRef, u32){ realloc = heap::alloc, heap = &h, hash = resref::hash, eq = resref::eq }
 let p = try alloc::new(Thing, heap::Heap){ realloc = heap::alloc, heap = &h, value = Thing{ ... } }
 ```
 
 - Lists and maps keep a pointer to their allocator state: the state must outlive them.
+- New memory is zero: every allocator hands out zeros past what a resize keeps, an arena after a
+  `reset` or `restore` too.
 - **Escape check:** you can't return or store the address of a local (or anything derived from
   it) where it outlives the local. Put long-lived data in heap memory and keep pointers to it.
-- Arenas (`arena::new{ buf }`) for scratch; the heap for everything with a lifetime. For a big
+- Arenas (`arena::new{ buf }`) for scratch, with `let m = arena::mark{ heap }` and
+  `arena::restore{ &heap, to = m }` around each item; the heap for everything with a lifetime. For a big
   arena's buffer, `mem::reserve{ &mem, size }` commits only what the arena reaches (Windows
   commits all of `mem::pages` at once); nothing but an arena may use it.
 

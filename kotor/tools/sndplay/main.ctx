@@ -162,7 +162,7 @@ fn write_mixed { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Are
     let limit: u64 = if opts.seconds > 0.0 { @as(u64, opts.seconds * @as(f64, opts.rate)) } else { 0xFFFFFFFFFFFF }
     let mut ticks: u64 = 0
     // Rendered whole first, to know the length for the header: up to 10 minutes.
-    let frames_mem = try alloc::resize(i16, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(i16){}, count = 2 * 48000 * 600 }
+    let frames_mem = try alloc::make(i16, arena::Arena){ realloc = arena::alloc, &heap, count = 2 * 48000 * 600 }
     let mut pending: [4096]i16
     let mut pending_frames: usize = 0
     let mut n: usize = 0

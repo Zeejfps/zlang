@@ -53,7 +53,7 @@ namespace gff_check {
         let tag = doc.tag
 
         // The engine's layout, and the semantic round trip through it.
-        let mark = scratch.used
+        let mark = arena::mark{ heap = scratch }
         let engine = write{ &scratch, doc, order = gffw::Order::dfs, layout = gffw::ENGINE } iferr err{ error } {
             st.semantic_failed = st.semantic_failed + 1
             _ = @fmt(&io, "gff FAIL write {}: {}\n", copy, error)
@@ -73,7 +73,7 @@ namespace gff_check {
             note{ st = &st, source, setting = 0, tag }
             return
         }
-        scratch.used = mark
+        arena::restore{ heap = &scratch, to = mark }
 
         let setting = classify{ &scratch, doc, data } ifnull UNEXPLAINED
         if setting == UNEXPLAINED {
@@ -89,7 +89,7 @@ namespace gff_check {
         let orders: [3]gffw::Order = [gffw::Order::dfs, gffw::Order::elements, gffw::Order::keep]
         let fis: [3]gffw::Fi = [gffw::Fi::second, gffw::Fi::by_struct, gffw::Fi::move]
         let lis: [2]gffw::Li = [gffw::Li::by_field, gffw::Li::move]
-        let mark = scratch.used
+        let mark = arena::mark{ heap = scratch }
         let mut o: usize = 0
         while o < 3 {
             let mut b = gffw::new{ realloc = arena::alloc, heap = &scratch, tag = doc.tag[..] } iferr { return null }
@@ -98,15 +98,15 @@ namespace gff_check {
             while i < 3 {
                 let mut j: usize = 0
                 while j < 2 {
-                    let inner = scratch.used
+                    let inner = arena::mark{ heap = scratch }
                     let out = gffw::finish{ &b, layout = gffw::Layout{ fi = fis[i], li = lis[j], late = 0 } } iferr { return null }
                     if slice::eq_bytes{ a = out, b = data } { return o * 6 + i * 2 + j }
-                    scratch.used = inner
+                    arena::restore{ heap = &scratch, to = inner }
                     j = j + 1
                 }
                 i = i + 1
             }
-            scratch.used = mark
+            arena::restore{ heap = &scratch, to = mark }
             o = o + 1
         }
         // Built, then fields appended in place: the last k fields are late, none a struct or list.
@@ -121,10 +121,10 @@ namespace gff_check {
             while i < 3 {
                 let mut j: usize = 0
                 while j < 2 {
-                    let inner = scratch.used
+                    let inner = arena::mark{ heap = scratch }
                     let out = gffw::finish{ &b, layout = gffw::Layout{ fi = fis[i], li = lis[j], late = @trunc(u32, k) } } iferr { return null }
                     if slice::eq_bytes{ a = out, b = data } { return 18 + 12 + i * 2 + j }
-                    scratch.used = inner
+                    arena::restore{ heap = &scratch, to = inner }
                     j = j + 1
                 }
                 i = i + 1
@@ -293,7 +293,7 @@ namespace gff_check {
         p.links = p.links + g.links.len
         if not pth::is_packed{ g } { p.unpacked = p.unpacked + 1 }
         // Components by union-find over the links.
-        let root = alloc::resize(u32, arena::Arena){ realloc = arena::alloc, heap = &scratch, mem = slice::empty(u32){}, count = n } iferr { return }
+        let root = alloc::make(u32, arena::Arena){ realloc = arena::alloc, heap = &scratch, count = n } iferr { return }
         let mut i: usize = 0
         while i < n {
             root[i] = @trunc(u32, i)

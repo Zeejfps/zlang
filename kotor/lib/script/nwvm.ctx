@@ -150,8 +150,8 @@ namespace nwvm {
             at = at + raw.size
             n = n + 1
         }
-        let ins = try alloc::resize(Ins, S){ realloc, &heap, mem = slice::empty(Ins){}, count = n + 1 }
-        let offs = alloc::resize(u32, S){ realloc, &heap, mem = slice::empty(u32){}, count = n + 1 } iferr err{ error } {
+        let ins = try alloc::make(Ins, S){ realloc, &heap, count = n + 1 }
+        let offs = alloc::make(u32, S){ realloc, &heap, count = n + 1 } iferr err{ error } {
             _ = alloc::resize(Ins, S){ realloc, &heap, mem = ins, count = 0 }
             return error
         }
@@ -441,12 +441,12 @@ namespace nwvm {
         let cells = @as(usize, limits.stack_cells)
         let slots = @as(usize, limits.string_slots)
         if slots == 0 { @panic("nwvm::new: no string slots") }
-        let types = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = cells }
-        let vals = try alloc::resize(Cell, S){ realloc, &heap, mem = slice::empty(Cell){}, count = cells }
-        let strs = try alloc::resize([]u8, S){ realloc, &heap, mem = slice::empty([]u8){}, count = slots }
-        let free = try alloc::resize(u32, S){ realloc, &heap, mem = slice::empty(u32){}, count = slots }
-        let marks = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = slots }
-        let text = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = @as(usize, limits.text_bytes) }
+        let types = try alloc::make(u8, S){ realloc, &heap, count = cells }
+        let vals = try alloc::make(Cell, S){ realloc, &heap, count = cells }
+        let strs = try alloc::make([]u8, S){ realloc, &heap, count = slots }
+        let free = try alloc::make(u32, S){ realloc, &heap, count = slots }
+        let marks = try alloc::make(u8, S){ realloc, &heap, count = slots }
+        let text = try alloc::make(u8, S){ realloc, &heap, count = @as(usize, limits.text_bytes) }
         let mut vm = Vm{
             types, vals, sp = 0, bp = 0, rets = [0; 128], nret = 0,
             strs, nstr = 1, free, nfree = 0, marks, text, text_used = 0,
@@ -1476,12 +1476,12 @@ namespace nwvm {
             if vm.types[i] == STRING { text_len = text_len + 4 + vm.strs[vm.vals[i].u].len }
             k = k + 1
         }
-        let types = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = n }
-        let vals = alloc::resize(Cell, S){ realloc, &heap, mem = slice::empty(Cell){}, count = n } iferr err{ error } {
+        let types = try alloc::make(u8, S){ realloc, &heap, count = n }
+        let vals = alloc::make(Cell, S){ realloc, &heap, count = n } iferr err{ error } {
             _ = alloc::resize(u8, S){ realloc, &heap, mem = types, count = 0 }
             return error
         }
-        let text = alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = text_len } iferr err{ error } {
+        let text = alloc::make(u8, S){ realloc, &heap, count = text_len } iferr err{ error } {
             _ = alloc::resize(u8, S){ realloc, &heap, mem = types, count = 0 }
             _ = alloc::resize(Cell, S){ realloc, &heap, mem = vals, count = 0 }
             return error
@@ -1629,12 +1629,12 @@ namespace nwvm {
             }
             k = k + 1
         }
-        let types = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = n }
-        let vals = alloc::resize(Cell, S){ realloc, &heap, mem = slice::empty(Cell){}, count = n } iferr err{ error } {
+        let types = try alloc::make(u8, S){ realloc, &heap, count = n }
+        let vals = alloc::make(Cell, S){ realloc, &heap, count = n } iferr err{ error } {
             _ = alloc::resize(u8, S){ realloc, &heap, mem = types, count = 0 }
             return error
         }
-        let text = alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = text_len } iferr err{ error } {
+        let text = alloc::make(u8, S){ realloc, &heap, count = text_len } iferr err{ error } {
             _ = alloc::resize(u8, S){ realloc, &heap, mem = types, count = 0 }
             _ = alloc::resize(Cell, S){ realloc, &heap, mem = vals, count = 0 }
             return error

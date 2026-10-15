@@ -11,7 +11,7 @@ fn upload_head {
     mut fs: Fs, mut dev: gpu::Device, mut heap: arena::Arena, mut mats: material::Cache, rm: res::Manager, model: *mdl::Model,
 } -> !Gfx {
     let g = try mdl_render::upload{ &dev, realloc = arena::alloc, &heap, model }
-    let materials = try alloc::resize(render::Material, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(render::Material){}, count = model.meshes.len }
+    let materials = try alloc::make(render::Material, arena::Arena){ realloc = arena::alloc, &heap, count = model.meshes.len }
     let mut i: usize = 0
     while i < materials.len {
         let m = model.meshes[i]
@@ -165,9 +165,9 @@ fn save_sheet { mut io: Io, mut fs: Fs, mut heap: arena::Arena, path: []u8, rgba
 fn render_mapping { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena, opts: Options, h: Head, g: Gfx, cam: Cam } -> ! {
     let talk = h.talk ifnull { return }
     let size = @as(usize, opts.size)
-    let tile = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = size * size * 4 }
+    let tile = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = size * size * 4 }
     let sheet_w = size * 8
-    let sheet = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = sheet_w * size * 4 * 4 }
+    let sheet = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = sheet_w * size * 4 * 4 }
     let mut m: usize = 0
     while m < 2 {
         let mapping = if m == 0 { lipsync::Mapping::ratio } else { lipsync::Mapping::frame }
@@ -191,9 +191,9 @@ fn render_mapping { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: ren
 fn render_line { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena, opts: Options, h: Head, g: Gfx, cam: Cam, track: *lipsync::Track } -> ! {
     let talk = h.talk ifnull { return }
     let size = @as(usize, opts.size)
-    let tile = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = size * size * 4 }
+    let tile = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = size * size * 4 }
     let sheet_w = size * 4
-    let sheet = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = sheet_w * size * 4 * 2 }
+    let sheet = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = sheet_w * size * 4 * 2 }
     let len = lipsync::length{ t = track }
     _ = @fmt(&io, "{}: {} keys over {} s; tiles left to right, top to bottom:\n", h.name, track.lip.count, len)
     let mut i: usize = 0

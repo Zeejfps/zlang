@@ -51,11 +51,11 @@ namespace scene {
         let vcount = @as(usize, mesh.vertex_count)
         let ntri = mesh.indices.len / 3
         if mesh.positions.len < vcount * 3 or ntri == 0 { return RayTree{ .. } }
-        let wv = try alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(math::Vec3){}, count = vcount }
+        let wv = try alloc::make(math::Vec3, heap::Heap){ realloc = heap::alloc, heap, count = vcount }
         defer _ = alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap, mem = wv, count = 0 }
-        let centers = try alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(math::Vec3){}, count = ntri }
+        let centers = try alloc::make(math::Vec3, heap::Heap){ realloc = heap::alloc, heap, count = ntri }
         defer _ = alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap, mem = centers, count = 0 }
-        let order = try alloc::resize(u32, arena::Arena){ realloc = arena::alloc, heap = arena, mem = slice::empty(u32){}, count = ntri }
+        let order = try alloc::make(u32, arena::Arena){ realloc = arena::alloc, heap = arena, count = ntri }
         let mut v: usize = 0
         while v < vcount {
             wv[v] = math::mat4::transform_point{ m = world, p = math::Vec3{ x = mesh.positions[v * 3], y = mesh.positions[v * 3 + 1], z = mesh.positions[v * 3 + 2] } }
@@ -76,7 +76,7 @@ namespace scene {
         }
         if n == 0 { return RayTree{ .. } }
         // Leaves hold at least half a leaf's worth (median splits), so this many nodes are plenty.
-        let nodes = try alloc::resize(RayNode, arena::Arena){ realloc = arena::alloc, heap = arena, mem = slice::empty(RayNode){}, count = 2 * (n / (LEAF_TRIANGLES / 2) + 1) }
+        let nodes = try alloc::make(RayNode, arena::Arena){ realloc = arena::alloc, heap = arena, count = 2 * (n / (LEAF_TRIANGLES / 2) + 1) }
         let mut next: usize = 0
         _ = build_ray_node{ nodes, &next, items = order[..n], base = 0, centers, wv, indices = mesh.indices }
         return RayTree{ world, nodes = nodes[..next], order = order[..n] }

@@ -101,11 +101,11 @@ namespace bink_video {
         if width == 0 or height == 0 or width > MAX_SIDE or height > MAX_SIDE { return bad_size{ width, height } }
         let luma = buffer_size{ blocks_wide = (width + 7) / 8, blocks_high = (height + 7) / 8 }
         let chroma = buffer_size{ blocks_wide = (width + 15) / 16, blocks_high = (height + 15) / 16 }
-        let pixel_mem = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = 2 * (luma.rows * luma.stride + 2 * chroma.rows * chroma.stride) }
+        let pixel_mem = try alloc::make(u8, S){ realloc, &heap, count = 2 * (luma.rows * luma.stride + 2 * chroma.rows * chroma.stride) }
         // Every bundle can hold its longest run: a count is at most 2^bits - 1, and the luma
         // plane, the widest, needs the most bits.
         let cap = bundle_capacity{ width }
-        let value_mem = alloc::resize(i32, S){ realloc, &heap, mem = slice::empty(i32){}, count = 9 * cap } iferr err{ error } {
+        let value_mem = alloc::make(i32, S){ realloc, &heap, count = 9 * cap } iferr err{ error } {
             _ = alloc::resize(u8, S){ realloc, &heap, mem = pixel_mem, count = 0 }
             return error
         }

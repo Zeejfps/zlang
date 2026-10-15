@@ -369,7 +369,7 @@ namespace rules {
         defer free_held{ h = ft, &heap }
         let rows = twoda::rows{ t = ft.t }
         let n = if rows > MAX_FEATS { MAX_FEATS } else { rows }
-        out.feats = try alloc::resize(FeatRow, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = slice::empty(FeatRow){}, count = n }
+        out.feats = try alloc::make(FeatRow, heap::Heap){ realloc = heap::alloc, heap = &heap, count = n }
         let mut i: usize = 0
         while i < n {
             let f = &out.feats[i]
@@ -442,7 +442,7 @@ namespace rules {
         defer free_held{ h = sp, &heap }
         let rows = twoda::rows{ t = sp.t }
         let n = if rows > MAX_SPELLS { MAX_SPELLS } else { rows }
-        out.spells = try alloc::resize(SpellRow, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = slice::empty(SpellRow){}, count = n }
+        out.spells = try alloc::make(SpellRow, heap::Heap){ realloc = heap::alloc, heap = &heap, count = n }
         let mut i: usize = 0
         while i < n {
             let s = &out.spells[i]
@@ -482,7 +482,7 @@ namespace rules {
         let bi = try load_held{ &fs, rm, &heap, name = "baseitems" }
         defer free_held{ h = bi, &heap }
         let n = twoda::rows{ t = bi.t }
-        out.baseitems = try alloc::resize(BaseItemRow, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = slice::empty(BaseItemRow){}, count = n }
+        out.baseitems = try alloc::make(BaseItemRow, heap::Heap){ realloc = heap::alloc, heap = &heap, count = n }
         let mut i: usize = 0
         while i < n {
             let b = &out.baseitems[i]
@@ -523,7 +523,7 @@ namespace rules {
         let ap = try load_held{ &fs, rm, &heap, name = "appearance" }
         defer free_held{ h = ap, &heap }
         let n = twoda::rows{ t = ap.t }
-        out.appearance_size = try alloc::resize(i32, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = slice::empty(i32){}, count = n }
+        out.appearance_size = try alloc::make(i32, heap::Heap){ realloc = heap::alloc, heap = &heap, count = n }
         let mut i: usize = 0
         while i < n {
             out.appearance_size[i] = cell_int{ t = ap.t, row = i, col = "sizecategory", dflt = 3 }

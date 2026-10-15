@@ -215,8 +215,8 @@ fn disassemble { mut t: Text, mut why: Text, mut heap: arena::Arena, data: []u8,
     let items: []ncs::Raw = list::items{ list = instrs }
 
     // Which offsets start an instruction, and the label each offset gets.
-    let starts = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = data.len }
-    let kinds = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = data.len }
+    let starts = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = data.len }
+    let kinds = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = data.len }
     slice::fill(u8){ s = starts, v = 0 }
     slice::fill(u8){ s = kinds, v = NO_LABEL }
     let mut k: usize = 0

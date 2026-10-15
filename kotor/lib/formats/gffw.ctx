@@ -702,7 +702,7 @@ namespace gffw {
 
     fn temp_u32(S) { mut t: Temp(S), n: usize, fill: u32 } -> ![]mut u32 {
         try list::reserve{ list = &t.blocks, extra = 1 }
-        let a = try alloc::resize(u32, S){ realloc = t.realloc, heap = t.heap, mem = slice::empty(u32){}, count = n }
+        let a = try alloc::make(u32, S){ realloc = t.realloc, heap = t.heap, count = n }
         slice::fill(u32){ s = a, v = fill }
         try list::push{ list = &t.blocks, item = slice::cast(u32, u8){ s = a } }
         return a

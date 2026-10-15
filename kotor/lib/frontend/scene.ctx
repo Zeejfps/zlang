@@ -15,7 +15,7 @@ namespace frontend {
     // Builds the scene; null when the install lacks the model or anything fails (the menu then
     // shows the panel's still picture).
     fn make_scene { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } -> ?*mut MenuScene {
-        let mem = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = fe.heap, mem = slice::empty(u8){}, count = SCENE_MEMORY } iferr { return null }
+        let mem = alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap = fe.heap, count = SCENE_MEMORY } iferr { return null }
         let ar = alloc::new(arena::Arena, heap::Heap){ realloc = heap::alloc, heap = fe.heap, value = arena::new{ buf = mem } } iferr { return null }
         let models = alloc::new(mdl_cache::Cache, heap::Heap){ realloc = heap::alloc, heap = fe.heap, value = mdl_cache::new{ rm = g.rm, keep = ar } } iferr { return null }
         let scene = gui3d::load{

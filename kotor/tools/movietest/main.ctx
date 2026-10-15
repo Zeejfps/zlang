@@ -65,7 +65,7 @@ fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut 
 
     let mut tables = try movie::load_tables{ &fs, realloc = heap::alloc, heap = &h, game = o.game }
     let size = gpu::screen_size{ dev }
-    let pixels = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
+    let pixels = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
 
     if o.show {
         let opened = audio::open{ &sdl, rate = 44100, latency_ms = 60 } iferr err{ error } {

@@ -24,14 +24,14 @@ namespace mg {
         if found == null {
             mdl_anim::reset{ model, pose }
             mdl_anim::finish{ model, pose }
-            let one = try alloc::resize(math::Mat4, S){ realloc, &heap, mem = slice::empty(math::Mat4){}, count = 1 }
+            let one = try alloc::make(math::Mat4, S){ realloc, &heap, count = 1 }
             one[0] = pose.world[hook]
             return Rail{ length = 0.0, step = RAIL_STEP, mats = one }
         }
         let binding = try mdl_anim::bind(S){ realloc, &heap, model, animation = found.animation }
         let length = found.animation.length
         let count = @as(usize, length / RAIL_STEP) + 2
-        let mats = try alloc::resize(math::Mat4, S){ realloc, &heap, mem = slice::empty(math::Mat4){}, count }
+        let mats = try alloc::make(math::Mat4, S){ realloc, &heap, count }
         let mut i: usize = 0
         while i < count {
             let t = math::min{ a = @as(f32, i) * RAIL_STEP, b = length }

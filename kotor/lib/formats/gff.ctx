@@ -138,11 +138,11 @@ namespace gff {
         }
         let mut ok = false
         defer { if not ok { free{ doc, realloc, &heap } } }
-        doc.structs = try alloc::resize(Struct, S){ realloc, &heap, mem = slice::empty(Struct){}, count = h[1] }
-        doc.fields = try alloc::resize(Field, S){ realloc, &heap, mem = slice::empty(Field){}, count = h[3] }
-        doc.labels = try alloc::resize([]u8, S){ realloc, &heap, mem = slice::empty([]u8){}, count = h[5] }
-        doc.members = try alloc::resize(u32, S){ realloc, &heap, mem = slice::empty(u32){}, count = h[3] }
-        doc.elements = try alloc::resize(u32, S){ realloc, &heap, mem = slice::empty(u32){}, count = @as(usize, h[11]) / 4 }
+        doc.structs = try alloc::make(Struct, S){ realloc, &heap, count = h[1] }
+        doc.fields = try alloc::make(Field, S){ realloc, &heap, count = h[3] }
+        doc.labels = try alloc::make([]u8, S){ realloc, &heap, count = h[5] }
+        doc.members = try alloc::make(u32, S){ realloc, &heap, count = h[3] }
+        doc.elements = try alloc::make(u32, S){ realloc, &heap, count = @as(usize, h[11]) / 4 }
 
         // Mark everything unreached: a struct's count NONE, a field's label NONE.
         let mut i: usize = 0

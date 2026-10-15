@@ -219,7 +219,7 @@ namespace mg {
             }
         }
         if let es = gff::get_list{ doc, s = m, label = "Enemies" } {
-            let out = try alloc::resize(Follower, S){ realloc, &heap, mem = slice::empty(Follower){}, count = es.len }
+            let out = try alloc::make(Follower, S){ realloc, &heap, count = es.len }
             let mut i: usize = 0
             while i < es.len {
                 out[i] = read_follower{ doc, s = es[i] }
@@ -228,7 +228,7 @@ namespace mg {
             a.enemies = out
         }
         if let os = gff::get_list{ doc, s = m, label = "Obstacles" } {
-            let out = try alloc::resize(resref::ResRef, S){ realloc, &heap, mem = slice::empty(resref::ResRef){}, count = os.len }
+            let out = try alloc::make(resref::ResRef, S){ realloc, &heap, count = os.len }
             let mut i: usize = 0
             while i < os.len {
                 out[i] = ref_of{ doc, s = os[i], label = "Name" }

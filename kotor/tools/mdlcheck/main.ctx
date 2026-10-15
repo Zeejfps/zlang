@@ -312,7 +312,7 @@ fn check_model { mut r: Report, mut t: Totals, mut scratch: Heap, label: []u8, m
     t.animations = t.animations + model.animations.len
 
     // Bind transforms from the node headers, for the skins' inverse binds.
-    let bind = alloc::resize(math::Mat4, Heap){ realloc = arena::alloc, heap = &scratch, mem = slice::empty(math::Mat4){}, count = model.nodes.len } iferr {
+    let bind = alloc::make(math::Mat4, Heap){ realloc = arena::alloc, heap = &scratch, count = model.nodes.len } iferr {
         fail{ &r, kind = "check: out of memory", model = label, detail = @fmt("") }
         return
     }
@@ -539,7 +539,7 @@ fn check_skin { mut r: Report, label: []u8, name: []u8, m: mdl::Mesh, skin: mdl:
 // The tree holds each face in one leaf, children sit in their parents, leaf boxes hold their
 // faces (77 meshes have leaves that don't, and m02af_01a's tree leaves out 30 faces).
 fn check_aabb { mut r: Report, mut scratch: Heap, label: []u8, name: []u8, m: mdl::Mesh, tree: mdl::Aabb } {
-    let seen = alloc::resize(u32, Heap){ realloc = arena::alloc, heap = &scratch, mem = slice::empty(u32){}, count = m.faces.len } iferr { return }
+    let seen = alloc::make(u32, Heap){ realloc = arena::alloc, heap = &scratch, count = m.faces.len } iferr { return }
     slice::fill(u32){ s = seen, v = 0 }
     let mut leaves: usize = 0
     let mut outside: u32 = 0
@@ -766,7 +766,7 @@ fn append { into: []mut u8, len: usize, s: []u8 } -> []u8 {
 }
 
 fn copy_lower { mut heap: Heap, s: []u8 } -> ![]u8 {
-    let out = try alloc::resize(u8, Heap){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = s.len }
+    let out = try alloc::make(u8, Heap){ realloc = arena::alloc, &heap, count = s.len }
     let mut i: usize = 0
     while i < s.len {
         out[i] = ascii::to_lower{ c = s[i] }

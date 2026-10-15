@@ -108,7 +108,7 @@ fn seconds_since { mut sdl: sdl::Sdl, start: u64 } -> f64 {
 
 // a + "/" + b, from the arena.
 fn join { mut heap: arena::Arena, a: []u8, b: []u8 } -> []u8 {
-    let out = try! alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = a.len + 1 + b.len }
+    let out = try! alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = a.len + 1 + b.len }
     slice::copy(u8){ dst = out[..a.len], src = a }
     out[a.len] = '/'
     slice::copy(u8){ dst = out[a.len + 1..], src = b }
@@ -137,7 +137,7 @@ fn walk {
         let name = names[i]
         let path = join{ heap = &walk_heap, a = dir, b = name }
         if ends_with_ci{ s = name, suffix = ".wav" } or ends_with_ci{ s = name, suffix = ".mp3" } {
-            let mark = file_heap.used
+            let mark = arena::mark{ heap = file_heap }
             let bytes = fs::read_all{ &fs, heap = &file_heap, realloc = arena::alloc, path }
             match bytes {
                 ok{ value } => { check_sound{ &io, &fs, &proc, &sdl, &c, heap = &file_heap, stream, opts, label = path, bytes = value } }
@@ -147,7 +147,7 @@ fn walk {
                     _ = @fmt(&io, "FAIL {}: can't read: {}\n", path, error)
                 }
             }
-            file_heap.used = mark
+            arena::restore{ heap = &file_heap, to = mark }
         } else if name.len > 0 and name[0] != '.' {
             walk{ &io, &fs, &proc, &sdl, &c, &walk_heap, &file_heap, stream, opts, dir = path }
         }
@@ -170,7 +170,7 @@ fn check_archives {
         let f = found[i]
         i = i + 1
         if f.loc.class == res::Class::dir { continue }
-        let mark = file_heap.used
+        let mark = arena::mark{ heap = file_heap }
         let mut label: [512]u8
         let mut n = append{ into = label[..], at = 0, b = res::source_path{ rm, loc = f.loc } }
         let member = res::member_file{ rm, loc = f.loc }
@@ -190,7 +190,7 @@ fn check_archives {
                 _ = @fmt(&io, "FAIL {}: can't read: {}\n", label[..n], error)
             }
         }
-        file_heap.used = mark
+        arena::restore{ heap = &file_heap, to = mark }
     }
 }
 
@@ -239,7 +239,7 @@ fn check_sound {
     }
     let mut keep = slice::empty(i16){}
     if compare {
-        keep = alloc::resize(i16, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(i16){}, count = @as(usize, expected) * ch } iferr {
+        keep = alloc::make(i16, arena::Arena){ realloc = arena::alloc, &heap, count = @as(usize, expected) * ch } iferr {
             compare = false
             slice::empty(i16){}
         }

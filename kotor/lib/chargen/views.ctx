@@ -21,7 +21,7 @@ namespace chargen {
     fn ensure_models { st: *mut State, rm: res::Manager } -> bool {
         if st.views.failed { return false }
         if st.views.models != null { return true }
-        let mem = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = st.heap, mem = slice::empty(u8){}, count = VIEW_MEMORY } iferr {
+        let mem = alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap = st.heap, count = VIEW_MEMORY } iferr {
             st.views.failed = true
             return false
         }
@@ -52,7 +52,7 @@ namespace chargen {
             preview3d::set_appearance{ preview = existing, &fs, &dev, rm = g.rm, models, mats = g.cache, appearance, head = -1 } iferr {}
             return
         }
-        let mem = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = st.heap, mem = slice::empty(u8){}, count = PREVIEW_MEMORY } iferr { return }
+        let mem = alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap = st.heap, count = PREVIEW_MEMORY } iferr { return }
         let p = preview3d::make{
             &fs, &dev, buf = mem, rm = g.rm, models, mats = g.cache,
             appearance_2da = st.data.appearance.t, heads_2da = st.data.heads.t, appearance, head = -1, female, kind, alignment = 50,

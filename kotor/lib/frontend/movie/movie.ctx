@@ -338,7 +338,7 @@ namespace movie {
         let ext = if text::find_byte{ s = name, c = '.' } == null { ".bik" } else { "" }
         let sep: usize = if game.len > 0 and game[game.len - 1] != '/' and game[game.len - 1] != '\\' { 1 } else { 0 }
         let n = game.len + sep + dir.len + name.len + ext.len
-        let out = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = n }
+        let out = try alloc::make(u8, S){ realloc, &heap, count = n }
         let mut at: usize = 0
         slice::copy(u8){ dst = out[at..at + game.len], src = game }
         at = at + game.len

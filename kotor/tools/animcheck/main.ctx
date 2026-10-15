@@ -315,7 +315,7 @@ fn to_lower { into: []mut u8, s: []u8 } -> []u8 {
 }
 
 fn copy { mut heap: Heap, s: []u8 } -> ![]u8 {
-    let out = try alloc::resize(u8, Heap){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = s.len }
+    let out = try alloc::make(u8, Heap){ realloc = arena::alloc, &heap, count = s.len }
     slice::copy(u8){ dst = out, src = s }
     return out
 }

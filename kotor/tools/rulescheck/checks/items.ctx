@@ -422,7 +422,7 @@ namespace check {
 
     // Every copy of every UTI the install has (modules and saves included), as corpus::each walks them.
     fn items_scan_install { mut io: Io, mut fs: Fs, mut r: Report, mut heap: heap::Heap, rm: res::Manager, tables: *rules::Tables } {
-        let buf = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = slice::empty(u8){}, count = 4 * 1024 * 1024 } iferr err{ error } {
+        let buf = alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap = &heap, count = 4 * 1024 * 1024 } iferr err{ error } {
             fail{ &io, &r, name = "items: no memory for the scratch arena", detail = 0 }
             return
         }

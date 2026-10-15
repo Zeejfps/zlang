@@ -501,7 +501,7 @@ fn draw_frame { mut gl: gl::Gl, scene: Scene, t: f32 } {
 // Reads the target back and writes it to `path` as an RGB PNG, top row first.
 fn screenshot { mut io: Io, mut fs: Fs, mut gl: gl::Gl, mut heap: arena::Arena, t: gl::Target, path: []u8 } -> ! {
     let size = @as(usize, t.width) * @as(usize, t.height) * 4
-    let pixels = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = size }
+    let pixels = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = size }
     defer _ = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = pixels, count = 0 }
     gl::read_rgba{ &gl, t, into = pixels }
     make_parent{ &fs, path }

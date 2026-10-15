@@ -106,8 +106,8 @@ namespace bink_audio {
 
         let tail_len = channels * overlap
         let total = channels * n + 6 * n + tail_len
-        let work = try alloc::resize(f64, S){ realloc, &heap, mem = slice::empty(f64){}, count = total }
-        let rev = alloc::resize(u32, S){ realloc, &heap, mem = slice::empty(u32){}, count = n / 2 } iferr err{ error } {
+        let work = try alloc::make(f64, S){ realloc, &heap, count = total }
+        let rev = alloc::make(u32, S){ realloc, &heap, count = n / 2 } iferr err{ error } {
             _ = alloc::resize(f64, S){ realloc, &heap, mem = work, count = 0 }
             return error
         }

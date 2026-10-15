@@ -9,7 +9,7 @@ namespace fxhud {
         if t.count == 0 { return }
         if not h.tried {
             h.tried = true
-            h.glyphs = alloc::resize(render::Glyph, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(render::Glyph){}, count = 256 } iferr { return }
+            h.glyphs = alloc::make(render::Glyph, heap::Heap){ realloc = heap::alloc, heap = w.heap, count = 256 } iferr { return }
             h.font = font::load{ fs = &w.fs, &dev, h = w.heap, rm = w.rm.*, name = "fnt_console", variant = false, glyphs = h.glyphs } iferr { null }
             if h.font == null { h.font = font::load{ fs = &w.fs, &dev, h = w.heap, rm = w.rm.*, name = "fnt_d16x16", variant = true, glyphs = h.glyphs } iferr { null } }
         }

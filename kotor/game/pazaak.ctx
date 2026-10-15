@@ -105,7 +105,7 @@ namespace pz_game {
         let start = sdl::counter{ &sdl }
         let mut last = start
         let mut closed = false
-        let silent = try alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(i16){}, count = 2048 }
+        let silent = try alloc::make(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, count = 2048 }
         defer _ = alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = silent, count = 0 }
         while not s.done and not closed {
             while true {

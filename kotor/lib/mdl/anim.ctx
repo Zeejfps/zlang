@@ -58,13 +58,13 @@ namespace mdl_anim {
     fn make_pose(S) { realloc: alloc::Fn(S), mut heap: S, model: *mdl::Model } -> !Pose {
         let n = model.nodes.len
         let pose = Pose{
-            nodes = try alloc::resize(NodeState, S){ realloc, &heap, mem = slice::empty(NodeState){}, count = n },
-            lights = try alloc::resize(mdl::LightProps, S){ realloc, &heap, mem = slice::empty(mdl::LightProps){}, count = model.lights.len },
-            emitters = try alloc::resize(mdl::EmitterProps, S){ realloc, &heap, mem = slice::empty(mdl::EmitterProps){}, count = model.emitters.len },
-            world = try alloc::resize(math::Mat4, S){ realloc, &heap, mem = slice::empty(math::Mat4){}, count = n },
-            alpha = try alloc::resize(f32, S){ realloc, &heap, mem = slice::empty(f32){}, count = n },
-            swings = try alloc::resize(Swing, S){ realloc, &heap, mem = slice::empty(Swing){}, count = model.meshes.len },
-            held = try alloc::resize(bool, S){ realloc, &heap, mem = slice::empty(bool){}, count = n },
+            nodes = try alloc::make(NodeState, S){ realloc, &heap, count = n },
+            lights = try alloc::make(mdl::LightProps, S){ realloc, &heap, count = model.lights.len },
+            emitters = try alloc::make(mdl::EmitterProps, S){ realloc, &heap, count = model.emitters.len },
+            world = try alloc::make(math::Mat4, S){ realloc, &heap, count = n },
+            alpha = try alloc::make(f32, S){ realloc, &heap, count = n },
+            swings = try alloc::make(Swing, S){ realloc, &heap, count = model.meshes.len },
+            held = try alloc::make(bool, S){ realloc, &heap, count = n },
         }
         slice::fill(bool){ s = pose.held, v = false }
         let still = Swing{ offset = math::vec3::zero{}, velocity = math::vec3::zero{}, last = math::vec3::zero{}, started = false }
@@ -147,7 +147,7 @@ namespace mdl_anim {
     // the model's nodes of the same name; when the animation's root names a node of the model
     // (an upper-body animation's `torso_g`, say), only that node's subtree.
     fn bind(S) { realloc: alloc::Fn(S), mut heap: S, model: *mdl::Model, animation: *mdl::Animation } -> !Binding {
-        let targets = try alloc::resize(i32, S){ realloc, &heap, mem = slice::empty(i32){}, count = animation.nodes.len }
+        let targets = try alloc::make(i32, S){ realloc, &heap, count = animation.nodes.len }
         let root = mdl::find_node{ model, name = animation.root } ifnull { 0 }
         let mut i: usize = 0
         while i < animation.nodes.len {

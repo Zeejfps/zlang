@@ -612,7 +612,7 @@ namespace traps {
         let faction = me.faction
         let area = me.area
         let party_set = is_party{ w = &w, id = setter }
-        let poly = alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(math::Vec3){}, count = 4 } iferr { return obj::INVALID }
+        let poly = alloc::make(math::Vec3, heap::Heap){ realloc = heap::alloc, heap = w.heap, count = 4 } iferr { return obj::INVALID }
         poly[0] = math::Vec3{ x = at.x - LAID_HALF, y = at.y - LAID_HALF, z = at.z }
         poly[1] = math::Vec3{ x = at.x + LAID_HALF, y = at.y - LAID_HALF, z = at.z }
         poly[2] = math::Vec3{ x = at.x + LAID_HALF, y = at.y + LAID_HALF, z = at.z }

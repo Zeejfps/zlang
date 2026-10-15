@@ -77,7 +77,7 @@ namespace vis {
             if e.declared != e.count { mismatches = mismatches + 1 }
             i = i + 1
         }
-        return Vis{ entries = try lists::take{ list = &entries }, names = try lists::take{ list = &names }, mismatches }
+        return Vis{ entries = try list::take{ list = &entries }, names = try list::take{ list = &names }, mismatches }
     }
 
     // Gives back what `parse` took from `realloc`.

@@ -30,7 +30,7 @@ namespace snd {
     // A Stream in memory from `realloc`, not yet opened: one is too big to want on the stack,
     // and has no zero value to start from.
     fn make(S) { realloc: alloc::Fn(S), mut heap: S } -> !*mut Stream {
-        let one = try alloc::resize(Stream, S){ realloc, &heap, mem = slice::empty(Stream){}, count = 1 }
+        let one = try alloc::make(Stream, S){ realloc, &heap, count = 1 }
         return &one[0]
     }
 

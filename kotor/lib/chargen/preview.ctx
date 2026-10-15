@@ -281,7 +281,7 @@ namespace preview3d {
     // A copy of `s` in the creature's arena (the texture names: the materials keep them).
     fn keep_name { mut preview: Preview, s: []u8 } -> ![]u8 {
         if s.len == 0 { return s }
-        let copy = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &preview.creature, mem = slice::empty(u8){}, count = s.len }
+        let copy = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, heap = &preview.creature, count = s.len }
         let mut i: usize = 0
         while i < s.len {
             copy[i] = s[i]
@@ -484,7 +484,7 @@ namespace preview3d {
         mdl_anim::evaluate{ model = m, player, pose }
 
         let g = try mdl_render::upload{ &dev, realloc = arena::alloc, heap = &heap, model = m }
-        let materials = try alloc::resize(render::Material, arena::Arena){ realloc = arena::alloc, heap = &heap, mem = slice::empty(render::Material){}, count = m.meshes.len }
+        let materials = try alloc::make(render::Material, arena::Arena){ realloc = arena::alloc, heap = &heap, count = m.meshes.len }
         let mut i: usize = 0
         while i < materials.len {
             let mesh = m.meshes[i]

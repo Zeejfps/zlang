@@ -78,6 +78,7 @@ fn run { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut rm: res::Manager, mut mo
         try check_all{ w, module = "", &seen, &t }
         let dir = try path::join(heap::Heap){ realloc = heap::alloc, heap = &h, dir = game, name = "modules" }
         let names = try fs::list{ &fs, heap = &h, realloc = heap::alloc, path = dir }
+        defer fs::list_free{ heap = &h, realloc = heap::alloc, names }
         let mut i: usize = 0
         while i < names.len {
             let n = names[i]

@@ -75,7 +75,7 @@ namespace erf {
         let n = @as(usize, h.count)
         if keys.len < n * KEY or resources.len < n * RESOURCE { return bad_table }
         if @as(u64, base) + @as(u64, size) > 4294967295 { return bad_table }
-        let out = try alloc::resize(res::Member, S){ realloc, &heap, mem = slice::empty(res::Member){}, count = n }
+        let out = try alloc::make(res::Member, S){ realloc, &heap, count = n }
         let mut i: usize = 0
         while i < n {
             let k = KEY * i
@@ -122,7 +122,7 @@ namespace erf {
     // January from 0.
     fn write(S) { realloc: alloc::Fn(S), mut heap: S, sig: Sig, members: []NewMember, year: u32, day: u32 } -> !alloc::Bytes {
         let n = members.len
-        let entries = try alloc::resize(Entry, S){ realloc, &heap, mem = slice::empty(Entry){}, count = n }
+        let entries = try alloc::make(Entry, S){ realloc, &heap, count = n }
         defer _ = alloc::resize(Entry, S){ realloc, &heap, mem = entries, count = 0 }
         let mut total: u64 = 0
         let mut i: usize = 0

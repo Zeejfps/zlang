@@ -170,7 +170,7 @@ namespace scene {
         let mut name = m.name
         let p = planet_of{ module = resref::bytes{ r = &name } }
         if p == Planet::none { return }
-        let data = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(u8){}, count = 1024 * 32 * 3 } iferr { return }
+        let data = alloc::make(u8, arena::Arena){ realloc = arena::alloc, heap = sc.arena, count = 1024 * 32 * 3 } iferr { return }
         grade_strip{ g = grade_of_planet{ p }, out = data }
         let desc = render::TextureDesc{
             kind = render::TextureKind::flat, format = render::PixelFormat::rgb8, width = 1024, height = 32, levels = 1, mipmap = false,

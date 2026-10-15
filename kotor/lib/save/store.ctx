@@ -82,7 +82,7 @@ namespace save {
     // The store as one ERF (`MOD V1.0`, as SAVEGAME.sav), in the heap; the caller frees it.
     fn store_image { st: *Store } -> !alloc::Bytes {
         let items = list::items{ list = st.members }
-        let members = try alloc::resize(erf::NewMember, heap::Heap){ realloc = heap::alloc, heap = st.heap, mem = slice::empty(erf::NewMember){}, count = items.len }
+        let members = try alloc::make(erf::NewMember, heap::Heap){ realloc = heap::alloc, heap = st.heap, count = items.len }
         defer _ = alloc::resize(erf::NewMember, heap::Heap){ realloc = heap::alloc, heap = st.heap, mem = members, count = 0 }
         let mut i: usize = 0
         while i < items.len {

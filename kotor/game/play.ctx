@@ -158,7 +158,7 @@ namespace play {
         ui.summary.panel_allowed = not opts.headless    // and the status summary may stop the game for its panel
         w.tut.allowed = not opts.headless    // and so may a tutorial pop-up (a script's `ui tutorial allow` lets a test see them)
         loading::step{ l = ld, &w, &dev, &sdl, &frame, opts, percent = 90 }
-        let silent = try alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(i16){}, count = 44100 }
+        let silent = try alloc::make(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, count = 44100 }
         let mut keys = ctl::Keys{ .. }
         let mut inputs = inject::Inputs{ .. }      // the scripted pointer and held modifiers
         let mut mouse_was_looking = false         // the mouse was turning the camera last frame (relative mode is on)
@@ -728,7 +728,7 @@ namespace play {
             }
             if want_save.len > 0 {
                 let size = gpu::screen_size{ dev }
-                let pixels = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &scene_arena, mem = slice::empty(u8){}, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
+                let pixels = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, heap = &scene_arena, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
                 _ = gpu::read_screen{ &dev, into = pixels } iferr { size }
                 // RequestSaveGame (0x004b58a0) pushes sound mode 3 and DoSaveGame (0x004b3110) pops it: nothing plays while the save is written.
                 let mode_before = enter_sound_mode{ &w, a = &amb, mode = ambience::MODE_MOVIE }
@@ -937,7 +937,7 @@ namespace play {
                     w.party.tutorial_shown = fe.tutorial_shown
                     let mut m = module
                     let name = resref::bytes{ r = &m }
-                    let kept = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = name.len }
+                    let kept = try alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, count = name.len }
                     slice::copy(u8){ dst = kept, src = name }
                     chosen = kept
                     done = true
@@ -947,7 +947,7 @@ namespace play {
                     let found = save::find_save{ &w, game = opts.game, name = name[..folder_len] }
                     if found != null {
                         // "load:" + the folder, for run to load instead of entering a module.
-                        let tagged = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = found.len + 5 }
+                        let tagged = try alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, count = found.len + 5 }
                         slice::copy(u8){ dst = tagged[..5], src = "load:" }
                         slice::copy(u8){ dst = tagged[5..], src = found }
                         chosen = tagged
@@ -1551,7 +1551,7 @@ namespace play {
         try @fmt(&b, ".png")
         let size = gpu::screen_size{ dev }
         // The heap, not the scene's arena: an arena gives nothing back, and hundreds of frames fill it.
-        let pixels = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
+        let pixels = try alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
         defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = pixels, count = 0 }
         _ = try gpu::read_screen{ &dev, into = pixels }
         gpu::shade_pixels{ dev, pixels }
@@ -1561,7 +1561,7 @@ namespace play {
 
     fn screenshot { mut w: world::World, mut dev: gpu::Device, mut heap: arena::Arena, path: []u8, frame_no: u64 } -> ! {
         let size = gpu::screen_size{ dev }
-        let pixels = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
+        let pixels = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
         defer _ = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = pixels, count = 0 }
         _ = try gpu::read_screen{ &dev, into = pixels }
         gpu::shade_pixels{ dev, pixels }    // as the window shows it: the brightness curve is applied in present

@@ -31,7 +31,7 @@ namespace modload {
         // The area's name in module memory: errors that carry it outlive this function.
         let mut area_key = area_name
         let area_local = resref::bytes{ r = &area_key }
-        let area_text = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, mem = slice::empty(u8){}, count = area_local.len }
+        let area_text = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, count = area_local.len }
         slice::copy(u8){ dst = area_text, src = area_local }
         if w.log.module {
             world::prefix{ w = &w }
@@ -528,7 +528,7 @@ namespace modload {
         obj::free_bytes{ heap = w.heap, s = w.player_blueprint }
         w.player_blueprint = slice::empty(u8){}
         if bytes.len == 0 { return }
-        let copy = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = bytes.len }
+        let copy = try alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, count = bytes.len }
         slice::copy(u8){ dst = copy, src = bytes }
         w.player_blueprint = copy
     }
@@ -743,7 +743,7 @@ namespace modload {
         w.arrival_waypoint_len = t.waypoint_len
         let mut m = t.module
         let name = resref::bytes{ r = &m }
-        let kept = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = name.len }
+        let kept = try alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, count = name.len }
         slice::copy(u8){ dst = kept, src = name }
         try enter{ &w, name = kept }
         // An autosave on arrival (gameloop.md 5.7): modulesave.2da AutoSaveOnEnter of the target

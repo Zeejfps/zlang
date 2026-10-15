@@ -130,7 +130,7 @@ namespace tex {
             let face = chain_size{ format, width, height = width, levels = mips }
             let end = TPC_HEADER + 6 * face
             if end > bytes.len { return truncated{ need = end, have = bytes.len } }
-            let data = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = 6 * face }
+            let data = try alloc::make(u8, S){ realloc, &heap, count = 6 * face }
             slice::copy(u8){ dst = data, src = bytes[TPC_HEADER..end] }
             // Face 5 (-Z) is stored upside down: reverse its rows at every level.
             let mut at = 5 * face
@@ -248,7 +248,7 @@ namespace tex {
         let mut unpacked: []mut u8              // a run-length encoded file's texels, freed on the way out
         defer _ = alloc::resize(u8, S){ realloc, &heap, mem = unpacked, count = 0 }
         if rle {
-            unpacked = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = count * bpp }
+            unpacked = try alloc::make(u8, S){ realloc, &heap, count = count * bpp }
             try unpack_rle{ src = bytes, at, bpp, into = unpacked }
             texels = unpacked
         } else {
@@ -259,7 +259,7 @@ namespace tex {
 
         let grey8 = base == 3 and bits == 8
         let channels: usize = if grey8 { 1 } else { 4 }
-        let out = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = count * channels }
+        let out = try alloc::make(u8, S){ realloc, &heap, count = count * channels }
         let alpha16 = (descriptor & 15) != 0
         let top_down = (descriptor & 0x20) != 0
         let right_to_left = (descriptor & 0x10) != 0
@@ -443,7 +443,7 @@ namespace tex {
         let w = mip_dim{ n = t.width, k = level }
         let h = mip_dim{ n = t.height, k = level }
         let src = tex::level{ t, image, level }
-        let out = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = @as(usize, w) * @as(usize, h) * 4 }
+        let out = try alloc::make(u8, S){ realloc, &heap, count = @as(usize, w) * @as(usize, h) * 4 }
         decode_into{ src, format = t.format, width = w, height = h, out }
         return out
     }
@@ -459,7 +459,7 @@ namespace tex {
     fn height_to_normal(S) { realloc: alloc::Fn(S), mut heap: S, t: Texture, scale: f32 } -> !Texture {
         if t.format != Format::grey8 { return not_grey }
         let per_image = chain_size{ format = Format::rgba8, width = t.width, height = t.height, levels = t.levels }
-        let data = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = per_image * @as(usize, t.images) }
+        let data = try alloc::make(u8, S){ realloc, &heap, count = per_image * @as(usize, t.images) }
         let mut at: usize = 0
         let mut image: u32 = 0
         while image < t.images {
@@ -553,7 +553,7 @@ namespace tex {
             realloc, &heap, mem = slice::empty(u8){},
             count = chain_size{ format = Format::rgba8, width = aw, height = ah, levels },
         }
-        let cell = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = @as(usize, t.width) * @as(usize, t.height) * 4 }
+        let cell = try alloc::make(u8, S){ realloc, &heap, count = @as(usize, t.width) * @as(usize, t.height) * 4 }
         let mut at: usize = 0
         let mut k: u32 = 0
         while k < levels {

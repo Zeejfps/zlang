@@ -120,10 +120,10 @@ namespace ups {
         let mut n: ViewNames
         if not names_of_item{ s, w = &w, item = s.item, &n } { return null }
         let heap = w.heap
-        let mem = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(u8){}, count = VIEW_MODELS_MEMORY } iferr { return null }
+        let mem = alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap, count = VIEW_MODELS_MEMORY } iferr { return null }
         let keep = alloc::new(arena::Arena, heap::Heap){ realloc = heap::alloc, heap, value = arena::new{ buf = mem } } iferr { return null }
         let models = alloc::new(mdl_cache::Cache, heap::Heap){ realloc = heap::alloc, heap, value = mdl_cache::new{ rm = w.rm.*, keep } } iferr { return null }
-        let smem = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(u8){}, count = VIEW_SCENE_MEMORY } iferr { return null }
+        let smem = alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap, count = VIEW_SCENE_MEMORY } iferr { return null }
         let ar = alloc::new(arena::Arena, heap::Heap){ realloc = heap::alloc, heap, value = arena::new{ buf = smem } } iferr { return null }
         let mut camera: [32]u8
         let mut camera_len: usize = 0

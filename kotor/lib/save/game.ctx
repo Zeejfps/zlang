@@ -278,7 +278,7 @@ namespace save {
             if let m = obj::module{ o = mo } {
                 let mut name = m.name
                 let low = resref::bytes{ r = &name }
-                let up = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(u8){}, count = low.len } iferr { return info }
+                let up = alloc::make(u8, arena::Arena){ realloc = arena::alloc, heap = w.scratch, count = low.len } iferr { return info }
                 let mut i: usize = 0
                 while i < low.len {
                     up[i] = ascii::to_upper{ c = low[i] }
@@ -315,7 +315,7 @@ namespace save {
             let joined = if dir.len == 0 { name } else { path::join_into{ dir, name, into = buf[..] } ifnull { continue } }
             let check = path::join(arena::Arena){ realloc = arena::alloc, heap = w.scratch, dir = joined, name = "SAVEGAME.sav" } iferr { continue }
             if fs::size{ fs = &w.fs, path = check } iferr { 0 } > 0 {
-                let out = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = joined.len } iferr { return null }
+                let out = alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, count = joined.len } iferr { return null }
                 slice::copy(u8){ dst = out, src = joined }
                 return out
             }
@@ -350,7 +350,7 @@ namespace save {
         let info = read_info{ doc = &info_doc }
         if info.last_module.len == 0 { return no_save{ folder } }
         // A fresh copy (a call's result counts as derived from its arguments: ctxlang/FRICTION.md #2).
-        let module = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = info.last_module.len }
+        let module = try alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, count = info.last_module.len }
         let mut k: usize = 0
         while k < module.len {
             module[k] = ascii::to_lower{ c = info.last_module[k] }

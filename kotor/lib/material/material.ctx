@@ -206,7 +206,7 @@ namespace material {
         if compressed and not info.dxt {
             desc.format = render::PixelFormat::rgba8
             let size = render::texture_size{ desc }
-            let out = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &scratch, mem = slice::empty(u8){}, count = size }
+            let out = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, heap = &scratch, count = size }
             let mut at: usize = 0
             let mut image: u32 = 0
             while image < images {
@@ -226,7 +226,7 @@ namespace material {
         }
         // Fewer levels than stored: gather each image's leading levels.
         let size = render::texture_size{ desc }
-        let out = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &scratch, mem = slice::empty(u8){}, count = size }
+        let out = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, heap = &scratch, count = size }
         let mut at: usize = 0
         let mut image: u32 = 0
         while image < images {

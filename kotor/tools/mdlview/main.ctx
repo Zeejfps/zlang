@@ -174,7 +174,7 @@ fn make_part {
         }
     }
     let g = try mdl_render::upload{ &dev, realloc = arena::alloc, &heap, model }
-    let materials = try alloc::resize(render::Material, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(render::Material){}, count = model.meshes.len }
+    let materials = try alloc::make(render::Material, arena::Arena){ realloc = arena::alloc, &heap, count = model.meshes.len }
     let mut i: usize = 0
     while i < materials.len {
         let m = model.meshes[i]
@@ -261,7 +261,7 @@ fn put { into: []mut u8, at: usize, s: []u8 } -> usize {
 
 fn save_screen { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut heap: arena::Arena, dir: []u8, name: []u8 } -> ! {
     let size = gpu::screen_size{ dev }
-    let pixels = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
+    let pixels = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
     _ = try gpu::read_screen{ &dev, into = pixels }
     let mut path_buf: [512]u8
     let mut n = put{ into = path_buf[..], at = 0, s = dir }

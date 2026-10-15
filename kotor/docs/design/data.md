@@ -36,11 +36,11 @@ Two allocators cover the game's lifetimes, both std `alloc::Fn`s:
 
   ```
   let mut h = heap::new{ &mem }
-  let bytes = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &h, mem = slice::empty(u8){}, count = n }
+  let bytes = try alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap = &h, count = n }
   ```
 
 - **`arena::Arena`** (std): for anything parsed, used and dropped together: one resource load,
-  one frame. Reset instead of freeing.
+  one frame. Reset, or restore to a mark, instead of freeing.
 
 The rules every reader here follows:
 

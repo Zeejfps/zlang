@@ -171,10 +171,10 @@ namespace mix {
     // A mixer for output at `rate` Hz, in memory from `realloc` (it is about 3 MB with its
     // voices), with every group at full volume.
     fn make(S) { realloc: alloc::Fn(S), mut heap: S, rate: u32, voices_2d: u32, voices_3d: u32 } -> !*mut Mixer {
-        let one = try alloc::resize(Mixer, S){ realloc, &heap, mem = slice::empty(Mixer){}, count = 1 }
+        let one = try alloc::make(Mixer, S){ realloc, &heap, count = 1 }
         let m = &one[0]
         let n: usize = voices_2d + voices_3d + FEEDS
-        let voices = alloc::resize(Voice, S){ realloc, &heap, mem = slice::empty(Voice){}, count = n } iferr err{ error } {
+        let voices = alloc::make(Voice, S){ realloc, &heap, count = n } iferr err{ error } {
             _ = alloc::resize(Mixer, S){ realloc, &heap, mem = one, count = 0 }
             return error
         }

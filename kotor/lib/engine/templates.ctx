@@ -488,7 +488,7 @@ namespace tmpl {
     // The GIT's Geometry list: points relative to the trigger's position, into area space.
     fn read_geometry { mut w: world::World, t: *mut obj::Trigger, doc: *gff::Doc, s: u32, origin: math::Vec3 } -> ! {
         let points = gff::get_list{ doc = doc.*, s, label = "Geometry" } ifnull { return }
-        let poly = try alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(math::Vec3){}, count = points.len }
+        let poly = try alloc::make(math::Vec3, heap::Heap){ realloc = heap::alloc, heap = w.heap, count = points.len }
         let mut i: usize = 0
         while i < points.len {
             let p = points[i]
@@ -527,7 +527,7 @@ namespace tmpl {
         script{ doc, s, o, label = "OnUserDefined", slot = obj::Slot::user_defined }
         let list = gff::get_list{ doc = doc.*, s, label = "CreatureList" }
         if list != null {
-            let names = try alloc::resize(resref::ResRef, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(resref::ResRef){}, count = list.len }
+            let names = try alloc::make(resref::ResRef, heap::Heap){ realloc = heap::alloc, heap = w.heap, count = list.len }
             let mut i: usize = 0
             while i < list.len {
                 names[i] = resref::truncate{ name = gff::get_resref{ doc = doc.*, s = list[i], label = "ResRef" } ifnull "" }
@@ -538,7 +538,7 @@ namespace tmpl {
         }
         let points = gff::get_list{ doc = doc.*, s, label = "Geometry" }
         if points != null {
-            let poly = try alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(math::Vec3){}, count = points.len }
+            let poly = try alloc::make(math::Vec3, heap::Heap){ realloc = heap::alloc, heap = w.heap, count = points.len }
             let mut i: usize = 0
             while i < points.len {
                 poly[i] = math::Vec3{
@@ -553,7 +553,7 @@ namespace tmpl {
         }
         let spawns = gff::get_list{ doc = doc.*, s, label = "SpawnPointList" }
         if spawns != null {
-            let at = try alloc::resize(math::Vec4, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(math::Vec4){}, count = spawns.len }
+            let at = try alloc::make(math::Vec4, heap::Heap){ realloc = heap::alloc, heap = w.heap, count = spawns.len }
             let mut i: usize = 0
             while i < spawns.len {
                 at[i] = math::Vec4{
@@ -591,7 +591,7 @@ namespace tmpl {
         snd.random_range_y = real{ doc, s, label = "RandomRangeY", default = snd.random_range_y }
         snd.priority = @trunc(u32, number{ doc, s, label = "Priority", default = @as(i64, snd.priority) })
         let list = gff::get_list{ doc = doc.*, s, label = "Sounds" } ifnull { return }
-        let names = try alloc::resize(resref::ResRef, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(resref::ResRef){}, count = list.len }
+        let names = try alloc::make(resref::ResRef, heap::Heap){ realloc = heap::alloc, heap = w.heap, count = list.len }
         let mut i: usize = 0
         while i < list.len {
             names[i] = resref::truncate{ name = gff::get_resref{ doc = doc.*, s = list[i], label = "Sound" } ifnull "" }

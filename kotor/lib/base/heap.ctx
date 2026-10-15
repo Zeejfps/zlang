@@ -4,7 +4,7 @@
 //
 //   let mut h = heap::new{ &mem }
 //   let mut xs = list::new(u32){ realloc = heap::alloc, heap = &h }
-//   let bytes = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &h, mem = slice::empty(u8){}, count = 100 }
+//   let bytes = try alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap = &h, count = 100 }
 //
 // A Heap holds the Mem capability, since taking memory from the system is an effect (spec §1.3),
 // and counts what is live, so a leak shows up as a number that keeps growing.
@@ -23,7 +23,7 @@ namespace heap {
         peak: usize,            // the most `live` has been
     }
 
-    extern fn malloc { mut mem: Mem, size: usize } -> ?*mut u8
+    extern fn calloc { mut mem: Mem, count: usize, size: usize } -> ?*mut u8
     extern fn realloc { mut mem: Mem, p: *mut u8, size: usize } -> ?*mut u8
     extern fn free { mut mem: Mem, p: *mut u8 }
 
@@ -32,7 +32,8 @@ namespace heap {
     }
 
     // Has type alloc::Fn(Heap). `mem` must be empty or a block this heap gave out, at the length
-    // it was given out with.
+    // it was given out with. What it hands out past `mem`'s bytes is zero, as std's allocators'
+    // is (spec §14): calloc's, and a grown block's new bytes.
     fn alloc { mut heap: Heap, mem: alloc::Bytes, new: usize, align: usize } -> ?alloc::Bytes {
         if align > MAX_ALIGN { return null }
         if new == 0 {
@@ -44,7 +45,7 @@ namespace heap {
             return slice::empty(u8){}
         }
         if mem.len == 0 {
-            let p = malloc{ mem = &heap.mem, size = new } ifnull { return null }
+            let p = calloc{ mem = &heap.mem, count = 1, size = new } ifnull { return null }
             heap.blocks = heap.blocks + 1
             heap.live = heap.live + new
             if heap.live > heap.peak { heap.peak = heap.live }
@@ -53,6 +54,8 @@ namespace heap {
         let q = realloc{ mem = &heap.mem, p = mem.ptr, size = new } ifnull { return null }
         heap.live = heap.live - mem.len + new
         if heap.live > heap.peak { heap.peak = heap.live }
-        return @slice(q, new)
+        let out = @slice(q, new)
+        if new > mem.len { slice::fill(u8){ s = out[mem.len..], v = 0 } }
+        return out
     }
 }

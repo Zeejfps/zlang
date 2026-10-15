@@ -48,7 +48,7 @@ namespace gui {
             if resref::eq{ a = items[i].name, b = key } { return if items[i].ok { @as(i32, i) } else { -1 } }
             i = i + 1
         }
-        let glyphs = alloc::resize(render::Glyph, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = slice::empty(render::Glyph){}, count = 256 } iferr {
+        let glyphs = alloc::make(render::Glyph, heap::Heap){ realloc = heap::alloc, heap = g.heap, count = 256 } iferr {
             return -1
         }
         let mut buf: [17]u8

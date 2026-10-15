@@ -27,7 +27,7 @@ namespace rim {
         let n = @as(usize, h.count)
         if keys.len < n * KEY { return bad_table }
         if @as(u64, base) + @as(u64, size) > 4294967295 { return bad_table }
-        let out = try alloc::resize(res::Member, S){ realloc, &heap, mem = slice::empty(res::Member){}, count = n }
+        let out = try alloc::make(res::Member, S){ realloc, &heap, count = n }
         let mut i: usize = 0
         while i < n {
             let k = KEY * i

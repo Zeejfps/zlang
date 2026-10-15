@@ -69,7 +69,7 @@ namespace frontend {
     } -> !SaveList {
         let own_names = if own.len > 0 { fs::list(arena::Arena){ &fs, heap = &scratch, realloc = arena::alloc, path = own } iferr { slice::empty([]u8){} } } else { slice::empty([]u8){} }
         let install_names = if install.len > 0 and not for_save { fs::list(arena::Arena){ &fs, heap = &scratch, realloc = arena::alloc, path = install } iferr { slice::empty([]u8){} } } else { slice::empty([]u8){} }
-        let entries = try alloc::resize(SaveEntry, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(SaveEntry){}, count = own_names.len + install_names.len + 1 }
+        let entries = try alloc::make(SaveEntry, heap::Heap){ realloc = heap::alloc, heap, count = own_names.len + install_names.len + 1 }
         let mut list = SaveList{ entries, count = 0 }
         if for_save {
             let mut slot: SaveEntry

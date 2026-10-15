@@ -107,8 +107,8 @@ namespace gui3d {
     } -> !Emitting {
         let e = &model.emitters[index]
         let cap = capacity_for{ e, props = e.props }
-        let puffs = try alloc::resize(Puff, arena::Arena){ realloc = arena::alloc, heap = &heap, mem = slice::empty(Puff){}, count = cap }
-        let out = try alloc::resize(render::Particle, arena::Arena){ realloc = arena::alloc, heap = &heap, mem = slice::empty(render::Particle){}, count = cap }
+        let puffs = try alloc::make(Puff, arena::Arena){ realloc = arena::alloc, heap = &heap, count = cap }
+        let out = try alloc::make(render::Particle, arena::Arena){ realloc = arena::alloc, heap = &heap, count = cap }
         let t = material::get{ cache = &mats, &fs, &dev, rm, name = e.texture }
         return emitting_over{ index, texture = t.texture, puffs, out, node_turn = model.nodes[e.node].orientation }
     }

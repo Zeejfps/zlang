@@ -174,7 +174,7 @@ namespace bwm {
         // Adjacency rows are faces 0 .. nw, so there can't be more of them than faces.
         if nw > nf { return bad_count{ table = Table::adjacency } }
 
-        let vertices = try make(math::Vec3, S){ realloc, &heap, count = nv }
+        let vertices = try alloc::make(math::Vec3, S){ realloc, &heap, count = nv }
         i = 0
         while i < nv {
             vertices[i] = vec3_at{ bytes, at = vertex_off + i * 12 }
@@ -182,8 +182,8 @@ namespace bwm {
             i = i + 1
         }
 
-        let faces = try make([3]u32, S){ realloc, &heap, count = nf }
-        let materials = try make(u32, S){ realloc, &heap, count = nf }
+        let faces = try alloc::make([3]u32, S){ realloc, &heap, count = nf }
+        let materials = try alloc::make(u32, S){ realloc, &heap, count = nf }
         i = 0
         while i < nf {
             let at = face_off + i * 12
@@ -194,8 +194,8 @@ namespace bwm {
             i = i + 1
         }
 
-        let flat = try make(bool, S){ realloc, &heap, count = nf }
-        let planes = try make(math::Plane, S){ realloc, &heap, count = nf }
+        let flat = try alloc::make(bool, S){ realloc, &heap, count = nf }
+        let planes = try alloc::make(math::Plane, S){ realloc, &heap, count = nf }
         let mut computed: u32 = 0
         i = 0
         while i < nf {
@@ -221,7 +221,7 @@ namespace bwm {
         }
 
         if nn > MAX_COUNT { return bad_count{ table = Table::nodes } }
-        let mut nodes = try make(Node, S){ realloc, &heap, count = nn }
+        let mut nodes = try alloc::make(Node, S){ realloc, &heap, count = nn }
         i = 0
         while i < nn {
             let at = node_off + i * 44
@@ -246,7 +246,7 @@ namespace bwm {
             rebuilt = true
         }
 
-        let adjacency = try make([3]i32, S){ realloc, &heap, count = nw }
+        let adjacency = try alloc::make([3]i32, S){ realloc, &heap, count = nw }
         i = 0
         while i < nw {
             let mut k: usize = 0
@@ -260,8 +260,8 @@ namespace bwm {
         }
 
         if ne > MAX_COUNT { return bad_count{ table = Table::perimeter } }
-        let perimeter = try make(Perimeter, S){ realloc, &heap, count = ne }
-        let edge_perimeter = try make(i32, S){ realloc, &heap, count = 3 * nf }
+        let perimeter = try alloc::make(Perimeter, S){ realloc, &heap, count = ne }
+        let edge_perimeter = try alloc::make(i32, S){ realloc, &heap, count = 3 * nf }
         slice::fill{ s = edge_perimeter, v = -1 }
         i = 0
         while i < ne {
@@ -274,7 +274,7 @@ namespace bwm {
             i = i + 1
         }
 
-        let loop_ends = try make(u32, S){ realloc, &heap, count = nl }
+        let loop_ends = try alloc::make(u32, S){ realloc, &heap, count = nl }
         let mut prev: usize = 0
         i = 0
         while i < nl {
@@ -306,9 +306,9 @@ namespace bwm {
     fn is_proper_tree(S) { realloc: alloc::Fn(S), mut heap: S, nodes: []Node, face_count: usize } -> !bool {
         let n = nodes.len
         // depth[i] is node i's depth once its parent is seen; 0 until then, and for the root.
-        let depth = try make(u32, S){ realloc, &heap, count = n }
+        let depth = try alloc::make(u32, S){ realloc, &heap, count = n }
         defer _ = alloc::resize(u32, S){ realloc, &heap, mem = depth, count = 0 }
-        let seen = try make(bool, S){ realloc, &heap, count = face_count }
+        let seen = try alloc::make(bool, S){ realloc, &heap, count = face_count }
         defer _ = alloc::resize(bool, S){ realloc, &heap, mem = seen, count = 0 }
         slice::fill{ s = depth, v = 0 }
         slice::fill{ s = seen, v = false }
@@ -362,10 +362,10 @@ namespace bwm {
     fn build_tree(S) { realloc: alloc::Fn(S), mut heap: S, vertices: []math::Vec3, faces: [][3]u32 } -> ![]mut Node {
         let nf = faces.len
         if nf == 0 { return slice::empty(Node){} }
-        let nodes = try make(Node, S){ realloc, &heap, count = 2 * nf - 1 }
-        let order = try make(u32, S){ realloc, &heap, count = nf }
+        let nodes = try alloc::make(Node, S){ realloc, &heap, count = 2 * nf - 1 }
+        let order = try alloc::make(u32, S){ realloc, &heap, count = nf }
         defer _ = alloc::resize(u32, S){ realloc, &heap, mem = order, count = 0 }
-        let centers = try make(math::Vec3, S){ realloc, &heap, count = nf }
+        let centers = try alloc::make(math::Vec3, S){ realloc, &heap, count = nf }
         defer _ = alloc::resize(math::Vec3, S){ realloc, &heap, mem = centers, count = 0 }
         let mut i: usize = 0
         while i < nf {
@@ -701,7 +701,7 @@ namespace bwm {
     fn transform_placed(S) { realloc: alloc::Fn(S), mut heap: S, w: Walkmesh, at: Placement } -> !Walkmesh {
         let c = math::cosf{ x = at.bearing }
         let s = math::sinf{ x = at.bearing }
-        let vertices = try make(math::Vec3, S){ realloc, &heap, count = w.vertices.len }
+        let vertices = try alloc::make(math::Vec3, S){ realloc, &heap, count = w.vertices.len }
         let mut i: usize = 0
         while i < vertices.len {
             vertices[i] = turn{ at, c, s, p = math::vec3::add{ a = w.vertices[i], b = w.position } }
@@ -709,8 +709,8 @@ namespace bwm {
         }
         let nf = w.faces.len
         let faces = try copy_of([3]u32, S){ realloc, &heap, items = w.faces }
-        let flat = try make(bool, S){ realloc, &heap, count = nf }
-        let planes = try make(math::Plane, S){ realloc, &heap, count = nf }
+        let flat = try alloc::make(bool, S){ realloc, &heap, count = nf }
+        let planes = try alloc::make(math::Plane, S){ realloc, &heap, count = nf }
         let mut computed: u32 = 0
         i = 0
         while i < nf {
@@ -838,12 +838,8 @@ namespace bwm {
 
     fn zero_plane {} -> math::Plane { return math::Plane{ n = math::vec3::zero{}, d = 0.0 } }
 
-    fn make(T, S) { realloc: alloc::Fn(S), mut heap: S, count: usize } -> ![]mut T {
-        return alloc::resize(T, S){ realloc, &heap, mem = slice::empty(T){}, count }
-    }
-
     fn copy_of(T, S) { realloc: alloc::Fn(S), mut heap: S, items: []T } -> ![]mut T {
-        let out = try make(T, S){ realloc, &heap, count = items.len }
+        let out = try alloc::make(T, S){ realloc, &heap, count = items.len }
         slice::copy(T){ dst = out, src = items }
         return out
     }

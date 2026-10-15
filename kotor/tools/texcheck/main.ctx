@@ -101,7 +101,7 @@ fn check { mut io: Io, mut fs: Fs, mut work: arena::Arena, mut keep: arena::Aren
     let rows = if samples == 0 { 1 } else { (samples + COLS - 1) / COLS }
     let sheet_w = COLS * CELL
     let sheet_h = rows * CELL
-    let sheet = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &keep, mem = slice::empty(u8){}, count = sheet_w * sheet_h * 4 } iferr {
+    let sheet = alloc::make(u8, arena::Arena){ realloc = arena::alloc, heap = &keep, count = sheet_w * sheet_h * 4 } iferr {
         io::eprintln{ &io, s = "texcheck: no memory for the contact sheet" }
         return 1
     }
@@ -276,7 +276,7 @@ fn read_texture { mut fs: Fs, mut work: arena::Arena, path: []u8, is_tpc: bool }
     let bytes = try fs::read_all{ &fs, heap = &work, realloc = arena::alloc, path }
     if is_tpc { return Loaded{ t = try tex::read_tpc{ realloc = arena::alloc, heap = &work, bytes }, standalone_txi = false } }
     let t = try tex::read_tga{ realloc = arena::alloc, heap = &work, bytes }
-    let txi_path = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &work, mem = slice::empty(u8){}, count = path.len }
+    let txi_path = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, heap = &work, count = path.len }
     slice::copy(u8){ dst = txi_path, src = path }
     txi_path[path.len - 2] = 'x'
     txi_path[path.len - 1] = 'i'
@@ -481,7 +481,7 @@ fn write_png { mut io: Io, mut fs: Fs, mut work: arena::Arena, dir: []u8, names:
         height = t.height
         rgba = try tex::decode_level{ realloc = arena::alloc, heap = &work, t, image = 0, level = 0 }
     }
-    let flat = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &work, mem = slice::empty(u8){}, count = width * height * 4 }
+    let flat = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, heap = &work, count = width * height * 4 }
     let mut p: usize = 0
     while p < width * height {
         put_over_checker{ px = rgba[p * 4..p * 4 + 4], x = p % width, y = p / width, into = flat[p * 4..p * 4 + 4] }
@@ -525,7 +525,7 @@ fn draw_cross { mut work: arena::Arena, t: tex::Texture } -> ![]mut u8 {
     let size: usize = t.width
     let w = 4 * size
     let h = 3 * size
-    let out = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &work, mem = slice::empty(u8){}, count = w * h * 4 }
+    let out = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, heap = &work, count = w * h * 4 }
     slice::fill(u8){ s = out, v = 0 }
     let mut faces: [6][]u8
     let mut f: usize = 0
@@ -671,13 +671,13 @@ fn fuzz { mut io: Io, mut fs: Fs, mut work: arena::Arena, opts: Options, names: 
             _ = @fmt(&io, "texcheck: {}: {}\n", name, error)
             return 1
         }
-        let copy = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &work, mem = slice::empty(u8){}, count = bytes.len } iferr { return 1 }
-        let mark = work.used
+        let copy = alloc::make(u8, arena::Arena){ realloc = arena::alloc, heap = &work, count = bytes.len } iferr { return 1 }
+        let mark = arena::mark{ heap = work }
         files = files + 1
         let header: usize = if which == 1 { 14 } else { 18 }
         let mut v: u32 = 0
         while v < VARIANTS {
-            work.used = mark
+            arena::restore{ heap = &work, to = mark }
             slice::copy(u8){ dst = copy, src = bytes }
             let mut len = bytes.len
             if v < 8 {
@@ -782,7 +782,7 @@ fn join(S) { realloc: alloc::Fn(S), mut heap: S, dir: []u8, name: []u8 } -> ![]u
 }
 
 fn join3(S) { realloc: alloc::Fn(S), mut heap: S, a: []u8, b: []u8, c: []u8 } -> ![]u8 {
-    let out = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = a.len + b.len + c.len }
+    let out = try alloc::make(u8, S){ realloc, &heap, count = a.len + b.len + c.len }
     slice::copy(u8){ dst = out, src = a }
     slice::copy(u8){ dst = out[a.len..], src = b }
     slice::copy(u8){ dst = out[a.len + b.len..], src = c }

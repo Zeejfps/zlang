@@ -140,7 +140,7 @@ namespace check {
     }
 
     fn run_saved { mut io: Io, mut fs: Fs, mut heap: heap::Heap, mut r: Report, tables: *rules::Tables, game: []u8 } {
-        let buf = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = slice::empty(u8){}, count = 16 * 1024 * 1024 } iferr err{ error } {
+        let buf = alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap = &heap, count = 16 * 1024 * 1024 } iferr err{ error } {
             fail{ &io, &r, name = "saved: no memory for the scratch arena", detail = 0 }
             return
         }

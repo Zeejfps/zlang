@@ -784,7 +784,7 @@ namespace check {
     // Every copy of every creature template in the install (the corpus walk: modules and saved
     // games included), as the census does; `rm` only supplies the game directory.
     fn pg_sweep_templates { mut io: Io, mut fs: Fs, mut r: Report, mut heap: heap::Heap, rm: res::Manager, tables: *rules::Tables } {
-        let buf = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = slice::empty(u8){}, count = 8 * 1024 * 1024 } iferr err{ error } {
+        let buf = alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap = &heap, count = 8 * 1024 * 1024 } iferr err{ error } {
             fail{ &io, &r, name = "progress: no memory for the scratch arena", detail = 0 }
             return
         }

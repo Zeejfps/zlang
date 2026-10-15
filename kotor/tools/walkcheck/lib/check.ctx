@@ -195,7 +195,7 @@ namespace walkcheck {
             k = k + 1
         }
         let entries = try make(Entry){ &heap, count = total, fill = Entry{ container = "", resref = "", ext = "" } }
-        let locs = try alloc::resize(res::Loc, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(res::Loc){}, count = total }
+        let locs = try alloc::make(res::Loc, arena::Arena){ realloc = arena::alloc, &heap, count = total }
         let mut n: usize = 0
         k = 0
         while k < 3 {
@@ -212,7 +212,7 @@ namespace walkcheck {
             }
             k = k + 1
         }
-        let mark = heap.used
+        let mark = arena::mark{ heap }
         let mut i: usize = 0
         while i < n {
             let entry = @as(u32, i)
@@ -222,7 +222,7 @@ namespace walkcheck {
                 continue
             }
             try check_file{ &con, &heap, &r, bytes, entry, e = entries[i] }
-            heap.used = mark
+            arena::restore{ &heap, to = mark }
             i = i + 1
         }
         report{ &con, &r, entries, from = "the install" }
@@ -238,7 +238,7 @@ namespace walkcheck {
         let text = try fs::read_all{ &fs, &heap, realloc = arena::alloc, path = manifest_path }
         let entries = try read_manifest{ &heap, text }
         // Everything a file needs goes after this mark; the manifest stays below it.
-        let mark = heap.used
+        let mark = arena::mark{ heap }
         let mut i: usize = 0
         while i < entries.len {
             let e = entries[i]
@@ -251,7 +251,7 @@ namespace walkcheck {
                 continue
             }
             try check_file{ &con, &heap, &r, bytes, entry, e }
-            heap.used = mark
+            arena::restore{ &heap, to = mark }
             i = i + 1
         }
         report{ &con, &r, entries, from = "the extraction" }
@@ -278,7 +278,7 @@ namespace walkcheck {
             if text[i] == '\n' { lines = lines + 1 }
             i = i + 1
         }
-        let entries = try alloc::resize(Entry, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(Entry){}, count = lines + 1 }
+        let entries = try alloc::make(Entry, arena::Arena){ realloc = arena::alloc, &heap, count = lines + 1 }
         let mut n: usize = 0
         let mut start: usize = 0
         i = 0
@@ -451,8 +451,8 @@ namespace walkcheck {
     }
 
     fn try_damaged { mut s: Summary, mut heap: arena::Arena, bytes: []u8, walkable: []bool, every: []bool } {
-        let mark = heap.used
-        defer heap.used = mark
+        let mark = arena::mark{ heap }
+        defer arena::restore{ &heap, to = mark }
         s.damaged = s.damaged + 1
         let w = bwm::parse{ realloc = arena::alloc, &heap, bytes } iferr {
             s.damaged_rejected = s.damaged_rejected + 1
@@ -606,7 +606,7 @@ namespace walkcheck {
         if n != 2 * nf - 1 { add{ &t, c = Class::node_count, entry, a = @as(i64, n), b = @as(i64, nf) } }
 
         // parse has checked every child and leaf face is in range.
-        let nodes = try alloc::resize(bwm::Node, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(bwm::Node){}, count = n }
+        let nodes = try alloc::make(bwm::Node, arena::Arena){ realloc = arena::alloc, &heap, count = n }
         let mut acyclic = true
         let mut i: usize = 0
         while i < n {
@@ -1044,7 +1044,7 @@ namespace walkcheck {
     }
 
     fn make(T) { mut heap: arena::Arena, count: usize, fill: T } -> ![]mut T {
-        let out = try alloc::resize(T, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(T){}, count }
+        let out = try alloc::make(T, arena::Arena){ realloc = arena::alloc, &heap, count }
         slice::fill(T){ s = out, v = fill }
         return out
     }

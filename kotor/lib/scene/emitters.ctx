@@ -19,7 +19,7 @@ namespace scene {
     fn give_emitters { mut sc: Scene, mut w: world::World, mut dev: gpu::Device, part: usize } -> ! {
         let model = loaded_at{ sc = &sc, i = part_at{ sc = &sc, i = part }.loaded }.model
         if model.emitters.len == 0 { return }
-        let ems = try alloc::resize(gui3d::Emitting, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(gui3d::Emitting){}, count = model.emitters.len }
+        let ems = try alloc::make(gui3d::Emitting, arena::Arena){ realloc = arena::alloc, heap = sc.arena, count = model.emitters.len }
         let mut e: usize = 0
         while e < ems.len {
             ems[e] = try gui3d::make_emitting{ fs = &w.fs, dev = &dev, heap = sc.arena, mats = &sc.materials, rm = w.rm.*, model, index = @as(u32, e) }

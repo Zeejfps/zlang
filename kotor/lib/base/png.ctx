@@ -208,7 +208,7 @@ namespace png {
     // Encodes `image` into memory from the allocator and writes it to `path`.
     fn save(S) { mut fs: Fs, realloc: alloc::Fn(S), mut heap: S, path: []u8, image: Image, alpha: bool, bottom_up: bool } -> ! {
         let size = encoded_size{ width = image.width, height = image.height, alpha }
-        let buf = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = size }
+        let buf = try alloc::make(u8, S){ realloc, &heap, count = size }
         defer _ = alloc::resize(u8, S){ realloc, &heap, mem = buf, count = 0 }
         let bytes = encode{ image, alpha, bottom_up, into = buf }
         _ = try fs::write_all{ &fs, path, bytes }

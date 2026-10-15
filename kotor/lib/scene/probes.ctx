@@ -507,7 +507,7 @@ namespace scene {
         f.nz = @as(u32, (hi.z - f.min_z) / f.cell) + 1
         let layer = @as(usize, f.nx) * @as(usize, f.ny)
         let cells = layer * @as(usize, f.nz)
-        f.starts = try alloc::resize(u32, arena::Arena){ realloc = arena::alloc, heap = arena, mem = slice::empty(u32){}, count = cells + 1 }
+        f.starts = try alloc::make(u32, arena::Arena){ realloc = arena::alloc, heap = arena, count = cells + 1 }
         i = 0
         while i <= cells {
             f.starts[i] = 0
@@ -527,7 +527,7 @@ namespace scene {
                     c = c + 1
                 }
                 total = @as(usize, run)
-                f.items = try alloc::resize(u32, arena::Arena){ realloc = arena::alloc, heap = arena, mem = slice::empty(u32){}, count = total + 1 }
+                f.items = try alloc::make(u32, arena::Arena){ realloc = arena::alloc, heap = arena, count = total + 1 }
             }
             i = 0
             while i < tris.len {
@@ -568,7 +568,7 @@ namespace scene {
             c = c - 1
         }
         f.starts[0] = 0
-        f.stamps = try alloc::resize(u32, arena::Arena){ realloc = arena::alloc, heap = arena, mem = slice::empty(u32){}, count = tris.len }
+        f.stamps = try alloc::make(u32, arena::Arena){ realloc = arena::alloc, heap = arena, count = tris.len }
         i = 0
         while i < tris.len {
             f.stamps[i] = 0
@@ -653,7 +653,7 @@ namespace scene {
         let sy = if lh > max { (lh + max - 1) / max } else { 1 }
         let ow = if lw / sx > 0 { lw / sx } else { 1 }
         let oh = if lh / sy > 0 { lh / sy } else { 1 }
-        let out = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(u8){}, count = @as(usize, ow) * @as(usize, oh) * 3 } iferr { return null }
+        let out = alloc::make(u8, arena::Arena){ realloc = arena::alloc, heap = sc.arena, count = @as(usize, ow) * @as(usize, oh) * 3 } iferr { return null }
         let mut y: u32 = 0
         while y < oh {
             let mut x: u32 = 0

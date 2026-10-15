@@ -11,7 +11,7 @@ namespace gui {
     // `cache` and the heap outlive it. Fonts, backdrops, cursors and sounds load on `open` and
     // `load_defaults`.
     fn make { heap: *mut heap::Heap, rm: res::Manager, cache: *mut material::Cache, width: i32, height: i32 } -> !Gui {
-        let lines = try alloc::resize(Line, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(Line){}, count = MAX_LINES }
+        let lines = try alloc::make(Line, heap::Heap){ realloc = heap::alloc, heap, count = MAX_LINES }
         let mut cursors: [CURSORS]CursorSlot
         let mut sounds: [SOUNDS]Sound
         let mut backdrops: [6]Img

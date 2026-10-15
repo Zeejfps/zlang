@@ -68,7 +68,7 @@ namespace mdl_cache {
     }
 
     fn copy { mut heap: arena::Arena, s: []u8 } -> ![]u8 {
-        let out = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = s.len }
+        let out = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = s.len }
         slice::copy(u8){ dst = out, src = s }
         return out
     }

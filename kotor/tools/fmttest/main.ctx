@@ -184,14 +184,14 @@ fn check_malformed { mut io: Io, mut t: Tally, mut scratch: arena::Arena } {
     }
     expect{ &io, &t, ok = all_failed, what = "every truncated GFF is an error" }
     // Every single-byte change either parses or is an error (no panic, no read outside).
-    let copy = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &scratch, mem = slice::empty(u8){}, count = good.len } iferr { return }
-    let mark = scratch.used
+    let copy = alloc::make(u8, arena::Arena){ realloc = arena::alloc, heap = &scratch, count = good.len } iferr { return }
+    let mark = arena::mark{ heap = scratch }
     let mut i: usize = 0
     while i < good.len {
         slice::copy(u8){ dst = copy, src = good }
         copy[i] = ~copy[i]
         _ = match gff::parse{ data = copy, realloc = arena::alloc, heap = &scratch } { ok => { true } err => { false } }
-        scratch.used = mark
+        arena::restore{ heap = &scratch, to = mark }
         i = i + 1
     }
     expect{ &io, &t, ok = true, what = "corrupted GFFs don't panic" }

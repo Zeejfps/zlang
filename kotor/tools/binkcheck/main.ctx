@@ -79,7 +79,7 @@ fn run { mut io: Io, mut fs: Fs, mut proc: Proc, mut sdl: sdl::Sdl, mut heap: ar
         fs::make_dir{ &fs, path = "kotor/out/bink/ref" } iferr { }
     }
     let freq = sdl::counter_frequency{ &sdl }
-    let mark = heap.used
+    let mark = arena::mark{ heap }
     let mut failures: u32 = 0
     let mut checked: u32 = 0
     let mut total = Report{ frames = 0, ticks = 0, max_ticks = 0, samples = 0, compared = 0, exact = 0, min_psnr = 1000.0, sum_psnr = 0.0, audio_compared = 0, audio_differ = 0, audio_max = 0, fuzzed = 0, fuzz_errors = 0 }
@@ -89,7 +89,7 @@ fn run { mut io: Io, mut fs: Fs, mut proc: Proc, mut sdl: sdl::Sdl, mut heap: ar
         let name = names[i]
         i = i + 1
         if o.first_movie >= args.len and not ends_with_bik{ s = name } { continue }
-        heap.used = mark
+        arena::restore{ &heap, to = mark }
         let mut path_buf: [512]u8
         let mut path = Text{ buf = path_buf[..], len = 0 }
         if is_path{ s = name } {
@@ -190,8 +190,8 @@ fn check { mut io: Io, mut fs: Fs, mut proc: Proc, mut sdl: sdl::Sdl, mut heap: 
     let w: usize = movie.header.width
     let h: usize = movie.header.height
     let frame_size = w * h + 2 * ((w + 1) / 2) * ((h + 1) / 2)
-    let ref_frame = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = frame_size }
-    let ref_pcm = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = 2 * movie.pcm.len + 8 }
+    let ref_frame = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = frame_size }
+    let ref_pcm = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 2 * movie.pcm.len + 8 }
     let mut yuv_done = false
     let mut pcm_done = false
     // --fuzz: decoders fed only corrupted packets, and room for a packet's copy.
@@ -201,8 +201,8 @@ fn check { mut io: Io, mut fs: Fs, mut proc: Proc, mut sdl: sdl::Sdl, mut heap: 
         let track = movie.header.tracks[0]
         bad_audio = try bink_audio::new{ realloc = arena::alloc, &heap, rate = track.rate, flags = track.flags }
     }
-    let scratch = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = movie.buffer.len }
-    let bad_pcm = try alloc::resize(i16, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(i16){}, count = movie.pcm.len }
+    let scratch = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = movie.buffer.len }
+    let bad_pcm = try alloc::make(i16, arena::Arena){ realloc = arena::alloc, &heap, count = movie.pcm.len }
     while o.frames == 0 or r.frames < o.frames {
         let t0 = sdl::counter{ &sdl }
         let bytes = try bink::read_frame{ &fs, m = &movie } ifnull { break }

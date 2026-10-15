@@ -43,7 +43,7 @@ namespace scripts {
         // The name goes to module memory first: the program keeps it.
         let mut key = name
         let text = resref::bytes{ r = &key }
-        let kept = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, mem = slice::empty(u8){}, count = text.len }
+        let kept = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, count = text.len }
         slice::copy(u8){ dst = kept, src = text }
         let bytes = try world::read_module{ &w, name = kept, kind = restype::Type::ncs } ifnull { return null }
         let program = try nwvm::load(arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, name = kept, bytes }

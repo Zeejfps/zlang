@@ -14,7 +14,7 @@ namespace kmodels {
         model: *mdl::Model, envmap: []u8,
     } -> !Loaded {
         let g = try mdl_render::upload{ &dev, realloc = arena::alloc, &heap, model }
-        let materials = try alloc::resize(render::Material, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(render::Material){}, count = model.meshes.len }
+        let materials = try alloc::make(render::Material, arena::Arena){ realloc = arena::alloc, &heap, count = model.meshes.len }
         let mut count: usize = 0
         let mut i: usize = 0
         while i < model.meshes.len {

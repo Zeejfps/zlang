@@ -120,9 +120,9 @@ namespace archive_check {
         st.archives = st.archives + 1
         let hd = erf::parse_header{ data } iferr { return }
         let n = @as(usize, hd.count)
-        let entries = alloc::resize(erf::Entry, heap::Heap){ realloc = heap::alloc, heap = &h, mem = slice::empty(erf::Entry){}, count = n } iferr { return }
+        let entries = alloc::make(erf::Entry, heap::Heap){ realloc = heap::alloc, heap = &h, count = n } iferr { return }
         defer _ = alloc::resize(erf::Entry, heap::Heap){ realloc = heap::alloc, heap = &h, mem = entries, count = 0 }
-        let mut members = alloc::resize(erf::NewMember, heap::Heap){ realloc = heap::alloc, heap = &h, mem = slice::empty(erf::NewMember){}, count = n } iferr { return }
+        let mut members = alloc::make(erf::NewMember, heap::Heap){ realloc = heap::alloc, heap = &h, count = n } iferr { return }
         defer _ = alloc::resize(erf::NewMember, heap::Heap){ realloc = heap::alloc, heap = &h, mem = members, count = 0 }
         let mut i: usize = 0
         while i < n {

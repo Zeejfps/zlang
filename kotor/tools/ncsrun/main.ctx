@@ -247,7 +247,7 @@ fn load_situation {
     let bp = try le::read_u32{ &r }
     let stack_size = try le::read_u32{ &r }
     let n = @as(usize, try le::read_u32{ &r })
-    let cells = try alloc::resize(nwvm::SavedCell, arena::Arena){ realloc = arena::alloc, heap = &work, mem = slice::empty(nwvm::SavedCell){}, count = n }
+    let cells = try alloc::make(nwvm::SavedCell, arena::Arena){ realloc = arena::alloc, heap = &work, count = n }
     let mut k: usize = 0
     while k < n {
         let tag = try le::read_u8{ &r }

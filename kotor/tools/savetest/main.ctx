@@ -639,7 +639,7 @@ fn test_screenshot { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut r: Report, s
     let orig = try read_file{ &fs, &h, dir = save_dir, name = "Screen.tga" }
     check{ &io, &r, ok = orig.len == 18 + 256 * 256 * 3, what = "screenshot: the install's Screen.tga is 18 + 256 * 256 * 3 bytes" }
     if orig.len == 18 + 256 * 256 * 3 {
-        let rgba = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &h, mem = slice::empty(u8){}, count = 256 * 256 * 4 }
+        let rgba = try alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap = &h, count = 256 * 256 * 4 }
         let mut row: usize = 0
         while row < 256 {
             let mut x: usize = 0
@@ -664,7 +664,7 @@ fn test_screenshot { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut r: Report, s
     // bottom right; the file runs bottom up.
     let sw: u32 = 1280
     let sh: u32 = 720
-    let screen = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &h, mem = slice::empty(u8){}, count = 1280 * 720 * 4 }
+    let screen = try alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap = &h, count = 1280 * 720 * 4 }
     let mut y: usize = 0
     while y < 720 {
         let mut x: usize = 0

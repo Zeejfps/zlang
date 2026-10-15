@@ -118,7 +118,7 @@ namespace save {
         let code = gff::get_void{ doc = doc.*, s, label = "Code" } ifnull { return null }
         let name = gff::get_string{ doc = doc.*, s, label = "Name" } ifnull ""
         // The program: the saved code behind an NCS header, in module memory.
-        let file = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, mem = slice::empty(u8){}, count = code.len + 13 } iferr { return null }
+        let file = alloc::make(u8, arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, count = code.len + 13 } iferr { return null }
         let header: [8]u8 = ['N', 'C', 'S', ' ', 'V', '1', '.', '0']
         slice::copy(u8){ dst = file[..8], src = header[..] }
         file[8] = 'B'
@@ -134,7 +134,7 @@ namespace save {
         let stack = gff::get_struct{ doc = doc.*, s, label = "Stack" } ifnull { return null }
         let bp = @trunc(u32, number_at{ doc, s = stack, label = "BasePointer", default = 0 })
         let list = gff::get_list{ doc = doc.*, s = stack, label = "Stack" } ifnull slice::empty(u32){}
-        let cells = alloc::resize(nwvm::SavedCell, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(nwvm::SavedCell){}, count = list.len } iferr { return null }
+        let cells = alloc::make(nwvm::SavedCell, arena::Arena){ realloc = arena::alloc, heap = w.scratch, count = list.len } iferr { return null }
         let mut i: usize = 0
         while i < list.len {
             let c = list[i]

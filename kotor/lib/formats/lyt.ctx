@@ -53,7 +53,7 @@ namespace lyt {
         let mut tracks = list::new(Placement, S){ realloc, heap = &heap }
         let mut obstacles = list::new(Placement, S){ realloc, heap = &heap }
         let mut hooks = list::new(DoorHook, S){ realloc, heap = &heap }
-        // On success the lists are empty by then (lists::take), so these free only on an error.
+        // On success the lists are empty by then (list::take), so these free only on an error.
         defer list::free{ list = &rooms }
         defer list::free{ list = &tracks }
         defer list::free{ list = &obstacles }
@@ -128,10 +128,10 @@ namespace lyt {
         }
         if remaining > 0 or not done { return unfinished{ line } }
         return Layout{
-            rooms = try lists::take{ list = &rooms },
-            tracks = try lists::take{ list = &tracks },
-            obstacles = try lists::take{ list = &obstacles },
-            doorhooks = try lists::take{ list = &hooks },
+            rooms = try list::take{ list = &rooms },
+            tracks = try list::take{ list = &tracks },
+            obstacles = try list::take{ list = &obstacles },
+            doorhooks = try list::take{ list = &hooks },
             blanked,
         }
     }

@@ -1705,7 +1705,7 @@ namespace check {
     // Every copy of every UTC in the install (modules and saved games included, like the creature
     // census) as an attacker against a medium-armour dummy and as a defender against it.
     fn cb_census { mut io: Io, mut fs: Fs, mut r: Report, mut heap: heap::Heap, tables: *rules::Tables, game: []u8 } {
-        let buf = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = slice::empty(u8){}, count = 8 * 1024 * 1024 } iferr err{ error } {
+        let buf = alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap = &heap, count = 8 * 1024 * 1024 } iferr err{ error } {
             fail{ &io, &r, name = "combat census: no memory for the scratch arena", detail = 0 }
             return
         }

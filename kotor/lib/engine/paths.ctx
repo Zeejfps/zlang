@@ -47,7 +47,7 @@ namespace paths {
 
     fn nearest_point { mut w: world::World, g: pth::Graph, at: math::Vec3, goal: bool } -> ?u32 {
         let n = g.points.len
-        let tried = alloc::resize(bool, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(bool){}, count = n } iferr { return null }
+        let tried = alloc::make(bool, arena::Arena){ realloc = arena::alloc, heap = w.scratch, count = n } iferr { return null }
         let mut k: u32 = 0
         while k < WINDOWS {
             let half = WINDOW * @as(f32, k + 1)
@@ -202,9 +202,9 @@ namespace paths {
 
     fn search { mut w: world::World, id: u32, g: pth::Graph, s: u32, t: u32, d: f32, near_z: f32, chain: *mut list::List(u32, arena::Arena) } -> bool {
         let n = g.points.len
-        let best_g = alloc::resize(f32, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(f32){}, count = n } iferr { return false }
-        let best_left = alloc::resize(f32, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(f32){}, count = n } iferr { return false }
-        let zs = alloc::resize(f32, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(f32){}, count = n } iferr { return false }
+        let best_g = alloc::make(f32, arena::Arena){ realloc = arena::alloc, heap = w.scratch, count = n } iferr { return false }
+        let best_left = alloc::make(f32, arena::Arena){ realloc = arena::alloc, heap = w.scratch, count = n } iferr { return false }
+        let zs = alloc::make(f32, arena::Arena){ realloc = arena::alloc, heap = w.scratch, count = n } iferr { return false }
         let mut i: usize = 0
         while i < n {
             best_g[i] = FAR

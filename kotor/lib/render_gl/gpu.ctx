@@ -173,23 +173,23 @@ namespace gpu {
         }
         let mut dev = Device{
             gl, win, config, info, debug_on, debug_log,
-            textures = try alloc::resize(TexSlot, S){ realloc, &heap, mem = slice::empty(TexSlot){}, count = config.max_textures },
-            meshes = try alloc::resize(MeshSlot, S){ realloc, &heap, mem = slice::empty(MeshSlot){}, count = config.max_meshes },
-            targets = try alloc::resize(TargetSlot, S){ realloc, &heap, mem = slice::empty(TargetSlot){}, count = config.max_targets },
+            textures = try alloc::make(TexSlot, S){ realloc, &heap, count = config.max_textures },
+            meshes = try alloc::make(MeshSlot, S){ realloc, &heap, count = config.max_meshes },
+            targets = try alloc::make(TargetSlot, S){ realloc, &heap, count = config.max_targets },
             screen, screen_ms = MsBuffers{ .. }, max_samples = if max_samples > 8 { 8 } else { max_samples },
             scene = ScenePrograms{ .. },
             particle = ParticleProgram{ .. },
             fx = screen,
-            scratch = try alloc::resize(f32, S){ realloc, &heap, mem = slice::empty(f32){}, count = STREAM_FLOATS },
-            sort = try alloc::resize(SortItem, S){ realloc, &heap, mem = slice::empty(SortItem){}, count = SORT_ITEMS },
-            sort_tmp = try alloc::resize(SortItem, S){ realloc, &heap, mem = slice::empty(SortItem){}, count = SORT_ITEMS },
+            scratch = try alloc::make(f32, S){ realloc, &heap, count = STREAM_FLOATS },
+            sort = try alloc::make(SortItem, S){ realloc, &heap, count = SORT_ITEMS },
+            sort_tmp = try alloc::make(SortItem, S){ realloc, &heap, count = SORT_ITEMS },
             state = State{ .. },
             anisotropy = if aniso { math::min{ a = 8.0, b = max_aniso } } else { 0.0 }, max_anisotropy = max_aniso,
-            log = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = 8192 },
+            log = try alloc::make(u8, S){ realloc, &heap, count = 8192 },
             scene_fx = ScenePrograms{ .. }, particle_fx = ParticleProgram{ .. },
             fxp = FxPrograms{ .. }, fxt = FxTargets{ .. }, cur = ScenePrograms{ .. }, cur_particle = ParticleProgram{ .. },
             timer = Timer{ .. }, atmos = AtmosPrograms{ .. }, aa = AaPrograms{ .. }, shadow = no_shadows{}, scene_tess = ScenePrograms{ .. }, aos = AoState{ .. }, dof = DofState{ .. }, ssr = SsrState{ .. }, ofx = no_orig_fx{},
-            pointer = no_pointer_state{ pixels = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = POINTER_BYTES * 2 } },
+            pointer = no_pointer_state{ pixels = try alloc::make(u8, S){ realloc, &heap, count = POINTER_BYTES * 2 } },
             ..
         }
         clear_tables{ &dev }

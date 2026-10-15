@@ -33,7 +33,7 @@ namespace galview {
         mut w: world::World, mut g: gui::Gui, mut dev: gpu::Device, model: []u8, size: usize, fov: f32, animation: []u8, warm_up: f32,
     } -> ?*mut Shown {
         let heap = w.heap
-        let mem = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(u8){}, count = size } iferr { return null }
+        let mem = alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap, count = size } iferr { return null }
         let ar = alloc::new(arena::Arena, heap::Heap){ realloc = heap::alloc, heap, value = arena::new{ buf = mem } } iferr { return null }
         let models = alloc::new(mdl_cache::Cache, heap::Heap){ realloc = heap::alloc, heap, value = mdl_cache::new{ rm = w.rm.*, keep = ar } } iferr { return null }
         let scene = gui3d::load{

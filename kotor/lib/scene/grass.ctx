@@ -126,8 +126,8 @@ namespace grass {
             }
             if pass == 0 {
                 let want = if total < MAX_TUFTS { total } else { MAX_TUFTS }
-                field.tufts = try alloc::resize(Tuft, arena::Arena){ realloc = arena::alloc, heap = &arena, mem = slice::empty(Tuft){}, count = want }
-                field.scratch = try alloc::resize(render::Particle, arena::Arena){ realloc = arena::alloc, heap = &arena, mem = slice::empty(render::Particle){}, count = MAX_DRAWN }
+                field.tufts = try alloc::make(Tuft, arena::Arena){ realloc = arena::alloc, heap = &arena, count = want }
+                field.scratch = try alloc::make(render::Particle, arena::Arena){ realloc = arena::alloc, heap = &arena, count = MAX_DRAWN }
             } else {
                 field.tufts = field.tufts[..at]
             }

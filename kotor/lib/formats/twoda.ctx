@@ -159,9 +159,9 @@ namespace twoda {
         let offsets_at = p
         let pool = data[p + offsets..]
 
-        let columns = try alloc::resize([]u8, S){ realloc, &heap, mem = slice::empty([]u8){}, count = ncols }
-        let labels = try alloc::resize([]u8, S){ realloc, &heap, mem = slice::empty([]u8){}, count = nrows }
-        let cells = try alloc::resize(u32, S){ realloc, &heap, mem = slice::empty(u32){}, count = ncells }
+        let columns = try alloc::make([]u8, S){ realloc, &heap, count = ncols }
+        let labels = try alloc::make([]u8, S){ realloc, &heap, count = nrows }
+        let cells = try alloc::make(u32, S){ realloc, &heap, count = ncells }
         fill_names{ data, at = names_at, into = columns }
         fill_names{ data, at = labels_at, into = labels }
         let mut k: usize = 0
@@ -267,8 +267,8 @@ namespace twoda {
         // Exactly sized, so `free` can give them back.
         let all = try alloc::resize(u8, S){ realloc, &heap, mem = pool.items, count = pool.len }
         let cell_offsets = try alloc::resize(u32, S){ realloc, &heap, mem = cells.items, count = cells.len }
-        let columns = try alloc::resize([]u8, S){ realloc, &heap, mem = slice::empty([]u8){}, count = col_spans.len }
-        let labels = try alloc::resize([]u8, S){ realloc, &heap, mem = slice::empty([]u8){}, count = label_spans.len }
+        let columns = try alloc::make([]u8, S){ realloc, &heap, count = col_spans.len }
+        let labels = try alloc::make([]u8, S){ realloc, &heap, count = label_spans.len }
         let mut i: usize = 0
         while i < columns.len {
             let sp = list::items{ list = col_spans }[i]

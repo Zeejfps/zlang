@@ -16,7 +16,7 @@ namespace save {
         let sw = @as(usize, width)
         let sh = @as(usize, height)
         if sw == 0 or sh == 0 or rgba.len / 4 / sw < sh { return bad_screenshot{ width, height } }
-        let out = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = TGA_HEADER + THUMB * THUMB * 3 }
+        let out = try alloc::make(u8, S){ realloc, &heap, count = TGA_HEADER + THUMB * THUMB * 3 }
 
         // No image id, no colour map, type 2, origin 0,0, 256 x 256, 24 bits, bottom-left origin.
         slice::fill(u8){ s = out[..TGA_HEADER], v = 0 }

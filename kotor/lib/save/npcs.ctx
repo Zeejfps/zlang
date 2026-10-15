@@ -211,7 +211,7 @@ namespace save {
         let doc = try gff::parse{ data = bytes, realloc = arena::alloc, heap = w.scratch }
         // The bag's old items go. destroy() takes an item out of its holder's list, so walk a
         // copy of the ids and clear the bag first (walking the list itself skipped every other one).
-        let old = try alloc::resize(u32, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(u32){}, count = w.bag.len }
+        let old = try alloc::make(u32, arena::Arena){ realloc = arena::alloc, heap = w.scratch, count = w.bag.len }
         slice::copy(u32){ dst = old, src = list::items{ list = w.bag } }
         list::clear{ list = &w.bag }
         let mut k: usize = 0

@@ -223,7 +223,7 @@ namespace cine {
             w.credits_running = false
             return false
         }
-        let silent = try alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(i16){}, count = 44100 }
+        let silent = try alloc::make(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, count = 44100 }
         defer _ = alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = silent, count = 0 }
         // The world is still: every sound playing stops until the films are over (sound mode 3, pushed around
         // PlayMovie 0x00540ed0 and by the movie mode 0x00602af0), the films' own and the credits' started after.

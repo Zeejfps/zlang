@@ -1436,12 +1436,9 @@ namespace mdl {
 
     // ---- small helpers
 
-    // `count` zeroed T's: an allocator may hand out memory it used before (an arena after a
-    // reset does), and counters and optional fields start from zero.
+    // `count` zeroed T's from the parser's allocator.
     fn make(T, S) { mut p: Parser(S), count: usize } -> ![]mut T {
-        let out = try alloc::resize(T, S){ realloc = p.realloc, heap = p.heap, mem = slice::empty(T){}, count }
-        slice::fill(u8){ s = slice::cast(T, u8){ s = out }, v = 0 }
-        return out
+        return alloc::make(T, S){ realloc = p.realloc, heap = p.heap, count }
     }
 
     fn read_floats(S) { mut p: Parser(S), at: usize, count: usize } -> ![]f32 {

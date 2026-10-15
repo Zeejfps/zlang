@@ -141,11 +141,11 @@ namespace dlg {
             nanims = nanims + list_len{ doc, s = reply_structs[i], label = "AnimList" }
             i = i + 1
         }
-        let entries = try alloc::resize(Node, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(Node){}, count = entry_structs.len }
-        let replies = try alloc::resize(Node, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(Node){}, count = reply_structs.len }
-        let stunts = try alloc::resize(Stunt, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(Stunt){}, count = stunt_structs.len }
-        let links = try alloc::resize(Link, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(Link){}, count = nlinks }
-        let anims = try alloc::resize(Anim, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(Anim){}, count = nanims }
+        let entries = try alloc::make(Node, heap::Heap){ realloc = heap::alloc, heap = w.heap, count = entry_structs.len }
+        let replies = try alloc::make(Node, heap::Heap){ realloc = heap::alloc, heap = w.heap, count = reply_structs.len }
+        let stunts = try alloc::make(Stunt, heap::Heap){ realloc = heap::alloc, heap = w.heap, count = stunt_structs.len }
+        let links = try alloc::make(Link, heap::Heap){ realloc = heap::alloc, heap = w.heap, count = nlinks }
+        let anims = try alloc::make(Anim, heap::Heap){ realloc = heap::alloc, heap = w.heap, count = nanims }
         let mut d = Dialog{
             bytes, entries, replies, starting = links[..start_structs.len], stunts, links, anims,
             camera_model = resref_of{ doc, s = root, label = "CameraModel" },

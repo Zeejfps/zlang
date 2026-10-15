@@ -248,7 +248,7 @@ fn one_frame {
 
 fn save_screen { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut heap: arena::Arena, dir: []u8, name: []u8 } -> ! {
     let size = gpu::screen_size{ dev }
-    let pixels = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
+    let pixels = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
     defer _ = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = pixels, count = 0 }
     _ = try gpu::read_screen{ &dev, into = pixels }
     let mut path_buf: [512]u8

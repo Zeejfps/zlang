@@ -135,7 +135,7 @@ namespace vfx {
         let model = scene::loaded_at{ sc = &sc, i = loaded }.model
         f.loaded = loaded
         f.part = try scene::add_part{ &sc, loaded, parent = -1, hook = "" }
-        f.emitting = try alloc::resize(gui3d::Emitting, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(gui3d::Emitting){}, count = model.emitters.len }
+        f.emitting = try alloc::make(gui3d::Emitting, arena::Arena){ realloc = arena::alloc, heap = sc.arena, count = model.emitters.len }
         let mut e: usize = 0
         while e < model.emitters.len {
             f.emitting[e] = try make_emitting{ &sc, &w, &dev, model, index = @as(u32, e) }
@@ -149,8 +149,8 @@ namespace vfx {
     fn make_emitting { mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, model: *mdl::Model, index: u32 } -> !gui3d::Emitting {
         let e = &model.emitters[index]
         let room = if e.update == mdl::EmitterUpdate::lightning { gui3d::LIGHTNING_POINTS } else { PUFFS }
-        let puffs = try alloc::resize(gui3d::Puff, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(gui3d::Puff){}, count = room }
-        let out = try alloc::resize(render::Particle, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(render::Particle){}, count = room }
+        let puffs = try alloc::make(gui3d::Puff, arena::Arena){ realloc = arena::alloc, heap = sc.arena, count = room }
+        let out = try alloc::make(render::Particle, arena::Arena){ realloc = arena::alloc, heap = sc.arena, count = room }
         let t = material::get{ cache = &sc.materials, fs = &w.fs, &dev, rm = w.rm.*, name = e.texture }
         return gui3d::emitting_over{ index, texture = t.texture, puffs, out, node_turn = model.nodes[e.node].orientation }
     }

@@ -167,12 +167,12 @@ namespace bink {
         let header = try parse_header{ bytes = head[..size] }
 
         let count: usize = header.frames + 1
-        let index = try alloc::resize(u32, S){ realloc, &heap, mem = slice::empty(u32){}, count }
+        let index = try alloc::make(u32, S){ realloc, &heap, count }
         let largest = read_index{ &fs, file, index, start = size } iferr err{ error } {
             _ = alloc::resize(u32, S){ realloc, &heap, mem = index, count = 0 }
             return error
         }
-        let buffer = alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = largest } iferr err{ error } {
+        let buffer = alloc::make(u8, S){ realloc, &heap, count = largest } iferr err{ error } {
             _ = alloc::resize(u32, S){ realloc, &heap, mem = index, count = 0 }
             return error
         }
@@ -217,7 +217,7 @@ namespace bink {
             }
         }
         let count: usize = track.max_decoded / 2
-        m.pcm = alloc::resize(i16, S){ realloc, &heap, mem = slice::empty(i16){}, count } iferr err{ error } {
+        m.pcm = alloc::make(i16, S){ realloc, &heap, count } iferr err{ error } {
             let mut a = audio
             bink_audio::free{ realloc, &heap, d = &a }
             return error

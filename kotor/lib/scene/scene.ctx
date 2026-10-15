@@ -139,7 +139,7 @@ namespace scene {
 
     // A heap-free key in the scene arena: the parts joined by '|', lower case.
     fn key_of { mut sc: Scene, a: []u8, b: []u8 } -> ![]u8 {
-        let out = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(u8){}, count = a.len + 1 + b.len }
+        let out = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, heap = sc.arena, count = a.len + 1 + b.len }
         let mut i: usize = 0
         while i < a.len {
             out[i] = ascii::to_lower{ c = a[i] }
@@ -179,7 +179,7 @@ namespace scene {
         if have != null { return have }
         let model = mdl_cache::get{ fs = &w.fs, cache = &sc.models, name } ifnull { return null }
         let g = mdl_render::upload(arena::Arena){ &dev, realloc = arena::alloc, heap = sc.arena, model } iferr { return upload_failed }
-        let mats = try alloc::resize(render::Material, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(render::Material){}, count = model.meshes.len }
+        let mats = try alloc::make(render::Material, arena::Arena){ realloc = arena::alloc, heap = sc.arena, count = model.meshes.len }
         i = 0
         while i < model.meshes.len {
             let m = model.meshes[i]

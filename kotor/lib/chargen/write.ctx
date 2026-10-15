@@ -9,7 +9,7 @@ namespace chargen {
 
     // The player's custom locstring: no strref, one string of language 0 (English, male).
     fn put_text { mut b: gffw::Builder(heap::Heap), heap: *mut heap::Heap, owner: u32, label: []u8, text: []u8 } -> ! {
-        let body = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(u8){}, count = 8 + text.len }
+        let body = try alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap, count = 8 + text.len }
         defer free_bytes{ b = body, heap }
         let mut i: usize = 0
         while i < 4 {

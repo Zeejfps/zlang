@@ -6,7 +6,7 @@ namespace path {
     // `realloc`.
     fn join(S) { realloc: alloc::Fn(S), mut heap: S, dir: []u8, name: []u8 } -> !alloc::Bytes {
         let sep: usize = if dir.len > 0 and dir[dir.len - 1] != '/' and dir[dir.len - 1] != '\\' { 1 } else { 0 }
-        let out = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = dir.len + sep + name.len }
+        let out = try alloc::make(u8, S){ realloc, &heap, count = dir.len + sep + name.len }
         slice::copy(u8){ dst = out[..dir.len], src = dir }
         if sep == 1 { out[dir.len] = '/' }
         slice::copy(u8){ dst = out[dir.len + sep..], src = name }

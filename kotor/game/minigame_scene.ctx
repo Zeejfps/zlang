@@ -101,7 +101,7 @@ namespace mg_game {
         if loaded == null { return null }
         let part = try scene::add_part{ &sc, loaded, parent = -1, hook = "" }
         let model = scene::loaded_at{ sc = &sc, i = loaded }.model
-        let emitting = try alloc::resize(gui3d::Emitting, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(gui3d::Emitting){}, count = model.emitters.len }
+        let emitting = try alloc::make(gui3d::Emitting, arena::Arena){ realloc = arena::alloc, heap = sc.arena, count = model.emitters.len }
         let mut e: usize = 0
         while e < emitting.len {
             emitting[e] = try gui3d::make_emitting{ fs = &w.fs, dev = &dev, heap = sc.arena, mats = &sc.materials, rm = w.rm.*, model, index = @as(u32, e) }
@@ -194,8 +194,8 @@ namespace mg_game {
     fn build_stage { mut stage: Stage, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device } -> ! {
         let run = w.minigame ifnull { return }
         stage.count = 0
-        stage.items = try alloc::resize(Item, arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, mem = slice::empty(Item){}, count = MAX_ITEMS }
-        stage.anims = try alloc::resize(Anim, arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, mem = slice::empty(Anim){}, count = MAX_ITEMS }
+        stage.items = try alloc::make(Item, arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, count = MAX_ITEMS }
+        stage.anims = try alloc::make(Anim, arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, count = MAX_ITEMS }
         let mut n: usize = 0
         while n < run.count {
             try add_object{ &stage, &sc, &w, &dev, run, n }

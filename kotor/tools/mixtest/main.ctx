@@ -42,7 +42,7 @@ fn near { a: f32, b: f32, tol: f32 } -> bool {
 // A RIFF/WAVE file of `frames` frames, every sample `value` (the right channel -value).
 fn make_wav { mut heap: arena::Arena, rate: u32, channels: u32, frames: usize, value: i16 } -> []u8 {
     let size = 44 + frames * channels * 2
-    let b = try! alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = size }
+    let b = try! alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = size }
     wav::write_header{ into = b, channels, rate, frames }
     let mut i: usize = 0
     while i < frames * channels {
@@ -62,7 +62,7 @@ fn render { m: *mut mix::Mixer, out: []mut i16, frames: usize } -> []mut i16 {
 }
 
 fn run { mut io: Io, mut heap: arena::Arena, mut t: Tally, mut threads: Threads } -> ! {
-    let out = try alloc::resize(i16, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(i16){}, count = 2 * 200000 }
+    let out = try alloc::make(i16, arena::Arena){ realloc = arena::alloc, &heap, count = 2 * 200000 }
     let dc = make_wav{ &heap, rate = 22050, channels = 1, frames = 22050, value = 10000 }
     let dc2 = make_wav{ &heap, rate = 44100, channels = 2, frames = 4410, value = 8000 }
     let short = make_wav{ &heap, rate = 22050, channels = 1, frames = 100, value = 10000 }

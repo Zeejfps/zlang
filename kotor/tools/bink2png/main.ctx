@@ -50,7 +50,7 @@ fn run { mut io: Io, mut fs: Fs, mut heap: arena::Arena, o: Options } -> ! {
     let revision = [h.revision]
     _ = @fmt(&io, "{}: BIK{} {}x{}, {} frames at {}/{} fps, audio {} Hz x {}\n",
         path, revision[..], h.width, h.height, h.frames, h.rate_num, h.rate_den, movie.audio_rate, movie.audio_channels)
-    let rgba = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = 4 * @as(usize, h.width) * @as(usize, h.height) }
+    let rgba = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 4 * @as(usize, h.width) * @as(usize, h.height) }
     let mut yuv_file: ?fs::File = null
     if o.yuv.len > 0 { yuv_file = try fs::open{ &fs, path = o.yuv, mode = fs::Mode::write } }
     let mut written: u32 = 0

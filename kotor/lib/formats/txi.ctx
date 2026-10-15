@@ -98,7 +98,7 @@ namespace txi {
         let mut t = Txi{ .. }
         let mut upper = list::new(Coord, S){ realloc, heap = &heap }
         let mut lower = list::new(Coord, S){ realloc, heap = &heap }
-        // On success the lists are empty by then (lists::take), so these free only on an error.
+        // On success the lists are empty by then (list::take), so these free only on an error.
         defer list::free{ list = &upper }
         defer list::free{ list = &lower }
         let mut block = Block::none
@@ -209,8 +209,8 @@ namespace txi {
             else if ci::eq{ a = k, b = "spacingr" } { t.spacingr = text::scan_f32{ s = v } ifnull t.spacingr }
             else if ci::eq{ a = k, b = "spacingb" } { t.spacingb = text::scan_f32{ s = v } ifnull t.spacingb }
         }
-        t.upperleftcoords = try lists::take{ list = &upper }
-        t.lowerrightcoords = try lists::take{ list = &lower }
+        t.upperleftcoords = try list::take{ list = &upper }
+        t.lowerrightcoords = try list::take{ list = &lower }
         return t
     }
 

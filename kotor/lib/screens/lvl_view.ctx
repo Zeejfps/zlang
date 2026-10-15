@@ -115,10 +115,10 @@ namespace lvl {
             camera_node = "camerahookz"
         }
         let heap = w.heap
-        let mem = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(u8){}, count = VIEW_MEMORY } iferr { return null }
+        let mem = alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap, count = VIEW_MEMORY } iferr { return null }
         let keep = alloc::new(arena::Arena, heap::Heap){ realloc = heap::alloc, heap, value = arena::new{ buf = mem } } iferr { return null }
         let models = alloc::new(mdl_cache::Cache, heap::Heap){ realloc = heap::alloc, heap, value = mdl_cache::new{ rm = w.rm.*, keep } } iferr { return null }
-        let pmem = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(u8){}, count = PREVIEW_MEMORY } iferr { return null }
+        let pmem = alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap, count = PREVIEW_MEMORY } iferr { return null }
         let p = preview3d::make_with{
             fs = &w.fs, &dev, buf = pmem, rm = w.rm.*, models, mats = g.cache,
             appearance_2da = w.tables.appearance, heads_2da = w.tables.heads,

@@ -146,7 +146,7 @@ namespace mg {
     fn make_run(S) {
         realloc: alloc::Fn(S), mut heap: S, area: *mut Area, layout: lyt::Layout, lookup: &fn{ name: []u8 } -> ?*mdl::Model,
     } -> !*mut Run {
-        let rails = try alloc::resize(Rail, S){ realloc, &heap, mem = slice::empty(Rail){}, count = 1 + area.enemies.len }
+        let rails = try alloc::make(Rail, S){ realloc, &heap, count = 1 + area.enemies.len }
         let mut run = Run{
             area, objs = [Obj{ .. }; 255], rails,
             tunnel_pos = area.player.tunnel_pos, tunnel_neg = area.player.tunnel_neg, tunnel_infinite = area.player.tunnel_infinite,
@@ -154,7 +154,7 @@ namespace mg {
             gears = slice::empty(Gear){}, bullets = [Bullet{ .. }; 96],
             ..
         }
-        let gears = try alloc::resize(Gear, S){ realloc, &heap, mem = slice::empty(Gear){}, count = 1 + area.enemies.len }
+        let gears = try alloc::make(Gear, S){ realloc, &heap, count = 1 + area.enemies.len }
         run.gears = gears
         gears[0] = try make_gear(S){ realloc, &heap, f = &area.player, lookup }
         let mut nrails: usize = 0
