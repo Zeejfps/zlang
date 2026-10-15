@@ -194,7 +194,7 @@ if c is '0'..='9' { ... }
 
 1. `?T` is a built-in union with variants `null` and `some{ value: T }`.
 2. `null` is a value of every `?T`. An expression of type `T` converts implicitly to `?T` as `some{ value = expr }`.
-3. Narrowing: where an `x` of type `?T` is known not to be null, it has type `T`. `x` must be a `let` local or a read-only context field, or a path of struct fields from one, such as `v.a.b` (not through a pointer, `.*` or an index). A mutable one doesn't narrow, since a write between the test and a use could make it null. Unwrap it into a new local instead, which holds the value the test saw: `if x is some{ value = v } { ... }` (§8, Is), `let v = x ifnull { return }` (rule 7) or `let some{ value = v } = x else { return }` (§11, Let-else). Where one of these places is used as its `T`, the error says so.
+3. Narrowing: where an `x` of type `?T` is known not to be null, it has type `T`. `x` must be a `let` local or a read-only context field, or a path of struct fields from one, such as `v.a.b` (not through a pointer, `.*` or an index). A mutable one doesn't narrow, since a write between the test and a use could make it null. Unwrap it into a new local instead, which holds the value the test saw: `if let v = x { ... }` (§11, If let), `let v = x ifnull { return }` (rule 7), or `x is some{ value = v }` (§8, Is) in a condition that combines tests. Where one of these places is used as its `T`, the error says so.
 4. A condition narrows some `x`s when it is true and some when it is false:
    - `x != null` narrows `x` when true; `x == null` narrows `x` when false.
    - `x is P` narrows `x` when true, unless `P` lists `null`: then it narrows `x` when false, as `x == null` does (§8, Is).
@@ -237,7 +237,7 @@ let found = map::get{ m, key } is field         // ?Kind for an enum Kind: null 
 3. On a `?U` for a union or enum `U`, a pattern may name a variant of `U`, which null doesn't match. `null` and `some` still name the optional's own variants. `match` doesn't do this: it lists exactly its scrutinee's variants.
 4. Its bindings are bound where the test is known true. `e is P` binds them when true, and `not`, `and` and `or` combine what conditions bind as they combine what they narrow (§8, Optional, rule 4). A name that would be bound twice, as in `a is x{ v } and b is y{ v }`, isn't bound, and neither is one that only one side of an `or` binds.
 5. They are in scope where narrowing would hold (§8, Optional, rule 5): in `b` of `a and b`, in the first branch of `if c` and the body of `while c`, and after an `if` whose branch leaves when `c` is false. After an `if`, they are declared in the enclosing block as a let-else's bindings are (§11, Let-else): a later `let` of the same name in that block is an error.
-6. `x is P`, for an `x` of type `?T` that can narrow (§8, Optional, rule 3), narrows `x` to `T` where it is known true, for a `P` that doesn't list `null`: `if r is local { take{ r } }`. A `P` that lists `null`, as `x is null` does, narrows `x` where the test is known false, as `x == null` does. This is the narrowing of §8, Optional, so it combines with `and`, `or` and `not` and holds where any narrowing would. A `let mut` local or a mutable field doesn't narrow, but its pattern's bindings still bind: `if w.tlk is some{ value = t }` gives a `t` of type `T` either way.
+6. `x is P`, for an `x` of type `?T` that can narrow (§8, Optional, rule 3), narrows `x` to `T` where it is known true, for a `P` that doesn't list `null`: `if r is local { take{ r } }`. A `P` that lists `null`, as `x is null` does, narrows `x` where the test is known false, as `x == null` does. This is the narrowing of §8, Optional, so it combines with `and`, `or` and `not` and holds where any narrowing would. A `let mut` local or a mutable field doesn't narrow, but its pattern's bindings still bind: `w.tlk is some{ value = t }` gives a `t` of type `T` either way. Alone in an `if`, that is `if let t = w.tlk` (§11, If let).
 7. `is` binds at the level of `==` and doesn't chain with comparisons (§11, Expressions). `not e is P` is `not (e is P)`, and `a is x and b is y` needs no parentheses.
 
 ### Errors
@@ -393,6 +393,21 @@ let decl{ i } = found else { return NONE }        // found: ?Ref; null takes the
 4. Otherwise `B` runs. `B` must leave: it ends a path (§11.7, 8, 9). `P`'s bindings aren't visible in it.
 5. `else V{ ... } { B }` binds `V`'s fields in `B`. `V` must be the union's only variant other than `P`'s, and `P` can't be a variant of a `?U`'s `U`.
 
+### If let
+
+```
+if let t = w.tlk { show{ n = t.n } } else { show{ n = 0 } }
+let n = if let v = map::get{ m, key } { v } else { 0 }
+if let &t = &w.tlk { bump{ &t } }               // t is the place inside w.tlk
+```
+
+1. `if let x = e { A } else { B }` takes an optional apart: if `e` holds a value, `A` runs with `x` a read-only local holding it; if `e` is null, `B` runs. It is `match e { some{ value = x } => { A } null => { B } }` (§8, Match), and is checked and runs as that match does.
+2. `e` must have a `?T` type, or be a pointer to one. Unlike narrowing (§8, Optional, rule 3), `e` may be any expression, a mutable place or a call included: it is evaluated once, and `x` holds the value it had.
+3. `x` is in scope in `A` only: not in `B`, and not after the statement, even when `B` leaves.
+4. `if let &x = e`, for `e` a pointer to a `?T` (`&w.tlk`), binds `x` as the place inside the optional, as `some{ &value = x }` does (§8, Match, rule 5). It is mutable only through a `*mut`. As in a match on `&p`, nothing in `A` may reach `p` except through `x` (§8, Match, rule 7). Without a pointer, `&x` is an error.
+5. As a statement, `else { B }` may be left out, and `B` is then empty. `else if` and `else if let` chain, as after an `if`. As an expression (§11, If and match expressions), `else` is required, and the value is the match's.
+6. `if let` tests one optional, and doesn't combine with `and`, `or` or `not`: for that, use `is` (§8, Is), as in `if a > 0 and x is some{ value = v }`.
+
 ### Defer
 
 ```
@@ -422,7 +437,7 @@ let v = match parse{ s } {
 2. An `if` expression must have an `else`.
 3. Each branch is a block whose last statement is an expression: the branch's value. `{ let y = f{}; y + 1 }` has the value `y + 1`.
 4. Instead of ending in a value, a branch may leave: it ends a path (§11.7, 8, 9) through `return`, `break`, `continue` or `@panic()`. At least one branch must produce a value.
-5. A branch whose last statement is an `if` with an `else`, or a `match`, takes that statement's value, unless every one of its branches leaves.
+5. A branch whose last statement is an `if` or `if let` with an `else`, or a `match`, takes that statement's value, unless every one of its branches leaves.
 6. Type: if the expression has an expected type (§11, Widening, rule 1) that every branch value converts to, that type. Otherwise the first branch type that every other branch value converts to, where `null` among the branches makes it `?T`. It is an error if there is none.
 7. Narrowing (§8, Optional) applies in the branches as in an `if` statement.
 8. A branch value must not hold the address of, or a bound function holding, a local declared in that branch (§6, §14).

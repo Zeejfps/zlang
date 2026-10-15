@@ -4588,6 +4588,16 @@ namespace check {
         if ok and x.is_ifnull and not is_opt{ c, t = st } {
             errorf{ &c, at = expr_at{ e = scrut }, msg = @fmt("`ifnull` needs an optional value, got {}", tstr{ c, t = st }) }
             ok = false
+        } else if ok and x.is_iflet and not is_opt{ c, t = ut } {
+            errorf{ &c, at = expr_at{ e = scrut }, msg = @fmt("`if let` needs an optional value, got {}", tstr{ c, t = st }) }
+            ok = false
+        } else if ok and x.is_iflet and not through and x.arms[0].pats[0].binders[0].by_ref {
+            // `if let &v = e`: v is a place inside e's value, so e must point to it.
+            let b = x.arms[0].pats[0].binders[0]
+            let name = b.local ifnull b.field
+            let text = str{ s = source_text{ c, span = scrut.span } }
+            errorf{ &c, at = expr_at{ e = scrut }, msg = @fmt("`if let &{}` binds a place inside the optional, so it needs a pointer to one: write `if let &{} = &{}`", str{ s = name.text }, str{ s = name.text }, text) }
+            ok = false
         } else if ok and x.is_iferr and not is_res{ c, t = st } {
             errorf{ &c, at = expr_at{ e = scrut }, msg = @fmt("`iferr` needs a `!T` value, got {}", tstr{ c, t = st }) }
             ok = false
@@ -5271,7 +5281,7 @@ namespace check {
         let why = why_unnarrowed{ c, e }
         if why == null { return }
         let text = str{ s = source_text{ c, span = e.span } }
-        return @fmt(&b, ": `{}` {}, so testing it for null doesn't narrow it; unwrap it with `if {} is some{{ value = v }}` or `let v = {} ifnull {{ return }}`", text, why, text, text)
+        return @fmt(&b, ": `{}` {}, so testing it for null doesn't narrow it; unwrap it with `if let v = {} {{ ... }}` or `let v = {} ifnull {{ return }}`", text, why, text, text)
     }
 
     fn add_fact { mut xs: list::List(Fact, Heap), f: Fact } {

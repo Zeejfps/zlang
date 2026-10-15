@@ -615,7 +615,7 @@ namespace tree {
     }
 
     fn match_node { mut d: Dumper, at: u32, x: syntax::Match } {
-        line{ &d, at, s = if x.is_ifnull { "match ifnull" } else if x.is_iferr { "match iferr" } else { "match" } }
+        line{ &d, at, s = if x.is_ifnull { "match ifnull" } else if x.is_iferr { "match iferr" } else if x.is_iflet { "match iflet" } else { "match" } }
         d.depth = d.depth + 1
         expr{ &d, e = x.scrut.* }
         let mut i: usize = 0

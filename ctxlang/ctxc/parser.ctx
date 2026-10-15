@@ -522,7 +522,7 @@ namespace parser {
         if k == tok::Kind::kw_let {
             return let_stmt{ &p, id }
         } else if k == tok::Kind::kw_if {
-            s = syntax::StmtKind::cond{ x = if_node{ &p } }
+            s = if_stmt{ &p }
         } else if k == tok::Kind::kw_while {
             s = while_stmt{ &p, label = null }
         } else if k == tok::Kind::kw_match {
@@ -809,22 +809,75 @@ namespace parser {
         let then = block{ &p }
         let mut els: ?syntax::Block = null
         if accept{ &p, k = tok::Kind::kw_else } {
-            if next_is{ p, k = tok::Kind::kw_if } {
-                let start = p.i
-                let id = new_id{ &p }
-                let x = if_node{ &p }
-                els = one{ &p, s = syntax::Stmt{ id, span = span_from{ p, start }, k = syntax::StmtKind::cond{ x } } }
-            } else {
-                els = block{ &p }
-            }
+            els = if next_is{ p, k = tok::Kind::kw_if } { else_if_stmt{ &p } } else { block{ &p } }
         }
         return syntax::If{ c, then, els }
+    }
+
+    // An `if` or `if let` statement.
+    fn if_stmt { mut p: Parser } -> syntax::StmtKind {
+        if kind{ p, ahead = 1 } == tok::Kind::kw_let { return syntax::StmtKind::choose{ x = if_let{ &p, value = false } } }
+        return syntax::StmtKind::cond{ x = if_node{ &p } }
+    }
+
+    // `else if ...` in a statement: a block of the inner `if` or `if let` alone.
+    fn else_if_stmt { mut p: Parser } -> syntax::Block {
+        let start = p.i
+        let id = new_id{ &p }
+        let k = if_stmt{ &p }
+        return one{ &p, s = syntax::Stmt{ id, span = span_from{ p, start }, k } }
+    }
+
+    // `if let x = e { A } else { B }` or `if let &x = e ...`: a match on e marked is_iflet
+    // (syntax::Match). As an expression (value) the `else` is required, and an `else if` is an
+    // `if` expression too.
+    fn if_let { mut p: Parser, value: bool } -> syntax::Match {
+        let start = p.i
+        let t = take{ &p }
+        skip{ &p }
+        let pat_start = p.i
+        let by_ref = accept{ &p, k = tok::Kind::amp }
+        let name = ident{ &p }
+        let pat_span = span_from{ p, start = pat_start }
+        expect{ &p, k = tok::Kind::assign }
+        let scrut = box{ &p, value = cond_expr{ &p } }
+        let then = block{ &p }
+        let no_quals = slice::empty(syntax::Name){}
+        let mut binders = list::new(syntax::Binder){ realloc = arena::alloc, heap = p.heap }
+        try! list::push{ list = &binders, item = syntax::Binder{ span = pat_span, by_ref, field = made_name{ &p, at = name.span, text = "value" }, local = name } }
+        let mut somes = list::new(syntax::Pattern){ realloc = arena::alloc, heap = p.heap }
+        try! list::push{ list = &somes, item = syntax::Pattern{ span = pat_span, quals = no_quals, variant = made_name{ &p, at = pat_span, text = "some" }, binders = list::items{ list = binders }, value = null, upto = null } }
+        let mut arms = list::new(syntax::Arm){ realloc = arena::alloc, heap = p.heap }
+        try! list::push{ list = &arms, item = syntax::Arm{ span = span_from{ p, start }, pats = list::items{ list = somes }, body = then } }
+        let else_at = p.i
+        let mut els = syntax::Block{ id = new_id{ &p }, span = span_from{ p, start = else_at }, stmts = slice::empty(syntax::Stmt){} }
+        if accept{ &p, k = tok::Kind::kw_else } {
+            if not next_is{ p, k = tok::Kind::kw_if } {
+                els = block{ &p }
+            } else if value {
+                els = else_if{ &p }
+            } else {
+                els = else_if_stmt{ &p }
+            }
+        } else if value {
+            fail_at{ &p, msg = "an `if` expression needs an `else`", t }
+        }
+        let null_span = span_from{ p, start = else_at }
+        let mut nulls = list::new(syntax::Pattern){ realloc = arena::alloc, heap = p.heap }
+        try! list::push{ list = &nulls, item = syntax::Pattern{ span = null_span, quals = no_quals, variant = made_name{ &p, at = null_span, text = "null" }, binders = slice::empty(syntax::Binder){}, value = null, upto = null } }
+        try! list::push{ list = &arms, item = syntax::Arm{ span = null_span, pats = list::items{ list = nulls }, body = els } }
+        return syntax::Match{ scrut, arms = list::items{ list = arms }, is_ifnull = false, is_iferr = false, is_iflet = true }
     }
 
     // An `if` in expression position. `else` is required; `else if` nests another one.
     fn if_expr { mut p: Parser } -> syntax::Expr {
         let start = p.i
         let id = new_id{ &p }
+        if kind{ p, ahead = 1 } == tok::Kind::kw_let {
+            let at = p.toks[p.i].span.start
+            let x = if_let{ &p, value = true }
+            return syntax::Expr{ id, span = span_from{ p, start }, at, k = syntax::ExprKind::matchx{ x } }
+        }
         let t = take{ &p }
         let c = box{ &p, value = cond_expr{ &p } }
         let then = block{ &p }
@@ -866,7 +919,7 @@ namespace parser {
             skip_semis{ &p }
         }
         expect{ &p, k = tok::Kind::rbrace }
-        return syntax::Match{ scrut, arms = list::items{ list = arms }, is_ifnull = false, is_iferr = false }
+        return syntax::Match{ scrut, arms = list::items{ list = arms }, is_ifnull = false, is_iferr = false, is_iflet = false }
     }
 
     // ---- expressions
@@ -976,7 +1029,7 @@ namespace parser {
         }
         let null_body = if next_is{ p, k = tok::Kind::lbrace } { block{ &p } } else { null_value{ &p } }
         try! list::push{ list = &arms, item = syntax::Arm{ span = span_from{ p, start = op_i }, pats = list::items{ list = nulls }, body = null_body } }
-        let x = syntax::Match{ scrut = box{ &p, value = e }, arms = list::items{ list = arms }, is_ifnull = is_null, is_iferr = not is_null }
+        let x = syntax::Match{ scrut = box{ &p, value = e }, arms = list::items{ list = arms }, is_ifnull = is_null, is_iferr = not is_null, is_iflet = false }
         return syntax::Expr{ id, span = span_from{ p, start }, at = op.span.start, k = syntax::ExprKind::matchx{ x } }
     }
 

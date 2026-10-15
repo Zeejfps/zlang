@@ -117,7 +117,9 @@ namespace syntax {
     // `null => { x }`. The first arm is zero-width at the `ifnull`, and so is the second's
     // pattern; the second's block is x's, or x alone. `e iferr x` is one marked is_iferr, with
     // `ok{ value } => { value }` and `err => { x }`, or the `err{ ... }` written before x's block.
-    struct Match { scrut: *Expr, arms: []Arm, is_ifnull: bool, is_iferr: bool }
+    // `if let x = e { A } else { B }` is one marked is_iflet, with `some{ value = x } => { A }`
+    // (`&value = x` for `if let &x`) and `null => { B }`, B empty without an `else`.
+    struct Match { scrut: *Expr, arms: []Arm, is_ifnull: bool, is_iferr: bool, is_iflet: bool }
 
     // pats is empty for `else`.
     struct Arm { span: Span, pats: []Pattern, body: Block }

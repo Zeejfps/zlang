@@ -1039,7 +1039,7 @@ class Bodies(Base):
 
         def unwrap(x, why):
             return (f': `{x}` {why}, so testing it for null doesn\'t narrow it; unwrap it with '
-                    f'`if {x} is some{{ value = v }}` or `let v = {x} ifnull {{ return }}`')
+                    f'`if let v = {x} {{ ... }}` or `let v = {x} ifnull {{ return }}`')
         for src, msg, line, col in [
             ('fn f {} {\n    let x = null\n}',
              'cannot infer the type of `null` here; add a type', 2, 13),
@@ -5833,6 +5833,85 @@ fn main {} {
     let is = 1
 }
 """, "expected a name, found 'is'")
+
+
+class IfLet(Base):
+    """§11 If let: `if let x = e { A } else { B }`, a match on the optional e."""
+
+    W = """
+struct Tlk { n: i32 }
+struct World { tlk: ?Tlk, count: i32 }
+fn bump { mut t: Tlk } { t.n = t.n + 1 }
+fn find { n: i32 } -> ?i32 {
+    if n > 0 { return n * 10 }
+    return null
+}
+"""
+
+    def run_both(self, body, expected):
+        # tick runs on a World holding a Tlk, then on one holding null.
+        self.assertOutput(self.W + body + """
+fn main { mut io: Io } {
+    let mut w = World{ tlk = Tlk{ n = 1 }, count = 0 }
+    let mut e = World{ tlk = null, count = 0 }
+    tick{ &io, &w }
+    tick{ &io, w = &e }
+}
+""", expected)
+
+    def test_statement(self):
+        # A mutable field, which `!= null` wouldn't narrow; `else` may be left out.
+        self.run_both("""
+fn tick { mut io: Io, mut w: World } {
+    if let t = w.tlk { _ = @fmt(&io, "{}\\n", t.n) } else { _ = @fmt(&io, "none\\n") }
+    if let t = w.tlk { _ = @fmt(&io, "again {}\\n", t.n) }
+}
+""", '1\nagain 1\nnone\n')
+
+    def test_expression(self):
+        self.run_both("""
+fn tick { mut io: Io, mut w: World } {
+    let n = if let t = w.tlk { t.n } else { -5 }
+    _ = @fmt(&io, "{}\\n", n)
+}
+""", '1\n-5\n')
+
+    def test_else_if_chains(self):
+        self.run_both("""
+fn tick { mut io: Io, mut w: World } {
+    if w.count > 5 {
+        _ = @fmt(&io, "big\\n")
+    } else if let t = w.tlk {
+        _ = @fmt(&io, "{}\\n", t.n)
+    } else if let v = find{ n = w.count + 4 } {
+        _ = @fmt(&io, "found {}\\n", v)
+    }
+    let n = if let t = w.tlk { t.n } else if let v = find{ n = w.count } { v } else { 42 }
+    _ = @fmt(&io, "{}\\n", n)
+}
+""", '1\n1\nfound 40\n42\n')
+
+    def test_place(self):
+        # `if let &t = &p` changes the value inside the optional.
+        self.run_both("""
+fn tick { mut io: Io, mut w: World } {
+    if let &t = &w.tlk { bump{ &t } }
+    if let t = w.tlk { _ = @fmt(&io, "{}\\n", t.n) } else { _ = @fmt(&io, "none\\n") }
+}
+""", '2\nnone\n')
+
+    def test_errors(self):
+        for body, msg in [
+            ('if let t = w.count { }', '`if let` needs an optional value, got i32'),
+            ('if let &t = w.tlk { bump{ &t } }',
+             '`if let &t` binds a place inside the optional, so it needs a pointer to one: write `if let &t = &w.tlk`'),
+            ('if let t = w.tlk { bump{ &t } }', '`t` is not a mutable place'),
+            ('let n = if let t = w.tlk { t.n }', 'an `if` expression needs an `else`'),
+            ('if let t = w.tlk { } else { let n = t.n }', 'unknown name `t`'),
+            ('if let t = w.tlk { } else { return }\n    let n = t.n', 'unknown name `t`'),
+            ('if let &t = &w.tlk { w.tlk = null; bump{ &t } }', 'w.tlk overlaps the match scrutinee'),
+        ]:
+            self.assertCompileError(self.W + 'fn tick { mut w: World } {\n    %s\n}\nfn main {} {}' % body, msg)
 
 
 class IfNull(Base):
