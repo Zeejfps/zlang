@@ -33,9 +33,9 @@ namespace gff {                                   // namespaces may span files (
   ending in `..` takes the fields it leaves out from theirs: `Stats{ str = 10, .. }` for
   `struct Stats { str: i32, speed: f32 = 1.0, class: Class = Class::soldier, target: ?*T = null }`.
   Without `..` every field is named, defaults or not. A default is a const: numbers, bools,
-  `null`, enum values, strings, consts, compile-time calls, and structs and arrays of those; not
-  a slice (`slice::empty` too), a pointer or a function. Give a new field a default where one
-  makes sense, so the literals that end in `..` keep compiling. Attributes take `..` too.
+  `null`, enum values, unions, strings, empty slices (`slice::empty(T){}`), consts, compile-time
+  calls, and structs and arrays of those; not a pointer or a function. Give a new field a default
+  where one makes sense, so the literals that end in `..` keep compiling. Attributes take `..` too.
 - **`mut` fields** are pointers to the caller's place; inside, use them as values. Pass `&local`
   (needs `let mut local`). Two `&` of overlapping places in one call is an error (§3.1).
 - **Big read-only arguments are passed by reference** (§14.6): a struct, union or array over
@@ -58,7 +58,9 @@ function: can't be stored in a struct or returned), `extern fn{C} -> R` (C funct
   bits), `@cast(*T, p)` for pointers. `@as(_, x)` takes the type from the context.
 - Integer literals take their type from use; float literals default to `f64`. Hex `0x1F`.
 - Structs/unions/arrays are values: assignment copies. `let mut x: T` zero-initialises if
-  every field has a zero value; field defaults don't apply there, only in literals.
+  every field has a zero value; field defaults don't apply there, only in literals. Everything
+  has one but pointers, functions and capabilities (so not a `list::List` or a `map::Map`,
+  which hold pointers): an enum's is its variant 0, a union's its first variant (§11).
 
 ## Control flow (§11)
 
