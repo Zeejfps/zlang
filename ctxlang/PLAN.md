@@ -370,7 +370,7 @@ alone; step 3 gives programs a test framework of their own. None blocks the othe
    - **`@expect(c)`**, a builtin: on failure it records the condition's text and, for a
      comparison, both sides, and the test goes on. With no sink of the program's, the compiler
      prints them as 3.1's `main -> !` prints an error's fields, which needs settling first. ctxlang has no macros or
-     generic printing (FRICTION #33), so a library `assert_eq` couldn't show the values.
+     generic printing (FRICTION #32), so a library `assert_eq` couldn't show the values.
    - **Leaks.** A std counting allocator fails a test that doesn't free what it took, as Zig's
      `std.testing.allocator` does.
    - **No `cfg(test)`.** Lowering starts from `main`, so tests never reach a normal build.
