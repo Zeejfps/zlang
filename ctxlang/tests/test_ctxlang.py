@@ -5224,6 +5224,33 @@ fn f { p: *S } -> i32 {
 fn main {} { }
 """, 'expected i32, got ?i32')
 
+    def test_testing_a_narrowed_optional(self):
+        # A narrowed x is its T: an optional's test of it says so.
+        cases = [
+            ('p: ?*i32', 'if p != null { if p is some{ value = q } { return q.* } }',
+             '`p` isn\'t null here, where a test narrowed it to *i32: use it as it is, without `is some`'),
+            ('p: ?i32', 'if p != null and p is null { return 1 }',
+             '`p` isn\'t null here, where a test narrowed it to i32: use it as it is, without `is null`'),
+            ('p: ?i32', 'if p == 3 { return p ifnull 0 }',
+             '`p` isn\'t null here, where a test narrowed it to i32: use it as it is, without `ifnull`'),
+            ('p: ?*i32', 'if p == null { return 0 }\n    if let q = p { return q.* }',
+             '`p` isn\'t null here, where a test narrowed it to *i32: use it as it is, without `if let`'),
+            ('s: S', 'if s.a != null { return s.a ifnull 0 }',
+             '`s.a` isn\'t null here, where a test narrowed it to i32: use it as it is, without `ifnull`'),
+            ('p: *i32', 'if p is some{ value = q } { return q.* }', '`is` cannot test through a pointer'),
+            ('p: i32', 'return p ifnull 0', '`ifnull` needs an optional value, got i32'),
+        ]
+        for params, body, msg in cases:
+            with self.subTest(body=body):
+                self.assertCompileError("""
+struct S { a: ?i32 }
+fn f { %s } -> i32 {
+    %s
+    return 0
+}
+fn main {} { }
+""" % (params, body), msg)
+
 
 class OptionalEquality(Base):
     """§11 Expressions, rule 5: a ?T compares with a T or a ?T by its value, and `x == v`
@@ -6223,16 +6250,16 @@ fn main { mut io: Io } {
 """, '2\n2\ntrue\nfalse\ncond\nblock\n')
 
     def test_needs_an_optional(self):
-        for body, found, line, col in [
-            ('let x = 5 ifnull 0', '{integer}', 2, 13),
-            ('let n: ?i32 = null\n    let p = &n\n    let x = p ifnull 0', '*?i32', 4, 13),
+        for body, msg, line, col in [
+            ('let x = 5 ifnull 0', '`ifnull` needs an optional value, got {integer}', 2, 13),
+            ('let n: ?i32 = null\n    let p = &n\n    let x = p ifnull 0', '`ifnull` needs an optional value, got *?i32', 4, 13),
             # A narrowed local is no longer optional.
-            ('let n: ?i32 = 3\n    if n != null { let y = n ifnull 0 }', 'i32', 3, 28),
+            ('let n: ?i32 = 3\n    if n != null { let y = n ifnull 0 }',
+             "`n` isn't null here, where a test narrowed it to i32: use it as it is, without `ifnull`", 3, 28),
         ]:
             with self.assertRaises(CompileError) as cm:
                 run('fn main {} {\n    %s\n}' % body)
-            self.assertEqual((cm.exception.msg, cm.exception.pos[:2]),
-                             ('`ifnull` needs an optional value, got ' + found, (line, col)), body)
+            self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), body)
 
     def test_default_of_another_type(self):
         self.assertCompileError("""

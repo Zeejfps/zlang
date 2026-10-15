@@ -4595,7 +4595,10 @@ namespace check {
             ut = types::prune{ s = c.ty, t = elem }
         }
         let mut ok = st != types::ERROR and ut != types::ERROR
-        if ok and x.is_ifnull and not is_opt{ c, t = st } {
+        if ok and (x.is_ifnull or x.is_iflet) and not is_opt{ c, t = ut } and is_narrowed{ c, e = scrut } {
+            narrowed_test{ &c, e = scrut, t = st, test = if x.is_ifnull { "ifnull" } else { "if let" } }
+            ok = false
+        } else if ok and x.is_ifnull and not is_opt{ c, t = st } {
             errorf{ &c, at = expr_at{ e = scrut }, msg = @fmt("`ifnull` needs an optional value, got {}", tstr{ c, t = st }) }
             ok = false
         } else if ok and x.is_iflet and not is_opt{ c, t = ut } {
@@ -5069,23 +5072,31 @@ namespace check {
     // true (facts).
     fn check_is { mut c: Checker, e: syntax::Expr, x: syntax::Expr, pats: []syntax::Pattern } -> Id {
         let t = typed{ &c, e = x }
-        if int_type{ c, t } { return check_int_is{ &c, e, pats, t } }
         let mut ok = t != types::ERROR
-        match types::get{ s = c.ty, id = t } {
-            ptr => {
-                error{ &c, at = expr_at{ e = x }, msg = "`is` cannot test through a pointer; use `match`" }
-                ok = false
-            }
-            sum | opt | enumeration => {}
-            else => {
-                if ok and (is_res{ c, t } or is_errs{ c, t }) {
-                    error{ &c, at = expr_at{ e = x }, msg = "`is` cannot test a `!T` or an error; use `match` or `iferr`" }
-                } else if ok and untagged_type{ c, t } {
-                    error{ &c, at = expr_at{ e = x }, msg = "an extern union has no tag to match on: read the field you know it holds" }
-                } else if ok {
-                    errorf{ &c, at = expr_at{ e = x }, msg = @fmt("`is` needs a union, enum or optional value, got {}", tstr{ c, t }) }
+        let gone = if ok { optional_pattern{ &c, t, pats } } else { null }
+        if gone != null and is_narrowed{ c, e = x } {
+            narrowed_test{ &c, e = x, t, test = if slice::eq_bytes{ a = gone, b = "null" } { "is null" } else { "is some" } }
+            ok = false
+        } else if int_type{ c, t } {
+            return check_int_is{ &c, e, pats, t }
+        }
+        if ok {
+            match types::get{ s = c.ty, id = t } {
+                ptr => {
+                    error{ &c, at = expr_at{ e = x }, msg = "`is` cannot test through a pointer; use `match`" }
+                    ok = false
                 }
-                ok = false
+                sum | opt | enumeration => {}
+                else => {
+                    if is_res{ c, t } or is_errs{ c, t } {
+                        error{ &c, at = expr_at{ e = x }, msg = "`is` cannot test a `!T` or an error; use `match` or `iferr`" }
+                    } else if untagged_type{ c, t } {
+                        error{ &c, at = expr_at{ e = x }, msg = "an extern union has no tag to match on: read the field you know it holds" }
+                    } else {
+                        errorf{ &c, at = expr_at{ e = x }, msg = @fmt("`is` needs a union, enum or optional value, got {}", tstr{ c, t }) }
+                    }
+                    ok = false
+                }
             }
         }
         let vs: []Variant = if ok { variants_of{ &c, t } } else { slice::empty(Variant){} }
@@ -5214,6 +5225,34 @@ namespace check {
     }
 
     // Whether one of an `is`'s patterns is `null`.
+    // Whether e is a ?T place narrowed to its T here (§8, Optional, rule 3): a local, or a path
+    // of fields, that a test showed isn't null.
+    fn is_narrowed { c: Checker, e: syntax::Expr } -> bool {
+        if map::has{ m = c.narrowed, key = expr_key{ e } } { return true }
+        if map::get{ m = c.refs, key = expr_key{ e } } is local{ var } { return get_var{ c, v = var }.kind == VarKind::narrow }
+        return false
+    }
+
+    // `some` or `null`, if one of pats names it and t, which isn't an optional, has no variant
+    // of that name.
+    fn optional_pattern { mut c: Checker, t: Id, pats: []syntax::Pattern } -> ?[]u8 {
+        if is_opt{ c, t } { return null }
+        let own = if types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is sum | enumeration { variants_of{ &c, t } } else { slice::empty(Variant){} }
+        let mut i: usize = 0
+        while i < pats.len {
+            let name = pats[i].variant.text
+            if (slice::eq_bytes{ a = name, b = "some" } or slice::eq_bytes{ a = name, b = "null" }) and variant_index{ vs = own, name } == NONE { return name }
+            i = i + 1
+        }
+        return null
+    }
+
+    // The error for test (`ifnull`, `if let`, `is some`) of e, a ?T narrowed to t: it holds a
+    // value here, so it is used as it is.
+    fn narrowed_test { mut c: Checker, e: syntax::Expr, t: Id, test: []u8 } {
+        errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` isn't null here, where a test narrowed it to {}: use it as it is, without `{}`", str{ s = source_text{ c, span = e.span } }, tstr{ c, t }, str{ s = test }) }
+    }
+
     fn names_null { pats: []syntax::Pattern } -> bool {
         let mut i: usize = 0
         while i < pats.len {
