@@ -5,6 +5,7 @@
 //   let d = math::sqrt{ x = dx * dx + dy * dy }       // f64
 //   let a = math::atan2f{ y, x }                      // f32
 //   if math::is_nan{ x = v } { ... }                  // an f32 widens to the f64 these take
+//   let f = math::f32_from_bits{ bits = 0x3F800000 }   // 1.0: the bits, not the value
 //
 // A program's own `math` namespace shadows this one (§10).
 
@@ -19,6 +20,25 @@ namespace math {
     fn is_nan { x: f64 } -> bool { return x != x }
     fn is_inf { x: f64 } -> bool { return x == x and x - x != x - x }
     fn is_finite { x: f64 } -> bool { return x - x == x - x }
+
+    // The float with the IEEE-754 bits `bits`, and a float's bits. A signed integer's bits are
+    // `@trunc` to the unsigned type of its size: `math::f32_from_bits{ bits = @trunc(u32, i) }`.
+    fn f32_from_bits { bits: u32 } -> f32 {
+        let b = bits
+        return @cast(*f32, &b).*
+    }
+    fn f32_to_bits { x: f32 } -> u32 {
+        let v = x
+        return @cast(*u32, &v).*
+    }
+    fn f64_from_bits { bits: u64 } -> f64 {
+        let b = bits
+        return @cast(*f64, &b).*
+    }
+    fn f64_to_bits { x: f64 } -> u64 {
+        let v = x
+        return @cast(*u64, &v).*
+    }
 
     // ---- f64
 

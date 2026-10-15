@@ -4549,6 +4549,20 @@ fn main { mut io: Io } {
 }
 """, '1.4142135623730951 2.0 true\n1024.0 -1.0 -3.0\ntrue true false false\n')
 
+    def test_math_bits(self):
+        # A float's bits and back, at run time and while compiling; a signed integer's are @trunc's.
+        self.assertOutput("""
+const ONE: f32 = math::f32_from_bits{ bits = 0x3F800000 }
+
+fn main { mut io: Io } {
+    let neg: i32 = -1
+    let half: f64 = 0.5
+    _ = @fmt(&io, "{} {} {}\\n", ONE, math::f32_to_bits{ x = -2.0 }, math::f32_from_bits{ bits = @trunc(u32, neg) } != math::f32_from_bits{ bits = @trunc(u32, neg) })
+    _ = @fmt(&io, "{} {}\\n", math::f64_to_bits{ x = half }, math::f64_from_bits{ bits = math::f64_to_bits{ x = half } })
+    _ = @fmt(&io, "{} {}\\n", @trunc(u32, neg), @trunc(i32, math::f32_to_bits{ x = -2.0 }))
+}
+""", '1.0 3221225472 true\n4602678819172646912 0.5\n4294967295 -1073741824\n')
+
 
 
 MAP_SETUP = """
