@@ -222,6 +222,14 @@ namespace check {
         lit_cache: map::Map([]u8, Val, Heap),         // by the conversion and the literal's bytes
         conv_progs: map::Map(u32, ir::Program, Heap), // each conversion as a program of its own
         converting: list::List(u32, Heap),            // the conversions being lowered, for cycles
+        // Array literals where a slice is expected (§11, Literals), each a view of its array: a
+        // static one's array is folded once the bodies are checked, as a converted literal is.
+        views:     map::Map(u64, View, Heap),         // by the literal's key
+        view_list: list::List(syntax::Expr, Heap),    // the static ones, in the order they were checked
+        view_values: map::Map(u64, Val, Heap),        // their views, once folded
+        // While the value of an `if` or `match` branch is checked, the depth of the block around
+        // the outermost such `if` or `match`, which a view's hidden local gets; NONE otherwise.
+        value_depth: u32,
         // The sets of Var.derived and Var.held.
         derived:   list::List([]u32, Heap),
         held:      list::List([]Place, Heap),
@@ -273,8 +281,14 @@ namespace check {
     // holds a pointer, and if flow errors were reported in its body when it was found.
     struct Escape { t: Id, at: source::Span, msg: utf8::String, report: bool }
 
-    // A local, context field or match binding, or a narrowed view of one (ctxi's VarInfo).
-    enum VarKind: u8 { ctx, local, bind, narrow }
+    // An array literal that is a view where a slice is expected (§11, Literals): the [N]T array
+    // it views, and the hidden local of its block that holds it, or NONE if every element is
+    // known while compiling and the array is static.
+    struct View { array: Id, local: u32 }
+
+    // A local, context field or match binding, or a narrowed view of one (ctxi's VarInfo). A
+    // literal is the hidden local of an array literal's view (View), which has no name.
+    enum VarKind: u8 { ctx, local, bind, narrow, literal }
 
     struct Var {
         name:       []u8,
@@ -428,6 +442,10 @@ namespace check {
             lit_cache = map::new([]u8, Val){ realloc = arena::alloc, &heap, hash = map::hash_bytes, eq = slice::eq_bytes },
             conv_progs = map::new(u32, ir::Program){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             converting = ids{ &heap },
+            views = map::new(u64, View){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            view_list = list::new(syntax::Expr){ realloc = arena::alloc, &heap },
+            view_values = map::new(u64, Val){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            value_depth = NONE,
             derived = list::new([]u32){ realloc = arena::alloc, &heap },
             held = list::new([]Place){ realloc = arena::alloc, &heap },
             faults = ids{ &heap },
@@ -499,8 +517,9 @@ namespace check {
     }
 
     // The consts folding can't compute (§14), evaluated in order, or earlier where another const
-    // needs one, then the converted literals (PLAN.md 4.5), so that what stops one is reported
-    // here. Only a program without errors is: lowering needs every body it reaches checked.
+    // needs one, then the converted literals (PLAN.md 4.5), then the arrays of array literals'
+    // static views (§11, Literals), so that what stops one is reported here. Only a program
+    // without errors is: lowering needs every body it reaches checked.
     fn evaluate { mut c: Checker } {
         if c.diags.errors > 0 { return }
         c.can_eval = true
@@ -509,6 +528,12 @@ namespace check {
         let mut i: usize = 0
         while i < ls.len {
             _ = literal_value{ &c, e = ls[i] }
+            i = i + 1
+        }
+        let vs = list::items{ list = c.view_list }
+        i = 0
+        while i < vs.len {
+            _ = fold_view{ &c, e = vs[i] }
             i = i + 1
         }
     }
@@ -1787,6 +1812,24 @@ namespace check {
         return v
     }
 
+    // The value of array literal e's static view (View): a Val::view of its array's value,
+    // folded the first time it is needed, once the bodies are checked. Null if it has none,
+    // after reporting why.
+    fn fold_view { mut c: Checker, e: syntax::Expr } -> ?Val {
+        let k = expr_key{ e }
+        let known = map::get{ m = c.view_values, key = k }
+        if known != null { return known }
+        let w = map::get{ m = c.views, key = k } ifnull { return null }
+        if w.local != NONE or not c.can_eval { return null }
+        let before = c.diags.errors
+        let v = fold_node{ &c, e } ifnull {
+            if c.diags.errors == before { error{ &c, at = expr_at{ e }, msg = "array literal couldn't be computed while compiling" } }
+            return null
+        }
+        try! map::put{ m = &c.view_values, key = k, value = v }
+        return v
+    }
+
     // ---- attributes (§18; PLAN.md stage 3 gives them to generators)
 
     // Every declaration's attributes, and its fields', each checked as a const literal of the
@@ -2941,6 +2984,7 @@ namespace check {
         list::clear{ list = &c.loops }
         add_mark{ &c, n = 0 }
         c.depth = 0
+        c.value_depth = NONE
         c.loop_depth = 0
         c.loop_base = 0
         c.defers = 0
@@ -3114,7 +3158,11 @@ namespace check {
                     ok = unfoldable{ &c, at, strict, msg = "cannot call a function" }
                     if not strict { return false }
                 } else if untagged_type{ c, t = type_of_expr{ c, e } } {
-                    error{ &c, at, msg = if strict { "an attribute cannot hold an extern union" } else { "a const cannot hold an extern union" } }
+                    // In a function's body an array literal's view asks (is_known), and there
+                    // the literal only doesn't fold.
+                    if strict or c.fn_decl == NONE {
+                        error{ &c, at, msg = if strict { "an attribute cannot hold an extern union" } else { "a const cannot hold an extern union" } }
+                    }
                     return false
                 }
                 let mut i: usize = 0
@@ -3164,6 +3212,7 @@ namespace check {
         variant{ ty: Id, index: u32, fields: []Val },
         array{ ty: Id, elems: []Val },
         repeat{ ty: Id, elem: *Val },           // N copies, N from the array type
+        view{ ty: Id, array: *Val },            // a []T viewing a static array: an array literal's (View)
     }
 
     struct Num { negative: bool, magnitude: u64 }
@@ -3274,8 +3323,10 @@ namespace check {
             }
             boolean{ value } => { return Val::boolean{ ty = t, value } }
             nil => { return Val::nil{ ty = t } }
-            // A converted literal isn't folded: its conversion runs (const_ok).
+            // A converted literal isn't folded in a const: its conversion runs (const_ok). An
+            // array literal's static view holds its value (is_known), once it can run.
             str{ bytes } => {
+                if map::has{ m = c.lit_convs, key = expr_key{ e } } { return literal_value{ &c, e } }
                 match types::get{ s = c.ty, id = t } {
                     array => { return Val::str{ ty = t, bytes } }
                     slice | strlit => { return Val::sbytes{ ty = t, bytes } }
@@ -3301,8 +3352,11 @@ namespace check {
                 }
             }
             braced{ callee, items } => { return fold_literal{ &c, e, callee = callee.*, items, t } }
+            // A literal that is a view (View) is the view of its array's value.
             array{ elems } => {
-                let et = elem_type{ c, t }
+                let w = map::get{ m = c.views, key = expr_key{ e } }
+                let at = if w == null { t } else { types::prune{ s = c.ty, t = w.array } }
+                let et = elem_type{ c, t = at }
                 let mut out = list::new(Val){ realloc = arena::alloc, heap = c.heap }
                 let mut i: usize = 0
                 while i < elems.len {
@@ -3311,13 +3365,17 @@ namespace check {
                     add_val{ xs = &out, v }
                     i = i + 1
                 }
-                return Val::array{ ty = t, elems = list::items{ list = out } }
+                let v = Val::array{ ty = at, elems = list::items{ list = out } }
+                return if w == null { v } else { wrap_view{ c, t, v } }
             }
             repeat{ elem } => {
-                let v = fold_to{ &c, e = elem.*, t = elem_type{ c, t } }
-                if v == null { return null }
-                let p = try! alloc::new{ realloc = arena::alloc, heap = c.heap, value = v }
-                return Val::repeat{ ty = t, elem = p }
+                let w = map::get{ m = c.views, key = expr_key{ e } }
+                let at = if w == null { t } else { types::prune{ s = c.ty, t = w.array } }
+                let x = fold_to{ &c, e = elem.*, t = elem_type{ c, t = at } }
+                if x == null { return null }
+                let p = try! alloc::new{ realloc = arena::alloc, heap = c.heap, value = x }
+                let v = Val::repeat{ ty = at, elem = p }
+                return if w == null { v } else { wrap_view{ c, t, v } }
             }
             builtin{ name, targ, args } => {
                 if targ == null { return null }
@@ -3349,6 +3407,11 @@ namespace check {
             binary{ op, a, b } => { return fold_binary{ &c, e, op, a = a.*, b = b.*, t } }
             else => { return null }
         }
+    }
+
+    // A view, of slice type t, of static array v.
+    fn wrap_view { c: Checker, t: Id, v: Val } -> Val {
+        return Val::view{ ty = t, array = try! alloc::new{ realloc = arena::alloc, heap = c.heap, value = v } }
     }
 
     // A struct or variant literal: its fields' values in the order of the fields.
@@ -3877,12 +3940,16 @@ namespace check {
         close{ &c }
     }
 
+    // A statement's views are its block's, also in a branch's value (value_depth).
     fn stmts { mut c: Checker, xs: []syntax::Stmt } {
+        let outer = c.value_depth
+        c.value_depth = NONE
         let mut i: usize = 0
         while i < xs.len {
             stmt{ &c, s = xs[i] }
             i = i + 1
         }
+        c.value_depth = outer
     }
 
     fn stmt { mut c: Checker, s: syntax::Stmt } {
@@ -4080,7 +4147,7 @@ namespace check {
             if found.len > 0 {
                 let ds = vars_in_order{ c, xs = found }
                 let mut b = message{ c }
-                try! @fmt(&b, "returned value holds the address of local `{}`", str{ s = get_var{ c, v = ds[0] }.name })
+                try! @fmt(&b, "returned value holds the address of {}", describe_local{ c, v = ds[0] })
                 escape_error{ &c, t = value_ty{ c, k = expr_key{ e = value } }, at, msg = utf8::view{ b } }
             }
         }
@@ -4272,6 +4339,10 @@ namespace check {
         let v = if xs.len == 0 { Value::none } else { branch_value{ s = xs[xs.len - 1] } }
         let has = not (v is none)
         stmts{ &c, xs = if has { xs[..xs.len - 1] } else { xs } }
+        // The value leaves the branch, so a view in it lives in the block around the `if` or
+        // `match` (add_view), or around the outermost one this is the value of.
+        let outer = c.value_depth
+        if outer == NONE { c.value_depth = c.depth - 1 }
         let mut t = types::NO_TYPE
         match v {
             nested{ s } => {
@@ -4287,6 +4358,7 @@ namespace check {
             }
             none => {}
         }
+        c.value_depth = outer
         if has and t != types::NO_TYPE {
             branch_escape{ &c, v }
         } else if not c.dead {
@@ -4309,7 +4381,7 @@ namespace check {
             let l = get_var{ c, v = ds[i] }
             if l.depth == c.depth {
                 let mut b = message{ c }
-                try! @fmt(&b, "the value of this branch holds the address of local `{}`, which ends with the branch", str{ s = l.name })
+                try! @fmt(&b, "the value of this branch holds the address of {}, which ends with the branch", describe_local{ c, v = ds[i] })
                 escape_error{ &c, t, at, msg = utf8::view{ b } }
                 return
             }
@@ -6145,8 +6217,12 @@ namespace check {
             binary{ op, a } => {
                 if is_arith{ op } and types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e = a.* } } } is ptr { return derives_raw{ &c, e = a.* } }
             }
+            // An array literal's view (View) is derived from its hidden local, and from what its
+            // elements are; a static one from nothing.
             array{ elems } => {
-                let mut out = no_vars{}
+                let w = map::get{ m = c.views, key = expr_key{ e } }
+                if w != null and w.local == NONE { return no_vars{} }
+                let mut out = if w == null { no_vars{} } else { one_id{ c, n = w.local } }
                 let mut i: usize = 0
                 while i < elems.len {
                     out = set_union{ c, a = out, b = derives{ &c, e = elems[i] } }
@@ -6154,7 +6230,12 @@ namespace check {
                 }
                 return out
             }
-            repeat{ elem } => { return derives{ &c, e = elem.* } }
+            repeat{ elem } => {
+                let w = map::get{ m = c.views, key = expr_key{ e } }
+                if w != null and w.local == NONE { return no_vars{} }
+                let out = derives{ &c, e = elem.* }
+                return if w == null { out } else { set_add{ c, xs = out, n = w.local } }
+            }
             ifx{ x } => { return derives_if{ &c, x } }
             matchx{ x } => { return derives_match{ &c, x } }
             trye{ e = x } => {
@@ -6346,6 +6427,16 @@ namespace check {
         return list::items{ list = out }
     }
 
+    // Local v as the escape check's messages name it: "local `x`", or "an array literal" for the
+    // hidden local of an array literal's view (View).
+    fn describe_local { c: Checker, v: u32 } -> utf8::String {
+        let x = get_var{ c, v }
+        if x.kind == VarKind::literal { return "an array literal" }
+        let mut b = message{ c }
+        try! @fmt(&b, "local `{}`", str{ s = x.name })
+        return utf8::view{ b }
+    }
+
     // Locals in the order of their declarations, so that a message about one of several names
     // the one ctxi names.
     fn vars_in_order { c: Checker, xs: []u32 } -> []u32 {
@@ -6419,17 +6510,17 @@ namespace check {
         if found.len == 0 { return }
         let t = value_ty{ c, k = expr_key{ e = rhs } }
         let ds = vars_in_order{ c, xs = found }
-        let name = get_var{ c, v = ds[0] }.name
+        let name = describe_local{ c, v = ds[0] }
         if through {
             let mut b = message{ c }
-            try! @fmt(&b, "cannot store the address of local `{}` through a pointer", str{ s = name })
+            try! @fmt(&b, "cannot store the address of {} through a pointer", name)
             escape_error{ &c, t, at, msg = utf8::view{ b } }
             return
         }
         let r = get_var{ c, v = root }
         if r.indirect {
             let mut b = message{ c }
-            try! @fmt(&b, "cannot store the address of local `{}` in `{}`, which belongs to the caller", str{ s = name }, str{ s = r.name })
+            try! @fmt(&b, "cannot store the address of {} in `{}`, which belongs to the caller", name, str{ s = r.name })
             escape_error{ &c, t, at, msg = utf8::view{ b } }
             return
         }
@@ -6438,7 +6529,7 @@ namespace check {
             let l = get_var{ c, v = ds[i] }
             if r.depth < l.depth {
                 let mut b = message{ c }
-                try! @fmt(&b, "`{}` outlives local `{}` whose address it would hold", str{ s = r.name }, str{ s = l.name })
+                try! @fmt(&b, "`{}` outlives {} whose address it would hold", str{ s = r.name }, describe_local{ c, v = ds[i] })
                 escape_error{ &c, t, at, msg = utf8::view{ b } }
                 return
             }
@@ -7241,7 +7332,7 @@ namespace check {
             }
             binary{ op, a, b } => { return binary{ &c, e, op, a = a.*, b = b.*, exp } }
             array{ elems } => { return array_lit{ &c, e, elems, exp } }
-            repeat{ elem, count } => { return repeat{ &c, elem = elem.*, count = count.*, exp } }
+            repeat{ elem, count } => { return repeat{ &c, e, elem = elem.*, count = count.*, exp } }
             builtin{ name, targ, args } => { return builtin{ &c, e, name, targ, args, exp } }
             field{ base, name } => { return field_expr{ &c, e, base = base.*, name } }
             deref{ base } => {
@@ -7334,7 +7425,7 @@ namespace check {
             if found.len > 0 {
                 let ds = vars_in_order{ c, xs = found }
                 let mut b = message{ c }
-                try! @fmt(&b, "`try` would return an error that may hold the address of local `{}`", str{ s = get_var{ c, v = ds[0] }.name })
+                try! @fmt(&b, "`try` would return an error that may hold the address of {}", describe_local{ c, v = ds[0] })
                 escape_error{ &c, t = errs, at = expr_at{ e }, msg = utf8::view{ b } }
             }
         }
@@ -8305,31 +8396,99 @@ namespace check {
         list::at{ list = c.ty.vars, i = n }.fixed = types::Fixed{ at = expr_at{ e = by }, path }
     }
 
+    // `[a, b, c]`: a [3]T array, of the element type an expected array gives; where a slice is
+    // expected, a view of that array (view_from_expected, add_view), so an empty one is the empty
+    // view.
     fn array_lit { mut c: Checker, e: syntax::Expr, elems: []syntax::Expr, exp: Id } -> Id {
+        _ = map::remove{ m = &c.views, key = expr_key{ e } }
+        let st = view_from_expected{ &c, e, exp }
         let mut et = types::NO_TYPE
-        if exp != types::NO_TYPE and types::get{ s = c.ty, id = types::prune{ s = c.ty, t = exp } } is array{ elem } { et = elem }
+        if st != types::NO_TYPE {
+            if types::get{ s = c.ty, id = st } is slice{ elem } { et = elem }
+        } else if exp != types::NO_TYPE and types::get{ s = c.ty, id = types::prune{ s = c.ty, t = exp } } is array{ elem } {
+            et = elem
+        }
         if elems.len == 0 {
             if et == types::NO_TYPE {
                 error{ &c, at = expr_at{ e }, msg = "an empty array literal needs a known type" }
                 return types::ERROR
             }
-            return types::array{ s = &c.ty, n = 0, elem = et }
+            let empty = types::array{ s = &c.ty, n = 0, elem = et }
+            if st != types::NO_TYPE { return add_view{ &c, e, array = empty, st, fixed = true } }
+            return empty
         }
+        let mut fixed = true
         let mut i: usize = 0
         while i < elems.len {
             if et == types::NO_TYPE { et = value_type{ &c, e = elems[i] } } else { expect{ &c, e = elems[i], t = et } }
+            if st != types::NO_TYPE and not is_known{ &c, e = elems[i] } { fixed = false }
             i = i + 1
         }
-        return types::array{ s = &c.ty, n = elems.len, elem = et }
+        let array = types::array{ s = &c.ty, n = elems.len, elem = et }
+        if st != types::NO_TYPE { return add_view{ &c, e, array, st, fixed } }
+        return array
     }
 
-    fn repeat { mut c: Checker, elem: syntax::Expr, count: syntax::Expr, exp: Id } -> Id {
+    // `[x; N]`, as an array literal of N copies of x.
+    fn repeat { mut c: Checker, e: syntax::Expr, elem: syntax::Expr, count: syntax::Expr, exp: Id } -> Id {
+        _ = map::remove{ m = &c.views, key = expr_key{ e } }
         let n = const_int{ &c, e = count, ns = c.sc.ns, what = "an array length" }
+        let st = view_from_expected{ &c, e, exp }
         let mut et = types::NO_TYPE
-        if exp != types::NO_TYPE and types::get{ s = c.ty, id = types::prune{ s = c.ty, t = exp } } is array{ elem = x } { et = x }
+        if st != types::NO_TYPE {
+            if types::get{ s = c.ty, id = st } is slice{ elem = x } { et = x }
+        } else if exp != types::NO_TYPE and types::get{ s = c.ty, id = types::prune{ s = c.ty, t = exp } } is array{ elem = x } {
+            et = x
+        }
         if et != types::NO_TYPE { expect{ &c, e = elem, t = et } } else { et = value_type{ &c, e = elem } }
         if n == null or n < 0 { return types::ERROR }
-        return types::array{ s = &c.ty, n = @as(u64, n), elem = et }
+        let array = types::array{ s = &c.ty, n = @as(u64, n), elem = et }
+        if st != types::NO_TYPE { return add_view{ &c, e, array, st, fixed = is_known{ &c, e = elem } } }
+        return array
+    }
+
+    // The slice type an array literal e is a view of where a value of type exp is expected
+    // (§11, Literals): the []T expected, also inside a ?[]T or a ![]T; NO_TYPE where it is an
+    // array value. The view is read-only, so a []mut T is an error, as for a string literal.
+    fn view_from_expected { mut c: Checker, e: syntax::Expr, exp: Id } -> Id {
+        if exp == types::NO_TYPE { return types::NO_TYPE }
+        let mut want = types::prune{ s = c.ty, t = exp }
+        if types::get{ s = c.ty, id = want } is res{ ok } { want = types::prune{ s = c.ty, t = ok } }
+        if types::get{ s = c.ty, id = want } is opt{ elem } { want = types::prune{ s = c.ty, t = elem } }
+        let slice{ elem, mutable } = types::get{ s = c.ty, id = want } else { return types::NO_TYPE }
+        if mutable {
+            errorf{ &c, at = expr_at{ e }, msg = @fmt("an array literal is read-only; it cannot be a {}", tstr{ c, t = want }) }
+        }
+        return types::slice{ s = &c.ty, elem, mutable = false }
+    }
+
+    // Array literal e as a view, of type st, of its array, of type `array`. If every element is
+    // known while compiling (fixed), the array is static and the view derives from nothing (§14);
+    // otherwise the array is a hidden local of the innermost block, which the view derives from
+    // (derives_raw), as `&x[..]` does from x; in a branch's value, of the block around the `if`
+    // or `match` (value_depth). A static array is folded once, for every instance
+    // of a generic function alike, so there, where an element may depend on the type arguments
+    // (`@size_of(T)`), the array is always a local.
+    fn add_view { mut c: Checker, e: syntax::Expr, array: Id, st: Id, fixed: bool } -> Id {
+        let mut local = NONE
+        if fixed and c.sc.args.len == 0 {
+            try! list::push{ list = &c.view_list, item = e }
+        } else {
+            local = new_var{ &c, name = "", ty = array, kind = VarKind::literal, mutable = false, at = expr_at{ e } }
+            if c.value_depth != NONE { list::at{ list = c.vars, i = local }.depth = c.value_depth }
+        }
+        try! map::put{ m = &c.views, key = expr_key{ e }, value = View{ array, local } }
+        return st
+    }
+
+    // Whether element e of an array literal's view is known while compiling: what folding
+    // computes (const_ok, §14), a converted string literal, whose conversion runs while
+    // compiling, or a static view itself.
+    fn is_known { mut c: Checker, e: syntax::Expr } -> bool {
+        let w = map::get{ m = c.views, key = expr_key{ e } }
+        if w != null { return w.local == NONE }
+        if e.k is str and map::has{ m = c.lit_convs, key = expr_key{ e } } { return true }
+        return const_ok{ &c, e, strict = false }
     }
 
     // ---- postfix

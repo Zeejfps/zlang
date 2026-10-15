@@ -41,6 +41,8 @@ namespace ir {
     }
 
     // A const of array, struct or union type. Its value is literals only: the checker computed it.
+    // The array of an array literal's static view is one too, and a view's value points into
+    // it: `(cast T (addr T (constref T ID)))`.
     struct Const { name: Bytes, ty: TypeId, value: Expr }
 
     // A C variable that a capability names (§15): the C symbol, of type ty.

@@ -83,7 +83,7 @@ namespace ambience {
 
     // A wave by name through the resource search (sound objects, PlaySound), loaded once. The
     // bytes are kept in a list and found by index: a value looked up with a key from a local
-    // would be "derived from" it (ctxlang/FRICTION.md #4).
+    // would be "derived from" it (ctxlang/FRICTION.md #3).
     fn wave { mut a: Ambience, mut w: world::World, name: resref::ResRef } -> []u8 {
         let have = map::get{ m = a.sounds, key = name }
         if have != null { return list::items{ list = a.waves }[have] }

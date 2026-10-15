@@ -2166,21 +2166,9 @@ namespace lower {
             }
             binary{ op, a, b } => { return binary{ &l, e, op, a = a.*, b = b.*, t } }
             braced{ callee, items, bind } => { return braced{ &l, e, callee = callee.*, items, bind, t } }
-            array{ elems } => {
-                let ty = tid{ &l, t }
-                let et = elem_of{ l, t }
-                let mut out = list::new(ir::Expr){ realloc = arena::alloc, heap = l.heap }
-                let mut i: usize = 0
-                while i < elems.len {
-                    let x = conv{ &l, e = elems[i], to = et }
-                    try! list::push{ list = &out, item = x }
-                    i = i + 1
-                }
-                return mk{ ty, k = ir::ExprKind::array{ elems = list::items{ list = out } } }
-            }
-            repeat{ elem } => {
-                let ty = tid{ &l, t }
-                return mk{ ty, k = ir::ExprKind::repeat{ elem = box{ l, e = conv{ &l, e = elem.*, to = elem_of{ l, t } } } } }
+            array | repeat => {
+                if map::has{ m = l.c.views, key = check::expr_key{ e } } { return view_ex{ &l, e, t } }
+                return array_ex{ &l, e, t }
             }
             builtin{ name, targ, args } => { return builtin{ &l, e, name = name.text, targ, args, t } }
             ifx{ x } => { return if_expr{ &l, x, t } }
@@ -2289,6 +2277,55 @@ namespace lower {
             i = i + 1
         }
         return null
+    }
+
+    // An array literal, `[a, b]` or `[x; N]`, as an array value of type t.
+    fn array_ex { mut l: Lower, e: syntax::Expr, t: Id } -> ir::Expr {
+        let ty = tid{ &l, t }
+        let et = elem_of{ l, t }
+        match e.k {
+            array{ elems } => {
+                let mut out = list::new(ir::Expr){ realloc = arena::alloc, heap = l.heap }
+                let mut i: usize = 0
+                while i < elems.len {
+                    let x = conv{ &l, e = elems[i], to = et }
+                    try! list::push{ list = &out, item = x }
+                    i = i + 1
+                }
+                return mk{ ty, k = ir::ExprKind::array{ elems = list::items{ list = out } } }
+            }
+            repeat{ elem } => { return mk{ ty, k = ir::ExprKind::repeat{ elem = box{ l, e = conv{ &l, e = elem.*, to = et } } } } }
+            else => { @panic("lower: not an array literal") }
+        }
+    }
+
+    // An array literal that is a view, of slice type t, of its array (check::View): a static
+    // array's view as the checker folded it (value), or a view of a hidden local that is set to
+    // the array each time the literal runs, `(with SLOT ARRAY VIEW)`.
+    fn view_ex { mut l: Lower, e: syntax::Expr, t: Id } -> ir::Expr {
+        let w = map::get{ m = l.c.views, key = check::expr_key{ e } } ifnull { @panic("lower: not a view") }
+        if w.local == NONE {
+            let v = check::fold_view{ c = l.c, e } ifnull {
+                l.failed = true
+                return value{ &l, v = check::Val::nil{ ty = t } }
+            }
+            return value{ &l, v }
+        }
+        let at = T{ &l, t = w.array }
+        let a = tid{ &l, t = at }
+        let s = temp{ &l, ty = a }
+        let local = mk{ ty = a, k = ir::ExprKind::local{ slot = s } }
+        let view = to_slice{ &l, t, p = first_of{ &l, place = local, array = at, t }, n = array_len{ l, t = at } }
+        return mk{ ty = tid{ &l, t }, k = ir::ExprKind::with{ slot = s, init = box{ l, e = array_ex{ &l, e, t = at } }, body = box{ l, e = view } } }
+    }
+
+    // A pointer to the first element of `place`, an array of type `array`, as one to an element
+    // of slice type t: the array's address, cast.
+    fn first_of { mut l: Lower, place: ir::Expr, array: Id, t: Id } -> ir::Expr {
+        let pa = tid{ &l, t = types::ptr{ s = &l.c.ty, elem = array, mutable = false } }
+        let pe = tid{ &l, t = types::ptr{ s = &l.c.ty, elem = slice_elem{ l, t }, mutable = false } }
+        let a = mk{ ty = pa, k = ir::ExprKind::addr{ place = box{ l, e = place } } }
+        return mk{ ty = pe, k = ir::ExprKind::cast{ e = box{ l, e = a } } }
     }
 
     // A string literal: what its conversion gave it while compiling (PLAN.md 4.5), or a [N]u8
@@ -2463,6 +2500,19 @@ namespace lower {
             repeat{ ty, elem } => {
                 let id = tid{ &l, t = ty }
                 return mk{ ty = id, k = ir::ExprKind::repeat{ elem = box{ l, e = value{ &l, v = elem.* } } } }
+            }
+            // An array literal's static view: its array is a const of its own, which the view
+            // points into, as a const array's does (§12, Slices).
+            view{ ty, array } => {
+                let x = value{ &l, v = array.* }
+                let at = match array.* {
+                    array{ ty = a } | repeat{ ty = a } => { a }
+                    else => { @panic("lower: a view of a non-array") }
+                }
+                let id = @as(u32, l.consts.len)
+                try! list::push{ list = &l.consts, item = ir::Const{ name = "array literal", ty = x.ty, value = x } }
+                let place = mk{ ty = x.ty, k = ir::ExprKind::constref{ id } }
+                return to_slice{ &l, t = ty, p = first_of{ &l, place, array = at, t = ty }, n = array_len{ l, t = at } }
             }
         }
     }

@@ -2882,6 +2882,163 @@ fn main { mut io: Io } {
                                 'cannot write through []u8')
 
 
+class ArrayLiteralViews(Base):
+    """An array literal where a []T is expected is a view of its array (§11, Literals, rule 4): a
+    static array if every element is a constant, else a hidden local of its block."""
+
+    SHOW = """
+fn show { mut io: Io, pages: []u32 } {
+    let mut sum: u32 = 0
+    let mut i: usize = 0
+    while i < pages.len { sum = sum + pages[i]; i = i + 1 }
+    _ = @fmt(&io, "{} {}\\n", pages.len, sum)
+}
+"""
+
+    def test_argument_field_and_optional(self):
+        self.assertOutput(self.SHOW + """
+struct Book { pages: []u32 }
+fn main { mut io: Io } {
+    show{ &io, pages = [1, 2, 3] }
+    let b = Book{ pages = [4, 5] }
+    show{ &io, pages = b.pages }
+    let o: ?[]u32 = [10, 20]
+    if o != null { show{ &io, pages = o } }
+    show{ &io, pages = [6; 4] }
+    show{ &io, pages = [] }
+    let xs: []u32 = [7]
+    show{ &io, pages = xs }
+}
+""", '3 6\n2 9\n2 30\n4 24\n0 0\n1 7\n')
+
+    def test_constant_views_are_static(self):
+        """A view of constants may be returned, nested or stored in a const, and is the same
+        static array each time."""
+        self.assertOutput(self.SHOW + """
+const BASE: u32 = 100
+const WORDS: [][]u8 = ["fn", "let", "match"]
+const ROWS: [][]u32 = [[1, 2], [3]]
+fn table {} -> []u32 { return [BASE, BASE + 1, 7] }
+fn nested {} -> [][]u32 { return [[1, 2], [3], []] }
+fn pick { c: bool } -> []u32 { return if c { [1, 2, 3] } else { [4] } }
+fn result {} -> ![]u32 { return [8, 9] }
+fn main { mut io: Io } {
+    show{ &io, pages = table{} }
+    let n = nested{}
+    show{ &io, pages = n[0] }
+    _ = @fmt(&io, "{} {}\\n", n.len, n[2].len)
+    _ = @fmt(&io, "{} {}\\n", WORDS.len, WORDS[2])
+    show{ &io, pages = ROWS[1] }
+    show{ &io, pages = pick{ c = false } }
+    show{ &io, pages = try! result{} }
+    io::println_bool{ &io, n = table{}.ptr == table{}.ptr }
+}
+""", '3 208\n2 3\n3 0\n3 match\n1 3\n1 4\n2 17\ntrue\n')
+
+    def test_converted_elements(self):
+        """Each element is checked against the slice's element type, so string literals become
+        utf8::Strings."""
+        self.assertOutput("""
+fn names {} -> []utf8::String { return ["a", "bb", "ccc"] }
+fn last { xs: []utf8::String } -> utf8::String { return xs[xs.len - 1] }
+fn main { mut io: Io } {
+    io::println{ &io, s = names{}[1] }
+    let s: utf8::String = "dd"
+    io::println{ &io, s = last{ xs = ["x", s] } }
+}
+""", 'bb\ndd\n')
+
+    def test_runtime_elements_in_a_loop(self):
+        """With an element known only at run time the array is a local, set each time the
+        literal runs."""
+        self.assertOutput(self.SHOW + """
+fn main { mut io: Io } {
+    let mut k: u32 = 1
+    while k <= 3 {
+        show{ &io, pages = [k, k * 10] }
+        let rows: [][]u32 = [[k], [1, 2], [k; 2]]
+        show{ &io, pages = rows[2] }
+        k = k + 1
+    }
+}
+""", '2 11\n2 2\n2 22\n2 4\n2 33\n2 6\n')
+
+    def test_runtime_views_as_branch_values(self):
+        """A branch's value leaves the branch, so a view in it is a local of the block around the
+        `if` or `match`: the outermost one's, when they nest."""
+        self.assertOutput(self.SHOW + """
+struct Pages { xs: []u32 }
+fn main { mut io: Io } {
+    let mut a: u32 = 1
+    while a <= 2 {
+        let c = a == 1
+        show{ &io, pages = if c { [a, 2] } else { [3] } }
+        let xs: []u32 = if c { [a, 2] } else { [3] }
+        show{ &io, pages = xs }
+        let rows: [][]u32 = match a { 1 => { [[a], [a, a]] } else => { if c { [[0]] } else { [[a; 3]] } } }
+        show{ &io, pages = rows[rows.len - 1] }
+        let p = if c { Pages{ xs = [a, 5] } } else { Pages{ xs = [a] } }
+        show{ &io, pages = p.xs }
+        a = a + 1
+    }
+}
+""", '2 3\n2 3\n2 2\n2 6\n1 3\n1 3\n3 6\n1 2\n')
+
+    def test_generic_inference(self):
+        self.assertOutput("""
+fn count(T) { xs: []T } -> usize { return xs.len }
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = count{ xs = [1, 2, 3] } + count{ xs = ["a", "b"] } }
+}
+""", '5\n')
+
+    def test_runtime_view_cannot_escape(self):
+        for src, message in [
+            ('fn f { x: u32 } -> []u32 { return [x, 1] }',
+             'returned value holds the address of an array literal'),
+            ('fn f { x: u32 } -> []u32 { let xs: []u32 = [x]; return xs }',
+             'returned value holds the address of an array literal'),
+            ('fn f { x: u32 } {\n    let mut keep: []u32 = [1]\n    if x > 0 { keep = [x] }\n}',
+             '`keep` outlives an array literal whose address it would hold'),
+            ('fn f { mut out: []u32, x: u32 } { out = [x] }',
+             'cannot store the address of an array literal in `out`, which belongs to the caller'),
+            # A view in a branch's statements is the branch's.
+            ('fn f { c: bool, x: u32 } {\n    let mut keep: []u32 = [1]\n'
+             '    let n = if c { keep = [x]; 1 } else { 2 }\n}',
+             '`keep` outlives an array literal whose address it would hold'),
+            ('fn f { c: bool, x: u32 } -> []u32 { return if c { [x] } else { [2] } }',
+             'returned value holds the address of an array literal'),
+            # A generic function's views are locals: an element may depend on the type.
+            ('fn f(T) {} -> []usize { return [@size_of(T)] }',
+             'returned value holds the address of an array literal'),
+        ]:
+            with self.subTest(src=src):
+                self.assertCompileError(src + '\nfn main {} {}', message)
+
+    def test_views_are_read_only(self):
+        self.assertCompileError('fn f { b: []mut u32 } { }\nfn main {} { f{ b = [1, 2] } }',
+                                'an array literal is read-only; it cannot be a []mut u32')
+        self.assertCompileError('fn main {} {\n    let xs: []u32 = [1, 2]\n    xs[0] = 3\n}',
+                                'cannot write through []u32')
+
+    def test_constants_fold(self):
+        """A static view's array is computed while compiling, as a const's is."""
+        self.assertCompileError('fn f {} -> []u8 { return [200 + 100] }\nfn main {} { _ = f{} }',
+                                'integer overflow in constant')
+        self.assertCompileError('const NAMES: []utf8::String = ["a", "b"]\nfn main {} {}',
+                                'const values cannot retain array views')
+
+    def test_without_a_slice_expected_it_is_an_array(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let a = [1, 2, 3]
+    let b: [2]u8 = [1, 2]
+    io::println_u64{ &io, n = a.len + b.len + @size_of([3]u32) }
+}
+""", '17\n')
+        self.assertCompileError('fn main {} { let a = [] }', 'an empty array literal needs a known type')
+
+
 class StrLit(Base):
     """`strlit`, a string literal's type (PLAN.md 4.2): built in, with its bytes as `.bytes`, a
     []u8 with the hidden zero after it. Only a literal makes one."""

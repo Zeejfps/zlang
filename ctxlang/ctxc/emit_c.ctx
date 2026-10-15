@@ -137,6 +137,7 @@ namespace emit {
         lg: Locals, la: Locals, lk: Locals, lb: Locals, ld: Locals,     // consts, C variables,
                                                     // functions, thunks, adapters, callbacks, records,
                                                     // statics
+        lqd: Locals,                                // the consts the unit has defined (const_defs)
     }
 
     // The whole program as one C file.
@@ -238,7 +239,7 @@ namespace emit {
             lt = locals{ heap, n = 0 }, lc = locals{ heap, n = 0 }, lq = locals{ heap, n = 0 },
             lv = locals{ heap, n = 0 }, lf = locals{ heap, n = 0 }, lg = locals{ heap, n = 0 },
             la = locals{ heap, n = 0 }, lk = locals{ heap, n = 0 }, lb = locals{ heap, n = 0 },
-            ld = locals{ heap, n = 0 },
+            ld = locals{ heap, n = 0 }, lqd = locals{ heap, n = 0 },
         }
         let mut i: usize = 0
         while i < p.files.len {
@@ -341,6 +342,7 @@ namespace emit {
         e.lt = locals{ heap, n = e.p.types.len }
         e.lc = locals{ heap, n = e.p.types.len }
         e.lq = locals{ heap, n = e.p.consts.len }
+        e.lqd = locals{ heap, n = e.p.consts.len }
         e.lv = locals{ heap, n = e.p.vars.len }
         e.lf = locals{ heap, n = e.p.fns.len }
         e.lg = locals{ heap, n = e.p.fns.len }
@@ -703,9 +705,9 @@ namespace emit {
                 nd = nd + 1
                 rewrite{ &e, src = list::items{ list = e.o.bytes }, into = &proto }
             } else if nq < e.lq.order.len {
-                const_def{ &e, id = list::items{ list = e.lq.order }[nq] }
+                let id = list::items{ list = e.lq.order }[nq]
                 nq = nq + 1
-                rewrite{ &e, src = list::items{ list = e.o.bytes }, into = &defs }
+                const_defs{ &e, id, &defs }
             } else if ng < e.lg.order.len {
                 thunk_def{ &e, callee = list::items{ list = e.lg.order }[ng] }
                 ng = ng + 1
@@ -822,6 +824,7 @@ namespace emit {
         clear_locals{ l = &e.lk }
         clear_locals{ l = &e.lb }
         clear_locals{ l = &e.ld }
+        clear_locals{ l = &e.lqd }
     }
 
     // src, with each marker replaced by its name in the unit, onto `into`.
@@ -1249,8 +1252,44 @@ namespace emit {
         if first { put{ &e, a = "void" } }
     }
 
-    // Const N, in read-only data: its value is literals only (the checker computed it), which
-    // GNU C takes as a static initializer, compound literals included.
+    // Const id's definition onto defs, after those of the consts its value points into (an array
+    // literal's view's array, lower.ctx), since C needs each declared before its address is
+    // taken. A unit defines each once (lqd).
+    fn const_defs { mut e: E, id: u32, mut defs: Out } {
+        if list::items{ list = e.lqd.ids }[id] > 0 { return }
+        _ = number{ l = &e.lqd, id }
+        define_refs{ &e, x = e.p.consts[id].value, &defs }
+        list::clear{ list = &e.o.bytes }
+        const_def{ &e, id }
+        rewrite{ &e, src = list::items{ list = e.o.bytes }, into = &defs }
+    }
+
+    // const_defs of each const that x, a const's value, refers to.
+    fn define_refs { mut e: E, x: ir::Expr, mut defs: Out } {
+        match x.k {
+            constref{ id } => { const_defs{ &e, id, &defs } }
+            addr{ place = a } | cast{ e = a } | some{ e = a } | widen{ e = a } | repeat{ elem = a } => { define_refs{ &e, x = a.*, &defs } }
+            record{ items } | variant{ items } => {
+                let mut i: usize = 0
+                while i < items.len {
+                    define_refs{ &e, x = items[i].value, &defs }
+                    i = i + 1
+                }
+            }
+            array{ elems } => {
+                let mut i: usize = 0
+                while i < elems.len {
+                    define_refs{ &e, x = elems[i], &defs }
+                    i = i + 1
+                }
+            }
+            else => {}
+        }
+    }
+
+    // Const N, in read-only data: its value is literals only (the checker computed it), and the
+    // addresses of other consts, which GNU C takes as a static initializer, compound literals
+    // included.
     //   static const tT qN = VALUE;
     fn const_def { mut e: E, id: u32 } {
         let c = e.p.consts[id]
@@ -3819,7 +3858,7 @@ namespace emit {
     // nothing between writes memory.
     fn pure { e: E, x: ir::Expr } -> bool {
         return match x.k {
-            int | float | boolean | str | sbytes | cstr | nil | local | fnref => { true }
+            int | float | boolean | str | sbytes | cstr | nil | local | constref | fnref => { true }
             deref{ ptr = a } | field{ base = a } | payload{ base = a } | addr{ place = a }
             | lnot{ e = a } | isnull{ e = a } | notnull{ e = a } | widen{ e = a } | some{ e = a }
             | cast{ e = a } | ptraddr{ e = a } | trunc{ e = a } | fnconv{ e = a } | repeat{ elem = a } => {

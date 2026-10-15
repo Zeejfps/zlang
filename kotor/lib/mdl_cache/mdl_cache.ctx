@@ -36,7 +36,7 @@ namespace mdl_cache {
         let mut lower: [64]u8
         let key = to_lower{ into = lower[..], s = name }
         // The index, not the pointer, goes through the map: a value found with a key in a local
-        // buffer counts as derived from it (ctxlang/FRICTION.md #4).
+        // buffer counts as derived from it (ctxlang/FRICTION.md #3).
         let have = map::get{ m = cache.loaded, key }
         if have != null { return list::items{ list = cache.models }[have] }
         let model = load{ &fs, rm = cache.rm, heap = cache.keep, name } iferr err{ error } {

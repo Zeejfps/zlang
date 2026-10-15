@@ -1456,6 +1456,10 @@ namespace decls {
                 if types::get{ s = c.ty, id = ty } is array{ n = k } { n = k }
                 try! @fmt(&out, "; {}]", n)
             }
+            view{ array } => {
+                dump::put{ &out, s = "view " }
+                value{ &out, c, v = array.* }
+            }
         }
     }
 
