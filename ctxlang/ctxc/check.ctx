@@ -5226,6 +5226,54 @@ namespace check {
         return null
     }
 
+    // Why e, a ?T place, doesn't narrow where a `let` local or a read-only field would (rule 3):
+    // it is mutable, reached through a pointer, or reached through an index. Null if it narrows
+    // or isn't such a place.
+    fn why_unnarrowed { c: Checker, e: syntax::Expr } -> ?utf8::String {
+        let t = types::prune{ s = c.ty, t = type_of_expr{ c, e } }
+        if not (types::get{ s = c.ty, id = t } is opt) { return null }
+        if fact{ c, e } != null { return null }
+        match e.k {
+            path => {
+                if map::get{ m = c.refs, key = expr_key{ e } } is local{ var } {
+                    if get_var{ c, v = var }.mutable { return "is mutable" }
+                }
+            }
+            field | index => {
+                let p = place_path{ c, e }
+                if p != null {
+                    let root = get_var{ c, v = p.root }
+                    if root.mutable { return "is mutable" }
+                    if root.indirect { return "is reached through a pointer" }
+                    if not all_fields{ steps = p.steps } { return "is reached through an index" }
+                } else if through_pointer{ c, e } {
+                    return "is reached through a pointer"
+                }
+            }
+            else => {}
+        }
+        return null
+    }
+
+    // Whether field or index path e takes a step through a pointer or a slice.
+    fn through_pointer { c: Checker, e: syntax::Expr } -> bool {
+        match e.k {
+            field{ base } => { return access_of{ c, e } is pfield or through_pointer{ c, e = base.* } }
+            index{ base } => { return access_of{ c, e } is slice | ptr | parr or through_pointer{ c, e = base.* } }
+            deref => { return true }
+            else => { return false }
+        }
+    }
+
+    // After an error at a use of e as the T inside its ?T: if e is a place that doesn't narrow,
+    // why, and the forms that unwrap it.
+    fn unnarrowed { c: Checker, e: syntax::Expr, mut b: utf8::Builder(Heap) } -> ! {
+        let why = why_unnarrowed{ c, e }
+        if why == null { return }
+        let text = str{ s = source_text{ c, span = e.span } }
+        return @fmt(&b, ": `{}` {}, so testing it for null doesn't narrow it; unwrap it with `if {} is some{{ value = v }}` or `let v = {} ifnull {{ return }}`", text, why, text, text)
+    }
+
     fn add_fact { mut xs: list::List(Fact, Heap), f: Fact } {
         try! list::push{ list = &xs, item = f }
     }
@@ -6897,6 +6945,16 @@ namespace check {
     }
 
     fn coerce_node { mut c: Checker, e: syntax::Expr, at: Id, t: Id } {
+        // A ?T place used as its T, which a null test didn't narrow: say how to unwrap it.
+        if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = at } } is opt{ elem } {
+            if types::prune{ s = c.ty, t = elem } == types::prune{ s = c.ty, t } and why_unnarrowed{ c, e } != null {
+                let mut b = message{ c }
+                try! @fmt(&b, "expected {}, got {}", tstr{ c, t }, tstr{ c, t = at })
+                try! unnarrowed{ c, e, &b }
+                error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+                return
+            }
+        }
         coerce_key{ &c, k = expr_key{ e }, pos = expr_at{ e }, a = at, t }
     }
 
@@ -7341,7 +7399,10 @@ namespace check {
                     ptr{ elem } => { return elem }
                     error => { return types::ERROR }
                     else => {
-                        errorf{ &c, at = expr_at{ e }, msg = @fmt("`.*` needs a pointer, got {}", tstr{ c, t = bt }) }
+                        let mut b = message{ c }
+                        try! @fmt(&b, "`.*` needs a pointer, got {}", tstr{ c, t = bt })
+                        try! unnarrowed{ c, e = base.*, &b }
+                        error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
                         return types::ERROR
                     }
                 }
@@ -7372,7 +7433,10 @@ namespace check {
                     }
                     error => { return types::ERROR }
                     else => {
-                        errorf{ &c, at = expr_at{ e }, msg = @fmt("cannot index {}", tstr{ c, t = bt }) }
+                        let mut b = message{ c }
+                        try! @fmt(&b, "cannot index {}", tstr{ c, t = bt })
+                        try! unnarrowed{ c, e = base.*, &b }
+                        error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
                         return types::ERROR
                     }
                 }
@@ -8674,7 +8738,13 @@ namespace check {
     }
 
     fn no_field { mut c: Checker, t: Id, e: syntax::Expr, name: syntax::Name } -> Id {
-        errorf{ &c, at = expr_at{ e }, msg = @fmt("{} has no field `{}`", tstr{ c, t }, str{ s = name.text }) }
+        let mut b = message{ c }
+        try! @fmt(&b, "{} has no field `{}`", tstr{ c, t }, str{ s = name.text })
+        match e.k {
+            field{ base } => { try! unnarrowed{ c, e = base.*, &b } }
+            else => {}
+        }
+        error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
         return types::ERROR
     }
 

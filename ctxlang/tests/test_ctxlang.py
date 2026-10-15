@@ -1036,6 +1036,10 @@ class Bodies(Base):
         U2 = 'union U { a, b{ x: i32 } }\n'
         U3 = 'union U { a, b{ x: i32 }, c{ x: i32, y: bool } }\n'
         B = 'fn w { mut b: utf8::Builder(arena::Arena) } -> ! {\n'
+
+        def unwrap(x, why):
+            return (f': `{x}` {why}, so testing it for null doesn\'t narrow it; unwrap it with '
+                    f'`if {x} is some{{ value = v }}` or `let v = {x} ifnull {{ return }}`')
         for src, msg, line, col in [
             ('fn f {} {\n    let x = null\n}',
              'cannot infer the type of `null` here; add a type', 2, 13),
@@ -1149,6 +1153,16 @@ class Bodies(Base):
              '`g` has no field `movie`', 4, 15),
             ('struct S { a: i32, b: i32 }\nfn f {} {\n    let x = 1\n    let s = S{ b = 2, x }\n}',
              'struct `S` has no field `x`: write `a = x`', 4, 23),
+            ('struct T { n: i32 }\nstruct W { t: ?T }\nfn f { mut w: W } {\n    if w.t != null { let n = w.t.n }\n}',
+             '?T has no field `n`' + unwrap('w.t', 'is mutable'), 4, 33),
+            ('struct T { n: i32 }\nfn g { t: T } {}\nfn f {} {\n    let mut a: ?T = null\n    if a != null { g{ t = a } }\n}',
+             'expected T, got ?T' + unwrap('a', 'is mutable'), 5, 27),
+            ('struct T { n: i32 }\nstruct W { t: ?T }\nfn g { t: T } {}\nfn f { w: *mut W } {\n    if w.t != null { g{ t = w.t } }\n}',
+             'expected T, got ?T' + unwrap('w.t', 'is reached through a pointer'), 5, 30),
+            ('struct W { xs: ?[]i32 }\nfn f { mut w: W } {\n    if w.xs != null { let n = w.xs[0] }\n}',
+             'cannot index ?[]i32' + unwrap('w.xs', 'is mutable'), 3, 35),
+            ('struct T { n: i32 }\nstruct W { t: ?T }\nfn g { t: T } {}\nfn f { w: W } {\n    g{ t = w.t }\n}',
+             'expected T, got ?T', 5, 13),
             ('fn g { a: i32, n: i32 } {}\nfn f { a: i32 } {\n    g{ .. }\n}',
              '`..` cannot supply `n`: no local or context field named `n`', 3, 6),
             ('fn g { a: i32, b: i32 } {}\nfn f {} {\n    let h: fn{ a: i32 } = g\n}',
@@ -1236,7 +1250,7 @@ class Bodies(Base):
             ('struct S { f: i32 }\nfn f { o: ?S } {\n    let y = o.f\n}',
              '?S has no field `f`', 3, 14),
             ('struct S { f: i32 }\nfn f {} {\n    let mut x: ?S = null\n    if x == null { return }\n    let y = x.f\n}',
-             '?S has no field `f`', 5, 14),
+             '?S has no field `f`' + unwrap('x', 'is mutable'), 5, 14),
             ('fn f { n: i32 } {\n    if n == null { return }\n}',
              'only an optional can be compared with null, got i32', 2, 10),
             ('fn f {} {\n    while true {\n        defer { break }\n    }\n}',
@@ -1248,7 +1262,7 @@ class Bodies(Base):
             ('fn f(T) { u: ?T } -> T {\n    match u {\n        null => { return y }\n        some{ value } => { return value }\n    }\n}',
              'unknown name `y`', 3, 26),
             ('struct S { f: i32 }\nfn f { c: bool } {\n    let mut x: ?S = null\n    if c {\n        if x == null { return }\n        let y = x.f\n    }\n}',
-             '?S has no field `f`', 6, 18),
+             '?S has no field `f`' + unwrap('x', 'is mutable'), 6, 18),
         ]:
             self.assertBodyError(src + '\nfn main {} {}', msg, line, col)
 

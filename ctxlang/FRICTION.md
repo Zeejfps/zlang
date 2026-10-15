@@ -45,8 +45,12 @@ a `[]u32` argument.
    manager) and a field (`w.minigame`, `w.tlk`, a field through a `mut` parameter) don't narrow
    after `!= null`, and narrowing turns `x` into a pointer that `is some{ ... }` can't test. A `?T`
    can't be compared with a `T` either (`map::get{ ... } == Access::field`). Written a copy (`let
-   q = p`), a `match` with `some{ value }`, or a `found: bool` beside a dummy value. Spec §8 rule
-   3 says so; `?T == T` is under PLAN.md stage 1's *Later*. *Hit by 9:* ctxc (about ten copies,
+   q = p`), a `match` with `some{ value }`, or a `found: bool` beside a dummy value. *Partly:*
+   the forms that unwrap into a new local already work on a mutable place (`if w.tlk is some{
+   value = t }`, `let t = w.tlk ifnull { return }`, let-else), and narrowing one can't be sound
+   while a `*mut` reaches it unchecked; spec §8 rule 3 now points at them, and so does the error
+   where such a place is used as its `T`. Left: `is` through a pointer, to change the payload in
+   place without a `match`, and `?T == T`, under PLAN.md stage 1's *Later*. *Hit by 9:* ctxc (about ten copies,
    and three comparisons), engine (6), data (2), dialog (about 10), models (3), rules (5), walk
    (2, and two helpers comparing optionals), minigames (2), hud.
 
