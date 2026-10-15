@@ -265,7 +265,7 @@ _ = scripts::run{ w, &vm, engine, name = "k_pend_area01", self = area_id }   // 
   takes `mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine` (a `&fn` can't be a struct
   field). ExecuteScript inside a routine has no engine at hand and binds a new one for its nested
   run (`let wp: *mut World = &w`, `routines::call{ w = wp, _ }`): one small leaked bind record per
-  call (ctxlang/FRICTION.md #20).
+  call (ctxlang/FRICTION.md #19).
 - **OBJECT_SELF** is the object whose slot runs (the area for area scripts, the module for module
   scripts, the target of an AssignCommand, the owner of a DelayCommand).
 

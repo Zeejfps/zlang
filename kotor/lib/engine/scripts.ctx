@@ -41,7 +41,7 @@ namespace scripts {
 
     fn load { mut w: world::World, name: resref::ResRef } -> !?*nwvm::Program {
         // The name goes to module memory first: a read through a name in a local would tie the
-        // program to the local (ctxlang/FRICTION.md #3).
+        // program to the local (ctxlang/FRICTION.md #2).
         let mut key = name
         let text = resref::bytes{ r = &key }
         let kept = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, mem = slice::empty(u8){}, count = text.len }

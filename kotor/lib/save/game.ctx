@@ -349,7 +349,7 @@ namespace save {
         let info_doc = try gff::parse{ data = info_bytes, realloc = arena::alloc, heap = w.scratch }
         let info = read_info{ doc = &info_doc }
         if info.last_module.len == 0 { return no_save{ folder } }
-        // A fresh copy (a call's result counts as derived from its arguments: ctxlang/FRICTION.md #3).
+        // A fresh copy (a call's result counts as derived from its arguments: ctxlang/FRICTION.md #2).
         let module = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = info.last_module.len }
         let mut k: usize = 0
         while k < module.len {
