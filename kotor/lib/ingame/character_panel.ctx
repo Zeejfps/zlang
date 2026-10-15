@@ -48,7 +48,7 @@ namespace character_panel {
     }
 
     fn drop_view { mut s: State, mut dev: gpu::Device } {
-        if s.view is some{ value = v } { lvl::free_view{ v, &dev } }
+        if let v = s.view { lvl::free_view{ v, &dev } }
         s.view = null
     }
 
@@ -146,7 +146,7 @@ namespace character_panel {
         let mut rows: [10]i32 = [0; 10]
         let mut shown: usize = 0
         let mut more = false
-        if hud::ruled_of{ w = &w, id } is some{ value = f } {
+        if let f = hud::ruled_of{ w = &w, id } {
             let mut i: usize = 0
             while i < @as(usize, f.c.nfx) {
                 let e = &f.c.fx[i]

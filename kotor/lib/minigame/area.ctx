@@ -171,11 +171,11 @@ namespace mg {
             tunnel_neg = vector_of{ doc, s, x = "TunnelXNeg", y = "TunnelYNeg", z = "TunnelZNeg" },
             tunnel_infinite = [false; 3],
         }
-        if gff::get_struct{ doc, s, label = "Sounds" } is some{ value = ss } {
+        if let ss = gff::get_struct{ doc, s, label = "Sounds" } {
             f.death_sound = ref_of{ doc, s = ss, label = "Death" }
             f.engine_sound = ref_of{ doc, s = ss, label = "Engine" }
         }
-        if gff::get_list{ doc, s, label = "Models" } is some{ value = ms } {
+        if let ms = gff::get_list{ doc, s, label = "Models" } {
             let mut i: usize = 0
             while i < ms.len and i < MAX_MODELS {
                 f.models[i] = ModelRef{ name = ref_of{ doc, s = ms[i], label = "Model" }, rotating = number_of{ doc, s = ms[i], label = "RotatingModel", fallback = 0 } != 0 }
@@ -183,7 +183,7 @@ namespace mg {
             }
             f.model_count = i
         }
-        if gff::get_list{ doc, s, label = "Gun_Banks" } is some{ value = bs } {
+        if let bs = gff::get_list{ doc, s, label = "Gun_Banks" } {
             let mut i: usize = 0
             while i < bs.len and i < MAX_BANKS {
                 f.banks[i] = read_bank{ doc, s = bs[i] }
@@ -191,7 +191,7 @@ namespace mg {
             }
             f.bank_count = i
         }
-        if gff::get_vector{ doc, s, label = "TunnelInfinite" } is some{ value = v } {
+        if let v = gff::get_vector{ doc, s, label = "TunnelInfinite" } {
             f.tunnel_infinite = [v[0] != 0.0, v[1] != 0.0, v[2] != 0.0]
         }
         return f
@@ -218,7 +218,7 @@ namespace mg {
             player = read_follower{ doc, s = gff::get_struct{ doc, s = m, label = "Player" } ifnull m },
             enemies = slice::empty(Follower){}, obstacles = slice::empty(resref::ResRef){},
         }
-        if gff::get_struct{ doc, s = m, label = "Mouse" } is some{ value = ms } {
+        if let ms = gff::get_struct{ doc, s = m, label = "Mouse" } {
             a.mouse = Mouse{
                 present = true, axis_x = @as(u32, number_of{ doc, s = ms, label = "AxisX", fallback = 0 }),
                 axis_y = @as(u32, number_of{ doc, s = ms, label = "AxisY", fallback = 0 }),
@@ -226,7 +226,7 @@ namespace mg {
                 flip_y = number_of{ doc, s = ms, label = "FlipAxisY", fallback = 0 } != 0,
             }
         }
-        if gff::get_list{ doc, s = m, label = "Enemies" } is some{ value = es } {
+        if let es = gff::get_list{ doc, s = m, label = "Enemies" } {
             let out = try alloc::resize(Follower, S){ realloc, &heap, mem = slice::empty(Follower){}, count = es.len }
             let mut i: usize = 0
             while i < es.len {
@@ -235,7 +235,7 @@ namespace mg {
             }
             a.enemies = out
         }
-        if gff::get_list{ doc, s = m, label = "Obstacles" } is some{ value = os } {
+        if let os = gff::get_list{ doc, s = m, label = "Obstacles" } {
             let out = try alloc::resize(resref::ResRef, S){ realloc, &heap, mem = slice::empty(resref::ResRef){}, count = os.len }
             let mut i: usize = 0
             while i < os.len {

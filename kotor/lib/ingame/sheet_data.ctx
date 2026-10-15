@@ -142,7 +142,7 @@ namespace sheet {
 
     // Skill ranks, feats and Force powers of a creature: the rules creature's.
     fn known_of { mut w: world::World, id: u32 } -> Known {
-        if hud::ruled_of{ w = &w, id } is some{ value = f } { return known_ruled{ &w, f } }
+        if let f = hud::ruled_of{ w = &w, id } { return known_ruled{ &w, f } }
         return known_standin{ &w, id }
     }
 
@@ -344,7 +344,7 @@ namespace sheet {
     // Everything the character sheet shows for creature `id`: the rules creature's numbers, or the
     // fallback's for a creature that has none.
     fn read { mut w: world::World, id: u32, known: Known } -> Sheet {
-        if hud::ruled_of{ w = &w, id } is some{ value = f } { return read_ruled{ &w, id, f } }
+        if let f = hud::ruled_of{ w = &w, id } { return read_ruled{ &w, id, f } }
         return read_standin{ &w, id, known }
     }
 
@@ -370,7 +370,7 @@ namespace sheet {
             let n = s.nclasses
             s.nclasses = n + 1
             s.class_level[n] = slot.level
-            if rules::get_class{ tables = w.rules, row = slot.class } is some{ value = row } {
+            if let row = rules::get_class{ tables = w.rules, row = slot.class } {
                 s.class_name[n] = @trunc(u32, row.name)
                 if row.caster { s.force_user = true }
             }

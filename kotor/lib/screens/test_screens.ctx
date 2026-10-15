@@ -24,7 +24,7 @@ namespace test_screens {
                 return true
             }
             outbox::post{ out = &w.out, note = outbox::Note::open_store{ store = id, customer = w.pc, markup = up, markdown = down } }
-            if store::data_of{ w = &w, store = id } is some{ value = st } {
+            if let st = store::data_of{ w = &w, store = id } {
                 _ = @fmt(&w.io, "store {} markup {} markdown {} flag {}\n", name, st.markup, st.markdown, st.buy_sell)
                 let stock = list::items{ list = st.stock }
                 let mut k: usize = 0
@@ -42,8 +42,8 @@ namespace test_screens {
             let tag = text::next_word{ &words } ifnull { return true }
             let template = text::next_word{ &words } ifnull { return true }
             let item = rt_item::create_item{ &w, template, target = world::object_by_tag{ w = &w, tag, nth = 0 }, stack = 1 }
-            if world::object{ w = &w, id = item } is some{ value = io } {
-                if obj::item{ o = io } is some{ value = it } { it.droppable = true }
+            if let io = world::object{ w = &w, id = item } {
+                if let it = obj::item{ o = io } { it.droppable = true }
             }
         } else if ci::eq{ a = cmd, b = "loot" } {
             let tag = text::next_word{ &words } ifnull { return true }
@@ -58,8 +58,8 @@ namespace test_screens {
                 let found = world::object_by_tag{ w = &w, tag, nth }
                 nth = nth + 1
                 if found == obj::INVALID { break }
-                if world::object{ w = &w, id = found } is some{ value = fo } {
-                    if obj::placeable{ o = fo } is some{ value = fp } {
+                if let fo = world::object{ w = &w, id = found } {
+                    if let fp = obj::placeable{ o = fo } {
                         if fp.has_inventory { id = found; break }
                     }
                 }
@@ -71,7 +71,7 @@ namespace test_screens {
             while k < all.len {
                 let o = all[k]
                 k = k + 1
-                if obj::placeable{ o } is some{ value = p } {
+                if let p = obj::placeable{ o } {
                     if p.has_inventory {
                         _ = @fmt(&w.io, "container {} tag {} items {} locked {} useable {} at {} {} {}\n", o.id, o.tag, p.inventory.len, p.locked, p.useable, o.position.x, o.position.y, o.position.z)
                     }
@@ -98,10 +98,10 @@ namespace test_screens {
             }
         } else if ci::eq{ a = cmd, b = "hp" } {
             let leader = party::leader{ w = &w }
-            if text::next_word{ &words } is some{ value = n } {
-                if world::object{ w = &w, id = leader } is some{ value = o } { o.hp = @trunc(i32, text::scan_decimal{ s = n }) }
+            if let n = text::next_word{ &words } {
+                if let o = world::object{ w = &w, id = leader } { o.hp = @trunc(i32, text::scan_decimal{ s = n }) }
             }
-            if world::object{ w = &w, id = leader } is some{ value = o } { _ = @fmt(&w.io, "leader hp {} of {}\n", o.hp, o.hp_max) }
+            if let o = world::object{ w = &w, id = leader } { _ = @fmt(&w.io, "leader hp {} of {}\n", o.hp, o.hp_max) }
         } else if ci::eq{ a = cmd, b = "useitem" } {
             // The leader uses an item of the bag (made first, with the given stack, when it is a blueprint name).
             let name = text::next_word{ &words } ifnull { return true }
@@ -125,7 +125,7 @@ namespace test_screens {
                 let ids = list::items{ list = w.bag }
                 let mut k: usize = 0
                 while k < ids.len {
-                    if world::object{ w = &w, id = ids[k] } is some{ value = o } {
+                    if let o = world::object{ w = &w, id = ids[k] } {
                         if ci::eq{ a = o.tag, b = tag } { item = ids[k]; break }
                     }
                     k = k + 1
@@ -148,7 +148,7 @@ namespace test_screens {
             let tag = text::next_word{ &words } ifnull { return true }
             let n = @as(usize, text::scan_decimal{ s = text::next_word{ &words } ifnull "1" })
             let id = world::object_by_tag{ w = &w, tag, nth = 0 }
-            if store::data_of{ w = &w, store = id } is some{ value = st } {
+            if let st = store::data_of{ w = &w, store = id } {
                 let mut k: usize = 0
                 while k < n and st.stock.len > 0 {
                     world::destroy{ &w, id = list::items{ list = st.stock }[st.stock.len - 1] }
@@ -163,7 +163,7 @@ namespace test_screens {
                 let id = world::object_by_tag{ w = &w, tag, nth }
                 nth = nth + 1
                 if id == obj::INVALID { break }
-                if store::data_of{ w = &w, store = id } is some{ value = st } {
+                if let st = store::data_of{ w = &w, store = id } {
                     _ = @fmt(&w.io, "store {} ({}): {} items, markup {} markdown {} flag {}\n", tag, id, st.stock.len, st.markup, st.markdown, st.buy_sell)
                 }
             }
@@ -182,14 +182,14 @@ namespace test_screens {
             // As the options screen's Auto Level Up NPCs box: its settings, which every frame passes
             // on to the rules (ingame::update), else the next frame undoes the change.
             let on = text::scan_decimal{ s = args } != 0
-            if ui.menus.options.fe is some{ value = fe } { fe.settings.auto_level_up = on }
+            if let fe = ui.menus.options.fe { fe.settings.auto_level_up = on }
             w.rules.settings.auto_level = on
         } else if ci::eq{ a = cmd, b = "levels" } {
             // Every party member's level and XP.
             let members = party::members{ w = &w }
             let mut m: usize = 0
             while m < members.len {
-                if levelup::fighter_of{ w = &w, id = members[m] } is some{ value = f } {
+                if let f = levelup::fighter_of{ w = &w, id = members[m] } {
                     _ = @fmt(&w.io, "member {} {}: level {} xp {} hp {}\n", members[m], hud::name_of{ w = &w, id = members[m] }, rules::total_level{ c = &f.c }, f.c.xp, f.c.stats.max_hp)
                 }
                 m = m + 1

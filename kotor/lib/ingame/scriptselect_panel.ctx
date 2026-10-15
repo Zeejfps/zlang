@@ -117,7 +117,7 @@ namespace scriptselect_panel {
     // and the panel closes. A row that does not exist changes nothing.
     fn choose { mut s: State, mut g: gui::Gui, mut w: world::World, row: i32 } {
         if row >= 0 and @as(usize, row) < s.count {
-            if hud::creature_of{ w = &w, id = s.who } is some{ value = c } {
+            if let c = hud::creature_of{ w = &w, id = s.who } {
                 if w.log.combat {
                     _ = @fmt(&w.io, "ai style: {} {} -> {}\n", hud::name_of{ w = &w, id = s.who }, c.ai_style, s.aistate[@as(usize, row)])
                 }
@@ -151,7 +151,7 @@ namespace scriptselect_panel {
             } else if (ev.kind == gui::EventKind::row_hover or ev.kind == gui::EventKind::row_selected) and slice::eq_bytes{ a = ev.tag, b = LIST } {
                 // A row the keys moved to is hilighted like one under the pointer (SetSelectedIndex's event 0).
                 if ev.kind == gui::EventKind::row_selected {
-                    if gui::find_control{ &g, panel = s.panel, tag = LIST } is some{ value = c } { c.hover_row = ev.row }
+                    if let c = gui::find_control{ &g, panel = s.panel, tag = LIST } { c.hover_row = ev.row }
                 }
                 show_row{ &s, &g, &w, row = ev.row } iferr err{ error } { _ = @fmt(&w.io, "kotor: script select: {}\n", error) }
             }

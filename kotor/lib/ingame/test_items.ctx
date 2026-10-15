@@ -56,14 +56,14 @@ namespace test_items {
             let slot = @as(usize, text::scan_decimal{ s = args })
             if slot < obj::EQUIP_SLOTS { _ = items::unequip{ &w, who = leader, index = slot } }
         } else if ci::eq{ a = cmd, b = "race" } {
-            if hud::creature_of{ w = &w, id = leader } is some{ value = c } { c.race = @trunc(u32, text::scan_decimal{ s = args }) }
+            if let c = hud::creature_of{ w = &w, id = leader } { c.race = @trunc(u32, text::scan_decimal{ s = args }) }
         } else if ci::eq{ a = cmd, b = "combat" } {
-            if hud::creature_of{ w = &w, id = leader } is some{ value = c } { c.in_combat = text::scan_decimal{ s = args } != 0 }
+            if let c = hud::creature_of{ w = &w, id = leader } { c.in_combat = text::scan_decimal{ s = args } != 0 }
         } else if ci::eq{ a = cmd, b = "credits" } {
             // A party member's credits are the party purse (GetGold reads it), not the creature's own field.
             let n = text::scan_decimal{ s = args }
             if party::is_member{ w = &w, id = leader } { w.party.gold = @trunc(i32, n) }
-            else if hud::creature_of{ w = &w, id = leader } is some{ value = c } { c.gold = @trunc(u32, n) }
+            else if let c = hud::creature_of{ w = &w, id = leader } { c.gold = @trunc(u32, n) }
         } else if ci::eq{ a = cmd, b = "inv" } {
             dump{ &w, leader }
         } else if ci::eq{ a = cmd, b = "treat" } {
@@ -76,7 +76,7 @@ namespace test_items {
             let bag = list::items{ list = w.bag }
             let mut k: usize = 0
             while k < bag.len and item == obj::INVALID {
-                if world::object{ w = &w, id = bag[k] } is some{ value = io } { if ci::eq{ a = io.tag, b = itag } { item = bag[k] } }
+                if let io = world::object{ w = &w, id = bag[k] } { if ci::eq{ a = io.tag, b = itag } { item = bag[k] } }
                 k = k + 1
             }
             let mut a = actions::make{ kind = actions::Kind::heal }
@@ -139,7 +139,7 @@ namespace test_items {
             let mut like_buf: [40]u8
             let mut like = ""
             let mut row: i32 = -1
-            if text::next_word{ &words } is some{ value = n } {
+            if let n = text::next_word{ &words } {
                 if n.len > 1 and n[0] == '~' {
                     let mut k: usize = 1
                     while k < n.len and k - 1 < like_buf.len {

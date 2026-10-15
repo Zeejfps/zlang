@@ -27,7 +27,7 @@ namespace mg_game {
             let script = mg::script_of{ run, slot = e.slot, object = e.object }
             if resref::is_empty{ r = script } {
                 if e.slot == mg::ON_DEATH {
-                    if mg::slot_of{ run, id = e.object } is some{ value = n } { mg::default_death{ run, n } }
+                    if let n = mg::slot_of{ run, id = e.object } { mg::default_death{ run, n } }
                 }
                 continue
             }

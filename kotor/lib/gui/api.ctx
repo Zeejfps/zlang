@@ -570,7 +570,7 @@ namespace gui {
         if not cancel {
             set_visible{ &g, panel = id, tag = "BTN_CANCEL", visible = false }
             let p = find_panel{ &g, id } ifnull { return id }
-            if find_control{ &g, panel = id, tag = "BTN_CANCEL" } is some{ value = b } { p.h = p.h - b.h - 2 }
+            if let b = find_control{ &g, panel = id, tag = "BTN_CANCEL" } { p.h = p.h - b.h - 2 }
             place{ &g, p }
         }
         grow_message_box{ &g, panel = id }

@@ -35,7 +35,7 @@ namespace hud {
         if id == obj::INVALID { return false }
         let o = world::object{ w, id } ifnull { return false }
         if o.destroyed { return false }
-        if obj::creature{ o } is some{ value = c } { return party::is_member{ w, id } or not c.dead }
+        if let c = obj::creature{ o } { return party::is_member{ w, id } or not c.dead }
         return o.hp >= 1
     }
 
@@ -49,7 +49,7 @@ namespace hud {
     fn fight_target_of { w: *world::World, o: *obj::Object, self_ok: bool } -> u32 {
         let c = obj::creature{ o } ifnull { return obj::INVALID }
         let mut running = o.actions.len > 0
-        if fight::of{ o } is some{ value = f } { if f.round.started { running = true } }
+        if let f = fight::of{ o } { if f.round.started { running = true } }
         if running and is_live{ w, id = c.attempted_target } and (self_ok or c.attempted_target != o.id) { return c.attempted_target }
         let queue = list::items{ list = o.actions }
         let mut i: usize = 0
@@ -75,7 +75,7 @@ namespace hud {
         // ProcessInput first (asm 0x00623c2c..0x00623c8e): the leader in combat mode, moved by the keys at 0.25 m/s
         // or more, says "Player moving. Cancelling combat actions."; once slower, that message turns back into
         // "combat mode engaged".
-        if creature_of{ w = &w, id = party::leader{ w = &w } } is some{ value = lc } {
+        if let lc = creature_of{ w = &w, id = party::leader{ w = &w } } {
             if lc.combat_mode {
                 if h.move_speed >= MOVING_MIN { lc.combat_message = PLAYER_MOVING }
                 else if lc.combat_message == PLAYER_MOVING { lc.combat_message = COMBAT_ENGAGED }
@@ -116,7 +116,7 @@ namespace hud {
         }
         // Last, the leader's own message is put up again every frame while it is in combat mode, unless it is
         // "combat mode engaged" (0x0062b110 at the end of 0x005f3ad0); the bar takes it only when no timed message runs.
-        if creature_of{ w = &w, id = party::leader{ w = &w } } is some{ value = lc } {
+        if let lc = creature_of{ w = &w, id = party::leader{ w = &w } } {
             if lc.combat_mode and lc.combat_message != COMBAT_ENGAGED { show_combat_message{ &h, &w, strref = lc.combat_message } }
         }
     }
@@ -207,7 +207,7 @@ namespace hud {
                 if f < 0.5 { alpha = f + f }
             } else {
                 h.cmsg_left = -1.0
-                if creature_of{ w = &w, id = party::leader{ w = &w } } is some{ value = lc } { lc.combat_message = COMBAT_ENGAGED }
+                if let lc = creature_of{ w = &w, id = party::leader{ w = &w } } { lc.combat_message = COMBAT_ENGAGED }
                 show_combat_message{ &h, &w, strref = COMBAT_ENGAGED }
             }
         }
@@ -250,7 +250,7 @@ namespace hud {
         let mut names: [4][24]u8 = [[0; 24]; 4]
         let mut lens: [4]usize = [0; 4]
         let mut n: usize = 0
-        if fight::of{ o = leader } is some{ value = lf } {
+        if let lf = fight::of{ o = leader } {
             if lf.round.started and not lf.round.cutscene {
                 let mut ib: [40]u8
                 let icon = order_icon{ w = &w, a = actions::make{ kind = actions::Kind::attack_object }, feat = lf.round.feat, into = ib[..] }

@@ -169,10 +169,10 @@ namespace ups {
         if fresh == obj::INVALID { return }
         set_bits{ &w, item = fresh, bits = s.bits }
         let first = if s.original != obj::INVALID { s.original } else { s.item }
-        if items::item_of{ w = &w, id = first } is some{ value = old } {
-            if items::item_of{ w = &w, id = fresh } is some{ value = nw } {
-                if old.rules is some{ value = ro } {
-                    if nw.rules is some{ value = rn } { rn.stolen = ro.stolen }
+        if let old = items::item_of{ w = &w, id = first } {
+            if let nw = items::item_of{ w = &w, id = fresh } {
+                if let ro = old.rules {
+                    if let rn = nw.rules { rn.stolen = ro.stolen }
                 }
             }
         }

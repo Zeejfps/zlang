@@ -115,11 +115,11 @@ namespace mg_game {
         }
         mdl_anim::reset{ model, pose }
         if a.has_main {
-            if a.main.binding is some{ value = b } { mdl_anim::apply{ model, binding = b, time = a.main.time, weight = 1.0, pose } }
+            if let b = a.main.binding { mdl_anim::apply{ model, binding = b, time = a.main.time, weight = 1.0, pose } }
         }
         i = 0
         while i < a.overlay_count {
-            if a.overlays[i].binding is some{ value = b } { mdl_anim::apply{ model, binding = b, time = a.overlays[i].time, weight = 1.0, pose } }
+            if let b = a.overlays[i].binding { mdl_anim::apply{ model, binding = b, time = a.overlays[i].time, weight = 1.0, pose } }
             i = i + 1
         }
         mdl_anim::finish{ model, pose }

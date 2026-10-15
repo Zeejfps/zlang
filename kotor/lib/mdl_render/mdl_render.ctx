@@ -206,7 +206,7 @@ namespace mdl_render {
             if handle == null { continue }
             let node: usize = mesh.node
             let mut mat = materials[i - 1]
-            if look is some{ value = l } {
+            if let l = look {
                 // Keep what decides whether the mesh shows at all (a hidden node's alpha).
                 let mut worn = l
                 worn.color.a = mat.color.a
@@ -243,7 +243,7 @@ namespace mdl_render {
             let shown = mat.color.a >= 0.5
             d.casts = mesh.shadow and shown and mesh.saber == null and (kind == render::DrawKind::creature or kind == render::DrawKind::object)
             d.ambient = ambient
-            if render::add_draw{ &frame, draw = d } is some{ value = index } {
+            if let index = render::add_draw{ &frame, draw = d } {
                 added = added + 1
                 if cast is some{ value = c } and mesh.shadow and shown {
                     let mut sh = c

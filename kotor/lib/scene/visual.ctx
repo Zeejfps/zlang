@@ -147,7 +147,7 @@ namespace visual {
             let mut armoured = false
             let armor = world::object{ w = &w, id = c.equipped[obj::SLOT_BODY] }
             if armor != null {
-                if obj::item{ o = armor } is some{ value = it } {
+                if let it = obj::item{ o = armor } {
                     armoured = true
                     let bodyvar = cell{ t = w.tables.baseitems, row = @as(usize, it.base), column = "bodyvar" }
                     if bodyvar.len == 1 { letter = ascii::to_lower{ c = bodyvar[0] } }
@@ -266,7 +266,7 @@ namespace visual {
         if o.animation != obj::ANIM_RUN and o.animation != obj::ANIM_WALK { return }
         let p0 = scene::part_at{ sc = &sc, i = v.first }
         let mut rate: f32 = 0.0
-        if p0.player.current is some{ value = tr } { rate = tr.speed }
+        if let tr = p0.player.current { rate = tr.speed }
         let len = scene::length_of{ &sc, &w, part = v.first, name = p0.anim[..p0.anim_len] }
         // The leader's speed and the distance to it say what a follower is reacting to.
         let lead = party::leader{ w = &w }
@@ -274,9 +274,9 @@ namespace visual {
         let mut lead_speed: f32 = 0.0
         let mut lead_dist: f32 = 0.0
         if lead != o.id and lead != obj::INVALID {
-            if world::object{ w = &w, id = lead } is some{ value = l } {
+            if let l = world::object{ w = &w, id = lead } {
                 lead_dist = movement::distance_2d{ a = o.position, b = l.position }
-                if obj::creature{ o = l } is some{ value = lc } { lead_speed = lc.speed }
+                if let lc = obj::creature{ o = l } { lead_speed = lc.speed }
             }
         }
         world::prefix{ w = &w }
@@ -348,7 +348,7 @@ namespace visual {
         if v.saber_force != 0 { return v.saber_force == 2 }
         if c.dead { return false }
         if c.in_combat { return true }
-        if fight::of{ o } is some{ value = f } { return f.round.started }
+        if let f = fight::of{ o } { return f.round.started }
         return false
     }
 
@@ -549,8 +549,8 @@ namespace visual {
     fn shadow_of { sc: *scene::Scene, w: *world::World, o: *obj::Object, frame: *render::Frame } -> ?render::Shadow {
         if obj::creature{ o } == null and obj::placeable{ o } == null { return null }
         let mut opacity: f32 = 0.5
-        if world::object{ w, id = w.area } is some{ value = ao } {
-            if obj::area{ o = ao } is some{ value = a } { opacity = @as(f32, a.shadow_opacity) / 255.0 }
+        if let ao = world::object{ w, id = w.area } {
+            if let a = obj::area{ o = ao } { opacity = @as(f32, a.shadow_opacity) / 255.0 }
         }
         if sc.volume_light >= 0 and @as(u32, sc.volume_light) < frame.light_count {
             let l = frame.lights[@as(u32, sc.volume_light)]
@@ -568,7 +568,7 @@ namespace visual {
     // a light chosen afresh every frame flipped every shadow at once.
     fn pick_volume_light { mut sc: scene::Scene, w: *world::World, frame: *render::Frame, view: u32 } {
         let mut at = frame.views[view].camera.eye
-        if world::object{ w, id = w.pc } is some{ value = pc } { at = pc.position }
+        if let pc = world::object{ w, id = w.pc } { at = pc.position }
         let mut best: i32 = -1
         let mut best_s: f32 = 0.0
         let mut kept: i32 = -1
@@ -609,7 +609,7 @@ namespace visual {
         while i < n {
             let p = scene::part_at{ sc, i = v.first + i }
             let l = scene::loaded_at{ sc, i = p.loaded }
-            if mdl_anim::hook_transform{ model = l.model, pose = p.pose, name = hook } is some{ value = local } {
+            if let local = mdl_anim::hook_transform{ model = l.model, pose = p.pose, name = hook } {
                 if seen == which { return math::mat4::mul{ a = transforms[i], b = local } }
                 seen = seen + 1
             }

@@ -102,7 +102,7 @@ namespace test_combat {
                 return true
             }
             movement::place{ &w, id, at }
-            if world::object{ w = &w, id } is some{ value = o } {
+            if let o = world::object{ w = &w, id } {
                 o.ai_level = 1
                 _ = @fmt(&w.io, "spawn {} {} tag {} at {} {} hp {}\n", template, id, o.tag, o.position.x, o.position.y, o.hp)
             }
@@ -169,8 +169,8 @@ namespace test_combat {
             }
             let mut na = "-"
             let mut nb = "-"
-            if world::object{ w = &w, id = ba } is some{ value = ta } { na = ta.tag }
-            if world::object{ w = &w, id = bb } is some{ value = tb } { nb = tb.tag }
+            if let ta = world::object{ w = &w, id = ba } { na = ta.tag }
+            if let tb = world::object{ w = &w, id = bb } { nb = tb.tag }
             _ = @fmt(&w.io, "gaps {} closest {} {} {} overlaps {}\n", n, best, na, nb, overlaps)
             return true
         }
@@ -179,7 +179,7 @@ namespace test_combat {
             let mut words = text::words{ s = args }
             let tag = text::next_word{ &words } ifnull { return true }
             let n = @as(u32, text::scan_decimal{ s = text::next_word{ &words } ifnull "1" })
-            if world::object{ w = &w, id = world::object_by_tag{ w = &w, tag, nth = 0 } } is some{ value = o } { o.faction = n }
+            if let o = world::object{ w = &w, id = world::object_by_tag{ w = &w, tag, nth = 0 } } { o.faction = n }
             return true
         }
         if ci::eq{ a = cmd, b = "provoke" } {
@@ -189,7 +189,7 @@ namespace test_combat {
             let tag = text::next_word{ &words } ifnull { return true }
             let spell = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "22" })
             let id = world::object_by_tag{ w = &w, tag, nth = 0 }
-            if world::object{ w = &w, id } is some{ value = o } { o.faction = 1 }
+            if let o = world::object{ w = &w, id } { o.faction = 1 }
             actions::clear_all{ &w, id }
             rt_talent::queue_cast{ &w, me = id, spell, target = id, location = math::vec3::zero{}, cheat = 1, instant = 0, item = obj::INVALID }
             return true
@@ -213,7 +213,7 @@ namespace test_combat {
             let tag = text::next_word{ &words } ifnull { return true }
             let hp = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "1" })
             let id = if ci::eq{ a = tag, b = "pc" } { w.player } else { world::object_by_tag{ w = &w, tag, nth = 0 } }
-            if world::object{ w = &w, id } is some{ value = o } { o.hp = hp }
+            if let o = world::object{ w = &w, id } { o.hp = hp }
             return true
         }
         if ci::eq{ a = cmd, b = "damage" } {
@@ -251,7 +251,7 @@ namespace test_combat {
             let tag = text::next_word{ &words } ifnull { return true }
             let n = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
             let id = world::object_by_tag{ w = &w, tag, nth = 0 }
-            if hud::creature_of{ w = &w, id } is some{ value = c } { c.ai_style = n }
+            if let c = hud::creature_of{ w = &w, id } { c.ai_style = n }
             return true
         }
         if ci::eq{ a = cmd, b = "plot" } {
@@ -259,7 +259,7 @@ namespace test_combat {
             let mut words = text::words{ s = args }
             let tag = text::next_word{ &words } ifnull { return true }
             let on = text::scan_decimal{ s = text::next_word{ &words } ifnull "1" } != 0
-            if world::object{ w = &w, id = world::object_by_tag{ w = &w, tag, nth = 0 } } is some{ value = o } { o.plot = on }
+            if let o = world::object{ w = &w, id = world::object_by_tag{ w = &w, tag, nth = 0 } } { o.plot = on }
             return true
         }
         if ci::eq{ a = cmd, b = "grantfeat" } {
@@ -289,7 +289,7 @@ namespace test_combat {
         let c = obj::creature{ o } ifnull { return }
         // The target's distance, and the combat mode beside the server's combat state: the HUD's combat bar follows the mode.
         let mut dist: f32 = -1.0
-        if world::object{ w = &w, id = w.target } is some{ value = t } {
+        if let t = world::object{ w = &w, id = w.target } {
             let dx = t.position.x - o.position.x
             let dy = t.position.y - o.position.y
             dist = math::sqrtf{ x = dx * dx + dy * dy }
@@ -306,7 +306,7 @@ namespace test_combat {
         let mut buf: [16]u8
         let mut n: usize = 0
         while n < 4 {
-            if gui::find_control{ g = &ui.gui, panel = ui.hud.panel, tag = hud::tag_n{ into = buf[..], prefix = "LBL_QUEUE", n } } is some{ value = qc } {
+            if let qc = gui::find_control{ g = &ui.gui, panel = ui.hud.panel, tag = hud::tag_n{ into = buf[..], prefix = "LBL_QUEUE", n } } {
                 if qc.flags & gui::F_VISIBLE != 0 and ui.hud.combat { icons = icons + 1 }
             }
             n = n + 1

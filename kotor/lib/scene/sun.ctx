@@ -24,8 +24,8 @@ namespace scene {
     // One log line, with a screenshot: the area's flags and sun.
     fn log_sun { sc: *Scene, mut w: world::World, sun: render::Sun } {
         let mut flags: u32 = 0
-        if world::object{ w = &w, id = w.area } is some{ value = ao } {
-            if obj::area{ o = ao } is some{ value = a } { flags = a.flags }
+        if let ao = world::object{ w = &w, id = w.area } {
+            if let a = obj::area{ o = ao } { flags = a.flags }
         }
         _ = @fmt(&w.io, "  sun: area flags {}, state {}, on {}, light {}, direction {} {} {}, strength {}\n", flags, sc.sun_state, sun.on, sun.light,
             sun.direction.x, sun.direction.y, sun.direction.z, sun.strength)

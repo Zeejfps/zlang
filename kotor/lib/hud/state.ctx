@@ -57,7 +57,7 @@ namespace hud {
     // The character level: the rules' total over the class slots. Without a rules creature the
     // fallback sums the engine's class levels.
     fn level_of { w: *world::World, id: u32 } -> i32 {
-        if ruled_of{ w, id } is some{ value = f } {
+        if let f = ruled_of{ w, id } {
             if f.c.stats.level > 0 { return f.c.stats.level }
         }
         let c = creature_of{ w, id } ifnull { return 1 }
@@ -81,7 +81,7 @@ namespace hud {
     // Whether the creature has the experience for a level it has not taken (the HUD shows the
     // level-up mark): the rules' CanLevelUp, or the XP test alone for a creature without rules.
     fn can_level_up { w: *world::World, id: u32 } -> bool {
-        if ruled_of{ w, id } is some{ value = f } {
+        if let f = ruled_of{ w, id } {
             return rules::can_level_up{ tables = w.rules, c = &f.c, alive = not is_down{ w, id } }
         }
         let c = creature_of{ w, id } ifnull { return false }

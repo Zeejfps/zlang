@@ -54,7 +54,7 @@ namespace play {
         let mixer = try mix::make(heap::Heap){ realloc = heap::alloc, heap = w.heap, rate, voices_2d = 24, voices_3d = 16 }
         speed::mute_unheard{ mixer, opts }
         // With a device, the mixer runs on its own thread (audio.ctx), and stops before anything else this fn set up goes.
-        if adev is some{ value = d } {
+        if let d = adev {
             audio::start{ &sdl, &threads, dev = d, m = mixer } iferr err{ error } {
                 _ = @fmt(&w.io, "kotor: no mixer thread ({}): the sound is mixed once a frame\n", error)
             }
@@ -102,7 +102,7 @@ namespace play {
         if not loading::is_up{ l = ld } {
             let mo = world::object{ w = &w, id = w.module }
             if mo != null {
-                if obj::module{ o = mo } is some{ value = m } {
+                if let m = obj::module{ o = mo } {
                     let mut mname = m.name
                     loading::show{ l = ld, &w, &dev, name = resref::bytes{ r = &mname }, story = false }
                     loading::step{ l = ld, &w, &dev, &sdl, &frame, opts, percent = 40 }
@@ -122,7 +122,7 @@ namespace play {
         let mut freelook_effect: i32 = -2       // the videoeffects.2da row free look switched on (-2: none)
         let ao = world::object{ w = &w, id = w.area }
         if ao != null {
-            if obj::area{ o = ao } is some{ value = a } {
+            if let a = obj::area{ o = ao } {
                 cam::set_style{ c = &camera, t = w.tables.camerastyle, row = a.camera_style }
                 ctl::set_style{ ctl = &control, t = w.tables.camerastyle, row = a.camera_style }
             }
@@ -149,7 +149,7 @@ namespace play {
         // A hidden run's input scripts are written for the default keys, whatever the player bound; --settings asks for the file's.
         if opts.headless and not opts.settings_given { ingame::use_default_keys{ ui } }
         ambience::tune_gui{ g = &ui.gui, m = mixer, w = &w, bias = amb.bias }
-        if ingame::options_front{ ui } is some{ value = fe } {
+        if let fe = ingame::options_front{ ui } {
             fe.settings = disp.live
             display::tell{ d = &disp, fe }
         }
@@ -235,7 +235,7 @@ namespace play {
                     let mut hw = text::words{ s = s.rest }
                     let tag = text::next_word{ words = &hw } ifnull ""
                     let nth = @as(i32, text::scan_decimal{ s = text::next_word{ words = &hw } ifnull "0" })
-                    if ingame::click_point{ ui = ui.*, &w, tag, nth } is some{ value = at } {
+                    if let at = ingame::click_point{ ui = ui.*, &w, tag, nth } {
                         inject::push_move{ &sdl, inp = &inputs, x = at[0], y = at[1] }
                     } else {
                         _ = @fmt(&w.io, "kotor: input script: hoveron {}: nothing of it can be picked on the screen\n", tag)
@@ -270,7 +270,7 @@ namespace play {
                 reload_scene = reload_scene or (changed & display::CHANGED_TEXTURES) != 0
                 if (changed & display::CHANGED_SIZE) != 0 and not opts.headless { display::report{ d = &disp, &sdl, io = &w.io } }
             }
-            if ingame::take_display_change{ ui } is some{ value = st } {
+            if let st = ingame::take_display_change{ ui } {
                 let changed = display::apply{ d = &disp, &dev, &sdl, s = st }
                 disp.live = st.*
                 options_changed{ &w, &dev, ui, &dview, &disp, ld, changed }
@@ -340,7 +340,7 @@ namespace play {
                     camera = cam::new{}
                     let loaded_area = world::object{ w = &w, id = w.area }
                     if loaded_area != null {
-                        if obj::area{ o = loaded_area } is some{ value = a } {
+                        if let a = obj::area{ o = loaded_area } {
                             cam::set_style{ c = &camera, t = w.tables.camerastyle, row = a.camera_style }
                             ctl::set_style{ ctl = &control, t = w.tables.camerastyle, row = a.camera_style }
                         }
@@ -367,8 +367,8 @@ namespace play {
             }
             if sw_on {
                 let mut here = false
-                if world::object{ w = &w, id = w.module } is some{ value = mo } {
-                    if obj::module{ o = mo } is some{ value = mm } {
+                if let mo = world::object{ w = &w, id = w.module } {
+                    if let mm = obj::module{ o = mo } {
                         let mut nm = mm.name
                         here = ci::eq{ a = resref::bytes{ r = &nm }, b = sw_module[..sw_module_len] }
                     }
@@ -376,8 +376,8 @@ namespace play {
                 if sw_quest_len > 0 and journal::state_of{ j = w.journal, tag = sw_quest[..sw_quest_len] } < sw_entry { here = false }
                 // ... and the leader is not fighting (an ambush that is still going on is not a place to keep)
                 let mut fighting = false
-                if world::object{ w = &w, id = w.pc } is some{ value = po } {
-                    if obj::creature{ o = po } is some{ value = pc } { fighting = pc.in_combat }
+                if let po = world::object{ w = &w, id = w.pc } {
+                    if let pc = obj::creature{ o = po } { fighting = pc.in_combat }
                 }
                 if sw_need == 5 { fighting = false }
                 if here and not fighting and w.transition == null and w.arrival == 0 and not w.conversation.active and not w.conversation.pending and not loading::is_up{ l = ld } { sw_quiet = sw_quiet + 1 } else { sw_quiet = 0 }
@@ -436,7 +436,7 @@ namespace play {
                 }
                 // The loading screen goes up over the change (gameloop.md 5.3: the client picks it, closes its panels and stops its sounds first).
                 let mut target = resref::empty{}
-                if w.transition is some{ value = t } { target = t.module }
+                if let t = w.transition { target = t.module }
                 loading::show{ l = ld, &w, &dev, name = resref::bytes{ r = &target }, story = false }
                 loading::step{ l = ld, &w, &dev, &sdl, &frame, opts, percent = 3 }
                 // A conversation doesn't cross a module change (its objects go).
@@ -459,7 +459,7 @@ namespace play {
                     camera = cam::new{}
                     let next_area = world::object{ w = &w, id = w.area }
                     if next_area != null {
-                        if obj::area{ o = next_area } is some{ value = a } {
+                        if let a = obj::area{ o = next_area } {
                             cam::set_style{ c = &camera, t = w.tables.camerastyle, row = a.camera_style }
                             ctl::set_style{ ctl = &control, t = w.tables.camerastyle, row = a.camera_style }
                         }
@@ -483,7 +483,7 @@ namespace play {
                 dlgview::take_note{ v = &dview, w = &w, g = &ui.gui, dev = &dev, note = notes[n] }
                 vfx::take{ v = &vx, &sc, &w, &dev, note = notes[n] }
                 cam::take_note{ c = &camera, w = &w, note = notes[n] }
-                if pz_game::request_of{ note = notes[n] } is some{ value = asked } { pazaak_asked = asked }
+                if let asked = pz_game::request_of{ note = notes[n] } { pazaak_asked = asked }
                 n = n + 1
             }
             outbox::clear{ out = &w.out }
@@ -494,7 +494,7 @@ namespace play {
                 last = sdl::counter{ &sdl }
             }
             // HOOK(minigames): a script asked for a game of pazaak; the visit takes over the frame (game/pazaak.ctx).
-            if pazaak_asked is some{ value = asked } {
+            if let asked = pazaak_asked {
                 if opts.headless {
                     try pz_game::visit_auto{ &w, &vm, engine, r = asked }
                 } else if try pz_game::visit{ &sdl, &w, &vm, engine, &dev, &frame, ui, mixer, adev, r = asked, &disp } {
@@ -622,14 +622,14 @@ namespace play {
                 to_menu = menu_allowed
             }
             // The party selection screen was applied: its exit script (ShowPartySelectionGUI's), with no caller.
-            if ingame::take_exit_script{ ui } is some{ value = exit_script } { _ = scripts::run{ &w, &vm, engine, name = exit_script, self = obj::INVALID } }    // HOOK(ingame)
-            if ingame::take_script_request{ ui } is some{ value = script } { _ = scripts::run{ &w, &vm, engine, name = script, self = obj::INVALID } }    // HOOK(ingame)
+            if let exit_script = ingame::take_exit_script{ ui } { _ = scripts::run{ &w, &vm, engine, name = exit_script, self = obj::INVALID } }    // HOOK(ingame)
+            if let script = ingame::take_script_request{ ui } { _ = scripts::run{ &w, &vm, engine, name = script, self = obj::INVALID } }    // HOOK(ingame)
             // The options menu's Save Game and Load Game (the menus have closed themselves).
-            if ingame::take_save_request{ ui } is some{ value = r } {    // HOOK(ingame)
+            if let r = ingame::take_save_request{ ui } {    // HOOK(ingame)
                 want_save = r.name
                 want_slot = r.slot
             }
-            if ingame::take_load_request{ ui } is some{ value = n } { want_load = n }    // HOOK(ingame)
+            if let n = ingame::take_load_request{ ui } { want_load = n }    // HOOK(ingame)
             // 11. Sound at the camera, in the mode the screen calls for.
             // The window losing activation suspends every sound (modes 5 and 6) whatever the mode.
             if disp.inactive != amb.suspended {
@@ -709,7 +709,7 @@ namespace play {
                     _ = @fmt(&w.io, "  world emitters: {} drawn, {} particles\n", sc.drawn_emitters, sc.drawn_particles)
                     fxhud::log{ &w, dev }
                     if frame.view_count > 0 { scene::log_sun{ sc = &sc, &w, sun = frame.views[0].sun } }
-                    if scene::light_of{ sc = &sc, id = w.pc } is some{ value = c } {
+                    if let c = scene::light_of{ sc = &sc, id = w.pc } {
                         _ = @fmt(&w.io, "  leader's room light: +x {} {} {} -x {} {} {} +y {} {} {} -y {} {} {} +z {} {} {} -z {} {} {}\n",
                             c.pos_x.x, c.pos_x.y, c.pos_x.z, c.neg_x.x, c.neg_x.y, c.neg_x.z, c.pos_y.x, c.pos_y.y, c.pos_y.z,
                             c.neg_y.x, c.neg_y.y, c.neg_y.z, c.pos_z.x, c.pos_z.y, c.pos_z.z, c.neg_z.x, c.neg_z.y, c.neg_z.z)
@@ -1010,7 +1010,7 @@ namespace play {
         ld.scale = disp.applied.gui_scale
         if (changed & (display::CHANGED_SIZE | display::CHANGED_UI_SCALE)) != 0 { relayout_ui{ &w, &dev, ui, &dview, &disp } }
         if (changed & display::CHANGED_TEXTURES) != 0 { mount_packs{ &w, quality = disp.applied.texture_quality } }
-        if ingame::options_front{ ui } is some{ value = fe } {
+        if let fe = ingame::options_front{ ui } {
             fe.settings.window_mode = disp.applied.window_mode     // Alt+Enter's, or the panel's own as corrected
             display::tell{ d = &disp, fe }
             frontend::refresh_display_texts{ fe, g = &ui.gui }
@@ -1212,7 +1212,7 @@ namespace play {
             }
             let over = math::Vec3{ x = c.o.position.x, y = c.o.position.y, z = c.o.position.z + 2.5 }
             let mut above = obj::INVALID
-            if hud::project{ p, at = over } is some{ value = q } { above = hud::pick_at{ p, w = &w, x = @as(i32, q.x), y = @as(i32, q.y) } }
+            if let q = hud::project{ p, at = over } { above = hud::pick_at{ p, w = &w, x = @as(i32, q.x), y = @as(i32, q.y) } }
             _ = @fmt(&w.io, "bodyhit bag {} hidden {}: {} triangles, {} of 4 points on the body pick it, the point over it picks {}\n",
                 bag, corpses::hides_bag{ w = &w, bag }, tris, hits, above)
         }
@@ -1296,7 +1296,7 @@ namespace play {
         } else if ci::eq{ a = kind, b = "death" } {
             // `fx death TAG [N]`: EffectDeath on the Nth door or placeable with the tag (kotor/tools/sndrun/doors.sh).
             let nth = @as(i32, text::scan_decimal{ s = second })
-            if world::object{ w = &w, id = world::object_by_tag{ w = &w, tag = first, nth } } is some{ value = o } { rt_fx::kill{ &w, o, killer = w.pc } }
+            if let o = world::object{ w = &w, id = world::object_by_tag{ w = &w, tag = first, nth } } { rt_fx::kill{ &w, o, killer = w.pc } }
         }
     }
 
@@ -1355,7 +1355,7 @@ namespace play {
         while k < members.len {
             let l = rt_party::formation_point{ w = &w, index = k }
             movement::place{ &w, id = members[k], at = l.position }
-            if world::object{ w = &w, id = members[k] } is some{ value = o } { world::set_orientation{ o, v = obj::direction_of{ degrees = l.facing } } }
+            if let o = world::object{ w = &w, id = members[k] } { world::set_orientation{ o, v = obj::direction_of{ degrees = l.facing } } }
             k = k + 1
         }
     }
@@ -1467,8 +1467,8 @@ namespace play {
     fn leader_in_combat_mode { w: *world::World } -> bool {
         let lead = party::leader{ w }
         let id = if lead == obj::INVALID { w.pc } else { lead }
-        if world::object{ w, id } is some{ value = o } {
-            if obj::creature{ o } is some{ value = c } { return c.combat_mode and not c.dead }
+        if let o = world::object{ w, id } {
+            if let c = obj::creature{ o } { return c.combat_mode and not c.dead }
         }
         return false
     }
@@ -1491,7 +1491,7 @@ namespace play {
             let id = world::object_by_tag{ w = &w, tag, nth }
             nth = nth + 1
             let o = world::object{ w = &w, id } ifnull { break }
-            if obj::creature{ o } is some{ value = c } { if c.dead { continue } }
+            if let c = obj::creature{ o } { if c.dead { continue } }
             let d = math::vec3::distance{ a = o.position, b = me.position }
             if d < best_d {
                 best = id

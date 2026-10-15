@@ -179,7 +179,7 @@ namespace selfslots {
     fn fill_items { mut w: world::World, leader: u32, mut out: [4]Slot } {
         let mut k: usize = 0
         if hud::allows_combat{ w = &w } {
-            if hud::creature_of{ w = &w, id = leader } is some{ value = c } {
+            if let c = hud::creature_of{ w = &w, id = leader } {
                 let cells: [3]usize = [obj::SLOT_LEFT_ARM, obj::SLOT_RIGHT_ARM, obj::SLOT_BELT]
                 while k < cells.len {
                     let id = c.equipped[cells[k]]
@@ -275,7 +275,7 @@ namespace selfslots {
         let e = sl.entries[index_of{ sl, id = sl.selected }]
         let img = if k == 0 { gui::resolve_img{ &g, fs = &w.fs, &dev, name = e.icon[..e.icon_len] } } else { items::icon_of{ &g, &w, &dev, id = e.id } }
         if img.ok { gui::set_picture{ &g, panel, tag = lbl, texture = img.tex, w = img.w, h = img.h } } else { gui::clear_picture{ &g, panel, tag = lbl } }
-        if gui::find_control{ &g, panel, tag = lbl } is some{ value = c } {
+        if let c = gui::find_control{ &g, panel, tag = lbl } {
             c.border.tinted = e.dim
             c.border.color = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = 0.25 }
         }
@@ -331,7 +331,7 @@ namespace selfslots {
         }
         gui::set_visible{ &g, panel, tag = "LBL_ACTIONDESC", visible = shown }
         gui::set_visible{ &g, panel, tag = "LBL_ACTIONDESCBG", visible = shown }
-        if gui::find_control{ &g, panel, tag = "LBL_ACTIONDESC" } is some{ value = lc } { lc.text.color.a = lc.text.file_color.a * alpha }
+        if let lc = gui::find_control{ &g, panel, tag = "LBL_ACTIONDESC" } { lc.text.color.a = lc.text.file_color.a * alpha }
     }
 
     // ---- every frame
@@ -372,7 +372,7 @@ namespace selfslots {
                 if s.blink[k] <= 0.0 {
                     // Over: the icon is as the list left it.
                     show_slot{ &s, &g, &w, &dev, panel, k }
-                } else if gui::find_control{ &g, panel, tag = tag_for{ into = buf[..], prefix = "LBL_ACTION", k } } is some{ value = c } {
+                } else if let c = gui::find_control{ &g, panel, tag = tag_for{ into = buf[..], prefix = "LBL_ACTION", k } } {
                     // The first tenth the icon fades out, the second it fades in; it overrides the dimming.
                     let t = s.blink[k]
                     let a: f32 = if t > 0.1 { 1.0 - (0.2 - t) * 10.0 } else { (0.1 - t) * 10.0 }

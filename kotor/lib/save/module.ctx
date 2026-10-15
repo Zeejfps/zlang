@@ -11,7 +11,7 @@ namespace save {
         let m = obj::module{ o = mo } ifnull { return }
         // modulesave.2da IncludeInSave 0: the module starts afresh every time.
         let mut key = m.name
-        if twoda::find_row{ t = w.tables.modulesave, label = resref::bytes{ r = &key } } is some{ value = r } {
+        if let r = twoda::find_row{ t = w.tables.modulesave, label = resref::bytes{ r = &key } } {
             if (twoda::get_int{ t = w.tables.modulesave, row = r, column = "includeinsave" } ifnull 1) == 0 { return }
         }
         let ao = world::object{ w = &w, id = w.area } ifnull { return }
@@ -39,7 +39,7 @@ namespace save {
         let mut i: usize = 0
         while i < rows {
             let g = twoda::get_int{ t, row = i, column = "savegroup" }
-            if g is some{ value = gv } {
+            if let gv = g {
                 if gv == group {
                     let name = twoda::get_string{ t, row = i, column = "modulename" } ifnull ""
                     if name.len > 0 { remove{ st = &w.gip, name, kind = 2057 } }
@@ -126,7 +126,7 @@ namespace save {
     fn in_git { w: *world::World, o: *obj::Object } -> bool {
         if o.destroyed or o.kind == obj::Kind::module or o.kind == obj::Kind::area { return false }
         if o.id == w.pc or o.id == w.player or party::is_member{ w, id = o.id } { return false }
-        if obj::item{ o } is some{ value = it } { return it.possessor == obj::INVALID }
+        if let it = obj::item{ o } { return it.possessor == obj::INVALID }
         return true
     }
 
@@ -137,7 +137,7 @@ namespace save {
         try put_locals{ &b, owner = r, l = ao.locals }
         try put_byte{ &b, owner = r, label = "CurrentWeather", v = 255 }
         try put_byte{ &b, owner = r, label = "WeatherStarted", v = 0 }
-        if obj::area{ o = ao } is some{ value = a } {
+        if let a = obj::area{ o = ao } {
             let p = try gffw::put_struct{ &b, owner = r, label = "AreaProperties", id = 100 }
             try put_int{ &b, owner = p, label = "AmbientSndDay", v = a.ambient_day }
             try put_int{ &b, owner = p, label = "AmbientSndNight", v = a.ambient_night }

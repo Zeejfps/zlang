@@ -28,8 +28,8 @@ namespace test_stealth {
         let mut xp_max: i32 = 0
         let mut xp_now: i32 = 0
         let mut xp_on = false
-        if world::object{ w = &w, id = o.area } is some{ value = ao } {
-            if obj::area{ o = ao } is some{ value = a } {
+        if let ao = world::object{ w = &w, id = o.area } {
+            if let a = obj::area{ o = ao } {
                 xp_max = a.stealth_xp_max
                 xp_now = a.stealth_xp_current
                 xp_on = a.stealth_xp_enabled

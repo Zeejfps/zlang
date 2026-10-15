@@ -730,7 +730,7 @@ namespace ingame {
         gui::update{ g = &ui.gui, dt }
         bot::step{ b = &ui.bot, &w }
         hud::log_tick{ log = &w.messages, dt }
-        if options_panel::settings{ s = &ui.menus.options } is some{ value = st } {
+        if let st = options_panel::settings{ s = &ui.menus.options } {
             w.rules.settings.auto_level = st.auto_level_up
             w.rules.settings.difficulty = st.difficulty
             ui.hud.floating.enabled = st.floating_numbers

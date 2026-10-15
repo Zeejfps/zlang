@@ -62,13 +62,13 @@ namespace galview {
     }
 
     fn free { mut v: View, mut dev: gpu::Device } {
-        if v.galaxy is some{ value = sh } { free_shown{ &v, &dev, sh } }
+        if let sh = v.galaxy { free_shown{ &v, &dev, sh } }
         drop_planet{ &v, &dev }
         alloc::free(View, heap::Heap){ realloc = heap::alloc, heap = v.heap, p = &v }
     }
 
     fn drop_planet { mut v: View, mut dev: gpu::Device } {
-        if v.planet is some{ value = sh } { free_shown{ &v, &dev, sh } }
+        if let sh = v.planet { free_shown{ &v, &dev, sh } }
         v.planet = null
         v.planet_model_len = 0
     }
@@ -86,13 +86,13 @@ namespace galview {
         v.planet_time = 0.0
         v.turning = false
         v.zoom_length = 0.0
-        if mdl_anim::find{ model = sh.scene.model, name = "zoomin", lookup = mdl_cache::get{ fs = &w.fs, cache = sh.models, _ } } is some{ value = found } {
+        if let found = mdl_anim::find{ model = sh.scene.model, name = "zoomin", lookup = mdl_cache::get{ fs = &w.fs, cache = sh.models, _ } } {
             v.zoom_length = found.animation.length
         }
     }
 
     fn update { mut v: View, mut w: world::World, dt: f32 } {
-        if v.galaxy is some{ value = sh } { gui3d::update{ scene = &sh.scene, dt } }
+        if let sh = v.galaxy { gui3d::update{ scene = &sh.scene, dt } }
         let sh = v.planet ifnull { return }
         gui3d::update{ scene = &sh.scene, dt }
         v.planet_time = v.planet_time + dt
@@ -110,13 +110,13 @@ namespace galview {
     fn draw { mut v: View, mut g: gui::Gui, mut frame: render::Frame, panel: u32, target: render::Size } {
         let sx = @as(f32, target.width) / @as(f32, g.ui_w)
         let sy = @as(f32, target.height) / @as(f32, g.ui_h)
-        if v.galaxy is some{ value = sh } {
-            if gui::control_rect{ &g, panel, tag = "3D_PlanetDisplay" } is some{ value = r } {
+        if let sh = v.galaxy {
+            if let r = gui::control_rect{ &g, panel, tag = "3D_PlanetDisplay" } {
                 _ = gui3d::add_to_frame{ scene = &sh.scene, &frame, viewport = render::Rect{ x = r.x * sx, y = r.y * sy, w = r.w * sx, h = r.h * sy } }
             }
         }
-        if v.planet is some{ value = sh } {
-            if gui::control_rect{ &g, panel, tag = "3D_PlanetModel" } is some{ value = r } {
+        if let sh = v.planet {
+            if let r = gui::control_rect{ &g, panel, tag = "3D_PlanetModel" } {
                 _ = gui3d::add_to_frame{ scene = &sh.scene, &frame, viewport = render::Rect{ x = r.x * sx, y = r.y * sy, w = r.w * sx, h = r.h * sy } }
             }
         }

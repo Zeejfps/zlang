@@ -658,7 +658,7 @@ namespace hud {
             }
         }
         o.actions.len = keep
-        if obj::creature{ o } is some{ value = c } {
+        if let c = obj::creature{ o } {
             if c.moving {
                 movement::stop{ &w, id = leader }
                 world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
@@ -714,15 +714,15 @@ namespace hud {
         let plain = default_actions{ w, id }
         if not is_foe{ w, id } {
             // A mine's Disable and Recover; a locked door's or placeable's Bash; nothing on a friendly creature.
-            if world::object{ w, id } is some{ value = o } { if o.kind == obj::Kind::trigger { return plain } }
+            if let o = world::object{ w, id } { if o.kind == obj::Kind::trigger { return plain } }
             return build_slot_actions{ w, id, k = 0 }
         }
         let lo = world::object{ w, id = party::leader{ w } } ifnull { return plain }
         let lc = obj::creature{ o = lo } ifnull { return plain }
         let f = lc.fighter ifnull { return plain }
         let mut ranged = false
-        if world::object{ w, id = lc.equipped[obj::SLOT_RIGHT_WEAPON] } is some{ value = io } {
-            if obj::item{ o = io } is some{ value = it } {
+        if let io = world::object{ w, id = lc.equipped[obj::SLOT_RIGHT_WEAPON] } {
+            if let it = obj::item{ o = io } {
                 ranged = (twoda::get_int{ t = w.tables.baseitems, row = @as(usize, it.base), column = "rangedweapon" } ifnull 0) != 0
             }
         }

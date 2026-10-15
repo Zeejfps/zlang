@@ -97,7 +97,7 @@ fn check_head { mut io: Io, mut rep: Report, h: Head, track: *lipsync::Track } {
         value = distance{ talk, a = h.work, b = h.third, driven = true } }
     // Shape 0 is the talk pose 1/32 s in, a hair off the model's own face: the jaw is shut to
     // within two degrees (the tongue tip of some heads moves more; `talk` prints that).
-    if h.jaw is some{ value = jaw } {
+    if let jaw = h.jaw {
         let a = angle_deg{ a = h.bind.nodes[jaw].orientation, b = h.third.nodes[jaw].orientation }
         expect{ &io, &rep, ok = a < 2.0, head = h.name, what = "the rest face has the jaw shut (degrees open from the bind pose)", value = a }
     }
@@ -109,7 +109,7 @@ fn check_head { mut io: Io, mut rep: Report, h: Head, track: *lipsync::Track } {
     expect{ &io, &rep, ok = others == 0.0, head = h.name, what = "mid-line, nodes talk doesn't drive are untouched", value = others }
     let moved = distance{ talk, a = h.work, b = h.third, driven = true }
     expect{ &io, &rep, ok = moved > 0.001, head = h.name, what = "mid-line, the face has left its rest", value = moved }
-    if h.jaw is some{ value = jaw } {
+    if let jaw = h.jaw {
         let a = angle_deg{ a = h.third.nodes[jaw].orientation, b = h.work.nodes[jaw].orientation }
         expect{ &io, &rep, ok = a > 1.0, head = h.name, what = "mid-line, the jaw is open (degrees from rest)", value = a }
     }

@@ -544,7 +544,7 @@ namespace ambience {
             let o = world::object{ w = &w, id = recs[r].id }
             let mut alive = false
             if o != null {
-                if obj::creature{ o } is some{ value = c } { alive = not o.destroyed and o.area == w.area and not c.dead }
+                if let c = obj::creature{ o } { alive = not o.destroyed and o.area == w.area and not c.dead }
             }
             if not alive {
                 forget_excited{ &a, index = r }

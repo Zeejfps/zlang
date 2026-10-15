@@ -16,7 +16,7 @@ namespace test_traps {
         } else if ci::eq{ a = cmd, b = "moveobj" } or ci::eq{ a = cmd, b = "clickobj" } {
             let mut words = text::words{ s = args }
             let name = text::next_word{ &words } ifnull { return true }
-            let nth = if text::next_word{ &words } is some{ value = n } { @as(usize, text::scan_decimal{ s = n }) } else { 1 }
+            let nth = if let n = text::next_word{ &words } { @as(usize, text::scan_decimal{ s = n }) } else { 1 }
             let id = find{ w = &w, name, nth }
             point_at{ &ui, &w, &dev, id, click = ci::eq{ a = cmd, b = "clickobj" } }
         } else {
@@ -74,7 +74,7 @@ namespace test_traps {
             _ = @fmt(&w.io, "mine {} {} base {} armed {} found {} flagged {} by {} faction {} at {} {} {} dist {} selectable {}",
                 o.id, o.tag, t.trap.base, t.trap.armed, t.trap.detected, t.trap.flagged, t.trap.creator, o.faction,
                 o.position.x, o.position.y, o.position.z, d, hud::is_selectable{ w = &w, id = o.id })
-            if hud::box_on_screen{ p = ui.hud.projector, o } is some{ value = b } { _ = @fmt(&w.io, " box {} {} {} {}", b.x0, b.y0, b.x1, b.y1) }
+            if let b = hud::box_on_screen{ p = ui.hud.projector, o } { _ = @fmt(&w.io, " box {} {} {} {}", b.x0, b.y0, b.x1, b.y1) }
             _ = @fmt(&w.io, "\n")
         }
     }

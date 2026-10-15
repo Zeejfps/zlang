@@ -72,7 +72,7 @@ namespace chargen {
         let t = &st.tut
         if t.box.panel != 0 { gui::close{ &g, id = t.box.panel } }
         t.box = gui::no_tutorial_box{}
-        if t.table is some{ value } { twoda::free(heap::Heap){ t = value, realloc = heap::alloc, heap = st.heap } }
+        if let value = t.table { twoda::free(heap::Heap){ t = value, realloc = heap::alloc, heap = st.heap } }
         t.table = null
         free_bytes{ b = t.bytes, heap = st.heap }
         t.bytes = slice::empty(u8){}

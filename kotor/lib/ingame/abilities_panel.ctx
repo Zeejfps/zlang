@@ -117,7 +117,7 @@ namespace abilities_panel {
             let mut i: usize = 0
             while i < known.npowers {
                 let spell = @as(i32, known.powers[i])
-                let ok = if f is some{ value = fr } { rules::has_enough_force_points{ tables = w.rules, c = &fr.c, spell } } else { blueprint_can_afford{ &w, t, spell, v } }
+                let ok = if let fr = f { rules::has_enough_force_points{ tables = w.rules, c = &fr.c, spell } } else { blueprint_can_afford{ &w, t, spell, v } }
                 if ok {
                     usable[nu] = known.powers[i]
                     nu = nu + 1

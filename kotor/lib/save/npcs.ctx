@@ -77,7 +77,7 @@ namespace save {
         // Its OnSpawn runs again on its first update: the original makes it with GetNPCObject
         // (0x00564700), a new creature (spawn flag +0x34c clear) read by LoadFromTemplate, which
         // leaves CreatnScrptFird unread (only LoadCreature reads it).
-        if obj::creature{ o } is some{ value = c } { c.spawn_fired = false }
+        if let c = obj::creature{ o } { c.spawn_fired = false }
         return o.id
     }
 
@@ -109,7 +109,7 @@ namespace save {
         o.position = at
         world::set_orientation{ o, v = facing }
         try tmpl::read{ &w, o, doc = &doc, s = gff::ROOT }
-        if obj::creature{ o } is some{ value = c } {
+        if let c = obj::creature{ o } {
             c.is_pc = true
             c.spawn_fired = tmpl::hench_spawn_fired{ o, c }
             tmpl::set_rate{ &w, c, row = 0 }
@@ -138,7 +138,7 @@ namespace save {
             let fresh = not world::is_valid{ w = &w, id = w.party.npcs[s] }
             if fresh {
                 let made = try npc_from_store{ &w, slot = s }
-                if made is some{ value = m } { id = m }
+                if let m = made { id = m }
                 if id == obj::INVALID and not resref::is_empty{ r = w.party.templates[s] } {
                     let mut blueprint = w.party.templates[s]
                     id = tmpl::spawn{ &w, kind = obj::Kind::creature, template = resref::bytes{ r = &blueprint }, position = base, orientation = facing } iferr { obj::INVALID }
@@ -155,7 +155,7 @@ namespace save {
             // RestoreParty makes each member with SpawnAvailableNPC, so a member made here runs its
             // OnSpawn (npc_from_store); one already in the world keeps its flag.
             if not fresh {
-                if obj::creature{ o } is some{ value = c } { c.spawn_fired = tmpl::hench_spawn_fired{ o, c } }
+                if let c = obj::creature{ o } { c.spawn_fired = tmpl::hench_spawn_fired{ o, c } }
             }
             actions::clear_all{ &w, id }
             // Behind the player, one to each side (ours: the original fades them in where the
@@ -193,8 +193,8 @@ namespace save {
         while k < items.len {
             let io = world::object{ w = &w, id = items[k] }
             k = k + 1
-            if io is some{ value = o } {
-                if obj::item{ o } is some{ value = it } {
+            if let o = io {
+                if let it = obj::item{ o } {
                     let e = try gffw::add_element{ &b, list, id = 0 }
                     try write_item{ &b, &w, s = e, o, i = it }
                 }

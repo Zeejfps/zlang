@@ -158,7 +158,7 @@ namespace hud {
             i = i + 1
         }
         let s = shape_of{ o }
-        let up = if obj::creature{ o } is some{ value = c } { s.height * 0.9 } else { s.height }
+        let up = if let c = obj::creature{ o } { s.height * 0.9 } else { s.height }
         return project{ p, at = math::Vec3{ x = o.position.x, y = o.position.y, z = o.position.z + up } }
     }
 

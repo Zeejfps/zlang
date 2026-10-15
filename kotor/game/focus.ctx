@@ -11,7 +11,7 @@ namespace focus {
     // The view's focus this frame, the eye at `eye`, the conversation's subject (null: none) at `at`.
     fn update { mut f: Focus, eye: math::Vec3, at: ?math::Vec3, dt: f32 } -> render::Focus {
         let k = math::min{ a = 1.0, b = dt * 10.0 }
-        if at is some{ value = p } {
+        if let p = at {
             let want = math::max{ a = 0.3, b = math::vec3::distance{ a = eye, b = p } }
             // The first frame of a shot takes the distance as it is: nothing is blurred yet to pull from.
             f.distance = if f.amount < 0.01 { want } else { f.distance + (want - f.distance) * k }

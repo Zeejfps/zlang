@@ -85,13 +85,13 @@ namespace ingame {
             // party has seen them (what enemy-sighted auto-pause looks at).
             let all = list::items{ list = w.objects.all }
             let lead = party::leader{ w = &w }
-            let lead_faction = if world::object{ w = &w, id = lead } is some{ value = lo } { lo.faction } else { 0 }
+            let lead_faction = if let lo = world::object{ w = &w, id = lead } { lo.faction } else { 0 }
             let mut i: usize = 0
             while i < all.len {
                 let o = all[i]
                 i = i + 1
                 if o.destroyed or o.kind != obj::Kind::creature or o.id == lead or not hud::is_hostile{ w = &w, id = o.id } { continue }
-                let seen = if perception::entry_of{ w = &w, viewer = lead, target = o.id } is some{ value = e } { e.seen } else { false }
+                let seen = if let e = perception::entry_of{ w = &w, viewer = lead, target = o.id } { e.seen } else { false }
                 _ = @fmt(&w.io, "hostile {} {} selectable {} seen {} at {} {} faction {} standing {}\n", o.id, o.tag, hud::is_selectable{ w = &w, id = o.id }, seen, o.position.x, o.position.y, o.faction, if lead_faction == 0 { w.repute[0][o.faction % 32] } else { w.repute[o.faction % 32][lead_faction % 32] })
             }
         } else if ci::eq{ a = cmd, b = "losaudit" } {
@@ -99,7 +99,7 @@ namespace ingame {
             // its area within METRES (12): the distance, whether a clear line joins them, whether the companion
             // perceives it, and what blocks the line. A companion that stands 5 m from an enemy it cannot see
             // is how a fight goes by without it (docs/mechanics/combat.md, "Companions in a fight").
-            let reach = if text::next_word{ &words } is some{ value = word } { text::scan_f32{ s = word } ifnull 12.0 } else { 12.0 }
+            let reach = if let word = text::next_word{ &words } { text::scan_f32{ s = word } ifnull 12.0 } else { 12.0 }
             let team = party::members{ w = &w }
             let lead = party::leader{ w = &w }
             let all = list::items{ list = w.objects.all }
@@ -120,7 +120,7 @@ namespace ingame {
                     let d = math::vec3::distance{ a = me.position, b = o.position }
                     if d > reach { continue }
                     let blk = perception::find_block{ w = &w, a = me.position, b = o.position, solids = true, ignore = obj::INVALID }
-                    let seen = if perception::entry_of{ w = &w, viewer = mid, target = o.id } is some{ value = e } { e.seen } else { false }
+                    let seen = if let e = perception::entry_of{ w = &w, viewer = mid, target = o.id } { e.seen } else { false }
                     _ = @fmt(&w.io, "audit {} sees {} at {} m: clear {} perceived {} sight range {}", me.tag, o.tag, d, blk.what == 0, seen, mc.sight_range)
                     if blk.what == 1 {
                         _ = @fmt(&w.io, " blocked by room {} face {} material {} at {} m", blk.index, blk.face, blk.material, blk.t)
@@ -142,7 +142,7 @@ namespace ingame {
             let ib = world::object_by_tag{ w = &w, tag = tb, nth = 0 }
             let oa = world::object{ w = &w, id = ia } ifnull { return }
             let ob = world::object{ w = &w, id = ib } ifnull { return }
-            let seen = if perception::entry_of{ w = &w, viewer = ia, target = ib } is some{ value = e } { e.seen } else { false }
+            let seen = if let e = perception::entry_of{ w = &w, viewer = ia, target = ib } { e.seen } else { false }
             _ = @fmt(&w.io, "los {} {}: clear {} sight {} seen {} distance {} (leader's view: selectable kind {} in view {})\n", ta, tb, perception::clear_line{ w = &w, a = oa.position, b = ob.position }, perception::is_sight_clear{ w = &w, a = oa.position, b = ob.position, ignore = ib }, seen, math::vec3::distance{ a = oa.position, b = ob.position }, hud::is_selectable_kind{ w = &w, id = ib }, hud::is_in_view{ w = &w, id = ib })
             // What stops the line, if anything: a room's face with its surface material, or a door's or placeable's mesh.
             let blk = perception::find_block{ w = &w, a = oa.position, b = ob.position, solids = true, ignore = obj::INVALID }
@@ -162,13 +162,13 @@ namespace ingame {
             let word = text::next_word{ &words } ifnull "on"
             if ci::eq{ a = word, b = "panel" } { ui.summary.panel_allowed = true } else {
                 ui.summary.on = ci::eq{ a = word, b = "on" }
-                if options_front{ &ui } is some{ value = fe } { fe.settings.status_summary = ui.summary.on }
+                if let fe = options_front{ &ui } { fe.settings.status_summary = ui.summary.on }
             }
         } else if ci::eq{ a = cmd, b = "hideunequip" } {
             // `ui hideunequip on|off`: the "Hide Unequippable" option (the equipment lists).
             let on = ci::eq{ a = text::next_word{ &words } ifnull "on", b = "on" }
             ui.menus.equip.hide_unequippable = on
-            if options_front{ &ui } is some{ value = fe } { fe.settings.hide_unequippable = on }
+            if let fe = options_front{ &ui } { fe.settings.hide_unequippable = on }
         } else if ci::eq{ a = cmd, b = "close" } {
             close_menu{ &ui, &w }
         } else if ci::eq{ a = cmd, b = "target" } {
@@ -276,7 +276,7 @@ namespace ingame {
                 _ = @fmt(&w.io, "where {} k{} {} at {} {} {} hp {} facing {} {} faction {}\n", o.id, @as(u32, o.kind), tag, o.position.x, o.position.y, o.position.z, o.hp, o.orientation.x, o.orientation.y, o.faction)
                 if o.ext is creature{ c } { _ = @fmt(&w.io, "  portrait {}\n", c.portrait) }
                 if o.ext is door{ d } { _ = @fmt(&w.io, "  door state {} locked {} area {} link flags {} to {}\n", @as(u32, d.state), d.locked, o.area, d.linked_flags, d.linked_to) }
-                if obj::trigger{ o } is some{ value = tr } {
+                if let tr = obj::trigger{ o } {
                     _ = @fmt(&w.io, "  trigger type {} polygon", tr.trigger_type)
                     let mut k: usize = 0
                     while k < tr.polygon.len {
@@ -343,10 +343,10 @@ namespace ingame {
             let ids = party::members{ w = &w }
             let mut i: usize = 0
             while i < ids.len {
-                if world::object{ w = &w, id = ids[i] } is some{ value = m } {
-                    if obj::creature{ o = m } is some{ value = c } {
+                if let m = world::object{ w = &w, id = ids[i] } {
+                    if let c = obj::creature{ o = m } {
                         // The rules creature holds it when there is one (the sheet reads it from there).
-                        let xp = if c.fighter is some{ value = f } { f.c.xp } else { @as(i32, c.xp) }
+                        let xp = if let f = c.fighter { f.c.xp } else { @as(i32, c.xp) }
                         _ = @fmt(&w.io, "xp {} {}: {}\n", ids[i], hud::name_of{ w = &w, id = ids[i] }, xp)
                     }
                 }
@@ -478,7 +478,7 @@ namespace ingame {
             else if ci::eq{ a = word, b = "reset" } { w.party.tutorial_shown = [0; 6] }
             else {
                 w.tut.on = ci::eq{ a = word, b = "on" }
-                if options_front{ &ui } is some{ value = fe } { fe.settings.tutorial_popups = w.tut.on }
+                if let fe = options_front{ &ui } { fe.settings.tutorial_popups = w.tut.on }
             }
         } else if ci::eq{ a = cmd, b = "bodypick" } {
             // Test helper: the picks at four points 0.8 m from the newest kept body (around it, a little above
@@ -495,7 +495,7 @@ namespace ingame {
                     while d < 4 {
                         let ox: f32 = if d == 0 { 0.8 } else if d == 1 { -0.8 } else { 0.0 }
                         let oy: f32 = if d == 2 { 0.8 } else if d == 3 { -0.8 } else { 0.0 }
-                        if hud::project{ p = ui.hud.projector, at = math::Vec3{ x = at.x + ox, y = at.y + oy, z = at.z + 0.2 } } is some{ value = q } {
+                        if let q = hud::project{ p = ui.hud.projector, at = math::Vec3{ x = at.x + ox, y = at.y + oy, z = at.z + 0.2 } } {
                             let id = hud::pick_at{ p = ui.hud.projector, w = &w, x = @as(i32, q.x), y = @as(i32, q.y) }
                             if id == bag { hits = hits + 1 }
                         }

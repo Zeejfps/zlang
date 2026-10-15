@@ -232,7 +232,7 @@ namespace cam {
         if c.turn_to != obj::INVALID {
             if input.turn != 0.0 or input.mouse_degrees != 0.0 {
                 c.turn_to = obj::INVALID
-            } else if world::object{ w, id = c.turn_to } is some{ value = goal } {
+            } else if let goal = world::object{ w, id = c.turn_to } {
                 let heading = math::atan2f{ y = -(goal.position.x - o.position.x), x = goal.position.y - o.position.y }
                 let mut side = c.yaw - heading
                 while side > math::PI { side = side - 2.0 * math::PI }

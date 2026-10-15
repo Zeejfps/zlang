@@ -95,8 +95,8 @@ namespace save {
         // A creature lying where it was thrown or knocked down is not commandable until it stands; the fall is not saved, so the
         // flag must not be: a game loaded from that moment would keep its leader frozen for ever.
         let mut commandable = o.commandable
-        if obj::creature{ o } is some{ value = knocked } {
-            if knocked.fighter is some{ value = kf } { if kf.knock.active { commandable = true } }
+        if let knocked = obj::creature{ o } {
+            if let kf = knocked.fighter { if kf.knock.active { commandable = true } }
         }
         try put_bool{ &b, owner, label = "Commandable", v = commandable }
         if o.kind == obj::Kind::creature {
@@ -144,7 +144,7 @@ namespace save {
             let io = world::object{ w = &w, id = stock[k] }
             k = k + 1
             if io == null { continue }
-            if obj::item{ o = io } is some{ value = it } {
+            if let it = obj::item{ o = io } {
                 let e = try gffw::add_element{ &b, list = items, id = @trunc(u32, k - 1) }
                 try write_item{ &b, &w, s = e, o = io, i = it }
                 try put_bool{ &b, owner = e, label = "Infinite", v = it.infinite }
@@ -183,7 +183,7 @@ namespace save {
         }
         let mut k: usize = 0
         let mut ruled = false
-        if c.fighter is some{ value = f } {
+        if let f = c.fighter {
             if f.loaded {
                 // The rules creature: stats, classes and powers, skills, feats, history, effects.
                 try put_rules_creature{ &b, owner = s, o, c = &f.c }
@@ -230,7 +230,7 @@ namespace save {
         while k < obj::EQUIP_SLOTS {
             let io = world::object{ w = &w, id = c.equipped[k] }
             if io != null {
-                if obj::item{ o = io } is some{ value = it } {
+                if let it = obj::item{ o = io } {
                     let e = try gffw::add_element{ &b, list = equipped, id = @as(u32, 1) << @as(u32, k) }
                     try write_item{ &b, &w, s = e, o = io, i = it }
                 }
@@ -244,7 +244,7 @@ namespace save {
             let io = world::object{ w = &w, id = inv[k] }
             k = k + 1
             if io == null { continue }
-            if obj::item{ o = io } is some{ value = it } {
+            if let it = obj::item{ o = io } {
                 let e = try gffw::add_element{ &b, list = carried, id = @trunc(u32, k - 1) }
                 try write_item{ &b, &w, s = e, o = io, i = it }
             }
@@ -267,7 +267,7 @@ namespace save {
         // creature in a loaded game dies with its loot gone.
         try put_bool{ &b, owner = s, label = "Dropable", v = i.droppable }
         // The rules' view of it: cost, flags, installed upgrades and every property.
-        if i.rules is some{ value = ri } {
+        if let ri = i.rules {
             try put_dword{ &b, owner = s, label = "Cost", v = bits{ v = ri.cost } }
             try put_dword{ &b, owner = s, label = "AddCost", v = bits{ v = ri.add_cost } }
             try put_bool{ &b, owner = s, label = "Stolen", v = ri.stolen }
@@ -369,7 +369,7 @@ namespace save {
             let io = world::object{ w = &w, id = inv[k] }
             k = k + 1
             if io == null { continue }
-            if obj::item{ o = io } is some{ value = it } {
+            if let it = obj::item{ o = io } {
                 let e = try gffw::add_element{ &b, list = items, id = @trunc(u32, k - 1) }
                 try write_item{ &b, &w, s = e, o = io, i = it }
             }

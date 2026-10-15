@@ -124,7 +124,7 @@ namespace mg {
         let mut b: usize = 0
         while b < f.bank_count {
             if not g.banks[b].ready {
-                if find_numbered{ model, prefix = "gunbank", n = f.banks[b].id } is some{ value = node } {
+                if let node = find_numbered{ model, prefix = "gunbank", n = f.banks[b].id } {
                     g.banks[b].mount = pose.world[node]
                     g.banks[b].rotating = rotating
                     g.banks[b].ready = true
@@ -133,7 +133,7 @@ namespace mg {
             b = b + 1
         }
         if not g.has_box {
-            if mdl::find_node{ model, name = "hitbullet" } is some{ value = node } {
+            if let node = mdl::find_node{ model, name = "hitbullet" } {
                 let box = node_box{ model, pose, node }
                 if not math::aabb::is_empty{ b = box } {
                     g.box = box
@@ -142,7 +142,7 @@ namespace mg {
                 }
             }
         }
-        if mdl_anim::find{ model, name = "die", lookup } is some{ value = found } {
+        if let found = mdl_anim::find{ model, name = "die", lookup } {
             g.die_length = math::max{ a = g.die_length, b = found.animation.length }
         }
     }
@@ -152,13 +152,13 @@ namespace mg {
     fn bank_from_models(S) {
         realloc: alloc::Fn(S), mut heap: S, mut bg: BankGear, bank: *Bank, lookup: &fn{ name: []u8 } -> ?*mdl::Model,
     } -> ! {
-        if model_named{ lookup, r = &bank.gun_model } is some{ value = gun } {
+        if let gun = model_named{ lookup, r = &bank.gun_model } {
             let pose = try mdl_anim::make_pose(S){ realloc, &heap, model = gun }
             mdl_anim::reset{ model = gun, pose }
             mdl_anim::finish{ model = gun, pose }
             let node = find_numbered{ model = gun, prefix = "bullethook", n = bank.id } ifnull { find_numbered{ model = gun, prefix = "bullethook", n = 0 } }
-            if node is some{ value = nd } { bg.muzzle = pose.world[nd] }
-            if mdl_anim::find{ model = gun, name = "fire", lookup } is some{ value = found } {
+            if let nd = node { bg.muzzle = pose.world[nd] }
+            if let found = mdl_anim::find{ model = gun, name = "fire", lookup } {
                 bg.fire_length = found.animation.length
                 let events = found.animation.events
                 let mut i: usize = 0
@@ -171,8 +171,8 @@ namespace mg {
                 }
             }
         }
-        if model_named{ lookup, r = &bank.bullet_model } is some{ value = shot } {
-            if mdl_anim::find{ model = shot, name = "explode", lookup } is some{ value = found } {
+        if let shot = model_named{ lookup, r = &bank.bullet_model } {
+            if let found = mdl_anim::find{ model = shot, name = "explode", lookup } {
                 if found.animation.length > 0.0 { bg.explode_length = found.animation.length }
             }
         }
@@ -185,7 +185,7 @@ namespace mg {
         let mut g = no_gear{}
         let mut m: usize = 0
         while m < f.model_count {
-            if model_named{ lookup, r = &f.models[m].name } is some{ value = model } {
+            if let model = model_named{ lookup, r = &f.models[m].name } {
                 try gear_from_model(S){ realloc, &heap, &g, f, model, rotating = f.models[m].rotating, lookup }
             }
             m = m + 1
@@ -424,7 +424,7 @@ namespace mg {
                     bl.position = math::vec3::add_scaled{ a = bl.position, b = bl.direction, s = bl.speed * dt }
                     bl.life = bl.life - dt
                     let hit = bullet_target{ run = &run, bl }
-                    if hit is some{ value = n } {
+                    if let n = hit {
                         bullet_hit{ &run, slot = i, n }
                     } else if bl.life <= 0.0 {
                         bl.live = false

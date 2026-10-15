@@ -337,7 +337,7 @@ namespace scene {
         }
         let ao = world::object{ w = &w, id = w.area }
         if ao != null {
-            if obj::area{ o = ao } is some{ value = a } {
+            if let a = obj::area{ o = ao } {
                 sc.ambient = color_of{ bgr = a.dyn_ambient }
                 if sc.ambient.x + sc.ambient.y + sc.ambient.z < 0.05 { sc.ambient = math::Vec3{ x = 0.3, y = 0.3, z = 0.3 } }
                 if a.fog_on {
@@ -418,7 +418,7 @@ namespace scene {
         }
         material::free_cache{ cache = &sc.materials, &dev }
         sc.look = no_look{}
-        if sc.grade is some{ value = t } { gpu::free_texture{ &dev, t } }
+        if let t = sc.grade { gpu::free_texture{ &dev, t } }
         sc.grade = null
     }
 

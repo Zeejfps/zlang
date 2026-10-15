@@ -146,7 +146,7 @@ namespace gui3d {
         let p2p = (e.flags & EMIT_P2P) != 0
         let mut goal = no_goal{}
         if p2p {
-            if em.aim is some{ value = a } { goal = goal_of{ em = &em, props, aim = a, world } }
+            if let a = em.aim { goal = goal_of{ em = &em, props, aim = a, world } }
         }
         let mut i: u32 = 0
         while i < em.live {
@@ -442,7 +442,7 @@ namespace gui3d {
         to = math::vec3::add_scaled{ a = to, b = math::mat4::transform_dir{ m = world, v = p.inh }, s = dt }
         v.z = v.z - dt * props.mass * GRAVITY
         if (e.flags & EMIT_BOUNCE) != 0 {
-            if ground{ from = at, to } is some{ value = c } {
+            if let c = ground{ from = at, to } {
                 v = math::vec3::scale{ v = math::vec3::sub{ a = v, b = math::vec3::scale{ v = c.normal, s = 2.0 * math::vec3::dot{ a = v, b = c.normal } } }, s = props.bounce_co }
                 to = math::vec3::add_scaled{ a = c.at, b = c.normal, s = 0.005 }
                 if math::vec3::length_sq{ v } < 0.5 {

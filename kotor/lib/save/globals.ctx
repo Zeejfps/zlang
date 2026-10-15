@@ -213,7 +213,7 @@ namespace save {
             // The orientation is kept as saved, so the slot writes back bit for bit (all zeros:
             // never set).
             let value = try read_location_slot{ data = locations, at = 24 * k }
-            if globals::find{ g, name, kind = globals::Type::location } is some{ value = v } {
+            if let v = globals::find{ g, name, kind = globals::Type::location } {
                 v.location = value
                 v.orientation = math::Vec3{
                     x = try le::get_f32{ data = locations, at = 24 * k + 12 },

@@ -90,7 +90,7 @@ namespace bot {
             if b.tour.on {
                 _ = @fmt(&w.io, "bot: tour of {} stops, at {}", b.tour.count, b.tour.next)
                 if b.tour.next < b.tour.count {
-                    if world::object{ w = &w, id = b.tour.ids[b.tour.next] } is some{ value = t } { _ = @fmt(&w.io, " ({} {} acted {} still {})", t.tag, @as(u32, t.kind), b.tour.acted, b.tour.still) }
+                    if let t = world::object{ w = &w, id = b.tour.ids[b.tour.next] } { _ = @fmt(&w.io, " ({} {} acted {} still {})", t.tag, @as(u32, t.kind), b.tour.acted, b.tour.still) }
                 }
                 _ = @fmt(&w.io, "\n")
             }
@@ -122,7 +122,7 @@ namespace bot {
             let team = party::members{ w = &w }
             let mut m: usize = 0
             while m < team.len {
-                if world::object{ w = &w, id = team[m] } is some{ value = mo } { mo.min_one_hp = true }
+                if let mo = world::object{ w = &w, id = team[m] } { mo.min_one_hp = true }
                 m = m + 1
             }
         }
@@ -145,7 +145,7 @@ namespace bot {
             // short of it, and an attack's approach no longer jumps to its goal when its timeout runs out) and the leader has not
             // moved for a dozen decisions: whoever the nearest is (the pick flips between foes at the same distance), a fight is not
             // what holds it.
-            if world::object{ w = &w, id = foe } is some{ value = fo } {
+            if let fo = world::object{ w = &w, id = foe } {
                 let fd = math::vec3::distance{ a = fo.position, b = me.position }
                 let hidden = fd > 2.5 and not perception::clear_line{ w = &w, a = math::Vec3{ x = me.position.x, y = me.position.y, z = me.position.z + 1.5 }, b = math::Vec3{ x = fo.position.x, y = fo.position.y, z = fo.position.z + 1.5 } }
                 if (fd > 8.0 or hidden) and math::vec3::distance{ a = me.position, b = b.far_pos } < 1.0 { b.foe_stalled = b.foe_stalled + 1 } else {
@@ -169,7 +169,7 @@ namespace bot {
                 let door = nearest_closed_door{ w = &w, me }
                 if door != obj::INVALID {
                     _ = @fmt(&w.io, "bot: no nearer to its foe {} for a while, opens door {}\n", foe, door)
-                    if world::object{ w = &w, id = door } is some{ value = dob } {
+                    if let dob = world::object{ w = &w, id = door } {
                         if dob.ext is door{ d } { if d.locked and b.unlock { d.locked = false } }
                     }
                     let mut a = actions::make{ kind = actions::Kind::open_door }
@@ -196,7 +196,7 @@ namespace bot {
         if b.next >= b.count { return }
         let raw = b.route[b.next][..@as(usize, b.lens[b.next])]
         // `X,Y`: a place on the floor (the hidden path through the Eastern Dune Sea is a row of them).
-        if point_stop{ stop = raw } is some{ value = pt } {
+        if let pt = point_stop{ stop = raw } {
             let f = walkmap::floor_anywhere{ m = &w.walk, x = pt[0], y = pt[1] }
             let at = math::Vec3{ x = pt[0], y = pt[1], z = if f != null { f.z } else { me.position.z } }
             let dist = math::vec3::distance{ a = at, b = me.position }
@@ -235,7 +235,7 @@ namespace bot {
             return
         }
         let at = stop_point{ w = &w, t, near_z = me.position.z }
-        b.trans_stop = if obj::trigger{ o = t } is some{ value = tr } { tr.linked_to.len > 0 } else { false }
+        b.trans_stop = if let tr = obj::trigger{ o = t } { tr.linked_to.len > 0 } else { false }
         let dist = math::vec3::distance{ a = at, b = me.position }
         b.waiting = b.waiting + 1
         if dist < b.best - 2.0 {
@@ -263,7 +263,7 @@ namespace bot {
                 let door = nearest_closed_door{ w = &w, me }
                 if door != obj::INVALID {
                     _ = @fmt(&w.io, "bot: no nearer to {} for a while ({} m), opens door {}\n", tag, dist, door)
-                    if world::object{ w = &w, id = door } is some{ value = dob } {
+                    if let dob = world::object{ w = &w, id = door } {
                         if dob.ext is door{ d } { if d.locked and b.unlock { d.locked = false } }
                     }
                     let mut a = actions::make{ kind = actions::Kind::open_door }
@@ -334,9 +334,9 @@ namespace bot {
         let mut a = actions::make{ kind = actions::Kind::move_to_point }
         a.params[0] = actions::Param::vector{ v = at }
         a.params[1] = actions::Param::int{ v = 1 }
-        a.params[2] = actions::Param::float{ v = if obj::trigger{ o = t } is some{ value = tr } { 0.2 } else { 1.0 } }
+        a.params[2] = actions::Param::float{ v = if let tr = obj::trigger{ o = t } { 0.2 } else { 1.0 } }
         // A trigger is entered at the middle of its polygon, not at its origin, which the move would head for if it were told the object.
-        a.params[3] = actions::Param::object{ id = if obj::trigger{ o = t } is some{ value = tr } { obj::INVALID } else { t.id } }
+        a.params[3] = actions::Param::object{ id = if let tr = obj::trigger{ o = t } { obj::INVALID } else { t.id } }
         a.params[4] = actions::Param::float{ v = 0.0 }
         _ = actions::add{ &w, id = lead, action = a, force = true }
     }
@@ -352,7 +352,7 @@ namespace bot {
 
     // Whether the stop is a trigger the leader does not stand in yet (near its middle is not enough in a narrow polygon).
     fn outside_trigger { t: *obj::Object, me: *obj::Object } -> bool {
-        if obj::trigger{ o = t } is some{ value = tr } {
+        if let tr = obj::trigger{ o = t } {
             return not movement::inside_polygon{ poly = tr.polygon, x = me.position.x, y = me.position.y }
         }
         return false
@@ -361,7 +361,7 @@ namespace bot {
     // Where to walk for a stop: the object's place, or the middle of a trigger's polygon (a transition trigger is a thin
     // strip some way from its origin, and standing near the origin is not standing in it).
     fn stop_point { w: *world::World, t: *obj::Object, near_z: f32 } -> math::Vec3 {
-        if obj::trigger{ o = t } is some{ value = tr } {
+        if let tr = obj::trigger{ o = t } {
             if tr.polygon.len > 0 {
                 let mid = polygon_middle{ poly = tr.polygon }
                 // The polygon's heights are not the floor's: the floor under the middle, as the leader would find it from the

@@ -444,7 +444,7 @@ namespace equip_panel {
         while k < obj::EQUIP_SLOTS {
             s.saved[k] = c.equipped[k]
             s.saved_from[k] = resref::empty{}
-            if world::object{ w = &w, id = c.equipped[k] } is some{ value = io } { s.saved_from[k] = io.template }
+            if let io = world::object{ w = &w, id = c.equipped[k] } { s.saved_from[k] = io.template }
             k = k + 1
         }
     }
@@ -478,7 +478,7 @@ namespace equip_panel {
         let carried = items::carried{ w = &w, who, into = order[..] }
         let mut k: usize = 0
         while k < carried.len {
-            if world::object{ w = &w, id = carried[k] } is some{ value = io } {
+            if let io = world::object{ w = &w, id = carried[k] } {
                 if resref::eq{ a = io.template, b = blueprint } { return carried[k] }
             }
             k = k + 1

@@ -69,7 +69,7 @@ namespace test_sheet {
         if is_ability { }
         else if ci::eq{ a = key, b = "xp" } {
             c.xp = @as(u32, n)
-            if c.fighter is some{ value = f } { f.c.xp = n }
+            if let f = c.fighter { f.c.xp = n }
         }
         else if ci::eq{ a = key, b = "align" } { c.good_evil = @as(u32, n) }
         else if ci::eq{ a = key, b = "hp" } { o.hp = n }

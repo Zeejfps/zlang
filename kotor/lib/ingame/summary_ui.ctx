@@ -216,10 +216,10 @@ namespace ingame {
             gui::set_visible{ g, panel = id, tag = SUM_DESCS[r], visible = shown }
             if not shown { continue }
             if text_strref != 0 { set_summary_text{ &ui, &w, panel = id, tag = SUM_DESCS[r], prefix, strref = text_strref, n = number } }
-            if gui::control_extent{ g, panel = id, tag = SUM_ROWS[r] } is some{ value = e } {
+            if let e = gui::control_extent{ g, panel = id, tag = SUM_ROWS[r] } {
                 gui::set_extent{ g, panel = id, tag = SUM_ROWS[r], x = @as(i32, e.x), y, w = @as(i32, e.w), h = @as(i32, e.h) }
             }
-            if gui::control_extent{ g, panel = id, tag = SUM_DESCS[r] } is some{ value = e } {
+            if let e = gui::control_extent{ g, panel = id, tag = SUM_DESCS[r] } {
                 gui::set_extent{ g, panel = id, tag = SUM_DESCS[r], x = @as(i32, e.x), y = y - 1, w = width, h = @as(i32, e.h) }
                 while width < 440 and gui::count_lines{ g, panel = id, tag = SUM_DESCS[r], width } > 1 {
                     width = width + 20
@@ -230,11 +230,11 @@ namespace ingame {
             y = y + 37
         }
         let mut desc_x: i32 = 52
-        if gui::control_extent{ g, panel = id, tag = SUM_DESCS[0] } is some{ value = e } { desc_x = @as(i32, e.x) }
+        if let e = gui::control_extent{ g, panel = id, tag = SUM_DESCS[0] } { desc_x = @as(i32, e.x) }
         let pw = desc_x + width + 10
         let ph = y + 25
         gui::set_panel_size{ g, panel = id, w = pw, h = ph }
-        if gui::control_extent{ g, panel = id, tag = "BTN_OK" } is some{ value = e } {
+        if let e = gui::control_extent{ g, panel = id, tag = "BTN_OK" } {
             gui::set_extent{ g, panel = id, tag = "BTN_OK", x = (pw - @as(i32, e.w)) / 2, y = y - 7, w = @as(i32, e.w), h = @as(i32, e.h) }
         }
         gui::set_focus{ g, panel = id, tag = "BTN_OK" }

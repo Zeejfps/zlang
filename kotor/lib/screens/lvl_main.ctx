@@ -71,7 +71,7 @@ namespace lvl {
         gui::close{ &g, id = s.list }
         gui::close{ &g, id = s.main }
         gui::play_sound{ &g, n = 5 }
-        if s.view is some{ value = v } { free_view{ v, &dev } }
+        if let v = s.view { free_view{ v, &dev } }
         s.view = null
         s.step = 0
         s.step_kind = NO_STEP

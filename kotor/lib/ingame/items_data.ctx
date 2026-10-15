@@ -126,7 +126,7 @@ namespace items {
     // The ability modifier of score index `k` (0 Str, 1 Dex ...): the rules creature's (effects
     // included); the fallback is (score - 10) / 2, rounded down, on the engine's score.
     fn ability_mod { w: *world::World, who: u32, k: usize } -> i32 {
-        if hud::ruled_of{ w, id = who } is some{ value = f } { return f.c.stats.abil_mod[k] }
+        if let f = hud::ruled_of{ w, id = who } { return f.c.stats.abil_mod[k] }
         let c = hud::creature_of{ w, id = who } ifnull { return 0 }
         let score = @as(i32, c.abilities[k])
         let d = score - 10
@@ -217,9 +217,9 @@ namespace items {
     // DroidOrHuman: 1 for humanoid gear, 2 for droid parts, 0 anyone; DenySubrace; a race-limit
     // property). The equip lists leave out what fails it. Without rules state only DroidOrHuman.
     fn race_ok { w: *world::World, who: u32, item: u32 } -> bool {
-        if hud::ruled_of{ w, id = who } is some{ value = f } {
-            if rules_item_of{ w, id = item } is some{ value = ri } {
-                if rules::get_baseitem{ tables = w.rules, row = ri.base_item } is some{ value = bi } {
+        if let f = hud::ruled_of{ w, id = who } {
+            if let ri = rules_item_of{ w, id = item } {
+                if let bi = rules::get_baseitem{ tables = w.rules, row = ri.base_item } {
                     return rules::check_limit_race{ c = &f.c, item = ri, bi }
                 }
             }
@@ -247,8 +247,8 @@ namespace items {
     fn fit_refusal { w: *world::World, who: u32, item: u32, index: usize } -> ?u32 {
         let c = hud::creature_of{ w, id = who } ifnull { return 0 }
         if (equipable_slots{ w, id = item } & mask_of{ index }) == 0 { return 0 }
-        if hud::ruled_of{ w, id = who } is some{ value = f } {
-            if rules_item_of{ w, id = item } is some{ value = ri } {
+        if let f = hud::ruled_of{ w, id = who } {
+            if let ri = rules_item_of{ w, id = item } {
                 let check = rules::can_equip_item{ tables = w.rules, c = &f.c, item = ri, slot = mask_of{ index }, from_player = true, in_combat_attacked = false }
                 if check.ok { return null }
                 return refusal_strref{ feedback = check.feedback }
@@ -297,7 +297,7 @@ namespace items {
     // dodge and the capped Dexterity modifier; combat.md 5). The fallback is 10 + the body armour's
     // BaseAC + the Dexterity modifier, which armour caps at its DexBonus.
     fn defense_of { w: *world::World, who: u32 } -> i32 {
-        if hud::ruled_of{ w, id = who } is some{ value = f } { return rules::armor_class_sheet{ tables = w.rules, c = &f.c } }
+        if let f = hud::ruled_of{ w, id = who } { return rules::armor_class_sheet{ tables = w.rules, c = &f.c } }
         let c = hud::creature_of{ w, id = who } ifnull { return 10 }
         let body = c.equipped[obj::SLOT_BODY]
         let mut dex = ability_mod{ w, who, k = 1 }
@@ -325,7 +325,7 @@ namespace items {
     // The attack bonus with the weapon in `item` (`off_hand`: it is in the left hand; a bare hand
     // is INVALID). The fallback is the character level plus Strength (Dexterity for a ranged weapon).
     fn attack_bonus_of { w: *world::World, who: u32, item: u32, off_hand: bool } -> i32 {
-        if hud::ruled_of{ w, id = who } is some{ value = f } { return attack_with{ w, f, off_hand } }
+        if let f = hud::ruled_of{ w, id = who } { return attack_with{ w, f, off_hand } }
         let level = hud::level_of{ w, id = who }
         let k: usize = if is_ranged{ w, id = item } { 1 } else { 0 }
         return level + ability_mod{ w, who, k }
@@ -333,7 +333,7 @@ namespace items {
 
     // Whether the shown attack bonus is above the creature's base attack bonus (the number is green then).
     fn attack_boosted { w: *world::World, who: u32, n: i32 } -> bool {
-        if hud::ruled_of{ w, id = who } is some{ value = f } { return n > f.c.stats.bab }
+        if let f = hud::ruled_of{ w, id = who } { return n > f.c.stats.bab }
         return false
     }
 
@@ -361,7 +361,7 @@ namespace items {
         }
         let mut gain_lo: i32 = 0
         let mut gain_hi: i32 = 0
-        if hud::ruled_of{ w, id = who } is some{ value = f } {
+        if let f = hud::ruled_of{ w, id = who } {
             if item == obj::INVALID { hi = if f.c.stats.size < 3 { 2 } else { 1 } }
             if item == obj::INVALID or not is_ranged{ w, id = item } {
                 lo = lo + f.c.stats.abil_mod[0]
@@ -369,7 +369,7 @@ namespace items {
             }
             if item != obj::INVALID {
                 let it = item_of{ w, id = item } ifnull { return DamageRange{ lo = 1, hi = 1, boosted = false } }
-                if rules::get_baseitem{ tables = w.rules, row = @as(i32, it.base) } is some{ value = bi } {
+                if let bi = rules::get_baseitem{ tables = w.rules, row = @as(i32, it.base) } {
                     if bi.spec_feat > 0 and rules::has_feat{ c = &f.c, feat = bi.spec_feat } {
                         lo = lo + 2
                         hi = hi + 2
@@ -583,8 +583,8 @@ namespace items {
     // 4.3): the alignment, class, race and feat limits, proficiency for an item that fits a slot,
     // and the weapon-size rule. Without rules state only the creature's kind is tested.
     fn can_use { mut w: world::World, who: u32, id: u32 } -> bool {
-        if hud::ruled_of{ w = &w, id = who } is some{ value = f } {
-            if rules_item_of{ w = &w, id } is some{ value = ri } {
+        if let f = hud::ruled_of{ w = &w, id = who } {
+            if let ri = rules_item_of{ w = &w, id } {
                 if not rules::has_property{ item = ri, name = rules::ip::CAST_SPELL } { return false }
                 let bi = rules::get_baseitem{ tables = w.rules, row = ri.base_item } ifnull { return false }
                 if not rules::check_limit_alignment{ c = &f.c, item = ri } or not rules::check_limit_class{ c = &f.c, item = ri } { return false }

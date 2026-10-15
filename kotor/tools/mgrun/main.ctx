@@ -111,7 +111,7 @@ fn run {
             let e = mg::take_event{ run = r } ifnull { break }
             // no scripts here: the engine's defaults stand in for the module's
             if area_ptr.kind == mg::TURRET {
-                if mg::slot_of{ run = r, id = e.object } is some{ value = k } {
+                if let k = mg::slot_of{ run = r, id = e.object } {
                     if e.slot == mg::ON_DAMAGE {
                         r.last_hp_change = e.value
                         mg::default_damage{ run = r, n = k }

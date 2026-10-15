@@ -433,7 +433,7 @@ namespace scene {
         while i < rooms.len {
             let mesh = rooms[i].mesh
             i = i + 1
-            if mesh is some{ value = m } {
+            if let m = mesh {
                 let mut k: usize = 0
                 while k < m.vertices.len {
                     lo = math::vec3::min{ a = lo, b = m.vertices[k] }

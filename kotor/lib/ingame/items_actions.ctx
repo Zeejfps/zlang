@@ -95,7 +95,7 @@ namespace items {
         if not equip::equip_item{ &w, id = who, item = moved, slot = index } {
             // Refused: a split-off item goes back on its stack.
             if moved != item {
-                if item_of{ w = &w, id = item } is some{ value = it } { it.stack = it.stack + 1 }
+                if let it = item_of{ w = &w, id = item } { it.stack = it.stack + 1 }
                 world::destroy{ &w, id = moved }
             }
             return none

@@ -57,7 +57,7 @@ namespace lvl {
             let mut armoured = false
             let armor = world::object{ w = &w, id = c.equipped[obj::SLOT_BODY] }
             if armor != null {
-                if obj::item{ o = armor } is some{ value = it } {
+                if let it = obj::item{ o = armor } {
                     armoured = true
                     let bodyvar = cell{ t = w.tables.baseitems, row = @as(usize, it.base), column = "bodyvar" }
                     if bodyvar.len == 1 { letter = ascii::to_lower{ c = bodyvar[0] } }

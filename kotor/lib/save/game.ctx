@@ -269,13 +269,13 @@ namespace save {
         }
         let ao = world::object{ w = &w, id = w.area }
         if ao != null {
-            if obj::area{ o = ao } is some{ value = a } {
+            if let a = obj::area{ o = ao } {
                 info.area_name = if a.name.text.len > 0 { a.name.text } else { world::string_by_strref{ w = &w, strref = a.name.strref } }
             }
         }
         let mo = world::object{ w = &w, id = w.module }
         if mo != null {
-            if obj::module{ o = mo } is some{ value = m } {
+            if let m = obj::module{ o = mo } {
                 let mut name = m.name
                 let low = resref::bytes{ r = &name }
                 let up = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(u8){}, count = low.len } iferr { return info }
@@ -293,7 +293,7 @@ namespace save {
             let o = world::object{ w = &w, id = members[i] }
             i = i + 1
             if o == null { continue }
-            if obj::creature{ o } is some{ value = c } {
+            if let c = obj::creature{ o } {
                 let name = twoda::get_string{ t = w.tables.portraits, row = @as(usize, c.portrait), column = "baseresref" } ifnull ""
                 info.portraits[info.portrait_count] = resref::truncate{ name }
                 info.portrait_count = info.portrait_count + 1
@@ -368,7 +368,7 @@ namespace save {
             let o = all[oi]
             oi = oi + 1
             if o.destroyed or o.kind != obj::Kind::item { continue }
-            if obj::item{ o } is some{ value = it } {
+            if let it = obj::item{ o } {
                 if old_player != obj::INVALID and (it.possessor == old_player or it.possessor == w.pc) {
                     o.destroyed = true
                     list::push{ list = &w.doomed, item = o.id } iferr {}

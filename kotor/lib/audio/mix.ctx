@@ -402,7 +402,7 @@ namespace mix {
 
     fn note_any { mut m: Mixer, stolen: bool, group: bool, p: Params, old: ?usize } {
         let mut e = Event{ stolen, group, tag = p.tag, priority = p.priority, old_tag = 0, old_priority = 0, old_looping = false, old_played = 0.0 }
-        if old is some{ value = k } {
+        if let k = old {
             let v = &m.voices[k]
             e.old_tag = v.p.tag
             e.old_priority = v.p.priority

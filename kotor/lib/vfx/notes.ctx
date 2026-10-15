@@ -181,8 +181,8 @@ namespace vfx {
 
     // Where an object's node is in the world, else `fallback` metres above its feet.
     fn hook_point { sc: *scene::Scene, w: *world::World, id: u32, hook: []u8, which: usize, fallback: f32 } -> math::Vec3 {
-        if scene::hook_of{ sc, w, id, hook, which } is some{ value = m } { return math::mat4::get_translation{ m } }
-        if world::object{ w, id } is some{ value = o } { return math::Vec3{ x = o.position.x, y = o.position.y, z = o.position.z + fallback } }
+        if let m = scene::hook_of{ sc, w, id, hook, which } { return math::mat4::get_translation{ m } }
+        if let o = world::object{ w, id } { return math::Vec3{ x = o.position.x, y = o.position.y, z = o.position.z + fallback } }
         return math::vec3::zero{}
     }
 

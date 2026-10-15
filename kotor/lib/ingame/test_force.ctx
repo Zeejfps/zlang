@@ -170,7 +170,7 @@ namespace test_force {
             let rows = twoda::rows{ t = w.tables.spells }
             let mut r: usize = 0
             while r < rows and r < 256 {
-                if rules::get_spell{ tables = w.rules, row = @as(i32, r) } is some{ value = row } {
+                if let row = rules::get_spell{ tables = w.rules, row = @as(i32, r) } {
                     if row.valid and row.user_type == 1 { f.c.powers[r >> 5] = f.c.powers[r >> 5] | (@as(u32, 1) << @trunc(u32, r & 31)) }
                 }
                 r = r + 1

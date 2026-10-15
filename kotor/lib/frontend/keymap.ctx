@@ -138,7 +138,7 @@ namespace frontend {
         while slot < 80 {
             let mut buf: [12]u8
             let label = slot_label{ slot, into = buf[..] }
-            if twoda::find_row{ t, label } is some{ value = row } {
+            if let row = twoda::find_row{ t, label } {
                 let disabled = (twoda::get_int{ t, row, column = "Disabled" } ifnull 0) != 0
                 let code = twoda::get_int{ t, row, column = "Language0" } ifnull 0
                 if not disabled and code > 0 and code < CODE_COUNT { km.codes[@as(usize, slot)] = @trunc(i16, code) }

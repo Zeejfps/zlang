@@ -96,7 +96,7 @@ namespace ups {
     // The view of the bench's item, made again when the item changed (a new colour crystal makes
     // a new saber). Nothing when the item has no model.
     fn refresh_view { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } {
-        if s.view is some{ value = v } {
+        if let v = s.view {
             if v.item == s.item { return }
         }
         drop_view{ &s, &dev }
@@ -106,7 +106,7 @@ namespace ups {
     fn drop_view { mut s: State, mut dev: gpu::Device } {
         let v = s.view ifnull { return }
         s.view = null
-        if v.part is some{ value = p } { mdl_render::release{ &dev, g = p.gpu } }
+        if let p = v.part { mdl_render::release{ &dev, g = p.gpu } }
         gui3d::free{ scene = &v.rig, &dev }
         alloc::free(arena::Arena, heap::Heap){ realloc = heap::alloc, heap = v.heap, p = v.arena }
         _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = v.smem, count = 0 }
@@ -132,14 +132,14 @@ namespace ups {
         let mut rotate_len: usize = 0
         let mut hook: i32 = -1
         let rig_model = mdl_cache::get{ fs = &w.fs, cache = models, name = "upgitem_light" }
-        if rig_model is some{ value = rm } {
+        if let rm = rig_model {
             preview3d::put_bytes{ into = camera[..], at = &camera_len, s = "camerahook" }
             preview3d::put_bytes{ into = camera[..], at = &camera_len, s = n.hook[..n.hook_len] }
             if mdl::find_node{ model = rm, name = camera[..camera_len] } == null { camera_len = 10 }
             camera_node = constant_hook{ name = camera[..camera_len] }
             preview3d::put_bytes{ into = rotate[..], at = &rotate_len, s = "rotatehook" }
             preview3d::put_bytes{ into = rotate[..], at = &rotate_len, s = n.hook[..n.hook_len] }
-            if mdl::find_node{ model = rm, name = rotate[..rotate_len] } is some{ value = at } { hook = @as(i32, at) }
+            if let at = mdl::find_node{ model = rm, name = rotate[..rotate_len] } { hook = @as(i32, at) }
         }
         let made = gui3d::load{
             fs = &w.fs, &dev, heap = ar, rm = w.rm.*, models, mats = g.cache,

@@ -82,7 +82,7 @@ namespace galaxy {
 
     fn close_panel { mut s: State, mut g: gui::Gui, mut dev: gpu::Device } {
         if not s.open { return }
-        if s.view is some{ value = v } { galview::free{ v, &dev } }
+        if let v = s.view { galview::free{ v, &dev } }
         s.view = null
         gui::close{ &g, id = s.panel }
         gui::play_sound{ &g, n = 5 }
@@ -110,7 +110,7 @@ namespace galaxy {
             try gui::set_text{ &g, panel = p, tag = "LBL_DESC", text = "" }
         }
         gui::set_focus{ &g, panel = p, tag = tag_of{ s = &s, row = s.selected } }
-        if s.view is some{ value = v } {
+        if let v = s.view {
             let model = twoda::get_string{ t = s.table, row, column = "model" } ifnull ""
             galview::set_planet{ v, &w, &g, &dev, model = if slice::eq_bytes{ a = model, b = "****" } { "" } else { model } }
         }
@@ -156,12 +156,12 @@ namespace galaxy {
 
     fn update { mut s: State, mut w: world::World, dt: f32 } {
         if not s.open { return }
-        if s.view is some{ value = v } { galview::update{ v, &w, dt } }
+        if let v = s.view { galview::update{ v, &w, dt } }
     }
 
     // Between the backdrop and the panel: the 3D views.
     fn draw_views { mut s: State, mut g: gui::Gui, mut frame: render::Frame, target: render::Size } {
         if not s.open { return }
-        if s.view is some{ value = v } { galview::draw{ v, &g, &frame, panel = s.panel, target } }
+        if let v = s.view { galview::draw{ v, &g, &frame, panel = s.panel, target } }
     }
 }

@@ -97,7 +97,7 @@ namespace hud {
         let img = gui::resolve_img{ &g, fs = &w.fs, &dev, name = e.icon[..e.icon_len] }
         if img.ok { gui::set_picture{ &g, panel = h.panel, tag = tag_icon, texture = img.tex, w = img.w, h = img.h } } else { gui::clear_picture{ &g, panel = h.panel, tag = tag_icon } }
         // An entry that cannot be used now is dimmed (alpha 0.25 in the original).
-        if gui::find_control{ &g, panel = h.panel, tag = tag_icon } is some{ value = c } {
+        if let c = gui::find_control{ &g, panel = h.panel, tag = tag_icon } {
             c.border.tinted = not e.usable
             c.border.color = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = 0.25 }
         }
@@ -267,7 +267,7 @@ namespace hud {
     // lookathook node, else the middle of the object's box.
     fn aim_point { h: *Hud, w: *world::World, o: *obj::Object, b: OnScreen } -> math::Vec2 {
         if w.aim_id == o.id {
-            if project{ p = h.projector, at = w.aim } is some{ value = q } { return q }
+            if let q = project{ p = h.projector, at = w.aim } { return q }
         }
         return math::Vec2{ x = (b.x0 + b.x1) / 2.0, y = (b.y0 + b.y1) / 2.0 }
     }
@@ -286,7 +286,7 @@ namespace hud {
     struct Anchor { x: f32, y: f32, front: bool }
 
     fn anchor_of { h: *Hud, w: *world::World, o: *obj::Object } -> Anchor {
-        if box_on_screen{ p = h.projector, o } is some{ value = b } {
+        if let b = box_on_screen{ p = h.projector, o } {
             let at = aim_point{ h, w, o, b }
             return Anchor{ x = at.x, y = at.y, front = true }
         }

@@ -137,7 +137,7 @@ namespace ups {
 
     fn make_companion { mut w: world::World, n: usize } -> u32 {
         let kept = save::npc_from_store{ &w, slot = n } iferr { null }
-        if kept is some{ value = id } { return id }
+        if let id = kept { return id }
         if resref::is_empty{ r = w.party.templates[n] } { return obj::INVALID }
         let mut blueprint = w.party.templates[n]
         let made = tmpl::spawn{ &w, kind = obj::Kind::creature, template = resref::bytes{ r = &blueprint }, position = math::vec3::zero{}, orientation = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 } } iferr err{ error } {
@@ -165,7 +165,7 @@ namespace ups {
     }
 
     fn drop_creature { mut w: world::World, id: u32 } {
-        if hud::creature_of{ w = &w, id } is some{ value = c } {
+        if let c = hud::creature_of{ w = &w, id } {
             let mut e: usize = 0
             while e < obj::EQUIP_SLOTS {
                 if c.equipped[e] != obj::INVALID { world::destroy{ &w, id = c.equipped[e] } }
@@ -216,7 +216,7 @@ namespace ups {
         let nwho = wearers{ s = &s, w, out = &who }
         let mut m: usize = 0
         while m < nwho {
-            if hud::creature_of{ w, id = who[m] } is some{ value = c } {
+            if let c = hud::creature_of{ w, id = who[m] } {
                 let mut slot: usize = 0
                 while slot < obj::EQUIP_SLOTS {
                     let id = c.equipped[slot]
@@ -358,7 +358,7 @@ namespace ups {
         if owner != obj::INVALID and slot >= 0 {
             let hand = @as(usize, slot)
             let mut template: resref::ResRef
-            if world::object{ w = &w, id = item } is some{ value = io } { template = io.template }
+            if let io = world::object{ w = &w, id = item } { template = io.template }
             let bits = bits_of{ w = &w, item }
             let two_hands = hand == obj::SLOT_RIGHT_WEAPON or hand == obj::SLOT_LEFT_WEAPON
             if two_hands and hand == obj::SLOT_RIGHT_WEAPON { take_partner{ &s, &w, owner, hand } }
@@ -373,8 +373,8 @@ namespace ups {
         if unit == obj::INVALID { return }
         let from = world::object{ w = &w, id = if owner != obj::INVALID { owner } else { w.player } } ifnull { return }
         _ = rt_item::remove_from_inventory{ &w, o = from, item = unit }
-        if world::object{ w = &w, id = unit } is some{ value = io } {
-            if obj::item{ o = io } is some{ value = it } { it.possessor = obj::INVALID }
+        if let io = world::object{ w = &w, id = unit } {
+            if let it = obj::item{ o = io } { it.possessor = obj::INVALID }
         }
         s.item = unit
         s.original = obj::INVALID
@@ -406,8 +406,8 @@ namespace ups {
         gui::set_click_rows{ &g, panel = s.bench, tag = "LB_ITEMS" }
         // The file gives LB_DESC no prototype row, so its text would have no font: it takes the one
         // of the lightsaber's description box, which sits at the same place in the file.
-        if gui::find_control{ &g, panel = s.bench, tag = "LB_DESC_LS" } is some{ value = ls } {
-            if gui::find_control{ &g, panel = s.bench, tag = "LB_DESC" } is some{ value = d } { d.proto = ls.proto }
+        if let ls = gui::find_control{ &g, panel = s.bench, tag = "LB_DESC_LS" } {
+            if let d = gui::find_control{ &g, panel = s.bench, tag = "LB_DESC" } { d.proto = ls.proto }
         }
         try fill_bench{ &s, &g, &w, &dev }
         // FUN_006c2f80 hilights the first slot on opening, which describes it.
@@ -510,7 +510,7 @@ namespace ups {
         }
         let img = if preview != obj::INVALID { items::icon_of{ &g, &w, &dev, id = preview } } else { gui::resolve_img{ &g, fs = &w.fs, &dev, name = generic } }
         if img.ok { gui::set_picture{ &g, panel = p, tag = lbl, texture = img.tex, w = img.w, h = img.h } } else { gui::clear_picture{ &g, panel = p, tag = lbl } }
-        if gui::find_control{ &g, panel = p, tag = lbl } is some{ value = c } {
+        if let c = gui::find_control{ &g, panel = p, tag = lbl } {
             c.border.tinted = dim
             c.border.color = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = 0.25 }
         }

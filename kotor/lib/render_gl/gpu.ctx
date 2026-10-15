@@ -358,7 +358,7 @@ namespace gpu {
         let mut i: i32 = 0
         while i < count and n < into.len {
             let m = sdl::mode_at{ &sdl, display, index = i }
-            if m is some{ value } {
+            if let value = m {
                 into[n] = render::DisplayMode{ width = value.width, height = value.height, refresh = value.refresh }
                 n = n + 1
             }

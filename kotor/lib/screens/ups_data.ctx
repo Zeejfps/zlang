@@ -38,9 +38,9 @@ namespace ups {
         let mut n: i32 = 0
         let mut k: usize = 0
         while k < ids.len {
-            if world::object{ w, id = ids[k] } is some{ value = o } {
+            if let o = world::object{ w, id = ids[k] } {
                 if resref::matches{ r = o.template, name = template } {
-                    n = n + (if obj::item{ o } is some{ value = it } { @as(i32, it.stack) } else { 1 })
+                    n = n + (if let it = obj::item{ o } { @as(i32, it.stack) } else { 1 })
                 }
             }
             k = k + 1
@@ -59,9 +59,9 @@ namespace ups {
         let mut second: i32 = 0
         let mut k: usize = 0
         while k < ids.len and second == 0 {
-            if world::object{ w, id = ids[k] } is some{ value = o } {
+            if let o = world::object{ w, id = ids[k] } {
                 if resref::matches{ r = o.template, name = template } {
-                    let n = if obj::item{ o } is some{ value = it } { @as(i32, it.stack) } else { 1 }
+                    let n = if let it = obj::item{ o } { @as(i32, it.stack) } else { 1 }
                     if first == 0 { first = n } else { second = n }
                 }
             }
@@ -183,7 +183,7 @@ namespace ups {
     fn make_preview { mut w: world::World, template: []u8 } -> u32 {
         if template.len == 0 { return obj::INVALID }
         let id = tmpl::spawn_item{ &w, template, possessor = obj::INVALID } iferr { return obj::INVALID }
-        if world::object{ w = &w, id } is some{ value = o } { o.ai_level = -1 }
+        if let o = world::object{ w = &w, id } { o.ai_level = -1 }
         return id
     }
 

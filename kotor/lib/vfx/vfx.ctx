@@ -324,7 +324,7 @@ namespace vfx {
     // The node an effect rides, now; the object's chest when the object or node is missing.
     fn follow_matrix { sc: *scene::Scene, w: *world::World, f: *Fx } -> math::Mat4 {
         let hook = f.hook[..f.hook_len]
-        if scene::hook_of{ sc, w, id = f.object, hook, which = f.which } is some{ value = m } { return m }
+        if let m = scene::hook_of{ sc, w, id = f.object, hook, which = f.which } { return m }
         let o = world::object{ w, id = f.object } ifnull { return f.matrix }
         let height = if ci::eq{ a = hook, b = "rootdummy" } { 0.0 } else { 1.2 }
         return math::mat4::translation{ t = math::Vec3{ x = o.position.x, y = o.position.y, z = o.position.z + height } }
@@ -356,7 +356,7 @@ namespace vfx {
     fn bolt_aim { sc: *scene::Scene, w: *world::World, f: *Fx, model: *mdl::Model, pose_world: []math::Mat4, e: *mdl::Emitter } -> ?math::Mat4 {
         if f.stopped { return null }
         if f.aim_object != obj::INVALID {
-            if scene::hook_of{ sc, w, id = f.aim_object, hook = "impact", which = 0 } is some{ value = m } { return m }
+            if let m = scene::hook_of{ sc, w, id = f.aim_object, hook = "impact", which = 0 } { return m }
             return math::mat4::translation{ t = hook_point{ sc, w, id = f.aim_object, hook = "impact", which = 0, fallback = 1.2 } }
         }
         let node = gui3d::bolt_end_node{ model, e } ifnull { return null }

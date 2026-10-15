@@ -128,7 +128,7 @@ namespace gpu {
         let mut i: usize = 0
         while i < dev.pointer.count {
             let c = dev.pointer.cursors[i].cursor
-            if c is some{ value } { sdl::SDL_FreeCursor{ &sdl, cursor = value } }
+            if let value = c { sdl::SDL_FreeCursor{ &sdl, cursor = value } }
             dev.pointer.cursors[i].cursor = null
             i = i + 1
         }

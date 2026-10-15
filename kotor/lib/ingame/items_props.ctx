@@ -14,8 +14,8 @@ namespace items {
     // Writes the row's name: the `name` column's dialog.tlk string, else the `label` column with its
     // underscores read as spaces. False (nothing written) for a row that has neither.
     fn push_row_name { mut b: utf8::Builder(heap::Heap), w: *world::World, t: twoda::Table, row: usize } -> !bool {
-        if twoda::get_string{ t, row, column = "name" } is some{ value = cell } {
-            if text::scan_int{ s = cell } is some{ value = strref } {
+        if let cell = twoda::get_string{ t, row, column = "name" } {
+            if let strref = text::scan_int{ s = cell } {
                 let text = if strref >= 0 { world::string_by_strref{ w, strref = @as(u32, strref) } } else { "" }
                 if text.len > 0 {
                     try utf8::push{ &b, s = utf8::String{ bytes = text } }
@@ -69,8 +69,8 @@ namespace items {
         let mut part = new_text{ w = &w }
         defer list::free{ list = &part.bytes }
 
-        if twoda::get_string{ t = defs, row, column = "subtyperesref" } is some{ value = table } {
-            if sheet::table_of{ &w, name = table } is some{ value = t } {
+        if let table = twoda::get_string{ t = defs, row, column = "subtyperesref" } {
+            if let t = sheet::table_of{ &w, name = table } {
                 if try push_row_name{ b = &word, &w, t, row = @as(usize, p.subtype) } {
                     try add_part{ &b, start, text = utf8::view{ b = word }.bytes }
                 }
@@ -78,8 +78,8 @@ namespace items {
         }
 
         let costs = rules::raw_table{ tables = w.rules, which = rules::Tab::iprp_costtable }
-        if twoda::get_string{ t = costs, row = @as(usize, p.cost_table), column = "name" } is some{ value = table } {
-            if sheet::table_of{ &w, name = table } is some{ value = t } {
+        if let table = twoda::get_string{ t = costs, row = @as(usize, p.cost_table), column = "name" } {
+            if let t = sheet::table_of{ &w, name = table } {
                 list::clear{ list = &word.bytes }
                 if try push_row_name{ b = &word, &w, t, row = @as(usize, p.cost_value) } {
                     let cost = utf8::view{ b = word }.bytes
@@ -98,8 +98,8 @@ namespace items {
         if p.param1 != NO_PARAM {
             let params = rules::raw_table{ tables = w.rules, which = rules::Tab::iprp_paramtable }
             let label = twoda::get_int{ t = params, row = @as(usize, p.param1), column = "name" } ifnull -1
-            if twoda::get_string{ t = params, row = @as(usize, p.param1), column = "tableresref" } is some{ value = table } {
-                if sheet::table_of{ &w, name = table } is some{ value = t } {
+            if let table = twoda::get_string{ t = params, row = @as(usize, p.param1), column = "tableresref" } {
+                if let t = sheet::table_of{ &w, name = table } {
                     list::clear{ list = &word.bytes }
                     list::clear{ list = &part.bytes }
                     if try push_row_name{ b = &word, &w, t, row = @as(usize, p.param1_value) } {

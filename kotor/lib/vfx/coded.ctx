@@ -62,7 +62,7 @@ namespace vfx {
         if code == 1202 {
             let at = hook_point{ sc = &sc, w = &w, id = object, hook = "impact", which = 0, fallback = 1.2 }
             let mut facing = math::vec3::zero{}
-            if world::object{ w = &w, id = source } is some{ value = s } {
+            if let s = world::object{ w = &w, id = source } {
                 facing = math::Vec3{ x = s.position.x - at.x, y = s.position.y - at.y, z = 0.0 }
             }
             _ = spawn_still{ &v, &sc, &w, &dev, model = "v_fresist_imp", at, facing, anim = "impact", life = CODED_FLASH } iferr { null }

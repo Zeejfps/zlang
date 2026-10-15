@@ -12,8 +12,8 @@ namespace dlgview {
         if v.panels.main == 0 or not v.panels.computer { return }
         let mut computer_skill: i32 = 0
         let mut repair_skill: i32 = 0
-        if world::object{ w = &w, id = party::leader{ w = &w } } is some{ value = o } {
-            if fight::of{ o } is some{ value = f } {
+        if let o = world::object{ w = &w, id = party::leader{ w = &w } } {
+            if let f = fight::of{ o } {
                 computer_skill = rules::skill_rank{ tables = w.rules, c = &f.c, skill = rules::skill::COMPUTER_USE, vs = rules::no_versus{}, base_only = false }
                 repair_skill = rules::skill_rank{ tables = w.rules, c = &f.c, skill = rules::skill::REPAIR, vs = rules::no_versus{}, base_only = false }
             }
@@ -23,8 +23,8 @@ namespace dlgview {
         let ids = list::items{ list = w.bag }
         let mut k: usize = 0
         while k < ids.len {
-            if world::object{ w = &w, id = ids[k] } is some{ value = io } {
-                if obj::item{ o = io } is some{ value = it } {
+            if let io = world::object{ w = &w, id = ids[k] } {
+                if let it = obj::item{ o = io } {
                     if ci::eq{ a = io.tag, b = "k_computer_spike" } { spikes = spikes + @as(i32, it.stack) }
                     else if ci::eq{ a = io.tag, b = "k_repair_part" } { parts = parts + @as(i32, it.stack) }
                 }

@@ -68,11 +68,11 @@ fn run {
             let mut asked: ?pz_game::Request = null
             let mut n: usize = 0
             while n < notes.len {
-                if pz_game::request_of{ note = notes[n] } is some{ value = r } { asked = r }
+                if let r = pz_game::request_of{ note = notes[n] } { asked = r }
                 n = n + 1
             }
             outbox::clear{ out = &w.out }
-            if asked is some{ value = r } { try pz_game::visit_auto{ w, &vm, engine, r } }
+            if let r = asked { try pz_game::visit_auto{ w, &vm, engine, r } }
             arena::reset{ heap = &scratch }
             frame = frame + 1
         }

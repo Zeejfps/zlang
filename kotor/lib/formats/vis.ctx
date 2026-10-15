@@ -132,10 +132,10 @@ namespace vis {
     fn sees { v: Vis, from: []u8, to: []u8 } -> bool {
         if ci::eq{ a = from, b = to } { return true }
         let own = find{ v, name = from }
-        if own is some{ value = e } {
+        if let e = own {
             if lists{ v, e, name = to } { return true }
         }
-        if find{ v, name = to } is some{ value = back } {
+        if let back = find{ v, name = to } {
             if lists{ v, e = back, name = from } { return true }
         }
         return own == null and not is_listed{ v, name = from }

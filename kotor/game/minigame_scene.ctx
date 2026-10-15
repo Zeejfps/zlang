@@ -118,7 +118,7 @@ namespace mg_game {
         }
         let i = stage.count
         stage.anims[i] = make_anim{}
-        if scene::binding_for{ &sc, &w, model, source = null, name = "ready" } is some{ value = b } {
+        if let b = scene::binding_for{ &sc, &w, model, source = null, name = "ready" } {
             start_layer{ a = &stage.anims[i], layer = make_layer{ name = "ready", binding = b, looping = true }, queue = false, overlay = false }
         }
         stage.items[i] = Item{
@@ -151,7 +151,7 @@ namespace mg_game {
         if o.kind == mg::ObjKind::player and not resref::is_empty{ r = f.camera } {
             let mut name = f.camera
             let at = try add_item{ &stage, &sc, &w, &dev, name = resref::bytes{ r = &name }, object = mg::id_of{ n }, kind = ItemKind::model, rotating = f.camera_rotate }
-            if at is some{ value = i } { stage.items[i].camera = true }
+            if let i = at { stage.items[i].camera = true }
         }
         if o.kind == mg::ObjKind::player and run.area.kind == mg::SWOOP {
             let mut i = first
@@ -175,7 +175,7 @@ namespace mg_game {
                 while i < stage.count and host < 0 {
                     if stage.items[i].kind == ItemKind::model {
                         let model = scene::loaded_at{ sc = &sc, i = scene::part_at{ sc = &sc, i = stage.items[i].part }.loaded }.model
-                        if mg::find_numbered{ model, prefix = "gunbank", n = f.banks[b].id } is some{ value = nd } {
+                        if let nd = mg::find_numbered{ model, prefix = "gunbank", n = f.banks[b].id } {
                             host = @as(i32, i)
                             node = @as(i32, nd)
                         }
@@ -185,7 +185,7 @@ namespace mg_game {
                 if host >= 0 {
                     let mut name = f.banks[b].gun_model
                     let at = try add_item{ &stage, &sc, &w, &dev, name = resref::bytes{ r = &name }, object = mg::id_of{ n }, kind = ItemKind::gun, rotating = stage.items[@as(usize, host)].rotating }
-                    if at is some{ value = gi } {
+                    if let gi = at {
                         stage.items[gi].bank = @as(i32, b)
                         stage.items[gi].parent = host
                         stage.items[gi].node = node
@@ -219,7 +219,7 @@ namespace mg_game {
         }
         let mut copy = name
         let at = try add_item{ &stage, &sc, &w, &dev, name = resref::bytes{ r = &copy }, object = 0, kind = ItemKind::bullet, rotating = false }
-        if at is some{ value = k } {
+        if let k = at {
             stage.items[k].slot = @as(i32, slot)
             stage.items[k].visible = false
         }
@@ -367,7 +367,7 @@ namespace mg_game {
                     } else {
                         let p = scene::part_at{ sc = &sc, i = it.part }
                         let model = scene::loaded_at{ sc = &sc, i = p.loaded }.model
-                        if scene::binding_for{ &sc, &w, model, source = null, name = r.name[..r.name_len] } is some{ value = b } {
+                        if let b = scene::binding_for{ &sc, &w, model, source = null, name = r.name[..r.name_len] } {
                             start_layer{ a = &stage.anims[i], layer = make_layer{ name = r.name[..r.name_len], binding = b, looping = r.looping }, queue = r.queue, overlay = r.overlay }
                         }
                     }
@@ -380,7 +380,7 @@ namespace mg_game {
         while i < stage.count {
             let it = &stage.items[i]
             if it.kind != ItemKind::bullet {
-                if mg::slot_of{ run, id = it.object } is some{ value = n } { it.visible = not run.objs[n].removed }
+                if let n = mg::slot_of{ run, id = it.object } { it.visible = not run.objs[n].removed }
             }
             i = i + 1
         }
@@ -394,7 +394,7 @@ namespace mg_game {
             }
             if bl.live and not resref::is_empty{ r = bl.model } {
                 let at = try bullet_item{ &stage, &sc, &w, &dev, slot = s, name = bl.model }
-                if at is some{ value = k2 } {
+                if let k2 = at {
                     let it = &stage.items[k2]
                     it.visible = true
                     let p = scene::part_at{ sc = &sc, i = it.part }
@@ -404,7 +404,7 @@ namespace mg_game {
                         it.serial = bl.serial
                         it.exploding = false
                         stage.anims[k2] = make_anim{}
-                        if scene::binding_for{ &sc, &w, model, source = null, name = "ready" } is some{ value = b } {
+                        if let b = scene::binding_for{ &sc, &w, model, source = null, name = "ready" } {
                             start_layer{ a = &stage.anims[k2], layer = make_layer{ name = "ready", binding = b, looping = true }, queue = false, overlay = false }
                         }
                         let mut e: usize = 0
@@ -415,7 +415,7 @@ namespace mg_game {
                     }
                     if bl.exploding and not it.exploding {
                         it.exploding = true
-                        if scene::binding_for{ &sc, &w, model, source = null, name = "explode" } is some{ value = b } {
+                        if let b = scene::binding_for{ &sc, &w, model, source = null, name = "explode" } {
                             start_layer{ a = &stage.anims[k2], layer = make_layer{ name = "explode", binding = b, looping = false }, queue = false, overlay = false }
                         }
                     }
