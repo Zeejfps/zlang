@@ -134,13 +134,13 @@ namespace text {
         while i < s.len {
             let d = digit_value{ c = s[i] }
             if d >= base { break }
-            v = @wrap_add(@wrap_mul(v, base), d)
+            v = v *% base +% d
             any = true
             i = i + 1
         }
         if not any { return null }
         let signed = @trunc(i64, v)
-        return if neg { @wrap_sub(0, signed) } else { signed }
+        return if neg { 0 -% signed } else { signed }
     }
 
     // C's atol: leading whitespace, a sign, decimal digits up to the first other character; 0 if
@@ -154,11 +154,11 @@ namespace text {
         }
         let mut v: u64 = 0
         while i < s.len and ascii::is_digit{ c = s[i] } {
-            v = @wrap_add(@wrap_mul(v, 10), @as(u64, s[i] - '0'))
+            v = v *% 10 +% @as(u64, s[i] - '0')
             i = i + 1
         }
         let signed = @trunc(i64, v)
-        return if neg { @wrap_sub(0, signed) } else { signed }
+        return if neg { 0 -% signed } else { signed }
     }
 
     // The length of the longest prefix of `s` (after leading whitespace, which counts) that C's

@@ -123,7 +123,7 @@ fn run {
                 continue
             }
             if e.slot != mg::ON_HEARTBEAT and e.slot != mg::ON_CREATE {
-                _ = @fmt(&io, "{} event: slot {} on object {} (last hit {} {})\n", t, e.slot, e.object - mg::ID_BASE, @wrap_sub(r.last_follower_hit, mg::ID_BASE), @wrap_sub(r.last_obstacle_hit, mg::ID_BASE))
+                _ = @fmt(&io, "{} event: slot {} on object {} (last hit {} {})\n", t, e.slot, e.object - mg::ID_BASE, r.last_follower_hit -% mg::ID_BASE, r.last_obstacle_hit -% mg::ID_BASE)
             }
         }
         if t >= next_report {

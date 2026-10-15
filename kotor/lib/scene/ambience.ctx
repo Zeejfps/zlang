@@ -69,7 +69,7 @@ namespace ambience {
     }
 
     fn random { mut a: Ambience } -> f32 {
-        a.rng = @wrap_add(@wrap_mul(a.rng, 214013), 2531011)
+        a.rng = a.rng *% 214013 +% 2531011
         return @as(f32, (a.rng >> 16) & 0x7FFF) / 32768.0
     }
 

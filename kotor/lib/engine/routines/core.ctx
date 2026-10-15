@@ -533,7 +533,7 @@ namespace rt_core {
     // int abs(int nValue): the most negative number stays itself.
     fn abs { mut vm: nwvm::Vm, argc: u8 } -> ! {
         let n = try nwarg::int{ &vm, routine = nwscript::abs, argc, i = 0 }
-        try nwvm::push_int{ &vm, v = if n < 0 { @wrap_sub(0, n) } else { n } }
+        try nwvm::push_int{ &vm, v = if n < 0 { 0 -% n } else { n } }
     }
 
     // float pow(float fValue, float fExponent): 0 for 0 raised to a negative power.

@@ -199,7 +199,7 @@ fn check_twoda { mut io: Io, t: *mut Twoda, mut scratch: arena::Arena, copy: cor
         }
         r = r + 1
     }
-    t.sum = @wrap_add(t.sum, @as(u64, crc))
+    t.sum = t.sum +% @as(u64, crc)
 }
 
 // Mounts and unmounts every module in modules/, checking that each mount finds the module's

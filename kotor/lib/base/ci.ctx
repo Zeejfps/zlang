@@ -53,7 +53,7 @@ namespace ci {
         let mut h: u64 = 14695981039346656037
         let mut i: usize = 0
         while i < key.len {
-            h = @wrap_mul(h ^ @as(u64, ascii::to_lower{ c = key[i] }), 1099511628211)
+            h = (h ^ @as(u64, ascii::to_lower{ c = key[i] })) *% 1099511628211
             i = i + 1
         }
         return h

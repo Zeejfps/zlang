@@ -763,11 +763,11 @@ namespace bink_video {
 
     // Each coefficient (the DC and those listed) times its quantizer, in Q11.
     fn dequantize { mut coefs: [64]i32, set: *[64]u8, count: usize, quant: []i32 } {
-        coefs[0] = @wrap_mul(coefs[0], quant[0]) >> 11
+        coefs[0] = coefs[0] *% quant[0] >> 11
         let mut i: usize = 0
         while i < count {
             let p = set[i]
-            coefs[p] = @wrap_mul(coefs[p], quant[p]) >> 11
+            coefs[p] = coefs[p] *% quant[p] >> 11
             i = i + 1
         }
     }
@@ -969,7 +969,7 @@ namespace bink_video {
             while i < 8 {
                 let v = values[8 * row + i]
                 let px: i32 = out[o + i]
-                out[o + i] = @trunc(u8, @wrap_add(px, v))
+                out[o + i] = @trunc(u8, px +% v)
                 values[8 * row + i] = 0
                 i = i + 1
             }
@@ -980,32 +980,32 @@ namespace bink_video {
     // ---- inverse DCT
 
     fn mul11 { a: i32, k: i32 } -> i32 {
-        return @wrap_mul(a, k) >> 11
+        return a *% k >> 11
     }
 
     // The 8-point inverse transform: IJG's fast-IDCT butterfly with products in Q11, truncated.
     // Wrapping arithmetic: a corrupt block gives garbage pixels, not a panic.
     fn butterfly { s: [8]i32 } -> [8]i32 {
-        let a0 = @wrap_add(s[0], s[4])
-        let a1 = @wrap_sub(s[0], s[4])
-        let a2 = @wrap_add(s[2], s[6])
-        let a3 = mul11{ a = @wrap_sub(s[2], s[6]), k = K_SQRT2 }
-        let z13 = @wrap_add(s[5], s[3])
-        let z10 = @wrap_sub(s[5], s[3])
-        let z11 = @wrap_add(s[1], s[7])
-        let z12 = @wrap_sub(s[1], s[7])
-        let t7 = @wrap_add(z13, z11)
-        let z5 = mul11{ a = @wrap_add(z10, z12), k = K_1847 }
-        let t6 = @wrap_add(@wrap_sub(mul11{ a = z10, k = K_M2613 }, t7), z5)
-        let t5 = @wrap_sub(mul11{ a = @wrap_sub(z11, z13), k = K_SQRT2 }, t6)
-        let t4 = @wrap_sub(@wrap_add(mul11{ a = z12, k = K_1082 }, t5), z5)
-        let e0 = @wrap_add(a0, a2)
-        let e3 = @wrap_sub(a0, a2)
-        let e1 = @wrap_sub(@wrap_add(a1, a3), a2)
-        let e2 = @wrap_add(@wrap_sub(a1, a3), a2)
+        let a0 = s[0] +% s[4]
+        let a1 = s[0] -% s[4]
+        let a2 = s[2] +% s[6]
+        let a3 = mul11{ a = s[2] -% s[6], k = K_SQRT2 }
+        let z13 = s[5] +% s[3]
+        let z10 = s[5] -% s[3]
+        let z11 = s[1] +% s[7]
+        let z12 = s[1] -% s[7]
+        let t7 = z13 +% z11
+        let z5 = mul11{ a = z10 +% z12, k = K_1847 }
+        let t6 = mul11{ a = z10, k = K_M2613 } -% t7 +% z5
+        let t5 = mul11{ a = z11 -% z13, k = K_SQRT2 } -% t6
+        let t4 = mul11{ a = z12, k = K_1082 } +% t5 -% z5
+        let e0 = a0 +% a2
+        let e3 = a0 -% a2
+        let e1 = a1 +% a3 -% a2
+        let e2 = a1 -% a3 +% a2
         return [
-            @wrap_add(e0, t7), @wrap_add(e1, t6), @wrap_add(e2, t5), @wrap_sub(e3, t4),
-            @wrap_add(e3, t4), @wrap_sub(e2, t5), @wrap_sub(e1, t6), @wrap_sub(e0, t7),
+            e0 +% t7, e1 +% t6, e2 +% t5, e3 -% t4,
+            e3 +% t4, e2 -% t5, e1 -% t6, e0 -% t7,
         ]
     }
 
@@ -1046,7 +1046,7 @@ namespace bink_video {
             let o = row * stride
             let mut i: usize = 0
             while i < 8 {
-                out[o + i] = @trunc(u8, @wrap_add(v[i], 127) >> 8)
+                out[o + i] = @trunc(u8, (v[i] +% 127) >> 8)
                 i = i + 1
             }
             row = row + 1
@@ -1063,7 +1063,7 @@ namespace bink_video {
             let mut i: usize = 0
             while i < 8 {
                 let px: i32 = out[o + i]
-                out[o + i] = @trunc(u8, @wrap_add(px, @wrap_add(v[i], 127) >> 8))
+                out[o + i] = @trunc(u8, px +% ((v[i] +% 127) >> 8))
                 i = i + 1
             }
             row = row + 1

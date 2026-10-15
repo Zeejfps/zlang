@@ -53,7 +53,7 @@ namespace world {
     struct Rng { state: u32 }
 
     fn rand { mut r: Rng } -> u32 {
-        r.state = @wrap_add(@wrap_mul(r.state, 214013), 2531011)
+        r.state = r.state *% 214013 +% 2531011
         return (r.state >> 16) & 0x7FFF
     }
 

@@ -217,14 +217,14 @@ namespace selfslots {
 
     // A number that changes when what a slot shows would.
     fn signature { sl: *Slot } -> u32 {
-        let mut h: u32 = @wrap_add(2166136261, @as(u32, sl.count))
+        let mut h: u32 = 2166136261 +% @as(u32, sl.count)
         let mut i: usize = 0
         while i < sl.count {
             let e = &sl.entries[i]
             i = i + 1
-            h = @wrap_mul(h ^ e.id, 16777619)
-            h = @wrap_mul(h ^ (if e.usable { 1 } else { 2 }) ^ (if e.dim { 4 } else { 0 }), 16777619)
-            h = @wrap_mul(h ^ @as(u32, e.reason), 16777619)
+            h = (h ^ e.id) *% 16777619
+            h = (h ^ (if e.usable { 1 } else { 2 }) ^ (if e.dim { 4 } else { 0 })) *% 16777619
+            h = (h ^ @as(u32, e.reason)) *% 16777619
         }
         return h
     }

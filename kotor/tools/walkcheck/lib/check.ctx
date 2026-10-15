@@ -388,7 +388,7 @@ namespace walkcheck {
             let p = parts[k]
             let mut i: usize = 0
             while i < p.len {
-                h = @wrap_mul(h ^ @as(u32, ascii::to_lower{ c = p[i] }), 0x01000193)
+                h = (h ^ @as(u32, ascii::to_lower{ c = p[i] })) *% 0x01000193
                 i = i + 1
             }
             k = k + 1
@@ -425,7 +425,7 @@ namespace walkcheck {
             slice::copy(u8){ dst = bytes[at..at + 4], src = saved[..] }
             field = field + 4
         }
-        let mut state = @wrap_mul(seed, 0x9E3779B1) | 1
+        let mut state = seed *% 0x9E3779B1 | 1
         let mut round: u32 = 0
         while round < 8 {
             let mut spot: [4]usize

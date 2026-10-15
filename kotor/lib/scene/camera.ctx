@@ -146,9 +146,9 @@ namespace cam {
         }
         let r = c.shake_left
         let a = math::sinf{ x = 2.0 * math::PI * r / 30.0 } * (1.0 + math::cosf{ x = 2.0 * math::PI * r / c.shake_total }) * 20.0 * math::PI / 180.0
-        c.seed = @wrap_add(@wrap_mul(c.seed, 1664525), 1013904223)
+        c.seed = c.seed *% 1664525 +% 1013904223
         if (c.seed >> 16) & 1 != 0 { c.shake_yaw = -a }
-        c.seed = @wrap_add(@wrap_mul(c.seed, 1664525), 1013904223)
+        c.seed = c.seed *% 1664525 +% 1013904223
         if (c.seed >> 16) & 1 != 0 { c.shake_pitch = -a }
         c.shake_left = r - ms
     }

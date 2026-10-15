@@ -21,7 +21,7 @@ namespace pazaak {
     fn make_rng { seed: u32 } -> Rng { return Rng{ state = seed } }
 
     fn rand_below { mut rng: Rng, n: i32 } -> i32 {
-        rng.state = @wrap_add(@wrap_mul(rng.state, 214013), 2531011)
+        rng.state = rng.state *% 214013 +% 2531011
         let r = @as(i32, (rng.state >> 16) & 32767)
         return r % n
     }

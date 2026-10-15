@@ -374,7 +374,7 @@ namespace scene {
 
     // 0..32767, as the C library's rand.
     fn next_random { mut sc: Scene } -> u32 {
-        sc.seed = @wrap_add(@wrap_mul(sc.seed, 1103515245), 12345)
+        sc.seed = sc.seed *% 1103515245 +% 12345
         return (sc.seed >> 16) & 0x7FFF
     }
 

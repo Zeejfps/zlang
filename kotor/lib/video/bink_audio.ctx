@@ -358,11 +358,11 @@ namespace bink_audio {
         while start < n {
             let mut j: usize = 0
             while j < half {
-                let w = @wrap_add(half, j)
+                let w = half +% j
                 let wr = tc.ptr[w]
                 let wi = ts.ptr[w]
-                let p = @wrap_add(start, j)
-                let q = @wrap_add(p, half)
+                let p = start +% j
+                let q = p +% half
                 let xr = re.ptr[q]
                 let xi = im.ptr[q]
                 let tr = xr * wr - xi * wi
@@ -373,9 +373,9 @@ namespace bink_audio {
                 im.ptr[p] = ui + ti
                 re.ptr[q] = ur - tr
                 im.ptr[q] = ui - ti
-                j = @wrap_add(j, 1)
+                j = j +% 1
             }
-            start = @wrap_add(start, size)
+            start = start +% size
         }
     }
 

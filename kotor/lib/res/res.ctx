@@ -48,7 +48,7 @@ namespace res {
     struct Key { name: resref::ResRef, kind: u16 }
 
     fn hash_key { key: Key } -> u64 {
-        return resref::hash{ key = key.name } ^ @wrap_mul(@as(u64, key.kind) + 1, 11400714819323198485)
+        return resref::hash{ key = key.name } ^ (@as(u64, key.kind) + 1) *% 11400714819323198485
     }
 
     fn eq_key { a: Key, b: Key } -> bool {

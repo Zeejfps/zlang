@@ -113,7 +113,7 @@ fn check_all { mut w: world::World, module: []u8, seen: *mut map::Map(u64, u8, h
         let name = found[i].name
         i = i + 1
         // The same name with another size is another dialogue (modules carry their own versions).
-        let key = @wrap_add(@wrap_mul(resref::hash{ key = name }, 31), @as(u64, found[i - 1].loc.size))
+        let key = resref::hash{ key = name } *% 31 +% @as(u64, found[i - 1].loc.size)
         if map::get{ m = seen.*, key } != null { continue }
         try map::put{ m = seen, key, value = 1 }
         t.dialogs = t.dialogs + 1

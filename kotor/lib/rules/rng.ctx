@@ -12,7 +12,7 @@ namespace rules {
 
     // rand(): 15 bits from the high half of the next state.
     fn next_rand { mut rng: Rng } -> i32 {
-        rng.state = @wrap_add(@wrap_mul(rng.state, 214013), 2531011)
+        rng.state = rng.state *% 214013 +% 2531011
         return @as(i32, (rng.state >> 16) & 0x7fff)
     }
 

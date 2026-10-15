@@ -17,7 +17,7 @@ namespace fight {
     // The same word for the same creature at the same time (sound must not use the game's dice,
     // which the scene's pace would otherwise change).
     fn voice_hash { w: *world::World, id: u32, salt: u32 } -> u32 {
-        return @wrap_add(@wrap_mul(id, 2654435761), @wrap_mul(@trunc(u32, w.clock.frame) + salt, 40503)) >> 7
+        return (id *% 2654435761 +% (@trunc(u32, w.clock.frame) + salt) *% 40503) >> 7
     }
 
     // One of slots first .. first + count - 1 of the creature's sound set, played at the creature

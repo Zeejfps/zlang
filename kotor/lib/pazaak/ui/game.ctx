@@ -33,7 +33,7 @@ namespace pazaak {
     }
 
     fn mix_bits { h: u64, v: i64 } -> u64 {
-        return @wrap_mul(h ^ @as(u64, v & 0xffffffff), 1099511628211)
+        return (h ^ @as(u64, v & 0xffffffff)) *% 1099511628211
     }
 
     // A hash of everything the table shows, so it is redrawn only when something changed.

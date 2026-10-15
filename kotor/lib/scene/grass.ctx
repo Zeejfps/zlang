@@ -86,7 +86,7 @@ namespace grass {
                     let a = m.vertices[@as(usize, face[0])]
                     let b = m.vertices[@as(usize, face[1])]
                     let c = m.vertices[@as(usize, face[2])]
-                    let seed: u32 = @wrap_add(@wrap_mul(@as(u32, r) * 7919 + @as(u32, f), 2654435761), 12345)
+                    let seed: u32 = (@as(u32, r) * 7919 + @as(u32, f)) *% 2654435761 +% 12345
                     let n = tufts_on{ a, b, c, density = grass.density, seed }
                     if pass == 0 {
                         total = total + n

@@ -174,12 +174,12 @@ namespace stealth {
     }
 
     fn roll { id: u32, at: u64, salt: u32, sides: u32 } -> i32 {
-        let mut h = @wrap_add(@wrap_mul(id, 2654435761), @wrap_mul(@trunc(u32, at / 1000), 2246822519))
-        h = @wrap_add(h, @wrap_mul(salt, 3266489917))
+        let mut h = id *% 2654435761 +% @trunc(u32, at / 1000) *% 2246822519
+        h = h +% salt *% 3266489917
         h = h ^ (h >> 15)
-        h = @wrap_mul(h, 2246822519)
+        h = h *% 2246822519
         h = h ^ (h >> 13)
-        h = @wrap_mul(h, 3266489917)
+        h = h *% 3266489917
         h = h ^ (h >> 16)
         return @as(i32, h % sides) + 1
     }

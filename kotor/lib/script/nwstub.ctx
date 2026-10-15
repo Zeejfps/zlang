@@ -249,7 +249,7 @@ namespace nwstub {
         }
         if routine == nwscript::Random {
             let n = arg_int{ a = args[0] }
-            stub.dice = @wrap_add(@wrap_mul(stub.dice, 1103515245), 12345)
+            stub.dice = stub.dice *% 1103515245 +% 12345
             if n <= 0 { return 0 }
             return @as(i32, (stub.dice >> 8) % @as(u32, n))
         }

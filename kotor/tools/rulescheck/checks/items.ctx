@@ -90,7 +90,7 @@ namespace check {
         return rules::Env{ tables, now = rules::Time{ day = 0, ms = 0 }, hp = 100, self_id = rules::OBJECT_INVALID }
     }
 
-    fn items_mix { d: i64, v: i64 } -> i64 { return @wrap_add(@wrap_mul(d, 31), v) }
+    fn items_mix { d: i64, v: i64 } -> i64 { return d *% 31 +% v }
 
     // A number that changes when anything the equipment can touch changes: the derived stats, the
     // effect count and which cells are in use. Used to show equip + unequip leaves a creature as it was.

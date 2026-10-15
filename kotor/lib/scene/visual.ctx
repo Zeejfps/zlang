@@ -61,10 +61,10 @@ namespace visual {
     fn signature_of { o: *obj::Object } -> u64 {
         let c = obj::creature{ o } ifnull { return 0 }
         let mut h: u64 = @as(u64, shown_appearance{ c }) + @as(u64, c.head + 1) * 4096
-        h = @wrap_add(@wrap_mul(h, 1000003), @as(u64, dark_stage{ alignment = @as(i32, c.good_evil) }))
-        h = @wrap_add(@wrap_mul(h, 1000003), @as(u64, c.equipped[obj::SLOT_BODY]))
-        h = @wrap_add(@wrap_mul(h, 1000003), @as(u64, c.equipped[obj::SLOT_RIGHT_WEAPON]))
-        h = @wrap_add(@wrap_mul(h, 1000003), @as(u64, c.equipped[obj::SLOT_LEFT_WEAPON]))
+        h = h *% 1000003 +% @as(u64, dark_stage{ alignment = @as(i32, c.good_evil) })
+        h = h *% 1000003 +% @as(u64, c.equipped[obj::SLOT_BODY])
+        h = h *% 1000003 +% @as(u64, c.equipped[obj::SLOT_RIGHT_WEAPON])
+        h = h *% 1000003 +% @as(u64, c.equipped[obj::SLOT_LEFT_WEAPON])
         return h
     }
 

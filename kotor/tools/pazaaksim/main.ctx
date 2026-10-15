@@ -77,7 +77,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     while a < count {
         let mut b: usize = 0
         while b < count {
-            let t = play_many{ a = decks[a], b = decks[b], games, seed = @wrap_add(seed, @wrap_mul(@as(u32, a * 100 + b), 7919)) }
+            let t = play_many{ a = decks[a], b = decks[b], games, seed = seed +% @as(u32, a * 100 + b) *% 7919 }
             let pct = if t.games > 0 { t.won * 1000 / t.games } else { 0 }
             let tie_pct = if t.sets > 0 { t.ties * 1000 / t.sets } else { 0 }
             _ = @fmt(&io, "{} vs {} | {}.{} %  ties {}.{} %  sets {}.{}  turns {}  longest {}\n", a, b,
@@ -96,7 +96,7 @@ fn play_many { a: [10]i32, b: [10]i32, games: i32, seed: u32 } -> Tally {
     let mut t = Tally{ games = 0, won = 0, sets = 0, ties = 0, turns = 0, longest = 0, player_sets = 0, opponent_sets = 0 }
     let mut k: i32 = 0
     while k < games {
-        play_one{ &t, a, b, seed = @wrap_add(seed, @wrap_mul(@as(u32, k), 2654435)) }
+        play_one{ &t, a, b, seed = seed +% @as(u32, k) *% 2654435 }
         k = k + 1
     }
     return t

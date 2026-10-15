@@ -87,7 +87,7 @@ namespace ltr {
 
     // 0 to 32767.
     fn roll_rand { mut rng: Rng } -> u32 {
-        rng.state = @wrap_add(@wrap_mul(rng.state, 214013), 2531011)
+        rng.state = rng.state *% 214013 +% 2531011
         return (rng.state >> 16) & 0x7FFF
     }
 
