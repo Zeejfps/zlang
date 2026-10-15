@@ -217,6 +217,7 @@ namespace check {
         // the conversion to T, which runs once the bodies are checked, as an evaluated const.
         lit_convs: map::Map(u64, u32, Heap),          // a literal's conversion, by its key; NONE once it failed
         lit_list:  list::List(syntax::Expr, Heap),    // the converted literals, in the order they were checked
+        lit_default: map::Map(u64, bool, Heap),       // literals that became a []u8 with no type expected
         lit_values: map::Map(u64, Val, Heap),         // their values, once computed
         lit_cache: map::Map([]u8, Val, Heap),         // by the conversion and the literal's bytes
         conv_progs: map::Map(u32, ir::Program, Heap), // each conversion as a program of its own
@@ -422,6 +423,7 @@ namespace check {
             fuel = comptime::FUEL, stack = comptime::STACK, scratch = slice::empty(u8){},
             lit_convs = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             lit_list = list::new(syntax::Expr){ realloc = arena::alloc, &heap },
+            lit_default = map::new(u64, bool){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             lit_values = map::new(u64, Val){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             lit_cache = map::new([]u8, Val){ realloc = arena::alloc, &heap, hash = map::hash_bytes, eq = slice::eq_bytes },
             conv_progs = map::new(u32, ir::Program){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
@@ -4449,15 +4451,13 @@ namespace check {
         }
     }
 
-    // 1 if a branch's value is a string literal that became an array, 2 if one that became a
-    // view, 0 if it isn't one.
+    // 1 if a branch's value is a string literal that became a []u8 with no type expected, 2 if
+    // one that became the type expected of it, 0 if it isn't one.
     fn literal_kind { c: Checker, v: Value } -> u32 {
         if v is expr{ e } {
             if e.k is str {
-                match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e } } } {
-                    array => { return 1 }
-                    else => { return 2 }
-                }
+                if map::has{ m = c.lit_default, key = expr_key{ e } } { return 1 }
+                return 2
             }
         }
         return 0
@@ -7397,12 +7397,13 @@ namespace check {
         }
     }
 
-    // A string literal is a strlit where one is expected (also inside ?), a view of static bytes
-    // where a []u8 is, the result of the conversion to T where a T is (PLAN.md 4.4), and a [N]u8
-    // array value otherwise. What text or a C string is, std's conversions say. Where a ?T is
-    // expected, a conversion to ?T comes before one to T.
+    // A string literal is a strlit where one is expected (also inside ?), the result of the
+    // conversion to T where a T is (PLAN.md 4.4), a [N]u8 array value where a [N]u8 is, and a
+    // view of static bytes, a []u8, otherwise. What text or a C string is, std's conversions
+    // say. Where a ?T is expected, a conversion to ?T comes before one to T.
     fn str_lit { mut c: Checker, e: syntax::Expr, bytes: []u8, exp: Id } -> Id {
         _ = map::remove{ m = &c.lit_convs, key = expr_key{ e } }
+        _ = map::remove{ m = &c.lit_default, key = expr_key{ e } }
         let mut want = types::NO_TYPE
         if exp != types::NO_TYPE {
             want = types::prune{ s = c.ty, t = exp }
@@ -7416,6 +7417,9 @@ namespace check {
                         if mutable { error{ &c, at = expr_at{ e }, msg = "a string literal is read-only; it cannot be a []mut u8" } }
                         return types::slice{ s = &c.ty, elem = types::U8, mutable = false }
                     }
+                }
+                array{ elem } => {
+                    if types::prune{ s = c.ty, t = elem } == types::U8 { return types::array{ s = &c.ty, n = bytes.len, elem = types::U8 } }
                 }
                 else => {}
             }
@@ -7433,7 +7437,8 @@ namespace check {
                 return want
             }
         }
-        return types::array{ s = &c.ty, n = bytes.len, elem = types::U8 }
+        try! map::put{ m = &c.lit_default, key = expr_key{ e }, value = true }
+        return types::slice{ s = &c.ty, elem = types::U8, mutable = false }
     }
 
     fn path_text { c: Checker, segs: []syntax::Seg } -> utf8::String {

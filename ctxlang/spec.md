@@ -482,13 +482,13 @@ A value of numeric type `A` converts implicitly to numeric type `B` when every v
 5. `[x; N]` is a `[N]T` array with every element a copy of `x`. `N` is a compile-time integer constant (§14).
 6. A string literal `"..."` holds `N` bytes. Its type depends on the type expected where it appears (also inside `?`):
    - `strlit` (§12): the literal itself. Its `bytes` are static and read-only, and live for the whole program.
-   - `[]u8`: a **view** of those bytes. `[]mut u8` is an error.
    - a type `T` that a `#convert` fn gives (§18, Literal conversions): that fn's result for the literal, computed while compiling. So std makes a literal a `utf8::String` (§17), whose bytes must be valid UTF-8, or a `c::String` (§18), which can't hold a NUL itself (`\0`), since C would end the string there.
-   - anything else, or nothing: a `[N]u8` array value. Like any array it is a value, not a place: bind it to a local to take its address.
+   - `[N]u8`, for the literal's `N`: an array value holding a copy of the bytes. Like any array it is a value, not a place: bind it to a `let mut` to write into it, as `let mut s: [3]u8 = "abc"`.
+   - anything else, or nothing: a `[]u8`, a **view** of those bytes. So `let pre = "gui_"` is a `[]u8`, and so is each element of `["a", "bb"]`. `[]mut u8` is an error.
 
    A literal's static bytes are followed by a 0 byte that isn't one of them, the **hidden zero**: `"abc"` as a `[]u8` has `len` 3, and its `ptr[3]` is 0, and `""`'s `ptr[0]` is 0. So a pointer to a literal's bytes is a C string as it is, and nobody writes `"abc\0"` for C.
 
-   In an `if` or `match` expression without an expected type, a branch that is a literal takes the type of another branch that is a `strlit`, a `[]u8` or a type a `#convert` fn gives, or of another literal branch that became one. Otherwise, as in `let msg = match p { a => { "one" } b => { "three" } }`, each literal is an array and the lengths must agree; annotate the `let` to get views.
+   In an `if` or `match` expression without an expected type, a branch that is a literal takes the type of another branch that is a `strlit`, a `[]u8` or a type a `#convert` fn gives, or of another literal branch that became one because one was expected: `if c { name } else { "none" }` is a `utf8::String` when `name` is one. Otherwise, as in `let msg = match p { a => { "one" } b => { "three" } }`, each literal is a `[]u8`.
 7. A character literal `'a'` is an integer literal whose value is the character's byte.
 8. String and character literals hold ASCII characters only. Escapes, except in a multi-line literal: `\n`, `\t`, `\r`, `\0`, `\\`, `\"`, `\'`, and `\xNN` for any byte.
 9. A **multi-line literal** is a string literal written as lines that each start with `\\`, with only spaces and tabs before it on its line. Each line's text is what follows its `\\`, as it is: there are no escapes, and a `\r` that ends the line isn't part of it. The literal's bytes are those texts joined with `\n`, with none after the last; an empty `\\` line at the end adds one. It ends at the first line that doesn't start with `\\`, so a comment can't be among its lines. Otherwise it is a string literal like any other (rule 6), for GLSL or any other text:

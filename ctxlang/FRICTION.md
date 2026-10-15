@@ -20,7 +20,8 @@ string literals (`2cf7326`); slices of const arrays (`549e1b5`); `fs::seek` and 
 (`c0b8b45`); `else` at the start of a line; `&p.*` as an argument; `error` as the type of any
 error; a callee's fresh allocation returned though an argument viewed a local, and `try` of a
 call whose errors' payloads only ever hold literals (the escape check's flow summaries, spec §14
-rule 2).
+rule 2). Fixed after the check: a string literal with no type expected is a `[]u8`, not a
+`[N]u8` (most of #2).
 
 ## Ranked
 
@@ -35,15 +36,15 @@ rule 2).
    (about 25), hud (about 40), chargen (4), minigames (about 46), rules (about 40), screens (about
    15), script (8), video (8).
 
-2. **String literals are arrays, so their `if` and their `let` don't make a `[]u8`.** `if c {
-   "yes" } else { "no" }` is "branches have different types: [3]u8 and [2]u8", and as an `@fmt`
-   hole "no writer of [4]u8"; `let pre = "gui_"` is a `[4]u8` that `slice::copy{ src = pre }`
-   refuses; `["a", "bb"]` is an error, so an array of names counts its length by hand
-   (`[20][]u8`, no `[_]`); `pages = [1, 2, 3]` isn't a `[]u32` argument. Written `let s: []u8 =
-   if ...` first, or an `either{ c, a, b }` helper. Literal conversions kept the rule (a literal
-   branch takes the type of one beside it); a hole could expect a `strlit`, and a literal in a
-   plain `let` or a branch could be a `[]u8`. *Hit by 12:* ctxc, glspike (5), engine, data (1),
-   dialog (12), gui (11), hud (2), minigames (3), render (about 5), screens (4), video, walk (1).
+2. **An array literal doesn't make a slice, and a const table counts its length by hand.**
+   `pages = [1, 2, 3]` isn't a `[]u32` argument, and a const array of names spells its length
+   (`[20][]u8`, no `[_]`). An array literal where a `[]T` is expected could view static storage
+   when its elements are constants, and a hidden local of its block otherwise; `[_]` in a
+   const's type could take the initializer's length. Most of this entry was string literals
+   being arrays (`if c { "yes" } else { "no" }` was "[3]u8 and [2]u8"), fixed since: with no
+   type expected a literal is a `[]u8`. *Hit by 12,* as the whole entry was: ctxc, glspike (5),
+   engine, data (1), dialog (12), gui (11), hud (2), minigames (3), render (about 5), screens
+   (4), video, walk (1).
 
 3. **Optionals narrow only in a `let`.** A `let mut` optional (an accumulator, a lazily opened
    manager) and a field (`w.minigame`, `w.tlk`, a field through a `mut` parameter) don't narrow
