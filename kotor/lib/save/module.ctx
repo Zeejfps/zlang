@@ -12,7 +12,7 @@ namespace save {
         // modulesave.2da IncludeInSave 0: the module starts afresh every time.
         let mut key = m.name
         if let r = twoda::find_row{ t = w.tables.modulesave, label = resref::bytes{ r = &key } } {
-            if (twoda::get_int{ t = w.tables.modulesave, row = r, column = "includeinsave" } ifnull 1) == 0 { return }
+            if twoda::get_int{ t = w.tables.modulesave, row = r, column = "includeinsave" } == 0 { return }
         }
         let ao = world::object{ w = &w, id = w.area } ifnull { return }
         let mut module_name = m.name

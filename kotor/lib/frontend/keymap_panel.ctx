@@ -79,13 +79,13 @@ namespace frontend {
         let row = twoda::find_row{ t, label } ifnull { return }
         let remappable = (twoda::get_int{ t, row, column = "ReMappable" } ifnull 0) != 0
         let forced = (twoda::get_int{ t, row, column = "ForceDisplay" } ifnull 0) != 0
-        let disabled = (twoda::get_int{ t, row, column = "Disabled" } ifnull 0) == 1
+        let disabled = twoda::get_int{ t, row, column = "Disabled" } == 1
         if (not remappable and not forced) or disabled { return }
         let mut classes: u32 = 0
         let flags = ["ICPC", "ICMiniGame", "ICPCGUI", "ICDialog", "ICFreeLook", "ICMovie"]
         let mut i: usize = 0
         while i < 6 {
-            if (twoda::get_int{ t, row, column = flags[i] } ifnull 0) == 1 { classes = classes | (@as(u32, 1) << @trunc(u32, i)) }
+            if twoda::get_int{ t, row, column = flags[i] } == 1 { classes = classes | (@as(u32, 1) << @trunc(u32, i)) }
             i = i + 1
         }
         let code = @as(i32, now.codes[@as(usize, slot)])

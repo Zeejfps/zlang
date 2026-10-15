@@ -74,8 +74,7 @@ namespace vis {
         let mut i: usize = 0
         while i < entries.len {
             let e = list::items{ list = entries }[i]
-            let d = e.declared
-            if d == null or d != e.count { mismatches = mismatches + 1 }
+            if e.declared != e.count { mismatches = mismatches + 1 }
             i = i + 1
         }
         return Vis{ entries = try lists::take{ list = &entries }, names = try lists::take{ list = &names }, mismatches }

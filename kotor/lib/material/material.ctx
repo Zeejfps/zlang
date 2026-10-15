@@ -106,10 +106,8 @@ namespace material {
         p.decal = (tex::txi_number{ txi, key = "decal" } ifnull 0) != 0
         let water = tex::txi_value{ txi, key = "wateralpha" }
         if water != null { p.water_alpha = number{ text = water } }
-        let mip = tex::txi_number{ txi, key = "mipmap" }
-        if mip != null and mip == 0 { p.mipmap = false }
-        let filter = tex::txi_number{ txi, key = "filter" }
-        if filter != null and filter == 0 { p.nearest = true }
+        if tex::txi_number{ txi, key = "mipmap" } == 0 { p.mipmap = false }
+        if tex::txi_number{ txi, key = "filter" } == 0 { p.nearest = true }
         p.clamp = (tex::txi_number{ txi, key = "clamp" } ifnull 0) != 0
         let procedure = tex::txi_value{ txi, key = "proceduretype" }
         if procedure != null and ci::eq{ a = procedure, b = "cycle" } { p.cycle = true }
