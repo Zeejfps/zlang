@@ -339,12 +339,12 @@ namespace gff {
             byte => { Value::byte{ v = @trunc(u8, d) } }
             char => { Value::char{ v = i8_of{ b = @trunc(u8, d) } } }
             word => { Value::word{ v = @trunc(u16, d) } }
-            short => { Value::short{ v = le::i16_of_bits{ bits = @trunc(u16, d) } } }
+            short => { Value::short{ v = @trunc(i16, d) } }
             dword => { Value::dword{ v = d } }
-            int => { Value::int{ v = le::i32_of_bits{ bits = d } } }
+            int => { Value::int{ v = @trunc(i32, d) } }
             dword64 => { Value::dword64{ v = le::get_u64{ data = fd, at = d } iferr 0 } }
             int64 => { Value::int64{ v = le::get_i64{ data = fd, at = d } iferr 0 } }
-            float => { Value::float{ v = le::f32_of_bits{ bits = d } } }
+            float => { Value::float{ v = math::f32_from_bits{ bits = d } } }
             double => { Value::double{ v = le::get_f64{ data = fd, at = d } iferr 0.0 } }
             exostring => { Value::exostring{ v = sized{ fd, at = d } } }
             void => { Value::void{ v = sized{ fd, at = d } } }

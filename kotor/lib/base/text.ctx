@@ -139,7 +139,7 @@ namespace text {
             i = i + 1
         }
         if not any { return null }
-        let signed = le::i64_of_bits{ bits = v }
+        let signed = @trunc(i64, v)
         return if neg { @wrap_sub(0, signed) } else { signed }
     }
 
@@ -157,7 +157,7 @@ namespace text {
             v = @wrap_add(@wrap_mul(v, 10), @as(u64, s[i] - '0'))
             i = i + 1
         }
-        let signed = le::i64_of_bits{ bits = v }
+        let signed = @trunc(i64, v)
         return if neg { @wrap_sub(0, signed) } else { signed }
     }
 

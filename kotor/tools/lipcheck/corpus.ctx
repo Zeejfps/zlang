@@ -56,7 +56,7 @@ fn visit_lip { st: *mut CorpusStats, hs: []Head, copy: corpus::Copy, data: []u8 
         st.not_rest = st.not_rest + 1
     }
     let track = lipsync::make_track{ lip = l }
-    let nan = le::f32_of_bits{ bits = 0x7FC00000 }
+    let nan = math::f32_from_bits{ bits = 0x7FC00000 }
     let mut n: usize = 0
     while n < hs.len {
         let head = hs[n]

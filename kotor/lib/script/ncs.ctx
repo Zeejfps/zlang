@@ -187,7 +187,7 @@ namespace ncs {
             } else {
                 if left < 4 { return truncated{ op } }
                 raw.a = be_i32{ b = code, at = q }
-                if ty == T_FLOAT { raw.f = f32_of_bits{ bits = be_u32{ b = code, at = q } } }
+                if ty == T_FLOAT { raw.f = math::f32_from_bits{ bits = be_u32{ b = code, at = q } } }
                 raw.size = 6
             }
         } else if op == ACTION {
@@ -273,30 +273,6 @@ namespace ncs {
     }
 
     fn be_i32 { b: []u8, at: usize } -> i32 {
-        return i32_of_bits{ bits = be_u32{ b, at } }
-    }
-
-    // The i32 with the same 32 bits as `bits`.
-    fn i32_of_bits { bits: u32 } -> i32 {
-        let mut v = bits
-        return @cast(*i32, &v).*
-    }
-
-    // An i32's 32 bits.
-    fn bits_of_i32 { i: i32 } -> u32 {
-        let mut v = i
-        return @cast(*u32, &v).*
-    }
-
-    // The f32 with the IEEE-754 bits `bits`.
-    fn f32_of_bits { bits: u32 } -> f32 {
-        let mut v = bits
-        return @cast(*f32, &v).*
-    }
-
-    // An f32's IEEE-754 bits.
-    fn bits_of_f32 { f: f32 } -> u32 {
-        let mut v = f
-        return @cast(*u32, &v).*
+        return @trunc(i32, be_u32{ b, at })
     }
 }

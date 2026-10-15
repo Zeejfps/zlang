@@ -441,6 +441,6 @@ namespace bink_audio {
     fn to_i16 { y: f64 } -> i16 {
         let mut f = if y >= 32767.0 { 32767.0 } else if y >= -32768.0 { y } else { -32768.0 }  // NaN too
         f = f + 6755399441055744.0
-        return @trunc(i16, @cast(*u64, &f).*)
+        return @trunc(i16, math::f64_to_bits{ x = f })
     }
 }

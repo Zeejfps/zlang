@@ -198,12 +198,12 @@ fn blend_error { h: Head, talk: mdl_anim::Binding, track: *lipsync::Track, a: li
 
 fn start_lip { buf: []mut u8, length: f32, count: u32 } {
     slice::copy(u8){ dst = buf[..8], src = "LIP V1.0" }
-    le::set_u32{ buf, at = 8, v = le::bits_of_f32{ v = length } }
+    le::set_u32{ buf, at = 8, v = math::f32_to_bits{ x = length } }
     le::set_u32{ buf, at = 12, v = count }
 }
 
 fn put_key { buf: []mut u8, i: usize, time: f32, shape: u8 } {
-    le::set_u32{ buf, at = 16 + 5 * i, v = le::bits_of_f32{ v = time } }
+    le::set_u32{ buf, at = 16 + 5 * i, v = math::f32_to_bits{ x = time } }
     buf[16 + 5 * i + 4] = shape
 }
 
@@ -250,8 +250,8 @@ fn check_synthetic { mut io: Io, mut rep: Report, hs: []Head } {
     // Times that aren't times, on that LIP and on one without keys.
     show_shape{ h, talk, shape = lip::Shape::ee, mapping = lipsync::Mapping::ratio }
     copy_pose{ from = h.work, to = h.third }
-    let nan = le::f32_of_bits{ bits = 0x7FC00000 }
-    let inf = le::f32_of_bits{ bits = 0x7F800000 }
+    let nan = math::f32_from_bits{ bits = 0x7FC00000 }
+    let inf = math::f32_from_bits{ bits = 0x7F800000 }
     let odd: [4]f32 = [nan, -1.0, 1.0e9, inf]
     let mut bad: u32 = 0
     let mut apart: f32 = 0.0

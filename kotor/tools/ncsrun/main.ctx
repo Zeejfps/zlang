@@ -252,8 +252,8 @@ fn load_situation {
     while k < n {
         let tag = try le::read_u8{ &r }
         let v = try le::read_u32{ &r }
-        cells[k] = if tag == nwvm::INT { nwvm::SavedCell::int{ v = ncs::i32_of_bits{ bits = v } } }
-            else if tag == nwvm::FLOAT { nwvm::SavedCell::float{ v = ncs::f32_of_bits{ bits = v } } }
+        cells[k] = if tag == nwvm::INT { nwvm::SavedCell::int{ v = @trunc(i32, v) } }
+            else if tag == nwvm::FLOAT { nwvm::SavedCell::float{ v = math::f32_from_bits{ bits = v } } }
             else if tag == nwvm::OBJECT { nwvm::SavedCell::object{ id = v } }
             else if tag == nwvm::STRING {
                 let at = r.pos
@@ -292,7 +292,7 @@ fn load_situation {
 fn same_cell { a: nwvm::SavedCell, b: nwvm::SavedCell } -> bool {
     return match a {
         int{ v = x } => { match b { int{ v } => { v == x } else => { false } } }
-        float{ v = x } => { match b { float{ v } => { ncs::bits_of_f32{ f = v } == ncs::bits_of_f32{ f = x } } else => { false } } }
+        float{ v = x } => { match b { float{ v } => { math::f32_to_bits{ x = v } == math::f32_to_bits{ x = x } } else => { false } } }
         string{ s = x } => { match b { string{ s } => { slice::eq_bytes{ a = s, b = x } } else => { false } } }
         object{ id = x } => { match b { object{ id } => { id == x } else => { false } } }
         engine{ kind = j, handle = x } => { match b { engine{ kind, handle } => { kind == j and handle == x } else => { false } } }

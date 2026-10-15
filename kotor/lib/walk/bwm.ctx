@@ -809,13 +809,11 @@ namespace bwm {
     }
 
     fn i32_at { bytes: []u8, at: usize } -> i32 {
-        let u = u32_at{ bytes, at }
-        return @cast(*i32, &u).*
+        return @trunc(i32, u32_at{ bytes, at })
     }
 
     fn f32_at { bytes: []u8, at: usize } -> f32 {
-        let u = u32_at{ bytes, at }
-        return @cast(*f32, &u).*
+        return math::f32_from_bits{ bits = u32_at{ bytes, at } }
     }
 
     fn vec3_at { bytes: []u8, at: usize } -> math::Vec3 {

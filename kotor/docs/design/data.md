@@ -61,7 +61,7 @@ The rules every reader here follows:
 | Namespace | API |
 |---|---|
 | `heap` | `Heap { mem, live, blocks, peak }`, `new{ &mem }`, `alloc` (an `alloc::Fn(Heap)`), `MAX_ALIGN` |
-| `le` | reading at an offset: `get_u8/u16/u32/u64/i16/i32/i64/f32/f64{ data, at } -> !T`, `get_bytes{ data, at, len }`, `fits`; in sequence: `Reader`, `reader{ data }`, `read_u8/.../f32{ &r }`, `read_bytes`, `skip`, `remaining`; error `truncated{ at, want }`; bits: `f32_of_bits`, `bits_of_f32`, ...; writing into a `list::List(u8, S)`: `put_u8/u16/u32/u64/i32/f32/bytes/zeros/padded`, and patching: `set_u16/u32` |
+| `le` | reading at an offset: `get_u8/u16/u32/u64/i16/i32/i64/f32/f64{ data, at } -> !T`, `get_bytes{ data, at, len }`, `fits`; in sequence: `Reader`, `reader{ data }`, `read_u8/.../f32{ &r }`, `read_bytes`, `skip`, `remaining`; error `truncated{ at, want }`; writing into a `list::List(u8, S)`: `put_u8/u16/u32/u64/i32/f32/bytes/zeros/padded`, and patching: `set_u16/u32` |
 | `resref` | `ResRef { len, chars: [16]u8 }`, lower-cased, a value usable as a map key: `from{ name } -> !ResRef` (error `too_long`), `truncate` (directory names: the first 16), `from_field{ raw }` (a NUL-padded 16-byte archive field), `bytes{ r = &r }`, `eq`, `hash`, `matches{ r, name }`, `empty`, `is_empty` |
 | `ci` | ASCII case-insensitive: `eq`, `starts_with`, `ends_with`, `find`, `compare`, `hash`, `lower` |
 | `text` | `Lines`/`next_line` (CR LF, LF or CR), `Words`/`next_word`/`rest`/`count_words` (spaces and tabs), `trim`, `find_byte`; numbers as the engine's C reads them: `scan_int` (sscanf `%i`: `0x` hex, leading-0 octal, stops at the first bad character, wraps), `scan_decimal` (atol), `scan_f32`/`scan_f64` (`%f`, `.5`, `1e-007`), `float_prefix`, `is_float`, `is_integer` |

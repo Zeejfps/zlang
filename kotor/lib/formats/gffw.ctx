@@ -129,12 +129,12 @@ namespace gffw {
         let off = @trunc(u32, at)
         match value {
             byte{ v } => { return try add_field_raw{ &b, owner, kind = gff::Kind::byte, label, raw = v } }
-            char{ v } => { return try add_field_raw{ &b, owner, kind = gff::Kind::char, label, raw = le::bits_of_i32{ v } } }
+            char{ v } => { return try add_field_raw{ &b, owner, kind = gff::Kind::char, label, raw = @trunc(u32, v) } }
             word{ v } => { return try add_field_raw{ &b, owner, kind = gff::Kind::word, label, raw = v } }
-            short{ v } => { return try add_field_raw{ &b, owner, kind = gff::Kind::short, label, raw = le::bits_of_i32{ v } } }
+            short{ v } => { return try add_field_raw{ &b, owner, kind = gff::Kind::short, label, raw = @trunc(u32, v) } }
             dword{ v } => { return try add_field_raw{ &b, owner, kind = gff::Kind::dword, label, raw = v } }
-            int{ v } => { return try add_field_raw{ &b, owner, kind = gff::Kind::int, label, raw = le::bits_of_i32{ v } } }
-            float{ v } => { return try add_field_raw{ &b, owner, kind = gff::Kind::float, label, raw = le::bits_of_f32{ v } } }
+            int{ v } => { return try add_field_raw{ &b, owner, kind = gff::Kind::int, label, raw = @trunc(u32, v) } }
+            float{ v } => { return try add_field_raw{ &b, owner, kind = gff::Kind::float, label, raw = math::f32_to_bits{ x = v } } }
             structure{ index } => { return try add_field_raw{ &b, owner, kind = gff::Kind::structure, label, raw = index } }
             list => { return try add_field_raw{ &b, owner, kind = gff::Kind::list, label, raw = 0 } }
             dword64{ v } => {
@@ -142,11 +142,11 @@ namespace gffw {
                 return try add_data_field{ &b, owner, kind = gff::Kind::dword64, label, off }
             }
             int64{ v } => {
-                try le::put_u64{ out = &b.data, v = le::bits_of_i64{ v } }
+                try le::put_u64{ out = &b.data, v = @trunc(u64, v) }
                 return try add_data_field{ &b, owner, kind = gff::Kind::int64, label, off }
             }
             double{ v } => {
-                try le::put_u64{ out = &b.data, v = le::bits_of_f64{ v } }
+                try le::put_u64{ out = &b.data, v = math::f64_to_bits{ x = v } }
                 return try add_data_field{ &b, owner, kind = gff::Kind::double, label, off }
             }
             exostring{ v } => {

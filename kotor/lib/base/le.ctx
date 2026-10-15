@@ -39,23 +39,23 @@ namespace le {
     }
 
     fn get_i16 { data: []u8, at: usize } -> !i16 {
-        return i16_of_bits{ bits = try get_u16{ data, at } }
+        return @trunc(i16, try get_u16{ data, at })
     }
 
     fn get_i32 { data: []u8, at: usize } -> !i32 {
-        return i32_of_bits{ bits = try get_u32{ data, at } }
+        return @trunc(i32, try get_u32{ data, at })
     }
 
     fn get_i64 { data: []u8, at: usize } -> !i64 {
-        return i64_of_bits{ bits = try get_u64{ data, at } }
+        return @trunc(i64, try get_u64{ data, at })
     }
 
     fn get_f32 { data: []u8, at: usize } -> !f32 {
-        return f32_of_bits{ bits = try get_u32{ data, at } }
+        return math::f32_from_bits{ bits = try get_u32{ data, at } }
     }
 
     fn get_f64 { data: []u8, at: usize } -> !f64 {
-        return f64_of_bits{ bits = try get_u64{ data, at } }
+        return math::f64_from_bits{ bits = try get_u64{ data, at } }
     }
 
     // A view of `len` bytes at `at`.
@@ -107,15 +107,15 @@ namespace le {
     }
 
     fn read_i16 { mut r: Reader } -> !i16 {
-        return i16_of_bits{ bits = try read_u16{ &r } }
+        return @trunc(i16, try read_u16{ &r })
     }
 
     fn read_i32 { mut r: Reader } -> !i32 {
-        return i32_of_bits{ bits = try read_u32{ &r } }
+        return @trunc(i32, try read_u32{ &r })
     }
 
     fn read_f32 { mut r: Reader } -> !f32 {
-        return f32_of_bits{ bits = try read_u32{ &r } }
+        return math::f32_from_bits{ bits = try read_u32{ &r } }
     }
 
     fn read_bytes { mut r: Reader, len: usize } -> ![]u8 {
@@ -133,53 +133,6 @@ namespace le {
     fn remaining { r: Reader } -> usize {
         if r.pos >= r.data.len { return 0 }
         return r.data.len - r.pos
-    }
-
-    // ---- bits
-
-    fn i16_of_bits { bits: u16 } -> i16 {
-        let b = bits
-        return @cast(*i16, &b).*
-    }
-
-    fn i32_of_bits { bits: u32 } -> i32 {
-        let b = bits
-        return @cast(*i32, &b).*
-    }
-
-    fn i64_of_bits { bits: u64 } -> i64 {
-        let b = bits
-        return @cast(*i64, &b).*
-    }
-
-    fn f32_of_bits { bits: u32 } -> f32 {
-        let b = bits
-        return @cast(*f32, &b).*
-    }
-
-    fn f64_of_bits { bits: u64 } -> f64 {
-        let b = bits
-        return @cast(*f64, &b).*
-    }
-
-    fn bits_of_i32 { v: i32 } -> u32 {
-        let x = v
-        return @cast(*u32, &x).*
-    }
-
-    fn bits_of_i64 { v: i64 } -> u64 {
-        let x = v
-        return @cast(*u64, &x).*
-    }
-
-    fn bits_of_f32 { v: f32 } -> u32 {
-        let x = v
-        return @cast(*u32, &x).*
-    }
-
-    fn bits_of_f64 { v: f64 } -> u64 {
-        let x = v
-        return @cast(*u64, &x).*
     }
 
     // ---- writing
@@ -208,11 +161,11 @@ namespace le {
     }
 
     fn put_i32(S) { mut out: list::List(u8, S), v: i32 } -> ! {
-        try put_u32{ &out, v = bits_of_i32{ v } }
+        try put_u32{ &out, v = @trunc(u32, v) }
     }
 
     fn put_f32(S) { mut out: list::List(u8, S), v: f32 } -> ! {
-        try put_u32{ &out, v = bits_of_f32{ v } }
+        try put_u32{ &out, v = math::f32_to_bits{ x = v } }
     }
 
     fn put_bytes(S) { mut out: list::List(u8, S), bytes: []u8 } -> ! {

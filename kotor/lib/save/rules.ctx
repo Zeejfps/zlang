@@ -6,21 +6,15 @@
 //   try save::put_rules_creature{ &b, owner = s, o, c = &fighter.c }
 //   save::read_effect_list{ doc, s, c = &fighter.c }
 namespace save {
-    // An i32's bits as a u32 (-1 is 0xFFFFFFFF, as the original writes "none").
-    fn bits { v: i32 } -> u32 {
-        let low = @as(u32, v & 0x7FFFFFFF)
-        return if v < 0 { low | 0x80000000 } else { low }
-    }
-
     fn put_rules_creature { mut b: Builder, owner: u32, o: *obj::Object, c: *rules::Creature } -> ! {
         let s = owner
         let labels = ["Str", "Dex", "Con", "Int", "Wis", "Cha"]
         let mut k: usize = 0
         while k < 6 {
-            try put_byte{ &b, owner = s, label = labels[k], v = @trunc(u8, bits{ v = c.abil[k] }) }
+            try put_byte{ &b, owner = s, label = labels[k], v = @trunc(u8, c.abil[k]) }
             k = k + 1
         }
-        try put_byte{ &b, owner = s, label = "NaturalAC", v = @trunc(u8, bits{ v = c.natural_ac }) }
+        try put_byte{ &b, owner = s, label = "NaturalAC", v = @trunc(u8, c.natural_ac) }
         try put_short{ &b, owner = s, label = "HitPoints", v = c.hp_base }
         try put_short{ &b, owner = s, label = "MaxHitPoints", v = o.hp_max }
         // Relative to the base hit points, as the original keeps them (fight::equip_loaded).
@@ -32,8 +26,8 @@ namespace save {
         try put_short{ &b, owner = s, label = "refbonus", v = c.save_bonus[1] }
         try put_short{ &b, owner = s, label = "willbonus", v = c.save_bonus[2] }
         try put_float{ &b, owner = s, label = "ChallengeRating", v = c.challenge }
-        try put_dword{ &b, owner = s, label = "Experience", v = bits{ v = c.xp } }
-        try put_word{ &b, owner = s, label = "SkillPoints", v = bits{ v = c.skill_points } }
+        try put_dword{ &b, owner = s, label = "Experience", v = @trunc(u32, c.xp) }
+        try put_word{ &b, owner = s, label = "SkillPoints", v = @trunc(u32, c.skill_points) }
         // Classes; the known Force powers go in the first class's KnownList0 (rules::read_creature
         // learns every listed power whichever class lists it).
         let classes = try gffw::put_list{ &b, owner = s, label = "ClassList" }
@@ -51,7 +45,7 @@ namespace save {
                 while spell < 256 {
                     if rules::knows_power{ c, spell } {
                         let p = try gffw::add_element{ &b, list = known, id = 3 }
-                        try put_word{ &b, owner = p, label = "Spell", v = bits{ v = spell } }
+                        try put_word{ &b, owner = p, label = "Spell", v = @trunc(u32, spell) }
                         try put_byte{ &b, owner = p, label = "SpellFlags", v = 1 }
                         try put_byte{ &b, owner = p, label = "SpellMetaMagic", v = 0 }
                     }
@@ -63,16 +57,16 @@ namespace save {
         k = 0
         while k < rules::NUM_SKILLS {
             let e = try gffw::add_element{ &b, list = skills, id = 0 }
-            try put_byte{ &b, owner = e, label = "Rank", v = @trunc(u8, bits{ v = c.skills[k] }) }
+            try put_byte{ &b, owner = e, label = "Rank", v = @trunc(u8, c.skills[k]) }
             k = k + 1
         }
         let feats = try gffw::put_list{ &b, owner = s, label = "FeatList" }
         let mut feat: i32 = 0
         while feat < 256 {
             let word = c.feats[@as(usize, feat >> 5)]
-            if (word >> bits{ v = feat & 31 }) & 1 != 0 {
+            if (word >> @trunc(u32, feat & 31)) & 1 != 0 {
                 let e = try gffw::add_element{ &b, list = feats, id = 1 }
-                try put_word{ &b, owner = e, label = "Feat", v = bits{ v = feat } }
+                try put_word{ &b, owner = e, label = "Feat", v = @trunc(u32, feat) }
             }
             feat = feat + 1
         }
@@ -84,23 +78,23 @@ namespace save {
                 let r = c.history[k]
                 k = k + 1
                 let e = try gffw::add_element{ &b, list = levels, id = 0 }
-                try put_byte{ &b, owner = e, label = "LvlStatClass", v = @trunc(u8, bits{ v = r.class }) }
-                try put_byte{ &b, owner = e, label = "LvlStatHitDie", v = @trunc(u8, bits{ v = r.hp }) }
-                try put_byte{ &b, owner = e, label = "LvlStatForce", v = @trunc(u8, bits{ v = r.fp }) }
-                try put_byte{ &b, owner = e, label = "LvlStatAbility", v = @trunc(u8, bits{ v = r.ability }) }
+                try put_byte{ &b, owner = e, label = "LvlStatClass", v = @trunc(u8, r.class) }
+                try put_byte{ &b, owner = e, label = "LvlStatHitDie", v = @trunc(u8, r.hp) }
+                try put_byte{ &b, owner = e, label = "LvlStatForce", v = @trunc(u8, r.fp) }
+                try put_byte{ &b, owner = e, label = "LvlStatAbility", v = @trunc(u8, r.ability) }
                 try put_short{ &b, owner = e, label = "SkillPoints", v = r.skill_left }
                 let ranks = try gffw::put_list{ &b, owner = e, label = "SkillList" }
                 let mut j: usize = 0
                 while j < rules::NUM_SKILLS {
                     let rk = try gffw::add_element{ &b, list = ranks, id = 0 }
-                    try put_byte{ &b, owner = rk, label = "Rank", v = @trunc(u8, bits{ v = r.skills[j] }) }
+                    try put_byte{ &b, owner = rk, label = "Rank", v = @trunc(u8, r.skills[j]) }
                     j = j + 1
                 }
                 let hf = try gffw::put_list{ &b, owner = e, label = "FeatList" }
                 j = 0
                 while j < @as(usize, r.nfeats) and j < rules::MAX_LEVEL_FEATS {
                     let fe = try gffw::add_element{ &b, list = hf, id = 0 }
-                    try put_word{ &b, owner = fe, label = "Feat", v = bits{ v = r.feats[j] } }
+                    try put_word{ &b, owner = fe, label = "Feat", v = @trunc(u32, r.feats[j]) }
                     j = j + 1
                 }
             }
@@ -123,14 +117,14 @@ namespace save {
     // IsExposed, the integer, float and object parameters; CasterLevel is ours.
     fn put_effect { mut b: Builder, owner: u32, e: *rules::Effect } -> ! {
         _ = try gffw::add_value{ &b, owner, label = "Id", value = gff::Value::dword64{ v = e.id } }
-        try put_word{ &b, owner, label = "Type", v = bits{ v = e.kind } }
-        try put_word{ &b, owner, label = "SubType", v = bits{ v = e.sub | e.dur } }
+        try put_word{ &b, owner, label = "Type", v = @trunc(u32, e.kind) }
+        try put_word{ &b, owner, label = "SubType", v = @trunc(u32, e.sub | e.dur) }
         try put_float{ &b, owner, label = "Duration", v = e.duration }
         try put_byte{ &b, owner, label = "SkipOnLoad", v = 0 }
         try put_dword{ &b, owner, label = "ExpireDay", v = e.expire.day }
         try put_dword{ &b, owner, label = "ExpireTime", v = e.expire.ms }
         try put_dword{ &b, owner, label = "CreatorId", v = e.creator }
-        try put_dword{ &b, owner, label = "SpellId", v = bits{ v = e.spell_id } }
+        try put_dword{ &b, owner, label = "SpellId", v = @trunc(u32, e.spell_id) }
         try put_int{ &b, owner, label = "CasterLevel", v = e.caster_level }
         try put_int{ &b, owner, label = "IsExposed", v = if e.exposed { 1 } else { 0 } }
         try put_int{ &b, owner, label = "NumIntegers", v = 8 }

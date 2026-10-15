@@ -268,8 +268,8 @@ namespace save {
         try put_bool{ &b, owner = s, label = "Dropable", v = i.droppable }
         // The rules' view of it: cost, flags, installed upgrades and every property.
         if let ri = i.rules {
-            try put_dword{ &b, owner = s, label = "Cost", v = bits{ v = ri.cost } }
-            try put_dword{ &b, owner = s, label = "AddCost", v = bits{ v = ri.add_cost } }
+            try put_dword{ &b, owner = s, label = "Cost", v = @trunc(u32, ri.cost) }
+            try put_dword{ &b, owner = s, label = "AddCost", v = @trunc(u32, ri.add_cost) }
             try put_bool{ &b, owner = s, label = "Stolen", v = ri.stolen }
             try put_dword{ &b, owner = s, label = "Upgrades", v = ri.upgrades }
             let props = try gffw::put_list{ &b, owner = s, label = "PropertiesList" }

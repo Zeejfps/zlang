@@ -201,7 +201,7 @@ namespace nwvm {
             let x = program.ins[i]
             if x.op == Op::jmp or x.op == Op::jsr or x.op == Op::jz or x.op == Op::jnz
                 or x.op == Op::store_state or x.op == Op::store_stateall {
-                let target = @as(i64, program.at[i]) + @as(i64, ncs::i32_of_bits{ bits = x.a })
+                let target = @as(i64, program.at[i]) + @as(i64, @trunc(i32, x.a))
                 if target < 0 or target >= @as(i64, len) { return bad_target{ at = program.at[i] } }
                 let found = index_of{ program, at = @as(u32, target) } ifnull { return bad_target{ at = program.at[i] } }
                 program.ins[i].a = found
@@ -238,10 +238,10 @@ namespace nwvm {
                 x.b = @as(u32, n)
             } else if ty == ncs::T_OBJECT {
                 x.op = Op::const_o
-                x.a = ncs::bits_of_i32{ i = raw.a }
+                x.a = @trunc(u32, raw.a)
             } else {
                 x.op = Op::push_const
-                x.a = ncs::bits_of_i32{ i = raw.a }
+                x.a = @trunc(u32, raw.a)
                 x.b = @as(u32, ty)
             }
         } else if op == ncs::ACTION {
@@ -293,7 +293,7 @@ namespace nwvm {
         } else if op == ncs::STORE_STATEALL { x.op = Op::store_stateall; x.a = @as(u32, ty) }
         else if op == ncs::JMP or op == ncs::JSR or op == ncs::JZ or op == ncs::JNZ {
             x.op = if op == ncs::JMP { Op::jmp } else if op == ncs::JSR { Op::jsr } else if op == ncs::JZ { Op::jz } else { Op::jnz }
-            x.a = ncs::bits_of_i32{ i = raw.a }
+            x.a = @trunc(u32, raw.a)
         } else if op == ncs::RETN { x.op = Op::retn }
         else if op == ncs::DESTRUCT {
             // A negative kept offset can't be honoured: it faults when run.
@@ -311,7 +311,7 @@ namespace nwvm {
         else if op == ncs::STORE_STATE {
             x.op = Op::store_state
             x.a = @as(u32, ty)
-            x.b = ncs::bits_of_i32{ i = raw.a }
+            x.b = @trunc(u32, raw.a)
             x.c = raw.b
         }
         return x
@@ -833,7 +833,7 @@ namespace nwvm {
                     if t[i] == INT { v[i].i = @wrap_sub(v[i].i, 1) }
                 }
                 store_state => {
-                    vm.saved = Saved{ valid = true, program, resume = x.a, globals = ncs::i32_of_bits{ bits = x.b }, frame = x.c }
+                    vm.saved = Saved{ valid = true, program, resume = x.a, globals = @trunc(i32, x.b), frame = x.c }
                 }
                 cpdownbp => {
                     let n = @as(usize, x.b)

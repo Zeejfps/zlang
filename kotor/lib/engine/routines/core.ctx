@@ -313,7 +313,7 @@ namespace rt_core {
         let mut buf: [10]u8
         buf[0] = '0'
         buf[1] = 'x'
-        let len = write_hex{ into = buf[2..], v = le::bits_of_i32{ v = n }, digits = 8 }
+        let len = write_hex{ into = buf[2..], v = @trunc(u32, n), digits = 8 }
         try nwvm::push_string{ &vm, s = buf[..2 + len] }
     }
 
@@ -324,7 +324,7 @@ namespace rt_core {
     fn format_fixed { into: []mut u8, f: f32, width: i32, decimals: i32 } -> []u8 {
         let wd = if width < 0 { 0 } else if width > 18 { 18 } else { width }
         let dec = if decimals < 0 { 0 } else if decimals > 9 { 9 } else { decimals }
-        let bits = le::bits_of_f32{ v = f }
+        let bits = math::f32_to_bits{ x = f }
         let negative = (bits >> 31) != 0
         let exp_bits = @as(i32, (bits >> 23) & 0xFF)
         let frac = bits & 0x7FFFFF
@@ -500,9 +500,9 @@ namespace rt_core {
 
     // A double as a float without a trap on overflow or NaN.
     fn to_f32 { x: f64 } -> f32 {
-        if x != x { return le::f32_of_bits{ bits = 0x7FC00000 } }
-        if x > 3.4028234663852886e38 { return le::f32_of_bits{ bits = 0x7F800000 } }
-        if x < -3.4028234663852886e38 { return le::f32_of_bits{ bits = 0xFF800000 } }
+        if x != x { return math::f32_from_bits{ bits = 0x7FC00000 } }
+        if x > 3.4028234663852886e38 { return math::f32_from_bits{ bits = 0x7F800000 } }
+        if x < -3.4028234663852886e38 { return math::f32_from_bits{ bits = 0xFF800000 } }
         return @as(f32, x)
     }
 

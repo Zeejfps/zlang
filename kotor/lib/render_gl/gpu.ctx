@@ -1611,7 +1611,7 @@ namespace gpu {
         let group = @as(u64, clamped + 32768)
         // A non-negative f32's bits order as its value does.
         let dist = math::vec3::length_sq{ v = math::vec3::sub{ a = at, b = eye } }
-        let bits = @as(u64, @cast(*u32, &dist).*)
+        let bits = @as(u64, math::f32_to_bits{ x = dist })
         return (group << 48) | ((0xFFFFFFFF - bits) << 16)
     }
 

@@ -115,7 +115,7 @@ namespace tex {
         if bytes.len < TPC_HEADER { return truncated{ need = TPC_HEADER, have = bytes.len } }
         let data_size = get_u32{ bytes, at = 0 }
         let mean_bits = get_u32{ bytes, at = 4 }
-        let alpha_mean = @cast(*f32, &mean_bits).*
+        let alpha_mean = math::f32_from_bits{ bits = mean_bits }
         let width = get_u16{ bytes, at = 8 }
         let height = get_u16{ bytes, at = 10 }
         let encoding = bytes[12]

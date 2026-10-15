@@ -1507,7 +1507,7 @@ namespace mdl {
     }
 
     fn i16_at { d: []u8, at: usize } -> i16 {
-        return le::i16_of_bits{ bits = u16_at{ d, at } }
+        return @trunc(i16, u16_at{ d, at })
     }
 
     fn u32_at { d: []u8, at: usize } -> u32 {
@@ -1520,11 +1520,11 @@ namespace mdl {
     }
 
     fn i32_at { d: []u8, at: usize } -> i32 {
-        return le::i32_of_bits{ bits = u32_at{ d, at } }
+        return @trunc(i32, u32_at{ d, at })
     }
 
     fn f32_at { d: []u8, at: usize } -> f32 {
-        return le::f32_of_bits{ bits = u32_at{ d, at } }
+        return math::f32_from_bits{ bits = u32_at{ d, at } }
     }
 
     fn vec3_at { d: []u8, at: usize } -> math::Vec3 {
