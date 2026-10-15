@@ -2710,6 +2710,7 @@ namespace lower {
         let ty = tid{ &l, t }
         let x = conv{ &l, e = a, to = t }
         let y = conv{ &l, e = b, to = t }
+        if check::wrapping{ op } { return mk{ ty, k = ir::ExprKind::wrap{ op = arith_op{ op }, a = box{ l, e = x }, b = box{ l, e = y } } } }
         return mk{ ty, k = ir::ExprKind::arith{ op = arith_op{ op }, a = box{ l, e = x }, b = box{ l, e = y }, pos = epos{ &l, e }, trap = trap_of{ l, e } } }
     }
 
@@ -2784,9 +2785,9 @@ namespace lower {
     }
 
     fn arith_op { op: tok::Kind } -> ir::ArithOp {
-        if op == tok::Kind::plus { return ir::ArithOp::add }
-        if op == tok::Kind::minus { return ir::ArithOp::sub }
-        if op == tok::Kind::star { return ir::ArithOp::mul }
+        if op == tok::Kind::plus or op == tok::Kind::plus_wrap { return ir::ArithOp::add }
+        if op == tok::Kind::minus or op == tok::Kind::minus_wrap { return ir::ArithOp::sub }
+        if op == tok::Kind::star or op == tok::Kind::star_wrap { return ir::ArithOp::mul }
         if op == tok::Kind::slash { return ir::ArithOp::div }
         return ir::ArithOp::rem
     }

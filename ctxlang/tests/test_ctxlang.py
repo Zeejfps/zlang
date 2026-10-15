@@ -746,6 +746,82 @@ fn main { mut io: Io } {
 """, '1099511627776\n')
 
 
+class Wrapping(Base):
+    """§11 Expressions, rule 2: `+%`, `-%` and `*%`, arithmetic modulo 2^N."""
+
+    def test_wraps(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let a: u8 = 250
+    let b: u8 = 10
+    let c: i32 = -2147483648
+    let n: i64 = 1
+    _ = @fmt(&io, "{} {} {}\\n", a +% b, b -% a, a *% b)
+    _ = @fmt(&io, "{} {} {} {}\\n", c -% 1, c *% -1, 2 + 3 *% 4, c +% n)
+}
+""", '4 16 196\n2147483647 -2147483648 14 -2147483647\n')
+
+    def test_constants_fold(self):
+        # Folded while compiling (§14).
+        self.assertOutput("""
+const SEED: u32 = 4000000000 *% 3 +% 7
+const NEG: i8 = 127 +% 1
+const LOW: u8 = 0 -% 1
+fn main { mut io: Io } { _ = @fmt(&io, "{} {} {}\\n", SEED, NEG, LOW) }
+""", '3410065415 -128 255\n')
+
+    def test_rng(self):
+        # The C library's rand, whose state wraps.
+        self.assertOutput("""
+fn rng { mut state: u32 } -> u32 {
+    state = state *% 214013 +% 2531011
+    return (state >> 16) & 32767
+}
+fn main { mut io: Io } {
+    let mut s: u32 = 1
+    _ = @fmt(&io, "{} {} {}\\n", rng{ state = &s }, rng{ state = &s }, rng{ state = &s })
+}
+""", '41 18467 6334\n')
+
+    def test_dereference_then_remainder(self):
+        # `.*` then `%` stays two operators: `p.*%2` is `p.* % 2`.
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let x: u32 = 5
+    let p = &x
+    _ = @fmt(&io, "{}\\n", p.*%2)
+}
+""", '1\n')
+
+    def test_integers_only(self):
+        for e, msg in [('f +% f', '`+%` needs integers, got f64'), ('p *% 2', '`*%` is not defined on pointers')]:
+            with self.subTest(e=e):
+                self.assertCompileError("""
+fn main {} {
+    let f: f64 = 1.5
+    let x: i32 = 1
+    let p = &x
+    _ = %s
+}
+""" % e, msg)
+
+    def test_with_ifoverflow(self):
+        # A wrapping operator never overflows, but ifoverflow covers what its operands cover.
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let a: u8 = 250
+    let b: u8 = 10
+    _ = @fmt(&io, "{} {}\\n", (a +% b) * 30 ifoverflow 1, (a * b) +% 1 ifoverflow 2)
+}
+""", '120 2\n')
+        self.assertCompileError("""
+fn main {} {
+    let a: u8 = 250
+    _ = a +% a ifoverflow 0
+}
+""", 'nothing before `ifoverflow` can overflow')
+
+
 class Lexer(Base):
     def assertLexError(self, src, msg, line, col):
         with self.assertRaises(CompileError) as cm:

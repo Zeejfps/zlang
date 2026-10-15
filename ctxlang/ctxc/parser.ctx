@@ -1080,8 +1080,8 @@ namespace parser {
         if level == 1 { return k == tok::Kind::caret }
         if level == 2 { return k == tok::Kind::amp }
         if level == 3 { return k == tok::Kind::shl or k == tok::Kind::shr }
-        if level == 4 { return k == tok::Kind::plus or k == tok::Kind::minus }
-        return k == tok::Kind::star or k == tok::Kind::slash or k == tok::Kind::percent
+        if level == 4 { return k == tok::Kind::plus or k == tok::Kind::minus or k == tok::Kind::plus_wrap or k == tok::Kind::minus_wrap }
+        return k == tok::Kind::star or k == tok::Kind::slash or k == tok::Kind::percent or k == tok::Kind::star_wrap
     }
 
     // The operators of `level` and tighter.

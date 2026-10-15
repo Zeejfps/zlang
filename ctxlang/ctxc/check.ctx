@@ -3666,12 +3666,13 @@ namespace check {
                 }
                 return int_val{ ty = t, n = Num{ negative = false, magnitude = p.magnitude >> n } }
             }
-            let mut r = bits_of{ n = p } << n
-            if w < 64 { r = r & ((@as(u64, 1) << @as(u32, w)) - 1) }
-            if types::signed{ p = prim } and w < 64 and r >= @as(u64, 1) << @as(u32, w - 1) {
-                return int_val{ ty = t, n = Num{ negative = true, magnitude = (@as(u64, 1) << @as(u32, w)) - r } }
-            }
-            return int_val{ ty = t, n = from_bits{ x = r, signed = types::signed{ p = prim } and w == 64 } }
+            return wrapped{ ty = t, p = prim, x = bits_of{ n = p } << n }
+        }
+        if wrapping{ op } {
+            let u = bits_of{ n = p }
+            let v = bits_of{ n = q }
+            let r = if op == tok::Kind::plus_wrap { @wrap_add(u, v) } else if op == tok::Kind::minus_wrap { @wrap_sub(u, v) } else { @wrap_mul(u, v) }
+            return wrapped{ ty = t, p = prim, x = r }
         }
         if op == tok::Kind::slash or op == tok::Kind::percent {
             if q.magnitude == 0 {
@@ -3691,6 +3692,17 @@ namespace check {
             return null
         }
         return fits_in{ &c, n = r, t, at }
+    }
+
+    // The integer of type ty, of prim p, whose bits are x's low ones.
+    fn wrapped { ty: Id, p: types::Prim, x: u64 } -> Val {
+        let w = @as(u64, types::bits{ p })
+        let mut r = x
+        if w < 64 { r = r & ((@as(u64, 1) << @as(u32, w)) - 1) }
+        if types::signed{ p } and w < 64 and r >= @as(u64, 1) << @as(u32, w - 1) {
+            return int_val{ ty, n = Num{ negative = true, magnitude = (@as(u64, 1) << @as(u32, w)) - r } }
+        }
+        return int_val{ ty, n = from_bits{ x = r, signed = types::signed{ p } and w == 64 } }
     }
 
     fn int_val { ty: Id, n: Num } -> Val {
@@ -4522,7 +4534,7 @@ namespace check {
                 } else if op == tok::Kind::slash {
                     _ = map::remove{ m = &c.traps, key = expr_key{ e } }
                 } else if not (op == tok::Kind::slash or op == tok::Kind::percent or op == tok::Kind::amp or op == tok::Kind::pipe
-                               or op == tok::Kind::caret or op == tok::Kind::shl or op == tok::Kind::shr) {
+                               or op == tok::Kind::caret or op == tok::Kind::shl or op == tok::Kind::shr or wrapping{ op }) {
                     return 0
                 }
                 return n + cover{ &c, e = a.*, region } + cover{ &c, e = b.*, region }
@@ -8916,7 +8928,7 @@ namespace check {
             errorf{ &c, at, msg = @fmt("operands of `{}` have incompatible types: {} and {}; convert one with @as", opname, tstr{ c, t = lt }, tstr{ c, t = rt }) }
             return types::ERROR
         }
-        if op == tok::Kind::amp or op == tok::Kind::pipe or op == tok::Kind::caret {
+        if op == tok::Kind::amp or op == tok::Kind::pipe or op == tok::Kind::caret or wrapping{ op } {
             if not is_int{ c, t } {
                 errorf{ &c, at, msg = @fmt("`{}` needs integers, got {}", opname, tstr{ c, t }) }
             }
@@ -8924,6 +8936,11 @@ namespace check {
             errorf{ &c, at, msg = @fmt("`{}` needs numbers, got {}", opname, tstr{ c, t }) }
         }
         return t
+    }
+
+    // `+%`, `-%` or `*%`: arithmetic that wraps (§11, Expressions, rule 2).
+    fn wrapping { op: tok::Kind } -> bool {
+        return op == tok::Kind::plus_wrap or op == tok::Kind::minus_wrap or op == tok::Kind::star_wrap
     }
 
     fn is_null { e: syntax::Expr } -> bool {

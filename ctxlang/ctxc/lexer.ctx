@@ -25,6 +25,7 @@ namespace tok {
         colons,                     // ::
         dots,                       // ..
         eq, ne, le, ge, shl, shr,   // == != <= >= << >>
+        plus_wrap, minus_wrap, star_wrap,   // +% -% *%
         lbrace, rbrace, lparen, rparen, lbracket, rbracket, comma, semi, colon, dot,
         assign,                     // =
         lt, gt, plus, minus, star, slash, percent, amp, pipe, caret, question,
@@ -41,7 +42,7 @@ namespace tok {
 
     // Two characters before one, so the longest match wins.
     const OPS: [_][]u8 = [
-        "->", "=>", "::", "..", "==", "!=", "<=", ">=", "<<", ">>",
+        "->", "=>", "::", "..", "==", "!=", "<=", ">=", "<<", ">>", "+%", "-%", "*%",
         "{", "}", "(", ")", "[", "]", ",", ";", ":", ".", "=", "<", ">",
         "+", "-", "*", "/", "%", "&", "|", "^", "?", "#", "!",
     ]
@@ -67,7 +68,7 @@ namespace tok {
     fn op { i: usize } -> Kind { return OP_KINDS[i] }
 
     const KEYWORD_KINDS: [30]Kind = keyword_kinds{}
-    const OP_KINDS: [34]Kind = op_kinds{}
+    const OP_KINDS: [37]Kind = op_kinds{}
 
     fn keyword_kinds {} -> [30]Kind {
         let mut out: [30]Kind = [Kind::eof; 30]
@@ -79,8 +80,8 @@ namespace tok {
         return out
     }
 
-    fn op_kinds {} -> [34]Kind {
-        let mut out: [34]Kind = [Kind::eof; 34]
+    fn op_kinds {} -> [37]Kind {
+        let mut out: [37]Kind = [Kind::eof; 37]
         let mut i: usize = 0
         while i < out.len {
             out[i] = @as(Kind, @as(usize, Kind::arrow) + i)
@@ -182,7 +183,9 @@ namespace lexer {
         let mut k: usize = 0
         while k < tok::OPS.len {
             let o = tok::OPS[k]
-            if i + o.len <= text.len and slice::eq_bytes{ a = text[i..i + o.len], b = o } {
+            // `p.*%2` is `p.* % 2`: after a `.`, `*` is a dereference, never `*%`.
+            let deref = i > 0 and text[i - 1] == '.' and slice::eq_bytes{ a = o, b = "*%" }
+            if not deref and i + o.len <= text.len and slice::eq_bytes{ a = text[i..i + o.len], b = o } {
                 return tok::op{ i = k }
             }
             k = k + 1
