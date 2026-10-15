@@ -21,7 +21,8 @@ string literals (`2cf7326`); slices of const arrays (`549e1b5`); `fs::seek` and 
 error; a callee's fresh allocation returned though an argument viewed a local, and `try` of a
 call whose errors' payloads only ever hold literals (the escape check's flow summaries, spec §14
 rule 2). Fixed after the check: a string literal with no type expected is a `[]u8`, not a
-`[N]u8` (most of #2).
+`[N]u8`, and a `let`'s or a const's type may be `[_]T`, its length the initializer's (most of
+#2).
 
 ## Ranked
 
@@ -36,13 +37,12 @@ rule 2). Fixed after the check: a string literal with no type expected is a `[]u
    (about 25), hud (about 40), chargen (4), minigames (about 46), rules (about 40), screens (about
    15), script (8), video (8).
 
-2. **An array literal doesn't make a slice, and a const table counts its length by hand.**
-   `pages = [1, 2, 3]` isn't a `[]u32` argument, and a const array of names spells its length
-   (`[20][]u8`, no `[_]`). An array literal where a `[]T` is expected could view static storage
-   when its elements are constants, and a hidden local of its block otherwise; `[_]` in a
-   const's type could take the initializer's length. Most of this entry was string literals
-   being arrays (`if c { "yes" } else { "no" }` was "[3]u8 and [2]u8"), fixed since: with no
-   type expected a literal is a `[]u8`. *Hit by 12,* as the whole entry was: ctxc, glspike (5),
+2. **An array literal doesn't make a slice.** `pages = [1, 2, 3]` isn't a `[]u32` argument:
+   the array is a value with no place for a view to point to, so it is a `let` first. An array
+   literal where a `[]T` is expected could view static storage when its elements are constants,
+   and a hidden local of its block otherwise. Most of this entry was string literals being
+   arrays (`if c { "yes" } else { "no" }` was "[3]u8 and [2]u8") and const tables counting
+   their length by hand, both fixed since. *Hit by 12,* as the whole entry was: ctxc, glspike (5),
    engine, data (1), dialog (12), gui (11), hud (2), minigames (3), render (about 5), screens
    (4), video, walk (1).
 

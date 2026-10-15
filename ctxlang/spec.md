@@ -537,7 +537,7 @@ step  := .field | [index]
 | `i8..i64`, `u8..u64`, `usize`, `f32`, `f64`, `bool` | primitives |
 | `*T` | read-only pointer to a `T`. Never null. |
 | `*mut T` | pointer to a `T` that can be written through. Never null. |
-| `[N]T` | fixed array. `N` is a compile-time integer constant (§14). |
+| `[N]T` | fixed array. `N` is a compile-time integer constant (§14), or `_` in a `let`'s or a const's type (Arrays, rule 3). |
 | `[]T` | read-only slice: a pointer to `T`s and a length. |
 | `[]mut T` | slice whose elements can be written. |
 | `?T` | optional (§8). `?*T` is a nullable pointer. |
@@ -566,6 +566,7 @@ step  := .field | [index]
 
 1. `a[i]` on an array is bounds-checked. An out-of-bounds index panics.
 2. `a.len` is `N`, of type `usize`.
+3. A `let`'s or a const's type may be `[_]T`: the array's length is its initializer's, which must be an array or string literal, as in `const NAMES: [_][]u8 = ["fn", "let", "match"]`, a `[3][]u8`. Only the outermost length may be `_`; `[_]T` anywhere else is an error.
 
 ### Enums
 

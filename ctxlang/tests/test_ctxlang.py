@@ -2795,6 +2795,32 @@ fn main { mut io: Io } {
                                 'cannot write through []u8')
         self.assertCompileError('fn main {} { let s: [4]u8 = "abc" }', 'expected [4]u8, got [3]u8')
 
+    def test_any_length(self):
+        """`[_]T` in a let's or a const's type takes its length from the literal it holds."""
+        self.assertOutput(r"""
+const NAMES: [_][]u8 = ["fn", "let", "match"]
+const TEXTS: [_]utf8::String = ["a", "bb"]
+const GRID: [_][2]u8 = [[1, 2], [3, 4], [5, 6]]
+fn main { mut io: Io } {
+    let xs: [_]u32 = [1, 2, 3, 4]
+    let mut s: [_]u8 = "abc"
+    s[0] = 'x'
+    _ = @fmt(&io, "{} {} {} {} {} {}\n", NAMES.len, NAMES[2], TEXTS.len, GRID.len, xs.len, s[..])
+}
+""", '3 match 2 3 4 xbc\n')
+
+    def test_any_length_errors(self):
+        need = '`[_]` takes its length from an initializer that is an array or string literal'
+        only = "`[_]` is only a let's or a const's type, whose initializer gives the length"
+        for src, msg in [
+            ('fn main {} { let mut xs: [_]u32 }', need),
+            ('const A: [2]u8 = [1, 2]\nconst B: [_]u8 = A\nfn main {} {}', need),
+            ('struct S { a: [_]u8 }\nfn main {} {}', only),
+            ('fn f { a: [_]u8 } {}\nfn main {} {}', only),
+            ('const M: [2][_]u8 = [[1, 2], [3, 4]]\nfn main {} {}', only),
+        ]:
+            self.assertCompileError(src, msg)
+
     def test_same_literal_twice(self):
         self.assertOutput("""
 fn view {} -> []u8 { return "same" }

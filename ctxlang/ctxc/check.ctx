@@ -1209,9 +1209,9 @@ namespace check {
 
     fn resolve_const { mut c: Checker, d: u32 } {
         let x = get_decl{ c, d }
-        if x.syn.k is constant{ ty } {
+        if x.syn.k is constant{ ty, value } {
             let empty = Scope{ ns = x.ns, owner = NONE, names = no_names{}, args = slice::empty(Id){} }
-            let mut t = rtype{ &c, te = ty, sc = empty, allow_bound = false }
+            let mut t = sized_type{ &c, te = ty, init = value, sc = empty, allow_bound = false }
             if holds_fail{ &c, t, depth = 0 } {
                 error{ &c, at = ty.span, msg = "a const can't hold a `!T` or an error" }
                 t = types::ERROR
@@ -2198,6 +2198,38 @@ namespace check {
         return t
     }
 
+    // A let's or a const's type, where `[_]T` takes its length from the initializer, an array
+    // or string literal (§11, Literals).
+    fn sized_type { mut c: Checker, te: syntax::TypeExpr, init: ?syntax::Expr, sc: Scope, allow_bound: bool } -> Id {
+        let array{ n, elem } = te.k else { return rtype{ &c, te, sc, allow_bound } }
+        if not is_any_len{ e = n.* } { return rtype{ &c, te, sc, allow_bound } }
+        let et = rtype{ &c, te = elem.*, sc, allow_bound = false }
+        let mut t = types::ERROR
+        let len = literal_len{ init }
+        if len == null {
+            error{ &c, at = te.span, msg = "`[_]` takes its length from an initializer that is an array or string literal" }
+        } else if et != types::ERROR {
+            t = types::array{ s = &c.ty, n = len, elem = et }
+        }
+        try! map::put{ m = &c.type_of, key = key{ file = te.span.file, id = te.id }, value = t }
+        return t
+    }
+
+    // The number of elements an array or string literal has.
+    fn literal_len { init: ?syntax::Expr } -> ?usize {
+        if init == null { return null }
+        match init.k {
+            array{ elems } => { return elems.len }
+            str{ bytes } => { return bytes.len }
+            else => { return null }
+        }
+    }
+
+    // `_` as an array's length, which only sized_type takes.
+    fn is_any_len { e: syntax::Expr } -> bool {
+        return e.k is path{ segs } and is_infer{ segs }
+    }
+
     fn resolve { mut c: Checker, te: syntax::TypeExpr, sc: Scope, allow_bound: bool } -> Id {
         match te.k {
             error => { return types::ERROR }
@@ -2215,6 +2247,10 @@ namespace check {
                 return types::slice{ s = &c.ty, elem = t, mutable }
             }
             array{ n, elem } => {
+                if is_any_len{ e = n.* } {
+                    error{ &c, at = te.span, msg = "`[_]` is only a let's or a const's type, whose initializer gives the length" }
+                    return types::ERROR
+                }
                 let len = const_int{ &c, e = n.*, ns = sc.ns, what = "an array length" }
                 let mut ok = len != null
                 if len != null and len < 0 {
@@ -3891,7 +3927,7 @@ namespace check {
     fn let_stmt { mut c: Checker, s: syntax::Stmt, mutable: bool, name: syntax::Name, ty: ?syntax::TypeExpr, init: ?syntax::Expr } {
         let mut t = types::ERROR
         if ty != null {
-            t = rtype{ &c, te = ty, sc = c.sc, allow_bound = true }
+            t = sized_type{ &c, te = ty, init, sc = c.sc, allow_bound = true }
             if init != null { expect{ &c, e = init, t } }
         } else if init != null {
             t = value_type{ &c, e = init }
