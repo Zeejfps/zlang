@@ -34,6 +34,10 @@ naming every field is a pointer, a function or a list, which have no zero value 
 A number's bits as another type of its size are `@trunc` between integers, which keeps every
 bit, and std's `math::f32_from_bits` and the like for floats (`e6da31a7`), so `@as(u32, -1)` and
 a pointer `@cast` are no longer the ways to it.
+Overflow can be handled instead of panicking: `count * 16 ifoverflow { return truncated }`
+(`fff522fc`, spec §11 Overflow), which KOTOR's parsers use for sizes from a header in place of
+widening to u64 (`f1d25a36`), and ctxc's evaluator and constant folding in place of sign tests
+(`571196bf`).
 
 ## Ranked
 
@@ -78,14 +82,10 @@ a pointer `@cast` are no longer the ways to it.
    and can keep gcc from vectorizing (a test loop's checked adds stayed scalar). `@as(i32, f)` from
    a float is inline too (`823c678f`; it was an out-of-line call that took about 20% of the audio
    decoder) but still two compares (an `f32` widened to double first), and no integer conversion
-   rounds or clamps instead, so the Bink audio rounds by adding 1.5 * 2^52 and reading the bits.
-   u32 size arithmetic on a hostile count panics instead of failing the range check. The other way,
-   the compile-time evaluator detects overflow by hand (`signed_arith` in ctxc/eval.ctx, a sign
-   test per operation and a division for `*`). `ifoverflow` (`fff522fc`, spec §11 Overflow) now
-   does both: `count * 16 ifoverflow { return too_big{ count } }` takes the arithmetic and `@as`
-   written before it. A wrapping type or block and rounding float conversions would help. A
-   lossless widening (`@as(usize, x)` from a `u32`) costs nothing now. *Hit by 6:* ctxc, audio,
-   minigames, models (about 60 reads), script (75), video (about 50).
+   rounds or clamps instead, so the Bink audio rounds by adding 1.5 * 2^52 and reading the bits. A
+   wrapping type or block and rounding float conversions would help. A lossless widening
+   (`@as(usize, x)` from a `u32`) costs nothing now. *Hit by 6:* ctxc, audio, minigames, models
+   (about 60 reads), script (75), video (about 50).
 
 4. **Allocation needs helpers every program writes.** `alloc::resize` from an arena returns the
    bytes it held before (after `reset`, or where `read_all` grew a buffer), though spec §11 says
