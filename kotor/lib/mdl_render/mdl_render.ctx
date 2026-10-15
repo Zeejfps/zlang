@@ -89,9 +89,8 @@ namespace mdl_render {
             }
             c = c + 1
         }
-        // From the allocator, not the stack: what create_mesh fails with may be taken to hold
-        // its arguments' addresses (ctxlang/FRICTION.md #2).
-        let indices = try alloc::resize(u16, S){ realloc, &heap, mem = slice::empty(u16){}, count = 36 }
+        let mut index_mem: [36]u16
+        let indices = index_mem[..]
         let mut n: usize = 0
         let halves: [2]u16 = [0, 2]
         let mut h: usize = 0
@@ -119,7 +118,6 @@ namespace mdl_render {
         let bytes = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = render::streams_size{ s } }
         let made = upload_streams{ &dev, s, bytes, indices }
         _ = alloc::resize(u8, S){ realloc, &heap, mem = bytes, count = 0 }
-        _ = alloc::resize(u16, S){ realloc, &heap, mem = indices, count = 0 }
         _ = alloc::resize(f32, S){ realloc, &heap, mem = floats, count = 0 }
         return try made
     }

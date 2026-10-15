@@ -12,18 +12,16 @@ namespace mdl_cache {
 
     struct Cache {
         rm: res::Manager,
-        loaded: map::Map([]u8, usize, arena::Arena),     // lower-case resref -> index in models
-        models: list::List(*mdl::Model, arena::Arena),
+        loaded: map::Map([]u8, *mdl::Model, arena::Arena),   // by lower-case resref
         keep: *mut arena::Arena,
-        missing: u32,                                    // lookups of models that aren't there
-        failed: u32,                                     // models that didn't parse
+        missing: u32,                                        // lookups of models that aren't there
+        failed: u32,                                         // models that didn't parse
     }
 
     fn new { rm: res::Manager, keep: *mut arena::Arena } -> Cache {
         return Cache{
             rm,
-            loaded = map::new([]u8, usize, arena::Arena){ realloc = arena::alloc, heap = keep, hash = map::hash_bytes, eq = slice::eq_bytes },
-            models = list::new(*mdl::Model, arena::Arena){ realloc = arena::alloc, heap = keep },
+            loaded = map::new([]u8, *mdl::Model, arena::Arena){ realloc = arena::alloc, heap = keep, hash = map::hash_bytes, eq = slice::eq_bytes },
             keep,
             missing = 0,
             failed = 0,
@@ -35,10 +33,8 @@ namespace mdl_cache {
     fn get { mut fs: Fs, mut cache: Cache, name: []u8 } -> ?*mdl::Model {
         let mut lower: [64]u8
         let key = to_lower{ into = lower[..], s = name }
-        // The index, not the pointer, goes through the map: a value found with a key in a local
-        // buffer counts as derived from it (ctxlang/FRICTION.md #2).
         let have = map::get{ m = cache.loaded, key }
-        if have != null { return list::items{ list = cache.models }[have] }
+        if have != null { return have }
         let model = load{ &fs, rm = cache.rm, heap = cache.keep, name } iferr err{ error } {
             match error {
                 not_found => { cache.missing = cache.missing + 1 }
@@ -48,8 +44,7 @@ namespace mdl_cache {
         }
         let kept = copy{ heap = cache.keep, s = key } iferr { return null }
         let p = alloc::new(mdl::Model, arena::Arena){ realloc = arena::alloc, heap = cache.keep, value = model } iferr { return null }
-        map::put{ m = &cache.loaded, key = kept, value = cache.models.len } iferr { return null }
-        list::push{ list = &cache.models, item = p } iferr { return null }
+        map::put{ m = &cache.loaded, key = kept, value = p } iferr { return null }
         return p
     }
 

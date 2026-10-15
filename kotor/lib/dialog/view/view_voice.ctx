@@ -81,10 +81,7 @@ namespace dlgview {
         }
         let mut key = name
         let text = resref::bytes{ r = &key }
-        let kept = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = text.len } iferr { return }
-        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = kept, count = 0 }
-        slice::copy(u8){ dst = kept, src = text }
-        let path = res::music_path(heap::Heap){ rm = w.rm.*, name = kept, realloc = heap::alloc, heap = w.heap } iferr { return }
+        let path = res::music_path(heap::Heap){ rm = w.rm.*, name = text, realloc = heap::alloc, heap = w.heap } iferr { return }
         defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = path, count = 0 }
         let bytes = fs::read_all(heap::Heap){ fs = &w.fs, heap = v.heap, realloc = heap::alloc, path } iferr { return }
         // CGuiInGame::PlayDialogAmbientTrack streams it in row 4 (Looping_AreaWide_Ambients): 95 of 127 of

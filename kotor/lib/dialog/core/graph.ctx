@@ -108,13 +108,7 @@ namespace dlg {
     // Reads the DLG called `name` from the resources, in the session heap. Free it with `free`.
     fn load { mut w: world::World, name: resref::ResRef } -> !Dialog {
         let mut key = name
-        let text = resref::bytes{ r = &key }
-        // The name goes to the heap first: a result read through a name in a local would be tied
-        // to the local (ctxlang/FRICTION.md #2).
-        let kept = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = text.len }
-        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = kept, count = 0 }
-        slice::copy(u8){ dst = kept, src = text }
-        let bytes = try res::load{ fs = &w.fs, rm = w.rm.*, name = kept, kind = restype::Type::dlg, realloc = heap::alloc, heap = w.heap } ifnull { return no_such_dialog }
+        let bytes = try res::load{ fs = &w.fs, rm = w.rm.*, name = resref::bytes{ r = &key }, kind = restype::Type::dlg, realloc = heap::alloc, heap = w.heap } ifnull { return no_such_dialog }
         let doc = gff::parse{ data = bytes, realloc = heap::alloc, heap = w.heap } iferr err{ error } {
             _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = bytes, count = 0 }
             return error

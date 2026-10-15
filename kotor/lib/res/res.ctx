@@ -357,7 +357,6 @@ namespace res {
         let src = source_by_id{ rm, id = loc.source } ifnull { return stale }
         let m = src.members[loc.member]
         if src.class == Class::dir {
-            // The path is on the heap: a result computed from a stack buffer couldn't be returned.
             let p = try path::join{ realloc = heap::alloc, heap = rm.heap, dir = src.path, name = name_of{ src, i = m.file } }
             defer free_bytes{ h = rm.heap, b = p }
             return try fs::read_all{ &fs, &heap, realloc, path = p }
@@ -861,11 +860,10 @@ namespace res {
         let exts = [".nwm", ".mod", ".sav", ".erf", ".hak"]
         let mut i: usize = 0
         while i < exts.len {
-            // The name is on the heap: find_in's result would hold a stack buffer's address.
-            let name = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = h, mem = slice::empty(u8){}, count = stem.len + exts[i].len }
-            defer free_bytes{ h, b = name }
-            _ = concat{ a = stem, b = exts[i], into = name }
-            let p = try find_in{ &fs, h, dir, name }
+            // No file's name is longer than 255 bytes.
+            let mut buf: [255]u8
+            if stem.len + exts[i].len > buf.len { return null }
+            let p = try find_in{ &fs, h, dir, name = concat{ a = stem, b = exts[i], into = buf[..] } }
             if p != null { return p }
             i = i + 1
         }
