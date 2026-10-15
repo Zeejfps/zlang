@@ -2646,6 +2646,7 @@ namespace lower {
                 if op == tok::Kind::eq { return mk{ ty, k = ir::ExprKind::isnull{ e = box{ l, e = x } } } }
                 return mk{ ty, k = ir::ExprKind::notnull{ e = box{ l, e = x } } }
             }
+            if get{ l, t = after{ &l, e = a } } is opt or get{ l, t = after{ &l, e = b } } is opt { return opt_eq{ &l, op, a, b, t } }
         }
         let cmp = cmp_op{ op }
         if cmp != null {
@@ -2681,6 +2682,61 @@ namespace lower {
         let x = conv{ &l, e = a, to = t }
         let y = conv{ &l, e = b, to = t }
         return mk{ ty, k = ir::ExprKind::arith{ op = arith_op{ op }, a = box{ l, e = x }, b = box{ l, e = y }, pos = epos{ &l, e } } }
+    }
+
+    // `a == b` or `a != b` with a ?T on one side or both (§11, Expressions, rule 5): equal when
+    // both hold equal values, or both are null. A `?*T` is its pointer, null 0, so comparing
+    // the pointers is enough. Any other optional is tested and its value read, so the operands
+    // are held in temporaries, a's first, unless reading them again is plain.
+    fn opt_eq { mut l: Lower, op: tok::Kind, a: syntax::Expr, b: syntax::Expr, t: Id } -> ir::Expr {
+        let ty = tid{ &l, t }
+        let at = after{ &l, e = a }
+        let bt = after{ &l, e = b }
+        let ao = get{ l, t = at } is opt
+        let bo = get{ l, t = bt } is opt
+        let pa = if ao { opt_elem{ l, t = at } } else { at }
+        let pb = if bo { opt_elem{ l, t = bt } } else { bt }
+        let common = if prims_widen{ &l, a = pa, b = pb } { pb } else { pa }
+        let xa = ex{ &l, e = a }
+        let xb = ex{ &l, e = b }
+        let tagged = (ao and not is_nptr{ l, x = xa }) or (bo and not is_nptr{ l, x = xb })
+        let sa = if tagged and not (plain{ x = xa } and plain{ x = xb }) { temp{ &l, ty = xa.ty } } else { NONE }
+        let sb = if tagged and not plain{ x = xb } { temp{ &l, ty = xb.ty } } else { NONE }
+        let ra = if sa == NONE { xa } else { mk{ ty = xa.ty, k = ir::ExprKind::local{ slot = sa } } }
+        let rb = if sb == NONE { xb } else { mk{ ty = xb.ty, k = ir::ExprKind::local{ slot = sb } } }
+        let va = coerce{ &l, x = if ao { payload_of{ &l, x = ra, t = pa } } else { ra }, frm = pa, to = common, at = check::expr_at{ e = a } }
+        let vb = coerce{ &l, x = if bo { payload_of{ &l, x = rb, t = pb } } else { rb }, frm = pb, to = common, at = check::expr_at{ e = b } }
+        let mut r = mk{ ty, k = ir::ExprKind::cmp{ op = ir::CmpOp::eq, a = box{ l, e = va }, b = box{ l, e = vb } } }
+        if tagged {
+            if ao and bo {
+                let none = mk{ ty, k = ir::ExprKind::land{ a = box{ l, e = test_null{ &l, x = ra, holds = false } }, b = box{ l, e = test_null{ &l, x = rb, holds = false } } } }
+                let some = mk{ ty, k = ir::ExprKind::land{ a = box{ l, e = test_null{ &l, x = ra, holds = true } }, b = box{ l, e = test_null{ &l, x = rb, holds = true } } } }
+                r = mk{ ty, k = ir::ExprKind::lor{ a = box{ l, e = none }, b = box{ l, e = mk{ ty, k = ir::ExprKind::land{ a = box{ l, e = some }, b = box{ l, e = r } } } } } }
+            } else {
+                r = mk{ ty, k = ir::ExprKind::land{ a = box{ l, e = test_null{ &l, x = if ao { ra } else { rb }, holds = true } }, b = box{ l, e = r } } }
+            }
+        }
+        if op == tok::Kind::ne { r = mk{ ty, k = ir::ExprKind::lnot{ e = box{ l, e = r } } } }
+        if sb != NONE { r = mk{ ty, k = ir::ExprKind::with{ slot = sb, init = box{ l, e = xb }, body = box{ l, e = r } } } }
+        if sa != NONE { r = mk{ ty, k = ir::ExprKind::with{ slot = sa, init = box{ l, e = xa }, body = box{ l, e = r } } } }
+        return r
+    }
+
+    // The value optional x holds, of type t, where it is known to hold one.
+    fn payload_of { mut l: Lower, x: ir::Expr, t: Id } -> ir::Expr {
+        return mk{ ty = tid{ &l, t }, k = ir::ExprKind::payload{ base = box{ l, e = x }, variant = 1, field = 0 } }
+    }
+
+    // Whether optional x holds a value, or with holds false, whether it is null.
+    fn test_null { mut l: Lower, x: ir::Expr, holds: bool } -> ir::Expr {
+        let ty = tid{ &l, t = types::BOOL }
+        if holds { return mk{ ty, k = ir::ExprKind::notnull{ e = box{ l, e = x } } } }
+        return mk{ ty, k = ir::ExprKind::isnull{ e = box{ l, e = x } } }
+    }
+
+    // Whether x, an optional, is a `?*T`: its pointer, with null 0 (§8, Optional, rule 6).
+    fn is_nptr { l: Lower, x: ir::Expr } -> bool {
+        return list::items{ list = l.types }[x.ty] is nptr
     }
 
     // Whether prim a widens to prim b (ctxi's widens, on two operands of a comparison).

@@ -3480,8 +3480,12 @@ namespace check {
         if x == null { return null }
         let y = fold{ &c, e = b }
         if y == null { return null }
+        if (op == tok::Kind::eq or op == tok::Kind::ne) and (x is nil or y is nil) {
+            // A ?T and a T or another ?T: equal if both are null (§11, Expressions, rule 5).
+            return Val::boolean{ ty = t, value = (x is nil and y is nil) == (op == tok::Kind::eq) }
+        }
         if op == tok::Kind::eq or op == tok::Kind::ne or op == tok::Kind::lt or op == tok::Kind::le or op == tok::Kind::gt or op == tok::Kind::ge {
-            return Val::boolean{ ty = t, value = compare{ op, x, y } }
+            return Val::boolean{ ty = t, value = compare{ op, x = unwrap_some{ c, v = x }, y = unwrap_some{ c, v = y } } }
         }
         if is_float_type{ c, t } {
             let p = float_of{ v = x }
@@ -3610,6 +3614,12 @@ namespace check {
     fn from_bits { x: u64, signed: bool } -> Num {
         if signed and x >= 9223372036854775808 { return Num{ negative = true, magnitude = @wrap_sub(0, x) } }
         return Num{ negative = false, magnitude = x }
+    }
+
+    // The value an optional's v holds, or v if it isn't an optional's.
+    fn unwrap_some { c: Checker, v: Val } -> Val {
+        if v is variant{ ty, fields } and is_opt{ c, t = ty } { return fields[0] }
+        return v
     }
 
     fn compare { op: tok::Kind, x: Val, y: Val } -> bool {
@@ -5159,10 +5169,18 @@ namespace check {
                 if (op == tok::Kind::eq or op == tok::Kind::ne) and an != is_null{ e = b.* } {
                     let f = fact{ c, e = if an { b.* } else { a.* } }
                     if f == null { return Facts{ yes = none, no = none } }
-                    let mut one = list::new(Fact){ realloc = arena::alloc, heap = c.heap }
-                    add_fact{ xs = &one, f }
-                    let xs: []Fact = list::items{ list = one }
+                    let xs = alone{ c, f }
                     if op == tok::Kind::ne { return Facts{ yes = xs, no = none } }
+                    return Facts{ yes = none, no = xs }
+                }
+                // `x == v`, for a v that isn't optional, narrows x when true, and `x != v` when
+                // false.
+                let ao = is_opt{ c, t = type_of_expr{ c, e = a.* } }
+                if (op == tok::Kind::eq or op == tok::Kind::ne) and not an and ao != is_opt{ c, t = type_of_expr{ c, e = b.* } } {
+                    let f = fact{ c, e = if ao { a.* } else { b.* } }
+                    if f == null { return Facts{ yes = none, no = none } }
+                    let xs = alone{ c, f }
+                    if op == tok::Kind::eq { return Facts{ yes = xs, no = none } }
                     return Facts{ yes = none, no = xs }
                 }
             }
@@ -5174,9 +5192,7 @@ namespace check {
                 let f = fact{ c, e = x.* }
                 if f != null {
                     if names_null{ pats } {
-                        let mut one = list::new(Fact){ realloc = arena::alloc, heap = c.heap }
-                        add_fact{ xs = &one, f }
-                        no = list::items{ list = one }
+                        no = alone{ c, f }
                     } else {
                         add_fact{ xs = &xs, f }
                     }
@@ -5205,6 +5221,13 @@ namespace check {
             i = i + 1
         }
         return false
+    }
+
+    // f alone, as a list of facts.
+    fn alone { c: Checker, f: Fact } -> []Fact {
+        let mut one = list::new(Fact){ realloc = arena::alloc, heap = c.heap }
+        add_fact{ xs = &one, f }
+        return list::items{ list = one }
     }
 
     // The fact that e is not null, if e can be narrowed: a read-only local or context field,
@@ -8417,14 +8440,18 @@ namespace check {
             }
             let lt = expr{ &c, e = a, exp = types::NO_TYPE }
             let rt = expr{ &c, e = b, exp = lt }
-            let t = operand_type{ &c, lt, rt, a, b }
+            // A ?T compares by its value with a T or another ?T (§11, Expressions, rule 5).
+            let lo = opt_payload{ c, t = lt }
+            let ro = opt_payload{ c, t = rt }
+            let t = operand_type{ &c, lt = lo ifnull lt, rt = ro ifnull rt, a, b }
             if t == types::NO_TYPE {
                 cannot_compare{ &c, lt, rt, at }
                 return types::BOOL
             }
             let eq = is_num{ c, t } or t == types::BOOL or types::get{ s = c.ty, id = t } is ptr | enumeration
             if not eq {
-                errorf{ &c, at, msg = @fmt("{} has no built-in equality", tstr{ c, t }) }
+                let shown = if lo != null { lt } else if ro != null { rt } else { t }
+                errorf{ &c, at, msg = @fmt("{} has no built-in equality", tstr{ c, t = shown }) }
             }
             return types::BOOL
         }
@@ -8477,6 +8504,12 @@ namespace check {
 
     fn is_null { e: syntax::Expr } -> bool {
         return e.k is nil
+    }
+
+    // T, for t a ?T; null for any other t.
+    fn opt_payload { c: Checker, t: Id } -> ?Id {
+        let opt{ elem } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } else { return null }
+        return elem
     }
 
     fn cannot_compare { mut c: Checker, lt: Id, rt: Id, at: source::Span } {

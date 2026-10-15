@@ -33,11 +33,7 @@ itself; a field with no writer is `_`, and std's padded writers keep their `push
 
 *Later, if wanted:* if patterns nest (a payload's fields, literal values), `_` comes in as a
 wildcard inside a pattern (`os{ code = _ }`), and `else` stays the whole-arm default. Optional
-chaining (`a?.b`) needs no lambdas, but nothing in FRICTION.md asks for it yet. `==` between a `?T`
-and a `T` (FRICTION #2) would follow Swift: `T` widens to `?T`, two nulls are equal, and `!=` is
-`==`'s negation, so `null != x` is true. `is` (spec §8) covers enums, and only three integer
-comparisons in ctxc would use it; one of them (`d != null and d != NONE`) shows how `!=` would
-mislead.
+chaining (`a?.b`) needs no lambdas, but nothing in FRICTION.md asks for it yet.
 
 ### 2. C interop
 

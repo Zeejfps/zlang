@@ -5225,6 +5225,183 @@ fn main {} { }
 """, 'expected i32, got ?i32')
 
 
+class OptionalEquality(Base):
+    """§11 Expressions, rule 5: a ?T compares with a T or a ?T by its value, and `x == v`
+    narrows x (§8, Optional, rule 4)."""
+
+    def test_with_a_value(self):
+        self.assertOutput("""
+fn show { mut io: Io, x: ?i32 } {
+    io::println_bool{ &io, n = x == 3 }
+    io::println_bool{ &io, n = x != 3 }
+    io::println_bool{ &io, n = 3 == x }
+}
+fn main { mut io: Io } {
+    show{ &io, x = 3 }
+    show{ &io, x = 4 }
+    show{ &io, x = null }
+}
+""", 'true\nfalse\ntrue\nfalse\ntrue\nfalse\nfalse\ntrue\nfalse\n')
+
+    def test_two_optionals(self):
+        # Two nulls are equal; a null and a value aren't.
+        self.assertOutput("""
+fn eq { a: ?u8, b: ?u32 } -> bool { return a == b }
+fn main { mut io: Io } {
+    io::println_bool{ &io, n = eq{ a = null, b = null } }
+    io::println_bool{ &io, n = eq{ a = 5, b = null } }
+    io::println_bool{ &io, n = eq{ a = null, b = 5 } }
+    io::println_bool{ &io, n = eq{ a = 5, b = 5 } }
+    io::println_bool{ &io, n = eq{ a = 5, b = 6 } }
+}
+""", 'true\nfalse\nfalse\ntrue\nfalse\n')
+
+    def test_types_with_equality(self):
+        self.assertOutput("""
+enum Access: u8 { field, method }
+fn main { mut io: Io } {
+    let w: ?u64 = 300
+    let small: u16 = 300
+    io::println_bool{ &io, n = w == small }
+    let k: ?Access = Access::method
+    io::println_bool{ &io, n = k == Access::method }
+    io::println_bool{ &io, n = k == Access::field }
+    let f: ?bool = false
+    io::println_bool{ &io, n = f == false }
+    let r: ?f64 = 1.5
+    io::println_bool{ &io, n = r == 1.5 }
+    let a: i32 = 1
+    let b: i32 = 1
+    let p: ?*i32 = &a
+    let q: ?*i32 = null
+    io::println_bool{ &io, n = p == &a }
+    io::println_bool{ &io, n = p == &b }
+    io::println_bool{ &io, n = q != &a }
+    io::println_bool{ &io, n = p == q }
+}
+""", 'true\ntrue\nfalse\ntrue\ntrue\ntrue\nfalse\ntrue\nfalse\n')
+
+    def test_mutable_pointer(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let mut a: i32 = 1
+    let m: ?*mut i32 = &a
+    let r: *i32 = &a
+    io::println_bool{ &io, n = m == r }
+}
+""", 'true\n')
+
+    def test_operands_evaluated_once_in_order(self):
+        self.assertOutput("""
+struct Box { v: ?i32 }
+fn take { mut io: Io, v: ?i32 } -> Box {
+    io::print_i64{ &io, n = v ifnull -1 }
+    return Box{ v }
+}
+fn num { mut io: Io, n: i32 } -> i32 {
+    io::print_i64{ &io, n }
+    return n
+}
+fn main { mut io: Io } {
+    io::println_bool{ &io, n = take{ &io, v = 2 }.v == num{ &io, n = 2 } }
+    io::println_bool{ &io, n = take{ &io, v = null }.v != num{ &io, n = 2 } }
+    io::println_bool{ &io, n = take{ &io, v = 4 }.v == take{ &io, v = 4 }.v }
+}
+""", '22true\n-12true\n44true\n')
+
+    def test_narrows_when_equal(self):
+        self.assertOutput("""
+struct S { tag: ?i32 }
+fn eq { x: ?i32 } -> i32 {
+    if x == 3 { return x + 1 }
+    return 0
+}
+fn ne { x: ?i32, v: i32 } -> i32 {
+    if x != v { return 0 }
+    return x * 2
+}
+fn field { s: S } -> i32 {
+    if 5 == s.tag and s.tag > 4 { return s.tag }
+    return -1
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = eq{ x = 3 } }
+    io::println_i64{ &io, n = eq{ x = null } }
+    io::println_i64{ &io, n = ne{ x = 6, v = 6 } }
+    io::println_i64{ &io, n = ne{ x = null, v = 6 } }
+    io::println_i64{ &io, n = field{ s = S{ tag = 5 } } }
+}
+""", '4\n0\n12\n0\n5\n')
+
+    def test_not_equal_does_not_narrow_when_true(self):
+        self.assertCompileError("""
+fn f { x: ?i32 } -> i32 {
+    if x != 3 { return x }
+    return 0
+}
+fn main {} { }
+""", 'expected i32, got ?i32')
+
+    def test_two_optionals_do_not_narrow(self):
+        self.assertCompileError("""
+fn f { x: ?i32, y: ?i32 } -> i32 {
+    if x == y { return x }
+    return 0
+}
+fn main {} { }
+""", 'expected i32, got ?i32')
+
+    def test_mutable_local_compares_but_does_not_narrow(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let mut x: ?i32 = null
+    io::println_bool{ &io, n = x == 1 }
+    x = 1
+    io::println_bool{ &io, n = x == 1 }
+}
+""", 'false\ntrue\n')
+        self.assertCompileError("""
+fn f {} -> i32 {
+    let mut x: ?i32 = 1
+    if x == 1 { return x }
+    return 0
+}
+fn main {} { }
+""", 'expected i32, got ?i32')
+
+    def test_consts(self):
+        self.assertOutput("""
+const A: ?i32 = 3
+const N: ?i32 = null
+const B: bool = A == 3
+const C: bool = A != 4
+const D: bool = N == 3
+const E: bool = N == N
+const F: bool = A == N
+fn main { mut io: Io } {
+    io::println_bool{ &io, n = B }
+    io::println_bool{ &io, n = C }
+    io::println_bool{ &io, n = D }
+    io::println_bool{ &io, n = E }
+    io::println_bool{ &io, n = F }
+}
+""", 'true\ntrue\nfalse\ntrue\nfalse\n')
+
+    def test_errors(self):
+        cases = [
+            ('fn f { x: ?u32, v: i32 } -> bool { return x == v }', 'cannot compare ?u32 with i32'),
+            ('fn f { x: ??u32, v: ?u32 } -> bool { return x == v }', 'cannot compare ??u32 with ?u32'),
+            ('fn f { x: ??u32, v: u32 } -> bool { return x == v }', 'cannot compare ??u32 with u32'),
+            ('fn f { x: ??u32 } -> bool { return x == x }', '??u32 has no built-in equality'),
+            ('struct S { a: i32 }\nfn f { x: ?S, v: S } -> bool { return x == v }', '?S has no built-in equality'),
+            ('fn f { x: ?[]u8, v: []u8 } -> bool { return x == v }', '?[]u8 has no built-in equality'),
+            ('fn f { x: ?i32 } -> bool { return x < 3 }', 'cannot compare ?i32 with {integer}'),
+        ]
+        for src, msg in cases:
+            with self.subTest(src=src):
+                self.assertCompileError(src + '\nfn main {} { }', msg)
+
+
 class LabeledLoops(Base):
     """§11 Statements: `break L` and `continue L` leave or repeat the enclosing loop labeled L."""
 

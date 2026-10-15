@@ -50,8 +50,8 @@ a `[]u32` argument.
    it into a new local works: `if let t = w.tlk { ... }` (spec §11, If let), `let t = w.tlk
    ifnull { return }`, or `is some{ value = t }` in a combined condition. `if let &t = &w.tlk`
    changes the payload in place without a `match`. Spec §8 rule 3 points at them, and so does
-   the error where such a place is used as its `T`. Left: `?T == T`, under PLAN.md stage 1's
-   *Later*. *Hit by 9:* ctxc (about ten copies,
+   the error where such a place is used as its `T`. A `?T` compares with a `T` (spec §11,
+   Expressions, rule 5), and `x == v` narrows `x`. *Hit by 9:* ctxc (about ten copies,
    and three comparisons), engine (6), data (2), dialog (about 10), models (3), rules (5), walk
    (2, and two helpers comparing optionals), minigames (2), hud.
 

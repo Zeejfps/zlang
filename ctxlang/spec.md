@@ -197,6 +197,7 @@ if c is '0'..='9' { ... }
 3. Narrowing: where an `x` of type `?T` is known not to be null, it has type `T`. `x` must be a `let` local or a read-only context field, or a path of struct fields from one, such as `v.a.b` (not through a pointer, `.*` or an index). A mutable one doesn't narrow, since a write between the test and a use could make it null. Unwrap it into a new local instead, which holds the value the test saw: `if let v = x { ... }` (§11, If let), `let v = x ifnull { return }` (rule 7), or `x is some{ value = v }` (§8, Is) in a condition that combines tests. Where one of these places is used as its `T`, the error says so.
 4. A condition narrows some `x`s when it is true and some when it is false:
    - `x != null` narrows `x` when true; `x == null` narrows `x` when false.
+   - `x == v`, for a `v` whose type isn't optional, narrows `x` when true, and `x != v` narrows `x` when false (§11, Expressions, rule 5). So does `v == x`.
    - `x is P` narrows `x` when true, unless `P` lists `null`: then it narrows `x` when false, as `x == null` does (§8, Is).
    - `not c` swaps what `c` narrows when true and when false.
    - `a and b` narrows, when true, what `a` or `b` narrows when true; when false, what both narrow when false.
@@ -466,7 +467,7 @@ Precedence, tightest first:
 2. Integer `+ - *` panic on overflow. `/` and `%` panic on a zero divisor. Use `@wrap_*` (§13) for wrapping arithmetic.
 3. `&`, `|` and `^` apply to two operands of the same integer type, after widening as in rule 1. They act on the two's complement bits and never panic.
 4. `a << n` and `a >> n` shift integer `a` by `n` bits. The result has `a`'s type. `n` may have any integer type and doesn't widen to or from `a`'s. A count below 0, or at or above `a`'s width in bits, panics. `<<` drops the bits shifted out, so it never overflows: `x << 1` wraps where `x * 2` panics. `>>` is arithmetic for signed types (it copies the sign bit) and logical for unsigned ones.
-5. `==` and `!=` work on numbers, `bool`, pointers (by address) and two values of one enum (§12, Enums), and on `?T` against `null`. Other types have no built-in equality.
+5. `==` and `!=` work on numbers, `bool`, pointers (by address) and two values of one enum (§12, Enums), and on `?T` against `null`. A `?T`, for a `T` of those types, also compares with a `T` or another such optional: a null equals only a null, and two values compare as their `T`s do, after widening as in rule 1. So `x == 3` is false and `x != 3` true where `x` is null. Each operand is evaluated once, left to right. `x == v` narrows `x` (§8, Optional, rule 4). Other types have no built-in equality: a `??T` compares only with `null`.
 6. `and`, `or` and `not` take and give `bool`. Conditions must be `bool`.
 
 ### Widening
