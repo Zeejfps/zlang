@@ -283,3 +283,10 @@ widening to u64 (`f1d25a36`), and ctxc's evaluator and constant folding in place
     unlocks and locks again keep the lock: mixtest let the other thread in 97 times in 3,000
     blocks, and about 1,000 once it yielded between blocks. Worth a line in std's `mutex` comment.
     *Hit by 1:* audio.
+
+39. **An array length or enum value can't use every folded const.** §14 says they can use any
+    folded const, but ctxc's early folder for them (`const_int`, check.ctx) works in untyped i64
+    and knows only literals, consts, unary `-` and the plain binary operators. So `const N: usize =
+    @size_of(u32)` or `const N: u8 = 255 +% 2`, both folded, is "an array length must be a
+    compile-time integer constant" in `[N]u8`. Folding them with the typed folder, or the spec
+    narrowing what they may use, would fix it. *Hit by 0:* found reviewing the wrapping operators.
