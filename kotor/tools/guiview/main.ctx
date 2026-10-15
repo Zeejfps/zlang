@@ -115,7 +115,7 @@ fn render_one {
         let mut ci: usize = 0
         while ci < cs.len {
             let c = &cs[ci]
-            _ = @fmt(&io, "  id {} type {} {} at {},{} {}x{} strref {} text {}\n", c.id, c.kind, c.tag, c.x, c.y, c.w, c.h, c.text.strref, c.text.text)
+            _ = @fmt(&io, "  id {} type {} {} at {},{} {}x{} strref {} text {}\n", c.id, @as(u8, c.kind), c.tag, c.x, c.y, c.w, c.h, c.text.strref, c.text.text)
             ci = ci + 1
         }
     }

@@ -1,22 +1,42 @@
 // The GUI system's data (docs/design/gui.md): a Gui holds panels, a panel holds controls, a
 // control is whatever its .gui struct said plus the state it has while shown.
 //
-// Controls are plain data with no zero-less field (no enums, pointers or functions), so
-// `let mut c: Control` starts as all zeros and the loader fills it; the kind is one of the K_*
-// constants (the CONTROLTYPE numbers of the files). Texture handles are resolved when a panel is
-// loaded, so drawing needs no file system and no device.
+// Controls are plain data with no field lacking a zero value (no pointers or functions), so
+// `let mut c: Control` starts as all zeros, its kind `other`, and the loader fills it. Texture
+// handles are resolved when a panel is loaded, so drawing needs no file system and no device.
 namespace gui {
-    // ---- control kinds (CONTROLTYPE in the files, docs/re/render-gui.md "Loading a .gui")
-    const K_PANEL: u8 = 2
-    const K_LABEL: u8 = 4
-    const K_PROTO: u8 = 5               // a list box's row prototype / a label that hilights
-    const K_BUTTON: u8 = 6
-    const K_CHECK: u8 = 7
-    const K_SLIDER: u8 = 8
-    const K_SCROLL: u8 = 9
-    const K_PROGRESS: u8 = 10
-    const K_LIST: u8 = 11
-    const K_EDIT: u8 = 12               // created by code only (save name, character name)
+    // A control's kind: its CONTROLTYPE number in the files (docs/re/render-gui.md "Loading a
+    // .gui"). `other` is any number the files don't use, and the zero value.
+    enum Kind: u8 {
+        other = 0,
+        panel = 2,
+        label = 4,
+        proto = 5,                      // a list box's row prototype / a label that hilights
+        button = 6,
+        check = 7,
+        slider = 8,
+        scroll = 9,
+        progress = 10,
+        list = 11,
+        edit = 12,                      // created by code only (save name, character name)
+    }
+
+    // CONTROLTYPE's number as a Kind.
+    fn kind_of { n: u8 } -> Kind {
+        match n {
+            2 => { return Kind::panel }
+            4 => { return Kind::label }
+            5 => { return Kind::proto }
+            6 => { return Kind::button }
+            7 => { return Kind::check }
+            8 => { return Kind::slider }
+            9 => { return Kind::scroll }
+            10 => { return Kind::progress }
+            11 => { return Kind::list }
+            12 => { return Kind::edit }
+            else => { return Kind::other }
+        }
+    }
 
     // ---- control flags
     const F_VISIBLE: u32 = 1
@@ -110,7 +130,7 @@ namespace gui {
     }
 
     struct Control {
-        kind: u8,
+        kind: Kind,
         id: i32,
         tag: []u8,                      // a view into the panel's file bytes
         parent: i32,                    // control id of Obj_ParentID, -1 for the panel

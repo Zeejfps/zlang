@@ -230,7 +230,7 @@ namespace gui {
         let cs = list::items{ list = p.controls }
         let mut i: usize = 0
         while i < cs.len {
-            if cs[i].kind == K_LIST and cs[i].cell_art.on and (cs[i].flags & F_VISIBLE) != 0 { return @as(i32, i) }
+            if cs[i].kind == Kind::list and cs[i].cell_art.on and (cs[i].flags & F_VISIBLE) != 0 { return @as(i32, i) }
             i = i + 1
         }
         return -1

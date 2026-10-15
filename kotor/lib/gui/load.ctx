@@ -153,7 +153,7 @@ namespace gui {
     // One control struct: a CONTROLS entry, or a list box's PROTOITEM or SCROLLBAR.
     fn read_control { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, doc: gff::Doc, s: u32 } -> Control {
         let mut c: Control
-        c.kind = @trunc(u8, geti{ doc, s, label = "CONTROLTYPE", fallback = 4 })
+        c.kind = kind_of{ n = @trunc(u8, geti{ doc, s, label = "CONTROLTYPE", fallback = 4 }) }
         c.id = geti{ doc, s, label = "ID", fallback = -1 }
         c.tag = gff::get_string{ doc, s, label = "TAG" } ifnull ""
         c.parent = geti{ doc, s, label = "Obj_ParentID", fallback = -1 }
@@ -196,7 +196,7 @@ namespace gui {
         c.padding = geti{ doc, s, label = "PADDING", fallback = 0 }
         c.looping = geti{ doc, s, label = "LOOPING", fallback = 0 } != 0
         c.scroll_left = geti{ doc, s, label = "LEFTSCROLLBAR", fallback = 1 } != 0
-        if c.kind == K_LIST {
+        if c.kind == Kind::list {
             let lc = getc{ doc, s, label = "COLOR", fallback = render::Color{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 } }
             c.list_color = lc
             c.list_tinted = lc.r >= 0.0
@@ -325,13 +325,13 @@ namespace gui {
         while i < items.len {
             let cs = items[i]
             let mut c = read_control{ &g, &fs, &dev, doc, s = cs }
-            if menu_checks and c.kind == K_CHECK { style_menu_check{ &c } }
+            if menu_checks and c.kind == Kind::check { style_menu_check{ &c } }
             try list::push{ list = &p.controls, item = c }
-            if c.kind == K_LIST {
+            if c.kind == Kind::list {
                 let ps = gff::get_struct{ doc, s = cs, label = "PROTOITEM" }
                 if ps != null {
                     let mut pc2 = read_control{ &g, &fs, &dev, doc, s = ps }
-                    if menu_checks and pc2.kind == K_CHECK { style_menu_check{ c = &pc2 } }
+                    if menu_checks and pc2.kind == Kind::check { style_menu_check{ c = &pc2 } }
                     pc2.parent = c.id
                     pc2.flags = pc2.flags | F_INTERNAL
                     pc2.id = -1
@@ -340,7 +340,7 @@ namespace gui {
                 let ss = gff::get_struct{ doc, s = cs, label = "SCROLLBAR" }
                 if ss != null {
                     let mut sc = read_control{ &g, &fs, &dev, doc, s = ss }
-                    sc.kind = K_SCROLL
+                    sc.kind = Kind::scroll
                     sc.parent = c.id
                     sc.flags = sc.flags | F_INTERNAL
                     sc.id = -1
@@ -357,7 +357,7 @@ namespace gui {
         while m < all.len {
             if all[m].parent >= 0 {
                 let up = find_by_id{ p, id = all[m].parent }
-                if up >= 0 and all[@as(usize, up)].kind == K_PROTO { all[@as(usize, up)].flags = all[@as(usize, up)].flags | F_NO_HIT }
+                if up >= 0 and all[@as(usize, up)].kind == Kind::proto { all[@as(usize, up)].flags = all[@as(usize, up)].flags | F_NO_HIT }
             }
             m = m + 1
         }
@@ -370,7 +370,7 @@ namespace gui {
             let owner = find_by_id{ p, id = ins[k].parent }
             if owner >= 0 {
                 let oc = list::at{ list = p.controls, i = @as(usize, owner) }
-                if ins[k].kind == K_SCROLL { oc.scrollbar = at } else { oc.proto = at }
+                if ins[k].kind == Kind::scroll { oc.scrollbar = at } else { oc.proto = at }
             }
             k = k + 1
         }

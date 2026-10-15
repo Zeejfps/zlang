@@ -263,7 +263,7 @@ namespace gui {
     // ---- controls
 
     fn border_for { c: *Control, hilighted: bool } -> Border {
-        if c.kind == K_CHECK {
+        if c.kind == Kind::check {
             let on = (c.flags & F_CHECKED) != 0
             if on {
                 if hilighted and c.hilight_selected.present { return c.hilight_selected }
@@ -281,26 +281,26 @@ namespace gui {
         let y = p.sy + c.y
         let hl = (c.flags & F_HILIGHT) != 0
         let k = c.kind
-        if k == K_LIST {
+        if k == Kind::list {
             draw_list{ &g, &frame, p, c, alpha, clip }
             return
         }
-        if k == K_PROGRESS {
+        if k == Kind::progress {
             draw_progress{ &g, &frame, c, x, y, alpha, clip }
             return
         }
-        if k == K_CHECK and (c.flags & F_MENU_CHECK) != 0 {
+        if k == Kind::check and (c.flags & F_MENU_CHECK) != 0 {
             draw_menu_check{ &g, &frame, b = border_for{ c, hilighted = hl }, t = c.text, text = c.text.text, flags = c.flags, x, y, w = c.w, h = c.h, alpha, clip }
             return
         }
-        let b = border_for{ c, hilighted = hl and (k == K_BUTTON or k == K_CHECK or k == K_PROTO or k == K_SLIDER or k == K_EDIT) }
+        let b = border_for{ c, hilighted = hl and (k == Kind::button or k == Kind::check or k == Kind::proto or k == Kind::slider or k == Kind::edit) }
         draw_border{ &g, &frame, b, x, y, w = c.w, h = c.h, alpha = if c.override_fill.ok { alpha * c.picture_alpha } else { alpha }, clip, override = c.override_fill }
-        if k == K_SLIDER { draw_slider_thumb{ &frame, c, x, y, alpha, clip } }
-        if c.text.present and c.text.text.len > 0 or k == K_EDIT {
+        if k == Kind::slider { draw_slider_thumb{ &frame, c, x, y, alpha, clip } }
+        if c.text.present and c.text.text.len > 0 or k == Kind::edit {
             let a = text_area{ b = c.border, x, y, w = c.w, h = c.h }
             let mut col = text_color{ &g, c }
             col = mul_alpha{ c = col, a = alpha }
-            if k == K_EDIT and hl {
+            if k == Kind::edit and hl {
                 // A caret after the typed text while the box has the focus.
                 draw_edit_text{ &g, &frame, c, a, col, clip }
             } else {
@@ -641,8 +641,8 @@ namespace gui {
         let mut b = pc.border
         // The options panels' rows are menu check boxes (style_menu_check): hilighted when hovered
         // or selected (SetSelectedIndex sends the selected row the hilight event).
-        let menu_check = pc.kind == K_CHECK and (pc.flags & F_MENU_CHECK) != 0
-        if pc.kind == K_CHECK {
+        let menu_check = pc.kind == Kind::check and (pc.flags & F_MENU_CHECK) != 0
+        if pc.kind == Kind::check {
             let hot = if menu_check { lit } else { hover }
             if row.checked {
                 b = if hot and pc.hilight_selected.present { pc.hilight_selected } else if pc.selected.present { pc.selected } else { pc.border }
@@ -683,9 +683,9 @@ namespace gui {
         }
         let mut col = pc.text.color
         if row.has_color { col = row.color }
-        if (lit or row.frame == FRAME_WAITING) and pc.kind == K_BUTTON and not row.has_color { col = color_hilight{} }
+        if (lit or row.frame == FRAME_WAITING) and pc.kind == Kind::button and not row.has_color { col = color_hilight{} }
         if not row.enabled { col = color_disabled{} }
-        if (lit or row.frame == FRAME_WAITING) and pc.kind == K_BUTTON { col = mul_alpha{ c = col, a = g.pulse_border } }
+        if (lit or row.frame == FRAME_WAITING) and pc.kind == Kind::button { col = mul_alpha{ c = col, a = g.pulse_border } }
         col = mul_alpha{ c = col, a = alpha }
         draw_text_in{ &g, &frame, t = pc.text, text = row.text, color = col, x = ax, y = a.y, w = aw, h = a.h, clip }
         if row.aside.len > 0 {
@@ -715,9 +715,9 @@ namespace gui {
         let a = text_area{ b = pc.border, x = x + box, y, w = w - box, h = box }
         let mut col = pc.text.color
         if row.has_color { col = row.color }
-        if lit and pc.kind == K_BUTTON and not row.has_color { col = color_hilight{} }
+        if lit and pc.kind == Kind::button and not row.has_color { col = color_hilight{} }
         if not row.enabled { col = color_disabled{} }
-        if lit and pc.kind == K_BUTTON { col = mul_alpha{ c = col, a = g.pulse_border } }
+        if lit and pc.kind == Kind::button { col = mul_alpha{ c = col, a = g.pulse_border } }
         draw_text_in{ &g, &frame, t = pc.text, text = row.text, color = mul_alpha{ c = col, a = alpha }, x = a.x, y = a.y, w = a.w, h = a.h, clip }
         if row.count < 2 { return }
         // The count: fnt_d16x16 in menu blue, bottom centred in a 19 pixel high box against the

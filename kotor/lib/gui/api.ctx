@@ -224,7 +224,7 @@ namespace gui {
     fn set_fill { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, panel: u32, tag: []u8, name: []u8 } {
         let c = find_control{ &g, panel, tag } ifnull { return }
         let img = resolve_img{ &g, &fs, &dev, name }
-        if c.kind == K_PROGRESS { c.progress.fill = img } else { c.border.fill = img }
+        if c.kind == Kind::progress { c.progress.fill = img } else { c.border.fill = img }
     }
 
     // The alpha a control's frame (its BORDER and its HILIGHT) is drawn with: the engine's border alpha field,
@@ -452,7 +452,7 @@ namespace gui {
     // Makes a label an edit box: it takes typed text while it has the focus (save names).
     fn make_edit { mut g: Gui, panel: u32, tag: []u8 } {
         let c = find_control{ &g, panel, tag } ifnull { return }
-        c.kind = K_EDIT
+        c.kind = Kind::edit
         c.flags = c.flags | F_VISIBLE | F_ENABLED
     }
 
@@ -495,7 +495,7 @@ namespace gui {
                 let cs = list::items{ list = p.controls }
                 let mut i: usize = 0
                 while i < cs.len {
-                    if cs[i].kind == K_BUTTON and (cs[i].flags & F_INTERNAL) == 0 { cs[i].y = cs[i].y + line }
+                    if cs[i].kind == Kind::button and (cs[i].flags & F_INTERNAL) == 0 { cs[i].y = cs[i].y + line }
                     else if @as(i32, i) == c.scrollbar { cs[i].h = cs[i].h + line }
                     i = i + 1
                 }
@@ -523,7 +523,7 @@ namespace gui {
         while i < cs.len {
             if i == li { cs[i].w = cs[i].w + by }
             else if @as(i32, i) == bar { cs[i].x = cs[i].x + by }
-            else if (cs[i].flags & F_INTERNAL) == 0 and cs[i].parent < 0 and cs[i].kind != K_PROTO { cs[i].x = cs[i].x + by / 2 }
+            else if (cs[i].flags & F_INTERNAL) == 0 and cs[i].parent < 0 and cs[i].kind != Kind::proto { cs[i].x = cs[i].x + by / 2 }
             i = i + 1
         }
     }
@@ -594,7 +594,7 @@ namespace gui {
         p.h = p.h + ICON_SIDE
         if not try clone_control{ &g, panel, from = "BTN_OK", tag = "LBL_ICON", x = (p.w - ICON_SIDE) / 2, y = 10 } { return }
         let c = find_control{ &g, panel, tag = "LBL_ICON" } ifnull { return }
-        c.kind = K_LABEL
+        c.kind = Kind::label
         c.flags = F_VISIBLE | F_NO_HIT
         c.w = ICON_SIDE
         c.h = ICON_SIDE
