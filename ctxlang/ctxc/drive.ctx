@@ -12,7 +12,8 @@
 // directory. It is build.ctx and the .ctx files under each directory a `#build::sources` on its
 // `fn build` names, which the driver reads from build.ctx's syntax tree before compiling it. A
 // build program, this one or any program whose entry is `fn build`, has std/build/'s files and
-// ctxc's lexer and parser with std's (`build_extras`), for build::declarations.
+// ctxc's lexer and parser with std's (`build_extras`), for build::declarations. The program `run`
+// runs has ctxc's environment, with CTX_CTXC naming ctxc's executable.
 //
 // ctxc finds std/ and ctxc/rt/ in its home: CTX_HOME if set, else the first directory holding
 // both above its executable, else above the working directory. The C compiler is `cc`, or CTX_CC:
@@ -146,7 +147,11 @@ namespace drive {
         let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
         try! list::push{ list = &argv, item = first }
         if args.len > 3 { add_all{ xs = &argv, ys = args[3..] } }
-        return started{ &io, r = proc::run{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} }, what = first }
+        // CTX_CTXC: this ctxc, for a program that runs ctxc in turn (tools/fixpoint.ctx).
+        let mut env = list::new([]u8){ realloc = arena::alloc, &heap }
+        let own = proc::exe_path{ &proc }
+        if own.len > 0 { try! list::push{ list = &env, item = cat{ &heap, a = "CTX_CTXC=", b = own } } }
+        return started{ &io, r = proc::run{ &proc, argv = list::items{ list = argv }, env = list::items{ list = env } }, what = first }
     }
 
     // `ctxc graph DIR GEN LIST`: runs the build program of directory DIR as `run` does, generated

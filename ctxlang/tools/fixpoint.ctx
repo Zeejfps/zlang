@@ -1,0 +1,254 @@
+// The self-hosting fixpoint, and the bootstraps' refresh. From ctxlang/:
+//
+//   ctxc run tools/fixpoint.ctx [-- [--update] [--keep]]
+//
+// ctxc1 is ctxc's current source, built by the ctxc that runs this program (`ctxc exe`; `run`
+// names it in CTX_CTXC). Then, with `ctxc build` and this platform's std layer (std/os/PLATFORM):
+//
+//   ctxc1 build -> ctxc2.c        ctxc1 exe -> ctxc2
+//   ctxc2 build -> ctxc3.c
+//
+// ctxc2.c and ctxc3.c must be byte-identical. ctxc2 is built as `exe` builds any program, in
+// units, not from ctxc2.c: the same program, but `exe` names std's files by paths of its own, so
+// the files' ids in its C differ. There is a bootstrap per layer, bootstrap/ctxc.PLATFORM.c:
+// this platform's is ctxc3.c, and each other's is what ctxc2 builds with that layer's files
+// (ctxc.PLATFORM.c here), since writing C needs no C compiler. A bootstrap that differs is out of
+// date, and --update replaces it. Refresh them before a change to ctxc's source needs a feature
+// the bootstraps' ctxc doesn't have, and whenever a change lands: a bootstrap is what builds ctxc
+// from a fresh checkout. Everything goes in build/fixpoint; --keep leaves the C there.
+//
+// The files' names are relative to ctxlang/, as the bootstraps' positions name them, so this
+// runs from there.
+
+type Heap = arena::Arena
+type Strs = list::List([]u8, Heap)
+
+const OUT: []u8 = "build/fixpoint/"
+const PLATFORMS: [3][]u8 = ["linux", "macos", "windows"]
+
+// ctxc's stack, as tools/toolchain.py runs it: 200 MiB.
+const STACK: []u8 = "CTX_STACK=209715200"
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> i32 {
+    let mut update = false
+    let mut keep = false
+    let mut i: usize = 0
+    while i < args.len {
+        if slice::eq_bytes{ a = args[i], b = "--update" } {
+            update = true
+        } else if slice::eq_bytes{ a = args[i], b = "--keep" } {
+            keep = true
+        } else {
+            io::eprintln{ &io, s = "usage: ctxc run tools/fixpoint.ctx [-- [--update] [--keep]]" }
+            return 2
+        }
+        i = i + 1
+    }
+    let ctxc0 = proc::env{ &proc, name = "CTX_CTXC" } ifnull {
+        io::eprintln{ &io, s = "fixpoint: run it with `ctxc run tools/fixpoint.ctx`, which names ctxc in CTX_CTXC" }
+        return 2
+    }
+    if not is_file{ &fs, path = "std/io.ctx" } or not is_file{ &fs, path = "ctxc/main.ctx" } {
+        io::eprintln{ &io, s = "fixpoint: run it from ctxlang/, where std/ and ctxc/ are" }
+        return 2
+    }
+    let pages = mem::reserve{ &mem, size = 1073741824 } ifnull {
+        io::eprintln{ &io, s = "out of memory" }
+        return 1
+    }
+    let mut heap = arena::new{ buf = pages }
+    let host = os_name{ os = proc::os{ &proc } }
+    let exe: []u8 = if slice::eq_bytes{ a = host, b = "windows" } { ".exe" } else { "" }
+    if not made{ &io, &fs, path = "build" } or not made{ &io, &fs, path = "build/fixpoint" } { return 1 }
+
+    // The executables by absolute paths: Windows doesn't start a program by a relative one with
+    // `/` in it.
+    let dir = fs::make_absolute(Heap){ &fs, &heap, realloc = arena::alloc, path = OUT } iferr {
+        cannot{ &io, path = OUT, what = "cannot find the working directory" }
+        return 1
+    }
+    let ctxc1 = cat{ &heap, a = dir, b = cat{ &heap, a = "ctxc1", b = exe } }
+    let ctxc2 = cat{ &heap, a = dir, b = cat{ &heap, a = "ctxc2", b = exe } }
+    let c2 = cat{ &heap, a = OUT, b = "ctxc2.c" }
+    let c3 = cat{ &heap, a = OUT, b = "ctxc3.c" }
+    if not ctxc_exe{ &io, &proc, &heap, ctxc = ctxc0, out = ctxc1 } { return 1 }
+    _ = @fmt(&io, "ctxc1: {}ctxc1{}, built by {}\n", OUT, exe, ctxc0)
+    if not ctxc_build{ &io, &fs, &proc, &heap, ctxc = ctxc1, out = c2, platform = host } { return 1 }
+    if not ctxc_exe{ &io, &proc, &heap, ctxc = ctxc1, out = ctxc2 } { return 1 }
+    _ = @fmt(&io, "ctxc2: {}ctxc2{}, built by ctxc1\n", OUT, exe)
+    if not ctxc_build{ &io, &fs, &proc, &heap, ctxc = ctxc2, out = c3, platform = host } { return 1 }
+
+    let two = read{ &io, &fs, &heap, path = c2 } ifnull { return 1 }
+    let three = read{ &io, &fs, &heap, path = c3 } ifnull { return 1 }
+    let ok = slice::eq_bytes{ a = two, b = three }
+    if ok {
+        _ = @fmt(&io, "ctxc2.c == ctxc3.c: yes ({} bytes)\n", two.len)
+    } else {
+        _ = @fmt(&io, "ctxc2.c == ctxc3.c: NO, ")
+        difference{ &io, a = two, b = three }
+        io::newline{ &io }
+    }
+    let mut made_c = list::new([]u8){ realloc = arena::alloc, &heap }
+    try! list::push{ list = &made_c, item = c2 }
+    try! list::push{ list = &made_c, item = c3 }
+    let mut k: usize = 0
+    while ok and k < PLATFORMS.len {
+        let platform = PLATFORMS[k]
+        k = k + 1
+        let mut c = c3
+        if not slice::eq_bytes{ a = platform, b = host } {
+            c = cat{ &heap, a = OUT, b = cat{ &heap, a = cat{ &heap, a = "ctxc.", b = platform }, b = ".c" } }
+            if not ctxc_build{ &io, &fs, &proc, &heap, ctxc = ctxc2, out = c, platform } { return 1 }
+            try! list::push{ list = &made_c, item = c }
+        }
+        let new = read{ &io, &fs, &heap, path = c } ifnull { return 1 }
+        let name = cat{ &heap, a = cat{ &heap, a = "bootstrap/ctxc.", b = platform }, b = ".c" }
+        let old: []u8 = if is_file{ &fs, path = name } { read{ &io, &fs, &heap, path = name } ifnull { return 1 } } else { "" }
+        if slice::eq_bytes{ a = old, b = new } {
+            _ = @fmt(&io, "{}: up to date\n", name)
+        } else if update {
+            _ = fs::write_all{ &fs, path = name, bytes = new } iferr {
+                cannot{ &io, path = name, what = "cannot write" }
+                return 1
+            }
+            _ = @fmt(&io, "{}: updated\n", name)
+        } else {
+            _ = @fmt(&io, "{}: out of date (", name)
+            difference{ &io, a = old, b = new }
+            _ = @fmt(&io, "); --update refreshes it\n")
+        }
+    }
+    if not keep {
+        let xs = list::items{ list = made_c }
+        let mut j: usize = 0
+        while j < xs.len {
+            _ = fs::remove{ &fs, path = xs[j] }
+            j = j + 1
+        }
+    }
+    return if ok { 0 } else { 1 }
+}
+
+// Has ctxc build ctxc's source into the executable out; false after saying it failed.
+fn ctxc_exe { mut io: Io, mut proc: Proc, mut heap: Heap, ctxc: []u8, out: []u8 } -> bool {
+    let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
+    try! list::push{ list = &argv, item = ctxc }
+    try! list::push{ list = &argv, item = "exe" }
+    try! list::push{ list = &argv, item = "ctxc" }
+    try! list::push{ list = &argv, item = "-o" }
+    try! list::push{ list = &argv, item = out }
+    return ran{ &io, &proc, &heap, argv = list::items{ list = argv }, what = "exe" }
+}
+
+// Has ctxc write ctxc's source as C to out, with platform's std layer, as `ctxc build OUT
+// STD... -- FILE...`; false after saying it failed.
+fn ctxc_build { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, ctxc: []u8, out: []u8, platform: []u8 } -> bool {
+    let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
+    try! list::push{ list = &argv, item = ctxc }
+    try! list::push{ list = &argv, item = "build" }
+    try! list::push{ list = &argv, item = out }
+    if not ctx_files{ &io, &fs, &heap, dir = "std", xs = &argv } { return false }
+    if not slice::eq_bytes{ a = platform, b = "windows" } {
+        if not ctx_files{ &io, &fs, &heap, dir = "std/os/posix", xs = &argv } { return false }
+    }
+    if not ctx_files{ &io, &fs, &heap, dir = cat{ &heap, a = "std/os/", b = platform }, xs = &argv } { return false }
+    try! list::push{ list = &argv, item = "--" }
+    if not ctx_files{ &io, &fs, &heap, dir = "ctxc", xs = &argv } { return false }
+    return ran{ &io, &proc, &heap, argv = list::items{ list = argv }, what = "build" }
+}
+
+// Runs ctxc with argv, with STACK; false after saying it failed. ctxc says why itself.
+fn ran { mut io: Io, mut proc: Proc, mut heap: Heap, argv: [][]u8, what: []u8 } -> bool {
+    let mut env = list::new([]u8){ realloc = arena::alloc, &heap }
+    try! list::push{ list = &env, item = STACK }
+    let code = proc::run{ &proc, argv, env = list::items{ list = env } } iferr {
+        cannot{ &io, path = argv[0], what = "cannot start" }
+        return false
+    }
+    if code != 0 {
+        cannot{ &io, path = argv[0], what = cat{ &heap, a = what, b = " failed" } }
+        return false
+    }
+    return true
+}
+
+// Adds dir's .ctx files to xs, as dir/NAME, sorted by name; false after saying it can't list
+// them.
+fn ctx_files { mut io: Io, mut fs: Fs, mut heap: Heap, dir: []u8, mut xs: Strs } -> bool {
+    let names = fs::list(Heap){ &fs, &heap, realloc = arena::alloc, path = dir } iferr {
+        cannot{ &io, path = dir, what = "cannot list" }
+        return false
+    }
+    let mut i: usize = 0
+    while i < names.len {
+        let name = names[i]
+        if name.len > 4 and slice::eq_bytes{ a = name[name.len - 4..], b = ".ctx" } {
+            try! list::push{ list = &xs, item = cat{ &heap, a = cat{ &heap, a = dir, b = "/" }, b = name } }
+        }
+        i = i + 1
+    }
+    return true
+}
+
+// Where a and b first differ: "first difference at byte N, line L".
+fn difference { mut io: Io, a: []u8, b: []u8 } {
+    let n = if a.len < b.len { a.len } else { b.len }
+    let mut i: usize = 0
+    while i < n and a[i] == b[i] { i = i + 1 }
+    let mut line: u64 = 1
+    let mut k: usize = 0
+    while k < i {
+        if a[k] == '\n' { line = line + 1 }
+        k = k + 1
+    }
+    _ = @fmt(&io, "first difference at byte {}, line {}", i, line)
+}
+
+fn read { mut io: Io, mut fs: Fs, mut heap: Heap, path: []u8 } -> ?[]u8 {
+    let bytes = fs::read_all(Heap){ &fs, &heap, realloc = arena::alloc, path } iferr {
+        cannot{ &io, path, what = "cannot read" }
+        return null
+    }
+    return bytes
+}
+
+fn is_file { mut fs: Fs, path: []u8 } -> bool {
+    match fs::size{ &fs, path } {
+        ok => { return true }
+        else => { return false }
+    }
+}
+
+// Creates directory path unless it is there; false after saying why it can't.
+fn made { mut io: Io, mut fs: Fs, path: []u8 } -> bool {
+    match fs::make_dir{ &fs, path } {
+        ok => { return true }
+        fs::exists => { return true }
+        else => {}
+    }
+    cannot{ &io, path, what = "cannot create directory" }
+    return false
+}
+
+fn cannot { mut io: Io, path: []u8, what: []u8 } {
+    io::write{ &io, to = io::Stream::err, bytes = path }
+    io::write{ &io, to = io::Stream::err, bytes = ": " }
+    io::write{ &io, to = io::Stream::err, bytes = what }
+    io::write{ &io, to = io::Stream::err, bytes = "\n" }
+}
+
+fn cat { mut heap: Heap, a: []u8, b: []u8 } -> []u8 {
+    let out = try! alloc::resize(u8, Heap){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = a.len + b.len }
+    slice::copy{ dst = out[..a.len], src = a }
+    slice::copy{ dst = out[a.len..], src = b }
+    return out
+}
+
+// The name std's layer for os has (std/os/NAME), as the bootstraps are named.
+fn os_name { os: build::Os } -> []u8 {
+    match os {
+        linux => { return "linux" }
+        macos => { return "macos" }
+        windows => { return "windows" }
+    }
+}

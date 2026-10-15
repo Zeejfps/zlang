@@ -17,7 +17,7 @@ interpreter ctxc replaced, is at `8436f4d`.
 | 3 | [Metaprogramming](#3-metaprogramming) | in progress | |
 | 4 | [Literal conversions](#4-literal-conversions) | in progress | |
 | 5 | [Language server](#5-language-server) | planned | |
-| 6 | [Tools in ctxlang](#6-tools-in-ctxlang) | planned | 3.1, 3.2 for 6.4 |
+| 6 | [Tools in ctxlang](#6-tools-in-ctxlang) | planned | 3.1, 3.2 for 6.3 |
 
 ## Stages
 
@@ -154,7 +154,7 @@ generator can't observe its own output.
      pick their exit codes, as ctxc and the examples do, keep `-> i32`.
    - *To settle first:* the error can't be printed "as `@fmt` prints it": `@fmt` writes through a
      sink's `#write` fns (spec §13), and the compiler names no sink, so the runtime has none of
-     the program's. The same goes for 6.4's `@expect`. One answer: the runtime prints primitives
+     the program's. The same goes for 6.3's `@expect`. One answer: the runtime prints primitives
      and `strlit` in C, and `_` for anything else, as a converted literal's error is printed
      (spec §18). A first version may print only the name, as `try!` does.
 2. **Reflection: the checked program.** `build::declarations` (below) gives a build program its
@@ -340,23 +340,21 @@ definition, hover and completion work on `ctxc/` itself. The editor-query fixtur
 ### 6. Tools in ctxlang
 
 Python is left in development only: about 8,100 lines in `tests/` and `tools/`. ctxc and std have
-none, and `ctxc run` and `exe` drive a build themselves. Steps 1–3 replace the Python and stand
-alone; step 4 gives programs a test framework of their own. None blocks the other stages.
+none, and `ctxc run` and `exe` drive a build themselves. Steps 1–2 replace the Python and stand
+alone; step 3 gives programs a test framework of their own. None blocks the other stages.
 
-1. **`fixpoint.py` in ctxlang.** It builds ctxc with itself twice, compares the C, and with
-   `--update` writes the three bootstraps: a few `proc::run` calls and file compares.
-2. **Tests as files.** The 454 tests are programs in Python strings (`tests/test_ctxlang.py`).
+1. **Tests as files.** The 454 tests are programs in Python strings (`tests/test_ctxlang.py`).
    Each becomes a `.ctx` file, or a directory for a multi-file program, that states its
    expected output, exit code, panic or first error in a header comment, and a ctxlang runner
    builds, runs and checks them. Then ctxc, the recovery corpus and stage 5's editor-query
    fixtures all read the same files, and `tools/toolchain.py`'s harness (building ctxc from the
    bootstrap, caching by hash, mapping positions back) moves into the runner. Do this before
    stage 5.
-3. **`corpus.py` and `recover.py` in ctxlang.** Both run many processes at once, with
+2. **`corpus.py` and `recover.py` in ctxlang.** Both run many processes at once, with
    `proc::spawn` and `wait`, which the driver's parallel compiles use too. With tests as files,
    the corpus is mostly the test directory itself.
-4. **`#test` functions** for std, ctxc's internals and programs, next to the code they test. The
-   compiler's own suite stays as files (6.2): a program can't catch its own compile error.
+3. **`#test` functions** for std, ctxc's internals and programs, next to the code they test. The
+   compiler's own suite stays as files (6.1): a program can't catch its own compile error.
    ```
    #test
    fn reads_config { mut fs: Fs } -> ! {
@@ -426,12 +424,13 @@ steps:
 
 1. Add it to ctxc, without ctxc using it. The bootstrap compiles that source, and the result
    understands the feature.
-2. Run `python tools/fixpoint.py --update` to refresh the bootstraps (`bootstrap/ctxc.*.c`, one
-   per platform layer, all written from any machine). ctxc's source may now use it.
+2. Run `./ctxc0 run tools/fixpoint.ctx -- --update` to refresh the bootstraps
+   (`bootstrap/ctxc.*.c`, one per platform layer, all written from any machine). ctxc's source
+   may now use it.
 
 Removing a feature goes the other way round: stop using it, refresh the bootstraps, then remove
 it. Refresh them whenever a change to ctxc lands, so a fresh checkout builds the current compiler
-in one step; `fixpoint.py` says when one is out of date.
+in one step; the fixpoint says when one is out of date.
 
 ### Known gaps
 
@@ -505,8 +504,8 @@ program asks for one (spec §19).
 - **Errors.** The compile-error tests match on a message fragment, or the message and position
   exactly, so message text is part of the interface. The tests see the first diagnostic; ctxc
   may report more.
-- **Fixpoint** (`tools/fixpoint.py`). ctxc built by itself must write the same C twice, and the
-  bootstrap must be current.
+- **Fixpoint** (`tools/fixpoint.ctx`, `ctxc run tools/fixpoint.ctx`). ctxc built by itself must
+  write the same C twice, and the bootstraps must be current.
 - **Corpus.** `tools/corpus.py` records every program the tests run, with its output, exit code,
   panic or error, plus `std/` and `examples/`, into `build/corpus`, for the recovery test.
 - **C's undefined behaviour.** `invalid memory access` is undefined behaviour in C, not a panic.
