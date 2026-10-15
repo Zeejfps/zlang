@@ -73,11 +73,14 @@ isn't null there (`8357131`).
    chose `K_*` `u8` constants over an enum to keep `Control` zero-initialisable. *Partly:* a
    struct's field may have a default, a const (`speed_factor: f32 = 1.0`, `kind: Class =
    Class::soldier`, `target: ?*T = null`), and a literal ending in `..` takes the fields it
-   leaves out from theirs (spec §7, rule 4), so a field added with a default breaks no literal
-   that has `..`. Defaults are for literals only: a struct with an enum, a pointer, a function or
-   a list still has no zero value, and a `[]T` field can't have one, a const holding no slice but
-   a string's. An enum's first variant as its zero would do the rest. *Hit by 7:* engine (2), gui, rules, chargen, minigames (3 structs), screens,
-   audio (3).
+   leaves out from theirs (spec §7, rule 4; `02abd47`), so a field added with a default breaks
+   no literal that has `..`. KOTOR's 26 biggest structs (`91395275`), `Stats`, `chargen::State`
+   and `Run` among them, and ctxc's Checker, Decl, M and E (`3d44e541`) use them. Still open:
+   defaults are for literals only, so a struct with an enum, a pointer, a function or a list has
+   no zero value yet, and the filler variants and `K_*` constants stay; and a `[]T` field can't
+   have a default, a const holding no slice but a string's, not even an empty one. An enum's
+   first variant as its zero would do most of the rest. *Hit by 7:* engine (2), gui, rules,
+   chargen, minigames (3 structs), screens, audio (3).
 
 4. **No bit casts.** An f32 or i32 from its bits, and back, goes through a local and a pointer
    cast (`let b = bits; return @cast(*f32, &b).*`); `@as(u32, -1)` for a "none" value panics at
