@@ -9542,6 +9542,24 @@ class Proc(Base):
 """)
         self.assertEqual(code, 0)
 
+    def test_relative_path_with_slashes(self):
+        # A program by a relative path with `/` in it, which Windows finds only with `\`: the
+        # native ctxc, from ctxlang/, which prints its usage and exits with 2.
+        from toolchain import ROOT, build_sources, native_ctxc, run_exe
+        exe, _ = build_sources([(PROC_MAIN % """
+    _ = list::push{ list = &argv, item = args[0] }
+    match proc::run{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} } {
+        ok{ value } => { io::println_i64{ &io, n = value } }
+        err         => { io::println{ &io, s = "cannot start" } }
+    }
+    return 0
+""", 'main.ctx')])
+        path = os.path.relpath(native_ctxc(), ROOT).replace(os.sep, '/')
+        self.assertIn('/', path)
+        out = io.StringIO()
+        self.assertEqual(run_exe(exe, out=out, args=[path], cwd=ROOT), 0)
+        self.assertEqual(out.getvalue().replace('\r\n', '\n'), '2\n')
+
     def test_env_and_exe_path(self):
         os.environ['CTX_TEST_ENV'] = 'set'
         self.addCleanup(os.environ.pop, 'CTX_TEST_ENV', None)

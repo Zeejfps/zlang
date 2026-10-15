@@ -432,8 +432,15 @@ namespace os {
         let line = c_malloc{ &proc, size = cap } ifnull { return out_of_memory(u64){} }
         defer c_free{ &proc, p = line }
         let text = @slice(line, cap)
-        let mut n: usize = 0
+        // The program with `\` for each `/`: CreateProcessW finds build\x.exe, a relative path
+        // to a program, but not build/x.exe. The program sees its name that way too.
+        let mut n = quote_arg{ line = text, n = 0, arg = argv[0] }
         i = 0
+        while i < n {
+            if text[i] == '/' { text[i] = '\\' }
+            i = i + 1
+        }
+        i = 1
         while i < argv.len {
             n = quote_arg{ line = text, n, arg = argv[i] }
             i = i + 1

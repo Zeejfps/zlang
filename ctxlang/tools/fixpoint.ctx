@@ -61,14 +61,8 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> 
     let exe: []u8 = if slice::eq_bytes{ a = host, b = "windows" } { ".exe" } else { "" }
     if not made{ &io, &fs, path = "build" } or not made{ &io, &fs, path = "build/fixpoint" } { return 1 }
 
-    // The executables by absolute paths: Windows doesn't start a program by a relative one with
-    // `/` in it.
-    let dir = fs::make_absolute(Heap){ &fs, &heap, realloc = arena::alloc, path = OUT } iferr {
-        cannot{ &io, path = OUT, what = "cannot find the working directory" }
-        return 1
-    }
-    let ctxc1 = cat{ &heap, a = dir, b = cat{ &heap, a = "ctxc1", b = exe } }
-    let ctxc2 = cat{ &heap, a = dir, b = cat{ &heap, a = "ctxc2", b = exe } }
+    let ctxc1 = cat{ &heap, a = OUT, b = cat{ &heap, a = "ctxc1", b = exe } }
+    let ctxc2 = cat{ &heap, a = OUT, b = cat{ &heap, a = "ctxc2", b = exe } }
     let c2 = cat{ &heap, a = OUT, b = "ctxc2.c" }
     let c3 = cat{ &heap, a = OUT, b = "ctxc3.c" }
     if not ctxc_exe{ &io, &proc, &heap, ctxc = ctxc0, out = ctxc1 } { return 1 }
