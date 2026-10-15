@@ -36,6 +36,8 @@ namespace gff {                                   // namespaces may span files (
   `null`, enum values, unions, strings, empty slices (`slice::empty(T){}`), consts, compile-time
   calls, and structs and arrays of those; not a pointer or a function. Give a new field a default
   where one makes sense, so the literals that end in `..` keep compiling. Attributes take `..` too.
+  Don't write a `no_x{}` helper that spells out constants: give the fields those defaults and
+  write `X{ .. }`.
 - **`mut` fields** are pointers to the caller's place; inside, use them as values. Pass `&local`
   (needs `let mut local`). Two `&` of overlapping places in one call is an error (§3.1).
 - **Big read-only arguments are passed by reference** (§14.6): a struct, union or array over
