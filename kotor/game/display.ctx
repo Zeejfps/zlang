@@ -45,14 +45,14 @@ namespace display {
     fn make { hidden: bool, path: []u8 } -> Display {
         let none = render::DisplayMode{ width = 0, height = 0, refresh = 0 }
         let mut d = Display{
-            hidden, applied = frontend::default_settings{}, have = false,
+            hidden, applied = frontend::Settings{ .. }, have = false,
             modes = [none; 192], mode_count = 0,
             desktop = render::DisplayMode{ width = 1920, height = 1080, refresh = 60 },
             usable = render::Size{ width = 1920, height = 1080 },
             window = render::Size{ width = 1280, height = 720 }, drawable = render::Size{ width = 1280, height = 720 },
             render = render::Size{ width = 1280, height = 720 },
             shown = render::Rect{ x = 0.0, y = 0.0, w = 1280.0, h = 720.0 },
-            path = [0; 256], path_len = 0, frame_start = 0, live = frontend::default_settings{}, pending = false, minimized = false, inactive = false, test_blur = 0.0, alt_enter = false, full_mode = 1,
+            path = [0; 256], path_len = 0, frame_start = 0, live = frontend::Settings{ .. }, pending = false, minimized = false, inactive = false, test_blur = 0.0, alt_enter = false, full_mode = 1,
             max_samples = 8, max_anisotropy = 16.0,
         }
         let n = if path.len < 256 { path.len } else { 256 }
@@ -65,7 +65,7 @@ namespace display {
     // options, leaving the rest of the settings: an offscreen run's pictures and logs then repeat whatever options file
     // is lying about.
     fn use_default_graphics { mut s: frontend::Settings } {
-        let d = frontend::default_settings{}
+        let d = frontend::Settings{ .. }
         s.width = d.width
         s.height = d.height
         s.window_mode = d.window_mode

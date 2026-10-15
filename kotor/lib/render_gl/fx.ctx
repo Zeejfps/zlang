@@ -8,16 +8,9 @@ namespace gpu {
     const BLOOM_LEVELS: usize = 6
 
     struct FxPrograms {
-        bloom_down: u32, bd_texel: i32, bd_params: i32,
-        bloom_up: u32, bu_texel: i32, bu_radius: i32,
-        composite: u32, co_params: i32, co_size: i32,
-    }
-
-    fn no_fx_programs {} -> FxPrograms {
-        return FxPrograms{
-            bloom_down = 0, bd_texel = -1, bd_params = -1, bloom_up = 0, bu_texel = -1, bu_radius = -1,
-            composite = 0, co_params = -1, co_size = -1,
-        }
+        bloom_down: u32 = 0, bd_texel: i32 = -1, bd_params: i32 = -1,
+        bloom_up: u32 = 0, bu_texel: i32 = -1, bu_radius: i32 = -1,
+        composite: u32 = 0, co_params: i32 = -1, co_size: i32 = -1,
     }
 
     // The enhanced views' targets, the size of the screen, made when first needed and again when it changes.
@@ -33,10 +26,6 @@ namespace gpu {
         ldr: u32 = 0, ldr_fbo: u32 = 0, // RGBA8: the tone-mapped picture, for the edge filter that follows
         refl: u32 = 0, ms_refl: u32 = 0, // RGBA16F: the environment map's share of each opaque pixel (rgb) and its weight (a), for reflections
         copy: u32 = 0, copy_fbo: u32 = 0, // RGBA16F: the opaque surfaces' light, copied for the reflections to read
-    }
-
-    fn no_fx_targets {} -> FxTargets {
-        return FxTargets{ .. }
     }
 
     // ---- the options
@@ -185,7 +174,7 @@ namespace gpu {
         }
         gl::delete_framebuffer{ gl = &dev.gl, id = t.ldr_fbo }
         forget_texture{ &dev, name = t.ldr }
-        dev.fxt = no_fx_targets{}
+        dev.fxt = FxTargets{ .. }
     }
 
     // Deletes a texture of ours and drops it from the cache of what is bound.
@@ -206,7 +195,7 @@ namespace gpu {
         let t = dev.fxt
         if t.made and t.width == w and t.height == h and t.samples == dev.samples { return }
         free_fx_targets{ &dev }
-        let mut n = no_fx_targets{}
+        let mut n = FxTargets{ .. }
         n.width = w
         n.height = h
         n.samples = dev.samples
@@ -359,7 +348,7 @@ namespace gpu {
         try run_ssr{ &dev, v, area }
         run_height_fog{ &dev, v, area }
         // The passes above set GL's state themselves: what the draws below assume is set afresh.
-        dev.state = unknown_state{}
+        dev.state = State{ .. }
         upload_frame_block{ &dev, v, view_proj, time = frame.time }
         bind_light_target{ &dev }
         dev.gl.viewport{ x = area.x, y = area.y, width = area.w, height = area.h }
@@ -400,7 +389,7 @@ namespace gpu {
         dev.in_fx = false
         dev.cur = dev.scene
         dev.cur_particle = dev.particle
-        dev.state = unknown_state{}
+        dev.state = State{ .. }
         try screen_passes{ &dev, frame, index }
     }
 
@@ -467,7 +456,7 @@ namespace gpu {
         dev.gl.disable{ cap = gl::STENCIL_TEST }
         dev.gl.disable{ cap = gl::POLYGON_OFFSET_FILL }
         dev.gl.depth_mask{ flag = gl::FALSE }
-        dev.state = unknown_state{}
+        dev.state = State{ .. }
         dev.gl.bind_vertex_array{ array = dev.ui_vao }
         dev.state.vao = dev.ui_vao
     }

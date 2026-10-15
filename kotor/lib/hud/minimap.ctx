@@ -17,11 +17,11 @@ namespace hud {
     // How the world maps onto the picture: pixel = scale * (u or v of the position) + offset,
     // with (u, v) the world's x and y (or swapped, or negated) as NorthAxis says.
     struct MapInfo {
-        present: bool,
-        axis: i32,
-        ax: f32, bx: f32,           // picture x (pixels) from u
-        ay: f32, by: f32,           // picture y (pixels) from v
-        picture: gui::Img,          // the picture, with its size
+        present: bool = false,
+        axis: i32 = 0,
+        ax: f32 = 0.0, bx: f32 = 0.0,     // picture x (pixels) from u
+        ay: f32 = 0.0, by: f32 = 0.0,     // picture y (pixels) from v
+        picture: gui::Img = gui::Img{ .. }, // the picture, with its size
     }
 
     struct MiniMap {
@@ -49,15 +49,11 @@ namespace hud {
         return -y
     }
 
-    fn no_map {} -> MapInfo {
-        return MapInfo{ present = false, axis = 0, ax = 0.0, bx = 0.0, ay = 0.0, by = 0.0, picture = gui::no_img{} }
-    }
-
     // Reads the area's map placement and picture. `present` stays false when the area has no
     // picture or no usable reference points (a few areas ship without).
     fn load_map { mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, area: u32 } -> MapInfo {
-        let ao = world::object{ w = &w, id = area } ifnull { return no_map{} }
-        let a = obj::area{ o = ao } ifnull { return no_map{} }
+        let ao = world::object{ w = &w, id = area } ifnull { return MapInfo{ .. } }
+        let a = obj::area{ o = ao } ifnull { return MapInfo{ .. } }
         let mut key = a.resref
         let name = resref::bytes{ r = &key }
         let mut pic: [48]u8
@@ -65,10 +61,10 @@ namespace hud {
         let n = if name.len > 40 { 40 } else { name.len }
         slice::copy(u8){ dst = pic[7..7 + n], src = name[..n] }
         let img = gui::resolve_img{ &g, fs = &w.fs, &dev, name = pic[..7 + n] }
-        if not img.ok { return no_map{} }
-        let doc = world::read_gff{ &w, name, kind = restype::Type::are } iferr { return no_map{} }
-        let d = doc ifnull { return no_map{} }
-        let ms = gff::get_struct{ doc = d, s = gff::ROOT, label = "Map" } ifnull { return no_map{} }
+        if not img.ok { return MapInfo{ .. } }
+        let doc = world::read_gff{ &w, name, kind = restype::Type::are } iferr { return MapInfo{ .. } }
+        let d = doc ifnull { return MapInfo{ .. } }
+        let ms = gff::get_struct{ doc = d, s = gff::ROOT, label = "Map" } ifnull { return MapInfo{ .. } }
         let axis = gff::get_int{ doc = d, s = ms, label = "NorthAxis" } ifnull 0
         let w1x = gff::get_float{ doc = d, s = ms, label = "WorldPt1X" } ifnull 0.0
         let w1y = gff::get_float{ doc = d, s = ms, label = "WorldPt1Y" } ifnull 0.0
@@ -82,7 +78,7 @@ namespace hud {
         let u2 = map_u{ axis, x = w2x, y = w2y }
         let v1 = map_v{ axis, x = w1x, y = w1y }
         let v2 = map_v{ axis, x = w2x, y = w2y }
-        if math::abs{ x = u2 - u1 } < 0.001 or math::abs{ x = v2 - v1 } < 0.001 { return no_map{} }
+        if math::abs{ x = u2 - u1 } < 0.001 or math::abs{ x = v2 - v1 } < 0.001 { return MapInfo{ .. } }
         let ax = (m2x - m1x) * MAP_W / (u2 - u1)
         let ay = (m2y - m1y) * MAP_H / (v2 - v1)
         return MapInfo{
@@ -109,8 +105,8 @@ namespace hud {
     // control shows. Called when the HUD opens.
     fn open_minimap { mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> MiniMap {
         let mut mm = MiniMap{
-            area = obj::INVALID, info = no_map{}, target = null, shown = null, side = 0,
-            arrow = gui::resolve_img{ &g, fs = &w.fs, &dev, name = "mm_barrow" }, fill = gui::no_img{},
+            area = obj::INVALID, info = MapInfo{ .. }, target = null, shown = null, side = 0,
+            arrow = gui::resolve_img{ &g, fs = &w.fs, &dev, name = "mm_barrow" }, fill = gui::Img{ .. },
         }
         let r = gui::control_rect{ &g, panel, tag = "LBL_MAPVIEW" } ifnull { return mm }
         let side = @as(i32, r.w)

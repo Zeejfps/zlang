@@ -14,30 +14,20 @@ namespace traps {
     // trap: TrapFlag, TrapDetectDC and DisarmDC are not read for triggers, the DCs are the trap
     // type's (traps.2da DetectDCMod, DisarmDCMod).
     struct Trap {
-        armed: bool,                // a live trap (Type 2); a disarmed or spent one is gone
-        base: i32,                  // TrapType: the traps.2da row (-1 none)
-        detectable: bool,           // TrapDetectable
-        detect_dc: i32,             // traps.2da DetectDCMod
-        disarmable: bool,           // TrapDisarmable
-        disarm_dc: i32,             // traps.2da DisarmDCMod
-        one_shot: bool,             // TrapOneShot: gone once it went off
-        creator: u32,               // CreatorId: who laid it (SETTRAP); INVALID for the module's own
-        party_set: bool,            // SetByPlayerParty: laid by the player's party
-        detected: bool,             // found by the party (one member's success is the party's)
-        flagged: bool,              // FLAGTRAP: everyone near finds it, the party sees it
-        key: []mut u8,              // KeyName: a creature carrying an item of this tag disarms it; heap
-        auto_remove_key: bool,      // AutoRemoveKey: that key goes when it does
-        last_disarmed: u32,         // GetLastDisarmed: who disarmed it with the key (+0x2a4)
-    }
-
-    // A field missing from every layer reads 0, TrapDetectable and TrapDisarmable included
-    // (LoadTrigger 0x0058da80); TrapOneShot alone defaults to 1.
-    fn none {} -> Trap {
-        return Trap{
-            armed = false, base = -1, detectable = false, detect_dc = 0, disarmable = false, disarm_dc = 0,
-            one_shot = true, creator = obj::INVALID, party_set = false, detected = false, flagged = false,
-            key = slice::empty(u8){}, auto_remove_key = false, last_disarmed = obj::INVALID,
-        }
+        armed: bool = false,        // a live trap (Type 2); a disarmed or spent one is gone
+        base: i32 = -1,             // TrapType: the traps.2da row (-1 none)
+        detectable: bool = false,   // TrapDetectable
+        detect_dc: i32 = 0,         // traps.2da DetectDCMod
+        disarmable: bool = false,   // TrapDisarmable
+        disarm_dc: i32 = 0,         // traps.2da DisarmDCMod
+        one_shot: bool = true,      // TrapOneShot: gone once it went off
+        creator: u32 = obj::INVALID, // CreatorId: who laid it (SETTRAP); INVALID for the module's own
+        party_set: bool = false,    // SetByPlayerParty: laid by the player's party
+        detected: bool = false,     // found by the party (one member's success is the party's)
+        flagged: bool = false,      // FLAGTRAP: everyone near finds it, the party sees it
+        key: []mut u8 = slice::empty(u8){}, // KeyName: a creature carrying an item of this tag disarms it; heap
+        auto_remove_key: bool = false, // AutoRemoveKey: that key goes when it does
+        last_disarmed: u32 = obj::INVALID, // GetLastDisarmed: who disarmed it with the key (+0x2a4)
     }
 
     // A blueprint's, GIT instance's or saved trigger's trap fields over what the trap holds.
@@ -259,7 +249,7 @@ namespace traps {
         let c = obj::creature{ o = victim } ifnull { return }
         if c.dead { return }
         if let f = c.fighter {
-            if rules::has_immunity{ c = &f.c, kind = rules::imm::TRAP, vs = rules::no_versus{} } { return }
+            if rules::has_immunity{ c = &f.c, kind = rules::imm::TRAP, vs = rules::Versus{ .. } } { return }
         }
         let source = world::object{ w = &w, id = trap.creator } ifnull o
         if victim.faction == o.faction or world::standing{ w = &w, from = victim.faction, toward = source.faction } > 10 { return }

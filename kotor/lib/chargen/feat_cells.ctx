@@ -141,7 +141,7 @@ namespace chargen {
             while k < 3 {
                 let feat = chains[i].cell[k]
                 users[k] = @as(i64, feat)
-                icons[k] = gui::no_img{}
+                icons[k] = gui::Img{ .. }
                 if feat >= 0 {
                     let name = twoda::get_string{ t, row = @as(usize, feat), column } ifnull ""
                     icons[k] = gui::resolve_img{ &g, &fs, &dev, name }

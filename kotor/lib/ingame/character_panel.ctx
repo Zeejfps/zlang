@@ -21,16 +21,12 @@ namespace character_panel {
     const SAVE_TAGS: [_][]u8 = ["LBL_FORTITUDE_STAT", "LBL_REFLEX_STAT", "LBL_WILL_STAT"]
 
     struct State {
-        opened: bool,
-        who: u32,                       // the creature shown
-        script: scriptselect_panel::State,  // the AI style panel (BTN_SCRIPTS), modal over the sheet
-        area: [4]i32,                   // LBL_3DCHAR as the file has it: x, y, w, h
-        view: ?*mut lvl::View,          // the 3D character; null when its appearance makes none
-        turn_wait: f32,                 // time to BTN_3DCHAR's next repeat while it is held
-    }
-
-    fn new {} -> State {
-        return State{ opened = false, who = obj::INVALID, script = scriptselect_panel::new{}, area = [0; 4], view = null, turn_wait = 0.0 }
+        opened: bool = false,
+        who: u32 = obj::INVALID,        // the creature shown
+        script: scriptselect_panel::State = scriptselect_panel::State{ .. }, // the AI style panel (BTN_SCRIPTS), modal over the sheet
+        area: [4]i32 = [0; 4],          // LBL_3DCHAR as the file has it: x, y, w, h
+        view: ?*mut lvl::View = null,   // the 3D character; null when its appearance makes none
+        turn_wait: f32 = 0.0,           // time to BTN_3DCHAR's next repeat while it is held
     }
 
     // The panel was just added, or the leader changed and it must be filled again.
@@ -173,7 +169,7 @@ namespace character_panel {
         let mut tag: [16]u8
         while n <= 10 {
             let at = hud::tag_n{ into = tag[..], prefix = "LBL_GOOD", n }
-            let mut img = gui::no_img{}
+            let mut img = gui::Img{ .. }
             if n <= shown and rows[n - 1] >= 0 and @as(usize, rows[n - 1]) < twoda::rows{ t } {
                 let name = rules::cell_text{ t, row = @as(usize, rows[n - 1]), col = "iconresref" }
                 if name.len > 0 { img = gui::resolve_img{ &g, fs = &w.fs, &dev, name } }

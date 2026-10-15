@@ -48,11 +48,7 @@ namespace bot {
         seen_open: bool = false,                // the door of the current stop has been seen open (one the story shuts again is passed, not opened twice)
         trans_stop: bool = false,               // the current stop is a trigger that starts an area transition (crossing it is reaching it)
         best: f32 = 1000000.0,                  // the nearest the leader has been to the current stop: a long walk is not a stuck one
-        tour: Tour,                             // the area's own route, when `bot tour` made one
-    }
-
-    fn new {} -> Bot {
-        return Bot{ tour = new_tour{}, .. }
+        tour: Tour = Tour{ .. },                // the area's own route, when `bot tour` made one
     }
 
     // The `bot ...` input line, after the word `bot`.

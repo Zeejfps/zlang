@@ -20,63 +20,42 @@ namespace mg {
 
     // How one bank of a vehicle is built, read from the models once.
     struct BankGear {
-        ready: bool,
-        rotating: bool,                 // the model carrying the gun bank turns with the aim
-        mount: math::Mat4,              // node gunbank<id> in that model
-        muzzle: math::Mat4,             // node bullethook in the gun model
-        event_time: f32,                // seconds after `fire` starts that the gun's `fire<id>` event spawns the bullet
-        fire_length: f32,               // the gun's `fire` animation
-        explode_length: f32,            // the bullet model's `explode` animation
+        ready: bool = false,
+        rotating: bool = false,         // the model carrying the gun bank turns with the aim
+        mount: math::Mat4 = math::mat4::identity{}, // node gunbank<id> in that model
+        muzzle: math::Mat4 = math::mat4::identity{}, // node bullethook in the gun model
+        event_time: f32 = 0.0,          // seconds after `fire` starts that the gun's `fire<id>` event spawns the bullet
+        fire_length: f32 = 0.0,         // the gun's `fire` animation
+        explode_length: f32 = EXPLODE_FALLBACK, // the bullet model's `explode` animation
     }
 
     // What a vehicle's models give the run.
     struct Gear {
-        banks: [4]BankGear,
-        has_box: bool,
-        box: math::Aabb,                // the `hitbullet` mesh in its model's space
-        box_rotating: bool,
-        die_length: f32,                // the longest `die` animation of its models
+        banks: [4]BankGear = [BankGear{ .. }; 4],
+        has_box: bool = false,
+        box: math::Aabb = math::aabb::empty{}, // the `hitbullet` mesh in its model's space
+        box_rotating: bool = false,
+        die_length: f32 = 0.0,          // the longest `die` animation of its models
     }
 
     // One bank's trigger: the cooldown to the next shot and the shot in progress (the gun is
     // playing `fire`; its bullet leaves when the animation reaches the event).
-    struct GunState { cooldown: f32, firing: bool, t: f32, spawned: bool }
+    struct GunState { cooldown: f32 = 0.0, firing: bool = false, t: f32 = 0.0, spawned: bool = false }
 
     struct Bullet {
-        live: bool,
-        owner: usize,                   // the object that fired it
-        bank: usize,
-        serial: u32,                    // which shot, so the host can tell a new bullet in a used slot
-        position: math::Vec3, previous: math::Vec3, direction: math::Vec3,
-        speed: f32, life: f32,
-        damage: i32, target: u32,       // target: bit 1 the player's side, bit 2 the enemies
-        model: resref::ResRef, hit_sound: resref::ResRef,
-        exploding: bool, explode_left: f32,
+        live: bool = false,
+        owner: usize = 0,               // the object that fired it
+        bank: usize = 0,
+        serial: u32 = 0,                // which shot, so the host can tell a new bullet in a used slot
+        position: math::Vec3 = math::vec3::zero{}, previous: math::Vec3 = math::vec3::zero{}, direction: math::Vec3 = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 },
+        speed: f32 = 0.0, life: f32 = 0.0,
+        damage: i32 = 0, target: u32 = 0,   // target: bit 1 the player's side, bit 2 the enemies
+        model: resref::ResRef = resref::empty{}, hit_sound: resref::ResRef = resref::empty{},
+        exploding: bool = false, explode_left: f32 = 0.0,
     }
 
     // A sound for the host to play: a resource name, a volume 0..1, and where, if it has a place.
     struct Sound { name: resref::ResRef, volume: f32, positional: bool, position: math::Vec3 }
-
-    fn no_bank_gear {} -> BankGear {
-        return BankGear{
-            ready = false, rotating = false, mount = math::mat4::identity{}, muzzle = math::mat4::identity{},
-            event_time = 0.0, fire_length = 0.0, explode_length = EXPLODE_FALLBACK,
-        }
-    }
-
-    fn no_gear {} -> Gear {
-        return Gear{ banks = [no_bank_gear{}; 4], has_box = false, box = math::aabb::empty{}, box_rotating = false, die_length = 0.0 }
-    }
-
-    fn no_gun {} -> GunState { return GunState{ cooldown = 0.0, firing = false, t = 0.0, spawned = false } }
-
-    fn no_bullet {} -> Bullet {
-        return Bullet{
-            live = false, owner = 0, bank = 0, serial = 0, position = math::vec3::zero{}, previous = math::vec3::zero{},
-            direction = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, speed = 0.0, life = 0.0, damage = 0, target = 0,
-            model = resref::empty{}, hit_sound = resref::empty{}, exploding = false, explode_left = 0.0,
-        }
-    }
 
     // ---- reading the models
 
@@ -182,7 +161,7 @@ namespace mg {
     fn make_gear(S) {
         realloc: alloc::Fn(S), mut heap: S, f: *Follower, lookup: &fn{ name: []u8 } -> ?*mdl::Model,
     } -> !Gear {
-        let mut g = no_gear{}
+        let mut g = Gear{ .. }
         let mut m: usize = 0
         while m < f.model_count {
             if let model = model_named{ lookup, r = &f.models[m].name } {

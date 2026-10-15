@@ -73,14 +73,14 @@ namespace dlgview {
         part.source = scene::loaded_at{ sc = &sc, i = index }.model
         part.anim_len = 0
         // A new model: nothing of the body's pose to blend away from (it is not in area space).
-        part.player = mdl_anim::new_player{}
+        part.player = mdl_anim::Player{ .. }
         // The stunt model has the face's nodes too (eyelids, jaw, brows): its scene animations move the
         // head as well, so the head plays them from it (the player sleeps with closed eyes in the opening).
         if let h = head_part{ sc = &sc, vis } {
             let hp = scene::part_at{ sc = &sc, i = h }
             hp.source = part.source
             hp.anim_len = 0
-            hp.player = mdl_anim::new_player{}
+            hp.player = mdl_anim::Player{ .. }
         }
         vis.stunt = true
         vis.animation = 0xFFFFFFFF
@@ -123,12 +123,12 @@ namespace dlgview {
             let part = scene::part_at{ sc = &sc, i = vis.first }
             part.source = null
             part.anim_len = 0
-            part.player = mdl_anim::new_player{}
+            part.player = mdl_anim::Player{ .. }
             if let h = head_part{ sc = &sc, vis } {
                 let hp = scene::part_at{ sc = &sc, i = h }
                 hp.source = null
                 hp.anim_len = 0
-                hp.player = mdl_anim::new_player{}
+                hp.player = mdl_anim::Player{ .. }
             }
             vis.stunt = false
             vis.animation = 0xFFFFFFFF

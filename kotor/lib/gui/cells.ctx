@@ -29,7 +29,7 @@ namespace gui {
         b.present = true
         b.corner = resolve_img{ &g, &fs, &dev, name = "border2d" }
         b.edge = resolve_img{ &g, &fs, &dev, name = "border1d" }
-        b.fill = no_img{}
+        b.fill = Img{ .. }
         b.color = white_color{}
         c.cell_art = CellArt{
             on = true, frame = b,
@@ -59,7 +59,7 @@ namespace gui {
         }
         let mut k: usize = 0
         while k < CELLS_PER_ROW {
-            c.cells[@as(usize, r) * CELLS_PER_ROW + k] = Cell{ user = users[k], icon = if users[k] >= 0 { icons[k] } else { no_img{} }, style = CELL_LOCKED }
+            c.cells[@as(usize, r) * CELLS_PER_ROW + k] = Cell{ user = users[k], icon = if users[k] >= 0 { icons[k] } else { Img{ .. } }, style = CELL_LOCKED }
             k = k + 1
         }
         return r
@@ -209,7 +209,7 @@ namespace gui {
                 fb.tinted = true
                 fb.color = look.color
                 fb.pulsing = if focused { 1 } else { 0 }
-                draw_border{ &g, &frame, b = fb, x = b.x, y = b.y, w = b.w, h = b.h, alpha = alpha * look.frame, clip, override = no_img{} }
+                draw_border{ &g, &frame, b = fb, x = b.x, y = b.y, w = b.w, h = b.h, alpha = alpha * look.frame, clip, override = Img{ .. } }
             }
             k = k + 1
         }

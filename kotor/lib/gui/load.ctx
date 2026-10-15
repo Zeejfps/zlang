@@ -5,10 +5,6 @@
 namespace gui {
     const NO_STRREF: u32 = 4294967295
 
-    fn no_img {} -> Img {
-        return Img{ tex = render::Texture{ id = 0 }, w = 0.0, h = 0.0, ok = false, additive = false }
-    }
-
     fn white_color {} -> render::Color {
         return render::Color{ r = 1.0, g = 1.0, b = 1.0, a = 1.0 }
     }
@@ -34,9 +30,9 @@ namespace gui {
 
     // The texture `name` through the shared cache, with its size; not ok when the install lacks it.
     fn resolve_img { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, name: []u8 } -> Img {
-        if name.len == 0 or ci::eq{ a = name, b = "NULL" } { return no_img{} }
+        if name.len == 0 or ci::eq{ a = name, b = "NULL" } { return Img{ .. } }
         let e = material::get{ cache = g.cache, &fs, &dev, rm = g.rm, name }
-        let t = e.texture ifnull { return no_img{} }
+        let t = e.texture ifnull { return Img{ .. } }
         let size = gpu::texture_size{ dev, t }
         return Img{ tex = t, w = @as(f32, size.width), h = @as(f32, size.height), ok = true, additive = e.props.blend == render::Blend::additive }
     }
@@ -110,7 +106,7 @@ namespace gui {
 
     fn no_border {} -> Border {
         return Border{
-            present = false, corner = no_img{}, edge = no_img{}, fill = no_img{}, fill_style = FILL_STRETCHED, fill_turns = 0,
+            present = false, corner = Img{ .. }, edge = Img{ .. }, fill = Img{ .. }, fill_style = FILL_STRETCHED, fill_turns = 0,
             dimension = 0, inner_offset = 0, color = white_color{}, tinted = false, pulsing = 0,
         }
     }
@@ -146,7 +142,7 @@ namespace gui {
     }
 
     fn read_image { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, doc: gff::Doc, s: u32, label: []u8 } -> Img {
-        let img_s = gff::get_struct{ doc, s, label } ifnull { return no_img{} }
+        let img_s = gff::get_struct{ doc, s, label } ifnull { return Img{ .. } }
         return resolve_img{ &g, &fs, &dev, name = gff::get_resref{ doc, s = img_s, label = "IMAGE" } ifnull "" }
     }
 
@@ -219,7 +215,7 @@ namespace gui {
         c.tooltip = ""
         c.tooltip_buf = slice::empty(u8){}
         c.max_chars = -1
-        c.override_fill = no_img{}
+        c.override_fill = Img{ .. }
         c.drag_with = -1
         return c
     }

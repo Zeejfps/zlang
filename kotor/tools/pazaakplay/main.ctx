@@ -146,7 +146,7 @@ fn run {
     }
 
     // what the script would pass: the opponent's deck, the player's cards
-    let mut params = pazaak::make_params{}
+    let mut params = pazaak::Params{ .. }
     params.max_wager = o.wager
     params.tutorial = o.tutorial
     params.seed = o.seed

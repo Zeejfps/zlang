@@ -100,7 +100,7 @@ namespace frontend {
             heap, game,
             settings = load_settings{ &fs, heap, path = config_path },
             saves = SaveList{ entries = slice::empty(SaveEntry){}, count = 0 },
-            snapshot = default_settings{},
+            snapshot = Settings{ .. },
             music_bytes = slice::empty(u8){},
             keys = new_key_screen{},
             ..

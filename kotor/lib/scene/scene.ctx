@@ -88,7 +88,7 @@ namespace scene {
         time: f32 = 0.0,
         current_room: i32 = -1,
         ambient: math::Vec3 = math::Vec3{ x = 0.35, y = 0.35, z = 0.35 },
-        fog: render::Fog = render::no_fog{},
+        fog: render::Fog = render::Fog{ .. },
         drawn_rooms: u32 = 0,
         drawn_objects: u32 = 0,
         look: Look,                     // a creature in stealth mode's texture (stealth_look.ctx)
@@ -104,7 +104,7 @@ namespace scene {
         shadow_opacity: f32 = 0.5,      // the ARE's ShadowOpacity, 0..1
         grade: ?render::Texture = null, // the planet's colour grade (atmosphere.ctx): a lookup table on the GPU, made when first asked for
         grade_state: u8 = 0,            // 0 not made yet, 1 made, 2 none
-        hfog: render::HeightFog = render::no_height_fog{}, // the area's height fog (atmosphere.ctx)
+        hfog: render::HeightFog = render::HeightFog{ .. }, // the area's height fog (atmosphere.ctx)
         hfog_state: u8 = 0,             // 0 not looked for yet, 1 found, 2 none
         emitters_on: bool = true,       // the Emitters option (set by the owner): the world's emitters run and draw (emitters.ctx)
         fx_frame: u32 = 0,              // frames drawn so far (a new scene time), for stepping each emitter once a frame
@@ -129,7 +129,7 @@ namespace scene {
             ray_trees = list::new(RayTree, arena::Arena){ realloc = arena::alloc, heap = arena },
             visuals = list::new(Visual, arena::Arena){ realloc = arena::alloc, heap = arena },
             by_id = map::new(u32, usize, arena::Arena){ realloc = arena::alloc, heap = arena, hash = map::hash_u32, eq = map::eq_u32 },
-            look = no_look{}, grass = grass::none{},
+            look = Look{ .. }, grass = grass::Field{ .. },
             field = no_field{ arena },
             ..
         }
@@ -227,7 +227,7 @@ namespace scene {
             mdl_anim::hold_shared{ model, pose, parent = parent_model, hook }
         }
         try list::push{ list = &sc.parts, item = Part{
-            loaded, pose, player = mdl_anim::new_player{}, anim = [0; 32], anim_len = 0, next = [0; 32], next_len = 0, parent, hook, source = null,
+            loaded, pose, player = mdl_anim::Player{ .. }, anim = [0; 32], anim_len = 0, next = [0; 32], next_len = 0, parent, hook, source = null,
             emitting = slice::empty(gui3d::Emitting){},
         } }
         return sc.parts.len - 1
@@ -414,7 +414,7 @@ namespace scene {
             i = i + 1
         }
         material::free_cache{ cache = &sc.materials, &dev }
-        sc.look = no_look{}
+        sc.look = Look{ .. }
         if let t = sc.grade { gpu::free_texture{ &dev, t } }
         sc.grade = null
     }

@@ -385,17 +385,17 @@ namespace nwvm {
     }
 
     struct Fault {
-        kind: FaultKind,
-        script: []u8,       // the program's name
-        offset: u32,        // the instruction's offset in the file, as the disassembler shows it
-        op: u8,             // its opcode and type byte, 0 if none
-        ty: u8,
-        routine: i32,       // inside an ACTION: the routine called, else -1
-        argc: i32,
-        want: u8,           // wrong_type, not_comparable: the cell types wanted and found
-        found: u8,
-        cells: i32,         // unbalanced: cells left above the start (negative: below)
-        why: []u8,          // a routine's own reason (fail)
+        kind: FaultKind = FaultKind::none,
+        script: []u8 = "",  // the program's name
+        offset: u32 = 0,    // the instruction's offset in the file, as the disassembler shows it
+        op: u8 = 0,         // its opcode and type byte, 0 if none
+        ty: u8 = 0,
+        routine: i32 = -1,  // inside an ACTION: the routine called, else -1
+        argc: i32 = 0,
+        want: u8 = 0,       // wrong_type, not_comparable: the cell types wanted and found
+        found: u8 = 0,
+        cells: i32 = 0,     // unbalanced: cells left above the start (negative: below)
+        why: []u8 = "",     // a routine's own reason (fail)
     }
 
     struct Vm {
@@ -454,7 +454,7 @@ namespace nwvm {
             count = 0, total = 0, budget = limits.budget,
             saved = Saved{ valid = false, program = null, resume = 0, globals = 0, frame = 0 },
             result = null,
-            fault = no_fault{},
+            fault = Fault{ .. },
         }
         vm.strs[0] = ""
         return vm
@@ -467,13 +467,6 @@ namespace nwvm {
         _ = alloc::resize(u32, S){ realloc, &heap, mem = vm.free, count = 0 }
         _ = alloc::resize(u8, S){ realloc, &heap, mem = vm.marks, count = 0 }
         _ = alloc::resize(u8, S){ realloc, &heap, mem = vm.text, count = 0 }
-    }
-
-    fn no_fault {} -> Fault {
-        return Fault{
-            kind = FaultKind::none, script = "", offset = 0, op = 0, ty = 0, routine = -1, argc = 0,
-            want = 0, found = 0, cells = 0, why = "",
-        }
     }
 
     // Empties the stack and everything a run made: what happens before an outermost run and
@@ -519,7 +512,7 @@ namespace nwvm {
     // `program` leaves none.
     fn run { mut vm: Vm, program: *Program, self: u32, engine: Engine } -> !?i32 {
         if vm.depth >= LEVELS {
-            vm.fault = no_fault{}
+            vm.fault = Fault{ .. }
             vm.fault.kind = FaultKind::too_deep
             vm.fault.script = program.name
             return faulted
@@ -530,7 +523,7 @@ namespace nwvm {
         let entry_sp = vm.sp
         let entry_ret = vm.nret
         if vm.nret + 1 >= RETURNS {
-            vm.fault = no_fault{}
+            vm.fault = Fault{ .. }
             vm.fault.kind = FaultKind::call_depth
             vm.fault.script = program.name
             return faulted
@@ -551,7 +544,7 @@ namespace nwvm {
         if sp == entry_sp + 1 and vm.types[entry_sp] == INT {
             vm.result = vm.vals[entry_sp].i
         } else if sp != entry_sp and sp != entry_sp + 1 {
-            vm.fault = no_fault{}
+            vm.fault = Fault{ .. }
             vm.fault.kind = FaultKind::unbalanced
             vm.fault.script = program.name
             vm.fault.cells = @as(i32, @as(i64, sp) - @as(i64, entry_sp))
@@ -1141,7 +1134,7 @@ namespace nwvm {
     // Records a fault at instruction `ip` of `program`; false, for `return trap{ ... }`.
     fn trap { mut vm: Vm, program: *Program, ip: usize, sp: usize, kind: FaultKind } -> bool {
         vm.sp = @as(u32, sp)
-        vm.fault = no_fault{}
+        vm.fault = Fault{ .. }
         vm.fault.kind = kind
         vm.fault.script = program.name
         let at = program.at[ip]
@@ -1526,7 +1519,7 @@ namespace nwvm {
     // must outlive the call; the engine frees it after (or keeps it, to run it again).
     fn resume { mut vm: Vm, situation: Situation, self: u32, engine: Engine } -> ! {
         if vm.depth != 0 {
-            vm.fault = no_fault{}
+            vm.fault = Fault{ .. }
             vm.fault.kind = FaultKind::busy
             vm.fault.script = situation.program.name
             return busy
@@ -1535,7 +1528,7 @@ namespace nwvm {
         vm.result = null
         let n = situation.types.len
         if n > vm.types.len or situation.bp > @as(u32, n) {
-            vm.fault = no_fault{}
+            vm.fault = Fault{ .. }
             vm.fault.kind = if n > vm.types.len { FaultKind::stack_full } else { FaultKind::bad_state }
             vm.fault.script = situation.program.name
             return faulted
@@ -1548,7 +1541,7 @@ namespace nwvm {
                 let at = @as(usize, situation.vals[k].u)
                 let bytes = record{ text = situation.text, at }
                 let slot = new_string{ &vm, s = bytes } ifnull {
-                    vm.fault = no_fault{}
+                    vm.fault = Fault{ .. }
                     vm.fault.kind = FaultKind::strings_full
                     vm.fault.script = situation.program.name
                     reset{ &vm }

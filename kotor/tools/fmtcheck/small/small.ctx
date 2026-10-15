@@ -253,7 +253,7 @@ namespace fmt_small {
         }
         if px.kind == txi::TpcKind::cube { st.tpc_cube = st.tpc_cube + 1 }
         if px.kind == txi::TpcKind::flipbook { st.tpc_flipbook = st.tpc_flipbook + 1 }
-        let mut t = txi::defaults{}
+        let mut t = txi::Txi{ .. }
         if text.len > 0 {
             t = check_txi{ &io, &st, &scratch, copy, data = text, verbose } ifnull {
                 st.tpc.failed = st.tpc.failed + 1

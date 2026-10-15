@@ -11,11 +11,7 @@
 namespace scene {
     const LOOK_TEXTURE: []u8 = "fx_tex_stealth"
 
-    struct Look { tried: bool, entry: material::Entry }
-
-    fn no_look {} -> Look {
-        return Look{ tried = false, entry = material::missing_entry{ key = resref::truncate{ name = LOOK_TEXTURE } } }
-    }
+    struct Look { tried: bool = false, entry: material::Entry = material::missing_entry{ key = resref::truncate{ name = LOOK_TEXTURE } } }
 
     // Loads the texture the first time a creature hides in the area (sync has the device).
     fn prepare_look { mut sc: Scene, mut w: world::World, mut dev: gpu::Device } {

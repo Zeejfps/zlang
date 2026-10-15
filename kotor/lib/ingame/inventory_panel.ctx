@@ -25,18 +25,14 @@ namespace inventory_panel {
     const TYPE_RECOVERY_KIT: i32 = 47
 
     struct State {
-        opened: bool,
-        who: u32,               // the creature shown: the leader
-        filter: i32,            // kept between openings, as the original keeps it
-        picked: u32,            // the selected item, INVALID none
-        box: u32,               // the refusal message box, 0 when none
-        seen: [64]u32,          // the new items whose description was shown: no longer new when the screen closes
-        nseen: usize,
-        would_use: bool,        // a click on the picked row would use its item (the Use Item button's colour, with the cooldown)
-    }
-
-    fn new {} -> State {
-        return State{ opened = false, who = obj::INVALID, filter = FILTER_ALL, picked = obj::INVALID, box = 0, seen = [obj::INVALID; 64], nseen = 0, would_use = false }
+        opened: bool = false,
+        who: u32 = obj::INVALID, // the creature shown: the leader
+        filter: i32 = FILTER_ALL, // kept between openings, as the original keeps it
+        picked: u32 = obj::INVALID, // the selected item, INVALID none
+        box: u32 = 0,           // the refusal message box, 0 when none
+        seen: [64]u32 = [obj::INVALID; 64], // the new items whose description was shown: no longer new when the screen closes
+        nseen: usize = 0,
+        would_use: bool = false, // a click on the picked row would use its item (the Use Item button's colour, with the cooldown)
     }
 
     // The panel was just added, or the leader changed and it must be filled again.

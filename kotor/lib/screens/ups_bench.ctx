@@ -25,7 +25,7 @@ namespace ups {
         s.item = obj::INVALID
         s.original = obj::INVALID
         s.choosing = false
-        s.box = msgbox::blank{}
+        s.box = msgbox::Box{ .. }
         s.ask = ASK_NOTHING
         s.sel = 0
         s.list = 0

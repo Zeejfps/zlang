@@ -45,11 +45,11 @@ namespace mg {
 
     // A weapon: its gun model hangs on node `gunbank<id>` of the vehicle; a shot is `bullet`.
     struct Bank {
-        id: u32,
-        gun_model: resref::ResRef, fire_sound: resref::ResRef,
-        bullet_model: resref::ResRef, collision_sound: resref::ResRef,
-        damage: u32, lifespan: f32, rate_of_fire: f32, speed: f32, target_type: u32,
-        inaccuracy: f32, sensing_radius: f32, horiz_spread: f32, vert_spread: f32,    // enemies aim by these
+        id: u32 = 0,
+        gun_model: resref::ResRef = resref::empty{}, fire_sound: resref::ResRef = resref::empty{},
+        bullet_model: resref::ResRef = resref::empty{}, collision_sound: resref::ResRef = resref::empty{},
+        damage: u32 = 0, lifespan: f32 = 0.0, rate_of_fire: f32 = 0.0, speed: f32 = 0.0, target_type: u32 = 0,
+        inaccuracy: f32 = 0.0, sensing_radius: f32 = 0.0, horiz_spread: f32 = 0.0, vert_spread: f32 = 0.0, // enemies aim by these
     }
 
     // The player's vehicle or an enemy, pad or fighter: something that rides a track.
@@ -115,14 +115,6 @@ namespace mg {
         return out
     }
 
-    fn no_bank {} -> Bank {
-        return Bank{
-            id = 0, gun_model = resref::empty{}, fire_sound = resref::empty{}, bullet_model = resref::empty{}, collision_sound = resref::empty{},
-            damage = 0, lifespan = 0.0, rate_of_fire = 0.0, speed = 0.0, target_type = 0,
-            inaccuracy = 0.0, sensing_radius = 0.0, horiz_spread = 0.0, vert_spread = 0.0,
-        }
-    }
-
     fn read_bank { doc: gff::Doc, s: u32 } -> Bank {
         let mut b = Bank{
             id = @as(u32, number_of{ doc, s, label = "BankID", fallback = 0 }),
@@ -159,7 +151,7 @@ namespace mg {
             death_sound = resref::empty{}, engine_sound = resref::empty{},
             models = [none; 8], model_count = 0,
             scripts = read_scripts{ doc, s },
-            banks = [no_bank{}; 4], bank_count = 0,
+            banks = [Bank{ .. }; 4], bank_count = 0,
             trigger = number_of{ doc, s, label = "Trigger", fallback = 0 } != 0,
             camera = ref_of{ doc, s, label = "Camera" }, camera_rotate = number_of{ doc, s, label = "CameraRotate", fallback = 0 } != 0,
             min_speed = float_of{ doc, s, label = "Minimum_Speed", fallback = 0.0 },

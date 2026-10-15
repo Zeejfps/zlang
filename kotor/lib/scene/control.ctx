@@ -5,33 +5,27 @@
 // clicks are the HUD's (lib/hud), not this file's.
 namespace ctl {
     struct Keys {
-        forward: bool,
-        back: bool,
-        strafe_left: bool,
-        strafe_right: bool,
-        turn_left: bool,            // camera rotate keys
-        turn_right: bool,
-        freelook: bool,             // free look: the keys do not move the leader (W and S tilt the view, cam::Input)
-        walk: bool,                 // the walk modifier (B) is held: half the input, the walk animation
-        action: bool,               // a minigame's fire key went down this frame (Space)
-    }
-
-    fn no_keys {} -> Keys {
-        return Keys{ forward = false, back = false, strafe_left = false, strafe_right = false, turn_left = false, turn_right = false, freelook = false, walk = false, action = false }
+        forward: bool = false,
+        back: bool = false,
+        strafe_left: bool = false,
+        strafe_right: bool = false,
+        turn_left: bool = false,    // camera rotate keys
+        turn_right: bool = false,
+        freelook: bool = false,     // free look: the keys do not move the leader (W and S tilt the view, cam::Input)
+        walk: bool = false,         // the walk modifier (B) is held: half the input, the walk animation
+        action: bool = false,       // a minigame's fire key went down this frame (Space)
     }
 
     struct Control {
-        vx: f32,                    // velocity, m/s, in the input's frame (x to the right, y ahead), not the world's
-        vy: f32,
-        moved_speed: f32,           // the speed the last frame moved at (the client creature's +0x3b0, SetMoveSpeed): 0 unless above 1 m/s
-        busy_wait: f32,             // seconds the keys still wait before they may break the leader's orders (client +0x2a4); <= 0: none
-        min_turn: f32,              // degrees per second (camerastyle MinTurnRate, MaxTurnRate)
-        max_turn: f32,
-        last: u32,                  // the creature moved last frame: when the leader changes, the old one stops
-        combat_movement: bool,      // the "Combat Movement" option: in combat mode the keys may break the leader's orders
+        vx: f32 = 0.0,              // velocity, m/s, in the input's frame (x to the right, y ahead), not the world's
+        vy: f32 = 0.0,
+        moved_speed: f32 = 0.0,     // the speed the last frame moved at (the client creature's +0x3b0, SetMoveSpeed): 0 unless above 1 m/s
+        busy_wait: f32 = -1.0,      // seconds the keys still wait before they may break the leader's orders (client +0x2a4); <= 0: none
+        min_turn: f32 = 150.0,      // degrees per second (camerastyle MinTurnRate, MaxTurnRate)
+        max_turn: f32 = 1500.0,
+        last: u32 = obj::INVALID,   // the creature moved last frame: when the leader changes, the old one stops
+        combat_movement: bool = true, // the "Combat Movement" option: in combat mode the keys may break the leader's orders
     }
-
-    fn new {} -> Control { return Control{ vx = 0.0, vy = 0.0, moved_speed = 0.0, busy_wait = -1.0, min_turn = 150.0, max_turn = 1500.0, last = obj::INVALID, combat_movement = true } }
 
     fn set_style { mut ctl: Control, t: twoda::Table, row: u32 } {
         ctl.min_turn = twoda::get_float{ t, row = @as(usize, row), column = "minturnrate" } ifnull 150.0

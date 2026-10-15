@@ -68,9 +68,7 @@ namespace frontend {
     const CODE_ESCAPE: i32 = 31
     const CODE_COUNT: i32 = 110              // codes 6..109 name keys (0x005f4df0)
 
-    struct Keymap { codes: [80]i16 }        // per slot: the key code, 0 none, -1 not given (a file's)
-
-    fn no_keymap {} -> Keymap { return Keymap{ codes = [-1; 80] } }
+    struct Keymap { codes: [80]i16 = [-1; 80] }        // per slot: the key code, 0 none, -1 not given (a file's)
 
     // The 2DA row and part (0 a one-key row, 1 the A key, 2 the B key: the original's numbering) of a slot.
     fn slot_row { slot: i32 } -> i32 { return if slot < 66 { 200 + slot } else { 280 + (slot - 66) / 2 } }
@@ -98,7 +96,7 @@ namespace frontend {
 
     // [Keymapping] of an options file's text: what it gives, -1 elsewhere.
     fn read_keymap { data: []u8 } -> Keymap {
-        let mut km = no_keymap{}
+        let mut km = Keymap{ .. }
         let mut slot: i32 = 0
         while slot < 80 {
             let mut buf: [12]u8

@@ -22,28 +22,20 @@ namespace map_panel {
     const TOGETHER_RANGE: f32 = 30.0
 
     struct State {
-        opened: bool,
-        info: hud::MapInfo,                 // the picture and where the world falls in it
-        info_area: u32,                     // the area `info` is for
-        target: ?render::Target,            // LBL_Map's contents, drawn by `draw`
-        shown: ?render::Texture,
-        width: i32, height: i32,            // the target's size
-        arrow: gui::Img,                    // a party member
-        marker: gui::Img,                   // a map note (the ring; the selected one is bigger and yellow)
-        notes: [32]u32,                     // waypoint ids with an enabled note, in object order
-        note_count: usize,
-        note_at: i32,                       // the selected note's index, NO_NOTE
-        box: u32,                           // the message box on screen, 0 when none
-        pending: u32,                       // what the box asks: 1 the Return question, 0 a notice
-        sel: partysel_panel::State,         // Party Selection, opened from this panel
-    }
-
-    fn new {} -> State {
-        return State{
-            opened = false, info = hud::no_map{}, info_area = obj::INVALID, target = null, shown = null,
-            width = 0, height = 0, arrow = gui::no_img{}, marker = gui::no_img{},
-            notes = [obj::INVALID; 32], note_count = 0, note_at = NO_NOTE, box = 0, pending = 0, sel = partysel_panel::new{},
-        }
+        opened: bool = false,
+        info: hud::MapInfo = hud::MapInfo{ .. }, // the picture and where the world falls in it
+        info_area: u32 = obj::INVALID,      // the area `info` is for
+        target: ?render::Target = null,     // LBL_Map's contents, drawn by `draw`
+        shown: ?render::Texture = null,
+        width: i32 = 0, height: i32 = 0,        // the target's size
+        arrow: gui::Img = gui::Img{ .. },   // a party member
+        marker: gui::Img = gui::Img{ .. },  // a map note (the ring; the selected one is bigger and yellow)
+        notes: [32]u32 = [obj::INVALID; 32], // waypoint ids with an enabled note, in object order
+        note_count: usize = 0,
+        note_at: i32 = NO_NOTE,             // the selected note's index, NO_NOTE
+        box: u32 = 0,                       // the message box on screen, 0 when none
+        pending: u32 = 0,                   // what the box asks: 1 the Return question, 0 a notice
+        sel: partysel_panel::State = partysel_panel::State{ .. }, // Party Selection, opened from this panel
     }
 
     // ---- what the panel shows

@@ -110,13 +110,13 @@ namespace play {
             }
         }
         let mut sc = scene::make{ arena = &scene_arena, heap = w.heap, scratch = texture_scratch, rm = w.rm.* }
-        let mut vx = vfx::make{}
+        let mut vx = vfx::Vfx{ .. }
         try scene::load_area{ &sc, &w, &dev }
         loading::step{ l = ld, &w, &dev, &sdl, &frame, opts, percent = 75 }
         let mut camera = cam::new{}
         let mut test_camera = ""       // `FRAME cam ...`: a camera for pictures (see place_test_camera)
         let mut camera_row: u32 = 0xFFFFFFFF    // the camerastyle.2da row the camera uses
-        let mut control = ctl::new{}
+        let mut control = ctl::Control{ .. }
         let mut was_freelook = false            // last frame's free look and conversation: RestoreDefaultCamera's moments
         let mut was_talking = false
         let mut freelook_effect: i32 = -2       // the videoeffects.2da row free look switched on (-2: none)
@@ -141,8 +141,8 @@ namespace play {
         // HOOK(minigames): a minigame area has a run, its own stage and its own frames (game/minigame*.ctx).
         let mut mg_models = mdl_cache::new{ rm = w.rm.*, keep = w.mod_arena }
         _ = try mg_game::enter{ &w, models = &mg_models }
-        let mut mg_stage = mg_game::make_stage{}
-        let mut mg_mouse = mg_game::make_mouse{}
+        let mut mg_stage = mg_game::Stage{ .. }
+        let mut mg_mouse = mg_game::Mouse{ .. }
         // HOOK(ingame): the HUD and the in-game menus (docs/design/hud.md).
         let screen_now = gpu::screen_size{ dev }
         let ui = try ingame::make{ &w, &dev, mixer, scratch = texture_scratch, width = @as(i32, screen_now.width), height = @as(i32, screen_now.height), settings = opts.settings, gui_scale = disp.live.gui_scale }
@@ -159,16 +159,16 @@ namespace play {
         w.tut.allowed = not opts.headless    // and so may a tutorial pop-up (a script's `ui tutorial allow` lets a test see them)
         loading::step{ l = ld, &w, &dev, &sdl, &frame, opts, percent = 90 }
         let silent = try alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(i16){}, count = 44100 }
-        let mut keys = ctl::no_keys{}
-        let mut inputs = inject::new_inputs{}      // the scripted pointer and held modifiers
+        let mut keys = ctl::Keys{ .. }
+        let mut inputs = inject::Inputs{ .. }      // the scripted pointer and held modifiers
         let mut mouse_was_looking = false         // the mouse was turning the camera last frame (relative mode is on)
         let freq = sdl::counter_frequency{ &sdl }
         let mut last = sdl::counter{ &sdl }
         let mut quit = false
         let mut to_menu = false                  // the pass ends for the main menu, not for the process
         let menu_allowed = not opts.headless or opts.cinema     // a hidden run ends instead, unless --cinema
-        let mut cinema = cine::make{}            // the films, the credits and the end of the game that scripts asked for (game/cine.ctx)
-        let mut wipe = death::make{}            // the party wipe's slow motion, camera, box and fade (game/death.ctx)
+        let mut cinema = cine::Cinema{ .. }            // the films, the credits and the end of the game that scripts asked for (game/cine.ctx)
+        let mut wipe = death::Death{ .. }            // the party wipe's slow motion, camera, box and fade (game/death.ctx)
         let mut want_save = ""            // a save asked for this frame: its folder name
         let mut want_slot: i32 = -1             // the manual save it writes over (Save Game list), or -1: a new one or QUICKSAVE / AUTOSAVE
         let mut sw_module: [24]u8 = [0; 24]     // `savewhen MODULE NAME`: the save waits for the story to be in MODULE and quiet for 2 s
@@ -190,8 +190,8 @@ namespace play {
         let mut tenth_count: [10]u64 = [0; 10]
         let mut owed = speed::Owed{ dt = 0.0, clock_dt = 0.0 }    // --speed: the presentation's time to catch up
         let mut speed_blur: f32 = 0.0              // the Frame Buffer Effects option's speed blur (programmed effect 1601 on the leader, lib/vfx/coded.ctx), eased in and out
-        let mut fxh = fxhud::make{}                 // the GPU Timing option's lines over the picture
-        let mut fcs = focus::make{}                 // depth of field in conversations (game/focus.ctx)
+        let mut fxh = fxhud::Hud{ .. }                 // the GPU Timing option's lines over the picture
+        let mut fcs = focus::Focus{ .. }                 // depth of field in conversations (game/focus.ctx)
         while not quit {
             frame_no = frame_no + 1
             if opts.frames > 0 and frame_no > opts.frames { break }
@@ -406,7 +406,7 @@ namespace play {
             death::step_slow{ d = &wipe, &w, dt }
             clock::advance{ c = &w.clock, seconds = dt }
             // The player doesn't walk while a conversation runs (re/dialogue.md 4.9).
-            if w.conversation.active { keys = ctl::no_keys{} }
+            if w.conversation.active { keys = ctl::Keys{ .. } }
             control.combat_movement = ingame::combat_movement{ ui }    // HOOK(ingame)
             ctl::update{ ctl = &control, &w, keys, yaw = camera.yaw, dt = w.clock.dt }
             ingame::set_move_speed{ ui, speed = math::max{ a = math::abs{ x = control.vx }, b = math::abs{ x = control.vy } } }    // HOOK(ingame)
@@ -468,7 +468,7 @@ namespace play {
                     brace_sound{ &sdl, adev, mixer }
                     // The new area fades in after 0.5 s over 1 s, unless its OnEnter script fades itself (gameloop.md 5.5 step 1).
                     outbox::post{ out = &w.out, note = outbox::Note::fade{ out = false, wait = 0.5, length = 1.0, color = math::vec3::zero{} } }
-                    mg_stage = mg_game::make_stage{}
+                    mg_stage = mg_game::Stage{ .. }
                     _ = try mg_game::enter{ &w, models = &mg_models }
                 }
             }
@@ -560,7 +560,7 @@ namespace play {
             }
             if mouse.freelook {
                 turn_leader{ &w, degrees = mouse.yaw_degrees + key_turn * cam::DPS * camera_dt }
-                input = cam::no_input{}
+                input = cam::Input{ .. }
                 input.pitch_degrees = mouse.pitch_degrees
                 input.tilt = (if keys.forward { 1.0 } else { 0.0 }) - (if keys.back { 1.0 } else { 0.0 })
             }
@@ -862,7 +862,7 @@ namespace play {
         try frontend::begin{ &fe, &g, fs = &w.fs, &dev, &sdl, mixer }
         let freq = sdl::counter_frequency{ &sdl }
         let mut last = sdl::counter{ &sdl }
-        let mut inputs = inject::new_inputs{}      // the scripted pointer and keys, for driving the menus in tests
+        let mut inputs = inject::Inputs{ .. }      // the scripted pointer and keys, for driving the menus in tests
         let mut chosen = ""
         let mut done = false
         while not done {

@@ -5,20 +5,13 @@ namespace gpu {
     const TIMER_RING: usize = 4
 
     struct Timer {
-        made: bool,
-        ids: [128]u32,                  // TIMER_RING frames of TIMER_SLOTS queries
-        names: [128][]u8,               // what each mark ends (the first of a frame is its start)
-        used: [4]u32,                   // marks issued in each frame of the ring
-        at: u32,                        // the ring's frame being recorded
-        recording: bool,
-        result: render::Timings,
-    }
-
-    fn no_timer {} -> Timer {
-        return Timer{
-            made = false, ids = [0; 128], names = [""; 128], used = [0; 4], at = 0, recording = false,
-            result = render::Timings{ count = 0, names = [""; 24], ms = [0.0; 24], total = 0.0 },
-        }
+        made: bool = false,
+        ids: [128]u32 = [0; 128],       // TIMER_RING frames of TIMER_SLOTS queries
+        names: [128][]u8 = [""; 128],   // what each mark ends (the first of a frame is its start)
+        used: [4]u32 = [0; 4],          // marks issued in each frame of the ring
+        at: u32 = 0,                    // the ring's frame being recorded
+        recording: bool = false,
+        result: render::Timings = render::Timings{ count = 0, names = [""; 24], ms = [0.0; 24], total = 0.0 },
     }
 
     // Starts a frame's measurements (at submit), first collecting the oldest frame of the ring if its answers are in.

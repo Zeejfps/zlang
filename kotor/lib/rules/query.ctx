@@ -7,11 +7,7 @@
 namespace rules {
     // Who the effects are being compared against. `valid` is false when nobody is (a character
     // sheet): conditional effects (versus a race or an alignment group) are then skipped.
-    struct Versus { valid: bool, race: i32, align: i32 }
-
-    fn no_versus {} -> Versus {
-        return Versus{ valid = false, race = race::ANY, align = 0 }
-    }
+    struct Versus { valid: bool = false, race: i32 = race::ANY, align: i32 = 0 }
 
     // GetAlignmentGroup: 1 neutral, 2 light, 3 dark, from the good-evil axis (0 dark .. 100 light).
     fn alignment_group { good_evil: i32 } -> i32 {

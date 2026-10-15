@@ -50,7 +50,7 @@ namespace pazaak {
 
     // A message the match waits on: the pages of an explanation (`info`), a question (`confirm`) or
     // the end of a set (`result`). Texts are dialog.tlk strings.
-    struct Prompt { kind: PromptKind, pages: [10]u32, count: usize, at: usize, then: Then, card: usize }
+    struct Prompt { kind: PromptKind = PromptKind::none, pages: [10]u32 = [0; 10], count: usize = 0, at: usize = 0, then: Then = Then::nothing, card: usize = 0 }
 
     struct Match {
         g: Game,
@@ -83,10 +83,6 @@ namespace pazaak {
     const T_LOSE_MATCH: u32 = 32337
     const T_TIE: u32 = 32338
 
-    fn no_prompt {} -> Prompt {
-        return Prompt{ kind = PromptKind::none, pages = [0; 10], count = 0, at = 0, then = Then::nothing, card = 0 }
-    }
-
     // A match with both sides' hands dealt (4 of each 10-card side deck). The player's deck is card
     // ids (-1 for a missing card, which the setup screen never allows).
     fn new_match {
@@ -96,7 +92,7 @@ namespace pazaak {
         deal_hand{ rng = &g.rng, side = &g.player, deck = deck_cards{ ids = player_deck } }
         deal_hand{ rng = &g.rng, side = &g.opponent, deck = deck_cards{ ids = opponent_deck } }
         return Match{
-            g, phase = Phase::new_set, timer = 0.0, tutorial, seen = 0, prompt = no_prompt{},
+            g, phase = Phase::new_set, timer = 0.0, tutorial, seen = 0, prompt = Prompt{ .. },
             cues = [Sound::click; 16], cue_count = 0, auto_player, last_set = SetResult::undecided,
             finished = false, won = false, forfeited = false, turns = 0,
         }
@@ -172,13 +168,13 @@ namespace pazaak {
     // Shows a tutorial explanation (only with the tutorial on).
     fn show_info { mut m: Match, page: Tutorial } {
         if not m.tutorial { return }
-        m.prompt = no_prompt{}
+        m.prompt = Prompt{ .. }
         m.prompt.kind = PromptKind::info
         m.prompt.count = tutorial_pages{ page, into = m.prompt.pages[..] }
     }
 
     fn ask_confirm { mut m: Match, text: u32, then: Then, card: usize } {
-        m.prompt = no_prompt{}
+        m.prompt = Prompt{ .. }
         m.prompt.kind = PromptKind::confirm
         m.prompt.pages[0] = text
         m.prompt.count = 1
@@ -195,7 +191,7 @@ namespace pazaak {
             m.prompt.at = p.at + 1
             return
         }
-        m.prompt = no_prompt{}
+        m.prompt = Prompt{ .. }
         if p.kind == PromptKind::result {
             if m.g.player.sets >= SETS_TO_WIN or m.g.opponent.sets >= SETS_TO_WIN {
                 m.phase = Phase::match_over
@@ -431,7 +427,7 @@ namespace pazaak {
 
     // The message and sound for a judged set; the match waits for the player's OK.
     fn announce_set { mut m: Match, r: SetResult, over: bool } {
-        m.prompt = no_prompt{}
+        m.prompt = Prompt{ .. }
         m.prompt.kind = PromptKind::result
         m.prompt.count = 1
         m.phase = Phase::wait_message

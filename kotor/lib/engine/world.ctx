@@ -85,12 +85,12 @@ namespace world {
         rm: *mut res::Manager,
         mod_arena: *mut arena::Arena,       // module memory: reset when the module is left
         scratch: *mut arena::Arena,         // frame memory: reset after each frame
-        clock: clock::Clock = clock::new{},
+        clock: clock::Clock = clock::Clock{ .. },
         objects: obj::Table,
         module: u32 = obj::INVALID,
         area: u32 = obj::INVALID,
         pc: u32 = obj::INVALID,             // the player's character (the party's main character)
-        party: party::Party = party::new{},
+        party: party::Party = party::Party{ .. },
         target: u32 = obj::INVALID,         // the selected object (HUD picking), obj::INVALID none
         hover: u32 = obj::INVALID,          // the object under the cursor
         target_keep: f32 = 0.0,             // the client's 1.5 s keep of a target that died (+0x378, hud::pick_target); while it runs every creature is a foe to the HUD (hud::is_foe)
@@ -130,7 +130,7 @@ namespace world {
         noise: Rng,                         // presentation picks (which of two hit sounds) kept off `rng`, so they never shift the game's sequence
         stats: Stats = Stats{ calls = [0; 772], missing = [0; 772], unbalanced = [false; 772], script_runs = 0, faults = 0, events = 0, objects_made = 0, party_rounds = 0, member_rounds = [0; 13], member_joined = [0; 13], member_joined_own = [0; 13] },
         routes: [772]?routines::Category = [null; 772], // each routine's category file, found by its first call (routines::categories)
-        log: elog::Log = elog::quiet{},
+        log: elog::Log = elog::Log{ .. },
         doomed: list::List(u32, heap::Heap),   // destroyed this frame, removed by sweep
         module_frame: bool = false,         // module and area heartbeats alternate frames
         autopause_asked: i32 = 0,           // the first auto-pause reason (lib/engine/autopause.ctx) the interface has not taken yet, 0 none
@@ -162,9 +162,9 @@ namespace world {
         button_mash: bool = false,          // SetButtonMashCheck / GetButtonMashCheck (the combat tutorial)
         tut: Tutorials,                     // the tutorial pop-ups' offers (tutorial.ctx)
         subscreen: i32 = 0,                 // GetSubScreenID: SUBSCREEN_ID_* of the in-game screen showing (0: none)
-        party_watch: fight::PartyWatch = fight::new_party_watch{}, // UpdatePartyDeath's clocks: downed members get up after the fight (fight.ctx)
-        messages: msglog::Log = msglog::new{}, // Messages > Feedback and Dialog (msglog.ctx): the save keeps it with the party table
-        log_tokens: fight_log::Tokens = fight_log::no_tokens{}, // the combat log's <CUSTOM2> as the client last had it (fight_log.ctx)
+        party_watch: fight::PartyWatch = fight::PartyWatch{ .. }, // UpdatePartyDeath's clocks: downed members get up after the fight (fight.ctx)
+        messages: msglog::Log = msglog::Log{ .. }, // Messages > Feedback and Dialog (msglog.ctx): the save keeps it with the party table
+        log_tokens: fight_log::Tokens = fight_log::Tokens{ .. }, // the combat log's <CUSTOM2> as the client last had it (fight_log.ctx)
         heads: [8]HeadPoint = [HeadPoint{ id = obj::INVALID, at = math::vec3::zero{}, found = false }; 8], // where the floating labels hang: the scene finds these objects' head_g nodes
         corpses: list::List(Corpse, heap::Heap),   // bodies the world let go of that still show (corpses.ctx)
         corpse_ring: [4]u32 = [obj::INVALID; 4], // the area's latest corpses (0x006056b0's ring), INVALID for an empty slot
@@ -208,9 +208,9 @@ namespace world {
             tokens = tokens::new{ heap },
             rules = try alloc::new(rules::Tables, heap::Heap){ realloc = heap::alloc, heap, value = blank_rules },
             dice = rules::seed_rng{ seed }, rev = blank_events,
-            tut = no_tutorials{},
+            tut = Tutorials{ .. },
             corpses = list::new(Corpse, heap::Heap){ realloc = heap::alloc, heap },
-            conversation = dlg::new_state{},
+            conversation = dlg::State{ .. },
             ..
         }
         let p = try alloc::new(World, heap::Heap){ realloc = heap::alloc, heap, value = w }
@@ -388,7 +388,7 @@ namespace world {
                     polygon = slice::empty(math::Vec3){}, trigger_type = 0, linked_to = slice::empty(u8){},
                     linked_to_module = resref::empty{}, linked_flags = 0,
                     transition_name = obj::Name{ strref = 0xFFFFFFFF, text = slice::empty(u8){} },
-                    inside = list::new(u32, heap::Heap){ realloc = heap::alloc, heap = h }, trap = traps::none{},
+                    inside = list::new(u32, heap::Heap){ realloc = heap::alloc, heap = h }, trap = traps::Trap{ .. },
                 } } }
             }
             item => {

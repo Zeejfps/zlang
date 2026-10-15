@@ -24,7 +24,7 @@ namespace rt_cmd {
 
     // The running script's OBJECT_SELF's context (empty for none).
     fn self_ctx { w: *world::World, vm: *nwvm::Vm } -> obj::Context {
-        let o = world::object{ w, id = nwvm::self_object{ vm = vm.* } } ifnull { return obj::no_context{} }
+        let o = world::object{ w, id = nwvm::self_object{ vm = vm.* } } ifnull { return obj::Context{ .. } }
         return o.ctx
     }
 
@@ -97,7 +97,7 @@ namespace rt_cmd {
     // event EventUserDefined(int nUserDefinedEventNumber)
     fn event_user_defined { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let n = try nwarg::int{ &vm, routine = nwscript::EventUserDefined, argc, i = 0 }
-        let mut e = values::no_event{}
+        let mut e = values::ScriptEvent{ .. }
         e.kind = events::USER_DEFINED
         e.ints[0] = n
         let h = values::add{ s = &w.values, v = values::Value::event{ e } }

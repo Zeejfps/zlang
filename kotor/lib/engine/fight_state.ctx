@@ -96,10 +96,6 @@ namespace fight {
     const PUSH_DOWN_MS: i32 = 2550
     const PUSH_RANGE: f32 = 5.0
 
-    fn no_knock {} -> Knock {
-        return Knock{ active = false, t_ms = 0, move_ms = 0, total_ms = 0, from = math::vec3::zero{}, to = math::vec3::zero{} }
-    }
-
     // The newest effect of `kind` on the creature, or null.
     fn newest_effect { f: *Fighter, kind: i32 } -> ?rules::Effect {
         let mut i: i32 = f.c.nfx - 1

@@ -338,7 +338,7 @@ namespace gui {
         mut g: Gui, mut frame: render::Frame, b: Border, t: Text, text: []u8, flags: u32,
         x: i32, y: i32, w: i32, h: i32, alpha: f32, clip: render::Rect,
     } {
-        draw_border{ &g, &frame, b, x, y = y + menu_check_box_y{ h }, w = MENU_CHECK_SIZE, h = MENU_CHECK_SIZE, alpha, clip, override = no_img{} }
+        draw_border{ &g, &frame, b, x, y = y + menu_check_box_y{ h }, w = MENU_CHECK_SIZE, h = MENU_CHECK_SIZE, alpha, clip, override = Img{ .. } }
         if t.present and text.len > 0 {
             let col = menu_check_text_color{ &g, flags, alpha }
             draw_text_in{ &g, &frame, t, text, color = col, x = x + MENU_CHECK_TEXT_X, y, w = w - MENU_CHECK_TEXT_X, h, clip }
@@ -355,7 +355,7 @@ namespace gui {
     }
 
     fn draw_progress { mut g: Gui, mut frame: render::Frame, c: *Control, x: i32, y: i32, alpha: f32, clip: render::Rect } {
-        draw_border{ &g, &frame, b = c.border, x, y, w = c.w, h = c.h, alpha, clip, override = no_img{} }
+        draw_border{ &g, &frame, b = c.border, x, y, w = c.w, h = c.h, alpha, clip, override = Img{ .. } }
         // The PROGRESS border fills the inner rectangle's long axis by CURVALUE / MAXVALUE.
         let a = text_area{ b = c.border, x, y, w = c.w, h = c.h }
         let mut ax = a.x
@@ -378,7 +378,7 @@ namespace gui {
             }
         }
         if aw > 0 and ah > 0 {
-            draw_border{ &g, &frame, b = c.progress, x = ax, y = ay, w = aw, h = ah, alpha, clip, override = no_img{} }
+            draw_border{ &g, &frame, b = c.progress, x = ax, y = ay, w = aw, h = ah, alpha, clip, override = Img{ .. } }
         }
     }
 
@@ -476,7 +476,7 @@ namespace gui {
         let l = list_layout{ p, c }
         let ox = p.sx
         let oy = p.sy
-        draw_border{ &g, &frame, b = c.border, x = ox + c.x, y = oy + c.y, w = c.w, h = c.h, alpha, clip, override = no_img{} }
+        draw_border{ &g, &frame, b = c.border, x = ox + c.x, y = oy + c.y, w = c.w, h = c.h, alpha, clip, override = Img{ .. } }
         let area_clip = rect_of{ x = ox + l.ax, y = oy + l.ay, w = l.aw, h = l.ah }
         if c.list_tinted {
             put_fill{ &frame, x = area_clip.x, y = area_clip.y, w = area_clip.w, h = area_clip.h, color = render::Color{ r = c.list_color.r, g = c.list_color.g, b = c.list_color.b, a = alpha }, clip }
@@ -670,7 +670,7 @@ namespace gui {
             draw_entry_row{ &g, &frame, c, pc, row, b, lit, x, y, w, alpha, row_alpha, clip }
             return
         }
-        draw_border{ &g, &frame, b, x, y, w, h, alpha = row_alpha, clip, override = no_img{} }
+        draw_border{ &g, &frame, b, x, y, w, h, alpha = row_alpha, clip, override = Img{ .. } }
         let a = text_area{ b = pc.border, x, y, w, h }
         let mut ax = a.x
         let mut aw = a.w
@@ -704,7 +704,7 @@ namespace gui {
         x: i32, y: i32, w: i32, alpha: f32, row_alpha: f32, clip: render::Rect,
     } {
         let box = ENTRY_BOX
-        draw_border{ &g, &frame, b, x = x + box, y, w = w - box, h = box, alpha = row_alpha, clip, override = no_img{} }
+        draw_border{ &g, &frame, b, x = x + box, y, w = w - box, h = box, alpha = row_alpha, clip, override = Img{ .. } }
         // The hexagon is a fill: the hilighted one pulses, a new item's normal one is half transparent;
         // the slot view's frame alpha (row_frame_alpha) leaves it alone.
         let ha = if lit { alpha * g.pulse_border } else if row.frame == FRAME_NEW { alpha * 0.5 } else { alpha }
@@ -766,7 +766,7 @@ namespace gui {
         let end = if bv.visible < 2 and bv.cur != bv.max { bv.max + 1 } else { bv.max }
         let can_down = bv.visible < bv.max and bv.cur + bv.visible < end
         if sb.draw_mode == 0 {
-            draw_border{ &g, &frame, b = sb.border, x, y, w, h, alpha, clip, override = no_img{} }
+            draw_border{ &g, &frame, b = sb.border, x, y, w, h, alpha, clip, override = Img{ .. } }
             let t = thumb_of{ l, b = bv }
             if t.h > 0 and sb.thumb.ok {
                 put_image{ &frame, img = sb.thumb, x = @as(f32, x), y = @as(f32, p.sy + t.y), w = @as(f32, w), h = @as(f32, t.h), color = col, angle = 0.0, clip }

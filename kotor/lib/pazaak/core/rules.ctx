@@ -33,14 +33,10 @@ namespace pazaak {
     fn who_index { who: Who } -> usize { return if who == Who::player { 0 } else { 1 } }
 
     struct Side {
-        hand: [4]Card,
-        table: [9]Card,
-        standing: bool,
-        sets: i32,                      // sets won in this match
-    }
-
-    fn new_side {} -> Side {
-        return Side{ hand = [no_card{}; 4], table = [no_card{}; 9], standing = false, sets = 0 }
+        hand: [4]Card = [Card{ .. }; 4],
+        table: [9]Card = [Card{ .. }; 9],
+        standing: bool = false,
+        sets: i32 = 0,                  // sets won in this match
     }
 
     struct Game {
@@ -55,8 +51,8 @@ namespace pazaak {
 
     fn new_game { seed: u32, wager: i32 } -> Game {
         return Game{
-            rng = make_rng{ seed }, player = new_side{}, opponent = new_side{},
-            main = [no_card{}; 40], top = -1, wager, ai = [0; 2],
+            rng = make_rng{ seed }, player = Side{ .. }, opponent = Side{ .. },
+            main = [Card{ .. }; 40], top = -1, wager, ai = [0; 2],
         }
     }
 
@@ -65,7 +61,7 @@ namespace pazaak {
     // Four of each 1..10 in a random order: each card is picked from the ones left, the last of
     // them filling the gap.
     fn shuffle_main_deck { mut g: Game } {
-        let mut left: [40]Card = [no_card{}; 40]
+        let mut left: [40]Card = [Card{ .. }; 40]
         let mut i: usize = 0
         while i < MAIN_DECK_SIZE {
             left[i] = make_card{ id = FIRST_MAIN + @as(i32, i % 10) }
@@ -102,7 +98,7 @@ namespace pazaak {
             let r = @as(usize, rand_below{ rng = &rng, n })
             side.hand[i] = left[r]
             left[r] = left[@as(usize, n - 1)]
-            left[@as(usize, n - 1)] = no_card{}
+            left[@as(usize, n - 1)] = Card{ .. }
             n = n - 1
             i = i + 1
         }
@@ -110,7 +106,7 @@ namespace pazaak {
 
     // A side deck of card ids (-1 for none) as cards.
     fn deck_cards { ids: [10]i32 } -> [10]Card {
-        let mut cs: [10]Card = [no_card{}; 10]
+        let mut cs: [10]Card = [Card{ .. }; 10]
         let mut i: usize = 0
         while i < SIDE_DECK_SIZE {
             if ids[i] >= 0 and ids[i] < @as(i32, SIDE_KINDS) { cs[i] = make_card{ id = ids[i] } }
@@ -164,7 +160,7 @@ namespace pazaak {
     fn play_hand_card { mut s: Side, i: usize } -> bool {
         if not has_hand_card{ s, i } { return false }
         let c = s.hand[i]
-        s.hand[i] = no_card{}
+        s.hand[i] = Card{ .. }
         place_card{ &s, c }
         return true
     }
@@ -178,8 +174,8 @@ namespace pazaak {
 
     // A new set: empty tables, nobody standing. Hands, sets won and the main deck stay.
     fn clear_tables { mut g: Game } {
-        g.player.table = [no_card{}; 9]
-        g.opponent.table = [no_card{}; 9]
+        g.player.table = [Card{ .. }; 9]
+        g.opponent.table = [Card{ .. }; 9]
         g.player.standing = false
         g.opponent.standing = false
     }

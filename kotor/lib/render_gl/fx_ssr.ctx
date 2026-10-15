@@ -4,9 +4,7 @@
 // share's weight; where a ray reflected off the pixel meets something on screen, that share is replaced by what the
 // ray meets, and where it doesn't the original's environment map stays.
 namespace gpu {
-    struct SsrState { program: u32, proj: i32, area: i32, params: i32 }
-
-    fn no_ssr {} -> SsrState { return SsrState{ program = 0, proj = -1, area = -1, params = -1 } }
+    struct SsrState { program: u32 = 0, proj: i32 = -1, area: i32 = -1, params: i32 = -1 }
 
     fn make_ssr_program { mut dev: Device } -> ! {
         let vs = glsl::POST_VS
@@ -60,7 +58,7 @@ namespace gpu {
         dev.gl.uniform4f{ location = dev.ssr.params, v0 = if level >= 2 { 48.0 } else { 24.0 }, v1 = 24.0, v2 = 0.6, v3 = 0.0 }
         draw_fullscreen{ &dev }
         dev.gl.disable{ cap = gl::BLEND }
-        dev.state = unknown_state{}
+        dev.state = State{ .. }
         timer_mark{ &dev, name = "reflections" }
     }
 }

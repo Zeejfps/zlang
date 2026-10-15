@@ -42,7 +42,7 @@ namespace rt_talent {
     // talent TalentSpell(int nSpell), TalentFeat(int nFeat), TalentSkill(int nSkill)
     fn make_talent { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, kind: i32 } -> ! {
         let id = try nwarg::int{ &vm, routine, argc, i = 0 }
-        let mut t = values::no_talent{}
+        let mut t = values::Talent{ .. }
         t.kind = kind
         t.id = id
         let h = values::add{ s = &w.values, v = values::Value::talent{ t } }
@@ -127,7 +127,7 @@ namespace rt_talent {
     // A skill is had when it has ranks or may be used untrained.
     fn has_skill { w: *world::World, f: *fight::Fighter, skill: i32 } -> bool {
         if skill < 0 or skill >= @as(i32, rules::NUM_SKILLS) { return false }
-        let rank = rules::skill_rank{ tables = w.rules, c = &f.c, skill, vs = rules::no_versus{}, base_only = false }
+        let rank = rules::skill_rank{ tables = w.rules, c = &f.c, skill, vs = rules::Versus{ .. }, base_only = false }
         return rank > 0 or w.rules.skills[@as(usize, skill)].untrained
     }
 
@@ -138,15 +138,11 @@ namespace rt_talent {
     // The candidates of one search: ids (spell or feat rows), the item and property index of an
     // item's spell, and the highest MaxCR seen (for "best").
     struct Pick {
-        n: usize,
-        top: i32,
-        id: [MAX_PICK]i32,
-        item: [MAX_PICK]u32,
-        sub: [MAX_PICK]i32,
-    }
-
-    fn new_pick {} -> Pick {
-        return Pick{ n = 0, top = -100, id = [0; MAX_PICK], item = [obj::INVALID; MAX_PICK], sub = [-1; MAX_PICK] }
+        n: usize = 0,
+        top: i32 = -100,
+        id: [MAX_PICK]i32 = [0; MAX_PICK],
+        item: [MAX_PICK]u32 = [obj::INVALID; MAX_PICK],
+        sub: [MAX_PICK]i32 = [-1; MAX_PICK],
     }
 
     // Adds a candidate; for "best" only the highest MaxCR is kept.
@@ -243,7 +239,7 @@ namespace rt_talent {
     }
 
     fn pick_one { mut w: world::World, p: Pick, kind: i32 } -> values::Talent {
-        if p.n == 0 { return values::no_talent{} }
+        if p.n == 0 { return values::Talent{ .. } }
         let k = @as(usize, rules::roll_below{ rng = &w.dice, n = @as(i32, p.n) })
         return values::Talent{ kind, id = p.id[k], sub = p.sub[k], item = p.item[k] }
     }
@@ -254,7 +250,7 @@ namespace rt_talent {
         ex_type: i32, ex_id: i32,
     } -> values::Talent {
         let n = w.rules.spells.len
-        let mut p = new_pick{}
+        let mut p = Pick{ .. }
         // 1. Special abilities: known spells that are not Force powers (their Exclusion cell empty).
         let mut s: usize = 0
         while s < n {
@@ -288,7 +284,7 @@ namespace rt_talent {
             scan_items{ &w, id = owner, c, spells, category, spell = -1, best, p = &p }
             if p.n > 0 { return pick_one{ &w, p, kind = nwconst::TALENT_TYPE_SPELL } }
         }
-        return values::no_talent{}
+        return values::Talent{ .. }
     }
 
     // The feats it has (0x005ac370).
@@ -296,9 +292,9 @@ namespace rt_talent {
         mut w: world::World, c: *obj::Creature, f: *fight::Fighter, feats: ?twoda::Table, category: i32, best: bool,
         ex_type: i32, ex_id: i32,
     } -> values::Talent {
-        if not able{ c, f } { return values::no_talent{} }
+        if not able{ c, f } { return values::Talent{ .. } }
         let n = w.rules.feats.len
-        let mut p = new_pick{}
+        let mut p = Pick{ .. }
         let mut s: usize = 0
         while s < n {
             let id = @as(i32, s)
@@ -344,10 +340,10 @@ namespace rt_talent {
     }
 
     fn find_talent { mut w: world::World, id: u32, category: i32, best: bool, ex_type: i32, ex_id: i32 } -> values::Talent {
-        let o = world::object{ w = &w, id } ifnull { return values::no_talent{} }
-        let c = obj::creature{ o } ifnull { return values::no_talent{} }
-        let f = c.fighter ifnull { return values::no_talent{} }
-        if not f.loaded or not able{ c, f } { return values::no_talent{} }
+        let o = world::object{ w = &w, id } ifnull { return values::Talent{ .. } }
+        let c = obj::creature{ o } ifnull { return values::Talent{ .. } }
+        let f = c.fighter ifnull { return values::Talent{ .. } }
+        if not f.loaded or not able{ c, f } { return values::Talent{ .. } }
         fight::sync_flags{ w = &w, o, f }
         let spells = scratch_table{ &w, name = "spells" }
         let feats = scratch_table{ &w, name = "feat" }
@@ -367,7 +363,7 @@ namespace rt_talent {
     struct ItemSpell { item: u32, sub: i32 }
 
     fn item_spell_of { mut w: world::World, id: u32, c: *obj::Creature, spell: i32 } -> ItemSpell {
-        let mut p = new_pick{}
+        let mut p = Pick{ .. }
         scan_items{ &w, id, c, spells = null, category = 0xffff, spell, best = false, p = &p }
         if p.n == 0 { return ItemSpell{ item = obj::INVALID, sub = -1 } }
         return ItemSpell{ item = p.item[0], sub = p.sub[0] }
@@ -528,7 +524,7 @@ namespace rt_talent {
         let r = nwscript::ActionUseFeat
         let feat = try nwarg::int{ &vm, routine = r, argc, i = 0 }
         let target = try nwarg::object{ &vm, routine = r, argc, i = 1 }
-        let mut t = values::no_talent{}
+        let mut t = values::Talent{ .. }
         t.kind = nwconst::TALENT_TYPE_FEAT
         t.id = feat
         use_talent{ &w, me = nwvm::self_object{ vm }, t, target, location = math::vec3::zero{} }

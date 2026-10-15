@@ -174,7 +174,7 @@ namespace frontend {
     }
 
     fn enhanced_defaults { mut fe: Front } {
-        let d = default_settings{}
+        let d = Settings{ .. }
         let mut r: usize = 0
         while r < FX_ROWS {
             fx_set{ s = &fe.settings, row = r, v = fx_get{ s = d, row = r } }

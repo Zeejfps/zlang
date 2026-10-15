@@ -15,18 +15,18 @@ namespace material {
     // What a texture's TXI says about drawing it (txi-render.md). Data-core's TXI parser will be
     // the full reading; this takes the keywords materials need.
     struct Props {
-        blend: render::Blend,       // `blending additive` / `punchthrough`
-        envmap: resref::ResRef,     // `envmaptexture` or `bumpyshinytexture`; empty for none
-        bumpmap: resref::ResRef,    // `bumpmaptexture`
-        decal: bool,
-        water_alpha: f32,           // `wateralpha`; negative when absent
-        mipmap: bool,               // false for `mipmap 0`
-        nearest: bool,              // `filter 0`
-        clamp: bool,                // `clamp` non-zero
-        cycle: bool,                // `proceduretype cycle`
-        fps: f32,
-        is_bumpmap: bool,           // `isbumpmap 1`: a grey one is a height map, made a normal map
-        bump_scale: f32,            // `bumpmapscaling`, 1 without it
+        blend: render::Blend = render::Blend::opaque, // `blending additive` / `punchthrough`
+        envmap: resref::ResRef = resref::empty{}, // `envmaptexture` or `bumpyshinytexture`; empty for none
+        bumpmap: resref::ResRef = resref::empty{}, // `bumpmaptexture`
+        decal: bool = false,
+        water_alpha: f32 = -1.0,    // `wateralpha`; negative when absent
+        mipmap: bool = true,        // false for `mipmap 0`
+        nearest: bool = false,      // `filter 0`
+        clamp: bool = false,        // `clamp` non-zero
+        cycle: bool = false,        // `proceduretype cycle`
+        fps: f32 = 0.0,
+        is_bumpmap: bool = false,   // `isbumpmap 1`: a grey one is a height map, made a normal map
+        bump_scale: f32 = 1.0,      // `bumpmapscaling`, 1 without it
     }
 
     // A texture in the cache. A missing one has texture null.
@@ -81,17 +81,9 @@ namespace material {
         map::free{ m = &cache.index }
     }
 
-    fn no_props {} -> Props {
-        return Props{
-            blend = render::Blend::opaque, envmap = resref::empty{}, bumpmap = resref::empty{}, decal = false,
-            water_alpha = -1.0, mipmap = true, nearest = false, clamp = false, cycle = false, fps = 0.0,
-            is_bumpmap = false, bump_scale = 1.0,
-        }
-    }
-
     // The keywords materials need from TXI text.
     fn read_props { txi: []u8 } -> Props {
-        let mut p = no_props{}
+        let mut p = Props{ .. }
         let blending = tex::txi_value{ txi, key = "blending" }
         if blending != null {
             if ci::eq{ a = blending, b = "additive" } { p.blend = render::Blend::additive }
@@ -153,7 +145,7 @@ namespace material {
     }
 
     fn missing_entry { key: resref::ResRef } -> Entry {
-        return Entry{ name = key, texture = null, cube = false, normal_map = false, alpha_mean = 1.0, frames_x = 1, frames_y = 1, props = no_props{} }
+        return Entry{ name = key, texture = null, cube = false, normal_map = false, alpha_mean = 1.0, frames_x = 1, frames_y = 1, props = Props{ .. } }
     }
 
     // Reads, decodes and uploads one texture, in the scratch arena.
@@ -277,7 +269,7 @@ namespace material {
     // self-illumination. A flipbook diffuse shows frame 0: set_flipbook_frame moves it on.
     fn for_mesh { mut cache: Cache, mut fs: Fs, mut dev: gpu::Device, rm: res::Manager, desc: MeshDesc } -> render::Material {
         let mut m = render::make_material{}
-        let mut props = no_props{}
+        let mut props = Props{ .. }
         let mut has_diffuse = false
         let mut alpha_mean: f32 = 1.0
         if not is_none{ name = desc.diffuse } {

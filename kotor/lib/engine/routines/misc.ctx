@@ -10,7 +10,7 @@
 namespace rt_misc {
     // The calling object's event context (no object: the defaults).
     fn self_ctx_of { w: *world::World, vm: *nwvm::Vm } -> obj::Context {
-        let o = world::object{ w, id = nwvm::self_object{ vm = vm.* } } ifnull { return obj::no_context{} }
+        let o = world::object{ w, id = nwvm::self_object{ vm = vm.* } } ifnull { return obj::Context{ .. } }
         return o.ctx
     }
 
@@ -110,7 +110,7 @@ namespace rt_misc {
 
     // The running script's OBJECT_SELF's context (empty for none).
     fn self_ctx { w: *world::World, vm: *nwvm::Vm } -> obj::Context {
-        let o = world::object{ w, id = nwvm::self_object{ vm = vm.* } } ifnull { return obj::no_context{} }
+        let o = world::object{ w, id = nwvm::self_object{ vm = vm.* } } ifnull { return obj::Context{ .. } }
         return o.ctx
     }
 

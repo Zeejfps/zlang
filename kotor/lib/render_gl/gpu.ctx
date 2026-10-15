@@ -33,21 +33,19 @@ namespace gpu {
     struct MeshSlot { vao: u32, vbo: u32, ibo: u32, smooth: u32, vertex_count: u32, index_count: u32, mode: u32, gen: u32, live: bool }
     // The multisampled twin of a render target: drawing goes here when anti-aliasing is on, and
     // `resolve` copies it into the target's own texture. `fbo` 0: not made yet.
-    struct MsBuffers { fbo: u32, color: u32, depth: u32, width: i32, height: i32, samples: i32, dirty: bool }
+    struct MsBuffers { fbo: u32 = 0, color: u32 = 0, depth: u32 = 0, width: i32 = 0, height: i32 = 0, samples: i32 = 0, dirty: bool = false }
     struct TargetSlot { fbo: u32, depth: u32, color: u32, width: i32, height: i32, ms: MsBuffers, gen: u32, live: bool }
 
-    fn no_ms {} -> MsBuffers { return MsBuffers{ fbo = 0, color = 0, depth = 0, width = 0, height = 0, samples = 0, dirty = false } }
-
     struct ScenePrograms {
-        id: u32,
-        model: i32, post: i32, normal: i32, bone_count: i32, bones: i32, dangle: i32,
-        maps: i32, mode: i32, color: i32, selfillum: i32, uv: i32, uv_cell: i32,
-        light_count: i32, light_pos: i32, light_color: i32,
-        fx: i32, fx2: i32, cube: i32,       // the enhanced program's own (fx.ctx); -1 in the original's
-        shadow_on: i32, sun_mat: i32, sun_dir: i32, shadow_params: i32, point_mat: i32, point_pos: i32, point_weight: i32, light_shadow: i32,
+        id: u32 = 0,
+        model: i32 = -1, post: i32 = -1, normal: i32 = -1, bone_count: i32 = -1, bones: i32 = -1, dangle: i32 = -1,
+        maps: i32 = -1, mode: i32 = -1, color: i32 = -1, selfillum: i32 = -1, uv: i32 = -1, uv_cell: i32 = -1,
+        light_count: i32 = -1, light_pos: i32 = -1, light_color: i32 = -1,
+        fx: i32 = -1, fx2: i32 = -1, cube: i32 = -1,  // the enhanced program's own (fx.ctx); -1 in the original's
+        shadow_on: i32 = -1, sun_mat: i32 = -1, sun_dir: i32 = -1, shadow_params: i32 = -1, point_mat: i32 = -1, point_pos: i32 = -1, point_weight: i32 = -1, light_shadow: i32 = -1,
     }
     struct UiProgram { id: u32, screen: i32, image: i32 }
-    struct ParticleProgram { id: u32, model: i32, emit: i32, axis: i32, mode: i32, gain: i32 }
+    struct ParticleProgram { id: u32 = 0, model: i32 = -1, emit: i32 = -1, axis: i32 = -1, mode: i32 = -1, gain: i32 = -1 }
     struct DebugProgram { id: u32 }
     struct PostProgram { id: u32, exponent: i32 }
     struct BlurProgram { id: u32, strength: i32 }
@@ -55,12 +53,12 @@ namespace gpu {
 
     // What GL has bound now, so a draw changes only what differs. -1: unknown.
     struct State {
-        program: u32,
-        blend: i32,             // render::Blend's value, or -1 for none
-        depth_test: i32, depth_write: i32, cull: i32, offset: i32, stencil: i32,
-        units: [5]u32,          // the texture bound to units 0..4
-        vao: u32,
-        coverage: i32,          // alpha-to-coverage (enhanced views, fx_aa.ctx)
+        program: u32 = 0,
+        blend: i32 = -2,        // render::Blend's value, or -1 for none
+        depth_test: i32 = -1, depth_write: i32 = -1, cull: i32 = -1, offset: i32 = -1, stencil: i32 = -1,
+        units: [5]u32 = [0; 5], // the texture bound to units 0..4
+        vao: u32 = 0,
+        coverage: i32 = -1,     // alpha-to-coverage (enhanced views, fx_aa.ctx)
     }
 
     // An item to sort: its key and which draw (or, with the top bit, which emitter) it is.
@@ -111,7 +109,7 @@ namespace gpu {
         max_anisotropy: f32,
         log: []mut u8,              // for the driver's shader logs
         // The enhanced renderer (fx.ctx): the options, its programs and targets, and which programs draw now.
-        enhance: render::Enhance = render::original_look{},
+        enhance: render::Enhance = render::Enhance{ .. },
         scene_fx: ScenePrograms,
         particle_fx: ParticleProgram,
         fxp: FxPrograms,
@@ -178,19 +176,19 @@ namespace gpu {
             textures = try alloc::resize(TexSlot, S){ realloc, &heap, mem = slice::empty(TexSlot){}, count = config.max_textures },
             meshes = try alloc::resize(MeshSlot, S){ realloc, &heap, mem = slice::empty(MeshSlot){}, count = config.max_meshes },
             targets = try alloc::resize(TargetSlot, S){ realloc, &heap, mem = slice::empty(TargetSlot){}, count = config.max_targets },
-            screen, screen_ms = no_ms{}, max_samples = if max_samples > 8 { 8 } else { max_samples },
-            scene = no_scene_program{},
-            particle = no_particle_program{},
+            screen, screen_ms = MsBuffers{ .. }, max_samples = if max_samples > 8 { 8 } else { max_samples },
+            scene = ScenePrograms{ .. },
+            particle = ParticleProgram{ .. },
             fx = screen,
             scratch = try alloc::resize(f32, S){ realloc, &heap, mem = slice::empty(f32){}, count = STREAM_FLOATS },
             sort = try alloc::resize(SortItem, S){ realloc, &heap, mem = slice::empty(SortItem){}, count = SORT_ITEMS },
             sort_tmp = try alloc::resize(SortItem, S){ realloc, &heap, mem = slice::empty(SortItem){}, count = SORT_ITEMS },
-            state = unknown_state{},
+            state = State{ .. },
             anisotropy = if aniso { math::min{ a = 8.0, b = max_aniso } } else { 0.0 }, max_anisotropy = max_aniso,
             log = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = 8192 },
-            scene_fx = no_scene_program{}, particle_fx = no_particle_program{},
-            fxp = no_fx_programs{}, fxt = no_fx_targets{}, cur = no_scene_program{}, cur_particle = no_particle_program{},
-            timer = no_timer{}, atmos = no_atmos_programs{}, aa = no_aa_programs{}, shadow = no_shadows{}, scene_tess = no_scene_program{}, aos = no_ao{}, dof = no_dof{}, ssr = no_ssr{}, ofx = no_orig_fx{},
+            scene_fx = ScenePrograms{ .. }, particle_fx = ParticleProgram{ .. },
+            fxp = FxPrograms{ .. }, fxt = FxTargets{ .. }, cur = ScenePrograms{ .. }, cur_particle = ParticleProgram{ .. },
+            timer = Timer{ .. }, atmos = AtmosPrograms{ .. }, aa = AaPrograms{ .. }, shadow = no_shadows{}, scene_tess = ScenePrograms{ .. }, aos = AoState{ .. }, dof = DofState{ .. }, ssr = SsrState{ .. }, ofx = no_orig_fx{},
             pointer = no_pointer_state{ pixels = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = POINTER_BYTES * 2 } },
             ..
         }
@@ -212,26 +210,9 @@ namespace gpu {
         return dev
     }
 
-    fn no_scene_program {} -> ScenePrograms {
-        return ScenePrograms{
-            id = 0, model = -1, post = -1, normal = -1, bone_count = -1, bones = -1, dangle = -1, maps = -1, mode = -1,
-            color = -1, selfillum = -1, uv = -1, uv_cell = -1, light_count = -1, light_pos = -1, light_color = -1,
-            fx = -1, fx2 = -1, cube = -1,
-            shadow_on = -1, sun_mat = -1, sun_dir = -1, shadow_params = -1, point_mat = -1, point_pos = -1, point_weight = -1, light_shadow = -1,
-        }
-    }
-
-    fn no_particle_program {} -> ParticleProgram {
-        return ParticleProgram{ id = 0, model = -1, emit = -1, axis = -1, mode = -1, gain = -1 }
-    }
-
     fn empty_log {} -> gl::DebugLog {
         let mut log: gl::DebugLog
         return log
-    }
-
-    fn unknown_state {} -> State {
-        return State{ program = 0, blend = -2, depth_test = -1, depth_write = -1, cull = -1, offset = -1, stencil = -1, units = [0; 5], vao = 0, coverage = -1 }
     }
 
     fn clear_tables { mut dev: Device } {
@@ -247,7 +228,7 @@ namespace gpu {
         }
         i = 0
         while i < dev.targets.len {
-            dev.targets[i] = TargetSlot{ fbo = 0, depth = 0, color = 0, width = 0, height = 0, ms = no_ms{}, gen = 1, live = false }
+            dev.targets[i] = TargetSlot{ fbo = 0, depth = 0, color = 0, width = 0, height = 0, ms = MsBuffers{ .. }, gen = 1, live = false }
             i = i + 1
         }
     }
@@ -489,7 +470,7 @@ namespace gpu {
             gl::delete_renderbuffer{ &gl, id = ms.color }
             gl::delete_renderbuffer{ &gl, id = ms.depth }
         }
-        ms = no_ms{}
+        ms = MsBuffers{ .. }
     }
 
     // Colour and depth-stencil renderbuffers of `samples` samples in a framebuffer, replacing any before.
@@ -1121,7 +1102,7 @@ namespace gpu {
         let slot = &dev.targets[index]
         slot.fbo = fbo
         slot.depth = depth
-        slot.ms = no_ms{}
+        slot.ms = MsBuffers{ .. }
         slot.color = make_id{ index = tex_index, gen = tslot.gen }
         slot.width = w
         slot.height = h
@@ -1257,7 +1238,7 @@ namespace gpu {
             dev.gl.draw_arrays{ mode = gl::TRIANGLES, first = 0, count = 3 }
             dev.gl.bind_vertex_array{ array = 0 }
             dev.gl.use_program{ program = 0 }
-            dev.state = unknown_state{}
+            dev.state = State{ .. }
         }
         sdl::swap{ &sdl, w = dev.win }
         show_pointer{ &dev, &sdl, scale = if dev.screen.width > 0 { r.w / @as(f32, dev.screen.width) } else { 1.0 } }
@@ -1355,7 +1336,7 @@ namespace gpu {
     // the UI runs over them.
     fn submit { mut dev: Device, frame: *render::Frame } -> ! {
         dev.stats = render::Stats{ draws = 0, triangles = 0, culled = 0, state_changes = 0, quads = 0, particles = 0, ui_draws = 0 }
-        dev.state = unknown_state{}
+        dev.state = State{ .. }
         dev.cur = dev.scene
         dev.cur_particle = dev.particle
         dev.in_fx = false
@@ -1390,7 +1371,7 @@ namespace gpu {
         dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = 0 }
         dev.gl.disable{ cap = gl::STENCIL_TEST }
         dev.gl.depth_mask{ flag = gl::TRUE }
-        dev.state = unknown_state{}
+        dev.state = State{ .. }
         try gl::check{ gl = &dev.gl, what = "gpu::submit" }
     }
 
@@ -1586,7 +1567,7 @@ namespace gpu {
         dev.gl.bind_vertex_array{ array = 0 }
         dev.gl.use_program{ program = 0 }
         dev.gl.depth_mask{ flag = gl::TRUE }
-        dev.state = unknown_state{}
+        dev.state = State{ .. }
     }
 
     // The Frame Buffer Effects option's speed blur: the screen so far, copied, is drawn back sampled along the line to the
@@ -1601,7 +1582,7 @@ namespace gpu {
         dev.gl.bind_vertex_array{ array = 0 }
         dev.gl.use_program{ program = 0 }
         dev.gl.depth_mask{ flag = gl::TRUE }
-        dev.state = unknown_state{}
+        dev.state = State{ .. }
     }
 
     fn visible { draw: render::Draw, frustum: math::Frustum } -> bool {

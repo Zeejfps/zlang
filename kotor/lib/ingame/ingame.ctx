@@ -15,7 +15,7 @@ namespace ingame {
         cache: *mut material::Cache,        // the GUI's textures: panels, portraits, icons
         gui: gui::Gui,                      // shared with whoever else shows panels in game
         hud: hud::Hud,
-        selfs: selfslots::State = selfslots::new{}, // the HUD's four self action slots
+        selfs: selfslots::State = selfslots::State{ .. }, // the HUD's four self action slots
         text: utf8::Builder(heap::Heap),    // scratch for formatted text
         width: i32, height: i32,            // the render size in pixels
         gui_scale: f32,                     // the GUI Scale option: 0 fits the window, 1 the original's pixels
@@ -30,10 +30,10 @@ namespace ingame {
         psel_exit: resref::ResRef = resref::empty{}, // its exit script, forced slots
         psel_force1: i32 = -1, psel_force2: i32 = -1,
         psel_paused: bool = false,          // the party selection screen holds the menu pause (it is up even with no menu)
-        bot: bot::Bot = bot::new{},         // the headless test player (bot.ctx); off unless a script turns it on
+        bot: bot::Bot = bot::Bot{ .. },         // the headless test player (bot.ctx); off unless a script turns it on
         shift_held: bool = false,           // Shift (AlternateActions): with a slot's key it steps through the slot's choices
         ctrl_held: bool = false,            // Ctrl (Lookabout): the camera follows the mouse (lib/scene/camera, play.ctx)
-        solo_box: msgbox::Box = msgbox::blank{}, // "Do you wish to turn Solo Mode on?", up while the question is asked
+        solo_box: msgbox::Box = msgbox::Box{ .. }, // "Do you wish to turn Solo Mode on?", up while the question is asked
         solo_pause: bool = false,           // the box paused the game and must unpause it
         focus_paused: bool = false,         // the window lost the focus and the game was running: it resumes on return
         run_script: resref::ResRef = resref::empty{}, // a script the loop should run when it can (no caller), empty when none
@@ -56,7 +56,7 @@ namespace ingame {
         mine_quiet: f32 = 1000.0,           // seconds no hostile mine has been in sight (mine_watch.ctx)
         combat_movement: bool,              // the "Combat Movement" option (lib/scene/control.ctx reads it)
         wiping: bool = false,               // the party-wipe sequence runs (game/death.ctx): menu keys fade out
-        notice_box: msgbox::Box = msgbox::blank{}, // a box with only OK (42628, the leader is down), up until answered
+        notice_box: msgbox::Box = msgbox::Box{ .. }, // a box with only OK (42628, the leader is down), up until answered
         summary: Summary,                   // the status summary's events and its panel (summary_ui.ctx)
         tbox: TutorialBox,                  // the tutorial pop-up while it is up (tutorial_ui.ctx)
         fade_busy: bool = false,            // a screen fade runs (the loop says so each frame): the status summary waits
@@ -98,14 +98,14 @@ namespace ingame {
         let ui = Ingame{
             heap = w.heap, cache, gui = g, hud = h,
             text = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } },
-            width, height, gui_scale, menus = new_menus{},
+            width, height, gui_scale, menus = Menus{ .. },
             mouse_look = saved.mouse_look, mouse_sens = saved.mouse_sensitivity, reverse_buttons = saved.reverse_buttons, reverse_minigame_y = saved.reverse_minigame_y,
             ap_enemy = saved.pause_enemy_sighted, ap_mine = saved.pause_mine_sighted, ap_party = saved.pause_party_killed,
             ap_target = saved.pause_triggers, ap_round = saved.pause_end_round, ap_action_menu = saved.pause_action_menu,
             combat_movement = saved.combat_movement,
-            summary = new_summary{ on = saved.status_summary }, tbox = no_tutorial_box{},
+            summary = new_summary{ on = saved.status_summary }, tbox = TutorialBox{ .. },
             keys = frontend::complete_keymap{ raw = saved.keymap, defaults = key_defaults }, key_defaults,
-            screens = screens::new{},
+            screens = screens::State{ .. },
             ..
         }
         let mut p = try alloc::new(Ingame, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = ui }
@@ -161,7 +161,7 @@ namespace ingame {
             return
         }
         ui.hud = h
-        ui.selfs = selfslots::new{}
+        ui.selfs = selfslots::State{ .. }
         hud::set_tooltips{ h = &ui.hud, g = &ui.gui, &w, text = &ui.text }
         set_hud_hidden{ &ui, hidden = was_hidden }
     }
@@ -475,7 +475,7 @@ namespace ingame {
     // The box goes, and the game runs on again if it paused it.
     fn close_solo { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device } {
         msgbox::close{ g = &ui.gui, b = &ui.solo_box }
-        ui.solo_box = msgbox::blank{}
+        ui.solo_box = msgbox::Box{ .. }
         if ui.solo_pause { set_player_pause{ &ui, &w, &dev, on = false } }
         ui.solo_pause = false
     }
@@ -800,7 +800,7 @@ namespace ingame {
             summary_event{ &ui, &w, ev }
             if msgbox::answer{ b = ui.notice_box, ev } != msgbox::Answer::none {
                 msgbox::close{ g = &ui.gui, b = &ui.notice_box }
-                ui.notice_box = msgbox::blank{}
+                ui.notice_box = msgbox::Box{ .. }
             }
             if ev.panel == ui.hud.panel { hud_event{ &ui, &w, &dev, ev } }
             else if ev.panel == ui.pause_panel and ev.kind == gui::EventKind::activate { set_player_pause{ &ui, &w, &dev, on = false } }

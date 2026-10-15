@@ -338,12 +338,12 @@ namespace mdl_anim {
     // Plays one animation at a time, blending each new one in from the one before over its
     // transition time, and up to LAYERS more over it at once (`play_layer`).
     struct Player {
-        current: ?Track,
-        previous: ?Track,                      // the animation blending out
-        held: ?Track,                          // an animation held at its last frame under the rest (play_after)
-        layers: [LAYERS]?Track,                // played over the rest, in order (a room's animloop2 and animloop3)
-        elapsed: f32,                          // time since the current one started
-        transition: f32,                       // how long the blend takes
+        current: ?Track = null,
+        previous: ?Track = null,               // the animation blending out
+        held: ?Track = null,                   // an animation held at its last frame under the rest (play_after)
+        layers: [LAYERS]?Track = [null; LAYERS], // played over the rest, in order (a room's animloop2 and animloop3)
+        elapsed: f32 = 0.0,                    // time since the current one started
+        transition: f32 = 0.0,                 // how long the blend takes
     }
 
     // How many animations a player runs over its current one.
@@ -368,10 +368,6 @@ namespace mdl_anim {
         t.time = at
         t.started = true
         player.current = t
-    }
-
-    fn new_player {} -> Player {
-        return Player{ current = null, previous = null, held = null, layers = [null; LAYERS], elapsed = 0.0, transition = 0.0 }
     }
 
     // Starts `binding`'s animation from its beginning on layer `slot` (below LAYERS), over the

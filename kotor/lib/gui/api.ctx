@@ -264,7 +264,7 @@ namespace gui {
 
     fn clear_picture { mut g: Gui, panel: u32, tag: []u8 } {
         let c = find_control{ &g, panel, tag } ifnull { return }
-        c.override_fill = no_img{}
+        c.override_fill = Img{ .. }
         c.picture_alpha = 1.0
     }
 
@@ -548,7 +548,7 @@ namespace gui {
     // A confirmation or notice (confirm.gui): `text` over OK and, if `cancel`, Cancel. Modal,
     // centred. The owner takes the activate events of BTN_OK / BTN_CANCEL and closes the panel.
     fn message_box { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, text: []u8, cancel: bool } -> !u32 {
-        return message_box_in{ &g, &fs, &dev, text, cancel, font = "", icon = no_img{} }
+        return message_box_in{ &g, &fs, &dev, text, cancel, font = "", icon = Img{ .. } }
     }
 
     // The same with the message in font `font` ("" the file's: the tutorial box sets fnt_d16x16) and
@@ -637,7 +637,7 @@ namespace gui {
             c.rows = try alloc::resize(Row, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = c.rows, count = n }
         }
         let copy = try copy_string{ &g, s = text }
-        c.rows[@as(usize, c.row_count)] = Row{ text = copy, user, color = white_color{}, has_color = false, icon = no_img{}, enabled = true, checked = false, frame = 0, hex = no_img{}, count = 0, aside = slice::empty(u8){} }
+        c.rows[@as(usize, c.row_count)] = Row{ text = copy, user, color = white_color{}, has_color = false, icon = Img{ .. }, enabled = true, checked = false, frame = 0, hex = Img{ .. }, count = 0, aside = slice::empty(u8){} }
         c.row_count = c.row_count + 1
         return @as(i32, c.row_count) - 1
     }

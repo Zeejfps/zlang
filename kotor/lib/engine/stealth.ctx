@@ -22,17 +22,13 @@ namespace stealth {
     // A creature's own rolls and their age (+0x91c..+0x91f, +0x37c), and its stealth-XP countdown
     // (+0xaa4): 0 none, XP_AT_ONCE to charge at the next update, else milliseconds left.
     struct Rolls {
-        hide_sight: i32,            // d10 + 10 while it hides, against others' sight
-        hide_hearing: i32,          // d10 + 10, against others' hearing
-        spot: i32,                  // d20 (d10 out of detect mode, which no creature leaves)
-        listen: i32,
-        rolled: bool,
-        rolled_ms: u64,
-        xp_ms: i64,
-    }
-
-    fn no_rolls {} -> Rolls {
-        return Rolls{ hide_sight = 1, hide_hearing = 1, spot = 1, listen = 1, rolled = false, rolled_ms = 0, xp_ms = 0 }
+        hide_sight: i32 = 1,        // d10 + 10 while it hides, against others' sight
+        hide_hearing: i32 = 1,      // d10 + 10, against others' hearing
+        spot: i32 = 1,              // d20 (d10 out of detect mode, which no creature leaves)
+        listen: i32 = 1,
+        rolled: bool = false,
+        rolled_ms: u64 = 0,
+        xp_ms: i64 = 0,
     }
 
     // ---- the mode

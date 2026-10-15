@@ -4,32 +4,24 @@
 // columns). A copy that fails a check is named once; the totals say how many there were.
 namespace check {
     struct Census {
-        copies: i32,
-        parse_failed: i32,
-        anomalies: i32,
-        printed: i32,
-        jedi: i32,
-        droids: i32,
-        multiclass: i32,
-        classes: [9]i32,
-        max_level: i32,
-        level_sum: i64,
-        hp_min: i32,
-        hp_max: i32,
-        fp_max: i32,
-        ac_min: i32,
-        ac_max: i32,
-        bab_max: i32,
-        fort_min: i32,
-        fort_max: i32,
-    }
-
-    fn new_census {} -> Census {
-        return Census{
-            copies = 0, parse_failed = 0, anomalies = 0, printed = 0, jedi = 0, droids = 0, multiclass = 0,
-            classes = [0; 9], max_level = 0, level_sum = 0, hp_min = 100000, hp_max = 0, fp_max = 0,
-            ac_min = 1000, ac_max = 0, bab_max = 0, fort_min = 1000, fort_max = -1000,
-        }
+        copies: i32 = 0,
+        parse_failed: i32 = 0,
+        anomalies: i32 = 0,
+        printed: i32 = 0,
+        jedi: i32 = 0,
+        droids: i32 = 0,
+        multiclass: i32 = 0,
+        classes: [9]i32 = [0; 9],
+        max_level: i32 = 0,
+        level_sum: i64 = 0,
+        hp_min: i32 = 100000,
+        hp_max: i32 = 0,
+        fp_max: i32 = 0,
+        ac_min: i32 = 1000,
+        ac_max: i32 = 0,
+        bab_max: i32 = 0,
+        fort_min: i32 = 1000,
+        fort_max: i32 = -1000,
     }
 
     fn wants_utc { kind: u16 } -> bool {
@@ -116,7 +108,7 @@ namespace check {
         }
         defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = buf, count = 0 }
         let mut scratch = arena::new{ buf }
-        let mut st = new_census{}
+        let mut st = Census{ .. }
         _ = corpus::each{ &fs, h = &heap, game, want = wants_utc, visit = visit_creature{ &io, &st, tables, &scratch, _ } } iferr err{ error } {
             fail{ &io, &r, name = "census: walking the install failed", detail = 0 }
             return

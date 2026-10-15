@@ -147,7 +147,7 @@ fn check_model { mut io: Io, mut fs: Fs, mut scratch: Heap, mut cache: mdl_cache
             k = k + 1
         }
         // Played once through, each event fires once.
-        let mut player = mdl_anim::new_player{}
+        let mut player = mdl_anim::Player{ .. }
         mdl_anim::play{ &player, binding = b, looping = false, speed = 1.0, transition = -1.0 }
         let mut fired: u64 = 0
         let dt = if a.length > 0.0 { a.length / 30.0 } else { 0.1 }

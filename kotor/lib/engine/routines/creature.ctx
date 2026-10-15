@@ -211,7 +211,7 @@ namespace rt_crea {
             // skills.2da: the ranks, the effects, the key ability, the feat line; 0 for an untrained
             // skill that needs training, -1 for no such skill.
             if n < 0 or n >= @as(i32, rules::NUM_SKILLS) { return -1 }
-            return rules::skill_rank{ tables = w.rules, c = &f.c, skill = n, vs = rules::no_versus{}, base_only = false }
+            return rules::skill_rank{ tables = w.rules, c = &f.c, skill = n, vs = rules::Versus{ .. }, base_only = false }
         }
         if routine == nwscript::GetHasSkill { return flag{ b = rt_talent::has_skill{ w, f, skill = n } } }
         if routine == nwscript::GetHasFeat { return flag{ b = rules::has_feat{ c = &f.c, feat = n } } }
@@ -316,7 +316,7 @@ namespace rt_crea {
     // creature with stats). `which`: rules::save::FORT, REFLEX or WILL.
     fn roll_save { mut w: world::World, id: u32, which: i32, dc: i32, save_type: i32, versus: u32, me: u32 } -> i32 {
         let f = fighter_of{ w = &w, id } ifnull { return 0 }
-        let mut vs = rules::no_versus{}
+        let mut vs = rules::Versus{ .. }
         if let vf = fighter_of{ w = &w, id = versus } { vs = rules::versus_creature{ c = &vf.c } }
         let power = casting_power{ w = &w, me }
         let res = rules::saving_throw{ c = &f.c, which, dc, save_type, vs, force_power = power, rng = &w.dice }

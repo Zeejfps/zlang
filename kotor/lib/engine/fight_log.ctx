@@ -54,9 +54,7 @@ namespace fight_log {
 
     // The client's <CUSTOM2> as the last combat line left it: "<target> damaged: <CUSTOM2>" (1402)
     // fills only <CUSTOM0> and <CUSTOM1>, so the original prints whatever an earlier line put there.
-    struct Tokens { custom2: [96]u8, len: usize }
-
-    fn no_tokens {} -> Tokens { return Tokens{ custom2 = [0; 96], len = 0 } }
+    struct Tokens { custom2: [96]u8 = [0; 96], len: usize = 0 }
 
     fn remember_custom2 { mut w: world::World, s: []u8 } {
         let n = if s.len > 96 { 96 } else { s.len }

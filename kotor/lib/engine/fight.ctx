@@ -84,13 +84,11 @@ namespace fight {
 
     // CutsceneAttack's orders (combat.md 3.1 bCutscene, 4.1 step 5): the animation row, the result
     // and the damage the designer fixed.
-    struct Forced { on: bool, animation: i32, result: i32, damage: i32 }
-
-    fn not_forced {} -> Forced { return Forced{ on = false, animation = NO_ROW, result = 0, damage = -1 } }
+    struct Forced { on: bool = false, animation: i32 = NO_ROW, result: i32 = 0, damage: i32 = -1 }
 
     // A creature thrown back by a Force push or knocked down (fight_state.ctx): the slide and how
     // long the fall, the lying and the get-up last.
-    struct Knock { active: bool, t_ms: i32, move_ms: i32, total_ms: i32, from: math::Vec3, to: math::Vec3 }
+    struct Knock { active: bool = false, t_ms: i32 = 0, move_ms: i32 = 0, total_ms: i32 = 0, from: math::Vec3 = math::vec3::zero{}, to: math::Vec3 = math::vec3::zero{} }
 
     // A creature's fighting state: the rules creature, its round, how long it stays in combat.
     struct Fighter {
@@ -138,7 +136,7 @@ namespace fight {
     fn new_fighter { heap: *mut heap::Heap } -> !*mut Fighter {
         let mut c: rules::Creature
         c.loaded_hp = -1
-        let f = Fighter{ c, round = no_round{}, knock = no_knock{}, saber = no_saber{}, .. }
+        let f = Fighter{ c, round = no_round{}, knock = Knock{ .. }, saber = SaberThrow{ .. }, .. }
         return try alloc::new(Fighter, heap::Heap){ realloc = heap::alloc, heap, value = f }
     }
 
@@ -1182,7 +1180,7 @@ namespace fight {
         }
         f.wait_ms = 0
         c.attempted_target = target
-        start_round{ &w, id, target, s, ranged_in = ranged, feat, forced = not_forced{}, engaged = can }
+        start_round{ &w, id, target, s, ranged_in = ranged, feat, forced = Forced{ .. }, engaged = can }
         return actions::Status::done
     }
 
@@ -1264,7 +1262,7 @@ namespace fight {
         stealth::attacked{ &w, attacker = id, target }
         stealth::leave{ &w, id }
         // The situation the rules need (combat.ctx AttackSituation).
-        let mut sit = rules::make_situation{}
+        let mut sit = rules::AttackSituation{ .. }
         let dx = t.position.x - o.position.x
         let dy = t.position.y - o.position.y
         sit.dist2 = dx * dx + dy * dy
@@ -1934,9 +1932,7 @@ namespace fight {
 
     // The clocks of UpdatePartyDeath: the once-a-second scan for hostiles, and how long the party
     // has had someone down with no hostile creature seeing any member.
-    struct PartyWatch { scan_ms: i32, calm_ms: i32 }
-
-    fn new_party_watch {} -> PartyWatch { return PartyWatch{ scan_ms = 0, calm_ms = 0 } }
+    struct PartyWatch { scan_ms: i32 = 0, calm_ms: i32 = 0 }
 
     // Whether a party member is down (GetIsDying: in the party, hit points below 1).
     fn is_down { w: *world::World, id: u32 } -> bool {

@@ -27,24 +27,17 @@ namespace partysel_panel {
 
 
     struct State {
-        opened: bool,
-        panel: u32,
-        selected: [9]bool,                  // slots picked (the party's companions on opening)
-        forced: [9]bool,                    // slots a script says must be in the party
-        from_script: bool,                  // ShowPartySelectionGUI opened it (Done asks first, Back is refused)
-        hilit: i32,                         // the slot under the pointer, -1 for none
-        box: u32,                           // the message box on screen, 0 for none
-        confirming: bool,                   // that box asks whether to apply the party
-        finished: bool,                     // closed since the last take_finished
-        exit_script: resref::ResRef,        // ShowPartySelectionGUI's script, run once the party was applied
-        applied: bool,                      // the party was applied (Done, or the map's Back) since the last take_exit_script
-    }
-
-    fn new {} -> State {
-        return State{
-            opened = false, panel = 0, selected = [false; 9], forced = [false; 9], from_script = false, hilit = -1, box = 0,
-            confirming = false, finished = false, exit_script = resref::empty{}, applied = false,
-        }
+        opened: bool = false,
+        panel: u32 = 0,
+        selected: [9]bool = [false; 9],     // slots picked (the party's companions on opening)
+        forced: [9]bool = [false; 9],       // slots a script says must be in the party
+        from_script: bool = false,          // ShowPartySelectionGUI opened it (Done asks first, Back is refused)
+        hilit: i32 = -1,                    // the slot under the pointer, -1 for none
+        box: u32 = 0,                       // the message box on screen, 0 for none
+        confirming: bool = false,           // that box asks whether to apply the party
+        finished: bool = false,             // closed since the last take_finished
+        exit_script: resref::ResRef = resref::empty{}, // ShowPartySelectionGUI's script, run once the party was applied
+        applied: bool = false,              // the party was applied (Done, or the map's Back) since the last take_exit_script
     }
 
     fn is_open { s: *State } -> bool { return s.opened }

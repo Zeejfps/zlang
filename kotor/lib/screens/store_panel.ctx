@@ -19,18 +19,14 @@ namespace store_panel {
     const STR_SELL_COSTLY: u32 = 41985
 
     struct State {
-        open: bool,
-        panel: u32,
-        store: u32,
-        selling: bool,          // the sell page is up
-        picked: u32,            // the selected item, INVALID none
-        notice: msgbox::Box,    // a refusal
-        confirm: msgbox::Box,   // "this costs more than ..."
-        shown_gold: i32,        // the credits the label shows
-    }
-
-    fn new {} -> State {
-        return State{ open = false, panel = 0, store = obj::INVALID, selling = false, picked = obj::INVALID, notice = msgbox::blank{}, confirm = msgbox::blank{}, shown_gold = -1 }
+        open: bool = false,
+        panel: u32 = 0,
+        store: u32 = obj::INVALID,
+        selling: bool = false,  // the sell page is up
+        picked: u32 = obj::INVALID, // the selected item, INVALID none
+        notice: msgbox::Box = msgbox::Box{ .. }, // a refusal
+        confirm: msgbox::Box = msgbox::Box{ .. }, // "this costs more than ..."
+        shown_gold: i32 = -1,   // the credits the label shows
     }
 
     // CGuiInGame::OpenStore: the panel over the world, on the page the store's BuySellFlag allows.
@@ -40,8 +36,8 @@ namespace store_panel {
         gui::set_backdrop{ &g, fs = &w.fs, &dev, panel = s.panel, kind = 1 }
         s.store = merchant
         s.picked = obj::INVALID
-        s.notice = msgbox::blank{}
-        s.confirm = msgbox::blank{}
+        s.notice = msgbox::Box{ .. }
+        s.confirm = msgbox::Box{ .. }
         s.open = true
         let sells = store::sells{ w = &w, store = merchant }
         let buys = store::buys{ w = &w, store = merchant }

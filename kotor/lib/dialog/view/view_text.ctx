@@ -14,8 +14,8 @@ namespace dlgview {
         let mut repair_skill: i32 = 0
         if let o = world::object{ w = &w, id = party::leader{ w = &w } } {
             if let f = fight::of{ o } {
-                computer_skill = rules::skill_rank{ tables = w.rules, c = &f.c, skill = rules::skill::COMPUTER_USE, vs = rules::no_versus{}, base_only = false }
-                repair_skill = rules::skill_rank{ tables = w.rules, c = &f.c, skill = rules::skill::REPAIR, vs = rules::no_versus{}, base_only = false }
+                computer_skill = rules::skill_rank{ tables = w.rules, c = &f.c, skill = rules::skill::COMPUTER_USE, vs = rules::Versus{ .. }, base_only = false }
+                repair_skill = rules::skill_rank{ tables = w.rules, c = &f.c, skill = rules::skill::REPAIR, vs = rules::Versus{ .. }, base_only = false }
             }
         }
         let mut spikes: i32 = 0

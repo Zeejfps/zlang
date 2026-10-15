@@ -11,21 +11,11 @@ namespace gpu {
     const FOG_REACH: f32 = 0.9
 
     struct AtmosPrograms {
-        made: bool,
-        shaft: u32, sh_area: i32, sh_sun: i32, sh_params: i32,
-        shaft_add: u32, sa_params: i32, sa_proj: i32, sa_inv_size: i32, sa_color: i32,
-        hfog: u32, hf_inv_vp: i32, hf_eye: i32, hf_fog: i32, hf_color: i32,
-        half: u32, half_fbo: u32, half_w: i32, half_h: i32,     // the shafts' target, half the screen's size
-    }
-
-    fn no_atmos_programs {} -> AtmosPrograms {
-        return AtmosPrograms{
-            made = false,
-            shaft = 0, sh_area = -1, sh_sun = -1, sh_params = -1,
-            shaft_add = 0, sa_params = -1, sa_proj = -1, sa_inv_size = -1, sa_color = -1,
-            hfog = 0, hf_inv_vp = -1, hf_eye = -1, hf_fog = -1, hf_color = -1,
-            half = 0, half_fbo = 0, half_w = 0, half_h = 0,
-        }
+        made: bool = false,
+        shaft: u32 = 0, sh_area: i32 = -1, sh_sun: i32 = -1, sh_params: i32 = -1,
+        shaft_add: u32 = 0, sa_params: i32 = -1, sa_proj: i32 = -1, sa_inv_size: i32 = -1, sa_color: i32 = -1,
+        hfog: u32 = 0, hf_inv_vp: i32 = -1, hf_eye: i32 = -1, hf_fog: i32 = -1, hf_color: i32 = -1,
+        half: u32 = 0, half_fbo: u32 = 0, half_w: i32 = 0, half_h: i32 = 0, // the shafts' target, half the screen's size
     }
 
     fn make_atmos_programs { mut dev: Device } -> ! {
@@ -76,7 +66,7 @@ namespace gpu {
         dev.gl.delete_program{ program = a.shaft_add }
         dev.gl.delete_program{ program = a.hfog }
         free_shaft_target{ &dev }
-        dev.atmos = no_atmos_programs{}
+        dev.atmos = AtmosPrograms{ .. }
     }
 
     fn free_shaft_target { mut dev: Device } {

@@ -382,7 +382,7 @@ namespace save {
             world::sweep{ &w }
             w.pc = obj::INVALID
         }
-        w.party = party::new{}
+        w.party = party::Party{ .. }
         try read_store{ st = &w.gip, image }
         try restore_repute{ &w }
         let globals_bytes = fs::read_all(arena::Arena){ fs = &w.fs, heap = w.scratch, realloc = arena::alloc, path = try file_in{ &w, folder, name = "GLOBALVARS.res" } } iferr { slice::empty(u8){} }

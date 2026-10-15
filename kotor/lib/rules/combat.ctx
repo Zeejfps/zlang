@@ -97,27 +97,19 @@ namespace rules {
 
     // The facts of a single attack that only the world knows. `make_situation` gives the defaults.
     struct AttackSituation {
-        target_object: bool,        // the target is a door or placeable, not a creature
-        target_plot: bool,          // an object target that cannot be damaged (creatures use Creature.plot)
-        dist2: f32,                 // squared distance attacker-defender in metres squared
-        defender_sees: bool,        // the defender's perception of the attacker has the seen bit
-        facing_cos: f32,            // cosine of the angle between the defender's facing and the direction to the attacker
-        facing_dot: f32,            // dot product of the two creatures' facing vectors (<= 0: the defender faces the shooter)
-        defender_busy: bool,        // the defender is in the middle of something (no deflection)
-        shield_absorbs: bool,       // an energy shield would stop a missed bolt (result 10)
-        defender_hp: i32,           // the defender's current hit points (killing blow, dying)
-        attacker_id: u32,           // creator of the effects the hit makes
-        forced: bool,               // a cutscene attack: the result (and the damage) are given
-        forced_result: i32,
-        forced_damage: i32,         // -1: roll it
-    }
-
-    fn make_situation {} -> AttackSituation {
-        return AttackSituation{
-            target_object = false, target_plot = false, dist2 = 9.0, defender_sees = true, facing_cos = 1.0,
-            facing_dot = -1.0, defender_busy = false, shield_absorbs = false, defender_hp = 1000,
-            attacker_id = OBJECT_INVALID, forced = false, forced_result = outcome::HIT, forced_damage = -1,
-        }
+        target_object: bool = false, // the target is a door or placeable, not a creature
+        target_plot: bool = false,  // an object target that cannot be damaged (creatures use Creature.plot)
+        dist2: f32 = 9.0,           // squared distance attacker-defender in metres squared
+        defender_sees: bool = true, // the defender's perception of the attacker has the seen bit
+        facing_cos: f32 = 1.0,      // cosine of the angle between the defender's facing and the direction to the attacker
+        facing_dot: f32 = -1.0,     // dot product of the two creatures' facing vectors (<= 0: the defender faces the shooter)
+        defender_busy: bool = false, // the defender is in the middle of something (no deflection)
+        shield_absorbs: bool = false, // an energy shield would stop a missed bolt (result 10)
+        defender_hp: i32 = 1000,    // the defender's current hit points (killing blow, dying)
+        attacker_id: u32 = OBJECT_INVALID, // creator of the effects the hit makes
+        forced: bool = false,       // a cutscene attack: the result (and the damage) are given
+        forced_result: i32 = outcome::HIT,
+        forced_damage: i32 = -1,    // -1: roll it
     }
 
     // ---- weapons and slots

@@ -24,27 +24,19 @@ namespace options_panel {
     const BOX_QUIT: u32 = 2
 
     struct State {
-        opened: bool,
-        quit: bool,                         // the Exit Game button was confirmed
-        fe: ?*mut frontend::Front,          // the option screens' state and settings
-        box: u32,                           // the message box on screen, 0 when none
-        box_for: u32,
-        save_req: [64]u8, save_len: usize,  // the name a game is to be saved under, once chosen
-        save_slot: i32,                     // the manual save it writes over, -1 for a new one
-        load_req: [300]u8, load_len: usize, // the folder (a path) of the save to load, once chosen
-        config: [256]u8, config_len: usize, // the options file
+        opened: bool = false,
+        quit: bool = false,                 // the Exit Game button was confirmed
+        fe: ?*mut frontend::Front = null,   // the option screens' state and settings
+        box: u32 = 0,                       // the message box on screen, 0 when none
+        box_for: u32 = BOX_NONE,
+        save_req: [64]u8 = [0; 64], save_len: usize = 0, // the name a game is to be saved under, once chosen
+        save_slot: i32 = -1,                // the manual save it writes over, -1 for a new one
+        load_req: [300]u8 = [0; 300], load_len: usize = 0, // the folder (a path) of the save to load, once chosen
+        config: [256]u8 = [0; 256], config_len: usize = 0, // the options file
     }
 
     // A Save Game choice: the name, and the number of the manual save written over (-1: a new one).
     struct SaveRequest { name: []u8, slot: i32 }
-
-    fn new {} -> State {
-        return State{
-            opened = false, quit = false, fe = null, box = 0, box_for = BOX_NONE,
-            save_req = [0; 64], save_len = 0, save_slot = -1, load_req = [0; 300], load_len = 0,
-            config = [0; 256], config_len = 0,
-        }
-    }
 
     // Which file the option screens read and write (default: kotor/out/kotor-settings.ini).
     fn set_config { mut s: State, path: []u8 } {

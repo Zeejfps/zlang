@@ -81,25 +81,25 @@ namespace dlg {
     }
 
     struct Dialog {
-        bytes: alloc::Bytes,
-        entries: []mut Node,
-        replies: []mut Node,
-        starting: []mut Link,
-        stunts: []mut Stunt,
-        links: []mut Link,              // the storage the nodes' link slices point into
-        anims: []mut Anim,
-        camera_model: resref::ResRef,
-        end_script: resref::ResRef,
-        abort_script: resref::ResRef,
-        ambient_track: resref::ResRef,
-        skippable: bool,
-        conversation_type: i32,
-        computer_type: u8,
-        unequip_items: bool,
-        unequip_held: bool,
-        animated_cut: bool,
-        old_hit_check: bool,
-        delay_entry: u32,
+        bytes: alloc::Bytes = slice::empty(u8){},
+        entries: []mut Node = slice::empty(Node){},
+        replies: []mut Node = slice::empty(Node){},
+        starting: []mut Link = slice::empty(Link){},
+        stunts: []mut Stunt = slice::empty(Stunt){},
+        links: []mut Link = slice::empty(Link){}, // the storage the nodes' link slices point into
+        anims: []mut Anim = slice::empty(Anim){},
+        camera_model: resref::ResRef = resref::empty{},
+        end_script: resref::ResRef = resref::empty{},
+        abort_script: resref::ResRef = resref::empty{},
+        ambient_track: resref::ResRef = resref::empty{},
+        skippable: bool = true,
+        conversation_type: i32 = 0,
+        computer_type: u8 = 0,
+        unequip_items: bool = false,
+        unequip_held: bool = false,
+        animated_cut: bool = false,
+        old_hit_check: bool = false,
+        delay_entry: u32 = 0,
     }
 
     // Where the flat arrays are filled.

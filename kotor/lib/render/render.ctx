@@ -329,9 +329,7 @@ namespace render {
     }
 
     // Linear fog by distance from the eye: none before `near`, all `color` at `far`.
-    struct Fog { on: bool, color: math::Vec3, near: f32, far: f32 }
-
-    fn no_fog {} -> Fog { return Fog{ on = false, color = math::vec3::zero{}, near = 0.0, far = 1.0 } }
+    struct Fog { on: bool = false, color: math::Vec3 = math::vec3::zero{}, near: f32 = 0.0, far: f32 = 1.0 }
 
     // ---- the enhanced renderer (docs/design/enhanced-render.md)
     //
@@ -345,32 +343,23 @@ namespace render {
     // The Enhanced Graphics options. `on` false is the original look: every view is drawn exactly as the
     // original renderer draws it, whatever the rest says. Levels: 0 off, 1 low (for a laptop's GPU), 2 high.
     struct Enhance {
-        on: bool,
-        bloom: u8,                  // HDR: what is brighter than white glows (emissive, additive, particles, bright lights)
-        exposure: f32,              // the scene's light before the tone curve; 1 keeps the original's mid-tones
-        room_light: u8,             // creatures and objects take the light around them (Draw.ambient), not the area's flat ambient
-        shadows: u8,                // 0 the original's planar creature shadows (the Shadows option); 1 shadow maps, 2 with soft penumbras
-        ao: u8,                     // ambient occlusion on the ambient and lightmap light
-        smooth_lightmaps: bool,     // lightmaps sampled bicubically, not bilinearly
-        lift_lightmaps: bool,       // the lightmaps' near-black texels lifted to a dark floor (ours: their baked-black dead ends)
-        dof: u8,                    // depth of field, for views with a focus (conversations)
-        reflections: u8,            // screen-space reflections on environment-mapped surfaces
-        shafts: bool,               // light shafts toward the view's sun
-        height_fog: bool,           // the view's height fog
-        grade: bool,                // the view's colour grade
-        post_aa: u8,                // 0 none, 1 FXAA, 2 a sharper edge filter (SMAA-like): when multisampling is off
-        alpha_coverage: bool,       // alpha-tested surfaces through alpha-to-coverage when multisampling is on
-        tessellation: u8,           // smoother creature silhouettes (PN triangles)
-        timing: bool,               // measure each pass on the GPU (gpu::get_timings)
-    }
-
-    // Everything off: the original renderer.
-    fn original_look {} -> Enhance {
-        return Enhance{
-            on = false, bloom = 0, exposure = 1.0, room_light = 0, shadows = 0, ao = 0, smooth_lightmaps = false, lift_lightmaps = false, dof = 0,
-            reflections = 0, shafts = false, height_fog = false, grade = false, post_aa = 0, alpha_coverage = false,
-            tessellation = 0, timing = false,
-        }
+        on: bool = false,
+        bloom: u8 = 0,              // HDR: what is brighter than white glows (emissive, additive, particles, bright lights)
+        exposure: f32 = 1.0,        // the scene's light before the tone curve; 1 keeps the original's mid-tones
+        room_light: u8 = 0,         // creatures and objects take the light around them (Draw.ambient), not the area's flat ambient
+        shadows: u8 = 0,            // 0 the original's planar creature shadows (the Shadows option); 1 shadow maps, 2 with soft penumbras
+        ao: u8 = 0,                 // ambient occlusion on the ambient and lightmap light
+        smooth_lightmaps: bool = false, // lightmaps sampled bicubically, not bilinearly
+        lift_lightmaps: bool = false, // the lightmaps' near-black texels lifted to a dark floor (ours: their baked-black dead ends)
+        dof: u8 = 0,                // depth of field, for views with a focus (conversations)
+        reflections: u8 = 0,        // screen-space reflections on environment-mapped surfaces
+        shafts: bool = false,       // light shafts toward the view's sun
+        height_fog: bool = false,   // the view's height fog
+        grade: bool = false,        // the view's colour grade
+        post_aa: u8 = 0,            // 0 none, 1 FXAA, 2 a sharper edge filter (SMAA-like): when multisampling is off
+        alpha_coverage: bool = false, // alpha-tested surfaces through alpha-to-coverage when multisampling is on
+        tessellation: u8 = 0,       // smoother creature silhouettes (PN triangles)
+        timing: bool = false,       // measure each pass on the GPU (gpu::get_timings)
     }
 
     // Every effect on at its high level: what a new settings file starts with.
@@ -384,40 +373,27 @@ namespace render {
 
     // The area's sun, for outdoor views: shadows are cast away from it and light shafts stream from it.
     struct Sun {
-        on: bool,
-        direction: math::Vec3,      // the way its light travels (unit length, pointing down)
-        color: math::Vec3,          // its light (the ARE's SunDiffuseColor)
-        strength: f32,              // how dark the shadows it casts are, 0..1 (the ARE's ShadowOpacity)
-        light: u32,                 // the frame light that is the sun (its index + 1; 0: none), whose light its shadows take away
+        on: bool = false,
+        direction: math::Vec3 = math::Vec3{ x = 0.0, y = 0.0, z = -1.0 }, // the way its light travels (unit length, pointing down)
+        color: math::Vec3 = math::vec3::zero{}, // its light (the ARE's SunDiffuseColor)
+        strength: f32 = 0.0,        // how dark the shadows it casts are, 0..1 (the ARE's ShadowOpacity)
+        light: u32 = 0,             // the frame light that is the sun (its index + 1; 0: none), whose light its shadows take away
     }
-
-    fn no_sun {} -> Sun { return Sun{ on = false, direction = math::Vec3{ x = 0.0, y = 0.0, z = -1.0 }, color = math::vec3::zero{}, strength = 0.0, light = 0 } }
 
     // Depth of field: what is in focus. Things nearer or farther than `range` from `distance` (metres along the
     // view) blur, up to `blur` (0..1 of the effect's largest blur). A cut of the camera changes it at once; the
     // backend eases nothing, so the caller eases what should move smoothly.
-    struct Focus { on: bool, distance: f32, range: f32, blur: f32 }
-
-    fn no_focus {} -> Focus { return Focus{ on = false, distance = 10.0, range = 2.0, blur = 0.0 } }
+    struct Focus { on: bool = false, distance: f32 = 10.0, range: f32 = 2.0, blur: f32 = 0.0 }
 
     // Fog that is thicker the lower it is: `density` per metre at height `base` (world z), thinning by e every
     // `falloff` metres above it. Layered over the view's linear `fog`.
-    struct HeightFog { on: bool, color: math::Vec3, base: f32, density: f32, falloff: f32 }
-
-    fn no_height_fog {} -> HeightFog { return HeightFog{ on = false, color = math::vec3::zero{}, base = 0.0, density = 0.0, falloff = 1.0 } }
+    struct HeightFog { on: bool = false, color: math::Vec3 = math::vec3::zero{}, base: f32 = 0.0, density: f32 = 0.0, falloff: f32 = 1.0 }
 
     // A video effect over the finished 3D picture of a view of the screen (videoeffects.2da: the security camera's
     // and the droids' views). `noise` (0..1) adds a fine grain that changes every frame; then each output channel is
     // the dot product of its row with the colour, clamped to 0..1. Drawn only with the Frame Buffer Effects option, as
     // the original does.
-    struct VideoEffect { on: bool, red: math::Vec3, green: math::Vec3, blue: math::Vec3, noise: f32 }
-
-    fn no_video_effect {} -> VideoEffect {
-        return VideoEffect{
-            on = false, red = math::Vec3{ x = 1.0, y = 0.0, z = 0.0 }, green = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 },
-            blue = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, noise = 0.0,
-        }
-    }
+    struct VideoEffect { on: bool = false, red: math::Vec3 = math::Vec3{ x = 1.0, y = 0.0, z = 0.0 }, green: math::Vec3 = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, blue: math::Vec3 = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, noise: f32 = 0.0 }
 
     // What a draw is, for the effects that treat surfaces differently. `room`: static, its light baked in a
     // lightmap; it receives shadows and occlusion and is what light probes are made from. `creature`: a
@@ -460,8 +436,8 @@ namespace render {
     fn make_view { camera: Camera } -> View {
         return View{
             target = null, viewport = null, clear_color = Color{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 }, clear_depth = true,
-            camera, ambient = math::Vec3{ x = 0.3, y = 0.3, z = 0.3 }, fog = no_fog{}, blur = 0.0, video = no_video_effect{},
-            sun = no_sun{}, focus = no_focus{}, grade = null, height_fog = no_height_fog{}, exposure = 1.0,
+            camera, ambient = math::Vec3{ x = 0.3, y = 0.3, z = 0.3 }, fog = Fog{ .. }, blur = 0.0, video = VideoEffect{ .. },
+            sun = Sun{ .. }, focus = Focus{ .. }, grade = null, height_fog = HeightFog{ .. }, exposure = 1.0,
         }
     }
 
@@ -587,9 +563,7 @@ namespace render {
     // The GUI's pointer picture in this frame (shown false: none). The quad that draws it is quads[quad]; a backend
     // that hands the pointer to the operating system (gpu::set_os_pointer, the EnableHardwareMouse option) leaves
     // that quad out and makes the OS cursor from `image` at width x height render pixels, hot spot hot_x, hot_y.
-    struct Pointer { shown: bool, image: Texture, quad: u32, width: f32, height: f32, hot_x: f32, hot_y: f32 }
-
-    fn no_pointer {} -> Pointer { return Pointer{ shown = false, image = Texture{ id = 0 }, quad = 0, width = 0.0, height = 0.0, hot_x = 0.0, hot_y = 0.0 } }
+    struct Pointer { shown: bool = false, image: Texture = Texture{ id = 0 }, quad: u32 = 0, width: f32 = 0.0, height: f32 = 0.0, hot_x: f32 = 0.0, hot_y: f32 = 0.0 }
 
     // Everything one frame draws. Made once with make_frame, emptied by begin_frame, filled by
     // the add_* functions, and drawn by gpu::submit.
@@ -627,7 +601,7 @@ namespace render {
             tris = try alloc::resize(Tri, S){ realloc, &heap, mem = slice::empty(Tri){}, count = cap.tris }, tri_count = 0,
             quads = try alloc::resize(Quad, S){ realloc, &heap, mem = slice::empty(Quad){}, count = cap.quads }, quad_count = 0,
             ambients = try alloc::resize(AmbientCube, S){ realloc, &heap, mem = slice::empty(AmbientCube){}, count = cap.ambients }, ambient_count = 0,
-            pointer = no_pointer{}, dropped = 0,
+            pointer = Pointer{ .. }, dropped = 0,
         }
     }
 
@@ -646,7 +620,7 @@ namespace render {
         frame.tri_count = 0
         frame.quad_count = 0
         frame.ambient_count = 0
-        frame.pointer = no_pointer{}
+        frame.pointer = Pointer{ .. }
         frame.dropped = 0
     }
 

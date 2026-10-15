@@ -24,7 +24,7 @@ namespace pz_game {
     }
 
     fn make_params { mut w: world::World, r: Request } -> !pazaak::Params {
-        let mut p = pazaak::make_params{}
+        let mut p = pazaak::Params{ .. }
         p.max_wager = r.max_wager
         p.tutorial = r.tutorial
         p.seed = world::random{ &w }

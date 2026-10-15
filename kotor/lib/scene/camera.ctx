@@ -167,16 +167,12 @@ namespace cam {
 
     // What the player's hands give the camera this frame.
     struct Input {
-        turn: f32,              // the rotate keys or the screen edge (-1..1, positive turns left)
-        mouse_degrees: f32,     // the mouse's yaw step while it looks about (positive turns left)
-        pitch_degrees: f32,     // free look: the mouse's pitch step (up positive)
-        looking: bool,          // the mouse looks about (Lookabout held XOR the Mouse Look option)
-        look_input: f32,        // its counts / 100, clamped to one, with the yaw's sign: the integrator's input
-        tilt: f32,              // free look: W (+1) and S (-1) tilt the view
-    }
-
-    fn no_input {} -> Input {
-        return Input{ turn = 0.0, mouse_degrees = 0.0, pitch_degrees = 0.0, looking = false, look_input = 0.0, tilt = 0.0 }
+        turn: f32 = 0.0,        // the rotate keys or the screen edge (-1..1, positive turns left)
+        mouse_degrees: f32 = 0.0, // the mouse's yaw step while it looks about (positive turns left)
+        pitch_degrees: f32 = 0.0, // free look: the mouse's pitch step (up positive)
+        looking: bool = false,  // the mouse looks about (Lookabout held XOR the Mouse Look option)
+        look_input: f32 = 0.0,  // its counts / 100, clamped to one, with the yaw's sign: the integrator's input
+        tilt: f32 = 0.0,        // free look: W (+1) and S (-1) tilt the view
     }
 
     // One update: `target` is the leader, `look_height` its head height above its feet.

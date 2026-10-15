@@ -7,80 +7,56 @@
 namespace frontend {
     struct Settings {
         // [Graphics Options]
-        width: i32, height: i32,
-        window_mode: i32,           // FullScreen: 0 windowed, 1 full screen (the display switches mode), 2 borderless over the desktop (ours)
-        refresh: i32,               // Refresh Rate (ours): Hz for full screen, 0 the display's highest
-        vsync: bool,
-        gamma: i32,                 // Brightness: 0..100, the brightness slider (57 leaves the picture as it is)
-        shadows: bool, soft_shadows: bool, grass: bool, frame_buffer: bool,
-        emitters: bool,             // Emitters: particle effects (in the original's strings, not on its panels)
-        anisotropy: i32,            // 0 off .. 4 (2x, 4x, 8x, 16x)
-        antialias: i32,             // 0 off .. 4 (2x, 4x, 6x, 8x samples)
-        texture_quality: i32,       // 0 low .. 2 high
-        gui_scale: f32,             // GUI Scale (ours): 0 fits the window (auto), 1 the original's pixel-for-pixel GUI, else a factor
-        frame_limit: i32,           // Frame Limit (ours): frames per second at most, 0 none
-        allow_windowed: bool,       // AllowWindowedMode: Alt+Enter switches between a window and full screen (else it minimises)
-        hardware_mouse: bool,       // EnableHardwareMouse: the OS draws the pointer, with the game's pictures (0: the game draws it)
+        width: i32 = 1280, height: i32 = 720,
+        window_mode: i32 = 0,       // FullScreen: 0 windowed, 1 full screen (the display switches mode), 2 borderless over the desktop (ours)
+        refresh: i32 = 0,           // Refresh Rate (ours): Hz for full screen, 0 the display's highest
+        vsync: bool = true,
+        gamma: i32 = 57,            // Brightness: 0..100, the brightness slider (57 leaves the picture as it is)
+        shadows: bool = true, soft_shadows: bool = false, grass: bool = true, frame_buffer: bool = true,
+        emitters: bool = true,      // Emitters: particle effects (in the original's strings, not on its panels)
+        anisotropy: i32 = 3,        // 0 off .. 4 (2x, 4x, 8x, 16x)
+        antialias: i32 = 0,         // 0 off .. 4 (2x, 4x, 6x, 8x samples)
+        texture_quality: i32 = 2,   // 0 low .. 2 high
+        gui_scale: f32 = 0.0,       // GUI Scale (ours): 0 fits the window (auto), 1 the original's pixel-for-pixel GUI, else a factor
+        frame_limit: i32 = 0,       // Frame Limit (ours): frames per second at most, 0 none
+        allow_windowed: bool = false, // AllowWindowedMode: Alt+Enter switches between a window and full screen (else it minimises)
+        hardware_mouse: bool = false, // EnableHardwareMouse: the OS draws the pointer, with the game's pictures (0: the game draws it)
         // [Enhanced Graphics] (ours: docs/design/enhanced-render.md). Levels 0 off, 1 low, 2 high.
-        fx_original: bool,          // Original Look: every enhancement off, the original renderer's picture
-        fx_bloom: i32,
-        fx_room_light: i32,         // 0 or 1
-        fx_shadows: i32,            // 0 the original's planar shadows, 1 shadow maps, 2 soft shadow maps
-        fx_ao: i32,
-        fx_lightmaps: i32,          // 0 the original's, 1 smooth (bicubic), 2 smooth with near-black lifted (ours)
-        fx_dof: i32,
-        fx_reflections: i32,
-        fx_shafts: bool,
-        fx_fog: bool,               // height fog
-        fx_grade: bool,             // the planets' colour grades
-        fx_edges: i32,              // edge smoothing after the picture, without multisampling: 0 off, 1 FXAA, 2 high
-        fx_foliage: bool,           // alpha-to-coverage under multisampling
-        fx_tessellation: i32,
-        fx_timing: bool,            // GPU time per pass, shown over the game
-        fx_exposure: f32,           // not on the panel
+        fx_original: bool = false,  // Original Look: every enhancement off, the original renderer's picture
+        fx_bloom: i32 = 2,
+        fx_room_light: i32 = 1,     // 0 or 1
+        fx_shadows: i32 = 2,        // 0 the original's planar shadows, 1 shadow maps, 2 soft shadow maps
+        fx_ao: i32 = 2,
+        fx_lightmaps: i32 = 2,      // 0 the original's, 1 smooth (bicubic), 2 smooth with near-black lifted (ours)
+        fx_dof: i32 = 2,
+        fx_reflections: i32 = 2,
+        fx_shafts: bool = true,
+        fx_fog: bool = true,        // height fog
+        fx_grade: bool = true,      // the planets' colour grades
+        fx_edges: i32 = 1,          // edge smoothing after the picture, without multisampling: 0 off, 1 FXAA, 2 high
+        fx_foliage: bool = true,    // alpha-to-coverage under multisampling
+        fx_tessellation: i32 = 0,
+        fx_timing: bool = false,    // GPU time per pass, shown over the game
+        fx_exposure: f32 = 1.0,     // not on the panel
         // [Sound Options]
-        music: i32, voice: i32, effects: i32, movie: i32,       // 0..100
-        eax: bool, force_software: bool,
-        bias_2d3d: f32,             // "2D3D Bias", 0.1..1.9: over 1 quietens the 2D sound effects by 2 - bias (docs/re/app.md, "Voices"); not on the panel; the install's swkotor.ini wins (install_bias)
+        music: i32 = 85, voice: i32 = 85, effects: i32 = 85, movie: i32 = 100, // 0..100
+        eax: bool = false, force_software: bool = false,
+        bias_2d3d: f32 = 1.5,       // "2D3D Bias", 0.1..1.9: over 1 quietens the 2D sound effects by 2 - bias (docs/re/app.md, "Voices"); not on the panel; the install's swkotor.ini wins (install_bias)
         // [Game Options]
-        difficulty: i32,            // 0 easy, 1 normal, 2 hard
-        mouse_sensitivity: i32,     // 0..100
-        reverse_buttons: bool,
-        mouse_look: bool, auto_level_up: bool, autosave: bool, reverse_minigame_y: bool, combat_movement: bool,
-        tooltips: bool, tutorial_popups: bool, subtitles: bool, minimap: bool, floating_numbers: bool,
-        status_summary: bool, hide_ingame_gui: bool, small_fonts: bool, hide_unequippable: bool,
+        difficulty: i32 = 1,        // 0 easy, 1 normal, 2 hard
+        mouse_sensitivity: i32 = 33, // 0..100
+        reverse_buttons: bool = false,
+        mouse_look: bool = false, auto_level_up: bool = false, autosave: bool = true, reverse_minigame_y: bool = false, combat_movement: bool = true,
+        tooltips: bool = true, tutorial_popups: bool = true, subtitles: bool = true, minimap: bool = true, floating_numbers: bool = true,
+        status_summary: bool = true, hide_ingame_gui: bool = false, small_fonts: bool = false, hide_unequippable: bool = false,
         // [Autopause Options]
-        pause_end_round: bool, pause_enemy_sighted: bool, pause_mine_sighted: bool, pause_party_killed: bool,
-        pause_action_menu: bool, pause_triggers: bool,
+        pause_end_round: bool = false, pause_enemy_sighted: bool = true, pause_mine_sighted: bool = true, pause_party_killed: bool = true,
+        pause_action_menu: bool = false, pause_triggers: bool = true,
         // [Movies]
-        disable_movies: bool,
-        movies_seen: [64]bool,      // [Movies Shown]: rows of movies.2da the player has seen
+        disable_movies: bool = false,
+        movies_seen: [64]bool = [false; 64], // [Movies Shown]: rows of movies.2da the player has seen
         // [Keymapping] (keymap.ctx): the keys the file gives, -1 for the rest, which take the defaults
-        keymap: Keymap,
-    }
-
-    // Our defaults, for a missing file or key. Mostly the original's, but the graphics differ on purpose
-    // (docs/mechanics/graphics.md, Decisions: a 1280x720 window, anisotropy 8x, V-Sync on, Soft Shadows off,
-    // Texture Quality High), where the original's own (0x0061da60, the Advanced panel's Default 0x0061d520) are
-    // full screen, anisotropy and V-Sync off, Soft Shadows on and Texture Quality Low.
-    fn default_settings {} -> Settings {
-        return Settings{
-            width = 1280, height = 720, window_mode = 0, refresh = 0, vsync = true, gamma = 57,
-            shadows = true, soft_shadows = false, grass = true, frame_buffer = true, emitters = true,
-            anisotropy = 3, antialias = 0, texture_quality = 2, gui_scale = 0.0, frame_limit = 0,
-            allow_windowed = false, hardware_mouse = false,
-            fx_original = false, fx_bloom = 2, fx_room_light = 1, fx_shadows = 2, fx_ao = 2, fx_lightmaps = 2, fx_dof = 2,
-            fx_reflections = 2, fx_shafts = true, fx_fog = true, fx_grade = true, fx_edges = 1, fx_foliage = true,
-            fx_tessellation = 0, fx_timing = false, fx_exposure = 1.0,
-            music = 85, voice = 85, effects = 85, movie = 100, eax = false, force_software = false, bias_2d3d = 1.5,
-            difficulty = 1, mouse_sensitivity = 33, reverse_buttons = false,
-            mouse_look = false, auto_level_up = false, autosave = true, reverse_minigame_y = false, combat_movement = true,
-            tooltips = true, tutorial_popups = true, subtitles = true, minimap = true, floating_numbers = true,
-            status_summary = true, hide_ingame_gui = false, small_fonts = false, hide_unequippable = false,
-            pause_end_round = false, pause_enemy_sighted = true, pause_mine_sighted = true, pause_party_killed = true,
-            pause_action_menu = false, pause_triggers = true,
-            disable_movies = false, movies_seen = [false; 64], keymap = no_keymap{},
-        }
+        keymap: Keymap = Keymap{ .. },
     }
 
     fn get_int { data: []u8, section: []u8, key: []u8, fallback: i32 } -> i32 {
@@ -107,7 +83,7 @@ namespace frontend {
 
     // The settings in the text of an options file; anything missing keeps its default.
     fn parse_settings { data: []u8 } -> Settings {
-        let d = default_settings{}
+        let d = Settings{ .. }
         let g = "Graphics Options"
         let s = "Sound Options"
         let o = "Game Options"
@@ -210,7 +186,7 @@ namespace frontend {
     fn enhance_of { s: Settings } -> render::Enhance {
         if s.fx_original {
             // Timing still measures the original's passes, to compare.
-            let mut o = render::original_look{}
+            let mut o = render::Enhance{ .. }
             o.timing = s.fx_timing
             return o
         }
@@ -237,7 +213,7 @@ namespace frontend {
 
     // Reads the options file at `path`; the defaults when there is none or it can't be read.
     fn load_settings { mut fs: Fs, heap: *mut heap::Heap, path: []u8 } -> Settings {
-        let bytes = fs::read_all(heap::Heap){ &fs, heap, realloc = heap::alloc, path } iferr { return default_settings{} }
+        let bytes = fs::read_all(heap::Heap){ &fs, heap, realloc = heap::alloc, path } iferr { return Settings{ .. } }
         defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap, mem = bytes, count = 0 }
         return parse_settings{ data = bytes }
     }

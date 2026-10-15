@@ -46,7 +46,7 @@ namespace gpu {
     fn no_orig_fx {} -> OrigFx {
         let none = gl::Target{ framebuffer = 0, color = 0, depth_stencil = 0, width = 0, height = 0 }
         return OrigFx{
-            volume = no_scene_program{},
+            volume = ScenePrograms{ .. },
             small = [none; 2], glow = [none; 2],
             ..
         }
@@ -334,7 +334,7 @@ namespace gpu {
         mask_marked{ &dev }
         dev.gl.color_mask{ red = gl::TRUE, green = gl::TRUE, blue = gl::TRUE, alpha = gl::TRUE }
         try copy_screen{ &dev }
-        dev.state = unknown_state{}
+        dev.state = State{ .. }
         reduce_into{ &dev, from = dev.fx.color, from_w = dev.screen.width, from_h = dev.screen.height, into = dev.ofx.small[0], mode = 0 }
         blur_twice{ &dev, a = dev.ofx.small[0], b = dev.ofx.small[1] }
         dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = screen }
@@ -346,7 +346,7 @@ namespace gpu {
         dev.gl.clear{ mask = gl::COLOR_BUFFER_BIT }
         dev.gl.color_mask{ red = gl::TRUE, green = gl::TRUE, blue = gl::TRUE, alpha = gl::TRUE }
         dev.gl.depth_mask{ flag = gl::TRUE }
-        dev.state = unknown_state{}
+        dev.state = State{ .. }
     }
 
     // `from` (from_w by from_h) into the small target `into`, 4x4 taps per pixel through REDUCE_FS's mode.
@@ -406,7 +406,7 @@ namespace gpu {
     fn glow_screen { mut dev: Device } -> ! {
         try ensure_small_targets{ &dev }
         try copy_screen{ &dev }
-        dev.state = unknown_state{}
+        dev.state = State{ .. }
         reduce_into{ &dev, from = dev.fx.color, from_w = dev.screen.width, from_h = dev.screen.height, into = dev.ofx.small[0], mode = 1 }
         reduce_into{ &dev, from = dev.ofx.small[0].color, from_w = SMALL_SIZE, from_h = SMALL_SIZE, into = dev.ofx.glow[0], mode = 2 }
         blur_twice{ &dev, a = dev.ofx.glow[0], b = dev.ofx.glow[1] }
@@ -415,7 +415,7 @@ namespace gpu {
         dev.gl.viewport{ x = 0, y = 0, width = dev.screen.width, height = dev.screen.height }
         spread_over{ &dev, from = dev.ofx.glow[0].color, mode = 1, strength = GLOW_GAIN, blend = render::Blend::additive, models = true }
         dev.gl.depth_mask{ flag = gl::TRUE }
-        dev.state = unknown_state{}
+        dev.state = State{ .. }
     }
 
     // Whether a draw is a distortion the view marks instead of drawing.
@@ -455,7 +455,7 @@ namespace gpu {
         dev.gl.color_mask{ red = gl::TRUE, green = gl::TRUE, blue = gl::TRUE, alpha = gl::TRUE }
         dev.gl.stencil_op{ fail = gl::KEEP, zfail = gl::KEEP, zpass = gl::KEEP }
         try copy_screen{ &dev }
-        dev.state = unknown_state{}
+        dev.state = State{ .. }
         use_program{ &dev, program = dev.ofx.distort }
         dev.gl.uniform1f{ location = dev.ofx.distort_amount, v0 = DISTORT_PIXELS * @as(f32, dev.screen.height) / 720.0 }
         bind_unit{ &dev, unit = 0, target = gl::TEXTURE_2D, name = dev.fx.color }
@@ -468,6 +468,6 @@ namespace gpu {
         dev.gl.draw_arrays{ mode = gl::TRIANGLES, first = 0, count = 3 }
         set_stencil{ &dev, on = false }
         dev.gl.depth_mask{ flag = gl::TRUE }
-        dev.state = unknown_state{}
+        dev.state = State{ .. }
     }
 }

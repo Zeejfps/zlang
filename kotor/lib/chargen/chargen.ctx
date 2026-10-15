@@ -68,7 +68,7 @@ namespace chargen {
         let st = try alloc::new(State, heap::Heap){ realloc = heap::alloc, heap, value = State{
             heap, tables, data, ch = fresh_choices{},
             rng = ltr::seed_rng{ seed }, player = slice::empty(u8){}, scratch,
-            views = no_views{}, tut = no_tutor{},
+            views = Views{ .. }, tut = Tutor{ .. },
             ..
         } }
         try open_screen{ st, &g, &fs, &dev, screen = SCR_CLASS }

@@ -23,29 +23,21 @@ namespace equip_panel {
     const NO_PICK: i64 = -1
 
     struct State {
-        opened: bool,
-        who: u32,               // the creature shown: the leader
-        slot: usize,            // the slot whose candidates the list shows (items::SLOTS: none)
-        selecting: bool,
-        picked: i64,            // the row last pointed at or chosen: its item id; 0 is "None", NO_PICK nothing
-        picked_row: i32,        // and its index in the list, -1 none
-        box: u32,               // the refusal message box, 0 when none
-        saved: [obj::EQUIP_SLOTS]u32,         // the worn items when selection mode began (Cancel puts them back)
-        saved_from: [obj::EQUIP_SLOTS]resref::ResRef,     // and the blueprints they came from, to find one that was merged into a stack
-        shown: i64,             // the row whose item is on now (a preview), NO_PICK none
-        states: [MAX_ROWS]u8,   // per row of the list as it was built: items::FITS, REFUSED or PAIR
-        hide_unequippable: bool, // the Hide Unequippable option (Feedback): the lists leave out what the creature cannot wear
+        opened: bool = false,
+        who: u32 = obj::INVALID, // the creature shown: the leader
+        slot: usize = items::SLOTS, // the slot whose candidates the list shows (items::SLOTS: none)
+        selecting: bool = false,
+        picked: i64 = NO_PICK,  // the row last pointed at or chosen: its item id; 0 is "None", NO_PICK nothing
+        picked_row: i32 = -1,   // and its index in the list, -1 none
+        box: u32 = 0,           // the refusal message box, 0 when none
+        saved: [obj::EQUIP_SLOTS]u32 = [obj::INVALID; obj::EQUIP_SLOTS], // the worn items when selection mode began (Cancel puts them back)
+        saved_from: [obj::EQUIP_SLOTS]resref::ResRef = [resref::empty{}; obj::EQUIP_SLOTS], // and the blueprints they came from, to find one that was merged into a stack
+        shown: i64 = NO_PICK,   // the row whose item is on now (a preview), NO_PICK none
+        states: [MAX_ROWS]u8 = [items::FITS; MAX_ROWS], // per row of the list as it was built: items::FITS, REFUSED or PAIR
+        hide_unequippable: bool = false, // the Hide Unequippable option (Feedback): the lists leave out what the creature cannot wear
     }
 
     const MAX_ROWS: usize = 520
-
-    fn new {} -> State {
-        return State{
-            opened = false, who = obj::INVALID, slot = items::SLOTS, selecting = false, picked = NO_PICK, box = 0,
-            picked_row = -1, saved = [obj::INVALID; obj::EQUIP_SLOTS], saved_from = [resref::empty{}; obj::EQUIP_SLOTS], shown = NO_PICK,
-            states = [items::FITS; MAX_ROWS], hide_unequippable = false,
-        }
-    }
 
     // Controls of the slot view that selection mode hides: the portrait (the description lies
     // where it and the slots are) and the slot's name. The numbers below stay and update.
@@ -244,7 +236,7 @@ namespace equip_panel {
                 }
             }
             let tag = items::join_tag{ into = buf[..], a = "LBL_INV_", b = items::SLOT_TAGS[slot] }
-            let mut img = gui::no_img{}
+            let mut img = gui::Img{ .. }
             if item != obj::INVALID and world::is_valid{ w = &w, id = item } { img = items::icon_of{ &g, &w, &dev, id = item } }
             if not img.ok { img = items::empty_slot_icon{ &g, &w, &dev, slot, droid } }
             if img.ok { gui::set_picture{ &g, panel, tag, texture = img.tex, w = img.w, h = img.h } } else { gui::clear_picture{ &g, panel, tag } }

@@ -1,16 +1,12 @@
 // The tiny assertion harness of rulescheck's checks:
 //
-//   let mut r = check::new_report{}
+//   let mut r = check::Report{ .. }
 //   check::expect_eq{ &io, &r, name = "soldier level 1 BAB", got = bab, want = 1 }
 //   ... at the end: check::summarize{ &io, r } -> exit code
 //
 // A check prints one line per failure (never per success), so a clean run is short.
 namespace check {
-    struct Report { passed: i32, failed: i32 }
-
-    fn new_report {} -> Report {
-        return Report{ passed = 0, failed = 0 }
-    }
+    struct Report { passed: i32 = 0, failed: i32 = 0 }
 
     fn expect_eq { mut io: Io, mut r: Report, name: []u8, got: i64, want: i64 } {
         if got == want {

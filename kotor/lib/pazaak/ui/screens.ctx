@@ -25,19 +25,12 @@ namespace pazaak {
 
     // What the script asked for (PlayPazaak) and what the host knows.
     struct Params {
-        opponent_deck: [10]i32,         // card ids, from pazaakdecks.2da
-        max_wager: i32,                 // already clamped to the party's gold; 0 or less: no wager
-        tutorial: bool,
-        seed: u32,
-        player_name: [64]u8, player_name_len: usize,
-        opponent_name: [64]u8, opponent_name_len: usize,
-    }
-
-    fn make_params {} -> Params {
-        return Params{
-            opponent_deck = [-1; 10], max_wager = 0, tutorial = false, seed = 1,
-            player_name = [0; 64], player_name_len = 0, opponent_name = [0; 64], opponent_name_len = 0,
-        }
+        opponent_deck: [10]i32 = [-1; 10], // card ids, from pazaakdecks.2da
+        max_wager: i32 = 0,             // already clamped to the party's gold; 0 or less: no wager
+        tutorial: bool = false,
+        seed: u32 = 1,
+        player_name: [64]u8 = [0; 64], player_name_len: usize = 0,
+        opponent_name: [64]u8 = [0; 64], opponent_name_len: usize = 0,
     }
 
     // How the visit ended. `wager` is the stake that changes hands (0: nothing was at risk, as when
@@ -173,7 +166,7 @@ namespace pazaak {
         mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, mixer: ?*mut mix::Mixer, params: Params,
         owned: [18]i32, side_deck: [10]i32,
     } -> !Session {
-        let none = gui::no_img{}
+        let none = gui::Img{ .. }
         let mut s = Session{
             stage = Stage::setup, ask = Ask::none, params, owned, left = owned, chosen = [-1; 10],
             wager = params.max_wager, setup = 0, wager_panel = 0, game = 0, box = 0,

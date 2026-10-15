@@ -794,7 +794,7 @@ namespace rules {
     // OPENLOCK (0x0057d9d0): Security + the security spike's bonus + (20 or d20) against the
     // lock's OpenLockDC, at least 1. Success unlocks; the engine then queues the use action.
     fn open_lock_check { tables: *Tables, c: *Creature, lock_dc: i32, spike_bonus: i32, in_combat: bool, mut rng: Rng } -> SkillCheck {
-        let rank = skill_rank{ tables, c, skill = skill::SECURITY, vs = no_versus{}, base_only = false }
+        let rank = skill_rank{ tables, c, skill = skill::SECURITY, vs = Versus{ .. }, base_only = false }
         let roll = skill_roll{ in_combat, rng = &rng }
         let dc = if lock_dc < 1 { 1 } else { lock_dc }
         return make_check{ total = rank + spike_bonus + roll, roll, dc }
@@ -808,7 +808,7 @@ namespace rules {
         if own_trap {
             return SkillCheck{ success = true, roll = 0, total = 0, dc, auto = true }
         }
-        let rank = skill_rank{ tables, c, skill = skill::DEMOLITIONS, vs = no_versus{}, base_only = false }
+        let rank = skill_rank{ tables, c, skill = skill::DEMOLITIONS, vs = Versus{ .. }, base_only = false }
         let roll = skill_roll{ in_combat, rng = &rng }
         let mut r = make_check{ total = rank + roll, roll, dc }
         if dc > 35 { r.success = false }
@@ -818,7 +818,7 @@ namespace rules {
     // SETTRAP (0x00519e30): Demolitions (+2 when the base ranks are above 4) + (20 or d20) against
     // traps.2da's SetDC, at least 1.
     fn set_trap_check { tables: *Tables, c: *Creature, set_dc: i32, in_combat: bool, mut rng: Rng } -> SkillCheck {
-        let rank = skill_rank{ tables, c, skill = skill::DEMOLITIONS, vs = no_versus{}, base_only = false }
+        let rank = skill_rank{ tables, c, skill = skill::DEMOLITIONS, vs = Versus{ .. }, base_only = false }
         let bonus = if c.skills[@as(usize, skill::DEMOLITIONS)] > 4 { 2 } else { 0 }
         let roll = skill_roll{ in_combat, rng = &rng }
         let dc = if set_dc < 1 { 1 } else { set_dc }
@@ -829,7 +829,7 @@ namespace rules {
     // it with the DC of the poison or disease being treated (medium confidence: a plain heal has
     // no DC, pass 0).
     fn treat_injury_check { tables: *Tables, c: *Creature, dc: i32, in_combat: bool, mut rng: Rng } -> SkillCheck {
-        let rank = skill_rank{ tables, c, skill = skill::TREAT_INJURY, vs = no_versus{}, base_only = false }
+        let rank = skill_rank{ tables, c, skill = skill::TREAT_INJURY, vs = Versus{ .. }, base_only = false }
         let roll = skill_roll{ in_combat, rng = &rng }
         return make_check{ total = rank + roll, roll, dc }
     }
@@ -840,7 +840,7 @@ namespace rules {
         if always_detected {
             return SkillCheck{ success = true, roll = 0, total = 0, dc = detect_dc, auto = true }
         }
-        let rank = skill_rank{ tables, c, skill = skill::AWARENESS, vs = no_versus{}, base_only = false }
+        let rank = skill_rank{ tables, c, skill = skill::AWARENESS, vs = Versus{ .. }, base_only = false }
         let die = roll_dice{ &rng, count = 1, sides = 10 }
         let roll = die + (if detect_mode { 10 } else { 0 })
         return make_check{ total = rank + roll, roll, dc = detect_dc }

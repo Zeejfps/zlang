@@ -327,7 +327,7 @@ namespace rules {
         }
         s.level = total_level{ c = &c }
         s.size = creature_size{ tables, c = &c }
-        let none = no_versus{}
+        let none = Versus{ .. }
 
         // abilities: base + effects (entangled: DEX -4), never below 3
         let entangled = has_effect_kind{ c = &c, kind = fx::ENTANGLE }

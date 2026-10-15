@@ -66,7 +66,7 @@ namespace pazaak {
     fn play_pick { mut s: Side, pick: Pick } {
         let i = @as(usize, pick.index)
         let c = s.hand[i]
-        s.hand[i] = no_card{}
+        s.hand[i] = Card{ .. }
         place_card{ s = &s, c }
     }
 

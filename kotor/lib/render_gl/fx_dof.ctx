@@ -4,19 +4,11 @@
 // light as much as each full-resolution pixel is out of focus.
 namespace gpu {
     struct DofState {
-        made: bool, width: i32, height: i32,
-        tex: [2]u32, fbo: [2]u32,
-        down: u32, down_proj: i32, down_focus: i32, down_lens: i32,
-        blur: u32, blur_params: i32,
-        apply: u32, apply_proj: i32, apply_focus: i32, apply_size: i32, apply_lens: i32,
-    }
-
-    fn no_dof {} -> DofState {
-        return DofState{
-            made = false, width = 0, height = 0, tex = [0; 2], fbo = [0; 2],
-            down = 0, down_proj = -1, down_focus = -1, down_lens = -1, blur = 0, blur_params = -1,
-            apply = 0, apply_proj = -1, apply_focus = -1, apply_size = -1, apply_lens = -1,
-        }
+        made: bool = false, width: i32 = 0, height: i32 = 0,
+        tex: [2]u32 = [0; 2], fbo: [2]u32 = [0; 2],
+        down: u32 = 0, down_proj: i32 = -1, down_focus: i32 = -1, down_lens: i32 = -1,
+        blur: u32 = 0, blur_params: i32 = -1,
+        apply: u32 = 0, apply_proj: i32 = -1, apply_focus: i32 = -1, apply_size: i32 = -1, apply_lens: i32 = -1,
     }
 
     const GLSL_410: c::String =
@@ -136,7 +128,7 @@ namespace gpu {
         dev.gl.uniform4f{ location = dev.dof.apply_lens, v0 = focal, v1 = focal / stops, v2 = per_metre, v3 = 0.0 }
         draw_fullscreen{ &dev }
         dev.gl.disable{ cap = gl::BLEND }
-        dev.state = unknown_state{}
+        dev.state = State{ .. }
         timer_mark{ &dev, name = "depth of field" }
     }
 }

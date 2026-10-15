@@ -23,16 +23,12 @@ namespace scriptselect_panel {
     const DESC: []u8 = "LB_DESC"
 
     struct State {
-        opened: bool,
-        panel: u32,
-        who: u32,                           // the creature whose style is being chosen
-        count: usize,                       // rows of aiscripts.2da in the list
-        aistate: [8]i32,                    // each row's `aistate`
-        desc: [8]u32,                       // each row's `description_strref`
-    }
-
-    fn new {} -> State {
-        return State{ opened = false, panel = 0, who = obj::INVALID, count = 0, aistate = [0; 8], desc = [0; 8] }
+        opened: bool = false,
+        panel: u32 = 0,
+        who: u32 = obj::INVALID,            // the creature whose style is being chosen
+        count: usize = 0,                   // rows of aiscripts.2da in the list
+        aistate: [8]i32 = [0; 8],           // each row's `aistate`
+        desc: [8]u32 = [0; 8],              // each row's `description_strref`
     }
 
     fn is_open { s: *State } -> bool { return s.opened }

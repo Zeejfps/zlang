@@ -145,7 +145,7 @@ namespace check {
         rules::clear_events{ &ev }
         _ = apply_timed{ env, c = &c, e = rules::fx::make_attack_increase{ amount = 2, hand = 0 }, dur = rules::dur::PERMANENT, seconds = 0.0, spell = 7, id = 1, rng = &rng, ev = &ev }
         _ = apply_timed{ env, c = &c, e = rules::fx::make_attack_increase{ amount = 3, hand = 0 }, dur = rules::dur::PERMANENT, seconds = 0.0, spell = 7, id = 2, rng = &rng, ev = &ev }
-        let q = rules::BonusQuery{ category = rules::cat::ATTACK, a = 0, b = 0, hand = 0, vs = rules::no_versus{} }
+        let q = rules::BonusQuery{ category = rules::cat::ATTACK, a = 0, b = 0, hand = 0, vs = rules::Versus{ .. } }
         expect_eq{ &io, &r, name = "attack bonuses of one spell: the larger", got = @as(i64, rules::net{ b = rules::effect_bonus{ c = &c, q } }), want = 3 }
         _ = apply_timed{ env, c = &c, e = rules::fx::make_attack_increase{ amount = 2, hand = 0 }, dur = rules::dur::PERMANENT, seconds = 0.0, spell = 8, id = 3, rng = &rng, ev = &ev }
         expect_eq{ &io, &r, name = "attack bonuses of two spells: added", got = @as(i64, rules::net{ b = rules::effect_bonus{ c = &c, q } }), want = 5 }
@@ -274,7 +274,7 @@ namespace check {
         let mut probe = rules::seed_rng{ seed = 77 }
         let d20 = rules::roll_dice{ rng = &probe, count = 1, sides = 20 }
         let mut real = rules::seed_rng{ seed = 77 }
-        let none = rules::no_versus{}
+        let none = rules::Versus{ .. }
         let res = rules::saving_throw{ c = &sv, which = rules::save::FORT, dc = d20 + 5, save_type = 0, vs = none, force_power = false, rng = &real }
         expect_eq{ &io, &r, name = "fortitude save of a soldier 3 (3 + 2) meets DC d20 + 5", got = @as(i64, res.result), want = 1 }
         expect_eq{ &io, &r, name = "the save reports the d20", got = @as(i64, res.roll), want = @as(i64, d20) }

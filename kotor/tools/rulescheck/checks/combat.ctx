@@ -215,7 +215,7 @@ namespace check {
     fn cb_test_modifier { mut io: Io, mut r: Report, tables: *rules::Tables } {
         let mut d: rules::Creature
         cb_fighter{ tables, c = &d, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
-        let mut sit = rules::make_situation{}
+        let mut sit = rules::AttackSituation{ .. }
         let mut a: rules::Creature
         cb_fighter{ tables, c = &a, class = rules::cls::SOLDIER, level = 1, strength = 16, dexterity = 10 }
         cb_wield{ tables, c = &a, mask = rules::slot::RIGHT, base_item = 8 }
@@ -304,7 +304,7 @@ namespace check {
     fn cb_test_modifier_ranged { mut io: Io, mut r: Report, tables: *rules::Tables } {
         let mut d: rules::Creature
         cb_fighter{ tables, c = &d, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
-        let mut sit = rules::make_situation{}
+        let mut sit = rules::AttackSituation{ .. }
         // a level 1 soldier, DEX 14, blaster pistol, Rapid Shot: BAB 1, -4, +10 close range, +2 DEX
         let mut b: rules::Creature
         cb_fighter{ tables, c = &b, class = rules::cls::SOLDIER, level = 1, strength = 16, dexterity = 14 }
@@ -349,7 +349,7 @@ namespace check {
     fn cb_test_defense { mut io: Io, mut r: Report, tables: *rules::Tables } {
         let mut a: rules::Creature
         cb_fighter{ tables, c = &a, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
-        let mut sit = rules::make_situation{}
+        let mut sit = rules::AttackSituation{ .. }
         // a level 6 Jedi Guardian: 10 + 4 (acbonus column JDG, row 6) + DEX 14 (+2)
         let mut g: rules::Creature
         cb_fighter{ tables, c = &g, class = rules::cls::JEDI_GUARDIAN, level = 6, strength = 10, dexterity = 14 }
@@ -525,7 +525,7 @@ namespace check {
         let mut a: rules::Creature
         cb_fighter{ tables, c = &a, class = rules::cls::SCOUNDREL, level = 1, strength = 10, dexterity = 10 }
         cb_wield{ tables, c = &a, mask = rules::slot::RIGHT, base_item = 4 }
-        let mut sit = rules::make_situation{}
+        let mut sit = rules::AttackSituation{ .. }
         sit.defender_sees = false
         expect_true{ &io, &r, name = "sneak: needs the feat", cond = not rules::sneak_attack_eligible{ tables, atk = &a, def = &d, sit = &sit }.eligible }
         cb_feat{ c = &a, feat = rules::feat::SNEAK_ATTACK_1 }
@@ -555,7 +555,7 @@ namespace check {
         cb_feat{ c = &b, feat = rules::feat::SNEAK_ATTACK_1 }
         let mut d2: rules::Creature
         cb_fighter{ tables, c = &d2, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
-        let mut s2 = rules::make_situation{}
+        let mut s2 = rules::AttackSituation{ .. }
         s2.defender_sees = false
         s2.dist2 = 81.0
         expect_true{ &io, &r, name = "sneak: ranged within 10 m, unaware", cond = rules::sneak_attack_eligible{ tables, atk = &b, def = &d2, sit = &s2 }.eligible }
@@ -579,7 +579,7 @@ namespace check {
         cb_wield{ tables, c = &a, mask = rules::slot::RIGHT, base_item = 8 }
         let mut d: rules::Creature
         cb_fighter{ tables, c = &d, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
-        let sit = rules::make_situation{}
+        let sit = rules::AttackSituation{ .. }
 
         // natural 1: a miss whatever the modifier
         let s1 = cb_find_seed{ d1 = 1, lo2 = 1, hi2 = 20 }
@@ -645,7 +645,7 @@ namespace check {
         cb_eq{ &io, &r, name = "roll: assured hit beats a natural 1", got = ra.result, want = rules::outcome::HIT }
         a.stats.assured_hit = false
         // a door: defense 0, only a natural 1 misses
-        let mut door = rules::make_situation{}
+        let mut door = rules::AttackSituation{ .. }
         door.target_object = true
         let rd = cb_attack{ tables, atk = &a, def = &d, sit = &door, seed = s5, idx = 0, feat = 0 }
         cb_eq{ &io, &r, name = "roll: door defense", got = rd.defense.total, want = 0 }
@@ -653,7 +653,7 @@ namespace check {
         let rd1 = cb_attack{ tables, atk = &a, def = &d, sit = &door, seed = s1, idx = 0, feat = 0 }
         cb_eq{ &io, &r, name = "roll: door natural 1", got = rd1.result, want = rules::outcome::MISS }
         // a forced result from a cutscene
-        let mut forced = rules::make_situation{}
+        let mut forced = rules::AttackSituation{ .. }
         forced.forced = true
         forced.forced_result = rules::outcome::MISS
         cb_eq{ &io, &r, name = "roll: forced miss", got = cb_attack{ tables, atk = &a, def = &d, sit = &forced, seed = s20, idx = 0, feat = 0 }.result, want = rules::outcome::MISS }
@@ -687,7 +687,7 @@ namespace check {
         cb_fighter{ tables, c = &g, class = rules::cls::JEDI_GUARDIAN, level = 1, strength = 10, dexterity = 10 }
         cb_wield{ tables, c = &g, mask = rules::slot::RIGHT, base_item = 8 }
         cb_feat{ c = &g, feat = rules::feat::MASTER_JEDI_DEFENSE }
-        let mut sit = rules::make_situation{}
+        let mut sit = rules::AttackSituation{ .. }
         cb_eq{ &io, &r, name = "deflect: shooter modifier", got = cb_modifier{ tables, a = &b, d = &g, sit = &sit, idx = 0, feat = 0 }.total, want = 13 }
         cb_eq{ &io, &r, name = "deflect: defender defense", got = cb_defense{ tables, d = &g, a = &b, sit = &sit }.total, want = 12 }
         // x = the shot's d20, y = the deflection d20: deflect = y + 6 + BAB 1 against x + 13
@@ -763,7 +763,7 @@ namespace check {
         cb_fighter{ tables, c = &tough, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
         tough.natural_ac = 30
         rules::recompute{ tables, c = &tough }
-        let mut sh = rules::make_situation{}
+        let mut sh = rules::AttackSituation{ .. }
         cb_eq{ &io, &r, name = "shield: a miss", got = cb_attack{ tables, atk = &b, def = &tough, sit = &sh, seed = s_fail, idx = 0, feat = 0 }.result, want = rules::outcome::MISS }
         sh.shield_absorbs = true
         cb_eq{ &io, &r, name = "shield: absorbed", got = cb_attack{ tables, atk = &b, def = &tough, sit = &sh, seed = s_fail, idx = 0, feat = 0 }.result, want = rules::outcome::SHIELD }
@@ -779,7 +779,7 @@ namespace check {
 
     // Shorthand: an ordinary damage roll.
     fn cb_hit { tables: *rules::Tables, atk: *rules::Creature, mut def: rules::Creature, seed: u32, critical: bool } -> rules::DamageRoll {
-        let sit = rules::make_situation{}
+        let sit = rules::AttackSituation{ .. }
         return cb_dmg{ tables, atk, def = &def, sit = &sit, seed, idx = 0, feat = 0, critical, sneak = false, simulate = false }
     }
 
@@ -797,7 +797,7 @@ namespace check {
     fn cb_test_damage { mut io: Io, mut r: Report, tables: *rules::Tables } {
         let mut d: rules::Creature
         cb_fighter{ tables, c = &d, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
-        let sit = rules::make_situation{}
+        let sit = rules::AttackSituation{ .. }
         let mut a: rules::Creature
         cb_fighter{ tables, c = &a, class = rules::cls::SOLDIER, level = 1, strength = 16, dexterity = 10 }
         cb_wield{ tables, c = &a, mask = rules::slot::RIGHT, base_item = 8 }
@@ -924,7 +924,7 @@ namespace check {
         cb_eq{ &io, &r, name = "on-hand: the long sword's d12", got = o1.dice_sides, want = 12 }
 
         // a cutscene attack deals what it says; a plot target takes nothing
-        let mut f = rules::make_situation{}
+        let mut f = rules::AttackSituation{ .. }
         f.forced = true
         f.forced_result = rules::outcome::HIT
         f.forced_damage = 7
@@ -934,7 +934,7 @@ namespace check {
         d.plot = true
         cb_eq{ &io, &r, name = "damage: plot", got = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = false }.total, want = 0 }
         d.plot = false
-        let mut door = rules::make_situation{}
+        let mut door = rules::AttackSituation{ .. }
         door.target_object = true
         door.target_plot = true
         cb_eq{ &io, &r, name = "damage: a plot door", got = cb_dmg{ tables, atk = &a, def = &d, sit = &door, seed = 777, idx = 0, feat = 0, critical = false, sneak = false, simulate = false }.total, want = 0 }
@@ -970,7 +970,7 @@ namespace check {
         let mut lim: rules::Creature
         cb_fighter{ tables, c = &lim, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
         cb_effect{ tables, c = &lim, e = rules::fx::make_damage_resistance{ types = rules::dmg::BLASTER, amount = 3, limit = 100 } }
-        let sit = rules::make_situation{}
+        let sit = rules::AttackSituation{ .. }
         let pv = cb_dmg{ tables, atk = &a, def = &lim, sit = &sit, seed = 777, idx = 0, feat = 0, critical = false, sneak = false, simulate = true }
         cb_eq{ &io, &r, name = "resistance: preview damage", got = pv.weapon_damage, want = raw - 3 }
         cb_eq{ &io, &r, name = "resistance: preview leaves the limit", got = lim.fx[0].ints[2], want = 100 }
@@ -1034,7 +1034,7 @@ namespace check {
     }
 
     fn cb_check_door { mut io: Io, mut r: Report, tables: *rules::Tables, a: *rules::Creature } {
-        let mut door = rules::make_situation{}
+        let mut door = rules::AttackSituation{ .. }
         door.target_object = true
         // a stand-in with no Hardness takes the whole hit
         let mut plain: rules::Creature
@@ -1074,7 +1074,7 @@ namespace check {
         cb_wield{ tables, c = &m, mask = rules::slot::RIGHT, base_item = 8 }
         let mut d: rules::Creature
         cb_fighter{ tables, c = &d, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
-        let sit = rules::make_situation{}
+        let sit = rules::AttackSituation{ .. }
         // a natural 1 always misses
         let miss = cb_find_seed{ d1 = 1, lo2 = 1, hi2 = 20 }
         cb_eq{ &io, &r, name = "shield: a miss without a shield", got = cb_attack{ tables, atk = &b, def = &d, sit = &sit, seed = miss, idx = 0, feat = 0 }.result, want = rules::outcome::MISS }
@@ -1120,7 +1120,7 @@ namespace check {
     }
 
     fn cb_check_told_shield { mut io: Io, mut r: Report, tables: *rules::Tables, b: *rules::Creature, d: *rules::Creature, miss: u32 } {
-        let mut told = rules::make_situation{}
+        let mut told = rules::AttackSituation{ .. }
         told.shield_absorbs = true
         cb_eq{ &io, &r, name = "shield: the situation's word counts", got = cb_attack{ tables, atk = b, def = d, sit = &told, seed = miss, idx = 0, feat = 0 }.result, want = rules::outcome::SHIELD }
     }
@@ -1304,7 +1304,7 @@ namespace check {
     }
 
     fn cb_test_resolve { mut io: Io, mut r: Report, tables: *rules::Tables } {
-        let mut sit = rules::make_situation{}
+        let mut sit = rules::AttackSituation{ .. }
         sit.attacker_id = CB_ATTACKER
         // the defender cannot pass a save: -20 to all of them
         let mut d: rules::Creature
@@ -1370,7 +1370,7 @@ namespace check {
     }
 
     fn cb_check_resolve_ranged { mut io: Io, mut r: Report, tables: *rules::Tables, d: *rules::Creature } {
-        let mut sit = rules::make_situation{}
+        let mut sit = rules::AttackSituation{ .. }
         sit.attacker_id = CB_ATTACKER
         let mut dd = d.*
         let mut b: rules::Creature
@@ -1392,7 +1392,7 @@ namespace check {
     }
 
     fn cb_check_resolve_onhit { mut io: Io, mut r: Report, tables: *rules::Tables, d: *rules::Creature } {
-        let mut sit = rules::make_situation{}
+        let mut sit = rules::AttackSituation{ .. }
         sit.attacker_id = CB_ATTACKER
         let mut dd = d.*
         let s_hit = cb_find_seed{ d1 = 15, lo2 = 1, hi2 = 20 }
@@ -1453,7 +1453,7 @@ namespace check {
     }
 
     fn cb_check_resolve_misc { mut io: Io, mut r: Report, tables: *rules::Tables, d: *rules::Creature } {
-        let mut sit = rules::make_situation{}
+        let mut sit = rules::AttackSituation{ .. }
         sit.attacker_id = CB_ATTACKER
         let mut dd = d.*
         let mut a: rules::Creature
@@ -1476,7 +1476,7 @@ namespace check {
         sit.defender_hp = 1000
         expect_true{ &io, &r, name = "no killing blow", cond = not cb_resolve{ tables, atk = &a, def = &dd, sit = &sit, seed = s_any, idx = 0, feat = 0 }.killing_blow }
         // a cutscene attack
-        let mut f = rules::make_situation{}
+        let mut f = rules::AttackSituation{ .. }
         f.forced = true
         f.forced_result = rules::outcome::HIT
         f.forced_damage = 7
@@ -1485,7 +1485,7 @@ namespace check {
         cb_eq{ &io, &r, name = "forced: damage", got = fr.damage.total, want = 7 }
         cb_eq{ &io, &r, name = "forced: no combat feat effects", got = fr.effects.len, want = 0 }
         // a door
-        let mut door = rules::make_situation{}
+        let mut door = rules::AttackSituation{ .. }
         door.target_object = true
         let dr = cb_resolve{ tables, atk = &a, def = &dd, sit = &door, seed = s_any, idx = 0, feat = 0 }
         expect_true{ &io, &r, name = "door: hit", cond = dr.hit and dr.roll.defense.total == 0 and dr.damage.total > 0 }
@@ -1534,8 +1534,8 @@ namespace check {
         cb_fighter{ tables, c = &tough, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
         tough.natural_ac = 30
         rules::recompute{ tables, c = &tough }
-        let sit = rules::make_situation{}
-        let mut door = rules::make_situation{}
+        let sit = rules::AttackSituation{ .. }
+        let mut door = rules::AttackSituation{ .. }
         door.target_object = true
         // the attacker needs 6 on the die against defense 10 (modifier +4): 15 of 20 hit, 19 and 20
         // threaten (a tenth) and a second 6+ confirms: 7.5 percent critical; a natural 1 is 5 percent
@@ -1651,7 +1651,7 @@ namespace check {
 
     // One creature as an attacker against the dummy, and the dummy against it.
     fn cb_census_one { mut io: Io, mut st: CbCensus, tables: *rules::Tables, c: *rules::Creature, mut dummy: rules::Creature, name: resref::ResRef, seed: u32 } {
-        let sit = rules::make_situation{}
+        let sit = rules::AttackSituation{ .. }
         let counts = rules::attack_counts{ tables, c, combat_feat = 0 }
         if counts.on_hand < 1 or counts.on_hand > 3 or counts.off_hand != 0 or counts.total != counts.on_hand {
             cb_note{ &io, &st, name, what = "attack counts", value = counts.total }

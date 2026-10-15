@@ -22,7 +22,7 @@ namespace gpu {
 
     fn no_pointer_state { pixels: []mut u8 } -> PointerState {
         let none = PointerCursor{ image = 0, width = 0, height = 0, hot_x = 0, hot_y = 0, cursor = null }
-        return PointerState{ os = false, want = render::no_pointer{}, shown = -1, current = -1, cursors = [none; 48], count = 0, pixels }
+        return PointerState{ os = false, want = render::Pointer{ .. }, shown = -1, current = -1, cursors = [none; 48], count = 0, pixels }
     }
 
     // Whether the OS draws the pointer from now on. Turned off, the OS pointer is left as it is: the owner hides it.
@@ -89,7 +89,7 @@ namespace gpu {
         dev.gl.pixel_storei{ pname = gl::PACK_ALIGNMENT, param = 1 }
         dev.gl.get_tex_image{ target = gl::TEXTURE_2D, level = 0, format = gl::RGBA, kind = gl::UNSIGNED_BYTE, pixels = src.ptr }
         dev.gl.bind_texture{ target = gl::TEXTURE_2D, texture = 0 }
-        dev.state = unknown_state{}
+        dev.state = State{ .. }
         // Nearest texel, top row first for the OS.
         let mut y: i32 = 0
         while y < h {

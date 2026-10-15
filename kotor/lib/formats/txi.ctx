@@ -87,24 +87,15 @@ namespace txi {
         texturewidth: f32 = 0.0,        // texture width / 100
         spacingr: f32 = 0.0,
         spacingb: f32 = 0.0,
-        upperleftcoords: []mut Coord,   // glyph i's corners; as many as the block's lines
-        lowerrightcoords: []mut Coord,
-    }
-
-    // A texture with no TXI, and the starting point of every parse (txi.md, Defaults; the NWN
-    // values where KOTOR's are unknown: gamma 1, downsamplemax 15).
-    fn defaults {} -> Txi {
-        return Txi{
-            upperleftcoords = slice::empty(Coord){}, lowerrightcoords = slice::empty(Coord){},
-            ..
-        }
+        upperleftcoords: []mut Coord = slice::empty(Coord){}, // glyph i's corners; as many as the block's lines
+        lowerrightcoords: []mut Coord = slice::empty(Coord){},
     }
 
     // Which block the number lines go to.
     enum Block: u8 { none, upper, lower, scale, translate }
 
     fn parse(S) { data: []u8, realloc: alloc::Fn(S), mut heap: S } -> !Txi {
-        let mut t = defaults{}
+        let mut t = Txi{ .. }
         let mut upper = list::new(Coord, S){ realloc, heap = &heap }
         let mut lower = list::new(Coord, S){ realloc, heap = &heap }
         // On success the lists are empty by then (lists::take), so these free only on an error.

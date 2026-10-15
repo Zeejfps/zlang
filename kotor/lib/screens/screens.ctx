@@ -15,21 +15,14 @@ namespace screens {
     const MAX_REQUESTS: usize = 4
 
     struct State {
-        store: store_panel::State,
-        container: container_panel::State,
-        level: lvl::State,
-        bench: ups::State,
-        galaxy: galaxy::State,
-        queue: [4]Request,
-        queued: usize,
-        paused: bool,                   // we hold PAUSE_MENU
-    }
-
-    fn new {} -> State {
-        return State{
-            store = store_panel::new{}, container = container_panel::new{}, level = lvl::new{}, bench = ups::new{}, galaxy = galaxy::new{},
-            queue = [Request{ kind = Kind::none, id = 0, n = 0 }; 4], queued = 0, paused = false,
-        }
+        store: store_panel::State = store_panel::State{ .. },
+        container: container_panel::State = container_panel::State{ .. },
+        level: lvl::State = lvl::new{},
+        bench: ups::State = ups::new{},
+        galaxy: galaxy::State = galaxy::new{},
+        queue: [4]Request = [Request{ kind = Kind::none, id = 0, n = 0 }; 4],
+        queued: usize = 0,
+        paused: bool = false,           // we hold PAUSE_MENU
     }
 
     fn ask { mut s: State, kind: Kind, id: u32, n: i32 } {

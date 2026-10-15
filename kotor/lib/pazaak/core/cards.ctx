@@ -14,9 +14,7 @@ namespace pazaak {
     const LAST_MAIN: i32 = 27
     const PLUS_SIGN: u8 = 0xB1          // the fonts are single-byte: the +/- sign is 0xB1
 
-    struct Card { id: i32, flipped: bool }
-
-    fn no_card {} -> Card { return Card{ id = NO_CARD, flipped = false } }
+    struct Card { id: i32 = NO_CARD, flipped: bool = false }
 
     fn make_card { id: i32 } -> Card { return Card{ id, flipped = false } }
 

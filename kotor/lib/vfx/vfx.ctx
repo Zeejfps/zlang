@@ -3,7 +3,7 @@
 // somewhere in the world for a while. An effect is an MDL with emitters, lights and perhaps an
 // animation; the scene supplies the model on the GPU and its pose, gui3d::Emitting the particles.
 //
-//   let mut vx = vfx::make{}
+//   let mut vx = vfx::Vfx{ .. }
 //   each tick, for each outbox note:   vfx::take{ &vx, &sc, &w, &dev, note }
 //   each presentation step:            vfx::update{ &vx, &sc, &w, dt }
 //   each frame, after scene::draw:     vfx::draw{ &vx, &sc, &frame, view }
@@ -26,7 +26,7 @@ namespace vfx {
         used: bool = false,             // the slot holds a part and particle arrays (reusable for the same model)
         loaded: usize = 0,              // scene.loaded: the model
         part: usize = 0,                // scene.parts: its pose and animation
-        emitting: []mut gui3d::Emitting,
+        emitting: []mut gui3d::Emitting = slice::empty(gui3d::Emitting){},
         kind: Kind = Kind::still,
         age: f32 = 0.0,                 // seconds since its first step (that one shows it as born)
         fresh: bool = false,            // not stepped yet: its first frame is its birth, however long the step was
@@ -62,43 +62,32 @@ namespace vfx {
         beam: i32 = 0,                  // the beam's visualeffects.2da id, 0 none
     }
 
-    fn no_fx {} -> Fx {
-        return Fx{
-            emitting = slice::empty(gui3d::Emitting){},
-            ..
-        }
-    }
-
     struct Vfx {
-        fx: [MAX_FX]Fx,
-        auras: [MAX_AURAS]Aura,         // texture shells over creatures (aura.ctx)
-        aura_count: u32,                // auras begun, which also orders them
-        blurs: [MAX_BLURS]BlurRecord,   // the speed blur's records (coded.ctx)
-        blur_on: bool,
-        time: f32,
-        rng: u32,
-        started: u32,                   // effects begun, for the report
-        dropped: u32,                   // wanted while the pool was full
-    }
-
-    fn make {} -> Vfx {
-        return Vfx{ fx = [no_fx{}; MAX_FX], auras = [no_aura{}; MAX_AURAS], aura_count = 0, blurs = [no_blur{}; MAX_BLURS], blur_on = false, time = 0.0, rng = 0x2F6E2B1, started = 0, dropped = 0 }
+        fx: [MAX_FX]Fx = [Fx{ .. }; MAX_FX],
+        auras: [MAX_AURAS]Aura = [Aura{ .. }; MAX_AURAS], // texture shells over creatures (aura.ctx)
+        aura_count: u32 = 0,            // auras begun, which also orders them
+        blurs: [MAX_BLURS]BlurRecord = [BlurRecord{ .. }; MAX_BLURS], // the speed blur's records (coded.ctx)
+        blur_on: bool = false,
+        time: f32 = 0.0,
+        rng: u32 = 0x2F6E2B1,
+        started: u32 = 0,               // effects begun, for the report
+        dropped: u32 = 0,               // wanted while the pool was full
     }
 
     // The scene was released: its parts and arrays are gone with the area's arena.
     fn reset { mut v: Vfx } {
         let mut i: usize = 0
         while i < MAX_FX {
-            v.fx[i] = no_fx{}
+            v.fx[i] = Fx{ .. }
             i = i + 1
         }
         i = 0
         while i < MAX_AURAS {
-            v.auras[i] = no_aura{}
+            v.auras[i] = Aura{ .. }
             i = i + 1
         }
         // The area's objects are gone, and their records' stops turned the blur off.
-        v.blurs = [no_blur{}; MAX_BLURS]
+        v.blurs = [BlurRecord{ .. }; MAX_BLURS]
         v.blur_on = false
     }
 

@@ -3,7 +3,7 @@
 
 // A side with the given table (values of main-deck cards 1..10, 0 for none) and hand (card ids, -1 none).
 fn side_with { table: [9]i32, hand: [4]i32 } -> pazaak::Side {
-    let mut s = pazaak::new_side{}
+    let mut s = pazaak::Side{ .. }
     let mut i: usize = 0
     while i < 9 {
         if table[i] > 0 { s.table[i] = pazaak::make_card{ id = pazaak::FIRST_MAIN + table[i] - 1 } }
@@ -121,7 +121,7 @@ fn run_selftest { mut io: Io } -> i32 {
     expect{ &io, &failed, what = "two cards after the draw", got = @as(i32, pazaak::table_count{ s = r13.opponent }), want = 2 }
     // a hand is four distinct cards of the ten
     let mut rng = pazaak::make_rng{ seed = 9 }
-    let mut dealt = pazaak::new_side{}
+    let mut dealt = pazaak::Side{ .. }
     pazaak::deal_hand{ rng = &rng, side = &dealt, deck = pazaak::deck_cards{ ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] } }
     let mut seen: i32 = 0
     let mut k: usize = 0

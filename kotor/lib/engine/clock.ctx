@@ -8,28 +8,21 @@ namespace clock {
     const MAX_STEP: f32 = 0.25
 
     struct Clock {
-        now_us: u64,            // world time since the module's clock started
-        dt: f32,                // this frame's step, seconds (0 while paused)
-        paused: bool,           // any pause bit set (gameloop.md 6)
-        pause_bits: u32,
-        speed: f32,             // 1.0; slow motion changes it
-        frame: u64,             // frames run
+        now_us: u64 = 0,        // world time since the module's clock started
+        dt: f32 = 0.0,          // this frame's step, seconds (0 while paused)
+        paused: bool = false,   // any pause bit set (gameloop.md 6)
+        pause_bits: u32 = 0,
+        speed: f32 = 1.0,       // 1.0; slow motion changes it
+        frame: u64 = 0,         // frames run
         // The calendar (IFO Mod_Start*, Mod_MinPerHour): the time of day at now_us = 0.
-        year: u32,
-        month: u32,             // 1..12
-        day: u32,               // 1..28
-        hour: u32,
-        minute: u32,
-        second: u32,
-        millisecond: u32,
-        min_per_hour: u32,      // real minutes per game hour (2 in KOTOR)
-    }
-
-    fn new {} -> Clock {
-        return Clock{
-            now_us = 0, dt = 0.0, paused = false, pause_bits = 0, speed = 1.0, frame = 0, year = 1340, month = 6,
-            day = 1, hour = 13, minute = 0, second = 0, millisecond = 0, min_per_hour = 2,
-        }
+        year: u32 = 1340,
+        month: u32 = 6,         // 1..12
+        day: u32 = 1,           // 1..28
+        hour: u32 = 13,
+        minute: u32 = 0,
+        second: u32 = 0,
+        millisecond: u32 = 0,
+        min_per_hour: u32 = 2,  // real minutes per game hour (2 in KOTOR)
     }
 
     // Pause types (gameloop.md 6.1): the player's pause key, a menu or panel open, the engine's

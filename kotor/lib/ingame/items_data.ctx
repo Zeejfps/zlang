@@ -95,8 +95,8 @@ namespace items {
             let img = gui::resolve_img{ &g, fs = &w.fs, &dev, name }
             if img.ok { return img }
         }
-        let it = item_of{ w = &w, id } ifnull { return gui::no_img{} }
-        let fallback = twoda::get_string{ t = w.tables.baseitems, row = @as(usize, it.base), column = "defaulticon" } ifnull { return gui::no_img{} }
+        let it = item_of{ w = &w, id } ifnull { return gui::Img{ .. } }
+        let fallback = twoda::get_string{ t = w.tables.baseitems, row = @as(usize, it.base), column = "defaulticon" } ifnull { return gui::Img{ .. } }
         return gui::resolve_img{ &g, fs = &w.fs, &dev, name = fallback }
     }
 
@@ -314,7 +314,7 @@ namespace items {
     // for the first on-hand attack, or the first off-hand attack of a dual wielder, with the base
     // attack bonus, the dual-wield penalties and feats, STR or DEX, Weapon Focus and the effects.
     fn attack_with { w: *world::World, f: *mut fight::Fighter, off_hand: bool } -> i32 {
-        let mut sit = rules::make_situation{}
+        let mut sit = rules::AttackSituation{ .. }
         sit.target_object = true
         let counts = rules::attack_counts{ tables = w.rules, c = &f.c, combat_feat = 0 }
         let index: i32 = if off_hand { counts.on_hand } else { 0 }
@@ -398,7 +398,7 @@ namespace items {
     // both ends); `lo_extra` brings the lowest end of a hand-made dice increase down to one a die (uncapped).
     fn effect_damage { w: *world::World, f: *fight::Fighter, off_hand: bool } -> EffectRange {
         let wtype: i32 = if off_hand { 2 } else { 1 }
-        let vs = rules::no_versus{}
+        let vs = rules::Versus{ .. }
         let mut plus: i32 = 0
         let mut extra: i32 = 0
         let mut dec: [15]i32 = [0; 15]

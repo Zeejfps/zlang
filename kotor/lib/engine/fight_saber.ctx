@@ -8,11 +8,7 @@ namespace fight {
     // The visualeffects.2da rows of the thrown saber's flight and its impact (VFX_IMP_MIRV_IMPACT).
     const VFX_SABER_IMPACT: i32 = 6001
 
-    struct SaberThrow { active: bool, t_ms: i32, end_ms: i32, count: i32, target: [3]u32, hit_ms: [3]i32, hit: [3]bool, legs: i32 }
-
-    fn no_saber {} -> SaberThrow {
-        return SaberThrow{ active = false, t_ms = 0, end_ms = 0, count = 0, target = [obj::INVALID; 3], hit_ms = [0; 3], hit = [false; 3], legs = 0 }
-    }
+    struct SaberThrow { active: bool = false, t_ms: i32 = 0, end_ms: i32 = 0, count: i32 = 0, target: [3]u32 = [obj::INVALID; 3], hit_ms: [3]i32 = [0; 3], hit: [3]bool = [false; 3], legs: i32 = 0 }
 
     // The effect has just been applied to the caster: work out when the saber reaches each target.
     fn start_saber_throw { mut w: world::World, id: u32 } {
@@ -22,7 +18,7 @@ namespace fight {
         let e = newest_effect{ f, kind = rules::fx::LIGHTSABER_THROW } ifnull { return }
         // The saber is in the right hand, or nothing flies.
         if c.equipped[obj::SLOT_RIGHT_WEAPON] == obj::INVALID { return }
-        let mut s = no_saber{}
+        let mut s = SaberThrow{ .. }
         let mut here = o.position
         let mut ms: f32 = 0.0
         let mut k: usize = 0

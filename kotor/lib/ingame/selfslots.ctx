@@ -52,45 +52,33 @@ namespace selfslots {
 
     // One choice: a power (spells.2da row in `id`, icon from the table) or an item (its object id).
     // `dim`: the icon is drawn at 0.25 (an unusable entry, or a mine while the leader is down, which a click still lays).
-    struct Entry { id: u32, icon: [24]u8, icon_len: usize, strref: u32, usable: bool, reason: i32, dim: bool }
+    struct Entry { id: u32 = obj::INVALID, icon: [24]u8 = [0; 24], icon_len: usize = 0, strref: u32 = 0, usable: bool = false, reason: i32 = R_OK, dim: bool = false }
 
     struct Slot {
-        entries: [12]Entry,
-        count: usize,
-        selected: u32,              // the id of the chosen entry, kept when the list is rebuilt
-        sig: u32,                   // what the controls show now
+        entries: [12]Entry = [Entry{ .. }; 12],
+        count: usize = 0,
+        selected: u32 = obj::INVALID, // the id of the chosen entry, kept when the list is rebuilt
+        sig: u32 = 0,               // what the controls show now
     }
 
     struct State {
-        slots: [4]Slot,
-        wait: f32,                  // seconds to the next rebuild
-        message: f32,               // seconds the refusal stays up in the description label
-        reason: i32,                // and which one it is
-        blink: [4]f32,              // seconds left of each slot's blink
-        hover: i32,                 // the slot under the pointer, -1 none
-        shown_leader: u32,
-        desc_bottom: i32,           // where the description label's bottom lies in the panel (its height follows its text); -1 not read yet
-        desc_panel: u32,            // the panel that was read from
-        queued: bool,               // a choice was used in combat mode: an auto-pause banner says "Action added to queue." (ingame)
-    }
-
-    fn empty_entry {} -> Entry {
-        return Entry{ id = obj::INVALID, icon = [0; 24], icon_len = 0, strref = 0, usable = false, reason = R_OK, dim = false }
-    }
-
-    fn empty_slot {} -> Slot {
-        return Slot{ entries = [empty_entry{}; 12], count = 0, selected = obj::INVALID, sig = 0 }
-    }
-
-    fn new {} -> State {
-        return State{ slots = [empty_slot{}; 4], wait = 0.0, message = 0.0, reason = R_OK, blink = [0.0; 4], hover = -1, shown_leader = obj::INVALID, desc_bottom = -1, desc_panel = 0, queued = false }
+        slots: [4]Slot = [Slot{ .. }; 4],
+        wait: f32 = 0.0,            // seconds to the next rebuild
+        message: f32 = 0.0,         // seconds the refusal stays up in the description label
+        reason: i32 = R_OK,         // and which one it is
+        blink: [4]f32 = [0.0; 4],   // seconds left of each slot's blink
+        hover: i32 = -1,            // the slot under the pointer, -1 none
+        shown_leader: u32 = obj::INVALID,
+        desc_bottom: i32 = -1,      // where the description label's bottom lies in the panel (its height follows its text); -1 not read yet
+        desc_panel: u32 = 0,        // the panel that was read from
+        queued: bool = false,       // a choice was used in combat mode: an auto-pause banner says "Action added to queue." (ingame)
     }
 
     // ---- the lists
 
     fn push { mut sl: Slot, id: u32, icon: []u8, strref: u32, usable: bool, reason: i32 } {
         if sl.count >= MAX { return }
-        let mut e = empty_entry{}
+        let mut e = Entry{ .. }
         e.id = id
         let n = if icon.len > 24 { 24 } else { icon.len }
         slice::copy(u8){ dst = e.icon[..n], src = icon[..n] }
@@ -221,7 +209,7 @@ namespace selfslots {
 
     // What the four lists are now for the leader.
     fn build { mut w: world::World, leader: u32, mut out: [4]Slot } {
-        out = [empty_slot{}; 4]
+        out = [Slot{ .. }; 4]
         fill_powers{ w = &w, leader, out = &out }
         fill_items{ &w, leader, out = &out }
         fill_mines{ &w, leader, out = &out }

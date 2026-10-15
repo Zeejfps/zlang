@@ -25,23 +25,15 @@ namespace ingame {
 
     // The state of each panel module.
     struct Menus {
-        equip: equip_panel::State,
-        inventory: inventory_panel::State,
-        character: character_panel::State,
-        abilities: abilities_panel::State,
-        messages: messages_panel::State,
-        journal: journal_panel::State,
-        map: map_panel::State,
-        options: options_panel::State,
-        partysel: partysel_panel::State,
-    }
-
-    fn new_menus {} -> Menus {
-        return Menus{
-            equip = equip_panel::new{}, inventory = inventory_panel::new{}, character = character_panel::new{},
-            abilities = abilities_panel::new{}, messages = messages_panel::new{}, journal = journal_panel::new{},
-            map = map_panel::new{}, options = options_panel::new{}, partysel = partysel_panel::new{},
-        }
+        equip: equip_panel::State = equip_panel::State{ .. },
+        inventory: inventory_panel::State = inventory_panel::State{ .. },
+        character: character_panel::State = character_panel::State{ .. },
+        abilities: abilities_panel::State = abilities_panel::State{ .. },
+        messages: messages_panel::State = messages_panel::State{ .. },
+        journal: journal_panel::State = journal_panel::new{},
+        map: map_panel::State = map_panel::State{ .. },
+        options: options_panel::State = options_panel::State{ .. },
+        partysel: partysel_panel::State = partysel_panel::State{ .. },
     }
 
     // The menu's .gui file.

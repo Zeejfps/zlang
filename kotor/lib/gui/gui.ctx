@@ -455,7 +455,7 @@ namespace gui {
             put_fill{ &frame, x = clip.x, y = clip.y, w = clip.w, h = clip.h, color = render::Color{ r = p.color.r, g = p.color.g, b = p.color.b, a = p.alpha }, clip }
         }
         if p.background and not overlay {
-            draw_border{ &g, &frame, b = p.border, x = p.sx, y = p.sy, w = p.w, h = p.h, alpha = p.alpha, clip, override = no_img{} }
+            draw_border{ &g, &frame, b = p.border, x = p.sx, y = p.sy, w = p.w, h = p.h, alpha = p.alpha, clip, override = Img{ .. } }
         }
         let cs = list::items{ list = p.controls }
         let mut i: usize = if overlay { @as(usize, p.overlay_from) } else { 0 }

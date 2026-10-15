@@ -246,7 +246,7 @@ namespace save {
                     p.text = slice::empty(u8){}
                 }
                 location => {
-                    p.location = values::no_location{}
+                    p.location = values::Location{ .. }
                     p.orientation = math::vec3::zero{}
                 }
                 else => { p.number = 0 }

@@ -194,7 +194,7 @@ namespace dlgview {
     // reaches). The scan noise adds `filmnoisetex` (procedural random, channel scale 0.02).
     fn video_effect_of { w: *world::World } -> render::VideoEffect {
         let c = &w.conversation
-        let mut e = render::no_video_effect{}
+        let mut e = render::VideoEffect{ .. }
         if not c.video_noise and not c.video_saturate { return e }
         e.on = true
         if c.video_noise { e.noise = 0.02 }

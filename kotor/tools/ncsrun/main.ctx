@@ -36,12 +36,12 @@ const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
 
 // How runs ended.
 struct Tally {
-    runs: u64,
-    ok: u64,
-    vm: u64,                    // VM faults
-    routine: u64,               // routine faults
-    budget: u64,                // ran out of instructions
-    kinds: [24]u64,             // VM faults by nwvm::FaultKind
+    runs: u64 = 0,
+    ok: u64 = 0,
+    vm: u64 = 0,                // VM faults
+    routine: u64 = 0,           // routine faults
+    budget: u64 = 0,            // ran out of instructions
+    kinds: [24]u64 = [0; 24],   // VM faults by nwvm::FaultKind
 }
 
 struct Report {
@@ -107,7 +107,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } 
     let stub_at = &stub
     let engine = nwstub::call{ &stub, _ }
     let mut report = Report{
-        scripts = no_tally{}, actions = no_tally{}, shown = no_tally{}, files = 0, unique = 0, failed = 0, ticks = 0,
+        scripts = Tally{ .. }, actions = Tally{ .. }, shown = Tally{ .. }, files = 0, unique = 0, failed = 0, ticks = 0,
     }
 
     if opts.execute and paths.len > 0 {
@@ -131,11 +131,6 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } 
         vm.total, @as(u64, seconds * 1000.0), @as(u64, rate * 10.0) / 10)
     io::flush{ &io }
     return if report.scripts.vm + report.actions.vm > 0 { 1 } else { 0 }
-}
-
-
-fn no_tally {} -> Tally {
-    return Tally{ runs = 0, ok = 0, vm = 0, routine = 0, budget = 0, kinds = [0; 24] }
 }
 
 // --execute: every script the paths name, decoded and kept, for the stub's ExecuteScript.

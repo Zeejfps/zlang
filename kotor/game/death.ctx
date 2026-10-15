@@ -36,24 +36,17 @@ namespace death {
     const REFERENCE_FPS: f32 = 30.0
 
     struct Death {
-        active: bool,
-        ended: bool,             // the box was answered or the fade is over: the game goes to the main menu
-        elapsed: f32,            // real seconds since the start (UpdateSlowMotion's +0x2cc)
-        first_step: f32,         // the first frame's step: the speed curve is 1.0 there
-        box: msgbox::Box,
-        fade_seen: bool,         // the fade has been seen running (it starts in the frame's outbox pass)
-        placed: bool,            // the camera has taken over
-        yaw: f32,                // the orbit's heading, radians (cam::forward's convention)
-        pitch: f32,              // downward angle of the view, radians (pi/2: straight down)
-        distance: f32,
-        rise: f32,
-    }
-
-    fn make {} -> Death {
-        return Death{
-            active = false, ended = false, elapsed = 0.0, first_step = 0.0, box = msgbox::blank{}, fade_seen = false,
-            placed = false, yaw = 0.0, pitch = 0.0, distance = ORBIT_DISTANCE, rise = START_RISE,
-        }
+        active: bool = false,
+        ended: bool = false,     // the box was answered or the fade is over: the game goes to the main menu
+        elapsed: f32 = 0.0,      // real seconds since the start (UpdateSlowMotion's +0x2cc)
+        first_step: f32 = 0.0,   // the first frame's step: the speed curve is 1.0 there
+        box: msgbox::Box = msgbox::Box{ .. },
+        fade_seen: bool = false, // the fade has been seen running (it starts in the frame's outbox pass)
+        placed: bool = false,    // the camera has taken over
+        yaw: f32 = 0.0,          // the orbit's heading, radians (cam::forward's convention)
+        pitch: f32 = 0.0,        // downward angle of the view, radians (pi/2: straight down)
+        distance: f32 = ORBIT_DISTANCE,
+        rise: f32 = START_RISE,
     }
 
     // A new world (a load) while the sequence ran: it is over, the box closes and the HUD returns.
@@ -63,13 +56,13 @@ namespace death {
         ingame::set_hud_hidden{ &ui, hidden = false }
         ingame::set_wiping{ &ui, on = false }
         w.clock.speed = 1.0
-        d = make{}
+        d = Death{ .. }
     }
 
     // The sequence begins: menus close, the HUD goes, the box opens over the world and the fade starts. The
     // world goes on, slowing down (step_slow).
     fn start { mut d: Death, mut ui: ingame::Ingame, mut w: world::World, mut dev: gpu::Device } {
-        d = make{}
+        d = Death{ .. }
         d.active = true
         ingame::set_wiping{ &ui, on = true }
         if ui.menu != ingame::NO_MENU { ingame::close_menu{ &ui, &w } }

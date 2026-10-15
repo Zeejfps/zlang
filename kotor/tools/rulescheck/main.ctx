@@ -39,7 +39,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
         return 1
     }
     defer rules::free_tables{ out = &tables, heap = &h }
-    let mut r = check::new_report{}
+    let mut r = check::Report{ .. }
     if opts.examples { check::run_examples{ &io, &r, tables = &tables } }
     if opts.census { check::run_census{ &io, &fs, heap = &h, &r, tables = &tables, game = opts.game } }
     if opts.saved { check::run_saved{ &io, &fs, heap = &h, &r, tables = &tables, game = opts.game } }

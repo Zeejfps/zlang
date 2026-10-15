@@ -930,7 +930,7 @@ namespace check {
         let right = rules::slot::RIGHT
         let env = items_env{ tables }
         let mut rng = rules::seed_rng{ seed = 9 }
-        let none = rules::no_versus{}
+        let none = rules::Versus{ .. }
 
         // (1) a blaster with Enhancement +2: attack +2 on the on-hand, damage 2, gone again on unequip
         let mut c = items_new_creature{ tables, race = rules::race::HUMAN, subrace = 0 }

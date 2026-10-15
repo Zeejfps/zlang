@@ -28,25 +28,17 @@ namespace msglog {
     // The last LINES lines of one list: `added` counts every line ever added, line i (0 oldest kept)
     // is at (added - kept + i) % LINES.
     struct Ring {
-        lines: [64]Line,
-        added: usize,
-        kept: usize,
+        lines: [64]Line = [Line{ text = [0; 1024], len = 0, speaker = [0; 64], speaker_len = 0, kind = 0, age = 0.0 }; 64],
+        added: usize = 0,
+        kept: usize = 0,
     }
 
     // The feedback list and the dialogue list, 64 lines each like the original's; `total` counts
     // every change (a line added, a load starting over), for whoever shows them.
     struct Log {
-        feedback: Ring,
-        dialog: Ring,
-        total: usize,
-    }
-
-    fn new_ring {} -> Ring {
-        return Ring{ lines = [Line{ text = [0; 1024], len = 0, speaker = [0; 64], speaker_len = 0, kind = 0, age = 0.0 }; 64], added = 0, kept = 0 }
-    }
-
-    fn new {} -> Log {
-        return Log{ feedback = new_ring{}, dialog = new_ring{}, total = 0 }
+        feedback: Ring = Ring{ .. },
+        dialog: Ring = Ring{ .. },
+        total: usize = 0,
     }
 
     // Lines kept: the feedback lines (oldest first), then the dialogue lines.

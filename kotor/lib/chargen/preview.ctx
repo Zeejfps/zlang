@@ -472,7 +472,7 @@ namespace preview3d {
         let m = mdl_cache::get{ &fs, cache = &models, name } ifnull { return null }
         let pose = try mdl_anim::make_pose{ realloc = arena::alloc, heap = &heap, model = m }
         if parent != null { mdl_anim::hold_shared{ model = m, pose, parent, hook = mdl_anim::HOOK_HEAD } }
-        let mut player = mdl_anim::new_player{}
+        let mut player = mdl_anim::Player{ .. }
         // A model without the pose (a party member's own skeleton may lack evil / neutral /
         // good) loops pause1 rather than standing in its bind pose.
         let first = find_loop{ &fs, &models, m, name = animation }

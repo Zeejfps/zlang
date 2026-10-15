@@ -16,16 +16,12 @@ namespace grass {
     struct Tuft { x: f32, y: f32, z: f32, size: f32, cell: u32, shade: f32, phase: f32 }
 
     struct Field {
-        on: bool,                       // the Grass option, set by the owner each frame
-        texture: ?render::Texture,      // null: the area has no grass, or its texture is missing
-        tufts: []mut Tuft,
-        quad_size: f32,
-        wind: i32,
-        scratch: []mut render::Particle,    // what one frame draws
-    }
-
-    fn none {} -> Field {
-        return Field{ on = true, texture = null, tufts = slice::empty(Tuft){}, quad_size = 1.0, wind = 0, scratch = slice::empty(render::Particle){} }
+        on: bool = true,                // the Grass option, set by the owner each frame
+        texture: ?render::Texture = null, // null: the area has no grass, or its texture is missing
+        tufts: []mut Tuft = slice::empty(Tuft){},
+        quad_size: f32 = 1.0,
+        wind: i32 = 0,
+        scratch: []mut render::Particle = slice::empty(render::Particle){}, // what one frame draws
     }
 
     // xorshift32.
@@ -62,10 +58,10 @@ namespace grass {
     } -> !Field {
         let mut name = grass.texture
         let tex_name = resref::bytes{ r = &name }
-        if tex_name.len == 0 or grass.density <= 0.0 { return none{} }
+        if tex_name.len == 0 or grass.density <= 0.0 { return Field{ .. } }
         let entry = material::get{ &cache, &fs, &dev, rm, name = tex_name }
-        if entry.texture == null { return none{} }
-        let mut field = none{}
+        if entry.texture == null { return Field{ .. } }
+        let mut field = Field{ .. }
         field.texture = entry.texture
         field.quad_size = if grass.quad_size > 0.05 { grass.quad_size } else { 1.0 }
         field.wind = grass.wind

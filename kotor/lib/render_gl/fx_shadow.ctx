@@ -34,17 +34,13 @@ namespace gpu {
 
     // A point light whose shadows are shown or fading, kept from view to view by where it is.
     struct ShadowTrack {
-        at: math::Vec3,
-        radius: f32,
-        weight: f32,                        // how far its shadows have faded in, 0..1
-        chosen: bool,                       // fading in (or shown), else fading out
-        since: f32,                         // seconds since it was chosen
-        light: u32,                         // its frame light this view (NO_LIGHT: not in the frame)
-        score: f32,                         // this view's
-    }
-
-    fn no_track {} -> ShadowTrack {
-        return ShadowTrack{ at = math::vec3::zero{}, radius = 0.0, weight = 0.0, chosen = false, since = 0.0, light = NO_LIGHT, score = 0.0 }
+        at: math::Vec3 = math::vec3::zero{},
+        radius: f32 = 0.0,
+        weight: f32 = 0.0,                  // how far its shadows have faded in, 0..1
+        chosen: bool = false,               // fading in (or shown), else fading out
+        since: f32 = 0.0,                   // seconds since it was chosen
+        light: u32 = NO_LIGHT,              // its frame light this view (NO_LIGHT: not in the frame)
+        score: f32 = 0.0,                   // this view's
     }
 
     struct ShadowState {
@@ -83,10 +79,10 @@ namespace gpu {
     fn no_shadows {} -> ShadowState {
         let id = math::mat4::identity{}
         return ShadowState{
-            loc = no_scene_program{},
+            loc = ScenePrograms{ .. },
             sun_mat = [id; 2],
             point_mat = [id; 30],
-            track = [no_track{}; 5],
+            track = [ShadowTrack{ .. }; 5],
             ..
         }
     }
@@ -186,7 +182,7 @@ namespace gpu {
         dev.shadow.last_time = frame.time
         dev.shadow.last_eye = v.camera.eye
         if snap {
-            dev.shadow.track = [no_track{}; 5]
+            dev.shadow.track = [ShadowTrack{ .. }; 5]
             dev.shadow.fallback = 0.0
         }
         let sun_light = if v.sun.on { v.sun.light } else { 0 }
@@ -203,7 +199,7 @@ namespace gpu {
         dev.gl.depth_mask{ flag = gl::TRUE }
         dev.gl.clear_depth{ depth = 1.0 }
         dev.gl.clear{ mask = gl::DEPTH_BUFFER_BIT }
-        dev.state = unknown_state{}
+        dev.state = State{ .. }
         set_depth{ &dev, test = true, write = true }
         set_blend{ &dev, blend = render::Blend::opaque }
         set_stencil{ &dev, on = false }
@@ -227,7 +223,7 @@ namespace gpu {
             k = k + 1
         }
         set_offset{ &dev, on = false }
-        dev.state = unknown_state{}
+        dev.state = State{ .. }
         timer_mark{ &dev, name = "shadow maps" }
         return true
     }
@@ -271,7 +267,7 @@ namespace gpu {
             k = k + 1
         }
         // Scored lights not yet tracked: the best `count` of them.
-        let mut fresh: [3]ShadowTrack = [no_track{}; 3]
+        let mut fresh: [3]ShadowTrack = [ShadowTrack{ .. }; 3]
         let mut fresh_n: u32 = 0
         let mut l: u32 = 0
         while l < frame.light_count {
@@ -403,7 +399,7 @@ namespace gpu {
                 dev.shadow.point_weight[p] = t.weight
                 p = p + 1
             } else if not t.chosen {
-                t = no_track{}
+                t = ShadowTrack{ .. }
             }
             track[k] = t
             k = k + 1

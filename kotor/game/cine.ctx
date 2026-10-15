@@ -20,34 +20,25 @@ namespace cine {
     const MAX_ITEMS: usize = 12
     const NAME_BYTES: usize = 24
 
-    struct Item { name: [24]u8, len: usize, skippable: bool, separate: bool }
+    struct Item { name: [24]u8 = [0; 24], len: usize = 0, skippable: bool = true, separate: bool = false }
 
     struct Cinema {
-        items: [12]Item,
-        count: usize,
-        queue: [12]Item,
-        queued: usize,
-        seen: usize,                        // the outbox's notes taken so far (the outbox is cleared once a frame)
-        credits: bool,                      // StartCreditSequence ran and the credits have not been shown
-        end_game: bool,                     // EndGame ran
-        end_left: f32,                      // seconds of world time before the main menu
-        tables: ?*bink_tables::Tables,
-        tables_failed: bool,
+        items: [12]Item = [Item{ .. }; 12],
+        count: usize = 0,
+        queue: [12]Item = [Item{ .. }; 12],
+        queued: usize = 0,
+        seen: usize = 0,                    // the outbox's notes taken so far (the outbox is cleared once a frame)
+        credits: bool = false,              // StartCreditSequence ran and the credits have not been shown
+        end_game: bool = false,             // EndGame ran
+        end_left: f32 = 0.0,                // seconds of world time before the main menu
+        tables: ?*bink_tables::Tables = null,
+        tables_failed: bool = false,
     }
 
     enum Ended: u8 { finished, skipped, window_closed, cut }
 
-    fn blank_item {} -> Item { return Item{ name = [0; 24], len = 0, skippable = true, separate = false } }
-
-    fn make {} -> Cinema {
-        return Cinema{
-            items = [blank_item{}; 12], count = 0, queue = [blank_item{}; 12], queued = 0, seen = 0, credits = false, end_game = false, end_left = 0.0,
-            tables = null, tables_failed = false,
-        }
-    }
-
     fn item_of { name: []u8, skippable: bool, separate: bool } -> Item {
-        let mut it = blank_item{}
+        let mut it = Item{ .. }
         let n = if name.len > NAME_BYTES { NAME_BYTES } else { name.len }
         slice::copy(u8){ dst = it.name[..n], src = name[..n] }
         it.len = n

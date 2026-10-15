@@ -10,16 +10,12 @@ namespace chargen {
     const TUT_FEATS: i32 = 18               // Enter_Feat_Screen_Char_Gen
 
     struct Tutor {
-        on: bool,                   // the "Tutorial Popups" option
-        allowed: bool,              // someone is playing (the front end says)
-        shown: [6]u8,               // PT_TUT_WND_SHOWN's bits for the ones shown here
-        table: ?twoda::Table,       // tutorial.2da, loaded at the first offer
-        bytes: alloc::Bytes,
-        box: gui::TutorialBox,
-    }
-
-    fn no_tutor {} -> Tutor {
-        return Tutor{ on = false, allowed = false, shown = [0; 6], table = null, bytes = slice::empty(u8){}, box = gui::no_tutorial_box{} }
+        on: bool = false,           // the "Tutorial Popups" option
+        allowed: bool = false,      // someone is playing (the front end says)
+        shown: [6]u8 = [0; 6],      // PT_TUT_WND_SHOWN's bits for the ones shown here
+        table: ?twoda::Table = null, // tutorial.2da, loaded at the first offer
+        bytes: alloc::Bytes = slice::empty(u8){},
+        box: gui::TutorialBox = gui::TutorialBox{ .. },
     }
 
     // CanShowTutorial and the box at once: the option, not yet shown, no box up, and a first page.
@@ -51,7 +47,7 @@ namespace chargen {
         if gui::turn_tutorial_page{ &g, b = &t.box, t = table } { return true }
         gui::close{ &g, id = t.box.panel }
         gui::play_sound{ &g, n = 0 }
-        t.box = gui::no_tutorial_box{}
+        t.box = gui::TutorialBox{ .. }
         return true
     }
 
@@ -71,7 +67,7 @@ namespace chargen {
     fn free_tutor { st: *mut State, mut g: gui::Gui } {
         let t = &st.tut
         if t.box.panel != 0 { gui::close{ &g, id = t.box.panel } }
-        t.box = gui::no_tutorial_box{}
+        t.box = gui::TutorialBox{ .. }
         if let value = t.table { twoda::free(heap::Heap){ t = value, realloc = heap::alloc, heap = st.heap } }
         t.table = null
         free_bytes{ b = t.bytes, heap = st.heap }

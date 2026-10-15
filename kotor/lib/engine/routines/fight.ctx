@@ -85,7 +85,7 @@ namespace rt_fight {
         let caster = try nwarg::object{ &vm, routine = r, argc, i = 0 }
         let spell = try nwarg::int{ &vm, routine = r, argc, i = 1 }
         let harmful = try nwarg::int{ &vm, routine = r, argc, i = 2 }
-        let mut e = values::no_event{}
+        let mut e = values::ScriptEvent{ .. }
         e.kind = events::SPELL_CAST_AT
         e.ints[0] = spell
         e.ints[1] = harmful

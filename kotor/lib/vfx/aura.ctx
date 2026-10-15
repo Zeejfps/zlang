@@ -37,31 +37,24 @@ namespace vfx {
     ]
 
     struct Aura {
-        live: bool,
-        object: u32,
-        hold: i32,                      // the visualeffects.2da row kept until it is released, 0 for a timed one
-        age: f32,
-        life: f32,                      // a timed one's length
-        order: u32,                     // when it began: the newest of an object shows
-        texture: ?render::Texture,
-        cols: u32,                      // the flipbook's grid
-        rows: u32,
-        fps: f32,
-        blend: render::Blend,
+        live: bool = false,
+        object: u32 = obj::INVALID,
+        hold: i32 = 0,                  // the visualeffects.2da row kept until it is released, 0 for a timed one
+        age: f32 = 0.0,
+        life: f32 = 0.0,                // a timed one's length
+        order: u32 = 0,                 // when it began: the newest of an object shows
+        texture: ?render::Texture = null,
+        cols: u32 = 1,                  // the flipbook's grid
+        rows: u32 = 1,
+        fps: f32 = 0.0,
+        blend: render::Blend = render::Blend::additive,
         // where it stands this step (update): the visual's index in the scene, the parts that get
         // the shell and their matrices
-        shown: bool,
-        visual: usize,
-        count: usize,
-        part: [4]usize,
-        transform: [4]math::Mat4,
-    }
-
-    fn no_aura {} -> Aura {
-        return Aura{
-            live = false, object = obj::INVALID, hold = 0, age = 0.0, life = 0.0, order = 0, texture = null, cols = 1, rows = 1, fps = 0.0,
-            blend = render::Blend::additive, shown = false, visual = 0, count = 0, part = [0; 4], transform = [math::mat4::identity{}; 4],
-        }
+        shown: bool = false,
+        visual: usize = 0,
+        count: usize = 0,
+        part: [4]usize = [0; 4],
+        transform: [4]math::Mat4 = [math::mat4::identity{}; 4],
     }
 
     // The texture a code 1401-1426 names; empty for every other code (-1, 0 and the codes of other
@@ -103,7 +96,7 @@ namespace vfx {
         let slot = pick ifnull { return }
         v.aura_count = v.aura_count + 1
         let a = &v.auras[slot]
-        v.auras[slot] = no_aura{}
+        v.auras[slot] = Aura{ .. }
         a.live = true
         a.object = object
         a.hold = hold

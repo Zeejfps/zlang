@@ -5,30 +5,22 @@
 // with rules::equip, and our totals are compared with the saved ones.
 namespace check {
     struct SavedStats {
-        creatures: i32,
-        with_effects: i32,        // creatures with temporary effects saved: not compared
-        compared: i32,
-        fort_wrong: i32,
-        reflex_wrong: i32,
-        will_wrong: i32,
-        hp_wrong: i32,
-        fp_wrong: i32,
-        ac_wrong: i32,
-        attacks_wrong: i32,
-        attack_mod_wrong: i32,
-        crit_wrong: i32,
-        mult_wrong: i32,
-        dice_wrong: i32,
-        resist_wrong: i32,
-        printed: i32,
-    }
-
-    fn new_saved_stats {} -> SavedStats {
-        return SavedStats{
-            creatures = 0, with_effects = 0, compared = 0, fort_wrong = 0, reflex_wrong = 0, will_wrong = 0,
-            hp_wrong = 0, fp_wrong = 0, ac_wrong = 0, attacks_wrong = 0, attack_mod_wrong = 0, crit_wrong = 0,
-            mult_wrong = 0, dice_wrong = 0, resist_wrong = 0, printed = 0,
-        }
+        creatures: i32 = 0,
+        with_effects: i32 = 0,    // creatures with temporary effects saved: not compared
+        compared: i32 = 0,
+        fort_wrong: i32 = 0,
+        reflex_wrong: i32 = 0,
+        will_wrong: i32 = 0,
+        hp_wrong: i32 = 0,
+        fp_wrong: i32 = 0,
+        ac_wrong: i32 = 0,
+        attacks_wrong: i32 = 0,
+        attack_mod_wrong: i32 = 0,
+        crit_wrong: i32 = 0,
+        mult_wrong: i32 = 0,
+        dice_wrong: i32 = 0,
+        resist_wrong: i32 = 0,
+        printed: i32 = 0,
     }
 
     fn wants_save_doc { kind: u16 } -> bool {
@@ -101,7 +93,7 @@ namespace check {
         let saved_fr = rules::read_number{ doc, s = info, label = "ForceResistance", dflt = -1 }
         let counts = rules::attack_counts{ tables, c = &c, combat_feat = 0 }
         let dummy = rules::make_creature{}
-        let sit = rules::make_situation{}
+        let sit = rules::AttackSituation{ .. }
         let am = rules::attack_modifier{ tables, atk = &c, def = &dummy, sit = &sit, attack_index = 0, combat_feat = 0 }
         let width = 21 - rules::critical_threat_roll{ tables, c = &c, off_hand = false, combat_feat = 0 }
         let mult = rules::critical_multiplier{ tables, c = &c, off_hand = false }
@@ -154,7 +146,7 @@ namespace check {
         }
         defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = buf, count = 0 }
         let mut scratch = arena::new{ buf }
-        let mut st = new_saved_stats{}
+        let mut st = SavedStats{ .. }
         _ = corpus::each{ &fs, h = &heap, game, want = wants_save_doc, visit = visit_save_doc{ &io, &st, tables, &scratch, _ } } iferr err{ error } {
             fail{ &io, &r, name = "saved: walking the install failed", detail = 0 }
             return

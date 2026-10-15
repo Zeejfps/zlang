@@ -19,28 +19,28 @@ namespace dlg {
     // The line on screen: an entry the owner (or another speaker) says, or a reply the player's
     // creature speaks (a chosen one, or an empty one the engine picks).
     struct Line {
-        serial: u32,                // 0 until a first line is shown
-        reply: bool,
-        node: u32,                  // index in the dialogue's entries or replies
-        speaker: u32,
-        listener: u32,              // 0 if the shot has none
-        angle: u32,                 // CameraAngle with 0 resolved
-        has_voice: bool,            // the voice file exists and is to be played
-        show_text: bool,            // show the text even with subtitles off
+        serial: u32 = 0,            // 0 until a first line is shown
+        reply: bool = false,
+        node: u32 = 0,              // index in the dialogue's entries or replies
+        speaker: u32 = obj::INVALID,
+        listener: u32 = obj::INVALID, // 0 if the shot has none
+        angle: u32 = 0,             // CameraAngle with 0 resolved
+        has_voice: bool = false,    // the voice file exists and is to be played
+        show_text: bool = true,     // show the text even with subtitles off
     }
 
     // The replies on offer. `links[i]` indexes the current entry's links; NO_INDEX is the empty
     // placeholder shown when nothing passes. `auto` is the single empty reply the engine picks.
     struct Choices {
-        serial: u32,
-        count: usize,
-        links: [32]u32,
-        enabled: [32]bool,
-        speaker: u32,               // who speaks them (the party leader)
-        listener: u32,
-        angle: u32,
-        auto: bool,
-        open: bool,                 // offered and not yet chosen
+        serial: u32 = 0,
+        count: usize = 0,
+        links: [32]u32 = [NO_INDEX; 32],
+        enabled: [32]bool = [true; 32],
+        speaker: u32 = obj::INVALID, // who speaks them (the party leader)
+        listener: u32 = obj::INVALID,
+        angle: u32 = 0,
+        auto: bool = false,
+        open: bool = false,         // offered and not yet chosen
     }
 
     // A test script's pick: reply number n (from 1), or, when len > 0, the first reply whose text contains `text`
@@ -51,7 +51,7 @@ namespace dlg {
 
     struct State {
         active: bool = false,
-        d: Dialog,                  // valid while active
+        d: Dialog = Dialog{ .. },   // valid while active
         name: resref::ResRef = resref::empty{},
         owner: u32 = obj::INVALID,
         other: u32 = obj::INVALID,  // "the PC": the player's side (+0x7c)
@@ -94,8 +94,8 @@ namespace dlg {
         anim_busy: bool = false,
         camera_busy: bool = false,
         fade_busy: bool = false,
-        line: Line,
-        choices: Choices,
+        line: Line = Line{ .. },
+        choices: Choices = Choices{ .. },
         // Speaker and listener bookkeeping (5.2).
         speaker: u32 = obj::INVALID,
         listener: u32 = obj::INVALID,
@@ -134,36 +134,6 @@ namespace dlg {
         started_serial: u32 = 0,
         nodes_shown: u32 = 0,
         scripts_run: u32 = 0,
-    }
-
-    fn new_state {} -> State {
-        return State{
-            d = empty_dialog{},
-            line = no_line{}, choices = no_choices{},
-            ..
-        }
-    }
-
-    fn empty_dialog {} -> Dialog {
-        return Dialog{
-            bytes = slice::empty(u8){}, entries = slice::empty(Node){}, replies = slice::empty(Node){},
-            starting = slice::empty(Link){}, stunts = slice::empty(Stunt){}, links = slice::empty(Link){},
-            anims = slice::empty(Anim){}, camera_model = resref::empty{}, end_script = resref::empty{},
-            abort_script = resref::empty{}, ambient_track = resref::empty{}, skippable = true, conversation_type = 0,
-            computer_type = 0, unequip_items = false, unequip_held = false, animated_cut = false, old_hit_check = false,
-            delay_entry = 0,
-        }
-    }
-
-    fn no_line {} -> Line {
-        return Line{ serial = 0, reply = false, node = 0, speaker = obj::INVALID, listener = obj::INVALID, angle = 0, has_voice = false, show_text = true }
-    }
-
-    fn no_choices {} -> Choices {
-        return Choices{
-            serial = 0, count = 0, links = [NO_INDEX; 32], enabled = [true; 32], speaker = obj::INVALID,
-            listener = obj::INVALID, angle = 0, auto = false, open = false,
-        }
     }
 
     // ---- questions the rest of the engine asks

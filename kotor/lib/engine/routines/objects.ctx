@@ -156,7 +156,7 @@ namespace rt_obj {
     fn get_location { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetLocation, argc, i = 0 }
         let o = world::object{ w = &w, id } ifnull {
-            try push_location{ &w, &vm, l = values::no_location{} }
+            try push_location{ &w, &vm, l = values::Location{ .. } }
             return
         }
         try push_location{ &w, &vm, l = values::Location{ position = o.position, facing = obj::facing_degrees{ o }, area = o.area } }

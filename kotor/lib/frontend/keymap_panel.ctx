@@ -36,7 +36,7 @@ namespace frontend {
 
     fn new_key_screen {} -> KeyScreen {
         let e = KeyEntry{ slot = 0, page = 0, sort = 0, strref = 0, locked = false, classes = 0, current = 0, pending = 0, changed = false }
-        return KeyScreen{ entries = [e; 80], count = 0, defaults = no_keymap{}, bindable = [false; 110], names = [0; 110], page = 0, waiting = -1, panel = 0 }
+        return KeyScreen{ entries = [e; 80], count = 0, defaults = Keymap{ .. }, bindable = [false; 110], names = [0; 110], page = 0, waiting = -1, panel = 0 }
     }
 
     // Builds the entries from keymap.2da and the bindings now (0x006ed930, 0x006ed610, 0x006ec7d0), and shows

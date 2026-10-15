@@ -1,9 +1,7 @@
 // The GPU Timing option of the Enhanced Graphics panel (docs/design/enhanced-render.md): the time the GPU spent on
 // each pass of the picture, drawn over everything at the top right, and written to the log with each screenshot.
 namespace fxhud {
-    struct Hud { font: ?render::Font, glyphs: []mut render::Glyph, tried: bool }
-
-    fn make {} -> Hud { return Hud{ font = null, glyphs = slice::empty(render::Glyph){}, tried = false } }
+    struct Hud { font: ?render::Font = null, glyphs: []mut render::Glyph = slice::empty(render::Glyph){}, tried: bool = false }
 
     // Adds a UI pass with one line per pass: "bloom 0.21 ms", and the total. Nothing when there are no timings yet.
     fn draw { mut h: Hud, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame } {

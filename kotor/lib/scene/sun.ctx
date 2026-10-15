@@ -13,9 +13,9 @@ namespace scene {
     // The sun as seen from `at` (the camera's subject), found the first time it is asked for in an area.
     fn sun_of { mut sc: Scene, w: *world::World, at: math::Vec3 } -> render::Sun {
         if sc.sun_state == 0 { find_sun{ &sc, w } }
-        if sc.sun_state != 1 { return render::no_sun{} }
+        if sc.sun_state != 1 { return render::Sun{ .. } }
         let d = math::vec3::sub{ a = at, b = sc.sun_at }
-        if math::vec3::length_sq{ v = d } < 1.0 { return render::no_sun{} }
+        if math::vec3::length_sq{ v = d } < 1.0 { return render::Sun{ .. } }
         let wanted = math::vec3::normalize{ v = d }
         if math::vec3::dot{ a = wanted, b = sc.sun_dir } < SUN_STEP { sc.sun_dir = wanted }
         return render::Sun{ on = true, direction = sc.sun_dir, color = sc.sun_color, strength = sc.shadow_opacity, light = 0 }

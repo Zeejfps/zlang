@@ -202,7 +202,7 @@ namespace rules {
     // at +20 and -20 apart. The state penalties (entangled, slowed) are attack-decrease effects in
     // the engine and share the cap.
     fn combat_get_attack_effects { atk: *Creature, def: *Creature, sit: *AttackSituation, wtype: i32 } -> i32 {
-        let vs = if sit.target_object { no_versus{} } else { versus_creature{ c = def } }
+        let vs = if sit.target_object { Versus{ .. } } else { versus_creature{ c = def } }
         let b = effect_bonus{ c = atk, q = BonusQuery{ category = cat::ATTACK, a = 0, b = 0, hand = wtype, vs } }
         let mut plus = b.plus
         let mut minus = b.minus

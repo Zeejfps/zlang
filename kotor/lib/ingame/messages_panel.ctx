@@ -16,13 +16,9 @@ namespace messages_panel {
     const SHOW_FEEDBACK_STRREF: u32 = 42142     // and while the dialogue log does
 
     struct State {
-        opened: bool,
-        feedback: bool,         // the feedback log is the one shown (remembered across opens)
-        seen_total: usize,      // the log's total when the lists were last filled
-    }
-
-    fn new {} -> State {
-        return State{ opened = false, feedback = false, seen_total = 0 }
+        opened: bool = false,
+        feedback: bool = false, // the feedback log is the one shown (remembered across opens)
+        seen_total: usize = 0,  // the log's total when the lists were last filled
     }
 
     // The panel was just added, or the leader changed and it must be filled again.

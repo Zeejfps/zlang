@@ -38,17 +38,13 @@ namespace world {
     const TUT_ROWS: i32 = 43                // CanShowTutorial takes ids below 0x2b
 
     struct Tutorials {
-        on: bool,           // the "Tutorial Popups" option (client options +0x14 bit 1)
-        allowed: bool,      // someone is playing: a headless run shows none unless its script says (`ui tutorial`)
-        pending: i32,       // the offer taken this frame, for the box to open (client +0x3b8, 0xff none); -1 none
-        who: u32,           // its arguments (+0x3ac, +0x3b0, +0x3b4): the action's object, its target, a number
-        target: u32,
-        n: i32,
-        open: bool,         // a box is up (the owner's): no other offer is taken meanwhile
-    }
-
-    fn no_tutorials {} -> Tutorials {
-        return Tutorials{ on = true, allowed = false, pending = -1, who = obj::INVALID, target = obj::INVALID, n = 0, open = false }
+        on: bool = true,    // the "Tutorial Popups" option (client options +0x14 bit 1)
+        allowed: bool = false, // someone is playing: a headless run shows none unless its script says (`ui tutorial`)
+        pending: i32 = -1,  // the offer taken this frame, for the box to open (client +0x3b8, 0xff none); -1 none
+        who: u32 = obj::INVALID, // its arguments (+0x3ac, +0x3b0, +0x3b4): the action's object, its target, a number
+        target: u32 = obj::INVALID,
+        n: i32 = 0,
+        open: bool = false, // a box is up (the owner's): no other offer is taken meanwhile
     }
 
     // Whether tutorial `id` is set in a shown set (PT_TUT_WND_SHOWN, CGuiInGame +0xba8): bit n of byte n / 8.

@@ -69,7 +69,7 @@ namespace events {
     // A script event of `kind` about `object` (the entering object, the user-defined number's
     // owner...): ints[0] carries the user-defined number.
     fn script_event { kind: i32, object: u32 } -> values::ScriptEvent {
-        let mut e = values::no_event{}
+        let mut e = values::ScriptEvent{ .. }
         e.kind = kind
         e.objects[0] = object
         return e

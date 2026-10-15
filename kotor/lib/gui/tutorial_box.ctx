@@ -13,9 +13,7 @@ namespace gui {
     const TUT_PAGES: i32 = 3
     const TUT_FONT: []u8 = "fnt_d16x16"
 
-    struct TutorialBox { panel: u32, id: i32, page: i32 }
-
-    fn no_tutorial_box {} -> TutorialBox { return TutorialBox{ panel = 0, id = -1, page = 0 } }
+    struct TutorialBox { panel: u32 = 0, id: i32 = -1, page: i32 = 0 }
 
     // Row `id`'s page `page` (tutorial.2da MessageN), null past the last.
     fn tutorial_page { t: twoda::Table, id: i32, page: i32 } -> ?u32 {
@@ -27,11 +25,11 @@ namespace gui {
 
     // The box with row `id`'s first page and icon, modal over everything.
     fn open_tutorial_box { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, t: twoda::Table, id: i32 } -> !TutorialBox {
-        let first = tutorial_page{ t, id, page = 0 } ifnull { return no_tutorial_box{} }
+        let first = tutorial_page{ t, id, page = 0 } ifnull { return TutorialBox{ .. } }
         let text = try tlk_text{ &g, strref = first }
         defer free_string{ &g, s = text }
         let icon = twoda::get_string{ t, row = @as(usize, id), column = "icon" } ifnull ""
-        let img = if icon.len > 0 { resolve_img{ &g, &fs, &dev, name = icon } } else { no_img{} }
+        let img = if icon.len > 0 { resolve_img{ &g, &fs, &dev, name = icon } } else { Img{ .. } }
         let panel = try message_box_in{ &g, &fs, &dev, text, cancel = false, font = TUT_FONT, icon = img }
         let b = TutorialBox{ panel, id, page = 0 }
         try caption_tutorial_box{ &g, b = &b, t }

@@ -154,8 +154,8 @@ namespace dlg {
         w.conversation.vo_playing = false
         w.conversation.vo_stop = false
         w.conversation.scene_ready = not w.conversation.client
-        w.conversation.line = no_line{}
-        w.conversation.choices = no_choices{}
+        w.conversation.line = Line{ .. }
+        w.conversation.choices = Choices{ .. }
         w.conversation.speaker = obj::INVALID
         w.conversation.listener = obj::INVALID
         w.conversation.prev_speaker = obj::INVALID
@@ -502,7 +502,7 @@ namespace dlg {
             if l != obj::INVALID { listener = l }
         }
         let angle = resolve_angle{ &w, angle = if first_reply != null { first_reply.camera_angle } else { ANGLE_AUTO }, entry = false }
-        let mut ch = no_choices{}
+        let mut ch = Choices{ .. }
         ch.serial = w.conversation.choices.serial + 1
         ch.speaker = leader
         ch.listener = listener
@@ -853,7 +853,7 @@ namespace dlg {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "dialog heap live {} bytes after {}\n", w.heap.live, w.conversation.name)
         }
-        w.conversation.d = empty_dialog{}
+        w.conversation.d = Dialog{ .. }
         w.conversation.active = false
         w.conversation.pending = false
         w.conversation.paused = false

@@ -13,9 +13,9 @@ namespace rules {
     }
 
     struct ApplyResult {
-        kept: bool,             // the effect is on the creature (lasting)
-        refused: bool,          // an immunity or a rule turned it away
-        feedback: i32,          // the engine's feedback message number for the refusal, 0 none
+        kept: bool = false,     // the effect is on the creature (lasting)
+        refused: bool = false,  // an immunity or a rule turned it away
+        feedback: i32 = 0,      // the engine's feedback message number for the refusal, 0 none
     }
 
     // ---- time
@@ -432,10 +432,6 @@ namespace rules {
         return ApplyResult{ kept = false, refused = true, feedback }
     }
 
-    fn dropped {} -> ApplyResult {
-        return ApplyResult{ kept = false, refused = false, feedback = 0 }
-    }
-
     fn kept_effect {} -> ApplyResult {
         return ApplyResult{ kept = true, refused = false, feedback = 0 }
     }
@@ -462,8 +458,8 @@ namespace rules {
     fn apply_leaf { env: Env, mut c: Creature, e0: Effect, mut rng: Rng, mut ev: Events } -> ApplyResult {
         let tables = env.tables
         let mut e = e0
-        let none = no_versus{}
-        if e.kind == fx::INVALID or e.kind >= fx::TYPE_COUNT { return dropped{} }
+        let none = Versus{ .. }
+        if e.kind == fx::INVALID or e.kind >= fx::TYPE_COUNT { return ApplyResult{ .. } }
         let cutscene = e.kind == fx::SETSTATE and e.ints[1] != 0
         let dead = env.hp < 1
 
@@ -479,15 +475,15 @@ namespace rules {
                 // Force points
                 let max = c.stats.max_fp
                 c.fp = if c.fp + e.ints[0] > max { max } else { c.fp + e.ints[0] }
-                return dropped{}
+                return ApplyResult{ .. }
             }
-            if dead { return dropped{} }
+            if dead { return ApplyResult{ .. } }
             emit{ ev = &ev, kind = ev::HEAL_HP, a = e.ints[0], b = 0, who = e.creator }
             emit{ ev = &ev, kind = ev::FEEDBACK, a = 0x97, b = e.ints[0], who = e.creator }
-            return dropped{}
+            return ApplyResult{ .. }
         }
         if e.kind == fx::DAMAGE {
-            if c.plot or dead { return dropped{} }
+            if c.plot or dead { return ApplyResult{ .. } }
             let mut d = e.ints[0]
             if e.ints[3] == 0 {
                 d = mitigate_damage{ c = &c, amount = d, flags = e.ints[1], power = e.ints[2], simulate = false, ev = &ev }
@@ -495,7 +491,7 @@ namespace rules {
             d = scale_damage_by_difficulty{ tables, c = &c, amount = d }
             d = absorb_temp_hp{ c = &c, damage = d, ev = &ev }
             if d > 0 { emit{ ev = &ev, kind = ev::DAMAGE_HP, a = d, b = e.ints[1], who = e.creator } }
-            return dropped{}
+            return ApplyResult{ .. }
         }
         if e.kind == fx::DEATH { return apply_death{ env, c = &c, e = &e, ev = &ev } }
         if e.kind == fx::RESURRECTION {
@@ -511,27 +507,27 @@ namespace rules {
                     i = i + 1
                 }
             }
-            return dropped{}
+            return ApplyResult{ .. }
         }
         if e.kind == fx::DAMAGE_FORCE_POINTS or e.kind == fx::FORCE_DRAIN {
             let left = c.fp + c.temp_fp - e.ints[0]
             c.fp = if left < 0 { 0 } else { left }
-            return dropped{}
+            return ApplyResult{ .. }
         }
         if e.kind == fx::HEAL_FORCE_POINTS {
             let total = c.fp + c.temp_fp + e.ints[0]
             c.fp = if total > c.stats.max_fp { c.stats.max_fp } else { total }
             emit{ ev = &ev, kind = ev::FEEDBACK, a = 0xe4, b = e.ints[0], who = e.creator }
-            return dropped{}
+            return ApplyResult{ .. }
         }
-        if e.kind == fx::LINK or e.kind == fx::DISPEL_MAGIC_ALL or e.kind == fx::DISPEL_MAGIC_BEST { return dropped{} }
+        if e.kind == fx::LINK or e.kind == fx::DISPEL_MAGIC_ALL or e.kind == fx::DISPEL_MAGIC_BEST { return ApplyResult{ .. } }
 
         // the lasting kinds
         if e.kind == fx::ABILITY_INCREASE or e.kind == fx::ABILITY_DECREASE {
-            if e.ints[1] <= 0 or dead { return dropped{} }
+            if e.ints[1] <= 0 or dead { return ApplyResult{ .. } }
             if e.kind == fx::ABILITY_DECREASE and (c.plot or has_immunity{ c = &c, kind = imm::ABILITY_DECREASE, vs = none }) { return refuse{ feedback = 0x7d } }
         }
-        if e.kind == fx::ATTACK_INCREASE and e.ints[0] <= 0 { return dropped{} }
+        if e.kind == fx::ATTACK_INCREASE and e.ints[0] <= 0 { return ApplyResult{ .. } }
         if e.kind == fx::TEMPORARY_HITPOINTS {
             c.temp_hp = c.temp_hp + e.ints[0]
         }
@@ -550,7 +546,7 @@ namespace rules {
             emit{ ev = &ev, kind = ev::CLEAR_ACTIONS, a = 0, b = 0, who = e.creator }
         }
         if e.kind == fx::KNOCKDOWN {
-            if dead { return dropped{} }
+            if dead { return ApplyResult{ .. } }
             emit{ ev = &ev, kind = ev::KNOCKDOWN, a = 0, b = 0, who = e.creator }
         }
         if e.kind == fx::POISON {
@@ -568,18 +564,18 @@ namespace rules {
         // VFX_COM_FORCE_RESISTED, from the power's caster; OnApplyForceFizzle 0x004dede0: row 4036), played once.
         if e.kind == fx::FORCE_RESISTED {
             emit{ ev = &ev, kind = ev::VISUAL_ON, a = 4037, b = 1, who = e.objects[0] }
-            return dropped{}
+            return ApplyResult{ .. }
         }
         if e.kind == fx::FORCE_FIZZLE {
             emit{ ev = &ev, kind = ev::VISUAL_ON, a = 4036, b = 1, who = e.creator }
-            return dropped{}
+            return ApplyResult{ .. }
         }
         if e.kind == fx::VISUALEFFECT {
             emit{ ev = &ev, kind = ev::VISUAL_ON, a = e.ints[0], b = if e.dur == dur::INSTANT { 1 } else { 0 }, who = e.creator }
-            if e.dur == dur::INSTANT { return dropped{} }
+            if e.dur == dur::INSTANT { return ApplyResult{ .. } }
         }
         if e.kind == fx::ICON {
-            if e.dur == dur::INSTANT { return dropped{} }
+            if e.dur == dur::INSTANT { return ApplyResult{ .. } }
             emit{ ev = &ev, kind = ev::ICON_ON, a = e.ints[0], b = 0, who = e.creator }
         }
         if e.kind == fx::DISGUISE { emit{ ev = &ev, kind = ev::APPEARANCE, a = e.ints[0], b = 0, who = e.creator } }
@@ -592,7 +588,7 @@ namespace rules {
             // the list is full: undo the pool changes of the kinds above
             if e.kind == fx::TEMPORARY_HITPOINTS { c.temp_hp = c.temp_hp - e.ints[0] }
             if e.kind == fx::TEMPORARY_FORCE_POINTS { c.temp_fp = c.temp_fp - e.ints[0] }
-            return dropped{}
+            return ApplyResult{ .. }
         }
         return kept_effect{}
     }
@@ -601,19 +597,19 @@ namespace rules {
     // a magical death with a spell id; otherwise the creature dies: every effect goes except the
     // equipped and innate ones and what removefxondeath.2da keeps.
     fn apply_death { env: Env, mut c: Creature, e: *Effect, mut ev: Events } -> ApplyResult {
-        if c.plot { return dropped{} }
+        if c.plot { return ApplyResult{ .. } }
         if c.min1hp {
             emit{ ev = &ev, kind = ev::RESURRECT, a = 1, b = 0, who = e.creator }
-            return dropped{}
+            return ApplyResult{ .. }
         }
-        let none = no_versus{}
+        let none = Versus{ .. }
         if (e.sub & 8) != 0 and e.spell_id >= 0 and has_immunity{ c = &c, kind = imm::DEATH, vs = none } {
             emit{ ev = &ev, kind = ev::FEEDBACK, a = 0x7f, b = 0, who = e.creator }
             return refuse{ feedback = 0x7f }
         }
         emit{ ev = &ev, kind = ev::DEATH, a = e.ints[0], b = e.ints[1], who = e.creator }
         strip_effects_on_death{ tables = env.tables, c = &c, ev = &ev }
-        return dropped{}
+        return ApplyResult{ .. }
     }
 
     // On death every effect goes except the equipped (3) and innate (4) ones and the kinds
@@ -638,7 +634,7 @@ namespace rules {
     // every PERIOD seconds. ints: 0 row, 1-2 start, 3-4 last tick, 5 duration, 6 period.
     fn apply_poison { env: Env, mut c: Creature, e: *mut Effect, mut rng: Rng, mut ev: Events } -> ApplyResult {
         if c.plot or env.hp < 1 { return refuse{ feedback = 0 } }
-        let none = no_versus{}
+        let none = Versus{ .. }
         if has_immunity{ c = &c, kind = imm::POISON, vs = none } { return refuse{ feedback = 0x7d } }
         let t = raw_table{ tables = env.tables, which = Tab::poison }
         let row = @as(usize, e.ints[0])

@@ -101,7 +101,7 @@ namespace ups {
     fn new {} -> State {
         let mut s: State
         s.open = false
-        s.box = msgbox::blank{}
+        s.box = msgbox::Box{ .. }
         s.item = obj::INVALID
         s.original = obj::INVALID
         s.owner = obj::INVALID

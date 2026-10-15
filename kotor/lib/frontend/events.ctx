@@ -372,7 +372,7 @@ namespace frontend {
     // ---- the options
 
     fn defaults_for { mut fe: Front, screen: u32 } {
-        let d = default_settings{}
+        let d = Settings{ .. }
         if screen == SCR_GAMEPLAY {
             fe.settings.difficulty = d.difficulty
             fe.settings.mouse_look = d.mouse_look

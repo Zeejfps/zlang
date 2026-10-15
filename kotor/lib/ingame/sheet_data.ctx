@@ -156,7 +156,7 @@ namespace sheet {
         let mut i: usize = 0
         while i < SKILLS {
             k.skill_rank[i] = f.c.skills[i]
-            k.total[i] = rules::skill_rank{ tables = w.rules, c = &f.c, skill = @as(i32, i), vs = rules::no_versus{}, base_only = false }
+            k.total[i] = rules::skill_rank{ tables = w.rules, c = &f.c, skill = @as(i32, i), vs = rules::Versus{ .. }, base_only = false }
             i = i + 1
         }
         let mut row: i32 = 0

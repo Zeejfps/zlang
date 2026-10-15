@@ -68,55 +68,41 @@ namespace obj {
     // What event scripts ask about, recorded on the object before its slot runs (engine.md,
     // "The common header"). Add fields as routines need them; event delivery sets them.
     struct Context {
-        entering: u32,            // GetEnteringObject (area, trigger, encounter)
-        exiting: u32,             // GetExitingObject
-        user_event: i32,          // GetUserDefinedEventNumber
-        last_opened_by: u32,
-        last_closed_by: u32,
-        last_used_by: u32,
-        last_locked_by: u32,
-        last_unlocked_by: u32,
-        last_perceived: u32,
-        perceived_seen: bool,
-        perceived_heard: bool,
-        perceived_vanished: bool,
-        perceived_inaudible: bool,
-        last_attacker: u32,
-        last_damager: u32,
-        last_speaker: u32,
-        last_disturbed: u32,
-        disturb_type: i32,        // GetInventoryDisturbType: 0 added, 1 removed, 2 stolen (last_disturbed is the item)
-        run_script_var: i32,      // ExecuteScript's nScriptVar, read by GetRunScriptVar
-        clicked_by: u32,
-        blocker: u32,             // OnBlocked: GetBlockingDoor
-        listen_pattern: i32,      // GetListenPatternNumber: the SetListenPattern number that matched, -1 none
+        entering: u32 = INVALID,  // GetEnteringObject (area, trigger, encounter)
+        exiting: u32 = INVALID,   // GetExitingObject
+        user_event: i32 = 0,      // GetUserDefinedEventNumber
+        last_opened_by: u32 = INVALID,
+        last_closed_by: u32 = INVALID,
+        last_used_by: u32 = INVALID,
+        last_locked_by: u32 = INVALID,
+        last_unlocked_by: u32 = INVALID,
+        last_perceived: u32 = INVALID,
+        perceived_seen: bool = false,
+        perceived_heard: bool = false,
+        perceived_vanished: bool = false,
+        perceived_inaudible: bool = false,
+        last_attacker: u32 = INVALID,
+        last_damager: u32 = INVALID,
+        last_speaker: u32 = INVALID,
+        last_disturbed: u32 = INVALID,
+        disturb_type: i32 = 0,    // GetInventoryDisturbType: 0 added, 1 removed, 2 stolen (last_disturbed is the item)
+        run_script_var: i32 = 0,  // ExecuteScript's nScriptVar, read by GetRunScriptVar
+        clicked_by: u32 = INVALID,
+        blocker: u32 = INVALID,   // OnBlocked: GetBlockingDoor
+        listen_pattern: i32 = -1, // GetListenPatternNumber: the SetListenPattern number that matched, -1 none
         // Force powers (fight::cast_spell): the caster's own cast while its impact script runs,
         // and on the target the last power cast at it (OnSpellCastAt).
-        spell_id: i32,            // GetSpellId (-1 none)
-        spell_target: u32,        // GetSpellTargetObject
-        spell_location: math::Vec3,   // GetSpellTargetLocation
-        last_spell: i32,          // GetLastSpell
-        last_spell_caster: u32,   // GetLastSpellCaster
-        last_spell_harmful: bool, // GetLastSpellHarmful
+        spell_id: i32 = -1,       // GetSpellId (-1 none)
+        spell_target: u32 = INVALID, // GetSpellTargetObject
+        spell_location: math::Vec3 = math::vec3::zero{}, // GetSpellTargetLocation
+        last_spell: i32 = -1,     // GetLastSpell
+        last_spell_caster: u32 = INVALID, // GetLastSpellCaster
+        last_spell_harmful: bool = false, // GetLastSpellHarmful
         // Appended by routines/combat.ctx and objects.ctx. The event that sets each belongs to the code
         // that posts it (path finding, the module's player death, trap loading); the getters read them.
-        found_enemy: u32,         // GetFoundEnemyCreature: the hostile a pathfind stopped at (k_def_pathfail01)
-        last_player_died: u32,    // GetLastPlayerDied, on the module: the party member whose death ran OnPlrDeath
-        trap_type: i32,           // GetTrapBaseType: the traps.2da row of the trap on a door, placeable or trigger, -1 none
-    }
-
-    fn no_context {} -> Context {
-        return Context{
-            entering = INVALID, exiting = INVALID, user_event = 0, last_opened_by = INVALID,
-            last_closed_by = INVALID, last_used_by = INVALID, last_locked_by = INVALID,
-            last_unlocked_by = INVALID, last_perceived = INVALID, perceived_seen = false,
-            perceived_heard = false, perceived_vanished = false, perceived_inaudible = false,
-            last_attacker = INVALID, last_damager = INVALID, last_speaker = INVALID,
-            last_disturbed = INVALID, disturb_type = 0, run_script_var = 0, clicked_by = INVALID, blocker = INVALID,
-            listen_pattern = -1, spell_id = -1, spell_target = INVALID, spell_location = math::vec3::zero{},
-            last_spell = -1, last_spell_caster = INVALID, last_spell_harmful = false,
-            found_enemy = INVALID, last_player_died = INVALID, trap_type = -1,
-        }
+        found_enemy: u32 = INVALID, // GetFoundEnemyCreature: the hostile a pathfind stopped at (k_def_pathfail01)
+        last_player_died: u32 = INVALID, // GetLastPlayerDied, on the module: the party member whose death ran OnPlrDeath
+        trap_type: i32 = -1,      // GetTrapBaseType: the traps.2da row of the trap on a door, placeable or trigger, -1 none
     }
 
     // The header every object has (objects.md, CSWSObject members).
@@ -278,7 +264,7 @@ namespace obj {
         // Appended by routines/creature.ctx and actions.ctx.
         head: i32 = -1,                     // DuplicateHeadAppearance: a heads.2da row to show instead of the appearance's own, -1 none
         stealth: bool = false,              // stealth mode is on (lib/engine/stealth.ctx)
-        stealth_rolls: stealth::Rolls = stealth::no_rolls{}, // its stealth and awareness rolls, its stealth-XP countdown
+        stealth_rolls: stealth::Rolls = stealth::Rolls{ .. }, // its stealth and awareness rolls, its stealth-XP countdown
         // Appended by traps.ctx.
         trap_search_ms: u64 = 0,            // when it last looked for traps (DoTrapDetection's timer)
     }
@@ -631,7 +617,7 @@ namespace obj {
             actions = list::new(actions::Action, heap::Heap){ realloc = heap::alloc, heap },
             action_group = 0, commandable = true, hp = 1, hp_max = 1, hardness = 0, hp_temp = 0, plot = false,
             min_one_hp = false, animation = ANIM_STAND, anim_speed = 1.0, anim_cycles = 0.0, dirty = 7,
-            ai_level = 0, conversation = resref::empty{}, faction = 0, ctx = no_context{},
+            ai_level = 0, conversation = resref::empty{}, faction = 0, ctx = Context{ .. },
             destroyed = false, ext = Ext::none,
         }
     }

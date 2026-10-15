@@ -68,7 +68,7 @@ fn test_clock { mut io: Io, mut r: Report, w: *mut world::World } {
     check{ &io, &r, ok = clock::elapsed_since{ now = 10, then = 4 } == 6, what = "elapsed_since: 10 since 4" }
     check{ &io, &r, ok = clock::elapsed_since{ now = 4, then = 10 } == 0, what = "elapsed_since: a stamp in the future is 0" }
     check{ &io, &r, ok = clock::elapsed_since{ now = 0, then = 1 } == 0, what = "elapsed_since: from 1 at time 0" }
-    let mut c = clock::new{}
+    let mut c = clock::Clock{ .. }
     c.now_us = 123456789
     let before = c.now_us
     let per_day = clock::ms_per_day{ c }
@@ -603,12 +603,12 @@ fn test_party { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut r: Report, w: *mu
     check{ &io, &r, ok = differing == 0, what = "party: the install's table written back, every field as it was" }
     check{ &io, &r, ok = slice::eq_bytes{ a = bytes, b = data }, what = "party: the install's table written back byte for byte" }
 
-    w.party = party::new{}
+    w.party = party::Party{ .. }
     try save::read_party_table{ w, doc = &doc2 }
     check{ &io, &r, ok = party_matches{ w, doc = &doc }, what = "party: round trip" }
 
     // Another party: an NPC leads and a second follows; solo, a bigger purse, other slots open.
-    w.party = party::new{}
+    w.party = party::Party{ .. }
     w.party.gold = 12345
     w.party.xp_pool = -3
     w.party.solo = true
@@ -624,7 +624,7 @@ fn test_party { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut r: Report, w: *mu
     _ = party::add{ w, id = pc }
     let bytes2 = try save::write_party_table{ realloc = heap::alloc, heap = &h, w, played_seconds = 7 }
     let doc3 = try gff::parse{ data = bytes2, realloc = heap::alloc, heap = &h }
-    w.party = party::new{}
+    w.party = party::Party{ .. }
     try save::read_party_table{ w, doc = &doc3 }
     check{ &io, &r, ok = w.party.gold == 12345 and w.party.xp_pool == -3 and w.party.solo and w.party.available[3] and w.party.available[5] and not w.party.available[0], what = "party: second table, purse and availability" }
     check{ &io, &r, ok = w.party.selectable[3] and not w.party.selectable[5] and w.party.selectable[0], what = "party: second table, selectable" }

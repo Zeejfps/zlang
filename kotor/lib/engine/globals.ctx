@@ -33,7 +33,7 @@ namespace globals {
                 else if ci::eq{ a = type_name, b = "string" } { Type::string }
                 else if ci::eq{ a = type_name, b = "location" } { Type::location }
                 else { Type::boolean }
-            try list::push{ list = &g.all, item = Global{ name, kind, number = 0, text = slice::empty(u8){}, location = values::no_location{}, orientation = math::vec3::zero{} } }
+            try list::push{ list = &g.all, item = Global{ name, kind, number = 0, text = slice::empty(u8){}, location = values::Location{ .. }, orientation = math::vec3::zero{} } }
             try map::put{ m = &g.by_name, key = name, value = g.all.len - 1 }
         }
         return g
@@ -75,7 +75,7 @@ namespace globals {
         v.text = copy
     }
     fn location { g: *Globals, name: []u8 } -> values::Location {
-        let v = find{ g, name, kind = Type::location } ifnull { return values::no_location{} }
+        let v = find{ g, name, kind = Type::location } ifnull { return values::Location{ .. } }
         return v.location
     }
     fn set_location { g: *Globals, name: []u8, value: values::Location } {

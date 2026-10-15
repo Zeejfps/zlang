@@ -14,11 +14,7 @@ namespace scene {
     // next node and whose right child is `right`.
     struct RayNode { box: math::Aabb, first: u32, count: u32, right: u32 }
 
-    struct RayTree { world: math::Mat4, nodes: []mut RayNode, order: []mut u32 }
-
-    fn no_ray_tree {} -> RayTree {
-        return RayTree{ world = math::mat4::identity{}, nodes = slice::empty(RayNode){}, order = slice::empty(u32){} }
-    }
+    struct RayTree { world: math::Mat4 = math::mat4::identity{}, nodes: []mut RayNode = slice::empty(RayNode){}, order: []mut u32 = slice::empty(u32){} }
 
     // The trees of every room model's meshes that need one, in Scene.ray_trees; Room.trees is the index of
     // its first (one per mesh of the model, an empty tree for a mesh too small or not drawn).
@@ -40,9 +36,9 @@ namespace scene {
             while m < model.meshes.len {
                 let mesh = &model.meshes[m]
                 m = m + 1
-                let mut tree = no_ray_tree{}
+                let mut tree = RayTree{ .. }
                 if mdl_render::draws{ mesh = mesh.* } and mesh.skin == null and mesh.indices.len >= LEAF_TRIANGLES * 3 * 2 {
-                    tree = build_ray_tree{ arena = sc.arena, heap = sc.heap, mesh, world = math::mat4::mul{ a = instance, b = p.pose.world[mesh.node] } } iferr { no_ray_tree{} }
+                    tree = build_ray_tree{ arena = sc.arena, heap = sc.heap, mesh, world = math::mat4::mul{ a = instance, b = p.pose.world[mesh.node] } } iferr { RayTree{ .. } }
                 }
                 list::push{ list = &sc.ray_trees, item = tree } iferr { return }
             }
@@ -54,7 +50,7 @@ namespace scene {
     fn build_ray_tree { arena: *mut arena::Arena, heap: *mut heap::Heap, mesh: *mdl::Mesh, world: math::Mat4 } -> !RayTree {
         let vcount = @as(usize, mesh.vertex_count)
         let ntri = mesh.indices.len / 3
-        if mesh.positions.len < vcount * 3 or ntri == 0 { return no_ray_tree{} }
+        if mesh.positions.len < vcount * 3 or ntri == 0 { return RayTree{ .. } }
         let wv = try alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(math::Vec3){}, count = vcount }
         defer _ = alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap, mem = wv, count = 0 }
         let centers = try alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(math::Vec3){}, count = ntri }
@@ -78,7 +74,7 @@ namespace scene {
             order[n] = @as(u32, t - 1)
             n = n + 1
         }
-        if n == 0 { return no_ray_tree{} }
+        if n == 0 { return RayTree{ .. } }
         // Leaves hold at least half a leaf's worth (median splits), so this many nodes are plenty.
         let nodes = try alloc::resize(RayNode, arena::Arena){ realloc = arena::alloc, heap = arena, mem = slice::empty(RayNode){}, count = 2 * (n / (LEAF_TRIANGLES / 2) + 1) }
         let mut next: usize = 0

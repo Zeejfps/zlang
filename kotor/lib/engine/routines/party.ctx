@@ -464,7 +464,7 @@ namespace rt_party {
     // Where the `index`-th member (1, 2) stands: behind the leader, one to each side, on the
     // walkmesh (the leader's own spot when the point is off it).
     fn formation_point { w: *world::World, index: usize } -> values::Location {
-        let lead = world::object{ w, id = party::leader{ w } } ifnull { return values::no_location{} }
+        let lead = world::object{ w, id = party::leader{ w } } ifnull { return values::Location{ .. } }
         let face = lead.orientation
         let side: f32 = if index % 2 == 1 { -1.0 } else { 1.0 }
         let at = math::Vec3{

@@ -2,11 +2,7 @@
 // when multisampling is off (Enhance.post_aa), and alpha-to-coverage for alpha-tested surfaces when it is on
 // (Enhance.alpha_coverage). Called from draw_view_fx and draw_mesh.
 namespace gpu {
-    struct AaPrograms { made: bool, edge: u32, size: i32, area: i32, cfg: i32 }
-
-    fn no_aa_programs {} -> AaPrograms {
-        return AaPrograms{ made = false, edge = 0, size = -1, area = -1, cfg = -1 }
-    }
+    struct AaPrograms { made: bool = false, edge: u32 = 0, size: i32 = -1, area: i32 = -1, cfg: i32 = -1 }
 
     fn make_aa_programs { mut dev: Device } -> ! {
         let post_vs = glsl::POST_VS
@@ -27,7 +23,7 @@ namespace gpu {
 
     fn free_aa_programs { mut dev: Device } {
         if dev.aa.made { dev.gl.delete_program{ program = dev.aa.edge } }
-        dev.aa = no_aa_programs{}
+        dev.aa = AaPrograms{ .. }
     }
 
     // ---- the edge filter (multisampling off)

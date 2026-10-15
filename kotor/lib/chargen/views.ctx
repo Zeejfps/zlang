@@ -9,19 +9,12 @@ namespace chargen {
     const VIEWS: usize = 8
 
     struct Views {
-        mem: alloc::Bytes,
-        keep: ?*mut arena::Arena,
-        models: ?*mut mdl_cache::Cache,
-        failed: bool,
-        pv: [VIEWS]?*mut preview3d::Preview,
-        pmem: [VIEWS]alloc::Bytes,
-    }
-
-    fn no_views {} -> Views {
-        return Views{
-            mem = slice::empty(u8){}, keep = null, models = null, failed = false,
-            pv = [null; VIEWS], pmem = [slice::empty(u8){}; VIEWS],
-        }
+        mem: alloc::Bytes = slice::empty(u8){},
+        keep: ?*mut arena::Arena = null,
+        models: ?*mut mdl_cache::Cache = null,
+        failed: bool = false,
+        pv: [VIEWS]?*mut preview3d::Preview = [null; VIEWS],
+        pmem: [VIEWS]alloc::Bytes = [slice::empty(u8){}; VIEWS],
     }
 
     // The cache models are read into, made on first use. False if it can't be had.

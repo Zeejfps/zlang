@@ -20,17 +20,12 @@ namespace trail {
     const SLOT_DISTANCE: f32 = 1.5
 
     struct Trail {
-        places: [100]math::Vec3,    // newest last; a ring from `first`
-        headings: [100]math::Vec3,  // the leader's facing at each place
-        first: usize,
-        count: usize,
-        leader: u32,
-        area: u32,
-    }
-
-    fn new {} -> Trail {
-        return Trail{ places = [math::vec3::zero{}; 100], headings = [math::vec3::zero{}; 100], first = 0, count = 0,
-            leader = obj::INVALID, area = obj::INVALID }
+        places: [100]math::Vec3 = [math::vec3::zero{}; 100], // newest last; a ring from `first`
+        headings: [100]math::Vec3 = [math::vec3::zero{}; 100], // the leader's facing at each place
+        first: usize = 0,
+        count: usize = 0,
+        leader: u32 = obj::INVALID,
+        area: u32 = obj::INVALID,
     }
 
     // The formation offsets of the two followers, x to the leader's right and y ahead of him, in metres

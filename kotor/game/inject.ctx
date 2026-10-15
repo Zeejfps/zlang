@@ -15,9 +15,7 @@
 // shift, alt, caps (modifier keys set the modifier bits of the keys after them).
 namespace inject {
     // Where the scripted pointer is and what is held, as a person's mouse and keyboard remember.
-    struct Inputs { x: i32, y: i32, buttons: u32, mods: u16 }
-
-    fn new_inputs {} -> Inputs { return Inputs{ x = 0, y = 0, buttons = 0, mods = 0 } }
+    struct Inputs { x: i32 = 0, y: i32 = 0, buttons: u32 = 0, mods: u16 = 0 }
 
     // An SDL keycode by the name scripts use; 0 for an unknown one.
     fn key_of { name: []u8 } -> i32 {

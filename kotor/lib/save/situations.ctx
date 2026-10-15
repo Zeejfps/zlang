@@ -185,7 +185,7 @@ namespace save {
                 } }
             }
             event => {
-                let mut e = values::no_event{}
+                let mut e = values::ScriptEvent{ .. }
                 e.kind = @trunc(i32, number_at{ doc, s, label = "EventType", default = 0 })
                 let names = ["Int0", "Int1", "Int2", "Int3"]
                 let objs = ["Obj0", "Obj1", "Obj2", "Obj3"]

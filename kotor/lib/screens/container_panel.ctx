@@ -6,14 +6,10 @@ namespace container_panel {
     const STR_PLACE_ITEMS: u32 = 392         // the file's own title: items available to place in the container
 
     struct State {
-        open: bool,
-        panel: u32,
-        placeable: u32,
-        giving: bool,           // the party's items are listed, to put in
-    }
-
-    fn new {} -> State {
-        return State{ open = false, panel = 0, placeable = obj::INVALID, giving = false }
+        open: bool = false,
+        panel: u32 = 0,
+        placeable: u32 = obj::INVALID,
+        giving: bool = false,   // the party's items are listed, to put in
     }
 
     // CGuiInGame::OpenContainer: the panel in the middle of the screen, over the world.

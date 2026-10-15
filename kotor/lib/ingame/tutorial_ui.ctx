@@ -4,18 +4,14 @@
 // opens over everything, pausing the game unless the player has. After its last page it closes, the
 // pause it made ends, and the action that offered it is done (hud::redo_tutorial).
 namespace ingame {
-    struct TutorialBox { b: gui::TutorialBox, paused_it: bool, who: u32, target: u32, n: i32 }
-
-    fn no_tutorial_box {} -> TutorialBox {
-        return TutorialBox{ b = gui::no_tutorial_box{}, paused_it = false, who = obj::INVALID, target = obj::INVALID, n = 0 }
-    }
+    struct TutorialBox { b: gui::TutorialBox = gui::TutorialBox{ .. }, paused_it: bool = false, who: u32 = obj::INVALID, target: u32 = obj::INVALID, n: i32 = 0 }
 
     // MainLoop's step for the offer taken last (0x0062f4a0): marked shown, the box with its first page.
     fn update_tutorial { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device } {
         // A box something else took down (a conversation's interface, a module change) is over, and its pause.
         if ui.tbox.b.panel != 0 and gui::find_panel{ g = &ui.gui, id = ui.tbox.b.panel } == null {
             if ui.tbox.paused_it { clock::set_pause{ c = &w.clock, bit = clock::PAUSE_PLAYER, on = false } }
-            ui.tbox = no_tutorial_box{}
+            ui.tbox = TutorialBox{ .. }
             w.tut.open = false
         }
         let id = w.tut.pending
@@ -54,7 +50,7 @@ namespace ingame {
         let t = ui.tbox
         gui::close{ g = &ui.gui, id = t.b.panel }
         gui::play_sound{ g = &ui.gui, n = 0 }
-        ui.tbox = no_tutorial_box{}
+        ui.tbox = TutorialBox{ .. }
         w.tut.open = false
         if t.paused_it { clock::set_pause{ c = &w.clock, bit = clock::PAUSE_PLAYER, on = false } }
         if w.log.objects {

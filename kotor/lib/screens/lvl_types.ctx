@@ -95,7 +95,7 @@ namespace lvl {
         s.open = false
         s.who = obj::INVALID
         s.view = null
-        s.box = msgbox::blank{}
+        s.box = msgbox::Box{ .. }
         s.popup = 0
         s.step_kind = NO_STEP
         return s

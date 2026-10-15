@@ -28,7 +28,7 @@ namespace lvl {
         if not rules::level_up_options{ tables = w.rules, c = &f.c, class, out = &s.opts } { return }
         s.who = who
         s.class = class
-        s.box = msgbox::blank{}
+        s.box = msgbox::Box{ .. }
         s.ask = ASK_NOTHING
         s.step = 0
         s.step_kind = NO_STEP

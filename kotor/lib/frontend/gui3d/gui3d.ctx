@@ -59,7 +59,7 @@ namespace gui3d {
         let m = mdl_cache::get{ &fs, cache = &models, name = model } ifnull { return no_model{ name = model } }
         let camera = mdl::find_node{ model = m, name = camera_node } ifnull { return no_camera{ name = camera_node } }
         let pose = try mdl_anim::make_pose{ realloc = arena::alloc, heap = &heap, model = m }
-        let mut player = mdl_anim::new_player{}
+        let mut player = mdl_anim::Player{ .. }
         let mut playing = false
         if animation.len > 0 {
             let found = mdl_anim::find{ model = m, name = animation, lookup = mdl_cache::get{ &fs, cache = &models, _ } }

@@ -17,23 +17,23 @@ namespace mg {
     enum ObjKind: u8 { none, player, enemy, obstacle }
 
     struct Obj {
-        kind: ObjKind,
-        index: usize,                   // the enemy's place in Area.enemies, the obstacle's in Area.obstacles
-        name: resref::ResRef,           // the track or obstacle model
-        hit_points: i32, max_hit_points: i32,
-        sphere: f32,
-        num_loops: i32,
-        invincible: f32,                // seconds left
-        dead: bool,
-        removed: bool,
-        remove_at: f32,                 // time a dead object leaves the scene (its `die` animation)
-        trigger: bool,
-        rail: i32,                      // in Run.rails, -1 none
-        t: f32,                         // seconds along the rail
-        origin: math::Vec3,             // where the layout puts the track or obstacle model
-        position: math::Vec3,           // in the area, as of the last step
-        bounds: math::Aabb,             // obstacles: in the area
-        guns: [4]GunState,              // the trigger of each gun bank (turret)
+        kind: ObjKind = ObjKind::none,
+        index: usize = 0,               // the enemy's place in Area.enemies, the obstacle's in Area.obstacles
+        name: resref::ResRef = resref::empty{}, // the track or obstacle model
+        hit_points: i32 = 1, max_hit_points: i32 = 1,
+        sphere: f32 = 1.0,
+        num_loops: i32 = -1,
+        invincible: f32 = 0.0,          // seconds left
+        dead: bool = false,
+        removed: bool = false,
+        remove_at: f32 = 0.0,           // time a dead object leaves the scene (its `die` animation)
+        trigger: bool = false,
+        rail: i32 = -1,                 // in Run.rails, -1 none
+        t: f32 = 0.0,                   // seconds along the rail
+        origin: math::Vec3 = math::vec3::zero{}, // where the layout puts the track or obstacle model
+        position: math::Vec3 = math::vec3::zero{}, // in the area, as of the last step
+        bounds: math::Aabb = math::aabb::empty{}, // obstacles: in the area
+        guns: [4]GunState = [GunState{ .. }; 4], // the trigger of each gun bank (turret)
     }
 
     // A script to run: slot (ON_*) of the object's scripts. `value` is the hit points an OnDamage
@@ -90,15 +90,6 @@ namespace mg {
         return n
     }
 
-    fn no_obj {} -> Obj {
-        return Obj{
-            kind = ObjKind::none, index = 0, name = resref::empty{}, hit_points = 1, max_hit_points = 1, sphere = 1.0, num_loops = -1,
-            invincible = 0.0, dead = false, removed = false, remove_at = 0.0, trigger = false, rail = -1, t = 0.0,
-            origin = math::vec3::zero{}, position = math::vec3::zero{}, bounds = math::aabb::empty{},
-            guns = [no_gun{}; 4],
-        }
-    }
-
     // ---- making a run
 
     // The layout's placement of the model called `name` among `places`, if it has one.
@@ -134,7 +125,7 @@ namespace mg {
     }
 
     fn follower_obj { kind: ObjKind, index: usize, f: Follower, origin: math::Vec3, rail: i32 } -> Obj {
-        let mut o = no_obj{}
+        let mut o = Obj{ .. }
         o.kind = kind
         o.index = index
         o.name = f.track
@@ -157,10 +148,10 @@ namespace mg {
     } -> !*mut Run {
         let rails = try alloc::resize(Rail, S){ realloc, &heap, mem = slice::empty(Rail){}, count = 1 + area.enemies.len }
         let mut run = Run{
-            area, objs = [no_obj{}; 255], rails,
+            area, objs = [Obj{ .. }; 255], rails,
             tunnel_pos = area.player.tunnel_pos, tunnel_neg = area.player.tunnel_neg, tunnel_infinite = area.player.tunnel_infinite,
             lateral_accel = area.lateral_accel, invincibility = area.player.invincibility,
-            gears = slice::empty(Gear){}, bullets = [no_bullet{}; 96],
+            gears = slice::empty(Gear){}, bullets = [Bullet{ .. }; 96],
             ..
         }
         let gears = try alloc::resize(Gear, S){ realloc, &heap, mem = slice::empty(Gear){}, count = 1 + area.enemies.len }
@@ -215,7 +206,7 @@ namespace mg {
         while i < area.obstacles.len and run.count < MAX_OBJECTS {
             let mut oname = area.obstacles[i]
             let origin = placement_of{ places = layout.obstacles, name = resref::bytes{ r = &oname } } ifnull math::vec3::zero{}
-            let mut o = no_obj{}
+            let mut o = Obj{ .. }
             o.kind = ObjKind::obstacle
             o.index = i
             o.name = oname

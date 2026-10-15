@@ -78,7 +78,7 @@ namespace rt_dlg {
 
     // event EventConversation()
     fn event_conversation { mut w: world::World, mut vm: nwvm::Vm } -> ! {
-        let mut e = values::no_event{}
+        let mut e = values::ScriptEvent{ .. }
         e.kind = events::DIALOGUE
         let h = values::add{ s = &w.values, v = values::Value::event{ e } }
         try nwvm::push_engine{ &vm, kind = nwvm::EngineType::event, handle = h }
@@ -136,7 +136,7 @@ namespace rt_dlg {
                 let pattern = c.listen_text[k][0..@as(usize, c.listen_len[k])]
                 k = k + 1
                 if not glob{ pattern, text } { continue }
-                let mut e = values::no_event{}
+                let mut e = values::ScriptEvent{ .. }
                 e.kind = events::DIALOGUE
                 e.ints = [0, c.listen_number[k - 1], 0, 0]
                 e.objects[0] = speaker

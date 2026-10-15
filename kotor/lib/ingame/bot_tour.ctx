@@ -12,22 +12,18 @@ namespace bot {
     const TOUR_STILL: u32 = 15                      // decisions without getting half a metre closer before it is dropped (5 s)
 
     struct Tour {
-        on: bool,
-        ids: [96]u32,
-        at: [96]math::Vec3,                         // where to walk for each stop
-        count: usize,
-        next: usize,
-        waiting: u32,
-        best: f32,                                  // the nearest the leader has been to this stop
-        still: u32,                                 // decisions since it last got closer
-        foe: u32,                                   // the foe the leader has been fighting
-        fought: u32,                                // decisions spent on it
-        ignore: u32,                                // a foe given up on
-        acted: bool,                                // the door of this stop was ordered open, the placeable used, the creature spoken to
-    }
-
-    fn new_tour {} -> Tour {
-        return Tour{ on = false, ids = [obj::INVALID; 96], at = [math::vec3::zero{}; 96], count = 0, next = 0, waiting = 0, best = 1000000.0, still = 0, foe = obj::INVALID, fought = 0, ignore = obj::INVALID, acted = false }
+        on: bool = false,
+        ids: [96]u32 = [obj::INVALID; 96],
+        at: [96]math::Vec3 = [math::vec3::zero{}; 96], // where to walk for each stop
+        count: usize = 0,
+        next: usize = 0,
+        waiting: u32 = 0,
+        best: f32 = 1000000.0,                      // the nearest the leader has been to this stop
+        still: u32 = 0,                             // decisions since it last got closer
+        foe: u32 = obj::INVALID,                    // the foe the leader has been fighting
+        fought: u32 = 0,                            // decisions spent on it
+        ignore: u32 = obj::INVALID,                 // a foe given up on
+        acted: bool = false,                        // the door of this stop was ordered open, the placeable used, the creature spoken to
     }
 
     // What kind of stop an object makes: 0 waypoint, 1 trigger, 2 door, 3 placeable, 4 creature; -1 none.
@@ -131,7 +127,7 @@ namespace bot {
 
     // Picks the stops and orders them nearest first from the leader.
     fn tour_build { mut b: Bot, w: *world::World } {
-        b.tour = new_tour{}
+        b.tour = Tour{ .. }
         let me = world::object{ w, id = party::leader{ w } } ifnull { return }
         let all = list::items{ list = w.objects.all }
         let mut total: [5]usize = [0; 5]

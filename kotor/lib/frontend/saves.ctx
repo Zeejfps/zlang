@@ -294,7 +294,7 @@ namespace frontend {
         let bytes = fs::read_all(heap::Heap){ &fs, heap, realloc = heap::alloc, path } iferr { return null }
         defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap, mem = bytes, count = 0 }
         let t = tex::read_tga{ realloc = arena::alloc, heap = &scratch, bytes } iferr { return null }
-        let texture = material::upload{ &dev, &scratch, t, props = material::no_props{} } iferr { return null }
+        let texture = material::upload{ &dev, &scratch, t, props = material::Props{ .. } } iferr { return null }
         arena::reset{ heap = &scratch }
         return texture
     }
