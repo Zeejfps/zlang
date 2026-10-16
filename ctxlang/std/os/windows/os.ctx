@@ -680,8 +680,9 @@ namespace os {
         if ok == 0 { return proc_failed{ code = last_error{ &proc } } }
         // A Job Object, for a group or to end the child with this program. It ends what is in
         // it when its handle is closed (JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE) if wait is to end a
-        // group's leftovers, or the child is to die with this program: then wait doesn't close
-        // it if that would end what wait keeps, and it stays open until this program ends.
+        // group's leftovers, or the child is to die with this program. A job whose leftovers
+        // outlive the child is its `cleanup`, which wait lets go of without ending them (spare);
+        // with `leftovers = kill` it is 0, and wait closes `group`, which ends them.
         let ends_leftovers = options.group and options.leftovers is kill
         let mut job: u64 = 0
         let mut cleanup: u64 = 0
@@ -693,7 +694,7 @@ namespace os {
                 return error
             }
             _ = ResumeThread{ &proc, thread = info.thread }
-            if ends_leftovers or not options.die_with_parent { cleanup = job }
+            if not ends_leftovers { cleanup = job }
         }
         _ = close_handle{ &proc, handle = info.thread }
         started = true
@@ -897,9 +898,9 @@ namespace os {
         return n + times
     }
 
-    // Waits for a child to end: its exit code. Then it closes the child's handle, and its
-    // `cleanup`, a Job Object, if it has one: with `leftovers = kill` that ends whatever of the
-    // group is still running (JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE).
+    // Waits for a child to end: its exit code. Then it releases the child's handle and its Job
+    // Object (release): with `leftovers = kill` that ends whatever of the group is still
+    // running (JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE), and otherwise leaves it running.
     fn wait { mut proc: Proc, child: proc::Child } -> proc::Error!i32 {
         defer release{ &proc, child }
         if WaitForSingleObject{ &proc, handle = child.id, ms = INFINITE } == WAIT_FAILED { return proc_failed{ code = last_error{ &proc } } }
@@ -931,10 +932,28 @@ namespace os {
         return @trunc(i32, code)
     }
 
-    // Closes a child's handle and its cleanup's.
+    // Closes the handle of a child that has ended, and of its Job Object: its `cleanup`, whose
+    // leftovers outlive it, once spare has let them go, or else its group's, which with
+    // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE ends them. If spare can't, the job's handle stays open
+    // until this program ends, which ends them then: what is left of a child that dies with
+    // this program isn't ended sooner than it would be.
     fn release { mut proc: Proc, child: proc::Child } {
         _ = close_handle{ &proc, handle = child.id }
-        if child.cleanup != 0 { _ = close_handle{ &proc, handle = child.cleanup } }
+        if child.cleanup != 0 {
+            if spare{ &proc, job = child.cleanup } { _ = close_handle{ &proc, handle = child.cleanup } }
+        } else if child.group != 0 {
+            _ = close_handle{ &proc, handle = child.group }
+        }
+    }
+
+    // Clears a Job Object's limits, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE among them, so that
+    // closing its handle leaves what is in it running: whether it did. Once the child has
+    // ended, what it started needn't end with this program, as on Linux, whose
+    // PR_SET_PDEATHSIG ends only the child.
+    fn spare { mut proc: Proc, job: u64 } -> bool {
+        let mut limits = JobLimits{ times = [0; 2], flags = 0, rest = [0; 15] }
+        let size = @as(u32, @size_of(JobLimits))
+        return SetInformationJobObject{ &proc, job, class = JOB_OBJECT_EXTENDED_LIMIT_INFORMATION, info = &limits, size } != 0
     }
 
     // Ends a child with proc::KILLED as its exit code: TerminateJobObject, which ends every

@@ -11454,6 +11454,46 @@ fn main { mut proc: Proc } -> i32 {
         self.assertFalse(gone(pid, timeout=1), 'the child ended with the program')
         self.assertLess(took, 30)
 
+    def test_die_with_parent_lets_leftovers_go(self):
+        # die_with_parent covers the child until it ends: a grandchild it started, still running
+        # when the child is waited for, outlives this program too, which ends normally, unless
+        # wait ends it (group with leftovers = kill, test_leftovers). On Windows wait clears the
+        # Job Object's KILL_ON_JOB_CLOSE before it closes it; on Linux PR_SET_PDEATHSIG was only
+        # ever the child's.
+        exe = self.build_proc("""
+    let cmd: [3][]u8 = [args[0], "-c", args[2]]
+    let group = slice::eq_bytes{ a = args[1], b = "group" }
+    let options = proc::Options{
+        stdin = proc::Stdio::ignore, stdout = proc::Stdio::pipe, stderr = proc::Stdio::ignore,
+        group, leftovers = proc::Leftovers::keep, die_with_parent = true, ..
+    }
+    let mut child = proc::spawn{ &proc, argv = cmd[..], options } iferr { return 1 }
+    let r = child.stdout ifnull { return 2 }
+    let mut got: [64]u8
+    let mut n: usize = 0
+    while n == 0 or got[n - 1] != '\\n' {
+        let k = proc::read{ &proc, pipe = r, into = got[n..] } iferr { return 3 }
+        if k == 0 { return 4 }
+        n = n + k
+    }
+    io::print{ &io, s = utf8::of{ chars = got[..n] } }
+    io::println_i64{ &io, n = proc::wait{ &proc, &child } iferr { return 5 } }
+    return 0
+""")
+        script = ('import subprocess, sys\n'
+                  'p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])\n'
+                  'print(p.pid, flush=True)')
+        for kind in ['plain', 'group']:
+            with self.subTest(kind=kind):
+                out, err, code, took = self.run_built(exe, [sys.executable, kind, script])
+                self.assertEqual(code, 0, err)
+                lines = out.split('\n')
+                self.assertEqual(lines[1], '0', out)
+                pid = int(lines[0])
+                self.addCleanup(kill_pid, pid)
+                self.assertFalse(gone(pid, timeout=1), 'the grandchild ended')
+                self.assertLess(took, 30)
+
     def test_leftovers(self):
         # A child in a group of its own starts a grandchild that sleeps, says its pid, and ends.
         # wait then ends the grandchild, with leftovers = kill, the default, or leaves it

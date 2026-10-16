@@ -79,10 +79,11 @@ namespace proc {
 
     // A program that `spawn` started, to `wait` for once: its process id, or its process handle
     // on Windows. `group` is its group's, with Options' `group`: the process group's id, which is
-    // the child's, or the Job Object's handle on Windows; 0 without. `cleanup` is what `wait`
-    // ends or closes once the child has ended, for the platform's layer: the process group to
-    // kill, with `leftovers = kill`, or on Windows the Job Object whose handle it closes; 0 for
-    // nothing. Its pipes are its streams that Options made `pipe`s, and null for the others.
+    // the child's, or the Job Object's handle on Windows; 0 without. `cleanup` is for the
+    // platform's layer, what `wait` does once the child has ended: on POSIX the process group
+    // it kills, with `leftovers = kill`; on Windows the Job Object whose leftovers outlive the
+    // child, which it lets go of; 0 for nothing. Its pipes are its streams that Options made
+    // `pipe`s, and null for the others.
     struct Child { id: u64, group: u64, cleanup: u64, stdin: ?Pipe, stdout: ?Pipe, stderr: ?Pipe }
 
     // How many processors this program may run on: at least 1.
@@ -125,9 +126,11 @@ namespace proc {
     // started since. macOS has no such thing, and ignores it: there a child that hangs is only
     // ended by this program, with `kill`, as after a `wait_for` that gave up.
     //
-    // On Windows a Job Object that ends the child with this program, but whose leftovers `wait`
-    // keeps (`die_with_parent` without `group`, or with `leftovers = keep`), stays open until
-    // the program ends, since closing it would end them: a handle for each such child.
+    // It is the child that dies with this program, until it has ended. What it started is let
+    // go of then, unless `wait` ends it (a `group` with `leftovers = kill`): on Linux,
+    // PR_SET_PDEATHSIG was only ever the child's; on Windows, `wait` clears the Job Object's
+    // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE before it closes it (`die_with_parent` without `group`,
+    // or with `leftovers = keep`).
     fn spawn { mut proc: Proc, argv: [][]u8, options: Options } -> !Child {
         if argv.len == 0 { rt::fail{ msg = "proc: run needs a program to run" } }
         let env = options.env
