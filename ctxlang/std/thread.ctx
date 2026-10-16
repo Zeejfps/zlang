@@ -1,5 +1,5 @@
-// std: thread, atomic, mutex and condition. Threads of the operating system (spec §15, rule 14;
-// ctxlang/threads.md, layer 1). Nothing keeps two threads from sharing memory: what they share,
+// std: thread, atomic, mutex and condition. Threads of the operating system (spec §15, rule 14).
+// Nothing keeps two threads from sharing memory: what they share,
 // and when it is freed, is the program's to manage, as in C, with the atomics (spec §13), a
 // mutex or a condition.
 //

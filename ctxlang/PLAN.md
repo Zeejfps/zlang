@@ -558,13 +558,3 @@ program asks for one (spec §19).
     pattern payloads may merge success/error provenance. `derived` and `held` remain separate.
   - The extra body check increases front-end work; a safety-only replay can replace it later
     if profiling justifies the additional machinery.
-
-## Risks
-
-- **One implementation.** With ctxi gone, a checker bug that the tests don't state goes
-  unnoticed. Mitigation: a test for every language change, with its expected output or error.
-- **Checker subtlety.** Literal inference that spans a whole function body, exclusivity and escape
-  analysis have many edge cases. Mitigation: error-fragment tests.
-- **Language friction.** ctxc pushes on method sugar (Q4), and imports and files as namespaces
-  (Q5, Q6). Each point of friction goes in [FRICTION.md](FRICTION.md) as evidence for these
-  questions.
