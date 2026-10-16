@@ -1111,7 +1111,7 @@ namespace drive {
             try! list::push{ list = &argv, item = c_tmp }
             try! list::push{ list = &argv, item = "-o" }
             try! list::push{ list = &argv, item = o_tmp }
-            match proc::spawn{ &proc, argv = list::items{ list = argv }, env = d.cc_env } {
+            match proc::spawn{ &proc, argv = list::items{ list = argv }, options = proc::Options{ env = d.cc_env, .. } } {
                 ok{ value } => { try! list::push{ list = &jobs, item = Job{ child = value, c_tmp, o_tmp, c = cat{ &heap, a = tag, b = ".c" }, o = obj } } }
                 err{ error } => {
                     _ = started{ &io, r = error, what = d.cc[0] }
@@ -1198,7 +1198,8 @@ namespace drive {
     // Waits for a unit's C compiler, and puts its object and C in place. False after saying it
     // failed.
     fn finish { mut io: Io, mut fs: Fs, mut proc: Proc, d: Driver, job: Job } -> bool {
-        let code = started{ &io, r = proc::wait{ &proc, child = job.child }, what = d.cc[0] }
+        let mut child = job.child
+        let code = started{ &io, r = proc::wait{ &proc, &child }, what = d.cc[0] }
         if code != 0 {
             io::eprintln{ &io, s = "ctxc: the C compiler failed" }
             _ = fs::remove{ &fs, path = job.c_tmp }

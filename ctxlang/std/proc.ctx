@@ -3,21 +3,28 @@
 // Every function takes `mut proc: Proc`. Only `main` receives a `Proc`, from the runtime, so a
 // function can start programs or read the environment only if its caller passes it down.
 //
-//   fn main { mut io: Io, mut proc: Proc, mut mem: Mem } -> i32 {
+//   fn main { mut io: Io, mut proc: Proc } -> i32 {
+//       let options = proc::Options{ stdout = proc::Stdio::pipe, .. }
+//       let mut child = proc::spawn{ &proc, argv = ["cc", "--version"], options } iferr { return 127 }
+//       let out = child.stdout ifnull { return 1 }
 //       let mut buf: [4096]u8
-//       let mut heap = arena::new{ buf = buf[..] }
-//       let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
-//       list::push{ list = &argv, item = "cc" } iferr { return 1 }
-//       list::push{ list = &argv, item = "--version" } iferr { return 1 }
-//       return proc::run{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} } iferr { 127 }
+//       while true {
+//           let n = proc::read{ &proc, pipe = out, into = buf[..] } iferr { 0 }
+//           if n == 0 { break }
+//           io::write{ &io, to = io::Stream::out, bytes = buf[..n] }
+//       }
+//       return proc::wait{ &proc, &child } iferr { 127 }
 //   }
 //
-// `spawn` starts a program without waiting for it, so that several run at once, and `wait` waits
-// for one.
+// `run` starts a program and waits for it, sharing this program's standard input, output and
+// error. `spawn` starts one without waiting for it, so that several run at once, with Options
+// that say where its streams go: a `pipe` is read or written with `read`, `write` and `close`.
+// `wait` waits for it, `wait_for` waits until a deadline, and `kill` ends it. None of them
+// starts a thread, so a program needn't be threaded to use them (spec §15, Entry point, rule 8).
 
 // Permission to start programs and to read this program's environment. It includes what its
 // platform's layer needs for that, os::Proc (std/os), such as C's environ, the console, which
-// the programs it starts share (`run` writes standard output's buffer out first), and proc's
+// the programs it starts share (`spawn` writes standard output's buffer out first), and proc's
 // state.
 capability Proc { ..os::Proc, ..Io, ..proc::State }
 
@@ -31,12 +38,52 @@ namespace proc {
 
     error not_found             // no such program, on PATH or at the path given
     error permission_denied
+    error broken_pipe           // `write` to a child's standard input after the child closed it
     error other{ code: i64 }    // the OS's error number
 
-    // What the platform's layer (std/os) may fail with, on every platform, starting or waiting
-    // for a program: spawn and wait declare this set (spec §8, Errors, rule 14). It is open, as
-    // fs::Error is.
-    type Error = error(not_found, permission_denied, other, ..)
+    // What the platform's layer (std/os) may fail with, on every platform, starting a program,
+    // waiting for it, ending it, or using its pipes: each of those declares this set (spec §8,
+    // Errors, rule 14). It is open, as fs::Error is.
+    type Error = error(not_found, permission_denied, broken_pipe, other, ..)
+
+    // Where one of a child's standard streams goes.
+    union Stdio {
+        inherit,                    // this program's own stream
+        ignore,                     // the null device: reading it ends at once, and what is written to it vanishes
+        pipe,                       // a pipe whose other end this program holds: the Child's stdin, stdout or stderr
+        file{ file: fs::File },     // an open file (fs::open): the child gets its own copy of the handle, and this program still closes its own
+    }
+
+    // What becomes of what is left of a child's group once the child has ended, and is waited
+    // for (Options' `leftovers`, which only a `group` has).
+    union Leftovers {
+        kill,                       // `wait` ends it, as `kill` would, before it releases the child
+        keep,                       // it goes on running
+    }
+
+    // How `spawn` starts a program. A literal names what differs and takes the rest from the
+    // defaults (spec §7, rule 4): `proc::Options{ stdout = proc::Stdio::pipe, .. }`.
+    struct Options {
+        env: [][]u8 = [],               // "KEY=VALUE" entries the program gets besides this one's environment, each replacing an entry of the same key
+        dir: []u8 = "",                 // the program's working directory; "" is this program's
+        stdin: Stdio = Stdio::inherit,
+        stdout: Stdio = Stdio::inherit,
+        stderr: Stdio = Stdio::inherit,
+        group: bool = false,            // a group of its own, which `kill` ends with all it started: a process group (POSIX), a Job Object (Windows)
+        leftovers: Leftovers = Leftovers::kill,     // with `group`: whether `wait` ends what is left of the group
+        die_with_parent: bool = false,  // the child ends when this program does (spawn says how); not on macOS
+    }
+
+    // This program's end of a pipe to or from a child: a file descriptor, or a Windows HANDLE.
+    struct Pipe { id: u64 }
+
+    // A program that `spawn` started, to `wait` for once: its process id, or its process handle
+    // on Windows. `group` is its group's, with Options' `group`: the process group's id, which is
+    // the child's, or the Job Object's handle on Windows; 0 without. `cleanup` is what `wait`
+    // ends or closes once the child has ended, for the platform's layer: the process group to
+    // kill, with `leftovers = kill`, or on Windows the Job Object whose handle it closes; 0 for
+    // nothing. Its pipes are its streams that Options made `pipe`s, and null for the others.
+    struct Child { id: u64, group: u64, cleanup: u64, stdin: ?Pipe, stdout: ?Pipe, stderr: ?Pipe }
 
     // How many processors this program may run on: at least 1.
     fn processors { mut proc: Proc } -> u32 {
@@ -55,24 +102,35 @@ namespace proc {
         return os::OS
     }
 
-    // Runs program argv[0] with the arguments argv[1..] and waits for it to end. argv[0] is
-    // looked for on PATH unless it holds a path separator. The program gets this one's
-    // environment plus `env`'s "KEY=VALUE" entries, each replacing an entry of the same key, and
-    // shares its standard input, output and error. Returns the program's exit code; one that a
-    // signal N killed has 128 + N, as a shell says.
+    // Runs program argv[0] with the arguments argv[1..] and waits for it to end, as `spawn`
+    // starts it with Options' defaults but `env`: it shares this program's standard input,
+    // output and error. Returns the program's exit code; one that a signal N killed has 128 + N,
+    // as a shell says.
     fn run { mut proc: Proc, argv: [][]u8, env: [][]u8 } -> !i32 {
-        let child = try spawn{ &proc, argv, env }
-        return try wait{ &proc, child }
+        let mut child = try spawn{ &proc, argv, options = Options{ env, .. } }
+        return try wait{ &proc, &child }
     }
 
-    // A program that `spawn` started, to `wait` for once: its process handle on Windows, its
-    // process id elsewhere.
-    struct Child { id: u64 }
-
-    // Starts a program as `run` does, without waiting for it: several may run at once. Every
-    // child must be waited for, once.
-    fn spawn { mut proc: Proc, argv: [][]u8, env: [][]u8 } -> !Child {
+    // Starts program argv[0] with the arguments argv[1..], without waiting for it: several may
+    // run at once. argv[0] is looked for on PATH unless it holds a path separator. The program
+    // gets this one's environment plus options.env's "KEY=VALUE" entries, each replacing an
+    // entry of the same key, and its streams go where options says. Every child must be waited
+    // for, once, with `wait`, or with `wait_for` until it returns a code.
+    //
+    // A child outlives this program unless Options' `die_with_parent` says otherwise. With it,
+    // on Linux, the child ends when the thread that started it does, as if `kill` had ended it
+    // (prctl's PR_SET_PDEATHSIG): when this program ends, or when another thread of it that
+    // started the child ends first. On Windows the child is in a Job Object that ends what is
+    // in it when its handle is closed, as it is when this program ends: the child and what it
+    // started since. macOS has no such thing, and ignores it: there a child that hangs is only
+    // ended by this program, with `kill`, as after a `wait_for` that gave up.
+    //
+    // On Windows a Job Object that ends the child with this program, but whose leftovers `wait`
+    // keeps (`die_with_parent` without `group`, or with `leftovers = keep`), stays open until
+    // the program ends, since closing it would end them: a handle for each such child.
+    fn spawn { mut proc: Proc, argv: [][]u8, options: Options } -> !Child {
         if argv.len == 0 { rt::fail{ msg = "proc: run needs a program to run" } }
+        let env = options.env
         let mut i: usize = 0
         while i < env.len {
             let e = env[i]
@@ -80,12 +138,61 @@ namespace proc {
             i = i + 1
         }
         io::flush{ io = &proc }
-        return Child{ id = try os::spawn{ &proc, argv, env } }
+        return try os::spawn{ &proc, argv, options }
     }
 
-    // Waits for a child to end, and returns its exit code as `run` does.
-    fn wait { mut proc: Proc, child: Child } -> !i32 {
-        return try os::wait{ &proc, id = child.id }
+    // Waits for a child to end, and returns its exit code as `run` does. A `group`'s with
+    // `leftovers = kill` then ends whatever of its group is still running. Then it releases the
+    // child: its handle, its Job Object on Windows, and its pipes that are still open, which it
+    // closes and sets to null. Read what a child writes to a pipe before waiting for it: a child
+    // that fills a pipe waits for it to be read.
+    fn wait { mut proc: Proc, mut child: Child } -> !i32 {
+        let code = os::wait{ &proc, child }
+        release{ &proc, &child }
+        return try code
+    }
+
+    // As `wait`, giving up after `nanoseconds`: null if the child is still running, and then it
+    // isn't released, nor its group's leftovers ended. 0 checks without waiting. It waits for
+    // the child itself, not by waking now and then to look.
+    fn wait_for { mut proc: Proc, mut child: Child, nanoseconds: u64 } -> !?i32 {
+        let code = try os::wait_for{ &proc, child, nanoseconds }
+        if code != null { release{ &proc, &child } }
+        return code
+    }
+
+    // Ends a child at once, without a chance to clean up, and with it its whole group if it has
+    // one: SIGKILL, or TerminateJobObject or TerminateProcess on Windows. Its exit code then says
+    // so: 128 + 9, as for SIGKILL, on every platform. It must still be waited for. A child that
+    // has ended already, but hasn't been waited for, needs nothing.
+    fn kill { mut proc: Proc, child: Child } -> ! {
+        try os::kill{ &proc, child }
+    }
+
+    // Reads at most into.len bytes of what a child writes to a pipe. Returns how many; 0 at the
+    // end of its output, when the child has closed its end, as it does when it ends. It waits
+    // until there is something to read.
+    fn read { mut proc: Proc, pipe: Pipe, into: []mut u8 } -> !usize {
+        if into.len == 0 { return 0 }
+        return try os::pipe_read{ &proc, pipe = pipe.id, into }
+    }
+
+    // Writes all of `bytes` to a child's standard input, waiting while its pipe is full. Fails
+    // with broken_pipe once the child has closed it, or has ended. On Linux and macOS that is
+    // also SIGPIPE, which ends this program unless it ignores the signal.
+    fn write { mut proc: Proc, pipe: Pipe, bytes: []u8 } -> !usize {
+        let mut done: usize = 0
+        while done < bytes.len {
+            done = done + try os::pipe_write{ &proc, pipe = pipe.id, bytes = bytes[done..] }
+        }
+        return done
+    }
+
+    // Closes a pipe if it is set, and sets it to null: `close{ &proc, pipe = &child.stdin }`
+    // ends a child's input, as the end of a file would.
+    fn close { mut proc: Proc, mut pipe: ?Pipe } {
+        if let p = pipe { os::pipe_close{ &proc, pipe = p.id } }
+        pipe = null
     }
 
     // The value of environment variable `name`, or null if it isn't set. It lives until the
@@ -97,6 +204,13 @@ namespace proc {
     // This program's environment: its "KEY=VALUE" entries, which live until the program ends.
     fn environment { mut proc: Proc } -> [][]u8 {
         return os::environment{ &proc }
+    }
+
+    // Closes a child's pipes that are still open (wait and wait_for).
+    fn release { mut proc: Proc, mut child: Child } {
+        close{ &proc, pipe = &child.stdin }
+        close{ &proc, pipe = &child.stdout }
+        close{ &proc, pipe = &child.stderr }
     }
 
     // ---- for the platform's layer (std/os)
@@ -131,4 +245,9 @@ namespace proc {
         }
         return true
     }
+
+    // The exit code `kill` gives a child: 128 + 9, what a shell says of one SIGKILL ended. On
+    // Windows, where nothing else says a program was ended, TerminateProcess gives it as its
+    // exit code, so that it is the same on every platform.
+    const KILLED: i32 = 137
 }

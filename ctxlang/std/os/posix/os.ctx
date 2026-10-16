@@ -265,32 +265,81 @@ namespace os {
         return true
     }
 
-    // ---- for std's proc: programs, started with posix_spawnp and waited for with waitpid. A
-    // child's id is its process id.
+    // ---- for std's proc: programs, started by sys::spawn, with fork and exec on Linux and
+    // posix_spawnp on macOS, and waited for with waitpid. A child's id is its process id, and
+    // its group's, the process group's id, is the same; a pipe's id is its file descriptor.
 
-    extern fn posix_spawnp { mut proc: Proc, mut pid: i32, file: *u8, actions: ?*u8, attrs: ?*u8, argv: *?*u8, envp: *?*u8 } -> i32
     extern fn waitpid { mut proc: Proc, pid: i32, mut status: i32, options: i32 } -> i32
     extern fn sysconf { mut proc: Proc, name: i32 } -> i64
+    extern fn getpid { mut proc: Proc } -> i32
+    #c::symbol{ name = "kill" }
+    extern fn c_kill { mut proc: Proc, pid: i32, signal: i32 } -> i32
+    #c::symbol{ name = "read" }
+    extern fn read_fd { mut proc: Proc, fd: i32, buf: *mut u8, count: usize } -> i64
+    #c::symbol{ name = "write" }
+    extern fn write_fd { mut proc: Proc, fd: i32, buf: *u8, count: usize } -> i64
+    #c::symbol{ name = "close" }
+    extern fn close_fd { mut proc: Proc, fd: i32 } -> i32
     #c::symbol{ name = "malloc" }
     extern fn c_malloc { mut proc: Proc, size: usize } -> ?*mut u8
     #c::symbol{ name = "free" }
     extern fn c_free { mut proc: Proc, p: *mut u8 }
 
-    // Starts argv[0] with this program's environment, less the entries env replaces, and env's
-    // own. argv and env aren't empty and are checked (proc::spawn). Its arrays of C strings are
-    // in one block from malloc, while posix_spawnp copies them.
-    fn spawn { mut proc: Proc, argv: [][]u8, env: [][]u8 } -> proc::Error!u64 {
+    // The numbers Linux and macOS share: waitpid's option not to wait, SIGKILL, errno's, and
+    // fcntl's command that sets a descriptor's flags, with its one flag.
+    const WNOHANG: i32 = 1
+    const SIGKILL: i32 = 9
+    const EPERM: i32 = 1
+    const ENOENT: i32 = 2
+    const ESRCH: i32 = 3
+    const EINTR: i32 = 4
+    const EBADF: i32 = 9
+    const EACCES: i32 = 13
+    const EPIPE: i32 = 32
+    const F_GETFD: i32 = 1
+    const F_SETFD: i32 = 2
+    const FD_CLOEXEC: i64 = 1
+    const O_RDWR: i32 = 2
+
+    // What sys::spawn's fds say of a stream that isn't put in place: the child's is this
+    // program's own, or this program hasn't one open, and then the child hasn't either.
+    const INHERITED: i32 = -1
+    const CLOSED: i32 = -2
+
+    // sys::await_exit's `nanoseconds` for waiting as long as it takes.
+    const FOREVER: u64 = 18446744073709551615
+
+    // What the C library searches for a program without PATH in the environment.
+    const DEFAULT_PATH: []u8 = "/bin:/usr/bin"
+
+    // Starts argv[0] as proc::spawn says, with this program's environment, less the entries
+    // options.env replaces, and options.env's own. argv and options.env aren't empty and are
+    // checked (proc::spawn). What the child needs is made first, since on Linux it can't
+    // allocate (sys::spawn): in one block from malloc, the arrays of C strings, the directory,
+    // and PATH, this program's, which execvp and posix_spawnp search for a program without a
+    // '/' in its name, with room for each path tried; and the descriptors its standard streams
+    // become.
+    fn spawn { mut proc: Proc, argv: [][]u8, options: proc::Options } -> proc::Error!proc::Child {
+        let extra = options.env
         let inherited = proc.environ
         let mut n: usize = 0
         if inherited != null {
             while inherited[n] != null { n = n + 1 }
         }
-        let words = argv.len + 1 + n + env.len + 1
-        let mut size = words * 8
+        let program = argv[0]
+        let mut searched = true
         let mut i: usize = 0
+        while i < program.len {
+            if program[i] == '/' { searched = false }
+            i = i + 1
+        }
+        let search = if searched { env{ &proc, name = "PATH" } ifnull DEFAULT_PATH } else { "" }
+        let words = argv.len + 1 + n + extra.len + 1
+        let mut size = words * 8 + options.dir.len + 1 + search.len + 1 + search.len + program.len + 2
+        i = 0
         while i < argv.len { size = size + argv[i].len + 1; i = i + 1 }
         i = 0
-        while i < env.len { size = size + env[i].len + 1; i = i + 1 }
+        while i < extra.len { size = size + extra[i].len + 1; i = i + 1 }
         let block = c_malloc{ &proc, size } ifnull {
             rt::fail{ msg = "out of memory" }
             return proc::other{ code = 12 }
@@ -310,25 +359,118 @@ namespace os {
         i = 0
         while inherited != null and i < n {
             let entry = inherited[i] ifnull { break }
-            if not proc::overridden{ entry = c::bytes{ s = entry }, env } {
+            if not proc::overridden{ entry = c::bytes{ s = entry }, env = extra } {
                 ptrs[k] = entry.ptr
                 k = k + 1
             }
             i = i + 1
         }
         i = 0
-        while i < env.len {
+        while i < extra.len {
             ptrs[k] = text
-            text = c_copy{ into = text, bytes = env[i] }
+            text = c_copy{ into = text, bytes = extra[i] }
             k = k + 1
             i = i + 1
         }
         ptrs[k] = null
         let file = ptrs[0] ifnull { return proc::not_found }
-        let mut pid: i32 = 0
-        let r = posix_spawnp{ &proc, pid = &pid, file, actions = null, attrs = null, argv = ptrs.ptr, envp = ptrs.ptr + envp }
-        if r != 0 { return proc_failed{ code = r } }
-        return @as(u64, pid)
+        let mut dir: ?*u8 = null
+        if options.dir.len > 0 {
+            dir = text
+            text = c_copy{ into = text, bytes = options.dir }
+        }
+        let mut path: ?*u8 = null
+        if searched {
+            path = text
+            text = c_copy{ into = text, bytes = search }
+        }
+        let scratch = text
+
+        // What the child's descriptors 0, 1 and 2 become: INHERITED for this program's own, or
+        // CLOSED for one that this program hasn't open, which the child hasn't either; this
+        // program's ends of pipes, the Child's; and the descriptors made for the child, closed
+        // once it has started, or hasn't: three for the streams, and three for those moved.
+        //
+        // Which of 0, 1 and 2 this program has open is asked first, before anything here takes
+        // one that is free. Every descriptor made here goes above 2 (above), so that none sits
+        // where the child's stream is this program's own, or is replaced when the child puts
+        // its streams in place.
+        let mut fds: [3]i32 = [INHERITED, INHERITED, INHERITED]
+        let mut ours: [3]i32 = [-1, -1, -1]
+        let mut made: [6]i32 = [-1, -1, -1, -1, -1, -1]
+        let mut started = false
+        defer close_all{ &proc, fds = made[..] }
+        defer {
+            if not started { close_all{ &proc, fds = ours[..] } }
+        }
+        let mut s: usize = 0
+        while s < 3 {
+            if sys::fcntl{ &proc, fd = @as(i32, s), cmd = F_GETFD, arg = 0 } < 0 { fds[s] = CLOSED }
+            s = s + 1
+        }
+        s = 0
+        while s < 3 {
+            let stdio = if s == 0 { options.stdin } else if s == 1 { options.stdout } else { options.stderr }
+            match stdio {
+                inherit => {}
+                ignore => {
+                    let fd = above{ &proc, fd = sys::open_null{ &proc } }
+                    if fd < 0 { return proc_failed{ code = sys::proc_errno{ &proc }.* } }
+                    made[s] = fd
+                    fds[s] = fd
+                }
+                pipe => {
+                    let mut ends: [2]i32 = [-1, -1]
+                    if sys::make_pipe{ &proc, fds = &ends[0] } != 0 { return proc_failed{ code = sys::proc_errno{ &proc }.* } }
+                    let reads = above{ &proc, fd = ends[0] }
+                    if reads < 0 {
+                        let e = sys::proc_errno{ &proc }.*
+                        _ = close_fd{ &proc, fd = ends[1] }
+                        return proc_failed{ code = e }
+                    }
+                    let writes = above{ &proc, fd = ends[1] }
+                    if writes < 0 {
+                        let e = sys::proc_errno{ &proc }.*
+                        _ = close_fd{ &proc, fd = reads }
+                        return proc_failed{ code = e }
+                    }
+                    // The child reads its standard input, and writes its output and error.
+                    let theirs = if s == 0 { reads } else { writes }
+                    made[s] = theirs
+                    ours[s] = if s == 0 { writes } else { reads }
+                    fds[s] = theirs
+                }
+                file{ file } => {
+                    fds[s] = descriptor{ file = file.id } ifnull { return proc_failed{ code = EBADF } }
+                }
+            }
+            s = s + 1
+        }
+        // A file's descriptor below 3 that is to become another stream is copied above them,
+        // so that putting one in place can't replace another still to be put.
+        s = 0
+        while s < 3 {
+            let fd = fds[s]
+            if fd >= 0 and fd < 3 and fd != @as(i32, s) {
+                let moved = sys::fcntl{ &proc, fd, cmd = sys::F_DUPFD_CLOEXEC, arg = 3 }
+                if moved < 0 { return proc_failed{ code = sys::proc_errno{ &proc }.* } }
+                made[3 + s] = moved
+                fds[s] = moved
+            }
+            s = s + 1
+        }
+
+        let pid = try sys::spawn{ &proc, file, argv = ptrs.ptr, envp = ptrs.ptr + envp, path, scratch, fds = &fds[0], dir, group = options.group, die_with_parent = options.die_with_parent }
+        started = true
+        let id = @as(u64, pid)
+        return proc::Child{
+            id,
+            group = if options.group { id } else { 0 },
+            cleanup = if options.group and options.leftovers is kill { id } else { 0 },
+            stdin = pipe_of{ fd = ours[0] },
+            stdout = pipe_of{ fd = ours[1] },
+            stderr = pipe_of{ fd = ours[2] },
+        }
     }
 
     // bytes and a zero at into; returns where they end.
@@ -342,18 +484,137 @@ namespace os {
         return into + (bytes.len + 1)
     }
 
-    // Waits for child `id` to end: its exit code, or 128 + N if signal N killed it. waitpid's
-    // status is decoded as WIFEXITED and the rest are, the same on Linux and macOS.
-    fn wait { mut proc: Proc, id: u64 } -> proc::Error!i32 {
-        let mut status: i32 = 0
-        while waitpid{ &proc, pid = @as(i32, id), status = &status, options = 0 } < 0 {
-            let e = sys::proc_errno{ &proc }.*
-            if e != 4 { return proc_failed{ code = e } }              // EINTR: wait again
+    // fd, or a copy of it above 2 that exec closes, if it is 0, 1 or 2, which it then closes:
+    // so that a descriptor proc makes is never one of a child's standard streams. -1, and
+    // errno, if fd is, or if it can't be copied.
+    fn above { mut proc: Proc, fd: i32 } -> i32 {
+        if fd < 0 or fd > 2 { return fd }
+        let moved = sys::fcntl{ &proc, fd, cmd = sys::F_DUPFD_CLOEXEC, arg = 3 }
+        let e = sys::proc_errno{ &proc }.*
+        _ = close_fd{ &proc, fd }
+        sys::proc_errno{ &proc }.* = e
+        return moved
+    }
+
+    // Closes each of fds that is a descriptor, not -1.
+    fn close_all { mut proc: Proc, fds: []i32 } {
+        let mut i: usize = 0
+        while i < fds.len {
+            if fds[i] >= 0 { _ = close_fd{ &proc, fd = fds[i] } }
+            i = i + 1
         }
+    }
+
+    // A pipe of descriptor fd, or null for -1.
+    fn pipe_of { fd: i32 } -> ?proc::Pipe {
+        if fd < 0 { return null }
+        return proc::Pipe{ id = @as(u64, fd) }
+    }
+
+    // Waits for a child to end: its exit code, or 128 + N if signal N killed it. A child whose
+    // `cleanup` is its process group has the group ended first (end_leftovers).
+    fn wait { mut proc: Proc, child: proc::Child } -> proc::Error!i32 {
+        let pid = @as(i32, child.id)
+        if child.cleanup != 0 {
+            _ = try sys::await_exit{ &proc, pid, nanoseconds = FOREVER }
+            try end_leftovers{ &proc, group = child.cleanup }
+        }
+        let code = try reap{ &proc, pid, options = 0 }
+        return code ifnull 255
+    }
+
+    // Waits for a child to end, for at most `nanoseconds`: its exit code, or null if it is still
+    // running. It looks without waiting first, and then waits for the child itself, as
+    // sys::await_exit does, rather than looking again and again. Once that says the child has
+    // ended, waitpid waits: macOS may say so a moment before waitpid can reap it, and waitpid
+    // never waits long for a child that has ended. A child whose `cleanup` is its group is
+    // looked at without reaping it, as wait does.
+    fn wait_for { mut proc: Proc, child: proc::Child, nanoseconds: u64 } -> proc::Error!?i32 {
+        let pid = @as(i32, child.id)
+        if child.cleanup != 0 {
+            let ended = try sys::await_exit{ &proc, pid, nanoseconds }
+            if not ended { return null }
+            try end_leftovers{ &proc, group = child.cleanup }
+            return try reap{ &proc, pid, options = 0 }
+        }
+        let code = try reap{ &proc, pid, options = WNOHANG }
+        if code != null or nanoseconds == 0 { return code }
+        let ended = try sys::await_exit{ &proc, pid, nanoseconds }
+        if not ended { return null }
+        return try reap{ &proc, pid, options = 0 }
+    }
+
+    // waitpid for child pid, with `options`: its exit code once it has ended, which reaps it;
+    // null with WNOHANG while it hasn't.
+    fn reap { mut proc: Proc, pid: i32, options: i32 } -> proc::Error!?i32 {
+        let mut status: i32 = 0
+        while true {
+            let r = waitpid{ &proc, pid, status = &status, options }
+            if r > 0 { break }
+            if r == 0 { return null }
+            let e = sys::proc_errno{ &proc }.*
+            if e != EINTR { return proc_failed{ code = e } }       // EINTR: wait again
+        }
+        return exit_code{ status }
+    }
+
+    // waitpid's status as an exit code: the child's own, or 128 + N if signal N killed it. It is
+    // decoded as WIFEXITED and the rest are, the same on Linux and macOS.
+    fn exit_code { status: i32 } -> i32 {
         let signal = status & 127
         if signal == 0 { return (status >> 8) & 255 }
         if signal != 127 { return 128 + signal }
         return 255
+    }
+
+    // SIGKILL to a child, or to its whole process group: a pid below 0 names a group. A child
+    // that has ended still has its id until it is waited for; ESRCH, that it has none, is a
+    // child that is gone already.
+    fn kill { mut proc: Proc, child: proc::Child } -> proc::Error! {
+        let target = if child.group != 0 { 0 - @as(i32, child.group) } else { @as(i32, child.id) }
+        if c_kill{ &proc, pid = target, signal = SIGKILL } != 0 {
+            let e = sys::proc_errno{ &proc }.*
+            if e != ESRCH { return proc_failed{ code = e } }
+        }
+    }
+
+    // SIGKILL to what is left of a child's process group, once the child, its leader, has ended
+    // but before it is reaped: until then its pid, which is the group's id, can't be another
+    // process's, so the signal can't reach a group that has taken the number since. ESRCH is a
+    // group with nothing left in it.
+    fn end_leftovers { mut proc: Proc, group: u64 } -> proc::Error! {
+        if c_kill{ &proc, pid = 0 - @as(i32, group), signal = SIGKILL } != 0 {
+            let e = sys::proc_errno{ &proc }.*
+            if e != ESRCH { return proc_failed{ code = e } }
+        }
+    }
+
+    // Reads at most into.len bytes, which aren't none. Returns how many; 0 at the end.
+    fn pipe_read { mut proc: Proc, pipe: u64, into: []mut u8 } -> proc::Error!usize {
+        let fd = descriptor{ file = pipe } ifnull { return proc_failed{ code = EBADF } }
+        while true {
+            let n = read_fd{ &proc, fd, buf = into.ptr, count = into.len }
+            if n >= 0 { return @as(usize, n) }
+            let e = sys::proc_errno{ &proc }.*
+            if e != EINTR { return proc_failed{ code = e } }
+        }
+    }
+
+    // Writes some of `bytes`, which aren't none. Returns how many; EPIPE, broken_pipe, once the
+    // reader has closed its end.
+    fn pipe_write { mut proc: Proc, pipe: u64, bytes: []u8 } -> proc::Error!usize {
+        let fd = descriptor{ file = pipe } ifnull { return proc_failed{ code = EBADF } }
+        while true {
+            let n = write_fd{ &proc, fd, buf = bytes.ptr, count = bytes.len }
+            if n >= 0 { return @as(usize, n) }
+            let e = sys::proc_errno{ &proc }.*
+            if e != EINTR { return proc_failed{ code = e } }
+        }
+    }
+
+    fn pipe_close { mut proc: Proc, pipe: u64 } {
+        let fd = descriptor{ file = pipe } ifnull { return }
+        _ = close_fd{ &proc, fd }
     }
 
     // How many processors this program may run on: at least 1.
@@ -366,11 +627,41 @@ namespace os {
         return sys::exe_path{ &proc }
     }
 
-    // The error for errno `code` from starting or waiting for a program.
+    // The error for errno `code` from starting a program, waiting for it, ending it, or using
+    // its pipes.
     fn proc_failed(T) { code: i32 } -> !T {
-        if code == 2 { return proc::not_found }                         // ENOENT
-        if code == 1 or code == 13 { return proc::permission_denied }   // EPERM, EACCES
+        if code == ENOENT { return proc::not_found }
+        if code == EPERM or code == EACCES { return proc::permission_denied }
+        if code == EPIPE { return proc::broken_pipe }
         return proc::other{ code = @as(i64, code) }
+    }
+
+    // A time on the monotonic clock, in nanoseconds: `nanoseconds` from now, or the furthest
+    // there is.
+    fn deadline { nanoseconds: u64 } -> u64 {
+        let now = monotonic{}
+        let max: u64 = 18446744073709551615
+        return if nanoseconds > max - now { max } else { now + nanoseconds }
+    }
+
+    // The nanoseconds from now until `deadline`; 0 once it has passed.
+    fn remaining { deadline: u64 } -> u64 {
+        let now = monotonic{}
+        return if deadline > now { deadline - now } else { 0 }
+    }
+
+    // Now, on the monotonic clock, in nanoseconds.
+    fn monotonic {} -> u64 {
+        let mut now = Timespec{ sec = 0, nsec = 0 }
+        _ = clock_gettime{ clock = sys::CLOCK_MONOTONIC, &now }
+        return @as(u64, now.sec) * 1000000000 + @as(u64, now.nsec)
+    }
+
+    // nanoseconds in milliseconds, rounded up, as a poll's timeout takes them: at most
+    // 2147483647, about 24 days, after which it is called again.
+    fn poll_millis { nanoseconds: u64 } -> i32 {
+        let ms = nanoseconds / 1000000 + (if nanoseconds % 1000000 > 0 { 1 } else { 0 })
+        return if ms > 2147483647 { 2147483647 } else { @as(i32, ms) }
     }
 
     // `path` with a zero after it, as C takes it, in buf; null if it doesn't fit.

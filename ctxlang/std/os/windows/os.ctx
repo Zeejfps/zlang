@@ -4,9 +4,11 @@
 // build compiles one.
 
 namespace os {
-    // What std's Proc holds on this platform: nothing, since Windows reaches the environment
-    // through functions.
-    capability Proc
+    // What std's Proc holds on this platform: a counter for the names of pipes (make_pipe).
+    // Windows reaches the environment through functions.
+    capability Proc {
+        static pipes: u64
+    }
 
     // The operating system this layer is for, and whether its environment's keys are
     // case-sensitive (std/os/windows/target.ctx).
@@ -383,9 +385,10 @@ namespace os {
     }
 
     // ---- for std's proc: programs, started with CreateProcessW. A child's id is its process
-    // handle.
+    // handle, its group's the handle of its Job Object, and a pipe's id the handle of this
+    // program's end of it.
 
-    extern fn CreateProcessW { mut proc: Proc, app: ?*u16, line: *mut u16, process: ?*u8, thread: ?*u8, inherit: i32, flags: u32, env: ?*u16, dir: ?*u16, mut startup: StartupInfo, mut info: ProcessInfo } -> i32
+    extern fn CreateProcessW { mut proc: Proc, app: ?*u16, line: *mut u16, process: ?*u8, thread: ?*u8, inherit: i32, flags: u32, env: ?*u16, dir: ?*u16, mut startup: StartupInfoEx, mut info: ProcessInfo } -> i32
     extern fn GetEnvironmentStringsW { mut proc: Proc } -> ?*u16
     extern fn FreeEnvironmentStringsW { mut proc: Proc, block: *u16 } -> i32
     extern fn GetEnvironmentVariableW { mut proc: Proc, name: *u16, buf: ?*mut u16, size: u32 } -> u32
@@ -393,6 +396,28 @@ namespace os {
     extern fn GetExitCodeProcess { mut proc: Proc, handle: u64, mut code: u32 } -> i32
     extern fn GetActiveProcessorCount { mut proc: Proc, group: u16 } -> u32
     extern fn GetModuleFileNameW { mut proc: Proc, module: u64, buf: *mut u16, size: u32 } -> u32
+    extern fn GetStdHandle { mut proc: Proc, which: u32 } -> u64
+    extern fn GetCurrentProcess { mut proc: Proc } -> u64
+    extern fn GetCurrentProcessId { mut proc: Proc } -> u32
+    extern fn DuplicateHandle { mut proc: Proc, from_process: u64, handle: u64, to_process: u64, mut copy: u64, access: u32, inherit: i32, options: u32 } -> i32
+    extern fn CreateNamedPipeW { mut proc: Proc, name: *u16, open_mode: u32, pipe_mode: u32, instances: u32, out_size: u32, in_size: u32, timeout: u32, security: ?*Security } -> u64
+    #c::symbol{ name = "CreateFileW" }
+    extern fn open_file { mut proc: Proc, name: *u16, access: u32, share: u32, security: ?*Security, disposition: u32, flags: u32, template: u64 } -> u64
+    extern fn InitializeProcThreadAttributeList { mut proc: Proc, list: ?*mut u8, count: u32, flags: u32, mut size: usize } -> i32
+    extern fn UpdateProcThreadAttribute { mut proc: Proc, list: *mut u8, flags: u32, attribute: usize, value: *u64, size: usize, previous: ?*mut u8, returned: ?*mut usize } -> i32
+    extern fn DeleteProcThreadAttributeList { mut proc: Proc, list: *mut u8 }
+    extern fn CreateJobObjectW { mut proc: Proc, security: ?*Security, name: ?*u16 } -> u64
+    extern fn SetInformationJobObject { mut proc: Proc, job: u64, class: i32, mut info: JobLimits, size: u32 } -> i32
+    extern fn AssignProcessToJobObject { mut proc: Proc, job: u64, process: u64 } -> i32
+    extern fn ResumeThread { mut proc: Proc, thread: u64 } -> u32
+    extern fn TerminateProcess { mut proc: Proc, process: u64, code: u32 } -> i32
+    extern fn TerminateJobObject { mut proc: Proc, job: u64, code: u32 } -> i32
+    extern fn CreateEventW { mut proc: Proc, security: ?*Security, manual: i32, initial: i32, name: ?*u16 } -> u64
+    extern fn GetOverlappedResult { mut proc: Proc, file: u64, mut overlapped: Overlapped, mut done: u32, wait: i32 } -> i32
+    #c::symbol{ name = "ReadFile" }
+    extern fn read_overlapped { mut proc: Proc, file: u64, buf: *mut u8, count: u32, done: ?*mut u32, mut overlapped: Overlapped } -> i32
+    #c::symbol{ name = "WriteFile" }
+    extern fn write_overlapped { mut proc: Proc, file: u64, buf: *u8, count: u32, done: ?*mut u32, mut overlapped: Overlapped } -> i32
     #c::symbol{ name = "CloseHandle" }
     extern fn close_handle { mut proc: Proc, handle: u64 } -> i32
     #c::symbol{ name = "GetLastError" }
@@ -412,24 +437,100 @@ namespace os {
         return narrow_utf16{ page = UTF8, flags = 0, text, n, out, cap, fallback, used }
     }
 
-    // STARTUPINFOW, zero but its size, and PROCESS_INFORMATION.
-    struct StartupInfo { size: u32, pad: u32, rest: [12]u64 }
+    // STARTUPINFOW, zero but what spawn sets: its standard handles, and the flag that says so.
+    struct StartupInfo {
+        size: u32 = 104,
+        reserved: u64 = 0,
+        desktop: u64 = 0,
+        title: u64 = 0,
+        x: u32 = 0,
+        y: u32 = 0,
+        width: u32 = 0,
+        height: u32 = 0,
+        columns: u32 = 0,
+        rows: u32 = 0,
+        fill: u32 = 0,
+        flags: u32 = 0,
+        show_window: u16 = 0,
+        reserved2_size: u16 = 0,
+        reserved2: u64 = 0,
+        stdin: u64 = 0,
+        stdout: u64 = 0,
+        stderr: u64 = 0,
+    }
+
+    // STARTUPINFOEXW: STARTUPINFOW and the list of attributes, which CreateProcessW reads with
+    // EXTENDED_STARTUPINFO_PRESENT; and PROCESS_INFORMATION.
+    struct StartupInfoEx { info: StartupInfo, attributes: ?*mut u8 }
     struct ProcessInfo { process: u64, thread: u64, pid: u32, tid: u32 }
 
+    // SECURITY_ATTRIBUTES, for a handle a child may inherit.
+    struct Security { size: u32, descriptor: u64, inherit: i32 }
+
+    // OVERLAPPED: an overlapped ReadFile's or WriteFile's state, with the event it signals.
+    struct Overlapped { internal: u64, internal_high: u64, offset: u32, offset_high: u32, event: u64 }
+
+    // JOBOBJECT_EXTENDED_LIMIT_INFORMATION: JOBOBJECT_BASIC_LIMIT_INFORMATION's two time limits
+    // and its LimitFlags, the one this sets, then the rest of it, IO_COUNTERS and the memory
+    // limits, all zero.
+    struct JobLimits { times: [2]i64, flags: u32, rest: [15]u64 }
+
+    // This program's end of a pipe, and the child's.
+    struct PipeEnds { ours: u64, theirs: u64 }
+
+    const CREATE_SUSPENDED: u32 = 0x4
     const CREATE_UNICODE_ENVIRONMENT: u32 = 0x400
+    const EXTENDED_STARTUPINFO_PRESENT: u32 = 0x80000
+    const STARTF_USESTDHANDLES: u32 = 0x100
+    const PROC_THREAD_ATTRIBUTE_HANDLE_LIST: usize = 0x20002
+    const DUPLICATE_SAME_ACCESS: u32 = 2
     const INFINITE: u32 = 4294967295
+    const WAIT_OBJECT_0: u32 = 0
     const WAIT_FAILED: u32 = 4294967295
     const ALL_PROCESSOR_GROUPS: u16 = 0xffff
+    const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: u32 = 0x2000
+    const JOB_OBJECT_EXTENDED_LIMIT_INFORMATION: i32 = 9
 
-    // Starts argv[0] with this program's environment, less the entries env replaces, and env's
-    // own. argv and env aren't empty and are checked (proc::spawn).
-    fn spawn { mut proc: Proc, argv: [][]u8, env: [][]u8 } -> proc::Error!u64 {
+    // GetStdHandle's STD_INPUT_HANDLE, STD_OUTPUT_HANDLE and STD_ERROR_HANDLE: (DWORD)-10, -11
+    // and -12.
+    const STD_HANDLES: [3]u32 = [4294967286, 4294967285, 4294967284]
+
+    // CreateNamedPipeW's: this program's end reads (inbound) or writes (outbound), overlapped,
+    // and is the pipe's first instance, which a name another program took already refuses.
+    // Its mode is PIPE_TYPE_BYTE, PIPE_READMODE_BYTE and PIPE_WAIT, which are 0, and not for
+    // other machines'.
+    const PIPE_ACCESS_INBOUND: u32 = 0x1
+    const PIPE_ACCESS_OUTBOUND: u32 = 0x2
+    const FILE_FLAG_OVERLAPPED: u32 = 0x40000000
+    const FILE_FLAG_FIRST_PIPE_INSTANCE: u32 = 0x80000
+    const PIPE_REJECT_REMOTE_CLIENTS: u32 = 0x8
+    const PIPE_BUFFER: u32 = 65536
+
+    // GetLastError's: the read or write is under way; the pipe has ended, its other end
+    // closed; it is being closed; access denied.
+    const ERROR_IO_PENDING: u32 = 997
+    const ERROR_BROKEN_PIPE: u32 = 109
+    const ERROR_NO_DATA: u32 = 232
+    const ERROR_ACCESS_DENIED: u32 = 5
+
+    // Starts argv[0] as proc::spawn says, with this program's environment, less the entries
+    // options.env replaces, and options.env's own. argv and options.env aren't empty and are
+    // checked (proc::spawn).
+    //
+    // The child inherits its three standard handles and no other: each a handle of its own,
+    // made here and closed once it has started, which CreateProcessW is given as a
+    // PROC_THREAD_ATTRIBUTE_HANDLE_LIST, so that it doesn't hand the child every handle this
+    // program could, such as a pipe another thread is starting a program with. A stream this
+    // program hasn't, as GetStdHandle says, the child hasn't either. A group's child starts
+    // suspended, until it is in its Job Object, so that whatever it starts is in it too.
+    fn spawn { mut proc: Proc, argv: [][]u8, options: proc::Options } -> proc::Error!proc::Child {
+        let env = options.env
         // The command line, as CommandLineToArgvW reads it back: each argument takes at most
         // twice its bytes and three more, a space and quotes.
         let mut cap: usize = 1
         let mut i: usize = 0
         while i < argv.len { cap = cap + 2 * argv[i].len + 3; i = i + 1 }
-        let line = c_malloc{ &proc, size = cap } ifnull { return out_of_memory(u64){} }
+        let line = c_malloc{ &proc, size = cap } ifnull { return out_of_memory(proc::Child){} }
         defer c_free{ &proc, p = line }
         let text = @slice(line, cap)
         // The program with `\` for each `/`: CreateProcessW finds build\x.exe, a relative path
@@ -445,7 +546,7 @@ namespace os {
             n = quote_arg{ line = text, n, arg = argv[i] }
             i = i + 1
         }
-        let wline = c_malloc{ &proc, size = (n + 1) * 2 } ifnull { return out_of_memory(u64){} }
+        let wline = c_malloc{ &proc, size = (n + 1) * 2 } ifnull { return out_of_memory(proc::Child){} }
         defer c_free{ &proc, p = wline }
         let wide = @slice(@cast(*mut u16, wline), n + 1)
         let k = if n == 0 { 0 } else { widen{ page = UTF8, flags = 0, text = line, n = @as(i32, n), out = wide.ptr, cap = @as(i32, n) } }
@@ -463,7 +564,7 @@ namespace os {
         }
         i = 0
         while i < env.len { units = units + env[i].len + 1; i = i + 1 }
-        let bytes = c_malloc{ &proc, size = units * 2 } ifnull { return out_of_memory(u64){} }
+        let bytes = c_malloc{ &proc, size = units * 2 } ifnull { return out_of_memory(proc::Child){} }
         defer c_free{ &proc, p = bytes }
         let block = @slice(@cast(*mut u16, bytes), units)
         let mut used: usize = 0
@@ -491,17 +592,232 @@ namespace os {
         }
         block[used] = 0
 
-        let mut startup = StartupInfo{ size = 104, pad = 0, rest = [0; 12] }
+        // The working directory, as UTF-16 with a zero after it.
+        let mut dir: ?*u16 = null
+        let dir_bytes = c_malloc{ &proc, size = (options.dir.len + 1) * 2 } ifnull { return out_of_memory(proc::Child){} }
+        defer c_free{ &proc, p = dir_bytes }
+        if options.dir.len > 0 {
+            let wdir = @slice(@cast(*mut u16, dir_bytes), options.dir.len + 1)
+            let d = utf16_of{ s = options.dir, into = wdir[..options.dir.len] } ifnull { return proc::other{ code = 123 } }     // ERROR_INVALID_NAME
+            wdir[d] = 0
+            dir = wdir.ptr
+        }
+
+        // The child's standard handles, closed once it has started, or hasn't; this program's
+        // ends of pipes, the Child's, closed unless it has.
+        let mut theirs: [3]u64 = [0, 0, 0]
+        let mut ours: [3]u64 = [0, 0, 0]
+        let mut started = false
+        defer close_handles{ &proc, handles = theirs[..] }
+        defer {
+            if not started { close_handles{ &proc, handles = ours[..] } }
+        }
+        let mut s: usize = 0
+        while s < 3 {
+            let stdio = if s == 0 { options.stdin } else if s == 1 { options.stdout } else { options.stderr }
+            match stdio {
+                inherit => {
+                    let h = GetStdHandle{ &proc, which = STD_HANDLES[s] }
+                    if h != 0 and h != INVALID_HANDLE { theirs[s] = try inheritable{ &proc, handle = h } }
+                }
+                ignore => { theirs[s] = try null_device{ &proc } }
+                pipe => {
+                    // The child reads its standard input, and writes its output and error.
+                    let ends = try make_pipe{ &proc, inbound = s != 0 }
+                    ours[s] = ends.ours
+                    theirs[s] = ends.theirs
+                }
+                file{ file } => { theirs[s] = try inheritable{ &proc, handle = file.id } }
+            }
+            s = s + 1
+        }
+
+        let mut flags = CREATE_UNICODE_ENVIRONMENT
+        if options.group or options.die_with_parent { flags = flags | CREATE_SUSPENDED }
+        let mut startup = StartupInfoEx{
+            info = StartupInfo{ flags = STARTF_USESTDHANDLES, stdin = theirs[0], stdout = theirs[1], stderr = theirs[2], .. },
+            attributes = null,
+        }
+        // The handles to inherit: those of the three it has. With none, it inherits nothing.
+        let mut list: [3]u64 = [0, 0, 0]
+        let mut count: usize = 0
+        s = 0
+        while s < 3 {
+            if theirs[s] != 0 {
+                list[count] = theirs[s]
+                count = count + 1
+            }
+            s = s + 1
+        }
+        let mut attributes: ?*mut u8 = null
+        defer {
+            if let a = attributes {
+                DeleteProcThreadAttributeList{ &proc, list = a }
+                c_free{ &proc, p = a }
+            }
+        }
+        if count > 0 {
+            let mut size: usize = 0
+            _ = InitializeProcThreadAttributeList{ &proc, list = null, count = 1, flags = 0, &size }
+            let a = c_malloc{ &proc, size } ifnull { return out_of_memory(proc::Child){} }
+            if InitializeProcThreadAttributeList{ &proc, list = a, count = 1, flags = 0, &size } == 0 {
+                let e = last_error{ &proc }
+                c_free{ &proc, p = a }
+                return proc_failed{ code = e }
+            }
+            attributes = a
+            if UpdateProcThreadAttribute{ &proc, list = a, flags = 0, attribute = PROC_THREAD_ATTRIBUTE_HANDLE_LIST, value = &list[0], size = count * 8, previous = null, returned = null } == 0 {
+                return proc_failed{ code = last_error{ &proc } }
+            }
+            startup.info.size = @as(u32, @size_of(StartupInfoEx))
+            startup.attributes = a
+            flags = flags | EXTENDED_STARTUPINFO_PRESENT
+        }
+
         let mut info = ProcessInfo{ process = 0, thread = 0, pid = 0, tid = 0 }
-        let ok = CreateProcessW{ &proc, app = null, line = wide.ptr, process = null, thread = null, inherit = 1, flags = CREATE_UNICODE_ENVIRONMENT, env = block.ptr, dir = null, startup = &startup, info = &info }
-        if ok == 0 {
-            let e = last_error{ &proc }
-            if e == 2 or e == 3 { return proc::not_found }              // file, path not found
-            if e == 5 { return proc::permission_denied }                // access denied
-            return proc::other{ code = @as(i64, e) }
+        let inherit: i32 = if count > 0 { 1 } else { 0 }
+        let ok = CreateProcessW{ &proc, app = null, line = wide.ptr, process = null, thread = null, inherit, flags, env = block.ptr, dir, startup = &startup, info = &info }
+        if ok == 0 { return proc_failed{ code = last_error{ &proc } } }
+        // A Job Object, for a group or to end the child with this program. It ends what is in
+        // it when its handle is closed (JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE) if wait is to end a
+        // group's leftovers, or the child is to die with this program: then wait doesn't close
+        // it if that would end what wait keeps, and it stays open until this program ends.
+        let ends_leftovers = options.group and options.leftovers is kill
+        let mut job: u64 = 0
+        let mut cleanup: u64 = 0
+        if options.group or options.die_with_parent {
+            job = job_for{ &proc, process = info.process, kill_on_close = ends_leftovers or options.die_with_parent } iferr err{ error } {
+                _ = TerminateProcess{ &proc, process = info.process, code = 1 }
+                _ = close_handle{ &proc, handle = info.thread }
+                _ = close_handle{ &proc, handle = info.process }
+                return error
+            }
+            _ = ResumeThread{ &proc, thread = info.thread }
+            if ends_leftovers or not options.die_with_parent { cleanup = job }
         }
         _ = close_handle{ &proc, handle = info.thread }
-        return info.process
+        started = true
+        return proc::Child{
+            id = info.process,
+            group = if options.group { job } else { 0 },
+            cleanup,
+            stdin = pipe_of{ handle = ours[0] },
+            stdout = pipe_of{ handle = ours[1] },
+            stderr = pipe_of{ handle = ours[2] },
+        }
+    }
+
+    // A copy of `handle` that a child may inherit, for its standard stream.
+    fn inheritable { mut proc: Proc, handle: u64 } -> proc::Error!u64 {
+        let here = GetCurrentProcess{ &proc }
+        let mut copy: u64 = 0
+        if DuplicateHandle{ &proc, from_process = here, handle, to_process = here, &copy, access = 0, inherit = 1, options = DUPLICATE_SAME_ACCESS } == 0 {
+            return proc_failed{ code = last_error{ &proc } }
+        }
+        return copy
+    }
+
+    // The null device, NUL, open to read and write, as a handle a child may inherit.
+    fn null_device { mut proc: Proc } -> proc::Error!u64 {
+        let name: [4]u16 = [78, 85, 76, 0]
+        let security = Security{ size = @as(u32, @size_of(Security)), descriptor = 0, inherit = 1 }
+        let h = open_file{ &proc, name = &name[0], access = GENERIC_READ | GENERIC_WRITE, share = SHARE_ALL, security = &security, disposition = OPEN_EXISTING, flags = 0, template = 0 }
+        if h == INVALID_HANDLE { return proc_failed{ code = last_error{ &proc } } }
+        return h
+    }
+
+    // A pipe for a child's standard stream: `inbound` for one the child writes and this program
+    // reads, else the other way. It is a named pipe, which unlike CreatePipe's can be
+    // overlapped: this program's end is, for pipe_read and pipe_write, and the child's end,
+    // which it may inherit, isn't, as programs expect of their standard handles. Its name is
+    // \\.\pipe\ctx-PID-N, N from a counter that this program's threads share, so that no two
+    // take one name; FILE_FLAG_FIRST_PIPE_INSTANCE refuses a name another program took, and
+    // the next N is tried.
+    fn make_pipe { mut proc: Proc, inbound: bool } -> proc::Error!PipeEnds {
+        let pid = GetCurrentProcessId{ &proc }
+        let mode = (if inbound { PIPE_ACCESS_INBOUND } else { PIPE_ACCESS_OUTBOUND }) | FILE_FLAG_OVERLAPPED | FILE_FLAG_FIRST_PIPE_INSTANCE
+        let mut tries: u32 = 0
+        while true {
+            let mut name: [64]u16
+            pipe_name{ name = name[..], pid, n = @atomic_add(&proc.pipes, 1, atomic::Order::relaxed) }
+            let ours = CreateNamedPipeW{ &proc, name = &name[0], open_mode = mode, pipe_mode = PIPE_REJECT_REMOTE_CLIENTS, instances = 1, out_size = PIPE_BUFFER, in_size = PIPE_BUFFER, timeout = 0, security = null }
+            if ours == INVALID_HANDLE {
+                let e = last_error{ &proc }
+                tries = tries + 1
+                if e == ERROR_ACCESS_DENIED and tries < 64 { continue }
+                return proc::other{ code = @as(i64, e) }
+            }
+            let security = Security{ size = @as(u32, @size_of(Security)), descriptor = 0, inherit = 1 }
+            let access = if inbound { GENERIC_WRITE } else { GENERIC_READ }
+            let theirs = open_file{ &proc, name = &name[0], access, share = 0, security = &security, disposition = OPEN_EXISTING, flags = 0, template = 0 }
+            if theirs == INVALID_HANDLE {
+                let e = last_error{ &proc }
+                _ = close_handle{ &proc, handle = ours }
+                return proc::other{ code = @as(i64, e) }
+            }
+            return PipeEnds{ ours, theirs }
+        }
+    }
+
+    // \\.\pipe\ctx-PID-N and a zero, in name.
+    fn pipe_name { name: []mut u16, pid: u32, n: u64 } {
+        let mut digits: [20]u8
+        let mut at = ascii_into{ into = name, at = 0, s = "\\\\.\\pipe\\ctx-" }
+        at = ascii_into{ into = name, at, s = utf8::fmt_u64{ n = @as(u64, pid), into = digits[..] }.bytes }
+        at = ascii_into{ into = name, at, s = "-" }
+        at = ascii_into{ into = name, at, s = utf8::fmt_u64{ n, into = digits[..] }.bytes }
+        name[at] = 0
+    }
+
+    // ASCII s as UTF-16 in `into` from `at`: where it ends.
+    fn ascii_into { into: []mut u16, at: usize, s: []u8 } -> usize {
+        let mut i: usize = 0
+        while i < s.len {
+            into[at + i] = @as(u16, s[i])
+            i = i + 1
+        }
+        return at + s.len
+    }
+
+    // A Job Object for process: its handle. What the process starts is in it too. With
+    // `kill_on_close` it ends every process in it when its last handle is closed
+    // (JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE).
+    fn job_for { mut proc: Proc, process: u64, kill_on_close: bool } -> proc::Error!u64 {
+        let job = CreateJobObjectW{ &proc, security = null, name = null }
+        if job == 0 { return proc_failed{ code = last_error{ &proc } } }
+        let mut limits = JobLimits{ times = [0; 2], flags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, rest = [0; 15] }
+        let size = @as(u32, @size_of(JobLimits))
+        let limited = not kill_on_close or SetInformationJobObject{ &proc, job, class = JOB_OBJECT_EXTENDED_LIMIT_INFORMATION, info = &limits, size } != 0
+        if not limited or AssignProcessToJobObject{ &proc, job, process } == 0 {
+            let e = last_error{ &proc }
+            _ = close_handle{ &proc, handle = job }
+            return proc_failed{ code = e }
+        }
+        return job
+    }
+
+    // Closes each of handles that isn't 0.
+    fn close_handles { mut proc: Proc, handles: []u64 } {
+        let mut i: usize = 0
+        while i < handles.len {
+            if handles[i] != 0 { _ = close_handle{ &proc, handle = handles[i] } }
+            i = i + 1
+        }
+    }
+
+    // A pipe of `handle`, or null for 0.
+    fn pipe_of { handle: u64 } -> ?proc::Pipe {
+        if handle == 0 { return null }
+        return proc::Pipe{ id = handle }
+    }
+
+    // The error for GetLastError's `code` from starting a program, waiting for it, ending it,
+    // or using its pipes.
+    fn proc_failed(T) { code: u32 } -> !T {
+        if code == 2 or code == 3 { return proc::not_found }                                // file, path not found
+        if code == ERROR_ACCESS_DENIED { return proc::permission_denied }
+        if code == ERROR_BROKEN_PIPE or code == ERROR_NO_DATA { return proc::broken_pipe }  // the pipe has ended, is being closed
+        return proc::other{ code = @as(i64, code) }
     }
 
     fn out_of_memory(T) {} -> !T {
@@ -581,13 +897,106 @@ namespace os {
         return n + times
     }
 
-    // Waits for child `id` to end, and closes its handle: its exit code.
-    fn wait { mut proc: Proc, id: u64 } -> proc::Error!i32 {
-        if WaitForSingleObject{ &proc, handle = id, ms = INFINITE } == WAIT_FAILED { return proc::other{ code = @as(i64, last_error{ &proc }) } }
+    // Waits for a child to end: its exit code. Then it closes the child's handle, and its
+    // `cleanup`, a Job Object, if it has one: with `leftovers = kill` that ends whatever of the
+    // group is still running (JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE).
+    fn wait { mut proc: Proc, child: proc::Child } -> proc::Error!i32 {
+        defer release{ &proc, child }
+        if WaitForSingleObject{ &proc, handle = child.id, ms = INFINITE } == WAIT_FAILED { return proc_failed{ code = last_error{ &proc } } }
+        return exit_code{ &proc, id = child.id }
+    }
+
+    // As `wait`, for at most `nanoseconds`, rounded up to milliseconds: its exit code, or null
+    // if the child is still running, which then keeps its handles.
+    fn wait_for { mut proc: Proc, child: proc::Child, nanoseconds: u64 } -> proc::Error!?i32 {
+        let mut ms = millis{ nanoseconds }
+        while true {
+            let now: u32 = if ms >= @as(u64, INFINITE) { INFINITE - 1 } else { @as(u32, ms) }
+            let r = WaitForSingleObject{ &proc, handle = child.id, ms = now }
+            if r == WAIT_OBJECT_0 {
+                let code = exit_code{ &proc, id = child.id }
+                release{ &proc, child }
+                return try code
+            }
+            if r == WAIT_FAILED { return proc_failed{ code = last_error{ &proc } } }
+            ms = ms - @as(u64, now)
+            if ms == 0 { return null }
+        }
+    }
+
+    // The exit code of child `id`, which has ended.
+    fn exit_code { mut proc: Proc, id: u64 } -> proc::Error!i32 {
         let mut code: u32 = 0
-        _ = GetExitCodeProcess{ &proc, handle = id, code = &code }
-        _ = close_handle{ &proc, handle = id }
+        if GetExitCodeProcess{ &proc, handle = id, &code } == 0 { return proc_failed{ code = last_error{ &proc } } }
         return @trunc(i32, code)
+    }
+
+    // Closes a child's handle and its cleanup's.
+    fn release { mut proc: Proc, child: proc::Child } {
+        _ = close_handle{ &proc, handle = child.id }
+        if child.cleanup != 0 { _ = close_handle{ &proc, handle = child.cleanup } }
+    }
+
+    // Ends a child with proc::KILLED as its exit code: TerminateJobObject, which ends every
+    // process of its group, or TerminateProcess without one. A child that has ended already
+    // refuses, which is no failure.
+    fn kill { mut proc: Proc, child: proc::Child } -> proc::Error! {
+        let code = @as(u32, proc::KILLED)
+        let ok = if child.group != 0 { TerminateJobObject{ &proc, job = child.group, code } } else { TerminateProcess{ &proc, process = child.id, code } }
+        if ok == 0 {
+            let e = last_error{ &proc }
+            if WaitForSingleObject{ &proc, handle = child.id, ms = 0 } == WAIT_OBJECT_0 { return }
+            return proc_failed{ code = e }
+        }
+    }
+
+    // Reads at most into.len bytes, which aren't none, from this program's end of a pipe,
+    // which is overlapped: ReadFile starts the read, and GetOverlappedResult waits for it to
+    // finish. ERROR_BROKEN_PIPE, the child's end closed, is the end: 0.
+    fn pipe_read { mut proc: Proc, pipe: u64, into: []mut u8 } -> proc::Error!usize {
+        let n = if into.len > CHUNK { CHUNK } else { into.len }
+        let mut o = try overlapped{ &proc }
+        defer _ = close_handle{ &proc, handle = o.event }
+        if read_overlapped{ &proc, file = pipe, buf = into.ptr, count = @as(u32, n), done = null, overlapped = &o } == 0 {
+            let e = last_error{ &proc }
+            if e == ERROR_BROKEN_PIPE { return 0 }
+            if e != ERROR_IO_PENDING { return proc_failed{ code = e } }
+        }
+        let mut done: u32 = 0
+        if GetOverlappedResult{ &proc, file = pipe, overlapped = &o, &done, wait = 1 } == 0 {
+            let e = last_error{ &proc }
+            if e == ERROR_BROKEN_PIPE { return 0 }
+            return proc_failed{ code = e }
+        }
+        return @as(usize, done)
+    }
+
+    // Writes some of `bytes`, which aren't none, to this program's end of a pipe, as pipe_read
+    // reads. Returns how many; broken_pipe once the child has closed its end.
+    fn pipe_write { mut proc: Proc, pipe: u64, bytes: []u8 } -> proc::Error!usize {
+        let n = if bytes.len > CHUNK { CHUNK } else { bytes.len }
+        let mut o = try overlapped{ &proc }
+        defer _ = close_handle{ &proc, handle = o.event }
+        if write_overlapped{ &proc, file = pipe, buf = bytes.ptr, count = @as(u32, n), done = null, overlapped = &o } == 0 {
+            let e = last_error{ &proc }
+            if e != ERROR_IO_PENDING { return proc_failed{ code = e } }
+        }
+        let mut done: u32 = 0
+        if GetOverlappedResult{ &proc, file = pipe, overlapped = &o, &done, wait = 1 } == 0 {
+            return proc_failed{ code = last_error{ &proc } }
+        }
+        return @as(usize, done)
+    }
+
+    fn pipe_close { mut proc: Proc, pipe: u64 } {
+        _ = close_handle{ &proc, handle = pipe }
+    }
+
+    // An OVERLAPPED for one read or write, with an event of its own, which the caller closes.
+    fn overlapped { mut proc: Proc } -> proc::Error!Overlapped {
+        let event = CreateEventW{ &proc, security = null, manual = 1, initial = 0, name = null }
+        if event == 0 { return proc_failed{ code = last_error{ &proc } } }
+        return Overlapped{ internal = 0, internal_high = 0, offset = 0, offset_high = 0, event }
     }
 
     // How many processors this program may run on: at least 1.

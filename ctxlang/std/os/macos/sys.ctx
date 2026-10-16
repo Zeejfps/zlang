@@ -70,4 +70,159 @@ namespace sys {
 
     // Nothing: the executable reserves its stack (ctxc/drive.ctx, link_flags).
     fn start { mut proc: os::Proc, argv: *?*u8 } {}
+
+    // ---- for os's proc: programs, started with posix_spawnp, and waited for with a kqueue.
+    // macOS has no way for a child to end with its parent, as Linux's PR_SET_PDEATHSIG ends
+    // one, so Options' die_with_parent does nothing here: a child outlives the program that
+    // started it, unless that program kills it.
+
+    // posix_spawn_file_actions_t and posix_spawnattr_t: on macOS each is a pointer to what its
+    // init allocates, and its destroy frees.
+    struct SpawnActions { opaque: u64 }
+    struct SpawnAttr { opaque: u64 }
+
+    extern fn posix_spawn_file_actions_init { mut proc: os::Proc, mut actions: SpawnActions } -> i32
+    extern fn posix_spawn_file_actions_destroy { mut proc: os::Proc, mut actions: SpawnActions } -> i32
+    extern fn posix_spawn_file_actions_adddup2 { mut proc: os::Proc, mut actions: SpawnActions, fd: i32, to: i32 } -> i32
+    extern fn posix_spawn_file_actions_addinherit_np { mut proc: os::Proc, mut actions: SpawnActions, fd: i32 } -> i32
+    extern fn posix_spawn_file_actions_addchdir_np { mut proc: os::Proc, mut actions: SpawnActions, path: *u8 } -> i32
+    extern fn posix_spawnattr_init { mut proc: os::Proc, mut attr: SpawnAttr } -> i32
+    extern fn posix_spawnattr_destroy { mut proc: os::Proc, mut attr: SpawnAttr } -> i32
+    extern fn posix_spawnattr_setflags { mut proc: os::Proc, mut attr: SpawnAttr, flags: i16 } -> i32
+    extern fn posix_spawnattr_setpgroup { mut proc: os::Proc, mut attr: SpawnAttr, group: i32 } -> i32
+    extern fn posix_spawnp { mut proc: os::Proc, mut pid: i32, file: *u8, actions: *SpawnActions, attr: *SpawnAttr, argv: *?*u8, envp: *?*u8 } -> i32
+    extern fn pipe { mut proc: os::Proc, fds: *mut i32 } -> i32
+    extern fn kqueue { mut proc: os::Proc } -> i32
+    extern fn kevent { mut proc: os::Proc, kq: i32, changes: ?*Kevent, count: i32, events: ?*mut Kevent, capacity: i32, timeout: *os::Timespec } -> i32
+
+    // fcntl and open are variadic in C, and their variadic argument goes where arm64 and
+    // x86_64 each read it, as c_open's mode does.
+    #c::symbol{ name = "fcntl" }
+    extern fn c_fcntl { mut proc: os::Proc, fd: i32, cmd: i32, arg: i64, r3: u64, r4: u64, r5: u64, r6: u64, r7: u64, stacked: i64 } -> i32
+    #c::symbol{ name = "open" }
+    extern fn proc_open { mut proc: os::Proc, path: c::String, flags: i32, mode: u32, r3: u64, r4: u64, r5: u64, r6: u64, r7: u64, stacked: u32 } -> i32
+
+    // posix_spawnattr_setflags' flags: the child in the process group setpgroup gives, and
+    // only the descriptors the file actions name open in it, so that it gets no other, a pipe
+    // another thread is starting a program with among them.
+    const POSIX_SPAWN_SETPGROUP: i16 = 0x2
+    const POSIX_SPAWN_CLOEXEC_DEFAULT: i16 = 0x4000
+
+    // open's flag, and fcntl's command, for a descriptor that exec closes; the clock that only
+    // goes forward, for clock_gettime.
+    const O_CLOEXEC: i32 = 0x1000000
+    const F_DUPFD_CLOEXEC: i32 = 67
+    const CLOCK_MONOTONIC: i32 = 6
+
+    // struct kevent, and what await_exit asks a kqueue for: a process's end, once.
+    struct Kevent { ident: u64, filter: i16, flags: u16, fflags: u32, data: i64, udata: u64 }
+    const EVFILT_PROC: i16 = -5
+    const EV_ADD: u16 = 0x1
+    const EV_ONESHOT: u16 = 0x10
+    const NOTE_EXIT: u32 = 0x80000000
+
+    // The longest await_exit waits in one kevent: a day, in nanoseconds.
+    const DAY: u64 = 86400000000000
+
+    // fcntl{ fd, cmd, arg }, for os.
+    fn fcntl { mut proc: os::Proc, fd: i32, cmd: i32, arg: i64 } -> i32 {
+        return c_fcntl{ &proc, fd, cmd, arg, r3 = 0, r4 = 0, r5 = 0, r6 = 0, r7 = 0, stacked = arg }
+    }
+
+    // A pipe whose descriptors exec closes, in fds[0] (its end to read) and fds[1]: 0, or -1 and
+    // errno. macOS has no pipe2, so exec closes them only once fcntl says so: a program that
+    // another thread forks meanwhile, other than with spawn, may get them.
+    fn make_pipe { mut proc: os::Proc, fds: *mut i32 } -> i32 {
+        if pipe{ &proc, fds } != 0 { return -1 }
+        if fcntl{ &proc, fd = fds[0], cmd = os::F_SETFD, arg = os::FD_CLOEXEC } < 0 or fcntl{ &proc, fd = fds[1], cmd = os::F_SETFD, arg = os::FD_CLOEXEC } < 0 {
+            let e = proc_errno{ &proc }.*
+            _ = os::close_fd{ &proc, fd = fds[0] }
+            _ = os::close_fd{ &proc, fd = fds[1] }
+            proc_errno{ &proc }.* = e
+            return -1
+        }
+        return 0
+    }
+
+    // The null device, open to read and write, for a stream that Stdio::ignore; -1 and errno if
+    // it can't be opened.
+    fn open_null { mut proc: os::Proc } -> i32 {
+        let flags = os::O_RDWR | O_CLOEXEC
+        return proc_open{ &proc, path = "/dev/null", flags, mode = 0, r3 = 0, r4 = 0, r5 = 0, r6 = 0, r7 = 0, stacked = 0 }
+    }
+
+    // Starts the program with posix_spawnp, which looks for `file` on PATH as execvp does, so
+    // `path` and `scratch` aren't needed here: fds[0], [1] and [2] become its standard input,
+    // output and error (os::INHERITED leaves one as this program's own, and os::CLOSED
+    // closed), in a process group of its own if `group`, in
+    // `dir` if it isn't null (addchdir_np, macOS 10.15 on). Returns its process id.
+    // `die_with_parent` can't be done on macOS, and is ignored.
+    fn spawn { mut proc: os::Proc, file: *u8, argv: *?*u8, envp: *?*u8, path: ?*u8, scratch: *mut u8, fds: *i32, dir: ?*u8, group: bool, die_with_parent: bool } -> proc::Error!i32 {
+        let mut actions = SpawnActions{ opaque = 0 }
+        let made = posix_spawn_file_actions_init{ &proc, &actions }
+        if made != 0 { return os::proc_failed{ code = made } }
+        defer _ = posix_spawn_file_actions_destroy{ &proc, &actions }
+        let mut attr = SpawnAttr{ opaque = 0 }
+        let set = posix_spawnattr_init{ &proc, &attr }
+        if set != 0 { return os::proc_failed{ code = set } }
+        defer _ = posix_spawnattr_destroy{ &proc, &attr }
+        let flags = if group { POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETPGROUP } else { POSIX_SPAWN_CLOEXEC_DEFAULT }
+        let mut e = posix_spawnattr_setflags{ &proc, &attr, flags }
+        if e == 0 and group { e = posix_spawnattr_setpgroup{ &proc, &attr, group = 0 } }
+        // With POSIX_SPAWN_CLOEXEC_DEFAULT the child's streams too are only those named here:
+        // its own, inherited, or another put in place. One that this program hasn't open isn't
+        // named, so the child hasn't it either: addinherit_np would fail on it.
+        let mut k: usize = 0
+        while e == 0 and k < 3 {
+            let fd = fds[k]
+            let to = @as(i32, k)
+            if fd == os::INHERITED or fd == to {
+                e = posix_spawn_file_actions_addinherit_np{ &proc, &actions, fd = to }
+            } else if fd >= 0 {
+                e = posix_spawn_file_actions_adddup2{ &proc, &actions, fd, to }
+            }
+            k = k + 1
+        }
+        if e == 0 {
+            if let d = dir { e = posix_spawn_file_actions_addchdir_np{ &proc, &actions, path = d } }
+        }
+        if e != 0 { return os::proc_failed{ code = e } }
+        let mut pid: i32 = 0
+        let r = posix_spawnp{ &proc, &pid, file, actions = &actions, attr = &attr, argv, envp }
+        if r != 0 { return os::proc_failed{ code = r } }
+        return pid
+    }
+
+    // Waits for process pid to end, for at most `nanoseconds` (0 looks without waiting):
+    // whether it did, without reaping it. A kqueue waits for its NOTE_EXIT, rather than the
+    // program looking again and again, a day at most at a time, since kevent refuses a timeout
+    // too far off. macOS says ESRCH for a process that ended already, which then needs no
+    // waiting.
+    fn await_exit { mut proc: os::Proc, pid: i32, nanoseconds: u64 } -> proc::Error!bool {
+        let kq = kqueue{ &proc }
+        if kq < 0 { return os::proc_failed{ code = proc_errno{ &proc }.* } }
+        defer _ = os::close_fd{ &proc, fd = kq }
+        let change = Kevent{ ident = @as(u64, pid), filter = EVFILT_PROC, flags = EV_ADD | EV_ONESHOT, fflags = NOTE_EXIT, data = 0, udata = 0 }
+        let now = os::Timespec{ sec = 0, nsec = 0 }
+        if kevent{ &proc, kq, changes = &change, count = 1, events = null, capacity = 0, timeout = &now } < 0 {
+            let e = proc_errno{ &proc }.*
+            if e == os::ESRCH { return true }
+            return os::proc_failed{ code = e }
+        }
+        let deadline = os::deadline{ nanoseconds }
+        let mut event = Kevent{ ident = 0, filter = 0, flags = 0, fflags = 0, data = 0, udata = 0 }
+        while true {
+            let left = os::remaining{ deadline }
+            let wait = if left > DAY { DAY } else { left }
+            let t = os::Timespec{ sec = @as(i64, wait / 1000000000), nsec = @as(i64, wait % 1000000000) }
+            let r = kevent{ &proc, kq, changes = null, count = 0, events = &event, capacity = 1, timeout = &t }
+            if r > 0 { return true }
+            if r < 0 {
+                let e = proc_errno{ &proc }.*
+                if e != os::EINTR { return os::proc_failed{ code = e } }
+            } else if left == 0 {
+                return false
+            }
+        }
+    }
 }

@@ -91,4 +91,236 @@ namespace sys {
         if setrlimit{ &proc, resource = RLIMIT_STACK, limit = &rl } != 0 { return }
         _ = execv{ &proc, path = "/proc/self/exe", argv }      // returns only if it failed: carry on
     }
+
+    // ---- for os's proc: programs, started with fork and exec, so that a child can ask, before
+    // it runs the program, to end with the thread that started it (Options' die_with_parent),
+    // which posix_spawn can't; and waited for with a pidfd.
+
+    extern fn fork { mut proc: os::Proc } -> i32
+    extern fn pipe2 { mut proc: os::Proc, fds: *mut i32, flags: i32 } -> i32
+    extern fn dup2 { mut proc: os::Proc, from: i32, to: i32 } -> i32
+    extern fn setpgid { mut proc: os::Proc, pid: i32, group: i32 } -> i32
+    extern fn chdir { mut proc: os::Proc, path: *u8 } -> i32
+    extern fn getppid { mut proc: os::Proc } -> i32
+    extern fn execve { mut proc: os::Proc, path: *u8, argv: *?*u8, envp: *?*u8 } -> i32
+    #c::symbol{ name = "_exit" }
+    extern fn exit_now { mut proc: os::Proc, code: i32 }
+    #c::symbol{ name = "open" }
+    extern fn proc_open { mut proc: os::Proc, path: c::String, flags: i32, mode: u32 } -> i32
+    // prctl, fcntl and syscall are variadic in C, and Linux's C conventions pass their variadic
+    // arguments as any other's, as open's mode.
+    extern fn prctl { mut proc: os::Proc, option: i32, arg2: u64, arg3: u64, arg4: u64, arg5: u64 } -> i32
+    #c::symbol{ name = "fcntl" }
+    extern fn c_fcntl { mut proc: os::Proc, fd: i32, cmd: i32, arg: i64 } -> i32
+    extern fn syscall { mut proc: os::Proc, number: i64, a: i64, b: i64 } -> i64
+    extern fn poll { mut proc: os::Proc, mut fd: PollFd, count: u64, ms: i32 } -> i32
+
+    // open's flag, and fcntl's command, for a descriptor that exec closes; the clock that only
+    // goes forward, for clock_gettime.
+    const O_CLOEXEC: i32 = 0x80000
+    const F_DUPFD_CLOEXEC: i32 = 1030
+    const CLOCK_MONOTONIC: i32 = 1
+
+    // The errnos execvp goes on to PATH's next directory after, besides ENOENT and EACCES.
+    const ENOTDIR: i32 = 20
+    const ENODEV: i32 = 19
+    const ETIMEDOUT: i32 = 110
+    const ESTALE: i32 = 116
+
+    // prctl's option that sends the calling process a signal when its parent thread ends.
+    const PR_SET_PDEATHSIG: i32 = 1
+
+    // pidfd_open's system call, since Linux 5.3: a descriptor for a process, which poll finds
+    // readable once the process has ended. glibc names it only from 2.36.
+    const SYS_PIDFD_OPEN: i64 = 434
+
+    // poll's struct pollfd, and its event for a descriptor that is readable.
+    struct PollFd { fd: i32, events: i16, revents: i16 }
+    const POLLIN: i16 = 1
+
+    // fcntl{ fd, cmd, arg }, for os.
+    fn fcntl { mut proc: os::Proc, fd: i32, cmd: i32, arg: i64 } -> i32 {
+        return c_fcntl{ &proc, fd, cmd, arg }
+    }
+
+    // A pipe whose descriptors exec closes, in fds[0] (its end to read) and fds[1]: 0, or -1 and
+    // errno.
+    fn make_pipe { mut proc: os::Proc, fds: *mut i32 } -> i32 {
+        return pipe2{ &proc, fds, flags = O_CLOEXEC }
+    }
+
+    // The null device, open to read and write, for a stream that Stdio::ignore; -1 and errno if
+    // it can't be opened.
+    fn open_null { mut proc: os::Proc } -> i32 {
+        return proc_open{ &proc, path = "/dev/null", flags = os::O_RDWR | O_CLOEXEC, mode = 0 }
+    }
+
+    // Starts the program: forks, and the child puts fds[0], [1] and [2] in place as its
+    // standard input, output and error (below 0 leaves one as it is: os::INHERITED or
+    // os::CLOSED), makes its own process group
+    // if `group`, moves to `dir` if it isn't null, and runs `file`. It looks for it in each of
+    // `path`'s directories, PATH's, in turn, as execvp does, writing each path it tries in
+    // `scratch`; with a null `path` it runs `file` as it is. Returns the child's process id.
+    //
+    // Between fork and exec the child is a copy of this program with only the thread that
+    // called fork, whose other threads may have held locks, the C library's among them. So it
+    // only makes calls that are async-signal-safe, and doesn't allocate, write standard
+    // output's buffer out or reach a panic: all it does is in the branch below, which calls
+    // nothing but extern fns. A ctxlang fn's call would check the stack, which may panic, as an
+    // index or arithmetic that may overflow would, so the branch reads through pointers and its
+    // arithmetic wraps. What it needs was made before fork, by os::spawn and here.
+    //
+    // A child that can't run the program writes errno to a pipe whose end exec closes
+    // (O_CLOEXEC), and exits: this program reads either 0 bytes, once exec has run the
+    // program, or the error, which it returns as os::spawn's, as posix_spawn would.
+    //
+    // With `die_with_parent`, the child asks for SIGKILL when the thread that started it ends
+    // (PR_SET_PDEATHSIG), so that it doesn't outlive the program: the thread, not the process,
+    // so on a thread that thread::create started it ends with that thread, if that thread ends
+    // first. A child whose parent ended before it asked has another parent by then, and exits
+    // instead.
+    fn spawn { mut proc: os::Proc, file: *u8, argv: *?*u8, envp: *?*u8, path: ?*u8, scratch: *mut u8, fds: *i32, dir: ?*u8, group: bool, die_with_parent: bool } -> proc::Error!i32 {
+        let parent = os::getpid{ &proc }
+        let mut report: [2]i32 = [-1, -1]
+        if pipe2{ &proc, fds = &report[0], flags = O_CLOEXEC } != 0 { return os::proc_failed{ code = proc_errno{ &proc }.* } }
+        // Both ends above 2 (os::above): one at 0, 1 or 2, as when this program hasn't those
+        // open, would be replaced as the child puts its streams in place, and its report lost.
+        let report_in = os::above{ &proc, fd = report[0] }
+        if report_in < 0 {
+            let e = proc_errno{ &proc }.*
+            _ = os::close_fd{ &proc, fd = report[1] }
+            return os::proc_failed{ code = e }
+        }
+        let report_out = os::above{ &proc, fd = report[1] }
+        if report_out < 0 {
+            let e = proc_errno{ &proc }.*
+            _ = os::close_fd{ &proc, fd = report_in }
+            return os::proc_failed{ code = e }
+        }
+        let pid = fork{ &proc }
+        if pid == 0 {
+            let mut code: i32 = 0
+            if die_with_parent {
+                if prctl{ &proc, option = PR_SET_PDEATHSIG, arg2 = 9, arg3 = 0, arg4 = 0, arg5 = 0 } != 0 { code = proc_errno{ &proc }.* }
+                if getppid{ &proc } != parent { exit_now{ &proc, code = 127 } }
+            }
+            if code == 0 and group and setpgid{ &proc, pid = 0, group = 0 } != 0 { code = proc_errno{ &proc }.* }
+            let mut k: usize = 0
+            while code == 0 and k < 3 {
+                let fd = fds[k]
+                let to = @trunc(i32, k)
+                if fd == to {
+                    // In place already: it only needs to stay open through exec.
+                    if c_fcntl{ &proc, fd, cmd = os::F_SETFD, arg = 0 } < 0 { code = proc_errno{ &proc }.* }
+                } else if fd >= 0 {
+                    while code == 0 and dup2{ &proc, from = fd, to } < 0 {
+                        let e = proc_errno{ &proc }.*
+                        if e != os::EINTR { code = e }
+                    }
+                }
+                k = k +% 1
+            }
+            if code == 0 {
+                if let d = dir {
+                    if chdir{ &proc, path = d } != 0 { code = proc_errno{ &proc }.* }
+                }
+            }
+            if code == 0 {
+                if let list = path {
+                    // Each of PATH's directories, up to the next ':': an empty one is the
+                    // working directory. execvp goes on to the next after these errnos, and
+                    // says EACCES at the end if any directory did, else ENOENT. A directory
+                    // too long to make a path of with the program's name (PATH_MAX) is
+                    // skipped, as glibc's execvpe skips one longer than PATH_MAX, and so is
+                    // one that execve finds too long (ENAMETOOLONG: a name in it past
+                    // NAME_MAX), which glibc's would stop at.
+                    let mut at = list
+                    let mut denied = false
+                    let mut more = true
+                    let mut length: usize = 0
+                    while file[length] != 0 { length = length +% 1 }
+                    code = os::ENOENT
+                    while more {
+                        let mut n: usize = 0
+                        while at[n] != 0 and at[n] != ':' { n = n +% 1 }
+                        if n +% length +% 2 <= os::PATH_MAX {
+                            let mut w: usize = 0
+                            while w < n {
+                                scratch[w] = at[w]
+                                w = w +% 1
+                            }
+                            if n > 0 {
+                                scratch[w] = '/'
+                                w = w +% 1
+                            }
+                            let mut i: usize = 0
+                            while i < length {
+                                scratch[w +% i] = file[i]
+                                i = i +% 1
+                            }
+                            scratch[w +% length] = 0
+                            _ = execve{ &proc, path = scratch, argv, envp }
+                            let e = proc_errno{ &proc }.*
+                            if e == os::EACCES {
+                                denied = true
+                            } else if e != os::ENOENT and e != ENOTDIR and e != ENODEV and e != ETIMEDOUT and e != ESTALE and e != ENAMETOOLONG {
+                                code = e
+                                more = false
+                            }
+                        }
+                        if at[n] == 0 { more = false } else { at = at + (n +% 1) }
+                    }
+                    if code == os::ENOENT and denied { code = os::EACCES }
+                } else {
+                    _ = execve{ &proc, path = file, argv, envp }
+                    code = proc_errno{ &proc }.*
+                }
+            }
+            _ = os::write_fd{ &proc, fd = report_out, buf = @cast(*u8, &code), count = 4 }
+            exit_now{ &proc, code = 127 }
+            return proc::other{ code = 0 }                  // exit_now doesn't return
+        }
+        let failed = proc_errno{ &proc }.*
+        _ = os::close_fd{ &proc, fd = report_out }
+        if pid < 0 {
+            _ = os::close_fd{ &proc, fd = report_in }
+            return os::proc_failed{ code = failed }
+        }
+        // The group from this side too, so that it is there by the time spawn returns, whichever
+        // of the two gets there first.
+        if group { _ = setpgid{ &proc, pid, group = pid } }
+        let mut code: i32 = 0
+        let mut got: i64 = -1
+        while got < 0 {
+            got = os::read_fd{ &proc, fd = report_in, buf = @cast(*mut u8, &code), count = 4 }
+            if got < 0 and proc_errno{ &proc }.* != os::EINTR { got = 0 }
+        }
+        _ = os::close_fd{ &proc, fd = report_in }
+        if got == 0 { return pid }
+        // It didn't run the program, and has exited: it is waited for here.
+        _ = os::reap{ &proc, pid, options = 0 }
+        return os::proc_failed{ code }
+    }
+
+    // Waits for process pid to end, for at most `nanoseconds` (0 looks without waiting):
+    // whether it did, without reaping it. poll waits on a pidfd for it, rather than the
+    // program looking again and again.
+    fn await_exit { mut proc: os::Proc, pid: i32, nanoseconds: u64 } -> proc::Error!bool {
+        let fd = syscall{ &proc, number = SYS_PIDFD_OPEN, a = @as(i64, pid), b = 0 }
+        if fd < 0 { return os::proc_failed{ code = proc_errno{ &proc }.* } }
+        let mut p = PollFd{ fd = @as(i32, fd), events = POLLIN, revents = 0 }
+        defer _ = os::close_fd{ &proc, fd = p.fd }
+        let deadline = os::deadline{ nanoseconds }
+        while true {
+            let left = os::remaining{ deadline }
+            let r = poll{ &proc, fd = &p, count = 1, ms = os::poll_millis{ nanoseconds = left } }
+            if r > 0 { return true }
+            if r < 0 {
+                let e = proc_errno{ &proc }.*
+                if e != os::EINTR { return os::proc_failed{ code = e } }
+            } else if left == 0 {
+                return false
+            }
+        }
+    }
 }

@@ -9120,7 +9120,15 @@ class PlatformLayers(Base):
         # Linux's and macOS's share std/os/posix; the interpreter's is std/os/interp.
         self.assertEqual(sorted(os.listdir(os.path.join(ROOT, 'std', 'os'))), sorted(toolchain.PLATFORMS + ('posix', 'interp')))
         d, files = toolchain.write_program([("""
-fn main { mut io: Io, mut mem: Mem, mut fs: Fs } -> i32 {
+fn main { mut io: Io, mut mem: Mem, mut fs: Fs, mut proc: Proc } -> i32 {
+    let options = proc::Options{ dir = "d", stdin = proc::Stdio::ignore, stdout = proc::Stdio::pipe, group = true, leftovers = proc::Leftovers::keep, die_with_parent = true, .. }
+    let mut child = proc::spawn{ &proc, argv = ["p"], options } iferr { return 1 }
+    let mut got: [8]u8
+    if let r = child.stdout { _ = proc::read{ &proc, pipe = r, into = got[..] } iferr { 0 } }
+    if let w = child.stdin { _ = proc::write{ &proc, pipe = w, bytes = "x" } iferr { 0 } }
+    _ = proc::wait_for{ &proc, &child, nanoseconds = 1 } iferr { null }
+    proc::kill{ &proc, child } iferr { return 1 }
+    _ = proc::wait{ &proc, &child } iferr { 1 }
     let mut line: [16]u8
     _ = io::read_line{ &io, into = line[..] }
     io::eprintln{ &io, s = "e" }
@@ -9136,11 +9144,15 @@ fn main { mut io: Io, mut mem: Mem, mut fs: Fs } -> i32 {
     return 0
 }
 """, 'main.ctx')])
-        posix = ['write', 'read', 'aligned_alloc', 'memset', 'open', 'close', 'opendir', 'readdir', 'rename', 'getcwd']
-        for platform, symbols in [('linux', posix + ['__errno_location']),
-                                  ('macos', posix + ['__error']),
+        posix = ['write', 'read', 'aligned_alloc', 'memset', 'open', 'close', 'opendir', 'readdir', 'rename', 'getcwd',
+                 'waitpid', 'kill', 'fcntl']
+        for platform, symbols in [('linux', posix + ['__errno_location', 'fork', 'prctl', 'execve', 'pipe2', 'syscall', 'poll']),
+                                  ('macos', posix + ['__error', 'posix_spawnp', 'posix_spawn_file_actions_addinherit_np',
+                                                     'posix_spawnattr_setpgroup', 'pipe', 'kqueue', 'kevent']),
                                   ('windows', ['_write', '_read', 'VirtualAlloc', 'CreateFileW', 'FindFirstFileW',
-                                               'MoveFileExW', 'GetCurrentDirectoryW']),
+                                               'MoveFileExW', 'GetCurrentDirectoryW', 'CreateProcessW', 'CreateNamedPipeW',
+                                               'UpdateProcThreadAttribute', 'AssignProcessToJobObject', 'TerminateJobObject',
+                                               'GetOverlappedResult']),
                                   ('interp', ['ctx_interp_write', 'ctx_interp_pages', 'ctx_interp_unsupported'])]:
             c = os.path.join(d, f'{platform}.c')
             self.assertEqual(toolchain.ctxc_build(toolchain.native_ctxc(), c, list(files), cwd=d, platform=platform), (0, ''))
@@ -9163,10 +9175,11 @@ fn main { mut io: Io, mut fs: Fs, mut proc: Proc } -> i32 {
         fs::other{ code } => { return 3 }
         else => { return 4 }
     }
-    match proc::wait{ &proc, child = proc::Child{ id = 0 } } {
+    let mut child = proc::Child{ id = 0, group = 0, cleanup = 0, stdin = null, stdout = null, stderr = null }
+    match proc::wait{ &proc, &child } {
         ok => { return 0 }
         proc::not_found | proc::permission_denied => { return 1 }
-        proc::other => { return 2 }
+        proc::broken_pipe | proc::other => { return 2 }
         else => { return 3 }
     }
 }
@@ -10863,6 +10876,100 @@ fn main { mut io: Io, mut proc: Proc, args: Args } -> i32 {
 """
 
 
+PROC_STDIO = """
+fn stdio_of { name: []u8, file: fs::File } -> proc::Stdio {
+    if slice::eq_bytes{ a = name, b = "ignore" } { return proc::Stdio::ignore }
+    if slice::eq_bytes{ a = name, b = "file" } { return proc::Stdio::file{ file } }
+    if slice::eq_bytes{ a = name, b = "pipe" } { return proc::Stdio::pipe }
+    return proc::Stdio::inherit
+}
+
+// All that a pipe gives, after its name.
+fn drain { mut io: Io, mut proc: Proc, pipe: ?proc::Pipe, name: []u8 } -> bool {
+    let r = pipe ifnull { return true }
+    let mut got: [4096]u8
+    let mut n: usize = 0
+    while true {
+        let k = proc::read{ &proc, pipe = r, into = got[n..] } iferr { return false }
+        if k == 0 { break }
+        n = n + k
+    }
+    _ = @fmt(&io, "{} pipe: {}\\n", name, got[..n])
+    return true
+}
+
+// args: Python, its script, the Stdio of the child's stdin, stdout and stderr, and a file for each.
+fn main { mut io: Io, mut fs: Fs, mut proc: Proc, args: Args } -> i32 {
+    let input = fs::open{ &fs, path = args[5], mode = fs::Mode::read } iferr { return 10 }
+    let output = fs::open{ &fs, path = args[6], mode = fs::Mode::write } iferr { return 11 }
+    let error = fs::open{ &fs, path = args[7], mode = fs::Mode::write } iferr { return 12 }
+    let argv: [3][]u8 = [args[0], "-c", args[1]]
+    let options = proc::Options{
+        stdin = stdio_of{ name = args[2], file = input },
+        stdout = stdio_of{ name = args[3], file = output },
+        stderr = stdio_of{ name = args[4], file = error },
+        ..
+    }
+    let mut child = proc::spawn{ &proc, argv = argv[..], options } iferr { return 13 }
+    if let w = child.stdin { _ = proc::write{ &proc, pipe = w, bytes = "piped input" } iferr { return 14 } }
+    proc::close{ &proc, pipe = &child.stdin }
+    if not drain{ &io, &proc, pipe = child.stdout, name = "out" } { return 15 }
+    if not drain{ &io, &proc, pipe = child.stderr, name = "err" } { return 16 }
+    let code = proc::wait{ &proc, &child } iferr { return 17 }
+    _ = fs::close{ &fs, file = input }
+    _ = fs::close{ &fs, file = output }
+    _ = fs::close{ &fs, file = error }
+    _ = @fmt(&io, "exit {}\\n", code)
+    return 0
+}
+"""
+
+
+def kill_pid(pid):
+    """Ends process pid, if it is still running."""
+    if os.name == 'nt':
+        import subprocess
+        subprocess.run(['taskkill', '/F', '/PID', str(pid)], capture_output=True)
+        return
+    try:
+        os.kill(pid, 9)
+    except ProcessLookupError:
+        pass
+
+
+def gone(pid, timeout=10):
+    """Whether process pid has ended, or does within timeout seconds."""
+    import time
+    if os.name == 'nt':
+        import ctypes
+        k = ctypes.windll.kernel32
+        k.OpenProcess.restype = ctypes.c_void_p
+        k.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+        k.CloseHandle.argtypes = [ctypes.c_void_p]
+        h = k.OpenProcess(0x00100000, False, pid)           # SYNCHRONIZE
+        if not h:
+            return True
+        try:
+            return k.WaitForSingleObject(h, int(timeout * 1000)) == 0
+        finally:
+            k.CloseHandle(h)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        try:
+            # A zombie, which its new parent hasn't waited for yet, has ended too.
+            with open(f'/proc/{pid}/stat') as f:
+                if f.read().rsplit(')', 1)[1].split()[0] == 'Z':
+                    return True
+        except OSError:
+            pass
+        time.sleep(0.05)
+    return False
+
+
 class Proc(Base):
     """std's proc: running programs, and this one's environment. The programs run are the
     Python running the tests, so they exist on every platform."""
@@ -10944,15 +11051,15 @@ class Proc(Base):
     _ = list::push{ list = &argv, item = args[0] }
     _ = list::push{ list = &argv, item = "-c" }
     _ = list::push{ list = &argv, item = args[1] }
-    let a = proc::spawn{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} } iferr { return 1 }
+    let mut a = proc::spawn{ &proc, argv = list::items{ list = argv }, options = proc::Options{ .. } } iferr { return 1 }
     list::items{ list = argv }[2] = args[2]
-    let b = proc::spawn{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} } iferr { return 2 }
-    io::println_i64{ &io, n = proc::wait{ &proc, child = b } iferr { return 3 } }
-    io::println_i64{ &io, n = proc::wait{ &proc, child = a } iferr { return 4 } }
+    let mut b = proc::spawn{ &proc, argv = list::items{ list = argv }, options = proc::Options{ .. } } iferr { return 2 }
+    io::println_i64{ &io, n = proc::wait{ &proc, child = &b } iferr { return 3 } }
+    io::println_i64{ &io, n = proc::wait{ &proc, child = &a } iferr { return 4 } }
     io::println_bool{ &io, n = proc::processors{ &proc } >= 1 }
     let mut missing = list::new([]u8){ realloc = arena::alloc, &heap }
     _ = list::push{ list = &missing, item = "ctx-no-such-program-anywhere" }
-    match proc::spawn{ &proc, argv = list::items{ list = missing }, env = slice::empty([]u8){} } {
+    match proc::spawn{ &proc, argv = list::items{ list = missing }, options = proc::Options{ .. } } {
         ok              => { return 5 }
         proc::not_found => { return 0 }
         else            => { return 6 }
@@ -10969,6 +11076,421 @@ class Proc(Base):
     return 0
 """)
         self.assertIn('an environment entry is KEY=VALUE', cm.exception.msg)
+
+    def build_proc(self, body):
+        from toolchain import build_sources
+        exe, _ = build_sources([(PROC_MAIN % body, 'main.ctx')])
+        return exe
+
+    def run_built(self, exe, args, inp=None, cwd=None):
+        """Runs exe: its stdout, its stderr, its exit code and how many seconds it took."""
+        import time
+        from toolchain import run_exe
+        out, err = io.StringIO(), io.StringIO()
+        start = time.monotonic()
+        code = run_exe(exe, out=out, err=err, inp=io.BytesIO(inp) if inp is not None else None, args=args, cwd=cwd)
+        took = time.monotonic() - start
+        return out.getvalue().replace('\r\n', '\n'), err.getvalue().replace('\r\n', '\n'), code, took
+
+    def test_each_stdio_for_each_stream(self):
+        # Each of a child's three streams goes, in turn, to each Stdio: this program's own
+        # (inherit), the null device (ignore), a file, and a pipe. The child copies its input
+        # into its output, and writes ERR to its error.
+        import tempfile
+        from toolchain import build_sources
+        exe, _ = build_sources([(PROC_STDIO, 'main.ctx')])
+        d = tempfile.mkdtemp(prefix='ctxstdio-', dir=os.path.join(ROOT, 'build'))
+        self.addCleanup(shutil.rmtree, d, True)
+        script = 'import sys\nd = sys.stdin.read()\nsys.stdout.write("OUT[" + d + "]")\nsys.stdout.flush()\nsys.stderr.write("ERR")\nsys.stderr.flush()'
+        modes = ['inherit', 'ignore', 'file', 'pipe']
+        given = {'inherit': 'from parent', 'ignore': '', 'file': 'from file', 'pipe': 'piped input'}
+        for i in range(4):
+            stdin, stdout, stderr = modes[i], modes[(i + 1) % 4], modes[(i + 2) % 4]
+            with self.subTest(stdin=stdin, stdout=stdout, stderr=stderr):
+                paths = [os.path.join(d, f'{n}{i}') for n in ('in', 'out', 'err')]
+                with open(paths[0], 'w') as f:
+                    f.write('from file')
+                out, err, code, _ = self.run_built(exe, [sys.executable, script, stdin, stdout, stderr, *paths], inp=b'from parent')
+                self.assertEqual(code, 0, (out, err))
+                with open(paths[1]) as f:
+                    in_file = f.read()
+                with open(paths[2]) as f:
+                    err_file = f.read()
+                text = f'OUT[{given[stdin]}]'
+                self.assertEqual(text in out and 'out pipe' not in out, stdout == 'inherit', out)
+                self.assertEqual(in_file, text if stdout == 'file' else '')
+                self.assertEqual(f'out pipe: {text}\n' in out, stdout == 'pipe', out)
+                self.assertEqual('ERR' in err, stderr == 'inherit', err)
+                self.assertEqual(err_file, 'ERR' if stderr == 'file' else '')
+                self.assertEqual('err pipe: ERR\n' in out, stderr == 'pipe', out)
+                self.assertTrue(out.endswith('exit 0\n'), out)
+
+    def test_pipe_round_trip(self):
+        # 200000 bytes into the child's input, which it closes, then all of its output, which is
+        # the input in upper case, and its error, a pipe of its own: more than a pipe holds, so
+        # each side waits for the other.
+        exe = self.build_proc("""
+    let mut sent: [200000]u8
+    let mut i: usize = 0
+    while i < sent.len {
+        sent[i] = @as(u8, 97 + i % 26)
+        i = i + 1
+    }
+    let cmd: [3][]u8 = [args[0], "-c", args[1]]
+    let options = proc::Options{ stdin = proc::Stdio::pipe, stdout = proc::Stdio::pipe, stderr = proc::Stdio::pipe, .. }
+    let mut child = proc::spawn{ &proc, argv = cmd[..], options } iferr { return 1 }
+    let w = child.stdin ifnull { return 2 }
+    let r = child.stdout ifnull { return 3 }
+    let e = child.stderr ifnull { return 4 }
+    io::println_u64{ &io, n = proc::write{ &proc, pipe = w, bytes = sent[..] } iferr { return 5 } }
+    proc::close{ &proc, pipe = &child.stdin }
+    io::println_bool{ &io, n = child.stdin == null }
+    let mut got: [4096]u8
+    let mut total: usize = 0
+    let mut same = true
+    while true {
+        let n = proc::read{ &proc, pipe = r, into = got[..] } iferr { return 6 }
+        if n == 0 { break }
+        let mut k: usize = 0
+        while k < n {
+            if total + k >= sent.len or got[k] != sent[total + k] - 32 { same = false }
+            k = k + 1
+        }
+        total = total + n
+    }
+    io::println_u64{ &io, n = total }
+    io::println_bool{ &io, n = same }
+    let n = proc::read{ &proc, pipe = e, into = got[..] } iferr { return 7 }
+    io::println{ &io, s = utf8::of{ chars = got[..n] } }
+    io::println_i64{ &io, n = proc::wait{ &proc, &child } iferr { return 8 } }
+    return 0
+""")
+        script = 'import sys\nd = sys.stdin.buffer.read()\nsys.stdout.buffer.write(d.upper())\nsys.stdout.flush()\nsys.stderr.write("E")'
+        out, err, code, _ = self.run_built(exe, [sys.executable, script])
+        self.assertEqual((out, code), ('200000\ntrue\n200000\ntrue\nE\n0\n', 0), err)
+
+    def test_dir_and_env(self):
+        # The child starts in Options' dir, with Options' env besides this program's.
+        import tempfile
+        d = tempfile.mkdtemp(prefix='ctxdir-', dir=os.path.join(ROOT, 'build'))
+        self.addCleanup(shutil.rmtree, d, True)
+        exe = self.build_proc("""
+    let cmd: [3][]u8 = [args[0], "-c", args[1]]
+    let entries: [1][]u8 = ["CTX_TEST_DIR_ENV=here"]
+    let options = proc::Options{ env = entries[..], dir = args[2], stdout = proc::Stdio::pipe, .. }
+    let mut child = proc::spawn{ &proc, argv = cmd[..], options } iferr { return 1 }
+    let r = child.stdout ifnull { return 2 }
+    let mut got: [4096]u8
+    let mut n: usize = 0
+    while true {
+        let k = proc::read{ &proc, pipe = r, into = got[n..] } iferr { return 3 }
+        if k == 0 { break }
+        n = n + k
+    }
+    io::println{ &io, s = utf8::of{ chars = got[..n] } }
+    return proc::wait{ &proc, &child } iferr { 4 }
+""")
+        script = 'import os\nprint(os.getcwd())\nprint(os.environ["CTX_TEST_DIR_ENV"])'
+        out, err, code, _ = self.run_built(exe, [sys.executable, script, d])
+        self.assertEqual(code, 0, err)
+        cwd, value = out.split('\n')[:2]
+        self.assertEqual(os.path.normcase(os.path.realpath(cwd)), os.path.normcase(os.path.realpath(d)))
+        self.assertEqual(value, 'here')
+
+    def test_wait_releases_pipes(self):
+        # wait closes the pipes still open and sets them to null; Stdio::inherit has none.
+        out, code = self.run_proc("""
+    let cmd: [3][]u8 = [args[0], "-c", "pass"]
+    let options = proc::Options{ stdin = proc::Stdio::pipe, stdout = proc::Stdio::pipe, stderr = proc::Stdio::pipe, .. }
+    let mut child = proc::spawn{ &proc, argv = cmd[..], options } iferr { return 1 }
+    io::println_bool{ &io, n = child.stdin != null and child.stdout != null and child.stderr != null }
+    io::println_i64{ &io, n = proc::wait{ &proc, &child } iferr { return 2 } }
+    io::println_bool{ &io, n = child.stdin == null and child.stdout == null and child.stderr == null }
+    let mut plain = proc::spawn{ &proc, argv = cmd[..], options = proc::Options{ .. } } iferr { return 3 }
+    io::println_bool{ &io, n = plain.stdin == null and plain.stdout == null and plain.stderr == null and plain.group == 0 }
+    io::println_i64{ &io, n = proc::wait{ &proc, child = &plain } iferr { return 4 } }
+    return 0
+""", [sys.executable])
+        self.assertEqual((out, code), ('true\n0\ntrue\ntrue\n0\n', 0))
+
+    def test_wait_for(self):
+        # Each wait is timed in a run of its own: std has no clock to time it with inside the
+        # program. A child that sleeps for a minute: wait_for with 0 says it is running without
+        # waiting, and with 300 ms after waiting that long. Once it is killed, wait_for gives its
+        # code without waiting the 60 s it was given. A child that ends after half a second
+        # wakes a wait_for of a minute then.
+        exe = self.build_proc("""
+    if slice::eq_bytes{ a = args[1], b = "quick" } {
+        let quick: [3][]u8 = [args[0], "-c", "import sys, time; time.sleep(0.5); sys.exit(5)"]
+        let mut other = proc::spawn{ &proc, argv = quick[..], options = proc::Options{ .. } } iferr { return 1 }
+        let code = proc::wait_for{ &proc, child = &other, nanoseconds = 60000000000 } iferr { return 2 }
+        io::println_i64{ &io, n = code ifnull -1 }
+        return 0
+    }
+    let sleeper: [3][]u8 = [args[0], "-c", "import time; time.sleep(60)"]
+    let mut child = proc::spawn{ &proc, argv = sleeper[..], options = proc::Options{ .. } } iferr { return 3 }
+    let wait: u64 = if slice::eq_bytes{ a = args[1], b = "0" } { 0 } else { 300000000 }
+    let now = proc::wait_for{ &proc, &child, nanoseconds = wait } iferr { return 4 }
+    io::println_bool{ &io, n = now == null }
+    proc::kill{ &proc, child } iferr { return 5 }
+    let killed = proc::wait_for{ &proc, &child, nanoseconds = 60000000000 } iferr { return 6 }
+    io::println_i64{ &io, n = killed ifnull -1 }
+    return 0
+""")
+        out, err, code, took_0 = self.run_built(exe, [sys.executable, '0'])
+        self.assertEqual((out, code), ('true\n137\n', 0), err)
+        out, err, code, took_300 = self.run_built(exe, [sys.executable, '300'])
+        self.assertEqual((out, code), ('true\n137\n', 0), err)
+        self.assertGreaterEqual(took_300, 0.3)
+        self.assertLess(took_0, took_300)
+        self.assertLess(took_300, 30)
+        out, err, code, took = self.run_built(exe, [sys.executable, 'quick'])
+        self.assertEqual((out, code), ('5\n', 0), err)
+        self.assertGreaterEqual(took, 0.5)
+        self.assertLess(took, 30)
+
+    def test_kill_then_wait(self):
+        # A killed child's exit code is 128 + 9, as for SIGKILL, on every platform.
+        exe = self.build_proc("""
+    let cmd: [3][]u8 = [args[0], "-c", "import time; time.sleep(60)"]
+    let mut child = proc::spawn{ &proc, argv = cmd[..], options = proc::Options{ .. } } iferr { return 1 }
+    proc::kill{ &proc, child } iferr { return 2 }
+    io::println_i64{ &io, n = proc::wait{ &proc, &child } iferr { return 3 } }
+    return 0
+""")
+        out, err, code, took = self.run_built(exe, [sys.executable])
+        self.assertEqual((out, code), ('137\n', 0), err)
+        self.assertLess(took, 30)
+
+    def test_kill_group(self):
+        # A child in a group of its own starts a grandchild that sleeps, and says its pid: kill
+        # ends both.
+        exe = self.build_proc("""
+    let cmd: [3][]u8 = [args[0], "-c", args[1]]
+    let options = proc::Options{ stdout = proc::Stdio::pipe, group = true, .. }
+    let mut child = proc::spawn{ &proc, argv = cmd[..], options } iferr { return 1 }
+    io::println_bool{ &io, n = child.group != 0 }
+    let r = child.stdout ifnull { return 2 }
+    let mut got: [64]u8
+    let mut n: usize = 0
+    while n == 0 or got[n - 1] != '\\n' {
+        let k = proc::read{ &proc, pipe = r, into = got[n..] } iferr { return 3 }
+        if k == 0 { return 4 }
+        n = n + k
+    }
+    io::print{ &io, s = utf8::of{ chars = got[..n] } }
+    proc::kill{ &proc, child } iferr { return 5 }
+    io::println_i64{ &io, n = proc::wait{ &proc, &child } iferr { return 6 } }
+    return 0
+""")
+        script = ('import subprocess, sys, time\n'
+                  'p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])\n'
+                  'print(p.pid, flush=True)\n'
+                  'time.sleep(60)')
+        out, err, code, took = self.run_built(exe, [sys.executable, script])
+        self.assertEqual(code, 0, err)
+        lines = out.split('\n')
+        self.assertEqual((lines[0], lines[2]), ('true', '137'), out)
+        self.assertTrue(gone(int(lines[1])), 'the grandchild is still running')
+        self.assertLess(took, 30)
+
+    def test_broken_pipe(self):
+        # Writing to a child's input after it closed it fails with broken_pipe. On Linux and
+        # macOS the write also raises SIGPIPE, which this program ignores itself: std leaves
+        # that to the program.
+        from toolchain import build_sources
+        exe, _ = build_sources([("""
+extern fn signal { number: i32, handler: u64 } -> u64
+
+fn main { mut io: Io, mut proc: Proc, args: Args } -> i32 {
+    if proc::os{ &proc } != build::Os::windows { _ = signal{ number = 13, handler = 1 } }      // SIGPIPE, SIG_IGN
+    let cmd: [3][]u8 = [args[0], "-c", "import os, sys, time\\nos.close(0)\\nprint('closed', flush=True)\\ntime.sleep(60)"]
+    let options = proc::Options{ stdin = proc::Stdio::pipe, stdout = proc::Stdio::pipe, .. }
+    let mut child = proc::spawn{ &proc, argv = cmd[..], options } iferr { return 1 }
+    let w = child.stdin ifnull { return 2 }
+    let r = child.stdout ifnull { return 3 }
+    let mut got: [64]u8
+    _ = proc::read{ &proc, pipe = r, into = got[..] } iferr { return 4 }
+    match proc::write{ &proc, pipe = w, bytes = "more" } {
+        ok                => { io::println{ &io, s = "written" } }
+        proc::broken_pipe => { io::println{ &io, s = "broken pipe" } }
+        else              => { io::println{ &io, s = "other" } }
+    }
+    proc::kill{ &proc, child } iferr { return 5 }
+    io::println_i64{ &io, n = proc::wait{ &proc, &child } iferr { return 6 } }
+    return 0
+}
+""", 'main.ctx')])
+        out, err, code, _ = self.run_built(exe, [sys.executable])
+        self.assertEqual((out, code), ('broken pipe\n137\n', 0), err)
+
+    def test_missing_program_spawned(self):
+        # On Linux spawn forks, and the child says exec failed through a pipe: spawn fails with
+        # not_found, not a child that exits with 127. Its stdout pipe is closed again.
+        out, code = self.run_proc("""
+    let cmd: [1][]u8 = ["ctx-no-such-program-anywhere"]
+    match proc::spawn{ &proc, argv = cmd[..], options = proc::Options{ stdout = proc::Stdio::pipe, group = true, .. } } {
+        ok              => { return 1 }
+        proc::not_found => { return 0 }
+        else            => { return 2 }
+    }
+""")
+        self.assertEqual(code, 0)
+
+    def run_closed(self, exe, args, closed):
+        """Runs exe with args, and with its descriptors in `closed` (a shell's `<&-` and the
+        like) closed: its stdout, its stderr and its exit code."""
+        import subprocess
+        from toolchain import program_env
+        r = subprocess.run(['sh', '-c', f'exec "$0" "$@" {closed}', exe, *args], capture_output=True,
+                           env=program_env(), timeout=60)
+        return r.stdout.decode().replace('\r\n', '\n'), r.stderr.decode(), r.returncode
+
+    @unittest.skipIf(os.name == 'nt', 'descriptors are POSIX')
+    def test_exec_failure_with_standard_streams_closed(self):
+        # This program has none of 0, 1 and 2 open, so the descriptors spawn makes would take
+        # them: the null device for the child's stderr, and the pipe a child reports a failed
+        # exec through. spawn keeps them above 2, so the child putting its stderr in place
+        # doesn't replace the report, and a missing program is still not_found.
+        from toolchain import build_sources
+        exe, _ = build_sources([("""
+fn main { mut proc: Proc } -> i32 {
+    let cmd: [1][]u8 = ["ctx-no-such-program-anywhere"]
+    match proc::spawn{ &proc, argv = cmd[..], options = proc::Options{ stderr = proc::Stdio::ignore, .. } } {
+        ok              => { return 1 }
+        proc::not_found => { return 0 }
+        else            => { return 2 }
+    }
+}
+""", 'main.ctx')])
+        self.assertEqual(self.run_closed(exe, [], '<&- >&- 2>&-')[2], 0)
+
+    @unittest.skipIf(os.name == 'nt', 'descriptors are POSIX')
+    def test_closed_stream_stays_closed(self):
+        # This program's stdin is closed, so the pipe for the child's stdout would take 0: the
+        # child's stdin, inherited, is closed too, not this program's end of that pipe.
+        exe = self.build_proc("""
+    let cmd: [3][]u8 = [args[0], "-c", "import os\\ntry:\\n    os.fstat(0)\\n    print('open')\\nexcept OSError:\\n    print('closed')"]
+    let options = proc::Options{ stdout = proc::Stdio::pipe, stderr = proc::Stdio::ignore, .. }
+    let mut child = proc::spawn{ &proc, argv = cmd[..], options } iferr { return 1 }
+    let r = child.stdout ifnull { return 2 }
+    let mut got: [64]u8
+    let mut n: usize = 0
+    while true {
+        let k = proc::read{ &proc, pipe = r, into = got[n..] } iferr { return 3 }
+        if k == 0 { break }
+        n = n + k
+    }
+    io::print{ &io, s = utf8::of{ chars = got[..n] } }
+    io::println_i64{ &io, n = proc::wait{ &proc, &child } iferr { return 4 } }
+    return 0
+""")
+        out, err, code = self.run_closed(exe, [sys.executable], '<&-')
+        self.assertEqual((out, code), ('closed\n0\n', 0), err)
+
+    @unittest.skipIf(os.name == 'nt', "Windows' CreateProcessW searches PATH itself")
+    def test_path_search_skips_long_entries(self):
+        # PATH's first directory has a name past NAME_MAX, and its second is longer than a path
+        # may be: spawn goes on past both to the one that has the program. The child, Python,
+        # gets a PATH of that one alone, since its own start looks through PATH too.
+        exe = self.build_proc("""
+    let cmd: [3][]u8 = [args[0], "-c", "print('found')"]
+    let entries: [1][]u8 = [args[1]]
+    let options = proc::Options{ env = entries[..], stdout = proc::Stdio::pipe, .. }
+    let mut child = proc::spawn{ &proc, argv = cmd[..], options } iferr err{ error } {
+        _ = @fmt(&io, "{}\\n", error)
+        return 1
+    }
+    let r = child.stdout ifnull { return 2 }
+    let mut got: [64]u8
+    let n = proc::read{ &proc, pipe = r, into = got[..] } iferr { return 3 }
+    io::print{ &io, s = utf8::of{ chars = got[..n] } }
+    io::println_i64{ &io, n = proc::wait{ &proc, &child } iferr { return 4 } }
+    return 0
+""")
+        from toolchain import run_exe
+        out = io.StringIO()
+        bin_dir = os.path.dirname(sys.executable)
+        path = '/' + 'a' * 300 + ':/' + 'b' * 5000 + ':' + bin_dir
+        code = run_exe(exe, out=out, args=[os.path.basename(sys.executable), 'PATH=' + bin_dir], env={'PATH': path})
+        self.assertEqual((out.getvalue(), code), ('found\n0\n', 0))
+
+    def run_unwaited(self, die_with_parent):
+        """Runs a program that starts a child that sleeps, says its pid, and ends without
+        waiting for it: the child's pid, and how many seconds the program took."""
+        exe = self.build_proc("""
+    let cmd: [3][]u8 = [args[0], "-c", "import os, time\\nprint(os.getpid(), flush=True)\\ntime.sleep(60)"]
+    let die = slice::eq_bytes{ a = args[1], b = "true" }
+    let options = proc::Options{ stdin = proc::Stdio::ignore, stdout = proc::Stdio::pipe, stderr = proc::Stdio::ignore, die_with_parent = die, .. }
+    let child = proc::spawn{ &proc, argv = cmd[..], options } iferr { return 1 }
+    let r = child.stdout ifnull { return 2 }
+    let mut got: [64]u8
+    let mut n: usize = 0
+    while n == 0 or got[n - 1] != '\\n' {
+        let k = proc::read{ &proc, pipe = r, into = got[n..] } iferr { return 3 }
+        if k == 0 { return 4 }
+        n = n + k
+    }
+    io::print{ &io, s = utf8::of{ chars = got[..n] } }
+    return 0
+""")
+        out, err, code, took = self.run_built(exe, [sys.executable, 'true' if die_with_parent else 'false'])
+        self.assertEqual(code, 0, err)
+        pid = int(out.strip())
+        self.addCleanup(kill_pid, pid)
+        return pid, took
+
+    @unittest.skipIf(sys.platform == 'darwin', 'macOS has no way for a child to end with its parent')
+    def test_die_with_parent(self):
+        # With die_with_parent, a child the program doesn't wait for ends when the program does:
+        # on Linux PR_SET_PDEATHSIG, on Windows a Job Object that ends it when it is closed.
+        pid, took = self.run_unwaited(True)
+        self.assertTrue(gone(pid), 'the child outlived the program')
+        self.assertLess(took, 30)
+
+    def test_child_outlives_the_program(self):
+        # Without die_with_parent, which is the default, the child goes on running.
+        pid, took = self.run_unwaited(False)
+        self.assertFalse(gone(pid, timeout=1), 'the child ended with the program')
+        self.assertLess(took, 30)
+
+    def test_leftovers(self):
+        # A child in a group of its own starts a grandchild that sleeps, says its pid, and ends.
+        # wait then ends the grandchild, with leftovers = kill, the default, or leaves it
+        # running, with keep.
+        exe = self.build_proc("""
+    let cmd: [3][]u8 = [args[0], "-c", args[2]]
+    let leftovers = if slice::eq_bytes{ a = args[1], b = "keep" } { proc::Leftovers::keep } else { proc::Leftovers::kill }
+    let options = proc::Options{ stdin = proc::Stdio::ignore, stdout = proc::Stdio::pipe, stderr = proc::Stdio::ignore, group = true, leftovers, .. }
+    let mut child = proc::spawn{ &proc, argv = cmd[..], options } iferr { return 1 }
+    let r = child.stdout ifnull { return 2 }
+    let mut got: [64]u8
+    let mut n: usize = 0
+    while n == 0 or got[n - 1] != '\\n' {
+        let k = proc::read{ &proc, pipe = r, into = got[n..] } iferr { return 3 }
+        if k == 0 { return 4 }
+        n = n + k
+    }
+    io::print{ &io, s = utf8::of{ chars = got[..n] } }
+    io::println_i64{ &io, n = proc::wait{ &proc, &child } iferr { return 5 } }
+    return 0
+""")
+        script = ('import subprocess, sys\n'
+                  'p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])\n'
+                  'print(p.pid, flush=True)')
+        for leftovers in ['kill', 'keep']:
+            with self.subTest(leftovers=leftovers):
+                out, err, code, took = self.run_built(exe, [sys.executable, leftovers, script])
+                self.assertEqual(code, 0, err)
+                lines = out.split('\n')
+                self.assertEqual(lines[1], '0', out)
+                pid = int(lines[0])
+                self.addCleanup(kill_pid, pid)
+                if leftovers == 'kill':
+                    self.assertTrue(gone(pid), 'the grandchild is still running')
+                else:
+                    self.assertFalse(gone(pid, timeout=1), 'the grandchild ended')
+                self.assertLess(took, 30)
 
 
 class CtxcDriver(Base):

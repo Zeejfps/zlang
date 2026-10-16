@@ -151,8 +151,13 @@ namespace os {
         return proc::other{ code = 0 }
     }
 
-    fn spawn { mut proc: Proc, argv: [][]u8, env: [][]u8 } -> proc::Error!u64 { return try no_programs(u64){} }
-    fn wait { mut proc: Proc, id: u64 } -> proc::Error!i32 { return try no_programs(i32){} }
+    fn spawn { mut proc: Proc, argv: [][]u8, options: proc::Options } -> proc::Error!proc::Child { return try no_programs(proc::Child){} }
+    fn wait { mut proc: Proc, child: proc::Child } -> proc::Error!i32 { return try no_programs(i32){} }
+    fn wait_for { mut proc: Proc, child: proc::Child, nanoseconds: u64 } -> proc::Error!?i32 { return try no_programs(?i32){} }
+    fn kill { mut proc: Proc, child: proc::Child } -> proc::Error! { _ = try no_programs(bool){} }
+    fn pipe_read { mut proc: Proc, pipe: u64, into: []mut u8 } -> proc::Error!usize { return try no_programs(usize){} }
+    fn pipe_write { mut proc: Proc, pipe: u64, bytes: []u8 } -> proc::Error!usize { return try no_programs(usize){} }
+    fn pipe_close { mut proc: Proc, pipe: u64 } { _ = unsupported{ what = "other programs" } }
 
     fn processors { mut proc: Proc } -> u32 {
         _ = unsupported{ what = "the number of processors" }
