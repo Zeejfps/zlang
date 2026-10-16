@@ -234,6 +234,9 @@ namespace check {
         // While the value of an `if` or `match` branch is checked, the depth of the block around
         // the outermost such `if` or `match`, which a view's hidden local gets; NONE otherwise.
         value_depth: u32 = NONE,
+        // The `ifnull` or `iferr` whose value a discard drops (`_ = f{} iferr { ... }`): its
+        // fallback may give no value, and then it has none (§11, rule 6).
+        dropping: ?u64 = null,
         // The sets of Var.derived and Var.held.
         derived:   list::List([]u32, Heap),
         held:      list::List([]Place, Heap),
@@ -278,7 +281,9 @@ namespace check {
 
     // A match on errors, whose arms are checked against the set once it is inferred: the errors
     // it lists, where, and the arm that takes the rest (`else` or `err`), if any.
-    struct Pending { at: source::Span, errs: Id, listed: []u32, spans: []source::Span, rest: ?source::Span, rest_word: []u8 }
+    // A match on errors, or with test an `is` (§8, Is), which lists errors without having to
+    // list them all.
+    struct Pending { at: source::Span, errs: Id, listed: []u32, spans: []source::Span, rest: ?source::Span, rest_word: []u8, test: bool }
 
     // An escape error (§14) about a value of type t that only a function's error set, unknown
     // while the bodies are checked, can make real: reported once the sets are inferred if t then
@@ -4166,12 +4171,10 @@ namespace check {
             }
             assign{ place, value } => { assign{ &c, place, value, at = s.span } }
             eval{ e } => { eval_stmt{ &c, e } }
-            discard{ e } => {
-                if typed{ &c, e } == types::VOID { error{ &c, at = expr_at{ e }, msg = "nothing to discard: this returns no value" } }
-            }
-            cond{ x } => { _ = check_if{ &c, x, at = s.span, exp = types::NO_TYPE, value = false, may_leave = false } }
+            discard{ e } => { discard{ &c, e } }
+            cond{ x } => { _ = check_if{ &c, x, at = s.span, exp = types::NO_TYPE, value = false, may_leave = false, drop = false } }
             loop{ label, c = cond, body } => { while_stmt{ &c, label, cond, body, at = s.span, k = stmt_key{ s } } }
-            choose{ x } => { _ = check_match{ &c, x, at = s.span, exp = types::NO_TYPE, value = false, may_leave = false } }
+            choose{ x } => { _ = check_match{ &c, x, at = s.span, exp = types::NO_TYPE, value = false, may_leave = false, drop = false } }
             ret{ value } => { return_stmt{ &c, value, at = s.span } }
             brk{ label } => { jump{ &c, word = "break", label, at = s.span, k = stmt_key{ s } } }
             cont{ label } => { jump{ &c, word = "continue", label, at = s.span, k = stmt_key{ s } } }
@@ -4194,6 +4197,17 @@ namespace check {
                 restore{ &c, s = s0 }
             }
         }
+    }
+
+    // `_ = e` (§11, rule 6) drops e's value. An `ifnull` or `iferr` whose fallback gives no value
+    // has none then, as one on a bare `!` has none, and is a statement.
+    fn discard { mut c: Checker, e: syntax::Expr } {
+        let fallback = e.k is matchx{ x } and (x.is_ifnull or x.is_iferr)
+        let outer = c.dropping
+        if fallback { c.dropping = expr_key{ e } }
+        let t = typed{ &c, e }
+        c.dropping = outer
+        if t == types::VOID and not fallback { error{ &c, at = expr_at{ e }, msg = "nothing to discard: this returns no value" } }
     }
 
     fn let_stmt { mut c: Checker, s: syntax::Stmt, mutable: bool, name: syntax::Name, ty: ?syntax::TypeExpr, init: ?syntax::Expr } {
@@ -4325,8 +4339,16 @@ namespace check {
                     _ = expr{ &c, e, exp = types::NO_TYPE }
                     return
                 }
-                t = typed{ &c, e }
-                name = "iferr"
+                // Checked as a discard's, so that a fallback with no value isn't the error.
+                let outer = c.dropping
+                c.dropping = expr_key{ e }
+                let it = typed{ &c, e }
+                c.dropping = outer
+                let st = type_of_expr{ c, e = x.scrut.* }
+                if it != types::ERROR and types::get{ s = c.ty, id = types::prune{ s = c.ty, t = st } } is res{ ok } and types::prune{ s = c.ty, t = ok } != types::VOID {
+                    errorf{ &c, at = expr_at{ e }, msg = @fmt("the value of this `iferr` ({}) is unused: use it, or discard it with `_ = ...`", tstr{ c, t = ok }) }
+                }
+                return
             }
             else => {
                 error{ &c, at = expr_at{ e }, msg = "an expression statement must be a call" }
@@ -4344,10 +4366,17 @@ namespace check {
         if value == null {
             if c.ret != types::VOID and c.ret != types::ERROR and not void_result{ c, t = c.ret } { error{ &c, at, msg = "`return` needs a value here" } }
         } else if c.ret == types::VOID {
-            error{ &c, at, msg = "this function has no return type" }
-            _ = expr{ &c, e = value, exp = types::NO_TYPE }
+            // `return f{}` of a call that returns nothing: the call, then `return`.
+            if typed{ &c, e = value } != types::VOID { error{ &c, at, msg = "this function has no return type" } }
         } else {
-            expect{ &c, e = value, t = c.ret }
+            let t = expr{ &c, e = value, exp = c.ret }
+            // In a function returning a bare `!`, `return e` of an e without a value, such as
+            // `try f{}` of a bare `!`, is e, then `return`.
+            if t == types::VOID and void_result{ c, t = c.ret } {
+                c.dead = true
+                return
+            }
+            coerce_node{ &c, e = value, at = t, t = c.ret }
             let found = derives{ &c, e = value }
             if found.len > 0 {
                 let ds = vars_in_order{ c, xs = found }
@@ -4483,20 +4512,21 @@ namespace check {
 
     // An `if`. As an expression (value), its type, or NO_TYPE if every branch leaves and that
     // is allowed (may_leave, for one that is the value of an enclosing branch).
-    fn check_if { mut c: Checker, x: syntax::If, at: source::Span, exp: Id, value: bool, may_leave: bool } -> Id {
+    fn check_if { mut c: Checker, x: syntax::If, at: source::Span, exp: Id, value: bool, may_leave: bool, drop: bool } -> Id {
         let cond = x.c.*
         expect{ &c, e = cond, t = types::BOOL }
         let f = facts{ c, e = cond }
         let s0 = save{ c }
         let none = slice::empty(u32){}
         let mut bs = list::new(Branch){ realloc = arena::alloc, heap = c.heap }
-        add_branch{ xs = &bs, b = branch{ &c, b = x.then, vars = none, facts = f.yes, exp, value } }
+        add_branch{ xs = &bs, b = branch{ &c, b = x.then, vars = none, facts = f.yes, exp, value, drop } }
         let s1 = save{ c }
         restore{ &c, s = s0 }
         let els = x.els
-        if els != null { add_branch{ xs = &bs, b = branch{ &c, b = els, vars = none, facts = f.no, exp, value } } }
+        if els != null { add_branch{ xs = &bs, b = branch{ &c, b = els, vars = none, facts = f.no, exp, value, drop } } }
         let s2 = save{ c }
         restore{ &c, s = merge{ c, xs = two_states{ c, a = s1, b = s2 } } }
+        if value and drop and gives_none{ bs = list::items{ list = bs } } { return types::VOID }
         if value { return join{ &c, at, bs = list::items{ list = bs }, exp, may_leave } }
         if not s0.dead {
             // If one branch always leaves, what the other assumes holds to the end of the block.
@@ -4519,7 +4549,7 @@ namespace check {
         restore{ &c, s = State{ defs = s0.defs, maybe = s1.maybe, dead = s0.dead } }
         let mut bs = list::new(Branch){ realloc = arena::alloc, heap = c.heap }
         add_branch{ xs = &bs, b = Branch{ t, value = Value::expr{ e = x } } }
-        add_branch{ xs = &bs, b = value_block{ &c, b = els, vars = slice::empty(u32){}, facts = slice::empty(Fact){}, exp = t } }
+        add_branch{ xs = &bs, b = value_block{ &c, b = els, vars = slice::empty(u32){}, facts = slice::empty(Fact){}, exp = t, drop = false } }
         let s2 = save{ c }
         restore{ &c, s = merge{ c, xs = two_states{ c, a = s1, b = s2 } } }
         if t == types::ERROR or n == 0 { return types::ERROR }
@@ -4582,8 +4612,8 @@ namespace check {
     }
 
     // A block of an `if` or `match`, which starts with vars declared or facts assumed.
-    fn branch { mut c: Checker, b: syntax::Block, vars: []u32, facts: []Fact, exp: Id, value: bool } -> Branch {
-        if value { return value_block{ &c, b, vars, facts, exp } }
+    fn branch { mut c: Checker, b: syntax::Block, vars: []u32, facts: []Fact, exp: Id, value: bool, drop: bool } -> Branch {
+        if value { return value_block{ &c, b, vars, facts, exp, drop } }
         open{ &c }
         declare_all{ &c, vars }
         assume{ &c, facts, after_if = false }
@@ -4594,8 +4624,9 @@ namespace check {
 
     // A branch of an `if` or `match` expression: its last statement gives its value. A trailing
     // `if` with an `else`, or `match`, is itself the value, unless every one of its branches
-    // leaves. Its type is NO_TYPE if the branch never finishes.
-    fn value_block { mut c: Checker, b: syntax::Block, vars: []u32, facts: []Fact, exp: Id } -> Branch {
+    // leaves. Its type is NO_TYPE if the branch never finishes. With drop, the value of a
+    // discard's `ifnull` or `iferr`, it may give none: its type is then VOID.
+    fn value_block { mut c: Checker, b: syntax::Block, vars: []u32, facts: []Fact, exp: Id, drop: bool } -> Branch {
         let entry = c.dead
         open{ &c }
         declare_all{ &c, vars }
@@ -4611,12 +4642,16 @@ namespace check {
         let mut t = types::NO_TYPE
         match v {
             nested{ s } => {
-                t = nested_value{ &c, s, exp }
+                t = nested_value{ &c, s, exp, drop }
                 if t != types::NO_TYPE { put_type{ &c, k = stmt_key{ s }, t } }
             }
             expr{ e } => {
+                // In `_ = a ifnull b ifnull { ... }`, b's fallback is dropped too.
+                let outer_drop = c.dropping
+                if drop and e.k is matchx{ x } and (x.is_ifnull or x.is_iferr) { c.dropping = expr_key{ e } }
                 t = expr{ &c, e, exp }
-                if t == types::VOID {
+                c.dropping = outer_drop
+                if t == types::VOID and not drop {
                     error{ &c, at = expr_at{ e }, msg = "this branch has no value: its last expression returns nothing" }
                     t = types::ERROR
                 }
@@ -4624,8 +4659,10 @@ namespace check {
             none => {}
         }
         c.value_depth = outer
-        if has and t != types::NO_TYPE {
+        if has and t != types::NO_TYPE and t != types::VOID {
             branch_escape{ &c, v }
+        } else if drop and not c.dead {
+            t = types::VOID
         } else if not c.dead {
             error{ &c, at = b.span, msg = "this branch must end in a value, or leave with `return`, `break`, `continue` or `@panic()`" }
         }
@@ -4680,10 +4717,11 @@ namespace check {
         return Value::none
     }
 
-    fn nested_value { mut c: Checker, s: syntax::Stmt, exp: Id } -> Id {
+    // With drop, s ends a branch of a discard's `ifnull` or `iferr`, whose branches may give no value.
+    fn nested_value { mut c: Checker, s: syntax::Stmt, exp: Id, drop: bool } -> Id {
         match s.k {
-            cond{ x } => { return check_if{ &c, x, at = s.span, exp, value = true, may_leave = true } }
-            choose{ x } => { return check_match{ &c, x, at = s.span, exp, value = true, may_leave = true } }
+            cond{ x } => { return check_if{ &c, x, at = s.span, exp, value = true, may_leave = true, drop } }
+            choose{ x } => { return check_match{ &c, x, at = s.span, exp, value = true, may_leave = true, drop } }
             else => { return types::NO_TYPE }
         }
     }
@@ -4838,7 +4876,8 @@ namespace check {
 
     // A `match` (§8, Match), through a pointer if the scrutinee is one. As an expression (value),
     // its type as for check_if.
-    fn check_match { mut c: Checker, x: syntax::Match, at: source::Span, exp: Id, value: bool, may_leave: bool } -> Id {
+    // With drop, x is a discard's `ifnull` or `iferr`, whose fallback may give no value.
+    fn check_match { mut c: Checker, x: syntax::Match, at: source::Span, exp: Id, value: bool, may_leave: bool, drop: bool } -> Id {
         let scrut = x.scrut.*
         let st = typed{ &c, e = scrut }
         let mut ut = st
@@ -4870,7 +4909,7 @@ namespace check {
             errorf{ &c, at = expr_at{ e = scrut }, msg = @fmt("`iferr` needs a `!T` value, got {}", tstr{ c, t = st }) }
             ok = false
         } else if ok and (is_res{ c, t = ut } or is_errs{ c, t = ut }) {
-            if not through { return check_fail_match{ &c, x, at, exp, value, may_leave, t = ut } }
+            if not through { return check_fail_match{ &c, x, at, exp, value, may_leave, t = ut, drop } }
             error{ &c, at = expr_at{ e = scrut }, msg = "match cannot go through a pointer to a `!T` or an error; match on the value with `.*`" }
             ok = false
         } else if ok and through and is_enum{ c, t = ut } {
@@ -4939,7 +4978,7 @@ namespace check {
                 k = k + 1
             }
             restore{ &c, s = s0 }
-            add_branch{ xs = &bs, b = branch{ &c, b = arm.body, vars = first, facts = slice::empty(Fact){}, exp, value } }
+            add_branch{ xs = &bs, b = branch{ &c, b = arm.body, vars = first, facts = slice::empty(Fact){}, exp, value, drop } }
             add_state{ xs = &results, s = save{ c } }
             if forb != null { scan_stmts{ &c, sc = Scan{ forb, via = binding_names{ c, vars = first } }, xs = arm.body.stmts } }
             i = i + 1
@@ -4960,8 +4999,19 @@ namespace check {
             error{ &c, at, msg = utf8::view{ b } }
         }
         restore{ &c, s = merge{ c, xs = list::items{ list = results } } }
+        if value and drop and gives_none{ bs = list::items{ list = bs } } { return types::VOID }
         if value { return join{ &c, at, bs = list::items{ list = bs }, exp, may_leave } }
         return types::NO_TYPE
+    }
+
+    // Whether a branch of a discard's `ifnull` or `iferr` gives no value: it then has none.
+    fn gives_none { bs: []Branch } -> bool {
+        let mut i: usize = 0
+        while i < bs.len {
+            if bs[i].t == types::VOID { return true }
+            i = i + 1
+        }
+        return false
     }
 
     // ---- match on integers (§8, Match on integers)
@@ -4994,7 +5044,7 @@ namespace check {
             let rs = int_pats{ &c, pats = arm.pats, t, &seen }
             try! list::push{ list = &out, item = rs }
             restore{ &c, s = s0 }
-            add_branch{ xs = &bs, b = branch{ &c, b = arm.body, vars = slice::empty(u32){}, facts = slice::empty(Fact){}, exp, value } }
+            add_branch{ xs = &bs, b = branch{ &c, b = arm.body, vars = slice::empty(u32){}, facts = slice::empty(Fact){}, exp, value, drop = false } }
             add_state{ xs = &results, s = save{ c } }
             i = i + 1
         }
@@ -5344,7 +5394,7 @@ namespace check {
                 sum | opt | enumeration => {}
                 else => {
                     if is_res{ c, t } or is_errs{ c, t } {
-                        error{ &c, at = expr_at{ e = x }, msg = "`is` cannot test a `!T` or an error; use `match` or `iferr`" }
+                        return check_fail_is{ &c, e, x, pats, t }
                     } else if untagged_type{ c, t } {
                         error{ &c, at = expr_at{ e = x }, msg = "an extern union has no tag to match on: read the field you know it holds" }
                     } else {
@@ -5398,6 +5448,71 @@ namespace check {
                 same_binds{ &c, first_name = pats[0].variant.text, first, variant = name, mine = bv, binders = p.binders, at = p.span, within = "test" }
             }
             i = i + 1
+        }
+        return types::BOOL
+    }
+
+    // e, `x is P` for an x of type t, a `!T` or an error (§8, Is): on a `!T`, P is `ok`, `err` or
+    // errors, and on an error, errors. Each error listed must be one x can be, which is checked
+    // once the sets are inferred, as a match's are; they needn't be all of them.
+    fn check_fail_is { mut c: Checker, e: syntax::Expr, x: syntax::Expr, pats: []syntax::Pattern, t: Id } -> Id {
+        let is_r = is_res{ c, t }
+        let mut vs: []Variant = slice::empty(Variant){}
+        let mut errs = t
+        if types::get{ s = c.ty, id = t } is res{ errs = es } {
+            vs = variants_of{ &c, t }
+            errs = es
+        }
+        let derived = new_derived{ &c, xs = derives{ &c, e = x } }
+        let mut listed = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        let mut spans = list::new(source::Span){ realloc = arena::alloc, heap = c.heap }
+        let mut kinds: u32 = 0          // 1: `ok` or `err`, 2: errors
+        let mut first: []u32 = slice::empty(u32){}
+        let mut i: usize = 0
+        while i < pats.len {
+            let p = pats[i]
+            let word = p.variant.text
+            let mut fields: ?[]types::Field = null
+            let mut known = true
+            if int_pattern{ p } {
+                errorf{ &c, at = p.span, msg = @fmt("an integer pattern needs an integer to test, got {}", tstr{ c, t }) }
+                known = false
+            } else if is_r and p.quals.len == 0 and (slice::eq_bytes{ a = word, b = "ok" } or slice::eq_bytes{ a = word, b = "err" }) {
+                kinds = kinds | 1
+                if listed_before{ pats, i } { errorf{ &c, at = p.span, msg = @fmt("variant `{}` is listed twice", str{ s = word }) } }
+                fields = vs[if slice::eq_bytes{ a = word, b = "ok" } { 0 } else { 1 }].fields
+            } else {
+                kinds = kinds | 2
+                let d = fault_named{ &c, p }
+                if d == NONE {
+                    known = false
+                } else {
+                    if has_id{ xs = list::items{ list = listed }, n = d } {
+                        errorf{ &c, at = p.span, msg = @fmt("error `{}` is listed twice", str{ s = get_decl{ c, d }.qual }) }
+                    } else {
+                        push{ xs = &listed, n = d }
+                        try! list::push{ list = &spans, item = p.span }
+                    }
+                    fields = fault_fields{ c, d }
+                    try! map::put{ m = &c.pat_errs, key = name_key{ n = p.variant }, value = d }
+                }
+            }
+            let bv = pattern_vars{ &c, variant = word, known, fields, binders = p.binders, through = false, ptr_mut = false, derived, at = p.span }
+            if i == 0 {
+                first = bv
+                try! map::put{ m = &c.is_vars, key = expr_key{ e }, value = bv }
+            } else {
+                same_binds{ &c, first_name = pats[0].variant.text, first, variant = word, mine = bv, binders = p.binders, at = p.span, within = "test" }
+            }
+            i = i + 1
+        }
+        if kinds == 3 { error{ &c, at = expr_at{ e }, msg = "a test can't list `ok` or `err` with errors" } }
+        if listed.len > 0 {
+            let p = Pending{
+                at = expr_at{ e }, errs, listed = list::items{ list = listed }, spans = list::items{ list = spans },
+                rest = null, rest_word = "", test = true,
+            }
+            try! list::push{ list = &c.pending, item = p }
         }
         return types::BOOL
     }
@@ -7918,8 +8033,8 @@ namespace check {
                 let m = place_mutable{ c, e = x.* }
                 return types::ptr{ s = &c.ty, elem = t, mutable = m }
             }
-            ifx{ x } => { return check_if{ &c, x, at = expr_at{ e }, exp, value = true, may_leave = false } }
-            matchx{ x } => { return check_match{ &c, x, at = expr_at{ e }, exp, value = true, may_leave = false } }
+            ifx{ x } => { return check_if{ &c, x, at = expr_at{ e }, exp, value = true, may_leave = false, drop = false } }
+            matchx{ x } => { return check_match{ &c, x, at = expr_at{ e }, exp, value = true, may_leave = false, drop = c.dropping == expr_key{ e } } }
             overflow{ e = x, els } => { return check_overflow{ &c, e, x = x.*, els, exp } }
             trye{ e = x, panics } => { return try_expr{ &c, e, x = x.*, panics } }
             isx{ e = x, pats } => { return check_is{ &c, e, x = x.*, pats } }
@@ -10270,7 +10385,7 @@ namespace check {
     // error, takes the rest. On an error, the arms list errors. Whether each listed error can
     // happen, and whether every one that can is listed, waits for the sets (finish_matches). As
     // `iferr` on a bare `!`, it has no value, and its `ok` arm is skipped.
-    fn check_fail_match { mut c: Checker, x: syntax::Match, at: source::Span, exp: Id, value: bool, may_leave: bool, t: Id } -> Id {
+    fn check_fail_match { mut c: Checker, x: syntax::Match, at: source::Span, exp: Id, value: bool, may_leave: bool, t: Id, drop: bool } -> Id {
         let scrut = x.scrut.*
         let mut vs: []Variant = slice::empty(Variant){}
         let mut errs = t
@@ -10361,7 +10476,7 @@ namespace check {
             if skip {
                 add_branch{ xs = &bs, b = Branch{ t = types::NO_TYPE, value = Value::none } }
             } else {
-                add_branch{ xs = &bs, b = branch{ &c, b = arm.body, vars = first, facts = slice::empty(Fact){}, exp, value = value and not bare } }
+                add_branch{ xs = &bs, b = branch{ &c, b = arm.body, vars = first, facts = slice::empty(Fact){}, exp, value = value and not bare, drop } }
             }
             add_state{ xs = &results, s = save{ c } }
             i = i + 1
@@ -10377,12 +10492,12 @@ namespace check {
         if listed.len > 0 or not is_r {
             let p = Pending{
                 at, errs, listed = list::items{ list = listed }, spans = list::items{ list = spans },
-                rest = if has_else or err_seen { rest } else { null }, rest_word,
+                rest = if has_else or err_seen { rest } else { null }, rest_word, test = false,
             }
             try! list::push{ list = &c.pending, item = p }
         }
         restore{ &c, s = merge{ c, xs = list::items{ list = results } } }
-        if bare { return types::VOID }
+        if bare or (value and drop and gives_none{ bs = list::items{ list = bs } }) { return types::VOID }
         if value { return join{ &c, at, bs = list::items{ list = bs }, exp, may_leave } }
         return types::NO_TYPE
     }
@@ -10544,7 +10659,8 @@ namespace check {
     }
 
     // The matches on errors, against the inferred sets: each error listed must be one that can
-    // happen, and without an `else` or `err` arm every one that can must be listed.
+    // happen, and without an `else` or `err` arm every one that can must be listed. An `is` needs
+    // only the first.
     fn finish_matches { mut c: Checker } {
         let ps = list::items{ list = c.pending }
         let mut i: usize = 0
@@ -10568,6 +10684,10 @@ namespace check {
                     error{ &c, at = p.spans[j], msg = utf8::view{ b } }
                 }
                 j = j + 1
+            }
+            if p.test {
+                i = i + 1
+                continue
             }
             let mut missing = list::new(u32){ realloc = arena::alloc, heap = c.heap }
             j = 0

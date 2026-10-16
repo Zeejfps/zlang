@@ -95,7 +95,10 @@ defer list::free{ list = &xs }                    // runs at block exit
 
 `error name{ field: T }` declares one. A function returning `!T` infers its error set from
 what it returns and `try`s. `try! e` panics on error (for out-of-memory and invariants).
-`match r { ok{ value } => {} gff::truncated{ at } => {} err{ error } => {} }`. Parsers return
+`match r { ok{ value } => {} gff::truncated{ at } => {} err{ error } => {} }`. Short forms:
+`_ = f{} iferr err{ error } { log{ error } }` (drop the value, handle the error, any `!T`),
+`if f{} is ok`, `r is fs::not_found | fs::exists` (test, payloads bind as in a match), and
+`return try f{}` in a function returning a bare `!`. Parsers return
 errors on bad data, never panic. A fallible function is a value of a function type whose `!T` has
 the same T (§5): `let run: fn{ s: []u8 } -> !u64 = parse_number`, in a struct field, an array, a
 `?fn`, or an argument. Calling through it fails with any error, so a `match` on the error needs

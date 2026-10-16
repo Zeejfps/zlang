@@ -6451,7 +6451,7 @@ fn main { mut io: Io } {
             ('if r is variant | local{ var } { }', '`local` binds `var`, which `variant` in the same test does not'),
             ('if r is local{ &var } { }', '`&var` needs a pointer scrutinee'),
             ('let p = &r\n    if p is null { }', '`is` cannot test through a pointer; use `match`'),
-            ('let e: !i32 = 1\n    if e is ok { }', '`is` cannot test a `!T` or an error'),
+            ('let e: !i32 = 1\n    if e is ok{ value = v } | err { }', '`err` must bind `v`, as `ok` in the same test does'),
             ('if true is local { }', '`is` needs a union, enum or optional value, got bool'),
             ('if r is local | local { }', 'variant `local` is listed twice'),
             ('if c is red{ x } { }', 'variant `red` has no payload'),
@@ -8202,6 +8202,174 @@ fn main { mut io: Io } {
     io::println_i64{ &io, n = error }
 }
 """, '2\n')
+
+
+class ErrorForms(Base):
+    """The short forms on a `!T`: a discard whose fallback gives no value (§11, rule 6), `is` on
+    a `!T` or an error (§8, Is), and `return e` of an e without a value (§11, rule 7)."""
+
+    LIB = Errors.PARSE + """
+fn act { s: []u8 } -> ! {
+    _ = try number{ s }
+}
+fn get { s: []u8 } -> ?u64 {
+    return number{ s } iferr null
+}
+"""
+
+    def test_discard_with_a_fallback_that_gives_no_value(self):
+        # The call runs once; on an error the block runs, and the value is dropped either way.
+        self.assertOutput(self.LIB + """
+fn count { mut n: i32, s: []u8 } -> !u64 {
+    n = n + 1
+    return number{ s }
+}
+fn main { mut io: Io } {
+    let mut n: i32 = 0
+    _ = count{ &n, s = "12" } iferr { io::println{ &io, s = "never" } }
+    _ = count{ &n, s = "x" } iferr { io::println{ &io, s = "failed" } }
+    _ = number{ s = "" } iferr err{ error } { _ = @fmt(&io, "{}\\n", error) }
+    _ = act{ s = "" } iferr { io::println{ &io, s = "bare" } }
+    _ = get{ s = "z" } ifnull { io::println{ &io, s = "null" } }
+    _ = get{ s = "7" } ifnull { io::println{ &io, s = "never" } }
+    _ = get{ s = "x" } ifnull get{ s = "y" } ifnull { io::println{ &io, s = "neither" } }
+    _ = get{ s = "x" } ifnull get{ s = "4" } ifnull { io::println{ &io, s = "never" } }
+    _ = @fmt(&io, "{}\\n", n)
+}
+""", 'failed\nparse::empty\nbare\nnull\nneither\n2\n')
+
+    def test_discard_ending_in_an_if_or_match(self):
+        # A fallback that ends in an `if` or `match` whose branches give no value, or a call.
+        self.assertOutput(self.LIB + """
+fn run { mut io: Io, s: []u8, loud: bool } {
+    _ = number{ s } iferr { if loud { io::println{ &io, s = "LOUD" } } else { io::println{ &io, s = "quiet" } } }
+    _ = number{ s } iferr err{ error } {
+        match error {
+            parse::empty => { io::println{ &io, s = "empty" } }
+            else => {}
+        }
+    }
+    _ = get{ s } ifnull { if loud { return } else { io::println{ &io, s = "no number" } } }
+    _ = get{ s } ifnull io::println{ &io, s = "call" }
+    io::println{ &io, s = "end" }
+}
+fn main { mut io: Io } {
+    run{ &io, s = "", loud = false }
+    run{ &io, s = "", loud = true }
+    run{ &io, s = "1", loud = true }
+}
+""", 'quiet\nempty\nno number\ncall\nend\nLOUD\nempty\nend\n')
+
+    def test_discard_with_a_value_or_leaving(self):
+        # A fallback that gives a value, or leaves, works as before.
+        self.assertOutput(self.LIB + """
+fn first { s: []u8 } -> i32 {
+    _ = number{ s } iferr { return 1 }
+    return 0
+}
+fn main { mut io: Io } {
+    _ = number{ s = "x" } iferr 0
+    _ = get{ s = "x" } ifnull 5
+    _ = @fmt(&io, "{} {}\\n", first{ s = "x" }, first{ s = "3" })
+}
+""", '1 0\n')
+
+    def test_discard_in_a_defer(self):
+        self.assertOutput(self.LIB + """
+fn run { mut io: Io } {
+    defer _ = number{ s = "" } iferr { io::println{ &io, s = "deferred" } }
+    io::println{ &io, s = "body" }
+}
+fn main { mut io: Io } { run{ &io } }
+""", 'body\ndeferred\n')
+
+    def test_iferr_statement_drops_a_value(self):
+        self.assertCompileError(self.LIB + """
+fn main {} { number{ s = "1" } iferr {} }
+""", 'the value of this `iferr` (u64) is unused: use it, or discard it with `_ = ...`')
+
+    def test_discard_of_nothing(self):
+        # A call that returns nothing still has nothing to discard.
+        self.assertCompileError("""
+fn nothing {} {}
+fn main {} { _ = nothing{} }
+""", 'nothing to discard: this returns no value')
+
+    def test_is_ok_and_err(self):
+        self.assertOutput(self.LIB + """
+fn main { mut io: Io } {
+    let a = number{ s = "12" }
+    let b = number{ s = "1y" }
+    _ = @fmt(&io, "{} {} {} {}\\n", a is ok, a is err, b is ok, not (b is ok))
+    if a is ok{ value = v } and v > 10 { _ = @fmt(&io, "value {}\\n", v) }
+    if b is err{ error = e } { _ = @fmt(&io, "error {}\\n", e) }
+    if act{ s = "3" } is ok { io::println{ &io, s = "bare ok" } }
+}
+""", 'true false false true\nvalue 12\nerror parse::bad_digit{ at = 1 }\nbare ok\n')
+
+    def test_is_errors(self):
+        # Errors listed on a `!T` or an error value, with their payloads; the value is evaluated once.
+        self.assertOutput(self.LIB + """
+fn count { mut n: i32, s: []u8 } -> !u64 {
+    n = n + 1
+    return number{ s }
+}
+fn main { mut io: Io } {
+    let mut n: i32 = 0
+    if count{ &n, s = "" } is parse::empty { io::println{ &io, s = "empty" } }
+    if count{ &n, s = "1q" } is parse::bad_digit{ at } { _ = @fmt(&io, "bad at {}\\n", at) }
+    if count{ &n, s = "5" } is parse::empty | parse::too_big { io::println{ &io, s = "never" } }
+    let r = number{ s = "123456789" }
+    if r is err{ error } {
+        if error is parse::too_big | parse::empty { io::println{ &io, s = "too big or empty" } }
+        if not (error is parse::bad_digit) { io::println{ &io, s = "not a digit error" } }
+    }
+    _ = @fmt(&io, "{}\\n", n)
+}
+""", 'empty\nbad at 1\ntoo big or empty\nnot a digit error\n3\n')
+
+    def test_is_errors_checked(self):
+        for test, msg in [
+            ('number{ s = "1" } is nope', "error `nope` can't happen here: this fails only with parse::empty, parse::bad_digit, parse::too_big"),
+            ('number{ s = "1" } is ok | parse::empty', "a test can't list `ok` or `err` with errors"),
+            ('number{ s = "1" } is ok | ok', 'variant `ok` is listed twice'),
+            ('number{ s = "1" } is parse::empty | parse::empty', 'error `parse::empty` is listed twice'),
+            ('number{ s = "1" } is parse::missing', 'no error `parse::missing`'),
+        ]:
+            with self.subTest(test=test):
+                self.assertCompileError(self.LIB + """
+error nope
+fn main {} { _ = %s }
+""" % test, msg)
+
+    def test_return_without_a_value(self):
+        # `return e` of an e without a value: e, then the return, after which the defers run.
+        self.assertOutput(self.LIB + """
+fn pass { mut io: Io, s: []u8 } -> ! {
+    defer io::println{ &io, s = "defer" }
+    return try act{ s }
+}
+fn handled { mut io: Io, s: []u8 } -> ! {
+    return act{ s } iferr { io::println{ &io, s = "handled" } }
+}
+fn say { mut io: Io } { io::println{ &io, s = "said" } }
+fn tell { mut io: Io } { return say{ &io } }
+fn main { mut io: Io } {
+    _ = @fmt(&io, "{}\\n", pass{ &io, s = "1" } is ok)
+    _ = @fmt(&io, "{}\\n", pass{ &io, s = "" } is parse::empty)
+    _ = @fmt(&io, "{}\\n", handled{ &io, s = "" } is ok)
+    tell{ &io }
+}
+""", 'defer\ntrue\ndefer\ntrue\nhandled\ntrue\nsaid\n')
+
+    def test_return_still_needs_its_value(self):
+        for src, msg in [
+            ('fn f {} -> ! { return number{ s = "1" } }', 'expected !, got !u64'),
+            ('fn nothing {} {}\nfn f {} -> i32 { return nothing{} }', 'expression has no value'),
+            ('fn f {} { return number{ s = "1" } }', 'this function has no return type'),
+        ]:
+            with self.subTest(src=src):
+                self.assertCompileError(self.LIB + src + '\nfn main {} {}\n', msg)
 
 
 class Defer(Base):

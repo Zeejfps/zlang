@@ -835,11 +835,49 @@ namespace lower {
         let mut out = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
         let mut i: usize = 0
         while i < xs.len {
-            let s = stmt{ &l, s = xs[i] }
-            try! list::push{ list = &out, item = s }
+            put_stmt{ &l, xs = &out, s = xs[i] }
             i = i + 1
         }
         return list::items{ list = out }
+    }
+
+    // s, as one statement, or two for `return e` of an e without a value (§11, rule 7): e, then
+    // the `return`.
+    fn put_stmt { mut l: Lower, mut xs: list::List(ir::Stmt, Heap), s: syntax::Stmt } {
+        if s.k is ret{ value = v } {
+            if let e = v {
+                if T{ &l, t = check::type_of_expr{ c = l.c.*, e } } == types::VOID {
+                    try! list::push{ list = &xs, item = eval_stmt{ &l, e } }
+                    let r = if check::void_result{ c = l.c.*, t = l.ret } { ir::Stmt::ret{ value = ok_unit{ &l } } } else { ir::Stmt::ret{ value = null } }
+                    try! list::push{ list = &xs, item = r }
+                    return
+                }
+            }
+        }
+        try! list::push{ list = &xs, item = stmt{ &l, s } }
+    }
+
+    // e as a statement: a call, `try` of one or an `iferr`, without a value or with one dropped.
+    fn eval_stmt { mut l: Lower, e: syntax::Expr } -> ir::Stmt {
+        match e.k {
+            builtin{ name, args } => {
+                if slice::eq_bytes{ a = name.text, b = "panic" } { return panic_stmt{ &l, e, args } }
+            }
+            trye{ e = x, panics } => {
+                // `try f{ ... }` of a bare `!`: a match with no value.
+                if T{ &l, t = check::type_of_expr{ c = l.c.*, e } } == types::VOID {
+                    let scrut = ex{ &l, e = x.* }
+                    return ir::Stmt::choose{ scrut, through = false, arms = try_arms{ &l, x = x.*, value = false, panics, pos = epos{ &l, e } } }
+                }
+            }
+            matchx{ x } => {
+                if T{ &l, t = check::type_of_expr{ c = l.c.*, e } } == types::VOID {
+                    return match_stmt{ &l, x, t = types::NO_TYPE, leaving = false }
+                }
+            }
+            else => {}
+        }
+        return ir::Stmt::eval{ e = ex{ &l, e } }
     }
 
     fn stmt { mut l: Lower, s: syntax::Stmt } -> ir::Stmt {
@@ -880,28 +918,9 @@ namespace lower {
                 let p = ex{ &l, e = place }
                 return ir::Stmt::assign{ place = p, value = conv{ &l, e = value, to = check::type_of_expr{ c = l.c.*, e = place } } }
             }
-            eval{ e } => {
-                match e.k {
-                    builtin{ name, args } => {
-                        if slice::eq_bytes{ a = name.text, b = "panic" } { return panic_stmt{ &l, e, args } }
-                    }
-                    trye{ e = x, panics } => {
-                        // `try f{ ... }` of a bare `!`: a match with no value.
-                        if T{ &l, t = check::type_of_expr{ c = l.c.*, e } } == types::VOID {
-                            let scrut = ex{ &l, e = x.* }
-                            return ir::Stmt::choose{ scrut, through = false, arms = try_arms{ &l, x = x.*, value = false, panics, pos = epos{ &l, e } } }
-                        }
-                    }
-                    matchx{ x } => {
-                        if x.is_iferr and T{ &l, t = check::type_of_expr{ c = l.c.*, e } } == types::VOID {
-                            return match_stmt{ &l, x, t = types::NO_TYPE, leaving = false }
-                        }
-                    }
-                    else => {}
-                }
-                return ir::Stmt::eval{ e = ex{ &l, e } }
-            }
-            discard{ e } => { return ir::Stmt::eval{ e = ex{ &l, e } } }
+            eval{ e } => { return eval_stmt{ &l, e } }
+            // A discard's `ifnull` or `iferr` without a value is a statement, as `iferr` on a bare `!` is.
+            discard{ e } => { return eval_stmt{ &l, e } }
             cond{ x } => {
                 // ctxi lowers the else block first.
                 let x_els = x.els
@@ -1120,7 +1139,7 @@ namespace lower {
             if arm.pats.len == 0 or slice::eq_bytes{ a = arm.pats[0].variant.text, b = "err" } and arm.pats[0].quals.len == 0 {
                 add_arm{ l, xs = &inner, pats = slice::empty(ir::Pat){}, body }
             } else if is_error_pat{ l, p = arm.pats[0] } {
-                add_arm{ l, xs = &inner, pats = error_pats{ &l, arm, set }, body }
+                add_arm{ l, xs = &inner, pats = error_pats{ &l, pats = arm.pats, set }, body }
             } else {
                 let mut pats = list::new(ir::Pat){ realloc = arena::alloc, heap = l.heap }
                 let mut k: usize = 0
@@ -1156,7 +1175,7 @@ namespace lower {
         let mut i: usize = 0
         while i < arms.len {
             let arm = arms[i]
-            let pats = if arm.pats.len == 0 { slice::empty(ir::Pat){} } else { error_pats{ &l, arm, set } }
+            let pats = if arm.pats.len == 0 { slice::empty(ir::Pat){} } else { error_pats{ &l, pats = arm.pats, set } }
             let body = if value { value_block{ &l, b = arm.body, t } } else { block{ &l, b = arm.body } }
             add_arm{ l, xs = &out, pats, body }
             i = i + 1
@@ -1164,15 +1183,15 @@ namespace lower {
         return list::items{ list = out }
     }
 
-    // An arm's patterns, each an error of `set`.
-    fn error_pats { mut l: Lower, arm: syntax::Arm, set: []u32 } -> []ir::Pat {
+    // An arm's or an `is`'s patterns, each an error of `set`, each binding what the first does.
+    fn error_pats { mut l: Lower, pats: []syntax::Pattern, set: []u32 } -> []ir::Pat {
         let mut out = list::new(ir::Pat){ realloc = arena::alloc, heap = l.heap }
         let mut k: usize = 0
-        while k < arm.pats.len {
-            let p = arm.pats[k]
+        while k < pats.len {
+            let p = pats[k]
             let d = map::get{ m = l.c.pat_errs, key = check::name_key{ n = p.variant } } ifnull { @panic("lower: an error pattern that wasn't resolved") }
             let fields = check::fault_fields{ c = l.c.*, d }
-            let bs = if k == 0 { binds{ &l, binders = p.binders, fields } } else { alt_binds{ &l, first = arm.pats[0].binders, binders = p.binders, fields } }
+            let bs = if k == 0 { binds{ &l, binders = p.binders, fields } } else { alt_binds{ &l, first = pats[0].binders, binders = p.binders, fields } }
             try! list::push{ list = &out, item = ir::Pat{ variant = set_index{ set, d }, binds = bs } }
             k = k + 1
         }
@@ -1799,8 +1818,7 @@ namespace lower {
         let mut out = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
         let mut i: usize = 0
         while i + 1 < xs.len {
-            let s = stmt{ &l, s = xs[i] }
-            try! list::push{ list = &out, item = s }
+            put_stmt{ &l, xs = &out, s = xs[i] }
             i = i + 1
         }
         match v {
@@ -2230,6 +2248,7 @@ namespace lower {
     fn is_ex { mut l: Lower, x: syntax::Expr, pats: []syntax::Pattern } -> ir::Expr {
         let scrut = ex{ &l, e = x }
         let t = types::prune{ s = l.c.ty, t = T{ &l, t = check::type_of_expr{ c = l.c.*, e = x } } }
+        if types::get{ s = l.c.ty, id = t } is res | errs | eset { return fail_is{ &l, scrut, t, pats } }
         let vs = check::variants_of{ c = l.c, t }
         let mut own = list::new(syntax::Pattern){ realloc = arena::alloc, heap = l.heap }
         let mut deep = list::new(syntax::Pattern){ realloc = arena::alloc, heap = l.heap }
@@ -2260,6 +2279,32 @@ namespace lower {
             add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = 1, binds = list::items{ list = take } } }, body }
         }
         return mk{ ty = tid{ &l, t = types::BOOL }, k = ir::ExprKind::matchx{ scrut = box{ l, e = scrut }, through = false, arms = list::items{ list = out } } }
+    }
+
+    // `x is P` on a `!T` or an error, scrut, of type t (§8, Is). `ok` and `err` are a `!T`'s
+    // variants. Errors listed are a match on the error: the `!T`'s, or scrut itself.
+    fn fail_is { mut l: Lower, scrut: ir::Expr, t: Id, pats: []syntax::Pattern } -> ir::Expr {
+        let first = pats[0].binders
+        if not is_error_pat{ l, p = pats[0] } { return test{ &l, scrut, t, vs = check::variants_of{ c = l.c, t }, pats, first } }
+        let mut errs = t
+        if types::get{ s = l.c.ty, id = t } is res{ errs = es } { errs = es }
+        let ps = error_pats{ &l, pats, set = check::set_of{ c = l.c.*, t = errs } }
+        let ty = tid{ &l, t = types::BOOL }
+        let none = slice::empty(ir::Pat){}
+        let mut arms = list::new(ir::Arm){ realloc = arena::alloc, heap = l.heap }
+        add_arm{ l, xs = &arms, pats = ps, body = bool_block{ &l, value = true } }
+        add_arm{ l, xs = &arms, pats = none, body = bool_block{ &l, value = false } }
+        if errs == t { return mk{ ty, k = ir::ExprKind::matchx{ scrut = box{ l, e = scrut }, through = false, arms = list::items{ list = arms } } } }
+        // A `!T`: its error, then the match on it.
+        let et = tid{ &l, t = errs }
+        let slot = temp{ &l, ty = et }
+        let inner = mk{ ty, k = ir::ExprKind::matchx{ scrut = box{ l, e = mk{ ty = et, k = ir::ExprKind::local{ slot } } }, through = false, arms = list::items{ list = arms } } }
+        let mut take = list::new(ir::Bind){ realloc = arena::alloc, heap = l.heap }
+        add_bind{ xs = &take, b = ir::Bind{ slot, field = 0, by_ref = false } }
+        let mut out = list::new(ir::Arm){ realloc = arena::alloc, heap = l.heap }
+        add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = 1, binds = list::items{ list = take } } }, body = ir::Block{ stmts = slice::empty(ir::Stmt){}, result = box{ l, e = inner } } }
+        add_arm{ l, xs = &out, pats = none, body = bool_block{ &l, value = false } }
+        return mk{ ty, k = ir::ExprKind::matchx{ scrut = box{ l, e = scrut }, through = false, arms = list::items{ list = out } } }
     }
 
     // Whether scrut, of type t with variants vs, holds one of pats' variants: a switch on an
