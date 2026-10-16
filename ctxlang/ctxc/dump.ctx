@@ -862,6 +862,24 @@ namespace decls {
             f = f + 1
         }
         if c.main != check::NONE { dump::put{ &out, s = "main\n" } }
+        lives{ &out, c }
+    }
+
+    // "live NAME TYPE FILE:L:C-L:C" for each local's name in the program's files, where it is in
+    // scope (check::Live).
+    fn lives { mut out: Out, c: check::Checker } {
+        let xs = list::items{ list = c.lives }
+        let mut i: usize = 0
+        while i < xs.len {
+            let v = check::get_var{ c, v = xs[i].var }
+            if @as(usize, v.at.file) >= c.std_files {
+                let f = c.files[v.at.file]
+                let a = source::position{ text = f.text, lines = f.lines, offset = xs[i].from }
+                let b = source::position{ text = f.text, lines = f.lines, offset = xs[i].to }
+                try! @fmt(&out, "live {} {} {}:{}:{}-{}:{}\n", check::str{ s = v.name }, check::tstr{ c, t = v.ty }, check::str{ s = f.name }, a.line, a.col, b.line, b.col)
+            }
+            i = i + 1
+        }
     }
 
     fn diagnostic { mut out: Out, c: check::Checker, d: diag::Diag } {

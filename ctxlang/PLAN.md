@@ -312,10 +312,10 @@ What the tables give, and what they don't yet:
 | each expression's type | `expr_ty`; a narrowed field's own `?T` in `narrowed` | hover, inlay hints |
 | each declaration: kind, name, namespace | `decls` (`Decl.kind`, `name`, `qual`, `syn`) | document and workspace symbols, hover |
 | what a `..` supplies | `forwards`, `filled` | hover on `..` |
-| scopes: each block's locals, with the span where each one is live | **missing**: `scope` and `marks` exist only while a body is checked | completion of names |
+| where each local's name is in scope | `lives` (a `Live`: the local, from where its name takes effect to where its scope ends; the latest `from` wins), and its type in `Var.ty`, narrowed for a narrowed view | completion of names |
 | the expected type at each `{` of a call or literal | **missing** | completion of field names, signature help |
 
-1. **The two missing tables,** recorded while checking, as the others are.
+1. **The missing table,** recorded while checking, as the others are.
 2. **The server:** reading messages (a `Content-Length` header, then that many bytes, by
    `io::read` in a loop), writing them (`io::write_bytes`, then `io::flush`), and JSON, by the
    parser and printer of `examples/json` moved into `ctxc/`.

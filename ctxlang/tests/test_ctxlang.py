@@ -14209,3 +14209,84 @@ fn main { mut io: Io, mut threads: Threads } -> i32 {
 }
 ''')
         self.assertEqual(out, '8000000\n8000000\n')
+
+
+class EditorTables(Base):
+    """What the checker records for an editor (PLAN.md 5), as `ctxc decls` prints it."""
+
+    def decls(self, src):
+        import subprocess
+        import toolchain
+        d, _ = toolchain.write_program([(src, 'main.ctx')])
+        std = [os.path.join(toolchain.ROOT, f) for f in toolchain.std_files()]
+        r = subprocess.run([toolchain.native_ctxc(), 'decls', *std, '--', 'main.ctx'], cwd=d, capture_output=True)
+        return r.stdout.decode()
+
+    def lives(self, src):
+        return [line[5:] for line in self.decls(src).splitlines() if line.startswith('live ')]
+
+    def test_lives(self):
+        # Each local's name is in scope from where it takes effect to the end of its scope: a
+        # context field's in the whole body, a let's after its statement, a pattern's binders in
+        # their arm or after the let-else, a narrowed view after the `if` that narrows it, and an
+        # `is` binder on the right of `and` and in the branch. Bodies checked twice record once.
+        self.assertEqual(self.lives("""union Shape { circle{ r: i32 }, square{ side: i32 } }
+
+fn area { s: Shape, o: ?i32 } -> i32 {
+    let k = 2
+    let some{ value = extra } = o else { return 0 }
+    match s {
+        circle{ r } => { return r * k + extra }
+        square{ side } => {
+            let a = side * side
+            return a
+        }
+    }
+}
+
+fn narrow { s: Shape, o: ?i32 } -> i32 {
+    if o == null { return 0 }
+    let y = o + 1
+    if s is circle{ r } and r > 1 { return r }
+    while y > 0 {
+        let t = y
+        return t
+    }
+    return y
+}
+
+fn main {} {}
+"""), [
+            's Shape main.ctx:3:38-13:2',
+            'o ?i32 main.ctx:3:38-13:2',
+            'k i32 main.ctx:4:14-13:2',
+            'extra i32 main.ctx:5:52-13:2',
+            'r i32 main.ctx:7:24-7:48',
+            'side i32 main.ctx:8:27-11:10',
+            'a i32 main.ctx:9:32-11:10',
+            's Shape main.ctx:15:40-24:2',
+            'o ?i32 main.ctx:15:40-24:2',
+            'o i32 main.ctx:16:30-24:2',
+            'y i32 main.ctx:17:18-24:2',
+            'r i32 main.ctx:18:29-18:34',
+            'r i32 main.ctx:18:35-18:47',
+            't i32 main.ctx:20:18-22:6',
+        ])
+
+    def test_lives_in_consts_and_damaged_bodies(self):
+        # A const's binders have theirs too; a body with errors still records what it declared.
+        self.assertEqual(self.lives("""union U { a{ x: i32 }, b }
+const C: i32 = match U::a{ x = 1 } { a{ x } => { x } b => { 0 } }
+
+fn f {} -> i32 {
+    let z = nope
+    let w = 1
+    return w
+}
+
+fn main {} {}
+"""), [
+            'x i32 main.ctx:2:48-2:53',
+            'z {error} main.ctx:5:17-8:2',
+            'w i32 main.ctx:6:14-8:2',
+        ])

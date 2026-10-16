@@ -172,6 +172,9 @@ namespace check {
         vars:      list::List(Var, Heap),             // the locals of every body, by index
         scope:     list::List(Binding, Heap),         // what is in scope, innermost last
         marks:     list::List(usize, Heap),           // where each open scope starts in `scope`
+        lives:     list::List(Live, Heap),            // where each local's name is in scope, in every body
+        live_marks: list::List(usize, Heap),          // where each open scope starts in `lives`
+        live_from: u32 = 0,                           // where the names declared next take effect
         depth:     u32 = 0,                           // open scopes, less the context's
         loop_depth: u32 = 0,
         loops:     list::List(Loop, Heap),            // the enclosing loops, innermost last
@@ -318,6 +321,12 @@ namespace check {
         held:       u32,
     }
 
+    // Where a name of a local is in scope, for an editor (PLAN.md 5): var, from the offset `from`,
+    // where it takes effect, to `to`, where its scope ends, both in the file of var's `at`. A
+    // local declared again, or narrowed, has another, from where that takes effect; the one with
+    // the latest `from` is the name's there. A local without a name (a view's) has none.
+    struct Live { var: u32, from: u32, to: u32 }
+
     // What a scope holds: a local by name, or the narrowed type of a path of struct fields
     // (`a.b.c`) from a local.
     union Binding {
@@ -410,6 +419,8 @@ namespace check {
             vars = list::new(Var){ realloc = arena::alloc, &heap },
             scope = list::new(Binding){ realloc = arena::alloc, &heap },
             marks = list::new(usize){ realloc = arena::alloc, &heap },
+            lives = list::new(Live){ realloc = arena::alloc, &heap },
+            live_marks = list::new(usize){ realloc = arena::alloc, &heap },
             loops = list::new(Loop){ realloc = arena::alloc, &heap },
             defs = slice::empty(u32){}, maybe = slice::empty(u32){},
             expr_ty = map::new(u64, Id){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
@@ -496,12 +507,15 @@ namespace check {
         each{ &c, xs = c.consts, what = Phase::fold }
         attributes{ &c }
         // First resolve body types and inferred error sets; escape diagnostics wait for
-        // direct-call summaries. The second body check replaces the body side tables.
+        // direct-call summaries. The second body check replaces the body side tables, and the
+        // lives the first one recorded.
+        let lives = c.lives.len
         each{ &c, xs = c.fns, what = Phase::bodies }
         infer_sets{ &c }
         finish_matches{ &c }
         infer_borrows{ &c }
         c.borrow_ready = true
+        c.lives.len = lives
         each{ &c, xs = c.fns, what = Phase::bodies }
         infer_sets{ &c }
         finish_matches{ &c }
@@ -2220,7 +2234,7 @@ namespace check {
         c.in_attr = true
         let t = expr{ &c, e = a.value, exp = types::NO_TYPE }
         c.in_attr = false
-        finish{ &c }
+        finish{ &c, end = a.value.span.end }
         if c.diags.errors != before { return null }
         let lit = map::get{ m = c.literal, key = expr_key{ e = a.value } }
         if lit == null or not lit or record_decl{ c, t } == NONE {
@@ -3073,7 +3087,7 @@ namespace check {
             begin_body{ &c, sc = Scope{ ns = x.ns, owner = NONE, names = no_names{}, args = slice::empty(Id){} }, ret = types::VOID }
             let before = c.diags.errors
             expect{ &c, e = value, t = x.ty }
-            finish{ &c }
+            finish{ &c, end = value.span.end }
             if c.diags.errors == before {
                 let folds = const_ok{ &c, e = value, strict = false }
                 if c.diags.errors == before {
@@ -3090,6 +3104,7 @@ namespace check {
             begin_body{ &c, sc = own_scope{ &c, d }, ret = x.ret }
             c.fn_decl = d
             try! map::put{ m = &c.first_var, key = d, value = @as(u32, c.vars.len) }
+            c.live_from = body.span.start
             let mut i: usize = 0
             while i < x.fields.len and i < params.len {
                 let f = x.fields[i]
@@ -3102,7 +3117,7 @@ namespace check {
             if x.ret != types::VOID and x.ret != types::ERROR and not c.dead and not void_result{ c, t = x.ret } {
                 errorf{ &c, at = x.syn.span, msg = @fmt("`{}` must end every path in `return` or `@panic()`", str{ s = x.name.text }) }
             }
-            finish{ &c }
+            finish{ &c, end = body.span.end }
         }
     }
 
@@ -3117,7 +3132,9 @@ namespace check {
         list::clear{ list = &c.scope }
         list::clear{ list = &c.marks }
         list::clear{ list = &c.loops }
+        list::clear{ list = &c.live_marks }
         add_mark{ &c, n = 0 }
+        try! list::push{ list = &c.live_marks, item = c.lives.len }
         c.depth = 0
         c.value_depth = NONE
         c.loop_depth = 0
@@ -3134,7 +3151,10 @@ namespace check {
     // Settles the body's literals: those whose type nothing fixed get the defaults, i32 and
     // f64, and each integer must fit its type. Then each @fmt finds its writers, for the
     // settled types. Last, every generic argument must be known.
-    fn finish { mut c: Checker } {
+    // Finishes the body, which ends at the offset `end`.
+    fn finish { mut c: Checker, end: u32 } {
+        let k = list::pop{ list = &c.live_marks }
+        if k != null { end_lives{ &c, from = k, end } }
         let fs = list::items{ list = c.fmts }
         let lits = list::items{ list = c.lits }
         let mut i: usize = 0
@@ -3878,13 +3898,27 @@ namespace check {
 
     fn open { mut c: Checker } {
         add_mark{ &c, n = c.scope.len }
+        try! list::push{ list = &c.live_marks, item = c.lives.len }
         c.depth = c.depth + 1
     }
 
-    fn close { mut c: Checker } {
+    // Closes the innermost scope, which ends at the offset `end`.
+    fn close { mut c: Checker, end: u32 } {
         let m = list::pop{ list = &c.marks }
         if m != null { c.scope.len = m }
+        let k = list::pop{ list = &c.live_marks }
+        if k != null { end_lives{ &c, from = k, end } }
         c.depth = c.depth - 1
+    }
+
+    // Ends the lives from index `from` on that are still open at the offset `end`.
+    fn end_lives { mut c: Checker, from: usize, end: u32 } {
+        let xs = list::items{ list = c.lives }
+        let mut i = from
+        while i < xs.len {
+            if xs[i].to == NONE { xs[i].to = end }
+            i = i + 1
+        }
     }
 
     fn add_mark { mut c: Checker, n: usize } {
@@ -3896,8 +3930,10 @@ namespace check {
     }
 
     // Puts local var in the innermost scope as `name`, over any earlier one there.
+    // Its name is in scope from c.live_from.
     fn bind_name { mut c: Checker, name: []u8, var: u32 } {
         add_binding{ &c, b = Binding::local{ name, var } }
+        if name.len > 0 { try! list::push{ list = &c.lives, item = Live{ var, from = c.live_from, to = NONE } } }
     }
 
     // Declares local v in the innermost scope. Only a narrowed view of a local from an outer
@@ -4147,7 +4183,7 @@ namespace check {
     fn block { mut c: Checker, b: syntax::Block } {
         open{ &c }
         stmts{ &c, xs = b.stmts }
-        close{ &c }
+        close{ &c, end = b.span.end }
     }
 
     // A statement's views are its block's, also in a branch's value (value_depth).
@@ -4231,6 +4267,7 @@ namespace check {
             at.derived = d
             at.held = h
         }
+        c.live_from = s.span.end
         declare_var{ &c, v }
         put_local{ &c, key = stmt_key{ s }, v }
         if held.len > 0 { check_bound_scope{ &c, v, places = held, at = s.span } }
@@ -4462,9 +4499,10 @@ namespace check {
         try! list::push{ list = &c.loops, item = lp }
         c.loop_depth = c.loop_depth + 1
         open{ &c }
+        c.live_from = body.span.start
         assume{ &c, facts = f.yes, after_if = false }
         stmts{ &c, xs = body.stmts }
-        close{ &c }
+        close{ &c, end = body.span.end }
         c.loop_depth = c.loop_depth - 1
         let popped = list::pop{ list = &c.loops }
         let l = if popped == null { lp } else { popped }
@@ -4530,6 +4568,7 @@ namespace check {
         if value { return join{ &c, at, bs = list::items{ list = bs }, exp, may_leave } }
         if not s0.dead {
             // If one branch always leaves, what the other assumes holds to the end of the block.
+            c.live_from = at.end
             if s1.dead { assume{ &c, facts = f.no, after_if = true } }
             if els != null and s2.dead { assume{ &c, facts = f.yes, after_if = true } }
         }
@@ -4615,10 +4654,11 @@ namespace check {
     fn branch { mut c: Checker, b: syntax::Block, vars: []u32, facts: []Fact, exp: Id, value: bool, drop: bool } -> Branch {
         if value { return value_block{ &c, b, vars, facts, exp, drop } }
         open{ &c }
+        c.live_from = b.span.start
         declare_all{ &c, vars }
         assume{ &c, facts, after_if = false }
         stmts{ &c, xs = b.stmts }
-        close{ &c }
+        close{ &c, end = b.span.end }
         return Branch{ t = types::NO_TYPE, value = Value::none }
     }
 
@@ -4629,6 +4669,7 @@ namespace check {
     fn value_block { mut c: Checker, b: syntax::Block, vars: []u32, facts: []Fact, exp: Id, drop: bool } -> Branch {
         let entry = c.dead
         open{ &c }
+        c.live_from = b.span.start
         declare_all{ &c, vars }
         assume{ &c, facts, after_if = false }
         let xs = b.stmts
@@ -4666,7 +4707,7 @@ namespace check {
         } else if not c.dead {
             error{ &c, at = b.span, msg = "this branch must end in a value, or leave with `return`, `break`, `continue` or `@panic()`" }
         }
-        close{ &c }
+        close{ &c, end = b.span.end }
         if c.dead and not entry { t = types::NO_TYPE }
         return Branch{ t, value = v }
     }
@@ -5361,13 +5402,15 @@ namespace check {
         }
         let s0 = save{ c }
         open{ &c }
+        c.live_from = els.span.start
         declare_all{ &c, vars = evars }
         stmts{ &c, xs = els.stmts }
-        close{ &c }
+        close{ &c, end = els.span.end }
         if not c.dead {
             error{ &c, at = els.span, msg = "the `else` of a `let` pattern must leave: end it with `return`, `break`, `continue` or `@panic()`" }
         }
         restore{ &c, s = State{ defs = s0.defs, maybe = set_union{ c, a = s0.maybe, b = c.maybe }, dead = s0.dead } }
+        c.live_from = s.span.end
         declare_all{ &c, vars = bvars }
     }
 
@@ -8990,9 +9033,10 @@ namespace check {
             // The right side runs only if the left is true (`and`) or false (`or`).
             open{ &c }
             let f = facts{ c, e = a }
+            c.live_from = b.span.start
             assume{ &c, facts = if op == tok::Kind::kw_and { f.yes } else { f.no }, after_if = false }
             expect{ &c, e = b, t = types::BOOL }
-            close{ &c }
+            close{ &c, end = b.span.end }
             return types::BOOL
         }
         if op == tok::Kind::eq or op == tok::Kind::ne {
