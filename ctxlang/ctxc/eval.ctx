@@ -553,8 +553,7 @@ namespace eval {
                 let held = try holds{ &m, u = k, t = init.ty, variant }
                 if not held {
                     if els_variant != null { try bind_all{ &m, binds = els_binds, u = k, t = init.ty, variant = els_variant } }
-                    try block{ &m, b = els, res = 0 }
-                    return
+                    return try block{ &m, b = els, res = 0 }
                 }
                 try bind_all{ &m, binds, u = k, t = init.ty, variant }
             }
@@ -1510,8 +1509,7 @@ namespace eval {
             try store{ &m, a = info, n = 8, v = address / 4096 * 4096 }
             try store{ &m, a = info + 24, n = 8, v = 1099511627776 }
             try store{ &m, a = info + 32, n = 4, v = 4096 }
-            try store{ &m, a = res, n = 8, v = 48 }
-            return
+            return try store{ &m, a = res, n = 8, v = 48 }
         }
         if slice::eq_bytes{ a = s, b = "ctx_panic_msg" } {
             // std's rt::fail: a panic without a position.
@@ -1522,8 +1520,7 @@ namespace eval {
             return halt
         }
         if m.emulate and is_host{ s } {
-            try host{ &m, f, base, res }
-            return
+            return try host{ &m, f, base, res }
         }
         if m.emulate {
             let f64_text = slice::eq_bytes{ a = s, b = "ctx_float_f64_digits" }
@@ -1541,8 +1538,7 @@ namespace eval {
                     return halt
                 }
                 slice::copy(u8){ dst = try at_w{ &m, a = ptr, n = @as(u64, k) }, src = buf[..k] }
-                try store{ &m, a = res, n = 8, v = @as(u64, k) }
-                return
+                return try store{ &m, a = res, n = 8, v = @as(u64, k) }
             }
             let f64_parse = slice::eq_bytes{ a = s, b = "ctx_float_f64_parse" }
             if f64_parse or slice::eq_bytes{ a = s, b = "ctx_float_f32_parse" } {
@@ -1597,8 +1593,7 @@ namespace eval {
                 }
                 try emit{ &m, to, bytes = bytes[from..] }
             }
-            try store{ &m, a = res, n = 8, v = @as(u64, bytes.len) }
-            return
+            return try store{ &m, a = res, n = 8, v = @as(u64, bytes.len) }
         }
         if slice::eq_bytes{ a = s, b = "ctx_interp_binary" } {
             m.binary = true
@@ -1610,8 +1605,7 @@ namespace eval {
                 unsupported{ &m, what = "more than 64 MiB of pages at once" }
                 return halt
             }
-            try store{ &m, a = res, n = 8, v = try aligned_bytes{ &m, n = size, align = 4096 } }
-            return
+            return try store{ &m, a = res, n = 8, v = try aligned_bytes{ &m, n = size, align = 4096 } }
         }
         if slice::eq_bytes{ a = s, b = "ctx_interp_environment" } {
             if m.environ == 0 {
@@ -1628,8 +1622,7 @@ namespace eval {
                 m.environ = items
             }
             try store{ &m, a = res, n = 8, v = m.environ }
-            try store{ &m, a = res + 8, n = 8, v = @as(u64, m.env.len) }
-            return
+            return try store{ &m, a = res + 8, n = 8, v = @as(u64, m.env.len) }
         }
         if slice::eq_bytes{ a = s, b = "ctx_interp_exit" } {
             let code = try arg_bits{ &m, f, base, name = "code" }
@@ -1664,8 +1657,7 @@ namespace eval {
             let at_n = try heap_bytes{ &m, n = @as(u64, name.len) + 1 }
             slice::copy(u8){ dst = try at_w{ &m, a = at_n, n = @as(u64, name.len) }, src = name }
             try store{ &m, a = res, n = 8, v = at_n }
-            try store{ &m, a = res + 8, n = 8, v = @as(u64, name.len) }
-            return
+            return try store{ &m, a = res + 8, n = 8, v = @as(u64, name.len) }
         }
         if slice::eq_bytes{ a = s, b = "ctx_interp_thread_enter" } {
             // A thread starts, and runs to its end before its creator goes on: its own
@@ -1702,8 +1694,7 @@ namespace eval {
         }
         if slice::eq_bytes{ a = s, b = "ctx_interp_thread_id" } {
             let id: u64 = if m.ids.len > 0 { list::items{ list = m.ids }[m.ids.len - 1] } else { 1 }
-            try store{ &m, a = res, n = 8, v = id }
-            return
+            return try store{ &m, a = res, n = 8, v = id }
         }
         unsupported{ &m, what = s }
         return halt
