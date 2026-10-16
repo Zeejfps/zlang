@@ -1,7 +1,7 @@
 // The recovery test (tools/recover.py drives it). An editor runs the front end on code that is
-// usually half-written, so the parser must survive any damage to a file:
+// usually half-written, so the parser and the checker must survive any damage to a file:
 //
-//   ctxc recover FILE FROM TO [-v]
+//   ctxc recover FILE FROM TO [-v] [--every N] [-- FILE...]
 //
 // For each token of FILE from index FROM up to TO, it lexes and parses three damaged copies: cut
 // short where the token starts, with the token deleted, and with it duplicated. Each copy must
@@ -14,6 +14,14 @@
 // an error, and every declaration that ends before the cut must still be there, with the same
 // kind, namespace, name and start.
 //
+// Then the copy is checked in FILE's program, in place of FILE: std's files and the program's,
+// FILE... (FILE among them), or FILE alone; a build program's with std's extras (main.ctx,
+// `builds`). A file of std's is checked in std, with its own layer, and no program. Checking
+// must not panic. It may report any number of errors: a cut can remove declarations that the
+// rest of the program uses, and each use is an error (diag::CAP keeps what an editor is shown
+// in bounds). With --every N, only every Nth copy is checked: a copy takes as long to check as
+// its whole program does, about 0.4 s for ctxc's.
+//
 // It prints a line for each copy that fails, then `done N` with the number of copies. With -v it
 // names each copy on stderr before parsing it, so the last one named is the one that crashed.
 
@@ -22,8 +30,13 @@ namespace recover {
 
     type Symbols = list::List(Symbol, arena::Arena)
 
+    // The program a damaged file is checked in: its files, std's first (files[..std_files]), and
+    // the damaged one's at `at`, whose entry each copy replaces. stack is how much of ctxc's stack
+    // a const's calls may take, and every how many copies make one that is checked.
+    struct Program { files: []mut check::File, std_files: usize, at: usize, stack: u64, every: u32 }
+
     // Returns the number of copies that fail.
-    fn run { mut io: Io, mut heap: arena::Arena, path: []u8, text: []u8, from: usize, to: usize, verbose: bool } -> u32 {
+    fn run { mut io: Io, mut heap: arena::Arena, path: []u8, text: []u8, from: usize, to: usize, verbose: bool, program: Program } -> u32 {
         let lines = source::line_starts{ text, &heap }
         let mut diags = diag::new{ &heap }
         let lexed = lexer::lex{ text, file = 0, &heap, &diags }
@@ -63,7 +76,7 @@ namespace recover {
                     n = put{ buf, at = n + 1, bytes = text[s..] }
                 }
                 if verbose { say{ &io, how, j, err = true, path, text, lines, at = s } }
-                let problem = one{ &heap, text = buf[..n], cut = s, is_cut = how == 0, clean, symbols }
+                let problem = one{ &heap, text = buf[..n], cut = s, is_cut = how == 0, clean, symbols, program, checked = count % program.every == 0 }
                 if problem != null {
                     say{ &io, how, j, err = false, path, text, lines, at = s }
                     io::println{ &io, s = problem }
@@ -105,31 +118,48 @@ namespace recover {
     }
 
     // Parses one damaged copy and checks it, with what is known about the undamaged file: whether
-    // it had errors, and its declarations. A cut copy ends at `cut`.
-    fn one { mut heap: arena::Arena, text: []u8, cut: usize, is_cut: bool, clean: bool, symbols: []Symbol } -> ?utf8::String {
+    // it had errors, and its declarations. A cut copy ends at `cut`. If `checked`, the checker
+    // runs on it too, in its program.
+    fn one { mut heap: arena::Arena, text: []u8, cut: usize, is_cut: bool, clean: bool, symbols: []Symbol, program: Program, checked: bool } -> ?utf8::String {
         let mut diags = diag::new{ &heap }
-        let lexed = lexer::lex{ text, file = 0, &heap, &diags }
-        let tree = parser::parse{ text, file = 0, tokens = lexed.tokens, &heap, &diags }
+        let file = @as(u32, program.at)
+        let lexed = lexer::lex{ text, file, &heap, &diags }
+        let tree = parser::parse{ text, file, tokens = lexed.tokens, &heap, &diags }
         if diags.errors > diag::CAP { return "more errors than the cap" }
         let seen = try! alloc::make(u8){ realloc = arena::alloc, &heap, count = @as(usize, tree.ids) }
         slice::fill{ s = seen, v = 0 }
-        let mut c = Check{ ids = tree.ids, seen, problem = null }
+        let mut shape = Check{ ids = tree.ids, seen, problem = null }
         let mut i: usize = 0
         while i < tree.decls.len {
-            decl{ &c, x = tree.decls[i], lo = 0, hi = @as(u32, text.len) }
+            decl{ c = &shape, x = tree.decls[i], lo = 0, hi = @as(u32, text.len) }
             i = i + 1
         }
-        if c.problem != null { return c.problem }
-        if not clean or not is_cut { return null }
+        if shape.problem != null { return shape.problem }
+        if clean and is_cut {
+            let lost = check_symbols{ &heap, tree, cut, errors = diags.errors, symbols }
+            if lost != null { return lost }
+        }
+        if not checked { return null }
+        let f = program.files[program.at]
+        program.files[program.at] = check::File{ name = f.name, text, lines = source::line_starts{ text, &heap }, tree }
+        let mut c = check::new{ files = program.files, std_files = program.std_files, &heap, &diags }
+        c.stack = program.stack
+        check::program{ &c }
+        program.files[program.at] = f
+        return null
+    }
 
+    // For a copy of a file without errors, cut at `cut`: an error if the cut is inside a
+    // declaration that ends in `}`, and every declaration that ends before the cut still there.
+    fn check_symbols { mut heap: arena::Arena, tree: syntax::File, cut: usize, errors: usize, symbols: []Symbol } -> ?utf8::String {
         let mut syms = list::new(Symbol){ realloc = arena::alloc, &heap }
-        collect{ &syms, &heap, prefix = text[..0], decls = tree.decls }
+        collect{ &syms, &heap, prefix = "", decls = tree.decls }
         let have = list::items{ list = syms }
         let mut k: usize = 0
-        i = 0
+        let mut i: usize = 0
         while i < symbols.len {
             let s = symbols[i]
-            if @as(usize, s.span.start) < cut and cut < @as(usize, s.span.end) and s.braced and diags.errors == 0 and not fieldless{ have, s } {
+            if @as(usize, s.span.start) < cut and cut < @as(usize, s.span.end) and s.braced and errors == 0 and not fieldless{ have, s } {
                 return "no error for a cut inside a declaration"
             }
             if @as(usize, s.span.end) <= cut {

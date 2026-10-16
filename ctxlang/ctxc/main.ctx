@@ -29,7 +29,8 @@
 //   ctxc tokens FILE...                         prints each file's tokens (dump.ctx), each
 //                                               after a line `file FILE`
 //   ctxc syntax FILE...                         the same for each file's syntax tree
-//   ctxc recover FILE FROM TO                   the recovery test (recover.ctx)
+//   ctxc recover FILE FROM TO [-v] [--every N] [-- FILE...]
+//                                               the recovery test (recover.ctx)
 //   ctxc decls STD... -- FILE...                checks the program and prints its declarations
 //                                               and bodies (dump.ctx, namespace decls)
 //
@@ -71,7 +72,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> 
     if args.len == 3 and slice::eq_bytes{ a = args[0], b = "c" } {
         to_c = true
     } else if args.len != 2 or not slice::eq_bytes{ a = args[0], b = "roundtrip" } {
-        io::eprintln{ &io, s = "usage: ctxc run PATH [-- ARGS...] | ctxc exe PATH -o OUT | ctxc graph DIR GEN LIST | ctxc interp PATH [-- ARGS...] | ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c | ctxc tokens|syntax FILE... | ctxc recover FILE FROM TO | ctxc decls|ir STD... -- FILE... | ctxc build OUT.c STD... -- FILE..." }
+        io::eprintln{ &io, s = "usage: ctxc run PATH [-- ARGS...] | ctxc exe PATH -o OUT | ctxc graph DIR GEN LIST | ctxc interp PATH [-- ARGS...] | ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c | ctxc tokens|syntax FILE... | ctxc recover FILE FROM TO [-v] [--every N] [-- FILE...] | ctxc decls|ir STD... -- FILE... | ctxc build OUT.c STD... -- FILE..." }
         return 2
     }
     let path = args[1]
@@ -420,32 +421,173 @@ fn add_file { mut files: list::List(check::File, arena::Arena), mut heap: arena:
     try! list::push{ list = &files, item = check::File{ name, text, lines, tree } }
 }
 
-// `ctxc recover FILE FROM TO [-v]`
-fn recovery { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+// `ctxc recover FILE FROM TO [-v] [--every N] [-- FILE...]` (recover.ctx). The program's files
+// are lexed and parsed once, below the arena's mark that each copy goes back to, so a copy costs
+// its own parse and the check.
+fn recovery { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> i32 {
     let path = args[1]
     let from = utf8::parse_u64{ s = utf8::String{ bytes = args[2] } }
     let to = utf8::parse_u64{ s = utf8::String{ bytes = args[3] } }
+    let mut verbose = false
+    let mut every: u64 = 1
+    let mut given: [][]u8 = slice::empty([]u8){}
     if from == null or to == null {
-        io::eprintln{ &io, s = "usage: ctxc recover FILE FROM TO [-v]" }
+        io::eprintln{ &io, s = "usage: ctxc recover FILE FROM TO [-v] [--every N] [-- FILE...]" }
         return 2
     }
-    let ok{ value = size } = fs::size{ &fs, path } else {
-        cannot{ &io, path, what = "cannot read" }
-        return 1
+    let mut usage = false
+    let mut i: usize = 4
+    while i < args.len and not usage {
+        if slice::eq_bytes{ a = args[i], b = "-v" } {
+            verbose = true
+        } else if slice::eq_bytes{ a = args[i], b = "--every" } and i + 1 < args.len {
+            i = i + 1
+            every = utf8::parse_u64{ s = utf8::String{ bytes = args[i] } } ifnull { 0 }
+            if every == 0 or every > 4294967295 { usage = true }
+        } else if slice::eq_bytes{ a = args[i], b = "--" } {
+            given = args[i + 1..]
+            break
+        } else {
+            usage = true
+        }
+        i = i + 1
     }
-    let pages = mem::reserve{ &mem, size = 67108864 + @as(usize, size) * 256 } ifnull {
+    if usage {
+        io::eprintln{ &io, s = "usage: ctxc recover FILE FROM TO [-v] [--every N] [-- FILE...]" }
+        return 2
+    }
+    let pages = mem::reserve{ &mem, size = 16777216 } ifnull {
         io::eprintln{ &io, s = "out of memory" }
         return 1
     }
-    let mut heap = arena::new{ buf = pages }
-    let ok{ value = text } = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } else {
-        cannot{ &io, path, what = "cannot read" }
+    let mut names = arena::new{ buf = pages }
+    let home = drive::find_home{ &fs, &proc, heap = &names } ifnull {
+        io::eprintln{ &io, s = "ctxc: cannot find std/ and ctxc/rt/; set CTX_HOME to the directory that holds them" }
         return 1
     }
-    let verbose = args.len > 4 and slice::eq_bytes{ a = args[4], b = "-v" }
-    let failures = recover::run{ &io, &heap, path, text, from = @as(usize, from), to = @as(usize, to), verbose }
+    let os = proc::os{ &proc }
+    let key = drive::key_of{ &io, &fs, heap = &names, path, os } ifnull { return 1 }
+
+    // FILE's program: std with FILE's layer, if FILE is std's; else std with the host's layer,
+    // and FILE... or FILE alone. src is FILE's index in all.
+    let mut layer = os
+    let mut interp = false
+    let std_dir = drive::key_of{ &io, &fs, heap = &names, path = drive::join{ heap = &names, a = home, b = "std" }, os } ifnull { return 1 }
+    let dir = drive::parent{ path = key }
+    let mut in_std = slice::eq_bytes{ a = dir, b = std_dir }
+    let layers: [5][]u8 = ["windows", "linux", "macos", "posix", "interp"]
+    let mut l: usize = 0
+    while l < layers.len {
+        if slice::eq_bytes{ a = dir, b = drive::join{ heap = &names, a = std_dir, b = drive::cat{ heap = &names, a = "os/", b = layers[l] } } } {
+            in_std = true
+            if l == 0 { layer = build::Os::windows }
+            if l == 1 or l == 3 { layer = build::Os::linux }
+            if l == 2 { layer = build::Os::macos }
+            if l == 4 { interp = true }
+        }
+        l = l + 1
+    }
+    let std = drive::std_files{ &io, &fs, heap = &names, home, os = layer, interp } ifnull { return 1 }
+    let mut paths = list::new([]u8){ realloc = arena::alloc, heap = &names }
+    let mut src = NOT_FOUND
+    i = 0
+    while i < std.len {
+        try! list::push{ list = &paths, item = std[i] }
+        let k = drive::key_of{ &io, &fs, heap = &names, path = std[i], os } ifnull { return 1 }
+        if in_std and slice::eq_bytes{ a = k, b = key } { src = i }
+        i = i + 1
+    }
+    if not in_std {
+        if given.len == 0 { given = drive::one{ heap = &names, s = path } }
+        i = 0
+        while i < given.len {
+            try! list::push{ list = &paths, item = given[i] }
+            let k = drive::key_of{ &io, &fs, heap = &names, path = given[i], os } ifnull { return 1 }
+            if slice::eq_bytes{ a = k, b = key } { src = std.len + i }
+            i = i + 1
+        }
+    }
+    if src == NOT_FOUND {
+        cannot{ &io, path, what = if in_std { "is in std/ but not among std's files" } else { "is not among the program's files" } }
+        return 1
+    }
+    let extras = drive::build_extras{ &io, &fs, heap = &names, home } ifnull { return 1 }
+
+    let all = list::items{ list = paths }
+    let mut total: u64 = 0
+    i = 0
+    while i < all.len + extras.len {
+        let p = if i < all.len { all[i] } else { extras[i - all.len] }
+        let ok{ value = size } = fs::size{ &fs, path = p } else {
+            cannot{ &io, path = p, what = "cannot read" }
+            return 1
+        }
+        total = total + size
+        i = i + 1
+    }
+    let big = mem::reserve{ &mem, size = 67108864 + @as(usize, total) * 512 } ifnull {
+        io::eprintln{ &io, s = "out of memory" }
+        return 1
+    }
+    let mut heap = arena::new{ buf = big }
+    let mut texts = list::new([]u8){ realloc = arena::alloc, &heap }
+    i = 0
+    while i < all.len {
+        let ok{ value = text } = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = all[i] } else {
+            cannot{ &io, path = all[i], what = "cannot read" }
+            return 1
+        }
+        try! list::push{ list = &texts, item = text }
+        i = i + 1
+    }
+    let read = list::items{ list = texts }
+    let mut diags = diag::new{ &heap }
+    let mut files = list::new(check::File){ realloc = arena::alloc, &heap }
+    i = 0
+    while i < std.len {
+        add_file{ &files, &heap, &diags, name = all[i], text = read[i] }
+        i = i + 1
+    }
+    // A build program's files come after std's extras, as `analyze` places them; whether it is
+    // one is decided by FILE's program as it is, not by each copy.
+    let mut std_count = std.len
+    if all.len > std.len {
+        let mark = arena::mark{ heap }
+        let mut own = list::new(check::File){ realloc = arena::alloc, &heap }
+        let mut scratch = diag::new{ &heap }
+        i = std.len
+        while i < all.len {
+            add_file{ files = &own, &heap, diags = &scratch, name = all[i], text = read[i] }
+            i = i + 1
+        }
+        let build = builds{ files = list::items{ list = own } }
+        arena::restore{ &heap, to = mark }
+        if build {
+            i = 0
+            while i < extras.len {
+                let ok{ value = text } = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = extras[i] } else {
+                    cannot{ &io, path = extras[i], what = "cannot read" }
+                    return 1
+                }
+                add_file{ &files, &heap, &diags, name = extras[i], text }
+                i = i + 1
+            }
+            std_count = std.len + extras.len
+        }
+        i = std.len
+        while i < all.len {
+            add_file{ &files, &heap, &diags, name = all[i], text = read[i] }
+            i = i + 1
+        }
+    }
+    let at = if src < std.len { src } else { src + std_count - std.len }
+    let program = recover::Program{ files = list::items{ list = files }, std_files = std_count, at, stack = drive::host_stack{ &proc } / 2, every = @as(u32, every) }
+    let failures = recover::run{ &io, &heap, path, text = read[src], from = @as(usize, from), to = @as(usize, to), verbose, program }
     return if failures > 0 { 1 } else { 0 }
 }
+
+// No index: a file not found among a program's.
+const NOT_FOUND: usize = 18446744073709551615
 
 // "PATH: what"
 fn cannot { mut io: Io, path: []u8, what: utf8::String } {

@@ -16,7 +16,7 @@ interpreter ctxc replaced, is at `8436f4d`.
 | 2 | [C interop](#2-c-interop) | in progress | |
 | 3 | [Metaprogramming](#3-metaprogramming) | in progress | |
 | 4 | [Literal conversions](#4-literal-conversions) | in progress | |
-| 5 | [Language server](#5-language-server) | planned | |
+| 5 | [Language server](#5-language-server) | planned | 6.1 for the fixtures |
 | 6 | [Tools in ctxlang](#6-tools-in-ctxlang) | planned | 3.1, 3.2 for 6.3 |
 
 ## Stages
@@ -292,43 +292,59 @@ declares attributes the compiler acts on.
 
 ### 5. Language server
 
-`ctxls`, written in ctxlang, speaks LSP (JSON-RPC over stdin and stdout) and answers from the
-`Analysis` the front end produces. The JSON reader and writer grow out of `examples/json`.
+`ctxc lsp` speaks LSP (JSON-RPC over stdin and stdout) and answers from the checker's side
+tables. It is a command of ctxc, in `ctxc/lsp.ctx` and files beside it, not a program of its
+own: the front end, the driver and std's files are already there, so nothing has to become a
+library, and the editor finds the server wherever it finds ctxc.
 
-The front end was built for this: `check{ files }` takes source text (so unsaved buffers work),
-never exits or panics on bad input, recovers from errors in the lexer, parser and checker, keeps
-comments on the side, and records its results in side tables by node id, so parsed trees stay
-read-only and unchanged files (std in particular) needn't be reparsed. What's left is reading
-those tables:
+The front end was built for this: `check::new{ files, .. }` and `check::program` take source
+text (so unsaved buffers work), recover from errors in the lexer, parser and checker, keep
+comments on the side (`lexer::Lexed.comments`), and record results in side tables by node key,
+so parsed trees stay read-only and std's needn't be reparsed after an edit: its trees stay in
+the arena below a `mark`, and each check `restore`s to it.
 
-| Record | Serves |
-|---|---|
-| each name use → its declaration (the file and span of a local, field, variant, fn, type or namespace) | go to definition, references, rename, semantic tokens |
-| each expression's type, and a local's type at each use (after narrowing, §8) | hover, inlay hints |
-| each declaration: kind, name, span, signature text, and its namespace | document and workspace symbols, hover |
-| scopes: each block's locals, with the span where each one is live | completion of names |
-| the expected type at each `{` of a call or literal, and which fields a pun or `..` supplied | completion of field names, signature help, hover on `..` |
+What the tables give, and what they don't yet:
 
-1. **Features, in order:** diagnostics on open and change (with debouncing), go to definition,
-   hover (type and signature), document symbols, completion (names in scope, fields after `.`,
+| Record | In `check::Checker` | Serves |
+|---|---|---|
+| each name use → what it names | `uses` (a `Ref`), `refs` (a `PathRef`), `local_of`; a local's span is `Var.at`, a declaration's its `syntax::Decl` | go to definition, references, rename, semantic tokens |
+| a field use → its field | not kept: found from the receiver's type in `expr_ty` and the field's name | go to definition, hover |
+| each expression's type | `expr_ty`; a narrowed field's own `?T` in `narrowed` | hover, inlay hints |
+| each declaration: kind, name, namespace | `decls` (`Decl.kind`, `name`, `qual`, `syn`) | document and workspace symbols, hover |
+| what a `..` supplies | `forwards`, `filled` | hover on `..` |
+| scopes: each block's locals, with the span where each one is live | **missing**: `scope` and `marks` exist only while a body is checked | completion of names |
+| the expected type at each `{` of a call or literal | **missing** | completion of field names, signature help |
+
+1. **The two missing tables,** recorded while checking, as the others are.
+2. **The server:** reading messages (a `Content-Length` header, then that many bytes, by
+   `io::read` in a loop), writing them (`io::write_bytes`, then `io::flush`), and JSON, by the
+   parser and printer of `examples/json` moved into `ctxc/`.
+3. **Features, in order:** diagnostics on open and change (debounced), go to definition, hover
+   (type and signature), document symbols, completion (names in scope, fields after `.`,
    context fields inside `{`), references, rename, workspace symbols, semantic tokens, signature
    help, inlay hints for inferred `let` types.
-2. **What std needs:** `io::read` of an exact byte count from stdin, because a message body has
-   no trailing newline and `read_line` won't do; and writing raw bytes to stdout without a
-   newline.
-3. **Doc comments,** for hover: their syntax is a separate spec decision.
+4. **Doc comments,** for hover: their syntax is a spec decision of its own, still to make.
 
 Design notes:
+- **Threads.** One thread reads stdin and queues messages; the main thread takes them, and
+  waits with `condition::wait_for` to debounce a run of changes into one check (std/thread.ctx).
 - **Positions.** Spans are byte offsets; the server converts to whatever the client negotiated:
   UTF-8 if it accepts `positionEncoding`, UTF-16 otherwise.
 - **Workspace.** A program is a directory of `.ctx` files plus std (§10). An open file joins the
-  program in its directory. Buffers the editor holds replace the text on disk.
+  program in its directory. Buffers the editor holds replace the text on disk. A directory with
+  a build.ctx is checked with the files its build program gives each executable, generated ones
+  included, which the server learns by running it as the driver does (drive.ctx); it runs again
+  when build.ctx or a file under a `#build::sources` directory is saved.
 - **Speed.** On every edit the server re-lexes and reparses the files that changed and rechecks
-  the whole program. Only if a profile says otherwise: skip unchanged function bodies, or check
-  only up to the cursor for completion.
-- **Robustness.** A panic kills the server, so the recovery test gates every release. A request
-  whose analysis fails for an internal reason returns an LSP error and doesn't take the session
-  down with it.
+  the whole program: about 100 ms for ctxc's own source. Only if a profile says otherwise: skip
+  unchanged function bodies, or check only up to the cursor for completion.
+- **Consts and converted literals** are evaluated only in a program without errors (stage 3's
+  *Later*), so their errors are missing while any other error is there. The server reports what
+  the checker reports; stage 3's direction would fix both at once.
+- **Robustness.** ctxlang can't recover from a panic, so a panic ends the server and the client
+  starts it again. The recovery test, which checks every damaged copy too (Testing), keeps
+  that rare and gates every release. Checking in a child process, to survive a panic, is
+  excluded: every buffer and every answer would cross a pipe on each edit.
 
 *Done when:* VS Code, with a minimal client extension, shows diagnostics while you type, and go to
 definition, hover and completion work on `ctxc/` itself. The editor-query fixtures pass.
@@ -507,11 +523,16 @@ program asks for one (spec §19).
 - **C's undefined behaviour.** `invalid memory access` is undefined behaviour in C, not a panic.
 - **Recovery** (`tools/recover.py`). Damage every file in the corpus: cut it at each token
   boundary, and delete or duplicate single tokens. Run the front end on every result, inside
-  ctxc (`ctxc recover`), in parallel chunks. It must not panic, must keep under the diagnostic
-  cap, and must build a well-formed tree: ids used once, and every span inside its parent's. A
-  cut inside a declaration that ends in `}` must report an error, and a cut must still produce
-  symbols for the declarations before it. Other damage can leave valid code, so it needn't report
-  anything. This is the test that guards editor use.
+  ctxc (`ctxc recover`), in parallel chunks. The parser must not panic, must keep under the
+  diagnostic cap, and must build a well-formed tree: ids used once, and every span inside its
+  parent's. A cut inside a declaration that ends in `}` must report an error, and a cut must
+  still produce symbols for the declarations before it. Other damage can leave valid code, so it
+  needn't report anything. Then each copy is checked in its program (the corpus case's files,
+  std, or ctxc), and the checker must not panic; it has no cap of its own, since a cut can
+  remove declarations the rest of the program uses, and each use is an error. ctxc's files are
+  checked at every 50th copy: each check takes as long as checking ctxc. std's 131K copies take
+  about 4 minutes on 24 processors, and ctxc's 951K about 54. This is the test that guards
+  editor use.
 - **Editor queries** (stage 5). Fixture files mark positions (`/*^def*/`, `/*^hover*/`) and state
   the expected answer, which covers the semantic model without a client.
 - **Float text.** `f64_digits` must copy Python's `repr` exactly: shortest round-trip digits,
