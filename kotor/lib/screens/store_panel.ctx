@@ -149,8 +149,7 @@ namespace store_panel {
             k = k + 1
         }
         if n == 0 {
-            try pick{ &s, &g, &w, user = 0 }
-            return
+            return try pick{ &s, &g, &w, user = 0 }
         }
         gui::list_select{ &g, panel = p, tag, row = select }
         try pick{ &s, &g, &w, user = @as(i64, order[@as(usize, select)]) }
@@ -199,8 +198,7 @@ namespace store_panel {
         try items::show_description{ &g, &w, panel = p, tag = "LB_DESCRIPTION", id = if id == obj::INVALID { 0 } else { id } }
         if id == obj::INVALID {
             try gui::set_text{ &g, panel = p, tag = "LBL_COST_VALUE", text = "" }
-            try gui::set_text{ &g, panel = p, tag = "LBL_STOCK_VALUE", text = "" }
-            return
+            return try gui::set_text{ &g, panel = p, tag = "LBL_STOCK_VALUE", text = "" }
         }
         let mut b = items::new_text{ w = &w }
         defer list::free{ list = &b.bytes }

@@ -85,16 +85,14 @@ namespace lvl {
         if not o.usable { return }
         if o.cost > s.sk_points {
             // Checked before the cap, as the original does.
-            try say{ &s, &g, &w, &dev, strref = 42464, ask = ASK_INFO }
-            return
+            return try say{ &s, &g, &w, &dev, strref = 42464, ask = ASK_INFO }
         }
         if skill_total{ s = &s, w = &w, row } >= o.max_rank {
             // "Class skills can have a maximum skill rank of <CUSTOM0> (current level + 3)."
             let mut buf: [16]u8
             let len = frontend::put_int{ into = buf[..], at = 0, n = o.max_rank }
             try gui::set_token{ &g, name = "CUSTOM0", value = buf[..len] }
-            try say{ &s, &g, &w, &dev, strref = if o.cost == 1 { 42178 } else { 42179 }, ask = ASK_INFO }
-            return
+            return try say{ &s, &g, &w, &dev, strref = if o.cost == 1 { 42178 } else { 42179 }, ask = ASK_INFO }
         }
         s.sk[row] = s.sk[row] + 1
         s.sk_points = s.sk_points - o.cost

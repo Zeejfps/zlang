@@ -35,8 +35,7 @@ namespace ups {
         if item != obj::INVALID and world::is_valid{ w = &w, id = item } {
             s.category = category_of{ s = &s, w = &w, item }
             if s.category != CAT_NONE {
-                try take_item{ &s, &g, &w, &dev, item, owner = holder_of{ s = &s, w = &w, item }, slot = worn_slot_of{ s = &s, w = &w, item } }
-                return
+                return try take_item{ &s, &g, &w, &dev, item, owner = holder_of{ s = &s, w = &w, item }, slot = worn_slot_of{ s = &s, w = &w, item } }
             }
         }
         try open_categories{ &s, &g, &w, &dev }
@@ -553,8 +552,7 @@ namespace ups {
         if s.lightsaber {
             let it = slot_item{ &s, &w, k }
             let name = if it != obj::INVALID { items::name_of{ w = &w, id = it } } else if slot.kind == KIND_COLOUR { world::string_by_strref{ w = &w, strref = STR_COLOUR_CRYSTAL } } else { world::string_by_strref{ w = &w, strref = STR_POWER_CRYSTAL } }
-            try gui::set_text{ &g, panel = p, tag = "LBL_LSSLOTNAME", text = name }
-            return
+            return try gui::set_text{ &g, panel = p, tag = "LBL_LSSLOTNAME", text = name }
         }
         let strref: u32 = if slot.type_ >= 1 and slot.type_ <= 9 { SLOT_NAME_STR[@as(usize, slot.type_)] } else { 0 }
         try gui::set_text{ &g, panel = p, tag = "LBL_SLOTNAME", text = if strref != 0 { world::string_by_strref{ w = &w, strref } } else { "" } }
@@ -603,8 +601,7 @@ namespace ups {
         }
         gui::set_visible{ &g, panel = p, tag = "LB_ITEMS", visible = pick }
         if pick {
-            try fill_choices{ &s, &g, &w, &dev }
-            return
+            return try fill_choices{ &s, &g, &w, &dev }
         }
         let mut k: usize = 0
         while k < s.nslots {

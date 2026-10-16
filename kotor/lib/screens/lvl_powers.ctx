@@ -145,21 +145,17 @@ namespace lvl {
         let f = creature_of{ w = &w, id = s.who } ifnull { return }
         let pr = s.prows[@as(usize, s.psel)]
         if pr.state == FS_KNOWN {
-            try say{ &s, &g, &w, &dev, strref = 42185, ask = ASK_INFO }
-            return
+            return try say{ &s, &g, &w, &dev, strref = 42185, ask = ASK_INFO }
         }
         if pr.state == FS_UNAVAILABLE {
-            try say{ &s, &g, &w, &dev, strref = 42186, ask = ASK_INFO }
-            return
+            return try say{ &s, &g, &w, &dev, strref = 42186, ask = ASK_INFO }
         }
         if pr.state == FS_SELECTABLE {
             if power_kept_for_pc{ f, spell = pr.id } {
-                try say{ &s, &g, &w, &dev, strref = 42470, ask = ASK_INFO }
-                return
+                return try say{ &s, &g, &w, &dev, strref = 42470, ask = ASK_INFO }
             }
             if s.ppicks <= 0 {
-                try say{ &s, &g, &w, &dev, strref = 42529, ask = ASK_INFO }
-                return
+                return try say{ &s, &g, &w, &dev, strref = 42529, ask = ASK_INFO }
             }
             if s.pnchosen < 8 {
                 s.pchosen[s.pnchosen] = pr.id
@@ -270,8 +266,7 @@ namespace lvl {
             }
             if any {
                 // "You have gained new powers. You must use "Add Power" to select your new powers before continuing."
-                try say{ &s, &g, &w, &dev, strref = 48210, ask = ASK_INFO }
-                return
+                return try say{ &s, &g, &w, &dev, strref = 48210, ask = ASK_INFO }
             }
         }
         s.rec.npowers = @as(i32, s.pnchosen)

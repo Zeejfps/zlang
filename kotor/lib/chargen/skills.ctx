@@ -98,16 +98,14 @@ namespace chargen {
         let cap = skill_cap_of{ st, row }
         if cost > st.sk_points {
             // Checked before the cap, as the original does.
-            try show_message{ st, &g, &fs, &dev, strref = 42464, ask = Ask::info }
-            return
+            return try show_message{ st, &g, &fs, &dev, strref = 42464, ask = Ask::info }
         }
         if st.sk[row] >= cap {
             // "Class skills can have a maximum skill rank of <CUSTOM0> (current level + 3)."
             let mut buf: [16]u8
             let len = frontend::put_int{ into = buf[..], at = 0, n = cap }
             try gui::set_token{ &g, name = "CUSTOM0", value = buf[..len] }
-            try show_message{ st, &g, &fs, &dev, strref = if cost == 1 { 42178 } else { 42179 }, ask = Ask::info }
-            return
+            return try show_message{ st, &g, &fs, &dev, strref = if cost == 1 { 42178 } else { 42179 }, ask = Ask::info }
         }
         st.sk[row] = st.sk[row] + 1
         st.sk_points = st.sk_points - cost

@@ -182,8 +182,7 @@ namespace rt_core {
         let start = try nwarg::int{ &vm, routine = r, argc, i = 1 }
         let count = try nwarg::int{ &vm, routine = r, argc, i = 2 }
         if start < 0 or @as(usize, start) >= s.len or count == 0 {
-            try nwvm::push_string{ &vm, s = "" }
-            return
+            return try nwvm::push_string{ &vm, s = "" }
         }
         let from = @as(usize, start)
         let rest = s.len - from
@@ -249,8 +248,7 @@ namespace rt_core {
         let ins = try nwarg::string{ &vm, routine = r, argc, i = 1 }
         let pos = try nwarg::int{ &vm, routine = r, argc, i = 2 }
         if ins.len == 0 or pos < 0 or @as(usize, pos) >= dest.len {
-            try nwvm::push_string{ &vm, s = dest }
-            return
+            return try nwvm::push_string{ &vm, s = dest }
         }
         let at = @as(usize, pos)
         let mut buf: [1024]u8
@@ -579,13 +577,11 @@ namespace rt_core {
     fn vector_normalize { mut vm: nwvm::Vm, argc: u8 } -> ! {
         let v = try nwarg::vector{ &vm, routine = nwscript::VectorNormalize, argc, i = 0 }
         if v.x == 0.0 and v.y == 0.0 and v.z == 0.0 {
-            try nwvm::push_vector{ &vm, v }
-            return
+            return try nwvm::push_vector{ &vm, v }
         }
         let length = math::sqrtf{ x = v.x * v.x + v.y * v.y + v.z * v.z }
         if length < 0.000000001 {
-            try nwvm::push_vector{ &vm, v = nwvm::Vector{ x = 1.0, y = 0.0, z = 0.0 } }
-            return
+            return try nwvm::push_vector{ &vm, v = nwvm::Vector{ x = 1.0, y = 0.0, z = 0.0 } }
         }
         let k = 1.0 / length
         try nwvm::push_vector{ &vm, v = nwvm::Vector{ x = v.x * k, y = v.y * k, z = v.z * k } }

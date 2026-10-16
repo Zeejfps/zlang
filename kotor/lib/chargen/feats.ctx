@@ -137,17 +137,14 @@ namespace chargen {
         let i = @as(usize, st.fsel)
         let fr = st.frows[i]
         if fr.state == FS_GRANTED {
-            try show_message{ st, &g, &fs, &dev, strref = 42183, ask = Ask::info }
-            return
+            return try show_message{ st, &g, &fs, &dev, strref = 42183, ask = Ask::info }
         }
         if fr.state == FS_UNAVAILABLE {
-            try show_message{ st, &g, &fs, &dev, strref = 42184, ask = Ask::info }
-            return
+            return try show_message{ st, &g, &fs, &dev, strref = 42184, ask = Ask::info }
         }
         if fr.state == FS_SELECTABLE {
             if st.fpicks <= 0 {
-                try show_message{ st, &g, &fs, &dev, strref = 42530, ask = Ask::info }
-                return
+                return try show_message{ st, &g, &fs, &dev, strref = 42530, ask = Ask::info }
             }
             if st.fnchosen < 8 {
                 st.fchosen[st.fnchosen] = fr.feat

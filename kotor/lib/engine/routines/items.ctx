@@ -301,8 +301,7 @@ namespace rt_item {
     fn get_first_item_in_inventory { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetFirstItemInInventory, argc, i = 0 }
         let o = world::object{ w = &w, id } ifnull {
-            try nwvm::push_object{ &vm, id = obj::INVALID }
-            return
+            return try nwvm::push_object{ &vm, id = obj::INVALID }
         }
         purge_dead{ &w, o }
         set_cursor{ &w, o, at = 0 }
@@ -313,8 +312,7 @@ namespace rt_item {
     fn get_next_item_in_inventory { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetNextItemInInventory, argc, i = 0 }
         let o = world::object{ w = &w, id } ifnull {
-            try nwvm::push_object{ &vm, id = obj::INVALID }
-            return
+            return try nwvm::push_object{ &vm, id = obj::INVALID }
         }
         try nwvm::push_object{ &vm, id = step_cursor{ &w, o } }
     }
@@ -324,8 +322,7 @@ namespace rt_item {
         let id = try nwarg::object{ &vm, routine = nwscript::GetItemPossessedBy, argc, i = 0 }
         let tag = try nwarg::string{ &vm, routine = nwscript::GetItemPossessedBy, argc, i = 1 }
         let o = world::object{ w = &w, id } ifnull {
-            try nwvm::push_object{ &vm, id = obj::INVALID }
-            return
+            return try nwvm::push_object{ &vm, id = obj::INVALID }
         }
         let ids = inventory_of{ &w, o }
         let mut found = obj::INVALID
@@ -359,12 +356,10 @@ namespace rt_item {
     fn get_item_possessor { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetItemPossessor, argc, i = 0 }
         let o = world::object{ w = &w, id } ifnull {
-            try nwvm::push_object{ &vm, id = obj::INVALID }
-            return
+            return try nwvm::push_object{ &vm, id = obj::INVALID }
         }
         let it = obj::item{ o } ifnull {
-            try nwvm::push_object{ &vm, id = obj::INVALID }
-            return
+            return try nwvm::push_object{ &vm, id = obj::INVALID }
         }
         try nwvm::push_object{ &vm, id = if world::is_valid{ w = &w, id = it.possessor } { it.possessor } else { obj::INVALID } }
     }
@@ -374,16 +369,13 @@ namespace rt_item {
         let slot = try nwarg::int{ &vm, routine = nwscript::GetItemInSlot, argc, i = 0 }
         let id = try nwarg::object{ &vm, routine = nwscript::GetItemInSlot, argc, i = 1 }
         let o = world::object{ w = &w, id } ifnull {
-            try nwvm::push_object{ &vm, id = obj::INVALID }
-            return
+            return try nwvm::push_object{ &vm, id = obj::INVALID }
         }
         let c = obj::creature{ o } ifnull {
-            try nwvm::push_object{ &vm, id = obj::INVALID }
-            return
+            return try nwvm::push_object{ &vm, id = obj::INVALID }
         }
         if slot < 0 or slot >= @as(i32, obj::EQUIP_SLOTS) {
-            try nwvm::push_object{ &vm, id = obj::INVALID }
-            return
+            return try nwvm::push_object{ &vm, id = obj::INVALID }
         }
         let item = c.equipped[@as(usize, slot)]
         try nwvm::push_object{ &vm, id = if world::is_valid{ w = &w, id = item } { item } else { obj::INVALID } }
@@ -414,12 +406,10 @@ namespace rt_item {
         let id = try nwarg::object{ &vm, routine = nwscript::GetBaseItemType, argc, i = 0 }
         let none = nwconst::BASE_ITEM_INVALID
         let o = world::object{ w = &w, id } ifnull {
-            try nwvm::push_int{ &vm, v = none }
-            return
+            return try nwvm::push_int{ &vm, v = none }
         }
         let it = obj::item{ o } ifnull {
-            try nwvm::push_int{ &vm, v = none }
-            return
+            return try nwvm::push_int{ &vm, v = none }
         }
         try nwvm::push_int{ &vm, v = @as(i32, it.base) }
     }
@@ -428,12 +418,10 @@ namespace rt_item {
     fn get_item_stack_size { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetItemStackSize, argc, i = 0 }
         let o = world::object{ w = &w, id } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         let it = obj::item{ o } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         try nwvm::push_int{ &vm, v = @as(i32, it.stack) }
     }
@@ -599,12 +587,10 @@ namespace rt_item {
     fn get_gold { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetGold, argc, i = 0 }
         let o = world::object{ w = &w, id } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         if let c = obj::creature{ o } {
-            try nwvm::push_int{ &vm, v = if party::is_member{ w = &w, id } { w.party.gold } else { @as(i32, c.gold) } }
-            return
+            return try nwvm::push_int{ &vm, v = if party::is_member{ w = &w, id } { w.party.gold } else { @as(i32, c.gold) } }
         }
         let ids = inventory_of{ &w, o }
         let mut k: usize = 0
@@ -614,8 +600,7 @@ namespace rt_item {
             if other == null { continue }
             let it = obj::item{ o = other } ifnull { continue }
             if is_credits{ w = &w, base = it.base } {
-                try nwvm::push_int{ &vm, v = @as(i32, it.stack) }
-                return
+                return try nwvm::push_int{ &vm, v = @as(i32, it.stack) }
             }
         }
         try nwvm::push_int{ &vm, v = 0 }
@@ -678,8 +663,7 @@ namespace rt_item {
     fn get_item_ac_value { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetItemACValue, argc, i = 0 }
         let row = base_row_of{ w = &w, item = id } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         try nwvm::push_int{ &vm, v = if row.base_ac > 0 { row.base_ac } else { 0 } }
     }
@@ -688,8 +672,7 @@ namespace rt_item {
     fn get_weapon_ranged { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetWeaponRanged, argc, i = 0 }
         let row = base_row_of{ w = &w, item = id } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         try nwvm::push_int{ &vm, v = if row.ranged { 1 } else { 0 } }
     }

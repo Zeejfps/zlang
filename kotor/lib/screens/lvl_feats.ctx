@@ -187,28 +187,23 @@ namespace lvl {
         let i = @as(usize, s.fsel)
         let fr = s.frows[i]
         if fr.state == FS_GRANTED {
-            try say{ &s, &g, &w, &dev, strref = 42183, ask = ASK_INFO }
-            return
+            return try say{ &s, &g, &w, &dev, strref = 42183, ask = ASK_INFO }
         }
         if fr.state == FS_KNOWN {
-            try say{ &s, &g, &w, &dev, strref = 42182, ask = ASK_INFO }
-            return
+            return try say{ &s, &g, &w, &dev, strref = 42182, ask = ASK_INFO }
         }
         if fr.state == FS_UNAVAILABLE {
-            try say{ &s, &g, &w, &dev, strref = 42184, ask = ASK_INFO }
-            return
+            return try say{ &s, &g, &w, &dev, strref = 42184, ask = ASK_INFO }
         }
         let base = feat_base{ s = &s, f }
         if fr.state == FS_SELECTABLE {
             let rec = pending_feats{ s = &s }
             if s.fpicks <= 0 {
-                try say{ &s, &g, &w, &dev, strref = 42530, ask = ASK_INFO }
-                return
+                return try say{ &s, &g, &w, &dev, strref = 42530, ask = ASK_INFO }
             }
             // The pool may be full for this kind of feat even with picks left.
             if not rules::can_select_feat{ tables = w.rules, c = &base, feat = fr.id, class = s.class, class_level = s.opts.class_level, general = pass_general{ s = &s }, bonus = pass_bonus{ s = &s }, pending = &rec } {
-                try say{ &s, &g, &w, &dev, strref = 42530, ask = ASK_INFO }
-                return
+                return try say{ &s, &g, &w, &dev, strref = 42530, ask = ASK_INFO }
             }
             if s.fnchosen < 8 {
                 s.fchosen[s.fnchosen] = fr.id
@@ -299,8 +294,7 @@ namespace lvl {
                 i = i + 1
             }
             if any {
-                try say{ &s, &g, &w, &dev, strref = 48215, ask = ASK_INFO }
-                return
+                return try say{ &s, &g, &w, &dev, strref = 48215, ask = ASK_INFO }
             }
         }
         if not s.fbonus and s.opts.bonus_feats > 0 {
@@ -310,8 +304,7 @@ namespace lvl {
                 s.fnprior = s.fnprior + 1
             }
             close_step{ &s, &g }
-            try open_step{ &s, &g, &w, &dev, k = STEP_FEATS, bonus = true }
-            return
+            return try open_step{ &s, &g, &w, &dev, k = STEP_FEATS, bonus = true }
         }
         let mut n: usize = 0
         while n < s.fnkept {

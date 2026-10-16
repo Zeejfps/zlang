@@ -69,12 +69,10 @@ namespace rt_mod {
     // string GetModuleFileName(): the module's resref (end_m01aa).
     fn get_module_file_name { mut w: world::World, mut vm: nwvm::Vm } -> ! {
         let mo = world::object{ w = &w, id = w.module } ifnull {
-            try nwvm::push_string{ &vm, s = "" }
-            return
+            return try nwvm::push_string{ &vm, s = "" }
         }
         let m = obj::module{ o = mo } ifnull {
-            try nwvm::push_string{ &vm, s = "" }
-            return
+            return try nwvm::push_string{ &vm, s = "" }
         }
         let name = m.name
         try nwvm::push_string{ &vm, s = resref::bytes{ r = &name } }

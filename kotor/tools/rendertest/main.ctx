@@ -60,8 +60,7 @@ fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut 
     let mut font_count: usize = 0
     let mut rm = res::open{ &fs, heap = &h, game = opts.game } iferr err{ error } {
         _ = @fmt(&io, "no game data at {} ({}): text skipped\n", opts.game, error)
-        try draw_ui_and_save{ &io, &fs, &dev, &frame, &heap, a = assets, fonts = fonts[..0], dir = opts.out_dir }
-        return
+        return try draw_ui_and_save{ &io, &fs, &dev, &frame, &heap, a = assets, fonts = fonts[..0], dir = opts.out_dir }
     }
     defer res::close{ &fs, &rm }
     let names = ["fnt_d16x16", "dialogfont16x16", "fnt_galahad14"]

@@ -97,8 +97,7 @@ namespace galaxy {
         gui::set_text_color{ &g, panel = p, tag = "BTN_ACCEPT", color = if s.selected >= 0 { gui::color_menu{} } else { gui::color_disabled{} } }
         if s.selected < 0 {
             try gui::set_text{ &g, panel = p, tag = "LBL_PLANETNAME", text = "" }
-            try gui::set_text{ &g, panel = p, tag = "LBL_DESC", text = "" }
-            return
+            return try gui::set_text{ &g, panel = p, tag = "LBL_DESC", text = "" }
         }
         let row = @as(usize, s.selected)
         let name = twoda::get_int{ t = s.table, row, column = "name" } ifnull 0

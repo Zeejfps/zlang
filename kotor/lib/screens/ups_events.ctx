@@ -105,8 +105,7 @@ namespace ups {
         s.hot_slot = k
         let slot = s.slots[k]
         if s.lightsaber {
-            try start_choosing{ &s, &g, &w, &dev, k }
-            return
+            return try start_choosing{ &s, &g, &w, &dev, k }
         }
         if slot.row != NO_ROW {
             remove_row{ &s, row = @as(usize, slot.row) }

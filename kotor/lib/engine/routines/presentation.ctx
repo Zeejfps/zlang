@@ -150,8 +150,7 @@ namespace rt_pres {
     fn music_track { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
         let id = try nwarg::object{ &vm, routine, argc, i = 0 }
         let a = area_of{ w = &w, id } ifnull {
-            try nwvm::push_int{ &vm, v = -1 }
-            return
+            return try nwvm::push_int{ &vm, v = -1 }
         }
         let row = match routine {
             nwscript::MusicBackgroundGetDayTrack => { a.music_day }
@@ -235,8 +234,7 @@ namespace rt_pres {
         let id = try nwarg::object{ &vm, routine, argc, i = 0 }
         let s = sound_of{ w = &w, id }
         if routine == nwscript::SoundObjectGetVolume {
-            try nwvm::push_int{ &vm, v = if s != null { @as(i32, s.volume) } else { 0 } }
-            return
+            return try nwvm::push_int{ &vm, v = if s != null { @as(i32, s.volume) } else { 0 } }
         }
         let mut v: f32 = 0.0
         if s != null {

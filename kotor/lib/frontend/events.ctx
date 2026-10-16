@@ -459,24 +459,19 @@ namespace frontend {
         if screen != SCR_GRAPHICS and screen != SCR_GRAPHICS_ADV and screen != SCR_GRAPHICS_FX { return }
         if screen == SCR_GRAPHICS_FX {
             let text = enhanced_description{ tag } ifnull { return }
-            try gui::set_list_text{ &g, panel = p, tag = "LB_DESC", text }
-            return
+            return try gui::set_list_text{ &g, panel = p, tag = "LB_DESC", text }
         }
         if tag_eq{ tag, other = "BTN_ENHANCED" } {
-            try gui::set_list_text{ &g, panel = p, tag = "LB_DESC", text = DESC_ENHANCED }
-            return
+            return try gui::set_list_text{ &g, panel = p, tag = "LB_DESC", text = DESC_ENHANCED }
         }
         if tag_eq{ tag, other = "BTN_DISPLAYMODE" } {
-            try gui::set_list_text{ &g, panel = p, tag = "LB_DESC", text = DESC_DISPLAY_MODE }
-            return
+            return try gui::set_list_text{ &g, panel = p, tag = "LB_DESC", text = DESC_DISPLAY_MODE }
         }
         if tag_eq{ tag, other = "BTN_UISCALE" } {
-            try gui::set_list_text{ &g, panel = p, tag = "LB_DESC", text = DESC_UI_SCALE }
-            return
+            return try gui::set_list_text{ &g, panel = p, tag = "LB_DESC", text = DESC_UI_SCALE }
         }
         if tag_eq{ tag, other = "SLI_GAMMA" } {
-            try gui::set_list_text{ &g, panel = p, tag = "LB_DESC", text = DESC_BRIGHTNESS }
-            return
+            return try gui::set_list_text{ &g, panel = p, tag = "LB_DESC", text = DESC_BRIGHTNESS }
         }
         let strref = description_strref{ tag }
         if strref == 0 { return }

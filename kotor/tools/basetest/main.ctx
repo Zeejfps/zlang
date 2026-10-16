@@ -32,13 +32,13 @@ fn check_le { mut io: Io, mut t: Tally } {
     // Reads that run past the end are errors, never panics.
     let past = match le::get_u32{ data, at = 10 } { ok => { false } le::truncated{ at, want } => { at == 10 and want == 4 } }
     expect{ &io, &t, ok = past, what = "get_u32 past the end" }
-    let huge = match le::get_u32{ data, at = 18446744073709551614 } { ok => { false } err => { true } }
+    let huge = le::get_u32{ data, at = 18446744073709551614 } is err
     expect{ &io, &t, ok = huge, what = "get_u32 at a huge offset" }
     let mut r = le::reader{ data }
     let a = le::read_u16{ &r } iferr 0
     let b = le::read_u8{ &r } iferr 0
     expect{ &io, &t, ok = a == 0x0201 and b == 3 and r.pos == 3, what = "reader sequence" }
-    let short = match le::read_bytes{ &r, len = 10 } { ok => { false } err => { true } }
+    let short = le::read_bytes{ &r, len = 10 } is err
     expect{ &io, &t, ok = short and r.pos == 3, what = "reader leaves pos on failure" }
 
     let mut buf: [64]u8

@@ -142,16 +142,16 @@ fn run { mut io: Io, mut heap: arena::Arena, mut t: Tally, mut threads: Threads 
     expect{ &io, &t, ok = not mix::is_playing{ m, h = a } and mix::is_playing{ m, h = b } and mix::is_playing{ m, h = c } and mix::is_playing{ m, h = d },
         what = "a new sound takes the lowest-priority voice" }
     p.priority = 5
-    let refused = match mix::play{ m, bytes = dc, p } { ok => { false } err => { true } }
+    let refused = mix::play{ m, bytes = dc, p } is err
     expect{ &io, &t, ok = refused, what = "a lower priority than every voice gets none" }
     p.priority = 15
-    let tie = match mix::play{ m, bytes = dc, p } { ok => { false } err => { true } }
+    let tie = mix::play{ m, bytes = dc, p } is err
     expect{ &io, &t, ok = tie and mix::is_playing{ m, h = d }, what = "an equal priority doesn't cut a playing sound off (the original's rule)" }
     let st = m.stats
     expect{ &io, &t, ok = st.steals == 1 and st.refused == 2 and st.busy_2d == 3, what = "the stats count the steal and the refusals" }
     mix::stop_all{ m, group = null, fade = 0.0 }
     let far = mix::sound_3d{ group = mix::Group::sfx, volume = 1.0, position = math::vec3::make{ x = 50.0, y = 0.0, z = 0.0 }, min_distance = 1.0, max_distance = 30.0 }
-    let unheard = match mix::play{ m, bytes = dc, p = far } { ok => { false } err => { true } }
+    let unheard = mix::play{ m, bytes = dc, p = far } is err
     expect{ &io, &t, ok = unheard, what = "a 3D sound beyond its max distance takes no voice" }
     expect{ &io, &t, ok = not mix::is_playing{ m, h = b } and not mix::is_playing{ m, h = d }, what = "stop_all ends them" }
     // A handle stays dead when its slot is reused.
@@ -239,17 +239,17 @@ fn run { mut io: Io, mut heap: arena::Arena, mut t: Tally, mut threads: Threads 
     expect{ &io, &t, ok = mix::is_playing{ m, h = a1 } and not mix::is_playing{ m, h = a2 } and mix::is_playing{ m, h = a3 }, what = "a full Interrupt group stops its latest sound for the new one" }
     let mut back4 = g4
     back4.may_interrupt = false
-    let back_ok = match mix::play{ m, bytes = dc, p = back4 } { ok => { true } err => { false } }
+    let back_ok = mix::play{ m, bytes = dc, p = back4 } is ok
     expect{ &io, &t, ok = not back_ok and mix::is_playing{ m, h = a1 } and mix::is_playing{ m, h = a3 }, what = "a loop coming back to a full group waits instead" }
     mix::stop_all{ m, group = null, fade = 0.0 }
     let mut g9 = g4
     g9.play_group = 9
     let b1 = try mix::play{ m, bytes = dc, p = g9 }
     let b2 = try mix::play{ m, bytes = dc, p = g9 }
-    let third = match mix::play{ m, bytes = dc, p = g9 } { ok => { true } err => { false } }
+    let third = mix::play{ m, bytes = dc, p = g9 } is ok
     expect{ &io, &t, ok = not third and mix::is_playing{ m, h = b1 } and mix::is_playing{ m, h = b2 }, what = "a full group without Interrupt refuses the new sound" }
     mix::stop{ m, h = b1, fade = 0.5 }
-    let b3_ok = match mix::play{ m, bytes = dc, p = g9 } { ok => { true } err => { false } }
+    let b3_ok = mix::play{ m, bytes = dc, p = g9 } is ok
     expect{ &io, &t, ok = b3_ok, what = "a sound fading out no longer counts against its group" }
     let gst = mix::stats{ m }
     expect{ &io, &t, ok = gst.interrupted - before.interrupted == 1 and gst.held - before.held == 2 and gst.steals == before.steals, what = "interrupts and holds are counted apart from steals" }

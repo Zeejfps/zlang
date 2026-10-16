@@ -104,8 +104,7 @@ namespace rt_combat {
         let id = if routine == nwscript::GetAttemptedAttackTarget { nwvm::self_object{ vm } }
             else { try nwarg::object{ &vm, routine, argc, i = 0 } }
         let c = creature_of{ w = &w, id } ifnull {
-            try nwvm::push_object{ &vm, id = obj::INVALID }
-            return
+            return try nwvm::push_object{ &vm, id = obj::INVALID }
         }
         let target = match routine {
             nwscript::GetAttackTarget => { c.attack_target }
@@ -121,21 +120,18 @@ namespace rt_combat {
     fn get_last_hostile_actor { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetLastHostileActor, argc, i = 0 }
         let o = world::object{ w = &w, id } ifnull {
-            try nwvm::push_object{ &vm, id = obj::INVALID }
-            return
+            return try nwvm::push_object{ &vm, id = obj::INVALID }
         }
         let mut actor = obj::INVALID
         if let c = obj::creature{ o } { actor = c.last_hostile_actor }
         if not world::is_valid{ w = &w, id = actor } { actor = o.ctx.last_attacker }
         if not world::is_valid{ w = &w, id = actor } { actor = o.ctx.last_damager }
         let a = world::object{ w = &w, id = actor } ifnull {
-            try nwvm::push_object{ &vm, id = obj::INVALID }
-            return
+            return try nwvm::push_object{ &vm, id = obj::INVALID }
         }
         if obj::creature{ o = a } is some{ value = ac } and ac.dead {
             if let c = obj::creature{ o } { c.last_hostile_actor = obj::INVALID }
-            try nwvm::push_object{ &vm, id = obj::INVALID }
-            return
+            return try nwvm::push_object{ &vm, id = obj::INVALID }
         }
         try nwvm::push_object{ &vm, id = actor }
     }
@@ -145,8 +141,7 @@ namespace rt_combat {
     fn get_last_attack_info { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
         let id = try nwarg::object{ &vm, routine, argc, i = 0 }
         let c = creature_of{ w = &w, id } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         let v: i32 = match routine {
             nwscript::GetLastAttackAction => { c.last_attack_action }
@@ -292,8 +287,7 @@ namespace rt_combat {
     // int GetPartyAIStyle()
     fn get_party_ai_style { mut w: world::World, mut vm: nwvm::Vm } -> ! {
         let c = creature_of{ w = &w, id = w.player } ifnull {
-            try nwvm::push_int{ &vm, v = nwconst::PARTY_AISTYLE_AGGRESSIVE }
-            return
+            return try nwvm::push_int{ &vm, v = nwconst::PARTY_AISTYLE_AGGRESSIVE }
         }
         try nwvm::push_int{ &vm, v = c.party_ai_style }
     }
@@ -309,8 +303,7 @@ namespace rt_combat {
     fn get_npc_ai_style { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetNPCAIStyle, argc, i = 0 }
         let c = creature_of{ w = &w, id } ifnull {
-            try nwvm::push_int{ &vm, v = nwconst::NPC_AISTYLE_DEFAULT_ATTACK }
-            return
+            return try nwvm::push_int{ &vm, v = nwconst::NPC_AISTYLE_DEFAULT_ATTACK }
         }
         try nwvm::push_int{ &vm, v = c.ai_style }
     }
@@ -360,8 +353,7 @@ namespace rt_combat {
     fn get_blocker { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
         let id = if routine == nwscript::GetBlockingDoor { nwvm::self_object{ vm } } else { try nwarg::object{ &vm, routine, argc, i = 0 } }
         let o = world::object{ w = &w, id } ifnull {
-            try nwvm::push_object{ &vm, id = obj::INVALID }
-            return
+            return try nwvm::push_object{ &vm, id = obj::INVALID }
         }
         let mut found = obj::INVALID
         if routine == nwscript::GetFoundEnemyCreature {
@@ -380,8 +372,7 @@ namespace rt_combat {
     // (the module's context; fight.ctx does not post that event yet, as a downed member is never dead).
     fn get_last_player_died { mut w: world::World, mut vm: nwvm::Vm } -> ! {
         let m = world::object{ w = &w, id = w.module } ifnull {
-            try nwvm::push_object{ &vm, id = obj::INVALID }
-            return
+            return try nwvm::push_object{ &vm, id = obj::INVALID }
         }
         try nwvm::push_object{ &vm, id = live_or_invalid{ w = &w, id = m.ctx.last_player_died } }
     }
@@ -401,8 +392,7 @@ namespace rt_combat {
     fn get_lock_flag { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
         let id = try nwarg::object{ &vm, routine, argc, i = 0 }
         let o = world::object{ w = &w, id } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         let mut v: i32 = 0
         if o.ext is door{ d } {
@@ -431,8 +421,7 @@ namespace rt_combat {
     fn get_lock_key_tag { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetLockKeyTag, argc, i = 0 }
         let o = world::object{ w = &w, id } ifnull {
-            try nwvm::push_string{ &vm, s = "" }
-            return
+            return try nwvm::push_string{ &vm, s = "" }
         }
         if o.ext is door{ d } {
             try nwvm::push_string{ &vm, s = d.key }
@@ -460,17 +449,14 @@ namespace rt_combat {
                 party::set_leader{ &w, id = me }
                 w.pc = me
             }
-            try nwvm::push_int{ &vm, v = 1 }
-            return
+            return try nwvm::push_int{ &vm, v = 1 }
         }
         if n < 0 or n >= @as(i32, party::SLOTS) {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         let id = w.party.npcs[@as(usize, n)]
         if not (world::is_valid{ w = &w, id } and party::is_member{ w = &w, id }) {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         party::set_leader{ &w, id }
         w.pc = id

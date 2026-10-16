@@ -76,11 +76,9 @@ fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut 
             let adev = try alloc::new(audio::Device, arena::Arena){ realloc = arena::alloc, &heap, value = opened }
             defer audio::close{ &sdl, dev = adev }
             let m = try mix::make{ realloc = arena::alloc, &heap, rate = adev.rate, voices_2d = 24, voices_3d = 16 }
-            try play{ &io, &fs, &sdl, &dev, &frame, &h, &tables, mixer = m, adev, rate = adev.rate, pixels, o }
-            return
+            return try play{ &io, &fs, &sdl, &dev, &frame, &h, &tables, mixer = m, adev, rate = adev.rate, pixels, o }
         }
-        try play{ &io, &fs, &sdl, &dev, &frame, &h, &tables, mixer = null, adev = null, rate = 44100, pixels, o }
-        return
+        return try play{ &io, &fs, &sdl, &dev, &frame, &h, &tables, mixer = null, adev = null, rate = 44100, pixels, o }
     }
     let m = try mix::make{ realloc = arena::alloc, &heap, rate = 44100, voices_2d = 24, voices_3d = 16 }
     try play{ &io, &fs, &sdl, &dev, &frame, &h, &tables, mixer = m, adev = null, rate = 44100, pixels, o }

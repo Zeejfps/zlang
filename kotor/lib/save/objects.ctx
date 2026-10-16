@@ -68,8 +68,7 @@ namespace save {
             try put_float{ &b, owner, label = "Y", v = o.position.y }
             try put_float{ &b, owner, label = "Z", v = o.position.z }
             // Bearing turns +Y onto the facing (gff-module.md).
-            try put_float{ &b, owner, label = "Bearing", v = math::atan2f{ y = -o.orientation.x, x = o.orientation.y } }
-            return
+            return try put_float{ &b, owner, label = "Bearing", v = math::atan2f{ y = -o.orientation.x, x = o.orientation.y } }
         }
         try put_float{ &b, owner, label = "XPosition", v = o.position.x }
         try put_float{ &b, owner, label = "YPosition", v = o.position.y }

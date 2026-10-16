@@ -111,10 +111,7 @@ namespace inventory_panel {
 
     // A failure of the work an event started is not the player's business: say it on the log.
     fn report { mut w: world::World, what: !bool } {
-        match what {
-            ok{ value } => {}
-            err{ error } => { _ = @fmt(&w.io, "kotor: inventory panel: {}\n", error) }
-        }
+        _ = what iferr err{ error } { _ = @fmt(&w.io, "kotor: inventory panel: {}\n", error) }
     }
 
     // ---- the controls

@@ -264,8 +264,7 @@ namespace gffw {
     fn copy_doc(S) { mut b: Builder(S), doc: gff::Doc, order: Order } -> ! {
         b.structs.items[0].id = doc.structs[gff::ROOT].id
         if order == Order::keep {
-            try copy_keep{ &b, doc }
-            return
+            return try copy_keep{ &b, doc }
         }
         try copy_struct{ &b, doc, src = gff::ROOT, dst = ROOT, elements_first = order == Order::elements }
     }
@@ -682,8 +681,7 @@ namespace gffw {
     fn grow_block(S) { mut out: list::List(u32, S), at: *mut u32, n: u32, item: u32 } -> ! {
         let a = @as(usize, at.*)
         if a + @as(usize, n) == out.len {
-            try list::push{ list = &out, item }
-            return
+            return try list::push{ list = &out, item }
         }
         try list::reserve{ list = &out, extra = @as(usize, n) + 1 }
         at.* = @trunc(u32, out.len)

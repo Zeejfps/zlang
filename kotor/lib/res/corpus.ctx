@@ -66,7 +66,7 @@ namespace corpus {
                 i = i + 1
                 let slot = try path::join{ realloc = heap::alloc, heap = h, dir = saves, name = n }
                 defer res::free_bytes{ h, b = slot }
-                let is_file = match fs::size{ &fs, path = slot } { ok => { true } err => { false } }
+                let is_file = fs::size{ &fs, path = slot } is ok
                 if is_file { continue }                                    // not a save slot
                 let files = list_dir{ &fs, h, dir = slot } iferr { continue }
                 defer free_names{ h, names = files }

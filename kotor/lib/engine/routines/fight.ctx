@@ -24,8 +24,7 @@ namespace rt_fight {
     // object GetLastKiller(): who killed the caller (its OnDeath).
     fn get_last_killer { mut w: world::World, mut vm: nwvm::Vm } -> ! {
         let f = fighter_of_self{ w = &w, vm = &vm } ifnull {
-            try nwvm::push_object{ &vm, id = obj::INVALID }
-            return
+            return try nwvm::push_object{ &vm, id = obj::INVALID }
         }
         try nwvm::push_object{ &vm, id = f.killer }
     }
@@ -33,8 +32,7 @@ namespace rt_fight {
     // object GetLastDamager(): who last damaged the caller (its OnDamaged).
     fn get_last_damager { mut w: world::World, mut vm: nwvm::Vm } -> ! {
         let o = world::object{ w = &w, id = nwvm::self_object{ vm } } ifnull {
-            try nwvm::push_object{ &vm, id = obj::INVALID }
-            return
+            return try nwvm::push_object{ &vm, id = obj::INVALID }
         }
         try nwvm::push_object{ &vm, id = o.ctx.last_damager }
     }
@@ -42,8 +40,7 @@ namespace rt_fight {
     // int GetTotalDamageDealt(): the caller's last damage, all types (its OnDamaged).
     fn get_total_damage { mut w: world::World, mut vm: nwvm::Vm } -> ! {
         let f = fighter_of_self{ w = &w, vm = &vm } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         try nwvm::push_int{ &vm, v = f.last_damage }
     }
@@ -53,8 +50,7 @@ namespace rt_fight {
     fn get_damage_by_type { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let types = try nwarg::int{ &vm, routine = nwscript::GetDamageDealtByType, argc, i = 0 }
         let f = fighter_of_self{ w = &w, vm = &vm } ifnull {
-            try nwvm::push_int{ &vm, v = -1 }
-            return
+            return try nwvm::push_int{ &vm, v = -1 }
         }
         let mut total: i32 = 0
         let mut any = false
@@ -72,8 +68,7 @@ namespace rt_fight {
     // int GetLastSpellHarmful(): whether the last spell cast at the caller was harmful.
     fn get_last_spell_harmful { mut w: world::World, mut vm: nwvm::Vm } -> ! {
         let o = world::object{ w = &w, id = nwvm::self_object{ vm } } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         try nwvm::push_int{ &vm, v = if o.ctx.last_spell_harmful { 1 } else { 0 } }
     }

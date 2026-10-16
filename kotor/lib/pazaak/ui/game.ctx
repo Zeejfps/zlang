@@ -127,8 +127,7 @@ namespace pazaak {
 
     fn on_game_event { mut s: Session, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } -> ! {
         if ev.kind == gui::EventKind::cancel {
-            try open_box{ &s, &g, &fs, &dev, strref = 42425, cancel = true, ask = Ask::quit_game }
-            return
+            return try open_box{ &s, &g, &fs, &dev, strref = 42425, cancel = true, ask = Ask::quit_game }
         }
         if ev.kind == gui::EventKind::right_click {
             // A right-click on a hand flip card flips it, as its BTN_FLIPn does (0x0067dcf0).

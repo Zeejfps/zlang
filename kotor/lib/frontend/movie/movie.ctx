@@ -283,8 +283,7 @@ namespace movie {
         let h: usize = plane.height
         let grey = render::PixelFormat::grey8
         if plane.stride == w {
-            try gpu::update_texture{ &dev, t, level = 0, x = 0, y = 0, width = plane.width, height = plane.height, format = grey, data = plane.pixels[..w * h] }
-            return
+            return try gpu::update_texture{ &dev, t, level = 0, x = 0, y = 0, width = plane.width, height = plane.height, format = grey, data = plane.pixels[..w * h] }
         }
         let mut row: usize = 0
         while row < h {

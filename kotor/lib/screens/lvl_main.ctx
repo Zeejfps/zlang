@@ -239,13 +239,11 @@ namespace lvl {
     // A click on the steps list.
     fn list_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } -> ! {
         if ev.kind == gui::EventKind::cancel {
-            try ask_leave{ &s, &g, &w, &dev }
-            return
+            return try ask_leave{ &s, &g, &w, &dev }
         }
         if ev.kind != gui::EventKind::activate { return }
         if slice::eq_bytes{ a = ev.tag, b = "BTN_BACK" } {
-            try ask_leave{ &s, &g, &w, &dev }
-            return
+            return try ask_leave{ &s, &g, &w, &dev }
         }
         let k = step_number{ tag = ev.tag }
         if k < 0 { return }

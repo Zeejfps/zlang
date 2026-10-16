@@ -92,8 +92,7 @@ namespace lvl {
             } else if slice::eq_bytes{ a = ev.tag, b = "BTN_ACCEPT" } {
                 if s.ab_points > 0 {
                     // "You must spend all of your points."
-                    try say{ &s, &g, &w, &dev, strref = 48217, ask = ASK_INFO }
-                    return
+                    return try say{ &s, &g, &w, &dev, strref = 48217, ask = ASK_INFO }
                 }
                 s.rec.ability = -1
                 let mut r: usize = 0

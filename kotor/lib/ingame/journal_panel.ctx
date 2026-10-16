@@ -275,8 +275,7 @@ namespace journal_panel {
     fn show_quest { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32, row: i32 } -> ! {
         let jrl = s.jrl ifnull { return }
         if row < 0 or @as(usize, row) >= s.view.count {
-            try journal::show_text{ &g, panel, tag = "LBL_ITEM_DESCRIPTION", text = "" }
-            return
+            return try journal::show_text{ &g, panel, tag = "LBL_ITEM_DESCRIPTION", text = "" }
         }
         let r = s.view.rows[@as(usize, row)]
         s.seen[r.quest] = true

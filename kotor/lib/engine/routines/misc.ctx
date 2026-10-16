@@ -140,8 +140,7 @@ namespace rt_misc {
 
     fn get_area_unescapable { mut w: world::World, mut vm: nwvm::Vm } -> ! {
         let a = current_area{ w = &w } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         try nwvm::push_int{ &vm, v = flag{ b = a.unescapable } }
     }
@@ -155,12 +154,10 @@ namespace rt_misc {
         let filter = try nwarg::int{ &vm, routine, argc, i = 1 }
         _ = try nwarg::int{ &vm, routine, argc, i = 2 }
         let o = world::object{ w = &w, id } ifnull {
-            try nwvm::push_object{ &vm, id = obj::INVALID }
-            return
+            return try nwvm::push_object{ &vm, id = obj::INVALID }
         }
         let t = obj::trigger{ o } ifnull {
-            try nwvm::push_object{ &vm, id = obj::INVALID }
-            return
+            return try nwvm::push_object{ &vm, id = obj::INVALID }
         }
         let ids = list::items{ list = t.inside }
         let mut i: usize = if first { 0 } else { w.cursor_inside }
@@ -188,12 +185,10 @@ namespace rt_misc {
     fn get_encounter_active { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetEncounterActive, argc, i = 0 }
         let o = world::object{ w = &w, id } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         let e = obj::encounter{ o } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         try nwvm::push_int{ &vm, v = flag{ b = e.active } }
     }
@@ -202,8 +197,7 @@ namespace rt_misc {
     fn get_has_inventory { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetHasInventory, argc, i = 0 }
         let o = world::object{ w = &w, id } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         let mut has = o.kind == obj::Kind::creature or o.kind == obj::Kind::store
         if let p = obj::placeable{ o } { has = p.has_inventory }
@@ -214,12 +208,10 @@ namespace rt_misc {
     fn get_is_in_combat { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetIsInCombat, argc, i = 0 }
         let o = world::object{ w = &w, id } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         let c = obj::creature{ o } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         try nwvm::push_int{ &vm, v = flag{ b = c.in_combat } }
     }
@@ -246,8 +238,7 @@ namespace rt_misc {
     // int GetMaxStealthXP(), GetCurrentStealthXP(), GetStealthXPEnabled(), GetStealthXPDecrement()
     fn stealth_get { mut w: world::World, mut vm: nwvm::Vm, routine: u16 } -> ! {
         let a = current_area{ w = &w } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         let v: i32 = match routine {
             nwscript::GetMaxStealthXP => { a.stealth_xp_max }
@@ -587,12 +578,10 @@ namespace rt_misc {
     fn get_num_stacked_items { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetNumStackedItems, argc, i = 0 }
         let o = world::object{ w = &w, id } ifnull {
-            try nwvm::push_int{ &vm, v = -1 }
-            return
+            return try nwvm::push_int{ &vm, v = -1 }
         }
         let it = obj::item{ o } ifnull {
-            try nwvm::push_int{ &vm, v = -1 }
-            return
+            return try nwvm::push_int{ &vm, v = -1 }
         }
         try nwvm::push_int{ &vm, v = @as(i32, it.stack) }
     }
@@ -617,12 +606,10 @@ namespace rt_misc {
         let id = tmpl::spawn_item{ &w, template, possessor = obj::INVALID } iferr err{ error } {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "CreateItemOnFloor {}: {}\n", template, error)
-            try nwvm::push_object{ &vm, id = obj::INVALID }
-            return
+            return try nwvm::push_object{ &vm, id = obj::INVALID }
         }
         let o = world::object{ w = &w, id } ifnull {
-            try nwvm::push_object{ &vm, id = obj::INVALID }
-            return
+            return try nwvm::push_object{ &vm, id = obj::INVALID }
         }
         o.area = if world::is_valid{ w = &w, id = l.area } { l.area } else { w.area }
         world::set_position{ o, p = l.position }
@@ -672,13 +659,11 @@ namespace rt_misc {
     fn get_current_action { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetCurrentAction, argc, i = 0 }
         let o = world::object{ w = &w, id } ifnull {
-            try nwvm::push_int{ &vm, v = 65535 }
-            return
+            return try nwvm::push_int{ &vm, v = 65535 }
         }
         let queue = list::items{ list = o.actions }
         if queue.len == 0 {
-            try nwvm::push_int{ &vm, v = 65534 }
-            return
+            return try nwvm::push_int{ &vm, v = 65534 }
         }
         let group = queue[0].group
         let mut answer: i32 = 65535
@@ -695,8 +680,7 @@ namespace rt_misc {
     fn get_last_attacker { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetLastAttacker, argc, i = 0 }
         let o = world::object{ w = &w, id } ifnull {
-            try nwvm::push_object{ &vm, id = obj::INVALID }
-            return
+            return try nwvm::push_object{ &vm, id = obj::INVALID }
         }
         try nwvm::push_object{ &vm, id = live_or_invalid{ w = &w, id = o.ctx.last_attacker } }
     }

@@ -95,8 +95,7 @@ namespace chargen {
         let score = st.ab[row]
         if st.ab_points <= 0 { return }     // checked first: at 18 with no points left it is silent too
         if score >= ABILITY_MAX {
-            try show_message{ st, &g, &fs, &dev, strref = 42181, ask = Ask::info }
-            return
+            return try show_message{ st, &g, &fs, &dev, strref = 42181, ask = Ask::info }
         }
         let cost = price_up{ score }
         if cost > st.ab_points { return }
@@ -109,8 +108,7 @@ namespace chargen {
         st.ab_focus = row
         let score = st.ab[row]
         if score <= ABILITY_MIN {
-            try show_message{ st, &g, &fs, &dev, strref = 42180, ask = Ask::info }
-            return
+            return try show_message{ st, &g, &fs, &dev, strref = 42180, ask = Ask::info }
         }
         st.ab[row] = score - 1
         st.ab_points = st.ab_points + refund_down{ score }

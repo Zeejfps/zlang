@@ -163,8 +163,7 @@ fn run {
     defer pazaak::end_session{ s = &w.s, g = &g }
 
     if o.interactive {
-        try interactive{ &io, &sdl, &dev, &frame, &g, &fs, &w, adev, o }
-        return
+        return try interactive{ &io, &sdl, &dev, &frame, &g, &fs, &w, adev, o }
     }
     let mut k = o.first
     while k < args.len {

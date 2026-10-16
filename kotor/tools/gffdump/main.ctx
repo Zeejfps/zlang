@@ -55,7 +55,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     while k < n {
         let name = names[k]
         k = k + 1
-        let from_disk = match fs::size{ &fs, path = name } { ok => { true } err => { false } }
+        let from_disk = fs::size{ &fs, path = name } is ok
         let data = if from_disk {
             fs::read_all{ &fs, heap = &h, realloc = heap::alloc, path = name } iferr err{ error } {
                 _ = @fmt(&io, "gffdump: {}: {}\n", name, error)

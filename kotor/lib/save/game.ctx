@@ -79,12 +79,10 @@ namespace save {
     // save in the next slot, its folder `Game<slot - 1>` and `name` what the player typed.
     fn save_named { mut w: world::World, name: []u8, screen: []u8, width: u32, height: u32 } -> ! {
         if ci::eq{ a = name, b = "QUICKSAVE" } {
-            try save_game{ &w, slot = 0, folder_name = "QUICKSAVE", save_name = "Quick Save", screen, width, height }
-            return
+            return try save_game{ &w, slot = 0, folder_name = "QUICKSAVE", save_name = "Quick Save", screen, width, height }
         }
         if ci::eq{ a = name, b = "AUTOSAVE" } {
-            try save_game{ &w, slot = 1, folder_name = "AUTOSAVE", save_name = "Auto Save", screen, width, height }
-            return
+            return try save_game{ &w, slot = 1, folder_name = "AUTOSAVE", save_name = "Auto Save", screen, width, height }
         }
         let slot = next_slot{ &w }
         let mut buf: [16]u8
@@ -96,8 +94,7 @@ namespace save {
     // `name`. Should the folder be gone, it is made as a new one would be.
     fn save_over { mut w: world::World, slot: u32, name: []u8, screen: []u8, width: u32, height: u32 } -> ! {
         if slot < 2 {
-            try save_named{ &w, name, screen, width, height }
-            return
+            return try save_named{ &w, name, screen, width, height }
         }
         let mut buf: [64]u8
         let mut n = find_own_folder{ &w, slot, into = buf[..] }

@@ -363,8 +363,7 @@ namespace dlgpanel {
         if p.computer {
             let s = try gui::expand_tokens{ &g, src = text }
             defer gui::free_string{ &g, s }
-            try gui::set_list_text{ &g, panel = p.main, tag = "LB_MESSAGE", text = s }
-            return
+            return try gui::set_list_text{ &g, panel = p.main, tag = "LB_MESSAGE", text = s }
         }
         if p.last != 0 {
             try gui::set_text{ &g, panel = p.last, tag = "LBL_MESSAGE", text = "" }

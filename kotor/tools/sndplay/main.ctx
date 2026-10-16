@@ -84,13 +84,11 @@ fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut 
     if xing != null { _ = @fmt(&io, "LAME tag: encoder delay {}, end padding {}\n", xing.delay, xing.padding) }
     let wav_out = opts.wav
     if wav_out != null {
-        try write_decoded{ &io, &fs, s, total, out = wav_out }
-        return
+        return try write_decoded{ &io, &fs, s, total, out = wav_out }
     }
     let mixed_out = opts.mixed
     if mixed_out != null {
-        try write_mixed{ &io, &fs, &sdl, &heap, bytes, opts, out = mixed_out }
-        return
+        return try write_mixed{ &io, &fs, &sdl, &heap, bytes, opts, out = mixed_out }
     }
     try play{ &io, &sdl, &heap, bytes, opts }
 }

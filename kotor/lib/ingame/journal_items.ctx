@@ -47,8 +47,7 @@ namespace journal_panel {
     fn show_item { mut s: State, mut g: gui::Gui, mut w: world::World, row: i32 } -> ! {
         if s.items_panel == 0 { return }
         if row < 0 or @as(usize, row) >= s.item_count {
-            try journal::show_text{ &g, panel = s.items_panel, tag = "LB_ITEM_DESCRIPTION", text = "" }
-            return
+            return try journal::show_text{ &g, panel = s.items_panel, tag = "LB_ITEM_DESCRIPTION", text = "" }
         }
         let strref = description_of{ &w, id = s.items[@as(usize, row)] }
         let t = try text_of{ &g, strref }

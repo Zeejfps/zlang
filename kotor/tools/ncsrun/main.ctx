@@ -284,7 +284,7 @@ fn load_situation {
     let done = nwvm::resume{ &vm, situation = s, self = nwstub::SELF, engine }
     report.ticks = report.ticks + (sdl::counter{ &sdl } - t0)
     flush_log{ &io, stub }
-    let fine = match done { ok => { true } err => { false } }
+    let fine = done is ok
     if opts.results { result{ &io, name, what = "action", vm, ok = fine, value = null } }
     tally{ &io, t = &report.actions, shown = &report.shown, vm, ok = fine, opts, line = line[..] }
 }
@@ -409,7 +409,7 @@ fn run_script {
         let ran = nwvm::run{ &vm, program = &program, self = nwstub::SELF, engine }
         report.ticks = report.ticks + (sdl::counter{ &sdl } - t0)
         flush_log{ &io, stub }
-        let ok = match ran { ok => { true } err => { false } }
+        let ok = ran is ok
         if opts.results { result{ &io, name, what = "script", vm, ok, value = ran iferr { null } } }
         tally{ &io, t = &report.scripts, shown = &report.shown, vm, ok, opts, line = line[..] }
         // The actions it handed on, and theirs, oldest first.
@@ -420,7 +420,7 @@ fn run_script {
             let done = nwvm::resume{ &vm, situation = s, self = nwstub::SELF, engine }
             report.ticks = report.ticks + (sdl::counter{ &sdl } - t1)
             flush_log{ &io, stub }
-            let fine = match done { ok => { true } err => { false } }
+            let fine = done is ok
             if opts.results { result{ &io, name, what = "action", vm, ok = fine, value = null } }
             tally{ &io, t = &report.actions, shown = &report.shown, vm, ok = fine, opts, line = line[..] }
         }

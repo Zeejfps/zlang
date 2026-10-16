@@ -178,7 +178,7 @@ fn check_malformed { mut io: Io, mut t: Tally, mut scratch: arena::Arena } {
     let mut n: usize = 0
     let mut all_failed = true
     while n < good.len {
-        let parsed = match gff::parse{ data = good[..n], realloc = arena::alloc, heap = &scratch } { ok => { true } err => { false } }
+        let parsed = gff::parse{ data = good[..n], realloc = arena::alloc, heap = &scratch } is ok
         if parsed { all_failed = false }
         n = n + 1
     }
@@ -190,7 +190,7 @@ fn check_malformed { mut io: Io, mut t: Tally, mut scratch: arena::Arena } {
     while i < good.len {
         slice::copy(u8){ dst = copy, src = good }
         copy[i] = ~copy[i]
-        _ = match gff::parse{ data = copy, realloc = arena::alloc, heap = &scratch } { ok => { true } err => { false } }
+        _ = gff::parse{ data = copy, realloc = arena::alloc, heap = &scratch }
         arena::restore{ heap = &scratch, to = mark }
         i = i + 1
     }
@@ -204,11 +204,11 @@ fn check_malformed { mut io: Io, mut t: Tally, mut scratch: arena::Arena } {
     expect{ &io, &t, ok = huge_lip, what = "a LIP of 4 billion keys is bad_size" }
     let huge_tlk = match tlk::parse{ data = "TLK V3.0\x00\x00\x00\x00\xFF\xFF\xFF\xFF\x14\x00\x00\x00" } { ok => { false } tlk::truncated => { true } else => { false } }
     expect{ &io, &t, ok = huge_tlk, what = "a TLK of 4 billion entries is truncated" }
-    let cut_2da = match twoda::parse{ data = "2DA V2.b\nlabel\t\x00\x05\x00\x00\x00", realloc = arena::alloc, heap = &scratch } { ok => { false } err => { true } }
+    let cut_2da = twoda::parse{ data = "2DA V2.b\nlabel\t\x00\x05\x00\x00\x00", realloc = arena::alloc, heap = &scratch } is err
     expect{ &io, &t, ok = cut_2da, what = "truncated 2DA is an error" }
-    let cut_erf = match erf::parse{ data = "MOD V1.0\x00\x00", realloc = arena::alloc, heap = &scratch } { ok => { false } err => { true } }
+    let cut_erf = erf::parse{ data = "MOD V1.0\x00\x00", realloc = arena::alloc, heap = &scratch } is err
     expect{ &io, &t, ok = cut_erf, what = "truncated ERF is an error" }
-    let cut_key = match key::parse{ data = "KEY V1  ", realloc = arena::alloc, heap = &scratch } { ok => { false } err => { true } }
+    let cut_key = key::parse{ data = "KEY V1  ", realloc = arena::alloc, heap = &scratch } is err
     expect{ &io, &t, ok = cut_key, what = "truncated KEY is an error" }
 }
 

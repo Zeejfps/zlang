@@ -408,8 +408,7 @@ namespace rt_fx {
         let icon = try nwarg::int{ &vm, routine = r, argc, i = 1 }
         let g = values::effect{ s = &w.values, handle = h }
         if g.len < 1 {
-            try push_group{ &w, &vm, g }
-            return
+            return try push_group{ &w, &vm, g }
         }
         let mut linked = rules::fx::link_groups{ child = rules::fx::make_group{ e = rules::fx::make_icon{ icon } }, parent = g }
         let id = g.items[0].id
@@ -429,16 +428,13 @@ namespace rt_fx {
     fn find_effect { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, first: bool } -> ! {
         let id = try nwarg::object{ &vm, routine, argc, i = 0 }
         let o = world::object{ w = &w, id } ifnull {
-            try push_no_effect{ &vm }
-            return
+            return try push_no_effect{ &vm }
         }
         let c = obj::creature{ o } ifnull {
-            try push_no_effect{ &vm }
-            return
+            return try push_no_effect{ &vm }
         }
         let f = c.fighter ifnull {
-            try push_no_effect{ &vm }
-            return
+            return try push_no_effect{ &vm }
         }
         let mut i: usize = if first { 0 } else { c.fx_cursor }
         while i < @as(usize, f.c.nfx) {
@@ -446,8 +442,7 @@ namespace rt_fx {
             i = i + 1
             if not f.c.fx[at].exposed { continue }
             c.fx_cursor = i
-            try push_group{ &w, &vm, g = rules::fx::make_group{ e = f.c.fx[at] } }
-            return
+            return try push_group{ &w, &vm, g = rules::fx::make_group{ e = f.c.fx[at] } }
         }
         c.fx_cursor = i
         try push_no_effect{ &vm }
@@ -465,12 +460,10 @@ namespace rt_fx {
         let h = try nwarg::engine{ &vm, routine = nwscript::GetEffectType, argc, i = 0, kind = nwvm::EngineType::effect }
         let g = values::effect{ s = &w.values, handle = h }
         if g.len < 1 {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         if g.items[0].kind == rules::fx::RESURRECTION {
-            try nwvm::push_int{ &vm, v = nwconst::EFFECT_TYPE_RESURRECTION }
-            return
+            return try nwvm::push_int{ &vm, v = nwconst::EFFECT_TYPE_RESURRECTION }
         }
         try nwvm::push_int{ &vm, v = rules::fx::script_type{ e = &g.items[0] } }
     }

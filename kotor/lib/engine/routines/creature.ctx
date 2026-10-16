@@ -139,8 +139,7 @@ namespace rt_crea {
             // that is alive changes it): k_pkor_webclear asks whether the beast kor34_monster, long since
             // destroyed with its body, is dead.
             let gone = routine == nwscript::GetIsDead and not world::is_valid{ w = &w, id }
-            try nwvm::push_int{ &vm, v = if gone { 1 } else { none } }
-            return
+            return try nwvm::push_int{ &vm, v = if gone { 1 } else { none } }
         }
         let v: i32 = match routine {
             nwscript::GetRacialType => { race_of{ c } }
@@ -174,8 +173,7 @@ namespace rt_crea {
         let n = try nwarg::int{ &vm, routine, argc, i = 0 }
         let id = try nwarg::object{ &vm, routine, argc, i = 1 }
         let c = creature_of{ w = &w, id } ifnull {
-            try nwvm::push_int{ &vm, v = none }
-            return
+            return try nwvm::push_int{ &vm, v = none }
         }
         let mut v = none
         if let f = rules_of{ c } {
@@ -226,8 +224,7 @@ namespace rt_crea {
         let id = try nwarg::object{ &vm, routine = r, argc, i = 0 }
         let kind = try nwarg::int{ &vm, routine = r, argc, i = 1 }
         let c = creature_of{ w = &w, id } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         try nwvm::push_int{ &vm, v = ability_score{ c, kind } }
     }
@@ -244,16 +241,13 @@ namespace rt_crea {
         let kind = try nwarg::int{ &vm, routine = r, argc, i = 0 }
         let id = try nwarg::object{ &vm, routine = r, argc, i = 1 }
         let c = creature_of{ w = &w, id } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         if kind < 0 or kind >= 6 {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         if let f = rules_of{ c } {
-            try nwvm::push_int{ &vm, v = f.c.stats.abil_mod[@as(usize, kind)] }
-            return
+            return try nwvm::push_int{ &vm, v = f.c.stats.abil_mod[@as(usize, kind)] }
         }
         try nwvm::push_int{ &vm, v = rules::ability_modifier{ score = ability_score{ c, kind } } }
     }
@@ -265,8 +259,7 @@ namespace rt_crea {
     fn get_force_points { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
         let id = try nwarg::object{ &vm, routine, argc, i = 0 }
         let f = fighter_of{ w = &w, id } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         try nwvm::push_int{ &vm, v = if routine == nwscript::GetCurrentForcePoints { f.c.fp + f.c.temp_fp } else { f.c.stats.max_fp } }
     }
@@ -278,8 +271,7 @@ namespace rt_crea {
         let id = try nwarg::object{ &vm, routine = nwscript::GetAC, argc, i = 0 }
         _ = try nwarg::int{ &vm, routine = nwscript::GetAC, argc, i = 1 }
         let o = world::object{ w = &w, id } ifnull {
-            try nwvm::push_int{ &vm, v = -1 }
-            return
+            return try nwvm::push_int{ &vm, v = -1 }
         }
         if let c = obj::creature{ o } {
             if let f = rules_of{ c } {
@@ -297,8 +289,7 @@ namespace rt_crea {
     fn get_base_save { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
         let id = try nwarg::object{ &vm, routine, argc, i = 0 }
         let f = fighter_of{ w = &w, id } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         let which: usize = if routine == nwscript::GetFortitudeSavingThrow { 0 } else if routine == nwscript::GetReflexSavingThrow { 1 } else { 2 }
         try nwvm::push_int{ &vm, v = f.c.stats.save_base[which] }
@@ -358,8 +349,7 @@ namespace rt_crea {
     // creature running the script; 14 without a caster (rules.md 3.5).
     fn get_spell_save_dc { mut w: world::World, mut vm: nwvm::Vm } -> ! {
         let f = fighter_of{ w = &w, id = nwvm::self_object{ vm } } ifnull {
-            try nwvm::push_int{ &vm, v = rules::DC_NO_CASTER }
-            return
+            return try nwvm::push_int{ &vm, v = rules::DC_NO_CASTER }
         }
         try nwvm::push_int{ &vm, v = rules::force_power_dc{ c = &f.c } }
     }
@@ -368,8 +358,7 @@ namespace rt_crea {
     fn get_caster_level { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetCasterLevel, argc, i = 0 }
         let c = creature_of{ w = &w, id } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         try nwvm::push_int{ &vm, v = hit_dice_of{ c } }
     }
@@ -381,12 +370,10 @@ namespace rt_crea {
         let source = try nwarg::object{ &vm, routine = r, argc, i = 0 }
         let target = try nwarg::object{ &vm, routine = r, argc, i = 1 }
         let tf = fighter_of{ w = &w, id = target } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         let so = world::object{ w = &w, id = source } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         let mut level = 10
         if let sc = obj::creature{ o = so } { level = hit_dice_of{ c = sc } }
@@ -401,8 +388,7 @@ namespace rt_crea {
     fn get_challenge_rating { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetChallengeRating, argc, i = 0 }
         let f = fighter_of{ w = &w, id } ifnull {
-            try nwvm::push_float{ &vm, v = 0.0 }
-            return
+            return try nwvm::push_float{ &vm, v = 0.0 }
         }
         try nwvm::push_float{ &vm, v = f.c.challenge }
     }
@@ -412,8 +398,7 @@ namespace rt_crea {
     fn get_object_field { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
         let id = try nwarg::object{ &vm, routine, argc, i = 0 }
         let o = world::object{ w = &w, id } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         let v: i32 = match routine {
             nwscript::GetCurrentHitPoints => { o.hp + o.hp_temp }
@@ -489,8 +474,7 @@ namespace rt_crea {
     fn get_standard_faction { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetStandardFaction, argc, i = 0 }
         let o = world::object{ w = &w, id } ifnull {
-            try nwvm::push_int{ &vm, v = nwconst::INVALID_STANDARD_FACTION }
-            return
+            return try nwvm::push_int{ &vm, v = nwconst::INVALID_STANDARD_FACTION }
         }
         try nwvm::push_int{ &vm, v = if o.faction < STANDARD_FACTIONS { @as(i32, o.faction) } else { nwconst::INVALID_STANDARD_FACTION } }
     }
@@ -511,12 +495,10 @@ namespace rt_crea {
         let a = try nwarg::object{ &vm, routine = r, argc, i = 0 }
         let b = try nwarg::object{ &vm, routine = r, argc, i = 1 }
         let oa = world::object{ w = &w, id = a } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         let ob = world::object{ w = &w, id = b } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         try nwvm::push_int{ &vm, v = flag{ b = oa.faction == ob.faction } }
     }
@@ -528,12 +510,10 @@ namespace rt_crea {
         let target = try nwarg::object{ &vm, routine, argc, i = 0 }
         let source = try nwarg::object{ &vm, routine, argc, i = 1 }
         let ot = world::object{ w = &w, id = target } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         let os = world::object{ w = &w, id = source } ifnull {
-            try nwvm::push_int{ &vm, v = 0 }
-            return
+            return try nwvm::push_int{ &vm, v = 0 }
         }
         let rep = if ot.id == os.id { 100 } else { world::standing{ w = &w, from = os.faction, toward = ot.faction } }
         let yes = if routine == nwscript::GetIsEnemy { rep <= 10 }
@@ -551,12 +531,10 @@ namespace rt_crea {
         let source = try nwarg::object{ &vm, routine = r, argc, i = 0 }
         let target = try nwarg::object{ &vm, routine = r, argc, i = 1 }
         let os = world::object{ w = &w, id = source } ifnull {
-            try nwvm::push_int{ &vm, v = -1 }
-            return
+            return try nwvm::push_int{ &vm, v = -1 }
         }
         let ot = world::object{ w = &w, id = target } ifnull {
-            try nwvm::push_int{ &vm, v = -1 }
-            return
+            return try nwvm::push_int{ &vm, v = -1 }
         }
         try nwvm::push_int{ &vm, v = world::standing{ w = &w, from = os.faction, toward = ot.faction } }
     }
@@ -567,8 +545,7 @@ namespace rt_crea {
     fn get_creature_movement_type { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetCreatureMovmentType, argc, i = 0 }
         let c = creature_of{ w = &w, id } ifnull {
-            try nwvm::push_int{ &vm, v = 1 }
-            return
+            return try nwvm::push_int{ &vm, v = 1 }
         }
         try nwvm::push_int{ &vm, v = @as(i32, c.movement_rate) }
     }
@@ -747,16 +724,14 @@ namespace rt_crea {
     fn get_name { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetName, argc, i = 0 }
         let o = world::object{ w = &w, id } ifnull {
-            try nwvm::push_string{ &vm, s = "" }
-            return
+            return try nwvm::push_string{ &vm, s = "" }
         }
         let mut name = o.name
         if let a = obj::area{ o } { name = a.name }
         if name.strref != 0xFFFFFFFF {
             let text = world::string_by_strref{ w = &w, strref = name.strref }
             if text.len > 0 {
-                try nwvm::push_string{ &vm, s = text }
-                return
+                return try nwvm::push_string{ &vm, s = text }
             }
         }
         try nwvm::push_string{ &vm, s = name.text }
@@ -834,8 +809,7 @@ namespace rt_crea {
         let t3 = try nwarg::int{ &vm, routine = r, argc, i = 6 }
         let v3 = try nwarg::int{ &vm, routine = r, argc, i = 7 }
         let from = world::object{ w = &w, id = target } ifnull {
-            try nwvm::push_object{ &vm, id = obj::INVALID }
-            return
+            return try nwvm::push_object{ &vm, id = obj::INVALID }
         }
         let wants_reputation = t1 == nwconst::CREATURE_TYPE_REPUTATION or t2 == nwconst::CREATURE_TYPE_REPUTATION
             or t3 == nwconst::CREATURE_TYPE_REPUTATION
@@ -868,8 +842,7 @@ namespace rt_crea {
                 }
             }
             if best == obj::INVALID {
-                try nwvm::push_object{ &vm, id = obj::INVALID }
-                return
+                return try nwvm::push_object{ &vm, id = obj::INVALID }
             }
             last = best_d
             last_id = best

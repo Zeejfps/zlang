@@ -332,8 +332,7 @@ namespace rt_talent {
             _ = @fmt(&w.io, "  talent wanted by {}: category {} best {} -> kind {} id {}\n", id, category, best, t.kind, t.id)
         }
         if t.kind == -1 {
-            try nwvm::push_engine{ &vm, kind = nwvm::EngineType::talent, handle = 0 }
-            return
+            return try nwvm::push_engine{ &vm, kind = nwvm::EngineType::talent, handle = 0 }
         }
         let h = values::add{ s = &w.values, v = values::Value::talent{ t } }
         try nwvm::push_engine{ &vm, kind = nwvm::EngineType::talent, handle = h }
