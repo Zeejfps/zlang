@@ -303,7 +303,7 @@ comments on the side (`lexer::Lexed.comments`), and record results in side table
 so parsed trees stay read-only and std's needn't be reparsed after an edit: its trees stay in
 the arena below a `mark`, and each check `restore`s to it.
 
-What the tables give, and what they don't yet:
+What the tables give:
 
 | Record | In `check::Checker` | Serves |
 |---|---|---|
@@ -313,17 +313,16 @@ What the tables give, and what they don't yet:
 | each declaration: kind, name, namespace | `decls` (`Decl.kind`, `name`, `qual`, `syn`) | document and workspace symbols, hover |
 | what a `..` supplies | `forwards`, `filled` | hover on `..` |
 | where each local's name is in scope | `lives` (a `Live`: the local, from where its name takes effect to where its scope ends; the latest `from` wins), and its type in `Var.ty`, narrowed for a narrowed view | completion of names |
-| the expected type at each `{` of a call or literal | **missing** | completion of field names, signature help |
+| the fields each `{` takes: a call's, generic arguments inferred, or a literal's type's | `braces` (recorded by `supplied`, so half-typed braces have them too) | completion of field names, signature help |
 
-1. **The missing table,** recorded while checking, as the others are.
-2. **The server:** reading messages (a `Content-Length` header, then that many bytes, by
+1. **The server:** reading messages (a `Content-Length` header, then that many bytes, by
    `io::read` in a loop), writing them (`io::write_bytes`, then `io::flush`), and JSON, by the
    parser and printer of `examples/json` moved into `ctxc/`.
-3. **Features, in order:** diagnostics on open and change (debounced), go to definition, hover
+2. **Features, in order:** diagnostics on open and change (debounced), go to definition, hover
    (type and signature), document symbols, completion (names in scope, fields after `.`,
    context fields inside `{`), references, rename, workspace symbols, semantic tokens, signature
    help, inlay hints for inferred `let` types.
-4. **Doc comments,** for hover: their syntax is a spec decision of its own, still to make.
+3. **Doc comments,** for hover: their syntax is a spec decision of its own, still to make.
 
 Design notes:
 - **Threads.** One thread reads stdin and queues messages; the main thread takes them, and

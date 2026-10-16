@@ -196,6 +196,7 @@ namespace check {
         local_of:  map::Map(u64, u32, Heap),          // the local a `let` or a binder's field declares
         is_vars:   map::Map(u64, []u32, Heap),        // the locals an `is` binds, by its key
         forwards:  map::Map(u64, []Forward, Heap),    // what `..` supplies to a call
+        braces:    map::Map(u64, []types::Field, Heap),  // the fields braces take: a call's, or a literal's type's
         filled:    map::Map(u64, []u32, Heap),        // the fields a struct literal's `..` takes from their defaults
         site_of:   map::Map(u64, u32, Heap),          // an @fmt's site, by its key
         holds:     map::Map(u64, []Place, Heap),      // the places a bind holds
@@ -433,6 +434,7 @@ namespace check {
             local_of = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             is_vars = map::new(u64, []u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             forwards = map::new(u64, []Forward){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            braces = map::new(u64, []types::Field){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             filled = map::new(u64, []u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             site_of = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             holds = map::new(u64, []Place){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
@@ -8617,8 +8619,10 @@ namespace check {
         try! map::put{ m = &c.literal, key = expr_key{ e }, value = literal }
     }
 
-    // The fields supplied in braces must exist and be supplied once. `what` names the callee.
-    fn supplied { mut c: Checker, items: []syntax::Item, fields: []types::Field, what: utf8::String } {
+    // The fields supplied in braces e must exist and be supplied once. `what` names the callee.
+    // e takes fields, for an editor (PLAN.md 5).
+    fn supplied { mut c: Checker, e: syntax::Expr, items: []syntax::Item, fields: []types::Field, what: utf8::String } {
+        try! map::put{ m = &c.braces, key = expr_key{ e }, value = fields }
         let mut i: usize = 0
         while i < items.len {
             let it = items[i]
@@ -8719,7 +8723,7 @@ namespace check {
         }
         let mut b = message{ c }
         try! @fmt(&b, "`{}`", name)
-        supplied{ &c, items, fields, what = utf8::view{ b } }
+        supplied{ &c, e, items, fields, what = utf8::view{ b } }
         let mut i: usize = 0
         while i < items.len {
             let it = items[i]
@@ -8923,7 +8927,7 @@ namespace check {
             let word: utf8::String = if forward { ".." } else { "_" }
             errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` is not allowed in a literal", word) }
         }
-        supplied{ &c, items, fields, what }
+        supplied{ &c, e, items, fields, what }
         if items.len != 1 {
             errorf{ &c, at = expr_at{ e }, msg = @fmt("{} literal must set exactly one field", what) }
         }
@@ -8973,7 +8977,7 @@ namespace check {
         } else if forward and defaults.len == 0 {
             errorf{ &c, at = expr_at{ e }, msg = @fmt("`..` takes fields from their defaults, and {} has none", what) }
         }
-        supplied{ &c, items, fields, what }
+        supplied{ &c, e, items, fields, what }
         let mut missing = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
         let mut defaulted = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
         let mut filled = list::new(u32){ realloc = arena::alloc, heap = c.heap }

@@ -1369,7 +1369,9 @@ namespace decls {
                 one = elem.*
             }
             braced{ items } => {
-                try! @fmt(&out, "braced {}\n", t)
+                try! @fmt(&out, "braced {}", t)
+                takes{ &out, c, e }
+                dump::put{ &out, s = "\n" }
                 let mut i: usize = 0
                 while i < items.len {
                     expr{ &out, c, e = items[i].value, depth = d + 1 }
@@ -1452,6 +1454,19 @@ namespace decls {
 
     // A const's value: `N:T` for a number, `"BYTES"` or `view "BYTES"`, `{V, ...}` for a struct,
     // `I{V, ...}` for variant I, `[V, ...]` for an array and `[V; N]` for N copies.
+    // " takes{ NAME: TYPE, mut NAME: TYPE }": the fields braces e take, if the checker knows.
+    fn takes { mut out: Out, c: check::Checker, e: syntax::Expr } {
+        let fs = map::get{ m = c.braces, key = check::expr_key{ e } } ifnull { return }
+        dump::put{ &out, s = " takes{" }
+        let mut i: usize = 0
+        while i < fs.len {
+            if i > 0 { dump::put{ &out, s = "," } }
+            try! @fmt(&out, " {}{}: {}", if fs[i].mutable { "mut " } else { "" }, check::str{ s = fs[i].name }, check::tstr{ c, t = fs[i].ty })
+            i = i + 1
+        }
+        dump::put{ &out, s = if fs.len > 0 { " }" } else { "}" } }
+    }
+
     fn value { mut out: Out, c: check::Checker, v: check::Val } {
         match v {
             int{ ty, negative, magnitude } => {

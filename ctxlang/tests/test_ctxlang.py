@@ -14290,3 +14290,38 @@ fn main {} {}
             'z {error} main.ctx:5:17-8:2',
             'w i32 main.ctx:6:14-8:2',
         ])
+
+    def test_braces_take(self):
+        # The fields each braces take: a call's (a generic one's with its type arguments
+        # inferred, a function value's), a struct's, a variant's and an error's. Braces whose
+        # callee doesn't resolve take nothing the checker knows.
+        out = self.decls("""struct P { x: i32, y: i32 = 0 }
+union Shape { circle{ r: i32 }, square{ side: i32 } }
+error bad{ code: i32 }
+
+fn add { a: i32, mut b: i32 } -> i32 { b = b + a; return b }
+fn pick(T) { a: T, b: T } -> T { return a }
+fn fails {} -> !i32 { return bad{ code = 1 } }
+
+fn main {} {
+    let p = P{ x = 1, .. }
+    let s = Shape::circle{ r = p.x }
+    let mut n = 0
+    let k = add{ a = 1, b = &n }
+    let q = pick{ a = p, b = P{ x = 2, y = 3 } }
+    let f: fn{ v: i32 } -> i32 = &fn{ v: i32 } -> i32 { return v }
+    let w = f{ v = 4 }
+    let z = nope{ a = 1 }
+}
+""")
+        own = out[out.index('\nfn add '):]
+        self.assertEqual([line.strip() for line in own.splitlines() if line.strip().startswith('braced')], [
+            'braced bad takes{ code: i32 }',
+            'braced P takes{ x: i32, y: i32 }',
+            'braced Shape takes{ r: i32 }',
+            'braced i32 takes{ a: i32, mut b: i32 }',
+            'braced P takes{ a: P, b: P }',
+            'braced P takes{ x: i32, y: i32 }',
+            'braced i32 takes{ v: i32 }',
+            'braced {error}',
+        ])
