@@ -81,6 +81,7 @@ namespace eval {
     union Code {
         thunk{ callee: u32 },                           // hN: calls callee
         bound{ callee: u32, args: []ir::Arg },          // bK: calls callee with args captured
+        tbound{ callee: u32, args: []ir::Arg },         // a task's bK: as bound, with its size at 8
         dbound{ inner: ir::TypeId, args: []ir::Arg },   // bK: calls the inner value, of type inner
         adapter{ from: ir::TypeId },                    // aK: calls the inner value, of type from
         cfn{ callee: u32 },                             // xN or kK: an extern fn, or a callback
@@ -800,12 +801,35 @@ namespace eval {
             dcall{ callee, args } => { return try dcall{ &m, t = x.ty, callee = callee.*, args } }
             bind{ callee, args } => {
                 let c = code{ &m, key = Key{ kind = 2, a = callee, b = @addr(args.ptr) }, c = Code::bound{ callee, args } }
-                return try record_of{ &m, t = x.ty, c, inner = 0, start = 8, args }
+                return try record_of{ &m, t = x.ty, c, inner = 0, start = 8, args, sized = false }
+            }
+            tbind{ callee, args } => {
+                let c = code{ &m, key = Key{ kind = 2, a = callee, b = @addr(args.ptr) }, c = Code::tbound{ callee, args } }
+                return try record_of{ &m, t = x.ty, c, inner = 0, start = 16, args, sized = true }
+            }
+            rsize{ e } => {
+                let rec = try scalar{ &m, x = e.* }
+                let r = try temp{ &m, t = x.ty }
+                try store{ &m, a = r, n = 8, v = try load{ &m, a = rec + 8, n = 8 } }
+                return r
+            }
+            rcopy{ e, into } => {
+                let rec = try scalar{ &m, x = e.* }
+                let s = try value{ &m, x = into.* }
+                let p = try load{ &m, a = s, n = 8 }
+                let len = try load{ &m, a = s + 8, n = 8 }
+                let n = try load{ &m, a = rec + 8, n = 8 }
+                if len < n {
+                    fail{ &m, msg = "@record_copy into fewer bytes than the record has" }
+                    return halt
+                }
+                try copy{ &m, dst = p, src = rec, n }
+                return try temp{ &m, t = x.ty }
             }
             dbind{ callee, args } => {
                 let c = code{ &m, key = Key{ kind = 3, a = callee.ty, b = @addr(args.ptr) }, c = Code::dbound{ inner = callee.ty, args } }
                 let inner = try scalar{ &m, x = callee.* }
-                return try record_of{ &m, t = x.ty, c, inner, start = 16, args }
+                return try record_of{ &m, t = x.ty, c, inner, start = 16, args, sized = false }
             }
             fnref{ callee } => {
                 let r = try temp{ &m, t = x.ty }
@@ -1250,6 +1274,11 @@ namespace eval {
                 try invoke{ &m, callee, base = nb, res }
                 m.argv.len = nb
             }
+            tbound{ callee, args } => {
+                let nb = try forward{ &m, target = m.p.fns[callee].params, args, rec, start = 16, given, base }
+                try invoke{ &m, callee, base = nb, res }
+                m.argv.len = nb
+            }
             dbound{ inner, args } => {
                 let func{ params } = m.types[inner] else {
                     fail{ &m, msg = "eval: a bind of a non-function" }
@@ -1356,7 +1385,7 @@ namespace eval {
 
     // A bind's record, on the heap: its code, the inner function value if start is 16, then
     // the captured args, evaluated in order. Returns a temporary holding its address.
-    fn record_of { mut m: M, t: ir::TypeId, c: Addr, inner: Addr, start: u64, args: []ir::Arg } -> !Addr {
+    fn record_of { mut m: M, t: ir::TypeId, c: Addr, inner: Addr, start: u64, args: []ir::Arg, sized: bool } -> !Addr {
         let base = m.argv.len
         let mut end = start
         let mut i: usize = 0
@@ -1369,7 +1398,7 @@ namespace eval {
         }
         let rec = try heap_bytes{ &m, n = end }
         try store{ &m, a = rec, n = 8, v = c }
-        if start == 16 { try store{ &m, a = rec + 8, n = 8, v = inner } }
+        if start == 16 { try store{ &m, a = rec + 8, n = 8, v = if sized { end } else { inner } } }
         let mut off = start
         i = 0
         while i < args.len {

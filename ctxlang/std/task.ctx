@@ -1,0 +1,158 @@
+// std: task. Tasks: calls that may run concurrently with the code that started them (spec §15,
+// Tasks; ctxlang/threads.md). A task is a call of a `#task` fn, made by a bind written in the
+// start's call that supplies every field, so the call shows everything the task receives. Its
+// handle is a local of the starter's, and the task never outlives the handle's scope: leaving it
+// without waiting cancels the task and waits for it there.
+//
+//   #task
+//   fn load { mut fs: Fs, path: []u8, into: *mut Buffer } -> !usize { ... }
+//
+//   fn load_two { mut fs: Fs, mut threads: Threads, a: *mut Buffer, b: *mut Buffer } -> !usize {
+//       let mut ta: task::Task(!usize)
+//       let mut tb: task::Task(!usize)
+//       task::start{ &threads, task = &ta, run = load{ &fs, path = "a.txt", into = a, _ } }
+//       task::start{ &threads, task = &tb, run = load{ &fs, path = "b.txt", into = b, _ } }
+//       let na = try task::wait{ &threads, task = &ta }
+//       let nb = try task::wait{ &threads, task = &tb }
+//       return na + nb
+//   }
+
+namespace task {
+    // A task's handle and, once it has ended, its result. Zero is no task. Only a local, a local
+    // array's element, or a `mut` field: never copied, so it never moves while its task writes
+    // its result into it.
+    #task_handle
+    struct Task(R) {
+        slot: u32,                  // the task's slot in the table, from 1; 0 once it has ended
+        generation: u32,            // the slot's, when the task started in it
+        state: u32,                 // NONE, RUNNING or ENDED
+        result: R,                  // the task's result, once ENDED
+    }
+
+    // Tasks that end together. Zero is an empty group. The same places as a Task.
+    #task_handle
+    struct Group {
+        tasks: u32,                 // tasks of the group that haven't ended
+        first: u32,                 // the slot of one of them, the head of their list; 0 if none
+        failed: bool,               // whether `error` holds the first error of its tasks
+        cancelling: bool,           // whether it is being cancelled: new tasks start cancelled
+        error: !,                   // the first error of its tasks
+    }
+
+    const NONE: u32 = 0
+    const RUNNING: u32 = 1
+    const ENDED: u32 = 2
+
+    error cancelled             // what a blocking call fails with, in a task that is cancelled
+    error out_of_resources      // no thread, or no room in the table
+
+    // Runs `run`, maybe concurrently with the caller, maybe at once. Returns no error: when the
+    // backend can't run it concurrently (no worker, the limit, or the table can't grow), it runs
+    // it here, and `task` holds its result when start returns. `task` must be zero.
+    #starts_task
+    fn start(R) { mut threads: Threads, mut task: Task(R), run: &fn{} -> R } {
+        if task.state != NONE { rt::fail{ msg = "task::start into a handle that holds a task" } }
+        let mut words: [64]u64
+        let bytes = @slice(@cast(*mut u8, &words[0]), 512)
+        if @record_size(run) > 512 { rt::fail{ msg = "big" } }
+        let entry = @record_copy(run, bytes)
+        entry{ record = @cast(*mut u8, &words[0]), result = @cast(*mut u8, &task.result) }
+        task.state = ENDED
+    }
+
+    // Runs `run` concurrently with the caller, or fails, and `task` stays zero.
+    #starts_task
+    fn start_concurrent(R) { mut threads: Threads, mut task: Task(R), run: &fn{} -> R } -> ! {
+        if task.state != NONE { rt::fail{ msg = "task::start_concurrent into a handle that holds a task" } }
+        return out_of_resources
+    }
+
+    // Runs `run` on an operating-system thread of its own, in every backend: for work that
+    // blocks outside std (a C call that waits, a lock held across IO) or computes for long. In
+    // Threaded it is start_concurrent.
+    #starts_task
+    fn start_blocking(R) { mut threads: Threads, mut task: Task(R), run: &fn{} -> R } -> ! {
+        return start_concurrent(R){ &threads, &task, run }
+    }
+
+    // Waits for the task to end and gives its result; `task` is zero again.
+    fn wait(R) { mut threads: Threads, mut task: Task(R) } -> R {
+        if task.state == NONE { rt::fail{ msg = "task::wait on a handle that holds no task" } }
+        task.state = NONE
+        return task.result
+    }
+
+    // As `wait` without giving the result: true once the task has ended (then `wait` returns at
+    // once), false when `nanoseconds` passed first. 0 looks without waiting.
+    fn wait_for(R) { mut threads: Threads, mut task: Task(R), nanoseconds: u64 } -> bool {
+        if task.state == NONE { rt::fail{ msg = "task::wait_for on a handle that holds no task" } }
+        return true
+    }
+
+    // Asks the task to stop, waits for it to end, and gives its result, which is usually
+    // `cancelled`; `task` is zero again.
+    fn cancel(R) { mut threads: Threads, mut task: Task(R) } -> R {
+        if task.state == NONE { rt::fail{ msg = "task::cancel on a handle that holds no task" } }
+        task.state = NONE
+        return task.result
+    }
+
+    // What ends a handle's scope (spec §15, Tasks): its task, if it has one, cancelled and waited
+    // for, its result dropped.
+    fn end(R) { mut threads: Threads, mut task: Task(R) } {
+        if task.state == NONE { return }
+        _ = cancel(R){ &threads, &task }
+    }
+
+    // As start, start_concurrent and start_blocking, the task belonging to `group`. A group's
+    // task returns `!`: the first of its tasks to fail cancels the others, and `wait_all`
+    // returns that error. A group being cancelled starts its new tasks cancelled.
+    #starts_task
+    fn start_in { mut threads: Threads, mut group: Group, run: &fn{} -> ! } {
+        run{} iferr err{ error } {
+            if not group.failed {
+                group.failed = true
+                group.error = error
+            }
+        }
+    }
+
+    #starts_task
+    fn start_concurrent_in { mut threads: Threads, mut group: Group, run: &fn{} -> ! } -> ! {
+        return out_of_resources
+    }
+
+    #starts_task
+    fn start_blocking_in { mut threads: Threads, mut group: Group, run: &fn{} -> ! } -> ! {
+        return out_of_resources
+    }
+
+    // Waits until the group has no task, those started meanwhile included: the first error of
+    // its tasks, or success.
+    fn wait_all { mut threads: Threads, mut group: Group } -> ! {
+        let failed = group.failed
+        let result = group.error
+        group.failed = false
+        group.cancelling = false
+        if failed { return result }
+    }
+
+    // Asks every task of the group to stop, then waits until it has none.
+    fn cancel_all { mut threads: Threads, mut group: Group } {
+        group.failed = false
+        group.cancelling = false
+    }
+
+    // Fails with `cancelled` if the calling task has been asked to stop: for a task that
+    // computes for long between blocking calls. Never fails outside a task.
+    fn check_cancelled { mut threads: Threads } -> ! {
+    }
+
+    // Busy workers past which `start` runs a task at once.
+    fn set_limit { mut threads: Threads, workers: u32 } {
+    }
+
+    // Stack for workers started after it; 0 for the default, 8 MiB.
+    fn set_stack { mut threads: Threads, bytes: usize } {
+    }
+}

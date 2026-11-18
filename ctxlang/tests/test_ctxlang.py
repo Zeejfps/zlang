@@ -14545,6 +14545,312 @@ fn main { mut io: Io, mut threads: Threads } -> i32 {
         self.assertEqual(out, '8000000\n8000000\n')
 
 
+
+class TaskLanguage(Base):
+    """Tasks' language rules (spec §15, Tasks; threads.md): `#task`, `#thread_bound`,
+    `#starts_task`, `#task_handle`, the record builtins, handles' scopes, and what a running
+    task borrows. std's task backend is tested in Tasks."""
+
+    TASKS = '''
+#task
+fn fill { mut buf: [8]u8, n: u8 } -> ! { buf[0] = n }
+
+#task
+fn look { s: []u8 } -> !u64 { return @as(u64, s.len) }
+
+#task
+fn sq { n: u64 } -> !u64 { return n * n }
+'''
+
+    def test_result_and_mut_field(self):
+        self.assertOutput('''
+#task
+fn add { a: u64, b: u64, mut out: u64 } -> !u64 {
+    out = a + b
+    return a * b
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let mut o: u64 = 0
+    let mut t: task::Task(!u64)
+    task::start{ &threads, task = &t, run = add{ a = 3, b = 4, out = &o, _ } }
+    let r = task::wait{ &threads, task = &t } iferr { return 1 }
+    io::println_u64{ &io, n = r }
+    io::println_u64{ &io, n = o }
+    return 0
+}
+''', '12\n7\n')
+
+    def test_arrays_groups_and_early_exits(self):
+        """An array of handles, a group's first error, and a scope left with tasks in it."""
+        self.assertOutput(self.TASKS + '''
+#task
+fn fails { n: u64 } -> ! { if n == 2 { return task::cancelled } }
+
+fn sum { mut threads: Threads, stop: bool } -> !u64 {
+    let mut ts: [4]task::Task(!u64)
+    let mut i: usize = 0
+    while i < 4 {
+        task::start{ &threads, task = &ts[i], run = sq{ n = @as(u64, i), _ } }
+        i = i + 1
+    }
+    if stop { return 0 }
+    let mut total: u64 = 0
+    i = 0
+    while i < 4 {
+        total = total + try task::wait{ &threads, task = &ts[i] }
+        i = i + 1
+    }
+    let mut g: task::Group
+    task::start_in{ &threads, group = &g, run = fails{ n = 1, _ } }
+    task::start_in{ &threads, group = &g, run = fails{ n = 2, _ } }
+    task::wait_all{ &threads, group = &g } iferr { total = total + 1000 }
+    return total
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    io::println_u64{ &io, n = sum{ &threads, stop = false } iferr { 99 } }
+    io::println_u64{ &io, n = sum{ &threads, stop = true } iferr { 99 } }
+    return 0
+}
+''', '1014\n0\n')
+
+    def test_borrows_end_with_wait_and_summaries(self):
+        """A held place is the starter's again once the task is waited for, also when a fn it
+        calls starts the task into its handle and another waits for it."""
+        self.assertOutput(self.TASKS + '''
+fn start_into { mut threads: Threads, mut buf: [8]u8, mut h: task::Task(!) } {
+    task::start{ &threads, task = &h, run = fill{ &buf, n = 5, _ } }
+}
+
+fn stop { mut threads: Threads, mut h: task::Task(!) } {
+    task::wait{ &threads, task = &h } iferr {}
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let mut buf: [8]u8
+    let mut t: task::Task(!)
+    task::start{ &threads, task = &t, run = fill{ &buf, n = 1, _ } }
+    task::wait{ &threads, task = &t } iferr {}
+    buf[1] = buf[0] + 1
+    let mut h: task::Task(!)
+    start_into{ &threads, &buf, &h }
+    stop{ &threads, &h }
+    io::println_u64{ &io, n = @as(u64, buf[0]) + @as(u64, buf[1]) }
+    let mut i: usize = 0
+    while i < 3 {
+        let mut u: task::Task(!)
+        task::start{ &threads, task = &u, run = fill{ &buf, n = 1, _ } }
+        i = i + 1
+    }
+    return 0
+}
+''', '7\n')
+
+    def test_static_reached_twice(self):
+        self.assertOutput('''
+namespace k {
+    capability C { static n: u64 }
+    fn bump { mut c: C } { c.n = c.n + 1 }
+    fn get { mut c: C } -> u64 { return c.n }
+}
+capability A { ..k::C }
+capability B { ..k::C }
+capability AB { ..A, ..B }
+
+fn main { mut io: Io, mut ab: AB } -> i32 {
+    k::bump{ c = &ab }
+    k::bump{ c = &ab }
+    io::println_u64{ &io, n = k::get{ c = &ab } }
+    return 0
+}
+''', '2\n')
+
+    def assertTaskError(self, body, fragment):
+        self.assertCompileError(self.TASKS + body, fragment)
+
+    def test_errors(self):
+        cases = [
+            ('thread_bound', '''
+#thread_bound
+capability Video
+capability Win { ..Video }
+#task
+fn draw { mut w: Win } -> ! {}
+fn main {} {}
+''', "task fn `draw` takes `w`, a thread-bound capability (`Win`)"),
+            ('build', '''
+#task
+fn b { mut b: Build } -> ! {}
+fn main {} {}
+''', "a thread-bound capability (`Build`)"),
+            ('not a bind', '''
+fn main { mut threads: Threads } {
+    let f = sq{ n = 1, _ }
+    let mut t: task::Task(!u64)
+    task::start{ &threads, task = &t, run = f }
+}
+''', "`run` is a bind of a `task` fn written here"),
+            ('not a task fn', '''
+fn plain { n: u64 } -> !u64 { return n }
+fn main { mut threads: Threads } {
+    let mut t: task::Task(!u64)
+    task::start{ &threads, task = &t, run = plain{ n = 1, _ } }
+}
+''', "`plain` is not a `task` fn"),
+            ('start as a value', '''
+fn main { mut threads: Threads } { let g = task::start(!u64) }
+''', "`task::start` starts a task, and is only called"),
+            ('start bound', '''
+fn main { mut threads: Threads } {
+    let mut t: task::Task(!u64)
+    let g = task::start{ &threads, task = &t, _ }
+}
+''', "starts a task, and is only called, not bound"),
+            ('struct field', '''
+struct Bad { t: task::Task(!) }
+fn main {} {}
+''', "struct `Bad`'s field `t` holds a task handle"),
+            ('result', '''
+fn ret {} -> task::Task(!) { let mut t: task::Task(!)
+    return t }
+fn main {} {}
+''', "fn `ret` returns a task handle"),
+            ('read-only field', '''
+fn look_at { t: task::Task(!) } {}
+fn main {} {}
+''', "fn `look_at`'s field `t` holds a task handle"),
+            ('optional', '''
+fn main {} { let mut p: ?task::Task(!) = null }
+''', "holds a task handle, which is never copied"),
+            ('copy', '''
+fn main {} {
+    let mut t: task::Task(!)
+    let mut u = t
+}
+''', "holds a task handle, which is never copied"),
+            ('generic argument', '''
+fn main {} { let mut xs: [2]u8
+    let n = slice::empty(task::Task(!)){} }
+''', "a generic argument holds a task handle"),
+            ('wait on zero', '''
+fn main { mut threads: Threads } {
+    let mut t: task::Task(!u64)
+    _ = task::wait{ &threads, task = &t }
+}
+''', "`t` holds no task here, on every path"),
+            ('start into full', '''
+fn main { mut threads: Threads } {
+    let mut t: task::Task(!u64)
+    task::start{ &threads, task = &t, run = sq{ n = 2, _ } }
+    task::start{ &threads, task = &t, run = sq{ n = 2, _ } }
+}
+''', "`t` holds a task here, on every path"),
+            ('held', '''
+fn main { mut threads: Threads } {
+    let mut buf: [8]u8
+    let mut t: task::Task(!)
+    task::start{ &threads, task = &t, run = fill{ &buf, n = 1, _ } }
+    let x = buf[1]
+}
+''', "`buf[_]` is held by the task started at"),
+            ('held on a path', '''
+fn main { mut threads: Threads, c: bool } {
+    let mut buf: [8]u8
+    let mut t: task::Task(!)
+    task::start{ &threads, task = &t, run = fill{ &buf, n = 1, _ } }
+    if c { task::wait{ &threads, task = &t } iferr {} }
+    buf[1] = 2
+}
+''', "`buf[_]` is held by the task started at"),
+            ('held in a loop', '''
+fn main { mut threads: Threads } {
+    let mut buf: [8]u8
+    let mut u: task::Task(!)
+    let mut i = 0
+    while i < 6 {
+        buf[3] = 1
+        task::start{ &threads, task = &u, run = fill{ &buf, n = 1, _ } }
+        i = i + 1
+    }
+}
+''', "`buf[_]` is held by the task started at"),
+            ('read', '''
+fn main { mut threads: Threads } {
+    let mut data: [8]u8
+    let mut t: task::Task(!u64)
+    task::start{ &threads, task = &t, run = look{ s = data[..], _ } }
+    let y = data[0]
+    data[0] = 1
+}
+''', "`data` is read by the task started at"),
+            ('scope', '''
+fn main { mut threads: Threads } {
+    let mut t: task::Task(!)
+    if true {
+        let mut buf: [8]u8
+        task::start{ &threads, task = &t, run = fill{ &buf, n = 1, _ } }
+    }
+}
+''', "`t` is declared outside the scope of `buf`, which its task borrows"),
+            ('caller', '''
+fn into { mut threads: Threads, mut h: task::Task(!) } {
+    let mut mine: [8]u8
+    task::start{ &threads, task = &h, run = fill{ buf = &mine, n = 1, _ } }
+}
+fn main {} {}
+''', "`h` is the caller's handle, and its task borrows `mine`"),
+            ('summary', '''
+fn into { mut threads: Threads, mut buf: [8]u8, mut h: task::Task(!) } {
+    task::start{ &threads, task = &h, run = fill{ &buf, n = 5, _ } }
+}
+fn main { mut threads: Threads } {
+    let mut buf: [8]u8
+    let mut h: task::Task(!)
+    into{ &threads, &buf, &h }
+    buf[0] = 3
+}
+''', "`buf[_]` is held by the task started at"),
+            ('defer', '''
+fn main { mut threads: Threads } {
+    let mut buf: [8]u8
+    let mut t: task::Task(!)
+    task::start{ &threads, task = &t, run = fill{ &buf, n = 1, _ } }
+    defer buf[0] = 1
+    task::wait{ &threads, task = &t } iferr {}
+}
+''', "`buf[_]` is held by the task started at"),
+            ('record outside', '''
+fn f { run: &fn{} -> u8 } -> usize { return @record_size(run) }
+fn main {} {}
+''', "@record_size is only of a `starts_task` fn's own `run`"),
+            ('starts signature', '''
+#starts_task
+fn go { run: &fn{} -> u8 } {}
+fn main {} {}
+''', "`starts_task` fn `go` takes `run: &fn{} -> R`"),
+            ('handle on a fn', '''
+#task_handle
+fn h {} {}
+fn main {} {}
+''', "`task_handle` applies only to a struct"),
+            ('bound on a struct', '''
+#thread_bound
+struct S { a: u8 }
+fn main {} {}
+''', "`thread_bound` applies only to a capability"),
+            ('task on an extern', '''
+#task
+#pure
+extern fn e {}
+fn main {} {}
+''', "`task` applies only to a fn with a body"),
+        ]
+        for name, body, fragment in cases:
+            with self.subTest(name):
+                self.assertTaskError(body, fragment)
+
+
 class EditorTables(Base):
     """What the checker records for an editor (PLAN.md 5), as `ctxc decls` prints it."""
 

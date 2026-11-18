@@ -39,7 +39,9 @@
 // build program has (std/build/declarations.ctx), parses its files as they are so far.
 
 // Permission to describe a build: only a build program's `fn build` receives one. It includes
-// the console, where the build's graph goes without CTX_BUILD_OUT.
+// the console, where the build's graph goes without CTX_BUILD_OUT. Its state is one thread's,
+// so no task takes it (spec §15, Tasks).
+#thread_bound
 capability Build { ..Io, ..build::State }
 
 namespace build {

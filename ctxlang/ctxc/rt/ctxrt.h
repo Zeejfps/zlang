@@ -216,6 +216,12 @@ void *ctx_alloc(size_t n);                 // permanent storage, not zeroed
 // The adapter of `fn` value `inner` with `code`: the same record for the same pair.
 ctx_fn *ctx_adapt(ctx_fn *inner, void (*code)(void));
 
+// A task's record (spec §15, Tasks): a bind written as a start's `run`, whose record holds its
+// size after its code, so that the task's backend can copy it (@record_size, @record_copy).
+typedef struct { ctx_fn base; uint64_t size; } ctx_task_rec;
+// Copies record `rec` into `into`, which holds at least `len` bytes: a panic if they're fewer.
+void ctx_rec_copy(void *into, uint64_t len, ctx_fn *rec);
+
 // ---- integer arithmetic
 
 #define CTX_OVERFLOW() ctx_panic(line, col, file, "integer overflow")
