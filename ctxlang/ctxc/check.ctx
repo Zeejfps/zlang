@@ -268,6 +268,7 @@ namespace check {
         fault_writers: map::Map(u64, []Writer, Heap), // an error hole's field writers, by fault_key
         ptr_faults: bool = false,                     // whether some error's payload holds a pointer
         thread_locals: list::List(CVar, Heap),        // the `#thread_local` statics, by owner and name
+        unmarked: list::List(syntax::Name, Heap),     // extern fns with neither a capability nor `#pure`
         // Threads (§15, rule 14): whether the call being checked is to a `#spawn` fn, and what
         // a run function passed to one takes beyond its field's type, by the argument's key.
         spawning:  bool = false,
@@ -474,6 +475,7 @@ namespace check {
             sites = list::new(Site){ realloc = arena::alloc, &heap },
             fault_writers = map::new(u64, []Writer){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             thread_locals = list::new(CVar){ realloc = arena::alloc, &heap },
+            unmarked = list::new(syntax::Name){ realloc = arena::alloc, &heap },
             carries = map::new(u64, []Forward){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             ..
         }
@@ -527,6 +529,7 @@ namespace check {
         finish_escapes{ &c }
         evaluate{ &c }
         check_main{ &c }
+        unmarked_externs{ &c }
     }
 
     // The consts folding can't compute (§14), evaluated in order, or earlier where another const
@@ -1592,6 +1595,7 @@ namespace check {
                 }
                 k = k + 1
             }
+            if not seen_pure and x.k is func{ name, external } and external { pure_or_cap{ &c, x, file, name } }
             if x.k is space{ decls = inner } {
                 let child = map::get{ m = c.space_of, key = key{ file, id = x.id } }
                 if child != null { compiler_attr_list{ &c, file, decls = inner, ns = child } }
@@ -1789,6 +1793,30 @@ namespace check {
         let cap = first_cap{ c, fields = get_decl{ c, d }.fields }
         if cap != null {
             errorf{ &c, at = a.span, msg = @fmt("a `pure` extern fn takes no capability, and this one takes `{}`: drop one", str{ s = cap }) }
+        }
+    }
+
+    // Extern fn x without `#pure` (§18, Extern functions, rule 8) must take a capability: what
+    // C does is said in its signature, either way. Those that don't are reported last
+    // (unmarked_externs), after what else is wrong with the program.
+    fn pure_or_cap { mut c: Checker, x: syntax::Decl, file: u32, name: syntax::Name } {
+        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
+        let fields = get_decl{ c, d }.fields
+        if first_cap{ c, fields } != null { return }
+        let mut i: usize = 0
+        while i < fields.len {
+            if types::prune{ s = c.ty, t = fields[i].ty } == types::ERROR { return }
+            i = i + 1
+        }
+        try! list::push{ list = &c.unmarked, item = name }
+    }
+
+    fn unmarked_externs { mut c: Checker } {
+        let xs = list::items{ list = c.unmarked }
+        let mut i: usize = 0
+        while i < xs.len {
+            errorf{ &c, at = xs[i].span, msg = @fmt("extern fn `{}` takes no capability: add a capability field for what it touches, or `#pure` if it touches only its arguments and the memory they point to", str{ s = xs[i].text }) }
+            i = i + 1
         }
     }
 

@@ -45,6 +45,7 @@ namespace os {
 
     // Stops the run: the interpreter can't do `what`. It doesn't return.
     #c::symbol{ name = "ctx_interp_unsupported" }
+    #pure
     extern fn unsupported { what: []u8 } -> u32
 
     fn write { mut io: Io, to: io::Stream, bytes: []u8 } -> usize {
@@ -181,7 +182,7 @@ namespace os {
     #c::symbol{ name = "ctx_interp_thread_leave" }
     extern fn host_thread_leave { mut threads: Threads }
     #c::symbol{ name = "ctx_interp_thread_id" }
-    extern fn host_thread_id {} -> u64
+    extern fn host_thread_id { mut threads: Threads } -> u64
 
     fn thread_create { mut threads: Threads, start: *mut u8, stack_size: usize } -> ?u64 {
         host_thread_enter{ &threads }
@@ -194,8 +195,8 @@ namespace os {
     fn thread_detach { mut threads: Threads, handle: u64 } {}
     fn thread_sleep { mut threads: Threads, nanoseconds: u64 } {}
     fn thread_yield { mut threads: Threads } {}
-    fn thread_id {} -> u64 { return host_thread_id{} }
-    fn thread_name { name: []u8 } {}
+    fn thread_id { mut threads: Threads } -> u64 { return host_thread_id{ &threads } }
+    fn thread_name { mut threads: Threads, name: []u8 } {}
 
     struct Mutex { locked: u32 }
     struct Condition { signals: u32 }
@@ -223,7 +224,7 @@ namespace os {
     }
 
     // No other thread can signal it meanwhile: it gives up at once.
-    fn condition_wait_for { mut condition: Condition, mut mutex: Mutex, nanoseconds: u64 } -> bool {
+    fn condition_wait_for { mut threads: Threads, mut condition: Condition, mut mutex: Mutex, nanoseconds: u64 } -> bool {
         return false
     }
 

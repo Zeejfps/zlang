@@ -16,11 +16,11 @@ namespace sys {
     // The bytes of a thread's name pthread_setname_np takes, before its NUL.
     const THREAD_NAME_MAX: usize = 15
 
-    extern fn pthread_setname_np { thread: u64, name: *u8 } -> i32
+    extern fn pthread_setname_np { mut threads: Threads, thread: u64, name: *u8 } -> i32
 
     // The calling thread's name, NUL-terminated.
-    fn set_thread_name { name: *u8 } {
-        _ = pthread_setname_np{ thread = os::pthread_self{}, name }
+    fn set_thread_name { mut threads: Threads, name: *u8 } {
+        _ = pthread_setname_np{ &threads, thread = os::pthread_self{ &threads }, name }
     }
 
     // sysconf's name for how many processors are online.
@@ -310,9 +310,9 @@ namespace sys {
         if fd < 0 { return os::proc_failed{ code = proc_errno{ &proc }.* } }
         let mut p = PollFd{ fd = @as(i32, fd), events = POLLIN, revents = 0 }
         defer _ = os::close_fd{ &proc, fd = p.fd }
-        let deadline = os::deadline{ nanoseconds }
+        let deadline = os::deadline{ &proc, nanoseconds }
         while true {
-            let left = os::remaining{ deadline }
+            let left = os::remaining{ &proc, deadline }
             let r = poll{ &proc, fd = &p, count = 1, ms = os::poll_millis{ nanoseconds = left } }
             if r > 0 { return true }
             if r < 0 {

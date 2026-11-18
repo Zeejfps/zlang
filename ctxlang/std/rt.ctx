@@ -20,6 +20,7 @@ namespace rt {
     // Panics with a message that needn't be a literal, as `@panic` does, but without a
     // position: for std's checks of what a caller passed.
     #c::symbol{ name = "ctx_panic_msg" }
+    #pure
     extern fn fail { msg: []u8 }
 
     // A panic message of pieces, for `fail`: what doesn't fit is cut.
@@ -115,11 +116,11 @@ namespace rt {
     // A new thread's stack limit, `usable` bytes below the caller's frame, and its name for a
     // panic's report (ctxc/rt/ctxthread.c): for thread::begin.
     #c::symbol{ name = "ctx_thread_begin" }
-    extern fn thread_begin { usable: usize, name: []u8 }
+    extern fn thread_begin { mut threads: Threads, usable: usize, name: []u8 }
 
     // The calling thread's name, which thread::begin gave: empty on the main thread.
     #c::symbol{ name = "ctx_here_name" }
-    extern fn thread_name {} -> []u8
+    extern fn thread_name { mut proc: Proc } -> []u8
 
     // The stack the check lets a program use: CTX_STACK bytes, at most 200 MiB, or 16 MiB. The
     // executable reserves more (ctxc/drive.ctx, link_flags), so a frame that crosses the limit
@@ -147,7 +148,7 @@ namespace rt {
             n = put{ into = buf[..buf.len - 1], n, s = ":" }
             n = put{ into = buf[..buf.len - 1], n, s = utf8::fmt_u64{ n = col, into = digits[..] }.bytes }
         }
-        let thread = thread_name{}
+        let thread = thread_name{ &proc }
         if thread.len > 0 {
             n = put{ into = buf[..buf.len - 1], n, s = ": panic in thread " }
             n = put{ into = buf[..buf.len - 1], n, s = thread }

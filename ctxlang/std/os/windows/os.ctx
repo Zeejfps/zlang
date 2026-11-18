@@ -354,8 +354,10 @@ namespace os {
     // was usable to begin with, so these take no capability, and an arena over any memory
     // needs none.
     #c::symbol{ name = "VirtualQuery" }
+    #pure
     extern fn query { address: *u8, mut info: MemInfo, size: usize } -> usize
     #c::symbol{ name = "VirtualAlloc" }
+    #pure
     extern fn commit_pages { address: *u8, size: usize, kind: u32, protect: u32 } -> ?*mut u8
 
     // Makes an arena's memory from first to last usable: commits each run of reserved pages
@@ -429,8 +431,10 @@ namespace os {
 
     // UTF-8 and UTF-16, which convert pure functions.
     #c::symbol{ name = "MultiByteToWideChar" }
+    #pure
     extern fn widen { page: u32, flags: u32, text: *u8, n: i32, out: ?*mut u16, cap: i32 } -> i32
     #c::symbol{ name = "WideCharToMultiByte" }
+    #pure
     extern fn narrow_utf16 { page: u32, flags: u32, text: *u16, n: i32, out: ?*mut u8, cap: i32, fallback: ?*u8, used: ?*mut i32 } -> i32
 
     fn narrow { text: *u16, n: i32, out: ?*mut u8, cap: i32, fallback: ?*u8, used: ?*mut i32 } -> i32 {
@@ -1092,11 +1096,11 @@ namespace os {
     #c::symbol{ name = "SwitchToThread" }
     extern fn switch_thread { mut threads: Threads } -> i32
     #c::symbol{ name = "GetCurrentThreadId" }
-    extern fn current_thread_id {} -> u32
+    extern fn current_thread_id { mut threads: Threads } -> u32
     #c::symbol{ name = "GetCurrentThread" }
-    extern fn current_thread {} -> u64
+    extern fn current_thread { mut threads: Threads } -> u64
     #c::symbol{ name = "SetThreadDescription" }
-    extern fn set_thread_description { thread: u64, name: *u16 } -> i32
+    extern fn set_thread_description { mut threads: Threads, thread: u64, name: *u16 } -> i32
 
     // CreateThread's flag: its stack size is what to reserve, not what to commit.
     const STACK_SIZE_PARAM_IS_A_RESERVATION: u32 = 65536
@@ -1144,17 +1148,17 @@ namespace os {
         _ = switch_thread{ &threads }
     }
 
-    fn thread_id {} -> u64 {
-        return @as(u64, current_thread_id{})
+    fn thread_id { mut threads: Threads } -> u64 {
+        return @as(u64, current_thread_id{ &threads })
     }
 
     // The calling thread's name for debuggers, as UTF-16; nothing for an empty one.
-    fn thread_name { name: []u8 } {
+    fn thread_name { mut threads: Threads, name: []u8 } {
         if name.len == 0 { return }
         let mut wide: [64]u16
         let n = utf16_of{ s = name[..if name.len > 63 { 63 } else { name.len }], into = wide[..63] } ifnull { return }
         wide[n] = 0
-        _ = set_thread_description{ thread = current_thread{}, name = &wide[0] }
+        _ = set_thread_description{ &threads, thread = current_thread{ &threads }, name = &wide[0] }
     }
 
     // ---- mutexes and conditions (std/thread.ctx): slim reader/writer locks, zero when free,
@@ -1163,11 +1167,21 @@ namespace os {
     struct Mutex { lock: usize }
     struct Condition { cv: usize }
 
+    #pure
     extern fn AcquireSRWLockExclusive { lock: *mut Mutex }
+    #pure
     extern fn TryAcquireSRWLockExclusive { lock: *mut Mutex } -> u8
+    #pure
     extern fn ReleaseSRWLockExclusive { lock: *mut Mutex }
-    extern fn SleepConditionVariableSRW { cv: *mut Condition, lock: *mut Mutex, ms: u32, flags: u32 } -> i32
+    // Waiting without a timeout touches only the lock and the condition; with one, it reads
+    // the clock, which takes Threads.
+    #c::symbol{ name = "SleepConditionVariableSRW" }
+    #pure
+    extern fn sleep_condition { cv: *mut Condition, lock: *mut Mutex, ms: u32, flags: u32 } -> i32
+    extern fn SleepConditionVariableSRW { mut threads: Threads, cv: *mut Condition, lock: *mut Mutex, ms: u32, flags: u32 } -> i32
+    #pure
     extern fn WakeConditionVariable { cv: *mut Condition }
+    #pure
     extern fn WakeAllConditionVariable { cv: *mut Condition }
 
     fn mutex_make {} -> Mutex { return Mutex{ lock = 0 } }
@@ -1179,13 +1193,13 @@ namespace os {
     fn condition_make {} -> Condition { return Condition{ cv = 0 } }
 
     fn condition_wait { mut condition: Condition, mut mutex: Mutex } {
-        _ = SleepConditionVariableSRW{ cv = &condition, lock = &mutex, ms = INFINITE, flags = 0 }
+        _ = sleep_condition{ cv = &condition, lock = &mutex, ms = INFINITE, flags = 0 }
     }
 
-    fn condition_wait_for { mut condition: Condition, mut mutex: Mutex, nanoseconds: u64 } -> bool {
+    fn condition_wait_for { mut threads: Threads, mut condition: Condition, mut mutex: Mutex, nanoseconds: u64 } -> bool {
         let ms = millis{ nanoseconds }
         let wait: u32 = if ms >= @as(u64, INFINITE) { INFINITE - 1 } else { @as(u32, ms) }
-        return SleepConditionVariableSRW{ cv = &condition, lock = &mutex, ms = wait, flags = 0 } != 0
+        return SleepConditionVariableSRW{ &threads, cv = &condition, lock = &mutex, ms = wait, flags = 0 } != 0
     }
 
     fn condition_signal { mut condition: Condition } { WakeConditionVariable{ cv = &condition } }

@@ -638,24 +638,28 @@ namespace os {
 
     // A time on the monotonic clock, in nanoseconds: `nanoseconds` from now, or the furthest
     // there is.
-    fn deadline { nanoseconds: u64 } -> u64 {
-        let now = monotonic{}
+    fn deadline { mut proc: Proc, nanoseconds: u64 } -> u64 {
+        let now = monotonic{ &proc }
         let max: u64 = 18446744073709551615
         return if nanoseconds > max - now { max } else { now + nanoseconds }
     }
 
     // The nanoseconds from now until `deadline`; 0 once it has passed.
-    fn remaining { deadline: u64 } -> u64 {
-        let now = monotonic{}
+    fn remaining { mut proc: Proc, deadline: u64 } -> u64 {
+        let now = monotonic{ &proc }
         return if deadline > now { deadline - now } else { 0 }
     }
 
-    // Now, on the monotonic clock, in nanoseconds.
-    fn monotonic {} -> u64 {
+    // Now, on the monotonic clock, in nanoseconds. Reading the clock takes a capability: a wait
+    // for a child holds Proc.
+    fn monotonic { mut proc: Proc } -> u64 {
         let mut now = Timespec{ sec = 0, nsec = 0 }
-        _ = clock_gettime{ clock = sys::CLOCK_MONOTONIC, &now }
+        _ = proc_clock_gettime{ &proc, clock = sys::CLOCK_MONOTONIC, &now }
         return @as(u64, now.sec) * 1000000000 + @as(u64, now.nsec)
     }
+
+    #c::symbol{ name = "clock_gettime" }
+    extern fn proc_clock_gettime { mut proc: Proc, clock: i32, mut now: Timespec } -> i32
 
     // nanoseconds in milliseconds, rounded up, as a poll's timeout takes them: at most
     // 2147483647, about 24 days, after which it is called again.
@@ -710,10 +714,10 @@ namespace os {
     extern fn pthread_create { mut threads: Threads, mut thread: u64, attr: *Attr, entry: extern fn{ start: *mut u8 } -> ?*mut u8, start: *mut u8 } -> i32
     extern fn pthread_join { mut threads: Threads, thread: u64, result: ?*mut ?*mut u8 } -> i32
     extern fn pthread_detach { mut threads: Threads, thread: u64 } -> i32
-    extern fn pthread_self {} -> u64
+    extern fn pthread_self { mut threads: Threads } -> u64
     extern fn nanosleep { mut threads: Threads, request: *Timespec, remaining: ?*mut Timespec } -> i32
     extern fn sched_yield { mut threads: Threads } -> i32
-    extern fn clock_gettime { clock: i32, mut now: Timespec } -> i32
+    extern fn clock_gettime { mut threads: Threads, clock: i32, mut now: Timespec } -> i32
 
     const CLOCK_REALTIME: i32 = 0
 
@@ -755,17 +759,17 @@ namespace os {
         _ = sched_yield{ &threads }
     }
 
-    fn thread_id {} -> u64 {
-        return pthread_self{}
+    fn thread_id { mut threads: Threads } -> u64 {
+        return pthread_self{ &threads }
     }
 
     // The calling thread's name for debuggers, cut to what the system takes.
-    fn thread_name { name: []u8 } {
+    fn thread_name { mut threads: Threads, name: []u8 } {
         if name.len == 0 { return }
         let mut buf: [64]u8 = [0; 64]
         let n = if name.len > sys::THREAD_NAME_MAX { sys::THREAD_NAME_MAX } else { name.len }
         slice::copy(u8){ dst = buf[..n], src = name[..n] }
-        sys::set_thread_name{ name = &buf[0] }
+        sys::set_thread_name{ &threads, name = &buf[0] }
     }
 
     // ---- mutexes and conditions (std/thread.ctx): a pthread_mutex_t, 40 or 48 bytes on Linux
@@ -774,14 +778,22 @@ namespace os {
     struct Mutex { sig: i64, rest: [7]u64 }
     struct Condition { sig: i64, rest: [7]u64 }
 
+    #pure
     extern fn pthread_mutex_lock { mutex: *mut Mutex } -> i32
+    #pure
     extern fn pthread_mutex_trylock { mutex: *mut Mutex } -> i32
+    #pure
     extern fn pthread_mutex_unlock { mutex: *mut Mutex } -> i32
+    #pure
     extern fn pthread_mutex_destroy { mutex: *mut Mutex } -> i32
+    #pure
     extern fn pthread_cond_wait { cond: *mut Condition, mutex: *mut Mutex } -> i32
-    extern fn pthread_cond_timedwait { cond: *mut Condition, mutex: *mut Mutex, until: *Timespec } -> i32
+    extern fn pthread_cond_timedwait { mut threads: Threads, cond: *mut Condition, mutex: *mut Mutex, until: *Timespec } -> i32
+    #pure
     extern fn pthread_cond_signal { cond: *mut Condition } -> i32
+    #pure
     extern fn pthread_cond_broadcast { cond: *mut Condition } -> i32
+    #pure
     extern fn pthread_cond_destroy { cond: *mut Condition } -> i32
 
     fn mutex_make {} -> Mutex { return Mutex{ sig = sys::MUTEX_SIG, rest = [0; 7] } }
@@ -796,16 +808,16 @@ namespace os {
         _ = pthread_cond_wait{ cond = &condition, mutex = &mutex }
     }
 
-    // pthread_cond_timedwait waits until a time of the realtime clock.
-    fn condition_wait_for { mut condition: Condition, mut mutex: Mutex, nanoseconds: u64 } -> bool {
+    // pthread_cond_timedwait waits until a time of the realtime clock, which reading takes Threads.
+    fn condition_wait_for { mut threads: Threads, mut condition: Condition, mut mutex: Mutex, nanoseconds: u64 } -> bool {
         let mut now = Timespec{ sec = 0, nsec = 0 }
-        _ = clock_gettime{ clock = CLOCK_REALTIME, &now }
+        _ = clock_gettime{ &threads, clock = CLOCK_REALTIME, &now }
         let ns = @as(u64, now.nsec) + nanoseconds % 1000000000
         let secs = nanoseconds / 1000000000 + ns / 1000000000
         let max: u64 = 9223372036854775807
         let sec = if secs > max - @as(u64, now.sec) { max } else { @as(u64, now.sec) + secs }
         let until = Timespec{ sec = @as(i64, sec), nsec = @as(i64, ns % 1000000000) }
-        return pthread_cond_timedwait{ cond = &condition, mutex = &mutex, until = &until } == 0
+        return pthread_cond_timedwait{ &threads, cond = &condition, mutex = &mutex, until = &until } == 0
     }
 
     fn condition_signal { mut condition: Condition } { _ = pthread_cond_signal{ cond = &condition } }

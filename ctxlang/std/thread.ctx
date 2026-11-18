@@ -69,14 +69,20 @@ namespace thread {
     // limit and name, then `run`. When the thread ends, the runtime writes out its standard
     // output (std's start gives it the fn that does, rt::thread_ends).
     fn begin { start: *mut u8 } {
+        // C passes no capability to a thread's first fn (spec §18, Callbacks, rule 6), but this
+        // one holds Threads as its creator does: only a threaded program starts a thread, and
+        // its creator waits in `create`, holding Threads, until `started` says the thread is
+        // past the calls that take it. A capability without fields is no bytes, so any pointer
+        // makes one (spec §15, rule 4); `run` gets only what its creator carried to it.
+        let mut threads = @cast(*Threads, start).*
         let s = @cast(*mut Start, start)
         let run = s.run
         let data = s.data
         // A panic's report names a thread without a name by its id.
         let mut digits: [20]u8
-        let name = if s.name.len > 0 { s.name } else { utf8::fmt_u64{ n = os::thread_id{}, into = digits[..] }.bytes }
-        rt::thread_begin{ usable = s.usable, name }
-        os::thread_name{ name = s.name }
+        let name = if s.name.len > 0 { s.name } else { utf8::fmt_u64{ n = os::thread_id{ &threads }, into = digits[..] }.bytes }
+        rt::thread_begin{ &threads, usable = s.usable, name }
+        os::thread_name{ &threads, name = s.name }
         @atomic_store(&s.started, 1, atomic::Order::release)
         run{ data }
     }
@@ -102,8 +108,8 @@ namespace thread {
     }
 
     // A number unique to the calling thread while it runs: the operating system's.
-    fn current_id {} -> u64 {
-        return os::thread_id{}
+    fn current_id { mut threads: Threads } -> u64 {
+        return os::thread_id{ &threads }
     }
 }
 
@@ -161,9 +167,10 @@ namespace condition {
         os::condition_wait{ &condition, &mutex }
     }
 
-    // As `wait`, giving up after `nanoseconds`: false when it gave up.
-    fn wait_for { mut condition: Condition, mut mutex: mutex::Mutex, nanoseconds: u64 } -> bool {
-        return os::condition_wait_for{ &condition, &mutex, nanoseconds }
+    // As `wait`, giving up after `nanoseconds`: false when it gave up. It reads the clock, which
+    // takes Threads.
+    fn wait_for { mut threads: Threads, mut condition: Condition, mut mutex: mutex::Mutex, nanoseconds: u64 } -> bool {
+        return os::condition_wait_for{ &threads, &condition, &mutex, nanoseconds }
     }
 
     // Wakes one thread that waits on it, if any.
