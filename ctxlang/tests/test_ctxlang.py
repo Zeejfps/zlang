@@ -2189,6 +2189,208 @@ fn main { mut io: Io } {
             self.assertCompileError(src + '\nfn main {} {}', fragment)
 
 
+
+DISTINCT = """
+type Meters = distinct f64
+type Seconds = distinct f64
+type UserId = distinct u64
+type Small = distinct u8
+type Name = distinct []u8
+struct P { x: i32, y: i32 }
+type Pos = distinct P
+type Flag = distinct bool
+type Id(T) = distinct u32
+"""
+
+
+class DistinctTypes(Base):
+    """`type Name = distinct T` (spec §12, Distinct types): a type of its own with T's
+    representation, which converts to and from T only with @as."""
+
+    def test_wrapping_complement_and_ifoverflow(self):
+        # `+%`, `~` and `ifoverflow` take a distinct integer as its base, and a field default
+        # of one is a literal of it.
+        self.assertOutput("""
+type Meters = distinct u32
+type Flags = distinct u8
+struct Track { len: Meters = 7, f: Flags = 0 }
+
+fn main { mut io: Io } {
+    let a: Meters = 4000000000
+    let b: Meters = 1000000000
+    let f: Flags = 0x0F
+    let t = Track{ .. }
+    _ = @fmt(&io, "{} {} {} {} {}\\n", a + b ifoverflow @as(Meters, 1), a +% b, ~f, t.len, @wrap_shl(a, 4))
+}
+""", '1 705032704 240 7 3870457856\n')
+
+    def test_numbers(self):
+        self.assertOutput(DISTINCT + """
+fn speed { d: Meters, t: Seconds } -> f64 { return @as(f64, d) / @as(f64, t) }
+fn next { id: UserId } -> UserId { return id + 1 }
+
+fn main { mut io: Io } {
+    let d: Meters = 5.0
+    let far = d + d * 2.0 - 1.0 / 2.0
+    io::println_f64{ &io, n = speed{ d = far, t = @as(Seconds, 2.0) } }
+    io::print_bool{ &io, n = far > d }
+    io::print_bool{ &io, n = far == d }
+    io::println_bool{ &io, n = -d < d }
+    let u = next{ id = 41 }
+    io::println_u64{ &io, n = @as(u64, u) }
+    io::println_u64{ &io, n = @as(u64, (u << 2) | 1 & 3 ^ u % 5) }
+    let s: Small = 250
+    io::println_u64{ &io, n = @as(u8, s +% 10) + @as(u8, @wrap_shl(s, 1)) }
+    let mut total: Meters
+    let xs: [3]Meters = [1.0, 2.0, 3.0]
+    let mut i: usize = 0
+    while i < xs.len {
+        total = total + xs[i]
+        i = i + 1
+    }
+    io::println_f64{ &io, n = @as(f64, total) }
+}
+""", '7.25\ntruefalsetrue\n42\n171\n248\n6.0\n')
+
+    def test_base_rules_apply(self):
+        self.assertPanic(DISTINCT + 'fn main {} { let s: Small = 200\n let t = s + s }', 'integer overflow')
+        self.assertPanic(DISTINCT + 'fn main {} { let s: Small = 200\n let t = s << 1 }', 'integer overflow')
+        self.assertPanic(DISTINCT + 'fn main {} { let u: UserId = 1\n let z: UserId = 0\n let q = u / z }', 'division by zero')
+
+    def test_other_bases(self):
+        self.assertOutput(DISTINCT + """
+type Handle = distinct *P
+type Km = distinct Meters
+
+fn first { h: ?Handle } -> i32 {
+    let p = h ifnull { return -1 }
+    return @as(*P, p).y
+}
+
+fn main { mut io: Io } {
+    let n = @as(Name, "bob")
+    io::println{ &io, s = utf8::String{ bytes = @as([]u8, n) } }
+    let p = @as(Pos, P{ x = 1, y = 2 })
+    io::println_i64{ &io, n = @as(P, p).y }
+    let f = @as(Flag, true)
+    io::println_bool{ &io, n = f == f and @as(bool, f) }
+    let q = P{ x = 3, y = 4 }
+    let h = @as(Handle, &q)
+    io::println_i64{ &io, n = first{ h } + first{ h = null } }
+    io::println_bool{ &io, n = h == h }
+    let k = @as(Km, @as(Meters, 2.5))
+    io::println_f64{ &io, n = @as(f64, @as(Meters, k)) }
+    io::println_u64{ &io, n = @size_of(Pos) + @align_of(Pos) + @size_of(?Handle) + @size_of(Name) }
+}
+""", 'bob\n2\ntrue\n3\ntrue\n2.5\n36\n')
+
+    def test_generic_and_zero_and_consts(self):
+        self.assertOutput(DISTINCT + """
+struct Row { d: Meters, ids: [2]Id(P), name: Name }
+const LIMIT: Meters = 100.0
+const ROW: Row = Row{ d = 1.5, ids = [3, 4], name = @as(Name, "row") }
+const HALF: Meters = @as(Meters, 0.5)
+
+fn twice(T) { x: T } -> [2]T { return [x, x] }
+
+fn main { mut io: Io } {
+    let mut r: Row
+    io::println_f64{ &io, n = @as(f64, r.d) + @as(f64, LIMIT) + @as(f64, HALF) }
+    io::println_u64{ &io, n = @as(u32, ROW.ids[0]) + @as([]u8, r.name).len }
+    let a: Id(P) = 7
+    let b: Id(P) = 8
+    io::println_bool{ &io, n = a < b }
+    let m = twice(Meters){ x = 1.0 }
+    let f = twice(f64){ x = 2.0 }
+    io::println_f64{ &io, n = @as(f64, m[1]) + f[1] }
+    match a {
+        0 => { io::println{ &io, s = "zero" } }
+        1..=7 => { io::println{ &io, s = "small" } }
+        else => { io::println{ &io, s = "big" } }
+    }
+    io::println_bool{ &io, n = b is 8 | 9 }
+}
+""", '100.5\n3\ntrue\n3.0\nsmall\ntrue\n')
+
+    def test_fmt(self):
+        self.assertOutput(DISTINCT + """
+type Kg = distinct f64
+
+#write
+fn write_kg { mut io: Io, w: Kg } -> ! {
+    try @fmt(&io, "{}kg", @as(f64, w))
+}
+
+fn main { mut io: Io } {
+    let d: Meters = 2.5
+    let u: UserId = 7
+    let w: Kg = 3.0
+    let a: Id(P) = 9
+    try! @fmt(&io, "{} {} {} {}\\n", d, u, w, a)
+}
+""", '2.5 7 3.0kg 9\n')
+
+    def test_keyword_only_in_place(self):
+        self.assertOutput("""
+struct distinct { v: i32 }
+type Plain = distinct
+type Meters = distinct f64
+
+fn main { mut io: Io } {
+    let distinct = Plain{ v = 4 }
+    let m: Meters = 1.0
+    io::println_i64{ &io, n = distinct.v }
+}
+""", '4\n')
+
+    def test_errors(self):
+        for src, fragment in [
+            ('fn f { m: Meters } {}\nfn g {} { let x: f64 = 1.0\n f{ m = x } }',
+             'expected Meters, got f64: convert with @as(Meters, x)'),
+            ('fn f {} { let d: Meters = 1.0\n let x: f64 = d }', 'expected f64, got Meters: convert with @as(f64, x)'),
+            ('fn f { m: Meters } {}\nfn g {} { let s: Seconds = 1.0\n f{ m = s } }', 'expected Meters, got Seconds'),
+            ('fn f {} { let x: f64 = 1.0\n let d: Meters = @as(f32, 1.0) }', 'expected Meters, got f32'),
+            ('fn f {} { let d: Meters = 1.0\n let x: f64 = 2.0\n let y = d + x }',
+             'operands of `+` have incompatible types: Meters and f64; convert one with @as'),
+            ('fn f {} { let d: Meters = 1.0\n let s: Seconds = 2.0\n let y = d < s }', 'cannot compare Meters with Seconds'),
+            ('fn f {} { let s: Seconds = 2.0\n let d = @as(Meters, s) }', '@as converts to Meters only from its base, f64, got Seconds'),
+            ('fn f {} { let d = @as(Meters, 1) }', '@as converts to Meters only from its base, f64, got {integer}'),
+            ('fn f {} { let d: Meters = 1.0\n let x = @as(f32, d) }', '@as converts Meters only to its base, f64, not f32'),
+            ('fn f {} { let u: UserId = 1\n let x = @trunc(u8, u) }', '@trunc converts integers only'),
+            ('fn f {} { let n: Name = "bob" }', 'expected Name, got []u8: convert with @as(Name, x)'),
+            ('fn f {} { let n = @as(Name, "bob")\n let k = n.len }',
+             'Name has no field `len`: a distinct type has none of its own; convert it with @as([]u8, x)'),
+            ('fn f {} { let p = @as(Pos, P{ x = 1, y = 2 })\n let x = p.x }', 'Pos has no field `x`'),
+            ('fn f {} { let n = @as(Name, "bob")\n let b = n == n }', 'Name has no built-in equality'),
+            ('fn f {} { let g = @as(Flag, true)\n let h = not g }', 'expected bool, got Flag'),
+            ('fn f {} { let g = @as(Flag, true)\n let h = g + g }', '`+` needs numbers, got Flag'),
+            ('fn f {} { let s: Small = 300 }', 'literal 300 does not fit in Small'),
+            ('fn f {} { let u: UserId = 1\n let x = 1 << u }', 'a shift count must be an integer, got UserId'),
+            ('fn f {} { let a: Id(P) = 1\n let b: Id(Pos) = a }', 'expected Id(Pos), got Id(P)'),
+            ('fn f {} { let a: Id(P) = 1\n let b: u32 = a }', 'expected u32, got Id(P): convert with @as(u32, x)'),
+            ('type Loop = distinct ?*Loop', 'type alias `Loop` refers to itself'),
+            ('fn f {} { let n = @as(Name, "x")\n let m = n[0] }', 'cannot index Name'),
+            ('fn f {} { let n: Meters = 1.0\n match n { 1 => {} else => {} } }',
+             'match needs a union, enum, optional or integer value, got Meters'),
+        ]:
+            self.assertCompileError(DISTINCT + src + '\nfn main {} {}', fragment)
+
+    def test_extern(self):
+        self.assertOutput("""
+type Len = distinct f64
+type Code = distinct i32
+#pure
+extern fn sqrt { x: Len } -> Len
+#pure
+extern fn abs { x: Code } -> Code
+
+fn main { mut io: Io } {
+    io::println_f64{ &io, n = @as(f64, sqrt{ x = 16.0 }) }
+    io::println_i64{ &io, n = @as(i32, abs{ x = -7 }) }
+}
+""", '4.0\n7\n')
+
+
 class IntegerMatch(Base):
     """`match` and `is` on integers (spec §8, Match on integers): literals, folded consts, ranges."""
 

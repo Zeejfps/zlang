@@ -295,8 +295,9 @@ namespace tree {
                 }
                 d.depth = d.depth - 1
             }
-            alias{ name = n, tparams, ty } => {
-                named{ &d, at, kind = "type", n, tparams }
+            alias{ name = n, tparams, ty, distinct } => {
+                let kind: utf8::String = if distinct { "distinct type" } else { "type" }
+                named{ &d, at, kind, n, tparams }
                 sub_type{ &d, t = ty }
             }
             constant{ name = n, ty, value } => {
@@ -1001,6 +1002,8 @@ namespace decls {
                     try! @fmt(&out, "type {}", q)
                     try! tparams{ d, b = &out }
                     try! @fmt(&out, "\n")
+                } else if types::get{ s = c.ty, id = d.ty } is distinct{ base } {
+                    try! @fmt(&out, "type {} = distinct {}\n", q, check::tstr{ c, t = base })
                 } else {
                     try! @fmt(&out, "type {} = {}\n", q, check::tstr{ c, t = d.ty })
                 }

@@ -65,6 +65,10 @@ namespace types {
         // A string literal's type (§11): its bytes, `.bytes`, with the hidden zero after them.
         // Only a literal makes one. It is a []u8 in the IR.
         strlit,
+        // `type Name(G) = distinct T` (§12): a type of its own with base's representation. base
+        // follows from decl and args; it is here so that what needs it doesn't need the checker.
+        // Lowering sees base instead (Store.erased).
+        distinct{ decl: u32, args: []Id, base: Id },
     }
 
     // An inference variable: `any` for a generic argument, `int` or `float` for a literal,
@@ -83,6 +87,9 @@ namespace types {
         items: list::List(Type, Heap),          // indexed by Id
         index: map::Map(Type, Id, Heap),
         vars:  list::List(Var, Heap),
+        // Set once checking is done, for lowering: then a distinct type is its base, which
+        // prune gives for it, so lowering never sees one.
+        erased: bool,
     }
 
     fn store { mut heap: Heap } -> Store {
@@ -91,6 +98,7 @@ namespace types {
             items = list::new(Type){ realloc = arena::alloc, &heap },
             index = map::new(Type, Id){ realloc = arena::alloc, &heap, hash, eq },
             vars = list::new(Var){ realloc = arena::alloc, &heap },
+            erased = false,
         }
         _ = intern{ &s, t = Type::error }
         _ = intern{ &s, t = Type::void }
@@ -152,6 +160,10 @@ namespace types {
         return intern{ &s, t = Type::sum{ decl, args = copy(Id){ s, xs = args } } }
     }
 
+    fn distinct { mut s: Store, decl: u32, args: []Id, base: Id } -> Id {
+        return intern{ &s, t = Type::distinct{ decl, args = copy(Id){ s, xs = args }, base } }
+    }
+
     const NONE: u32 = 4294967295
 
     fn errs { mut s: Store, owner: u32, one: u32 } -> Id {
@@ -189,6 +201,9 @@ namespace types {
             }
             sum{ decl = d, args = xs } => {
                 return sum{ &s, decl = d, args = subst_all{ &s, ts = xs, decl, args } }
+            }
+            distinct{ decl = d, args = xs, base } => {
+                return distinct{ &s, decl = d, args = subst_all{ &s, ts = xs, decl, args }, base = subst{ &s, t = base, decl, args } }
             }
             func{ fields, ret, bound, external } => {
                 let mut fs = list::new(Field){ realloc = arena::alloc, heap = s.heap }
@@ -284,6 +299,7 @@ namespace types {
             eset{ errs, open } => { return mix{ h = mix_ids{ h = 17, ids = errs }, n = flag{ b = open } } }
             res{ ok, errs } => { return mix{ h = mix{ h = 18, n = ok }, n = errs } }
             strlit => { return 19 }
+            distinct{ decl, args, base } => { return mix{ h = mix_ids{ h = mix{ h = 20, n = decl }, ids = args }, n = base } }
         }
     }
 
@@ -336,6 +352,7 @@ namespace types {
             eset{ errs, open } => { return b is eset{ errs = xs, open = o } and same_ids{ a = errs, b = xs } and open == o }
             res{ ok, errs } => { return b is res{ ok = o, errs = e } and ok == o and errs == e }
             strlit => { return b is strlit }
+            distinct{ decl, args, base } => { return b is distinct{ decl = d, args = xs, base = y } and decl == d and base == y and same_ids{ a = args, b = xs } }
         }
     }
 
@@ -360,7 +377,7 @@ namespace types {
     }
 
     // t, or what the variables it is bound to are bound to, down to a type that isn't a bound
-    // variable.
+    // variable. Once the store is erased, a distinct type's base too.
     fn prune { s: Store, t: Id } -> Id {
         let mut x = t
         while true {
@@ -369,6 +386,10 @@ namespace types {
                     let r = var_of{ s, n }.ref
                     if r == NO_TYPE { return x }
                     x = r
+                }
+                distinct{ base } => {
+                    if not s.erased { return x }
+                    x = base
                 }
                 else => { return x }
             }
@@ -385,6 +406,7 @@ namespace types {
             array{ n, elem } => { return array{ &s, n, elem = zonk{ &s, t = elem } } }
             record{ decl, args } => { return record{ &s, decl, args = zonk_all{ &s, ts = args } } }
             sum{ decl, args } => { return sum{ &s, decl, args = zonk_all{ &s, ts = args } } }
+            distinct{ decl, args, base } => { return distinct{ &s, decl, args = zonk_all{ &s, ts = args }, base = zonk{ &s, t = base } } }
             func{ fields, ret, bound, external } => {
                 let mut fs = list::new(Field){ realloc = arena::alloc, heap = s.heap }
                 let mut i: usize = 0
@@ -424,6 +446,7 @@ namespace types {
             array{ elem } => { return occurs{ s, n, t = elem } }
             record{ args } => { return any_occurs{ s, n, ts = args } }
             sum{ args } => { return any_occurs{ s, n, ts = args } }
+            distinct{ args, base } => { return any_occurs{ s, n, ts = args } or occurs{ s, n, t = base } }
             res{ ok, errs } => { return occurs{ s, n, t = ok } or occurs{ s, n, t = errs } }
             func{ fields, ret } => {
                 if occurs{ s, n, t = ret } { return true }
@@ -463,8 +486,10 @@ namespace types {
             }
             return false
         }
-        if v.kind == VarKind::int and not is_int{ s, t } { return false }
-        if v.kind == VarKind::float and not is_float{ s, t } { return false }
+        // A literal takes a distinct type as it would take the type's base (§11, Literals).
+        let lt = undistinct{ s, t }
+        if v.kind == VarKind::int and not is_int{ s, t = lt } { return false }
+        if v.kind == VarKind::float and not is_float{ s, t = lt } { return false }
         if occurs{ s, n, t } { return false }
         bind_var{ &s, n, t }
         return true
@@ -488,6 +513,8 @@ namespace types {
             array{ n, elem } => { return tb is array{ n = k, elem = e } and n == k and unify{ &s, a = elem, b = e } }
             record{ decl, args } => { return tb is record{ decl = d, args = xs } and decl == d and unify_all{ &s, a = args, b = xs } }
             sum{ decl, args } => { return tb is sum{ decl = d, args = xs } and decl == d and unify_all{ &s, a = args, b = xs } }
+            // Its arguments decide its base.
+            distinct{ decl, args } => { return tb is distinct{ decl = d, args = xs } and decl == d and args.len == xs.len and unify_all{ &s, a = args, b = xs } }
             // Two results are the same type only with the same errors: an error set flows into
             // another only where the checker allows it (check::coerce).
             res{ ok, errs } => { return tb is res{ ok = o, errs = e } and (errs == e or unify{ &s, a = errs, b = e }) and unify{ &s, a = ok, b = o } }
@@ -530,6 +557,7 @@ namespace types {
             array{ n, elem } => { return tb is array{ n = k, elem = e } and n == k and instance{ s, p = elem, t = e, decl, args } }
             record{ decl = r, args = ps } => { return tb is record{ decl = d, args = ts } and r == d and instances{ s, ps, ts, decl, args } }
             sum{ decl = r, args = ps } => { return tb is sum{ decl = d, args = ts } and r == d and instances{ s, ps, ts, decl, args } }
+            distinct{ decl = r, args = ps } => { return tb is distinct{ decl = d, args = ts } and r == d and instances{ s, ps, ts, decl, args } }
             res{ ok, errs } => { return tb is res{ ok = o, errs = e } and (errs == e or instance{ s, p = errs, t = e, decl, args }) and instance{ s, p = ok, t = o, decl, args } }
             func{ fields, ret, bound, external } => {
                 if not (tb is func{ fields = fs, ret = r, bound = bd, external = ex }) or bound != bd or external != ex or fields.len != fs.len { return false }
@@ -557,6 +585,7 @@ namespace types {
             array{ elem } => { return mentions{ s, t = elem, decl, index } }
             record{ args } => { return any_mentions{ s, ts = args, decl, index } }
             sum{ args } => { return any_mentions{ s, ts = args, decl, index } }
+            distinct{ args, base } => { return any_mentions{ s, ts = args, decl, index } or mentions{ s, t = base, decl, index } }
             res{ ok, errs } => { return mentions{ s, t = ok, decl, index } or mentions{ s, t = errs, decl, index } }
             func{ fields, ret } => {
                 let mut i: usize = 0
@@ -642,6 +671,14 @@ namespace types {
         return bits{ p = pb } > bits{ p = pa }
     }
 
+    // t without the distinct types around it: a distinct type's base, or its base's, down to a
+    // type that isn't one. t itself if it isn't one.
+    fn undistinct { s: Store, t: Id } -> Id {
+        let mut x = prune{ s, t }
+        while get{ s, id = x } is distinct{ base } { x = prune{ s, t = base } }
+        return x
+    }
+
     fn prim_of { s: Store, t: Id } -> ?Prim {
         match get{ s, id = t } {
             prim{ p } => { return p }
@@ -659,6 +696,7 @@ namespace types {
             array{ elem } => { return has_vars{ s, t = elem } }
             record{ args } => { return any_vars{ s, ts = args } }
             sum{ args } => { return any_vars{ s, ts = args } }
+            distinct{ args, base } => { return any_vars{ s, ts = args } or has_vars{ s, t = base } }
             res{ ok, errs } => { return has_vars{ s, t = ok } or has_vars{ s, t = errs } }
             func{ fields, ret } => {
                 if has_vars{ s, t = ret } { return true }
@@ -725,6 +763,7 @@ namespace types {
             array{ elem } => { return has_bound_fn{ s, t = elem } }
             record{ args } => { return any_bound_fn{ s, ts = args } }
             sum{ args } => { return any_bound_fn{ s, ts = args } }
+            distinct{ base } => { return has_bound_fn{ s, t = base } }
             res{ ok } => { return has_bound_fn{ s, t = ok } }
             else => { return false }
         }

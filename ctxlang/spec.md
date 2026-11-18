@@ -7,7 +7,7 @@ Examples: [examples/list.ctx](examples/list.ctx) (lists, allocators, bound funct
 1. A program is a sequence of declarations: `fn`, `extern fn` (§18), `struct`, `union`, `enum`, `type`, `const`, `capability` (§15), `error` (§8, Errors), `namespace`. Any declaration may have attributes (§18).
 2. There is no mutable state at top level. Top-level names may be referenced from anywhere.
 3. All effects (IO, memory, OS) reach a function only through its context.
-4. Source files are UTF-8. Names are ASCII: a letter or `_`, then letters, digits and `_`, and not a keyword: `fn` `struct` `union` `enum` `type` `const` `namespace` `let` `mut` `if` `else` `while` `break` `continue` `match` `return` `defer` `and` `or` `not` `true` `false` `null` `extern` `capability` `ifnull` `iferr` `try` `is`. Other characters may appear only in comments, which are `// to the end of the line` and `/* ... */` (not nested). String and character literals are ASCII too (§11 Literals).
+4. Source files are UTF-8. Names are ASCII: a letter or `_`, then letters, digits and `_`, and not a keyword: `fn` `struct` `union` `enum` `type` `const` `namespace` `let` `mut` `if` `else` `while` `break` `continue` `match` `return` `defer` `and` `or` `not` `true` `false` `null` `extern` `capability` `ifnull` `iferr` `try` `is`. `distinct` is a keyword only after `type Name =` (§12, Distinct types), and a name everywhere else. Other characters may appear only in comments, which are `// to the end of the line` and `/* ... */` (not nested). String and character literals are ASCII too (§11 Literals).
 
 ## 2. Functions and contexts
 
@@ -510,7 +510,7 @@ A value of numeric type `A` converts implicitly to numeric type `B` when every v
 2. A `*mut T` converts implicitly to `*T`, a `[]mut T` to `[]T`, and a `?*mut T` or `?[]mut T` to `?*T` or `?[]T`, wherever rule 1 applies and between the operands of `==` and `!=`.
 3. Wherever rule 1 applies, a `*[N]T` converts implicitly to a `[]T`, and a `*mut [N]T` to a `[]mut T` or `[]T`: the slice of the whole array. An array value doesn't, but an array literal there is a view of its array (Literals, rule 4).
 4. Wherever rule 1 applies, a capability converts implicitly to one it includes (§15, rule 10).
-5. Nothing else converts implicitly. In particular integers don't widen to floats, `usize` doesn't widen to a signed type, `*T` doesn't convert to `*mut T` nor `[]T` to `[]mut T`, and `?A`, `*A` and `[N]A` don't convert to `?B`, `*B` and `[N]B`. A `mut` field's argument is a `*mut` pointer, so its type must match exactly, except that it may point to a capability that includes the field's (§15, rule 10).
+5. Nothing else converts implicitly. In particular a distinct type (§12) converts to and from no other type, not even its base, and doesn't widen; integers don't widen to floats, `usize` doesn't widen to a signed type, `*T` doesn't convert to `*mut T` nor `[]T` to `[]mut T`, and `?A`, `*A` and `[N]A` don't convert to `?B`, `*B` and `[N]B`. A `mut` field's argument is a `*mut` pointer, so its type must match exactly, except that it may point to a capability that includes the field's (§15, rule 10).
 6. `usize` is at least 32 and at most 64 bits wide on every target, which is what makes the `usize` rows lossless.
 
 ### Literals
@@ -593,7 +593,8 @@ step  := .field | [index]
 | `&fn{C} -> R` | bound function type (§5, §6) |
 | `extern fn{C} -> R` | C function pointer (below, §18) |
 | `extern union Name { f: T, ... }` | C's untagged union (below, §18) |
-| `type Name(G) = T` | alias |
+| `type Name(G) = T` | alias: another name for `T`, which mixes freely with it |
+| `type Name(G) = distinct T` | a new type with `T`'s representation (below) |
 
 ### Pointers
 
@@ -636,6 +637,28 @@ let i = @as(usize, k)       // 40
 8. A const may hold enum values (§14).
 
 An enum is for a closed set whose values matter: table indexes, file formats, a chosen size. A union whose variants have no payload is for a closed set whose values don't.
+
+### Distinct types
+
+```
+type Meters = distinct f64
+type Seconds = distinct f64
+type Id(T) = distinct u64              // Id(User) and Id(Order) are different types
+
+fn speed { d: Meters, t: Seconds } -> f64 { return @as(f64, d) / @as(f64, t) }
+
+let d: Meters = 5.0
+let far = d + d * 2.0                  // a Meters
+speed{ d = far, t = @as(Seconds, 2.0) }
+speed{ d = 2.0, t = far }              // error: expected Seconds, got Meters
+```
+
+1. `type Name(G) = distinct T` declares a new type, `Name`, whose **base** is `T`, which may be any type. It has `T`'s size, alignment and representation, so C sees a `T` where an extern fn (§18) takes or returns one. Its generic parameters need not appear in `T`: `Id(User)` and `Id(Order)` are two types.
+2. A distinct type converts implicitly to and from no other type, not even its base (§11, Widening). `@as(Name, x)` converts `x`, a `T`, to `Name`, and `@as(T, d)` converts `d`, a `Name`, to `T`: no other `@as` applies to it. Both cost nothing at run time.
+3. An integer or float literal takes a distinct type whose base is a number as it would take the base (§11, Literals): `let d: Meters = 5.0`. A string literal doesn't: `@as(Name, "bob")` makes one of a `type Name = distinct []u8`.
+4. If `T` is a number, the arithmetic (`+%`, `-%` and `*%` too), bitwise, shift and comparison operators, unary `-` and `~`, and `@wrap_shl` apply to `Name`s as to `T`s, with `T`'s overflow and panics (which an `ifoverflow` covers as a `T`'s), and give a `Name` (a comparison a `bool`). Both operands are `Name`s, or one is a literal: a `T` or another distinct type is an error, which `@as` resolves. A shift count is an integer that isn't a distinct type, as for `T`. If `T` is an integer, `match` and `is` take a `Name` as they take a `T` (§8, Match on integers).
+5. `==` and `!=` apply to a `Name` if they apply to a `T`. Nothing else applies to a distinct type: a distinct struct has no fields, and a distinct slice no `len` or index, until `@as` gives the `T`.
+6. A distinct type has a zero value if `T` has (§11, Initialization), and a const may hold one if it may hold a `T` (§14). `@fmt` writes it as a `T` unless it has a writer of its own (§13, Formatting).
 
 ### C function pointers
 
@@ -698,7 +721,7 @@ A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are buil
 | `@size_of(T)` | `usize` | The size of `T` in bytes. |
 | `@align_of(T)` | `usize` | The required alignment of `T`. A power of two. |
 | `@offset_of(T, f)` | `usize` | The offset in bytes of field `f` of struct `T` from its start, as C's `offsetof`: 0 for an extern union's. `f` is a field's name. |
-| `@as(T, x)` | `T` | Converts number `x` to numeric type `T`. Panics if the value isn't representable in `T`, unless an `ifoverflow` covers it (§11, Overflow). Float to integer rounds toward zero and panics on NaN. Integer to float rounds to nearest. Also converts between an enum and an integer type (§12, Enums). |
+| `@as(T, x)` | `T` | Converts number `x` to numeric type `T`. Panics if the value isn't representable in `T`, unless an `ifoverflow` covers it (§11, Overflow). Float to integer rounds toward zero and panics on NaN. Integer to float rounds to nearest. Also converts between an enum and an integer type (§12, Enums), and between a distinct type and its base, at no cost (§12, Distinct types). |
 | `@trunc(T, x)` | `T` | Converts integer `x` to integer type `T`, keeping the low bits. |
 | `@cast(*U, q)`, `@cast(*mut U, q)`, `@cast(extern fn{C} -> R, q)` | the target | Reinterprets `q`, a pointer or a C function pointer (§12), as a pointer or a C function pointer. Unchecked, except that a `*T` can't be cast to a `*mut U`, and `q` can't be optional: check it for `null` first. |
 | `@slice(p, n)` | `[]T`, or `[]mut T` for a `*mut T` | The slice of `n: usize` elements starting at pointer `p: *T`. Unchecked. |
@@ -738,7 +761,7 @@ namespace utf8 {
 4. A fn with the attribute `#write` is a **writer** of its value to its sink. Its context is two fields: the sink, `mut`, and the value, read-only. Its result is a bare `!`, or nothing, for a writer that records failure itself. It may be generic, but neither field's type is a bare type parameter, the value isn't a function, and every type parameter appears in a field's type. The compiler declares `write`, as it declares `convert` (§18, Attributes). An `@fmt` sees the writers its code could name, as a literal sees conversions (§18, Literal conversions, rule 4). For each piece it looks at the program's writers first, and at std's only if it sees none of the program's, so a program's writer replaces std's for the same types, as its names shadow std's (§10).
 5. Each piece of the format is written to the sink, a `B`, by the writer the `@fmt` sees for `B` and the piece's type:
    - text is a `strlit` (§12), and so is a string literal argument;
-   - an argument of type `T` is written by the writer for exactly `T`. There's no widening, since a `u32` widens to both an `i64` and a `u64`, except one: a `[]mut T` with no writer of its own is written by that of `[]T`. The types are those the body settles, after integer literals take their defaults (§11, Literals);
+   - an argument of type `T` is written by the writer for exactly `T`. There's no widening, since a `u32` widens to both an `i64` and a `u64`, except two: a `[]mut T` with no writer of its own is written by that of `[]T`, and a distinct type with none by that of its base (§12, Distinct types). The types are those the body settles, after integer literals take their defaults (§11, Literals);
    - a function value whose context is one `mut` field, of type `B`, and that returns a bare `!` is called with the sink. This is how a value is written some other way: `utf8::write_hex{ n, _ }` and `date::write_iso{ d, _ }` bind everything but the sink (§4). An `@fmt` without a sink as an argument is written as part of the outer one;
    - an error (§8, Errors) is written by the compiler: its full name, as a `strlit`, and its payload as `{ field = value, ... }`, each value by the writer for its type, or `_` if there is none: `parse::bad_digit{ at = 3 }`.
 

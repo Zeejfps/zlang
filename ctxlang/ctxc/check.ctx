@@ -552,6 +552,8 @@ namespace check {
             _ = fold_view{ &c, e = vs[i] }
             i = i + 1
         }
+        // Lowering a const's program erased the distinct types (lower::lowering).
+        c.ty.erased = false
     }
 
     fn declarations { mut c: Checker } {
@@ -917,6 +919,7 @@ namespace check {
         match types::get{ s = c.ty, id = x } {
             res | errs | eset => { return true }
             array{ elem } | opt{ elem } => { return holds_fail{ &c, t = elem, depth = depth + 1 } }
+            distinct{ base } => { return holds_fail{ &c, t = base, depth = depth + 1 } }
             record => {
                 let fs = struct_fields{ &c, t = x }
                 let mut i: usize = 0
@@ -1220,6 +1223,7 @@ namespace check {
         if loaded_cap{ c, t = x } { return true }
         match types::get{ s = c.ty, id = x } {
             array{ elem } | opt{ elem } => { return holds_cap{ &c, t = elem, depth = depth + 1 } }
+            distinct{ base } => { return holds_cap{ &c, t = base, depth = depth + 1 } }
             record => { return fields_hold_cap{ &c, fields = struct_fields{ &c, t = x }, depth } }
             sum => {
                 let vs = variants_of{ &c, t = x }
@@ -1438,6 +1442,8 @@ namespace check {
     fn c_compatible { c: Checker, t: Id } -> bool {
         match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
             error | prim | cap | enumeration | ptr | slice | record => { return true }
+            // A distinct type is its base to C (§12).
+            distinct{ base } => { return c_compatible{ c, t = base } }
             opt => { return nullable_ptr{ c, t } }
             func{ external } => { return external }
             else => { return false }
@@ -2800,8 +2806,10 @@ namespace check {
                         }
                         push{ xs = &c.alias_stack, n = i }
                         let mut t = types::ERROR
-                        if x.syn.k is alias{ ty } {
+                        if x.syn.k is alias{ ty, distinct } {
                             t = rtype{ &c, te = ty, sc = Scope{ ns = x.ns, owner = i, names = x.tparams, args = xs }, allow_bound }
+                            // A distinct type (§12) is a type of its own, of t's representation.
+                            if distinct and t != types::ERROR { t = types::distinct{ s = &c.ty, decl = i, args = xs, base = t } }
                         }
                         _ = list::pop{ list = &c.alias_stack }
                         return t
@@ -3080,6 +3088,7 @@ namespace check {
             enumeration{ decl } => { return utf8::push{ &b, s = str{ s = get_decl{ c, d = decl }.qual } } }
             record{ decl, args } => { return generic{ c, decl, args, &b } }
             sum{ decl, args } => { return generic{ c, decl, args, &b } }
+            distinct{ decl, args } => { return generic{ c, decl, args, &b } }
             func{ fields, ret, bound, external } => {
                 try utf8::push{ &b, s = if bound { "&fn{" } else if external { "extern fn{" } else { "fn{" } }
                 let mut i: usize = 0
@@ -3265,7 +3274,7 @@ namespace check {
             let e = lits[i]
             if e.k is int{ negative, value } {
                 let t = types::prune{ s = c.ty, t = type_of_expr{ c, e } }
-                let p = types::prim_of{ s = c.ty, t }
+                let p = types::prim_of{ s = c.ty, t = op_type{ c, t } }
                 if p != null and (value == null or not types::fits{ p, negative, magnitude = value }) {
                     let mut b = message{ c }
                     let sign: utf8::String = if negative { "-" } else { "" }
@@ -3518,7 +3527,7 @@ namespace check {
     }
 
     fn retype { c: Checker, v: Val, t: Id } -> Val {
-        if not (types::get{ s = c.ty, id = t } is prim | enumeration) { return v }
+        if not (types::get{ s = c.ty, id = op_type{ c, t } } is prim | enumeration) { return v }
         match v {
             int{ negative, magnitude } => { return Val::int{ ty = t, negative, magnitude } }
             float{ value } => { return Val::float{ ty = t, value } }
@@ -3556,7 +3565,8 @@ namespace check {
     }
 
     fn fold_node { mut c: Checker, e: syntax::Expr } -> ?Val {
-        let t = types::prune{ s = c.ty, t = type_of_expr{ c, e } }
+        // A distinct type's value is its base's (§12).
+        let t = op_type{ c, t = type_of_expr{ c, e } }
         match e.k {
             int{ negative, value } => {
                 let m = if value == null { 0 } else { value }
@@ -4128,6 +4138,7 @@ namespace check {
         match types::get{ s = c.ty, id = x } {
             error | prim | opt | slice => { return true }
             array{ elem } => { return has_zero{ &c, t = elem, depth = depth + 1 } }
+            distinct{ base } => { return has_zero{ &c, t = base, depth = depth + 1 } }
             record => {
                 let fs = struct_fields{ &c, t = x }
                 let mut i: usize = 0
@@ -4691,7 +4702,7 @@ namespace check {
     // call's arguments, an index, a nested `ifoverflow`.
     fn cover { mut c: Checker, e: syntax::Expr, region: u64 } -> u32 {
         let t = type_of_expr{ c, e }
-        if t == types::ERROR or not is_int{ c, t } { return 0 }
+        if t == types::ERROR or not is_int{ c, t = op_type{ c, t } } { return 0 }
         match e.k {
             binary{ op, a, b } => {
                 let mut n: u32 = 0
@@ -5148,7 +5159,7 @@ namespace check {
     }
 
     fn int_type { c: Checker, t: Id } -> bool {
-        let x = types::prune{ s = c.ty, t }
+        let x = op_type{ c, t }
         return x != types::ERROR and is_int{ c, t = x }
     }
 
@@ -5249,7 +5260,7 @@ namespace check {
     }
 
     fn signed_type { c: Checker, t: Id } -> bool {
-        if types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is prim{ p } { return types::signed{ p } }
+        if types::get{ s = c.ty, id = op_type{ c, t } } is prim{ p } { return types::signed{ p } }
         return true
     }
 
@@ -6783,6 +6794,7 @@ namespace check {
             func{ bound } => { return bound }
             opt{ elem } => { return holds_ptr{ &c, t = elem, seen, unknown } }
             array{ elem } => { return holds_ptr{ &c, t = elem, seen, unknown } }
+            distinct{ base } => { return holds_ptr{ &c, t = base, seen, unknown } }
             record{ decl } => {
                 if has_id{ xs = seen, n = decl } { return false }
                 let inner = set_add{ c, xs = seen, n = decl }
@@ -8056,7 +8068,13 @@ namespace check {
         try @fmt(&b, "expected ")
         try write_type{ c, t = y, &b }
         try @fmt(&b, ", got ")
-        return write_type{ c, t = x, &b }
+        try write_type{ c, t = x, &b }
+        // A distinct type and its base convert only explicitly (§12, Distinct types).
+        if (is_distinct{ c, t = x } and distinct_base{ c, t = x } == y) or (is_distinct{ c, t = y } and distinct_base{ c, t = y } == x) {
+            try utf8::push{ &b, s = ": convert with @as(" }
+            try write_type{ c, t = y, &b }
+            return utf8::push{ &b, s = ", x)" }
+        }
     }
 
     // t's result if t is a function type, else t.
@@ -8085,7 +8103,7 @@ namespace check {
             braced{ callee, items, forward, bind } => { return braced{ &c, e, callee = callee.*, items, forward, bind, exp } }
             neg{ e = x } => {
                 let t = expr{ &c, e = x.*, exp }
-                if not is_num{ c, t } {
+                if not is_num{ c, t = op_type{ c, t } } {
                     errorf{ &c, at = expr_at{ e }, msg = @fmt("unary `-` needs a number, got {}", tstr{ c, t }) }
                 }
                 return t
@@ -8096,7 +8114,7 @@ namespace check {
             }
             bnot{ e = x } => {
                 let t = expr{ &c, e = x.*, exp }
-                if not is_int{ c, t } {
+                if not is_int{ c, t = op_type{ c, t } } {
                     errorf{ &c, at = expr_at{ e }, msg = @fmt("unary `~` needs an integer, got {}", tstr{ c, t }) }
                 }
                 return t
@@ -8291,6 +8309,23 @@ namespace check {
             var{ n } => { return types::var_of{ s = c.ty, n }.kind == types::VarKind::int }
             else => { return types::is_int{ s = c.ty, t = x } }
         }
+    }
+
+    // What operators see of t (§12, Distinct types): a distinct type's base, so that two values
+    // of one distinct number type add and compare as its base's do.
+    fn op_type { c: Checker, t: Id } -> Id {
+        return types::undistinct{ s = c.ty, t }
+    }
+
+    // The base of distinct type t, one level down: `type B = distinct A` has base A even if A
+    // is a distinct type too.
+    fn distinct_base { c: Checker, t: Id } -> Id {
+        if types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is distinct{ base } { return types::prune{ s = c.ty, t = base } }
+        return t
+    }
+
+    fn is_distinct { c: Checker, t: Id } -> bool {
+        return types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is distinct
     }
 
     fn is_num { c: Checker, t: Id } -> bool {
@@ -9152,7 +9187,8 @@ namespace check {
                 cannot_compare{ &c, lt, rt, at }
                 return types::BOOL
             }
-            let eq = is_num{ c, t } or t == types::BOOL or types::get{ s = c.ty, id = t } is ptr | enumeration
+            let bt = op_type{ c, t }
+            let eq = is_num{ c, t = bt } or bt == types::BOOL or types::get{ s = c.ty, id = bt } is ptr | enumeration
             if not eq {
                 let shown = if lo != null { lt } else if ro != null { rt } else { t }
                 errorf{ &c, at, msg = @fmt("{} has no built-in equality", tstr{ c, t = shown }) }
@@ -9165,14 +9201,14 @@ namespace check {
             let t = operand_type{ &c, lt, rt, a, b }
             if t == types::NO_TYPE {
                 cannot_compare{ &c, lt, rt, at }
-            } else if not is_num{ c, t } {
+            } else if not is_num{ c, t = op_type{ c, t } } {
                 errorf{ &c, at, msg = @fmt("`{}` needs numbers, got {}", opname, tstr{ c, t }) }
             }
             return types::BOOL
         }
         if op == tok::Kind::shl or op == tok::Kind::shr {
             let t = expr{ &c, e = a, exp }
-            if not is_int{ c, t } {
+            if not is_int{ c, t = op_type{ c, t } } {
                 errorf{ &c, at, msg = @fmt("`{}` needs an integer to shift, got {}", opname, tstr{ c, t }) }
             }
             let ct = expr{ &c, e = b, exp = types::NO_TYPE }
@@ -9197,10 +9233,10 @@ namespace check {
             return types::ERROR
         }
         if op == tok::Kind::amp or op == tok::Kind::pipe or op == tok::Kind::caret or wrapping{ op } {
-            if not is_int{ c, t } {
+            if not is_int{ c, t = op_type{ c, t } } {
                 errorf{ &c, at, msg = @fmt("`{}` needs integers, got {}", opname, tstr{ c, t }) }
             }
-        } else if not is_num{ c, t } {
+        } else if not is_num{ c, t = op_type{ c, t } } {
             errorf{ &c, at, msg = @fmt("`{}` needs numbers, got {}", opname, tstr{ c, t }) }
         }
         return t
@@ -9490,6 +9526,10 @@ namespace check {
     }
 
     fn no_field { mut c: Checker, t: Id, e: syntax::Expr, name: syntax::Name } -> Id {
+        if is_distinct{ c, t } {
+            errorf{ &c, at = expr_at{ e }, msg = @fmt("{} has no field `{}`: a distinct type has none of its own; convert it with @as({}, x)", tstr{ c, t }, str{ s = name.text }, tstr{ c, t = distinct_base{ c, t } }) }
+            return types::ERROR
+        }
         let mut b = message{ c }
         try! @fmt(&b, "{} has no field `{}`", tstr{ c, t }, str{ s = name.text })
         match e.k {
@@ -9584,8 +9624,25 @@ namespace check {
         if slice::eq_bytes{ a = n, b = "fmt" } { return fmt_builtin{ &c, e, args, exp } }
         if slice::eq_bytes{ a = n, b = "as" } {
             let x = args[0]
+            // A distinct type converts to and from its base only (§12, Distinct types).
+            if is_distinct{ c, t = tt } {
+                let base = distinct_base{ c, t = tt }
+                let src = expr{ &c, e = x, exp = base }
+                if src == types::ERROR or types::unify{ s = &c.ty, a = src, b = tt } or types::unify{ s = &c.ty, a = src, b = base } { return tt }
+                // Down from a distinct type whose base is this one.
+                if is_distinct{ c, t = src } and types::unify{ s = &c.ty, a = distinct_base{ c, t = src }, b = tt } { return tt }
+                errorf{ &c, at = expr_at{ e = x }, msg = @fmt("@as converts to {} only from its base, {}, got {}", tstr{ c, t = tt }, tstr{ c, t = base }, tstr{ c, t = src }) }
+                return tt
+            }
             let src = typed{ &c, e = x }
             if tt == types::ERROR or src == types::ERROR { return tt }
+            if is_distinct{ c, t = src } {
+                let base = distinct_base{ c, t = src }
+                if not types::unify{ s = &c.ty, a = tt, b = base } {
+                    errorf{ &c, at, msg = @fmt("@as converts {} only to its base, {}, not {}", tstr{ c, t = src }, tstr{ c, t = base }, tstr{ c, t = tt }) }
+                }
+                return tt
+            }
             if is_enum{ c, t = tt } {
                 if not is_int{ c, t = src } {
                     errorf{ &c, at = expr_at{ e = x }, msg = @fmt("@as to an enum takes an integer, got {}", tstr{ c, t = src }) }
@@ -9668,7 +9725,7 @@ namespace check {
         }
         if slice::eq_bytes{ a = n, b = "wrap_shl" } {
             let t = expr{ &c, e = args[0], exp }
-            if not is_int{ c, t } {
+            if not is_int{ c, t = op_type{ c, t } } {
                 errorf{ &c, at = expr_at{ e = args[0] }, msg = @fmt("@wrap_shl needs an integer to shift, got {}", tstr{ c, t }) }
             }
             let ct = expr{ &c, e = args[1], exp = types::NO_TYPE }
@@ -10165,6 +10222,8 @@ namespace check {
                 return writers_of{ &c, b, t = ro, ns }
             }
         }
+        // A distinct type with none of its own is written as its base (§13, Formatting).
+        if is_distinct{ c, t } { return writers_of{ &c, b, t = distinct_base{ c, t }, ns } }
         return found
     }
 
@@ -10992,6 +11051,7 @@ namespace check {
             }
             void => { return Layout{ size = 0, align = 1 } }
             enumeration{ decl } => { return layout{ &c, t = get_decl{ c, d = decl }.ty } }
+            distinct{ base } => { return layout{ &c, t = base } }
             array{ n, elem } => {
                 let el = layout{ &c, t = elem }
                 if el == null { return null }
@@ -11020,7 +11080,7 @@ namespace check {
     fn nullable_ptr { c: Checker, t: Id } -> bool {
         match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
             opt{ elem } => {
-                match types::get{ s = c.ty, id = types::prune{ s = c.ty, t = elem } } {
+                match types::get{ s = c.ty, id = types::undistinct{ s = c.ty, t = elem } } {
                     ptr => { return true }
                     func{ external } => { return external }
                     record{ decl } => { return decl == c.cstr_decl and decl != NONE }

@@ -92,6 +92,8 @@ namespace lower {
     }
 
     fn lowering { mut c: check::Checker } -> Lower {
+        // Checking is done: a distinct type is its base from here on (§12, Distinct types).
+        c.ty.erased = true
         return Lower{
             c = &c, heap = c.heap,
             types = list::new(ir::Type){ realloc = arena::alloc, heap = c.heap },
@@ -3075,6 +3077,8 @@ namespace lower {
                 let base = check::get_decl{ c = l.c.*, d = decl }.ty
                 if norm{ &l, t = base } == norm{ &l, t } { return ex{ &l, e = args[0] } }
             }
+            // Between a distinct type and its base, erased to one type: nothing to do.
+            if norm{ &l, t = src } == norm{ &l, t } { return ex{ &l, e = args[0] } }
             let ty = tid{ &l, t }
             let x = ex{ &l, e = args[0] }
             return mk{ ty, k = ir::ExprKind::convert{ e = box{ l, e = x }, pos = epos{ &l, e }, trap = trap_of{ l, e } } }
