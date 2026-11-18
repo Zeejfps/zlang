@@ -241,7 +241,9 @@ ctx_fn *ctx_adapt(ctx_fn *inner, void (*code)(void));
         if (SIGNED && a == (T)(MIN) && b == (T)-1) return 1;                                      \
         *r = a / b;                                                                               \
         return 0;                                                                                 \
-    }
+    }                                                                                             \
+    /* a << n, n checked: a * 2^n, so it overflows where shifting back doesn't give a */           \
+    static inline T ctx_shl_##S(T a, int n, CTX_POS) { T r = (T)((uint64_t)a << n); if ((T)(r >> n) != a) CTX_OVERFLOW(); return r; }
 
 CTX_INT_OPS(int8_t, i8, INT8_MIN, 1)
 CTX_INT_OPS(int16_t, i16, INT16_MIN, 1)

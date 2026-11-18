@@ -42,63 +42,119 @@ namespace math {
 
     // ---- f64
 
+    #pure
     extern fn sqrt { x: f64 } -> f64
+    #pure
     extern fn cbrt { x: f64 } -> f64
+    #pure
     extern fn hypot { x: f64, y: f64 } -> f64
+    #pure
     extern fn pow { x: f64, y: f64 } -> f64
+    #pure
     extern fn exp { x: f64 } -> f64
+    #pure
     extern fn exp2 { x: f64 } -> f64
+    #pure
     extern fn log { x: f64 } -> f64
+    #pure
     extern fn log2 { x: f64 } -> f64
+    #pure
     extern fn log10 { x: f64 } -> f64
+    #pure
     extern fn sin { x: f64 } -> f64
+    #pure
     extern fn cos { x: f64 } -> f64
+    #pure
     extern fn tan { x: f64 } -> f64
+    #pure
     extern fn asin { x: f64 } -> f64
+    #pure
     extern fn acos { x: f64 } -> f64
+    #pure
     extern fn atan { x: f64 } -> f64
+    #pure
     extern fn atan2 { y: f64, x: f64 } -> f64
+    #pure
     extern fn sinh { x: f64 } -> f64
+    #pure
     extern fn cosh { x: f64 } -> f64
+    #pure
     extern fn tanh { x: f64 } -> f64
+    #pure
     extern fn floor { x: f64 } -> f64
+    #pure
     extern fn ceil { x: f64 } -> f64
+    #pure
     extern fn round { x: f64 } -> f64              // halfway cases away from zero
+    #pure
     extern fn trunc { x: f64 } -> f64
+    #pure
     extern fn fabs { x: f64 } -> f64
+    #pure
     extern fn fmod { x: f64, y: f64 } -> f64       // the remainder of x / y, with x's sign
+    #pure
     extern fn fmin { x: f64, y: f64 } -> f64       // the other one if one is NaN
+    #pure
     extern fn fmax { x: f64, y: f64 } -> f64
+    #pure
     extern fn copysign { x: f64, y: f64 } -> f64
 
     // ---- f32
 
+    #pure
     extern fn sqrtf { x: f32 } -> f32
+    #pure
     extern fn cbrtf { x: f32 } -> f32
+    #pure
     extern fn hypotf { x: f32, y: f32 } -> f32
+    #pure
     extern fn powf { x: f32, y: f32 } -> f32
+    #pure
     extern fn expf { x: f32 } -> f32
+    #pure
     extern fn exp2f { x: f32 } -> f32
+    #pure
     extern fn logf { x: f32 } -> f32
+    #pure
     extern fn log2f { x: f32 } -> f32
+    #pure
     extern fn log10f { x: f32 } -> f32
+    #pure
     extern fn sinf { x: f32 } -> f32
+    #pure
     extern fn cosf { x: f32 } -> f32
+    #pure
     extern fn tanf { x: f32 } -> f32
+    #pure
     extern fn asinf { x: f32 } -> f32
+    #pure
     extern fn acosf { x: f32 } -> f32
+    #pure
     extern fn atanf { x: f32 } -> f32
+    #pure
     extern fn atan2f { y: f32, x: f32 } -> f32
+    #pure
     extern fn sinhf { x: f32 } -> f32
+    #pure
     extern fn coshf { x: f32 } -> f32
+    #pure
     extern fn tanhf { x: f32 } -> f32
+    #pure
     extern fn floorf { x: f32 } -> f32
+    #pure
     extern fn ceilf { x: f32 } -> f32
+    #pure
     extern fn roundf { x: f32 } -> f32
+    #pure
     extern fn truncf { x: f32 } -> f32
+    #pure
     extern fn fabsf { x: f32 } -> f32
+    #pure
     extern fn fmodf { x: f32, y: f32 } -> f32
+    #pure
     extern fn fminf { x: f32, y: f32 } -> f32
+    #pure
     extern fn fmaxf { x: f32, y: f32 } -> f32
+    #pure
     extern fn copysignf { x: f32, y: f32 } -> f32
 }

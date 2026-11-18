@@ -2402,8 +2402,10 @@ namespace emit {
         close_temps{ &e, tt }
     }
 
-    // `((tT)((uint64_t)A << ctx_shcount_i(B, BITS, pos)))`: shl in unsigned arithmetic, so the bits
-    // shifted out are dropped; shr is C's, which is arithmetic for a signed A with gcc and clang.
+    // `((tT)((uint64_t)A << ctx_shcount_i(B, BITS, pos)))`: wrap_shl in unsigned arithmetic, so
+    // the bits shifted out are dropped; shr is C's, which is arithmetic for a signed A with gcc and
+    // clang. shl is `((tT)(ctx_shl_S(A, ctx_shcount_i(B, BITS, pos), pos)))`, which panics where
+    // it loses bits.
     fn shift { mut e: E, t: ir::TypeId, op: ir::ShiftOp, a: ir::Expr, b: ir::Expr, pos: ir::Pos } {
         let p = prim_of{ e, t } ifnull { @panic("emit: shift of a non-integer") }
         let cp = prim_of{ e, t = b.ty } ifnull { @panic("emit: shift count of a non-integer") }
@@ -2411,6 +2413,13 @@ namespace emit {
         cast_open{ &e, t }
         match op {
             shl => {
+                put{ &e, a = "ctx_shl_" }
+                suffix{ &e, p }
+                ch{ &e, c = '(' }
+                operand{ &e, x = a, tt, i = 0 }
+                put{ &e, a = ", " }
+            }
+            wrap_shl => {
                 put{ &e, a = "(uint64_t)" }
                 operand{ &e, x = a, tt, i = 0 }
                 put{ &e, a = " << " }
@@ -2426,7 +2435,13 @@ namespace emit {
         num{ &e, n = bit_width{ p } }
         put{ &e, a = ", " }
         position{ &e, p = pos }
-        put{ &e, a = ")))" }
+        ch{ &e, c = ')' }
+        if op is shl {
+            put{ &e, a = ", " }
+            position{ &e, p = pos }
+            ch{ &e, c = ')' }
+        }
+        put{ &e, a = "))" }
         close_temps{ &e, tt }
     }
 

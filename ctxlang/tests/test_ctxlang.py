@@ -255,10 +255,10 @@ fn main { mut io: Io } {
     let a: u32 = 0xF0
     let n: usize = 24
     io::println_u64{ &io, n = a << n }
-    io::println_u64{ &io, n = a << 28 }
+    io::println_u64{ &io, n = @wrap_shl(a, 28) }
     io::println_u64{ &io, n = a >> 4 }
     let one: i8 = 1
-    io::println_i64{ &io, n = one << 7 }
+    io::println_i64{ &io, n = @wrap_shl(one, 7) }
     let b: i8 = -128
     io::println_i64{ &io, n = b >> 7 }
     let big: u64 = 256 << 20
@@ -293,6 +293,55 @@ fn main { mut io: Io } {
     io::println_i64{ &io, n = x >> n }
 }
 """, 'shift count -1 out of range for a 64-bit integer')
+
+    def test_shift_left_keeps_the_value(self):
+        # a << n is a * 2^n: it panics where that doesn't fit, as the multiply would
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let a: u8 = 0x7F
+    io::println_u64{ &io, n = a << 1 }
+    let b: i8 = -64
+    io::println_i64{ &io, n = b << 1 }
+    let c: i8 = 1
+    io::println_i64{ &io, n = c << 6 }
+    let d: i64 = -1
+    io::println_i64{ &io, n = d << 63 }
+    let e: u64 = 1
+    io::println_u64{ &io, n = e << 63 }
+}
+""", '254\n-128\n64\n-9223372036854775808\n9223372036854775808\n')
+        for body in ['let x: u8 = 0x80\n    let y = x << 1',
+                     'let x: u32 = 0xF0\n    let y = x << 28',
+                     'let x: i8 = 1\n    let y = x << 7',
+                     'let x: i32 = 0x40000000\n    let y = x << 1',
+                     'let x: i16 = -16385\n    let y = x << 1',
+                     'let x: i64 = 3\n    let n: u8 = 62\n    let y = x << n']:
+            with self.subTest(body=body):
+                self.assertPanic('fn main {} {\n    ' + body + '\n}\n', 'integer overflow')
+
+    def test_wrap_shl(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let a: u8 = 0x81
+    io::println_u64{ &io, n = @wrap_shl(a, 1) }
+    let b: i8 = 1
+    io::println_i64{ &io, n = @wrap_shl(b, 7) }
+    let c: u64 = 0xFFFFFFFFFFFFFFFF
+    let n: i32 = 60
+    io::println_u64{ &io, n = @wrap_shl(c, n) }
+    io::println_i64{ &io, n = @wrap_shl(@as(i32, 0x40000001), 1) }
+}
+""", '2\n-128\n17293822569102704640\n-2147483646\n')
+        self.assertPanic("""
+fn main {} {
+    let a: u8 = 1
+    let n: i64 = 8
+    let y = @wrap_shl(a, n)
+}
+""", 'shift count 8 out of range for a 8-bit integer')
+        self.assertCompileError("""
+fn main {} { let x = @wrap_shl(1.5, 2) }
+""", '@wrap_shl needs an integer to shift, got {float}')
 
     def test_bitwise_needs_integers(self):
         self.assertCompileError("""
@@ -1232,6 +1281,7 @@ class Declarations(Base):
             ('struct S { a: [1 / 0]u8 }', 'division by zero in constant', 1, 18),
             ('struct S { a: [1 % 0]u8 }', 'division by zero in constant', 1, 18),
             ('struct S { a: [1 << 64]u8 }', 'shift count out of range in constant', 1, 18),
+            ('struct S { a: [3 << 62]u8 }', 'integer constant is too large', 1, 18),
             ('const N: usize = N\nstruct S { a: [N]u8 }', 'const `N` refers to itself', 1, 18),
             ('const N: usize = M\nconst M: usize = N\nstruct S { a: [N]u8 }', 'const `N` refers to itself', 2, 18),
             ('struct S { a: [x]u8 }', 'an array length must be a compile-time integer constant', 1, 16),
@@ -1324,7 +1374,7 @@ class ConstInitializers(Base):
             'const A: utf8::String = "ok"',
             'const A: bool = false and 1 / 0 == 1',
             'const A: i32 = -2147483648 % -1',
-            'const A: i8 = 64 << 1',
+            'const A: i8 = 32 << 1',
             'const A: i32 = @as(i32, 1)',
             'fn f {} -> i32 { return 1 }\nconst A: i32 = f{}',
         ]:
@@ -1346,6 +1396,10 @@ class ConstInitializers(Base):
             ('const A: u8 = 3 - 4', 'integer overflow in constant', 1, 17),
             ('const A: i32 = 5 % 0', 'division by zero in constant', 1, 18),
             ('const A: i64 = 1 >> 64', 'shift count out of range in constant', 1, 18),
+            ('const A: i8 = 64 << 1', 'integer overflow in constant', 1, 18),
+            ('const A: u8 = 3 << 7', 'integer overflow in constant', 1, 17),
+            ('const A: i64 = -2 << 63', 'integer overflow in constant', 1, 19),
+            ('const A: [1]u32 = [0xF0 << 28]', 'integer overflow in constant', 1, 25),
         ]:
             self.assertConstError(src + '\nfn main {} {}', msg, line, col)
 
@@ -1373,7 +1427,7 @@ const M: u64 = 1000000
 const W: u64 = M * 5000000 + N
 const F: f32 = 1.1 * 3.0
 const H: i32 = -7 / 2 + (-7 % 2) + (1 << 30) + (-8 >> 1)
-const K: i8 = 64 << 1
+const K: i8 = -64 << 1
 const Q: P = P{ b = N - 1, a = W }
 const Z: [4]i64 = [N; 4]
 fn main { mut io: Io } {
@@ -2135,6 +2189,208 @@ fn main { mut io: Io } {
             self.assertCompileError(src + '\nfn main {} {}', fragment)
 
 
+
+DISTINCT = """
+type Meters = distinct f64
+type Seconds = distinct f64
+type UserId = distinct u64
+type Small = distinct u8
+type Name = distinct []u8
+struct P { x: i32, y: i32 }
+type Pos = distinct P
+type Flag = distinct bool
+type Id(T) = distinct u32
+"""
+
+
+class DistinctTypes(Base):
+    """`type Name = distinct T` (spec §12, Distinct types): a type of its own with T's
+    representation, which converts to and from T only with @as."""
+
+    def test_wrapping_complement_and_ifoverflow(self):
+        # `+%`, `~` and `ifoverflow` take a distinct integer as its base, and a field default
+        # of one is a literal of it.
+        self.assertOutput("""
+type Meters = distinct u32
+type Flags = distinct u8
+struct Track { len: Meters = 7, f: Flags = 0 }
+
+fn main { mut io: Io } {
+    let a: Meters = 4000000000
+    let b: Meters = 1000000000
+    let f: Flags = 0x0F
+    let t = Track{ .. }
+    _ = @fmt(&io, "{} {} {} {} {}\\n", a + b ifoverflow @as(Meters, 1), a +% b, ~f, t.len, @wrap_shl(a, 4))
+}
+""", '1 705032704 240 7 3870457856\n')
+
+    def test_numbers(self):
+        self.assertOutput(DISTINCT + """
+fn speed { d: Meters, t: Seconds } -> f64 { return @as(f64, d) / @as(f64, t) }
+fn next { id: UserId } -> UserId { return id + 1 }
+
+fn main { mut io: Io } {
+    let d: Meters = 5.0
+    let far = d + d * 2.0 - 1.0 / 2.0
+    io::println_f64{ &io, n = speed{ d = far, t = @as(Seconds, 2.0) } }
+    io::print_bool{ &io, n = far > d }
+    io::print_bool{ &io, n = far == d }
+    io::println_bool{ &io, n = -d < d }
+    let u = next{ id = 41 }
+    io::println_u64{ &io, n = @as(u64, u) }
+    io::println_u64{ &io, n = @as(u64, (u << 2) | 1 & 3 ^ u % 5) }
+    let s: Small = 250
+    io::println_u64{ &io, n = @as(u8, s +% 10) + @as(u8, @wrap_shl(s, 1)) }
+    let mut total: Meters
+    let xs: [3]Meters = [1.0, 2.0, 3.0]
+    let mut i: usize = 0
+    while i < xs.len {
+        total = total + xs[i]
+        i = i + 1
+    }
+    io::println_f64{ &io, n = @as(f64, total) }
+}
+""", '7.25\ntruefalsetrue\n42\n171\n248\n6.0\n')
+
+    def test_base_rules_apply(self):
+        self.assertPanic(DISTINCT + 'fn main {} { let s: Small = 200\n let t = s + s }', 'integer overflow')
+        self.assertPanic(DISTINCT + 'fn main {} { let s: Small = 200\n let t = s << 1 }', 'integer overflow')
+        self.assertPanic(DISTINCT + 'fn main {} { let u: UserId = 1\n let z: UserId = 0\n let q = u / z }', 'division by zero')
+
+    def test_other_bases(self):
+        self.assertOutput(DISTINCT + """
+type Handle = distinct *P
+type Km = distinct Meters
+
+fn first { h: ?Handle } -> i32 {
+    let p = h ifnull { return -1 }
+    return @as(*P, p).y
+}
+
+fn main { mut io: Io } {
+    let n = @as(Name, "bob")
+    io::println{ &io, s = utf8::String{ bytes = @as([]u8, n) } }
+    let p = @as(Pos, P{ x = 1, y = 2 })
+    io::println_i64{ &io, n = @as(P, p).y }
+    let f = @as(Flag, true)
+    io::println_bool{ &io, n = f == f and @as(bool, f) }
+    let q = P{ x = 3, y = 4 }
+    let h = @as(Handle, &q)
+    io::println_i64{ &io, n = first{ h } + first{ h = null } }
+    io::println_bool{ &io, n = h == h }
+    let k = @as(Km, @as(Meters, 2.5))
+    io::println_f64{ &io, n = @as(f64, @as(Meters, k)) }
+    io::println_u64{ &io, n = @size_of(Pos) + @align_of(Pos) + @size_of(?Handle) + @size_of(Name) }
+}
+""", 'bob\n2\ntrue\n3\ntrue\n2.5\n36\n')
+
+    def test_generic_and_zero_and_consts(self):
+        self.assertOutput(DISTINCT + """
+struct Row { d: Meters, ids: [2]Id(P), name: Name }
+const LIMIT: Meters = 100.0
+const ROW: Row = Row{ d = 1.5, ids = [3, 4], name = @as(Name, "row") }
+const HALF: Meters = @as(Meters, 0.5)
+
+fn twice(T) { x: T } -> [2]T { return [x, x] }
+
+fn main { mut io: Io } {
+    let mut r: Row
+    io::println_f64{ &io, n = @as(f64, r.d) + @as(f64, LIMIT) + @as(f64, HALF) }
+    io::println_u64{ &io, n = @as(u32, ROW.ids[0]) + @as([]u8, r.name).len }
+    let a: Id(P) = 7
+    let b: Id(P) = 8
+    io::println_bool{ &io, n = a < b }
+    let m = twice(Meters){ x = 1.0 }
+    let f = twice(f64){ x = 2.0 }
+    io::println_f64{ &io, n = @as(f64, m[1]) + f[1] }
+    match a {
+        0 => { io::println{ &io, s = "zero" } }
+        1..=7 => { io::println{ &io, s = "small" } }
+        else => { io::println{ &io, s = "big" } }
+    }
+    io::println_bool{ &io, n = b is 8 | 9 }
+}
+""", '100.5\n3\ntrue\n3.0\nsmall\ntrue\n')
+
+    def test_fmt(self):
+        self.assertOutput(DISTINCT + """
+type Kg = distinct f64
+
+#write
+fn write_kg { mut io: Io, w: Kg } -> ! {
+    try @fmt(&io, "{}kg", @as(f64, w))
+}
+
+fn main { mut io: Io } {
+    let d: Meters = 2.5
+    let u: UserId = 7
+    let w: Kg = 3.0
+    let a: Id(P) = 9
+    try! @fmt(&io, "{} {} {} {}\\n", d, u, w, a)
+}
+""", '2.5 7 3.0kg 9\n')
+
+    def test_keyword_only_in_place(self):
+        self.assertOutput("""
+struct distinct { v: i32 }
+type Plain = distinct
+type Meters = distinct f64
+
+fn main { mut io: Io } {
+    let distinct = Plain{ v = 4 }
+    let m: Meters = 1.0
+    io::println_i64{ &io, n = distinct.v }
+}
+""", '4\n')
+
+    def test_errors(self):
+        for src, fragment in [
+            ('fn f { m: Meters } {}\nfn g {} { let x: f64 = 1.0\n f{ m = x } }',
+             'expected Meters, got f64: convert with @as(Meters, x)'),
+            ('fn f {} { let d: Meters = 1.0\n let x: f64 = d }', 'expected f64, got Meters: convert with @as(f64, x)'),
+            ('fn f { m: Meters } {}\nfn g {} { let s: Seconds = 1.0\n f{ m = s } }', 'expected Meters, got Seconds'),
+            ('fn f {} { let x: f64 = 1.0\n let d: Meters = @as(f32, 1.0) }', 'expected Meters, got f32'),
+            ('fn f {} { let d: Meters = 1.0\n let x: f64 = 2.0\n let y = d + x }',
+             'operands of `+` have incompatible types: Meters and f64; convert one with @as'),
+            ('fn f {} { let d: Meters = 1.0\n let s: Seconds = 2.0\n let y = d < s }', 'cannot compare Meters with Seconds'),
+            ('fn f {} { let s: Seconds = 2.0\n let d = @as(Meters, s) }', '@as converts to Meters only from its base, f64, got Seconds'),
+            ('fn f {} { let d = @as(Meters, 1) }', '@as converts to Meters only from its base, f64, got {integer}'),
+            ('fn f {} { let d: Meters = 1.0\n let x = @as(f32, d) }', '@as converts Meters only to its base, f64, not f32'),
+            ('fn f {} { let u: UserId = 1\n let x = @trunc(u8, u) }', '@trunc converts integers only'),
+            ('fn f {} { let n: Name = "bob" }', 'expected Name, got []u8: convert with @as(Name, x)'),
+            ('fn f {} { let n = @as(Name, "bob")\n let k = n.len }',
+             'Name has no field `len`: a distinct type has none of its own; convert it with @as([]u8, x)'),
+            ('fn f {} { let p = @as(Pos, P{ x = 1, y = 2 })\n let x = p.x }', 'Pos has no field `x`'),
+            ('fn f {} { let n = @as(Name, "bob")\n let b = n == n }', 'Name has no built-in equality'),
+            ('fn f {} { let g = @as(Flag, true)\n let h = not g }', 'expected bool, got Flag'),
+            ('fn f {} { let g = @as(Flag, true)\n let h = g + g }', '`+` needs numbers, got Flag'),
+            ('fn f {} { let s: Small = 300 }', 'literal 300 does not fit in Small'),
+            ('fn f {} { let u: UserId = 1\n let x = 1 << u }', 'a shift count must be an integer, got UserId'),
+            ('fn f {} { let a: Id(P) = 1\n let b: Id(Pos) = a }', 'expected Id(Pos), got Id(P)'),
+            ('fn f {} { let a: Id(P) = 1\n let b: u32 = a }', 'expected u32, got Id(P): convert with @as(u32, x)'),
+            ('type Loop = distinct ?*Loop', 'type alias `Loop` refers to itself'),
+            ('fn f {} { let n = @as(Name, "x")\n let m = n[0] }', 'cannot index Name'),
+            ('fn f {} { let n: Meters = 1.0\n match n { 1 => {} else => {} } }',
+             'match needs a union, enum, optional or integer value, got Meters'),
+        ]:
+            self.assertCompileError(DISTINCT + src + '\nfn main {} {}', fragment)
+
+    def test_extern(self):
+        self.assertOutput("""
+type Len = distinct f64
+type Code = distinct i32
+#pure
+extern fn sqrt { x: Len } -> Len
+#pure
+extern fn abs { x: Code } -> Code
+
+fn main { mut io: Io } {
+    io::println_f64{ &io, n = @as(f64, sqrt{ x = 16.0 }) }
+    io::println_i64{ &io, n = @as(i32, abs{ x = -7 }) }
+}
+""", '4.0\n7\n')
+
+
 class IntegerMatch(Base):
     """`match` and `is` on integers (spec §8, Match on integers): literals, folded consts, ranges."""
 
@@ -2750,6 +3006,7 @@ fn main { mut io: Io } {
         # other operand's, and an optional's payload.
         self.assertOutput("""
 #c::symbol{ name = "llabs" }
+#pure
 extern fn long_abs { n: i64 } -> i64
 type Abs = extern fn{ n: i64 } -> i64
 struct Fns { abs: Abs }
@@ -4001,6 +4258,7 @@ fn main { mut io: Io } {
         self.assertOutput("""
 namespace cstr {
     struct C { p: *u8, n: usize }
+    #pure
     extern fn strlen { s: *u8 } -> usize
     #convert
     fn from_literal { s: strlit } -> C { return C{ p = s.bytes.ptr, n = s.bytes.len } }
@@ -9788,9 +10046,13 @@ class ExternFns(Base):
 struct DivT { quot: i32, rem: i32 }
 
 #c::symbol{ name = "labs" }
+#pure
 extern fn long_abs { n: i64 } -> i64
+#pure
 extern fn strlen { s: *u8 } -> usize
+#pure
 extern fn frexp { x: f64, mut exp: i32 } -> f64
+#pure
 extern fn div { numer: i32, denom: i32 } -> DivT
 
 fn main { mut io: Io } {
@@ -9818,6 +10080,7 @@ fn main { mut io: Io } {
         self.assertOutput("""
 namespace cmath {
     #c::symbol{ name = "sqrt" }
+    #pure
     extern fn root { x: f64 } -> f64
 }
 fn apply { f: fn{ x: f64 } -> f64, x: f64 } -> f64 { return f{ x } }
@@ -9830,6 +10093,7 @@ fn main { mut io: Io } {
         # The prototype has its own C name, so a signature that differs from string.h's doesn't
         # clash with it.
         self.assertOutput("""
+#pure
 extern fn memset { dst: *mut u8, value: i32, n: usize } -> *mut u8
 fn main { mut io: Io } {
     let mut buf: [4]u8 = [0; 4]
@@ -9842,6 +10106,7 @@ fn main { mut io: Io } {
         from toolchain import ir_sources
         text = ir_sources([("""
 #c::symbol{ name = "labs" }
+#pure
 extern fn long_abs { n: i64 } -> i64
 fn main {} -> i32 { return @trunc(i32, long_abs{ n = 3 }) }
 """, None)])
@@ -9888,6 +10153,38 @@ fn main {} -> i32 { return @trunc(i32, long_abs{ n = 3 }) }
              'an attribute cannot call a function', 3, 10),
         ]:
             self.assertExternError(src, msg, line, col)
+
+    def test_pure_or_capability(self):
+        # Every extern fn says what C does (spec §18, Extern functions, rule 8): a capability
+        # field for what it touches, or `#pure`.
+        neither = ("extern fn `{}` takes no capability: add a capability field for what it touches, "
+                   "or `#pure` if it touches only its arguments and the memory they point to")
+        for src, msg, line, col in [
+            ('extern fn labs { n: i64 } -> i64\nfn main {} {}', neither.format('labs'), 1, 11),
+            ('namespace c2 {\n    extern fn clock {} -> i64\n}\nfn main {} {}', neither.format('clock'), 2, 15),
+            ('#pure\nextern fn putchar { mut io: Io, c: i32 } -> i32\nfn main {} {}',
+             'a `pure` extern fn takes no capability, and this one takes `io`: drop one', 1, 1),
+            ('#pure\nfn f {} -> i32 { return 1 }\nfn main {} {}',
+             '`pure` applies only to an extern fn: a fn with a body shows what it touches', 1, 1),
+            ('#pure\nstruct S { x: i32 }\nfn main {} {}', '`pure` applies only to an extern fn', 1, 1),
+            ('capability C {\n    #pure\n    f: extern fn{}\n}\nfn main {} {}', '`pure` applies only to an extern fn', 2, 5),
+            ('#pure\n#pure\nextern fn labs { n: i64 } -> i64\nfn main {} {}', 'duplicate `pure` attribute', 2, 1),
+            ('#pure{ x = 1 }\nextern fn labs { n: i64 } -> i64\nfn main {} {}', '`pure` takes no fields', 1, 8),
+        ]:
+            self.assertExternError(src, msg, line, col)
+
+    def test_pure_and_capability_both_run(self):
+        self.assertOutput("""
+#c::symbol{ name = "llabs" }
+#pure
+extern fn long_abs { n: i64 } -> i64
+extern fn putchar { mut io: Io, c: i32 } -> i32
+
+fn main { mut io: Io } {
+    _ = putchar{ &io, c = @trunc(i32, long_abs{ n = -65 }) }
+    _ = putchar{ &io, c = 10 }
+}
+""", "A\n")
 
     def test_attributes_are_data(self):
         # Any struct can be an attribute, on any declaration; the compiler checks it and ignores
@@ -9965,6 +10262,7 @@ fn step {
 }
 
 #ecs::key
+#pure
 extern fn abs {
     #ecs::key
     n: i32
@@ -9995,7 +10293,7 @@ fn main { mut io: Io } {
         import toolchain
         blank = '\n'.join('' if line.startswith(' ') and line.strip().startswith('#') else line
                           for line in self.PROGRAM.split('\n'))
-        self.assertEqual(blank.count('#'), 1)
+        self.assertEqual(blank.count('#'), 2)
         self.assertEqual(toolchain.ir_sources([(self.PROGRAM, 'main.ctx')]), toolchain.ir_sources([(blank, 'main.ctx')]))
         texts = []
         for src in (self.PROGRAM, blank):
@@ -10159,7 +10457,9 @@ fn main { mut io: Io } {
 
     def test_extern_round_trip(self):
         self.assertOutput("""
+#pure
 extern fn strchr { s: *u8, c: i32 } -> ?*u8
+#pure
 extern fn strtol { s: *u8, end: ?*mut *u8, base: i32 } -> i64
 
 fn main { mut io: Io } {
@@ -10235,8 +10535,10 @@ namespace clib {
     capability Loader
 
     #c::symbol{ name = "llabs" }
+    #pure
     extern fn long_abs { n: i64 } -> i64
     #c::symbol{ name = "strlen" }
+    #pure
     extern fn str_len { s: c::String } -> usize
 
     capability Math {
@@ -10278,7 +10580,7 @@ fn main { mut io: Io, mut loader: clib::Loader } -> i32 {
             ('capability C { f: fn{} }\nfn main {} {}', "capability `C`'s field `f` must be a C function pointer, `extern fn{ ... }`, not fn{}", 1, 16),
             ('capability C { f: extern fn{}, f: extern fn{} }\nfn main {} {}', 'duplicate field `f`', 1, 32),
             # made only by a function of its namespace that holds a capability or a bound function
-            (CAP_FIELDS + 'fn main { mut l: m::L } { let x = m::M{ f = m::abs } }', 'capability `M` can only be made by a function of namespace `m`, which declares it', 8, 38),
+            (CAP_FIELDS + 'fn main { mut l: m::L } { let x = m::M{ f = m::abs } }', 'capability `M` can only be made by a function of namespace `m`, which declares it', 9, 38),
             ('namespace m {\n    capability M { f: extern fn{} }\n    extern fn g {}\n    fn load {} -> M { return M{ f = g } }\n}\nfn main {} {}',
              'capability `M` can only be made by a function that holds a capability or a bound function: `load` takes neither', 4, 30),
             # a plain fn can't hold a capability: whoever calls it supplies its context
@@ -10291,20 +10593,20 @@ fn main { mut io: Io, mut loader: clib::Loader } -> i32 {
             ('namespace m {\n    capability M { f: extern fn{}, g: extern fn{} }\n    extern fn h {}\n    fn load { mut io: Io } -> M { return M{ f = h } }\n}\nfn main {} {}',
              'capability `M` is missing `g`', 4, 43),
             # its fields can only be called, through a mutable one
-            (CAP_FIELDS + 'fn main { mut l: m::L } { let mut x = m::load{ &l }\n    let f = x.f }', '`f` is a field of capability M: it can only be called, as `x.f{ ... }`', 9, 14),
-            (CAP_FIELDS + 'fn g { f: extern fn{ n: i64 } -> i64 } {}\nfn main { mut l: m::L } { let mut x = m::load{ &l }\n    g{ f = x.f } }', '`f` is a field of capability M: it can only be called, as `x.f{ ... }`', 10, 13),
-            (CAP_FIELDS + 'fn main { mut l: m::L } -> i32 { let mut x = m::load{ &l }\n    if x.f == m::abs { return 1 }\n    return 0 }', '`f` is a field of capability M: it can only be called, as `x.f{ ... }`', 9, 9),
-            (CAP_FIELDS + 'fn main { mut l: m::L } { let mut x = m::load{ &l }\n    let p = @cast(*u8, x.f) }', '`f` is a field of capability M: it can only be called, as `x.f{ ... }`', 9, 25),
-            (CAP_FIELDS + 'fn main { mut l: m::L } { let mut x = m::load{ &l }\n    x.f = m::abs }', '`f` is a field of capability M: it can only be called, as `x.f{ ... }`', 9, 6),
-            (CAP_FIELDS + 'fn main { mut l: m::L } -> i32 { let x = m::load{ &l }\n    return @trunc(i32, x.f{ n = 1 }) }', '`x` is not a mutable place', 9, 24),
-            (CAP_FIELDS + 'fn g { x: m::M } -> i64 { return x.f{ n = 1 } }\nfn main {} {}', '`x` is not a mutable place', 8, 34),
-            (CAP_FIELDS + 'fn g { p: *m::M } -> i64 { return p.f{ n = -3 } }\nfn main {} {}', 'cannot write through *M; it needs to be a `*mut`', 8, 36),
+            (CAP_FIELDS + 'fn main { mut l: m::L } { let mut x = m::load{ &l }\n    let f = x.f }', '`f` is a field of capability M: it can only be called, as `x.f{ ... }`', 10, 14),
+            (CAP_FIELDS + 'fn g { f: extern fn{ n: i64 } -> i64 } {}\nfn main { mut l: m::L } { let mut x = m::load{ &l }\n    g{ f = x.f } }', '`f` is a field of capability M: it can only be called, as `x.f{ ... }`', 11, 13),
+            (CAP_FIELDS + 'fn main { mut l: m::L } -> i32 { let mut x = m::load{ &l }\n    if x.f == m::abs { return 1 }\n    return 0 }', '`f` is a field of capability M: it can only be called, as `x.f{ ... }`', 10, 9),
+            (CAP_FIELDS + 'fn main { mut l: m::L } { let mut x = m::load{ &l }\n    let p = @cast(*u8, x.f) }', '`f` is a field of capability M: it can only be called, as `x.f{ ... }`', 10, 25),
+            (CAP_FIELDS + 'fn main { mut l: m::L } { let mut x = m::load{ &l }\n    x.f = m::abs }', '`f` is a field of capability M: it can only be called, as `x.f{ ... }`', 10, 6),
+            (CAP_FIELDS + 'fn main { mut l: m::L } -> i32 { let x = m::load{ &l }\n    return @trunc(i32, x.f{ n = 1 }) }', '`x` is not a mutable place', 10, 24),
+            (CAP_FIELDS + 'fn g { x: m::M } -> i64 { return x.f{ n = 1 } }\nfn main {} {}', '`x` is not a mutable place', 9, 34),
+            (CAP_FIELDS + 'fn g { p: *m::M } -> i64 { return p.f{ n = -3 } }\nfn main {} {}', 'cannot write through *M; it needs to be a `*mut`', 9, 36),
             # neither the runtime nor a callback's thunk can supply one
-            (CAP_FIELDS + 'fn main { mut x: m::M } {}', '`main` cannot take `M`: a capability with fields comes from a function of its namespace, not the runtime', 8, 1),
+            (CAP_FIELDS + 'fn main { mut x: m::M } {}', '`main` cannot take `M`: a capability with fields comes from a function of its namespace, not the runtime', 9, 1),
             (CAP_FIELDS + '#c::callback\nfn cb { mut x: m::M, n: i32 } {}\nfn main {} {}',
-             "callback `cb` can't take `x`: capability M has fields, and nothing can supply one when C calls the callback", 9, 1),
+             "callback `cb` can't take `x`: capability M has fields, and nothing can supply one when C calls the callback", 10, 1),
             (CAP_FIELDS + callback_type,
-             "callback `cb` can't have type extern fn{ mut x: M, n: i32 }: its field `x` is capability M, which has fields, and nothing can supply one when C calls the callback", 12, 24),
+             "callback `cb` can't have type extern fn{ mut x: M, n: i32 }: its field `x` is capability M, which has fields, and nothing can supply one when C calls the callback", 13, 24),
         ]:
             self.assertCapError(src, msg, line, col)
 
@@ -10315,6 +10617,7 @@ fn main { mut io: Io, mut loader: clib::Loader } -> i32 {
 namespace lib {
     capability Lib
     #c::symbol{ name = "llabs" }
+    #pure
     extern fn long_abs { n: i64 } -> i64
     fn find { mut l: Lib, name: c::String } -> ?extern fn{ n: i64 } -> i64 { return long_abs }
 }
@@ -10396,46 +10699,46 @@ fn main { mut l: m::L } -> i32 {
         for src, msg, line, col in [
             # a field reaches a capability once
             (CAP_CHAIN + 'capability X { ..m::A, abs: extern fn{ n: i64 } -> i64 }\nfn main {} {}',
-             'capability `X` declares `abs`, which it includes from `A`', 16, 24),
+             'capability `X` declares `abs`, which it includes from `A`', 19, 24),
             (CAP_CHAIN + 'capability X { abs: extern fn{ n: i64 } -> i64, ..m::A }\nfn main {} {}',
-             'capability `X` declares `abs`, which it includes from `A`', 16, 49),
+             'capability `X` declares `abs`, which it includes from `A`', 19, 49),
             (CAP_CHAIN + 'capability Y { abs: extern fn{ n: i64 } -> i64 }\ncapability X { ..m::A, ..Y }\nfn main {} {}',
-             'capability `X` includes `abs` twice: from `A` and from `Y`', 17, 24),
-            (CAP_CHAIN + 'capability X { ..m::B, ..m::A }\nfn main {} {}', 'capability `X` includes `abs` twice: from `B` and from `A`', 16, 24),
+             'capability `X` includes `abs` twice: from `A` and from `Y`', 20, 24),
+            (CAP_CHAIN + 'capability X { ..m::B, ..m::A }\nfn main {} {}', 'capability `X` includes `abs` twice: from `B` and from `A`', 19, 24),
             # no cycles
             ('capability P { ..P }\nfn main {} {}', 'capability `P` includes itself', 1, 16),
             ('capability P { ..Q, f: extern fn{} }\ncapability Q { ..P }\nfn main {} {}', 'capability `P` includes itself, through `Q`', 2, 16),
             # only a capability, and in one with fields only one with fields
             ('capability L\ncapability X { f: extern fn{}, ..L }\nfn main {} {}', "capability `X` can't include `L`: it has no fields", 2, 32),
             ('capability L\ncapability X { ..L, f: extern fn{} }\nfn main {} {}', "capability `X` can't include `L`: it has no fields", 2, 16),
-            (CAP_CHAIN + 'capability L\ncapability X { ..m::A, ..L }\nfn main {} {}', "capability `X` can't include `L`: it has no fields", 17, 24),
+            (CAP_CHAIN + 'capability L\ncapability X { ..m::A, ..L }\nfn main {} {}', "capability `X` can't include `L`: it has no fields", 20, 24),
             ('capability V { extern opterr: i32 }\ncapability X { f: extern fn{}, ..V }\nfn main {} {}', "capability `X` can't include `V`: it has only C variables", 2, 32),
             ('struct S { a: i32 }\ncapability X { ..S }\nfn main {} {}', 'capability `X` can only include a capability, not S', 2, 16),
             # it converts only to what it includes
-            (CAP_CHAIN + 'fn need { mut b: m::B } {}\nfn main { mut l: m::L } { let mut a = m::load_a{ &l }\n    need{ b = &a } }', 'expected *mut B, got *mut A', 18, 15),
-            (CAP_CHAIN + 'fn main { mut l: m::L } { let a = m::load_a{ &l }\n    let b: m::B = a }', 'expected B, got A', 17, 19),
-            (CAP_CHAIN + 'fn main { mut l: m::L } { let mut a = m::load_a{ &l }\n    let p: *mut m::A = &a\n    let q: *mut m::B = p }', 'expected *mut B, got *mut A', 18, 24),
+            (CAP_CHAIN + 'fn need { mut b: m::B } {}\nfn main { mut l: m::L } { let mut a = m::load_a{ &l }\n    need{ b = &a } }', 'expected *mut B, got *mut A', 21, 15),
+            (CAP_CHAIN + 'fn main { mut l: m::L } { let a = m::load_a{ &l }\n    let b: m::B = a }', 'expected B, got A', 20, 19),
+            (CAP_CHAIN + 'fn main { mut l: m::L } { let mut a = m::load_a{ &l }\n    let p: *mut m::A = &a\n    let q: *mut m::B = p }', 'expected *mut B, got *mut A', 21, 24),
             # a spread is only where a literal may be, of one the literal's capability includes,
             # and supplies its fields once
             (CAP_CHAIN + 'fn main { mut l: m::L } { let a = m::load_a{ &l }\n    let b = m::B{ ..a, len = m::len } }',
-             'capability `B` can only be made by a function of namespace `m`, which declares it', 17, 16),
+             'capability `B` can only be made by a function of namespace `m`, which declares it', 20, 16),
             (CAP_CHAIN.replace('    fn load_b', '    fn bad { mut l: L } -> B { return B{ ..load_b{ &l }, len } }\n    fn load_b') + 'fn main {} {}',
-             "`..load_b{ &l }` has type B, which capability `B` doesn't include", 13, 50),
+             "`..load_b{ &l }` has type B, which capability `B` doesn't include", 16, 50),
             (CAP_CHAIN.replace('    fn load_b', '    fn bad { mut l: L } -> B { return B{ ..load_a{ &l }, abs, len } }\n    fn load_b') + 'fn main {} {}',
-             '`abs` is supplied more than once', 13, 42),
+             '`abs` is supplied more than once', 16, 42),
             (CAP_CHAIN.replace('    fn load_b', '    fn bad { mut l: L } -> B { return B{ ..load_a{ &l } } }\n    fn load_b') + 'fn main {} {}',
-             'capability `B` is missing `len`', 13, 40),
-            (CAP_CHAIN + 'fn f { a: m::A } {}\nfn main { mut l: m::L } { let a = m::load_a{ &l }\n    f{ ..a } }', "`..a` is allowed only in a capability's literal", 18, 8),
+             'capability `B` is missing `len`', 16, 40),
+            (CAP_CHAIN + 'fn f { a: m::A } {}\nfn main { mut l: m::L } { let a = m::load_a{ &l }\n    f{ ..a } }', "`..a` is allowed only in a capability's literal", 21, 8),
             ('struct S { a: i32 }\nfn main {} { let s = S{ a = 1 }\n    let t = S{ ..s } }', "`..s` is allowed only in a capability's literal", 3, 16),
             # one is never replaced, whole or inside another value: a `mut` field may hold a copy
             (CAP_CHAIN + 'fn set { mut a: m::A, b: m::A } { a = b }\nfn main {} {}',
-             'cannot assign A, which is a capability with fields: one is never replaced, only declared with its value or assigned once to a `let x: T`', 16, 35),
+             'cannot assign A, which is a capability with fields: one is never replaced, only declared with its value or assigned once to a `let x: T`', 19, 35),
             (CAP_CHAIN + 'fn main { mut l: m::L } { let mut c = m::load_c{ &l }\n    c = m::load_c{ &l } }',
-             'cannot assign C, which is a capability with fields: one is never replaced, only declared with its value or assigned once to a `let x: T`', 17, 5),
+             'cannot assign C, which is a capability with fields: one is never replaced, only declared with its value or assigned once to a `let x: T`', 20, 5),
             (CAP_CHAIN + 'struct H { c: m::C, n: i32 }\nfn bump { mut h: H } { h = h }\nfn main {} {}',
-             'cannot assign H, which holds a capability with fields: one is never replaced, only declared with its value or assigned once to a `let x: T`', 17, 24),
+             'cannot assign H, which holds a capability with fields: one is never replaced, only declared with its value or assigned once to a `let x: T`', 20, 24),
             (CAP_CHAIN + 'fn main { mut l: m::L } { let mut o: ?m::A = null\n    o = m::load_a{ &l } }',
-             'cannot assign ?A, which holds a capability with fields: one is never replaced, only declared with its value or assigned once to a `let x: T`', 17, 5),
+             'cannot assign ?A, which holds a capability with fields: one is never replaced, only declared with its value or assigned once to a `let x: T`', 20, 5),
         ]:
             self.assertCapError(src, msg, line, col)
 
@@ -10476,6 +10779,7 @@ namespace getopt {
 namespace m {
     capability L
     #c::symbol{ name = "llabs" }
+    #pure
     extern fn abs { n: i64 } -> i64
     capability M { f: extern fn{ n: i64 } -> i64, extern optind: i32 }
     fn load { mut l: L } -> M { return M{ f = abs } }
@@ -10749,6 +11053,7 @@ CAP_FIELDS = """namespace m {
     capability L
     capability M { f: extern fn{ n: i64 } -> i64 }
     #c::symbol{ name = "llabs" }
+    #pure
     extern fn abs { n: i64 } -> i64
     fn load { mut l: L } -> M { return M{ f = abs } }
 }
@@ -10760,10 +11065,13 @@ CAP_FIELDS = """namespace m {
 CAP_CHAIN = """namespace m {
     capability L
     #c::symbol{ name = "llabs" }
+    #pure
     extern fn abs { n: i64 } -> i64
     #c::symbol{ name = "strlen" }
+    #pure
     extern fn len { s: c::String } -> usize
     #c::symbol{ name = "atoi" }
+    #pure
     extern fn int { s: c::String } -> i32
     capability A { abs: extern fn{ n: i64 } -> i64 }
     capability B { ..A, len: extern fn{ s: c::String } -> usize }
@@ -11300,10 +11608,10 @@ class Proc(Base):
         # that to the program.
         from toolchain import build_sources
         exe, _ = build_sources([("""
-extern fn signal { number: i32, handler: u64 } -> u64
+extern fn signal { mut proc: Proc, number: i32, handler: u64 } -> u64
 
 fn main { mut io: Io, mut proc: Proc, args: Args } -> i32 {
-    if proc::os{ &proc } != build::Os::windows { _ = signal{ number = 13, handler = 1 } }      // SIGPIPE, SIG_IGN
+    if proc::os{ &proc } != build::Os::windows { _ = signal{ &proc, number = 13, handler = 1 } }      // SIGPIPE, SIG_IGN
     let cmd: [3][]u8 = [args[0], "-c", "import os, sys, time\\nos.close(0)\\nprint('closed', flush=True)\\ntime.sleep(60)"]
     let options = proc::Options{ stdin = proc::Stdio::pipe, stdout = proc::Stdio::pipe, .. }
     let mut child = proc::spawn{ &proc, argv = cmd[..], options } iferr { return 1 }
@@ -12017,7 +12325,9 @@ const ORIGIN: a::Point = a::Point{ x = 3, y = 4 }
 namespace a {
     struct Point { x: i64, y: i64 }
 
+    #pure
     extern fn labs { n: i64 } -> i64
+    #pure
     extern fn qsort { base: *mut u8, n: usize, size: usize, cmp: extern fn{ x: *u8, y: *u8 } -> i32 }
 
     #c::callback
@@ -12913,6 +13223,7 @@ fn main { mut io: Io, mut proc: Proc } {
 
     def test_extern_fn_not_supported(self):
         d = self.project({'c.ctx': """
+#pure
 extern fn abs { n: i32 } -> i32
 fn main { mut io: Io } {
     io::println{ &io, s = "first" }
@@ -13169,10 +13480,15 @@ void ctxtest_out(int32_t (*f)(int32_t, int32_t), int32_t *out) { *out = f(20, 22
 
     HEAD = """
 type Op = extern fn{ a: i32, b: i32 } -> i32
+#pure
 extern fn ctxtest_op { which: i32 } -> ?*u8
+#pure
 extern fn ctxtest_op_typed { which: i32 } -> ?Op
+#pure
 extern fn ctxtest_apply { f: Op, a: i32, b: i32 } -> i32
+#pure
 extern fn ctxtest_sub { a: i32, b: i32 } -> i32
+#pure
 extern fn ctxtest_out { f: Op, mut out: i32 }
 """
 
@@ -13273,12 +13589,15 @@ P ctxtest_swap(P (*f)(P), P p) { return f(p); }
 
     HEAD = """
 type Op = extern fn{ a: i32, b: i32 } -> i32
+#pure
 extern fn ctxtest_apply { f: Op, a: i32, b: i32 } -> i32
+#pure
 extern fn ctxtest_each { f: extern fn{ mut total: i64, i: i32 }, mut total: i64, n: i32 }
 """
 
     def test_qsort(self):
         self.assertOutput("""
+#pure
 extern fn qsort { base: *mut u8, n: usize, size: usize, cmp: extern fn{ a: *u8, b: *u8 } -> i32 }
 
 #c::callback
@@ -13299,10 +13618,11 @@ fn main { mut io: Io } {
     def test_called_from_c(self):
         self.assertEqual(self.run_with_lib("""
 #c::symbol{ name = "ctxtest_apply" }
-extern fn apply_io { f: extern fn{ mut io: Io, a: i32, b: i32 } -> i32, a: i32, b: i32 } -> i32
+extern fn apply_io { mut io: Io, f: extern fn{ mut io: Io, a: i32, b: i32 } -> i32, a: i32, b: i32 } -> i32
 
 struct P { x: i32, y: i32 }
 #c::symbol{ name = "ctxtest_swap" }
+#pure
 extern fn swap_via { f: extern fn{ p: P } -> P, p: P } -> P
 
 // Fields of the type it doesn't take are dropped: this one ignores `a`.
@@ -13333,7 +13653,7 @@ fn main { mut io: Io } {
     let maybe: ?Op = twice
     if maybe != null { io::println_i64{ &io, n = maybe{ a = 0, b = 5 } } }
     io::println_i64{ &io, n = op{ a = 1, b = 3 } }
-    io::println_i64{ &io, n = apply_io{ f = noisy, a = 7, b = 8 } }
+    io::println_i64{ &io, n = apply_io{ &io, f = noisy, a = 7, b = 8 } }
     let mut total: i64 = 0
     ctxtest_each{ f = add_to, &total, n = 4 }
     io::println_i64{ &io, n = total }
@@ -13398,12 +13718,19 @@ struct Color { r: f32, g: f32, b: f32, a: f32 }
 struct DepthStencil { depth: f32, stencil: u32 }
 extern union ClearValue { color: Color, depth_stencil: DepthStencil }
 struct Attachment { kind: u32, value: ClearValue, last: u8 }
+#pure
 extern fn ctxtest_size {} -> u64
+#pure
 extern fn ctxtest_align {} -> u64
+#pure
 extern fn ctxtest_attachment_size {} -> u64
+#pure
 extern fn ctxtest_last_offset {} -> u64
+#pure
 extern fn ctxtest_depth { d: f32, s: u32 } -> ClearValue
+#pure
 extern fn ctxtest_sum { v: ClearValue } -> f32
+#pure
 extern fn ctxtest_attachment { a: Attachment } -> u32
 """
 
@@ -13501,8 +13828,11 @@ Pick ctxtest_picker(void) { return pick; }
     HEAD = """
 struct Named { name: ?c::String, n: i32 }
 type Pick = extern fn{ i: i32 } -> ?c::String
+#pure
 extern fn ctxtest_named { x: Named } -> u64
+#pure
 extern fn ctxtest_echo { s: ?c::String } -> ?c::String
+#pure
 extern fn ctxtest_picker {} -> Pick
 """
 
@@ -13511,8 +13841,11 @@ extern fn ctxtest_picker {} -> Pick
 
     def test_literals_to_libc(self):
         self.assertOutput("""
+#pure
 extern fn strlen { s: c::String } -> usize
+#pure
 extern fn strcmp { a: c::String, b: c::String } -> i32
+#pure
 extern fn strchr { s: c::String, ch: i32 } -> ?c::String
 const GREETING: c::String = "hello"
 fn pick { b: bool } -> c::String { return if b { "yes" } else { "no" } }
@@ -13841,6 +14174,7 @@ namespace lib {
     capability Lib { abs: extern fn{ n: i64 } -> i64 }
 
     #c::symbol{ name = "llabs" }
+    #pure
     extern fn c_llabs { n: i64 } -> i64
 
     fn load { mut io: Io } -> Lib { return Lib{ abs = c_llabs } }
@@ -14055,7 +14389,7 @@ fn main { mut io: Io, mut threads: Threads } -> i32 {
     thread::join{ &threads, thread = t }
     // nothing signals it now: it gives up
     mutex::lock{ mutex = &q.lock }
-    let woke = condition::wait_for{ condition = &q.ready, mutex = &q.lock, nanoseconds = 1000000 }
+    let woke = condition::wait_for{ &threads, condition = &q.ready, mutex = &q.lock, nanoseconds = 1000000 }
     mutex::unlock{ mutex = &q.lock }
     condition::free{ condition = &q.ready }
     mutex::free{ mutex = &q.lock }

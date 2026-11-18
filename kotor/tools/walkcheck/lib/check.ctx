@@ -480,9 +480,9 @@ namespace walkcheck {
     }
 
     fn xorshift { x: u32 } -> u32 {
-        let a = x ^ (x << 13)
+        let a = x ^ @wrap_shl(x, 13)
         let b = a ^ (a >> 17)
-        return b ^ (b << 5)
+        return b ^ @wrap_shl(b, 5)
     }
 
     // Tables come in the documented order, packed after the header, and end the file (4).
@@ -982,7 +982,9 @@ namespace walkcheck {
         return d <= 0.0001 and d >= -0.0001
     }
 
+    #pure
     extern fn cos { x: f64 } -> f64
+    #pure
     extern fn sin { x: f64 } -> f64
 
     // ---- small helpers

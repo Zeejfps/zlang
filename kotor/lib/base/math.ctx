@@ -20,19 +20,33 @@
 // verb phrases; constructors are `make`, `from_*` and `identity`.
 namespace math {
     // ---- libm (every program links it). Pure: they take no capability.
+    #pure
     extern fn sqrtf { x: f32 } -> f32
+    #pure
     extern fn sinf { x: f32 } -> f32
+    #pure
     extern fn cosf { x: f32 } -> f32
+    #pure
     extern fn tanf { x: f32 } -> f32
+    #pure
     extern fn atan2f { y: f32, x: f32 } -> f32
+    #pure
     extern fn acosf { x: f32 } -> f32
+    #pure
     extern fn asinf { x: f32 } -> f32
+    #pure
     extern fn floorf { x: f32 } -> f32
+    #pure
     extern fn ceilf { x: f32 } -> f32
+    #pure
     extern fn powf { x: f32, y: f32 } -> f32
+    #pure
     extern fn fabsf { x: f32 } -> f32
+    #pure
     extern fn fmodf { x: f32, y: f32 } -> f32
+    #pure
     extern fn expf { x: f32 } -> f32
+    #pure
     extern fn logf { x: f32 } -> f32
 
     // ---- std's float bits, which this namespace hides. A signed integer's bits are `@trunc`.

@@ -54,8 +54,8 @@ nullable pointer), `[N]T` arrays (values, bounds-checked), `[]T`/`[]mut T` slice
 `s.ptr`, `s[a..b]`), `!T` (value or error), `strlit`, `fn{C} -> R`, `&fn{C} -> R` (bound
 function: can't be stored in a struct or returned), `extern fn{C} -> R` (C function pointer).
 
-- Integer `+ - *` panic on overflow; use `+%`, `-%`, `*%` for hashes and CRCs. Shifts never
-  overflow. `/` by zero panics.
+- Integer `+ - * <<` panic on overflow (`a << n` is `a * 2^n`); use `+%`, `-%`, `*%` and
+  `@wrap_shl` for hashes, CRCs and RNGs. `/` by zero panics.
 - `~x` flips an integer's bits: `flags & ~F_VISIBLE` clears a flag.
 - `e ifoverflow x` gives x where the arithmetic and `@as` written in e overflow, for counts from a
   file: `count * 16 ifoverflow { return truncated }`. A call's arguments in e aren't covered.
@@ -141,8 +141,9 @@ let p = try alloc::new(Thing, heap::Heap){ realloc = heap::alloc, heap = &h, val
 
 `main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32` receives the capabilities;
 pass them down to what needs them (`&fs`). Code without capabilities is pure. C functions are
-`extern fn name { ... } -> R` with `#c::symbol{ name = "..." }`; libm functions are in
-`kotor/lib/base/math.ctx`. SDL is `kotor/lib/platform/sdl.ctx`; only `lib/render_gl` touches GL.
+`extern fn name { ... } -> R` with `#c::symbol{ name = "..." }`. Each takes a capability field
+for what it touches, or is `#pure` (it touches only its arguments and what they point to), or it
+is an error. libm functions are in `kotor/lib/base/math.ctx`, `#pure`. SDL is `kotor/lib/platform/sdl.ctx`; only `lib/render_gl` touches GL.
 
 ## Printing and text
 

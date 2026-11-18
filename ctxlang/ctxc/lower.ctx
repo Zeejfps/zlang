@@ -92,6 +92,8 @@ namespace lower {
     }
 
     fn lowering { mut c: check::Checker } -> Lower {
+        // Checking is done: a distinct type is its base from here on (§12, Distinct types).
+        c.ty.erased = true
         return Lower{
             c = &c, heap = c.heap,
             types = list::new(ir::Type){ realloc = arena::alloc, heap = c.heap },
@@ -3075,6 +3077,8 @@ namespace lower {
                 let base = check::get_decl{ c = l.c.*, d = decl }.ty
                 if norm{ &l, t = base } == norm{ &l, t } { return ex{ &l, e = args[0] } }
             }
+            // Between a distinct type and its base, erased to one type: nothing to do.
+            if norm{ &l, t = src } == norm{ &l, t } { return ex{ &l, e = args[0] } }
             let ty = tid{ &l, t }
             let x = ex{ &l, e = args[0] }
             return mk{ ty, k = ir::ExprKind::convert{ e = box{ l, e = x }, pos = epos{ &l, e }, trap = trap_of{ l, e } } }
@@ -3084,6 +3088,12 @@ namespace lower {
             return mk{ ty, k = ir::ExprKind::trunc{ e = box{ l, e = ex{ &l, e = args[0] } } } }
         }
         if check::atomic_name{ n = name } { return atomic{ &l, name, args, t } }
+        if slice::eq_bytes{ a = name, b = "wrap_shl" } {
+            let ty = tid{ &l, t }
+            let x = conv{ &l, e = args[0], to = t }
+            let y = ex{ &l, e = args[1] }
+            return mk{ ty, k = ir::ExprKind::shift{ op = ir::ShiftOp::wrap_shl, a = box{ l, e = x }, b = box{ l, e = y }, pos = epos{ &l, e } } }
+        }
         @panic("lower: a builtin the parser doesn't know")
     }
 

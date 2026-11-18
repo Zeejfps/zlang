@@ -27,9 +27,9 @@ namespace grass {
     // xorshift32.
     fn next { mut s: u32 } -> u32 {
         let mut x = s
-        x = x ^ (x << 13)
+        x = x ^ @wrap_shl(x, 13)
         x = x ^ (x >> 17)
-        x = x ^ (x << 5)
+        x = x ^ @wrap_shl(x, 5)
         s = x
         return x
     }

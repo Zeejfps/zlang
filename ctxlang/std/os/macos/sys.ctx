@@ -16,11 +16,11 @@ namespace sys {
     // The bytes of a thread's name pthread_setname_np takes, before its NUL.
     const THREAD_NAME_MAX: usize = 63
 
-    extern fn pthread_setname_np { name: *u8 } -> i32
+    extern fn pthread_setname_np { mut threads: Threads, name: *u8 } -> i32
 
     // The calling thread's name, NUL-terminated: macOS names only the calling thread.
-    fn set_thread_name { name: *u8 } {
-        _ = pthread_setname_np{ name }
+    fn set_thread_name { mut threads: Threads, name: *u8 } {
+        _ = pthread_setname_np{ &threads, name }
     }
 
     // sysconf's name for how many processors are online.
@@ -209,10 +209,10 @@ namespace sys {
             if e == os::ESRCH { return true }
             return os::proc_failed{ code = e }
         }
-        let deadline = os::deadline{ nanoseconds }
+        let deadline = os::deadline{ &proc, nanoseconds }
         let mut event = Kevent{ ident = 0, filter = 0, flags = 0, fflags = 0, data = 0, udata = 0 }
         while true {
-            let left = os::remaining{ deadline }
+            let left = os::remaining{ &proc, deadline }
             let wait = if left > DAY { DAY } else { left }
             let t = os::Timespec{ sec = @as(i64, wait / 1000000000), nsec = @as(i64, wait % 1000000000) }
             let r = kevent{ &proc, kq, changes = null, count = 0, events = &event, capacity = 1, timeout = &t }

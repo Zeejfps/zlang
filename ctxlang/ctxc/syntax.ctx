@@ -40,7 +40,7 @@ namespace syntax {
         record{ name: Name, tparams: []Name, fields: []Field, untagged: bool },   // struct; extern union if untagged
         sum{ name: Name, tparams: []Name, variants: []Variant },         // union
         enumeration{ name: Name, base: TypeExpr, variants: []EnumVariant },
-        alias{ name: Name, tparams: []Name, ty: TypeExpr },               // type
+        alias{ name: Name, tparams: []Name, ty: TypeExpr, distinct: bool },  // type; `= distinct T` if distinct
         constant{ name: Name, ty: TypeExpr, value: Expr },
         space{ name: Name, decls: []Decl },                               // namespace
         cap{ name: Name, fields: ?[]Field, includes: []Include },          // capability; fields null without braces

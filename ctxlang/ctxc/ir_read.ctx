@@ -663,6 +663,7 @@ namespace ir_read {
     fn shift_op { mut r: Reader } -> ir::ShiftOp {
         let s = sym{ &r }
         if spells{ s, lit = "shl" } { return ir::ShiftOp::shl }
+        if spells{ s, lit = "wrap_shl" } { return ir::ShiftOp::wrap_shl }
         if not spells{ s, lit = "shr" } { fail{ &r, problem = Problem::unknown_tag } }
         return ir::ShiftOp::shr
     }

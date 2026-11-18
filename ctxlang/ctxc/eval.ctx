@@ -1896,7 +1896,17 @@ namespace eval {
         }
         let n = @trunc(u32, b)
         match op {
-            shl => { return extend{ v = a << n, p } }
+            shl => {
+                // a * 2^n, which overflows when shifting back doesn't give a
+                let r = extend{ v = shl_bits{ a, n }, p }
+                let back = if signed{ p } { @trunc(u64, @trunc(i64, r) >> n) } else { r >> n }
+                if back != a {
+                    overflow{ &m, pos }
+                    return halt
+                }
+                return r
+            }
+            wrap_shl => { return extend{ v = shl_bits{ a, n }, p } }
             shr => {
                 if signed{ p } { return @trunc(u64, @trunc(i64, a) >> n) }
                 return a >> n
@@ -2013,6 +2023,12 @@ namespace eval {
     // An integer literal of type p: its magnitude, negated if negative.
     fn int_bits { negative: bool, n: u64, p: ir::Prim } -> u64 {
         return extend{ v = if negative { 0 -% n } else { n }, p }
+    }
+
+    // a << n in 64 bits, the bits shifted out dropped: the high n bits go first, so the shift
+    // itself never overflows.
+    fn shl_bits { a: u64, n: u32 } -> u64 {
+        return (a & (MAX >> n)) << n
     }
 
     // v's low bits for p, sign-extended if p is signed.

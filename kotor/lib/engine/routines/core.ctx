@@ -475,22 +475,31 @@ namespace rt_core {
     // degrees, in double precision here as the engine's x87 does.
 
     #c::symbol{ name = "cos" }
+    #pure
     extern fn libm_cos { x: f64 } -> f64
     #c::symbol{ name = "sin" }
+    #pure
     extern fn libm_sin { x: f64 } -> f64
     #c::symbol{ name = "tan" }
+    #pure
     extern fn libm_tan { x: f64 } -> f64
     #c::symbol{ name = "acos" }
+    #pure
     extern fn libm_acos { x: f64 } -> f64
     #c::symbol{ name = "asin" }
+    #pure
     extern fn libm_asin { x: f64 } -> f64
     #c::symbol{ name = "atan" }
+    #pure
     extern fn libm_atan { x: f64 } -> f64
     #c::symbol{ name = "log" }
+    #pure
     extern fn libm_log { x: f64 } -> f64
     #c::symbol{ name = "pow" }
+    #pure
     extern fn libm_pow { x: f64, y: f64 } -> f64
     #c::symbol{ name = "sqrt" }
+    #pure
     extern fn libm_sqrt { x: f64 } -> f64
 
     const RADIANS_PER_DEGREE: f64 = 0.017453292519943295

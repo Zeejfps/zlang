@@ -346,6 +346,7 @@ fn compare_ref {
     note_worst{ &c, path, max, rms }
 }
 
+#pure
 extern fn sqrt { x: f64 } -> f64
 
 // Keeps the 8 files with the largest differences.

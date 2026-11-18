@@ -153,7 +153,7 @@ namespace mp3 {
                 k = k + 1
             }
         }
-        return (w << (b.pos & 7)) >> (32 - n)
+        return @wrap_shl(w, b.pos & 7) >> (32 - n)
     }
 
     // The next n bits (0..25).
