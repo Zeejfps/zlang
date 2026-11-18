@@ -3084,6 +3084,12 @@ namespace lower {
             return mk{ ty, k = ir::ExprKind::trunc{ e = box{ l, e = ex{ &l, e = args[0] } } } }
         }
         if check::atomic_name{ n = name } { return atomic{ &l, name, args, t } }
+        if slice::eq_bytes{ a = name, b = "wrap_shl" } {
+            let ty = tid{ &l, t }
+            let x = conv{ &l, e = args[0], to = t }
+            let y = ex{ &l, e = args[1] }
+            return mk{ ty, k = ir::ExprKind::shift{ op = ir::ShiftOp::wrap_shl, a = box{ l, e = x }, b = box{ l, e = y }, pos = epos{ &l, e } } }
+        }
         @panic("lower: a builtin the parser doesn't know")
     }
 

@@ -2857,7 +2857,14 @@ namespace check {
                 error{ &c, at, msg = "shift count out of range in constant" }
                 return null
             }
-            return if op == tok::Kind::shl { x << y } else { x >> y }
+            if op == tok::Kind::shr { return x >> y }
+            // x << y holds x * 2^y when the bits from 63 - y up are all x's sign
+            let h = x >> (63 - y)
+            if h != 0 and h != -1 {
+                too_large{ &c, at }
+                return null
+            }
+            return x << y
         }
         if op == tok::Kind::amp { return x & y }
         if op == tok::Kind::pipe { return x | y }
@@ -3706,7 +3713,13 @@ namespace check {
                 }
                 return int_val{ ty = t, n = Num{ negative = false, magnitude = p.magnitude >> n } }
             }
-            return wrapped{ ty = t, p = prim, x = bits_of{ n = p } << n }
+            // as p * 2^n, which panics where it doesn't fit
+            let r = num_mul{ a = p, b = Num{ negative = false, magnitude = @as(u64, 1) << n } }
+            if r == null {
+                error{ &c, at, msg = "integer overflow in constant" }
+                return null
+            }
+            return fits_in{ &c, n = r, t, at }
         }
         if wrapping{ op } {
             let u = bits_of{ n = p }
@@ -9582,6 +9595,17 @@ namespace check {
             let pt = typed{ &c, e = args[0] }
             if not (types::get{ s = c.ty, id = pt } is ptr | error) { error{ &c, at = expr_at{ e = args[0] }, msg = "@addr needs a pointer argument" } }
             return types::USIZE
+        }
+        if slice::eq_bytes{ a = n, b = "wrap_shl" } {
+            let t = expr{ &c, e = args[0], exp }
+            if not is_int{ c, t } {
+                errorf{ &c, at = expr_at{ e = args[0] }, msg = @fmt("@wrap_shl needs an integer to shift, got {}", tstr{ c, t }) }
+            }
+            let ct = expr{ &c, e = args[1], exp = types::NO_TYPE }
+            if not is_int{ c, t = ct } {
+                errorf{ &c, at = expr_at{ e = args[1] }, msg = @fmt("a shift count must be an integer, got {}", tstr{ c, t = ct }) }
+            }
+            return t
         }
         @panic("check: a builtin the parser doesn't know")
     }

@@ -255,10 +255,10 @@ fn main { mut io: Io } {
     let a: u32 = 0xF0
     let n: usize = 24
     io::println_u64{ &io, n = a << n }
-    io::println_u64{ &io, n = a << 28 }
+    io::println_u64{ &io, n = @wrap_shl(a, 28) }
     io::println_u64{ &io, n = a >> 4 }
     let one: i8 = 1
-    io::println_i64{ &io, n = one << 7 }
+    io::println_i64{ &io, n = @wrap_shl(one, 7) }
     let b: i8 = -128
     io::println_i64{ &io, n = b >> 7 }
     let big: u64 = 256 << 20
@@ -293,6 +293,55 @@ fn main { mut io: Io } {
     io::println_i64{ &io, n = x >> n }
 }
 """, 'shift count -1 out of range for a 64-bit integer')
+
+    def test_shift_left_keeps_the_value(self):
+        # a << n is a * 2^n: it panics where that doesn't fit, as the multiply would
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let a: u8 = 0x7F
+    io::println_u64{ &io, n = a << 1 }
+    let b: i8 = -64
+    io::println_i64{ &io, n = b << 1 }
+    let c: i8 = 1
+    io::println_i64{ &io, n = c << 6 }
+    let d: i64 = -1
+    io::println_i64{ &io, n = d << 63 }
+    let e: u64 = 1
+    io::println_u64{ &io, n = e << 63 }
+}
+""", '254\n-128\n64\n-9223372036854775808\n9223372036854775808\n')
+        for body in ['let x: u8 = 0x80\n    let y = x << 1',
+                     'let x: u32 = 0xF0\n    let y = x << 28',
+                     'let x: i8 = 1\n    let y = x << 7',
+                     'let x: i32 = 0x40000000\n    let y = x << 1',
+                     'let x: i16 = -16385\n    let y = x << 1',
+                     'let x: i64 = 3\n    let n: u8 = 62\n    let y = x << n']:
+            with self.subTest(body=body):
+                self.assertPanic('fn main {} {\n    ' + body + '\n}\n', 'integer overflow')
+
+    def test_wrap_shl(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let a: u8 = 0x81
+    io::println_u64{ &io, n = @wrap_shl(a, 1) }
+    let b: i8 = 1
+    io::println_i64{ &io, n = @wrap_shl(b, 7) }
+    let c: u64 = 0xFFFFFFFFFFFFFFFF
+    let n: i32 = 60
+    io::println_u64{ &io, n = @wrap_shl(c, n) }
+    io::println_i64{ &io, n = @wrap_shl(@as(i32, 0x40000001), 1) }
+}
+""", '2\n-128\n17293822569102704640\n-2147483646\n')
+        self.assertPanic("""
+fn main {} {
+    let a: u8 = 1
+    let n: i64 = 8
+    let y = @wrap_shl(a, n)
+}
+""", 'shift count 8 out of range for a 8-bit integer')
+        self.assertCompileError("""
+fn main {} { let x = @wrap_shl(1.5, 2) }
+""", '@wrap_shl needs an integer to shift, got {float}')
 
     def test_bitwise_needs_integers(self):
         self.assertCompileError("""
@@ -1232,6 +1281,7 @@ class Declarations(Base):
             ('struct S { a: [1 / 0]u8 }', 'division by zero in constant', 1, 18),
             ('struct S { a: [1 % 0]u8 }', 'division by zero in constant', 1, 18),
             ('struct S { a: [1 << 64]u8 }', 'shift count out of range in constant', 1, 18),
+            ('struct S { a: [3 << 62]u8 }', 'integer constant is too large', 1, 18),
             ('const N: usize = N\nstruct S { a: [N]u8 }', 'const `N` refers to itself', 1, 18),
             ('const N: usize = M\nconst M: usize = N\nstruct S { a: [N]u8 }', 'const `N` refers to itself', 2, 18),
             ('struct S { a: [x]u8 }', 'an array length must be a compile-time integer constant', 1, 16),
@@ -1324,7 +1374,7 @@ class ConstInitializers(Base):
             'const A: utf8::String = "ok"',
             'const A: bool = false and 1 / 0 == 1',
             'const A: i32 = -2147483648 % -1',
-            'const A: i8 = 64 << 1',
+            'const A: i8 = 32 << 1',
             'const A: i32 = @as(i32, 1)',
             'fn f {} -> i32 { return 1 }\nconst A: i32 = f{}',
         ]:
@@ -1346,6 +1396,10 @@ class ConstInitializers(Base):
             ('const A: u8 = 3 - 4', 'integer overflow in constant', 1, 17),
             ('const A: i32 = 5 % 0', 'division by zero in constant', 1, 18),
             ('const A: i64 = 1 >> 64', 'shift count out of range in constant', 1, 18),
+            ('const A: i8 = 64 << 1', 'integer overflow in constant', 1, 18),
+            ('const A: u8 = 3 << 7', 'integer overflow in constant', 1, 17),
+            ('const A: i64 = -2 << 63', 'integer overflow in constant', 1, 19),
+            ('const A: [1]u32 = [0xF0 << 28]', 'integer overflow in constant', 1, 25),
         ]:
             self.assertConstError(src + '\nfn main {} {}', msg, line, col)
 
@@ -1373,7 +1427,7 @@ const M: u64 = 1000000
 const W: u64 = M * 5000000 + N
 const F: f32 = 1.1 * 3.0
 const H: i32 = -7 / 2 + (-7 % 2) + (1 << 30) + (-8 >> 1)
-const K: i8 = 64 << 1
+const K: i8 = -64 << 1
 const Q: P = P{ b = N - 1, a = W }
 const Z: [4]i64 = [N; 4]
 fn main { mut io: Io } {

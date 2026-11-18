@@ -576,6 +576,7 @@ namespace ir_print {
                 char{ &o, c = ' ' }
                 match op {
                     shl => { text{ &o, a = "shl" } }
+                    wrap_shl => { text{ &o, a = "wrap_shl" } }
                     shr => { text{ &o, a = "shr" } }
                 }
                 sub{ &o, e = a, depth }
