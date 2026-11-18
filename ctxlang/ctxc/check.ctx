@@ -91,8 +91,9 @@ namespace check {
 
     // The attributes the compiler declares, in the universe: `#convert` (§18, Literal
     // conversions), `#write` (§13, Formatting), `#start` and `#panic` (§15, Entry point),
-    // `#stack_limit` and `#thread_local` on a static (§15, rule 13), and `#spawn` (§15, rule 14).
-    enum Attribute: u8 { convert, write, start, panic, stack_limit, thread_local, spawn }
+    // `#stack_limit` and `#thread_local` on a static (§15, rule 13), `#spawn` (§15, rule 14) and
+    // `#pure` on an extern fn (§18, Extern functions, rule 8).
+    enum Attribute: u8 { convert, write, start, panic, stack_limit, thread_local, spawn, pure }
 
     struct Space {
         name:   []u8,
@@ -494,6 +495,7 @@ namespace check {
         put_name{ &c, ns = UNIVERSE, values = false, name = "stack_limit", e = Entry::attr{ a = Attribute::stack_limit } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "thread_local", e = Entry::attr{ a = Attribute::thread_local } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "spawn", e = Entry::attr{ a = Attribute::spawn } }
+        put_name{ &c, ns = UNIVERSE, values = false, name = "pure", e = Entry::attr{ a = Attribute::pure } }
         return c
     }
 
@@ -1548,6 +1550,7 @@ namespace check {
             let mut seen_start = false
             let mut seen_panic = false
             let mut seen_spawn = false
+            let mut seen_pure = false
             let mut k: usize = 0
             while k < x.attrs.len {
                 let a = x.attrs[k]
@@ -1581,6 +1584,10 @@ namespace check {
                             spawn_attr{ &c, x, file, a, seen = seen_spawn }
                             seen_spawn = true
                         }
+                        pure => {
+                            pure_attr{ &c, x, file, a, seen = seen_pure }
+                            seen_pure = true
+                        }
                     }
                 }
                 k = k + 1
@@ -1595,7 +1602,7 @@ namespace check {
 
     // A compiler attribute's name, for messages.
     fn attr_name { a: Attribute } -> []u8 {
-        return match a { convert => { "convert" } write => { "write" } start => { "start" } panic => { "panic" } stack_limit => { "stack_limit" } thread_local => { "thread_local" } spawn => { "spawn" } }
+        return match a { convert => { "convert" } write => { "write" } start => { "start" } panic => { "panic" } stack_limit => { "stack_limit" } thread_local => { "thread_local" } spawn => { "spawn" } pure => { "pure" } }
     }
 
     // The attribute the compiler declares that a names, if it is one: `#convert` or `#write`
@@ -1760,6 +1767,39 @@ namespace check {
             return
         }
         at.spawn = true
+    }
+
+    // `#pure` on x (§18, Extern functions, rule 8): an extern fn without a capability field,
+    // which says the C function reaches nothing but its arguments and the memory their pointers
+    // reach. Nothing checks the C side.
+    fn pure_attr { mut c: Checker, x: syntax::Decl, file: u32, a: syntax::Attr, seen: bool } {
+        let func{ external } = x.k else {
+            error{ &c, at = a.span, msg = "`pure` applies only to an extern fn" }
+            return
+        }
+        if not external {
+            error{ &c, at = a.span, msg = "`pure` applies only to an extern fn: a fn with a body shows what it touches" }
+            return
+        }
+        if seen {
+            error{ &c, at = a.span, msg = "duplicate `pure` attribute" }
+            return
+        }
+        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
+        let cap = first_cap{ c, fields = get_decl{ c, d }.fields }
+        if cap != null {
+            errorf{ &c, at = a.span, msg = @fmt("a `pure` extern fn takes no capability, and this one takes `{}`: drop one", str{ s = cap }) }
+        }
+    }
+
+    // The name of the first field of fields that has a capability type, or null.
+    fn first_cap { c: Checker, fields: []types::Field } -> ?[]u8 {
+        let mut i: usize = 0
+        while i < fields.len {
+            if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = fields[i].ty } } is cap { return fields[i].name }
+            i = i + 1
+        }
+        return null
     }
 
     // The argument of a `#spawn` fn's `run` (§15, rule 14), where type t is expected: a value
@@ -2112,6 +2152,8 @@ namespace check {
                     } else if which == Attribute::thread_local {
                         local_attr{ &c, d, f, a, seen = seen_local }
                         seen_local = true
+                    } else if which == Attribute::pure {
+                        error{ &c, at = a.span, msg = "`pure` applies only to an extern fn" }
                     } else {
                         errorf{ &c, at = a.span, msg = @fmt("`{}` applies only to a fn", str{ s = attr_name{ a = which } }) }
                     }
