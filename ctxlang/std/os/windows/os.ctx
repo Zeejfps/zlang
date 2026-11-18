@@ -216,6 +216,25 @@ namespace os {
         return @as(usize, done)
     }
 
+    // Reads at most into.len bytes, which aren't none, from `offset` bytes into the file, without
+    // its position: ReadFile with the offset in an OVERLAPPED, which on a handle that isn't
+    // overlapped reads synchronously, and moves the position. Returns how many; 0 at or past the
+    // end (ERROR_HANDLE_EOF).
+    fn file_read_at { mut fs: Fs, file: u64, offset: u64, into: []mut u8 } -> fs::Error!usize {
+        let n = if into.len > CHUNK { CHUNK } else { into.len }
+        let mut o = Overlapped{ internal = 0, internal_high = 0, offset = @trunc(u32, offset), offset_high = @trunc(u32, offset >> 32), event = 0 }
+        let mut done: u32 = 0
+        if ReadFile{ &fs, file, buf = into.ptr, count = @as(u32, n), done = &done, overlapped = @cast(*u8, &o) } == 0 {
+            let e = GetLastError{ &fs }
+            if e == ERROR_HANDLE_EOF { return 0 }
+            return failed{ code = e }
+        }
+        return @as(usize, done)
+    }
+
+    // ReadFile's error at the end of a file, read at an offset.
+    const ERROR_HANDLE_EOF: u32 = 38
+
     // Writes some of `bytes`, which aren't none. Returns how many.
     fn file_write { mut fs: Fs, file: u64, bytes: []u8 } -> fs::Error!usize {
         let n = if bytes.len > CHUNK { CHUNK } else { bytes.len }

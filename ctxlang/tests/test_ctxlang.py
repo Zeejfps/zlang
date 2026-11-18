@@ -8992,8 +8992,9 @@ class Fs(Base):
     fs::seek{ &fs, file = f, offset = 0 } iferr { return 5 }
     let n = fs::read{ &fs, file = f, into = buf[..1] } iferr { return 6 }
     io::println{ &io, s = utf8::of{ chars = buf[..n] } }
-    // The position is after what read_at read.
+    // read_at doesn't use the position, and leaves it unspecified: a read after seeks first.
     _ = fs::read_at{ &fs, file = f, offset = 5, into = buf[..2] } iferr { return 7 }
+    fs::seek{ &fs, file = f, offset = 7 } iferr { return 8 }
     let m = fs::read{ &fs, file = f, into = buf[..] } iferr { return 8 }
     io::println{ &io, s = utf8::of{ chars = buf[..m] } }
     return 0
@@ -14736,6 +14737,60 @@ fn main { mut io: Io, mut proc: Proc, mut threads: Threads, args: Args } -> i32 
 ''', args=[sys.executable, flood])
         newline = 2 if sys.platform == 'win32' else 1
         self.assertEqual((out, code), (f'{2000 * (100 + newline)} {2000 * (100 + newline)}\nread: cancelled\nwait: cancelled\n137\n', 0))
+
+    def test_tasks_read_one_file_at_once(self):
+        """fs::read_at doesn't use the file's position: 8 tasks read one open file at once, each
+        its own blocks, again and again, and every byte is where it should be."""
+        import tempfile
+        import toolchain
+        with tempfile.TemporaryDirectory(dir=toolchain.CACHE) as d:
+            path = os.path.join(d, 'blocks.bin')
+            with open(path, 'wb') as f:
+                f.write(bytes(i * 7 % 251 for i in range(1 << 20)))
+            out, code = self.native('''
+#task
+fn check { mut fs: Fs, file: fs::File, first: u64 } -> !u64 {
+    let mut buf: [4096]u8
+    let mut bad: u64 = 0
+    let mut round: u64 = 0
+    while round < 20 {
+        let mut k: u64 = first
+        while k < 256 {
+            let at = k * 4096
+            let n = try fs::read_at{ &fs, file, offset = at, into = buf[..] }
+            if n != 4096 { bad = bad + 1 }
+            let mut i: usize = 0
+            while i < n {
+                if @as(u64, buf[i]) != (at + @as(u64, i)) * 7 % 251 { bad = bad + 1 }
+                i = i + 1
+            }
+            k = k + 8
+        }
+        round = round + 1
+    }
+    return bad
+}
+
+fn main { mut io: Io, mut fs: Fs, mut threads: Threads, args: Args } -> i32 {
+    let file = fs::open{ &fs, path = args[0], mode = fs::Mode::read } iferr { return 1 }
+    defer _ = fs::close{ &fs, file }
+    let mut ts: [8]task::Task(!u64)
+    let mut i: usize = 0
+    while i < 8 {
+        task::start_concurrent{ &threads, task = &ts[i], run = check{ &fs, file, first = @as(u64, i), _ } } iferr { return 2 }
+        i = i + 1
+    }
+    let mut bad: u64 = 0
+    i = 0
+    while i < 8 {
+        bad = bad + (task::wait{ &threads, task = &ts[i] } iferr { 1000000 })
+        i = i + 1
+    }
+    io::println_u64{ &io, n = bad }
+    return 0
+}
+''', args=[path])
+        self.assertEqual((out, code), ('0\n', 0))
 
     def test_misuse_panics(self):
         cases = [

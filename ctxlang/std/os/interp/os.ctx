@@ -103,6 +103,7 @@ namespace os {
     fn file_write { mut fs: Fs, file: u64, bytes: []u8 } -> fs::Error!usize { return try no_files(usize){} }
     fn file_close { mut fs: Fs, file: u64 } -> fs::Error! { _ = try no_files(bool){} }
     fn file_seek { mut fs: Fs, file: u64, offset: u64 } -> fs::Error! { _ = try no_files(bool){} }
+    fn file_read_at { mut fs: Fs, file: u64, offset: u64, into: []mut u8 } -> fs::Error!usize { return try no_files(usize){} }
     fn file_size { mut fs: Fs, path: []u8 } -> fs::Error!u64 { return try no_files(u64){} }
     fn remove { mut fs: Fs, path: []u8 } -> fs::Error! { _ = try no_files(bool){} }
     fn make_dir { mut fs: Fs, path: []u8 } -> fs::Error! { _ = try no_files(bool){} }

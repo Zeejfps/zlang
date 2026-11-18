@@ -179,6 +179,20 @@ namespace os {
         return @as(usize, n)
     }
 
+    // Reads at most into.len bytes, which aren't none, from `offset` bytes into the file, without
+    // its position (pread). Returns how many; 0 at or past the end.
+    fn file_read_at { mut fs: Fs, file: u64, offset: u64, into: []mut u8 } -> fs::Error!usize {
+        let fd = descriptor{ file } ifnull { return fs::bad_file }
+        while true {
+            let n = pread{ &fs, fd, buf = into.ptr, count = into.len, offset = @as(i64, offset) }
+            if n >= 0 { return @as(usize, n) }
+            let e = sys::errno{ &fs }.*
+            if e != EINTR { return failed{ code = e } }
+        }
+    }
+
+    extern fn pread { mut fs: Fs, fd: i32, buf: *mut u8, count: usize, offset: i64 } -> i64
+
     // Writes some of `bytes`, which aren't none. Returns how many.
     fn file_write { mut fs: Fs, file: u64, bytes: []u8 } -> fs::Error!usize {
         let fd = descriptor{ file } ifnull { return fs::bad_file }

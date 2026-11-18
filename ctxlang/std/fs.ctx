@@ -75,14 +75,15 @@ namespace fs {
     }
 
     // Reads into `into` from `offset` bytes into the file: all of it, or as much as there is
-    // before the end of the file. Returns how many bytes it read. Leaves the file's position after
-    // them. For archives, whose members are read by offset without loading the whole file.
+    // before the end of the file. Returns how many bytes it read. For archives, whose members are
+    // read by offset without loading the whole file. It doesn't use the file's position, so
+    // tasks may read one open file at once, each at its own offset (std/task.ctx); it leaves the
+    // position unspecified (Windows moves it, Linux and macOS don't), so seek before a `read`.
     fn read_at { mut fs: Fs, file: File, offset: u64, into: []mut u8 } -> !usize {
         try task::check{ cancel = &fs }
-        try seek{ &fs, file, offset }
         let mut n: usize = 0
         while n < into.len {
-            let got = try read{ &fs, file, into = into[n..] }
+            let got = try os::file_read_at{ &fs, file = file.id, offset = offset + @as(u64, n), into = into[n..] }
             if got == 0 { break }
             n = n + got
         }

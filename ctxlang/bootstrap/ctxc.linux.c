@@ -6276,7 +6276,7 @@ static t59 f_list__pushdrive__Sourcearena__Arena_562e5cf5(t419 l0, t420 l1);
 static t536 f_drive__find_field_sources(t333 l0);
 static t536 f_drive__find_attr_sources(t343 l0);
 static t59 f_utf8__push_bytesarena__Arena_2b9e4dcb(t73 l0, t7 l1);
-static t95 f_fs__seek(t2 l0, t91 l1, t8 l2);
+static t188 f_os__file_read_at(t2 l0, t8 l1, t8 l2, t7 l3);
 static t59 f_list__reservedrive__Genarena__Arena_c0d9080c(t422 l0, t14 l1);
 static t187 f_os__remove_dir(t2 l0, t7 l1);
 extern t0 x1022(t41, t41) __asm__(CTX_SYMBOL("rename"));
@@ -6660,7 +6660,8 @@ static t27 f_emit__local_name(t33 l0, t15 l1, t22 l2);
 static t7 f_slice__castdrive__Targetu8_3a23e3c5(t55 l0);
 static t55 f_slice__castu8drive__Target_81a6bc33(t7 l0);
 static t59 f_list__reservedrive__Sourcearena__Arena_7f0be5d7(t419 l0, t14 l1);
-static t187 f_os__file_seek(t2 l0, t8 l1, t8 l2);
+extern t53 x1387(t0, t41, t14, t53) __asm__(CTX_SYMBOL("pread"));
+static t53 e1387(void * l0, t0 l1, t41 l2, t14 l3, t53 l4);
 static t725 f_alloc__resizedrive__Genarena__Arena_d27f9cf1(t29 l0, t28 l1, t57 l2, t14 l3);
 extern t0 x1389(t41) __asm__(CTX_SYMBOL("rmdir"));
 static t0 e1389(void * l0, t41 l1);
@@ -8759,6 +8760,11 @@ static t90 e1041(void * l0, t8 l1) {
     return x1041(l1);
 }
 
+// os::pread
+static t53 e1387(void * l0, t0 l1, t41 l2, t14 l3, t53 l4) {
+    return x1387(l1, l2, l3, l4);
+}
+
 // os::rmdir
 static t0 e1389(void * l0, t41 l1) {
     return x1389(l1);
@@ -10018,7 +10024,7 @@ static t19 f_fs__read_allarena__Arena_64241b8f(t2 l0, t28 l1, t29 l2, t7 l3) {
                 l10 = ({ t14 _t4; if (((l8).m_len == ((t14)(0ULL)))) {
                     _t4 = ((t14)(4096ULL));
                 } else {
-                    _t4 = ctx_mul_u64((l8).m_len, ((t14)(2ULL)), 236, 74, 3122788911);
+                    _t4 = ctx_mul_u64((l8).m_len, ((t14)(2ULL)), 237, 74, 3122788911);
                 } _t4; });
                 l8 = ({ t7 _t5; t18 _t6 = ({ ctx_fn *_t7 = l2; ((c29)_t7->code)(_t7, ((t14)(1ULL)), (&(*l1)), l8, l10); }); if ((_t6.tag == 0)) { {
                     (void)({ ctx_fn *_t8 = l2; ((c29)_t8->code)(_t8, ((t14)(1ULL)), (&(*l1)), l8, ((t14)(0ULL))); });
@@ -10032,7 +10038,7 @@ static t19 f_fs__read_allarena__Arena_64241b8f(t2 l0, t28 l1, t29 l2, t7 l3) {
                     _t5 = l11;
                 } } _t5; });
             }
-            l12 = ({ t14 _t12; t21 _t13 = ({ t2 _t14 = (&(*l0)); t91 _t15 = l4; t7 _t16 = ({ t7 _t17 = (l8); uint64_t _t18 = l9; uint64_t _t19 = (l8).m_len; ctx_range(_t18, _t19, _t17.m_len, 245, 50, 3122788911); (t7){ .m_ptr = _t17.m_ptr + _t18, .m_len = _t19 - _t18 }; }); f_fs__read(_t14, _t15, _t16); }); if ((_t13.tag == 0)) { l13 = _t13.p.v0.m_value; {
+            l12 = ({ t14 _t12; t21 _t13 = ({ t2 _t14 = (&(*l0)); t91 _t15 = l4; t7 _t16 = ({ t7 _t17 = (l8); uint64_t _t18 = l9; uint64_t _t19 = (l8).m_len; ctx_range(_t18, _t19, _t17.m_len, 246, 50, 3122788911); (t7){ .m_ptr = _t17.m_ptr + _t18, .m_len = _t19 - _t18 }; }); f_fs__read(_t14, _t15, _t16); }); if ((_t13.tag == 0)) { l13 = _t13.p.v0.m_value; {
                 _t12 = l13;
             } } else if ((_t13.tag == 1)) { l14 = _t13.p.v1.m_error; {
                 (void)({ ctx_fn *_t20 = l2; ((c29)_t20->code)(_t20, ((t14)(1ULL)), (&(*l1)), l8, ((t14)(0ULL))); });
@@ -10062,7 +10068,7 @@ static t19 f_fs__read_allarena__Arena_64241b8f(t2 l0, t28 l1, t29 l2, t7 l3) {
             if ((l12 == ((t14)(0ULL)))) {
                  break;
             }
-            l9 = ctx_add_u64(l9, l12, 250, 19, 3122788911);
+            l9 = ctx_add_u64(l9, l12, 251, 19, 3122788911);
         }
         l16 = ({ ctx_fn *_t24 = l2; ((c29)_t24->code)(_t24, ((t14)(1ULL)), (&(*l1)), l8, l9); });
         if (((l16).tag != 0)) {
@@ -10071,7 +10077,7 @@ static t19 f_fs__read_allarena__Arena_64241b8f(t2 l0, t28 l1, t29 l2, t7 l3) {
                 (void)f_fs__close((&(*l0)), l4);
             } return _t25; }
         }
-        { t19 _t26 = ((t19){ .tag = 0, .p.v0 = { .m_value = ({ t7 _t27 = (l8); uint64_t _t28 = ((t14)(0ULL)); uint64_t _t29 = l9; ctx_range(_t28, _t29, _t27.m_len, 255, 19, 3122788911); (t7){ .m_ptr = _t27.m_ptr + _t28, .m_len = _t29 - _t28 }; }), } });
+        { t19 _t26 = ((t19){ .tag = 0, .p.v0 = { .m_value = ({ t7 _t27 = (l8); uint64_t _t28 = ((t14)(0ULL)); uint64_t _t29 = l9; ctx_range(_t28, _t29, _t27.m_len, 256, 19, 3122788911); (t7){ .m_ptr = _t27.m_ptr + _t28, .m_len = _t29 - _t28 }; }), } });
         {
             (void)f_fs__close((&(*l0)), l4);
         } return _t26; }
@@ -12705,7 +12711,7 @@ static t89 f_os__file_size(t2 l0, t7 l1) {
     CTX_STACK_CHECK();
     {
         memset(&l2, 0, sizeof l2);
-        l3 = ({ t41 _t0; t90 _t1 = ({ t7 _t2 = l1; t7 _t3 = ({ t7 _t4 = (((t7){ .m_ptr = ((t41)((&l2))), .m_len = ((t14)(4096ULL)), })); uint64_t _t5 = ((t14)(0ULL)); uint64_t _t6 = _t4.m_len; ctx_range(_t5, _t6, _t4.m_len, 205, 40, 2834000043); (t7){ .m_ptr = _t4.m_ptr + _t5, .m_len = _t6 - _t5 }; }); f_os__c_path(_t2, _t3); }); if ((_t1 != 0)) { l4 = _t1; {
+        l3 = ({ t41 _t0; t90 _t1 = ({ t7 _t2 = l1; t7 _t3 = ({ t7 _t4 = (((t7){ .m_ptr = ((t41)((&l2))), .m_len = ((t14)(4096ULL)), })); uint64_t _t5 = ((t14)(0ULL)); uint64_t _t6 = _t4.m_len; ctx_range(_t5, _t6, _t4.m_len, 219, 40, 2834000043); (t7){ .m_ptr = _t4.m_ptr + _t5, .m_len = _t6 - _t5 }; }); f_os__c_path(_t2, _t3); }); if ((_t1 != 0)) { l4 = _t1; {
             _t0 = l4;
         } } else if ((_t1 == 0)) { {
             return ({ t89 _t7; t184 _t8 = f_os__failedu64_85b811de(((t0)(36ULL))); if ((_t8.tag == 0)) { l5 = _t8.p.v0.m_value; {
@@ -12785,7 +12791,7 @@ static t89 f_os__file_size(t2 l0, t7 l1) {
                 } } _t19; }), } });
             } } _t17; });
         }
-        return ((t89){ .tag = 0, .p.v0 = { .m_value = ((t8)(ctx_as_s((int64_t)(l12), 0, INT64_MAX, "u64", 213, 16, 2834000043))), } });
+        return ((t89){ .tag = 0, .p.v0 = { .m_value = ((t8)(ctx_as_s((int64_t)(l12), 0, INT64_MAX, "u64", 227, 16, 2834000043))), } });
     }
     __builtin_unreachable();
 }
@@ -12807,15 +12813,15 @@ static t90 f_os__reserve(t3 l0, t14 l1) {
     t41 l3;
     CTX_STACK_CHECK();
     {
-        if (({ t14 _t0 = l1; t14 _t1 = ctx_sub_u64(((t14)(18446744073709551615ULL)), ((t14)(4096ULL)), 303, 40, 2834000043); (_t0 > _t1); })) {
+        if (({ t14 _t0 = l1; t14 _t1 = ctx_sub_u64(((t14)(18446744073709551615ULL)), ((t14)(4096ULL)), 317, 40, 2834000043); (_t0 > _t1); })) {
             return ((t90)(0));
         }
-        l2 = ({ t41 _t2; t90 _t3 = ({ t3 _t4 = (&(*l0)); t14 _t5 = ((t14)(1ULL)); t14 _t6 = ctx_add_u64(l1, ((t14)(4096ULL)), 304, 56, 2834000043); e259(_t4, _t5, _t6); }); if ((_t3 != 0)) { l3 = _t3; {
+        l2 = ({ t41 _t2; t90 _t3 = ({ t3 _t4 = (&(*l0)); t14 _t5 = ((t14)(1ULL)); t14 _t6 = ctx_add_u64(l1, ((t14)(4096ULL)), 318, 56, 2834000043); e259(_t4, _t5, _t6); }); if ((_t3 != 0)) { l3 = _t3; {
             _t2 = l3;
         } } else if ((_t3 == 0)) { {
             return ((t90)(0));
         } } _t2; });
-        return ((t90)(({ t41 _t7 = l2; t14 _t8 = ctx_rem_u64(ctx_sub_u64(((t14)(4096ULL)), ctx_rem_u64(((uint64_t)(uintptr_t)(l2)), ((t14)(4096ULL)), 305, 42, 2834000043), 305, 31, 2834000043), ((t14)(4096ULL)), 305, 55, 2834000043); (_t7 + _t8); })));
+        return ((t90)(({ t41 _t7 = l2; t14 _t8 = ctx_rem_u64(ctx_sub_u64(((t14)(4096ULL)), ctx_rem_u64(((uint64_t)(uintptr_t)(l2)), ((t14)(4096ULL)), 319, 42, 2834000043), 319, 31, 2834000043), ((t14)(4096ULL)), 319, 55, 2834000043); (_t7 + _t8); })));
     }
     __builtin_unreachable();
 }
@@ -16544,7 +16550,7 @@ static t142 f_os__wait(t38 l0, t86 l1, t131 * l2, t6 l3) {
     t0 l15;
     CTX_STACK_CHECK();
     {
-        l4 = ((t0)(ctx_as_u((uint64_t)(((*l2)).m_id), INT32_MAX, "i32", 570, 19, 2834000043)));
+        l4 = ((t0)(ctx_as_u((uint64_t)(((*l2)).m_id), INT32_MAX, "i32", 584, 19, 2834000043)));
         l5 = ({ t8 _t0; if (l3) {
             _t0 = f_task__get_cancel_object((&(*l1)));
         } else {
@@ -18310,8 +18316,8 @@ static t90 f_os__c_path(t7 l0, t7 l1) {
         if (((l0).m_len >= (l1).m_len)) {
             return ((t90)(0));
         }
-        ({ t7 _t0 = ({ t7 _t2 = (l1); uint64_t _t3 = ((t14)(0ULL)); uint64_t _t4 = (l0).m_len; ctx_range(_t3, _t4, _t2.m_len, 750, 35, 2834000043); (t7){ .m_ptr = _t2.m_ptr + _t3, .m_len = _t4 - _t3 }; }); t7 _t1 = l0; f_slice__copyu8_aae5a9c4(_t0, _t1); });
-        (*({ t7 _t5 = (l1); uint64_t _t6 = (l0).m_len; _t5.m_ptr + ctx_idx(_t6, _t5.m_len, 751, 12, 2834000043); })) = ((t15)(0ULL));
+        ({ t7 _t0 = ({ t7 _t2 = (l1); uint64_t _t3 = ((t14)(0ULL)); uint64_t _t4 = (l0).m_len; ctx_range(_t3, _t4, _t2.m_len, 764, 35, 2834000043); (t7){ .m_ptr = _t2.m_ptr + _t3, .m_len = _t4 - _t3 }; }); t7 _t1 = l0; f_slice__copyu8_aae5a9c4(_t0, _t1); });
+        (*({ t7 _t5 = (l1); uint64_t _t6 = (l0).m_len; _t5.m_ptr + ctx_idx(_t6, _t5.m_len, 765, 12, 2834000043); })) = ((t15)(0ULL));
         return ((t90)((l1).m_ptr));
     }
     __builtin_unreachable();
@@ -18357,7 +18363,7 @@ static t184 f_os__failedu64_85b811de(t0 l0) {
                 _t12 = ((t183){ .tag = 6 });
             } } _t12; }), } });
         }
-        return ((t184){ .tag = 1, .p.v1 = { .m_error = ({ t183 _t14; t356 _t15 = ((t356){ .tag = 0, .p.v0 = { .m_code = ((t53)(ctx_as_s((int64_t)(l0), INT64_MIN, INT64_MAX, "i64", 778, 34, 2834000043))), } }); if ((_t15.tag == 0)) { l1 = _t15.p.v0.m_code; {
+        return ((t184){ .tag = 1, .p.v1 = { .m_error = ({ t183 _t14; t356 _t15 = ((t356){ .tag = 0, .p.v0 = { .m_code = ((t53)(ctx_as_s((int64_t)(l0), INT64_MIN, INT64_MAX, "i64", 792, 34, 2834000043))), } }); if ((_t15.tag == 0)) { l1 = _t15.p.v0.m_code; {
             _t14 = ((t183){ .tag = 7, .p.v7 = { .m_code = l1, } });
         } } _t14; }), } });
     }
@@ -20117,7 +20123,7 @@ static t188 f_os__file_write(t2 l0, t8 l1, t7 l2) {
                 } } _t6; }), } });
             } } _t4; });
         }
-        return ((t188){ .tag = 0, .p.v0 = { .m_value = ((t14)(ctx_as_s((int64_t)(l5), 0, INT64_MAX, "usize", 187, 16, 2834000043))), } });
+        return ((t188){ .tag = 0, .p.v0 = { .m_value = ((t14)(ctx_as_s((int64_t)(l5), 0, INT64_MAX, "usize", 201, 16, 2834000043))), } });
     }
     __builtin_unreachable();
 }
@@ -20612,7 +20618,7 @@ static t240 f_fs__make_absolutearena__Arena_6bd52909(t2 l0, t28 l1, t29 l2, t7 l
         l5 = ({ t14 _t0; if (f_os__is_absolute(l3)) {
             _t0 = ((t14)(0ULL));
         } else {
-            _t0 = ({ t14 _t1; t188 _t2 = ({ t2 _t3 = (&(*l0)); t7 _t4 = ({ t7 _t5 = (((t7){ .m_ptr = ((t41)((&l4))), .m_len = ((t14)(32768ULL)), })); uint64_t _t6 = ((t14)(0ULL)); uint64_t _t7 = _t5.m_len; ctx_range(_t6, _t7, _t5.m_len, 147, 93, 3122788911); (t7){ .m_ptr = _t5.m_ptr + _t6, .m_len = _t7 - _t6 }; }); f_os__working_dir(_t3, _t4); }); if ((_t2.tag == 0)) { l6 = _t2.p.v0.m_value; {
+            _t0 = ({ t14 _t1; t188 _t2 = ({ t2 _t3 = (&(*l0)); t7 _t4 = ({ t7 _t5 = (((t7){ .m_ptr = ((t41)((&l4))), .m_len = ((t14)(32768ULL)), })); uint64_t _t6 = ((t14)(0ULL)); uint64_t _t7 = _t5.m_len; ctx_range(_t6, _t7, _t5.m_len, 148, 93, 3122788911); (t7){ .m_ptr = _t5.m_ptr + _t6, .m_len = _t7 - _t6 }; }); f_os__working_dir(_t3, _t4); }); if ((_t2.tag == 0)) { l6 = _t2.p.v0.m_value; {
                 _t1 = l6;
             } } else if ((_t2.tag == 1)) { l7 = _t2.p.v1.m_error; {
                 return ((t240){ .tag = 1, .p.v1 = { .m_error = ({ t415 _t8; t84 _t9 = l7; if ((_t9.tag == 0)) { {
@@ -20634,23 +20640,23 @@ static t240 f_fs__make_absolutearena__Arena_6bd52909(t2 l0, t28 l1, t29 l2, t7 l
                 } } _t8; }), } });
             } } _t1; });
         } _t0; });
-        l9 = ({ t14 _t10; if (((((l5 > ((t14)(0ULL))) && ((l3).m_len > ((t14)(0ULL)))) && ((*({ t414 *_t11 = &(l4); uint64_t _t12 = ctx_sub_u64(l5, ((t14)(1ULL)), 148, 62, 3122788911); &_t11->a[ctx_idx(_t12, 32768, 148, 59, 3122788911)]; })) != ((t15)(47ULL)))) && ((*({ t414 *_t13 = &(l4); uint64_t _t14 = ctx_sub_u64(l5, ((t14)(1ULL)), 148, 84, 3122788911); &_t13->a[ctx_idx(_t14, 32768, 148, 81, 3122788911)]; })) != ((t15)(92ULL))))) {
+        l9 = ({ t14 _t10; if (((((l5 > ((t14)(0ULL))) && ((l3).m_len > ((t14)(0ULL)))) && ((*({ t414 *_t11 = &(l4); uint64_t _t12 = ctx_sub_u64(l5, ((t14)(1ULL)), 149, 62, 3122788911); &_t11->a[ctx_idx(_t12, 32768, 149, 59, 3122788911)]; })) != ((t15)(47ULL)))) && ((*({ t414 *_t13 = &(l4); uint64_t _t14 = ctx_sub_u64(l5, ((t14)(1ULL)), 149, 84, 3122788911); &_t13->a[ctx_idx(_t14, 32768, 149, 81, 3122788911)]; })) != ((t15)(92ULL))))) {
             _t10 = ((t14)(1ULL));
         } else {
             _t10 = ((t14)(0ULL));
         } _t10; });
-        l10 = ({ t7 _t15; t107 _t16 = ({ t29 _t17 = l2; t28 _t18 = (&(*l1)); t14 _t19 = ({ t14 _t20 = ctx_add_u64(l5, l9, 149, 69, 3122788911); t14 _t21 = (l3).m_len; ctx_add_u64(_t20, _t21, 149, 75, 3122788911); }); f_alloc__makeu8arena__Arena_f9741c32(_t17, _t18, _t19); }); if ((_t16.tag == 0)) { l11 = _t16.p.v0.m_value; {
+        l10 = ({ t7 _t15; t107 _t16 = ({ t29 _t17 = l2; t28 _t18 = (&(*l1)); t14 _t19 = ({ t14 _t20 = ctx_add_u64(l5, l9, 150, 69, 3122788911); t14 _t21 = (l3).m_len; ctx_add_u64(_t20, _t21, 150, 75, 3122788911); }); f_alloc__makeu8arena__Arena_f9741c32(_t17, _t18, _t19); }); if ((_t16.tag == 0)) { l11 = _t16.p.v0.m_value; {
             _t15 = l11;
         } } else if ((_t16.tag == 1)) { l12 = _t16.p.v1.m_error; {
             return ((t240){ .tag = 1, .p.v1 = { .m_error = ({ t415 _t22; t12 _t23 = l12; if ((_t23.tag == 0)) { {
                 _t22 = ((t415){ .tag = 0 });
             } } _t22; }), } });
         } } _t15; });
-        ({ t7 _t24 = ({ t7 _t26 = (l10); uint64_t _t27 = ((t14)(0ULL)); uint64_t _t28 = l5; ctx_range(_t27, _t28, _t26.m_len, 150, 35, 3122788911); (t7){ .m_ptr = _t26.m_ptr + _t27, .m_len = _t28 - _t27 }; }); t7 _t25 = ({ t7 _t29 = (((t7){ .m_ptr = ((t41)((&l4))), .m_len = ((t14)(32768ULL)), })); uint64_t _t30 = ((t14)(0ULL)); uint64_t _t31 = l5; ctx_range(_t30, _t31, _t29.m_len, 150, 51, 3122788911); (t7){ .m_ptr = _t29.m_ptr + _t30, .m_len = _t31 - _t30 }; }); f_slice__copyu8_aae5a9c4(_t24, _t25); });
+        ({ t7 _t24 = ({ t7 _t26 = (l10); uint64_t _t27 = ((t14)(0ULL)); uint64_t _t28 = l5; ctx_range(_t27, _t28, _t26.m_len, 151, 35, 3122788911); (t7){ .m_ptr = _t26.m_ptr + _t27, .m_len = _t28 - _t27 }; }); t7 _t25 = ({ t7 _t29 = (((t7){ .m_ptr = ((t41)((&l4))), .m_len = ((t14)(32768ULL)), })); uint64_t _t30 = ((t14)(0ULL)); uint64_t _t31 = l5; ctx_range(_t30, _t31, _t29.m_len, 151, 51, 3122788911); (t7){ .m_ptr = _t29.m_ptr + _t30, .m_len = _t31 - _t30 }; }); f_slice__copyu8_aae5a9c4(_t24, _t25); });
         if ((l9 == ((t14)(1ULL)))) {
-            (*({ t7 _t32 = (l10); uint64_t _t33 = l5; _t32.m_ptr + ctx_idx(_t33, _t32.m_len, 151, 26, 3122788911); })) = ((t15)(47ULL));
+            (*({ t7 _t32 = (l10); uint64_t _t33 = l5; _t32.m_ptr + ctx_idx(_t33, _t32.m_len, 152, 26, 3122788911); })) = ((t15)(47ULL));
         }
-        ({ t7 _t34 = ({ t7 _t36 = (l10); uint64_t _t37 = ctx_add_u64(l5, l9, 152, 38, 3122788911); uint64_t _t38 = _t36.m_len; ctx_range(_t37, _t38, _t36.m_len, 152, 35, 3122788911); (t7){ .m_ptr = _t36.m_ptr + _t37, .m_len = _t38 - _t37 }; }); t7 _t35 = l3; f_slice__copyu8_aae5a9c4(_t34, _t35); });
+        ({ t7 _t34 = ({ t7 _t36 = (l10); uint64_t _t37 = ctx_add_u64(l5, l9, 153, 38, 3122788911); uint64_t _t38 = _t36.m_len; ctx_range(_t37, _t38, _t36.m_len, 153, 35, 3122788911); (t7){ .m_ptr = _t36.m_ptr + _t37, .m_len = _t38 - _t37 }; }); t7 _t35 = l3; f_slice__copyu8_aae5a9c4(_t34, _t35); });
         return ((t240){ .tag = 0, .p.v0 = { .m_value = l10, } });
     }
     __builtin_unreachable();
@@ -20811,7 +20817,7 @@ static t22 f_os__processors(t38 l0) {
     {
         l1 = e639((&(*l0)), ((t0)(84ULL)));
         return ({ t22 _t0; if (((l1 > ((t53)(0ULL))) && (l1 < ((t53)(4294967296ULL))))) {
-            _t0 = ((t22)(ctx_as_s((int64_t)(l1), 0, UINT32_MAX, "u32", 699, 46, 2834000043)));
+            _t0 = ((t22)(ctx_as_s((int64_t)(l1), 0, UINT32_MAX, "u32", 713, 46, 2834000043)));
         } else {
             _t0 = ((t22)(1ULL));
         } _t0; });
@@ -21361,7 +21367,7 @@ static t187 f_os__remove(t2 l0, t7 l1) {
     CTX_STACK_CHECK();
     {
         memset(&l2, 0, sizeof l2);
-        l3 = ({ t41 _t0; t90 _t1 = ({ t7 _t2 = l1; t7 _t3 = ({ t7 _t4 = (((t7){ .m_ptr = ((t41)((&l2))), .m_len = ((t14)(4096ULL)), })); uint64_t _t5 = ((t14)(0ULL)); uint64_t _t6 = _t4.m_len; ctx_range(_t5, _t6, _t4.m_len, 218, 40, 2834000043); (t7){ .m_ptr = _t4.m_ptr + _t5, .m_len = _t6 - _t5 }; }); f_os__c_path(_t2, _t3); }); if ((_t1 != 0)) { l4 = _t1; {
+        l3 = ({ t41 _t0; t90 _t1 = ({ t7 _t2 = l1; t7 _t3 = ({ t7 _t4 = (((t7){ .m_ptr = ((t41)((&l2))), .m_len = ((t14)(4096ULL)), })); uint64_t _t5 = ((t14)(0ULL)); uint64_t _t6 = _t4.m_len; ctx_range(_t5, _t6, _t4.m_len, 232, 40, 2834000043); (t7){ .m_ptr = _t4.m_ptr + _t5, .m_len = _t6 - _t5 }; }); f_os__c_path(_t2, _t3); }); if ((_t1 != 0)) { l4 = _t1; {
             _t0 = l4;
         } } else if ((_t1 == 0)) { {
             return ({ t187 _t7; t95 _t8 = f_os__failednovalue_13c7547f(((t0)(36ULL))); if ((_t8.tag == 0)) { {
@@ -21494,17 +21500,17 @@ static t243 f_os__spawn(t38 l0, t5 l1, t135 * l2) {
         l5 = ((t14)(0ULL));
         if (((l4) != 0)) {
             while ((((*((l4) + l5))).m_ptr != 0)) {
-                l5 = ctx_add_u64(l5, ((t14)(1ULL)), 374, 48, 2834000043);
+                l5 = ctx_add_u64(l5, ((t14)(1ULL)), 388, 48, 2834000043);
             }
         }
-        l6 = (*({ t5 _t0 = (l1); uint64_t _t1 = ((t14)(0ULL)); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 376, 27, 2834000043); }));
+        l6 = (*({ t5 _t0 = (l1); uint64_t _t1 = ((t14)(0ULL)); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 390, 27, 2834000043); }));
         l7 = ((bool)1);
         l8 = ((t14)(0ULL));
         while ((l8 < (l6).m_len)) {
-            if (((*({ t7 _t2 = (l6); uint64_t _t3 = l8; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 380, 23, 2834000043); })) == ((t15)(47ULL)))) {
+            if (((*({ t7 _t2 = (l6); uint64_t _t3 = l8; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 394, 23, 2834000043); })) == ((t15)(47ULL)))) {
                 l7 = ((bool)0);
             }
-            l8 = ctx_add_u64(l8, ((t14)(1ULL)), 381, 19, 2834000043);
+            l8 = ctx_add_u64(l8, ((t14)(1ULL)), 395, 19, 2834000043);
         }
         l9 = ({ t7 _t4; if (l7) {
             _t4 = ({ t7 _t5; t18 _t6 = f_os__env((&(*l0)), ((t7){ .m_ptr = (void *)"PATH", .m_len = 4 })); if ((_t6.tag == 1)) { l10 = _t6.p.v1.m_value; {
@@ -21515,17 +21521,17 @@ static t243 f_os__spawn(t38 l0, t5 l1, t135 * l2) {
         } else {
             _t4 = ((t7){ .m_ptr = (void *)"", .m_len = 0 });
         } _t4; });
-        l11 = ctx_add_u64(({ t14 _t7 = ({ t14 _t9 = ctx_add_u64((l1).m_len, ((t14)(1ULL)), 384, 30, 2834000043); t14 _t10 = l5; ctx_add_u64(_t9, _t10, 384, 34, 2834000043); }); t14 _t8 = (l3).m_len; ctx_add_u64(_t7, _t8, 384, 38, 2834000043); }), ((t14)(1ULL)), 384, 50, 2834000043);
-        l12 = ctx_add_u64(({ t14 _t11 = ({ t14 _t13 = ctx_add_u64(({ t14 _t15 = ctx_add_u64(({ t14 _t17 = ctx_mul_u64(l11, ((t14)(8ULL)), 385, 30, 2834000043); t14 _t18 = (((*l2)).m_dir).m_len; ctx_add_u64(_t17, _t18, 385, 34, 2834000043); }), ((t14)(1ULL)), 385, 52, 2834000043); t14 _t16 = (l9).m_len; ctx_add_u64(_t15, _t16, 385, 56, 2834000043); }), ((t14)(1ULL)), 385, 69, 2834000043); t14 _t14 = (l9).m_len; ctx_add_u64(_t13, _t14, 385, 73, 2834000043); }); t14 _t12 = (l6).m_len; ctx_add_u64(_t11, _t12, 385, 86, 2834000043); }), ((t14)(2ULL)), 385, 100, 2834000043);
+        l11 = ctx_add_u64(({ t14 _t7 = ({ t14 _t9 = ctx_add_u64((l1).m_len, ((t14)(1ULL)), 398, 30, 2834000043); t14 _t10 = l5; ctx_add_u64(_t9, _t10, 398, 34, 2834000043); }); t14 _t8 = (l3).m_len; ctx_add_u64(_t7, _t8, 398, 38, 2834000043); }), ((t14)(1ULL)), 398, 50, 2834000043);
+        l12 = ctx_add_u64(({ t14 _t11 = ({ t14 _t13 = ctx_add_u64(({ t14 _t15 = ctx_add_u64(({ t14 _t17 = ctx_mul_u64(l11, ((t14)(8ULL)), 399, 30, 2834000043); t14 _t18 = (((*l2)).m_dir).m_len; ctx_add_u64(_t17, _t18, 399, 34, 2834000043); }), ((t14)(1ULL)), 399, 52, 2834000043); t14 _t16 = (l9).m_len; ctx_add_u64(_t15, _t16, 399, 56, 2834000043); }), ((t14)(1ULL)), 399, 69, 2834000043); t14 _t14 = (l9).m_len; ctx_add_u64(_t13, _t14, 399, 73, 2834000043); }); t14 _t12 = (l6).m_len; ctx_add_u64(_t11, _t12, 399, 86, 2834000043); }), ((t14)(2ULL)), 399, 100, 2834000043);
         l8 = ((t14)(0ULL));
         while ((l8 < (l1).m_len)) {
-            l12 = ctx_add_u64(({ t14 _t19 = l12; t14 _t20 = ((*({ t5 _t21 = (l1); uint64_t _t22 = l8; _t21.m_ptr + ctx_idx(_t22, _t21.m_len, 387, 48, 2834000043); }))).m_len; ctx_add_u64(_t19, _t20, 387, 42, 2834000043); }), ((t14)(1ULL)), 387, 56, 2834000043);
-            l8 = ctx_add_u64(l8, ((t14)(1ULL)), 387, 67, 2834000043);
+            l12 = ctx_add_u64(({ t14 _t19 = l12; t14 _t20 = ((*({ t5 _t21 = (l1); uint64_t _t22 = l8; _t21.m_ptr + ctx_idx(_t22, _t21.m_len, 401, 48, 2834000043); }))).m_len; ctx_add_u64(_t19, _t20, 401, 42, 2834000043); }), ((t14)(1ULL)), 401, 56, 2834000043);
+            l8 = ctx_add_u64(l8, ((t14)(1ULL)), 401, 67, 2834000043);
         }
         l8 = ((t14)(0ULL));
         while ((l8 < (l3).m_len)) {
-            l12 = ctx_add_u64(({ t14 _t23 = l12; t14 _t24 = ((*({ t5 _t25 = (l3); uint64_t _t26 = l8; _t25.m_ptr + ctx_idx(_t26, _t25.m_len, 389, 50, 2834000043); }))).m_len; ctx_add_u64(_t23, _t24, 389, 43, 2834000043); }), ((t14)(1ULL)), 389, 58, 2834000043);
-            l8 = ctx_add_u64(l8, ((t14)(1ULL)), 389, 69, 2834000043);
+            l12 = ctx_add_u64(({ t14 _t23 = l12; t14 _t24 = ((*({ t5 _t25 = (l3); uint64_t _t26 = l8; _t25.m_ptr + ctx_idx(_t26, _t25.m_len, 403, 50, 2834000043); }))).m_len; ctx_add_u64(_t23, _t24, 403, 43, 2834000043); }), ((t14)(1ULL)), 403, 58, 2834000043);
+            l8 = ctx_add_u64(l8, ((t14)(1ULL)), 403, 69, 2834000043);
         }
         l13 = ({ t41 _t27; t90 _t28 = e386((&(*l0)), l12); if ((_t28 != 0)) { l14 = _t28; {
             _t27 = l14;
@@ -21537,15 +21543,15 @@ static t243 f_os__spawn(t38 l0, t5 l1, t135 * l2) {
         } } _t27; });
         /* defer */
         l16 = ((t423){ .m_ptr = ((t36)(l13)), .m_len = l11, });
-        l17 = ({ t41 _t31 = l13; t14 _t32 = ctx_mul_u64(l11, ((t14)(8ULL)), 396, 38, 2834000043); (_t31 + _t32); });
+        l17 = ({ t41 _t31 = l13; t14 _t32 = ctx_mul_u64(l11, ((t14)(8ULL)), 410, 38, 2834000043); (_t31 + _t32); });
         l8 = ((t14)(0ULL));
         while ((l8 < (l1).m_len)) {
-            (*({ t423 _t33 = (l16); uint64_t _t34 = l8; _t33.m_ptr + ctx_idx(_t34, _t33.m_len, 399, 17, 2834000043); })) = ((t90)(l17));
-            l17 = ({ t41 _t35 = l17; t7 _t36 = (*({ t5 _t37 = (l1); uint64_t _t38 = l8; _t37.m_ptr + ctx_idx(_t38, _t37.m_len, 400, 53, 2834000043); })); f_os__c_copy(_t35, _t36); });
-            l8 = ctx_add_u64(l8, ((t14)(1ULL)), 401, 19, 2834000043);
+            (*({ t423 _t33 = (l16); uint64_t _t34 = l8; _t33.m_ptr + ctx_idx(_t34, _t33.m_len, 413, 17, 2834000043); })) = ((t90)(l17));
+            l17 = ({ t41 _t35 = l17; t7 _t36 = (*({ t5 _t37 = (l1); uint64_t _t38 = l8; _t37.m_ptr + ctx_idx(_t38, _t37.m_len, 414, 53, 2834000043); })); f_os__c_copy(_t35, _t36); });
+            l8 = ctx_add_u64(l8, ((t14)(1ULL)), 415, 19, 2834000043);
         }
-        (*({ t423 _t39 = (l16); uint64_t _t40 = (l1).m_len; _t39.m_ptr + ctx_idx(_t40, _t39.m_len, 403, 13, 2834000043); })) = ((t90)(0));
-        l18 = ctx_add_u64((l1).m_len, ((t14)(1ULL)), 404, 29, 2834000043);
+        (*({ t423 _t39 = (l16); uint64_t _t40 = (l1).m_len; _t39.m_ptr + ctx_idx(_t40, _t39.m_len, 417, 13, 2834000043); })) = ((t90)(0));
+        l18 = ctx_add_u64((l1).m_len, ((t14)(1ULL)), 418, 29, 2834000043);
         l19 = l18;
         l8 = ((t14)(0ULL));
         while ((((l4) != 0) && (l8 < l5))) {
@@ -21555,20 +21561,20 @@ static t243 f_os__spawn(t38 l0, t5 l1, t135 * l2) {
                  break;
             } } _t41; });
             if ((!({ t7 _t43 = f_c__bytes(l20); t5 _t44 = l3; f_proc__overridden(_t43, _t44); }))) {
-                (*({ t423 _t45 = (l16); uint64_t _t46 = l19; _t45.m_ptr + ctx_idx(_t46, _t45.m_len, 410, 21, 2834000043); })) = ((t90)((l20).m_ptr));
-                l19 = ctx_add_u64(l19, ((t14)(1ULL)), 411, 23, 2834000043);
+                (*({ t423 _t45 = (l16); uint64_t _t46 = l19; _t45.m_ptr + ctx_idx(_t46, _t45.m_len, 424, 21, 2834000043); })) = ((t90)((l20).m_ptr));
+                l19 = ctx_add_u64(l19, ((t14)(1ULL)), 425, 23, 2834000043);
             }
-            l8 = ctx_add_u64(l8, ((t14)(1ULL)), 413, 19, 2834000043);
+            l8 = ctx_add_u64(l8, ((t14)(1ULL)), 427, 19, 2834000043);
         }
         l8 = ((t14)(0ULL));
         while ((l8 < (l3).m_len)) {
-            (*({ t423 _t47 = (l16); uint64_t _t48 = l19; _t47.m_ptr + ctx_idx(_t48, _t47.m_len, 417, 17, 2834000043); })) = ((t90)(l17));
-            l17 = ({ t41 _t49 = l17; t7 _t50 = (*({ t5 _t51 = (l3); uint64_t _t52 = l8; _t51.m_ptr + ctx_idx(_t52, _t51.m_len, 418, 54, 2834000043); })); f_os__c_copy(_t49, _t50); });
-            l19 = ctx_add_u64(l19, ((t14)(1ULL)), 419, 19, 2834000043);
-            l8 = ctx_add_u64(l8, ((t14)(1ULL)), 420, 19, 2834000043);
+            (*({ t423 _t47 = (l16); uint64_t _t48 = l19; _t47.m_ptr + ctx_idx(_t48, _t47.m_len, 431, 17, 2834000043); })) = ((t90)(l17));
+            l17 = ({ t41 _t49 = l17; t7 _t50 = (*({ t5 _t51 = (l3); uint64_t _t52 = l8; _t51.m_ptr + ctx_idx(_t52, _t51.m_len, 432, 54, 2834000043); })); f_os__c_copy(_t49, _t50); });
+            l19 = ctx_add_u64(l19, ((t14)(1ULL)), 433, 19, 2834000043);
+            l8 = ctx_add_u64(l8, ((t14)(1ULL)), 434, 19, 2834000043);
         }
-        (*({ t423 _t53 = (l16); uint64_t _t54 = l19; _t53.m_ptr + ctx_idx(_t54, _t53.m_len, 422, 13, 2834000043); })) = ((t90)(0));
-        l22 = ({ t41 _t55; t90 _t56 = (*({ t423 _t57 = (l16); uint64_t _t58 = ((t14)(0ULL)); _t57.m_ptr + ctx_idx(_t58, _t57.m_len, 423, 24, 2834000043); })); if ((_t56 != 0)) { l23 = _t56; {
+        (*({ t423 _t53 = (l16); uint64_t _t54 = l19; _t53.m_ptr + ctx_idx(_t54, _t53.m_len, 436, 13, 2834000043); })) = ((t90)(0));
+        l22 = ({ t41 _t55; t90 _t56 = (*({ t423 _t57 = (l16); uint64_t _t58 = ((t14)(0ULL)); _t57.m_ptr + ctx_idx(_t58, _t57.m_len, 437, 24, 2834000043); })); if ((_t56 != 0)) { l23 = _t56; {
             _t55 = l23;
         } } else if ((_t56 == 0)) { {
             { t243 _t59 = ((t243){ .tag = 1, .p.v1 = { .m_error = ({ t143 _t60; t429 _t61 = ((t429){ .tag = 0 }); if ((_t61.tag == 0)) { {
@@ -21597,10 +21603,10 @@ static t243 f_os__spawn(t38 l0, t5 l1, t135 * l2) {
         /* defer */
         l31 = ((t14)(0ULL));
         while ((l31 < ((t14)(3ULL)))) {
-            if ((({ t38 _t62 = (&(*l0)); t0 _t63 = ((t0)(ctx_as_u((uint64_t)(l31), INT32_MAX, "i32", 455, 40, 2834000043))); t0 _t64 = ((t0)(1ULL)); t53 _t65 = ((t53)(0ULL)); f_sys__fcntl(_t62, _t63, _t64, _t65); }) < ((t0)(0ULL)))) {
-                (l27).a[ctx_idx(l31, 3, 455, 87, 2834000043)] = ((t0)((-(int64_t)1LL - 1)));
+            if ((({ t38 _t62 = (&(*l0)); t0 _t63 = ((t0)(ctx_as_u((uint64_t)(l31), INT32_MAX, "i32", 469, 40, 2834000043))); t0 _t64 = ((t0)(1ULL)); t53 _t65 = ((t53)(0ULL)); f_sys__fcntl(_t62, _t63, _t64, _t65); }) < ((t0)(0ULL)))) {
+                (l27).a[ctx_idx(l31, 3, 469, 87, 2834000043)] = ((t0)((-(int64_t)1LL - 1)));
             }
-            l31 = ctx_add_u64(l31, ((t14)(1ULL)), 456, 19, 2834000043);
+            l31 = ctx_add_u64(l31, ((t14)(1ULL)), 470, 19, 2834000043);
         }
         l31 = ((t14)(0ULL));
         while ((l31 < ((t14)(3ULL)))) {
@@ -21632,21 +21638,21 @@ static t243 f_os__spawn(t38 l0, t5 l1, t135 * l2) {
                     } } _t72; });
                     {
                         if ((!l30)) {
-                            ({ t38 _t76 = (&(*l0)); t431 _t77 = ({ t431 _t78 = (((t431){ .m_ptr = ((t186)((&l28))), .m_len = ((t14)(3ULL)), })); uint64_t _t79 = ((t14)(0ULL)); uint64_t _t80 = _t78.m_len; ctx_range(_t79, _t80, _t78.m_len, 451, 58, 2834000043); (t431){ .m_ptr = _t78.m_ptr + _t79, .m_len = _t80 - _t79 }; }); f_os__close_all(_t76, _t77); });
+                            ({ t38 _t76 = (&(*l0)); t431 _t77 = ({ t431 _t78 = (((t431){ .m_ptr = ((t186)((&l28))), .m_len = ((t14)(3ULL)), })); uint64_t _t79 = ((t14)(0ULL)); uint64_t _t80 = _t78.m_len; ctx_range(_t79, _t80, _t78.m_len, 465, 58, 2834000043); (t431){ .m_ptr = _t78.m_ptr + _t79, .m_len = _t80 - _t79 }; }); f_os__close_all(_t76, _t77); });
                         }
                     }
                     {
-                        ({ t38 _t81 = (&(*l0)); t431 _t82 = ({ t431 _t83 = (((t431){ .m_ptr = ((t186)((&l29))), .m_len = ((t14)(6ULL)), })); uint64_t _t84 = ((t14)(0ULL)); uint64_t _t85 = _t83.m_len; ctx_range(_t84, _t85, _t83.m_len, 449, 43, 2834000043); (t431){ .m_ptr = _t83.m_ptr + _t84, .m_len = _t85 - _t84 }; }); f_os__close_all(_t81, _t82); });
+                        ({ t38 _t81 = (&(*l0)); t431 _t82 = ({ t431 _t83 = (((t431){ .m_ptr = ((t186)((&l29))), .m_len = ((t14)(6ULL)), })); uint64_t _t84 = ((t14)(0ULL)); uint64_t _t85 = _t83.m_len; ctx_range(_t84, _t85, _t83.m_len, 463, 43, 2834000043); (t431){ .m_ptr = _t83.m_ptr + _t84, .m_len = _t85 - _t84 }; }); f_os__close_all(_t81, _t82); });
                     }
                     {
                         e657((&(*l0)), l13);
                     } return _t71; }
                 }
-                (l29).a[ctx_idx(l31, 6, 466, 25, 2834000043)] = l33;
-                (l27).a[ctx_idx(l31, 3, 467, 24, 2834000043)] = l33;
+                (l29).a[ctx_idx(l31, 6, 480, 25, 2834000043)] = l33;
+                (l27).a[ctx_idx(l31, 3, 481, 24, 2834000043)] = l33;
             } } else if ((_t68.tag == 2)) { {
                 l37 = ((t427){{ ((t0)((-(int64_t)0LL - 1))), ((t0)((-(int64_t)0LL - 1))) }});
-                if ((({ t38 _t86 = (&(*l0)); t186 _t87 = (&(l37).a[ctx_idx(((t14)(0ULL)), 2, 471, 58, 2834000043)]); f_sys__make_pipe(_t86, _t87); }) != ((t0)(0ULL)))) {
+                if ((({ t38 _t86 = (&(*l0)); t186 _t87 = (&(l37).a[ctx_idx(((t14)(0ULL)), 2, 485, 58, 2834000043)]); f_sys__make_pipe(_t86, _t87); }) != ((t0)(0ULL)))) {
                     { t243 _t88 = ({ t243 _t89; t430 _t90 = f_os__proc_failedproc__Child_05204862((*e662((&(*l0))))); if ((_t90.tag == 0)) { l38 = _t90.p.v0.m_value; {
                         _t89 = ((t243){ .tag = 0, .p.v0 = { .m_value = l38, } });
                     } } else if ((_t90.tag == 1)) { l39 = _t90.p.v1.m_error; {
@@ -21662,20 +21668,20 @@ static t243 f_os__spawn(t38 l0, t5 l1, t135 * l2) {
                     } } _t89; });
                     {
                         if ((!l30)) {
-                            ({ t38 _t93 = (&(*l0)); t431 _t94 = ({ t431 _t95 = (((t431){ .m_ptr = ((t186)((&l28))), .m_len = ((t14)(3ULL)), })); uint64_t _t96 = ((t14)(0ULL)); uint64_t _t97 = _t95.m_len; ctx_range(_t96, _t97, _t95.m_len, 451, 58, 2834000043); (t431){ .m_ptr = _t95.m_ptr + _t96, .m_len = _t97 - _t96 }; }); f_os__close_all(_t93, _t94); });
+                            ({ t38 _t93 = (&(*l0)); t431 _t94 = ({ t431 _t95 = (((t431){ .m_ptr = ((t186)((&l28))), .m_len = ((t14)(3ULL)), })); uint64_t _t96 = ((t14)(0ULL)); uint64_t _t97 = _t95.m_len; ctx_range(_t96, _t97, _t95.m_len, 465, 58, 2834000043); (t431){ .m_ptr = _t95.m_ptr + _t96, .m_len = _t97 - _t96 }; }); f_os__close_all(_t93, _t94); });
                         }
                     }
                     {
-                        ({ t38 _t98 = (&(*l0)); t431 _t99 = ({ t431 _t100 = (((t431){ .m_ptr = ((t186)((&l29))), .m_len = ((t14)(6ULL)), })); uint64_t _t101 = ((t14)(0ULL)); uint64_t _t102 = _t100.m_len; ctx_range(_t101, _t102, _t100.m_len, 449, 43, 2834000043); (t431){ .m_ptr = _t100.m_ptr + _t101, .m_len = _t102 - _t101 }; }); f_os__close_all(_t98, _t99); });
+                        ({ t38 _t98 = (&(*l0)); t431 _t99 = ({ t431 _t100 = (((t431){ .m_ptr = ((t186)((&l29))), .m_len = ((t14)(6ULL)), })); uint64_t _t101 = ((t14)(0ULL)); uint64_t _t102 = _t100.m_len; ctx_range(_t101, _t102, _t100.m_len, 463, 43, 2834000043); (t431){ .m_ptr = _t100.m_ptr + _t101, .m_len = _t102 - _t101 }; }); f_os__close_all(_t98, _t99); });
                     }
                     {
                         e657((&(*l0)), l13);
                     } return _t88; }
                 }
-                l41 = ({ t38 _t103 = (&(*l0)); t0 _t104 = (l37).a[ctx_idx(((t14)(0ULL)), 2, 472, 56, 2834000043)]; f_os__above(_t103, _t104); });
+                l41 = ({ t38 _t103 = (&(*l0)); t0 _t104 = (l37).a[ctx_idx(((t14)(0ULL)), 2, 486, 56, 2834000043)]; f_os__above(_t103, _t104); });
                 if ((l41 < ((t0)(0ULL)))) {
                     l42 = (*e662((&(*l0))));
-                    (void)({ t38 _t105 = (&(*l0)); t0 _t106 = (l37).a[ctx_idx(((t14)(1ULL)), 2, 475, 55, 2834000043)]; e665(_t105, _t106); });
+                    (void)({ t38 _t105 = (&(*l0)); t0 _t106 = (l37).a[ctx_idx(((t14)(1ULL)), 2, 489, 55, 2834000043)]; e665(_t105, _t106); });
                     { t243 _t107 = ({ t243 _t108; t430 _t109 = f_os__proc_failedproc__Child_05204862(l42); if ((_t109.tag == 0)) { l43 = _t109.p.v0.m_value; {
                         _t108 = ((t243){ .tag = 0, .p.v0 = { .m_value = l43, } });
                     } } else if ((_t109.tag == 1)) { l44 = _t109.p.v1.m_error; {
@@ -21691,17 +21697,17 @@ static t243 f_os__spawn(t38 l0, t5 l1, t135 * l2) {
                     } } _t108; });
                     {
                         if ((!l30)) {
-                            ({ t38 _t112 = (&(*l0)); t431 _t113 = ({ t431 _t114 = (((t431){ .m_ptr = ((t186)((&l28))), .m_len = ((t14)(3ULL)), })); uint64_t _t115 = ((t14)(0ULL)); uint64_t _t116 = _t114.m_len; ctx_range(_t115, _t116, _t114.m_len, 451, 58, 2834000043); (t431){ .m_ptr = _t114.m_ptr + _t115, .m_len = _t116 - _t115 }; }); f_os__close_all(_t112, _t113); });
+                            ({ t38 _t112 = (&(*l0)); t431 _t113 = ({ t431 _t114 = (((t431){ .m_ptr = ((t186)((&l28))), .m_len = ((t14)(3ULL)), })); uint64_t _t115 = ((t14)(0ULL)); uint64_t _t116 = _t114.m_len; ctx_range(_t115, _t116, _t114.m_len, 465, 58, 2834000043); (t431){ .m_ptr = _t114.m_ptr + _t115, .m_len = _t116 - _t115 }; }); f_os__close_all(_t112, _t113); });
                         }
                     }
                     {
-                        ({ t38 _t117 = (&(*l0)); t431 _t118 = ({ t431 _t119 = (((t431){ .m_ptr = ((t186)((&l29))), .m_len = ((t14)(6ULL)), })); uint64_t _t120 = ((t14)(0ULL)); uint64_t _t121 = _t119.m_len; ctx_range(_t120, _t121, _t119.m_len, 449, 43, 2834000043); (t431){ .m_ptr = _t119.m_ptr + _t120, .m_len = _t121 - _t120 }; }); f_os__close_all(_t117, _t118); });
+                        ({ t38 _t117 = (&(*l0)); t431 _t118 = ({ t431 _t119 = (((t431){ .m_ptr = ((t186)((&l29))), .m_len = ((t14)(6ULL)), })); uint64_t _t120 = ((t14)(0ULL)); uint64_t _t121 = _t119.m_len; ctx_range(_t120, _t121, _t119.m_len, 463, 43, 2834000043); (t431){ .m_ptr = _t119.m_ptr + _t120, .m_len = _t121 - _t120 }; }); f_os__close_all(_t117, _t118); });
                     }
                     {
                         e657((&(*l0)), l13);
                     } return _t107; }
                 }
-                l46 = ({ t38 _t122 = (&(*l0)); t0 _t123 = (l37).a[ctx_idx(((t14)(1ULL)), 2, 478, 57, 2834000043)]; f_os__above(_t122, _t123); });
+                l46 = ({ t38 _t122 = (&(*l0)); t0 _t123 = (l37).a[ctx_idx(((t14)(1ULL)), 2, 492, 57, 2834000043)]; f_os__above(_t122, _t123); });
                 if ((l46 < ((t0)(0ULL)))) {
                     l47 = (*e662((&(*l0))));
                     (void)e665((&(*l0)), l41);
@@ -21720,11 +21726,11 @@ static t243 f_os__spawn(t38 l0, t5 l1, t135 * l2) {
                     } } _t125; });
                     {
                         if ((!l30)) {
-                            ({ t38 _t129 = (&(*l0)); t431 _t130 = ({ t431 _t131 = (((t431){ .m_ptr = ((t186)((&l28))), .m_len = ((t14)(3ULL)), })); uint64_t _t132 = ((t14)(0ULL)); uint64_t _t133 = _t131.m_len; ctx_range(_t132, _t133, _t131.m_len, 451, 58, 2834000043); (t431){ .m_ptr = _t131.m_ptr + _t132, .m_len = _t133 - _t132 }; }); f_os__close_all(_t129, _t130); });
+                            ({ t38 _t129 = (&(*l0)); t431 _t130 = ({ t431 _t131 = (((t431){ .m_ptr = ((t186)((&l28))), .m_len = ((t14)(3ULL)), })); uint64_t _t132 = ((t14)(0ULL)); uint64_t _t133 = _t131.m_len; ctx_range(_t132, _t133, _t131.m_len, 465, 58, 2834000043); (t431){ .m_ptr = _t131.m_ptr + _t132, .m_len = _t133 - _t132 }; }); f_os__close_all(_t129, _t130); });
                         }
                     }
                     {
-                        ({ t38 _t134 = (&(*l0)); t431 _t135 = ({ t431 _t136 = (((t431){ .m_ptr = ((t186)((&l29))), .m_len = ((t14)(6ULL)), })); uint64_t _t137 = ((t14)(0ULL)); uint64_t _t138 = _t136.m_len; ctx_range(_t137, _t138, _t136.m_len, 449, 43, 2834000043); (t431){ .m_ptr = _t136.m_ptr + _t137, .m_len = _t138 - _t137 }; }); f_os__close_all(_t134, _t135); });
+                        ({ t38 _t134 = (&(*l0)); t431 _t135 = ({ t431 _t136 = (((t431){ .m_ptr = ((t186)((&l29))), .m_len = ((t14)(6ULL)), })); uint64_t _t137 = ((t14)(0ULL)); uint64_t _t138 = _t136.m_len; ctx_range(_t137, _t138, _t136.m_len, 463, 43, 2834000043); (t431){ .m_ptr = _t136.m_ptr + _t137, .m_len = _t138 - _t137 }; }); f_os__close_all(_t134, _t135); });
                     }
                     {
                         e657((&(*l0)), l13);
@@ -21735,13 +21741,13 @@ static t243 f_os__spawn(t38 l0, t5 l1, t135 * l2) {
                 } else {
                     _t139 = l46;
                 } _t139; });
-                (l29).a[ctx_idx(l31, 6, 486, 25, 2834000043)] = l51;
+                (l29).a[ctx_idx(l31, 6, 500, 25, 2834000043)] = l51;
                 { t0 _t140 = ({ t0 _t141; if ((l31 == ((t14)(0ULL)))) {
                     _t141 = l46;
                 } else {
                     _t141 = l41;
-                } _t141; }); (l28).a[ctx_idx(l31, 3, 487, 25, 2834000043)] = _t140; }
-                if ((({ t38 _t142 = (&(*l0)); t0 _t143 = (l28).a[ctx_idx(l31, 3, 490, 52, 2834000043)]; t0 _t144 = ((t0)(4ULL)); t53 _t145 = ((t53)(2048ULL)); f_sys__fcntl(_t142, _t143, _t144, _t145); }) < ((t0)(0ULL)))) {
+                } _t141; }); (l28).a[ctx_idx(l31, 3, 501, 25, 2834000043)] = _t140; }
+                if ((({ t38 _t142 = (&(*l0)); t0 _t143 = (l28).a[ctx_idx(l31, 3, 504, 52, 2834000043)]; t0 _t144 = ((t0)(4ULL)); t53 _t145 = ((t53)(2048ULL)); f_sys__fcntl(_t142, _t143, _t144, _t145); }) < ((t0)(0ULL)))) {
                     { t243 _t146 = ({ t243 _t147; t430 _t148 = f_os__proc_failedproc__Child_05204862((*e662((&(*l0))))); if ((_t148.tag == 0)) { l52 = _t148.p.v0.m_value; {
                         _t147 = ((t243){ .tag = 0, .p.v0 = { .m_value = l52, } });
                     } } else if ((_t148.tag == 1)) { l53 = _t148.p.v1.m_error; {
@@ -21757,17 +21763,17 @@ static t243 f_os__spawn(t38 l0, t5 l1, t135 * l2) {
                     } } _t147; });
                     {
                         if ((!l30)) {
-                            ({ t38 _t151 = (&(*l0)); t431 _t152 = ({ t431 _t153 = (((t431){ .m_ptr = ((t186)((&l28))), .m_len = ((t14)(3ULL)), })); uint64_t _t154 = ((t14)(0ULL)); uint64_t _t155 = _t153.m_len; ctx_range(_t154, _t155, _t153.m_len, 451, 58, 2834000043); (t431){ .m_ptr = _t153.m_ptr + _t154, .m_len = _t155 - _t154 }; }); f_os__close_all(_t151, _t152); });
+                            ({ t38 _t151 = (&(*l0)); t431 _t152 = ({ t431 _t153 = (((t431){ .m_ptr = ((t186)((&l28))), .m_len = ((t14)(3ULL)), })); uint64_t _t154 = ((t14)(0ULL)); uint64_t _t155 = _t153.m_len; ctx_range(_t154, _t155, _t153.m_len, 465, 58, 2834000043); (t431){ .m_ptr = _t153.m_ptr + _t154, .m_len = _t155 - _t154 }; }); f_os__close_all(_t151, _t152); });
                         }
                     }
                     {
-                        ({ t38 _t156 = (&(*l0)); t431 _t157 = ({ t431 _t158 = (((t431){ .m_ptr = ((t186)((&l29))), .m_len = ((t14)(6ULL)), })); uint64_t _t159 = ((t14)(0ULL)); uint64_t _t160 = _t158.m_len; ctx_range(_t159, _t160, _t158.m_len, 449, 43, 2834000043); (t431){ .m_ptr = _t158.m_ptr + _t159, .m_len = _t160 - _t159 }; }); f_os__close_all(_t156, _t157); });
+                        ({ t38 _t156 = (&(*l0)); t431 _t157 = ({ t431 _t158 = (((t431){ .m_ptr = ((t186)((&l29))), .m_len = ((t14)(6ULL)), })); uint64_t _t159 = ((t14)(0ULL)); uint64_t _t160 = _t158.m_len; ctx_range(_t159, _t160, _t158.m_len, 463, 43, 2834000043); (t431){ .m_ptr = _t158.m_ptr + _t159, .m_len = _t160 - _t159 }; }); f_os__close_all(_t156, _t157); });
                     }
                     {
                         e657((&(*l0)), l13);
                     } return _t146; }
                 }
-                (l27).a[ctx_idx(l31, 3, 491, 24, 2834000043)] = l51;
+                (l27).a[ctx_idx(l31, 3, 505, 24, 2834000043)] = l51;
             } } else if ((_t68.tag == 3)) { l55 = _t68.p.v3.m_file; {
                 { t0 _t161 = ({ t0 _t162; t245 _t163 = f_os__descriptor((l55).m_id); if ((_t163.tag == 1)) { l56 = _t163.p.v1.m_value; {
                     _t162 = l56;
@@ -21787,23 +21793,23 @@ static t243 f_os__spawn(t38 l0, t5 l1, t135 * l2) {
                     } } _t165; });
                     {
                         if ((!l30)) {
-                            ({ t38 _t169 = (&(*l0)); t431 _t170 = ({ t431 _t171 = (((t431){ .m_ptr = ((t186)((&l28))), .m_len = ((t14)(3ULL)), })); uint64_t _t172 = ((t14)(0ULL)); uint64_t _t173 = _t171.m_len; ctx_range(_t172, _t173, _t171.m_len, 451, 58, 2834000043); (t431){ .m_ptr = _t171.m_ptr + _t172, .m_len = _t173 - _t172 }; }); f_os__close_all(_t169, _t170); });
+                            ({ t38 _t169 = (&(*l0)); t431 _t170 = ({ t431 _t171 = (((t431){ .m_ptr = ((t186)((&l28))), .m_len = ((t14)(3ULL)), })); uint64_t _t172 = ((t14)(0ULL)); uint64_t _t173 = _t171.m_len; ctx_range(_t172, _t173, _t171.m_len, 465, 58, 2834000043); (t431){ .m_ptr = _t171.m_ptr + _t172, .m_len = _t173 - _t172 }; }); f_os__close_all(_t169, _t170); });
                         }
                     }
                     {
-                        ({ t38 _t174 = (&(*l0)); t431 _t175 = ({ t431 _t176 = (((t431){ .m_ptr = ((t186)((&l29))), .m_len = ((t14)(6ULL)), })); uint64_t _t177 = ((t14)(0ULL)); uint64_t _t178 = _t176.m_len; ctx_range(_t177, _t178, _t176.m_len, 449, 43, 2834000043); (t431){ .m_ptr = _t176.m_ptr + _t177, .m_len = _t178 - _t177 }; }); f_os__close_all(_t174, _t175); });
+                        ({ t38 _t174 = (&(*l0)); t431 _t175 = ({ t431 _t176 = (((t431){ .m_ptr = ((t186)((&l29))), .m_len = ((t14)(6ULL)), })); uint64_t _t177 = ((t14)(0ULL)); uint64_t _t178 = _t176.m_len; ctx_range(_t177, _t178, _t176.m_len, 463, 43, 2834000043); (t431){ .m_ptr = _t176.m_ptr + _t177, .m_len = _t178 - _t177 }; }); f_os__close_all(_t174, _t175); });
                     }
                     {
                         e657((&(*l0)), l13);
                     } return _t164; }
-                } } _t162; }); (l27).a[ctx_idx(l31, 3, 494, 24, 2834000043)] = _t161; }
+                } } _t162; }); (l27).a[ctx_idx(l31, 3, 508, 24, 2834000043)] = _t161; }
             } } }
-            l31 = ctx_add_u64(l31, ((t14)(1ULL)), 497, 19, 2834000043);
+            l31 = ctx_add_u64(l31, ((t14)(1ULL)), 511, 19, 2834000043);
         }
         l31 = ((t14)(0ULL));
         while ((l31 < ((t14)(3ULL)))) {
-            l60 = (l27).a[ctx_idx(l31, 3, 503, 25, 2834000043)];
-            if ((((l60 >= ((t0)(0ULL))) && (l60 < ((t0)(3ULL)))) && ({ t0 _t179 = l60; t0 _t180 = ((t0)(ctx_as_u((uint64_t)(l31), INT32_MAX, "i32", 504, 45, 2834000043))); (_t179 != _t180); }))) {
+            l60 = (l27).a[ctx_idx(l31, 3, 517, 25, 2834000043)];
+            if ((((l60 >= ((t0)(0ULL))) && (l60 < ((t0)(3ULL)))) && ({ t0 _t179 = l60; t0 _t180 = ((t0)(ctx_as_u((uint64_t)(l31), INT32_MAX, "i32", 518, 45, 2834000043))); (_t179 != _t180); }))) {
                 l61 = f_sys__fcntl((&(*l0)), l60, ((t0)(1030ULL)), ((t53)(3ULL)));
                 if ((l61 < ((t0)(0ULL)))) {
                     { t243 _t181 = ({ t243 _t182; t430 _t183 = f_os__proc_failedproc__Child_05204862((*e662((&(*l0))))); if ((_t183.tag == 0)) { l62 = _t183.p.v0.m_value; {
@@ -21821,39 +21827,39 @@ static t243 f_os__spawn(t38 l0, t5 l1, t135 * l2) {
                     } } _t182; });
                     {
                         if ((!l30)) {
-                            ({ t38 _t186 = (&(*l0)); t431 _t187 = ({ t431 _t188 = (((t431){ .m_ptr = ((t186)((&l28))), .m_len = ((t14)(3ULL)), })); uint64_t _t189 = ((t14)(0ULL)); uint64_t _t190 = _t188.m_len; ctx_range(_t189, _t190, _t188.m_len, 451, 58, 2834000043); (t431){ .m_ptr = _t188.m_ptr + _t189, .m_len = _t190 - _t189 }; }); f_os__close_all(_t186, _t187); });
+                            ({ t38 _t186 = (&(*l0)); t431 _t187 = ({ t431 _t188 = (((t431){ .m_ptr = ((t186)((&l28))), .m_len = ((t14)(3ULL)), })); uint64_t _t189 = ((t14)(0ULL)); uint64_t _t190 = _t188.m_len; ctx_range(_t189, _t190, _t188.m_len, 465, 58, 2834000043); (t431){ .m_ptr = _t188.m_ptr + _t189, .m_len = _t190 - _t189 }; }); f_os__close_all(_t186, _t187); });
                         }
                     }
                     {
-                        ({ t38 _t191 = (&(*l0)); t431 _t192 = ({ t431 _t193 = (((t431){ .m_ptr = ((t186)((&l29))), .m_len = ((t14)(6ULL)), })); uint64_t _t194 = ((t14)(0ULL)); uint64_t _t195 = _t193.m_len; ctx_range(_t194, _t195, _t193.m_len, 449, 43, 2834000043); (t431){ .m_ptr = _t193.m_ptr + _t194, .m_len = _t195 - _t194 }; }); f_os__close_all(_t191, _t192); });
+                        ({ t38 _t191 = (&(*l0)); t431 _t192 = ({ t431 _t193 = (((t431){ .m_ptr = ((t186)((&l29))), .m_len = ((t14)(6ULL)), })); uint64_t _t194 = ((t14)(0ULL)); uint64_t _t195 = _t193.m_len; ctx_range(_t194, _t195, _t193.m_len, 463, 43, 2834000043); (t431){ .m_ptr = _t193.m_ptr + _t194, .m_len = _t195 - _t194 }; }); f_os__close_all(_t191, _t192); });
                     }
                     {
                         e657((&(*l0)), l13);
                     } return _t181; }
                 }
-                (*({ t425 *_t196 = &(l29); uint64_t _t197 = ctx_add_u64(((t14)(3ULL)), l31, 507, 24, 2834000043); &_t196->a[ctx_idx(_t197, 6, 507, 21, 2834000043)]; })) = l61;
-                (l27).a[ctx_idx(l31, 3, 508, 20, 2834000043)] = l61;
+                (*({ t425 *_t196 = &(l29); uint64_t _t197 = ctx_add_u64(((t14)(3ULL)), l31, 521, 24, 2834000043); &_t196->a[ctx_idx(_t197, 6, 521, 21, 2834000043)]; })) = l61;
+                (l27).a[ctx_idx(l31, 3, 522, 20, 2834000043)] = l61;
             }
-            l31 = ctx_add_u64(l31, ((t14)(1ULL)), 510, 19, 2834000043);
+            l31 = ctx_add_u64(l31, ((t14)(1ULL)), 524, 19, 2834000043);
         }
-        l65 = ({ t0 _t198; t142 _t199 = ({ t38 _t200 = (&(*l0)); t41 _t201 = l22; t36 _t202 = (l16).m_ptr; t36 _t203 = ((l16).m_ptr + l18); t90 _t204 = l25; t41 _t205 = l26; t186 _t206 = (&(l27).a[ctx_idx(((t14)(0ULL)), 3, 513, 114, 2834000043)]); t90 _t207 = l24; t6 _t208 = ((*l2)).m_group; t6 _t209 = ((*l2)).m_die_with_parent; f_sys__spawn(_t200, _t201, _t202, _t203, _t204, _t205, _t206, _t207, _t208, _t209); }); if ((_t199.tag == 0)) { l66 = _t199.p.v0.m_value; {
+        l65 = ({ t0 _t198; t142 _t199 = ({ t38 _t200 = (&(*l0)); t41 _t201 = l22; t36 _t202 = (l16).m_ptr; t36 _t203 = ((l16).m_ptr + l18); t90 _t204 = l25; t41 _t205 = l26; t186 _t206 = (&(l27).a[ctx_idx(((t14)(0ULL)), 3, 527, 114, 2834000043)]); t90 _t207 = l24; t6 _t208 = ((*l2)).m_group; t6 _t209 = ((*l2)).m_die_with_parent; f_sys__spawn(_t200, _t201, _t202, _t203, _t204, _t205, _t206, _t207, _t208, _t209); }); if ((_t199.tag == 0)) { l66 = _t199.p.v0.m_value; {
             _t198 = l66;
         } } else if ((_t199.tag == 1)) { l67 = _t199.p.v1.m_error; {
             { t243 _t210 = ((t243){ .tag = 1, .p.v1 = { .m_error = l67, } });
             {
                 if ((!l30)) {
-                    ({ t38 _t211 = (&(*l0)); t431 _t212 = ({ t431 _t213 = (((t431){ .m_ptr = ((t186)((&l28))), .m_len = ((t14)(3ULL)), })); uint64_t _t214 = ((t14)(0ULL)); uint64_t _t215 = _t213.m_len; ctx_range(_t214, _t215, _t213.m_len, 451, 58, 2834000043); (t431){ .m_ptr = _t213.m_ptr + _t214, .m_len = _t215 - _t214 }; }); f_os__close_all(_t211, _t212); });
+                    ({ t38 _t211 = (&(*l0)); t431 _t212 = ({ t431 _t213 = (((t431){ .m_ptr = ((t186)((&l28))), .m_len = ((t14)(3ULL)), })); uint64_t _t214 = ((t14)(0ULL)); uint64_t _t215 = _t213.m_len; ctx_range(_t214, _t215, _t213.m_len, 465, 58, 2834000043); (t431){ .m_ptr = _t213.m_ptr + _t214, .m_len = _t215 - _t214 }; }); f_os__close_all(_t211, _t212); });
                 }
             }
             {
-                ({ t38 _t216 = (&(*l0)); t431 _t217 = ({ t431 _t218 = (((t431){ .m_ptr = ((t186)((&l29))), .m_len = ((t14)(6ULL)), })); uint64_t _t219 = ((t14)(0ULL)); uint64_t _t220 = _t218.m_len; ctx_range(_t219, _t220, _t218.m_len, 449, 43, 2834000043); (t431){ .m_ptr = _t218.m_ptr + _t219, .m_len = _t220 - _t219 }; }); f_os__close_all(_t216, _t217); });
+                ({ t38 _t216 = (&(*l0)); t431 _t217 = ({ t431 _t218 = (((t431){ .m_ptr = ((t186)((&l29))), .m_len = ((t14)(6ULL)), })); uint64_t _t219 = ((t14)(0ULL)); uint64_t _t220 = _t218.m_len; ctx_range(_t219, _t220, _t218.m_len, 463, 43, 2834000043); (t431){ .m_ptr = _t218.m_ptr + _t219, .m_len = _t220 - _t219 }; }); f_os__close_all(_t216, _t217); });
             }
             {
                 e657((&(*l0)), l13);
             } return _t210; }
         } } _t198; });
         l30 = ((bool)1);
-        l68 = ((t8)(ctx_as_s((int64_t)(l65), 0, INT64_MAX, "u64", 515, 18, 2834000043)));
+        l68 = ((t8)(ctx_as_s((int64_t)(l65), 0, INT64_MAX, "u64", 529, 18, 2834000043)));
         { t243 _t221 = ((t243){ .tag = 0, .p.v0 = { .m_value = ({ t8 _t222 = l68; t8 _t223 = ({ t8 _t228; if (((*l2)).m_group) {
             _t228 = l68;
         } else {
@@ -21866,25 +21872,25 @@ static t243 f_os__spawn(t38 l0, t5 l1, t135 * l2) {
             _t229 = l68;
         } else {
             _t229 = ((t8)(0ULL));
-        } _t229; }); t251 _t225 = f_os__pipe_of((l28).a[ctx_idx(((t14)(0ULL)), 3, 520, 39, 2834000043)]); t251 _t226 = f_os__pipe_of((l28).a[ctx_idx(((t14)(1ULL)), 3, 521, 40, 2834000043)]); t251 _t227 = f_os__pipe_of((l28).a[ctx_idx(((t14)(2ULL)), 3, 522, 40, 2834000043)]); ((t131){ .m_id = _t222, .m_group = _t223, .m_cleanup = _t224, .m_stdin = _t225, .m_stdout = _t226, .m_stderr = _t227, }); }), } });
+        } _t229; }); t251 _t225 = f_os__pipe_of((l28).a[ctx_idx(((t14)(0ULL)), 3, 534, 39, 2834000043)]); t251 _t226 = f_os__pipe_of((l28).a[ctx_idx(((t14)(1ULL)), 3, 535, 40, 2834000043)]); t251 _t227 = f_os__pipe_of((l28).a[ctx_idx(((t14)(2ULL)), 3, 536, 40, 2834000043)]); ((t131){ .m_id = _t222, .m_group = _t223, .m_cleanup = _t224, .m_stdin = _t225, .m_stdout = _t226, .m_stderr = _t227, }); }), } });
         {
             if ((!l30)) {
-                ({ t38 _t232 = (&(*l0)); t431 _t233 = ({ t431 _t234 = (((t431){ .m_ptr = ((t186)((&l28))), .m_len = ((t14)(3ULL)), })); uint64_t _t235 = ((t14)(0ULL)); uint64_t _t236 = _t234.m_len; ctx_range(_t235, _t236, _t234.m_len, 451, 58, 2834000043); (t431){ .m_ptr = _t234.m_ptr + _t235, .m_len = _t236 - _t235 }; }); f_os__close_all(_t232, _t233); });
+                ({ t38 _t232 = (&(*l0)); t431 _t233 = ({ t431 _t234 = (((t431){ .m_ptr = ((t186)((&l28))), .m_len = ((t14)(3ULL)), })); uint64_t _t235 = ((t14)(0ULL)); uint64_t _t236 = _t234.m_len; ctx_range(_t235, _t236, _t234.m_len, 465, 58, 2834000043); (t431){ .m_ptr = _t234.m_ptr + _t235, .m_len = _t236 - _t235 }; }); f_os__close_all(_t232, _t233); });
             }
         }
         {
-            ({ t38 _t237 = (&(*l0)); t431 _t238 = ({ t431 _t239 = (((t431){ .m_ptr = ((t186)((&l29))), .m_len = ((t14)(6ULL)), })); uint64_t _t240 = ((t14)(0ULL)); uint64_t _t241 = _t239.m_len; ctx_range(_t240, _t241, _t239.m_len, 449, 43, 2834000043); (t431){ .m_ptr = _t239.m_ptr + _t240, .m_len = _t241 - _t240 }; }); f_os__close_all(_t237, _t238); });
+            ({ t38 _t237 = (&(*l0)); t431 _t238 = ({ t431 _t239 = (((t431){ .m_ptr = ((t186)((&l29))), .m_len = ((t14)(6ULL)), })); uint64_t _t240 = ((t14)(0ULL)); uint64_t _t241 = _t239.m_len; ctx_range(_t240, _t241, _t239.m_len, 463, 43, 2834000043); (t431){ .m_ptr = _t239.m_ptr + _t240, .m_len = _t241 - _t240 }; }); f_os__close_all(_t237, _t238); });
         }
         {
             e657((&(*l0)), l13);
         } return _t221; }
         {
             if ((!l30)) {
-                ({ t38 _t242 = (&(*l0)); t431 _t243 = ({ t431 _t244 = (((t431){ .m_ptr = ((t186)((&l28))), .m_len = ((t14)(3ULL)), })); uint64_t _t245 = ((t14)(0ULL)); uint64_t _t246 = _t244.m_len; ctx_range(_t245, _t246, _t244.m_len, 451, 58, 2834000043); (t431){ .m_ptr = _t244.m_ptr + _t245, .m_len = _t246 - _t245 }; }); f_os__close_all(_t242, _t243); });
+                ({ t38 _t242 = (&(*l0)); t431 _t243 = ({ t431 _t244 = (((t431){ .m_ptr = ((t186)((&l28))), .m_len = ((t14)(3ULL)), })); uint64_t _t245 = ((t14)(0ULL)); uint64_t _t246 = _t244.m_len; ctx_range(_t245, _t246, _t244.m_len, 465, 58, 2834000043); (t431){ .m_ptr = _t244.m_ptr + _t245, .m_len = _t246 - _t245 }; }); f_os__close_all(_t242, _t243); });
             }
         }
         {
-            ({ t38 _t247 = (&(*l0)); t431 _t248 = ({ t431 _t249 = (((t431){ .m_ptr = ((t186)((&l29))), .m_len = ((t14)(6ULL)), })); uint64_t _t250 = ((t14)(0ULL)); uint64_t _t251 = _t249.m_len; ctx_range(_t250, _t251, _t249.m_len, 449, 43, 2834000043); (t431){ .m_ptr = _t249.m_ptr + _t250, .m_len = _t251 - _t250 }; }); f_os__close_all(_t247, _t248); });
+            ({ t38 _t247 = (&(*l0)); t431 _t248 = ({ t431 _t249 = (((t431){ .m_ptr = ((t186)((&l29))), .m_len = ((t14)(6ULL)), })); uint64_t _t250 = ((t14)(0ULL)); uint64_t _t251 = _t249.m_len; ctx_range(_t250, _t251, _t249.m_len, 463, 43, 2834000043); (t431){ .m_ptr = _t249.m_ptr + _t250, .m_len = _t251 - _t250 }; }); f_os__close_all(_t247, _t248); });
         }
         {
             e657((&(*l0)), l13);
@@ -22011,10 +22017,10 @@ static t244 f_fs__listarena__Arena_55a09bf3(t2 l0, t28 l1, t29 l2, t7 l3) {
             if ((f_slice__eq_bytes(l11, ((t7){ .m_ptr = (void *)".", .m_len = 1 })) || f_slice__eq_bytes(l11, ((t7){ .m_ptr = (void *)"..", .m_len = 2 })))) {
                  continue;
             }
-            if (({ t14 _t11 = ctx_add_u64(ctx_add_u64(l10, (l11).m_len, 169, 18, 3122788911), ((t14)(1ULL)), 169, 29, 3122788911); t14 _t12 = (l9).m_len; (_t11 > _t12); })) {
-                l13 = ctx_add_u64(ctx_add_u64(l10, (l11).m_len, 170, 30, 3122788911), ((t14)(1ULL)), 170, 41, 3122788911);
-                l14 = ({ t14 _t13; if (({ t14 _t14 = ctx_mul_u64((l9).m_len, ((t14)(2ULL)), 171, 45, 3122788911); t14 _t15 = l13; (_t14 > _t15); })) {
-                    _t13 = ctx_mul_u64((l9).m_len, ((t14)(2ULL)), 171, 66, 3122788911);
+            if (({ t14 _t11 = ctx_add_u64(ctx_add_u64(l10, (l11).m_len, 170, 18, 3122788911), ((t14)(1ULL)), 170, 29, 3122788911); t14 _t12 = (l9).m_len; (_t11 > _t12); })) {
+                l13 = ctx_add_u64(ctx_add_u64(l10, (l11).m_len, 171, 30, 3122788911), ((t14)(1ULL)), 171, 41, 3122788911);
+                l14 = ({ t14 _t13; if (({ t14 _t14 = ctx_mul_u64((l9).m_len, ((t14)(2ULL)), 172, 45, 3122788911); t14 _t15 = l13; (_t14 > _t15); })) {
+                    _t13 = ctx_mul_u64((l9).m_len, ((t14)(2ULL)), 172, 66, 3122788911);
                 } else {
                     _t13 = ({ t14 _t16; if ((l13 > ((t14)(256ULL)))) {
                         _t16 = l13;
@@ -22034,20 +22040,20 @@ static t244 f_fs__listarena__Arena_55a09bf3(t2 l0, t28 l1, t29 l2, t7 l3) {
                     _t17 = l15;
                 } } _t17; });
             }
-            ({ t7 _t24 = ({ t7 _t26 = (l9); uint64_t _t27 = l10; uint64_t _t28 = ctx_add_u64(l10, (l11).m_len, 180, 45, 3122788911); ctx_range(_t27, _t28, _t26.m_len, 180, 39, 3122788911); (t7){ .m_ptr = _t26.m_ptr + _t27, .m_len = _t28 - _t27 }; }); t7 _t25 = l11; f_slice__copyu8_aae5a9c4(_t24, _t25); });
-            (*({ t7 _t29 = (l9); uint64_t _t30 = ctx_add_u64(l10, (l11).m_len, 181, 19, 3122788911); _t29.m_ptr + ctx_idx(_t30, _t29.m_len, 181, 16, 3122788911); })) = ((t15)(0ULL));
-            l10 = ctx_add_u64(ctx_add_u64(l10, (l11).m_len, 182, 19, 3122788911), ((t14)(1ULL)), 182, 30, 3122788911);
+            ({ t7 _t24 = ({ t7 _t26 = (l9); uint64_t _t27 = l10; uint64_t _t28 = ctx_add_u64(l10, (l11).m_len, 181, 45, 3122788911); ctx_range(_t27, _t28, _t26.m_len, 181, 39, 3122788911); (t7){ .m_ptr = _t26.m_ptr + _t27, .m_len = _t28 - _t27 }; }); t7 _t25 = l11; f_slice__copyu8_aae5a9c4(_t24, _t25); });
+            (*({ t7 _t29 = (l9); uint64_t _t30 = ctx_add_u64(l10, (l11).m_len, 182, 19, 3122788911); _t29.m_ptr + ctx_idx(_t30, _t29.m_len, 182, 16, 3122788911); })) = ((t15)(0ULL));
+            l10 = ctx_add_u64(ctx_add_u64(l10, (l11).m_len, 183, 19, 3122788911), ((t14)(1ULL)), 183, 30, 3122788911);
         }
         l16 = ((t14)(0ULL));
         l17 = ((t14)(0ULL));
         while ((l17 < l10)) {
-            if (((*({ t7 _t31 = (l9); uint64_t _t32 = l17; _t31.m_ptr + ctx_idx(_t32, _t31.m_len, 187, 19, 3122788911); })) == ((t15)(0ULL)))) {
-                l16 = ctx_add_u64(l16, ((t14)(1ULL)), 187, 44, 3122788911);
+            if (((*({ t7 _t31 = (l9); uint64_t _t32 = l17; _t31.m_ptr + ctx_idx(_t32, _t31.m_len, 188, 19, 3122788911); })) == ((t15)(0ULL)))) {
+                l16 = ctx_add_u64(l16, ((t14)(1ULL)), 188, 44, 3122788911);
             }
-            l17 = ctx_add_u64(l17, ((t14)(1ULL)), 188, 19, 3122788911);
+            l17 = ctx_add_u64(l17, ((t14)(1ULL)), 189, 19, 3122788911);
         }
-        l18 = ctx_mul_u64(l16, ((t14)(16ULL)), 191, 27, 3122788911);
-        l19 = ({ t7 _t33; t18 _t34 = ({ ctx_fn *_t35 = l2; ({ t28 _t36 = (&(*l1)); t7 _t37 = f_slice__emptyu8_5539fb6e(); t14 _t38 = ctx_add_u64(l18, l10, 192, 73, 3122788911); t14 _t39 = ((t14)(8ULL)); ((c29)_t35->code)(_t35, _t39, _t36, _t37, _t38); }); }); if ((_t34.tag == 1)) { l20 = _t34.p.v1.m_value; {
+        l18 = ctx_mul_u64(l16, ((t14)(16ULL)), 192, 27, 3122788911);
+        l19 = ({ t7 _t33; t18 _t34 = ({ ctx_fn *_t35 = l2; ({ t28 _t36 = (&(*l1)); t7 _t37 = f_slice__emptyu8_5539fb6e(); t14 _t38 = ctx_add_u64(l18, l10, 193, 73, 3122788911); t14 _t39 = ((t14)(8ULL)); ((c29)_t35->code)(_t35, _t39, _t36, _t37, _t38); }); }); if ((_t34.tag == 1)) { l20 = _t34.p.v1.m_value; {
             _t33 = l20;
         } } else if ((_t34.tag == 0)) { {
             (void)({ ctx_fn *_t40 = l2; ((c29)_t40->code)(_t40, ((t14)(1ULL)), (&(*l1)), l9, ((t14)(0ULL))); });
@@ -22058,20 +22064,20 @@ static t244 f_fs__listarena__Arena_55a09bf3(t2 l0, t28 l1, t29 l2, t7 l3) {
                 f_os__dir_close((&(*l0)), (&l5));
             } return _t41; }
         } } _t33; });
-        l21 = ({ t7 _t44 = (l19); uint64_t _t45 = l18; uint64_t _t46 = _t44.m_len; ctx_range(_t45, _t46, _t44.m_len, 196, 24, 3122788911); (t7){ .m_ptr = _t44.m_ptr + _t45, .m_len = _t46 - _t45 }; });
-        ({ t7 _t47 = l21; t7 _t48 = ({ t7 _t49 = (l9); uint64_t _t50 = ((t14)(0ULL)); uint64_t _t51 = l10; ctx_range(_t50, _t51, _t49.m_len, 197, 48, 3122788911); (t7){ .m_ptr = _t49.m_ptr + _t50, .m_len = _t51 - _t50 }; }); f_slice__copyu8_aae5a9c4(_t47, _t48); });
+        l21 = ({ t7 _t44 = (l19); uint64_t _t45 = l18; uint64_t _t46 = _t44.m_len; ctx_range(_t45, _t46, _t44.m_len, 197, 24, 3122788911); (t7){ .m_ptr = _t44.m_ptr + _t45, .m_len = _t46 - _t45 }; });
+        ({ t7 _t47 = l21; t7 _t48 = ({ t7 _t49 = (l9); uint64_t _t50 = ((t14)(0ULL)); uint64_t _t51 = l10; ctx_range(_t50, _t51, _t49.m_len, 198, 48, 3122788911); (t7){ .m_ptr = _t49.m_ptr + _t50, .m_len = _t51 - _t50 }; }); f_slice__copyu8_aae5a9c4(_t47, _t48); });
         (void)({ ctx_fn *_t52 = l2; ((c29)_t52->code)(_t52, ((t14)(1ULL)), (&(*l1)), l9, ((t14)(0ULL))); });
-        l22 = f_slice__castu8u8_15ec90b5(({ t7 _t53 = (l19); uint64_t _t54 = ((t14)(0ULL)); uint64_t _t55 = l18; ctx_range(_t54, _t55, _t53.m_len, 199, 51, 3122788911); (t7){ .m_ptr = _t53.m_ptr + _t54, .m_len = _t55 - _t54 }; }));
+        l22 = f_slice__castu8u8_15ec90b5(({ t7 _t53 = (l19); uint64_t _t54 = ((t14)(0ULL)); uint64_t _t55 = l18; ctx_range(_t54, _t55, _t53.m_len, 200, 51, 3122788911); (t7){ .m_ptr = _t53.m_ptr + _t54, .m_len = _t55 - _t54 }; }));
         l23 = ((t14)(0ULL));
         l24 = ((t14)(0ULL));
         l17 = ((t14)(0ULL));
         while ((l17 < l10)) {
-            if (((*({ t7 _t56 = (l21); uint64_t _t57 = l17; _t56.m_ptr + ctx_idx(_t57, _t56.m_len, 204, 21, 3122788911); })) == ((t15)(0ULL)))) {
-                { t7 _t58 = ({ t7 _t59 = (l21); uint64_t _t60 = l23; uint64_t _t61 = l17; ctx_range(_t60, _t61, _t59.m_len, 205, 33, 3122788911); (t7){ .m_ptr = _t59.m_ptr + _t60, .m_len = _t61 - _t60 }; }); (*({ t5 _t62 = (l22); uint64_t _t63 = l24; _t62.m_ptr + ctx_idx(_t63, _t62.m_len, 205, 22, 3122788911); })) = _t58; }
-                l24 = ctx_add_u64(l24, ((t14)(1ULL)), 206, 23, 3122788911);
-                l23 = ctx_add_u64(l17, ((t14)(1ULL)), 207, 27, 3122788911);
+            if (((*({ t7 _t56 = (l21); uint64_t _t57 = l17; _t56.m_ptr + ctx_idx(_t57, _t56.m_len, 205, 21, 3122788911); })) == ((t15)(0ULL)))) {
+                { t7 _t58 = ({ t7 _t59 = (l21); uint64_t _t60 = l23; uint64_t _t61 = l17; ctx_range(_t60, _t61, _t59.m_len, 206, 33, 3122788911); (t7){ .m_ptr = _t59.m_ptr + _t60, .m_len = _t61 - _t60 }; }); (*({ t5 _t62 = (l22); uint64_t _t63 = l24; _t62.m_ptr + ctx_idx(_t63, _t62.m_len, 206, 22, 3122788911); })) = _t58; }
+                l24 = ctx_add_u64(l24, ((t14)(1ULL)), 207, 23, 3122788911);
+                l23 = ctx_add_u64(l17, ((t14)(1ULL)), 208, 27, 3122788911);
             }
-            l17 = ctx_add_u64(l17, ((t14)(1ULL)), 209, 19, 3122788911);
+            l17 = ctx_add_u64(l17, ((t14)(1ULL)), 210, 19, 3122788911);
         }
         f_fs__sort(l22);
         { t244 _t64 = ((t244){ .tag = 0, .p.v0 = { .m_value = l22, } });
@@ -22296,7 +22302,7 @@ static t247 f_os__end_leftovers(t38 l0, t8 l1) {
     t53 l4;
     CTX_STACK_CHECK();
     {
-        if ((({ t38 _t0 = (&(*l0)); t0 _t1 = ctx_sub_i32(((t0)(0ULL)), ((t0)(ctx_as_u((uint64_t)(l1), INT32_MAX, "i32", 648, 37, 2834000043))), 648, 35, 2834000043); t0 _t2 = ((t0)(9ULL)); e683(_t0, _t1, _t2); }) != ((t0)(0ULL)))) {
+        if ((({ t38 _t0 = (&(*l0)); t0 _t1 = ctx_sub_i32(((t0)(0ULL)), ((t0)(ctx_as_u((uint64_t)(l1), INT32_MAX, "i32", 662, 37, 2834000043))), 662, 35, 2834000043); t0 _t2 = ((t0)(9ULL)); e683(_t0, _t1, _t2); }) != ((t0)(0ULL)))) {
             l2 = (*e662((&(*l0))));
             if ((l2 != ((t0)(3ULL)))) {
                 return ({ t247 _t3; t443 _t4 = f_os__proc_failednovalue_ca4bbae4(l2); if ((_t4.tag == 0)) { {
@@ -22369,9 +22375,9 @@ static t247 f_os__kill(t38 l0, t131 * l1) {
     CTX_STACK_CHECK();
     {
         l2 = ({ t0 _t0; if ((((*l1)).m_group != ((t8)(0ULL)))) {
-            _t0 = ctx_sub_i32(((t0)(0ULL)), ((t0)(ctx_as_u((uint64_t)(((*l1)).m_group), INT32_MAX, "i32", 636, 48, 2834000043))), 636, 46, 2834000043);
+            _t0 = ctx_sub_i32(((t0)(0ULL)), ((t0)(ctx_as_u((uint64_t)(((*l1)).m_group), INT32_MAX, "i32", 650, 48, 2834000043))), 650, 46, 2834000043);
         } else {
-            _t0 = ((t0)(ctx_as_u((uint64_t)(((*l1)).m_id), INT32_MAX, "i32", 636, 79, 2834000043)));
+            _t0 = ((t0)(ctx_as_u((uint64_t)(((*l1)).m_id), INT32_MAX, "i32", 650, 79, 2834000043)));
         } _t0; });
         if ((e683((&(*l0)), l2, ((t0)(9ULL))) != ((t0)(0ULL)))) {
             l3 = (*e662((&(*l0))));
@@ -26228,7 +26234,7 @@ static t245 f_os__descriptor(t8 l0) {
         if ((l0 > ((t8)(2147483647ULL)))) {
             return ((t245){0});
         }
-        return ((t245){ .tag = 1, .p.v1.m_value = ((t0)(ctx_as_u((uint64_t)(l0), INT32_MAX, "i32", 766, 16, 2834000043))) });
+        return ((t245){ .tag = 1, .p.v1.m_value = ((t0)(ctx_as_u((uint64_t)(l0), INT32_MAX, "i32", 780, 16, 2834000043))) });
     }
     __builtin_unreachable();
 }
@@ -26273,7 +26279,7 @@ static t95 f_os__failednovalue_13c7547f(t0 l0) {
                 _t12 = ((t183){ .tag = 6 });
             } } _t12; }), } });
         }
-        return ((t95){ .tag = 1, .p.v1 = { .m_error = ({ t183 _t14; t356 _t15 = ((t356){ .tag = 0, .p.v0 = { .m_code = ((t53)(ctx_as_s((int64_t)(l0), INT64_MIN, INT64_MAX, "i64", 778, 34, 2834000043))), } }); if ((_t15.tag == 0)) { l1 = _t15.p.v0.m_code; {
+        return ((t95){ .tag = 1, .p.v1 = { .m_error = ({ t183 _t14; t356 _t15 = ((t356){ .tag = 0, .p.v0 = { .m_code = ((t53)(ctx_as_s((int64_t)(l0), INT64_MIN, INT64_MAX, "i64", 792, 34, 2834000043))), } }); if ((_t15.tag == 0)) { l1 = _t15.p.v0.m_code; {
             _t14 = ((t183){ .tag = 7, .p.v7 = { .m_code = l1, } });
         } } _t14; }), } });
         return ((t95){ .tag = 0 });
@@ -26321,7 +26327,7 @@ static t357 f_os__failedusize_0dc56eeb(t0 l0) {
                 _t12 = ((t183){ .tag = 6 });
             } } _t12; }), } });
         }
-        return ((t357){ .tag = 1, .p.v1 = { .m_error = ({ t183 _t14; t356 _t15 = ((t356){ .tag = 0, .p.v0 = { .m_code = ((t53)(ctx_as_s((int64_t)(l0), INT64_MIN, INT64_MAX, "i64", 778, 34, 2834000043))), } }); if ((_t15.tag == 0)) { l1 = _t15.p.v0.m_code; {
+        return ((t357){ .tag = 1, .p.v1 = { .m_error = ({ t183 _t14; t356 _t15 = ((t356){ .tag = 0, .p.v0 = { .m_code = ((t53)(ctx_as_s((int64_t)(l0), INT64_MIN, INT64_MAX, "i64", 792, 34, 2834000043))), } }); if ((_t15.tag == 0)) { l1 = _t15.p.v0.m_code; {
             _t14 = ((t183){ .tag = 7, .p.v7 = { .m_code = l1, } });
         } } _t14; }), } });
     }
@@ -28536,8 +28542,8 @@ static t188 f_os__working_dir(t2 l0, t7 l1) {
             } } _t0; });
         }
         l5 = ((t14)(0ULL));
-        while (((l5 < (l1).m_len) && ((*({ t7 _t4 = (l1); uint64_t _t5 = l5; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 247, 36, 2834000043); })) != ((t15)(0ULL))))) {
-            l5 = ctx_add_u64(l5, ((t14)(1ULL)), 247, 53, 2834000043);
+        while (((l5 < (l1).m_len) && ((*({ t7 _t4 = (l1); uint64_t _t5 = l5; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 261, 36, 2834000043); })) != ((t15)(0ULL))))) {
+            l5 = ctx_add_u64(l5, ((t14)(1ULL)), 261, 53, 2834000043);
         }
         return ((t188){ .tag = 0, .p.v0 = { .m_value = l5, } });
     }
@@ -28565,7 +28571,7 @@ static t187 f_os__make_dir(t2 l0, t7 l1) {
     CTX_STACK_CHECK();
     {
         memset(&l2, 0, sizeof l2);
-        l3 = ({ t41 _t0; t90 _t1 = ({ t7 _t2 = l1; t7 _t3 = ({ t7 _t4 = (((t7){ .m_ptr = ((t41)((&l2))), .m_len = ((t14)(4096ULL)), })); uint64_t _t5 = ((t14)(0ULL)); uint64_t _t6 = _t4.m_len; ctx_range(_t5, _t6, _t4.m_len, 225, 40, 2834000043); (t7){ .m_ptr = _t4.m_ptr + _t5, .m_len = _t6 - _t5 }; }); f_os__c_path(_t2, _t3); }); if ((_t1 != 0)) { l4 = _t1; {
+        l3 = ({ t41 _t0; t90 _t1 = ({ t7 _t2 = l1; t7 _t3 = ({ t7 _t4 = (((t7){ .m_ptr = ((t41)((&l2))), .m_len = ((t14)(4096ULL)), })); uint64_t _t5 = ((t14)(0ULL)); uint64_t _t6 = _t4.m_len; ctx_range(_t5, _t6, _t4.m_len, 239, 40, 2834000043); (t7){ .m_ptr = _t4.m_ptr + _t5, .m_len = _t6 - _t5 }; }); f_os__c_path(_t2, _t3); }); if ((_t1 != 0)) { l4 = _t1; {
             _t0 = l4;
         } } else if ((_t1 == 0)) { {
             return ({ t187 _t7; t95 _t8 = f_os__failednovalue_13c7547f(((t0)(36ULL))); if ((_t8.tag == 0)) { {
@@ -28866,12 +28872,11 @@ static t27 f_drive__report_at(t1 l0, t28 l1, t7 l2, t7 l3, t22 l4, t7 l5) {
 // fs::read_at
 static t21 f_fs__read_at(t2 l0, t91 l1, t8 l2, t7 l3) {
     t83 l4;
-    t183 l5;
-    t53 l6;
+    t14 l5;
+    t14 l6;
     t14 l7;
-    t14 l8;
-    t14 l9;
-    t87 l10;
+    t84 l8;
+    t53 l9;
     CTX_STACK_CHECK();
     {
         { t85 _t0 = f_task__check(((t86)((&(*l0))))); if ((_t0.tag == 0)) { {
@@ -28880,39 +28885,35 @@ static t21 f_fs__read_at(t2 l0, t91 l1, t8 l2, t7 l3) {
                 _t1 = ((t87){ .tag = 8 });
             } } _t1; }), } });
         } } }
-        { t95 _t3 = f_fs__seek((&(*l0)), l1, l2); if ((_t3.tag == 0)) { {
-        } } else if ((_t3.tag == 1)) { l5 = _t3.p.v1.m_error; {
-            return ((t21){ .tag = 1, .p.v1 = { .m_error = ({ t87 _t4; t183 _t5 = l5; if ((_t5.tag == 0)) { {
-                _t4 = ((t87){ .tag = 0 });
-            } } else if ((_t5.tag == 1)) { {
-                _t4 = ((t87){ .tag = 1 });
-            } } else if ((_t5.tag == 2)) { {
-                _t4 = ((t87){ .tag = 2 });
-            } } else if ((_t5.tag == 3)) { {
-                _t4 = ((t87){ .tag = 3 });
-            } } else if ((_t5.tag == 4)) { {
-                _t4 = ((t87){ .tag = 4 });
-            } } else if ((_t5.tag == 5)) { {
-                _t4 = ((t87){ .tag = 5 });
-            } } else if ((_t5.tag == 6)) { {
-                _t4 = ((t87){ .tag = 6 });
-            } } else if ((_t5.tag == 7)) { l6 = _t5.p.v7.m_code; {
-                _t4 = ((t87){ .tag = 7, .p.v7 = { .m_code = l6, } });
-            } } _t4; }), } });
-        } } }
-        l7 = ((t14)(0ULL));
-        while ((l7 < (l3).m_len)) {
-            l8 = ({ t14 _t6; t21 _t7 = ({ t2 _t8 = (&(*l0)); t91 _t9 = l1; t7 _t10 = ({ t7 _t11 = (l3); uint64_t _t12 = l7; uint64_t _t13 = _t11.m_len; ctx_range(_t12, _t13, _t11.m_len, 85, 55, 3122788911); (t7){ .m_ptr = _t11.m_ptr + _t12, .m_len = _t13 - _t12 }; }); f_fs__read(_t8, _t9, _t10); }); if ((_t7.tag == 0)) { l9 = _t7.p.v0.m_value; {
-                _t6 = l9;
-            } } else if ((_t7.tag == 1)) { l10 = _t7.p.v1.m_error; {
-                return ((t21){ .tag = 1, .p.v1 = { .m_error = l10, } });
-            } } _t6; });
-            if ((l8 == ((t14)(0ULL)))) {
+        l5 = ((t14)(0ULL));
+        while ((l5 < (l3).m_len)) {
+            l6 = ({ t14 _t3; t188 _t4 = ({ t2 _t5 = (&(*l0)); t8 _t6 = (l1).m_id; t8 _t7 = ({ t8 _t9 = l2; t8 _t10 = ((t8)(ctx_as_u((uint64_t)(l5), UINT64_MAX, "u64", 86, 84, 3122788911))); ctx_add_u64(_t9, _t10, 86, 82, 3122788911); }); t7 _t8 = ({ t7 _t11 = (l3); uint64_t _t12 = l5; uint64_t _t13 = _t11.m_len; ctx_range(_t12, _t13, _t11.m_len, 86, 108, 3122788911); (t7){ .m_ptr = _t11.m_ptr + _t12, .m_len = _t13 - _t12 }; }); f_os__file_read_at(_t5, _t6, _t7, _t8); }); if ((_t4.tag == 0)) { l7 = _t4.p.v0.m_value; {
+                _t3 = l7;
+            } } else if ((_t4.tag == 1)) { l8 = _t4.p.v1.m_error; {
+                return ((t21){ .tag = 1, .p.v1 = { .m_error = ({ t87 _t14; t84 _t15 = l8; if ((_t15.tag == 0)) { {
+                    _t14 = ((t87){ .tag = 0 });
+                } } else if ((_t15.tag == 1)) { {
+                    _t14 = ((t87){ .tag = 1 });
+                } } else if ((_t15.tag == 2)) { {
+                    _t14 = ((t87){ .tag = 2 });
+                } } else if ((_t15.tag == 3)) { {
+                    _t14 = ((t87){ .tag = 3 });
+                } } else if ((_t15.tag == 4)) { {
+                    _t14 = ((t87){ .tag = 4 });
+                } } else if ((_t15.tag == 5)) { {
+                    _t14 = ((t87){ .tag = 5 });
+                } } else if ((_t15.tag == 6)) { {
+                    _t14 = ((t87){ .tag = 6 });
+                } } else if ((_t15.tag == 7)) { l9 = _t15.p.v7.m_code; {
+                    _t14 = ((t87){ .tag = 7, .p.v7 = { .m_code = l9, } });
+                } } _t14; }), } });
+            } } _t3; });
+            if ((l6 == ((t14)(0ULL)))) {
                  break;
             }
-            l7 = ctx_add_u64(l7, l8, 87, 19, 3122788911);
+            l5 = ctx_add_u64(l5, l6, 88, 19, 3122788911);
         }
-        return ((t21){ .tag = 0, .p.v0 = { .m_value = l7, } });
+        return ((t21){ .tag = 0, .p.v0 = { .m_value = l5, } });
     }
     __builtin_unreachable();
 }
@@ -29076,7 +29077,7 @@ static t187 f_os__rename(t2 l0, t7 l1, t7 l2) {
     {
         memset(&l3, 0, sizeof l3);
         memset(&l4, 0, sizeof l4);
-        l5 = ({ t41 _t0; t90 _t1 = ({ t7 _t2 = l1; t7 _t3 = ({ t7 _t4 = (((t7){ .m_ptr = ((t41)((&l3))), .m_len = ((t14)(4096ULL)), })); uint64_t _t5 = ((t14)(0ULL)); uint64_t _t6 = _t4.m_len; ctx_range(_t5, _t6, _t4.m_len, 238, 45, 2834000043); (t7){ .m_ptr = _t4.m_ptr + _t5, .m_len = _t6 - _t5 }; }); f_os__c_path(_t2, _t3); }); if ((_t1 != 0)) { l6 = _t1; {
+        l5 = ({ t41 _t0; t90 _t1 = ({ t7 _t2 = l1; t7 _t3 = ({ t7 _t4 = (((t7){ .m_ptr = ((t41)((&l3))), .m_len = ((t14)(4096ULL)), })); uint64_t _t5 = ((t14)(0ULL)); uint64_t _t6 = _t4.m_len; ctx_range(_t5, _t6, _t4.m_len, 252, 45, 2834000043); (t7){ .m_ptr = _t4.m_ptr + _t5, .m_len = _t6 - _t5 }; }); f_os__c_path(_t2, _t3); }); if ((_t1 != 0)) { l6 = _t1; {
             _t0 = l6;
         } } else if ((_t1 == 0)) { {
             return ({ t187 _t7; t95 _t8 = f_os__failednovalue_13c7547f(((t0)(36ULL))); if ((_t8.tag == 0)) { {
@@ -29101,7 +29102,7 @@ static t187 f_os__rename(t2 l0, t7 l1, t7 l2) {
                 } } _t9; }), } });
             } } _t7; });
         } } _t0; });
-        l9 = ({ t41 _t11; t90 _t12 = ({ t7 _t13 = l2; t7 _t14 = ({ t7 _t15 = (((t7){ .m_ptr = ((t41)((&l4))), .m_len = ((t14)(4096ULL)), })); uint64_t _t16 = ((t14)(0ULL)); uint64_t _t17 = _t15.m_len; ctx_range(_t16, _t17, _t15.m_len, 239, 43, 2834000043); (t7){ .m_ptr = _t15.m_ptr + _t16, .m_len = _t17 - _t16 }; }); f_os__c_path(_t13, _t14); }); if ((_t12 != 0)) { l10 = _t12; {
+        l9 = ({ t41 _t11; t90 _t12 = ({ t7 _t13 = l2; t7 _t14 = ({ t7 _t15 = (((t7){ .m_ptr = ((t41)((&l4))), .m_len = ((t14)(4096ULL)), })); uint64_t _t16 = ((t14)(0ULL)); uint64_t _t17 = _t15.m_len; ctx_range(_t16, _t17, _t15.m_len, 253, 43, 2834000043); (t7){ .m_ptr = _t15.m_ptr + _t16, .m_len = _t17 - _t16 }; }); f_os__c_path(_t13, _t14); }); if ((_t12 != 0)) { l10 = _t12; {
             _t11 = l10;
         } } else if ((_t12 == 0)) { {
             return ({ t187 _t18; t95 _t19 = f_os__failednovalue_13c7547f(((t0)(36ULL))); if ((_t19.tag == 0)) { {
@@ -29161,11 +29162,11 @@ static t41 f_os__c_copy(t41 l0, t7 l1) {
     {
         l2 = ((t14)(0ULL));
         while ((l2 < (l1).m_len)) {
-            { t15 _t0 = (*({ t7 _t1 = (l1); uint64_t _t2 = l2; _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 530, 28, 2834000043); })); (*(l0 + l2)) = _t0; }
-            l2 = ctx_add_u64(l2, ((t14)(1ULL)), 531, 19, 2834000043);
+            { t15 _t0 = (*({ t7 _t1 = (l1); uint64_t _t2 = l2; _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 544, 28, 2834000043); })); (*(l0 + l2)) = _t0; }
+            l2 = ctx_add_u64(l2, ((t14)(1ULL)), 545, 19, 2834000043);
         }
         (*(l0 + (l1).m_len)) = ((t15)(0ULL));
-        return ({ t41 _t3 = l0; t14 _t4 = ctx_add_u64((l1).m_len, ((t14)(1ULL)), 534, 34, 2834000043); (_t3 + _t4); });
+        return ({ t41 _t3 = l0; t14 _t4 = ctx_add_u64((l1).m_len, ((t14)(1ULL)), 548, 34, 2834000043); (_t3 + _t4); });
     }
     __builtin_unreachable();
 }
@@ -29177,10 +29178,10 @@ static t27 f_os__close_all(t38 l0, t431 l1) {
     {
         l2 = ((t14)(0ULL));
         while ((l2 < (l1).m_len)) {
-            if (((*({ t431 _t0 = (l1); uint64_t _t1 = l2; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 553, 19, 2834000043); })) >= ((t0)(0ULL)))) {
-                (void)({ t38 _t2 = (&(*l0)); t0 _t3 = (*({ t431 _t4 = (l1); uint64_t _t5 = l2; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 553, 59, 2834000043); })); e665(_t2, _t3); });
+            if (((*({ t431 _t0 = (l1); uint64_t _t1 = l2; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 567, 19, 2834000043); })) >= ((t0)(0ULL)))) {
+                (void)({ t38 _t2 = (&(*l0)); t0 _t3 = (*({ t431 _t4 = (l1); uint64_t _t5 = l2; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 567, 59, 2834000043); })); e665(_t2, _t3); });
             }
-            l2 = ctx_add_u64(l2, ((t14)(1ULL)), 554, 19, 2834000043);
+            l2 = ctx_add_u64(l2, ((t14)(1ULL)), 568, 19, 2834000043);
         }
     }
 }
@@ -29241,7 +29242,7 @@ static t430 f_os__proc_failedproc__Child_05204862(t0 l0) {
                 _t4 = ((t426){ .tag = 2 });
             } } _t4; }), } });
         }
-        return ((t430){ .tag = 1, .p.v1 = { .m_error = ({ t426 _t6; t428 _t7 = ((t428){ .tag = 0, .p.v0 = { .m_code = ((t53)(ctx_as_s((int64_t)(l0), INT64_MIN, INT64_MAX, "i64", 712, 36, 2834000043))), } }); if ((_t7.tag == 0)) { l1 = _t7.p.v0.m_code; {
+        return ((t430){ .tag = 1, .p.v1 = { .m_error = ({ t426 _t6; t428 _t7 = ((t428){ .tag = 0, .p.v0 = { .m_code = ((t53)(ctx_as_s((int64_t)(l0), INT64_MIN, INT64_MAX, "i64", 726, 36, 2834000043))), } }); if ((_t7.tag == 0)) { l1 = _t7.p.v0.m_code; {
             _t6 = ((t426){ .tag = 3, .p.v3 = { .m_code = l1, } });
         } } _t6; }), } });
     }
@@ -29517,7 +29518,7 @@ static t251 f_os__pipe_of(t0 l0) {
         if ((l0 < ((t0)(0ULL)))) {
             return ((t251){0});
         }
-        return ((t251){ .tag = 1, .p.v1.m_value = ((t445){ .m_id = ((t8)(ctx_as_s((int64_t)(l0), 0, INT64_MAX, "u64", 561, 33, 2834000043))), }) });
+        return ((t251){ .tag = 1, .p.v1.m_value = ((t445){ .m_id = ((t8)(ctx_as_s((int64_t)(l0), 0, INT64_MAX, "u64", 575, 33, 2834000043))), }) });
     }
     __builtin_unreachable();
 }
@@ -29553,7 +29554,7 @@ static t436 f_os__dir_open(t2 l0, t7 l1) {
     CTX_STACK_CHECK();
     {
         memset(&l2, 0, sizeof l2);
-        l3 = ({ t41 _t0; t90 _t1 = ({ t7 _t2 = l1; t7 _t3 = ({ t7 _t4 = (((t7){ .m_ptr = ((t41)((&l2))), .m_len = ((t14)(4096ULL)), })); uint64_t _t5 = ((t14)(0ULL)); uint64_t _t6 = _t4.m_len; ctx_range(_t5, _t6, _t4.m_len, 257, 40, 2834000043); (t7){ .m_ptr = _t4.m_ptr + _t5, .m_len = _t6 - _t5 }; }); f_os__c_path(_t2, _t3); }); if ((_t1 != 0)) { l4 = _t1; {
+        l3 = ({ t41 _t0; t90 _t1 = ({ t7 _t2 = l1; t7 _t3 = ({ t7 _t4 = (((t7){ .m_ptr = ((t41)((&l2))), .m_len = ((t14)(4096ULL)), })); uint64_t _t5 = ((t14)(0ULL)); uint64_t _t6 = _t4.m_len; ctx_range(_t5, _t6, _t4.m_len, 271, 40, 2834000043); (t7){ .m_ptr = _t4.m_ptr + _t5, .m_len = _t6 - _t5 }; }); f_os__c_path(_t2, _t3); }); if ((_t1 != 0)) { l4 = _t1; {
             _t0 = l4;
         } } else if ((_t1 == 0)) { {
             return ({ t436 _t7; t591 _t8 = f_os__failedos__Dir_d53c32fe(((t0)(36ULL))); if ((_t8.tag == 0)) { l5 = _t8.p.v0.m_value; {
@@ -29640,14 +29641,14 @@ static t27 f_fs__sort(t5 l0) {
     {
         l1 = ((t14)(1ULL));
         while ((l1 < (l0).m_len)) {
-            l2 = (*({ t5 _t0 = (l0); uint64_t _t1 = l1; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 270, 26, 3122788911); }));
+            l2 = (*({ t5 _t0 = (l0); uint64_t _t1 = l1; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 271, 26, 3122788911); }));
             l3 = l1;
-            while (((l3 > ((t14)(0ULL))) && ({ t7 _t2 = l2; t7 _t3 = (*({ t5 _t4 = (l0); uint64_t _t5 = ctx_sub_u64(l3, ((t14)(1ULL)), 272, 56, 3122788911); _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 272, 53, 3122788911); })); f_fs__before(_t2, _t3); }))) {
-                { t7 _t6 = (*({ t5 _t7 = (l0); uint64_t _t8 = ctx_sub_u64(l3, ((t14)(1ULL)), 273, 36, 3122788911); _t7.m_ptr + ctx_idx(_t8, _t7.m_len, 273, 33, 3122788911); })); (*({ t5 _t9 = (l0); uint64_t _t10 = l3; _t9.m_ptr + ctx_idx(_t10, _t9.m_len, 273, 22, 3122788911); })) = _t6; }
-                l3 = ctx_sub_u64(l3, ((t14)(1ULL)), 274, 23, 3122788911);
+            while (((l3 > ((t14)(0ULL))) && ({ t7 _t2 = l2; t7 _t3 = (*({ t5 _t4 = (l0); uint64_t _t5 = ctx_sub_u64(l3, ((t14)(1ULL)), 273, 56, 3122788911); _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 273, 53, 3122788911); })); f_fs__before(_t2, _t3); }))) {
+                { t7 _t6 = (*({ t5 _t7 = (l0); uint64_t _t8 = ctx_sub_u64(l3, ((t14)(1ULL)), 274, 36, 3122788911); _t7.m_ptr + ctx_idx(_t8, _t7.m_len, 274, 33, 3122788911); })); (*({ t5 _t9 = (l0); uint64_t _t10 = l3; _t9.m_ptr + ctx_idx(_t10, _t9.m_len, 274, 22, 3122788911); })) = _t6; }
+                l3 = ctx_sub_u64(l3, ((t14)(1ULL)), 275, 23, 3122788911);
             }
-            (*({ t5 _t11 = (l0); uint64_t _t12 = l3; _t11.m_ptr + ctx_idx(_t12, _t11.m_len, 276, 18, 3122788911); })) = l2;
-            l1 = ctx_add_u64(l1, ((t14)(1ULL)), 277, 19, 3122788911);
+            (*({ t5 _t11 = (l0); uint64_t _t12 = l3; _t11.m_ptr + ctx_idx(_t12, _t11.m_len, 277, 18, 3122788911); })) = l2;
+            l1 = ctx_add_u64(l1, ((t14)(1ULL)), 278, 19, 3122788911);
         }
     }
 }
@@ -29684,7 +29685,7 @@ static t7 f_slice__castu8u8_f63d4531(t7 l0) {
 static t8 f_os__event_waitable(t8 l0) {
     CTX_STACK_CHECK();
     {
-        return ctx_sub_u64(((t8)((l0 & ((t8)(4294967295ULL))))), ((t8)(1ULL)), 799, 75, 2834000043);
+        return ctx_sub_u64(((t8)((l0 & ((t8)(4294967295ULL))))), ((t8)(1ULL)), 813, 75, 2834000043);
     }
     __builtin_unreachable();
 }
@@ -29709,7 +29710,7 @@ static t439 f_os__proc_failedu8_c46acba1(t0 l0) {
                 _t4 = ((t426){ .tag = 2 });
             } } _t4; }), } });
         }
-        return ((t439){ .tag = 1, .p.v1 = { .m_error = ({ t426 _t6; t428 _t7 = ((t428){ .tag = 0, .p.v0 = { .m_code = ((t53)(ctx_as_s((int64_t)(l0), INT64_MIN, INT64_MAX, "i64", 712, 36, 2834000043))), } }); if ((_t7.tag == 0)) { l1 = _t7.p.v0.m_code; {
+        return ((t439){ .tag = 1, .p.v1 = { .m_error = ({ t426 _t6; t428 _t7 = ((t428){ .tag = 0, .p.v0 = { .m_code = ((t53)(ctx_as_s((int64_t)(l0), INT64_MIN, INT64_MAX, "i64", 726, 36, 2834000043))), } }); if ((_t7.tag == 0)) { l1 = _t7.p.v0.m_code; {
             _t6 = ((t426){ .tag = 3, .p.v3 = { .m_code = l1, } });
         } } _t6; }), } });
     }
@@ -29724,10 +29725,10 @@ static t8 f_os__deadline(t38 l0, t8 l1) {
     {
         l2 = f_os__monotonic((&(*l0)));
         l3 = ((t8)(18446744073709551615ULL));
-        return ({ t8 _t0; if (({ t8 _t1 = l1; t8 _t2 = ctx_sub_u64(l3, l2, 720, 37, 2834000043); (_t1 > _t2); })) {
+        return ({ t8 _t0; if (({ t8 _t1 = l1; t8 _t2 = ctx_sub_u64(l3, l2, 734, 37, 2834000043); (_t1 > _t2); })) {
             _t0 = l3;
         } else {
-            _t0 = ctx_add_u64(l2, l1, 720, 62, 2834000043);
+            _t0 = ctx_add_u64(l2, l1, 734, 62, 2834000043);
         } _t0; });
     }
     __builtin_unreachable();
@@ -29740,7 +29741,7 @@ static t8 f_os__remaining(t38 l0, t8 l1) {
     {
         l2 = f_os__monotonic((&(*l0)));
         return ({ t8 _t0; if ((l1 > l2)) {
-            _t0 = ctx_sub_u64(l1, l2, 726, 45, 2834000043);
+            _t0 = ctx_sub_u64(l1, l2, 740, 45, 2834000043);
         } else {
             _t0 = ((t8)(0ULL));
         } _t0; });
@@ -29753,15 +29754,15 @@ static t0 f_os__poll_millis(t8 l0) {
     t8 l1;
     CTX_STACK_CHECK();
     {
-        l1 = ({ t8 _t0 = ctx_div_u64(l0, ((t8)(1000000ULL)), 743, 30, 2834000043); t8 _t1 = ({ t8 _t2; if ((ctx_rem_u64(l0, ((t8)(1000000ULL)), 743, 58, 2834000043) > ((t8)(0ULL)))) {
+        l1 = ({ t8 _t0 = ctx_div_u64(l0, ((t8)(1000000ULL)), 757, 30, 2834000043); t8 _t1 = ({ t8 _t2; if ((ctx_rem_u64(l0, ((t8)(1000000ULL)), 757, 58, 2834000043) > ((t8)(0ULL)))) {
             _t2 = ((t8)(1ULL));
         } else {
             _t2 = ((t8)(0ULL));
-        } _t2; }); ctx_add_u64(_t0, _t1, 743, 40, 2834000043); });
+        } _t2; }); ctx_add_u64(_t0, _t1, 757, 40, 2834000043); });
         return ({ t0 _t3; if ((l1 > ((t8)(2147483647ULL)))) {
             _t3 = ((t0)(2147483647ULL));
         } else {
-            _t3 = ((t0)(ctx_as_u((uint64_t)(l1), INT32_MAX, "i32", 744, 57, 2834000043)));
+            _t3 = ((t0)(ctx_as_u((uint64_t)(l1), INT32_MAX, "i32", 758, 57, 2834000043)));
         } _t3; });
     }
     __builtin_unreachable();
@@ -29787,7 +29788,7 @@ static t443 f_os__proc_failednovalue_ca4bbae4(t0 l0) {
                 _t4 = ((t426){ .tag = 2 });
             } } _t4; }), } });
         }
-        return ((t443){ .tag = 1, .p.v1 = { .m_error = ({ t426 _t6; t428 _t7 = ((t428){ .tag = 0, .p.v0 = { .m_code = ((t53)(ctx_as_s((int64_t)(l0), INT64_MIN, INT64_MAX, "i64", 712, 36, 2834000043))), } }); if ((_t7.tag == 0)) { l1 = _t7.p.v0.m_code; {
+        return ((t443){ .tag = 1, .p.v1 = { .m_error = ({ t426 _t6; t428 _t7 = ((t428){ .tag = 0, .p.v0 = { .m_code = ((t53)(ctx_as_s((int64_t)(l0), INT64_MIN, INT64_MAX, "i64", 726, 36, 2834000043))), } }); if ((_t7.tag == 0)) { l1 = _t7.p.v0.m_code; {
             _t6 = ((t426){ .tag = 3, .p.v3 = { .m_code = l1, } });
         } } _t6; }), } });
         return ((t443){ .tag = 0 });
@@ -29815,7 +29816,7 @@ static t444 f_os__proc_failedi32_f6818da5(t0 l0) {
                 _t4 = ((t426){ .tag = 2 });
             } } _t4; }), } });
         }
-        return ((t444){ .tag = 1, .p.v1 = { .m_error = ({ t426 _t6; t428 _t7 = ((t428){ .tag = 0, .p.v0 = { .m_code = ((t53)(ctx_as_s((int64_t)(l0), INT64_MIN, INT64_MAX, "i64", 712, 36, 2834000043))), } }); if ((_t7.tag == 0)) { l1 = _t7.p.v0.m_code; {
+        return ((t444){ .tag = 1, .p.v1 = { .m_error = ({ t426 _t6; t428 _t7 = ((t428){ .tag = 0, .p.v0 = { .m_code = ((t53)(ctx_as_s((int64_t)(l0), INT64_MIN, INT64_MAX, "i64", 726, 36, 2834000043))), } }); if ((_t7.tag == 0)) { l1 = _t7.p.v0.m_code; {
             _t6 = ((t426){ .tag = 3, .p.v3 = { .m_code = l1, } });
         } } _t6; }), } });
     }
@@ -29829,10 +29830,10 @@ static t0 f_os__exit_code(t0 l0) {
     {
         l1 = ((t0)((l0 & ((t0)(127ULL)))));
         if ((l1 == ((t0)(0ULL)))) {
-            return ((t0)((((t0)(l0 >> ctx_shcount_i(((t0)(8ULL)), 32, 627, 41, 2834000043))) & ((t0)(255ULL)))));
+            return ((t0)((((t0)(l0 >> ctx_shcount_i(((t0)(8ULL)), 32, 641, 41, 2834000043))) & ((t0)(255ULL)))));
         }
         if ((l1 != ((t0)(127ULL)))) {
-            return ctx_add_i32(((t0)(128ULL)), l1, 628, 39, 2834000043);
+            return ctx_add_i32(((t0)(128ULL)), l1, 642, 39, 2834000043);
         }
         return ((t0)(255ULL));
     }
@@ -39646,33 +39647,54 @@ static t59 f_utf8__push_bytesarena__Arena_2b9e4dcb(t73 l0, t7 l1) {
     __builtin_unreachable();
 }
 
-// fs::seek
-static t95 f_fs__seek(t2 l0, t91 l1, t8 l2) {
-    t84 l3;
-    t53 l4;
+// os::file_read_at
+static t188 f_os__file_read_at(t2 l0, t8 l1, t8 l2, t7 l3) {
+    t0 l4;
+    t0 l5;
+    t53 l6;
+    t0 l7;
+    t14 l8;
+    t183 l9;
+    t53 l10;
     CTX_STACK_CHECK();
     {
-        { t187 _t0 = f_os__file_seek((&(*l0)), (l1).m_id, l2); if ((_t0.tag == 0)) { {
-        } } else if ((_t0.tag == 1)) { l3 = _t0.p.v1.m_error; {
-            return ((t95){ .tag = 1, .p.v1 = { .m_error = ({ t183 _t1; t84 _t2 = l3; if ((_t2.tag == 0)) { {
-                _t1 = ((t183){ .tag = 0 });
-            } } else if ((_t2.tag == 1)) { {
-                _t1 = ((t183){ .tag = 1 });
-            } } else if ((_t2.tag == 2)) { {
-                _t1 = ((t183){ .tag = 2 });
-            } } else if ((_t2.tag == 3)) { {
-                _t1 = ((t183){ .tag = 3 });
-            } } else if ((_t2.tag == 4)) { {
-                _t1 = ((t183){ .tag = 4 });
-            } } else if ((_t2.tag == 5)) { {
-                _t1 = ((t183){ .tag = 5 });
-            } } else if ((_t2.tag == 6)) { {
-                _t1 = ((t183){ .tag = 6 });
-            } } else if ((_t2.tag == 7)) { l4 = _t2.p.v7.m_code; {
-                _t1 = ((t183){ .tag = 7, .p.v7 = { .m_code = l4, } });
-            } } _t1; }), } });
-        } } }
-        return ((t95){ .tag = 0 });
+        l4 = ({ t0 _t0; t245 _t1 = f_os__descriptor(l1); if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_value; {
+            _t0 = l5;
+        } } else if ((_t1.tag == 0)) { {
+            return ((t188){ .tag = 1, .p.v1 = { .m_error = ({ t84 _t2; t355 _t3 = ((t355){ .tag = 0 }); if ((_t3.tag == 0)) { {
+                _t2 = ((t84){ .tag = 6 });
+            } } _t2; }), } });
+        } } _t0; });
+        while (((bool)1)) {
+            l6 = ({ t2 _t4 = (&(*l0)); t0 _t5 = l4; t41 _t6 = (l3).m_ptr; t14 _t7 = (l3).m_len; t53 _t8 = ((t53)(ctx_as_u((uint64_t)(l2), INT64_MAX, "i64", 187, 80, 2834000043))); e1387(_t4, _t5, _t6, _t7, _t8); });
+            if ((l6 >= ((t53)(0ULL)))) {
+                return ((t188){ .tag = 0, .p.v0 = { .m_value = ((t14)(ctx_as_s((int64_t)(l6), 0, INT64_MAX, "usize", 188, 32, 2834000043))), } });
+            }
+            l7 = (*e256((&(*l0))));
+            if ((l7 != ((t0)(4ULL)))) {
+                return ({ t188 _t9; t357 _t10 = f_os__failedusize_0dc56eeb(l7); if ((_t10.tag == 0)) { l8 = _t10.p.v0.m_value; {
+                    _t9 = ((t188){ .tag = 0, .p.v0 = { .m_value = l8, } });
+                } } else if ((_t10.tag == 1)) { l9 = _t10.p.v1.m_error; {
+                    _t9 = ((t188){ .tag = 1, .p.v1 = { .m_error = ({ t84 _t11; t183 _t12 = l9; if ((_t12.tag == 0)) { {
+                        _t11 = ((t84){ .tag = 0 });
+                    } } else if ((_t12.tag == 1)) { {
+                        _t11 = ((t84){ .tag = 1 });
+                    } } else if ((_t12.tag == 2)) { {
+                        _t11 = ((t84){ .tag = 2 });
+                    } } else if ((_t12.tag == 3)) { {
+                        _t11 = ((t84){ .tag = 3 });
+                    } } else if ((_t12.tag == 4)) { {
+                        _t11 = ((t84){ .tag = 4 });
+                    } } else if ((_t12.tag == 5)) { {
+                        _t11 = ((t84){ .tag = 5 });
+                    } } else if ((_t12.tag == 6)) { {
+                        _t11 = ((t84){ .tag = 6 });
+                    } } else if ((_t12.tag == 7)) { l10 = _t12.p.v7.m_code; {
+                        _t11 = ((t84){ .tag = 7, .p.v7 = { .m_code = l10, } });
+                    } } _t11; }), } });
+                } } _t9; });
+            }
+        }
     }
     __builtin_unreachable();
 }
@@ -39718,7 +39740,7 @@ static t187 f_os__remove_dir(t2 l0, t7 l1) {
     CTX_STACK_CHECK();
     {
         memset(&l2, 0, sizeof l2);
-        l3 = ({ t41 _t0; t90 _t1 = ({ t7 _t2 = l1; t7 _t3 = ({ t7 _t4 = (((t7){ .m_ptr = ((t41)((&l2))), .m_len = ((t14)(4096ULL)), })); uint64_t _t5 = ((t14)(0ULL)); uint64_t _t6 = _t4.m_len; ctx_range(_t5, _t6, _t4.m_len, 231, 40, 2834000043); (t7){ .m_ptr = _t4.m_ptr + _t5, .m_len = _t6 - _t5 }; }); f_os__c_path(_t2, _t3); }); if ((_t1 != 0)) { l4 = _t1; {
+        l3 = ({ t41 _t0; t90 _t1 = ({ t7 _t2 = l1; t7 _t3 = ({ t7 _t4 = (((t7){ .m_ptr = ((t41)((&l2))), .m_len = ((t14)(4096ULL)), })); uint64_t _t5 = ((t14)(0ULL)); uint64_t _t6 = _t4.m_len; ctx_range(_t5, _t6, _t4.m_len, 245, 40, 2834000043); (t7){ .m_ptr = _t4.m_ptr + _t5, .m_len = _t6 - _t5 }; }); f_os__c_path(_t2, _t3); }); if ((_t1 != 0)) { l4 = _t1; {
             _t0 = l4;
         } } else if ((_t1 == 0)) { {
             return ({ t187 _t7; t95 _t8 = f_os__failednovalue_13c7547f(((t0)(36ULL))); if ((_t8.tag == 0)) { {
@@ -39791,7 +39813,7 @@ static t590 f_os__proc_failedi32_90c4dade(t0 l0) {
                 _t4 = ((t426){ .tag = 2 });
             } } _t4; }), } });
         }
-        return ((t590){ .tag = 1, .p.v1 = { .m_error = ({ t426 _t6; t428 _t7 = ((t428){ .tag = 0, .p.v0 = { .m_code = ((t53)(ctx_as_s((int64_t)(l0), INT64_MIN, INT64_MAX, "i64", 712, 36, 2834000043))), } }); if ((_t7.tag == 0)) { l1 = _t7.p.v0.m_code; {
+        return ((t590){ .tag = 1, .p.v1 = { .m_error = ({ t426 _t6; t428 _t7 = ((t428){ .tag = 0, .p.v0 = { .m_code = ((t53)(ctx_as_s((int64_t)(l0), INT64_MIN, INT64_MAX, "i64", 726, 36, 2834000043))), } }); if ((_t7.tag == 0)) { l1 = _t7.p.v0.m_code; {
             _t6 = ((t426){ .tag = 3, .p.v3 = { .m_code = l1, } });
         } } _t6; }), } });
     }
@@ -39866,7 +39888,7 @@ static t591 f_os__failedos__Dir_d53c32fe(t0 l0) {
                 _t12 = ((t183){ .tag = 6 });
             } } _t12; }), } });
         }
-        return ((t591){ .tag = 1, .p.v1 = { .m_error = ({ t183 _t14; t356 _t15 = ((t356){ .tag = 0, .p.v0 = { .m_code = ((t53)(ctx_as_s((int64_t)(l0), INT64_MIN, INT64_MAX, "i64", 778, 34, 2834000043))), } }); if ((_t15.tag == 0)) { l1 = _t15.p.v0.m_code; {
+        return ((t591){ .tag = 1, .p.v1 = { .m_error = ({ t183 _t14; t356 _t15 = ((t356){ .tag = 0, .p.v0 = { .m_code = ((t53)(ctx_as_s((int64_t)(l0), INT64_MIN, INT64_MAX, "i64", 792, 34, 2834000043))), } }); if ((_t15.tag == 0)) { l1 = _t15.p.v0.m_code; {
             _t14 = ((t183){ .tag = 7, .p.v7 = { .m_code = l1, } });
         } } _t14; }), } });
     }
@@ -39880,10 +39902,10 @@ static t6 f_fs__before(t7 l0, t7 l1) {
     {
         l2 = ((t14)(0ULL));
         while (((l2 < (l0).m_len) && (l2 < (l1).m_len))) {
-            if (({ t15 _t0 = (*({ t7 _t2 = (l0); uint64_t _t3 = l2; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 285, 17, 3122788911); })); t15 _t1 = (*({ t7 _t4 = (l1); uint64_t _t5 = l2; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 285, 25, 3122788911); })); (_t0 != _t1); })) {
-                return ({ t15 _t6 = (*({ t7 _t8 = (l0); uint64_t _t9 = l2; _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 285, 39, 3122788911); })); t15 _t7 = (*({ t7 _t10 = (l1); uint64_t _t11 = l2; _t10.m_ptr + ctx_idx(_t11, _t10.m_len, 285, 46, 3122788911); })); (_t6 < _t7); });
+            if (({ t15 _t0 = (*({ t7 _t2 = (l0); uint64_t _t3 = l2; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 286, 17, 3122788911); })); t15 _t1 = (*({ t7 _t4 = (l1); uint64_t _t5 = l2; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 286, 25, 3122788911); })); (_t0 != _t1); })) {
+                return ({ t15 _t6 = (*({ t7 _t8 = (l0); uint64_t _t9 = l2; _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 286, 39, 3122788911); })); t15 _t7 = (*({ t7 _t10 = (l1); uint64_t _t11 = l2; _t10.m_ptr + ctx_idx(_t11, _t10.m_len, 286, 46, 3122788911); })); (_t6 < _t7); });
             }
-            l2 = ctx_add_u64(l2, ((t14)(1ULL)), 286, 19, 3122788911);
+            l2 = ctx_add_u64(l2, ((t14)(1ULL)), 287, 19, 3122788911);
         }
         return ((l0).m_len < (l1).m_len);
     }
@@ -39897,7 +39919,7 @@ static t8 f_os__monotonic(t38 l0) {
     {
         l1 = ((t727){ .m_sec = ((t53)(0ULL)), .m_nsec = ((t53)(0ULL)), });
         (void)e1390((&(*l0)), ((t0)(1ULL)), (&l1));
-        return ({ t8 _t0 = ctx_mul_u64(((t8)(ctx_as_s((int64_t)((l1).m_sec), 0, INT64_MAX, "u64", 734, 16, 2834000043))), ((t8)(1000000000ULL)), 734, 34, 2834000043); t8 _t1 = ((t8)(ctx_as_s((int64_t)((l1).m_nsec), 0, INT64_MAX, "u64", 734, 49, 2834000043))); ctx_add_u64(_t0, _t1, 734, 47, 2834000043); });
+        return ({ t8 _t0 = ctx_mul_u64(((t8)(ctx_as_s((int64_t)((l1).m_sec), 0, INT64_MAX, "u64", 748, 16, 2834000043))), ((t8)(1000000000ULL)), 748, 34, 2834000043); t8 _t1 = ((t8)(ctx_as_s((int64_t)((l1).m_nsec), 0, INT64_MAX, "u64", 748, 49, 2834000043))); ctx_add_u64(_t0, _t1, 748, 47, 2834000043); });
     }
     __builtin_unreachable();
 }
@@ -50465,74 +50487,6 @@ static t59 f_list__reservedrive__Sourcearena__Arena_7f0be5d7(t419 l0, t14 l1) {
             return ((t59){ .tag = 1, .p.v1 = { .m_error = l5, } });
         } } _t1; }); ((*l0)).m_items = _t0; }
         return ((t59){ .tag = 0 });
-    }
-    __builtin_unreachable();
-}
-
-// os::file_seek
-static t187 f_os__file_seek(t2 l0, t8 l1, t8 l2) {
-    t0 l3;
-    t0 l4;
-    t183 l5;
-    t53 l6;
-    t183 l7;
-    t53 l8;
-    CTX_STACK_CHECK();
-    {
-        l3 = ({ t0 _t0; t245 _t1 = f_os__descriptor(l1); if ((_t1.tag == 1)) { l4 = _t1.p.v1.m_value; {
-            _t0 = l4;
-        } } else if ((_t1.tag == 0)) { {
-            return ((t187){ .tag = 1, .p.v1 = { .m_error = ({ t84 _t2; t355 _t3 = ((t355){ .tag = 0 }); if ((_t3.tag == 0)) { {
-                _t2 = ((t84){ .tag = 6 });
-            } } _t2; }), } });
-        } } _t0; });
-        if ((l2 > ((t8)(9223372036854775807ULL)))) {
-            return ({ t187 _t4; t95 _t5 = f_os__failednovalue_13c7547f(((t0)(22ULL))); if ((_t5.tag == 0)) { {
-                _t4 = ((t187){ .tag = 0 });
-            } } else if ((_t5.tag == 1)) { l5 = _t5.p.v1.m_error; {
-                _t4 = ((t187){ .tag = 1, .p.v1 = { .m_error = ({ t84 _t6; t183 _t7 = l5; if ((_t7.tag == 0)) { {
-                    _t6 = ((t84){ .tag = 0 });
-                } } else if ((_t7.tag == 1)) { {
-                    _t6 = ((t84){ .tag = 1 });
-                } } else if ((_t7.tag == 2)) { {
-                    _t6 = ((t84){ .tag = 2 });
-                } } else if ((_t7.tag == 3)) { {
-                    _t6 = ((t84){ .tag = 3 });
-                } } else if ((_t7.tag == 4)) { {
-                    _t6 = ((t84){ .tag = 4 });
-                } } else if ((_t7.tag == 5)) { {
-                    _t6 = ((t84){ .tag = 5 });
-                } } else if ((_t7.tag == 6)) { {
-                    _t6 = ((t84){ .tag = 6 });
-                } } else if ((_t7.tag == 7)) { l6 = _t7.p.v7.m_code; {
-                    _t6 = ((t84){ .tag = 7, .p.v7 = { .m_code = l6, } });
-                } } _t6; }), } });
-            } } _t4; });
-        }
-        if ((({ t2 _t8 = (&(*l0)); t0 _t9 = l3; t53 _t10 = ((t53)(ctx_as_u((uint64_t)(l2), INT64_MAX, "i64", 199, 37, 2834000043))); t0 _t11 = ((t0)(0ULL)); e257(_t8, _t9, _t10, _t11); }) < ((t53)(0ULL)))) {
-            return ({ t187 _t12; t95 _t13 = f_os__failednovalue_13c7547f((*e256((&(*l0))))); if ((_t13.tag == 0)) { {
-                _t12 = ((t187){ .tag = 0 });
-            } } else if ((_t13.tag == 1)) { l7 = _t13.p.v1.m_error; {
-                _t12 = ((t187){ .tag = 1, .p.v1 = { .m_error = ({ t84 _t14; t183 _t15 = l7; if ((_t15.tag == 0)) { {
-                    _t14 = ((t84){ .tag = 0 });
-                } } else if ((_t15.tag == 1)) { {
-                    _t14 = ((t84){ .tag = 1 });
-                } } else if ((_t15.tag == 2)) { {
-                    _t14 = ((t84){ .tag = 2 });
-                } } else if ((_t15.tag == 3)) { {
-                    _t14 = ((t84){ .tag = 3 });
-                } } else if ((_t15.tag == 4)) { {
-                    _t14 = ((t84){ .tag = 4 });
-                } } else if ((_t15.tag == 5)) { {
-                    _t14 = ((t84){ .tag = 5 });
-                } } else if ((_t15.tag == 6)) { {
-                    _t14 = ((t84){ .tag = 6 });
-                } } else if ((_t15.tag == 7)) { l8 = _t15.p.v7.m_code; {
-                    _t14 = ((t84){ .tag = 7, .p.v7 = { .m_code = l8, } });
-                } } _t14; }), } });
-            } } _t12; });
-        }
-        return ((t187){ .tag = 0 });
     }
     __builtin_unreachable();
 }
