@@ -224,11 +224,6 @@ wrong answer instead of a compile error.
     declares them `offset: usize`, which works only because 64-bit ABIs pass the two alike.
     *Hit by 1:* glspike.
 
-34. **A typed function value can't be cast.** A thread's start record holds `fn{ data: *mut T }`
-    for any `T`, read through `@cast(*fn{ data: *mut u8 }, &run).*`, since `@cast` takes pointers
-    only. Every `fn` value is one pointer, which a cast of `fn` values whose fields differ only in
-    pointer types could say outright. *Hit by 1:* ctxc (std/thread.ctx).
-
 35. **`null` can't name a variant,** so `types::Type`'s is `nil`. Cosmetic. *Hit by 1:* ctxc.
 
 36. **The mutex isn't fair, and std doesn't say so.** Windows' slim locks let a thread that

@@ -131,9 +131,9 @@ The `proc` work (capturing output, timeouts, kill) comes before either layer.
 `proc` gets there in two parts. The first is built and needs no tasks; the second, `capture`, is
 tasks (threads.md) over the first part's blocking calls.
 
-**threads.md's Threaded backend comes first.** `capture` takes `Tasks`, which doesn't exist yet, and
-Ctrl-C needs its cancellation (`task::Cancel`, interrupting a blocked call), so neither can be built
-before that backend, and the test runner waits on both. Only the broken-pipe setting doesn't.
+**threads.md's Threaded backend came first, and is built.** `capture` takes `Threads`, and Ctrl-C
+needs its cancellation (`task::Cancel`, interrupting a blocked call); both can be built on it now,
+and the test runner waits on them. The broken-pipe setting never needed it.
 
 ### The first part: spawning, pipes, waiting, killing (built)
 
