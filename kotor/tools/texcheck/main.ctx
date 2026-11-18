@@ -8,7 +8,8 @@
 // (G:/Dev/zlang/kotor/extract/tex by default: `<container>__<resref>.tpc|tga|txi`); there is no
 // resource manager in ctxlang yet.
 //
-// Without --png it reads every .tpc and .tga there, decodes every level of every image (cube face,
+// Without --png it reads every .tpc and .tga there, on WORKERS tasks at once (std/task.ctx), each
+// its share of the textures with memory of its own, and decodes every level of every image (cube face,
 // flipbook frame) to RGBA8, turns each flipbook into an atlas, and with a TGA reads its standalone
 // TXI (a water map's grid). It prints each failure with its error, then tallies (format, kind,
 // levels, sizes, TXI, flipbook grids) beside the counts tpc.md and tga.md give, and a check of the
@@ -35,11 +36,16 @@ struct Options { dir: []u8, sheet: []u8, every: usize, pngs: bool, fuzz: usize, 
 const WORK: usize = 268435456
 const KEEP: usize = 67108864
 
+// The corpus check's tasks, each with WORK of its own, reserved (mem::reserve) so that only what
+// a texture needs is used, and LOG for what it prints.
+const WORKERS: usize = 8
+const LOG: usize = 16777216
+
 // The contact sheet: COLS cells across, each CELL texels square.
 const COLS: usize = 24
 const CELL: usize = 64
 
-fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut threads: Threads, args: Args } -> i32 {
     let opts = parse_args{ &io, args } ifnull { return 2 }
     let work_pages = mem::pages{ &mem, size = WORK } ifnull {
         io::eprintln{ &io, s = "texcheck: out of memory" }
@@ -61,7 +67,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     } else if opts.fuzz > 0 {
         fuzz{ &io, &fs, &work, opts, names }
     } else {
-        check{ &io, &fs, &work, &keep, opts, names }
+        check{ &io, &fs, &mem, &threads, &work, &keep, opts, names }
     }
     io::flush{ &io }
     return status
@@ -90,11 +96,39 @@ struct Stats {
     alpha_tight: u32,               // within 0.005
 }
 
-fn check { mut io: Io, mut fs: Fs, mut work: arena::Arena, mut keep: arena::Arena, opts: Options, names: [][]u8 } -> i32 {
+// One task's share of the check: every WORKERS-th texture from `first`, with memory of its own,
+// its own tallies, and what it prints, in order, for `check` to print once every task is done.
+struct Part {
+    work: arena::Arena,             // one texture at a time, reset before each
+    log: arena::Arena,              // its lines, kept to the end
+    stats: Stats,
+    first: ?*mut Line,
+    last: ?*mut Line,
+}
+
+// A line a texture printed: a failure, or a note on its AlphaMean. `at` is the texture's place
+// among the textures.
+struct Line { at: usize, text: []u8, next: ?*mut Line }
+
+fn check { mut io: Io, mut fs: Fs, mut mem: Mem, mut threads: Threads, mut work: arena::Arena, mut keep: arena::Arena, opts: Options, names: [][]u8 } -> i32 {
     let mut count: usize = 0
     let mut i: usize = 0
     while i < names.len {
         if texture_kind{ name = names[i] } != 0 { count = count + 1 }
+        i = i + 1
+    }
+    // The textures' places in `names`, in order.
+    let textures = alloc::make(usize, arena::Arena){ realloc = arena::alloc, heap = &keep, count } iferr {
+        io::eprintln{ &io, s = "texcheck: out of memory" }
+        return 1
+    }
+    count = 0
+    i = 0
+    while i < names.len {
+        if texture_kind{ name = names[i] } != 0 {
+            textures[count] = i
+            count = count + 1
+        }
         i = i + 1
     }
     let samples = (count + opts.every - 1) / opts.every
@@ -111,26 +145,58 @@ fn check { mut io: Io, mut fs: Fs, mut work: arena::Arena, mut keep: arena::Aren
         i = i + 1
     }
 
-    let mut stats: Stats
-    let mut index: usize = 0
-    i = 0
-    while i < names.len {
-        let name = names[i]
-        i = i + 1
-        let which = texture_kind{ name }
-        if which == 0 { continue }
-        arena::reset{ heap = &work }
-        let cell: ?usize = if index % opts.every == 0 { index / opts.every } else { null }
-        index = index + 1
-        let path = join{ realloc = arena::alloc, heap = &work, dir = opts.dir, name } iferr {
+    // The tasks: each part's memory, then each part's share. The sheet is shared: each texture
+    // draws only its own cell.
+    let mut parts: [WORKERS]Part
+    let mut w: usize = 0
+    while w < WORKERS {
+        let work_buf = mem::reserve{ &mem, size = WORK } ifnull {
             io::eprintln{ &io, s = "texcheck: out of memory" }
             return 1
         }
-        check_file{ &io, &fs, &work, &stats, path, name, is_tpc = which == 1, cell, sheet, sheet_w } iferr err{ error } {
-            stats.failures = stats.failures + 1
-            _ = @fmt(&io, "FAIL {}: {}\n", name, error)
+        let log_buf = mem::reserve{ &mem, size = LOG } ifnull {
+            io::eprintln{ &io, s = "texcheck: out of memory" }
+            return 1
         }
+        parts[w].work = arena::new{ buf = work_buf }
+        parts[w].log = arena::new{ buf = log_buf }
+        w = w + 1
     }
+    let mut tasks: [WORKERS]task::Task(!)
+    w = 0
+    while w < WORKERS {
+        task::start{ &threads, task = &tasks[w], run = check_part{ &fs, part = &parts[w], first = w, opts, names, textures, sheet, sheet_w, _ } }
+        w = w + 1
+    }
+    let mut stats: Stats
+    let mut ok = true
+    w = 0
+    while w < WORKERS {
+        task::wait{ &threads, task = &tasks[w] } iferr err{ error } {
+            _ = @fmt(&io, "texcheck: {}\n", error)
+            ok = false
+        }
+        add_stats{ into = &stats, s = parts[w].stats }
+        w = w + 1
+    }
+    // What the textures printed, in their order: texture k's lines are part k % WORKERS's next.
+    let mut next: [WORKERS]?*mut Line
+    w = 0
+    while w < WORKERS {
+        next[w] = parts[w].first
+        w = w + 1
+    }
+    let mut k: usize = 0
+    while k < textures.len {
+        while true {
+            let l = next[k % WORKERS] ifnull { break }
+            if l.at != k { break }
+            io::write{ &io, to = io::Stream::out, bytes = l.text }
+            next[k % WORKERS] = l.next
+        }
+        k = k + 1
+    }
+    if not ok { return 1 }
     report{ &io, stats }
 
     make_parents{ &fs, path = opts.sheet }
@@ -145,6 +211,92 @@ fn check { mut io: Io, mut fs: Fs, mut work: arena::Arena, mut keep: arena::Aren
 }
 
 // 1 for a .tpc, 2 for a .tga, 0 for anything else.
+// Part `part`'s share of the textures: every WORKERS-th from `first`. It reaches its part
+// through a pointer, which `check` reads once every task is done.
+#task
+fn check_part { mut fs: Fs, part: *mut Part, first: usize, opts: Options, names: [][]u8, textures: []usize, sheet: []mut u8, sheet_w: usize } -> ! {
+    let mut k = first
+    while k < textures.len {
+        arena::reset{ heap = &part.work }
+        let name = names[textures[k]]
+        let cell: ?usize = if k % opts.every == 0 { k / opts.every } else { null }
+        let path = try join{ realloc = arena::alloc, heap = &part.work, dir = opts.dir, name }
+        let mut notes = utf8::builder(arena::Arena){ realloc = arena::alloc, heap = &part.log }
+        check_file{ &fs, work = &part.work, stats = &part.stats, &notes, path, name, is_tpc = texture_kind{ name } == 1, cell, sheet, sheet_w } iferr err{ error } {
+            part.stats.failures = part.stats.failures + 1
+            try @fmt(&notes, "FAIL {}: {}\n", name, error)
+        }
+        let text = utf8::view(arena::Arena){ b = notes }.bytes
+        if text.len > 0 {
+            let l = try alloc::new(Line, arena::Arena){ realloc = arena::alloc, heap = &part.log, value = Line{ at = k, text, next = null } }
+            match part.last {
+                some{ value } => { value.next = l }
+                null => { part.first = l }
+            }
+            part.last = l
+        }
+        k = k + WORKERS
+    }
+}
+
+// s's tallies added to into's.
+fn add_stats { mut into: Stats, s: Stats } {
+    let mut a: usize = 0
+    while a < 2 {
+        into.files[a] = into.files[a] + s.files[a]
+        into.odd_sizes[a] = into.odd_sizes[a] + s.odd_sizes[a]
+        into.txi[a] = into.txi[a] + s.txi[a]
+        let mut b: usize = 0
+        while b < 5 {
+            into.format[a][b] = into.format[a][b] + s.format[a][b]
+            b = b + 1
+        }
+        b = 0
+        while b < 3 {
+            into.kind[a][b] = into.kind[a][b] + s.kind[a][b]
+            b = b + 1
+        }
+        b = 0
+        while b < 16 {
+            let mut c: usize = 0
+            while c < 16 {
+                into.sizes[a][b][c] = into.sizes[a][b][c] + s.sizes[a][b][c]
+                c = c + 1
+            }
+            b = b + 1
+        }
+        a = a + 1
+    }
+    a = 0
+    while a < 3 {
+        into.full_chains[a] = into.full_chains[a] + s.full_chains[a]
+        let mut b: usize = 0
+        while b < 20 {
+            into.levels[a][b] = into.levels[a][b] + s.levels[a][b]
+            b = b + 1
+        }
+        a = a + 1
+    }
+    a = 0
+    while a < 17 {
+        let mut b: usize = 0
+        while b < 17 {
+            into.grids[a][b] = into.grids[a][b] + s.grids[a][b]
+            b = b + 1
+        }
+        a = a + 1
+    }
+    into.failures = into.failures + s.failures
+    into.big_grids = into.big_grids + s.big_grids
+    into.images = into.images + s.images
+    into.decoded = into.decoded + s.decoded
+    into.texels = into.texels + s.texels
+    into.atlases = into.atlases + s.atlases
+    into.alpha_checked = into.alpha_checked + s.alpha_checked
+    into.alpha_close = into.alpha_close + s.alpha_close
+    into.alpha_tight = into.alpha_tight + s.alpha_tight
+}
+
 fn texture_kind { name: []u8 } -> u32 {
     if ends_with{ s = name, suffix = ".tpc" } { return 1 }
     if ends_with{ s = name, suffix = ".tga" } { return 2 }
@@ -153,7 +305,7 @@ fn texture_kind { name: []u8 } -> u32 {
 
 // Reads, decodes and tallies one texture; draws its top level into contact sheet cell `cell`.
 fn check_file {
-    mut io: Io, mut fs: Fs, mut work: arena::Arena, mut stats: Stats,
+    mut fs: Fs, mut work: arena::Arena, mut stats: Stats, mut notes: utf8::Builder(arena::Arena),
     path: []u8, name: []u8, is_tpc: bool, cell: ?usize, sheet: []mut u8, sheet_w: usize,
 } -> ! {
     let loaded = try read_texture{ &fs, &work, path, is_tpc }
@@ -208,7 +360,7 @@ fn check_file {
                     stats.alpha_checked = stats.alpha_checked + 1
                     if diff <= 0.02 { stats.alpha_close = stats.alpha_close + 1 }
                     if diff <= 0.005 { stats.alpha_tight = stats.alpha_tight + 1 }
-                    if diff > 0.02 { _ = @fmt(&io, "note {}: AlphaMean {} but the top level's mean alpha is {}\n", name, t.alpha_mean, mean_alpha{ rgba }) }
+                    if diff > 0.02 { _ = @fmt(&notes, "note {}: AlphaMean {} but the top level's mean alpha is {}\n", name, t.alpha_mean, mean_alpha{ rgba }) }
                 }
                 if cell != null { draw_cell{ sheet, sheet_w, cell, rgba, width = t.width, height = t.height } }
             }
