@@ -54,8 +54,8 @@ nullable pointer), `[N]T` arrays (values, bounds-checked), `[]T`/`[]mut T` slice
 `s.ptr`, `s[a..b]`), `!T` (value or error), `strlit`, `fn{C} -> R`, `&fn{C} -> R` (bound
 function: can't be stored in a struct or returned), `extern fn{C} -> R` (C function pointer).
 
-- Integer `+ - *` panic on overflow; use `+%`, `-%`, `*%` for hashes and CRCs. Shifts never
-  overflow. `/` by zero panics.
+- Integer `+ - * <<` panic on overflow (`a << n` is `a * 2^n`); use `+%`, `-%`, `*%` and
+  `@wrap_shl` for hashes, CRCs and RNGs. `/` by zero panics.
 - `~x` flips an integer's bits: `flags & ~F_VISIBLE` clears a flag.
 - `e ifoverflow x` gives x where the arithmetic and `@as` written in e overflow, for counts from a
   file: `count * 16 ifoverflow { return truncated }`. A call's arguments in e aren't covered.

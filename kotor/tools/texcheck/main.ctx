@@ -728,9 +728,9 @@ fn exercise { mut work: arena::Arena, bytes: []u8, is_tpc: bool } -> ! {
 // xorshift32: the next number of a fixed sequence, so a run can be repeated.
 fn next { mut seed: u32 } -> u32 {
     let mut x = seed
-    x = x ^ (x << 13)
+    x = x ^ @wrap_shl(x, 13)
     x = x ^ (x >> 17)
-    x = x ^ (x << 5)
+    x = x ^ @wrap_shl(x, 5)
     seed = x
     return x
 }

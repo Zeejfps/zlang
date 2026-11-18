@@ -243,9 +243,9 @@ namespace mg {
     fn random_unit { mut run: Run } -> f32 {
         let mut x = run.rng
         if x == 0 { x = 0x9E3779B9 }
-        x = x ^ (x << 13)
+        x = x ^ @wrap_shl(x, 13)
         x = x ^ (x >> 17)
-        x = x ^ (x << 5)
+        x = x ^ @wrap_shl(x, 5)
         run.rng = x
         return @as(f32, x >> 8) / 16777216.0
     }

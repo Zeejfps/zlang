@@ -312,9 +312,9 @@ fn corrupt { mut rng: u64, src: []u8, into: []mut u8 } -> []u8 {
 // xorshift64: the next of a sequence that never reaches 0.
 fn random { mut s: u64 } -> u64 {
     if s == 0 { s = 0x9E3779B97F4A7C15 }
-    s = s ^ (s << 13)
+    s = s ^ @wrap_shl(s, 13)
     s = s ^ (s >> 7)
-    s = s ^ (s << 17)
+    s = s ^ @wrap_shl(s, 17)
     return s
 }
 
