@@ -65,6 +65,15 @@ void ctx_thread_leave(ctx_thread *t) {
     set_here(NULL);
 }
 
+void ctx_thread_rename(ctx_slice name) {
+    ctx_thread *t = here();
+    uint64_t n = name.len < sizeof t->name ? name.len : sizeof t->name - 1;
+    const char *s = name.ptr;
+    for (uint64_t i = 0; i < n; i++) t->name[i] = s[i];
+    t->name[n] = 0;
+    t->name_len = n;
+}
+
 void ctx_thread_begin(uint64_t usable, ctx_slice name) {
     ctx_thread *t = here();
     uint64_t at = (uint64_t)(uintptr_t)__builtin_frame_address(0);

@@ -1,18 +1,20 @@
-// The sound device: SDL's queued audio, kept topped up from a mix::Mixer, either by a thread of
+// The sound device: SDL's queued audio, kept topped up from a mix::Mixer, either by a task of
 // its own (`start`) or by the program once a frame (`update`).
 //
 //   let mut dev = try audio::open{ &sdl, rate = 44100, latency_ms = 60 }
 //   let m = try mix::make{ realloc, &heap, rate = dev.rate, voices_2d = 24, voices_3d = 16 }
-//   try audio::start{ &sdl, &threads, &dev, m }      // the mixer's thread keeps the queue full
+//   let mut pump: task::Task(!)
+//   try audio::start{ &sdl, &threads, &dev, m, &pump }    // the mixer's task keeps the queue full
 //   defer audio::close{ &sdl, &dev }
-//   defer audio::stop{ &threads, &dev }               // before close: the thread is joined
+//   defer audio::stop{ &threads, &dev, &pump }             // before close: the task is cancelled and waited for
 //   while running {
 //       ... game update: mix::play, mix::set_listener, ...
 //   }
 //
-// With the thread, the queue is `latency_ms` ahead of the speakers whatever the frames take, as
-// Miles mixed on a thread of its own in the original; the mixer's lock (mix.ctx) lets the game
-// change sounds meanwhile. Without it (a program that doesn't take Threads, or the thread
+// The task's handle is the caller's, so the task can't outlive it (std/task.ctx). With the task,
+// the queue is `latency_ms` ahead of the speakers whatever the frames take, as Miles mixed on a
+// thread of its own in the original; the mixer's lock (mix.ctx) lets the game
+// change sounds meanwhile. Without it (a program that doesn't take Threads, or the task
 // couldn't start), the game calls `update` once a frame, and it mixes as much as the queue lacks
 // to cover the next frame: `latency_ms` is then the least kept queued, and `update` keeps more
 // when frames are slow: the longest gap between updates lately plus a margin, up to MOST_MS,
@@ -20,21 +22,20 @@
 // arrival at real pace (docs/design/audio.md, "Checked"), a fixed 60 ms ran dry 144 times in
 // 90 s (2.7 s of silence) where frames took 60-100 ms. Before work known to stall the loop,
 // `fill` can queue more, so music keeps playing over it. `update`, `brace` and `fill` do
-// nothing while the thread runs.
+// nothing while the task runs.
 namespace audio {
     struct Device {
         out: sdl::AudioOut,
         rate: u32,              // the device's: the mixer must run at it
-        ahead: u32,             // frames to keep queued at the least (latency_ms); the thread keeps this
+        ahead: u32,             // frames to keep queued at the least (latency_ms); the task keeps this
         underruns: u32,         // top-ups that found the queue empty (the sound stuttered); atomic: `underruns` reads it
         slow: f64,              // the longest gap between updates lately, in seconds (decaying)
         last: u64,              // the performance counter at the last update (0: none yet)
         want: u32,              // frames the last update kept queued
         started: bool,
         buf: [2048]i16,         // a mix::BLOCK of stereo frames on its way to SDL
-        mixer: ?*mut mix::Mixer,        // what the thread mixes
-        thread: ?thread::Thread,        // the mixer's thread, or null: `update` tops up once a frame
-        running: u32,                   // atomic: 0 asks the thread to end
+        mixer: ?*mut mix::Mixer,        // what the task mixes
+        pumping: u32,                   // atomic: 1 while the mixer's task runs; 0: `update` tops up once a frame
     }
 
     // Opens the default output, stereo 16-bit, at `rate` Hz or whatever rate the device wants
@@ -48,7 +49,7 @@ namespace audio {
         let actual = @as(u32, out.freq)
         let mut dev = Device{
             out, rate = actual, ahead = 0, underruns = 0, slow = 0.0, last = 0, want = 0, started = false, buf = [0; 2048],
-            mixer = null, thread = null, running = 0,
+            mixer = null, pumping = 0,
         }
         set_latency{ &dev, latency_ms }
         return dev
@@ -58,47 +59,43 @@ namespace audio {
         if sdl::SDL_InitSubSystem{ &sdl, flags = sdl::INIT_AUDIO } != 0 { return sdl::failed{ call = "SDL_InitSubSystem" } }
     }
 
-    // Closes the device; its thread, if it had one, must have been stopped.
+    // Closes the device; its mixer's task, if it had one, must have been stopped.
     fn close { mut sdl: sdl::Sdl, mut dev: Device } {
         sdl::close_audio{ &sdl, out = dev.out }
         sdl::SDL_QuitSubSystem{ &sdl, flags = sdl::INIT_AUDIO }
     }
 
-    // ---- the mixer's thread
+    // ---- the mixer's task
 
-    const PUMP_SLEEP_NS: u64 = 4000000  // between the thread's looks at the queue: a few ms, far under the 23 ms the device takes at a time
+    const PUMP_SLEEP_NS: u64 = 4000000  // between the task's looks at the queue: a few ms, far under the 23 ms the device takes at a time
 
-    // Starts the thread that keeps the queue `ahead` frames full from `m`, which (with `dev`) must
-    // stay where it is until `stop`. Fails if the thread can't start; `update` then still works.
-    fn start { mut sdl: sdl::Sdl, mut threads: Threads, mut dev: Device, m: *mut mix::Mixer } -> ! {
-        if dev.thread != null { return }
+    // Starts the task that keeps the queue `ahead` frames full from `m`, into the caller's
+    // handle `pump`. `dev` and `m` must stay where they are until `stop`. It must run alongside
+    // the game, so it fails if it can't (task::start_concurrent); `update` then still works.
+    fn start { mut sdl: sdl::Sdl, mut threads: Threads, mut dev: Device, m: *mut mix::Mixer, mut pump: task::Task(!) } -> ! {
+        if @atomic_load(&dev.pumping, atomic::Order::acquire) != 0 { return }
         dev.mixer = m
         dev.want = dev.ahead
-        @atomic_store(&dev.running, 1, atomic::Order::release)
-        let mut options = thread::default_options{}
-        options.name = "mixer"
-        let t = thread::create{ &threads, run = pump, data = &dev, options } iferr err{ error } {
-            @atomic_store(&dev.running, 0, atomic::Order::release)
-            return error
-        }
-        dev.thread = t
+        try task::start_concurrent{ &threads, task = &pump, run = pumping{ &sdl, &threads, dev = &dev, _ } }
+        @atomic_store(&dev.pumping, 1, atomic::Order::release)
     }
 
-    // Ends the mixer's thread and waits for it: after this nothing renders until `update`.
-    fn stop { mut threads: Threads, mut dev: Device } {
-        let t = dev.thread ifnull { return }
-        @atomic_store(&dev.running, 0, atomic::Order::release)
-        thread::join{ &threads, thread = t }
-        dev.thread = null
+    // Cancels the mixer's task and waits for it: after this nothing renders until `update`.
+    fn stop { mut threads: Threads, mut dev: Device, mut pump: task::Task(!) } {
+        task::end{ &threads, task = &pump }
+        @atomic_store(&dev.pumping, 0, atomic::Order::release)
     }
 
-    // The thread: tops the queue up to `ahead`, sleeps a little, and again, until `stop`. It holds
-    // the mixer's lock only while `mix::render` mixes a block, never across SDL's calls or a sleep,
-    // and prints nothing (the game reads `underruns`).
-    fn pump { mut sdl: sdl::Sdl, mut threads: Threads, data: *mut Device } {
-        let m = data.mixer ifnull { return }
-        while @atomic_load(&data.running, atomic::Order::acquire) == 1 {
-            top_up{ &sdl, dev = data, m, frames = data.ahead } iferr {}
+    // The task: tops the queue up to `ahead`, sleeps a little, and again, until `stop` cancels
+    // it, which ends its sleep at once. It holds the mixer's lock only while `mix::render` mixes
+    // a block, never across SDL's calls or a sleep, and prints nothing (the game reads
+    // `underruns`). `dev` is shared with the game, which reads `pumping` and `underruns`.
+    #task
+    fn pumping { mut sdl: sdl::Sdl, mut threads: Threads, dev: *mut Device } -> ! {
+        let m = dev.mixer ifnull { return }
+        while true {
+            try task::check_cancelled{ &threads }
+            top_up{ &sdl, dev, m, frames = dev.ahead } iferr {}
             thread::sleep{ &threads, nanoseconds = PUMP_SLEEP_NS }
         }
     }
@@ -125,9 +122,9 @@ namespace audio {
     const MARGIN_S: f64 = 0.05          // over the slow gap: the device takes its buffer a block (23 ms) at a time, and frames vary
 
     // Mixes what the queue lacks to cover the next frame: `ahead` frames, or the slow gap of late
-    // and a margin. Once a frame; nothing while the thread runs.
+    // and a margin. Once a frame; nothing while the task runs.
     fn update { mut sdl: sdl::Sdl, mut dev: Device, m: *mut mix::Mixer } -> ! {
-        if dev.thread != null { return }
+        if @atomic_load(&dev.pumping, atomic::Order::acquire) != 0 { return }
         let now = sdl::counter{ &sdl }
         if dev.last != 0 {
             // A stall longer than the most we would queue (a module loading) can't be covered: it counts as that.
@@ -148,16 +145,16 @@ namespace audio {
     }
 
     // Before slow frames that are known to come (a new area's first ones): queues the most `update`
-    // would, and keeps that until frames are seen to be quick again. Nothing while the thread runs.
+    // would, and keeps that until frames are seen to be quick again. Nothing while the task runs.
     fn brace { mut sdl: sdl::Sdl, mut dev: Device, m: *mut mix::Mixer } -> ! {
-        if dev.thread != null { return }
+        if @atomic_load(&dev.pumping, atomic::Order::acquire) != 0 { return }
         dev.slow = @as(f64, MOST_MS) / 1000.0 - MARGIN_S
         try top_up{ &sdl, &dev, m, frames = dev.rate * MOST_MS / 1000 }
     }
 
-    // Mixes until `frames` are queued: more before a known stall. Nothing while the thread runs.
+    // Mixes until `frames` are queued: more before a known stall. Nothing while the task runs.
     fn fill { mut sdl: sdl::Sdl, mut dev: Device, m: *mut mix::Mixer, frames: u32 } -> ! {
-        if dev.thread != null { return }
+        if @atomic_load(&dev.pumping, atomic::Order::acquire) != 0 { return }
         try top_up{ &sdl, &dev, m, frames }
     }
 

@@ -10343,7 +10343,6 @@ fn main { mut io: Io } {
             ('fn f {\n    #write\n    a: i32\n} {}', '`write` applies only to a fn', 2, 5),
             ('union U { v{\n    #start\n    a: i32 } }', '`start` applies only to a fn', 2, 5),
             ('error e{\n    #panic\n    a: i32 }', '`panic` applies only to a fn', 2, 5),
-            ('extern fn f {\n    #spawn\n    a: i32 }', '`spawn` applies only to a fn', 2, 5),
             ('struct S {\n    #stack_limit\n    a: usize\n}',
              "`stack_limit` applies only to a capability's static, `static name: usize`", 2, 5),
             ('fn f {\n    #thread_local\n    a: i32\n} {}',
@@ -14069,9 +14068,10 @@ if __name__ == '__main__':
 
 
 class Threads(Base):
-    """Threads (spec §15, rule 14; §13, Atomics; §17, thread, mutex, condition; threads.md). The
-    interpreter runs each thread to its end inside thread::create, so what it can run it runs
-    the same each time, and the compiled program must print the same."""
+    """Threads (§13, Atomics; §17, thread, mutex, condition; threads.md), through tasks, which
+    run on workers, threads of the operating system (std/task.ctx). The interpreter runs a
+    `start`ed task at once, so what it can run it runs the same each time, and the compiled
+    program must print the same."""
 
     def run_native(self, src):
         """Runs src compiled, without the interpreter: for what it can't run, or too slowly."""
@@ -14085,90 +14085,49 @@ class Threads(Base):
             else:
                 os.environ['CTX_DIFF'] = old
 
-    def test_create_join_and_data(self):
+    def test_start_wait_and_data(self):
         self.assertOutput('''
 struct Job { input: u64, output: u64 }
 
-fn square { data: *mut Job } {
+#task
+fn square { data: *mut Job } -> ! {
     data.output = data.input * data.input
 }
 
 fn main { mut io: Io, mut threads: Threads } -> i32 {
     let mut a = Job{ input = 7, output = 0 }
     let mut b = Job{ input = 12, output = 0 }
-    let ta = thread::create{ &threads, run = square, data = &a, options = thread::default_options{} } iferr { return 1 }
-    let tb = thread::create{ &threads, run = square, data = &b, options = thread::Options{ stack_size = 65536, name = "b" } } iferr { return 1 }
-    thread::join{ &threads, thread = ta }
-    thread::join{ &threads, thread = tb }
+    let mut ta: task::Task(!)
+    let mut tb: task::Task(!)
+    task::start{ &threads, task = &ta, run = square{ data = &a, _ } }
+    task::start{ &threads, task = &tb, run = square{ data = &b, _ } }
+    task::wait{ &threads, task = &ta } iferr { return 1 }
+    task::wait{ &threads, task = &tb } iferr { return 1 }
     io::println_u64{ &io, n = a.output + b.output }
     return 0
 }
 ''', '193\n')
 
-    def test_capabilities_on_a_thread(self):
-        """The run function takes Io, which main holds: the thread receives it, and its standard
-        output is written out when it ends."""
+    def test_capabilities_in_a_task(self):
+        """A task takes Io from its bind: its standard output is written out when it ends,
+        before its end is published."""
         self.assertOutput('''
-fn hello { mut io: Io, data: *mut u32 } {
-    io::println_u64{ &io, n = @as(u64, data.*) }
-}
-
-fn start { mut io: Io, mut threads: Threads, n: *mut u32 } -> !thread::Thread {
-    return thread::create{ &threads, run = hello, data = n, options = thread::default_options{} }
+#task
+fn hello { mut io: Io, n: u32 } -> ! {
+    io::println_u64{ &io, n = @as(u64, n) }
 }
 
 fn main { mut io: Io, mut threads: Threads } -> i32 {
-    let mut n: u32 = 42
-    let t = start{ &io, &threads, n = &n } iferr { return 1 }
-    thread::join{ &threads, thread = t }
-    io::println{ &io, s = "joined" }
+    let mut t: task::Task(!)
+    task::start{ &threads, task = &t, run = hello{ &io, n = 42, _ } }
+    task::wait{ &threads, task = &t } iferr { return 1 }
+    io::println{ &io, s = "waited" }
     return 0
 }
-''', '42\njoined\n')
+''', '42\nwaited\n')
 
-    def test_a_thread_without_the_callers_capability(self):
-        self.assertCompileError('''
-fn hello { mut io: Io, data: *mut u32 } {
-    io::println_u64{ &io, n = @as(u64, data.*) }
-}
-
-fn start { mut threads: Threads, n: *mut u32 } -> !thread::Thread {
-    return thread::create{ &threads, run = hello, data = n, options = thread::default_options{} }
-}
-
-fn main { mut io: Io, mut threads: Threads } {
-    let mut n: u32 = 1
-    _ = start{ &threads, n = &n }
-}
-''', "`hello` takes capability `io`, which a thread receives from its creator: no local or context field named `io` holds one here")
-
-    def test_a_thread_needs_a_mutable_capability(self):
-        self.assertCompileError('''
-fn hello { mut io: Io, data: *mut u32 } {}
-
-fn start { io: Io, mut threads: Threads, n: *mut u32 } -> !thread::Thread {
-    return thread::create{ &threads, run = hello, data = n, options = thread::default_options{} }
-}
-
-fn main { mut io: Io, mut threads: Threads } {
-    let mut n: u32 = 1
-    _ = start{ io, &threads, n = &n }
-}
-''', '`io` is not a mutable place')
-
-    def test_a_bound_function_cant_run_on_a_thread(self):
-        self.assertCompileError('''
-fn add { a: u32, data: *mut u32 } { data.* = data.* + a }
-
-fn main { mut threads: Threads } {
-    let mut n: u32 = 1
-    let f = add{ a = 2, _ }
-    _ = thread::create{ &threads, run = f, data = &n, options = thread::default_options{} }
-}
-''', 'got &fn{ data: *mut u32 }')
-
-    def test_capability_with_fields_on_a_thread(self):
-        """A capability with fields goes to the thread as a copy, which outlives its creator."""
+    def test_capability_with_fields_in_a_task(self):
+        """A capability with fields goes to the task in its bind's record."""
         self.assertOutput('''
 namespace lib {
     capability Lib { abs: extern fn{ n: i64 } -> i64 }
@@ -14180,48 +14139,25 @@ namespace lib {
     fn load { mut io: Io } -> Lib { return Lib{ abs = c_llabs } }
 }
 
-fn work { mut lib: lib::Lib, data: *mut i64 } {
-    data.* = lib.abs{ n = data.* }
-}
-
-fn start { mut threads: Threads, mut io: Io, n: *mut i64 } -> !thread::Thread {
-    let mut lib = lib::load{ &io }
-    return thread::create{ &threads, run = work, data = n, options = thread::default_options{} }
+#task
+fn work { mut lib: lib::Lib, n: i64 } -> !i64 {
+    return lib.abs{ n }
 }
 
 fn main { mut io: Io, mut threads: Threads } -> i32 {
-    let mut n: i64 = -5
-    let t = start{ &threads, &io, n = &n } iferr { return 1 }
-    thread::join{ &threads, thread = t }
-    io::println_i64{ &io, n }
+    let mut lib = lib::load{ &io }
+    let mut t: task::Task(!i64)
+    task::start{ &threads, task = &t, run = work{ &lib, n = -5, _ } }
+    io::println_i64{ &io, n = task::wait{ &threads, task = &t } iferr { 0 } }
     return 0
 }
 ''', '5\n')
 
-    def test_a_fn_value_runs_on_a_thread(self):
+    def test_a_fn_reads_a_mut_field(self):
+        """A function that takes a field read-only where the type it converts to has it `mut`
+        reads it through the pointer (§5), bound with capabilities or not."""
         self.assertOutput('''
-fn twice { data: *mut u32 } { data.* = data.* * 2 }
-fn thrice { mut io: Io, data: *mut u32 } { data.* = data.* * 3 }
-
-fn main { mut io: Io, mut threads: Threads } -> i32 {
-    let mut n: u32 = 1
-    let fs: [2]fn{ data: *mut u32 } = [twice, twice]
-    let t = thread::create{ &threads, run = fs[1], data = &n, options = thread::default_options{} } iferr { return 1 }
-    thread::join{ &threads, thread = t }
-    let g = thrice
-    let u = thread::create{ &threads, run = g, data = &n, options = thread::default_options{} } iferr { return 1 }
-    thread::join{ &threads, thread = u }
-    io::println_u64{ &io, n = @as(u64, n) }
-    return 0
-}
-''', '6\n')
-
-    def test_a_run_fn_reads_a_mut_field(self):
-        """A run function that takes a field read-only where `run`'s type has it `mut` reads it
-        through the pointer (§5), with the capabilities it carries or without."""
-        self.assertOutput('''
-#spawn
-fn go { run: fn{ mut n: u32 } } {
+fn go { run: &fn{ mut n: u32 } } {
     let mut k: u32 = 4
     run{ n = &k }
     k = 9
@@ -14232,16 +14168,14 @@ fn show { mut io: Io, n: u32 } { io::println_u64{ &io, n = @as(u64, n) } }
 fn ignore { n: u32 } {}
 
 fn main { mut io: Io } {
-    go{ run = show }
-    let v: fn{ mut io: Io, n: u32 } = show
-    go{ run = v }
+    go{ run = show{ &io, _ } }
     go{ run = ignore }
 }
-''', '4\n9\n4\n9\n')
+''', '4\n9\n')
 
-    def test_a_run_fn_reads_a_snapshot(self):
-        """What a carrying thunk reads through the pointer is a copy, which another argument
-        pointing into the struct (over 32 bytes) doesn't change (§14, rule 6)."""
+    def test_a_fn_reads_a_snapshot(self):
+        """What a converted function reads through the pointer is a copy, which another
+        argument pointing into the struct (over 32 bytes) doesn't change (§14, rule 6)."""
         self.assertOutput('''
 struct Big { a: i64, b: i64, c: i64, d: i64, e: i64 }
 
@@ -14250,17 +14184,15 @@ fn inspect { mut io: Io, b: Big, p: *mut i64 } -> i64 {
     return b.a
 }
 
-#spawn
-fn go { run: fn{ mut b: Big, p: *mut i64 } -> i64 } -> i64 {
+fn go { run: &fn{ mut b: Big, p: *mut i64 } -> i64 } -> i64 {
     let mut big = Big{ a = 1, b = 2, c = 3, d = 4, e = 5 }
     return run{ b = &big, p = &big.a }
 }
 
 fn main { mut io: Io } {
-    io::println_i64{ &io, n = go{ run = inspect } }
+    io::println_i64{ &io, n = go{ run = inspect{ &io, _ } } }
 }
 ''', '1\n')
-
     def test_atomics(self):
         self.assertOutput('''
 enum State: u8 { idle, busy, done }
@@ -14350,12 +14282,13 @@ fn main { mut io: Io } {
 ''', 'false\ntrue\n')
 
     def test_condition(self):
-        """A consumer waits on a condition for what a producer adds. The interpreter can't run a
-        thread that waits for another."""
+        """A consumer waits on a condition for what a producer task adds. The interpreter can't
+        run a task that waits for another."""
         out = self.run_native('''
 struct Queue { lock: mutex::Mutex, ready: condition::Condition, items: [16]u32, count: u32, done: bool }
 
-fn produce { mut threads: Threads, data: *mut Queue } {
+#task
+fn produce { mut threads: Threads, data: *mut Queue } -> ! {
     let mut i: u32 = 1
     while i <= 10 {
         mutex::lock{ mutex = &data.lock }
@@ -14373,26 +14306,30 @@ fn produce { mut threads: Threads, data: *mut Queue } {
 }
 
 fn main { mut io: Io, mut threads: Threads } -> i32 {
+    // The queue is shared through a pointer, as threads share memory: the task's borrow of `q`
+    // is only of the pointer's origin, and a write through `qp` isn't a write of `q` (§15, Tasks, rule 9).
     let mut q = Queue{ lock = mutex::make{}, ready = condition::make{}, items = [0; 16], count = 0, done = false }
-    let t = thread::create{ &threads, run = produce, data = &q, options = thread::default_options{} } iferr { return 1 }
+    let qp = &q
+    let mut t: task::Task(!)
+    task::start_concurrent{ &threads, task = &t, run = produce{ &threads, data = qp, _ } } iferr { return 1 }
     let mut total: u32 = 0
-    mutex::lock{ mutex = &q.lock }
+    mutex::lock{ mutex = &qp.lock }
     while true {
-        while q.count > 0 {
-            q.count = q.count - 1
-            total = total + q.items[@as(usize, q.count)]
+        while qp.count > 0 {
+            qp.count = qp.count - 1
+            total = total + qp.items[@as(usize, qp.count)]
         }
-        if q.done { break }
-        condition::wait{ condition = &q.ready, mutex = &q.lock }
+        if qp.done { break }
+        condition::wait{ condition = &qp.ready, mutex = &qp.lock }
     }
-    mutex::unlock{ mutex = &q.lock }
-    thread::join{ &threads, thread = t }
+    mutex::unlock{ mutex = &qp.lock }
+    task::wait{ &threads, task = &t } iferr { return 2 }
     // nothing signals it now: it gives up
-    mutex::lock{ mutex = &q.lock }
-    let woke = condition::wait_for{ &threads, condition = &q.ready, mutex = &q.lock, nanoseconds = 1000000 }
-    mutex::unlock{ mutex = &q.lock }
-    condition::free{ condition = &q.ready }
-    mutex::free{ mutex = &q.lock }
+    mutex::lock{ mutex = &qp.lock }
+    let woke = condition::wait_for{ &threads, condition = &qp.ready, mutex = &qp.lock, nanoseconds = 1000000 }
+    mutex::unlock{ mutex = &qp.lock }
+    condition::free{ condition = &qp.ready }
+    mutex::free{ mutex = &qp.lock }
     io::println_u64{ &io, n = @as(u64, total) }
     io::println_bool{ &io, n = woke }
     return 0
@@ -14401,7 +14338,7 @@ fn main { mut io: Io, mut threads: Threads } -> i32 {
         self.assertEqual(out, '55\nfalse\n')
 
     def test_thread_local_statics(self):
-        """Each thread counts in its own static; a program that isn't threaded has one."""
+        """Each worker counts in its own static; a program that isn't threaded has one."""
         src = '''
 namespace counts {
     capability Counts {
@@ -14415,31 +14352,49 @@ namespace counts {
     }
 }
 
-struct Seen { n: u64 }
-
-fn worker { mut counts: counts::Counts, data: *mut Seen } {
+#task
+fn worker { mut counts: counts::Counts, mut seen: u64 } -> ! {
     _ = counts::bump{ c = &counts }
-    data.n = counts::bump{ c = &counts }
+    seen = counts::bump{ c = &counts }
 }
 
 fn main { mut io: Io, mut counts: counts::Counts, mut threads: Threads } -> i32 {
     _ = counts::bump{ c = &counts }
     _ = counts::bump{ c = &counts }
     _ = counts::bump{ c = &counts }
-    let mut s = Seen{ n = 0 }
-    let t = thread::create{ &threads, run = worker, data = &s, options = thread::default_options{} } iferr { return 1 }
-    thread::join{ &threads, thread = t }
-    io::println_u64{ &io, n = s.n }
+    let mut seen: u64 = 0
+    let mut t: task::Task(!)
+    task::start_concurrent{ &threads, task = &t, run = worker{ &counts, &seen, _ } } iferr { return 1 }
+    task::wait{ &threads, task = &t } iferr { return 1 }
+    io::println_u64{ &io, n = seen }
     io::println_u64{ &io, n = counts::bump{ c = &counts } }
     return 0
 }
 '''
-        self.assertOutput(src, '2\n4\n')
-        single = src.replace('mut threads: Threads', 'mut threads: Io').replace(
-            '''    let t = thread::create{ &threads, run = worker, data = &s, options = thread::default_options{} } iferr { return 1 }
-    thread::join{ &threads, thread = t }
-''', '    worker{ &counts, data = &s }\n')
-        self.assertOutput(single, '5\n6\n')
+        self.assertEqual(self.run_native(src), '2\n4\n')
+        single = '''
+namespace counts {
+    capability Counts {
+        #thread_local
+        static n: u64
+    }
+
+    fn bump { mut c: Counts } -> u64 {
+        c.n = c.n + 1
+        return c.n
+    }
+}
+
+fn main { mut io: Io, mut counts: counts::Counts } -> i32 {
+    _ = counts::bump{ c = &counts }
+    _ = counts::bump{ c = &counts }
+    _ = counts::bump{ c = &counts }
+    _ = counts::bump{ c = &counts }
+    io::println_u64{ &io, n = counts::bump{ c = &counts } }
+    return 0
+}
+'''
+        self.assertOutput(single, '5\n')
 
     def test_threaded_only_where_the_source_says(self):
         """A program is threaded if main takes Threads (spec §15, Entry point, rule 8): only then
@@ -14464,28 +14419,30 @@ fn main { mut io: Io, mut counts: counts::Counts, mut threads: Threads } -> i32 
         self.assertIn('_Thread_local', texts[1])
         self.assertIn('ctx_thread_setup();', texts[1])
 
-    def test_panic_on_a_thread(self):
+    def test_panic_in_a_task(self):
+        """A panic in a task is reported with its task fn's name."""
         with self.assertRaises(Panic) as cm:
-            run('''
-fn fail { data: *mut u32 } {
+            self.run_native('''
+#task
+fn fail { n: u32 } -> !u32 {
     let xs: [2]u32 = [1, 2]
-    data.* = xs[@as(usize, data.*)]
+    return xs[@as(usize, n)]
 }
 
 fn main { mut io: Io, mut threads: Threads } -> i32 {
-    let mut n: u32 = 5
-    let t = thread::create{ &threads, run = fail, data = &n, options = thread::Options{ stack_size = 0, name = "worker" } } iferr { return 1 }
-    thread::join{ &threads, thread = t }
+    let mut t: task::Task(!u32)
+    task::start_concurrent{ &threads, task = &t, run = fail{ n = 5, _ } } iferr { return 1 }
+    _ = task::wait{ &threads, task = &t }
     io::println{ &io, s = "not reached" }
     return 0
 }
 ''')
         self.assertEqual(cm.exception.msg, 'index 5 out of bounds for length 2')
-        self.assertEqual(cm.exception.thread, 'worker')
+        self.assertEqual(cm.exception.thread, 'task fail')
 
-    def test_stack_overflow_on_a_thread(self):
-        """A thread's stack limit is its own: a recursion on a thread with a small stack panics
-        there, as the main thread's would."""
+    def test_stack_overflow_in_a_task(self):
+        """A worker's stack limit is its own: a recursion in a task on a small stack
+        (task::set_stack) panics there, as the main thread's would."""
         with self.assertRaises(Panic) as cm:
             self.run_native('''
 fn down { n: u64 } -> u64 {
@@ -14493,27 +14450,30 @@ fn down { n: u64 } -> u64 {
     return down{ n = n + 1 } + pad[3]
 }
 
-fn deep { data: *mut u64 } {
-    data.* = down{ n = 0 }
+#task
+fn deep {} -> !u64 {
+    return down{ n = 0 }
 }
 
 fn main { mut io: Io, mut threads: Threads } -> i32 {
-    let mut n: u64 = 0
-    let t = thread::create{ &threads, run = deep, data = &n, options = thread::Options{ stack_size = 262144, name = "deep" } } iferr { return 1 }
-    thread::join{ &threads, thread = t }
+    task::set_stack{ &threads, bytes = 262144 }
+    let mut t: task::Task(!u64)
+    task::start_concurrent{ &threads, task = &t, run = deep{ _ } } iferr { return 1 }
+    _ = task::wait{ &threads, task = &t }
     return 0
 }
 ''')
         self.assertEqual(cm.exception.msg, 'stack overflow')
-        self.assertEqual(cm.exception.thread, 'deep')
+        self.assertEqual(cm.exception.thread, 'task deep')
 
     def test_stress(self):
-        """8 threads each add 1,000,000 times to one atomic counter and to one counter under a
+        """8 tasks each add 1,000,000 times to one atomic counter and to one counter under a
         mutex: both totals are exact."""
         out = self.run_native('''
 struct Shared { atomic: u64, lock: mutex::Mutex, locked: u64 }
 
-fn add { data: *mut Shared } {
+#task
+fn add { data: *mut Shared } -> ! {
     let mut i: u32 = 0
     while i < 1000000 {
         _ = @atomic_add(&data.atomic, 1, atomic::Order::relaxed)
@@ -14526,15 +14486,15 @@ fn add { data: *mut Shared } {
 
 fn main { mut io: Io, mut threads: Threads } -> i32 {
     let mut s = Shared{ atomic = 0, lock = mutex::make{}, locked = 0 }
-    let mut ts: [8]thread::Thread
+    let mut ts: [8]task::Task(!)
     let mut i: usize = 0
     while i < 8 {
-        ts[i] = thread::create{ &threads, run = add, data = &s, options = thread::default_options{} } iferr { return 1 }
+        task::start_concurrent{ &threads, task = &ts[i], run = add{ data = &s, _ } } iferr { return 1 }
         i = i + 1
     }
     i = 0
     while i < 8 {
-        thread::join{ &threads, thread = ts[i] }
+        task::wait{ &threads, task = &ts[i] } iferr { return 1 }
         i = i + 1
     }
     io::println_u64{ &io, n = @atomic_load(&s.atomic, atomic::Order::acquire) }
@@ -14544,6 +14504,291 @@ fn main { mut io: Io, mut threads: Threads } -> i32 {
 ''')
         self.assertEqual(out, '8000000\n8000000\n')
 
+
+class Tasks(Base):
+    """std's task backend, Threaded (std/task.ctx; threads.md): workers, the limit, cancellation
+    of blocking calls, handles' scopes, groups, and misuse. The programs that need tasks to run
+    concurrently run compiled only: the interpreter runs a `start`ed task at once, and stops at
+    `start_concurrent`."""
+
+    def native(self, src, args=(), inp=None):
+        old = os.environ.get('CTX_DIFF')
+        os.environ['CTX_DIFF'] = '0'
+        try:
+            out = io.StringIO()
+            code = run_source(src, out=out, args=list(args), inp=inp)
+            return out.getvalue().replace('\r\n', '\n'), code
+        finally:
+            if old is None:
+                del os.environ['CTX_DIFF']
+            else:
+                os.environ['CTX_DIFF'] = old
+
+    COMMON = '''
+#task
+fn nap { mut threads: Threads, ns: u64 } -> !u64 {
+    thread::sleep{ &threads, nanoseconds = ns }
+    try task::check_cancelled{ &threads }
+    return 7
+}
+
+#task
+fn same_thread { mut threads: Threads, id: u64 } -> !bool {
+    return thread::current_id{ &threads } == id
+}
+
+#task
+fn fails_after { mut threads: Threads, ns: u64 } -> ! {
+    thread::sleep{ &threads, nanoseconds = ns }
+    try task::check_cancelled{ &threads }
+    return task::out_of_resources
+}
+
+fn show(T) { mut io: Io, r: !T, what: []u8 } {
+    match r {
+        ok => { _ = @fmt(&io, "{}: ok\\n", what) }
+        err{ error } => {
+            match error {
+                task::cancelled => { _ = @fmt(&io, "{}: cancelled\\n", what) }
+                else => { _ = @fmt(&io, "{}: failed\\n", what) }
+            }
+        }
+    }
+}
+'''
+
+    def test_limit(self):
+        """With the limit at 0, `start` runs a task at once, on the caller's thread; with the
+        default, on a worker."""
+        out, code = self.native(self.COMMON + '''
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let me = thread::current_id{ &threads }
+    let mut a: task::Task(!bool)
+    task::start{ &threads, task = &a, run = same_thread{ &threads, id = me, _ } }
+    io::println_bool{ &io, n = task::wait{ &threads, task = &a } iferr { true } }
+    task::set_limit{ &threads, workers = 0 }
+    let mut b: task::Task(!bool)
+    task::start{ &threads, task = &b, run = same_thread{ &threads, id = me, _ } }
+    io::println_bool{ &io, n = task::wait{ &threads, task = &b } iferr { false } }
+    return 0
+}
+''')
+        self.assertEqual((out, code), ('false\ntrue\n', 0))
+
+    def test_cancel_wait_for_and_reuse(self):
+        """wait_for gives up; cancel ends a long sleep at once; the next task, in the reused
+        slot, sleeps its time without a stale cancel; a group's first error cancels the rest; a
+        task added to a cancelling group starts cancelled."""
+        import time
+        began = time.monotonic()
+        out, code = self.native(self.COMMON + '''
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let mut t: task::Task(!u64)
+    task::start_concurrent{ &threads, task = &t, run = nap{ &threads, ns = 30000000000, _ } } iferr { return 1 }
+    io::println_bool{ &io, n = task::wait_for{ &threads, task = &t, nanoseconds = 20000000 } }
+    show(u64){ &io, r = task::cancel{ &threads, task = &t }, what = "cancel" }
+    task::start_concurrent{ &threads, task = &t, run = nap{ &threads, ns = 50000000, _ } } iferr { return 1 }
+    show(u64){ &io, r = task::wait{ &threads, task = &t }, what = "again" }
+    let mut g: task::Group
+    task::start_concurrent_in{ &threads, group = &g, run = nap_group{ &threads, _ } } iferr { return 2 }
+    task::start_concurrent_in{ &threads, group = &g, run = fails_after{ &threads, ns = 10000000, _ } } iferr { return 2 }
+    task::wait_all{ &threads, group = &g } iferr { io::println{ &io, s = "group: failed" } }
+    return 0
+}
+
+#task
+fn nap_group { mut threads: Threads } -> ! {
+    thread::sleep{ &threads, nanoseconds = 30000000000 }
+    try task::check_cancelled{ &threads }
+}
+''')
+        self.assertEqual((out, code), ('false\ncancel: cancelled\nagain: ok\ngroup: failed\n', 0))
+        self.assertLess(time.monotonic() - began, 20)
+
+    def test_scope_ends_its_tasks(self):
+        """A handle's scope, left by return, try, break or falling through with its task still
+        running, cancels and waits for it; a zero handle, and an array partly used, need
+        nothing."""
+        import time
+        began = time.monotonic()
+        out, code = self.native(self.COMMON + '''
+fn fail_now {} -> ! { return task::out_of_resources }
+
+fn leave { mut threads: Threads, how: u32 } -> !u64 {
+    let mut i: u32 = 0
+    while i < 2 {
+        let mut ts: [4]task::Task(!u64)
+        let mut unused: task::Task(!u64)
+        try task::start_concurrent{ &threads, task = &ts[1], run = nap{ &threads, ns = 30000000000, _ } }
+        if how == 0 { return 1 }
+        if how == 1 { try fail_now{} }
+        if how == 2 { break }
+        i = i + 1
+    }
+    return 2
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let mut how: u32 = 0
+    while how < 4 {
+        io::println_u64{ &io, n = leave{ &threads, how } iferr { 9 } }
+        how = how + 1
+    }
+    return 0
+}
+''')
+        self.assertEqual((out, code), ('1\n9\n2\n2\n', 0))
+        self.assertLess(time.monotonic() - began, 20)
+
+    def test_cancellation_follows_waits_down(self):
+        """A task that waits for another and is cancelled cancels it; a task run at once is
+        cancelled with its starter; cancel_all reaches a task that waits."""
+        out, code = self.native(self.COMMON + '''
+#task
+fn outer { mut threads: Threads } -> !u64 {
+    let mut inner: task::Task(!u64)
+    try task::start_concurrent{ &threads, task = &inner, run = nap{ &threads, ns = 30000000000, _ } }
+    return task::wait{ &threads, task = &inner }
+}
+
+#task
+fn at_once { mut threads: Threads } -> !u64 {
+    task::set_limit{ &threads, workers = 0 }
+    let mut inner: task::Task(!u64)
+    task::start{ &threads, task = &inner, run = nap{ &threads, ns = 30000000000, _ } }
+    return task::wait{ &threads, task = &inner }
+}
+
+#task
+fn waits_in_group { mut threads: Threads } -> ! {
+    _ = try outer{ &threads }
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let mut t: task::Task(!u64)
+    task::start_concurrent{ &threads, task = &t, run = outer{ &threads, _ } } iferr { return 1 }
+    thread::sleep{ &threads, nanoseconds = 20000000 }
+    show(u64){ &io, r = task::cancel{ &threads, task = &t }, what = "outer" }
+    task::start_concurrent{ &threads, task = &t, run = at_once{ &threads, _ } } iferr { return 1 }
+    thread::sleep{ &threads, nanoseconds = 20000000 }
+    show(u64){ &io, r = task::cancel{ &threads, task = &t }, what = "at once" }
+    task::set_limit{ &threads, workers = 64 }
+    let mut g: task::Group
+    task::start_concurrent_in{ &threads, group = &g, run = waits_in_group{ &threads, _ } } iferr { return 2 }
+    thread::sleep{ &threads, nanoseconds = 20000000 }
+    task::cancel_all{ &threads, group = &g }
+    io::println{ &io, s = "group: stopped" }
+    return 0
+}
+''')
+        self.assertEqual((out, code), ('outer: cancelled\nat once: cancelled\ngroup: stopped\n', 0))
+
+    def test_child_pipes_and_waits(self):
+        """A child's standard error read by a task while this code reads its standard output,
+        which must run concurrently; then a blocked pipe read and a child wait, each cancelled,
+        which leaves the child to be killed and waited for."""
+        flood = ('import sys\nfor i in range(2000):\n    sys.stderr.write("e" * 100 + "\\n")\n'
+                 '    sys.stdout.write("o" * 100 + "\\n")\n')
+        out, code = self.native(self.COMMON + '''
+#task
+fn drain { mut proc: Proc, pipe: proc::Pipe } -> !usize {
+    let mut buf: [4096]u8
+    let mut total: usize = 0
+    while true {
+        let n = try proc::read{ &proc, pipe, into = buf[..] }
+        if n == 0 { break }
+        total = total + n
+    }
+    return total
+}
+
+#task
+fn wait_child { mut proc: Proc, mut child: proc::Child } -> !i32 {
+    return proc::wait{ &proc, &child }
+}
+
+fn main { mut io: Io, mut proc: Proc, mut threads: Threads, args: Args } -> i32 {
+    let options = proc::Options{ stdout = proc::Stdio::pipe, stderr = proc::Stdio::pipe, .. }
+    let mut child = proc::spawn{ &proc, argv = [args[0], "-c", args[1]], options } iferr { return 1 }
+    let out_pipe = child.stdout ifnull { return 2 }
+    let err_pipe = child.stderr ifnull { return 2 }
+    let mut errs: task::Task(!usize)
+    task::start_concurrent{ &threads, task = &errs, run = drain{ &proc, pipe = err_pipe, _ } } iferr { return 3 }
+    let outs = drain{ &proc, pipe = out_pipe } iferr { 0 }
+    let n = task::wait{ &threads, task = &errs } iferr { 0 }
+    _ = proc::wait{ &proc, &child } iferr { 0 }
+    _ = @fmt(&io, "{} {}\\n", outs, n)
+
+    let mut sleeper = proc::spawn{ &proc, argv = [args[0], "-c", "import time; time.sleep(30)"], options } iferr { return 4 }
+    let sout = sleeper.stdout ifnull { return 5 }
+    let mut r: task::Task(!usize)
+    task::start_concurrent{ &threads, task = &r, run = drain{ &proc, pipe = sout, _ } } iferr { return 6 }
+    thread::sleep{ &threads, nanoseconds = 100000000 }
+    show(usize){ &io, r = task::cancel{ &threads, task = &r }, what = "read" }
+    let mut w: task::Task(!i32)
+    task::start_concurrent{ &threads, task = &w, run = wait_child{ &proc, child = &sleeper, _ } } iferr { return 7 }
+    thread::sleep{ &threads, nanoseconds = 100000000 }
+    show(i32){ &io, r = task::cancel{ &threads, task = &w }, what = "wait" }
+    proc::kill{ &proc, child = sleeper } iferr {}
+    io::println_i64{ &io, n = proc::wait{ &proc, child = &sleeper } iferr { -1 } }
+    return 0
+}
+''', args=[sys.executable, flood])
+        newline = 2 if sys.platform == 'win32' else 1
+        self.assertEqual((out, code), (f'{2000 * (100 + newline)} {2000 * (100 + newline)}\nread: cancelled\nwait: cancelled\n137\n', 0))
+
+    def test_misuse_panics(self):
+        cases = [
+            ('''
+fn into { mut threads: Threads, mut t: task::Task(!u64) } {
+    task::start{ &threads, task = &t, run = nap{ &threads, ns = 0, _ } }
+}
+fn main { mut threads: Threads } {
+    let mut t: task::Task(!u64)
+    into{ &threads, &t }
+    into{ &threads, &t }
+}
+''', 'task::start into a handle that holds a task'),
+            ('''
+fn wait_on { mut threads: Threads, mut t: task::Task(!u64) } { _ = task::wait{ &threads, task = &t } }
+fn main { mut threads: Threads } {
+    let mut t: task::Task(!u64)
+    wait_on{ &threads, &t }
+}
+''', 'task::wait on a handle that holds no task'),
+        ]
+        for src, fragment in cases:
+            with self.subTest(fragment):
+                with self.assertRaises(Panic) as cm:
+                    self.native(self.COMMON + src)
+                self.assertIn(fragment, cm.exception.msg)
+
+    def test_interp_runs_start_and_refuses_start_concurrent(self):
+        """The interpreter runs `start`'s tasks at once, and stops at start_concurrent, which
+        it can't keep the promise of."""
+        self.assertOutput(self.COMMON + '''
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let mut t: task::Task(!u64)
+    task::start{ &threads, task = &t, run = nap{ &threads, ns = 1000, _ } }
+    io::println_u64{ &io, n = task::wait{ &threads, task = &t } iferr { 0 } }
+    return 0
+}
+''', '7\n')
+        import subprocess, tempfile
+        import toolchain
+        src = self.COMMON + '''
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let mut t: task::Task(!u64)
+    task::start_concurrent{ &threads, task = &t, run = nap{ &threads, ns = 1000, _ } } iferr { return 1 }
+    return 0
+}
+'''
+        with tempfile.TemporaryDirectory(dir=toolchain.CACHE) as d:
+            with open(os.path.join(d, 'main.ctx'), 'w') as f:
+                f.write(src)
+            r = subprocess.run([toolchain.native_ctxc(), 'interp', 'main.ctx'], cwd=d, capture_output=True,
+                               env=dict(os.environ, CTX_HOME=toolchain.ROOT))
+        self.assertIn('task::start_concurrent and task::start_blocking is not supported by interp', r.stderr.decode())
 
 
 class TaskLanguage(Base):

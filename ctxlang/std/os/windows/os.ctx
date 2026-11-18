@@ -39,12 +39,63 @@ namespace os {
     }
 
     // Reads some of standard input into `into`, which isn't empty. Returns how many; 0 at the end
-    // or after an error.
+    // or after an error, and in a task asked to stop (std/task.ctx). There a console is waited
+    // on with the task's cancel object, and its events that aren't key presses are dropped,
+    // until a key press begins the read, which then waits for its line; an inherited pipe can't
+    // be overlapped, so its read is a synchronous call that a stop interrupts; a file is read.
     fn read { mut io: Io, into: []mut u8 } -> usize {
+        let object = task::get_cancel_object{ cancel = &io }
+        if object == 0 { return read_stdin{ &io, into } }
+        if task::check{ cancel = &io } is err { return 0 }
+        let h = std_handle{ &io, which = STD_HANDLES[0] }
+        let kind = file_type{ &io, file = h }
+        if kind == FILE_TYPE_CHAR {
+            let handles: [2]u64 = [h, object]
+            while true {
+                let r = wait_any_io{ &io, count = 2, handles = &handles[0], all = 0, ms = INFINITE }
+                if r == WAIT_OBJECT_0 + 1 { return 0 }
+                if r != WAIT_OBJECT_0 { break }
+                let mut rec = InputRecord{ kind = 0, pad = 0, key_down = 0, rest = [0; 3] }
+                let mut n: u32 = 0
+                if peek_console{ &io, input = h, &rec, count = 1, &n } == 0 { break }
+                if n == 0 { continue }
+                if rec.kind == KEY_EVENT and rec.key_down != 0 { break }
+                _ = read_console{ &io, input = h, &rec, count = 1, &n }
+            }
+            return read_stdin{ &io, into }
+        }
+        if kind == FILE_TYPE_PIPE {
+            if task::begin_synchronous{ cancel = &io } is err { return 0 }
+            let r = read_stdin{ &io, into }
+            task::end_synchronous{ cancel = &io }
+            return r
+        }
+        return read_stdin{ &io, into }
+    }
+
+    fn read_stdin { mut io: Io, into: []mut u8 } -> usize {
         let n = if into.len > CHUNK { CHUNK } else { into.len }
         let r = crt_read{ &io, fd = 0, buf = into.ptr, count = @as(u32, n) }
         return if r > 0 { @as(usize, r) } else { 0 }
     }
+
+    #c::symbol{ name = "GetStdHandle" }
+    extern fn std_handle { mut io: Io, which: u32 } -> u64
+    #c::symbol{ name = "GetFileType" }
+    extern fn file_type { mut io: Io, file: u64 } -> u32
+    #c::symbol{ name = "WaitForMultipleObjects" }
+    extern fn wait_any_io { mut io: Io, count: u32, handles: *u64, all: i32, ms: u32 } -> u32
+    #c::symbol{ name = "PeekConsoleInputW" }
+    extern fn peek_console { mut io: Io, input: u64, mut rec: InputRecord, count: u32, mut n: u32 } -> i32
+    #c::symbol{ name = "ReadConsoleInputW" }
+    extern fn read_console { mut io: Io, input: u64, mut rec: InputRecord, count: u32, mut n: u32 } -> i32
+
+    // GetFileType's console and pipe, and an INPUT_RECORD, as much of it as a key's event needs:
+    // its kind, and for a key whether it went down.
+    const FILE_TYPE_CHAR: u32 = 2
+    const FILE_TYPE_PIPE: u32 = 3
+    const KEY_EVENT: u16 = 1
+    struct InputRecord { kind: u16, pad: u16, key_down: i32, rest: [3]u32 }
 
     // `size` bytes, a multiple of mem::PAGE, zeroed and page-aligned. Null if there isn't enough
     // memory.
@@ -902,22 +953,45 @@ namespace os {
         return n + times
     }
 
-    // Waits for a child to end: its exit code. Then it releases the child's handle and its Job
-    // Object (release): with `leftovers = kill` that ends whatever of the group is still
-    // running (JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE), and otherwise leaves it running.
-    fn wait { mut proc: Proc, child: proc::Child } -> proc::Error!i32 {
+    // Waits for a child to end. Then it releases the child's handle and its Job Object
+    // (release): with `leftovers = kill` that ends whatever of the group is still running
+    // (JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE), and otherwise leaves it running. An interruptible
+    // wait in a task asked to stop fails with task::cancelled and leaves the child as it was.
+    fn wait { mut proc: Proc, mut cancel: task::Cancel, child: proc::Child, interruptible: bool } -> proc::Error!i32 {
+        let object = if interruptible { task::get_cancel_object{ &cancel } } else { 0 }
+        if object != 0 {
+            try task::check{ &cancel }
+            let handles: [2]u64 = [child.id, object]
+            let r = wait_any{ &proc, count = 2, handles = &handles[0], all = 0, ms = INFINITE }
+            if r == WAIT_OBJECT_0 + 1 { return task::cancelled }
+            if r == WAIT_FAILED { return proc_failed{ code = last_error{ &proc } } }
+        } else if WaitForSingleObject{ &proc, handle = child.id, ms = INFINITE } == WAIT_FAILED {
+            defer release{ &proc, child }
+            return proc_failed{ code = last_error{ &proc } }
+        }
         defer release{ &proc, child }
-        if WaitForSingleObject{ &proc, handle = child.id, ms = INFINITE } == WAIT_FAILED { return proc_failed{ code = last_error{ &proc } } }
         return exit_code{ &proc, id = child.id }
     }
 
+    #c::symbol{ name = "WaitForMultipleObjects" }
+    extern fn wait_any { mut proc: Proc, count: u32, handles: *u64, all: i32, ms: u32 } -> u32
+    #c::symbol{ name = "CancelIoEx" }
+    extern fn cancel_io { mut proc: Proc, file: u64, overlapped: *Overlapped } -> i32
+
+    // ERROR_OPERATION_ABORTED: what an operation CancelIoEx ended fails with.
+    const ERROR_OPERATION_ABORTED: u32 = 995
+
     // As `wait`, for at most `nanoseconds`, rounded up to milliseconds: its exit code, or null
     // if the child is still running, which then keeps its handles.
-    fn wait_for { mut proc: Proc, child: proc::Child, nanoseconds: u64 } -> proc::Error!?i32 {
+    fn wait_for { mut proc: Proc, mut cancel: task::Cancel, child: proc::Child, nanoseconds: u64 } -> proc::Error!?i32 {
+        try task::check{ &cancel }
+        let object = task::get_cancel_object{ &cancel }
+        let handles: [2]u64 = [child.id, object]
         let mut ms = millis{ nanoseconds }
         while true {
             let now: u32 = if ms >= @as(u64, INFINITE) { INFINITE - 1 } else { @as(u32, ms) }
-            let r = WaitForSingleObject{ &proc, handle = child.id, ms = now }
+            let r = wait_any{ &proc, count = if object != 0 { 2 } else { 1 }, handles = &handles[0], all = 0, ms = now }
+            if r == WAIT_OBJECT_0 + 1 { return task::cancelled }
             if r == WAIT_OBJECT_0 {
                 let code = exit_code{ &proc, id = child.id }
                 release{ &proc, child }
@@ -976,7 +1050,8 @@ namespace os {
     // Reads at most into.len bytes, which aren't none, from this program's end of a pipe,
     // which is overlapped: ReadFile starts the read, and GetOverlappedResult waits for it to
     // finish. ERROR_BROKEN_PIPE, the child's end closed, is the end: 0.
-    fn pipe_read { mut proc: Proc, pipe: u64, into: []mut u8 } -> proc::Error!usize {
+    fn pipe_read { mut proc: Proc, mut cancel: task::Cancel, pipe: u64, into: []mut u8 } -> proc::Error!usize {
+        try task::check{ &cancel }
         let n = if into.len > CHUNK { CHUNK } else { into.len }
         let mut o = try overlapped{ &proc }
         defer _ = close_handle{ &proc, handle = o.event }
@@ -986,17 +1061,42 @@ namespace os {
             if e != ERROR_IO_PENDING { return proc_failed{ code = e } }
         }
         let mut done: u32 = 0
-        if GetOverlappedResult{ &proc, file = pipe, overlapped = &o, &done, wait = 1 } == 0 {
+        let end = finish{ &proc, &cancel, file = pipe, &o, &done }
+        if not end.ok {
             let e = last_error{ &proc }
             if e == ERROR_BROKEN_PIPE { return 0 }
+            if end.stopped and e == ERROR_OPERATION_ABORTED { return task::cancelled }
             return proc_failed{ code = e }
         }
+        if end.stopped and done == 0 { return task::cancelled }
         return @as(usize, done)
+    }
+
+    // How an overlapped operation ended: GetOverlappedResult's success, and whether the calling
+    // task was asked to stop meanwhile.
+    struct Finish { ok: bool, stopped: bool }
+
+    // Waits for overlapped operation o on `file` to finish, in a task with its cancel object
+    // too: asked to stop, it cancels this operation alone (CancelIoEx), and waits for it to
+    // finish before its buffer is let go. An operation that completes meanwhile stands.
+    fn finish { mut proc: Proc, mut cancel: task::Cancel, file: u64, mut o: Overlapped, mut done: u32 } -> Finish {
+        let object = task::get_cancel_object{ &cancel }
+        if object != 0 {
+            let handles: [2]u64 = [o.event, object]
+            let r = wait_any{ &proc, count = 2, handles = &handles[0], all = 0, ms = INFINITE }
+            if r == WAIT_OBJECT_0 + 1 {
+                _ = cancel_io{ &proc, file, overlapped = &o }
+                let ok = GetOverlappedResult{ &proc, file, overlapped = &o, &done, wait = 1 } != 0
+                return Finish{ ok, stopped = true }
+            }
+        }
+        return Finish{ ok = GetOverlappedResult{ &proc, file, overlapped = &o, &done, wait = 1 } != 0, stopped = false }
     }
 
     // Writes some of `bytes`, which aren't none, to this program's end of a pipe, as pipe_read
     // reads. Returns how many; broken_pipe once the child has closed its end.
-    fn pipe_write { mut proc: Proc, pipe: u64, bytes: []u8 } -> proc::Error!usize {
+    fn pipe_write { mut proc: Proc, mut cancel: task::Cancel, pipe: u64, bytes: []u8 } -> proc::Error!usize {
+        try task::check{ &cancel }
         let n = if bytes.len > CHUNK { CHUNK } else { bytes.len }
         let mut o = try overlapped{ &proc }
         defer _ = close_handle{ &proc, handle = o.event }
@@ -1005,9 +1105,15 @@ namespace os {
             if e != ERROR_IO_PENDING { return proc_failed{ code = e } }
         }
         let mut done: u32 = 0
-        if GetOverlappedResult{ &proc, file = pipe, overlapped = &o, &done, wait = 1 } == 0 {
-            return proc_failed{ code = last_error{ &proc } }
+        let end = finish{ &proc, &cancel, file = pipe, &o, &done }
+        if not end.ok {
+            let e = last_error{ &proc }
+            if end.stopped and e == ERROR_OPERATION_ABORTED { return task::cancelled }
+            return proc_failed{ code = e }
         }
+        // Cancelled after some of its bytes went: how many is known here, but the caller's
+        // write as a whole fails, and the stream's state is unknown.
+        if end.stopped { return task::cancelled }
         return @as(usize, done)
     }
 
@@ -1083,7 +1189,61 @@ namespace os {
         return fs::other{ code = 206 }                              // ERROR_FILENAME_EXCED_RANGE
     }
 
-    // ---- threads (std/thread.ctx): kernel32's
+    // ---- threads (std/task.ctx, std/thread.ctx): kernel32's
+
+    // Permission to start threads, which std's Threads includes.
+    capability Threads
+
+    // Whether tasks may run concurrently: not only in the interpreter.
+    const CONCURRENT: bool = true
+
+    // What only the interpreter can't do.
+    fn concurrency_unsupported { what: []u8 } { rt::fail{ msg = what } }
+
+    #c::symbol{ name = "CreateEventW" }
+    extern fn create_event { mut threads: Threads, security: ?*u8, manual: i32, initial: i32, name: ?*u16 } -> u64
+    #c::symbol{ name = "SetEvent" }
+    extern fn set_event { mut threads: Threads, event: u64 } -> i32
+    #c::symbol{ name = "ResetEvent" }
+    extern fn reset_event { mut threads: Threads, event: u64 } -> i32
+    #c::symbol{ name = "GetTickCount64" }
+    extern fn tick_count { mut threads: Threads } -> u64
+    #c::symbol{ name = "GetCurrentProcess" }
+    extern fn this_process { mut threads: Threads } -> u64
+    #c::symbol{ name = "DuplicateHandle" }
+    extern fn duplicate_thread { mut threads: Threads, from_process: u64, handle: u64, to_process: u64, mut copy: u64, access: u32, inherit: i32, options: u32 } -> i32
+    #c::symbol{ name = "CancelSynchronousIo" }
+    extern fn cancel_synchronous_io { mut threads: Threads, thread: u64 } -> i32
+
+    // A task's cancel object (std/task.ctx): a manual-reset event, not signalled, or 0 if
+    // Windows won't make one.
+    fn event_make { mut threads: Threads } -> u64 {
+        return create_event{ &threads, security = null, manual = 1, initial = 0, name = null }
+    }
+
+    fn event_signal { mut threads: Threads, event: u64 } { _ = set_event{ &threads, event } }
+    fn event_reset { mut threads: Threads, event: u64 } { _ = reset_event{ &threads, event } }
+
+    // What a wait waits on for it: the event's handle.
+    fn event_waitable { event: u64 } -> u64 { return event }
+
+    // Now on a clock that only goes forward, in nanoseconds, to the millisecond.
+    fn now { mut threads: Threads } -> u64 {
+        return tick_count{ &threads } * 1000000
+    }
+
+    // A handle of the calling thread that other threads may use (CancelSynchronousIo).
+    fn thread_handle { mut threads: Threads } -> u64 {
+        let here = this_process{ &threads }
+        let mut copy: u64 = 0
+        if duplicate_thread{ &threads, from_process = here, handle = current_thread{ &threads }, to_process = here, &copy, access = 0, inherit = 0, options = 2 } == 0 { return 0 }
+        return copy
+    }
+
+    // Interrupts the synchronous call thread `thread` is in, if it is in one.
+    fn cancel_synchronous { mut threads: Threads, thread: u64 } {
+        if thread != 0 { _ = cancel_synchronous_io{ &threads, thread } }
+    }
 
     #c::symbol{ name = "CreateThread" }
     extern fn create_thread { mut threads: Threads, security: ?*u8, stack: usize, entry: extern fn{ start: *mut u8 } -> u32, start: *mut u8, flags: u32, id: ?*mut u32 } -> u64
@@ -1109,11 +1269,11 @@ namespace os {
     // capability.
     #c::callback{ any_thread = true }
     fn thread_entry { start: *mut u8 } -> u32 {
-        thread::begin{ start }
+        task::begin{ start }
         return 0
     }
 
-    // Starts a thread that runs thread::begin{ start }, with a stack of stack_size bytes: its
+    // Starts a thread that runs task::begin{ start }, with a stack of stack_size bytes: its
     // handle, or null if Windows won't.
     fn thread_create { mut threads: Threads, start: *mut u8, stack_size: usize } -> ?u64 {
         let h = create_thread{ &threads, security = null, stack = stack_size, entry = thread_entry, start, flags = STACK_SIZE_PARAM_IS_A_RESERVATION, id = null }
@@ -1121,10 +1281,6 @@ namespace os {
         return h
     }
 
-    fn thread_join { mut threads: Threads, handle: u64 } {
-        _ = wait_thread{ &threads, handle, ms = INFINITE }
-        _ = close_thread{ &threads, handle }
-    }
 
     fn thread_detach { mut threads: Threads, handle: u64 } {
         _ = close_thread{ &threads, handle }
@@ -1135,6 +1291,16 @@ namespace os {
         while ms > 0 {
             let now: u32 = if ms >= @as(u64, INFINITE) { INFINITE - 1 } else { @as(u32, ms) }
             c_sleep{ &threads, ms = now }
+            ms = ms - @as(u64, now)
+        }
+    }
+
+    // Waits on a task's cancel object for at most `nanoseconds` (thread::sleep in a task).
+    fn event_wait { mut threads: Threads, waitable: u64, nanoseconds: u64 } {
+        let mut ms = millis{ nanoseconds }
+        while ms > 0 {
+            let now: u32 = if ms >= @as(u64, INFINITE) { INFINITE - 1 } else { @as(u32, ms) }
+            if wait_thread{ &threads, handle = waitable, ms = now } == WAIT_OBJECT_0 { return }
             ms = ms - @as(u64, now)
         }
     }

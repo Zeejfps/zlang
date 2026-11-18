@@ -599,7 +599,7 @@ namespace ir_print {
             call{ callee, args }      => { head{ &o, e, a = "call" }; spaced{ &o, n = callee }; arg_list{ &o, args, depth } }
             bind{ callee, args }      => { head{ &o, e, a = "bind" }; spaced{ &o, n = callee }; arg_list{ &o, args, depth } }
             dcall{ callee, args }     => { head{ &o, e, a = "dcall" }; sub{ &o, e = callee, depth }; arg_list{ &o, args, depth } }
-            tbind{ callee, args }     => { head{ &o, e, a = "tbind" }; spaced{ &o, n = callee }; arg_list{ &o, args, depth } }
+            tbind{ callee, args, name } => { head{ &o, e, a = "tbind" }; spaced{ &o, n = callee }; arg_list{ &o, args, depth }; char{ &o, c = ' ' }; quote{ &o, b = name } }
             rsize{ e = x }            => { unary{ &o, a = "rsize", ty = e.ty, e = x, depth } }
             rcopy{ e = a, into = b }  => { binary{ &o, tag = "rcopy", ty = e.ty, a, b, depth } }
             dbind{ callee, args }     => { head{ &o, e, a = "dbind" }; sub{ &o, e = callee, depth }; arg_list{ &o, args, depth } }

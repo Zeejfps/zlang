@@ -803,9 +803,14 @@ namespace eval {
                 let c = code{ &m, key = Key{ kind = 2, a = callee, b = @addr(args.ptr) }, c = Code::bound{ callee, args } }
                 return try record_of{ &m, t = x.ty, c, inner = 0, start = 8, args, sized = false }
             }
-            tbind{ callee, args } => {
+            tbind{ callee, args, name } => {
                 let c = code{ &m, key = Key{ kind = 2, a = callee, b = @addr(args.ptr) }, c = Code::tbound{ callee, args } }
-                return try record_of{ &m, t = x.ty, c, inner = 0, start = 16, args, sized = true }
+                let r = try record_of{ &m, t = x.ty, c, inner = 0, start = 32, args, sized = true }
+                // its task fn's name, a []u8 of static bytes, after the size
+                let rec = try load{ &m, a = r, n = 8 }
+                try store{ &m, a = rec + 16, n = 8, v = try literal{ &m, bytes = name } }
+                try store{ &m, a = rec + 24, n = 8, v = @as(u64, name.len) }
+                return r
             }
             rsize{ e } => {
                 let rec = try scalar{ &m, x = e.* }
@@ -1275,7 +1280,7 @@ namespace eval {
                 m.argv.len = nb
             }
             tbound{ callee, args } => {
-                let nb = try forward{ &m, target = m.p.fns[callee].params, args, rec, start = 16, given, base }
+                let nb = try forward{ &m, target = m.p.fns[callee].params, args, rec, start = 32, given, base }
                 try invoke{ &m, callee, base = nb, res }
                 m.argv.len = nb
             }
@@ -1398,7 +1403,7 @@ namespace eval {
         }
         let rec = try heap_bytes{ &m, n = end }
         try store{ &m, a = rec, n = 8, v = c }
-        if start == 16 { try store{ &m, a = rec + 8, n = 8, v = if sized { end } else { inner } } }
+        if sized { try store{ &m, a = rec + 8, n = 8, v = end } } else if start == 16 { try store{ &m, a = rec + 8, n = 8, v = inner } }
         let mut off = start
         i = 0
         while i < args.len {

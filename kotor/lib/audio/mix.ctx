@@ -23,7 +23,7 @@
 // Before that, a sound's play group (a prioritygroups.2da row: set_group_limit) may be full: then
 // it stops the group's latest sound to start (Interrupt) or isn't played (group_full).
 //
-// The mixer may render on a thread of its own (audio::start) while the game plays and stops
+// The mixer may render on a task of its own (audio::start) while the game plays and stops
 // sounds: every fn here that takes a Mixer locks `m.lock` for its work, and `render` holds it
 // for one BLOCK at a time, so a call never waits longer than one block's mixing. Hence the
 // memory rule: a sound's bytes may be freed once its voice is over, meaning `stop` with no fade

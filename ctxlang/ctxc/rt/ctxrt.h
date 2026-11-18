@@ -145,6 +145,7 @@ void ctx_thread_leave(ctx_thread *t);
 // std's thread::begin, on a new thread: its stack limit, `usable` bytes below the caller's
 // frame, and its name, cut to 63 bytes.
 void ctx_thread_begin(uint64_t usable, ctx_slice name);
+void ctx_thread_rename(ctx_slice name);
 #else
 #define CTX_HERE (&ctx_main_thread)
 #define CTX_STACK_LIMIT (ctx_main_thread.stack_limit)
@@ -218,7 +219,9 @@ ctx_fn *ctx_adapt(ctx_fn *inner, void (*code)(void));
 
 // A task's record (spec §15, Tasks): a bind written as a start's `run`, whose record holds its
 // size after its code, so that the task's backend can copy it (@record_size, @record_copy).
-typedef struct { ctx_fn base; uint64_t size; } ctx_task_rec;
+typedef struct { ctx_fn base; uint64_t size; ctx_slice name; } ctx_task_rec;
+// The name of the task fn whose record rec is, or a copy of one.
+ctx_slice ctx_task_name(void *rec);
 // Copies record `rec` into `into`, which holds at least `len` bytes: a panic if they're fewer.
 void ctx_rec_copy(void *into, uint64_t len, ctx_fn *rec);
 

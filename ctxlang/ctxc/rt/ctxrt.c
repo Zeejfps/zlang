@@ -333,6 +333,10 @@ void ctx_rec_copy(void *into, uint64_t len, ctx_fn *rec) {
     memcpy(into, rec, n);
 }
 
+ctx_slice ctx_task_name(void *rec) {
+    return ((ctx_task_rec *)rec)->name;
+}
+
 typedef struct ctx_canon { struct ctx_canon *next; ctx_adapter a; } ctx_canon;
 
 ctx_fn *ctx_adapt(ctx_fn *inner, void (*code)(void)) {

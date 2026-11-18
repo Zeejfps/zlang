@@ -1,9 +1,11 @@
 # Concurrent IO: design
 
-Status: **designed, not built.** It replaces `thread::create` and `#spawn` (spec §15, rule 14; §17
-`thread`), which pass a task its data through a `*mut T` that nothing checks. The first backend is
-Threaded ("Order of work"), std built on the threads, atomics, mutexes and conditions ctxlang already
-has, with the changes to the language listed under Language changes.
+Status: **the Threaded backend is built** (Order of work, steps 1 to 7): the language changes, the
+audit, `task::Cancel`, the backend in std/task.ctx, the interruptible calls, KOTOR's mixer moved to a
+task, and the tests. `thread::create` and `#spawn`, which passed a thread its data through a `*mut T`
+that nothing checked, are gone. Steps 8 and 9, net.md and http.md and the Evented backend, are next.
+spec §15, Tasks, is the language's side; what the build settled that this document left open is under
+Decisions made building it.
 
 ## Why
 
@@ -12,9 +14,9 @@ sending HTTP requests, loading files from disk, reading standard input or a chil
 that does one at a time spends its life waiting. It wants many in flight at once, written as ordinary
 code that reads top to bottom, without managing threads by hand.
 
-What ctxlang has today, `thread::create{ &threads, run, data }`, gives a thread a function and a
-`*mut T`. The function's capabilities are carried by a special rule (`#spawn`), the data's type is
-generic but its lifetime is a comment ("must outlive the thread"), and a result comes back through
+What ctxlang had, `thread::create{ &threads, run, data }`, gave a thread a function and a
+`*mut T`. The function's capabilities were carried by a special rule (`#spawn`), the data's type was
+generic but its lifetime a comment ("must outlive the thread"), and a result came back through
 the same pointer. Everything else in the language reaches a function through its context, checked
 at the call. A task should too.
 
@@ -414,8 +416,8 @@ What `task::State` holds and does, all of it std over the platform layer's threa
   and applies to the next `start`; lowering it stops no worker. 0 makes `start` always run at once.
 - **No queue.** A task either has a worker or has run. Nothing waits for a free worker.
 - **Stacks.** Workers have 8 MiB by default, reserved and committed as used, with headroom past it for
-  the stack check to land in (a quarter of it, at least 1 MiB), as `thread::create` gives a thread
-  today. `set_stack` applies to workers started after it; an idle worker whose stack is smaller than
+  the stack check to land in (a quarter of it, at least 1 MiB), as `thread::create` gave a thread.
+  `set_stack` applies to workers started after it; an idle worker whose stack is smaller than
   the setting ends instead of taking a task. A task fn whose stack bound the compiler knows
   (The Evented backend) and that exceeds a worker's stack gets a worker of its own size.
 - **A panic** in a task ends the program, as on any thread, reported as `panic in task NAME:`, NAME
@@ -789,6 +791,35 @@ Language work on its own branch (kotor/AGENTS.md, rule 1), one step at a time.
    interrupts every call that can be waited on; a signal would add a reserved signal, an
    async-signal-safe handler, and a re-send protocol for no call that the cancel object doesn't
    already reach.
+
+## Decisions made building it
+
+What the Threaded backend's build settled, where this document left room:
+
+1. **`task::Cancel`'s `current` is the running task's slot**, `?*mut Slot`, not a number: slots live
+   in pages that are never freed, so the pointer stays valid, and `check` is one load of its flag.
+2. **Capabilities never conflict in a call** (spec §3.1, rule 6), not only at a start: one never
+   changes (spec §15, rule 8), so `os::pipe_read{ &proc, cancel = &proc, ... }` passes one twice.
+3. **The namespace that declares a handle type implements it**: std's `task` keeps pointers to
+   groups and copies results, so the handle rules (spec §15, Tasks, rule 4) don't apply inside it.
+4. **A handle that is an array's element ends its loan only with its scope**: which element a wait
+   names isn't known to the compiler. Waiting on `loads[i]` doesn't free what that task borrowed;
+   the array's scope does.
+5. **A wait or cancel on a handle zero on every path, and a start into one that holds a task on
+   every path, are compile errors**; on some paths only, they panic at run time. A loop forgets
+   what it knows of a handle declared before it.
+6. **A defer's body is checked against the loans live where it is written**: it may run at an early
+   exit while they still are.
+7. **A bind written as a start's `run` has its size and its task fn's name in its record**, after
+   its code: `@record_size` reads the size, and a worker names the task in a panic's report
+   (`panic in task NAME:`) from the copy (`rt::task_name`).
+8. **The interpreter refuses `start_concurrent`** through the platform layer: `os::CONCURRENT` is
+   false there, and `os::concurrency_unsupported` stops the run.
+9. **On Linux a child started with `die_with_parent` from a task ends with the worker's thread**
+   (`PR_SET_PDEATHSIG`), which may end 10 seconds after the task, when the worker has waited for
+   another in vain.
+10. **KOTOR's mixer shares its device through a pointer** (rule 5), as the thread did: the game
+   reads `pumping` and `underruns` while it runs, so the device can't be the task's alone.
 
 ## Open questions
 

@@ -53,13 +53,14 @@ namespace play {
         let rate: u32 = match adev { some{ value } => { value.rate } null => { 44100 } }
         let mixer = try mix::make(heap::Heap){ realloc = heap::alloc, heap = w.heap, rate, voices_2d = 24, voices_3d = 16 }
         speed::mute_unheard{ mixer, opts }
-        // With a device, the mixer runs on its own thread (audio.ctx), and stops before anything else this fn set up goes.
+        // With a device, the mixer runs as a task of its own (audio.ctx), and stops before anything else this fn set up goes.
+        let mut pump: task::Task(!)
         if let d = adev {
-            audio::start{ &sdl, &threads, dev = d, m = mixer } iferr err{ error } {
-                _ = @fmt(&w.io, "kotor: no mixer thread ({}): the sound is mixed once a frame\n", error)
+            audio::start{ &sdl, &threads, dev = d, m = mixer, &pump } iferr err{ error } {
+                _ = @fmt(&w.io, "kotor: no mixer task ({}): the sound is mixed once a frame\n", error)
             }
         }
-        defer close_sound{ &sdl, &threads, adev }
+        defer close_sound{ &sdl, &threads, adev, &pump }
         // The loading screen (game/loading.ctx): up over every way into an area, behind which the area is assembled.
         let ld = try loading::make{ &w, &dev, scratch = texture_scratch, opts, scale = disp.live.gui_scale }
         let script = try read_script{ &w, path = opts.input }
@@ -808,10 +809,10 @@ namespace play {
     // made again, the saves and the log options are kept, and the old world's memory is left to the arenas.
     // A new area's sound starts while its first frames are still slow (the first sight of its models, textures and
     // emitters): the device queues the most it would for a slow frame, so its music doesn't stutter in.
-    // The sound device's last: its thread joined (no voice is mixed after), then the device closed.
-    fn close_sound { mut sdl: sdl::Sdl, mut threads: Threads, adev: ?*mut audio::Device } {
+    // The sound device's last: its mixer's task cancelled and waited for (no voice is mixed after), then the device closed.
+    fn close_sound { mut sdl: sdl::Sdl, mut threads: Threads, adev: ?*mut audio::Device, mut pump: task::Task(!) } {
         let d = adev ifnull { return }
-        audio::stop{ &threads, dev = d }
+        audio::stop{ &threads, dev = d, &pump }
         audio::close{ &sdl, dev = d }
     }
 

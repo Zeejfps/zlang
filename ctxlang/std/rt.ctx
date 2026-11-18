@@ -100,7 +100,7 @@ namespace rt {
 
     // ---- threads (std/thread.ctx)
 
-    // What the runtime calls when a thread that thread::create started, or that called a
+    // What the runtime calls when a task's worker, or a thread that called a
     // callback, ends: its standard output, written out. The runtime calls it only within
     // `start`, which holds the `Io`.
     #c::callback
@@ -114,13 +114,23 @@ namespace rt {
     extern fn ends_set { mut io: Io, ends: Ends }
 
     // A new thread's stack limit, `usable` bytes below the caller's frame, and its name for a
-    // panic's report (ctxc/rt/ctxthread.c): for thread::begin.
+    // panic's report (ctxc/rt/ctxthread.c): for task::begin.
     #c::symbol{ name = "ctx_thread_begin" }
     extern fn thread_begin { mut threads: Threads, usable: usize, name: []u8 }
 
-    // The calling thread's name, which thread::begin gave: empty on the main thread.
+    // The calling thread's label for a panic's report, which task::begin gave its worker ("task
+    // worker") and a task's run renames ("task NAME"): empty on the main thread.
     #c::symbol{ name = "ctx_here_name" }
     extern fn thread_name { mut proc: Proc } -> []u8
+
+    // Gives the calling thread, which task::begin started, another label.
+    #c::symbol{ name = "ctx_thread_rename" }
+    extern fn thread_rename { mut threads: Threads, name: []u8 }
+
+    // The name of the task fn whose record `record` is (std/task.ctx, a copy of one).
+    #c::symbol{ name = "ctx_task_name" }
+    #pure
+    extern fn task_name { record: *u8 } -> []u8
 
     // The stack the check lets a program use: CTX_STACK bytes, at most 200 MiB, or 16 MiB. The
     // executable reserves more (ctxc/drive.ctx, link_flags), so a frame that crosses the limit
@@ -135,7 +145,7 @@ namespace rt {
     // Reports a panic on standard error, after what standard output holds, and ends the program
     // with exit code 134: "FILE:LINE:COL: panic: MSG", or "PROGRAM: panic: MSG" for a panic
     // without a position (line 0); on a thread but the main one, "panic in thread NAME:", NAME
-    // being its name or its id. One thread reports: a panic on another meanwhile waits for the
+    // being its name or its id, and in a task "panic in task NAME:", NAME being its task fn's. One thread reports: a panic on another meanwhile waits for the
     // end (ctxc/rt/ctxrt.c).
     #panic
     fn report { mut io: Io, mut proc: Proc, msg: []u8, file: []u8, line: u32, col: u32 } {
@@ -150,7 +160,7 @@ namespace rt {
         }
         let thread = thread_name{ &proc }
         if thread.len > 0 {
-            n = put{ into = buf[..buf.len - 1], n, s = ": panic in thread " }
+            n = put{ into = buf[..buf.len - 1], n, s = ": panic in " }
             n = put{ into = buf[..buf.len - 1], n, s = thread }
             n = put{ into = buf[..buf.len - 1], n, s = ": " }
         } else {

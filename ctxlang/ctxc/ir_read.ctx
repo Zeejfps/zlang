@@ -581,7 +581,8 @@ namespace ir_read {
             k = ir::ExprKind::bind{ callee, args = try args{ &r } }
         } else if spells{ s = tag, lit = "tbind" } {
             let callee = id32{ &r }
-            k = ir::ExprKind::tbind{ callee, args = try args{ &r } }
+            let a = try args{ &r }
+            k = ir::ExprKind::tbind{ callee, args = a, name = try string{ &r } }
         } else if spells{ s = tag, lit = "rsize" } {
             k = ir::ExprKind::rsize{ e = try sub{ &r } }
         } else if spells{ s = tag, lit = "rcopy" } {

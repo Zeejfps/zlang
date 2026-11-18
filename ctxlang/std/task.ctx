@@ -16,17 +16,34 @@
 //       let nb = try task::wait{ &threads, task = &tb }
 //       return na + nb
 //   }
+//
+// The backend is Threaded: each running task has a worker, an operating-system thread, and a
+// blocking call blocks it. Workers wait for their next task for 10 seconds, then end. Nothing
+// waits for a free worker: `start` runs a task at once when it can't run it concurrently.
 
 namespace task {
+    // Whether the calling thread runs a task, and which: its slot, null outside a task. What
+    // std's blocking calls check (check, get_cancel_object); only namespace task reads it. A
+    // task run at once runs as part of its starter, with the starter's.
+    capability Cancel {
+        #thread_local
+        static current: ?*mut Slot
+    }
+
+    // The backend's state: the table of tasks (Table), made the first time it is needed.
+    capability State {
+        static table: Table
+    }
+
     // A task's handle and, once it has ended, its result. Zero is no task. Only a local, a local
     // array's element, or a `mut` field: never copied, so it never moves while its task writes
     // its result into it.
     #task_handle
     struct Task(R) {
-        slot: u32,                  // the task's slot in the table, from 1; 0 once it has ended
+        slot: u32,                  // the task's slot in the table, from 1, while RUNNING
         generation: u32,            // the slot's, when the task started in it
-        state: u32,                 // NONE, RUNNING or ENDED
-        result: R,                  // the task's result, once ENDED
+        state: u32,                 // NONE, RUNNING or ENDED (it ran at once: result holds its result)
+        result: R,                  // the task's result, once it has ended
     }
 
     // Tasks that end together. Zero is an empty group. The same places as a Task.
@@ -46,17 +63,37 @@ namespace task {
     error cancelled             // what a blocking call fails with, in a task that is cancelled
     error out_of_resources      // no thread, or no room in the table
 
+    // ---- the API
+
     // Runs `run`, maybe concurrently with the caller, maybe at once. Returns no error: when the
     // backend can't run it concurrently (no worker, the limit, or the table can't grow), it runs
     // it here, and `task` holds its result when start returns. `task` must be zero.
     #starts_task
     fn start(R) { mut threads: Threads, mut task: Task(R), run: &fn{} -> R } {
         if task.state != NONE { rt::fail{ msg = "task::start into a handle that holds a task" } }
-        let mut words: [64]u64
-        let bytes = @slice(@cast(*mut u8, &words[0]), 512)
-        if @record_size(run) > 512 { rt::fail{ msg = "big" } }
-        let entry = @record_copy(run, bytes)
-        entry{ record = @cast(*mut u8, &words[0]), result = @cast(*mut u8, &task.result) }
+        if os::CONCURRENT {
+            let t = table{ state = &threads }
+            mutex::lock{ mutex = &t.lock }
+            let limit = if t.limit_set { t.limit } else { LIMIT }
+            if t.busy < limit {
+                if let s = new_slot{ &threads, t } {
+                    if let rec = new_record{ &threads, t, size = @record_size(run) } {
+                        let entry = @record_copy(run, rec)
+                        if begin_task{ &threads, t, s, entry, rec, result = @cast(*mut u8, &task.result), group = null } {
+                            task.slot = s.id
+                            task.generation = s.generation
+                            task.state = RUNNING
+                            mutex::unlock{ mutex = &t.lock }
+                            return
+                        }
+                        free_record{ t, rec }
+                    }
+                    free_slot{ &threads, t, s }
+                }
+            }
+            mutex::unlock{ mutex = &t.lock }
+        }
+        task.result = run{}
         task.state = ENDED
     }
 
@@ -64,7 +101,24 @@ namespace task {
     #starts_task
     fn start_concurrent(R) { mut threads: Threads, mut task: Task(R), run: &fn{} -> R } -> ! {
         if task.state != NONE { rt::fail{ msg = "task::start_concurrent into a handle that holds a task" } }
-        return out_of_resources
+        if not os::CONCURRENT { os::concurrency_unsupported{ what = "task::start_concurrent and task::start_blocking" } }
+        let t = table{ state = &threads }
+        mutex::lock{ mutex = &t.lock }
+        defer mutex::unlock{ mutex = &t.lock }
+        let s = new_slot{ &threads, t } ifnull { return out_of_resources }
+        let rec = new_record{ &threads, t, size = @record_size(run) } ifnull {
+            free_slot{ &threads, t, s }
+            return out_of_resources
+        }
+        let entry = @record_copy(run, rec)
+        if not begin_task{ &threads, t, s, entry, rec, result = @cast(*mut u8, &task.result), group = null } {
+            free_record{ t, rec }
+            free_slot{ &threads, t, s }
+            return out_of_resources
+        }
+        task.slot = s.id
+        task.generation = s.generation
+        task.state = RUNNING
     }
 
     // Runs `run` on an operating-system thread of its own, in every backend: for work that
@@ -78,6 +132,14 @@ namespace task {
     // Waits for the task to end and gives its result; `task` is zero again.
     fn wait(R) { mut threads: Threads, mut task: Task(R) } -> R {
         if task.state == NONE { rt::fail{ msg = "task::wait on a handle that holds no task" } }
+        if task.state == RUNNING {
+            let t = table{ state = &threads }
+            mutex::lock{ mutex = &t.lock }
+            let s = slot_of{ t, id = task.slot, generation = task.generation }
+            _ = await{ &threads, t, s, nanoseconds = FOREVER }
+            free_slot{ &threads, t, s }
+            mutex::unlock{ mutex = &t.lock }
+        }
         task.state = NONE
         return task.result
     }
@@ -86,19 +148,33 @@ namespace task {
     // once), false when `nanoseconds` passed first. 0 looks without waiting.
     fn wait_for(R) { mut threads: Threads, mut task: Task(R), nanoseconds: u64 } -> bool {
         if task.state == NONE { rt::fail{ msg = "task::wait_for on a handle that holds no task" } }
-        return true
+        if task.state == ENDED { return true }
+        let t = table{ state = &threads }
+        mutex::lock{ mutex = &t.lock }
+        defer mutex::unlock{ mutex = &t.lock }
+        let s = slot_of{ t, id = task.slot, generation = task.generation }
+        return await{ &threads, t, s, nanoseconds }
     }
 
-    // Asks the task to stop, waits for it to end, and gives its result, which is usually
-    // `cancelled`; `task` is zero again.
+    // Asks the task to stop (Cancellation), waits for it to end, and gives its result, which is
+    // usually `cancelled`; `task` is zero again.
     fn cancel(R) { mut threads: Threads, mut task: Task(R) } -> R {
         if task.state == NONE { rt::fail{ msg = "task::cancel on a handle that holds no task" } }
+        if task.state == RUNNING {
+            let t = table{ state = &threads }
+            mutex::lock{ mutex = &t.lock }
+            let s = slot_of{ t, id = task.slot, generation = task.generation }
+            ask_stop{ &threads, s }
+            _ = await{ &threads, t, s, nanoseconds = FOREVER }
+            free_slot{ &threads, t, s }
+            mutex::unlock{ mutex = &t.lock }
+        }
         task.state = NONE
         return task.result
     }
 
-    // What ends a handle's scope (spec §15, Tasks): its task, if it has one, cancelled and waited
-    // for, its result dropped.
+    // What ends a handle's scope (spec §15, Tasks, rule 6): its task, if it has one, cancelled
+    // and waited for, its result dropped.
     fn end(R) { mut threads: Threads, mut task: Task(R) } {
         if task.state == NONE { return }
         _ = cancel(R){ &threads, &task }
@@ -109,36 +185,81 @@ namespace task {
     // returns that error. A group being cancelled starts its new tasks cancelled.
     #starts_task
     fn start_in { mut threads: Threads, mut group: Group, run: &fn{} -> ! } {
-        run{} iferr err{ error } {
-            if not group.failed {
-                group.failed = true
-                group.error = error
+        if os::CONCURRENT {
+            let t = table{ state = &threads }
+            mutex::lock{ mutex = &t.lock }
+            let limit = if t.limit_set { t.limit } else { LIMIT }
+            if t.busy < limit {
+                if let s = new_slot{ &threads, t } {
+                    if let rec = new_record{ &threads, t, size = @record_size(run) } {
+                        let entry = @record_copy(run, rec)
+                        if begin_task{ &threads, t, s, entry, rec, result = @cast(*mut u8, &s.gresult), group = &group } {
+                            mutex::unlock{ mutex = &t.lock }
+                            return
+                        }
+                        free_record{ t, rec }
+                    }
+                    free_slot{ &threads, t, s }
+                }
             }
+            mutex::unlock{ mutex = &t.lock }
+        }
+        // At once, as part of the caller: its first error is the group's.
+        let r = run{}
+        if r is err {
+            let t = table{ state = &threads }
+            mutex::lock{ mutex = &t.lock }
+            failed{ &threads, t, g = &group, r }
+            mutex::unlock{ mutex = &t.lock }
         }
     }
 
     #starts_task
     fn start_concurrent_in { mut threads: Threads, mut group: Group, run: &fn{} -> ! } -> ! {
-        return out_of_resources
+        if not os::CONCURRENT { os::concurrency_unsupported{ what = "task::start_concurrent_in and task::start_blocking_in" } }
+        let t = table{ state = &threads }
+        mutex::lock{ mutex = &t.lock }
+        defer mutex::unlock{ mutex = &t.lock }
+        let s = new_slot{ &threads, t } ifnull { return out_of_resources }
+        let rec = new_record{ &threads, t, size = @record_size(run) } ifnull {
+            free_slot{ &threads, t, s }
+            return out_of_resources
+        }
+        let entry = @record_copy(run, rec)
+        if not begin_task{ &threads, t, s, entry, rec, result = @cast(*mut u8, &s.gresult), group = &group } {
+            free_record{ t, rec }
+            free_slot{ &threads, t, s }
+            return out_of_resources
+        }
     }
 
     #starts_task
     fn start_blocking_in { mut threads: Threads, mut group: Group, run: &fn{} -> ! } -> ! {
-        return out_of_resources
+        return start_concurrent_in{ &threads, &group, run }
     }
 
     // Waits until the group has no task, those started meanwhile included: the first error of
-    // its tasks, or success.
+    // its tasks, or success. The group is empty again.
     fn wait_all { mut threads: Threads, mut group: Group } -> ! {
+        let t = table{ state = &threads }
+        mutex::lock{ mutex = &t.lock }
+        defer mutex::unlock{ mutex = &t.lock }
+        await_group{ &threads, t, g = &group }
         let failed = group.failed
-        let result = group.error
+        let r = group.error
         group.failed = false
         group.cancelling = false
-        if failed { return result }
+        if failed { return r }
     }
 
-    // Asks every task of the group to stop, then waits until it has none.
+    // Asks every task of the group to stop, then waits until it has none. The group is empty
+    // again, its error dropped.
     fn cancel_all { mut threads: Threads, mut group: Group } {
+        let t = table{ state = &threads }
+        mutex::lock{ mutex = &t.lock }
+        defer mutex::unlock{ mutex = &t.lock }
+        stop_group{ &threads, t, g = &group }
+        await_group{ &threads, t, g = &group }
         group.failed = false
         group.cancelling = false
     }
@@ -146,13 +267,534 @@ namespace task {
     // Fails with `cancelled` if the calling task has been asked to stop: for a task that
     // computes for long between blocking calls. Never fails outside a task.
     fn check_cancelled { mut threads: Threads } -> ! {
+        return check{ cancel = &threads }
     }
 
-    // Busy workers past which `start` runs a task at once.
+    // Busy workers past which `start` runs a task at once; 0 makes it always run at once. It
+    // applies to the next `start`, and stops no worker.
     fn set_limit { mut threads: Threads, workers: u32 } {
+        let t = table{ state = &threads }
+        mutex::lock{ mutex = &t.lock }
+        t.limit = workers
+        t.limit_set = true
+        mutex::unlock{ mutex = &t.lock }
     }
 
-    // Stack for workers started after it; 0 for the default, 8 MiB.
+    // Stack for workers started after it; 0 for the default, 8 MiB. An idle worker whose stack
+    // is smaller ends instead of taking a task.
     fn set_stack { mut threads: Threads, bytes: usize } {
+        let t = table{ state = &threads }
+        mutex::lock{ mutex = &t.lock }
+        t.stack = bytes
+        mutex::unlock{ mutex = &t.lock }
+    }
+
+    // ---- what std's blocking calls use (threads.md, Capabilities)
+
+    // Fails with `cancelled` if the calling task has been asked to stop. Never outside a task.
+    fn check { mut cancel: Cancel } -> ! {
+        let me = cancel.current ifnull { return }
+        if @atomic_load(&me.flag, atomic::Order::acquire) != 0 { return cancelled }
+    }
+
+    // The calling task's cancel object, which is signalled when it is asked to stop: a Windows
+    // event, a Linux eventfd, or the read end of a macOS pipe. 0 outside a task.
+    fn get_cancel_object { mut cancel: Cancel } -> u64 {
+        let me = cancel.current ifnull { return 0 }
+        return os::event_waitable{ event = me.object }
+    }
+
+    // Around a synchronous call that only CancelSynchronousIo can interrupt (Windows' reads of
+    // an inherited anonymous pipe): fails with `cancelled` if the calling task has been asked
+    // to stop, and otherwise marks it in one, so that a stop interrupts the call (ask_stop),
+    // until end_synchronous. Under the slot's lock, so a late stop can't reach a later call.
+    fn begin_synchronous { mut cancel: Cancel } -> ! {
+        let me = cancel.current ifnull { return }
+        lock_sync{ s = me }
+        if @atomic_load(&me.flag, atomic::Order::acquire) != 0 {
+            unlock_sync{ s = me }
+            return cancelled
+        }
+        me.sync = true
+        unlock_sync{ s = me }
+    }
+
+    fn end_synchronous { mut cancel: Cancel } {
+        let me = cancel.current ifnull { return }
+        lock_sync{ s = me }
+        me.sync = false
+        unlock_sync{ s = me }
+    }
+
+    fn lock_sync { s: *mut Slot } {
+        while @atomic_compare_exchange(&s.sync_lock, 0, 1, atomic::Order::acquire) != null {}
+    }
+
+    fn unlock_sync { s: *mut Slot } {
+        @atomic_store(&s.sync_lock, 0, atomic::Order::release)
+    }
+
+    // Interrupts slot s's synchronous call, if it is in one: whether it is.
+    fn interrupt { mut threads: Threads, s: *mut Slot } -> bool {
+        lock_sync{ s }
+        let sync = s.sync
+        if sync { os::cancel_synchronous{ &threads, thread = s.thread } }
+        unlock_sync{ s }
+        return sync
+    }
+
+    // ---- the Threaded backend
+
+    // Busy workers past which `start` runs a task at once, until set_limit: tasks that do IO
+    // spend their time blocked, so the processors' count would be too few.
+    const LIMIT: u32 = 64
+
+    // How long an idle worker waits for a task before it ends: 10 seconds.
+    const IDLE: u64 = 10000000000
+
+    const FOREVER: u64 = 18446744073709551615
+
+    // Slots per page of the table, and pages at most: 65536 tasks at once.
+    const PER_PAGE: u32 = 64
+    const PAGES: u32 = 1024
+
+    // Records' sizes: 64 << class bytes, for classes 0 to 20 (64 MiB).
+    const CLASSES: u32 = 21
+
+    // Workers' stacks: 8 MiB unless set_stack says otherwise.
+    const DEFAULT_STACK: usize = 8388608
+
+    // The table: under one mutex, the slots, the idle workers, and the free records.
+    struct Table {
+        ready: u32,                         // 0, then 1 while it is made, then 2 (table)
+        lock: mutex::Mutex,
+        groups: condition::Condition,       // broadcast when any group's task ends
+        pages: [1024]?*mut Slot,
+        made: u32,                          // slots made, numbered from 1
+        free: u32,                          // the first free slot, 0 if none
+        idle: ?*mut Worker,                 // workers waiting for a task
+        spare: ?*mut Worker,                // records of workers that ended
+        busy: u32,                          // workers running one
+        limit: u32,
+        limit_set: bool,
+        stack: usize,
+        records: [21]?*mut FreeRecord,
+    }
+
+    // A task, while it runs or until it is waited for, and after that a free slot.
+    struct Slot {
+        id: u32,
+        generation: u32,                    // grows each time the slot is freed
+        state: u32,                         // NONE (free), RUNNING, ENDED
+        flag: u32,                          // asked to stop: read with atomics
+        object: u64,                        // its cancel object (os::event_make)
+        entry: fn{ record: *mut u8, result: *mut u8 },
+        record: []mut u8,                   // the copy of its bind's record (new_record)
+        result: *mut u8,                    // where its result goes: its Task's, or gresult
+        group: ?*mut Group,
+        next: u32,                          // the next and previous of its group's tasks
+        prev: u32,
+        done: condition::Condition,         // broadcast when it ends, and when its waiter is asked to stop
+        waiting: ?*mut condition::Condition, // the condition its task waits on, while it waits
+        thread: u64,                        // its worker's thread, for interrupting a synchronous call
+        sync: bool,                         // in a call only CancelSynchronousIo interrupts
+        sync_lock: u32,                     // held while sync changes, and while it is acted on
+        next_free: u32,
+        gresult: !,                         // a group's task's result
+    }
+
+    // A worker: a thread that runs one task at a time, on its own stack.
+    struct Worker {
+        wake: condition::Condition,
+        slot: ?*mut Slot,                   // the task to run next
+        next: ?*mut Worker,                 // in the idle list
+        stack: usize,                       // what it may use
+        leave: bool,                        // its stack is too small: it ends
+        listed: bool,                       // in the idle list
+    }
+
+    struct FreeRecord { next: ?*mut FreeRecord }
+
+    // The table, made the first time: its mutex and condition need making on some platforms.
+    fn table { mut state: State } -> *mut Table {
+        let t = &state.table
+        if @atomic_load(&t.ready, atomic::Order::acquire) == 2 { return t }
+        if @atomic_compare_exchange(&t.ready, 0, 1, atomic::Order::acquire_release) == null {
+            t.lock = mutex::make{}
+            t.groups = condition::make{}
+            @atomic_store(&t.ready, 2, atomic::Order::release)
+            return t
+        }
+        while @atomic_load(&t.ready, atomic::Order::acquire) != 2 {}
+        return t
+    }
+
+    // Slot `id`, which has been made.
+    fn slot_ptr { t: *mut Table, id: u32 } -> *mut Slot {
+        let page = t.pages[(id - 1) / PER_PAGE] ifnull { @panic("task: a slot of no page") }
+        return &page[(id - 1) % PER_PAGE]
+    }
+
+    // The slot of a handle's task, which must still be its.
+    fn slot_of { t: *mut Table, id: u32, generation: u32 } -> *mut Slot {
+        let s = slot_ptr{ t, id }
+        if s.generation != generation { rt::fail{ msg = "task: a handle whose task was waited for already" } }
+        return s
+    }
+
+    // A free slot, under the table's mutex, or null if the table can't grow.
+    fn new_slot { mut threads: Threads, t: *mut Table } -> ?*mut Slot {
+        let mut s: ?*mut Slot = null
+        if t.free != 0 {
+            let f = slot_ptr{ t, id = t.free }
+            t.free = f.next_free
+            os::event_reset{ &threads, event = f.object }
+            s = f
+        } else {
+            if t.made == PER_PAGE * PAGES { return null }
+            let p = t.made / PER_PAGE
+            if t.pages[p] == null {
+                let bytes = mem::pages{ mem = &threads, size = @as(usize, PER_PAGE) * @size_of(Slot) } ifnull { return null }
+                t.pages[p] = @cast(*mut Slot, &bytes[0])
+            }
+            let page = t.pages[p] ifnull { return null }
+            let object = os::event_make{ &threads }
+            if object == 0 { return null }
+            let f = &page[t.made % PER_PAGE]
+            t.made = t.made + 1
+            f.id = t.made
+            f.object = object
+            f.done = condition::make{}
+            s = f
+        }
+        let f = s ifnull { return null }
+        f.state = RUNNING
+        @atomic_store(&f.flag, 0, atomic::Order::relaxed)
+        f.group = null
+        f.waiting = null
+        f.sync = false
+        f.next = 0
+        f.prev = 0
+        return f
+    }
+
+    // Frees slot s, whose task has ended and been waited for, under the table's mutex.
+    fn free_slot { mut threads: Threads, t: *mut Table, s: *mut Slot } {
+        s.state = NONE
+        s.generation = s.generation + 1
+        s.next_free = t.free
+        t.free = s.id
+    }
+
+    fn class_of { size: usize } -> u32 {
+        let mut k: u32 = 0
+        while k < CLASSES and (@as(usize, 64) << k) < size { k = k + 1 }
+        return k
+    }
+
+    // Memory for a record of `size` bytes, from the free list of its class or new pages, under
+    // the table's mutex; null if there is none.
+    fn new_record { mut threads: Threads, t: *mut Table, size: usize } -> ?[]mut u8 {
+        let k = class_of{ size }
+        if k == CLASSES { return null }
+        let n = @as(usize, 64) << k
+        if let f = t.records[k] {
+            t.records[k] = f.next
+            return @slice(@cast(*mut u8, f), n)
+        }
+        // A page of small ones at a time.
+        let take = if n < mem::PAGE { mem::PAGE } else { n }
+        let bytes = mem::pages{ mem = &threads, size = take } ifnull { return null }
+        let mut at = n
+        while at + n <= take {
+            let f = @cast(*mut FreeRecord, &bytes[at])
+            f.next = t.records[k]
+            t.records[k] = f
+            at = at + n
+        }
+        return bytes[..n]
+    }
+
+    fn free_record { t: *mut Table, rec: []mut u8 } {
+        let k = class_of{ size = rec.len }
+        let f = @cast(*mut FreeRecord, &rec[0])
+        f.next = t.records[k]
+        t.records[k] = f
+    }
+
+    // Gives slot s its task and a worker, under the table's mutex: an idle one, or a new
+    // thread. False if the operating system refuses a thread.
+    fn begin_task { mut threads: Threads, t: *mut Table, s: *mut Slot, entry: fn{ record: *mut u8, result: *mut u8 }, rec: []mut u8, result: *mut u8, group: ?*mut Group } -> bool {
+        s.entry = entry
+        s.record = rec
+        s.result = result
+        let want = if t.stack == 0 { DEFAULT_STACK } else { t.stack }
+        let mut given = false
+        while not given {
+            let w = t.idle ifnull { break }
+            t.idle = w.next
+            w.next = null
+            w.listed = false
+            if w.stack < want {
+                w.leave = true
+                condition::signal{ condition = &w.wake }
+            } else {
+                w.slot = s
+                condition::signal{ condition = &w.wake }
+                given = true
+            }
+        }
+        if not given and not new_worker{ &threads, s, usable = want } { return false }
+        if let g = group {
+            s.group = g
+            s.next = g.first
+            if g.first != 0 { slot_ptr{ t, id = g.first }.prev = s.id }
+            g.first = s.id
+            g.tasks = g.tasks + 1
+            if g.cancelling { @atomic_store(&s.flag, 1, atomic::Order::release) }
+        }
+        t.busy = t.busy + 1
+        return true
+    }
+
+    // Starts a worker whose first task is slot s's: false if the operating system refuses.
+    fn new_worker { mut threads: Threads, s: *mut Slot, usable: usize } -> bool {
+        // The stack is larger than what the worker may use, so a frame that crosses the limit
+        // still reaches the check, and the panic can be reported.
+        let room: usize = if usable / 4 > 1048576 { usable / 4 } else { 1048576 }
+        let mut start = Start{ slot = s, usable, started = 0 }
+        let handle = os::thread_create{ &threads, start = @cast(*mut u8, &start), stack_size = usable + room } ifnull { return false }
+        // start is this frame's: the worker copies it before it says it has started.
+        while @atomic_load(&start.started, atomic::Order::acquire) == 0 { os::thread_yield{ &threads } }
+        os::thread_detach{ &threads, handle }
+        return true
+    }
+
+    // What a new worker starts with, in its starter's frame until it has copied it.
+    struct Start { slot: *mut Slot, usable: usize, started: u32 }
+
+    // A worker's first fn, which the platform's layer calls on the new thread (os::thread_create):
+    // its stack limit and its label for a panic's report, then its first task. When the thread
+    // ends, the runtime writes out its standard output (rt::thread_ends). C passes no capability
+    // to a thread's first fn (spec §18, Callbacks, rule 6), but this one holds those its starter
+    // does, which waits in new_worker until `started` says it is past them: only a threaded
+    // program starts a task, and a capability without fields is no bytes (spec §15, rule 4).
+    fn begin { start: *mut u8 } {
+        let mut threads = @cast(*Threads, start).*
+        let mut io = @cast(*Io, start).*
+        let s = @cast(*mut Start, start)
+        let first = s.slot
+        rt::thread_begin{ &threads, usable = s.usable, name = "task worker" }
+        os::thread_name{ &threads, name = "task worker" }
+        @atomic_store(&s.started, 1, atomic::Order::release)
+        worker{ &threads, &io, first }
+    }
+
+    // Runs tasks until none comes for IDLE.
+    fn worker { mut threads: Threads, mut io: Io, first: *mut Slot } {
+        let t = table{ state = &threads }
+        let me = os::thread_handle{ &threads }
+        mutex::lock{ mutex = &t.lock }
+        let w = new_worker_record{ &threads, t } ifnull {
+            // No memory for its record: it runs its first task, and ends.
+            mutex::unlock{ mutex = &t.lock }
+            run{ &threads, &io, s = first }
+            mutex::lock{ mutex = &t.lock }
+            ended{ &threads, t, s = first }
+            mutex::unlock{ mutex = &t.lock }
+            return
+        }
+        w.wake = condition::make{}
+        w.slot = first
+        w.next = null
+        w.leave = false
+        w.listed = false
+        w.stack = if t.stack == 0 { DEFAULT_STACK } else { t.stack }
+        while true {
+            let s = w.slot ifnull {
+                if w.leave { break }
+                // Idle: wait for a task, or end.
+                if not w.listed {
+                    w.next = t.idle
+                    t.idle = w
+                    w.listed = true
+                }
+                let woke = condition::wait_for{ &threads, condition = &w.wake, mutex = &t.lock, nanoseconds = IDLE }
+                if w.slot == null and not w.leave and not woke {
+                    unlink_idle{ t, w }
+                    break
+                }
+                continue
+            }
+            s.thread = me
+            mutex::unlock{ mutex = &t.lock }
+            run{ &threads, &io, s }
+            mutex::lock{ mutex = &t.lock }
+            ended{ &threads, t, s }
+            w.slot = null
+        }
+        condition::free{ condition = &w.wake }
+        w.next = t.spare
+        t.spare = w
+        mutex::unlock{ mutex = &t.lock }
+    }
+
+    // A worker's record, from the spare ones or new pages, under the table's mutex.
+    fn new_worker_record { mut threads: Threads, t: *mut Table } -> ?*mut Worker {
+        if let w = t.spare {
+            t.spare = w.next
+            return w
+        }
+        let bytes = mem::pages{ mem = &threads, size = mem::PAGE } ifnull { return null }
+        let n = mem::PAGE / @size_of(Worker)
+        let mut i: usize = 1
+        while i < n {
+            let w = @cast(*mut Worker, &bytes[i * @size_of(Worker)])
+            w.next = t.spare
+            t.spare = w
+            i = i + 1
+        }
+        return @cast(*mut Worker, &bytes[0])
+    }
+
+    fn unlink_idle { t: *mut Table, w: *mut Worker } {
+        let mut at = &t.idle
+        while true {
+            let x = at.* ifnull { return }
+            if x == w {
+                at.* = w.next
+                return
+            }
+            at = &x.next
+        }
+    }
+
+    // Runs slot s's task on this worker: its name for a panic's report, its cancel slot, and
+    // its standard output written out before its end is published, whatever its flag.
+    fn run { mut threads: Threads, mut io: Io, s: *mut Slot } {
+        let mut label: [80]u8
+        let name = rt::task_name{ record = @cast(*u8, &s.record[0]) }
+        let n = rt::put{ into = label[..], n = rt::put{ into = label[..], n = 0, s = "task " }, s = name }
+        rt::thread_rename{ &threads, name = label[..n] }
+        threads.current = s
+        s.entry{ record = @cast(*mut u8, &s.record[0]), result = s.result }
+        threads.current = null
+        io::flush{ &io }
+        rt::thread_rename{ &threads, name = "task worker" }
+    }
+
+    // Slot s's task has ended, under the table's mutex: its record goes back, its group learns
+    // of it, and whoever waits for it is woken. A group's slot is freed at once: nothing waits
+    // for one task of a group.
+    fn ended { mut threads: Threads, t: *mut Table, s: *mut Slot } {
+        free_record{ t, rec = s.record }
+        s.state = ENDED
+        t.busy = t.busy - 1
+        if let g = s.group {
+            if s.prev != 0 { slot_ptr{ t, id = s.prev }.next = s.next } else { g.first = s.next }
+            if s.next != 0 { slot_ptr{ t, id = s.next }.prev = s.prev }
+            g.tasks = g.tasks - 1
+            let r = s.gresult
+            if r is err { failed{ &threads, t, g, r } }
+            free_slot{ &threads, t, s }
+            condition::broadcast{ condition = &t.groups }
+            return
+        }
+        condition::broadcast{ condition = &s.done }
+    }
+
+    // A task of group g failed with r, under the table's mutex: the first failure is the
+    // group's, and cancels the rest.
+    fn failed { mut threads: Threads, t: *mut Table, g: *mut Group, r: ! } {
+        if g.failed { return }
+        g.failed = true
+        g.error = r
+        stop_group{ &threads, t, g }
+    }
+
+    // Asks every task of group g to stop, under the table's mutex; its new ones start asked.
+    fn stop_group { mut threads: Threads, t: *mut Table, g: *mut Group } {
+        g.cancelling = true
+        let mut id = g.first
+        while id != 0 {
+            let s = slot_ptr{ t, id }
+            ask_stop{ &threads, s }
+            id = s.next
+        }
+    }
+
+    // Asks slot s's task to stop, under the table's mutex: its flag, its cancel object, and
+    // the condition it waits on, if it waits, so that it notices.
+    fn ask_stop { mut threads: Threads, s: *mut Slot } {
+        if s.state != RUNNING { return }
+        @atomic_store(&s.flag, 1, atomic::Order::release)
+        os::event_signal{ &threads, event = s.object }
+        if let c = s.waiting { condition::broadcast{ condition = c } }
+        _ = interrupt{ &threads, s }
+    }
+
+    // The calling task's slot, or null outside a task.
+    fn me { mut threads: Threads } -> ?*mut Slot {
+        return threads.current
+    }
+
+    // Waits under the table's mutex for slot s's task to end, at most `nanoseconds`: whether it
+    // has. A waiting task that is asked to stop asks s to stop, then waits to the end.
+    fn await { mut threads: Threads, t: *mut Table, s: *mut Slot, nanoseconds: u64 } -> bool {
+        if s.state == ENDED { return true }
+        if nanoseconds == 0 and not stopping{ &threads } { return false }
+        let mine = me{ &threads }
+        let mut left = nanoseconds
+        let mut began = os::now{ &threads }
+        while s.state != ENDED {
+            if stopping{ &threads } {
+                ask_stop{ &threads, s }
+                left = FOREVER
+            }
+            if let m = mine { m.waiting = &s.done }
+            if @atomic_load(&s.flag, atomic::Order::acquire) != 0 and interrupt{ &threads, s } {
+                // A call not yet entered isn't reached: again each millisecond, until it leaves.
+                _ = condition::wait_for{ &threads, condition = &s.done, mutex = &t.lock, nanoseconds = 1000000 }
+                continue
+            }
+            if left == FOREVER {
+                condition::wait{ condition = &s.done, mutex = &t.lock }
+            } else {
+                _ = condition::wait_for{ &threads, condition = &s.done, mutex = &t.lock, nanoseconds = left }
+                let now = os::now{ &threads }
+                let spent = now - began
+                began = now
+                if s.state != ENDED and spent >= left and not stopping{ &threads } {
+                    if let m = mine { m.waiting = null }
+                    return false
+                }
+                left = if spent >= left { 0 } else { left - spent }
+                if left == 0 and not stopping{ &threads } {
+                    if let m = mine { m.waiting = null }
+                    return s.state == ENDED
+                }
+            }
+        }
+        if let m = mine { m.waiting = null }
+        return true
+    }
+
+    // Waits under the table's mutex until group g has no task. A task of the group panics: it
+    // would wait for itself. A waiting task asked to stop stops the group, then waits.
+    fn await_group { mut threads: Threads, t: *mut Table, g: *mut Group } {
+        let mine = me{ &threads }
+        if let m = mine { if m.group == g { rt::fail{ msg = "task: a task of a group waits for its own group" } } }
+        while g.tasks > 0 {
+            if stopping{ &threads } { stop_group{ &threads, t, g } }
+            if let m = mine { m.waiting = &t.groups }
+            condition::wait{ condition = &t.groups, mutex = &t.lock }
+        }
+        if let m = mine { m.waiting = null }
+    }
+
+    // Whether the calling task has been asked to stop.
+    fn stopping { mut threads: Threads } -> bool {
+        let m = me{ &threads } ifnull { return false }
+        return @atomic_load(&m.flag, atomic::Order::acquire) != 0
     }
 }

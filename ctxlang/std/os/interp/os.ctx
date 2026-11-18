@@ -153,11 +153,11 @@ namespace os {
     }
 
     fn spawn { mut proc: Proc, argv: [][]u8, options: proc::Options } -> proc::Error!proc::Child { return try no_programs(proc::Child){} }
-    fn wait { mut proc: Proc, child: proc::Child } -> proc::Error!i32 { return try no_programs(i32){} }
-    fn wait_for { mut proc: Proc, child: proc::Child, nanoseconds: u64 } -> proc::Error!?i32 { return try no_programs(?i32){} }
+    fn wait { mut proc: Proc, mut cancel: task::Cancel, child: proc::Child, interruptible: bool } -> proc::Error!i32 { return try no_programs(i32){} }
+    fn wait_for { mut proc: Proc, mut cancel: task::Cancel, child: proc::Child, nanoseconds: u64 } -> proc::Error!?i32 { return try no_programs(?i32){} }
     fn kill { mut proc: Proc, child: proc::Child } -> proc::Error! { _ = try no_programs(bool){} }
-    fn pipe_read { mut proc: Proc, pipe: u64, into: []mut u8 } -> proc::Error!usize { return try no_programs(usize){} }
-    fn pipe_write { mut proc: Proc, pipe: u64, bytes: []u8 } -> proc::Error!usize { return try no_programs(usize){} }
+    fn pipe_read { mut proc: Proc, mut cancel: task::Cancel, pipe: u64, into: []mut u8 } -> proc::Error!usize { return try no_programs(usize){} }
+    fn pipe_write { mut proc: Proc, mut cancel: task::Cancel, pipe: u64, bytes: []u8 } -> proc::Error!usize { return try no_programs(usize){} }
     fn pipe_close { mut proc: Proc, pipe: u64 } { _ = unsupported{ what = "other programs" } }
 
     fn processors { mut proc: Proc } -> u32 {
@@ -172,10 +172,27 @@ namespace os {
 
     // ---- threads (std/thread.ctx): one at a time
     //
-    // A thread runs to its end inside thread::create, before its creator goes on, with its own
+    // A thread runs to its end inside os::thread_create, before its starter goes on, with its own
     // `#thread_local` statics (ctx_interp_thread_enter and _leave): one schedule a program's
     // threads may have, and the same each run. What would wait for another thread instead (a
     // mutex another holds, a condition) stops the run, as not supported by interp.
+
+    // Permission to start threads, which std's Threads includes.
+    capability Threads
+
+    // Tasks run at once: one thread can't keep a promise to run them concurrently.
+    const CONCURRENT: bool = false
+
+    fn concurrency_unsupported { what: []u8 } { _ = unsupported{ what } }
+
+    fn event_make { mut threads: Threads } -> u64 { return 1 }
+    fn event_signal { mut threads: Threads, event: u64 } {}
+    fn event_reset { mut threads: Threads, event: u64 } {}
+    fn event_waitable { event: u64 } -> u64 { return 0 }
+    fn event_wait { mut threads: Threads, waitable: u64, nanoseconds: u64 } {}
+    fn now { mut threads: Threads } -> u64 { return 0 }
+    fn thread_handle { mut threads: Threads } -> u64 { return 0 }
+    fn cancel_synchronous { mut threads: Threads, thread: u64 } {}
 
     #c::symbol{ name = "ctx_interp_thread_enter" }
     extern fn host_thread_enter { mut threads: Threads }
@@ -186,12 +203,11 @@ namespace os {
 
     fn thread_create { mut threads: Threads, start: *mut u8, stack_size: usize } -> ?u64 {
         host_thread_enter{ &threads }
-        thread::begin{ start }
+        task::begin{ start }
         host_thread_leave{ &threads }
         return 1
     }
 
-    fn thread_join { mut threads: Threads, handle: u64 } {}
     fn thread_detach { mut threads: Threads, handle: u64 } {}
     fn thread_sleep { mut threads: Threads, nanoseconds: u64 } {}
     fn thread_yield { mut threads: Threads } {}

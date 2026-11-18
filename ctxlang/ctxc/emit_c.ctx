@@ -104,6 +104,7 @@ namespace emit {
         aux:      Out,                              // records, placed before the function
         f:        ir::Func,                         // the function being emitted
         temp:     u32 = 0,                          // the next _tK
+        task_name: []u8 = "",                       // the name a task's record is being made with (tbind)
         nodes:    u32 = 0,                          // the statements and expressions written for the function
         sites:    u32 = 0,                          // the next bind record
         loops:    u32 = 0,                          // the loops around what is being written
@@ -2180,7 +2181,10 @@ namespace emit {
             call{ callee, args } => { call{ &e, callee, args } }
             dcall{ callee, args } => { dcall{ &e, callee = callee.*, args } }
             bind{ callee, args } => { bind{ &e, t = x.ty, callee, args, given, sized = false } }
-            tbind{ callee, args } => { bind{ &e, t = x.ty, callee, args, given, sized = true } }
+            tbind{ callee, args, name } => {
+                e.task_name = name
+                bind{ &e, t = x.ty, callee, args, given, sized = true }
+            }
             rsize{ e = a } => {
                 put{ &e, a = "((ctx_task_rec *)(" }
                 expr{ &e, x = a.* }
@@ -2957,7 +2961,7 @@ namespace emit {
         mark_id{ &e, kind = 'b', id = k }
         put{ &e, a = " { ctx_fn base; " }
         if inner { put{ &e, a = "ctx_fn *inner; " } }
-        if sized { put{ &e, a = "uint64_t size; " } }
+        if sized { put{ &e, a = "uint64_t size; ctx_slice name; " } }
         let mut i = 0
         while i < args.len {
             let a = args[i]
@@ -3228,7 +3232,7 @@ namespace emit {
         let s = store{ &e, t, given, empty = args.len == 0 and inner == null and not sized }
         match s {
             canon => {
-                // A thunk of a `fn` value alone (lower.ctx, widen_fn and carried): an adapter's
+                // A thunk of a `fn` value alone (lower.ctx, widen_fn): an adapter's
                 // layout, one for each value.
                 if inner == null and args.len == 1 and ty{ e, id = args[0].value.ty } is func {
                     put{ &e, a = "ctx_adapt(" }
@@ -3238,8 +3242,8 @@ namespace emit {
                     put{ &e, a = "_code)" }
                     return
                 }
-                // A thunk that carries capabilities to a thread (lower.ctx, carried): a record
-                // that lives as long as the program, as the thread may.
+                // A widening thunk of a named function: a record that lives as long as the
+                // program, as a `fn` value may.
                 if inner != null { @panic("emit: a `fn` record of a function value's bind") }
             }
             fixed => {
@@ -3278,6 +3282,15 @@ namespace emit {
             put{ &e, a = "size = sizeof(struct " }
             mark_id{ &e, kind = 'b', id = k }
             put{ &e, a = "); " }
+            tmp{ &e, k = kr }
+            put{ &e, a = to }
+            put{ &e, a = "name = " }
+            put{ &e, a = "(ctx_slice){ (void *)" }
+            cstr{ &e, b = e.task_name }
+            put{ &e, a = ", " }
+            num{ &e, n = e.task_name.len }
+            put{ &e, a = " }" }
+            put{ &e, a = "; " }
         }
         let g = inner_given{ s, given }
         match inner {
