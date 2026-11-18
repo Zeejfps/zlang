@@ -41,6 +41,7 @@ struct Report {
     fuzz_errors: u32,
 }
 
+#pure
 extern fn log10 { x: f64 } -> f64
 
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut sdl: sdl::Sdl, args: Args } -> i32 {

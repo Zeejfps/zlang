@@ -825,9 +825,13 @@ type Mat4 = [16]f32
 
 struct Vec3 { x: f32, y: f32, z: f32 }
 
+#pure
 extern fn sinf { x: f32 } -> f32
+#pure
 extern fn cosf { x: f32 } -> f32
+#pure
 extern fn tanf { x: f32 } -> f32
+#pure
 extern fn sqrtf { x: f32 } -> f32
 
 fn identity {} -> Mat4 {

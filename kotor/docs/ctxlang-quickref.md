@@ -141,8 +141,9 @@ let p = try alloc::new(Thing, heap::Heap){ realloc = heap::alloc, heap = &h, val
 
 `main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32` receives the capabilities;
 pass them down to what needs them (`&fs`). Code without capabilities is pure. C functions are
-`extern fn name { ... } -> R` with `#c::symbol{ name = "..." }`; libm functions are in
-`kotor/lib/base/math.ctx`. SDL is `kotor/lib/platform/sdl.ctx`; only `lib/render_gl` touches GL.
+`extern fn name { ... } -> R` with `#c::symbol{ name = "..." }`. Each takes a capability field
+for what it touches, or is `#pure` (it touches only its arguments and what they point to), or it
+is an error. libm functions are in `kotor/lib/base/math.ctx`, `#pure`. SDL is `kotor/lib/platform/sdl.ctx`; only `lib/render_gl` touches GL.
 
 ## Printing and text
 

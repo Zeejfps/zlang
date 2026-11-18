@@ -43,9 +43,13 @@ namespace bink_audio {
     // Coefficient group lengths, in 8s, that a group's escape bit selects.
     const RUNS: [16]usize = [2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 32, 64]
 
+    #pure
     extern fn cos { x: f64 } -> f64
+    #pure
     extern fn sin { x: f64 } -> f64
+    #pure
     extern fn sqrt { x: f64 } -> f64
+    #pure
     extern fn pow { x: f64, y: f64 } -> f64
 
     struct Decoder {

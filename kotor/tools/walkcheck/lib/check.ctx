@@ -982,7 +982,9 @@ namespace walkcheck {
         return d <= 0.0001 and d >= -0.0001
     }
 
+    #pure
     extern fn cos { x: f64 } -> f64
+    #pure
     extern fn sin { x: f64 } -> f64
 
     // ---- small helpers
