@@ -327,6 +327,16 @@ void *ctx_alloc(size_t n) {
 
 // Adapters of `fn` values, one for each inner value and code. Such a value is a named
 // function's static record or another of these, so there are finitely many.
+void ctx_rec_copy(void *into, uint64_t len, ctx_fn *rec) {
+    uint64_t n = ((ctx_task_rec *)rec)->size;
+    if (len < n) ctx_panic_msg((ctx_slice){ (void *)"@record_copy into fewer bytes than the record has", 49 });
+    memcpy(into, rec, n);
+}
+
+ctx_slice ctx_task_name(void *rec) {
+    return ((ctx_task_rec *)rec)->name;
+}
+
 typedef struct ctx_canon { struct ctx_canon *next; ctx_adapter a; } ctx_canon;
 
 ctx_fn *ctx_adapt(ctx_fn *inner, void (*code)(void)) {

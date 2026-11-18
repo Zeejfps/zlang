@@ -44,7 +44,7 @@ namespace proc {
     // What the platform's layer (std/os) may fail with, on every platform, starting a program,
     // waiting for it, ending it, or using its pipes: each of those declares this set (spec §8,
     // Errors, rule 14). It is open, as fs::Error is.
-    type Error = error(not_found, permission_denied, broken_pipe, other, ..)
+    type Error = error(not_found, permission_denied, broken_pipe, other, task::cancelled, ..)
 
     // Where one of a child's standard streams goes.
     union Stdio {
@@ -109,7 +109,23 @@ namespace proc {
     // as a shell says.
     fn run { mut proc: Proc, argv: [][]u8, env: [][]u8 } -> !i32 {
         let mut child = try spawn{ &proc, argv, options = Options{ env, .. } }
-        return try wait{ &proc, &child }
+        let code = os::wait{ &proc, cancel = &proc, child, interruptible = true }
+        if stopped(i32){ r = code } {
+            // A task asked to stop: the child it owns ends, at once, and is waited for.
+            kill{ &proc, child } iferr {}
+            _ = os::wait{ &proc, cancel = &proc, child, interruptible = false }
+        }
+        release{ &proc, &child }
+        return try code
+    }
+
+    // Whether r is a stop's: a task's wait that was asked to stop, which leaves its child as it
+    // was (std/task.ctx).
+    fn stopped(T) { r: Error!T } -> bool {
+        match r {
+            ok => { return false }
+            err{ error } => { return match error { task::cancelled => { true } else => { false } } }
+        }
     }
 
     // Starts program argv[0] with the arguments argv[1..], without waiting for it: several may
@@ -149,8 +165,12 @@ namespace proc {
     // child: its handle, its Job Object on Windows, and its pipes that are still open, which it
     // closes and sets to null. Read what a child writes to a pipe before waiting for it: a child
     // that fills a pipe waits for it to be read.
+    //
+    // In a task asked to stop it fails with task::cancelled, and leaves the child as it was: not
+    // released, its pipes open, to be waited for or killed.
     fn wait { mut proc: Proc, mut child: Child } -> !i32 {
-        let code = os::wait{ &proc, child }
+        let code = os::wait{ &proc, cancel = &proc, child, interruptible = true }
+        if stopped(i32){ r = code } { return try code }
         release{ &proc, &child }
         return try code
     }
@@ -159,7 +179,7 @@ namespace proc {
     // isn't released, nor its group's leftovers ended. 0 checks without waiting. It waits for
     // the child itself, not by waking now and then to look.
     fn wait_for { mut proc: Proc, mut child: Child, nanoseconds: u64 } -> !?i32 {
-        let code = try os::wait_for{ &proc, child, nanoseconds }
+        let code = try os::wait_for{ &proc, cancel = &proc, child, nanoseconds }
         if code != null { release{ &proc, &child } }
         return code
     }
@@ -177,7 +197,7 @@ namespace proc {
     // until there is something to read.
     fn read { mut proc: Proc, pipe: Pipe, into: []mut u8 } -> !usize {
         if into.len == 0 { return 0 }
-        return try os::pipe_read{ &proc, pipe = pipe.id, into }
+        return try os::pipe_read{ &proc, cancel = &proc, pipe = pipe.id, into }
     }
 
     // Writes all of `bytes` to a child's standard input, waiting while its pipe is full. Fails
@@ -186,7 +206,7 @@ namespace proc {
     fn write { mut proc: Proc, pipe: Pipe, bytes: []u8 } -> !usize {
         let mut done: usize = 0
         while done < bytes.len {
-            done = done + try os::pipe_write{ &proc, pipe = pipe.id, bytes = bytes[done..] }
+            done = done + try os::pipe_write{ &proc, cancel = &proc, pipe = pipe.id, bytes = bytes[done..] }
         }
         return done
     }

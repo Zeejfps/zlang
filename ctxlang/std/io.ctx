@@ -10,8 +10,9 @@
 //
 // print* functions write their value only. println* functions add a newline.
 
-// Permission to use the console. It includes io's state, which only io reaches.
-capability Io { ..io::State }
+// Permission to use the console. It includes io's state, which only io reaches, and whether
+// the calling thread runs a task, which its blocking calls check (std/task.ctx).
+capability Io { ..io::State, ..task::Cancel }
 
 namespace io {
     enum Stream: u32 { out, err }

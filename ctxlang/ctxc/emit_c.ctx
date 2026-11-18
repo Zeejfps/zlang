@@ -104,6 +104,7 @@ namespace emit {
         aux:      Out,                              // records, placed before the function
         f:        ir::Func,                         // the function being emitted
         temp:     u32 = 0,                          // the next _tK
+        task_name: []u8 = "",                       // the name a task's record is being made with (tbind)
         nodes:    u32 = 0,                          // the statements and expressions written for the function
         sites:    u32 = 0,                          // the next bind record
         loops:    u32 = 0,                          // the loops around what is being written
@@ -2179,7 +2180,23 @@ namespace emit {
             fnconv{ e = a } => { fnconv{ &e, to = x.ty, a = a.*, given } }
             call{ callee, args } => { call{ &e, callee, args } }
             dcall{ callee, args } => { dcall{ &e, callee = callee.*, args } }
-            bind{ callee, args } => { bind{ &e, t = x.ty, callee, args, given } }
+            bind{ callee, args } => { bind{ &e, t = x.ty, callee, args, given, sized = false } }
+            tbind{ callee, args, name } => {
+                e.task_name = name
+                bind{ &e, t = x.ty, callee, args, given, sized = true }
+            }
+            rsize{ e = a } => {
+                put{ &e, a = "((ctx_task_rec *)(" }
+                expr{ &e, x = a.* }
+                put{ &e, a = "))->size" }
+            }
+            rcopy{ e = a, into } => {
+                put{ &e, a = "({ __auto_type _into = " }
+                expr{ &e, x = into.* }
+                put{ &e, a = "; ctx_rec_copy(_into.m_ptr, _into.m_len, " }
+                expr{ &e, x = a.* }
+                put{ &e, a = "); })" }
+            }
             dbind{ callee, args } => { dbind{ &e, t = x.ty, callee = callee.*, args, given } }
             fnref{ callee } => {
                 if is_cfn{ e, t = x.ty } {
@@ -2889,11 +2906,11 @@ namespace emit {
 
     // A bound function: a record holding the code and the given args (Records). The record's
     // type and code go before the function (aux).
-    fn bind { mut e: E, t: ir::TypeId, callee: u32, args: []ir::Arg, given: Given } {
+    fn bind { mut e: E, t: ir::TypeId, callee: u32, args: []ir::Arg, given: Given, sized: bool } {
         let f = e.p.fns[callee]
         let k = e.sites
         e.sites = e.sites + 1
-        record{ &e, k, inner = false, args }
+        record{ &e, k, inner = false, args, sized }
         let func{ params, ret } = ty{ e, id = t } else { @panic("emit: bind to a non-function type") }
         to_aux{ &e }
         code_head{ &e, kind = 'b', id = k, ret, params }
@@ -2904,7 +2921,7 @@ namespace emit {
         forward{ &e, target = f.params, ext = f.symbol.len > 0, args, given = params }
         put{ &e, a = ");\n}\n\n" }
         to_aux{ &e }
-        new_record{ &e, k, inner = null, args, t, given }
+        new_record{ &e, k, inner = null, args, t, given, sized }
     }
 
     // A bound function value: like bind, calling the callee value through its code.
@@ -2912,7 +2929,7 @@ namespace emit {
         let func{ params = target } = ty{ e, id = callee.ty } else { @panic("emit: bind of a non-function") }
         let k = e.sites
         e.sites = e.sites + 1
-        record{ &e, k, inner = true, args }
+        record{ &e, k, inner = true, args, sized = false }
         let func{ params, ret } = ty{ e, id = t } else { @panic("emit: bind to a non-function type") }
         to_aux{ &e }
         code_head{ &e, kind = 'b', id = k, ret, params }
@@ -2925,7 +2942,7 @@ namespace emit {
         forward{ &e, target, ext = false, args, given = params }
         put{ &e, a = ");\n}\n\n" }
         to_aux{ &e }
-        new_record{ &e, k, inner = callee, args, t, given }
+        new_record{ &e, k, inner = callee, args, t, given, sized = false }
     }
 
     //   struct bK *s = (struct bK *)self;
@@ -2938,12 +2955,13 @@ namespace emit {
     }
 
     // `struct bK { ctx_fn base; [ctx_fn *inner;] T cI; ... };` for the args it captures.
-    fn record { mut e: E, k: u32, inner: bool, args: []ir::Arg } {
+    fn record { mut e: E, k: u32, inner: bool, args: []ir::Arg, sized: bool } {
         to_aux{ &e }
         put{ &e, a = "struct " }
         mark_id{ &e, kind = 'b', id = k }
         put{ &e, a = " { ctx_fn base; " }
         if inner { put{ &e, a = "ctx_fn *inner; " } }
+        if sized { put{ &e, a = "uint64_t size; ctx_slice name; " } }
         let mut i = 0
         while i < args.len {
             let a = args[i]
@@ -3130,7 +3148,7 @@ namespace emit {
             deref{ ptr = a } | field{ base = a } | payload{ base = a } | addr{ place = a } | neg{ e = a }
             | lnot{ e = a } | isnull{ e = a } | notnull{ e = a } | widen{ e = a } | some{ e = a }
             | fnconv{ e = a } | repeat{ elem = a } | convert{ e = a } | trunc{ e = a } | cast{ e = a }
-            | ptraddr{ e = a } => {
+            | ptraddr{ e = a } | rsize{ e = a } => {
                 c_expr{ &e, x = a.*, taken = false }
             }
             index{ base, i } | sindex{ base, i } => {
@@ -3165,7 +3183,11 @@ namespace emit {
                 c_expr{ &e, x = callee.*, taken = true }
                 c_args{ &e, args, taken = true }
             }
-            bind{ args } => { c_args{ &e, args, taken = false } }
+            bind{ args } | tbind{ args } => { c_args{ &e, args, taken = false } }
+            rcopy{ e = a, into = b } => {
+                c_expr{ &e, x = a.*, taken = false }
+                c_expr{ &e, x = b.*, taken = false }
+            }
             dbind{ callee, args } => {
                 c_expr{ &e, x = callee.*, taken = false }
                 c_args{ &e, args, taken = false }
@@ -3206,11 +3228,11 @@ namespace emit {
     }
 
     // Record bK, filled in IR order: callee, then args.
-    fn new_record { mut e: E, k: u32, inner: ?ir::Expr, args: []ir::Arg, t: ir::TypeId, given: Given } {
-        let s = store{ &e, t, given, empty = args.len == 0 and inner == null }
+    fn new_record { mut e: E, k: u32, inner: ?ir::Expr, args: []ir::Arg, t: ir::TypeId, given: Given, sized: bool } {
+        let s = store{ &e, t, given, empty = args.len == 0 and inner == null and not sized }
         match s {
             canon => {
-                // A thunk of a `fn` value alone (lower.ctx, widen_fn and carried): an adapter's
+                // A thunk of a `fn` value alone (lower.ctx, widen_fn): an adapter's
                 // layout, one for each value.
                 if inner == null and args.len == 1 and ty{ e, id = args[0].value.ty } is func {
                     put{ &e, a = "ctx_adapt(" }
@@ -3220,8 +3242,8 @@ namespace emit {
                     put{ &e, a = "_code)" }
                     return
                 }
-                // A thunk that carries capabilities to a thread (lower.ctx, carried): a record
-                // that lives as long as the program, as the thread may.
+                // A widening thunk of a named function: a record that lives as long as the
+                // program, as a `fn` value may.
                 if inner != null { @panic("emit: a `fn` record of a function value's bind") }
             }
             fixed => {
@@ -3254,6 +3276,22 @@ namespace emit {
         put{ &e, a = "base.code = (void (*)(void))" }
         mark_id{ &e, kind = 'b', id = k }
         put{ &e, a = "_code; " }
+        if sized {
+            tmp{ &e, k = kr }
+            put{ &e, a = to }
+            put{ &e, a = "size = sizeof(struct " }
+            mark_id{ &e, kind = 'b', id = k }
+            put{ &e, a = "); " }
+            tmp{ &e, k = kr }
+            put{ &e, a = to }
+            put{ &e, a = "name = " }
+            put{ &e, a = "(ctx_slice){ (void *)" }
+            cstr{ &e, b = e.task_name }
+            put{ &e, a = ", " }
+            num{ &e, n = e.task_name.len }
+            put{ &e, a = " }" }
+            put{ &e, a = "; " }
+        }
         let g = inner_given{ s, given }
         match inner {
             some{ value } => {
@@ -3844,7 +3882,7 @@ namespace emit {
         if not bound { return false }
         return match x.k {
             fnref | nil => { false }
-            bind{ args } => { reaches_args{ e, args, slot } }
+            bind{ args } | tbind{ args } => { reaches_args{ e, args, slot } }
             dbind{ callee, args } => { reaches{ e, x = callee.*, slot } or reaches_args{ e, args, slot } }
             fnconv{ e = a } => { holds{ e, x = a.*, slot } }
             local{ slot = n } => { n >= e.f.params.len }
@@ -3899,7 +3937,7 @@ namespace emit {
                 let h = match hi { some{ value } => { writes{ e, x = value.* } } null => { false } }
                 writes{ e, x = base.* } or writes{ e, x = lo.* } or h
             }
-            record{ items } | variant{ items } | bind{ args = items } => {
+            record{ items } | variant{ items } | bind{ args = items } | tbind{ args = items } => {
                 let mut i = 0
                 while i < items.len {
                     if writes{ e, x = items[i].value } { return true }

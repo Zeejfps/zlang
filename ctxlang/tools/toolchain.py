@@ -361,8 +361,9 @@ STD_FILE = re.compile(r'(?:\.\./)*(std/(?:os/[^/]+/)?[^/]+\.ctx)')
 
 # ---- running programs
 
-# std's report (std/rt.ctx) says "panic in thread NAME:" on a thread but the main one.
-PANIC = re.compile(r'^(.*?)(?::(\d+):(\d+))?: panic(?: in thread ([^:]*))?: (.*)$')
+# std's report (std/rt.ctx) says "panic in task NAME:" in a task, NAME its task fn's, and "panic in
+# thread NAME:" on another thread but the main one; the thread is "task NAME", or NAME.
+PANIC = re.compile(r'^(.*?)(?::(\d+):(\d+))?: panic(?: in (?:thread )?([^:]*))?: (.*)$')
 
 
 def run_source(src, file=None, **kw):

@@ -34,10 +34,56 @@ namespace os {
 
     // Reads some of standard input into `into`, which isn't empty. Returns how many; 0 at the end
     // or after an error.
+    // In a task it first waits until standard input is readable or the task is asked to stop
+    // (std/task.ctx), and then returns 0 as at the end. Descriptor 0 stays blocking: other
+    // programs share it.
     fn read { mut io: Io, into: []mut u8 } -> usize {
+        let object = task::get_cancel_object{ cancel = &io }
+        if object != 0 {
+            if task::check{ cancel = &io } is err { return 0 }
+            let mut fds: [2]PollFd = [PollFd{ fd = 0, events = POLLIN, revents = 0 }, PollFd{ fd = @as(i32, object), events = POLLIN, revents = 0 }]
+            while poll_io{ &io, fds = &fds[0], count = 2, ms = -1 } < 0 {}
+            if fds[1].revents != 0 { return 0 }
+        }
         let r = c_read{ &io, fd = 0, buf = into.ptr, count = into.len }
         return if r > 0 { @as(usize, r) } else { 0 }
     }
+
+    // poll's struct pollfd, the same on Linux and macOS, and its events: readable, writable. A
+    // descriptor below 0 is skipped.
+    struct PollFd { fd: i32, events: i16, revents: i16 }
+    const POLLIN: i16 = 1
+    const POLLOUT: i16 = 4
+
+    #c::symbol{ name = "poll" }
+    extern fn poll_io { mut io: Io, fds: *mut PollFd, count: u64, ms: i32 } -> i32
+    #c::symbol{ name = "poll" }
+    extern fn poll_proc { mut proc: Proc, fds: *mut PollFd, count: u64, ms: i32 } -> i32
+    #c::symbol{ name = "poll" }
+    extern fn poll_threads { mut threads: Threads, fds: *mut PollFd, count: u64, ms: i32 } -> i32
+
+    // Waits until descriptor fd has `events`, or, with a cancel object (task::get_cancel_object),
+    // until it is signalled: then it fails with task::cancelled.
+    fn ready { mut proc: Proc, fd: i32, events: i16, object: u64 } -> proc::Error! {
+        let mut fds: [2]PollFd = [PollFd{ fd, events, revents = 0 }, PollFd{ fd = if object != 0 { @as(i32, object) } else { -1 }, events = POLLIN, revents = 0 }]
+        while true {
+            let r = poll_proc{ &proc, fds = &fds[0], count = 2, ms = -1 }
+            if r > 0 {
+                if fds[1].revents != 0 { return task::cancelled }
+                return
+            }
+            if r < 0 {
+                let e = sys::proc_errno{ &proc }.*
+                if e != EINTR { return proc_failed{ code = e } }
+            }
+        }
+    }
+
+    // What sys::await_exit found: the time ran out, the process ended, or the calling task was
+    // asked to stop.
+    const TIMED_OUT: u8 = 0
+    const EXITED: u8 = 1
+    const STOPPED: u8 = 2
 
     // `size` bytes, a multiple of mem::PAGE, zeroed and page-aligned. Null if there isn't enough
     // memory.
@@ -132,6 +178,20 @@ namespace os {
         if n < 0 { return failed{ code = sys::errno{ &fs }.* } }
         return @as(usize, n)
     }
+
+    // Reads at most into.len bytes, which aren't none, from `offset` bytes into the file, without
+    // its position (pread). Returns how many; 0 at or past the end.
+    fn file_read_at { mut fs: Fs, file: u64, offset: u64, into: []mut u8 } -> fs::Error!usize {
+        let fd = descriptor{ file } ifnull { return fs::bad_file }
+        while true {
+            let n = pread{ &fs, fd, buf = into.ptr, count = into.len, offset = @as(i64, offset) }
+            if n >= 0 { return @as(usize, n) }
+            let e = sys::errno{ &fs }.*
+            if e != EINTR { return failed{ code = e } }
+        }
+    }
+
+    extern fn pread { mut fs: Fs, fd: i32, buf: *mut u8, count: usize, offset: i64 } -> i64
 
     // Writes some of `bytes`, which aren't none. Returns how many.
     fn file_write { mut fs: Fs, file: u64, bytes: []u8 } -> fs::Error!usize {
@@ -294,6 +354,7 @@ namespace os {
     const ESRCH: i32 = 3
     const EINTR: i32 = 4
     const EBADF: i32 = 9
+    const F_SETFL: i32 = 4                                          // fcntl's: a descriptor's status flags, the same on Linux and macOS
     const EACCES: i32 = 13
     const EPIPE: i32 = 32
     const F_GETFD: i32 = 1
@@ -438,6 +499,9 @@ namespace os {
                     let theirs = if s == 0 { reads } else { writes }
                     made[s] = theirs
                     ours[s] = if s == 0 { writes } else { reads }
+                    // This program's end doesn't block: pipe_read and pipe_write poll it, with a
+                    // task's cancel object (std/task.ctx).
+                    if sys::fcntl{ &proc, fd = ours[s], cmd = F_SETFL, arg = sys::O_NONBLOCK } < 0 { return proc_failed{ code = sys::proc_errno{ &proc }.* } }
                     fds[s] = theirs
                 }
                 file{ file } => {
@@ -513,10 +577,18 @@ namespace os {
 
     // Waits for a child to end: its exit code, or 128 + N if signal N killed it. A child whose
     // `cleanup` is its process group has the group ended first (end_leftovers).
-    fn wait { mut proc: Proc, child: proc::Child } -> proc::Error!i32 {
+    //
+    // An interruptible wait in a task waits on the child and the task's cancel object, and fails
+    // with task::cancelled when the task is asked to stop, leaving the child as it was.
+    fn wait { mut proc: Proc, mut cancel: task::Cancel, child: proc::Child, interruptible: bool } -> proc::Error!i32 {
         let pid = @as(i32, child.id)
+        let object = if interruptible { task::get_cancel_object{ &cancel } } else { 0 }
+        if object != 0 {
+            try task::check{ &cancel }
+            if try sys::await_exit{ &proc, pid, nanoseconds = FOREVER, cancel = object } == STOPPED { return task::cancelled }
+        }
         if child.cleanup != 0 {
-            _ = try sys::await_exit{ &proc, pid, nanoseconds = FOREVER }
+            if object == 0 { _ = try sys::await_exit{ &proc, pid, nanoseconds = FOREVER, cancel = 0 } }
             try end_leftovers{ &proc, group = child.cleanup }
         }
         let code = try reap{ &proc, pid, options = 0 }
@@ -529,18 +601,22 @@ namespace os {
     // ended, waitpid waits: macOS may say so a moment before waitpid can reap it, and waitpid
     // never waits long for a child that has ended. A child whose `cleanup` is its group is
     // looked at without reaping it, as wait does.
-    fn wait_for { mut proc: Proc, child: proc::Child, nanoseconds: u64 } -> proc::Error!?i32 {
+    fn wait_for { mut proc: Proc, mut cancel: task::Cancel, child: proc::Child, nanoseconds: u64 } -> proc::Error!?i32 {
+        try task::check{ &cancel }
+        let object = task::get_cancel_object{ &cancel }
         let pid = @as(i32, child.id)
         if child.cleanup != 0 {
-            let ended = try sys::await_exit{ &proc, pid, nanoseconds }
-            if not ended { return null }
+            let r = try sys::await_exit{ &proc, pid, nanoseconds, cancel = object }
+            if r == STOPPED { return task::cancelled }
+            if r == TIMED_OUT { return null }
             try end_leftovers{ &proc, group = child.cleanup }
             return try reap{ &proc, pid, options = 0 }
         }
         let code = try reap{ &proc, pid, options = WNOHANG }
         if code != null or nanoseconds == 0 { return code }
-        let ended = try sys::await_exit{ &proc, pid, nanoseconds }
-        if not ended { return null }
+        let r = try sys::await_exit{ &proc, pid, nanoseconds, cancel = object }
+        if r == STOPPED { return task::cancelled }
+        if r == TIMED_OUT { return null }
         return try reap{ &proc, pid, options = 0 }
     }
 
@@ -590,25 +666,39 @@ namespace os {
     }
 
     // Reads at most into.len bytes, which aren't none. Returns how many; 0 at the end.
-    fn pipe_read { mut proc: Proc, pipe: u64, into: []mut u8 } -> proc::Error!usize {
+    // This program's end of the pipe doesn't block (spawn): when it has nothing, ready waits,
+    // in a task with its cancel object too.
+    fn pipe_read { mut proc: Proc, mut cancel: task::Cancel, pipe: u64, into: []mut u8 } -> proc::Error!usize {
+        try task::check{ &cancel }
+        let object = task::get_cancel_object{ &cancel }
         let fd = descriptor{ file = pipe } ifnull { return proc_failed{ code = EBADF } }
         while true {
             let n = read_fd{ &proc, fd, buf = into.ptr, count = into.len }
             if n >= 0 { return @as(usize, n) }
             let e = sys::proc_errno{ &proc }.*
-            if e != EINTR { return proc_failed{ code = e } }
+            if e == sys::EAGAIN {
+                try ready{ &proc, fd, events = POLLIN, object }
+            } else if e != EINTR {
+                return proc_failed{ code = e }
+            }
         }
     }
 
     // Writes some of `bytes`, which aren't none. Returns how many; EPIPE, broken_pipe, once the
     // reader has closed its end.
-    fn pipe_write { mut proc: Proc, pipe: u64, bytes: []u8 } -> proc::Error!usize {
+    fn pipe_write { mut proc: Proc, mut cancel: task::Cancel, pipe: u64, bytes: []u8 } -> proc::Error!usize {
+        try task::check{ &cancel }
+        let object = task::get_cancel_object{ &cancel }
         let fd = descriptor{ file = pipe } ifnull { return proc_failed{ code = EBADF } }
         while true {
             let n = write_fd{ &proc, fd, buf = bytes.ptr, count = bytes.len }
             if n >= 0 { return @as(usize, n) }
             let e = sys::proc_errno{ &proc }.*
-            if e != EINTR { return proc_failed{ code = e } }
+            if e == sys::EAGAIN {
+                try ready{ &proc, fd, events = POLLOUT, object }
+            } else if e != EINTR {
+                return proc_failed{ code = e }
+            }
         }
     }
 
@@ -702,7 +792,48 @@ namespace os {
         return fs::other{ code = @as(i64, code) }
     }
 
-    // ---- threads (std/thread.ctx): pthreads
+    // ---- threads (std/task.ctx, std/thread.ctx): pthreads
+
+    // Permission to start threads, which std's Threads includes.
+    capability Threads
+
+    // Whether tasks may run concurrently: not only in the interpreter.
+    const CONCURRENT: bool = true
+
+    // What only the interpreter can't do.
+    fn concurrency_unsupported { what: []u8 } { rt::fail{ msg = what } }
+
+    // A task's cancel object (std/task.ctx): an eventfd on Linux, a pipe on macOS, not
+    // signalled; 0 if the system won't make one (sys::event_make).
+    fn event_make { mut threads: Threads } -> u64 { return sys::event_make{ &threads } }
+    fn event_signal { mut threads: Threads, event: u64 } { sys::event_signal{ &threads, event } }
+    fn event_reset { mut threads: Threads, event: u64 } { sys::event_reset{ &threads, event } }
+
+    // What poll waits on for it: a descriptor that is readable once it is signalled.
+    fn event_waitable { event: u64 } -> u64 { return (event & 0xFFFFFFFF) - 1 }
+
+    // Now on the monotonic clock, in nanoseconds.
+    fn now { mut threads: Threads } -> u64 {
+        let mut t = Timespec{ sec = 0, nsec = 0 }
+        _ = clock_gettime{ &threads, clock = sys::CLOCK_MONOTONIC, now = &t }
+        return @as(u64, t.sec) * 1000000000 + @as(u64, t.nsec)
+    }
+
+    // Waits on a task's cancel object for at most `nanoseconds` (thread::sleep in a task).
+    fn event_wait { mut threads: Threads, waitable: u64, nanoseconds: u64 } {
+        let start = now{ &threads }
+        let until = if nanoseconds > FOREVER - start { FOREVER } else { start + nanoseconds }
+        let mut fds: [1]PollFd = [PollFd{ fd = @as(i32, waitable), events = POLLIN, revents = 0 }]
+        while true {
+            let at = now{ &threads }
+            if at >= until { return }
+            if poll_threads{ &threads, fds = &fds[0], count = 1, ms = poll_millis{ nanoseconds = until - at } } > 0 { return }
+        }
+    }
+
+    // Only Windows has synchronous calls that another thread interrupts.
+    fn thread_handle { mut threads: Threads } -> u64 { return 0 }
+    fn cancel_synchronous { mut threads: Threads, thread: u64 } {}
 
     // A pthread_attr_t: 56 bytes on Linux, 64 on macOS.
     struct Attr { bytes: [8]u64 }
@@ -712,7 +843,6 @@ namespace os {
     extern fn pthread_attr_setstacksize { mut threads: Threads, mut attr: Attr, size: usize } -> i32
     extern fn pthread_attr_destroy { mut threads: Threads, mut attr: Attr } -> i32
     extern fn pthread_create { mut threads: Threads, mut thread: u64, attr: *Attr, entry: extern fn{ start: *mut u8 } -> ?*mut u8, start: *mut u8 } -> i32
-    extern fn pthread_join { mut threads: Threads, thread: u64, result: ?*mut ?*mut u8 } -> i32
     extern fn pthread_detach { mut threads: Threads, thread: u64 } -> i32
     extern fn pthread_self { mut threads: Threads } -> u64
     extern fn nanosleep { mut threads: Threads, request: *Timespec, remaining: ?*mut Timespec } -> i32
@@ -725,11 +855,11 @@ namespace os {
     // capability.
     #c::callback{ any_thread = true }
     fn thread_entry { start: *mut u8 } -> ?*mut u8 {
-        thread::begin{ start }
+        task::begin{ start }
         return null
     }
 
-    // Starts a thread that runs thread::begin{ start }, with a stack of stack_size bytes, rounded
+    // Starts a thread that runs task::begin{ start }, with a stack of stack_size bytes, rounded
     // up to 64 KiB as macOS wants a multiple of its pages: its pthread_t, or null.
     fn thread_create { mut threads: Threads, start: *mut u8, stack_size: usize } -> ?u64 {
         let mut attr = Attr{ bytes = [0; 8] }
@@ -742,9 +872,6 @@ namespace os {
         return t
     }
 
-    fn thread_join { mut threads: Threads, handle: u64 } {
-        _ = pthread_join{ &threads, thread = handle, result = null }
-    }
 
     fn thread_detach { mut threads: Threads, handle: u64 } {
         _ = pthread_detach{ &threads, thread = handle }

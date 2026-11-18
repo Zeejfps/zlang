@@ -1432,6 +1432,8 @@ namespace parser {
         Builtin{ name = "atomic_add", types = 0, lo = 3, hi = 3, usage = "@atomic_add(p, value, order)" },
         Builtin{ name = "atomic_subtract", types = 0, lo = 3, hi = 3, usage = "@atomic_subtract(p, value, order)" },
         Builtin{ name = "fence",    types = 0, lo = 1, hi = 1, usage = "@fence(order)" },
+        Builtin{ name = "record_size", types = 0, lo = 1, hi = 1, usage = "@record_size(run)" },
+        Builtin{ name = "record_copy", types = 0, lo = 2, hi = 2, usage = "@record_copy(run, into)" },
     ]
 
     fn builtin { mut p: Parser } -> syntax::Expr {

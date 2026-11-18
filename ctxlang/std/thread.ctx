@@ -1,105 +1,42 @@
-// std: thread, atomic, mutex and condition. Threads of the operating system (spec §15, rule 14).
-// Nothing keeps two threads from sharing memory: what they share,
-// and when it is freed, is the program's to manage, as in C, with the atomics (spec §13), a
-// mutex or a condition.
+// std: thread, atomic, mutex and condition. What runs concurrently is a task (std/task.ctx), on
+// a thread of the operating system; these are what threads share memory with: the atomics (spec
+// §13), a mutex or a condition, and what a thread does to itself, sleep and yield.
 //
 //   struct Counter { lock: mutex::Mutex, n: u64 }
 //
-//   fn count { data: *mut Counter } {
-//       mutex::lock{ mutex = &data.lock }
-//       data.n = data.n + 1
-//       mutex::unlock{ mutex = &data.lock }
+//   #task
+//   fn count { c: *mut Counter } -> ! {
+//       mutex::lock{ mutex = &c.lock }
+//       c.n = c.n + 1
+//       mutex::unlock{ mutex = &c.lock }
 //   }
 //
 //   fn main { mut io: Io, mut threads: Threads } -> i32 {
 //       let mut c = Counter{ lock = mutex::make{}, n = 0 }
-//       let t = thread::create{ &threads, run = count, data = &c, options = thread::default_options{} } iferr { return 1 }
-//       thread::join{ &threads, thread = t }
+//       let mut t: task::Task(!)
+//       task::start{ &threads, task = &t, run = count{ c = &c, _ } }
+//       task::wait{ &threads, task = &t } iferr { return 1 }
 //       io::println_u64{ &io, n = c.n }
 //       return 0
 //   }
 
-// Permission to start threads, and to wait for them. Only `main` receives it, and a program
-// whose `main` (or start fn) takes it is threaded (spec §15, Entry point, rule 8).
-capability Threads
+// Permission to run tasks (std/task.ctx), and threads, and to wait for them. Only `main`
+// receives it, and a program whose `main` (or start fn) takes it is threaded (spec §15, Entry
+// point, rule 8). It includes the platform layer's permission to start threads, Mem, since the
+// task backend keeps its table in pages, and the backend's state.
+capability Threads { ..os::Threads, ..Mem, ..task::State, ..task::Cancel }
 
 namespace thread {
-    // A running thread, as the operating system knows it: a Windows HANDLE, or a pthread_t.
-    struct Thread { handle: u64 }
-
-    struct Options {
-        stack_size: usize,          // bytes the thread may use; 0 for DEFAULT_STACK
-        name: []u8,                 // for debuggers and a panic's report, cut to 63 bytes; may be empty
-    }
-
-    // The operating system refused another thread.
-    error out_of_resources
-
-    // The stack a thread may use when its options say 0: 8 MiB.
-    const DEFAULT_STACK: usize = 8388608
-
-    fn default_options {} -> Options {
-        return Options{ stack_size = 0, name = "" }
-    }
-
-    // Starts a thread that runs `run{ data }`, and ends when that returns. `run` may take
-    // capabilities besides `data`, which the caller must hold as a direct call would need them,
-    // and the thread receives (spec §15, rule 14). Nothing copies `*data` or keeps it alive: it
-    // must outlive the thread. Each thread is joined or detached once.
-    #spawn
-    fn create(T) { mut threads: Threads, run: fn{ data: *mut T }, data: *mut T, options: Options } -> !Thread {
-        let usable = if options.stack_size == 0 { DEFAULT_STACK } else { options.stack_size }
-        // The stack is larger than what the thread may use (rt's limit for it, begin), so a
-        // frame that crosses the limit still reaches the check, and the panic can be reported.
-        let room: usize = if usable / 4 > 1048576 { usable / 4 } else { 1048576 }
-        let erased = @cast(*fn{ data: *mut u8 }, &run).*
-        let mut start = Start{ run = erased, data = @cast(*mut u8, data), usable, name = options.name, started = 0 }
-        let handle = os::thread_create{ &threads, start = @cast(*mut u8, &start), stack_size = usable + room } ifnull {
-            return out_of_resources
-        }
-        // start is this frame's: the new thread copies it before it says it has started.
-        while @atomic_load(&start.started, atomic::Order::acquire) == 0 { os::thread_yield{ &threads } }
-        return Thread{ handle }
-    }
-
-    // What a new thread starts with, in its creator's frame until it has copied it.
-    struct Start { run: fn{ data: *mut u8 }, data: *mut u8, usable: usize, name: []u8, started: u32 }
-
-    // A new thread's first fn, which the platform's layer calls (os::thread_create): its stack
-    // limit and name, then `run`. When the thread ends, the runtime writes out its standard
-    // output (std's start gives it the fn that does, rt::thread_ends).
-    fn begin { start: *mut u8 } {
-        // C passes no capability to a thread's first fn (spec §18, Callbacks, rule 6), but this
-        // one holds Threads as its creator does: only a threaded program starts a thread, and
-        // its creator waits in `create`, holding Threads, until `started` says the thread is
-        // past the calls that take it. A capability without fields is no bytes, so any pointer
-        // makes one (spec §15, rule 4); `run` gets only what its creator carried to it.
-        let mut threads = @cast(*Threads, start).*
-        let s = @cast(*mut Start, start)
-        let run = s.run
-        let data = s.data
-        // A panic's report names a thread without a name by its id.
-        let mut digits: [20]u8
-        let name = if s.name.len > 0 { s.name } else { utf8::fmt_u64{ n = os::thread_id{ &threads }, into = digits[..] }.bytes }
-        rt::thread_begin{ &threads, usable = s.usable, name }
-        os::thread_name{ &threads, name = s.name }
-        @atomic_store(&s.started, 1, atomic::Order::release)
-        run{ data }
-    }
-
-    // Waits for the thread to end.
-    fn join { mut threads: Threads, thread: Thread } {
-        os::thread_join{ &threads, handle = thread.handle }
-    }
-
-    // Lets the thread end on its own: its handle is no longer valid.
-    fn detach { mut threads: Threads, thread: Thread } {
-        os::thread_detach{ &threads, handle = thread.handle }
-    }
-
-    // The calling thread waits at least this long.
+    // The calling thread waits at least this long, or, in a task asked to stop, until then
+    // (std/task.ctx): it waits on the task's cancel object.
     fn sleep { mut threads: Threads, nanoseconds: u64 } {
-        os::thread_sleep{ &threads, nanoseconds }
+        let object = task::get_cancel_object{ cancel = &threads }
+        if object == 0 {
+            os::thread_sleep{ &threads, nanoseconds }
+            return
+        }
+        if task::check{ cancel = &threads } is err { return }
+        os::event_wait{ &threads, waitable = object, nanoseconds }
     }
 
     // Gives the rest of the calling thread's time slice to another thread.

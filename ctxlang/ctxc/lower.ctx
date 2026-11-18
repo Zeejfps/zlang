@@ -20,13 +20,7 @@ namespace lower {
     // without a sink is an instance too, under the declaration it is in: site is its Site,
     // NONE for any other. So is a widening thunk (widen), under the declaration whose file it
     // goes in.
-    struct Inst { decl: u32, targs: []Id, site: u32, widen: ?Widen, carry: ?Carry }
-
-    // A thunk of function type `to` that calls a run function passed to a `#spawn` fn (spec §15,
-    // rule 14): instance callee, or with callee NONE its first param, a function value of type
-    // frm, with the capabilities it takes beyond to's fields: from nothing if they have no
-    // fields, and the copies kept, read-only params after the value, if they have.
-    struct Carry { callee: u32, frm: Id, to: Id, kept: []types::Field }
+    struct Inst { decl: u32, targs: []Id, site: u32, widen: ?Widen, entry: Id }
 
     // A thunk of function type `to` (spec §5): it calls instance callee, or with callee NONE its
     // first param, a function value of type frm, reading each field frm takes read-only and to
@@ -128,8 +122,8 @@ namespace lower {
             let kind = check::get_decl{ c = l.c.*, d = inst.decl }.kind
             let f = if inst.widen != null {
                 widening{ &l, id = @as(u32, i), inst }
-            } else if inst.carry != null {
-                carrying{ &l, id = @as(u32, i), inst }
+            } else if inst.entry != NONE {
+                entering{ &l, id = @as(u32, i), inst }
             } else if inst.site != NONE {
                 hidden{ &l, id = @as(u32, i), inst }
             } else if kind == check::Kind::external {
@@ -157,28 +151,31 @@ namespace lower {
     }
 
     // Whether the program may run on several threads (spec §15, Entry point, rule 8): main or
-    // the start fn takes std's `Threads`, or it has a callback that C may call from any thread.
+    // the start fn takes std's `Threads` or a capability that includes it, or it has a callback
+    // that C may call from any thread.
     fn threaded_program { l: Lower, main: u32, start: u32 } -> bool {
         let threads = check::std_decl_top{ c = l.c.*, name = "Threads" }
-        let fns = list::items{ list = l.fns }
-        if threads != check::NONE {
-            if takes_cap{ l, f = fns[main], decl = threads } { return true }
-            if start != NONE and takes_cap{ l, f = fns[start], decl = threads } { return true }
-        }
         let q = list::items{ list = l.queue }
+        if threads != check::NONE {
+            if takes_cap{ l, d = q[main].decl, decl = threads } { return true }
+            if start != NONE and takes_cap{ l, d = q[start].decl, decl = threads } { return true }
+        }
         let mut i: usize = 0
         while i < q.len {
-            if q[i].site == NONE and q[i].widen == null and q[i].carry == null and check::get_decl{ c = l.c.*, d = q[i].decl }.any_thread { return true }
+            if q[i].site == NONE and q[i].widen == null and q[i].entry == NONE and check::get_decl{ c = l.c.*, d = q[i].decl }.any_thread { return true }
             i = i + 1
         }
         return false
     }
 
-    fn takes_cap { l: Lower, f: ir::Func, decl: u32 } -> bool {
-        let threads = check::get_decl{ c = l.c.*, d = decl }.qual
+    // Whether fn d's context has capability `decl`, or one that includes it.
+    fn takes_cap { l: Lower, d: u32, decl: u32 } -> bool {
+        let fields = check::get_decl{ c = l.c.*, d }.fields
         let mut i: usize = 0
-        while i < f.params.len {
-            if list::items{ list = l.types }[f.params[i].ty] is cap{ name } and slice::eq_bytes{ a = name, b = threads } { return true }
+        while i < fields.len {
+            if types::get{ s = l.c.ty, id = types::prune{ s = l.c.ty, t = fields[i].ty } } is cap{ decl = x } {
+                if x == decl or check::has_id{ xs = check::get_decl{ c = l.c.*, d = x }.includes, n = decl } { return true }
+            }
             i = i + 1
         }
         return false
@@ -364,7 +361,7 @@ namespace lower {
         if known != null { return known }
         let i = @as(u32, l.queue.len)
         try! map::put{ m = &l.fn_ids, key = k, value = i }
-        try! list::push{ list = &l.queue, item = Inst{ decl, targs, site = NONE, widen = null, carry = null } }
+        try! list::push{ list = &l.queue, item = Inst{ decl, targs, site = NONE, widen = null, entry = NONE } }
         return i
     }
 
@@ -384,7 +381,7 @@ namespace lower {
         if known != null { return known }
         let id = @as(u32, l.queue.len)
         try! map::put{ m = &l.fn_ids, key, value = id }
-        try! list::push{ list = &l.queue, item = Inst{ decl = l.decl, targs = l.targs, site, widen = null, carry = null } }
+        try! list::push{ list = &l.queue, item = Inst{ decl = l.decl, targs = l.targs, site, widen = null, entry = NONE } }
         return id
     }
 
@@ -857,6 +854,60 @@ namespace lower {
             }
         }
         try! list::push{ list = &xs, item = stmt{ &l, s } }
+        if s.k is local { handle_scope{ &l, &xs, s } }
+    }
+
+    // After a local that is or holds a task's handle (spec §15, Tasks): its scope's end, as a
+    // defer, cancels and waits for what it still has, through std's task::end or, for a group,
+    // task::cancel_all, with a Threads from nothing (a capability without fields).
+    fn handle_scope { mut l: Lower, mut xs: list::List(ir::Stmt, Heap), s: syntax::Stmt } {
+        let v = local_of{ l, k = check::stmt_key{ s } }
+        let t = T{ &l, t = check::get_var{ c = l.c.*, v }.ty }
+        if not check::holds_handle{ c = l.c.*, t } { return }
+        let place = mk{ ty = tid{ &l, t }, k = ir::ExprKind::local{ slot = slot{ &l, v } } }
+        let mut body = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
+        end_handles{ &l, out = &body, place, t }
+        try! list::push{ list = &xs, item = ir::Stmt::deferred{ body = ir::Block{ stmts = list::items{ list = body }, result = null } } }
+    }
+
+    fn end_handles { mut l: Lower, mut out: list::List(ir::Stmt, Heap), place: ir::Expr, t: Id } {
+        match get{ l, t } {
+            array{ n, elem } => {
+                let ut = tid{ &l, t = types::USIZE }
+                let i = temp{ &l, ty = ut }
+                let iv = mk{ ty = ut, k = ir::ExprKind::local{ slot = i } }
+                try! list::push{ list = &out, item = ir::Stmt::define{ slot = i, init = int_lit{ &l, t = types::USIZE, n = 0 } } }
+                let mut body = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
+                let none = ir::Pos{ line = 0, col = 0, file = 0 }
+                let at = mk{ ty = tid{ &l, t = elem }, k = ir::ExprKind::index{ base = box{ l, e = place }, i = box{ l, e = iv }, pos = none } }
+                end_handles{ &l, out = &body, place = at, t = elem }
+                let next = mk{ ty = ut, k = ir::ExprKind::arith{ op = ir::ArithOp::add, a = box{ l, e = iv }, b = box{ l, e = int_lit{ &l, t = types::USIZE, n = 1 } }, pos = none, trap = ir::NO_TRAP } }
+                try! list::push{ list = &body, item = ir::Stmt::assign{ place = iv, value = next } }
+                let c = mk{ ty = tid{ &l, t = types::BOOL }, k = ir::ExprKind::cmp{ op = ir::CmpOp::lt, a = box{ l, e = iv }, b = box{ l, e = int_lit{ &l, t = types::USIZE, n } } } }
+                try! list::push{ list = &out, item = ir::Stmt::loop{ c, body = ir::Block{ stmts = list::items{ list = body }, result = null }, label = null } }
+            }
+            record{ decl, args } => {
+                let task = check::std_decl{ c = l.c.*, space = "task", name = "Task" }
+                let group = check::std_decl{ c = l.c.*, space = "task", name = "Group" }
+                let end = if decl == task { check::std_fn{ c = l.c.*, space = "task", name = "end" } } else if decl == group { check::std_fn{ c = l.c.*, space = "task", name = "cancel_all" } } else { NONE }
+                if end == NONE { @panic("lower: a task handle without std's task::end") }
+                let ts = if decl == task { args } else { no_ids{} }
+                let x = check::get_decl{ c = l.c.*, d = end }
+                let fields = check::subst_fields{ c = l.c, fields = x.fields, decl = end, args = ts }
+                let mut call = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
+                let mut k: usize = 0
+                while k < fields.len {
+                    let f = fields[k]
+                    let at = tid{ &l, t = arg_type{ &l, f, ptrs = true } }
+                    let value = if get{ l, t = f.ty } is cap { mk{ ty = at, k = ir::ExprKind::capref } } else { mk{ ty = at, k = ir::ExprKind::addr{ place = box{ l, e = place } } } }
+                    add_arg{ xs = &call, a = ir::Arg{ index = @as(u32, k), value } }
+                    k = k + 1
+                }
+                let e = mk{ ty = tid{ &l, t = types::VOID }, k = ir::ExprKind::call{ callee = fn_id{ &l, decl = end, targs = ts }, args = list::items{ list = call } } }
+                try! list::push{ list = &out, item = ir::Stmt::eval{ e } }
+            }
+            else => { @panic("lower: a task handle that is neither a handle nor an array of them") }
+        }
     }
 
     // e as a statement: a call, `try` of one or an `iferr`, without a value or with one dropped.
@@ -1427,7 +1478,7 @@ namespace lower {
         let id = @as(u32, l.queue.len)
         try! map::put{ m = &l.fn_ids, key, value = id }
         let decl = if callee == NONE { l.decl } else { list::items{ list = l.queue }[callee].decl }
-        try! list::push{ list = &l.queue, item = Inst{ decl, targs = no_ids{}, site = NONE, widen = Widen{ callee, frm, to }, carry = null } }
+        try! list::push{ list = &l.queue, item = Inst{ decl, targs = no_ids{}, site = NONE, widen = Widen{ callee, frm, to }, entry = NONE } }
         return id
     }
 
@@ -1524,174 +1575,84 @@ namespace lower {
         return mk{ ty = ft, k = ir::ExprKind::local{ slot = z } }
     }
 
-    // ---- run functions that carry capabilities (spec §15, rule 14)
+    // ---- tasks (spec §15, Tasks)
 
-    // Run function e, passed to a `#spawn` fn's field of type `to` with the capabilities fw
-    // beyond it (check's carry): a value of type `to` that calls it with them. A named
-    // function that takes only capabilities without fields becomes a thunk that calls it,
-    // with no record, as the function had none; otherwise a bind of the thunk holds the value
-    // and the copies of the capabilities with fields, whose record lives as long as the
-    // program (a bind of a `fn` type, which emit_c allocates for good).
-    fn carried { mut l: Lower, e: syntax::Expr, fw: []check::Forward, to: Id } -> ir::Expr {
-        let x = ex{ &l, e }
-        let frm = after{ &l, e }
-        let tt = T{ &l, t = to }
-        let ty = tid{ &l, t = tt }
-        let func{ fields = ff } = get{ l, t = frm } else { @panic("lower: a carried value that isn't a function") }
-        let at = check::expr_at{ e }
-        let mut kept = list::new(types::Field){ realloc = arena::alloc, heap = l.heap }
-        let mut vals = list::new(ir::Expr){ realloc = arena::alloc, heap = l.heap }
+    // A start's `run`, in args: a bind written in the call, whose record holds its size (tbind),
+    // or the starts_task fn's own `run`, passed on.
+    fn task_record { mut l: Lower, fields: []types::Field, args: []ir::Arg } -> []ir::Arg {
+        let k = types::field_index{ fields, name = "run" } ifnull { @panic("lower: a start without `run`") }
+        let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
         let mut i: usize = 0
-        while i < fw.len {
-            let k = types::find_field{ fields = ff, name = fw[i].name } ifnull { @panic("lower: a carried capability the function doesn't take") }
-            let ct = T{ &l, t = k.ty }
-            if check::loaded_cap{ c = l.c.*, t = ct } {
-                let v = var_ex{ &l, v = fw[i].var, at }
-                add_field{ xs = &kept, f = types::Field{ name = k.name, mutable = false, ty = ct } }
-                try! list::push{ list = &vals, item = coerce{ &l, x = v, frm = T{ &l, t = fw[i].ty }, to = ct, at } }
+        while i < args.len {
+            let mut a = args[i]
+            if a.index == @as(u32, k) {
+                let v = a.value
+                match v.k {
+                    bind{ callee, args = bound } => {
+                        let q = list::items{ list = l.queue }[callee]
+                        let name = check::get_decl{ c = l.c.*, d = q.decl }.qual
+                        a.value = mk{ ty = v.ty, k = ir::ExprKind::tbind{ callee, args = bound, name } }
+                    }
+                    local => {}
+                    else => { @panic("lower: a start's `run` that isn't a bind") }
+                }
             }
+            try! list::push{ list = &out, item = a }
             i = i + 1
         }
-        let mut callee = NONE
-        match x.k {
-            fnref{ callee = f } => { if direct{ l, callee = f } { callee = f } }
-            else => {}
-        }
-        let id = carry_id{ &l, callee, frm, to = tt, kept = list::items{ list = kept } }
-        let mut args = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
-        let mut n: u32 = 0
-        if callee == NONE {
-            add_arg{ xs = &args, a = ir::Arg{ index = 0, value = x } }
-            n = 1
-        }
-        let vs = list::items{ list = vals }
-        i = 0
-        while i < vs.len {
-            add_arg{ xs = &args, a = ir::Arg{ index = n + @as(u32, i), value = vs[i] } }
-            i = i + 1
-        }
-        if args.len == 0 { return mk{ ty, k = ir::ExprKind::fnref{ callee = id } } }
-        return mk{ ty, k = ir::ExprKind::bind{ callee = id, args = list::items{ list = args } } }
+        return list::items{ list = out }
     }
 
-    // The id of a thunk that carries capabilities (Carry), queued the first time it is met.
-    fn carry_id { mut l: Lower, callee: u32, frm: Id, to: Id, kept: []types::Field } -> u32 {
+    // The id of the entry thunk of a task whose result is r (@record_copy): it runs the record
+    // it is given, and writes what that returns to `result`.
+    fn entry_id { mut l: Lower, r: Id } -> u32 {
         let mut b = list::new(u8){ realloc = arena::alloc, heap = l.heap }
         put_u32{ xs = &b, n = NONE }         // no declaration's id
-        put_u32{ xs = &b, n = NONE - 1 }     // no widening thunk's callee
-        put_u32{ xs = &b, n = callee }
-        put_u32{ xs = &b, n = if callee == NONE { norm{ &l, t = frm } } else { 0 } }
-        put_u32{ xs = &b, n = norm{ &l, t = to } }
-        let mut i: usize = 0
-        while i < kept.len {
-            put_u32{ xs = &b, n = norm{ &l, t = kept[i].ty } }
-            let mut k: usize = 0
-            while k < kept[i].name.len {
-                try! list::push{ list = &b, item = kept[i].name[k] }
-                k = k + 1
-            }
-            try! list::push{ list = &b, item = 0 }
-            i = i + 1
-        }
+        put_u32{ xs = &b, n = NONE - 2 }     // no widening thunk's callee
+        put_u32{ xs = &b, n = norm{ &l, t = r } }
         let key = list::items{ list = b }
         let known = map::get{ m = l.fn_ids, key }
         if known != null { return known }
         let id = @as(u32, l.queue.len)
         try! map::put{ m = &l.fn_ids, key, value = id }
-        let decl = if callee == NONE { l.decl } else { list::items{ list = l.queue }[callee].decl }
-        try! list::push{ list = &l.queue, item = Inst{ decl, targs = no_ids{}, site = NONE, widen = null, carry = Carry{ callee, frm, to, kept } } }
+        try! list::push{ list = &l.queue, item = Inst{ decl = l.decl, targs = no_ids{}, site = NONE, widen = null, entry = r } }
         return id
     }
 
-    // Carrying thunk inst.carry as a function. Its context is the value it calls (`fn`, if it
-    // calls one), the kept capabilities, then to's fields. It calls its callee with to's fields
-    // by name, a kept capability by its address (a `mut` field) or its value, and any other
-    // capability from nothing, as the runtime supplies main's (entry_fns).
-    fn carrying { mut l: Lower, id: u32, inst: Inst } -> ir::Func {
-        let w = inst.carry ifnull { @panic("lower: a carrying thunk that isn't one") }
+    // Entry thunk inst as a function: `fn{ record: *mut u8, result: *mut u8 }`, calling the
+    // record as a `&fn{} -> R` and storing its result at `result`.
+    fn entering { mut l: Lower, id: u32, inst: Inst } -> ir::Func {
         let d = check::get_decl{ c = l.c.*, d = inst.decl }
         l.decl = inst.decl
         l.targs = no_ids{}
         map::clear{ m = &l.slots }
         l.locals = list::new(ir::Local){ realloc = arena::alloc, heap = l.heap }
-        let func{ fields = tf, ret = tr } = get{ l, t = w.to } else { @panic("lower: a carrying thunk of a non-function") }
-        l.ret = tr
-        let mut ctx = list::new(types::Field){ realloc = arena::alloc, heap = l.heap }
-        let mut takes: []types::Field = slice::empty(types::Field){}
-        let mut cr = types::VOID
-        let mut b = message{ l }
-        if w.callee == NONE {
-            let func{ fields = ff, ret = fr } = get{ l, t = w.frm } else { @panic("lower: a carrying thunk of a non-function") }
-            add_field{ xs = &ctx, f = types::Field{ name = "fn", mutable = false, ty = w.frm } }
-            takes = sorted_fields{ l, fields = ff }
-            cr = fr
-            try! @fmt(&b, "({})", str{ s = type_name{ l, t = w.frm } })
-        } else {
-            let q = list::items{ list = l.queue }[w.callee]
-            let x = check::get_decl{ c = l.c.*, d = q.decl }
-            takes = check::subst_fields{ c = l.c, fields = x.fields, decl = q.decl, args = q.targs }
-            cr = if q.targs.len == 0 { x.ret } else { types::subst{ s = &l.c.ty, t = x.ret, decl = q.decl, args = q.targs } }
-            try! utf8::push{ &b, s = str{ s = inst_name{ l, x, targs = q.targs } } }
-        }
-        try! @fmt(&b, " carried as {}", str{ s = type_name{ l, t = w.to } })
-        let mut i: usize = 0
-        while i < w.kept.len {
-            add_field{ xs = &ctx, f = w.kept[i] }
-            i = i + 1
-        }
-        i = 0
-        while i < tf.len {
-            add_field{ xs = &ctx, f = tf[i] }
-            i = i + 1
-        }
-        let fs = list::items{ list = ctx }
+        let r = inst.entry
+        l.ret = types::VOID
+        let bytes = types::ptr{ s = &l.c.ty, elem = types::U8, mutable = true }
+        let pt = tid{ &l, t = bytes }
         let mut params = list::new(ir::Param){ realloc = arena::alloc, heap = l.heap }
-        i = 0
-        while i < fs.len {
-            let f = fs[i]
-            try! list::push{ list = &params, item = ir::Param{ name = f.name, mutable = f.mutable, ty = tid{ &l, t = f.ty } } }
-            try! list::push{ list = &l.locals, item = ir::Local{ name = f.name, ty = tid{ &l, t = arg_type{ &l, f, ptrs = true } } } }
-            i = i + 1
-        }
-        let first_kept: usize = if w.callee == NONE { 1 } else { 0 }
+        try! list::push{ list = &params, item = ir::Param{ name = "record", mutable = false, ty = pt } }
+        try! list::push{ list = &params, item = ir::Param{ name = "result", mutable = false, ty = pt } }
+        try! list::push{ list = &l.locals, item = ir::Local{ name = "record", ty = pt } }
+        try! list::push{ list = &l.locals, item = ir::Local{ name = "result", ty = pt } }
+        let ft = tid{ &l, t = types::func{ s = &l.c.ty, fields = slice::empty(types::Field){}, ret = r, bound = true, external = false } }
+        let rt = tid{ &l, t = r }
+        let run = mk{ ty = ft, k = ir::ExprKind::cast{ e = box{ l, e = mk{ ty = pt, k = ir::ExprKind::local{ slot = 0 } } } } }
+        let call = mk{ ty = rt, k = ir::ExprKind::dcall{ callee = box{ l, e = run }, args = slice::empty(ir::Arg){} } }
         let mut body = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
-        let mut args = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
-        i = 0
-        while i < takes.len {
-            let f = takes[i]
-            let at = tid{ &l, t = arg_type{ &l, f, ptrs = true } }
-            let mut v = mk{ ty = at, k = ir::ExprKind::capref }
-            let s = types::field_index{ fields = fs, name = f.name }
-            if s != null and s >= first_kept + w.kept.len {
-                v = taken{ &l, f, own = fs[s], slot = @as(u32, s), &body }
-            } else if s != null and not f.mutable {
-                v = mk{ ty = at, k = ir::ExprKind::local{ slot = @as(u32, s) } }
-            } else if s != null {
-                let ct = tid{ &l, t = f.ty }
-                v = mk{ ty = at, k = ir::ExprKind::addr{ place = box{ l, e = mk{ ty = ct, k = ir::ExprKind::local{ slot = @as(u32, s) } } } } }
-            } else if not f.mutable {
-                // a read-only capability without fields: a zeroed local, as entry_fns gives one
-                let z = temp{ &l, ty = at }
-                try! list::push{ list = &body, item = ir::Stmt::zero{ slot = z } }
-                v = mk{ ty = at, k = ir::ExprKind::local{ slot = z } }
-            }
-            add_arg{ xs = &args, a = ir::Arg{ index = @as(u32, i), value = v } }
-            i = i + 1
-        }
-        let ct = tid{ &l, t = cr }
-        let call = if w.callee == NONE {
-            let inner = mk{ ty = tid{ &l, t = w.frm }, k = ir::ExprKind::local{ slot = 0 } }
-            mk{ ty = ct, k = ir::ExprKind::dcall{ callee = box{ l, e = inner }, args = list::items{ list = args } } }
-        } else {
-            mk{ ty = ct, k = ir::ExprKind::call{ callee = w.callee, args = list::items{ list = args } } }
-        }
-        if list::items{ list = l.types }[ct] is void {
+        if list::items{ list = l.types }[rt] is void {
             try! list::push{ list = &body, item = ir::Stmt::eval{ e = call } }
         } else {
-            try! list::push{ list = &body, item = ir::Stmt::ret{ value = call } }
+            let to = tid{ &l, t = types::ptr{ s = &l.c.ty, elem = r, mutable = true } }
+            let at = mk{ ty = to, k = ir::ExprKind::cast{ e = box{ l, e = mk{ ty = pt, k = ir::ExprKind::local{ slot = 1 } } } } }
+            let place = mk{ ty = rt, k = ir::ExprKind::deref{ ptr = box{ l, e = at }, pos = ir::Pos{ line = 0, col = 0, file = 0 } } }
+            try! list::push{ list = &body, item = ir::Stmt::assign{ place, value = call } }
         }
+        let mut b = message{ l }
+        try! @fmt(&b, "task entry of {}", str{ s = type_name{ l, t = r } })
         return ir::Func{
-            id, name = utf8::view{ b }.bytes, symbol = "", params = list::items{ list = params }, ret = tid{ &l, t = tr },
+            id, name = utf8::view{ b }.bytes, symbol = "", params = list::items{ list = params }, ret = tid{ &l, t = types::VOID },
             locals = list::items{ list = l.locals }, body = ir::Block{ stmts = list::items{ list = body }, result = null },
             unit = unit_of{ l, x = d }, at = d.syn.span.start,
         }
@@ -2889,6 +2850,7 @@ namespace lower {
             let ty = tid{ &l, t }
             let args = item_args{ &l, e, items, fields, ptrs = true }
             if bind { return mk{ ty, k = ir::ExprKind::bind{ callee = fid, args } } }
+            if x.starts_task { return mk{ ty, k = ir::ExprKind::call{ callee = fid, args = task_record{ &l, fields, args } } } }
             return mk{ ty, k = ir::ExprKind::call{ callee = fid, args } }
         }
         let ft = T{ &l, t = check::type_of_expr{ c = l.c.*, e = callee } }
@@ -2978,12 +2940,7 @@ namespace lower {
         while i < items.len {
             if not items[i].spread {
                 let fi = field_pos{ fields, name = items[i].name.text }
-                let carries = map::get{ m = l.c.carries, key = check::expr_key{ e = items[i].value } }
-                let x = if carries != null {
-                    carried{ &l, e = items[i].value, fw = carries, to = arg_type{ &l, f = fields[fi], ptrs } }
-                } else {
-                    conv{ &l, e = items[i].value, to = arg_type{ &l, f = fields[fi], ptrs } }
-                }
+                let x = conv{ &l, e = items[i].value, to = arg_type{ &l, f = fields[fi], ptrs } }
                 add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, fi), value = x } }
             }
             i = i + 1
@@ -3055,6 +3012,19 @@ namespace lower {
             let off = check::offset_of{ c = l.c, t = T{ &l, t = targ_type{ l, targ } }, arg = args[0], report = false }
             if off == null { @panic("lower: @offset_of of no field") }
             return int_lit{ &l, t, n = off }
+        }
+        if slice::eq_bytes{ a = name, b = "record_size" } {
+            return mk{ ty = tid{ &l, t }, k = ir::ExprKind::rsize{ e = box{ l, e = ex{ &l, e = args[0] } } } }
+        }
+        if slice::eq_bytes{ a = name, b = "record_copy" } {
+            // The copy, then the entry thunk for run's result type, as a `fn` value.
+            let run = ex{ &l, e = args[0] }
+            let rt = T{ &l, t = check::type_of_expr{ c = l.c.*, e = args[0] } }
+            let func{ ret = r } = get{ l, t = rt } else { @panic("lower: @record_copy of a non-function") }
+            let copy = mk{ ty = tid{ &l, t = types::VOID }, k = ir::ExprKind::rcopy{ e = box{ l, e = run }, into = box{ l, e = ex{ &l, e = args[1] } } } }
+            let ty = tid{ &l, t }
+            let thunk = mk{ ty, k = ir::ExprKind::fnref{ callee = entry_id{ &l, r } } }
+            return mk{ ty, k = ir::ExprKind::seq{ first = box{ l, e = copy }, then = box{ l, e = thunk } } }
         }
         if slice::eq_bytes{ a = name, b = "addr" } {
             let ty = tid{ &l, t }

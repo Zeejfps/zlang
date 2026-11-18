@@ -16,10 +16,10 @@ namespace sys {
     // The bytes of a thread's name pthread_setname_np takes, before its NUL.
     const THREAD_NAME_MAX: usize = 63
 
-    extern fn pthread_setname_np { mut threads: Threads, name: *u8 } -> i32
+    extern fn pthread_setname_np { mut threads: os::Threads, name: *u8 } -> i32
 
     // The calling thread's name, NUL-terminated: macOS names only the calling thread.
-    fn set_thread_name { mut threads: Threads, name: *u8 } {
+    fn set_thread_name { mut threads: os::Threads, name: *u8 } {
         _ = pthread_setname_np{ &threads, name }
     }
 
@@ -198,7 +198,10 @@ namespace sys {
     // program looking again and again, a day at most at a time, since kevent refuses a timeout
     // too far off. macOS says ESRCH for a process that ended already, which then needs no
     // waiting.
-    fn await_exit { mut proc: os::Proc, pid: i32, nanoseconds: u64 } -> proc::Error!bool {
+    //
+    // With a task's cancel object (os::TIMED_OUT, EXITED, STOPPED) the kqueue watches its pipe's
+    // read end too.
+    fn await_exit { mut proc: os::Proc, pid: i32, nanoseconds: u64, cancel: u64 } -> proc::Error!u8 {
         let kq = kqueue{ &proc }
         if kq < 0 { return os::proc_failed{ code = proc_errno{ &proc }.* } }
         defer _ = os::close_fd{ &proc, fd = kq }
@@ -206,8 +209,12 @@ namespace sys {
         let now = os::Timespec{ sec = 0, nsec = 0 }
         if kevent{ &proc, kq, changes = &change, count = 1, events = null, capacity = 0, timeout = &now } < 0 {
             let e = proc_errno{ &proc }.*
-            if e == os::ESRCH { return true }
+            if e == os::ESRCH { return os::EXITED }
             return os::proc_failed{ code = e }
+        }
+        if cancel != 0 {
+            let watch = Kevent{ ident = cancel, filter = EVFILT_READ, flags = EV_ADD, fflags = 0, data = 0, udata = 0 }
+            if kevent{ &proc, kq, changes = &watch, count = 1, events = null, capacity = 0, timeout = &now } < 0 { return os::proc_failed{ code = proc_errno{ &proc }.* } }
         }
         let deadline = os::deadline{ &proc, nanoseconds }
         let mut event = Kevent{ ident = 0, filter = 0, flags = 0, fflags = 0, data = 0, udata = 0 }
@@ -216,13 +223,54 @@ namespace sys {
             let wait = if left > DAY { DAY } else { left }
             let t = os::Timespec{ sec = @as(i64, wait / 1000000000), nsec = @as(i64, wait % 1000000000) }
             let r = kevent{ &proc, kq, changes = null, count = 0, events = &event, capacity = 1, timeout = &t }
-            if r > 0 { return true }
+            if r > 0 { return if event.filter == EVFILT_READ { os::STOPPED } else { os::EXITED } }
             if r < 0 {
                 let e = proc_errno{ &proc }.*
                 if e != os::EINTR { return os::proc_failed{ code = e } }
             } else if left == 0 {
-                return false
+                return os::TIMED_OUT
             }
         }
+    }
+
+    // ---- tasks' cancel objects (os::event_make): a pipe, both ends non-blocking, read end + 1
+    // in the low half and write end + 1 in the high half, so that 0 is none
+
+    #c::symbol{ name = "pipe" }
+    extern fn event_pipe { mut threads: os::Threads, fds: *mut i32 } -> i32
+    #c::symbol{ name = "fcntl" }
+    extern fn event_fcntl { mut threads: os::Threads, fd: i32, cmd: i32, arg: i64, r3: u64, r4: u64, r5: u64, r6: u64, r7: u64, stacked: i64 } -> i32
+    #c::symbol{ name = "read" }
+    extern fn event_read { mut threads: os::Threads, fd: i32, buf: *mut u8, count: usize } -> i64
+    #c::symbol{ name = "write" }
+    extern fn event_write { mut threads: os::Threads, fd: i32, buf: *u8, count: usize } -> i64
+
+    // fcntl's command that sets a descriptor's status flags, and its flag for one that doesn't
+    // block; the error for one with nothing yet; a kqueue's filter for a readable descriptor.
+    const F_SETFL: i32 = 4
+    const O_NONBLOCK: i64 = 4
+    const EAGAIN: i32 = 35
+    const EVFILT_READ: i16 = -1
+
+    fn event_flags { mut threads: os::Threads, fd: i32 } -> bool {
+        if event_fcntl{ &threads, fd, cmd = os::F_SETFD, arg = os::FD_CLOEXEC, r3 = 0, r4 = 0, r5 = 0, r6 = 0, r7 = 0, stacked = os::FD_CLOEXEC } < 0 { return false }
+        return event_fcntl{ &threads, fd, cmd = F_SETFL, arg = O_NONBLOCK, r3 = 0, r4 = 0, r5 = 0, r6 = 0, r7 = 0, stacked = O_NONBLOCK } >= 0
+    }
+
+    fn event_make { mut threads: os::Threads } -> u64 {
+        let mut fds: [2]i32 = [0, 0]
+        if event_pipe{ &threads, fds = &fds[0] } != 0 { return 0 }
+        if not event_flags{ &threads, fd = fds[0] } or not event_flags{ &threads, fd = fds[1] } { return 0 }
+        return (@as(u64, fds[0]) + 1) | ((@as(u64, fds[1]) + 1) << 32)
+    }
+
+    fn event_signal { mut threads: os::Threads, event: u64 } {
+        let one: u8 = 1
+        _ = event_write{ &threads, fd = @as(i32, (event >> 32) - 1), buf = &one, count = 1 }
+    }
+
+    fn event_reset { mut threads: os::Threads, event: u64 } {
+        let mut buf: [64]u8
+        while event_read{ &threads, fd = @as(i32, (event & 0xFFFFFFFF) - 1), buf = &buf[0], count = 64 } > 0 {}
     }
 }

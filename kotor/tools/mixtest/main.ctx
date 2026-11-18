@@ -268,12 +268,13 @@ fn run { mut io: Io, mut heap: arena::Arena, mut t: Tally, mut threads: Threads 
     try lock_stress{ &io, &t, &heap, &threads, dc, short }
 }
 
-// What the rendering thread shares with the test.
+// What the rendering task shares with the test.
 struct Spin { m: *mut mix::Mixer, blocks: u32, done: u32 }
 
 // It yields between blocks, as the game's pump sleeps between top-ups: a lock that isn't fair would
 // otherwise go back to it every time.
-fn spin_render { mut threads: Threads, data: *mut Spin } {
+#task
+fn spin_render { mut threads: Threads, data: *mut Spin } -> ! {
     let mut buf: [2048]i16 = [0; 2048]
     let mut i: u32 = 0
     while i < data.blocks {
@@ -284,12 +285,13 @@ fn spin_render { mut threads: Threads, data: *mut Spin } {
     @atomic_store(&data.done, 1, atomic::Order::release)
 }
 
-// A thread renders block after block while this one plays, stops, fades and releases sounds: no
+// A task renders block after block while this code plays, stops, fades and releases sounds: no
 // deadlock, and a voice stopped at once or released is never seen playing after the call returns.
 fn lock_stress { mut io: Io, mut t: Tally, mut heap: arena::Arena, mut threads: Threads, dc: []u8, short: []u8 } -> ! {
     let m = try mix::make{ realloc = arena::alloc, &heap, rate = RATE, voices_2d = 8, voices_3d = 4 }
     let mut spin = Spin{ m, blocks = 3000, done = 0 }
-    let th = try thread::create{ &threads, run = spin_render, data = &spin, options = thread::default_options{} }
+    let mut th: task::Task(!)
+    try task::start_concurrent{ &threads, task = &th, run = spin_render{ &threads, data = &spin, _ } }
     let mut calls: u32 = 0
     let mut wrong: u32 = 0
     while @atomic_load(&spin.done, atomic::Order::acquire) == 0 {
@@ -309,10 +311,10 @@ fn lock_stress { mut io: Io, mut t: Tally, mut heap: arena::Arena, mut threads: 
         _ = mix::played{ m, h }
         calls = calls + 1
     }
-    thread::join{ &threads, thread = th }
+    try task::wait{ &threads, task = &th }
     mix::stop_all{ m, group = null, fade = 0.0 }
     let st = mix::stats{ m }
-    expect{ &io, &t, ok = wrong == 0 and calls > 10 and st.busy_2d > 0, what = "a thread renders while this one plays and stops sounds" }
+    expect{ &io, &t, ok = wrong == 0 and calls > 10 and st.busy_2d > 0, what = "a task renders while this code plays and stops sounds" }
     mix::free{ realloc = arena::alloc, &heap, m }
 }
 

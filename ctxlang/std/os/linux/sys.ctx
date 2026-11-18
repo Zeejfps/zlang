@@ -16,10 +16,10 @@ namespace sys {
     // The bytes of a thread's name pthread_setname_np takes, before its NUL.
     const THREAD_NAME_MAX: usize = 15
 
-    extern fn pthread_setname_np { mut threads: Threads, thread: u64, name: *u8 } -> i32
+    extern fn pthread_setname_np { mut threads: os::Threads, thread: u64, name: *u8 } -> i32
 
     // The calling thread's name, NUL-terminated.
-    fn set_thread_name { mut threads: Threads, name: *u8 } {
+    fn set_thread_name { mut threads: os::Threads, name: *u8 } {
         _ = pthread_setname_np{ &threads, thread = os::pthread_self{ &threads }, name }
     }
 
@@ -176,7 +176,7 @@ namespace sys {
     //
     // With `die_with_parent`, the child asks for SIGKILL when the thread that started it ends
     // (PR_SET_PDEATHSIG), so that it doesn't outlive the program: the thread, not the process,
-    // so on a thread that thread::create started it ends with that thread, if that thread ends
+    // so on a task's worker it ends with that thread, if that thread ends
     // first. A child whose parent ended before it asked has another parent by then, and exits
     // instead.
     fn spawn { mut proc: os::Proc, file: *u8, argv: *?*u8, envp: *?*u8, path: ?*u8, scratch: *mut u8, fds: *i32, dir: ?*u8, group: bool, die_with_parent: bool } -> proc::Error!i32 {
@@ -305,22 +305,59 @@ namespace sys {
     // Waits for process pid to end, for at most `nanoseconds` (0 looks without waiting):
     // whether it did, without reaping it. poll waits on a pidfd for it, rather than the
     // program looking again and again.
-    fn await_exit { mut proc: os::Proc, pid: i32, nanoseconds: u64 } -> proc::Error!bool {
+    //
+    // With a task's cancel object (os::TIMED_OUT, EXITED, STOPPED) it polls that too.
+    fn await_exit { mut proc: os::Proc, pid: i32, nanoseconds: u64, cancel: u64 } -> proc::Error!u8 {
         let fd = syscall{ &proc, number = SYS_PIDFD_OPEN, a = @as(i64, pid), b = 0 }
         if fd < 0 { return os::proc_failed{ code = proc_errno{ &proc }.* } }
-        let mut p = PollFd{ fd = @as(i32, fd), events = POLLIN, revents = 0 }
-        defer _ = os::close_fd{ &proc, fd = p.fd }
+        let mut ps: [2]os::PollFd = [os::PollFd{ fd = @as(i32, fd), events = os::POLLIN, revents = 0 }, os::PollFd{ fd = if cancel != 0 { @as(i32, cancel) } else { -1 }, events = os::POLLIN, revents = 0 }]
+        defer _ = os::close_fd{ &proc, fd = ps[0].fd }
         let deadline = os::deadline{ &proc, nanoseconds }
         while true {
             let left = os::remaining{ &proc, deadline }
-            let r = poll{ &proc, fd = &p, count = 1, ms = os::poll_millis{ nanoseconds = left } }
-            if r > 0 { return true }
+            let r = os::poll_proc{ &proc, fds = &ps[0], count = 2, ms = os::poll_millis{ nanoseconds = left } }
+            if r > 0 {
+                if ps[0].revents != 0 { return os::EXITED }
+                return os::STOPPED
+            }
             if r < 0 {
                 let e = proc_errno{ &proc }.*
                 if e != os::EINTR { return os::proc_failed{ code = e } }
             } else if left == 0 {
-                return false
+                return os::TIMED_OUT
             }
         }
+    }
+
+    // A descriptor that doesn't block (fcntl's F_SETFL), and the error for one with nothing yet.
+    const O_NONBLOCK: i64 = 2048
+    const EAGAIN: i32 = 11
+
+    // ---- tasks' cancel objects (os::event_make): an eventfd, numbered from 1 so that 0 is none
+
+    #c::symbol{ name = "eventfd" }
+    extern fn eventfd { mut threads: os::Threads, initval: u32, flags: i32 } -> i32
+    #c::symbol{ name = "read" }
+    extern fn event_read { mut threads: os::Threads, fd: i32, buf: *mut u64, count: usize } -> i64
+    #c::symbol{ name = "write" }
+    extern fn event_write { mut threads: os::Threads, fd: i32, buf: *u64, count: usize } -> i64
+
+    const EFD_CLOEXEC: i32 = 524288
+    const EFD_NONBLOCK: i32 = 2048
+
+    fn event_make { mut threads: os::Threads } -> u64 {
+        let fd = eventfd{ &threads, initval = 0, flags = EFD_CLOEXEC | EFD_NONBLOCK }
+        if fd < 0 { return 0 }
+        return @as(u64, fd) + 1
+    }
+
+    fn event_signal { mut threads: os::Threads, event: u64 } {
+        let one: u64 = 1
+        _ = event_write{ &threads, fd = @as(i32, event - 1), buf = &one, count = 8 }
+    }
+
+    fn event_reset { mut threads: os::Threads, event: u64 } {
+        let mut n: u64 = 0
+        _ = event_read{ &threads, fd = @as(i32, event - 1), buf = &n, count = 8 }
     }
 }
