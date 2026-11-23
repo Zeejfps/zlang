@@ -2218,9 +2218,10 @@ namespace lower {
             }
             index{ base, i } => { return index_ex{ &l, e, base = base.*, i = i.*, t } }
             range{ base, lo, hi } => {
-                let lo_ir = if lo == null { int_lit{ &l, t = types::USIZE, n = 0 } } else { conv{ &l, e = lo.*, to = types::USIZE } }
+                // A bound keeps its integer type, which the check takes as it is (§12, Slices).
+                let lo_ir = if lo == null { int_lit{ &l, t = types::USIZE, n = 0 } } else { ex{ &l, e = lo.* } }
                 let mut hi_ir: ?*ir::Expr = null
-                if hi != null { hi_ir = box{ l, e = conv{ &l, e = hi.*, to = types::USIZE } } }
+                if hi != null { hi_ir = box{ l, e = ex{ &l, e = hi.* } } }
                 let ty = tid{ &l, t }
                 let b = ex{ &l, e = base.* }
                 return mk{ ty, k = ir::ExprKind::ssub{ base = box{ l, e = b }, lo = box{ l, e = lo_ir }, hi = hi_ir, pos = epos{ &l, e } } }
@@ -2472,7 +2473,10 @@ namespace lower {
             let ty = tid{ &l, t }
             return mk{ ty, k = ir::ExprKind::constref{ id = const_id{ &l, d, at } } }
         }
-        return value{ &l, v = const_val{ &l, d, at } }
+        // An integer const's name that converted has the type it converted to (check::const_as).
+        let v = const_val{ &l, d, at }
+        if v is int{ negative, magnitude } and get{ l, t } is prim { return value{ &l, v = check::Val::int{ ty = t, negative, magnitude } } }
+        return value{ &l, v }
     }
 
     fn path_ex { mut l: Lower, e: syntax::Expr, t: Id } -> ir::Expr {
@@ -2724,7 +2728,8 @@ namespace lower {
 
     fn index_ex { mut l: Lower, e: syntax::Expr, base: syntax::Expr, i: syntax::Expr, t: Id } -> ir::Expr {
         let bt = T{ &l, t = check::type_of_expr{ c = l.c.*, e = base } }
-        let ix = conv{ &l, e = i, to = types::USIZE }
+        // An index keeps its integer type, which the check takes as it is (§12, Arrays).
+        let ix = ex{ &l, e = i }
         let p = epos{ &l, e }
         let a = check::access_of{ c = l.c.*, e }
         if a is arr {

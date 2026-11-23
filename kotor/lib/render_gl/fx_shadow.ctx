@@ -134,17 +134,17 @@ namespace gpu {
             return gl::incomplete{ status }
         }
         let cmp = gl::gen_sampler{ gl = &dev.gl }
-        dev.gl.sampler_parameteri{ sampler = cmp, pname = gl::TEXTURE_MIN_FILTER, param = @as(i32, gl::LINEAR) }
-        dev.gl.sampler_parameteri{ sampler = cmp, pname = gl::TEXTURE_MAG_FILTER, param = @as(i32, gl::LINEAR) }
-        dev.gl.sampler_parameteri{ sampler = cmp, pname = gl::TEXTURE_WRAP_S, param = @as(i32, gl::CLAMP_TO_EDGE) }
-        dev.gl.sampler_parameteri{ sampler = cmp, pname = gl::TEXTURE_WRAP_T, param = @as(i32, gl::CLAMP_TO_EDGE) }
-        dev.gl.sampler_parameteri{ sampler = cmp, pname = gl::TEXTURE_COMPARE_MODE, param = @as(i32, gl::COMPARE_REF_TO_TEXTURE) }
-        dev.gl.sampler_parameteri{ sampler = cmp, pname = gl::TEXTURE_COMPARE_FUNC, param = @as(i32, gl::LEQUAL) }
+        dev.gl.sampler_parameteri{ sampler = cmp, pname = gl::TEXTURE_MIN_FILTER, param = gl::LINEAR }
+        dev.gl.sampler_parameteri{ sampler = cmp, pname = gl::TEXTURE_MAG_FILTER, param = gl::LINEAR }
+        dev.gl.sampler_parameteri{ sampler = cmp, pname = gl::TEXTURE_WRAP_S, param = gl::CLAMP_TO_EDGE }
+        dev.gl.sampler_parameteri{ sampler = cmp, pname = gl::TEXTURE_WRAP_T, param = gl::CLAMP_TO_EDGE }
+        dev.gl.sampler_parameteri{ sampler = cmp, pname = gl::TEXTURE_COMPARE_MODE, param = gl::COMPARE_REF_TO_TEXTURE }
+        dev.gl.sampler_parameteri{ sampler = cmp, pname = gl::TEXTURE_COMPARE_FUNC, param = gl::LEQUAL }
         let raw = gl::gen_sampler{ gl = &dev.gl }
-        dev.gl.sampler_parameteri{ sampler = raw, pname = gl::TEXTURE_MIN_FILTER, param = @as(i32, gl::NEAREST) }
-        dev.gl.sampler_parameteri{ sampler = raw, pname = gl::TEXTURE_MAG_FILTER, param = @as(i32, gl::NEAREST) }
-        dev.gl.sampler_parameteri{ sampler = raw, pname = gl::TEXTURE_WRAP_S, param = @as(i32, gl::CLAMP_TO_EDGE) }
-        dev.gl.sampler_parameteri{ sampler = raw, pname = gl::TEXTURE_WRAP_T, param = @as(i32, gl::CLAMP_TO_EDGE) }
+        dev.gl.sampler_parameteri{ sampler = raw, pname = gl::TEXTURE_MIN_FILTER, param = gl::NEAREST }
+        dev.gl.sampler_parameteri{ sampler = raw, pname = gl::TEXTURE_MAG_FILTER, param = gl::NEAREST }
+        dev.gl.sampler_parameteri{ sampler = raw, pname = gl::TEXTURE_WRAP_S, param = gl::CLAMP_TO_EDGE }
+        dev.gl.sampler_parameteri{ sampler = raw, pname = gl::TEXTURE_WRAP_T, param = gl::CLAMP_TO_EDGE }
         dev.shadow.size = size
         dev.shadow.atlas = t
         dev.shadow.fbo = fbo

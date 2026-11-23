@@ -243,6 +243,12 @@ namespace check {
         // Array literals where a slice is expected (§11, Literals), each a view of its array: a
         // static one's array is folded once the bodies are checked, as a converted literal is.
         views:     map::Map(u64, View, Heap),         // by the literal's key
+        // The names of integer consts that converted to another integer type (§11, Widening,
+        // rule 7): the type each has, by its key. Those in consts' initializers wait in
+        // const_wait until every const is checked (consts_done), when their values are known.
+        const_as:  map::Map(u64, Id, Heap),
+        const_wait: list::List(ConstAs, Heap),
+        consts_done: bool = false,
         view_list: list::List(syntax::Expr, Heap),    // the static ones, in the order they were checked
         view_values: map::Map(u64, Val, Heap),        // their views, once folded
         // While the value of an `if` or `match` branch is checked, the depth of the block around
@@ -504,6 +510,8 @@ namespace check {
             conv_progs = map::new(u32, ir::Program){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             converting = ids{ &heap },
             views = map::new(u64, View){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            const_as = map::new(u64, Id){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            const_wait = list::new(ConstAs){ realloc = arena::alloc, &heap },
             view_list = list::new(syntax::Expr){ realloc = arena::alloc, &heap },
             view_values = map::new(u64, Val){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             derived = list::new([]u32){ realloc = arena::alloc, &heap },
@@ -578,6 +586,7 @@ namespace check {
     fn program { mut c: Checker } {
         declarations{ &c }
         each{ &c, xs = c.consts, what = Phase::const_values }
+        settle_const_as{ &c }
         each{ &c, xs = c.consts, what = Phase::fold }
         attributes{ &c }
         // First resolve body types and inferred error sets; escape diagnostics wait for
@@ -3985,7 +3994,15 @@ namespace check {
                 let r = map::get{ m = c.refs, key = expr_key{ e } }
                 if r == null { return null }
                 match r {
-                    constant{ decl } => { return const_value{ &c, d = decl, at = expr_at{ e } } }
+                    constant{ decl } => {
+                        let v = const_value{ &c, d = decl, at = expr_at{ e } }
+                        // An integer const's name that converted has the type it converted to.
+                        let to = map::get{ m = c.const_as, key = expr_key{ e } }
+                        if v != null and to != null {
+                            if v is int{ negative, magnitude } { return Val::int{ ty = to, negative, magnitude } }
+                        }
+                        return v
+                    }
                     enumval{ ty, index } => {
                         match types::get{ s = c.ty, id = ty } {
                             enumeration{ decl } => {
@@ -5465,7 +5482,11 @@ namespace check {
         defer c.declared.len = tried
         let mut i: usize = 0
         while i < bs.len {
-            if bs[i].t != types::NO_TYPE and coerce{ &c, a = bs[i].t, e = t } is fail { return false }
+            if bs[i].t != types::NO_TYPE and coerce{ &c, a = bs[i].t, e = t } is fail {
+                // A branch that is an integer const's name converts where its value fits.
+                let expr{ e } = bs[i].value else { return false }
+                if not const_would{ &c, e, at = bs[i].t, t } { return false }
+            }
             i = i + 1
         }
         return true
@@ -9855,7 +9876,87 @@ namespace check {
                 return
             }
         }
-        coerce_key{ &c, k = expr_key{ e }, pos = expr_at{ e }, a = at, t }
+        // An integer const's name converts where its value fits (const_as).
+        let named = const_as{ &c, e, at, t, strict = true }
+        if named == types::ERROR { return }
+        coerce_key{ &c, k = expr_key{ e }, pos = expr_at{ e }, a = if named == types::NO_TYPE { at } else { named }, t }
+    }
+
+    // The name of a const that converted to another integer type, where its value is checked.
+    struct ConstAs { e: syntax::Expr, d: u32, from: Id, to: Id }
+
+    // The name of a folded const (§14) of an integer type converts to another integer type
+    // where its value fits it, as a literal of that value would (§11, Widening, rule 7): e, of
+    // type at, where a t is expected, or the payload of a `?T` or a `!T`. The type e has from
+    // then on, which const_as keeps for the folder; NO_TYPE if e is no such name, or needs no
+    // conversion; with strict, ERROR after reporting a value that doesn't fit, which without
+    // it is NO_TYPE too. A const's initializer is checked before the consts are known to
+    // fold, so there e converts now and its value is checked once they are (settle_const_as).
+    fn const_as { mut c: Checker, e: syntax::Expr, at: Id, t: Id, strict: bool } -> Id {
+        let x = const_probe{ &c, e, at, t } ifnull { return types::NO_TYPE }
+        if not c.consts_done {
+            try! list::push{ list = &c.const_wait, item = x }
+        } else if not const_fits{ &c, x, report = strict } {
+            return if strict { types::ERROR } else { types::NO_TYPE }
+        }
+        set_type{ &c, e, t = x.to }
+        try! map::put{ m = &c.const_as, key = expr_key{ e }, value = x.to }
+        return x.to
+    }
+
+    // Whether const_as would convert e, without converting it: for a branch's value, while
+    // the branches' type is still being chosen.
+    fn const_would { mut c: Checker, e: syntax::Expr, at: Id, t: Id } -> bool {
+        let x = const_probe{ &c, e, at, t } ifnull { return false }
+        return not c.consts_done or const_fits{ &c, x, report = false }
+    }
+
+    // e as a const's name that const_as may convert: an integer const's, of type at, where
+    // another integer type that it doesn't widen to is expected.
+    fn const_probe { mut c: Checker, e: syntax::Expr, at: Id, t: Id } -> ?ConstAs {
+        if not (e.k is path) { return null }
+        let constant{ decl } = map::get{ m = c.refs, key = expr_key{ e } } else { return null }
+        let from = types::prune{ s = c.ty, t = at }
+        let mut to = types::prune{ s = c.ty, t }
+        match types::get{ s = c.ty, id = to } {
+            opt{ elem } => { to = types::prune{ s = c.ty, t = elem } }
+            res{ ok } => { to = types::prune{ s = c.ty, t = ok } }
+            else => {}
+        }
+        if from == to or not types::is_int{ s = c.ty, t = from } or not types::is_int{ s = c.ty, t = to } { return null }
+        if types::widens{ s = &c.ty, a = from, b = to } { return null }
+        return ConstAs{ e, d = decl, from, to }
+    }
+
+    // Whether const x.d's value is folded and fits x.to. If not, with report, an error at
+    // x.e that says why, and what to write.
+    fn const_fits { mut c: Checker, x: ConstAs, report: bool } -> bool {
+        if not map::has{ m = c.foldable, key = x.d } {
+            // One computed by running code; one that failed its own check has its error.
+            if report and map::has{ m = c.evaluated, key = x.d } {
+                let name = str{ s = source_text{ c, span = x.e.span } }
+                errorf{ &c, at = expr_at{ e = x.e }, msg = @fmt("expected {}, got {}: `{}` is computed by running code, so only a const whose value is folded converts; write @as({}, {})", tstr{ c, t = x.to }, tstr{ c, t = x.from }, name, tstr{ c, t = x.to }, name) }
+            }
+            return false
+        }
+        let v = const_value{ &c, d = x.d, at = expr_at{ e = x.e } }
+        if v == null { return false }
+        let int{ negative, magnitude } = v else { return false }
+        let p = types::prim_of{ s = c.ty, t = x.to }
+        if p != null and types::fits{ p, negative, magnitude } { return true }
+        if report {
+            let name = str{ s = source_text{ c, span = x.e.span } }
+            let sign: utf8::String = if negative { "-" } else { "" }
+            errorf{ &c, at = expr_at{ e = x.e }, msg = @fmt("expected {}, got {}: `{}` is {}{}, which doesn't fit {}", tstr{ c, t = x.to }, tstr{ c, t = x.from }, name, sign, magnitude, tstr{ c, t = x.to }) }
+        }
+        return false
+    }
+
+    // Every const is checked: the names that converted in consts' initializers have values now.
+    fn settle_const_as { mut c: Checker } {
+        c.consts_done = true
+        let xs = list::items{ list = c.const_wait }
+        for x in xs { _ = const_fits{ &c, x, report = true } }
     }
 
     // Converts the value with key k, of type a, to t, and records how. pos is where it is.
@@ -10324,7 +10425,7 @@ namespace check {
             }
             index{ base, i } => {
                 let bt = typed{ &c, e = base.* }
-                expect{ &c, e = i.*, t = types::USIZE }
+                index_type{ &c, e = i.*, what = "an index" }
                 match types::get{ s = c.ty, id = bt } {
                     array{ elem } => {
                         put_access{ &c, e, a = Access::arr }
@@ -10380,7 +10481,12 @@ namespace check {
     fn reject_pointer_index { mut c: Checker, e: syntax::Expr, base: syntax::Expr, i: syntax::Expr, bt: Id } {
         let q = str{ s = source_text{ c, span = base.span } }
         let n = str{ s = source_text{ c, span = i.span } }
-        if i.k is binary | ifx | matchx | overflow | trye | isx {
+        // Pointer arithmetic takes a usize (§12, Pointers, rule 4): an index of another type
+        // is converted in what the error spells.
+        let it = types::prune{ s = c.ty, t = type_of_expr{ c, e = i } }
+        if it != types::USIZE and types::is_int{ s = c.ty, t = it } {
+            errorf{ &c, at = expr_at{ e }, msg = @fmt("cannot index {}: a pointer has no length to check against; write `({} + @as(usize, {})).*`, which isn't checked", tstr{ c, t = bt }, q, n) }
+        } else if i.k is binary | ifx | matchx | overflow | trye | isx {
             errorf{ &c, at = expr_at{ e }, msg = @fmt("cannot index {}: a pointer has no length to check against; write `({} + ({})).*`, which isn't checked", tstr{ c, t = bt }, q, n) }
         } else {
             errorf{ &c, at = expr_at{ e }, msg = @fmt("cannot index {}: a pointer has no length to check against; write `({} + {}).*`, which isn't checked", tstr{ c, t = bt }, q, n) }
@@ -10499,9 +10605,26 @@ namespace check {
                 t = types::ERROR
             }
         }
-        if lo != null { expect{ &c, e = lo.*, t = types::USIZE } }
-        if hi != null { expect{ &c, e = hi.*, t = types::USIZE } }
+        if lo != null { index_type{ &c, e = lo.*, what = "a range's bound" } }
+        if hi != null { index_type{ &c, e = hi.*, what = "a range's bound" } }
         return t
+    }
+
+    // An index, or a bound of a range: an integer of any type but a distinct one (§12, Arrays,
+    // rule 1), which the bounds check takes as it is, below 0 too. A literal is a usize, so
+    // one below 0 is an error here.
+    fn index_type { mut c: Checker, e: syntax::Expr, what: utf8::String } {
+        if e.k is int {
+            expect{ &c, e, t = types::USIZE }
+            return
+        }
+        let t = typed{ &c, e }
+        if is_int{ c, t } { return }
+        let mut b = message{ c }
+        try! @fmt(&b, "{} is an integer, got {}", what, tstr{ c, t })
+        if types::get{ s = c.ty, id = t } is enumeration { try! utf8::push{ &b, s = ": convert it with @as(usize, x)" } }
+        if is_distinct{ c, t } and is_int{ c, t = op_type{ c, t } } { try! utf8::push{ &b, s = ": convert it to its base with @as" } }
+        error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
     }
 
     // A `for` over base, of type bt, which is no slice or array: what it goes over, and what to
@@ -11537,6 +11660,17 @@ namespace check {
         if types::unify{ s = &c.ty, a = lt, b = rt } { return types::prune{ s = c.ty, t = lt } }
         if types::widens{ s = &c.ty, a = rt, b = lt } { return types::prune{ s = c.ty, t = lt } }
         if types::widens{ s = &c.ty, a = lt, b = rt } { return types::prune{ s = c.ty, t = rt } }
+        // An integer const's name converts to the other operand's type where its value fits
+        // (const_as): the right one first; if neither fits, the error says so.
+        let mut strict = false
+        while true {
+            let kb = const_as{ &c, e = b, at = rt, t = lt, strict }
+            if kb != types::NO_TYPE { return kb }
+            let ka = const_as{ &c, e = a, at = lt, t = rt, strict }
+            if ka != types::NO_TYPE { return ka }
+            if strict { break }
+            strict = true
+        }
         return types::NO_TYPE
     }
 

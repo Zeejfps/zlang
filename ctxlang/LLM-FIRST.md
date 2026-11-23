@@ -203,13 +203,36 @@ What a model writes by default should compile, or fail with the exact fix.
     Converted as proof: 22 loops in ctxc/types.ctx, 3 in std/slice.ctx, 7 in KOTOR's
     lib/base (ci.ctx, resref.ctx).
 
-- [ ] **3.3 Index with any integer type.**
+- [x] **3.3 Index with any integer type.**
   `a[i]` with `i: i32` is "expected usize", so the code is `a[@as(usize, i)]` after a range check
   (about 150 in rules, 84 in walk). Let an index take any integer type, its bounds check
   rejecting negatives too. Also: typed integer consts converting where their value fits, as
   literals do (`@as(i32, gl::LINEAR)`).
   - Details: F#7; [spec §12, Arrays](spec.md#arrays), [§12, Slices](spec.md#slices), [§11, Widening](spec.md#widening).
   - *Done when:* `a[i]` and `s[lo..hi]` accept any integer type and panic below 0.
+  - *Done:* [spec §12, Arrays, rule 1](spec.md#arrays) and [Slices, rules 2 and 3](spec.md#slices).
+    An index and each bound of a range is an integer of any type; the bounds check takes it as
+    it is and panics below 0 in today's words, `index -1 out of bounds for length 3` and
+    `range -1..2 out of bounds for length 3`, while compiling too (a const's panic is its
+    error). The cost is unchanged: a signed index is compared as its 64 bits, which below 0
+    are past any length, so it is still one unsigned compare, and only the panic's text knows
+    the sign. An integer literal as an index stays a `usize`, so `a[-1]` is still a compile
+    error; a distinct type and an enum still convert with `@as` (the error says so), as for a
+    shift count. A pointer's error now comes first and spells the conversion that pointer
+    arithmetic needs: ``write `(q + @as(usize, i)).*` `` (1.2). Pointer arithmetic and `@slice`
+    keep `usize`: they are the unchecked operations, where a negative would not be caught.
+    Consts, [spec §11, Widening, rule 7](spec.md#widening): the name of a const whose type is
+    an integer type and whose value is folded converts to another integer type where its
+    value fits, as a literal of that value would: as an argument, a field, an assignment, a
+    return, an element, a branch's value, a `match` pattern, and one operand of a binary
+    operator. It is tried only where the types neither agree nor widen, so no program that
+    compiled changes. Not converted, each for its reason: an expression of consts and a local
+    (only a name's value is a known constant at its use), a const computed by running code
+    (unknown while bodies are checked; the error says to write `@as`), a distinct type or an
+    enum either way, and a float target. A value that doesn't fit is an error that gives it:
+    ``expected i32, got u32: `gl::BIG` is 4000000000, which doesn't fit i32``.
+    Removed as proof: 30 index casts in KOTOR's lib/walk/bwm.ctx and lib/rules/progress.ctx,
+    and 12 `@as(i32, gl::...)` in lib/render_gl's fx.ctx and fx_shadow.ctx.
 
 - [ ] **3.4 `iferr` and `ifnull` chain.**
   `f{} iferr { return } ifnull { return }` on a `!?T` is a parse error. Also, `x == f{} ifnull y`

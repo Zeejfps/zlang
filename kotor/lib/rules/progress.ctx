@@ -283,7 +283,7 @@ namespace rules {
     // Skill points per rank: 1 for a class skill, 2 across classes.
     fn skill_cost { tables: *Tables, class: i32, skill: i32 } -> i32 {
         if class < 0 or class >= @as(i32, NUM_CLASS_ROWS) or skill < 0 or skill >= @as(i32, NUM_SKILLS) { return 2 }
-        return if tables.skills[@as(usize, skill)].class_skill[@as(usize, class)] { 1 } else { 2 }
+        return if tables.skills[skill].class_skill[class] { 1 } else { 2 }
     }
 
     // The highest rank a skill may have at `class_level` (the level being taken): level + 3 for a
@@ -334,7 +334,7 @@ namespace rules {
         let none = SelectableAs{ general = false, bonus = false }
         let row = get_feat{ tables, row = feat } ifnull { return none }
         if not row.valid or class < 0 or class >= @as(i32, NUM_CLASS_ROWS) { return none }
-        let l = row.list[@as(usize, class)]
+        let l = row.list[class]
         if l == 0 { return SelectableAs{ general = true, bonus = false } }
         if l == 1 { return SelectableAs{ general = true, bonus = true } }
         if l == 2 { return SelectableAs{ general = false, bonus = true } }
@@ -394,8 +394,8 @@ namespace rules {
         }
         if named and not met { return false }
         if row.req_skill >= 0 and row.req_skill < @as(i32, NUM_SKILLS) {
-            let sk = &tables.skills[@as(usize, row.req_skill)]
-            if not sk.untrained and c.skills[@as(usize, row.req_skill)] <= 0 { return false }
+            let sk = &tables.skills[row.req_skill]
+            if not sk.untrained and c.skills[row.req_skill] <= 0 { return false }
         }
         return true
     }
@@ -555,7 +555,7 @@ namespace rules {
         while f < tables.feats.len and out.ngranted < 16 {
             let fr = &tables.feats[f]
             if fr.valid and fr.list[cx] == 3 and fr.granted[cx] == n {
-                out.granted[@as(usize, out.ngranted)] = @as(i32, f)
+                out.granted[out.ngranted] = @as(i32, f)
                 out.ngranted = out.ngranted + 1
             }
             f = f + 1
@@ -567,7 +567,7 @@ namespace rules {
     // lists all eight.
     fn class_has_skill { tables: *Tables, class: i32, skill: i32 } -> bool {
         if class < 0 or class >= @as(i32, NUM_CLASS_ROWS) or skill < 0 or skill >= @as(i32, NUM_SKILLS) { return false }
-        return tables.classes[@as(usize, class)].valid and tables.skills[@as(usize, skill)].valid
+        return tables.classes[class].valid and tables.skills[skill].valid
     }
 
     // ---- applying a level (4.3)
@@ -604,7 +604,7 @@ namespace rules {
 
         // 1 history
         if c.nhistory < @as(i32, MAX_LEVELS) {
-            c.history[@as(usize, c.nhistory)] = rec
+            c.history[c.nhistory] = rec
             c.nhistory = c.nhistory + 1
         }
         // 2 the class slot
@@ -612,19 +612,19 @@ namespace rules {
         let mut at = slot
         if at < 0 {
             at = c.nclasses
-            c.classes[@as(usize, at)] = ClassSlot{ class = rec.class, level = 1 }
+            c.classes[at] = ClassSlot{ class = rec.class, level = 1 }
             c.nclasses = c.nclasses + 1
             opened = true
         } else {
-            c.classes[@as(usize, at)].level = c.classes[@as(usize, at)].level + 1
+            c.classes[at].level = c.classes[at].level + 1
         }
-        let new_level = c.classes[@as(usize, at)].level
+        let new_level = c.classes[at].level
         // 3 hit points and Force points (the bases; a player character's maxima come from the history)
         c.hp_base = c.hp_base + rec.hp
         c.fp_base = c.fp_base + rec.fp
         // 4 ability point
         if rec.ability >= 0 and rec.ability < 6 {
-            c.abil[@as(usize, rec.ability)] = c.abil[@as(usize, rec.ability)] + 1
+            c.abil[rec.ability] = c.abil[rec.ability] + 1
         }
         // 5 skill ranks, unspent points
         let mut s: usize = 0
@@ -712,7 +712,7 @@ namespace rules {
             pos = pos + 1
             if ft < 0 { continue }
             if can_select_feat{ tables, c = &c, feat = ft, class, class_level = n, general = fc.general, bonus = fc.bonus, pending = &r } {
-                r.feats[@as(usize, r.nfeats)] = ft
+                r.feats[r.nfeats] = ft
                 r.nfeats = r.nfeats + 1
                 to_pick = to_pick - 1
             }
@@ -728,7 +728,7 @@ namespace rules {
                 pos = pos + 1
                 if sp < 0 { continue }
                 if can_learn_force_power{ tables, c = &c, spell = sp, class, level_before, total_to_gain = want, pending = &r } {
-                    r.powers[@as(usize, r.npowers)] = sp
+                    r.powers[r.npowers] = sp
                     r.npowers = r.npowers + 1
                 }
             }

@@ -134,7 +134,7 @@ fn parse_with { kind: u8, s: []u8 } -> !u64 {
 
 // Now: each converts to the table's type, whose `!T` may fail with any error.
 fn parse_with { table: []fn{ s: []u8 } -> !u64, kind: u8, s: []u8 } -> !u64 {
-    return table[@as(usize, kind)]{ s }
+    return table[kind]{ s }
 }
 let parsers: [2]fn{ s: []u8 } -> !u64 = [number, word]
 match parse_with{ table = parsers[..], kind = 0, s } {
@@ -228,7 +228,7 @@ if c is '0'..='9' { ... }
 ```
 
 1. A scrutinee of an integer type (`i8`..`i64`, `u8`..`u64`, `usize`) is matched by value. Its patterns are integer literals (a character literal is one), with a `-` or not; names of consts, with their path, whose values are folded (§14, rule 1); and ranges `lo..=hi` of these, which include `lo` and `hi`. `lo..hi` is a syntax error.
-2. Each value must convert to the scrutinee's type as an argument would (§11, Widening and Literals): `300` doesn't fit a `u8`, and an `i32` const doesn't convert to one.
+2. Each value must convert to the scrutinee's type as an argument would (§11, Widening and Literals): `300` doesn't fit a `u8`, and neither does an `i32` const whose value is 300, while one whose value is 3 converts (§11, Widening, rule 7).
 3. No value may be matched by two patterns, in one arm or two, and a range's `lo` can't be above its `hi`.
 4. `else` is required, even if the patterns cover every value. Patterns have no bindings.
 5. A pointer to an integer is an error: match on `p.*`. Let-else doesn't apply to integers.
@@ -533,7 +533,7 @@ Precedence, tightest first:
 | and | `and` | short-circuit |
 | or | `or` | short-circuit |
 
-1. Arithmetic and comparison apply to two operands of the same numeric type, after widening (below). If the operand types differ, the one that widens to the other is converted. If neither widens to the other, it is an error. Use `@as` or `@trunc` (§13).
+1. Arithmetic and comparison apply to two operands of the same numeric type, after widening (below). If the operand types differ, the one that widens to the other is converted. If neither widens to the other, it is an error, unless one is a const's name whose value fits the other's type (Widening, rule 7). Use `@as` or `@trunc` (§13).
 2. Integer `+ - *` panic on overflow, unless an `ifoverflow` covers them (Overflow, below). `/` and `%` panic on a zero divisor. `+%`, `-%` and `*%` are the same arithmetic modulo 2^N, for an N-bit type: they wrap instead of overflowing, as a hash, a random number generator or a format's C does (`state *% 214013 +% 2531011`), and cost no check where nothing can overflow. They apply to two operands of the same integer type, after widening as in rule 1.
 3. `&`, `|` and `^` apply to two operands of the same integer type, after widening as in rule 1, and `~` to one integer, whose bits it flips: `flags & ~SELECTED` clears a flag. They act on the two's complement bits and never panic.
 4. `a << n` and `a >> n` shift integer `a` by `n` bits. The result has `a`'s type. `n` may have any integer type and doesn't widen to or from `a`'s. A count below 0, or at or above `a`'s width in bits, panics. `a << n` is `a * 2^n` and panics where that overflows, as `*` does (rule 2). `@wrap_shl(a, n)` (§13) drops the bits shifted out instead. `>>` is arithmetic for signed types (it copies the sign bit) and logical for unsigned ones.
@@ -573,8 +573,9 @@ A value of numeric type `A` converts implicitly to numeric type `B` when every v
 2. A `*mut T` converts implicitly to `*T`, a `[]mut T` to `[]T`, and a `?*mut T` or `?[]mut T` to `?*T` or `?[]T`, wherever rule 1 applies and between the operands of `==` and `!=`.
 3. Wherever rule 1 applies, a `*[N]T` converts implicitly to a `[]T`, and a `*mut [N]T` to a `[]mut T` or `[]T`: the slice of the whole array. An array value doesn't, but an array literal there is a view of its array (Literals, rule 4).
 4. Wherever rule 1 applies, a capability converts implicitly to one it includes (§15, rule 10).
-5. Nothing else converts implicitly. In particular a distinct type (§12) converts to and from no other type, not even its base, and doesn't widen; integers don't widen to floats, `usize` doesn't widen to a signed type, `*T` doesn't convert to `*mut T` nor `[]T` to `[]mut T`, and `?A`, `*A` and `[N]A` don't convert to `?B`, `*B` and `[N]B`. A `mut` field's argument is a `*mut` pointer, so its type must match exactly, except that it may point to a capability that includes the field's (§15, rule 10).
+5. Nothing else converts implicitly, but a const's name (rule 7). In particular a distinct type (§12) converts to and from no other type, not even its base, and doesn't widen; integers don't widen to floats, `usize` doesn't widen to a signed type, `*T` doesn't convert to `*mut T` nor `[]T` to `[]mut T`, and `?A`, `*A` and `[N]A` don't convert to `?B`, `*B` and `[N]B`. A `mut` field's argument is a `*mut` pointer, so its type must match exactly, except that it may point to a capability that includes the field's (§15, rule 10).
 6. `usize` is at least 32 and at most 64 bits wide on every target, which is what makes the `usize` rows lossless.
+7. **A const's name converts where its value fits.** The name of a const, with its path (`gl::LINEAR`), whose type is an integer type and whose value is folded (§14, rule 1), converts implicitly to another integer type where its value is a value of that type, as an integer literal of that value would: wherever rule 1 applies, as a `match` pattern (§8, Match on integers), and as one operand of a binary operator whose other operand has that type. So `tex_parameteri{ param = gl::LINEAR }` takes the `u32` const for an `i32` field, and `x == gl::LINEAR` compares it with an `i32`. Where the value doesn't fit, it is an error that gives the value: a `u32` const of 300 is no `u8`. The conversion is tried only where the types neither agree nor widen, so it changes no program that compiled without it. Only the name converts: not an expression of consts (`gl::A | gl::B` keeps their type; name it in a const), not a const whose value is computed by running code (§14), which isn't known while the bodies are checked, and not a local, a field or a call's result, whose values aren't known at all. Nor does a const of a distinct type or an enum convert, or any const convert to one (rule 5), or an integer const to a float type. Everywhere else the const has its own type: `let n = gl::LINEAR` is a `u32`.
 
 ### Literals
 
@@ -665,14 +666,14 @@ step  := .field | [index]
 2. `q.*` is the place that pointer `q` points to.
 3. If `q` is a `*S` for a struct `S`, `q.f` means `q.*.f`.
 4. `q + n`, with `n: usize`, points `n` elements of `T` after `q`. It has `q`'s type.
-5. A pointer can't be indexed: `q[i]` is an error, since `[i]` is bounds-checked and a pointer has no length to check against. The element `i` after `q` is written `(q + i).*`, which is not bounds-checked. `q[lo..hi]` is an error too: `@slice(q + lo, n)` makes the slice (§13).
+5. A pointer can't be indexed: `q[i]` is an error, since `[i]` is bounds-checked and a pointer has no length to check against. The element `i` after `q` is written `(q + i).*`, which is not bounds-checked; the error spells it, with `@as(usize, i)` for an `i` of another integer type. `q[lo..hi]` is an error too: `@slice(q + lo, n)` makes the slice (§13).
 6. Exception: if `q` is a `*[N]T`, `q[i]` means `q.*[i]` (bounds-checked) and `q.len` means `N`.
 7. Pointers aren't tracked. Using a pointer to memory that no longer exists, or outside its allocation, is undefined behaviour. The operations that can make such a pointer are the unchecked operations (§13), which a build can deny outside the directories it names.
 8. A place reached through a `*T` is read-only: assigning to it, or passing it as `&p` to a `mut` field, is an error. Through a `*mut T` it is mutable (§11).
 
 ### Arrays
 
-1. `a[i]` on an array is bounds-checked. An out-of-bounds index panics.
+1. `a[i]` on an array is bounds-checked: an index below 0, or at or past the length, panics, with a message that gives the index and the length (`index -1 out of bounds for length 3`). `i` is an integer of any type, signed or not, but not a distinct type or an enum, which `@as` converts: game data's `i32` indexes a table as it is, and the check that it is in range is the index's own. The check costs the same for every type: a signed index is compared as its bits, which below 0 are past any length. An integer literal as an index is a `usize`, so `a[-1]` is an error while compiling.
 2. `a.len` is `N`, of type `usize`.
 3. A `let`'s or a const's type may be `[_]T`: the array's length is its initializer's, which must be an array or string literal, as in `const NAMES: [_][]u8 = ["fn", "let", "match"]`, a `[3][]u8`. Only the outermost length may be `_`; `[_]T` anywhere else is an error.
 
@@ -763,8 +764,8 @@ let d = v.depth_stencil.depth          // the same bytes, read as another field
 A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are built in because they are a shape of memory, like arrays and pointers; what to do with memory (allocating, growing, hashing, text) is left to the standard library.
 
 1. `s.len` is the number of elements, a `usize`. `s.ptr` is a `*T` for a `[]T` and a `*mut T` for a `[]mut T`, pointing to the first element. Neither is a place. The `ptr` of an empty slice is unspecified and must not be dereferenced, except a string literal's view, whose `ptr` points to its hidden zero (§11, Literals).
-2. `s[i]` is the element at `i`, bounds-checked: `i >= s.len` panics. It is a place through a deref (§11), mutable only for a `[]mut T`. `(s.ptr + i).*` is the same element without the check; `s.ptr[i]` is an error (Pointers, rule 5).
-3. `s[lo..hi]` is the slice of elements `lo` up to but not including `hi`, of `s`'s type. `lo` defaults to 0 and `hi` to `s.len`, so `s[..]` is `s`. `lo > hi` or `hi > s.len` panics. `lo` and `hi` are `usize`.
+2. `s[i]` is the element at `i`, bounds-checked: an `i` below 0, or `i >= s.len`, panics. `i` is an integer of any type, as for an array (Arrays, rule 1). It is a place through a deref (§11), mutable only for a `[]mut T`. `(s.ptr + i).*` is the same element without the check; `s.ptr[i]` is an error (Pointers, rule 5).
+3. `s[lo..hi]` is the slice of elements `lo` up to but not including `hi`, of `s`'s type. `lo` defaults to 0 and `hi` to `s.len`, so `s[..]` is `s`. `lo > hi` or `hi > s.len` panics, and so does a bound below 0 (`range -1..2 out of bounds for length 3`). `lo` and `hi` are integers of any type, each its own, as an index is (Arrays, rule 1).
 4. `a[lo..hi]` on an array place `a` means `(&a)[lo..hi]`, and on a `*[N]T` or `*mut [N]T` it slices the array it points to. The result is `[]mut T` if the place is mutable (§11), `[]T` otherwise.
    - An array const, or an array reached by fields and array indexes from a const, may also be sliced. The result is always `[]T`, backed by immutable static storage (§14), with the same bounds checks. No array is copied to make the view. This does not make the const a place: `&C` and `&C[i]` remain errors.
    - An array literal where a `[]T` is expected is a view of its array, in static storage or in a hidden local (§11, Literals, rule 4).

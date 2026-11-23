@@ -119,8 +119,8 @@ namespace gpu {
         let filter = @as(i32, if linear { gl::LINEAR } else { gl::NEAREST })
         gl.tex_parameteri{ target = gl::TEXTURE_2D, pname = gl::TEXTURE_MIN_FILTER, param = filter }
         gl.tex_parameteri{ target = gl::TEXTURE_2D, pname = gl::TEXTURE_MAG_FILTER, param = filter }
-        gl.tex_parameteri{ target = gl::TEXTURE_2D, pname = gl::TEXTURE_WRAP_S, param = @as(i32, gl::CLAMP_TO_EDGE) }
-        gl.tex_parameteri{ target = gl::TEXTURE_2D, pname = gl::TEXTURE_WRAP_T, param = @as(i32, gl::CLAMP_TO_EDGE) }
+        gl.tex_parameteri{ target = gl::TEXTURE_2D, pname = gl::TEXTURE_WRAP_S, param = gl::CLAMP_TO_EDGE }
+        gl.tex_parameteri{ target = gl::TEXTURE_2D, pname = gl::TEXTURE_WRAP_T, param = gl::CLAMP_TO_EDGE }
         gl.tex_parameteri{ target = gl::TEXTURE_2D, pname = gl::TEXTURE_MAX_LEVEL, param = 0 }
         return t
     }

@@ -493,6 +493,177 @@ fn main { mut io: Io } {
         ])
 
 
+class AnyIntegerIndex(Base):
+    """§12, Arrays, rule 1 and Slices, rules 2 and 3: an index and a range's bounds are integers
+    of any type, and the bounds check rejects one below 0."""
+
+    def test_every_integer_type(self):
+        self.assertOutput(r"""
+fn main { mut io: Io } {
+    let a = [10, 20, 30]
+    let s = a[..]
+    let i8v: i8 = 1
+    let i16v: i16 = 2
+    let i32v: i32 = 0
+    let i64v: i64 = 1
+    let u8v: u8 = 2
+    let u16v: u16 = 0
+    let u32v: u32 = 1
+    let u64v: u64 = 2
+    let z: usize = 0
+    _ = @fmt(&io, "{} {} {} {} {} {} {} {} {}\n", a[i8v], a[i16v], a[i32v], a[i64v], s[u8v], s[u16v], s[u32v], s[u64v], s[z])
+    let lo: i32 = 1
+    let hi: u8 = 3
+    let t = s[lo..hi]                   // each bound its own type
+    let u = a[i64v..]
+    let v = s[..i16v]
+    _ = @fmt(&io, "{} {} {} {}\n", t.len, t[0], u.len, v.len)
+    let mut m = [1, 2, 3]
+    m[i32v + 1] = 5                     // a place
+    let p = &m
+    p[i8v] = p[i8v] + 1                 // through a pointer to an array
+    let k = 2                           // a literal's local: an i32 here
+    _ = @fmt(&io, "{} {} {}\n", m[1], m[k], m[k - 1])
+}
+""", '20 30 10 20 30 10 20 30 10\n2 20 2 2\n6 3 6\n')
+
+    def test_below_zero_panics(self):
+        head = 'fn main { mut io: Io } {\n    let mut a = [1, 2, 3]\n    let s = a[..]\n    '
+        for body, msg in [
+            ('let i: i32 = -1\n    _ = @fmt(&io, "{}", a[i])', 'index -1 out of bounds for length 3'),
+            ('let i: i64 = -5\n    _ = @fmt(&io, "{}", s[i])', 'index -5 out of bounds for length 3'),
+            ('let i: i8 = -128\n    _ = @fmt(&io, "{}", s[i])', 'index -128 out of bounds for length 3'),
+            ('let i: i32 = -1\n    a[i] = 5', 'index -1 out of bounds for length 3'),
+            ('let i: i16 = 3\n    _ = @fmt(&io, "{}", a[i])', 'index 3 out of bounds for length 3'),
+            ('let i: u64 = 18446744073709551615\n    _ = @fmt(&io, "{}", s[i])',
+             'index 18446744073709551615 out of bounds for length 3'),
+            ('let lo: i32 = -1\n    _ = @fmt(&io, "{}", s[lo..2].len)', 'range -1..2 out of bounds for length 3'),
+            ('let hi: i16 = -2\n    _ = @fmt(&io, "{}", a[1..hi].len)', 'range 1..-2 out of bounds for length 3'),
+            ('let lo: u8 = 2\n    let hi: i64 = 1\n    _ = @fmt(&io, "{}", a[lo..hi].len)', 'range 2..1 out of bounds for length 3'),
+            ('let hi: i64 = 4\n    _ = @fmt(&io, "{}", s[..hi].len)', 'range 0..4 out of bounds for length 3'),
+        ]:
+            with self.subTest(body=body):
+                self.assertPanic(head + body + '\n}\n', msg)
+        # While compiling too: a const's panic is an error at the const.
+        self.assertCompileError("""
+const TABLE: [3]i32 = [1, 2, 3]
+fn pick { i: i32 } -> i32 { return TABLE[i] }
+const B: i32 = pick{ i = -1 }
+fn main {} { _ = B }
+""", 'const `B` panicked while compiling: index -1 out of bounds for length 3')
+
+    def test_errors(self):
+        for src, msg in [
+            # A literal is a usize, so one below 0 is an error while compiling.
+            ('fn main {} { let a = [1, 2, 3]; let x = a[-1] }', 'literal -1 does not fit in usize'),
+            ('fn main {} { let a = [1, 2, 3]; let x = a[-1..2] }', 'literal -1 does not fit in usize'),
+            ('fn main {} { let a = [1, 2, 3]; let f = 1.0; let x = a[f] }', 'an index is an integer, got {float}'),
+            ('fn main {} { let a = [1, 2, 3]; let x = a[true] }', 'an index is an integer, got bool'),
+            ('fn main {} { let a = [1, 2, 3]; let f: f32 = 1.0; let x = a[0..f] }', "a range's bound is an integer, got f32"),
+            ('enum K: u8 { a, b }\nfn main {} { let xs = [1, 2, 3]; let k = K::b; let x = xs[k] }',
+             'an index is an integer, got K: convert it with @as(usize, x)'),
+            ('type Id = distinct u32\nfn main {} { let xs = [1, 2, 3]; let k: Id = 1; let x = xs[k] }',
+             'an index is an integer, got Id: convert it to its base with @as'),
+            # A pointer's error comes first, and spells the conversion pointer arithmetic needs.
+            ('fn f { q: *i32, i: i32 } -> i32 { return q[i] }\nfn main {} {}',
+             "cannot index *i32: a pointer has no length to check against; write `(q + @as(usize, i)).*`, which isn't checked"),
+            ('fn f { q: *i32, i: i32 } -> []i32 { return q[i..2] }\nfn main {} {}',
+             'cannot slice *i32: a pointer has no length to check against'),
+        ]:
+            with self.subTest(src=src):
+                self.assertCompileError(src, msg)
+
+
+class ConstNamesConvert(Base):
+    """§11, Widening, rule 7: the name of a folded const of an integer type converts to another
+    integer type where its value fits."""
+
+    DECLS = r"""
+namespace gl {
+    const LINEAR: u32 = 9729
+    const BIG: u32 = 4000000000
+    const NEG: i32 = -1
+    const SMALL: i64 = 7
+}
+"""
+
+    def test_converts_where_it_fits(self):
+        self.assertOutput(self.DECLS + r"""
+const AS_I32: i32 = gl::LINEAR              // in a const's initializer
+const EARLY: u8 = LATER                     // before the const it names
+const LATER: i64 = 12
+struct S { n: i32 = gl::LINEAR }
+fn take { param: i32 } -> i32 { return param }
+fn byte { b: u8 } -> u8 { return b }
+fn opt { x: ?i32 } -> i32 { return x ifnull 0 }
+fn res {} -> !i32 { return gl::LINEAR }
+fn twice { x: i32 } -> i32 { return x * 2 + gl::LINEAR }
+const RUN: i32 = twice{ x = gl::SMALL }     // while compiling
+fn main { mut io: Io } {
+    let x: i32 = 9729
+    let a = take{ param = gl::LINEAR }      // an argument
+    let b: i16 = gl::LINEAR                 // a let with a type
+    let mut c: i32 = 0
+    c = gl::LINEAR                          // an assignment
+    let e = [x, gl::LINEAR]                 // an element
+    let s = S{ .. }                         // a field's default
+    let u = gl::LINEAR                      // nothing is expected: still a u32
+    let w: u64 = u
+    _ = @fmt(&io, "{} {} {} {} {} {} {} {} {}\n", a, b, c, e[1], s.n, w, AS_I32, EARLY, RUN)
+    _ = @fmt(&io, "{} {} {} {}\n", x == gl::LINEAR, gl::LINEAR == x, x + gl::SMALL, gl::SMALL * x)
+    _ = @fmt(&io, "{} {} {}\n", byte{ b = gl::SMALL }, opt{ x = gl::LINEAR }, res{} iferr 0)
+    let smooth = true
+    _ = @fmt(&io, "{}\n", take{ param = if smooth { gl::LINEAR } else { gl::SMALL } })     // a branch's value
+    match x {
+        gl::LINEAR => { _ = @fmt(&io, "linear\n") }                                        // a pattern
+        else => {}
+    }
+    let k: u8 = 7
+    let neg: i64 = gl::NEG
+    _ = @fmt(&io, "{} {} {}\n", k is gl::SMALL, neg, gl::SMALL == k)
+}
+""", '9729 9729 9729 9729 9729 9729 9729 12 9743\ntrue true 9736 68103\n7 9729 9729\n9729\nlinear\ntrue -1 true\n')
+
+    def test_widening_comes_first(self):
+        """Where the types agree or widen, nothing changes: a `u8` const beside a `u32` is still
+        widened, and two consts convert whichever way fits."""
+        self.assertOutput(r"""
+const C: u8 = 200
+const A: u8 = 5
+const B: i8 = -1
+fn main { mut io: Io } {
+    let x: u32 = 1000
+    let z: i64 = C
+    _ = @fmt(&io, "{} {} {}\n", x + C, z, A == B)
+}
+""", '1200 200 false\n')
+
+    def test_errors(self):
+        for body, msg in [
+            ('fn take { param: i32 } -> i32 { return param }\nfn main {} { _ = take{ param = gl::BIG } }',
+             'expected i32, got u32: `gl::BIG` is 4000000000, which doesn\'t fit i32'),
+            ('fn main {} { let x: u32 = gl::NEG }', "expected u32, got i32: `gl::NEG` is -1, which doesn't fit u32"),
+            ('fn main {} { let k: i8 = 7; let b = k == gl::LINEAR }',
+             "expected i8, got u32: `gl::LINEAR` is 9729, which doesn't fit i8"),
+            ('const BAD: u8 = gl::NEG\nfn main {} { _ = BAD }', "expected u8, got i32: `gl::NEG` is -1, which doesn't fit u8"),
+            ('fn main {} { let x: i32 = 0; match x { gl::BIG => {} else => {} } }',
+             "expected i32, got u32: `gl::BIG` is 4000000000, which doesn't fit i32"),
+            # Only a folded const's name: not one that is run, an expression, a local.
+            ('fn three {} -> u32 { return 3 }\nconst R: u32 = three{}\nfn main {} { let x: i32 = R }',
+             'expected i32, got u32: `R` is computed by running code, so only a const whose value is folded converts; '
+             'write @as(i32, R)'),
+            ('fn main {} { let x: i32 = gl::LINEAR | gl::BIG }', 'expected i32, got u32'),
+            ('fn main {} { let a = gl::LINEAR; let x: i32 = a }', 'expected i32, got u32'),
+            # Not to a float, a distinct type or a `mut` field.
+            ('fn main {} { let x: f32 = gl::LINEAR }', 'expected f32, got u32'),
+            ('type Id = distinct u32\nfn main {} { let x: Id = gl::LINEAR }', 'expected Id, got u32: convert with @as(Id, x)'),
+            ('type Id = distinct u32\nconst D: Id = 5\nfn main {} { let y: u32 = D }', 'expected u32, got Id: convert with @as(u32, x)'),
+            ('fn g { mut x: i32 } {}\nfn main {} { g{ x = gl::LINEAR } }', 'expected *mut i32, got u32'),
+        ]:
+            with self.subTest(body=body):
+                self.assertCompileError(self.DECLS + body, msg)
+
+
 class ListExample(Base):
     def test_runs(self):
         self.assertOutput(LIST_SRC, '10\n20\n30\n40\n100\n10\n')
@@ -1815,7 +1986,7 @@ class ConstInitializers(Base):
             ('const A: i32 = 1.5', 'expected i32, got {float}', 1, 16),
             ('const A: [3]u8 = [7; 4]', 'expected [3]u8, got [4]u8', 1, 18),
             ('struct S { a: i32 }\nconst A: S = S{ .. }', '`..` takes fields from their defaults, and struct `S` has none', 2, 15),
-            ('const A: u8 = N\nconst N: i64 = 3', 'expected u8, got i64', 1, 15),
+            ('const A: u8 = N\nconst N: i64 = 300', "expected u8, got i64: `N` is 300, which doesn't fit u8", 1, 15),
             ('const A: utf8::String = "\\xff"', 'string literal: utf8::invalid{ at = 0 }', 1, 25),
         ]:
             self.assertConstError(src + '\nfn main {} {}', msg, line, col)
@@ -3250,7 +3421,7 @@ fn main {} { _ = f{ %s } }
     def test_bad_patterns(self):
         self.match_error("5..=1 => {}\nelse => {}", "range 5..=1 is empty")
         self.match_error("300 => {}\nelse => {}", "literal 300 does not fit in u8")
-        self.match_error("K => {}\nelse => {}", "expected u8, got i32", head='const K: i32 = 3')
+        self.match_error("K => {}\nelse => {}", "expected u8, got i32: `K` is 300, which doesn't fit u8", head='const K: i32 = 300')
         self.match_error("x => {}\nelse => {}", "unknown name `x`")
         self.match_error("v{ a } => {}\nelse => {}", "an integer pattern is a literal, a const or a range `lo..=hi`, with no bindings")
         self.match_error("1..5 => {}\nelse => {}", "a range pattern is `lo..=hi`, which includes hi")

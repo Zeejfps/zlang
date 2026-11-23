@@ -72,10 +72,17 @@ function: can't be stored in a struct or returned), `extern fn{C} -> R` (C funct
 - `e ifoverflow x` gives x where the integer arithmetic and `@as` to an integer written in e
   overflow, for counts from a file: `count * 16 ifoverflow { return truncated }`. A call's
   arguments in e aren't covered.
-- No implicit int→float or signed↔unsigned: `@as(u32, n)` (to an integer: panics if the value
+- No implicit int→float or signed↔unsigned (but for an index and a const's name, below):
+  `@as(u32, n)` (to an integer: panics if the value
   doesn't fit), `@as(f32, x)` (to a float: never panics, rounds, and an `f64` too big for `f32`
   gives `inf`), `@trunc(u8, n)` (low bits), `@cast(*T, p)` for pointers. `@as(_, x)` takes the
   type from the context.
+- An index is any integer type: `a[i]` and `s[lo..hi]` take an `i32`, a `u8` or an `i64` as it
+  is, and panic below 0 as past the end (`index -1 out of bounds for length 3`). Don't write
+  `a[@as(usize, i)]`. An enum or a distinct type still converts with `@as`.
+- A const's name converts to another integer type where its value fits: `param = gl::LINEAR`
+  for an `i32` field, `x == gl::LINEAR` for an `i32` `x`, with `LINEAR` a `u32`. Not an
+  expression of consts, and not a local.
 - Only arrays and slices are indexed, and `[i]` is always bounds-checked. `q[i]` on a pointer is
   an error: the element without a check is `(q + i).*` (`(q + i).f` for a field), and
   `(s.ptr + i).*` skips a slice's check. Keep these to hot loops whose bounds are checked once.

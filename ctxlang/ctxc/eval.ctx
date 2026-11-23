@@ -1082,7 +1082,7 @@ namespace eval {
                 }
                 let b = try base_of{ &m, x = base.* }
                 let k = try scalar{ &m, x = i.* }
-                try bounds{ &m, i = k, n, pos }
+                try bounds{ &m, i = k, signed = signed_int{ m, t = i.ty }, n, pos }
                 return b + k * size{ ts = m.types, t = elem }
             }
             sindex{ base, i, pos } => {
@@ -1090,7 +1090,7 @@ namespace eval {
                 let k = try scalar{ &m, x = i.* }
                 let ptr = try load{ &m, a = s, n = 8 }
                 let n = try load{ &m, a = s + 8, n = 8 }
-                try bounds{ &m, i = k, n, pos }
+                try bounds{ &m, i = k, signed = signed_int{ m, t = i.ty }, n, pos }
                 return ptr +% k *% size{ ts = m.types, t = x.ty }
             }
             payload{ base, variant, field } => {
@@ -1124,13 +1124,28 @@ namespace eval {
         }
     }
 
-    // "index I out of bounds for length N", as ctx_idx panics.
-    fn bounds { mut m: M, i: u64, n: u64, pos: ir::Pos } -> ! {
+    // "index I out of bounds for length N", as ctx_idx and ctx_idx_s panic: an index of a
+    // signed type is checked as its 64 bits, which below 0 are past any length, and shown signed.
+    fn bounds { mut m: M, i: u64, signed: bool, n: u64, pos: ir::Pos } -> ! {
         if i < n { return }
         let mut b = builder{ heap = m.heap }
-        try! @fmt(&b, "index {} out of bounds for length {}", i, n)
+        try! utf8::push{ &b, s = "index " }
+        try! push_index{ &b, i, signed }
+        try! @fmt(&b, " out of bounds for length {}", n)
         panic_at{ &m, pos, msg = utf8::view{ b }.bytes }
         return halt
+    }
+
+    // Whether t is a signed integer type.
+    fn signed_int { m: M, t: ir::TypeId } -> bool {
+        if m.types[t] is prim{ p } { return signed{ p } }
+        return false
+    }
+
+    // An index or a bound in a panic's message: signed if its type is.
+    fn push_index { mut b: utf8::Builder(Heap), i: u64, signed: bool } -> ! {
+        if signed { return @fmt(&b, "{}", @trunc(i64, i)) }
+        return @fmt(&b, "{}", i)
     }
 
     // S[LO..HI], as ctx_range checks it.
@@ -1142,7 +1157,11 @@ namespace eval {
         if hi != null { h = try scalar{ &m, x = hi.* } }
         if l > h or h > n {
             let mut b = builder{ heap = m.heap }
-            try! @fmt(&b, "range {}..{} out of bounds for length {}", l, h, n)
+            try! utf8::push{ &b, s = "range " }
+            try! push_index{ &b, i = l, signed = signed_int{ m, t = lo.ty } }
+            try! utf8::push{ &b, s = ".." }
+            try! push_index{ &b, i = h, signed = hi != null and signed_int{ m, t = hi.*.ty } }
+            try! @fmt(&b, " out of bounds for length {}", n)
             panic_at{ &m, pos, msg = utf8::view{ b }.bytes }
             return halt
         }

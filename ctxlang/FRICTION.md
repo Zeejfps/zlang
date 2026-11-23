@@ -73,13 +73,12 @@ as the write-ups gave them.
     video, rules, render (about 6).
 
 7. **Signed and unsigned integers don't mix.** Game data is signed (-1 for none, modifiers) and
-    every table is indexed by `usize`, which an `i32` isn't (`a[i]` is "expected usize"), and
-    neither widens to the other: every lookup is `a[@as(usize, i)]` after a range check, and a
-    `usize` going into an `i64` payload `@as(i64, f)`. A typed integer const doesn't convert where
-    its value fits (`@as(i32, gl::LINEAR)`), and `@as(i64, b)` refuses a `bool`, so counting is `if
-    b { 1 } else { 0 }`. An index that takes any integer type with its bounds check, and consts
-    that convert as literals do, would remove most. *Hit by 4:* glspike (11), rules (about 150,
-    and about 60 bools), walk (84), video.
+    lengths and counts are `usize`, and neither widens to the other: a `usize` going into an
+    `i64` payload is `@as(i64, f)`. `@as(i64, b)` refuses a `bool`, so counting is `if b { 1 }
+    else { 0 }`. *Partly:* an index takes any integer type with its bounds check (spec §12,
+    Arrays, rule 1), and a const's name converts where its value fits (§11, Widening, rule 7),
+    which were most of the sites. *Hit by 4:* glspike (11), rules (about 150, and about 60
+    bools), walk (84), video.
 
 8. **`iferr` and `ifnull` don't chain, and bind tighter than comparison.** A `!?T` wants `f{}
     iferr { return } ifnull { return }`, which is "expected a newline or ';' after statement,

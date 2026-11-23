@@ -165,6 +165,26 @@ _Noreturn void ctx_panic_range(uint64_t lo, uint64_t hi, uint64_t n, CTX_POS) {
     ctx_panic(line, col, file, m.text);
 }
 
+_Noreturn void ctx_panic_index_s(int64_t i, uint64_t n, CTX_POS) {
+    message m = { "", 0 };
+    text(&m, "index ");
+    signed_number(&m, i);
+    text(&m, " out of bounds for length ");
+    unsigned_number(&m, n);
+    ctx_panic(line, col, file, m.text);
+}
+
+_Noreturn void ctx_panic_range_s(uint64_t lo, uint64_t hi, uint64_t n, int sg, CTX_POS) {
+    message m = { "", 0 };
+    text(&m, "range ");
+    if (sg & 1) signed_number(&m, (int64_t)lo); else unsigned_number(&m, lo);
+    text(&m, "..");
+    if (sg & 2) signed_number(&m, (int64_t)hi); else unsigned_number(&m, hi);
+    text(&m, " out of bounds for length ");
+    unsigned_number(&m, n);
+    ctx_panic(line, col, file, m.text);
+}
+
 _Noreturn void ctx_panic_shift_s(int64_t n, int bits, CTX_POS) {
     message m = { "", 0 };
     text(&m, "shift count ");

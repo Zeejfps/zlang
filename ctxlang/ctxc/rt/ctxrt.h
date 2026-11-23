@@ -71,6 +71,8 @@ _Noreturn void ctx_panic_msg(ctx_slice msg);
 // The checks' messages, with their numbers: "index I out of bounds for length N" and the rest.
 _Noreturn void ctx_panic_index(uint64_t i, uint64_t n, CTX_POS);
 _Noreturn void ctx_panic_range(uint64_t lo, uint64_t hi, uint64_t n, CTX_POS);
+_Noreturn void ctx_panic_index_s(int64_t i, uint64_t n, CTX_POS);
+_Noreturn void ctx_panic_range_s(uint64_t lo, uint64_t hi, uint64_t n, int sg, CTX_POS);
 _Noreturn void ctx_panic_shift_s(int64_t n, int bits, CTX_POS);
 _Noreturn void ctx_panic_shift_u(uint64_t n, int bits, CTX_POS);
 _Noreturn void ctx_panic_as_s(int64_t v, const char *dst, CTX_POS);
@@ -282,6 +284,18 @@ static inline uint64_t ctx_idx(uint64_t i, uint64_t n, CTX_POS) {
 // A slice's sub-range lo..hi, or "range LO..HI out of bounds for length N".
 static inline void ctx_range(uint64_t lo, uint64_t hi, uint64_t n, CTX_POS) {
     if (lo > hi || hi > n) ctx_panic_range(lo, hi, n, line, col, file);
+}
+
+// The same for an index, or bounds, of a signed type (spec §12, Arrays, rule 1), converted to 64
+// bits as C converts it: one below 0 is then past any length, so the one unsigned compare
+// rejects it too. The panic shows it signed; sg says which bounds are (1: lo, 2: hi).
+static inline uint64_t ctx_idx_s(uint64_t i, uint64_t n, CTX_POS) {
+    if (i >= n) ctx_panic_index_s((int64_t)i, n, line, col, file);
+    return i;
+}
+
+static inline void ctx_range_s(uint64_t lo, uint64_t hi, uint64_t n, int sg, CTX_POS) {
+    if (lo > hi || hi > n) ctx_panic_range_s(lo, hi, n, sg, line, col, file);
 }
 
 // ---- @as

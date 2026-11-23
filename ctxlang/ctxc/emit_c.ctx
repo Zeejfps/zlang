@@ -2479,7 +2479,8 @@ namespace emit {
         expr{ &e, x = i }
         put{ &e, a = "; " }
         tmp{ &e, k = ks }
-        put{ &e, a = ".m_ptr + ctx_idx(" }
+        put{ &e, a = ".m_ptr + " }
+        idx_call{ &e, i }
         tmp{ &e, k = ki }
         put{ &e, a = ", " }
         tmp{ &e, k = ks }
@@ -2513,13 +2514,24 @@ namespace emit {
             null          => { tmp{ &e, k = ks }; put{ &e, a = ".m_len" } }
             some{ value } => { expr{ &e, x = value.* } }
         }
-        put{ &e, a = "; ctx_range(" }
+        // A bound of a signed type is checked as its bits are, which below 0 are past any
+        // length; ctx_range_s is told which bounds to show signed (1: lo, 2: hi).
+        let mut sg: u64 = if signed_int{ e, t = lo.ty } { 1 } else { 0 }
+        match hi {
+            null          => {}
+            some{ value } => { if signed_int{ e, t = value.*.ty } { sg = sg + 2 } }
+        }
+        put{ &e, a = if sg == 0 { "; ctx_range(" } else { "; ctx_range_s(" } }
         tmp{ &e, k = kl }
         put{ &e, a = ", " }
         tmp{ &e, k = kh }
         put{ &e, a = ", " }
         tmp{ &e, k = ks }
         put{ &e, a = ".m_len, " }
+        if sg != 0 {
+            num{ &e, n = sg }
+            put{ &e, a = ", " }
+        }
         position{ &e, p = pos }
         put{ &e, a = "); (" }
         tn{ &e, t }
@@ -2540,13 +2552,25 @@ namespace emit {
         }
     }
 
+    // `ctx_idx(`, or for an index of a signed type `ctx_idx_s(`: the same check of the index's
+    // bits, which below 0 are past any length, and a panic that shows it signed.
+    fn idx_call { mut e: E, i: ir::Expr } {
+        put{ &e, a = if signed_int{ e, t = i.ty } { "ctx_idx_s(" } else { "ctx_idx(" } }
+    }
+
+    fn signed_int { e: E, t: ir::TypeId } -> bool {
+        let p = prim_of{ e, t } ifnull { return false }
+        return is_signed{ p }
+    }
+
     // `(B).a[ctx_idx(I, N, pos)]`, with the base before the index.
     fn index { mut e: E, base: ir::Expr, i: ir::Expr, pos: ir::Pos } {
         let arr{ n } = ty{ e, id = base.ty } else { @panic("emit: index of a non-array") }
         if not ordered{ e, a = base, b = i } {
             ch{ &e, c = '(' }
             expr{ &e, x = base }
-            put{ &e, a = ").a[ctx_idx(" }
+            put{ &e, a = ").a[" }
+            idx_call{ &e, i }
             expr{ &e, x = i }
             put{ &e, a = ", " }
             num{ &e, n }
@@ -2571,7 +2595,8 @@ namespace emit {
         put{ &e, a = "; " }
         if place { ch{ &e, c = '&' } }
         tmp{ &e, k = kb }
-        if place { put{ &e, a = "->a[ctx_idx(" } } else { put{ &e, a = ".a[ctx_idx(" } }
+        put{ &e, a = if place { "->a[" } else { ".a[" } }
+        idx_call{ &e, i }
         tmp{ &e, k = ki }
         put{ &e, a = ", " }
         num{ &e, n }
