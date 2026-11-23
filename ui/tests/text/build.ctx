@@ -1,0 +1,7 @@
+// Stage 1's test: fonts, measuring, wrapping, ellipsis, glyph placement and the caret. How to run it: ui/AGENTS.md.
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "ui_test_text", root = "." }
+    build::add_sources{ &b, exe, dir = "../../core" }
+    build::add_sources{ &b, exe, dir = "../../record" }
+    build::add_sources{ &b, exe, dir = "../../test" }
+}

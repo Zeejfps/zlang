@@ -1,0 +1,676 @@
+// Stage 1's test: fonts, measuring, wrapping, ellipsis, glyph placement and the caret, in the test
+// font (a glyph table of 8 by 16 cells, advance 8) and in an outline font served by a fake provider
+// (7 pixels a byte, one cluster a byte, and "fi" a two-byte ligature of 12).
+//
+//   kotor/tools/ctxc run ui/tests/text                 (from the repository root)
+//   kotor/tools/ctxc run ui/tests/text -- --update     rewrite the goldens after an intended change
+//
+// Exits 1 when any check fails.
+
+const GOLDEN_DIR: []u8 = "ui/tests/text/golden"
+
+// The fake provider's own state: how often it was asked.
+struct Fake { shapes: u32, metrics: u32 }
+
+fn fake_metrics { mut state: ui::Opaque, handle: u32, pixels: u32 } -> ui::LineMetrics {
+    let fake = @cast(*mut Fake, &state)
+    fake.metrics = fake.metrics + 1
+    return ui::LineMetrics{ height = @as(f32, pixels) * 1.25 + @as(f32, handle) * 0.0, ascent = @as(f32, pixels) }
+}
+
+fn fake_shape { mut state: ui::Opaque, handle: u32, pixels: u32, text: []u8, out: []mut ui::Shaped } -> usize {
+    let fake = @cast(*mut Fake, &state)
+    fake.shapes = fake.shapes + 1
+    let mut n: usize = 0
+    let mut i: usize = 0
+    while i < text.len and n < out.len {
+        let lig = text[i] == 'f' and i + 1 < text.len and text[i + 1] == 'i'
+        let advance: f32 = if lig { 12.0 } else { 7.0 }
+        out[n] = ui::Shaped{ glyph = @as(u32, text[i]), face = handle + pixels * 0, x_advance = advance, cluster = @as(u32, i), .. }
+        n = n + 1
+        i = i + (if lig { 2 } else { 1 })
+    }
+    return n
+}
+
+fn fake_raster { mut state: ui::Opaque, face: u32, glyph: u32, mut out: ui::GlyphBitmap } -> bool {
+    return face == glyph + 1 and out.width == 0
+}
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let mut t = ui_test::Tally{ run = 0, failed = 0 }
+    let buf = mem::pages{ &mem, size = 4194304 } ifnull { return 1 }
+    let mut heap = arena::new{ buf }
+    let update = ui_test::has_flag{ args, flag = "--update" }
+
+    check_decode{ &io, &t }
+    check_font_table{ &io, &t, &heap }
+
+    // One list holds the three fonts the rest uses: the test font in UTF-8 and in bytes, and an
+    // outline font behind the fake provider.
+    let mut list = make_list{ &heap, scale = 1.0 } iferr { return 1 }
+    let def = ui_test::make_test_font{ realloc = arena::alloc, &heap } iferr { return 1 }
+    let font = ui::draw::add_font{ &list, font = def } ifnull { return 1 }
+    let bytes_font = ui::draw::add_font{ &list, font = make_bytes_font{ font = def } } ifnull { return 1 }
+    let outline = ui::draw::add_font{ &list, font = make_outline{ handle = 5 } } ifnull { return 1 }
+    let mut cache = ui::text::make_cache{ realloc = arena::alloc, &heap, entries = 64, shaped = 64 } iferr { return 1 }
+    let mut fake = Fake{ shapes = 0, metrics = 0 }
+    let provider: ?ui::TextProvider = ui::TextProvider{ state = @cast(*mut ui::Opaque, &fake), metrics = fake_metrics, shape = fake_shape, rasterize = fake_raster }
+    let none: ?ui::TextProvider = null
+
+    check_measure{ &io, &t, &cache, list, font, provider = none }
+    check_goldens{ &io, &fs, &t, &heap, &cache, list, font, bytes_font, outline, provider, none, update }
+    check_wrap_limits{ &io, &t, &cache, list, font, provider = none }
+    check_caret_ends{ &io, &t, &cache, list, font, provider = none }
+    check_bad_text{ &io, &t, &cache, list, font, bytes_font, provider = none }
+    check_custom_tables{ &io, &t, &cache, &heap }
+    check_outline{ &io, &t, &heap, &cache, &list, outline, provider, none, fake = &fake }
+    check_glyphs{ &io, &fs, &t, &heap, list, font, update }
+    check_unregistered{ &io, &t, &heap, &cache }
+    ui_test::expect{ &io, &t, ok = list.dropped == 0, what = "nothing was dropped from the shared list" }
+
+    _ = @fmt(&io, "ui/tests/text: {} checks, {} failed\n", t.run, t.failed)
+    io::flush{ &io }
+    return if t.failed == 0 { 0 } else { 1 }
+}
+
+fn is_near { a: f32, b: f32 } -> bool {
+    return ui::abs_f32{ x = a - b } < 0.001
+}
+
+// A list for tests: surface of 800 by 600 at `scale`, room for four fonts.
+fn make_list { mut heap: arena::Arena, scale: f32 } -> !ui::DrawList {
+    let mut list = try ui::draw::make{ realloc = arena::alloc, &heap, cmds = 16, text = 256, clips = 4, fonts = 4 }
+    ui::draw::reset{ &list, width = 800.0, height = 600.0, scale_x = scale, scale_y = scale }
+    return list
+}
+
+fn make_outline { handle: u32 } -> ui::FontDef {
+    return ui::FontDef{ kind = ui::FontKind::outline{ handle }, encoding = ui::Encoding::utf8, height = 0.0, ascent = 0.0, snap = false }
+}
+
+// The same glyph table with the encoding changed: how kotor's byte-indexed fonts differ.
+fn make_bytes_font { font: ui::FontDef } -> ui::FontDef {
+    return ui::FontDef{ kind = font.kind, encoding = ui::Encoding::bytes, height = font.height, ascent = font.ascent, snap = font.snap }
+}
+
+// ---- the byte decoder
+
+fn check_decode { mut io: Io, mut t: ui_test::Tally } {
+    let euro = ui::decode_char{ text = "\xE2\x82\xAC", at = 0, encoding = ui::Encoding::utf8 }
+    ui_test::expect{ &io, &t, ok = euro.code == 0x20AC and euro.len == 3, what = "a three byte sequence decodes to its code point" }
+    let e = ui::decode_char{ text = "\xC3\xA9", at = 0, encoding = ui::Encoding::utf8 }
+    ui_test::expect{ &io, &t, ok = e.code == 0xE9 and e.len == 2, what = "a two byte sequence decodes to its code point" }
+    let smile = ui::decode_char{ text = "\xF0\x9F\x98\x80", at = 0, encoding = ui::Encoding::utf8 }
+    ui_test::expect{ &io, &t, ok = smile.code == 0x1F600 and smile.len == 4, what = "a four byte sequence decodes to its code point" }
+    let as_bytes = ui::decode_char{ text = "\xC3\xA9", at = 0, encoding = ui::Encoding::bytes }
+    ui_test::expect{ &io, &t, ok = as_bytes.code == 0xC3 and as_bytes.len == 1, what = "bytes encoding is one byte one character" }
+    let past = ui::decode_char{ text = "a", at = 1, encoding = ui::Encoding::utf8 }
+    ui_test::expect{ &io, &t, ok = past.len == 0, what = "past the end there is no character" }
+
+    // Each of these is one invalid byte, U+FFFD, and the next byte is read afresh.
+    ui_test::expect{ &io, &t, ok = is_bad_byte{ text = "\x80a" }, what = "a stray continuation byte is one bad character" }
+    ui_test::expect{ &io, &t, ok = is_bad_byte{ text = "\xC0\x80" }, what = "an overlong two byte form is bad" }
+    ui_test::expect{ &io, &t, ok = is_bad_byte{ text = "\xE0\x80\x80" }, what = "an overlong three byte form is bad" }
+    ui_test::expect{ &io, &t, ok = is_bad_byte{ text = "\xED\xA0\x80" }, what = "a surrogate is bad" }
+    ui_test::expect{ &io, &t, ok = is_bad_byte{ text = "\xF4\x90\x80\x80" }, what = "a value past U+10FFFF is bad" }
+    ui_test::expect{ &io, &t, ok = is_bad_byte{ text = "\xF8\x88\x80\x80\x80" }, what = "a five byte lead is bad" }
+    ui_test::expect{ &io, &t, ok = is_bad_byte{ text = "\xE2\x82" }, what = "a sequence cut short is bad" }
+    ui_test::expect{ &io, &t, ok = is_bad_byte{ text = "\xF0" }, what = "a lead byte alone is bad" }
+    ui_test::expect{ &io, &t, ok = is_bad_byte{ text = "\xC3\x41" }, what = "a lead followed by a plain byte is bad" }
+    ui_test::expect{ &io, &t, ok = is_bad_byte{ text = "\xE2\x82\x41" }, what = "a third byte that is not a continuation is bad" }
+
+    // Every pair of leading bytes, followed by continuation bytes: a character is always between one
+    // byte and what is left, so walking text by characters ends.
+    let mut ok = true
+    let mut a: usize = 0
+    while a < 256 {
+        let mut b: usize = 0
+        while b < 256 {
+            let text = [@as(u8, a), @as(u8, b), 0x80, 0x80, 0x41]
+            let mut at: usize = 0
+            let mut steps: usize = 0
+            while at < 5 {
+                let d = ui::decode_char{ text = text[..], at, encoding = ui::Encoding::utf8 }
+                if d.len == 0 or d.len > 4 or at + @as(usize, d.len) > 5 or d.code > 0x10FFFF { ok = false }
+                at = at + @as(usize, if d.len == 0 { 1 } else { d.len })
+                steps = steps + 1
+            }
+            if steps > 5 { ok = false }
+            b = b + 1
+        }
+        a = a + 1
+    }
+    ui_test::expect{ &io, &t, ok, what = "no pair of bytes makes decoding stall, overrun or give a bad code point" }
+}
+
+fn is_bad_byte { text: []u8 } -> bool {
+    let d = ui::decode_char{ text, at = 0, encoding = ui::Encoding::utf8 }
+    return d.code == ui::BAD_CHAR and d.len == 1
+}
+
+// ---- the font table
+
+fn check_font_table { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut list = ui::draw::make{ realloc = arena::alloc, &heap, cmds = 4, text = 64, clips = 2, fonts = 2 } iferr {
+        ui_test::expect{ &io, &t, ok = false, what = "make the small list" }
+        return
+    }
+    let def = ui_test::make_test_font{ realloc = arena::alloc, &heap } iferr {
+        ui_test::expect{ &io, &t, ok = false, what = "make the test font" }
+        return
+    }
+    ui_test::expect{ &io, &t, ok = not ui::draw::has_font{ list, font = ui::Font{ .. } }, what = "an empty table has no font 0" }
+    let first = ui::draw::add_font{ &list, font = def } ifnull { ui::Font{ index = 99 } }
+    let second = ui::draw::add_font{ &list, font = make_outline{ handle = 3 } } ifnull { ui::Font{ index = 99 } }
+    ui_test::expect{ &io, &t, ok = first.index == 0 and second.index == 1 and list.font_count == 2, what = "fonts take table entries in order" }
+    let third = ui::draw::add_font{ &list, font = def }
+    ui_test::expect{ &io, &t, ok = third == null and list.font_count == 2, what = "a full font table refuses a font" }
+    ui_test::expect{ &io, &t, ok = ui::draw::has_font{ list, font = second } and not ui::draw::has_font{ list, font = ui::Font{ index = 2 } }, what = "has_font knows the registered handles" }
+    let got = ui::draw::get_font{ list, font = first } ifnull { def }
+    ui_test::expect{ &io, &t, ok = got.height == 16.0 and got.ascent == 12.0 and got.snap, what = "get_font returns the registered definition" }
+    ui_test::expect{ &io, &t, ok = ui::draw::get_font{ list, font = ui::Font{ index = 5 } } == null, what = "get_font of an unknown handle is null" }
+
+    // The test font: 95 glyphs from the space, 8 wide, advance 8.
+    let g = ui::get_glyph{ font = def, code = 'A' } ifnull { ui::Glyph{ .. } }
+    ui_test::expect{ &io, &t, ok = g.advance == 8.0 and g.width == 8.0 and g.height == 16.0, what = "the test font's cells are 8 by 16" }
+    ui_test::expect{ &io, &t, ok = ui::get_glyph{ font = def, code = 31 } == null and ui::get_glyph{ font = def, code = 127 } == null, what = "characters outside 32 to 126 have no glyph" }
+    ui_test::expect{ &io, &t, ok = ui::get_glyph{ font = def, code = 32 } != null and ui::get_glyph{ font = def, code = 126 } != null, what = "the ends of the table have glyphs" }
+    ui_test::expect{ &io, &t, ok = ui::get_glyph{ font = make_outline{ handle = 1 }, code = 'A' } == null, what = "an outline font has no glyph table" }
+
+    // Scale: size / height; with snap a whole number of device pixels a font unit.
+    ui_test::expect{ &io, &t, ok = ui::get_font_scale{ font = def, size = 16.0, scale = 1.0 } == 1.0, what = "size 16 is scale 1 in a font 16 high" }
+    ui_test::expect{ &io, &t, ok = ui::get_font_scale{ font = def, size = 32.0, scale = 1.0 } == 2.0, what = "size 32 is scale 2" }
+    ui_test::expect{ &io, &t, ok = ui::get_font_scale{ font = def, size = 20.0, scale = 1.0 } == 1.0, what = "a snapped font rounds 1.25 device pixels a unit to 1" }
+    ui_test::expect{ &io, &t, ok = ui::get_font_scale{ font = def, size = 1.0, scale = 1.0 } == 1.0, what = "a snapped font never covers less than a device pixel" }
+    ui_test::expect{ &io, &t, ok = is_near{ a = ui::get_font_scale{ font = def, size = 16.0, scale = 1.5 }, b = 2.0 / 1.5 }, what = "at scale 1.5 one unit is 2 device pixels" }
+    let loose = ui::FontDef{ kind = def.kind, encoding = def.encoding, height = 16.0, ascent = 12.0, snap = false }
+    ui_test::expect{ &io, &t, ok = is_near{ a = ui::get_font_scale{ font = loose, size = 20.0, scale = 1.0 }, b = 1.25 }, what = "an unsnapped font scales exactly" }
+    ui_test::expect{ &io, &t, ok = ui::get_font_scale{ font = def, size = 0.0, scale = 1.0 } == 0.0 and ui::get_font_scale{ font = def, size = -4.0, scale = 1.0 } == 0.0, what = "no size is no scale" }
+
+    // Text through the checked add_text: drawn in a registered font, dropped in one that is not.
+    ui::draw::reset{ &list, width = 100.0, height = 100.0, scale_x = 1.0, scale_y = 1.0 }
+    ui::draw::add_known_text{ &list, font = first, size = 16.0, x = 0.0, y = 0.0, text = "ok", color = ui::Color{ .. }, clip = 0 }
+    ui_test::expect{ &io, &t, ok = list.count == 1 and list.dropped == 0, what = "text in a registered font is drawn" }
+    ui::draw::add_known_text{ &list, font = ui::Font{ index = 7 }, size = 16.0, x = 0.0, y = 0.0, text = "lost", color = ui::Color{ .. }, clip = 0 }
+    ui_test::expect{ &io, &t, ok = list.count == 1 and list.dropped == 1 and list.text_len == 2, what = "text in a font that was never registered is not drawn and is counted" }
+}
+
+
+// ---- measuring in a glyph table
+
+fn check_measure { mut io: Io, mut t: ui_test::Tally, mut cache: ui::text::Cache, list: ui::DrawList, font: ui::Font, provider: ?ui::TextProvider } {
+    ui_test::expect{ &io, &t, ok = ui::text::measure_text{ &cache, list, provider, font, size = 16.0, text = "Hello" } == 40.0, what = "Hello is 40 wide at size 16" }
+    ui_test::expect{ &io, &t, ok = ui::text::measure_text{ &cache, list, provider, font, size = 32.0, text = "Hello" } == 80.0, what = "Hello is 80 wide at size 32" }
+    ui_test::expect{ &io, &t, ok = ui::text::measure_text{ &cache, list, provider, font, size = 16.0, text = "" } == 0.0, what = "an empty text is 0 wide" }
+    ui_test::expect{ &io, &t, ok = ui::text::measure_text{ &cache, list, provider, font, size = 16.0, text = "a\x01b\x7F" } == 16.0, what = "control bytes and characters past the table have no advance" }
+    ui_test::expect{ &io, &t, ok = ui::text::measure_text{ &cache, list, provider, font, size = 16.0, text = "\xE2\x82\xAC" } == 0.0, what = "a code point the table lacks is 0 wide" }
+    ui_test::expect{ &io, &t, ok = ui::text::measure_text{ &cache, list, provider, font, size = 16.0, text = "a\xFF\xFEb\xC3" } == 16.0, what = "bad UTF-8 bytes measure without a panic, 0 wide each" }
+    ui_test::expect{ &io, &t, ok = ui::text::measure_text{ &cache, list, provider, font, size = 0.0, text = "Hello" } == 0.0, what = "no size is no width" }
+    ui_test::expect{ &io, &t, ok = cache.unknown_font == 0 and cache.no_provider == 0, what = "nothing was reported against a registered font" }
+    ui_test::expect{ &io, &t, ok = cache.hits == 0 and cache.misses == 0, what = "a glyph table is not cached, only summed" }
+
+    let m16 = ui::text::get_line_metrics{ &cache, list, provider, font, size = 16.0 }
+    ui_test::expect{ &io, &t, ok = m16.height == 16.0 and m16.ascent == 12.0, what = "line metrics at size 16" }
+    let m32 = ui::text::get_line_metrics{ &cache, list, provider, font, size = 32.0 }
+    ui_test::expect{ &io, &t, ok = m32.height == 32.0 and m32.ascent == 24.0, what = "line metrics at size 32" }
+}
+
+// ---- the three text goldens
+
+fn dump_wrap { mut sink: ui_rec::Sink, mut cache: ui::text::Cache, list: ui::DrawList, provider: ?ui::TextProvider, font: ui::Font,
+               label: []u8, size: f32, text: []u8, width: f32 } -> ! {
+    let mut lines: [32]ui::text::Line
+    let w = ui::text::wrap_text{ &cache, list, provider, font, size, text, width, lines = lines[..] }
+    try @fmt(&sink, "{} {} size={} width={} lines={} rest={} widest={}\n", label, ui_rec::write_quoted{ s = text, _ }, ui_rec::write_number{ v = size, _ },
+        ui_rec::write_number{ v = width, _ }, w.lines, w.rest, ui_rec::write_number{ v = w.width, _ })
+    let mut i: usize = 0
+    while i < @as(usize, w.lines) {
+        let l = lines[i]
+        let kept = text[@as(usize, l.start)..@as(usize, l.end)]
+        try @fmt(&sink, "  {} [{},{}) {} {}\n", i, l.start, l.end, ui_rec::write_number{ v = l.width, _ }, ui_rec::write_quoted{ s = kept, _ })
+        i = i + 1
+    }
+}
+
+fn write_wraps { mut sink: ui_rec::Sink, mut cache: ui::text::Cache, list: ui::DrawList, font: ui::Font, outline: ui::Font,
+                 provider: ?ui::TextProvider, none: ?ui::TextProvider } -> ! {
+    let table = "wrap"
+    try dump_wrap{ &sink, &cache, list, font, provider = none, label = table, size = 16.0, text = "the quick brown fox", width = 80.0 }
+    try dump_wrap{ &sink, &cache, list, font, provider = none, label = table, size = 16.0, text = "a  b", width = 8.0 }
+    try dump_wrap{ &sink, &cache, list, font, provider = none, label = table, size = 16.0, text = "well-known thing", width = 56.0 }
+    try dump_wrap{ &sink, &cache, list, font, provider = none, label = table, size = 16.0, text = "abcdefghij", width = 32.0 }
+    try dump_wrap{ &sink, &cache, list, font, provider = none, label = table, size = 16.0, text = "ab\ncd\n\nef", width = 100.0 }
+    try dump_wrap{ &sink, &cache, list, font, provider = none, label = table, size = 16.0, text = "ab\n", width = 100.0 }
+    try dump_wrap{ &sink, &cache, list, font, provider = none, label = table, size = 16.0, text = "", width = 100.0 }
+    try dump_wrap{ &sink, &cache, list, font, provider = none, label = table, size = 16.0, text = "abc", width = 3.0 }
+    try dump_wrap{ &sink, &cache, list, font, provider = none, label = table, size = 16.0, text = "a b", width = 3.0 }
+    try dump_wrap{ &sink, &cache, list, font, provider = none, label = table, size = 16.0, text = "ab c", width = 0.0 }
+    try dump_wrap{ &sink, &cache, list, font, provider = none, label = table, size = 16.0, text = "a\xFF\xC3b", width = 8.0 }
+    try dump_wrap{ &sink, &cache, list, font, provider = none, label = table, size = 16.0, text = "  ab  ", width = 100.0 }
+    try dump_wrap{ &sink, &cache, list, font, provider = none, label = table, size = 16.0, text = "abcd efgh", width = 32.0 }
+    try dump_wrap{ &sink, &cache, list, font, provider = none, label = table, size = 16.0, text = "a - b", width = 16.0 }
+    try dump_wrap{ &sink, &cache, list, font, provider = none, label = table, size = 32.0, text = "ab cd", width = 40.0 }
+    try dump_wrap{ &sink, &cache, list, font = outline, provider, label = "owrap", size = 16.0, text = "fi fish fo", width = 40.0 }
+}
+
+fn dump_fit { mut sink: ui_rec::Sink, mut cache: ui::text::Cache, list: ui::DrawList, provider: ?ui::TextProvider, font: ui::Font,
+              label: []u8, text: []u8, width: f32 } -> ! {
+    let fit = ui::text::fit_ellipsis{ &cache, list, provider, font, size = 16.0, text, width }
+    let mut buf: [128]u8
+    let n = ui::text::copy_ellipsized{ text, fit, into = buf[..] }
+    try @fmt(&sink, "{} {} width={} len={} width={} dots={} {}\n", label, ui_rec::write_quoted{ s = text, _ }, ui_rec::write_number{ v = width, _ },
+        fit.len, ui_rec::write_number{ v = fit.width, _ }, fit.dots, ui_rec::write_quoted{ s = buf[..n], _ })
+}
+
+fn write_fits { mut sink: ui_rec::Sink, mut cache: ui::text::Cache, list: ui::DrawList, font: ui::Font, outline: ui::Font,
+                provider: ?ui::TextProvider, none: ?ui::TextProvider } -> ! {
+    let table = "ellipsis"
+    let hello = "Hello world"
+    try dump_fit{ &sink, &cache, list, provider = none, font, label = table, text = hello, width = 100.0 }
+    try dump_fit{ &sink, &cache, list, provider = none, font, label = table, text = hello, width = 80.0 }
+    try dump_fit{ &sink, &cache, list, provider = none, font, label = table, text = hello, width = 70.0 }
+    try dump_fit{ &sink, &cache, list, provider = none, font, label = table, text = hello, width = 50.0 }
+    try dump_fit{ &sink, &cache, list, provider = none, font, label = table, text = hello, width = 24.0 }
+    try dump_fit{ &sink, &cache, list, provider = none, font, label = table, text = hello, width = 20.0 }
+    try dump_fit{ &sink, &cache, list, provider = none, font, label = table, text = "ab cdefg", width = 48.0 }
+    try dump_fit{ &sink, &cache, list, provider = none, font, label = table, text = "", width = 0.0 }
+    try dump_fit{ &sink, &cache, list, provider, font = outline, label = "oellipsis", text = "fi fish fo", width = 60.0 }
+}
+
+// One line of the caret golden: the places the caret stops stepping forward and back, what an index in
+// the middle of a unit does, the x of each index and the index nearest each x.
+fn dump_caret { mut sink: ui_rec::Sink, mut cache: ui::text::Cache, list: ui::DrawList, provider: ?ui::TextProvider, font: ui::Font,
+                label: []u8, text: []u8, mid: usize, xs: []f32 } -> ! {
+    try @fmt(&sink, "caret {} {} forward 0", label, ui_rec::write_quoted{ s = text, _ })
+    let mut at: usize = 0
+    let mut guard: usize = 0
+    while guard <= text.len {
+        let next = ui::text::step_caret{ &cache, list, provider, font, size = 16.0, text, index = at, forward = true }
+        if next == at { break }
+        at = next
+        try @fmt(&sink, " {}", at)
+        guard = guard + 1
+    }
+    try @fmt(&sink, " backward {}", text.len)
+    at = text.len
+    guard = 0
+    while guard <= text.len {
+        let next = ui::text::step_caret{ &cache, list, provider, font, size = 16.0, text, index = at, forward = false }
+        if next == at { break }
+        at = next
+        try @fmt(&sink, " {}", at)
+        guard = guard + 1
+    }
+    let forward = ui::text::step_caret{ &cache, list, provider, font, size = 16.0, text, index = mid, forward = true }
+    let backward = ui::text::step_caret{ &cache, list, provider, font, size = 16.0, text, index = mid, forward = false }
+    try @fmt(&sink, " mid {}: forward {} backward {} locate", mid, forward, backward)
+    let mut i: usize = 0
+    while i <= text.len {
+        let x = ui::text::locate_caret{ &cache, list, provider, font, size = 16.0, text, index = i }
+        try @fmt(&sink, " {}={}", i, ui_rec::write_number{ v = x, _ })
+        i = i + 1
+    }
+    try @fmt(&sink, " pick")
+    i = 0
+    while i < xs.len {
+        let index = ui::text::pick_index{ &cache, list, provider, font, size = 16.0, text, x = xs[i] }
+        try @fmt(&sink, " {}={}", ui_rec::write_number{ v = xs[i], _ }, index)
+        i = i + 1
+    }
+    try @fmt(&sink, "\n")
+}
+
+fn write_carets { mut sink: ui_rec::Sink, mut cache: ui::text::Cache, list: ui::DrawList, font: ui::Font, bytes_font: ui::Font, outline: ui::Font,
+                  provider: ?ui::TextProvider, none: ?ui::TextProvider } -> ! {
+    try dump_caret{ &sink, &cache, list, provider = none, font, label = "utf8", text = "a\xC3\xA9", mid = 2, xs = [-5.0, 3.0, 5.0, 8.0, 12.0] }
+    try dump_caret{ &sink, &cache, list, provider = none, font = bytes_font, label = "bytes", text = "a\xC3\xA9", mid = 2, xs = [-5.0, 3.0, 5.0, 8.0, 12.0] }
+    try dump_caret{ &sink, &cache, list, provider, font = outline, label = "outline", text = "fio", mid = 1, xs = [-3.0, 5.0, 7.0, 15.0, 16.0, 100.0] }
+}
+
+fn check_goldens { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, mut cache: ui::text::Cache, list: ui::DrawList,
+                   font: ui::Font, bytes_font: ui::Font, outline: ui::Font, provider: ?ui::TextProvider, none: ?ui::TextProvider, update: bool } {
+    let out = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 16384 } iferr {
+        ui_test::expect{ &io, &t, ok = false, what = "allocate the dump buffer" }
+        return
+    }
+    let again_out = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 16384 } iferr {
+        ui_test::expect{ &io, &t, ok = false, what = "allocate the second dump buffer" }
+        return
+    }
+    let scratch = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 16384 } iferr {
+        ui_test::expect{ &io, &t, ok = false, what = "allocate the golden buffer" }
+        return
+    }
+    let mut sink = ui_rec::make_sink{ bytes = out }
+    write_wraps{ &sink, &cache, list, font, outline, provider, none } iferr {
+        ui_test::expect{ &io, &t, ok = false, what = "write the wrap dump" }
+        return
+    }
+    ui_test::expect{ &io, &t, ok = sink.lost == 0, what = "the wrap dump fit its buffer" }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "wrap", actual = ui_rec::get_text{ sink }, scratch, update }
+
+    // Wrapping the same texts again gives the same lines: nothing is kept between calls.
+    let mut again = ui_rec::make_sink{ bytes = again_out }
+    write_wraps{ sink = &again, &cache, list, font, outline, provider, none } iferr {
+        ui_test::expect{ &io, &t, ok = false, what = "write the wrap dump again" }
+        return
+    }
+    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = ui_rec::get_text{ sink }, b = ui_rec::get_text{ sink = again } }, what = "wrapping twice gives the same lines" }
+
+    ui_rec::reset_sink{ &sink }
+    write_fits{ &sink, &cache, list, font, outline, provider, none } iferr {
+        ui_test::expect{ &io, &t, ok = false, what = "write the ellipsis dump" }
+        return
+    }
+    ui_test::expect{ &io, &t, ok = sink.lost == 0, what = "the ellipsis dump fit its buffer" }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "ellipsis", actual = ui_rec::get_text{ sink }, scratch, update }
+
+    ui_rec::reset_sink{ &sink }
+    write_carets{ &sink, &cache, list, font, bytes_font, outline, provider, none } iferr {
+        ui_test::expect{ &io, &t, ok = false, what = "write the caret dump" }
+        return
+    }
+    ui_test::expect{ &io, &t, ok = sink.lost == 0, what = "the caret dump fit its buffer" }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "caret", actual = ui_rec::get_text{ sink }, scratch, update }
+}
+
+// ---- wrapping at its limits
+
+fn check_wrap_limits { mut io: Io, mut t: ui_test::Tally, mut cache: ui::text::Cache, list: ui::DrawList, font: ui::Font, provider: ?ui::TextProvider } {
+    let mut lines: [8]ui::text::Line
+    // The lines buffer runs out: what was laid out is kept, `rest` says where the rest starts.
+    let w = ui::text::wrap_text{ &cache, list, provider, font, size = 16.0, text = "a\nb\nc", width = 100.0, lines = lines[..2] }
+    ui_test::expect{ &io, &t, ok = w.lines == 2 and w.rest == 4, what = "a full lines buffer stops after the lines it has and says where the rest starts" }
+    let w2 = ui::text::wrap_text{ &cache, list, provider, font, size = 16.0, text = "abcdefghij", width = 32.0, lines = lines[..2] }
+    ui_test::expect{ &io, &t, ok = w2.lines == 2 and w2.rest == 8 and lines[1].end == 8, what = "a long word cut by a full lines buffer rests at the third line" }
+    let w3 = ui::text::wrap_text{ &cache, list, provider, font, size = 16.0, text = "abc", width = 32.0, lines = lines[..0] }
+    ui_test::expect{ &io, &t, ok = w3.lines == 0 and w3.rest == 0, what = "no room for lines lays out nothing" }
+    // A width that is not a number is 0; an infinite one never wraps.
+    let nan = 0.0 / ui::pick_max_f32{ a = 0.0, b = 0.0 }
+    let w4 = ui::text::wrap_text{ &cache, list, provider, font, size = 16.0, text = "ab", width = nan, lines = lines[..] }
+    ui_test::expect{ &io, &t, ok = w4.lines == 2, what = "a width that is not a number wraps as width 0" }
+    let inf = 1.0e30 * 1.0e30
+    let w5 = ui::text::wrap_text{ &cache, list, provider, font, size = 16.0, text = "a b c d", width = inf, lines = lines[..] }
+    ui_test::expect{ &io, &t, ok = w5.lines == 1 and lines[0].end == 7 and w5.width == 56.0, what = "an infinite width never wraps, and the widest line is reported" }
+    let w6 = ui::text::wrap_text{ &cache, list, provider, font, size = 16.0, text = "a b c d", width = -5.0, lines = lines[..] }
+    ui_test::expect{ &io, &t, ok = w6.lines == 4, what = "a negative width wraps as width 0" }
+}
+
+// ---- bad bytes never panic or loop
+
+// Whether stepping forward from 0 reaches the end by strictly increasing indexes, stepping back from
+// the end reaches 0 by strictly decreasing ones, and every line that wrap gives is inside the text.
+fn walks_cleanly { mut cache: ui::text::Cache, list: ui::DrawList, provider: ?ui::TextProvider, font: ui::Font, text: []u8 } -> bool {
+    let mut at: usize = 0
+    let mut steps: usize = 0
+    while at < text.len {
+        let next = ui::text::step_caret{ &cache, list, provider, font, size = 16.0, text, index = at, forward = true }
+        if next <= at or next > text.len or steps > text.len { return false }
+        at = next
+        steps = steps + 1
+    }
+    steps = 0
+    while at > 0 {
+        let next = ui::text::step_caret{ &cache, list, provider, font, size = 16.0, text, index = at, forward = false }
+        if next >= at or steps > text.len { return false }
+        at = next
+        steps = steps + 1
+    }
+    let mut lines: [64]ui::text::Line
+    let mut width: f32 = 0.0
+    while width <= 24.0 {
+        let w = ui::text::wrap_text{ &cache, list, provider, font, size = 16.0, text, width, lines = lines[..] }
+        if w.lines == 0 or @as(usize, w.rest) != text.len { return false }
+        let mut i: usize = 0
+        let mut prev_end: usize = 0
+        while i < @as(usize, w.lines) {
+            let l = lines[i]
+            if @as(usize, l.end) > text.len or l.start > l.end or @as(usize, l.start) < prev_end { return false }
+            prev_end = @as(usize, l.end)
+            i = i + 1
+        }
+        width = width + 8.0
+    }
+    let probe = ui::text::pick_index{ &cache, list, provider, font, size = 16.0, text, x = 5.0 }
+    let far = ui::text::pick_index{ &cache, list, provider, font, size = 16.0, text, x = 1000.0 }
+    let wide = ui::text::locate_caret{ &cache, list, provider, font, size = 16.0, text, index = 1000 }
+    let fit = ui::text::fit_ellipsis{ &cache, list, provider, font, size = 16.0, text, width = 16.0 }
+    return probe <= text.len and far == text.len and wide >= 0.0 and @as(usize, fit.len) <= text.len
+}
+
+// The caret at the two ends of a line, past them, and in no text at all.
+fn check_caret_ends { mut io: Io, mut t: ui_test::Tally, mut cache: ui::text::Cache, list: ui::DrawList, font: ui::Font, provider: ?ui::TextProvider } {
+    let text = "abc"
+    ui_test::expect{ &io, &t, ok = ui::text::step_caret{ &cache, list, provider, font, size = 16.0, text, index = 0, forward = false } == 0, what = "stepping back from index 0 stays at 0" }
+    ui_test::expect{ &io, &t, ok = ui::text::step_caret{ &cache, list, provider, font, size = 16.0, text, index = 3, forward = true } == 3, what = "stepping forward from the end stays at the end" }
+    ui_test::expect{ &io, &t, ok = ui::text::step_caret{ &cache, list, provider, font, size = 16.0, text, index = 0, forward = true } == 1, what = "stepping forward from 0 goes to 1" }
+    ui_test::expect{ &io, &t, ok = ui::text::step_caret{ &cache, list, provider, font, size = 16.0, text, index = 3, forward = false } == 2, what = "stepping back from the end goes to the last character" }
+    ui_test::expect{ &io, &t, ok = ui::text::step_caret{ &cache, list, provider, font, size = 16.0, text, index = 99, forward = true } == 3, what = "an index past the end counts as the end going forward" }
+    ui_test::expect{ &io, &t, ok = ui::text::step_caret{ &cache, list, provider, font, size = 16.0, text, index = 99, forward = false } == 2, what = "an index past the end counts as the end going back" }
+    ui_test::expect{ &io, &t, ok = ui::text::step_caret{ &cache, list, provider, font, size = 16.0, text = "", index = 0, forward = true } == 0 and ui::text::step_caret{ &cache, list, provider, font, size = 16.0, text = "", index = 0, forward = false } == 0, what = "no text has one caret place" }
+    ui_test::expect{ &io, &t, ok = ui::text::locate_caret{ &cache, list, provider, font, size = 16.0, text, index = 0 } == 0.0 and ui::text::locate_caret{ &cache, list, provider, font, size = 16.0, text, index = 3 } == 24.0, what = "the caret is at 0 and at the whole width at the ends" }
+    ui_test::expect{ &io, &t, ok = ui::text::locate_caret{ &cache, list, provider, font, size = 16.0, text, index = 99 } == 24.0, what = "an index past the end is at the whole width" }
+    ui_test::expect{ &io, &t, ok = ui::text::pick_index{ &cache, list, provider, font, size = 16.0, text, x = 23.0 } == 3 and ui::text::pick_index{ &cache, list, provider, font, size = 16.0, text = "", x = 5.0 } == 0, what = "a point right of the line is the end, in no text 0" }
+}
+
+fn check_bad_text { mut io: Io, mut t: ui_test::Tally, mut cache: ui::text::Cache, list: ui::DrawList, font: ui::Font, bytes_font: ui::Font, provider: ?ui::TextProvider } {
+    let texts: [9][]u8 = ["\xFF\xFF\xFF", "\xE2\x82", "\xF0\x9F", "\x80", "a\xC3", "\xC0\x80\xED\xA0\x80", "ab\xE2\x82 cd\xF8", "\x00\x01\x1F\x7F\xFF", ""]
+    let mut ok_utf8 = true
+    let mut ok_bytes = true
+    let mut i: usize = 0
+    while i < texts.len {
+        if not walks_cleanly{ &cache, list, provider, font, text = texts[i] } { ok_utf8 = false }
+        if not walks_cleanly{ &cache, list, provider, font = bytes_font, text = texts[i] } { ok_bytes = false }
+        i = i + 1
+    }
+    ui_test::expect{ &io, &t, ok = ok_utf8, what = "invalid UTF-8 steps, wraps, picks and ellipsizes without a panic or a loop" }
+    ui_test::expect{ &io, &t, ok = ok_bytes, what = "the same bytes in a byte-encoded font" }
+}
+
+// ---- tables that differ from the test font
+
+fn check_custom_tables { mut io: Io, mut t: ui_test::Tally, mut cache: ui::text::Cache, mut heap: arena::Arena } {
+    let mut list = make_list{ &heap, scale = 1.0 } iferr {
+        ui_test::expect{ &io, &t, ok = false, what = "make the custom list" }
+        return
+    }
+    let no_picture = slice::empty(u8){}
+    let none: ?ui::TextProvider = null
+
+    // e-acute as one glyph of a UTF-8 table, and as the two glyphs of a byte table (0xC3 0xA9).
+    let one = [ui::Glyph{ width = 9.0, height = 10.0, advance = 9.0, .. }]
+    let utf = ui::FontDef{
+        kind = ui::FontKind::bitmap{ image = ui::Image{ .. }, glyphs = one[..], first = 0xE9, pixels = no_picture, pixels_width = 0, pixels_height = 0 },
+        encoding = ui::Encoding::utf8, height = 10.0, ascent = 8.0, snap = false,
+    }
+    let mut run: [27]ui::Glyph
+    run[0] = ui::Glyph{ width = 5.0, height = 10.0, advance = 5.0, .. }      // 0xA9
+    run[26] = ui::Glyph{ width = 3.0, height = 10.0, advance = 3.0, .. }     // 0xC3
+    let raw = ui::FontDef{
+        kind = ui::FontKind::bitmap{ image = ui::Image{ .. }, glyphs = run[..], first = 0xA9, pixels = no_picture, pixels_width = 0, pixels_height = 0 },
+        encoding = ui::Encoding::bytes, height = 10.0, ascent = 8.0, snap = false,
+    }
+    // A table with fractional metrics, as an unsnapped font like kotor's has: 'A' has ink, 'B' only moves the pen.
+    let mut fraction: [2]ui::Glyph
+    fraction[0] = ui::Glyph{ left = 1.5, top = 2.25, width = 6.5, height = 12.0, advance = 7.25, .. }
+    fraction[1] = ui::Glyph{ advance = 3.0, .. }
+    let loose = ui::FontDef{
+        kind = ui::FontKind::bitmap{ image = ui::Image{ .. }, glyphs = fraction[..], first = 'A', pixels = no_picture, pixels_width = 0, pixels_height = 0 },
+        encoding = ui::Encoding::utf8, height = 12.0, ascent = 9.0, snap = false,
+    }
+    let utf_font = ui::draw::add_font{ &list, font = utf } ifnull { return }
+    let raw_font = ui::draw::add_font{ &list, font = raw } ifnull { return }
+    let loose_font = ui::draw::add_font{ &list, font = loose } ifnull { return }
+
+    // e-acute (C3 A9): the UTF-8 table has one character for the two bytes, the byte table two.
+    ui_test::expect{ &io, &t, ok = ui::text::measure_text{ &cache, list, provider = none, font = utf_font, size = 10.0, text = "\xC3\xA9" } == 9.0, what = "UTF-8 reads C3 A9 as one character of advance 9" }
+    ui_test::expect{ &io, &t, ok = ui::text::measure_text{ &cache, list, provider = none, font = raw_font, size = 10.0, text = "\xC3\xA9" } == 8.0, what = "a byte table reads C3 and A9 as two characters, 3 and 5" }
+    let utf_step = ui::text::step_caret{ &cache, list, provider = none, font = utf_font, size = 10.0, text = "\xC3\xA9", index = 0, forward = true }
+    let raw_step = ui::text::step_caret{ &cache, list, provider = none, font = raw_font, size = 10.0, text = "\xC3\xA9", index = 0, forward = true }
+    ui_test::expect{ &io, &t, ok = utf_step == 2 and raw_step == 1, what = "the caret steps over e-acute in one move in UTF-8 and in two in bytes" }
+    let mut out: [8]ui::Placed
+    let placed_utf = ui::lay_glyphs{ font = utf, size = 10.0, x = 0.0, y = 0.0, text = "\xC3\xA9", scale_x = 1.0, scale_y = 1.0, out = out[..] }
+    ui_test::expect{ &io, &t, ok = placed_utf == 1 and out[0].rect.w == 9.0, what = "UTF-8 lays out one glyph for e-acute" }
+    let placed_raw = ui::lay_glyphs{ font = raw, size = 10.0, x = 0.0, y = 0.0, text = "\xC3\xA9", scale_x = 1.0, scale_y = 1.0, out = out[..] }
+    ui_test::expect{ &io, &t, ok = placed_raw == 2 and out[0].rect.w == 3.0 and out[1].rect.x == 3.0 and out[1].rect.w == 5.0, what = "bytes lay out two glyphs for e-acute, the second after the first's advance" }
+    ui_test::expect{ &io, &t, ok = ui::text::measure_text{ &cache, list, provider = none, font = utf_font, size = 10.0, text = "\xC3" } == 0.0, what = "a lead byte alone is an invalid character with no glyph" }
+
+    // Fractional metrics are used as they are when the font does not snap, at any scale.
+    let n = ui::lay_glyphs{ font = loose, size = 12.0, x = 1.0, y = 2.0, text = "ABAZ", scale_x = 1.5, scale_y = 1.5, out = out[..] }
+    ui_test::expect{ &io, &t, ok = n == 2, what = "a glyph with no ink and a character outside the table take no entry" }
+    ui_test::expect{ &io, &t, ok = out[0].rect.x == 2.5 and out[0].rect.y == 4.25 and out[0].rect.w == 6.5 and out[0].rect.h == 12.0, what = "an unsnapped glyph is exactly where the table puts it" }
+    ui_test::expect{ &io, &t, ok = out[1].rect.x == 12.75, what = "the pen moves by the advance of a glyph with no ink" }
+    ui_test::expect{ &io, &t, ok = ui::text::measure_text{ &cache, list, provider = none, font = loose_font, size = 12.0, text = "ABAZ" } == 17.5, what = "an unsnapped table measures its exact advances" }
+    let few = ui::lay_glyphs{ font = loose, size = 12.0, x = 0.0, y = 0.0, text = "AAA", scale_x = 1.0, scale_y = 1.0, out = out[..1] }
+    ui_test::expect{ &io, &t, ok = few == 1, what = "an out buffer that is too small is filled and no more" }
+    ui_test::expect{ &io, &t, ok = ui::lay_glyphs{ font = loose, size = 12.0, x = 0.0, y = 0.0, text = "", scale_x = 1.0, scale_y = 1.0, out = out[..] } == 0, what = "no text lays out nothing" }
+    ui_test::expect{ &io, &t, ok = ui::lay_glyphs{ font = make_outline{ handle = 1 }, size = 12.0, x = 0.0, y = 0.0, text = "AA", scale_x = 1.0, scale_y = 1.0, out = out[..] } == 0, what = "an outline font is not laid out here" }
+    ui_test::expect{ &io, &t, ok = ui::lay_glyphs{ font = loose, size = 0.0, x = 0.0, y = 0.0, text = "AA", scale_x = 1.0, scale_y = 1.0, out = out[..] } == 0, what = "no size draws nothing" }
+}
+
+// ---- outline text through the fake provider
+
+fn check_outline { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, mut cache: ui::text::Cache, mut list: ui::DrawList, outline: ui::Font,
+                   provider: ?ui::TextProvider, none: ?ui::TextProvider, fake: *Fake } {
+    ui::text::reset_cache{ &cache }
+    let base = fake.shapes
+    ui_test::expect{ &io, &t, ok = ui::text::measure_text{ &cache, list, provider, font = outline, size = 16.0, text = "Hello" } == 35.0, what = "outline text is shaped and summed: 7 a byte" }
+    ui_test::expect{ &io, &t, ok = fake.shapes == base + 1 and cache.misses == 1 and cache.hits == 0, what = "the first measure asks the provider" }
+    ui_test::expect{ &io, &t, ok = ui::text::measure_text{ &cache, list, provider, font = outline, size = 16.0, text = "Hello" } == 35.0, what = "the same text measures the same" }
+    ui_test::expect{ &io, &t, ok = fake.shapes == base + 1 and cache.hits == 1, what = "measuring the same text again is a cache hit, not another shape" }
+    ui_test::expect{ &io, &t, ok = ui::text::measure_text{ &cache, list, provider, font = outline, size = 16.0, text = "fi" } == 12.0, what = "a two-byte ligature is 12 wide" }
+    ui_test::expect{ &io, &t, ok = ui::text::measure_text{ &cache, list, provider, font = outline, size = 16.0, text = "fio" } == 19.0, what = "a ligature then a letter is 19" }
+    ui_test::expect{ &io, &t, ok = ui::text::measure_text{ &cache, list, provider, font = outline, size = 16.0, text = "ffi" } == 19.0, what = "a letter then a ligature is 19" }
+    ui_test::expect{ &io, &t, ok = ui::text::measure_text{ &cache, list, provider, font = outline, size = 16.0, text = "" } == 0.0, what = "an empty outline text is 0 wide" }
+    ui_test::expect{ &io, &t, ok = fake.shapes == base + 4 and cache.misses == 5, what = "each new text is shaped once, an empty one not at all" }
+    // The size is part of what a width depends on; so is the scale.
+    ui_test::expect{ &io, &t, ok = ui::text::measure_text{ &cache, list, provider, font = outline, size = 24.0, text = "Hello" } == 35.0 and cache.misses == 6, what = "another size is another measurement" }
+    ui::text::reset_cache{ &cache }
+    ui_test::expect{ &io, &t, ok = ui::text::measure_text{ &cache, list, provider, font = outline, size = 16.0, text = "Hello" } == 35.0 and fake.shapes == base + 6, what = "a new frame asks the provider again" }
+    ui_test::expect{ &io, &t, ok = cache.hits == 0 and cache.misses == 1 and cache.used == 1, what = "reset_cache empties the table and the counts" }
+
+    // Line metrics come from the provider at the pixel size, divided by the scale.
+    let before = fake.metrics
+    let m = ui::text::get_line_metrics{ &cache, list, provider, font = outline, size = 16.0 }
+    ui_test::expect{ &io, &t, ok = m.height == 20.0 and m.ascent == 16.0 and fake.metrics == before + 1, what = "outline line metrics are the provider's at 16 pixels" }
+    ui::draw::reset{ &list, width = 800.0, height = 600.0, scale_x = 1.5, scale_y = 1.5 }
+    let m15 = ui::text::get_line_metrics{ &cache, list, provider, font = outline, size = 16.0 }
+    ui_test::expect{ &io, &t, ok = is_near{ a = m15.height, b = 20.0 } and is_near{ a = m15.ascent, b = 16.0 }, what = "at scale 1.5 the face is 24 pixels, its 30 and 24 pixel metrics are 20 and 16 logical units" }
+    let w15 = ui::text::measure_text{ &cache, list, provider, font = outline, size = 16.0, text = "Hello" }
+    ui_test::expect{ &io, &t, ok = is_near{ a = w15, b = 35.0 / 1.5 }, what = "at scale 1.5 advances in pixels are divided by the scale" }
+    ui::draw::reset{ &list, width = 800.0, height = 600.0, scale_x = 1.0, scale_y = 1.0 }
+
+    // Without a provider an outline font measures 0 and is reported; its characters still step.
+    ui::text::reset_cache{ &cache }
+    ui_test::expect{ &io, &t, ok = ui::text::measure_text{ &cache, list, provider = none, font = outline, size = 16.0, text = "Hello" } == 0.0, what = "an outline font with no provider is 0 wide" }
+    ui_test::expect{ &io, &t, ok = cache.no_provider == 1, what = "and it is counted" }
+    let step = ui::text::step_caret{ &cache, list, provider = none, font = outline, size = 16.0, text = "Hello", index = 1, forward = true }
+    ui_test::expect{ &io, &t, ok = step == 2, what = "the caret still steps a character at a time without a provider" }
+    let nm = ui::text::get_line_metrics{ &cache, list, provider = none, font = outline, size = 16.0 }
+    ui_test::expect{ &io, &t, ok = nm.height == 16.0, what = "the line is `size` high without a provider" }
+
+    // A text longer than the provider's buffer is shaped in pieces, cut at a space when there is one.
+    let mut tiny = ui::text::make_cache{ realloc = arena::alloc, &heap, entries = 8, shaped = 16 } iferr {
+        ui_test::expect{ &io, &t, ok = false, what = "make the small cache" }
+        return
+    }
+    let ligs = "fi fi fi fi fi fi fi fi fi fi fi"
+    ui_test::expect{ &io, &t, ok = ui::text::measure_text{ cache = &tiny, list, provider, font = outline, size = 16.0, text = ligs } == 202.0, what = "a text shaped in pieces cut at spaces measures what the whole would" }
+    let xs = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    ui_test::expect{ &io, &t, ok = ui::text::measure_text{ cache = &tiny, list, provider, font = outline, size = 16.0, text = xs } == 280.0, what = "a text with no space is cut between characters" }
+    let at20 = ui::text::pick_index{ cache = &tiny, list, provider, font = outline, size = 16.0, text = xs, x = 141.0 }
+    let loc25 = ui::text::locate_caret{ cache = &tiny, list, provider, font = outline, size = 16.0, text = xs, index = 25 }
+    ui_test::expect{ &io, &t, ok = at20 == 20 and loc25 == 175.0, what = "caret positions are right across pieces" }
+    let mut stepped = true
+    let mut at: usize = 0
+    let mut guard: usize = 0
+    while at < xs.len and guard <= xs.len {
+        let next = ui::text::step_caret{ cache = &tiny, list, provider, font = outline, size = 16.0, text = xs, index = at, forward = true }
+        if next != at + 1 { stepped = false }
+        at = next
+        guard = guard + 1
+    }
+    ui_test::expect{ &io, &t, ok = stepped and at == xs.len, what = "the caret steps one cluster at a time across pieces" }
+}
+
+// ---- where glyphs are laid out
+
+fn dump_glyphs { mut sink: ui_rec::Sink, font: ui::FontDef, size: f32, x: f32, y: f32, text: []u8, scale: f32 } -> ! {
+    let mut out: [32]ui::Placed
+    let n = ui::lay_glyphs{ font, size, x, y, text, scale_x = scale, scale_y = scale, out = out[..] }
+    try @fmt(&sink, "glyphs {} size={} at={},{} scale={}x{} count={}\n", ui_rec::write_quoted{ s = text, _ }, ui_rec::write_number{ v = size, _ },
+        ui_rec::write_number{ v = x, _ }, ui_rec::write_number{ v = y, _ }, ui_rec::write_number{ v = scale, _ }, ui_rec::write_number{ v = scale, _ }, n)
+    let mut i: usize = 0
+    while i < n {
+        let p = out[i]
+        try @fmt(&sink, "  {} {},{} {}x{} uv={},{},{},{}\n", i, ui_rec::write_number{ v = p.rect.x, _ }, ui_rec::write_number{ v = p.rect.y, _ },
+            ui_rec::write_number{ v = p.rect.w, _ }, ui_rec::write_number{ v = p.rect.h, _ },
+            ui_rec::write_number{ v = p.uv.u0, _ }, ui_rec::write_number{ v = p.uv.v0, _ }, ui_rec::write_number{ v = p.uv.u1, _ }, ui_rec::write_number{ v = p.uv.v1, _ })
+        i = i + 1
+    }
+}
+
+// Whether every edge of every glyph of `text` is on a whole device pixel.
+fn is_on_grid { font: ui::FontDef, size: f32, x: f32, y: f32, text: []u8, scale: f32 } -> bool {
+    let mut out: [64]ui::Placed
+    let n = ui::lay_glyphs{ font, size, x, y, text, scale_x = scale, scale_y = scale, out = out[..] }
+    if n != text.len { return false }
+    let mut i: usize = 0
+    while i < n {
+        let r = out[i].rect
+        let edges = [r.x * scale, (r.x + r.w) * scale, r.y * scale, (r.y + r.h) * scale]
+        let mut e: usize = 0
+        while e < 4 {
+            if not is_near{ a = edges[e], b = ui::round_f32{ x = edges[e] } } { return false }
+            e = e + 1
+        }
+        i = i + 1
+    }
+    return true
+}
+
+fn check_glyphs { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, list: ui::DrawList, font: ui::Font, update: bool } {
+    let def = ui::draw::get_font{ list, font } ifnull {
+        ui_test::expect{ &io, &t, ok = false, what = "the test font is registered" }
+        return
+    }
+    let out = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 4096 } iferr { return }
+    let scratch = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 4096 } iferr { return }
+    let mut sink = ui_rec::make_sink{ bytes = out }
+    dump_glyphs{ &sink, font = def, size = 16.0, x = 10.0, y = 20.0, text = "Hi", scale = 1.5 } iferr { return }
+    dump_glyphs{ &sink, font = def, size = 20.0, x = 0.4, y = 0.0, text = "ab", scale = 1.0 } iferr { return }
+    dump_glyphs{ &sink, font = def, size = 32.0, x = 1.0, y = 1.0, text = "a b", scale = 2.0 } iferr { return }
+    ui_test::expect{ &io, &t, ok = sink.lost == 0, what = "the glyph dump fit its buffer" }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "glyphs", actual = ui_rec::get_text{ sink }, scratch, update }
+
+    // At any scale every edge falls on a device pixel, whatever the position and size.
+    let text = "Hello, World! (Test) 123"
+    ui_test::expect{ &io, &t, ok = is_on_grid{ font = def, size = 16.0, x = 3.3, y = 7.7, text, scale = 1.5 }, what = "glyph edges at scale 1.5 fall on device pixels" }
+    ui_test::expect{ &io, &t, ok = is_on_grid{ font = def, size = 13.0, x = 0.31, y = 9.99, text, scale = 1.25 }, what = "glyph edges at scale 1.25 fall on device pixels" }
+    ui_test::expect{ &io, &t, ok = is_on_grid{ font = def, size = 24.0, x = 100.7, y = 0.2, text, scale = 2.0 }, what = "glyph edges at scale 2 fall on device pixels" }
+    ui_test::expect{ &io, &t, ok = is_on_grid{ font = def, size = 9.0, x = 5.5, y = 5.5, text, scale = 3.0 }, what = "glyph edges at scale 3 fall on device pixels" }
+    ui_test::expect{ &io, &t, ok = is_on_grid{ font = def, size = 16.0, x = 0.0, y = 0.0, text, scale = 1.0 }, what = "glyph edges at scale 1 fall on device pixels" }
+}
+
+// ---- text in a font that was never registered
+
+fn check_unregistered { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, mut cache: ui::text::Cache } {
+    let mut list = ui::draw::make{ realloc = arena::alloc, &heap, cmds = 4, text = 64, clips = 2, fonts = 1 } iferr { return }
+    ui::draw::reset{ &list, width = 100.0, height = 100.0, scale_x = 1.0, scale_y = 1.0 }
+    let none: ?ui::TextProvider = null
+    ui::text::reset_cache{ &cache }
+    let unknown = ui::Font{ index = 9 }
+    ui_test::expect{ &io, &t, ok = not ui::draw::has_font{ list, font = unknown }, what = "font 9 is not registered" }
+    ui_test::expect{ &io, &t, ok = ui::text::measure_text{ &cache, list, provider = none, font = unknown, size = 16.0, text = "Hello" } == 0.0, what = "text in an unregistered font is 0 wide" }
+    ui_test::expect{ &io, &t, ok = cache.unknown_font == 1, what = "and the miss is counted" }
+    let mut lines: [4]ui::text::Line
+    let seen = cache.unknown_font
+    let w = ui::text::wrap_text{ &cache, list, provider = none, font = unknown, size = 16.0, text = "a b\nc", width = 8.0, lines = lines[..] }
+    ui_test::expect{ &io, &t, ok = w.lines == 2 and w.width == 0.0 and cache.unknown_font > seen, what = "it wraps only at newlines, with no width, and is counted" }
+    let seen2 = cache.unknown_font
+    let m = ui::text::get_line_metrics{ &cache, list, provider = none, font = unknown, size = 16.0 }
+    ui_test::expect{ &io, &t, ok = m.height == 16.0 and cache.unknown_font == seen2 + 1, what = "its line is `size` high, and is counted" }
+    ui::draw::add_known_text{ &list, font = unknown, size = 16.0, x = 0.0, y = 0.0, text = "Hello", color = ui::Color{ .. }, clip = 0 }
+    ui_test::expect{ &io, &t, ok = list.count == 0 and list.text_len == 0 and list.dropped == 1, what = "drawing in an unregistered font draws nothing and is counted" }
+}

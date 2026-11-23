@@ -1,0 +1,136 @@
+// ui: the font table and what a font is (plan section 2.7). The core ships no font: a program
+// registers each one it wants and names it in the theme. A font is one of two kinds.
+//
+//   bitmap   a glyph table. `glyphs[c - first]` is character `c`. Everything is in font units;
+//            `height` is the line height in font units, so text at `size` is drawn at
+//            `size / height`. With `snap` that scale is rounded so one font unit covers whole device
+//            pixels and each glyph starts on a device pixel.
+//   outline  TrueType or OpenType, served by a `TextProvider` (shaping, line metrics, rasterising).
+//
+// A Glyph's `left` is the distance from the pen to the left edge of its box, and `top` the distance
+// from the top of the line box DOWN to the top of its box, both in font units: y runs down in the
+// whole library, and a glyph table such as kotor's has no baseline to count up from. `ascent` is
+// where the baseline lies below the line's top, for what aligns on it. A character the table does
+// not hold (below `first`, past the last glyph, or a control byte) has no glyph and no advance.
+namespace ui {
+    // What serves outline fonts: line metrics, shaping and one glyph's coverage. Sizes and advances
+    // are in device pixels. `state` is the provider's own, opaque to the core.
+    struct Opaque {}
+    struct LineMetrics { height: f32 = 0.0, ascent: f32 = 0.0 }
+    struct Shaped { glyph: u32 = 0, face: u32 = 0, x_offset: f32 = 0.0, y_offset: f32 = 0.0, x_advance: f32 = 0.0, cluster: u32 = 0 }
+    struct GlyphBitmap { pixels: []mut u8, width: u32, height: u32, left: i32, top: i32 }
+    type MetricsFn = fn{ mut state: Opaque, handle: u32, pixels: u32 } -> LineMetrics
+    type ShapeFn = fn{ mut state: Opaque, handle: u32, pixels: u32, text: []u8, out: []mut Shaped } -> usize
+    type RasterFn = fn{ mut state: Opaque, face: u32, glyph: u32, mut out: GlyphBitmap } -> bool
+    struct TextProvider { state: *mut Opaque, metrics: MetricsFn, shape: ShapeFn, rasterize: RasterFn }
+
+    // One character of some text and how many bytes it took.
+    struct Decoded { code: u32, len: u8 }
+
+    // The U+FFFD an invalid byte decodes to.
+    const BAD_CHAR: u32 = 65533
+
+    // The character at byte `at` of `text`. `bytes` is one byte one character (KOTOR's cp1252).
+    // `utf8` decodes a code point, and any byte that does not start a well-formed sequence (a
+    // stray continuation byte, an overlong form, a surrogate, a value past U+10FFFF, a sequence cut
+    // short) is one character of its own, U+FFFD, one byte long: text with bad bytes in it is walked
+    // byte by byte and never loops. `len` is 0 only when `at` is past the end.
+    fn decode_char { text: []u8, at: usize, encoding: Encoding } -> Decoded {
+        if at >= text.len { return Decoded{ code = 0, len = 0 } }
+        let b0 = text[at]
+        if b0 < 128 or encoding == Encoding::bytes { return Decoded{ code = @as(u32, b0), len = 1 } }
+        let bad = Decoded{ code = BAD_CHAR, len = 1 }
+        let mut need: usize = 0
+        let mut code: u32 = 0
+        if b0 >= 0xC2 and b0 <= 0xDF {
+            need = 1
+            code = @as(u32, b0 & 0x1F)
+        } else if b0 >= 0xE0 and b0 <= 0xEF {
+            need = 2
+            code = @as(u32, b0 & 0x0F)
+        } else if b0 >= 0xF0 and b0 <= 0xF4 {
+            need = 3
+            code = @as(u32, b0 & 0x07)
+        } else {
+            return bad
+        }
+        if at + need >= text.len { return bad }      // cut short: the last byte it needs is not there
+        let b1 = text[at + 1]
+        // The second byte's range is narrower after these leads: no overlong forms, no surrogates,
+        // nothing above U+10FFFF.
+        let lo: u8 = if b0 == 0xE0 { 0xA0 } else if b0 == 0xF0 { 0x90 } else { 0x80 }
+        let hi: u8 = if b0 == 0xED { 0x9F } else if b0 == 0xF4 { 0x8F } else { 0xBF }
+        if b1 < lo or b1 > hi { return bad }
+        code = (code << 6) | @as(u32, b1 & 0x3F)
+        let mut k: usize = 2
+        while k <= need {
+            let b = text[at + k]
+            if b < 0x80 or b > 0xBF { return bad }
+            code = (code << 6) | @as(u32, b & 0x3F)
+            k = k + 1
+        }
+        return Decoded{ code, len = @as(u8, need + 1) }
+    }
+
+    // The glyph of `code` in a glyph table, or null when the table has none.
+    fn find_glyph { glyphs: []Glyph, first: u32, code: u32 } -> ?Glyph {
+        if code < first { return null }
+        let i = @as(usize, code - first)
+        if i >= glyphs.len { return null }
+        return glyphs[i]
+    }
+
+    // The glyph of `code` in `font`: null for an outline font or a character it has no glyph for.
+    fn get_glyph { font: FontDef, code: u32 } -> ?Glyph {
+        match font.kind {
+            bitmap{ glyphs, first } => { return find_glyph{ glyphs, first, code } }
+            outline => { return null }
+        }
+    }
+
+    // Logical units per font unit for a glyph table drawn at `size` (the line height wanted) on a
+    // surface with `scale` device pixels per logical unit along the axis asked about. With `snap`
+    // the number of device pixels one font unit covers is rounded to a whole number, at least 1.
+    // 0 when the font or the size has no height.
+    fn get_font_scale { font: FontDef, size: f32, scale: f32 } -> f32 {
+        if not (font.height > 0.0) or not (size > 0.0) { return 0.0 }
+        let k = size / font.height
+        if not font.snap or not (scale > 0.0) { return k }
+        let device = round_f32{ x = k * scale }
+        return pick_max_f32{ a = 1.0, b = device } / scale
+    }
+
+    namespace draw {
+        // Registers `font` and returns the handle that text commands name it by. Null when the table
+        // is full (the list was made with room for that many fonts).
+        fn add_font { mut list: DrawList, font: FontDef } -> ?Font {
+            let index = @as(usize, list.font_count)
+            if index >= list.fonts.len or index > 65535 { return null }
+            list.fonts[index] = font
+            list.font_count = list.font_count + 1
+            return Font{ index = @as(u16, index) }
+        }
+
+        // Whether `font` names a registered font.
+        fn has_font { list: DrawList, font: Font } -> bool {
+            return @as(u32, font.index) < list.font_count
+        }
+
+        // The registered font, or null for a handle that names none.
+        fn get_font { list: DrawList, font: Font } -> ?FontDef {
+            if not has_font{ list, font } { return null }
+            return list.fonts[@as(usize, font.index)]
+        }
+
+        // add_text for a font that must be registered. Text in a font that never was is not drawn:
+        // the shape is dropped and counted in `list.dropped`, which the tests assert is 0 after every
+        // frame. The Ui records the misuse as a problem by asking `has_font` first.
+        fn add_known_text { mut list: DrawList, font: Font, size: f32, x: f32, y: f32, text: []u8, color: Color, clip: u16 } {
+            if not has_font{ list, font } {
+                list.dropped = list.dropped + 1
+                return
+            }
+            add_text{ &list, font, size, x, y, text, color, clip }
+        }
+    }
+}

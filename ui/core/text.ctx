@@ -1,0 +1,560 @@
+// ui::text: measuring, wrapping, ellipsis and caret positions, and `ui::lay_glyphs` for glyph tables
+// (plan section 2.7). Nothing here needs a `Ui`: each function takes the draw list (it holds the font
+// table and the surface's scale), the font provider if the program has one, a `Cache`, and the font
+// and size to work in. The Ui's own `measure_text` and the layout call these.
+//
+// Everything is measured in logical units. A glyph table's advances scale by size / height (see
+// `ui::get_font_scale`); an outline font is shaped by the provider at `size * scale` device pixels and
+// its advances are divided by the scale again, so a width at scale 1.5 is the width of the text
+// rasterised at that size, not the scale-1 width times 1.5.
+//
+// A text is walked as a run of **units**: a character of a glyph table (a byte or a code point,
+// by the font's encoding) or a cluster of shaped glyphs of an outline font (a ligature is one unit
+// that spans its bytes). Every unit is at least one byte, units follow one another without gaps and
+// each has an advance, so wrapping, measuring and the caret all step the same way and none of them
+// can loop on bad input. A caret stops between units and never inside one.
+//
+// Nothing here fails. Text in a font that is not registered measures 0 wide and is counted in
+// `cache.unknown_font`; an outline font with no provider the same in `cache.no_provider` (its
+// characters still step one at a time, with no width).
+namespace ui {
+    // Where a glyph of `font` is laid out: a rectangle in logical units and the part of the picture it shows.
+    struct Placed { rect: Rect, uv: Uv }
+
+    // The rectangles of the glyphs of `text` in a glyph table drawn at `size` with the line box's top
+    // left at (`x`, `y`) on a surface of the given scale. The count written to `out` is the glyphs
+    // that have ink: a character the table lacks, and a glyph with no width or height, takes no
+    // entry (the pen still moves by the advance of the ones that exist). `out` needs a place for each
+    // character, at most `text.len`; when it is shorter the rest of the text is not laid out. An
+    // outline font lays out nothing here: the provider shapes it.
+    //
+    // With `font.snap` each edge of each rectangle is put on the device grid on its own (the size
+    // is the difference of the snapped edges), which is ZGF's rule and `ui::snap_f32`'s.
+    // Without it the rectangles are exactly where the font says.
+    fn lay_glyphs { font: FontDef, size: f32, x: f32, y: f32, text: []u8, scale_x: f32, scale_y: f32, out: []mut Placed } -> usize {
+        match font.kind {
+            bitmap{ glyphs, first } => {
+                let kx = get_font_scale{ font, size, scale = scale_x }
+                let ky = get_font_scale{ font, size, scale = scale_y }
+                if not (kx > 0.0) or not (ky > 0.0) { return 0 }
+                let mut n: usize = 0
+                let mut pen: f32 = x
+                let mut at: usize = 0
+                while at < text.len and n < out.len {
+                    let d = decode_char{ text, at, encoding = font.encoding }
+                    at = at + @as(usize, d.len)
+                    let g = find_glyph{ glyphs, first, code = d.code } ifnull { continue }
+                    let left = pen + g.left * kx
+                    let top = y + g.top * ky
+                    let mut x0 = left
+                    let mut x1 = left + g.width * kx
+                    let mut y0 = top
+                    let mut y1 = top + g.height * ky
+                    if font.snap {
+                        x0 = snap_f32{ v = x0, scale = scale_x }
+                        x1 = snap_f32{ v = x1, scale = scale_x }
+                        y0 = snap_f32{ v = y0, scale = scale_y }
+                        y1 = snap_f32{ v = y1, scale = scale_y }
+                    }
+                    pen = pen + g.advance * kx
+                    if g.width > 0.0 and g.height > 0.0 {
+                        out[n] = Placed{ rect = Rect{ x = x0, y = y0, w = x1 - x0, h = y1 - y0 }, uv = g.uv }
+                        n = n + 1
+                    }
+                }
+                return n
+            }
+            outline => { return 0 }
+        }
+    }
+
+    namespace text {
+        // Two widths are the same when they differ by less than this: sums of advances at a fractional
+        // scale are not exact.
+        const EPS: f32 = 0.0001
+
+        // What one frame remembers: the widths of outline text already measured, and the buffer the
+        // provider shapes into. `make_cache` allocates both once; `reset_cache` starts a frame.
+        struct Measured { key: u64, width: f32 }
+        struct Cache {
+            entries: []mut Measured, used: u32,
+            shaped: []mut Shaped,
+            hits: u32, misses: u32,
+            unknown_font: u32,      // times text was asked of a font that is not registered (a wrap counts once a paragraph)
+            no_provider: u32,       // times text was asked of an outline font with no provider set
+        }
+
+        // `entries` places for measured widths (a full table measures again each time) and room for
+        // `shaped` glyphs in one call to the provider (a longer text is shaped in pieces, cut at a
+        // space where it can be).
+        fn make_cache(S) { realloc: alloc::Fn(S), mut heap: S, entries: u32, shaped: u32 } -> !Cache {
+            let e = try alloc::make(Measured, S){ realloc, &heap, count = @as(usize, entries) }
+            let s = try alloc::make(Shaped, S){ realloc, &heap, count = @as(usize, pick_max_u32{ a = shaped, b = 16 }) }
+            return Cache{ entries = e, used = 0, shaped = s, hits = 0, misses = 0, unknown_font = 0, no_provider = 0 }
+        }
+
+        fn reset_cache { mut cache: Cache } {
+            let mut i: usize = 0
+            while i < cache.entries.len {
+                cache.entries[i] = Measured{ key = 0, width = 0.0 }
+                i = i + 1
+            }
+            cache.used = 0
+            cache.hits = 0
+            cache.misses = 0
+            cache.unknown_font = 0
+            cache.no_provider = 0
+        }
+
+        // ---- units
+
+        struct Unit { start: usize, end: usize, advance: f32 }
+        enum Source: u8 { table, outline }
+        struct Units {
+            source: Source,
+            text: []u8, pos: usize,                         // the text, and where the next unit or chunk starts
+            encoding: Encoding, glyphs: []Glyph, first: u32, kx: f32,       // a glyph table
+            provider: ?TextProvider, shaped: []mut Shaped, handle: u32, pixels: u32, inv_x: f32,   // an outline font
+            count: usize, at: usize,                        // the glyphs of the chunk shaped last, and the next one to use
+            base: usize, group_start: usize, chunk_end: usize,          // where that chunk lies in the text
+        }
+
+        // Device pixels a face is sized to: `size` at `scale`, at least 1.
+        fn get_pixel_size { size: f32, scale: f32 } -> u32 {
+            let v = if scale > 0.0 { size * scale } else { size }
+            let r = round_f32{ x = v }
+            if not (r >= 1.0) { return 1 }
+            if r > 100000.0 { return 100000 }
+            return @as(u32, r)
+        }
+
+        // The units of `text` in `font` at `size`. An unknown font, or an outline font with no
+        // provider, gives units one character wide with no advance.
+        fn start_units { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: f32, text: []u8 } -> Units {
+            let mut it = Units{
+                source = Source::table, text, pos = 0,
+                encoding = Encoding::utf8, glyphs = [], first = 0, kx = 0.0,
+                provider = null, shaped = cache.shaped, handle = 0, pixels = 1, inv_x = 1.0,
+                count = 0, at = 0, base = 0, group_start = 0, chunk_end = 0,
+            }
+            let def = ui::draw::get_font{ list, font } ifnull {
+                cache.unknown_font = cache.unknown_font + 1
+                return it
+            }
+            it.encoding = def.encoding
+            match def.kind {
+                bitmap{ glyphs, first } => {
+                    it.glyphs = glyphs
+                    it.first = first
+                    it.kx = get_font_scale{ font = def, size, scale = list.scale_x }
+                }
+                outline{ handle } => {
+                    if provider == null or cache.shaped.len == 0 {
+                        cache.no_provider = cache.no_provider + 1
+                    } else {
+                        it.source = Source::outline
+                        it.provider = provider
+                        it.handle = handle
+                        it.pixels = get_pixel_size{ size, scale = list.scale_y }
+                        it.inv_x = if list.scale_x > 0.0 { 1.0 / list.scale_x } else { 1.0 }
+                    }
+                }
+            }
+            return it
+        }
+
+        fn is_continuation { b: u8 } -> bool { return b >= 0x80 and b < 0xC0 }
+
+        // Shapes the next piece of an outline text. A text longer than the buffer is cut at the last
+        // space that fits, or at a character boundary; the glyphs of a cluster that the buffer may
+        // have cut in two are left for the next piece. False when nothing is left.
+        fn fill_chunk { mut it: Units } -> bool {
+            while it.pos < it.text.len {
+                let p = it.provider ifnull { return false }
+                let base = it.pos
+                let remaining = it.text.len - base
+                let mut n = if remaining < it.shaped.len { remaining } else { it.shaped.len }
+                if n < remaining {
+                    let mut cut = n
+                    while cut > 1 and it.text[base + cut - 1] != ' ' { cut = cut - 1 }
+                    if cut > 1 {
+                        n = cut
+                    } else {
+                        while n > 1 and is_continuation{ b = it.text[base + n] } { n = n - 1 }
+                    }
+                }
+                let got = p.shape{ state = p.state, handle = it.handle, pixels = it.pixels, text = it.text[base..base + n], out = it.shaped }
+                let mut c = if got < it.shaped.len { got } else { it.shaped.len }
+                let mut end = n
+                if c == it.shaped.len and c > 1 {
+                    // The buffer is full, so the last cluster may go on past it: take it again with the next piece.
+                    let last = it.shaped[c - 1].cluster
+                    let mut k = c - 1
+                    while k > 0 and it.shaped[k - 1].cluster == last { k = k - 1 }
+                    let at = @as(usize, last)
+                    if k > 0 and at > 0 and at < n {
+                        c = k
+                        end = at
+                    }
+                }
+                it.pos = base + end
+                it.base = base
+                it.chunk_end = base + end
+                it.count = c
+                it.at = 0
+                it.group_start = base
+                if c > 0 { return true }
+            }
+            return false
+        }
+
+        // The next unit of an outline text: the glyphs of one cluster, as wide as they advance. A
+        // cluster that does not move on from the one before joins it, so every unit has a byte or more.
+        fn next_shaped { mut it: Units } -> ?Unit {
+            if it.at >= it.count {
+                if not fill_chunk{ &it } { return null }
+            }
+            let start = it.group_start
+            let mut j = it.at + 1
+            let mut advance = it.shaped[it.at].x_advance
+            while j < it.count {
+                let at = it.base + @as(usize, it.shaped[j].cluster)
+                if at > start and at < it.chunk_end { break }
+                advance = advance + it.shaped[j].x_advance
+                j = j + 1
+            }
+            let end = if j < it.count { it.base + @as(usize, it.shaped[j].cluster) } else { it.chunk_end }
+            it.at = j
+            it.group_start = end
+            return Unit{ start, end, advance = advance * it.inv_x }
+        }
+
+        // The next unit, or null at the end of the text.
+        fn next_unit { mut it: Units } -> ?Unit {
+            if it.source == Source::outline { return next_shaped{ &it } }
+            if it.pos >= it.text.len { return null }
+            let d = decode_char{ text = it.text, at = it.pos, encoding = it.encoding }
+            let start = it.pos
+            it.pos = start + @as(usize, d.len)
+            let mut advance: f32 = 0.0
+            if let g = find_glyph{ glyphs = it.glyphs, first = it.first, code = d.code } {
+                advance = g.advance * it.kx
+            }
+            return Unit{ start, end = it.pos, advance }
+        }
+
+        // ---- measuring
+
+        fn quantize { v: f32 } -> u64 {
+            if not (v >= 0.0) or v > 1000000.0 { return 0 }
+            return @as(u64, v * 64.0)
+        }
+
+        // FNV-1a over what decides an outline text's width: the font, its pixel size, the scale and the bytes.
+        fn hash_text { font: Font, pixels: u32, scale: f32, text: []u8 } -> u64 {
+            let mut h: u64 = 14695981039346656037
+            h = (h ^ @as(u64, font.index)) *% 1099511628211
+            h = (h ^ @as(u64, pixels)) *% 1099511628211
+            h = (h ^ quantize{ v = scale }) *% 1099511628211
+            let mut i: usize = 0
+            while i < text.len {
+                h = (h ^ @as(u64, text[i])) *% 1099511628211
+                i = i + 1
+            }
+            return if h == 0 { 1 } else { h }
+        }
+
+        fn sum_units { mut it: Units } -> f32 {
+            let mut total: f32 = 0.0
+            while true {
+                let u = next_unit{ &it } ifnull { break }
+                total = total + u.advance
+            }
+            return total
+        }
+
+        // The width of one line of `text`. A glyph table is summed directly; an outline font is
+        // shaped by the provider, and the width is remembered for the rest of the frame, so
+        // measuring a line and then wrapping or drawing it asks the provider once for the measure.
+        // The remembered width is found by a 64-bit hash of the font, pixel size, scale and bytes; the
+        // bytes themselves are not kept, so two texts with one hash would share a width.
+        fn measure_text { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: f32, text: []u8 } -> f32 {
+            let mut it = start_units{ &cache, list, provider, font, size, text }
+            if it.source == Source::table { return sum_units{ &it } }
+            let key = hash_text{ font, pixels = it.pixels, scale = list.scale_x, text }
+            let slots = cache.entries.len
+            let mut slot: usize = 0
+            if slots > 0 {
+                slot = @as(usize, key % @as(u64, slots))
+                let mut probes: usize = 0
+                while probes < slots {
+                    let e = cache.entries[slot]
+                    if e.key == 0 { break }
+                    if e.key == key {
+                        cache.hits = cache.hits + 1
+                        return e.width
+                    }
+                    slot = (slot + 1) % slots
+                    probes = probes + 1
+                }
+            }
+            cache.misses = cache.misses + 1
+            let width = sum_units{ &it }
+            // Keep a quarter of the table free so a probe always meets an empty slot.
+            if slots > 0 and @as(usize, cache.used) * 4 < slots * 3 and cache.entries[slot].key == 0 {
+                cache.entries[slot] = Measured{ key, width }
+                cache.used = cache.used + 1
+            }
+            return width
+        }
+
+        // The height of a line in `font` at `size` and where its baseline lies below the line's top,
+        // in logical units. A glyph table scales its own metrics; an outline font asks the provider
+        // for the face at the pixel size. With no font or no provider the line is `size` high.
+        fn get_line_metrics { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: f32 } -> LineMetrics {
+            let fallback = LineMetrics{ height = size, ascent = size }
+            let def = ui::draw::get_font{ list, font } ifnull {
+                cache.unknown_font = cache.unknown_font + 1
+                return fallback
+            }
+            match def.kind {
+                bitmap => {
+                    let k = get_font_scale{ font = def, size, scale = list.scale_y }
+                    return LineMetrics{ height = def.height * k, ascent = def.ascent * k }
+                }
+                outline{ handle } => {
+                    let p = provider ifnull {
+                        cache.no_provider = cache.no_provider + 1
+                        return fallback
+                    }
+                    let m = p.metrics{ state = p.state, handle, pixels = get_pixel_size{ size, scale = list.scale_y } }
+                    let inv = if list.scale_y > 0.0 { 1.0 / list.scale_y } else { 1.0 }
+                    return LineMetrics{ height = m.height * inv, ascent = m.ascent * inv }
+                }
+            }
+        }
+
+        // ---- wrapping
+
+        // Bytes [start, end) of the text and the width of what is drawn there.
+        struct Line { start: u32, end: u32, width: f32 }
+        // `lines` written, the byte where the text not laid out starts (the text's length when it
+        // all fit), and the widest line.
+        struct Wrapped { lines: u32, rest: u32, width: f32 }
+
+        fn emit_line { lines: []mut Line, mut out: Wrapped, start: usize, end: usize, width: f32 } -> bool {
+            if @as(usize, out.lines) >= lines.len { return false }
+            lines[@as(usize, out.lines)] = Line{ start = @as(u32, start), end = @as(u32, end), width }
+            out.lines = out.lines + 1
+            if width > out.width { out.width = width }
+            return true
+        }
+
+        enum Prev: u8 { none, space, hyphen, other }
+
+        // One paragraph (no newline in it), as lines appended to `lines`. False when `lines` is full.
+        fn wrap_paragraph { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: f32, text: []u8, from: usize, to: usize,
+                            limit: f32, lines: []mut Line, mut out: Wrapped } -> bool {
+            let para = text[from..to]
+            let mut it = start_units{ &cache, list, provider, font, size, text = para }
+            let mut line_start: usize = 0
+            let mut x: f32 = 0.0                // the width from line_start to the last unit taken
+            let mut have_brk = false            // the last place the line may break
+            let mut brk_end: usize = 0          //   the line ends here
+            let mut brk_w: f32 = 0.0            //   and is this wide
+            let mut brk_next: usize = 0         //   the next line starts here (past the spaces that were the break)
+            let mut brk_x: f32 = 0.0            //   and x was this much by there
+            let mut prev = Prev::none
+            while true {
+                let u = next_unit{ &it } ifnull { break }
+                let one = u.end - u.start == 1
+                let is_space = one and para[u.start] == ' '
+                let is_hyphen = one and para[u.start] == '-'
+                // Spaces hang past the edge; anything else that does not fit goes to the next line.
+                if not is_space and x + u.advance > limit + EPS and u.start > line_start {
+                    if have_brk {
+                        if not emit_line{ lines, &out, start = from + line_start, end = from + brk_end, width = brk_w } {
+                            out.rest = @as(u32, from + line_start)
+                            return false
+                        }
+                        line_start = brk_next
+                        x = x - brk_x
+                        have_brk = false
+                    }
+                    // No place to break, or the rest of the line is still too long with this unit: split the word here.
+                    if u.start > line_start and x + u.advance > limit + EPS {
+                        if not emit_line{ lines, &out, start = from + line_start, end = from + u.start, width = x } {
+                            out.rest = @as(u32, from + line_start)
+                            return false
+                        }
+                        line_start = u.start
+                        x = 0.0
+                    }
+                }
+                let before = x
+                x = x + u.advance
+                if is_space {
+                    if prev != Prev::space and u.start > line_start {
+                        have_brk = true
+                        brk_end = u.start
+                        brk_w = before
+                        brk_next = u.end
+                        brk_x = x
+                    } else if prev == Prev::space and have_brk and brk_next == u.start {
+                        brk_next = u.end
+                        brk_x = x
+                    }
+                    prev = Prev::space
+                } else if is_hyphen {
+                    // After a hyphen that follows a letter and is followed by one, not in "--" or " - ".
+                    if prev == Prev::other and u.end < para.len and para[u.end] != ' ' {
+                        have_brk = true
+                        brk_end = u.end
+                        brk_w = x
+                        brk_next = u.end
+                        brk_x = x
+                    }
+                    prev = Prev::hyphen
+                } else {
+                    prev = Prev::other
+                }
+            }
+            if not emit_line{ lines, &out, start = from + line_start, end = to, width = x } {
+                out.rest = @as(u32, from + line_start)
+                return false
+            }
+            return true
+        }
+
+        // Breaks `text` into lines no wider than `width`, written to `lines`.
+        //  - A newline ends a line; the newline is in no line. Text that ends in a newline ends in an
+        //    empty line, and an empty text is one empty line, so a text field has a line to put its
+        //    caret on.
+        //  - A line breaks at spaces and after a hyphen inside a word. The spaces where it broke are
+        //    in no line (the next line starts at the next word); spaces anywhere else are kept.
+        //  - A word that does not fit a line of its own is split where the width runs out, and
+        //    every line has at least one unit, so a width smaller than one glyph gives a line a unit.
+        // A width that is not a number is 0. When `lines` is full the text from `rest` on is not laid out.
+        fn wrap_text { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: f32, text: []u8, width: f32, lines: []mut Line } -> Wrapped {
+            let mut out = Wrapped{ lines = 0, rest = 0, width = 0.0 }
+            let limit = if width >= 0.0 { width } else { 0.0 }
+            let mut from: usize = 0
+            while true {
+                let mut to = from
+                while to < text.len and text[to] != '\n' { to = to + 1 }
+                if not wrap_paragraph{ &cache, list, provider, font, size, text, from, to, limit, lines, &out } {
+                    return out
+                }
+                if to >= text.len {
+                    out.rest = @as(u32, text.len)
+                    return out
+                }
+                from = to + 1
+            }
+        }
+
+        // ---- ellipsis
+
+        // `len` bytes of the text are kept, then "..." if `dots`; `width` is of all of it.
+        struct Fit { len: u32, width: f32, dots: bool }
+
+        const DOTS: []u8 = "..."
+
+        // Cuts one line of text to `width`: all of it when it fits, otherwise the longest start of it
+        // with its trailing spaces dropped that leaves room for "...". When not even the dots fit the
+        // result keeps nothing and has no dots.
+        fn fit_ellipsis { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: f32, text: []u8, width: f32 } -> Fit {
+            let total = measure_text{ &cache, list, provider, font, size, text }
+            let limit = if width >= 0.0 { width } else { 0.0 }
+            if total <= limit + EPS { return Fit{ len = @as(u32, text.len), width = total, dots = false } }
+            let dots_w = measure_text{ &cache, list, provider, font, size, text = DOTS }
+            if dots_w > limit + EPS { return Fit{ len = 0, width = 0.0, dots = false } }
+            let budget = limit - dots_w
+            let mut it = start_units{ &cache, list, provider, font, size, text }
+            let mut x: f32 = 0.0
+            let mut kept: usize = 0         // the end of the last unit that is not a space
+            let mut kept_w: f32 = 0.0
+            while true {
+                let u = next_unit{ &it } ifnull { break }
+                if x + u.advance > budget + EPS { break }
+                x = x + u.advance
+                if not (u.end - u.start == 1 and text[u.start] == ' ') {
+                    kept = u.end
+                    kept_w = x
+                }
+            }
+            return Fit{ len = @as(u32, kept), width = kept_w + dots_w, dots = true }
+        }
+
+        // The kept start of `text` and then "..." (when the fit has them) into `into`, as much as fits.
+        // The number of bytes written.
+        fn copy_ellipsized { text: []u8, fit: Fit, into: []mut u8 } -> usize {
+            let keep = if @as(usize, fit.len) < text.len { @as(usize, fit.len) } else { text.len }
+            let mut n: usize = 0
+            while n < keep and n < into.len {
+                into[n] = text[n]
+                n = n + 1
+            }
+            if fit.dots and n == keep {
+                let mut i: usize = 0
+                while i < DOTS.len and n < into.len {
+                    into[n] = DOTS[i]
+                    n = n + 1
+                    i = i + 1
+                }
+            }
+            return n
+        }
+
+        // ---- the caret
+        //
+        // These work on one line. A caret stands between units: on a glyph table's characters (a
+        // byte or a code point, by the font's encoding), and on an outline font's clusters, so it
+        // never stops inside a ligature. An index inside a unit counts as the unit's start.
+
+        // The next place the caret can stand after `index` (`forward`) or before it. At the ends of
+        // the text it stays.
+        fn step_caret { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: f32, text: []u8, index: usize, forward: bool } -> usize {
+            let at = if index < text.len { index } else { text.len }
+            if not forward and at == 0 { return 0 }
+            let mut it = start_units{ &cache, list, provider, font, size, text }
+            let mut last: usize = 0
+            while true {
+                let u = next_unit{ &it } ifnull { break }
+                if forward {
+                    if u.end > at { return u.end }
+                } else {
+                    if u.start < at and u.end >= at { return u.start }
+                }
+                last = u.start
+            }
+            return if forward { text.len } else { last }
+        }
+
+        // How far from the line's left edge the caret stands at byte `index`.
+        fn locate_caret { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: f32, text: []u8, index: usize } -> f32 {
+            let mut it = start_units{ &cache, list, provider, font, size, text }
+            let mut x: f32 = 0.0
+            while true {
+                let u = next_unit{ &it } ifnull { break }
+                if u.end > index { break }
+                x = x + u.advance
+            }
+            return x
+        }
+
+        // The byte index of the caret place nearest `x` (distance from the line's left edge): the
+        // start of a unit when `x` is before its middle, otherwise its end. 0 for an `x` left of the
+        // line, the length for one right of it.
+        fn pick_index { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: f32, text: []u8, x: f32 } -> usize {
+            let mut it = start_units{ &cache, list, provider, font, size, text }
+            let mut pos: f32 = 0.0
+            while true {
+                let u = next_unit{ &it } ifnull { break }
+                if x <= pos or x < pos + u.advance * 0.5 { return u.start }
+                pos = pos + u.advance
+            }
+            return text.len
+        }
+    }
+}

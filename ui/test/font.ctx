@@ -1,0 +1,48 @@
+// ui_test: the font the tests draw in. A glyph table built in code, so no font file exists anywhere
+// under ui/ and every metric is fixed: 95 cells of 8 by 16 for the printable ASCII characters
+// (32 to 126), advance 8, line height 16, ascent 12, snapped, UTF-8. Each cell's coverage is a frame
+// with the character's bits as marks inside it, so no two glyphs look alike. Text in it is not
+// readable, which is the point: layouts compare the same on every machine.
+//
+// The picture is 128 by 96 bytes of coverage (16 cells a row, 6 rows) with `image.id` 0, which is
+// how a glyph table that the program supplies pixels for is marked (plan section 2.7).
+namespace ui_test {
+    const CELL_WIDTH: usize = 8
+    const CELL_HEIGHT: usize = 16
+    const PICTURE_WIDTH: usize = 128
+    const PICTURE_HEIGHT: usize = 96
+
+    fn make_test_font(S) { realloc: alloc::Fn(S), mut heap: S } -> !ui::FontDef {
+        let glyphs = try alloc::make(ui::Glyph, S){ realloc, &heap, count = 95 }
+        let pixels = try alloc::make(u8, S){ realloc, &heap, count = PICTURE_WIDTH * PICTURE_HEIGHT }
+        let mut i: usize = 0
+        while i < 95 {
+            let column = i % 16
+            let row = i / 16
+            let cx = @as(f32, column * CELL_WIDTH)
+            let cy = @as(f32, row * CELL_HEIGHT)
+            glyphs[i] = ui::Glyph{
+                uv = ui::Uv{ u0 = cx / 128.0, v0 = cy / 96.0, u1 = (cx + 8.0) / 128.0, v1 = (cy + 16.0) / 96.0 },
+                width = 8.0, height = 16.0, left = 0.0, top = 0.0, advance = 8.0,
+            }
+            // The cell's picture: a frame, and the character's eight bits as marks inside it.
+            let code = i + 32
+            let mut y: usize = 2
+            while y < 14 {
+                let mut x: usize = 1
+                while x < 7 {
+                    let edge = y == 2 or y == 13 or x == 1 or x == 6
+                    let bit = if edge { 1 } else { (code >> ((y - 3) / 3 * 2 + (x - 2) / 2)) & 1 }
+                    if bit == 1 { pixels[(row * CELL_HEIGHT + y) * PICTURE_WIDTH + column * CELL_WIDTH + x] = 255 }
+                    x = x + 1
+                }
+                y = y + 1
+            }
+            i = i + 1
+        }
+        return ui::FontDef{
+            kind = ui::FontKind::bitmap{ image = ui::Image{ .. }, glyphs, first = 32, pixels, pixels_width = 128, pixels_height = 96 },
+            encoding = ui::Encoding::utf8, height = 16.0, ascent = 12.0, snap = true,
+        }
+    }
+}

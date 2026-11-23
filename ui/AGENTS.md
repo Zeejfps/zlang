@@ -58,6 +58,7 @@ compiler on first use; a cached rerun of a small program takes about 0.1 s.
 
 ```
 kotor/tools/ctxc run ui/tests/draw                     # stage 0: draw list, recorder, formatting
+kotor/tools/ctxc run ui/tests/text                     # stage 1: fonts, measuring, wrapping, caret
 kotor/tools/ctxc run ui/tests/draw -- --update         # rewrite goldens after an intended change
 kotor/tools/ctxc run kotor/tools/uicompat              # ui built beside kotor's libraries
 ui/tools/check                                         # every headless ui test in turn, then uicompat
@@ -83,8 +84,10 @@ ui/
     draw.ctx    ui::draw: make, reset, add, add_clip, add_rect, add_image, add_line, add_text, add_host
     num.ctx     libm externs (floor_f32 ...), pick_min_f32, pick_max_f32, clamp_f32, snap_f32
     format.ctx  format_fixed, format_hex, format_color: into a caller's buffer, no std float printing
+    font.ctx    the provider hook types, decode_char, get_font_scale; ui::draw: add_font, has_font, get_font, add_known_text
+    text.ctx    lay_glyphs; ui::text: Cache, measure_text, wrap_text, fit_ellipsis, step_caret, locate_caret, pick_index
   record/     namespace ui_rec     the recorder: Sink with its own #write fns, write_list, write_quoted
-  test/       namespace ui_test    Tally, expect, has_flag, compare_golden (later: scripted driver, test font)
+  test/       namespace ui_test    Tally, expect, has_flag, compare_golden, make_test_font (later: scripted driver)
   tests/<name>/                    programs: build.ctx, main.ctx, golden/*.txt
   tools/check                      bash loop over the headless tests
   out/                             (ignored) screenshots from later stages
