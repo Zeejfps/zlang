@@ -3660,6 +3660,21 @@ namespace check {
                     error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
                 }
             }
+            // A float literal rounds to the nearest value of its type, but not to an infinity
+            // (§11, Literals, rule 2): `let y: f32 = 1e300` would be `inf` without a word.
+            if e.k is float{ negative, value } {
+                let t = types::prune{ s = c.ty, t = type_of_expr{ c, e } }
+                let narrow = is_f32{ t = op_type{ c, t } }
+                if math::is_inf{ x = if narrow { f32r{ x = value } } else { value } } {
+                    let text = str{ s = source_text{ c, span = e.span } }
+                    let sign: utf8::String = if negative { "-" } else { "" }
+                    if narrow {
+                        errorf{ &c, at = expr_at{ e }, msg = @fmt("{} doesn't fit f32 (its largest value is about 3.4e38): write `@as(f32, {})` if infinity is meant", text, text) }
+                    } else {
+                        errorf{ &c, at = expr_at{ e }, msg = @fmt("{} doesn't fit f64 (its largest value is about 1.8e308): write `@as(f32, {}1e300)`, which widens to f64, if infinity is meant", text, sign) }
+                    }
+                }
+            }
             i = i + 1
         }
         let gs = list::items{ list = c.gvars }

@@ -89,7 +89,9 @@ function: can't be stored in a struct or returned), `extern fn{C} -> R` (C funct
   them.
 - Same bits, other type: `@trunc` between integers of one size (`@trunc(u32, -1)` is
   `0xFFFFFFFF`, where `@as` panics); `math::f32_from_bits`, `f32_to_bits` and the `f64` pair for floats.
-- Integer literals take their type from use; float literals default to `f64`. Hex `0x1F`.
+- Integer literals take their type from use; float literals default to `f64`. Hex `0x1F`. A
+  float literal too big for its type is an error (`let y: f32 = 1e300`); `@as(f32, 1e300)` is
+  `inf`.
 - Structs/unions/arrays are values: assignment copies. `let mut x: T` zero-initialises if
   every field has a zero value; field defaults don't apply there, only in literals. Everything
   has one but pointers, functions and capabilities (so not a `list::List` or a `map::Map`,

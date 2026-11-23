@@ -3322,6 +3322,49 @@ fn main { mut io: Io } {
 }
 """, 'nothing before `ifoverflow` can overflow: it covers the integer `+`, `-`, `*` and `/`, unary `-` and `@as` to an integer')
 
+    def test_float_literal_out_of_range(self):
+        """§11, Literals, rule 2: a float literal that would round to an infinity in its type is
+        an error, however it takes the type; `@as` gives the infinity."""
+        f32 = "%s doesn't fit f32 (its largest value is about 3.4e38): write `@as(f32, %s)` if infinity is meant"
+        f64 = ("%s doesn't fit f64 (its largest value is about 1.8e308): write `@as(f32, %s)`, which widens to "
+               "f64, if infinity is meant")
+        for src, msg in [
+            ('fn main {} { let y: f32 = 1e300 }', f32 % ('1e300', '1e300')),
+            ('fn main {} { let y: f32 = 3.5e38 }', f32 % ('3.5e38', '3.5e38')),
+            ('fn main {} { let y: f32 = -1e39 }', f32 % ('-1e39', '-1e39')),
+            ('fn f { x: f32 } {}\nfn main {} { f{ x = 1e39 } }', f32 % ('1e39', '1e39')),
+            ('struct S { x: f32 }\nfn main {} { let s = S{ x = 1e39 } }', f32 % ('1e39', '1e39')),
+            ('struct S { x: f32 = 1e39 }\nfn main {} { let s = S{ .. } }', f32 % ('1e39', '1e39')),
+            ('fn f {} -> f32 { return 1e39 }\nfn main {} { _ = f{} }', f32 % ('1e39', '1e39')),
+            ('fn main {} { let a: [2]f32 = [1.0, 1e39] }', f32 % ('1e39', '1e39')),
+            ('fn main {} { let a: f32 = 2.0; let b = a * 1e39 }', f32 % ('1e39', '1e39')),
+            ('type M = distinct f32\nfn main {} { let m: M = 1e39 }', f32 % ('1e39', '1e39')),
+            ('const BIG: f32 = 1e39\nfn main {} { _ = BIG }', f32 % ('1e39', '1e39')),
+            ('const BIG: f32 = -1e39\nfn main {} { _ = BIG }', f32 % ('-1e39', '-1e39')),
+            ('fn main {} { let y = 1e999 }', f64 % ('1e999', '1e300')),
+            ('fn main {} { let y: f64 = -1e999 }', f64 % ('-1e999', '-1e300')),
+            ('fn main {} { let y = @as(f32, 1e999) }', f64 % ('1e999', '1e300')),
+            ('const BIG: f64 = 1e999\nfn main {} { _ = BIG }', f64 % ('1e999', '1e300')),
+        ]:
+            with self.subTest(src=src):
+                self.assertCompileError(src, msg)
+        # Rounding is no error: to the nearest value, and a tiny literal to a subnormal or zero.
+        self.assertOutput("""
+const TINY: f32 = 1e-60
+const INF: f64 = @as(f32, 1e300)
+fn main { mut io: Io } {
+    let a: f32 = 0.1
+    let b: f32 = 1e-50
+    let c: f32 = 1e-40
+    let d: f32 = 3.4e38
+    let e = 1e-999
+    let f = 1.7e308
+    let g: f64 = @as(f32, -1e300)
+    _ = @fmt(&io, "{} {} {} {} {} {}\\n", a, b, c > 0.0, d > 1e38, e, f > 1e307)
+    _ = @fmt(&io, "{} {} {} {}\\n", TINY, INF, g, @as(f32, 1e39))
+}
+""", '0.1 0.0 true true 0.0 true\n0.0 inf -inf inf\n')
+
     def test_type_argument_parsed_as_type(self):
         # `S` names both a struct and a local; in a type position it can only be the struct.
         self.assertOutput("""
