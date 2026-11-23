@@ -1,0 +1,553 @@
+// ui_fonts: outline fonts (TrueType, OpenType) for ui, over FreeType and HarfBuzz (plan section 2.7),
+// designed after ZGF.Fonts' FreeTypeFontBackend. The library holds the faces a program added, their
+// sized variants, the fallback faces and the shaped-run cache (shape.ctx), and serves the core and the
+// staged level through a `ui::TextProvider`:
+//
+//   metrics    a sized face's ascent and line height, in device pixels
+//   shape      a run of UTF-8 text into glyphs, each with the sized face it came from (a fallback
+//              face where the face lacks a character), its offsets, advance and cluster
+//   rasterize  one glyph of a sized face as 8-bit coverage, top row first, `width` bytes a row
+//
+// A sized variant is made the first time a face is asked for at a pixel size: an FT_Size of the
+// face's FT_Face and an hb_font of its hb_face, scaled to that size. Its id is the `face` a `Shaped`
+// names; ids are never reused, so the staged level's glyph cache, keyed by (sized face, glyph), never
+// mixes two of them. Sizes are device pixels: the core asks at `size * scale`.
+//
+// Nothing here panics on what a program or a font hands it. A handle that names no face, a zero or
+// huge size, a full size table, a missing glyph, a bitmap larger than the buffer, a FreeType error and
+// bytes that are not UTF-8 each give an empty or partial answer and are counted in `Library.stats`.
+// Malformed font bytes make `add_face` fail. `Library.live` counts the FreeType and HarfBuzz objects
+// alive, and `count_freed` what HarfBuzz reports freed, so a test can see that `close` released
+// everything.
+namespace ui_fonts {
+    // Permission to call FreeType and HarfBuzz: `fn main { ..., mut fonts: ui_fonts::Fonts }`. Every
+    // extern fn takes it. Its statics count the blobs and buffers HarfBuzz reported freed, and are
+    // the keys the finalizers are attached under.
+    capability Fonts {
+        static blobs_freed: u64,
+        static buffers_freed: u64,
+        static blob_key: UserDataKey,
+        static buffer_key: UserDataKey,
+    }
+
+    error freetype_failed{ code: i32 }                         // FT_Init_FreeType's error
+    error bad_font{ code: i32 }                                // FreeType's error opening the bytes; -1 for no bytes or more than 2 GiB
+    error bad_layout{ field: []u8, got: i64, want: i64 }       // a mirrored FreeType field read wrong (freetype.ctx)
+    error no_room                                              // the face table is full
+    error closed                                               // the library was closed
+
+    // Pixel sizes past this are refused: no glyph of a UI is that big.
+    const MAX_PIXELS: u32 = 2048
+    // Fallback faces tried after a face lacks a character.
+    const MAX_FALLBACKS: usize = 8
+    // The pixel size add_face checks a new face at.
+    const CHECK_PIXELS: u32 = 32
+
+    // How much room `open` allocates: faces and their sized variants alive at once; the run cache's
+    // generations (each holds `runs` shaped runs, `run_bytes` bytes of their text and `run_glyphs`
+    // glyphs); and `scratch`, the most glyphs one shaping call makes (the rest of a longer text is
+    // cut, and counted).
+    struct Capacity { faces: u32 = 16, sizes: u32 = 64, runs: u32 = 1024, run_bytes: u32 = 65536, run_glyphs: u32 = 32768, scratch: u32 = 4096 }
+
+    // A face added to the library: `FontKind::outline{ handle = id }` names it to the core. 0 is none.
+    struct Face { id: u32 = 0 }
+
+    // A face: its FreeType and HarfBuzz objects over one copy of the bytes, which the blob owns. id 0: free.
+    struct FaceSlot { id: u32, ft: ?*mut FtFace, hb: ?*mut HbFace, blob: ?*mut HbBlob, units_per_em: u32, glyph_count: u32 }
+    // A sized variant of face `face` at `pixels`. ascent, descent and height are in device pixels. id 0: free.
+    struct SizeSlot { id: u32, face: u32, pixels: u32, ft: ?*mut FtSize, hb: ?*mut HbFont, ascent: f32, descent: f32, height: f32 }
+
+    // What the library did, and what it refused (each refusal is an empty or partial answer).
+    struct Stats {
+        shaped: u64 = 0,            // runs HarfBuzz shaped
+        hits: u64 = 0,              // shape calls the run cache answered
+        misses: u64 = 0,            // shape calls it did not
+        uncached: u64 = 0,          // shaped text too big for an empty generation, shaped again each time
+        retired: u64 = 0,           // generations of the run cache dropped to make room
+        forgotten: u64 = 0,         // times the whole run cache was emptied (a fallback added, a face released)
+        truncated: u64 = 0,         // shape calls whose glyphs passed the scratch buffer: the rest was cut
+        missing: u64 = 0,           // glyphs of characters no face has (glyph 0, which draws nothing)
+        invalid: u64 = 0,           // bytes that are not UTF-8, each shaped as U+FFFD
+        rasterized: u64 = 0,        // glyphs rasterised
+        too_big: u64 = 0,           // bitmaps larger than the buffer they were asked into
+        bad_bitmap: u64 = 0,        // bitmaps that are not 8-bit coverage
+        failed: u64 = 0,            // FreeType errors loading a glyph or making a size
+        bad_layout: u64 = 0,        // mirrored fields that read wrong after add_face's check passed
+        unknown: u64 = 0,           // a handle or sized face that names no face alive
+        bad_size: u64 = 0,          // a pixel size of 0 or past MAX_PIXELS, or a text past MAX_TEXT bytes
+        sizes_full: u64 = 0,        // sizes asked for with the size table full
+        fallbacks_full: u64 = 0,    // fallbacks added past MAX_FALLBACKS
+    }
+
+    // FreeType and HarfBuzz objects this library made and has not released.
+    struct Live { ft_libraries: u32 = 0, ft_faces: u32 = 0, ft_sizes: u32 = 0, hb_blobs: u32 = 0, hb_faces: u32 = 0, hb_fonts: u32 = 0, hb_buffers: u32 = 0 }
+
+    struct Library {
+        fonts: Fonts,                       // the provider's functions get only the state pointer
+        layout: Layout,                     // FreeType's mirrored offsets (freetype.ctx)
+        ft: ?*mut FtLibrary,                // null once closed
+        buffer: ?*mut HbBuffer,             // the one buffer every run is shaped in
+        faces: []mut FaceSlot, next_face: u32,
+        sizes: []mut SizeSlot, next_size: u32,
+        fallbacks: [MAX_FALLBACKS]u32, fallback_count: u32,     // face ids, in the order added
+        cur: RunCache, old: RunCache,       // the run cache's two generations (shape.ctx)
+        scratch: []mut ui::Shaped,          // one shaping call's glyphs
+        stats: Stats,
+        live: Live,
+    }
+
+    // Starts FreeType and allocates every table once from the caller's allocator. FreeType and
+    // HarfBuzz allocate their own objects with the C allocator.
+    fn open(S) { mut fonts: Fonts, realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !Library {
+        let faces = try alloc::make(FaceSlot, S){ realloc, &heap, count = @as(usize, ui::pick_max_u32{ a = cap.faces, b = 1 }) }
+        let sizes = try alloc::make(SizeSlot, S){ realloc, &heap, count = @as(usize, ui::pick_max_u32{ a = cap.sizes, b = 1 }) }
+        let cur = try make_runs(S){ realloc, &heap, cap }
+        let old = try make_runs(S){ realloc, &heap, cap }
+        let scratch = try alloc::make(ui::Shaped, S){ realloc, &heap, count = @as(usize, ui::pick_max_u32{ a = cap.scratch, b = 16 }) }
+        let mut ft: ?*mut FtLibrary = null
+        let code = FT_Init_FreeType{ &fonts, library = &ft }
+        if code != 0 { return freetype_failed{ code } }
+        let library = ft ifnull { return freetype_failed{ code = -1 } }
+        let buffer = hb_buffer_create{ &fonts }
+        if hb_buffer_allocation_successful{ &fonts, buffer } == 0 {
+            hb_buffer_destroy{ &fonts, buffer }
+            _ = FT_Done_FreeType{ &fonts, library }
+            return alloc::out_of_memory
+        }
+        _ = hb_buffer_set_user_data{ &fonts, buffer, key = &fonts.buffer_key, data = null, destroy = count_buffer_freed, replace = 1 }
+        return Library{
+            fonts, layout = LAYOUT, ft = library, buffer,
+            faces, next_face = 1, sizes, next_size = 1,
+            fallbacks = [0, 0, 0, 0, 0, 0, 0, 0], fallback_count = 0,
+            cur, old, scratch,
+            stats = Stats{ .. },
+            live = Live{ ft_libraries = 1, hb_buffers = 1, .. },
+        }
+    }
+
+    // FreeType's version, for a program's log.
+    struct Version { major: i32, minor: i32, patch: i32 }
+
+    fn get_version { mut lib: Library } -> Version {
+        let mut v = Version{ major = 0, minor = 0, patch = 0 }
+        let ft = lib.ft ifnull { return v }
+        FT_Library_Version{ &lib.fonts, library = ft, major = &v.major, minor = &v.minor, patch = &v.patch }
+        return v
+    }
+
+    // How many blobs and buffers HarfBuzz has freed since the program started (its finalizers).
+    struct Freed { blobs: u64, buffers: u64 }
+
+    fn count_freed { mut fonts: Fonts } -> Freed {
+        return Freed{ blobs = fonts.blobs_freed, buffers = fonts.buffers_freed }
+    }
+
+    // ---- faces
+
+    fn find_face { lib: Library, id: u32 } -> ?usize {
+        if id == 0 { return null }
+        for f at i in lib.faces { if f.id == id { return i } }
+        return null
+    }
+
+    fn find_size { lib: Library, id: u32 } -> ?usize {
+        if id == 0 { return null }
+        for s at i in lib.sizes { if s.id == id { return i } }
+        return null
+    }
+
+    // Adds the face `index` of a font file's bytes (TrueType, OpenType, or a collection of them).
+    // The bytes are copied (into a HarfBuzz blob, which FreeType reads too), so the program may free
+    // its own as soon as this returns. Every mirrored FreeType field is checked on the new face
+    // before it is used: a mismatch fails with `bad_layout` and leaves nothing behind.
+    fn add_face { mut lib: Library, data: []u8, index: u32 } -> !Face {
+        let ft = lib.ft ifnull { return closed }
+        if data.len == 0 or data.len > 2147483647 { return bad_font{ code = -1 } }
+        let mut free: ?usize = null
+        for f at i in lib.faces {
+            if f.id == 0 {
+                free = i
+                break
+            }
+        }
+        let slot = free ifnull { return no_room }
+        let blob = hb_blob_create{ &lib.fonts, data = data.ptr, length = @as(u32, data.len), mode = MEMORY_MODE_DUPLICATE, user_data = null, destroy = null }
+        if hb_blob_get_length{ &lib.fonts, blob } != @as(u32, data.len) {
+            hb_blob_destroy{ &lib.fonts, blob }
+            return alloc::out_of_memory
+        }
+        _ = hb_blob_set_user_data{ &lib.fonts, blob, key = &lib.fonts.blob_key, data = null, destroy = count_blob_freed, replace = 1 }
+        lib.live.hb_blobs = lib.live.hb_blobs + 1
+        let id = lib.next_face
+        lib.next_face = lib.next_face + 1
+        lib.faces[slot] = FaceSlot{ id, ft = null, hb = null, blob, units_per_em = 0, glyph_count = 0 }
+        let mut length: u32 = 0
+        let bytes = hb_blob_get_data{ &lib.fonts, blob, length = &length } ifnull {
+            drop_face{ &lib, index = slot }
+            return alloc::out_of_memory
+        }
+        let mut face: ?*mut FtFace = null
+        let code = FT_New_Memory_Face{ &lib.fonts, library = ft, base = bytes, size = @as(i64, data.len), face_index = @as(i64, index), face = &face }
+        let f = face ifnull {
+            drop_face{ &lib, index = slot }
+            return bad_font{ code = if code != 0 { code } else { -1 } }
+        }
+        if code != 0 {
+            drop_face{ &lib, index = slot }
+            return bad_font{ code }
+        }
+        lib.faces[slot].ft = f
+        lib.live.ft_faces = lib.live.ft_faces + 1
+        lib.faces[slot].hb = hb_face_create{ &lib.fonts, blob, index }
+        lib.live.hb_faces = lib.live.hb_faces + 1
+        check_face{ &lib, index = slot } iferr err{ error } {
+            drop_face{ &lib, index = slot }
+            return error
+        }
+        return Face{ id }
+    }
+
+    // The start-up check of the mirrored fields (freetype.ctx), on every face added: units per em
+    // and the glyph count against HarfBuzz's reading of the same tables, a size's y_ppem against the
+    // size asked for and its metrics in range, and a glyph slot that names the face and the glyph
+    // loaded into it, with an 8-bit bitmap of plausible size and bearings.
+    fn check_face { mut lib: Library, index: usize } -> ! {
+        let layout = lib.layout
+        let f = lib.faces[index].ft ifnull { return closed }
+        let hb = lib.faces[index].hb ifnull { return closed }
+        let upem = @as(i64, get_units_per_em{ face = f, layout })
+        let hb_upem = @as(i64, hb_face_get_upem{ &lib.fonts, face = hb })
+        if upem < 16 or upem > 16384 or upem != hb_upem { return bad_layout{ field = "FT_FaceRec.units_per_EM", got = upem, want = hb_upem } }
+        let glyphs = get_num_glyphs{ face = f, layout }
+        let hb_glyphs = @as(i64, hb_face_get_glyph_count{ &lib.fonts, face = hb })
+        if glyphs < 1 or glyphs > 65535 or glyphs != hb_glyphs { return bad_layout{ field = "FT_FaceRec.num_glyphs", got = glyphs, want = hb_glyphs } }
+        lib.faces[index].units_per_em = @as(u32, upem)
+        lib.faces[index].glyph_count = @as(u32, glyphs)
+
+        let mut made: ?*mut FtSize = null
+        let code = FT_New_Size{ &lib.fonts, face = f, size = &made }
+        if code != 0 { return bad_font{ code } }
+        let size = made ifnull { return bad_font{ code = -1 } }
+        defer _ = FT_Done_Size{ &lib.fonts, size }
+        let activated = FT_Activate_Size{ &lib.fonts, size }
+        if activated != 0 { return bad_font{ code = activated } }
+        let set = FT_Set_Pixel_Sizes{ &lib.fonts, face = f, pixel_width = 0, pixel_height = CHECK_PIXELS }
+        if set != 0 { return bad_font{ code = set } }
+        let m = get_size_metrics{ size, layout }
+        if @as(u32, m.y_ppem) != CHECK_PIXELS { return bad_layout{ field = "FT_Size_Metrics.y_ppem", got = @as(i64, m.y_ppem), want = @as(i64, CHECK_PIXELS) } }
+        let px = @as(f32, CHECK_PIXELS)
+        if not (m.ascender > 0.0 and m.ascender < px * 4.0) { return bad_layout{ field = "FT_Size_Metrics.ascender", got = @as(i64, m.ascender), want = @as(i64, CHECK_PIXELS) } }
+        if not (m.descender <= 0.0 and m.descender > -px * 4.0) { return bad_layout{ field = "FT_Size_Metrics.descender", got = @as(i64, m.descender), want = 0 } }
+        if not (m.height > 0.0 and m.height < px * 4.0) { return bad_layout{ field = "FT_Size_Metrics.height", got = @as(i64, m.height), want = @as(i64, CHECK_PIXELS) } }
+
+        let glyph = pick_check_glyph{ &lib, face = f, count = @as(u32, glyphs) }
+        let loaded = FT_Load_Glyph{ &lib.fonts, face = f, glyph_index = glyph, load_flags = LOAD_FLAGS }
+        if loaded != 0 { return bad_font{ code = loaded } }
+        let slot = read_slot{ face = f, layout }
+        let address = @as(i64, @addr(f))
+        if @as(i64, slot.face) != address { return bad_layout{ field = "FT_GlyphSlotRec.face", got = @as(i64, slot.face), want = address } }
+        if slot.glyph != glyph { return bad_layout{ field = "FT_GlyphSlotRec.glyph_index", got = @as(i64, slot.glyph), want = @as(i64, glyph) } }
+        if slot.width > 0 and slot.rows > 0 {
+            if slot.pixel_mode != PIXEL_MODE_GRAY or slot.num_grays != 256 {
+                return bad_layout{ field = "FT_Bitmap.pixel_mode", got = @as(i64, slot.pixel_mode), want = @as(i64, PIXEL_MODE_GRAY) }
+            }
+            if slot.width > CHECK_PIXELS * 4 or slot.rows > CHECK_PIXELS * 4 or slot.row < @as(usize, slot.width) or slot.pixels.len == 0 {
+                return bad_layout{ field = "FT_Bitmap.width", got = @as(i64, slot.width), want = @as(i64, CHECK_PIXELS) }
+            }
+            if slot.left < -64 or slot.left > 64 or slot.top < -64 or slot.top > 128 {
+                return bad_layout{ field = "FT_GlyphSlotRec.bitmap_top", got = @as(i64, slot.top), want = @as(i64, m.ascender) }
+            }
+        }
+    }
+
+    // A glyph to load for the check: of the first of a few common characters the face has, or glyph
+    // 1 (glyph 0 is .notdef).
+    fn pick_check_glyph { mut lib: Library, face: *mut FtFace, count: u32 } -> u32 {
+        let codes: [6]u64 = [72, 65, 120, 48, 0x4E00, 0x3042]       // H A x 0 一 あ
+        for code in codes {
+            let g = FT_Get_Char_Index{ &lib.fonts, face, charcode = code }
+            if g != 0 { return g }
+        }
+        return if count > 1 { 1 } else { 0 }
+    }
+
+    // Releases a face slot and every sized variant of it, HarfBuzz's objects before the FreeType
+    // face, and the blob, which owns the bytes FreeType reads, last.
+    fn drop_face { mut lib: Library, index: usize } {
+        let id = lib.faces[index].id
+        for i in 0..lib.sizes.len {
+            if lib.sizes[i].id != 0 and lib.sizes[i].face == id { drop_size{ &lib, index = i } }
+        }
+        if let hb = lib.faces[index].hb {
+            hb_face_destroy{ &lib.fonts, face = hb }
+            lib.live.hb_faces = lib.live.hb_faces - 1
+        }
+        if let f = lib.faces[index].ft {
+            _ = FT_Done_Face{ &lib.fonts, face = f }
+            lib.live.ft_faces = lib.live.ft_faces - 1
+        }
+        if let blob = lib.faces[index].blob {
+            hb_blob_destroy{ &lib.fonts, blob }
+            lib.live.hb_blobs = lib.live.hb_blobs - 1
+        }
+        lib.faces[index] = FaceSlot{ id = 0, ft = null, hb = null, blob = null, units_per_em = 0, glyph_count = 0 }
+    }
+
+    fn drop_size { mut lib: Library, index: usize } {
+        if let hb = lib.sizes[index].hb {
+            hb_font_destroy{ &lib.fonts, font = hb }
+            lib.live.hb_fonts = lib.live.hb_fonts - 1
+        }
+        if let s = lib.sizes[index].ft {
+            _ = FT_Done_Size{ &lib.fonts, size = s }
+            lib.live.ft_sizes = lib.live.ft_sizes - 1
+        }
+        lib.sizes[index] = SizeSlot{ id = 0, face = 0, pixels = 0, ft = null, hb = null, ascent = 0.0, descent = 0.0, height = 0.0 }
+    }
+
+    // Adds `face` to the faces tried, in the order added, for a character a face lacks (ZGF's
+    // RegisterFallbackFont). Runs shaped before are forgotten, since they may have missed it. Past
+    // MAX_FALLBACKS it is counted and not added; a face already there, or no face, is not added.
+    fn add_fallback { mut lib: Library, face: Face } {
+        if find_face{ lib, id = face.id } == null {
+            lib.stats.unknown = lib.stats.unknown + 1
+            return
+        }
+        for i in 0..@as(usize, lib.fallback_count) { if lib.fallbacks[i] == face.id { return } }
+        if @as(usize, lib.fallback_count) >= MAX_FALLBACKS {
+            lib.stats.fallbacks_full = lib.stats.fallbacks_full + 1
+            return
+        }
+        lib.fallbacks[@as(usize, lib.fallback_count)] = face.id
+        lib.fallback_count = lib.fallback_count + 1
+        forget_runs{ &lib }
+    }
+
+    // Writes the ids of `face`'s sized variants to `out` (as many as fit) and returns how many it
+    // has. Releasing a face releases its glyphs in a staged level by these ids: call
+    // `ui_stage::release_face` for each, then `release_face` (plan section 2.6).
+    fn list_sizes { lib: Library, face: Face, out: []mut u32 } -> usize {
+        let mut n: usize = 0
+        if face.id == 0 { return 0 }
+        for s in lib.sizes {
+            if s.id != 0 and s.face == face.id {
+                if n < out.len { out[n] = s.id }
+                n = n + 1
+            }
+        }
+        return n
+    }
+
+    // Releases `face`: its sized variants, its FreeType and HarfBuzz objects and its copy of the
+    // bytes. It is no longer a fallback, and the run cache is emptied. Its handle and its sized
+    // faces' ids name nothing from then on (they are never given out again). Call it between frames,
+    // once nothing draws text in it.
+    fn release_face { mut lib: Library, face: Face } {
+        let index = find_face{ lib, id = face.id } ifnull {
+            lib.stats.unknown = lib.stats.unknown + 1
+            return
+        }
+        drop_face{ &lib, index }
+        let mut kept: usize = 0
+        for i in 0..@as(usize, lib.fallback_count) {
+            let id = lib.fallbacks[i]
+            if id != face.id {
+                lib.fallbacks[kept] = id
+                kept = kept + 1
+            }
+        }
+        lib.fallback_count = @as(u32, kept)
+        forget_runs{ &lib }
+    }
+
+    // Releases every face, the buffer and FreeType. The library answers nothing after it.
+    fn close { mut lib: Library } {
+        for i in 0..lib.faces.len {
+            if lib.faces[i].id != 0 { drop_face{ &lib, index = i } }
+        }
+        lib.fallback_count = 0
+        forget_runs{ &lib }
+        if let buffer = lib.buffer {
+            hb_buffer_destroy{ &lib.fonts, buffer }
+            lib.live.hb_buffers = lib.live.hb_buffers - 1
+            lib.buffer = null
+        }
+        if let ft = lib.ft {
+            _ = FT_Done_FreeType{ &lib.fonts, library = ft }
+            lib.live.ft_libraries = lib.live.ft_libraries - 1
+            lib.ft = null
+        }
+    }
+
+    // ---- sized variants
+
+    // The sized variant of face slot `face` at `pixels`, made the first time it is asked for. Null,
+    // counted, when the size table is full or FreeType refuses the size.
+    fn get_size { mut lib: Library, face: usize, pixels: u32 } -> ?usize {
+        let id = lib.faces[face].id
+        let mut free: ?usize = null
+        for s at i in lib.sizes {
+            if s.id != 0 and s.face == id and s.pixels == pixels { return i }
+            if s.id == 0 and free == null { free = i }
+        }
+        let slot = free ifnull {
+            lib.stats.sizes_full = lib.stats.sizes_full + 1
+            return null
+        }
+        let f = lib.faces[face].ft ifnull { return null }
+        let hb = lib.faces[face].hb ifnull { return null }
+        let mut made: ?*mut FtSize = null
+        if FT_New_Size{ &lib.fonts, face = f, size = &made } != 0 {
+            lib.stats.failed = lib.stats.failed + 1
+            return null
+        }
+        let size = made ifnull {
+            lib.stats.failed = lib.stats.failed + 1
+            return null
+        }
+        lib.live.ft_sizes = lib.live.ft_sizes + 1
+        lib.sizes[slot] = SizeSlot{ id = 0, face = id, pixels, ft = size, hb = null, ascent = 0.0, descent = 0.0, height = 0.0 }
+        if FT_Activate_Size{ &lib.fonts, size } != 0 or FT_Set_Pixel_Sizes{ &lib.fonts, face = f, pixel_width = 0, pixel_height = pixels } != 0 {
+            drop_size{ &lib, index = slot }
+            lib.stats.failed = lib.stats.failed + 1
+            return null
+        }
+        let m = get_size_metrics{ size, layout = lib.layout }
+        if @as(u32, m.y_ppem) != pixels {
+            drop_size{ &lib, index = slot }
+            lib.stats.bad_layout = lib.stats.bad_layout + 1
+            return null
+        }
+        let font = hb_font_create{ &lib.fonts, face = hb }
+        lib.live.hb_fonts = lib.live.hb_fonts + 1
+        hb_ot_font_set_funcs{ &lib.fonts, font }
+        hb_font_set_scale{ &lib.fonts, font, x_scale = @as(i32, pixels) * 64, y_scale = @as(i32, pixels) * 64 }
+        // The line box holds the ascent and the descent, so a clip to it never cuts a descender:
+        // FreeType rounds the ascender up and the descender down but the line height to nearest.
+        let ascent = m.ascender
+        let descent = -m.descender
+        lib.sizes[slot].hb = font
+        lib.sizes[slot].ascent = ascent
+        lib.sizes[slot].descent = descent
+        lib.sizes[slot].height = ui::pick_max_f32{ a = m.height, b = ascent + descent }
+        lib.sizes[slot].id = lib.next_size
+        lib.next_size = lib.next_size + 1
+        return slot
+    }
+
+    // The face slot named by `handle` at `pixels`, sized, or null (counted) for a handle that names no
+    // face or a size out of range.
+    fn find_sized { mut lib: Library, handle: u32, pixels: u32 } -> ?usize {
+        let face = find_face{ lib, id = handle } ifnull {
+            lib.stats.unknown = lib.stats.unknown + 1
+            return null
+        }
+        if pixels == 0 or pixels > MAX_PIXELS {
+            lib.stats.bad_size = lib.stats.bad_size + 1
+            return null
+        }
+        return get_size{ &lib, face, pixels }
+    }
+
+    // ---- the core's side
+
+    // The font a text command names to draw in `face`, for a draw list made without a `ui::Ui`
+    // (`ui::draw::add_font`). An outline font's line metrics come from the provider at each size, so
+    // its `height` and `ascent` are 0. Null when `face` is not alive.
+    fn describe_face { lib: Library, face: Face } -> ?ui::FontDef {
+        if find_face{ lib, id = face.id } == null { return null }
+        return ui::FontDef{ kind = ui::FontKind::outline{ handle = face.id }, encoding = ui::Encoding::utf8, height = 0.0, ascent = 0.0, snap = false }
+    }
+
+    // Registers `face` with the core as an outline font. Null when it is not alive or the font
+    // table is full.
+    fn make_font { mut lib: Library, mut ui: ui::Ui, face: Face } -> ?ui::Font {
+        let def = describe_face{ lib, face } ifnull { return null }
+        return ui::add_font{ &ui, font = def }
+    }
+
+    // The provider over `lib`. Its state is `lib`'s address: the library must stay where it is, and
+    // open, while the core or a staged level may call it.
+    fn get_provider { lib: *mut Library } -> ui::TextProvider {
+        return ui::TextProvider{ state = @cast(*mut ui::Opaque, lib), metrics = provide_metrics, shape = provide_shape, rasterize = provide_raster }
+    }
+
+    fn provide_metrics { mut state: ui::Opaque, handle: u32, pixels: u32 } -> ui::LineMetrics {
+        let lib = @cast(*mut Library, &state)
+        return measure_line{ lib, handle, pixels }
+    }
+
+    fn provide_shape { mut state: ui::Opaque, handle: u32, pixels: u32, text: []u8, out: []mut ui::Shaped } -> usize {
+        let lib = @cast(*mut Library, &state)
+        return shape_text{ lib, handle, pixels, text, out }
+    }
+
+    fn provide_raster { mut state: ui::Opaque, face: u32, glyph: u32, mut out: ui::GlyphBitmap } -> bool {
+        let lib = @cast(*mut Library, &state)
+        return rasterize_glyph{ lib, face, glyph, &out }
+    }
+
+    // A face's line at `pixels`: its height and where the baseline lies below the line's top, in
+    // device pixels (ZGF's GetMetrics). 0 and 0 for a handle or size that is refused.
+    fn measure_line { mut lib: Library, handle: u32, pixels: u32 } -> ui::LineMetrics {
+        let s = find_sized{ &lib, handle, pixels } ifnull { return ui::LineMetrics{ height = 0.0, ascent = 0.0 } }
+        return ui::LineMetrics{ height = lib.sizes[s].height, ascent = lib.sizes[s].ascent }
+    }
+
+    // Glyph `glyph` of sized face `face` as ZGF's TryGetGlyph loads it (FT_LOAD_RENDER |
+    // FT_LOAD_NO_BITMAP | FT_LOAD_TARGET_NORMAL), copied into `out.pixels` top row first, `width`
+    // bytes a row, with its bearings: `left` from the pen to the bitmap's left edge, `top` from the
+    // baseline up to its top row. A glyph with no ink (a space) is true with width and height 0.
+    // False for glyph 0 (a character no face has: ZGF draws nothing for it), and, counted, for a
+    // sized face that is gone, a FreeType error, a bitmap that is not 8-bit coverage, and one larger
+    // than `out.pixels`.
+    fn rasterize_glyph { mut lib: Library, face: u32, glyph: u32, mut out: ui::GlyphBitmap } -> bool {
+        let s = find_size{ lib, id = face } ifnull {
+            lib.stats.unknown = lib.stats.unknown + 1
+            return false
+        }
+        if glyph == 0 { return false }
+        let owner = find_face{ lib, id = lib.sizes[s].face } ifnull {
+            lib.stats.unknown = lib.stats.unknown + 1
+            return false
+        }
+        let f = lib.faces[owner].ft ifnull { return false }
+        let size = lib.sizes[s].ft ifnull { return false }
+        if FT_Activate_Size{ &lib.fonts, size } != 0 or FT_Load_Glyph{ &lib.fonts, face = f, glyph_index = glyph, load_flags = LOAD_FLAGS } != 0 {
+            lib.stats.failed = lib.stats.failed + 1
+            return false
+        }
+        let slot = read_slot{ face = f, layout = lib.layout }
+        if slot.face != @addr(f) or slot.glyph != glyph {
+            lib.stats.bad_layout = lib.stats.bad_layout + 1
+            return false
+        }
+        lib.stats.rasterized = lib.stats.rasterized + 1
+        out.left = slot.left
+        out.top = slot.top
+        if slot.width == 0 or slot.rows == 0 {
+            out.width = 0
+            out.height = 0
+            return true
+        }
+        let row = slot.row
+        let width = @as(usize, slot.width)
+        let rows = @as(usize, slot.rows)
+        if slot.pixel_mode != PIXEL_MODE_GRAY or slot.num_grays != 256 or row < width or slot.pixels.len < row * rows {
+            lib.stats.bad_bitmap = lib.stats.bad_bitmap + 1
+            return false
+        }
+        if @as(u64, width) * @as(u64, rows) > @as(u64, out.pixels.len) {
+            lib.stats.too_big = lib.stats.too_big + 1
+            return false
+        }
+        // A positive pitch has the top row first in memory, a negative one the bottom row.
+        for r in 0..rows {
+            let from = if slot.pitch >= 0 { r * row } else { (rows - 1 - r) * row }
+            slice::copy(u8){ dst = out.pixels[r * width..r * width + width], src = slot.pixels[from..from + width] }
+        }
+        out.width = slot.width
+        out.height = slot.rows
+        return true
+    }
+}

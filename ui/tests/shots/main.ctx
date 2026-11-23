@@ -38,7 +38,7 @@ struct Images { flag: ui::Image, grey: ui::Image, sheet: ui::Image, gradient: ui
 // One scale's picture, kept to put the three together.
 struct Shot { pixels: []mut u8, width: u32, height: u32 }
 
-fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: ui_sdl::Sdl, args: Args } -> i32 {
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: ui_sdl::Sdl, mut fonts: ui_fonts::Fonts, args: Args } -> i32 {
     let mut t = ui_test::Tally{ run = 0, failed = 0 }
     let out_dir = find_option{ args, name = "--out" } ifnull { OUT_DEFAULT }
     let buf = mem::pages{ &mem, size = 268435456 } ifnull {
@@ -59,6 +59,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: ui_sdl::Sdl, args: Args
         io::flush{ &io }
         return 1
     }
+    shoot_text{ &io, &fs, &sdl, &fonts, &t, &heap, args, out_dir }
     _ = @fmt(&io, "ui/tests/shots: {} checks, {} failed\n", t.run, t.failed)
     io::flush{ &io }
     return if t.failed == 0 { 0 } else { 1 }

@@ -1,0 +1,18 @@
+// Stage 4's test: outline fonts through FreeType and HarfBuzz. How to run it: ui/AGENTS.md. It reads
+// a system font (`--font PATH`, `--cjk PATH`) and exits 0 with a message when there is none.
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "ui_test_fonts", root = "." }
+    build::add_sources{ &b, exe, dir = "../../core" }
+    build::add_sources{ &b, exe, dir = "../../stage" }
+    build::add_sources{ &b, exe, dir = "../../test" }
+    build::add_sources{ &b, exe, dir = "../../fonts" }
+    // The unchecked operations only in the bindings: libm's in core, FreeType's and HarfBuzz's here.
+    build::deny_unchecked{ &b, exe, except = ["../../core", "../../fonts"] }
+    match build::os{ &b } {
+        macos => { build::lib_path{ &b, exe, path = "/opt/homebrew/lib" } }       // Homebrew's freetype and harfbuzz
+        windows => {}
+        linux => {}
+    }
+    build::link{ &b, exe, lib = "freetype" }
+    build::link{ &b, exe, lib = "harfbuzz" }
+}

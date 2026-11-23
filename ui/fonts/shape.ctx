@@ -1,0 +1,242 @@
+// ui_fonts: shaping (ZGF's GetShapedText and ShapeWithFallback). A text is split into runs by which
+// face covers each character: the face asked for, then each fallback in the order added, and the
+// face asked for when none does (FT_Get_Char_Index). Each run is shaped by HarfBuzz with its face's
+// variant at the same pixel size, positions in 26.6 divided by 64, so one text may come back as
+// glyphs of several sized faces. The whole text goes to HarfBuzz with each run as the item, so a run
+// is shaped with its neighbours as context and the clusters are byte offsets into the text.
+//
+// Bidirectional text is excluded (plan section 1.2): every run is shaped left to right in logical
+// order, with HarfBuzz's guess of script and language, so clusters never go down, which is what the
+// core's caret and wrapping step by.
+//
+// Shaped runs are cached by (sized face, text) in two generations, ZGF's clock: a run is looked up
+// in the current generation, then in the old one (and copied into the current one on a hit, so a
+// line still in use survives the next sweep); when the current generation is full it becomes the
+// old one and the old one is dropped. ZGF keeps 256 runs a generation for each font; here one cache
+// serves the library and a generation holds `Capacity.runs`. It is emptied when a fallback is added
+// or a face released.
+namespace ui_fonts {
+    // Texts longer than this are refused (counted): HarfBuzz takes lengths as C ints, and the core
+    // shapes a few hundred bytes at a time.
+    const MAX_TEXT: usize = 1048576
+
+    // A cached run: its key's hash, the sized face, and where its text and glyphs are kept.
+    struct Run { hash: u64, size: u32, text_at: u32, text_len: u32, glyph_at: u32, glyph_count: u32 }
+    // One generation. `slots` holds run indexes plus one, by hash, with linear probing; it is twice
+    // as long as `runs`, so a probe always meets an empty slot.
+    struct RunCache {
+        runs: []mut Run, count: u32,
+        slots: []mut u32,
+        text: []mut u8, text_used: u32,
+        glyphs: []mut ui::Shaped, glyph_used: u32,
+    }
+
+    fn make_runs(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !RunCache {
+        let n = @as(usize, ui::pick_max_u32{ a = cap.runs, b = 1 })
+        let runs = try alloc::make(Run, S){ realloc, &heap, count = n }
+        let slots = try alloc::make(u32, S){ realloc, &heap, count = n * 2 }
+        let text = try alloc::make(u8, S){ realloc, &heap, count = @as(usize, ui::pick_max_u32{ a = cap.run_bytes, b = 1 }) }
+        let glyphs = try alloc::make(ui::Shaped, S){ realloc, &heap, count = @as(usize, ui::pick_max_u32{ a = cap.run_glyphs, b = 1 }) }
+        return RunCache{ runs, count = 0, slots, text, text_used = 0, glyphs, glyph_used = 0 }
+    }
+
+    fn clear_runs { mut cache: RunCache } {
+        cache.count = 0
+        cache.text_used = 0
+        cache.glyph_used = 0
+        slice::fill(u32){ s = cache.slots, v = 0 }
+    }
+
+    // Empties both generations: what was shaped may now shape differently.
+    fn forget_runs { mut lib: Library } {
+        clear_runs{ cache = &lib.cur }
+        clear_runs{ cache = &lib.old }
+        lib.stats.forgotten = lib.stats.forgotten + 1
+    }
+
+    // FNV-1a over the sized face and the bytes.
+    fn hash_run { size: u32, text: []u8 } -> u64 {
+        let mut h: u64 = 14695981039346656037
+        h = (h ^ @as(u64, size)) *% 1099511628211
+        for b in text { h = (h ^ @as(u64, b)) *% 1099511628211 }
+        return h
+    }
+
+    // The run of sized face `size` and exactly these bytes, or null.
+    fn find_run { cache: RunCache, hash: u64, size: u32, text: []u8 } -> ?Run {
+        let slots = cache.slots.len
+        let mut slot = @as(usize, hash % @as(u64, slots))
+        for _ in 0..slots {
+            let k = cache.slots[slot]
+            if k == 0 { return null }
+            let r = cache.runs[@as(usize, k - 1)]
+            if r.hash == hash and r.size == size and @as(usize, r.text_len) == text.len {
+                let at = @as(usize, r.text_at)
+                if slice::eq_bytes{ a = cache.text[at..at + text.len], b = text } { return r }
+            }
+            slot = (slot + 1) % slots
+        }
+        return null
+    }
+
+    // Keeps the first `count` glyphs of the scratch buffer as the run of `size` and `text`, retiring
+    // the current generation when it has no room. A run that would not fit an empty generation is
+    // not kept, and counted.
+    fn keep_run { mut lib: Library, hash: u64, size: u32, text: []u8, count: usize } {
+        if count > lib.cur.glyphs.len or text.len > lib.cur.text.len {
+            lib.stats.uncached = lib.stats.uncached + 1
+            return
+        }
+        let full = @as(usize, lib.cur.count) >= lib.cur.runs.len
+            or @as(usize, lib.cur.text_used) + text.len > lib.cur.text.len
+            or @as(usize, lib.cur.glyph_used) + count > lib.cur.glyphs.len
+        if full {
+            let retired = lib.old
+            lib.old = lib.cur
+            lib.cur = retired
+            clear_runs{ cache = &lib.cur }
+            lib.stats.retired = lib.stats.retired + 1
+        }
+        let text_at = @as(usize, lib.cur.text_used)
+        let glyph_at = @as(usize, lib.cur.glyph_used)
+        slice::copy(u8){ dst = lib.cur.text[text_at..text_at + text.len], src = text }
+        slice::copy(ui::Shaped){ dst = lib.cur.glyphs[glyph_at..glyph_at + count], src = lib.scratch[..count] }
+        let index = lib.cur.count
+        lib.cur.runs[@as(usize, index)] = Run{ hash, size, text_at = @as(u32, text_at), text_len = @as(u32, text.len), glyph_at = @as(u32, glyph_at), glyph_count = @as(u32, count) }
+        lib.cur.count = index + 1
+        lib.cur.text_used = @as(u32, text_at + text.len)
+        lib.cur.glyph_used = @as(u32, glyph_at + count)
+        let slots = lib.cur.slots.len
+        let mut slot = @as(usize, hash % @as(u64, slots))
+        while lib.cur.slots[slot] != 0 { slot = (slot + 1) % slots }
+        lib.cur.slots[slot] = index + 1
+    }
+
+    // Copies as many of `glyphs` as fit into `out`.
+    fn copy_glyphs { glyphs: []ui::Shaped, out: []mut ui::Shaped } -> usize {
+        let n = if glyphs.len < out.len { glyphs.len } else { out.len }
+        slice::copy(ui::Shaped){ dst = out[..n], src = glyphs[..n] }
+        return n
+    }
+
+    // The provider's `shape`: `text` in the face `handle` names at `pixels`, into `out`. The count
+    // written; when the text has more glyphs than `out` holds, `out` is filled and the core shapes the
+    // rest again from where it cut. Nothing for a handle, size or text that is refused (counted).
+    fn shape_text { mut lib: Library, handle: u32, pixels: u32, text: []u8, out: []mut ui::Shaped } -> usize {
+        if text.len == 0 or out.len == 0 { return 0 }
+        if text.len > MAX_TEXT {
+            lib.stats.bad_size = lib.stats.bad_size + 1
+            return 0
+        }
+        let size = find_sized{ &lib, handle, pixels } ifnull { return 0 }
+        let face = find_face{ lib, id = handle } ifnull { return 0 }
+        let id = lib.sizes[size].id
+        let hash = hash_run{ size = id, text }
+        if let r = find_run{ cache = lib.cur, hash, size = id, text } {
+            lib.stats.hits = lib.stats.hits + 1
+            let at = @as(usize, r.glyph_at)
+            return copy_glyphs{ glyphs = lib.cur.glyphs[at..at + @as(usize, r.glyph_count)], out }
+        }
+        if let r = find_run{ cache = lib.old, hash, size = id, text } {
+            // Promoted: copied out of the old generation before keep_run may drop it.
+            lib.stats.hits = lib.stats.hits + 1
+            let at = @as(usize, r.glyph_at)
+            let n = @as(usize, r.glyph_count)
+            slice::copy(ui::Shaped){ dst = lib.scratch[..n], src = lib.old.glyphs[at..at + n] }
+            keep_run{ &lib, hash, size = id, text, count = n }
+            return copy_glyphs{ glyphs = lib.scratch[..n], out }
+        }
+        lib.stats.misses = lib.stats.misses + 1
+        let cut_before = lib.stats.truncated
+        let n = shape_runs{ &lib, face, size, pixels, text }
+        if lib.stats.truncated == cut_before { keep_run{ &lib, hash, size = id, text, count = n } }
+        return copy_glyphs{ glyphs = lib.scratch[..n], out }
+    }
+
+    // The first face of `chain` (face slots) that has a glyph for `code`, or 0, the face asked for.
+    fn pick_face { mut lib: Library, chain: [MAX_FALLBACKS + 1]usize, count: usize, code: u32 } -> usize {
+        for k in 0..count {
+            if let f = lib.faces[chain[k]].ft {
+                if FT_Get_Char_Index{ &lib.fonts, face = f, charcode = @as(u64, code) } != 0 { return k }
+            }
+        }
+        return 0
+    }
+
+    // Shapes `text` into the scratch buffer: runs split by the face that covers each character, each
+    // shaped with its face's variant at `pixels` (the face asked for is face slot `face`, sized `size`).
+    // The glyphs written.
+    fn shape_runs { mut lib: Library, face: usize, size: usize, pixels: u32, text: []u8 } -> usize {
+        let mut chain: [MAX_FALLBACKS + 1]usize
+        chain[0] = face
+        let mut count: usize = 1
+        for i in 0..@as(usize, lib.fallback_count) {
+            if let f = find_face{ lib, id = lib.fallbacks[i] } {
+                if f != face {
+                    chain[count] = f
+                    count = count + 1
+                }
+            }
+        }
+        let mut n: usize = 0
+        let mut run_start: usize = 0
+        let mut run_face: usize = 0
+        let mut at: usize = 0
+        while at < text.len {
+            let d = ui::decode_char{ text, at, encoding = ui::Encoding::utf8 }
+            if d.code == ui::BAD_CHAR and d.len == 1 { lib.stats.invalid = lib.stats.invalid + 1 }
+            let k = if count > 1 { pick_face{ &lib, chain, count, code = d.code } } else { 0 }
+            if at > 0 and k != run_face {
+                n = shape_one{ &lib, chain, size, pixels, k = run_face, text, start = run_start, end = at, n }
+                run_start = at
+            }
+            run_face = k
+            at = at + @as(usize, d.len)
+        }
+        return shape_one{ &lib, chain, size, pixels, k = run_face, text, start = run_start, end = text.len, n }
+    }
+
+    // Shapes bytes [start, end) of `text` with face `chain[k]` at `pixels`, appending to the scratch
+    // buffer after its first `n` glyphs. A fallback whose size cannot be made shapes with the face
+    // asked for (`size`). The glyphs in the scratch buffer after it.
+    fn shape_one { mut lib: Library, chain: [MAX_FALLBACKS + 1]usize, size: usize, pixels: u32, k: usize, text: []u8, start: usize, end: usize, n: usize } -> usize {
+        if end <= start { return n }
+        let mut s = size
+        if k > 0 {
+            if let other = get_size{ &lib, face = chain[k], pixels } { s = other }
+        }
+        let buffer = lib.buffer ifnull { return n }
+        let font = lib.sizes[s].hb ifnull { return n }
+        let id = lib.sizes[s].id
+        hb_buffer_clear_contents{ &lib.fonts, buffer }
+        hb_buffer_add_utf8{ &lib.fonts, buffer, text = text.ptr, text_length = @as(i32, text.len), item_offset = @as(u32, start), item_length = @as(i32, end - start) }
+        hb_buffer_guess_segment_properties{ &lib.fonts, buffer }
+        hb_buffer_set_direction{ &lib.fonts, buffer, direction = DIRECTION_LTR }
+        hb_shape{ &lib.fonts, font, buffer, features = null, num_features = 0 }
+        lib.stats.shaped = lib.stats.shaped + 1
+        let glyphs = get_glyphs{ fonts = &lib.fonts, buffer }
+        let mut out = n
+        // Clusters stay in [start, end) and never go down, whatever HarfBuzz returned.
+        let mut last = @as(u32, start)
+        if n > 0 and lib.scratch[n - 1].cluster > last { last = lib.scratch[n - 1].cluster }
+        for info at i in glyphs.infos {
+            if out >= lib.scratch.len {
+                lib.stats.truncated = lib.stats.truncated + 1
+                break
+            }
+            let p = glyphs.positions[i]
+            let mut cluster = info.cluster
+            if cluster < last { cluster = last }
+            if @as(usize, cluster) >= end { cluster = @as(u32, end - 1) }
+            last = cluster
+            if info.codepoint == 0 { lib.stats.missing = lib.stats.missing + 1 }
+            lib.scratch[out] = ui::Shaped{
+                glyph = info.codepoint, face = id,
+                x_offset = @as(f32, p.x_offset) / 64.0, y_offset = @as(f32, p.y_offset) / 64.0,
+                x_advance = @as(f32, p.x_advance) / 64.0, cluster,
+            }
+            out = out + 1
+        }
+        return out
+    }
+}

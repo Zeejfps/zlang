@@ -1,0 +1,161 @@
+// ui_fonts: the part of FreeType (2.13) the font library calls: a library, faces over bytes in
+// memory, a size per pixel size, the character map, and one glyph loaded and rendered at a time.
+//
+// The extern fns are FreeType's own, under their C names. Every handle is opaque here: FT_Library,
+// FT_Face and FT_Size are pointers to structs this file never declares. FreeType has no accessor
+// functions for a face's glyph slot or a size's metrics, so those few fields are read at byte
+// offsets from the handle (`Layout`). The offsets depend on the size of C's `long` (FT_Long, FT_Pos,
+// FT_Fixed): 4 bytes on 64-bit Windows, 8 on Linux and macOS. `LAYOUT` picks the table by
+// `target::OS`; `ui_fonts::add_face` checks every field it reads against values it can know some
+// other way (HarfBuzz's own reading of the same font, the pixel size it asked for, the glyph it
+// loaded), so a wrong table fails at the first face instead of reading garbage.
+//
+// A parameter C declares `long` or `unsigned long` is passed here as an i64 or u64. On 64-bit
+// Windows the callee reads its low 32 bits from the same 8-byte register or stack slot, and every
+// value passed fits them; on Linux and macOS it is exact. No function whose result C declares
+// `long` is called.
+namespace ui_fonts {
+    struct FtLibrary {}         // FT_LibraryRec, only behind a pointer
+    struct FtFace {}            // FT_FaceRec: read through `Layout`
+    struct FtSize {}            // FT_SizeRec: read through `Layout`
+
+    // FT_Load_Glyph's flags, as ZGF's TryGetGlyph passes them: FT_LOAD_RENDER | FT_LOAD_NO_BITMAP |
+    // FT_LOAD_TARGET_NORMAL (0). NO_BITMAP: some fonts carry 1-bit bitmaps for small sizes, which
+    // the 8-bit atlas cannot take; their outlines draw them as every other font.
+    const LOAD_RENDER: i32 = 4
+    const LOAD_NO_BITMAP: i32 = 8
+    const LOAD_TARGET_NORMAL: i32 = 0
+    const LOAD_FLAGS: i32 = 12
+    const PIXEL_MODE_GRAY: u8 = 2
+
+    extern fn FT_Init_FreeType { mut fonts: Fonts, mut library: ?*mut FtLibrary } -> i32
+    extern fn FT_Done_FreeType { mut fonts: Fonts, library: *mut FtLibrary } -> i32
+    extern fn FT_Library_Version { mut fonts: Fonts, library: *mut FtLibrary, mut major: i32, mut minor: i32, mut patch: i32 }
+    // size and face_index are FT_Long.
+    extern fn FT_New_Memory_Face { mut fonts: Fonts, library: *mut FtLibrary, base: *u8, size: i64, face_index: i64, mut face: ?*mut FtFace } -> i32
+    extern fn FT_Done_Face { mut fonts: Fonts, face: *mut FtFace } -> i32
+    extern fn FT_New_Size { mut fonts: Fonts, face: *mut FtFace, mut size: ?*mut FtSize } -> i32
+    extern fn FT_Activate_Size { mut fonts: Fonts, size: *mut FtSize } -> i32
+    extern fn FT_Done_Size { mut fonts: Fonts, size: *mut FtSize } -> i32
+    extern fn FT_Set_Pixel_Sizes { mut fonts: Fonts, face: *mut FtFace, pixel_width: u32, pixel_height: u32 } -> i32
+    // charcode is FT_ULong.
+    extern fn FT_Get_Char_Index { mut fonts: Fonts, face: *mut FtFace, charcode: u64 } -> u32
+    extern fn FT_Load_Glyph { mut fonts: Fonts, face: *mut FtFace, glyph_index: u32, load_flags: i32 } -> i32
+
+    // Byte offsets of the fields read, and the size of C's long. Source of the Windows table: a C
+    // program compiled against this machine's FreeType 2.13.3 headers (MSYS2 mingw64) printed each
+    // offsetof (see the plan's appendix, probe `ccheck`, repeated for stage 4 with every field
+    // below). The LP64 table is the same struct declarations (freetype.h, ftimage.h) laid out with an
+    // 8-byte long; it is checked by add_face at run time on those platforms, not here.
+    struct Layout {
+        long: usize,
+        face_num_glyphs: usize,         // FT_FaceRec.num_glyphs, FT_Long
+        face_units_per_em: usize,       // FT_FaceRec.units_per_EM, FT_UShort
+        face_glyph: usize,              // FT_FaceRec.glyph, FT_GlyphSlot
+        size_y_ppem: usize,             // FT_SizeRec.metrics.y_ppem, FT_UShort
+        size_ascender: usize,           // FT_SizeRec.metrics.ascender, FT_Pos (26.6)
+        size_descender: usize,          // FT_SizeRec.metrics.descender, FT_Pos
+        size_height: usize,             // FT_SizeRec.metrics.height, FT_Pos
+        slot_face: usize,               // FT_GlyphSlotRec.face, FT_Face
+        slot_glyph_index: usize,        // FT_GlyphSlotRec.glyph_index, FT_UInt
+        slot_bitmap: usize,             // FT_GlyphSlotRec.bitmap, FT_Bitmap
+        slot_bitmap_left: usize,        // FT_GlyphSlotRec.bitmap_left, FT_Int
+        slot_bitmap_top: usize,         // FT_GlyphSlotRec.bitmap_top, FT_Int
+        bitmap_rows: usize,             // FT_Bitmap.rows, unsigned int
+        bitmap_width: usize,            // FT_Bitmap.width, unsigned int
+        bitmap_pitch: usize,            // FT_Bitmap.pitch, int
+        bitmap_buffer: usize,           // FT_Bitmap.buffer, unsigned char *
+        bitmap_num_grays: usize,        // FT_Bitmap.num_grays, unsigned short
+        bitmap_pixel_mode: usize,       // FT_Bitmap.pixel_mode, unsigned char
+    }
+
+    const LAYOUT_LLP64: Layout = Layout{
+        long = 4,
+        face_num_glyphs = 16, face_units_per_em = 104, face_glyph = 120,
+        size_y_ppem = 26, size_ascender = 36, size_descender = 40, size_height = 44,
+        slot_face = 8, slot_glyph_index = 24, slot_bitmap = 104, slot_bitmap_left = 144, slot_bitmap_top = 148,
+        bitmap_rows = 0, bitmap_width = 4, bitmap_pitch = 8, bitmap_buffer = 16, bitmap_num_grays = 24, bitmap_pixel_mode = 26,
+    }
+    const LAYOUT_LP64: Layout = Layout{
+        long = 8,
+        face_num_glyphs = 32, face_units_per_em = 136, face_glyph = 152,
+        size_y_ppem = 26, size_ascender = 48, size_descender = 56, size_height = 64,
+        slot_face = 8, slot_glyph_index = 24, slot_bitmap = 152, slot_bitmap_left = 192, slot_bitmap_top = 196,
+        bitmap_rows = 0, bitmap_width = 4, bitmap_pitch = 8, bitmap_buffer = 16, bitmap_num_grays = 24, bitmap_pixel_mode = 26,
+    }
+    // FT_SizeRec is { FT_Face face; FT_Generic generic; FT_Size_Metrics metrics; ... }: metrics at
+    // 24 on both, and the size_* offsets above are 24 plus the field's offset in FT_Size_Metrics.
+    const LAYOUT: Layout = if target::OS == build::Os::windows { LAYOUT_LLP64 } else { LAYOUT_LP64 }
+
+    // ---- reading mirrored fields
+
+    fn read_u8 { at: *u8, offset: usize } -> u8 { return (at + offset).* }
+    fn read_u16 { at: *u8, offset: usize } -> u16 { return @cast(*u16, at + offset).* }
+    fn read_i32 { at: *u8, offset: usize } -> i32 { return @cast(*i32, at + offset).* }
+    fn read_u32 { at: *u8, offset: usize } -> u32 { return @cast(*u32, at + offset).* }
+    fn read_long { at: *u8, offset: usize, layout: Layout } -> i64 {
+        if layout.long == 4 { return @as(i64, @cast(*i32, at + offset).*) }
+        return @cast(*i64, at + offset).*
+    }
+    fn read_address { at: *u8, offset: usize } -> usize {
+        return @cast(*usize, at + offset).*
+    }
+
+    fn face_bytes { face: *mut FtFace } -> *u8 { return @cast(*u8, face) }
+    fn size_bytes { size: *mut FtSize } -> *u8 { return @cast(*u8, size) }
+
+    fn get_num_glyphs { face: *mut FtFace, layout: Layout } -> i64 {
+        return read_long{ at = face_bytes{ face }, offset = layout.face_num_glyphs, layout }
+    }
+    fn get_units_per_em { face: *mut FtFace, layout: Layout } -> u16 {
+        return read_u16{ at = face_bytes{ face }, offset = layout.face_units_per_em }
+    }
+
+    // A size's metrics in device pixels: y_ppem, and the ascender, descender and line height as
+    // FreeType rounds them for the grid (26.6 values divided by 64).
+    struct SizeMetrics { y_ppem: u16, ascender: f32, descender: f32, height: f32 }
+
+    fn get_size_metrics { size: *mut FtSize, layout: Layout } -> SizeMetrics {
+        let at = size_bytes{ size }
+        return SizeMetrics{
+            y_ppem = read_u16{ at, offset = layout.size_y_ppem },
+            ascender = @as(f32, read_long{ at, offset = layout.size_ascender, layout }) / 64.0,
+            descender = @as(f32, read_long{ at, offset = layout.size_descender, layout }) / 64.0,
+            height = @as(f32, read_long{ at, offset = layout.size_height, layout }) / 64.0,
+        }
+    }
+
+    // What the face's glyph slot holds after FT_Load_Glyph with FT_LOAD_RENDER: whose slot it is,
+    // which glyph, and the bitmap. `row` is |pitch|, the bytes from one row to the next, and
+    // `pixels` views the bitmap's rows, `rows * row` bytes, empty when the bitmap is.
+    struct Slot {
+        face: usize, glyph: u32,
+        rows: u32, width: u32, pitch: i32, row: usize, num_grays: u16, pixel_mode: u8,
+        left: i32, top: i32,
+        pixels: []u8,
+    }
+
+    fn read_slot { face: *mut FtFace, layout: Layout } -> Slot {
+        let slot = @cast(*u8, @cast(**u8, face_bytes{ face } + layout.face_glyph).*)
+        let bitmap = slot + layout.slot_bitmap
+        let rows = read_u32{ at = bitmap, offset = layout.bitmap_rows }
+        let pitch = read_i32{ at = bitmap, offset = layout.bitmap_pitch }
+        let row_bytes: u64 = if pitch < 0 { @as(u64, -@as(i64, pitch)) } else { @as(u64, pitch) }
+        let mut pixels: []u8 = []
+        let size = row_bytes * @as(u64, rows)
+        if size > 0 and read_address{ at = bitmap, offset = layout.bitmap_buffer } != 0 {
+            let buffer = @cast(**u8, bitmap + layout.bitmap_buffer).*
+            pixels = @slice(buffer, @as(usize, size))
+        }
+        return Slot{
+            face = read_address{ at = slot, offset = layout.slot_face },
+            glyph = read_u32{ at = slot, offset = layout.slot_glyph_index },
+            rows, width = read_u32{ at = bitmap, offset = layout.bitmap_width }, pitch, row = @as(usize, row_bytes),
+            num_grays = read_u16{ at = bitmap, offset = layout.bitmap_num_grays },
+            pixel_mode = read_u8{ at = bitmap, offset = layout.bitmap_pixel_mode },
+            left = read_i32{ at = slot, offset = layout.slot_bitmap_left },
+            top = read_i32{ at = slot, offset = layout.slot_bitmap_top },
+            pixels,
+        }
+    }
+}

@@ -16,4 +16,7 @@ fn build { mut b: Build } {
         windows => { build::link{ &b, exe, lib = "SDL2" } }
         linux => { build::link{ &b, exe, lib = "SDL2" } }
     }
+    build::add_sources{ &b, exe, dir = "../../fonts" }
+    build::link{ &b, exe, lib = "freetype" }
+    build::link{ &b, exe, lib = "harfbuzz" }
 }

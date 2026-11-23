@@ -1,0 +1,243 @@
+// Stage 4's screenshot: text in a real outline font through ui_fonts, staged and drawn by ui_gl, at
+// scales 1 and 1.5. Called from main.ctx after the conformance pictures, with a window of its own;
+// it shares main.ctx's `Shot`, `write_shot`, `place_shot`, `find_option` and `BG`.
+//
+//   --font PATH     the Latin face (default: the platform's, C:\Windows\Fonts\segoeui.ttf on Windows)
+//   --cjk PATH      a face with CJK characters, registered as the fallback (default: the platform's)
+//   --italic PATH   an italic face, for overhang (default: the platform's)
+//
+// Writes text-gl-1x.png, text-gl-1.5x.png and text-gl.png (both, one above the other). Each line of
+// text has a dim guide on the device-pixel row under its baseline, so a look tells whether glyphs of
+// every size, and of the Latin and CJK faces, stand on one line. With no Latin face it says why and
+// draws nothing; with no CJK or italic face that line is left out.
+//
+// Checks: nothing dropped anywhere; the device draws what was staged; the first frame uploads the
+// atlas and a second identical frame uploads no atlas bytes, with the same pixels; no character of
+// the mixed line is missing when the fallback is there; text sits where the core says it does (ink
+// under the measured width, none past it).
+
+const TEXT_WIDTH: f32 = 520.0
+const TEXT_HEIGHT: f32 = 452.0
+const TEXT_INK: ui::Color = ui::Color{ r = 232, g = 234, b = 240, a = 255 }
+const TEXT_GUIDE: ui::Color = ui::Color{ r = 70, g = 90, b = 120, a = 255 }
+const TEXT_PANEL: ui::Color = ui::Color{ r = 36, g = 40, b = 50, a = 255 }
+const TEXT_LATIN_WINDOWS: [1][]u8 = ["C:/Windows/Fonts/segoeui.ttf"]
+const TEXT_LATIN_MACOS: [1][]u8 = ["/System/Library/Fonts/Helvetica.ttc"]
+const TEXT_LATIN_LINUX: [2][]u8 = ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf"]
+const TEXT_CJK_WINDOWS: [3][]u8 = ["C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/YuGothR.ttc", "C:/Windows/Fonts/simsun.ttc"]
+const TEXT_CJK_MACOS: [2][]u8 = ["/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/Hiragino Sans GB.ttc"]
+const TEXT_CJK_LINUX: [2][]u8 = ["/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc"]
+const TEXT_ITALIC_WINDOWS: [1][]u8 = ["C:/Windows/Fonts/segoeuii.ttf"]
+const TEXT_ITALIC_MACOS: [1][]u8 = ["/System/Library/Fonts/Supplemental/Arial Italic.ttf"]
+const TEXT_ITALIC_LINUX: [2][]u8 = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf", "/usr/share/fonts/TTF/DejaVuSans-Oblique.ttf"]
+
+const TEXT_PARAGRAPH: []u8 = "Wrapped in the real font: the core breaks at spaces and after hyphens, measuring each word by shaping it, so no line runs past the panel's edge."
+
+// A font file's bytes, the path the option names or the first default that reads; `path` is what
+// was read, or tried.
+struct TextFont { path: []u8, bytes: ?[]u8 }
+
+fn read_text_font { mut fs: Fs, mut heap: arena::Arena, args: Args, option: []u8, defaults: [][]u8 } -> TextFont {
+    if let path = find_option{ args, name = option } {
+        let bytes = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } iferr { return TextFont{ path, bytes = null } }
+        return TextFont{ path, bytes }
+    }
+    for path in defaults {
+        let bytes = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } iferr { continue }
+        return TextFont{ path, bytes }
+    }
+    return TextFont{ path = if defaults.len > 0 { defaults[0] } else { "" }, bytes = null }
+}
+
+fn pick_text_paths { windows: [][]u8, macos: [][]u8, linux: [][]u8 } -> [][]u8 {
+    return match target::OS { windows => { windows } macos => { macos } linux => { linux } }
+}
+
+// The text pictures. Never fails: an error is printed and counted as a failed check.
+fn shoot_text { mut io: Io, mut fs: Fs, mut sdl: ui_sdl::Sdl, mut fonts: ui_fonts::Fonts, mut t: ui_test::Tally, mut heap: arena::Arena, args: Args, out_dir: []u8 } {
+    let latin = read_text_font{ &fs, &heap, args, option = "--font",
+        defaults = pick_text_paths{ windows = TEXT_LATIN_WINDOWS[..], macos = TEXT_LATIN_MACOS[..], linux = TEXT_LATIN_LINUX[..] } }
+    let latin_bytes = latin.bytes ifnull {
+        _ = @fmt(&io, "text: no font at {} (pass --font PATH): the text pictures are skipped\n", latin.path)
+        return
+    }
+    let cjk = read_text_font{ &fs, &heap, args, option = "--cjk",
+        defaults = pick_text_paths{ windows = TEXT_CJK_WINDOWS[..], macos = TEXT_CJK_MACOS[..], linux = TEXT_CJK_LINUX[..] } }
+    let italic = read_text_font{ &fs, &heap, args, option = "--italic",
+        defaults = pick_text_paths{ windows = TEXT_ITALIC_WINDOWS[..], macos = TEXT_ITALIC_MACOS[..], linux = TEXT_ITALIC_LINUX[..] } }
+    _ = @fmt(&io, "text: font {}; fallback {}{}; italic {}{}\n", latin.path, cjk.path, if cjk.bytes == null { " (absent)" } else { "" },
+        italic.path, if italic.bytes == null { " (absent)" } else { "" })
+    let mut log: [16384]u8
+    run_text{ &io, &fs, &sdl, &fonts, &t, &heap, latin = latin_bytes, cjk = cjk.bytes, italic = italic.bytes, out_dir, log = log[..] } iferr err{ error } {
+        _ = @fmt(&io, "text: failed: {}\n", error)
+        t.run = t.run + 1
+        t.failed = t.failed + 1
+    }
+}
+
+// Which fonts the list has: 0 the Latin face (with the CJK face as its fallback), 1 the italic face.
+struct TextFaces { latin: ui_fonts::Face, has_cjk: bool, has_italic: bool }
+
+fn run_text { mut io: Io, mut fs: Fs, mut sdl: ui_sdl::Sdl, mut fonts: ui_fonts::Fonts, mut t: ui_test::Tally, mut heap: arena::Arena,
+              latin: []u8, cjk: ?[]u8, italic: ?[]u8, out_dir: []u8, log: []mut u8 } -> ! {
+    try ui_sdl::init{ &sdl }
+    defer ui_sdl::quit{ &sdl }
+    let mut host = try ui_sdl::open_gl_window{ &sdl, realloc = arena::alloc, &heap, title = "ui text shots",
+        width = 520, height = 452, hidden = true, resizable = false, clipboard = 4096 }
+    defer ui_sdl::close_window{ &sdl, &host }
+    let mut dev = try ui_gl::open{ get_proc = ui_sdl::get_gl_proc{ &sdl, _ }, realloc = arena::alloc, &heap, options = ui_gl::Options{ .. }, log }
+    defer ui_gl::close{ &dev }
+
+    let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
+    defer ui_fonts::close{ &lib }
+    let face = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
+    let mut faces = TextFaces{ latin = face, has_cjk = false, has_italic = false }
+    if let bytes = cjk {
+        let other = try ui_fonts::add_face{ &lib, data = bytes, index = 0 }
+        ui_fonts::add_fallback{ &lib, face = other }
+        faces.has_cjk = true
+    }
+    let mut list = try ui::draw::make{ realloc = arena::alloc, &heap, cmds = 256, text = 8192, clips = 8, fonts = 4 }
+    let def = ui_fonts::describe_face{ lib, face } ifnull { return ui_fonts::closed }
+    _ = ui::draw::add_font{ &list, font = def }
+    if let bytes = italic {
+        let slanted = try ui_fonts::add_face{ &lib, data = bytes, index = 0 }
+        let italic_def = ui_fonts::describe_face{ lib, face = slanted } ifnull { return ui_fonts::closed }
+        _ = ui::draw::add_font{ &list, font = italic_def }
+        faces.has_italic = true
+    }
+    let provider = ui_fonts::get_provider{ lib = &lib }
+    let mut cache = try ui::text::make_cache{ realloc = arena::alloc, &heap, entries = 256, shaped = 256 }
+    let mut staged = try ui_stage::make{ realloc = arena::alloc, &heap, cap = ui_stage::Capacity{
+        rects = 256, glyphs = 4096, images = 16, shapes = 256, draws = 64, passes = 2,
+        atlas_width = 512, atlas_height = 256, atlas_max_height = 1024, glyph_cache = 2048, raster_bytes = 16384 } }
+
+    let one = try shoot_text_scale{ &io, &fs, &t, &heap, &dev, &staged, &list, &cache, &lib, provider, faces, scale = 1.0, name = "text-gl-1x", out_dir }
+    let half = try shoot_text_scale{ &io, &fs, &t, &heap, &dev, &staged, &list, &cache, &lib, provider, faces, scale = 1.5, name = "text-gl-1.5x", out_dir }
+    let width = ui::pick_max_u32{ a = one.width, b = half.width }
+    let height = one.height + half.height
+    let pixels = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = @as(usize, width) * @as(usize, height) * 4 }
+    for i in 0..pixels.len / 4 {
+        pixels[i * 4] = BG.r
+        pixels[i * 4 + 1] = BG.g
+        pixels[i * 4 + 2] = BG.b
+        pixels[i * 4 + 3] = 255
+    }
+    place_shot{ into = pixels, width, top = 0, shot = one }
+    place_shot{ into = pixels, width, top = one.height, shot = half }
+    try write_shot{ &io, &fs, &heap, shot = Shot{ pixels, width, height }, name = "text-gl", out_dir }
+    _ = @fmt(&io, "text: {} runs shaped, {} cache hits, {} glyphs rasterised, {} missing, {} too big, {} unknown\n",
+        lib.stats.shaped, lib.stats.hits, lib.stats.rasterized, lib.stats.missing, lib.stats.too_big, lib.stats.unknown)
+}
+
+// One line of text with a guide on the device row under its baseline. The y of the next line.
+fn add_text_line { mut list: ui::DrawList, mut cache: ui::text::Cache, provider: ui::TextProvider, font: ui::Font, size: f32, x: f32, y: f32, text: []u8 } -> f32 {
+    let m = ui::text::get_line_metrics{ &cache, list, provider, font, size }
+    let s = list.scale_y
+    let baseline = ui::round_f32{ x = (y + m.ascent) * s } / s
+    let width = ui::text::measure_text{ &cache, list, provider, font, size, text }
+    ui::draw::add_line{ &list, x0 = x - 4.0, y0 = baseline + 0.5 / s, x1 = x + width + 4.0, y1 = baseline + 0.5 / s,
+        width = 1.0 / s, color = TEXT_GUIDE, cap = ui::Cap::butt, clip = 0 }
+    ui::draw::add_text{ &list, font, size, x, y, text, color = TEXT_INK, clip = 0 }
+    return y + m.height
+}
+
+fn build_text_list { mut list: ui::DrawList, mut cache: ui::text::Cache, provider: ui::TextProvider, faces: TextFaces, scale: f32 } {
+    ui::draw::reset{ &list, width = TEXT_WIDTH, height = TEXT_HEIGHT, scale_x = scale, scale_y = scale }
+    ui::text::reset_cache{ &cache }
+    let latin = ui::Font{ index = 0 }
+    let x: f32 = 16.0
+    let mut y: f32 = 10.0
+    y = add_text_line{ &list, &cache, provider, font = latin, size = 11.0, x, y, text = "11 px: The quick brown fox jumps over the lazy dog. 0123456789 (sharp?)" }
+    y = add_text_line{ &list, &cache, provider, font = latin, size = 13.0, x, y, text = "13 px: Sphinx of black quartz, judge my vow! @#$%&*[]{}" }
+    y = add_text_line{ &list, &cache, provider, font = latin, size = 16.0, x, y, text = "16 px: Settings  Open\xE2\x80\xA6  Save as  Cancel  \xC3\x84\xC3\xB6\xC3\xBC \xC3\xA9t\xC3\xA9 \xE2\x80\x94 \xE2\x82\xAC12.50" }
+    y = add_text_line{ &list, &cache, provider, font = latin, size = 24.0, x, y, text = "24 px: Kerning AV Wa To Ty LT P. office" }
+    y = add_text_line{ &list, &cache, provider, font = latin, size = 40.0, x, y, text = "AVAWAY Tj gjpqy \xC3\x85\xC3\x84" }
+    if faces.has_cjk {
+        y = add_text_line{ &list, &cache, provider, font = latin, size = 24.0, x, y,
+            text = "Mixed: Hello \xE4\xB8\x96\xE7\x95\x8C, \xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E and \xE4\xB8\xAD\xE6\x96\x87 text" }
+        y = add_text_line{ &list, &cache, provider, font = latin, size = 16.0, x, y,
+            text = "16 px: \xE8\xAE\xBE\xE7\xBD\xAE Settings \xE3\x83\x95\xE3\x82\xA1\xE3\x82\xA4\xE3\x83\xAB File \xE7\xBC\x96\xE8\xBE\x91 Edit" }
+    }
+    if faces.has_italic {
+        y = add_text_line{ &list, &cache, provider, font = ui::Font{ index = 1 }, size = 32.0, x, y, text = "Italic: fjord ff Wf /// jag" }
+    }
+    // A paragraph wrapped to a panel 300 wide.
+    let panel = ui::Rect{ x = x - 6.0, y = y + 4.0, w = 312.0, h = 0.0 }
+    let limit: f32 = 300.0
+    let mut lines: [16]ui::text::Line
+    let wrapped = ui::text::wrap_text{ &cache, list, provider, font = latin, size = 14.0, text = TEXT_PARAGRAPH, width = limit, lines = lines[..] }
+    let m = ui::text::get_line_metrics{ &cache, list, provider, font = latin, size = 14.0 }
+    ui::draw::add_rect{ &list, rect = ui::Rect{ x = panel.x, y = panel.y, w = panel.w, h = m.height * @as(f32, wrapped.lines) + 8.0 }, clip = 0,
+        style = ui::RectStyle{ fill = TEXT_PANEL, radius = ui::round{ radius = 4.0 }, .. } }
+    let mut ly = panel.y + 4.0
+    for l in lines[..@as(usize, wrapped.lines)] {
+        ui::draw::add_text{ &list, font = latin, size = 14.0, x, y = ly, text = TEXT_PARAGRAPH[@as(usize, l.start)..@as(usize, l.end)], color = TEXT_INK, clip = 0 }
+        ly = ly + m.height
+    }
+}
+
+fn shoot_text_scale {
+    mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, mut dev: ui_gl::Device, mut staged: ui_stage::Staged,
+    mut list: ui::DrawList, mut cache: ui::text::Cache, mut lib: ui_fonts::Library, provider: ui::TextProvider, faces: TextFaces,
+    scale: f32, name: []u8, out_dir: []u8,
+} -> !Shot {
+    let missing = lib.stats.missing
+    build_text_list{ &list, &cache, provider, faces, scale }
+    ui_test::expect{ &io, &t, ok = list.dropped == 0 and cache.unknown_font == 0 and cache.no_provider == 0, what = "text: the list was built with nothing dropped" }
+    ui_stage::stage{ out = &staged, list = &list, provider }
+    ui_test::expect{ &io, &t, ok = staged.dropped == 0, what = "text: the list stages with nothing dropped" }
+    ui_test::expect{ &io, &t, ok = not faces.has_cjk or lib.stats.missing == missing, what = "text: with the fallback, no character is missing" }
+    let width = @as(u32, staged.pixel_width)
+    let height = @as(u32, staged.pixel_height)
+    try ui_gl::make_target{ &dev, width, height }
+    ui_gl::clear{ &dev, color = BG }
+    try ui_gl::render{ &dev, staged = &staged }
+    _ = @fmt(&io, "{}: {}x{} pixels, {} draws, {} glyph instances, atlas {}x{}, {} atlas bytes uploaded\n",
+        name, width, height, dev.stats.draws, staged.glyph_count, staged.atlas.width, staged.atlas.height, dev.stats.atlas_bytes)
+    ui_test::expect{ &io, &t, ok = dev.stats.draws == staged.draw_count and dev.stats.dropped == 0, what = "text: the device drew what was staged" }
+    ui_test::expect{ &io, &t, ok = dev.stats.atlas_bytes > 0, what = "text: the first frame uploads the glyphs" }
+    let pixels = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = @as(usize, width) * @as(usize, height) * 4 }
+    try ui_gl::read_pixels{ &dev, into = pixels }
+    let shot = Shot{ pixels, width, height }
+    try write_shot{ &io, &fs, &heap, shot, name, out_dir }
+
+    // The same frame again: nothing rasterised, no atlas bytes, the same pixels.
+    let rasterized = lib.stats.rasterized
+    let revision = staged.revision
+    build_text_list{ &list, &cache, provider, faces, scale }
+    ui_stage::stage{ out = &staged, list = &list, provider }
+    ui_gl::clear{ &dev, color = BG }
+    try ui_gl::render{ &dev, staged = &staged }
+    ui_test::expect{ &io, &t, ok = lib.stats.rasterized == rasterized and staged.revision == revision, what = "text: a second identical frame rasterises nothing and keeps its revision" }
+    ui_test::expect{ &io, &t, ok = dev.stats.atlas_bytes == 0 and dev.stats.uploads == 0, what = "text: a second identical frame uploads no atlas bytes" }
+    let again = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = pixels.len }
+    try ui_gl::read_pixels{ &dev, into = again }
+    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = again, b = pixels }, what = "text: the second frame has the same pixels" }
+    check_text_ink{ &io, &t, &cache, list, provider, shot, scale }
+    return shot
+}
+
+// The first line's ink lies inside its measured box, and the device column after the box is clear.
+fn check_text_ink { mut io: Io, mut t: ui_test::Tally, mut cache: ui::text::Cache, list: ui::DrawList, provider: ui::TextProvider, shot: Shot, scale: f32 } {
+    let text: []u8 = "11 px: The quick brown fox jumps over the lazy dog. 0123456789 (sharp?)"
+    let font = ui::Font{ index = 0 }
+    let width = ui::text::measure_text{ &cache, list, provider, font, size = 11.0, text }
+    let m = ui::text::get_line_metrics{ &cache, list, provider, font, size = 11.0 }
+    let x0 = @as(usize, ui::floor_f32{ x = 16.0 * scale })
+    let x1 = @as(usize, ui::ceil_f32{ x = (16.0 + width) * scale })
+    let y0 = @as(usize, ui::floor_f32{ x = 10.0 * scale })
+    let y1 = @as(usize, ui::floor_f32{ x = (10.0 + m.ascent) * scale })      // above the guide
+    let mut inside: u32 = 0
+    let mut past: u32 = 0
+    for y in y0..y1 {
+        for x in x0..x1 + 6 {
+            let at = (y * @as(usize, shot.width) + x) * 4
+            let lit = shot.pixels[at] > 120
+            if lit and x < x1 + 1 { inside = inside + 1 }
+            if lit and x > x1 + 1 { past = past + 1 }
+        }
+    }
+    ui_test::expect{ &io, &t, ok = inside > 100 and past == 0, what = "text: the first line's ink lies within its measured width" }
+    if past > 0 { _ = @fmt(&io, "  {} lit pixels past the measured width\n", past) }
+}

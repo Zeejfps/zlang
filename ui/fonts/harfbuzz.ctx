@@ -1,0 +1,82 @@
+// ui_fonts: the part of HarfBuzz (hb.h, hb-ot.h; 2.6 or later) the font library calls: a blob over
+// the font's bytes, a face and a font per size, one buffer, and hb_shape.
+//
+// The extern fns are HarfBuzz's own, under their C names. Objects are opaque. The structs that
+// cross (hb_glyph_info_t, hb_glyph_position_t, hb_font_extents_t) are HarfBuzz's public ones, made
+// of 32-bit fields only, so their layout is the same on every platform. A HarfBuzz function never
+// fails with an error: one that cannot allocate returns an inert empty object, which the callers
+// detect (a blob of the wrong length, a face with no glyphs, a buffer whose allocation failed).
+namespace ui_fonts {
+    struct HbBlob {}
+    struct HbFace {}
+    struct HbFont {}
+    struct HbBuffer {}
+    // hb_user_data_key_t: only its address matters.
+    struct UserDataKey { unused: u8 }
+    struct GlyphInfo { codepoint: u32, mask: u32, cluster: u32, var1: u32, var2: u32 }
+    struct GlyphPosition { x_advance: i32, y_advance: i32, x_offset: i32, y_offset: i32, var: u32 }
+    struct FontExtents { ascender: i32, descender: i32, line_gap: i32, reserved: [9]i32 }
+
+    // hb_memory_mode_t: DUPLICATE copies the bytes into memory HarfBuzz owns.
+    const MEMORY_MODE_DUPLICATE: i32 = 0
+    // hb_direction_t
+    const DIRECTION_LTR: i32 = 4
+
+    // hb_destroy_func_t, called when the object the user data is on is finally freed. The pointer
+    // it is given is not used: what it counts is the capability's static.
+    type DestroyFn = extern fn{ mut fonts: Fonts, data: ?*mut u8 }
+
+    extern fn hb_version_string { mut fonts: Fonts } -> c::String
+    extern fn hb_blob_create { mut fonts: Fonts, data: *u8, length: u32, mode: i32, user_data: ?*mut u8, destroy: ?DestroyFn } -> *mut HbBlob
+    extern fn hb_blob_get_length { mut fonts: Fonts, blob: *mut HbBlob } -> u32
+    extern fn hb_blob_get_data { mut fonts: Fonts, blob: *mut HbBlob, mut length: u32 } -> ?*u8
+    extern fn hb_blob_set_user_data { mut fonts: Fonts, blob: *mut HbBlob, key: *mut UserDataKey, data: ?*mut u8, destroy: ?DestroyFn, replace: i32 } -> i32
+    extern fn hb_blob_destroy { mut fonts: Fonts, blob: *mut HbBlob }
+    extern fn hb_face_create { mut fonts: Fonts, blob: *mut HbBlob, index: u32 } -> *mut HbFace
+    extern fn hb_face_get_upem { mut fonts: Fonts, face: *mut HbFace } -> u32
+    extern fn hb_face_get_glyph_count { mut fonts: Fonts, face: *mut HbFace } -> u32
+    extern fn hb_face_destroy { mut fonts: Fonts, face: *mut HbFace }
+    extern fn hb_font_create { mut fonts: Fonts, face: *mut HbFace } -> *mut HbFont
+    extern fn hb_ot_font_set_funcs { mut fonts: Fonts, font: *mut HbFont }
+    extern fn hb_font_set_scale { mut fonts: Fonts, font: *mut HbFont, x_scale: i32, y_scale: i32 }
+    extern fn hb_font_get_h_extents { mut fonts: Fonts, font: *mut HbFont, mut extents: FontExtents } -> i32
+    extern fn hb_font_destroy { mut fonts: Fonts, font: *mut HbFont }
+    extern fn hb_buffer_create { mut fonts: Fonts } -> *mut HbBuffer
+    extern fn hb_buffer_allocation_successful { mut fonts: Fonts, buffer: *mut HbBuffer } -> i32
+    extern fn hb_buffer_set_user_data { mut fonts: Fonts, buffer: *mut HbBuffer, key: *mut UserDataKey, data: ?*mut u8, destroy: ?DestroyFn, replace: i32 } -> i32
+    extern fn hb_buffer_clear_contents { mut fonts: Fonts, buffer: *mut HbBuffer }
+    extern fn hb_buffer_add_utf8 { mut fonts: Fonts, buffer: *mut HbBuffer, text: *u8, text_length: i32, item_offset: u32, item_length: i32 }
+    extern fn hb_buffer_guess_segment_properties { mut fonts: Fonts, buffer: *mut HbBuffer }
+    extern fn hb_buffer_set_direction { mut fonts: Fonts, buffer: *mut HbBuffer, direction: i32 }
+    extern fn hb_shape { mut fonts: Fonts, font: *mut HbFont, buffer: *mut HbBuffer, features: ?*u8, num_features: u32 }
+    extern fn hb_buffer_get_glyph_infos { mut fonts: Fonts, buffer: *mut HbBuffer, mut length: u32 } -> ?*GlyphInfo
+    extern fn hb_buffer_get_glyph_positions { mut fonts: Fonts, buffer: *mut HbBuffer, mut length: u32 } -> ?*GlyphPosition
+    extern fn hb_buffer_destroy { mut fonts: Fonts, buffer: *mut HbBuffer }
+
+    // HarfBuzz calls these when a blob or a buffer of this library is finally freed, inside the
+    // hb_*_destroy call that drops its last reference, so on the thread that holds `Fonts`. A blob
+    // is freed only after the face over it and every font over that face, so the count of blobs
+    // freed shows that HarfBuzz released all three.
+    #c::callback
+    fn count_blob_freed { mut fonts: Fonts } {
+        fonts.blobs_freed = fonts.blobs_freed + 1
+    }
+
+    #c::callback
+    fn count_buffer_freed { mut fonts: Fonts } {
+        fonts.buffers_freed = fonts.buffers_freed + 1
+    }
+
+    // The glyphs of the buffer's last hb_shape: its infos and positions, the same length.
+    struct Glyphs { infos: []GlyphInfo, positions: []GlyphPosition }
+
+    fn get_glyphs { mut fonts: Fonts, buffer: *mut HbBuffer } -> Glyphs {
+        let mut n: u32 = 0
+        let mut m: u32 = 0
+        let infos = hb_buffer_get_glyph_infos{ &fonts, buffer, length = &n } ifnull { return Glyphs{ infos = [], positions = [] } }
+        let positions = hb_buffer_get_glyph_positions{ &fonts, buffer, length = &m } ifnull { return Glyphs{ infos = [], positions = [] } }
+        let count = @as(usize, if n < m { n } else { m })
+        if count == 0 { return Glyphs{ infos = [], positions = [] } }
+        return Glyphs{ infos = @slice(infos, count), positions = @slice(positions, count) }
+    }
+}
