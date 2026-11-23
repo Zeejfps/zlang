@@ -18,10 +18,10 @@ namespace slice {
     // Copies all of src into the start of dst. Panics if dst is shorter.
     fn copy(T) { dst: []mut T, src: []T } {
         if dst.len < src.len { @panic("slice::copy: destination is shorter than source") }
-        // The check above covers every index, so the loop indexes the pointers directly.
+        // The check above covers every index, so the loop goes through the pointers, unchecked.
         let mut i: usize = 0
         while i < src.len {
-            dst.ptr[i] = src.ptr[i]
+            (dst.ptr + i).* = (src.ptr + i).*
             i = i + 1
         }
     }
@@ -41,7 +41,7 @@ namespace slice {
     fn fill(T) { s: []mut T, v: T } {
         let mut i: usize = 0
         while i < s.len {
-            s.ptr[i] = v
+            (s.ptr + i).* = v
             i = i + 1
         }
     }

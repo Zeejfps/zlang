@@ -99,7 +99,7 @@ namespace os {
         let entries = proc.environ ifnull { return null }
         let mut i: usize = 0
         while true {
-            let entry = c::bytes{ s = entries[i] ifnull { return null } }
+            let entry = c::bytes{ s = (entries + i).* ifnull { return null } }
             if entry.len > name.len and entry[name.len] == '=' and slice::eq_bytes{ a = entry[..name.len], b = name } {
                 return entry[name.len + 1..]
             }
@@ -113,13 +113,13 @@ namespace os {
     fn environment { mut proc: Proc } -> [][]u8 {
         let entries = proc.environ ifnull { return slice::empty([]u8){} }
         let mut n: usize = 0
-        while entries[n] != null { n = n + 1 }
+        while (entries + n).* != null { n = n + 1 }
         if n == 0 { return slice::empty([]u8){} }
         let p = c_malloc{ &proc, size = n * @size_of([]u8) } ifnull { return slice::empty([]u8){} }
         let items = @slice(@cast(*mut []u8, p), n)
         let mut i: usize = 0
         while i < n {
-            items[i] = c::bytes{ s = entries[i] ifnull { return items[..i] } }
+            items[i] = c::bytes{ s = (entries + i).* ifnull { return items[..i] } }
             i = i + 1
         }
         return items
@@ -385,7 +385,7 @@ namespace os {
         let inherited = proc.environ
         let mut n: usize = 0
         if inherited != null {
-            while inherited[n] != null { n = n + 1 }
+            while (inherited + n).* != null { n = n + 1 }
         }
         let program = argv[0]
         let mut searched = true
@@ -419,7 +419,7 @@ namespace os {
         let mut k = envp
         i = 0
         while inherited != null and i < n {
-            let entry = inherited[i] ifnull { break }
+            let entry = (inherited + i).* ifnull { break }
             if not proc::overridden{ entry = c::bytes{ s = entry }, env = extra } {
                 ptrs[k] = entry.ptr
                 k = k + 1
@@ -541,10 +541,10 @@ namespace os {
     fn c_copy { into: *mut u8, bytes: []u8 } -> *mut u8 {
         let mut i: usize = 0
         while i < bytes.len {
-            into[i] = bytes[i]
+            (into + i).* = bytes[i]
             i = i + 1
         }
-        into[bytes.len] = 0
+        (into + bytes.len).* = 0
         return into + (bytes.len + 1)
     }
 

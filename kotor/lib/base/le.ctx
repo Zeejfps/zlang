@@ -206,6 +206,6 @@ namespace le {
     // The u32 at `at`; the caller has checked that it fits.
     fn u32_of { data: []u8, at: usize } -> u32 {
         let p = data.ptr + at
-        return @as(u32, p[0]) | (@as(u32, p[1]) << 8) | (@as(u32, p[2]) << 16) | (@as(u32, p[3]) << 24)
+        return @as(u32, p.*) | (@as(u32, (p + 1).*) << 8) | (@as(u32, (p + 2).*) << 16) | (@as(u32, (p + 3).*) << 24)
     }
 }

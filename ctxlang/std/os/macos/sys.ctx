@@ -134,10 +134,10 @@ namespace sys {
     // another thread forks meanwhile, other than with spawn, may get them.
     fn make_pipe { mut proc: os::Proc, fds: *mut i32 } -> i32 {
         if pipe{ &proc, fds } != 0 { return -1 }
-        if fcntl{ &proc, fd = fds[0], cmd = os::F_SETFD, arg = os::FD_CLOEXEC } < 0 or fcntl{ &proc, fd = fds[1], cmd = os::F_SETFD, arg = os::FD_CLOEXEC } < 0 {
+        if fcntl{ &proc, fd = fds.*, cmd = os::F_SETFD, arg = os::FD_CLOEXEC } < 0 or fcntl{ &proc, fd = (fds + 1).*, cmd = os::F_SETFD, arg = os::FD_CLOEXEC } < 0 {
             let e = proc_errno{ &proc }.*
-            _ = os::close_fd{ &proc, fd = fds[0] }
-            _ = os::close_fd{ &proc, fd = fds[1] }
+            _ = os::close_fd{ &proc, fd = fds.* }
+            _ = os::close_fd{ &proc, fd = (fds + 1).* }
             proc_errno{ &proc }.* = e
             return -1
         }
@@ -174,7 +174,7 @@ namespace sys {
         // named, so the child hasn't it either: addinherit_np would fail on it.
         let mut k: usize = 0
         while e == 0 and k < 3 {
-            let fd = fds[k]
+            let fd = (fds + k).*
             let to = @as(i32, k)
             if fd == os::INHERITED or fd == to {
                 e = posix_spawn_file_actions_addinherit_np{ &proc, &actions, fd = to }

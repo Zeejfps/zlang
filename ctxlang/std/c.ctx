@@ -36,7 +36,7 @@ namespace c {
     // The bytes before the NUL.
     fn len { s: String } -> usize {
         let mut n: usize = 0
-        while s.ptr[n] != 0 { n = n + 1 }
+        while (s.ptr + n).* != 0 { n = n + 1 }
         return n
     }
 

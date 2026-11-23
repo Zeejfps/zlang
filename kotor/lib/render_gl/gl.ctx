@@ -388,7 +388,7 @@ namespace gl {
             else if severity == DEBUG_SEVERITY_MEDIUM { "medium: " }
             else if severity == DEBUG_SEVERITY_LOW { "low: " } else { "note: " }
         let mut n: usize = 0
-        if length >= 0 { n = @as(usize, length) } else { while message[n] != 0 { n = n + 1 } }
+        if length >= 0 { n = @as(usize, length) } else { while (message + n).* != 0 { n = n + 1 } }
         log.count = log.count + 1
         if log.used + prefix.len + n + 1 > log.text.len {
             log.dropped = log.dropped + 1
@@ -402,7 +402,7 @@ namespace gl {
         }
         i = 0
         while i < n {
-            log.text[log.used] = message[i]
+            log.text[log.used] = (message + i).*
             log.used = log.used + 1
             i = i + 1
         }

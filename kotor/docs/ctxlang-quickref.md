@@ -61,6 +61,9 @@ function: can't be stored in a struct or returned), `extern fn{C} -> R` (C funct
   file: `count * 16 ifoverflow { return truncated }`. A call's arguments in e aren't covered.
 - No implicit int→float or signed↔unsigned: `@as(f32, n)` (checked), `@trunc(u8, n)` (low
   bits), `@cast(*T, p)` for pointers. `@as(_, x)` takes the type from the context.
+- Only arrays and slices are indexed, and `[i]` is always bounds-checked. `q[i]` on a pointer is
+  an error: the element without a check is `(q + i).*` (`(q + i).f` for a field), and
+  `(s.ptr + i).*` skips a slice's check. Keep these to hot loops whose bounds are checked once.
 - Same bits, other type: `@trunc` between integers of one size (`@trunc(u32, -1)` is
   `0xFFFFFFFF`, where `@as` panics); `math::f32_from_bits`, `f32_to_bits` and the `f64` pair for floats.
 - Integer literals take their type from use; float literals default to `f64`. Hex `0x1F`.

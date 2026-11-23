@@ -543,7 +543,7 @@ A value of numeric type `A` converts implicitly to numeric type `B` when every v
    - `[N]u8`, for the literal's `N`: an array value holding a copy of the bytes. Like any array it is a value, not a place: bind it to a `let mut` to write into it, as `let mut s: [3]u8 = "abc"`.
    - anything else, or nothing: a `[]u8`, a **view** of those bytes. So `let pre = "gui_"` is a `[]u8`, and so is each element of `["a", "bb"]`. `[]mut u8` is an error.
 
-   A literal's static bytes are followed by a 0 byte that isn't one of them, the **hidden zero**: `"abc"` as a `[]u8` has `len` 3, and its `ptr[3]` is 0, and `""`'s `ptr[0]` is 0. So a pointer to a literal's bytes is a C string as it is, and nobody writes `"abc\0"` for C.
+   A literal's static bytes are followed by a 0 byte that isn't one of them, the **hidden zero**: `"abc"` as a `[]u8` has `len` 3, and its `(ptr + 3).*` is 0, and `""`'s `ptr.*` is 0. So a pointer to a literal's bytes is a C string as it is, and nobody writes `"abc\0"` for C.
 
    In an `if` or `match` expression without an expected type, a branch that is a literal takes the type of another branch that is a `strlit`, a `[]u8` or a type a `#convert` fn gives, or of another literal branch that became one because one was expected: `if c { name } else { "none" }` is a `utf8::String` when `name` is one. Otherwise, as in `let msg = match p { a => { "one" } b => { "three" } }`, each literal is a `[]u8`.
 7. A character literal `'a'` is an integer literal whose value is the character's byte.
@@ -564,9 +564,9 @@ root  := local | context field | match binding | expr.*
 step  := .field | [index]
 ```
 
-1. For a pointer `q`, `q.f` and `q[i]` are places rooted at a deref (§12). So is `s[i]` for a slice `s`.
+1. For a pointer `q`, `q.f` is a place rooted at a deref (§12), and so is `q[i]` for a pointer to an array. So is `s[i]` for a slice `s`.
 2. A place **goes through a deref** if its root is `expr.*`.
-3. A place is **mutable** if its root is a `let mut` local, a `mut` context field, or a `&f` match binding through a `*mut` (§8), or if it goes through a deref of a `*mut` pointer or a `[]mut` slice: `q.*`, `q.f` or `q[i]` for `q: *mut T`, and `s[i]` for `s: []mut T`.
+3. A place is **mutable** if its root is a `let mut` local, a `mut` context field, or a `&f` match binding through a `*mut` (§8), or if it goes through a deref of a `*mut` pointer or a `[]mut` slice: `q.*`, `q.f` or `(q + i).*` for `q: *mut T`, and `s[i]` for `s: []mut T`.
 4. Every other place is read-only.
 
 ### Initialization
@@ -617,7 +617,7 @@ step  := .field | [index]
 2. `q.*` is the place that pointer `q` points to.
 3. If `q` is a `*S` for a struct `S`, `q.f` means `q.*.f`.
 4. `q + n`, with `n: usize`, points `n` elements of `T` after `q`. It has `q`'s type.
-5. `q[i]` means `(q + i).*`. It is not bounds-checked.
+5. A pointer can't be indexed: `q[i]` is an error, since `[i]` is bounds-checked and a pointer has no length to check against. The element `i` after `q` is written `(q + i).*`, which is not bounds-checked. `q[lo..hi]` is an error too: `@slice(q + lo, n)` makes the slice (§13).
 6. Exception: if `q` is a `*[N]T`, `q[i]` means `q.*[i]` (bounds-checked) and `q.len` means `N`.
 7. Pointers aren't tracked. Using a pointer to memory that no longer exists, or outside its allocation, is undefined behaviour.
 8. A place reached through a `*T` is read-only: assigning to it, or passing it as `&p` to a `mut` field, is an error. Through a `*mut T` it is mutable (§11).
@@ -715,7 +715,7 @@ let d = v.depth_stencil.depth          // the same bytes, read as another field
 A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are built in because they are a shape of memory, like arrays and pointers; what to do with memory (allocating, growing, hashing, text) is left to the standard library.
 
 1. `s.len` is the number of elements, a `usize`. `s.ptr` is a `*T` for a `[]T` and a `*mut T` for a `[]mut T`, pointing to the first element. Neither is a place. The `ptr` of an empty slice is unspecified and must not be dereferenced, except a string literal's view, whose `ptr` points to its hidden zero (§11, Literals).
-2. `s[i]` is the element at `i`, bounds-checked: `i >= s.len` panics. It is a place through a deref (§11), mutable only for a `[]mut T`. `s.ptr[i]` is the same element without the check.
+2. `s[i]` is the element at `i`, bounds-checked: `i >= s.len` panics. It is a place through a deref (§11), mutable only for a `[]mut T`. `(s.ptr + i).*` is the same element without the check; `s.ptr[i]` is an error (Pointers, rule 5).
 3. `s[lo..hi]` is the slice of elements `lo` up to but not including `hi`, of `s`'s type. `lo` defaults to 0 and `hi` to `s.len`, so `s[..]` is `s`. `lo > hi` or `hi > s.len` panics. `lo` and `hi` are `usize`.
 4. `a[lo..hi]` on an array place `a` means `(&a)[lo..hi]`, and on a `*[N]T` or `*mut [N]T` it slices the array it points to. The result is `[]mut T` if the place is mutable (§11), `[]T` otherwise.
    - An array const, or an array reached by fields and array indexes from a const, may also be sliced. The result is always `[]T`, backed by immutable static storage (§14), with the same bounds checks. No array is copied to make the view. This does not make the const a place: `&C` and `&C[i]` remain errors.

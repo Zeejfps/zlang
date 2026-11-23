@@ -275,18 +275,18 @@ namespace bink_audio {
             let width = bink_bits::read{ r = &rd, n = 4 }
             if width == 0 {
                 while i < j {
-                    x.ptr[i] = 0.0
+                    (x.ptr + i).* = 0.0
                     i = i + 1
                 }
             } else {
                 while i < j {
                     let v = bink_bits::read{ r = &rd, n = width }
                     if v == 0 {
-                        x.ptr[i] = 0.0
+                        (x.ptr + i).* = 0.0
                     } else if bink_bits::bit{ r = &rd } != 0 {
-                        x.ptr[i] = -@as(f64, v)
+                        (x.ptr + i).* = -@as(f64, v)
                     } else {
-                        x.ptr[i] = @as(f64, v)
+                        (x.ptr + i).* = @as(f64, v)
                     }
                     i = i + 1
                 }
@@ -299,7 +299,7 @@ namespace bink_audio {
             let mut k = d.starts[b]
             let stop = d.starts[b + 1]
             while k < stop {
-                x.ptr[k] = x.ptr[k] * s
+                (x.ptr + k).* = (x.ptr + k).* * s
                 k = k + 1
             }
             b = b + 1
@@ -335,14 +335,14 @@ namespace bink_audio {
         let h = n / 2
         let mut k: usize = 0
         while k < h {
-            let u = pack{ left, right, stereo, c = pc.ptr[k], s = ps.ptr[k], k, n }
+            let u = pack{ left, right, stereo, c = (pc.ptr + k).*, s = (ps.ptr + k).*, k, n }
             let k2 = k + h
-            let t = pack{ left, right, stereo, c = pc.ptr[k2], s = ps.ptr[k2], k = k2, n }
-            let p: usize = rev.ptr[k]
-            re.ptr[p] = u.re + t.re
-            im.ptr[p] = u.im + t.im
-            re.ptr[p + 1] = u.re - t.re
-            im.ptr[p + 1] = u.im - t.im
+            let t = pack{ left, right, stereo, c = (pc.ptr + k2).*, s = (ps.ptr + k2).*, k = k2, n }
+            let p: usize = (rev.ptr + k).*
+            (re.ptr + p).* = u.re + t.re
+            (im.ptr + p).* = u.im + t.im
+            (re.ptr + (p + 1)).* = u.re - t.re
+            (im.ptr + (p + 1)).* = u.im - t.im
             k = k + 1
         }
 
@@ -363,20 +363,20 @@ namespace bink_audio {
             let mut j: usize = 0
             while j < half {
                 let w = half +% j
-                let wr = tc.ptr[w]
-                let wi = ts.ptr[w]
+                let wr = (tc.ptr + w).*
+                let wi = (ts.ptr + w).*
                 let p = start +% j
                 let q = p +% half
-                let xr = re.ptr[q]
-                let xi = im.ptr[q]
+                let xr = (re.ptr + q).*
+                let xi = (im.ptr + q).*
                 let tr = xr * wr - xi * wi
                 let ti = xr * wi + xi * wr
-                let ur = re.ptr[p]
-                let ui = im.ptr[p]
-                re.ptr[p] = ur + tr
-                im.ptr[p] = ui + ti
-                re.ptr[q] = ur - tr
-                im.ptr[q] = ui - ti
+                let ur = (re.ptr + p).*
+                let ui = (im.ptr + p).*
+                (re.ptr + p).* = ur + tr
+                (im.ptr + p).* = ui + ti
+                (re.ptr + q).* = ur - tr
+                (im.ptr + q).* = ui - ti
                 j = j +% 1
             }
             start = start +% size
@@ -386,13 +386,13 @@ namespace bink_audio {
     // V[k] = e^(i pi k / 2N) (X[k] - i X[N-k]) for the left channel, plus i times the right's
     // (the 1 / sqrt(N) of the output is in the cosine and sine).
     fn pack { left: []f64, right: []f64, stereo: bool, c: f64, s: f64, k: usize, n: usize } -> Complex {
-        let a = left.ptr[k]
-        let b = if k == 0 { 0.0 } else { left.ptr[n - k] }
+        let a = (left.ptr + k).*
+        let b = if k == 0 { 0.0 } else { (left.ptr + (n - k)).* }
         let lr = a * c + b * s
         let li = a * s - b * c
         if not stereo { return Complex{ re = lr, im = li } }
-        let a2 = right.ptr[k]
-        let b2 = if k == 0 { 0.0 } else { right.ptr[n - k] }
+        let a2 = (right.ptr + k).*
+        let b2 = if k == 0 { 0.0 } else { (right.ptr + (n - k)).* }
         return Complex{ re = lr - (a2 * s - b2 * c), im = li + (a2 * c + b2 * s) }
     }
 
@@ -418,19 +418,19 @@ namespace bink_audio {
             let mut t: usize = 0
             while t < out_frames {
                 let half = t / 2
-                let y = (if t % 2 == 0 { v.ptr[half] } else { v.ptr[n - 1 - half] }) + x0
+                let y = (if t % 2 == 0 { (v.ptr + half).* } else { (v.ptr + (n - 1 - half)).* }) + x0
                 let mut s = y
                 if t < fade_frames {
                     let w = @as(f64, t * ch + c) / fade_div
-                    s = tail.ptr[t] * (1.0 - w) + y * w
+                    s = (tail.ptr + t).* * (1.0 - w) + y * w
                 }
-                out.ptr[t * ch + c] = to_i16{ y = s }
+                (out.ptr + (t * ch + c)).* = to_i16{ y = s }
                 t = t + 1
             }
             t = frames
             while t < n {
                 let half = t / 2
-                tail.ptr[t - frames] = (if t % 2 == 0 { v.ptr[half] } else { v.ptr[n - 1 - half] }) + x0
+                (tail.ptr + (t - frames)).* = (if t % 2 == 0 { (v.ptr + half).* } else { (v.ptr + (n - 1 - half)).* }) + x0
                 t = t + 1
             }
             c = c + 1

@@ -2678,11 +2678,8 @@ namespace lower {
             let b = ex{ &l, e = base }
             return mk{ ty, k = ir::ExprKind::sindex{ base = box{ l, e = b }, i = box{ l, e = ix }, pos = p } }
         }
-        let ty = tid{ &l, t }
-        let pt = tid{ &l, t = bt }
-        let b = ex{ &l, e = base }
-        let q = mk{ ty = pt, k = ir::ExprKind::ptradd{ p = box{ l, e = b }, n = box{ l, e = ix } } }
-        return mk{ ty, k = ir::ExprKind::deref{ ptr = box{ l, e = q }, pos = p } }
+        // The checker rejects an index on any other pointer (spec §12, Pointers, rule 5).
+        @panic("lower: an index on a pointer")
     }
 
     fn binary { mut l: Lower, e: syntax::Expr, op: tok::Kind, a: syntax::Expr, b: syntax::Expr, t: Id } -> ir::Expr {

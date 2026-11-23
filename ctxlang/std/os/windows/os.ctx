@@ -129,7 +129,7 @@ namespace os {
         defer _ = FreeEnvironmentStringsW{ &proc, block }
         let mut n: usize = 0
         let mut at: usize = 0
-        while block[at] != 0 {
+        while (block + at).* != 0 {
             at = at + wide_len{ s = block + at } + 1
             n = n + 1
         }
@@ -384,7 +384,7 @@ namespace os {
         let mut size = head
         let mut i: usize = 0
         while i < n {
-            let w = wide[i + 1] ifnull { return slice::empty([]u8){} }
+            let w = (wide + (i + 1)).* ifnull { return slice::empty([]u8){} }
             size = size + @as(usize, narrow{ text = w, n = -1, out = null, cap = 0, fallback = null, used = null })
             i = i + 1
         }
@@ -396,7 +396,7 @@ namespace os {
         let mut at = head
         i = 0
         while i < n {
-            let w = wide[i + 1] ifnull { break }
+            let w = (wide + (i + 1)).* ifnull { break }
             let k = narrow{ text = w, n = -1, out = bytes[at..].ptr, cap = @as(i32, size - at), fallback = null, used = null }
             if k <= 0 { break }
             items[i] = bytes[at..at + @as(usize, k) - 1]          // less the zero
@@ -631,7 +631,7 @@ namespace os {
         defer _ = FreeEnvironmentStringsW{ &proc, block = inherited }
         let mut units: usize = 1
         let mut at: usize = 0
-        while inherited[at] != 0 {
+        while (inherited + at).* != 0 {
             let len = wide_len{ s = inherited + at }
             units = units + len + 1
             at = at + len + 1
@@ -643,12 +643,12 @@ namespace os {
         let block = @slice(@cast(*mut u16, bytes), units)
         let mut used: usize = 0
         at = 0
-        while inherited[at] != 0 {
+        while (inherited + at).* != 0 {
             let len = wide_len{ s = inherited + at }
             if not replaced{ &proc, entry = @slice(inherited + at, len), env } {
                 let mut j: usize = 0
                 while j <= len {
-                    block[used + j] = inherited[at + j]
+                    block[used + j] = (inherited + (at + j)).*
                     j = j + 1
                 }
                 used = used + len + 1
@@ -903,7 +903,7 @@ namespace os {
     // How many u16s s has before its zero.
     fn wide_len { s: *u16 } -> usize {
         let mut n: usize = 0
-        while s[n] != 0 { n = n + 1 }
+        while (s + n).* != 0 { n = n + 1 }
         return n
     }
 

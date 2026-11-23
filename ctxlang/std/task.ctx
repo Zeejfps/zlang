@@ -432,7 +432,7 @@ namespace task {
     // Slot `id`, which has been made.
     fn slot_ptr { t: *mut Table, id: u32 } -> *mut Slot {
         let page = t.pages[(id - 1) / PER_PAGE] ifnull { @panic("task: a slot of no page") }
-        return &page[(id - 1) % PER_PAGE]
+        return page + (id - 1) % PER_PAGE
     }
 
     // The slot of a handle's task, which must still be its.
@@ -460,7 +460,7 @@ namespace task {
             let page = t.pages[p] ifnull { return null }
             let object = os::event_make{ &threads }
             if object == 0 { return null }
-            let f = &page[t.made % PER_PAGE]
+            let f = page + t.made % PER_PAGE
             t.made = t.made + 1
             f.id = t.made
             f.object = object

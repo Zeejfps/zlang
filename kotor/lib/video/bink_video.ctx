@@ -454,7 +454,7 @@ namespace bink_video {
             return 0
         }
         b.pos = p + 1
-        return b.values.ptr[p]
+        return (b.values.ptr + p).*
     }
 
     fn starved_any { d: Decoder } -> bool {
@@ -634,7 +634,7 @@ namespace bink_video {
             let o = row * stride
             let mut i: usize = 0
             while i < 8 {
-                dst[o + i] = src[o + i]
+                (dst + (o + i)).* = (src + (o + i)).*
                 i = i + 1
             }
             row = row + 1
@@ -647,7 +647,7 @@ namespace bink_video {
             let o = row * stride
             let mut i: usize = 0
             while i < size {
-                out[o + i] = v
+                (out + (o + i)).* = v
                 i = i + 1
             }
             row = row + 1
@@ -662,10 +662,10 @@ namespace bink_video {
             let mut i: usize = 0
             while i < 8 {
                 let v = block[8 * row + i]
-                out[o + 2 * i] = v
-                out[o + 2 * i + 1] = v
-                out[o + stride + 2 * i] = v
-                out[o + stride + 2 * i + 1] = v
+                (out + (o + 2 * i)).* = v
+                (out + (o + 2 * i + 1)).* = v
+                (out + (o + stride + 2 * i)).* = v
+                (out + (o + stride + 2 * i + 1)).* = v
                 i = i + 1
             }
             row = row + 1
@@ -706,7 +706,7 @@ namespace bink_video {
     // Pixel p (raster order in an 8x8 block) of a block at `out`.
     fn put { out: *mut u8, stride: usize, p: u8, v: u8 } {
         let i: usize = p
-        out[(i >> 3) * stride + (i & 7)] = v
+        (out + ((i >> 3) * stride + (i & 7))).* = v
     }
 
     fn pattern_block { mut d: Decoder, out: *mut u8, stride: usize } {
@@ -718,7 +718,7 @@ namespace bink_video {
             let o = row * stride
             let mut i: usize = 0
             while i < 8 {
-                out[o + i] = if ((bits >> i) & 1) != 0 { c1 } else { c0 }
+                (out + (o + i)).* = if ((bits >> i) & 1) != 0 { c1 } else { c0 }
                 i = i + 1
             }
             row = row + 1
@@ -731,7 +731,7 @@ namespace bink_video {
             let o = row * stride
             let mut i: usize = 0
             while i < 8 {
-                out[o + i] = @trunc(u8, take{ b = &d.colors })
+                (out + (o + i)).* = @trunc(u8, take{ b = &d.colors })
                 i = i + 1
             }
             row = row + 1
@@ -968,8 +968,8 @@ namespace bink_video {
             let mut i: usize = 0
             while i < 8 {
                 let v = values[8 * row + i]
-                let px: i32 = out[o + i]
-                out[o + i] = @trunc(u8, px +% v)
+                let px: i32 = (out + (o + i)).*
+                (out + (o + i)).* = @trunc(u8, px +% v)
                 values[8 * row + i] = 0
                 i = i + 1
             }
@@ -1046,7 +1046,7 @@ namespace bink_video {
             let o = row * stride
             let mut i: usize = 0
             while i < 8 {
-                out[o + i] = @trunc(u8, (v[i] +% 127) >> 8)
+                (out + (o + i)).* = @trunc(u8, (v[i] +% 127) >> 8)
                 i = i + 1
             }
             row = row + 1
@@ -1062,8 +1062,8 @@ namespace bink_video {
             let o = row * stride
             let mut i: usize = 0
             while i < 8 {
-                let px: i32 = out[o + i]
-                out[o + i] = @trunc(u8, px +% ((v[i] +% 127) >> 8))
+                let px: i32 = (out + (o + i)).*
+                (out + (o + i)).* = @trunc(u8, px +% ((v[i] +% 127) >> 8))
                 i = i + 1
             }
             row = row + 1

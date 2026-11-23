@@ -26,15 +26,15 @@ namespace bink_bits {
         let i = r.next
         let mut w: u64 = 0
         if i + 4 <= r.data.len {
-            let b0: u64 = r.data.ptr[i]
-            let b1: u64 = r.data.ptr[i + 1]
-            let b2: u64 = r.data.ptr[i + 2]
-            let b3: u64 = r.data.ptr[i + 3]
+            let b0: u64 = (r.data.ptr + i).*
+            let b1: u64 = (r.data.ptr + (i + 1)).*
+            let b2: u64 = (r.data.ptr + (i + 2)).*
+            let b3: u64 = (r.data.ptr + (i + 3)).*
             w = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
         } else {
             let mut k: usize = 0
             while i + k < r.data.len and k < 4 {
-                let b: u64 = r.data.ptr[i + k]
+                let b: u64 = (r.data.ptr + (i + k)).*
                 w = w | (b << (8 * k))
                 k = k + 1
             }

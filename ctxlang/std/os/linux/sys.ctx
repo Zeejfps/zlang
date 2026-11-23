@@ -207,7 +207,7 @@ namespace sys {
             if code == 0 and group and setpgid{ &proc, pid = 0, group = 0 } != 0 { code = proc_errno{ &proc }.* }
             let mut k: usize = 0
             while code == 0 and k < 3 {
-                let fd = fds[k]
+                let fd = (fds + k).*
                 let to = @trunc(i32, k)
                 if fd == to {
                     // In place already: it only needs to stay open through exec.
@@ -238,27 +238,27 @@ namespace sys {
                     let mut denied = false
                     let mut more = true
                     let mut length: usize = 0
-                    while file[length] != 0 { length = length +% 1 }
+                    while (file + length).* != 0 { length = length +% 1 }
                     code = os::ENOENT
                     while more {
                         let mut n: usize = 0
-                        while at[n] != 0 and at[n] != ':' { n = n +% 1 }
+                        while (at + n).* != 0 and (at + n).* != ':' { n = n +% 1 }
                         if n +% length +% 2 <= os::PATH_MAX {
                             let mut w: usize = 0
                             while w < n {
-                                scratch[w] = at[w]
+                                (scratch + w).* = (at + w).*
                                 w = w +% 1
                             }
                             if n > 0 {
-                                scratch[w] = '/'
+                                (scratch + w).* = '/'
                                 w = w +% 1
                             }
                             let mut i: usize = 0
                             while i < length {
-                                scratch[w +% i] = file[i]
+                                (scratch + (w +% i)).* = (file + i).*
                                 i = i +% 1
                             }
-                            scratch[w +% length] = 0
+                            (scratch + (w +% length)).* = 0
                             _ = execve{ &proc, path = scratch, argv, envp }
                             let e = proc_errno{ &proc }.*
                             if e == os::EACCES {
@@ -268,7 +268,7 @@ namespace sys {
                                 more = false
                             }
                         }
-                        if at[n] == 0 { more = false } else { at = at + (n +% 1) }
+                        if (at + n).* == 0 { more = false } else { at = at + (n +% 1) }
                     }
                     if code == os::ENOENT and denied { code = os::EACCES }
                 } else {

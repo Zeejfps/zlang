@@ -486,7 +486,7 @@ program asks for one (spec §19).
 | enum | its base integer type | `match` becomes an if-else chain on the value (IR `switch`), as a `match` on an integer does: a case lists values and ranges, `lo <= v && v <= hi`. |
 | `Io`, `Fs`, `Mem` | empty struct | Size 0 with GNU C. |
 | `capability Gl { f: extern fn{C} -> R, ... }` | struct of function pointers | `x.f{ ... }` calls the pointer; dropped from extern and `cfn` params, as other capabilities are. |
-| `*T`, `q + n`, `q[i]` | `T*`, pointer arithmetic | Not checked. §12.7 calls a bad pointer UB. |
+| `*T`, `q + n`, `(q + i).*` | `T*`, pointer arithmetic | Not checked. §12.7 calls a bad pointer UB. |
 | `a[i]` on arrays | index with a bounds check | Panics, as the spec requires. |
 | `fn{C} -> R` | pointer to a record whose first member is the code | Called with the record and the fields in name order. Conversion to a type with more fields wraps the value in an adapter. Conversion to one whose `!T` may fail with any error, or that has `mut` a field the value takes read-only (spec §5), is a widening thunk that lowering writes as a function (lower.ctx, `widen_fn`), which reads such a field through its pointer: a named function's is its static record, a bind's binds the thunk instead, and any other value is held by a bind of a thunk calling it. |
 | read-only param of a struct, union or array over 32 bytes | `T *`, used as `(*lN)` | Spec §14.6: the caller passes its place, or a copy where another argument or the callee could change it (emit_c.ctx, `pass`). Not to extern fns. A 300 KB struct passed 20,000 times: 0.89 s to 0.06 s; `ctxc build` of ctxc, 451 ms to 317 ms. |

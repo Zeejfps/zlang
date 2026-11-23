@@ -9980,7 +9980,9 @@ namespace check {
                                 return inner
                             }
                             else => {
+                                // Still a place through a pointer, for the checks that follow.
                                 put_access{ &c, e, a = Access::ptr }
+                                reject_pointer_index{ &c, e, base = base.*, i = i.*, bt }
                                 return elem
                             }
                         }
@@ -10007,6 +10009,19 @@ namespace check {
             overflow{ e = x, els } => { return check_overflow{ &c, e, x = x.*, els, exp } }
             trye{ e = x, panics } => { return try_expr{ &c, e, x = x.*, panics } }
             isx{ e = x, pats } => { return check_is{ &c, e, x = x.*, pats } }
+        }
+    }
+
+    // `q[i]` on a pointer q (§12, Pointers, rule 5): an error that spells the unchecked element,
+    // `(q + i).*`, from the source's own text. An index that is an operator's expression keeps
+    // its meaning in parentheses.
+    fn reject_pointer_index { mut c: Checker, e: syntax::Expr, base: syntax::Expr, i: syntax::Expr, bt: Id } {
+        let q = str{ s = source_text{ c, span = base.span } }
+        let n = str{ s = source_text{ c, span = i.span } }
+        if i.k is binary | ifx | matchx | overflow | trye | isx {
+            errorf{ &c, at = expr_at{ e }, msg = @fmt("cannot index {}: a pointer has no length to check against; write `({} + ({})).*`, which isn't checked", tstr{ c, t = bt }, q, n) }
+        } else {
+            errorf{ &c, at = expr_at{ e }, msg = @fmt("cannot index {}: a pointer has no length to check against; write `({} + {}).*`, which isn't checked", tstr{ c, t = bt }, q, n) }
         }
     }
 
@@ -10104,7 +10119,11 @@ namespace check {
         if not ok {
             t = types::ERROR
         } else {
-            if not (types::get{ s = c.ty, id = bt } is slice | error) {
+            if types::get{ s = c.ty, id = bt } is ptr {
+                let q = str{ s = source_text{ c, span = base.span } }
+                errorf{ &c, at = expr_at{ e }, msg = @fmt("cannot slice {}: a pointer has no length to check against; write `@slice({} + lo, n)` for `n` elements from `lo`, which isn't checked", tstr{ c, t = bt }, q) }
+                t = types::ERROR
+            } else if not (types::get{ s = c.ty, id = bt } is slice | error) {
                 errorf{ &c, at = expr_at{ e }, msg = @fmt("cannot slice {}", tstr{ c, t = bt }) }
                 t = types::ERROR
             }

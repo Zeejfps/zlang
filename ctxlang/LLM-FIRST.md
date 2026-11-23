@@ -31,13 +31,22 @@ entries are cited by number, e.g. F#24) and [kotor/docs/tooling-gaps.md](../koto
     and 13 in KOTOR (among them RNG draws in `Vec3{ x = rand, y = rand }` and a stale copy of
     `h.lists[1]` in the HUD), each fixed with a `let` in today's order.
 
-- [ ] **1.2 Give unchecked pointer indexing its own syntax.**
+- [x] **1.2 Give unchecked pointer indexing its own syntax.**
   `q[i]` on a `*T` is `(q + i).*`, unchecked, but looks the same as the bounds-checked `s[i]` on
   a slice or array. A model will assume it is checked. Same for `s.ptr[i]`.
   Move it to a spelling that says so (e.g. `@unchecked(q, i)` or `(q + i).*` only), so every
   route to undefined behaviour is greppable.
   - Details: [spec §12, Pointers, rule 5](spec.md#pointers), [§12, Slices, rule 2](spec.md#slices).
   - *Done when:* `q[i]` on a pointer is an error that says what to write; ctxc, std and kotor are migrated.
+  - *Done:* `(q + i).*` only, no builtin: it existed already, is a place as it stands (written,
+    `&`, `(q + i).f`), and leaves one unchecked operation fewer for 1.3, pointer arithmetic, which
+    the compiler can find where a text search can't. `q[i]` and `q[lo..hi]` on a pointer are
+    errors that spell the fix from the source, e.g. ``write `(s.ptr + (i + 1)).*`, which isn't
+    checked``; a `*[N]T` still indexes its array, checked.
+    [spec §12, Pointers, rule 5](spec.md#pointers). Migrated by applying the compiler's own
+    fixes, behaviour unchanged: 395 sites in KOTOR (300 on the script VM's stack, the rest
+    in the Bink, MP3 and mixer loops), 37 in std (23 of them in the posix, linux and macos
+    layers), 7 in examples/glfw, 9 in the tests' programs, none in ctxc.
 
 - [ ] **1.3 Make the unchecked operations auditable as a set.**
   With 1.2 done, `@cast`, `@slice`, pointer arithmetic, unchecked indexing and `@addr` are the

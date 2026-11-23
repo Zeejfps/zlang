@@ -144,7 +144,7 @@ namespace mp3 {
         let mut w: u32 = 0
         if i + 4 <= b.buf.len {
             let p = b.buf.ptr + i
-            w = (@as(u32, p[0]) << 24) | (@as(u32, p[1]) << 16) | (@as(u32, p[2]) << 8) | @as(u32, p[3])
+            w = (@as(u32, p.*) << 24) | (@as(u32, (p + 1).*) << 16) | (@as(u32, (p + 2).*) << 8) | @as(u32, (p + 3).*)
         } else {
             let mut k: usize = 0
             while k < 4 {
@@ -551,8 +551,8 @@ namespace mp3 {
             let mut t: f32 = 0.0
             let mut k: usize = 0
             while k < 18 {
-                s = s + xs[k] * COS36[a + k]
-                t = t + xs[k] * COS36[b + k]
+                s = s + (xs + k).* * COS36[a + k]
+                t = t + (xs + k).* * COS36[b + k]
                 k = k + 1
             }
             y[i] = s
@@ -564,9 +564,9 @@ namespace mp3 {
         i = 0
         while i < 18 {
             // Keep the f32 product rounded before overlap-add.
-            let first = y[i] * window[i]
+            let first = y[i] * (window + i).*
             out[i] = first + prev[i]
-            prev[i] = y[18 + i] * window[18 + i]
+            prev[i] = y[18 + i] * (window + (18 + i)).*
             i = i + 1
         }
     }

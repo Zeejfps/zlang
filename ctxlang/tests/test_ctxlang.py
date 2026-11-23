@@ -1913,7 +1913,7 @@ class Bodies(Base):
             'fn total { s: []i32 } -> i32 {\n    let mut t = 0\n    let mut i: usize = 0\n    while i < s.len {\n        t = t + s[i]\n        i = i + 1\n    }\n    return t\n}\nfn main {} {\n    let a: [4]i32 = [1, 2, 3, 4]\n    let s = a[1..3]\n    let p = &a\n    _ = total{ s = s[..1] }\n    _ = total{ s = p[2..] }\n    _ = total{ s = a[..] }\n}',
             'fn main {} {\n    let mut a: [4]u8 = [0; 4]\n    let s = a[0..2]\n    s[1] = 7\n    let p = &a\n    p[3] = 1\n    _ = p.len\n}',
             # ptr arithmetic
-            'fn main {} {\n    let a: [3]i32 = [1, 2, 3]\n    let p = @cast(*i32, &a)\n    let q = p + 2\n    _ = q.* + p[1]\n}',
+            'fn main {} {\n    let a: [3]i32 = [1, 2, 3]\n    let p = @cast(*i32, &a)\n    let q = p + 2\n    _ = q.* + (p + 1).*\n}',
             # builtins
             'enum E: u8 { a, b }\nfn main {} {\n    let n: i64 = 300\n    let x = @as(f64, n)\n    let y = @trunc(u8, n)\n    let e = @as(E, 1)\n    let k = @as(u32, e)\n    let w = y +% @as(u8, 250)\n    let v = y -% w\n    let m = y *% v\n    let s = @size_of(i64) + @align_of(u32)\n    let mut arr: [4]u8 = [0; 4]\n    let sl = @slice(&arr[0], 2)\n    sl[0] = 1\n    let addr = @addr(&arr)\n    let bp = @cast(*u8, &arr)\n    _ = addr + s + @as(usize, m) + @as(usize, k) + @as(usize, bp.*)\n    _ = x\n}',
             'fn f { n: i32 } -> i32 {\n    if n < 0 { @panic("negative") }\n    if n > 100 { @panic() }\n    return n\n}\nfn main {} {\n    _ = f{ n = 1 }\n}',
@@ -2616,7 +2616,7 @@ fn main { mut io: Io } {
     let xs = tables::view{ lo = 1, hi = 3 }
     let mut saved: []i32
     save{ out = &saved }
-    io::println_i64{ &io, n = xs[0] + xs.ptr[1] + tables::pointer{}.* + saved[3] }
+    io::println_i64{ &io, n = xs[0] + (xs.ptr + 1).* + tables::pointer{}.* + saved[3] }
     io::println_u64{ &io, n = tables::NUMS[..0].len + tables::NUMS[4..].len }
 }
 """, '110\n0\n')
@@ -2636,7 +2636,7 @@ const SUM: i32 = sum{}
 fn main { mut io: Io } {
     let xs = row{ i = 0 }
     io::println_i64{ &io, n = xs[0] + xs[1] + SUM }
-    io::println_u64{ &io, n = BYTES[1..].ptr[0] }
+    io::println_u64{ &io, n = BYTES[1..].ptr.* }
 }
 """, '16\n98\n')
 
@@ -2656,7 +2656,7 @@ fn main { mut io: Io } {
     def test_array_views_are_read_only(self):
         for body, message in [
             ('C[..][0] = 9', 'cannot write through []i32'),
-            ('C[..].ptr[0] = 9', 'cannot write through *i32'),
+            ('C[..].ptr.* = 9', 'cannot write through *i32'),
             ('let xs: []mut i32 = C[..]', 'expected []mut i32, got []i32'),
             ('let p: *mut i32 = C[..].ptr', 'expected *mut i32, got *i32'),
             ('_ = &C', 'is a const, not a place'),
@@ -3471,6 +3471,137 @@ fn main { mut io: Io } { let mut a: i32 = 1; let p: **mut i32 = &a }
 """, 'expected **mut i32, got *mut i32')
 
 
+class PointerIndexing(Base):
+    """Spec §12, Pointers, rule 5: `[i]` is always bounds-checked, so a pointer, which has no
+    length, isn't indexed. The error spells the unchecked element, `(q + i).*`."""
+
+    def assertErrorAt(self, src, msg, line, col):
+        with self.assertRaises(CompileError) as cm:
+            run(src)
+        self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), src)
+
+    def test_indexing_a_pointer_is_an_error(self):
+        def fix(t, text):
+            return (f'cannot index {t}: a pointer has no length to check against; '
+                    f'write `{text}`, which isn\'t checked')
+        P = 'struct P { x: i32, y: i32 }\n'
+        for src, msg, line, col in [
+            # a read
+            ('fn f { q: *i32 } -> i32 {\n    return q[1]\n}\nfn main {} {}',
+             fix('*i32', '(q + 1).*'), 2, 13),
+            # a write, through either kind of pointer
+            ('fn f { q: *mut i32, i: usize } {\n    q[i] = 9\n}\nfn main {} {}',
+             fix('*mut i32', '(q + i).*'), 2, 6),
+            ('fn f { q: *i32 } {\n    q[0] = 9\n}\nfn main {} {}',
+             fix('*i32', '(q + 0).*'), 2, 6),
+            # read and written in one statement: the first is reported first
+            ('fn f { q: *mut i32 } {\n    q[0] = q[1] + 1\n}\nfn main {} {}',
+             fix('*mut i32', '(q + 0).*'), 2, 6),
+            # its address
+            ('fn f { q: *mut i32 } -> *mut i32 {\n    return &q[2]\n}\nfn main {} {}',
+             fix('*mut i32', '(q + 2).*'), 2, 14),
+            # a slice's pointer
+            ('fn f { s: []u8, i: usize } -> u8 {\n    return s.ptr[i]\n}\nfn main {} {}',
+             fix('*u8', '(s.ptr + i).*'), 2, 17),
+            ('fn f { s: []mut u8 } {\n    s.ptr[0] = 1\n}\nfn main {} {}',
+             fix('*mut u8', '(s.ptr + 0).*'), 2, 10),
+            # an index that is an operator's expression keeps its parentheses
+            ('fn f { q: *u8, i: usize } -> u8 {\n    return q[i + 1]\n}\nfn main {} {}',
+             fix('*u8', '(q + (i + 1)).*'), 2, 13),
+            ('fn f { q: *u8, i: usize } -> u8 {\n    return q[i << 2]\n}\nfn main {} {}',
+             fix('*u8', '(q + (i << 2)).*'), 2, 13),
+            ('fn f { q: *u8, b: bool } -> u8 {\n    return q[if b { 1 } else { 0 }]\n}\nfn main {} {}',
+             fix('*u8', '(q + (if b { 1 } else { 0 })).*'), 2, 13),
+            # a base that is one
+            ('fn f { q: *u8 } -> u8 {\n    return (q + 4)[1]\n}\nfn main {} {}',
+             fix('*u8', '((q + 4) + 1).*'), 2, 19),
+            # before a field, and as a call's `mut` argument
+            (P + 'fn f { q: *mut P } {\n    q[1].x = 5\n}\nfn main {} {}',
+             fix('*mut P', '(q + 1).*'), 3, 6),
+            (P + 'fn g { mut p: P } {}\nfn f { q: *mut P } {\n    g{ p = &q[1] }\n}\nfn main {} {}',
+             fix('*mut P', '(q + 1).*'), 4, 14),
+            # a pointer to a pointer, and to a generic type
+            ('fn f { q: **u8 } -> u8 {\n    return q[1].*\n}\nfn main {} {}',
+             fix('**u8', '(q + 1).*'), 2, 13),
+            ('fn f(T) { q: *T } -> T {\n    return q[1]\n}\nfn main {} {}',
+             fix('*T', '(q + 1).*'), 2, 13),
+            # in a const's fn
+            ('fn first { q: *u8 } -> u8 { return q[0] }\nconst C: u8 = first{ q = "abc".ptr }\nfn main {} {}',
+             fix('*u8', '(q + 0).*'), 1, 37),
+        ]:
+            self.assertErrorAt(src, msg, line, col)
+
+    def test_slicing_a_pointer_is_an_error(self):
+        for src, msg, line, col in [
+            ('fn f { q: *u8 } -> []u8 {\n    return q[1..3]\n}\nfn main {} {}',
+             'cannot slice *u8: a pointer has no length to check against; write `@slice(q + lo, n)` '
+             'for `n` elements from `lo`, which isn\'t checked', 2, 13),
+            ('fn f { s: []mut u8 } -> []mut u8 {\n    return s.ptr[..]\n}\nfn main {} {}',
+             'cannot slice *mut u8: a pointer has no length to check against; write `@slice(s.ptr + lo, n)` '
+             'for `n` elements from `lo`, which isn\'t checked', 2, 17),
+        ]:
+            self.assertErrorAt(src, msg, line, col)
+
+    def test_optional_pointer(self):
+        self.assertCompileError("""
+fn f { q: ?*u8 } -> u8 { return q[0] }
+fn main {} {}
+""", 'cannot index ?*u8')
+
+    def test_unchecked_element(self):
+        self.assertOutput("""
+struct P { x: i32, y: i32 }
+fn sum { q: *i32, n: usize } -> i32 {
+    let mut t = 0
+    let mut i: usize = 0
+    while i < n { t = t + (q + i).*; i = i + 1 }
+    return t
+}
+fn bump { mut n: i32 } { n = n + 100 }
+fn main { mut io: Io } {
+    let mut a = [10, 20, 30, 40]
+    let q = &a[0]
+    (q + 1).* = (q + 1).* + (q + 2).*
+    let r = &(q + 3).*
+    r.* = 41
+    bump{ n = &(q + 2).* }
+    io::println_i64{ &io, n = sum{ q, n = a.len } }
+    let s: []mut i32 = &a
+    (s.ptr + (s.len - 1)).* = 1
+    io::println_i64{ &io, n = (s.ptr + 3).* + a[2] }
+    let mut ps = [P{ x = 1, y = 2 }, P{ x = 3, y = 4 }]
+    let p = &ps[0]
+    (p + 1).x = (p + 1).y + p.x
+    (p + 1).*.y = 7
+    io::println_i64{ &io, n = ps[1].x * 10 + ps[1].y }
+}
+""", '231\n131\n57\n')
+
+    def test_unchecked_element_is_read_only_through_a_read_only_pointer(self):
+        self.assertCompileError("""
+fn f { q: *i32 } { (q + 1).* = 2 }
+fn main {} {}
+""", 'cannot write through *i32')
+
+    def test_pointer_to_array_is_indexed_and_checked(self):
+        self.assertOutput("""
+fn third { q: *[3]i32 } -> i32 { return q[2] }
+fn main { mut io: Io } {
+    let mut a = [1, 2, 3]
+    let q = &a
+    q[0] = 5
+    io::println_i64{ &io, n = third{ q } + q[0] + @as(i32, q[1..].len) }
+}
+""", '10\n')
+        self.assertPanic("""
+fn at { q: *[3]i32, i: usize } -> i32 { return q[i] }
+fn main { mut io: Io } {
+    let a = [1, 2, 3]
+    io::println_i64{ &io, n = at{ q = &a, i = 3 } }
+}
+""", 'out of bounds')
+
+
 class Slices(Base):
     def test_index_len_and_ptr(self):
         self.assertOutput("""
@@ -3480,7 +3611,7 @@ fn main { mut io: Io } {
     s[1] = s[1] + 1
     io::println_i64{ &io, n = a[1] }
     io::println_u64{ &io, n = s.len }
-    io::println_i64{ &io, n = s.ptr[2] }
+    io::println_i64{ &io, n = (s.ptr + 2).* }
 }
 """, '21\n3\n30\n')
 
@@ -3529,7 +3660,7 @@ fn f { xs: []i32 } { xs[0] = 1 }
 fn main { mut io: Io } { }
 """, 'cannot write through []i32; it needs to be a `[]mut`')
         self.assertCompileError("""
-fn f { xs: []i32 } { xs.ptr[0] = 1 }
+fn f { xs: []i32 } { xs.ptr.* = 1 }
 fn main { mut io: Io } { }
 """, 'cannot write through *i32')
         self.assertCompileError("""
@@ -3762,7 +3893,7 @@ fn main { mut io: Io } {
         """A literal's view is followed by a 0 byte that isn't part of it (§11, Literals), even
         when it is empty, in both backends."""
         self.assertOutput("""
-fn after { b: []u8 } -> u8 { return b.ptr[b.len] }
+fn after { b: []u8 } -> u8 { return (b.ptr + b.len).* }
 const WORD: []u8 = "const"
 const EMPTY: []u8 = ""
 fn main { mut io: Io } {
@@ -3969,12 +4100,12 @@ const RUN: strlit = same{ s = "evaluated" }
 fn main { mut io: Io } {
     io::println_u64{ &io, n = size{ s = "hello" } + size{ s = "" } }
     let s: strlit = "abc"
-    io::println_u64{ &io, n = s.bytes.len + @as(u64, s.bytes.ptr[3]) }
+    io::println_u64{ &io, n = s.bytes.len + @as(u64, (s.bytes.ptr + 3).*) }
     io::println{ &io, s = utf8::of{ chars = view{ s = "view" } } }
     let n = Named{ name = "named", n = 2 }
     io::println_u64{ &io, n = n.name.bytes.len }
     io::println_u64{ &io, n = FOLDED.bytes.len + @size_of(strlit) }
-    io::println_u64{ &io, n = RUN.bytes.len + @as(u64, RUN.bytes.ptr[9]) }
+    io::println_u64{ &io, n = RUN.bytes.len + @as(u64, (RUN.bytes.ptr + 9).*) }
     io::println{ &io, s = utf8::of{ chars = pick{ b = false }.bytes } }
     let o: ?strlit = "maybe"
     if o != null { io::println_u64{ &io, n = o.bytes.len } }
@@ -9950,7 +10081,7 @@ fn main { mut io: Io, args: Args } -> i32 {
     bump{ xs = a[1..3] }
     io::println_i64{ &io, n = sum{ xs = &a } }
     let s = @slice(&a[0], 2)
-    io::println_i64{ &io, n = s.ptr[1] + s[..1][0] }
+    io::println_i64{ &io, n = (s.ptr + 1).* + s[..1][0] }
     let mut e: []i32
     io::println_u64{ &io, n = e.len + args.len + args[0].len }
     return a[2]
@@ -12623,7 +12754,7 @@ namespace tables {
             'main.ctx': '''
 fn main { mut io: Io } {
     let xs = tables::view{}
-    io::println_i64{ &io, n = xs[0] + tables::pointer{}[2] }
+    io::println_i64{ &io, n = xs[0] + (tables::pointer{} + 2).* }
 }
 ''',
         })

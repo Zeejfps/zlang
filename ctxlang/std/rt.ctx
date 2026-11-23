@@ -60,7 +60,7 @@ namespace rt {
         let items = slice::cast(u8, []u8){ s = bytes[..n * @size_of([]u8)] }
         let mut i: usize = 0
         while i < n {
-            let p = argv[i + 1] ifnull { break }
+            let p = (argv + (i + 1)).* ifnull { break }
             items[i] = c::bytes{ s = c::String{ ptr = p } }
             i = i + 1
         }
