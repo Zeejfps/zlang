@@ -237,7 +237,7 @@ namespace dlgview {
         v.panels.bars_instant = v.carry_bars
         v.carry_bars = false
         dlgpanel::open{ p = &v.panels, g = &g, fs = &w.fs, dev = &dev, computer, computer_type = w.conversation.d.computer_type } iferr err{ error } {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "dialog panels: {}\n", error)
         }
         v.panels.bars_instant = false
@@ -250,7 +250,7 @@ namespace dlgview {
             dlgpanel::start_fade{ p = &v.panels, out = false, delay = 0.0, length = 1.0, color = math::vec3::zero{} }
         }
         if w.log.dialog {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "dialog view: begin\n")
         }
     }
@@ -280,7 +280,7 @@ namespace dlgview {
         w.conversation.hold = false
         v.seen_ended = w.conversation.ended_serial
         if w.log.dialog {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "dialog view: finish\n")
         }
     }
@@ -308,7 +308,7 @@ namespace dlgview {
         v.carry_bars = true
         v.seen_ended = w.conversation.ended_serial
         if w.log.dialog {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "dialog view: hand over\n")
         }
     }

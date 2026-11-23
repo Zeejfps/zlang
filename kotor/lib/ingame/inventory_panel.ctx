@@ -241,7 +241,7 @@ namespace inventory_panel {
             if fight::is_attacked{ c } and hud::ruled_of{ w = &w, id = s.who } is some{ value = f } {
                 if f.item_ms > 0 {
                     if w.log.actions {
-                        world::prefix{ w = &w }
+                        world::prefix{ &w }
                         _ = @fmt(&w.io, "inventory: {} may use one item a round (42409, {} ms left)\n", s.who, f.item_ms)
                     }
                     s.box = items::notice{ &g, &w, &dev, strref = 42409 }

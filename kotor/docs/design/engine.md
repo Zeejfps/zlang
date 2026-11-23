@@ -238,7 +238,7 @@ tick for tick the same. `--screenshot-loading DIR` writes each frame of it (`--n
 The GUI keeps a copy of the resource manager, so `show` refreshes it (a copy from before a module was mounted walks
 freed memory).
 
-`world::tick{ &w, &vm, engine }` does step 5 in the original's order (gameloop.md 2.2): events due
+`world::tick{ &w, &vm }` does step 5 in the original's order (gameloop.md 2.2): events due
 at the frame's world time are delivered first (an event queued during the frame with no delay is
 delivered in the same frame, at the next delivery point), then each AI level's objects. There is
 no 10 ms budget yet (*ours*: KOTOR's object counts let every object update every frame); the
@@ -249,23 +249,23 @@ level order, the "a due event ends the level" rule and the delivery points are k
 ### Running one
 
 ```
-let engine = routines::call{ w = world_ptr, _ }          // once, in game/main: nwvm::Engine
-_ = scripts::run_slot{ w = world_ptr, &vm, engine, object = id, slot = obj::Slot::heartbeat }
-_ = scripts::run{ w, &vm, engine, name = "k_pend_area01", self = area_id }   // -> ?i32
+_ = scripts::run_slot{ &w, &vm, object = id, slot = obj::Slot::heartbeat }
+_ = scripts::run{ &w, &vm, name = "k_pend_area01", self = area_id }   // -> ?i32
 ```
 
 - `scripts::Cache` loads each NCS once per module (`nwvm::load` into the module arena), keyed by
   resref; a missing script is remembered as missing and is "no script" (gff-templates.md: a few
   hooks name scripts that don't exist).
-- A run is `nwvm::run{ &vm, program, self, engine }`. Faults are logged as one line
+- A run is `nwvm::run{ &vm, program, self, engine = routines::call{ &w, _ } }`. Faults are logged as one line
   (`nwvm::describe`) and counted in `w.stats.faults`; the game goes on, as the original does.
-- **The bind.** `nwvm::Engine` is `&fn{ mut vm, call } -> Reply`, bound once to the world:
-  `routines::call{ w = world_ptr, _ }` with `world_ptr: *mut World` (a raw pointer, so passing
-  `w = world_ptr` beside the bind isn't an exclusivity error). Every function that may run a script
-  takes `mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine` (a `&fn` can't be a struct
-  field). ExecuteScript inside a routine has no engine at hand and binds a new one for its nested
-  run (`let wp: *mut World = &w`, `routines::call{ w = wp, _ }`): one small leaked bind record per
-  call (ctxlang/FRICTION.md #13).
+- **The bind.** `nwvm::Engine` is `&fn{ mut vm, call } -> Reply`, bound to the world where a
+  script runs and nowhere else: `scripts::run_program`, `scripts::resume` and ExecuteScript give
+  `nwvm::run` or `nwvm::resume` `engine = routines::call{ &w, _ }`, in a call that isn't given
+  `&w`, so the world stays a checked `mut w` all the way down (a bind beside a `&` of what it
+  holds is an exclusivity error, ctxlang/spec.md §3.1, rule 8; the bind's record lasts until the
+  function that made it returns). Every function that may run a script takes `mut w:
+  world::World, mut vm: nwvm::Vm`, and what a script changes of the world counts as a change
+  made through that `&w`.
 - **OBJECT_SELF** is the object whose slot runs (the area for area scripts, the module for module
   scripts, the target of an AssignCommand, the owner of a DelayCommand).
 
@@ -315,7 +315,7 @@ group: u16, params: [13]Param, started: u64, first: bool }` where `union Param {
 object, string, situation }`, `Kind` the original's internal ids (MOVETOPOINT 1, PLAYANIMATION 6,
 OPENDOOR 0x14, WAIT 0x1e, DOCOMMAND 0x25, USEOBJECT 0x28, ...). `actions::add{ &w, id, action }`
 appends (dropped when the object isn't commandable), `actions::clear_all{ &w, id }` is
-ClearAllActions. `actions::run{ &w, &vm, engine, id }` runs the head as RunActions does
+ClearAllActions. `actions::run{ &w, &vm, id }` runs the head as RunActions does
 (actions.md 1.3): a handler returns `running` (stays at the head, stop for this frame), `retry`
 (to the tail), `done` or `failed` (removed, next one in the same frame up to a small count; a move
 ends the frame's run). One function per action kind in `lib/engine/actions*.ctx`; a new action is
@@ -585,7 +585,7 @@ each frame:
   and anything else in the folder is removed. `save::save_named` picks the slot by name (a new
   manual save takes the next number), `save::save_over{ &w, slot, name, ... }` writes over manual
   save `slot` in its own folder (the Save Game list's choice of an existing save);
-  `save::load_game{ &w, &vm, engine, folder }` replaces the game in progress, reads globals and
+  `save::load_game{ &w, &vm, folder }` replaces the game in progress, reads globals and
   the party table, and enters LASTMODULE with `w.restoring` (the player and the companions where
   the save says). `save::find_save` looks in our directory, then the install's Saves/. Play:
   F4 quick save, F5 quick load, the front end's Load Game; headless `save NAME`, `load FOLDER`.

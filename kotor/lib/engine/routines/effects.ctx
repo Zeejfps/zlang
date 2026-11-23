@@ -640,13 +640,13 @@ namespace rt_fx {
                 }
             }
             if w.log.combat {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 let outcome = if res.kept { "kept" } else if res.refused { "refused" } else { "done" }
                 _ = @fmt(&w.io, "effect {} ({} leaves, id {}, duration {} {} s, spell {}) on {}: {}\n", g.items[0].kind, g.len, g.items[0].id, kind, seconds, spell, target, outcome)
             }
         } else {
             if w.log.combat {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "effect {} ({} leaves, id {}, duration {}) on {} without a rules creature (plot {}, hp {}/{})\n", g.items[0].kind, g.len, g.items[0].id, kind, target, o.plot, o.hp, o.hp_max)
             }
             apply_plain{ &w, o, g = &g, creator }

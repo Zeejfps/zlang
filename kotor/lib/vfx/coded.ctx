@@ -98,7 +98,7 @@ namespace vfx {
         v.blurs[slot] = BlurRecord{ object, hold }
         if live == 0 and object == w.pc { v.blur_on = true }
         if w.log.trace {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "vfx speed blur record on {} ({} live), blur {}\n", object, live + 1, v.blur_on)
         }
     }

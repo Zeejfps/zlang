@@ -339,7 +339,7 @@ namespace dlg {
     }
 
     // Gives a dialogue's memory back.
-    fn free { mut w: world::World, d: *mut Dialog } {
+    fn free { mut w: world::World, mut d: Dialog } {
         _ = alloc::resize(Node, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = d.entries, count = 0 }
         _ = alloc::resize(Node, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = d.replies, count = 0 }
         _ = alloc::resize(Stunt, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = d.stunts, count = 0 }

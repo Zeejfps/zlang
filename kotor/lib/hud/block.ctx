@@ -370,7 +370,7 @@ namespace hud {
         }
         h.reticle = r
         if w.log.trace and w.clock.frame % 4 == 0 {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "reticle {} {} side {} at {} {} turns {} (point {} {} front {})\n", o.tag, MARKS[@as(usize, r.mark)], r.side, r.x, r.y, r.turns, a.x, a.y, a.front)
         }
     }
@@ -435,7 +435,7 @@ namespace hud {
                 show_slot_description{ &h, &g, &w }
             }
             if w.log.combat {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "refused: {} slot {} spell {} reason {} \"{}\"\n", party::leader{ w = &w }, k, e.id, e.reason, block_name{ &h, &w, id = w.target })
             }
             gui::play_sound{ &g, n = 2 }

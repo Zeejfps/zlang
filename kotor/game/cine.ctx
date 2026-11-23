@@ -210,12 +210,12 @@ namespace cine {
         if hidden {
             let mut i: usize = 0
             while i < c.count {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "movie {} (not shown: hidden run)\n", c.items[i].name[..c.items[i].len])
                 i = i + 1
             }
             if c.credits {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "credits (not shown: hidden run)\n")
             }
             c.count = 0
@@ -243,7 +243,7 @@ namespace cine {
             let item = c.items[i]
             i = i + 1
             if skipping_rest {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "movie {} (skipped with the queue)\n", item.name[..item.len])
                 continue
             }
@@ -271,17 +271,17 @@ namespace cine {
     } -> !Ended {
         let name = item.name[..item.len]
         let tables = c.tables ifnull {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "movie {} (not shown: no Bink tables in binkw32.dll)\n", name)
             return Ended::finished
         }
         let sound: ?*mut mix::Mixer = mixer
         let mut pl = movie::open(heap::Heap){ fs = &w.fs, &dev, realloc = heap::alloc, heap = w.heap, tables, mixer = sound, game = opts.game, name } iferr err{ error } {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "movie {} (not shown: {})\n", name, error)
             return Ended::finished
         }
-        world::prefix{ w = &w }
+        world::prefix{ &w }
         let locked = if item.skippable { "" } else { ", not skippable" }
         _ = @fmt(&w.io, "movie {} start: {}x{}, {} frames, sound {}{}\n", name, pl.movie.header.width, pl.movie.header.height, pl.movie.header.frames,
             pl.has_audio, locked)
@@ -328,7 +328,7 @@ namespace cine {
             if state == movie::State::finished { break }
         }
         display::fit_movie{ d = &disp, &dev, &sdl, on = false }
-        world::prefix{ w = &w }
+        world::prefix{ &w }
         let how = match ended {
             finished => { "finished" }
             skipped => { "skipped" }
@@ -450,7 +450,7 @@ namespace cine {
         }
         let card_total = @as(f32, cards) * CARD_SECONDS
         let scroll_seconds = if seconds > card_total + 60.0 { seconds - card_total } else { 120.0 }
-        world::prefix{ w = &w }
+        world::prefix{ &w }
         _ = @fmt(&w.io, "credits start: {} cards, a list of {} lines, music {} ({} s), font slot {} ({} px)\n", cards, lines, playing_song, seconds, slot, font.height)
         let freq = sdl::counter_frequency{ &sdl }
         let mut last = sdl::counter{ &sdl }
@@ -514,7 +514,7 @@ namespace cine {
             }
         }
         if playing_song { mix::stop{ m = mixer, h = music, fade = 0.5 } }
-        world::prefix{ w = &w }
+        world::prefix{ &w }
         let how = if ended == Ended::skipped { " (skipped)" } else { "" }
         _ = @fmt(&w.io, "credits end: after {} s{}\n", offset, how)
         return ended

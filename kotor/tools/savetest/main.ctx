@@ -64,7 +64,7 @@ fn run {
 
 // A load moves the calendar and leaves the world clock's counter alone, and an elapsed time taken
 // from a stamp in the future is 0 (a clock discontinuity must never underflow).
-fn test_clock { mut io: Io, mut r: Report, w: *mut world::World } {
+fn test_clock { mut io: Io, mut r: Report, mut w: world::World } {
     check{ &io, &r, ok = clock::elapsed_since{ now = 10, then = 4 } == 6, what = "elapsed_since: 10 since 4" }
     check{ &io, &r, ok = clock::elapsed_since{ now = 4, then = 10 } == 0, what = "elapsed_since: a stamp in the future is 0" }
     check{ &io, &r, ok = clock::elapsed_since{ now = 0, then = 1 } == 0, what = "elapsed_since: from 1 at time 0" }
@@ -389,7 +389,7 @@ fn locations_and_strings_differing { g: *globals::Globals, doc: *gff::Doc } -> u
     return bad
 }
 
-fn test_globals { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut r: Report, w: *mut world::World, save_dir: []u8, out_dir: []u8 } -> ! {
+fn test_globals { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut r: Report, mut w: world::World, save_dir: []u8, out_dir: []u8 } -> ! {
     let data = try read_file{ &fs, &h, dir = save_dir, name = "GLOBALVARS.res" }
     let doc = try gff::parse{ data, realloc = heap::alloc, heap = &h }
     let g = &w.globals
@@ -543,12 +543,12 @@ fn party_matches { w: *world::World, doc: *gff::Doc } -> bool {
     return w.party.saved_leader == leader
 }
 
-fn test_party { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut r: Report, w: *mut world::World, save_dir: []u8, out_dir: []u8 } -> ! {
+fn test_party { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut r: Report, mut w: world::World, save_dir: []u8, out_dir: []u8 } -> ! {
     let data = try read_file{ &fs, &h, dir = save_dir, name = "PARTYTABLE.res" }
     let doc = try gff::parse{ data, realloc = heap::alloc, heap = &h }
-    try save::read_party_table{ w, doc = &doc }
+    try save::read_party_table{ &w, doc = &doc }
     _ = @fmt(&io, "party: gold {} solo {} member slots {} leader slot {}\n", w.party.gold, w.party.solo, w.party.saved_count, w.party.saved_leader)
-    check{ &io, &r, ok = party_matches{ w, doc = &doc }, what = "party: read the install's table" }
+    check{ &io, &r, ok = party_matches{ w = &w, doc = &doc }, what = "party: read the install's table" }
 
     // The loader spawns each listed slot's creature and puts the party together, the leader first
     // (the PC when no NPC leads); here, made-up ids.
@@ -557,19 +557,19 @@ fn test_party { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut r: Report, w: *mu
     if w.party.saved_leader >= 0 {
         let slot = @as(usize, w.party.saved_leader)
         w.party.npcs[slot] = 0x7F000100 + @as(u32, slot)
-        _ = party::add{ w, id = w.party.npcs[slot] }
+        _ = party::add{ &w, id = w.party.npcs[slot] }
     }
-    _ = party::add{ w, id = pc }
+    _ = party::add{ &w, id = pc }
     let mut m: usize = 0
     while m < w.party.saved_count {
         let slot = @as(usize, w.party.saved_slots[m])
         if w.party.saved_slots[m] != w.party.saved_leader {
             w.party.npcs[slot] = 0x7F000100 + @as(u32, slot)
-            _ = party::add{ w, id = w.party.npcs[slot] }
+            _ = party::add{ &w, id = w.party.npcs[slot] }
         }
         m = m + 1
     }
-    let bytes = try save::write_party_table{ realloc = heap::alloc, heap = &h, w, played_seconds = played }
+    let bytes = try save::write_party_table{ realloc = heap::alloc, heap = &h, w = &w, played_seconds = played }
     try write_file{ &fs, &h, dir = out_dir, name = "PARTYTABLE.res", bytes }
     let doc2 = try gff::parse{ data = bytes, realloc = heap::alloc, heap = &h }
     _ = @fmt(&io, "party: wrote {} bytes (the install's file is {}, with its message logs)\n", bytes.len, data.len)
@@ -604,8 +604,8 @@ fn test_party { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut r: Report, w: *mu
     check{ &io, &r, ok = slice::eq_bytes{ a = bytes, b = data }, what = "party: the install's table written back byte for byte" }
 
     w.party = party::Party{ .. }
-    try save::read_party_table{ w, doc = &doc2 }
-    check{ &io, &r, ok = party_matches{ w, doc = &doc }, what = "party: round trip" }
+    try save::read_party_table{ &w, doc = &doc2 }
+    check{ &io, &r, ok = party_matches{ w = &w, doc = &doc }, what = "party: round trip" }
 
     // Another party: an NPC leads and a second follows; solo, a bigger purse, other slots open.
     w.party = party::Party{ .. }
@@ -619,13 +619,13 @@ fn test_party { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut r: Report, w: *mu
     w.party.selectable[5] = false
     w.party.npcs[3] = 0x7F000103
     w.party.npcs[5] = 0x7F000105
-    _ = party::add{ w, id = 0x7F000103 }
-    _ = party::add{ w, id = 0x7F000105 }
-    _ = party::add{ w, id = pc }
-    let bytes2 = try save::write_party_table{ realloc = heap::alloc, heap = &h, w, played_seconds = 7 }
+    _ = party::add{ &w, id = 0x7F000103 }
+    _ = party::add{ &w, id = 0x7F000105 }
+    _ = party::add{ &w, id = pc }
+    let bytes2 = try save::write_party_table{ realloc = heap::alloc, heap = &h, w = &w, played_seconds = 7 }
     let doc3 = try gff::parse{ data = bytes2, realloc = heap::alloc, heap = &h }
     w.party = party::Party{ .. }
-    try save::read_party_table{ w, doc = &doc3 }
+    try save::read_party_table{ &w, doc = &doc3 }
     check{ &io, &r, ok = w.party.gold == 12345 and w.party.xp_pool == -3 and w.party.solo and w.party.available[3] and w.party.available[5] and not w.party.available[0], what = "party: second table, purse and availability" }
     check{ &io, &r, ok = w.party.selectable[3] and not w.party.selectable[5] and w.party.selectable[0], what = "party: second table, selectable" }
     check{ &io, &r, ok = w.party.saved_count == 2 and w.party.saved_slots[0] == 3 and w.party.saved_slots[1] == 5 and w.party.saved_leader == 3, what = "party: second table, members and leader" }

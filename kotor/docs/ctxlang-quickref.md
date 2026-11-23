@@ -39,7 +39,16 @@ namespace gff {                                   // namespaces may span files (
   Don't write a `no_x{}` helper that spells out constants: give the fields those defaults and
   write `X{ .. }`.
 - **`mut` fields** are pointers to the caller's place; inside, use them as values. Pass `&local`
-  (needs `let mut local`). Two `&` of overlapping places in one call is an error (§3.1).
+  (needs `let mut local`). Two `&` of overlapping places in one call are allowed where the
+  callee uses them apart (§3.1, rule 8): `free{ &w, d = &w.conversation.d }` is fine because
+  `free` doesn't touch `w.conversation.d` through `w`. So pass a part as a `mut` field, not as a
+  `*mut` pointer. The callee must be a named function with a body (not a function value or an
+  extern fn), and the error says which access of the callee's, where, uses the part both ways.
+- **A bound function beside a `&` of what it holds is an error** (`tick{ &w, engine }` with
+  `engine` bound to `&w`). Bind where the function is called, in a call that isn't given the
+  place: `nwvm::run{ &vm, program, self, engine = routines::call{ &w, _ } }`, as `scripts::run`
+  does; don't pass a bound function down beside what it holds. A bind beside a `&` of what it
+  doesn't hold is fine, if the callee leaves what it holds alone.
 - **Big read-only arguments are passed by reference** (§14.6): a struct, union or array over
   32 bytes isn't copied, unless a `&` of the same local, or a later argument that calls a
   function, is in the same call. So a read-only `mixer: Mixer` field is cheap.

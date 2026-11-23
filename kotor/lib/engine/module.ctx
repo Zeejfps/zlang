@@ -34,7 +34,7 @@ namespace modload {
         let area_text = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, count = area_local.len }
         slice::copy(u8){ dst = area_text, src = area_local }
         if w.log.module {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "module {}: area {}\n", name, area_text)
         }
 
@@ -74,7 +74,7 @@ namespace modload {
             }
         }
         if w.log.module {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "module {}: {} objects, {} rooms with walkmeshes\n", name, w.objects.all.len, w.walk.rooms.len)
         }
 
@@ -237,7 +237,7 @@ namespace modload {
             let mut mesh: ?bwm::Walkmesh = null
             if wok != null {
                 mesh = bwm::parse(arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, bytes = wok } iferr err{ error } {
-                    world::prefix{ w = &w }
+                    world::prefix{ &w }
                     _ = @fmt(&w.io, "walkmesh {}: {}\n", room_name, error)
                     null
                 }
@@ -292,7 +292,7 @@ namespace modload {
             let s = items[i]
             i = i + 1
             read_instance{ &w, doc, s, kind } iferr err{ error } {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "GIT {} entry {}: {}\n", label, i - 1, error)
             }
         }
@@ -391,7 +391,7 @@ namespace modload {
     fn place_player { mut w: world::World } {
         if not world::is_valid{ w = &w, id = w.player } {
             w.player = make_default_player{ &w } iferr err{ error } {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "no player: {}\n", error)
                 return
             }
@@ -440,7 +440,7 @@ namespace modload {
         // A loaded save's party inventory (INVENTORY.res, RestoreParty step 3).
         if from_save {
             save::restore_inventory{ &w } iferr err{ error } {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "restoring the inventory: {}\n", error)
             }
         }
@@ -452,7 +452,7 @@ namespace modload {
         }
         if not minigame {
             save::restore_party{ &w, at_saved = from_save } iferr err{ error } {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "restoring the party: {}\n", error)
             }
         }
@@ -467,7 +467,7 @@ namespace modload {
         events::post{ &w, delay_ms = 0, caller = w.pc, target = w.module, payload = events::Payload::script{ e = events::script_event{ kind = events::PLAYER_ENTER, object = w.pc } } }
         events::post{ &w, delay_ms = 0, caller = w.pc, target = w.area, payload = events::Payload::script{ e = events::script_event{ kind = events::OBJECT_ENTER, object = w.pc } } }
         if w.log.module {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             let p = world::object{ w = &w, id = w.pc }
             if p != null { _ = @fmt(&w.io, "player {} placed at {} {} {}\n", w.pc, p.position.x, p.position.y, p.position.z) }
         }
@@ -633,7 +633,7 @@ namespace modload {
         events::post{ &w, delay_ms = 500, caller = actor, target = id, payload = events::Payload::transition{ token = a.transition_token } }
         outbox::post{ out = &w.out, note = outbox::Note::fade{ out = true, wait = 0.0, length = 0.5, color = math::vec3::zero{} } }
         if w.log.module {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "transition started by {} at {} ({})\n", actor, id, o.tag)
         }
     }
@@ -648,7 +648,7 @@ namespace modload {
         let t = link_of{ o } ifnull { return }
         w.transition = t
         if w.log.module {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             let mut m = t.module
             _ = @fmt(&w.io, "transition to {} at {}\n", resref::bytes{ r = &m }, t.waypoint[..t.waypoint_len])
         }
@@ -658,16 +658,16 @@ namespace modload {
     // cleared, every object but the PC and what it carries destroyed, the event queue, scripts,
     // walkmeshes and module memory let go. The module's state isn't kept yet (HOOK(save):
     // GAMEINPROGRESS).
-    fn leave { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine } {
-        leave_keeping{ &w, &vm, engine, keep = true }
+    fn leave { mut w: world::World, mut vm: nwvm::Vm } {
+        leave_keeping{ &w, &vm, keep = true }
     }
 
     // Leaves the module; with `keep` its state goes into the game in progress first (a
     // transition), without (a load replacing the game) it is dropped.
-    fn leave_keeping { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, keep: bool } {
+    fn leave_keeping { mut w: world::World, mut vm: nwvm::Vm, keep: bool } {
         if keep {
             save::save_module_state{ &w } iferr err{ error } {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "saving the module's state: {}\n", error)
             }
             // The companions travel as AVAILNPC files (SavePlayerCharacters, party-items-saves.md 3.3). A minigame's
@@ -679,7 +679,7 @@ namespace modload {
             }
             if not minigame {
                 save::keep_party{ &w } iferr err{ error } {
-                    world::prefix{ w = &w }
+                    world::prefix{ &w }
                     _ = @fmt(&w.io, "keeping the party: {}\n", error)
                 }
             }
@@ -687,7 +687,7 @@ namespace modload {
         let ao = world::object{ w = &w, id = w.area }
         if ao != null {
             ao.ctx.exiting = w.pc
-            _ = scripts::run_slot{ &w, &vm, engine, id = w.area, slot = obj::Slot::exit }
+            _ = scripts::run_slot{ &w, &vm, id = w.area, slot = obj::Slot::exit }
         }
         // Control returns to the player character; a companion leading goes with the others.
         if world::is_valid{ w = &w, id = w.player } { w.pc = w.player }
@@ -735,10 +735,10 @@ namespace modload {
 
     // Takes a pending transition: leave, then enter the next module with the PC arriving at the
     // link's waypoint. True if it happened (the presentation must rebuild its scene).
-    fn take_transition { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine } -> !bool {
+    fn take_transition { mut w: world::World, mut vm: nwvm::Vm } -> !bool {
         let t = w.transition ifnull { return false }
         w.transition = null
-        leave{ &w, &vm, engine }
+        leave{ &w, &vm }
         w.arrival_waypoint = t.waypoint
         w.arrival_waypoint_len = t.waypoint_len
         let mut m = t.module

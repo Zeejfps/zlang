@@ -111,7 +111,7 @@ namespace vfx {
         a.blend = if t.props.blend == render::Blend::opaque { render::Blend::alpha } else { t.props.blend }
         if w.log.trace {
             let how = if hold != 0 { "held" } else { "timed" }
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "vfx aura {} (code {}, {}x{} at {} fps) on {} {}\n", name, code, a.cols, a.rows, a.fps, object, how)
         }
         place_aura{ sc = &sc, w = &w, a }
@@ -126,7 +126,7 @@ namespace vfx {
             if a.live and effect != 0 and a.hold == effect and a.object == object {
                 a.live = false
                 if w.log.trace {
-                    world::prefix{ w = &w }
+                    world::prefix{ &w }
                     _ = @fmt(&w.io, "vfx aura on {} ended after {} s\n", object, a.age)
                 }
             }

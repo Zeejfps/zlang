@@ -2,8 +2,8 @@
 // module, runs of an object's script slot, situations (the actions DelayCommand, AssignCommand
 // and ActionDoCommand keep), and fault logging.
 //
-//   _ = scripts::run_slot{ &w, &vm, engine, id, slot = obj::Slot::heartbeat }     // -> ?i32
-//   _ = scripts::run{ &w, &vm, engine, name = "k_pend_area01", self = area }
+//   _ = scripts::run_slot{ &w, &vm, id, slot = obj::Slot::heartbeat }     // -> ?i32
+//   _ = scripts::run{ &w, &vm, name = "k_pend_area01", self = area }
 namespace scripts {
     struct Cache {
         loaded: map::Map(resref::ResRef, usize, heap::Heap),   // resref -> index in programs
@@ -30,7 +30,7 @@ namespace scripts {
         let have = map::get{ m = w.scripts.loaded, key = name }
         if have != null { return list::items{ list = w.scripts.programs }[have] }
         let p = load{ &w, name } iferr err{ error } {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "script {}: {}\n", name, error)
             null
         }
@@ -52,19 +52,19 @@ namespace scripts {
 
     // Runs script `name` as `self`; its int result (a conditional's answer) or null. A missing
     // script is no script; a fault is logged and counted.
-    fn run { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, name: resref::ResRef, self: u32 } -> ?i32 {
+    fn run { mut w: world::World, mut vm: nwvm::Vm, name: resref::ResRef, self: u32 } -> ?i32 {
         let p = program{ &w, name } ifnull { return null }
-        return run_program{ &w, &vm, engine, p, self }
+        return run_program{ &w, &vm, p, self }
     }
 
-    fn run_program { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, p: *nwvm::Program, self: u32 } -> ?i32 {
+    fn run_program { mut w: world::World, mut vm: nwvm::Vm, p: *nwvm::Program, self: u32 } -> ?i32 {
         let outermost = vm.depth == 0
         w.stats.script_runs = w.stats.script_runs + 1
         if w.log.scripts {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "script {} self={}\n", p.name, self)
         }
-        let r = nwvm::run{ &vm, program = p, self, engine } iferr {
+        let r = nwvm::run{ &vm, program = p, self, engine = routines::call{ &w, _ } } iferr {
             report_fault{ &w, vm = &vm }
             if outermost { values::end_run{ s = &w.values } }
             return null
@@ -74,22 +74,22 @@ namespace scripts {
     }
 
     // Runs an object's script for `slot`, if it has one.
-    fn run_slot { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, slot: obj::Slot } -> ?i32 {
+    fn run_slot { mut w: world::World, mut vm: nwvm::Vm, id: u32, slot: obj::Slot } -> ?i32 {
         let o = world::object{ w = &w, id } ifnull { return null }
         let name = obj::script{ o, slot }
         if resref::is_empty{ r = name } { return null }
-        return run{ &w, &vm, engine, name, self = id }
+        return run{ &w, &vm, name, self = id }
     }
 
     // Runs a kept situation as `self` (a delayed or assigned command, a DoCommand action).
-    fn resume { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, situation: *mut nwvm::Situation, self: u32 } {
+    fn resume { mut w: world::World, mut vm: nwvm::Vm, situation: *mut nwvm::Situation, self: u32 } {
         if vm.depth != 0 { return }
         w.stats.script_runs = w.stats.script_runs + 1
         if w.log.scripts {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "resume {} self={}\n", situation.program.name, self)
         }
-        nwvm::resume{ &vm, situation = situation.*, self, engine } iferr { report_fault{ &w, vm = &vm } }
+        nwvm::resume{ &vm, situation = situation.*, self, engine = routines::call{ &w, _ } } iferr { report_fault{ &w, vm = &vm } }
         values::end_run{ s = &w.values }
     }
 
@@ -111,7 +111,7 @@ namespace scripts {
         w.stats.faults = w.stats.faults + 1
         let mut buf: [512]u8
         let line = nwvm::describe{ f = vm.fault, into = buf[..] }
-        world::prefix{ w = &w }
+        world::prefix{ &w }
         _ = @fmt(&w.io, "fault: {}\n", line)
     }
 }

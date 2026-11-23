@@ -5,7 +5,7 @@
 // install's Saves/) and enters its LASTMODULE from it, the player where it was saved.
 //
 //   try save::save_game{ &w, slot = 0, folder_name = "QUICKSAVE", save_name = "Quick Save", screen = pixels, width, height }
-//   try save::load_game{ &w, &vm, engine, folder = path }        // then the presentation starts over
+//   try save::load_game{ &w, &vm, folder = path }        // then the presentation starts over
 namespace save {
     error no_save{ folder: []u8 }
 
@@ -194,7 +194,7 @@ namespace save {
             return error
         }
         try publish_staged{ &w, folder, shot = screen.len > 0 }
-        world::prefix{ w = &w }
+        world::prefix{ &w }
         _ = @fmt(&w.io, "saved {}\n", folder)
     }
 
@@ -340,7 +340,7 @@ namespace save {
     // Loads the save in `folder` (party-items-saves.md 1.6): the game in progress replaced by its
     // SAVEGAME.sav, the globals and the party table read, the module left without keeping its
     // state, then its LASTMODULE entered with the player where it was saved.
-    fn load_game { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, folder: []u8 } -> ! {
+    fn load_game { mut w: world::World, mut vm: nwvm::Vm, folder: []u8 } -> ! {
         let image = try fs::read_all(heap::Heap){ fs = &w.fs, heap = w.heap, realloc = heap::alloc, path = try file_in{ &w, folder, name = "SAVEGAME.sav" } }
         defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = image, count = 0 }
         let info_bytes = try fs::read_all(arena::Arena){ fs = &w.fs, heap = w.scratch, realloc = arena::alloc, path = try file_in{ &w, folder, name = "savenfo.res" } }
@@ -356,7 +356,7 @@ namespace save {
         }
         defer obj::free_bytes{ heap = w.heap, s = module }
         // Leave what is running, the player too (the save brings its own).
-        if w.module != obj::INVALID { modload::leave_keeping{ &w, &vm, engine, keep = false } }
+        if w.module != obj::INVALID { modload::leave_keeping{ &w, &vm, keep = false } }
         let old_player = w.player
         if w.player != obj::INVALID { world::destroy{ &w, id = w.player } }
         // What the old player carried or wore goes with it (the module change kept those items).
@@ -398,7 +398,7 @@ namespace save {
         w.load_hints = [info.gameplay_hint, info.story_hint]
         w.restoring = true
         try modload::enter{ &w, name = module }
-        world::prefix{ w = &w }
+        world::prefix{ &w }
         _ = @fmt(&w.io, "loaded {} ({})\n", folder, module)
     }
 }

@@ -7,7 +7,7 @@ namespace dlg {
         let kept = outbox::keep_text{ out = &w.out, s = text }
         outbox::post{ out = &w.out, note = outbox::Note::bark{ speaker, strref, text = kept, sound } }
         if w.log.dialog {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "dialog bark {} \"{}\" sound={}\n", speaker, log_text{ w = &w, text }, sound)
         }
     }
@@ -15,7 +15,7 @@ namespace dlg {
     // PlayOneLiner: the starting entry as a bubble over its speaker, with its script (and the
     // single reply's) run. The speaker is entry 0's Speaker, not the chosen entry's (the
     // original's quirk): empty is the owner, else the object with the tag nearest the player.
-    fn play_one_liner { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, entry: usize } {
+    fn play_one_liner { mut w: world::World, mut vm: nwvm::Vm, entry: usize } {
         let n = &w.conversation.d.entries[entry]
         let tag = w.conversation.d.entries[0].speaker
         let mut speaker = w.conversation.owner
@@ -29,29 +29,29 @@ namespace dlg {
             post_bark{ &w, speaker, strref = @trunc(u32, n.text.strref), text, sound = n.sound }
         }
         if w.log.dialog {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "dialog one-liner entry {}\n", entry)
         }
         apply_quest{ &w, n }
-        run_script{ &w, &vm, engine, name = n.script, what = "entry" }
+        run_script{ &w, &vm, name = n.script, what = "entry" }
         if n.links.len == 1 and w.conversation.active {
             let r = @as(usize, n.links[0].index)
             if r < w.conversation.d.replies.len {
-                run_script{ &w, &vm, engine, name = w.conversation.d.replies[r].script, what = "reply" }
+                run_script{ &w, &vm, name = w.conversation.d.replies[r].script, what = "reply" }
             }
         }
     }
 
     // After a one-liner the conversation ends normally with only the owner's end-of-dialogue
     // script, and then, because starting failed, the abort path runs as well (4.1).
-    fn finish_one_liner { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine } {
+    fn finish_one_liner { mut w: world::World, mut vm: nwvm::Vm } {
         if not w.conversation.active { return }
         w.conversation.end_ran = true
-        run_script{ &w, &vm, engine, name = w.conversation.d.end_script, what = "end" }
-        _ = scripts::run_slot{ &w, &vm, engine, id = w.conversation.owner, slot = obj::Slot::end_dialogue }
-        run_script{ &w, &vm, engine, name = w.conversation.d.abort_script, what = "abort" }
+        run_script{ &w, &vm, name = w.conversation.d.end_script, what = "end" }
+        _ = scripts::run_slot{ &w, &vm, id = w.conversation.owner, slot = obj::Slot::end_dialogue }
+        run_script{ &w, &vm, name = w.conversation.d.abort_script, what = "abort" }
         if w.log.dialog {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "dialog end {} (one-liner)\n", w.conversation.name)
         }
         clear{ &w, normal = true }
@@ -75,7 +75,7 @@ namespace dlg {
     // SpeakOneLinerConversation (10.3): the first starting entry with no speaker, a passing
     // Active script and no replies, as a bubble over `self`; its script runs on `self`. No
     // conversation, no camera.
-    fn speak_one_liner { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, self: u32, name: resref::ResRef, token: u32 } {
+    fn speak_one_liner { mut w: world::World, mut vm: nwvm::Vm, self: u32, name: resref::ResRef, token: u32 } {
         let so = world::object{ w = &w, id = self } ifnull { return }
         let mut resname = name
         if resref::is_empty{ r = resname } { resname = so.conversation }
@@ -90,12 +90,12 @@ namespace dlg {
             let n = &d.entries[@as(usize, link.index)]
             if n.speaker.len != 0 or n.links.len != 0 { continue }
             if not resref::is_empty{ r = link.active } {
-                let r = scripts::run{ &w, &vm, engine, name = link.active, self } ifnull { continue }
+                let r = scripts::run{ &w, &vm, name = link.active, self } ifnull { continue }
                 if r == 0 { continue }
             }
             let text = text_of{ w = &w, n, gender }
             post_bark{ &w, speaker = self, strref = @trunc(u32, n.text.strref), text, sound = n.sound }
-            _ = scripts::run{ &w, &vm, engine, name = n.script, self }
+            _ = scripts::run{ &w, &vm, name = n.script, self }
             break
         }
         free{ &w, d = &d }

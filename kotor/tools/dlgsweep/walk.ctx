@@ -77,21 +77,21 @@ fn note_script { mut w: world::World, t: *mut Tally, name: resref::ResRef } {
 }
 
 // A link's Active script, run as the flow would; its answer is counted and the walk goes on anyway.
-fn try_link { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, t: *mut Tally, link: dlg::Link } {
+fn try_link { mut w: world::World, mut vm: nwvm::Vm, t: *mut Tally, link: dlg::Link } {
     if resref::is_empty{ r = link.active } { return }
     note_script{ &w, t, name = link.active }
     t.scripts = t.scripts + 1
-    if dlg::check_condition{ &w, &vm, engine, name = link.active } { t.yes = t.yes + 1 } else { t.no = t.no + 1 }
+    if dlg::check_condition{ &w, &vm, name = link.active } { t.yes = t.yes + 1 } else { t.no = t.no + 1 }
 }
 
-fn run_node_script { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, t: *mut Tally, name: resref::ResRef, what: []u8 } {
+fn run_node_script { mut w: world::World, mut vm: nwvm::Vm, t: *mut Tally, name: resref::ResRef, what: []u8 } {
     if resref::is_empty{ r = name } { return }
     note_script{ &w, t, name }
     t.scripts = t.scripts + 1
-    dlg::run_script{ &w, &vm, engine, name, what }
+    dlg::run_script{ &w, &vm, name, what }
 }
 
-fn sweep_one { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, name: resref::ResRef, module: []u8, settle_frames: u32 } -> ! {
+fn sweep_one { mut w: world::World, mut vm: nwvm::Vm, name: resref::ResRef, module: []u8, settle_frames: u32 } -> ! {
     // Whoever the last dialogue's scripts left in charge goes; the player may have been moved or lost.
     w.transition = null
     w.conversation.pending = false
@@ -169,7 +169,7 @@ fn sweep_one { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, name
         let link = w.conversation.d.starting[i]
         i = i + 1
         if @as(usize, link.index) >= ne { t.link_errors = t.link_errors + 1; continue }
-        try_link{ &w, &vm, engine, &t, link }
+        try_link{ &w, &vm, &t, link }
         try list::push{ list = &todo, item = link.index << 1 }
     }
     // Entries are encoded as index * 2, replies as index * 2 + 1.
@@ -185,28 +185,28 @@ fn sweep_one { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, name
                 if bad_speakers < 3 { bad_tags[@as(usize, bad_speakers)] = idx }
                 bad_speakers = bad_speakers + 1
             }
-            run_node_script{ &w, &vm, engine, &t, name = w.conversation.d.entries[idx].script, what = "entry" }
+            run_node_script{ &w, &vm, &t, name = w.conversation.d.entries[idx].script, what = "entry" }
             let links = w.conversation.d.entries[idx].links
             let mut k: usize = 0
             while k < links.len {
                 let link = links[k]
                 k = k + 1
                 if @as(usize, link.index) >= nr { t.link_errors = t.link_errors + 1; continue }
-                try_link{ &w, &vm, engine, &t, link }
+                try_link{ &w, &vm, &t, link }
                 try list::push{ list = &todo, item = (link.index << 1) | 1 }
             }
         } else {
             if seen_r[idx] { continue }
             seen_r[idx] = true
             reached_r = reached_r + 1
-            run_node_script{ &w, &vm, engine, &t, name = w.conversation.d.replies[idx].script, what = "reply" }
+            run_node_script{ &w, &vm, &t, name = w.conversation.d.replies[idx].script, what = "reply" }
             let links = w.conversation.d.replies[idx].links
             let mut k: usize = 0
             while k < links.len {
                 let link = links[k]
                 k = k + 1
                 if @as(usize, link.index) >= ne { t.link_errors = t.link_errors + 1; continue }
-                try_link{ &w, &vm, engine, &t, link }
+                try_link{ &w, &vm, &t, link }
                 try list::push{ list = &todo, item = link.index << 1 }
             }
         }
@@ -216,7 +216,7 @@ fn sweep_one { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, name
     note_script{ &w, &t, name = w.conversation.d.end_script }
     if not resref::is_empty{ r = w.conversation.d.abort_script } { t.scripts = t.scripts + 1 }
     if not resref::is_empty{ r = w.conversation.d.end_script } { t.scripts = t.scripts + 1 }
-    dlg::run_script{ &w, &vm, engine, name = w.conversation.d.abort_script, what = "abort" }
+    dlg::run_script{ &w, &vm, name = w.conversation.d.abort_script, what = "abort" }
     // The speakers' tags, while the dialogue's bytes are still there.
     let mut who: [96]u8 = [0; 96]
     let mut who_len: usize = 0
@@ -235,9 +235,9 @@ fn sweep_one { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, name
         }
         i = i + 1
     }
-    dlg::finish{ &w, &vm, engine, normal = true }
+    dlg::finish{ &w, &vm, normal = true }
     w.transition = null
-    settle{ &w, &vm, engine, frames = settle_frames }
+    settle{ &w, &vm, frames = settle_frames }
     w.transition = null
 
     // The line.

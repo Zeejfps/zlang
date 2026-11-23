@@ -668,7 +668,7 @@ namespace ingame {
         ui.pause_reason = reason
         ui.auto_paused = true
         if w.log.objects {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "auto-pause: {} (target {})\n", reason, w.target)
         }
         set_player_pause{ &ui, &w, &dev, on = true }
@@ -773,7 +773,7 @@ namespace ingame {
             if ui.auto_paused and ui.pause_panel != 0 {
                 set_banner_reason{ &ui, &w, p = ui.pause_panel, reason = REASON_QUEUED }
                 if w.log.objects {
-                    world::prefix{ w = &w }
+                    world::prefix{ &w }
                     _ = @fmt(&w.io, "pause banner: {}\n", REASON_QUEUED)
                 }
             }

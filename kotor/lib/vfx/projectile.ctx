@@ -85,7 +85,7 @@ namespace vfx {
             f.leg_count = 1
         }
         if w.log.combat {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "grenade path: {} legs, ground {} {} {}, target z {}\n", f.leg_count, f.legs[0].z, f.legs[1].z, f.legs[2].z, to.z)
         }
         let flat = math::Vec3{ x = span.x, y = span.y, z = 0.0 }

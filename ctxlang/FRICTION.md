@@ -57,14 +57,6 @@ as the write-ups gave them.
    *Hit by 5:* glspike (35), engine (2), audio (3 writers), data (1), script (about 15, and six
    writers).
 
-4. **Exclusivity blocks a context and a part of it in one call.** `f{ &e, xs = &e.list }` is two
-    mut references to `e`, and so is a bind beside a `&` of what it holds (`routines::call{
-    &world, _ }` then `tick{ &world, ..., engine }`). Written: a struct holds its heap as a `*mut`
-    (`Parser.heap`), the World and the VM stub live behind raw `*mut` pointers the checker doesn't
-    track, and `fs = &w.fs` goes only in calls without `&w`. Sound, but it is the checker worked
-    around for the program's central object. Split borrows would remove it. *Hit by 5:* ctxc,
-    engine, hud, screens (about ten calls), script (7 fns).
-
 5. **Sources come by directory, and a directory is one flat namespace.** `build::add_sources`
     takes a directory and `build::exe` one without its subdirectories, so a tool can't pick one
     file (the dialog panels and lip sync moved to directories of their own), and one half-written
@@ -117,10 +109,10 @@ as the write-ups gave them.
     with no hint of a conflict; finding that a `mut heap: Heap` field takes `&heap.*` from a
     `*mut Heap` took three tries. *Hit by 3:* engine, hud, chargen.
 
-13. **A `&fn` can't be a struct field, and bind records are never freed.** The VM's engine bind
-    travels as its own context field beside `mut w` and `mut vm` (about 15 engine fns, 6 in
-    ncsrun); ExecuteScript binds a new engine per call and leaks its record, and the scene binds
-    `mdl_cache::get` once per (model, animation). *Hit by 2:* engine, script.
+13. **A `&fn` can't be a struct field.** A bound function travels as a context field of its own,
+    or is bound again where it is used: the engine's functions bind the script VM's engine at
+    each run (`engine = routines::call{ &w, _ }`), and the scene binds `mdl_cache::get` once per
+    (model, animation). *Hit by 2:* engine, script.
 
 14. **Changing a shared fn's signature breaks callers nobody on the task owns.** No default
     arguments, so a helper that gains an input edits every call site, in other owners' files; no

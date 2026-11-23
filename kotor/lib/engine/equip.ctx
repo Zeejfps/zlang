@@ -87,7 +87,7 @@ namespace equip {
 
     fn log_refusal { mut w: world::World, id: u32, item: u32, why: []u8 } {
         if not w.log.actions { return }
-        world::prefix{ w = &w }
+        world::prefix{ &w }
         _ = @fmt(&w.io, "equip: {} cannot use item {}: {}\n", id, item, why)
     }
 
@@ -332,7 +332,7 @@ namespace equip {
         a.params[3] = actions::Param::int{ v = ROUND_ENTRY_MS }
         _ = actions::add{ &w, id, action = a, force = false }
         if w.log.actions {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "equip: {} spends 1.5 s of its round on slot {}\n", id, slot)
         }
     }

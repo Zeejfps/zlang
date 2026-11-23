@@ -146,7 +146,7 @@ namespace fight {
         actions::clear_all{ &w, id }
         end_round{ &w, id, script = false }
         if w.log.combat {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "{} is thrown from {} {} to {} {}\n", id, o.position.x, o.position.y, end.x, end.y)
         }
     }

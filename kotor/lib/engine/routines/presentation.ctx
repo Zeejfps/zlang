@@ -74,7 +74,7 @@ namespace rt_pres {
     fn play_movie { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let name = try nwarg::string{ &vm, routine = nwscript::PlayMovie, argc, i = 0 }
         outbox::post{ out = &w.out, note = outbox::Note::movie{ name = resref::truncate{ name } } }
-        world::prefix{ w = &w }
+        world::prefix{ &w }
         _ = @fmt(&w.io, "movie {}\n", name)
     }
 
@@ -290,7 +290,7 @@ namespace rt_pres {
     fn end_game { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let show = try nwarg::int{ &vm, routine = nwscript::EndGame, argc, i = 0 }
         outbox::post{ out = &w.out, note = outbox::Note::end_game{ show_gui = show != 0 } }
-        world::prefix{ w = &w }
+        world::prefix{ &w }
         _ = @fmt(&w.io, "EndGame {}\n", show)
     }
 

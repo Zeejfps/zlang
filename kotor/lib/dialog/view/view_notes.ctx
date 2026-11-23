@@ -6,7 +6,7 @@ namespace dlgview {
         match note {
             fade{ out, wait, length, color } => {
                 if w.log.dialog {
-                    world::prefix{ w = &w }
+                    world::prefix{ &w }
                     _ = @fmt(&w.io, "dialog fade out {} after {} s over {} s\n", out, wait, length)
                 }
                 dlgpanel::start_fade{ p = &v.panels, out, delay = wait, length, color }

@@ -312,7 +312,7 @@ namespace rt_crea {
         let power = casting_power{ w = &w, me }
         let res = rules::saving_throw{ c = &f.c, which, dc, save_type, vs, force_power = power, rng = &w.dice }
         if w.log.combat {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "save {} of {} vs DC {}: d20 {} + {} + {} = {}\n", which, id, dc, res.roll, res.bonus, res.base, res.result)
         }
         return res.result

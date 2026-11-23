@@ -413,7 +413,7 @@ namespace rt_misc {
             let amount = journal_entry_xp{ &w, tag, state } iferr { 0 }
             if amount > 0 {
                 if w.log.scripts {
-                    world::prefix{ w = &w }
+                    world::prefix{ &w }
                     _ = @fmt(&w.io, "journal xp: {} {} -> {}\n", tag, state, amount)
                 }
                 award_party_xp_told{ &w, amount, icon = xp_icon }
@@ -482,7 +482,7 @@ namespace rt_misc {
         // everything away (k_plev_escsetup) sees the same item for ever.
         if party::holds{ w = &w, item } {
             if w.log.actions and from != w.player {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "item {} ({}) in the party's bag names {} as its possessor\n", item, io.tag, from)
             }
             if let po = world::object{ w = &w, id = w.player } { _ = rt_item::remove_from_inventory{ &w, o = po, item } }
@@ -604,7 +604,7 @@ namespace rt_misc {
         _ = try nwarg::int{ &vm, routine = r, argc, i = 2 }
         let l = values::location{ s = &w.values, handle = h }
         let id = tmpl::spawn_item{ &w, template, possessor = obj::INVALID } iferr err{ error } {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "CreateItemOnFloor {}: {}\n", template, error)
             return try nwvm::push_object{ &vm, id = obj::INVALID }
         }
@@ -724,7 +724,7 @@ namespace rt_misc {
         let damage = try nwarg::int{ &vm, routine = r, argc, i = 3 }
         let me = nwvm::self_object{ vm }
         if w.log.actions {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "CutsceneAttack {} -> {} animation {} result {} damage {}\n", me, target, animation, result, damage)
         }
         // The caster's round with the designer's result and damage (fight::attack_object).
@@ -755,7 +755,7 @@ namespace rt_misc {
         }
         _ = try nwarg::int{ &vm, routine, argc, i = 2 }
         if w.log.actions {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "ActionCastFakeSpell {} by {} at {}: animation only\n", spell, me, target)
         }
         queue_cutscene_animation{ &w, me, target, at, animation = 62 }

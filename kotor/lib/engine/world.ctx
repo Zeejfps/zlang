@@ -3,8 +3,7 @@
 //
 //   let w = try world::make{ fs, io, heap = &h, rm = &rm, module_arena = &ma, scratch = &sa }
 //   try modload::enter{ w, name = "end_m01aa" }
-//   let engine = routines::call{ w, _ }                 // once
-//   each frame: clock::advance{ c = &w.clock, seconds }; world::tick{ w, &vm, engine }
+//   each frame: clock::advance{ c = &w.clock, seconds }; world::tick{ w, &vm }
 //
 // Pass the world as `mut w: world::World` (from a `*mut World`: `w = ptr`); never read-only, which
 // would copy it.
@@ -446,7 +445,7 @@ namespace world {
         back.destroyed = true
         list::push{ list = &w.doomed, item = id } iferr {}
         if w.log.objects {
-            prefix{ w = &w }
+            prefix{ &w }
             _ = @fmt(&w.io, "destroy {} {}\n", id, o.tag)
         }
     }
@@ -604,8 +603,8 @@ namespace world {
     // One server frame (gameloop.md 1.3 steps 3-6, 2.2): due events, then every object's
     // update by AI level 4 down to 0 (events posted meanwhile are delivered at the next delivery
     // point), the module and area heartbeats, the PC's arrival, and the sweep of destroyed objects.
-    fn tick { mut w: World, mut vm: nwvm::Vm, engine: nwvm::Engine } {
-        events::deliver_due{ &w, &vm, engine }
+    fn tick { mut w: World, mut vm: nwvm::Vm } {
+        events::deliver_due{ &w, &vm }
         trail::record{ &w }
         let mut level: i32 = 4
         while level >= 0 {
@@ -615,14 +614,14 @@ namespace world {
                 let o = list::items{ list = w.objects.all }[i]
                 i = i + 1
                 if o.destroyed or o.ai_level != level { continue }
-                ai::update{ &w, &vm, engine, id = o.id }
-                if events::has_due{ w = &w } { events::deliver_due{ &w, &vm, engine } }
+                ai::update{ &w, &vm, id = o.id }
+                if events::has_due{ w = &w } { events::deliver_due{ &w, &vm } }
             }
             level = level - 1
         }
-        ai::update_module_and_area{ &w, &vm, engine }
+        ai::update_module_and_area{ &w, &vm }
         fight::update_party{ &w }
-        events::deliver_due{ &w, &vm, engine }
+        events::deliver_due{ &w, &vm }
         if w.arrival > 0 {
             w.arrival = w.arrival - 1
             if w.arrival == 0 { modload::place_player{ &w } }
@@ -632,7 +631,7 @@ namespace world {
     }
 
     // The log line prefix: `[frame seconds] `.
-    fn prefix { w: *mut World } {
+    fn prefix { mut w: World } {
         let ms = clock::now_ms{ c = w.clock }
         _ = @fmt(&w.io, "[{} {}.{}] ", w.clock.frame, ms / 1000, pad3{ n = ms % 1000 })
     }

@@ -112,7 +112,7 @@ namespace doors {
     }
 
     // OPENDOOR (actions.md 3.6): param 0 the door.
-    fn open_door { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, a: *mut actions::Action } -> actions::Status {
+    fn open_door { mut w: world::World, mut vm: nwvm::Vm, id: u32, a: *mut actions::Action } -> actions::Status {
         let target = actions::object_param{ a, i = 0 }
         let o = world::object{ w = &w, id = target } ifnull { return actions::Status::failed }
         let d = obj::door{ o } ifnull { return actions::Status::failed }
@@ -141,7 +141,7 @@ namespace doors {
     }
 
     // CLOSEDOOR: param 0 the door.
-    fn close_door { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, a: *mut actions::Action } -> actions::Status {
+    fn close_door { mut w: world::World, mut vm: nwvm::Vm, id: u32, a: *mut actions::Action } -> actions::Status {
         let target = actions::object_param{ a, i = 0 }
         let o = world::object{ w = &w, id = target } ifnull { return actions::Status::failed }
         let d = obj::door{ o } ifnull { return actions::Status::failed }
@@ -153,10 +153,10 @@ namespace doors {
     }
 
     // USEOBJECT (actions.md 3.5): param 0 the placeable (or door: open it).
-    fn use_object { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, a: *mut actions::Action } -> actions::Status {
+    fn use_object { mut w: world::World, mut vm: nwvm::Vm, id: u32, a: *mut actions::Action } -> actions::Status {
         let target = actions::object_param{ a, i = 0 }
         let o = world::object{ w = &w, id = target } ifnull { return actions::Status::failed }
-        if o.kind == obj::Kind::door { return open_door{ &w, &vm, engine, id, a } }
+        if o.kind == obj::Kind::door { return open_door{ &w, &vm, id, a } }
         let p = obj::placeable{ o } ifnull { return actions::Status::failed }
         if not p.useable { return actions::Status::failed }
         if approach{ &w, id, target, a } { return actions::Status::done }
@@ -192,7 +192,7 @@ namespace doors {
     // a lock that wants one, else the Security check against the lock's DC. Success unlocks it (UNLOCKED)
     // and the user opens it (a door opens, a container is used); failure leaves it locked and the
     // roll is the only thing said.
-    fn open_lock { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, a: *mut actions::Action } -> actions::Status {
+    fn open_lock { mut w: world::World, mut vm: nwvm::Vm, id: u32, a: *mut actions::Action } -> actions::Status {
         let target = actions::object_param{ a, i = 0 }
         let o = world::object{ w = &w, id = target } ifnull { return actions::Status::failed }
         let me = world::object{ w = &w, id } ifnull { return actions::Status::failed }
@@ -237,7 +237,7 @@ namespace doors {
     // the lock for 1.5 s, then its key (UseKeyOnObject) or a Security check against CloseLockDC locks
     // it (Locked = 1, LOCKED from the user); a key-only lock without the key fails to lock (feedback
     // 15). An open door is closed first.
-    fn lock_object { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, a: *mut actions::Action } -> actions::Status {
+    fn lock_object { mut w: world::World, mut vm: nwvm::Vm, id: u32, a: *mut actions::Action } -> actions::Status {
         let target = actions::object_param{ a, i = 0 }
         let o = world::object{ w = &w, id = target } ifnull { return actions::Status::failed }
         let me = world::object{ w = &w, id } ifnull { return actions::Status::failed }
@@ -339,7 +339,7 @@ namespace doors {
         objsound::play{ &w, id = target, column = objsound::LOCKED }
         world::set_object_text{ &w, id = target, strref = TEXT_LOCKED }
         if w.log.objects {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "locked {}: feedback {}, text {}\n", target, FEEDBACK_LOCKED, TEXT_LOCKED)
         }
     }
@@ -435,7 +435,7 @@ namespace doors {
         walkmap::set_active{ m = &w.walk, index = d.walk, active = state == obj::DoorState::closed }
         o.dirty = o.dirty | obj::DIRTY_ANIMATION
         if w.log.objects {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "door {} ({}) -> {}\n", id, o.tag, @as(u32, state))
         }
     }

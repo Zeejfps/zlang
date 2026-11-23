@@ -57,7 +57,7 @@ namespace rt_cmd {
     }
 
     // void ExecuteScript(string sScript, object oTarget, int nScriptVar = -1): now, nested, as
-    // oTarget. The engine is bound again for the nested run (engine.md, "Running one").
+    // oTarget. The engine is bound for the nested run, as for any (engine.md, "Running one").
     fn execute_script { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let r = nwscript::ExecuteScript
         let name = try nwarg::string{ &vm, routine = r, argc, i = 0 }
@@ -65,22 +65,20 @@ namespace rt_cmd {
         let var = try nwarg::int{ &vm, routine = r, argc, i = 2 }
         let program = scripts::program{ &w, name = resref::truncate{ name } } ifnull {
             if w.log.scripts {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "execute {} self={}: no such script\n", name, target)
             }
             return
         }
         let o = world::object{ w = &w, id = target }
         if o != null { o.ctx.run_script_var = var }
-        let wp: *mut world::World = &w
-        let engine = routines::call{ w = wp, _ }
         w.stats.script_runs = w.stats.script_runs + 1
         if w.log.scripts {
-            world::prefix{ w = wp }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "execute {} self={}\n", program.name, target)
         }
-        _ = nwvm::run{ &vm, program, self = if o != null { target } else { obj::INVALID }, engine } iferr {
-            scripts::report_fault{ w = wp, vm = &vm }
+        _ = nwvm::run{ &vm, program, self = if o != null { target } else { obj::INVALID }, engine = routines::call{ &w, _ } } iferr {
+            scripts::report_fault{ &w, vm = &vm }
             null
         }
     }
@@ -110,7 +108,7 @@ namespace rt_cmd {
         let id = try nwarg::object{ &vm, routine = nwscript::SetCommandable, argc, i = 1 }
         let o = world::object{ w = &w, id } ifnull { return }
         if w.log.scripts {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "SetCommandable({}) on {}\n", value, id)
         }
         o.commandable = value != 0

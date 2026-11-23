@@ -141,7 +141,7 @@ namespace dlgview {
         let node = dlg::current_node{ s = &w.conversation } ifnull { return }
         if is_pass_through{ w = &w, node, line } {
             if w.log.dialog {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "dialog view: line {} (continue, nothing shown)\n", line.serial)
             }
             return
@@ -168,7 +168,7 @@ namespace dlgview {
             dlgpanel::set_line{ p = &v.panels, g = &g, speaker = name_of{ w = &w, id = line.speaker }, text } iferr {}
         }
         if w.log.dialog {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "dialog view: line {} camera mode {}\n", line.serial, @as(u32, v.mode))
             // The staging of the line: how far apart the two stand and in which rooms (a speaker behind a wall or
             // a door, or across the area, is a script's staging that did not happen).
@@ -178,7 +178,7 @@ namespace dlgview {
                 let d = math::vec3::distance{ a = so.position, b = lo.position }
                 let sr = walkmap::room_at{ m = &w.walk, x = so.position.x, y = so.position.y, z = so.position.z + 0.5 }
                 let lr = walkmap::room_at{ m = &w.walk, x = lo.position.x, y = lo.position.y, z = lo.position.z + 0.5 }
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "dialog stage: {} and {} stand {} m apart (rooms {} and {})\n", so.tag, lo.tag, d, sr, lr)
             }
         }

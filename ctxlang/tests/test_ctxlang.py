@@ -98,7 +98,7 @@ fn main {} { _ = make{} }
                        'expected i64, got ?i32')
 
     def test_two_mut_refs(self):
-        extra = 'fn move_first(S) { mut from: list::List(i32, S), mut to: list::List(i32, S), mut heap: S } { }\n'
+        extra = 'fn move_first(S) { mut from: list::List(i32, S), mut to: list::List(i32, S), mut heap: S } { to = from }\n'
         self.lib_error('    move_first{ from = &nums, to = &nums, .. }', 'two mut references to `nums`', extra)
 
     def test_match_scrutinee_overlap(self):
@@ -128,7 +128,7 @@ fn main {} { _ = make{} }
     apply{ &nums, ev, .. }""", '`ev` may be read before it is assigned')
 
     def test_held_overlap(self):
-        extra = 'fn sum_into { mut total: i32, f: &fn{ item: i32 } } { }\n'
+        extra = 'fn sum_into { mut total: i32, f: &fn{ item: i32 } } { total = 0 }\n'
         self.lib_error("""
     let f = add_to{ &total, _ }
     sum_into{ &total, f }""", '`total` overlaps a place held by `f`', extra)
@@ -1997,22 +1997,35 @@ class Safety(Base):
 
     def test_errors(self):
         for src, msg, line, col in [
-            ('struct P { a: i32, b: i32 }\nfn g { mut x: i32, mut y: i32 } {}\nfn f {} {\n    let mut p = P{ a = 1, b = 2 }\n    g{ x = &p.a, y = &p.a }\n}',
-             'two mut references to `p.a` in one call', 5, 6),
-            ('fn g { mut x: [2]i32, mut y: i32 } {}\nfn f {} {\n    let mut a = [1, 2]\n    g{ x = &a, y = &a[1] }\n}',
-             'two mut references to `a` in one call', 4, 6),
-            ('fn g { mut x: i32, mut y: i32 } {}\nfn f { mut x: i32 } {\n    g{ &x, y = &x }\n}',
-             'two mut references to `x` in one call', 3, 6),
-            ('fn g { mut x: i32, mut y: i32 } {}\nfn f { mut x: i32, mut y: i32 } {\n    g{ &x, .. }\n    g{ y = &x, .. }\n}',
-             'two mut references to `x` in one call', 4, 6),
-            ('fn inc { mut n: i32 } { n = n + 1 }\nfn g { mut n: i32, f: &fn{} } {}\nfn f {} {\n    let mut n = 0\n    let h = inc{ &n, _ }\n    g{ &n, f = h }\n}',
-             '`n` overlaps a place held by `h`', 6, 6),
-            ('fn inc { mut n: i32 } { n = n + 1 }\nfn g { mut n: i32, h: &fn{} } {}\nfn f {} {\n    let mut n = 0\n    let h = inc{ &n, _ }\n    g{ &n, .. }\n}',
-             '`n` overlaps a place held by `h`', 6, 6),
-            ('fn inc { mut n: i32 } { n = n + 1 }\nfn g { mut n: i32, f: &fn{} } {}\nfn f {} {\n    let mut n = 0\n    g{ &n, f = inc{ &n, _ } }\n}',
-             '`n` overlaps a place held by `f`', 5, 6),
-            ('fn two { mut a: i32, mut b: i32 } {}\nfn f {} {\n    let mut n = 0\n    let h = two{ a = &n, b = &n, _ }\n}',
-             'two mut references to `n` in one call', 4, 16),
+            # Two mut references that overlap, to a callee that uses both for the same part
+            # (§3.1, rule 8; test_split_borrows has the rest).
+            ('struct P { a: i32, b: i32 }\nfn g { mut x: i32, mut y: i32 } { x = y }\nfn f {} {\n    let mut p = P{ a = 1, b = 2 }\n    g{ x = &p.a, y = &p.a }\n}',
+             'two mut references to `p.a` in one call: `g` changes `p.a` through its field `x` at 2:35, and reads `p.a` through its field `y` at 2:39; '
+             'pass one of them, or change `g` to use `p.a` through one of them only', 5, 6),
+            ('fn g { mut x: [2]i32, mut y: i32 } { y = x[0] }\nfn f {} {\n    let mut a = [1, 2]\n    g{ x = &a, y = &a[1] }\n}',
+             'two mut references to `a` in one call: `g` reads `a[_]` through its field `x` at 1:42, and changes `a[_]` through its field `y` at 1:38; '
+             'pass one of them, or change `g` to use `a[_]` through one of them only', 4, 6),
+            ('fn g { mut x: i32, mut y: i32 } { x = y }\nfn f { mut x: i32 } {\n    g{ &x, y = &x }\n}',
+             'two mut references to `x` in one call: `g` changes `x` through its field `x` at 1:35, and reads `x` through its field `y` at 1:39; '
+             'pass one of them, or change `g` to use `x` through one of them only', 3, 6),
+            ('fn g { mut x: i32, mut y: i32 } { x = y }\nfn f { mut x: i32, mut y: i32 } {\n    g{ &x, .. }\n    g{ y = &x, .. }\n}',
+             'two mut references to `x` in one call: `g` reads `x` through its field `y` at 1:39, and changes `x` through its field `x` at 1:35; '
+             'pass one of them, or change `g` to use `x` through one of them only', 4, 6),
+            ('fn inc { mut n: i32 } { n = n + 1 }\nfn g { mut n: i32, f: &fn{} } { n = 0 }\nfn f {} {\n    let mut n = 0\n    let h = inc{ &n, _ }\n    g{ &n, f = h }\n}',
+             '`n` overlaps a place held by `h`: `g` changes `n` through its field `n` at 2:33, and `h` may change `n` whenever it is called; '
+             'pass one of them, or change `g` to leave `n` to `h`', 6, 6),
+            ('fn inc { mut n: i32 } { n = n + 1 }\nfn g { mut n: i32, h: &fn{} } { n = 0 }\nfn f {} {\n    let mut n = 0\n    let h = inc{ &n, _ }\n    g{ &n, .. }\n}',
+             '`n` overlaps a place held by `h`: `g` changes `n` through its field `n` at 2:33, and `h` may change `n` whenever it is called; '
+             'pass one of them, or change `g` to leave `n` to `h`', 6, 6),
+            ('fn inc { mut n: i32 } { n = n + 1 }\nfn g { mut n: i32, f: &fn{} } { n = 0 }\nfn f {} {\n    let mut n = 0\n    g{ &n, f = inc{ &n, _ } }\n}',
+             '`n` overlaps a place held by `f`: `g` changes `n` through its field `n` at 2:33, and `f` may change `n` whenever it is called; '
+             'pass one of them, or change `g` to leave `n` to `f`', 5, 6),
+            ('fn two { mut a: i32, mut b: i32 } { a = b }\nfn f {} {\n    let mut n = 0\n    let h = two{ a = &n, b = &n, _ }\n}',
+             'two mut references to `n` in one call: `two` changes `n` through its field `a` at 1:37, and reads `n` through its field `b` at 1:41; '
+             'pass one of them, or change `two` to use `n` through one of them only', 4, 16),
+            # A bound function called with a place it holds.
+            ('fn two { mut a: i32, mut b: i32 } { a = a + b }\nfn f {} {\n    let mut n = 1\n    let h = two{ a = &n, _ }\n    h{ b = &n }\n}',
+             "`n` overlaps a place held by `h`, the bound function called: it can't be given a place it holds; pass another, or call the function it was bound from", 5, 6),
             ('union U { a{ x: i32 }, b }\nfn f { mut u: U } {\n    match &u {\n        a{ &x } => { u = U::b }\n        b => {}\n    }\n}',
              'u overlaps the match scrutinee; access it only through `x`', 4, 22),
             ('union U { a{ x: i32 }, b }\nfn g { u: U } {}\nfn f { mut u: U } {\n    match &u {\n        a => { g{ u = u } }\n        b => {}\n    }\n}',
@@ -2110,6 +2123,15 @@ fn show { n: i32, z: i32 } { let t = n + z }
              '        a{ x } => { return x }\n        b => { return 0 }\n    }\n}\nfn f { mut w: W } {\n'
              '    show{ n = ux{ u = w.u }, z = set_a{ &w } }\n    show{ n = w.k, z = set_a{ &w } }\n}',
              '`n` reads `w.u`, which `z` changes' + reads, 23, 30),
+            # A match on `&w.u` reads w.u, without a binding by reference too.
+            ('union U { a{ x: i32 }, b }\nstruct W { u: U, k: i32 }\nfn peek { mut w: W } -> i32 {\n    match &w.u {\n'
+             '        a{ x } => { return x }\n        b => { return 0 }\n    }\n}\n'
+             'fn set_b { mut w: W } -> i32 {\n    w.u = U::b\n    return 1\n}\nfn f { mut w: W } {\n    show{ n = peek{ &w }, z = set_b{ &w } }\n}',
+             '`n` reads `w.u`, which `z` changes' + reads, 20, 27),
+            # An @fmt changes its sink, as a statement of the callee's too.
+            ('struct B { len: i32 }\nstruct T { n: i32, out: B }\n#write\nfn write_i { mut b: B, v: i32 } { b.len = b.len + 1 }\n'
+             'fn log { mut t: T } -> i32 {\n    _ = @fmt(&t.out, "{}", t.n)\n    return 0\n}\nfn f { mut t: T } {\n    show{ n = t.out.len, z = log{ &t } }\n}',
+             '`n` reads `t.out.len`, and `z` changes `t.out`' + reads, 16, 26),
         ]:
             self.assertSafetyError(self.ORDER + src + '\nfn main {} {}', msg, line, col)
 
@@ -2142,6 +2164,218 @@ fn main { mut io: Io } {
     show{ n = s.n, z = s.m }                        // nothing runs
 }
 """, '12\n13\n6\n3\n2\n2\n')
+
+    # Split borrows (§3.1, rule 8): a call to a function with a body may be given places that
+    # overlap, where the function uses them apart.
+    SPLIT = """struct L { len: i32, cap: i32 }
+struct In { a: i32, l: L }
+struct E { n: i32, list: L, arr: [3]i32, sub: In }
+fn push { mut l: L } { l.len = l.len + 1 }
+fn count { l: L } -> i32 { return l.len }
+"""
+
+    def test_split_borrows(self):
+        two = 'two mut references to `e` in one call: '
+        named = 'only a call to a named function with a body may be given places that overlap, and only where the function uses them apart; pass one of them'
+        one = lambda fn, place: f'; pass one of them, or change `{fn}` to use `{place}` through one of them only'
+        for src, msg, line, col in [
+            # The callee reads the part through `e`.
+            ('fn f { mut e: E, mut xs: L } {\n    e.n = e.list.len\n    push{ l = &xs }\n}\nfn t { mut e: E } {\n    f{ &e, xs = &e.list }\n}',
+             two + '`f` reads `e.list.len` through its field `e` at 7:11, and changes `e.list.len` through its field `xs` at 8:15 '
+             '(the access is in `push`)' + one('f', 'e.list.len'), 11, 6),
+            # It changes it through `e`.
+            ('fn f { mut e: E, mut xs: L } {\n    e.list.cap = 0\n    xs.cap = 8\n}\nfn t { mut e: E } {\n    f{ &e, xs = &e.list }\n}',
+             two + '`f` changes `e.list.cap` through its field `e` at 7:5, and changes `e.list.cap` through its field `xs` at 8:5'
+             + one('f', 'e.list.cap'), 11, 6),
+            # It changes all of `e`.
+            ('fn f { mut e: E, mut xs: L } {\n    e = E{ n = 0, list = L{ len = 0, cap = 0 }, arr = [0; 3], sub = In{ a = 0, l = L{ len = 0, cap = 0 } } }\n'
+             '    let n = xs.len\n}\nfn t { mut e: E } {\n    f{ &e, xs = &e.list }\n}',
+             two + '`f` changes `e` through its field `e` at 7:5, and reads `e.list.len` through its field `xs` at 8:13'
+             + one('f', 'e.list.len'), 11, 6),
+            # Through the functions it calls: mid gives `e` to total, which gives its list to count.
+            ('fn total { e: E } -> i32 { return count{ l = e.list } }\nfn mid { mut e: E } -> i32 { return total{ e } }\n'
+             'fn f { mut e: E, mut xs: L } {\n    push{ l = &xs }\n    e.n = mid{ &e }\n}\nfn t { mut e: E } {\n    f{ &e, xs = &e.list }\n}',
+             two + '`f` reads `e.list.len` through its field `e` at 10:16 (the access is in `count`), and changes `e.list.len` through its '
+             'field `xs` at 9:15 (the access is in `push`)' + one('f', 'e.list.len'), 13, 6),
+            # Recursion: what the function does in any of its calls.
+            ('fn f { mut e: E, mut xs: L, k: i32 } {\n    if k == 0 {\n        e.list.len = 0\n        return\n    }\n    push{ l = &xs }\n'
+             '    f{ &e, &xs, k = k - 1 }\n}\nfn t { mut e: E } {\n    f{ &e, xs = &e.list, k = 2 }\n}',
+             two + '`f` changes `e.list.len` through its field `e` at 8:9, and reads `e.list.len` through its field `xs` at 11:15 '
+             '(the access is in `push`)' + one('f', 'e.list.len'), 15, 6),
+            # A function value's body isn't known.
+            ('fn f { mut e: E, mut xs: L } { e.n = 1 }\nfn t { mut e: E } {\n    let g = f\n    g{ &e, xs = &e.list }\n}',
+             two + named, 9, 6),
+            # The callee gives `e` to a function value, which may do anything with all of it.
+            ('fn f { mut e: E, mut xs: L, cb: fn{ mut e: E } } {\n    cb{ &e }\n    push{ l = &xs }\n}\nfn noop { mut e: E } {}\n'
+             'fn t { mut e: E } {\n    f{ &e, xs = &e.list, cb = noop }\n}',
+             two + '`f` changes `e` through its field `e` at 7:9, and reads `e.list.len` through its field `xs` at 8:15 '
+             '(the access is in `push`)' + one('f', 'e.list.len'), 12, 6),
+            # An extern fn has no body.
+            ('#pure\nextern fn c_both { mut e: E, mut xs: L }\nfn t { mut e: E } {\n    c_both{ &e, xs = &e.list }\n}',
+             two + named, 9, 11),
+            # The callee gives `e` to an extern fn.
+            ('#pure\nextern fn c_one { mut e: E }\nfn f { mut e: E, mut xs: L } {\n    c_one{ &e }\n    push{ l = &xs }\n}\n'
+             'fn t { mut e: E } {\n    f{ &e, xs = &e.list }\n}',
+             two + '`f` changes `e` through its field `e` at 9:12, and reads `e.list.len` through its field `xs` at 10:15 '
+             '(the access is in `push`)' + one('f', 'e.list.len'), 13, 6),
+            # An address given out: returned,
+            ('fn f { mut e: E, mut xs: L } -> *mut i32 {\n    push{ l = &xs }\n    return &e.list.len\n}\nfn t { mut e: E } {\n'
+             '    _ = f{ &e, xs = &e.list }\n}',
+             two + '`f` gives out the address of `e.list.len` through its field `e` at 8:12, and reads `e.list.len` through its field `xs` '
+             'at 7:15 (the access is in `push`)' + one('f', 'e.list.len'), 11, 10),
+            # or handed back by a function that uses no pointer itself,
+            ('fn id { p: *mut L } -> *mut L { return p }\nfn f { mut e: E, mut xs: L } {\n    let p = id{ p = &e.list }\n    p.len = 0\n'
+             '    push{ l = &xs }\n}\nfn t { mut e: E } {\n    f{ &e, xs = &e.list }\n}',
+             two + '`f` gives out the address of `e.list` through its field `e` at 8:21 (the access is in `id`), and reads `e.list.len` '
+             'through its field `xs` at 10:15 (the access is in `push`)' + one('f', 'e.list.len'), 13, 6),
+            # or given to one that writes through it.
+            ('fn zero { p: *mut L } { p.len = 0 }\nfn f { mut e: E, mut xs: L } {\n    zero{ p = &e.list }\n    push{ l = &xs }\n}\n'
+             'fn t { mut e: E } {\n    f{ &e, xs = &e.list }\n}',
+             two + '`f` reads `e.list` through its field `e` at 8:15 (the access is in `zero`), and changes `e.list.len` through its field `xs` '
+             'at 9:15 (the access is in `push`)' + one('f', 'e.list.len'), 12, 6),
+            # An array against one of its elements: any two indexes count as the same.
+            ('fn f { mut e: E, mut x: i32 } {\n    let mut i: usize = 0\n    while i < 3 {\n        x = x + e.arr[i]\n        i = i + 1\n    }\n}\n'
+             'fn t { mut e: E } {\n    f{ &e, x = &e.arr[1] }\n}',
+             two + '`f` reads `e.arr[_]` through its field `e` at 9:17, and changes `e.arr[_]` through its field `x` at 9:9'
+             + one('f', 'e.arr[_]'), 14, 6),
+            # A binding by reference changes what it matches.
+            ('union U { a{ x: i32 }, b }\nstruct W { u: U, k: i32 }\nfn f { mut w: W, mut u: U } {\n    match &u {\n'
+             '        a{ &x } => { x = w.k }\n        b => {}\n    }\n    w.u = U::b\n}\nfn t { mut w: W } {\n    f{ &w, u = &w.u }\n}',
+             'two mut references to `w` in one call: `f` changes `w.u` through its field `w` at 13:5, and reads `w.u` through its field `u` '
+             'at 9:12' + one('f', 'w.u'), 16, 6),
+            # A bound function beside a `&` of what it holds, which the callee uses,
+            ('fn step { mut e: E, note: &fn{} } {\n    e.n = e.list.len\n    note{}\n}\nfn t { mut e: E } {\n'
+             '    step{ &e, note = push{ l = &e.list, _ } }\n}',
+             '`e` overlaps a place held by `note`: `step` reads `e.list.len` through its field `e` at 7:11, and `note` may change `e.list` '
+             'whenever it is called; pass one of them, or change `step` to leave `e.list.len` to `note`', 11, 9),
+            # and two bound functions that hold one place.
+            ('fn both { f: &fn{}, g: &fn{} } {\n    f{}\n    g{}\n}\nfn t { mut e: E } {\n'
+             '    both{ f = push{ l = &e.list, _ }, g = push{ l = &e.list, _ } }\n}',
+             '`e.list` overlaps a place held by `g`: `f` may change it too, whenever it is called; pass one of them', 11, 9),
+            # A bind is checked as a call is, and so is what `..` supplies.
+            ('fn f { mut e: E, mut xs: L } {\n    e.list.cap = 0\n    xs.cap = 8\n}\nfn t { mut e: E } {\n    let b = f{ &e, xs = &e.list, _ }\n}',
+             two + '`f` changes `e.list.cap` through its field `e` at 7:5, and changes `e.list.cap` through its field `xs` at 8:5'
+             + one('f', 'e.list.cap'), 11, 14),
+            ('fn f { mut e: E, mut xs: L } {\n    e.list.cap = 0\n    xs.cap = 8\n}\nfn t { mut e: E } {\n    f{ xs = &e.list, .. }\n}',
+             'two mut references to `e.list` in one call: `f` changes `e.list.cap` through its field `xs` at 8:5, and changes `e.list.cap` '
+             'through its field `e` at 7:5' + one('f', 'e.list.cap'), 11, 6),
+        ]:
+            self.assertSafetyError(self.SPLIT + src + '\nfn main {} {}', msg, line, col)
+
+    def test_split_borrows_other_file(self):
+        # An access in another file is named with its file.
+        with self.assertRaises(CompileError) as cm:
+            run_sources([('struct L { len: i32 }\nstruct E { n: i32, list: L }\nfn f { mut e: E, mut xs: L } {\n    e.list.len = 0\n    xs.len = 1\n}\n', 'lib/e.ctx'),
+                         ('fn main {} {\n    let mut e = E{ n = 0, list = L{ len = 0 } }\n    f{ &e, xs = &e.list }\n}\n', 'main.ctx')])
+        self.assertEqual((cm.exception.msg, cm.exception.pos), (
+            'two mut references to `e` in one call: `f` changes `e.list.len` through its field `e` at lib/e.ctx:4:5, and changes `e.list.len` '
+            'through its field `xs` at lib/e.ctx:5:5; pass one of them, or change `f` to use `e.list.len` through one of them only',
+            (3, 6, 'main.ctx')))
+
+    def test_split_borrows_list(self):
+        # A struct and its list (FRICTION's case): allowed while the callee uses the list
+        # through `xs` alone, and an error once it reads it through `e` too, in std's own fns.
+        src = """type Heap = arena::Arena
+struct E { n: i32, list: list::List(i32, Heap) }
+fn add { mut e: E, mut xs: list::List(i32, Heap), item: i32 } -> ! {
+    %s
+    try list::push{ list = &xs, item }
+}
+fn main { mut io: Io } {
+    let mut mem: [4096]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut e = E{ n = 0, list = list::new(i32){ realloc = arena::alloc, &heap } }
+    try! add{ &e, xs = &e.list, item = 5 }
+    try! add{ &e, xs = &e.list, item = 6 }
+    io::println_i64{ &io, n = @as(i64, e.n * 100 + e.list.items[1] * 10 + @as(i32, e.list.len)) }
+}
+"""
+        self.assertOutput(src % 'e.n = e.n + 1', '262\n')
+        with self.assertRaises(CompileError) as cm:
+            run(src % 'e.n = list::get{ list = e.list, i = 0 } ifnull 0')
+        self.assertEqual(cm.exception.pos[:2], (11, 13))
+        self.assertIn('two mut references to `e` in one call: `add` reads `e.list', cm.exception.msg)
+        self.assertIn('through its field `e` at 4:', cm.exception.msg)
+        self.assertIn('(the access is in `list::get`), and changes `e.list', cm.exception.msg)
+        self.assertIn('through its field `xs` at 5:', cm.exception.msg)
+        self.assertIn('(the access is in `list::push`); pass one of them, or change `add` to use `e.list', cm.exception.msg)
+
+    def test_split_borrows_allowed(self):
+        self.assertOutput(self.SPLIT + """
+// Disjoint fields: e.n through e, e.list through xs.
+fn add { mut e: E, mut xs: L } {
+    e.n = e.n + 1
+    push{ l = &xs }
+}
+// Nested fields: e.sub.a through e, e.sub.l through xs.
+fn nested { mut e: E, mut xs: L } {
+    e.sub.a = e.sub.a + 10
+    xs.cap = xs.cap * 2
+}
+// An array's element against another field.
+fn element { mut e: E, mut x: i32 } {
+    x = x + e.n
+    e.list.cap = 9
+}
+// Through a chain of calls.
+fn inner { mut e: E } { e.n = e.n + 100 }
+fn mid { mut e: E } { inner{ &e } }
+fn chain { mut e: E, mut xs: L } {
+    mid{ &e }
+    push{ l = &xs }
+    push{ l = &xs }
+}
+// Both only read it.
+fn sum { mut a: E, mut b: E } -> i32 { return a.n + b.n }
+// Recursion that keeps them apart.
+fn depth { mut e: E, mut xs: L, k: i32 } {
+    if k == 0 { return }
+    e.n = e.n + 1
+    push{ l = &xs }
+    depth{ &e, &xs, k = k - 1 }
+}
+// A bound function beside a `&` of what it doesn't hold.
+fn step { mut e: E, note: &fn{} } {
+    e.n = e.n + 1000
+    note{}
+}
+// An address of another part given out.
+fn at_n { mut e: E, mut xs: L } -> *mut i32 {
+    push{ l = &xs }
+    return &e.n
+}
+// From a `mut` field of the caller's own.
+fn top { mut e: E } { add{ &e, xs = &e.list } }
+
+fn show { mut io: Io, e: E } {
+    _ = @fmt(&io, "{} {} {} {} {} {} {}\\n", e.n, e.list.len, e.list.cap, e.arr[1], e.sub.a, e.sub.l.len, e.sub.l.cap)
+}
+
+fn main { mut io: Io } {
+    let mut e = E{ n = 1, list = L{ len = 0, cap = 4 }, arr = [5, 6, 7], sub = In{ a = 2, l = L{ len = 0, cap = 3 } } }
+    add{ &e, xs = &e.list }
+    show{ &io, e }
+    nested{ &e, xs = &e.sub.l }
+    show{ &io, e }
+    element{ &e, x = &e.arr[1] }
+    show{ &io, e }
+    chain{ &e, xs = &e.list }
+    show{ &io, e }
+    io::println_i64{ &io, n = @as(i64, sum{ a = &e, b = &e }) }
+    depth{ &e, xs = &e.list, k = 3 }
+    show{ &io, e }
+    step{ &e, note = push{ l = &e.list, _ } }
+    show{ &io, e }
+    let p = at_n{ &e, xs = &e.sub.l }
+    p.* = 7
+    show{ &io, e }
+    top{ &e }
+    let bound = add{ &e, xs = &e.sub.l, _ }     // a bind, as a call
+    bound{}
+    show{ &io, e }
+}
+""", '2 1 4 6 2 0 3\n2 1 4 6 12 0 6\n2 1 9 8 12 0 6\n102 3 9 8 12 0 6\n204\n105 6 9 8 12 0 6\n1105 7 9 8 12 0 6\n'
+             '7 7 9 8 12 1 6\n9 8 9 8 12 2 6\n')
 
     def test_checks(self):
         for src in [
@@ -5040,7 +5274,8 @@ fn main { mut io: Io } {
             ('    let mut b = utf8::builder{ realloc = arena::alloc, &heap }\n    try! @fmt(&b)', '@fmt needs a format after its sink: a string literal', 16, 10),
             ('    @fmt("x")', 'an @fmt without a sink needs a type to be: a writer, a function of its sink such as `utf8::Fmt(S)`', 15, 5),
             ('    let mut n = 0\n    report{ &io, &heap, msg = @fmt("{}", bump{ &heap, _ }) }',
-             '`heap` overlaps a place held by `msg`', 16, 11),
+             '`heap` overlaps a place held by `msg`: `report` gives out the address of `heap` through its field `heap` at 4:56 '
+             '(the access is in `utf8::builder`), and `msg` may change `heap` whenever it is called; pass one of them, or change `report` to leave `heap` to `msg`', 16, 11),
             ('    let mut w: utf8::Fmt(arena::Arena) = @fmt("x")\n    if true {\n        let buf: [2]u8 = [1, 2]\n        w = @fmt("{}", @as(i32, buf[..][0]))\n        w = @fmt("{}", view{ s = buf[..], _ })\n    }',
              '`w` outlives local `buf` whose address it would hold', 19, 9),
         ]:
@@ -14249,8 +14484,9 @@ fn main { mut io: Io } {
             (U + 'fn main {} { let u = U{ a = 1 }\n    let a{ x } = u else { return } }',
              'an extern union has no tag to match on: read the field you know it holds', 3, 18),
             ('extern union U(T) { a: T }\nfn main {} {}', 'an extern union cannot have generic parameters', 1, 15),
-            (U + 'fn f { mut x: i32, mut y: f32 } {}\nfn main {} { let mut u = U{ a = 1 }\n    f{ x = &u.a, y = &u.b } }',
-             'two mut references to `u.a` in one call', 4, 6),
+            (U + 'fn f { mut x: i32, mut y: f32 } { x = 1; y = 2.0 }\nfn main {} { let mut u = U{ a = 1 }\n    f{ x = &u.a, y = &u.b } }',
+             'two mut references to `u.a` in one call: `f` changes `u.a` through its field `x` at 2:35, and changes `u.b` through its field `y` at 2:42; '
+             'pass one of them, or change `f` to use `u.a` through one of them only', 4, 6),
             (U + 'const C: U = U{ a = 1 }\nfn main {} {}', 'a const cannot hold an extern union', 2, 15),
             ('struct P { p: *i32 }\nextern union V { a: i32, p: P }\nfn main { mut io: Io } { let mut v: V\n    io::println_i64{ &io, n = v.a } }',
              '`v` may be read before it is assigned', 4, 31),

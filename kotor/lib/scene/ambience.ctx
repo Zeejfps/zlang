@@ -186,7 +186,7 @@ namespace ambience {
         while i < events.len {
             let e = events[i]
             i = i + 1
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             let mut new_name = name_of{ a = &a, tag = e.tag }
             if e.group {
                 let mut old_name = name_of{ a = &a, tag = e.old_tag }
@@ -328,7 +328,7 @@ namespace ambience {
         a.music = mix::play{ m = a.m, bytes = a.music_bytes, p = stream_params{ w = &w, row = ROW_MUSIC } } iferr { mix::Handle{ slot = 0, id = 0 } }
         a.started = a.started + 1
         if w.log.module {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "music {} ({} bytes)\n", name, a.music_bytes.len)
         }
     }
@@ -400,7 +400,7 @@ namespace ambience {
             if a.battle or area.music_battle <= 0 { return }
             a.battle = true
             if w.log.module {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "battle music on\n")
             }
             change_music{ &a, &w, row = area.music_battle }
@@ -409,7 +409,7 @@ namespace ambience {
         if not a.battle { return }
         a.battle = false
         if w.log.module {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "battle music off\n")
         }
         change_music{ &a, &w, row = if a.bg_off { 0 } else { background_row{ area } } }
@@ -442,7 +442,7 @@ namespace ambience {
         a.stinger = mix::play{ m = a.m, bytes = a.stinger_bytes, p = stream_params{ w = &w, row = ROW_STINGERS } } iferr { mix::Handle{ slot = 0, id = 0 } }
         a.started = a.started + 1
         if w.log.module {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "stinger {} ({} bytes)\n", name, a.stinger_bytes.len)
         }
     }
@@ -625,7 +625,7 @@ namespace ambience {
             play_sound{ name, object, position, positional, group } => {
                 let bytes = wave{ &a, &w, name }
                 if w.log.sound {
-                    world::prefix{ w = &w }
+                    world::prefix{ &w }
                     let mut shown = name
                     let missing = if bytes.len == 0 { " (missing)" } else { "" }
                     _ = @fmt(&w.io, "sound play {} row {}{}\n", resref::bytes{ r = &shown }, group, missing)
@@ -750,7 +750,7 @@ namespace ambience {
         // SoundObjectSetFixedVariance: a constant multiplier on the sound's pitch.
         if s.fixed_variance > 0.0 { p.pitch = s.fixed_variance }
         if w.log.sound {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             let mut name = s.sounds[index]
             _ = @fmt(&w.io, "sound object {}: {} row {} volume {} positional {} looping {}\n", o.id, resref::bytes{ r = &name }, s.priority, p.volume, s.positional, looping)
         }

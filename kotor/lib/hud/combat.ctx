@@ -22,7 +22,7 @@ namespace hud {
     fn enter_combat_mode { mut w: world::World } {
         let c = creature_of{ w = &w, id = party::leader{ w = &w } } ifnull { return }
         if not c.combat_mode and w.log.combat {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "combat mode on: {} (order)\n", party::leader{ w = &w })
         }
         c.combat_mode = true
@@ -93,7 +93,7 @@ namespace hud {
                 if t != obj::INVALID {
                     c.combat_mode = true
                     if w.log.combat {
-                        world::prefix{ w = &w }
+                        world::prefix{ &w }
                         _ = @fmt(&w.io, "combat mode on: {} (target {})\n", id, t)
                     }
                 }
@@ -110,7 +110,7 @@ namespace hud {
             c.combat_mode = false
             h.sight_quiet = -1.0
             if w.log.combat {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "combat mode off: {}\n", id)
             }
         }
@@ -144,7 +144,7 @@ namespace hud {
         if strref != h.cmsg { h.cmsg_label = 0 }
         h.cmsg = strref
         if w.log.combat {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "combat message: {}\n", strref)
         }
     }
@@ -299,7 +299,7 @@ namespace hud {
         fight::cancel_actions{ &w, id = leader }
         h.zoom = -1.0
         if w.log.combat {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "combat mode off: {} (disengage)\n", leader)
         }
     }

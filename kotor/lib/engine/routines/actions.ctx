@@ -336,7 +336,7 @@ namespace rt_act {
             let sk = rules::skill::SECURITY
             let mode = if c.in_combat { "d20" } else { "take-20" }
             let verdict = if check.success { "unlocked" } else { "failed" }
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "security: {} on {} ({}): ranks {} key-ability {} feat {} spike {} + {} {} = {} against DC {}: {}\n", me.tag, t.tag, t.id, f.c.skills[@as(usize, sk)],
                 f.c.stats.abil_mod[@as(usize, w.rules.skills[@as(usize, sk)].key_ability)], rules::skill_feat_bonus{ c = &f.c, skill = sk }, spike_bonus,
                 mode, check.roll, check.total, check.dc, verdict)
@@ -385,7 +385,7 @@ namespace rt_act {
             a.params[1] = actions::Param::object{ id = item }
             _ = actions::add{ &w, id = me, action = a, force = false }
         } else if w.log.actions {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "ActionUseSkill {} on {}: not implemented\n", skill, target)
         }
     }
@@ -446,7 +446,7 @@ namespace rt_act {
         }
         if not found and t.hp >= t.hp_max {
             if w.log.actions {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "heal {} on {}: nothing to treat\n", id, target)
             }
             return actions::Status::failed
@@ -478,7 +478,7 @@ namespace rt_act {
         rules::fx::set_creator{ e = &v, creator = id, spell_id = -1 }
         _ = fight::apply{ &w, target, e = v }
         if w.log.actions {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "heal {} on {} with {}: roll {} total {} against DC {} (cure {}), healed {}\n", id, target, item, check.roll, check.total, dc, found and check.success, check.total)
         }
         return actions::Status::done

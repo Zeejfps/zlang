@@ -151,7 +151,7 @@ namespace fight_log {
         while n > 0 and line[n - 1] == ' ' { n = n - 1 }
         if n == 0 { return }
         if w.log.combat {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             let tag = if is_summary{ strref } { " (red)" } else { "" }
             _ = @fmt(&w.io, "log{}: {}\n", tag, line[..n])
         }

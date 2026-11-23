@@ -81,7 +81,7 @@ namespace world {
         w.tut.target = target
         w.tut.n = n
         if w.log.objects {
-            prefix{ w = &w }
+            prefix{ &w }
             _ = @fmt(&w.io, "tutorial offered: {} ({} {} {})\n", id, who, target, n)
         }
         return true

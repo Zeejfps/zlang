@@ -1,7 +1,7 @@
 // The engine as the NWScript VM sees it (docs/design/engine.md, "Routines: many hands, one
-// dispatcher"): `call` is the nwvm::Engine, bound once to the world; `dispatch` calls the
-// category file that implements the routine, found by asking each in turn the first time it is
-// called. One file per category, one namespace per file (rt_*), each with
+// dispatcher"): `call` is the nwvm::Engine, bound to the world where a script runs; `dispatch`
+// calls the category file that implements the routine, found by asking each in turn the first
+// time it is called. One file per category, one namespace per file (rt_*), each with
 //
 //   fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool
 //
@@ -12,7 +12,7 @@ namespace routines {
     // A category file's `run`.
     type Category = fn{ mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool
 
-    // The nwvm::Engine: `let engine = routines::call{ w = world_ptr, _ }`.
+    // The nwvm::Engine: `nwvm::run{ &vm, program, self, engine = routines::call{ &w, _ } }`.
     fn call { mut w: world::World, mut vm: nwvm::Vm, call: nwvm::Call } -> nwvm::Reply {
         match call {
             action{ routine, argc } => {
@@ -56,7 +56,7 @@ namespace routines {
         let k = @as(usize, routine)
         if w.stats.unbalanced[k] { return }
         w.stats.unbalanced[k] = true
-        world::prefix{ w = &w }
+        world::prefix{ &w }
         _ = @fmt(&w.io, "BUG: routine {} left {} stack cells, wanted {}\n", r.name, @as(i64, vm.sp) - @as(i64, sp), want - @as(i64, sp))
     }
 
@@ -99,7 +99,7 @@ namespace routines {
     // `routine Name/argc -> result` (the result as the routine left it on the stack).
     fn log_call { mut w: world::World, vm: *nwvm::Vm, routine: u16, argc: u8, sp: u32, done: bool } {
         let r = nwscript::ROUTINES[@as(usize, routine)]
-        world::prefix{ w = &w }
+        world::prefix{ &w }
         let mark = if done { "" } else { " (missing)" }
         if vm.sp == 0 or r.ret == nwscript::Type::void {
             _ = @fmt(&w.io, "routine {}/{}{}\n", r.name, argc, mark)

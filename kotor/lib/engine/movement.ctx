@@ -161,7 +161,7 @@ namespace movement {
                 else { paths::plan{ &w, id, from = o.position, goal, out = &c.path, adjusted = &c.path_adjusted } }
             if not planned {
                 if w.log.actions {
-                    world::prefix{ w = &w }
+                    world::prefix{ &w }
                     _ = @fmt(&w.io, "move {}: no route from {} {} to {} {} (try {})\n", id, o.position.x, o.position.y, goal.x, goal.y, a.phase + 1)
                 }
                 a.phase = a.phase + 1
@@ -253,7 +253,7 @@ namespace movement {
                 // waits for the door its OnBlocked script is opening instead: the timeout is its
                 // way out, else Bastila's eight legs on Dantooine all fail at the first door.
                 if w.log.actions {
-                    world::prefix{ w = &w }
+                    world::prefix{ &w }
                     _ = @fmt(&w.io, "move {}: blocked at {} {} going to {} {} (goal {} {}, try {})\n", id, here.x, here.y, p.x, p.y, goal.x, goal.y, a.phase + 1)
                 }
                 c.path_next = c.path.len
@@ -309,7 +309,7 @@ namespace movement {
         let c = obj::creature{ o } ifnull { return actions::Status::failed }
         c.blocked_steps = c.blocked_steps + 1
         if w.log.actions {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "move {}: blocked by creature {} at {} {} (step {})\n", id, blocker, here.x, here.y, c.blocked_steps)
         }
         if c.blocked_steps >= GIVE_UP or blocker == target { return end_blocked{ &w, id } }

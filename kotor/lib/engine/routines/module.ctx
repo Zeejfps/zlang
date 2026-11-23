@@ -61,7 +61,7 @@ namespace rt_mod {
         t.waypoint_len = n
         w.transition = t
         if w.log.module {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "StartNewModule {} at {}\n", name, waypoint)
         }
     }
@@ -97,7 +97,7 @@ namespace rt_mod {
         let allow_lower = try nwarg::int{ &vm, routine = r, argc, i = 2 }
         let changed = rt_misc::set_quest_state{ &w, tag = plot, state, allow_lower = allow_lower != 0, xp_icon = false }
         if w.log.scripts {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "journal: {} -> state {} ({})\n", plot, state, changed)
         }
     }
@@ -107,7 +107,7 @@ namespace rt_mod {
         let plot = try nwarg::string{ &vm, routine = nwscript::RemoveJournalQuestEntry, argc, i = 0 }
         journal::remove{ j = &w.journal, tag = plot }
         if w.log.scripts {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "journal: {} removed\n", plot)
         }
     }

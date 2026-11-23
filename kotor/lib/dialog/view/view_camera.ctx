@@ -251,12 +251,12 @@ namespace dlgview {
         if v.log_shot and w.log.dialog {
             v.log_shot = false
             let room = walkmap::room_under{ m = &w.walk, x = rig.eye.x, y = rig.eye.y }
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "dialog camera: mode {} angle {} static {} blocked {} eye {} {} {} forward {} {} {} fov {} room {}\n", @as(u32, v.mode), v.angle, v.static_id, v.blocked, rig.eye.x, rig.eye.y, rig.eye.z, rig.forward.x, rig.forward.y, rig.forward.z, rig.fov, room)
             let se = eye_point{ w = &w, sc, id = v.speaker }
             let le = eye_point{ w = &w, sc, id = v.listener }
             if se != null and le != null {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "dialog camera: speaker eye {} {} {} listener eye {} {} {}\n", se.x, se.y, se.z, le.x, le.y, le.z)
             }
         }

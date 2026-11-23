@@ -55,7 +55,7 @@ namespace pz_game {
     // The outcome in the party: the wager changes hands, the deck is kept, the result is what
     // GetLastPazaakResult tells; then the script that asked for the game goes on.
     fn conclude {
-        mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, r: Request, result: pazaak::Result,
+        mut w: world::World, mut vm: nwvm::Vm, r: Request, result: pazaak::Result,
     } {
         if result.wager > 0 {
             let before = w.party.gold
@@ -64,7 +64,7 @@ namespace pz_game {
             if w.party.gold != before { notices::summary{ &w, kind = notices::SUMMARY_CREDITS, value = w.party.gold - before } }
         }
         let verb = if result.won { "won" } else { "lost" }
-        world::prefix{ w = &w }
+        world::prefix{ &w }
         _ = @fmt(&w.io, "pazaak: {}, wager {}, gold now {}\n", verb, result.wager, w.party.gold)
         let mut full = true
         let mut i: usize = 0
@@ -75,11 +75,11 @@ namespace pz_game {
         if full { w.party.pazaak_deck = result.side_deck }
         w.party.pazaak_won = result.won
         let name = resref::bytes{ r = &r.end_script }
-        if name.len > 0 { _ = scripts::run{ &w, &vm, engine, name = r.end_script, self = obj::INVALID } }
+        if name.len > 0 { _ = scripts::run{ &w, &vm, name = r.end_script, self = obj::INVALID } }
     }
 
     // Without a screen (headless runs): the AI plays the player's side too, with the default deck.
-    fn visit_auto { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, r: Request } -> ! {
+    fn visit_auto { mut w: world::World, mut vm: nwvm::Vm, r: Request } -> ! {
         let p = try make_params{ &w, r }
         let deck = default_deck{ owned = w.party.pazaak_cards }
         let stake = if r.max_wager > 0 { r.max_wager } else { 0 }
@@ -90,13 +90,13 @@ namespace pz_game {
             if pazaak::has_prompt{ m = m } { pazaak::answer_prompt{ m = &m, yes = true } }
             guard = guard + 1
         }
-        conclude{ &w, &vm, engine, r, result = pazaak::Result{ won = m.won, forfeited = false, wager = stake, side_deck = deck } }
+        conclude{ &w, &vm, r, result = pazaak::Result{ won = m.won, forfeited = false, wager = stake, side_deck = deck } }
     }
 
     // A visit with the player at the table: the screens over `ui.gui` until the match is done.
     // True if the window was closed meanwhile (the game should end).
     fn visit {
-        mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut dev: gpu::Device, mut frame: render::Frame,
+        mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, mut dev: gpu::Device, mut frame: render::Frame,
         ui: *mut ingame::Ingame, mixer: *mut mix::Mixer, adev: ?*mut audio::Device, r: Request, mut disp: display::Display,
     } -> !bool {
         let p = try make_params{ &w, r }
@@ -139,7 +139,7 @@ namespace pz_game {
             display::rest{ d = &disp, &sdl }
         }
         pazaak::end_session{ s = &s, g = &ui.gui }
-        if s.done { conclude{ &w, &vm, engine, r, result = s.result } }
+        if s.done { conclude{ &w, &vm, r, result = s.result } }
         return closed
     }
 }

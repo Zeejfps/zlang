@@ -73,7 +73,7 @@ namespace fight {
             rules::fx::set_creator{ e = &e, creator = o.id, spell_id = -1 }
             _ = apply{ &w, target = tid, e }
             if w.log.combat {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "{}'s saber hits {} for {}\n", o.id, tid, amount)
             }
         }

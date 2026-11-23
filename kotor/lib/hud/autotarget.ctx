@@ -63,7 +63,7 @@ namespace hud {
                 dist = math::sqrtf{ x = dx * dx + dy * dy }
                 bearing = measure_bearing{ lo, p = no.position } * 57.29578
             }
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "target: {} -> {} ({} m, {} deg ccw of facing)\n", bt, at, dist, bearing)
         }
     }
@@ -213,7 +213,7 @@ namespace hud {
             h.swing_to = w.target
             have = true
             if w.log.objects {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "enemy sighted: {}, combat mode {}\n", ids[first_hostile], combat)
             }
             // UpdateSelectableObjects offers Hostile_Creature_Encountered at the sighting (0x005fa5a0).
@@ -229,7 +229,7 @@ namespace hud {
         } else {
             h.sight_latch = false
             if w.log.objects {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "enemy sight latch cleared\n")
             }
         }

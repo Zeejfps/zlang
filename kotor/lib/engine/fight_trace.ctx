@@ -33,7 +33,7 @@ namespace fight {
             let front: u32 = if o.actions.len > 0 { @as(u32, list::items{ list = o.actions }[0].kind) } else { 0 }
             let state = if c.dead { " dead" } else if f.dying_ms > 0 { " dying" } else if f.c.down { " down" } else { "" }
             let scripted = if f.round.cutscene { " cutscene" } else { "" }
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "trace {} {} at {} {} anim {} ({}) hp {}/{} target {} act {} round {}/{} fired {}/{}{}{}\n",
                 o.id, o.tag, o.position.x, o.position.y, o.animation, name, o.hp, o.hp_max, c.attack_target, front,
                 f.round.timer_ms, f.round.anim_ms, f.round.fired, f.round.count,

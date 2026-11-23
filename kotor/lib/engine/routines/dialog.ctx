@@ -44,10 +44,7 @@ namespace rt_dlg {
         let name = try nwarg::string{ &vm, routine = r, argc, i = 0 }
         let other = try nwarg::object{ &vm, routine = r, argc, i = 1 }
         let me = self_of{ vm = &vm }
-        // A nested bind for the scripts the conversation runs (as ExecuteScript does).
-        let wp: *mut world::World = &w
-        let engine = routines::call{ w = wp, _ }
-        let ok = dlg::begin{ w = wp, &vm, engine, self = me, name, other_arg = other }
+        let ok = dlg::begin{ &w, &vm, self = me, name, other_arg = other }
         try nwvm::push_int{ &vm, v = if ok { 1 } else { 0 } }
     }
 
@@ -182,9 +179,7 @@ namespace rt_dlg {
     fn speak_one_liner { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let name = try nwarg::string{ &vm, routine = nwscript::SpeakOneLinerConversation, argc, i = 0 }
         let token = try nwarg::object{ &vm, routine = nwscript::SpeakOneLinerConversation, argc, i = 1 }
-        let wp: *mut world::World = &w
-        let engine = routines::call{ w = wp, _ }
-        dlg::speak_one_liner{ w = wp, &vm, engine, self = self_of{ vm = &vm }, name = resref::truncate{ name }, token }
+        dlg::speak_one_liner{ &w, &vm, self = self_of{ vm = &vm }, name = resref::truncate{ name }, token }
     }
 
     // void SetDialogPlaceableCamera(int nCameraId): only while a conversation runs (9.5).

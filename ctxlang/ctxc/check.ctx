@@ -313,6 +313,9 @@ namespace check {
         ord_owner:   u32 = 0,
         ord_first:   u32 = 0,
         ord_lending: bool = false,                    // an address taken now reaches code that runs
+        // Split borrows (§3.1, rule 8): the calls given places that overlap, checked by
+        // order_post against their callees' summaries.
+        split_cands: list::List(SplitCand, Heap),
     }
 
     // What flows into a function's error set: the errors it returns (atoms), the functions whose
@@ -536,6 +539,7 @@ namespace check {
             ord_callees_now = ids{ &heap },
             ord_seen = list::new(usize){ realloc = arena::alloc, &heap },
             ord_keys = map::new(u64, u8){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            split_cands = list::new(SplitCand){ realloc = arena::alloc, &heap },
             ..
         }
         _ = space{ &c, name = "", parent = NONE }
@@ -7710,11 +7714,19 @@ namespace check {
     }
 
     // A call's mut references, `&p` for a `mut` field (holder empty), and the places held by its
-    // bound-function arguments (holder names the argument), which must not overlap (§3.1).
-    struct HeldRef { p: Place, holder: []u8 }
+    // bound-function arguments (holder names the argument), which must not overlap (§3.1) but
+    // where the callee uses them apart. field is the callee's field each is given for.
+    struct HeldRef { p: Place, holder: []u8, field: []u8 }
 
-    fn check_exclusive { mut c: Checker, e: syntax::Expr, items: []syntax::Item, fields: []types::Field } -> []Place {
+    // callee is the fn the call names, or NONE, and name how messages name it.
+    fn check_exclusive { mut c: Checker, e: syntax::Expr, items: []syntax::Item, fields: []types::Field, callee: u32, name: utf8::String } -> []Place {
         let mut refs = list::new(HeldRef){ realloc = arena::alloc, heap = c.heap }
+        // What a bound function that is called holds, it is given too (no field).
+        if e.k is braced{ callee = ce } {
+            if map::get{ m = c.refs, key = expr_key{ e = ce.* } } is local{ var } {
+                held_refs{ xs = &refs, c, places = held_by{ c, v = var }, holder = get_var{ c, v = var }.name, field = "" }
+            }
+        }
         let mut i: usize = 0
         while i < items.len {
             let it = items[i]
@@ -7723,14 +7735,14 @@ namespace check {
                 if f.mutable {
                     if it.value.k is addr{ e = x } {
                         let p = place_path{ c, e = x.* }
-                        if p != null { add_ref{ xs = &refs, r = HeldRef{ p, holder = "" } } }
+                        if p != null { add_ref{ xs = &refs, r = HeldRef{ p, holder = "", field = it.name.text } } }
                     }
                 } else {
                     let holder = match it.value.k {
                         path{ segs } => { if map::get{ m = c.convs, key = expr_key{ e = it.value } } == null { segs[0].name.text } else { it.name.text } }
                         else => { it.name.text }
                     }
-                    held_refs{ xs = &refs, c, places = held_of{ c, e = it.value }, holder }
+                    held_refs{ xs = &refs, c, places = held_of{ c, e = it.value }, holder, field = it.name.text }
                 }
             }
             i = i + 1
@@ -7741,20 +7753,23 @@ namespace check {
             while i < fw.len {
                 let f = fw[i]
                 if f.mutable {
-                    add_ref{ xs = &refs, r = HeldRef{ p = Place{ root = root_var{ c, v = f.var }, steps = slice::empty([]u8){} }, holder = "" } }
+                    add_ref{ xs = &refs, r = HeldRef{ p = Place{ root = root_var{ c, v = f.var }, steps = slice::empty([]u8){} }, holder = "", field = f.name } }
                 } else if f.conv == null {
-                    held_refs{ xs = &refs, c, places = held_by{ c, v = f.var }, holder = f.name }
+                    held_refs{ xs = &refs, c, places = held_by{ c, v = f.var }, holder = f.name, field = f.name }
                 }
                 i = i + 1
             }
         }
         let rs = list::items{ list = refs }
-        overlapping{ &c, e, rs }
+        overlapping{ &c, e, rs, callee, name }
         return places_of{ c, rs }
     }
 
-    // The first two of call e's mut references rs that overlap, if any, as an error.
-    fn overlapping { mut c: Checker, e: syntax::Expr, rs: []HeldRef } {
+    // Call e's mut references rs that overlap (§3.1, rules 4 and 8). Where the callee is a fn
+    // with a body, a pair with a `&p` in it is kept for split_post, which knows what the fn does
+    // through each of its fields; the first other pair is an error now. An `@fmt` has no name.
+    fn overlapping { mut c: Checker, e: syntax::Expr, rs: []HeldRef, callee: u32, name: utf8::String } {
+        let known = has_body{ c, d = callee }
         let mut i: usize = 0
         while i < rs.len {
             let mut j = i + 1
@@ -7764,16 +7779,107 @@ namespace check {
                 // A capability never changes (§15, rule 8): two references to one don't conflict,
                 // and a start's task shares those its starter passes on (§15, Tasks, rule 9).
                 let shared = a.p.steps.len == 0 and types::get{ s = c.ty, id = types::prune{ s = c.ty, t = get_var{ c, v = a.p.root }.ty } } is cap
-                if overlap{ p = a.p, q = b.p } and not shared {
-                    let mut m = message{ c }
-                    if a.holder.len == 0 and b.holder.len == 0 {
-                        try! @fmt(&m, "two mut references to `{}` in one call", place_str{ c, p = a.p })
+                // One bound function's places are held together: its binds were checked.
+                let together = a.holder.len > 0 and slice::eq_bytes{ a = a.holder, b = b.holder }
+                if overlap{ p = a.p, q = b.p } and not shared and not together {
+                    if known and (a.holder.len == 0 or b.holder.len == 0) {
+                        try! list::push{ list = &c.split_cands, item = SplitCand{ e, callee, name, a, b } }
                     } else {
-                        let holder = if b.holder.len > 0 { b.holder } else { a.holder }
-                        let place = if a.holder.len == 0 { a.p } else { b.p }
-                        try! @fmt(&m, "`{}` overlaps a place held by `{}`", place_str{ c, p = place }, str{ s = holder })
+                        let mut m = message{ c }
+                        try! split_head{ c, a, b, m = &m }
+                        let called = (a.holder.len > 0 and a.field.len == 0) or (b.holder.len > 0 and b.field.len == 0)
+                        if name.bytes.len > 0 and called {
+                            try! utf8::push{ b = &m, s = ", the bound function called: it can't be given a place it holds; pass another, or call the function it was bound from" }
+                        } else if name.bytes.len > 0 and a.holder.len > 0 and b.holder.len > 0 {
+                            try! @fmt(&m, ": `{}` may change it too, whenever it is called; pass one of them", str{ s = a.holder })
+                        } else if name.bytes.len > 0 {
+                            try! utf8::push{ b = &m, s = SPLIT_UNKNOWN }
+                        }
+                        flow_error{ &c, at = expr_at{ e }, msg = utf8::view{ b = m } }
+                        return
                     }
-                    flow_error{ &c, at = expr_at{ e }, msg = utf8::view{ b = m } }
+                }
+                j = j + 1
+            }
+            i = i + 1
+        }
+    }
+
+    // After the start of a message about two places given to a callee with no body to look at.
+    const SPLIT_UNKNOWN: utf8::String = ": only a call to a named function with a body may be given places that overlap, and only where the function uses them apart; pass one of them"
+
+    // How a message starts about a and b, which overlap.
+    fn split_head { c: Checker, a: HeldRef, b: HeldRef, mut m: utf8::Builder(Heap) } -> ! {
+        if a.holder.len == 0 and b.holder.len == 0 { return @fmt(&m, "two mut references to `{}` in one call", place_str{ c, p = a.p }) }
+        let holder = if b.holder.len > 0 { b.holder } else { a.holder }
+        let place = if a.holder.len == 0 { a.p } else { b.p }
+        return @fmt(&m, "`{}` overlaps a place held by `{}`", place_str{ c, p = place }, str{ s = holder })
+    }
+
+    // Whether d is a fn declared with a body: one whose summary can say what it does with its
+    // fields.
+    fn has_body { c: Checker, d: u32 } -> bool {
+        if d == NONE { return false }
+        let func{ external } = get_decl{ c, d }.syn.k else { return false }
+        return not external
+    }
+
+    fn add_ref { mut xs: list::List(HeldRef, Heap), r: HeldRef } {
+        try! list::push{ list = &xs, item = r }
+    }
+
+    fn held_refs { mut xs: list::List(HeldRef, Heap), c: Checker, places: []Place, holder: []u8, field: []u8 } {
+        let ps = places_in_order{ c, xs = places }
+        let mut i: usize = 0
+        while i < ps.len {
+            add_ref{ &xs, r = HeldRef{ p = ps[i], holder, field } }
+            i = i + 1
+        }
+    }
+
+    // ---- split borrows (§3.1, rule 8): a call to a fn with a body may be given places that
+    // overlap, where what the fn does through one field leaves alone what it changes through the
+    // other. While the bodies are checked, `overlapping` keeps each such pair; once they all are,
+    // split_post looks each up in the callee's summary (fn_uses), which holds what the fn and
+    // the fns it calls read, change and lend out of each of its fields.
+
+    // Call e to fn callee, which messages name `name`, gives it a and b, which overlap.
+    struct SplitCand { e: syntax::Expr, callee: u32, name: utf8::String, a: HeldRef, b: HeldRef }
+
+    // What the callee does with p, part of one of the two: u, from its summary, or, for a place
+    // a bound function holds, anything, whenever that is called (u null).
+    struct SplitUse { p: Place, write: bool, u: ?ParamUse }
+
+    fn split_post { mut c: Checker } {
+        let xs = list::items{ list = c.split_cands }
+        let mut i: usize = 0
+        while i < xs.len {
+            split_check{ &c, k = xs[i] }
+            i = i + 1
+        }
+    }
+
+    // An error if the callee of k uses its two places for the same part, changing it through
+    // one of them at least.
+    fn split_check { mut c: Checker, k: SplitCand } {
+        if not summed{ c, d = k.callee } {
+            let mut m = message{ c }
+            try! split_head{ c, a = k.a, b = k.b, m = &m }
+            try! utf8::push{ b = &m, s = SPLIT_UNKNOWN }
+            error{ &c, at = expr_at{ e = k.e }, msg = utf8::view{ b = m } }
+            return
+        }
+        // The `&p` first, so that the message starts with what the callee does.
+        let first = if k.a.holder.len == 0 { k.a } else { k.b }
+        let second = if k.a.holder.len == 0 { k.b } else { k.a }
+        let xs = split_uses{ &c, k, r = first }
+        let ys = split_uses{ &c, k, r = second }
+        let mut i: usize = 0
+        while i < xs.len {
+            let mut j: usize = 0
+            while j < ys.len {
+                if (xs[i].write or ys[j].write) and overlap{ p = xs[i].p, q = ys[j].p } {
+                    split_error{ &c, k, first, second, x = xs[i], y = ys[j] }
                     return
                 }
                 j = j + 1
@@ -7782,17 +7888,56 @@ namespace check {
         }
     }
 
-    fn add_ref { mut xs: list::List(HeldRef, Heap), r: HeldRef } {
-        try! list::push{ list = &xs, item = r }
-    }
-
-    fn held_refs { mut xs: list::List(HeldRef, Heap), c: Checker, places: []Place, holder: []u8 } {
-        let ps = places_in_order{ c, xs = places }
+    // What k's callee does with the place r gives it.
+    fn split_uses { mut c: Checker, k: SplitCand, r: HeldRef } -> []SplitUse {
+        let mut out = list::new(SplitUse){ realloc = arena::alloc, heap = c.heap }
+        if r.holder.len > 0 {
+            try! list::push{ list = &out, item = SplitUse{ p = r.p, write = true, u = null } }
+            return list::items{ list = out }
+        }
+        let s = fn_uses{ &c, d = k.callee }
         let mut i: usize = 0
-        while i < ps.len {
-            add_ref{ &xs, r = HeldRef{ p = ps[i], holder } }
+        while i < s.len {
+            // What is lent out may be read, or changed, through the address: a use like any.
+            if slice::eq_bytes{ a = s[i].field, b = r.field } {
+                try! list::push{ list = &out, item = SplitUse{ p = ord_extend{ c, p = r.p, steps = s[i].steps }, write = s[i].write, u = s[i] } }
+            }
             i = i + 1
         }
+        return list::items{ list = out }
+    }
+
+    fn split_error { mut c: Checker, k: SplitCand, first: HeldRef, second: HeldRef, x: SplitUse, y: SplitUse } {
+        let mut m = message{ c }
+        try! split_head{ c, a = k.a, b = k.b, m = &m }
+        try! @fmt(&m, ": `{}` ", k.name)
+        try! split_side{ c, k, r = first, x, m = &m }
+        try! utf8::push{ b = &m, s = ", and " }
+        try! split_side{ c, k, r = second, x = y, m = &m }
+        let part = if x.p.steps.len >= y.p.steps.len { x.p } else { y.p }
+        if second.holder.len > 0 {
+            try! @fmt(&m, "; pass one of them, or change `{}` to leave `{}` to `{}`", k.name, place_str{ c, p = part }, str{ s = second.holder })
+        } else {
+            try! @fmt(&m, "; pass one of them, or change `{}` to use `{}` through one of them only", k.name, place_str{ c, p = part })
+        }
+        error{ &c, at = expr_at{ e = k.e }, msg = utf8::view{ b = m } }
+    }
+
+    // "changes `e.list.len` through its field `xs` at 4:5", after the callee's name.
+    fn split_side { c: Checker, k: SplitCand, r: HeldRef, x: SplitUse, mut m: utf8::Builder(Heap) } -> ! {
+        let u = x.u ifnull {
+            return @fmt(&m, "`{}` may change `{}` whenever it is called", str{ s = r.holder }, place_str{ c, p = x.p })
+        }
+        let verb: utf8::String = if u.lent { "gives out the address of" } else if u.write { "changes" } else { "reads" }
+        try @fmt(&m, "{} `{}` through its field `{}`", verb, place_str{ c, p = x.p }, str{ s = r.field })
+        if @as(usize, u.at.file) < c.files.len {
+            let file = c.files[u.at.file]
+            let p = source::position{ text = file.text, lines = file.lines, offset = u.at.start }
+            try utf8::push{ b = &m, s = " at " }
+            if u.at.file != k.e.span.file { try @fmt(&m, "{}:", str{ s = file.name }) }
+            try @fmt(&m, "{}:{}", p.line, p.col)
+        }
+        if u.by != k.callee { try @fmt(&m, " (the access is in `{}`)", str{ s = get_decl{ c, d = u.by }.qual }) }
     }
 
     fn places_of { c: Checker, rs: []HeldRef } -> []Place {
@@ -7816,10 +7961,16 @@ namespace check {
 
     // A read or a write of place p by part `part` of a braces: its callee (0), an item (1 on), or
     // a field its `..` supplies (after the items).
-    struct Use { p: Place, part: u32, write: bool }
+    // at is where the use is written. A lent use isn't one of the part's own: an address of p
+    // is given out, to the fn's caller or to a fn that only passes it on, and what holds it may
+    // read p, and with write change it, later. Only a fn's summary keeps those, for the split
+    // borrow check (§3.1, rule 8); argument order ignores them.
+    struct Use { p: Place, part: u32, write: bool, lent: bool, at: source::Span }
 
-    // A path of a fn's context field `field` that its body, or a fn it calls, reads or changes.
-    struct ParamUse { field: []u8, steps: [][]u8, write: bool }
+    // A path of a fn's context field `field` that its body, or a fn it calls, reads or changes:
+    // at `at` in the fn's own body, which is the access itself or the call that passes the field
+    // on, and in the end in fn `by`.
+    struct ParamUse { field: []u8, steps: [][]u8, write: bool, lent: bool, at: source::Span, by: u32 }
 
     struct OrdCand { e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item }
 
@@ -7876,6 +8027,7 @@ namespace check {
     fn order_post { mut c: Checker } {
         if c.diags.errors > 0 { return }
         c.ord_precise = true
+        split_post{ &c }
         let xs = list::items{ list = c.ord_cands }
         let mut i: usize = 0
         while i < xs.len {
@@ -7928,7 +8080,7 @@ namespace check {
             let p = if mutable or it.spread { null } else { place_path{ c, e = it.value } }
             if let q = p {
                 ord_indexes{ &c, e = it.value, part, &us }
-                ord_param{ &c, d, name = it.name.text, p = q, mutable = false, part, &us }
+                ord_param{ &c, d, name = it.name.text, p = q, mutable = false, part, at = it.value.span, &us }
             } else {
                 ord_expr{ &c, e = it.value, part, &us }
             }
@@ -7938,7 +8090,7 @@ namespace check {
         while i < fw.len {
             if not fw[i].mutable {
                 let p = Place{ root = root_var{ c, v = fw[i].var }, steps = slice::empty([]u8){} }
-                ord_param{ &c, d, name = fw[i].name, p, mutable = false, part = @as(u32, items.len + 1 + i), &us }
+                ord_param{ &c, d, name = fw[i].name, p, mutable = false, part = @as(u32, items.len + 1 + i), at = expr_at{ e }, &us }
             }
             i = i + 1
         }
@@ -7997,10 +8149,17 @@ namespace check {
         return expr_at{ e }
     }
 
-    fn ord_use { mut c: Checker, p: Place, part: u32, write: bool, mut us: list::List(Use, Heap) } {
+    fn ord_use { mut c: Checker, p: Place, part: u32, write: bool, at: source::Span, mut us: list::List(Use, Heap) } {
         // A capability never changes (§15, rule 8).
         if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = get_var{ c, v = p.root }.ty } } is cap { return }
-        try! list::push{ list = &us, item = Use{ p, part, write } }
+        try! list::push{ list = &us, item = Use{ p, part, write, lent = false, at } }
+    }
+
+    // An address of p that is given out, for a fn's summary (Use.lent).
+    fn ord_use_lent { mut c: Checker, p: Place, part: u32, write: bool, at: source::Span, mut us: list::List(Use, Heap) } {
+        if not c.ord_extracting { return }
+        if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = get_var{ c, v = p.root }.ty } } is cap { return }
+        try! list::push{ list = &us, item = Use{ p, part, write, lent = true, at } }
     }
 
     // A read, and a write if the pointer or view made of it is mutable: what code that runs and
@@ -8013,28 +8172,37 @@ namespace check {
     // The same, for an address or view e of p given to fn d's read-only field name: only if d
     // reads, or writes, through a pointer at all.
     fn ord_lend { mut c: Checker, d: u32, name: []u8, p: Place, e: syntax::Expr, part: u32, mut us: list::List(Use, Heap) } {
-        if not c.ord_lending { return }
         let t = types::prune{ s = c.ty, t = type_of_expr{ c, e } }
-        let w = match types::get{ s = c.ty, id = t } {
-            ptr{ mutable } => { mutable }
-            slice{ mutable } => { mutable }
-            else => { false }
+        let mut w = false
+        match types::get{ s = c.ty, id = t } {
+            ptr{ elem, mutable } => {
+                // A pointer to a capability, which never changes (§15, rule 8).
+                if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = elem } } is cap { return }
+                w = mutable
+            }
+            slice{ mutable } => { w = mutable }
+            else => {}
+        }
+        if not c.ord_lending {
+            // It goes nowhere that runs now: to the fn's caller, or into a comparison.
+            ord_use_lent{ &c, p, part, write = w, at = e.span, &us }
+            return
         }
         if d != NONE and c.ord_precise and summed{ c, d } {
             if c.ord_extracting {
                 if let f = ord_field{ c, d = c.ord_owner, first = c.ord_first, root = p.root } {
-                    try! list::push{ list = &c.ord_found, item = OrdCall{ id = ord_call_id{ &c }, callee = d, arg = name, field = f, steps = p.steps, mutable = w, lent = true } }
+                    try! list::push{ list = &c.ord_found, item = OrdCall{ id = ord_call_id{ &c }, callee = d, arg = name, field = f, steps = p.steps, mutable = w, lent = true, at = e.span } }
                 }
                 return
             }
             _ = fn_uses{ &c, d }
             let fl = map::get{ m = c.ord_flags, key = d } ifnull { 3 }
-            if fl & 1 != 0 { ord_use{ &c, p, part, write = false, &us } }
-            if fl & 2 != 0 and w { ord_use{ &c, p, part, write = true, &us } }
+            if fl & 1 != 0 { ord_use{ &c, p, part, write = false, at = e.span, &us } }
+            if fl & 2 != 0 and w { ord_use{ &c, p, part, write = true, at = e.span, &us } }
             return
         }
-        ord_use{ &c, p, part, write = false, &us }
-        if w { ord_use{ &c, p, part, write = true, &us } }
+        ord_use{ &c, p, part, write = false, at = e.span, &us }
+        if w { ord_use{ &c, p, part, write = true, at = e.span, &us } }
     }
 
     // What evaluating e reads and changes.
@@ -8103,7 +8271,7 @@ namespace check {
     fn ord_place { mut c: Checker, e: syntax::Expr, part: u32, write: bool, addr: bool, mut us: list::List(Use, Heap) } {
         if let p = place_path{ c, e } {
             ord_indexes{ &c, e, part, &us }
-            if not addr { ord_use{ &c, p, part, write, &us } }
+            if not addr { ord_use{ &c, p, part, write, at = e.span, &us } }
             return
         }
         if c.ord_extracting and not addr and not (e.k is path) { c.ord_flag_now = c.ord_flag_now | if write { 3 } else { 1 } }
@@ -8145,21 +8313,21 @@ namespace check {
     // What fn d reads and changes of its field name: uses of p, the place given for it. Without
     // a summary, all of p, a write for a `mut` field. While a summary is walked for, the call
     // is kept for it instead, if p is one of its fn's fields.
-    fn ord_param { mut c: Checker, d: u32, name: []u8, p: Place, mutable: bool, part: u32, mut us: list::List(Use, Heap) } {
+    fn ord_param { mut c: Checker, d: u32, name: []u8, p: Place, mutable: bool, part: u32, at: source::Span, mut us: list::List(Use, Heap) } {
         if d == NONE or not c.ord_precise or not summed{ c, d } {
-            ord_use{ &c, p, part, write = mutable, &us }
+            ord_use{ &c, p, part, write = mutable, at, &us }
             return
         }
         if c.ord_extracting {
             if let f = ord_field{ c, d = c.ord_owner, first = c.ord_first, root = p.root } {
-                try! list::push{ list = &c.ord_found, item = OrdCall{ id = ord_call_id{ &c }, callee = d, arg = name, field = f, steps = p.steps, mutable, lent = false } }
+                try! list::push{ list = &c.ord_found, item = OrdCall{ id = ord_call_id{ &c }, callee = d, arg = name, field = f, steps = p.steps, mutable, lent = false, at } }
             }
             return
         }
         let s = fn_uses{ &c, d }
         let mut i: usize = 0
         while i < s.len {
-            if slice::eq_bytes{ a = s[i].field, b = name } { ord_use{ &c, p = ord_extend{ c, p, steps = s[i].steps }, part, write = s[i].write and mutable, &us } }
+            if not s[i].lent and slice::eq_bytes{ a = s[i].field, b = name } { ord_use{ &c, p = ord_extend{ c, p, steps = s[i].steps }, part, write = s[i].write and mutable, at, &us } }
             i = i + 1
         }
     }
@@ -8172,7 +8340,7 @@ namespace check {
         let r = map::get{ m = c.refs, key = expr_key{ e = callee } }
         if r is local{ var } {
             ord_place{ &c, e = callee, part, write = false, addr = false, &us }
-            if not bind { ord_held{ &c, places = held_by{ c, v = var }, part, &us } }
+            if not bind { ord_held{ &c, places = held_by{ c, v = var }, part, at = callee.span, &us } }
         } else if not (callee.k is path) {
             ord_expr{ &c, e = callee, part, &us }
         }
@@ -8199,11 +8367,11 @@ namespace check {
                 if mutable {
                     let addr{ e = x } = it.value.k else { @panic("check: not an address") }
                     ord_indexes{ &c, e = x.*, part, &us }
-                    if not bind { ord_param{ &c, d, name = it.name.text, p = q, mutable = true, part, &us } }
+                    if not bind { ord_param{ &c, d, name = it.name.text, p = q, mutable = true, part, at = it.value.span, &us } }
                 } else {
                     ord_indexes{ &c, e = it.value, part, &us }
-                    ord_param{ &c, d, name = it.name.text, p = q, mutable = false, part, &us }
-                    if not bind { ord_held{ &c, places = held_of{ c, e = it.value }, part, &us } }
+                    ord_param{ &c, d, name = it.name.text, p = q, mutable = false, part, at = it.value.span, &us }
+                    if not bind { ord_held{ &c, places = held_of{ c, e = it.value }, part, at = it.value.span, &us } }
                 }
             } else if mutable and it.value.k is addr {
                 let addr{ e = x } = it.value.k else { @panic("check: not an address") }
@@ -8214,7 +8382,7 @@ namespace check {
                 ord_lend{ &c, d = if bind { NONE } else { d }, name = it.name.text, p = q, e = it.value, part, &us }
             } else {
                 ord_expr{ &c, e = it.value, part, &us }
-                if not bind { ord_held{ &c, places = held_of{ c, e = it.value }, part, &us } }
+                if not bind { ord_held{ &c, places = held_of{ c, e = it.value }, part, at = it.value.span, &us } }
             }
             i = i + 1
         }
@@ -8223,10 +8391,10 @@ namespace check {
             while i < fw.len {
                 let p = Place{ root = root_var{ c, v = fw[i].var }, steps = slice::empty([]u8){} }
                 if fw[i].mutable {
-                    if not bind { ord_param{ &c, d, name = fw[i].name, p, mutable = true, part, &us } }
+                    if not bind { ord_param{ &c, d, name = fw[i].name, p, mutable = true, part, at = expr_at{ e }, &us } }
                 } else {
-                    ord_param{ &c, d, name = fw[i].name, p, mutable = false, part, &us }
-                    if not bind and fw[i].conv == null { ord_held{ &c, places = held_by{ c, v = fw[i].var }, part, &us } }
+                    ord_param{ &c, d, name = fw[i].name, p, mutable = false, part, at = expr_at{ e }, &us }
+                    if not bind and fw[i].conv == null { ord_held{ &c, places = held_by{ c, v = fw[i].var }, part, at = expr_at{ e }, &us } }
                 }
                 i = i + 1
             }
@@ -8258,10 +8426,10 @@ namespace check {
         }
     }
 
-    fn ord_held { mut c: Checker, places: []Place, part: u32, mut us: list::List(Use, Heap) } {
+    fn ord_held { mut c: Checker, places: []Place, part: u32, at: source::Span, mut us: list::List(Use, Heap) } {
         let mut i: usize = 0
         while i < places.len {
-            ord_use{ &c, p = places[i], part, write = true, &us }
+            ord_use{ &c, p = places[i], part, write = true, at, &us }
             i = i + 1
         }
     }
@@ -8273,11 +8441,15 @@ namespace check {
         let sink = fmt and args.len > 0 and not (args[0].k is str)
         let atomic = name.len > 7 and slice::eq_bytes{ a = name[..7], b = "atomic_" }
         if c.ord_extracting and (sink or atomic) { c.ord_flag_now = 3 }
+        // The writers, or the atomic operation, run now with the addresses they are given.
+        let lending = c.ord_lending
+        if sink or atomic { c.ord_lending = true }
+        defer c.ord_lending = lending
         let mut i: usize = 0
         while i < args.len {
             let a = args[i]
             ord_expr{ &c, e = a, part, &us }
-            if sink and i > 0 { ord_held{ &c, places = held_of{ c, e = a }, part, &us } }
+            if sink and i > 0 { ord_held{ &c, places = held_of{ c, e = a }, part, at = a.span, &us } }
             i = i + 1
         }
     }
@@ -8290,7 +8462,15 @@ namespace check {
 
     // A match on `&p` whose arms bind a field by reference may change p through it.
     fn ord_match { mut c: Checker, x: syntax::Match, part: u32, mut us: list::List(Use, Heap) } {
-        ord_expr{ &c, e = x.scrut.*, part, &us }
+        // `match &p` reads p where it stands; only a binding by reference changes it, below.
+        let mut viewed = false
+        if x.scrut.*.k is addr{ e = y } {
+            if place_path{ c, e = y.* } != null {
+                ord_place{ &c, e = y.*, part, write = false, addr = false, &us }
+                viewed = true
+            }
+        }
+        if not viewed { ord_expr{ &c, e = x.scrut.*, part, &us } }
         let mut by_ref = false
         let mut i: usize = 0
         while i < x.arms.len {
@@ -8309,7 +8489,7 @@ namespace check {
             i = i + 1
         }
         if by_ref and x.scrut.*.k is addr{ e = y } {
-            if let p = place_path{ c, e = y.* } { ord_use{ &c, p, part, write = true, &us } }
+            if let p = place_path{ c, e = y.* } { ord_use{ &c, p, part, write = true, at = y.*.span, &us } }
         }
     }
 
@@ -8369,7 +8549,7 @@ namespace check {
     // when mutable. When lent, it passes an address of it, or a view, to a read-only field, and
     // the callee reads, and through a mutable one changes, it if it reads or writes through a
     // pointer at all.
-    struct OrdCall { id: u32, callee: u32, arg: []u8, field: []u8, steps: [][]u8, mutable: bool, lent: bool }
+    struct OrdCall { id: u32, callee: u32, arg: []u8, field: []u8, steps: [][]u8, mutable: bool, lent: bool, at: source::Span }
 
     // Whether fn d has a body ctxc checked, which a summary is made from.
     fn summed { c: Checker, d: u32 } -> bool {
@@ -8472,7 +8652,7 @@ namespace check {
         let mut i: usize = 0
         while i < xs.len {
             if let f = ord_field{ c, d, first, root = xs[i].p.root } {
-                _ = ord_add{ &c, d, out, field = f, a = xs[i].p.steps, b = none, write = xs[i].write }
+                _ = ord_add{ &c, d, out, field = f, a = xs[i].p.steps, b = none, write = xs[i].write, lent = xs[i].lent, at = xs[i].at, by = d }
             }
             i = i + 1
         }
@@ -8510,8 +8690,10 @@ namespace check {
             let k = calls[i]
             if k.lent {
                 let kf = map::get{ m = c.ord_flags, key = k.callee } ifnull { 3 }
-                if kf & 1 != 0 and ord_add{ &c, d, out, field = k.field, a = k.steps, b = none, write = false } { grew = true }
-                if kf & 2 != 0 and k.mutable and ord_add{ &c, d, out, field = k.field, a = k.steps, b = none, write = true } { grew = true }
+                if kf & 1 != 0 and ord_add{ &c, d, out, field = k.field, a = k.steps, b = none, write = false, lent = false, at = k.at, by = k.callee } { grew = true }
+                if kf & 2 != 0 and k.mutable and ord_add{ &c, d, out, field = k.field, a = k.steps, b = none, write = true, lent = false, at = k.at, by = k.callee } { grew = true }
+                // The callee may also hand the address back, or on, without using it.
+                if ord_add{ &c, d, out, field = k.field, a = k.steps, b = none, write = k.mutable, lent = true, at = k.at, by = k.callee } { grew = true }
                 i = i + 1
                 continue
             }
@@ -8521,7 +8703,7 @@ namespace check {
             while j < ord_sum{ c, d = k.callee }.len {
                 let u = ord_sum{ c, d = k.callee }[j]
                 if slice::eq_bytes{ a = u.field, b = k.arg } {
-                    if ord_add{ &c, d, out, field = k.field, a = k.steps, b = u.steps, write = u.write and k.mutable } { grew = true }
+                    if ord_add{ &c, d, out, field = k.field, a = k.steps, b = u.steps, write = u.write and k.mutable, lent = u.lent, at = k.at, by = u.by } { grew = true }
                 }
                 j = j + 1
             }
@@ -8549,29 +8731,32 @@ namespace check {
     }
 
     // Adds the use of field's path a then b, cut to ORD_STEPS steps, to fn d's summary out,
-    // unless a use there covers it: a use of a path covers those below it, and a write covers a
-    // read. The paths are found by a hash of d, the field and the steps (ord_keys). Whether it
-    // added it.
-    fn ord_add { mut c: Checker, d: u32, out: *mut list::List(ParamUse, Heap), field: []u8, a: [][]u8, b: [][]u8, write: bool } -> bool {
+    // unless a use there covers it: a use of a path covers those below it, a write covers a
+    // read, and a use covers a lent one that does no more. The paths are found by a hash of d,
+    // the field and the steps (ord_keys: 1 read, 2 written, 4 lent to be read, 8 lent to be
+    // written). Whether it added it.
+    fn ord_add { mut c: Checker, d: u32, out: *mut list::List(ParamUse, Heap), field: []u8, a: [][]u8, b: [][]u8, write: bool, lent: bool, at: source::Span, by: u32 } -> bool {
         let n = if a.len + b.len < ORD_STEPS { a.len + b.len } else { ORD_STEPS }
         let mut h = ord_hash{ h = (14695981039346656037 ^ @as(u64, d)) *% 1099511628211, bytes = field }
+        let bit: u8 = if lent { if write { 8 } else { 4 } } else if write { 2 } else { 1 }
+        let covers: u8 = if lent { if write { 10 } else { 15 } } else if write { 2 } else { 3 }
         let mut k: usize = 0
         while true {
             let f = map::get{ m = c.ord_keys, key = h } ifnull { 0 }
-            if f & 2 != 0 or (not write and f & 1 != 0) { return false }
+            if f & covers != 0 { return false }
             if k == n { break }
             h = ord_hash{ h = (h ^ 255) *% 1099511628211, bytes = if k < a.len { a[k] } else { b[k - a.len] } }
             k = k + 1
         }
         let f = map::get{ m = c.ord_keys, key = h } ifnull { 0 }
-        try! map::put{ m = &c.ord_keys, key = h, value = f | if write { 2 } else { 1 } }
+        try! map::put{ m = &c.ord_keys, key = h, value = f | bit }
         let mut steps = list::new([]u8){ realloc = arena::alloc, heap = c.heap }
         let mut i: usize = 0
         while i < n {
             try! list::push{ list = &steps, item = if i < a.len { a[i] } else { b[i - a.len] } }
             i = i + 1
         }
-        try! list::push{ list = out, item = ParamUse{ field, steps = list::items{ list = steps }, write } }
+        try! list::push{ list = out, item = ParamUse{ field, steps = list::items{ list = steps }, write, lent, at, by } }
         return true
     }
 
@@ -10758,7 +10943,7 @@ namespace check {
             error{ &c, at = expr_at{ e }, msg = utf8::view{ b = m } }
         }
         c.cap_shared = starting
-        let refs = check_exclusive{ &c, e, items, fields }
+        let refs = check_exclusive{ &c, e, items, fields, callee = call_decl, name }
         c.cap_shared = false
         if bind {
             try! map::put{ m = &c.holds, key = expr_key{ e }, value = refs }
@@ -11966,7 +12151,7 @@ namespace check {
         let mut refs = list::new(HeldRef){ realloc = arena::alloc, heap = c.heap }
         if sink != null and sink.k is addr{ e = x } {
             let p = place_path{ c, e = x.* }
-            if p != null { add_ref{ xs = &refs, r = HeldRef{ p, holder = "" } } }
+            if p != null { add_ref{ xs = &refs, r = HeldRef{ p, holder = "", field = "" } } }
         }
         let mut i: usize = 0
         while i < holes.len {
@@ -11975,10 +12160,10 @@ namespace check {
                 path{ segs } => { if map::get{ m = c.convs, key = expr_key{ e = h } } == null { segs[0].name.text } else { source_text{ c, span = h.span } } }
                 else => { source_text{ c, span = h.span } }
             }
-            held_refs{ xs = &refs, c, places = held_of{ c, e = h }, holder }
+            held_refs{ xs = &refs, c, places = held_of{ c, e = h }, holder, field = "" }
             i = i + 1
         }
-        overlapping{ &c, e, rs = list::items{ list = refs } }
+        overlapping{ &c, e, rs = list::items{ list = refs }, callee = NONE, name = "" }
         return places_of{ c, rs = list::items{ list = refs } }
     }
 

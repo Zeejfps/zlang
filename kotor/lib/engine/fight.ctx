@@ -394,7 +394,7 @@ namespace fight {
             _ = apply{ &w, target = id, e = drain_fx }
         } else if k == rules::ev::FEEDBACK {
             if w.log.combat {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "feedback {} ({}, {}) to {}\n", e.a, e.b, e.c, id)
             }
             // Damage mitigation outside a weapon hit (OnApplyDamage's non-combat damage): to the damaged
@@ -432,7 +432,7 @@ namespace fight {
         }
         fight_log::damaged{ &w, target = id, amount, slots, who, line = not f.quiet_damage }
         if w.log.combat {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "{} takes {} damage from {}: {}/{}\n", id, amount, who, o.hp, o.hp_max)
         }
         if who != obj::INVALID and who != id {
@@ -498,7 +498,7 @@ namespace fight {
             // A party member goes down: never dead (8.1); it gets up when the fight is over. The
             // module's OnPlayerDeath runs (GetLastPlayerDied, 8.2).
             if w.log.combat {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "{} is down\n", id)
             }
             if let mo = world::object{ w = &w, id = w.module } {
@@ -522,7 +522,7 @@ namespace fight {
         bc.dead = true
         if back.hp > rules::DEATH_HP { back.hp = rules::DEATH_HP }
         if w.log.combat {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "{} ({}) dies, killed by {}\n", id, back.tag, killer)
         }
         award_kill_xp{ &w, victim = id, killer }
@@ -546,7 +546,7 @@ namespace fight {
         o.ctx.last_damager = who
         fight_log::damaged{ &w, target = id, amount, slots, who, line = true }
         if w.log.combat {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "{} ({}) takes {} damage from {}: {}/{}\n", id, o.tag, amount, who, o.hp, o.hp_max)
         }
         events::post{ &w, delay_ms = 0, caller = who, target = id, payload = events::Payload::script{ e = events::script_event{ kind = events::DAMAGED, object = who } } }
@@ -613,7 +613,7 @@ namespace fight {
             _ = given
         }
         if w.log.combat {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "{} XP for killing {}\n", xp, victim)
         }
         fight_log::killed{ &w, victim, killer, xp }
@@ -1048,7 +1048,7 @@ namespace fight {
             if dir.x * dir.x + dir.y * dir.y > 0.0001 { world::set_orientation{ o, v = math::Vec3{ x = dir.x, y = dir.y, z = 0.0 } } }
         }
         if w.log.combat and engaged {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             let role = if master { "master" } else { "slave" }
             let other_tag: []u8 = if let t = world::object{ w = &w, id = target } { t.tag } else { "" }
             _ = @fmt(&w.io, "{} ({}) engages {} ({}) as {}\n", id, o.tag, target, other_tag, role)
@@ -1404,7 +1404,7 @@ namespace fight {
                     }
                     _ = apply{ &w, target = id, e = ce.effect }
                     if w.log.combat {
-                        world::prefix{ w = &w }
+                        world::prefix{ &w }
                         _ = @fmt(&w.io, "  feat {} on {}: defense -{} for 3 s\n", res.roll.combat_feat, id, rules::combat_get_self_penalty{ feat = res.roll.combat_feat, ranged = res.roll.ranged })
                     }
                 }
@@ -1418,7 +1418,7 @@ namespace fight {
                 attack = attack + 1
                 c.last_attack_result = res.roll.result
                 if w.log.combat {
-                    world::prefix{ w = &w }
+                    world::prefix{ &w }
                     _ = @fmt(&w.io, "  attack {}: d20 {} total {} vs {} result {} damage {} at {} ms feat {} threat {} special {} bonus {} stun {} {}\n", attack, res.roll.d20, res.roll.attack_total, res.roll.attack_total + res.roll.missed_by, res.roll.result, res.damage.total, times[k],
                         res.roll.combat_feat, res.roll.threat_range, rules::combat_get_special_modifier{ feat = res.roll.combat_feat }, res.damage.special_bonus, res.stun_tried, res.stun_save.result)
                 }
@@ -1456,7 +1456,7 @@ namespace fight {
                     play_row{ &w, o = t, row = answer }
                     p.react_ms = 0
                     if w.log.combat {
-                        world::prefix{ w = &w }
+                        world::prefix{ &w }
                         _ = @fmt(&w.io, "{} answers with animation {}\n", target, answer)
                     }
                 }
@@ -1464,7 +1464,7 @@ namespace fight {
         }
         if not forced.on { bark{ &w, id, first = VOICE_ATTACK, count = 3, chance_in = 2, quiet = true } }
         if w.log.combat {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "{} attacks {}: {} attacks, animation {}\n", id, target, attack, row)
         }
     }
@@ -1621,7 +1621,7 @@ namespace fight {
         }
         if not script or cutscene_round { return }
         if w.log.combat {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             let state = if target_alive { "alive" } else { "gone" }
             _ = @fmt(&w.io, "{} ends its round (target {} {})\n", id, target, state)
         }
@@ -1663,7 +1663,7 @@ namespace fight {
                 world::set_animation{ o = back, id = obj::ANIM_STAND, speed = 1.0 }
             }
             if w.log.combat {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "{} stands down\n", id)
             }
             return
@@ -1685,7 +1685,7 @@ namespace fight {
         drop_clicked{ &w, id, target = next }
         if w.target == target or w.target == obj::INVALID { w.target = next }
         if w.log.combat {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "{} turns on {}\n", id, next)
         }
         if turned or o.actions.len > 0 { return }
@@ -1701,7 +1701,7 @@ namespace fight {
         let t = world::object{ w = &w, id = target } ifnull { return }
         let tc = obj::creature{ o = t } ifnull { return }
         if tc.attempted_target != id or tc.clicked_target == obj::INVALID or tc.clicked_target == id { return }
-        world::prefix{ w = &w }
+        world::prefix{ &w }
         _ = @fmt(&w.io, "{} not paired with {}: its clicked target is {}\n", id, target, tc.clicked_target)
     }
 
@@ -2044,7 +2044,7 @@ namespace fight {
                     }
                 }
                 if w.log.combat {
-                    world::prefix{ w = &w }
+                    world::prefix{ &w }
                     _ = @fmt(&w.io, "{} gets up\n", id)
                 }
             }
@@ -2057,7 +2057,7 @@ namespace fight {
                         let spot = trail::follow_point{ w = &w, id } ifnull lead_at
                         place_free{ &w, id, near = spot }
                         if w.log.combat {
-                            world::prefix{ w = &w }
+                            world::prefix{ &w }
                             _ = @fmt(&w.io, "{} back to formation\n", id)
                         }
                     }
@@ -2094,7 +2094,7 @@ namespace fight {
         movement::stop{ &w, id }
         movement::place{ &w, id, at = best }
         if w.log.combat {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "{} placed at {} {}\n", id, best.x, best.y)
         }
     }
@@ -2152,7 +2152,7 @@ namespace fight {
     // then the catch time (phase 3). Only the grenades fly: thrown at the point where the target stood
     // as the throw began (ITEMCASTSPELL clears the target of an item without FORCEHOSTILE), they land
     // after the projectile's flight.
-    fn cast_spell { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, a: *mut actions::Action } -> actions::Status {
+    fn cast_spell { mut w: world::World, mut vm: nwvm::Vm, id: u32, a: *mut actions::Action } -> actions::Status {
         let o = world::object{ w = &w, id } ifnull { return actions::Status::failed }
         let spell = actions::int_param{ a, i = 0 }
         let target = actions::object_param{ a, i = 1 }
@@ -2197,7 +2197,7 @@ namespace fight {
                 let reason = rules::can_keep_casting{ tables = w.rules, c = &f.c, spell, alive }
                 if reason != rules::cast::OK and reason != rules::cast::ENTANGLED {
                     if w.log.combat {
-                        world::prefix{ w = &w }
+                        world::prefix{ &w }
                         _ = @fmt(&w.io, "{} cannot cast {}: reason {}\n", id, spell, reason)
                     }
                     return actions::Status::failed
@@ -2242,7 +2242,7 @@ namespace fight {
             a.phase = 1
             a.started = now
             if w.log.combat {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "{} conjures {} at {}\n", id, spell, target)
             }
         }
@@ -2266,13 +2266,13 @@ namespace fight {
                 let start = rules::begin_cast{ tables = w.rules, c = &f.c, spell, alive, from_item = free }
                 if start.reason != rules::cast::OK and start.reason != rules::cast::ENTANGLED {
                     if w.log.combat {
-                        world::prefix{ w = &w }
+                        world::prefix{ &w }
                         _ = @fmt(&w.io, "{} cannot pay for {}: reason {}\n", id, spell, start.reason)
                     }
                     return actions::Status::failed
                 }
                 if w.log.combat and start.paid {
-                    world::prefix{ w = &w }
+                    world::prefix{ &w }
                     _ = @fmt(&w.io, "{} pays {} Force points for {} ({} left)\n", id, rules::force_point_cost{ tables = w.rules, c = &f.c, spell }, spell, f.c.fp)
                 }
                 if start.interrupted { return actions::Status::failed }
@@ -2284,18 +2284,18 @@ namespace fight {
             }
             spell_visuals{ &w, id, spell, cast = true }
             if w.log.combat {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "{} casts {} at {}\n", id, spell, target)
             }
             // A Force power lands as the cast animation starts (an item's ability a moment later, below).
-            if not by_item { fire{ &w, &vm, engine, id, spell, target, at } }
+            if not by_item { fire{ &w, &vm, id, spell, target, at } }
             a.phase = 2
         }
         if a.phase == 2 {
             if elapsed < conj_ms + cast_ms { return actions::Status::running }
             if by_item {
                 // A thrown grenade goes to the point, not the creature (the original clears the target).
-                fire{ &w, &vm, engine, id, spell, target = if flies { obj::INVALID } else { target }, at }
+                fire{ &w, &vm, id, spell, target = if flies { obj::INVALID } else { target }, at }
                 // A droid utility device's tail plays only its loop (11002) until the end.
                 if rt_item::item_type_of{ w = &w, id = used_item } == 12 {
                     if let uo = world::object{ w = &w, id } { play_row{ &w, o = uo, row = ROW_DEVICE_LOOP } }
@@ -2447,11 +2447,11 @@ namespace fight {
     // The power fires (SpellCastAndImpact 0x004cdf50): the impact at once, or, for a spell that throws a
     // projectile, the projectile shown leaving the caster's hand for the point and the impact (AI event 8,
     // SPELL_IMPACT, to the caster) when it lands.
-    fn fire { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, spell: i32, target: u32, at: math::Vec3 } {
+    fn fire { mut w: world::World, mut vm: nwvm::Vm, id: u32, spell: i32, target: u32, at: math::Vec3 } {
         let o = world::object{ w = &w, id } ifnull { return }
         let ms = flight_ms{ w = &w, spell, from = o.position, to = at }
         if ms == 0 {
-            impact{ &w, &vm, engine, id, spell, target, at }
+            impact{ &w, &vm, id, spell, target, at }
             return
         }
         let model = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "projmodel" } ifnull ""
@@ -2462,7 +2462,7 @@ namespace fight {
             } }
         }
         if w.log.combat {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "{} throws {} at {} {} {}: lands in {} ms\n", id, spell, at.x, at.y, at.z, ms)
         }
         events::post{ &w, delay_ms = ms, caller = id, target = id, payload = events::Payload::spell_impact{ spell, object = target, at } }
@@ -2470,7 +2470,7 @@ namespace fight {
 
     // The impact: the power's script (spells.2da impactscript) as the caster, with the spell
     // context set on it and the target told who cast what at it.
-    fn impact { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, spell: i32, target: u32, at: math::Vec3 } {
+    fn impact { mut w: world::World, mut vm: nwvm::Vm, id: u32, spell: i32, target: u32, at: math::Vec3 } {
         let name = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "impactscript" } ifnull ""
         if let t = world::object{ w = &w, id = target } {
             t.ctx.last_spell = spell
@@ -2481,7 +2481,7 @@ namespace fight {
         o.ctx.spell_target = target
         o.ctx.spell_location = at
         if name.len > 0 and not ci::eq{ a = name, b = "****" } {
-            _ = scripts::run{ &w, &vm, engine, name = resref::truncate{ name }, self = id }
+            _ = scripts::run{ &w, &vm, name = resref::truncate{ name }, self = id }
         }
         if let back = world::object{ w = &w, id } {
             back.ctx.spell_id = -1
@@ -2587,7 +2587,7 @@ namespace fight {
             }
         }
         if w.log.combat {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "{} leaves a body bag {} with {} items\n", id, bag_id, n)
         }
     }
@@ -2653,7 +2653,7 @@ namespace fight {
         set_combat{ &w, id, bark = false, attacked = false }
         if w.log.combat {
             let how = if c.moving { "moving" } else { "still" }
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "{} flourishes its weapon (stance {}, {})\n", id, s, how)
         }
         if c.moving { return }

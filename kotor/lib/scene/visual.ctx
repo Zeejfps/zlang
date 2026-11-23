@@ -192,7 +192,7 @@ namespace visual {
         }
         if body_name.len == 0 { return null }
         let body_loaded = try scene::load_model{ &sc, &w, &dev, name = body_name, body_texture = texture[..texture_len], envmap, hide_null = false } ifnull {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "creature {} ({}): no model {}\n", o.id, o.tag, body_name)
             return null
         }
@@ -279,7 +279,7 @@ namespace visual {
                 if let lc = obj::creature{ o = l } { lead_speed = lc.speed }
             }
         }
-        world::prefix{ w = &w }
+        world::prefix{ &w }
         _ = @fmt(&w.io, "gait {} anim {} speed {} rate {} cycle {} s feet {} ground {} cycles/s at {} {} lead {} m/s {} m smooth {}\n", o.tag, o.animation, c.speed, rate, len, if len > 0.0 { rate / len } else { 0.0 }, ground, o.position.x, o.position.y, lead_speed, lead_dist, c.follow_speed)
     }
 
@@ -469,7 +469,7 @@ namespace visual {
         }
         if w.log.objects {
             let sep = if via.len > 0 { " then " } else { "" }
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "placeable {} {} plays {}{}{}\n", o.id, o.tag, via, sep, name)
         }
         let looping = animname::loops{ id = anim } or anim == container::ANIM_OPEN or anim == container::ANIM_CLOSE or anim == ANIM_ON or anim == ANIM_OFF

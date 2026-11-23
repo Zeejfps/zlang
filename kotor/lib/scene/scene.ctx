@@ -195,7 +195,7 @@ namespace scene {
                 } }
                 mat.sort = mats[i].sort
                 if mat.diffuse == null and diffuse.len > 0 and w.log.objects {
-                    world::prefix{ w = &w }
+                    world::prefix{ &w }
                     _ = @fmt(&w.io, "model {}: no texture {}\n", name, diffuse)
                 }
                 // A door's `trans` plane (texture NULL) is the transition marker the toolset shows;
@@ -255,7 +255,7 @@ namespace scene {
         let hit = found ifnull {
             map::put{ m = &sc.missing_anims, key, value = 1 } iferr {}
             if w.log.trace {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "scene: no animation {} on {}\n", name, model.name)
             }
             return null
@@ -441,7 +441,7 @@ namespace scene {
             let mut index: usize = 0
             if have != null { index = have } else {
                 let made = visual::create{ &sc, &w, &dev, o } iferr err{ error } {
-                    world::prefix{ w = &w }
+                    world::prefix{ &w }
                     _ = @fmt(&w.io, "visual {} ({}): {}\n", o.id, o.tag, error)
                     null
                 }

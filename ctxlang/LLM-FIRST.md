@@ -103,13 +103,50 @@ entries are cited by number, e.g. F#24) and [kotor/docs/tooling-gaps.md](../koto
 
 ## 2. Make the safe form the easy form
 
-- [ ] **2.1 Split borrows.**
+- [x] **2.1 Split borrows.**
   `f{ &e, xs = &e.list }` is two mut references to `e`, so the World and the VM live behind raw
   `*mut` pointers that the checker doesn't track at all: the exclusivity rule pushes the
   program's central objects out of checking. Allow disjoint places of one root in one call (and
   a bind beside a `&` of what it doesn't hold), keeping the check where they overlap.
   - Details: F#4 (5 write-ups), F#27, F#28; [spec §3.1](spec.md#31-exclusivity).
   - *Done when:* `f{ &e, xs = &e.list }` compiles where `f` can't reach `list` through `e` (or the rule for what's allowed is in the spec), and kotor's World is passed as a checked `mut` field somewhere it was a raw pointer.
+  - *Done:* [spec §3.1, rule 8](spec.md#31-exclusivity): a call or a bind of a function with a
+    body may be given mut references that overlap, where what the function does through one
+    field doesn't overlap what it changes through the other. It is 1.1's summaries, by field
+    and through the functions called, which now also keep an address that is given out
+    (returned, or passed to a function that only hands it on) as a use of the place, and where
+    each access is. A function value, an extern fn and a capability's field are given nothing
+    that overlaps: no body to look at. A bound function's places count as changed whole, so a
+    bind beside a `&` of what it doesn't hold is allowed, and two binds over one place aren't.
+    The error names the callee's two accesses, e.g. ``two mut references to `e` in one call:
+    `f` reads `e.list.len` through its field `e` at 7:11, and changes `e.list.len` through its
+    field `xs` at 8:15 (the access is in `push`); pass one of them, or change `f` to use
+    `e.list.len` through one of them only``.
+    Excluded, and why: a bind beside a `&` of a place it holds, which the callee uses
+    (`tick{ &world, engine }`). The bound function runs whenever the callee calls it, whatever
+    the callee holds of the place by then (a slice of a list the bound function grows), and the
+    checker follows no pointers. The answer is to bind where the function is called, in a call
+    that isn't given the place. Memory through a pointer or a slice stored in the places isn't
+    compared either, as everywhere (§3.1, rule 6).
+    Found on the way, and fixed: a bound function called with a place it holds
+    (`h{ b = &n }`) was not checked at all; and two holes in 1.1's summaries, a `match &p`
+    without a binding by reference (not counted as reading `p`) and an `@fmt` to a sink in a
+    callee's statement (not counted as changing it).
+    KOTOR: the World and ncsrun's VM stub were raw pointers because one engine bind, made at
+    the root, travelled beside them through 72 signatures. The engine is now bound where a
+    script runs (`scripts::run_program`, `scripts::resume`, ExecuteScript; ncsrun's two
+    calls), the `engine` field is gone, and the world is a checked `mut w` on every path from
+    `world::tick` down, the three `let wp: *mut World = &w` and ncsrun's `stub: *mut Stub`
+    (7 fns) included; `world::prefix` (211 calls) and savetest's tests take `mut w` too, and
+    `dlg::free{ &w, d = &w.conversation.d }` takes the dialogue as a `mut` field by this rule,
+    the one call in KOTOR that passed a part of the world raw beside it. What a script changes
+    now counts as a change through `&w` for argument order (1.1), which the raw pointer hid.
+    Still raw: the root's `*mut World` from `world::make` (the World is on the heap, and a
+    place through a pointer isn't checked); heap objects (`*mut obj::Object`, `Fighter`,
+    `Action`, GUI panels); `*World` and `*MessageLog` read-only views, which exist to avoid a
+    copy; allocator state (`heap: *mut heap::Heap`), which std's containers hold as a pointer.
+    F#27 (a `mut` argument that is a temporary) and F#28 (locking through a read-only pointer)
+    are other problems and stay in 8.4.
 
 ## 3. First-draft traps
 
@@ -269,10 +306,11 @@ What a model writes by default should compile, or fail with the exact fix.
   reliable.
   - *Done when:* `ctxc fmt` is idempotent over std, ctxc and kotor.
 
-- [ ] **8.4 Remaining friction.** Enum ordering and counts (F#10), `&fn` as a struct field and
-  bind records freed (F#13), slices staying `[]mut` until freed (F#22, F#25), tuples (F#29), scoped
-  lock (F#23), hex literals in the spec (F#16), array lengths from any folded const (F#37). Take
-  them as they come up; each has its entry in FRICTION.md.
+- [ ] **8.4 Remaining friction.** Enum ordering and counts (F#10), `&fn` as a struct field
+  (F#13), slices staying `[]mut` until freed (F#22, F#25), a `mut` argument that is a temporary
+  (F#27), locking through a read-only pointer (F#28), tuples (F#29), scoped lock (F#23), hex
+  literals in the spec (F#16), array lengths from any folded const (F#37). Take them as they
+  come up; each has its entry in FRICTION.md.
 
 ## Not adding
 

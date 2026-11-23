@@ -25,7 +25,7 @@ namespace container {
         p.opening = false
         play{ &w, o, p, anim = ANIM_OPEN }
         if w.log.objects {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "placeable {} {} opens its inventory\n", o.id, o.tag)
         }
         events::post{ &w, delay_ms = 0, caller = user, target = placeable, payload = events::Payload::script{ e = events::script_event{ kind = events::OPEN, object = user } } }

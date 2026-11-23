@@ -1,7 +1,7 @@
 // Which engine logs are on, and the line prefix they share: `[frame seconds] `. Lines go to
 // standard output through tools/common's @fmt writers for Io.
 //
-//   if w.log.scripts { elog::prefix{ w = &w }; _ = @fmt(&w.io, "script {} self={}\n", name, self) }
+//   if w.log.scripts { elog::prefix{ &w }; _ = @fmt(&w.io, "script {} self={}\n", name, self) }
 namespace elog {
     struct Log {
         scripts: bool = false,  // each script run and its result, faults always

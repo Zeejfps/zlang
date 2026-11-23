@@ -86,7 +86,7 @@ namespace stealth {
         c.stealth = on
         let at = o.position
         if w.log.actions {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             let what = if on { "enters" } else { "leaves" }
             _ = @fmt(&w.io, "stealth: {} ({}) {} stealth mode\n", o.tag, id, what)
         }
@@ -376,7 +376,7 @@ namespace stealth {
         let left = if a.stealth_xp_current < a.stealth_xp_decrement { 0 } else { a.stealth_xp_current - a.stealth_xp_decrement }
         a.stealth_xp_current = if left > a.stealth_xp_max { a.stealth_xp_max } else { left }
         if w.log.actions and was != a.stealth_xp_current {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "stealth: {} ({}) noticed the party: stealth XP {} -> {}\n", o.tag, id, was, a.stealth_xp_current)
         }
     }

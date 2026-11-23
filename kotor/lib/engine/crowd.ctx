@@ -138,7 +138,7 @@ namespace crowd {
         o.position = home
         let p = spot ifnull { return false }
         if w.log.actions {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "crowd: {} pushes {} aside to {} {}\n", mover, other, p.x, p.y)
         }
         movement::place{ &w, id = other, at = p }
@@ -240,7 +240,7 @@ namespace crowd {
         }
         c3.path_next = 0
         if w.log.actions {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "crowd: {} walks round {} on side {} ({} corners)\n", id, blocker, if c3.avoid_side { 1 } else { 0 }, use.count)
         }
         if met != obj::INVALID {
@@ -255,7 +255,7 @@ namespace crowd {
         let o = world::object{ w = &w, id } ifnull { return }
         o.ctx.found_enemy = enemy
         if w.log.actions {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "crowd: {} runs k_def_pathfail01 (enemy {})\n", id, enemy)
         }
         events::post{ &w, delay_ms = 0, caller = id, target = id, payload = events::Payload::run_script{ name = resref::truncate{ name = "k_def_pathfail01" } } }

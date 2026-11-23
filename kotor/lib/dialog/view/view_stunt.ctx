@@ -12,7 +12,7 @@ namespace dlgview {
         let part = scene::add_part{ &sc, loaded = index, parent = -1, hook = "" } iferr { return }
         v.camera_model = CameraModel{ loaded = true, part, node, model }
         if w.log.dialog {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "dialog camera model {} (hook node {})\n", name, node)
         }
     }
@@ -28,7 +28,7 @@ namespace dlgview {
         p.anim_len = 0
         let ok = scene::play{ &sc, &w, part = v.camera_model.part, name, looping = animname::loops_in{ w = &w, id = number }, speed = 1.0, transition = 0.0 }
         if ok and w.log.dialog {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "dialog camera animation {} ({})\n", number, name)
         }
         return ok
@@ -87,7 +87,7 @@ namespace dlgview {
         v.swaps[v.swap_count] = Swap{ id, visual = vi, original = 0, active = true }
         v.swap_count = v.swap_count + 1
         if w.log.dialog {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "dialog stunt model {} on {}\n", model, id)
         }
         return true

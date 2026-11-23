@@ -294,7 +294,7 @@ namespace rt_party {
             }
             b = b + 1
         }
-        world::prefix{ w = &w }
+        world::prefix{ &w }
         _ = @fmt(&w.io, "SwitchPlayerCharacter {}: the player is {} ({})\n", n, next, no.tag)
         return true
     }
@@ -342,7 +342,7 @@ namespace rt_party {
             if resref::is_empty{ r = w.party.templates[s] } { return obj::INVALID }
             let mut blueprint = w.party.templates[s]
             id = tmpl::spawn{ &w, kind = obj::Kind::creature, template = resref::bytes{ r = &blueprint }, position = l.position, orientation = facing } iferr err{ error } {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "SpawnAvailableNPC {}: {}\n", n, error)
                 return obj::INVALID
             }

@@ -140,7 +140,7 @@ namespace ingame {
             return
         }
         if w.log.scripts and (s.flags & SUM_PANEL) != 0 {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "status summary icons: flags {} credits {} xp {} stealth {} light {} dark {}\n", s.flags, s.credits, s.xp, s.stealth_xp, s.light, s.dark)
         }
         play_summary_sounds{ &ui }
@@ -161,7 +161,7 @@ namespace ingame {
     fn open_summary { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device } {
         let g = &ui.gui
         let id = gui::open{ g, fs = &w.fs, &dev, name = "statussummary", mode = gui::Mode::dialog, modal = true } iferr err{ error } {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "kotor: status summary: {}\n", error)
             clear_summary{ s = &ui.summary }
             return
@@ -239,7 +239,7 @@ namespace ingame {
         }
         gui::set_focus{ g, panel = id, tag = "BTN_OK" }
         if w.log.scripts {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "status summary: flags {} credits {} xp {} stealth {} light {} dark {}\n", s.flags, s.credits, s.xp, s.stealth_xp, s.light, s.dark)
         }
         // Tutorial pop-up 14 is offered here too; tutorial pop-ups are not built yet.

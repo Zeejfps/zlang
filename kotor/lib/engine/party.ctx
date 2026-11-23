@@ -273,7 +273,7 @@ namespace party {
         }
         _ = actions::add{ &w, id, action = actions::make{ kind = actions::Kind::rest }, force = false }
         if w.log.actions {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "rest {}: rests\n", id)
         }
         return true
@@ -281,7 +281,7 @@ namespace party {
 
     fn refuse_rest { mut w: world::World, id: u32, why: []u8 } -> bool {
         if w.log.actions {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "rest {}: refused ({})\n", id, why)
         }
         return false

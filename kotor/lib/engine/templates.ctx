@@ -32,7 +32,7 @@ namespace tmpl {
         o.position = position
         world::set_orientation{ o, v = orientation }
         if w.log.objects {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "spawn {} {} tag={}\n", o.id, template, o.tag)
         }
         return o.id

@@ -18,7 +18,7 @@ namespace mg_game {
 
     // Runs the scripts the run has raised since the last call. A slot without a script gets the
     // engine's default where there is one (death).
-    fn run_events { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine } {
+    fn run_events { mut w: world::World, mut vm: nwvm::Vm } {
         let run = w.minigame ifnull { return }
         let mut guard: i32 = 0
         while guard < 256 {
@@ -33,15 +33,15 @@ namespace mg_game {
             }
             // an OnDamage script asks for the change it is about to take (GetLastHPChange)
             if e.slot == mg::ON_DAMAGE { run.last_hp_change = e.value }
-            _ = scripts::run{ &w, &vm, engine, name = script, self = e.object }
+            _ = scripts::run{ &w, &vm, name = script, self = e.object }
         }
     }
 
     // One step of the run after the world's: physics, then the scripts it raised.
-    fn step { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, dt: f32 } {
+    fn step { mut w: world::World, mut vm: nwvm::Vm, dt: f32 } {
         let run = w.minigame ifnull { return }
         mg::step_run{ run, dt }
-        run_events{ &w, &vm, engine }
+        run_events{ &w, &vm }
     }
 
     // Forgets the run when its module is left (its memory is the module's).

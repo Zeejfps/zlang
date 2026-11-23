@@ -104,8 +104,6 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } 
         slice::empty(u8){}
     }
     let mut stub = nwstub::new{ heap = &work, actions = opts.actions, log }
-    let stub_at = &stub
-    let engine = nwstub::call{ &stub, _ }
     let mut report = Report{
         scripts = Tally{ .. }, actions = Tally{ .. }, shown = Tally{ .. }, files = 0, unique = 0, failed = 0, ticks = 0,
     }
@@ -114,9 +112,9 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } 
         stub.scripts = preload{ &io, &fs, &keep, paths = list::items{ list = paths } } ifnull { return out_of_memory{ &io } }
     }
     let code = if paths.len > 0 {
-        from_paths{ &io, &fs, &sdl, &vm, &work, &keep, &report, stub = stub_at, opts, engine, paths = list::items{ list = paths } }
+        from_paths{ &io, &fs, &sdl, &vm, &work, &keep, &report, &stub, opts, paths = list::items{ list = paths } }
     } else {
-        from_game{ &io, &fs, &mem, &sdl, &vm, &work, &keep, &report, stub = stub_at, opts, engine }
+        from_game{ &io, &fs, &mem, &sdl, &vm, &work, &keep, &report, &stub, opts }
     }
     if code != 0 { return code }
 
@@ -170,18 +168,18 @@ fn preload { mut io: Io, mut fs: Fs, mut keep: arena::Arena, paths: [][]u8 } -> 
 // Every .ncs file given, or found in a directory given, in name order.
 fn from_paths {
     mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut vm: nwvm::Vm, mut work: arena::Arena, mut keep: arena::Arena,
-    mut report: Report, stub: *mut nwstub::Stub, opts: Options, engine: nwvm::Engine, paths: [][]u8,
+    mut report: Report, mut stub: nwstub::Stub, opts: Options, paths: [][]u8,
 } -> i32 {
     let mut i: usize = 0
     while i < paths.len {
         let p = paths[i]
         i = i + 1
         if ends_with{ s = p, suffix = ".ncs" } {
-            from_file{ &io, &fs, &sdl, &vm, &work, &report, stub, opts, engine, path = p }
+            from_file{ &io, &fs, &sdl, &vm, &work, &report, &stub, opts, path = p }
             continue
         }
         if ends_with{ s = p, suffix = ".sit" } {
-            from_situation{ &io, &fs, &sdl, &vm, &work, &report, stub, opts, engine, path = p }
+            from_situation{ &io, &fs, &sdl, &vm, &work, &report, &stub, opts, path = p }
             continue
         }
         let names = fs::list{ &fs, heap = &keep, realloc = arena::alloc, path = p } iferr err{ error } {
@@ -192,7 +190,7 @@ fn from_paths {
         while k < names.len {
             if ends_with{ s = names[k], suffix = ".ncs" } {
                 let joined = join{ heap = &keep, dir = p, name = names[k] } ifnull { return out_of_memory{ &io } }
-                from_file{ &io, &fs, &sdl, &vm, &work, &report, stub, opts, engine, path = joined }
+                from_file{ &io, &fs, &sdl, &vm, &work, &report, &stub, opts, path = joined }
             }
             k = k + 1
         }
@@ -202,9 +200,9 @@ fn from_paths {
 
 fn from_file {
     mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut vm: nwvm::Vm, mut work: arena::Arena, mut report: Report,
-    stub: *mut nwstub::Stub, opts: Options, engine: nwvm::Engine, path: []u8,
+    mut stub: nwstub::Stub, opts: Options, path: []u8,
 } {
-    nwstub::clear{ stub }
+    nwstub::clear{ &stub }
     arena::reset{ heap = &work }
     report.files = report.files + 1
     let bytes = fs::read_all{ &fs, heap = &work, realloc = arena::alloc, path } iferr err{ error } {
@@ -212,7 +210,7 @@ fn from_file {
         report.failed = report.failed + 1
         return
     }
-    run_script{ &io, &sdl, &vm, &work, &report, stub, opts, engine, name = script_name{ path }, bytes }
+    run_script{ &io, &sdl, &vm, &work, &report, &stub, opts, name = script_name{ path }, bytes }
 }
 
 error bad_situation{ at: usize }
@@ -221,13 +219,13 @@ error bad_situation{ at: usize }
 // nwvm::make_situation, checked to give back the fields it was made from, and resumed.
 fn from_situation {
     mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut vm: nwvm::Vm, mut work: arena::Arena, mut report: Report,
-    stub: *mut nwstub::Stub, opts: Options, engine: nwvm::Engine, path: []u8,
+    mut stub: nwstub::Stub, opts: Options, path: []u8,
 } {
-    nwstub::clear{ stub }
+    nwstub::clear{ &stub }
     arena::reset{ heap = &work }
     report.files = report.files + 1
     let name = script_name{ path }
-    load_situation{ &io, &fs, &sdl, &vm, &work, &report, stub, opts, engine, path, name } iferr err{ error } {
+    load_situation{ &io, &fs, &sdl, &vm, &work, &report, &stub, opts, path, name } iferr err{ error } {
         _ = @fmt(&io, "{}: {}\n", path, error)
         report.failed = report.failed + 1
     }
@@ -235,7 +233,7 @@ fn from_situation {
 
 fn load_situation {
     mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut vm: nwvm::Vm, mut work: arena::Arena, mut report: Report,
-    stub: *mut nwstub::Stub, opts: Options, engine: nwvm::Engine, path: []u8, name: []u8,
+    mut stub: nwstub::Stub, opts: Options, path: []u8, name: []u8,
 } -> ! {
     let data = try fs::read_all{ &fs, heap = &work, realloc = arena::alloc, path }
     let code_path = copy{ heap = &work, b = path } ifnull { return alloc::out_of_memory }
@@ -281,9 +279,9 @@ fn load_situation {
     if opts.verbose { _ = @fmt(&io, "{}: {} cells, BP {}, resuming at {}\n", name, n, bp, ip) }
     let mut line: [512]u8
     let t0 = sdl::counter{ &sdl }
-    let done = nwvm::resume{ &vm, situation = s, self = nwstub::SELF, engine }
+    let done = nwvm::resume{ &vm, situation = s, self = nwstub::SELF, engine = nwstub::call{ &stub, _ } }
     report.ticks = report.ticks + (sdl::counter{ &sdl } - t0)
-    flush_log{ &io, stub }
+    flush_log{ &io, &stub }
     let fine = done is ok
     if opts.results { result{ &io, name, what = "action", vm, ok = fine, value = null } }
     tally{ &io, t = &report.actions, shown = &report.shown, vm, ok = fine, opts, line = line[..] }
@@ -303,7 +301,7 @@ fn same_cell { a: nwvm::SavedCell, b: nwvm::SavedCell } -> bool {
 // module's own. Each distinct content runs once.
 fn from_game {
     mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, mut vm: nwvm::Vm, mut work: arena::Arena,
-    mut keep: arena::Arena, mut report: Report, stub: *mut nwstub::Stub, opts: Options, engine: nwvm::Engine,
+    mut keep: arena::Arena, mut report: Report, mut stub: nwstub::Stub, opts: Options,
 } -> i32 {
     let mut h = heap::new{ &mem }
     let mut rm = res::open{ &fs, heap = &h, game = opts.game } iferr err{ error } {
@@ -315,7 +313,7 @@ fn from_game {
 
     // The global search's scripts, then each module's: modules/ holds <m>.rim and <m>_s.rim, or
     // <m>.mod.
-    from_search{ &io, &fs, &sdl, &vm, &work, &report, &seen, &h, rm, stub, opts, engine, module = false } iferr { return out_of_memory{ &io } }
+    from_search{ &io, &fs, &sdl, &vm, &work, &report, &seen, &h, rm, &stub, opts, module = false } iferr { return out_of_memory{ &io } }
     let names = fs::list{ &fs, heap = &keep, realloc = arena::alloc, path = rm.dirs.modules } iferr err{ error } {
         _ = @fmt(&io, "ncsrun: {}: {}\n", rm.dirs.modules, error)
         return 1
@@ -333,7 +331,7 @@ fn from_game {
             _ = @fmt(&io, "ncsrun: can't mount module {}: {}\n", module, error)
             continue
         }
-        from_search{ &io, &fs, &sdl, &vm, &work, &report, &seen, &h, rm, stub, opts, engine, module = true } iferr { return out_of_memory{ &io } }
+        from_search{ &io, &fs, &sdl, &vm, &work, &report, &seen, &h, rm, &stub, opts, module = true } iferr { return out_of_memory{ &io } }
     }
     res::unmount_module{ &fs, &rm }
     return 0
@@ -360,8 +358,8 @@ fn ascii_eq { a: []u8, b: []u8 } -> bool {
 // The scripts the search finds now: with `module`, only those in the module's own archives.
 fn from_search {
     mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut vm: nwvm::Vm, mut work: arena::Arena, mut report: Report,
-    mut seen: map::Map(u64, u8, arena::Arena), mut h: heap::Heap, rm: res::Manager, stub: *mut nwstub::Stub,
-    opts: Options, engine: nwvm::Engine, module: bool,
+    mut seen: map::Map(u64, u8, arena::Arena), mut h: heap::Heap, rm: res::Manager, mut stub: nwstub::Stub,
+    opts: Options, module: bool,
 } -> ! {
     let found = try res::list_type{ rm, kind = restype::Type::ncs, realloc = heap::alloc, heap = &h }
     defer _ = alloc::resize(res::Found, heap::Heap){ realloc = heap::alloc, heap = &h, mem = found, count = 0 }
@@ -372,7 +370,7 @@ fn from_search {
         let in_module = f.loc.class == res::Class::rim or f.loc.class == res::Class::erf2
         if module != in_module { continue }
         report.files = report.files + 1
-        nwstub::clear{ stub }
+        nwstub::clear{ &stub }
         arena::reset{ heap = &work }
         let bytes = res::read{ &fs, rm, loc = f.loc, realloc = arena::alloc, heap = &work } iferr err{ error } {
             _ = @fmt(&io, "{}.ncs: {}\n", resref::bytes{ r = &f.name }, error)
@@ -384,14 +382,14 @@ fn from_search {
         try map::put{ m = &seen, key, value = 1 }
         // The program views its name: a copy that lives as long as the script's arena.
         let name = copy{ heap = &work, b = resref::bytes{ r = &f.name } } ifnull { return alloc::out_of_memory }
-        run_script{ &io, &sdl, &vm, &work, &report, stub, opts, engine, name, bytes }
+        run_script{ &io, &sdl, &vm, &work, &report, &stub, opts, name, bytes }
     }
 }
 
 // Decodes one script, runs it and its actions, and counts how each run ends.
 fn run_script {
     mut io: Io, mut sdl: sdl::Sdl, mut vm: nwvm::Vm, mut work: arena::Arena, mut report: Report,
-    stub: *mut nwstub::Stub, opts: Options, engine: nwvm::Engine, name: []u8, bytes: []u8,
+    mut stub: nwstub::Stub, opts: Options, name: []u8, bytes: []u8,
 } {
     let program = nwvm::load(arena::Arena){ realloc = arena::alloc, heap = &work, name, bytes } iferr err{ error } {
         _ = @fmt(&io, "{}: {}\n", name, error)
@@ -403,23 +401,23 @@ fn run_script {
     let mut r: u32 = 0
     while r < opts.repeat {
         r = r + 1
-        nwstub::clear{ stub }
+        nwstub::clear{ &stub }
         if opts.verbose { _ = @fmt(&io, "{}:\n", name) }
         let t0 = sdl::counter{ &sdl }
-        let ran = nwvm::run{ &vm, program = &program, self = nwstub::SELF, engine }
+        let ran = nwvm::run{ &vm, program = &program, self = nwstub::SELF, engine = nwstub::call{ &stub, _ } }
         report.ticks = report.ticks + (sdl::counter{ &sdl } - t0)
-        flush_log{ &io, stub }
+        flush_log{ &io, &stub }
         let ok = ran is ok
         if opts.results { result{ &io, name, what = "script", vm, ok, value = ran iferr { null } } }
         tally{ &io, t = &report.scripts, shown = &report.shown, vm, ok, opts, line = line[..] }
         // The actions it handed on, and theirs, oldest first.
         while true {
-            let s = nwstub::next_action{ stub } ifnull { break }
+            let s = nwstub::next_action{ &stub } ifnull { break }
             if opts.verbose { _ = @fmt(&io, "  action at {}:\n", nwvm::Hex{ n = s.program.at[s.resume] }) }
             let t1 = sdl::counter{ &sdl }
-            let done = nwvm::resume{ &vm, situation = s, self = nwstub::SELF, engine }
+            let done = nwvm::resume{ &vm, situation = s, self = nwstub::SELF, engine = nwstub::call{ &stub, _ } }
             report.ticks = report.ticks + (sdl::counter{ &sdl } - t1)
-            flush_log{ &io, stub }
+            flush_log{ &io, &stub }
             let fine = done is ok
             if opts.results { result{ &io, name, what = "action", vm, ok = fine, value = null } }
             tally{ &io, t = &report.actions, shown = &report.shown, vm, ok = fine, opts, line = line[..] }
@@ -428,7 +426,7 @@ fn run_script {
 }
 
 // With -v: the routine calls the stub logged.
-fn flush_log { mut io: Io, stub: *mut nwstub::Stub } {
+fn flush_log { mut io: Io, mut stub: nwstub::Stub } {
     if stub.log.len > 0 {
         io::write{ &io, to = io::Stream::out, bytes = stub.log.buf[..stub.log.len] }
         stub.log.len = 0

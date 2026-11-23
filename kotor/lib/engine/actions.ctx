@@ -115,7 +115,7 @@ namespace actions {
             return false
         }
         if w.log.actions {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "action {} queued on {} ({} queued)\n", @as(u32, a.kind), id, o.actions.len)
         }
         return true
@@ -233,7 +233,7 @@ namespace actions {
 
     // Runs the head of the object's queue (actions.md 1.3): instant actions chain within the
     // frame; a running action, a retry, a move or a jump ends the frame's run.
-    fn run { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32 } {
+    fn run { mut w: world::World, mut vm: nwvm::Vm, id: u32 } {
         let mut steps: u32 = 0
         while steps < 16 {
             steps = steps + 1
@@ -243,9 +243,9 @@ namespace actions {
                 a.has_started = true
                 a.started = clock::now_ms{ c = w.clock }
             }
-            let status = step{ &w, &vm, engine, id, a = &a }
+            let status = step{ &w, &vm, id, a = &a }
             if w.log.actions and status != Status::running {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "action {} on {}: {}\n", @as(u32, a.kind), id, @as(u32, status))
             }
             let back = world::object{ w = &w, id } ifnull {
@@ -268,12 +268,12 @@ namespace actions {
     }
 
     // One action's handler.
-    fn step { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, a: *mut Action } -> Status {
+    fn step { mut w: world::World, mut vm: nwvm::Vm, id: u32, a: *mut Action } -> Status {
         let o = world::object{ w = &w, id } ifnull { return Status::failed }
         let c = obj::creature{ o }
         if c != null and c.dead { return Status::failed }
         match a.kind {
-            do_command => { return do_command{ &w, &vm, engine, id, a } }
+            do_command => { return do_command{ &w, &vm, id, a } }
             wait => { return wait{ &w, a } }
             play_animation => { return play_animation{ &w, id, a } }
             move_to_point => { return movement::move_to_point{ &w, id, a } }
@@ -281,11 +281,11 @@ namespace actions {
             jump_to_object => { return jump_to_object{ &w, id, a } }
             face_object => { return face_object{ &w, id, a } }
             face_point => { return face_point{ &w, id, a } }
-            open_door => { return doors::open_door{ &w, &vm, engine, id, a } }
-            close_door => { return doors::close_door{ &w, &vm, engine, id, a } }
-            use_object => { return doors::use_object{ &w, &vm, engine, id, a } }
-            open_lock => { return doors::open_lock{ &w, &vm, engine, id, a } }
-            lock => { return doors::lock_object{ &w, &vm, engine, id, a } }
+            open_door => { return doors::open_door{ &w, &vm, id, a } }
+            close_door => { return doors::close_door{ &w, &vm, id, a } }
+            use_object => { return doors::use_object{ &w, &vm, id, a } }
+            open_lock => { return doors::open_lock{ &w, &vm, id, a } }
+            lock => { return doors::lock_object{ &w, &vm, id, a } }
             dialog_object => { return dialog_object{ &w, id, a } }
             resume_conversation => { return resume_conversation{ &w } }
             follow => { return follow{ &w, id, a, leader = false } }
@@ -298,13 +298,13 @@ namespace actions {
             pickup_item => { return equip::pickup_action{ &w, id, a } }
             equip_item => { return equip::equip_action{ &w, id, a } }
             unequip_item => { return equip::unequip_action{ &w, id, a } }
-            cast_spell => { return fight::cast_spell{ &w, &vm, engine, id, a } }
-            disable_trap | recover_trap | flag_trap | examine_trap => { return traps::work_on_trap{ &w, &vm, engine, id, a } }
-            set_trap => { return traps::set_trap{ &w, &vm, engine, id, a } }
+            cast_spell => { return fight::cast_spell{ &w, &vm, id, a } }
+            disable_trap | recover_trap | flag_trap | examine_trap => { return traps::work_on_trap{ &w, &vm, id, a } }
+            set_trap => { return traps::set_trap{ &w, &vm, id, a } }
             else => {
                 // Not written yet: done, so queues behind it keep moving.
                 if w.log.actions {
-                    world::prefix{ w = &w }
+                    world::prefix{ &w }
                     _ = @fmt(&w.io, "action {} on {}: not implemented\n", @as(u32, a.kind), id)
                 }
                 return Status::done
@@ -315,10 +315,10 @@ namespace actions {
     // ---- handlers
 
     // DOCOMMAND (actions.md 3.10): run the situation as the object, now.
-    fn do_command { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, a: *mut Action } -> Status {
+    fn do_command { mut w: world::World, mut vm: nwvm::Vm, id: u32, a: *mut Action } -> Status {
         if a.params[0] is situation{ s } {
             a.params[0] = Param::none
-            scripts::resume{ &w, &vm, engine, situation = s, self = id }
+            scripts::resume{ &w, &vm, situation = s, self = id }
             scripts::free_situation{ &w, s }
             return Status::done
         }
@@ -513,7 +513,7 @@ namespace actions {
         if a.params[1] is string{ s } { dialog = resref::truncate{ name = s } }
         let t = world::object{ w = &w, id = target } ifnull {
             if w.log.actions {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "talk {} to {}: no such object\n", id, target)
             }
             w.conversation.pending = false
@@ -529,7 +529,7 @@ namespace actions {
         if lying and not w.conversation.active { return Status::running }
         if not t.commandable or w.conversation.active {
             if w.log.actions {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 let why1 = if t.commandable { "" } else { "not commandable" }
                 let why2 = if w.conversation.active { "a conversation is on" } else { "" }
                 _ = @fmt(&w.io, "talk {} to {}: refused ({}{})\n", id, target, why1, why2)

@@ -123,11 +123,11 @@ namespace events {
     }
 
     // Delivers every event due now, including those posted while delivering (gameloop.md 4.2).
-    fn deliver_due { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine } {
+    fn deliver_due { mut w: world::World, mut vm: nwvm::Vm } {
         let mut guard: u32 = 0
         while guard < 100000 {
             let ev = pop_due{ &w } ifnull { return }
-            deliver{ &w, &vm, engine, ev }
+            deliver{ &w, &vm, ev }
             guard = guard + 1
         }
     }
@@ -147,13 +147,13 @@ namespace events {
         list::clear{ list = &w.queue.events }
     }
 
-    fn deliver { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, ev: Event } {
+    fn deliver { mut w: world::World, mut vm: nwvm::Vm, ev: Event } {
         w.stats.events = w.stats.events + 1
         let o = world::object{ w = &w, id = ev.target } ifnull {
             // HOOK(minigames): a minigame object (not a world object) can delay a command too: the
             // turret's player object does when the Hawk falls, and its situation still runs.
             if ev.payload is situation{ s } and mg::is_object_id{ id = ev.target } {
-                scripts::resume{ &w, &vm, engine, situation = s, self = ev.target }
+                scripts::resume{ &w, &vm, situation = s, self = ev.target }
             }
             free_payload{ &w, payload = ev.payload }
             return
@@ -161,17 +161,17 @@ namespace events {
         match ev.payload {
             situation{ s } => {
                 if w.log.events {
-                    world::prefix{ w = &w }
+                    world::prefix{ &w }
                     _ = @fmt(&w.io, "event situation {} -> {}\n", s.program.name, ev.target)
                 }
-                scripts::resume{ &w, &vm, engine, situation = s, self = ev.target }
+                scripts::resume{ &w, &vm, situation = s, self = ev.target }
                 scripts::free_situation{ &w, s }
             }
             script{ e } => {
                 // A placeable's death plays its destroyed animation, which sounds placeableobjsnds'
                 // Destroyed (objsound.ctx); every way it dies posts this event at once.
                 if e.kind == DEATH and o.kind == obj::Kind::placeable { objsound::play{ &w, id = o.id, column = objsound::DESTROYED } }
-                run_script_event{ &w, &vm, engine, o, e, caller = ev.caller }
+                run_script_event{ &w, &vm, o, e, caller = ev.caller }
             }
             destroy{ death } => {
                 // Only DestroyObject queues this for an item (a used-up one goes at once): one a party creature
@@ -189,18 +189,18 @@ namespace events {
                 world::destroy{ &w, id = ev.target }
             }
             transition{ token } => { modload::transition_arrived{ &w, id = ev.target, token } }
-            run_script{ name } => { _ = scripts::run{ &w, &vm, engine, name, self = ev.target } }
-            spell_impact{ spell, object, at } => { fight::impact{ &w, &vm, engine, id = ev.target, spell, target = object, at } }
+            run_script{ name } => { _ = scripts::run{ &w, &vm, name, self = ev.target } }
+            spell_impact{ spell, object, at } => { fight::impact{ &w, &vm, id = ev.target, spell, target = object, at } }
         }
     }
 
     // Sets the target's context from a script event and runs the slot its type names
     // (objects.md, "How a script slot gets run"; gameloop.md 4.4).
-    fn run_script_event { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, o: *mut obj::Object, e: values::ScriptEvent, caller: u32 } {
+    fn run_script_event { mut w: world::World, mut vm: nwvm::Vm, o: *mut obj::Object, e: values::ScriptEvent, caller: u32 } {
         let id = o.id
         let slot = slot_for{ kind = o.kind, event = e.kind } ifnull {
             if w.log.events {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "event {} to {}: no slot\n", e.kind, id)
             }
             return
@@ -236,7 +236,7 @@ namespace events {
             o.ctx.perceived_inaudible = e.ints[0] & perception::INAUDIBLE != 0
         }
         if w.log.events {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "event {} to {} ({}) from {}\n", e.kind, id, o.tag, caller)
         }
         // A click on a transition door, or the PC entering a transition trigger, starts the
@@ -251,7 +251,7 @@ namespace events {
         // A trap trigger decides itself whether what entered sets it off; its OnEnter runs only when
         // it does (CSWSTrigger::EventHandler 0x0058f140, movement.md 5.2; lib/engine/traps.ctx).
         if e.kind == OBJECT_ENTER and traps::of{ o } != null {
-            traps::entered{ &w, &vm, engine, id, who = e.objects[0] }
+            traps::entered{ &w, &vm, id, who = e.objects[0] }
             return
         }
         if (o.kind == obj::Kind::module or o.kind == obj::Kind::area) and e.kind == HEARTBEAT {
@@ -267,11 +267,11 @@ namespace events {
         if e.kind == DIALOGUE and (o.kind == obj::Kind::creature or o.kind == obj::Kind::placeable or o.kind == obj::Kind::door) {
             let own = obj::script{ o, slot }
             if resref::is_empty{ r = own } or resref::matches{ r = own, name = "default" } {
-                _ = scripts::run{ &w, &vm, engine, name = resref::truncate{ name = "k_hen_dialogue01" }, self = id }
+                _ = scripts::run{ &w, &vm, name = resref::truncate{ name = "k_hen_dialogue01" }, self = id }
                 return
             }
         }
-        _ = scripts::run_slot{ &w, &vm, engine, id, slot }
+        _ = scripts::run_slot{ &w, &vm, id, slot }
     }
 
     // The script slot an event type runs on an object of `kind` (null: none).

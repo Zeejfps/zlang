@@ -70,7 +70,7 @@ namespace death {
         d.box = msgbox::show_strref{ g = &ui.gui, &w, &dev, strref = STRREF, cancel = false, what = 0, item = 0 }
         outbox::post{ out = &w.out, note = outbox::Note::fade{ out = true, wait = FADE_WAIT, length = FADE_LENGTH, color = math::vec3::zero{} } }
         if w.log.combat {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "party wiped: slow motion, death camera, box, fade over {} s\n", FADE_WAIT + FADE_LENGTH)
         }
     }
@@ -147,7 +147,7 @@ namespace death {
         if d.ended {
             msgbox::close{ g = &ui.gui, b = &d.box }
             if w.log.combat {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "party wipe over after {} s: to the main menu\n", d.elapsed)
             }
         }

@@ -171,7 +171,7 @@ starting). The shape of what we found:
    `lib/minigame`, which owns the struct and its LYT track/obstacle lists), and the module's
    party should not be spawned in such an area.
 2. **A minigame step in the loop**, taking the frame between world step and render like pazaak's
-   visit, but over several frames: `mg::update{ &m, &w, &vm, engine, input, dt }` and a scene for
+   visit, but over several frames: `mg::update{ &m, &w, &vm, input, dt }` and a scene for
    it; the world's clock keeps running (the scripts use `DelayCommand`, heartbeat and the time of
    day).
 3. **Script routines** `SWMG_*` as a new category file (`rt_mg` already exists for pazaak and is

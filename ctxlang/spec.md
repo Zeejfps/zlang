@@ -57,14 +57,39 @@ v = Vec3{ x = rand{ &rng }, y = rand{ &rng }, z = 0.0 }   // error: both change 
 
 1. Only places (§11) that don't go through a deref are checked. Their root is a local, context field or match binding.
 2. Two places **overlap** if one's steps are a prefix of the other's, with the same root. Any two `[index]` steps count as equal.
-3. A call's **mut references** are each place `p` supplied as `&p` to a `mut` field, and each place `p` held as `&p` by a bound-function argument.
-   - A bind holds every place it takes as `&p`, plus every place held by its `&fn` arguments.
+3. A call's **mut references** are each place `p` supplied as `&p` to a `mut` field, each place `p` held as `&p` by a bound-function argument, and each place held by the bound function that is called.
+   - A bind holds every place it takes as `&p`, plus every place held by its `&fn` arguments, and by the bound function it binds further.
    - A `&fn` local holds every place held by any bind assigned to it.
    - A `&fn` context field holds no checked places.
-4. Two mut references of one call must not overlap. A violation is a compile error.
+4. Two mut references of one call must not overlap, except as rule 8 allows. A violation is a compile error. The places one bound function holds are checked where it is bound, not again where it is passed.
 5. If a read-only field's argument is a place that overlaps a mut reference of the same call, it is passed by copy.
 6. Pointers that don't come from `&p` in the call itself are not checked, and neither are places that go through a deref, a capability's static among them (§15, rule 13), nor capabilities, which never change (§15, rule 8): `os::pipe_read{ &proc, cancel = &proc, ... }` passes one twice.
 7. A task's bind holds its places past the call that starts it, until the task is waited on (§15, Tasks, rules 7 to 9).
+8. **Split borrows.** A call or a bind of a function declared with a body may be given mut references that overlap, where the function uses them apart: what it does through one of the two fields must not overlap what it changes through the other. So a function may be given a struct and one of its parts, `f{ &e, xs = &e.list }`, if it leaves `e.list` alone through `e`, or only reads it through both.
+   - What a function **does through a field** is what its body does with the field's place, and what the functions it calls do with what it gives them of it, as for argument order (§3, rule 10): it reads a place, changes it, or gives out its address. Places are compared as rule 2 compares them, from the place the call gives for the field: with `xs = &e.list`, the function's `xs.len` is `e.list.len`. ctxc keeps three steps of each path a function uses: a deeper place counts as the one three steps down, `e.a.b.c.d` as `e.a.b.c`, here and for argument order.
+   - An address is **given out** when the function returns `&p` or a view of an array `p`, stores it, or gives it to a function that doesn't use it at once. What holds it may use it later, so it counts as reading `p`, and, for a `*mut` or a `[]mut`, as changing it.
+   - A function value, an extern fn or a capability's field may read and change all of what the function gives it (§3, rule 10).
+   - A place a bound-function argument holds counts as changed, all of it, whenever the callee runs. A bound function beside a `&p` is allowed where the callee does nothing through the `&p`'s field that overlaps what the bound function holds: `step{ &w, note = log{ l = &w.log, _ } }`, if `step` leaves `w.log` alone. Two bound functions that hold overlapping places are an error.
+   - The callee must be the function itself, named: a call through a function value, a `&fn` or a capability's field, and a call of an extern fn, have no body to look at, and must not be given overlapping references.
+   - The error names the two accesses that meet: the function, what it does to which place, through which of its fields, and where: the access itself, or the call in the function's body that leads to it, with the function that makes the access. A call's being allowed depends here on the callee's body and those of the functions it calls, so a change there can make the call an error: the message points at the access that did.
+   - Not allowed: a bound function beside a `&p` of a place it holds, which the callee uses too, as in `tick{ &world, engine }` with `engine` bound to `&world`. The bound function may run whenever the callee calls it, whatever the callee holds of `p` by then, such as a slice of a list that the bound function goes on to grow, and pointers aren't followed (rule 6). Bind where the function is called instead, in a call that isn't given the place: `run{ &vm, engine = call{ &world, _ } }`.
+   - Not compared: memory reached through a pointer or a slice that the places hold (rule 6; §2, rule 3). Two references whose places hold the same slice both reach its elements, as two copies of a slice always do; what is compared is the slice itself, so a function that grows a list through one field and reads its items through the other is an error.
+
+```
+struct E { n: i32, list: List }
+fn add { mut e: E, mut xs: List } {
+    e.n = e.n + 1                   // through e: e.n
+    push{ list = &xs }              // through xs: e.list
+}
+add{ &e, xs = &e.list }             // fine: add uses e.list through xs only
+
+fn reset { mut e: E, mut xs: List } {
+    e.list.len = 0                  // through e: e.list.len
+    push{ list = &xs }
+}
+reset{ &e, xs = &e.list }           // error: reset changes `e.list.len` through its field `e`,
+                                    // and reads it through `xs`, in push
+```
 
 ## 4. Binding
 
@@ -707,7 +732,7 @@ let d = v.depth_stencil.depth          // the same bytes, read as another field
 3. A literal sets exactly one field, and the rest of the bytes are zero.
 4. Its zero value is every byte zero, if every field type has a zero value (§11, Initialization).
 5. A const can't hold one (§14).
-6. Two fields of one extern union are the same place for §3.1: passing `&v.color` and `&v.depth_stencil` to `mut` fields of one call is an error. A value read from a field is derived from whatever the union is (§14).
+6. Two fields of one extern union are the same place for §3.1: `&v.color` and `&v.depth_stencil` given to `mut` fields of one call overlap, an error unless the callee uses them apart (§3.1, rule 8). A value read from a field is derived from whatever the union is (§14).
 7. For a union of the language's own, which says which variant it holds, use `union` (§8).
 
 ### Slices

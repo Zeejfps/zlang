@@ -328,7 +328,7 @@ namespace rt_talent {
         }
         let t = find_talent{ &w, id, category, best, ex_type, ex_id }
         if w.log.routines {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "  talent wanted by {}: category {} best {} -> kind {} id {}\n", id, category, best, t.kind, t.id)
         }
         if t.kind == -1 {
@@ -378,7 +378,7 @@ namespace rt_talent {
         let t = values::talent{ s = &w.values, handle = h }
         let has = has_talent{ &w, id, t }
         if w.log.routines {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "  has talent asked of {}: kind {} id {} -> {}\n", id, t.kind, t.id, has)
         }
         try nwvm::push_int{ &vm, v = flag{ b = has } }
@@ -446,7 +446,7 @@ namespace rt_talent {
             if let f = fighter_of{ w = &w, id = me } {
                 if not rules::has_enough_force_points{ tables = w.rules, c = &f.c, spell } {
                     if w.log.actions or w.log.combat {
-                        world::prefix{ w = &w }
+                        world::prefix{ &w }
                         _ = @fmt(&w.io, "{} cannot order {}: not enough Force points ({})\n", me, spell, f.c.fp + f.c.temp_fp)
                     }
                     return
@@ -490,14 +490,14 @@ namespace rt_talent {
             if is_combat_feat{ feat } {
                 queue_feat_attack{ &w, me, feat, target }
             } else if w.log.actions {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "feat {} used by {}: only the combat feats do anything yet\n", feat, me)
             }
         } else if t.id == rules::skill::STEALTH {
             // A skill talent is UseSkill: Stealth toggles stealth mode (actions.md 3.13).
             stealth::toggle{ &w, id = me }
         } else if w.log.actions {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "skill {} used by {}: skill use is not implemented\n", t.id, me)
         }
     }

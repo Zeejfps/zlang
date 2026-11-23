@@ -47,7 +47,7 @@ namespace dlgview {
         load_lip{ &v, &w, name }
         v.lip_elapsed = 0.0
         if w.log.dialog {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "dialog voice {} on {}\n", name, speaker)
         }
         return true
@@ -95,7 +95,7 @@ namespace dlgview {
         }
         v.ambient_bytes = bytes
         if w.log.dialog {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "dialog ambient track {} ({} bytes)\n", name, bytes.len)
         }
     }

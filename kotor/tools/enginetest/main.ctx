@@ -59,16 +59,15 @@ fn run {
     let tlk_path = try path::join(heap::Heap){ realloc = heap::alloc, heap = &h, dir = game, name = "dialog.tlk" }
     w.tlk = tlk::load(heap::Heap){ &fs, realloc = heap::alloc, heap = &h, path = tlk_path } iferr null
     let mut vm = try nwvm::new(heap::Heap){ realloc = heap::alloc, heap = &h, limits = nwvm::LIMITS }
-    let engine = routines::call{ w, _ }
     try modload::enter{ w, name = module }
     arena::reset{ heap = &scratch }
     let mut frame: u64 = 0
     let mut next_reply: usize = 0
     while frame < frames {
         clock::advance{ c = &w.clock, seconds = dt }
-        world::tick{ w, &vm, engine }
-        dlg::update{ w, &vm, engine }
-        pick_reply{ w, &vm, engine, replies, next = &next_reply }
+        world::tick{ w, &vm }
+        dlg::update{ w, &vm }
+        pick_reply{ w, &vm, replies, next = &next_reply }
         outbox::clear{ out = &w.out }
         arena::reset{ heap = &scratch }
         frame = frame + 1
@@ -78,7 +77,7 @@ fn run {
 
 // Plays the player's side of a conversation without a view: the next number of `replies` (a comma
 // list, then 0) picks the reply to take when a list is offered.
-fn pick_reply { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, replies: []u8, mut next: usize } {
+fn pick_reply { mut w: world::World, mut vm: nwvm::Vm, replies: []u8, mut next: usize } {
     if not w.conversation.active or not w.conversation.choices.open or w.conversation.choices.auto { return }
     let mut start: usize = 0
     let mut index: usize = 0
@@ -96,5 +95,5 @@ fn pick_reply { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, rep
         i = i + 1
     }
     next = next + 1
-    dlg::choose{ &w, &vm, engine, choice = pick }
+    dlg::choose{ &w, &vm, choice = pick }
 }

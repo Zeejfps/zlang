@@ -74,7 +74,7 @@ namespace rt_core {
     fn print_string { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let s = try nwarg::string{ &vm, routine = nwscript::PrintString, argc, i = 0 }
         if w.log.scripts {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "print: {}\n", s)
         }
     }
@@ -82,7 +82,7 @@ namespace rt_core {
     fn print_integer { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let n = try nwarg::int{ &vm, routine = nwscript::PrintInteger, argc, i = 0 }
         if w.log.scripts {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "print: {}\n", n)
         }
     }
@@ -443,7 +443,7 @@ namespace rt_core {
         if w.log.scripts {
             let mut buf: [96]u8
             let text = format_fixed{ into = buf[..], f, width, decimals }
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "print: {}\n", text)
         }
     }
@@ -452,7 +452,7 @@ namespace rt_core {
     fn print_object { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::PrintObject, argc, i = 0 }
         if w.log.scripts {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "print: object {}\n", id)
         }
     }
@@ -463,7 +463,7 @@ namespace rt_core {
         let v = try nwarg::vector{ &vm, routine = r, argc, i = 0 }
         let prepend = try nwarg::int{ &vm, routine = r, argc, i = 1 }
         if w.log.scripts {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             let head = if prepend != 0 { "PRINTVECTOR:" } else { "" }
             _ = @fmt(&w.io, "print: {}({}, {}, {})\n", head, v.x, v.y, v.z)
         }

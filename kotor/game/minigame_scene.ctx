@@ -505,7 +505,7 @@ namespace mg_game {
     // the step begins): the world, the run and its scripts, the sound, the picture. Returns true
     // when a module change is pending: nothing was drawn and the ordinary frame must go on.
     fn frame {
-        mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut dev: gpu::Device, mut frame: render::Frame,
+        mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, mut dev: gpu::Device, mut frame: render::Frame,
         mut sc: scene::Scene, mut stage: Stage, mut amb: ambience::Ambience, mixer: *mut mix::Mixer, adev: ?*mut audio::Device,
         silent: []mut i16, rate: u32, opts: options::Options, keys: ctl::Keys, mut mouse: Mouse, dt: f32, frame_no: u64, shot_heap: *mut arena::Arena,
         mut dview: dlgview::View, mut g: gui::Gui, mut disp: display::Display,
@@ -514,7 +514,7 @@ namespace mg_game {
         let dt = if mouse.paused { 0.0 } else { dt }
         if mouse.paused != stage.paused { set_paused{ &stage, &sdl, &w, &dev, &g, mixer, on = mouse.paused } }
         clock::advance{ c = &w.clock, seconds = dt }
-        world::tick{ &w, &vm, engine }
+        world::tick{ &w, &vm }
         let run = w.minigame ifnull { return true }
         if not stage.ready {
             try build_stage{ &stage, &sc, &w, &dev }
@@ -527,7 +527,7 @@ namespace mg_game {
         }
         run.input = read_input{ keys, &mouse, run }
         if mouse.paused { run.input = mg::Input{ x = 0.0, y = 0.0, fire = false, aim_x = 0.0, aim_y = 0.0 } }
-        step{ &w, &vm, engine, dt }
+        step{ &w, &vm, dt }
         if w.transition != null {
             if stage.paused {
                 mouse.paused = false

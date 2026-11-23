@@ -206,7 +206,7 @@ namespace rt_obj {
             return try nwvm::push_object{ &vm, id = obj::INVALID }
         }
         let id = tmpl::spawn{ &w, kind, template, position = l.position, orientation = obj::direction_of{ degrees = l.facing } } iferr err{ error } {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "CreateObject {}: {}\n", template, error)
             return try nwvm::push_object{ &vm, id = obj::INVALID }
         }

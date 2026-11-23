@@ -29,7 +29,7 @@ namespace ingame {
             ui.tbox.paused_it = true
         }
         if w.log.objects {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "tutorial shown: {} page 0 strref {}\n", id, gui::tutorial_page{ t = w.tables.tutorial, id, page = 0 } ifnull 0)
         }
     }
@@ -54,7 +54,7 @@ namespace ingame {
         w.tut.open = false
         if t.paused_it { clock::set_pause{ c = &w.clock, bit = clock::PAUSE_PLAYER, on = false } }
         if w.log.objects {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "tutorial closed: {}\n", t.b.id)
         }
         hud::redo_tutorial{ h = &ui.hud, g = &ui.gui, &w, id = t.b.id, who = t.who, target = t.target, n = t.n }

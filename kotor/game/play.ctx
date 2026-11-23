@@ -7,7 +7,7 @@ namespace play {
     // leader jumps next to the object), `FRAME use TAG` (the leader's default action on it) are play's.
     struct Scripted { frame: u64, word: []u8, rest: []u8 }
 
-    fn run { mut sdl: sdl::Sdl, mut threads: Threads, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut mem: Mem, opts: options::Options } -> !i32 {
+    fn run { mut sdl: sdl::Sdl, mut threads: Threads, mut w: world::World, mut vm: nwvm::Vm, mut mem: Mem, opts: options::Options } -> !i32 {
         try sdl::init{ &sdl, flags = sdl::INIT_VIDEO | sdl::INIT_EVENTS }
         defer sdl::quit{ &sdl }
         let scene_pages = mem::pages{ &mem, size = 805306368 } ifnull { return 1 }
@@ -77,7 +77,7 @@ namespace play {
                 return 1
             }
             show_for_save{ ld, &w, &dev, &sdl, &frame, opts, folder }
-            try save::load_game{ &w, &vm, engine, folder }
+            try save::load_game{ &w, &vm, folder }
             loading::step{ l = ld, &w, &dev, &sdl, &frame, opts, percent = 40 }
             arena::reset{ heap = w.scratch }
         }
@@ -88,7 +88,7 @@ namespace play {
             if chosen.len == 0 { return 0 }
             if chosen.len > 5 and slice::eq_bytes{ a = chosen[..5], b = "load:" } {
                 show_for_save{ ld, &w, &dev, &sdl, &frame, opts, folder = chosen[5..] }
-                try save::load_game{ &w, &vm, engine, folder = chosen[5..] }
+                try save::load_game{ &w, &vm, folder = chosen[5..] }
             } else {
                 // After Play in character creation, or New Game: the story hints and the module's picture.
                 loading::show{ l = ld, &w, &dev, name = chosen, story = true }
@@ -132,7 +132,7 @@ namespace play {
         // The install's swkotor.ini says the 2D3D Bias, as for the original; our options file's when it doesn't.
         amb.bias = frontend::install_bias{ fs = &w.fs, heap = w.heap, game = opts.game, fallback = disp.live.bias_2d3d }
         if w.log.sound {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "sound: 2D3D Bias {}\n", amb.bias)
         }
         let mut dview = dlgview::make{ heap = w.heap, m = mixer }
@@ -246,7 +246,7 @@ namespace play {
                 }
                 // One call per owner, in turn: the first that knows the word takes the line. A new owner adds
                 // its call here (docs/testing.md, "Adding a scripted command").
-                let handled = handle_scripted{ &w, &vm, engine, &keys, &want_save, &want_load, word = s.word, rest = s.rest } or
+                let handled = handle_scripted{ &w, &vm, &keys, &want_save, &want_load, word = s.word, rest = s.rest } or
                     cine::handle_scripted{ c = &cinema, word = s.word, rest = s.rest } or
                     mg_game::handle_scripted{ m = &mg_mouse, word = s.word, rest = s.rest } or
                     handle_scripted_vfx{ &w, &test_camera, word = s.word, rest = s.rest } or
@@ -320,7 +320,7 @@ namespace play {
                     fade_before_load{ &sdl, a = &amb, adev, mixer }
                     show_for_save{ ld, &w, &dev, &sdl, &frame, opts, folder }
                     // As a transition: no conversation survives the world it ran in.
-                    dlg::abort{ &w, &vm, engine }
+                    dlg::abort{ &w, &vm }
                     dlgview::leave{ v = &dview, w = &w, sc = &sc, g = &ui.gui }
                     ambience::stop_area{ a = &amb }
                     _ = ambience::set_mode{ a = &amb, mode = ambience::MODE_PLAY }
@@ -329,7 +329,7 @@ namespace play {
                     vfx::reset{ v = &vx }
                     death::abort{ d = &wipe, ui, &w }
                     clock::set_pause{ c = &w.clock, bit = clock::PAUSE_ENGINE, on = false }
-                    save::load_game{ &w, &vm, engine, folder } iferr err{ error } {
+                    save::load_game{ &w, &vm, folder } iferr err{ error } {
                         _ = @fmt(&w.io, "kotor: load failed: {}\n", error)
                         return 1
                     }
@@ -400,7 +400,7 @@ namespace play {
                     last = sdl::counter{ &sdl }
                 }
                 mg_mouse.reverse_y = ingame::reverse_minigame_y{ ui }    // HOOK(ingame)
-                let leaving = try mg_game::frame{ &sdl, &w, &vm, engine, &dev, &frame, &sc, stage = &mg_stage, &amb, mixer, adev, silent, rate, opts, keys, mouse = &mg_mouse, dt, frame_no, shot_heap = &scene_arena, dview = &dview, g = &ui.gui, disp = &disp }
+                let leaving = try mg_game::frame{ &sdl, &w, &vm, &dev, &frame, &sc, stage = &mg_stage, &amb, mixer, adev, silent, rate, opts, keys, mouse = &mg_mouse, dt, frame_no, shot_heap = &scene_arena, dview = &dview, g = &ui.gui, disp = &disp }
                 if not leaving { continue }
             }
             // 3-6. The world. The party wipe's slow motion sets the game speed first (gameloop.md 6.6).
@@ -411,7 +411,7 @@ namespace play {
             control.combat_movement = ingame::combat_movement{ ui }    // HOOK(ingame)
             ctl::update{ ctl = &control, &w, keys, yaw = camera.yaw, dt = w.clock.dt }
             ingame::set_move_speed{ ui, speed = math::max{ a = math::abs{ x = control.vx }, b = math::abs{ x = control.vy } } }    // HOOK(ingame)
-            world::tick{ &w, &vm, engine }
+            world::tick{ &w, &vm }
             fight::trace{ &w }
             // EndGame: after its wait the story is over, and the main menu is next.
             if cine::end_due{ c = &cinema, dt = w.clock.dt } {
@@ -426,7 +426,7 @@ namespace play {
                 death::start{ d = &wipe, ui, &w, &dev }
             }
             // 7. The conversation's pump: the next line, the replies, the end.
-            dlg::update{ &w, &vm, engine }
+            dlg::update{ &w, &vm }
             // 6. A transition: the next module, and a new scene and sound for it.
             if w.transition != null {
                 // The movies StartNewModule named play first, before the module is loaded (gameloop.md 5.3: StartModuleTransition plays the queued movies).
@@ -441,13 +441,13 @@ namespace play {
                 loading::show{ l = ld, &w, &dev, name = resref::bytes{ r = &target }, story = false }
                 loading::step{ l = ld, &w, &dev, &sdl, &frame, opts, percent = 3 }
                 // A conversation doesn't cross a module change (its objects go).
-                dlg::abort{ &w, &vm, engine }
+                dlg::abort{ &w, &vm }
                 dlgview::leave{ v = &dview, w = &w, sc = &sc, g = &ui.gui }
                 ambience::stop_area{ a = &amb }
                 scene::release{ &sc, &dev }
                 arena::reset{ heap = &scene_arena }
                 vfx::reset{ v = &vx }
-                let moved = modload::take_transition{ &w, &vm, engine } iferr err{ error } {
+                let moved = modload::take_transition{ &w, &vm } iferr err{ error } {
                     _ = @fmt(&w.io, "kotor: transition failed: {}\n", error)
                     return 1
                 }
@@ -497,8 +497,8 @@ namespace play {
             // HOOK(minigames): a script asked for a game of pazaak; the visit takes over the frame (game/pazaak.ctx).
             if let asked = pazaak_asked {
                 if opts.headless {
-                    try pz_game::visit_auto{ &w, &vm, engine, r = asked }
-                } else if try pz_game::visit{ &sdl, &w, &vm, engine, &dev, &frame, ui, mixer, adev, r = asked, &disp } {
+                    try pz_game::visit_auto{ &w, &vm, r = asked }
+                } else if try pz_game::visit{ &sdl, &w, &vm, &dev, &frame, ui, mixer, adev, r = asked, &disp } {
                     quit = true
                 }
                 last = sdl::counter{ &sdl }
@@ -623,8 +623,8 @@ namespace play {
                 to_menu = menu_allowed
             }
             // The party selection screen was applied: its exit script (ShowPartySelectionGUI's), with no caller.
-            if let exit_script = ingame::take_exit_script{ ui } { _ = scripts::run{ &w, &vm, engine, name = exit_script, self = obj::INVALID } }    // HOOK(ingame)
-            if let script = ingame::take_script_request{ ui } { _ = scripts::run{ &w, &vm, engine, name = script, self = obj::INVALID } }    // HOOK(ingame)
+            if let exit_script = ingame::take_exit_script{ ui } { _ = scripts::run{ &w, &vm, name = exit_script, self = obj::INVALID } }    // HOOK(ingame)
+            if let script = ingame::take_script_request{ ui } { _ = scripts::run{ &w, &vm, name = script, self = obj::INVALID } }    // HOOK(ingame)
             // The options menu's Save Game and Load Game (the menus have closed themselves).
             if let r = ingame::take_save_request{ ui } {    // HOOK(ingame)
                 want_save = r.name
@@ -636,7 +636,7 @@ namespace play {
             if disp.inactive != amb.suspended {
                 let held = ambience::suspend{ a = &amb, on = disp.inactive }
                 if w.log.sound {
-                    world::prefix{ w = &w }
+                    world::prefix{ &w }
                     _ = @fmt(&w.io, "sound mode {}: {} sounds held\n", if disp.inactive { 5 } else { 6 }, held)
                 }
             }
@@ -649,7 +649,7 @@ namespace play {
                     // The mixer's thread counts its underruns as they happen: this frame's are those since the last.
                     let now_underruns = audio::underruns{ dev = value }
                     if w.log.sound and now_underruns != seen_underruns {
-                        world::prefix{ w = &w }
+                        world::prefix{ &w }
                         _ = @fmt(&w.io, "sound underrun: the queue ran dry after a {} ms frame (now keeping {} ms queued)\n", real * 1000.0, value.want * 1000 / value.rate)
                     }
                     seen_underruns = now_underruns
@@ -666,7 +666,7 @@ namespace play {
                 let line_up = dview.up and dview.seen_line == w.conversation.line.serial
                 if loading::settled{ l = ld, &w, line_shown = line_up } {
                     if w.log.module {
-                        world::prefix{ w = &w }
+                        world::prefix{ &w }
                         _ = @fmt(&w.io, "loading screen down after {} ticks (conversation {}, its line up {})\n", ld.ticks, w.conversation.active, line_up)
                     }
                     loading::hide{ l = ld }
@@ -790,7 +790,7 @@ namespace play {
         // The main menu: what the game showed and held is let go, a new world takes the old one's place and the front end opens the
         // next pass (the original unloads the module, destroys the server and shows the menu: gameloop.md 6.6).
         _ = @fmt(&w.io, "to the main menu\n")
-        dlg::abort{ &w, &vm, engine }
+        dlg::abort{ &w, &vm }
         dlgview::leave{ v = &dview, w = &w, sc = &sc, g = &ui.gui }
         ambience::stop_area{ a = &amb }
         mix::stop_all{ m = mixer, group = null, fade = 0.5 }
@@ -1119,7 +1119,7 @@ namespace play {
     // Play's own scripted words: keys, the leader's moves, saves and loads, and the conversation and
     // fight helpers below. True if `word` is one of them, else nothing happened.
     fn handle_scripted {
-        mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut keys: ctl::Keys,
+        mut w: world::World, mut vm: nwvm::Vm, mut keys: ctl::Keys,
         mut want_save: []u8, mut want_load: []u8, word: []u8, rest: []u8,
     } -> bool {
         let arg = text::first_word{ s = rest }
@@ -1133,8 +1133,8 @@ namespace play {
         else if ci::eq{ a = word, b = "use" } { use_tagged{ &w, tag = arg } }
         else if ci::eq{ a = word, b = "attack" } { attack_tagged{ &w, tag = arg } }
         else if ci::eq{ a = word, b = "newgame" } {}    // the front end's (front_end above)
-        else if ci::eq{ a = word, b = "talk" } { talk_to{ &w, &vm, engine, text = rest } }
-        else if ci::eq{ a = word, b = "hush" } { dlg::abort{ &w, &vm, engine } }
+        else if ci::eq{ a = word, b = "talk" } { talk_to{ &w, &vm, text = rest } }
+        else if ci::eq{ a = word, b = "hush" } { dlg::abort{ &w, &vm } }
         else if ci::eq{ a = word, b = "drop" } { drop_item{ &w, template = arg } }
         else if ci::eq{ a = word, b = "join" } { join_template{ &w, text = rest } }
         else if ci::eq{ a = word, b = "pick" } { pick_lock{ &w, tag = arg } }
@@ -1318,17 +1318,17 @@ namespace play {
     // `FRAME talk RESREF [TAG]`: starts conversation RESREF with the creature tagged TAG
     // (end_trask by default) as its owner, without the click and the walk up: the dialogue on its
     // own, for tests.
-    fn talk_to { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, text: []u8 } {
+    fn talk_to { mut w: world::World, mut vm: nwvm::Vm, text: []u8 } {
         let mut words = text::words{ s = text }
         let name = text::next_word{ &words } ifnull { return }
         let tag = text::next_word{ &words } ifnull "end_trask"
         let owner = world::object_by_tag{ w = &w, tag, nth = 0 }
         if owner == obj::INVALID { return }
         // A conversation already running is cut short.
-        dlg::abort{ &w, &vm, engine }
+        dlg::abort{ &w, &vm }
         w.conversation.pending = false
         if not dlg::order{ &w } { return }
-        if not dlg::start{ &w, &vm, engine, owner, other = w.pc, name = resref::truncate{ name }, private = false } {
+        if not dlg::start{ &w, &vm, owner, other = w.pc, name = resref::truncate{ name }, private = false } {
             w.conversation.pending = false
         }
     }
@@ -1511,7 +1511,7 @@ namespace play {
         if mode == before { return before }
         let held = ambience::set_mode{ &a, mode }
         if w.log.sound {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "sound mode {}: {} sounds held\n", mode, held)
         }
         return before
@@ -1575,7 +1575,7 @@ namespace play {
     // light the shadow volumes are cast from is (scene::Scene.volume_at; `none`: from overhead).
     fn log_shadows { mut w: world::World, dev: gpu::Device, sc: *scene::Scene } {
         let s = gpu::shadow_info{ dev }
-        world::prefix{ w = &w }
+        world::prefix{ &w }
         _ = @fmt(&w.io, "shadows: maps {} volumes {} cut {} sun {} fallback {} lights {}", s.maps, s.volumes, s.cut, s.sun, s.fallback, s.lights)
         if s.sun { _ = @fmt(&w.io, " sun_dir {} {} {}", s.sun_dir.x, s.sun_dir.y, s.sun_dir.z) }
         if sc.volume_light >= 0 { _ = @fmt(&w.io, " volume_light {} {} {}", sc.volume_at.x, sc.volume_at.y, sc.volume_at.z) } else { _ = @fmt(&w.io, " volume_light none") }

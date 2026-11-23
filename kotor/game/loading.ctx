@@ -73,7 +73,7 @@ namespace loading {
         w.load_hints[0] = @trunc(u8, l.fe.hint_game)
         w.load_hints[1] = @trunc(u8, l.fe.hint_story)
         if w.log.module {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "loading screen up for {}\n", name)
         }
     }

@@ -6,27 +6,27 @@
 namespace ai {
     const OBJECT_HEARTBEAT_MS: u64 = 6000
 
-    fn update { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32 } {
+    fn update { mut w: world::World, mut vm: nwvm::Vm, id: u32 } {
         let o = world::object{ w = &w, id } ifnull { return }
         match o.kind {
-            creature => { update_creature{ &w, &vm, engine, id } }
+            creature => { update_creature{ &w, &vm, id } }
             door | placeable | trigger | aoe | encounter => {
-                update_object{ &w, &vm, engine, id }
-                actions::run{ &w, &vm, engine, id }
+                update_object{ &w, &vm, id }
+                actions::run{ &w, &vm, id }
             }
             else => {}
         }
     }
 
     // CSWSCreature::AIUpdate (gameloop.md 2.3) and RunHeartbeat (2.4).
-    fn update_creature { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32 } {
+    fn update_creature { mut w: world::World, mut vm: nwvm::Vm, id: u32 } {
         let o = world::object{ w = &w, id } ifnull { return }
         let c = obj::creature{ o } ifnull { return }
         let now = clock::now_ms{ c = w.clock }
         if not c.spawn_fired {
             c.spawn_fired = true
-            _ = scripts::run_slot{ &w, &vm, engine, id, slot = obj::Slot::spawn }
-            heartbeat{ &w, &vm, engine, id, now }
+            _ = scripts::run_slot{ &w, &vm, id, slot = obj::Slot::spawn }
+            heartbeat{ &w, &vm, id, now }
         } else {
             let again = world::object{ w = &w, id } ifnull { return }
             let cc = obj::creature{ o = again } ifnull { return }
@@ -37,7 +37,7 @@ namespace ai {
                 // restarts, would make every such creature beat at once.
                 cc.last_heartbeat = if now == 0 { 1 } else { now }
             } else if clock::elapsed_since{ now, then = cc.last_heartbeat } >= @as(u64, cc.heartbeat_interval) {
-                heartbeat{ &w, &vm, engine, id, now }
+                heartbeat{ &w, &vm, id, now }
             }
         }
         perception::update{ &w, id }
@@ -55,7 +55,7 @@ namespace ai {
         if fight::getting_up{ w = &w, id } { return }
         // A party member follows the leader by the FOLLOWLEADER its heartbeat script queues (k_hen_heartbt01 through
         // k_ai_master: no enemy seen and no other order, movement.md 6.1); nothing else sends it after him.
-        actions::run{ &w, &vm, engine, id }
+        actions::run{ &w, &vm, id }
         let after = world::object{ w = &w, id } ifnull { return }
         let ac = obj::creature{ o = after } ifnull { return }
         if not ac.moving and after.actions.len == 0 and after.animation != obj::ANIM_STAND and is_movement_animation{ id = after.animation } {
@@ -67,22 +67,22 @@ namespace ai {
         return id == obj::ANIM_WALK or id == obj::ANIM_RUN or id == obj::ANIM_WALK_BACK or id == obj::ANIM_STEALTH_WALK
     }
 
-    fn heartbeat { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, now: u64 } {
+    fn heartbeat { mut w: world::World, mut vm: nwvm::Vm, id: u32, now: u64 } {
         let o = world::object{ w = &w, id } ifnull { return }
         let c = obj::creature{ o } ifnull { return }
         c.last_heartbeat = now
         c.heartbeat_interval = 3000 + world::random{ &w } % 1200
         if c.dead { return }
-        _ = scripts::run_slot{ &w, &vm, engine, id, slot = obj::Slot::heartbeat }
+        _ = scripts::run_slot{ &w, &vm, id, slot = obj::Slot::heartbeat }
     }
 
     // A door's, placeable's or trigger's heartbeat every 6 s of world time; the first due check
     // only records the time (gameloop.md 2.5).
-    fn update_object { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32 } {
+    fn update_object { mut w: world::World, mut vm: nwvm::Vm, id: u32 } {
         let o = world::object{ w = &w, id } ifnull { return }
         if resref::is_empty{ r = obj::script{ o, slot = obj::Slot::heartbeat } } { return }
         let now = clock::now_ms{ c = w.clock }
-        if heartbeat_due{ &w, id, now } { _ = scripts::run_slot{ &w, &vm, engine, id, slot = obj::Slot::heartbeat } }
+        if heartbeat_due{ &w, id, now } { _ = scripts::run_slot{ &w, &vm, id, slot = obj::Slot::heartbeat } }
     }
 
     // Heartbeat timers of doors, placeables and triggers, by object id (ours).
@@ -99,7 +99,7 @@ namespace ai {
 
     // CSWSModule::UpdateModuleAndArea (gameloop.md 2.6): module and area heartbeats on
     // alternate frames, every 6 s, the first skipped.
-    fn update_module_and_area { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine } {
+    fn update_module_and_area { mut w: world::World, mut vm: nwvm::Vm } {
         w.module_frame = not w.module_frame
         let now = clock::now_ms{ c = w.clock }
         let id = if w.module_frame { w.module } else { w.area }
@@ -117,6 +117,6 @@ namespace ai {
                 a.last_heartbeat = if now == 0 { 1 } else { now }
             }
         }
-        if due { _ = scripts::run_slot{ &w, &vm, engine, id, slot = obj::Slot::heartbeat } }
+        if due { _ = scripts::run_slot{ &w, &vm, id, slot = obj::Slot::heartbeat } }
     }
 }

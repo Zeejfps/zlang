@@ -242,7 +242,7 @@ namespace traps {
     // trap itself when nobody did): reputation 10 or less sets it off. Whether anyone had found the
     // trap does not matter. A creature carrying the trap's key disarms it instead (no shipped trap
     // has a KeyName).
-    fn entered { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, who: u32 } {
+    fn entered { mut w: world::World, mut vm: nwvm::Vm, id: u32, who: u32 } {
         let o = world::object{ w = &w, id } ifnull { return }
         let trap = of{ o } ifnull { return }
         let victim = world::object{ w = &w, id = who } ifnull { return }
@@ -253,15 +253,15 @@ namespace traps {
         }
         let source = world::object{ w = &w, id = trap.creator } ifnull o
         if victim.faction == o.faction or world::standing{ w = &w, from = victim.faction, toward = source.faction } > 10 { return }
-        if disarm_with_key{ &w, &vm, engine, id, who } { return }
-        spring{ &w, &vm, engine, id, who }
+        if disarm_with_key{ &w, &vm, id, who } { return }
+        spring{ &w, &vm, id, who }
     }
 
     // OnTrapEntered's key branch (0x0058d570): an item tagged with the KeyName in the creature's bag
     // or worn disarms the trap: with AutoRemoveKey the key goes, the creature becomes the trap's last
     // disarmer, OnDisarm runs as the trap, and the trap is gone. Ours: an empty KeyName matches
     // nothing (the original may match an item with an empty tag; no shipped trap has a KeyName).
-    fn disarm_with_key { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, who: u32 } -> bool {
+    fn disarm_with_key { mut w: world::World, mut vm: nwvm::Vm, id: u32, who: u32 } -> bool {
         let o = world::object{ w = &w, id } ifnull { return false }
         let trap = of{ o } ifnull { return false }
         if trap.key.len == 0 { return false }
@@ -281,10 +281,10 @@ namespace traps {
             let base = trap.base
             let position = o.position
             if w.log.events {
-                world::prefix{ w = &w }
+                world::prefix{ &w }
                 _ = @fmt(&w.io, "trap {} ({}) disarmed by {} with its key\n", id, o.tag, who)
             }
-            _ = scripts::run_slot{ &w, &vm, engine, id, slot = obj::Slot::disarm }
+            _ = scripts::run_slot{ &w, &vm, id, slot = obj::Slot::disarm }
             remove{ &w, id, base, position, exploded = false }
             return true
         }
@@ -294,7 +294,7 @@ namespace traps {
     // The trap goes off under `who`: the victim is told, OnTrapTriggered runs as the trap (the type's
     // TrapScript when it has none, as LoadTrigger sets it) with `who` as the entering object, then
     // OnEnter, and a one-shot trap is gone in its explosion.
-    fn spring { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, who: u32 } {
+    fn spring { mut w: world::World, mut vm: nwvm::Vm, id: u32, who: u32 } {
         let o = world::object{ w = &w, id } ifnull { return }
         let trap = of{ o } ifnull { return }
         let one_shot = trap.one_shot
@@ -304,12 +304,12 @@ namespace traps {
         o.ctx.entering = who
         let name = trap_script{ w = &w, o, base }
         if w.log.events {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "trap {} ({}) set off by {}: {}\n", id, o.tag, who, resref::bytes{ r = &name })
         }
         doors::tell{ &w, who, strref = FEEDBACK_TRIGGERED }
-        if not resref::is_empty{ r = name } { _ = scripts::run{ &w, &vm, engine, name, self = id } }
-        _ = scripts::run_slot{ &w, &vm, engine, id, slot = obj::Slot::enter }
+        if not resref::is_empty{ r = name } { _ = scripts::run{ &w, &vm, name, self = id } }
+        _ = scripts::run_slot{ &w, &vm, id, slot = obj::Slot::enter }
         if one_shot { remove{ &w, id, base, position, exploded = true } }
     }
 
@@ -401,7 +401,7 @@ namespace traps {
     // and the mine goes; flagging marks it (everyone near finds it, the party sees it); examining
     // changes nothing. A disable that misses by more than 10, or a recovery by more than 5, sets the
     // trap off under the worker.
-    fn work_on_trap { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, a: *mut actions::Action } -> actions::Status {
+    fn work_on_trap { mut w: world::World, mut vm: nwvm::Vm, id: u32, a: *mut actions::Action } -> actions::Status {
         let target = actions::object_param{ a, i = 0 }
         let o = world::object{ w = &w, id = target } ifnull { return actions::Status::failed }
         if of{ o } == null { return actions::Status::failed }
@@ -437,7 +437,7 @@ namespace traps {
         if kind != actions::Kind::disable_trap { check.success = check.auto or check.total >= check.dc }
         let what = if kind == actions::Kind::disable_trap { NAME_DISABLE } else if kind == actions::Kind::recover_trap { NAME_RECOVER } else if kind == actions::Kind::examine_trap { NAME_EXAMINE } else { NAME_NONE }
         if w.log.actions {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "demolitions: {} works ({}) on {} ({}): {} against DC {} (own {}): {}\n", me.tag, @as(u32, kind), target, o.tag, check.total, check.dc, own, check.success)
         }
         doors::say_skill_roll{ &w, me, target = o, check, in_combat = c.in_combat, what, skill = NAME_DEMOLITIONS }
@@ -528,7 +528,7 @@ namespace traps {
     // combat) still lays it. A laid mine is the setter's: its faction, its creator, the type's name
     // and script, and DCs of the roll's total + the type's DetectDCMod and DisarmDCMod. The kit is
     // spent only when a mine is laid.
-    fn set_trap { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, a: *mut actions::Action } -> actions::Status {
+    fn set_trap { mut w: world::World, mut vm: nwvm::Vm, id: u32, a: *mut actions::Action } -> actions::Status {
         let item = actions::object_param{ a, i = 0 }
         let target = actions::object_param{ a, i = 1 }
         let me = world::object{ w = &w, id } ifnull { return actions::Status::failed }
@@ -581,7 +581,7 @@ namespace traps {
         let set_dc = twoda::get_int{ t = w.tables.traps, row = @as(usize, row), column = "setdc" } ifnull 1
         let check = rules::set_trap_check{ tables = w.rules, c = &f.c, set_dc, in_combat = c.in_combat, rng = &w.dice }
         if w.log.actions {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "demolitions: {} sets a mine (row {}): {} against DC {}: {}\n", me.tag, row, check.total, check.dc, check.success)
         }
         doors::say_skill_roll{ &w, me, target = me, check, in_combat = c.in_combat, what = NAME_SET, skill = NAME_DEMOLITIONS }
@@ -638,7 +638,7 @@ namespace traps {
             key = slice::empty(u8){}, auto_remove_key = false, last_disarmed = obj::INVALID,
         }
         if w.log.objects {
-            world::prefix{ w = &w }
+            world::prefix{ &w }
             _ = @fmt(&w.io, "mine {} laid by {} (row {}) at {} {} {}\n", o.id, setter, row, at.x, at.y, at.z)
         }
         return o.id

@@ -78,10 +78,9 @@ fn run { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut rm: res::Manager, mut mo
         return
     }
     let mut vm = try nwvm::new(heap::Heap){ realloc = heap::alloc, heap = &h, limits = nwvm::LIMITS }
-    let engine = routines::call{ w, _ }
     try modload::enter{ w, name = o.module }
     arena::reset{ heap = &scratch }
-    settle{ w, &vm, engine, frames = o.settle }
+    settle{ w, &vm, frames = o.settle }
     _ = @fmt(&w.io, "MODULE {} {} objects\n", o.module, w.objects.all.len)
 
     // The dialogues to sweep.
@@ -125,7 +124,7 @@ fn run { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut rm: res::Manager, mut mo
         return
     }
     while k < items.len {
-        try sweep_one{ w, &vm, engine, name = items[k], module = o.module, settle_frames = o.settle }
+        try sweep_one{ w, &vm, name = items[k], module = o.module, settle_frames = o.settle }
         arena::reset{ heap = &scratch }
         k = k + 1
     }
@@ -142,11 +141,11 @@ fn add_name { mut names: list::List(resref::ResRef, heap::Heap), name: resref::R
 }
 
 // Lets the world run a little: spawn scripts, the module's load script, delayed commands.
-fn settle { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, frames: u32 } {
+fn settle { mut w: world::World, mut vm: nwvm::Vm, frames: u32 } {
     let mut f: u32 = 0
     while f < frames {
         clock::advance{ c = &w.clock, seconds = 1.0 / 30.0 }
-        world::tick{ &w, &vm, engine }
+        world::tick{ &w, &vm }
         outbox::clear{ out = &w.out }
         arena::reset{ heap = w.scratch }
         f = f + 1
