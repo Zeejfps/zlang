@@ -1,0 +1,140 @@
+// ui_rec: a `ui_stage::Staged` as text, for golden files: the canvas, the atlas, the clip table, then
+// each pass with its draws and every field of every instance in the draw, in the order a backend
+// uploads them. This is how batching is pinned: a change that splits or merges draws, or reorders
+// instances, shows as a diff.
+//
+//   staged 800x600 pixels 1200x900 revision 1
+//   atlas 128x64 version 0 dirty 0,0 128x40
+//   clip 0 0,0,800,600 round=0,0,0,0 radius=0
+//   pass 0 draws 0+2 host 1 320,60 280x360
+//   draw 0 rect first=0 count=1
+//     rect 16,556 120x28 radius=4,4,0,0 border=1,1,0,1 fill=FF30343E colors=FF404552,FF404552,00000000,FF404552 clip=1
+//   draw 1 glyph first=0 count=1
+//     glyph 24,562 8x16 uv=0.007813,0.015625,0.0625,0.25 color=FFE4E7ED clip=1 angle=0
+//   draw 2 image first=0 count=1 img=3 blend=alpha
+//     image 10,558 32x32 uv=0,1,1,-1 tint=FFFFFFFF clip=0 angle=1.5708 radius=0,0,0,0
+//   draw 3 shape first=0 count=1
+//     shape 37,524.5 18x18 data=40,540,52,528 data2=0,0,0,0 half=1 color=FFE4E7ED kind=2 clip=0 color2=FFE4E7ED flags=0
+//   pass 1 draws 4+1
+//   dropped 2
+//
+// Everything is in canvas space (y up, origin bottom left) and as the instance holds it: colours are
+// the packed ARGB the shaders unpack, radii run tl, tr, br, bl and borders top, right, bottom, left,
+// a clip is (left, bottom, right, top). A host's rectangle is the list's (y down). Coordinates keep
+// four digits after the point and UVs six. A `dropped` line ends a Staged that dropped anything.
+namespace ui_rec {
+    const UV_DIGITS: u32 = 6
+
+    fn write_uv { mut sink: Sink, v: f32 } -> ! {
+        let mut buf: [48]u8
+        let n = ui::format_fixed{ v, digits = UV_DIGITS, trim = true, into = buf[..] }
+        write_bytes{ &sink, s = buf[..n] }
+    }
+
+    fn write_argb { mut sink: Sink, n: u32 } -> ! {
+        try write_hex{ &sink, n = @as(u64, n), digits = 8 }
+    }
+
+    fn name_kind { kind: ui_stage::Kind } -> []u8 {
+        match kind {
+            rect => { return "rect" }
+            glyph => { return "glyph" }
+            image => { return "image" }
+            shape => { return "shape" }
+        }
+    }
+
+    fn write_box { mut sink: Sink, x: f32, y: f32, w: f32, h: f32 } -> ! {
+        try @fmt(&sink, "{},{} {}x{}", write_number{ v = x, _ }, write_number{ v = y, _ }, write_number{ v = w, _ }, write_number{ v = h, _ })
+    }
+
+    fn write_four { mut sink: Sink, a: f32, b: f32, c: f32, d: f32 } -> ! {
+        try @fmt(&sink, "{},{},{},{}", write_number{ v = a, _ }, write_number{ v = b, _ }, write_number{ v = c, _ }, write_number{ v = d, _ })
+    }
+
+    fn write_staged_clip { mut sink: Sink, index: usize, c: ui_stage::ClipSlot } -> ! {
+        try @fmt(&sink, "clip {} {} round={} radius={}\n", index, write_four{ a = c.left, b = c.bottom, c = c.right, d = c.top, _ },
+            write_four{ a = c.round_left, b = c.round_bottom, c = c.round_right, d = c.round_top, _ }, write_number{ v = c.radius, _ })
+    }
+
+    fn write_rect_instance { mut sink: Sink, r: ui_stage::RectInstance } -> ! {
+        try @fmt(&sink, "  rect {} radius={} border={} fill={} colors={},{},{},{} clip={}\n", write_box{ x = r.x, y = r.y, w = r.w, h = r.h, _ },
+            write_four{ a = r.radius_tl, b = r.radius_tr, c = r.radius_br, d = r.radius_bl, _ },
+            write_four{ a = r.border_top, b = r.border_right, c = r.border_bottom, d = r.border_left, _ },
+            write_argb{ n = r.fill, _ }, write_argb{ n = r.color_top, _ }, write_argb{ n = r.color_right, _ }, write_argb{ n = r.color_bottom, _ },
+            write_argb{ n = r.color_left, _ }, r.clip)
+    }
+
+    fn write_glyph_instance { mut sink: Sink, g: ui_stage::GlyphInstance } -> ! {
+        try @fmt(&sink, "  glyph {} uv={},{},{},{} color={} clip={} angle={}\n", write_box{ x = g.x, y = g.y, w = g.w, h = g.h, _ },
+            write_uv{ v = g.u, _ }, write_uv{ v = g.v, _ }, write_uv{ v = g.uw, _ }, write_uv{ v = g.vh, _ },
+            write_argb{ n = g.color, _ }, g.clip, write_number{ v = g.angle, _ })
+    }
+
+    fn write_image_instance { mut sink: Sink, m: ui_stage::ImageInstance } -> ! {
+        try @fmt(&sink, "  image {} uv={},{},{},{} tint={} clip={} angle={} radius={}\n", write_box{ x = m.x, y = m.y, w = m.w, h = m.h, _ },
+            write_uv{ v = m.u, _ }, write_uv{ v = m.v, _ }, write_uv{ v = m.uw, _ }, write_uv{ v = m.vh, _ },
+            write_argb{ n = m.tint, _ }, m.clip, write_number{ v = m.angle, _ },
+            write_four{ a = m.radius_tl, b = m.radius_tr, c = m.radius_br, d = m.radius_bl, _ })
+    }
+
+    fn write_shape_instance { mut sink: Sink, s: ui_stage::ShapeInstance } -> ! {
+        try @fmt(&sink, "  shape {} data={} data2={} half={} color={} kind={} clip={} color2={} flags={}\n", write_box{ x = s.x, y = s.y, w = s.w, h = s.h, _ },
+            write_four{ a = s.data[0], b = s.data[1], c = s.data[2], d = s.data[3], _ },
+            write_four{ a = s.data2[0], b = s.data2[1], c = s.data2[2], d = s.data2[3], _ },
+            write_number{ v = s.half_width, _ }, write_argb{ n = s.color, _ }, s.kind, s.clip, write_argb{ n = s.color2, _ }, s.flags)
+    }
+
+    fn write_draw { mut sink: Sink, staged: *ui_stage::Staged, index: usize } -> ! {
+        let d = staged.draws[index]
+        try @fmt(&sink, "draw {} {} first={} count={}", index, name_kind{ kind = d.kind }, d.first, d.count)
+        if d.kind == ui_stage::Kind::image {
+            try @fmt(&sink, " img={} blend={}", d.image, name_blend{ blend = d.blend })
+        }
+        write_bytes{ &sink, s = "\n" }
+        let mut i = @as(usize, d.first)
+        let end = i + @as(usize, d.count)
+        while i < end {
+            match d.kind {
+                rect => { try write_rect_instance{ &sink, r = staged.rects[i] } }
+                glyph => { try write_glyph_instance{ &sink, g = staged.glyphs[i] } }
+                image => { try write_image_instance{ &sink, m = staged.images[i] } }
+                shape => { try write_shape_instance{ &sink, s = staged.shapes[i] } }
+            }
+            i = i + 1
+        }
+    }
+
+    // The whole Staged: what a backend draws, pass by pass.
+    fn write_staged { mut sink: Sink, staged: *ui_stage::Staged } -> ! {
+        try @fmt(&sink, "staged {}x{} pixels {}x{} revision {}\n", write_number{ v = staged.width, _ }, write_number{ v = staged.height, _ },
+            write_number{ v = staged.pixel_width, _ }, write_number{ v = staged.pixel_height, _ }, staged.revision)
+        let a = staged.atlas
+        let dirty_w = if a.dirty_x1 > a.dirty_x0 { a.dirty_x1 - a.dirty_x0 } else { 0 }
+        let dirty_h = if a.dirty_y1 > a.dirty_y0 { a.dirty_y1 - a.dirty_y0 } else { 0 }
+        try @fmt(&sink, "atlas {}x{} version {} dirty {},{} {}x{}\n", a.width, a.height, a.version, a.dirty_x0, a.dirty_y0, dirty_w, dirty_h)
+        let mut i: usize = 0
+        while i < @as(usize, staged.clip_count) {
+            try write_staged_clip{ &sink, index = i, c = staged.clips[i] }
+            i = i + 1
+        }
+        let mut p: usize = 0
+        while p < @as(usize, staged.pass_count) {
+            let pass = staged.passes[p]
+            try @fmt(&sink, "pass {} draws {}+{}", p, pass.first, pass.count)
+            if pass.host {
+                try @fmt(&sink, " host {} {}", pass.slot, write_rect{ rect = pass.rect, _ })
+            }
+            write_bytes{ &sink, s = "\n" }
+            let mut d = @as(usize, pass.first)
+            while d < @as(usize, pass.first + pass.count) {
+                try write_draw{ &sink, staged, index = d }
+                d = d + 1
+            }
+            p = p + 1
+        }
+        if staged.dropped > 0 {
+            try @fmt(&sink, "dropped {}\n", staged.dropped)
+        }
+    }
+}

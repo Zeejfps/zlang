@@ -1,0 +1,244 @@
+// ui_stage: overlap-aware batching, ZGF's BuildBatches. Walking the instances in paint order, each
+// joins the most recent draw of its kind (and, for an image, of its texture and blend) that it can
+// reach without passing a draw of another kind whose bounds it overlaps. Draws whose bounds do not
+// overlap can be drawn in either order, so the result paints the same picture as strict paint order
+// with far fewer draws: a tool UI is a few draws, a KOTOR panel one a texture.
+//
+// An instance's bounds are its rectangle, widened to the box of its turn when it is rotated and by
+// the device pixel the rect and image shaders grow an off-grid edge by, then cut to its clip's
+// rectangle. A draw's bounds are the box of its instances'. Bounds that only touch do not overlap.
+// An instance its clip cuts away entirely draws nothing, so it overlaps nothing and joins any draw
+// of its kind. Draws never span passes: a host slot starts the walk afresh.
+//
+// The instances are then laid out per kind in draw order, so each draw is a run of one array.
+namespace ui_stage {
+    const FAR: f32 = 3.0e38
+
+    struct Box { min_x: f32, min_y: f32, max_x: f32, max_y: f32 }
+
+    // Whether `v` (logical units) is between device pixels, by the shaders' rule.
+    fn is_off_grid { v: f32, scale: f32 } -> bool {
+        let device = v * scale
+        return ui::abs_f32{ x = device - ui::round_f32{ x = device } } >= 1.0 / 256.0
+    }
+
+    // `b` widened by one device pixel on each axis that has an edge between device pixels, as the rect
+    // and image vertex shaders grow such a quad. Only a quad with area grows.
+    fn widen_off_grid { b: Box, scale_x: f32, scale_y: f32 } -> Box {
+        if not (b.max_x > b.min_x and b.max_y > b.min_y) { return b }
+        let mut r = b
+        if is_off_grid{ v = b.min_x, scale = scale_x } or is_off_grid{ v = b.max_x, scale = scale_x } {
+            r.min_x = r.min_x - 1.0 / scale_x
+            r.max_x = r.max_x + 1.0 / scale_x
+        }
+        if is_off_grid{ v = b.min_y, scale = scale_y } or is_off_grid{ v = b.max_y, scale = scale_y } {
+            r.min_y = r.min_y - 1.0 / scale_y
+            r.max_y = r.max_y + 1.0 / scale_y
+        }
+        return r
+    }
+
+    // The box a rectangle turned by `angle` about its centre covers. A turn by a whole number of
+    // quarter turns is exact: the sine or cosine float noise leaves is taken as 0.
+    fn turn_box { x: f32, y: f32, w: f32, h: f32, angle: f32 } -> Box {
+        if angle == 0.0 { return Box{ min_x = x, min_y = y, max_x = x + w, max_y = y + h } }
+        let mut cs = ui::abs_f32{ x = ui::cos_f32{ x = angle } }
+        let mut sn = ui::abs_f32{ x = ui::sin_f32{ x = angle } }
+        if sn < 0.000001 { sn = 0.0 }
+        if cs < 0.000001 { cs = 0.0 }
+        let cx = x + w * 0.5
+        let cy = y + h * 0.5
+        let ex = w * 0.5 * cs + h * 0.5 * sn
+        let ey = w * 0.5 * sn + h * 0.5 * cs
+        return Box{ min_x = cx - ex, min_y = cy - ey, max_x = cx + ex, max_y = cy + ey }
+    }
+
+    // An item's bounds in canvas space, cut to its clip.
+    fn get_bounds { paint: Paint, item: Item } -> Box {
+        let i = @as(usize, item.index)
+        let mut b = Box{ min_x = 0.0, min_y = 0.0, max_x = 0.0, max_y = 0.0 }
+        let mut clip: u32 = 0
+        match item.kind {
+            rect => {
+                let r = paint.rects[i]
+                b = widen_off_grid{ b = Box{ min_x = r.x, min_y = r.y, max_x = r.x + r.w, max_y = r.y + r.h }, scale_x = paint.scale_x, scale_y = paint.scale_y }
+                clip = r.clip
+            }
+            glyph => {
+                let g = paint.glyphs[i]
+                b = turn_box{ x = g.x, y = g.y, w = g.w, h = g.h, angle = g.angle }
+                clip = g.clip
+            }
+            image => {
+                let m = paint.images[i]
+                b = turn_box{ x = m.x, y = m.y, w = m.w, h = m.h, angle = m.angle }
+                if m.angle == 0.0 { b = widen_off_grid{ b, scale_x = paint.scale_x, scale_y = paint.scale_y } }
+                clip = m.clip
+            }
+            shape => {
+                let s = paint.shapes[i]
+                b = Box{ min_x = s.x, min_y = s.y, max_x = s.x + s.w, max_y = s.y + s.h }
+                clip = s.clip
+            }
+        }
+        let c = paint.clips[@as(usize, clip)]
+        if c.left > b.min_x { b.min_x = c.left }
+        if c.bottom > b.min_y { b.min_y = c.bottom }
+        if c.right < b.max_x { b.max_x = c.right }
+        if c.top < b.max_y { b.max_y = c.top }
+        return b
+    }
+
+    fn is_overlapping { b: Box, batch: Batch } -> bool {
+        return not (b.max_x <= batch.min_x or batch.max_x <= b.min_x or b.max_y <= batch.min_y or batch.max_y <= b.min_y)
+    }
+
+    fn is_same_key { batch: Batch, item: Item } -> bool {
+        if batch.kind != item.kind { return false }
+        return item.kind != Kind::image or (batch.image == item.image and batch.blend == item.blend)
+    }
+
+    // Puts item `at` into a draw of the pass whose draws start at `first`.
+    fn assign_item { mut out: Staged, at: u32, first: u32 } {
+        let item = out.front.items[@as(usize, at)]
+        let b = get_bounds{ paint = out.front, item }
+        let empty = not (b.max_x > b.min_x and b.max_y > b.min_y)
+        let mut target = NONE
+        let mut k = out.draw_count
+        while k > first {
+            k = k - 1
+            let batch = out.batches[@as(usize, k)]
+            if is_same_key{ batch, item } {
+                target = k
+                break
+            }
+            if not empty and is_overlapping{ b, batch } { break }
+        }
+        if target == NONE {
+            if @as(usize, out.draw_count) >= out.batches.len or @as(usize, out.draw_count) >= out.draws.len {
+                out.batch_dropped = out.batch_dropped + 1
+                return
+            }
+            target = out.draw_count
+            out.draw_count = out.draw_count + 1
+            out.batches[@as(usize, target)] = Batch{
+                kind = item.kind, blend = if item.kind == Kind::image { item.blend } else { ui::Blend::alpha },
+                image = if item.kind == Kind::image { item.image } else { 0 },
+                min_x = FAR, min_y = FAR, max_x = 0.0 - FAR, max_y = 0.0 - FAR, head = NONE, tail = NONE, count = 0,
+            }
+        }
+        let t = @as(usize, target)
+        let mut batch = out.batches[t]
+        if not empty {
+            if b.min_x < batch.min_x { batch.min_x = b.min_x }
+            if b.min_y < batch.min_y { batch.min_y = b.min_y }
+            if b.max_x > batch.max_x { batch.max_x = b.max_x }
+            if b.max_y > batch.max_y { batch.max_y = b.max_y }
+        }
+        if batch.head == NONE {
+            batch.head = at
+        } else {
+            out.next[@as(usize, batch.tail)] = at
+        }
+        batch.tail = at
+        batch.count = batch.count + 1
+        out.batches[t] = batch
+        out.next[@as(usize, at)] = NONE
+    }
+
+    // Batches this frame's items, pass by pass. A pass that finds the pass list full (only when the
+    // list has no room at all) drops its items.
+    fn build_draws { mut out: Staged } {
+        out.draw_count = 0
+        out.pass_count = 0
+        out.batch_dropped = 0
+        let mut start: u32 = 0
+        let mut host: u32 = 0
+        while host <= out.front.host_count {
+            let has_host = host < out.front.host_count
+            let end = if has_host { out.front.hosts[@as(usize, host)].item } else { out.front.item_count }
+            if @as(usize, out.pass_count) >= out.passes.len {
+                out.batch_dropped = out.batch_dropped + (end - start)
+            } else {
+                let first = out.draw_count
+                let mut at = start
+                while at < end {
+                    assign_item{ &out, at, first }
+                    at = at + 1
+                }
+                let mut pass = Pass{ first, count = out.draw_count - first, host = false, slot = 0, rect = ui::Rect{ .. } }
+                if has_host {
+                    let h = out.front.hosts[@as(usize, host)]
+                    pass.host = true
+                    pass.slot = h.slot
+                    pass.rect = h.rect
+                }
+                out.passes[@as(usize, out.pass_count)] = pass
+                out.pass_count = out.pass_count + 1
+            }
+            start = end
+            host = host + 1
+        }
+    }
+
+    // Copies each draw's instances, in draw order, into the arrays a backend uploads, with glyph UVs
+    // made fractions of the atlas; and the clip table and the canvas's size.
+    fn lay_out_draws { mut out: Staged } {
+        let mut rects: u32 = 0
+        let mut glyphs: u32 = 0
+        let mut images: u32 = 0
+        let mut shapes: u32 = 0
+        let aw = @as(f32, out.atlas.width)
+        let ah = @as(f32, out.atlas.height)
+        let mut d: usize = 0
+        while d < @as(usize, out.draw_count) {
+            let batch = out.batches[d]
+            let first = if batch.kind == Kind::rect { rects } else if batch.kind == Kind::glyph { glyphs } else if batch.kind == Kind::image { images } else { shapes }
+            let mut at = batch.head
+            while at != NONE {
+                let item = out.front.items[@as(usize, at)]
+                let i = @as(usize, item.index)
+                match item.kind {
+                    rect => {
+                        out.rects[@as(usize, rects)] = out.front.rects[i]
+                        rects = rects + 1
+                    }
+                    glyph => {
+                        let mut g = out.front.glyphs[i]
+                        g.u = g.u / aw
+                        g.v = g.v / ah
+                        g.uw = g.uw / aw
+                        g.vh = g.vh / ah
+                        out.glyphs[@as(usize, glyphs)] = g
+                        glyphs = glyphs + 1
+                    }
+                    image => {
+                        out.images[@as(usize, images)] = out.front.images[i]
+                        images = images + 1
+                    }
+                    shape => {
+                        out.shapes[@as(usize, shapes)] = out.front.shapes[i]
+                        shapes = shapes + 1
+                    }
+                }
+                at = out.next[@as(usize, at)]
+            }
+            out.draws[d] = Draw{ kind = batch.kind, first, count = batch.count, image = batch.image, blend = batch.blend }
+            d = d + 1
+        }
+        out.rect_count = rects
+        out.glyph_count = glyphs
+        out.image_count = images
+        out.shape_count = shapes
+        let mut c: usize = 0
+        while c < @as(usize, out.front.clip_count) {
+            out.clips[c] = out.front.clips[c]
+            c = c + 1
+        }
+        out.clip_count = out.front.clip_count
+        out.width = out.front.width
+        out.height = out.front.height
+        out.pixel_width = out.front.pixel_width
+        out.pixel_height = out.front.pixel_height
+    }
+}

@@ -1,0 +1,13 @@
+staged 200x100 pixels 200x100 revision 1
+atlas 128x64 version 0 dirty 1,1 18x16
+clip 0 0,0,200,100 round=0,0,0,0 radius=0
+pass 0 draws 0+2 host 7 60,0 80x60
+draw 0 rect first=0 count=1
+  rect 0,80 50x20 radius=0,0,0,0 border=0,0,0,0 fill=FF110000 colors=00000000,00000000,00000000,00000000 clip=0
+draw 1 glyph first=0 count=1
+  glyph 2,82 8x16 uv=0.007813,0.015625,0.0625,0.25 color=FF220000 clip=0 angle=0
+pass 1 draws 2+2
+draw 2 rect first=1 count=1
+  rect 150,80 50x20 radius=0,0,0,0 border=0,0,0,0 fill=FF330000 colors=00000000,00000000,00000000,00000000 clip=0
+draw 3 glyph first=1 count=1
+  glyph 152,82 8x16 uv=0.085938,0.015625,0.0625,0.25 color=FF440000 clip=0 angle=0

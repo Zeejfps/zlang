@@ -1,0 +1,198 @@
+// ui_test: a PNG writer for pictures a test writes to look at (the glyph atlas, screenshots). ui
+// carries its own instead of using kotor's, so ui/ needs nothing under kotor/. The pixels go into
+// zlib's stored (uncompressed) deflate blocks, so a file is a little larger than its pixels and
+// takes no time to make. Any PNG reader takes it.
+//
+// A file: the signature, then chunks of [length, type, data, CRC-32 of type and data]: IHDR (the
+// size and pixel format), one IDAT (a zlib stream of the rows, each led by its filter byte, 0
+// here), IEND. Numbers are big-endian.
+namespace ui_test {
+    // 8-bit pixels, row by row: width * height * channels bytes. One channel is grey (the atlas's
+    // coverage), four are RGBA.
+    struct Picture { width: u32, height: u32, channels: u32, pixels: []u8 }
+
+    // Most bytes in a stored deflate block.
+    const PNG_BLOCK: usize = 65535
+
+    // CRC-32 (ISO 3309, as zlib and PNG use it), a byte at a time from this table.
+    const PNG_CRC_TABLE: [256]u32 = make_crc_table{}
+
+    fn make_crc_table {} -> [256]u32 {
+        let mut t: [256]u32
+        let mut n: u32 = 0
+        while n < 256 {
+            let mut c = n
+            let mut k = 0
+            while k < 8 {
+                c = if (c & 1) != 0 { 0xEDB88320 ^ (c >> 1) } else { c >> 1 }
+                k = k + 1
+            }
+            t[n] = c
+            n = n + 1
+        }
+        return t
+    }
+
+    // The CRC of `bytes`, continuing one that has seen what came before: start from 0.
+    fn add_crc { crc: u32, bytes: []u8 } -> u32 {
+        let table = PNG_CRC_TABLE
+        let mut c = ~crc
+        let mut i: usize = 0
+        while i < bytes.len {
+            c = table[(c ^ bytes[i]) & 0xFF] ^ (c >> 8)
+            i = i + 1
+        }
+        return ~c
+    }
+
+    // Adler-32 (zlib's), continuing: start from 1.
+    fn add_adler { adler: u32, bytes: []u8 } -> u32 {
+        let mut a = adler & 0xFFFF
+        let mut b = adler >> 16
+        let mut i: usize = 0
+        while i < bytes.len {
+            // 5552 bytes is the most that can't overflow a u32 between reductions.
+            let end = if bytes.len - i > 5552 { i + 5552 } else { bytes.len }
+            while i < end {
+                a = a + bytes[i]
+                b = b + a
+                i = i + 1
+            }
+            a = a % 65521
+            b = b % 65521
+        }
+        return (b << 16) | a
+    }
+
+    // The rows' bytes before deflate: a filter byte, then the pixels.
+    fn get_png_raw_size { picture: Picture } -> usize {
+        return @as(usize, picture.height) * (1 + @as(usize, picture.width) * @as(usize, picture.channels))
+    }
+
+    // The size of the file `encode_png` makes.
+    fn get_png_size { picture: Picture } -> usize {
+        let raw = get_png_raw_size{ picture }
+        let blocks = if raw == 0 { 1 } else { (raw + PNG_BLOCK - 1) / PNG_BLOCK }
+        let zlib = 2 + blocks * 5 + raw + 4
+        return 8 + (12 + 13) + (12 + zlib) + 12
+    }
+
+    struct PngWriter { out: []mut u8, at: usize }
+
+    fn put_png_byte { mut w: PngWriter, n: u8 } {
+        w.out[w.at] = n
+        w.at = w.at + 1
+    }
+
+    fn put_png_bytes { mut w: PngWriter, bytes: []u8 } {
+        slice::copy(u8){ dst = w.out[w.at..w.at + bytes.len], src = bytes }
+        w.at = w.at + bytes.len
+    }
+
+    fn put_png_u16_le { mut w: PngWriter, n: u16 } {
+        put_png_byte{ &w, n = @trunc(u8, n) }
+        put_png_byte{ &w, n = @trunc(u8, n >> 8) }
+    }
+
+    fn put_png_u32 { mut w: PngWriter, n: u32 } {
+        put_png_byte{ &w, n = @trunc(u8, n >> 24) }
+        put_png_byte{ &w, n = @trunc(u8, n >> 16) }
+        put_png_byte{ &w, n = @trunc(u8, n >> 8) }
+        put_png_byte{ &w, n = @trunc(u8, n) }
+    }
+
+    // Writes a chunk's length and type; returns where the type starts, which its CRC covers.
+    fn begin_png_chunk { mut w: PngWriter, kind: []u8, len: u32 } -> usize {
+        put_png_u32{ &w, n = len }
+        let start = w.at
+        put_png_bytes{ &w, bytes = kind }
+        return start
+    }
+
+    fn end_png_chunk { mut w: PngWriter, start: usize } {
+        put_png_u32{ &w, n = add_crc{ crc = 0, bytes = w.out[start..w.at] } }
+    }
+
+    // Writes `picture` as a PNG into the start of `into`, which must hold get_png_size bytes, and
+    // returns those bytes. `bottom_up` takes the rows from the last to the first, as the atlas and
+    // an OpenGL framebuffer keep them. Panics on a picture that is not one or four channels or is
+    // shorter than its size says: a test's mistake.
+    fn encode_png { picture: Picture, bottom_up: bool, into: []mut u8 } -> []mut u8 {
+        if picture.channels != 1 and picture.channels != 4 { @panic("ui_test::encode_png: a picture is one or four channels") }
+        let size = get_png_size{ picture }
+        if into.len < size { @panic("ui_test::encode_png: the buffer is too small") }
+        let channels = @as(usize, picture.channels)
+        let row_pixels = @as(usize, picture.width) * channels
+        if picture.pixels.len < row_pixels * @as(usize, picture.height) { @panic("ui_test::encode_png: the picture is short") }
+        let mut w = PngWriter{ out = into[..size], at = 0 }
+
+        let signature = [0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n']
+        put_png_bytes{ &w, bytes = signature[..] }
+
+        let ihdr = begin_png_chunk{ &w, kind = "IHDR", len = 13 }
+        put_png_u32{ &w, n = picture.width }
+        put_png_u32{ &w, n = picture.height }
+        put_png_byte{ &w, n = 8 }                                         // bits per channel
+        put_png_byte{ &w, n = if channels == 1 { 0 } else { 6 } }        // grey or RGBA
+        put_png_byte{ &w, n = 0 }                                         // deflate
+        put_png_byte{ &w, n = 0 }                                         // adaptive filtering, of which row filter 0
+        put_png_byte{ &w, n = 0 }                                         // not interlaced
+        end_png_chunk{ &w, start = ihdr }
+
+        // IDAT: zlib header, stored blocks, Adler-32
+        let raw = get_png_raw_size{ picture }
+        let blocks = if raw == 0 { 1 } else { (raw + PNG_BLOCK - 1) / PNG_BLOCK }
+        let idat = begin_png_chunk{ &w, kind = "IDAT", len = @as(u32, 2 + blocks * 5 + raw + 4) }
+        put_png_byte{ &w, n = 0x78 }                                      // deflate, 32K window
+        put_png_byte{ &w, n = 0x01 }                                      // no dictionary; 0x7801 % 31 == 0
+        let row_bytes = 1 + row_pixels
+        let mut adler: u32 = 1
+        let mut done: usize = 0                                           // raw bytes written
+        let mut left_in_block: usize = 0
+        while done < raw {
+            if left_in_block == 0 {
+                let n = if raw - done > PNG_BLOCK { PNG_BLOCK } else { raw - done }
+                put_png_byte{ &w, n = if done + n == raw { 1 } else { 0 } }   // BFINAL, BTYPE 00
+                put_png_u16_le{ &w, n = @as(u16, n) }
+                put_png_u16_le{ &w, n = ~@as(u16, n) }
+                left_in_block = n
+            }
+            // The raw byte at `done`: a row's filter byte or one of its pixels' channels.
+            let row = done / row_bytes
+            let col = done % row_bytes
+            let n = if row_bytes - col < left_in_block { row_bytes - col } else { left_in_block }
+            let source = if bottom_up { @as(usize, picture.height) - 1 - row } else { row }
+            let start = w.at
+            if col == 0 {
+                put_png_byte{ &w, n = 0 }
+                put_png_bytes{ &w, bytes = picture.pixels[source * row_pixels..source * row_pixels + n - 1] }
+            } else {
+                let from = source * row_pixels + col - 1
+                put_png_bytes{ &w, bytes = picture.pixels[from..from + n] }
+            }
+            adler = add_adler{ adler, bytes = w.out[start..w.at] }
+            done = done + n
+            left_in_block = left_in_block - n
+        }
+        if raw == 0 {
+            put_png_byte{ &w, n = 1 }
+            put_png_u16_le{ &w, n = 0 }
+            put_png_u16_le{ &w, n = 0xFFFF }
+        }
+        put_png_u32{ &w, n = adler }
+        end_png_chunk{ &w, start = idat }
+
+        let iend = begin_png_chunk{ &w, kind = "IEND", len = 0 }
+        end_png_chunk{ &w, start = iend }
+        if w.at != size { @panic("ui_test::encode_png: the size was miscounted") }
+        return w.out
+    }
+
+    // Encodes `picture` into memory from the allocator and writes it to `path`.
+    fn write_png(S) { mut fs: Fs, realloc: alloc::Fn(S), mut heap: S, path: []u8, picture: Picture, bottom_up: bool } -> ! {
+        let buf = try alloc::make(u8, S){ realloc, &heap, count = get_png_size{ picture } }
+        defer _ = alloc::resize(u8, S){ realloc, &heap, mem = buf, count = 0 }
+        let bytes = encode_png{ picture, bottom_up, into = buf }
+        _ = try fs::write_all{ &fs, path, bytes }
+    }
+}

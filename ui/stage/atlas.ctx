@@ -1,0 +1,440 @@
+// ui_stage: the glyph atlas and the glyph cache. The atlas is a port of ZGF's GlyphAtlas: skyline
+// packing with one texel of padding round each glyph, reuse of the room released glyphs gave back
+// (the smallest freed space that fits), a quarantine of four frames before freed room is cleared and
+// taken again (a frame drawn before the release may still be on the GPU, sampling it), growth in
+// height up to a limit with `version` raised, and a dirty rectangle so a backend uploads only what
+// changed.
+//
+// Rows are bottom first (texel row 0 is texture v = 0), as ZGF's are: a glyph's bitmap, which comes
+// top row first, is copied upside down, so the bottom of a glyph's quad samples the bottom of it.
+//
+// The cache is keyed as ZGF keys it: (sized face, glyph index) for an outline glyph, and for a glyph
+// table (its picture, the glyph's texel rectangle), so a glyph is rasterised or copied once. When
+// the atlas is full at its limit, or the cache is, the glyphs that did not fit are counted as
+// dropped and both are emptied before the next frame, which refills them.
+namespace ui_stage {
+    const PADDING: u32 = 1
+    const QUARANTINE_FRAMES: u64 = 4
+
+    // ---- the packer
+
+    // The skyline as it is for an empty atlas: one segment as wide as the atlas, at the bottom.
+    fn reset_packer { mut out: Staged } {
+        out.packer.nodes[0] = Node{ x = 0, y = 0, w = out.atlas.width }
+        out.packer.node_count = 1
+        out.packer.freed_count = 0
+        out.packer.held_count = 0
+        out.packer.refill = false
+    }
+
+    // Empties the atlas and the cache: every texel cleared, the whole atlas dirty. The height it grew
+    // to is kept, as ZGF never shrinks its atlas.
+    fn empty_atlas { mut out: Staged } {
+        slice::fill(u8){ s = out.atlas.pixels, v = 0 }
+        reset_packer{ &out }
+        let mut i: usize = 0
+        while i < out.cache.len {
+            out.cache[i].state = SLOT_EMPTY
+            i = i + 1
+        }
+        out.cache_used = 0
+        out.cache_gone = 0
+        mark_dirty{ &out, x0 = 0, y0 = 0, x1 = out.atlas.width, y1 = out.atlas.height }
+    }
+
+    // What starts every frame: the last frame's dirty rectangle was uploaded, an atlas that ran out
+    // is emptied, and released glyphs whose quarantine is over give their room back.
+    fn begin_atlas_frame { mut out: Staged } {
+        out.atlas.dirty_x0 = 0
+        out.atlas.dirty_y0 = 0
+        out.atlas.dirty_x1 = 0
+        out.atlas.dirty_y1 = 0
+        if out.packer.refill { empty_atlas{ &out } }
+        out.packer.frame = out.packer.frame + 1
+        let mut i = out.packer.held_count
+        while i > 0 {
+            i = i - 1
+            let held = out.packer.held[@as(usize, i)]
+            if out.packer.frame - held.frame < QUARANTINE_FRAMES { continue }
+            remove_held{ &out, index = i }
+            clear_texels{ &out, x = held.x, y = held.y, w = held.w, h = held.h }
+            keep_freed{ &out, space = Space{ x = held.x - PADDING, y = held.y - PADDING, w = held.w + PADDING * 2, h = held.h + PADDING * 2 } }
+        }
+    }
+
+    fn remove_held { mut out: Staged, index: u32 } {
+        let mut i = @as(usize, index)
+        let last = @as(usize, out.packer.held_count) - 1
+        while i < last {
+            out.packer.held[i] = out.packer.held[i + 1]
+            i = i + 1
+        }
+        out.packer.held_count = out.packer.held_count - 1
+    }
+
+    // Room to take again. When the list is full the room is lost until the atlas is next emptied.
+    fn keep_freed { mut out: Staged, space: Space } {
+        if @as(usize, out.packer.freed_count) >= out.packer.freed.len { return }
+        out.packer.freed[@as(usize, out.packer.freed_count)] = space
+        out.packer.freed_count = out.packer.freed_count + 1
+    }
+
+    fn remove_freed { mut out: Staged, index: u32 } {
+        let mut i = @as(usize, index)
+        let last = @as(usize, out.packer.freed_count) - 1
+        while i < last {
+            out.packer.freed[i] = out.packer.freed[i + 1]
+            i = i + 1
+        }
+        out.packer.freed_count = out.packer.freed_count - 1
+    }
+
+    fn mark_dirty { mut out: Staged, x0: u32, y0: u32, x1: u32, y1: u32 } {
+        if x1 <= x0 or y1 <= y0 { return }
+        if out.atlas.dirty_x1 <= out.atlas.dirty_x0 {
+            out.atlas.dirty_x0 = x0
+            out.atlas.dirty_y0 = y0
+            out.atlas.dirty_x1 = x1
+            out.atlas.dirty_y1 = y1
+            return
+        }
+        out.atlas.dirty_x0 = ui::pick_min_u32{ a = out.atlas.dirty_x0, b = x0 }
+        out.atlas.dirty_y0 = ui::pick_min_u32{ a = out.atlas.dirty_y0, b = y0 }
+        out.atlas.dirty_x1 = ui::pick_max_u32{ a = out.atlas.dirty_x1, b = x1 }
+        out.atlas.dirty_y1 = ui::pick_max_u32{ a = out.atlas.dirty_y1, b = y1 }
+    }
+
+    fn clear_texels { mut out: Staged, x: u32, y: u32, w: u32, h: u32 } {
+        let width = @as(usize, out.atlas.width)
+        let mut row: usize = 0
+        while row < @as(usize, h) {
+            let start = (@as(usize, y) + row) * width + @as(usize, x)
+            slice::fill(u8){ s = out.atlas.pixels[start..start + @as(usize, w)], v = 0 }
+            row = row + 1
+        }
+        mark_dirty{ &out, x0 = x, y0 = y, x1 = x + w, y1 = y + h }
+    }
+
+    // Room for a glyph `w` by `h`: the texel its bottom left corner goes at. Freed room first, then
+    // the skyline, growing the atlas while that fails. Null when the atlas is at its limit, and then
+    // the atlas is emptied before the next frame; a glyph wider than the atlas or taller than its
+    // limit never fits and empties nothing.
+    fn reserve_room { mut out: Staged, w: u32, h: u32 } -> ?Space {
+        let pw = w + PADDING * 2
+        let ph = h + PADDING * 2
+        if pw > out.atlas.width or ph > out.packer.max_height { return null }
+        if let space = take_freed{ &out, pw, ph } { return space }
+        let mut space = place_on_skyline{ &out, pw, ph }
+        while space == null {
+            if not grow_atlas{ &out } {
+                out.packer.refill = true
+                return null
+            }
+            space = place_on_skyline{ &out, pw, ph }
+        }
+        return space
+    }
+
+    // The height doubles, up to the limit. The width is fixed, so a texel's offset in the pixels
+    // (y * width + x) does not move and the glyphs already packed stay where they are.
+    fn grow_atlas { mut out: Staged } -> bool {
+        if out.atlas.height >= out.packer.max_height { return false }
+        let doubled = if out.atlas.height > out.packer.max_height / 2 { out.packer.max_height } else { out.atlas.height * 2 }
+        out.atlas.height = ui::pick_max_u32{ a = doubled, b = out.atlas.height + 1 }
+        out.atlas.pixels = out.atlas_store[..@as(usize, out.atlas.width) * @as(usize, out.atlas.height)]
+        out.atlas.version = out.atlas.version + 1
+        return true
+    }
+
+    // Takes the smallest freed space that fits `pw` by `ph` (padding included), keeping what it leaves
+    // to the right and above as freed spaces of their own.
+    fn take_freed { mut out: Staged, pw: u32, ph: u32 } -> ?Space {
+        let mut best = NONE
+        let mut best_area: u64 = 18446744073709551615
+        let mut i: u32 = 0
+        while i < out.packer.freed_count {
+            let s = out.packer.freed[@as(usize, i)]
+            let area = @as(u64, s.w) * @as(u64, s.h)
+            if s.w >= pw and s.h >= ph and area < best_area {
+                best = i
+                best_area = area
+            }
+            i = i + 1
+        }
+        if best == NONE { return null }
+        let s = out.packer.freed[@as(usize, best)]
+        remove_freed{ &out, index = best }
+        keep_leftover{ &out, space = Space{ x = s.x + pw, y = s.y, w = s.w - pw, h = ph } }
+        keep_leftover{ &out, space = Space{ x = s.x, y = s.y + ph, w = s.w, h = s.h - ph } }
+        return Space{ x = s.x + PADDING, y = s.y + PADDING, w = pw - PADDING * 2, h = ph - PADDING * 2 }
+    }
+
+    fn keep_leftover { mut out: Staged, space: Space } {
+        if space.w <= PADDING * 2 or space.h <= PADDING * 2 { return }
+        keep_freed{ &out, space }
+    }
+
+    // The lowest place on the skyline, leftmost among equals, where `pw` by `ph` fits.
+    fn place_on_skyline { mut out: Staged, pw: u32, ph: u32 } -> ?Space {
+        if pw > out.atlas.width or ph > out.atlas.height { return null }
+        let mut best = NONE
+        let mut best_y = NONE
+        let mut best_x: u32 = 0
+        let mut i: u32 = 0
+        while i < out.packer.node_count {
+            let y = find_fit{ packer = out.packer, index = i, width = pw, atlas_width = out.atlas.width, atlas_height = out.atlas.height } ifnull {
+                i = i + 1
+                continue
+            }
+            let x = out.packer.nodes[@as(usize, i)].x
+            if y + ph <= out.atlas.height and (y < best_y or (y == best_y and x < best_x)) {
+                best = i
+                best_y = y
+                best_x = x
+            }
+            i = i + 1
+        }
+        if best == NONE { return null }
+        add_level{ &out, index = best, x = best_x, y = best_y, w = pw, h = ph }
+        return Space{ x = best_x + PADDING, y = best_y + PADDING, w = pw - PADDING * 2, h = ph - PADDING * 2 }
+    }
+
+    // The height a `width` wide rectangle would rest at if its left edge were at segment `index`, or
+    // null when it would stick out of the atlas.
+    fn find_fit { packer: Packer, index: u32, width: u32, atlas_width: u32, atlas_height: u32 } -> ?u32 {
+        let x = packer.nodes[@as(usize, index)].x
+        if x + width > atlas_width { return null }
+        let mut remaining = width
+        let mut i = index
+        let mut y = packer.nodes[@as(usize, i)].y
+        while remaining > 0 {
+            if i >= packer.node_count { return null }
+            let node = packer.nodes[@as(usize, i)]
+            if node.y > y { y = node.y }
+            if y + 1 > atlas_height { return null }
+            remaining = if node.w >= remaining { 0 } else { remaining - node.w }
+            i = i + 1
+        }
+        return y
+    }
+
+    // Puts a `w` by `h` rectangle on the skyline at segment `index`: a new segment at its top, the
+    // segments it covers shortened or removed, and neighbours of one height merged.
+    fn add_level { mut out: Staged, index: u32, x: u32, y: u32, w: u32, h: u32 } {
+        let at = @as(usize, index)
+        let mut k = @as(usize, out.packer.node_count)
+        if k >= out.packer.nodes.len { return }
+        while k > at {
+            out.packer.nodes[k] = out.packer.nodes[k - 1]
+            k = k - 1
+        }
+        out.packer.nodes[at] = Node{ x, y = y + h, w }
+        out.packer.node_count = out.packer.node_count + 1
+
+        let mut i = at + 1
+        while i < @as(usize, out.packer.node_count) {
+            let prev = out.packer.nodes[i - 1]
+            let mut node = out.packer.nodes[i]
+            if node.x >= prev.x + prev.w { break }
+            let shrink = prev.x + prev.w - node.x
+            if node.w <= shrink {
+                remove_node{ &out, index = i }
+                continue
+            }
+            node.x = node.x + shrink
+            node.w = node.w - shrink
+            out.packer.nodes[i] = node
+            break
+        }
+
+        i = 0
+        while i + 1 < @as(usize, out.packer.node_count) {
+            let cur = out.packer.nodes[i]
+            let next = out.packer.nodes[i + 1]
+            if cur.y == next.y {
+                out.packer.nodes[i] = Node{ x = cur.x, y = cur.y, w = cur.w + next.w }
+                remove_node{ &out, index = i + 1 }
+                continue
+            }
+            i = i + 1
+        }
+    }
+
+    fn remove_node { mut out: Staged, index: usize } {
+        let mut i = index
+        let last = @as(usize, out.packer.node_count) - 1
+        while i < last {
+            out.packer.nodes[i] = out.packer.nodes[i + 1]
+            i = i + 1
+        }
+        out.packer.node_count = out.packer.node_count - 1
+    }
+
+    // Copies a `w` by `h` bitmap into the atlas with its bottom left at (x, y). `src` is top row first,
+    // `pitch` bytes a row, and the bitmap starts at column `sx` of row `sy`; its rows go in upside down.
+    fn copy_bitmap { mut out: Staged, src: []u8, pitch: usize, sx: usize, sy: usize, x: u32, y: u32, w: u32, h: u32 } {
+        let width = @as(usize, out.atlas.width)
+        let rows = @as(usize, h)
+        let mut r: usize = 0
+        while r < rows {
+            let from = (sy + rows - 1 - r) * pitch + sx
+            let to = (@as(usize, y) + r) * width + @as(usize, x)
+            slice::copy(u8){ dst = out.atlas.pixels[to..to + @as(usize, w)], src = src[from..from + @as(usize, w)] }
+            r = r + 1
+        }
+        mark_dirty{ &out, x0 = x, y0 = y, x1 = x + w, y1 = y + h }
+        out.packed = out.packed + 1
+    }
+
+    // Gives a glyph's room back: it keeps its texels, and its room is not taken again, until
+    // QUARANTINE_FRAMES frames have begun. When the waiting list is full the room is lost until the
+    // atlas is next emptied.
+    fn release_room { mut out: Staged, x: u32, y: u32, w: u32, h: u32 } {
+        if w == 0 or h == 0 { return }
+        if @as(usize, out.packer.held_count) >= out.packer.held.len { return }
+        out.packer.held[@as(usize, out.packer.held_count)] = Held{ x, y, w, h, frame = out.packer.frame }
+        out.packer.held_count = out.packer.held_count + 1
+    }
+
+    // ---- the glyph cache
+
+    fn hash_glyph { owner: u64, glyph: u64, outline: bool } -> u64 {
+        let mut h: u64 = 14695981039346656037
+        let tag: u64 = if outline { 1 } else { 2 }
+        h = (h ^ tag) *% 1099511628211
+        h = (h ^ owner) *% 1099511628211
+        h = (h ^ (owner >> 32)) *% 1099511628211
+        h = (h ^ glyph) *% 1099511628211
+        h = (h ^ (glyph >> 32)) *% 1099511628211
+        return h
+    }
+
+    fn is_glyph { entry: Cached, owner: u64, glyph: u64, outline: bool } -> bool {
+        return entry.state == SLOT_USED and entry.owner == owner and entry.glyph == glyph and entry.outline == outline
+    }
+
+    // The cached glyph, or null when it is not in the cache.
+    fn find_glyph { out: Staged, owner: u64, glyph: u64, outline: bool } -> ?Cached {
+        let slots = out.cache.len
+        let mut slot = @as(usize, hash_glyph{ owner, glyph, outline } % @as(u64, slots))
+        let mut probes: usize = 0
+        while probes < slots {
+            let entry = out.cache[slot]
+            if entry.state == SLOT_EMPTY { return null }
+            if is_glyph{ entry, owner, glyph, outline } { return entry }
+            slot = (slot + 1) % slots
+            probes = probes + 1
+        }
+        return null
+    }
+
+    // Whether the cache can take another glyph: a quarter of it stays free so a probe meets an empty slot.
+    fn has_cache_room { out: Staged } -> bool {
+        return (@as(usize, out.cache_used) + @as(usize, out.cache_gone) + 1) * 4 <= out.cache.len * 3
+    }
+
+    fn keep_glyph { mut out: Staged, entry: Cached } {
+        let slots = out.cache.len
+        let mut slot = @as(usize, hash_glyph{ owner = entry.owner, glyph = entry.glyph, outline = entry.outline } % @as(u64, slots))
+        let mut probes: usize = 0
+        while probes < slots {
+            let state = out.cache[slot].state
+            if state != SLOT_USED {
+                if state == SLOT_GONE { out.cache_gone = out.cache_gone - 1 }
+                out.cache[slot] = entry
+                out.cache_used = out.cache_used + 1
+                return
+            }
+            slot = (slot + 1) % slots
+            probes = probes + 1
+        }
+    }
+
+    // Forgets every glyph of `owner` and gives its room back (after the quarantine).
+    fn release_owner { mut out: Staged, owner: u64, outline: bool } {
+        let mut i: usize = 0
+        while i < out.cache.len {
+            let entry = out.cache[i]
+            if entry.state == SLOT_USED and entry.owner == owner and entry.outline == outline {
+                release_room{ &out, x = entry.x, y = entry.y, w = entry.w, h = entry.h }
+                out.cache[i].state = SLOT_GONE
+                out.cache_used = out.cache_used - 1
+                out.cache_gone = out.cache_gone + 1
+            }
+            i = i + 1
+        }
+    }
+
+    // Releases the atlas room of a glyph table whose pixels were packed into the atlas, as ZGF frees
+    // a released font's glyphs: the room is taken again QUARANTINE_FRAMES frames later. Call it
+    // between frames, once the program draws no more text in the font. A table on a backend image
+    // has nothing in the atlas.
+    fn release_font { mut out: Staged, font: ui::FontDef } {
+        if font.kind is bitmap{ pixels } {
+            if pixels.len > 0 { release_owner{ &out, owner = @as(u64, @addr(pixels.ptr)), outline = false } }
+        }
+    }
+
+    // Releases the glyphs of one sized face of an outline font (the `face` a provider's `Shaped`
+    // names), the same way.
+    fn release_face { mut out: Staged, face: u32 } {
+        release_owner{ &out, owner = @as(u64, face), outline = true }
+    }
+
+    // The glyph of a glyph table whose picture is `pixels` (`pitch` texels a row, top row first) and
+    // which shows texels [x0, x1) by [y0, y1) of it, copied into the atlas the first time it is asked
+    // for. Null, counted as dropped, when the atlas or the cache has no room.
+    fn get_table_glyph { mut out: Staged, pixels: []u8, pitch: u32, x0: u32, y0: u32, x1: u32, y1: u32 } -> ?Cached {
+        let owner = @as(u64, @addr(pixels.ptr))
+        let glyph = @as(u64, x0) | (@as(u64, y0) << 16) | (@as(u64, x1) << 32) | (@as(u64, y1) << 48)
+        if let found = find_glyph{ out, owner, glyph, outline = false } { return found }
+        let w = x1 - x0
+        let h = y1 - y0
+        if not has_cache_room{ out } {
+            out.packer.refill = true
+            out.dropped = out.dropped + 1
+            return null
+        }
+        let room = reserve_room{ &out, w, h } ifnull {
+            out.dropped = out.dropped + 1
+            return null
+        }
+        copy_bitmap{ &out, src = pixels, pitch = @as(usize, pitch), sx = @as(usize, x0), sy = @as(usize, y0), x = room.x, y = room.y, w, h }
+        let entry = Cached{ owner, glyph, x = room.x, y = room.y, w, h, left = 0, top = 0, state = SLOT_USED, outline = false }
+        keep_glyph{ &out, entry }
+        return entry
+    }
+
+    // The glyph `glyph` of sized face `face`, rasterised by the provider and copied into the atlas the
+    // first time it is asked for. A glyph with no ink is cached with no room. Null when the provider
+    // cannot rasterise it (not counted: it has nothing to draw), and null counted as dropped when the
+    // atlas or the cache has no room.
+    fn get_outline_glyph { mut out: Staged, provider: ui::TextProvider, face: u32, glyph: u32 } -> ?Cached {
+        let owner = @as(u64, face)
+        let key = @as(u64, glyph)
+        if let found = find_glyph{ out, owner, glyph = key, outline = true } { return found }
+        if not has_cache_room{ out } {
+            out.packer.refill = true
+            out.dropped = out.dropped + 1
+            return null
+        }
+        let mut bitmap = ui::GlyphBitmap{ pixels = out.raster, width = 0, height = 0, left = 0, top = 0 }
+        if not provider.rasterize{ state = provider.state, face, glyph, out = &bitmap } { return null }
+        let size = @as(u64, bitmap.width) * @as(u64, bitmap.height)
+        if size > @as(u64, out.raster.len) { return null }
+        let mut entry = Cached{ owner, glyph = key, x = 0, y = 0, w = 0, h = 0, left = bitmap.left, top = bitmap.top, state = SLOT_USED, outline = true }
+        if size > 0 {
+            let room = reserve_room{ &out, w = bitmap.width, h = bitmap.height } ifnull {
+                out.dropped = out.dropped + 1
+                return null
+            }
+            copy_bitmap{ &out, src = out.raster, pitch = @as(usize, bitmap.width), sx = 0, sy = 0, x = room.x, y = room.y, w = bitmap.width, h = bitmap.height }
+            entry.x = room.x
+            entry.y = room.y
+            entry.w = bitmap.width
+            entry.h = bitmap.height
+        }
+        keep_glyph{ &out, entry }
+        return entry
+    }
+}

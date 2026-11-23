@@ -59,6 +59,7 @@ compiler on first use; a cached rerun of a small program takes about 0.1 s.
 ```
 kotor/tools/ctxc run ui/tests/draw                     # stage 0: draw list, recorder, formatting
 kotor/tools/ctxc run ui/tests/text                     # stage 1: fonts, measuring, wrapping, caret
+kotor/tools/ctxc run ui/tests/stage                    # stage 2: instances, atlas, batching; writes ui/out/stage-atlas.png
 kotor/tools/ctxc run ui/tests/draw -- --update         # rewrite goldens after an intended change
 kotor/tools/ctxc run kotor/tools/uicompat              # ui built beside kotor's libraries
 ui/tools/check                                         # every headless ui test in turn, then uicompat
@@ -86,8 +87,11 @@ ui/
     format.ctx  format_fixed, format_hex, format_color: into a caller's buffer, no std float printing
     font.ctx    the provider hook types, decode_char, get_font_scale; ui::draw: add_font, has_font, get_font, add_known_text
     text.ctx    lay_glyphs; ui::text: Cache, measure_text, wrap_text, fit_ellipsis, step_caret, locate_caret, pick_index
+  stage/      namespace ui_stage   the staged level: instances, clip slots, atlas and glyph cache, batching, passes
   record/     namespace ui_rec     the recorder: Sink with its own #write fns, write_list, write_quoted
-  test/       namespace ui_test    Tally, expect, has_flag, compare_golden, make_test_font (later: scripted driver)
+  record_stage/ namespace ui_rec   write_staged, the dump of a Staged: its own directory, because it names ui_stage
+                                   and a program that records only draw lists should not have to add ui/stage
+  test/       namespace ui_test    Tally, expect, has_flag, compare_golden, make_test_font, write_png (later: scripted driver)
   tests/<name>/                    programs: build.ctx, main.ctx, golden/*.txt
   tools/check                      bash loop over the headless tests
   out/                             (ignored) screenshots from later stages

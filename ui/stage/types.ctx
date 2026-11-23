@@ -1,0 +1,203 @@
+// ui_stage: the staged level (plan section 2.6). It turns a draw list into ZGF's instance kinds, the
+// clip table the shaders test, batched draws and passes, and keeps the glyph atlas and glyph cache.
+// A backend uploads what is here and draws it; it knows nothing of widgets or fonts.
+//
+// Everything below the seam is in ZGF's canvas space: y up, origin bottom left, logical units. The
+// shape list is y down; `stage` flips each value once, as it writes it. Colours are packed as ARGB,
+// as the shaders unpack them.
+//
+// Nothing here fails after `make`: an array, the clip table, the draw or pass list, the glyph cache
+// or the atlas that is full drops what did not fit and counts it in `Staged.dropped`.
+namespace ui_stage {
+    // canvas_rect: i_rect, i_borderRadius (tl, tr, br, bl), i_borderSize (top, right, bottom, left), five colours, i_clipIndex.
+    struct RectInstance {
+        x: f32, y: f32, w: f32, h: f32,
+        radius_tl: f32, radius_tr: f32, radius_br: f32, radius_bl: f32,
+        border_top: f32, border_right: f32, border_bottom: f32, border_left: f32,
+        fill: u32, color_top: u32, color_right: u32, color_bottom: u32, color_left: u32,
+        clip: u32,
+    }
+    // canvas_glyph: i_rect, i_atlasUV (u, v, w, h), i_color, i_clipIndex, i_rotation.
+    struct GlyphInstance { x: f32, y: f32, w: f32, h: f32, u: f32, v: f32, uw: f32, vh: f32, color: u32, clip: u32, angle: f32 }
+    // canvas_image: i_rect, i_srcUV (u, v, w, h), i_tint, i_clipIndex, i_rotation, i_cornerRadius (tl, tr, br, bl).
+    struct ImageInstance {
+        x: f32, y: f32, w: f32, h: f32, u: f32, v: f32, uw: f32, vh: f32, tint: u32, clip: u32, angle: f32,
+        radius_tl: f32, radius_tr: f32, radius_br: f32, radius_bl: f32,
+    }
+    // canvas_shape: i_outerRect, i_shapeData, i_shapeData2, i_halfWidth, i_color, i_shapeType, i_clipIndex, i_color2, i_flags.
+    struct ShapeInstance {
+        x: f32, y: f32, w: f32, h: f32, data: [4]f32, data2: [4]f32,
+        half_width: f32, color: u32, kind: u32, clip: u32, color2: u32, flags: u32,
+    }
+    const SHAPE_LINE: u32 = 2
+    // The clip uniform block's three rows for one entry: (left, bottom, right, top), the rounded rectangle, its radius.
+    struct ClipSlot { left: f32, bottom: f32, right: f32, top: f32, round_left: f32, round_bottom: f32, round_right: f32, round_top: f32, radius: f32 }
+    enum Kind: u8 { rect, glyph, image, shape }
+    // `first` and `count` index the instance array of `kind`. `image` is the texture of an image draw
+    // (0 for the other kinds), and `blend` how it is blended (alpha for the other kinds).
+    struct Draw { kind: Kind, first: u32, count: u32, image: u32, blend: ui::Blend }
+    // The draws [first, first + count). With `host`, the host then draws slot `slot` in `rect`, which
+    // is the host shape's rectangle as the list has it (logical units, y down), and the next pass
+    // draws over it. The last pass has no host.
+    struct Pass { first: u32, count: u32, host: bool, slot: u32, rect: ui::Rect }
+    // One byte of coverage a texel, bottom row first, as ZGF's glyph atlas is: texel (x, y) is
+    // `pixels[y * width + x]` and row 0 is texture v = 0. `pixels` is the current extent. `version`
+    // is raised when the atlas grows, so a backend makes its texture again; otherwise it uploads the
+    // dirty rectangle, texels [dirty_x0, dirty_x1) by [dirty_y0, dirty_y1), empty when x1 <= x0. The
+    // dirty rectangle is what changed during the last `stage` call.
+    struct Atlas { pixels: []mut u8, width: u32, height: u32, version: u32, dirty_x0: u32, dirty_y0: u32, dirty_x1: u32, dirty_y1: u32 }
+
+    // How much room `make` allocates. The defaults for rectangles, glyphs and shapes are ZGF's;
+    // images get 16384 (a KOTOR panel is thousands of image pieces). The atlas starts at
+    // atlas_width by atlas_height texels and grows in height, doubling, up to atlas_max_height.
+    // `glyph_cache` is the glyph cache's slots, of which it fills three quarters, and `raster_bytes`
+    // the largest glyph bitmap a provider may rasterise (width times height).
+    struct Capacity {
+        rects: u32 = 4096, glyphs: u32 = 16384, images: u32 = 16384, shapes: u32 = 2048, draws: u32 = 1024, passes: u32 = 16,
+        atlas_width: u32 = 2048, atlas_height: u32 = 2048,
+        atlas_max_height: u32 = 8192, glyph_cache: u32 = 8192, raster_bytes: u32 = 65536,
+    }
+
+    // The clip uniform block holds 256 entries (ZGF's MaxClips); a shape naming a later entry is dropped.
+    const MAX_CLIPS: u32 = 256
+    // A text is laid out and shaped in pieces of at most this many bytes.
+    const PIECE: u32 = 256
+    const NONE: u32 = 4294967295
+
+    // ---- what one frame staged, in paint order (the batcher's input)
+
+    // One instance in paint order: its kind, where it is in the paint arrays of that kind, and for an
+    // image its texture and blend.
+    struct Item { kind: Kind, blend: ui::Blend, index: u32, image: u32 }
+    // A host shape: the items before `item` are drawn before it.
+    struct Host { item: u32, slot: u32, rect: ui::Rect }
+    // The instances of a frame as they were painted. Glyph UVs are in atlas texels here; they are
+    // divided by the atlas size when the draws are laid out.
+    struct Paint {
+        rects: []mut RectInstance, rect_count: u32,
+        glyphs: []mut GlyphInstance, glyph_count: u32,
+        images: []mut ImageInstance, image_count: u32,
+        shapes: []mut ShapeInstance, shape_count: u32,
+        items: []mut Item, item_count: u32,
+        hosts: []mut Host, host_count: u32,
+        clips: []mut ClipSlot, clip_count: u32,
+        width: f32, height: f32, pixel_width: f32, pixel_height: f32, scale_x: f32, scale_y: f32,
+        atlas_width: u32, atlas_height: u32,
+    }
+
+    // ---- the atlas's packer and the glyph cache (atlas.ctx)
+
+    struct Node { x: u32, y: u32, w: u32 }                     // a skyline segment: [x, x + w) is filled up to y
+    struct Space { x: u32, y: u32, w: u32, h: u32 }            // freed room, padding included
+    struct Held { x: u32, y: u32, w: u32, h: u32, frame: u64 } // a released glyph waiting out its quarantine
+    struct Packer {
+        nodes: []mut Node, node_count: u32,
+        freed: []mut Space, freed_count: u32,
+        held: []mut Held, held_count: u32,
+        max_height: u32,
+        frame: u64,
+        refill: bool,           // the atlas or the cache ran out this frame: empty both before the next
+    }
+    // A glyph in the atlas. `owner` is the sized face of an outline glyph or the picture of a glyph
+    // table; `glyph` is the glyph index, or a table glyph's texel rectangle. A glyph with no ink has
+    // w and h 0 and no room in the atlas.
+    struct Cached { owner: u64, glyph: u64, x: u32, y: u32, w: u32, h: u32, left: i32, top: i32, state: u8, outline: bool }
+    const SLOT_EMPTY: u8 = 0
+    const SLOT_USED: u8 = 1
+    const SLOT_GONE: u8 = 2
+
+    // A draw being built: the batcher's state for one draw call.
+    struct Batch { kind: Kind, blend: ui::Blend, image: u32, min_x: f32, min_y: f32, max_x: f32, max_y: f32, head: u32, tail: u32, count: u32 }
+
+    struct Staged {
+        rects: []mut RectInstance, rect_count: u32,
+        glyphs: []mut GlyphInstance, glyph_count: u32,
+        images: []mut ImageInstance, image_count: u32,
+        shapes: []mut ShapeInstance, shape_count: u32,
+        clips: []mut ClipSlot, clip_count: u32,
+        draws: []mut Draw, draw_count: u32,
+        passes: []mut Pass, pass_count: u32,
+        atlas: Atlas,
+        width: f32, height: f32, pixel_width: f32, pixel_height: f32,   // u_canvasMetrics
+        revision: u64,          // changes only when the staged bytes differ from the last frame's
+        dropped: u32,
+
+        // The staging state below is the staged level's own; a backend reads none of it.
+        front: Paint, back: Paint,          // this frame's instances in paint order, and the last frame's
+        has_back: bool,                     // whether `back` holds a frame
+        batch_dropped: u32,                 // instances the last batching dropped for want of a draw
+        packer: Packer,
+        atlas_store: []mut u8,              // the atlas at its largest; `atlas.pixels` is its first rows
+        cache: []mut Cached, cache_used: u32, cache_gone: u32,
+        batches: []mut Batch, next: []mut u32,
+        placed: []mut ui::Placed, shaped: []mut ui::Shaped, raster: []mut u8,
+        packed: u64,            // glyphs copied into the atlas since `make`, for tests and statistics
+    }
+
+    fn make_paint(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !Paint {
+        let rects = try alloc::make(RectInstance, S){ realloc, &heap, count = @as(usize, cap.rects) }
+        let glyphs = try alloc::make(GlyphInstance, S){ realloc, &heap, count = @as(usize, cap.glyphs) }
+        let images = try alloc::make(ImageInstance, S){ realloc, &heap, count = @as(usize, cap.images) }
+        let shapes = try alloc::make(ShapeInstance, S){ realloc, &heap, count = @as(usize, cap.shapes) }
+        let items = try alloc::make(Item, S){ realloc, &heap, count = count_items{ cap } }
+        let hosts = try alloc::make(Host, S){ realloc, &heap, count = @as(usize, pick_host_room{ passes = cap.passes }) }
+        let clips = try alloc::make(ClipSlot, S){ realloc, &heap, count = @as(usize, MAX_CLIPS) }
+        return Paint{
+            rects, rect_count = 0, glyphs, glyph_count = 0, images, image_count = 0, shapes, shape_count = 0,
+            items, item_count = 0, hosts, host_count = 0, clips, clip_count = 0,
+            width = 0.0, height = 0.0, pixel_width = 0.0, pixel_height = 0.0, scale_x = 0.0, scale_y = 0.0,
+            atlas_width = 0, atlas_height = 0,
+        }
+    }
+
+    // Every instance is one item.
+    fn count_items { cap: Capacity } -> usize {
+        return @as(usize, cap.rects) + @as(usize, cap.glyphs) + @as(usize, cap.images) + @as(usize, cap.shapes)
+    }
+
+    // Each host slot ends a pass, so `passes` passes have room for one host fewer.
+    fn pick_host_room { passes: u32 } -> u32 { return if passes > 0 { passes - 1 } else { 0 } }
+
+    // Allocates every buffer once, from the caller's allocator. The atlas is allocated at its
+    // largest (atlas_width by atlas_max_height bytes) and starts atlas_height rows high.
+    fn make(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !Staged {
+        let width = ui::pick_max_u32{ a = cap.atlas_width, b = 1 }
+        let height = ui::pick_max_u32{ a = cap.atlas_height, b = 1 }
+        let max_height = ui::pick_max_u32{ a = cap.atlas_max_height, b = height }
+        let store = try alloc::make(u8, S){ realloc, &heap, count = @as(usize, width) * @as(usize, max_height) }
+        let cache_room = @as(usize, ui::pick_max_u32{ a = cap.glyph_cache, b = 1 })
+        let front = try make_paint(S){ realloc, &heap, cap }
+        let back = try make_paint(S){ realloc, &heap, cap }
+        let rects = try alloc::make(RectInstance, S){ realloc, &heap, count = @as(usize, cap.rects) }
+        let glyphs = try alloc::make(GlyphInstance, S){ realloc, &heap, count = @as(usize, cap.glyphs) }
+        let images = try alloc::make(ImageInstance, S){ realloc, &heap, count = @as(usize, cap.images) }
+        let shapes = try alloc::make(ShapeInstance, S){ realloc, &heap, count = @as(usize, cap.shapes) }
+        let clips = try alloc::make(ClipSlot, S){ realloc, &heap, count = @as(usize, MAX_CLIPS) }
+        let draws = try alloc::make(Draw, S){ realloc, &heap, count = @as(usize, cap.draws) }
+        let passes = try alloc::make(Pass, S){ realloc, &heap, count = @as(usize, cap.passes) }
+        let nodes = try alloc::make(Node, S){ realloc, &heap, count = @as(usize, width) + 1 }
+        let freed = try alloc::make(Space, S){ realloc, &heap, count = cache_room * 2 }
+        let held = try alloc::make(Held, S){ realloc, &heap, count = cache_room * 2 }
+        let cache = try alloc::make(Cached, S){ realloc, &heap, count = cache_room }
+        let batches = try alloc::make(Batch, S){ realloc, &heap, count = @as(usize, cap.draws) }
+        let next = try alloc::make(u32, S){ realloc, &heap, count = count_items{ cap } }
+        let placed = try alloc::make(ui::Placed, S){ realloc, &heap, count = @as(usize, PIECE) }
+        let shaped = try alloc::make(ui::Shaped, S){ realloc, &heap, count = @as(usize, PIECE) }
+        let raster = try alloc::make(u8, S){ realloc, &heap, count = @as(usize, cap.raster_bytes) }
+        let mut out = Staged{
+            rects, rect_count = 0, glyphs, glyph_count = 0, images, image_count = 0, shapes, shape_count = 0,
+            clips, clip_count = 0, draws, draw_count = 0, passes, pass_count = 0,
+            atlas = Atlas{ pixels = store[..@as(usize, width) * @as(usize, height)], width, height, version = 0, dirty_x0 = 0, dirty_y0 = 0, dirty_x1 = 0, dirty_y1 = 0 },
+            width = 0.0, height = 0.0, pixel_width = 0.0, pixel_height = 0.0,
+            revision = 0, dropped = 0,
+            front, back, has_back = false, batch_dropped = 0,
+            packer = Packer{ nodes, node_count = 0, freed, freed_count = 0, held, held_count = 0, max_height, frame = 0, refill = false },
+            atlas_store = store,
+            cache, cache_used = 0, cache_gone = 0,
+            batches, next, placed, shaped, raster,
+            packed = 0,
+        }
+        reset_packer{ &out }
+        return out
+    }
+}
