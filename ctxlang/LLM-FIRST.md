@@ -56,12 +56,18 @@ entries are cited by number, e.g. F#24) and [kotor/docs/tooling-gaps.md](../koto
   - Details: [spec §13](spec.md#13-builtins), [§12, Pointers, rule 7](spec.md#pointers).
   - *Done when:* a build program can deny them per directory, and kotor's game code builds with them denied outside its platform and binding layers (or the exceptions are listed).
 
-- [ ] **1.4 Fix float-to-float `@as` in the spec.**
+- [x] **1.4 Fix float-to-float `@as` in the spec.**
   §13 says `@as` panics if the value isn't representable, but `@as(f32, 1e300)` gives `inf`.
   When spec and compiler disagree, the model believes the spec. Say float-to-float rounds and
   overflows to infinity (or give it its own builtin), and check `ifoverflow` doesn't claim to cover it.
   - Details: F#26; [spec §13](spec.md#13-builtins), [§11, Overflow](spec.md#overflow).
   - *Done when:* spec and compiler agree, with a test.
+  - *Done:* the spec changed, not the compiler: `@as` to a float type never panics. It rounds to
+    the nearest value, an `f64` past `f32`'s range to an infinity, as C, the interpreter and a
+    const's evaluation all did already; a panic there would put a check in every audio and
+    vertex loop for a value `math::is_finite` can test. [spec §13](spec.md#13-builtins) says so,
+    and [§11, Overflow, rule 2](spec.md#overflow) that it never overflows: `ifoverflow` covered
+    only `@as` to an integer, and `@as(f32, x) ifoverflow 0.0` was an error already.
 
 ## 2. Make the safe form the easy form
 

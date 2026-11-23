@@ -57,10 +57,12 @@ function: can't be stored in a struct or returned), `extern fn{C} -> R` (C funct
 - Integer `+ - * <<` panic on overflow (`a << n` is `a * 2^n`); use `+%`, `-%`, `*%` and
   `@wrap_shl` for hashes, CRCs and RNGs. `/` by zero panics.
 - `~x` flips an integer's bits: `flags & ~F_VISIBLE` clears a flag.
-- `e ifoverflow x` gives x where the arithmetic and `@as` written in e overflow, for counts from a
+- `e ifoverflow x` gives x where the integer arithmetic and `@as` to an integer written in e overflow, for counts from a
   file: `count * 16 ifoverflow { return truncated }`. A call's arguments in e aren't covered.
-- No implicit int→float or signed↔unsigned: `@as(f32, n)` (checked), `@trunc(u8, n)` (low
-  bits), `@cast(*T, p)` for pointers. `@as(_, x)` takes the type from the context.
+- No implicit int→float or signed↔unsigned: `@as(u32, n)` (to an integer: panics if the value
+  doesn't fit), `@as(f32, x)` (to a float: never panics, rounds, and an `f64` too big for `f32`
+  gives `inf`), `@trunc(u8, n)` (low bits), `@cast(*T, p)` for pointers. `@as(_, x)` takes the
+  type from the context.
 - Only arrays and slices are indexed, and `[i]` is always bounds-checked. `q[i]` on a pointer is
   an error: the element without a check is `(q + i).*` (`(q + i).f` for a field), and
   `(s.ptr + i).*` skips a slice's check. Keep these to hot loops whose bounds are checked once.

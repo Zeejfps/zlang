@@ -3064,6 +3064,30 @@ class Builtins(Base):
     def test_parentheses_required(self):
         self.assertCompileError('fn main { mut io: Io } { @panic }', "expected '(' after @panic")
 
+    def test_as_to_a_float_never_panics(self):
+        """§13: `@as` to a float type rounds, an f64 past f32's range to an infinity, at run time
+        and in a const alike, and no `ifoverflow` covers it."""
+        self.assertOutput("""
+const HUGE: f32 = @as(f32, 1e300)
+const NEG: f32 = @as(f32, -1e300)
+fn big {} -> f64 { return 1e300 }
+fn main { mut io: Io } {
+    let x = big{}
+    let n: u64 = 18446744073709551615
+    let odd: i32 = 16777217
+    _ = @fmt(&io, "{} {} {} {}\\n", @as(f32, x), @as(f32, -x), @as(f32, x - x), @as(f32, 1e-300))
+    _ = @fmt(&io, "{} {}\\n", math::is_nan{ x = @as(f32, (x - x) / (x - x)) }, math::is_finite{ x = @as(f32, x) })
+    _ = @fmt(&io, "{} {} {}\\n", @as(f64, @as(f32, 0.1)), @as(f32, n), @as(f32, odd))
+    _ = @fmt(&io, "{} {}\\n", HUGE, NEG)
+}
+""", 'inf -inf 0.0 0.0\ntrue false\n0.10000000149011612 1.8446744e+19 16777216.0\ninf -inf\n')
+        self.assertCompileError("""
+fn main { mut io: Io } {
+    let x = 1e300
+    let y = @as(f32, x) ifoverflow 0.0
+}
+""", 'nothing before `ifoverflow` can overflow: it covers the integer `+`, `-`, `*` and `/`, unary `-` and `@as` to an integer')
+
     def test_type_argument_parsed_as_type(self):
         # `S` names both a struct and a local; in a type position it can only be the struct.
         self.assertOutput("""

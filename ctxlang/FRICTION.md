@@ -177,11 +177,6 @@ as the write-ups gave them.
     has `alloc::make`, `list::take`, `fs::list_free` and an arena mark.) *Hit by 1:* data (8
     fields).
 
-26. **Float-to-float `@as` reads as fallible, and the spec says it is.** §13 says `@as` "panics if
-    the value isn't representable in T", but `@as(f32, 1e300)` gives `inf`. A spec fix: say float
-    to float rounds (and overflows to infinity), or give it a separate conversion. *Hit by 1:*
-    ctxc (5).
-
 27. **A `mut` argument can't be a temporary.** `f{ x = g{} }` for a `mut x` has no place to point
     to, so it is `let mut tmp = g{}` first. *Hit by 1:* rules (4).
 
