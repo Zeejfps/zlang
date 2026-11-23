@@ -57,8 +57,9 @@ function: can't be stored in a struct or returned), `extern fn{C} -> R` (C funct
 - Integer `+ - * <<` panic on overflow (`a << n` is `a * 2^n`); use `+%`, `-%`, `*%` and
   `@wrap_shl` for hashes, CRCs and RNGs. `/` by zero panics.
 - `~x` flips an integer's bits: `flags & ~F_VISIBLE` clears a flag.
-- `e ifoverflow x` gives x where the integer arithmetic and `@as` to an integer written in e overflow, for counts from a
-  file: `count * 16 ifoverflow { return truncated }`. A call's arguments in e aren't covered.
+- `e ifoverflow x` gives x where the integer arithmetic and `@as` to an integer written in e
+  overflow, for counts from a file: `count * 16 ifoverflow { return truncated }`. A call's
+  arguments in e aren't covered.
 - No implicit int→float or signed↔unsigned: `@as(u32, n)` (to an integer: panics if the value
   doesn't fit), `@as(f32, x)` (to a float: never panics, rounds, and an `f64` too big for `f32`
   gives `inf`), `@trunc(u8, n)` (low bits), `@cast(*T, p)` for pointers. `@as(_, x)` takes the
@@ -66,6 +67,17 @@ function: can't be stored in a struct or returned), `extern fn{C} -> R` (C funct
 - Only arrays and slices are indexed, and `[i]` is always bounds-checked. `q[i]` on a pointer is
   an error: the element without a check is `(q + i).*` (`(q + i).f` for a field), and
   `(s.ptr + i).*` skips a slice's check. Keep these to hot loops whose bounds are checked once.
+- The **unchecked operations** (spec §13) are `@cast`, `@slice`, pointer arithmetic (`q + n`, so
+  `(q + i).*` too), a `c::String` from a pointer, and declaring an `extern fn`, an
+  `extern union`, a C variable or a `#c::callback` fn. The game's build makes them compile
+  errors (`build::deny_unchecked` in kotor/build.ctx) outside the directories its `except`
+  lists, each with its reason: lib/platform, lib/render_gl, lib/base, lib/script, lib/video,
+  lib/audio, lib/engine and lib/render. Elsewhere write the checked form the error names:
+  `s[i]` and `a[lo..hi]`, `alloc::free` for one object from `alloc::new`, std's `math` for
+  libm, a string literal for a `c::String`; or call a function of one of those directories.
+  Calling an extern fn or using a slice that such a directory made is allowed everywhere. Add a
+  directory to `except` only with its reason on its line. The tools (kotor/tools/*) don't deny
+  them.
 - Same bits, other type: `@trunc` between integers of one size (`@trunc(u32, -1)` is
   `0xFFFFFFFF`, where `@as` panics); `math::f32_from_bits`, `f32_to_bits` and the `f64` pair for floats.
 - Integer literals take their type from use; float literals default to `f64`. Hex `0x1F`.

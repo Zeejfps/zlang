@@ -180,6 +180,15 @@ files and flags, and how the build went, from LIST and compiles them itself, so 
 ctxlang. Its generated files are GEN/EXE/NAME-HASH.ctx, HASH being of the text, so the same text
 keeps its path and its cached C, and runs with other text never share a file.
 
+*Done: denying the unchecked operations* (spec §13, Unchecked operations, and §19, rule 17;
+std/build.ctx, ctxc/drive.ctx, ctxc/check.ctx). `build::deny_unchecked{ &b, exe, except }` sends a
+`deny` record and an `except` record for each directory through the graph. The driver marks each
+of the executable's files denied unless its key (`key_of`) is under an excepted directory's, and
+the checker reports each unchecked operation written in a denied file (`check::File.denied`,
+`unchecked`). `ctxc graph` lists such a file as `denied PATH` instead of `file PATH`, and
+`tools/toolchain.py` passes that on as `ctxc build ... -- --deny-unchecked FILE...
+--allow-unchecked FILE...`, so Python still parses no ctxlang.
+
 *Done: declarations* (spec §19, rules 14 to 16; std/build/declarations.ctx, `examples/gen`).
 `build::declarations{ &b, &fs, &mem, &heap, realloc, exe }` parses exe's files as they are at
 the call, its root's and the directories `add_sources` gave it so far, found from build.ctx's

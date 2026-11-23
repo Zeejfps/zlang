@@ -9,7 +9,9 @@
 // build.ctx, the executables its build program describes (spec §19), of which `run` runs the
 // first and `exe` writes the first to OUT. A build program is compiled and run first, with
 // CTX_BUILD_OUT naming the file for its graph (std/build.ctx) and CTX_BUILD_DIR build.ctx's
-// directory. It is build.ctx and the .ctx files under each directory a `#build::sources` on its
+// directory. An executable it denies the unchecked operations (build::deny_unchecked, spec §13)
+// is checked with them as errors in its files, but for those under a directory it excepts
+// (`denied`). It is build.ctx and the .ctx files under each directory a `#build::sources` on its
 // `fn build` names, which the driver reads from build.ctx's syntax tree before compiling it. A
 // build program, this one or any program whose entry is `fn build`, has std/build/'s files and
 // ctxc's lexer and parser with std's (`build_extras`), for build::declarations. The program `run`
@@ -90,8 +92,10 @@ namespace drive {
     struct Job { child: proc::Child, c_tmp: []u8, o_tmp: []u8, c: []u8, o: []u8 }
 
     // An executable to build: its root and the directories added to it, its optimization level,
-    // the C compiler flags its build program gave, and the files it generates for it.
-    struct Target { name: []u8, root: []u8, dirs: Strs, level: u8, paths: Strs, libs: Strs, gens: list::List(Gen, Heap) }
+    // the C compiler flags its build program gave, and the files it generates for it. If it
+    // denies the unchecked operations (`deny`, build::deny_unchecked), they are errors in its
+    // files, but for those under the directories of `except`.
+    struct Target { name: []u8, root: []u8, dirs: Strs, level: u8, paths: Strs, libs: Strs, gens: list::List(Gen, Heap), deny: bool, except: Strs }
 
     // A file build::gen_file gives an executable: NAME.ctx, holding text, and once written, its
     // path, where errors in it point.
@@ -134,11 +138,12 @@ namespace drive {
         while i < targets.len {
             let t = list::items{ list = targets }[i]
             let files = program_files{ &io, &fs, &heap, d, path, t } ifnull { return 1 }
+            let no = denied{ &io, &fs, &heap, d, dir = path, t, files } ifnull { return 1 }
             let mut flags = list::new([]u8){ realloc = arena::alloc, &heap }
             add_all{ xs = &flags, ys = list::items{ list = t.paths } }
             add_all{ xs = &flags, ys = list::items{ list = t.libs } }
             let out: []u8 = if i == 0 and not run { args[3] } else { "" }
-            let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = d.work, name = t.name, files, gens = list::items{ list = t.gens }, level = t.level, flags = list::items{ list = flags }, out, &why } ifnull { return 1 }
+            let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = d.work, name = t.name, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, level = t.level, flags = list::items{ list = flags }, out, &why } ifnull { return 1 }
             if i == 0 { first = exe }
             i = i + 1
         }
@@ -168,6 +173,8 @@ namespace drive {
     //   exe NAME      an executable, which the records after it describe
     //   level N       its optimization level, 0 to 3
     //   file PATH     one of its files, by its absolute path, generated ones in GEN
+    //   denied PATH   a file as well, in which the unchecked operations are errors
+    //                 (build::deny_unchecked), for `ctxc build`'s --deny-unchecked
     //   flag FLAG     a flag that links it: -LDIR, with DIR absolute, -lLIB, or -framework
     //                 and then the framework's NAME
     //
@@ -233,6 +240,10 @@ namespace drive {
                 why = Why::errors
                 return false
             }
+            let no = denied{ &io, &fs, &heap, d, dir = path, t, files } ifnull {
+                why = Why::errors
+                return false
+            }
             let gens = list::items{ list = t.gens }
             let at = join{ &heap, a = gen, b = t.name }
             if gens.len > 0 and (not made{ &io, &fs, path = gen } or not made{ &io, &fs, path = at }) { return false }
@@ -250,7 +261,9 @@ namespace drive {
             k = 0
             while k < xs.len {
                 let full = absolute{ &io, &fs, &heap, path = xs[k] } ifnull { return false }
-                add_bytes{ xs = &text, s = cat{ &heap, a = "\nfile\t", b = full } }
+                // A generated file is under no directory of the program's, so nothing excepts it.
+                let kind: []u8 = if t.deny and (k >= no.len or no[k]) { "\ndenied\t" } else { "\nfile\t" }
+                add_bytes{ xs = &text, s = cat{ &heap, a = kind, b = full } }
                 k = k + 1
             }
             let ps = list::items{ list = t.paths }
@@ -412,7 +425,7 @@ namespace drive {
             env = kept
             k = k + 2
         }
-        return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = std.len, extras, mode = Mode::interp, out = stem{ path = base{ path } }, argv, env = list::items{ list = env }, stack, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){} }
+        return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = std.len, extras, mode = Mode::interp, out = stem{ path = base{ path } }, argv, env = list::items{ list = env }, stack, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = slice::empty(bool){} }
     }
 
     // About how many bytes of C a unit has: CTX_UNIT_SIZE, or UNIT_SIZE.
@@ -448,7 +461,7 @@ namespace drive {
             why = Why::errors
             return 1
         }
-        let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = work, name = "build", files, gens = slice::empty(Gen){}, level = 1, flags = slice::empty([]u8){}, out = "", &why } ifnull { return 1 }
+        let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = work, name = "build", files, gens = slice::empty(Gen){}, denied = slice::empty(bool){}, deny = false, level = 1, flags = slice::empty([]u8){}, out = "", &why } ifnull { return 1 }
         let graph = claim{ &io, &fs, &heap, base = join{ &heap, a = work, b = "graph" }, ext = ".txt" } ifnull { return 1 }
         defer _ = fs::remove{ &fs, path = graph }
         let mut env = list::new([]u8){ realloc = arena::alloc, &heap }
@@ -462,8 +475,9 @@ namespace drive {
         }
         let text = read_whole{ &io, &fs, &mem, path = graph } ifnull { return 1 }
         // One record per line, its fields separated by tabs: exe ID NAME ROOT, sources ID DIR,
-        // optimize ID LEVEL, link ID LIB, framework ID NAME, libpath ID PATH, and gen ID NAME
-        // SIZE, whose line SIZE bytes of text and a line break follow. Ids count from 0 in the
+        // optimize ID LEVEL, link ID LIB, framework ID NAME, libpath ID PATH, deny ID COUNT,
+        // except ID DIR, and gen ID NAME SIZE, whose line SIZE bytes of text and a line break
+        // follow. Ids count from 0 in the
         // order of exe records. A graph whose last record has no line break was cut short.
         let mut i: usize = 0
         while i < text.len {
@@ -599,6 +613,11 @@ namespace drive {
             try! list::push{ list = &t.libs, item = f[2] }
         } else if slice::eq_bytes{ a = kind, b = "libpath" } {
             try! list::push{ list = &t.paths, item = cat{ &heap, a = "-L", b = place{ &heap, dir, rel = f[2] } } }
+        } else if slice::eq_bytes{ a = kind, b = "deny" } {
+            t.deny = true
+        } else if slice::eq_bytes{ a = kind, b = "except" } {
+            if not t.deny { return null }
+            try! list::push{ list = &t.except, item = f[2] }
         } else {
             return null
         }
@@ -1021,14 +1040,62 @@ namespace drive {
         try! list::push{ list = &found.keys, item = key }
     }
 
+    // Which of target t's files, for the build program in dir, are denied the unchecked
+    // operations (spec §13; build::deny_unchecked, §19): one for each of files, or none if t
+    // doesn't deny them. A file is denied unless it is under a directory t excepts, at any
+    // depth. Each of those must hold one of t's files, so that a directory misspelt, or one
+    // that has gone, isn't a hole left open. Null after saying which doesn't.
+    fn denied { mut io: Io, mut fs: Fs, mut heap: Heap, d: Driver, dir: []u8, t: Target, files: [][]u8 } -> ?[]bool {
+        if not t.deny { return slice::empty(bool){} }
+        let out = try! alloc::make(bool, Heap){ realloc = arena::alloc, &heap, count = files.len }
+        let mut keys = list::new([]u8){ realloc = arena::alloc, &heap }
+        let mut i: usize = 0
+        while i < files.len {
+            let key = key_of{ &io, &fs, &heap, path = files[i], os = d.os } ifnull { return null }
+            try! list::push{ list = &keys, item = key }
+            out[i] = true
+            i = i + 1
+        }
+        let ks = list::items{ list = keys }
+        let dirs = list::items{ list = t.except }
+        let mut k: usize = 0
+        while k < dirs.len {
+            let at = place{ &heap, dir, rel = dirs[k] }
+            let key = key_of{ &io, &fs, &heap, path = at, os = d.os } ifnull { return null }
+            let mut holds = false
+            i = 0
+            while i < ks.len {
+                if under{ file = ks[i], dir = key } {
+                    out[i] = false
+                    holds = true
+                }
+                i = i + 1
+            }
+            if not holds {
+                let head = cat{ &heap, a = "holds no file of executable ", b = t.name }
+                cannot{ &io, path = at, what = utf8::String{ bytes = cat{ &heap, a = head, b = ", so build::deny_unchecked can't except it" } } }
+                return null
+            }
+            k = k + 1
+        }
+        return out
+    }
+
+    // Whether the file whose key is `file` is in the directory whose key is `dir`, at any depth.
+    fn under { file: []u8, dir: []u8 } -> bool {
+        if dir.len == 0 or file.len <= dir.len or not slice::eq_bytes{ a = file[..dir.len], b = dir } { return false }
+        return dir[dir.len - 1] == '/' or file[dir.len] == '/'
+    }
+
     // ---- compiling
 
     // Builds the program of files and gens, with std's, into an executable: `out`, or if out is
     // empty dir/NAME-HASH, which stays to be run again while HASH is the same. Each unit of its C
     // is compiled into dir/NAME-HASH.o unless that is there, its C going to dir/NAME-HASH.c.
-    // Returns the executable; null after saying why there is none, and setting why to errors if
-    // the program has errors.
-    fn compile { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, dir: []u8, name: []u8, files: [][]u8, gens: []Gen, level: u8, flags: [][]u8, out: []u8, mut why: Why } -> ?[]u8 {
+    // If deny, denied says which of files are denied the unchecked operations (`denied`), and
+    // gens are denied them too. Returns the executable; null after saying why there is none,
+    // and setting why to errors if the program has errors.
+    fn compile { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, dir: []u8, name: []u8, files: [][]u8, gens: []Gen, denied: []bool, deny: bool, level: u8, flags: [][]u8, out: []u8, mut why: Why } -> ?[]u8 {
         let base = join{ &heap, a = dir, b = name }
         let mut paths = list::new([]u8){ realloc = arena::alloc, &heap }
         add_all{ xs = &paths, ys = d.std }
@@ -1041,8 +1108,21 @@ namespace drive {
             try! list::push{ list = &texts, item = gens[k].text }
             k = k + 1
         }
+        // For each of paths: std's files never, files as denied says, and a generated file, which
+        // is under no directory of the program's for one to except, whenever its executable
+        // denies them.
+        let mut no = slice::empty(bool){}
+        if deny {
+            let all = try! alloc::make(bool, Heap){ realloc = arena::alloc, &heap, count = paths.len }
+            k = d.std.len
+            while k < paths.len {
+                all[k] = k >= d.std.len + files.len or denied[k - d.std.len]
+                k = k + 1
+            }
+            no = all
+        }
         let mut units: [][]u8 = slice::empty([]u8){}
-        let code = analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = d.std.len, extras = d.extras, mode = Mode::units, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = d.unit, copy = if level == 0 { 0 } else { d.copy }, made = &units, texts = list::items{ list = texts } }
+        let code = analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = d.std.len, extras = d.extras, mode = Mode::units, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = d.unit, copy = if level == 0 { 0 } else { d.copy }, made = &units, texts = list::items{ list = texts }, denied = no }
         if code != 0 {
             why = Why::errors
             return null
@@ -1651,6 +1731,8 @@ namespace drive {
             paths = list::new([]u8){ realloc = arena::alloc, &heap },
             libs = list::new([]u8){ realloc = arena::alloc, &heap },
             gens = list::new(Gen){ realloc = arena::alloc, &heap },
+            deny = false,
+            except = list::new([]u8){ realloc = arena::alloc, &heap },
         }
     }
 

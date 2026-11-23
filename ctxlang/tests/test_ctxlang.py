@@ -13317,6 +13317,222 @@ two) n=1 + 2 (?) s="a  //b" (s a  //b)
         self.assertEqual((code, out, err), (0, 'file src/a\\b.ctx\nstruct AB @ src/a\\b.ctx:1:1\n', ''))
 
 
+class UncheckedOperations(Base):
+    """The unchecked operations (spec §13) and `build::deny_unchecked` (§19, rule 17): errors in
+    an executable's files, but for the directories it excepts."""
+
+    project, ctxc, work_dir = CtxcDriver.project, CtxcDriver.ctxc, CtxcDriver.work_dir
+
+    BUILD = """
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "t", root = "src" }
+    build::add_sources{ &b, exe, dir = "lib" }
+%s}
+"""
+    MAIN = """
+fn main { mut io: Io } {
+    let a: [4]u8 = [1, 2, 3, 4]
+    io::println_u64{ &io, n = raw::second{ p = &a[0] } + game::sum{ s = a[..] } + deep::third{ p = &a[0] } }
+}
+"""
+    RAW = """
+namespace raw {
+    #pure
+    extern fn abs { n: i32 } -> i32
+    extern union Bits { f: f32, u: u32 }
+    fn second { p: *u8 } -> u64 { return (p + 1).* }
+    fn view { p: *u8, n: usize } -> []u8 { return @slice(p, n) }
+    fn as_u32 { p: *u8 } -> *u32 { return @cast(*u32, p) }
+}
+"""
+    DEEP = 'namespace deep { fn third { p: *u8 } -> u64 { return (p + 2).* } }\n'
+    # Every kind, one to a line, in a directory that isn't a binding's.
+    GAME = """
+namespace game {
+    #pure
+    extern fn labs { n: i64 } -> i64
+    extern union Bits { f: f32, u: u32 }
+    capability Lib { extern ctxtest_count: i32 }
+    #c::callback
+    fn on_key { key: i32 } {}
+    fn sum { s: []u8 } -> u64 {
+        let p = s.ptr
+        let q = @cast(*u32, p)
+        let v = @slice(p, 2)
+        let mut cs: c::String = "x"
+        cs.ptr = p
+        let pp = &cs.ptr
+        let made = c::String{ ptr = p }
+        return (p + 1).* + v.len
+    }
+}
+"""
+    # What `sum` does with what the language checks, and with what raw and std made unchecked.
+    CHECKED = """
+namespace game {
+    fn sum { s: []u8 } -> u64 {
+        let cs: c::String = "xy"
+        let b = raw::Bits{ u = 0 }
+        let mut buf: [64]u8
+        let mut heap = arena::new{ buf = buf[..] }
+        let mut xs = list::new(u8){ realloc = arena::alloc, &heap }
+        try! list::push{ list = &xs, item = s[1] }
+        let n = list::items{ list = xs }[0] + raw::second{ p = s.ptr } + raw::view{ p = s.ptr, n = 2 }.len + c::len{ s = cs }
+        return n + @as(u64, raw::abs{ n = -1 }) + @as(u64, b.f) + @addr(s.ptr) % 1
+    }
+}
+"""
+    DENIED = [
+        ('lib/game/game.ctx:4:15', 'an extern fn', None),
+        ('lib/game/game.ctx:5:18', 'an extern union', 'use a `union`, which says which variant it holds'),
+        ('lib/game/game.ctx:6:29', 'a C variable', None),
+        ('lib/game/game.ctx:8:8', 'a `#c::callback` fn', None),
+        ('lib/game/game.ctx:11:17', '`@cast`', None),
+        ('lib/game/game.ctx:12:17', '`@slice`', 'slice an array or a slice (`a[lo..hi]`, which is bounds-checked)'),
+        ('lib/game/game.ctx:14:11', 'a `c::String` made from a pointer', 'use a string literal, which its hidden zero ends'),
+        ('lib/game/game.ctx:15:18', 'a `c::String` made from a pointer', 'use a string literal, which its hidden zero ends'),
+        ('lib/game/game.ctx:16:29', 'a `c::String` made from a pointer', 'use a string literal, which its hidden zero ends'),
+        ('lib/game/game.ctx:17:19', 'pointer arithmetic', 'index an array or a slice (`s[i]`, which is bounds-checked)'),
+    ]
+
+    def message(self, what, checked):
+        fix = 'it has no checked form, so write' if checked is None else checked + ', or write'
+        return f'{what} is unchecked, and `build::deny_unchecked` in build.ctx denies it here: {fix} it in a directory its `except` lists'
+
+    def program(self, deny, game=None):
+        return self.project({'build.ctx': self.BUILD % deny, 'src/main.ctx': self.MAIN, 'lib/raw/raw.ctx': self.RAW,
+                             'lib/raw/deep/deep.ctx': self.DEEP, 'lib/game/game.ctx': game or self.GAME})
+
+    def test_denied_operations(self):
+        # Each kind is an error where it is written, saying what to write instead; lib/raw and
+        # what is below it are excepted, and std's files always are.
+        d = self.program('    build::deny_unchecked{ &b, exe, except = ["lib/raw"] }\n')
+        code, out, err = self.ctxc('run', '.', cwd=d)
+        self.assertEqual((code, out), (1, ''))
+        self.assertEqual(err.split('\n'), [f'{at}: error: {self.message(what, checked)}' for at, what, checked in self.DENIED] + [''])
+
+    def test_denied_everywhere(self):
+        # `except = []`: the program's own directories are all denied, its root too.
+        d = self.program('    build::deny_unchecked{ &b, exe, except = [] }\n', game=self.CHECKED)
+        code, _, err = self.ctxc('run', '.', cwd=d)
+        self.assertEqual(code, 1)
+        files = sorted({line.split(':')[0] for line in err.split('\n') if line})
+        self.assertEqual(files, ['lib/raw/deep/deep.ctx', 'lib/raw/raw.ctx'])
+        d = self.project({'build.ctx': 'fn build { mut b: Build } {\n    build::deny_unchecked{ &b, exe = build::exe{ &b, name = "t", root = "src" }, except = [] }\n}\n',
+                          'src/main.ctx': 'fn main { mut io: Io } {\n    let a: [2]u8 = [1, 2]\n    io::println_u64{ &io, n = (&a[0] + 1).* }\n}\n'})
+        self.assertEqual(self.ctxc('run', '.', cwd=d),
+                         (1, '', 'src/main.ctx:3:38: error: ' + self.message('pointer arithmetic', 'index an array or a slice (`s[i]`, which is bounds-checked)') + '\n'))
+
+    def test_excepted_directories(self):
+        # Code in a denied directory uses what an excepted one made, and std: only writing an
+        # unchecked operation is denied. A directory is named as add_sources names one, and
+        # several calls add up.
+        for deny in ['    build::deny_unchecked{ &b, exe, except = ["lib/raw"] }\n',
+                     '    build::deny_unchecked{ &b, exe, except = ["src/../lib/raw/", "./lib/raw/deep"] }\n',
+                     '    build::deny_unchecked{ &b, exe, except = ["lib/raw/deep"] }\n    build::deny_unchecked{ &b, exe, except = ["lib/raw"] }\n']:
+            with self.subTest(deny=deny):
+                d = self.program(deny, game=self.CHECKED)
+                self.assertEqual(self.ctxc('run', '.', cwd=d), (0, '14\n', ''))
+        # With its own directory excepted, every kind compiles.
+        d = self.program('    build::deny_unchecked{ &b, exe, except = ["lib/raw", "lib/game"] }\n')
+        self.assertEqual(self.ctxc('run', '.', cwd=d), (0, '9\n', ''))
+        # A directory added after the call is denied as one added before it.
+        build = ('fn build { mut b: Build } {\n    let exe = build::exe{ &b, name = "t", root = "src" }\n'
+                 '    build::deny_unchecked{ &b, exe, except = [] }\n    build::add_sources{ &b, exe, dir = "lib" }\n}\n')
+        d = self.project({'build.ctx': build, 'src/main.ctx': 'fn main { mut io: Io } { io::println_u64{ &io, n = deep::third{ p = "abc".ptr } } }\n',
+                          'lib/deep.ctx': self.DEEP})
+        code, _, err = self.ctxc('run', '.', cwd=d)
+        self.assertEqual((code, err.split(': error: ')[0]), (1, 'lib/deep.ctx:1:57'))
+
+    def test_no_opt_in(self):
+        # Without the call, an executable uses them anywhere, as a program without a build
+        # program does; one executable's call doesn't deny another's files.
+        d = self.program('')
+        self.assertEqual(self.ctxc('run', '.', cwd=d), (0, '9\n', ''))
+        build = ('fn build { mut b: Build } {\n    let free = build::exe{ &b, name = "free", root = "src" }\n'
+                 '    let strict = build::exe{ &b, name = "strict", root = "strict" }\n'
+                 '    build::add_sources{ &b, exe = free, dir = "lib" }\n'
+                 '    build::deny_unchecked{ &b, exe = strict, except = [] }\n}\n')
+        d = self.project({'build.ctx': build, 'src/main.ctx': 'fn main { mut io: Io } { io::println_u64{ &io, n = deep::third{ p = "abc".ptr } } }\n',
+                          'lib/deep.ctx': self.DEEP, 'strict/main.ctx': 'fn main {} {}\n'})
+        self.assertEqual(self.ctxc('run', '.', cwd=d), (0, '99\n', ''))
+        d = self.project({'main.ctx': self.MAIN, 'raw.ctx': self.RAW, 'deep.ctx': self.DEEP, 'game.ctx': self.GAME})
+        self.assertEqual(self.ctxc('run', '.', cwd=d), (0, '9\n', ''))
+
+    def test_except_errors(self):
+        # A directory that holds none of the executable's files excepts nothing: misspelt, gone,
+        # or another executable's.
+        for path in ['lib/rav', 'elsewhere', 'lib/raw/raw.ctx']:
+            with self.subTest(path=path):
+                d = self.program('    build::deny_unchecked{ &b, exe, except = ["lib/raw", "%s"] }\n' % path, game=self.CHECKED)
+                os.makedirs(os.path.join(d, 'elsewhere'))
+                self.assertEqual(self.ctxc('run', '.', cwd=d),
+                                 (1, '', f"{path}: holds no file of executable t, so build::deny_unchecked can't except it\n"))
+        self.assertPanic('fn build { mut b: Build } { build::deny_unchecked{ &b, exe = build::exe{ &b, name = "a", root = "." }, except = [""] } }',
+                         'build: empty directory')
+        self.assertPanic('fn build { mut b: Build } { build::deny_unchecked{ &b, exe = build::Exe{ id = 3 }, except = [] } }',
+                         'build: no executable 3')
+        # Run directly, a build program prints its records.
+        self.assertOutput('fn build { mut b: Build } { build::deny_unchecked{ &b, exe = build::exe{ &b, name = "a", root = "." }, except = ["x", "y/z"] } }',
+                          'exe\t0\ta\t.\ndeny\t0\t2\nexcept\t0\tx\nexcept\t0\ty/z\n')
+
+    def test_generated_files(self):
+        # A generated file is under no directory of the program's, so it is always denied.
+        text = 'namespace gen { fn third { p: *u8 } -> u64 { return (p + 2).* } }\\n'
+        build = ('fn build { mut b: Build } {\n    let exe = build::exe{ &b, name = "t", root = "src" }\n%s'
+                 '    build::gen_file{ &b, exe, name = "gen", text = "' + text + '" }\n}\n')
+        main = 'fn main { mut io: Io } { io::println_u64{ &io, n = gen::third{ p = "abc".ptr } } }\n'
+        d = self.project({'build.ctx': build % '', 'src/main.ctx': main})
+        self.assertEqual(self.ctxc('run', d), (0, '99\n', ''))
+        d = self.project({'build.ctx': build % '    build::deny_unchecked{ &b, exe, except = ["src"] }\n', 'src/main.ctx': main})
+        gen = os.path.join(self.work_dir(d), 'gen', 't', 'gen.ctx').replace('\\', '/')
+        self.assertEqual(self.ctxc('run', d),
+                         (1, '', f'{gen}:1:56: error: ' + self.message('pointer arithmetic', 'index an array or a slice (`s[i]`, which is bounds-checked)') + '\n'))
+        # Made of generated files alone, it is denied too.
+        d = self.project({'build.ctx': build.replace('root = "src"', 'root = "."') % '    build::deny_unchecked{ &b, exe, except = [] }\n'})
+        code, _, err = self.ctxc('run', d)
+        self.assertEqual((code, err.split(': error: ')[1][:32]), (1, 'pointer arithmetic is unchecked,'))
+
+    def test_through_graph(self):
+        # toolchain.build_project passes what `ctxc graph` lists as denied on to `ctxc build`.
+        from toolchain import build_project, run_exe
+        d = self.program('    build::deny_unchecked{ &b, exe, except = ["lib/raw"] }\n')
+        with self.assertRaises(CompileError) as cm:
+            build_project(d, err=io.StringIO())
+        at = os.path.join(d, 'lib', 'game', 'game.ctx').replace('\\', '/')
+        self.assertEqual((cm.exception.msg, cm.exception.pos), (self.message('an extern fn', None), (4, 15, at)))
+        self.assertEqual(cm.exception.text.count(' is unchecked, '), len(self.DENIED))
+        d = self.program('    build::deny_unchecked{ &b, exe, except = ["lib/raw"] }\n', game=self.CHECKED)
+        [(_, exe)] = build_project(d)
+        out = io.StringIO()
+        run_exe(exe, out=out)
+        self.assertEqual(out.getvalue(), '14\n')
+        # A generated file is listed as denied.
+        text = 'namespace gen { fn third { p: *u8 } -> u64 { return (p + 2).* } }\\n'
+        build = ('fn build { mut b: Build } {\n    let exe = build::exe{ &b, name = "t", root = "." }\n'
+                 '    build::deny_unchecked{ &b, exe, except = ["."] }\n'
+                 '    build::gen_file{ &b, exe, name = "gen", text = "' + text + '" }\n}\n')
+        d = self.project({'build.ctx': build, 'main.ctx': 'fn main { mut io: Io } { io::println_u64{ &io, n = (gen::third{ p = "abc".ptr } + ("a".ptr + 0).*) } }\n'})
+        with self.assertRaises(CompileError) as cm:
+            build_project(d, err=io.StringIO())
+        self.assertEqual((cm.exception.pos[:2], cm.exception.text.count(' is unchecked, ')), ((1, 56), 1))
+
+    def test_ctxc_build_flags(self):
+        # `ctxc build`, `ir` and `decls` take the files to deny after `--deny-unchecked`, up to
+        # the next `--allow-unchecked`.
+        from toolchain import native_ctxc, program_args
+        import subprocess
+        d = self.project({'a.ctx': 'fn main {} { _ = a{ p = "ab".ptr } + b{ p = "ab".ptr } + c{ p = "ab".ptr } }\nfn a { p: *u8 } -> u8 { return (p + 1).* }\n',
+                          'b.ctx': 'fn b { p: *u8 } -> u8 { return (p + 1).* }\n', 'c.ctx': 'fn c { p: *u8 } -> u8 { return (p + 1).* }\n'})
+        self.assertEqual(program_args(['a.ctx', 'b.ctx', 'c.ctx'], d, denied={'b.ctx'})[-6:],
+                         ['--', 'a.ctx', '--deny-unchecked', 'b.ctx', '--allow-unchecked', 'c.ctx'])
+        for denied, files in [((), []), (('b.ctx',), ['b.ctx']), (('a.ctx', 'c.ctx'), ['a.ctx', 'c.ctx']), (('a.ctx', 'b.ctx', 'c.ctx'), ['a.ctx', 'b.ctx', 'c.ctx'])]:
+            with self.subTest(denied=denied):
+                r = subprocess.run([native_ctxc(), 'ir', *program_args(['a.ctx', 'b.ctx', 'c.ctx'], d, denied=denied)], cwd=d, capture_output=True)
+                lines = [line for line in r.stdout.decode().split('\n') if ' is unchecked, ' in line]
+                self.assertEqual((r.returncode, [line.split(':')[0].split()[-1] for line in lines]), (1 if files else 0, files))
+
+
 class Interp(Base):
     """`ctxc interp` (ctxc/eval.ctx): main run in the interpreter over the IR. Every program the
     other tests run is also compared with its compiled run (toolchain.run_sources, unless

@@ -142,16 +142,24 @@ def stack_flags():
     return []
 
 
-def program_args(files, cwd, platform=HOST):
-    """`STD... -- FILE...`, with std's files for platform relative to cwd."""
+def program_args(files, cwd, platform=HOST, denied=()):
+    """`STD... -- FILE...`, with std's files for platform relative to cwd. Each of files that
+    is in denied follows a `--deny-unchecked`, and each that isn't, after one that is, an
+    `--allow-unchecked`: the files whose unchecked operations are errors (spec §13)."""
     std = [os.path.relpath(os.path.join(ROOT, p), cwd).replace(os.sep, '/') for p in std_files(platform)]
-    return [*std, '--', *files]
+    args, deny = [*std, '--'], False
+    for f in files:
+        if (f in denied) != deny:
+            deny = not deny
+            args.append('--deny-unchecked' if deny else '--allow-unchecked')
+        args.append(f)
+    return args
 
 
-def ctxc_build(ctxc, out_c, files, cwd=ROOT, platform=HOST):
-    """Runs `ctxc build OUT.c STD... -- FILE...` in cwd, with std's files for platform. Returns
-    (exit code, stderr text)."""
-    r = subprocess.run([ctxc, 'build', out_c, *program_args(files, cwd, platform)], cwd=cwd,
+def ctxc_build(ctxc, out_c, files, cwd=ROOT, platform=HOST, denied=()):
+    """Runs `ctxc build OUT.c STD... -- FILE...` in cwd, with std's files for platform, and the
+    files of denied denied the unchecked operations. Returns (exit code, stderr text)."""
+    r = subprocess.run([ctxc, 'build', out_c, *program_args(files, cwd, platform, denied)], cwd=cwd,
                        capture_output=True, env=dict(os.environ, CTX_STACK=CTXC_STACK))
     return r.returncode, r.stderr.decode('utf-8', 'replace')
 
@@ -307,13 +315,14 @@ def ir_sources(sources):
     return text
 
 
-def build_files(files, cwd=ROOT, name='program', given=None, flags=(), cflags=CFLAGS):
+def build_files(files, cwd=ROOT, name='program', given=None, flags=(), cflags=CFLAGS, denied=()):
     """The path of an executable for the program of files, relative to cwd, compiled with cflags
-    and linked with flags. Raises CompileError, with its file renamed by given."""
+    and linked with flags, the files of denied denied the unchecked operations. Raises
+    CompileError, with its file renamed by given."""
     ctxc = native_ctxc()
     os.makedirs(CACHE, exist_ok=True)
     tmp_c = os.path.join(CACHE, f'tmp-{os.getpid()}-{threading.get_ident()}.c')
-    code, err = ctxc_build(ctxc, tmp_c, files, cwd)
+    code, err = ctxc_build(ctxc, tmp_c, files, cwd, denied=denied)
     if code == 1 and not os.path.exists(tmp_c):
         raise first_error(err, given)
     if code != 0:
@@ -583,18 +592,21 @@ def build_project(directory, out=None, err=None):
         raise RuntimeError(f'build.ctx exited with {status[1]}')
     if status != ['ok']:
         raise RuntimeError(f'ctxc graph failed ({r.returncode}): {text.strip()}')
-    exes = []                           # [name, level, files, flags]
+    exes = []                           # [name, level, files, flags, denied]
     for kind, value in records[1:]:
         if kind == 'exe':
-            exes.append([value, 1, [], []])
+            exes.append([value, 1, [], [], set()])
         elif kind == 'level':
             exes[-1][1] = int(value)
         elif kind == 'file':
             exes[-1][2].append(value)
+        elif kind == 'denied':          # a file too, whose unchecked operations are errors
+            exes[-1][2].append(value)
+            exes[-1][4].add(value)
         elif kind == 'flag':
             exes[-1][3].append(value)
     built = []
-    for name, level, files, flags in exes:
+    for name, level, files, flags, denied in exes:
         cflags = [f'-O{level}' if f == '-O1' else f for f in CFLAGS]
-        built.append((name, build_files(files, cwd=d, name=name, flags=flags, cflags=cflags)))
+        built.append((name, build_files(files, cwd=d, name=name, flags=flags, cflags=cflags, denied=denied)))
     return built

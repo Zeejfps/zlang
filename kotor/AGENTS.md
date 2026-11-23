@@ -94,6 +94,10 @@ fn build { mut b: Build } {
   and an edit to one function rebuilds in ~3 s. Inserting lines recompiles every unit of that
   file. Tools that include only the libraries they need still build faster than the whole game.
 - `@size_of` and `@offset_of(T, field)` check bindings' structs against C's layouts.
+- The game's build denies the unchecked operations (`@cast`, `@slice`, pointer arithmetic, C's
+  declarations: spec §13) outside the directories `kotor/build.ctx` lists in
+  `build::deny_unchecked`'s `except`, each with its reason. New game code goes in the checked
+  directories and calls the bindings; see the quick reference.
 
 Testing the game (fast headless runs, checkpoints, the module smoke test, the conversation sweep): [docs/testing.md](docs/testing.md).
 Gaps in the shell, the test tools and the game's framework that cost time: [docs/tooling-gaps.md](docs/tooling-gaps.md).

@@ -48,13 +48,45 @@ entries are cited by number, e.g. F#24) and [kotor/docs/tooling-gaps.md](../koto
     in the Bink, MP3 and mixer loops), 37 in std (23 of them in the posix, linux and macos
     layers), 7 in examples/glfw, 9 in the tests' programs, none in ctxc.
 
-- [ ] **1.3 Make the unchecked operations auditable as a set.**
+- [x] **1.3 Make the unchecked operations auditable as a set.**
   With 1.2 done, `@cast`, `@slice`, pointer arithmetic, unchecked indexing and `@addr` are the
   ways to undefined behaviour. A build should be able to forbid them outside chosen directories
   (e.g. a `build::allow_unchecked{ &b, exe, dir }`, everything else an error), so game code can't
   reach for them and review only looks where they are allowed.
   - Details: [spec §13](spec.md#13-builtins), [§12, Pointers, rule 7](spec.md#pointers).
   - *Done when:* a build program can deny them per directory, and kotor's game code builds with them denied outside its platform and binding layers (or the exceptions are listed).
+  - *Done:* the set is in one place, [spec §13, Unchecked operations](spec.md#unchecked-operations):
+    `@cast`, `@slice`, pointer arithmetic, `@record_copy`, a `c::String` from a pointer, and
+    declaring an `extern fn`, an `extern union`, a capability's C variable or a `#c::callback`
+    fn (a wrong declaration is undefined behaviour, and `extern fn memcpy` would be a way round
+    the rest). Not `@addr`, which gives an integer nothing turns back into a pointer. The spec
+    also lists what a review must still look for anywhere: use after free, data races, an
+    allocator of the program's own, a `#start` without a stack limit.
+    `build::deny_unchecked{ &b, exe, except = ["lib/platform", ...] }`
+    ([spec §19, rule 17](spec.md#19-build-programs)) makes them errors in the executable's
+    files but for the directories listed: one call that says both that they are denied and
+    where they aren't, rather than `allow_unchecked` calls whose first would switch the denial
+    on. An executable without it builds as before. A directory that holds none of the
+    executable's files stops the build, generated files are always denied, std never is. Only
+    writing one is denied: calling an extern fn or using a slice an excepted directory made is
+    allowed anywhere. The error names the checked form, e.g. ``pointer arithmetic is unchecked,
+    and `build::deny_unchecked` in build.ctx denies it here: index an array or a slice (`s[i]`,
+    which is bounds-checked), or write it in a directory its `except` lists``.
+    KOTOR's game denies them in 240 of its 359 files; [kotor/build.ctx](../kotor/build.ctx)
+    excepts eight directories, 690 sites in all, each with its reason:
+    - `lib/platform` (85): SDL2's binding.
+    - `lib/render_gl` (155): OpenGL's binding, and vertex and uniform data as bytes.
+    - `lib/base` (27): the C heap behind `heap::alloc`, libm's f32 functions, float bits, and
+      `le`'s reads after one bounds check.
+    - `lib/script` (301): the NCS VM's stack through pointers, and its untagged `Cell`.
+    - `lib/video` (67): the Bink decoder's inner loops, and libm for its audio tables.
+    - `lib/audio` (28): the mixer's and the MP3 decoder's inner loops.
+    - `lib/engine` (25): 16 frees of one object written `@slice(p, 1)`, which std's
+      `alloc::free` does, and 9 libm declarations in routines/core.ctx, which std's `math` has.
+    - `lib/render` (2): `put_floats`, which views f32s as bytes.
+
+    The last two need no unchecked code, but this change moved no game code to the checked
+    forms; replacing those 27 sites lets both directories come off the list.
 
 - [x] **1.4 Fix float-to-float `@as` in the spec.**
   §13 says `@as` panics if the value isn't representable, but `@as(f32, 1e300)` gives `inf`.

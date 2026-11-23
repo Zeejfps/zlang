@@ -20,7 +20,10 @@
 //   ctxc build OUT.c STD... -- FILE...          checks the program of FILE..., with std's files
 //                                               STD..., and writes it as C, for ctxc/rt/ctxrt.c
 //                                               (and ctxfloat.c);
-//                                               or prints its errors and exits with 1
+//                                               or prints its errors and exits with 1. In the
+//                                               FILEs after a `--deny-unchecked`, up to the next
+//                                               `--allow-unchecked`, the unchecked operations
+//                                               are errors (spec §13), as in `ir` and `decls`
 //   ctxc ir STD... -- FILE...                   checks the program and prints its IR, or its
 //                                               diagnostics if it has errors (lower.ctx)
 //   ctxc roundtrip FILE.ir                      reads IR (from `ctxc ir`) and prints it back;
@@ -72,7 +75,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> 
     if args.len == 3 and slice::eq_bytes{ a = args[0], b = "c" } {
         to_c = true
     } else if args.len != 2 or not slice::eq_bytes{ a = args[0], b = "roundtrip" } {
-        io::eprintln{ &io, s = "usage: ctxc run PATH [-- ARGS...] | ctxc exe PATH -o OUT | ctxc graph DIR GEN LIST | ctxc interp PATH [-- ARGS...] | ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c | ctxc tokens|syntax FILE... | ctxc recover FILE FROM TO [-v] [--every N] [-- FILE...] | ctxc decls|ir STD... -- FILE... | ctxc build OUT.c STD... -- FILE..." }
+        io::eprintln{ &io, s = "usage: ctxc run PATH [-- ARGS...] | ctxc exe PATH -o OUT | ctxc graph DIR GEN LIST | ctxc interp PATH [-- ARGS...] | ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c | ctxc tokens|syntax FILE... | ctxc recover FILE FROM TO [-v] [--every N] [-- FILE...] | ctxc decls|ir STD... -- FILE... | ctxc build OUT.c STD... -- FILE... (FILE...: also --deny-unchecked, --allow-unchecked)" }
         return 2
     }
     let path = args[1]
@@ -174,13 +177,25 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
     let mut buf: [65536]u8
     let mut heap = arena::new{ buf = buf[..] }
     let mut paths = list::new([]u8){ realloc = arena::alloc, &heap }
+    // Which of paths are denied the unchecked operations: those after a `--deny-unchecked`, up
+    // to the next `--allow-unchecked`, as tools/toolchain.py passes what `ctxc graph` listed.
+    let mut denied = list::new(bool){ realloc = arena::alloc, &heap }
+    let mut deny = false
     let mut split: usize = 0
     let mut i = first
     while i < args.len {
         if slice::eq_bytes{ a = args[i], b = "--" } {
             split = i
+        } else if split != 0 and slice::eq_bytes{ a = args[i], b = "--deny-unchecked" } {
+            deny = true
+        } else if split != 0 and slice::eq_bytes{ a = args[i], b = "--allow-unchecked" } {
+            deny = false
         } else {
             list::push{ list = &paths, item = args[i] } iferr {
+                io::eprintln{ &io, s = "too many files" }
+                return 1
+            }
+            list::push{ list = &denied, item = deny } iferr {
                 io::eprintln{ &io, s = "too many files" }
                 return 1
             }
@@ -188,12 +203,12 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
         i = i + 1
     }
     if split == 0 {
-        io::eprintln{ &io, s = "usage: ctxc decls|ir STD... -- FILE... | ctxc build OUT.c STD... -- FILE..." }
+        io::eprintln{ &io, s = "usage: ctxc decls|ir STD... -- FILE... | ctxc build OUT.c STD... -- FILE... (FILE...: also --deny-unchecked, --allow-unchecked)" }
         return 2
     }
     let out: []u8 = if mode == Mode::build { args[1] } else { "" }
     let mut units: [][]u8 = slice::empty([]u8){}
-    return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = split - first, extras = slice::empty([]u8){}, mode, out, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){} }
+    return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = split - first, extras = slice::empty([]u8){}, mode, out, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = list::items{ list = denied } }
 }
 
 // Checks the program of `paths`, std's files first, and acts on it as `mode` says: for build,
@@ -205,8 +220,9 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
 // set. The last texts.len files aren't read: their text is texts', as the driver has it for the
 // files a build program generates, so what is compiled is the driver's, whatever another ctxc
 // does to the file meanwhile. If the program is a build program (`builds`), extras are std's
-// files too, after paths' (drive.ctx, `build_extras`).
-fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8, std_files: usize, extras: [][]u8, mode: Mode, out: []u8, argv: [][]u8, env: [][]u8, stack: u64, size: usize, copy: usize, mut made: [][]u8, texts: [][]u8 } -> i32 {
+// files too, after paths' (drive.ctx, `build_extras`). denied says which of paths are denied
+// the unchecked operations (spec §13), one for each, or is empty for none.
+fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8, std_files: usize, extras: [][]u8, mode: Mode, out: []u8, argv: [][]u8, env: [][]u8, stack: u64, size: usize, copy: usize, mut made: [][]u8, texts: [][]u8, denied: []bool } -> i32 {
     let given = paths.len - texts.len               // paths[given..] are texts'
     let mut total: u64 = 0
     let mut i: usize = 0
@@ -254,9 +270,9 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8
     i = 0
     while i < paths.len {
         if i < std_files {
-            add_file{ &files, &heap, &diags, name = paths[i], text = all[i] }
+            add_file{ &files, &heap, &diags, name = paths[i], text = all[i], denied = false }
         } else {
-            add_file{ &files, &heap, diags = &own, name = paths[i], text = all[i] }
+            add_file{ &files, &heap, diags = &own, name = paths[i], text = all[i], denied = i < denied.len and denied[i] }
         }
         i = i + 1
     }
@@ -269,13 +285,13 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8
                 cannot{ &io, path = extras[i], what = "cannot read" }
                 return 1
             }
-            add_file{ &files, &heap, &diags, name = extras[i], text }
+            add_file{ &files, &heap, &diags, name = extras[i], text, denied = false }
             i = i + 1
         }
         std_count = std_files + extras.len
         i = std_files
         while i < paths.len {
-            add_file{ &files, &heap, &diags, name = paths[i], text = all[i] }
+            add_file{ &files, &heap, &diags, name = paths[i], text = all[i], denied = i < denied.len and denied[i] }
             i = i + 1
         }
     } else {
@@ -412,13 +428,14 @@ fn builds { files: []check::File } -> bool {
     return build
 }
 
-// Lexes and parses a file into the program's list, where its index is its file id.
-fn add_file { mut files: list::List(check::File, arena::Arena), mut heap: arena::Arena, mut diags: diag::Diags, name: []u8, text: []u8 } {
+// Lexes and parses a file into the program's list, where its index is its file id. denied:
+// the unchecked operations are errors in it (spec §13).
+fn add_file { mut files: list::List(check::File, arena::Arena), mut heap: arena::Arena, mut diags: diag::Diags, name: []u8, text: []u8, denied: bool } {
     let file = @as(u32, files.len)
     let lexed = lexer::lex{ text, file, &heap, &diags }
     let tree = parser::parse{ text, file, tokens = lexed.tokens, &heap, &diags }
     let lines = source::line_starts{ text, &heap }
-    try! list::push{ list = &files, item = check::File{ name, text, lines, tree } }
+    try! list::push{ list = &files, item = check::File{ name, text, lines, tree, denied } }
 }
 
 // `ctxc recover FILE FROM TO [-v] [--every N] [-- FILE...]` (recover.ctx). The program's files
@@ -545,7 +562,7 @@ fn recovery { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args }
     let mut files = list::new(check::File){ realloc = arena::alloc, &heap }
     i = 0
     while i < std.len {
-        add_file{ &files, &heap, &diags, name = all[i], text = read[i] }
+        add_file{ &files, &heap, &diags, name = all[i], text = read[i], denied = false }
         i = i + 1
     }
     // A build program's files come after std's extras, as `analyze` places them; whether it is
@@ -557,7 +574,7 @@ fn recovery { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args }
         let mut scratch = diag::new{ &heap }
         i = std.len
         while i < all.len {
-            add_file{ files = &own, &heap, diags = &scratch, name = all[i], text = read[i] }
+            add_file{ files = &own, &heap, diags = &scratch, name = all[i], text = read[i], denied = false }
             i = i + 1
         }
         let build = builds{ files = list::items{ list = own } }
@@ -569,14 +586,14 @@ fn recovery { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args }
                     cannot{ &io, path = extras[i], what = "cannot read" }
                     return 1
                 }
-                add_file{ &files, &heap, &diags, name = extras[i], text }
+                add_file{ &files, &heap, &diags, name = extras[i], text, denied = false }
                 i = i + 1
             }
             std_count = std.len + extras.len
         }
         i = std.len
         while i < all.len {
-            add_file{ &files, &heap, &diags, name = all[i], text = read[i] }
+            add_file{ &files, &heap, &diags, name = all[i], text = read[i], denied = false }
             i = i + 1
         }
     }

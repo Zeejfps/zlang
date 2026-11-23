@@ -40,8 +40,10 @@ namespace check {
     // large an index.
     const SITE: u32 = 2147483648
 
-    // A source file: std's files come first, then the program's.
-    struct File { name: []u8, text: []u8, lines: []u32, tree: syntax::File }
+    // A source file: std's files come first, then the program's. In one that is `denied`, the
+    // unchecked operations are errors (spec §13, Unchecked operations): one of an executable's
+    // files that its build program's `build::deny_unchecked` doesn't except (§19).
+    struct File { name: []u8, text: []u8, lines: []u32, tree: syntax::File, denied: bool }
 
     enum Kind: u8 { func, record, sum, enumeration, alias, constant, external, cap, fault }
 
@@ -2071,6 +2073,7 @@ namespace check {
             errorf{ &c, at = expr_at{ e }, msg = @fmt("@{} is only of a `starts_task` fn's own `run`", str{ s = n }) }
         }
         if not copy { return types::USIZE }
+        unchecked{ &c, at = expr_at{ e }, what = "`@record_copy`", checked = "start tasks with std's `task::start`" }
         expect{ &c, e = args[1], t = types::slice{ s = &c.ty, elem = types::U8, mutable = true } }
         let p = types::ptr{ s = &c.ty, elem = types::U8, mutable = true }
         let fields = [types::Field{ name = "record", mutable = false, ty = p }, types::Field{ name = "result", mutable = false, ty = p }]
@@ -2447,6 +2450,7 @@ namespace check {
                 }
                 k = k + 1
             }
+            unchecked_decl{ &c, x, callback = seen_callback }
             match x.k {
                 space{ decls = inner } => {
                     let child = map::get{ m = c.space_of, key = key{ file, id = x.id } }
@@ -4789,6 +4793,7 @@ namespace check {
         }
         let lt = expr{ &c, e = place, exp = types::NO_TYPE }
         check_mutable{ &c, e = place }
+        if cstr_ptr{ c, e = place } { unchecked_cstr{ &c, at = expr_at{ e = place } } }
         expect{ &c, e = value, t = lt }
         check_cap_assign{ &c, t = lt, once = false, at = expr_at{ e = place } }
         handle_local{ &c, t = lt, value = true, at = expr_at{ e = place } }
@@ -10001,6 +10006,7 @@ namespace check {
             addr{ e = x } => {
                 let t = expr{ &c, e = x.*, exp = types::NO_TYPE }
                 if not check_place{ &c, e = x.* } { return types::ERROR }
+                if cstr_ptr{ c, e = x.* } { unchecked_cstr{ &c, at = expr_at{ e } } }
                 let m = place_mutable{ c, e = x.* }
                 return types::ptr{ s = &c.ty, elem = t, mutable = m }
             }
@@ -10818,6 +10824,7 @@ namespace check {
         }
         same_decl{ &c, t, exp }
         no_spread{ &c, e, items }
+        if decl == c.cstr_decl { unchecked_cstr{ &c, at = expr_at{ e } } }
         let mut b = message{ c }
         if is_untagged{ c, d = decl } {
             try! @fmt(&b, "extern union `{}`", str{ s = get_decl{ c, d = decl }.name.text })
@@ -11080,6 +11087,8 @@ namespace check {
         if types::get{ s = c.ty, id = plt } is ptr {
             if op != tok::Kind::plus {
                 errorf{ &c, at, msg = @fmt("`{}` is not defined on pointers", opname) }
+            } else {
+                unchecked{ &c, at, what = "pointer arithmetic", checked = "index an array or a slice (`s[i]`, which is bounds-checked)" }
             }
             expect{ &c, e = b, t = types::USIZE }
             return plt
@@ -11532,6 +11541,7 @@ namespace check {
             return tt
         }
         if slice::eq_bytes{ a = n, b = "cast" } {
+            unchecked{ &c, at, what = "`@cast`", checked = "" }
             // Pointers and C function pointers (extern fn types) cast to each other.
             let target = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = tt } }
             let mut to_mut = false
@@ -11565,6 +11575,7 @@ namespace check {
             return tt
         }
         if slice::eq_bytes{ a = n, b = "slice" } {
+            unchecked{ &c, at, what = "`@slice`", checked = "slice an array or a slice (`a[lo..hi]`, which is bounds-checked)" }
             let pt = typed{ &c, e = args[0] }
             let mut out = types::ERROR
             match types::get{ s = c.ty, id = pt } {
@@ -13032,6 +13043,61 @@ namespace check {
 
     // Reports msg at the start of span at, unless the same message is already there: a type
     // alias is resolved at each use, and its errors would repeat.
+    // ---- unchecked operations (§13): errors in a file its build denies them in (§19)
+
+    // An error at `at` if its file is denied: `what` is unchecked, and `checked` is the checked
+    // form to write instead, or empty if it has none.
+    fn unchecked { mut c: Checker, at: source::Span, what: utf8::String, checked: utf8::String } {
+        if at.file == NO_FILE or not c.files[at.file].denied { return }
+        if checked.bytes.len == 0 {
+            errorf{ &c, at, msg = @fmt("{} is unchecked, and `build::deny_unchecked` in build.ctx denies it here: it has no checked form, so write it in a directory its `except` lists", what) }
+        } else {
+            errorf{ &c, at, msg = @fmt("{} is unchecked, and `build::deny_unchecked` in build.ctx denies it here: {}, or write it in a directory its `except` lists", what, checked) }
+        }
+    }
+
+    // A `c::String` made from a pointer: its literal, or its `ptr` written or its address taken.
+    // Nothing checks that a NUL ends the bytes it points to.
+    fn unchecked_cstr { mut c: Checker, at: source::Span } {
+        unchecked{ &c, at, what = "a `c::String` made from a pointer", checked = "use a string literal, which its hidden zero ends" }
+    }
+
+    // Whether place e is the `ptr` of a `c::String`, or of one a pointer points to.
+    fn cstr_ptr { c: Checker, e: syntax::Expr } -> bool {
+        let field{ base, name } = e.k else { return false }
+        if c.cstr_decl == NONE or not slice::eq_bytes{ a = name.text, b = "ptr" } { return false }
+        let mut t = types::prune{ s = c.ty, t = type_of_expr{ c, e = base.* } }
+        if types::get{ s = c.ty, id = t } is ptr{ elem } { t = types::prune{ s = c.ty, t = elem } }
+        return types::get{ s = c.ty, id = t } is record{ decl } and decl == c.cstr_decl
+    }
+
+    // The declarations that bring in what C says, which nothing checks against C: an extern fn,
+    // an extern union, a capability's C variable and a `#c::callback` fn.
+    fn unchecked_decl { mut c: Checker, x: syntax::Decl, callback: bool } {
+        match x.k {
+            func{ name, external } => {
+                if external {
+                    unchecked{ &c, at = name.span, what = "an extern fn", checked = "" }
+                } else if callback {
+                    unchecked{ &c, at = name.span, what = "a `#c::callback` fn", checked = "" }
+                }
+            }
+            record{ name, untagged } => {
+                if untagged { unchecked{ &c, at = name.span, what = "an extern union", checked = "use a `union`, which says which variant it holds" } }
+            }
+            cap{ fields } => {
+                if fields != null {
+                    let mut i: usize = 0
+                    while i < fields.len {
+                        if fields[i].external { unchecked{ &c, at = fields[i].name.span, what = "a C variable", checked = "" } }
+                        i = i + 1
+                    }
+                }
+            }
+            else => {}
+        }
+    }
+
     fn error { mut c: Checker, at: source::Span, msg: utf8::String } {
         let ds = diag::items{ diags = c.diags.* }
         let mut i: usize = 0

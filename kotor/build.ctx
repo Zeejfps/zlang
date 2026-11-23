@@ -35,6 +35,20 @@ fn build { mut b: Build } {
     build::add_sources{ &b, exe, dir = "lib/screens" }
     build::add_sources{ &b, exe, dir = "lib/pazaak" }
     build::add_sources{ &b, exe, dir = "tools/common" }
+    // The unchecked operations (ctxlang/spec.md §13: `@cast`, `@slice`, pointer arithmetic, C's
+    // declarations) are errors in the game's code, but for these directories: review for
+    // memory safety looks here. The first two are the binding layers; the rest are game-side,
+    // each for the reason beside it.
+    build::deny_unchecked{ &b, exe, except = [
+        "lib/platform",     // SDL2's binding: its extern fns, the event union, C's buffers as slices
+        "lib/render_gl",    // OpenGL's binding: the loader's casts, the debug callback, vertex and uniform data as bytes
+        "lib/base",         // the C heap behind heap::alloc, libm's f32 functions, float bits, and le's reads after one bounds check
+        "lib/script",       // the NCS VM: its stack through pointers, and its untagged Cell
+        "lib/video",        // the Bink decoder's inner loops, and libm for its audio tables
+        "lib/audio",        // the mixer's and the MP3 decoder's inner loops
+        "lib/engine",       // frees of one object, written `@slice(p, 1)` (std's alloc::free does it), and routines/core.ctx's libm
+        "lib/render",       // put_floats, which views f32s as bytes
+    ] }
     build::optimize{ &b, exe, level = 2 }
     match build::os{ &b } {
         macos => {

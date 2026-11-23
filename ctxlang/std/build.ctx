@@ -37,6 +37,15 @@
 //
 // A generator may read the executable's own declarations first: `declarations`, which only a
 // build program has (std/build/declarations.ctx), parses its files as they are so far.
+//
+// `deny_unchecked` makes the unchecked operations (spec §13: `@cast`, `@slice`, pointer
+// arithmetic, C's declarations and the rest) errors in an executable's files, but for the
+// directories it excepts, so that review looks only there:
+//
+//   build::deny_unchecked{ &b, exe, except = [
+//       "../lib/platform",        // SDL's binding
+//       "src/decode",             // the decoder's inner loops
+//   ] }
 
 // Permission to describe a build: only a build program's `fn build` receives one. It includes
 // the console, where the build's graph goes without CTX_BUILD_OUT. Its state is one thread's,
@@ -148,6 +157,28 @@ namespace build {
         record{ &b, kind = "framework", exe, a = name, more = "" }
     }
 
+    // Makes the unchecked operations (spec §13, Unchecked operations) errors in exe's files,
+    // those added after the call too, but for the files under each directory of `except`, at
+    // any depth: `except = []` for none. std's files are never denied them, and a file the
+    // build program generates always is, being under no directory of the program's. Each
+    // directory must hold a file of exe's, or the build fails, naming it. Without this call exe
+    // may use them anywhere; with several, a file is excepted if any of them excepts it.
+    fn deny_unchecked { mut b: Build, exe: Exe, except: [][]u8 } {
+        check{ &b, exe }
+        let mut i: usize = 0
+        while i < except.len {
+            field{ s = except[i], what = "directory" }
+            i = i + 1
+        }
+        let mut digits: [20]u8
+        record{ &b, kind = "deny", exe, a = utf8::fmt_u64{ n = except.len, into = digits[..] }.bytes, more = "" }
+        i = 0
+        while i < except.len {
+            record{ &b, kind = "except", exe, a = except[i], more = "" }
+            i = i + 1
+        }
+    }
+
     // Looks for exe's libraries in directory `path` too: `-L path`.
     fn lib_path { mut b: Build, exe: Exe, path: []u8 } {
         check{ &b, exe }
@@ -163,6 +194,7 @@ namespace build {
     // CTX_BUILD_OUT names (ctxc/drive.ctx reads it), or to standard output without it:
     //   exe ID NAME ROOT    sources ID DIR    optimize ID LEVEL
     //   link ID LIB    framework ID NAME    libpath ID PATH
+    //   deny ID COUNT, then COUNT of except ID DIR
     //   gen ID NAME SIZE, then SIZE bytes of text and a line break
 
     // build's state for the whole program (spec §15, rule 13): what the build program has
