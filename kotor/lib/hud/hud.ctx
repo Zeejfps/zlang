@@ -111,10 +111,10 @@ namespace hud {
         let file_w = p.w
         let file_h = p.h
         fit_to_screen{ &g, p }
+        let minimap = open_minimap{ &g, &w, &dev, panel }
+        let font = gui::font_slot{ &g, fs = &w.fs, &dev, name = "dialogfont10x10" }
         let mut h = Hud{
-            panel, file_w, file_h,
-            minimap = open_minimap{ &g, &w, &dev, panel },
-            font = gui::font_slot{ &g, fs = &w.fs, &dev, name = "dialogfont10x10" },
+            panel, file_w, file_h, minimap, font,
             lists = [empty_list{}; 3],
             floating = new_floating{ &g, &w, &dev },
             ..

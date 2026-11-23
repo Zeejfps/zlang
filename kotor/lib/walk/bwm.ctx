@@ -736,16 +736,22 @@ namespace bwm {
             abs[i] = turn{ at, c, s, p = w.abs_hooks[i] }
             i = i + 1
         }
+        let materials = try copy_of(u32, S){ realloc, &heap, items = w.materials }
+        let nodes = try build_tree(S){ realloc, &heap, vertices, faces }
+        let adjacency = try copy_of([3]i32, S){ realloc, &heap, items = w.adjacency }
+        let perimeter = try copy_of(Perimeter, S){ realloc, &heap, items = w.perimeter }
+        let loop_ends = try copy_of(u32, S){ realloc, &heap, items = w.loop_ends }
+        let edge_perimeter = try copy_of(i32, S){ realloc, &heap, items = w.edge_perimeter }
         return Walkmesh{
             kind = w.kind, position = math::vec3::zero{}, rel_hooks = rel, abs_hooks = abs,
             vertices, faces,
-            materials = try copy_of(u32, S){ realloc, &heap, items = w.materials },
+            materials,
             planes, flat,
-            nodes = try build_tree(S){ realloc, &heap, vertices, faces },
-            adjacency = try copy_of([3]i32, S){ realloc, &heap, items = w.adjacency },
-            perimeter = try copy_of(Perimeter, S){ realloc, &heap, items = w.perimeter },
-            loop_ends = try copy_of(u32, S){ realloc, &heap, items = w.loop_ends },
-            edge_perimeter = try copy_of(i32, S){ realloc, &heap, items = w.edge_perimeter },
+            nodes,
+            adjacency,
+            perimeter,
+            loop_ends,
+            edge_perimeter,
             tree_rebuilt = true, planes_computed = computed,
         }
     }

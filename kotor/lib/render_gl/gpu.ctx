@@ -171,25 +171,33 @@ namespace gpu {
             max_samples = if max_samples > 8 { 8 } else if max_samples > 0 { @as(u32, max_samples) } else { 0 },
             max_anisotropy = if aniso { max_aniso } else { 0.0 },
         }
+        let textures = try alloc::make(TexSlot, S){ realloc, &heap, count = config.max_textures }
+        let meshes = try alloc::make(MeshSlot, S){ realloc, &heap, count = config.max_meshes }
+        let targets = try alloc::make(TargetSlot, S){ realloc, &heap, count = config.max_targets }
+        let scratch = try alloc::make(f32, S){ realloc, &heap, count = STREAM_FLOATS }
+        let sort = try alloc::make(SortItem, S){ realloc, &heap, count = SORT_ITEMS }
+        let sort_tmp = try alloc::make(SortItem, S){ realloc, &heap, count = SORT_ITEMS }
+        let log = try alloc::make(u8, S){ realloc, &heap, count = 8192 }
+        let pixels = try alloc::make(u8, S){ realloc, &heap, count = POINTER_BYTES * 2 }
         let mut dev = Device{
             gl, win, config, info, debug_on, debug_log,
-            textures = try alloc::make(TexSlot, S){ realloc, &heap, count = config.max_textures },
-            meshes = try alloc::make(MeshSlot, S){ realloc, &heap, count = config.max_meshes },
-            targets = try alloc::make(TargetSlot, S){ realloc, &heap, count = config.max_targets },
+            textures,
+            meshes,
+            targets,
             screen, screen_ms = MsBuffers{ .. }, max_samples = if max_samples > 8 { 8 } else { max_samples },
             scene = ScenePrograms{ .. },
             particle = ParticleProgram{ .. },
             fx = screen,
-            scratch = try alloc::make(f32, S){ realloc, &heap, count = STREAM_FLOATS },
-            sort = try alloc::make(SortItem, S){ realloc, &heap, count = SORT_ITEMS },
-            sort_tmp = try alloc::make(SortItem, S){ realloc, &heap, count = SORT_ITEMS },
+            scratch,
+            sort,
+            sort_tmp,
             state = State{ .. },
             anisotropy = if aniso { math::min{ a = 8.0, b = max_aniso } } else { 0.0 }, max_anisotropy = max_aniso,
-            log = try alloc::make(u8, S){ realloc, &heap, count = 8192 },
+            log,
             scene_fx = ScenePrograms{ .. }, particle_fx = ParticleProgram{ .. },
             fxp = FxPrograms{ .. }, fxt = FxTargets{ .. }, cur = ScenePrograms{ .. }, cur_particle = ParticleProgram{ .. },
             timer = Timer{ .. }, atmos = AtmosPrograms{ .. }, aa = AaPrograms{ .. }, shadow = no_shadows{}, scene_tess = ScenePrograms{ .. }, aos = AoState{ .. }, dof = DofState{ .. }, ssr = SsrState{ .. }, ofx = no_orig_fx{},
-            pointer = no_pointer_state{ pixels = try alloc::make(u8, S){ realloc, &heap, count = POINTER_BYTES * 2 } },
+            pointer = no_pointer_state{ pixels },
             ..
         }
         clear_tables{ &dev }

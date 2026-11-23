@@ -208,7 +208,8 @@ namespace hud {
             // What the leader can do to the target changed under it (a lock picked or locked, a key found,
             // the last grenade thrown, Force points spent or regained, a power learned).
             let first = same_actions{ a = left_actions{ w = &w, id = w.target }, b = h.lists[0] }
-            let middle = same_actions{ a = middle_list{ h = &h, w = &w, id = w.target }, b = h.lists[1] }
+            let now = middle_list{ h = &h, w = &w, id = w.target }
+            let middle = same_actions{ a = now, b = h.lists[1] }
             let last = same_actions{ a = grenade_actions{ w = &w, target = w.target }, b = h.lists[2] }
             if not first or not last {
                 build_block{ &h, &g, &w, &dev, id = w.target }
@@ -461,7 +462,10 @@ namespace hud {
         let taught = if e.act == Act::feat_attack { world::offer_tutorial{ &w, id = world::TUT_COMBAT_FEAT, who = w.target, target = obj::INVALID, n = e.id } }
             else if e.act == Act::throw { world::offer_tutorial{ &w, id = world::TUT_GRENADE, who = w.target, target = leader, n = @as(i32, e.item) } }
             else { false }
-        if not taught { run_act{ &w, act = e.act, target = w.target, item = e.item, spell = e.id, queue = queues_orders{ h = &h, w = &w } } }
+        if not taught {
+            let target = w.target
+            run_act{ &w, act = e.act, target, item = e.item, spell = e.id, queue = queues_orders{ h = &h, w = &w } }
+        }
         if to_combat { enter_combat_mode{ &w } }
         return true
     }

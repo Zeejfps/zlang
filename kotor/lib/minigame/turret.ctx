@@ -299,7 +299,10 @@ namespace mg {
         if run.objs[n].kind == ObjKind::enemy {
             let goal = target_point{ run = &run }
             let miss = bank.inaccuracy * math::vec3::distance{ a = from, b = goal }
-            let jitter = math::Vec3{ x = random_unit{ &run } - 0.5, y = random_unit{ &run } - 0.5, z = random_unit{ &run } - 0.5 }
+            let jx = random_unit{ &run } - 0.5
+            let jy = random_unit{ &run } - 0.5
+            let jz = random_unit{ &run } - 0.5
+            let jitter = math::Vec3{ x = jx, y = jy, z = jz }
             let aimed = math::vec3::add_scaled{ a = goal, b = math::vec3::normalize{ v = jitter }, s = miss * random_unit{ &run } }
             dir = math::vec3::normalize{ v = math::vec3::sub{ a = aimed, b = from } }
         }

@@ -31,11 +31,9 @@ namespace gui {
         b.edge = resolve_img{ &g, &fs, &dev, name = "border1d" }
         b.fill = Img{ .. }
         b.color = white_color{}
-        c.cell_art = CellArt{
-            on = true, frame = b,
-            backing = resolve_img{ &g, &fs, &dev, name = "lbl_indent" },
-            arrow = resolve_img{ &g, &fs, &dev, name = "lbl_skarr" },
-        }
+        let backing = resolve_img{ &g, &fs, &dev, name = "lbl_indent" }
+        let arrow = resolve_img{ &g, &fs, &dev, name = "lbl_skarr" }
+        c.cell_art = CellArt{ on = true, frame = b, backing, arrow }
         c.cell_focus = 0
     }
 

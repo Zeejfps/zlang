@@ -107,7 +107,9 @@ namespace partysel_panel {
         // same tag, is not the companion the player is offered.
         let id = if world::is_valid{ w = &w, id = w.party.npcs[n] } { w.party.npcs[n] } else { if in_party{ w = &w, n } { slot_creature{ w = &w, n } } else { obj::INVALID } }
         if id != obj::INVALID {
-            return Slot{ name = hud::name_of{ w = &w, id }, portrait = hud::portrait_of{ w = &w, id }, level = hud::level_of{ w = &w, id } }
+            let name = hud::name_of{ w = &w, id }
+            let portrait = hud::portrait_of{ w = &w, id }
+            return Slot{ name, portrait, level = hud::level_of{ w = &w, id } }
         }
         let none = Slot{ name = "", portrait = "", level = 1 }
         let doc = world::read_gff{ &w, name = template_of{ w = &w, n }, kind = restype::Type::utc } iferr { return none }

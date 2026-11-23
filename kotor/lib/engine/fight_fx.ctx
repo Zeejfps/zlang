@@ -283,7 +283,8 @@ namespace fight {
             let mut n: usize = 0
             while n < base.len { col[n] = base[n]; n = n + 1 }
             col[n] = @trunc(u8, '0' + (id *% 2654435761 +% @trunc(u32, w.clock.frame)) / 7 % 3)      // not the world's dice: sound must not change the game
-            let sound = twoda::get_string{ t = w.tables.weaponsounds, row = weapon_sound_row{ w = &w, c }, column = col[..n + 1] } ifnull ""
+            let t = w.tables.weaponsounds
+            let sound = twoda::get_string{ t, row = weapon_sound_row{ w = &w, c }, column = col[..n + 1] } ifnull ""
             say{ &w, name = sound, at = chest_of{ o }, source = id }
         } else if ci::eq{ a = name, b = "snd_hitground" } {
             // dirt, hard ground, metal or water by the surface it lands on.

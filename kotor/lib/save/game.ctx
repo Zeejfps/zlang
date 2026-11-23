@@ -212,7 +212,8 @@ namespace save {
         w.played_seconds = @as(f64, played)
         let party_bytes = try write_party_table(arena::Arena){ realloc = arena::alloc, heap = w.scratch, w = &w, played_seconds = played }
         _ = try fs::write_all{ fs = &w.fs, path = try staged_in{ &w, folder, name = SAVE_FILES[2] }, bytes = party_bytes }
-        let info_bytes = try write_info(arena::Arena){ realloc = arena::alloc, heap = w.scratch, info = info_now{ &w, save_name, played } }
+        let scratch = w.scratch
+        let info_bytes = try write_info(arena::Arena){ realloc = arena::alloc, heap = scratch, info = info_now{ &w, save_name, played } }
         _ = try fs::write_all{ fs = &w.fs, path = try staged_in{ &w, folder, name = SAVE_FILES[3] }, bytes = info_bytes }
         if screen.len > 0 {
             let tga = try write_screenshot(arena::Arena){ realloc = arena::alloc, heap = w.scratch, rgba = screen, width, height }

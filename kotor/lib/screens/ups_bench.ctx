@@ -35,7 +35,8 @@ namespace ups {
         if item != obj::INVALID and world::is_valid{ w = &w, id = item } {
             s.category = category_of{ s = &s, w = &w, item }
             if s.category != CAT_NONE {
-                return try take_item{ &s, &g, &w, &dev, item, owner = holder_of{ s = &s, w = &w, item }, slot = worn_slot_of{ s = &s, w = &w, item } }
+                let owner = holder_of{ s = &s, w = &w, item }
+                return try take_item{ &s, &g, &w, &dev, item, owner, slot = worn_slot_of{ s = &s, w = &w, item } }
             }
         }
         try open_categories{ &s, &g, &w, &dev }
