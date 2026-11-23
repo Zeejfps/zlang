@@ -1,0 +1,19 @@
+== wrapped text: in a fit panel, in a grow column, with a newline in a fixed width, beside a fixed sibling
+frame 800x600 scale 1x1
+rect 20,20 216x48 fill=20232AFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+text 28,28 font=0 size=16 E4E7EDFF clip=0 "The quick brown fox jumps"
+text 28,44 font=0 size=16 E4E7EDFF clip=0 "over the lazy dog"
+rect 20,72 50x10 fill=4A90E2FF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 300,20 320x77 fill=20232AFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 310,30 100x20 fill=4A90E2FF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 420,30 190x57 fill=30343EFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+text 425,35 font=0 size=16 E4E7EDFF clip=0 "one two three four"
+text 425,51 font=0 size=16 E4E7EDFF clip=0 "five six"
+rect 425,72 30x10 fill=FFFFFFFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 20,120 120x56 fill=14161BFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+text 56,124 font=0 size=16 E4E7EDFF clip=0 "alpha beta"
+text 48,140 font=0 size=16 E4E7EDFF clip=0 "gamma delta"
+text 80,156 font=0 size=16 E4E7EDFF clip=0 "epsilon"
+text 300,120 font=0 size=16 E4E7EDFF clip=0 "aa bb cc dd"
+text 300,136 font=0 size=16 E4E7EDFF clip=0 "ee ff"
+rect 400,120 200x20 fill=4A90E2FF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0

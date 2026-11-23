@@ -33,6 +33,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     check_end_hook{ &io, &t, &heap }
     check_lines{ &io, &t, &heap }
     check_defaults{ &io, &t, &heap }
+    check_solver{ &io, &fs, &t, &heap, update }
 
     _ = @fmt(&io, "ui/tests/layout: {} checks, {} failed\n", t.run, t.failed)
     io::flush{ &io }

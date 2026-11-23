@@ -1,0 +1,18 @@
+== ellipsis: a short row, a row with room, a narrow column, a fixed width, clip, no room for the dots, an exact fit
+frame 800x600 scale 1x1
+rect 20,20 100x16 fill=20232AFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+text 20,20 font=0 size=16 E4E7EDFF clip=0 "A lon..."
+rect 90,20 30x16 fill=4A90E2FF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 20,50 200x16 fill=20232AFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+text 20,50 font=0 size=16 E4E7EDFF clip=0 "A long label here"
+rect 160,50 30x16 fill=4A90E2FF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 20,80 80x24 fill=20232AFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+text 24,84 font=0 size=16 E4E7EDFF clip=0 "Hello..."
+rect 20,120 60x16 fill=14161BFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+text 24,120 font=0 size=16 E4E7EDFF clip=0 "Sett..."
+rect 20,150 100x16 fill=20232AFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+text 20,150 font=0 size=16 E4E7EDFF clip=0 "A long label here"
+rect 160,150 30x16 fill=4A90E2FF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 20,180 20x16 fill=14161BFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 20,210 40x16 fill=14161BFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+text 20,210 font=0 size=16 E4E7EDFF clip=0 "Hello"
