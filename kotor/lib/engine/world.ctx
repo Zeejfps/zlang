@@ -492,18 +492,18 @@ namespace world {
                 list::free{ list = &c.triggers }
                 list::free{ list = &c.perceived }
                 if let f = c.fighter { fight::free_fighter{ heap = w.heap, f } }
-                _ = alloc::resize(obj::Creature, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(c, 1), count = 0 }
+                alloc::free(obj::Creature, heap::Heap){ realloc = heap::alloc, heap = w.heap, p = c }
             }
             door{ d } => {
                 obj::free_bytes{ heap = w.heap, s = d.key }
                 obj::free_bytes{ heap = w.heap, s = d.linked_to }
                 obj::free_bytes{ heap = w.heap, s = d.transition_name.text }
-                _ = alloc::resize(obj::Door, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(d, 1), count = 0 }
+                alloc::free(obj::Door, heap::Heap){ realloc = heap::alloc, heap = w.heap, p = d }
             }
             placeable{ p } => {
                 obj::free_bytes{ heap = w.heap, s = p.key }
                 list::free{ list = &p.inventory }
-                _ = alloc::resize(obj::Placeable, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(p, 1), count = 0 }
+                alloc::free(obj::Placeable, heap::Heap){ realloc = heap::alloc, heap = w.heap, p = p }
             }
             trigger{ t } => {
                 obj::free_bytes{ heap = w.heap, s = t.linked_to }
@@ -511,42 +511,42 @@ namespace world {
                 obj::free_bytes{ heap = w.heap, s = t.trap.key }
                 list::free{ list = &t.inside }
                 _ = alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = t.polygon, count = 0 }
-                _ = alloc::resize(obj::Trigger, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(t, 1), count = 0 }
+                alloc::free(obj::Trigger, heap::Heap){ realloc = heap::alloc, heap = w.heap, p = t }
             }
             item{ i } => {
-                if let ri = i.rules { _ = alloc::resize(rules::Item, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(ri, 1), count = 0 } }
-                _ = alloc::resize(obj::Item, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(i, 1), count = 0 }
+                if let ri = i.rules { alloc::free(rules::Item, heap::Heap){ realloc = heap::alloc, heap = w.heap, p = ri } }
+                alloc::free(obj::Item, heap::Heap){ realloc = heap::alloc, heap = w.heap, p = i }
             }
             waypoint{ wp } => {
                 obj::free_bytes{ heap = w.heap, s = wp.map_note.text }
-                _ = alloc::resize(obj::Waypoint, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(wp, 1), count = 0 }
+                alloc::free(obj::Waypoint, heap::Heap){ realloc = heap::alloc, heap = w.heap, p = wp }
             }
             sound{ s } => {
                 _ = alloc::resize(resref::ResRef, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = s.sounds, count = 0 }
-                _ = alloc::resize(obj::Sound, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(s, 1), count = 0 }
+                alloc::free(obj::Sound, heap::Heap){ realloc = heap::alloc, heap = w.heap, p = s }
             }
             encounter{ e } => {
                 _ = alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = e.polygon, count = 0 }
                 _ = alloc::resize(math::Vec4, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = e.spawn_points, count = 0 }
                 _ = alloc::resize(resref::ResRef, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = e.creatures, count = 0 }
-                _ = alloc::resize(obj::Encounter, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(e, 1), count = 0 }
+                alloc::free(obj::Encounter, heap::Heap){ realloc = heap::alloc, heap = w.heap, p = e }
             }
             store{ st } => {
                 list::free{ list = &st.stock }
-                _ = alloc::resize(obj::Store, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(st, 1), count = 0 }
+                alloc::free(obj::Store, heap::Heap){ realloc = heap::alloc, heap = w.heap, p = st }
             }
-            aoe{ a } => { _ = alloc::resize(obj::Aoe, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(a, 1), count = 0 } }
+            aoe{ a } => { alloc::free(obj::Aoe, heap::Heap){ realloc = heap::alloc, heap = w.heap, p = a } }
             area{ a } => {
                 obj::free_bytes{ heap = w.heap, s = a.name.text }
-                _ = alloc::resize(obj::Area, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(a, 1), count = 0 }
+                alloc::free(obj::Area, heap::Heap){ realloc = heap::alloc, heap = w.heap, p = a }
             }
             module{ m } => {
                 obj::free_bytes{ heap = w.heap, s = m.vo_id }
-                _ = alloc::resize(obj::Module, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(m, 1), count = 0 }
+                alloc::free(obj::Module, heap::Heap){ realloc = heap::alloc, heap = w.heap, p = m }
             }
             none => {}
         }
-        _ = alloc::resize(obj::Object, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(o, 1), count = 0 }
+        alloc::free(obj::Object, heap::Heap){ realloc = heap::alloc, heap = w.heap, p = o }
     }
 
     // Sets an object's tag (lower-cased, as SetTag does).

@@ -474,34 +474,6 @@ namespace rt_core {
     // One engine handler serves routines 67..77 (0x0053f5c0); the trigonometric routines work in
     // degrees, in double precision here as the engine's x87 does.
 
-    #c::symbol{ name = "cos" }
-    #pure
-    extern fn libm_cos { x: f64 } -> f64
-    #c::symbol{ name = "sin" }
-    #pure
-    extern fn libm_sin { x: f64 } -> f64
-    #c::symbol{ name = "tan" }
-    #pure
-    extern fn libm_tan { x: f64 } -> f64
-    #c::symbol{ name = "acos" }
-    #pure
-    extern fn libm_acos { x: f64 } -> f64
-    #c::symbol{ name = "asin" }
-    #pure
-    extern fn libm_asin { x: f64 } -> f64
-    #c::symbol{ name = "atan" }
-    #pure
-    extern fn libm_atan { x: f64 } -> f64
-    #c::symbol{ name = "log" }
-    #pure
-    extern fn libm_log { x: f64 } -> f64
-    #c::symbol{ name = "pow" }
-    #pure
-    extern fn libm_pow { x: f64, y: f64 } -> f64
-    #c::symbol{ name = "sqrt" }
-    #pure
-    extern fn libm_sqrt { x: f64 } -> f64
-
     const RADIANS_PER_DEGREE: f64 = 0.017453292519943295
     const DEGREES_PER_RADIAN: f64 = 57.29578
 
@@ -526,14 +498,14 @@ namespace rt_core {
         let x = @as(f64, f)
         let mut y: f64 = 0.0
         if routine == nwscript::fabs { y = if x < 0.0 { -x } else { x } }
-        else if routine == nwscript::cos { y = libm_cos{ x = x * RADIANS_PER_DEGREE } }
-        else if routine == nwscript::sin { y = libm_sin{ x = x * RADIANS_PER_DEGREE } }
-        else if routine == nwscript::tan { y = libm_tan{ x = x * RADIANS_PER_DEGREE } }
-        else if routine == nwscript::acos { if x >= -1.0 and x <= 1.0 { y = libm_acos{ x } * DEGREES_PER_RADIAN } }
-        else if routine == nwscript::asin { if x >= -1.0 and x <= 1.0 { y = libm_asin{ x } * DEGREES_PER_RADIAN } }
-        else if routine == nwscript::atan { y = libm_atan{ x } * DEGREES_PER_RADIAN }
-        else if routine == nwscript::log { if x > 0.0 { y = libm_log{ x } } }
-        else if routine == nwscript::sqrt { if x > 0.0 { y = libm_sqrt{ x } } }
+        else if routine == nwscript::cos { y = math::cos{ x = x * RADIANS_PER_DEGREE } }
+        else if routine == nwscript::sin { y = math::sin{ x = x * RADIANS_PER_DEGREE } }
+        else if routine == nwscript::tan { y = math::tan{ x = x * RADIANS_PER_DEGREE } }
+        else if routine == nwscript::acos { if x >= -1.0 and x <= 1.0 { y = math::acos{ x } * DEGREES_PER_RADIAN } }
+        else if routine == nwscript::asin { if x >= -1.0 and x <= 1.0 { y = math::asin{ x } * DEGREES_PER_RADIAN } }
+        else if routine == nwscript::atan { y = math::atan{ x } * DEGREES_PER_RADIAN }
+        else if routine == nwscript::log { if x > 0.0 { y = math::log{ x } } }
+        else if routine == nwscript::sqrt { if x > 0.0 { y = math::sqrt{ x } } }
         try nwvm::push_float{ &vm, v = to_f32{ x = y } }
     }
 
@@ -549,7 +521,7 @@ namespace rt_core {
         let base = try nwarg::float{ &vm, routine = r, argc, i = 0 }
         let exponent = try nwarg::float{ &vm, routine = r, argc, i = 1 }
         let mut y: f64 = 0.0
-        if base != 0.0 or exponent >= 0.0 { y = libm_pow{ x = @as(f64, base), y = @as(f64, exponent) } }
+        if base != 0.0 or exponent >= 0.0 { y = math::pow{ x = @as(f64, base), y = @as(f64, exponent) } }
         try nwvm::push_float{ &vm, v = to_f32{ x = y } }
     }
 
@@ -609,8 +581,8 @@ namespace rt_core {
     fn angle_to_vector { mut vm: nwvm::Vm, argc: u8 } -> ! {
         let a = try nwarg::float{ &vm, routine = nwscript::AngleToVector, argc, i = 0 }
         let rad = @as(f64, a) * RADIANS_PER_DEGREE
-        let x = to_f32{ x = libm_cos{ x = rad } }
-        let y = to_f32{ x = libm_sin{ x = rad } }
+        let x = to_f32{ x = math::cos{ x = rad } }
+        let y = to_f32{ x = math::sin{ x = rad } }
         try nwvm::push_vector{ &vm, v = nwvm::Vector{ x, y, z = 0.0 } }
     }
 

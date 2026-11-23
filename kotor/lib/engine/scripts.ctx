@@ -104,7 +104,7 @@ namespace scripts {
     fn free_situation { mut w: world::World, s: *mut nwvm::Situation } {
         values::release_cells{ s = &w.values, situation = s.* }
         nwvm::free_situation(heap::Heap){ realloc = heap::alloc, heap = w.heap, situation = s.* }
-        _ = alloc::resize(nwvm::Situation, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(s, 1), count = 0 }
+        alloc::free(nwvm::Situation, heap::Heap){ realloc = heap::alloc, heap = w.heap, p = s }
     }
 
     fn report_fault { mut w: world::World, vm: *nwvm::Vm } {

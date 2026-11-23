@@ -242,10 +242,19 @@ namespace render {
     }
 
     fn put_floats { into: []mut u8, mut at: usize, src: []f32 } -> i32 {
+        // Each float's four bytes, low byte first: the order of every machine the game builds for.
         let start = at
-        let bytes = @slice(@cast(*u8, src.ptr), src.len * 4)
-        slice::copy(u8){ dst = into[start..start + bytes.len], src = bytes }
-        at = start + bytes.len
+        let dst = into[start..start + src.len * 4]
+        let mut i: usize = 0
+        while i < src.len {
+            let bits = math::f32_to_bits{ x = src[i] }
+            dst[i * 4] = @trunc(u8, bits)
+            dst[i * 4 + 1] = @trunc(u8, bits >> 8)
+            dst[i * 4 + 2] = @trunc(u8, bits >> 16)
+            dst[i * 4 + 3] = @trunc(u8, bits >> 24)
+            i = i + 1
+        }
+        at = start + dst.len
         return @as(i32, start)
     }
 

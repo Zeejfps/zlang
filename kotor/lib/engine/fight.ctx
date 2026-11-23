@@ -141,7 +141,7 @@ namespace fight {
     }
 
     fn free_fighter { heap: *mut heap::Heap, f: *mut Fighter } {
-        _ = alloc::resize(Fighter, heap::Heap){ realloc = heap::alloc, heap, mem = @slice(f, 1), count = 0 }
+        alloc::free(Fighter, heap::Heap){ realloc = heap::alloc, heap, p = f }
     }
 
     fn of { o: *obj::Object } -> ?*mut Fighter {

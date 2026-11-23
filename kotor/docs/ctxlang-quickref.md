@@ -71,9 +71,9 @@ function: can't be stored in a struct or returned), `extern fn{C} -> R` (C funct
   `(q + i).*` too), a `c::String` from a pointer, and declaring an `extern fn`, an
   `extern union`, a C variable or a `#c::callback` fn. The game's build makes them compile
   errors (`build::deny_unchecked` in kotor/build.ctx) outside the directories its `except`
-  lists, each with its reason: lib/platform, lib/render_gl, lib/base, lib/script, lib/video,
-  lib/audio, lib/engine and lib/render. Elsewhere write the checked form the error names:
-  `s[i]` and `a[lo..hi]`, `alloc::free` for one object from `alloc::new`, std's `math` for
+  lists, each with its reason: lib/platform, lib/render_gl, lib/base, lib/script, lib/video
+  and lib/audio. Elsewhere write the checked form the error names:
+  `s[i]` and `a[lo..hi]`, `alloc::free` for one object from `alloc::new`, `math::` (lib/base) for
   libm, a string literal for a `c::String`; or call a function of one of those directories.
   Calling an extern fn or using a slice that such a directory made is allowed everywhere. Add a
   directory to `except` only with its reason on its line. The tools (kotor/tools/*) don't deny

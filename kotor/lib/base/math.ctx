@@ -49,6 +49,26 @@ namespace math {
     #pure
     extern fn logf { x: f32 } -> f32
 
+    // ---- libm's f64 functions, for the script routines, which compute in double precision.
+    #pure
+    extern fn sqrt { x: f64 } -> f64
+    #pure
+    extern fn sin { x: f64 } -> f64
+    #pure
+    extern fn cos { x: f64 } -> f64
+    #pure
+    extern fn tan { x: f64 } -> f64
+    #pure
+    extern fn acos { x: f64 } -> f64
+    #pure
+    extern fn asin { x: f64 } -> f64
+    #pure
+    extern fn atan { x: f64 } -> f64
+    #pure
+    extern fn log { x: f64 } -> f64
+    #pure
+    extern fn pow { x: f64, y: f64 } -> f64
+
     // ---- std's float bits, which this namespace hides. A signed integer's bits are `@trunc`.
     fn f32_from_bits { bits: u32 } -> f32 {
         let b = bits

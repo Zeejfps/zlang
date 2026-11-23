@@ -72,21 +72,21 @@ entries are cited by number, e.g. F#24) and [kotor/docs/tooling-gaps.md](../koto
     allowed anywhere. The error names the checked form, e.g. ``pointer arithmetic is unchecked,
     and `build::deny_unchecked` in build.ctx denies it here: index an array or a slice (`s[i]`,
     which is bounds-checked), or write it in a directory its `except` lists``.
-    KOTOR's game denies them in 240 of its 359 files; [kotor/build.ctx](../kotor/build.ctx)
-    excepts eight directories, 690 sites in all, each with its reason:
+    KOTOR's game denies them in 310 of its 359 files; [kotor/build.ctx](../kotor/build.ctx)
+    excepts six directories, 672 sites in all, each with its reason:
     - `lib/platform` (85): SDL2's binding.
     - `lib/render_gl` (155): OpenGL's binding, and vertex and uniform data as bytes.
-    - `lib/base` (27): the C heap behind `heap::alloc`, libm's f32 functions, float bits, and
+    - `lib/base` (36): the C heap behind `heap::alloc`, libm's functions, float bits, and
       `le`'s reads after one bounds check.
     - `lib/script` (301): the NCS VM's stack through pointers, and its untagged `Cell`.
     - `lib/video` (67): the Bink decoder's inner loops, and libm for its audio tables.
     - `lib/audio` (28): the mixer's and the MP3 decoder's inner loops.
-    - `lib/engine` (25): 16 frees of one object written `@slice(p, 1)`, which std's
-      `alloc::free` does, and 9 libm declarations in routines/core.ctx, which std's `math` has.
-    - `lib/render` (2): `put_floats`, which views f32s as bytes.
 
-    The last two need no unchecked code, but this change moved no game code to the checked
-    forms; replacing those 27 sites lets both directories come off the list.
+    `lib/engine` and `lib/render` were excepted at first and came off the list: 16 frees of one
+    object written `@slice(p, 1)` became `alloc::free`, `put_floats` writes each f32's bits
+    (`math::f32_to_bits`) instead of viewing the floats as bytes, and the 9 libm f64
+    declarations of routines/core.ctx moved to `lib/base` beside the f32 ones (KOTOR's own
+    `math` namespace hides std's).
 
 - [x] **1.4 Fix float-to-float `@as` in the spec.**
   §13 says `@as` panics if the value isn't representable, but `@as(f32, 1e300)` gives `inf`.
