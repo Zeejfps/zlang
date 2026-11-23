@@ -14,15 +14,14 @@ as the write-ups gave them.
 
 ## Ranked
 
-1. **Punning `&x` needs the callee's field name, and `&a.b` doesn't pun at all.** `deal_hand{
-   &g.rng, &g.player, deck }` is "expected '}', found '.'"; `next{ &fs, &movie }` for a field `m`
-   is "has no field `movie`". Written `rng = &g.rng`, `m = &movie`. Each file's first compile
-   trips on it, one call at a time; a library whose fns take `mut p: Panels` makes callers name
-   their value `p`. *Partly:* the errors say what to write ("a pun is a name alone: write `rng =
-   &g.rng`", "`next` has no field `movie`: write `m = &movie`", from the fields nothing supplies),
-   so each fix is mechanical, but each call is still written out. A std convention (name a
-   builder `b`) shrinks it; punning a place's last name (`&g.rng` fills `rng`) would remove most
-   of it. *Hit by 12:* ctxc (about 30, and
+1. **Punning `&x` needs the callee's field name.** `next{ &fs, &movie }` for a field `m` is "has
+   no field `movie`", and `deal_hand{ &g.rng, &g.player, deck }` for a field `side` the same for
+   `player`. Written `m = &movie`, `side = &g.player`. A library whose fns take `mut p: Panels`
+   makes callers name their value `p`. *Partly:* a place's last name puns (`&g.rng` fills `rng`,
+   `w.d` fills `d`: spec §3, rule 6), which was most of it, and the error says what to write
+   ("`next` has no field `movie`: write `m = &movie`", from the fields nothing supplies), so each
+   fix is mechanical. A std convention (name a builder `b`) shrinks the rest. *Hit by 12:* ctxc
+   (about 30, and
    `mutex::lock{ &shared.lock }`), engine (about 40), data (about 40), dialog (about 36), gui
    (about 25), hud (about 40), chargen (4), minigames (about 46), rules (about 40), screens (about
    15), script (8), video (8).

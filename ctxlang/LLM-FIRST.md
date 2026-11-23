@@ -152,11 +152,24 @@ entries are cited by number, e.g. F#24) and [kotor/docs/tooling-gaps.md](../koto
 
 What a model writes by default should compile, or fail with the exact fix.
 
-- [ ] **3.1 Pun a place's last name: `&g.rng` fills `rng`.**
+- [x] **3.1 Pun a place's last name: `&g.rng` fills `rng`.**
   Today `deal_hand{ &g.rng, &g.player, deck }` is a parse error and must be `rng = &g.rng`. Hit by
   12 of 17 write-ups, every file's first compile. Also `g.rng` for a read-only field.
   - Details: F#1; [spec §3, rule 6](spec.md#3-calls).
   - *Done when:* `f{ &a.b.c, a.d }` supplies `c` and `d`, with tests; the old error is gone.
+  - *Done:* [spec §3, rule 6](spec.md#3-calls): an item that is a place ending in a field's name
+    is a pun of that name, in a call, a bind and every literal (they share one parser). The
+    place starts at a name and may go through fields, indexes and derefs on the way
+    (`&ws[i].g.rng`); only the last step counts, so `s.len` supplies `len`. What ends in
+    anything else is not a pun, since no name there is the field's: an index, `.*`, a range, a
+    call or a literal, a `::` path, an operator's expression. Each is one error that keeps the
+    rest of the call checked, e.g. ``a pun is a place that ends in a field's name, as `&g.rng`
+    is for `rng`, and this one ends in an index: write the field's name, as `name = &g.xs[0]` ``;
+    before, `f{ make{} }` and `f{ n + 1 }` were "expected '}'". A pun that names no field says
+    what to write from the fields nothing supplies (``write `d = w.g.xs` ``), or lists the fields
+    when all are supplied. Argument order (1.1) and split borrows (2.1) see the pun's place as
+    they see a named item's. Converted as proof, not everywhere: KOTOR's pazaak (21 sites, the
+    `deal_hand` of F#1 among them) and 6 in std.
 
 - [ ] **3.2 A `for` loop.**
   Every loop is `let mut i = 0; while i < n { ...; i = i + 1 }`: forgotten increments are hangs,
@@ -255,7 +268,7 @@ What a model writes by default should compile, or fail with the exact fix.
   - *Done when:* every diagnostic has the JSON form, and the borrow and escape errors carry a note at the other place.
 
 - [ ] **6.3 Machine-applicable fix-its.**
-  Many errors already say what to write ("a pun is a name alone: write `rng = &g.rng`"). Give
+  Many errors already say what to write ("`next` has no field `movie`: write `m = &movie`"). Give
   those a structured replacement (span and new text), and `ctxc check --fix` to apply them.
   - *Done when:* the pun, unused-result (`_ =`), `@as` and missing-field errors carry fixes, and `--fix` applies them.
 

@@ -89,8 +89,8 @@ namespace pazaak {
         seed: u32, wager: i32, player_deck: [10]i32, opponent_deck: [10]i32, tutorial: bool, auto_player: bool,
     } -> Match {
         let mut g = new_game{ seed, wager }
-        deal_hand{ rng = &g.rng, side = &g.player, deck = deck_cards{ ids = player_deck } }
-        deal_hand{ rng = &g.rng, side = &g.opponent, deck = deck_cards{ ids = opponent_deck } }
+        deal_hand{ &g.rng, side = &g.player, deck = deck_cards{ ids = player_deck } }
+        deal_hand{ &g.rng, side = &g.opponent, deck = deck_cards{ ids = opponent_deck } }
         return Match{
             g, phase = Phase::new_set, timer = 0.0, tutorial, seen = 0, prompt = Prompt{ .. },
             cues = [Sound::click; 16], cue_count = 0, auto_player, last_set = SetResult::undecided,
@@ -315,7 +315,7 @@ namespace pazaak {
                 return false
             }
             draw => {
-                _ = draw_card{ g = &m.g, who = Who::player }
+                _ = draw_card{ &m.g, who = Who::player }
                 m.g.ai[0] = AI_DREW
                 m.turns = m.turns + 1
                 add_cue{ &m, s = Sound::draw_main }
@@ -348,7 +348,7 @@ namespace pazaak {
                 } else if t > TARGET {
                     show_info{ &m, page = Tutorial::bust }
                 }
-                if judge_set{ g = &m.g } != SetResult::undecided {
+                if judge_set{ &m.g } != SetResult::undecided {
                     m.phase = Phase::judge
                     return true
                 }
@@ -370,7 +370,7 @@ namespace pazaak {
                 return false
             }
             opponent_acts => {
-                let r = ai_step{ g = &m.g, who = Who::opponent }
+                let r = ai_step{ &m.g, who = Who::opponent }
                 if r == AI_DREW {
                     m.turns = m.turns + 1
                     add_cue{ &m, s = Sound::draw_main }
@@ -396,19 +396,19 @@ namespace pazaak {
                 return false
             }
             judge => {
-                let r = judge_set{ g = &m.g }
+                let r = judge_set{ &m.g }
                 if r == SetResult::undecided {
                     m.phase = Phase::turn_start
                     return false
                 }
                 m.last_set = r
-                let over = score_set{ g = &m.g, r }
+                let over = score_set{ &m.g, r }
                 announce_set{ &m, r, over }
                 return false
             }
             set_message | wait_message => { return false }
             new_set => {
-                clear_tables{ g = &m.g }
+                clear_tables{ &m.g }
                 m.g.ai = [0; 2]
                 m.phase = Phase::begin
                 if (m.seen & SEEN_START) == 0 {
@@ -444,7 +444,7 @@ namespace pazaak {
 
     // The player's side, played by the AI (simulations, demos): continues a turn from the AI state.
     fn auto_choose { mut m: Match } {
-        let r = ai_step{ g = &m.g, who = Who::player }
+        let r = ai_step{ &m.g, who = Who::player }
         if r == AI_PLAYED {
             add_cue{ &m, s = Sound::play_side }
             m.phase = Phase::choose_after_card

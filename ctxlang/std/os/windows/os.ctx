@@ -323,7 +323,7 @@ namespace os {
             fresh = true,
             name = [0; 1040],
         }
-        d.find = FindFirstFileW{ &fs, name = p, data = &d.data }
+        d.find = FindFirstFileW{ &fs, name = p, &d.data }
         if d.find == INVALID_HANDLE { return failed{ code = GetLastError{ &fs } } }
         return d
     }
@@ -332,7 +332,7 @@ namespace os {
     // call.
     fn dir_next { mut fs: Fs, mut dir: Dir } -> ?[]u8 {
         if not dir.fresh {
-            if FindNextFileW{ &fs, find = dir.find, data = &dir.data } == 0 { return null }
+            if FindNextFileW{ &fs, find = dir.find, &dir.data } == 0 { return null }
         }
         dir.fresh = false
         let n = WideCharToMultiByte{ &fs, page = UTF8, flags = 0, text = dir.data.name[..].ptr, n = -1, out = dir.name[..].ptr, cap = @as(i32, NAME_MAX), fallback = null, used = null }

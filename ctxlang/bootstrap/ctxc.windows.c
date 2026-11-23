@@ -7848,7 +7848,7 @@ static t61 f_list__pushsyntax__Exprarena__Arena_cbfee3a4(t793 l0, t364 * l1);
 static t762 f_parser__type_list(t179 l0);
 static t918 f_list__newsyntax__Itemarena__Arena_29a40a98(t29 l0, t28 l1);
 static t61 f_list__pushsyntax__Itemarena__Arena_ba1e9d6c(t919 l0, t602 * l1);
-static t6 f_parser__at_place_tail(t177 * l0);
+static t6 f_parser__at_item_end(t177 * l0);
 static t602 f_parser__long_pun(t179 l0, t14 l1, t183 l2);
 static t183 f_parser__again(t179 l0, t183 l1);
 static t550 f_list__itemssyntax__Itemarena__Arena_2504c876(t918 * l0);
@@ -8133,8 +8133,7 @@ static t127 f_parser__builtinfmt_9bd81dce_1(t16 l0, t16 l1, t75 l2);
 static t127 f_parser__builtinfmt_9bd81dce_2(t16 l0, t75 l1);
 static t355 f_parser__else_if(t179 l0);
 static t61 f_list__reservesyntax__Itemarena__Arena_c5f4bbfa(t919 l0, t14 l1);
-static t127 f_parser__long_punfmt_1832044b(t16 l0, t16 l1, t75 l2);
-static t127 f_parser__long_punfmt_1832044b_1(t16 l0, t75 l1);
+static t6 f_parser__pun_place(t364 * l0);
 static t7 f_slice__castsyntax__Expru8_86b6f68e(t485 l0);
 static t485 f_slice__castu8syntax__Expr_484a66ca(t7 l0);
 static t7 f_slice__castsyntax__Attru8_c5d39fb2(t366 l0);
@@ -24515,32 +24514,32 @@ static t27 f_check__infer_sets(t166 l0) {
         l2 = f_list__itemsu32arena__Arena_0ba5b83a(&(((*l0)).m_fns));
         l3 = ((t14)(0ULL));
         while ((l3 < (l2).m_len)) {
-            f_check__push((&l1), (*({ t173 _t0 = (l2); uint64_t _t1 = l3; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 12786, 39, 3242879023); })));
-            l3 = ctx_add_u64(l3, ((t14)(1ULL)), 12787, 19, 3242879023);
+            f_check__push((&l1), (*({ t173 _t0 = (l2); uint64_t _t1 = l3; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 12797, 39, 3242879023); })));
+            l3 = ctx_add_u64(l3, ((t14)(1ULL)), 12798, 19, 3242879023);
         }
         l3 = ((t14)(0ULL));
         while ((l3 < (((*l0)).m_sites).m_len)) {
-            f_check__push((&l1), ctx_add_u32(((t22)(2147483648ULL)), ((t22)(ctx_as_u((uint64_t)(l3), UINT32_MAX, "u32", 12791, 44, 3242879023))), 12791, 42, 3242879023));
-            l3 = ctx_add_u64(l3, ((t14)(1ULL)), 12792, 19, 3242879023);
+            f_check__push((&l1), ctx_add_u32(((t22)(2147483648ULL)), ((t22)(ctx_as_u((uint64_t)(l3), UINT32_MAX, "u32", 12802, 44, 3242879023))), 12802, 42, 3242879023));
+            l3 = ctx_add_u64(l3, ((t14)(1ULL)), 12803, 19, 3242879023);
         }
         l4 = f_list__itemsu32arena__Arena_0ba5b83a(&(l1));
         l5 = f_map__newu32boolarena__Arena_5ab9eab8((&g0), ((*l0)).m_heap, (&g1), (&g2));
         l3 = ((t14)(0ULL));
         while ((l3 < (l4).m_len)) {
-            l6 = (*({ t173 _t2 = (l4); uint64_t _t3 = l3; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 12798, 23, 3242879023); }));
+            l6 = (*({ t173 _t2 = (l4); uint64_t _t3 = l3; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 12809, 23, 3242879023); }));
             l7 = f_map__getu32check__Flowarena__Arena_ba99da30(&(((*l0)).m_flows), l6);
             if (((l7).tag != 0)) {
                 { t61 _t4 = f_map__putu32u32arena__Arena_a9cd65db((&((*l0)).m_sets), l6, ((l7).p.v1.m_value).m_atoms); if ((_t4.tag == 0)) { {
                 } } else if ((_t4.tag == 1)) { l8 = _t4.p.v1.m_error; {
                     { t12 _t5 = l8; if ((_t5.tag == 0)) { {
-                        ctx_panic(12801, 17, 3242879023, "try! failed: alloc::out_of_memory");
+                        ctx_panic(12812, 17, 3242879023, "try! failed: alloc::out_of_memory");
                     } } }
                 } } }
                 if (((l7).p.v1.m_value).m_any) {
                     f_check__put_bool((&l5), l6);
                 }
             }
-            l3 = ctx_add_u64(l3, ((t14)(1ULL)), 12804, 19, 3242879023);
+            l3 = ctx_add_u64(l3, ((t14)(1ULL)), 12815, 19, 3242879023);
         }
         l9 = ((bool)1);
         while (l9) {
@@ -24550,7 +24549,7 @@ static t27 f_check__infer_sets(t166 l0) {
             }
             l3 = ((t14)(0ULL));
             while ((l3 < (l4).m_len)) {
-                l10 = (*({ t173 _t6 = (l4); uint64_t _t7 = l3; _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 12812, 27, 3242879023); }));
+                l10 = (*({ t173 _t6 = (l4); uint64_t _t7 = l3; _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 12823, 27, 3242879023); }));
                 l11 = f_map__getu32check__Flowarena__Arena_ba99da30(&(((*l0)).m_flows), l10);
                 if (((((l11).tag != 0) && ((l11).p.v1.m_value).m_any) && (!f_map__hasu32boolarena__Arena_03e08fba(&(l5), l10)))) {
                     f_check__put_bool((&l5), l10);
@@ -24560,8 +24559,8 @@ static t27 f_check__infer_sets(t166 l0) {
                     l12 = ((l11).p.v1.m_value).m_open;
                     l13 = ((t14)(0ULL));
                     while (((l13 < (((l11).p.v1.m_value).m_subs).m_len) && (!l12))) {
-                        l12 = ({ t273 *_t8 = &(((*l0)).m_open_sets); t22 _t9 = (*({ t173 _t10 = (((l11).p.v1.m_value).m_subs); uint64_t _t11 = l13; _t10.m_ptr + ctx_idx(_t11, _t10.m_len, 12824, 71, 3242879023); })); f_map__hasu32boolarena__Arena_03e08fba(_t8, _t9); });
-                        l13 = ctx_add_u64(l13, ((t14)(1ULL)), 12825, 31, 3242879023);
+                        l12 = ({ t273 *_t8 = &(((*l0)).m_open_sets); t22 _t9 = (*({ t173 _t10 = (((l11).p.v1.m_value).m_subs); uint64_t _t11 = l13; _t10.m_ptr + ctx_idx(_t11, _t10.m_len, 12835, 71, 3242879023); })); f_map__hasu32boolarena__Arena_03e08fba(_t8, _t9); });
+                        l13 = ctx_add_u64(l13, ((t14)(1ULL)), 12836, 31, 3242879023);
                     }
                     if (l12) {
                         f_check__put_bool((&((*l0)).m_open_sets), l10);
@@ -24581,7 +24580,7 @@ static t27 f_check__infer_sets(t166 l0) {
                     }
                     l17 = ((t14)(0ULL));
                     while ((l17 < (((l11).p.v1.m_value).m_subs).m_len)) {
-                        l18 = (*({ t173 _t14 = (((l11).p.v1.m_value).m_subs); uint64_t _t15 = l17; _t14.m_ptr + ctx_idx(_t15, _t14.m_len, 12841, 41, 3242879023); }));
+                        l18 = (*({ t173 _t14 = (((l11).p.v1.m_value).m_subs); uint64_t _t15 = l17; _t14.m_ptr + ctx_idx(_t15, _t14.m_len, 12852, 41, 3242879023); }));
                         if (f_map__hasu32boolarena__Arena_03e08fba(&(l5), l18)) {
                             f_check__put_bool((&l5), l10);
                             l9 = ((bool)1);
@@ -24597,21 +24596,21 @@ static t27 f_check__infer_sets(t166 l0) {
                             l14 = l21;
                             l9 = ((bool)1);
                         }
-                        l17 = ctx_add_u64(l17, ((t14)(1ULL)), 12853, 31, 3242879023);
+                        l17 = ctx_add_u64(l17, ((t14)(1ULL)), 12864, 31, 3242879023);
                     }
                     { t61 _t18 = f_map__putu32u32arena__Arena_a9cd65db((&((*l0)).m_sets), l10, l14); if ((_t18.tag == 0)) { {
                     } } else if ((_t18.tag == 1)) { l22 = _t18.p.v1.m_error; {
                         { t12 _t19 = l22; if ((_t19.tag == 0)) { {
-                            ctx_panic(12855, 21, 3242879023, "try! failed: alloc::out_of_memory");
+                            ctx_panic(12866, 21, 3242879023, "try! failed: alloc::out_of_memory");
                         } } }
                     } } }
                 }
-                l3 = ctx_add_u64(l3, ((t14)(1ULL)), 12857, 23, 3242879023);
+                l3 = ctx_add_u64(l3, ((t14)(1ULL)), 12868, 23, 3242879023);
             }
         }
         l3 = ((t14)(0ULL));
         while ((l3 < (l4).m_len)) {
-            l23 = (*({ t173 _t20 = (l4); uint64_t _t21 = l3; _t20.m_ptr + ctx_idx(_t21, _t20.m_len, 12862, 23, 3242879023); }));
+            l23 = (*({ t173 _t20 = (l4); uint64_t _t21 = l3; _t20.m_ptr + ctx_idx(_t21, _t20.m_len, 12873, 23, 3242879023); }));
             if (f_map__hasu32boolarena__Arena_03e08fba(&(l5), l23)) {
                 f_check__put_bool((&((*l0)).m_open_sets), l23);
             }
@@ -24627,10 +24626,10 @@ static t27 f_check__infer_sets(t166 l0) {
             { t61 _t25 = ({ t538 _t26 = (&((*l0)).m_sets); t22 _t27 = l23; t173 _t28 = f_check__sorted_ids(&((*l0)), l24); f_map__putu32u32arena__Arena_a9cd65db(_t26, _t27, _t28); }); if ((_t25.tag == 0)) { {
             } } else if ((_t25.tag == 1)) { l26 = _t25.p.v1.m_error; {
                 { t12 _t29 = l26; if ((_t29.tag == 0)) { {
-                    ctx_panic(12867, 13, 3242879023, "try! failed: alloc::out_of_memory");
+                    ctx_panic(12878, 13, 3242879023, "try! failed: alloc::out_of_memory");
                 } } }
             } } }
-            l3 = ctx_add_u64(l3, ((t14)(1ULL)), 12868, 19, 3242879023);
+            l3 = ctx_add_u64(l3, ((t14)(1ULL)), 12879, 19, 3242879023);
         }
     }
 }
@@ -24675,13 +24674,13 @@ static t27 f_check__finish_matches(t166 l0) {
         l1 = f_list__itemscheck__Pendingarena__Arena_a34defff(&(((*l0)).m_pending));
         l2 = ((t14)(0ULL));
         while ((l2 < (l1).m_len)) {
-            l3 = (*({ t512 _t0 = (l1); uint64_t _t1 = l2; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 12939, 23, 3242879023); }));
+            l3 = (*({ t512 _t0 = (l1); uint64_t _t1 = l2; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 12950, 23, 3242879023); }));
             l4 = f_check__set_of(&((*l0)), (l3).m_errs);
             l5 = ((t14)(0ULL));
             while ((l5 < ((l3).m_listed).m_len)) {
-                if ((!({ t173 _t2 = l4; t22 _t3 = (*({ t173 _t4 = ((l3).m_listed); uint64_t _t5 = l5; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 12943, 54, 3242879023); })); f_check__has_id(_t2, _t3); }))) {
+                if ((!({ t173 _t2 = l4; t22 _t3 = (*({ t173 _t4 = ((l3).m_listed); uint64_t _t5 = l5; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 12954, 54, 3242879023); })); f_check__has_id(_t2, _t3); }))) {
                     l6 = f_check__message(&((*l0)));
-                    { t61 _t6 = ({ l7 = f_check__str((({ t163 *_t7 = &((*l0)); t22 _t8 = (*({ t173 _t9 = ((l3).m_listed); uint64_t _t10 = l5; _t9.m_ptr + ctx_idx(_t10, _t9.m_len, 12945, 103, 3242879023); })); f_check__get_decl(_t7, _t8); })).m_qual); ({ t61 _t11; t61 _t12 = f_utf8__push_literalarena__Arena_f5a0db07((&l6), ((t7){ .m_ptr = (void *)"error `", .m_len = 7 })); if ((_t12.tag == 0)) { {
+                    { t61 _t6 = ({ l7 = f_check__str((({ t163 *_t7 = &((*l0)); t22 _t8 = (*({ t173 _t9 = ((l3).m_listed); uint64_t _t10 = l5; _t9.m_ptr + ctx_idx(_t10, _t9.m_len, 12956, 103, 3242879023); })); f_check__get_decl(_t7, _t8); })).m_qual); ({ t61 _t11; t61 _t12 = f_utf8__push_literalarena__Arena_f5a0db07((&l6), ((t7){ .m_ptr = (void *)"error `", .m_len = 7 })); if ((_t12.tag == 0)) { {
                         _t11 = ({ t61 _t13; t61 _t14 = f_utf8__pusharena__Arena_14525023((&l6), l7); if ((_t14.tag == 0)) { {
                             _t13 = ({ t61 _t15; t61 _t16 = f_utf8__push_literalarena__Arena_f5a0db07((&l6), ((t7){ .m_ptr = (void *)"` can't happen here: ", .m_len = 21 })); if ((_t16.tag == 0)) { {
                                 _t15 = ((t61){ .tag = 0 });
@@ -24696,7 +24695,7 @@ static t27 f_check__finish_matches(t166 l0) {
                     } } _t11; }); }); if ((_t6.tag == 0)) { {
                     } } else if ((_t6.tag == 1)) { l11 = _t6.p.v1.m_error; {
                         { t12 _t17 = l11; if ((_t17.tag == 0)) { {
-                            ctx_panic(12945, 21, 3242879023, "try! failed: alloc::out_of_memory");
+                            ctx_panic(12956, 21, 3242879023, "try! failed: alloc::out_of_memory");
                         } } }
                     } } }
                     if (({ t6 _t18; t476 _t19 = ({ t270 _t20 = ((*l0)).m_ty; t22 _t21 = f_types__prune(&(((*l0)).m_ty), (l3).m_errs); f_types__get(&_t20, _t21); }); if ((_t19.tag == 13)) { {
@@ -24707,13 +24706,13 @@ static t27 f_check__finish_matches(t166 l0) {
                         { t61 _t22 = f_check__write_type(&((*l0)), (l3).m_errs, (&l6)); if ((_t22.tag == 0)) { {
                         } } else if ((_t22.tag == 1)) { l15 = _t22.p.v1.m_error; {
                             { t12 _t23 = l15; if ((_t23.tag == 0)) { {
-                                ctx_panic(12947, 25, 3242879023, "try! failed: alloc::out_of_memory");
+                                ctx_panic(12958, 25, 3242879023, "try! failed: alloc::out_of_memory");
                             } } }
                         } } }
                         { t61 _t24 = f_utf8__pusharena__Arena_14525023((&l6), ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)" is a generic set, whose errors are its argument's", .m_len = 50 }), })); if ((_t24.tag == 0)) { {
                         } } else if ((_t24.tag == 1)) { l16 = _t24.p.v1.m_error; {
                             { t12 _t25 = l16; if ((_t25.tag == 0)) { {
-                                ctx_panic(12948, 25, 3242879023, "try! failed: alloc::out_of_memory");
+                                ctx_panic(12959, 25, 3242879023, "try! failed: alloc::out_of_memory");
                             } } }
                         } } }
                     } else {
@@ -24721,39 +24720,39 @@ static t27 f_check__finish_matches(t166 l0) {
                             { t61 _t26 = f_utf8__pusharena__Arena_14525023((&l6), ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"this can't fail", .m_len = 15 }), })); if ((_t26.tag == 0)) { {
                             } } else if ((_t26.tag == 1)) { l14 = _t26.p.v1.m_error; {
                                 { t12 _t27 = l14; if ((_t27.tag == 0)) { {
-                                    ctx_panic(12950, 25, 3242879023, "try! failed: alloc::out_of_memory");
+                                    ctx_panic(12961, 25, 3242879023, "try! failed: alloc::out_of_memory");
                                 } } }
                             } } }
                         } else {
                             { t61 _t28 = f_utf8__pusharena__Arena_14525023((&l6), ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"this fails only with ", .m_len = 21 }), })); if ((_t28.tag == 0)) { {
                             } } else if ((_t28.tag == 1)) { l12 = _t28.p.v1.m_error; {
                                 { t12 _t29 = l12; if ((_t29.tag == 0)) { {
-                                    ctx_panic(12952, 25, 3242879023, "try! failed: alloc::out_of_memory");
+                                    ctx_panic(12963, 25, 3242879023, "try! failed: alloc::out_of_memory");
                                 } } }
                             } } }
                             { t61 _t30 = f_check__fault_names(&((*l0)), l4, (&l6)); if ((_t30.tag == 0)) { {
                             } } else if ((_t30.tag == 1)) { l13 = _t30.p.v1.m_error; {
                                 { t12 _t31 = l13; if ((_t31.tag == 0)) { {
-                                    ctx_panic(12953, 25, 3242879023, "try! failed: alloc::out_of_memory");
+                                    ctx_panic(12964, 25, 3242879023, "try! failed: alloc::out_of_memory");
                                 } } }
                             } } }
                         }
                     }
-                    ({ t166 _t32 = (&(*l0)); t174 _t33 = (*({ t171 _t35 = ((l3).m_spans); uint64_t _t36 = l5; _t35.m_ptr + ctx_idx(_t36, _t35.m_len, 12955, 44, 3242879023); })); t16 _t34 = f_utf8__viewarena__Arena_5db7a4ae(&(l6)); f_check__error(_t32, _t33, _t34); });
+                    ({ t166 _t32 = (&(*l0)); t174 _t33 = (*({ t171 _t35 = ((l3).m_spans); uint64_t _t36 = l5; _t35.m_ptr + ctx_idx(_t36, _t35.m_len, 12966, 44, 3242879023); })); t16 _t34 = f_utf8__viewarena__Arena_5db7a4ae(&(l6)); f_check__error(_t32, _t33, _t34); });
                 }
-                l5 = ctx_add_u64(l5, ((t14)(1ULL)), 12957, 23, 3242879023);
+                l5 = ctx_add_u64(l5, ((t14)(1ULL)), 12968, 23, 3242879023);
             }
             if ((l3).m_test) {
-                l2 = ctx_add_u64(l2, ((t14)(1ULL)), 12960, 23, 3242879023);
+                l2 = ctx_add_u64(l2, ((t14)(1ULL)), 12971, 23, 3242879023);
                  continue;
             }
             l17 = f_list__newu32arena__Arena_8372a2f8((&g0), ((*l0)).m_heap);
             l5 = ((t14)(0ULL));
             while ((l5 < (l4).m_len)) {
-                if ((!({ t173 _t37 = (l3).m_listed; t22 _t38 = (*({ t173 _t39 = (l4); uint64_t _t40 = l5; _t39.m_ptr + ctx_idx(_t40, _t39.m_len, 12966, 54, 3242879023); })); f_check__has_id(_t37, _t38); }))) {
-                    f_check__push((&l17), (*({ t173 _t41 = (l4); uint64_t _t42 = l5; _t41.m_ptr + ctx_idx(_t42, _t41.m_len, 12966, 90, 3242879023); })));
+                if ((!({ t173 _t37 = (l3).m_listed; t22 _t38 = (*({ t173 _t39 = (l4); uint64_t _t40 = l5; _t39.m_ptr + ctx_idx(_t40, _t39.m_len, 12977, 54, 3242879023); })); f_check__has_id(_t37, _t38); }))) {
+                    f_check__push((&l17), (*({ t173 _t41 = (l4); uint64_t _t42 = l5; _t41.m_ptr + ctx_idx(_t42, _t41.m_len, 12977, 90, 3242879023); })));
                 }
-                l5 = ctx_add_u64(l5, ((t14)(1ULL)), 12967, 23, 3242879023);
+                l5 = ctx_add_u64(l5, ((t14)(1ULL)), 12978, 23, 3242879023);
             }
             l18 = (l3).m_rest;
             l19 = f_check__open_set(&((*l0)), (l3).m_errs);
@@ -24762,19 +24761,19 @@ static t27 f_check__finish_matches(t166 l0) {
                 { t61 _t43 = f_utf8__pusharena__Arena_14525023((&l23), ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"a match on an open error set needs `else` or `err`: ", .m_len = 52 }), })); if ((_t43.tag == 0)) { {
                 } } else if ((_t43.tag == 1)) { l24 = _t43.p.v1.m_error; {
                     { t12 _t44 = l24; if ((_t44.tag == 0)) { {
-                        ctx_panic(12973, 17, 3242879023, "try! failed: alloc::out_of_memory");
+                        ctx_panic(12984, 17, 3242879023, "try! failed: alloc::out_of_memory");
                     } } }
                 } } }
                 { t61 _t45 = f_check__write_type(&((*l0)), (l3).m_errs, (&l23)); if ((_t45.tag == 0)) { {
                 } } else if ((_t45.tag == 1)) { l25 = _t45.p.v1.m_error; {
                     { t12 _t46 = l25; if ((_t46.tag == 0)) { {
-                        ctx_panic(12974, 17, 3242879023, "try! failed: alloc::out_of_memory");
+                        ctx_panic(12985, 17, 3242879023, "try! failed: alloc::out_of_memory");
                     } } }
                 } } }
                 { t61 _t47 = f_utf8__pusharena__Arena_14525023((&l23), ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)" may gain errors", .m_len = 16 }), })); if ((_t47.tag == 0)) { {
                 } } else if ((_t47.tag == 1)) { l26 = _t47.p.v1.m_error; {
                     { t12 _t48 = l26; if ((_t48.tag == 0)) { {
-                        ctx_panic(12975, 17, 3242879023, "try! failed: alloc::out_of_memory");
+                        ctx_panic(12986, 17, 3242879023, "try! failed: alloc::out_of_memory");
                     } } }
                 } } }
                 ({ t166 _t49 = (&(*l0)); t174 _t50 = (l3).m_at; t16 _t51 = f_utf8__viewarena__Arena_5db7a4ae(&(l23)); f_check__error(_t49, _t50, _t51); });
@@ -24785,13 +24784,13 @@ static t27 f_check__finish_matches(t166 l0) {
                         { t61 _t52 = f_utf8__pusharena__Arena_14525023((&l20), ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"match isn't exhaustive: missing ", .m_len = 32 }), })); if ((_t52.tag == 0)) { {
                         } } else if ((_t52.tag == 1)) { l21 = _t52.p.v1.m_error; {
                             { t12 _t53 = l21; if ((_t53.tag == 0)) { {
-                                ctx_panic(12980, 21, 3242879023, "try! failed: alloc::out_of_memory");
+                                ctx_panic(12991, 21, 3242879023, "try! failed: alloc::out_of_memory");
                             } } }
                         } } }
                         { t61 _t54 = ({ t163 _t55 = (*l0); t173 _t56 = f_list__itemsu32arena__Arena_0ba5b83a(&(l17)); t75 _t57 = (&l20); f_check__fault_names(&_t55, _t56, _t57); }); if ((_t54.tag == 0)) { {
                         } } else if ((_t54.tag == 1)) { l22 = _t54.p.v1.m_error; {
                             { t12 _t58 = l22; if ((_t58.tag == 0)) { {
-                                ctx_panic(12981, 21, 3242879023, "try! failed: alloc::out_of_memory");
+                                ctx_panic(12992, 21, 3242879023, "try! failed: alloc::out_of_memory");
                             } } }
                         } } }
                         ({ t166 _t59 = (&(*l0)); t174 _t60 = (l3).m_at; t16 _t61 = f_utf8__viewarena__Arena_5db7a4ae(&(l20)); f_check__error(_t59, _t60, _t61); });
@@ -24802,7 +24801,7 @@ static t27 f_check__finish_matches(t166 l0) {
                     }
                 }
             }
-            l2 = ctx_add_u64(l2, ((t14)(1ULL)), 12987, 19, 3242879023);
+            l2 = ctx_add_u64(l2, ((t14)(1ULL)), 12998, 19, 3242879023);
         }
     }
 }
@@ -26482,7 +26481,7 @@ static t6 f_parser__next_is(t177 * l0, t15 l1) {
 static t27 f_parser__fail(t179 l0, t16 l1) {
     CTX_STACK_CHECK();
     {
-        ({ t179 _t0 = (&(*l0)); t16 _t1 = l1; t175 _t2 = (*({ t76 _t3 = (((*l0)).m_toks); uint64_t _t4 = ((*l0)).m_i; _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 1552, 37, 4018602316); })); f_parser__fail_at(_t0, _t1, _t2); });
+        ({ t179 _t0 = (&(*l0)); t16 _t1 = l1; t175 _t2 = (*({ t76 _t3 = (((*l0)).m_toks); uint64_t _t4 = ((*l0)).m_i; _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 1586, 37, 4018602316); })); f_parser__fail_at(_t0, _t1, _t2); });
     }
 }
 
@@ -26706,8 +26705,8 @@ static t27 f_parser__sync(t179 l0, t14 l1, t6 l2, t6 l3) {
     {
         l4 = ((t22)(0ULL));
         l5 = l1;
-        while ((((*({ t76 _t0 = (((*l0)).m_toks); uint64_t _t1 = l5; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 1496, 21, 4018602316); }))).m_kind != ((t15)(0ULL)))) {
-            l6 = (*({ t76 _t2 = (((*l0)).m_toks); uint64_t _t3 = l5; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 1497, 27, 4018602316); }));
+        while ((((*({ t76 _t0 = (((*l0)).m_toks); uint64_t _t1 = l5; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 1530, 21, 4018602316); }))).m_kind != ((t15)(0ULL)))) {
+            l6 = (*({ t76 _t2 = (((*l0)).m_toks); uint64_t _t3 = l5; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 1531, 27, 4018602316); }));
             if ((l5 >= ((*l0)).m_i)) {
                 if ((((l6).m_nl && f_parser__is_decl_keyword((l6).m_kind)) && ((l5 > l1) || l2))) {
                      break;
@@ -26722,13 +26721,13 @@ static t27 f_parser__sync(t179 l0, t14 l1, t6 l2, t6 l3) {
                 }
             }
             if (((((l6).m_kind == ((t15)(51ULL))) || ((l6).m_kind == ((t15)(53ULL)))) || ((l6).m_kind == ((t15)(55ULL))))) {
-                l4 = ctx_add_u32(l4, ((t22)(1ULL)), 1506, 31, 4018602316);
+                l4 = ctx_add_u32(l4, ((t22)(1ULL)), 1540, 31, 4018602316);
             } else {
                 if ((((((l6).m_kind == ((t15)(52ULL))) || ((l6).m_kind == ((t15)(54ULL)))) || ((l6).m_kind == ((t15)(56ULL)))) && (l4 > ((t22)(0ULL))))) {
-                    l4 = ctx_sub_u32(l4, ((t22)(1ULL)), 1508, 31, 4018602316);
+                    l4 = ctx_sub_u32(l4, ((t22)(1ULL)), 1542, 31, 4018602316);
                 }
             }
-            l5 = ctx_add_u64(l5, ((t14)(1ULL)), 1510, 19, 4018602316);
+            l5 = ctx_add_u64(l5, ((t14)(1ULL)), 1544, 19, 4018602316);
         }
         ((*l0)).m_i = l5;
         ((*l0)).m_bad = ((bool)0);
@@ -33135,7 +33134,7 @@ static t27 f_check__push(t252 l0, t22 l1) {
         { t61 _t0 = f_list__pushu32arena__Arena_098e3c94((&(*l0)), l1); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l2 = _t0.p.v1.m_error; {
             { t12 _t1 = l2; if ((_t1.tag == 0)) { {
-                ctx_panic(13338, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(13349, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
     }
@@ -33218,26 +33217,26 @@ static t6 f_check__error_holes(t166 l0, t273 * l1) {
         l2 = ((bool)0);
         l3 = ((t14)(0ULL));
         while ((l3 < (((*l0)).m_sites).m_len)) {
-            l4 = (*({ t515 _t0 = (f_list__itemscheck__Sitearena__Arena_41ad0b09(&(((*l0)).m_sites))); uint64_t _t1 = l3; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 12878, 51, 3242879023); }));
+            l4 = (*({ t515 _t0 = (f_list__itemscheck__Sitearena__Arena_41ad0b09(&(((*l0)).m_sites))); uint64_t _t1 = l3; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 12889, 51, 3242879023); }));
             l5 = ((t14)(0ULL));
             while ((l5 < ((l4).m_pieces).m_len)) {
-                l6 = (*({ t679 _t2 = ((l4).m_pieces); uint64_t _t3 = l5; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 12882, 34, 3242879023); }));
+                l6 = (*({ t679 _t2 = ((l4).m_pieces); uint64_t _t3 = l5; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 12893, 34, 3242879023); }));
                 if (((l6).m_hole && f_slice__eq_bytes((l6).m_push, ((t7){ .m_ptr = (void *)"error", .m_len = 5 })))) {
                     l7 = f_check__current_set(&((*l0)), (l6).m_ty, &((*l1)));
                     l8 = ((t14)(0ULL));
                     while ((l8 < (l7).m_len)) {
-                        l9 = (*({ t515 _t4 = (f_list__itemscheck__Sitearena__Arena_41ad0b09(&(((*l0)).m_sites))); uint64_t _t5 = l3; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 12887, 64, 3242879023); }));
-                        if ((!({ t173 _t6 = (l9).m_faults; t22 _t7 = (*({ t173 _t8 = (l7); uint64_t _t9 = l8; _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 12888, 64, 3242879023); })); f_check__has_id(_t6, _t7); }))) {
-                            { t173 _t10 = ({ t163 *_t11 = &((*l0)); t173 _t12 = (l9).m_faults; t22 _t13 = (*({ t173 _t14 = (l7); uint64_t _t15 = l8; _t14.m_ptr + ctx_idx(_t15, _t14.m_len, 12889, 109, 3242879023); })); f_check__set_add(_t11, _t12, _t13); }); ((*f_list__atcheck__Sitearena__Arena_76a8d734(&(((*l0)).m_sites), l3))).m_faults = _t10; }
-                            ({ t166 _t16 = (&(*l0)); t22 _t17 = ((t22)(ctx_as_u((uint64_t)(l3), UINT32_MAX, "u32", 12890, 59, 3242879023))); t22 _t18 = (*({ t173 _t20 = (l7); uint64_t _t21 = l8; _t20.m_ptr + ctx_idx(_t21, _t20.m_len, 12890, 80, 3242879023); })); t174 _t19 = (l6).m_at; f_check__fault_field_writers(_t16, _t17, _t18, _t19); });
+                        l9 = (*({ t515 _t4 = (f_list__itemscheck__Sitearena__Arena_41ad0b09(&(((*l0)).m_sites))); uint64_t _t5 = l3; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 12898, 64, 3242879023); }));
+                        if ((!({ t173 _t6 = (l9).m_faults; t22 _t7 = (*({ t173 _t8 = (l7); uint64_t _t9 = l8; _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 12899, 64, 3242879023); })); f_check__has_id(_t6, _t7); }))) {
+                            { t173 _t10 = ({ t163 *_t11 = &((*l0)); t173 _t12 = (l9).m_faults; t22 _t13 = (*({ t173 _t14 = (l7); uint64_t _t15 = l8; _t14.m_ptr + ctx_idx(_t15, _t14.m_len, 12900, 109, 3242879023); })); f_check__set_add(_t11, _t12, _t13); }); ((*f_list__atcheck__Sitearena__Arena_76a8d734(&(((*l0)).m_sites), l3))).m_faults = _t10; }
+                            ({ t166 _t16 = (&(*l0)); t22 _t17 = ((t22)(ctx_as_u((uint64_t)(l3), UINT32_MAX, "u32", 12901, 59, 3242879023))); t22 _t18 = (*({ t173 _t20 = (l7); uint64_t _t21 = l8; _t20.m_ptr + ctx_idx(_t21, _t20.m_len, 12901, 80, 3242879023); })); t174 _t19 = (l6).m_at; f_check__fault_field_writers(_t16, _t17, _t18, _t19); });
                             l2 = ((bool)1);
                         }
-                        l8 = ctx_add_u64(l8, ((t14)(1ULL)), 12893, 31, 3242879023);
+                        l8 = ctx_add_u64(l8, ((t14)(1ULL)), 12904, 31, 3242879023);
                     }
                 }
-                l5 = ctx_add_u64(l5, ((t14)(1ULL)), 12896, 23, 3242879023);
+                l5 = ctx_add_u64(l5, ((t14)(1ULL)), 12907, 23, 3242879023);
             }
-            l3 = ctx_add_u64(l3, ((t14)(1ULL)), 12898, 21, 3242879023);
+            l3 = ctx_add_u64(l3, ((t14)(1ULL)), 12909, 21, 3242879023);
         }
         return l2;
     }
@@ -33309,16 +33308,16 @@ static t173 f_check__sorted_ids(t163 * l0, t173 l1) {
         l2 = f_list__newu32arena__Arena_8372a2f8((&g0), ((*l0)).m_heap);
         l3 = ((t14)(0ULL));
         while ((l3 < (l1).m_len)) {
-            f_check__push((&l2), (*({ t173 _t0 = (l1); uint64_t _t1 = l3; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 12918, 36, 3242879023); })));
+            f_check__push((&l2), (*({ t173 _t0 = (l1); uint64_t _t1 = l3; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 12929, 36, 3242879023); })));
             l4 = f_list__itemsu32arena__Arena_0ba5b83a(&(l2));
-            l5 = ctx_sub_u64((l4).m_len, ((t14)(1ULL)), 12920, 32, 3242879023);
-            while (((l5 > ((t14)(0ULL))) && ({ t22 _t2 = (*({ t173 _t4 = (l4); uint64_t _t5 = l5; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 12921, 31, 3242879023); })); t22 _t3 = (*({ t173 _t6 = (l4); uint64_t _t7 = ctx_sub_u64(l5, ((t14)(1ULL)), 12921, 42, 3242879023); _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 12921, 39, 3242879023); })); (_t2 < _t3); }))) {
-                l6 = (*({ t173 _t8 = (l4); uint64_t _t9 = l5; _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 12922, 29, 3242879023); }));
-                { t22 _t10 = (*({ t173 _t11 = (l4); uint64_t _t12 = ctx_sub_u64(l5, ((t14)(1ULL)), 12923, 30, 3242879023); _t11.m_ptr + ctx_idx(_t12, _t11.m_len, 12923, 27, 3242879023); })); (*({ t173 _t13 = (l4); uint64_t _t14 = l5; _t13.m_ptr + ctx_idx(_t14, _t13.m_len, 12923, 19, 3242879023); })) = _t10; }
-                (*({ t173 _t15 = (l4); uint64_t _t16 = ctx_sub_u64(l5, ((t14)(1ULL)), 12924, 22, 3242879023); _t15.m_ptr + ctx_idx(_t16, _t15.m_len, 12924, 19, 3242879023); })) = l6;
-                l5 = ctx_sub_u64(l5, ((t14)(1ULL)), 12925, 23, 3242879023);
+            l5 = ctx_sub_u64((l4).m_len, ((t14)(1ULL)), 12931, 32, 3242879023);
+            while (((l5 > ((t14)(0ULL))) && ({ t22 _t2 = (*({ t173 _t4 = (l4); uint64_t _t5 = l5; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 12932, 31, 3242879023); })); t22 _t3 = (*({ t173 _t6 = (l4); uint64_t _t7 = ctx_sub_u64(l5, ((t14)(1ULL)), 12932, 42, 3242879023); _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 12932, 39, 3242879023); })); (_t2 < _t3); }))) {
+                l6 = (*({ t173 _t8 = (l4); uint64_t _t9 = l5; _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 12933, 29, 3242879023); }));
+                { t22 _t10 = (*({ t173 _t11 = (l4); uint64_t _t12 = ctx_sub_u64(l5, ((t14)(1ULL)), 12934, 30, 3242879023); _t11.m_ptr + ctx_idx(_t12, _t11.m_len, 12934, 27, 3242879023); })); (*({ t173 _t13 = (l4); uint64_t _t14 = l5; _t13.m_ptr + ctx_idx(_t14, _t13.m_len, 12934, 19, 3242879023); })) = _t10; }
+                (*({ t173 _t15 = (l4); uint64_t _t16 = ctx_sub_u64(l5, ((t14)(1ULL)), 12935, 22, 3242879023); _t15.m_ptr + ctx_idx(_t16, _t15.m_len, 12935, 19, 3242879023); })) = l6;
+                l5 = ctx_sub_u64(l5, ((t14)(1ULL)), 12936, 23, 3242879023);
             }
-            l3 = ctx_add_u64(l3, ((t14)(1ULL)), 12927, 19, 3242879023);
+            l3 = ctx_add_u64(l3, ((t14)(1ULL)), 12938, 19, 3242879023);
         }
         return f_list__itemsu32arena__Arena_0ba5b83a(&(l2));
     }
@@ -33404,11 +33403,11 @@ static t61 f_check__fault_names(t163 * l0, t173 l1, t75 l2) {
                     return ((t61){ .tag = 1, .p.v1 = { .m_error = l4, } });
                 } } }
             }
-            { t61 _t1 = ({ t75 _t2 = (&(*l2)); t16 _t3 = f_check__str((({ t163 *_t4 = &((*l0)); t22 _t5 = (*({ t173 _t6 = (l1); uint64_t _t7 = l3; _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 12996, 65, 3242879023); })); f_check__get_decl(_t4, _t5); })).m_qual); f_utf8__pusharena__Arena_14525023(_t2, _t3); }); if ((_t1.tag == 0)) { {
+            { t61 _t1 = ({ t75 _t2 = (&(*l2)); t16 _t3 = f_check__str((({ t163 *_t4 = &((*l0)); t22 _t5 = (*({ t173 _t6 = (l1); uint64_t _t7 = l3; _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 13007, 65, 3242879023); })); f_check__get_decl(_t4, _t5); })).m_qual); f_utf8__pusharena__Arena_14525023(_t2, _t3); }); if ((_t1.tag == 0)) { {
             } } else if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_error; {
                 return ((t61){ .tag = 1, .p.v1 = { .m_error = l5, } });
             } } }
-            l3 = ctx_add_u64(l3, ((t14)(1ULL)), 12997, 19, 3242879023);
+            l3 = ctx_add_u64(l3, ((t14)(1ULL)), 13008, 19, 3242879023);
         }
         return ((t61){ .tag = 0 });
     }
@@ -33758,11 +33757,11 @@ static t27 f_check__error(t166 l0, t174 l1, t16 l2) {
         l3 = f_diag__items(&((*((*l0)).m_diags)));
         l4 = ((t14)(0ULL));
         while ((l4 < (l3).m_len)) {
-            l5 = (*({ t162 _t0 = (l3); uint64_t _t1 = l4; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 13305, 23, 3242879023); }));
+            l5 = (*({ t162 _t0 = (l3); uint64_t _t1 = l4; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 13316, 23, 3242879023); }));
             if ((((((l5).m_span).m_file == (l1).m_file) && (((l5).m_span).m_start == (l1).m_start)) && f_utf8__eq((l5).m_msg, l2))) {
                 return;
             }
-            l4 = ctx_add_u64(l4, ((t14)(1ULL)), 13307, 19, 3242879023);
+            l4 = ctx_add_u64(l4, ((t14)(1ULL)), 13318, 19, 3242879023);
         }
         f_diag__error(((*l0)).m_diags, l1, l2);
     }
@@ -33798,43 +33797,43 @@ static t27 f_check__errorf(t166 l0, t174 l1, t543 l2) {
         { t127 _t0 = ({ ctx_fn *_t1 = l2; ((c543)_t1->code)(_t1, (&l3)); }); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l4 = _t0.p.v1.m_error; {
             { t64 _t2 = l4; if ((_t2.tag == 0)) { {
-                ctx_panic(13315, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(13326, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } else if ((_t2.tag == 1)) { {
-                ctx_panic(13315, 9, 3242879023, "try! failed: c::has_nul");
+                ctx_panic(13326, 9, 3242879023, "try! failed: c::has_nul");
             } } else if ((_t2.tag == 2)) { {
-                ctx_panic(13315, 9, 3242879023, "try! failed: fs::not_found");
+                ctx_panic(13326, 9, 3242879023, "try! failed: fs::not_found");
             } } else if ((_t2.tag == 3)) { {
-                ctx_panic(13315, 9, 3242879023, "try! failed: fs::permission_denied");
+                ctx_panic(13326, 9, 3242879023, "try! failed: fs::permission_denied");
             } } else if ((_t2.tag == 4)) { {
-                ctx_panic(13315, 9, 3242879023, "try! failed: fs::is_directory");
+                ctx_panic(13326, 9, 3242879023, "try! failed: fs::is_directory");
             } } else if ((_t2.tag == 5)) { {
-                ctx_panic(13315, 9, 3242879023, "try! failed: fs::exists");
+                ctx_panic(13326, 9, 3242879023, "try! failed: fs::exists");
             } } else if ((_t2.tag == 6)) { {
-                ctx_panic(13315, 9, 3242879023, "try! failed: fs::not_directory");
+                ctx_panic(13326, 9, 3242879023, "try! failed: fs::not_directory");
             } } else if ((_t2.tag == 7)) { {
-                ctx_panic(13315, 9, 3242879023, "try! failed: fs::not_empty");
+                ctx_panic(13326, 9, 3242879023, "try! failed: fs::not_empty");
             } } else if ((_t2.tag == 8)) { {
-                ctx_panic(13315, 9, 3242879023, "try! failed: fs::bad_file");
+                ctx_panic(13326, 9, 3242879023, "try! failed: fs::bad_file");
             } } else if ((_t2.tag == 9)) { {
-                ctx_panic(13315, 9, 3242879023, "try! failed: fs::other");
+                ctx_panic(13326, 9, 3242879023, "try! failed: fs::other");
             } } else if ((_t2.tag == 10)) { {
-                ctx_panic(13315, 9, 3242879023, "try! failed: proc::not_found");
+                ctx_panic(13326, 9, 3242879023, "try! failed: proc::not_found");
             } } else if ((_t2.tag == 11)) { {
-                ctx_panic(13315, 9, 3242879023, "try! failed: proc::permission_denied");
+                ctx_panic(13326, 9, 3242879023, "try! failed: proc::permission_denied");
             } } else if ((_t2.tag == 12)) { {
-                ctx_panic(13315, 9, 3242879023, "try! failed: proc::broken_pipe");
+                ctx_panic(13326, 9, 3242879023, "try! failed: proc::broken_pipe");
             } } else if ((_t2.tag == 13)) { {
-                ctx_panic(13315, 9, 3242879023, "try! failed: proc::other");
+                ctx_panic(13326, 9, 3242879023, "try! failed: proc::other");
             } } else if ((_t2.tag == 14)) { {
-                ctx_panic(13315, 9, 3242879023, "try! failed: task::cancelled");
+                ctx_panic(13326, 9, 3242879023, "try! failed: task::cancelled");
             } } else if ((_t2.tag == 15)) { {
-                ctx_panic(13315, 9, 3242879023, "try! failed: task::out_of_resources");
+                ctx_panic(13326, 9, 3242879023, "try! failed: task::out_of_resources");
             } } else if ((_t2.tag == 16)) { {
-                ctx_panic(13315, 9, 3242879023, "try! failed: utf8::invalid");
+                ctx_panic(13326, 9, 3242879023, "try! failed: utf8::invalid");
             } } else if ((_t2.tag == 17)) { {
-                ctx_panic(13315, 9, 3242879023, "try! failed: eval::leave");
+                ctx_panic(13326, 9, 3242879023, "try! failed: eval::leave");
             } } else if ((_t2.tag == 18)) { {
-                ctx_panic(13315, 9, 3242879023, "try! failed: eval::halt");
+                ctx_panic(13326, 9, 3242879023, "try! failed: eval::halt");
             } } }
         } } }
         ({ t166 _t3 = (&(*l0)); t174 _t4 = l1; t16 _t5 = f_utf8__viewarena__Arena_5db7a4ae(&(l3)); f_check__error(_t3, _t4, _t5); });
@@ -35474,10 +35473,10 @@ static t343 f_check__decl_var(t163 * l0, t22 l1, t7 l2) {
         l3 = (f_check__get_decl(&((*l0)), l1)).m_vars;
         l4 = ((t14)(0ULL));
         while ((l4 < (l3).m_len)) {
-            if (({ t7 _t0 = ((*({ t517 _t2 = (l3); uint64_t _t3 = l4; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 11557, 39, 3242879023); }))).m_name; t7 _t1 = l2; f_slice__eq_bytes(_t0, _t1); })) {
-                return ((t343){ .tag = 1, .p.v1.m_value = (*({ t517 _t4 = (l3); uint64_t _t5 = l4; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 11557, 71, 3242879023); })) });
+            if (({ t7 _t0 = ((*({ t517 _t2 = (l3); uint64_t _t3 = l4; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 11568, 39, 3242879023); }))).m_name; t7 _t1 = l2; f_slice__eq_bytes(_t0, _t1); })) {
+                return ((t343){ .tag = 1, .p.v1.m_value = (*({ t517 _t4 = (l3); uint64_t _t5 = l4; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 11568, 71, 3242879023); })) });
             }
-            l4 = ctx_add_u64(l4, ((t14)(1ULL)), 11558, 19, 3242879023);
+            l4 = ctx_add_u64(l4, ((t14)(1ULL)), 11569, 19, 3242879023);
         }
         return ((t343){0});
     }
@@ -38079,11 +38078,11 @@ static t15 f_parser__kind(t177 * l0, t14 l1) {
         if (((*l0)).m_bad) {
             return ((t15)(0ULL));
         }
-        l2 = ctx_add_u64(((*l0)).m_i, l1, 1609, 21, 4018602316);
+        l2 = ctx_add_u64(((*l0)).m_i, l1, 1643, 21, 4018602316);
         if ((l2 >= (((*l0)).m_toks).m_len)) {
             return ((t15)(0ULL));
         }
-        return ((*({ t76 _t0 = (((*l0)).m_toks); uint64_t _t1 = l2; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 1611, 22, 4018602316); }))).m_kind;
+        return ((*({ t76 _t0 = (((*l0)).m_toks); uint64_t _t1 = l2; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 1645, 22, 4018602316); }))).m_kind;
     }
     __builtin_unreachable();
 }
@@ -38221,7 +38220,7 @@ static t22 f_parser__new_id(t179 l0) {
     CTX_STACK_CHECK();
     {
         l1 = ((*l0)).m_ids;
-        { t22 _t0 = ctx_add_u32(((*l0)).m_ids, ((t22)(1ULL)), 1685, 23, 4018602316); ((*l0)).m_ids = _t0; }
+        { t22 _t0 = ctx_add_u32(((*l0)).m_ids, ((t22)(1ULL)), 1719, 23, 4018602316); ((*l0)).m_ids = _t0; }
         return l1;
     }
     __builtin_unreachable();
@@ -38255,7 +38254,7 @@ static t27 f_parser__expected(t179 l0, t16 l1) {
         } } _t1; }); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l6 = _t0.p.v1.m_error; {
             { t12 _t7 = l6; if ((_t7.tag == 0)) { {
-                ctx_panic(1581, 9, 4018602316, "try! failed: alloc::out_of_memory");
+                ctx_panic(1615, 9, 4018602316, "try! failed: alloc::out_of_memory");
             } } }
         } } }
         ({ t179 _t8 = (&(*l0)); t16 _t9 = f_utf8__viewarena__Arena_5db7a4ae(&(l2)); f_parser__expected_msg(_t8, _t9); });
@@ -38267,7 +38266,7 @@ static t27 f_parser__skip(t179 l0) {
     CTX_STACK_CHECK();
     {
         if ((f_parser__kind(&((*l0)), ((t14)(0ULL))) != ((t15)(0ULL)))) {
-            { t14 _t0 = ctx_add_u64(((*l0)).m_i, ((t14)(1ULL)), 1631, 63, 4018602316); ((*l0)).m_i = _t0; }
+            { t14 _t0 = ctx_add_u64(((*l0)).m_i, ((t14)(1ULL)), 1665, 63, 4018602316); ((*l0)).m_i = _t0; }
         }
     }
 }
@@ -38282,7 +38281,7 @@ static t183 f_parser__ident(t179 l0) {
         }
         f_parser__expected((&(*l0)), ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"a name", .m_len = 6 }), }));
         l1 = f_parser__prev_end(&((*l0)));
-        return ({ t22 _t0 = f_parser__new_id((&(*l0))); t174 _t1 = ((t174){ .m_file = ((*l0)).m_file, .m_start = l1, .m_end = l1, }); t7 _t2 = ({ t7 _t3 = (((*l0)).m_text); uint64_t _t4 = ((t14)(0ULL)); uint64_t _t5 = ((t14)(0ULL)); ctx_range(_t4, _t5, _t3.m_len, 1672, 122, 4018602316); (t7){ .m_ptr = _t3.m_ptr + _t4, .m_len = _t5 - _t4 }; }); ((t183){ .m_id = _t0, .m_span = _t1, .m_text = _t2, }); });
+        return ({ t22 _t0 = f_parser__new_id((&(*l0))); t174 _t1 = ((t174){ .m_file = ((*l0)).m_file, .m_start = l1, .m_end = l1, }); t7 _t2 = ({ t7 _t3 = (((*l0)).m_text); uint64_t _t4 = ((t14)(0ULL)); uint64_t _t5 = ((t14)(0ULL)); ctx_range(_t4, _t5, _t3.m_len, 1706, 122, 4018602316); (t7){ .m_ptr = _t3.m_ptr + _t4, .m_len = _t5 - _t4 }; }); ((t183){ .m_id = _t0, .m_span = _t1, .m_text = _t2, }); });
     }
     __builtin_unreachable();
 }
@@ -38316,7 +38315,7 @@ static t27 f_parser__expect(t179 l0, t15 l1) {
         } } _t1; }); }); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l7 = _t0.p.v1.m_error; {
             { t12 _t7 = l7; if ((_t7.tag == 0)) { {
-                ctx_panic(1649, 9, 4018602316, "try! failed: alloc::out_of_memory");
+                ctx_panic(1683, 9, 4018602316, "try! failed: alloc::out_of_memory");
             } } }
         } } }
         ({ t179 _t8 = (&(*l0)); t16 _t9 = f_utf8__viewarena__Arena_5db7a4ae(&(l2)); f_parser__expected_msg(_t8, _t9); });
@@ -38327,7 +38326,7 @@ static t27 f_parser__expect(t179 l0, t15 l1) {
 static t6 f_parser__at_error_decl(t177 * l0) {
     CTX_STACK_CHECK();
     {
-        return ((f_parser__next_is(&((*l0)), ((t15)(2ULL))) && f_slice__eq_bytes(({ t177 *_t0 = &((*l0)); t175 _t1 = (*({ t76 _t2 = (((*l0)).m_toks); uint64_t _t3 = ((*l0)).m_i; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 1528, 98, 4018602316); })); f_parser__text_of(_t0, _t1); }), ((t7){ .m_ptr = (void *)"error", .m_len = 5 }))) && (f_parser__kind(&((*l0)), ((t14)(1ULL))) == ((t15)(2ULL))));
+        return ((f_parser__next_is(&((*l0)), ((t15)(2ULL))) && f_slice__eq_bytes(({ t177 *_t0 = &((*l0)); t175 _t1 = (*({ t76 _t2 = (((*l0)).m_toks); uint64_t _t3 = ((*l0)).m_i; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 1562, 98, 4018602316); })); f_parser__text_of(_t0, _t1); }), ((t7){ .m_ptr = (void *)"error", .m_len = 5 }))) && (f_parser__kind(&((*l0)), ((t14)(1ULL))) == ((t15)(2ULL))));
     }
     __builtin_unreachable();
 }
@@ -38336,7 +38335,7 @@ static t6 f_parser__at_error_decl(t177 * l0) {
 static t6 f_parser__nl(t177 * l0) {
     CTX_STACK_CHECK();
     {
-        return (((*l0)).m_bad || ((*({ t76 _t0 = (((*l0)).m_toks); uint64_t _t1 = ((*l0)).m_i; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 1620, 31, 4018602316); }))).m_nl);
+        return (((*l0)).m_bad || ((*({ t76 _t0 = (((*l0)).m_toks); uint64_t _t1 = ((*l0)).m_i; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 1654, 31, 4018602316); }))).m_nl);
     }
     __builtin_unreachable();
 }
@@ -38625,10 +38624,10 @@ static t6 f_parser__at_distinct(t177 * l0) {
     t15 l1;
     CTX_STACK_CHECK();
     {
-        if (((!f_parser__next_is(&((*l0)), ((t15)(2ULL)))) || (!f_slice__eq_bytes(({ t177 *_t0 = &((*l0)); t175 _t1 = (*({ t76 _t2 = (((*l0)).m_toks); uint64_t _t3 = ((*l0)).m_i; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 1519, 101, 4018602316); })); f_parser__text_of(_t0, _t1); }), ((t7){ .m_ptr = (void *)"distinct", .m_len = 8 }))))) {
+        if (((!f_parser__next_is(&((*l0)), ((t15)(2ULL)))) || (!f_slice__eq_bytes(({ t177 *_t0 = &((*l0)); t175 _t1 = (*({ t76 _t2 = (((*l0)).m_toks); uint64_t _t3 = ((*l0)).m_i; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 1553, 101, 4018602316); })); f_parser__text_of(_t0, _t1); }), ((t7){ .m_ptr = (void *)"distinct", .m_len = 8 }))))) {
             return ((bool)0);
         }
-        if ((({ t14 _t4 = ctx_add_u64(((*l0)).m_i, ((t14)(1ULL)), 1520, 16, 4018602316); t14 _t5 = (((*l0)).m_toks).m_len; (_t4 >= _t5); }) || ((*({ t76 _t6 = (((*l0)).m_toks); uint64_t _t7 = ctx_add_u64(((*l0)).m_i, ((t14)(1ULL)), 1520, 48, 4018602316); _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 1520, 43, 4018602316); }))).m_nl)) {
+        if ((({ t14 _t4 = ctx_add_u64(((*l0)).m_i, ((t14)(1ULL)), 1554, 16, 4018602316); t14 _t5 = (((*l0)).m_toks).m_len; (_t4 >= _t5); }) || ((*({ t76 _t6 = (((*l0)).m_toks); uint64_t _t7 = ctx_add_u64(((*l0)).m_i, ((t14)(1ULL)), 1554, 48, 4018602316); _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 1554, 43, 4018602316); }))).m_nl)) {
             return ((bool)0);
         }
         l1 = f_parser__kind(&((*l0)), ((t14)(1ULL)));
@@ -38757,7 +38756,7 @@ static t22 f_parser__prev_end(t177 * l0) {
         if ((((*l0)).m_i == ((t14)(0ULL)))) {
             return ((t22)(0ULL));
         }
-        return (((*({ t76 _t0 = (((*l0)).m_toks); uint64_t _t1 = ctx_sub_u64(((*l0)).m_i, ((t14)(1ULL)), 1706, 27, 4018602316); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 1706, 22, 4018602316); }))).m_span).m_end;
+        return (((*({ t76 _t0 = (((*l0)).m_toks); uint64_t _t1 = ctx_sub_u64(((*l0)).m_i, ((t14)(1ULL)), 1740, 27, 4018602316); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 1740, 22, 4018602316); }))).m_span).m_end;
     }
     __builtin_unreachable();
 }
@@ -38863,7 +38862,7 @@ static t6 f_parser__body_as_context(t177 * l0) {
 static t27 f_parser__failf(t179 l0, t543 l1) {
     CTX_STACK_CHECK();
     {
-        ({ t179 _t0 = (&(*l0)); t543 _t1 = l1; t175 _t2 = (*({ t76 _t3 = (((*l0)).m_toks); uint64_t _t4 = ((*l0)).m_i; _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 1557, 38, 4018602316); })); f_parser__failf_at(_t0, _t1, _t2); });
+        ({ t179 _t0 = (&(*l0)); t543 _t1 = l1; t175 _t2 = (*({ t76 _t3 = (((*l0)).m_toks); uint64_t _t4 = ((*l0)).m_i; _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 1591, 38, 4018602316); })); f_parser__failf_at(_t0, _t1, _t2); });
     }
 }
 
@@ -38960,7 +38959,7 @@ static t174 f_parser__span_from(t177 * l0, t14 l1) {
             l2 = f_parser__prev_end(&((*l0)));
             return ((t174){ .m_file = ((*l0)).m_file, .m_start = l2, .m_end = l2, });
         }
-        return ({ t22 _t0 = ((*l0)).m_file; t22 _t1 = (((*({ t76 _t3 = (((*l0)).m_toks); uint64_t _t4 = l1; _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 1696, 59, 4018602316); }))).m_span).m_start; t22 _t2 = (((*({ t76 _t5 = (((*l0)).m_toks); uint64_t _t6 = ctx_sub_u64(((*l0)).m_i, ((t14)(1ULL)), 1696, 96, 4018602316); _t5.m_ptr + ctx_idx(_t6, _t5.m_len, 1696, 91, 4018602316); }))).m_span).m_end; ((t174){ .m_file = _t0, .m_start = _t1, .m_end = _t2, }); });
+        return ({ t22 _t0 = ((*l0)).m_file; t22 _t1 = (((*({ t76 _t3 = (((*l0)).m_toks); uint64_t _t4 = l1; _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 1730, 59, 4018602316); }))).m_span).m_start; t22 _t2 = (((*({ t76 _t5 = (((*l0)).m_toks); uint64_t _t6 = ctx_sub_u64(((*l0)).m_i, ((t14)(1ULL)), 1730, 96, 4018602316); _t5.m_ptr + ctx_idx(_t6, _t5.m_len, 1730, 91, 4018602316); }))).m_span).m_end; ((t174){ .m_file = _t0, .m_start = _t1, .m_end = _t2, }); });
     }
     __builtin_unreachable();
 }
@@ -39178,7 +39177,7 @@ static t7 f_parser__kind_text(t15 l0) {
     CTX_STACK_CHECK();
     {
         if (f_tok__is_keyword(l0)) {
-            return (*({ t586 *_t0 = &(q23); uint64_t _t1 = ({ t14 _t2 = ((t14)(ctx_as_u((uint64_t)(l0), UINT64_MAX, "usize", 1655, 63, 4018602316))); t14 _t3 = ((t14)(ctx_as_u((uint64_t)(((t15)(8ULL))), UINT64_MAX, "usize", 1655, 79, 4018602316))); ctx_sub_u64(_t2, _t3, 1655, 77, 4018602316); }); &_t0->a[ctx_idx(_t1, 30, 1655, 62, 4018602316)]; }));
+            return (*({ t586 *_t0 = &(q23); uint64_t _t1 = ({ t14 _t2 = ((t14)(ctx_as_u((uint64_t)(l0), UINT64_MAX, "usize", 1689, 63, 4018602316))); t14 _t3 = ((t14)(ctx_as_u((uint64_t)(((t15)(8ULL))), UINT64_MAX, "usize", 1689, 79, 4018602316))); ctx_sub_u64(_t2, _t3, 1689, 77, 4018602316); }); &_t0->a[ctx_idx(_t1, 30, 1689, 62, 4018602316)]; }));
         }
         return f_tok__op_text(l0);
     }
@@ -42685,7 +42684,7 @@ static t27 f_check__add_field(t660 l0, t551 l1) {
         { t61 _t0 = f_list__pushtypes__Fieldarena__Arena_726ee789((&(*l0)), l1); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l2 = _t0.p.v1.m_error; {
             { t12 _t1 = l2; if ((_t1.tag == 0)) { {
-                ctx_panic(13350, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(13361, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
     }
@@ -43300,7 +43299,7 @@ static t27 f_check__add_variant(t663 l0, t658 * l1) {
         { t61 _t0 = f_list__pushcheck__Variantarena__Arena_11813e23((&(*l0)), &((*l1))); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l2 = _t0.p.v1.m_error; {
             { t12 _t1 = l2; if ((_t1.tag == 0)) { {
-                ctx_panic(13354, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(13365, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
     }
@@ -43574,7 +43573,7 @@ static t27 f_check__push_i64(t667 l0, t54 l1) {
         { t61 _t0 = f_list__pushi64arena__Arena_085bf065((&(*l0)), l1); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l2 = _t0.p.v1.m_error; {
             { t12 _t1 = l2; if ((_t1.tag == 0)) { {
-                ctx_panic(13342, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(13353, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
     }
@@ -44893,10 +44892,10 @@ static t27 f_check__unchecked_decl(t166 l0, t182 * l1, t6 l2) {
             if (((l7).tag != 0)) {
                 l8 = ((t14)(0ULL));
                 while ((l8 < ((l7).p.v1.m_value).m_len)) {
-                    if (((*({ t356 _t1 = ((l7).p.v1.m_value); uint64_t _t2 = l8; _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 13292, 34, 3242879023); }))).m_external) {
-                        ({ t166 _t3 = (&(*l0)); t174 _t4 = (((*({ t356 _t7 = ((l7).p.v1.m_value); uint64_t _t8 = l8; _t7.m_ptr + ctx_idx(_t8, _t7.m_len, 13292, 75, 3242879023); }))).m_name).m_span; t16 _t5 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"a C variable", .m_len = 12 }), }); t16 _t6 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"", .m_len = 0 }), }); f_check__unchecked(_t3, _t4, _t5, _t6); });
+                    if (((*({ t356 _t1 = ((l7).p.v1.m_value); uint64_t _t2 = l8; _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 13303, 34, 3242879023); }))).m_external) {
+                        ({ t166 _t3 = (&(*l0)); t174 _t4 = (((*({ t356 _t7 = ((l7).p.v1.m_value); uint64_t _t8 = l8; _t7.m_ptr + ctx_idx(_t8, _t7.m_len, 13303, 75, 3242879023); }))).m_name).m_span; t16 _t5 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"a C variable", .m_len = 12 }), }); t16 _t6 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"", .m_len = 0 }), }); f_check__unchecked(_t3, _t4, _t5, _t6); });
                     }
-                    l8 = ctx_add_u64(l8, ((t14)(1ULL)), 13293, 31, 3242879023);
+                    l8 = ctx_add_u64(l8, ((t14)(1ULL)), 13304, 31, 3242879023);
                 }
             }
         } } else { {
@@ -45287,23 +45286,23 @@ static t27 f_check__fault_field_writers(t166 l0, t22 l1, t22 l2, t174 l3) {
     CTX_STACK_CHECK();
     struct b55 _r55;
     {
-        l4 = (*({ t515 _t0 = (f_list__itemscheck__Sitearena__Arena_41ad0b09(&(((*l0)).m_sites))); uint64_t _t1 = ((t14)(ctx_as_u((uint64_t)(l1), UINT64_MAX, "usize", 12540, 48, 3242879023))); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 12540, 47, 3242879023); }));
+        l4 = (*({ t515 _t0 = (f_list__itemscheck__Sitearena__Arena_41ad0b09(&(((*l0)).m_sites))); uint64_t _t1 = ((t14)(ctx_as_u((uint64_t)(l1), UINT64_MAX, "usize", 12551, 48, 3242879023))); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 12551, 47, 3242879023); }));
         l5 = ({ t552 _t2; t656 _t3 = f_check__fault_fields(&((*l0)), l2); if ((_t3.tag == 1)) { l6 = _t3.p.v1.m_value; {
             _t2 = l6;
         } } else if ((_t3.tag == 0)) { {
             _t2 = f_slice__emptytypes__Field_36078b08();
         } } _t2; });
         l7 = f_list__newcheck__Writerarena__Arena_dadc8bf3((&g0), ((*l0)).m_heap);
-        l8 = ({ t539 _t4; t536 _t5 = ({ t304 *_t6 = &(((*l0)).m_flows); t22 _t7 = ctx_add_u32(((t22)(2147483648ULL)), l1, 12543, 58, 3242879023); f_map__getu32check__Flowarena__Arena_ba99da30(_t6, _t7); }); if ((_t5.tag == 1)) { l9 = _t5.p.v1.m_value; {
+        l8 = ({ t539 _t4; t536 _t5 = ({ t304 *_t6 = &(((*l0)).m_flows); t22 _t7 = ctx_add_u32(((t22)(2147483648ULL)), l1, 12554, 58, 3242879023); f_map__getu32check__Flowarena__Arena_ba99da30(_t6, _t7); }); if ((_t5.tag == 1)) { l9 = _t5.p.v1.m_value; {
             _t4 = l9;
         } } else if ((_t5.tag == 0)) { {
             _t4 = ({ t173 _t8 = f_check__no_vars(); t173 _t9 = f_check__no_vars(); t6 _t10 = ((bool)0); t6 _t11 = ((bool)0); ((t539){ .m_atoms = _t8, .m_subs = _t9, .m_any = _t10, .m_open = _t11, }); });
         } } _t4; });
         l10 = ((t14)(0ULL));
         while ((l10 < (l5).m_len)) {
-            l11 = ({ t166 _t12 = (&(*l0)); t22 _t13 = (l4).m_sink; t22 _t14 = ((*({ t552 _t16 = (l5); uint64_t _t17 = l10; _t16.m_ptr + ctx_idx(_t17, _t16.m_len, 12546, 64, 3242879023); }))).m_ty; t22 _t15 = (l4).m_ns; f_check__writers_of(_t12, _t13, _t14, _t15); });
+            l11 = ({ t166 _t12 = (&(*l0)); t22 _t13 = (l4).m_sink; t22 _t14 = ((*({ t552 _t16 = (l5); uint64_t _t17 = l10; _t16.m_ptr + ctx_idx(_t17, _t16.m_len, 12557, 64, 3242879023); }))).m_ty; t22 _t15 = (l4).m_ns; f_check__writers_of(_t12, _t13, _t14, _t15); });
             if (((l11).m_two != ((t22)(4294967295ULL)))) {
-                ({ t166 _t18 = (&(*l0)); t174 _t19 = l3; t543 _t20 = ({ struct b55 _t21; _t21.base.code = (void (*)(void))b55_code; _t21.c0 = ({ t163 *_t22 = &((*l0)); t22 _t23 = ((*({ t552 _t24 = (l5); uint64_t _t25 = l10; _t24.m_ptr + ctx_idx(_t25, _t24.m_len, 12548, 137, 3242879023); }))).m_ty; f_check__tstr(_t22, _t23); }); _t21.c1 = f_check__tstr(&((*l0)), (l4).m_sink); _t21.c2 = f_check__str((f_check__get_decl(&((*l0)), l2)).m_qual); _t21.c3 = f_check__str(((*({ t552 _t26 = (l5); uint64_t _t27 = l10; _t26.m_ptr + ctx_idx(_t27, _t26.m_len, 12548, 220, 3242879023); }))).m_name); _t21.c4 = f_check__str((f_check__get_decl(&((*l0)), ((l11).m_one).m_decl)).m_qual); _t21.c5 = f_check__str((f_check__get_decl(&((*l0)), (l11).m_two)).m_qual); _r55 = _t21; (ctx_fn *)&_r55; }); f_check__errorf(_t18, _t19, _t20); });
+                ({ t166 _t18 = (&(*l0)); t174 _t19 = l3; t543 _t20 = ({ struct b55 _t21; _t21.base.code = (void (*)(void))b55_code; _t21.c0 = ({ t163 *_t22 = &((*l0)); t22 _t23 = ((*({ t552 _t24 = (l5); uint64_t _t25 = l10; _t24.m_ptr + ctx_idx(_t25, _t24.m_len, 12559, 137, 3242879023); }))).m_ty; f_check__tstr(_t22, _t23); }); _t21.c1 = f_check__tstr(&((*l0)), (l4).m_sink); _t21.c2 = f_check__str((f_check__get_decl(&((*l0)), l2)).m_qual); _t21.c3 = f_check__str(((*({ t552 _t26 = (l5); uint64_t _t27 = l10; _t26.m_ptr + ctx_idx(_t27, _t26.m_len, 12559, 220, 3242879023); }))).m_name); _t21.c4 = f_check__str((f_check__get_decl(&((*l0)), ((l11).m_one).m_decl)).m_qual); _t21.c5 = f_check__str((f_check__get_decl(&((*l0)), (l11).m_two)).m_qual); _r55 = _t21; (ctx_fn *)&_r55; }); f_check__errorf(_t18, _t19, _t20); });
             }
             if ((((l11).m_one).m_decl != ((t22)(4294967295ULL)))) {
                 f_check__add_writer_set(&((*l0)), (&l8), ((l11).m_one).m_decl);
@@ -45311,21 +45310,21 @@ static t27 f_check__fault_field_writers(t166 l0, t22 l1, t22 l2, t174 l3) {
             { t61 _t28 = f_list__pushcheck__Writerarena__Arena_8154aa47((&l7), (l11).m_one); if ((_t28.tag == 0)) { {
             } } else if ((_t28.tag == 1)) { l12 = _t28.p.v1.m_error; {
                 { t12 _t29 = l12; if ((_t29.tag == 0)) { {
-                    ctx_panic(12551, 13, 3242879023, "try! failed: alloc::out_of_memory");
+                    ctx_panic(12562, 13, 3242879023, "try! failed: alloc::out_of_memory");
                 } } }
             } } }
-            l10 = ctx_add_u64(l10, ((t14)(1ULL)), 12552, 19, 3242879023);
+            l10 = ctx_add_u64(l10, ((t14)(1ULL)), 12563, 19, 3242879023);
         }
         { t61 _t30 = ({ t814 _t31 = (&((*l0)).m_fault_writers); t8 _t32 = f_check__fault_key(l1, l2); t815 _t33 = f_list__itemscheck__Writerarena__Arena_4b6d940d(&(l7)); f_map__putu64check__Writerarena__Arena_40d11b07(_t31, _t32, _t33); }); if ((_t30.tag == 0)) { {
         } } else if ((_t30.tag == 1)) { l13 = _t30.p.v1.m_error; {
             { t12 _t34 = l13; if ((_t34.tag == 0)) { {
-                ctx_panic(12554, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(12565, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
-        { t61 _t35 = ({ t816 _t36 = (&((*l0)).m_flows); t22 _t37 = ctx_add_u32(((t22)(2147483648ULL)), l1, 12555, 49, 3242879023); t539 *_t38 = &(l8); f_map__putu32check__Flowarena__Arena_f05c8855(_t36, _t37, _t38); }); if ((_t35.tag == 0)) { {
+        { t61 _t35 = ({ t816 _t36 = (&((*l0)).m_flows); t22 _t37 = ctx_add_u32(((t22)(2147483648ULL)), l1, 12566, 49, 3242879023); t539 *_t38 = &(l8); f_map__putu32check__Flowarena__Arena_f05c8855(_t36, _t37, _t38); }); if ((_t35.tag == 0)) { {
         } } else if ((_t35.tag == 1)) { l14 = _t35.p.v1.m_error; {
             { t12 _t39 = l14; if ((_t39.tag == 0)) { {
-                ctx_panic(12555, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(12566, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
     }
@@ -45436,8 +45435,8 @@ static t61 f_check__site_text(t163 * l0, t22 l1, t75 l2) {
     t12 l11;
     CTX_STACK_CHECK();
     {
-        l3 = ((*({ t515 _t0 = (f_list__itemscheck__Sitearena__Arena_41ad0b09(&(((*l0)).m_sites))); uint64_t _t1 = ((t14)(ctx_as_u((uint64_t)(ctx_sub_u32(l1, ((t22)(2147483648ULL)), 12363, 65, 3242879023)), UINT64_MAX, "usize", 12363, 48, 3242879023))); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 12363, 47, 3242879023); }))).m_at;
-        l4 = (*({ t82 _t2 = (((*l0)).m_files); uint64_t _t3 = ((t14)((l3).m_file)); _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 12364, 27, 3242879023); }));
+        l3 = ((*({ t515 _t0 = (f_list__itemscheck__Sitearena__Arena_41ad0b09(&(((*l0)).m_sites))); uint64_t _t1 = ((t14)(ctx_as_u((uint64_t)(ctx_sub_u32(l1, ((t22)(2147483648ULL)), 12374, 65, 3242879023)), UINT64_MAX, "usize", 12374, 48, 3242879023))); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 12374, 47, 3242879023); }))).m_at;
+        l4 = (*({ t82 _t2 = (((*l0)).m_files); uint64_t _t3 = ((t14)((l3).m_file)); _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 12375, 27, 3242879023); }));
         l5 = f_source__position((l4).m_text, (l4).m_lines, (l3).m_start);
         return ({ l6 = (l5).m_line; ({ l7 = (l5).m_col; ({ t61 _t4; t61 _t5 = f_utf8__push_literalarena__Arena_f5a0db07((&(*l2)), ((t7){ .m_ptr = (void *)"`@fmt` at ", .m_len = 10 })); if ((_t5.tag == 0)) { {
             _t4 = ({ t61 _t6; t61 _t7 = f_utf8__push_u32arena__Arena_4c4822da((&(*l2)), l6); if ((_t7.tag == 0)) { {
@@ -45756,8 +45755,8 @@ static t657 f_check__variants_of(t166 l0, t22 l1) {
             l4 = f_check__enum_names(&((*l0)), l3);
             l5 = ((t14)(0ULL));
             while ((l5 < (l4).m_len)) {
-                ({ t663 _t1 = (&l2); t658 _t2 = ((t658){ .m_name = (*({ t5 _t3 = (l4); uint64_t _t4 = l5; _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 13027, 70, 3242879023); })), .m_fields = ((t656){0}), }); f_check__add_variant(_t1, &_t2); });
-                l5 = ctx_add_u64(l5, ((t14)(1ULL)), 13028, 27, 3242879023);
+                ({ t663 _t1 = (&l2); t658 _t2 = ((t658){ .m_name = (*({ t5 _t3 = (l4); uint64_t _t4 = l5; _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 13038, 70, 3242879023); })), .m_fields = ((t656){0}), }); f_check__add_variant(_t1, &_t2); });
+                l5 = ctx_add_u64(l5, ((t14)(1ULL)), 13039, 27, 3242879023);
             }
         } } else if ((_t0.tag == 8)) { l6 = _t0.p.v8.m_elem; {
             ({ t663 _t5 = (&l2); t658 _t6 = ((t658){ .m_name = ((t7){ .m_ptr = (void *)"null", .m_len = 4 }), .m_fields = ((t656){0}), }); f_check__add_variant(_t5, &_t6); });
@@ -45768,14 +45767,14 @@ static t657 f_check__variants_of(t166 l0, t22 l1) {
             l10 = (f_check__get_decl(&((*l0)), l8)).m_variants;
             l11 = ((t14)(0ULL));
             while ((l11 < (l10).m_len)) {
-                l12 = (*({ t657 _t9 = (l10); uint64_t _t10 = l11; _t9.m_ptr + ctx_idx(_t10, _t9.m_len, 13041, 31, 3242879023); }));
+                l12 = (*({ t657 _t9 = (l10); uint64_t _t10 = l11; _t9.m_ptr + ctx_idx(_t10, _t9.m_len, 13052, 31, 3242879023); }));
                 l13 = (l12).m_fields;
                 if (((l13).tag == 0)) {
                     f_check__add_variant((&l2), &(l12));
                 } else {
                     ({ t663 _t11 = (&l2); t658 _t12 = ({ t7 _t13 = (l12).m_name; t656 _t14 = ((t656){ .tag = 1, .p.v1.m_value = f_check__subst_fields((&(*l0)), (l13).p.v1.m_value, l8, l9) }); ((t658){ .m_name = _t13, .m_fields = _t14, }); }); f_check__add_variant(_t11, &_t12); });
                 }
-                l11 = ctx_add_u64(l11, ((t14)(1ULL)), 13048, 27, 3242879023);
+                l11 = ctx_add_u64(l11, ((t14)(1ULL)), 13059, 27, 3242879023);
             }
         } } else if ((_t0.tag == 17)) { l14 = _t0.p.v17.m_ok; l15 = _t0.p.v17.m_errs; {
             if ((f_types__prune(&(((*l0)).m_ty), l14) == ((t22)(1ULL)))) {
@@ -45793,9 +45792,9 @@ static t657 f_check__variants_of(t166 l0, t22 l1) {
         } } else if ((_t0.tag == 16)) { l18 = _t0.p.v16.m_errs; {
             l19 = ((t14)(0ULL));
             while ((l19 < (l18).m_len)) {
-                l20 = ({ t163 *_t23 = &((*l0)); t22 _t24 = (*({ t173 _t25 = (l18); uint64_t _t26 = l19; _t25.m_ptr + ctx_idx(_t26, _t25.m_len, 13069, 50, 3242879023); })); f_check__get_decl(_t23, _t24); });
-                ({ t663 _t27 = (&l2); t658 _t28 = ({ t7 _t29 = (l20).m_qual; t656 _t30 = ({ t163 *_t31 = &((*l0)); t22 _t32 = (*({ t173 _t33 = (l18); uint64_t _t34 = l19; _t33.m_ptr + ctx_idx(_t34, _t33.m_len, 13070, 107, 3242879023); })); f_check__fault_fields(_t31, _t32); }); ((t658){ .m_name = _t29, .m_fields = _t30, }); }); f_check__add_variant(_t27, &_t28); });
-                l19 = ctx_add_u64(l19, ((t14)(1ULL)), 13071, 27, 3242879023);
+                l20 = ({ t163 *_t23 = &((*l0)); t22 _t24 = (*({ t173 _t25 = (l18); uint64_t _t26 = l19; _t25.m_ptr + ctx_idx(_t26, _t25.m_len, 13080, 50, 3242879023); })); f_check__get_decl(_t23, _t24); });
+                ({ t663 _t27 = (&l2); t658 _t28 = ({ t7 _t29 = (l20).m_qual; t656 _t30 = ({ t163 *_t31 = &((*l0)); t22 _t32 = (*({ t173 _t33 = (l18); uint64_t _t34 = l19; _t33.m_ptr + ctx_idx(_t34, _t33.m_len, 13081, 107, 3242879023); })); f_check__fault_fields(_t31, _t32); }); ((t658){ .m_name = _t29, .m_fields = _t30, }); }); f_check__add_variant(_t27, &_t28); });
+                l19 = ctx_add_u64(l19, ((t14)(1ULL)), 13082, 27, 3242879023);
             }
         } } else { {
         } } }
@@ -48041,9 +48040,9 @@ static t552 f_check__subst_fields(t166 l0, t552 l1, t22 l2, t173 l3) {
         l4 = f_list__newtypes__Fieldarena__Arena_f8297ded((&g0), ((*l0)).m_heap);
         l5 = ((t14)(0ULL));
         while ((l5 < (l1).m_len)) {
-            l6 = (*({ t552 _t0 = (l1); uint64_t _t1 = l5; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 13084, 27, 3242879023); }));
+            l6 = (*({ t552 _t0 = (l1); uint64_t _t1 = l5; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 13095, 27, 3242879023); }));
             f_check__add_field((&l4), ({ t7 _t2 = (l6).m_name; t6 _t3 = (l6).m_mutable; t22 _t4 = f_types__subst((&((*l0)).m_ty), (l6).m_ty, l2, l3); ((t551){ .m_name = _t2, .m_mutable = _t3, .m_ty = _t4, }); }));
-            l5 = ctx_add_u64(l5, ((t14)(1ULL)), 13086, 19, 3242879023);
+            l5 = ctx_add_u64(l5, ((t14)(1ULL)), 13097, 19, 3242879023);
         }
         return f_list__itemstypes__Fieldarena__Arena_7d0ea9d3(&(l4));
     }
@@ -48919,7 +48918,7 @@ static t730 f_check__struct_offsets(t166 l0, t22 l1) {
         l6 = ((t8)(1ULL));
         l7 = ((t14)(0ULL));
         while ((l7 < (l2).m_len)) {
-            l8 = ({ t166 _t0 = (&(*l0)); t22 _t1 = ((*({ t552 _t2 = (l2); uint64_t _t3 = l7; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 13175, 44, 3242879023); }))).m_ty; f_check__layout(_t0, _t1); });
+            l8 = ({ t166 _t0 = (&(*l0)); t22 _t1 = ((*({ t552 _t2 = (l2); uint64_t _t3 = l7; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 13186, 44, 3242879023); }))).m_ty; f_check__layout(_t0, _t1); });
             if (((l8).tag == 0)) {
                 return ((t730){0});
             }
@@ -48931,12 +48930,12 @@ static t730 f_check__struct_offsets(t166 l0, t22 l1) {
             } else {
                 l5 = f_check__align_up(l5, ((l8).p.v1.m_value).m_align);
                 f_check__push_u64((&l4), l5);
-                l5 = ctx_add_u64(l5, ((l8).p.v1.m_value).m_size, 13184, 27, 3242879023);
+                l5 = ctx_add_u64(l5, ((l8).p.v1.m_value).m_size, 13195, 27, 3242879023);
             }
             if ((((l8).p.v1.m_value).m_align > l6)) {
                 l6 = ((l8).p.v1.m_value).m_align;
             }
-            l7 = ctx_add_u64(l7, ((t14)(1ULL)), 13187, 19, 3242879023);
+            l7 = ctx_add_u64(l7, ((t14)(1ULL)), 13198, 19, 3242879023);
         }
         return ((t730){ .tag = 1, .p.v1.m_value = ({ t733 _t4 = ({ t8 _t6 = f_check__align_up(l5, l6); t8 _t7 = l6; ((t733){ .m_size = _t6, .m_align = _t7, }); }); t454 _t5 = f_list__itemsu64arena__Arena_219a5d8b(&(l4)); ((t734){ .m_layout = _t4, .m_offs = _t5, }); }) });
     }
@@ -48980,23 +48979,23 @@ static t732 f_check__union_offsets(t166 l0, t22 l1) {
         l5 = ((t8)(0ULL));
         l6 = ((t14)(0ULL));
         while ((l6 < (l2).m_len)) {
-            l7 = ((*({ t657 _t0 = (l2); uint64_t _t1 = l6; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 13203, 24, 3242879023); }))).m_fields;
+            l7 = ((*({ t657 _t0 = (l2); uint64_t _t1 = l6; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 13214, 24, 3242879023); }))).m_fields;
             l8 = f_list__newu64arena__Arena_9cf5497d((&g0), ((*l0)).m_heap);
             if (((l7).tag != 0)) {
                 l9 = ((t8)(0ULL));
                 l10 = ((t14)(0ULL));
                 while ((l10 < ((l7).p.v1.m_value).m_len)) {
-                    l11 = ({ t166 _t2 = (&(*l0)); t22 _t3 = ((*({ t552 _t4 = ((l7).p.v1.m_value); uint64_t _t5 = l10; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 13209, 48, 3242879023); }))).m_ty; f_check__layout(_t2, _t3); });
+                    l11 = ({ t166 _t2 = (&(*l0)); t22 _t3 = ((*({ t552 _t4 = ((l7).p.v1.m_value); uint64_t _t5 = l10; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 13220, 48, 3242879023); }))).m_ty; f_check__layout(_t2, _t3); });
                     if (((l11).tag == 0)) {
                         return ((t732){0});
                     }
                     l9 = f_check__align_up(l9, ((l11).p.v1.m_value).m_align);
                     f_check__push_u64((&l8), l9);
-                    l9 = ctx_add_u64(l9, ((l11).p.v1.m_value).m_size, 13213, 31, 3242879023);
+                    l9 = ctx_add_u64(l9, ((l11).p.v1.m_value).m_size, 13224, 31, 3242879023);
                     if ((((l11).p.v1.m_value).m_align > l4)) {
                         l4 = ((l11).p.v1.m_value).m_align;
                     }
-                    l10 = ctx_add_u64(l10, ((t14)(1ULL)), 13215, 27, 3242879023);
+                    l10 = ctx_add_u64(l10, ((t14)(1ULL)), 13226, 27, 3242879023);
                 }
                 if ((l9 > l5)) {
                     l5 = l9;
@@ -49005,10 +49004,10 @@ static t732 f_check__union_offsets(t166 l0, t22 l1) {
             { t61 _t6 = f_list__pushmutu64arena__Arena_542cb0af((&l3), f_list__itemsu64arena__Arena_219a5d8b(&(l8))); if ((_t6.tag == 0)) { {
             } } else if ((_t6.tag == 1)) { l12 = _t6.p.v1.m_error; {
                 { t12 _t7 = l12; if ((_t7.tag == 0)) { {
-                    ctx_panic(13219, 13, 3242879023, "try! failed: alloc::out_of_memory");
+                    ctx_panic(13230, 13, 3242879023, "try! failed: alloc::out_of_memory");
                 } } }
             } } }
-            l6 = ctx_add_u64(l6, ((t14)(1ULL)), 13220, 19, 3242879023);
+            l6 = ctx_add_u64(l6, ((t14)(1ULL)), 13231, 19, 3242879023);
         }
         l13 = ({ t8 _t8; if ((l4 > ((t8)(4ULL)))) {
             _t8 = l4;
@@ -49019,15 +49018,15 @@ static t732 f_check__union_offsets(t166 l0, t22 l1) {
         l15 = f_list__itemsmutu64arena__Arena_daa2d86d(&(l3));
         l6 = ((t14)(0ULL));
         while ((l6 < (l15).m_len)) {
-            l16 = (*({ t731 _t9 = (l15); uint64_t _t10 = l6; _t9.m_ptr + ctx_idx(_t10, _t9.m_len, 13227, 25, 3242879023); }));
+            l16 = (*({ t731 _t9 = (l15); uint64_t _t10 = l6; _t9.m_ptr + ctx_idx(_t10, _t9.m_len, 13238, 25, 3242879023); }));
             l17 = ((t14)(0ULL));
             while ((l17 < (l16).m_len)) {
-                { t8 _t11 = ({ t8 _t12 = (*({ t454 _t14 = (l16); uint64_t _t15 = l17; _t14.m_ptr + ctx_idx(_t15, _t14.m_len, 13230, 27, 3242879023); })); t8 _t13 = l14; ctx_add_u64(_t12, _t13, 13230, 31, 3242879023); }); (*({ t454 _t16 = (l16); uint64_t _t17 = l17; _t16.m_ptr + ctx_idx(_t17, _t16.m_len, 13230, 19, 3242879023); })) = _t11; }
-                l17 = ctx_add_u64(l17, ((t14)(1ULL)), 13231, 23, 3242879023);
+                { t8 _t11 = ({ t8 _t12 = (*({ t454 _t14 = (l16); uint64_t _t15 = l17; _t14.m_ptr + ctx_idx(_t15, _t14.m_len, 13241, 27, 3242879023); })); t8 _t13 = l14; ctx_add_u64(_t12, _t13, 13241, 31, 3242879023); }); (*({ t454 _t16 = (l16); uint64_t _t17 = l17; _t16.m_ptr + ctx_idx(_t17, _t16.m_len, 13241, 19, 3242879023); })) = _t11; }
+                l17 = ctx_add_u64(l17, ((t14)(1ULL)), 13242, 23, 3242879023);
             }
-            l6 = ctx_add_u64(l6, ((t14)(1ULL)), 13233, 19, 3242879023);
+            l6 = ctx_add_u64(l6, ((t14)(1ULL)), 13244, 19, 3242879023);
         }
-        return ((t732){ .tag = 1, .p.v1.m_value = ({ t733 _t18 = ({ t8 _t21 = ({ t8 _t23 = ctx_add_u64(l14, l5, 13235, 72, 3242879023); t8 _t24 = l13; f_check__align_up(_t23, _t24); }); t8 _t22 = l13; ((t733){ .m_size = _t21, .m_align = _t22, }); }); t8 _t19 = l14; t731 _t20 = l15; ((t735){ .m_layout = _t18, .m_pay_off = _t19, .m_offs = _t20, }); }) });
+        return ((t732){ .tag = 1, .p.v1.m_value = ({ t733 _t18 = ({ t8 _t21 = ({ t8 _t23 = ctx_add_u64(l14, l5, 13246, 72, 3242879023); t8 _t24 = l13; f_check__align_up(_t23, _t24); }); t8 _t22 = l13; ((t733){ .m_size = _t21, .m_align = _t22, }); }); t8 _t19 = l14; t731 _t20 = l15; ((t735){ .m_layout = _t18, .m_pay_off = _t19, .m_offs = _t20, }); }) });
     }
     __builtin_unreachable();
 }
@@ -50176,7 +50175,7 @@ static t599 f_parser__boxsyntax__Expr_cfa759fc(t179 l0, t364 * l1) {
             _t0 = l3;
         } } else if ((_t1.tag == 1)) { l4 = _t1.p.v1.m_error; {
             { t12 _t2 = l4; if ((_t2.tag == 0)) { {
-                ctx_panic(1720, 17, 4018602316, "try! failed: alloc::out_of_memory");
+                ctx_panic(1754, 17, 4018602316, "try! failed: alloc::out_of_memory");
             } } }
         } } _t0; });
         return l2;
@@ -50256,7 +50255,7 @@ static t27 f_parser__expected_msg(t179 l0, t16 l1) {
         if (((*l0)).m_bad) {
             return;
         }
-        l2 = (*({ t76 _t0 = (((*l0)).m_toks); uint64_t _t1 = ((*l0)).m_i; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 1588, 23, 4018602316); }));
+        l2 = (*({ t76 _t0 = (((*l0)).m_toks); uint64_t _t1 = ((*l0)).m_i; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 1622, 23, 4018602316); }));
         l3 = f_parser__message(&((*l0)));
         if (((l2).m_kind == ((t15)(0ULL)))) {
             { t61 _t2 = ({ t61 _t3; t61 _t4 = f_utf8__pusharena__Arena_14525023((&l3), l1); if ((_t4.tag == 0)) { {
@@ -50270,7 +50269,7 @@ static t27 f_parser__expected_msg(t179 l0, t16 l1) {
             } } _t3; }); if ((_t2.tag == 0)) { {
             } } else if ((_t2.tag == 1)) { l12 = _t2.p.v1.m_error; {
                 { t12 _t7 = l12; if ((_t7.tag == 0)) { {
-                    ctx_panic(1591, 13, 4018602316, "try! failed: alloc::out_of_memory");
+                    ctx_panic(1625, 13, 4018602316, "try! failed: alloc::out_of_memory");
                 } } }
             } } }
         } else {
@@ -50293,7 +50292,7 @@ static t27 f_parser__expected_msg(t179 l0, t16 l1) {
             } } _t9; }); }); if ((_t8.tag == 0)) { {
             } } else if ((_t8.tag == 1)) { l9 = _t8.p.v1.m_error; {
                 { t12 _t17 = l9; if ((_t17.tag == 0)) { {
-                    ctx_panic(1593, 13, 4018602316, "try! failed: alloc::out_of_memory");
+                    ctx_panic(1627, 13, 4018602316, "try! failed: alloc::out_of_memory");
                 } } }
             } } }
         }
@@ -50316,7 +50315,7 @@ static t183 f_parser__keyword_name(t179 l0) {
 static t7 f_parser__text_of(t177 * l0, t175 l1) {
     CTX_STACK_CHECK();
     {
-        return ({ t7 _t0 = (((*l0)).m_text); uint64_t _t1 = ((t14)(((l1).m_span).m_start)); uint64_t _t2 = ((t14)(((l1).m_span).m_end)); ctx_range(_t1, _t2, _t0.m_len, 1664, 22, 4018602316); (t7){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
+        return ({ t7 _t0 = (((*l0)).m_text); uint64_t _t1 = ((t14)(((l1).m_span).m_start)); uint64_t _t2 = ((t14)(((l1).m_span).m_end)); ctx_range(_t1, _t2, _t0.m_len, 1698, 22, 4018602316); (t7){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; });
     }
     __builtin_unreachable();
 }
@@ -50399,7 +50398,7 @@ static t6 f_parser__enter(t179 l0) {
             f_parser__fail((&(*l0)), ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"too deeply nested", .m_len = 17 }), }));
             return ((bool)0);
         }
-        { t22 _t0 = ctx_add_u32(((*l0)).m_depth, ((t22)(1ULL)), 1715, 27, 4018602316); ((*l0)).m_depth = _t0; }
+        { t22 _t0 = ctx_add_u32(((*l0)).m_depth, ((t22)(1ULL)), 1749, 27, 4018602316); ((*l0)).m_depth = _t0; }
         return ((bool)1);
     }
     __builtin_unreachable();
@@ -50486,7 +50485,7 @@ static t597 f_parser__boxsyntax__TypeExpr_e8a1917c(t179 l0, t360 * l1) {
             _t0 = l3;
         } } else if ((_t1.tag == 1)) { l4 = _t1.p.v1.m_error; {
             { t12 _t2 = l4; if ((_t2.tag == 0)) { {
-                ctx_panic(1720, 17, 4018602316, "try! failed: alloc::out_of_memory");
+                ctx_panic(1754, 17, 4018602316, "try! failed: alloc::out_of_memory");
             } } }
         } } _t0; });
         return l2;
@@ -50666,43 +50665,43 @@ static t27 f_parser__failf_at(t179 l0, t543 l1, t175 l2) {
         { t127 _t0 = ({ ctx_fn *_t1 = l1; ((c543)_t1->code)(_t1, (&l3)); }); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l4 = _t0.p.v1.m_error; {
             { t64 _t2 = l4; if ((_t2.tag == 0)) { {
-                ctx_panic(1562, 9, 4018602316, "try! failed: alloc::out_of_memory");
+                ctx_panic(1596, 9, 4018602316, "try! failed: alloc::out_of_memory");
             } } else if ((_t2.tag == 1)) { {
-                ctx_panic(1562, 9, 4018602316, "try! failed: c::has_nul");
+                ctx_panic(1596, 9, 4018602316, "try! failed: c::has_nul");
             } } else if ((_t2.tag == 2)) { {
-                ctx_panic(1562, 9, 4018602316, "try! failed: fs::not_found");
+                ctx_panic(1596, 9, 4018602316, "try! failed: fs::not_found");
             } } else if ((_t2.tag == 3)) { {
-                ctx_panic(1562, 9, 4018602316, "try! failed: fs::permission_denied");
+                ctx_panic(1596, 9, 4018602316, "try! failed: fs::permission_denied");
             } } else if ((_t2.tag == 4)) { {
-                ctx_panic(1562, 9, 4018602316, "try! failed: fs::is_directory");
+                ctx_panic(1596, 9, 4018602316, "try! failed: fs::is_directory");
             } } else if ((_t2.tag == 5)) { {
-                ctx_panic(1562, 9, 4018602316, "try! failed: fs::exists");
+                ctx_panic(1596, 9, 4018602316, "try! failed: fs::exists");
             } } else if ((_t2.tag == 6)) { {
-                ctx_panic(1562, 9, 4018602316, "try! failed: fs::not_directory");
+                ctx_panic(1596, 9, 4018602316, "try! failed: fs::not_directory");
             } } else if ((_t2.tag == 7)) { {
-                ctx_panic(1562, 9, 4018602316, "try! failed: fs::not_empty");
+                ctx_panic(1596, 9, 4018602316, "try! failed: fs::not_empty");
             } } else if ((_t2.tag == 8)) { {
-                ctx_panic(1562, 9, 4018602316, "try! failed: fs::bad_file");
+                ctx_panic(1596, 9, 4018602316, "try! failed: fs::bad_file");
             } } else if ((_t2.tag == 9)) { {
-                ctx_panic(1562, 9, 4018602316, "try! failed: fs::other");
+                ctx_panic(1596, 9, 4018602316, "try! failed: fs::other");
             } } else if ((_t2.tag == 10)) { {
-                ctx_panic(1562, 9, 4018602316, "try! failed: proc::not_found");
+                ctx_panic(1596, 9, 4018602316, "try! failed: proc::not_found");
             } } else if ((_t2.tag == 11)) { {
-                ctx_panic(1562, 9, 4018602316, "try! failed: proc::permission_denied");
+                ctx_panic(1596, 9, 4018602316, "try! failed: proc::permission_denied");
             } } else if ((_t2.tag == 12)) { {
-                ctx_panic(1562, 9, 4018602316, "try! failed: proc::broken_pipe");
+                ctx_panic(1596, 9, 4018602316, "try! failed: proc::broken_pipe");
             } } else if ((_t2.tag == 13)) { {
-                ctx_panic(1562, 9, 4018602316, "try! failed: proc::other");
+                ctx_panic(1596, 9, 4018602316, "try! failed: proc::other");
             } } else if ((_t2.tag == 14)) { {
-                ctx_panic(1562, 9, 4018602316, "try! failed: task::cancelled");
+                ctx_panic(1596, 9, 4018602316, "try! failed: task::cancelled");
             } } else if ((_t2.tag == 15)) { {
-                ctx_panic(1562, 9, 4018602316, "try! failed: task::out_of_resources");
+                ctx_panic(1596, 9, 4018602316, "try! failed: task::out_of_resources");
             } } else if ((_t2.tag == 16)) { {
-                ctx_panic(1562, 9, 4018602316, "try! failed: utf8::invalid");
+                ctx_panic(1596, 9, 4018602316, "try! failed: utf8::invalid");
             } } else if ((_t2.tag == 17)) { {
-                ctx_panic(1562, 9, 4018602316, "try! failed: eval::leave");
+                ctx_panic(1596, 9, 4018602316, "try! failed: eval::leave");
             } } else if ((_t2.tag == 18)) { {
-                ctx_panic(1562, 9, 4018602316, "try! failed: eval::halt");
+                ctx_panic(1596, 9, 4018602316, "try! failed: eval::halt");
             } } }
         } } }
         ({ t179 _t3 = (&(*l0)); t16 _t4 = f_utf8__viewarena__Arena_5db7a4ae(&(l3)); t175 _t5 = l2; f_parser__fail_at(_t3, _t4, _t5); });
@@ -50845,7 +50844,7 @@ static t6 f_parser__at_decl(t177 * l0) {
     t175 l1;
     CTX_STACK_CHECK();
     {
-        l1 = (*({ t76 _t0 = (((*l0)).m_toks); uint64_t _t1 = ((*l0)).m_i; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 1546, 23, 4018602316); }));
+        l1 = (*({ t76 _t0 = (((*l0)).m_toks); uint64_t _t1 = ((*l0)).m_i; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 1580, 23, 4018602316); }));
         return ((l1).m_nl && f_parser__is_decl_keyword((l1).m_kind));
     }
     __builtin_unreachable();
@@ -53394,14 +53393,14 @@ static t27 f_check__write_attr(t166 l0, t182 * l1, t22 l2, t593 * l3, t6 l4) {
         l11 = (l10).m_fields;
         l12 = ((t14)(0ULL));
         while ((l12 < (l11).m_len)) {
-            if ((({ t270 *_t5 = &(((*l0)).m_ty); t22 _t6 = ((*({ t552 _t7 = (l11); uint64_t _t8 = l12; _t7.m_ptr + ctx_idx(_t8, _t7.m_len, 12206, 46, 3242879023); }))).m_ty; f_types__prune(_t5, _t6); }) == ((t22)(0ULL)))) {
+            if ((({ t270 *_t5 = &(((*l0)).m_ty); t22 _t6 = ((*({ t552 _t7 = (l11); uint64_t _t8 = l12; _t7.m_ptr + ctx_idx(_t8, _t7.m_len, 12217, 46, 3242879023); }))).m_ty; f_types__prune(_t5, _t6); }) == ((t22)(0ULL)))) {
                 return;
             }
-            l12 = ctx_add_u64(l12, ((t14)(1ULL)), 12207, 19, 3242879023);
+            l12 = ctx_add_u64(l12, ((t14)(1ULL)), 12218, 19, 3242879023);
         }
-        if (((((l11).m_len != ((t14)(2ULL))) || ({ t6 _t9 = ((*({ t552 _t11 = (l11); uint64_t _t12 = ((t14)(0ULL)); _t11.m_ptr + ctx_idx(_t12, _t11.m_len, 12209, 29, 3242879023); }))).m_mutable; t6 _t10 = ((*({ t552 _t13 = (l11); uint64_t _t14 = ((t14)(1ULL)); _t13.m_ptr + ctx_idx(_t14, _t13.m_len, 12209, 46, 3242879023); }))).m_mutable; (_t9 == _t10); })) || ((l6).m_len != ((t14)(2ULL))))) {
+        if (((((l11).m_len != ((t14)(2ULL))) || ({ t6 _t9 = ((*({ t552 _t11 = (l11); uint64_t _t12 = ((t14)(0ULL)); _t11.m_ptr + ctx_idx(_t12, _t11.m_len, 12220, 29, 3242879023); }))).m_mutable; t6 _t10 = ((*({ t552 _t13 = (l11); uint64_t _t14 = ((t14)(1ULL)); _t13.m_ptr + ctx_idx(_t14, _t13.m_len, 12220, 46, 3242879023); }))).m_mutable; (_t9 == _t10); })) || ((l6).m_len != ((t14)(2ULL))))) {
             l13 = ({ t174 _t15; if (((l6).m_len > ((t14)(0ULL)))) {
-                _t15 = ((*({ t353 _t16 = (l6); uint64_t _t17 = ((t14)(0ULL)); _t16.m_ptr + ctx_idx(_t17, _t16.m_len, 12210, 48, 3242879023); }))).m_span;
+                _t15 = ((*({ t353 _t16 = (l6); uint64_t _t17 = ((t14)(0ULL)); _t16.m_ptr + ctx_idx(_t17, _t16.m_len, 12221, 48, 3242879023); }))).m_span;
             } else {
                 _t15 = ((*l1)).m_span;
             } _t15; });
@@ -53422,8 +53421,8 @@ static t27 f_check__write_attr(t166 l0, t182 * l1, t22 l2, t593 * l3, t6 l4) {
         }
         l12 = ((t14)(0ULL));
         while ((l12 < ((t14)(2ULL)))) {
-            l15 = ({ t270 *_t22 = &(((*l0)).m_ty); t22 _t23 = ((*({ t552 _t24 = (l11); uint64_t _t25 = l12; _t24.m_ptr + ctx_idx(_t25, _t24.m_len, 12222, 51, 3242879023); }))).m_ty; f_types__prune(_t22, _t23); });
-            l16 = ({ t16 _t26; if (((*({ t552 _t27 = (l11); uint64_t _t28 = l12; _t27.m_ptr + ctx_idx(_t28, _t27.m_len, 12223, 43, 3242879023); }))).m_mutable) {
+            l15 = ({ t270 *_t22 = &(((*l0)).m_ty); t22 _t23 = ((*({ t552 _t24 = (l11); uint64_t _t25 = l12; _t24.m_ptr + ctx_idx(_t25, _t24.m_len, 12233, 51, 3242879023); }))).m_ty; f_types__prune(_t22, _t23); });
+            l16 = ({ t16 _t26; if (((*({ t552 _t27 = (l11); uint64_t _t28 = l12; _t27.m_ptr + ctx_idx(_t28, _t27.m_len, 12234, 43, 3242879023); }))).m_mutable) {
                 _t26 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"sink", .m_len = 4 }), });
             } else {
                 _t26 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"value", .m_len = 5 }), });
@@ -53433,27 +53432,27 @@ static t27 f_check__write_attr(t166 l0, t182 * l1, t22 l2, t593 * l3, t6 l4) {
             } } else { {
                 _t29 = ((bool)0);
             } } _t29; })) {
-                ({ t166 _t31 = (&(*l0)); t174 _t32 = ((*({ t353 _t34 = (l6); uint64_t _t35 = l12; _t34.m_ptr + ctx_idx(_t35, _t34.m_len, 12225, 40, 3242879023); }))).m_span; t543 _t33 = ({ struct b60 _t36; _t36.base.code = (void (*)(void))b60_code; _t36.c0 = l16; _r60 = _t36; (ctx_fn *)&_r60; }); f_check__errorf(_t31, _t32, _t33); });
+                ({ t166 _t31 = (&(*l0)); t174 _t32 = ((*({ t353 _t34 = (l6); uint64_t _t35 = l12; _t34.m_ptr + ctx_idx(_t35, _t34.m_len, 12236, 40, 3242879023); }))).m_span; t543 _t33 = ({ struct b60 _t36; _t36.base.code = (void (*)(void))b60_code; _t36.c0 = l16; _r60 = _t36; (ctx_fn *)&_r60; }); f_check__errorf(_t31, _t32, _t33); });
                 return;
             }
-            if (((!((*({ t552 _t37 = (l11); uint64_t _t38 = l12; _t37.m_ptr + ctx_idx(_t38, _t37.m_len, 12228, 22, 3242879023); }))).m_mutable) && ({ t6 _t39; t476 _t40 = f_types__get(&(((*l0)).m_ty), l15); if ((_t40.tag == 12)) { {
+            if (((!((*({ t552 _t37 = (l11); uint64_t _t38 = l12; _t37.m_ptr + ctx_idx(_t38, _t37.m_len, 12239, 22, 3242879023); }))).m_mutable) && ({ t6 _t39; t476 _t40 = f_types__get(&(((*l0)).m_ty), l15); if ((_t40.tag == 12)) { {
                 _t39 = ((bool)1);
             } } else { {
                 _t39 = ((bool)0);
             } } _t39; }))) {
-                ({ t166 _t41 = (&(*l0)); t174 _t42 = ((*({ t353 _t44 = (l6); uint64_t _t45 = l12; _t44.m_ptr + ctx_idx(_t45, _t44.m_len, 12229, 39, 3242879023); }))).m_span; t16 _t43 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"a `write` fn's value can't be a function: an @fmt hole calls a function with the sink", .m_len = 85 }), }); f_check__error(_t41, _t42, _t43); });
+                ({ t166 _t41 = (&(*l0)); t174 _t42 = ((*({ t353 _t44 = (l6); uint64_t _t45 = l12; _t44.m_ptr + ctx_idx(_t45, _t44.m_len, 12240, 39, 3242879023); }))).m_span; t16 _t43 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"a `write` fn's value can't be a function: an @fmt hole calls a function with the sink", .m_len = 85 }), }); f_check__error(_t41, _t42, _t43); });
                 return;
             }
-            l12 = ctx_add_u64(l12, ((t14)(1ULL)), 12232, 19, 3242879023);
+            l12 = ctx_add_u64(l12, ((t14)(1ULL)), 12243, 19, 3242879023);
         }
         l12 = ((t14)(0ULL));
         while ((l12 < (l5).m_len)) {
-            l17 = ((t22)(ctx_as_u((uint64_t)(l12), UINT32_MAX, "u32", 12236, 21, 3242879023)));
-            if (((!({ t270 *_t46 = &(((*l0)).m_ty); t22 _t47 = ((*({ t552 _t50 = (l11); uint64_t _t51 = ((t14)(0ULL)); _t50.m_ptr + ctx_idx(_t51, _t50.m_len, 12237, 53, 3242879023); }))).m_ty; t22 _t48 = l8; t22 _t49 = l17; f_types__mentions(_t46, _t47, _t48, _t49); })) && (!({ t270 *_t52 = &(((*l0)).m_ty); t22 _t53 = ((*({ t552 _t56 = (l11); uint64_t _t57 = ((t14)(1ULL)); _t56.m_ptr + ctx_idx(_t57, _t56.m_len, 12237, 124, 3242879023); }))).m_ty; t22 _t54 = l8; t22 _t55 = l17; f_types__mentions(_t52, _t53, _t54, _t55); })))) {
-                ({ t166 _t58 = (&(*l0)); t174 _t59 = ((*({ t278 _t61 = (l5); uint64_t _t62 = l12; _t61.m_ptr + ctx_idx(_t62, _t61.m_len, 12238, 41, 3242879023); }))).m_span; t543 _t60 = ({ struct b61 _t63; _t63.base.code = (void (*)(void))b61_code; _t63.c0 = f_check__str(((*({ t278 _t64 = (l5); uint64_t _t65 = l12; _t64.m_ptr + ctx_idx(_t65, _t64.m_len, 12238, 142, 3242879023); }))).m_text); _r61 = _t63; (ctx_fn *)&_r61; }); f_check__errorf(_t58, _t59, _t60); });
+            l17 = ((t22)(ctx_as_u((uint64_t)(l12), UINT32_MAX, "u32", 12247, 21, 3242879023)));
+            if (((!({ t270 *_t46 = &(((*l0)).m_ty); t22 _t47 = ((*({ t552 _t50 = (l11); uint64_t _t51 = ((t14)(0ULL)); _t50.m_ptr + ctx_idx(_t51, _t50.m_len, 12248, 53, 3242879023); }))).m_ty; t22 _t48 = l8; t22 _t49 = l17; f_types__mentions(_t46, _t47, _t48, _t49); })) && (!({ t270 *_t52 = &(((*l0)).m_ty); t22 _t53 = ((*({ t552 _t56 = (l11); uint64_t _t57 = ((t14)(1ULL)); _t56.m_ptr + ctx_idx(_t57, _t56.m_len, 12248, 124, 3242879023); }))).m_ty; t22 _t54 = l8; t22 _t55 = l17; f_types__mentions(_t52, _t53, _t54, _t55); })))) {
+                ({ t166 _t58 = (&(*l0)); t174 _t59 = ((*({ t278 _t61 = (l5); uint64_t _t62 = l12; _t61.m_ptr + ctx_idx(_t62, _t61.m_len, 12249, 41, 3242879023); }))).m_span; t543 _t60 = ({ struct b61 _t63; _t63.base.code = (void (*)(void))b61_code; _t63.c0 = f_check__str(((*({ t278 _t64 = (l5); uint64_t _t65 = l12; _t64.m_ptr + ctx_idx(_t65, _t64.m_len, 12249, 142, 3242879023); }))).m_text); _r61 = _t63; (ctx_fn *)&_r61; }); f_check__errorf(_t58, _t59, _t60); });
                 return;
             }
-            l12 = ctx_add_u64(l12, ((t14)(1ULL)), 12241, 19, 3242879023);
+            l12 = ctx_add_u64(l12, ((t14)(1ULL)), 12252, 19, 3242879023);
         }
         f_check__push((&((*l0)).m_writers), l8);
     }
@@ -55502,17 +55501,17 @@ static t27 f_check__fmt_calls(t166 l0, t364 * l1) {
         } } else if ((_t1.tag == 0)) { {
             return;
         } } _t0; });
-        l4 = (*({ t515 _t4 = (f_list__itemscheck__Sitearena__Arena_41ad0b09(&(((*l0)).m_sites))); uint64_t _t5 = ((t14)(ctx_as_u((uint64_t)(l2), UINT64_MAX, "usize", 12446, 48, 3242879023))); _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 12446, 47, 3242879023); }));
+        l4 = (*({ t515 _t4 = (f_list__itemscheck__Sitearena__Arena_41ad0b09(&(((*l0)).m_sites))); uint64_t _t5 = ((t14)(ctx_as_u((uint64_t)(l2), UINT64_MAX, "usize", 12457, 48, 3242879023))); _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 12457, 47, 3242879023); }));
         l5 = f_types__zonk((&((*l0)).m_ty), (l4).m_sink);
-        ((*({ t310 *_t6 = &(((*l0)).m_sites); t14 _t7 = ((t14)(ctx_as_u((uint64_t)(l2), UINT64_MAX, "usize", 12448, 39, 3242879023))); f_list__atcheck__Sitearena__Arena_76a8d734(_t6, _t7); }))).m_sink = l5;
+        ((*({ t310 *_t6 = &(((*l0)).m_sites); t14 _t7 = ((t14)(ctx_as_u((uint64_t)(l2), UINT64_MAX, "usize", 12459, 39, 3242879023))); f_list__atcheck__Sitearena__Arena_76a8d734(_t6, _t7); }))).m_sink = l5;
         l6 = ({ t173 _t8 = f_check__no_vars(); t173 _t9 = f_check__no_vars(); t6 _t10 = ((bool)1); t6 _t11 = ((bool)0); ((t539){ .m_atoms = _t8, .m_subs = _t9, .m_any = _t10, .m_open = _t11, }); });
         if ((!f_check__write_calls((&(*l0)), &(l4), l5, (&l6)))) {
             (l6).m_any = ((bool)1);
         }
-        { t61 _t12 = ({ t816 _t13 = (&((*l0)).m_flows); t22 _t14 = ctx_add_u32(((t22)(2147483648ULL)), l2, 12451, 49, 3242879023); t539 *_t15 = &(l6); f_map__putu32check__Flowarena__Arena_f05c8855(_t13, _t14, _t15); }); if ((_t12.tag == 0)) { {
+        { t61 _t12 = ({ t816 _t13 = (&((*l0)).m_flows); t22 _t14 = ctx_add_u32(((t22)(2147483648ULL)), l2, 12462, 49, 3242879023); t539 *_t15 = &(l6); f_map__putu32check__Flowarena__Arena_f05c8855(_t13, _t14, _t15); }); if ((_t12.tag == 0)) { {
         } } else if ((_t12.tag == 1)) { l7 = _t12.p.v1.m_error; {
             { t12 _t16 = l7; if ((_t16.tag == 0)) { {
-                ctx_panic(12451, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(12462, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
     }
@@ -57015,7 +57014,7 @@ static t27 f_check__unchecked(t166 l0, t174 l1, t16 l2, t16 l3) {
     struct b80 _r80;
     struct b81 _r81;
     {
-        if ((((l1).m_file == ((t22)(4294967295ULL))) || (!((*({ t82 _t0 = (((*l0)).m_files); uint64_t _t1 = ((t14)((l1).m_file)); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 13251, 45, 3242879023); }))).m_denied))) {
+        if ((((l1).m_file == ((t22)(4294967295ULL))) || (!((*({ t82 _t0 = (((*l0)).m_files); uint64_t _t1 = ((t14)((l1).m_file)); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 13262, 45, 3242879023); }))).m_denied))) {
             return;
         }
         if ((((l3).m_bytes).m_len == ((t14)(0ULL)))) {
@@ -57569,7 +57568,7 @@ static t61 f_map__putu64check__Writerarena__Arena_40d11b07(t814 l0, t8 l1, t815 
 static t8 f_check__fault_key(t22 l0, t22 l1) {
     CTX_STACK_CHECK();
     {
-        return ((t8)(({ t8 _t0 = ((t8)(ctx_shl_u64(((t8)(ctx_as_u((uint64_t)(l0), UINT64_MAX, "u64", 12559, 17, 3242879023))), ctx_shcount_i(((t0)(32ULL)), 64, 12559, 30, 3242879023), 12559, 30, 3242879023))); t8 _t1 = ((t8)(ctx_as_u((uint64_t)(l1), UINT64_MAX, "u64", 12559, 39, 3242879023))); (_t0 | _t1); })));
+        return ((t8)(({ t8 _t0 = ((t8)(ctx_shl_u64(((t8)(ctx_as_u((uint64_t)(l0), UINT64_MAX, "u64", 12570, 17, 3242879023))), ctx_shcount_i(((t0)(32ULL)), 64, 12570, 30, 3242879023), 12570, 30, 3242879023))); t8 _t1 = ((t8)(ctx_as_u((uint64_t)(l1), UINT64_MAX, "u64", 12570, 39, 3242879023))); (_t0 | _t1); })));
     }
     __builtin_unreachable();
 }
@@ -59859,8 +59858,8 @@ static t77 f_check__offset_of(t166 l0, t22 l1, t364 * l2, t6 l3) {
         } } else { {
             _t0 = ((bool)0);
         } } _t0; })) {
-            if ((((l6).m_len == ((t14)(1ULL))) && ((((*({ t596 _t2 = (l6); uint64_t _t3 = ((t14)(0ULL)); _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 11623, 38, 3242879023); }))).m_targs).tag == 0))) {
-                l5 = (((*({ t596 _t4 = (l6); uint64_t _t5 = ((t14)(0ULL)); _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 11623, 69, 3242879023); }))).m_name).m_text;
+            if ((((l6).m_len == ((t14)(1ULL))) && ((((*({ t596 _t2 = (l6); uint64_t _t3 = ((t14)(0ULL)); _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 11634, 38, 3242879023); }))).m_targs).tag == 0))) {
+                l5 = (((*({ t596 _t4 = (l6); uint64_t _t5 = ((t14)(0ULL)); _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 11634, 69, 3242879023); }))).m_name).m_text;
             }
         }
         if (((l5).m_len == ((t14)(0ULL)))) {
@@ -59881,8 +59880,8 @@ static t77 f_check__offset_of(t166 l0, t22 l1, t364 * l2, t6 l3) {
         }
         l7 = f_check__struct_fields((&(*l0)), l4);
         l8 = ((t14)(0ULL));
-        while (((l8 < (l7).m_len) && (!({ t7 _t15 = ((*({ t552 _t17 = (l7); uint64_t _t18 = l8; _t17.m_ptr + ctx_idx(_t18, _t17.m_len, 11635, 65, 3242879023); }))).m_name; t7 _t16 = l5; f_slice__eq_bytes(_t15, _t16); })))) {
-            l8 = ctx_add_u64(l8, ((t14)(1ULL)), 11635, 94, 3242879023);
+        while (((l8 < (l7).m_len) && (!({ t7 _t15 = ((*({ t552 _t17 = (l7); uint64_t _t18 = l8; _t17.m_ptr + ctx_idx(_t18, _t17.m_len, 11646, 65, 3242879023); }))).m_name; t7 _t16 = l5; f_slice__eq_bytes(_t15, _t16); })))) {
+            l8 = ctx_add_u64(l8, ((t14)(1ULL)), 11646, 94, 3242879023);
         }
         if ((l8 == (l7).m_len)) {
             if (l3) {
@@ -59895,7 +59894,7 @@ static t77 f_check__offset_of(t166 l0, t22 l1, t364 * l2, t6 l3) {
         } } else if ((_t24.tag == 0)) { {
             return ((t77){0});
         } } _t23; });
-        return ((t77){ .tag = 1, .p.v1.m_value = (*({ t454 _t25 = ((l9).m_offs); uint64_t _t26 = l8; _t25.m_ptr + ctx_idx(_t26, _t25.m_len, 11641, 25, 3242879023); })) });
+        return ((t77){ .tag = 1, .p.v1.m_value = (*({ t454 _t25 = ((l9).m_offs); uint64_t _t26 = l8; _t25.m_ptr + ctx_idx(_t26, _t25.m_len, 11652, 25, 3242879023); })) });
     }
     __builtin_unreachable();
 }
@@ -59918,7 +59917,7 @@ static t843 f_check__layout(t166 l0, t22 l1) {
         { t61 _t0 = f_map__putu32boolarena__Arena_07a91299((&((*l0)).m_busy), l1, ((bool)1)); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l3 = _t0.p.v1.m_error; {
             { t12 _t1 = l3; if ((_t1.tag == 0)) { {
-                ctx_panic(13099, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(13110, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
         l4 = f_check__compute((&(*l0)), l1);
@@ -59927,7 +59926,7 @@ static t843 f_check__layout(t166 l0, t22 l1) {
             { t61 _t2 = f_map__putu32check__Layoutarena__Arena_7d262b9f((&((*l0)).m_layouts), l1, (l4).p.v1.m_value); if ((_t2.tag == 0)) { {
             } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
                 { t12 _t3 = l5; if ((_t3.tag == 0)) { {
-                    ctx_panic(13103, 13, 3242879023, "try! failed: alloc::out_of_memory");
+                    ctx_panic(13114, 13, 3242879023, "try! failed: alloc::out_of_memory");
                 } } }
             } } }
         }
@@ -61502,7 +61501,7 @@ static t14 f_map__homeu64u32arena__Arena_218bb910(t274 * l0, t8 l1) {
 static t8 f_check__align_up(t8 l0, t8 l1) {
     CTX_STACK_CHECK();
     {
-        return ({ t8 _t0 = ({ t8 _t2 = ctx_sub_u64(ctx_add_u64(l0, l1, 13239, 19, 3242879023), ((t8)(1ULL)), 13239, 23, 3242879023); t8 _t3 = l1; ctx_div_u64(_t2, _t3, 13239, 28, 3242879023); }); t8 _t1 = l1; ctx_mul_u64(_t0, _t1, 13239, 32, 3242879023); });
+        return ({ t8 _t0 = ({ t8 _t2 = ctx_sub_u64(ctx_add_u64(l0, l1, 13250, 19, 3242879023), ((t8)(1ULL)), 13250, 23, 3242879023); t8 _t3 = l1; ctx_div_u64(_t2, _t3, 13250, 28, 3242879023); }); t8 _t1 = l1; ctx_mul_u64(_t0, _t1, 13250, 32, 3242879023); });
     }
     __builtin_unreachable();
 }
@@ -61515,7 +61514,7 @@ static t27 f_check__push_u64(t850 l0, t8 l1) {
         { t61 _t0 = f_list__pushu64arena__Arena_b08d4ed9((&(*l0)), l1); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l2 = _t0.p.v1.m_error; {
             { t12 _t1 = l2; if ((_t1.tag == 0)) { {
-                ctx_panic(13346, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(13357, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
     }
@@ -62589,7 +62588,7 @@ static t364 f_parser__primary(t179 l0) {
     CTX_STACK_CHECK();
     {
         l1 = ((*l0)).m_i;
-        l2 = (*({ t76 _t0 = (((*l0)).m_toks); uint64_t _t1 = ((*l0)).m_i; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 1349, 23, 4018602316); }));
+        l2 = (*({ t76 _t0 = (((*l0)).m_toks); uint64_t _t1 = ((*l0)).m_i; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 1383, 23, 4018602316); }));
         l3 = f_parser__kind(&((*l0)), ((t14)(0ULL)));
         l4 = ((t606){ .tag = 0 });
         if (((l3 == ((t15)(3ULL))) || (l3 == ((t15)(6ULL))))) {
@@ -62647,7 +62646,7 @@ static t364 f_parser__primary(t179 l0) {
                                                         { t61 _t17 = f_list__pushsyntax__Exprarena__Arena_cbfee3a4((&l5), &(l6)); if ((_t17.tag == 0)) { {
                                                         } } else if ((_t17.tag == 1)) { l9 = _t17.p.v1.m_error; {
                                                             { t12 _t18 = l9; if ((_t18.tag == 0)) { {
-                                                                ctx_panic(1394, 17, 4018602316, "try! failed: alloc::out_of_memory");
+                                                                ctx_panic(1428, 17, 4018602316, "try! failed: alloc::out_of_memory");
                                                             } } }
                                                         } } }
                                                         while (f_parser__accept((&(*l0)), ((t15)(57ULL)))) {
@@ -62657,7 +62656,7 @@ static t364 f_parser__primary(t179 l0) {
                                                             { t61 _t19 = ({ t793 _t20 = (&l5); t364 _t21 = f_parser__expr((&(*l0))); f_list__pushsyntax__Exprarena__Arena_cbfee3a4(_t20, &_t21); }); if ((_t19.tag == 0)) { {
                                                             } } else if ((_t19.tag == 1)) { l10 = _t19.p.v1.m_error; {
                                                                 { t12 _t22 = l10; if ((_t22.tag == 0)) { {
-                                                                    ctx_panic(1397, 21, 4018602316, "try! failed: alloc::out_of_memory");
+                                                                    ctx_panic(1431, 21, 4018602316, "try! failed: alloc::out_of_memory");
                                                                 } } }
                                                             } } }
                                                         }
@@ -62831,7 +62830,7 @@ static t364 f_parser__braced(t179 l0, t14 l1, t364 * l2) {
                 } else {
                     if (f_parser__accept((&(*l0)), ((t15)(69ULL)))) {
                         l16 = f_parser__ident((&(*l0)));
-                        if (f_parser__at_place_tail(&((*l0)))) {
+                        if ((!f_parser__at_item_end(&((*l0))))) {
                             { t61 _t17 = ({ t919 _t18 = (&l5); t602 _t19 = f_parser__long_pun((&(*l0)), l9, l16); f_list__pushsyntax__Itemarena__Arena_ba1e9d6c(_t18, &_t19); }); if ((_t17.tag == 0)) { {
                             } } else if ((_t17.tag == 1)) { l20 = _t17.p.v1.m_error; {
                                 { t12 _t20 = l20; if ((_t20.tag == 0)) { {
@@ -62859,7 +62858,7 @@ static t364 f_parser__braced(t179 l0, t14 l1, t364 * l2) {
                                 } } }
                             } } }
                         } else {
-                            if (f_parser__at_place_tail(&((*l0)))) {
+                            if ((!f_parser__at_item_end(&((*l0))))) {
                                 { t61 _t45 = ({ t919 _t46 = (&l5); t602 _t47 = f_parser__long_pun((&(*l0)), l9, l10); f_list__pushsyntax__Itemarena__Arena_ba1e9d6c(_t46, &_t47); }); if ((_t45.tag == 0)) { {
                                 } } else if ((_t45.tag == 1)) { l13 = _t45.p.v1.m_error; {
                                     { t12 _t48 = l13; if ((_t48.tag == 0)) { {
@@ -62971,7 +62970,7 @@ static t175 f_parser__take(t179 l0) {
     t175 l1;
     CTX_STACK_CHECK();
     {
-        l1 = (*({ t76 _t0 = (((*l0)).m_toks); uint64_t _t1 = ((*l0)).m_i; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 1635, 23, 4018602316); }));
+        l1 = (*({ t76 _t0 = (((*l0)).m_toks); uint64_t _t1 = ((*l0)).m_i; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 1669, 23, 4018602316); }));
         f_parser__skip((&(*l0)));
         return l1;
     }
@@ -66786,7 +66785,7 @@ static t173 f_types__copyu32_06ad0f2c(t270 * l0, t173 l1) {
 static t6 f_check__is_infer(t596 l0) {
     CTX_STACK_CHECK();
     {
-        return ((((l0).m_len == ((t14)(1ULL))) && ((((*({ t596 _t0 = (l0); uint64_t _t1 = ((t14)(0ULL)); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 11614, 38, 3242879023); }))).m_targs).tag == 0)) && f_slice__eq_bytes((((*({ t596 _t2 = (l0); uint64_t _t3 = ((t14)(0ULL)); _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 11614, 85, 3242879023); }))).m_name).m_text, ((t7){ .m_ptr = (void *)"_", .m_len = 1 })));
+        return ((((l0).m_len == ((t14)(1ULL))) && ((((*({ t596 _t0 = (l0); uint64_t _t1 = ((t14)(0ULL)); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 11625, 38, 3242879023); }))).m_targs).tag == 0)) && f_slice__eq_bytes((((*({ t596 _t2 = (l0); uint64_t _t3 = ((t14)(0ULL)); _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 11625, 85, 3242879023); }))).m_name).m_text, ((t7){ .m_ptr = (void *)"_", .m_len = 1 })));
     }
     __builtin_unreachable();
 }
@@ -67516,17 +67515,17 @@ static t6 f_check__write_calls(t166 l0, t677 * l1, t22 l2, t818 l3) {
         l7 = ((t14)(0ULL));
         l8 = ((t14)(0ULL));
         while ((l8 < (l5).m_len)) {
-            l9 = (*({ t679 _t0 = (l5); uint64_t _t1 = l8; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 12464, 23, 3242879023); }));
+            l9 = (*({ t679 _t0 = (l5); uint64_t _t1 = l8; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 12475, 23, 3242879023); }));
             l10 = (l9).m_at;
             l11 = ((t22)(15ULL));
             l12 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)", for its text", .m_len = 14 }), });
             if ((l9).m_hole) {
-                l13 = (*({ t485 _t2 = (l4); uint64_t _t3 = l7; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 12469, 29, 3242879023); }));
-                l7 = ctx_add_u64(l7, ((t14)(1ULL)), 12470, 23, 3242879023);
+                l13 = (*({ t485 _t2 = (l4); uint64_t _t3 = l7; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 12480, 29, 3242879023); }));
+                l7 = ctx_add_u64(l7, ((t14)(1ULL)), 12481, 23, 3242879023);
                 l11 = ({ t475 _t4 = (&((*l0)).m_ty); t22 _t5 = f_check__type_of_expr(&((*l0)), &(l13)); f_types__zonk(_t4, _t5); });
                 l10 = f_check__expr_at(&(l13));
-                ((*({ t679 _t6 = (l5); uint64_t _t7 = l8; _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 12473, 19, 3242879023); }))).m_ty = l11;
-                ((*({ t679 _t8 = (l5); uint64_t _t9 = l8; _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 12474, 19, 3242879023); }))).m_at = l10;
+                ((*({ t679 _t6 = (l5); uint64_t _t7 = l8; _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 12484, 19, 3242879023); }))).m_ty = l11;
+                ((*({ t679 _t8 = (l5); uint64_t _t9 = l8; _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 12485, 19, 3242879023); }))).m_at = l10;
                 l12 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"", .m_len = 0 }), });
                 if ((l11 == ((t22)(0ULL)))) {
                     return ((bool)0);
@@ -67557,15 +67556,15 @@ static t6 f_check__write_calls(t166 l0, t677 * l1, t22 l2, t818 l3) {
                     _t15 = ((t7){ .m_ptr = (void *)"error", .m_len = 5 });
                 } else {
                     _t15 = ((t7){ .m_ptr = (void *)"write", .m_len = 5 });
-                } _t15; }); ((*({ t679 _t16 = (l5); uint64_t _t17 = l8; _t16.m_ptr + ctx_idx(_t17, _t16.m_len, 12489, 19, 3242879023); }))).m_push = _t14; }
-                ((*({ t679 _t18 = (l5); uint64_t _t19 = l8; _t18.m_ptr + ctx_idx(_t19, _t18.m_len, 12490, 19, 3242879023); }))).m_writer = l6;
+                } _t15; }); ((*({ t679 _t16 = (l5); uint64_t _t17 = l8; _t16.m_ptr + ctx_idx(_t17, _t16.m_len, 12500, 19, 3242879023); }))).m_push = _t14; }
+                ((*({ t679 _t18 = (l5); uint64_t _t19 = l8; _t18.m_ptr + ctx_idx(_t19, _t18.m_len, 12501, 19, 3242879023); }))).m_writer = l6;
             } else {
                 if (((((({ t6 _t20; t476 _t21 = f_types__get(&(((*l0)).m_ty), l11); if ((_t21.tag == 12)) { l17 = _t21.p.v12.m_fields; l18 = _t21.p.v12.m_ret; l19 = _t21.p.v12.m_external; {
                     _t20 = ((bool)1);
                 } } else { {
                     _t20 = ((bool)0);
-                } } _t20; }) && (!l19)) && ((l17).m_len == ((t14)(1ULL)))) && ((*({ t552 _t22 = (l17); uint64_t _t23 = ((t14)(0ULL)); _t22.m_ptr + ctx_idx(_t23, _t22.m_len, 12491, 134, 3242879023); }))).m_mutable) && f_check__void_result(&((*l0)), l18))) {
-                    ((*({ t679 _t24 = (l5); uint64_t _t25 = l8; _t24.m_ptr + ctx_idx(_t25, _t24.m_len, 12492, 19, 3242879023); }))).m_push = ((t7){ .m_ptr = (void *)"call", .m_len = 4 });
+                } } _t20; }) && (!l19)) && ((l17).m_len == ((t14)(1ULL)))) && ((*({ t552 _t22 = (l17); uint64_t _t23 = ((t14)(0ULL)); _t22.m_ptr + ctx_idx(_t23, _t22.m_len, 12502, 134, 3242879023); }))).m_mutable) && f_check__void_result(&((*l0)), l18))) {
+                    ((*({ t679 _t24 = (l5); uint64_t _t25 = l8; _t24.m_ptr + ctx_idx(_t25, _t24.m_len, 12503, 19, 3242879023); }))).m_push = ((t7){ .m_ptr = (void *)"call", .m_len = 4 });
                     l20 = f_types__prune(&(((*l0)).m_ty), l18);
                     l21 = ((bool)0);
                     if (({ t6 _t26; t476 _t27 = f_types__get(&(((*l0)).m_ty), l20); if ((_t27.tag == 17)) { l22 = _t27.p.v17.m_errs; {
@@ -67586,7 +67585,7 @@ static t6 f_check__write_calls(t166 l0, t677 * l1, t22 l2, t818 l3) {
                     if ((!l21)) {
                         ((*l3)).m_any = ((bool)1);
                     }
-                    ({ t166 _t33 = (&(*l0)); t364 *_t34 = &((*({ t485 _t36 = (l4); uint64_t _t37 = ctx_sub_u64(l7, ((t14)(1ULL)), 12504, 43, 3242879023); _t36.m_ptr + ctx_idx(_t37, _t36.m_len, 12504, 40, 3242879023); }))); t677 *_t35 = &((*l1)); f_check__call_hole(_t33, _t34, _t35); });
+                    ({ t166 _t33 = (&(*l0)); t364 *_t34 = &((*({ t485 _t36 = (l4); uint64_t _t37 = ctx_sub_u64(l7, ((t14)(1ULL)), 12515, 43, 3242879023); _t36.m_ptr + ctx_idx(_t37, _t36.m_len, 12515, 40, 3242879023); }))); t677 *_t35 = &((*l1)); f_check__call_hole(_t33, _t34, _t35); });
                 } else {
                     l15 = ({ t817 _t38; t959 _t39 = f_check__writer_of((&(*l0)), l2, l11, ((*l1)).m_ns, l10, l12); if ((_t39.tag == 1)) { l16 = _t39.p.v1.m_value; {
                         _t38 = l16;
@@ -67594,11 +67593,11 @@ static t6 f_check__write_calls(t166 l0, t677 * l1, t22 l2, t818 l3) {
                         return ((bool)0);
                     } } _t38; });
                     f_check__add_writer_set(&((*l0)), (&(*l3)), (l15).m_decl);
-                    ((*({ t679 _t40 = (l5); uint64_t _t41 = l8; _t40.m_ptr + ctx_idx(_t41, _t40.m_len, 12508, 19, 3242879023); }))).m_push = ((t7){ .m_ptr = (void *)"write", .m_len = 5 });
-                    ((*({ t679 _t42 = (l5); uint64_t _t43 = l8; _t42.m_ptr + ctx_idx(_t43, _t42.m_len, 12509, 19, 3242879023); }))).m_writer = l15;
+                    ((*({ t679 _t40 = (l5); uint64_t _t41 = l8; _t40.m_ptr + ctx_idx(_t41, _t40.m_len, 12519, 19, 3242879023); }))).m_push = ((t7){ .m_ptr = (void *)"write", .m_len = 5 });
+                    ((*({ t679 _t42 = (l5); uint64_t _t43 = l8; _t42.m_ptr + ctx_idx(_t43, _t42.m_len, 12520, 19, 3242879023); }))).m_writer = l15;
                 }
             }
-            l8 = ctx_add_u64(l8, ((t14)(1ULL)), 12511, 19, 3242879023);
+            l8 = ctx_add_u64(l8, ((t14)(1ULL)), 12522, 19, 3242879023);
         }
         return ((bool)1);
     }
@@ -68999,7 +68998,7 @@ static t813 f_check__writers_in(t166 l0, t22 l1, t22 l2, t22 l3, t6 l4) {
         l6 = f_check__no_writer();
         l7 = ((t14)(0ULL));
         while ((l7 < (l5).m_len)) {
-            l8 = (*({ t173 _t0 = (l5); uint64_t _t1 = l7; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 12306, 23, 3242879023); }));
+            l8 = (*({ t173 _t0 = (l5); uint64_t _t1 = l7; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 12317, 23, 3242879023); }));
             l9 = f_check__get_decl(&((*l0)), l8);
             if ((({ t6 _t2 = f_check__encloses(&((*l0)), ((t22)(2ULL)), (l9).m_ns); t6 _t3 = l4; (_t2 != _t3); }) && f_check__reaches(&((*l0)), l3, (l9).m_ns))) {
                 l10 = f_check__no_args((&(*l0)), ((l9).m_tparams).m_len);
@@ -69010,7 +69009,7 @@ static t813 f_check__writers_in(t166 l0, t22 l1, t22 l2, t22 l3, t6 l4) {
                     l6 = ((t817){ .m_decl = l8, .m_targs = l10, });
                 }
             }
-            l7 = ctx_add_u64(l7, ((t14)(1ULL)), 12315, 19, 3242879023);
+            l7 = ctx_add_u64(l7, ((t14)(1ULL)), 12326, 19, 3242879023);
         }
         return ((t813){ .m_one = l6, .m_two = ((t22)(4294967295ULL)), });
     }
@@ -71178,7 +71177,7 @@ static t843 f_check__compute(t166 l0, t22 l1) {
     CTX_STACK_CHECK();
     {
         { t476 _t0 = f_types__get(&(((*l0)).m_ty), l1); if ((_t0.tag == 3)) { l2 = _t0.p.v3.m_p; {
-            l3 = ((t8)(ctx_as_u((uint64_t)(ctx_div_u32(f_types__bits(l2), ((t22)(8ULL)), 13111, 51, 3242879023)), UINT64_MAX, "u64", 13111, 25, 3242879023)));
+            l3 = ((t8)(ctx_as_u((uint64_t)(ctx_div_u32(f_types__bits(l2), ((t22)(8ULL)), 13122, 51, 3242879023)), UINT64_MAX, "u64", 13122, 25, 3242879023)));
             return ((t843){ .tag = 1, .p.v1.m_value = ((t733){ .m_size = l3, .m_align = l3, }) });
         } } else if ((_t0.tag == 5) || (_t0.tag == 12)) { {
             return ((t843){ .tag = 1, .p.v1.m_value = ((t733){ .m_size = ((t8)(8ULL)), .m_align = ((t8)(8ULL)), }) });
@@ -71204,10 +71203,10 @@ static t843 f_check__compute(t166 l0, t22 l1) {
             if (((l10).tag == 0)) {
                 return ((t843){0});
             }
-            if (((((l10).p.v1.m_value).m_size != ((t8)(0ULL))) && ({ t8 _t3 = l8; t8 _t4 = ctx_div_u64(((t8)(18446744073709551615ULL)), ((l10).p.v1.m_value).m_size, 13128, 62, 3242879023); (_t3 > _t4); }))) {
+            if (((((l10).p.v1.m_value).m_size != ((t8)(0ULL))) && ({ t8 _t3 = l8; t8 _t4 = ctx_div_u64(((t8)(18446744073709551615ULL)), ((l10).p.v1.m_value).m_size, 13139, 62, 3242879023); (_t3 > _t4); }))) {
                 return ((t843){0});
             }
-            return ((t843){ .tag = 1, .p.v1.m_value = ({ t8 _t5 = ctx_mul_u64(l8, ((l10).p.v1.m_value).m_size, 13129, 41, 3242879023); t8 _t6 = ((l10).p.v1.m_value).m_align; ((t733){ .m_size = _t5, .m_align = _t6, }); }) });
+            return ((t843){ .tag = 1, .p.v1.m_value = ({ t8 _t5 = ctx_mul_u64(l8, ((l10).p.v1.m_value).m_size, 13140, 41, 3242879023); t8 _t6 = ((l10).p.v1.m_value).m_align; ((t733){ .m_size = _t5, .m_align = _t6, }); }) });
         } } else if ((_t0.tag == 9)) { {
             l11 = f_check__struct_offsets((&(*l0)), l1);
             if (((l11).tag == 0)) {
@@ -72377,10 +72376,10 @@ static t551 f_check__value_field(t163 * l0, t22 l1) {
     CTX_STACK_CHECK();
     {
         l2 = (f_check__get_decl(&((*l0)), l1)).m_fields;
-        return ({ t551 _t0; if (((*({ t552 _t1 = (l2); uint64_t _t2 = ((t14)(0ULL)); _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 12254, 21, 3242879023); }))).m_mutable) {
-            _t0 = (*({ t552 _t3 = (l2); uint64_t _t4 = ((t14)(1ULL)); _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 12254, 37, 3242879023); }));
+        return ({ t551 _t0; if (((*({ t552 _t1 = (l2); uint64_t _t2 = ((t14)(0ULL)); _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 12265, 21, 3242879023); }))).m_mutable) {
+            _t0 = (*({ t552 _t3 = (l2); uint64_t _t4 = ((t14)(1ULL)); _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 12265, 37, 3242879023); }));
         } else {
-            _t0 = (*({ t552 _t5 = (l2); uint64_t _t6 = ((t14)(0ULL)); _t5.m_ptr + ctx_idx(_t6, _t5.m_len, 12254, 52, 3242879023); }));
+            _t0 = (*({ t552 _t5 = (l2); uint64_t _t6 = ((t14)(0ULL)); _t5.m_ptr + ctx_idx(_t6, _t5.m_len, 12265, 52, 3242879023); }));
         } _t0; });
     }
     __builtin_unreachable();
@@ -73034,7 +73033,7 @@ static t915 f_check__site_at(t163 * l0, t364 * l1) {
         } } else if ((_t1.tag == 0)) { {
             return ((t915){0});
         } } _t0; });
-        return ((t915){ .tag = 1, .p.v1.m_value = (*({ t515 _t4 = (f_list__itemscheck__Sitearena__Arena_41ad0b09(&(((*l0)).m_sites))); uint64_t _t5 = ((t14)(ctx_as_u((uint64_t)(l2), UINT64_MAX, "usize", 12433, 46, 3242879023))); _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 12433, 45, 3242879023); })) });
+        return ((t915){ .tag = 1, .p.v1.m_value = (*({ t515 _t4 = (f_list__itemscheck__Sitearena__Arena_41ad0b09(&(((*l0)).m_sites))); uint64_t _t5 = ((t14)(ctx_as_u((uint64_t)(l2), UINT64_MAX, "usize", 12444, 46, 3242879023))); _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 12444, 45, 3242879023); })) });
     }
     __builtin_unreachable();
 }
@@ -73192,16 +73191,16 @@ static t364 f_parser__builtin(t179 l0) {
     {
         l1 = ((*l0)).m_i;
         l2 = f_parser__take((&(*l0)));
-        l3 = ({ t22 _t0 = f_parser__new_id((&(*l0))); t174 _t1 = ({ t22 _t3 = ((*l0)).m_file; t22 _t4 = ctx_add_u32(((l2).m_span).m_start, ((t22)(1ULL)), 1443, 89, 4018602316); t22 _t5 = ((l2).m_span).m_end; ((t174){ .m_file = _t3, .m_start = _t4, .m_end = _t5, }); }); t7 _t2 = ({ t7 _t6 = (((*l0)).m_text); uint64_t _t7 = ((t14)(ctx_add_u32(((l2).m_span).m_start, ((t22)(1ULL)), 1444, 40, 4018602316))); uint64_t _t8 = ((t14)(((l2).m_span).m_end)); ctx_range(_t7, _t8, _t6.m_len, 1444, 26, 4018602316); (t7){ .m_ptr = _t6.m_ptr + _t7, .m_len = _t8 - _t7 }; }); ((t183){ .m_id = _t0, .m_span = _t1, .m_text = _t2, }); });
+        l3 = ({ t22 _t0 = f_parser__new_id((&(*l0))); t174 _t1 = ({ t22 _t3 = ((*l0)).m_file; t22 _t4 = ctx_add_u32(((l2).m_span).m_start, ((t22)(1ULL)), 1477, 89, 4018602316); t22 _t5 = ((l2).m_span).m_end; ((t174){ .m_file = _t3, .m_start = _t4, .m_end = _t5, }); }); t7 _t2 = ({ t7 _t6 = (((*l0)).m_text); uint64_t _t7 = ((t14)(ctx_add_u32(((l2).m_span).m_start, ((t22)(1ULL)), 1478, 40, 4018602316))); uint64_t _t8 = ((t14)(((l2).m_span).m_end)); ctx_range(_t7, _t8, _t6.m_len, 1478, 26, 4018602316); (t7){ .m_ptr = _t6.m_ptr + _t7, .m_len = _t8 - _t7 }; }); ((t183){ .m_id = _t0, .m_span = _t1, .m_text = _t2, }); });
         l4 = ((t14)(0ULL));
-        while (((l4 < ((t14)(20ULL))) && (!({ t7 _t9 = ((q30).a[ctx_idx(l4, 20, 1447, 69, 4018602316)]).m_name; t7 _t10 = (l3).m_text; f_slice__eq_bytes(_t9, _t10); })))) {
-            l4 = ctx_add_u64(l4, ((t14)(1ULL)), 1447, 103, 4018602316);
+        while (((l4 < ((t14)(20ULL))) && (!({ t7 _t9 = ((q30).a[ctx_idx(l4, 20, 1481, 69, 4018602316)]).m_name; t7 _t10 = (l3).m_text; f_slice__eq_bytes(_t9, _t10); })))) {
+            l4 = ctx_add_u64(l4, ((t14)(1ULL)), 1481, 103, 4018602316);
         }
         if ((l4 == ((t14)(20ULL)))) {
             ({ t179 _t11 = (&(*l0)); t543 _t12 = ({ struct b93 _t14; _t14.base.code = (void (*)(void))b93_code; _t14.c0 = ((t16){ .m_bytes = (l3).m_text, }); _r93 = _t14; (ctx_fn *)&_r93; }); t175 _t13 = l2; f_parser__failf_at(_t11, _t12, _t13); });
             return ({ t179 _t15 = (&(*l0)); t14 _t16 = l1; t606 _t17 = ((t606){ .tag = 0 }); f_parser__expr_from(_t15, _t16, &_t17); });
         }
-        l5 = (q30).a[ctx_idx(l4, 20, 1452, 27, 4018602316)];
+        l5 = (q30).a[ctx_idx(l4, 20, 1486, 27, 4018602316)];
         if ((!f_parser__next_is(&((*l0)), ((t15)(53ULL))))) {
             ({ t179 _t18 = (&(*l0)); t543 _t19 = ({ struct b94 _t20; _t20.base.code = (void (*)(void))b94_code; _t20.c0 = ((t16){ .m_bytes = (l3).m_text, }); _t20.c1 = (l5).m_usage; _r94 = _t20; (ctx_fn *)&_r94; }); f_parser__failf(_t18, _t19); });
             return ({ t179 _t21 = (&(*l0)); t14 _t22 = l1; t606 _t23 = ((t606){ .tag = 0 }); f_parser__expr_from(_t21, _t22, &_t23); });
@@ -73210,23 +73209,23 @@ static t364 f_parser__builtin(t179 l0) {
         l6 = ((t598)(0));
         l7 = f_list__newsyntax__Exprarena__Arena_433b8660((&g0), ((*l0)).m_heap);
         l8 = ((t22)(0ULL));
-        while ((((l8 < (l5).m_types) || ({ t22 _t24 = ctx_sub_u32(l8, (l5).m_types, 1461, 43, 4018602316); t22 _t25 = (l5).m_hi; (_t24 < _t25); })) && f_parser__more(&((*l0)), ((t15)(54ULL))))) {
+        while ((((l8 < (l5).m_types) || ({ t22 _t24 = ctx_sub_u32(l8, (l5).m_types, 1495, 43, 4018602316); t22 _t25 = (l5).m_hi; (_t24 < _t25); })) && f_parser__more(&((*l0)), ((t15)(54ULL))))) {
             if ((l8 < (l5).m_types)) {
                 l6 = ((t598)(({ t179 _t26 = (&(*l0)); t360 _t27 = f_parser__type_expr((&(*l0))); f_parser__boxsyntax__TypeExpr_e8a1917c(_t26, &_t27); })));
             } else {
                 { t61 _t28 = ({ t793 _t29 = (&l7); t364 _t30 = f_parser__expr((&(*l0))); f_list__pushsyntax__Exprarena__Arena_cbfee3a4(_t29, &_t30); }); if ((_t28.tag == 0)) { {
                 } } else if ((_t28.tag == 1)) { l9 = _t28.p.v1.m_error; {
                     { t12 _t31 = l9; if ((_t31.tag == 0)) { {
-                        ctx_panic(1465, 17, 4018602316, "try! failed: alloc::out_of_memory");
+                        ctx_panic(1499, 17, 4018602316, "try! failed: alloc::out_of_memory");
                     } } }
                 } } }
             }
-            l8 = ctx_add_u32(l8, ((t22)(1ULL)), 1467, 27, 4018602316);
+            l8 = ctx_add_u32(l8, ((t22)(1ULL)), 1501, 27, 4018602316);
             if ((!f_parser__accept((&(*l0)), ((t15)(57ULL))))) {
                  break;
             }
         }
-        if ((({ t22 _t32 = l8; t22 _t33 = ctx_add_u32((l5).m_types, (l5).m_lo, 1470, 30, 4018602316); (_t32 < _t33); }) || (!f_parser__next_is(&((*l0)), ((t15)(54ULL)))))) {
+        if ((({ t22 _t32 = l8; t22 _t33 = ctx_add_u32((l5).m_types, (l5).m_lo, 1504, 30, 4018602316); (_t32 < _t33); }) || (!f_parser__next_is(&((*l0)), ((t15)(54ULL)))))) {
             ({ t179 _t34 = (&(*l0)); t543 _t35 = ({ struct b95 _t36; _t36.base.code = (void (*)(void))b95_code; _t36.c0 = (l5).m_usage; _r95 = _t36; (ctx_fn *)&_r95; }); f_parser__failf(_t34, _t35); });
         }
         f_parser__skip((&(*l0)));
@@ -73284,7 +73283,7 @@ static t364 f_parser__name_path(t179 l0, t183 l1) {
         { t61 _t0 = ({ t747 _t1 = (&l2); t748 _t2 = ((t748){ .m_name = l1, .m_targs = ((t761){0}), .m_rest = ((bool)0), }); f_list__pushsyntax__Segarena__Arena_ff07a022(_t1, &_t2); }); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l3 = _t0.p.v1.m_error; {
             { t12 _t3 = l3; if ((_t3.tag == 0)) { {
-                ctx_panic(1342, 9, 4018602316, "try! failed: alloc::out_of_memory");
+                ctx_panic(1376, 9, 4018602316, "try! failed: alloc::out_of_memory");
             } } }
         } } }
         l4 = ((t606){ .tag = 6, .p.v6 = { .m_segs = f_list__itemssyntax__Segarena__Arena_76733e50(&(l2)), } });
@@ -73352,55 +73351,100 @@ static t61 f_list__pushsyntax__Itemarena__Arena_ba1e9d6c(t919 l0, t602 * l1) {
     __builtin_unreachable();
 }
 
-// parser::at_place_tail
-static t6 f_parser__at_place_tail(t177 * l0) {
+// parser::at_item_end
+static t6 f_parser__at_item_end(t177 * l0) {
     CTX_STACK_CHECK();
     {
-        return (f_parser__next_is(&((*l0)), ((t15)(60ULL))) || (f_parser__next_is(&((*l0)), ((t15)(55ULL))) && (!((*({ t76 _t0 = (((*l0)).m_toks); uint64_t _t1 = ((*l0)).m_i; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 1308, 105, 4018602316); }))).m_nl)));
+        return (f_parser__next_is(&((*l0)), ((t15)(57ULL))) || f_parser__next_is(&((*l0)), ((t15)(52ULL))));
     }
     __builtin_unreachable();
-}
-
-struct b96 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b96_code(ctx_fn *self, void * a0) {
-    struct b96 *s = (struct b96 *)self;
-    return f_parser__long_punfmt_1832044b(s->c0, s->c1, a0);
-}
-
-struct b97 { ctx_fn base; t16 c0; };
-static t127 b97_code(ctx_fn *self, void * a0) {
-    struct b97 *s = (struct b97 *)self;
-    return f_parser__long_punfmt_1832044b_1(s->c0, a0);
 }
 
 // parser::long_pun
 static t602 f_parser__long_pun(t179 l0, t14 l1, t183 l2) {
     t364 l3;
-    t16 l4;
-    t364 l5;
+    t364 l4;
+    t599 l5;
     t599 l6;
     t183 l7;
-    t183 l8;
+    t596 l8;
+    t16 l9;
+    t16 l10;
+    t72 l11;
+    t12 l12;
+    t12 l13;
+    t12 l14;
+    t12 l15;
+    t12 l16;
+    t12 l17;
+    t174 l18;
+    t183 l19;
     CTX_STACK_CHECK();
-    struct b96 _r96;
-    struct b97 _r97;
     {
         ((*l0)).m_i = l1;
         l3 = f_parser__expr((&(*l0)));
-        l4 = ((t16){ .m_bytes = ({ t7 _t0 = (((*l0)).m_text); uint64_t _t1 = ((t14)(((l3).m_span).m_start)); uint64_t _t2 = ((t14)(((l3).m_span).m_end)); ctx_range(_t1, _t2, _t0.m_len, 1317, 48, 4018602316); (t7){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; }), });
-        l5 = l3;
-        { t606 _t3 = (l3).m_k; if ((_t3.tag == 15)) { l6 = _t3.p.v15.m_e; {
-            l5 = (*l6);
+        l4 = l3;
+        { t606 _t0 = (l3).m_k; if ((_t0.tag == 15)) { l5 = _t0.p.v15.m_e; {
+            l4 = (*l5);
         } } else { {
         } } }
-        l7 = l2;
-        { t606 _t4 = (l5).m_k; if ((_t4.tag == 7)) { l8 = _t4.p.v7.m_name; {
-            l7 = l8;
-            ({ t179 _t5 = (&(*l0)); t543 _t6 = ({ struct b96 _t8; _t8.base.code = (void (*)(void))b96_code; _t8.c0 = ((t16){ .m_bytes = (l8).m_text, }); _t8.c1 = l4; _r96 = _t8; (ctx_fn *)&_r96; }); t175 _t7 = (*({ t76 _t9 = (((*l0)).m_toks); uint64_t _t10 = l1; _t9.m_ptr + ctx_idx(_t10, _t9.m_len, 1327, 136, 4018602316); })); f_parser__failf_at(_t5, _t6, _t7); });
+        { t606 _t1 = (l4).m_k; if ((_t1.tag == 7)) { l6 = _t1.p.v7.m_base; l7 = _t1.p.v7.m_name; {
+            if (f_parser__pun_place(&((*l6)))) {
+                return ({ t174 _t2 = f_parser__span_from(&((*l0)), l1); t183 _t3 = f_parser__again((&(*l0)), l7); t364 _t4 = l3; t6 _t5 = ((bool)1); t6 _t6 = ((bool)0); ((t602){ .m_span = _t2, .m_name = _t3, .m_value = _t4, .m_pun = _t5, .m_spread = _t6, }); });
+            }
+        } } else if ((_t1.tag == 6)) { l8 = _t1.p.v6.m_segs; {
+            if ((((l8).m_len == ((t14)(1ULL))) && ((((*({ t596 _t7 = (l8); uint64_t _t8 = ((t14)(0ULL)); _t7.m_ptr + ctx_idx(_t8, _t7.m_len, 1332, 42, 4018602316); }))).m_targs).tag == 0))) {
+                return ({ t174 _t9 = f_parser__span_from(&((*l0)), l1); t183 _t10 = l2; t364 _t11 = l3; t6 _t12 = ((bool)1); t6 _t13 = ((bool)0); ((t602){ .m_span = _t9, .m_name = _t10, .m_value = _t11, .m_pun = _t12, .m_spread = _t13, }); });
+            }
         } } else { {
-            ({ t179 _t11 = (&(*l0)); t543 _t12 = ({ struct b97 _t14; _t14.base.code = (void (*)(void))b97_code; _t14.c0 = l4; _r97 = _t14; (ctx_fn *)&_r97; }); t175 _t13 = (*({ t76 _t15 = (((*l0)).m_toks); uint64_t _t16 = l1; _t15.m_ptr + ctx_idx(_t16, _t15.m_len, 1329, 130, 4018602316); })); f_parser__failf_at(_t11, _t12, _t13); });
         } } }
-        return ({ t174 _t17 = f_parser__span_from(&((*l0)), l1); t183 _t18 = f_parser__again((&(*l0)), l7); t364 _t19 = l3; t6 _t20 = ((bool)0); t6 _t21 = ((bool)0); ((t602){ .m_span = _t17, .m_name = _t18, .m_value = _t19, .m_pun = _t20, .m_spread = _t21, }); });
+        l9 = ((t16){ .m_bytes = ({ t7 _t14 = (((*l0)).m_text); uint64_t _t15 = ((t14)(((l3).m_span).m_start)); uint64_t _t16 = ((t14)(((l3).m_span).m_end)); ctx_range(_t15, _t16, _t14.m_len, 1338, 48, 4018602316); (t7){ .m_ptr = _t14.m_ptr + _t15, .m_len = _t16 - _t15 }; }), });
+        l10 = ({ t16 _t17; t606 _t18 = (l4).m_k; if ((_t18.tag == 9)) { {
+            _t17 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"this one ends in an index", .m_len = 25 }), });
+        } } else if ((_t18.tag == 8)) { {
+            _t17 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"this one ends in `.*`", .m_len = 21 }), });
+        } } else if ((_t18.tag == 10)) { {
+            _t17 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"this one ends in a range", .m_len = 24 }), });
+        } } else if ((_t18.tag == 11)) { {
+            _t17 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"this one is a call or a literal", .m_len = 31 }), });
+        } } else if ((_t18.tag == 7) || (_t18.tag == 6)) { {
+            _t17 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"this one isn't a place", .m_len = 22 }), });
+        } } else { {
+            _t17 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"this one is an expression", .m_len = 25 }), });
+        } } _t17; });
+        if ((!((*l0)).m_bad)) {
+            l11 = f_parser__message(&((*l0)));
+            { t61 _t19 = ({ t61 _t20; t61 _t21 = f_utf8__push_literalarena__Arena_f5a0db07((&l11), ((t7){ .m_ptr = (void *)"a pun is a place that ends in a field's name, as `&g.rng` is for `rng`, and ", .m_len = 76 })); if ((_t21.tag == 0)) { {
+                _t20 = ({ t61 _t22; t61 _t23 = f_utf8__pusharena__Arena_14525023((&l11), l10); if ((_t23.tag == 0)) { {
+                    _t22 = ({ t61 _t24; t61 _t25 = f_utf8__push_literalarena__Arena_f5a0db07((&l11), ((t7){ .m_ptr = (void *)": write the field's name, as `name = ", .m_len = 37 })); if ((_t25.tag == 0)) { {
+                        _t24 = ({ t61 _t26; t61 _t27 = f_utf8__pusharena__Arena_14525023((&l11), l9); if ((_t27.tag == 0)) { {
+                            _t26 = ({ t61 _t28; t61 _t29 = f_utf8__push_literalarena__Arena_f5a0db07((&l11), ((t7){ .m_ptr = (void *)"`", .m_len = 1 })); if ((_t29.tag == 0)) { {
+                                _t28 = ((t61){ .tag = 0 });
+                            } } else if ((_t29.tag == 1)) { l12 = _t29.p.v1.m_error; {
+                                _t28 = ((t61){ .tag = 1, .p.v1 = { .m_error = l12, } });
+                            } } _t28; });
+                        } } else if ((_t27.tag == 1)) { l13 = _t27.p.v1.m_error; {
+                            _t26 = ((t61){ .tag = 1, .p.v1 = { .m_error = l13, } });
+                        } } _t26; });
+                    } } else if ((_t25.tag == 1)) { l14 = _t25.p.v1.m_error; {
+                        _t24 = ((t61){ .tag = 1, .p.v1 = { .m_error = l14, } });
+                    } } _t24; });
+                } } else if ((_t23.tag == 1)) { l15 = _t23.p.v1.m_error; {
+                    _t22 = ((t61){ .tag = 1, .p.v1 = { .m_error = l15, } });
+                } } _t22; });
+            } } else if ((_t21.tag == 1)) { l16 = _t21.p.v1.m_error; {
+                _t20 = ((t61){ .tag = 1, .p.v1 = { .m_error = l16, } });
+            } } _t20; }); if ((_t19.tag == 0)) { {
+            } } else if ((_t19.tag == 1)) { l17 = _t19.p.v1.m_error; {
+                { t12 _t30 = l17; if ((_t30.tag == 0)) { {
+                    ctx_panic(1349, 13, 4018602316, "try! failed: alloc::out_of_memory");
+                } } }
+            } } }
+            ({ t74 _t31 = ((*l0)).m_diags; t174 _t32 = ((*({ t76 _t34 = (((*l0)).m_toks); uint64_t _t35 = l1; _t34.m_ptr + ctx_idx(_t35, _t34.m_len, 1350, 56, 4018602316); }))).m_span; t16 _t33 = f_utf8__viewarena__Arena_5db7a4ae(&(l11)); f_diag__error(_t31, _t32, _t33); });
+        }
+        l18 = f_parser__span_from(&((*l0)), l1);
+        l19 = ({ t22 _t36 = f_parser__new_id((&(*l0))); t174 _t37 = ((t174){ .m_file = ((*l0)).m_file, .m_start = (l18).m_start, .m_end = (l18).m_start, }); t7 _t38 = ({ t7 _t39 = (((*l0)).m_text); uint64_t _t40 = ((t14)(0ULL)); uint64_t _t41 = ((t14)(0ULL)); ctx_range(_t40, _t41, _t39.m_len, 1353, 142, 4018602316); (t7){ .m_ptr = _t39.m_ptr + _t40, .m_len = _t41 - _t40 }; }); ((t183){ .m_id = _t36, .m_span = _t37, .m_text = _t38, }); });
+        return ((t602){ .m_span = l18, .m_name = l19, .m_value = l3, .m_pun = ((bool)0), .m_spread = ((bool)0), });
     }
     __builtin_unreachable();
 }
@@ -75026,18 +75070,18 @@ static t127 f_check__path_typefmt_2deaaf52(t16 l0, t75 l1) {
     __builtin_unreachable();
 }
 
-struct b98 { ctx_fn base; t16 c0; };
-static t127 b98_code(ctx_fn *self, void * a0) {
-    struct b98 *s = (struct b98 *)self;
+struct b96 { ctx_fn base; t16 c0; };
+static t127 b96_code(ctx_fn *self, void * a0) {
+    struct b96 *s = (struct b96 *)self;
     return f_check__unknownfmt_93532f30(s->c0, a0);
 }
 
 // check::unknown
 static t27 f_check__unknown(t166 l0, t183 l1) {
     CTX_STACK_CHECK();
-    struct b98 _r98;
+    struct b96 _r96;
     {
-        ({ t166 _t0 = (&(*l0)); t174 _t1 = (l1).m_span; t543 _t2 = ({ struct b98 _t3; _t3.base.code = (void (*)(void))b98_code; _t3.c0 = f_check__str((l1).m_text); _r98 = _t3; (ctx_fn *)&_r98; }); f_check__errorf(_t0, _t1, _t2); });
+        ({ t166 _t0 = (&(*l0)); t174 _t1 = (l1).m_span; t543 _t2 = ({ struct b96 _t3; _t3.base.code = (void (*)(void))b96_code; _t3.c0 = f_check__str((l1).m_text); _r96 = _t3; (ctx_fn *)&_r96; }); f_check__errorf(_t0, _t1, _t2); });
     }
 }
 
@@ -75315,9 +75359,9 @@ static t27 f_check__add_lit(t166 l0, t364 * l1) {
     }
 }
 
-struct b99 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
-static t127 b99_code(ctx_fn *self, void * a0) {
-    struct b99 *s = (struct b99 *)self;
+struct b97 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
+static t127 b97_code(ctx_fn *self, void * a0) {
+    struct b97 *s = (struct b97 *)self;
     return f_check__str_litfmt_a730c9b3(s->c0, s->c1, s->c2, a0);
 }
 
@@ -75334,7 +75378,7 @@ static t22 f_check__str_lit(t166 l0, t364 * l1, t7 l2, t22 l3) {
     t12 l12;
     t12 l13;
     CTX_STACK_CHECK();
-    struct b99 _r99;
+    struct b97 _r97;
     {
         (void)({ t654 _t0 = (&((*l0)).m_lit_convs); t8 _t1 = f_check__expr_key(&((*l1))); f_map__removeu64u32arena__Arena_e6ef82a3(_t0, _t1); });
         (void)({ t1010 _t2 = (&((*l0)).m_lit_default); t8 _t3 = f_check__expr_key(&((*l1))); f_map__removeu64boolarena__Arena_8c52827d(_t2, _t3); });
@@ -75369,7 +75413,7 @@ static t22 f_check__str_lit(t166 l0, t364 * l1, t7 l2, t22 l3) {
             if (((l9).tag != 0)) {
                 l10 = f_check__other_conversion(&((*l0)), l4, (l9).p.v1.m_value, (((*l0)).m_sc).m_ns);
                 if (((l10).tag != 0)) {
-                    ({ t166 _t10 = (&(*l0)); t174 _t11 = f_check__expr_at(&((*l1))); t543 _t12 = ({ struct b99 _t13; _t13.base.code = (void (*)(void))b99_code; _t13.c0 = f_check__tstr(&((*l0)), l4); _t13.c1 = f_check__str((f_check__get_decl(&((*l0)), (l9).p.v1.m_value)).m_qual); _t13.c2 = f_check__str((f_check__get_decl(&((*l0)), (l10).p.v1.m_value)).m_qual); _r99 = _t13; (ctx_fn *)&_r99; }); f_check__errorf(_t10, _t11, _t12); });
+                    ({ t166 _t10 = (&(*l0)); t174 _t11 = f_check__expr_at(&((*l1))); t543 _t12 = ({ struct b97 _t13; _t13.base.code = (void (*)(void))b97_code; _t13.c0 = f_check__tstr(&((*l0)), l4); _t13.c1 = f_check__str((f_check__get_decl(&((*l0)), (l9).p.v1.m_value)).m_qual); _t13.c2 = f_check__str((f_check__get_decl(&((*l0)), (l10).p.v1.m_value)).m_qual); _r97 = _t13; (ctx_fn *)&_r97; }); f_check__errorf(_t10, _t11, _t12); });
                     return l4;
                 }
                 { t61 _t14 = ({ t654 _t15 = (&((*l0)).m_lit_convs); t8 _t16 = f_check__expr_key(&((*l1))); t22 _t17 = (l9).p.v1.m_value; f_map__putu64u32arena__Arena_d2e79330(_t15, _t16, _t17); }); if ((_t14.tag == 0)) { {
@@ -75398,27 +75442,27 @@ static t22 f_check__str_lit(t166 l0, t364 * l1, t7 l2, t22 l3) {
     __builtin_unreachable();
 }
 
+struct b98 { ctx_fn base; t16 c0; };
+static t127 b98_code(ctx_fn *self, void * a0) {
+    struct b98 *s = (struct b98 *)self;
+    return f_check__path_exprfmt_6e897c05(s->c0, a0);
+}
+
+struct b99 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b99_code(ctx_fn *self, void * a0) {
+    struct b99 *s = (struct b99 *)self;
+    return f_check__path_exprfmt_6e897c05_1(s->c0, s->c1, a0);
+}
+
 struct b100 { ctx_fn base; t16 c0; };
 static t127 b100_code(ctx_fn *self, void * a0) {
     struct b100 *s = (struct b100 *)self;
-    return f_check__path_exprfmt_6e897c05(s->c0, a0);
+    return f_check__path_exprfmt_6e897c05_2(s->c0, a0);
 }
 
 struct b101 { ctx_fn base; t16 c0; t16 c1; };
 static t127 b101_code(ctx_fn *self, void * a0) {
     struct b101 *s = (struct b101 *)self;
-    return f_check__path_exprfmt_6e897c05_1(s->c0, s->c1, a0);
-}
-
-struct b102 { ctx_fn base; t16 c0; };
-static t127 b102_code(ctx_fn *self, void * a0) {
-    struct b102 *s = (struct b102 *)self;
-    return f_check__path_exprfmt_6e897c05_2(s->c0, a0);
-}
-
-struct b103 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b103_code(ctx_fn *self, void * a0) {
-    struct b103 *s = (struct b103 *)self;
     return f_check__path_exprfmt_6e897c05_3(s->c0, s->c1, a0);
 }
 
@@ -75436,10 +75480,10 @@ static t22 f_check__path_expr(t166 l0, t364 * l1, t596 l2, t22 l3) {
     t22 l13;
     t22 l14;
     CTX_STACK_CHECK();
+    struct b98 _r98;
+    struct b99 _r99;
     struct b100 _r100;
     struct b101 _r101;
-    struct b102 _r102;
-    struct b103 _r103;
     {
         l4 = f_check__resolve_path((&(*l0)), &((*l1)), l2, ((bool)0));
         if (((l4).tag == 0)) {
@@ -75450,7 +75494,7 @@ static t22 f_check__path_expr(t166 l0, t364 * l1, t596 l2, t22 l3) {
             return (f_check__get_var(&((*l0)), l5)).m_ty;
         } } else if ((_t0.tag == 1)) { l6 = _t0.p.v1.m_decl; l7 = _t0.p.v1.m_targs; {
             if ((f_check__get_decl(&((*l0)), l6)).m_starts_task) {
-                ({ t166 _t4 = (&(*l0)); t174 _t5 = f_check__expr_at(&((*l1))); t543 _t6 = ({ struct b100 _t7; _t7.base.code = (void (*)(void))b100_code; _t7.c0 = f_check__path_text(&((*l0)), l2); _r100 = _t7; (ctx_fn *)&_r100; }); f_check__errorf(_t4, _t5, _t6); });
+                ({ t166 _t4 = (&(*l0)); t174 _t5 = f_check__expr_at(&((*l1))); t543 _t6 = ({ struct b98 _t7; _t7.base.code = (void (*)(void))b98_code; _t7.c0 = f_check__path_text(&((*l0)), l2); _r98 = _t7; (ctx_fn *)&_r98; }); f_check__errorf(_t4, _t5, _t6); });
             }
             l8 = ({ t166 _t8 = (&(*l0)); t22 _t9 = l6; t22 _t10 = l3; t174 _t11 = f_check__expr_at(&((*l1))); f_check__c_fn_value(_t8, _t9, _t10, _t11); });
             if ((l8 != ((t22)(4294967295ULL)))) {
@@ -75462,18 +75506,18 @@ static t22 f_check__path_expr(t166 l0, t364 * l1, t596 l2, t22 l3) {
         } } else if ((_t0.tag == 3)) { l10 = _t0.p.v3.m_ty; l11 = _t0.p.v3.m_index; {
             l12 = (*({ t657 _t12 = (f_check__variants_of((&(*l0)), l10)); uint64_t _t13 = ((t14)(l11)); _t12.m_ptr + ctx_idx(_t13, _t12.m_len, 10461, 50, 3242879023); }));
             if ((((l12).m_fields).tag != 0)) {
-                ({ t166 _t14 = (&(*l0)); t174 _t15 = f_check__expr_at(&((*l1))); t543 _t16 = ({ struct b101 _t17; _t17.base.code = (void (*)(void))b101_code; _t17.c0 = f_check__str((l12).m_name); _t17.c1 = f_check__path_text(&((*l0)), l2); _r101 = _t17; (ctx_fn *)&_r101; }); f_check__errorf(_t14, _t15, _t16); });
+                ({ t166 _t14 = (&(*l0)); t174 _t15 = f_check__expr_at(&((*l1))); t543 _t16 = ({ struct b99 _t17; _t17.base.code = (void (*)(void))b99_code; _t17.c0 = f_check__str((l12).m_name); _t17.c1 = f_check__path_text(&((*l0)), l2); _r99 = _t17; (ctx_fn *)&_r99; }); f_check__errorf(_t14, _t15, _t16); });
             }
             f_check__same_decl((&(*l0)), l10, l3);
             return l10;
         } } else if ((_t0.tag == 4)) { l13 = _t0.p.v4.m_ty; {
             return l13;
         } } else if ((_t0.tag == 5)) { {
-            ({ t166 _t18 = (&(*l0)); t174 _t19 = f_check__expr_at(&((*l1))); t543 _t20 = ({ struct b102 _t21; _t21.base.code = (void (*)(void))b102_code; _t21.c0 = f_check__path_text(&((*l0)), l2); _r102 = _t21; (ctx_fn *)&_r102; }); f_check__errorf(_t18, _t19, _t20); });
+            ({ t166 _t18 = (&(*l0)); t174 _t19 = f_check__expr_at(&((*l1))); t543 _t20 = ({ struct b100 _t21; _t21.base.code = (void (*)(void))b100_code; _t21.c0 = f_check__path_text(&((*l0)), l2); _r100 = _t21; (ctx_fn *)&_r100; }); f_check__errorf(_t18, _t19, _t20); });
             return ((t22)(0ULL));
         } } else if ((_t0.tag == 6)) { l14 = _t0.p.v6.m_decl; {
             if (((f_check__fault_fields(&((*l0)), l14)).tag != 0)) {
-                ({ t166 _t22 = (&(*l0)); t174 _t23 = f_check__expr_at(&((*l1))); t543 _t24 = ({ struct b103 _t25; _t25.base.code = (void (*)(void))b103_code; _t25.c0 = f_check__str((f_check__get_decl(&((*l0)), l14)).m_qual); _t25.c1 = f_check__path_text(&((*l0)), l2); _r103 = _t25; (ctx_fn *)&_r103; }); f_check__errorf(_t22, _t23, _t24); });
+                ({ t166 _t22 = (&(*l0)); t174 _t23 = f_check__expr_at(&((*l1))); t543 _t24 = ({ struct b101 _t25; _t25.base.code = (void (*)(void))b101_code; _t25.c0 = f_check__str((f_check__get_decl(&((*l0)), l14)).m_qual); _t25.c1 = f_check__path_text(&((*l0)), l2); _r101 = _t25; (ctx_fn *)&_r101; }); f_check__errorf(_t22, _t23, _t24); });
             }
             return f_types__errs((&((*l0)).m_ty), ((t22)(4294967295ULL)), l14);
         } } }
@@ -75569,57 +75613,57 @@ static t127 f_check__expr_kindfmt_ca6dbf60_1(t16 l0, t75 l1) {
     __builtin_unreachable();
 }
 
-struct b104 { ctx_fn base; t16 c0; };
-static t127 b104_code(ctx_fn *self, void * a0) {
-    struct b104 *s = (struct b104 *)self;
+struct b102 { ctx_fn base; t16 c0; };
+static t127 b102_code(ctx_fn *self, void * a0) {
+    struct b102 *s = (struct b102 *)self;
     return f_check__binaryfmt_1c6b5e31(s->c0, a0);
 }
 
-struct b105 { ctx_fn base; t16 c0; };
-static t127 b105_code(ctx_fn *self, void * a0) {
-    struct b105 *s = (struct b105 *)self;
+struct b103 { ctx_fn base; t16 c0; };
+static t127 b103_code(ctx_fn *self, void * a0) {
+    struct b103 *s = (struct b103 *)self;
     return f_check__binaryfmt_1c6b5e31_1(s->c0, a0);
 }
 
-struct b106 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b106_code(ctx_fn *self, void * a0) {
-    struct b106 *s = (struct b106 *)self;
+struct b104 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b104_code(ctx_fn *self, void * a0) {
+    struct b104 *s = (struct b104 *)self;
     return f_check__binaryfmt_1c6b5e31_2(s->c0, s->c1, a0);
 }
 
-struct b107 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b107_code(ctx_fn *self, void * a0) {
-    struct b107 *s = (struct b107 *)self;
+struct b105 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b105_code(ctx_fn *self, void * a0) {
+    struct b105 *s = (struct b105 *)self;
     return f_check__binaryfmt_1c6b5e31_3(s->c0, s->c1, a0);
 }
 
-struct b108 { ctx_fn base; t16 c0; };
-static t127 b108_code(ctx_fn *self, void * a0) {
-    struct b108 *s = (struct b108 *)self;
+struct b106 { ctx_fn base; t16 c0; };
+static t127 b106_code(ctx_fn *self, void * a0) {
+    struct b106 *s = (struct b106 *)self;
     return f_check__binaryfmt_1c6b5e31_4(s->c0, a0);
 }
 
-struct b109 { ctx_fn base; t16 c0; };
-static t127 b109_code(ctx_fn *self, void * a0) {
-    struct b109 *s = (struct b109 *)self;
+struct b107 { ctx_fn base; t16 c0; };
+static t127 b107_code(ctx_fn *self, void * a0) {
+    struct b107 *s = (struct b107 *)self;
     return f_check__binaryfmt_1c6b5e31_5(s->c0, a0);
 }
 
-struct b110 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
-static t127 b110_code(ctx_fn *self, void * a0) {
-    struct b110 *s = (struct b110 *)self;
+struct b108 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
+static t127 b108_code(ctx_fn *self, void * a0) {
+    struct b108 *s = (struct b108 *)self;
     return f_check__binaryfmt_1c6b5e31_6(s->c0, s->c1, s->c2, a0);
 }
 
-struct b111 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b111_code(ctx_fn *self, void * a0) {
-    struct b111 *s = (struct b111 *)self;
+struct b109 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b109_code(ctx_fn *self, void * a0) {
+    struct b109 *s = (struct b109 *)self;
     return f_check__binaryfmt_1c6b5e31_8(s->c0, s->c1, a0);
 }
 
-struct b112 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b112_code(ctx_fn *self, void * a0) {
-    struct b112 *s = (struct b112 *)self;
+struct b110 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b110_code(ctx_fn *self, void * a0) {
+    struct b110 *s = (struct b110 *)self;
     return f_check__binaryfmt_1c6b5e31_7(s->c0, s->c1, a0);
 }
 
@@ -75652,6 +75696,8 @@ static t22 f_check__binary(t166 l0, t364 * l1, t15 l2, t364 * l3, t364 * l4, t22
     t22 l30;
     t22 l31;
     CTX_STACK_CHECK();
+    struct b102 _r102;
+    struct b103 _r103;
     struct b104 _r104;
     struct b105 _r105;
     struct b106 _r106;
@@ -75659,8 +75705,6 @@ static t22 f_check__binary(t166 l0, t364 * l1, t15 l2, t364 * l3, t364 * l4, t22
     struct b108 _r108;
     struct b109 _r109;
     struct b110 _r110;
-    struct b111 _r111;
-    struct b112 _r112;
     {
         l6 = f_check__expr_at(&((*l1)));
         l7 = f_check__str(f_parser__kind_text(l2));
@@ -75697,7 +75741,7 @@ static t22 f_check__binary(t166 l0, t364 * l1, t15 l2, t364 * l3, t364 * l4, t22
                 } } else { {
                     _t5 = ((bool)0);
                 } } _t5; })))) {
-                    ({ t166 _t7 = (&(*l0)); t174 _t8 = l6; t543 _t9 = ({ struct b104 _t10; _t10.base.code = (void (*)(void))b104_code; _t10.c0 = f_check__tstr(&((*l0)), l12); _r104 = _t10; (ctx_fn *)&_r104; }); f_check__errorf(_t7, _t8, _t9); });
+                    ({ t166 _t7 = (&(*l0)); t174 _t8 = l6; t543 _t9 = ({ struct b102 _t10; _t10.base.code = (void (*)(void))b102_code; _t10.c0 = f_check__tstr(&((*l0)), l12); _r102 = _t10; (ctx_fn *)&_r102; }); f_check__errorf(_t7, _t8, _t9); });
                 }
                 ({ t166 _t11 = (&(*l0)); t364 _t12 = ({ t364 _t14; if (l9) {
                     _t14 = (*l3);
@@ -75739,7 +75783,7 @@ static t22 f_check__binary(t166 l0, t364 * l1, t15 l2, t364 * l3, t364 * l4, t22
                         _t27 = l17;
                     } _t27; });
                 } _t26; });
-                ({ t166 _t28 = (&(*l0)); t174 _t29 = l6; t543 _t30 = ({ struct b105 _t31; _t31.base.code = (void (*)(void))b105_code; _t31.c0 = f_check__tstr(&((*l0)), l22); _r105 = _t31; (ctx_fn *)&_r105; }); f_check__errorf(_t28, _t29, _t30); });
+                ({ t166 _t28 = (&(*l0)); t174 _t29 = l6; t543 _t30 = ({ struct b103 _t31; _t31.base.code = (void (*)(void))b103_code; _t31.c0 = f_check__tstr(&((*l0)), l22); _r103 = _t31; (ctx_fn *)&_r103; }); f_check__errorf(_t28, _t29, _t30); });
             }
             return ((t22)(14ULL));
         }
@@ -75751,7 +75795,7 @@ static t22 f_check__binary(t166 l0, t364 * l1, t15 l2, t364 * l3, t364 * l4, t22
                 f_check__cannot_compare((&(*l0)), l23, l24, l6);
             } else {
                 if ((!({ t163 _t32 = (*l0); t22 _t33 = f_check__op_type(&((*l0)), l25); f_check__is_num(&_t32, _t33); }))) {
-                    ({ t166 _t34 = (&(*l0)); t174 _t35 = l6; t543 _t36 = ({ struct b106 _t37; _t37.base.code = (void (*)(void))b106_code; _t37.c0 = l7; _t37.c1 = f_check__tstr(&((*l0)), l25); _r106 = _t37; (ctx_fn *)&_r106; }); f_check__errorf(_t34, _t35, _t36); });
+                    ({ t166 _t34 = (&(*l0)); t174 _t35 = l6; t543 _t36 = ({ struct b104 _t37; _t37.base.code = (void (*)(void))b104_code; _t37.c0 = l7; _t37.c1 = f_check__tstr(&((*l0)), l25); _r104 = _t37; (ctx_fn *)&_r104; }); f_check__errorf(_t34, _t35, _t36); });
                 }
             }
             return ((t22)(14ULL));
@@ -75759,11 +75803,11 @@ static t22 f_check__binary(t166 l0, t364 * l1, t15 l2, t364 * l3, t364 * l4, t22
         if (((l2 == ((t15)(46ULL))) || (l2 == ((t15)(47ULL))))) {
             l26 = f_check__expr((&(*l0)), &((*l3)), l5);
             if ((!({ t163 _t38 = (*l0); t22 _t39 = f_check__op_type(&((*l0)), l26); f_check__is_int(&_t38, _t39); }))) {
-                ({ t166 _t40 = (&(*l0)); t174 _t41 = l6; t543 _t42 = ({ struct b107 _t43; _t43.base.code = (void (*)(void))b107_code; _t43.c0 = l7; _t43.c1 = f_check__tstr(&((*l0)), l26); _r107 = _t43; (ctx_fn *)&_r107; }); f_check__errorf(_t40, _t41, _t42); });
+                ({ t166 _t40 = (&(*l0)); t174 _t41 = l6; t543 _t42 = ({ struct b105 _t43; _t43.base.code = (void (*)(void))b105_code; _t43.c0 = l7; _t43.c1 = f_check__tstr(&((*l0)), l26); _r105 = _t43; (ctx_fn *)&_r105; }); f_check__errorf(_t40, _t41, _t42); });
             }
             l27 = f_check__expr((&(*l0)), &((*l4)), ((t22)(4294967295ULL)));
             if ((!f_check__is_int(&((*l0)), l27))) {
-                ({ t166 _t44 = (&(*l0)); t174 _t45 = l6; t543 _t46 = ({ struct b108 _t47; _t47.base.code = (void (*)(void))b108_code; _t47.c0 = f_check__tstr(&((*l0)), l27); _r108 = _t47; (ctx_fn *)&_r108; }); f_check__errorf(_t44, _t45, _t46); });
+                ({ t166 _t44 = (&(*l0)); t174 _t45 = l6; t543 _t46 = ({ struct b106 _t47; _t47.base.code = (void (*)(void))b106_code; _t47.c0 = f_check__tstr(&((*l0)), l27); _r106 = _t47; (ctx_fn *)&_r106; }); f_check__errorf(_t44, _t45, _t46); });
             }
             return l26;
         }
@@ -75775,7 +75819,7 @@ static t22 f_check__binary(t166 l0, t364 * l1, t15 l2, t364 * l3, t364 * l4, t22
             _t48 = ((bool)0);
         } } _t48; })) {
             if ((l2 != ((t15)(64ULL)))) {
-                ({ t166 _t50 = (&(*l0)); t174 _t51 = l6; t543 _t52 = ({ struct b109 _t53; _t53.base.code = (void (*)(void))b109_code; _t53.c0 = l7; _r109 = _t53; (ctx_fn *)&_r109; }); f_check__errorf(_t50, _t51, _t52); });
+                ({ t166 _t50 = (&(*l0)); t174 _t51 = l6; t543 _t52 = ({ struct b107 _t53; _t53.base.code = (void (*)(void))b107_code; _t53.c0 = l7; _r107 = _t53; (ctx_fn *)&_r107; }); f_check__errorf(_t50, _t51, _t52); });
             } else {
                 f_check__unchecked((&(*l0)), l6, ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"pointer arithmetic", .m_len = 18 }), }), ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"index an array or a slice (`s[i]`, which is bounds-checked)", .m_len = 59 }), }));
             }
@@ -75785,16 +75829,16 @@ static t22 f_check__binary(t166 l0, t364 * l1, t15 l2, t364 * l3, t364 * l4, t22
         l30 = f_check__expr((&(*l0)), &((*l4)), l28);
         l31 = f_check__operand_type((&(*l0)), l28, l30, &((*l3)), &((*l4)));
         if ((l31 == ((t22)(4294967295ULL)))) {
-            ({ t166 _t54 = (&(*l0)); t174 _t55 = l6; t543 _t56 = ({ struct b110 _t57; _t57.base.code = (void (*)(void))b110_code; _t57.c0 = l7; _t57.c1 = f_check__tstr(&((*l0)), l28); _t57.c2 = f_check__tstr(&((*l0)), l30); _r110 = _t57; (ctx_fn *)&_r110; }); f_check__errorf(_t54, _t55, _t56); });
+            ({ t166 _t54 = (&(*l0)); t174 _t55 = l6; t543 _t56 = ({ struct b108 _t57; _t57.base.code = (void (*)(void))b108_code; _t57.c0 = l7; _t57.c1 = f_check__tstr(&((*l0)), l28); _t57.c2 = f_check__tstr(&((*l0)), l30); _r108 = _t57; (ctx_fn *)&_r108; }); f_check__errorf(_t54, _t55, _t56); });
             return ((t22)(0ULL));
         }
         if (((((l2 == ((t15)(69ULL))) || (l2 == ((t15)(70ULL)))) || (l2 == ((t15)(71ULL)))) || f_check__wrapping(l2))) {
             if ((!({ t163 _t58 = (*l0); t22 _t59 = f_check__op_type(&((*l0)), l31); f_check__is_int(&_t58, _t59); }))) {
-                ({ t166 _t60 = (&(*l0)); t174 _t61 = l6; t543 _t62 = ({ struct b111 _t63; _t63.base.code = (void (*)(void))b111_code; _t63.c0 = l7; _t63.c1 = f_check__tstr(&((*l0)), l31); _r111 = _t63; (ctx_fn *)&_r111; }); f_check__errorf(_t60, _t61, _t62); });
+                ({ t166 _t60 = (&(*l0)); t174 _t61 = l6; t543 _t62 = ({ struct b109 _t63; _t63.base.code = (void (*)(void))b109_code; _t63.c0 = l7; _t63.c1 = f_check__tstr(&((*l0)), l31); _r109 = _t63; (ctx_fn *)&_r109; }); f_check__errorf(_t60, _t61, _t62); });
             }
         } else {
             if ((!({ t163 _t64 = (*l0); t22 _t65 = f_check__op_type(&((*l0)), l31); f_check__is_num(&_t64, _t65); }))) {
-                ({ t166 _t66 = (&(*l0)); t174 _t67 = l6; t543 _t68 = ({ struct b112 _t69; _t69.base.code = (void (*)(void))b112_code; _t69.c0 = l7; _t69.c1 = f_check__tstr(&((*l0)), l31); _r112 = _t69; (ctx_fn *)&_r112; }); f_check__errorf(_t66, _t67, _t68); });
+                ({ t166 _t66 = (&(*l0)); t174 _t67 = l6; t543 _t68 = ({ struct b110 _t69; _t69.base.code = (void (*)(void))b110_code; _t69.c0 = l7; _t69.c1 = f_check__tstr(&((*l0)), l31); _r110 = _t69; (ctx_fn *)&_r110; }); f_check__errorf(_t66, _t67, _t68); });
             }
         }
         return l31;
@@ -75849,14 +75893,14 @@ static t22 f_check__array_lit(t166 l0, t364 * l1, t485 l2, t22 l3) {
         l10 = ((t14)(0ULL));
         while ((l10 < (l2).m_len)) {
             if ((l5 == ((t22)(4294967295ULL)))) {
-                l5 = ({ t166 _t11 = (&(*l0)); t364 *_t12 = &((*({ t485 _t13 = (l2); uint64_t _t14 = l10; _t13.m_ptr + ctx_idx(_t14, _t13.m_len, 11376, 69, 3242879023); }))); f_check__value_type(_t11, _t12); });
+                l5 = ({ t166 _t11 = (&(*l0)); t364 *_t12 = &((*({ t485 _t13 = (l2); uint64_t _t14 = l10; _t13.m_ptr + ctx_idx(_t14, _t13.m_len, 11387, 69, 3242879023); }))); f_check__value_type(_t11, _t12); });
             } else {
-                ({ t166 _t15 = (&(*l0)); t364 *_t16 = &((*({ t485 _t18 = (l2); uint64_t _t19 = l10; _t18.m_ptr + ctx_idx(_t19, _t18.m_len, 11376, 105, 3242879023); }))); t22 _t17 = l5; f_check__expect(_t15, _t16, _t17); });
+                ({ t166 _t15 = (&(*l0)); t364 *_t16 = &((*({ t485 _t18 = (l2); uint64_t _t19 = l10; _t18.m_ptr + ctx_idx(_t19, _t18.m_len, 11387, 105, 3242879023); }))); t22 _t17 = l5; f_check__expect(_t15, _t16, _t17); });
             }
-            if (((l4 != ((t22)(4294967295ULL))) && (!({ t166 _t20 = (&(*l0)); t364 *_t21 = &((*({ t485 _t22 = (l2); uint64_t _t23 = l10; _t22.m_ptr + ctx_idx(_t23, _t22.m_len, 11377, 68, 3242879023); }))); f_check__is_known(_t20, _t21); })))) {
+            if (((l4 != ((t22)(4294967295ULL))) && (!({ t166 _t20 = (&(*l0)); t364 *_t21 = &((*({ t485 _t22 = (l2); uint64_t _t23 = l10; _t22.m_ptr + ctx_idx(_t23, _t22.m_len, 11388, 68, 3242879023); }))); f_check__is_known(_t20, _t21); })))) {
                 l9 = ((bool)0);
             }
-            l10 = ctx_add_u64(l10, ((t14)(1ULL)), 11378, 19, 3242879023);
+            l10 = ctx_add_u64(l10, ((t14)(1ULL)), 11389, 19, 3242879023);
         }
         l11 = f_types__array((&((*l0)).m_ty), ((t8)((l2).m_len)), l5);
         if ((l4 != ((t22)(4294967295ULL)))) {
@@ -75906,7 +75950,7 @@ static t22 f_check__repeat(t166 l0, t364 * l1, t364 * l2, t364 * l3, t22 l4) {
         if ((((l5).tag == 0) || ((l5).p.v1.m_value < ((t54)(0ULL))))) {
             return ((t22)(0ULL));
         }
-        l10 = ({ t475 _t8 = (&((*l0)).m_ty); t8 _t9 = ((t8)(ctx_as_s((int64_t)((l5).p.v1.m_value), 0, INT64_MAX, "u64", 11398, 50, 3242879023))); t22 _t10 = l7; f_types__array(_t8, _t9, _t10); });
+        l10 = ({ t475 _t8 = (&((*l0)).m_ty); t8 _t9 = ((t8)(ctx_as_s((int64_t)((l5).p.v1.m_value), 0, INT64_MAX, "u64", 11409, 50, 3242879023))); t22 _t10 = l7; f_types__array(_t8, _t9, _t10); });
         if ((l6 != ((t22)(4294967295ULL)))) {
             return ({ t166 _t11 = (&(*l0)); t364 _t12 = (*l1); t22 _t13 = l10; t22 _t14 = l6; t6 _t15 = f_check__is_known((&(*l0)), &((*l2))); f_check__add_view(_t11, &_t12, _t13, _t14, _t15); });
         }
@@ -75915,69 +75959,69 @@ static t22 f_check__repeat(t166 l0, t364 * l1, t364 * l2, t364 * l3, t22 l4) {
     __builtin_unreachable();
 }
 
-struct b113 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
-static t127 b113_code(ctx_fn *self, void * a0) {
-    struct b113 *s = (struct b113 *)self;
+struct b111 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
+static t127 b111_code(ctx_fn *self, void * a0) {
+    struct b111 *s = (struct b111 *)self;
     return f_check__builtinfmt_911eb805(s->c0, s->c1, s->c2, a0);
 }
 
-struct b114 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
+struct b112 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
+static t127 b112_code(ctx_fn *self, void * a0) {
+    struct b112 *s = (struct b112 *)self;
+    return f_check__builtinfmt_911eb805_1(s->c0, s->c1, s->c2, a0);
+}
+
+struct b113 { ctx_fn base; t16 c0; };
+static t127 b113_code(ctx_fn *self, void * a0) {
+    struct b113 *s = (struct b113 *)self;
+    return f_check__builtinfmt_911eb805_2(s->c0, a0);
+}
+
+struct b114 { ctx_fn base; t16 c0; };
 static t127 b114_code(ctx_fn *self, void * a0) {
     struct b114 *s = (struct b114 *)self;
-    return f_check__builtinfmt_911eb805_1(s->c0, s->c1, s->c2, a0);
+    return f_check__builtinfmt_911eb805_3(s->c0, a0);
 }
 
 struct b115 { ctx_fn base; t16 c0; };
 static t127 b115_code(ctx_fn *self, void * a0) {
     struct b115 *s = (struct b115 *)self;
-    return f_check__builtinfmt_911eb805_2(s->c0, a0);
+    return f_check__builtinfmt_911eb805_4(s->c0, a0);
 }
 
 struct b116 { ctx_fn base; t16 c0; };
 static t127 b116_code(ctx_fn *self, void * a0) {
     struct b116 *s = (struct b116 *)self;
-    return f_check__builtinfmt_911eb805_3(s->c0, a0);
+    return f_check__builtinfmt_911eb805_5(s->c0, a0);
 }
 
 struct b117 { ctx_fn base; t16 c0; };
 static t127 b117_code(ctx_fn *self, void * a0) {
     struct b117 *s = (struct b117 *)self;
-    return f_check__builtinfmt_911eb805_4(s->c0, a0);
+    return f_check__builtinfmt_911eb805_6(s->c0, a0);
 }
 
 struct b118 { ctx_fn base; t16 c0; };
 static t127 b118_code(ctx_fn *self, void * a0) {
     struct b118 *s = (struct b118 *)self;
-    return f_check__builtinfmt_911eb805_5(s->c0, a0);
+    return f_check__builtinfmt_911eb805_7(s->c0, a0);
 }
 
 struct b119 { ctx_fn base; t16 c0; };
 static t127 b119_code(ctx_fn *self, void * a0) {
     struct b119 *s = (struct b119 *)self;
-    return f_check__builtinfmt_911eb805_6(s->c0, a0);
+    return f_check__builtinfmt_911eb805_8(s->c0, a0);
 }
 
 struct b120 { ctx_fn base; t16 c0; };
 static t127 b120_code(ctx_fn *self, void * a0) {
     struct b120 *s = (struct b120 *)self;
-    return f_check__builtinfmt_911eb805_7(s->c0, a0);
+    return f_check__builtinfmt_911eb805_9(s->c0, a0);
 }
 
 struct b121 { ctx_fn base; t16 c0; };
 static t127 b121_code(ctx_fn *self, void * a0) {
     struct b121 *s = (struct b121 *)self;
-    return f_check__builtinfmt_911eb805_8(s->c0, a0);
-}
-
-struct b122 { ctx_fn base; t16 c0; };
-static t127 b122_code(ctx_fn *self, void * a0) {
-    struct b122 *s = (struct b122 *)self;
-    return f_check__builtinfmt_911eb805_9(s->c0, a0);
-}
-
-struct b123 { ctx_fn base; t16 c0; };
-static t127 b123_code(ctx_fn *self, void * a0) {
-    struct b123 *s = (struct b123 *)self;
     return f_check__builtinfmt_911eb805_10(s->c0, a0);
 }
 
@@ -76015,6 +76059,8 @@ static t22 f_check__builtin(t166 l0, t364 * l1, t183 l2, t598 l3, t485 l4, t22 l
     t22 l35;
     t22 l36;
     CTX_STACK_CHECK();
+    struct b111 _r111;
+    struct b112 _r112;
     struct b113 _r113;
     struct b114 _r114;
     struct b115 _r115;
@@ -76024,8 +76070,6 @@ static t22 f_check__builtin(t166 l0, t364 * l1, t183 l2, t598 l3, t485 l4, t22 l
     struct b119 _r119;
     struct b120 _r120;
     struct b121 _r121;
-    struct b122 _r122;
-    struct b123 _r123;
     {
         l6 = f_check__expr_at(&((*l1)));
         l7 = (l2).m_text;
@@ -76043,7 +76087,7 @@ static t22 f_check__builtin(t166 l0, t364 * l1, t183 l2, t598 l3, t485 l4, t22 l
                 { t61 _t2 = ({ t654 _t3 = (&((*l0)).m_type_of); t8 _t4 = f_check__key(((l10).m_span).m_file, (l10).m_id); t22 _t5 = l9; f_map__putu64u32arena__Arena_d2e79330(_t3, _t4, _t5); }); if ((_t2.tag == 0)) { {
                 } } else if ((_t2.tag == 1)) { l13 = _t2.p.v1.m_error; {
                     { t12 _t6 = l13; if ((_t6.tag == 0)) { {
-                        ctx_panic(11670, 17, 3242879023, "try! failed: alloc::out_of_memory");
+                        ctx_panic(11681, 17, 3242879023, "try! failed: alloc::out_of_memory");
                     } } }
                 } } }
             } else {
@@ -76061,7 +76105,7 @@ static t22 f_check__builtin(t166 l0, t364 * l1, t183 l2, t598 l3, t485 l4, t22 l
         }
         if (f_slice__eq_bytes(l7, ((t7){ .m_ptr = (void *)"offset_of", .m_len = 9 }))) {
             if ((((l9 != ((t22)(0ULL))) && (l9 != ((t22)(4294967295ULL)))) && ((l4).m_len == ((t14)(1ULL))))) {
-                (void)({ t166 _t11 = (&(*l0)); t22 _t12 = l9; t364 *_t13 = &((*({ t485 _t15 = (l4); uint64_t _t16 = ((t14)(0ULL)); _t15.m_ptr + ctx_idx(_t16, _t15.m_len, 11679, 117, 3242879023); }))); t6 _t14 = ((bool)1); f_check__offset_of(_t11, _t12, _t13, _t14); });
+                (void)({ t166 _t11 = (&(*l0)); t22 _t12 = l9; t364 *_t13 = &((*({ t485 _t15 = (l4); uint64_t _t16 = ((t14)(0ULL)); _t15.m_ptr + ctx_idx(_t16, _t15.m_len, 11690, 117, 3242879023); }))); t6 _t14 = ((bool)1); f_check__offset_of(_t11, _t12, _t13, _t14); });
             }
             return ((t22)(11ULL));
         }
@@ -76079,14 +76123,14 @@ static t22 f_check__builtin(t166 l0, t364 * l1, t183 l2, t598 l3, t485 l4, t22 l
         }
         if (f_slice__eq_bytes(l7, ((t7){ .m_ptr = (void *)"panic", .m_len = 5 }))) {
             if (((l4).m_len > ((t14)(0ULL)))) {
-                if ((!({ t6 _t19; t606 _t20 = ((*({ t485 _t21 = (l4); uint64_t _t22 = ((t14)(0ULL)); _t21.m_ptr + ctx_idx(_t22, _t21.m_len, 11687, 29, 3242879023); }))).m_k; if ((_t20.tag == 3)) { {
+                if ((!({ t6 _t19; t606 _t20 = ((*({ t485 _t21 = (l4); uint64_t _t22 = ((t14)(0ULL)); _t21.m_ptr + ctx_idx(_t22, _t21.m_len, 11698, 29, 3242879023); }))).m_k; if ((_t20.tag == 3)) { {
                     _t19 = ((bool)1);
                 } } else { {
                     _t19 = ((bool)0);
                 } } _t19; }))) {
-                    ({ t166 _t23 = (&(*l0)); t174 _t24 = f_check__expr_at(&((*({ t485 _t26 = (l4); uint64_t _t27 = ((t14)(0ULL)); _t26.m_ptr + ctx_idx(_t27, _t26.m_len, 11687, 78, 3242879023); })))); t16 _t25 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"@panic takes a string literal", .m_len = 29 }), }); f_check__error(_t23, _t24, _t25); });
+                    ({ t166 _t23 = (&(*l0)); t174 _t24 = f_check__expr_at(&((*({ t485 _t26 = (l4); uint64_t _t27 = ((t14)(0ULL)); _t26.m_ptr + ctx_idx(_t27, _t26.m_len, 11698, 78, 3242879023); })))); t16 _t25 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"@panic takes a string literal", .m_len = 29 }), }); f_check__error(_t23, _t24, _t25); });
                 }
-                (void)({ t166 _t28 = (&(*l0)); t364 *_t29 = &((*({ t485 _t31 = (l4); uint64_t _t32 = ((t14)(0ULL)); _t31.m_ptr + ctx_idx(_t32, _t31.m_len, 11688, 39, 3242879023); }))); t22 _t30 = ((t22)(4294967295ULL)); f_check__expr(_t28, _t29, _t30); });
+                (void)({ t166 _t28 = (&(*l0)); t364 *_t29 = &((*({ t485 _t31 = (l4); uint64_t _t32 = ((t14)(0ULL)); _t31.m_ptr + ctx_idx(_t32, _t31.m_len, 11699, 39, 3242879023); }))); t22 _t30 = ((t22)(4294967295ULL)); f_check__expr(_t28, _t29, _t30); });
             }
             return ((t22)(1ULL));
         }
@@ -76094,7 +76138,7 @@ static t22 f_check__builtin(t166 l0, t364 * l1, t183 l2, t598 l3, t485 l4, t22 l
             return f_check__fmt_builtin((&(*l0)), &((*l1)), l4, l5);
         }
         if (f_slice__eq_bytes(l7, ((t7){ .m_ptr = (void *)"as", .m_len = 2 }))) {
-            l15 = (*({ t485 _t33 = (l4); uint64_t _t34 = ((t14)(0ULL)); _t33.m_ptr + ctx_idx(_t34, _t33.m_len, 11694, 25, 3242879023); }));
+            l15 = (*({ t485 _t33 = (l4); uint64_t _t34 = ((t14)(0ULL)); _t33.m_ptr + ctx_idx(_t34, _t33.m_len, 11705, 25, 3242879023); }));
             if (f_check__is_distinct(&((*l0)), l9)) {
                 l16 = f_check__distinct_base(&((*l0)), l9);
                 l17 = f_check__expr((&(*l0)), &(l15), l16);
@@ -76104,7 +76148,7 @@ static t22 f_check__builtin(t166 l0, t364 * l1, t183 l2, t598 l3, t485 l4, t22 l
                 if ((f_check__is_distinct(&((*l0)), l17) && ({ t475 _t35 = (&((*l0)).m_ty); t22 _t36 = f_check__distinct_base(&((*l0)), l17); t22 _t37 = l9; f_types__unify(_t35, _t36, _t37); }))) {
                     return l9;
                 }
-                ({ t166 _t38 = (&(*l0)); t174 _t39 = f_check__expr_at(&(l15)); t543 _t40 = ({ struct b113 _t41; _t41.base.code = (void (*)(void))b113_code; _t41.c0 = f_check__tstr(&((*l0)), l9); _t41.c1 = f_check__tstr(&((*l0)), l16); _t41.c2 = f_check__tstr(&((*l0)), l17); _r113 = _t41; (ctx_fn *)&_r113; }); f_check__errorf(_t38, _t39, _t40); });
+                ({ t166 _t38 = (&(*l0)); t174 _t39 = f_check__expr_at(&(l15)); t543 _t40 = ({ struct b111 _t41; _t41.base.code = (void (*)(void))b111_code; _t41.c0 = f_check__tstr(&((*l0)), l9); _t41.c1 = f_check__tstr(&((*l0)), l16); _t41.c2 = f_check__tstr(&((*l0)), l17); _r111 = _t41; (ctx_fn *)&_r111; }); f_check__errorf(_t38, _t39, _t40); });
                 return l9;
             }
             l18 = f_check__typed((&(*l0)), &(l15));
@@ -76114,24 +76158,24 @@ static t22 f_check__builtin(t166 l0, t364 * l1, t183 l2, t598 l3, t485 l4, t22 l
             if (f_check__is_distinct(&((*l0)), l18)) {
                 l19 = f_check__distinct_base(&((*l0)), l18);
                 if ((!f_types__unify((&((*l0)).m_ty), l9, l19))) {
-                    ({ t166 _t42 = (&(*l0)); t174 _t43 = l6; t543 _t44 = ({ struct b114 _t45; _t45.base.code = (void (*)(void))b114_code; _t45.c0 = f_check__tstr(&((*l0)), l18); _t45.c1 = f_check__tstr(&((*l0)), l19); _t45.c2 = f_check__tstr(&((*l0)), l9); _r114 = _t45; (ctx_fn *)&_r114; }); f_check__errorf(_t42, _t43, _t44); });
+                    ({ t166 _t42 = (&(*l0)); t174 _t43 = l6; t543 _t44 = ({ struct b112 _t45; _t45.base.code = (void (*)(void))b112_code; _t45.c0 = f_check__tstr(&((*l0)), l18); _t45.c1 = f_check__tstr(&((*l0)), l19); _t45.c2 = f_check__tstr(&((*l0)), l9); _r112 = _t45; (ctx_fn *)&_r112; }); f_check__errorf(_t42, _t43, _t44); });
                 }
                 return l9;
             }
             if (f_check__is_enum(&((*l0)), l9)) {
                 if ((!f_check__is_int(&((*l0)), l18))) {
-                    ({ t166 _t46 = (&(*l0)); t174 _t47 = f_check__expr_at(&(l15)); t543 _t48 = ({ struct b115 _t49; _t49.base.code = (void (*)(void))b115_code; _t49.c0 = f_check__tstr(&((*l0)), l18); _r115 = _t49; (ctx_fn *)&_r115; }); f_check__errorf(_t46, _t47, _t48); });
+                    ({ t166 _t46 = (&(*l0)); t174 _t47 = f_check__expr_at(&(l15)); t543 _t48 = ({ struct b113 _t49; _t49.base.code = (void (*)(void))b113_code; _t49.c0 = f_check__tstr(&((*l0)), l18); _r113 = _t49; (ctx_fn *)&_r113; }); f_check__errorf(_t46, _t47, _t48); });
                 }
                 return l9;
             }
             if (f_check__is_enum(&((*l0)), l18)) {
                 if ((!f_check__is_int(&((*l0)), l9))) {
-                    ({ t166 _t50 = (&(*l0)); t174 _t51 = l6; t543 _t52 = ({ struct b116 _t53; _t53.base.code = (void (*)(void))b116_code; _t53.c0 = f_check__tstr(&((*l0)), l9); _r116 = _t53; (ctx_fn *)&_r116; }); f_check__errorf(_t50, _t51, _t52); });
+                    ({ t166 _t50 = (&(*l0)); t174 _t51 = l6; t543 _t52 = ({ struct b114 _t53; _t53.base.code = (void (*)(void))b114_code; _t53.c0 = f_check__tstr(&((*l0)), l9); _r114 = _t53; (ctx_fn *)&_r114; }); f_check__errorf(_t50, _t51, _t52); });
                 }
                 return l9;
             }
             if ((!f_check__is_num(&((*l0)), l9))) {
-                ({ t166 _t54 = (&(*l0)); t174 _t55 = l6; t543 _t56 = ({ struct b117 _t57; _t57.base.code = (void (*)(void))b117_code; _t57.c0 = f_check__tstr(&((*l0)), l9); _r117 = _t57; (ctx_fn *)&_r117; }); f_check__errorf(_t54, _t55, _t56); });
+                ({ t166 _t54 = (&(*l0)); t174 _t55 = l6; t543 _t56 = ({ struct b115 _t57; _t57.base.code = (void (*)(void))b115_code; _t57.c0 = f_check__tstr(&((*l0)), l9); _r115 = _t57; (ctx_fn *)&_r115; }); f_check__errorf(_t54, _t55, _t56); });
             } else {
                 if ((!f_check__is_num(&((*l0)), l18))) {
                     ({ t166 _t58 = (&(*l0)); t174 _t59 = f_check__expr_at(&(l15)); t16 _t60 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"@as converts numbers only", .m_len = 25 }), }); f_check__error(_t58, _t59, _t60); });
@@ -76141,11 +76185,11 @@ static t22 f_check__builtin(t166 l0, t364 * l1, t183 l2, t598 l3, t485 l4, t22 l
         }
         if (f_slice__eq_bytes(l7, ((t7){ .m_ptr = (void *)"trunc", .m_len = 5 }))) {
             if ((!f_check__is_int(&((*l0)), l9))) {
-                ({ t166 _t61 = (&(*l0)); t174 _t62 = l6; t543 _t63 = ({ struct b118 _t64; _t64.base.code = (void (*)(void))b118_code; _t64.c0 = f_check__tstr(&((*l0)), l9); _r118 = _t64; (ctx_fn *)&_r118; }); f_check__errorf(_t61, _t62, _t63); });
+                ({ t166 _t61 = (&(*l0)); t174 _t62 = l6; t543 _t63 = ({ struct b116 _t64; _t64.base.code = (void (*)(void))b116_code; _t64.c0 = f_check__tstr(&((*l0)), l9); _r116 = _t64; (ctx_fn *)&_r116; }); f_check__errorf(_t61, _t62, _t63); });
             }
-            l20 = ({ t166 _t65 = (&(*l0)); t364 *_t66 = &((*({ t485 _t68 = (l4); uint64_t _t69 = ((t14)(0ULL)); _t68.m_ptr + ctx_idx(_t69, _t68.m_len, 11737, 41, 3242879023); }))); t22 _t67 = ((t22)(4294967295ULL)); f_check__expr(_t65, _t66, _t67); });
+            l20 = ({ t166 _t65 = (&(*l0)); t364 *_t66 = &((*({ t485 _t68 = (l4); uint64_t _t69 = ((t14)(0ULL)); _t68.m_ptr + ctx_idx(_t69, _t68.m_len, 11748, 41, 3242879023); }))); t22 _t67 = ((t22)(4294967295ULL)); f_check__expr(_t65, _t66, _t67); });
             if ((!f_check__is_int(&((*l0)), l20))) {
-                ({ t166 _t70 = (&(*l0)); t174 _t71 = f_check__expr_at(&((*({ t485 _t73 = (l4); uint64_t _t74 = ((t14)(0ULL)); _t73.m_ptr + ctx_idx(_t74, _t73.m_len, 11739, 50, 3242879023); })))); t16 _t72 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"@trunc converts integers only", .m_len = 29 }), }); f_check__error(_t70, _t71, _t72); });
+                ({ t166 _t70 = (&(*l0)); t174 _t71 = f_check__expr_at(&((*({ t485 _t73 = (l4); uint64_t _t74 = ((t14)(0ULL)); _t73.m_ptr + ctx_idx(_t74, _t73.m_len, 11750, 50, 3242879023); })))); t16 _t72 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"@trunc converts integers only", .m_len = 29 }), }); f_check__error(_t70, _t71, _t72); });
             }
             return l9;
         }
@@ -76162,17 +76206,17 @@ static t22 f_check__builtin(t166 l0, t364 * l1, t183 l2, t598 l3, t485 l4, t22 l
             } } else { {
             } } }
             if ((!l23)) {
-                ({ t166 _t78 = (&(*l0)); t174 _t79 = l6; t543 _t80 = ({ struct b119 _t81; _t81.base.code = (void (*)(void))b119_code; _t81.c0 = f_check__tstr(&((*l0)), l9); _r119 = _t81; (ctx_fn *)&_r119; }); f_check__errorf(_t78, _t79, _t80); });
+                ({ t166 _t78 = (&(*l0)); t174 _t79 = l6; t543 _t80 = ({ struct b117 _t81; _t81.base.code = (void (*)(void))b117_code; _t81.c0 = f_check__tstr(&((*l0)), l9); _r117 = _t81; (ctx_fn *)&_r117; }); f_check__errorf(_t78, _t79, _t80); });
             }
-            l26 = ({ t166 _t82 = (&(*l0)); t364 *_t83 = &((*({ t485 _t84 = (l4); uint64_t _t85 = ((t14)(0ULL)); _t84.m_ptr + ctx_idx(_t85, _t84.m_len, 11757, 42, 3242879023); }))); f_check__typed(_t82, _t83); });
+            l26 = ({ t166 _t82 = (&(*l0)); t364 *_t83 = &((*({ t485 _t84 = (l4); uint64_t _t85 = ((t14)(0ULL)); _t84.m_ptr + ctx_idx(_t85, _t84.m_len, 11768, 42, 3242879023); }))); f_check__typed(_t82, _t83); });
             if ((l26 != ((t22)(0ULL)))) {
                 { t476 _t86 = f_types__get(&(((*l0)).m_ty), l26); if ((_t86.tag == 5)) { l27 = _t86.p.v5.m_mutable; {
                     if (((l23 && l22) && (!l27))) {
-                        ({ t166 _t87 = (&(*l0)); t174 _t88 = f_check__expr_at(&((*({ t485 _t90 = (l4); uint64_t _t91 = ((t14)(0ULL)); _t90.m_ptr + ctx_idx(_t91, _t90.m_len, 11762, 63, 3242879023); })))); t543 _t89 = ({ struct b120 _t92; _t92.base.code = (void (*)(void))b120_code; _t92.c0 = f_check__tstr(&((*l0)), l26); _r120 = _t92; (ctx_fn *)&_r120; }); f_check__errorf(_t87, _t88, _t89); });
+                        ({ t166 _t87 = (&(*l0)); t174 _t88 = f_check__expr_at(&((*({ t485 _t90 = (l4); uint64_t _t91 = ((t14)(0ULL)); _t90.m_ptr + ctx_idx(_t91, _t90.m_len, 11773, 63, 3242879023); })))); t543 _t89 = ({ struct b118 _t92; _t92.base.code = (void (*)(void))b118_code; _t92.c0 = f_check__tstr(&((*l0)), l26); _r118 = _t92; (ctx_fn *)&_r118; }); f_check__errorf(_t87, _t88, _t89); });
                     }
                 } } else if ((_t86.tag == 12)) { l28 = _t86.p.v12.m_external; {
                     if ((!l28)) {
-                        ({ t166 _t93 = (&(*l0)); t174 _t94 = f_check__expr_at(&((*({ t485 _t96 = (l4); uint64_t _t97 = ((t14)(0ULL)); _t96.m_ptr + ctx_idx(_t97, _t96.m_len, 11766, 76, 3242879023); })))); t16 _t95 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"@cast can't take a ctxlang function: only a pointer or an extern fn value", .m_len = 73 }), }); f_check__error(_t93, _t94, _t95); });
+                        ({ t166 _t93 = (&(*l0)); t174 _t94 = f_check__expr_at(&((*({ t485 _t96 = (l4); uint64_t _t97 = ((t14)(0ULL)); _t96.m_ptr + ctx_idx(_t97, _t96.m_len, 11777, 76, 3242879023); })))); t16 _t95 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"@cast can't take a ctxlang function: only a pointer or an extern fn value", .m_len = 73 }), }); f_check__error(_t93, _t94, _t95); });
                     }
                 } } else if ((_t86.tag == 8)) { {
                     l29 = ({ t16 _t98; if (f_check__nullable_ptr(&((*l0)), l26)) {
@@ -76180,56 +76224,56 @@ static t22 f_check__builtin(t166 l0, t364 * l1, t183 l2, t598 l3, t485 l4, t22 l
                     } else {
                         _t98 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"@cast needs a pointer or extern fn argument", .m_len = 43 }), });
                     } _t98; });
-                    ({ t166 _t99 = (&(*l0)); t174 _t100 = f_check__expr_at(&((*({ t485 _t102 = (l4); uint64_t _t103 = ((t14)(0ULL)); _t102.m_ptr + ctx_idx(_t103, _t102.m_len, 11770, 58, 3242879023); })))); t16 _t101 = l29; f_check__error(_t99, _t100, _t101); });
+                    ({ t166 _t99 = (&(*l0)); t174 _t100 = f_check__expr_at(&((*({ t485 _t102 = (l4); uint64_t _t103 = ((t14)(0ULL)); _t102.m_ptr + ctx_idx(_t103, _t102.m_len, 11781, 58, 3242879023); })))); t16 _t101 = l29; f_check__error(_t99, _t100, _t101); });
                 } } else { {
-                    ({ t166 _t104 = (&(*l0)); t174 _t105 = f_check__expr_at(&((*({ t485 _t107 = (l4); uint64_t _t108 = ((t14)(0ULL)); _t107.m_ptr + ctx_idx(_t108, _t107.m_len, 11772, 64, 3242879023); })))); t16 _t106 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"@cast needs a pointer or extern fn argument", .m_len = 43 }), }); f_check__error(_t104, _t105, _t106); });
+                    ({ t166 _t104 = (&(*l0)); t174 _t105 = f_check__expr_at(&((*({ t485 _t107 = (l4); uint64_t _t108 = ((t14)(0ULL)); _t107.m_ptr + ctx_idx(_t108, _t107.m_len, 11783, 64, 3242879023); })))); t16 _t106 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"@cast needs a pointer or extern fn argument", .m_len = 43 }), }); f_check__error(_t104, _t105, _t106); });
                 } } }
             }
             return l9;
         }
         if (f_slice__eq_bytes(l7, ((t7){ .m_ptr = (void *)"slice", .m_len = 5 }))) {
             f_check__unchecked((&(*l0)), l6, ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"`@slice`", .m_len = 8 }), }), ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"slice an array or a slice (`a[lo..hi]`, which is bounds-checked)", .m_len = 64 }), }));
-            l30 = ({ t166 _t109 = (&(*l0)); t364 *_t110 = &((*({ t485 _t111 = (l4); uint64_t _t112 = ((t14)(0ULL)); _t111.m_ptr + ctx_idx(_t112, _t111.m_len, 11779, 41, 3242879023); }))); f_check__typed(_t109, _t110); });
+            l30 = ({ t166 _t109 = (&(*l0)); t364 *_t110 = &((*({ t485 _t111 = (l4); uint64_t _t112 = ((t14)(0ULL)); _t111.m_ptr + ctx_idx(_t112, _t111.m_len, 11790, 41, 3242879023); }))); f_check__typed(_t109, _t110); });
             l31 = ((t22)(0ULL));
             { t476 _t113 = f_types__get(&(((*l0)).m_ty), l30); if ((_t113.tag == 5)) { l32 = _t113.p.v5.m_elem; l33 = _t113.p.v5.m_mutable; {
                 l31 = f_types__slice((&((*l0)).m_ty), l32, l33);
             } } else if ((_t113.tag == 0)) { {
             } } else { {
-                ({ t166 _t114 = (&(*l0)); t174 _t115 = f_check__expr_at(&((*({ t485 _t117 = (l4); uint64_t _t118 = ((t14)(0ULL)); _t117.m_ptr + ctx_idx(_t118, _t117.m_len, 11785, 55, 3242879023); })))); t543 _t116 = ({ struct b121 _t119; _t119.base.code = (void (*)(void))b121_code; _t119.c0 = f_check__tstr(&((*l0)), l30); _r121 = _t119; (ctx_fn *)&_r121; }); f_check__errorf(_t114, _t115, _t116); });
+                ({ t166 _t114 = (&(*l0)); t174 _t115 = f_check__expr_at(&((*({ t485 _t117 = (l4); uint64_t _t118 = ((t14)(0ULL)); _t117.m_ptr + ctx_idx(_t118, _t117.m_len, 11796, 55, 3242879023); })))); t543 _t116 = ({ struct b119 _t119; _t119.base.code = (void (*)(void))b119_code; _t119.c0 = f_check__tstr(&((*l0)), l30); _r119 = _t119; (ctx_fn *)&_r119; }); f_check__errorf(_t114, _t115, _t116); });
             } } }
-            ({ t166 _t120 = (&(*l0)); t364 *_t121 = &((*({ t485 _t123 = (l4); uint64_t _t124 = ((t14)(1ULL)); _t123.m_ptr + ctx_idx(_t124, _t123.m_len, 11788, 33, 3242879023); }))); t22 _t122 = ((t22)(11ULL)); f_check__expect(_t120, _t121, _t122); });
+            ({ t166 _t120 = (&(*l0)); t364 *_t121 = &((*({ t485 _t123 = (l4); uint64_t _t124 = ((t14)(1ULL)); _t123.m_ptr + ctx_idx(_t124, _t123.m_len, 11799, 33, 3242879023); }))); t22 _t122 = ((t22)(11ULL)); f_check__expect(_t120, _t121, _t122); });
             return l31;
         }
         if (f_slice__eq_bytes(l7, ((t7){ .m_ptr = (void *)"addr", .m_len = 4 }))) {
-            l34 = ({ t166 _t125 = (&(*l0)); t364 *_t126 = &((*({ t485 _t127 = (l4); uint64_t _t128 = ((t14)(0ULL)); _t127.m_ptr + ctx_idx(_t128, _t127.m_len, 11792, 41, 3242879023); }))); f_check__typed(_t125, _t126); });
+            l34 = ({ t166 _t125 = (&(*l0)); t364 *_t126 = &((*({ t485 _t127 = (l4); uint64_t _t128 = ((t14)(0ULL)); _t127.m_ptr + ctx_idx(_t128, _t127.m_len, 11803, 41, 3242879023); }))); f_check__typed(_t125, _t126); });
             if ((!({ t6 _t129; t476 _t130 = f_types__get(&(((*l0)).m_ty), l34); if ((_t130.tag == 5) || (_t130.tag == 0)) { {
                 _t129 = ((bool)1);
             } } else { {
                 _t129 = ((bool)0);
             } } _t129; }))) {
-                ({ t166 _t131 = (&(*l0)); t174 _t132 = f_check__expr_at(&((*({ t485 _t134 = (l4); uint64_t _t135 = ((t14)(0ULL)); _t134.m_ptr + ctx_idx(_t135, _t134.m_len, 11793, 104, 3242879023); })))); t16 _t133 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"@addr needs a pointer argument", .m_len = 30 }), }); f_check__error(_t131, _t132, _t133); });
+                ({ t166 _t131 = (&(*l0)); t174 _t132 = f_check__expr_at(&((*({ t485 _t134 = (l4); uint64_t _t135 = ((t14)(0ULL)); _t134.m_ptr + ctx_idx(_t135, _t134.m_len, 11804, 104, 3242879023); })))); t16 _t133 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"@addr needs a pointer argument", .m_len = 30 }), }); f_check__error(_t131, _t132, _t133); });
             }
             return ((t22)(11ULL));
         }
         if (f_slice__eq_bytes(l7, ((t7){ .m_ptr = (void *)"wrap_shl", .m_len = 8 }))) {
-            l35 = ({ t166 _t136 = (&(*l0)); t364 *_t137 = &((*({ t485 _t139 = (l4); uint64_t _t140 = ((t14)(0ULL)); _t139.m_ptr + ctx_idx(_t140, _t139.m_len, 11797, 39, 3242879023); }))); t22 _t138 = l5; f_check__expr(_t136, _t137, _t138); });
+            l35 = ({ t166 _t136 = (&(*l0)); t364 *_t137 = &((*({ t485 _t139 = (l4); uint64_t _t140 = ((t14)(0ULL)); _t139.m_ptr + ctx_idx(_t140, _t139.m_len, 11808, 39, 3242879023); }))); t22 _t138 = l5; f_check__expr(_t136, _t137, _t138); });
             if ((!({ t163 _t141 = (*l0); t22 _t142 = f_check__op_type(&((*l0)), l35); f_check__is_int(&_t141, _t142); }))) {
-                ({ t166 _t143 = (&(*l0)); t174 _t144 = f_check__expr_at(&((*({ t485 _t146 = (l4); uint64_t _t147 = ((t14)(0ULL)); _t146.m_ptr + ctx_idx(_t147, _t146.m_len, 11799, 51, 3242879023); })))); t543 _t145 = ({ struct b122 _t148; _t148.base.code = (void (*)(void))b122_code; _t148.c0 = f_check__tstr(&((*l0)), l35); _r122 = _t148; (ctx_fn *)&_r122; }); f_check__errorf(_t143, _t144, _t145); });
+                ({ t166 _t143 = (&(*l0)); t174 _t144 = f_check__expr_at(&((*({ t485 _t146 = (l4); uint64_t _t147 = ((t14)(0ULL)); _t146.m_ptr + ctx_idx(_t147, _t146.m_len, 11810, 51, 3242879023); })))); t543 _t145 = ({ struct b120 _t148; _t148.base.code = (void (*)(void))b120_code; _t148.c0 = f_check__tstr(&((*l0)), l35); _r120 = _t148; (ctx_fn *)&_r120; }); f_check__errorf(_t143, _t144, _t145); });
             }
-            l36 = ({ t166 _t149 = (&(*l0)); t364 *_t150 = &((*({ t485 _t152 = (l4); uint64_t _t153 = ((t14)(1ULL)); _t152.m_ptr + ctx_idx(_t153, _t152.m_len, 11801, 40, 3242879023); }))); t22 _t151 = ((t22)(4294967295ULL)); f_check__expr(_t149, _t150, _t151); });
+            l36 = ({ t166 _t149 = (&(*l0)); t364 *_t150 = &((*({ t485 _t152 = (l4); uint64_t _t153 = ((t14)(1ULL)); _t152.m_ptr + ctx_idx(_t153, _t152.m_len, 11812, 40, 3242879023); }))); t22 _t151 = ((t22)(4294967295ULL)); f_check__expr(_t149, _t150, _t151); });
             if ((!f_check__is_int(&((*l0)), l36))) {
-                ({ t166 _t154 = (&(*l0)); t174 _t155 = f_check__expr_at(&((*({ t485 _t157 = (l4); uint64_t _t158 = ((t14)(1ULL)); _t157.m_ptr + ctx_idx(_t158, _t157.m_len, 11803, 51, 3242879023); })))); t543 _t156 = ({ struct b123 _t159; _t159.base.code = (void (*)(void))b123_code; _t159.c0 = f_check__tstr(&((*l0)), l36); _r123 = _t159; (ctx_fn *)&_r123; }); f_check__errorf(_t154, _t155, _t156); });
+                ({ t166 _t154 = (&(*l0)); t174 _t155 = f_check__expr_at(&((*({ t485 _t157 = (l4); uint64_t _t158 = ((t14)(1ULL)); _t157.m_ptr + ctx_idx(_t158, _t157.m_len, 11814, 51, 3242879023); })))); t543 _t156 = ({ struct b121 _t159; _t159.base.code = (void (*)(void))b121_code; _t159.c0 = f_check__tstr(&((*l0)), l36); _r121 = _t159; (ctx_fn *)&_r121; }); f_check__errorf(_t154, _t155, _t156); });
             }
             return l35;
         }
-        ctx_panic(11807, 9, 3242879023, "check: a builtin the parser doesn't know");
+        ctx_panic(11818, 9, 3242879023, "check: a builtin the parser doesn't know");
     }
     __builtin_unreachable();
 }
 
-struct b124 { ctx_fn base; t16 c0; };
-static t127 b124_code(ctx_fn *self, void * a0) {
-    struct b124 *s = (struct b124 *)self;
+struct b122 { ctx_fn base; t16 c0; };
+static t127 b122_code(ctx_fn *self, void * a0) {
+    struct b122 *s = (struct b122 *)self;
     return f_check__field_exprfmt_ddd97492(s->c0, a0);
 }
 
@@ -76247,7 +76291,7 @@ static t22 f_check__field_expr(t166 l0, t364 * l1, t364 * l2, t183 l3) {
     t22 l13;
     t6 l14;
     CTX_STACK_CHECK();
-    struct b124 _r124;
+    struct b122 _r122;
     {
         l4 = f_check__typed((&(*l0)), &((*l2)));
         if (((l4 == ((t22)(0ULL))) || (((l3).m_text).m_len == ((t14)(0ULL))))) {
@@ -76295,7 +76339,7 @@ static t22 f_check__field_expr(t166 l0, t364 * l1, t364 * l2, t183 l3) {
                 { t61 _t2 = ({ t654 _t3 = (&((*l0)).m_narrowed); t8 _t4 = f_check__expr_key(&((*l1))); t22 _t5 = l10; f_map__putu64u32arena__Arena_d2e79330(_t3, _t4, _t5); }); if ((_t2.tag == 0)) { {
                 } } else if ((_t2.tag == 1)) { l12 = _t2.p.v1.m_error; {
                     { t12 _t6 = l12; if ((_t6.tag == 0)) { {
-                        ctx_panic(11493, 21, 3242879023, "try! failed: alloc::out_of_memory");
+                        ctx_panic(11504, 21, 3242879023, "try! failed: alloc::out_of_memory");
                     } } }
                 } } }
                 return l11;
@@ -76321,7 +76365,7 @@ static t22 f_check__field_expr(t166 l0, t364 * l1, t364 * l2, t183 l3) {
                 return f_types__slice((&((*l0)).m_ty), ((t22)(7ULL)), ((bool)0));
             }
         } } else if ((_t0.tag == 14)) { {
-            ({ t166 _t7 = (&(*l0)); t174 _t8 = f_check__expr_at(&((*l1))); t543 _t9 = ({ struct b124 _t10; _t10.base.code = (void (*)(void))b124_code; _t10.c0 = f_check__str((l3).m_text); _r124 = _t10; (ctx_fn *)&_r124; }); f_check__errorf(_t7, _t8, _t9); });
+            ({ t166 _t7 = (&(*l0)); t174 _t8 = f_check__expr_at(&((*l1))); t543 _t9 = ({ struct b122 _t10; _t10.base.code = (void (*)(void))b122_code; _t10.c0 = f_check__str((l3).m_text); _r122 = _t10; (ctx_fn *)&_r122; }); f_check__errorf(_t7, _t8, _t9); });
             return ((t22)(0ULL));
         } } else { {
         } } }
@@ -76355,15 +76399,15 @@ static t27 f_check__put_access(t166 l0, t364 * l1, t15 l2) {
     }
 }
 
-struct b125 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
-static t127 b125_code(ctx_fn *self, void * a0) {
-    struct b125 *s = (struct b125 *)self;
+struct b123 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
+static t127 b123_code(ctx_fn *self, void * a0) {
+    struct b123 *s = (struct b123 *)self;
     return f_check__reject_pointer_indexfmt_d4dfa86e_1(s->c0, s->c1, s->c2, a0);
 }
 
-struct b126 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
-static t127 b126_code(ctx_fn *self, void * a0) {
-    struct b126 *s = (struct b126 *)self;
+struct b124 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
+static t127 b124_code(ctx_fn *self, void * a0) {
+    struct b124 *s = (struct b124 *)self;
     return f_check__reject_pointer_indexfmt_d4dfa86e(s->c0, s->c1, s->c2, a0);
 }
 
@@ -76372,8 +76416,8 @@ static t27 f_check__reject_pointer_index(t166 l0, t364 * l1, t364 * l2, t364 * l
     t16 l5;
     t16 l6;
     CTX_STACK_CHECK();
-    struct b125 _r125;
-    struct b126 _r126;
+    struct b123 _r123;
+    struct b124 _r124;
     {
         l5 = f_check__str(f_check__source_text(&((*l0)), ((*l2)).m_span));
         l6 = f_check__str(f_check__source_text(&((*l0)), ((*l3)).m_span));
@@ -76382,22 +76426,22 @@ static t27 f_check__reject_pointer_index(t166 l0, t364 * l1, t364 * l2, t364 * l
         } } else { {
             _t0 = ((bool)0);
         } } _t0; })) {
-            ({ t166 _t2 = (&(*l0)); t174 _t3 = f_check__expr_at(&((*l1))); t543 _t4 = ({ struct b125 _t5; _t5.base.code = (void (*)(void))b125_code; _t5.c0 = f_check__tstr(&((*l0)), l4); _t5.c1 = l5; _t5.c2 = l6; _r125 = _t5; (ctx_fn *)&_r125; }); f_check__errorf(_t2, _t3, _t4); });
+            ({ t166 _t2 = (&(*l0)); t174 _t3 = f_check__expr_at(&((*l1))); t543 _t4 = ({ struct b123 _t5; _t5.base.code = (void (*)(void))b123_code; _t5.c0 = f_check__tstr(&((*l0)), l4); _t5.c1 = l5; _t5.c2 = l6; _r123 = _t5; (ctx_fn *)&_r123; }); f_check__errorf(_t2, _t3, _t4); });
         } else {
-            ({ t166 _t6 = (&(*l0)); t174 _t7 = f_check__expr_at(&((*l1))); t543 _t8 = ({ struct b126 _t9; _t9.base.code = (void (*)(void))b126_code; _t9.c0 = f_check__tstr(&((*l0)), l4); _t9.c1 = l5; _t9.c2 = l6; _r126 = _t9; (ctx_fn *)&_r126; }); f_check__errorf(_t6, _t7, _t8); });
+            ({ t166 _t6 = (&(*l0)); t174 _t7 = f_check__expr_at(&((*l1))); t543 _t8 = ({ struct b124 _t9; _t9.base.code = (void (*)(void))b124_code; _t9.c0 = f_check__tstr(&((*l0)), l4); _t9.c1 = l5; _t9.c2 = l6; _r124 = _t9; (ctx_fn *)&_r124; }); f_check__errorf(_t6, _t7, _t8); });
         }
     }
 }
 
-struct b127 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b127_code(ctx_fn *self, void * a0) {
-    struct b127 *s = (struct b127 *)self;
+struct b125 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b125_code(ctx_fn *self, void * a0) {
+    struct b125 *s = (struct b125 *)self;
     return f_check__range_exprfmt_5a207db1_1(s->c0, s->c1, a0);
 }
 
-struct b128 { ctx_fn base; t16 c0; };
-static t127 b128_code(ctx_fn *self, void * a0) {
-    struct b128 *s = (struct b128 *)self;
+struct b126 { ctx_fn base; t16 c0; };
+static t127 b126_code(ctx_fn *self, void * a0) {
+    struct b126 *s = (struct b126 *)self;
     return f_check__range_exprfmt_5a207db1(s->c0, a0);
 }
 
@@ -76415,8 +76459,8 @@ static t22 f_check__range_expr(t166 l0, t364 * l1, t364 * l2, t601 l3, t601 l4) 
     t22 l14;
     t16 l15;
     CTX_STACK_CHECK();
-    struct b127 _r127;
-    struct b128 _r128;
+    struct b125 _r125;
+    struct b126 _r126;
     {
         l5 = f_check__typed((&(*l0)), &((*l2)));
         l6 = ((t22)(4294967295ULL));
@@ -76464,7 +76508,7 @@ static t22 f_check__range_expr(t166 l0, t364 * l1, t364 * l2, t601 l3, t601 l4) 
                 _t12 = ((bool)0);
             } } _t12; })) {
                 l15 = f_check__str(f_check__source_text(&((*l0)), ((*l2)).m_span));
-                ({ t166 _t14 = (&(*l0)); t174 _t15 = f_check__expr_at(&((*l1))); t543 _t16 = ({ struct b127 _t17; _t17.base.code = (void (*)(void))b127_code; _t17.c0 = f_check__tstr(&((*l0)), l5); _t17.c1 = l15; _r127 = _t17; (ctx_fn *)&_r127; }); f_check__errorf(_t14, _t15, _t16); });
+                ({ t166 _t14 = (&(*l0)); t174 _t15 = f_check__expr_at(&((*l1))); t543 _t16 = ({ struct b125 _t17; _t17.base.code = (void (*)(void))b125_code; _t17.c0 = f_check__tstr(&((*l0)), l5); _t17.c1 = l15; _r125 = _t17; (ctx_fn *)&_r125; }); f_check__errorf(_t14, _t15, _t16); });
                 l14 = ((t22)(0ULL));
             } else {
                 if ((!({ t6 _t18; t476 _t19 = f_types__get(&(((*l0)).m_ty), l5); if ((_t19.tag == 6) || (_t19.tag == 0)) { {
@@ -76472,7 +76516,7 @@ static t22 f_check__range_expr(t166 l0, t364 * l1, t364 * l2, t601 l3, t601 l4) 
                 } } else { {
                     _t18 = ((bool)0);
                 } } _t18; }))) {
-                    ({ t166 _t20 = (&(*l0)); t174 _t21 = f_check__expr_at(&((*l1))); t543 _t22 = ({ struct b128 _t23; _t23.base.code = (void (*)(void))b128_code; _t23.c0 = f_check__tstr(&((*l0)), l5); _r128 = _t23; (ctx_fn *)&_r128; }); f_check__errorf(_t20, _t21, _t22); });
+                    ({ t166 _t20 = (&(*l0)); t174 _t21 = f_check__expr_at(&((*l1))); t543 _t22 = ({ struct b126 _t23; _t23.base.code = (void (*)(void))b126_code; _t23.c0 = f_check__tstr(&((*l0)), l5); _r126 = _t23; (ctx_fn *)&_r126; }); f_check__errorf(_t20, _t21, _t22); });
                     l14 = ((t22)(0ULL));
                 }
             }
@@ -76793,51 +76837,51 @@ static t22 f_check__check_if(t166 l0, t603 * l1, t174 l2, t22 l3, t6 l4, t6 l5, 
     __builtin_unreachable();
 }
 
-struct b129 { ctx_fn base; t16 c0; };
+struct b127 { ctx_fn base; t16 c0; };
+static t127 b127_code(ctx_fn *self, void * a0) {
+    struct b127 *s = (struct b127 *)self;
+    return f_check__check_matchfmt_b250747c_4(s->c0, a0);
+}
+
+struct b128 { ctx_fn base; t16 c0; };
+static t127 b128_code(ctx_fn *self, void * a0) {
+    struct b128 *s = (struct b128 *)self;
+    return f_check__check_matchfmt_b250747c_3(s->c0, a0);
+}
+
+struct b129 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
 static t127 b129_code(ctx_fn *self, void * a0) {
     struct b129 *s = (struct b129 *)self;
-    return f_check__check_matchfmt_b250747c_4(s->c0, a0);
+    return f_check__check_matchfmt_b250747c_2(s->c0, s->c1, s->c2, a0);
 }
 
 struct b130 { ctx_fn base; t16 c0; };
 static t127 b130_code(ctx_fn *self, void * a0) {
     struct b130 *s = (struct b130 *)self;
-    return f_check__check_matchfmt_b250747c_3(s->c0, a0);
+    return f_check__check_matchfmt_b250747c_1(s->c0, a0);
 }
 
-struct b131 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
+struct b131 { ctx_fn base; t16 c0; };
 static t127 b131_code(ctx_fn *self, void * a0) {
     struct b131 *s = (struct b131 *)self;
-    return f_check__check_matchfmt_b250747c_2(s->c0, s->c1, s->c2, a0);
+    return f_check__check_matchfmt_b250747c(s->c0, a0);
 }
 
 struct b132 { ctx_fn base; t16 c0; };
 static t127 b132_code(ctx_fn *self, void * a0) {
     struct b132 *s = (struct b132 *)self;
-    return f_check__check_matchfmt_b250747c_1(s->c0, a0);
+    return f_check__check_matchfmt_b250747c_7(s->c0, a0);
 }
 
-struct b133 { ctx_fn base; t16 c0; };
+struct b133 { ctx_fn base; t16 c0; t16 c1; };
 static t127 b133_code(ctx_fn *self, void * a0) {
     struct b133 *s = (struct b133 *)self;
-    return f_check__check_matchfmt_b250747c(s->c0, a0);
+    return f_check__check_matchfmt_b250747c_6(s->c0, s->c1, a0);
 }
 
 struct b134 { ctx_fn base; t16 c0; };
 static t127 b134_code(ctx_fn *self, void * a0) {
     struct b134 *s = (struct b134 *)self;
-    return f_check__check_matchfmt_b250747c_7(s->c0, a0);
-}
-
-struct b135 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b135_code(ctx_fn *self, void * a0) {
-    struct b135 *s = (struct b135 *)self;
-    return f_check__check_matchfmt_b250747c_6(s->c0, s->c1, a0);
-}
-
-struct b136 { ctx_fn base; t16 c0; };
-static t127 b136_code(ctx_fn *self, void * a0) {
-    struct b136 *s = (struct b136 *)self;
     return f_check__check_matchfmt_b250747c_5(s->c0, a0);
 }
 
@@ -76882,14 +76926,14 @@ static t22 f_check__check_match(t166 l0, t604 l1, t174 l2, t22 l3, t6 l4, t6 l5,
     t12 l43;
     t12 l44;
     CTX_STACK_CHECK();
+    struct b127 _r127;
+    struct b128 _r128;
     struct b129 _r129;
     struct b130 _r130;
     struct b131 _r131;
     struct b132 _r132;
     struct b133 _r133;
     struct b134 _r134;
-    struct b135 _r135;
-    struct b136 _r136;
     {
         l7 = (*(l1).m_scrut);
         l8 = f_check__typed((&(*l0)), &(l7));
@@ -76915,11 +76959,11 @@ static t22 f_check__check_match(t166 l0, t604 l1, t174 l2, t22 l3, t6 l4, t6 l5,
             l14 = ((bool)0);
         } else {
             if (((l14 && (l1).m_is_ifnull) && (!f_check__is_opt(&((*l0)), l8)))) {
-                ({ t166 _t7 = (&(*l0)); t174 _t8 = f_check__expr_at(&(l7)); t543 _t9 = ({ struct b129 _t10; _t10.base.code = (void (*)(void))b129_code; _t10.c0 = f_check__tstr(&((*l0)), l8); _r129 = _t10; (ctx_fn *)&_r129; }); f_check__errorf(_t7, _t8, _t9); });
+                ({ t166 _t7 = (&(*l0)); t174 _t8 = f_check__expr_at(&(l7)); t543 _t9 = ({ struct b127 _t10; _t10.base.code = (void (*)(void))b127_code; _t10.c0 = f_check__tstr(&((*l0)), l8); _r127 = _t10; (ctx_fn *)&_r127; }); f_check__errorf(_t7, _t8, _t9); });
                 l14 = ((bool)0);
             } else {
                 if (((l14 && (l1).m_is_iflet) && (!f_check__is_opt(&((*l0)), l9)))) {
-                    ({ t166 _t11 = (&(*l0)); t174 _t12 = f_check__expr_at(&(l7)); t543 _t13 = ({ struct b130 _t14; _t14.base.code = (void (*)(void))b130_code; _t14.c0 = f_check__tstr(&((*l0)), l8); _r130 = _t14; (ctx_fn *)&_r130; }); f_check__errorf(_t11, _t12, _t13); });
+                    ({ t166 _t11 = (&(*l0)); t174 _t12 = f_check__expr_at(&(l7)); t543 _t13 = ({ struct b128 _t14; _t14.base.code = (void (*)(void))b128_code; _t14.c0 = f_check__tstr(&((*l0)), l8); _r128 = _t14; (ctx_fn *)&_r128; }); f_check__errorf(_t11, _t12, _t13); });
                     l14 = ((bool)0);
                 } else {
                     if ((((l14 && (l1).m_is_iflet) && (!l10)) && ((*({ t758 _t15 = (((*({ t605 _t17 = (((*({ t765 _t19 = ((l1).m_arms); uint64_t _t20 = ((t14)(0ULL)); _t19.m_ptr + ctx_idx(_t20, _t19.m_len, 5447, 63, 3242879023); }))).m_pats); uint64_t _t18 = ((t14)(0ULL)); _t17.m_ptr + ctx_idx(_t18, _t17.m_len, 5447, 71, 3242879023); }))).m_binders); uint64_t _t16 = ((t14)(0ULL)); _t15.m_ptr + ctx_idx(_t16, _t15.m_len, 5447, 82, 3242879023); }))).m_by_ref)) {
@@ -76930,11 +76974,11 @@ static t22 f_check__check_match(t166 l0, t604 l1, t174 l2, t22 l3, t6 l4, t6 l5,
                             _t27 = (l15).m_field;
                         } } _t27; });
                         l18 = f_check__str(f_check__source_text(&((*l0)), (l7).m_span));
-                        ({ t166 _t29 = (&(*l0)); t174 _t30 = f_check__expr_at(&(l7)); t543 _t31 = ({ struct b131 _t32; _t32.base.code = (void (*)(void))b131_code; _t32.c0 = f_check__str((l16).m_text); _t32.c1 = f_check__str((l16).m_text); _t32.c2 = l18; _r131 = _t32; (ctx_fn *)&_r131; }); f_check__errorf(_t29, _t30, _t31); });
+                        ({ t166 _t29 = (&(*l0)); t174 _t30 = f_check__expr_at(&(l7)); t543 _t31 = ({ struct b129 _t32; _t32.base.code = (void (*)(void))b129_code; _t32.c0 = f_check__str((l16).m_text); _t32.c1 = f_check__str((l16).m_text); _t32.c2 = l18; _r129 = _t32; (ctx_fn *)&_r129; }); f_check__errorf(_t29, _t30, _t31); });
                         l14 = ((bool)0);
                     } else {
                         if (((l14 && (l1).m_is_iferr) && (!f_check__is_res(&((*l0)), l8)))) {
-                            ({ t166 _t33 = (&(*l0)); t174 _t34 = f_check__expr_at(&(l7)); t543 _t35 = ({ struct b132 _t36; _t36.base.code = (void (*)(void))b132_code; _t36.c0 = f_check__tstr(&((*l0)), l8); _r132 = _t36; (ctx_fn *)&_r132; }); f_check__errorf(_t33, _t34, _t35); });
+                            ({ t166 _t33 = (&(*l0)); t174 _t34 = f_check__expr_at(&(l7)); t543 _t35 = ({ struct b130 _t36; _t36.base.code = (void (*)(void))b130_code; _t36.c0 = f_check__tstr(&((*l0)), l8); _r130 = _t36; (ctx_fn *)&_r130; }); f_check__errorf(_t33, _t34, _t35); });
                             l14 = ((bool)0);
                         } else {
                             if ((l14 && (f_check__is_res(&((*l0)), l9) || f_check__is_errs(&((*l0)), l9)))) {
@@ -76960,7 +77004,7 @@ static t22 f_check__check_match(t166 l0, t604 l1, t174 l2, t22 l3, t6 l4, t6 l5,
                                             l14 = ((bool)0);
                                         } else {
                                             if ((l14 && (!f_check__has_variants(&((*l0)), l9)))) {
-                                                ({ t166 _t49 = (&(*l0)); t174 _t50 = f_check__expr_at(&(l7)); t543 _t51 = ({ struct b133 _t52; _t52.base.code = (void (*)(void))b133_code; _t52.c0 = f_check__tstr(&((*l0)), l8); _r133 = _t52; (ctx_fn *)&_r133; }); f_check__errorf(_t49, _t50, _t51); });
+                                                ({ t166 _t49 = (&(*l0)); t174 _t50 = f_check__expr_at(&(l7)); t543 _t51 = ({ struct b131 _t52; _t52.base.code = (void (*)(void))b131_code; _t52.c0 = f_check__tstr(&((*l0)), l8); _r131 = _t52; (ctx_fn *)&_r131; }); f_check__errorf(_t49, _t50, _t51); });
                                                 l14 = ((bool)0);
                                             }
                                         }
@@ -77018,17 +77062,17 @@ static t22 f_check__check_match(t166 l0, t604 l1, t174 l2, t22 l3, t6 l4, t6 l5,
                 } _t65; });
                 l36 = l14;
                 if ((l14 && f_check__int_pattern(&(l34)))) {
-                    ({ t166 _t66 = (&(*l0)); t174 _t67 = (l34).m_span; t543 _t68 = ({ struct b134 _t69; _t69.base.code = (void (*)(void))b134_code; _t69.c0 = f_check__tstr(&((*l0)), l9); _r134 = _t69; (ctx_fn *)&_r134; }); f_check__errorf(_t66, _t67, _t68); });
+                    ({ t166 _t66 = (&(*l0)); t174 _t67 = (l34).m_span; t543 _t68 = ({ struct b132 _t69; _t69.base.code = (void (*)(void))b132_code; _t69.c0 = f_check__tstr(&((*l0)), l9); _r132 = _t69; (ctx_fn *)&_r132; }); f_check__errorf(_t66, _t67, _t68); });
                     l36 = ((bool)0);
                 } else {
                     if ((l14 && (l35 == ((t22)(4294967295ULL))))) {
                         if (((((l34).m_variant).m_text).m_len > ((t14)(0ULL)))) {
-                            ({ t166 _t70 = (&(*l0)); t174 _t71 = (l34).m_span; t543 _t72 = ({ struct b135 _t73; _t73.base.code = (void (*)(void))b135_code; _t73.c0 = f_check__tstr(&((*l0)), l9); _t73.c1 = f_check__str(((l34).m_variant).m_text); _r135 = _t73; (ctx_fn *)&_r135; }); f_check__errorf(_t70, _t71, _t72); });
+                            ({ t166 _t70 = (&(*l0)); t174 _t71 = (l34).m_span; t543 _t72 = ({ struct b133 _t73; _t73.base.code = (void (*)(void))b133_code; _t73.c0 = f_check__tstr(&((*l0)), l9); _t73.c1 = f_check__str(((l34).m_variant).m_text); _r133 = _t73; (ctx_fn *)&_r133; }); f_check__errorf(_t70, _t71, _t72); });
                         }
                         l36 = ((bool)0);
                     } else {
                         if ((l14 && ({ t173 _t74 = f_list__itemsu32arena__Arena_0ba5b83a(&(l24)); t22 _t75 = l35; f_check__has_id(_t74, _t75); }))) {
-                            ({ t166 _t76 = (&(*l0)); t174 _t77 = (l34).m_span; t543 _t78 = ({ struct b136 _t79; _t79.base.code = (void (*)(void))b136_code; _t79.c0 = f_check__str(((l34).m_variant).m_text); _r136 = _t79; (ctx_fn *)&_r136; }); f_check__errorf(_t76, _t77, _t78); });
+                            ({ t166 _t76 = (&(*l0)); t174 _t77 = (l34).m_span; t543 _t78 = ({ struct b134 _t79; _t79.base.code = (void (*)(void))b134_code; _t79.c0 = f_check__str(((l34).m_variant).m_text); _r134 = _t79; (ctx_fn *)&_r134; }); f_check__errorf(_t76, _t77, _t78); });
                         } else {
                             if (l14) {
                                 f_check__push((&l24), l35);
@@ -77142,9 +77186,9 @@ static t22 f_check__check_overflow(t166 l0, t364 * l1, t364 * l2, t355 l3, t22 l
     __builtin_unreachable();
 }
 
-struct b137 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b137_code(ctx_fn *self, void * a0) {
-    struct b137 *s = (struct b137 *)self;
+struct b135 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b135_code(ctx_fn *self, void * a0) {
+    struct b135 *s = (struct b135 *)self;
     return f_check__try_exprfmt_738e74bd(s->c0, s->c1, a0);
 }
 
@@ -77177,18 +77221,18 @@ static t22 f_check__try_expr(t166 l0, t364 * l1, t364 * l2, t6 l3) {
     t12 l28;
     t12 l29;
     CTX_STACK_CHECK();
-    struct b137 _r137;
+    struct b135 _r135;
     {
         l4 = f_check__typed((&(*l0)), &((*l2)));
         if ((l4 == ((t22)(0ULL)))) {
             return ((t22)(0ULL));
         }
         { t476 _t0 = f_types__get(&(((*l0)).m_ty), l4); if (!(_t0.tag == 17)) { {
-            ({ t166 _t1 = (&(*l0)); t174 _t2 = f_check__expr_at(&((*l2))); t543 _t3 = ({ struct b137 _t4; _t4.base.code = (void (*)(void))b137_code; _t4.c0 = f_check__str(({ t7 _t5; if (l3) {
+            ({ t166 _t1 = (&(*l0)); t174 _t2 = f_check__expr_at(&((*l2))); t543 _t3 = ({ struct b135 _t4; _t4.base.code = (void (*)(void))b135_code; _t4.c0 = f_check__str(({ t7 _t5; if (l3) {
                 _t5 = ((t7){ .m_ptr = (void *)"try!", .m_len = 4 });
             } else {
                 _t5 = ((t7){ .m_ptr = (void *)"try", .m_len = 3 });
-            } _t5; })); _t4.c1 = f_check__tstr(&((*l0)), l4); _r137 = _t4; (ctx_fn *)&_r137; }); f_check__errorf(_t1, _t2, _t3); });
+            } _t5; })); _t4.c1 = f_check__tstr(&((*l0)), l4); _r135 = _t4; (ctx_fn *)&_r135; }); f_check__errorf(_t1, _t2, _t3); });
             return ((t22)(0ULL));
         } } l5 = _t0.p.v17.m_ok; l6 = _t0.p.v17.m_errs; }
         if (l3) {
@@ -77314,33 +77358,33 @@ static t22 f_check__try_expr(t166 l0, t364 * l1, t364 * l2, t6 l3) {
     __builtin_unreachable();
 }
 
-struct b138 { ctx_fn base; t16 c0; };
-static t127 b138_code(ctx_fn *self, void * a0) {
-    struct b138 *s = (struct b138 *)self;
+struct b136 { ctx_fn base; t16 c0; };
+static t127 b136_code(ctx_fn *self, void * a0) {
+    struct b136 *s = (struct b136 *)self;
     return f_check__check_isfmt_4c441935(s->c0, a0);
 }
 
-struct b139 { ctx_fn base; t16 c0; };
+struct b137 { ctx_fn base; t16 c0; };
+static t127 b137_code(ctx_fn *self, void * a0) {
+    struct b137 *s = (struct b137 *)self;
+    return f_check__check_isfmt_4c441935_4(s->c0, a0);
+}
+
+struct b138 { ctx_fn base; t16 c0; };
+static t127 b138_code(ctx_fn *self, void * a0) {
+    struct b138 *s = (struct b138 *)self;
+    return f_check__check_isfmt_4c441935_3(s->c0, a0);
+}
+
+struct b139 { ctx_fn base; t16 c0; t16 c1; };
 static t127 b139_code(ctx_fn *self, void * a0) {
     struct b139 *s = (struct b139 *)self;
-    return f_check__check_isfmt_4c441935_4(s->c0, a0);
+    return f_check__check_isfmt_4c441935_2(s->c0, s->c1, a0);
 }
 
 struct b140 { ctx_fn base; t16 c0; };
 static t127 b140_code(ctx_fn *self, void * a0) {
     struct b140 *s = (struct b140 *)self;
-    return f_check__check_isfmt_4c441935_3(s->c0, a0);
-}
-
-struct b141 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b141_code(ctx_fn *self, void * a0) {
-    struct b141 *s = (struct b141 *)self;
-    return f_check__check_isfmt_4c441935_2(s->c0, s->c1, a0);
-}
-
-struct b142 { ctx_fn base; t16 c0; };
-static t127 b142_code(ctx_fn *self, void * a0) {
-    struct b142 *s = (struct b142 *)self;
     return f_check__check_isfmt_4c441935_1(s->c0, a0);
 }
 
@@ -77365,11 +77409,11 @@ static t22 f_check__check_is(t166 l0, t364 * l1, t364 * l2, t605 l3) {
     t173 l20;
     t12 l21;
     CTX_STACK_CHECK();
+    struct b136 _r136;
+    struct b137 _r137;
     struct b138 _r138;
     struct b139 _r139;
     struct b140 _r140;
-    struct b141 _r141;
-    struct b142 _r142;
     {
         l4 = f_check__typed((&(*l0)), &((*l2)));
         l5 = (l4 != ((t22)(0ULL)));
@@ -77402,7 +77446,7 @@ static t22 f_check__check_is(t166 l0, t364 * l1, t364 * l2, t605 l3) {
                     if (f_check__untagged_type(&((*l0)), l4)) {
                         ({ t166 _t10 = (&(*l0)); t174 _t11 = f_check__expr_at(&((*l2))); t16 _t12 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"an extern union has no tag to match on: read the field you know it holds", .m_len = 72 }), }); f_check__error(_t10, _t11, _t12); });
                     } else {
-                        ({ t166 _t13 = (&(*l0)); t174 _t14 = f_check__expr_at(&((*l2))); t543 _t15 = ({ struct b138 _t16; _t16.base.code = (void (*)(void))b138_code; _t16.c0 = f_check__tstr(&((*l0)), l4); _r138 = _t16; (ctx_fn *)&_r138; }); f_check__errorf(_t13, _t14, _t15); });
+                        ({ t166 _t13 = (&(*l0)); t174 _t14 = f_check__expr_at(&((*l2))); t543 _t15 = ({ struct b136 _t16; _t16.base.code = (void (*)(void))b136_code; _t16.c0 = f_check__tstr(&((*l0)), l4); _r136 = _t16; (ctx_fn *)&_r136; }); f_check__errorf(_t13, _t14, _t15); });
                     }
                 }
                 l5 = ((bool)0);
@@ -77444,21 +77488,21 @@ static t22 f_check__check_is(t166 l0, t364 * l1, t364 * l2, t605 l3) {
             }
             l18 = l5;
             if ((l5 && f_check__int_pattern(&(l14)))) {
-                ({ t166 _t26 = (&(*l0)); t174 _t27 = (l14).m_span; t543 _t28 = ({ struct b139 _t29; _t29.base.code = (void (*)(void))b139_code; _t29.c0 = f_check__tstr(&((*l0)), l4); _r139 = _t29; (ctx_fn *)&_r139; }); f_check__errorf(_t26, _t27, _t28); });
+                ({ t166 _t26 = (&(*l0)); t174 _t27 = (l14).m_span; t543 _t28 = ({ struct b137 _t29; _t29.base.code = (void (*)(void))b137_code; _t29.c0 = f_check__tstr(&((*l0)), l4); _r137 = _t29; (ctx_fn *)&_r137; }); f_check__errorf(_t26, _t27, _t28); });
                 l18 = ((bool)0);
             } else {
                 if ((((l14).m_quals).m_len > ((t14)(0ULL)))) {
-                    ({ t166 _t30 = (&(*l0)); t174 _t31 = (l14).m_span; t543 _t32 = ({ struct b140 _t33; _t33.base.code = (void (*)(void))b140_code; _t33.c0 = f_check__str(l15); _r140 = _t33; (ctx_fn *)&_r140; }); f_check__errorf(_t30, _t31, _t32); });
+                    ({ t166 _t30 = (&(*l0)); t174 _t31 = (l14).m_span; t543 _t32 = ({ struct b138 _t33; _t33.base.code = (void (*)(void))b138_code; _t33.c0 = f_check__str(l15); _r138 = _t33; (ctx_fn *)&_r138; }); f_check__errorf(_t30, _t31, _t32); });
                     l18 = ((bool)0);
                 } else {
                     if ((l5 && (l17 == ((t22)(4294967295ULL))))) {
                         if (((l15).m_len > ((t14)(0ULL)))) {
-                            ({ t166 _t34 = (&(*l0)); t174 _t35 = (l14).m_span; t543 _t36 = ({ struct b141 _t37; _t37.base.code = (void (*)(void))b141_code; _t37.c0 = f_check__tstr(&((*l0)), l4); _t37.c1 = f_check__str(l15); _r141 = _t37; (ctx_fn *)&_r141; }); f_check__errorf(_t34, _t35, _t36); });
+                            ({ t166 _t34 = (&(*l0)); t174 _t35 = (l14).m_span; t543 _t36 = ({ struct b139 _t37; _t37.base.code = (void (*)(void))b139_code; _t37.c0 = f_check__tstr(&((*l0)), l4); _t37.c1 = f_check__str(l15); _r139 = _t37; (ctx_fn *)&_r139; }); f_check__errorf(_t34, _t35, _t36); });
                         }
                         l18 = ((bool)0);
                     } else {
                         if ((l5 && f_check__listed_before(l3, l13))) {
-                            ({ t166 _t38 = (&(*l0)); t174 _t39 = (l14).m_span; t543 _t40 = ({ struct b142 _t41; _t41.base.code = (void (*)(void))b142_code; _t41.c0 = f_check__str(l15); _r142 = _t41; (ctx_fn *)&_r142; }); f_check__errorf(_t38, _t39, _t40); });
+                            ({ t166 _t38 = (&(*l0)); t174 _t39 = (l14).m_span; t543 _t40 = ({ struct b140 _t41; _t41.base.code = (void (*)(void))b140_code; _t41.c0 = f_check__str(l15); _r140 = _t41; (ctx_fn *)&_r140; }); f_check__errorf(_t38, _t39, _t40); });
                         }
                     }
                 }
@@ -77758,9 +77802,9 @@ static t817 f_check__no_writer(void) {
     __builtin_unreachable();
 }
 
-struct b143 { ctx_fn base; t14 c0; };
-static t127 b143_code(ctx_fn *self, void * a0) {
-    struct b143 *s = (struct b143 *)self;
+struct b141 { ctx_fn base; t14 c0; };
+static t127 b141_code(ctx_fn *self, void * a0) {
+    struct b141 *s = (struct b141 *)self;
     return f_check__fmt_text_okfmt_d8ce53b0(s->c0, a0);
 }
 
@@ -77769,20 +77813,20 @@ static t27 f_check__fmt_text_ok(t166 l0, t7 l1, t174 l2) {
     t613 l3;
     t14 l4;
     CTX_STACK_CHECK();
-    struct b143 _r143;
+    struct b141 _r141;
     {
         { t399 _t0 = f_utf8__from(l1); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l3 = _t0.p.v1.m_error; {
             { t613 _t1 = l3; if ((_t1.tag == 0)) { l4 = _t1.p.v0.m_at; {
-                ({ t166 _t2 = (&(*l0)); t174 _t3 = l2; t543 _t4 = ({ struct b143 _t5; _t5.base.code = (void (*)(void))b143_code; _t5.c0 = l4; _r143 = _t5; (ctx_fn *)&_r143; }); f_check__errorf(_t2, _t3, _t4); });
+                ({ t166 _t2 = (&(*l0)); t174 _t3 = l2; t543 _t4 = ({ struct b141 _t5; _t5.base.code = (void (*)(void))b141_code; _t5.c0 = l4; _r141 = _t5; (ctx_fn *)&_r141; }); f_check__errorf(_t2, _t3, _t4); });
             } } }
         } } }
     }
 }
 
-struct b144 { ctx_fn base; t16 c0; t16 c1; t16 c2; t16 c3; };
-static t127 b144_code(ctx_fn *self, void * a0) {
-    struct b144 *s = (struct b144 *)self;
+struct b142 { ctx_fn base; t16 c0; t16 c1; t16 c2; t16 c3; };
+static t127 b142_code(ctx_fn *self, void * a0) {
+    struct b142 *s = (struct b142 *)self;
     return f_check__writer_offmt_c2fd0843(s->c0, s->c1, s->c2, s->c3, a0);
 }
 
@@ -77801,11 +77845,11 @@ static t959 f_check__writer_of(t166 l0, t22 l1, t22 l2, t22 l3, t174 l4, t16 l5)
     t12 l16;
     t12 l17;
     CTX_STACK_CHECK();
-    struct b144 _r144;
+    struct b142 _r142;
     {
         l6 = f_check__writers_of((&(*l0)), l1, l2, l3);
         if (((l6).m_two != ((t22)(4294967295ULL)))) {
-            ({ t166 _t0 = (&(*l0)); t174 _t1 = l4; t543 _t2 = ({ struct b144 _t3; _t3.base.code = (void (*)(void))b144_code; _t3.c0 = f_check__tstr(&((*l0)), l2); _t3.c1 = f_check__tstr(&((*l0)), l1); _t3.c2 = f_check__str((f_check__get_decl(&((*l0)), ((l6).m_one).m_decl)).m_qual); _t3.c3 = f_check__str((f_check__get_decl(&((*l0)), (l6).m_two)).m_qual); _r144 = _t3; (ctx_fn *)&_r144; }); f_check__errorf(_t0, _t1, _t2); });
+            ({ t166 _t0 = (&(*l0)); t174 _t1 = l4; t543 _t2 = ({ struct b142 _t3; _t3.base.code = (void (*)(void))b142_code; _t3.c0 = f_check__tstr(&((*l0)), l2); _t3.c1 = f_check__tstr(&((*l0)), l1); _t3.c2 = f_check__str((f_check__get_decl(&((*l0)), ((l6).m_one).m_decl)).m_qual); _t3.c3 = f_check__str((f_check__get_decl(&((*l0)), (l6).m_two)).m_qual); _r142 = _t3; (ctx_fn *)&_r142; }); f_check__errorf(_t0, _t1, _t2); });
             return ((t959){0});
         }
         if ((((l6).m_one).m_decl == ((t22)(4294967295ULL)))) {
@@ -77833,14 +77877,14 @@ static t959 f_check__writer_of(t166 l0, t22 l1, t22 l2, t22 l3, t174 l4, t16 l5)
             } } _t5; }); }); }); if ((_t4.tag == 0)) { {
             } } else if ((_t4.tag == 1)) { l15 = _t4.p.v1.m_error; {
                 { t12 _t15 = l15; if ((_t15.tag == 0)) { {
-                    ctx_panic(12330, 13, 3242879023, "try! failed: alloc::out_of_memory");
+                    ctx_panic(12341, 13, 3242879023, "try! failed: alloc::out_of_memory");
                 } } }
             } } }
             if (f_check__is_enum(&((*l0)), l2)) {
                 { t61 _t16 = f_utf8__pusharena__Arena_14525023((&l7), ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)": convert it with `@as`", .m_len = 23 }), })); if ((_t16.tag == 0)) { {
                 } } else if ((_t16.tag == 1)) { l17 = _t16.p.v1.m_error; {
                     { t12 _t17 = l17; if ((_t17.tag == 0)) { {
-                        ctx_panic(12332, 17, 3242879023, "try! failed: alloc::out_of_memory");
+                        ctx_panic(12343, 17, 3242879023, "try! failed: alloc::out_of_memory");
                     } } }
                 } } }
             } else {
@@ -77852,7 +77896,7 @@ static t959 f_check__writer_of(t166 l0, t22 l1, t22 l2, t22 l3, t174 l4, t16 l5)
                     { t61 _t20 = f_utf8__pusharena__Arena_14525023((&l7), ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)": give it a value with `ifnull`", .m_len = 31 }), })); if ((_t20.tag == 0)) { {
                     } } else if ((_t20.tag == 1)) { l16 = _t20.p.v1.m_error; {
                         { t12 _t21 = l16; if ((_t21.tag == 0)) { {
-                            ctx_panic(12334, 17, 3242879023, "try! failed: alloc::out_of_memory");
+                            ctx_panic(12345, 17, 3242879023, "try! failed: alloc::out_of_memory");
                         } } }
                     } } }
                 }
@@ -77876,7 +77920,7 @@ static t27 f_check__call_hole(t166 l0, t364 * l1, t677 * l2) {
         } } else { {
             _t0 = ((bool)0);
         } } _t0; })) {
-            l4 = ({ t475 _t6 = (&((*l0)).m_ty); t22 _t7 = ((*({ t552 _t9 = (l3); uint64_t _t10 = ((t14)(0ULL)); _t9.m_ptr + ctx_idx(_t10, _t9.m_len, 12530, 60, 3242879023); }))).m_ty; t6 _t8 = ((bool)1); f_types__ptr(_t6, _t7, _t8); });
+            l4 = ({ t475 _t6 = (&((*l0)).m_ty); t22 _t7 = ((*({ t552 _t9 = (l3); uint64_t _t10 = ((t14)(0ULL)); _t9.m_ptr + ctx_idx(_t10, _t9.m_len, 12541, 60, 3242879023); }))).m_ty; t6 _t8 = ((bool)1); f_types__ptr(_t6, _t7, _t8); });
             (void)({ t166 _t11 = (&(*l0)); t22 _t12 = ((*l2)).m_ptr; t22 _t13 = l4; t174 _t14 = ({ t174 _t15; if (((*l2)).m_value) {
                 _t15 = f_check__expr_at(&((*l1)));
             } else {
@@ -77895,7 +77939,7 @@ static t6 f_check__is_errs(t163 * l0, t22 l1) {
         { t476 _t0 = ({ t270 _t1 = ((*l0)).m_ty; t22 _t2 = f_types__prune(&(((*l0)).m_ty), l1); f_types__get(&_t1, _t2); }); if ((_t0.tag == 15) || (_t0.tag == 16)) { {
             return ((bool)1);
         } } else if ((_t0.tag == 13)) { l2 = _t0.p.v13.m_decl; l3 = _t0.p.v13.m_index; {
-            return ({ t163 *_t3 = &((*l0)); t22 _t4 = l2; t14 _t5 = ((t14)(ctx_as_u((uint64_t)(l3), UINT64_MAX, "usize", 12571, 78, 3242879023))); f_check__set_param(_t3, _t4, _t5); });
+            return ({ t163 *_t3 = &((*l0)); t22 _t4 = l2; t14 _t5 = ((t14)(ctx_as_u((uint64_t)(l3), UINT64_MAX, "usize", 12582, 78, 3242879023))); f_check__set_param(_t3, _t4, _t5); });
         } } else { {
             return ((bool)0);
         } } }
@@ -78209,33 +78253,33 @@ static t27 f_check__let_stmt(t166 l0, t595 * l1, t6 l2, t183 l3, t354 * l4, t363
     }
 }
 
-struct b145 { ctx_fn base; t16 c0; };
+struct b143 { ctx_fn base; t16 c0; };
+static t127 b143_code(ctx_fn *self, void * a0) {
+    struct b143 *s = (struct b143 *)self;
+    return f_check__let_elsefmt_6e481ceb(s->c0, a0);
+}
+
+struct b144 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b144_code(ctx_fn *self, void * a0) {
+    struct b144 *s = (struct b144 *)self;
+    return f_check__let_elsefmt_6e481ceb_1(s->c0, s->c1, a0);
+}
+
+struct b145 { ctx_fn base; t16 c0; t16 c1; };
 static t127 b145_code(ctx_fn *self, void * a0) {
     struct b145 *s = (struct b145 *)self;
-    return f_check__let_elsefmt_6e481ceb(s->c0, a0);
+    return f_check__let_elsefmt_6e481ceb_4(s->c0, s->c1, a0);
 }
 
 struct b146 { ctx_fn base; t16 c0; t16 c1; };
 static t127 b146_code(ctx_fn *self, void * a0) {
     struct b146 *s = (struct b146 *)self;
-    return f_check__let_elsefmt_6e481ceb_1(s->c0, s->c1, a0);
-}
-
-struct b147 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b147_code(ctx_fn *self, void * a0) {
-    struct b147 *s = (struct b147 *)self;
-    return f_check__let_elsefmt_6e481ceb_4(s->c0, s->c1, a0);
-}
-
-struct b148 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b148_code(ctx_fn *self, void * a0) {
-    struct b148 *s = (struct b148 *)self;
     return f_check__let_elsefmt_6e481ceb_3(s->c0, s->c1, a0);
 }
 
-struct b149 { ctx_fn base; t16 c0; };
-static t127 b149_code(ctx_fn *self, void * a0) {
-    struct b149 *s = (struct b149 *)self;
+struct b147 { ctx_fn base; t16 c0; };
+static t127 b147_code(ctx_fn *self, void * a0) {
+    struct b147 *s = (struct b147 *)self;
     return f_check__let_elsefmt_6e481ceb_2(s->c0, a0);
 }
 
@@ -78273,11 +78317,11 @@ static t27 f_check__let_else(t166 l0, t595 * l1, t183 l2, t758 l3, t364 * l4, t7
     t656 l37;
     t963 l38;
     CTX_STACK_CHECK();
+    struct b143 _r143;
+    struct b144 _r144;
     struct b145 _r145;
     struct b146 _r146;
     struct b147 _r147;
-    struct b148 _r148;
-    struct b149 _r149;
     {
         l8 = f_check__value_type((&(*l0)), &((*l4)));
         l9 = f_types__prune(&(((*l0)).m_ty), l8);
@@ -78292,7 +78336,7 @@ static t27 f_check__let_else(t166 l0, t595 * l1, t183 l2, t758 l3, t364 * l4, t7
                 l10 = ((bool)0);
             } else {
                 if (l10) {
-                    ({ t166 _t7 = (&(*l0)); t174 _t8 = f_check__expr_at(&((*l4))); t543 _t9 = ({ struct b145 _t10; _t10.base.code = (void (*)(void))b145_code; _t10.c0 = f_check__tstr(&((*l0)), l9); _r145 = _t10; (ctx_fn *)&_r145; }); f_check__errorf(_t7, _t8, _t9); });
+                    ({ t166 _t7 = (&(*l0)); t174 _t8 = f_check__expr_at(&((*l4))); t543 _t9 = ({ struct b143 _t10; _t10.base.code = (void (*)(void))b143_code; _t10.c0 = f_check__tstr(&((*l0)), l9); _r143 = _t10; (ctx_fn *)&_r143; }); f_check__errorf(_t7, _t8, _t9); });
                     l10 = ((bool)0);
                 }
             }
@@ -78329,7 +78373,7 @@ static t27 f_check__let_else(t166 l0, t595 * l1, t183 l2, t758 l3, t364 * l4, t7
         l18 = l10;
         if ((l10 && (l12 == ((t22)(4294967295ULL))))) {
             if ((((l2).m_text).m_len > ((t14)(0ULL)))) {
-                ({ t166 _t16 = (&(*l0)); t174 _t17 = ((*l1)).m_span; t543 _t18 = ({ struct b146 _t19; _t19.base.code = (void (*)(void))b146_code; _t19.c0 = f_check__tstr(&((*l0)), l9); _t19.c1 = f_check__str((l2).m_text); _r146 = _t19; (ctx_fn *)&_r146; }); f_check__errorf(_t16, _t17, _t18); });
+                ({ t166 _t16 = (&(*l0)); t174 _t17 = ((*l1)).m_span; t543 _t18 = ({ struct b144 _t19; _t19.base.code = (void (*)(void))b144_code; _t19.c0 = f_check__tstr(&((*l0)), l9); _t19.c1 = f_check__str((l2).m_text); _r144 = _t19; (ctx_fn *)&_r144; }); f_check__errorf(_t16, _t17, _t18); });
             }
             l18 = ((bool)0);
         }
@@ -78346,15 +78390,15 @@ static t27 f_check__let_else(t166 l0, t595 * l1, t183 l2, t758 l3, t364 * l4, t7
             l24 = f_check__variant_index(l11, l23);
             l25 = ((l18 && (l24 != ((t22)(4294967295ULL)))) && (!l13));
             if ((l18 && l13)) {
-                ({ t166 _t25 = (&(*l0)); t174 _t26 = (l7).m_span; t543 _t27 = ({ struct b147 _t28; _t28.base.code = (void (*)(void))b147_code; _t28.c0 = f_check__str(l23); _t28.c1 = f_check__str((l2).m_text); _r147 = _t28; (ctx_fn *)&_r147; }); f_check__errorf(_t25, _t26, _t27); });
+                ({ t166 _t25 = (&(*l0)); t174 _t26 = (l7).m_span; t543 _t27 = ({ struct b145 _t28; _t28.base.code = (void (*)(void))b145_code; _t28.c0 = f_check__str(l23); _t28.c1 = f_check__str((l2).m_text); _r145 = _t28; (ctx_fn *)&_r145; }); f_check__errorf(_t25, _t26, _t27); });
             } else {
                 if ((l18 && (l24 == ((t22)(4294967295ULL))))) {
                     if (((l23).m_len > ((t14)(0ULL)))) {
-                        ({ t166 _t29 = (&(*l0)); t174 _t30 = (l7).m_span; t543 _t31 = ({ struct b148 _t32; _t32.base.code = (void (*)(void))b148_code; _t32.c0 = f_check__tstr(&((*l0)), l9); _t32.c1 = f_check__str(l23); _r148 = _t32; (ctx_fn *)&_r148; }); f_check__errorf(_t29, _t30, _t31); });
+                        ({ t166 _t29 = (&(*l0)); t174 _t30 = (l7).m_span; t543 _t31 = ({ struct b146 _t32; _t32.base.code = (void (*)(void))b146_code; _t32.c0 = f_check__tstr(&((*l0)), l9); _t32.c1 = f_check__str(l23); _r146 = _t32; (ctx_fn *)&_r146; }); f_check__errorf(_t29, _t30, _t31); });
                     }
                 } else {
                     if ((l18 && f_slice__eq_bytes(l23, (l2).m_text))) {
-                        ({ t166 _t33 = (&(*l0)); t174 _t34 = (l7).m_span; t543 _t35 = ({ struct b149 _t36; _t36.base.code = (void (*)(void))b149_code; _t36.c0 = f_check__str((l2).m_text); _r149 = _t36; (ctx_fn *)&_r149; }); f_check__errorf(_t33, _t34, _t35); });
+                        ({ t166 _t33 = (&(*l0)); t174 _t34 = (l7).m_span; t543 _t35 = ({ struct b147 _t36; _t36.base.code = (void (*)(void))b147_code; _t36.c0 = f_check__str((l2).m_text); _r147 = _t36; (ctx_fn *)&_r147; }); f_check__errorf(_t33, _t34, _t35); });
                     } else {
                         if ((l18 && ((l11).m_len != ((t14)(2ULL))))) {
                             l26 = f_check__message(&((*l0)));
@@ -78431,9 +78475,9 @@ static t27 f_check__let_else(t166 l0, t595 * l1, t183 l2, t758 l3, t364 * l4, t7
     }
 }
 
-struct b150 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b150_code(ctx_fn *self, void * a0) {
-    struct b150 *s = (struct b150 *)self;
+struct b148 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b148_code(ctx_fn *self, void * a0) {
+    struct b148 *s = (struct b148 *)self;
     return f_check__assignfmt_9f92461d(s->c0, s->c1, a0);
 }
 
@@ -78455,7 +78499,7 @@ static t27 f_check__assign(t166 l0, t364 * l1, t364 * l2, t174 l3) {
     t22 l17;
     t696 l18;
     CTX_STACK_CHECK();
-    struct b150 _r150;
+    struct b148 _r148;
     {
         l4 = ((t22)(4294967295ULL));
         if (({ t6 _t0; t606 _t1 = ((*l1)).m_k; if ((_t1.tag == 6)) { l5 = _t1.p.v6.m_segs; {
@@ -78481,7 +78525,7 @@ static t27 f_check__assign(t166 l0, t364 * l1, t364 * l2, t174 l3) {
                 } else {
                     _t7 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"read-only", .m_len = 9 }), });
                 } _t7; });
-                ({ t166 _t8 = (&(*l0)); t174 _t9 = f_check__expr_at(&((*l1))); t543 _t10 = ({ struct b150 _t11; _t11.base.code = (void (*)(void))b150_code; _t11.c0 = f_check__str((l7).m_name); _t11.c1 = l8; _r150 = _t11; (ctx_fn *)&_r150; }); f_check__errorf(_t8, _t9, _t10); });
+                ({ t166 _t8 = (&(*l0)); t174 _t9 = f_check__expr_at(&((*l1))); t543 _t10 = ({ struct b148 _t11; _t11.base.code = (void (*)(void))b148_code; _t11.c0 = f_check__str((l7).m_name); _t11.c1 = l8; _r148 = _t11; (ctx_fn *)&_r148; }); f_check__errorf(_t8, _t9, _t10); });
             }
             f_check__expect((&(*l0)), &((*l2)), (l7).m_ty);
             ({ t166 _t12 = (&(*l0)); t22 _t13 = (l7).m_ty; t6 _t14 = ((l7).m_tracked && (!(l7).m_mutable)); t174 _t15 = f_check__expr_at(&((*l1))); f_check__check_cap_assign(_t12, _t13, _t14, _t15); });
@@ -78543,15 +78587,15 @@ static t27 f_check__assign(t166 l0, t364 * l1, t364 * l2, t174 l3) {
     }
 }
 
-struct b151 { ctx_fn base; t16 c0; };
-static t127 b151_code(ctx_fn *self, void * a0) {
-    struct b151 *s = (struct b151 *)self;
+struct b149 { ctx_fn base; t16 c0; };
+static t127 b149_code(ctx_fn *self, void * a0) {
+    struct b149 *s = (struct b149 *)self;
     return f_check__eval_stmtfmt_0b8ccc6b(s->c0, a0);
 }
 
-struct b152 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b152_code(ctx_fn *self, void * a0) {
-    struct b152 *s = (struct b152 *)self;
+struct b150 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b150_code(ctx_fn *self, void * a0) {
+    struct b150 *s = (struct b150 *)self;
     return f_check__eval_stmtfmt_0b8ccc6b_1(s->c0, s->c1, a0);
 }
 
@@ -78593,8 +78637,8 @@ static t27 f_check__eval_stmt(t166 l0, t364 * l1) {
     t22 l35;
     t22 l36;
     CTX_STACK_CHECK();
-    struct b151 _r151;
-    struct b152 _r152;
+    struct b149 _r149;
+    struct b150 _r150;
     {
         l2 = f_check__str(((t7){ .m_ptr = (void *)"this call", .m_len = 9 }));
         l3 = ((t22)(0ULL));
@@ -78715,7 +78759,7 @@ static t27 f_check__eval_stmt(t166 l0, t364 * l1) {
             } } else { {
                 _t42 = ((bool)0);
             } } _t42; })) && (f_types__prune(&(((*l0)).m_ty), l36) != ((t22)(1ULL))))) {
-                ({ t166 _t46 = (&(*l0)); t174 _t47 = f_check__expr_at(&((*l1))); t543 _t48 = ({ struct b151 _t49; _t49.base.code = (void (*)(void))b151_code; _t49.c0 = f_check__tstr(&((*l0)), l36); _r151 = _t49; (ctx_fn *)&_r151; }); f_check__errorf(_t46, _t47, _t48); });
+                ({ t166 _t46 = (&(*l0)); t174 _t47 = f_check__expr_at(&((*l1))); t543 _t48 = ({ struct b149 _t49; _t49.base.code = (void (*)(void))b149_code; _t49.c0 = f_check__tstr(&((*l0)), l36); _r149 = _t49; (ctx_fn *)&_r149; }); f_check__errorf(_t46, _t47, _t48); });
             }
             return;
         } } else { {
@@ -78724,7 +78768,7 @@ static t27 f_check__eval_stmt(t166 l0, t364 * l1) {
             return;
         } } }
         if (((l3 != ((t22)(1ULL))) && (l3 != ((t22)(0ULL))))) {
-            ({ t166 _t53 = (&(*l0)); t174 _t54 = f_check__expr_at(&((*l1))); t543 _t55 = ({ struct b152 _t56; _t56.base.code = (void (*)(void))b152_code; _t56.c0 = l2; _t56.c1 = f_check__tstr(&((*l0)), l3); _r152 = _t56; (ctx_fn *)&_r152; }); f_check__errorf(_t53, _t54, _t55); });
+            ({ t166 _t53 = (&(*l0)); t174 _t54 = f_check__expr_at(&((*l1))); t543 _t55 = ({ struct b150 _t56; _t56.base.code = (void (*)(void))b150_code; _t56.c0 = l2; _t56.c1 = f_check__tstr(&((*l0)), l3); _r150 = _t56; (ctx_fn *)&_r150; }); f_check__errorf(_t53, _t54, _t55); });
         }
     }
 }
@@ -78754,9 +78798,9 @@ static t27 f_check__discard(t166 l0, t364 * l1) {
     }
 }
 
-struct b153 { ctx_fn base; t16 c0; };
-static t127 b153_code(ctx_fn *self, void * a0) {
-    struct b153 *s = (struct b153 *)self;
+struct b151 { ctx_fn base; t16 c0; };
+static t127 b151_code(ctx_fn *self, void * a0) {
+    struct b151 *s = (struct b151 *)self;
     return f_check__while_stmtfmt_2fd003b4(s->c0, a0);
 }
 
@@ -78788,7 +78832,7 @@ static t27 f_check__while_stmt(t166 l0, t759 * l1, t364 * l2, t355 l3, t174 l4, 
     t173 l29;
     t963 l30;
     CTX_STACK_CHECK();
-    struct b153 _r153;
+    struct b151 _r151;
     {
         l6 = ((t7){ .m_ptr = (void *)"", .m_len = 0 });
         if ((((*l1)).tag != 0)) {
@@ -78797,7 +78841,7 @@ static t27 f_check__while_stmt(t166 l0, t759 * l1, t364 * l2, t355 l3, t174 l4, 
             l8 = ((*l0)).m_loop_base;
             while ((l8 < (l7).m_len)) {
                 if ((((l6).m_len > ((t14)(0ULL))) && ({ t7 _t0 = ((*({ t490 _t2 = (l7); uint64_t _t3 = l8; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 4984, 63, 3242879023); }))).m_label; t7 _t1 = l6; f_slice__eq_bytes(_t0, _t1); }))) {
-                    ({ t166 _t4 = (&(*l0)); t174 _t5 = (((*l1)).p.v1.m_value).m_span; t543 _t6 = ({ struct b153 _t7; _t7.base.code = (void (*)(void))b153_code; _t7.c0 = f_check__str(l6); _r153 = _t7; (ctx_fn *)&_r153; }); f_check__errorf(_t4, _t5, _t6); });
+                    ({ t166 _t4 = (&(*l0)); t174 _t5 = (((*l1)).p.v1.m_value).m_span; t543 _t6 = ({ struct b151 _t7; _t7.base.code = (void (*)(void))b151_code; _t7.c0 = f_check__str(l6); _r151 = _t7; (ctx_fn *)&_r151; }); f_check__errorf(_t4, _t5, _t6); });
                      break;
                 }
                 l8 = ctx_add_u64(l8, ((t14)(1ULL)), 4988, 23, 3242879023);
@@ -78955,15 +78999,15 @@ static t27 f_check__return_stmt(t166 l0, t363 * l1, t174 l2) {
     }
 }
 
-struct b154 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b154_code(ctx_fn *self, void * a0) {
-    struct b154 *s = (struct b154 *)self;
+struct b152 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b152_code(ctx_fn *self, void * a0) {
+    struct b152 *s = (struct b152 *)self;
     return f_check__jumpfmt_57fb9fec(s->c0, s->c1, a0);
 }
 
-struct b155 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b155_code(ctx_fn *self, void * a0) {
-    struct b155 *s = (struct b155 *)self;
+struct b153 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b153_code(ctx_fn *self, void * a0) {
+    struct b153 *s = (struct b153 *)self;
     return f_check__jumpfmt_57fb9fec_1(s->c0, s->c1, a0);
 }
 
@@ -78978,8 +79022,8 @@ static t27 f_check__jump(t166 l0, t16 l1, t759 * l2, t174 l3, t8 l4) {
     t1021 l11;
     t12 l12;
     CTX_STACK_CHECK();
-    struct b154 _r154;
-    struct b155 _r155;
+    struct b152 _r152;
+    struct b153 _r153;
     {
         l5 = ({ t16 _t0; if ((((*l0)).m_defers > ((t22)(0ULL)))) {
             _t0 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)" in this defer", .m_len = 14 }), });
@@ -78987,7 +79031,7 @@ static t27 f_check__jump(t166 l0, t16 l1, t759 * l2, t174 l3, t8 l4) {
             _t0 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"", .m_len = 0 }), });
         } _t0; });
         if (((((*l0)).m_loops).m_len == ((*l0)).m_loop_base)) {
-            ({ t166 _t1 = (&(*l0)); t174 _t2 = l3; t543 _t3 = ({ struct b154 _t4; _t4.base.code = (void (*)(void))b154_code; _t4.c0 = l1; _t4.c1 = l5; _r154 = _t4; (ctx_fn *)&_r154; }); f_check__errorf(_t1, _t2, _t3); });
+            ({ t166 _t1 = (&(*l0)); t174 _t2 = l3; t543 _t3 = ({ struct b152 _t4; _t4.base.code = (void (*)(void))b152_code; _t4.c0 = l1; _t4.c1 = l5; _r152 = _t4; (ctx_fn *)&_r152; }); f_check__errorf(_t1, _t2, _t3); });
             ((*l0)).m_dead = ((bool)1);
             return;
         }
@@ -79008,7 +79052,7 @@ static t27 f_check__jump(t166 l0, t16 l1, t759 * l2, t174 l3, t8 l4) {
                 }
             }
             if ((!l8)) {
-                ({ t166 _t16 = (&(*l0)); t174 _t17 = l3; t543 _t18 = ({ struct b155 _t19; _t19.base.code = (void (*)(void))b155_code; _t19.c0 = f_check__str((((*l2)).p.v1.m_value).m_text); _t19.c1 = l5; _r155 = _t19; (ctx_fn *)&_r155; }); f_check__errorf(_t16, _t17, _t18); });
+                ({ t166 _t16 = (&(*l0)); t174 _t17 = l3; t543 _t18 = ({ struct b153 _t19; _t19.base.code = (void (*)(void))b153_code; _t19.c0 = f_check__str((((*l2)).p.v1.m_value).m_text); _t19.c1 = l5; _r153 = _t19; (ctx_fn *)&_r153; }); f_check__errorf(_t16, _t17, _t18); });
                 ((*l0)).m_dead = ((bool)1);
                 return;
             }
@@ -79267,10 +79311,10 @@ static t173 f_check__no_args(t166 l0, t14 l1) {
             { t61 _t0 = f_list__pushu32arena__Arena_098e3c94((&l2), ((t22)(4294967295ULL))); if ((_t0.tag == 0)) { {
             } } else if ((_t0.tag == 1)) { l4 = _t0.p.v1.m_error; {
                 { t12 _t1 = l4; if ((_t1.tag == 0)) { {
-                    ctx_panic(12274, 13, 3242879023, "try! failed: alloc::out_of_memory");
+                    ctx_panic(12285, 13, 3242879023, "try! failed: alloc::out_of_memory");
                 } } }
             } } }
-            l3 = ctx_add_u64(l3, ((t14)(1ULL)), 12275, 19, 3242879023);
+            l3 = ctx_add_u64(l3, ((t14)(1ULL)), 12286, 19, 3242879023);
         }
         return f_list__itemsu32arena__Arena_0ba5b83a(&(l2));
     }
@@ -79430,10 +79474,10 @@ static t551 f_check__sink_field(t163 * l0, t22 l1) {
     CTX_STACK_CHECK();
     {
         l2 = (f_check__get_decl(&((*l0)), l1)).m_fields;
-        return ({ t551 _t0; if (((*({ t552 _t1 = (l2); uint64_t _t2 = ((t14)(0ULL)); _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 12249, 21, 3242879023); }))).m_mutable) {
-            _t0 = (*({ t552 _t3 = (l2); uint64_t _t4 = ((t14)(0ULL)); _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 12249, 37, 3242879023); }));
+        return ({ t551 _t0; if (((*({ t552 _t1 = (l2); uint64_t _t2 = ((t14)(0ULL)); _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 12260, 21, 3242879023); }))).m_mutable) {
+            _t0 = (*({ t552 _t3 = (l2); uint64_t _t4 = ((t14)(0ULL)); _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 12260, 37, 3242879023); }));
         } else {
-            _t0 = (*({ t552 _t5 = (l2); uint64_t _t6 = ((t14)(1ULL)); _t5.m_ptr + ctx_idx(_t6, _t5.m_len, 12249, 52, 3242879023); }));
+            _t0 = (*({ t552 _t5 = (l2); uint64_t _t6 = ((t14)(1ULL)); _t5.m_ptr + ctx_idx(_t6, _t5.m_len, 12260, 52, 3242879023); }));
         } _t0; });
     }
     __builtin_unreachable();
@@ -79914,15 +79958,15 @@ static t973 f_check__tw_path(t163 * l0, t364 * l1) {
     __builtin_unreachable();
 }
 
-struct b156 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b156_code(ctx_fn *self, void * a0) {
-    struct b156 *s = (struct b156 *)self;
+struct b154 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b154_code(ctx_fn *self, void * a0) {
+    struct b154 *s = (struct b154 *)self;
     return f_check__tw_usefmt_e106d9e5(s->c0, s->c1, a0);
 }
 
-struct b157 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b157_code(ctx_fn *self, void * a0) {
-    struct b157 *s = (struct b157 *)self;
+struct b155 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b155_code(ctx_fn *self, void * a0) {
+    struct b155 *s = (struct b155 *)self;
     return f_check__tw_usefmt_e106d9e5_1(s->c0, s->c1, a0);
 }
 
@@ -79933,8 +79977,8 @@ static t27 f_check__tw_use(t166 l0, t972 l1, t6 l2, t174 l3, t689 * l4) {
     t892 l7;
     t14 l8;
     CTX_STACK_CHECK();
-    struct b156 _r156;
-    struct b157 _r157;
+    struct b154 _r154;
+    struct b155 _r155;
     {
         if ((!((*l0)).m_treport)) {
             return;
@@ -79946,13 +79990,13 @@ static t27 f_check__tw_use(t166 l0, t972 l1, t6 l2, t174 l3, t689 * l4) {
             l8 = ((t14)(0ULL));
             while ((l8 < ((l7).m_holds).m_len)) {
                 if (({ t697 _t4 = (*({ t802 _t6 = ((l7).m_holds); uint64_t _t7 = l8; _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 9245, 40, 3242879023); })); t697 _t5 = (l1).m_place; f_check__overlap(_t4, _t5); })) {
-                    ({ t166 _t8 = (&(*l0)); t174 _t9 = l3; t543 _t10 = ({ struct b156 _t11; _t11.base.code = (void (*)(void))b156_code; _t11.c0 = f_check__place_str(&((*l0)), (l1).m_place); _t11.c1 = f_check__tw_at(&((*l0)), (l7).m_at); _r156 = _t11; (ctx_fn *)&_r156; }); f_check__errorf(_t8, _t9, _t10); });
+                    ({ t166 _t8 = (&(*l0)); t174 _t9 = l3; t543 _t10 = ({ struct b154 _t11; _t11.base.code = (void (*)(void))b154_code; _t11.c0 = f_check__place_str(&((*l0)), (l1).m_place); _t11.c1 = f_check__tw_at(&((*l0)), (l7).m_at); _r154 = _t11; (ctx_fn *)&_r154; }); f_check__errorf(_t8, _t9, _t10); });
                     return;
                 }
                 l8 = ctx_add_u64(l8, ((t14)(1ULL)), 9249, 23, 3242879023);
             }
             if ((l5 && f_check__has_id((l7).m_reads, ((l1).m_place).m_root))) {
-                ({ t166 _t12 = (&(*l0)); t174 _t13 = l3; t543 _t14 = ({ struct b157 _t15; _t15.base.code = (void (*)(void))b157_code; _t15.c0 = f_check__str((f_check__get_var(&((*l0)), ((l1).m_place).m_root)).m_name); _t15.c1 = f_check__tw_at(&((*l0)), (l7).m_at); _r157 = _t15; (ctx_fn *)&_r157; }); f_check__errorf(_t12, _t13, _t14); });
+                ({ t166 _t12 = (&(*l0)); t174 _t13 = l3; t543 _t14 = ({ struct b155 _t15; _t15.base.code = (void (*)(void))b155_code; _t15.c0 = f_check__str((f_check__get_var(&((*l0)), ((l1).m_place).m_root)).m_name); _t15.c1 = f_check__tw_at(&((*l0)), (l7).m_at); _r155 = _t15; (ctx_fn *)&_r155; }); f_check__errorf(_t12, _t13, _t14); });
                 return;
             }
             l6 = ctx_add_u64(l6, ((t14)(1ULL)), 9255, 19, 3242879023);
@@ -83422,74 +83466,25 @@ static t61 f_list__reservesyntax__Itemarena__Arena_c5f4bbfa(t919 l0, t14 l1) {
     __builtin_unreachable();
 }
 
-// parser::long_pun@fmt
-static t127 f_parser__long_punfmt_1832044b(t16 l0, t16 l1, t75 l2) {
-    t12 l3;
-    t12 l4;
-    t12 l5;
-    t12 l6;
-    t12 l7;
-    t12 l8;
+// parser::pun_place
+static t6 f_parser__pun_place(t364 * l0) {
+    t596 l1;
+    t599 l2;
+    t599 l3;
+    t599 l4;
     CTX_STACK_CHECK();
     {
-        return ({ t127 _t0; t61 _t1 = ({ t61 _t2; t61 _t3 = f_utf8__push_literalarena__Arena_f5a0db07(l2, ((t7){ .m_ptr = (void *)"a pun is a name alone: write `", .m_len = 30 })); if ((_t3.tag == 0)) { {
-            _t2 = ({ t61 _t4; t61 _t5 = f_utf8__pusharena__Arena_14525023(l2, l0); if ((_t5.tag == 0)) { {
-                _t4 = ({ t61 _t6; t61 _t7 = f_utf8__push_literalarena__Arena_f5a0db07(l2, ((t7){ .m_ptr = (void *)" = ", .m_len = 3 })); if ((_t7.tag == 0)) { {
-                    _t6 = ({ t61 _t8; t61 _t9 = f_utf8__pusharena__Arena_14525023(l2, l1); if ((_t9.tag == 0)) { {
-                        _t8 = ({ t61 _t10; t61 _t11 = f_utf8__push_literalarena__Arena_f5a0db07(l2, ((t7){ .m_ptr = (void *)"`", .m_len = 1 })); if ((_t11.tag == 0)) { {
-                            _t10 = ((t61){ .tag = 0 });
-                        } } else if ((_t11.tag == 1)) { l3 = _t11.p.v1.m_error; {
-                            _t10 = ((t61){ .tag = 1, .p.v1 = { .m_error = l3, } });
-                        } } _t10; });
-                    } } else if ((_t9.tag == 1)) { l4 = _t9.p.v1.m_error; {
-                        _t8 = ((t61){ .tag = 1, .p.v1 = { .m_error = l4, } });
-                    } } _t8; });
-                } } else if ((_t7.tag == 1)) { l5 = _t7.p.v1.m_error; {
-                    _t6 = ((t61){ .tag = 1, .p.v1 = { .m_error = l5, } });
-                } } _t6; });
-            } } else if ((_t5.tag == 1)) { l6 = _t5.p.v1.m_error; {
-                _t4 = ((t61){ .tag = 1, .p.v1 = { .m_error = l6, } });
-            } } _t4; });
-        } } else if ((_t3.tag == 1)) { l7 = _t3.p.v1.m_error; {
-            _t2 = ((t61){ .tag = 1, .p.v1 = { .m_error = l7, } });
-        } } _t2; }); if ((_t1.tag == 0)) { {
-            _t0 = ((t127){ .tag = 0 });
-        } } else if ((_t1.tag == 1)) { l8 = _t1.p.v1.m_error; {
-            _t0 = ((t127){ .tag = 1, .p.v1 = { .m_error = ({ t64 _t12; t12 _t13 = l8; if ((_t13.tag == 0)) { {
-                _t12 = ((t64){ .tag = 0 });
-            } } _t12; }), } });
-        } } _t0; });
-    }
-    __builtin_unreachable();
-}
-
-// parser::long_pun@fmt
-static t127 f_parser__long_punfmt_1832044b_1(t16 l0, t75 l1) {
-    t12 l2;
-    t12 l3;
-    t12 l4;
-    t12 l5;
-    CTX_STACK_CHECK();
-    {
-        return ({ t127 _t0; t61 _t1 = ({ t61 _t2; t61 _t3 = f_utf8__push_literalarena__Arena_f5a0db07(l1, ((t7){ .m_ptr = (void *)"a pun is a name alone: write the field's name, as `name = ", .m_len = 58 })); if ((_t3.tag == 0)) { {
-            _t2 = ({ t61 _t4; t61 _t5 = f_utf8__pusharena__Arena_14525023(l1, l0); if ((_t5.tag == 0)) { {
-                _t4 = ({ t61 _t6; t61 _t7 = f_utf8__push_literalarena__Arena_f5a0db07(l1, ((t7){ .m_ptr = (void *)"`", .m_len = 1 })); if ((_t7.tag == 0)) { {
-                    _t6 = ((t61){ .tag = 0 });
-                } } else if ((_t7.tag == 1)) { l2 = _t7.p.v1.m_error; {
-                    _t6 = ((t61){ .tag = 1, .p.v1 = { .m_error = l2, } });
-                } } _t6; });
-            } } else if ((_t5.tag == 1)) { l3 = _t5.p.v1.m_error; {
-                _t4 = ((t61){ .tag = 1, .p.v1 = { .m_error = l3, } });
-            } } _t4; });
-        } } else if ((_t3.tag == 1)) { l4 = _t3.p.v1.m_error; {
-            _t2 = ((t61){ .tag = 1, .p.v1 = { .m_error = l4, } });
-        } } _t2; }); if ((_t1.tag == 0)) { {
-            _t0 = ((t127){ .tag = 0 });
-        } } else if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_error; {
-            _t0 = ((t127){ .tag = 1, .p.v1 = { .m_error = ({ t64 _t8; t12 _t9 = l5; if ((_t9.tag == 0)) { {
-                _t8 = ((t64){ .tag = 0 });
-            } } _t8; }), } });
-        } } _t0; });
+        { t606 _t0 = ((*l0)).m_k; if ((_t0.tag == 6)) { l1 = _t0.p.v6.m_segs; {
+            return (((l1).m_len == ((t14)(1ULL))) && ((((*({ t596 _t1 = (l1); uint64_t _t2 = ((t14)(0ULL)); _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 1360, 60, 4018602316); }))).m_targs).tag == 0));
+        } } else if ((_t0.tag == 7)) { l2 = _t0.p.v7.m_base; {
+            return f_parser__pun_place(&((*l2)));
+        } } else if ((_t0.tag == 9)) { l3 = _t0.p.v9.m_base; {
+            return f_parser__pun_place(&((*l3)));
+        } } else if ((_t0.tag == 8)) { l4 = _t0.p.v8.m_base; {
+            return f_parser__pun_place(&((*l4)));
+        } } else { {
+            return ((bool)0);
+        } } }
     }
     __builtin_unreachable();
 }
@@ -85097,9 +85092,9 @@ static t16 f_check__path_text(t163 * l0, t596 l1) {
     __builtin_unreachable();
 }
 
-struct b158 { ctx_fn base; t16 c0; t16 c1; t16 c2; t16 c3; t16 c4; };
-static t127 b158_code(ctx_fn *self, void * a0) {
-    struct b158 *s = (struct b158 *)self;
+struct b156 { ctx_fn base; t16 c0; t16 c1; t16 c2; t16 c3; t16 c4; };
+static t127 b156_code(ctx_fn *self, void * a0) {
+    struct b156 *s = (struct b156 *)self;
     return f_check__c_fn_valuefmt_6e80c0d4(s->c0, s->c1, s->c2, s->c3, s->c4, a0);
 }
 
@@ -85113,7 +85108,7 @@ static t22 f_check__c_fn_value(t166 l0, t22 l1, t22 l2, t174 l3) {
     t695 l9;
     t22 l10;
     CTX_STACK_CHECK();
-    struct b158 _r158;
+    struct b156 _r156;
     {
         l4 = f_check__get_decl(&((*l0)), l1);
         if (((((l4).m_kind != ((t15)(6ULL))) && (!(l4).m_callback)) || (l2 == ((t22)(4294967295ULL))))) {
@@ -85135,7 +85130,7 @@ static t22 f_check__c_fn_value(t166 l0, t22 l1, t22 l2, t174 l3) {
             if ((l7 && (l4).m_callback)) {
                 l9 = f_check__loaded_field(&((*l0)), l8);
                 if (((l9).tag != 0)) {
-                    ({ t166 _t4 = (&(*l0)); t174 _t5 = l3; t543 _t6 = ({ struct b158 _t7; _t7.base.code = (void (*)(void))b158_code; _t7.c0 = f_check__str(((l4).m_name).m_text); _t7.c1 = f_check__tstr(&((*l0)), l5); _t7.c2 = f_check__str(((l9).p.v1.m_value).m_name); _t7.c3 = f_check__tstr(&((*l0)), ((l9).p.v1.m_value).m_ty); _t7.c4 = f_check__str(q28); _r158 = _t7; (ctx_fn *)&_r158; }); f_check__errorf(_t4, _t5, _t6); });
+                    ({ t166 _t4 = (&(*l0)); t174 _t5 = l3; t543 _t6 = ({ struct b156 _t7; _t7.base.code = (void (*)(void))b156_code; _t7.c0 = f_check__str(((l4).m_name).m_text); _t7.c1 = f_check__tstr(&((*l0)), l5); _t7.c2 = f_check__str(((l9).p.v1.m_value).m_name); _t7.c3 = f_check__tstr(&((*l0)), ((l9).p.v1.m_value).m_ty); _t7.c4 = f_check__str(q28); _r156 = _t7; (ctx_fn *)&_r156; }); f_check__errorf(_t4, _t5, _t6); });
                     return ((t22)(0ULL));
                 }
                 l10 = f_types__func((&((*l0)).m_ty), (l4).m_fields, (l4).m_ret, ((bool)0), ((bool)0));
@@ -85318,21 +85313,21 @@ static t127 f_check__path_exprfmt_6e897c05_3(t16 l0, t16 l1, t75 l2) {
     __builtin_unreachable();
 }
 
-struct b159 { ctx_fn base; t16 c0; };
-static t127 b159_code(ctx_fn *self, void * a0) {
-    struct b159 *s = (struct b159 *)self;
+struct b157 { ctx_fn base; t16 c0; };
+static t127 b157_code(ctx_fn *self, void * a0) {
+    struct b157 *s = (struct b157 *)self;
     return f_check__braced_asfmt_7ef18a7c(s->c0, a0);
 }
 
-struct b160 { ctx_fn base; t16 c0; };
-static t127 b160_code(ctx_fn *self, void * a0) {
-    struct b160 *s = (struct b160 *)self;
+struct b158 { ctx_fn base; t16 c0; };
+static t127 b158_code(ctx_fn *self, void * a0) {
+    struct b158 *s = (struct b158 *)self;
     return f_check__braced_asfmt_7ef18a7c_1(s->c0, a0);
 }
 
-struct b161 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b161_code(ctx_fn *self, void * a0) {
-    struct b161 *s = (struct b161 *)self;
+struct b159 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b159_code(ctx_fn *self, void * a0) {
+    struct b159 *s = (struct b159 *)self;
     return f_check__braced_asfmt_7ef18a7c_2(s->c0, s->c1, a0);
 }
 
@@ -85356,9 +85351,9 @@ static t22 f_check__braced_as(t166 l0, t364 * l1, t364 * l2, t550 l3, t6 l4, t6 
     t599 l22;
     t22 l23;
     CTX_STACK_CHECK();
+    struct b157 _r157;
+    struct b158 _r158;
     struct b159 _r159;
-    struct b160 _r160;
-    struct b161 _r161;
     {
         l7 = ((t22)(0ULL));
         l8 = f_check__str(((t7){ .m_ptr = (void *)"function", .m_len = 8 }));
@@ -85374,13 +85369,13 @@ static t22 f_check__braced_as(t166 l0, t364 * l1, t364 * l2, t550 l3, t6 l4, t6 
             } } else if ((_t1.tag == 3)) { l14 = _t1.p.v3.m_ty; l15 = _t1.p.v3.m_index; {
                 return f_check__variant_lit((&(*l0)), &((*l1)), l14, l15, l3, l4, l5, l6);
             } } else if ((_t1.tag == 4)) { {
-                ({ t166 _t2 = (&(*l0)); t174 _t3 = f_check__expr_at(&((*l1))); t543 _t4 = ({ struct b159 _t5; _t5.base.code = (void (*)(void))b159_code; _t5.c0 = l8; _r159 = _t5; (ctx_fn *)&_r159; }); f_check__errorf(_t2, _t3, _t4); });
+                ({ t166 _t2 = (&(*l0)); t174 _t3 = f_check__expr_at(&((*l1))); t543 _t4 = ({ struct b157 _t5; _t5.base.code = (void (*)(void))b157_code; _t5.c0 = l8; _r157 = _t5; (ctx_fn *)&_r157; }); f_check__errorf(_t2, _t3, _t4); });
                 return ((t22)(0ULL));
             } } else if ((_t1.tag == 1)) { l16 = _t1.p.v1.m_decl; l17 = _t1.p.v1.m_targs; {
                 l7 = f_check__fn_type((&(*l0)), l16, l17);
                 l9 = (f_check__get_decl(&((*l0)), l16)).m_starts_task;
                 if ((l9 && l5)) {
-                    ({ t166 _t6 = (&(*l0)); t174 _t7 = f_check__expr_at(&((*l1))); t543 _t8 = ({ struct b160 _t9; _t9.base.code = (void (*)(void))b160_code; _t9.c0 = l8; _r160 = _t9; (ctx_fn *)&_r160; }); f_check__errorf(_t6, _t7, _t8); });
+                    ({ t166 _t6 = (&(*l0)); t174 _t7 = f_check__expr_at(&((*l1))); t543 _t8 = ({ struct b158 _t9; _t9.base.code = (void (*)(void))b158_code; _t9.c0 = l8; _r158 = _t9; (ctx_fn *)&_r158; }); f_check__errorf(_t6, _t7, _t8); });
                 }
                 if (((!l9) && (!((((*l0)).m_fn_decl != ((t22)(4294967295ULL))) && ({ t163 _t10 = (*l0); t22 _t11 = (f_check__get_decl(&((*l0)), ((*l0)).m_fn_decl)).m_ns; f_check__handles_own(&_t10, _t11); }))))) {
                     ({ t166 _t12 = (&(*l0)); t173 _t13 = l17; t174 _t14 = f_check__expr_at(&((*l2))); f_check__no_handle_targs(_t12, _t13, _t14); });
@@ -85416,7 +85411,7 @@ static t22 f_check__braced_as(t166 l0, t364 * l1, t364 * l2, t550 l3, t6 l4, t6 
         } } else { {
             _t21 = ((bool)0);
         } } _t21; }))) {
-            ({ t166 _t23 = (&(*l0)); t174 _t24 = f_check__expr_at(&((*l2))); t543 _t25 = ({ struct b161 _t26; _t26.base.code = (void (*)(void))b161_code; _t26.c0 = l8; _t26.c1 = f_check__tstr(&((*l0)), l7); _r161 = _t26; (ctx_fn *)&_r161; }); f_check__errorf(_t23, _t24, _t25); });
+            ({ t166 _t23 = (&(*l0)); t174 _t24 = f_check__expr_at(&((*l2))); t543 _t25 = ({ struct b159 _t26; _t26.base.code = (void (*)(void))b159_code; _t26.c0 = l8; _t26.c1 = f_check__tstr(&((*l0)), l7); _r159 = _t26; (ctx_fn *)&_r159; }); f_check__errorf(_t23, _t24, _t25); });
             return ((t22)(0ULL));
         }
         ((*l0)).m_starting = l9;
@@ -85443,9 +85438,9 @@ static t6 f_map__hasu64boolarena__Arena_292b678f(t288 * l0, t8 l1) {
     __builtin_unreachable();
 }
 
-struct b162 { ctx_fn base; t16 c0; };
-static t127 b162_code(ctx_fn *self, void * a0) {
-    struct b162 *s = (struct b162 *)self;
+struct b160 { ctx_fn base; t16 c0; };
+static t127 b160_code(ctx_fn *self, void * a0) {
+    struct b160 *s = (struct b160 *)self;
     return f_check__no_spreadfmt_63b612b9(s->c0, a0);
 }
 
@@ -85454,17 +85449,17 @@ static t27 f_check__no_spread(t166 l0, t364 * l1, t550 l2) {
     t14 l3;
     t602 l4;
     CTX_STACK_CHECK();
-    struct b162 _r162;
+    struct b160 _r160;
     {
         f_check__spreads_checked((&(*l0)), &((*l1)));
         l3 = ((t14)(0ULL));
         while ((l3 < (l2).m_len)) {
-            l4 = (*({ t550 _t0 = (l2); uint64_t _t1 = l3; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 10861, 27, 3242879023); }));
+            l4 = (*({ t550 _t0 = (l2); uint64_t _t1 = l3; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 10869, 27, 3242879023); }));
             if ((l4).m_spread) {
                 (void)f_check__expr((&(*l0)), &((l4).m_value), ((t22)(4294967295ULL)));
-                ({ t166 _t2 = (&(*l0)); t174 _t3 = (l4).m_span; t543 _t4 = ({ struct b162 _t5; _t5.base.code = (void (*)(void))b162_code; _t5.c0 = f_check__str(f_check__source_text(&((*l0)), ((l4).m_value).m_span)); _r162 = _t5; (ctx_fn *)&_r162; }); f_check__errorf(_t2, _t3, _t4); });
+                ({ t166 _t2 = (&(*l0)); t174 _t3 = (l4).m_span; t543 _t4 = ({ struct b160 _t5; _t5.base.code = (void (*)(void))b160_code; _t5.c0 = f_check__str(f_check__source_text(&((*l0)), ((l4).m_value).m_span)); _r160 = _t5; (ctx_fn *)&_r160; }); f_check__errorf(_t2, _t3, _t4); });
             }
-            l3 = ctx_add_u64(l3, ((t14)(1ULL)), 10866, 19, 3242879023);
+            l3 = ctx_add_u64(l3, ((t14)(1ULL)), 10874, 19, 3242879023);
         }
     }
 }
@@ -85708,18 +85703,18 @@ static t22 f_check__operand_type(t166 l0, t22 l1, t22 l2, t364 * l3, t364 * l4) 
     __builtin_unreachable();
 }
 
-struct b163 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b163_code(ctx_fn *self, void * a0) {
-    struct b163 *s = (struct b163 *)self;
+struct b161 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b161_code(ctx_fn *self, void * a0) {
+    struct b161 *s = (struct b161 *)self;
     return f_check__cannot_comparefmt_7f3d4d83(s->c0, s->c1, a0);
 }
 
 // check::cannot_compare
 static t27 f_check__cannot_compare(t166 l0, t22 l1, t22 l2, t174 l3) {
     CTX_STACK_CHECK();
-    struct b163 _r163;
+    struct b161 _r161;
     {
-        ({ t166 _t0 = (&(*l0)); t174 _t1 = l3; t543 _t2 = ({ struct b163 _t3; _t3.base.code = (void (*)(void))b163_code; _t3.c0 = f_check__tstr(&((*l0)), l1); _t3.c1 = f_check__tstr(&((*l0)), l2); _r163 = _t3; (ctx_fn *)&_r163; }); f_check__errorf(_t0, _t1, _t2); });
+        ({ t166 _t0 = (&(*l0)); t174 _t1 = l3; t543 _t2 = ({ struct b161 _t3; _t3.base.code = (void (*)(void))b161_code; _t3.c0 = f_check__tstr(&((*l0)), l1); _t3.c1 = f_check__tstr(&((*l0)), l2); _r161 = _t3; (ctx_fn *)&_r161; }); f_check__errorf(_t0, _t1, _t2); });
     }
 }
 
@@ -86023,9 +86018,9 @@ static t706 f_map__removeu64check__Viewarena__Arena_2b457216(t1013 l0, t8 l1) {
     __builtin_unreachable();
 }
 
-struct b164 { ctx_fn base; t16 c0; };
-static t127 b164_code(ctx_fn *self, void * a0) {
-    struct b164 *s = (struct b164 *)self;
+struct b162 { ctx_fn base; t16 c0; };
+static t127 b162_code(ctx_fn *self, void * a0) {
+    struct b162 *s = (struct b162 *)self;
     return f_check__view_from_expectedfmt_5e5fe627(s->c0, a0);
 }
 
@@ -86037,7 +86032,7 @@ static t22 f_check__view_from_expected(t166 l0, t364 * l1, t22 l2) {
     t22 l6;
     t6 l7;
     CTX_STACK_CHECK();
-    struct b164 _r164;
+    struct b162 _r162;
     {
         if ((l2 == ((t22)(4294967295ULL)))) {
             return ((t22)(4294967295ULL));
@@ -86061,7 +86056,7 @@ static t22 f_check__view_from_expected(t166 l0, t364 * l1, t22 l2) {
             return ((t22)(4294967295ULL));
         } } l6 = _t4.p.v6.m_elem; l7 = _t4.p.v6.m_mutable; }
         if (l7) {
-            ({ t166 _t5 = (&(*l0)); t174 _t6 = f_check__expr_at(&((*l1))); t543 _t7 = ({ struct b164 _t8; _t8.base.code = (void (*)(void))b164_code; _t8.c0 = f_check__tstr(&((*l0)), l3); _r164 = _t8; (ctx_fn *)&_r164; }); f_check__errorf(_t5, _t6, _t7); });
+            ({ t166 _t5 = (&(*l0)); t174 _t6 = f_check__expr_at(&((*l1))); t543 _t7 = ({ struct b162 _t8; _t8.base.code = (void (*)(void))b162_code; _t8.c0 = f_check__tstr(&((*l0)), l3); _r162 = _t8; (ctx_fn *)&_r162; }); f_check__errorf(_t5, _t6, _t7); });
         }
         return f_types__slice((&((*l0)).m_ty), l6, ((bool)0));
     }
@@ -86080,7 +86075,7 @@ static t22 f_check__add_view(t166 l0, t364 * l1, t22 l2, t22 l3, t6 l4) {
             { t61 _t0 = f_list__pushsyntax__Exprarena__Arena_cbfee3a4((&((*l0)).m_view_list), &((*l1))); if ((_t0.tag == 0)) { {
             } } else if ((_t0.tag == 1)) { l6 = _t0.p.v1.m_error; {
                 { t12 _t1 = l6; if ((_t1.tag == 0)) { {
-                    ctx_panic(11428, 13, 3242879023, "try! failed: alloc::out_of_memory");
+                    ctx_panic(11439, 13, 3242879023, "try! failed: alloc::out_of_memory");
                 } } }
             } } }
         } else {
@@ -86092,7 +86087,7 @@ static t22 f_check__add_view(t166 l0, t364 * l1, t22 l2, t22 l3, t6 l4) {
         { t61 _t8 = ({ t1013 _t9 = (&((*l0)).m_views); t8 _t10 = f_check__expr_key(&((*l1))); t705 _t11 = ((t705){ .m_array = l2, .m_local = l5, }); f_map__putu64check__Viewarena__Arena_fd0c839d(_t9, _t10, _t11); }); if ((_t8.tag == 0)) { {
         } } else if ((_t8.tag == 1)) { l7 = _t8.p.v1.m_error; {
             { t12 _t12 = l7; if ((_t12.tag == 0)) { {
-                ctx_panic(11433, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(11444, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
         return l3;
@@ -86138,9 +86133,9 @@ static t6 f_check__is_known(t166 l0, t364 * l1) {
     __builtin_unreachable();
 }
 
-struct b165 { ctx_fn base; t16 c0; };
-static t127 b165_code(ctx_fn *self, void * a0) {
-    struct b165 *s = (struct b165 *)self;
+struct b163 { ctx_fn base; t16 c0; };
+static t127 b163_code(ctx_fn *self, void * a0) {
+    struct b163 *s = (struct b163 *)self;
     return f_check__expected_targfmt_145f2c6b(s->c0, a0);
 }
 
@@ -86149,7 +86144,7 @@ static t22 f_check__expected_targ(t166 l0, t7 l1, t22 l2, t174 l3) {
     t22 l4;
     t22 l5;
     CTX_STACK_CHECK();
-    struct b165 _r165;
+    struct b163 _r163;
     {
         if ((l2 != ((t22)(4294967295ULL)))) {
             l4 = f_types__prune(&(((*l0)).m_ty), l2);
@@ -86167,15 +86162,15 @@ static t22 f_check__expected_targ(t166 l0, t7 l1, t22 l2, t174 l3) {
                 return l4;
             } } }
         }
-        ({ t166 _t3 = (&(*l0)); t174 _t4 = l3; t543 _t5 = ({ struct b165 _t6; _t6.base.code = (void (*)(void))b165_code; _t6.c0 = f_check__str(l1); _r165 = _t6; (ctx_fn *)&_r165; }); f_check__errorf(_t3, _t4, _t5); });
+        ({ t166 _t3 = (&(*l0)); t174 _t4 = l3; t543 _t5 = ({ struct b163 _t6; _t6.base.code = (void (*)(void))b163_code; _t6.c0 = f_check__str(l1); _r163 = _t6; (ctx_fn *)&_r163; }); f_check__errorf(_t3, _t4, _t5); });
         return ((t22)(0ULL));
     }
     __builtin_unreachable();
 }
 
-struct b166 { ctx_fn base; t16 c0; };
-static t127 b166_code(ctx_fn *self, void * a0) {
-    struct b166 *s = (struct b166 *)self;
+struct b164 { ctx_fn base; t16 c0; };
+static t127 b164_code(ctx_fn *self, void * a0) {
+    struct b164 *s = (struct b164 *)self;
     return f_check__task_recordfmt_ec6218c9(s->c0, a0);
 }
 
@@ -86192,7 +86187,7 @@ static t22 f_check__task_record(t166 l0, t364 * l1, t7 l2, t485 l3) {
     t1086 l12;
     t659 l13;
     CTX_STACK_CHECK();
-    struct b166 _r166;
+    struct b164 _r164;
     {
         l4 = f_slice__eq_bytes(l2, ((t7){ .m_ptr = (void *)"record_copy", .m_len = 11 }));
         if (({ t14 _t0 = (l3).m_len; t14 _t1 = ({ t14 _t2; if (l4) {
@@ -86220,7 +86215,7 @@ static t22 f_check__task_record(t166 l0, t364 * l1, t7 l2, t485 l3) {
             } } }
         }
         if (((!l5) || (!l7))) {
-            ({ t166 _t21 = (&(*l0)); t174 _t22 = f_check__expr_at(&((*l1))); t543 _t23 = ({ struct b166 _t24; _t24.base.code = (void (*)(void))b166_code; _t24.c0 = f_check__str(l2); _r166 = _t24; (ctx_fn *)&_r166; }); f_check__errorf(_t21, _t22, _t23); });
+            ({ t166 _t21 = (&(*l0)); t174 _t22 = f_check__expr_at(&((*l1))); t543 _t23 = ({ struct b164 _t24; _t24.base.code = (void (*)(void))b164_code; _t24.c0 = f_check__str(l2); _r164 = _t24; (ctx_fn *)&_r164; }); f_check__errorf(_t21, _t22, _t23); });
         }
         if ((!l4)) {
             return ((t22)(11ULL));
@@ -86244,32 +86239,32 @@ static t6 f_check__atomic_name(t7 l0) {
     CTX_STACK_CHECK();
     {
         l1 = ((t7){ .m_ptr = (void *)"atomic_", .m_len = 7 });
-        return ((((l0).m_len > (l1).m_len) && ({ t7 _t0 = ({ t7 _t2 = (l0); uint64_t _t3 = ((t14)(0ULL)); uint64_t _t4 = (l1).m_len; ctx_range(_t3, _t4, _t2.m_len, 11818, 57, 3242879023); (t7){ .m_ptr = _t2.m_ptr + _t3, .m_len = _t4 - _t3 }; }); t7 _t1 = l1; f_slice__eq_bytes(_t0, _t1); })) || f_slice__eq_bytes(l0, ((t7){ .m_ptr = (void *)"fence", .m_len = 5 })));
+        return ((((l0).m_len > (l1).m_len) && ({ t7 _t0 = ({ t7 _t2 = (l0); uint64_t _t3 = ((t14)(0ULL)); uint64_t _t4 = (l1).m_len; ctx_range(_t3, _t4, _t2.m_len, 11829, 57, 3242879023); (t7){ .m_ptr = _t2.m_ptr + _t3, .m_len = _t4 - _t3 }; }); t7 _t1 = l1; f_slice__eq_bytes(_t0, _t1); })) || f_slice__eq_bytes(l0, ((t7){ .m_ptr = (void *)"fence", .m_len = 5 })));
     }
     __builtin_unreachable();
+}
+
+struct b165 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b165_code(ctx_fn *self, void * a0) {
+    struct b165 *s = (struct b165 *)self;
+    return f_check__atomic_builtinfmt_da21a125(s->c0, s->c1, a0);
+}
+
+struct b166 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b166_code(ctx_fn *self, void * a0) {
+    struct b166 *s = (struct b166 *)self;
+    return f_check__atomic_builtinfmt_da21a125_1(s->c0, s->c1, a0);
 }
 
 struct b167 { ctx_fn base; t16 c0; t16 c1; };
 static t127 b167_code(ctx_fn *self, void * a0) {
     struct b167 *s = (struct b167 *)self;
-    return f_check__atomic_builtinfmt_da21a125(s->c0, s->c1, a0);
+    return f_check__atomic_builtinfmt_da21a125_3(s->c0, s->c1, a0);
 }
 
 struct b168 { ctx_fn base; t16 c0; t16 c1; };
 static t127 b168_code(ctx_fn *self, void * a0) {
     struct b168 *s = (struct b168 *)self;
-    return f_check__atomic_builtinfmt_da21a125_1(s->c0, s->c1, a0);
-}
-
-struct b169 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b169_code(ctx_fn *self, void * a0) {
-    struct b169 *s = (struct b169 *)self;
-    return f_check__atomic_builtinfmt_da21a125_3(s->c0, s->c1, a0);
-}
-
-struct b170 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b170_code(ctx_fn *self, void * a0) {
-    struct b170 *s = (struct b170 *)self;
     return f_check__atomic_builtinfmt_da21a125_2(s->c0, s->c1, a0);
 }
 
@@ -86284,36 +86279,36 @@ static t22 f_check__atomic_builtin(t166 l0, t364 * l1, t7 l2, t485 l3) {
     t6 l10;
     t14 l11;
     CTX_STACK_CHECK();
+    struct b165 _r165;
+    struct b166 _r166;
     struct b167 _r167;
     struct b168 _r168;
-    struct b169 _r169;
-    struct b170 _r170;
     {
         l4 = f_check__atomic_arity(l2);
-        if (({ t14 _t0 = (l3).m_len; t14 _t1 = ctx_add_u64(l4, ((t14)(1ULL)), 11834, 25, 3242879023); (_t0 < _t1); })) {
+        if (({ t14 _t0 = (l3).m_len; t14 _t1 = ctx_add_u64(l4, ((t14)(1ULL)), 11845, 25, 3242879023); (_t0 < _t1); })) {
             return ((t22)(0ULL));
         }
         l5 = f_slice__eq_bytes(l2, ((t7){ .m_ptr = (void *)"atomic_load", .m_len = 11 }));
         l6 = (f_slice__eq_bytes(l2, ((t7){ .m_ptr = (void *)"atomic_add", .m_len = 10 })) || f_slice__eq_bytes(l2, ((t7){ .m_ptr = (void *)"atomic_subtract", .m_len = 15 })));
         l7 = ((t22)(0ULL));
         if ((l4 > ((t14)(0ULL)))) {
-            l8 = ({ t166 _t2 = (&(*l0)); t364 *_t3 = &((*({ t485 _t4 = (l3); uint64_t _t5 = ((t14)(0ULL)); _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 11839, 41, 3242879023); }))); f_check__typed(_t2, _t3); });
+            l8 = ({ t166 _t2 = (&(*l0)); t364 *_t3 = &((*({ t485 _t4 = (l3); uint64_t _t5 = ((t14)(0ULL)); _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 11850, 41, 3242879023); }))); f_check__typed(_t2, _t3); });
             { t476 _t6 = f_types__get(&(((*l0)).m_ty), l8); if ((_t6.tag == 5)) { l9 = _t6.p.v5.m_elem; l10 = _t6.p.v5.m_mutable; {
                 l7 = f_types__prune(&(((*l0)).m_ty), l9);
                 if (((!l5) && (!l10))) {
-                    ({ t166 _t7 = (&(*l0)); t174 _t8 = f_check__expr_at(&((*({ t485 _t10 = (l3); uint64_t _t11 = ((t14)(0ULL)); _t10.m_ptr + ctx_idx(_t11, _t10.m_len, 11844, 59, 3242879023); })))); t543 _t9 = ({ struct b167 _t12; _t12.base.code = (void (*)(void))b167_code; _t12.c0 = f_check__str(l2); _t12.c1 = f_check__tstr(&((*l0)), l8); _r167 = _t12; (ctx_fn *)&_r167; }); f_check__errorf(_t7, _t8, _t9); });
+                    ({ t166 _t7 = (&(*l0)); t174 _t8 = f_check__expr_at(&((*({ t485 _t10 = (l3); uint64_t _t11 = ((t14)(0ULL)); _t10.m_ptr + ctx_idx(_t11, _t10.m_len, 11855, 59, 3242879023); })))); t543 _t9 = ({ struct b165 _t12; _t12.base.code = (void (*)(void))b165_code; _t12.c0 = f_check__str(l2); _t12.c1 = f_check__tstr(&((*l0)), l8); _r165 = _t12; (ctx_fn *)&_r165; }); f_check__errorf(_t7, _t8, _t9); });
                 }
             } } else if ((_t6.tag == 0)) { {
             } } else { {
-                ({ t166 _t13 = (&(*l0)); t174 _t14 = f_check__expr_at(&((*({ t485 _t16 = (l3); uint64_t _t17 = ((t14)(0ULL)); _t16.m_ptr + ctx_idx(_t17, _t16.m_len, 11848, 61, 3242879023); })))); t543 _t15 = ({ struct b168 _t18; _t18.base.code = (void (*)(void))b168_code; _t18.c0 = f_check__str(l2); _t18.c1 = f_check__tstr(&((*l0)), l8); _r168 = _t18; (ctx_fn *)&_r168; }); f_check__errorf(_t13, _t14, _t15); });
+                ({ t166 _t13 = (&(*l0)); t174 _t14 = f_check__expr_at(&((*({ t485 _t16 = (l3); uint64_t _t17 = ((t14)(0ULL)); _t16.m_ptr + ctx_idx(_t17, _t16.m_len, 11859, 61, 3242879023); })))); t543 _t15 = ({ struct b166 _t18; _t18.base.code = (void (*)(void))b166_code; _t18.c0 = f_check__str(l2); _t18.c1 = f_check__tstr(&((*l0)), l8); _r166 = _t18; (ctx_fn *)&_r166; }); f_check__errorf(_t13, _t14, _t15); });
             } } }
             if ((l7 != ((t22)(0ULL)))) {
                 if ((l6 && (!f_check__is_int(&((*l0)), l7)))) {
-                    ({ t166 _t19 = (&(*l0)); t174 _t20 = f_check__expr_at(&((*({ t485 _t22 = (l3); uint64_t _t23 = ((t14)(0ULL)); _t22.m_ptr + ctx_idx(_t23, _t22.m_len, 11852, 55, 3242879023); })))); t543 _t21 = ({ struct b169 _t24; _t24.base.code = (void (*)(void))b169_code; _t24.c0 = f_check__str(l2); _t24.c1 = f_check__tstr(&((*l0)), l7); _r169 = _t24; (ctx_fn *)&_r169; }); f_check__errorf(_t19, _t20, _t21); });
+                    ({ t166 _t19 = (&(*l0)); t174 _t20 = f_check__expr_at(&((*({ t485 _t22 = (l3); uint64_t _t23 = ((t14)(0ULL)); _t22.m_ptr + ctx_idx(_t23, _t22.m_len, 11863, 55, 3242879023); })))); t543 _t21 = ({ struct b167 _t24; _t24.base.code = (void (*)(void))b167_code; _t24.c0 = f_check__str(l2); _t24.c1 = f_check__tstr(&((*l0)), l7); _r167 = _t24; (ctx_fn *)&_r167; }); f_check__errorf(_t19, _t20, _t21); });
                     l7 = ((t22)(0ULL));
                 } else {
                     if ((!f_check__atomic_type(&((*l0)), l7))) {
-                        ({ t166 _t25 = (&(*l0)); t174 _t26 = f_check__expr_at(&((*({ t485 _t28 = (l3); uint64_t _t29 = ((t14)(0ULL)); _t28.m_ptr + ctx_idx(_t29, _t28.m_len, 11855, 55, 3242879023); })))); t543 _t27 = ({ struct b170 _t30; _t30.base.code = (void (*)(void))b170_code; _t30.c0 = f_check__str(l2); _t30.c1 = f_check__tstr(&((*l0)), l7); _r170 = _t30; (ctx_fn *)&_r170; }); f_check__errorf(_t25, _t26, _t27); });
+                        ({ t166 _t25 = (&(*l0)); t174 _t26 = f_check__expr_at(&((*({ t485 _t28 = (l3); uint64_t _t29 = ((t14)(0ULL)); _t28.m_ptr + ctx_idx(_t29, _t28.m_len, 11866, 55, 3242879023); })))); t543 _t27 = ({ struct b168 _t30; _t30.base.code = (void (*)(void))b168_code; _t30.c0 = f_check__str(l2); _t30.c1 = f_check__tstr(&((*l0)), l7); _r168 = _t30; (ctx_fn *)&_r168; }); f_check__errorf(_t25, _t26, _t27); });
                         l7 = ((t22)(0ULL));
                     }
                 }
@@ -86321,17 +86316,17 @@ static t22 f_check__atomic_builtin(t166 l0, t364 * l1, t7 l2, t485 l3) {
             l11 = ((t14)(1ULL));
             while ((l11 < l4)) {
                 if ((l7 == ((t22)(0ULL)))) {
-                    (void)({ t166 _t31 = (&(*l0)); t364 *_t32 = &((*({ t485 _t34 = (l3); uint64_t _t35 = l11; _t34.m_ptr + ctx_idx(_t35, _t34.m_len, 11861, 62, 3242879023); }))); t22 _t33 = ((t22)(4294967295ULL)); f_check__expr(_t31, _t32, _t33); });
+                    (void)({ t166 _t31 = (&(*l0)); t364 *_t32 = &((*({ t485 _t34 = (l3); uint64_t _t35 = l11; _t34.m_ptr + ctx_idx(_t35, _t34.m_len, 11872, 62, 3242879023); }))); t22 _t33 = ((t22)(4294967295ULL)); f_check__expr(_t31, _t32, _t33); });
                 } else {
-                    ({ t166 _t36 = (&(*l0)); t364 *_t37 = &((*({ t485 _t39 = (l3); uint64_t _t40 = l11; _t39.m_ptr + ctx_idx(_t40, _t39.m_len, 11861, 119, 3242879023); }))); t22 _t38 = l7; f_check__expect(_t36, _t37, _t38); });
+                    ({ t166 _t36 = (&(*l0)); t364 *_t37 = &((*({ t485 _t39 = (l3); uint64_t _t40 = l11; _t39.m_ptr + ctx_idx(_t40, _t39.m_len, 11872, 119, 3242879023); }))); t22 _t38 = l7; f_check__expect(_t36, _t37, _t38); });
                 }
-                l11 = ctx_add_u64(l11, ((t14)(1ULL)), 11862, 23, 3242879023);
+                l11 = ctx_add_u64(l11, ((t14)(1ULL)), 11873, 23, 3242879023);
             }
             if ((((l4 > ((t14)(1ULL))) && (!l6)) && (l7 != ((t22)(0ULL))))) {
-                ({ t166 _t41 = (&(*l0)); t22 _t42 = ((t22)(4294967295ULL)); t6 _t43 = ((bool)1); t364 _t44 = (*({ t485 _t46 = (l3); uint64_t _t47 = ctx_sub_u64(l4, ((t14)(1ULL)), 11865, 119, 3242879023); _t46.m_ptr + ctx_idx(_t47, _t46.m_len, 11865, 116, 3242879023); })); t174 _t45 = f_check__expr_at(&((*({ t485 _t48 = (l3); uint64_t _t49 = ctx_sub_u64(l4, ((t14)(1ULL)), 11865, 150, 3242879023); _t48.m_ptr + ctx_idx(_t49, _t48.m_len, 11865, 147, 3242879023); })))); f_check__check_store(_t41, _t42, _t43, &_t44, _t45); });
+                ({ t166 _t41 = (&(*l0)); t22 _t42 = ((t22)(4294967295ULL)); t6 _t43 = ((bool)1); t364 _t44 = (*({ t485 _t46 = (l3); uint64_t _t47 = ctx_sub_u64(l4, ((t14)(1ULL)), 11876, 119, 3242879023); _t46.m_ptr + ctx_idx(_t47, _t46.m_len, 11876, 116, 3242879023); })); t174 _t45 = f_check__expr_at(&((*({ t485 _t48 = (l3); uint64_t _t49 = ctx_sub_u64(l4, ((t14)(1ULL)), 11876, 150, 3242879023); _t48.m_ptr + ctx_idx(_t49, _t48.m_len, 11876, 147, 3242879023); })))); f_check__check_store(_t41, _t42, _t43, &_t44, _t45); });
             }
         }
-        ({ t166 _t50 = (&(*l0)); t7 _t51 = l2; t364 _t52 = (*({ t485 _t55 = (l3); uint64_t _t56 = l4; _t55.m_ptr + ctx_idx(_t56, _t55.m_len, 11867, 38, 3242879023); })); t6 _t53 = l5; t6 _t54 = f_slice__eq_bytes(l2, ((t7){ .m_ptr = (void *)"atomic_store", .m_len = 12 })); f_check__atomic_order(_t50, _t51, &_t52, _t53, _t54); });
+        ({ t166 _t50 = (&(*l0)); t7 _t51 = l2; t364 _t52 = (*({ t485 _t55 = (l3); uint64_t _t56 = l4; _t55.m_ptr + ctx_idx(_t56, _t55.m_len, 11878, 38, 3242879023); })); t6 _t53 = l5; t6 _t54 = f_slice__eq_bytes(l2, ((t7){ .m_ptr = (void *)"atomic_store", .m_len = 12 })); f_check__atomic_order(_t50, _t51, &_t52, _t53, _t54); });
         if (((l4 == ((t14)(0ULL))) || f_slice__eq_bytes(l2, ((t7){ .m_ptr = (void *)"atomic_store", .m_len = 12 })))) {
             return ((t22)(1ULL));
         }
@@ -86346,27 +86341,27 @@ static t22 f_check__atomic_builtin(t166 l0, t364 * l1, t7 l2, t485 l3) {
     __builtin_unreachable();
 }
 
+struct b169 { ctx_fn base; t16 c0; };
+static t127 b169_code(ctx_fn *self, void * a0) {
+    struct b169 *s = (struct b169 *)self;
+    return f_check__fmt_builtinfmt_bfa7624d(s->c0, a0);
+}
+
+struct b170 { ctx_fn base; t16 c0; };
+static t127 b170_code(ctx_fn *self, void * a0) {
+    struct b170 *s = (struct b170 *)self;
+    return f_check__fmt_builtinfmt_bfa7624d_3(s->c0, a0);
+}
+
 struct b171 { ctx_fn base; t16 c0; };
 static t127 b171_code(ctx_fn *self, void * a0) {
     struct b171 *s = (struct b171 *)self;
-    return f_check__fmt_builtinfmt_bfa7624d(s->c0, a0);
+    return f_check__fmt_builtinfmt_bfa7624d_2(s->c0, a0);
 }
 
 struct b172 { ctx_fn base; t16 c0; };
 static t127 b172_code(ctx_fn *self, void * a0) {
     struct b172 *s = (struct b172 *)self;
-    return f_check__fmt_builtinfmt_bfa7624d_3(s->c0, a0);
-}
-
-struct b173 { ctx_fn base; t16 c0; };
-static t127 b173_code(ctx_fn *self, void * a0) {
-    struct b173 *s = (struct b173 *)self;
-    return f_check__fmt_builtinfmt_bfa7624d_2(s->c0, a0);
-}
-
-struct b174 { ctx_fn base; t16 c0; };
-static t127 b174_code(ctx_fn *self, void * a0) {
-    struct b174 *s = (struct b174 *)self;
     return f_check__fmt_builtinfmt_bfa7624d_1(s->c0, a0);
 }
 
@@ -86397,15 +86392,15 @@ static t22 f_check__fmt_builtin(t166 l0, t364 * l1, t485 l2, t22 l3) {
     t12 l26;
     t12 l27;
     CTX_STACK_CHECK();
+    struct b169 _r169;
+    struct b170 _r170;
     struct b171 _r171;
     struct b172 _r172;
-    struct b173 _r173;
-    struct b174 _r174;
     {
         if (((l2).m_len == ((t14)(0ULL)))) {
             return f_check__fmt_type((&(*l0)));
         }
-        l4 = ({ t6 _t0; t606 _t1 = ((*({ t485 _t2 = (l2); uint64_t _t3 = ((t14)(0ULL)); _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 11961, 25, 3242879023); }))).m_k; if ((_t1.tag == 3)) { {
+        l4 = ({ t6 _t0; t606 _t1 = ((*({ t485 _t2 = (l2); uint64_t _t3 = ((t14)(0ULL)); _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 11972, 25, 3242879023); }))).m_k; if ((_t1.tag == 3)) { {
             _t0 = ((bool)1);
         } } else { {
             _t0 = ((bool)0);
@@ -86427,7 +86422,7 @@ static t22 f_check__fmt_builtin(t166 l0, t364 * l1, t485 l2, t22 l3) {
                     l5 = ((bool)0);
                 } else {
                     if ((f_types__prune(&(((*l0)).m_ty), l3) != ((t22)(0ULL)))) {
-                        ({ t166 _t12 = (&(*l0)); t174 _t13 = f_check__expr_at(&((*l1))); t543 _t14 = ({ struct b171 _t15; _t15.base.code = (void (*)(void))b171_code; _t15.c0 = f_check__tstr(&((*l0)), l3); _r171 = _t15; (ctx_fn *)&_r171; }); f_check__errorf(_t12, _t13, _t14); });
+                        ({ t166 _t12 = (&(*l0)); t174 _t13 = f_check__expr_at(&((*l1))); t543 _t14 = ({ struct b169 _t15; _t15.base.code = (void (*)(void))b169_code; _t15.c0 = f_check__tstr(&((*l0)), l3); _r169 = _t15; (ctx_fn *)&_r169; }); f_check__errorf(_t12, _t13, _t14); });
                         l5 = ((bool)0);
                     } else {
                         l5 = ((bool)0);
@@ -86435,17 +86430,17 @@ static t22 f_check__fmt_builtin(t166 l0, t364 * l1, t485 l2, t22 l3) {
                 }
             }
         } else {
-            l6 = ({ t166 _t16 = (&(*l0)); t364 *_t17 = &((*({ t485 _t18 = (l2); uint64_t _t19 = ((t14)(0ULL)); _t18.m_ptr + ctx_idx(_t19, _t18.m_len, 11983, 37, 3242879023); }))); f_check__typed(_t16, _t17); });
+            l6 = ({ t166 _t16 = (&(*l0)); t364 *_t17 = &((*({ t485 _t18 = (l2); uint64_t _t19 = ((t14)(0ULL)); _t18.m_ptr + ctx_idx(_t19, _t18.m_len, 11994, 37, 3242879023); }))); f_check__typed(_t16, _t17); });
             if (((l2).m_len < ((t14)(2ULL)))) {
                 ({ t166 _t20 = (&(*l0)); t174 _t21 = f_check__expr_at(&((*l1))); t16 _t22 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"@fmt needs a format after its sink: a string literal", .m_len = 52 }), }); f_check__error(_t20, _t21, _t22); });
                 l5 = ((bool)0);
             }
         }
-        l11 = (*({ t485 _t23 = (l2); uint64_t _t24 = ((t14)(0ULL)); _t23.m_ptr + ctx_idx(_t24, _t23.m_len, 11989, 21, 3242879023); }));
+        l11 = (*({ t485 _t23 = (l2); uint64_t _t24 = ((t14)(0ULL)); _t23.m_ptr + ctx_idx(_t24, _t23.m_len, 12000, 21, 3242879023); }));
         l12 = f_check__sink_of(&((*l0)), l6);
         if ((l12 == ((t22)(4294967295ULL)))) {
             if ((l6 != ((t22)(0ULL)))) {
-                ({ t166 _t25 = (&(*l0)); t174 _t26 = f_check__expr_at(&(l11)); t543 _t27 = ({ struct b172 _t28; _t28.base.code = (void (*)(void))b172_code; _t28.c0 = f_check__tstr(&((*l0)), l6); _r172 = _t28; (ctx_fn *)&_r172; }); f_check__errorf(_t25, _t26, _t27); });
+                ({ t166 _t25 = (&(*l0)); t174 _t26 = f_check__expr_at(&(l11)); t543 _t27 = ({ struct b170 _t28; _t28.base.code = (void (*)(void))b170_code; _t28.c0 = f_check__tstr(&((*l0)), l6); _r170 = _t28; (ctx_fn *)&_r170; }); f_check__errorf(_t25, _t26, _t27); });
             }
             l5 = ((bool)0);
         } else {
@@ -86457,7 +86452,7 @@ static t22 f_check__fmt_builtin(t166 l0, t364 * l1, t485 l2, t22 l3) {
                         _t33 = (*l1);
                     } else {
                         _t33 = l11;
-                    } _t33; }); f_check__expr_at(&_t32); }); t543 _t31 = ({ struct b173 _t34; _t34.base.code = (void (*)(void))b173_code; _t34.c0 = f_check__tstr(&((*l0)), l12); _r173 = _t34; (ctx_fn *)&_r173; }); f_check__errorf(_t29, _t30, _t31); });
+                    } _t33; }); f_check__expr_at(&_t32); }); t543 _t31 = ({ struct b171 _t34; _t34.base.code = (void (*)(void))b171_code; _t34.c0 = f_check__tstr(&((*l0)), l12); _r171 = _t34; (ctx_fn *)&_r171; }); f_check__errorf(_t29, _t30, _t31); });
                     l5 = ((bool)0);
                 } else {
                     if ((!(({ t6 _t35; t476 _t36 = ({ t270 _t37 = ((*l0)).m_ty; t22 _t38 = f_types__prune(&(((*l0)).m_ty), l6); f_types__get(&_t37, _t38); }); if ((_t36.tag == 5)) { l13 = _t36.p.v5.m_mutable; {
@@ -86472,7 +86467,7 @@ static t22 f_check__fmt_builtin(t166 l0, t364 * l1, t485 l2, t22 l3) {
                         } } _t39; })) {
                             f_check__check_mutable((&(*l0)), &((*l14)));
                         } else {
-                            ({ t166 _t41 = (&(*l0)); t174 _t42 = f_check__expr_at(&(l11)); t543 _t43 = ({ struct b174 _t44; _t44.base.code = (void (*)(void))b174_code; _t44.c0 = f_check__tstr(&((*l0)), l6); _r174 = _t44; (ctx_fn *)&_r174; }); f_check__errorf(_t41, _t42, _t43); });
+                            ({ t166 _t41 = (&(*l0)); t174 _t42 = f_check__expr_at(&(l11)); t543 _t43 = ({ struct b172 _t44; _t44.base.code = (void (*)(void))b172_code; _t44.c0 = f_check__tstr(&((*l0)), l6); _r172 = _t44; (ctx_fn *)&_r172; }); f_check__errorf(_t41, _t42, _t43); });
                         }
                         l5 = ((bool)0);
                     }
@@ -86482,7 +86477,7 @@ static t22 f_check__fmt_builtin(t166 l0, t364 * l1, t485 l2, t22 l3) {
         l15 = f_list__newcheck__Piecearena__Arena_dd8370ce((&g0), ((*l0)).m_heap);
         l16 = f_list__newsyntax__Exprarena__Arena_433b8660((&g0), ((*l0)).m_heap);
         if (((l2).m_len > l8)) {
-            if ((!({ t166 _t45 = (&(*l0)); t364 *_t46 = &((*l1)); t364 _t47 = (*({ t485 _t51 = (l2); uint64_t _t52 = l8; _t51.m_ptr + ctx_idx(_t52, _t51.m_len, 12012, 46, 3242879023); })); t485 _t48 = ({ t485 _t53 = (l2); uint64_t _t54 = ctx_add_u64(l8, ((t14)(1ULL)), 12012, 73, 3242879023); uint64_t _t55 = _t53.m_len; ctx_range(_t54, _t55, _t53.m_len, 12012, 66, 3242879023); (t485){ .m_ptr = _t53.m_ptr + _t54, .m_len = _t55 - _t54 }; }); t1088 _t49 = (&l15); t793 _t50 = (&l16); f_check__fmt_parts(_t45, _t46, &_t47, _t48, _t49, _t50); }))) {
+            if ((!({ t166 _t45 = (&(*l0)); t364 *_t46 = &((*l1)); t364 _t47 = (*({ t485 _t51 = (l2); uint64_t _t52 = l8; _t51.m_ptr + ctx_idx(_t52, _t51.m_len, 12023, 46, 3242879023); })); t485 _t48 = ({ t485 _t53 = (l2); uint64_t _t54 = ctx_add_u64(l8, ((t14)(1ULL)), 12023, 73, 3242879023); uint64_t _t55 = _t53.m_len; ctx_range(_t54, _t55, _t53.m_len, 12023, 66, 3242879023); (t485){ .m_ptr = _t53.m_ptr + _t54, .m_len = _t55 - _t54 }; }); t1088 _t49 = (&l15); t793 _t50 = (&l16); f_check__fmt_parts(_t45, _t46, &_t47, _t48, _t49, _t50); }))) {
                 l5 = ((bool)0);
             }
         }
@@ -86499,8 +86494,8 @@ static t22 f_check__fmt_builtin(t166 l0, t364 * l1, t485 l2, t22 l3) {
                 _t61 = f_check__fmt_type((&(*l0)));
             } _t61; });
         }
-        l19 = ((t22)(ctx_as_u((uint64_t)((((*l0)).m_sites).m_len), UINT32_MAX, "u32", 12017, 18, 3242879023)));
-        l20 = ({ t475 _t62 = (&((*l0)).m_ty); t22 _t63 = ((t22)(1ULL)); t22 _t64 = ({ t475 _t65 = (&((*l0)).m_ty); t22 _t66 = ctx_add_u32(((t22)(2147483648ULL)), l19, 12018, 103, 3242879023); t22 _t67 = ((t22)(4294967295ULL)); f_types__errs(_t65, _t66, _t67); }); f_types__res(_t62, _t63, _t64); });
+        l19 = ((t22)(ctx_as_u((uint64_t)((((*l0)).m_sites).m_len), UINT32_MAX, "u32", 12028, 18, 3242879023)));
+        l20 = ({ t475 _t62 = (&((*l0)).m_ty); t22 _t63 = ((t22)(1ULL)); t22 _t64 = ({ t475 _t65 = (&((*l0)).m_ty); t22 _t66 = ctx_add_u32(((t22)(2147483648ULL)), l19, 12029, 103, 3242879023); t22 _t67 = ((t22)(4294967295ULL)); f_types__errs(_t65, _t66, _t67); }); f_types__res(_t62, _t63, _t64); });
         if ((!l4)) {
             l7 = l20;
         }
@@ -86512,13 +86507,13 @@ static t22 f_check__fmt_builtin(t166 l0, t364 * l1, t485 l2, t22 l3) {
         { t61 _t80 = f_list__pushcheck__Sitearena__Arena_69f343fb((&((*l0)).m_sites), &(l21)); if ((_t80.tag == 0)) { {
         } } else if ((_t80.tag == 1)) { l22 = _t80.p.v1.m_error; {
             { t12 _t81 = l22; if ((_t81.tag == 0)) { {
-                ctx_panic(12024, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(12035, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
         { t61 _t82 = ({ t654 _t83 = (&((*l0)).m_site_of); t8 _t84 = f_check__expr_key(&((*l1))); t22 _t85 = l19; f_map__putu64u32arena__Arena_d2e79330(_t83, _t84, _t85); }); if ((_t82.tag == 0)) { {
         } } else if ((_t82.tag == 1)) { l23 = _t82.p.v1.m_error; {
             { t12 _t86 = l23; if ((_t86.tag == 0)) { {
-                ctx_panic(12025, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(12036, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
         if ((l4 && ({ t6 _t87; t476 _t88 = ({ t270 _t89 = ((*l0)).m_ty; t22 _t90 = ({ t270 _t91 = ((*l0)).m_ty; t22 _t92 = f_check__result_of(&((*l0)), l7); f_types__prune(&_t91, _t92); }); f_types__get(&_t89, _t90); }); if ((_t88.tag == 17)) { l24 = _t88.p.v17.m_errs; {
@@ -86531,10 +86526,10 @@ static t22 f_check__fmt_builtin(t166 l0, t364 * l1, t485 l2, t22 l3) {
             } } else { {
                 _t93 = ((bool)0);
             } } _t93; })) {
-                { t61 _t97 = ({ t1089 _t98 = (&((*l0)).m_declared); t545 _t99 = ({ t22 _t100 = ctx_add_u32(((t22)(2147483648ULL)), l19, 12030, 84, 3242879023); t22 _t101 = f_types__prune(&(((*l0)).m_ty), l24); t174 _t102 = f_check__expr_at(&((*l1))); ((t545){ .m_owner = _t100, .m_into = _t101, .m_at = _t102, }); }); f_list__pushcheck__Declaredarena__Arena_adf76f84(_t98, _t99); }); if ((_t97.tag == 0)) { {
+                { t61 _t97 = ({ t1089 _t98 = (&((*l0)).m_declared); t545 _t99 = ({ t22 _t100 = ctx_add_u32(((t22)(2147483648ULL)), l19, 12041, 84, 3242879023); t22 _t101 = f_types__prune(&(((*l0)).m_ty), l24); t174 _t102 = f_check__expr_at(&((*l1))); ((t545){ .m_owner = _t100, .m_into = _t101, .m_at = _t102, }); }); f_list__pushcheck__Declaredarena__Arena_adf76f84(_t98, _t99); }); if ((_t97.tag == 0)) { {
                 } } else if ((_t97.tag == 1)) { l25 = _t97.p.v1.m_error; {
                     { t12 _t103 = l25; if ((_t103.tag == 0)) { {
-                        ctx_panic(12030, 17, 3242879023, "try! failed: alloc::out_of_memory");
+                        ctx_panic(12041, 17, 3242879023, "try! failed: alloc::out_of_memory");
                     } } }
                 } } }
             }
@@ -86542,14 +86537,14 @@ static t22 f_check__fmt_builtin(t166 l0, t364 * l1, t485 l2, t22 l3) {
         { t61 _t104 = f_list__pushsyntax__Exprarena__Arena_cbfee3a4((&((*l0)).m_fmts), &((*l1))); if ((_t104.tag == 0)) { {
         } } else if ((_t104.tag == 1)) { l26 = _t104.p.v1.m_error; {
             { t12 _t105 = l26; if ((_t105.tag == 0)) { {
-                ctx_panic(12033, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(12044, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
         if (l4) {
             { t61 _t106 = ({ t1090 _t107 = (&((*l0)).m_holds); t8 _t108 = f_check__expr_key(&((*l1))); t802 _t109 = l18; f_map__putu64check__Placearena__Arena_53c902cd(_t107, _t108, _t109); }); if ((_t106.tag == 0)) { {
             } } else if ((_t106.tag == 1)) { l27 = _t106.p.v1.m_error; {
                 { t12 _t110 = l27; if ((_t110.tag == 0)) { {
-                    ctx_panic(12034, 20, 3242879023, "try! failed: alloc::out_of_memory");
+                    ctx_panic(12045, 20, 3242879023, "try! failed: alloc::out_of_memory");
                 } } }
             } } }
         }
@@ -87030,7 +87025,7 @@ static t22 f_check__use_cvar(t166 l0, t364 * l1, t344 * l2) {
                 } } _t9; }); }); }); if ((_t8.tag == 0)) { {
                 } } else if ((_t8.tag == 1)) { l35 = _t8.p.v1.m_error; {
                     { t12 _t27 = l35; if ((_t27.tag == 0)) { {
-                        ctx_panic(11577, 17, 3242879023, "try! failed: alloc::out_of_memory");
+                        ctx_panic(11588, 17, 3242879023, "try! failed: alloc::out_of_memory");
                     } } }
                 } } }
             } else {
@@ -87081,7 +87076,7 @@ static t22 f_check__use_cvar(t166 l0, t364 * l1, t344 * l2) {
                 } } _t29; }); }); }); }); if ((_t28.tag == 0)) { {
                 } } else if ((_t28.tag == 1)) { l23 = _t28.p.v1.m_error; {
                     { t12 _t51 = l23; if ((_t51.tag == 0)) { {
-                        ctx_panic(11579, 17, 3242879023, "try! failed: alloc::out_of_memory");
+                        ctx_panic(11590, 17, 3242879023, "try! failed: alloc::out_of_memory");
                     } } }
                 } } }
             }
@@ -87092,9 +87087,9 @@ static t22 f_check__use_cvar(t166 l0, t364 * l1, t344 * l2) {
     __builtin_unreachable();
 }
 
-struct b175 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
-static t127 b175_code(ctx_fn *self, void * a0) {
-    struct b175 *s = (struct b175 *)self;
+struct b173 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
+static t127 b173_code(ctx_fn *self, void * a0) {
+    struct b173 *s = (struct b173 *)self;
     return f_check__cap_fieldfmt_f2534121(s->c0, s->c1, s->c2, a0);
 }
 
@@ -87102,11 +87097,11 @@ static t127 b175_code(ctx_fn *self, void * a0) {
 static t22 f_check__cap_field(t166 l0, t22 l1, t364 * l2, t183 l3) {
     t22 l4;
     CTX_STACK_CHECK();
-    struct b175 _r175;
+    struct b173 _r173;
     {
         l4 = f_check__field_type((&(*l0)), l1, &((*l2)), l3);
         if (((l4 != ((t22)(0ULL))) && ({ t8 _t0 = ((*l0)).m_calling; t8 _t1 = f_check__expr_key(&((*l2))); (_t0 != _t1); }))) {
-            ({ t166 _t2 = (&(*l0)); t174 _t3 = f_check__expr_at(&((*l2))); t543 _t4 = ({ struct b175 _t5; _t5.base.code = (void (*)(void))b175_code; _t5.c0 = f_check__str((l3).m_text); _t5.c1 = f_check__tstr(&((*l0)), l1); _t5.c2 = f_check__str(f_check__source_text(&((*l0)), ((*l2)).m_span)); _r175 = _t5; (ctx_fn *)&_r175; }); f_check__errorf(_t2, _t3, _t4); });
+            ({ t166 _t2 = (&(*l0)); t174 _t3 = f_check__expr_at(&((*l2))); t543 _t4 = ({ struct b173 _t5; _t5.base.code = (void (*)(void))b173_code; _t5.c0 = f_check__str((l3).m_text); _t5.c1 = f_check__tstr(&((*l0)), l1); _t5.c2 = f_check__str(f_check__source_text(&((*l0)), ((*l2)).m_span)); _r173 = _t5; (ctx_fn *)&_r173; }); f_check__errorf(_t2, _t3, _t4); });
         }
         return l4;
     }
@@ -87174,9 +87169,9 @@ static t127 f_check__field_exprfmt_ddd97492(t16 l0, t75 l1) {
     __builtin_unreachable();
 }
 
-struct b176 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
-static t127 b176_code(ctx_fn *self, void * a0) {
-    struct b176 *s = (struct b176 *)self;
+struct b174 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
+static t127 b174_code(ctx_fn *self, void * a0) {
+    struct b174 *s = (struct b174 *)self;
     return f_check__no_fieldfmt_ea55e21c(s->c0, s->c1, s->c2, a0);
 }
 
@@ -87193,10 +87188,10 @@ static t22 f_check__no_field(t166 l0, t22 l1, t364 * l2, t183 l3) {
     t599 l12;
     t12 l13;
     CTX_STACK_CHECK();
-    struct b176 _r176;
+    struct b174 _r174;
     {
         if (f_check__is_distinct(&((*l0)), l1)) {
-            ({ t166 _t0 = (&(*l0)); t174 _t1 = f_check__expr_at(&((*l2))); t543 _t2 = ({ struct b176 _t3; _t3.base.code = (void (*)(void))b176_code; _t3.c0 = f_check__tstr(&((*l0)), l1); _t3.c1 = f_check__str((l3).m_text); _t3.c2 = ({ t163 _t4 = (*l0); t22 _t5 = f_check__distinct_base(&((*l0)), l1); f_check__tstr(&_t4, _t5); }); _r176 = _t3; (ctx_fn *)&_r176; }); f_check__errorf(_t0, _t1, _t2); });
+            ({ t166 _t0 = (&(*l0)); t174 _t1 = f_check__expr_at(&((*l2))); t543 _t2 = ({ struct b174 _t3; _t3.base.code = (void (*)(void))b174_code; _t3.c0 = f_check__tstr(&((*l0)), l1); _t3.c1 = f_check__str((l3).m_text); _t3.c2 = ({ t163 _t4 = (*l0); t22 _t5 = f_check__distinct_base(&((*l0)), l1); f_check__tstr(&_t4, _t5); }); _r174 = _t3; (ctx_fn *)&_r174; }); f_check__errorf(_t0, _t1, _t2); });
             return ((t22)(0ULL));
         }
         l4 = f_check__message(&((*l0)));
@@ -87219,14 +87214,14 @@ static t22 f_check__no_field(t166 l0, t22 l1, t364 * l2, t183 l3) {
         } } _t7; }); }); }); if ((_t6.tag == 0)) { {
         } } else if ((_t6.tag == 1)) { l11 = _t6.p.v1.m_error; {
             { t12 _t15 = l11; if ((_t15.tag == 0)) { {
-                ctx_panic(11601, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(11612, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
         { t606 _t16 = ((*l2)).m_k; if ((_t16.tag == 7)) { l12 = _t16.p.v7.m_base; {
             { t61 _t17 = f_check__unnarrowed(&((*l0)), &((*l12)), (&l4)); if ((_t17.tag == 0)) { {
             } } else if ((_t17.tag == 1)) { l13 = _t17.p.v1.m_error; {
                 { t12 _t18 = l13; if ((_t18.tag == 0)) { {
-                    ctx_panic(11603, 32, 3242879023, "try! failed: alloc::out_of_memory");
+                    ctx_panic(11614, 32, 3242879023, "try! failed: alloc::out_of_memory");
                 } } }
             } } }
         } } else { {
@@ -87640,9 +87635,9 @@ static t1019 f_list__itemscheck__Brancharena__Arena_a72516ec(t1015 * l0) {
     __builtin_unreachable();
 }
 
-struct b177 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b177_code(ctx_fn *self, void * a0) {
-    struct b177 *s = (struct b177 *)self;
+struct b175 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b175_code(ctx_fn *self, void * a0) {
+    struct b175 *s = (struct b175 *)self;
     return f_check__joinfmt_3d09c838(s->c0, s->c1, a0);
 }
 
@@ -87662,7 +87657,7 @@ static t22 f_check__join(t166 l0, t174 l1, t1019 l2, t22 l3, t6 l4) {
     t364 l16;
     t595 l17;
     CTX_STACK_CHECK();
-    struct b177 _r177;
+    struct b175 _r175;
     {
         l5 = ((t14)(0ULL));
         l6 = ((t22)(4294967295ULL));
@@ -87745,7 +87740,7 @@ static t22 f_check__join(t166 l0, t174 l1, t1019 l2, t22 l3, t6 l4) {
                 if ((l13 == ((t22)(4294967295ULL)))) {
                     l13 = l12;
                 }
-                ({ t166 _t33 = (&(*l0)); t174 _t34 = l1; t543 _t35 = ({ struct b177 _t36; _t36.base.code = (void (*)(void))b177_code; _t36.c0 = f_check__tstr(&((*l0)), l12); _t36.c1 = f_check__tstr(&((*l0)), l13); _r177 = _t36; (ctx_fn *)&_r177; }); f_check__errorf(_t33, _t34, _t35); });
+                ({ t166 _t33 = (&(*l0)); t174 _t34 = l1; t543 _t35 = ({ struct b175 _t36; _t36.base.code = (void (*)(void))b175_code; _t36.c0 = f_check__tstr(&((*l0)), l12); _t36.c1 = f_check__tstr(&((*l0)), l13); _r175 = _t36; (ctx_fn *)&_r175; }); f_check__errorf(_t33, _t34, _t35); });
                 return ((t22)(0ULL));
             }
         }
@@ -87890,27 +87885,27 @@ static t6 f_check__is_res(t163 * l0, t22 l1) {
     __builtin_unreachable();
 }
 
+struct b176 { ctx_fn base; t16 c0; };
+static t127 b176_code(ctx_fn *self, void * a0) {
+    struct b176 *s = (struct b176 *)self;
+    return f_check__check_fail_matchfmt_23ad439b_2(s->c0, a0);
+}
+
+struct b177 { ctx_fn base; t16 c0; };
+static t127 b177_code(ctx_fn *self, void * a0) {
+    struct b177 *s = (struct b177 *)self;
+    return f_check__check_fail_matchfmt_23ad439b_1(s->c0, a0);
+}
+
 struct b178 { ctx_fn base; t16 c0; };
 static t127 b178_code(ctx_fn *self, void * a0) {
     struct b178 *s = (struct b178 *)self;
-    return f_check__check_fail_matchfmt_23ad439b_2(s->c0, a0);
+    return f_check__check_fail_matchfmt_23ad439b(s->c0, a0);
 }
 
 struct b179 { ctx_fn base; t16 c0; };
 static t127 b179_code(ctx_fn *self, void * a0) {
     struct b179 *s = (struct b179 *)self;
-    return f_check__check_fail_matchfmt_23ad439b_1(s->c0, a0);
-}
-
-struct b180 { ctx_fn base; t16 c0; };
-static t127 b180_code(ctx_fn *self, void * a0) {
-    struct b180 *s = (struct b180 *)self;
-    return f_check__check_fail_matchfmt_23ad439b(s->c0, a0);
-}
-
-struct b181 { ctx_fn base; t16 c0; };
-static t127 b181_code(ctx_fn *self, void * a0) {
-    struct b181 *s = (struct b181 *)self;
     return f_check__check_fail_matchfmt_23ad439b_3(s->c0, a0);
 }
 
@@ -87957,10 +87952,10 @@ static t22 f_check__check_fail_match(t166 l0, t604 l1, t174 l2, t22 l3, t6 l4, t
     t541 l46;
     t12 l47;
     CTX_STACK_CHECK();
+    struct b176 _r176;
+    struct b177 _r177;
     struct b178 _r178;
     struct b179 _r179;
-    struct b180 _r180;
-    struct b181 _r181;
     {
         l8 = (*(l1).m_scrut);
         l9 = f_slice__emptycheck__Variant_b3338106();
@@ -87989,12 +87984,12 @@ static t22 f_check__check_fail_match(t166 l0, t604 l1, t174 l2, t22 l3, t6 l4, t
         l25 = (l1).m_arms;
         l26 = ((t14)(0ULL));
         while ((l26 < (l25).m_len)) {
-            l27 = (*({ t765 _t4 = (l25); uint64_t _t5 = l26; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 12683, 27, 3242879023); }));
+            l27 = (*({ t765 _t4 = (l25); uint64_t _t5 = l26; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 12694, 27, 3242879023); }));
             l28 = (l11 && (l26 == ((t14)(0ULL))));
             l29 = f_slice__emptyu32_c1c40257();
             l30 = ((t7){ .m_ptr = (void *)"", .m_len = 0 });
             if ((((l27).m_pats).m_len == ((t14)(0ULL)))) {
-                if (({ t14 _t6 = l26; t14 _t7 = ctx_sub_u64((l25).m_len, ((t14)(1ULL)), 12688, 34, 3242879023); (_t6 != _t7); })) {
+                if (({ t14 _t6 = l26; t14 _t7 = ctx_sub_u64((l25).m_len, ((t14)(1ULL)), 12699, 34, 3242879023); (_t6 != _t7); })) {
                     f_check__error((&(*l0)), (l27).m_span, ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"`else` must be the last arm", .m_len = 27 }), }));
                 } else {
                     if (((l17).m_len == ((t14)(2ULL)))) {
@@ -88008,7 +88003,7 @@ static t22 f_check__check_fail_match(t166 l0, t604 l1, t174 l2, t22 l3, t6 l4, t
             l31 = ((t22)(0ULL));
             l32 = ((t14)(0ULL));
             while ((l32 < ((l27).m_pats).m_len)) {
-                l33 = (*({ t605 _t8 = ((l27).m_pats); uint64_t _t9 = l32; _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 12700, 33, 3242879023); }));
+                l33 = (*({ t605 _t8 = ((l27).m_pats); uint64_t _t9 = l32; _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 12711, 33, 3242879023); }));
                 l34 = ((l33).m_variant).m_text;
                 l35 = ((t656){0});
                 l36 = ((bool)1);
@@ -88020,7 +88015,7 @@ static t22 f_check__check_fail_match(t166 l0, t604 l1, t174 l2, t22 l3, t6 l4, t
                         _t10 = ((t22)(1ULL));
                     } _t10; });
                     if (({ t173 _t11 = f_list__itemsu32arena__Arena_0ba5b83a(&(l17)); t22 _t12 = l41; f_check__has_id(_t11, _t12); })) {
-                        ({ t166 _t13 = (&(*l0)); t174 _t14 = (l33).m_span; t543 _t15 = ({ struct b178 _t16; _t16.base.code = (void (*)(void))b178_code; _t16.c0 = f_check__str(l34); _r178 = _t16; (ctx_fn *)&_r178; }); f_check__errorf(_t13, _t14, _t15); });
+                        ({ t166 _t13 = (&(*l0)); t174 _t14 = (l33).m_span; t543 _t15 = ({ struct b176 _t16; _t16.base.code = (void (*)(void))b176_code; _t16.c0 = f_check__str(l34); _r176 = _t16; (ctx_fn *)&_r176; }); f_check__errorf(_t13, _t14, _t15); });
                     } else {
                         f_check__push((&l17), l41);
                     }
@@ -88028,7 +88023,7 @@ static t22 f_check__check_fail_match(t166 l0, t604 l1, t174 l2, t22 l3, t6 l4, t
                         l20 = ((t542){ .tag = 1, .p.v1.m_value = (l33).m_span });
                         l21 = ((t7){ .m_ptr = (void *)"err", .m_len = 3 });
                     }
-                    l35 = ((*({ t657 _t17 = (l9); uint64_t _t18 = ((t14)(l41)); _t17.m_ptr + ctx_idx(_t18, _t17.m_len, 12716, 32, 3242879023); }))).m_fields;
+                    l35 = ((*({ t657 _t17 = (l9); uint64_t _t18 = ((t14)(l41)); _t17.m_ptr + ctx_idx(_t18, _t17.m_len, 12727, 32, 3242879023); }))).m_fields;
                 } else {
                     l31 = ((t22)((l31 | ((t22)(2ULL)))));
                     l37 = f_check__fault_named((&(*l0)), &(l33));
@@ -88037,16 +88032,16 @@ static t22 f_check__check_fail_match(t166 l0, t604 l1, t174 l2, t22 l3, t6 l4, t
                     } else {
                         l38 = f_check__str((f_check__get_decl(&((*l0)), l37)).m_qual);
                         if (f_check__has_id(f_list__itemsu32arena__Arena_0ba5b83a(&(l17)), ((t22)(1ULL)))) {
-                            ({ t166 _t19 = (&(*l0)); t174 _t20 = (l33).m_span; t543 _t21 = ({ struct b179 _t22; _t22.base.code = (void (*)(void))b179_code; _t22.c0 = l38; _r179 = _t22; (ctx_fn *)&_r179; }); f_check__errorf(_t19, _t20, _t21); });
+                            ({ t166 _t19 = (&(*l0)); t174 _t20 = (l33).m_span; t543 _t21 = ({ struct b177 _t22; _t22.base.code = (void (*)(void))b177_code; _t22.c0 = l38; _r177 = _t22; (ctx_fn *)&_r177; }); f_check__errorf(_t19, _t20, _t21); });
                         } else {
                             if (({ t173 _t23 = f_list__itemsu32arena__Arena_0ba5b83a(&(l18)); t22 _t24 = l37; f_check__has_id(_t23, _t24); })) {
-                                ({ t166 _t25 = (&(*l0)); t174 _t26 = (l33).m_span; t543 _t27 = ({ struct b180 _t28; _t28.base.code = (void (*)(void))b180_code; _t28.c0 = l38; _r180 = _t28; (ctx_fn *)&_r180; }); f_check__errorf(_t25, _t26, _t27); });
+                                ({ t166 _t25 = (&(*l0)); t174 _t26 = (l33).m_span; t543 _t27 = ({ struct b178 _t28; _t28.base.code = (void (*)(void))b178_code; _t28.c0 = l38; _r178 = _t28; (ctx_fn *)&_r178; }); f_check__errorf(_t25, _t26, _t27); });
                             } else {
                                 f_check__push((&l18), l37);
                                 { t61 _t29 = f_list__pushsource__Spanarena__Arena_8cadd217((&l19), (l33).m_span); if ((_t29.tag == 0)) { {
                                 } } else if ((_t29.tag == 1)) { l39 = _t29.p.v1.m_error; {
                                     { t12 _t30 = l39; if ((_t30.tag == 0)) { {
-                                        ctx_panic(12730, 29, 3242879023, "try! failed: alloc::out_of_memory");
+                                        ctx_panic(12741, 29, 3242879023, "try! failed: alloc::out_of_memory");
                                     } } }
                                 } } }
                             }
@@ -88055,7 +88050,7 @@ static t22 f_check__check_fail_match(t166 l0, t604 l1, t174 l2, t22 l3, t6 l4, t
                         { t61 _t31 = ({ t654 _t32 = (&((*l0)).m_pat_errs); t8 _t33 = f_check__name_key((l33).m_variant); t22 _t34 = l37; f_map__putu64u32arena__Arena_d2e79330(_t32, _t33, _t34); }); if ((_t31.tag == 0)) { {
                         } } else if ((_t31.tag == 1)) { l40 = _t31.p.v1.m_error; {
                             { t12 _t35 = l40; if ((_t35.tag == 0)) { {
-                                ctx_panic(12733, 25, 3242879023, "try! failed: alloc::out_of_memory");
+                                ctx_panic(12744, 25, 3242879023, "try! failed: alloc::out_of_memory");
                             } } }
                         } } }
                     }
@@ -88071,7 +88066,7 @@ static t22 f_check__check_fail_match(t166 l0, t604 l1, t174 l2, t22 l3, t6 l4, t
                 } else {
                     f_check__same_binds((&(*l0)), l30, l29, l34, l42, (l33).m_binders, (l33).m_span, ((t7){ .m_ptr = (void *)"arm", .m_len = 3 }));
                 }
-                l32 = ctx_add_u64(l32, ((t14)(1ULL)), 12743, 23, 3242879023);
+                l32 = ctx_add_u64(l32, ((t14)(1ULL)), 12754, 23, 3242879023);
             }
             if ((l31 == ((t22)(3ULL)))) {
                 f_check__error((&(*l0)), (l27).m_span, ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"an arm can't list `ok` or `err` with errors", .m_len = 43 }), }));
@@ -88083,7 +88078,7 @@ static t22 f_check__check_fail_match(t166 l0, t604 l1, t174 l2, t22 l3, t6 l4, t
                 ({ t1016 _t39 = (&l24); t1017 _t40 = ({ t166 _t41 = (&(*l0)); t355 _t42 = (l27).m_body; t173 _t43 = l29; t1012 _t44 = f_slice__emptycheck__Fact_f3d2509b(); t22 _t45 = l3; t6 _t46 = (l4 && (!l11)); t6 _t47 = l7; f_check__branch(_t41, _t42, _t43, _t44, _t45, _t46, _t47); }); f_check__add_branch(_t39, &_t40); });
             }
             ({ t1021 _t48 = (&l23); t963 _t49 = f_check__save(&((*l0))); f_check__add_state(_t48, &_t49); });
-            l26 = ctx_add_u64(l26, ((t14)(1ULL)), 12753, 19, 3242879023);
+            l26 = ctx_add_u64(l26, ((t14)(1ULL)), 12764, 19, 3242879023);
         }
         l43 = f_check__has_id(f_list__itemsu32arena__Arena_0ba5b83a(&(l17)), ((t22)(0ULL)));
         l44 = f_check__has_id(f_list__itemsu32arena__Arena_0ba5b83a(&(l17)), ((t22)(1ULL)));
@@ -88100,7 +88095,7 @@ static t22 f_check__check_fail_match(t166 l0, t604 l1, t174 l2, t22 l3, t6 l4, t
                         _t51 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"err", .m_len = 3 }), });
                     } _t51; });
                 } _t50; });
-                ({ t166 _t52 = (&(*l0)); t174 _t53 = l2; t543 _t54 = ({ struct b181 _t55; _t55.base.code = (void (*)(void))b181_code; _t55.c0 = l45; _r181 = _t55; (ctx_fn *)&_r181; }); f_check__errorf(_t52, _t53, _t54); });
+                ({ t166 _t52 = (&(*l0)); t174 _t53 = l2; t543 _t54 = ({ struct b179 _t55; _t55.base.code = (void (*)(void))b179_code; _t55.c0 = l45; _r179 = _t55; (ctx_fn *)&_r179; }); f_check__errorf(_t52, _t53, _t54); });
             }
         }
         if ((((l18).m_len > ((t14)(0ULL))) || (!l14))) {
@@ -88112,7 +88107,7 @@ static t22 f_check__check_fail_match(t166 l0, t604 l1, t174 l2, t22 l3, t6 l4, t
             { t61 _t64 = f_list__pushcheck__Pendingarena__Arena_1d8e6c6d((&((*l0)).m_pending), &(l46)); if ((_t64.tag == 0)) { {
             } } else if ((_t64.tag == 1)) { l47 = _t64.p.v1.m_error; {
                 { t12 _t65 = l47; if ((_t65.tag == 0)) { {
-                    ctx_panic(12768, 13, 3242879023, "try! failed: alloc::out_of_memory");
+                    ctx_panic(12779, 13, 3242879023, "try! failed: alloc::out_of_memory");
                 } } }
             } } }
         }
@@ -88282,18 +88277,18 @@ static t6 f_check__is_narrowed(t163 * l0, t364 * l1) {
     __builtin_unreachable();
 }
 
-struct b182 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
-static t127 b182_code(ctx_fn *self, void * a0) {
-    struct b182 *s = (struct b182 *)self;
+struct b180 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
+static t127 b180_code(ctx_fn *self, void * a0) {
+    struct b180 *s = (struct b180 *)self;
     return f_check__narrowed_testfmt_472e07a1(s->c0, s->c1, s->c2, a0);
 }
 
 // check::narrowed_test
 static t27 f_check__narrowed_test(t166 l0, t364 * l1, t22 l2, t7 l3) {
     CTX_STACK_CHECK();
-    struct b182 _r182;
+    struct b180 _r180;
     {
-        ({ t166 _t0 = (&(*l0)); t174 _t1 = f_check__expr_at(&((*l1))); t543 _t2 = ({ struct b182 _t3; _t3.base.code = (void (*)(void))b182_code; _t3.c0 = f_check__str(f_check__source_text(&((*l0)), ((*l1)).m_span)); _t3.c1 = f_check__tstr(&((*l0)), l2); _t3.c2 = f_check__str(l3); _r182 = _t3; (ctx_fn *)&_r182; }); f_check__errorf(_t0, _t1, _t2); });
+        ({ t166 _t0 = (&(*l0)); t174 _t1 = f_check__expr_at(&((*l1))); t543 _t2 = ({ struct b180 _t3; _t3.base.code = (void (*)(void))b180_code; _t3.c0 = f_check__str(f_check__source_text(&((*l0)), ((*l1)).m_span)); _t3.c1 = f_check__tstr(&((*l0)), l2); _t3.c2 = f_check__str(l3); _r180 = _t3; (ctx_fn *)&_r180; }); f_check__errorf(_t0, _t1, _t2); });
     }
 }
 
@@ -88437,27 +88432,27 @@ static t127 f_check__check_matchfmt_b250747c_7(t16 l0, t75 l1) {
     __builtin_unreachable();
 }
 
-struct b183 { ctx_fn base; t16 c0; };
-static t127 b183_code(ctx_fn *self, void * a0) {
-    struct b183 *s = (struct b183 *)self;
+struct b181 { ctx_fn base; t16 c0; };
+static t127 b181_code(ctx_fn *self, void * a0) {
+    struct b181 *s = (struct b181 *)self;
     return f_check__pattern_varsfmt_6ff305ad(s->c0, a0);
 }
 
-struct b184 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b184_code(ctx_fn *self, void * a0) {
-    struct b184 *s = (struct b184 *)self;
+struct b182 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b182_code(ctx_fn *self, void * a0) {
+    struct b182 *s = (struct b182 *)self;
     return f_check__pattern_varsfmt_6ff305ad_2(s->c0, s->c1, a0);
 }
 
-struct b185 { ctx_fn base; t16 c0; };
-static t127 b185_code(ctx_fn *self, void * a0) {
-    struct b185 *s = (struct b185 *)self;
+struct b183 { ctx_fn base; t16 c0; };
+static t127 b183_code(ctx_fn *self, void * a0) {
+    struct b183 *s = (struct b183 *)self;
     return f_check__pattern_varsfmt_6ff305ad_1(s->c0, a0);
 }
 
-struct b186 { ctx_fn base; t16 c0; };
-static t127 b186_code(ctx_fn *self, void * a0) {
-    struct b186 *s = (struct b186 *)self;
+struct b184 { ctx_fn base; t16 c0; };
+static t127 b184_code(ctx_fn *self, void * a0) {
+    struct b184 *s = (struct b184 *)self;
     return f_check__pattern_varsfmt_6ff305ad_3(s->c0, a0);
 }
 
@@ -88474,14 +88469,14 @@ static t173 f_check__pattern_vars(t166 l0, t7 l1, t6 l2, t656 l3, t758 l4, t6 l5
     t22 l17;
     t669 l18;
     CTX_STACK_CHECK();
+    struct b181 _r181;
+    struct b182 _r182;
     struct b183 _r183;
     struct b184 _r184;
-    struct b185 _r185;
-    struct b186 _r186;
     {
         l9 = f_list__newu32arena__Arena_8372a2f8((&g0), ((*l0)).m_heap);
         if (((l2 && ((l4).m_len > ((t14)(0ULL)))) && ((l3).tag == 0))) {
-            ({ t166 _t0 = (&(*l0)); t174 _t1 = l8; t543 _t2 = ({ struct b183 _t3; _t3.base.code = (void (*)(void))b183_code; _t3.c0 = f_check__str(l1); _r183 = _t3; (ctx_fn *)&_r183; }); f_check__errorf(_t0, _t1, _t2); });
+            ({ t166 _t0 = (&(*l0)); t174 _t1 = l8; t543 _t2 = ({ struct b181 _t3; _t3.base.code = (void (*)(void))b181_code; _t3.c0 = f_check__str(l1); _r181 = _t3; (ctx_fn *)&_r181; }); f_check__errorf(_t0, _t1, _t2); });
         }
         l10 = ((t14)(0ULL));
         while ((l10 < (l4).m_len)) {
@@ -88492,17 +88487,17 @@ static t173 f_check__pattern_vars(t166 l0, t7 l1, t6 l2, t656 l3, t758 l4, t6 l5
                 l14 = f_types__find_field((l3).p.v1.m_value, l12);
                 if (((l14).tag == 0)) {
                     if (((l12).m_len > ((t14)(0ULL)))) {
-                        ({ t166 _t6 = (&(*l0)); t174 _t7 = (l11).m_span; t543 _t8 = ({ struct b184 _t9; _t9.base.code = (void (*)(void))b184_code; _t9.c0 = f_check__str(l1); _t9.c1 = f_check__str(l12); _r184 = _t9; (ctx_fn *)&_r184; }); f_check__errorf(_t6, _t7, _t8); });
+                        ({ t166 _t6 = (&(*l0)); t174 _t7 = (l11).m_span; t543 _t8 = ({ struct b182 _t9; _t9.base.code = (void (*)(void))b182_code; _t9.c0 = f_check__str(l1); _t9.c1 = f_check__str(l12); _r182 = _t9; (ctx_fn *)&_r182; }); f_check__errorf(_t6, _t7, _t8); });
                     }
                 } else {
                     l13 = ((l14).p.v1.m_value).m_ty;
                     if (f_check__bound_before(l4, l10)) {
-                        ({ t166 _t10 = (&(*l0)); t174 _t11 = (l11).m_span; t543 _t12 = ({ struct b185 _t13; _t13.base.code = (void (*)(void))b185_code; _t13.c0 = f_check__str(l12); _r185 = _t13; (ctx_fn *)&_r185; }); f_check__errorf(_t10, _t11, _t12); });
+                        ({ t166 _t10 = (&(*l0)); t174 _t11 = (l11).m_span; t543 _t12 = ({ struct b183 _t13; _t13.base.code = (void (*)(void))b183_code; _t13.c0 = f_check__str(l12); _r183 = _t13; (ctx_fn *)&_r183; }); f_check__errorf(_t10, _t11, _t12); });
                     }
                 }
             }
             if (((l2 && (l11).m_by_ref) && (!l5))) {
-                ({ t166 _t14 = (&(*l0)); t174 _t15 = (l11).m_span; t543 _t16 = ({ struct b186 _t17; _t17.base.code = (void (*)(void))b186_code; _t17.c0 = f_check__str(l12); _r186 = _t17; (ctx_fn *)&_r186; }); f_check__errorf(_t14, _t15, _t16); });
+                ({ t166 _t14 = (&(*l0)); t174 _t15 = (l11).m_span; t543 _t16 = ({ struct b184 _t17; _t17.base.code = (void (*)(void))b184_code; _t17.c0 = f_check__str(l12); _r184 = _t17; (ctx_fn *)&_r184; }); f_check__errorf(_t14, _t15, _t16); });
             }
             l15 = (l11).m_local;
             l16 = ({ t7 _t18; if (((l15).tag == 0)) {
@@ -88523,27 +88518,27 @@ static t173 f_check__pattern_vars(t166 l0, t7 l1, t6 l2, t656 l3, t758 l4, t6 l5
     __builtin_unreachable();
 }
 
-struct b187 { ctx_fn base; t16 c0; t16 c1; t16 c2; t16 c3; };
-static t127 b187_code(ctx_fn *self, void * a0) {
-    struct b187 *s = (struct b187 *)self;
+struct b185 { ctx_fn base; t16 c0; t16 c1; t16 c2; t16 c3; };
+static t127 b185_code(ctx_fn *self, void * a0) {
+    struct b185 *s = (struct b185 *)self;
     return f_check__same_bindsfmt_ca4e325d_2(s->c0, s->c1, s->c2, s->c3, a0);
 }
 
-struct b188 { ctx_fn base; t16 c0; t16 c1; t16 c2; t16 c3; t16 c4; };
-static t127 b188_code(ctx_fn *self, void * a0) {
-    struct b188 *s = (struct b188 *)self;
+struct b186 { ctx_fn base; t16 c0; t16 c1; t16 c2; t16 c3; t16 c4; };
+static t127 b186_code(ctx_fn *self, void * a0) {
+    struct b186 *s = (struct b186 *)self;
     return f_check__same_bindsfmt_ca4e325d_1(s->c0, s->c1, s->c2, s->c3, s->c4, a0);
 }
 
-struct b189 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
-static t127 b189_code(ctx_fn *self, void * a0) {
-    struct b189 *s = (struct b189 *)self;
+struct b187 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
+static t127 b187_code(ctx_fn *self, void * a0) {
+    struct b187 *s = (struct b187 *)self;
     return f_check__same_bindsfmt_ca4e325d(s->c0, s->c1, s->c2, a0);
 }
 
-struct b190 { ctx_fn base; t16 c0; t16 c1; t16 c2; t16 c3; };
-static t127 b190_code(ctx_fn *self, void * a0) {
-    struct b190 *s = (struct b190 *)self;
+struct b188 { ctx_fn base; t16 c0; t16 c1; t16 c2; t16 c3; };
+static t127 b188_code(ctx_fn *self, void * a0) {
+    struct b188 *s = (struct b188 *)self;
     return f_check__same_bindsfmt_ca4e325d_3(s->c0, s->c1, s->c2, s->c3, a0);
 }
 
@@ -88560,10 +88555,10 @@ static t27 f_check__same_binds(t166 l0, t7 l1, t173 l2, t7 l3, t173 l4, t758 l5,
     t579 l16;
     t579 l17;
     CTX_STACK_CHECK();
+    struct b185 _r185;
+    struct b186 _r186;
     struct b187 _r187;
     struct b188 _r188;
-    struct b189 _r189;
-    struct b190 _r190;
     {
         l8 = f_list__newboolarena__Arena_e38d8bc4((&g0), ((*l0)).m_heap);
         l9 = ((t14)(0ULL));
@@ -88590,7 +88585,7 @@ static t27 f_check__same_binds(t166 l0, t7 l1, t173 l2, t7 l3, t173 l4, t758 l5,
                 }
             }
             if ((l14 == ((t22)(4294967295ULL)))) {
-                ({ t166 _t14 = (&(*l0)); t174 _t15 = l6; t543 _t16 = ({ struct b187 _t17; _t17.base.code = (void (*)(void))b187_code; _t17.c0 = f_check__str(l3); _t17.c1 = f_check__str((l12).m_name); _t17.c2 = f_check__str(l1); _t17.c3 = f_check__str(l7); _r187 = _t17; (ctx_fn *)&_r187; }); f_check__errorf(_t14, _t15, _t16); });
+                ({ t166 _t14 = (&(*l0)); t174 _t15 = l6; t543 _t16 = ({ struct b185 _t17; _t17.base.code = (void (*)(void))b185_code; _t17.c0 = f_check__str(l3); _t17.c1 = f_check__str((l12).m_name); _t17.c2 = f_check__str(l1); _t17.c3 = f_check__str(l7); _r185 = _t17; (ctx_fn *)&_r185; }); f_check__errorf(_t14, _t15, _t16); });
             } else {
                 l15 = ((t14)(0ULL));
                 while ((l15 < (l4).m_len)) {
@@ -88601,10 +88596,10 @@ static t27 f_check__same_binds(t166 l0, t7 l1, t173 l2, t7 l3, t173 l4, t758 l5,
                 }
                 l16 = ({ t163 *_t26 = &((*l0)); t22 _t27 = (*({ t173 _t28 = (l4); uint64_t _t29 = ((t14)(l14)); _t28.m_ptr + ctx_idx(_t29, _t28.m_len, 5805, 45, 3242879023); })); f_check__get_var(_t26, _t27); });
                 if ((!f_types__unify((&((*l0)).m_ty), (l16).m_ty, (l12).m_ty))) {
-                    ({ t166 _t30 = (&(*l0)); t174 _t31 = (l16).m_at; t543 _t32 = ({ struct b188 _t33; _t33.base.code = (void (*)(void))b188_code; _t33.c0 = f_check__str((l12).m_name); _t33.c1 = f_check__tstr(&((*l0)), (l12).m_ty); _t33.c2 = f_check__str(l1); _t33.c3 = f_check__tstr(&((*l0)), (l16).m_ty); _t33.c4 = f_check__str(l3); _r188 = _t33; (ctx_fn *)&_r188; }); f_check__errorf(_t30, _t31, _t32); });
+                    ({ t166 _t30 = (&(*l0)); t174 _t31 = (l16).m_at; t543 _t32 = ({ struct b186 _t33; _t33.base.code = (void (*)(void))b186_code; _t33.c0 = f_check__str((l12).m_name); _t33.c1 = f_check__tstr(&((*l0)), (l12).m_ty); _t33.c2 = f_check__str(l1); _t33.c3 = f_check__tstr(&((*l0)), (l16).m_ty); _t33.c4 = f_check__str(l3); _r186 = _t33; (ctx_fn *)&_r186; }); f_check__errorf(_t30, _t31, _t32); });
                 } else {
                     if (((l16).m_indirect != (l12).m_indirect)) {
-                        ({ t166 _t34 = (&(*l0)); t174 _t35 = (l16).m_at; t543 _t36 = ({ struct b189 _t37; _t37.base.code = (void (*)(void))b189_code; _t37.c0 = f_check__str((l12).m_name); _t37.c1 = f_check__str(l1); _t37.c2 = f_check__str(l3); _r189 = _t37; (ctx_fn *)&_r189; }); f_check__errorf(_t34, _t35, _t36); });
+                        ({ t166 _t34 = (&(*l0)); t174 _t35 = (l16).m_at; t543 _t36 = ({ struct b187 _t37; _t37.base.code = (void (*)(void))b187_code; _t37.c0 = f_check__str((l12).m_name); _t37.c1 = f_check__str(l1); _t37.c2 = f_check__str(l3); _r187 = _t37; (ctx_fn *)&_r187; }); f_check__errorf(_t34, _t35, _t36); });
                     }
                 }
                 ({ t166 _t38 = (&(*l0)); t8 _t39 = f_check__name_key(((*({ t758 _t41 = (l5); uint64_t _t42 = ((t14)(l14)); _t41.m_ptr + ctx_idx(_t42, _t41.m_len, 5811, 59, 3242879023); }))).m_field); t22 _t40 = (*({ t173 _t43 = (l2); uint64_t _t44 = l9; _t43.m_ptr + ctx_idx(_t44, _t43.m_len, 5811, 85, 3242879023); })); f_check__put_local(_t38, _t39, _t40); });
@@ -88615,7 +88610,7 @@ static t27 f_check__same_binds(t166 l0, t7 l1, t173 l2, t7 l3, t173 l4, t758 l5,
         while ((l9 < (l4).m_len)) {
             if ((!(*({ t51 _t45 = (l11); uint64_t _t46 = l9; _t45.m_ptr + ctx_idx(_t46, _t45.m_len, 5817, 25, 3242879023); })))) {
                 l17 = ({ t163 *_t47 = &((*l0)); t22 _t48 = (*({ t173 _t49 = (l4); uint64_t _t50 = l9; _t49.m_ptr + ctx_idx(_t50, _t49.m_len, 5818, 45, 3242879023); })); f_check__get_var(_t47, _t48); });
-                ({ t166 _t51 = (&(*l0)); t174 _t52 = (l17).m_at; t543 _t53 = ({ struct b190 _t54; _t54.base.code = (void (*)(void))b190_code; _t54.c0 = f_check__str(l3); _t54.c1 = f_check__str((l17).m_name); _t54.c2 = f_check__str(l1); _t54.c3 = f_check__str(l7); _r190 = _t54; (ctx_fn *)&_r190; }); f_check__errorf(_t51, _t52, _t53); });
+                ({ t166 _t51 = (&(*l0)); t174 _t52 = (l17).m_at; t543 _t53 = ({ struct b188 _t54; _t54.base.code = (void (*)(void))b188_code; _t54.c0 = f_check__str(l3); _t54.c1 = f_check__str((l17).m_name); _t54.c2 = f_check__str(l1); _t54.c3 = f_check__str(l7); _r188 = _t54; (ctx_fn *)&_r188; }); f_check__errorf(_t51, _t52, _t53); });
                 return;
             }
             l9 = ctx_add_u64(l9, ((t14)(1ULL)), 5822, 19, 3242879023);
@@ -89414,21 +89409,21 @@ static t127 f_check__check_isfmt_4c441935(t16 l0, t75 l1) {
     __builtin_unreachable();
 }
 
-struct b191 { ctx_fn base; t16 c0; };
-static t127 b191_code(ctx_fn *self, void * a0) {
-    struct b191 *s = (struct b191 *)self;
+struct b189 { ctx_fn base; t16 c0; };
+static t127 b189_code(ctx_fn *self, void * a0) {
+    struct b189 *s = (struct b189 *)self;
     return f_check__check_fail_isfmt_5bd9ba04_2(s->c0, a0);
 }
 
-struct b192 { ctx_fn base; t16 c0; };
-static t127 b192_code(ctx_fn *self, void * a0) {
-    struct b192 *s = (struct b192 *)self;
+struct b190 { ctx_fn base; t16 c0; };
+static t127 b190_code(ctx_fn *self, void * a0) {
+    struct b190 *s = (struct b190 *)self;
     return f_check__check_fail_isfmt_5bd9ba04_1(s->c0, a0);
 }
 
-struct b193 { ctx_fn base; t16 c0; };
-static t127 b193_code(ctx_fn *self, void * a0) {
-    struct b193 *s = (struct b193 *)self;
+struct b191 { ctx_fn base; t16 c0; };
+static t127 b191_code(ctx_fn *self, void * a0) {
+    struct b191 *s = (struct b191 *)self;
     return f_check__check_fail_isfmt_5bd9ba04(s->c0, a0);
 }
 
@@ -89456,9 +89451,9 @@ static t22 f_check__check_fail_is(t166 l0, t364 * l1, t364 * l2, t605 l3, t22 l4
     t541 l24;
     t12 l25;
     CTX_STACK_CHECK();
+    struct b189 _r189;
+    struct b190 _r190;
     struct b191 _r191;
-    struct b192 _r192;
-    struct b193 _r193;
     {
         l5 = f_check__is_res(&((*l0)), l4);
         l6 = f_slice__emptycheck__Variant_b3338106();
@@ -89483,13 +89478,13 @@ static t22 f_check__check_fail_is(t166 l0, t364 * l1, t364 * l2, t605 l3, t22 l4
             l17 = ((t656){0});
             l18 = ((bool)1);
             if (f_check__int_pattern(&(l15))) {
-                ({ t166 _t6 = (&(*l0)); t174 _t7 = (l15).m_span; t543 _t8 = ({ struct b191 _t9; _t9.base.code = (void (*)(void))b191_code; _t9.c0 = f_check__tstr(&((*l0)), l4); _r191 = _t9; (ctx_fn *)&_r191; }); f_check__errorf(_t6, _t7, _t8); });
+                ({ t166 _t6 = (&(*l0)); t174 _t7 = (l15).m_span; t543 _t8 = ({ struct b189 _t9; _t9.base.code = (void (*)(void))b189_code; _t9.c0 = f_check__tstr(&((*l0)), l4); _r189 = _t9; (ctx_fn *)&_r189; }); f_check__errorf(_t6, _t7, _t8); });
                 l18 = ((bool)0);
             } else {
                 if (((l5 && (((l15).m_quals).m_len == ((t14)(0ULL)))) && (f_slice__eq_bytes(l16, ((t7){ .m_ptr = (void *)"ok", .m_len = 2 })) || f_slice__eq_bytes(l16, ((t7){ .m_ptr = (void *)"err", .m_len = 3 }))))) {
                     l12 = ((t22)((l12 | ((t22)(1ULL)))));
                     if (f_check__listed_before(l3, l14)) {
-                        ({ t166 _t10 = (&(*l0)); t174 _t11 = (l15).m_span; t543 _t12 = ({ struct b192 _t13; _t13.base.code = (void (*)(void))b192_code; _t13.c0 = f_check__str(l16); _r192 = _t13; (ctx_fn *)&_r192; }); f_check__errorf(_t10, _t11, _t12); });
+                        ({ t166 _t10 = (&(*l0)); t174 _t11 = (l15).m_span; t543 _t12 = ({ struct b190 _t13; _t13.base.code = (void (*)(void))b190_code; _t13.c0 = f_check__str(l16); _r190 = _t13; (ctx_fn *)&_r190; }); f_check__errorf(_t10, _t11, _t12); });
                     }
                     l17 = ((*({ t657 _t14 = (l6); uint64_t _t15 = ({ t14 _t16; if (f_slice__eq_bytes(l16, ((t7){ .m_ptr = (void *)"ok", .m_len = 2 }))) {
                         _t16 = ((t14)(0ULL));
@@ -89503,7 +89498,7 @@ static t22 f_check__check_fail_is(t166 l0, t364 * l1, t364 * l2, t605 l3, t22 l4
                         l18 = ((bool)0);
                     } else {
                         if (({ t173 _t17 = f_list__itemsu32arena__Arena_0ba5b83a(&(l10)); t22 _t18 = l19; f_check__has_id(_t17, _t18); })) {
-                            ({ t166 _t19 = (&(*l0)); t174 _t20 = (l15).m_span; t543 _t21 = ({ struct b193 _t22; _t22.base.code = (void (*)(void))b193_code; _t22.c0 = f_check__str((f_check__get_decl(&((*l0)), l19)).m_qual); _r193 = _t22; (ctx_fn *)&_r193; }); f_check__errorf(_t19, _t20, _t21); });
+                            ({ t166 _t19 = (&(*l0)); t174 _t20 = (l15).m_span; t543 _t21 = ({ struct b191 _t22; _t22.base.code = (void (*)(void))b191_code; _t22.c0 = f_check__str((f_check__get_decl(&((*l0)), l19)).m_qual); _r191 = _t22; (ctx_fn *)&_r191; }); f_check__errorf(_t19, _t20, _t21); });
                         } else {
                             f_check__push((&l10), l19);
                             { t61 _t23 = f_list__pushsource__Spanarena__Arena_8cadd217((&l11), (l15).m_span); if ((_t23.tag == 0)) { {
@@ -90598,23 +90593,23 @@ static t489 f_slice__castu8check__Live_ea57260e(t7 l0) {
     __builtin_unreachable();
 }
 
-struct b194 { ctx_fn base; t16 c0; };
-static t127 b194_code(ctx_fn *self, void * a0) {
-    struct b194 *s = (struct b194 *)self;
+struct b192 { ctx_fn base; t16 c0; };
+static t127 b192_code(ctx_fn *self, void * a0) {
+    struct b192 *s = (struct b192 *)self;
     return f_check__handle_localfmt_3f372d1e_1(s->c0, a0);
 }
 
-struct b195 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b195_code(ctx_fn *self, void * a0) {
-    struct b195 *s = (struct b195 *)self;
+struct b193 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b193_code(ctx_fn *self, void * a0) {
+    struct b193 *s = (struct b193 *)self;
     return f_check__handle_localfmt_3f372d1e(s->c0, s->c1, a0);
 }
 
 // check::handle_local
 static t27 f_check__handle_local(t166 l0, t22 l1, t6 l2, t174 l3) {
     CTX_STACK_CHECK();
-    struct b194 _r194;
-    struct b195 _r195;
+    struct b192 _r192;
+    struct b193 _r193;
     {
         if ((!f_check__holds_handle(&((*l0)), l1))) {
             return;
@@ -90623,10 +90618,10 @@ static t27 f_check__handle_local(t166 l0, t22 l1, t6 l2, t174 l3) {
             return;
         }
         if (l2) {
-            ({ t166 _t2 = (&(*l0)); t174 _t3 = l3; t543 _t4 = ({ struct b194 _t5; _t5.base.code = (void (*)(void))b194_code; _t5.c0 = f_check__tstr(&((*l0)), l1); _r194 = _t5; (ctx_fn *)&_r194; }); f_check__errorf(_t2, _t3, _t4); });
+            ({ t166 _t2 = (&(*l0)); t174 _t3 = l3; t543 _t4 = ({ struct b192 _t5; _t5.base.code = (void (*)(void))b192_code; _t5.c0 = f_check__tstr(&((*l0)), l1); _r192 = _t5; (ctx_fn *)&_r192; }); f_check__errorf(_t2, _t3, _t4); });
         } else {
             if ((!f_check__local_handle(&((*l0)), l1))) {
-                ({ t166 _t6 = (&(*l0)); t174 _t7 = l3; t543 _t8 = ({ struct b195 _t9; _t9.base.code = (void (*)(void))b195_code; _t9.c0 = f_check__tstr(&((*l0)), l1); _t9.c1 = f_check__str(q24); _r195 = _t9; (ctx_fn *)&_r195; }); f_check__errorf(_t6, _t7, _t8); });
+                ({ t166 _t6 = (&(*l0)); t174 _t7 = l3; t543 _t8 = ({ struct b193 _t9; _t9.base.code = (void (*)(void))b193_code; _t9.c0 = f_check__tstr(&((*l0)), l1); _t9.c1 = f_check__str(q24); _r193 = _t9; (ctx_fn *)&_r193; }); f_check__errorf(_t6, _t7, _t8); });
             }
         }
     }
@@ -90649,9 +90644,9 @@ static t27 f_check__mark_tasky(t166 l0) {
     }
 }
 
-struct b196 { ctx_fn base; t16 c0; };
-static t127 b196_code(ctx_fn *self, void * a0) {
-    struct b196 *s = (struct b196 *)self;
+struct b194 { ctx_fn base; t16 c0; };
+static t127 b194_code(ctx_fn *self, void * a0) {
+    struct b194 *s = (struct b194 *)self;
     return f_check__declare_varfmt_66d53af2(s->c0, a0);
 }
 
@@ -90662,14 +90657,14 @@ static t27 f_check__declare_var(t166 l0, t22 l1) {
     t579 l4;
     t669 l5;
     CTX_STACK_CHECK();
-    struct b196 _r196;
+    struct b194 _r194;
     {
         l2 = f_check__get_var(&((*l0)), l1);
         l3 = f_check__in_scope(&((*l0)), (l2).m_name);
         if (((l3 != ((t22)(4294967295ULL))) && (((l2).m_name).m_len > ((t14)(0ULL))))) {
             l4 = f_check__get_var(&((*l0)), l3);
             if ((!(((l4).m_kind == ((t15)(3ULL))) && ({ t22 _t0 = (({ t163 _t2 = (*l0); t22 _t3 = f_check__root_var(&((*l0)), l3); f_check__get_var(&_t2, _t3); })).m_depth; t22 _t1 = ((*l0)).m_depth; (_t0 < _t1); })))) {
-                ({ t166 _t4 = (&(*l0)); t174 _t5 = (l2).m_at; t543 _t6 = ({ struct b196 _t7; _t7.base.code = (void (*)(void))b196_code; _t7.c0 = f_check__str((l2).m_name); _r196 = _t7; (ctx_fn *)&_r196; }); f_check__errorf(_t4, _t5, _t6); });
+                ({ t166 _t4 = (&(*l0)); t174 _t5 = (l2).m_at; t543 _t6 = ({ struct b194 _t7; _t7.base.code = (void (*)(void))b194_code; _t7.c0 = f_check__str((l2).m_name); _r194 = _t7; (ctx_fn *)&_r194; }); f_check__errorf(_t4, _t5, _t6); });
             }
         }
         l5 = f_list__atcheck__Vararena__Arena_fe626f16(&(((*l0)).m_vars), ((t14)(l1)));
@@ -91028,9 +91023,9 @@ static t127 f_check__assignfmt_9f92461d(t16 l0, t16 l1, t75 l2) {
     __builtin_unreachable();
 }
 
-struct b197 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b197_code(ctx_fn *self, void * a0) {
-    struct b197 *s = (struct b197 *)self;
+struct b195 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b195_code(ctx_fn *self, void * a0) {
+    struct b195 *s = (struct b195 *)self;
     return f_check__check_cap_assignfmt_eb35d86d(s->c0, s->c1, a0);
 }
 
@@ -91038,7 +91033,7 @@ static t127 b197_code(ctx_fn *self, void * a0) {
 static t27 f_check__check_cap_assign(t166 l0, t22 l1, t6 l2, t174 l3) {
     t16 l4;
     CTX_STACK_CHECK();
-    struct b197 _r197;
+    struct b195 _r195;
     {
         if ((l2 || (!f_check__holds_cap((&(*l0)), l1, ((t22)(0ULL)))))) {
             return;
@@ -91048,7 +91043,7 @@ static t27 f_check__check_cap_assign(t166 l0, t22 l1, t6 l2, t174 l3) {
         } else {
             _t0 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"holds", .m_len = 5 }), });
         } _t0; });
-        ({ t166 _t1 = (&(*l0)); t174 _t2 = l3; t543 _t3 = ({ struct b197 _t4; _t4.base.code = (void (*)(void))b197_code; _t4.c0 = f_check__tstr(&((*l0)), l1); _t4.c1 = l4; _r197 = _t4; (ctx_fn *)&_r197; }); f_check__errorf(_t1, _t2, _t3); });
+        ({ t166 _t1 = (&(*l0)); t174 _t2 = l3; t543 _t3 = ({ struct b195 _t4; _t4.base.code = (void (*)(void))b195_code; _t4.c0 = f_check__tstr(&((*l0)), l1); _t4.c1 = l4; _r195 = _t4; (ctx_fn *)&_r195; }); f_check__errorf(_t1, _t2, _t3); });
     }
 }
 
@@ -91199,15 +91194,15 @@ static t27 f_check__add_held(t166 l0, t22 l1, t802 l2) {
     }
 }
 
-struct b198 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b198_code(ctx_fn *self, void * a0) {
-    struct b198 *s = (struct b198 *)self;
+struct b196 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b196_code(ctx_fn *self, void * a0) {
+    struct b196 *s = (struct b196 *)self;
     return f_check__check_mutablefmt_973dce2f(s->c0, s->c1, a0);
 }
 
-struct b199 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b199_code(ctx_fn *self, void * a0) {
-    struct b199 *s = (struct b199 *)self;
+struct b197 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b197_code(ctx_fn *self, void * a0) {
+    struct b197 *s = (struct b197 *)self;
     return f_check__check_mutablefmt_973dce2f_1(s->c0, s->c1, a0);
 }
 
@@ -91227,8 +91222,8 @@ static t27 f_check__check_mutable(t166 l0, t364 * l1) {
     t22 l13;
     t16 l14;
     CTX_STACK_CHECK();
-    struct b198 _r198;
-    struct b199 _r199;
+    struct b196 _r196;
+    struct b197 _r197;
     {
         if ((!f_check__check_place((&(*l0)), &((*l1))))) {
             return;
@@ -91252,7 +91247,7 @@ static t27 f_check__check_mutable(t166 l0, t364 * l1) {
                     } else {
                         _t5 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"", .m_len = 0 }), });
                     } _t5; });
-                    ({ t166 _t6 = (&(*l0)); t174 _t7 = f_check__expr_at(&((*l1))); t543 _t8 = ({ struct b198 _t9; _t9.base.code = (void (*)(void))b198_code; _t9.c0 = f_check__str((l4).m_name); _t9.c1 = l5; _r198 = _t9; (ctx_fn *)&_r198; }); f_check__errorf(_t6, _t7, _t8); });
+                    ({ t166 _t6 = (&(*l0)); t174 _t7 = f_check__expr_at(&((*l1))); t543 _t8 = ({ struct b196 _t9; _t9.base.code = (void (*)(void))b196_code; _t9.c0 = f_check__str((l4).m_name); _t9.c1 = l5; _r196 = _t9; (ctx_fn *)&_r196; }); f_check__errorf(_t6, _t7, _t8); });
                 }
             }
             return;
@@ -91305,7 +91300,7 @@ static t27 f_check__check_mutable(t166 l0, t364 * l1) {
             } } else { {
                 _t28 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"*mut", .m_len = 4 }), });
             } } _t28; });
-            ({ t166 _t30 = (&(*l0)); t174 _t31 = f_check__expr_at(&((*l1))); t543 _t32 = ({ struct b199 _t33; _t33.base.code = (void (*)(void))b199_code; _t33.c0 = f_check__tstr(&((*l0)), l13); _t33.c1 = l14; _r199 = _t33; (ctx_fn *)&_r199; }); f_check__errorf(_t30, _t31, _t32); });
+            ({ t166 _t30 = (&(*l0)); t174 _t31 = f_check__expr_at(&((*l1))); t543 _t32 = ({ struct b197 _t33; _t33.base.code = (void (*)(void))b197_code; _t33.c0 = f_check__tstr(&((*l0)), l13); _t33.c1 = l14; _r197 = _t33; (ctx_fn *)&_r197; }); f_check__errorf(_t30, _t31, _t32); });
         }
     }
 }
@@ -97072,39 +97067,39 @@ static t14 f_map__free_slotu64boolarena__Arena_6143c81a(t288 * l0, t8 l1) {
     __builtin_unreachable();
 }
 
-struct b200 { ctx_fn base; t16 c0; };
-static t127 b200_code(ctx_fn *self, void * a0) {
-    struct b200 *s = (struct b200 *)self;
+struct b198 { ctx_fn base; t16 c0; };
+static t127 b198_code(ctx_fn *self, void * a0) {
+    struct b198 *s = (struct b198 *)self;
     return f_check__resolve_segsfmt_437ab70f(s->c0, a0);
 }
 
-struct b201 { ctx_fn base; t16 c0; };
-static t127 b201_code(ctx_fn *self, void * a0) {
-    struct b201 *s = (struct b201 *)self;
+struct b199 { ctx_fn base; t16 c0; };
+static t127 b199_code(ctx_fn *self, void * a0) {
+    struct b199 *s = (struct b199 *)self;
     return f_check__resolve_segsfmt_437ab70f_1(s->c0, a0);
 }
 
-struct b202 { ctx_fn base; t16 c0; };
+struct b200 { ctx_fn base; t16 c0; };
+static t127 b200_code(ctx_fn *self, void * a0) {
+    struct b200 *s = (struct b200 *)self;
+    return f_check__resolve_segsfmt_437ab70f_2(s->c0, a0);
+}
+
+struct b201 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b201_code(ctx_fn *self, void * a0) {
+    struct b201 *s = (struct b201 *)self;
+    return f_check__resolve_segsfmt_437ab70f_3(s->c0, s->c1, a0);
+}
+
+struct b202 { ctx_fn base; t16 c0; t16 c1; };
 static t127 b202_code(ctx_fn *self, void * a0) {
     struct b202 *s = (struct b202 *)self;
-    return f_check__resolve_segsfmt_437ab70f_2(s->c0, a0);
+    return f_check__resolve_segsfmt_437ab70f_4(s->c0, s->c1, a0);
 }
 
 struct b203 { ctx_fn base; t16 c0; t16 c1; };
 static t127 b203_code(ctx_fn *self, void * a0) {
     struct b203 *s = (struct b203 *)self;
-    return f_check__resolve_segsfmt_437ab70f_3(s->c0, s->c1, a0);
-}
-
-struct b204 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b204_code(ctx_fn *self, void * a0) {
-    struct b204 *s = (struct b204 *)self;
-    return f_check__resolve_segsfmt_437ab70f_4(s->c0, s->c1, a0);
-}
-
-struct b205 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b205_code(ctx_fn *self, void * a0) {
-    struct b205 *s = (struct b205 *)self;
     return f_check__resolve_segsfmt_437ab70f_5(s->c0, s->c1, a0);
 }
 
@@ -97133,12 +97128,12 @@ static t701 f_check__resolve_segs(t166 l0, t596 l1, t6 l2) {
     t22 l23;
     t14 l24;
     CTX_STACK_CHECK();
+    struct b198 _r198;
+    struct b199 _r199;
     struct b200 _r200;
     struct b201 _r201;
     struct b202 _r202;
     struct b203 _r203;
-    struct b204 _r204;
-    struct b205 _r205;
     {
         l3 = (((*l0)).m_sc).m_ns;
         l4 = (*({ t596 _t0 = (l1); uint64_t _t1 = ((t14)(0ULL)); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 10556, 22, 3242879023); }));
@@ -97146,7 +97141,7 @@ static t701 f_check__resolve_segs(t166 l0, t596 l1, t6 l2) {
             l5 = f_check__local_named(&((*l0)), ((l4).m_name).m_text, l2);
             if ((l5 != ((t22)(4294967295ULL)))) {
                 if ((((l4).m_targs).tag != 0)) {
-                    ({ t166 _t2 = (&(*l0)); t174 _t3 = ((l4).m_name).m_span; t543 _t4 = ({ struct b200 _t5; _t5.base.code = (void (*)(void))b200_code; _t5.c0 = f_check__str(((l4).m_name).m_text); _r200 = _t5; (ctx_fn *)&_r200; }); f_check__errorf(_t2, _t3, _t4); });
+                    ({ t166 _t2 = (&(*l0)); t174 _t3 = ((l4).m_name).m_span; t543 _t4 = ({ struct b198 _t5; _t5.base.code = (void (*)(void))b198_code; _t5.c0 = f_check__str(((l4).m_name).m_text); _r198 = _t5; (ctx_fn *)&_r198; }); f_check__errorf(_t2, _t3, _t4); });
                     return ((t701){0});
                 }
                 f_check__use((&(*l0)), (l4).m_name, ((t874){ .tag = 4, .p.v4 = { .m_var = l5, } }));
@@ -97162,7 +97157,7 @@ static t701 f_check__resolve_segs(t166 l0, t596 l1, t6 l2) {
                 f_check__refer((&(*l0)), (l4).m_name, (l7).p.v1.m_value);
                 return ((t701){ .tag = 1, .p.v1.m_value = ((t694){ .tag = 5, .p.v5 = { .m_e = (l7).p.v1.m_value, .m_seg = l4, } }) });
             }
-            ({ t166 _t6 = (&(*l0)); t174 _t7 = ((l4).m_name).m_span; t543 _t8 = ({ struct b201 _t9; _t9.base.code = (void (*)(void))b201_code; _t9.c0 = f_check__str(((l4).m_name).m_text); _r201 = _t9; (ctx_fn *)&_r201; }); f_check__errorf(_t6, _t7, _t8); });
+            ({ t166 _t6 = (&(*l0)); t174 _t7 = ((l4).m_name).m_span; t543 _t8 = ({ struct b199 _t9; _t9.base.code = (void (*)(void))b199_code; _t9.c0 = f_check__str(((l4).m_name).m_text); _r199 = _t9; (ctx_fn *)&_r199; }); f_check__errorf(_t6, _t7, _t8); });
             return ((t701){0});
         }
         l8 = f_check__lookup_path(&((*l0)), l3, ((l4).m_name).m_text);
@@ -97187,7 +97182,7 @@ static t701 f_check__resolve_segs(t166 l0, t596 l1, t6 l2) {
             }
             if ((l14 != ((t22)(4294967295ULL)))) {
                 if ((((l12).m_targs).tag != 0)) {
-                    ({ t166 _t18 = (&(*l0)); t174 _t19 = ((l12).m_name).m_span; t543 _t20 = ({ struct b202 _t21; _t21.base.code = (void (*)(void))b202_code; _t21.c0 = f_check__str(((l12).m_name).m_text); _r202 = _t21; (ctx_fn *)&_r202; }); f_check__errorf(_t18, _t19, _t20); });
+                    ({ t166 _t18 = (&(*l0)); t174 _t19 = ((l12).m_name).m_span; t543 _t20 = ({ struct b200 _t21; _t21.base.code = (void (*)(void))b200_code; _t21.c0 = f_check__str(((l12).m_name).m_text); _r200 = _t21; (ctx_fn *)&_r200; }); f_check__errorf(_t18, _t19, _t20); });
                     return ((t701){0});
                 }
                 l16 = f_check__get_space(&((*l0)), l14);
@@ -97200,7 +97195,7 @@ static t701 f_check__resolve_segs(t166 l0, t596 l1, t6 l2) {
                 }
                 l18 = f_map__getu8check__Entryarena__Arena_74893629(&((l16).m_paths), ((l11).m_name).m_text);
                 if (((l18).tag == 0)) {
-                    ({ t166 _t22 = (&(*l0)); t174 _t23 = ((l11).m_name).m_span; t543 _t24 = ({ struct b203 _t25; _t25.base.code = (void (*)(void))b203_code; _t25.c0 = f_check__str(((l11).m_name).m_text); _t25.c1 = f_check__str(((l12).m_name).m_text); _r203 = _t25; (ctx_fn *)&_r203; }); f_check__errorf(_t22, _t23, _t24); });
+                    ({ t166 _t22 = (&(*l0)); t174 _t23 = ((l11).m_name).m_span; t543 _t24 = ({ struct b201 _t25; _t25.base.code = (void (*)(void))b201_code; _t25.c0 = f_check__str(((l11).m_name).m_text); _t25.c1 = f_check__str(((l12).m_name).m_text); _r201 = _t25; (ctx_fn *)&_r201; }); f_check__errorf(_t22, _t23, _t24); });
                     return ((t701){0});
                 }
                 f_check__refer((&(*l0)), (l11).m_name, (l18).p.v1.m_value);
@@ -97238,11 +97233,11 @@ static t701 f_check__resolve_segs(t166 l0, t596 l1, t6 l2) {
                         }
                         l24 = ctx_add_u64(l24, ((t14)(1ULL)), 10642, 31, 3242879023);
                     }
-                    ({ t166 _t42 = (&(*l0)); t174 _t43 = ((l11).m_name).m_span; t543 _t44 = ({ struct b204 _t45; _t45.base.code = (void (*)(void))b204_code; _t45.c0 = f_check__tstr(&((*l0)), l20); _t45.c1 = f_check__str(((l11).m_name).m_text); _r204 = _t45; (ctx_fn *)&_r204; }); f_check__errorf(_t42, _t43, _t44); });
+                    ({ t166 _t42 = (&(*l0)); t174 _t43 = ((l11).m_name).m_span; t543 _t44 = ({ struct b202 _t45; _t45.base.code = (void (*)(void))b202_code; _t45.c0 = f_check__tstr(&((*l0)), l20); _t45.c1 = f_check__str(((l11).m_name).m_text); _r202 = _t45; (ctx_fn *)&_r202; }); f_check__errorf(_t42, _t43, _t44); });
                     return ((t701){0});
                 }
             }
-            ({ t166 _t46 = (&(*l0)); t174 _t47 = ((l11).m_name).m_span; t543 _t48 = ({ struct b205 _t49; _t49.base.code = (void (*)(void))b205_code; _t49.c0 = f_check__str(((l12).m_name).m_text); _t49.c1 = f_check__str(((l11).m_name).m_text); _r205 = _t49; (ctx_fn *)&_r205; }); f_check__errorf(_t46, _t47, _t48); });
+            ({ t166 _t46 = (&(*l0)); t174 _t47 = ((l11).m_name).m_span; t543 _t48 = ({ struct b203 _t49; _t49.base.code = (void (*)(void))b203_code; _t49.c0 = f_check__str(((l12).m_name).m_text); _t49.c1 = f_check__str(((l11).m_name).m_text); _r203 = _t49; (ctx_fn *)&_r203; }); f_check__errorf(_t46, _t47, _t48); });
             return ((t701){0});
         }
         return ((t701){ .tag = 1, .p.v1.m_value = ({ t327 _t50 = l9; t748 _t51 = (*({ t596 _t52 = (l1); uint64_t _t53 = ctx_sub_u64((l1).m_len, ((t14)(1ULL)), 10651, 58, 3242879023); _t52.m_ptr + ctx_idx(_t53, _t52.m_len, 10651, 48, 3242879023); })); ((t694){ .tag = 5, .p.v5 = { .m_e = _t50, .m_seg = _t51, } }); }) });
@@ -97349,15 +97344,15 @@ static t6 f_check__fn_accepts(t166 l0, t22 l1, t22 l2, t6 l3) {
     __builtin_unreachable();
 }
 
-struct b206 { ctx_fn base; t16 c0; };
-static t127 b206_code(ctx_fn *self, void * a0) {
-    struct b206 *s = (struct b206 *)self;
+struct b204 { ctx_fn base; t16 c0; };
+static t127 b204_code(ctx_fn *self, void * a0) {
+    struct b204 *s = (struct b204 *)self;
     return f_check__struct_litfmt_2d7ec93b(s->c0, a0);
 }
 
-struct b207 { ctx_fn base; t16 c0; };
-static t127 b207_code(ctx_fn *self, void * a0) {
-    struct b207 *s = (struct b207 *)self;
+struct b205 { ctx_fn base; t16 c0; };
+static t127 b205_code(ctx_fn *self, void * a0) {
+    struct b205 *s = (struct b205 *)self;
     return f_check__struct_litfmt_2d7ec93b_1(s->c0, a0);
 }
 
@@ -97380,8 +97375,8 @@ static t22 f_check__struct_lit(t166 l0, t364 * l1, t327 l2, t748 * l3, t550 l4, 
     t12 l22;
     t12 l23;
     CTX_STACK_CHECK();
-    struct b206 _r206;
-    struct b207 _r207;
+    struct b204 _r204;
+    struct b205 _r205;
     {
         l8 = ({ t166 _t0 = (&(*l0)); t327 _t1 = l2; t183 _t2 = ((*l3)).m_name; t537 _t3 = f_check__targs_of((&(*l0)), &((*l3))); t174 _t4 = (((*l3)).m_name).m_span; t6 _t5 = ((bool)1); t6 _t6 = ((bool)0); f_check__decl_type(_t0, _t1, _t2, _t3, _t4, _t5, _t6); });
         l9 = f_types__prune(&(((*l0)).m_ty), l8);
@@ -97393,14 +97388,14 @@ static t22 f_check__struct_lit(t166 l0, t364 * l1, t327 l2, t748 * l3, t550 l4, 
             l10 = l11;
         } } else if ((_t7.tag == 4)) { l12 = _t7.p.v4.m_decl; {
             if ((!f_check__loaded_cap(&((*l0)), l9))) {
-                ({ t166 _t8 = (&(*l0)); t174 _t9 = (((*l3)).m_name).m_span; t543 _t10 = ({ struct b206 _t11; _t11.base.code = (void (*)(void))b206_code; _t11.c0 = f_check__str((((*l3)).m_name).m_text); _r206 = _t11; (ctx_fn *)&_r206; }); f_check__errorf(_t8, _t9, _t10); });
+                ({ t166 _t8 = (&(*l0)); t174 _t9 = (((*l3)).m_name).m_span; t543 _t10 = ({ struct b204 _t11; _t11.base.code = (void (*)(void))b204_code; _t11.c0 = f_check__str((((*l3)).m_name).m_text); _r204 = _t11; (ctx_fn *)&_r204; }); f_check__errorf(_t8, _t9, _t10); });
                 return ((t22)(0ULL));
             }
             return f_check__cap_lit((&(*l0)), &((*l1)), l9, l12, &((*l3)), l4, l5, l6, l7);
         } } else { {
         } } }
         if ((l10 == ((t22)(4294967295ULL)))) {
-            ({ t166 _t12 = (&(*l0)); t174 _t13 = (((*l3)).m_name).m_span; t543 _t14 = ({ struct b207 _t15; _t15.base.code = (void (*)(void))b207_code; _t15.c0 = f_check__str((((*l3)).m_name).m_text); _r207 = _t15; (ctx_fn *)&_r207; }); f_check__errorf(_t12, _t13, _t14); });
+            ({ t166 _t12 = (&(*l0)); t174 _t13 = (((*l3)).m_name).m_span; t543 _t14 = ({ struct b205 _t15; _t15.base.code = (void (*)(void))b205_code; _t15.c0 = f_check__str((((*l3)).m_name).m_text); _r205 = _t15; (ctx_fn *)&_r205; }); f_check__errorf(_t12, _t13, _t14); });
             return ((t22)(0ULL));
         }
         f_check__same_decl((&(*l0)), l9, l7);
@@ -97425,7 +97420,7 @@ static t22 f_check__struct_lit(t166 l0, t364 * l1, t327 l2, t748 * l3, t550 l4, 
             } } _t19; }); }); if ((_t18.tag == 0)) { {
             } } else if ((_t18.tag == 1)) { l18 = _t18.p.v1.m_error; {
                 { t12 _t25 = l18; if ((_t25.tag == 0)) { {
-                    ctx_panic(11030, 13, 3242879023, "try! failed: alloc::out_of_memory");
+                    ctx_panic(11041, 13, 3242879023, "try! failed: alloc::out_of_memory");
                 } } }
             } } }
             return ({ t166 _t26 = (&(*l0)); t364 _t27 = (*l1); t22 _t28 = l9; t552 _t29 = f_check__struct_fields((&(*l0)), l9); t16 _t30 = f_utf8__viewarena__Arena_5db7a4ae(&(l13)); t550 _t31 = l4; t6 _t32 = l5; t6 _t33 = l6; f_check__untagged_lit(_t26, &_t27, _t28, _t29, _t30, _t31, _t32, _t33); });
@@ -97445,7 +97440,7 @@ static t22 f_check__struct_lit(t166 l0, t364 * l1, t327 l2, t748 * l3, t550 l4, 
         } } _t35; }); }); if ((_t34.tag == 0)) { {
         } } else if ((_t34.tag == 1)) { l23 = _t34.p.v1.m_error; {
             { t12 _t41 = l23; if ((_t41.tag == 0)) { {
-                ctx_panic(11033, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(11044, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
         return ({ t166 _t42 = (&(*l0)); t364 _t43 = (*l1); t22 _t44 = l9; t552 _t45 = f_check__struct_fields((&(*l0)), l9); t16 _t46 = f_utf8__viewarena__Arena_5db7a4ae(&(l13)); t550 _t47 = l4; t552 _t48 = f_slice__emptytypes__Field_36078b08(); t173 _t49 = (f_check__get_decl(&((*l0)), l10)).m_defaults; t6 _t50 = l5; t6 _t51 = l6; f_check__fields_lit(_t42, &_t43, _t44, _t45, _t46, _t47, _t48, _t49, _t50, _t51); });
@@ -97453,9 +97448,9 @@ static t22 f_check__struct_lit(t166 l0, t364 * l1, t327 l2, t748 * l3, t550 l4, 
     __builtin_unreachable();
 }
 
-struct b208 { ctx_fn base; t16 c0; };
-static t127 b208_code(ctx_fn *self, void * a0) {
-    struct b208 *s = (struct b208 *)self;
+struct b206 { ctx_fn base; t16 c0; };
+static t127 b206_code(ctx_fn *self, void * a0) {
+    struct b206 *s = (struct b206 *)self;
     return f_check__variant_litfmt_e50638d5(s->c0, a0);
 }
 
@@ -97470,12 +97465,12 @@ static t22 f_check__variant_lit(t166 l0, t364 * l1, t22 l2, t22 l3, t550 l4, t6 
     t12 l14;
     t12 l15;
     CTX_STACK_CHECK();
-    struct b208 _r208;
+    struct b206 _r206;
     {
-        l8 = (*({ t657 _t0 = (f_check__variants_of((&(*l0)), l2)); uint64_t _t1 = ((t14)(l3)); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 11141, 42, 3242879023); }));
+        l8 = (*({ t657 _t0 = (f_check__variants_of((&(*l0)), l2)); uint64_t _t1 = ((t14)(l3)); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 11152, 42, 3242879023); }));
         l9 = (l8).m_fields;
         if (((l9).tag == 0)) {
-            ({ t166 _t2 = (&(*l0)); t174 _t3 = f_check__expr_at(&((*l1))); t543 _t4 = ({ struct b208 _t5; _t5.base.code = (void (*)(void))b208_code; _t5.c0 = f_check__str((l8).m_name); _r208 = _t5; (ctx_fn *)&_r208; }); f_check__errorf(_t2, _t3, _t4); });
+            ({ t166 _t2 = (&(*l0)); t174 _t3 = f_check__expr_at(&((*l1))); t543 _t4 = ({ struct b206 _t5; _t5.base.code = (void (*)(void))b206_code; _t5.c0 = f_check__str((l8).m_name); _r206 = _t5; (ctx_fn *)&_r206; }); f_check__errorf(_t2, _t3, _t4); });
             return ((t22)(0ULL));
         }
         f_check__same_decl((&(*l0)), l2, l7);
@@ -97496,7 +97491,7 @@ static t22 f_check__variant_lit(t166 l0, t364 * l1, t22 l2, t22 l3, t550 l4, t6 
         } } _t7; }); }); if ((_t6.tag == 0)) { {
         } } else if ((_t6.tag == 1)) { l15 = _t6.p.v1.m_error; {
             { t12 _t13 = l15; if ((_t13.tag == 0)) { {
-                ctx_panic(11150, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(11161, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
         return ({ t166 _t14 = (&(*l0)); t364 _t15 = (*l1); t22 _t16 = l2; t552 _t17 = (l9).p.v1.m_value; t16 _t18 = f_utf8__viewarena__Arena_5db7a4ae(&(l10)); t550 _t19 = l4; t552 _t20 = f_slice__emptytypes__Field_36078b08(); t173 _t21 = f_slice__emptyu32_c1c40257(); t6 _t22 = l5; t6 _t23 = l6; f_check__fields_lit(_t14, &_t15, _t16, _t17, _t18, _t19, _t20, _t21, _t22, _t23); });
@@ -97566,26 +97561,26 @@ static t127 f_check__braced_asfmt_7ef18a7c_1(t16 l0, t75 l1) {
     __builtin_unreachable();
 }
 
-struct b209 { ctx_fn base; t16 c0; };
-static t127 b209_code(ctx_fn *self, void * a0) {
-    struct b209 *s = (struct b209 *)self;
+struct b207 { ctx_fn base; t16 c0; };
+static t127 b207_code(ctx_fn *self, void * a0) {
+    struct b207 *s = (struct b207 *)self;
     return f_check__no_handle_targsfmt_409b76ce(s->c0, a0);
 }
 
 // check::no_handle_targs
 static t27 f_check__no_handle_targs(t166 l0, t173 l1, t174 l2) {
     CTX_STACK_CHECK();
-    struct b209 _r209;
+    struct b207 _r207;
     {
         if (f_check__any_handle(&((*l0)), l1)) {
-            ({ t166 _t0 = (&(*l0)); t174 _t1 = l2; t543 _t2 = ({ struct b209 _t3; _t3.base.code = (void (*)(void))b209_code; _t3.c0 = f_check__str(q24); _r209 = _t3; (ctx_fn *)&_r209; }); f_check__errorf(_t0, _t1, _t2); });
+            ({ t166 _t0 = (&(*l0)); t174 _t1 = l2; t543 _t2 = ({ struct b207 _t3; _t3.base.code = (void (*)(void))b207_code; _t3.c0 = f_check__str(q24); _r207 = _t3; (ctx_fn *)&_r207; }); f_check__errorf(_t0, _t1, _t2); });
         }
     }
 }
 
-struct b210 { ctx_fn base; t16 c0; };
-static t127 b210_code(ctx_fn *self, void * a0) {
-    struct b210 *s = (struct b210 *)self;
+struct b208 { ctx_fn base; t16 c0; };
+static t127 b208_code(ctx_fn *self, void * a0) {
+    struct b208 *s = (struct b208 *)self;
     return f_check__fault_litfmt_af3cae00(s->c0, a0);
 }
 
@@ -97601,13 +97596,13 @@ static t22 f_check__fault_lit(t166 l0, t364 * l1, t22 l2, t550 l3, t6 l4, t6 l5)
     t12 l13;
     t12 l14;
     CTX_STACK_CHECK();
-    struct b210 _r210;
+    struct b208 _r208;
     {
         l6 = f_check__str((f_check__get_decl(&((*l0)), l2)).m_qual);
         l7 = ({ t552 _t0; t656 _t1 = f_check__fault_fields(&((*l0)), l2); if ((_t1.tag == 1)) { l8 = _t1.p.v1.m_value; {
             _t0 = l8;
         } } else if ((_t1.tag == 0)) { {
-            ({ t166 _t2 = (&(*l0)); t174 _t3 = f_check__expr_at(&((*l1))); t543 _t4 = ({ struct b210 _t5; _t5.base.code = (void (*)(void))b210_code; _t5.c0 = l6; _r210 = _t5; (ctx_fn *)&_r210; }); f_check__errorf(_t2, _t3, _t4); });
+            ({ t166 _t2 = (&(*l0)); t174 _t3 = f_check__expr_at(&((*l1))); t543 _t4 = ({ struct b208 _t5; _t5.base.code = (void (*)(void))b208_code; _t5.c0 = l6; _r208 = _t5; (ctx_fn *)&_r208; }); f_check__errorf(_t2, _t3, _t4); });
             return ((t22)(0ULL));
         } } _t0; });
         f_check__no_spread((&(*l0)), &((*l1)), l3);
@@ -97628,7 +97623,7 @@ static t22 f_check__fault_lit(t166 l0, t364 * l1, t22 l2, t550 l3, t6 l4, t6 l5)
         } } _t7; }); if ((_t6.tag == 0)) { {
         } } else if ((_t6.tag == 1)) { l14 = _t6.p.v1.m_error; {
             { t12 _t13 = l14; if ((_t13.tag == 0)) { {
-                ctx_panic(11136, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(11147, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
         return ({ t166 _t14 = (&(*l0)); t364 _t15 = (*l1); t22 _t16 = l9; t552 _t17 = l7; t16 _t18 = f_utf8__viewarena__Arena_5db7a4ae(&(l10)); t550 _t19 = l3; t552 _t20 = f_slice__emptytypes__Field_36078b08(); t173 _t21 = f_slice__emptyu32_c1c40257(); t6 _t22 = l4; t6 _t23 = l5; f_check__fields_lit(_t14, &_t15, _t16, _t17, _t18, _t19, _t20, _t21, _t22, _t23); });
@@ -97693,9 +97688,9 @@ static t127 f_check__braced_asfmt_7ef18a7c_2(t16 l0, t16 l1, t75 l2) {
     __builtin_unreachable();
 }
 
-struct b211 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b211_code(ctx_fn *self, void * a0) {
-    struct b211 *s = (struct b211 *)self;
+struct b209 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b209_code(ctx_fn *self, void * a0) {
+    struct b209 *s = (struct b209 *)self;
     return f_check__call_argsfmt_a48e5ab2(s->c0, s->c1, a0);
 }
 
@@ -97735,7 +97730,7 @@ static t22 f_check__call_args(t166 l0, t364 * l1, t22 l2, t16 l3, t550 l4, t6 l5
     t802 l38;
     t12 l39;
     CTX_STACK_CHECK();
-    struct b211 _r211;
+    struct b209 _r209;
     {
         l7 = ((*l0)).m_starting;
         ((*l0)).m_starting = ((bool)0);
@@ -97773,13 +97768,13 @@ static t22 f_check__call_args(t166 l0, t364 * l1, t22 l2, t16 l3, t550 l4, t6 l5
         } } _t6; }); if ((_t5.tag == 0)) { {
         } } else if ((_t5.tag == 1)) { l18 = _t5.p.v1.m_error; {
             { t12 _t12 = l18; if ((_t12.tag == 0)) { {
-                ctx_panic(10902, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(10913, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
         ({ t166 _t13 = (&(*l0)); t364 _t14 = (*l1); t550 _t15 = l4; t552 _t16 = l9; t16 _t17 = f_utf8__viewarena__Arena_5db7a4ae(&(l14)); f_check__supplied(_t13, &_t14, _t15, _t16, _t17); });
         l19 = ((t14)(0ULL));
         while ((l19 < (l4).m_len)) {
-            l20 = (*({ t550 _t18 = (l4); uint64_t _t19 = l19; _t18.m_ptr + ctx_idx(_t19, _t18.m_len, 10906, 27, 3242879023); }));
+            l20 = (*({ t550 _t18 = (l4); uint64_t _t19 = l19; _t18.m_ptr + ctx_idx(_t19, _t18.m_len, 10917, 27, 3242879023); }));
             l21 = f_types__find_field(l9, ((l20).m_name).m_text);
             if (((l21).tag != 0)) {
                 if (((l21).p.v1.m_value).m_mutable) {
@@ -97802,23 +97797,23 @@ static t22 f_check__call_args(t166 l0, t364 * l1, t22 l2, t16 l3, t550 l4, t6 l5
                     }
                 }
             }
-            l19 = ctx_add_u64(l19, ((t14)(1ULL)), 10929, 19, 3242879023);
+            l19 = ctx_add_u64(l19, ((t14)(1ULL)), 10940, 19, 3242879023);
         }
         l25 = f_list__newtypes__Fieldarena__Arena_f8297ded((&g0), ((*l0)).m_heap);
         l26 = f_list__newcheck__Forwardarena__Arena_77fcf3d3((&g0), ((*l0)).m_heap);
         l19 = ((t14)(0ULL));
         while ((l19 < (l9).m_len)) {
-            l27 = (*({ t552 _t30 = (l9); uint64_t _t31 = l19; _t30.m_ptr + ctx_idx(_t31, _t30.m_len, 10935, 27, 3242879023); }));
+            l27 = (*({ t552 _t30 = (l9); uint64_t _t31 = l19; _t30.m_ptr + ctx_idx(_t31, _t30.m_len, 10946, 27, 3242879023); }));
             if ((!f_check__given(l4, (l27).m_name))) {
                 if (l5) {
                     l28 = f_check__lookup_local(&((*l0)), (l27).m_name, ((bool)0));
                     if ((l28 == ((t22)(4294967295ULL)))) {
-                        ({ t166 _t32 = (&(*l0)); t174 _t33 = f_check__expr_at(&((*l1))); t543 _t34 = ({ struct b211 _t35; _t35.base.code = (void (*)(void))b211_code; _t35.c0 = f_check__str((l27).m_name); _t35.c1 = f_check__str((l27).m_name); _r211 = _t35; (ctx_fn *)&_r211; }); f_check__errorf(_t32, _t33, _t34); });
+                        ({ t166 _t32 = (&(*l0)); t174 _t33 = f_check__expr_at(&((*l1))); t543 _t34 = ({ struct b209 _t35; _t35.base.code = (void (*)(void))b209_code; _t35.c0 = f_check__str((l27).m_name); _t35.c1 = f_check__str((l27).m_name); _r209 = _t35; (ctx_fn *)&_r209; }); f_check__errorf(_t32, _t33, _t34); });
                     } else {
                         { t61 _t36 = ({ t1125 _t37 = (&l26); t703 _t38 = ({ t166 _t39 = (&(*l0)); t551 _t40 = l27; t22 _t41 = l28; t174 _t42 = f_check__expr_at(&((*l1))); f_check__forwarded(_t39, _t40, _t41, _t42); }); f_list__pushcheck__Forwardarena__Arena_f5c282a7(_t37, &_t38); }); if ((_t36.tag == 0)) { {
                         } } else if ((_t36.tag == 1)) { l29 = _t36.p.v1.m_error; {
                             { t12 _t43 = l29; if ((_t43.tag == 0)) { {
-                                ctx_panic(10942, 25, 3242879023, "try! failed: alloc::out_of_memory");
+                                ctx_panic(10953, 25, 3242879023, "try! failed: alloc::out_of_memory");
                             } } }
                         } } }
                     }
@@ -97826,13 +97821,13 @@ static t22 f_check__call_args(t166 l0, t364 * l1, t22 l2, t16 l3, t550 l4, t6 l5
                     f_check__add_field((&l25), l27);
                 }
             }
-            l19 = ctx_add_u64(l19, ((t14)(1ULL)), 10948, 19, 3242879023);
+            l19 = ctx_add_u64(l19, ((t14)(1ULL)), 10959, 19, 3242879023);
         }
         if (((l26).m_len > ((t14)(0ULL)))) {
             { t61 _t44 = ({ t1126 _t45 = (&((*l0)).m_forwards); t8 _t46 = f_check__expr_key(&((*l1))); t692 _t47 = f_list__itemscheck__Forwardarena__Arena_30ec2219(&(l26)); f_map__putu64check__Forwardarena__Arena_48306367(_t45, _t46, _t47); }); if ((_t44.tag == 0)) { {
             } } else if ((_t44.tag == 1)) { l30 = _t44.p.v1.m_error; {
                 { t12 _t48 = l30; if ((_t48.tag == 0)) { {
-                    ctx_panic(10951, 13, 3242879023, "try! failed: alloc::out_of_memory");
+                    ctx_panic(10962, 13, 3242879023, "try! failed: alloc::out_of_memory");
                 } } }
             } } }
         }
@@ -97854,13 +97849,13 @@ static t22 f_check__call_args(t166 l0, t364 * l1, t22 l2, t16 l3, t550 l4, t6 l5
             } } _t50; }); if ((_t49.tag == 0)) { {
             } } else if ((_t49.tag == 1)) { l36 = _t49.p.v1.m_error; {
                 { t12 _t56 = l36; if ((_t56.tag == 0)) { {
-                    ctx_panic(10956, 13, 3242879023, "try! failed: alloc::out_of_memory");
+                    ctx_panic(10967, 13, 3242879023, "try! failed: alloc::out_of_memory");
                 } } }
             } } }
             { t61 _t57 = f_check__names(l31, (&l32)); if ((_t57.tag == 0)) { {
             } } else if ((_t57.tag == 1)) { l37 = _t57.p.v1.m_error; {
                 { t12 _t58 = l37; if ((_t58.tag == 0)) { {
-                    ctx_panic(10957, 13, 3242879023, "try! failed: alloc::out_of_memory");
+                    ctx_panic(10968, 13, 3242879023, "try! failed: alloc::out_of_memory");
                 } } }
             } } }
             ({ t166 _t59 = (&(*l0)); t174 _t60 = f_check__expr_at(&((*l1))); t16 _t61 = f_utf8__viewarena__Arena_5db7a4ae(&(l32)); f_check__error(_t59, _t60, _t61); });
@@ -97872,7 +97867,7 @@ static t22 f_check__call_args(t166 l0, t364 * l1, t22 l2, t16 l3, t550 l4, t6 l5
             { t61 _t62 = ({ t1090 _t63 = (&((*l0)).m_holds); t8 _t64 = f_check__expr_key(&((*l1))); t802 _t65 = l38; f_map__putu64check__Placearena__Arena_53c902cd(_t63, _t64, _t65); }); if ((_t62.tag == 0)) { {
             } } else if ((_t62.tag == 1)) { l39 = _t62.p.v1.m_error; {
                 { t12 _t66 = l39; if ((_t66.tag == 0)) { {
-                    ctx_panic(10964, 13, 3242879023, "try! failed: alloc::out_of_memory");
+                    ctx_panic(10975, 13, 3242879023, "try! failed: alloc::out_of_memory");
                 } } }
             } } }
             return f_types__func((&((*l0)).m_ty), l31, l10, ((bool)1), ((bool)0));
@@ -97890,7 +97885,7 @@ static t27 f_check__spreads_checked(t166 l0, t364 * l1) {
         { t61 _t0 = ({ t1010 _t1 = (&((*l0)).m_spreads); t8 _t2 = f_check__expr_key(&((*l1))); t6 _t3 = ((bool)1); f_map__putu64boolarena__Arena_97d2073c(_t1, _t2, _t3); }); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l2 = _t0.p.v1.m_error; {
             { t12 _t4 = l2; if ((_t4.tag == 0)) { {
-                ctx_panic(10871, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(10879, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
     }
@@ -98480,15 +98475,15 @@ static t127 f_check__atomic_builtinfmt_da21a125_3(t16 l0, t16 l1, t75 l2) {
     __builtin_unreachable();
 }
 
-struct b212 { ctx_fn base; t16 c0; };
-static t127 b212_code(ctx_fn *self, void * a0) {
-    struct b212 *s = (struct b212 *)self;
+struct b210 { ctx_fn base; t16 c0; };
+static t127 b210_code(ctx_fn *self, void * a0) {
+    struct b210 *s = (struct b210 *)self;
     return f_check__atomic_orderfmt_9f7b12be(s->c0, a0);
 }
 
-struct b213 { ctx_fn base; t16 c0; };
-static t127 b213_code(ctx_fn *self, void * a0) {
-    struct b213 *s = (struct b213 *)self;
+struct b211 { ctx_fn base; t16 c0; };
+static t127 b211_code(ctx_fn *self, void * a0) {
+    struct b211 *s = (struct b211 *)self;
     return f_check__atomic_orderfmt_9f7b12be_1(s->c0, a0);
 }
 
@@ -98499,15 +98494,15 @@ static t27 f_check__atomic_order(t166 l0, t7 l1, t364 * l2, t6 l3, t6 l4) {
     t14 l7;
     t77 l8;
     CTX_STACK_CHECK();
-    struct b212 _r212;
-    struct b213 _r213;
+    struct b210 _r210;
+    struct b211 _r211;
     {
         l5 = f_check__std_type_in((&(*l0)), ((t7){ .m_ptr = (void *)"atomic", .m_len = 6 }), ((t7){ .m_ptr = (void *)"Order", .m_len = 5 }));
         if ((l5 == ((t22)(0ULL)))) {
             l6 = ((*((*l0)).m_diags)).m_errors;
             (void)f_check__expr((&(*l0)), &((*l2)), ((t22)(4294967295ULL)));
             if ((((*((*l0)).m_diags)).m_errors == l6)) {
-                ({ t166 _t0 = (&(*l0)); t174 _t1 = f_check__expr_at(&((*l2))); t543 _t2 = ({ struct b212 _t3; _t3.base.code = (void (*)(void))b212_code; _t3.c0 = f_check__str(l1); _r212 = _t3; (ctx_fn *)&_r212; }); f_check__errorf(_t0, _t1, _t2); });
+                ({ t166 _t0 = (&(*l0)); t174 _t1 = f_check__expr_at(&((*l2))); t543 _t2 = ({ struct b210 _t3; _t3.base.code = (void (*)(void))b210_code; _t3.c0 = f_check__str(l1); _r210 = _t3; (ctx_fn *)&_r210; }); f_check__errorf(_t0, _t1, _t2); });
             }
             return;
         }
@@ -98518,7 +98513,7 @@ static t27 f_check__atomic_order(t166 l0, t7 l1, t364 * l2, t6 l3, t6 l4) {
         }
         l8 = f_check__atomic_order_value((&(*l0)), &((*l2)));
         if (((l8).tag == 0)) {
-            ({ t166 _t4 = (&(*l0)); t174 _t5 = f_check__expr_at(&((*l2))); t543 _t6 = ({ struct b213 _t7; _t7.base.code = (void (*)(void))b213_code; _t7.c0 = f_check__str(l1); _r213 = _t7; (ctx_fn *)&_r213; }); f_check__errorf(_t4, _t5, _t6); });
+            ({ t166 _t4 = (&(*l0)); t174 _t5 = f_check__expr_at(&((*l2))); t543 _t6 = ({ struct b211 _t7; _t7.base.code = (void (*)(void))b211_code; _t7.c0 = f_check__str(l1); _r211 = _t7; (ctx_fn *)&_r211; }); f_check__errorf(_t4, _t5, _t6); });
             return;
         }
         if ((l3 && (((l8).p.v1.m_value == ((t8)(2ULL))) || ((l8).p.v1.m_value == ((t8)(3ULL)))))) {
@@ -98561,13 +98556,13 @@ static t695 f_check__writer_field(t163 * l0, t22 l1) {
         l6 = ((t695){0});
         l7 = ((t14)(0ULL));
         while ((l7 < (l2).m_len)) {
-            if (((*({ t552 _t3 = (l2); uint64_t _t4 = l7; _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 12122, 22, 3242879023); }))).m_mutable) {
+            if (((*({ t552 _t3 = (l2); uint64_t _t4 = l7; _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 12133, 22, 3242879023); }))).m_mutable) {
                 if (((l6).tag != 0)) {
                     return ((t695){0});
                 }
-                l6 = ((t695){ .tag = 1, .p.v1.m_value = (*({ t552 _t5 = (l2); uint64_t _t6 = l7; _t5.m_ptr + ctx_idx(_t6, _t5.m_len, 12124, 31, 3242879023); })) });
+                l6 = ((t695){ .tag = 1, .p.v1.m_value = (*({ t552 _t5 = (l2); uint64_t _t6 = l7; _t5.m_ptr + ctx_idx(_t6, _t5.m_len, 12135, 31, 3242879023); })) });
             }
-            l7 = ctx_add_u64(l7, ((t14)(1ULL)), 12126, 19, 3242879023);
+            l7 = ctx_add_u64(l7, ((t14)(1ULL)), 12137, 19, 3242879023);
         }
         return l6;
     }
@@ -98679,11 +98674,11 @@ static t6 f_check__has_writer(t166 l0, t22 l1, t22 l2) {
         l3 = f_list__itemsu32arena__Arena_0ba5b83a(&(((*l0)).m_writers));
         l4 = ((t14)(0ULL));
         while ((l4 < (l3).m_len)) {
-            l5 = ({ t163 *_t0 = &((*l0)); t22 _t1 = (*({ t173 _t2 = (l3); uint64_t _t3 = l4; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 12262, 40, 3242879023); })); f_check__get_decl(_t0, _t1); });
-            if ((f_check__reaches(&((*l0)), l2, (l5).m_ns) && ({ t270 _t4 = ((*l0)).m_ty; t22 _t5 = (({ t163 *_t9 = &((*l0)); t22 _t10 = (*({ t173 _t11 = (l3); uint64_t _t12 = l4; _t11.m_ptr + ctx_idx(_t12, _t11.m_len, 12263, 107, 3242879023); })); f_check__sink_field(_t9, _t10); })).m_ty; t22 _t6 = l1; t22 _t7 = (*({ t173 _t13 = (l3); uint64_t _t14 = l4; _t13.m_ptr + ctx_idx(_t14, _t13.m_len, 12263, 133, 3242879023); })); t173 _t8 = f_check__no_args((&(*l0)), ((l5).m_tparams).m_len); f_types__instance(&_t4, _t5, _t6, _t7, _t8); }))) {
+            l5 = ({ t163 *_t0 = &((*l0)); t22 _t1 = (*({ t173 _t2 = (l3); uint64_t _t3 = l4; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 12273, 40, 3242879023); })); f_check__get_decl(_t0, _t1); });
+            if ((f_check__reaches(&((*l0)), l2, (l5).m_ns) && ({ t270 _t4 = ((*l0)).m_ty; t22 _t5 = (({ t163 *_t9 = &((*l0)); t22 _t10 = (*({ t173 _t11 = (l3); uint64_t _t12 = l4; _t11.m_ptr + ctx_idx(_t12, _t11.m_len, 12274, 107, 3242879023); })); f_check__sink_field(_t9, _t10); })).m_ty; t22 _t6 = l1; t22 _t7 = (*({ t173 _t13 = (l3); uint64_t _t14 = l4; _t13.m_ptr + ctx_idx(_t14, _t13.m_len, 12274, 133, 3242879023); })); t173 _t8 = f_check__no_args((&(*l0)), ((l5).m_tparams).m_len); f_types__instance(&_t4, _t5, _t6, _t7, _t8); }))) {
                 return ((bool)1);
             }
-            l4 = ctx_add_u64(l4, ((t14)(1ULL)), 12264, 19, 3242879023);
+            l4 = ctx_add_u64(l4, ((t14)(1ULL)), 12275, 19, 3242879023);
         }
         return ((bool)0);
     }
@@ -98756,9 +98751,9 @@ static t1087 f_list__newcheck__Piecearena__Arena_dd8370ce(t29 l0, t28 l1) {
     __builtin_unreachable();
 }
 
-struct b214 { ctx_fn base; t14 c0; t16 c1; t14 c2; t16 c3; t16 c4; };
-static t127 b214_code(ctx_fn *self, void * a0) {
-    struct b214 *s = (struct b214 *)self;
+struct b212 { ctx_fn base; t14 c0; t16 c1; t14 c2; t16 c3; t16 c4; };
+static t127 b212_code(ctx_fn *self, void * a0) {
+    struct b212 *s = (struct b212 *)self;
     return f_check__fmt_partsfmt_385a813c(s->c0, s->c1, s->c2, s->c3, s->c4, a0);
 }
 
@@ -98784,7 +98779,7 @@ static t6 f_check__fmt_parts(t166 l0, t364 * l1, t364 * l2, t485 l3, t1088 l4, t
     t1087 l23;
     t279 l24;
     CTX_STACK_CHECK();
-    struct b214 _r214;
+    struct b212 _r212;
     {
         l6 = ({ t855 _t0; t606 _t1 = ((*l2)).m_k; if ((_t1.tag == 3)) { l7 = _t1.p.v3.m_bytes; {
             _t0 = ({ t166 _t2 = (&(*l0)); t7 _t3 = l7; t174 _t4 = f_check__expr_at(&((*l2))); f_check__fmt_pieces(_t2, _t3, _t4); });
@@ -98797,7 +98792,7 @@ static t6 f_check__fmt_parts(t166 l0, t364 * l1, t364 * l2, t485 l3, t1088 l4, t
         l8 = ((l6).tag != 0);
         l9 = ((t14)(0ULL));
         while ((l9 < (l3).m_len)) {
-            l10 = (*({ t485 _t8 = (l3); uint64_t _t9 = l9; _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 12053, 25, 3242879023); }));
+            l10 = (*({ t485 _t8 = (l3); uint64_t _t9 = l9; _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 12064, 25, 3242879023); }));
             if ((!f_check__is_writer_fmt(&(l10)))) {
                 l11 = ({ t22 _t10; t606 _t11 = (l10).m_k; if ((_t11.tag == 3)) { {
                     _t10 = ((t22)(15ULL));
@@ -98806,16 +98801,16 @@ static t6 f_check__fmt_parts(t166 l0, t364 * l1, t364 * l2, t485 l3, t1088 l4, t
                 } } _t10; });
                 (void)f_check__expr((&(*l0)), &(l10), l11);
             }
-            l9 = ctx_add_u64(l9, ((t14)(1ULL)), 12058, 19, 3242879023);
+            l9 = ctx_add_u64(l9, ((t14)(1ULL)), 12069, 19, 3242879023);
         }
         if (((l6).tag != 0)) {
             l12 = ((t14)(0ULL));
             l9 = ((t14)(0ULL));
             while ((l9 < ((l6).p.v1.m_value).m_len)) {
-                if (((*({ t679 _t12 = ((l6).p.v1.m_value); uint64_t _t13 = l9; _t12.m_ptr + ctx_idx(_t13, _t12.m_len, 12064, 22, 3242879023); }))).m_hole) {
-                    l12 = ctx_add_u64(l12, ((t14)(1ULL)), 12064, 39, 3242879023);
+                if (((*({ t679 _t12 = ((l6).p.v1.m_value); uint64_t _t13 = l9; _t12.m_ptr + ctx_idx(_t13, _t12.m_len, 12075, 22, 3242879023); }))).m_hole) {
+                    l12 = ctx_add_u64(l12, ((t14)(1ULL)), 12075, 39, 3242879023);
                 }
-                l9 = ctx_add_u64(l9, ((t14)(1ULL)), 12065, 23, 3242879023);
+                l9 = ctx_add_u64(l9, ((t14)(1ULL)), 12076, 23, 3242879023);
             }
             if ((l12 != (l3).m_len)) {
                 l13 = ({ t16 _t14; if ((l12 == ((t14)(1ULL)))) {
@@ -98833,26 +98828,26 @@ static t6 f_check__fmt_parts(t166 l0, t364 * l1, t364 * l2, t485 l3, t1088 l4, t
                 } else {
                     _t16 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"", .m_len = 0 }), });
                 } _t16; });
-                ({ t166 _t17 = (&(*l0)); t174 _t18 = f_check__expr_at(&((*l1))); t543 _t19 = ({ struct b214 _t20; _t20.base.code = (void (*)(void))b214_code; _t20.c0 = l12; _t20.c1 = l13; _t20.c2 = (l3).m_len; _t20.c3 = l14; _t20.c4 = l15; _r214 = _t20; (ctx_fn *)&_r214; }); f_check__errorf(_t17, _t18, _t19); });
+                ({ t166 _t17 = (&(*l0)); t174 _t18 = f_check__expr_at(&((*l1))); t543 _t19 = ({ struct b212 _t20; _t20.base.code = (void (*)(void))b212_code; _t20.c0 = l12; _t20.c1 = l13; _t20.c2 = (l3).m_len; _t20.c3 = l14; _t20.c4 = l15; _r212 = _t20; (ctx_fn *)&_r212; }); f_check__errorf(_t17, _t18, _t19); });
                 l8 = ((bool)0);
             }
         }
         l16 = ((t14)(0ULL));
         l9 = ((t14)(0ULL));
         while ((((l6).tag != 0) && (l9 < ((l6).p.v1.m_value).m_len))) {
-            l17 = (*({ t679 _t21 = ((l6).p.v1.m_value); uint64_t _t22 = l9; _t21.m_ptr + ctx_idx(_t22, _t21.m_len, 12078, 23, 3242879023); }));
+            l17 = (*({ t679 _t21 = ((l6).p.v1.m_value); uint64_t _t22 = l9; _t21.m_ptr + ctx_idx(_t22, _t21.m_len, 12089, 23, 3242879023); }));
             if ((!(l17).m_hole)) {
                 f_check__add_piece((&(*l4)), &(l17));
             } else {
                 if ((l16 < (l3).m_len)) {
-                    l18 = (*({ t485 _t23 = (l3); uint64_t _t24 = l16; _t23.m_ptr + ctx_idx(_t24, _t23.m_len, 12082, 29, 3242879023); }));
-                    l16 = ctx_add_u64(l16, ((t14)(1ULL)), 12083, 23, 3242879023);
+                    l18 = (*({ t485 _t23 = (l3); uint64_t _t24 = l16; _t23.m_ptr + ctx_idx(_t24, _t23.m_len, 12093, 29, 3242879023); }));
+                    l16 = ctx_add_u64(l16, ((t14)(1ULL)), 12094, 23, 3242879023);
                     if ((({ t6 _t25; t606 _t26 = (l18).m_k; if ((_t26.tag == 19)) { l20 = _t26.p.v19.m_args; {
                         _t25 = ((bool)1);
                     } } else { {
                         _t25 = ((bool)0);
                     } } _t25; }) && f_check__is_writer_fmt(&(l18)))) {
-                        if ((!({ t166 _t27 = (&(*l0)); t364 *_t28 = &(l18); t364 _t29 = (*({ t485 _t33 = (l20); uint64_t _t34 = ((t14)(0ULL)); _t33.m_ptr + ctx_idx(_t34, _t33.m_len, 12085, 59, 3242879023); })); t485 _t30 = ({ t485 _t35 = (l20); uint64_t _t36 = ((t14)(1ULL)); uint64_t _t37 = _t35.m_len; ctx_range(_t36, _t37, _t35.m_len, 12085, 76, 3242879023); (t485){ .m_ptr = _t35.m_ptr + _t36, .m_len = _t37 - _t36 }; }); t1088 _t31 = (&(*l4)); t793 _t32 = (&(*l5)); f_check__fmt_parts(_t27, _t28, &_t29, _t30, _t31, _t32); }))) {
+                        if ((!({ t166 _t27 = (&(*l0)); t364 *_t28 = &(l18); t364 _t29 = (*({ t485 _t33 = (l20); uint64_t _t34 = ((t14)(0ULL)); _t33.m_ptr + ctx_idx(_t34, _t33.m_len, 12096, 59, 3242879023); })); t485 _t30 = ({ t485 _t35 = (l20); uint64_t _t36 = ((t14)(1ULL)); uint64_t _t37 = _t35.m_len; ctx_range(_t36, _t37, _t35.m_len, 12096, 76, 3242879023); (t485){ .m_ptr = _t35.m_ptr + _t36, .m_len = _t37 - _t36 }; }); t1088 _t31 = (&(*l4)); t793 _t32 = (&(*l5)); f_check__fmt_parts(_t27, _t28, &_t29, _t30, _t31, _t32); }))) {
                             l8 = ((bool)0);
                         }
                     } else {
@@ -98860,16 +98855,16 @@ static t6 f_check__fmt_parts(t166 l0, t364 * l1, t364 * l2, t485 l3, t1088 l4, t
                         { t61 _t38 = f_list__pushsyntax__Exprarena__Arena_cbfee3a4((&(*l5)), &(l18)); if ((_t38.tag == 0)) { {
                         } } else if ((_t38.tag == 1)) { l19 = _t38.p.v1.m_error; {
                             { t12 _t39 = l19; if ((_t39.tag == 0)) { {
-                                ctx_panic(12088, 21, 3242879023, "try! failed: alloc::out_of_memory");
+                                ctx_panic(12099, 21, 3242879023, "try! failed: alloc::out_of_memory");
                             } } }
                         } } }
                     }
                 }
             }
-            l9 = ctx_add_u64(l9, ((t14)(1ULL)), 12091, 19, 3242879023);
+            l9 = ctx_add_u64(l9, ((t14)(1ULL)), 12102, 19, 3242879023);
         }
         while ((l16 < (l3).m_len)) {
-            l21 = (*({ t485 _t40 = (l3); uint64_t _t41 = l16; _t40.m_ptr + ctx_idx(_t41, _t40.m_len, 12095, 25, 3242879023); }));
+            l21 = (*({ t485 _t40 = (l3); uint64_t _t41 = l16; _t40.m_ptr + ctx_idx(_t41, _t40.m_len, 12106, 25, 3242879023); }));
             if ((({ t6 _t42; t606 _t43 = (l21).m_k; if ((_t43.tag == 19)) { l22 = _t43.p.v19.m_args; {
                 _t42 = ((bool)1);
             } } else { {
@@ -98877,9 +98872,9 @@ static t6 f_check__fmt_parts(t166 l0, t364 * l1, t364 * l2, t485 l3, t1088 l4, t
             } } _t42; }) && f_check__is_writer_fmt(&(l21)))) {
                 l23 = f_list__newcheck__Piecearena__Arena_dd8370ce((&g0), ((*l0)).m_heap);
                 l24 = f_list__newsyntax__Exprarena__Arena_433b8660((&g0), ((*l0)).m_heap);
-                (void)({ t166 _t44 = (&(*l0)); t364 *_t45 = &(l21); t364 _t46 = (*({ t485 _t50 = (l22); uint64_t _t51 = ((t14)(0ULL)); _t50.m_ptr + ctx_idx(_t51, _t50.m_len, 12099, 52, 3242879023); })); t485 _t47 = ({ t485 _t52 = (l22); uint64_t _t53 = ((t14)(1ULL)); uint64_t _t54 = _t52.m_len; ctx_range(_t53, _t54, _t52.m_len, 12099, 69, 3242879023); (t485){ .m_ptr = _t52.m_ptr + _t53, .m_len = _t54 - _t53 }; }); t1088 _t48 = (&l23); t793 _t49 = (&l24); f_check__fmt_parts(_t44, _t45, &_t46, _t47, _t48, _t49); });
+                (void)({ t166 _t44 = (&(*l0)); t364 *_t45 = &(l21); t364 _t46 = (*({ t485 _t50 = (l22); uint64_t _t51 = ((t14)(0ULL)); _t50.m_ptr + ctx_idx(_t51, _t50.m_len, 12110, 52, 3242879023); })); t485 _t47 = ({ t485 _t52 = (l22); uint64_t _t53 = ((t14)(1ULL)); uint64_t _t54 = _t52.m_len; ctx_range(_t53, _t54, _t52.m_len, 12110, 69, 3242879023); (t485){ .m_ptr = _t52.m_ptr + _t53, .m_len = _t54 - _t53 }; }); t1088 _t48 = (&l23); t793 _t49 = (&l24); f_check__fmt_parts(_t44, _t45, &_t46, _t47, _t48, _t49); });
             }
-            l16 = ctx_add_u64(l16, ((t14)(1ULL)), 12101, 19, 3242879023);
+            l16 = ctx_add_u64(l16, ((t14)(1ULL)), 12112, 19, 3242879023);
         }
         return l8;
     }
@@ -98910,10 +98905,10 @@ static t802 f_check__fmt_exclusive(t166 l0, t364 * l1, t363 * l2, t485 l3) {
         }
         l7 = ((t14)(0ULL));
         while ((l7 < (l3).m_len)) {
-            l8 = (*({ t485 _t4 = (l3); uint64_t _t5 = l7; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 12173, 26, 3242879023); }));
+            l8 = (*({ t485 _t4 = (l3); uint64_t _t5 = l7; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 12184, 26, 3242879023); }));
             l9 = ({ t7 _t6; t606 _t7 = (l8).m_k; if ((_t7.tag == 6)) { l10 = _t7.p.v6.m_segs; {
                 _t6 = ({ t7 _t8; if (((({ t286 _t9 = ((*l0)).m_convs; t8 _t10 = f_check__expr_key(&(l8)); f_map__getu64check__Convarena__Arena_4d591bfd(&_t9, _t10); })).tag == 0)) {
-                    _t8 = (((*({ t596 _t11 = (l10); uint64_t _t12 = ((t14)(0ULL)); _t11.m_ptr + ctx_idx(_t12, _t11.m_len, 12175, 101, 3242879023); }))).m_name).m_text;
+                    _t8 = (((*({ t596 _t11 = (l10); uint64_t _t12 = ((t14)(0ULL)); _t11.m_ptr + ctx_idx(_t12, _t11.m_len, 12186, 101, 3242879023); }))).m_name).m_text;
                 } else {
                     _t8 = f_check__source_text(&((*l0)), (l8).m_span);
                 } _t8; });
@@ -98921,7 +98916,7 @@ static t802 f_check__fmt_exclusive(t166 l0, t364 * l1, t363 * l2, t485 l3) {
                 _t6 = f_check__source_text(&((*l0)), (l8).m_span);
             } } _t6; });
             ({ t1128 _t13 = (&l4); t163 _t14 = (*l0); t802 _t15 = f_check__held_of(&((*l0)), &(l8)); t7 _t16 = l9; t7 _t17 = ((t7){ .m_ptr = (void *)"", .m_len = 0 }); f_check__held_refs(_t13, &_t14, _t15, _t16, _t17); });
-            l7 = ctx_add_u64(l7, ((t14)(1ULL)), 12179, 19, 3242879023);
+            l7 = ctx_add_u64(l7, ((t14)(1ULL)), 12190, 19, 3242879023);
         }
         ({ t166 _t18 = (&(*l0)); t364 _t19 = (*l1); t1129 _t20 = f_list__itemscheck__HeldRefarena__Arena_34000dae(&(l4)); t22 _t21 = ((t22)(4294967295ULL)); t16 _t22 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"", .m_len = 0 }), }); f_check__overlapping(_t18, &_t19, _t20, _t21, _t22); });
         return ({ t163 _t23 = (*l0); t1129 _t24 = f_list__itemscheck__HeldRefarena__Arena_34000dae(&(l4)); f_check__places_of(&_t23, _t24); });
@@ -99334,21 +99329,21 @@ static t1092 f_list__newir__Rangearena__Arena_f4489fca(t29 l0, t28 l1) {
     __builtin_unreachable();
 }
 
-struct b215 { ctx_fn base; t16 c0; t8 c1; t16 c2; t8 c3; };
-static t127 b215_code(ctx_fn *self, void * a0) {
-    struct b215 *s = (struct b215 *)self;
+struct b213 { ctx_fn base; t16 c0; t8 c1; t16 c2; t8 c3; };
+static t127 b213_code(ctx_fn *self, void * a0) {
+    struct b213 *s = (struct b213 *)self;
     return f_check__int_patsfmt_59c5d324(s->c0, s->c1, s->c2, s->c3, a0);
 }
 
-struct b216 { ctx_fn base; t16 c0; t8 c1; };
-static t127 b216_code(ctx_fn *self, void * a0) {
-    struct b216 *s = (struct b216 *)self;
+struct b214 { ctx_fn base; t16 c0; t8 c1; };
+static t127 b214_code(ctx_fn *self, void * a0) {
+    struct b214 *s = (struct b214 *)self;
     return f_check__int_patsfmt_59c5d324_2(s->c0, s->c1, a0);
 }
 
-struct b217 { ctx_fn base; t16 c0; t8 c1; t16 c2; t8 c3; };
-static t127 b217_code(ctx_fn *self, void * a0) {
-    struct b217 *s = (struct b217 *)self;
+struct b215 { ctx_fn base; t16 c0; t8 c1; t16 c2; t8 c3; };
+static t127 b215_code(ctx_fn *self, void * a0) {
+    struct b215 *s = (struct b215 *)self;
     return f_check__int_patsfmt_59c5d324_1(s->c0, s->c1, s->c2, s->c3, a0);
 }
 
@@ -99369,9 +99364,9 @@ static t410 f_check__int_pats(t166 l0, t605 l1, t22 l2, t411 l3) {
     t12 l16;
     t12 l17;
     CTX_STACK_CHECK();
+    struct b213 _r213;
+    struct b214 _r214;
     struct b215 _r215;
-    struct b216 _r216;
-    struct b217 _r217;
     {
         l4 = f_list__newir__Rangearena__Arena_8239c786((&g0), ((*l0)).m_heap);
         l5 = f_check__signed_type(&((*l0)), l2);
@@ -99397,7 +99392,7 @@ static t410 f_check__int_pats(t166 l0, t605 l1, t22 l2, t411 l3) {
                  continue;
             }
             if (({ t8 _t3 = f_check__int_key((l11).p.v1.m_value, l5); t8 _t4 = f_check__int_key((l9).p.v1.m_value, l5); (_t3 < _t4); })) {
-                ({ t166 _t5 = (&(*l0)); t174 _t6 = (l7).m_span; t543 _t7 = ({ struct b215 _t8; _t8.base.code = (void (*)(void))b215_code; _t8.c0 = f_check__sign((l9).p.v1.m_value); _t8.c1 = ((l9).p.v1.m_value).m_value; _t8.c2 = f_check__sign((l11).p.v1.m_value); _t8.c3 = ((l11).p.v1.m_value).m_value; _r215 = _t8; (ctx_fn *)&_r215; }); f_check__errorf(_t5, _t6, _t7); });
+                ({ t166 _t5 = (&(*l0)); t174 _t6 = (l7).m_span; t543 _t7 = ({ struct b213 _t8; _t8.base.code = (void (*)(void))b213_code; _t8.c0 = f_check__sign((l9).p.v1.m_value); _t8.c1 = ((l9).p.v1.m_value).m_value; _t8.c2 = f_check__sign((l11).p.v1.m_value); _t8.c3 = ((l11).p.v1.m_value).m_value; _r213 = _t8; (ctx_fn *)&_r213; }); f_check__errorf(_t5, _t6, _t7); });
                  continue;
             }
             l12 = ((t406){ .m_lo = (l9).p.v1.m_value, .m_hi = (l11).p.v1.m_value, });
@@ -99412,9 +99407,9 @@ static t410 f_check__int_pats(t166 l0, t605 l1, t22 l2, t411 l3) {
             }
             if (l14) {
                 if (((l10) == 0)) {
-                    ({ t166 _t15 = (&(*l0)); t174 _t16 = (l7).m_span; t543 _t17 = ({ struct b216 _t18; _t18.base.code = (void (*)(void))b216_code; _t18.c0 = f_check__sign((l9).p.v1.m_value); _t18.c1 = ((l9).p.v1.m_value).m_value; _r216 = _t18; (ctx_fn *)&_r216; }); f_check__errorf(_t15, _t16, _t17); });
+                    ({ t166 _t15 = (&(*l0)); t174 _t16 = (l7).m_span; t543 _t17 = ({ struct b214 _t18; _t18.base.code = (void (*)(void))b214_code; _t18.c0 = f_check__sign((l9).p.v1.m_value); _t18.c1 = ((l9).p.v1.m_value).m_value; _r214 = _t18; (ctx_fn *)&_r214; }); f_check__errorf(_t15, _t16, _t17); });
                 } else {
-                    ({ t166 _t19 = (&(*l0)); t174 _t20 = (l7).m_span; t543 _t21 = ({ struct b217 _t22; _t22.base.code = (void (*)(void))b217_code; _t22.c0 = f_check__sign((l9).p.v1.m_value); _t22.c1 = ((l9).p.v1.m_value).m_value; _t22.c2 = f_check__sign((l11).p.v1.m_value); _t22.c3 = ((l11).p.v1.m_value).m_value; _r217 = _t22; (ctx_fn *)&_r217; }); f_check__errorf(_t19, _t20, _t21); });
+                    ({ t166 _t19 = (&(*l0)); t174 _t20 = (l7).m_span; t543 _t21 = ({ struct b215 _t22; _t22.base.code = (void (*)(void))b215_code; _t22.c0 = f_check__sign((l9).p.v1.m_value); _t22.c1 = ((l9).p.v1.m_value).m_value; _t22.c2 = f_check__sign((l11).p.v1.m_value); _t22.c3 = ((l11).p.v1.m_value).m_value; _r215 = _t22; (ctx_fn *)&_r215; }); f_check__errorf(_t19, _t20, _t21); });
                 }
                  continue;
             }
@@ -99491,15 +99486,15 @@ static t995 f_list__itemsir__Rangearena__Arena_f38cf8e8(t1092 * l0) {
     __builtin_unreachable();
 }
 
-struct b218 { ctx_fn base; t16 c0; };
-static t127 b218_code(ctx_fn *self, void * a0) {
-    struct b218 *s = (struct b218 *)self;
+struct b216 { ctx_fn base; t16 c0; };
+static t127 b216_code(ctx_fn *self, void * a0) {
+    struct b216 *s = (struct b216 *)self;
     return f_check__fault_namedfmt_f03d2a80(s->c0, a0);
 }
 
-struct b219 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b219_code(ctx_fn *self, void * a0) {
-    struct b219 *s = (struct b219 *)self;
+struct b217 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b217_code(ctx_fn *self, void * a0) {
+    struct b217 *s = (struct b217 *)self;
     return f_check__fault_namedfmt_f03d2a80_1(s->c0, s->c1, a0);
 }
 
@@ -99529,8 +99524,8 @@ static t22 f_check__fault_named(t166 l0, t607 * l1) {
     t12 l23;
     t12 l24;
     CTX_STACK_CHECK();
-    struct b218 _r218;
-    struct b219 _r219;
+    struct b216 _r216;
+    struct b217 _r217;
     {
         l2 = ((*l1)).m_variant;
         if ((((l2).m_text).m_len == ((t14)(0ULL)))) {
@@ -99540,7 +99535,7 @@ static t22 f_check__fault_named(t166 l0, t607 * l1) {
         if (((((*l1)).m_quals).m_len == ((t14)(0ULL)))) {
             l3 = f_check__lookup_value(&((*l0)), (((*l0)).m_sc).m_ns, (l2).m_text);
         } else {
-            l4 = (*({ t278 _t0 = (((*l1)).m_quals); uint64_t _t1 = ((t14)(0ULL)); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 12608, 29, 3242879023); }));
+            l4 = (*({ t278 _t0 = (((*l1)).m_quals); uint64_t _t1 = ((t14)(0ULL)); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 12619, 29, 3242879023); }));
             if ((((l4).m_text).m_len == ((t14)(0ULL)))) {
                 return ((t22)(4294967295ULL));
             }
@@ -99554,24 +99549,24 @@ static t22 f_check__fault_named(t166 l0, t607 * l1) {
             l7 = l5;
             l8 = ((t14)(0ULL));
             while ((l8 < (((*l1)).m_quals).m_len)) {
-                l9 = (*({ t278 _t4 = (((*l1)).m_quals); uint64_t _t5 = l8; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 12618, 35, 3242879023); }));
+                l9 = (*({ t278 _t4 = (((*l1)).m_quals); uint64_t _t5 = l8; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 12629, 35, 3242879023); }));
                 { t327 _t6 = l7; if (!(_t6.tag == 0)) { {
-                    ({ t166 _t7 = (&(*l0)); t174 _t8 = (l9).m_span; t543 _t9 = ({ struct b218 _t10; _t10.base.code = (void (*)(void))b218_code; _t10.c0 = f_check__str((l9).m_text); _r218 = _t10; (ctx_fn *)&_r218; }); f_check__errorf(_t7, _t8, _t9); });
+                    ({ t166 _t7 = (&(*l0)); t174 _t8 = (l9).m_span; t543 _t9 = ({ struct b216 _t10; _t10.base.code = (void (*)(void))b216_code; _t10.c0 = f_check__str((l9).m_text); _r216 = _t10; (ctx_fn *)&_r216; }); f_check__errorf(_t7, _t8, _t9); });
                     return ((t22)(4294967295ULL));
                 } } l10 = _t6.p.v0.m_ns; }
-                if (({ t14 _t11 = ctx_add_u64(l8, ((t14)(1ULL)), 12623, 22, 3242879023); t14 _t12 = (((*l1)).m_quals).m_len; (_t11 == _t12); })) {
+                if (({ t14 _t11 = ctx_add_u64(l8, ((t14)(1ULL)), 12634, 22, 3242879023); t14 _t12 = (((*l1)).m_quals).m_len; (_t11 == _t12); })) {
                     l3 = ({ t530 _t13 = (f_check__get_space(&((*l0)), l10)).m_values; t7 _t14 = (l2).m_text; f_map__getu8check__Entryarena__Arena_74893629(&_t13, _t14); });
                 } else {
-                    l11 = (*({ t278 _t15 = (((*l1)).m_quals); uint64_t _t16 = ctx_add_u64(l8, ((t14)(1ULL)), 12626, 39, 3242879023); _t15.m_ptr + ctx_idx(_t16, _t15.m_len, 12626, 36, 3242879023); }));
+                    l11 = (*({ t278 _t15 = (((*l1)).m_quals); uint64_t _t16 = ctx_add_u64(l8, ((t14)(1ULL)), 12637, 39, 3242879023); _t15.m_ptr + ctx_idx(_t16, _t15.m_len, 12637, 36, 3242879023); }));
                     l7 = ({ t327 _t17; t653 _t18 = ({ t530 _t19 = (f_check__get_space(&((*l0)), l10)).m_paths; t7 _t20 = (l11).m_text; f_map__getu8check__Entryarena__Arena_74893629(&_t19, _t20); }); if ((_t18.tag == 1)) { l12 = _t18.p.v1.m_value; {
                         _t17 = l12;
                     } } else if ((_t18.tag == 0)) { {
-                        ({ t166 _t21 = (&(*l0)); t174 _t22 = (l11).m_span; t543 _t23 = ({ struct b219 _t24; _t24.base.code = (void (*)(void))b219_code; _t24.c0 = f_check__str((l11).m_text); _t24.c1 = f_check__str((l9).m_text); _r219 = _t24; (ctx_fn *)&_r219; }); f_check__errorf(_t21, _t22, _t23); });
+                        ({ t166 _t21 = (&(*l0)); t174 _t22 = (l11).m_span; t543 _t23 = ({ struct b217 _t24; _t24.base.code = (void (*)(void))b217_code; _t24.c0 = f_check__str((l11).m_text); _t24.c1 = f_check__str((l9).m_text); _r217 = _t24; (ctx_fn *)&_r217; }); f_check__errorf(_t21, _t22, _t23); });
                         return ((t22)(4294967295ULL));
                     } } _t17; });
                     f_check__refer((&(*l0)), l11, l7);
                 }
-                l8 = ctx_add_u64(l8, ((t14)(1ULL)), 12633, 23, 3242879023);
+                l8 = ctx_add_u64(l8, ((t14)(1ULL)), 12644, 23, 3242879023);
             }
         }
         l13 = l3;
@@ -99595,12 +99590,12 @@ static t22 f_check__fault_named(t166 l0, t607 * l1) {
         } _t30; })); if ((_t29.tag == 0)) { {
         } } else if ((_t29.tag == 1)) { l17 = _t29.p.v1.m_error; {
             { t12 _t31 = l17; if ((_t31.tag == 0)) { {
-                ctx_panic(12642, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(12653, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
         l18 = ((t14)(0ULL));
         while ((l18 < (((*l1)).m_quals).m_len)) {
-            { t61 _t32 = ({ l19 = f_check__str(((*({ t278 _t33 = (((*l1)).m_quals); uint64_t _t34 = l18; _t33.m_ptr + ctx_idx(_t34, _t33.m_len, 12645, 51, 3242879023); }))).m_text); ({ t61 _t35; t61 _t36 = f_utf8__pusharena__Arena_14525023((&l16), l19); if ((_t36.tag == 0)) { {
+            { t61 _t32 = ({ l19 = f_check__str(((*({ t278 _t33 = (((*l1)).m_quals); uint64_t _t34 = l18; _t33.m_ptr + ctx_idx(_t34, _t33.m_len, 12656, 51, 3242879023); }))).m_text); ({ t61 _t35; t61 _t36 = f_utf8__pusharena__Arena_14525023((&l16), l19); if ((_t36.tag == 0)) { {
                 _t35 = ({ t61 _t37; t61 _t38 = f_utf8__push_literalarena__Arena_f5a0db07((&l16), ((t7){ .m_ptr = (void *)"::", .m_len = 2 })); if ((_t38.tag == 0)) { {
                     _t37 = ((t61){ .tag = 0 });
                 } } else if ((_t38.tag == 1)) { l20 = _t38.p.v1.m_error; {
@@ -99611,15 +99606,15 @@ static t22 f_check__fault_named(t166 l0, t607 * l1) {
             } } _t35; }); }); if ((_t32.tag == 0)) { {
             } } else if ((_t32.tag == 1)) { l22 = _t32.p.v1.m_error; {
                 { t12 _t39 = l22; if ((_t39.tag == 0)) { {
-                    ctx_panic(12645, 13, 3242879023, "try! failed: alloc::out_of_memory");
+                    ctx_panic(12656, 13, 3242879023, "try! failed: alloc::out_of_memory");
                 } } }
             } } }
-            l18 = ctx_add_u64(l18, ((t14)(1ULL)), 12646, 19, 3242879023);
+            l18 = ctx_add_u64(l18, ((t14)(1ULL)), 12657, 19, 3242879023);
         }
         { t61 _t40 = f_utf8__pusharena__Arena_14525023((&l16), f_check__str((l2).m_text)); if ((_t40.tag == 0)) { {
         } } else if ((_t40.tag == 1)) { l23 = _t40.p.v1.m_error; {
             { t12 _t41 = l23; if ((_t41.tag == 0)) { {
-                ctx_panic(12648, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(12659, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
         { t61 _t42 = f_utf8__pusharena__Arena_14525023((&l16), ({ t16 _t43; if (((l13).tag == 0)) {
@@ -99629,7 +99624,7 @@ static t22 f_check__fault_named(t166 l0, t607 * l1) {
         } _t43; })); if ((_t42.tag == 0)) { {
         } } else if ((_t42.tag == 1)) { l24 = _t42.p.v1.m_error; {
             { t12 _t44 = l24; if ((_t44.tag == 0)) { {
-                ctx_panic(12649, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(12660, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
         ({ t166 _t45 = (&(*l0)); t174 _t46 = ((*l1)).m_span; t16 _t47 = f_utf8__viewarena__Arena_5db7a4ae(&(l16)); f_check__error(_t45, _t46, _t47); });
@@ -102191,9 +102186,9 @@ static t61 f_list__pusheval__Chunkarena__Arena_5b7deeb3(t1112 l0, t338 l1) {
     __builtin_unreachable();
 }
 
-struct b220 { ctx_fn base; t8 c1; };
-static t61 b220_code(ctx_fn *self, void * a0) {
-    struct b220 *s = (struct b220 *)self;
+struct b218 { ctx_fn base; t8 c1; };
+static t61 b218_code(ctx_fn *self, void * a0) {
+    struct b218 *s = (struct b218 *)self;
     return f_utf8__write_hexarena__Arena_376fc71a(a0, s->c1);
 }
 
@@ -102209,11 +102204,11 @@ static t1114 f_eval__code_at(t340 l0, t8 l1) {
     t64 l9;
     t64 l10;
     CTX_STACK_CHECK();
-    struct b220 _r220;
+    struct b218 _r218;
     {
         if ((({ t8 _t0 = ((t8)(l1 >> ctx_shcount_u(((t8)(40ULL)), 64, 1360, 14, 2601359597))); t8 _t1 = ((t8)(ctx_as_u((uint64_t)(((t22)(1ULL))), UINT64_MAX, "u64", 1360, 26, 2601359597))); (_t0 != _t1); }) || ({ t8 _t2 = ((t8)((l1 & ((t8)(1099511627775ULL))))); t8 _t3 = ((t8)(ctx_as_u((uint64_t)((((*l0)).m_codes).m_len), UINT64_MAX, "u64", 1360, 58, 2601359597))); (_t2 >= _t3); }))) {
             l2 = f_eval__builder(((*l0)).m_heap);
-            { t127 _t4 = ({ l3 = ({ struct b220 _t5; _t5.base.code = (void (*)(void))b220_code; _t5.c1 = l1; _r220 = _t5; (ctx_fn *)&_r220; }); ({ t127 _t6; t127 _t7 = ({ t127 _t8; t61 _t9 = f_utf8__push_literalarena__Arena_f5a0db07((&l2), ((t7){ .m_ptr = (void *)"a call through ", .m_len = 15 })); if ((_t9.tag == 0)) { {
+            { t127 _t4 = ({ l3 = ({ struct b218 _t5; _t5.base.code = (void (*)(void))b218_code; _t5.c1 = l1; _r218 = _t5; (ctx_fn *)&_r218; }); ({ t127 _t6; t127 _t7 = ({ t127 _t8; t61 _t9 = f_utf8__push_literalarena__Arena_f5a0db07((&l2), ((t7){ .m_ptr = (void *)"a call through ", .m_len = 15 })); if ((_t9.tag == 0)) { {
                 _t8 = ((t127){ .tag = 0 });
             } } else if ((_t9.tag == 1)) { l4 = _t9.p.v1.m_error; {
                 _t8 = ((t127){ .tag = 1, .p.v1 = { .m_error = ({ t64 _t10; t12 _t11 = l4; if ((_t11.tag == 0)) { {
@@ -104294,7 +104289,7 @@ static t6 f_check__simple_place(t364 * l0) {
             { t606 _t0 = (l1).m_k; if ((_t0.tag == 7)) { l2 = _t0.p.v7.m_base; {
                 l1 = (*l2);
             } } else if ((_t0.tag == 6)) { l3 = _t0.p.v6.m_segs; {
-                return (((l3).m_len == ((t14)(1ULL))) && ((((*({ t596 _t1 = (l3); uint64_t _t2 = ((t14)(0ULL)); _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 12155, 64, 3242879023); }))).m_targs).tag == 0));
+                return (((l3).m_len == ((t14)(1ULL))) && ((((*({ t596 _t1 = (l3); uint64_t _t2 = ((t14)(0ULL)); _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 12166, 64, 3242879023); }))).m_targs).tag == 0));
             } } else { {
                 return ((bool)0);
             } } }
@@ -104939,21 +104934,21 @@ static t127 f_check__resolve_segsfmt_437ab70f(t16 l0, t75 l1) {
     __builtin_unreachable();
 }
 
-struct b221 { ctx_fn base; t16 c0; };
-static t127 b221_code(ctx_fn *self, void * a0) {
-    struct b221 *s = (struct b221 *)self;
+struct b219 { ctx_fn base; t16 c0; };
+static t127 b219_code(ctx_fn *self, void * a0) {
+    struct b219 *s = (struct b219 *)self;
     return f_check__value_reffmt_16fa9f2d(s->c0, a0);
 }
 
-struct b222 { ctx_fn base; t16 c0; };
-static t127 b222_code(ctx_fn *self, void * a0) {
-    struct b222 *s = (struct b222 *)self;
+struct b220 { ctx_fn base; t16 c0; };
+static t127 b220_code(ctx_fn *self, void * a0) {
+    struct b220 *s = (struct b220 *)self;
     return f_check__value_reffmt_16fa9f2d_1(s->c0, a0);
 }
 
-struct b223 { ctx_fn base; t16 c0; t14 c1; t14 c2; };
-static t127 b223_code(ctx_fn *self, void * a0) {
-    struct b223 *s = (struct b223 *)self;
+struct b221 { ctx_fn base; t16 c0; t14 c1; t14 c2; };
+static t127 b221_code(ctx_fn *self, void * a0) {
+    struct b221 *s = (struct b221 *)self;
     return f_check__value_reffmt_16fa9f2d_2(s->c0, s->c1, s->c2, a0);
 }
 
@@ -104966,22 +104961,22 @@ static t701 f_check__value_ref(t166 l0, t327 l1, t748 * l2) {
     t14 l7;
     t22 l8;
     CTX_STACK_CHECK();
+    struct b219 _r219;
+    struct b220 _r220;
     struct b221 _r221;
-    struct b222 _r222;
-    struct b223 _r223;
     {
         { t327 _t0 = l1; if ((_t0.tag == 1)) { l3 = _t0.p.v1.m_i; {
             l4 = f_check__get_decl(&((*l0)), l3);
             if (((l4).m_kind == ((t15)(5ULL)))) {
                 if (((((*l2)).m_targs).tag != 0)) {
-                    ({ t166 _t1 = (&(*l0)); t174 _t2 = (((*l2)).m_name).m_span; t543 _t3 = ({ struct b221 _t4; _t4.base.code = (void (*)(void))b221_code; _t4.c0 = f_check__str(((l4).m_name).m_text); _r221 = _t4; (ctx_fn *)&_r221; }); f_check__errorf(_t1, _t2, _t3); });
+                    ({ t166 _t1 = (&(*l0)); t174 _t2 = (((*l2)).m_name).m_span; t543 _t3 = ({ struct b219 _t4; _t4.base.code = (void (*)(void))b219_code; _t4.c0 = f_check__str(((l4).m_name).m_text); _r219 = _t4; (ctx_fn *)&_r219; }); f_check__errorf(_t1, _t2, _t3); });
                     return ((t701){0});
                 }
                 return ((t701){ .tag = 1, .p.v1.m_value = ((t694){ .tag = 2, .p.v2 = { .m_decl = l3, } }) });
             }
             if (((l4).m_kind == ((t15)(8ULL)))) {
                 if (((((*l2)).m_targs).tag != 0)) {
-                    ({ t166 _t5 = (&(*l0)); t174 _t6 = (((*l2)).m_name).m_span; t543 _t7 = ({ struct b222 _t8; _t8.base.code = (void (*)(void))b222_code; _t8.c0 = f_check__str(((l4).m_name).m_text); _r222 = _t8; (ctx_fn *)&_r222; }); f_check__errorf(_t5, _t6, _t7); });
+                    ({ t166 _t5 = (&(*l0)); t174 _t6 = (((*l2)).m_name).m_span; t543 _t7 = ({ struct b220 _t8; _t8.base.code = (void (*)(void))b220_code; _t8.c0 = f_check__str(((l4).m_name).m_text); _r220 = _t8; (ctx_fn *)&_r220; }); f_check__errorf(_t5, _t6, _t7); });
                     return ((t701){0});
                 }
                 return ((t701){ .tag = 1, .p.v1.m_value = ((t694){ .tag = 6, .p.v6 = { .m_decl = l3, } }) });
@@ -104990,7 +104985,7 @@ static t701 f_check__value_ref(t166 l0, t327 l1, t748 * l2) {
             l6 = f_list__newu32arena__Arena_8372a2f8((&g0), ((*l0)).m_heap);
             if (((l5).tag != 0)) {
                 if ((((l5).p.v1.m_value).m_len > ((l4).m_tparams).m_len)) {
-                    ({ t166 _t9 = (&(*l0)); t174 _t10 = (((*l2)).m_name).m_span; t543 _t11 = ({ struct b223 _t12; _t12.base.code = (void (*)(void))b223_code; _t12.c0 = f_check__str(((l4).m_name).m_text); _t12.c1 = ((l4).m_tparams).m_len; _t12.c2 = ((l5).p.v1.m_value).m_len; _r223 = _t12; (ctx_fn *)&_r223; }); f_check__errorf(_t9, _t10, _t11); });
+                    ({ t166 _t9 = (&(*l0)); t174 _t10 = (((*l2)).m_name).m_span; t543 _t11 = ({ struct b221 _t12; _t12.base.code = (void (*)(void))b221_code; _t12.c0 = f_check__str(((l4).m_name).m_text); _t12.c1 = ((l4).m_tparams).m_len; _t12.c2 = ((l5).p.v1.m_value).m_len; _r221 = _t12; (ctx_fn *)&_r221; }); f_check__errorf(_t9, _t10, _t11); });
                     return ((t701){0});
                 }
                 l7 = ((t14)(0ULL));
@@ -105318,21 +105313,21 @@ static t127 f_check__struct_litfmt_2d7ec93b(t16 l0, t75 l1) {
     __builtin_unreachable();
 }
 
-struct b224 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b224_code(ctx_fn *self, void * a0) {
-    struct b224 *s = (struct b224 *)self;
+struct b222 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b222_code(ctx_fn *self, void * a0) {
+    struct b222 *s = (struct b222 *)self;
     return f_check__cap_litfmt_dc4d63d4(s->c0, s->c1, a0);
 }
 
-struct b225 { ctx_fn base; t16 c0; };
-static t127 b225_code(ctx_fn *self, void * a0) {
-    struct b225 *s = (struct b225 *)self;
+struct b223 { ctx_fn base; t16 c0; };
+static t127 b223_code(ctx_fn *self, void * a0) {
+    struct b223 *s = (struct b223 *)self;
     return f_check__cap_litfmt_dc4d63d4_2(s->c0, a0);
 }
 
-struct b226 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
-static t127 b226_code(ctx_fn *self, void * a0) {
-    struct b226 *s = (struct b226 *)self;
+struct b224 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
+static t127 b224_code(ctx_fn *self, void * a0) {
+    struct b224 *s = (struct b224 *)self;
     return f_check__cap_litfmt_dc4d63d4_1(s->c0, s->c1, s->c2, a0);
 }
 
@@ -105372,9 +105367,9 @@ static t22 f_check__cap_lit(t166 l0, t364 * l1, t22 l2, t22 l3, t748 * l4, t550 
     t12 l40;
     t12 l41;
     CTX_STACK_CHECK();
+    struct b222 _r222;
+    struct b223 _r223;
     struct b224 _r224;
-    struct b225 _r225;
-    struct b226 _r226;
     {
         f_check__spreads_checked((&(*l0)), &((*l1)));
         l9 = f_check__get_decl(&((*l0)), l3);
@@ -105399,7 +105394,7 @@ static t22 f_check__cap_lit(t166 l0, t364 * l1, t22 l2, t22 l3, t748 * l4, t550 
                 } } _t3; }); }); if ((_t2.tag == 0)) { {
                 } } else if ((_t2.tag == 1)) { l26 = _t2.p.v1.m_error; {
                     { t12 _t9 = l26; if ((_t9.tag == 0)) { {
-                        ctx_panic(11049, 17, 3242879023, "try! failed: alloc::out_of_memory");
+                        ctx_panic(11060, 17, 3242879023, "try! failed: alloc::out_of_memory");
                     } } }
                 } } }
             } else {
@@ -105426,7 +105421,7 @@ static t22 f_check__cap_lit(t166 l0, t364 * l1, t22 l2, t22 l3, t748 * l4, t550 
                 } } _t11; }); }); }); if ((_t10.tag == 0)) { {
                 } } else if ((_t10.tag == 1)) { l21 = _t10.p.v1.m_error; {
                     { t12 _t21 = l21; if ((_t21.tag == 0)) { {
-                        ctx_panic(11051, 17, 3242879023, "try! failed: alloc::out_of_memory");
+                        ctx_panic(11062, 17, 3242879023, "try! failed: alloc::out_of_memory");
                     } } }
                 } } }
             }
@@ -105437,7 +105432,7 @@ static t22 f_check__cap_lit(t166 l0, t364 * l1, t22 l2, t22 l3, t748 * l4, t550 
         l28 = ((bool)0);
         l29 = ((t14)(0ULL));
         while ((l29 < (l27).m_len)) {
-            { t476 _t25 = ({ t270 _t26 = ((*l0)).m_ty; t22 _t27 = ({ t270 *_t28 = &(((*l0)).m_ty); t22 _t29 = ((*({ t552 _t30 = (l27); uint64_t _t31 = l29; _t30.m_ptr + ctx_idx(_t31, _t30.m_len, 11060, 76, 3242879023); }))).m_ty; f_types__prune(_t28, _t29); }); f_types__get(&_t26, _t27); }); if ((_t25.tag == 4)) { {
+            { t476 _t25 = ({ t270 _t26 = ((*l0)).m_ty; t22 _t27 = ({ t270 *_t28 = &(((*l0)).m_ty); t22 _t29 = ((*({ t552 _t30 = (l27); uint64_t _t31 = l29; _t30.m_ptr + ctx_idx(_t31, _t30.m_len, 11071, 76, 3242879023); }))).m_ty; f_types__prune(_t28, _t29); }); f_types__get(&_t26, _t27); }); if ((_t25.tag == 4)) { {
                 l28 = ((bool)1);
             } } else if ((_t25.tag == 12)) { l30 = _t25.p.v12.m_bound; {
                 if (l30) {
@@ -105445,41 +105440,41 @@ static t22 f_check__cap_lit(t166 l0, t364 * l1, t22 l2, t22 l3, t748 * l4, t550 
                 }
             } } else { {
             } } }
-            l29 = ctx_add_u64(l29, ((t14)(1ULL)), 11065, 19, 3242879023);
+            l29 = ctx_add_u64(l29, ((t14)(1ULL)), 11076, 19, 3242879023);
         }
         if ((!l28)) {
-            ({ t166 _t32 = (&(*l0)); t174 _t33 = (((*l4)).m_name).m_span; t543 _t34 = ({ struct b224 _t35; _t35.base.code = (void (*)(void))b224_code; _t35.c0 = f_check__str((((*l4)).m_name).m_text); _t35.c1 = f_check__str(((f_check__get_decl(&((*l0)), l10)).m_name).m_text); _r224 = _t35; (ctx_fn *)&_r224; }); f_check__errorf(_t32, _t33, _t34); });
+            ({ t166 _t32 = (&(*l0)); t174 _t33 = (((*l4)).m_name).m_span; t543 _t34 = ({ struct b222 _t35; _t35.base.code = (void (*)(void))b222_code; _t35.c0 = f_check__str((((*l4)).m_name).m_text); _t35.c1 = f_check__str(((f_check__get_decl(&((*l0)), l10)).m_name).m_text); _r222 = _t35; (ctx_fn *)&_r222; }); f_check__errorf(_t32, _t33, _t34); });
             return ((t22)(0ULL));
         }
         f_check__same_decl((&(*l0)), l2, l8);
         l31 = f_list__newtypes__Fieldarena__Arena_f8297ded((&g0), ((*l0)).m_heap);
         l29 = ((t14)(0ULL));
         while ((l29 < (l5).m_len)) {
-            l32 = (*({ t550 _t36 = (l5); uint64_t _t37 = l29; _t36.m_ptr + ctx_idx(_t37, _t36.m_len, 11076, 27, 3242879023); }));
+            l32 = (*({ t550 _t36 = (l5); uint64_t _t37 = l29; _t36.m_ptr + ctx_idx(_t37, _t36.m_len, 11087, 27, 3242879023); }));
             if ((l32).m_spread) {
                 l33 = f_check__expr((&(*l0)), &((l32).m_value), ((t22)(4294967295ULL)));
                 if (f_check__includes_cap(&((*l0)), l2, l33)) {
                     l34 = f_check__cap_fields(&((*l0)), l33);
                     l35 = ((t14)(0ULL));
                     while ((l35 < (l34).m_len)) {
-                        if ((({ t550 _t38 = l5; t7 _t39 = ((*({ t552 _t40 = (l34); uint64_t _t41 = l35; _t40.m_ptr + ctx_idx(_t41, _t40.m_len, 11083, 51, 3242879023); }))).m_name; f_check__given(_t38, _t39); }) || ((({ t552 _t42 = f_list__itemstypes__Fieldarena__Arena_7d0ea9d3(&(l31)); t7 _t43 = ((*({ t552 _t44 = (l34); uint64_t _t45 = l35; _t44.m_ptr + ctx_idx(_t45, _t44.m_len, 11083, 132, 3242879023); }))).m_name; f_types__find_field(_t42, _t43); })).tag != 0))) {
-                            ({ t166 _t46 = (&(*l0)); t174 _t47 = (l32).m_span; t543 _t48 = ({ struct b225 _t49; _t49.base.code = (void (*)(void))b225_code; _t49.c0 = f_check__str(((*({ t552 _t50 = (l34); uint64_t _t51 = l35; _t50.m_ptr + ctx_idx(_t51, _t50.m_len, 11084, 112, 3242879023); }))).m_name); _r225 = _t49; (ctx_fn *)&_r225; }); f_check__errorf(_t46, _t47, _t48); });
+                        if ((({ t550 _t38 = l5; t7 _t39 = ((*({ t552 _t40 = (l34); uint64_t _t41 = l35; _t40.m_ptr + ctx_idx(_t41, _t40.m_len, 11094, 51, 3242879023); }))).m_name; f_check__given(_t38, _t39); }) || ((({ t552 _t42 = f_list__itemstypes__Fieldarena__Arena_7d0ea9d3(&(l31)); t7 _t43 = ((*({ t552 _t44 = (l34); uint64_t _t45 = l35; _t44.m_ptr + ctx_idx(_t45, _t44.m_len, 11094, 132, 3242879023); }))).m_name; f_types__find_field(_t42, _t43); })).tag != 0))) {
+                            ({ t166 _t46 = (&(*l0)); t174 _t47 = (l32).m_span; t543 _t48 = ({ struct b223 _t49; _t49.base.code = (void (*)(void))b223_code; _t49.c0 = f_check__str(((*({ t552 _t50 = (l34); uint64_t _t51 = l35; _t50.m_ptr + ctx_idx(_t51, _t50.m_len, 11095, 112, 3242879023); }))).m_name); _r223 = _t49; (ctx_fn *)&_r223; }); f_check__errorf(_t46, _t47, _t48); });
                              break;
                         }
-                        l35 = ctx_add_u64(l35, ((t14)(1ULL)), 11087, 31, 3242879023);
+                        l35 = ctx_add_u64(l35, ((t14)(1ULL)), 11098, 31, 3242879023);
                     }
                     l35 = ((t14)(0ULL));
                     while ((l35 < (l34).m_len)) {
-                        f_check__add_field((&l31), (*({ t552 _t52 = (l34); uint64_t _t53 = l35; _t52.m_ptr + ctx_idx(_t53, _t52.m_len, 11091, 56, 3242879023); })));
-                        l35 = ctx_add_u64(l35, ((t14)(1ULL)), 11092, 31, 3242879023);
+                        f_check__add_field((&l31), (*({ t552 _t52 = (l34); uint64_t _t53 = l35; _t52.m_ptr + ctx_idx(_t53, _t52.m_len, 11102, 56, 3242879023); })));
+                        l35 = ctx_add_u64(l35, ((t14)(1ULL)), 11103, 31, 3242879023);
                     }
                 } else {
                     if ((f_types__prune(&(((*l0)).m_ty), l33) != ((t22)(0ULL)))) {
-                        ({ t166 _t54 = (&(*l0)); t174 _t55 = f_check__expr_at(&((l32).m_value)); t543 _t56 = ({ struct b226 _t57; _t57.base.code = (void (*)(void))b226_code; _t57.c0 = f_check__str(f_check__source_text(&((*l0)), ((l32).m_value).m_span)); _t57.c1 = f_check__tstr(&((*l0)), l33); _t57.c2 = f_check__str(((l9).m_name).m_text); _r226 = _t57; (ctx_fn *)&_r226; }); f_check__errorf(_t54, _t55, _t56); });
+                        ({ t166 _t54 = (&(*l0)); t174 _t55 = f_check__expr_at(&((l32).m_value)); t543 _t56 = ({ struct b224 _t57; _t57.base.code = (void (*)(void))b224_code; _t57.c0 = f_check__str(f_check__source_text(&((*l0)), ((l32).m_value).m_span)); _t57.c1 = f_check__tstr(&((*l0)), l33); _t57.c2 = f_check__str(((l9).m_name).m_text); _r224 = _t57; (ctx_fn *)&_r224; }); f_check__errorf(_t54, _t55, _t56); });
                     }
                 }
             }
-            l29 = ctx_add_u64(l29, ((t14)(1ULL)), 11098, 19, 3242879023);
+            l29 = ctx_add_u64(l29, ((t14)(1ULL)), 11109, 19, 3242879023);
         }
         l36 = f_check__message(&((*l0)));
         { t61 _t58 = ({ l37 = f_check__str(((l9).m_name).m_text); ({ t61 _t59; t61 _t60 = f_utf8__push_literalarena__Arena_f5a0db07((&l36), ((t7){ .m_ptr = (void *)"capability `", .m_len = 12 })); if ((_t60.tag == 0)) { {
@@ -105497,7 +105492,7 @@ static t22 f_check__cap_lit(t166 l0, t364 * l1, t22 l2, t22 l3, t748 * l4, t550 
         } } _t59; }); }); if ((_t58.tag == 0)) { {
         } } else if ((_t58.tag == 1)) { l41 = _t58.p.v1.m_error; {
             { t12 _t65 = l41; if ((_t65.tag == 0)) { {
-                ctx_panic(11101, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(11112, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
         return ({ t166 _t66 = (&(*l0)); t364 _t67 = (*l1); t22 _t68 = l2; t552 _t69 = (l9).m_fields; t16 _t70 = f_utf8__viewarena__Arena_5db7a4ae(&(l36)); t550 _t71 = l5; t552 _t72 = f_list__itemstypes__Fieldarena__Arena_7d0ea9d3(&(l31)); t173 _t73 = f_slice__emptyu32_c1c40257(); t6 _t74 = l6; t6 _t75 = l7; f_check__fields_lit(_t66, &_t67, _t68, _t69, _t70, _t71, _t72, _t73, _t74, _t75); });
@@ -105536,15 +105531,15 @@ static t127 f_check__struct_litfmt_2d7ec93b_1(t16 l0, t75 l1) {
     __builtin_unreachable();
 }
 
-struct b227 { ctx_fn base; t16 c0; };
-static t127 b227_code(ctx_fn *self, void * a0) {
-    struct b227 *s = (struct b227 *)self;
+struct b225 { ctx_fn base; t16 c0; };
+static t127 b225_code(ctx_fn *self, void * a0) {
+    struct b225 *s = (struct b225 *)self;
     return f_check__untagged_litfmt_1e168c61(s->c0, a0);
 }
 
-struct b228 { ctx_fn base; t16 c0; };
-static t127 b228_code(ctx_fn *self, void * a0) {
-    struct b228 *s = (struct b228 *)self;
+struct b226 { ctx_fn base; t16 c0; };
+static t127 b226_code(ctx_fn *self, void * a0) {
+    struct b226 *s = (struct b226 *)self;
     return f_check__untagged_litfmt_1e168c61_1(s->c0, a0);
 }
 
@@ -105554,8 +105549,8 @@ static t22 f_check__untagged_lit(t166 l0, t364 * l1, t22 l2, t552 l3, t16 l4, t5
     t14 l9;
     t695 l10;
     CTX_STACK_CHECK();
-    struct b227 _r227;
-    struct b228 _r228;
+    struct b225 _r225;
+    struct b226 _r226;
     {
         f_check__set_literal((&(*l0)), &((*l1)), ((bool)1));
         if ((l6 || l7)) {
@@ -105564,28 +105559,28 @@ static t22 f_check__untagged_lit(t166 l0, t364 * l1, t22 l2, t552 l3, t16 l4, t5
             } else {
                 _t0 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"_", .m_len = 1 }), });
             } _t0; });
-            ({ t166 _t1 = (&(*l0)); t174 _t2 = f_check__expr_at(&((*l1))); t543 _t3 = ({ struct b227 _t4; _t4.base.code = (void (*)(void))b227_code; _t4.c0 = l8; _r227 = _t4; (ctx_fn *)&_r227; }); f_check__errorf(_t1, _t2, _t3); });
+            ({ t166 _t1 = (&(*l0)); t174 _t2 = f_check__expr_at(&((*l1))); t543 _t3 = ({ struct b225 _t4; _t4.base.code = (void (*)(void))b225_code; _t4.c0 = l8; _r225 = _t4; (ctx_fn *)&_r225; }); f_check__errorf(_t1, _t2, _t3); });
         }
         f_check__supplied((&(*l0)), &((*l1)), l5, l3, l4);
         if (((l5).m_len != ((t14)(1ULL)))) {
-            ({ t166 _t5 = (&(*l0)); t174 _t6 = f_check__expr_at(&((*l1))); t543 _t7 = ({ struct b228 _t8; _t8.base.code = (void (*)(void))b228_code; _t8.c0 = l4; _r228 = _t8; (ctx_fn *)&_r228; }); f_check__errorf(_t5, _t6, _t7); });
+            ({ t166 _t5 = (&(*l0)); t174 _t6 = f_check__expr_at(&((*l1))); t543 _t7 = ({ struct b226 _t8; _t8.base.code = (void (*)(void))b226_code; _t8.c0 = l4; _r226 = _t8; (ctx_fn *)&_r226; }); f_check__errorf(_t5, _t6, _t7); });
         }
         l9 = ((t14)(0ULL));
         while ((l9 < (l5).m_len)) {
-            l10 = ({ t552 _t9 = l3; t7 _t10 = (((*({ t550 _t11 = (l5); uint64_t _t12 = l9; _t11.m_ptr + ctx_idx(_t12, _t11.m_len, 11119, 60, 3242879023); }))).m_name).m_text; f_types__find_field(_t9, _t10); });
+            l10 = ({ t552 _t9 = l3; t7 _t10 = (((*({ t550 _t11 = (l5); uint64_t _t12 = l9; _t11.m_ptr + ctx_idx(_t12, _t11.m_len, 11130, 60, 3242879023); }))).m_name).m_text; f_types__find_field(_t9, _t10); });
             if (((l10).tag != 0)) {
-                ({ t166 _t13 = (&(*l0)); t364 *_t14 = &(((*({ t550 _t16 = (l5); uint64_t _t17 = l9; _t16.m_ptr + ctx_idx(_t17, _t16.m_len, 11120, 49, 3242879023); }))).m_value); t22 _t15 = ((l10).p.v1.m_value).m_ty; f_check__expect(_t13, _t14, _t15); });
+                ({ t166 _t13 = (&(*l0)); t364 *_t14 = &(((*({ t550 _t16 = (l5); uint64_t _t17 = l9; _t16.m_ptr + ctx_idx(_t17, _t16.m_len, 11131, 49, 3242879023); }))).m_value); t22 _t15 = ((l10).p.v1.m_value).m_ty; f_check__expect(_t13, _t14, _t15); });
             }
-            l9 = ctx_add_u64(l9, ((t14)(1ULL)), 11121, 19, 3242879023);
+            l9 = ctx_add_u64(l9, ((t14)(1ULL)), 11132, 19, 3242879023);
         }
         return l2;
     }
     __builtin_unreachable();
 }
 
-struct b229 { ctx_fn base; t16 c0; };
-static t127 b229_code(ctx_fn *self, void * a0) {
-    struct b229 *s = (struct b229 *)self;
+struct b227 { ctx_fn base; t16 c0; };
+static t127 b227_code(ctx_fn *self, void * a0) {
+    struct b227 *s = (struct b227 *)self;
     return f_check__fields_litfmt_3bd09493(s->c0, a0);
 }
 
@@ -105611,14 +105606,14 @@ static t22 f_check__fields_lit(t166 l0, t364 * l1, t22 l2, t552 l3, t16 l4, t550
     t12 l27;
     t695 l28;
     CTX_STACK_CHECK();
-    struct b229 _r229;
+    struct b227 _r227;
     {
         f_check__set_literal((&(*l0)), &((*l1)), ((bool)1));
         if (l9) {
             ({ t166 _t0 = (&(*l0)); t174 _t1 = f_check__expr_at(&((*l1))); t16 _t2 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"`_` is not allowed in a literal", .m_len = 31 }), }); f_check__error(_t0, _t1, _t2); });
         } else {
             if ((l8 && ((l7).m_len == ((t14)(0ULL))))) {
-                ({ t166 _t3 = (&(*l0)); t174 _t4 = f_check__expr_at(&((*l1))); t543 _t5 = ({ struct b229 _t6; _t6.base.code = (void (*)(void))b229_code; _t6.c0 = l4; _r229 = _t6; (ctx_fn *)&_r229; }); f_check__errorf(_t3, _t4, _t5); });
+                ({ t166 _t3 = (&(*l0)); t174 _t4 = f_check__expr_at(&((*l1))); t543 _t5 = ({ struct b227 _t6; _t6.base.code = (void (*)(void))b227_code; _t6.c0 = l4; _r227 = _t6; (ctx_fn *)&_r227; }); f_check__errorf(_t3, _t4, _t5); });
             }
         }
         f_check__supplied((&(*l0)), &((*l1)), l5, l3, l4);
@@ -105627,32 +105622,32 @@ static t22 f_check__fields_lit(t166 l0, t364 * l1, t22 l2, t552 l3, t16 l4, t550
         l12 = f_list__newu32arena__Arena_8372a2f8((&g0), ((*l0)).m_heap);
         l13 = ((t14)(0ULL));
         while ((l13 < (l3).m_len)) {
-            l14 = ((l13 < (l7).m_len) && ((*({ t173 _t7 = (l7); uint64_t _t8 = l13; _t7.m_ptr + ctx_idx(_t8, _t7.m_len, 11169, 52, 3242879023); })) != ((t22)(4294967295ULL))));
-            if ((({ t550 _t9 = l5; t7 _t10 = ((*({ t552 _t11 = (l3); uint64_t _t12 = l13; _t11.m_ptr + ctx_idx(_t12, _t11.m_len, 11170, 43, 3242879023); }))).m_name; f_check__given(_t9, _t10); }) || ((({ t552 _t13 = l6; t7 _t14 = ((*({ t552 _t15 = (l3); uint64_t _t16 = l13; _t15.m_ptr + ctx_idx(_t16, _t15.m_len, 11170, 106, 3242879023); }))).m_name; f_types__find_field(_t13, _t14); })).tag != 0))) {
+            l14 = ((l13 < (l7).m_len) && ((*({ t173 _t7 = (l7); uint64_t _t8 = l13; _t7.m_ptr + ctx_idx(_t8, _t7.m_len, 11180, 52, 3242879023); })) != ((t22)(4294967295ULL))));
+            if ((({ t550 _t9 = l5; t7 _t10 = ((*({ t552 _t11 = (l3); uint64_t _t12 = l13; _t11.m_ptr + ctx_idx(_t12, _t11.m_len, 11181, 43, 3242879023); }))).m_name; f_check__given(_t9, _t10); }) || ((({ t552 _t13 = l6; t7 _t14 = ((*({ t552 _t15 = (l3); uint64_t _t16 = l13; _t15.m_ptr + ctx_idx(_t16, _t15.m_len, 11181, 106, 3242879023); }))).m_name; f_types__find_field(_t13, _t14); })).tag != 0))) {
             } else {
                 if ((l14 && l8)) {
-                    { t61 _t17 = f_list__pushu32arena__Arena_098e3c94((&l12), ((t22)(ctx_as_u((uint64_t)(l13), UINT32_MAX, "u32", 11173, 57, 3242879023)))); if ((_t17.tag == 0)) { {
+                    { t61 _t17 = f_list__pushu32arena__Arena_098e3c94((&l12), ((t22)(ctx_as_u((uint64_t)(l13), UINT32_MAX, "u32", 11184, 57, 3242879023)))); if ((_t17.tag == 0)) { {
                     } } else if ((_t17.tag == 1)) { l15 = _t17.p.v1.m_error; {
                         { t12 _t18 = l15; if ((_t18.tag == 0)) { {
-                            ctx_panic(11173, 17, 3242879023, "try! failed: alloc::out_of_memory");
+                            ctx_panic(11184, 17, 3242879023, "try! failed: alloc::out_of_memory");
                         } } }
                     } } }
                 } else {
-                    if ((l14 || (!(((*l0)).m_in_attr && ({ t163 *_t19 = &((*l0)); t22 _t20 = ((*({ t552 _t21 = (l3); uint64_t _t22 = l13; _t21.m_ptr + ctx_idx(_t22, _t21.m_len, 11174, 74, 3242879023); }))).m_ty; f_check__zero_field(_t19, _t20); }))))) {
-                        f_check__add_field((&l10), (*({ t552 _t23 = (l3); uint64_t _t24 = l13; _t23.m_ptr + ctx_idx(_t24, _t23.m_len, 11176, 53, 3242879023); })));
+                    if ((l14 || (!(((*l0)).m_in_attr && ({ t163 *_t19 = &((*l0)); t22 _t20 = ((*({ t552 _t21 = (l3); uint64_t _t22 = l13; _t21.m_ptr + ctx_idx(_t22, _t21.m_len, 11185, 74, 3242879023); }))).m_ty; f_check__zero_field(_t19, _t20); }))))) {
+                        f_check__add_field((&l10), (*({ t552 _t23 = (l3); uint64_t _t24 = l13; _t23.m_ptr + ctx_idx(_t24, _t23.m_len, 11187, 53, 3242879023); })));
                         if (l14) {
-                            f_check__add_field((&l11), (*({ t552 _t25 = (l3); uint64_t _t26 = l13; _t25.m_ptr + ctx_idx(_t26, _t25.m_len, 11177, 64, 3242879023); })));
+                            f_check__add_field((&l11), (*({ t552 _t25 = (l3); uint64_t _t26 = l13; _t25.m_ptr + ctx_idx(_t26, _t25.m_len, 11188, 64, 3242879023); })));
                         }
                     }
                 }
             }
-            l13 = ctx_add_u64(l13, ((t14)(1ULL)), 11179, 19, 3242879023);
+            l13 = ctx_add_u64(l13, ((t14)(1ULL)), 11190, 19, 3242879023);
         }
         if (((l12).m_len > ((t14)(0ULL)))) {
             { t61 _t27 = ({ t1023 _t28 = (&((*l0)).m_filled); t8 _t29 = f_check__expr_key(&((*l1))); t173 _t30 = f_list__itemsu32arena__Arena_0ba5b83a(&(l12)); f_map__putu64u32arena__Arena_17fd8e54(_t28, _t29, _t30); }); if ((_t27.tag == 0)) { {
             } } else if ((_t27.tag == 1)) { l16 = _t27.p.v1.m_error; {
                 { t12 _t31 = l16; if ((_t31.tag == 0)) { {
-                    ctx_panic(11181, 29, 3242879023, "try! failed: alloc::out_of_memory");
+                    ctx_panic(11192, 29, 3242879023, "try! failed: alloc::out_of_memory");
                 } } }
             } } }
         }
@@ -105670,13 +105665,13 @@ static t22 f_check__fields_lit(t166 l0, t364 * l1, t22 l2, t552 l3, t16 l4, t550
             } } _t33; }); if ((_t32.tag == 0)) { {
             } } else if ((_t32.tag == 1)) { l21 = _t32.p.v1.m_error; {
                 { t12 _t37 = l21; if ((_t37.tag == 0)) { {
-                    ctx_panic(11185, 13, 3242879023, "try! failed: alloc::out_of_memory");
+                    ctx_panic(11196, 13, 3242879023, "try! failed: alloc::out_of_memory");
                 } } }
             } } }
             { t61 _t38 = f_check__names(l17, (&l18)); if ((_t38.tag == 0)) { {
             } } else if ((_t38.tag == 1)) { l22 = _t38.p.v1.m_error; {
                 { t12 _t39 = l22; if ((_t39.tag == 0)) { {
-                    ctx_panic(11186, 13, 3242879023, "try! failed: alloc::out_of_memory");
+                    ctx_panic(11197, 13, 3242879023, "try! failed: alloc::out_of_memory");
                 } } }
             } } }
             l23 = f_list__itemstypes__Fieldarena__Arena_7d0ea9d3(&(l11));
@@ -105688,7 +105683,7 @@ static t22 f_check__fields_lit(t166 l0, t364 * l1, t22 l2, t552 l3, t16 l4, t550
                 } _t41; })); if ((_t40.tag == 0)) { {
                 } } else if ((_t40.tag == 1)) { l27 = _t40.p.v1.m_error; {
                     { t12 _t42 = l27; if ((_t42.tag == 0)) { {
-                        ctx_panic(11189, 17, 3242879023, "try! failed: alloc::out_of_memory");
+                        ctx_panic(11200, 17, 3242879023, "try! failed: alloc::out_of_memory");
                     } } }
                 } } }
             } else {
@@ -105696,13 +105691,13 @@ static t22 f_check__fields_lit(t166 l0, t364 * l1, t22 l2, t552 l3, t16 l4, t550
                     { t61 _t43 = f_utf8__pusharena__Arena_14525023((&l18), ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)" (`..` at the end takes ", .m_len = 24 }), })); if ((_t43.tag == 0)) { {
                     } } else if ((_t43.tag == 1)) { l24 = _t43.p.v1.m_error; {
                         { t12 _t44 = l24; if ((_t44.tag == 0)) { {
-                            ctx_panic(11191, 17, 3242879023, "try! failed: alloc::out_of_memory");
+                            ctx_panic(11202, 17, 3242879023, "try! failed: alloc::out_of_memory");
                         } } }
                     } } }
                     { t61 _t45 = f_check__names(l23, (&l18)); if ((_t45.tag == 0)) { {
                     } } else if ((_t45.tag == 1)) { l25 = _t45.p.v1.m_error; {
                         { t12 _t46 = l25; if ((_t46.tag == 0)) { {
-                            ctx_panic(11192, 17, 3242879023, "try! failed: alloc::out_of_memory");
+                            ctx_panic(11203, 17, 3242879023, "try! failed: alloc::out_of_memory");
                         } } }
                     } } }
                     { t61 _t47 = f_utf8__pusharena__Arena_14525023((&l18), ({ t16 _t48; if (((l23).m_len == ((t14)(1ULL)))) {
@@ -105712,7 +105707,7 @@ static t22 f_check__fields_lit(t166 l0, t364 * l1, t22 l2, t552 l3, t16 l4, t550
                     } _t48; })); if ((_t47.tag == 0)) { {
                     } } else if ((_t47.tag == 1)) { l26 = _t47.p.v1.m_error; {
                         { t12 _t49 = l26; if ((_t49.tag == 0)) { {
-                            ctx_panic(11193, 17, 3242879023, "try! failed: alloc::out_of_memory");
+                            ctx_panic(11204, 17, 3242879023, "try! failed: alloc::out_of_memory");
                         } } }
                     } } }
                 }
@@ -105721,11 +105716,11 @@ static t22 f_check__fields_lit(t166 l0, t364 * l1, t22 l2, t552 l3, t16 l4, t550
         }
         l13 = ((t14)(0ULL));
         while ((l13 < (l5).m_len)) {
-            l28 = ({ t552 _t53 = l3; t7 _t54 = (((*({ t550 _t55 = (l5); uint64_t _t56 = l13; _t55.m_ptr + ctx_idx(_t56, _t55.m_len, 11199, 60, 3242879023); }))).m_name).m_text; f_types__find_field(_t53, _t54); });
+            l28 = ({ t552 _t53 = l3; t7 _t54 = (((*({ t550 _t55 = (l5); uint64_t _t56 = l13; _t55.m_ptr + ctx_idx(_t56, _t55.m_len, 11210, 60, 3242879023); }))).m_name).m_text; f_types__find_field(_t53, _t54); });
             if (((l28).tag != 0)) {
-                ({ t166 _t57 = (&(*l0)); t364 *_t58 = &(((*({ t550 _t60 = (l5); uint64_t _t61 = l13; _t60.m_ptr + ctx_idx(_t61, _t60.m_len, 11200, 49, 3242879023); }))).m_value); t22 _t59 = ((l28).p.v1.m_value).m_ty; f_check__expect(_t57, _t58, _t59); });
+                ({ t166 _t57 = (&(*l0)); t364 *_t58 = &(((*({ t550 _t60 = (l5); uint64_t _t61 = l13; _t60.m_ptr + ctx_idx(_t61, _t60.m_len, 11211, 49, 3242879023); }))).m_value); t22 _t59 = ((l28).p.v1.m_value).m_ty; f_check__expect(_t57, _t58, _t59); });
             }
-            l13 = ctx_add_u64(l13, ((t14)(1ULL)), 11201, 19, 3242879023);
+            l13 = ctx_add_u64(l13, ((t14)(1ULL)), 11212, 19, 3242879023);
         }
         return l2;
     }
@@ -105834,9 +105829,9 @@ static t27 f_check__set_literal(t166 l0, t364 * l1, t6 l2) {
     }
 }
 
-struct b230 { ctx_fn base; t16 c0; };
-static t127 b230_code(ctx_fn *self, void * a0) {
-    struct b230 *s = (struct b230 *)self;
+struct b228 { ctx_fn base; t16 c0; };
+static t127 b228_code(ctx_fn *self, void * a0) {
+    struct b228 *s = (struct b228 *)self;
     return f_check__suppliedfmt_7e4d9b9a(s->c0, a0);
 }
 
@@ -105855,7 +105850,7 @@ static t27 f_check__supplied(t166 l0, t364 * l1, t550 l2, t552 l3, t16 l4) {
     t12 l15;
     t12 l16;
     CTX_STACK_CHECK();
-    struct b230 _r230;
+    struct b228 _r228;
     {
         { t61 _t0 = ({ t1159 _t1 = (&((*l0)).m_braces); t8 _t2 = f_check__expr_key(&((*l1))); t552 _t3 = l3; f_map__putu64types__Fieldarena__Arena_59aff549(_t1, _t2, _t3); }); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l5 = _t0.p.v1.m_error; {
@@ -105868,64 +105863,67 @@ static t27 f_check__supplied(t166 l0, t364 * l1, t550 l2, t552 l3, t16 l4) {
             l7 = (*({ t550 _t5 = (l2); uint64_t _t6 = l6; _t5.m_ptr + ctx_idx(_t6, _t5.m_len, 10803, 27, 3242879023); }));
             if ((l7).m_spread) {
             } else {
-                if (((f_types__find_field(l3, ((l7).m_name).m_text)).tag == 0)) {
-                    l9 = f_check__message(&((*l0)));
-                    { t61 _t7 = ({ l10 = f_check__str(((l7).m_name).m_text); ({ t61 _t8; t61 _t9 = f_utf8__pusharena__Arena_14525023((&l9), l4); if ((_t9.tag == 0)) { {
-                        _t8 = ({ t61 _t10; t61 _t11 = f_utf8__push_literalarena__Arena_f5a0db07((&l9), ((t7){ .m_ptr = (void *)" has no field `", .m_len = 15 })); if ((_t11.tag == 0)) { {
-                            _t10 = ({ t61 _t12; t61 _t13 = f_utf8__pusharena__Arena_14525023((&l9), l10); if ((_t13.tag == 0)) { {
-                                _t12 = ({ t61 _t14; t61 _t15 = f_utf8__push_literalarena__Arena_f5a0db07((&l9), ((t7){ .m_ptr = (void *)"`", .m_len = 1 })); if ((_t15.tag == 0)) { {
-                                    _t14 = ((t61){ .tag = 0 });
-                                } } else if ((_t15.tag == 1)) { l11 = _t15.p.v1.m_error; {
-                                    _t14 = ((t61){ .tag = 1, .p.v1 = { .m_error = l11, } });
-                                } } _t14; });
-                            } } else if ((_t13.tag == 1)) { l12 = _t13.p.v1.m_error; {
-                                _t12 = ((t61){ .tag = 1, .p.v1 = { .m_error = l12, } });
-                            } } _t12; });
-                        } } else if ((_t11.tag == 1)) { l13 = _t11.p.v1.m_error; {
-                            _t10 = ((t61){ .tag = 1, .p.v1 = { .m_error = l13, } });
-                        } } _t10; });
-                    } } else if ((_t9.tag == 1)) { l14 = _t9.p.v1.m_error; {
-                        _t8 = ((t61){ .tag = 1, .p.v1 = { .m_error = l14, } });
-                    } } _t8; }); }); if ((_t7.tag == 0)) { {
-                    } } else if ((_t7.tag == 1)) { l15 = _t7.p.v1.m_error; {
-                        { t12 _t16 = l15; if ((_t16.tag == 0)) { {
-                            ctx_panic(10808, 17, 3242879023, "try! failed: alloc::out_of_memory");
-                        } } }
-                    } } }
-                    if ((l7).m_pun) {
-                        { t61 _t17 = f_check__pun_hint(&((*l0)), l2, l3, &(l7), (&l9)); if ((_t17.tag == 0)) { {
-                        } } else if ((_t17.tag == 1)) { l16 = _t17.p.v1.m_error; {
-                            { t12 _t18 = l16; if ((_t18.tag == 0)) { {
-                                ctx_panic(10809, 29, 3242879023, "try! failed: alloc::out_of_memory");
+                if (((((l7).m_name).m_text).m_len == ((t14)(0ULL)))) {
+                } else {
+                    if (((f_types__find_field(l3, ((l7).m_name).m_text)).tag == 0)) {
+                        l9 = f_check__message(&((*l0)));
+                        { t61 _t7 = ({ l10 = f_check__str(((l7).m_name).m_text); ({ t61 _t8; t61 _t9 = f_utf8__pusharena__Arena_14525023((&l9), l4); if ((_t9.tag == 0)) { {
+                            _t8 = ({ t61 _t10; t61 _t11 = f_utf8__push_literalarena__Arena_f5a0db07((&l9), ((t7){ .m_ptr = (void *)" has no field `", .m_len = 15 })); if ((_t11.tag == 0)) { {
+                                _t10 = ({ t61 _t12; t61 _t13 = f_utf8__pusharena__Arena_14525023((&l9), l10); if ((_t13.tag == 0)) { {
+                                    _t12 = ({ t61 _t14; t61 _t15 = f_utf8__push_literalarena__Arena_f5a0db07((&l9), ((t7){ .m_ptr = (void *)"`", .m_len = 1 })); if ((_t15.tag == 0)) { {
+                                        _t14 = ((t61){ .tag = 0 });
+                                    } } else if ((_t15.tag == 1)) { l11 = _t15.p.v1.m_error; {
+                                        _t14 = ((t61){ .tag = 1, .p.v1 = { .m_error = l11, } });
+                                    } } _t14; });
+                                } } else if ((_t13.tag == 1)) { l12 = _t13.p.v1.m_error; {
+                                    _t12 = ((t61){ .tag = 1, .p.v1 = { .m_error = l12, } });
+                                } } _t12; });
+                            } } else if ((_t11.tag == 1)) { l13 = _t11.p.v1.m_error; {
+                                _t10 = ((t61){ .tag = 1, .p.v1 = { .m_error = l13, } });
+                            } } _t10; });
+                        } } else if ((_t9.tag == 1)) { l14 = _t9.p.v1.m_error; {
+                            _t8 = ((t61){ .tag = 1, .p.v1 = { .m_error = l14, } });
+                        } } _t8; }); }); if ((_t7.tag == 0)) { {
+                        } } else if ((_t7.tag == 1)) { l15 = _t7.p.v1.m_error; {
+                            { t12 _t16 = l15; if ((_t16.tag == 0)) { {
+                                ctx_panic(10810, 17, 3242879023, "try! failed: alloc::out_of_memory");
                             } } }
                         } } }
-                    }
-                    ({ t166 _t19 = (&(*l0)); t174 _t20 = (l7).m_span; t16 _t21 = f_utf8__viewarena__Arena_5db7a4ae(&(l9)); f_check__error(_t19, _t20, _t21); });
-                } else {
-                    l8 = ((t14)(0ULL));
-                    while ((l8 < l6)) {
-                        if (({ t7 _t22 = (((*({ t550 _t24 = (l2); uint64_t _t25 = l8; _t24.m_ptr + ctx_idx(_t25, _t24.m_len, 10814, 50, 3242879023); }))).m_name).m_text; t7 _t23 = ((l7).m_name).m_text; f_slice__eq_bytes(_t22, _t23); })) {
-                            ({ t166 _t26 = (&(*l0)); t174 _t27 = (l7).m_span; t543 _t28 = ({ struct b230 _t29; _t29.base.code = (void (*)(void))b230_code; _t29.c0 = f_check__str(((l7).m_name).m_text); _r230 = _t29; (ctx_fn *)&_r230; }); f_check__errorf(_t26, _t27, _t28); });
-                             break;
+                        if ((l7).m_pun) {
+                            { t61 _t17 = f_check__pun_hint(&((*l0)), l2, l3, &(l7), (&l9)); if ((_t17.tag == 0)) { {
+                            } } else if ((_t17.tag == 1)) { l16 = _t17.p.v1.m_error; {
+                                { t12 _t18 = l16; if ((_t18.tag == 0)) { {
+                                    ctx_panic(10811, 29, 3242879023, "try! failed: alloc::out_of_memory");
+                                } } }
+                            } } }
                         }
-                        l8 = ctx_add_u64(l8, ((t14)(1ULL)), 10818, 27, 3242879023);
+                        ({ t166 _t19 = (&(*l0)); t174 _t20 = (l7).m_span; t16 _t21 = f_utf8__viewarena__Arena_5db7a4ae(&(l9)); f_check__error(_t19, _t20, _t21); });
+                    } else {
+                        l8 = ((t14)(0ULL));
+                        while ((l8 < l6)) {
+                            if (({ t7 _t22 = (((*({ t550 _t24 = (l2); uint64_t _t25 = l8; _t24.m_ptr + ctx_idx(_t25, _t24.m_len, 10816, 50, 3242879023); }))).m_name).m_text; t7 _t23 = ((l7).m_name).m_text; f_slice__eq_bytes(_t22, _t23); })) {
+                                ({ t166 _t26 = (&(*l0)); t174 _t27 = (l7).m_span; t543 _t28 = ({ struct b228 _t29; _t29.base.code = (void (*)(void))b228_code; _t29.c0 = f_check__str(((l7).m_name).m_text); _r228 = _t29; (ctx_fn *)&_r228; }); f_check__errorf(_t26, _t27, _t28); });
+                                 break;
+                            }
+                            l8 = ctx_add_u64(l8, ((t14)(1ULL)), 10820, 27, 3242879023);
+                        }
                     }
                 }
             }
-            l6 = ctx_add_u64(l6, ((t14)(1ULL)), 10821, 19, 3242879023);
+            l6 = ctx_add_u64(l6, ((t14)(1ULL)), 10823, 19, 3242879023);
         }
     }
 }
 
-struct b231 { ctx_fn base; t16 c0; };
-static t127 b231_code(ctx_fn *self, void * a0) {
-    struct b231 *s = (struct b231 *)self;
+struct b229 { ctx_fn base; t16 c0; };
+static t127 b229_code(ctx_fn *self, void * a0) {
+    struct b229 *s = (struct b229 *)self;
     return f_check__task_runfmt_bd8e2627(s->c0, a0);
 }
 
-struct b232 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b232_code(ctx_fn *self, void * a0) {
-    struct b232 *s = (struct b232 *)self;
+struct b230 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b230_code(ctx_fn *self, void * a0) {
+    struct b230 *s = (struct b230 *)self;
     return f_check__task_runfmt_bd8e2627_1(s->c0, s->c1, a0);
 }
 
@@ -105945,8 +105943,8 @@ static t27 f_check__task_run(t166 l0, t364 * l1) {
     t14 l13;
     t22 l14;
     CTX_STACK_CHECK();
-    struct b231 _r231;
-    struct b232 _r232;
+    struct b229 _r229;
+    struct b230 _r230;
     {
         l2 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"`run` is a bind of a `task` fn written here, supplying every field: `run = f{ ..., _ }`", .m_len = 87 }), });
         if ((((((((*l0)).m_fn_decl != ((t22)(4294967295ULL))) && (f_check__get_decl(&((*l0)), ((*l0)).m_fn_decl)).m_starts_task) && ({ t6 _t0; t606 _t1 = ((*l1)).m_k; if ((_t1.tag == 6)) { l3 = _t1.p.v6.m_segs; {
@@ -105985,14 +105983,14 @@ static t27 f_check__task_run(t166 l0, t364 * l1) {
         } } l10 = _t23.p.v1.m_decl; l11 = _t23.p.v1.m_targs; }
         l12 = f_check__get_decl(&((*l0)), l10);
         if ((!(l12).m_task)) {
-            ({ t166 _t27 = (&(*l0)); t174 _t28 = f_check__expr_at(&((*l6))); t543 _t29 = ({ struct b231 _t30; _t30.base.code = (void (*)(void))b231_code; _t30.c0 = f_check__str((l12).m_qual); _r231 = _t30; (ctx_fn *)&_r231; }); f_check__errorf(_t27, _t28, _t29); });
+            ({ t166 _t27 = (&(*l0)); t174 _t28 = f_check__expr_at(&((*l6))); t543 _t29 = ({ struct b229 _t30; _t30.base.code = (void (*)(void))b229_code; _t30.c0 = f_check__str((l12).m_qual); _r229 = _t30; (ctx_fn *)&_r229; }); f_check__errorf(_t27, _t28, _t29); });
             return;
         }
         l13 = ((t14)(0ULL));
         while ((l13 < (l11).m_len)) {
             l14 = ({ t163 *_t31 = &((*l0)); t22 _t32 = (*({ t173 _t33 = (l11); uint64_t _t34 = l13; _t33.m_ptr + ctx_idx(_t34, _t33.m_len, 2055, 44, 3242879023); })); f_check__bound_cap(_t31, _t32); });
             if ((l14 != ((t22)(4294967295ULL)))) {
-                ({ t166 _t35 = (&(*l0)); t174 _t36 = f_check__expr_at(&((*l6))); t543 _t37 = ({ struct b232 _t38; _t38.base.code = (void (*)(void))b232_code; _t38.c0 = f_check__str((l12).m_qual); _t38.c1 = f_check__str((f_check__get_decl(&((*l0)), l14)).m_qual); _r232 = _t38; (ctx_fn *)&_r232; }); f_check__errorf(_t35, _t36, _t37); });
+                ({ t166 _t35 = (&(*l0)); t174 _t36 = f_check__expr_at(&((*l6))); t543 _t37 = ({ struct b230 _t38; _t38.base.code = (void (*)(void))b230_code; _t38.c0 = f_check__str((l12).m_qual); _t38.c1 = f_check__str((f_check__get_decl(&((*l0)), l14)).m_qual); _r230 = _t38; (ctx_fn *)&_r230; }); f_check__errorf(_t35, _t36, _t37); });
             }
             l13 = ctx_add_u64(l13, ((t14)(1ULL)), 2059, 19, 3242879023);
         }
@@ -106009,15 +106007,15 @@ static t27 f_check__mut_arg(t166 l0, t364 * l1, t22 l2, t22 l3) {
     }
 }
 
-struct b233 { ctx_fn base; t16 c0; };
-static t127 b233_code(ctx_fn *self, void * a0) {
-    struct b233 *s = (struct b233 *)self;
+struct b231 { ctx_fn base; t16 c0; };
+static t127 b231_code(ctx_fn *self, void * a0) {
+    struct b231 *s = (struct b231 *)self;
     return f_check__handle_flowfmt_6bc82f7d(s->c0, a0);
 }
 
-struct b234 { ctx_fn base; t16 c0; };
-static t127 b234_code(ctx_fn *self, void * a0) {
-    struct b234 *s = (struct b234 *)self;
+struct b232 { ctx_fn base; t16 c0; };
+static t127 b232_code(ctx_fn *self, void * a0) {
+    struct b232 *s = (struct b232 *)self;
     return f_check__handle_flowfmt_6bc82f7d_1(s->c0, a0);
 }
 
@@ -106030,8 +106028,8 @@ static t27 f_check__handle_flow(t166 l0, t364 * l1, t7 l2, t22 l3, t174 l4) {
     t579 l9;
     t0 l10;
     CTX_STACK_CHECK();
-    struct b233 _r233;
-    struct b234 _r234;
+    struct b231 _r231;
+    struct b232 _r232;
     {
         { t606 _t0 = ((*l1)).m_k; if (!(_t0.tag == 6)) { {
             return;
@@ -106070,10 +106068,10 @@ static t27 f_check__handle_flow(t166 l0, t364 * l1, t7 l2, t22 l3, t174 l4) {
             }
         }
         if ((((l10 == ((t0)(3ULL))) || (l10 == ((t0)(4ULL)))) && f_check__has_id(((*l0)).m_zeros, l8))) {
-            ({ t166 _t18 = (&(*l0)); t174 _t19 = l4; t543 _t20 = ({ struct b233 _t21; _t21.base.code = (void (*)(void))b233_code; _t21.c0 = f_check__str((l9).m_name); _r233 = _t21; (ctx_fn *)&_r233; }); f_check__errorf(_t18, _t19, _t20); });
+            ({ t166 _t18 = (&(*l0)); t174 _t19 = l4; t543 _t20 = ({ struct b231 _t21; _t21.base.code = (void (*)(void))b231_code; _t21.c0 = f_check__str((l9).m_name); _r231 = _t21; (ctx_fn *)&_r231; }); f_check__errorf(_t18, _t19, _t20); });
         }
         if ((((l10 == ((t0)(1ULL))) || (l10 == ((t0)(2ULL)))) && f_check__has_id(((*l0)).m_fulls, l8))) {
-            ({ t166 _t22 = (&(*l0)); t174 _t23 = l4; t543 _t24 = ({ struct b234 _t25; _t25.base.code = (void (*)(void))b234_code; _t25.c0 = f_check__str((l9).m_name); _r234 = _t25; (ctx_fn *)&_r234; }); f_check__errorf(_t22, _t23, _t24); });
+            ({ t166 _t22 = (&(*l0)); t174 _t23 = l4; t543 _t24 = ({ struct b232 _t25; _t25.base.code = (void (*)(void))b232_code; _t25.c0 = f_check__str((l9).m_name); _r232 = _t25; (ctx_fn *)&_r232; }); f_check__errorf(_t22, _t23, _t24); });
         }
         if ((l10 == ((t0)(4ULL)))) {
             return;
@@ -106105,10 +106103,13 @@ static t6 f_check__given(t550 l0, t7 l1) {
     {
         l2 = ((t14)(0ULL));
         while ((l2 < (l0).m_len)) {
-            if (({ t7 _t0 = (((*({ t550 _t2 = (l0); uint64_t _t3 = l2; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 10877, 42, 3242879023); }))).m_name).m_text; t7 _t1 = l1; f_slice__eq_bytes(_t0, _t1); })) {
+            if (({ t7 _t0 = (((*({ t550 _t2 = (l0); uint64_t _t3 = l2; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 10887, 42, 3242879023); }))).m_name).m_text; t7 _t1 = l1; f_slice__eq_bytes(_t0, _t1); })) {
                 return ((bool)1);
             }
-            l2 = ctx_add_u64(l2, ((t14)(1ULL)), 10878, 19, 3242879023);
+            if (((((((*({ t550 _t4 = (l0); uint64_t _t5 = l2; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 10888, 21, 3242879023); }))).m_name).m_text).m_len == ((t14)(0ULL))) && (!((*({ t550 _t6 = (l0); uint64_t _t7 = l2; _t6.m_ptr + ctx_idx(_t7, _t6.m_len, 10888, 57, 3242879023); }))).m_spread))) {
+                return ((bool)1);
+            }
+            l2 = ctx_add_u64(l2, ((t14)(1ULL)), 10889, 19, 3242879023);
         }
         return ((bool)0);
     }
@@ -106131,9 +106132,9 @@ static t61 f_list__pushcheck__Forwardarena__Arena_f5c282a7(t1125 l0, t703 * l1) 
     __builtin_unreachable();
 }
 
-struct b235 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b235_code(ctx_fn *self, void * a0) {
-    struct b235 *s = (struct b235 *)self;
+struct b233 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b233_code(ctx_fn *self, void * a0) {
+    struct b233 *s = (struct b233 *)self;
     return f_check__forwardedfmt_c8e7e182(s->c0, s->c1, a0);
 }
 
@@ -106147,7 +106148,7 @@ static t703 f_check__forwarded(t166 l0, t551 l1, t22 l2, t174 l3) {
     t22 l9;
     t958 l10;
     CTX_STACK_CHECK();
-    struct b235 _r235;
+    struct b233 _r233;
     {
         f_check__check_read((&(*l0)), l2, l3);
         l4 = f_check__get_var(&((*l0)), l2);
@@ -106159,7 +106160,7 @@ static t703 f_check__forwarded(t166 l0, t551 l1, t22 l2, t174 l3) {
                 } else {
                     _t0 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"", .m_len = 0 }), });
                 } _t0; });
-                ({ t166 _t1 = (&(*l0)); t174 _t2 = l3; t543 _t3 = ({ struct b235 _t4; _t4.base.code = (void (*)(void))b235_code; _t4.c0 = f_check__str((l4).m_name); _t4.c1 = l6; _r235 = _t4; (ctx_fn *)&_r235; }); f_check__errorf(_t1, _t2, _t3); });
+                ({ t166 _t1 = (&(*l0)); t174 _t2 = l3; t543 _t3 = ({ struct b233 _t4; _t4.base.code = (void (*)(void))b233_code; _t4.c0 = f_check__str((l4).m_name); _t4.c1 = l6; _r233 = _t4; (ctx_fn *)&_r233; }); f_check__errorf(_t1, _t2, _t3); });
             }
             l7 = f_types__ptr((&((*l0)).m_ty), (l1).m_ty, ((bool)1));
             l8 = ({ t958 _t5; if (f_check__includes_cap_ptr(&((*l0)), l5, l7)) {
@@ -106275,7 +106276,7 @@ static t61 f_check__names(t552 l0, t75 l1) {
                     return ((t61){ .tag = 1, .p.v1 = { .m_error = l3, } });
                 } } }
             }
-            { t61 _t1 = ({ l4 = f_check__str(((*({ t552 _t2 = (l0); uint64_t _t3 = l2; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 11000, 49, 3242879023); }))).m_name); ({ t61 _t4; t61 _t5 = f_utf8__push_literalarena__Arena_f5a0db07((&(*l1)), ((t7){ .m_ptr = (void *)"`", .m_len = 1 })); if ((_t5.tag == 0)) { {
+            { t61 _t1 = ({ l4 = f_check__str(((*({ t552 _t2 = (l0); uint64_t _t3 = l2; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 11011, 49, 3242879023); }))).m_name); ({ t61 _t4; t61 _t5 = f_utf8__push_literalarena__Arena_f5a0db07((&(*l1)), ((t7){ .m_ptr = (void *)"`", .m_len = 1 })); if ((_t5.tag == 0)) { {
                 _t4 = ({ t61 _t6; t61 _t7 = f_utf8__pusharena__Arena_14525023((&(*l1)), l4); if ((_t7.tag == 0)) { {
                     _t6 = ({ t61 _t8; t61 _t9 = f_utf8__push_literalarena__Arena_f5a0db07((&(*l1)), ((t7){ .m_ptr = (void *)"`", .m_len = 1 })); if ((_t9.tag == 0)) { {
                         _t8 = ((t61){ .tag = 0 });
@@ -106291,7 +106292,7 @@ static t61 f_check__names(t552 l0, t75 l1) {
             } } else if ((_t1.tag == 1)) { l8 = _t1.p.v1.m_error; {
                 return ((t61){ .tag = 1, .p.v1 = { .m_error = l8, } });
             } } }
-            l2 = ctx_add_u64(l2, ((t14)(1ULL)), 11001, 19, 3242879023);
+            l2 = ctx_add_u64(l2, ((t14)(1ULL)), 11012, 19, 3242879023);
         }
         return ((t61){ .tag = 0 });
     }
@@ -106640,52 +106641,52 @@ static t855 f_check__fmt_pieces(t166 l0, t7 l1, t174 l2) {
         l4 = f_list__newu8arena__Arena_0b75fdc7((&g0), ((*l0)).m_heap);
         l5 = ((t14)(0ULL));
         while ((l5 < (l1).m_len)) {
-            l6 = (*({ t7 _t0 = (l1); uint64_t _t1 = l5; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 12376, 23, 3242879023); }));
-            l7 = ({ t15 _t2; if (({ t14 _t3 = ctx_add_u64(l5, ((t14)(1ULL)), 12377, 33, 3242879023); t14 _t4 = (l1).m_len; (_t3 < _t4); })) {
-                _t2 = (*({ t7 _t5 = (l1); uint64_t _t6 = ctx_add_u64(l5, ((t14)(1ULL)), 12377, 51, 3242879023); _t5.m_ptr + ctx_idx(_t6, _t5.m_len, 12377, 48, 3242879023); }));
+            l6 = (*({ t7 _t0 = (l1); uint64_t _t1 = l5; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 12387, 23, 3242879023); }));
+            l7 = ({ t15 _t2; if (({ t14 _t3 = ctx_add_u64(l5, ((t14)(1ULL)), 12388, 33, 3242879023); t14 _t4 = (l1).m_len; (_t3 < _t4); })) {
+                _t2 = (*({ t7 _t5 = (l1); uint64_t _t6 = ctx_add_u64(l5, ((t14)(1ULL)), 12388, 51, 3242879023); _t5.m_ptr + ctx_idx(_t6, _t5.m_len, 12388, 48, 3242879023); }));
             } else {
                 _t2 = ((t15)(0ULL));
             } _t2; });
             if ((((l6 == ((t15)(123ULL))) && (l7 == ((t15)(123ULL)))) || ((l6 == ((t15)(125ULL))) && (l7 == ((t15)(125ULL)))))) {
                 f_check__push_byte((&l4), l6);
-                l5 = ctx_add_u64(l5, ((t14)(2ULL)), 12380, 23, 3242879023);
+                l5 = ctx_add_u64(l5, ((t14)(2ULL)), 12391, 23, 3242879023);
             } else {
                 if ((l6 == ((t15)(123ULL)))) {
-                    l8 = ctx_add_u64(l5, ((t14)(1ULL)), 12382, 31, 3242879023);
-                    while (((l8 < (l1).m_len) && ((*({ t7 _t7 = (l1); uint64_t _t8 = l8; _t7.m_ptr + ctx_idx(_t8, _t7.m_len, 12383, 38, 3242879023); })) != ((t15)(125ULL))))) {
-                        l8 = ctx_add_u64(l8, ((t14)(1ULL)), 12383, 57, 3242879023);
+                    l8 = ctx_add_u64(l5, ((t14)(1ULL)), 12393, 31, 3242879023);
+                    while (((l8 < (l1).m_len) && ((*({ t7 _t7 = (l1); uint64_t _t8 = l8; _t7.m_ptr + ctx_idx(_t8, _t7.m_len, 12394, 38, 3242879023); })) != ((t15)(125ULL))))) {
+                        l8 = ctx_add_u64(l8, ((t14)(1ULL)), 12394, 57, 3242879023);
                     }
                     if ((l8 >= (l1).m_len)) {
                         f_check__error((&(*l0)), l2, ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"the format has a `{` without a `}`; write `{{` for a brace", .m_len = 58 }), }));
                         return ((t855){0});
                     }
-                    if (({ t14 _t9 = l8; t14 _t10 = ctx_add_u64(l5, ((t14)(1ULL)), 12388, 27, 3242879023); (_t9 != _t10); })) {
+                    if (({ t14 _t9 = l8; t14 _t10 = ctx_add_u64(l5, ((t14)(1ULL)), 12399, 27, 3242879023); (_t9 != _t10); })) {
                         l9 = f_check__message(&((*l0)));
                         { t61 _t11 = f_utf8__pusharena__Arena_14525023((&l9), ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"bad hole `", .m_len = 10 }), })); if ((_t11.tag == 0)) { {
                         } } else if ((_t11.tag == 1)) { l10 = _t11.p.v1.m_error; {
                             { t12 _t12 = l10; if ((_t12.tag == 0)) { {
-                                ctx_panic(12390, 21, 3242879023, "try! failed: alloc::out_of_memory");
+                                ctx_panic(12401, 21, 3242879023, "try! failed: alloc::out_of_memory");
                             } } }
                         } } }
                         l11 = l5;
                         while ((l11 <= l8)) {
-                            l12 = ({ t22 _t13; if (((*({ t7 _t14 = (l1); uint64_t _t15 = l11; _t14.m_ptr + ctx_idx(_t15, _t14.m_len, 12393, 45, 3242879023); })) < ((t15)(128ULL)))) {
-                                _t13 = ((t22)((*({ t7 _t16 = (l1); uint64_t _t17 = l11; _t16.m_ptr + ctx_idx(_t17, _t16.m_len, 12393, 58, 3242879023); }))));
+                            l12 = ({ t22 _t13; if (((*({ t7 _t14 = (l1); uint64_t _t15 = l11; _t14.m_ptr + ctx_idx(_t15, _t14.m_len, 12404, 45, 3242879023); })) < ((t15)(128ULL)))) {
+                                _t13 = ((t22)((*({ t7 _t16 = (l1); uint64_t _t17 = l11; _t16.m_ptr + ctx_idx(_t17, _t16.m_len, 12404, 58, 3242879023); }))));
                             } else {
                                 _t13 = ((t22)(65533ULL));
                             } _t13; });
                             { t61 _t18 = f_utf8__push_chararena__Arena_b8fd56e2((&l9), l12); if ((_t18.tag == 0)) { {
                             } } else if ((_t18.tag == 1)) { l13 = _t18.p.v1.m_error; {
                                 { t12 _t19 = l13; if ((_t19.tag == 0)) { {
-                                    ctx_panic(12394, 25, 3242879023, "try! failed: alloc::out_of_memory");
+                                    ctx_panic(12405, 25, 3242879023, "try! failed: alloc::out_of_memory");
                                 } } }
                             } } }
-                            l11 = ctx_add_u64(l11, ((t14)(1ULL)), 12395, 31, 3242879023);
+                            l11 = ctx_add_u64(l11, ((t14)(1ULL)), 12406, 31, 3242879023);
                         }
                         { t61 _t20 = f_utf8__pusharena__Arena_14525023((&l9), ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"` in the format: a hole is `{}`, and a function writes a value another way, as `utf8::write_hex{ n, _ }`", .m_len = 104 }), })); if ((_t20.tag == 0)) { {
                         } } else if ((_t20.tag == 1)) { l14 = _t20.p.v1.m_error; {
                             { t12 _t21 = l14; if ((_t21.tag == 0)) { {
-                                ctx_panic(12397, 21, 3242879023, "try! failed: alloc::out_of_memory");
+                                ctx_panic(12408, 21, 3242879023, "try! failed: alloc::out_of_memory");
                             } } }
                         } } }
                         ({ t166 _t22 = (&(*l0)); t174 _t23 = l2; t16 _t24 = f_utf8__viewarena__Arena_5db7a4ae(&(l9)); f_check__error(_t22, _t23, _t24); });
@@ -106696,14 +106697,14 @@ static t855 f_check__fmt_pieces(t166 l0, t7 l1, t174 l2) {
                         l4 = f_list__newu8arena__Arena_0b75fdc7((&g0), ((*l0)).m_heap);
                     }
                     ({ t1088 _t33 = (&l3); t678 _t34 = ({ t6 _t35 = ((bool)1); t7 _t36 = ((t7){ .m_ptr = (void *)"", .m_len = 0 }); t7 _t37 = ((t7){ .m_ptr = (void *)"", .m_len = 0 }); t817 _t38 = f_check__no_writer(); t22 _t39 = ((t22)(4294967295ULL)); t174 _t40 = l2; ((t678){ .m_hole = _t35, .m_text = _t36, .m_push = _t37, .m_writer = _t38, .m_ty = _t39, .m_at = _t40, }); }); f_check__add_piece(_t33, &_t34); });
-                    l5 = ctx_add_u64(l8, ((t14)(1ULL)), 12406, 23, 3242879023);
+                    l5 = ctx_add_u64(l8, ((t14)(1ULL)), 12417, 23, 3242879023);
                 } else {
                     if ((l6 == ((t15)(125ULL)))) {
                         f_check__error((&(*l0)), l2, ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)"the format has a `}` without a `{`; write `}}` for a brace", .m_len = 58 }), }));
                         return ((t855){0});
                     } else {
                         f_check__push_byte((&l4), l6);
-                        l5 = ctx_add_u64(l5, ((t14)(1ULL)), 12412, 23, 3242879023);
+                        l5 = ctx_add_u64(l5, ((t14)(1ULL)), 12423, 23, 3242879023);
                     }
                 }
             }
@@ -106725,7 +106726,7 @@ static t6 f_check__is_writer_fmt(t364 * l0) {
         { t606 _t0 = ((*l0)).m_k; if (!(_t0.tag == 19)) { {
             return ((bool)0);
         } } l1 = _t0.p.v19.m_name; l2 = _t0.p.v19.m_args; }
-        return ((f_slice__eq_bytes((l1).m_text, ((t7){ .m_ptr = (void *)"fmt", .m_len = 3 })) && ((l2).m_len > ((t14)(0ULL)))) && ({ t6 _t1; t606 _t2 = ((*({ t485 _t3 = (l2); uint64_t _t4 = ((t14)(0ULL)); _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 12109, 85, 3242879023); }))).m_k; if ((_t2.tag == 3)) { {
+        return ((f_slice__eq_bytes((l1).m_text, ((t7){ .m_ptr = (void *)"fmt", .m_len = 3 })) && ((l2).m_len > ((t14)(0ULL)))) && ({ t6 _t1; t606 _t2 = ((*({ t485 _t3 = (l2); uint64_t _t4 = ((t14)(0ULL)); _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 12120, 85, 3242879023); }))).m_k; if ((_t2.tag == 3)) { {
             _t1 = ((bool)1);
         } } else { {
             _t1 = ((bool)0);
@@ -106813,7 +106814,7 @@ static t27 f_check__add_piece(t1088 l0, t678 * l1) {
         { t61 _t0 = f_list__pushcheck__Piecearena__Arena_335730e2((&(*l0)), &((*l1))); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l2 = _t0.p.v1.m_error; {
             { t12 _t1 = l2; if ((_t1.tag == 0)) { {
-                ctx_panic(12427, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(12438, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
     }
@@ -108070,15 +108071,15 @@ static t61 f_list__reservecheck__Placearena__Arena_94f6ddfb(t1045 l0, t14 l1) {
     __builtin_unreachable();
 }
 
-struct b236 { ctx_fn base; t16 c0; t16 c1; };
-static t127 b236_code(ctx_fn *self, void * a0) {
-    struct b236 *s = (struct b236 *)self;
+struct b234 { ctx_fn base; t16 c0; t16 c1; };
+static t127 b234_code(ctx_fn *self, void * a0) {
+    struct b234 *s = (struct b234 *)self;
     return f_check__tw_scopefmt_b37d664a_1(s->c0, s->c1, a0);
 }
 
-struct b237 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
-static t127 b237_code(ctx_fn *self, void * a0) {
-    struct b237 *s = (struct b237 *)self;
+struct b235 { ctx_fn base; t16 c0; t16 c1; t16 c2; };
+static t127 b235_code(ctx_fn *self, void * a0) {
+    struct b235 *s = (struct b235 *)self;
     return f_check__tw_scopefmt_b37d664a(s->c0, s->c1, s->c2, a0);
 }
 
@@ -108089,8 +108090,8 @@ static t27 f_check__tw_scope(t166 l0, t892 * l1) {
     t22 l4;
     t579 l5;
     CTX_STACK_CHECK();
-    struct b236 _r236;
-    struct b237 _r237;
+    struct b234 _r234;
+    struct b235 _r235;
     {
         l2 = f_check__get_var(&((*l0)), (((*l1)).m_handle).m_root);
         l3 = ((t14)(0ULL));
@@ -108103,12 +108104,12 @@ static t27 f_check__tw_scope(t166 l0, t892 * l1) {
             l5 = f_check__get_var(&((*l0)), l4);
             if (((l2).m_kind == ((t15)(0ULL)))) {
                 if ((!(((l5).m_kind == ((t15)(0ULL))) && (l5).m_indirect))) {
-                    ({ t166 _t7 = (&(*l0)); t174 _t8 = ((*l1)).m_at; t543 _t9 = ({ struct b236 _t10; _t10.base.code = (void (*)(void))b236_code; _t10.c0 = f_check__str((l2).m_name); _t10.c1 = f_check__str((l5).m_name); _r236 = _t10; (ctx_fn *)&_r236; }); f_check__errorf(_t7, _t8, _t9); });
+                    ({ t166 _t7 = (&(*l0)); t174 _t8 = ((*l1)).m_at; t543 _t9 = ({ struct b234 _t10; _t10.base.code = (void (*)(void))b234_code; _t10.c0 = f_check__str((l2).m_name); _t10.c1 = f_check__str((l5).m_name); _r234 = _t10; (ctx_fn *)&_r234; }); f_check__errorf(_t7, _t8, _t9); });
                     return;
                 }
             } else {
                 if ((((l5).m_kind != ((t15)(0ULL))) && ((l5).m_depth > (l2).m_depth))) {
-                    ({ t166 _t11 = (&(*l0)); t174 _t12 = ((*l1)).m_at; t543 _t13 = ({ struct b237 _t14; _t14.base.code = (void (*)(void))b237_code; _t14.c0 = f_check__str((l2).m_name); _t14.c1 = f_check__str((l5).m_name); _t14.c2 = f_check__str((l5).m_name); _r237 = _t14; (ctx_fn *)&_r237; }); f_check__errorf(_t11, _t12, _t13); });
+                    ({ t166 _t11 = (&(*l0)); t174 _t12 = ((*l1)).m_at; t543 _t13 = ({ struct b235 _t14; _t14.base.code = (void (*)(void))b235_code; _t14.c0 = f_check__str((l2).m_name); _t14.c1 = f_check__str((l5).m_name); _t14.c2 = f_check__str((l5).m_name); _r235 = _t14; (ctx_fn *)&_r235; }); f_check__errorf(_t11, _t12, _t13); });
                     return;
                 }
             }
@@ -110198,18 +110199,20 @@ static t61 f_check__pun_hint(t163 * l0, t550 l1, t552 l2, t602 * l3, t75 l4) {
     t14 l6;
     t14 l7;
     t14 l8;
-    t16 l9;
+    t12 l9;
     t12 l10;
-    t14 l11;
-    t551 l12;
-    t12 l13;
-    t16 l14;
+    t16 l11;
+    t12 l12;
+    t14 l13;
+    t551 l14;
     t12 l15;
-    t12 l16;
+    t16 l16;
     t12 l17;
     t12 l18;
     t12 l19;
     t12 l20;
+    t12 l21;
+    t12 l22;
     CTX_STACK_CHECK();
     {
         l5 = ({ t6 _t0; t606 _t1 = (((*l3)).m_value).m_k; if ((_t1.tag == 15)) { {
@@ -110221,60 +110224,79 @@ static t61 f_check__pun_hint(t163 * l0, t550 l1, t552 l2, t602 * l3, t75 l4) {
         l7 = ((t14)(0ULL));
         l8 = ((t14)(0ULL));
         while ((l8 < (l2).m_len)) {
-            if ((!({ t550 _t2 = l1; t7 _t3 = ((*({ t552 _t4 = (l2); uint64_t _t5 = l8; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 10834, 47, 3242879023); }))).m_name; f_check__given(_t2, _t3); }))) {
-                l7 = ctx_add_u64(l7, ((t14)(1ULL)), 10835, 29, 3242879023);
-                if (({ t6 _t6 = ((*({ t552 _t8 = (l2); uint64_t _t9 = l8; _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 10836, 26, 3242879023); }))).m_mutable; t6 _t7 = l5; (_t6 == _t7); })) {
-                    l6 = ctx_add_u64(l6, ((t14)(1ULL)), 10836, 58, 3242879023);
+            if ((!({ t550 _t2 = l1; t7 _t3 = ((*({ t552 _t4 = (l2); uint64_t _t5 = l8; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 10837, 47, 3242879023); }))).m_name; f_check__given(_t2, _t3); }))) {
+                l7 = ctx_add_u64(l7, ((t14)(1ULL)), 10838, 29, 3242879023);
+                if (({ t6 _t6 = ((*({ t552 _t8 = (l2); uint64_t _t9 = l8; _t8.m_ptr + ctx_idx(_t9, _t8.m_len, 10839, 26, 3242879023); }))).m_mutable; t6 _t7 = l5; (_t6 == _t7); })) {
+                    l6 = ctx_add_u64(l6, ((t14)(1ULL)), 10839, 58, 3242879023);
                 }
             }
-            l8 = ctx_add_u64(l8, ((t14)(1ULL)), 10838, 19, 3242879023);
+            l8 = ctx_add_u64(l8, ((t14)(1ULL)), 10841, 19, 3242879023);
         }
         if ((l7 == ((t14)(0ULL)))) {
-            return ((t61){ .tag = 0 });
+            if (((l2).m_len == ((t14)(0ULL)))) {
+                return ((t61){ .tag = 0 });
+            }
+            { t61 _t10 = ({ t75 _t11 = (&(*l4)); t16 _t12 = ({ t16 _t13; if (((l2).m_len == ((t14)(1ULL)))) {
+                _t13 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)": its field, ", .m_len = 13 }), });
+            } else {
+                _t13 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)": its fields, ", .m_len = 14 }), });
+            } _t13; }); f_utf8__pusharena__Arena_14525023(_t11, _t12); }); if ((_t10.tag == 0)) { {
+            } } else if ((_t10.tag == 1)) { l9 = _t10.p.v1.m_error; {
+                return ((t61){ .tag = 1, .p.v1 = { .m_error = l9, } });
+            } } }
+            { t61 _t14 = f_check__names(l2, (&(*l4))); if ((_t14.tag == 0)) { {
+            } } else if ((_t14.tag == 1)) { l10 = _t14.p.v1.m_error; {
+                return ((t61){ .tag = 1, .p.v1 = { .m_error = l10, } });
+            } } }
+            return ({ t75 _t15 = (&(*l4)); t16 _t16 = ({ t16 _t17; if (((l2).m_len == ((t14)(1ULL)))) {
+                _t17 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)", is supplied already", .m_len = 21 }), });
+            } else {
+                _t17 = ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)", are all supplied already", .m_len = 26 }), });
+            } _t17; }); f_utf8__pusharena__Arena_14525023(_t15, _t16); });
         }
-        l9 = f_check__str(f_check__source_text(&((*l0)), (((*l3)).m_value).m_span));
-        { t61 _t10 = f_utf8__pusharena__Arena_14525023((&(*l4)), ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)": write ", .m_len = 8 }), })); if ((_t10.tag == 0)) { {
-        } } else if ((_t10.tag == 1)) { l10 = _t10.p.v1.m_error; {
-            return ((t61){ .tag = 1, .p.v1 = { .m_error = l10, } });
+        l11 = f_check__str(f_check__source_text(&((*l0)), (((*l3)).m_value).m_span));
+        { t61 _t18 = f_utf8__pusharena__Arena_14525023((&(*l4)), ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)": write ", .m_len = 8 }), })); if ((_t18.tag == 0)) { {
+        } } else if ((_t18.tag == 1)) { l12 = _t18.p.v1.m_error; {
+            return ((t61){ .tag = 1, .p.v1 = { .m_error = l12, } });
         } } }
-        l11 = ((t14)(0ULL));
+        l13 = ((t14)(0ULL));
         l8 = ((t14)(0ULL));
         while ((l8 < (l2).m_len)) {
-            l12 = (*({ t552 _t11 = (l2); uint64_t _t12 = l8; _t11.m_ptr + ctx_idx(_t12, _t11.m_len, 10846, 27, 3242879023); }));
-            if (((!f_check__given(l1, (l12).m_name)) && ((l6 == ((t14)(0ULL))) || ((l12).m_mutable == l5)))) {
-                if ((l11 > ((t14)(0ULL)))) {
-                    { t61 _t13 = f_utf8__pusharena__Arena_14525023((&(*l4)), ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)" or ", .m_len = 4 }), })); if ((_t13.tag == 0)) { {
-                    } } else if ((_t13.tag == 1)) { l13 = _t13.p.v1.m_error; {
-                        return ((t61){ .tag = 1, .p.v1 = { .m_error = l13, } });
+            l14 = (*({ t552 _t19 = (l2); uint64_t _t20 = l8; _t19.m_ptr + ctx_idx(_t20, _t19.m_len, 10854, 27, 3242879023); }));
+            if (((!f_check__given(l1, (l14).m_name)) && ((l6 == ((t14)(0ULL))) || ((l14).m_mutable == l5)))) {
+                if ((l13 > ((t14)(0ULL)))) {
+                    { t61 _t21 = f_utf8__pusharena__Arena_14525023((&(*l4)), ((t16){ .m_bytes = ((t7){ .m_ptr = (void *)" or ", .m_len = 4 }), })); if ((_t21.tag == 0)) { {
+                    } } else if ((_t21.tag == 1)) { l15 = _t21.p.v1.m_error; {
+                        return ((t61){ .tag = 1, .p.v1 = { .m_error = l15, } });
                     } } }
                 }
-                { t61 _t14 = ({ l14 = f_check__str((l12).m_name); ({ t61 _t15; t61 _t16 = f_utf8__push_literalarena__Arena_f5a0db07((&(*l4)), ((t7){ .m_ptr = (void *)"`", .m_len = 1 })); if ((_t16.tag == 0)) { {
-                    _t15 = ({ t61 _t17; t61 _t18 = f_utf8__pusharena__Arena_14525023((&(*l4)), l14); if ((_t18.tag == 0)) { {
-                        _t17 = ({ t61 _t19; t61 _t20 = f_utf8__push_literalarena__Arena_f5a0db07((&(*l4)), ((t7){ .m_ptr = (void *)" = ", .m_len = 3 })); if ((_t20.tag == 0)) { {
-                            _t19 = ({ t61 _t21; t61 _t22 = f_utf8__pusharena__Arena_14525023((&(*l4)), l9); if ((_t22.tag == 0)) { {
-                                _t21 = ({ t61 _t23; t61 _t24 = f_utf8__push_literalarena__Arena_f5a0db07((&(*l4)), ((t7){ .m_ptr = (void *)"`", .m_len = 1 })); if ((_t24.tag == 0)) { {
-                                    _t23 = ((t61){ .tag = 0 });
-                                } } else if ((_t24.tag == 1)) { l15 = _t24.p.v1.m_error; {
-                                    _t23 = ((t61){ .tag = 1, .p.v1 = { .m_error = l15, } });
-                                } } _t23; });
-                            } } else if ((_t22.tag == 1)) { l16 = _t22.p.v1.m_error; {
-                                _t21 = ((t61){ .tag = 1, .p.v1 = { .m_error = l16, } });
-                            } } _t21; });
-                        } } else if ((_t20.tag == 1)) { l17 = _t20.p.v1.m_error; {
-                            _t19 = ((t61){ .tag = 1, .p.v1 = { .m_error = l17, } });
-                        } } _t19; });
-                    } } else if ((_t18.tag == 1)) { l18 = _t18.p.v1.m_error; {
-                        _t17 = ((t61){ .tag = 1, .p.v1 = { .m_error = l18, } });
-                    } } _t17; });
-                } } else if ((_t16.tag == 1)) { l19 = _t16.p.v1.m_error; {
-                    _t15 = ((t61){ .tag = 1, .p.v1 = { .m_error = l19, } });
-                } } _t15; }); }); if ((_t14.tag == 0)) { {
-                } } else if ((_t14.tag == 1)) { l20 = _t14.p.v1.m_error; {
-                    return ((t61){ .tag = 1, .p.v1 = { .m_error = l20, } });
+                { t61 _t22 = ({ l16 = f_check__str((l14).m_name); ({ t61 _t23; t61 _t24 = f_utf8__push_literalarena__Arena_f5a0db07((&(*l4)), ((t7){ .m_ptr = (void *)"`", .m_len = 1 })); if ((_t24.tag == 0)) { {
+                    _t23 = ({ t61 _t25; t61 _t26 = f_utf8__pusharena__Arena_14525023((&(*l4)), l16); if ((_t26.tag == 0)) { {
+                        _t25 = ({ t61 _t27; t61 _t28 = f_utf8__push_literalarena__Arena_f5a0db07((&(*l4)), ((t7){ .m_ptr = (void *)" = ", .m_len = 3 })); if ((_t28.tag == 0)) { {
+                            _t27 = ({ t61 _t29; t61 _t30 = f_utf8__pusharena__Arena_14525023((&(*l4)), l11); if ((_t30.tag == 0)) { {
+                                _t29 = ({ t61 _t31; t61 _t32 = f_utf8__push_literalarena__Arena_f5a0db07((&(*l4)), ((t7){ .m_ptr = (void *)"`", .m_len = 1 })); if ((_t32.tag == 0)) { {
+                                    _t31 = ((t61){ .tag = 0 });
+                                } } else if ((_t32.tag == 1)) { l17 = _t32.p.v1.m_error; {
+                                    _t31 = ((t61){ .tag = 1, .p.v1 = { .m_error = l17, } });
+                                } } _t31; });
+                            } } else if ((_t30.tag == 1)) { l18 = _t30.p.v1.m_error; {
+                                _t29 = ((t61){ .tag = 1, .p.v1 = { .m_error = l18, } });
+                            } } _t29; });
+                        } } else if ((_t28.tag == 1)) { l19 = _t28.p.v1.m_error; {
+                            _t27 = ((t61){ .tag = 1, .p.v1 = { .m_error = l19, } });
+                        } } _t27; });
+                    } } else if ((_t26.tag == 1)) { l20 = _t26.p.v1.m_error; {
+                        _t25 = ((t61){ .tag = 1, .p.v1 = { .m_error = l20, } });
+                    } } _t25; });
+                } } else if ((_t24.tag == 1)) { l21 = _t24.p.v1.m_error; {
+                    _t23 = ((t61){ .tag = 1, .p.v1 = { .m_error = l21, } });
+                } } _t23; }); }); if ((_t22.tag == 0)) { {
+                } } else if ((_t22.tag == 1)) { l22 = _t22.p.v1.m_error; {
+                    return ((t61){ .tag = 1, .p.v1 = { .m_error = l22, } });
                 } } }
-                l11 = ctx_add_u64(l11, ((t14)(1ULL)), 10850, 23, 3242879023);
+                l13 = ctx_add_u64(l13, ((t14)(1ULL)), 10858, 23, 3242879023);
             }
-            l8 = ctx_add_u64(l8, ((t14)(1ULL)), 10852, 19, 3242879023);
+            l8 = ctx_add_u64(l8, ((t14)(1ULL)), 10860, 19, 3242879023);
         }
         return ((t61){ .tag = 0 });
     }
@@ -110684,7 +110706,7 @@ static t27 f_check__push_byte(t68 l0, t15 l1) {
         { t61 _t0 = f_list__pushu8arena__Arena_83b628db((&(*l0)), l1); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l2 = _t0.p.v1.m_error; {
             { t12 _t1 = l2; if ((_t1.tag == 0)) { {
-                ctx_panic(12423, 9, 3242879023, "try! failed: alloc::out_of_memory");
+                ctx_panic(12434, 9, 3242879023, "try! failed: alloc::out_of_memory");
             } } }
         } } }
     }

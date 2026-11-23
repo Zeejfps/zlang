@@ -26,6 +26,11 @@ fn main { mut io: Io } {
 """
 
 
+# An item in braces that is neither `name = e` nor a pun (§3, rule 6).
+PUN = ("a pun is a place that ends in a field's name, as `&g.rng` is for `rng`, and this one %s: "
+       "write the field's name, as `name = %s`")
+
+
 def run(src):
     out = io.StringIO()
     run_source(src, out=out)
@@ -45,6 +50,109 @@ class Base(unittest.TestCase):
         with self.assertRaises(Panic) as cm:
             run(src)
         self.assertIn(fragment, cm.exception.msg)
+
+
+class LongPuns(Base):
+    """§3, rule 6: a place that ends in a field's name is a pun of that name, `&a.b.c` for a `mut`
+    field `c` and `a.d` for a read-only `d`, in a call, a bind and a literal alike."""
+
+    DECLS = r"""
+struct Rng { s: u32 }
+struct Player { hp: i32 }
+struct Game { rng: Rng, player: Player, d: i32, xs: [3]i32 }
+struct World { g: Game }
+struct Pair { hp: i32, s: u32 }
+union Seen { both{ hp: i32, s: u32 }, none }
+fn deal { mut rng: Rng, mut player: Player, d: i32 } { rng.s = rng.s + 1; player.hp = player.hp + d }
+fn show { mut io: Io, hp: i32, s: u32 } { _ = @fmt(&io, "{} {}\n", hp, s) }
+fn count { len: usize } -> usize { return len }
+fn bump { mut s: u32 } -> u32 { s = s + 1; return s }
+fn world {} -> World { return World{ g = Game{ rng = Rng{ s = 1 }, player = Player{ hp = 10 }, d = 5, xs = [1, 2, 3] } } }
+"""
+    MAIN = 'fn main { mut io: Io } {\n    let mut w = world{}\n    %s\n}\n'
+
+    def test_supplies_the_last_name(self):
+        self.assertOutput(self.DECLS + r"""
+fn main { mut io: Io } {
+    let mut w = world{}
+    deal{ &w.g.rng, &w.g.player, w.g.d }            // a call: rng, player and d
+    show{ &io, w.g.player.hp, w.g.rng.s }
+    let p = Pair{ w.g.player.hp, w.g.rng.s }        // a struct literal
+    let f = show{ &io, p.hp, _ }                    // a bind
+    f{ p.s }
+    let q = &w
+    deal{ &q.g.rng, &q.*.g.player, q.g.d }          // through a pointer, and its deref
+    match Seen::both{ w.g.player.hp, w.g.rng.s } {  // a variant's payload
+        both{ hp, s } => { show{ &io, hp, s } }
+        none => {}
+    }
+    let ws: [2]World = [world{}, w]
+    let i: usize = 1
+    show{ &io, ws[i].g.player.hp, ws[i].g.rng.s }   // an index on the way to the name
+    let all = ws[..]
+    _ = @fmt(&io, "{}\n", count{ all.len })         // a slice's len
+}
+""", '15 2\n15 2\n20 3\n20 3\n2\n')
+
+    def test_names_no_field(self):
+        for body, msg in [
+            # The fields nothing supplies that it could be, as for a name alone.
+            ('deal{ rng = &w.g.rng, &w.g.player, w.g.xs }',
+             '`deal` has no field `xs`: write `d = w.g.xs`'),
+            ('let mut r = Rng{ s = 1 }\n    deal{ &r, &w.g.player, d = 1 }',
+             '`deal` has no field `r`: write `rng = &r`'),
+            ('show{ &io, w.g.d, w.g.rng.s }', '`show` has no field `d`: write `hp = w.g.d`'),
+            ('let p = Pair{ hp = 1, w.g.rng }', 'struct `Pair` has no field `rng`: write `s = w.g.rng`'),
+            # Every field is supplied: the fields there are.
+            ('show{ &io, hp = 1, s = 2, w.g.d }',
+             '`show` has no field `d`: its fields, `io`, `hp`, `s`, are all supplied already'),
+            ('_ = count{ len = 1, w.g.d }', '`count` has no field `d`: its field, `len`, is supplied already'),
+            ('show{ &io, w.g.player.hp, s = 1, hp = 2 }', '`hp` is supplied more than once'),
+        ]:
+            with self.subTest(body=body):
+                self.assertCompileError(self.DECLS + self.MAIN % body, msg)
+
+    def test_not_a_pun(self):
+        # One error, the parser's: the item may be meant for any field, so none is missing.
+        for body, why, text in [
+            ('deal{ &w.g.rng, &w.g.player, w.g.xs[0] }', 'ends in an index', 'w.g.xs[0]'),
+            ('let q = &w.g.d\n    deal{ &w.g.rng, &w.g.player, q.* }', 'ends in `.*`', 'q.*'),
+            ('deal{ &w.g.rng, &w.g.player, w.g.d + 1 }', 'is an expression', 'w.g.d + 1'),
+            ('show{ &io, hp = 1, bump{ &w.g.rng.s } }', 'is a call or a literal', 'bump{ &w.g.rng.s }'),
+            ('let p = Pair{ hp = 1, w.g.rng.s + 1 }', 'is an expression', 'w.g.rng.s + 1'),
+        ]:
+            with self.subTest(body=body):
+                with self.assertRaises(CompileError) as cm:
+                    run(self.DECLS + self.MAIN % body)
+                self.assertIn(PUN % (why, text), cm.exception.msg)
+                self.assertEqual(cm.exception.text.count('error:'), 1, cm.exception.text)
+
+    def test_checked_as_named_items(self):
+        """Argument order (§3, rule 10) and split borrows (§3.1, rule 8) see a pun's place."""
+        decls = r"""
+struct List { len: i32 }
+struct E { n: i32, list: List }
+struct W { e: E }
+fn push { mut list: List } -> i32 { list.len = list.len + 1; return list.len }
+fn add { mut e: E, mut list: List } { e.n = e.n + 1; _ = push{ &list } }
+fn reset { mut e: E, mut list: List } { e.list.len = 0; _ = push{ &list } }
+fn show { mut io: Io, n: i32, len: i32 } { _ = @fmt(&io, "{} {}\n", n, len) }
+fn both { mut list: List, mut l: List } { list.len = 1; l.len = 2 }
+"""
+        main = 'fn main { mut io: Io } {\n    let mut w = W{ e = E{ n = 0, list = List{ len = 0 } } }\n    %s\n}\n'
+        self.assertOutput(decls + main % """add{ &w.e, &w.e.list }                // add uses e.list through `list` only
+    show{ &io, w.e.n, w.e.list.len }
+    let len = push{ &w.e.list }
+    show{ &io, w.e.n, len }""", '1 1\n1 2\n')
+        for body, msg in [
+            ('reset{ &w.e, &w.e.list }',
+             'two mut references to `w.e` in one call: `reset` changes `w.e.list.len` through its field `e`'),
+            ('both{ &w.e.list, l = &w.e.list }', 'two mut references to `w.e.list` in one call'),
+            ('show{ &io, w.e.list.len, n = push{ &w.e.list } }',
+             '`len` reads `w.e.list.len`, which `n` changes, in one call'),
+        ]:
+            with self.subTest(body=body):
+                self.assertCompileError(decls + main % body, msg)
 
 
 class ListExample(Base):
@@ -1100,9 +1208,16 @@ class Parser(Base):
             ('let b = r == null is a', 'comparisons do not chain', 2, 23),
             ('f{ .., a }', "'..' must be the last item", 2, 12),
             ('f{ _, a }', "'_' must be the last item", 2, 11),
-            ('f{ &g.rng, b }', 'a pun is a name alone: write `rng = &g.rng`', 2, 8),
-            ('f{ a = 1, g.h.rng }', 'a pun is a name alone: write `rng = g.h.rng`', 2, 15),
-            ('f{ &xs[i] }', "a pun is a name alone: write the field's name, as `name = &xs[i]`", 2, 8),
+            ('f{ &xs[i] }', PUN % ('ends in an index', '&xs[i]'), 2, 8),
+            ('f{ a = 1, g.h.xs[i + 1] }', PUN % ('ends in an index', 'g.h.xs[i + 1]'), 2, 15),
+            ('f{ g.p.* }', PUN % ('ends in `.*`', 'g.p.*'), 2, 8),
+            ('f{ &g.xs[1..] }', PUN % ('ends in a range', '&g.xs[1..]'), 2, 8),
+            ('f{ g.make{} }', PUN % ('is a call or a literal', 'g.make{}'), 2, 8),
+            ('f{ make{ n = 1 }, b }', PUN % ('is a call or a literal', 'make{ n = 1 }'), 2, 8),
+            ('f{ g.a + 1 }', PUN % ('is an expression', 'g.a + 1'), 2, 8),
+            ('f{ &g.a == p }', PUN % ('is an expression', '&g.a == p'), 2, 8),
+            ('f{ gl::LINEAR }', PUN % ("isn't a place", 'gl::LINEAR'), 2, 8),
+            ('f{ make{}.rng }', PUN % ("isn't a place", 'make{}.rng'), 2, 8),
             ('let x = )', "expected an expression, found ')'", 2, 13),
             ('let x = a[1', "expected ']', found '}'", 3, 1),
             ('let x = a.', "expected a name, found '}'", 3, 1),
@@ -1751,7 +1866,7 @@ class Bodies(Base):
             ('fn g { mut m: i32 } {}\nfn f {} {\n    let movie = 1\n    g{ movie }\n}',
              '`g` has no field `movie`: write `m = movie`', 4, 8),
             ('fn g { m: i32 } {}\nfn f {} {\n    let movie = 1\n    g{ m = 1, movie }\n}',
-             '`g` has no field `movie`', 4, 15),
+             '`g` has no field `movie`: its field, `m`, is supplied already', 4, 15),
             ('struct S { a: i32, b: i32 }\nfn f {} {\n    let x = 1\n    let s = S{ b = 2, x }\n}',
              'struct `S` has no field `x`: write `a = x`', 4, 23),
             ('struct T { n: i32 }\nstruct W { t: ?T }\nfn f { mut w: W } {\n    if w.t != null { let n = w.t.n }\n}',

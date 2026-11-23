@@ -166,13 +166,13 @@ namespace build {
         // the driver's (`add_tree`) is, so it names the file as the driver's errors do: only a
         // directory's path is normalized, by `place`.
         fn add_files(S) { mut fs: Fs, mut w: Walk(S), dir: []u8, deep: bool } -> ! {
-            let full = try fs::make_absolute{ &fs, heap = w.heap, realloc = w.realloc, path = dir }
+            let full = try fs::make_absolute{ &fs, w.heap, w.realloc, path = dir }
             try add_tree{ &fs, &w, dir, key = try fold{ &w, s = try normalize{ &w, path = full } }, deep }
         }
 
         fn add_tree(S) { mut fs: Fs, mut w: Walk(S), dir: []u8, key: []u8, deep: bool } -> ! {
-            let names = try fs::list{ &fs, heap = w.heap, realloc = w.realloc, path = dir }
-            let mut below = list::new([]u8){ realloc = w.realloc, heap = w.heap }
+            let names = try fs::list{ &fs, w.heap, w.realloc, path = dir }
+            let mut below = list::new([]u8){ w.realloc, w.heap }
             let mut i: usize = 0
             while i < names.len {
                 let n = names[i]
@@ -235,7 +235,7 @@ namespace build {
                 try list::push{ list = &out, item = '/' }
                 if i == 0 and path.len >= 2 and separator{ c = path[1] } { try list::push{ list = &out, item = '/' } }
             }
-            let mut parts = list::new([]u8){ realloc = w.realloc, heap = w.heap }
+            let mut parts = list::new([]u8){ w.realloc, w.heap }
             let mut ups: usize = 0          // leading `..`s, which no later one takes away
             while i < path.len {
                 if separator{ c = path[i] } {

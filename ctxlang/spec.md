@@ -26,7 +26,7 @@ fn name(Generics) { field: T, mut field: T, ... } -> R { body }
 ## 3. Calls
 
 ```
-f{ a = expr, b = &place, c, &d, .. }
+f{ a = expr, b = &place, c, &d, &g.e, g.h, .. }
 ```
 
 1. A call is an expression of function type followed by `{ ... }`.
@@ -34,7 +34,7 @@ f{ a = expr, b = &place, c, &d, .. }
 3. A read-only field of type `T` takes an expression of type `T`.
 4. A `mut` field of type `T` takes an expression of type `*mut T`. If the argument has the form `&p`, `p` must be a mutable place and §3.1 applies. Any other `*mut T` expression is accepted unchecked. For a capability `T`, a pointer to one that includes it is accepted too (§15, rule 10).
 5. Places and mutable places are defined in §11.
-6. Punning: `c` means `c = c`, and `&d` means `d = &d`.
+6. Punning: `c` means `c = c`, and `&d` means `d = &d`. A place (§11) that ends in a field's name is a pun of that name: `&g.e` means `e = &g.e`, and `g.h` means `h = g.h`. The place starts at a name, and may go through fields, indexes and derefs on the way (`&ws[i].g.rng`, `&q.*.rng`); only its last step counts, so `s.len` supplies `len`. Anything else without `name =` names no field, and is an error that says to write the name: an item that ends in an index (`&g.xs[i]`), a deref (`g.p.*`) or a range, a call or a literal (`g.make{}`, `make{}.h`), a `::` path (`gl::LINEAR`), or an operator's expression (`g.h + 1`). A pun whose name is no field of the callee is an error that says what to write, from the fields nothing supplies yet, or lists the fields if all are supplied. A pun is checked as the item it means (rule 10, §3.1).
 7. Forwarding: a trailing `..` supplies each remaining field `F` from the local or context field named `F`. In a struct's literal it takes fields from their defaults instead (§7, rule 4). Namespace and top-level names are not considered. It supplies `F = F` for a read-only field and `F = &F` for a `mut` field. It is an error if `F` isn't in scope, or if `F` is `mut` and the name isn't a mutable place.
 8. `..`, when present, must be the last item.
 9. A call's result may be discarded.

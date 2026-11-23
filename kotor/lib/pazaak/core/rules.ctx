@@ -70,7 +70,7 @@ namespace pazaak {
         let mut n: i32 = @as(i32, MAIN_DECK_SIZE)
         i = 0
         while i < MAIN_DECK_SIZE {
-            let r = @as(usize, rand_below{ rng = &g.rng, n })
+            let r = @as(usize, rand_below{ &g.rng, n })
             g.main[i] = left[r]
             left[r] = left[@as(usize, n - 1)]
             n = n - 1

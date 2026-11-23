@@ -132,33 +132,33 @@ namespace pazaak {
         if ev.kind == gui::EventKind::right_click {
             // A right-click on a hand flip card flips it, as its BTN_FLIPn does (0x0067dcf0).
             let k = tag_number{ tag = ev.tag, prefix = "BTN_PLRSIDE" }
-            if k >= 0 and flip_card{ m = &s.m, i = @as(usize, k) } { gui::play_sound{ &g, n = 0 } }
+            if k >= 0 and flip_card{ &s.m, i = @as(usize, k) } { gui::play_sound{ &g, n = 0 } }
             return
         }
         if ev.kind == gui::EventKind::dropped {
             // A hand card let go over one of the player's table slots is played (0x0067ef00).
             let k = tag_number{ tag = ev.tag, prefix = "BTN_PLRSIDE" }
-            if k >= 0 and tag_number{ tag = ev.target, prefix = "BTN_PLR" } >= 0 { _ = play_card{ m = &s.m, i = @as(usize, k) } }
+            if k >= 0 and tag_number{ tag = ev.target, prefix = "BTN_PLR" } >= 0 { _ = play_card{ &s.m, i = @as(usize, k) } }
             return
         }
         if ev.kind != gui::EventKind::activate { return }
         let side = tag_number{ tag = ev.tag, prefix = "BTN_PLRSIDE" }
         let flip = tag_number{ tag = ev.tag, prefix = "BTN_FLIP" }
         if side >= 0 {
-            _ = play_card{ m = &s.m, i = @as(usize, side) }
+            _ = play_card{ &s.m, i = @as(usize, side) }
         } else if flip >= 0 {
-            _ = flip_card{ m = &s.m, i = @as(usize, flip) }
+            _ = flip_card{ &s.m, i = @as(usize, flip) }
         } else if is_tag{ tag = ev.tag, name = "BTN_XTEXT" } {
-            _ = end_turn{ m = &s.m }
+            _ = end_turn{ &s.m }
         } else if is_tag{ tag = ev.tag, name = "BTN_YTEXT" } {
-            _ = stand_up{ m = &s.m }
+            _ = stand_up{ &s.m }
         }
     }
 
     // The match asks the player something: a message box over the table.
     fn open_prompt { mut s: Session, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } -> ! {
         let kind = s.m.prompt.kind
-        try open_box{ &s, &g, &fs, &dev, strref = prompt_text{ m = s.m }, cancel = kind != PromptKind::result, ask = Ask::prompt }
+        try open_box{ &s, &g, &fs, &dev, strref = prompt_text{ s.m }, cancel = kind != PromptKind::result, ask = Ask::prompt }
         if kind == PromptKind::info {
             try gui::set_strref{ &g, panel = s.box, tag = "BTN_OK", strref = 38623 }
             try gui::set_strref{ &g, panel = s.box, tag = "BTN_CANCEL", strref = 38625 }
@@ -192,16 +192,16 @@ namespace pazaak {
             if still.len == 0 { s.hold_steps = 0 }
         }
         if s.stage != Stage::game { return }
-        if s.box == 0 { step_match{ m = &s.m, dt } }
+        if s.box == 0 { step_match{ &s.m, dt } }
         while true {
-            let cue = take_cue{ m = &s.m } ifnull { break }
+            let cue = take_cue{ &s.m } ifnull { break }
             play_sound{ &s, &g, which = cue }
         }
         if s.m.finished {
             if not s.m.forfeited { finish{ &s, &g, won = s.m.won, forfeited = false, wager = s.stake } }
             return
         }
-        if has_prompt{ m = s.m } and s.box == 0 { try open_prompt{ &s, &g, &fs, &dev } }
-        if game_sig{ m = s.m } != s.drawn { refresh_game{ &s, &g } }
+        if has_prompt{ s.m } and s.box == 0 { try open_prompt{ &s, &g, &fs, &dev } }
+        if game_sig{ s.m } != s.drawn { refresh_game{ &s, &g } }
     }
 }

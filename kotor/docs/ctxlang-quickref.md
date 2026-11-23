@@ -27,8 +27,11 @@ namespace gff {                                   // namespaces may span files (
 ```
 
 - **Calls name every field:** `gff::parse{ realloc, &heap, bytes = data }`. `x` alone means
-  `x = x`; `&x` passes `x` to a `mut` field (§3). Order doesn't matter. A trailing `..` fills
-  the rest from same-named locals (in a struct literal it means defaults instead, below).
+  `x = x`; `&x` passes `x` to a `mut` field (§3). A place's last name puns too: `&g.rng` is
+  `rng = &g.rng` and `w.heap` is `heap = w.heap`, in calls, binds and literals. What doesn't end
+  in a field's name (`xs[i]`, `p.*`, `f{}`, `a.n + 1`, `gl::LINEAR`) needs `name =`. Order
+  doesn't matter. A trailing `..` fills the rest from same-named locals (in a struct literal it
+  means defaults instead, below).
 - **Struct literals name every field** (§7), but a field may declare a default and a literal
   ending in `..` takes the fields it leaves out from theirs: `Stats{ str = 10, .. }` for
   `struct Stats { str: i32, speed: f32 = 1.0, class: Class = Class::soldier, target: ?*T = null }`.

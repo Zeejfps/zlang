@@ -10803,6 +10803,8 @@ namespace check {
             let it = items[i]
             if it.spread {
                 // a capability literal's, which cap_lit checks
+            } else if it.name.text.len == 0 {
+                // an item that names no field, which the parser reported (parser.ctx, long_pun)
             } else if types::find_field{ fields, name = it.name.text } == null {
                 let mut b = message{ c }
                 try! @fmt(&b, "{} has no field `{}`", what, str{ s = it.name.text })
@@ -10822,9 +10824,10 @@ namespace check {
         }
     }
 
-    // After "has no field `x`" for a pun it, `x` or `&x`: what to write instead, with each field
-    // nothing supplies that is `mut` if it is `&x` and read-only if not, or with each field
-    // nothing supplies if none is.
+    // After "has no field `x`" for a pun it, `x` or `&x`, or one of a longer place, `&g.x`: what
+    // to write instead, with each field nothing supplies that is `mut` if it is `&x` and
+    // read-only if not, or with each field nothing supplies if none is; or the fields there
+    // are, if all are supplied.
     fn pun_hint { c: Checker, items: []syntax::Item, fields: []types::Field, it: syntax::Item, mut b: utf8::Builder(Heap) } -> ! {
         let addr = it.value.k is addr
         let mut fit: usize = 0
@@ -10837,7 +10840,12 @@ namespace check {
             }
             i = i + 1
         }
-        if open == 0 { return }
+        if open == 0 {
+            if fields.len == 0 { return }
+            try utf8::push{ &b, s = if fields.len == 1 { ": its field, " } else { ": its fields, " } }
+            try names{ fields, &b }
+            return utf8::push{ &b, s = if fields.len == 1 { ", is supplied already" } else { ", are all supplied already" } }
+        }
         let text = str{ s = source_text{ c, span = it.value.span } }
         try utf8::push{ &b, s = ": write " }
         let mut n: usize = 0
@@ -10871,10 +10879,13 @@ namespace check {
         try! map::put{ m = &c.spreads, key = expr_key{ e }, value = true }
     }
 
+    // Whether an item supplies the field `name`. An item that names no field, which the parser
+    // reported (parser.ctx, long_pun), may be meant for any.
     fn given { items: []syntax::Item, name: []u8 } -> bool {
         let mut i: usize = 0
         while i < items.len {
             if slice::eq_bytes{ a = items[i].name.text, b = name } { return true }
+            if items[i].name.text.len == 0 and not items[i].spread { return true }
             i = i + 1
         }
         return false

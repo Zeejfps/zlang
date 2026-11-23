@@ -1274,7 +1274,7 @@ namespace parser {
                 bind = true
             } else if accept{ &p, k = tok::Kind::amp } {
                 let name = ident{ &p }
-                if at_place_tail{ p } {
+                if not at_item_end{ p } {
                     try! list::push{ list = &items, item = long_pun{ &p, s, name } }
                 } else {
                     let path = name_path{ &p, name = again{ &p, n = name } }
@@ -1289,7 +1289,7 @@ namespace parser {
                 if accept{ &p, k = tok::Kind::assign } {
                     let value = expr{ &p }
                     try! list::push{ list = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = false, spread = false } }
-                } else if at_place_tail{ p } {
+                } else if not at_item_end{ p } {
                     try! list::push{ list = &items, item = long_pun{ &p, s, name } }
                 } else {
                     let value = name_path{ &p, name = again{ &p, n = name } }
@@ -1303,32 +1303,66 @@ namespace parser {
         return syntax::Expr{ id = new_id{ &p }, span = span_from{ p, start }, at = t.span.start, k }
     }
 
-    // At a `.` or `[` after a pun's name: the pun is of a longer place, as `&g.rng`.
-    fn at_place_tail { p: Parser } -> bool {
-        return next_is{ p, k = tok::Kind::dot } or (next_is{ p, k = tok::Kind::lbracket } and not p.toks[p.i].nl)
+    // After a pun's name: the item ends here, at a `,` or the `}`, so the pun is the name alone.
+    fn at_item_end { p: Parser } -> bool {
+        return next_is{ p, k = tok::Kind::comma } or next_is{ p, k = tok::Kind::rbrace }
     }
 
-    // A pun of a longer place than a name, from token s: an error, since a pun names its field
-    // only by a name. It says what to write, the place's last name as the field's when it ends
-    // in one (`rng = &g.rng`), and gives the item that would be, named so.
+    // An item without `name =` that is more than a name, from token s (§3, rule 6). A place that
+    // ends in a field's name is a pun of that name: `&g.rng` is `rng = &g.rng`, and `a.d` is
+    // `d = a.d`. Anything else names no field: an error that says what to write, without
+    // recovering, since the item's expression is whole. Its name is then empty, zero-width at
+    // its start, which the checker takes for any field, so that this is the item's only error.
     fn long_pun { mut p: Parser, s: usize, name: syntax::Name } -> syntax::Item {
         p.i = s
         let value = expr{ &p }
-        let text = utf8::String{ bytes = p.text[value.span.start..value.span.end] }
         let mut place = value
         match value.k {
             addr{ e } => { place = e.* }
             else => {}
         }
-        let mut field = name
         match place.k {
-            field{ name = last } => {
-                field = last
-                failf_at{ &p, msg = @fmt("a pun is a name alone: write `{} = {}`", utf8::String{ bytes = last.text }, text), t = p.toks[s] }
+            field{ base, name = last } => {
+                if pun_place{ e = base.* } {
+                    return syntax::Item{ span = span_from{ p, start = s }, name = again{ &p, n = last }, value, pun = true, spread = false }
+                }
             }
-            else => { failf_at{ &p, msg = @fmt("a pun is a name alone: write the field's name, as `name = {}`", text), t = p.toks[s] } }
+            // The name alone after all: what follows it is not part of the item.
+            path{ segs } => {
+                if segs.len == 1 and segs[0].targs == null {
+                    return syntax::Item{ span = span_from{ p, start = s }, name, value, pun = true, spread = false }
+                }
+            }
+            else => {}
         }
-        return syntax::Item{ span = span_from{ p, start = s }, name = again{ &p, n = field }, value, pun = false, spread = false }
+        let text = utf8::String{ bytes = p.text[value.span.start..value.span.end] }
+        let why: utf8::String = match place.k {
+            index => { "this one ends in an index" }
+            deref => { "this one ends in `.*`" }
+            range => { "this one ends in a range" }
+            braced => { "this one is a call or a literal" }
+            field | path => { "this one isn't a place" }
+            else => { "this one is an expression" }
+        }
+        if not p.bad {
+            let mut b = message{ p }
+            try! @fmt(&b, "a pun is a place that ends in a field's name, as `&g.rng` is for `rng`, and {}: write the field's name, as `name = {}`", why, text)
+            diag::error{ diags = p.diags, span = p.toks[s].span, msg = utf8::view{ b } }
+        }
+        let span = span_from{ p, start = s }
+        let none = syntax::Name{ id = new_id{ &p }, span = source::Span{ file = p.file, start = span.start, end = span.start }, text = p.text[..0] }
+        return syntax::Item{ span, name = none, value, pun = false, spread = false }
+    }
+
+    // Whether e is a place by its shape (§11, Places): a name, then fields, indexes and derefs.
+    fn pun_place { e: syntax::Expr } -> bool {
+        match e.k {
+            path{ segs } => { return segs.len == 1 and segs[0].targs == null }
+            field{ base } => { return pun_place{ e = base.* } }
+            index{ base } => { return pun_place{ e = base.* } }
+            deref{ base } => { return pun_place{ e = base.* } }
+            else => { return false }
+        }
     }
 
     // The same name as another node: a pun's item name and its value are two uses of it.
