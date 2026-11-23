@@ -103,10 +103,8 @@ namespace types {
         _ = intern{ &s, t = Type::error }
         _ = intern{ &s, t = Type::void }
         _ = intern{ &s, t = Type::nil }
-        let mut i: usize = 0
-        while i < PRIM_NAMES.len {
+        for i in 0..PRIM_NAMES.len {
             _ = intern{ &s, t = Type::prim{ p = @as(Prim, i) } }
-            i = i + 1
         }
         _ = intern{ &s, t = Type::strlit }
         return s
@@ -208,11 +206,9 @@ namespace types {
             }
             func{ fields, ret, bound, external } => {
                 let mut fs = list::new(Field){ realloc = arena::alloc, heap = s.heap }
-                let mut i: usize = 0
-                while i < fields.len {
+                for i in 0..fields.len {
                     let f = fields[i]
                     try! list::push{ list = &fs, item = Field{ name = f.name, mutable = f.mutable, ty = subst{ &s, t = f.ty, decl, args } } }
-                    i = i + 1
                 }
                 return func{ &s, fields = list::items{ list = fs }, ret = subst{ &s, t = ret, decl, args }, bound, external }
             }
@@ -227,10 +223,8 @@ namespace types {
 
     fn subst_all { mut s: Store, ts: []Id, decl: u32, args: []Id } -> []Id {
         let mut out = list::new(Id){ realloc = arena::alloc, heap = s.heap }
-        let mut i: usize = 0
-        while i < ts.len {
+        for i in 0..ts.len {
             try! list::push{ list = &out, item = subst{ &s, t = ts[i], decl, args } }
-            i = i + 1
         }
         return list::items{ list = out }
     }
@@ -289,11 +283,9 @@ namespace types {
             enumeration{ decl } => { return mix{ h = 12, n = decl } }
             func{ fields, ret, bound, external } => {
                 let mut h = mix{ h = mix{ h = mix{ h = 13, n = ret }, n = flag{ b = bound } }, n = flag{ b = external } }
-                let mut i: usize = 0
-                while i < fields.len {
+                for i in 0..fields.len {
                     let f = fields[i]
                     h = mix{ h = mix{ h = mix{ h, n = map::hash_bytes{ key = f.name } }, n = flag{ b = f.mutable } }, n = f.ty }
-                    i = i + 1
                 }
                 return h
             }
@@ -315,10 +307,8 @@ namespace types {
 
     fn mix_ids { h: u64, ids: []Id } -> u64 {
         let mut x = mix{ h, n = ids.len }
-        let mut i: usize = 0
-        while i < ids.len {
+        for i in 0..ids.len {
             x = mix{ h = x, n = ids[i] }
-            i = i + 1
         }
         return x
     }
@@ -339,14 +329,12 @@ namespace types {
             enumeration{ decl } => { return b is enumeration{ decl = d } and decl == d }
             func{ fields, ret, bound, external } => {
                 if not (b is func{ fields = fs, ret = r, bound = bd, external = ex }) or ret != r or bound != bd or external != ex or fields.len != fs.len { return false }
-                let mut i: usize = 0
-                while i < fields.len {
+                for i in 0..fields.len {
                     let f = fields[i]
                     let g = fs[i]
                     if f.ty != g.ty or f.mutable != g.mutable or not slice::eq_bytes{ a = f.name, b = g.name } {
                         return false
                     }
-                    i = i + 1
                 }
                 return true
             }
@@ -416,11 +404,9 @@ namespace types {
             }
             func{ fields, ret, bound, external } => {
                 let mut fs = list::new(Field){ realloc = arena::alloc, heap = s.heap }
-                let mut i: usize = 0
-                while i < fields.len {
+                for i in 0..fields.len {
                     let f = fields[i]
                     try! list::push{ list = &fs, item = Field{ name = f.name, mutable = f.mutable, ty = zonk{ &s, t = f.ty } } }
-                    i = i + 1
                 }
                 return func{ &s, fields = list::items{ list = fs }, ret = zonk{ &s, t = ret }, bound, external }
             }
@@ -434,10 +420,8 @@ namespace types {
 
     fn zonk_all { mut s: Store, ts: []Id } -> []Id {
         let mut out = list::new(Id){ realloc = arena::alloc, heap = s.heap }
-        let mut i: usize = 0
-        while i < ts.len {
+        for i in 0..ts.len {
             try! list::push{ list = &out, item = zonk{ &s, t = ts[i] } }
-            i = i + 1
         }
         return list::items{ list = out }
     }
@@ -460,10 +444,8 @@ namespace types {
             res{ ok, errs } => { return occurs{ s, n, t = ok } or occurs{ s, n, t = errs } }
             func{ fields, ret } => {
                 if occurs{ s, n, t = ret } { return true }
-                let mut i: usize = 0
-                while i < fields.len {
+                for i in 0..fields.len {
                     if occurs{ s, n, t = fields[i].ty } { return true }
-                    i = i + 1
                 }
                 return false
             }
@@ -472,10 +454,8 @@ namespace types {
     }
 
     fn any_occurs { s: Store, n: u32, ts: []Id } -> bool {
-        let mut i: usize = 0
-        while i < ts.len {
+        for i in 0..ts.len {
             if occurs{ s, n, t = ts[i] } { return true }
-            i = i + 1
         }
         return false
     }
@@ -530,14 +510,12 @@ namespace types {
             res{ ok, errs } => { return tb is res{ ok = o, errs = e } and (errs == e or unify{ &s, a = errs, b = e }) and unify{ &s, a = ok, b = o } }
             func{ fields, ret, bound, external } => {
                 if not (tb is func{ fields = fs, ret = r, bound = bd, external = ex }) or bound != bd or external != ex or fields.len != fs.len { return false }
-                let mut i: usize = 0
-                while i < fields.len {
+                for i in 0..fields.len {
                     let f = fields[i]
                     // A C function's fields pair up in order; a ctxlang function's by name.
                     let g: ?Field = if external { fs[i] } else { find_field{ fields = fs, name = f.name } }
                     if g == null or g.mutable != f.mutable or not unify{ &s, a = f.ty, b = g.ty } { return false }
                     if external and not slice::eq_bytes{ a = f.name, b = g.name } { return false }
-                    i = i + 1
                 }
                 return unify{ &s, a = ret, b = r }
             }
@@ -571,13 +549,11 @@ namespace types {
             res{ ok, errs } => { return tb is res{ ok = o, errs = e } and (errs == e or instance{ s, p = errs, t = e, decl, args }) and instance{ s, p = ok, t = o, decl, args } }
             func{ fields, ret, bound, external } => {
                 if not (tb is func{ fields = fs, ret = r, bound = bd, external = ex }) or bound != bd or external != ex or fields.len != fs.len { return false }
-                let mut i: usize = 0
-                while i < fields.len {
+                for i in 0..fields.len {
                     let f = fields[i]
                     let g: ?Field = if external { fs[i] } else { find_field{ fields = fs, name = f.name } }
                     if g == null or g.mutable != f.mutable or not instance{ s, p = f.ty, t = g.ty, decl, args } { return false }
                     if external and not slice::eq_bytes{ a = f.name, b = g.name } { return false }
-                    i = i + 1
                 }
                 return instance{ s, p = ret, t = r, decl, args }
             }
@@ -598,10 +574,8 @@ namespace types {
             distinct{ args, base } => { return any_mentions{ s, ts = args, decl, index } or mentions{ s, t = base, decl, index } }
             res{ ok, errs } => { return mentions{ s, t = ok, decl, index } or mentions{ s, t = errs, decl, index } }
             func{ fields, ret } => {
-                let mut i: usize = 0
-                while i < fields.len {
+                for i in 0..fields.len {
                     if mentions{ s, t = fields[i].ty, decl, index } { return true }
-                    i = i + 1
                 }
                 return mentions{ s, t = ret, decl, index }
             }
@@ -610,20 +584,16 @@ namespace types {
     }
 
     fn any_mentions { s: Store, ts: []Id, decl: u32, index: u32 } -> bool {
-        let mut i: usize = 0
-        while i < ts.len {
+        for i in 0..ts.len {
             if mentions{ s, t = ts[i], decl, index } { return true }
-            i = i + 1
         }
         return false
     }
 
     fn instances { s: Store, ps: []Id, ts: []Id, decl: u32, args: []mut Id } -> bool {
         if ps.len != ts.len { return false }
-        let mut i: usize = 0
-        while i < ps.len {
+        for i in 0..ps.len {
             if not instance{ s, p = ps[i], t = ts[i], decl, args } { return false }
-            i = i + 1
         }
         return true
     }
@@ -645,10 +615,8 @@ namespace types {
 
     // The index of the field named name, or null.
     fn field_index { fields: []Field, name: []u8 } -> ?usize {
-        let mut i: usize = 0
-        while i < fields.len {
+        for i in 0..fields.len {
             if slice::eq_bytes{ a = fields[i].name, b = name } { return i }
-            i = i + 1
         }
         return null
     }
@@ -710,10 +678,8 @@ namespace types {
             res{ ok, errs } => { return has_vars{ s, t = ok } or has_vars{ s, t = errs } }
             func{ fields, ret } => {
                 if has_vars{ s, t = ret } { return true }
-                let mut i: usize = 0
-                while i < fields.len {
+                for i in 0..fields.len {
                     if has_vars{ s, t = fields[i].ty } { return true }
-                    i = i + 1
                 }
                 return false
             }
@@ -722,10 +688,8 @@ namespace types {
     }
 
     fn any_vars { s: Store, ts: []Id } -> bool {
-        let mut i: usize = 0
-        while i < ts.len {
+        for i in 0..ts.len {
             if has_vars{ s, t = ts[i] } { return true }
-            i = i + 1
         }
         return false
     }
@@ -743,10 +707,8 @@ namespace types {
             res{ ok, errs } => { return has_params{ s, t = ok } or has_params{ s, t = errs } }
             func{ fields, ret } => {
                 if has_params{ s, t = ret } { return true }
-                let mut i: usize = 0
-                while i < fields.len {
+                for i in 0..fields.len {
                     if has_params{ s, t = fields[i].ty } { return true }
-                    i = i + 1
                 }
                 return false
             }
@@ -755,10 +717,8 @@ namespace types {
     }
 
     fn any_params { s: Store, ts: []Id } -> bool {
-        let mut i: usize = 0
-        while i < ts.len {
+        for i in 0..ts.len {
             if has_params{ s, t = ts[i] } { return true }
-            i = i + 1
         }
         return false
     }
@@ -780,20 +740,16 @@ namespace types {
     }
 
     fn any_bound_fn { s: Store, ts: []Id } -> bool {
-        let mut i: usize = 0
-        while i < ts.len {
+        for i in 0..ts.len {
             if has_bound_fn{ s, t = ts[i] } { return true }
-            i = i + 1
         }
         return false
     }
 
     fn same_ids { a: []Id, b: []Id } -> bool {
         if a.len != b.len { return false }
-        let mut i: usize = 0
-        while i < a.len {
+        for i in 0..a.len {
             if a[i] != b[i] { return false }
-            i = i + 1
         }
         return true
     }

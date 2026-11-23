@@ -104,7 +104,11 @@ function: can't be stored in a struct or returned), `extern fn{C} -> R` (C funct
 
 ```
 let v = if a { 1 } else { 2 }                     // if/match are expressions too
-while i < n { i = i + 1 }                         // the only loop; `label: while`, break/continue
+for i in 0..n { }                                 // i = 0 .. n - 1, of n's type; lo..hi leaves hi out
+for x in xs { }                                   // each element of a slice or an array, copied
+for &x in xs { x = 0 }                            // each element's place: changes it, copies nothing
+for x at i in xs { }                              // with its index (usize); `for &x at i` too
+while i < n { i = i + 1 }                         // any other loop; `label:`, break/continue on both
 match value { int{ v } => { ... } text{ s } => { ... } none => {} }      // exhaustive
 match kind { byte | char => { ... } else => { ... } }                     // enums too
 if r is int{ v } { use{ v } }                     // test one variant and bind (§8 Is)
@@ -114,6 +118,12 @@ let ok{ value = d } = r else err{ error } { return error }
 defer list::free{ list = &xs }                    // runs at block exit
 ```
 
+- **Write a `for`, not a counter** (§11, For): a `while` that forgets `i = i + 1` hangs. The
+  range's bounds and the slice are read once, before the loop. `i`, `x` and the index can't be
+  assigned. A range never counts down (`5..2` is empty), `lo..=hi` is an error (`lo..hi + 1`),
+  and two names are spelled `for x at i in xs`, never `for i, x`. Go over a list with
+  `for x in list::items{ list = xs }`; if the body grows the list, count instead:
+  `for i in 0..xs.len`. `for _ in 0..n` repeats.
 - `match` takes integers (§8, Match on integers): literals, folded consts (`gl::TRIANGLES`) and
   ranges `'a'..='z'` (both ends included), joined with `|`; `else` is required. `c is '0'..='9'`
   tests one.

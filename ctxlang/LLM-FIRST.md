@@ -171,12 +171,37 @@ What a model writes by default should compile, or fail with the exact fix.
     they see a named item's. Converted as proof, not everywhere: KOTOR's pazaak (21 sites, the
     `deal_hand` of F#1 among them) and 6 in std.
 
-- [ ] **3.2 A `for` loop.**
+- [x] **3.2 A `for` loop.**
   Every loop is `let mut i = 0; while i < n { ...; i = i + 1 }`: forgotten increments are hangs,
   the worst failure an agent can hit. A `for i in lo..hi` and a `for x in slice` (with index form)
   would cover nearly all.
   - Details: F#20 (about 70 loops in bink_video.ctx alone); [spec §11](spec.md#11-statements-and-control-flow).
   - *Done when:* both forms are in the spec and ctxc, with `break`/`continue`/labels as for `while`.
+  - *Done:* [spec §11, For](spec.md#for). `for i in lo..hi`: half-open, the bounds read once
+    (`lo` first), `i` of the bounds' one type after widening as `<` widens (`0..n` gives `n`'s
+    type), empty where `lo >= hi`, and counting can't overflow. `for x in e` copies each
+    element of a slice, an array place (through its view `e[..]`), a pointer to an array, a
+    const array or an array literal; `for &x in e` binds the element's place, as `&f` does in
+    a pattern, mutable where `e` is; `for x at i in e` adds the index. Chosen against wrong
+    guesses: two names with a comma are an error rather than an order to remember (`for i, x`
+    in Go, `for x, i` in Odin: with a `[]usize` either would compile), `lo..=hi` and
+    `range(n)` are errors that say what to write, and the names can't be assigned (``cannot
+    assign to `i`: it is set by its `for` each time round; change a copy of it, a `let mut` ``).
+    What is gone over is evaluated once and held as a `let` holds a slice: its length is
+    fixed, later turns see earlier turns' changes, and a body that frees or moves the memory
+    is unchecked as for any held slice (§13, Unchecked operations, rule 3). No new check was
+    added for that: rejecting a body that changes what the `for`'s expression read would also
+    reject well-defined loops over arrays, and its fix, a `let` before the loop, would only
+    hide the same dangling slice; the spec says to go over indexes instead. `for` is a
+    keyword; `in` and `at` are words only in its head.
+    The checker takes it as its own statement in every pass: flow (it ends no path, and a
+    `let x: T` assigned in it is an error), narrowing, escape (`&x` is derived from what is
+    gone over), argument order (a fn that changes an array through `for &x` changes it; `for
+    x` reads it), tasks, and `match &p`'s scan; lowering writes a `while` over a hidden
+    counter that steps before the body, so `continue` needs nothing and the IR, the C backend,
+    the interpreter and consts are unchanged. A task's handle can't be gone over.
+    Converted as proof: 22 loops in ctxc/types.ctx, 3 in std/slice.ctx, 7 in KOTOR's
+    lib/base (ci.ctx, resref.ctx).
 
 - [ ] **3.3 Index with any integer type.**
   `a[i]` with `i: i32` is "expected usize", so the code is `a[@as(usize, i)]` after a range check

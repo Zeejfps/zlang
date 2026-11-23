@@ -535,6 +535,8 @@ namespace parser {
             s = if_stmt{ &p }
         } else if k == tok::Kind::kw_while {
             s = while_stmt{ &p, label = null }
+        } else if k == tok::Kind::kw_for {
+            s = for_stmt{ &p, label = null }
         } else if k == tok::Kind::kw_match {
             s = syntax::StmtKind::choose{ x = match_node{ &p } }
         } else if k == tok::Kind::kw_break {
@@ -561,15 +563,17 @@ namespace parser {
                 s = syntax::StmtKind::ret{ value = expr{ &p } }
             }
         } else if k == tok::Kind::ident and kind{ p, ahead = 1 } == tok::Kind::colon {
-            // A loop label: `name:`, then the `while`, on the same line or the next. The
-            // statement starts at the `while`, as in ctxi.
+            // A loop label: `name:`, then the `while` or the `for`, on the same line or the
+            // next. The statement starts at the `while`, as in ctxi.
             let label = ident{ &p }
             skip{ &p }
             start = p.i
             if next_is{ p, k = tok::Kind::kw_while } {
                 s = while_stmt{ &p, label }
+            } else if next_is{ p, k = tok::Kind::kw_for } {
+                s = for_stmt{ &p, label }
             } else {
-                expected_msg{ &p, msg = "only a `while` can be labeled, found " }
+                expected_msg{ &p, msg = "only a `while` or a `for` can be labeled, found " }
             }
         } else {
             let e = expr{ &p }
@@ -658,6 +662,55 @@ namespace parser {
         skip{ &p }
         let c = cond_expr{ &p }
         return syntax::StmtKind::loop{ label, c, body = block{ &p } }
+    }
+
+    // `for i in lo..hi { }`, `for x in e { }`, `for &x in e { }` and `for x at i in e { }`
+    // (§11, For). `in` and `at` are words only here. What is gone over is e's slice, `e[..]`,
+    // with e's span, so an array is gone over as its view; an array literal stays as it is, a
+    // view where a slice is expected.
+    fn for_stmt { mut p: Parser, label: ?syntax::Name } -> syntax::StmtKind {
+        skip{ &p }
+        let amp = p.toks[p.i]
+        let by_ref = accept{ &p, k = tok::Kind::amp }
+        let item = ident{ &p }
+        let mut index: ?syntax::Name = null
+        if next_is{ p, k = tok::Kind::comma } {
+            fail{ &p, msg = "a `for` names one element: write `for x at i in xs` for each element `x` and its index `i`" }
+        }
+        let word = p.toks[p.i]
+        if is_word{ p, word = "at" } and kind{ p, ahead = 1 } == tok::Kind::ident {
+            skip{ &p }
+            index = ident{ &p }
+        }
+        if is_word{ p, word = "in" } {
+            skip{ &p }
+        } else {
+            expected_msg{ &p, msg = "expected `in` after a `for`'s name, as in `for x in xs` or `for i in 0..n`, found " }
+        }
+        if is_word{ p, word = "range" } and kind{ p, ahead = 1 } == tok::Kind::lparen {
+            fail{ &p, msg = "a `for` counts over a range written `lo..hi`: write `for i in 0..n`" }
+        }
+        let first = cond_expr{ &p }
+        let mut hi: ?syntax::Expr = null
+        let mut iter = first
+        if accept{ &p, k = tok::Kind::dots } {
+            if next_is{ p, k = tok::Kind::assign } {
+                fail{ &p, msg = "a `for`'s range is `lo..hi`, which leaves `hi` out: to include it, write `lo..hi + 1`" }
+            }
+            if by_ref { fail_at{ &p, msg = "a range's numbers aren't places: write `for i in lo..hi`, without the `&`", t = amp } }
+            if index != null { fail_at{ &p, msg = "a range's number is its own index: write `for i in lo..hi`, without the `at`", t = word } }
+            hi = cond_expr{ &p }
+        } else {
+            if not (first.k is array | repeat) {
+                iter = syntax::Expr{ id = new_id{ &p }, span = first.span, at = first.span.start, k = syntax::ExprKind::range{ base = box{ &p, value = first }, lo = null, hi = null } }
+            }
+        }
+        return syntax::StmtKind::each{ label, item, by_ref, index, iter, hi, body = block{ &p } }
+    }
+
+    // Whether the current token is the name `word`: a word that is a keyword only in its place.
+    fn is_word { p: Parser, word: []u8 } -> bool {
+        return next_is{ p, k = tok::Kind::ident } and slice::eq_bytes{ a = text_of{ p, t = p.toks[p.i] }, b = word }
     }
 
     // The label after `break` or `continue`, if one follows on the same line.

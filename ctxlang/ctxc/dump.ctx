@@ -589,6 +589,27 @@ namespace tree {
                 block{ &d, b = body }
                 d.depth = d.depth - 1
             }
+            each{ label, item, by_ref, index, iter, hi = upto, body } => {
+                start{ &d, at }
+                put{ &d, s = if by_ref { "for &" } else { "for " } }
+                name{ &d, n = item }
+                if index != null {
+                    put{ &d, s = " at " }
+                    name{ &d, n = index }
+                }
+                if label != null {
+                    put{ &d, s = " " }
+                    name{ &d, n = label }
+                    put{ &d, s = " " }
+                    dump::pos{ out = d.out, p = source::position{ text = d.text, lines = d.lines, offset = label.span.start } }
+                }
+                end{ &d }
+                d.depth = d.depth + 1
+                expr{ &d, e = iter }
+                if upto != null { expr{ &d, e = upto } }
+                block{ &d, b = body }
+                d.depth = d.depth - 1
+            }
             choose{ x } => { match_node{ &d, at, x } }
             ret{ value } => {
                 line{ &d, at, s = "return" }
@@ -1131,6 +1152,20 @@ namespace decls {
             loop{ label, c = cond, body } => {
                 labeled{ &out, depth, word = "while", label }
                 expr{ &out, c, e = cond, depth = d }
+                line{ &out, depth = d, s = "do" }
+                stmts{ &out, c, xs = body.stmts, depth = d + 1 }
+            }
+            each{ label, item, by_ref, index, iter, hi = upto, body } => {
+                labeled{ &out, depth, word = "for", label }
+                indent{ &out, depth = d }
+                let amp: utf8::String = if by_ref { "&" } else { "" }
+                try! @fmt(&out, "{}{}: {}\n", amp, check::str{ s = item.text }, local_ty{ c, k = check::name_key{ n = item } })
+                if index != null {
+                    indent{ &out, depth = d }
+                    try! @fmt(&out, "at {}: {}\n", check::str{ s = index.text }, local_ty{ c, k = check::name_key{ n = index } })
+                }
+                expr{ &out, c, e = iter, depth = d }
+                if upto != null { expr{ &out, c, e = upto, depth = d } }
                 line{ &out, depth = d, s = "do" }
                 stmts{ &out, c, xs = body.stmts, depth = d + 1 }
             }

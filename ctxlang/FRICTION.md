@@ -142,10 +142,6 @@ as the write-ups gave them.
     attributes since `304f48d`) and a generator over `build::declarations` would make a binding
     one line per function. *Hit by 1:* glspike (132 loader lines).
 
-20. **No `for` loop.** Every loop over a block is `let mut i: usize = 0; while i < 8 { ...; i = i
-    + 1 }`: three lines of bookkeeping, and a class of forgotten increments. *Hit by 1:* video
-    (about 70 in bink_video.ctx).
-
 21. **A diagnostic takes three lines** in ctxc. *Mostly solved:* `@fmt` without a sink is a writer
     (spec §13), so 163 of 197 sites are one line (`errorf{ &c, at, msg = @fmt("...", args) }`).
     About 50 keep a builder: reports through `flow_error` and `escape_error`, which take a

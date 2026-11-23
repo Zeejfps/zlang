@@ -155,6 +155,344 @@ fn both { mut list: List, mut l: List } { list.len = 1; l.len = 2 }
                 self.assertCompileError(decls + main % body, msg)
 
 
+class ForLoops(Base):
+    """§11, For: `for i in lo..hi`, `for x in e`, `for &x in e` and `for x at i in e`."""
+
+    def errors(self, cases):
+        for src, msg in cases:
+            with self.subTest(src=src):
+                self.assertCompileError(src, msg)
+
+    def test_range(self):
+        self.assertOutput(r"""
+fn bound { mut calls: i32, v: i32 } -> i32 { calls = calls + 1; return v }
+fn main { mut io: Io } {
+    let mut total = 0
+    for i in 0..5 { total = total + i }
+    _ = @fmt(&io, "{}\n", total)
+    let n: u8 = 3
+    for i in 0..n { io::println_u64{ &io, n = i } }           // i: u8, n's type
+    let lo: u8 = 250
+    let hi: usize = 260
+    let mut sum: usize = 0
+    for i in lo..hi { sum = sum + i }                           // i: usize, which lo widens to
+    _ = @fmt(&io, "{}\n", sum)
+    for i in -2..2 { _ = @fmt(&io, "{} ", i) }
+    for i in 5..5 { _ = @fmt(&io, "never {}", i) }             // empty
+    for i in 5..2 { _ = @fmt(&io, "never {}", i) }             // and never counts down
+    let mut calls = 0
+    let mut end = 3
+    let mut turns = 0
+    for i in bound{ &calls, v = 1 }..bound{ &calls, v = end } {
+        end = 10                                                // the bounds were read once
+        turns = turns + 1
+    }
+    _ = @fmt(&io, "\n{} {} {}\n", calls, end, turns)
+    let top: i64 = 9223372036854775807
+    for i in top - 2..top { _ = @fmt(&io, "{} ", i) }          // counting never overflows
+    let b: u8 = 255
+    for i in 253..b { _ = @fmt(&io, "{} ", i) }
+    for _ in 0..3 { _ = @fmt(&io, ".") }
+    _ = @fmt(&io, "\n")
+}
+""", '10\n0\n1\n2\n2545\n-2 -1 0 1 \n2 10 2\n9223372036854775805 9223372036854775806 253 254 ...\n')
+
+    def test_elements(self):
+        self.assertOutput(r"""
+const PRIMES: [4]u32 = [2, 3, 5, 7]
+struct P { hp: i32 }
+fn sum { xs: []i32 } -> i32 {
+    let mut t = 0
+    for x in xs { t = t + x }
+    return t
+}
+fn total(T) { xs: []T, add: fn{ a: i32, x: T } -> i32 } -> i32 {
+    let mut t = 0
+    for x in xs { t = add{ a = t, x } }
+    return t
+}
+fn add_p { a: i32, x: P } -> i32 { return a + x.hp }
+fn main { mut io: Io } {
+    let a = [1, 2, 3]
+    _ = @fmt(&io, "{} {}\n", sum{ xs = a[..] }, sum{ xs = a[1..] })
+    let mut t = 0
+    for x in a { t = t + x }                        // an array place, as its view
+    for p in PRIMES { t = t + @as(i32, p) }         // a const array
+    for x in [10, 20] { t = t + x }                 // an array literal
+    for x in [1; 4] { t = t + x }
+    let q = &a
+    for x in q { t = t + x }                        // a pointer to an array
+    for b in "ab" { t = t + @as(i32, b) }           // a string literal's bytes
+    _ = @fmt(&io, "{}\n", t)
+    let ps = [P{ hp = 1 }, P{ hp = 2 }]
+    _ = @fmt(&io, "{}\n", total{ xs = ps[..], add = add_p })
+    let grid = [[1, 2], [3, 4]]
+    for row in grid { for v in row { _ = @fmt(&io, "{} ", v) } }
+    for x at i in a[1..] { _ = @fmt(&io, "{}:{} ", i, x) }     // the index, from 0
+    let none: []i32 = []
+    for x in none { _ = @fmt(&io, "never {}", x) }
+    _ = @fmt(&io, "\n")
+}
+""", '6 5\n258\n3\n1 2 3 4 0:2 1:3 \n')
+
+    def test_element_places(self):
+        self.assertOutput(r"""
+struct P { hp: i32 }
+fn double { xs: []mut i32 } { for &x in xs { x = x * 2 } }
+fn heal { mut p: P } { p.hp = p.hp + 100 }
+fn at { xs: []mut i32, want: i32 } -> ?*mut i32 {
+    for &x in xs { if x == want { return &x } }     // a pointer into the caller's slice
+    return null
+}
+fn main { mut io: Io } {
+    let mut a = [1, 2, 3]
+    for &x in a { x = x + 1 }
+    double{ xs = a[..] }
+    for &x at i in a { x = x + @as(i32, i) }
+    for x in a { _ = @fmt(&io, "{} ", x) }
+    let mut ps = [P{ hp = 1 }, P{ hp = 2 }]
+    for &p in ps {
+        p.hp = p.hp * 10
+        heal{ &p }
+    }
+    for &p in ps { _ = @fmt(&io, "{} ", p.hp) }     // read-only places: nothing is copied
+    // A later turn sees what an earlier one changed.
+    let mut b = [1, 1, 1, 1]
+    for x at i in b { if i + 1 < b.len { b[i + 1] = x + 1 } }
+    for x in b { _ = @fmt(&io, "{} ", x) }
+    // A copy is not the element.
+    for x in a {
+        let mut y = x
+        y = 0
+    }
+    let p = at{ xs = a[..], want = 7 } ifnull { return }
+    p.* = 70
+    _ = @fmt(&io, "{} {}\n", a[0], a[1])
+}
+""", '4 7 10 110 120 1 2 3 4 4 70\n')
+
+    def test_jumps_and_labels(self):
+        self.assertOutput(r"""
+fn show { mut io: Io, n: i32 } { _ = @fmt(&io, "{} ", n) }
+fn main { mut io: Io } {
+    for i in 0..10 {
+        if i % 2 == 0 { continue }                  // on to the next number
+        if i > 7 { break }
+        _ = @fmt(&io, "{} ", i)
+    }
+    let grid = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+    rows:
+    for row at r in grid {
+        for v in row {
+            if v == 2 { continue rows }
+            if v == 8 { break rows }
+            _ = @fmt(&io, "{}:{} ", r, v)
+        }
+    }
+    outer: for i in 0..3 {
+        let mut j = 0
+        while true {
+            j = j + 1
+            if j > i { continue outer }
+            if i == 2 { break outer }
+        }
+    }
+    for i in 0..3 {
+        defer _ = @fmt(&io, "d{} ", i)              // a defer runs each turn
+        if i == 1 { continue }
+        _ = @fmt(&io, "b{} ", i)
+    }
+    for i in 0..2 {
+        let g = show{ &io, n = i, _ }               // a bind holds that turn's value
+        g{}
+    }
+    _ = @fmt(&io, "\n")
+}
+""", '1 3 5 7 0:1 1:4 1:5 1:6 2:7 b0 d0 d1 b2 d2 0 1 \n')
+
+    def test_while_compiling(self):
+        """A const runs a `for`, and so does the interpreter (run_source compares both)."""
+        self.assertOutput(r"""
+fn tri { n: i32 } -> i32 {
+    let mut t = 0
+    for i in 0..n + 1 { t = t + i }
+    return t
+}
+fn dot { a: [3]i32, b: [3]i32 } -> i32 {
+    let mut t = 0
+    for x at i in a { t = t + x * b[i] }
+    return t
+}
+fn squares {} -> [4]i32 {
+    let mut out: [4]i32
+    for &x at i in out { x = @as(i32, i * i) }
+    return out
+}
+const T: i32 = tri{ n = 10 }
+const D: i32 = dot{ a = [1, 2, 3], b = [4, 5, 6] }
+const S: [4]i32 = squares{}
+fn main { mut io: Io } { _ = @fmt(&io, "{} {} {}\n", T, D, S[3]) }
+""", '55 32 9\n')
+
+    def test_flow(self):
+        """A `for` may run no turn: it ends no path, and assigns nothing for sure. Narrowing, a
+        handle's scope and shadowing work in its body as in a `while`'s."""
+        self.assertOutput(r"""
+#task
+fn work { n: i32 } -> i32 { return n * 2 }
+fn known { xs: []?i32 } -> i32 {
+    let mut t = 0
+    for x in xs {
+        if x == null { continue }
+        t = t + x
+    }
+    return t
+}
+fn first { xs: []i32 } -> i32 {
+    for x in xs {
+        while true { return x }
+    }
+    return -1
+}
+fn main { mut io: Io, mut threads: Threads } {
+    let i = 100
+    let x = 7
+    for i in 0..2 { _ = @fmt(&io, "{} ", i) }
+    for x at i in [x, x + 1] { _ = @fmt(&io, "{}:{} ", i, x) }
+    let mut total = 0
+    for n in 0..3 {
+        let mut t: task::Task(i32)
+        task::start{ &threads, task = &t, run = work{ n, _ } }
+        total = total + task::wait{ &threads, task = &t }
+    }
+    _ = @fmt(&io, "{} {} {} {} {}\n", i, x, known{ xs = [1, null, 3] }, first{ xs = [] }, total)
+}
+""", '0 1 0:7 1:8 100 7 4 -1 6\n')
+        self.errors([
+            ('fn f {} -> i32 {\n    for i in 0..3 { return i }\n}\nfn main {} { _ = f{} }',
+             '`f` must end every path in `return` or `@panic()`'),
+            ('fn main {} {\n    let x: i32\n    for i in 0..3 { x = i }\n}',
+             '`x` may be assigned more than once: it is assigned in a loop that can repeat; declare it with `let mut`'),
+            ('fn main {} {\n    a: for i in 0..3 {\n        a: for j in 0..3 { }\n    }\n}',
+             'loop label `a` is already used by an enclosing loop'),
+            ('fn main {} { for x at x in [1, 2] { } }', '`x` is already declared in this scope'),
+        ])
+
+    def test_lists(self):
+        """What is gone over is read once: a list that grows is gone over by index."""
+        self.assertOutput(r"""
+fn main { mut io: Io, mut mem: Mem } {
+    let pages = mem::pages{ &mem, size = 65536 } ifnull { return }
+    let mut heap = arena::new{ buf = pages }
+    let mut xs = list::new(i32){ realloc = arena::alloc, &heap }
+    for i in 0..4 { try! list::push{ list = &xs, item = i } }
+    for i in 0..xs.len { try! list::push{ list = &xs, item = xs.items[i] * 10 } }   // 4 turns
+    for x in list::items{ list = xs } { _ = @fmt(&io, "{} ", x) }
+    for &x in list::items{ list = xs } { x = x + 1 }
+    _ = @fmt(&io, "{}\n", xs.items[7])
+}
+""", '0 1 2 3 0 10 20 30 31\n')
+
+    def test_names_are_read_only(self):
+        each = 'it is set by its `for` each time round; change a copy of it, a `let mut`'
+        fixed = ('it is an element of a read-only array or slice; `for &x` changes the elements of a `let mut` '
+                 'array or a `[]mut T`')
+        self.errors([
+            ('fn main {} { for i in 0..3 { i = 5 } }', 'cannot assign to `i`: ' + each),
+            ('fn main {} { let a = [1, 2]; for x in a { x = 5 } }', 'cannot assign to `x`: ' + each),
+            ('fn main {} { let a = [1, 2]; for x at i in a { i = 5 } }', 'cannot assign to `i`: ' + each),
+            ('fn f { xs: []i32 } { for &x in xs { x = 5 } }\nfn main {} { f{ xs = [1] } }', 'cannot assign to `x`: ' + fixed),
+            ('fn main {} { let a = [1, 2]; for &x in a { x = 5 } }', 'cannot assign to `x`: ' + fixed),
+            ('fn bump { mut n: i32 } { n = n + 1 }\nfn main {} { for i in 0..3 { bump{ n = &i } } }',
+             '`i` is not a mutable place: its `for` sets it each time round; pass a copy of it, a `let mut`'),
+            ('fn bump { mut n: i32 } { n = n + 1 }\nfn f { xs: []i32 } { for &x in xs { bump{ n = &x } } }\nfn main {} { f{ xs = [1] } }',
+             '`x` is not a mutable place: it is an element of a read-only array or slice'),
+        ])
+
+    def test_what_is_gone_over(self):
+        over = 'a `for` goes over a range `lo..hi`, a slice or an array, not '
+        self.errors([
+            ('fn main {} { let n = 3; for i in n { } }', over + '{integer}: to count up to it, write `0..n`'),
+            ('fn f { n: usize } { for i in n { } }\nfn main {} { f{ n = 1 } }', over + 'usize: to count up to it, write `0..n`'),
+            ('fn f { p: *i32 } { for x in p { } }\nfn main {} { let a = 1; f{ p = &a } }',
+             over + "*i32: a pointer has no length; go over `@slice(p, n)` for its `n` elements, which isn't checked"),
+            ('fn f { xs: ?[]i32 } { for x in xs { } }\nfn main {} { f{ xs = null } }',
+             over + '?[]i32: unwrap it first, as `if let xs = ... { for x in xs { ... } }`'),
+            ('fn f { xs: list::List(i32, arena::Arena) } { for x in xs { } }\nfn main {} {}',
+             over + 'list::List(i32, arena::Arena): go over its items, `list::items{ list = xs }`'),
+            ('struct S { n: i32 }\nfn f { s: S } { for x in s { } }\nfn main {} {}', over + 'S'),
+            ('fn make {} -> [3]i32 { return [1, 2, 3] }\nfn main {} { for x in make{} { } }',
+             'a `for` goes over an array through a view of it, which needs a place: keep the array in a `let` first, and go over that'),
+            ('fn main {} { for i in 0.0..3.0 { } }',
+             "a `for`'s range counts integers, got {float}: count with an integer, and convert it with @as in the body"),
+            ('fn main {} { let a: i32 = 0; let b: u32 = 3; for i in a..b { } }',
+             "a `for`'s range needs bounds of one integer type, got i32 and u32: convert one with @as"),
+            ('#task\nfn work {} -> i32 { return 1 }\nfn main { mut threads: Threads } {\n    let mut ts: [2]task::Task(i32)\n'
+             '    for &t in ts { _ = task::wait{ &threads, task = &t } }\n}',
+             "a `for` can't go over tasks' handles, which are never copied or renamed: count the indexes, "
+             '`for i in 0..tasks.len`, and write `tasks[i]`'),
+        ])
+
+    def test_escape(self):
+        """§14: `&x` of a `for &x` points into what is gone over, and an element's copy holds
+        what the array's elements hold."""
+        self.assertOutput(r"""
+fn first { xs: []*i32 } -> *i32 {
+    for p in xs { return p }
+    @panic()
+}
+fn fixed {} -> *i32 {
+    for &x in [1, 2] { return &x }                  // a static view
+    @panic()
+}
+fn main { mut io: Io } {
+    let a = [7, 8]
+    let ps: [1]*i32 = [&a[0]]
+    _ = @fmt(&io, "{} {}\n", first{ xs = ps[..] }.*, fixed{}.*)
+}
+""", '7 1\n')
+        self.errors([
+            ('fn f {} -> *i32 {\n    let a = [1, 2]\n    for &x in a { return &x }\n    @panic()\n}\nfn main {} { _ = f{} }',
+             'returned value holds the address of local `a`'),
+            ('fn f {} -> *i32 {\n    let v = 1\n    let a = [&v, &v]\n    for p in a { return p }\n    @panic()\n}\nfn main {} { _ = f{} }',
+             'returned value holds the address of local `a`'),
+            ('struct Keep { p: ?*mut i32 }\nfn f { mut k: Keep } {\n    let mut a = [1, 2]\n    for &x in a { k.p = &x }\n}\n'
+             'fn main {} { let mut k = Keep{ p = null }; f{ &k } }',
+             'cannot store the address of local `a` in `k`, which belongs to the caller'),
+            ('fn f {} -> *i32 {\n    let v = 1\n    for &x in [v, 2] { return &x }\n    @panic()\n}\nfn main {} { _ = f{} }',
+             'returned value holds the address of an array literal'),
+        ])
+
+    def test_argument_order(self):
+        """§3, rule 10: a fn that changes an array through a `for &x` changes it; `for x` reads it."""
+        decls = """
+struct S { a: [3]i32, n: i32 }
+fn zero { mut s: S } -> i32 {
+    for &x in s.a { x = 0 }
+    return 0
+}
+fn sum { mut s: S } -> i32 {
+    let mut t = 0
+    for x in s.a { t = t + x }
+    s.n = t
+    return t
+}
+fn show { n: i32, z: i32 } -> i32 { return n + z }
+"""
+        self.assertOutput(decls + r"""
+fn main { mut io: Io } {
+    let mut s = S{ a = [1, 2, 3], n = 1 }
+    _ = @fmt(&io, "{}\n", show{ n = s.a[0], z = sum{ &s } })       // sum only reads s.a
+}
+""", '7\n')
+        self.errors([
+            (decls + 'fn main {} { let mut s = S{ a = [1, 2, 3], n = 1 }; _ = show{ n = s.a[0], z = zero{ &s } } }',
+             '`n` reads `s.a[_]`, and `z` changes `s.a`, in one call'),
+            (decls + 'fn main {} { let mut s = S{ a = [1, 2, 3], n = 1 }; _ = show{ n = s.n, z = sum{ &s } } }',
+             '`n` reads `s.n`, which `z` changes, in one call'),
+        ])
+
+
 class ListExample(Base):
     def test_runs(self):
         self.assertOutput(LIST_SRC, '10\n20\n30\n40\n100\n10\n')
@@ -1186,7 +1524,15 @@ class Parser(Base):
             ('let _ = 1', '`_` is not a name: `_ = e` discards a value without declaring anything', 2, 5),
             ('let x', '`let x` needs a type or an initializer', 2, 5),
             ('defer let x = 1', '`defer` takes a call, an assignment, `_ = e` or a block', 2, 5),
-            ('outer: if true {}', "only a `while` can be labeled, found 'if'", 2, 12),
+            ('outer: if true {}', "only a `while` or a `for` can be labeled, found 'if'", 2, 12),
+            ('for a, b in xs {}', 'a `for` names one element: write `for x at i in xs` for each element `x` and its index `i`', 2, 10),
+            ('for x of xs {}', "expected `in` after a `for`'s name, as in `for x in xs` or `for i in 0..n`, found 'of'", 2, 11),
+            ('for i in 0..=n {}', 'a `for`\'s range is `lo..hi`, which leaves `hi` out: to include it, write `lo..hi + 1`', 2, 17),
+            ('for &i in 0..n {}', "a range's numbers aren't places: write `for i in lo..hi`, without the `&`", 2, 9),
+            ('for i at k in 0..n {}', "a range's number is its own index: write `for i in lo..hi`, without the `at`", 2, 11),
+            ('for i in range(n) {}', 'a `for` counts over a range written `lo..hi`: write `for i in 0..n`', 2, 14),
+            ('for i in 0.. {}', "expected an expression, found '{'", 2, 18),
+            ('let for = 1', "expected a name, found 'for'", 2, 9),
             ('let some{ value } = x', 'a `let` with a pattern needs an `else`', 3, 1),
             ('let null = x', 'a `let` with a pattern needs an `else`', 3, 1),
             ('let ok{ value } = r else err{ e } {', "expected '}' to close block", 3, 2),
@@ -6992,7 +7338,7 @@ fn main {} {
 """, 'loop label `a` is already used by an enclosing loop')
 
     def test_only_while_is_labeled(self):
-        self.assertCompileError('fn main {} {\n    a: if true { }\n}', 'only a `while` can be labeled')
+        self.assertCompileError('fn main {} {\n    a: if true { }\n}', 'only a `while` or a `for` can be labeled')
 
     def test_defer_cannot_leave_through_a_label(self):
         self.assertCompileError("""

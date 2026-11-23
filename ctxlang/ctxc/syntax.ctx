@@ -104,6 +104,10 @@ namespace syntax {
         discard{ e: Expr },                             // _ = e
         cond{ x: If },
         loop{ label: ?Name, c: Expr, body: Block },     // while; the label is outside the span
+        // for (§11, For); the label is outside the span. `for i in lo..hi`: iter is lo, and hi
+        // is set. `for x in e`, `for &x in e` (by_ref) and `for x at i in e` (index): iter is
+        // what is gone over, a slice: `e[..]` with e's span, or e itself, an array literal.
+        each{ label: ?Name, item: Name, by_ref: bool, index: ?Name, iter: Expr, hi: ?Expr, body: Block },
         choose{ x: Match },                             // match
         ret{ value: ?Expr },
         brk{ label: ?Name },

@@ -19,30 +19,24 @@ namespace slice {
     fn copy(T) { dst: []mut T, src: []T } {
         if dst.len < src.len { @panic("slice::copy: destination is shorter than source") }
         // The check above covers every index, so the loop goes through the pointers, unchecked.
-        let mut i: usize = 0
-        while i < src.len {
+        for i in 0..src.len {
             (dst.ptr + i).* = (src.ptr + i).*
-            i = i + 1
         }
     }
 
     // Whether a and b hold the same bytes. Also the equality for a map with []u8 keys.
     fn eq_bytes { a: []u8, b: []u8 } -> bool {
         if a.len != b.len { return false }
-        let mut i: usize = 0
-        while i < a.len {
-            if a[i] != b[i] { return false }
-            i = i + 1
+        for x at i in a {
+            if x != b[i] { return false }
         }
         return true
     }
 
     // Sets every element to v.
     fn fill(T) { s: []mut T, v: T } {
-        let mut i: usize = 0
-        while i < s.len {
+        for i in 0..s.len {
             (s.ptr + i).* = v
-            i = i + 1
         }
     }
 }

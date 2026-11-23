@@ -7,7 +7,7 @@ Examples: [examples/list.ctx](examples/list.ctx) (lists, allocators, bound funct
 1. A program is a sequence of declarations: `fn`, `extern fn` (§18), `struct`, `union`, `enum`, `type`, `const`, `capability` (§15), `error` (§8, Errors), `namespace`. Any declaration may have attributes (§18).
 2. There is no mutable state at top level. Top-level names may be referenced from anywhere.
 3. All effects (IO, memory, OS) reach a function only through its context.
-4. Source files are UTF-8. Names are ASCII: a letter or `_`, then letters, digits and `_`, and not a keyword: `fn` `struct` `union` `enum` `type` `const` `namespace` `let` `mut` `if` `else` `while` `break` `continue` `match` `return` `defer` `and` `or` `not` `true` `false` `null` `extern` `capability` `ifnull` `iferr` `try` `is`. `distinct` is a keyword only after `type Name =` (§12, Distinct types), and a name everywhere else. Other characters may appear only in comments, which are `// to the end of the line` and `/* ... */` (not nested). String and character literals are ASCII too (§11 Literals).
+4. Source files are UTF-8. Names are ASCII: a letter or `_`, then letters, digits and `_`, and not a keyword: `fn` `struct` `union` `enum` `type` `const` `namespace` `let` `mut` `if` `else` `while` `for` `break` `continue` `match` `return` `defer` `and` `or` `not` `true` `false` `null` `extern` `capability` `ifnull` `iferr` `try` `is`. `distinct` is a keyword only after `type Name =` (§12, Distinct types), and `in` and `at` only in a `for`'s head (§11, For): each is a name everywhere else. Other characters may appear only in comments, which are `// to the end of the line` and `/* ... */` (not nested). String and character literals are ASCII too (§11 Literals).
 
 ## 2. Functions and contexts
 
@@ -393,7 +393,8 @@ x = e
 _ = e
 if e { } else if e { } else { }
 while e { }
-label: while e { }
+for i in lo..hi { }      for x in e { }      for &x in e { }      for x at i in e { }
+label: while e { }       label: for x in e { }
 break      break label
 continue   continue label
 match e { ... }
@@ -410,9 +411,9 @@ f{ ... }
 5. In `x = e`, `x` must be a mutable place.
 6. An expression statement must be a call or a builtin call that returns nothing, `try` of such a call, or `iferr` on a bare `!` (§8, Errors). A call that returns a value is an error as a statement, a `!T` or `!` included: use the value, or discard it explicitly with `_ = e`. `_ = e` evaluates any expression `e` that has a value, and drops it; `_` is not a name and can't be declared. In `_ = e ifnull x` and `_ = e iferr x`, `x` may also give no value, since the value is dropped either way: a block that ends without one, a trailing `if` or `match` among them, or a call that returns nothing. It runs for its effects (`_ = f{} iferr { log{} }`), and the `ifnull` or `iferr` then has no value, as one on a bare `!` has none. An `x` that is itself an `ifnull` or `iferr` may end so too. So `_ = f{} iferr { ... }` is right whatever `f` returns. The exception is the last statement of a branch of an `if` or `match` expression, which gives the branch its value (below).
 7. `return` without a value is only allowed in a function with no `-> R`. In a function with `-> R`, every path must end in `return e` or `@panic()`. In a function with no `-> R`, or whose result is a bare `!` (§8, Errors, rule 4), `return e` may also take an `e` without a value: a call that returns nothing, `try` of one that returns a bare `!`, or an `iferr` on one. It is `e`, then `return`: `return try close{ &fs, file }`.
-8. `break` leaves the innermost enclosing `while`. `continue` skips the rest of its body and goes to its next condition check. Both are errors outside a loop, and both end a path.
+8. `break` leaves the innermost enclosing loop, a `while` or a `for`. `continue` skips the rest of its body and goes to its next condition check, or to a `for`'s next element or number. Both are errors outside a loop, and both end a path.
 9. `while true` without a `break` that leaves it ends a path, like `return`.
-10. Labels: `name:` before a `while`, on the same line or the line above, labels it. Only a `while` can be labeled. `break name` and `continue name` act on the enclosing loop labeled `name` instead of the innermost one, leaving any loops in between. It is an error if no enclosing loop has that label, or if a loop is labeled with a name an enclosing loop already uses. A jump in a `defer` body sees only the loops inside that body (§11, Defer). Deferred bodies run for every block the jump leaves, innermost first.
+10. Labels: `name:` before a `while` or a `for`, on the same line or the line above, labels it. Only a loop can be labeled. `break name` and `continue name` act on the enclosing loop labeled `name` instead of the innermost one, leaving any loops in between. It is an error if no enclosing loop has that label, or if a loop is labeled with a name an enclosing loop already uses. A jump in a `defer` body sees only the loops inside that body (§11, Defer). Deferred bodies run for every block the jump leaves, innermost first.
 
 ```
 rows:
@@ -425,6 +426,28 @@ while r < n {
     r = r + 1
 }
 ```
+
+### For
+
+```
+for i in 0..n { total = total + xs[i] }             // i has n's type: 0, 1, ... n - 1
+for x in xs { total = total + x }                   // each element, copied
+for &x in xs { x = x * 2 }                          // each element's place: xs is a []mut T or a mutable array
+for x at i in xs { if x == want { return i } }      // the element and its index, a usize
+rows:
+for r in 0..n {
+    for c in 0..n { if grid[r][c] == want { break rows } }
+}
+```
+
+1. `for i in lo..hi { B }` runs `B` with `i` set to `lo`, `lo + 1` and so on up to `hi - 1`: `hi` is left out, and where `lo >= hi` the body doesn't run at all, so a range never counts down. `lo` and `hi` are evaluated once, `lo` first, before the first turn: what the body does to the places they read doesn't change the range. They are integers of one type after widening, as the operands of `<` are (Expressions, rule 1), and `i` has that type: in `for i in 0..n` it is `n`'s, and between two literals `i32`, unless a use says otherwise (Literals, rule 1). Counting never overflows. `lo..=hi` is an error: write `lo..hi + 1`.
+2. `for x in e { B }` runs `B` once for each element of `e`, in order, with `x` a copy of the element. `e` is a slice; or an array place, a pointer to an array or a const array, gone over as its view `e[..]` (§12, Slices, rule 4); or an array literal, which is a view where a slice is expected (Literals, rule 4). An array that isn't a place, as a call's result, is an error: keep it in a `let` first. Anything else is an error that says what to go over: for a number `n`, `0..n`; for a list, `list::items{ list = xs }`.
+3. `for &x in e { B }` binds `x` as the element's place instead, as `&f` binds a field in a pattern (§8, Match, rule 5). Nothing is copied. `x` is mutable where `e` is a `[]mut T` or a mutable array place, and read-only otherwise. `&x` is the element's address, derived from what `e` is derived from (§14, Escape check).
+4. `for x at i in e`, and `for &x at i in e`, also set `i`, a `usize`, to the element's index. Two names with a comma, `for a, b in e`, are an error that says to write `at`: which of the two is the index would be easy to get wrong. A range has no `&` and no `at`.
+5. The names are the body's own, set anew each turn: `i`, an `x` without `&` and the index are read-only locals, so assigning one is an error (change a `let mut` copy), and a bind made in the body holds that turn's value. `_` for a name declares nothing: `for _ in 0..n`.
+6. What is gone over is evaluated once, before the first turn, and the loop holds that slice as a `let` holds one: its length is fixed then, and each turn reads its element as it is at that turn, so a later turn sees what an earlier one changed. Nothing tracks what a held slice points to (§12, Pointers, rule 7). So a body that frees or moves the memory, as growing a list while going over its items may, leaves the loop with a slice of memory that is gone, as it would leave any slice held across that call (§13, Unchecked operations, rule 3): go over the indexes instead, `for i in 0..xs.len`, whose `xs.len` is read once, and index the list in the body.
+7. `break`, `continue` and labels act on a `for` as on a `while` (rules 8 and 10). A `for` never ends a path (rule 9): it may run no turn.
+8. A `for` can't go over tasks' handles (§15, Tasks, rule 4), which are never copied: count the indexes.
 
 ### Let-else
 
@@ -879,6 +902,7 @@ The compiler checks that the address of a local does not outlive it. Direct call
    - a struct, union or array literal, or an error with a payload (`name{ field = e }`)
    - pointer arithmetic, `@cast` or `@slice`
    - converting a `*[N]T` to a slice, slicing (`s[lo..hi]`), or `s.ptr`
+   - a `for` (§11, For): the address of its `&x`, from what the loop goes over, as `&s[i]` is; and an element's copy `x`, from what the elements of an array it goes over are
    - a direct call, whose result is derived from the read-only parameters that may flow into that output. Success and error outputs have separate summaries: `try` propagates only error origins and yields only success origins. A fresh copy or static error need not borrow an input that only controls its contents or selection.
    - an indirect call, whose outputs conservatively derive from all read-only arguments and the callee's captured origins; a bind (§4) copies all read-only arguments and the callee's captured origins. Arguments passed to `mut` fields do not count.
 

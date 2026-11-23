@@ -313,6 +313,7 @@ namespace check {
         ord_owner:   u32 = 0,
         ord_first:   u32 = 0,
         ord_lending: bool = false,                    // an address taken now reaches code that runs
+        each_iter: u64 = NO_KEY,                      // the `e[..]` a `for` goes over, while it is checked
         // Split borrows (§3.1, rule 8): the calls given places that overlap, checked by
         // order_post against their callees' summaries.
         split_cands: list::List(SplitCand, Heap),
@@ -353,6 +354,7 @@ namespace check {
         kind:       VarKind,
         mutable:    bool,
         indirect:   bool,           // it holds a pointer to the place: a `mut` field, a `&f` binding
+        each:       bool,           // a `for` sets it each time round: `x`, `&x` or the index
         tracked:    bool,           // `let x: T` without a value, which must be assigned before use
         narrow_of:  u32,            // what a narrowed view narrows, or NONE
         depth:      u32,
@@ -4362,7 +4364,7 @@ namespace check {
     fn new_var { mut c: Checker, name: []u8, ty: Id, kind: VarKind, mutable: bool, at: source::Span } -> u32 {
         let v = @as(u32, c.vars.len)
         let item = Var{
-            name, ty, kind, mutable, indirect = false, tracked = false, narrow_of = NONE,
+            name, ty, kind, mutable, indirect = false, each = false, tracked = false, narrow_of = NONE,
             depth = c.depth, loop_depth = c.loop_depth, at,
             derived = new_derived{ &c, xs = slice::empty(u32){} },
             held = new_held{ &c, xs = slice::empty(Place){} },
@@ -4511,6 +4513,9 @@ namespace check {
     fn put_local { mut c: Checker, key: u64, v: u32 } {
         try! map::put{ m = &c.local_of, key, value = v }
     }
+
+    // No node's key: a file's index is never this high.
+    const NO_KEY: u64 = 0xFFFFFFFFFFFFFFFF
 
     fn stmt_key { s: syntax::Stmt } -> u64 {
         return key{ file = s.span.file, id = s.id }
@@ -4705,6 +4710,7 @@ namespace check {
             discard{ e } => { discard{ &c, e } }
             cond{ x } => { _ = check_if{ &c, x, at = s.span, exp = types::NO_TYPE, value = false, may_leave = false, drop = false } }
             loop{ label, c = cond, body } => { while_stmt{ &c, label, cond, body, at = s.span, k = stmt_key{ s } } }
+            each{ label, item, by_ref, index, iter, hi, body } => { for_stmt{ &c, s, label, item, by_ref, index, iter, hi, body } }
             choose{ x } => { _ = check_match{ &c, x, at = s.span, exp = types::NO_TYPE, value = false, may_leave = false, drop = false } }
             ret{ value } => { return_stmt{ &c, value, at = s.span } }
             brk{ label } => { jump{ &c, word = "break", label, at = s.span, k = stmt_key{ s } } }
@@ -4785,7 +4791,15 @@ namespace check {
             put_ref{ &c, e = place, r = PathRef::local{ var = v } }
             set_type{ &c, e = place, t = x.ty }
             if not x.mutable and not x.tracked {
-                let why: utf8::String = if x.indirect { "bound through a read-only pointer" } else { "read-only" }
+                let why: utf8::String = if x.each and x.indirect {
+                    "an element of a read-only array or slice; `for &x` changes the elements of a `let mut` array or a `[]mut T`"
+                } else if x.each {
+                    "set by its `for` each time round; change a copy of it, a `let mut`"
+                } else if x.indirect {
+                    "bound through a read-only pointer"
+                } else {
+                    "read-only"
+                }
                 errorf{ &c, at = expr_at{ e = place }, msg = @fmt("cannot assign to `{}`: it is {}", str{ s = x.name }, why) }
             }
             expect{ &c, e = value, t = x.ty }
@@ -4975,6 +4989,16 @@ namespace check {
     }
 
     fn while_stmt { mut c: Checker, label: ?syntax::Name, cond: syntax::Expr, body: syntax::Block, at: source::Span, k: u64 } {
+        let name = loop_label{ &c, label }
+        expect{ &c, e = cond, t = types::BOOL }
+        let f = facts{ c, e = cond }
+        let mut forever = false
+        if cond.k is boolean{ value } { forever = value }
+        loop_body{ &c, name, facts = f.yes, vars = no_vars{}, forever, body, at, k }
+    }
+
+    // A loop's label, or "" without one. An enclosing loop can't have it already.
+    fn loop_label { mut c: Checker, label: ?syntax::Name } -> []u8 {
         let mut name = ""
         if label != null {
             name = label.text
@@ -4988,12 +5012,87 @@ namespace check {
                 i = i + 1
             }
         }
-        expect{ &c, e = cond, t = types::BOOL }
+        return name
+    }
+
+    // `for` (§11, For). A range's bounds, or what is gone over, are evaluated once, before the
+    // loop, and the names are the body's: set anew each time round, so not assignable.
+    fn for_stmt { mut c: Checker, s: syntax::Stmt, label: ?syntax::Name, item: syntax::Name, by_ref: bool, index: ?syntax::Name, iter: syntax::Expr, hi: ?syntax::Expr, body: syntax::Block } {
+        let name = loop_label{ &c, label }
+        let mut vars = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        if let end = hi {
+            // `lo..hi`: integers of one type, after widening as a comparison's operands.
+            let lt = expr{ &c, e = iter, exp = types::NO_TYPE }
+            let rt = expr{ &c, e = end, exp = lt }
+            let mut t = operand_type{ &c, lt, rt, a = iter, b = end }
+            if t == types::NO_TYPE {
+                errorf{ &c, at = expr_at{ e = iter }, msg = @fmt("a `for`'s range needs bounds of one integer type, got {} and {}: convert one with @as", tstr{ c, t = lt }, tstr{ c, t = rt }) }
+                t = types::ERROR
+            } else if not is_int{ c, t = op_type{ c, t } } {
+                let float: utf8::String = if is_num{ c, t = op_type{ c, t } } { ": count with an integer, and convert it with @as in the body" } else { "" }
+                errorf{ &c, at = expr_at{ e = iter }, msg = @fmt("a `for`'s range counts integers, got {}{}", tstr{ c, t }, float) }
+                t = types::ERROR
+            }
+            push{ xs = &vars, n = each_var{ &c, name = item, t, by_ref = false, mutable = false, origins = no_vars{} } }
+        } else {
+            let mut st = types::ERROR
+            if iter.k is array | repeat {
+                // A literal is a view of its array where a slice is expected (§11, Literals).
+                let any = types::fresh{ s = &c.ty, kind = types::VarKind::any }
+                let want = types::slice{ s = &c.ty, elem = any, mutable = false }
+                let got = expr{ &c, e = iter, exp = want }
+                st = types::prune{ s = c.ty, t = got }
+            } else {
+                c.each_iter = expr_key{ e = iter }
+                st = typed{ &c, e = iter }
+                c.each_iter = NO_KEY
+            }
+            let mut elem = types::ERROR
+            let mut mutable = false
+            if types::get{ s = c.ty, id = st } is slice{ elem = x, mutable = m } {
+                elem = x
+                mutable = m
+            }
+            if holds_handle{ c, t = elem } {
+                error{ &c, at = item.span, msg = "a `for` can't go over tasks' handles, which are never copied or renamed: count the indexes, `for i in 0..tasks.len`, and write `tasks[i]`" }
+                elem = types::ERROR
+            }
+            // An element's copy holds what the array's elements hold; `&x` points into what was
+            // gone over, as `&s[i]` does.
+            let mut origins = no_vars{}
+            if by_ref or iter.k is array | repeat {
+                origins = derives{ &c, e = iter }
+            } else if iter.k is range{ base } {
+                if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e = base.* } } } is array { origins = derives{ &c, e = base.* } }
+            }
+            push{ xs = &vars, n = each_var{ &c, name = item, t = elem, by_ref, mutable = by_ref and mutable, origins } }
+            if let ix = index { push{ xs = &vars, n = each_var{ &c, name = ix, t = types::USIZE, by_ref = false, mutable = false, origins = no_vars{} } } }
+        }
+        loop_body{ &c, name, facts = slice::empty(Fact){}, vars = list::items{ list = vars }, forever = false, body, at = s.span, k = stmt_key{ s } }
+    }
+
+    // A local that a `for` sets each time round: an element's copy, its index or a range's
+    // number, or, by_ref, the element's place.
+    fn each_var { mut c: Checker, name: syntax::Name, t: Id, by_ref: bool, mutable: bool, origins: []u32 } -> u32 {
+        // `_` declares nothing: the local has no name.
+        let text = if slice::eq_bytes{ a = name.text, b = "_" } { name.text[..0] } else { name.text }
+        let v = new_var{ &c, name = text, ty = t, kind = VarKind::bind, mutable, at = name.span }
+        let d = new_derived{ &c, xs = origins }
+        let at = list::at{ list = c.vars, i = v }
+        at.indirect = by_ref
+        at.each = true
+        at.derived = d
+        put_local{ &c, key = name_key{ n = name }, v }
+        return v
+    }
+
+    // A loop's body, which may run any number of times: with `facts` assumed in it, and `vars`
+    // declared in it. `forever` is a loop that leaves only through a `break`.
+    fn loop_body { mut c: Checker, name: []u8, facts: []Fact, vars: []u32, forever: bool, body: syntax::Block, at: source::Span, k: u64 } {
         let s0 = save{ c }
         // A loop may run its body any number of times: no handle declared before it is known.
         c.zeros = slice::empty(u32){}
         c.fulls = slice::empty(u32){}
-        let f = facts{ c, e = cond }
         let lp = Loop{
             label = name,
             key = k,
@@ -5004,7 +5103,12 @@ namespace check {
         c.loop_depth = c.loop_depth + 1
         open{ &c }
         c.live_from = body.span.start
-        assume{ &c, facts = f.yes, after_if = false }
+        let mut n: usize = 0
+        while n < vars.len {
+            declare_var{ &c, v = vars[n] }
+            n = n + 1
+        }
+        assume{ &c, facts, after_if = false }
         stmts{ &c, xs = body.stmts }
         close{ &c, end = body.span.end }
         c.loop_depth = c.loop_depth - 1
@@ -5039,8 +5143,6 @@ namespace check {
             maybe = set_union{ c, a = maybe, b = conts[i].maybe }
             i = i + 1
         }
-        let mut forever = false
-        if cond.k is boolean{ value } { forever = value }
         if forever {
             // `while true` leaves only through a break; without one it ends the path.
             let none = slice::empty(u32){}
@@ -6488,7 +6590,15 @@ namespace check {
                 if r is local{ var } {
                     let v = get_var{ c, v = var }
                     if not v.mutable {
-                        let why: utf8::String = if v.indirect { ": it is bound through a read-only pointer" } else { "" }
+                        let why: utf8::String = if v.each and v.indirect {
+                            ": it is an element of a read-only array or slice"
+                        } else if v.each {
+                            ": its `for` sets it each time round; pass a copy of it, a `let mut`"
+                        } else if v.indirect {
+                            ": it is bound through a read-only pointer"
+                        } else {
+                            ""
+                        }
                         errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` is not a mutable place{}", str{ s = v.name }, why) }
                     }
                 }
@@ -6840,6 +6950,17 @@ namespace check {
                 choose{ x } => { borrow_match{ &c, &b, x } }
                 loop{ c = test, body } => {
                     _ = borrow_expr{ &c, &b, e = test }
+                    borrow_block{ &c, &b, block = body }
+                }
+                each{ item, iter, hi, body } => {
+                    // An element, or its place, comes from what is gone over, as `let x = s[i]`.
+                    let xs = borrow_origins{ c, v = borrow_expr{ &c, &b, e = iter } }
+                    if let e = hi {
+                        _ = borrow_expr{ &c, &b, e }
+                    } else {
+                        let v = map::get{ m = c.local_of, key = name_key{ n = item } }
+                        if v != null { borrow_put{ &c, &b, v, xs } }
+                    }
                     borrow_block{ &c, &b, block = body }
                 }
                 deferred{ body } => { borrow_block{ &c, &b, block = body } }
@@ -7453,6 +7574,8 @@ namespace check {
     fn derive_addr { mut c: Checker, x: syntax::Expr } -> []u32 {
         let p = place_path{ c, e = x }
         if p != null {
+            // A `for`'s `&x` points into what the loop goes over, as `&s[i]` does.
+            if get_var{ c, v = p.root }.each and get_var{ c, v = p.root }.indirect { return derived_of{ c, v = p.root } }
             if get_var{ c, v = p.root }.indirect { return no_vars{} }
             return set_add{ c, xs = no_vars{}, n = p.root }
         }
@@ -8544,6 +8667,26 @@ namespace check {
                 ord_expr{ &c, e = cond, part, &us }
                 ord_block{ &c, b = body, part, &us }
             }
+            each{ by_ref, iter, hi, body } => {
+                // A `for` holds what it goes over while its body runs. `for &x` may change an
+                // array through its view, as a view kept in a `let` may; `for x` reads it.
+                let mut read = false
+                if not by_ref {
+                    if iter.k is range{ base } {
+                        if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e = base.* } } } is array {
+                            ord_place{ &c, e = base.*, part, write = false, addr = false, &us }
+                            read = true
+                        }
+                    }
+                }
+                if not read {
+                    c.ord_lending = true
+                    ord_expr{ &c, e = iter, part, &us }
+                    c.ord_lending = lending
+                }
+                if let e = hi { ord_expr{ &c, e, part, &us } }
+                ord_block{ &c, b = body, part, &us }
+            }
             choose{ x } => { ord_match{ &c, x, part, &us } }
             ret{ value } => {
                 c.ord_lending = false
@@ -8994,6 +9137,12 @@ namespace check {
             discard{ e } => { return tw_expr{ &c, e, st } }
             cond{ x } => { return tw_if{ &c, x, st } }
             loop{ label, c = cond, body } => { return tw_loop{ &c, label = if let n = label { n.text } else { "" }, cond, body, st } }
+            each{ label, iter, hi, body } => {
+                // What is gone over is evaluated once, then the body any number of times.
+                let first = tw_expr{ &c, e = iter, st }
+                let from = if let e = hi { tw_expr{ &c, e, st = first } } else { first }
+                return tw_loop{ &c, label = if let n = label { n.text } else { "" }, cond = null, body, st = from }
+            }
             choose{ x } => { return tw_match{ &c, x, st } }
             ret{ value } => {
                 let after = if let e = value { tw_expr{ &c, e, st } } else { st }
@@ -9054,7 +9203,7 @@ namespace check {
 
     // A loop: its body walked from what may come in, the first time or after any number of
     // times round, until that stops growing; then once more, reporting.
-    fn tw_loop { mut c: Checker, label: []u8, cond: syntax::Expr, body: syntax::Block, st: TState } -> TState {
+    fn tw_loop { mut c: Checker, label: []u8, cond: ?syntax::Expr, body: syntax::Block, st: TState } -> TState {
         let report = c.treport
         c.treport = false
         let mut head = st
@@ -9074,9 +9223,10 @@ namespace check {
     // One walk of a loop from head: the state going round again, and the state after it.
     struct TRound { again: TState, out: TState }
 
-    fn tw_round { mut c: Checker, label: []u8, cond: syntax::Expr, body: syntax::Block, head: TState } -> TRound {
+    // cond is a `while`'s condition; a `for` has none, and may always end.
+    fn tw_round { mut c: Checker, label: []u8, cond: ?syntax::Expr, body: syntax::Block, head: TState } -> TRound {
         try! list::push{ list = &c.tloops, item = TLoop{ label, breaks = list::new(TState){ realloc = arena::alloc, heap = c.heap }, conts = list::new(TState){ realloc = arena::alloc, heap = c.heap } } }
-        let s = tw_expr{ &c, e = cond, st = head }
+        let s = if let e = cond { tw_expr{ &c, e, st = head } } else { head }
         let end = tw_block{ &c, b = body, st = s }
         let l = list::pop{ list = &c.tloops } ifnull { @panic("check: a loop's exits lost") }
         let mut again = list::new(TState){ realloc = arena::alloc, heap = c.heap }
@@ -9088,7 +9238,8 @@ namespace check {
             i = i + 1
         }
         let mut outs = list::new(TState){ realloc = arena::alloc, heap = c.heap }
-        let forever = cond.k is boolean{ value } and value
+        let mut forever = false
+        if let e = cond { forever = e.k is boolean{ value } and value }
         if not forever { try! list::push{ list = &outs, item = s } }
         let bs = list::items{ list = l.breaks }
         i = 0
@@ -9499,6 +9650,11 @@ namespace check {
             cond{ x } => { scan_if{ &c, sc, x } }
             loop{ c = cond, body } => {
                 scan{ &c, sc, e = cond }
+                scan_stmts{ &c, sc, xs = body.stmts }
+            }
+            each{ iter, hi, body } => {
+                scan{ &c, sc, e = iter }
+                if let e = hi { scan{ &c, sc, e } }
                 scan_stmts{ &c, sc, xs = body.stmts }
             }
             choose{ x } => { scan_match{ &c, sc, x } }
@@ -10301,12 +10457,18 @@ namespace check {
 
     // `base[lo..hi]`. An array place or const is sliced through its address, a `*[N]T` directly.
     fn range_expr { mut c: Checker, e: syntax::Expr, base: syntax::Expr, lo: ?*syntax::Expr, hi: ?*syntax::Expr } -> Id {
+        // What a `for` goes over is `e[..]` (§11, For): its errors are the `for`'s.
+        let each = c.each_iter == expr_key{ e }
+        c.each_iter = NO_KEY
         let mut bt = typed{ &c, e = base }
         let mut addr = types::NO_TYPE
         let mut ok = true
         if types::get{ s = c.ty, id = bt } is array {
             let constant = const_storage{ c, e = base }
-            if constant or check_place{ &c, e = base } {
+            if each and not constant and not (base.k is path | field | index | deref | error) {
+                error{ &c, at = expr_at{ e = base }, msg = "a `for` goes over an array through a view of it, which needs a place: keep the array in a `let` first, and go over that" }
+                ok = false
+            } else if constant or check_place{ &c, e = base } {
                 let m = not constant and place_mutable{ c, e = base }
                 addr = types::ptr{ s = &c.ty, elem = bt, mutable = m }
                 bt = addr
@@ -10325,7 +10487,10 @@ namespace check {
         if not ok {
             t = types::ERROR
         } else {
-            if types::get{ s = c.ty, id = bt } is ptr {
+            if each and not (types::get{ s = c.ty, id = bt } is slice | error) {
+                each_error{ &c, base, bt }
+                t = types::ERROR
+            } else if types::get{ s = c.ty, id = bt } is ptr {
                 let q = str{ s = source_text{ c, span = base.span } }
                 errorf{ &c, at = expr_at{ e }, msg = @fmt("cannot slice {}: a pointer has no length to check against; write `@slice({} + lo, n)` for `n` elements from `lo`, which isn't checked", tstr{ c, t = bt }, q) }
                 t = types::ERROR
@@ -10337,6 +10502,27 @@ namespace check {
         if lo != null { expect{ &c, e = lo.*, t = types::USIZE } }
         if hi != null { expect{ &c, e = hi.*, t = types::USIZE } }
         return t
+    }
+
+    // A `for` over base, of type bt, which is no slice or array: what it goes over, and what to
+    // write for a number, a pointer, a list or an optional.
+    fn each_error { mut c: Checker, base: syntax::Expr, bt: Id } {
+        let text = str{ s = source_text{ c, span = base.span } }
+        let mut b = message{ c }
+        try! @fmt(&b, "a `for` goes over a range `lo..hi`, a slice or an array, not {}", tstr{ c, t = bt })
+        match types::get{ s = c.ty, id = bt } {
+            ptr => { try! @fmt(&b, ": a pointer has no length; go over `@slice({}, n)` for its `n` elements, which isn't checked", text) }
+            record{ decl } => {
+                if decl == std_decl{ c, space = "list", name = "List" } { try! @fmt(&b, ": go over its items, `list::items{{ list = {} }}`", text) }
+            }
+            opt => {
+                try! utf8::push{ &b, s = ": unwrap it first, as `if let xs = ... { for x in xs { ... } }`" }
+            }
+            else => {
+                if is_int{ c, t = op_type{ c, t = bt } } { try! @fmt(&b, ": to count up to it, write `0..{}`", text) }
+            }
+        }
+        error{ &c, at = expr_at{ e = base }, msg = utf8::view{ b } }
     }
 
     // The type of e, pruned, with no expected type. (Pruning in the same call would copy the store

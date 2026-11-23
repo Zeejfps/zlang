@@ -4,10 +4,8 @@
 namespace ci {
     fn eq { a: []u8, b: []u8 } -> bool {
         if a.len != b.len { return false }
-        let mut i: usize = 0
-        while i < a.len {
+        for i in 0..a.len {
             if ascii::to_lower{ c = a[i] } != ascii::to_lower{ c = b[i] } { return false }
-            i = i + 1
         }
         return true
     }
@@ -51,20 +49,16 @@ namespace ci {
     // A hash that agrees with `eq`: FNV-1a over the lower-cased bytes.
     fn hash { key: []u8 } -> u64 {
         let mut h: u64 = 14695981039346656037
-        let mut i: usize = 0
-        while i < key.len {
-            h = (h ^ @as(u64, ascii::to_lower{ c = key[i] })) *% 1099511628211
-            i = i + 1
+        for c in key {
+            h = (h ^ @as(u64, ascii::to_lower{ c })) *% 1099511628211
         }
         return h
     }
 
     // Lower-cases `src` into the start of `into` and returns that part. Panics if it doesn't fit.
     fn lower { src: []u8, into: []mut u8 } -> []mut u8 {
-        let mut i: usize = 0
-        while i < src.len {
-            into[i] = ascii::to_lower{ c = src[i] }
-            i = i + 1
+        for c at i in src {
+            into[i] = ascii::to_lower{ c }
         }
         return into[..src.len]
     }

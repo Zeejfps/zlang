@@ -475,6 +475,14 @@ namespace recover {
                 expr{ &c, e = cond, lo = a, hi = b }
                 block{ &c, x = body, lo = a, hi = b }
             }
+            each{ label, item, index, iter, hi = upto, body } => {
+                if label != null { name{ &c, n = label, lo, hi } }
+                name{ &c, n = item, lo = a, hi = b }
+                if index != null { name{ &c, n = index, lo = a, hi = b } }
+                expr{ &c, e = iter, lo = a, hi = b }
+                if upto != null { expr{ &c, e = upto, lo = a, hi = b } }
+                block{ &c, x = body, lo = a, hi = b }
+            }
             choose{ x } => { match_node{ &c, x, lo = a, hi = b } }
             ret{ value } => { if value != null { expr{ &c, e = value, lo = a, hi = b } } }
             brk{ label } => { if label != null { name{ &c, n = label, lo = a, hi = b } } }

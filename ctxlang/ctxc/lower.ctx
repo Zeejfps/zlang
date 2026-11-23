@@ -853,8 +853,73 @@ namespace lower {
                 }
             }
         }
+        if s.k is each {
+            put_each{ &l, &xs, s }
+            return
+        }
         try! list::push{ list = &xs, item = stmt{ &l, s } }
         if s.k is local { handle_scope{ &l, &xs, s } }
+    }
+
+    // `for` (§11, For), as a `while` over a hidden counter that steps before the body runs, so
+    // that a `continue` needs nothing more:
+    //
+    //   for i in lo..hi { B }      n = lo; end = hi; while n < end { i = n; n = n +% 1; B }
+    //   for x at i in e { B }      s = e; n = 0; while n < s.len { x = s[n]; i = n; n = n +% 1; B }
+    //
+    // `for &x` sets x to the element's address. The step can't wrap: n is below its bound.
+    fn put_each { mut l: Lower, mut xs: list::List(ir::Stmt, Heap), s: syntax::Stmt } {
+        let each{ item, by_ref, index, iter, hi, body } = s.k else { return }
+        let none = ir::Pos{ line = 0, col = 0, file = 0 }
+        let bool_ty = tid{ &l, t = types::BOOL }
+        let iv = local_of{ l, k = check::name_key{ n = item } }
+        let it = T{ &l, t = check::get_var{ c = l.c.*, v = iv }.ty }
+        let mut inner = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
+        let mut c = mk{ ty = bool_ty, k = ir::ExprKind::boolean{ value = false } }
+        if let end = hi {
+            let ty = tid{ &l, t = it }
+            let n = temp{ &l, ty }
+            let stop = temp{ &l, ty }
+            try! list::push{ list = &xs, item = ir::Stmt::define{ slot = n, init = conv{ &l, e = iter, to = it } } }
+            try! list::push{ list = &xs, item = ir::Stmt::define{ slot = stop, init = conv{ &l, e = end, to = it } } }
+            let nv = mk{ ty, k = ir::ExprKind::local{ slot = n } }
+            let one = mk{ ty, k = ir::ExprKind::int{ negative = false, value = 1 } }
+            try! list::push{ list = &inner, item = ir::Stmt::define{ slot = slot{ &l, v = iv }, init = nv } }
+            try! list::push{ list = &inner, item = ir::Stmt::assign{ place = nv, value = mk{ ty, k = ir::ExprKind::wrap{ op = ir::ArithOp::add, a = box{ l, e = nv }, b = box{ l, e = one } } } } }
+            c = mk{ ty = bool_ty, k = ir::ExprKind::cmp{ op = ir::CmpOp::lt, a = box{ l, e = nv }, b = box{ l, e = mk{ ty, k = ir::ExprKind::local{ slot = stop } } } } }
+        } else {
+            let ut = tid{ &l, t = types::USIZE }
+            let st = tid{ &l, t = types::slice{ s = &l.c.ty, elem = it, mutable = false } }
+            let held = temp{ &l, ty = st }
+            let n = temp{ &l, ty = ut }
+            try! list::push{ list = &xs, item = ir::Stmt::define{ slot = held, init = ex{ &l, e = iter } } }
+            try! list::push{ list = &xs, item = ir::Stmt::define{ slot = n, init = int_lit{ &l, t = types::USIZE, n = 0 } } }
+            let sv = mk{ ty = st, k = ir::ExprKind::local{ slot = held } }
+            let nv = mk{ ty = ut, k = ir::ExprKind::local{ slot = n } }
+            let elem = mk{ ty = tid{ &l, t = it }, k = ir::ExprKind::sindex{ base = box{ l, e = sv }, i = box{ l, e = nv }, pos = pos{ &l, at = s.span } } }
+            if by_ref {
+                let pt = tid{ &l, t = types::ptr{ s = &l.c.ty, elem = it, mutable = false } }
+                try! list::push{ list = &inner, item = ir::Stmt::define{ slot = slot{ &l, v = iv }, init = mk{ ty = pt, k = ir::ExprKind::addr{ place = box{ l, e = elem } } } } }
+            } else {
+                try! list::push{ list = &inner, item = ir::Stmt::define{ slot = slot{ &l, v = iv }, init = elem } }
+            }
+            if let name = index {
+                let xv = local_of{ l, k = check::name_key{ n = name } }
+                try! list::push{ list = &inner, item = ir::Stmt::define{ slot = slot{ &l, v = xv }, init = nv } }
+            }
+            let one = int_lit{ &l, t = types::USIZE, n = 1 }
+            try! list::push{ list = &inner, item = ir::Stmt::assign{ place = nv, value = mk{ ty = ut, k = ir::ExprKind::wrap{ op = ir::ArithOp::add, a = box{ l, e = nv }, b = box{ l, e = one } } } } }
+            let len = mk{ ty = ut, k = ir::ExprKind::field{ base = box{ l, e = sv }, index = 1 } }
+            c = mk{ ty = bool_ty, k = ir::ExprKind::cmp{ op = ir::CmpOp::lt, a = box{ l, e = nv }, b = box{ l, e = len } } }
+        }
+        let rest = stmts{ &l, xs = body.stmts }
+        let mut i: usize = 0
+        while i < rest.len {
+            try! list::push{ list = &inner, item = rest[i] }
+            i = i + 1
+        }
+        let label = map::get{ m = l.c.loop_ids, key = check::stmt_key{ s } }
+        try! list::push{ list = &xs, item = ir::Stmt::loop{ c, body = ir::Block{ stmts = list::items{ list = inner }, result = null }, label } }
     }
 
     // After a local that is or holds a task's handle (spec §15, Tasks): its scope's end, as a
@@ -989,6 +1054,7 @@ namespace lower {
                 let b = block{ &l, b = body }
                 return ir::Stmt::loop{ c, body = b, label = map::get{ m = l.c.loop_ids, key = k } }
             }
+            each => { @panic("lower: a `for` is lowered by put_each") }
             brk => { return ir::Stmt::brk{ label = map::get{ m = l.c.jump_ids, key = k } } }
             cont => { return ir::Stmt::cont{ label = map::get{ m = l.c.jump_ids, key = k } } }
             ret{ value } => {
