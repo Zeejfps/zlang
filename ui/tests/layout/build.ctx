@@ -1,0 +1,7 @@
+// The layout test: the tree, placed layout and emit (stage 5). How to run it: ui/AGENTS.md.
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "ui_test_layout", root = "." }
+    build::add_sources{ &b, exe, dir = "../../core" }
+    build::add_sources{ &b, exe, dir = "../../record" }
+    build::add_sources{ &b, exe, dir = "../../test" }
+}

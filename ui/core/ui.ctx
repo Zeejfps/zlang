@@ -1,0 +1,385 @@
+// ui: the context. A program makes one `Ui` and describes its whole interface into it every frame
+// (plan sections 2.2, 2.10, 2.11):
+//
+//   ui::begin_frame{ &ui, frame }      empties the frame's buffers
+//   (the program records its widgets)  elements, paints and text go into the frame's tree
+//   ui::end_frame{ &ui }               closes open scopes, solves the layout, emits `ui.draw`
+//
+// `ui.draw` is then the frame's shape list, which the staged level turns into instances and a
+// backend draws.
+//
+// Everything is allocated once by `make`, from the caller's allocator; a frame allocates nothing.
+// No call here or in the rest of the core can fail: what does not fit is dropped and counted in
+// `ui.stats.dropped`, and misuse is recorded in `ui.problems`, never a panic. A test asserts after
+// every frame that `stats.dropped` and `stats.problems` are both 0.
+//
+// The frame's text arena is the draw list's (`ui.draw.text`): copies of labels, the names of id
+// scopes, formatted text. A `Span` and a slice from `take_text` are valid until the next
+// `begin_frame`.
+//
+// One field of `Ui` belongs to each subsystem, and each subsystem's file declares its state and
+// the functions the frame calls: `make_state` (from `make`), `reset_state` (from `begin_frame`) and
+// `finish_frame` (from `end_frame`, after the frame is emitted). A subsystem is filled in by editing
+// its own file; this file does not change with it.
+namespace ui {
+    // What the host says about a frame: the logical size the interface is laid out in, the size of
+    // the surface in device pixels (the core derives the scale of each axis from the two), and the
+    // time since the last frame in seconds. The core reads no clock.
+    struct FrameInfo { width: f32, height: f32, pixel_width: f32, pixel_height: f32, dt: f32 }
+
+    // How much of everything a Ui has room for. `elements` counts what the program records in a
+    // frame: boxes, texts, paints and host slots. `layers` counts the trees beside the base one
+    // (overlays, windows, popups). `lines` is the lines of all flowed text together; `measures` and
+    // `shaped` size the frame's cache of measured outline text and the buffer a provider shapes into.
+    struct Capacity {
+        elements: u32 = 8192, text: u32 = 262144, cmds: u32 = 32768, clips: u32 = 256, hits: u32 = 8192,
+        states: u32 = 2048, nodes: u32 = 8192, fonts: u32 = 16, scopes: u32 = 128, layers: u32 = 64,
+        lines: u32 = 8192, measures: u32 = 1024, shaped: u32 = 1024,
+    }
+
+    // Behaviour the program may change at any time.
+    struct Config {
+        hover_focus: bool = false,      // the stock widgets take focus when hovered
+        nodes: bool = true,             // keep the node list that tests and scripts read
+        state_ttl: u32 = 600,           // frames a widget's state lives when nothing asks for it
+        drag_start: f32 = 6.0,          // how far the pointer moves before a press is a drag
+    }
+
+    // Colours by role and the metrics the stock widgets read when they are recorded (plan section
+    // 2.9), so assigning a field in the middle of a frame changes what comes after. `font` is a font
+    // the program registered: there is no default for it, and text recorded before the program sets
+    // it is reported and not drawn. A state colour left at alpha 0 is derived from its base role by
+    // the widget package, which also has the dark and the light palette; these defaults are only
+    // what a Ui starts with.
+    struct Theme {
+        font: Font = Font{ .. }, font_size: f32 = 16.0,
+        background: Color = Color{ r = 24, g = 26, b = 31, .. },
+        surface: Color = Color{ r = 32, g = 35, b = 42, .. },
+        control: Color = Color{ r = 48, g = 52, b = 62, .. },
+        field: Color = Color{ r = 20, g = 22, b = 27, .. },
+        accent: Color = Color{ r = 74, g = 144, b = 226, .. },
+        on_accent: Color = Color{ r = 255, g = 255, b = 255, .. },
+        text: Color = Color{ r = 228, g = 231, b = 237, .. },
+        text_muted: Color = Color{ r = 150, g = 156, b = 168, .. },
+        text_disabled: Color = Color{ r = 96, g = 101, b = 112, .. },
+        border: Color = Color{ r = 64, g = 69, b = 82, .. },
+        selection: Color = Color{ r = 74, g = 144, b = 226, a = 96 },
+        focus_ring: Color = Color{ r = 120, g = 176, b = 240, .. },
+        scrim: Color = Color{ r = 0, g = 0, b = 0, a = 128 },
+        danger: Color = Color{ r = 224, g = 82, b = 82, .. },
+        control_hovered: Color = Color{ a = 0, .. },
+        control_pressed: Color = Color{ a = 0, .. },
+        accent_hovered: Color = Color{ a = 0, .. },
+        gap: f32 = 8.0, padding: f32 = 8.0, control_height: f32 = 28.0, row_height: f32 = 24.0,
+        radius: f32 = 4.0, border_width: f32 = 1.0, scrollbar: f32 = 10.0, tip_delay: f32 = 0.6,
+    }
+
+    // What a frame came to. Filled by `end_frame`; `dropped`, `stray_ends`, `duplicate_ids` and
+    // `problems` also count while the frame is recorded.
+    struct Stats {
+        elements: u32 = 0,          // recorded by the program (the frame's own root is not counted)
+        shapes: u32 = 0,            // in the draw list
+        hits: u32 = 0,              // hit regions
+        dropped: u32 = 0,           // things of any kind that did not fit and were left out
+        unclosed: u32 = 0,          // scopes still open at end_frame, which closed them
+        stray_ends: u32 = 0,        // ui::end calls with a scope that was not open
+        duplicate_ids: u32 = 0,     // elements recorded with an id another element of the frame has
+        problems: u32 = 0,          // problems recorded, those past the ones kept included
+    }
+
+    // What went wrong in a frame. The `_full` kinds are a table that ran out: what did not fit was
+    // left out and counted in `stats.dropped`, and the kind is listed once a frame.
+    enum ProblemKind: u8 {
+        none,
+        frame_open,         // begin_frame while a frame was open: that frame was abandoned
+        frame_not_open,     // end_frame or a widget call with no frame open: it did nothing
+        unclosed_scope,     // scopes were open at end_frame; the path is theirs
+        stray_end,          // ui::end with a scope that is not open: it closed nothing
+        duplicate_id,       // a second element with this id; the path is the scopes around it
+        unknown_font,       // text in a font that was never registered: not drawn
+        no_provider,        // text in an outline font with no provider set: it has no width
+        elements_full, text_full, shapes_full, clips_full, hits_full, scopes_full, lines_full, layers_full,
+        states_full, nodes_full, events_full,
+    }
+
+    // One problem: what, the id it is about (0 when it has none) and the path of the id scopes that
+    // were open, as text in the frame's arena (`get_text`).
+    struct Problem { kind: ProblemKind = ProblemKind::none, id: Id = NO_ID, path: Span = Span{ .. } }
+
+    // The first problems of a frame are kept; the rest are only counted.
+    const MAX_PROBLEMS: usize = 16
+
+    struct Ui {
+        draw: DrawList,                 // the frame's shapes after end_frame; its text arena is the frame's
+        theme: Theme,
+        config: Config,
+        info: FrameInfo,                // of the frame being recorded, or of the last one
+        frame: u64,                     // counts begin_frame calls
+        in_frame: bool,                 // between begin_frame and end_frame
+        stats: Stats,
+        problems: []mut Problem, problem_count: u32,
+        problem_kinds: u32,             // one bit a kind recorded this frame
+        provider: ?TextProvider,        // serves outline fonts; null: glyph tables only
+        cache: text::Cache,             // this frame's measured text
+        pending: u32,                   // where text being formatted into the arena starts (take_text)
+        ids: id::State,
+        tree: tree::State,
+        layout: layout::State,
+        emit: emit::State,
+        input: input::State,
+        interact: interact::State,
+        focus: focus::State,
+        state: state::State,
+        nodes: nodes::State,
+        layers: layers::State,
+        scroll: scroll::State,
+    }
+
+    // Allocates every buffer once. The Ui is not generic, so nothing that takes one is.
+    fn make(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !Ui {
+        let list = try draw::make{ realloc, &heap, cmds = cap.cmds, text = cap.text, clips = cap.clips, fonts = cap.fonts }
+        let problems = try alloc::make(Problem, S){ realloc, &heap, count = MAX_PROBLEMS }
+        let cache = try text::make_cache{ realloc, &heap, entries = cap.measures, shaped = cap.shaped }
+        let ids = try id::make_state{ realloc, &heap, cap }
+        let tree_state = try tree::make_state{ realloc, &heap, cap }
+        let layout_state = try layout::make_state{ realloc, &heap, cap }
+        let emit_state = try emit::make_state{ realloc, &heap, cap }
+        let input_state = try input::make_state{ realloc, &heap, cap }
+        let interact_state = try interact::make_state{ realloc, &heap, cap }
+        let focus_state = try focus::make_state{ realloc, &heap, cap }
+        let state_state = try state::make_state{ realloc, &heap, cap }
+        let nodes_state = try nodes::make_state{ realloc, &heap, cap }
+        let layers_state = try layers::make_state{ realloc, &heap, cap }
+        let scroll_state = try scroll::make_state{ realloc, &heap, cap }
+        return Ui{
+            draw = list, theme = Theme{ .. }, config = Config{ .. },
+            info = FrameInfo{ width = 0.0, height = 0.0, pixel_width = 0.0, pixel_height = 0.0, dt = 0.0 },
+            frame = 0, in_frame = false, stats = Stats{ .. },
+            problems, problem_count = 0, problem_kinds = 0,
+            provider = null, cache, pending = 0,
+            ids, tree = tree_state, layout = layout_state, emit = emit_state,
+            input = input_state, interact = interact_state, focus = focus_state, state = state_state,
+            nodes = nodes_state, layers = layers_state, scroll = scroll_state,
+        }
+    }
+
+    // ---- the frame
+
+    // Starts a frame: empties the frame's buffers and opens the base tree, a column the size of the
+    // surface. The subsystems start their frame in the order ids, tree, layout, emit, input,
+    // interact, focus, state, nodes, layers, scroll; last frame's hit regions (`ui.emit.hits`) are
+    // still there for them. Called while a frame is open, it abandons that frame, of which nothing
+    // is emitted, and reports it.
+    fn begin_frame { mut ui: Ui, frame: FrameInfo } {
+        let reopened = ui.in_frame
+        ui.frame = ui.frame +% 1
+        ui.info = frame
+        let width = if frame.width > 0.0 { frame.width } else { 0.0 }
+        let height = if frame.height > 0.0 { frame.height } else { 0.0 }
+        let scale_x = if width > 0.0 and frame.pixel_width > 0.0 { frame.pixel_width / width } else { 1.0 }
+        let scale_y = if height > 0.0 and frame.pixel_height > 0.0 { frame.pixel_height / height } else { 1.0 }
+        // The text functions read the list's scale, so the list is reset before anything measures.
+        draw::reset{ list = &ui.draw, width, height, scale_x, scale_y }
+        text::reset_cache{ cache = &ui.cache }
+        ui.stats = Stats{ .. }
+        ui.problem_count = 0
+        ui.problem_kinds = 0
+        ui.pending = 0
+        ui.in_frame = true
+        id::reset_state{ &ui }
+        tree::reset_state{ &ui }
+        layout::reset_state{ &ui }
+        emit::reset_state{ &ui }
+        input::reset_state{ &ui }
+        interact::reset_state{ &ui }
+        focus::reset_state{ &ui }
+        state::reset_state{ &ui }
+        nodes::reset_state{ &ui }
+        layers::reset_state{ &ui }
+        scroll::reset_state{ &ui }
+        if reopened { report_problem{ &ui, kind = ProblemKind::frame_open, id = NO_ID } }
+    }
+
+    // Ends the frame: closes the scopes still open (and reports them), solves the layout, lets the
+    // scroll regions settle and the layers place themselves, emits the draw list and the hit
+    // regions, and then lets each subsystem finish its frame. With no frame open it does nothing
+    // but report that.
+    fn end_frame { mut ui: Ui } {
+        if not ui.in_frame {
+            report_problem{ &ui, kind = ProblemKind::frame_not_open, id = NO_ID }
+            return
+        }
+        id::close_frame{ &ui }
+        layout::solve{ &ui }
+        // A scroll region that gained or lost a bar changes its content's room: one more solve, as
+        // the layout this one is modelled on does.
+        let settled = scroll::settle_regions{ &ui }
+        if settled == scroll::Settle::relayout {
+            layout::solve{ &ui }
+            if scroll::settle_regions{ &ui } != scroll::Settle::none { layout::position{ &ui } }
+        } else if settled == scroll::Settle::reposition {
+            layout::position{ &ui }
+        }
+        if layers::place_layers{ &ui } { layout::position{ &ui } }
+        emit::emit_frame{ &ui }
+        nodes::finish_frame{ &ui }
+        interact::finish_frame{ &ui }
+        focus::finish_frame{ &ui }
+        state::finish_frame{ &ui }
+        layers::finish_frame{ &ui }
+        scroll::finish_frame{ &ui }
+        input::finish_frame{ &ui }
+
+        if ui.cache.unknown_font > 0 and not has_problem{ ui, kind = ProblemKind::unknown_font } {
+            report_problem{ &ui, kind = ProblemKind::unknown_font, id = NO_ID }
+        }
+        if ui.cache.no_provider > 0 and not has_problem{ ui, kind = ProblemKind::no_provider } {
+            report_problem{ &ui, kind = ProblemKind::no_provider, id = NO_ID }
+        }
+        if ui.draw.dropped > 0 {
+            if not has_problem{ ui, kind = ProblemKind::clips_full } and not has_problem{ ui, kind = ProblemKind::shapes_full } {
+                report_problem{ &ui, kind = ProblemKind::shapes_full, id = NO_ID }
+            }
+            ui.stats.dropped = add_count{ a = ui.stats.dropped, b = ui.draw.dropped }
+        }
+        ui.stats.elements = if ui.tree.count > 0 { ui.tree.count - 1 } else { 0 }
+        ui.stats.shapes = ui.draw.count
+        ui.stats.hits = ui.emit.hit_count
+        ui.in_frame = false
+    }
+
+    // ---- problems and counts
+
+    // `a + b`, held at the largest u32: a count never wraps and never panics.
+    fn add_count { a: u32, b: u32 } -> u32 {
+        return if b > 4294967295 - a { 4294967295 } else { a + b }
+    }
+
+    fn get_kind_bit { kind: ProblemKind } -> u32 {
+        return @as(u32, 1) << @as(u32, @as(u8, kind))
+    }
+
+    // Whether a problem of this kind was recorded this frame (also one past those kept).
+    fn has_problem { ui: Ui, kind: ProblemKind } -> bool {
+        return (ui.problem_kinds & get_kind_bit{ kind }) != 0
+    }
+
+    // Records a problem with the path of the open id scopes. The first MAX_PROBLEMS of a frame are
+    // kept in `ui.problems`; every one is counted in `stats.problems`.
+    fn report_problem { mut ui: Ui, kind: ProblemKind, id: Id } {
+        ui.stats.problems = add_count{ a = ui.stats.problems, b = 1 }
+        ui.problem_kinds = ui.problem_kinds | get_kind_bit{ kind }
+        let n = @as(usize, ui.problem_count)
+        if n >= ui.problems.len { return }
+        let path = id::write_path{ &ui }
+        ui.problems[n] = Problem{ kind, id, path }
+        ui.problem_count = ui.problem_count + 1
+    }
+
+    // Counts one thing that did not fit, and reports its kind the first time in a frame.
+    fn report_drop { mut ui: Ui, kind: ProblemKind } {
+        ui.stats.dropped = add_count{ a = ui.stats.dropped, b = 1 }
+        if not has_problem{ ui, kind } { report_problem{ &ui, kind, id = NO_ID } }
+    }
+
+    // ---- fonts and text
+
+    // Registers a font and returns the handle text names it by; null when the font table is full.
+    fn add_font { mut ui: Ui, font: FontDef } -> ?Font {
+        return draw::add_font{ list = &ui.draw, font }
+    }
+
+    // What serves outline fonts. A program that uses only glyph tables sets none.
+    fn set_provider { mut ui: Ui, provider: TextProvider } {
+        ui.provider = provider
+    }
+
+    // The width of one line of `text`, in logical units, at this frame's scale.
+    fn measure_text { mut ui: Ui, font: Font, size: f32, text: []u8 } -> f32 {
+        return text::measure_text{ cache = &ui.cache, list = ui.draw, provider = ui.provider, font, size, text }
+    }
+
+    // The bytes a span of the frame's arena names; empty for a span that is not inside it.
+    fn get_text { ui: Ui, span: Span } -> []u8 {
+        let start = @as(usize, span.start)
+        let len = @as(usize, span.len)
+        if start > @as(usize, ui.draw.text_len) or len > @as(usize, ui.draw.text_len) - start { return "" }
+        return ui.draw.text[start..start + len]
+    }
+
+    // Copies `text` into the frame's arena, so the caller's bytes need not outlive the call. Null,
+    // and one drop counted, when it does not fit.
+    fn keep_text { mut ui: Ui, text: []u8 } -> ?Span {
+        let start = @as(usize, ui.draw.text_len)
+        if text.len > ui.draw.text.len - start {
+            report_drop{ &ui, kind = ProblemKind::text_full }
+            return null
+        }
+        slice::copy(u8){ dst = ui.draw.text[start..start + text.len], src = text }
+        ui.draw.text_len = @as(u32, start + text.len)
+        ui.pending = ui.draw.text_len
+        return Span{ start = @as(u32, start), len = @as(u32, text.len) }
+    }
+
+    // ---- the Ui as an @fmt sink: `_ = @fmt(&ui, "{} of {} done", done, count)`, then `take_text`
+    //
+    // The bytes go into the frame's arena. Text that does not fit is cut, and the cut is counted.
+
+    #write
+    fn write_bytes { mut ui: Ui, s: []u8 } {
+        let start = @as(usize, ui.draw.text_len)
+        let room = ui.draw.text.len - start
+        let n = if s.len < room { s.len } else { room }
+        slice::copy(u8){ dst = ui.draw.text[start..start + n], src = s[..n] }
+        ui.draw.text_len = @as(u32, start + n)
+        if n < s.len { report_drop{ &ui, kind = ProblemKind::text_full } }
+    }
+
+    #write
+    fn write_literal { mut ui: Ui, s: strlit } { write_bytes{ &ui, s = s.bytes } }
+
+    #write
+    fn write_bool { mut ui: Ui, v: bool } { write_bytes{ &ui, s = if v { "true" } else { "false" } } }
+
+    #write
+    fn write_i64 { mut ui: Ui, n: i64 } {
+        let mut buf: [20]u8
+        write_bytes{ &ui, s = utf8::fmt_i64{ n, into = buf[..] }.bytes }
+    }
+
+    #write
+    fn write_u64 { mut ui: Ui, n: u64 } {
+        let mut buf: [20]u8
+        write_bytes{ &ui, s = utf8::fmt_u64{ n, into = buf[..] }.bytes }
+    }
+
+    #write
+    fn write_i32 { mut ui: Ui, n: i32 } { write_i64{ &ui, n } }
+    #write
+    fn write_u8 { mut ui: Ui, n: u8 } { write_u64{ &ui, n } }
+    #write
+    fn write_u16 { mut ui: Ui, n: u16 } { write_u64{ &ui, n } }
+    #write
+    fn write_u32 { mut ui: Ui, n: u32 } { write_u64{ &ui, n } }
+    #write
+    fn write_usize { mut ui: Ui, n: usize } { write_u64{ &ui, n } }
+
+    // A decimal in an @fmt hole: `@fmt(&ui, "{} %", ui::write_fixed{ v, digits = 1, _ })`. Exactly
+    // `digits` digits after the point (37.5 with 1 is `37.5`, 10 with 2 is `10.00`). It cannot
+    // fail: the result is only the shape @fmt needs.
+    fn write_fixed { mut ui: Ui, v: f32, digits: u32 } -> ! {
+        let mut buf: [48]u8
+        let n = format_fixed{ v, digits, trim = false, into = buf[..] }
+        write_bytes{ &ui, s = buf[..n] }
+    }
+
+    // The text formatted into the Ui since the last take_text (or since a widget call kept text of
+    // its own). It lives in the frame's arena until the next begin_frame.
+    fn take_text { mut ui: Ui } -> []u8 {
+        let start = @as(usize, ui.pending)
+        let end = @as(usize, ui.draw.text_len)
+        ui.pending = ui.draw.text_len
+        if start > end { return "" }
+        return ui.draw.text[start..end]
+    }
+}

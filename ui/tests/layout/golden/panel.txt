@@ -1,0 +1,17 @@
+== a panel at the centre of 800 by 600 with five placed controls
+frame 800x600 scale 1x1
+clip 1 200,150 400x300 round 200,150 400x300 r=8
+rect 200,150 400x300 fill=20232AFF radius=8,8,8,8 border=2,2,2,2 404552FF,404552FF,404552FF,404552FF clip=0
+text 220,166 font=0 size=16 E4E7EDFF clip=1 "Options"
+image 220,198 64x64 img=7 uv=0,0,1,1 tint=FFFFFFFF quarter=1 angle=0 radius=0,0,0,0 blend=alpha clip=1
+rect 320,218 240x4 fill=14161BFF radius=2,2,2,2 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=1
+rect 430,210 20x20 fill=4A90E2FF radius=10,10,10,10 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=1
+rect 220,400 100x30 fill=30343EFF radius=4,4,4,4 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=1
+text 262,407 font=0 size=16 E4E7EDFF clip=1 "OK"
+rect 540,400 100x30 fill=30343EFF radius=4,4,4,4 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=1
+text 566,407 font=0 size=16 E4E7EDFF clip=1 "Cancel"
+hit 200,150 400x300 area 200,150 400x300
+hit 220,198 64x64 area 220,198 64x64
+hit 320,210 240x20 area 320,210 240x20
+hit 220,400 100x30 area 220,400 100x30
+hit 540,400 100x30 area 540,400 60x30

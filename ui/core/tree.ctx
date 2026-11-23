@@ -1,0 +1,405 @@
+// ui: the frame's tree and what the program records into it (plan section 2.4, "Record" and
+// "Declaration").
+//
+// Elements go into one flat array in the order they are recorded, linked by indices (`parent`,
+// `first_child`, `last_child`, `next`), so a parent's index is always smaller than its children's.
+// There are four kinds:
+//
+//   box    what `begin_element` opens: a rectangle that lays out its children along its axis
+//   text   what `add_text` adds: a leaf sized by its text
+//   host   what `add_host_slot` adds: a leaf the host draws itself
+//   paint  what `paint_rect` and the other paint calls add: a shape in the open element's own
+//          coordinates (its top left is 0, 0). A paint takes no part in layout
+//
+// Emission is pre-order, so a widget chooses what draws over what by the order of its calls: an
+// element's own decoration (its box's fill and border) first, then its paints and children as
+// they were recorded.
+//
+// A tree has a root with no parent. `begin_frame` opens the base tree, a column the size of the
+// surface. A layer (an overlay, a window, a popup) is another tree: `tree::open_element` with
+// `root` set records a root where the code is, and what follows is recorded inside it until its
+// scope ends, when recording goes on in the element that was open before. Trees are emitted in the
+// order of their roots' `order`, so a layer's content is recorded where the code is and drawn with
+// its layer.
+//
+// Nothing here fails. An element that does not fit is dropped and counted, and so is everything
+// recorded inside it; a second element with an id that the frame has already seen is recorded
+// and reported.
+namespace ui {
+    struct Insets { left: f32 = 0.0, top: f32 = 0.0, right: f32 = 0.0, bottom: f32 = 0.0 }
+    enum Align: u8 { start, center, end }
+    enum Axis: u8 { row, column }
+
+    // How big an element is along one axis: its content's size (`FIT`), its content's size plus a
+    // share of the parent's spare room (`GROW`), exactly `value` (`fix`), or the fraction `value` of
+    // the parent's inner size (`take`). `min` and `max` hold every kind but `fix`.
+    enum SizeKind: u8 { fit, grow, fixed, part }
+    struct Size { kind: SizeKind = SizeKind::fit, value: f32 = 0.0, min: f32 = 0.0, max: f32 = 100000.0 }
+    const FIT: Size = Size{ .. }
+    const GROW: Size = Size{ kind = SizeKind::grow, .. }
+    fn fix { px: f32 } -> Size { return Size{ kind = SizeKind::fixed, value = px, .. } }
+    fn take { part: f32 } -> Size { return Size{ kind = SizeKind::part, value = part, .. } }
+
+    // Where an element out of the flow goes: its top left is
+    // parent.xy + parent.wh * (anchor_x, anchor_y) + (x, y). It adds nothing to its parent's size.
+    struct Place { anchor_x: f32 = 0.0, anchor_y: f32 = 0.0, x: f32 = 0.0, y: f32 = 0.0 }
+
+    // How an element is laid out and decorated. A field left null takes its default: fitted sizes,
+    // no padding or gap, children at the start of both axes, no fill, border or radius, not
+    // clipping, opaque, in the flow, a hit region that is exactly its rectangle.
+    struct Box {
+        width: ?Size = null, height: ?Size = null,
+        padding: ?Insets = null, gap: ?f32 = null,
+        align_x: ?Align = null, align_y: ?Align = null,
+        fill: ?Color = null, border: ?SideColors = null, border_width: ?Sides = null, radius: ?Corners = null,
+        clip: ?bool = null, opacity: ?f32 = null,
+        place: ?Place = null,
+        hit_outset: ?Insets = null,
+    }
+
+    // An explicit rectangle in the parent's own coordinates, out of the flow.
+    fn place { x: f32, y: f32, w: f32, h: f32 } -> Box {
+        return Box{ width = fix{ px = w }, height = fix{ px = h }, place = Place{ x, y, .. }, .. }
+    }
+
+    // How `add_text` draws. A null font, size or colour is the theme's. `align` is where each line
+    // lies in the element's inner width.
+    enum Overflow: u8 { clip, ellipsis }
+    struct TextStyle {
+        font: ?Font = null, size: ?f32 = null, color: ?Color = null,
+        wrap: bool = false, align: Align = Align::start, overflow: Overflow = Overflow::clip,
+    }
+
+    // ---- recording
+
+    // Opens an element: a rectangle that lays its children out along `axis`. What is recorded
+    // until `ui::end` gets this scope becomes its content. An id other than 0 makes it a hit region
+    // and gives it a rectangle to ask for the next frame (`get_rect`).
+    fn begin_element { mut ui: Ui, id: Id, axis: Axis, box: Box } -> Scope {
+        return tree::open_element{ &ui, id, axis, box, root = null, on_end = null }
+    }
+
+    // One piece of text as an element of its own, sized by the text (a null size in `box` fits it).
+    // The text is copied.
+    fn add_text { mut ui: Ui, text: []u8, style: TextStyle, box: Box } {
+        if not tree::can_record{ &ui } { return }
+        let font = style.font ifnull ui.theme.font
+        let size = style.size ifnull ui.theme.font_size
+        let color = style.color ifnull ui.theme.text
+        if not draw::has_font{ list = ui.draw, font } { report_problem{ &ui, kind = ProblemKind::unknown_font, id = NO_ID } }
+        let span = keep_text{ &ui, text } ifnull { return }
+        let mut e = tree::make_element{ id = NO_ID, kind = tree::Kind::text, axis = Axis::row, box }
+        e.font = font
+        e.text_size = size
+        e.color = color
+        e.text = span
+        e.wrap = style.wrap
+        e.overflow = style.overflow
+        e.text_align = style.align
+        e.content_w = text::measure_text{ cache = &ui.cache, list = ui.draw, provider = ui.provider, font, size, text }
+        let metrics = text::get_line_metrics{ cache = &ui.cache, list = ui.draw, provider = ui.provider, font, size }
+        e.line_height = metrics.height
+        e.content_h = metrics.height
+        _ = tree::add_element{ &ui, e }
+    }
+
+    // A rectangle the host draws itself (a 3D view), laid out by `box` like any element. It is a
+    // `host` shape in the draw list, in order: what is recorded before it is under it, what is
+    // recorded after it is over it.
+    fn add_host_slot { mut ui: Ui, slot: u32, box: Box } {
+        if not tree::can_record{ &ui } { return }
+        let mut e = tree::make_element{ id = NO_ID, kind = tree::Kind::host, axis = Axis::row, box }
+        e.data = slot
+        _ = tree::add_element{ &ui, e }
+    }
+
+    // ---- painting: shapes in the open element's coordinates, drawn in the order of the calls
+
+    fn paint_rect { mut ui: Ui, rect: Rect, style: RectStyle } {
+        tree::add_paint{ &ui, cmd = Cmd::rect{ rect, style, clip = 0 } }
+    }
+
+    // The part `uv` of `image` over `rect`, which is where the picture ends up after `quarter`
+    // counterclockwise quarter turns; `angle` (radians, counterclockwise) then turns it about the
+    // rectangle's centre.
+    fn paint_image { mut ui: Ui, rect: Rect, image: Image, uv: Uv, tint: Color, quarter: u8, angle: f32, blend: Blend } {
+        tree::add_paint{ &ui, cmd = Cmd::image{ rect, image, uv, tint, quarter = quarter % 4, angle, radius = Corners{ .. }, blend, clip = 0 } }
+    }
+
+    // A sprite or an atlas entry.
+    fn paint_region { mut ui: Ui, rect: Rect, region: Region, tint: Color } {
+        tree::add_paint{ &ui, cmd = Cmd::image{ rect, image = region.image, uv = region.uv, tint, quarter = 0, angle = 0.0, radius = Corners{ .. }, blend = Blend::alpha, clip = 0 } }
+    }
+
+    fn paint_rounded_image { mut ui: Ui, rect: Rect, region: Region, tint: Color, radius: Corners } {
+        tree::add_paint{ &ui, cmd = Cmd::image{ rect, image = region.image, uv = region.uv, tint, quarter = 0, angle = 0.0, radius, blend = Blend::alpha, clip = 0 } }
+    }
+
+    // One line of text with its line box's top left at (`x`, `y`). The text is copied. Text in a
+    // font that is not registered is reported and not drawn.
+    fn paint_text { mut ui: Ui, font: Font, size: f32, x: f32, y: f32, text: []u8, color: Color } {
+        if not tree::can_record{ &ui } { return }
+        if not draw::has_font{ list = ui.draw, font } {
+            report_problem{ &ui, kind = ProblemKind::unknown_font, id = NO_ID }
+            return
+        }
+        let span = keep_text{ &ui, text } ifnull { return }
+        tree::add_paint{ &ui, cmd = Cmd::text{ font, size, x, y, text = span, color, clip = 0 } }
+    }
+
+    fn paint_line { mut ui: Ui, x0: f32, y0: f32, x1: f32, y1: f32, width: f32, color: Color, cap: Cap } {
+        tree::add_paint{ &ui, cmd = Cmd::line{ x0, y0, x1, y1, width, color, cap, clip = 0 } }
+    }
+
+    namespace tree {
+        // No element: the `parent` of a root, the end of a list of children.
+        const NONE: u32 = 4294967295
+
+        // The base tree's place among the layers. A root with a smaller `order` is drawn behind
+        // it, one with a larger order in front; roots with one order are drawn as recorded.
+        const BASE_ORDER: u32 = 268435456
+
+        enum Kind: u8 { box, text, paint, host }
+
+        struct Element {
+            id: Id = NO_ID,
+            parent: u32 = NONE, first_child: u32 = NONE, last_child: u32 = NONE, next: u32 = NONE,
+            kind: Kind = Kind::box,
+            axis: Axis = Axis::column,
+            root: bool = false,             // has no parent: a tree of its own, placed on the surface
+            placed: bool = false,           // out of its parent's flow, at an anchor
+            clip: bool = false,
+            width: Size = Size{ .. }, height: Size = Size{ .. },
+            padding: Insets = Insets{ .. }, gap: f32 = 0.0,
+            align_x: Align = Align::start, align_y: Align = Align::start,
+            anchor_x: f32 = 0.0, anchor_y: f32 = 0.0, offset_x: f32 = 0.0, offset_y: f32 = 0.0,
+            scroll_x: f32 = 0.0, scroll_y: f32 = 0.0,   // how far its flow children are moved up and left
+            opacity: f32 = 1.0,
+            hit_outset: Insets = Insets{ .. },
+            style: RectStyle = RectStyle{ .. },         // its own decoration
+            // kind text
+            font: Font = Font{ .. }, text_size: f32 = 0.0, color: Color = Color{ .. },
+            text: Span = Span{ .. },
+            wrap: bool = false, overflow: Overflow = Overflow::clip, text_align: Align = Align::start,
+            line_height: f32 = 0.0,
+            first_line: u32 = 0, line_count: u32 = 0,   // its lines in `ui.layout.lines`, set by the layout
+            dots: bool = false,                         // its last line is followed by "..."
+            // kind paint: the index of its shape in `paints`. kind host: the slot.
+            data: u32 = 0,
+            // The size of its content without padding. A text's is measured when it is recorded;
+            // a box's is what the layout finds.
+            content_w: f32 = 0.0, content_h: f32 = 0.0,
+            // Solved by the layout: absolute, in logical units, before snapping.
+            x: f32 = 0.0, y: f32 = 0.0, w: f32 = 0.0, h: f32 = 0.0,
+        }
+
+        // A tree: its root element and where it stands among the layers. The hit regions of every
+        // tree behind a `modal` one are switched off; a tree with `hits` false makes none.
+        struct Root { element: u32, order: u32, modal: bool, hits: bool }
+        struct RootOpts { order: u32 = BASE_ORDER, modal: bool = false, hits: bool = true }
+
+        // An id that an element of frame `frame` has.
+        struct Seen { id: Id, frame: u64 }
+
+        struct State {
+            elements: []mut Element, count: u32,
+            paints: []mut Cmd, paint_count: u32,        // in their element's coordinates; `clip` unused
+            roots: []mut Root, root_count: u32,         // in the order they were recorded; roots[0] is the base tree
+            seen: []mut Seen,                           // open addressing by id; a power of two long
+        }
+
+        fn make_state(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !State {
+            // One more than the program's: the base tree's root. An index never reaches NONE.
+            let room: usize = if cap.elements > 4294967293 { 4294967294 } else { @as(usize, cap.elements) + 1 }
+            let elements = try alloc::make(Element, S){ realloc, &heap, count = room }
+            let paints = try alloc::make(Cmd, S){ realloc, &heap, count = room }
+            let roots = try alloc::make(Root, S){ realloc, &heap, count = @as(usize, cap.layers) + 1 }
+            let mut slots: usize = 2
+            while slots < room * 2 { slots = slots * 2 }
+            let seen = try alloc::make(Seen, S){ realloc, &heap, count = slots }
+            return State{ elements, count = 0, paints, paint_count = 0, roots, root_count = 0, seen }
+        }
+
+        // Empties the tree and opens the base one: a column the size of the surface, which
+        // everything the program records at the top level becomes a child of.
+        fn reset_state { mut ui: Ui } {
+            ui.tree.count = 0
+            ui.tree.paint_count = 0
+            ui.tree.root_count = 0
+            ui.tree.elements[0] = Element{
+                root = true, axis = Axis::column,
+                width = fix{ px = ui.draw.width }, height = fix{ px = ui.draw.height }, ..
+            }
+            ui.tree.count = 1
+            ui.tree.roots[0] = Root{ element = 0, order = BASE_ORDER, modal = false, hits = true }
+            ui.tree.root_count = 1
+            ui.ids.entries[0].element = 0
+            ui.ids.entries[0].lost = ProblemKind::none
+        }
+
+        // Whether a frame is open to record into; a call outside one is reported.
+        fn can_record { mut ui: Ui } -> bool {
+            if ui.in_frame { return true }
+            report_problem{ &ui, kind = ProblemKind::frame_not_open, id = NO_ID }
+            return false
+        }
+
+        // The element that is open: what is recorded now becomes its child. NONE where nothing
+        // can be recorded (the open element did not fit, or the scope stack is full).
+        fn get_open { ui: Ui } -> u32 {
+            return id::get_element{ ui }
+        }
+
+        // The place among the layers of the tree that is being recorded into: BASE_ORDER for the
+        // base tree. Once the frame is emitted, a tree whose order is below `ui.emit.floor` is
+        // behind a modal one.
+        fn get_order { ui: Ui } -> u32 {
+            return id::get_order{ ui }
+        }
+
+        // An element declared by `box`, not yet in the tree.
+        fn make_element { id: Id, kind: Kind, axis: Axis, box: Box } -> Element {
+            let mut e = Element{ id, kind, axis, .. }
+            e.width = box.width ifnull FIT
+            e.height = box.height ifnull FIT
+            e.padding = box.padding ifnull Insets{ .. }
+            e.gap = box.gap ifnull 0.0
+            e.align_x = box.align_x ifnull Align::start
+            e.align_y = box.align_y ifnull Align::start
+            e.style = RectStyle{
+                fill = box.fill ifnull Color{ a = 0, .. },
+                radius = box.radius ifnull Corners{ .. },
+                border = box.border_width ifnull Sides{ .. },
+                border_color = box.border ifnull SideColors{ .. },
+            }
+            e.clip = box.clip ifnull false
+            let opacity = box.opacity ifnull 1.0
+            e.opacity = if not (opacity > 0.0) { 0.0 } else if opacity > 1.0 { 1.0 } else { opacity }
+            if let p = box.place {
+                e.placed = true
+                e.anchor_x = p.anchor_x
+                e.anchor_y = p.anchor_y
+                e.offset_x = p.x
+                e.offset_y = p.y
+            }
+            e.hit_outset = box.hit_outset ifnull Insets{ .. }
+            return e
+        }
+
+        // Appends `e` as the last child of the open element (a root has no parent). The index, or
+        // NONE when it was dropped: nothing can be recorded here, or the array is full.
+        fn add_element { mut ui: Ui, e: Element } -> u32 {
+            let loss = id::get_loss{ ui }
+            if loss != ProblemKind::none {
+                report_drop{ &ui, kind = loss }
+                return NONE
+            }
+            let index = ui.tree.count
+            let at = @as(usize, index)
+            if at >= ui.tree.elements.len {
+                report_drop{ &ui, kind = ProblemKind::elements_full }
+                return NONE
+            }
+            let parent = if e.root { NONE } else { id::get_element{ ui } }
+            ui.tree.elements[at] = e
+            ui.tree.elements[at].parent = parent
+            ui.tree.elements[at].first_child = NONE
+            ui.tree.elements[at].last_child = NONE
+            ui.tree.elements[at].next = NONE
+            if parent != NONE {
+                let p = @as(usize, parent)
+                let last = ui.tree.elements[p].last_child
+                if last != NONE {
+                    ui.tree.elements[@as(usize, last)].next = index
+                } else {
+                    ui.tree.elements[p].first_child = index
+                }
+                ui.tree.elements[p].last_child = index
+            }
+            ui.tree.count = index + 1
+            return index
+        }
+
+        // Notes that an element of this frame has `id`. True when one already had it.
+        fn note_id { mut ui: Ui, id: Id } -> bool {
+            let slots = ui.tree.seen.len
+            let mut at = @as(usize, @as(u64, id) & @as(u64, slots - 1))
+            let mut probes: usize = 0
+            while probes < slots {
+                let s = ui.tree.seen[at]
+                if s.frame != ui.frame {
+                    ui.tree.seen[at] = Seen{ id, frame = ui.frame }
+                    return false
+                }
+                if s.id == id { return true }
+                at = (at + 1) & (slots - 1)
+                probes = probes + 1
+            }
+            return false
+        }
+
+        // Opens an element and its scope. With `root` it is a tree of its own (a layer), placed on
+        // the surface by its box and emitted by its `order`; recording goes on in the element that
+        // is open now when its scope ends. `on_end` runs when the scope closes, while the element is
+        // still open, and only if the element was recorded.
+        //
+        // After the call `get_open` is the new element, or NONE when it was dropped: it did not
+        // fit (the elements, the layers or the scope stack were full), and neither does anything
+        // recorded until its scope ends.
+        fn open_element { mut ui: Ui, id: Id, axis: Axis, box: Box, root: ?RootOpts, on_end: ?EndFn } -> Scope {
+            if not can_record{ &ui } { return Scope{ .. } }
+            let mut index = NONE
+            let mut lost = id::get_loss{ ui }
+            // An element that is dropped is counted once: here, or by push_scope when its scope
+            // has no place on the stack either.
+            if not id::has_room{ ui } {
+                if lost == ProblemKind::none { lost = ProblemKind::scopes_full }
+            } else if lost != ProblemKind::none {
+                report_drop{ &ui, kind = lost }
+            } else {
+                let mut e = make_element{ id, kind = Kind::box, axis, box }
+                if let r = root {
+                    if @as(usize, ui.tree.root_count) >= ui.tree.roots.len {
+                        report_drop{ &ui, kind = ProblemKind::layers_full }
+                        lost = ProblemKind::layers_full
+                    } else {
+                        e.root = true
+                        index = add_element{ &ui, e }
+                        if index != NONE {
+                            ui.tree.roots[@as(usize, ui.tree.root_count)] = Root{ element = index, order = r.order, modal = r.modal, hits = r.hits }
+                            ui.tree.root_count = ui.tree.root_count + 1
+                        }
+                    }
+                } else {
+                    index = add_element{ &ui, e }
+                }
+                if index == NONE and lost == ProblemKind::none { lost = ProblemKind::elements_full }
+            }
+            if index != NONE and id != NO_ID {
+                if note_id{ &ui, id } {
+                    ui.stats.duplicate_ids = add_count{ a = ui.stats.duplicate_ids, b = 1 }
+                    report_problem{ &ui, kind = ProblemKind::duplicate_id, id }
+                }
+            }
+            let hook: ?EndFn = if index != NONE { on_end } else { null }
+            let mut order = id::get_order{ ui }
+            if let r = root { order = r.order }
+            let entry = id::Entry{ seed = id::get_seed{ ui }, name = Span{ .. }, named = false, element = index, order, lost, serial = 0, on_end = hook }
+            return id::push_scope{ &ui, entry }
+        }
+
+        // A paint: `cmd` in the open element's coordinates, as a leaf of it.
+        fn add_paint { mut ui: Ui, cmd: Cmd } {
+            if not can_record{ &ui } { return }
+            let slot = @as(usize, ui.tree.paint_count)
+            if slot >= ui.tree.paints.len {
+                report_drop{ &ui, kind = ProblemKind::elements_full }
+                return
+            }
+            let index = add_element{ &ui, e = Element{ kind = Kind::paint, data = ui.tree.paint_count, .. } }
+            if index == NONE { return }
+            ui.tree.paints[slot] = cmd
+            ui.tree.paint_count = ui.tree.paint_count + 1
+        }
+    }
+}

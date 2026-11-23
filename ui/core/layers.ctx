@@ -1,0 +1,31 @@
+// ui::layers: the trees beside the base one (plan section 2.5): overlays, windows, modals, popups
+// and tooltips, back to front.
+//
+// A layer is a tree of its own: `tree::open_element` with `root` set records it where the code is,
+// and emit draws the trees in the order of their roots' `order` (`tree::BASE_ORDER` is the base
+// tree's). A root is placed on the surface by its box: anchor fractions of the surface plus an
+// offset.
+//
+// This file is the subsystem's place in the Ui: `ui.layers` is its state. `make` builds it and
+// `begin_frame` calls `reset_state`. `end_frame` calls `place_layers` once the layout is solved and
+// the scroll regions have settled: it may move a root (a popup that would leave the surface) and
+// answers whether it did, in which case positions are worked out again before the frame is
+// emitted. `finish_frame` runs after the frame is emitted.
+namespace ui {
+    namespace layers {
+        struct State {}
+
+        fn make_state(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !State {
+            return State{}
+        }
+
+        fn reset_state { mut ui: Ui } {}
+
+        // Whether a root was moved after the solve, so that positions must be worked out again.
+        fn place_layers { mut ui: Ui } -> bool {
+            return false
+        }
+
+        fn finish_frame { mut ui: Ui } {}
+    }
+}

@@ -1,0 +1,34 @@
+// ui::scroll: scroll regions (plan stage 8): their offsets, their bars, and where the wheel goes.
+//
+// A region is an element whose flow children are moved by `scroll_x`, `scroll_y` (fields of
+// `tree::Element`, which the layout subtracts when it positions them); `content_w` and `content_h`
+// are the size of its content without padding once the layout is solved. What a region must record
+// after its content (its bars, over the content) it records from the `on_end` of
+// `tree::open_element`, which runs while the element is still open.
+//
+// This file is the subsystem's place in the Ui: `ui.scroll` is its state. `make` builds it and
+// `begin_frame` calls `reset_state`. `end_frame` calls `settle_regions` once the layout is solved:
+// it holds every offset inside its range and answers what that changed. `relayout` (a bar appeared
+// or went, so a region's padding changed) makes `end_frame` solve again and settle once more;
+// `reposition` (only offsets changed) makes it work out positions again. `finish_frame` runs after
+// the frame is emitted.
+namespace ui {
+    namespace scroll {
+        // What settling the scroll regions changed.
+        enum Settle: u8 { none, reposition, relayout }
+
+        struct State {}
+
+        fn make_state(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !State {
+            return State{}
+        }
+
+        fn reset_state { mut ui: Ui } {}
+
+        fn settle_regions { mut ui: Ui } -> Settle {
+            return Settle::none
+        }
+
+        fn finish_frame { mut ui: Ui } {}
+    }
+}

@@ -25,8 +25,8 @@ backend, so the same code runs in a test with no window.
 3. **Function names are verbs** (`add_rect`, `write_list`, `format_fixed`, `from_literal`). Types,
    consts and namespaces follow the plan.
 4. **Widget calls cannot fail**, so there is no `try` on one. Overflow drops the item and counts it
-   (`DrawList.dropped`, later `ui.stats`); misuse is recorded, never a panic. A test asserts after
-   every frame that nothing was dropped and no problem was recorded.
+   (`DrawList.dropped`, `ui.stats.dropped`); misuse is recorded in `ui.problems`, never a panic. A
+   test asserts after every frame that nothing was dropped and no problem was recorded.
 5. **No parsing of ctxlang outside the compiler.** Tools and tests never lex or parse ctxlang and
    never mirror the compiler driver; if a tool needs to know something about a program it asks the
    native `ctxc`. `ui/tools/check` is a plain bash loop that runs test programs. No Python in any test
@@ -60,6 +60,7 @@ compiler on first use; a cached rerun of a small program takes about 0.1 s.
 kotor/tools/ctxc run ui/tests/draw                     # stage 0: draw list, recorder, formatting
 kotor/tools/ctxc run ui/tests/text                     # stage 1: fonts, measuring, wrapping, caret
 kotor/tools/ctxc run ui/tests/stage                    # stage 2: instances, atlas, batching; writes ui/out/stage-atlas.png
+kotor/tools/ctxc run ui/tests/layout                   # stage 5: the Ui, ids, the tree, placed layout, emit
 kotor/tools/ctxc run ui/tests/draw -- --update         # rewrite goldens after an intended change
 kotor/tools/ctxc run kotor/tools/uicompat              # ui built beside kotor's libraries
 ui/tools/check                                         # every headless ui test in turn, then uicompat
@@ -80,13 +81,21 @@ Carriage returns are ignored in the compare, so a checkout with Windows line end
 ```
 ui/
   AGENTS.md PLAN.md .gitignore     (.gitignore: /out/ and *.actual.txt)
-  core/       namespace ui         values, draw list, numbers; later the font table, tree, layout, input
+  core/       namespace ui         values, draw list, numbers, fonts and text, the Ui, ids, tree, layout, emit
     types.ctx   Rect, Color, Uv, RectStyle, Cmd, Clip, Region, FontDef, DrawList
     draw.ctx    ui::draw: make, reset, add, add_clip, add_rect, add_image, add_line, add_text, add_host
     num.ctx     libm externs (floor_f32 ...), pick_min_f32, pick_max_f32, clamp_f32, snap_f32
     format.ctx  format_fixed, format_hex, format_color: into a caller's buffer, no std float printing
     font.ctx    the provider hook types, decode_char, get_font_scale; ui::draw: add_font, has_font, get_font, add_known_text
     text.ctx    lay_glyphs; ui::text: Cache, measure_text, wrap_text, fit_ellipsis, step_caret, locate_caret, pick_index
+    ui.ctx      Ui, Capacity, Theme, Config, Stats, Problem; make, begin_frame, end_frame; report_problem, report_drop;
+                add_font, set_provider, measure_text; the Ui as an @fmt sink, write_fixed, take_text
+    id.ctx      Id, Scope, make_id, push_id, push_key, end; ui::id: the scope stack, write_path
+    tree.ctx    Box, Size, Place, TextStyle; begin_element, add_text, add_host_slot, paint_*; ui::tree: Element, open_element
+    layout.ctx  ui::layout: solve, position (sizes, one line a text, positions)
+    emit.ctx    Hit, get_rect; ui::emit: emit_frame (snapping, clips, opacity, hit regions)
+    input.ctx interact.ctx focus.ctx state.ctx nodes.ctx layers.ctx scroll.ctx
+                one subsystem each: its state (a field of Ui) and make_state, reset_state, finish_frame
   stage/      namespace ui_stage   the staged level: instances, clip slots, atlas and glyph cache, batching, passes
   record/     namespace ui_rec     the recorder: Sink with its own #write fns, write_list, write_quoted
   record_stage/ namespace ui_rec   write_staged, the dump of a Staged: its own directory, because it names ui_stage
@@ -112,3 +121,25 @@ with a `dropped N` line. The exact format is the comment at the top of `ui/recor
 or a clip index that names no entry drops the shape and counts it in `list.dropped`; the shape is
 never drawn unclipped. `ui::draw::add_clip` shares equal entries and counts the drop itself, so the
 caller skips its shape without counting again.
+
+**The Ui and its subsystems.** `ui/core/ui.ctx` holds `Ui`, `make`, `begin_frame` and `end_frame`, and
+a core stage does not edit it: each subsystem has one field of `Ui` and its own file, with
+`make_state` (called by `make`), `reset_state` (by `begin_frame`) and `finish_frame` (by `end_frame`).
+
+- `begin_frame` resets ids, tree, layout, emit, then input, interact, focus, state, nodes, layers,
+  scroll. `end_frame` closes open scopes, calls `layout::solve`, `scroll::settle_regions` (which may ask
+  for one more solve, or for `layout::position`), `layers::place_layers` (which may ask for
+  `layout::position`), `emit::emit_frame`, and then `finish_frame` of nodes, interact, focus, state,
+  layers, scroll, input.
+- What does not fit is `ui::report_drop{ &ui, kind }` (counted in `ui.stats.dropped`, its kind listed
+  once a frame); misuse is `ui::report_problem{ &ui, kind, id }`. A test checks after every
+  well-formed frame that `ui.stats.dropped` and `ui.stats.problems` are 0.
+- The tree is `ui.tree.elements[..ui.tree.count]`, parents before children. `tree::get_open{ ui }` is
+  the element being recorded into. The layout owns `x`, `y`, `w`, `h`, `content_w`, `content_h` and a
+  text element's `first_line`, `line_count`, `dots` (its lines are in `ui.layout.lines`); emit reads
+  them and nothing else of a solve.
+- `ui.emit.hits[..ui.emit.hit_count]` is the last finished frame's identified elements in emission
+  order, topmost last, from one `end_frame` to the next: `rect` is the element's rectangle, `area`
+  where it takes the pointer (empty when it is out of sight or behind a modal tree).
+- A layer is `tree::open_element` with `root` set; a scope that must record something when it closes
+  (a scroll region's bars) passes `on_end`.

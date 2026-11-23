@@ -1,0 +1,264 @@
+// ui: identity and scopes (plan section 2.3).
+//
+// An `Id` is FNV-1a 64 over the id of the enclosing id scope and the bytes of a name, so it is the
+// same on every run and every machine. Id 0 is anonymous: not hit-testable, not addressable. An
+// empty name makes no id, so a container with no name is anonymous instead of sharing its scope's
+// id with every other one.
+//
+// `push_id` and `push_key` open an id scope; `begin_element` opens an element. Both are scopes on
+// one stack, and `ui::end` closes the scope it is given and every scope opened inside it that is
+// still open, so an early return between a begin and its end cannot corrupt the tree.
+//
+// A scope's id is its name hashed on from its parent's id and then sealed with a byte no name
+// holds, so the scopes "ab" > "c" and "a" > "bc" give different ids although their bytes run on.
+//
+// Nothing here fails. The stack has `Capacity.scopes` places; scopes past them are still counted
+// (so every `end` finds its begin) but not kept, what is recorded inside them is dropped, and the
+// frame reports `scopes_full`.
+namespace ui {
+    type Id = distinct u64
+    const NO_ID: Id = @as(Id, 0)
+
+    // What a begin returns and `ui::end` takes. `open` is false for a widget that is closed (a
+    // closed window): its content is not to be recorded, and ending it does nothing.
+    struct Scope { depth: u32 = 0, open: bool = false, serial: u32 = 0 }
+
+    // What runs when the scope of an element closes, with the element's index: how a scroll region
+    // records its bars after its content. It must end every scope it opens.
+    type EndFn = fn{ mut ui: Ui, element: u32 }
+
+    const FNV_BASIS: u64 = 14695981039346656037
+    const FNV_PRIME: u64 = 1099511628211
+
+    // FNV-1a 64 of `bytes`, carried on from `seed`.
+    fn hash_bytes { seed: u64, bytes: []u8 } -> u64 {
+        let mut h = seed
+        let mut i: usize = 0
+        while i < bytes.len {
+            h = (h ^ @as(u64, bytes[i])) *% FNV_PRIME
+            i = i + 1
+        }
+        return h
+    }
+
+    // The id of `name` in the innermost open id scope. An empty name is anonymous (0).
+    fn make_id { ui: Ui, name: []u8 } -> Id {
+        if name.len == 0 { return NO_ID }
+        let h = hash_bytes{ seed = @as(u64, id::get_seed{ ui }), bytes = name }
+        return @as(Id, if h == 0 { 1 } else { h })
+    }
+
+    // Opens an id scope: ids made inside it are those of their names under `name`, and `name` is
+    // a part of their path (`options/BTN_BACK`). The name is copied.
+    fn push_id { mut ui: Ui, name: []u8 } -> Scope {
+        if not ui.in_frame {
+            report_problem{ &ui, kind = ProblemKind::frame_not_open, id = NO_ID }
+            return Scope{ .. }
+        }
+        let seed = id::seal_seed{ h = hash_bytes{ seed = @as(u64, id::get_seed{ ui }), bytes = name } }
+        let kept = keep_text{ &ui, text = name } ifnull Span{ .. }
+        return id::push_scope{ &ui, entry = id::make_id_scope{ ui, seed, name = kept } }
+    }
+
+    // Opens an id scope for a number: a list row pushes its index or its item's own key. Its part
+    // of the path is `#` and the number (`items/#3/done`).
+    fn push_key { mut ui: Ui, key: u64 } -> Scope {
+        if not ui.in_frame {
+            report_problem{ &ui, kind = ProblemKind::frame_not_open, id = NO_ID }
+            return Scope{ .. }
+        }
+        let mut bytes: [8]u8
+        let mut k = key
+        let mut i: usize = 0
+        while i < 8 {
+            bytes[i] = @as(u8, k & 255)
+            k = k >> 8
+            i = i + 1
+        }
+        let seed = id::seal_seed{ h = hash_bytes{ seed = @as(u64, id::get_seed{ ui }), bytes = bytes[..] } }
+        let mut name: [21]u8
+        name[0] = '#'
+        let digits = utf8::fmt_u64{ n = key, into = name[1..] }.bytes
+        let kept = keep_text{ &ui, text = name[..1 + digits.len] } ifnull Span{ .. }
+        return id::push_scope{ &ui, entry = id::make_id_scope{ ui, seed, name = kept } }
+    }
+
+    // Closes `scope` and every scope opened inside it that is still open, innermost first. A scope
+    // that is not open (it was closed already, or it is another frame's) closes nothing and is
+    // reported as a stray end.
+    fn end { mut ui: Ui, scope: Scope } {
+        if not scope.open { return }
+        let stored = @as(usize, scope.depth) < ui.ids.entries.len
+        if scope.depth == 0 or scope.depth > ui.ids.depth or
+           (stored and ui.ids.entries[@as(usize, scope.depth)].serial != scope.serial) {
+            ui.stats.stray_ends = add_count{ a = ui.stats.stray_ends, b = 1 }
+            report_problem{ &ui, kind = ProblemKind::stray_end, id = NO_ID }
+            return
+        }
+        id::close_scopes{ &ui, to = scope.depth }
+    }
+
+    namespace id {
+        // One open scope. `seed` is the id of the innermost id scope, `element` the element that is
+        // open (what is recorded becomes its child), `order` the place among the layers of the tree
+        // it belongs to, and `lost` why nothing can be recorded here (`element` is then
+        // tree::NONE): the element this scope opened did not fit.
+        struct Entry {
+            seed: Id, name: Span, named: bool,
+            element: u32, order: u32, lost: ProblemKind,
+            serial: u32, on_end: ?EndFn,
+        }
+
+        // entries[0] is the frame's own scope; a scope the program opens at depth d is entries[d].
+        // `depth` goes on counting past the end of `entries`.
+        struct State { entries: []mut Entry, depth: u32, serial: u32 }
+
+        fn make_state(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !State {
+            let entries = try alloc::make(Entry, S){ realloc, &heap, count = @as(usize, cap.scopes) + 1 }
+            entries[0] = Entry{ seed = @as(Id, FNV_BASIS), name = Span{ .. }, named = false, element = tree::NONE, order = tree::BASE_ORDER, lost = ProblemKind::frame_not_open, serial = 0, on_end = null }
+            return State{ entries, depth = 0, serial = 0 }
+        }
+
+        // The frame's own scope. tree::reset_state opens the base tree and names its root here.
+        // `serial` goes on counting from frame to frame, so a scope of an earlier frame is not
+        // taken for one of this frame's.
+        fn reset_state { mut ui: Ui } {
+            ui.ids.depth = 0
+            ui.ids.entries[0] = Entry{ seed = @as(Id, FNV_BASIS), name = Span{ .. }, named = false, element = tree::NONE, order = tree::BASE_ORDER, lost = ProblemKind::elements_full, serial = 0, on_end = null }
+        }
+
+        // What every scope's id ends with: one FNV step over a byte that no name holds.
+        fn seal_seed { h: u64 } -> Id {
+            let sealed = (h ^ 255) *% FNV_PRIME
+            return @as(Id, if sealed == 0 { 1 } else { sealed })
+        }
+
+        // The innermost scope that is kept.
+        fn get_top { ui: Ui } -> usize {
+            let d = @as(usize, ui.ids.depth)
+            return if d < ui.ids.entries.len { d } else { ui.ids.entries.len - 1 }
+        }
+
+        fn get_seed { ui: Ui } -> Id {
+            return ui.ids.entries[get_top{ ui }].seed
+        }
+
+        // The element that is open, or tree::NONE where nothing can be recorded.
+        fn get_element { ui: Ui } -> u32 {
+            if @as(usize, ui.ids.depth) >= ui.ids.entries.len { return tree::NONE }
+            return ui.ids.entries[@as(usize, ui.ids.depth)].element
+        }
+
+        // Why nothing can be recorded in the open scope; `none` when something can.
+        fn get_loss { ui: Ui } -> ProblemKind {
+            if @as(usize, ui.ids.depth) >= ui.ids.entries.len { return ProblemKind::scopes_full }
+            return ui.ids.entries[@as(usize, ui.ids.depth)].lost
+        }
+
+        // The place among the layers of the tree that is being recorded into (tree::BASE_ORDER for
+        // the base tree): what `ui.emit.floor` is compared with once the frame is emitted.
+        fn get_order { ui: Ui } -> u32 {
+            return ui.ids.entries[get_top{ ui }].order
+        }
+
+        // An id scope under the open one: the same element and tree, a new seed and a name.
+        fn make_id_scope { ui: Ui, seed: Id, name: Span } -> Entry {
+            return Entry{ seed, name, named = true, element = get_element{ ui }, order = get_order{ ui }, lost = get_loss{ ui }, serial = 0, on_end = null }
+        }
+
+        // Whether one more scope would be kept.
+        fn has_room { ui: Ui } -> bool {
+            return @as(usize, ui.ids.depth) + 1 < ui.ids.entries.len
+        }
+
+        // Opens a scope. One that the stack has no place for is counted but not kept: it is
+        // reported, `on_end` is never called for it, and what is recorded inside it is dropped.
+        fn push_scope { mut ui: Ui, entry: Entry } -> Scope {
+            if ui.ids.depth == 4294967295 { return Scope{ .. } }
+            ui.ids.depth = ui.ids.depth + 1
+            ui.ids.serial = ui.ids.serial +% 1
+            let d = @as(usize, ui.ids.depth)
+            if d < ui.ids.entries.len {
+                ui.ids.entries[d] = entry
+                ui.ids.entries[d].serial = ui.ids.serial
+            } else {
+                report_drop{ &ui, kind = ProblemKind::scopes_full }
+            }
+            return Scope{ depth = ui.ids.depth, open = true, serial = ui.ids.serial }
+        }
+
+        // Closes scopes from the innermost down to depth `to`, that one included. A scope's
+        // `on_end` runs while the scope is still open, so what it records lands inside; scopes it
+        // leaves open are closed after it.
+        fn close_scopes { mut ui: Ui, to: u32 } {
+            while to > 0 and ui.ids.depth >= to {
+                let d = @as(usize, ui.ids.depth)
+                if d < ui.ids.entries.len {
+                    let entry = ui.ids.entries[d]
+                    if let hook = entry.on_end {
+                        ui.ids.entries[d].on_end = null
+                        hook{ &ui, element = entry.element }
+                        continue
+                    }
+                }
+                ui.ids.depth = ui.ids.depth - 1
+            }
+        }
+
+        // end_frame: the scopes the program left open are closed for it, counted and reported.
+        fn close_frame { mut ui: Ui } {
+            if ui.ids.depth == 0 { return }
+            ui.stats.unclosed = ui.ids.depth
+            report_problem{ &ui, kind = ProblemKind::unclosed_scope, id = NO_ID }
+            close_scopes{ &ui, to = 1 }
+        }
+
+        // The names of the open id scopes, outermost first, joined with `/`, written into the
+        // frame's arena: the path of whatever is recorded here (`items/#3`). Empty when no id scope
+        // is open, and when the arena has no room for it (which is counted).
+        fn write_path { mut ui: Ui } -> Span {
+            let top = get_top{ ui }
+            let mut need: usize = 0
+            let mut parts: usize = 0
+            let mut i: usize = 1
+            while i <= top {
+                let e = ui.ids.entries[i]
+                if e.named {
+                    need = need + @as(usize, e.name.len) + (if parts > 0 { 1 } else { 0 })
+                    parts = parts + 1
+                }
+                i = i + 1
+            }
+            if need == 0 { return Span{ .. } }
+            let start = @as(usize, ui.draw.text_len)
+            if need > ui.draw.text.len - start {
+                ui.stats.dropped = add_count{ a = ui.stats.dropped, b = 1 }
+                return Span{ .. }
+            }
+            let mut at = start
+            parts = 0
+            i = 1
+            while i <= top {
+                let e = ui.ids.entries[i]
+                if e.named {
+                    if parts > 0 {
+                        ui.draw.text[at] = '/'
+                        at = at + 1
+                    }
+                    let from = @as(usize, e.name.start)
+                    let mut k: usize = 0
+                    while k < @as(usize, e.name.len) {
+                        ui.draw.text[at] = ui.draw.text[from + k]
+                        at = at + 1
+                        k = k + 1
+                    }
+                    parts = parts + 1
+                }
+                i = i + 1
+            }
+            ui.draw.text_len = @as(u32, at)
+            ui.pending = ui.draw.text_len
+            return Span{ start = @as(u32, start), len = @as(u32, need) }
+        }
+    }
+}

@@ -1,0 +1,20 @@
+// ui::interact: hot and active (plan section 2.5): which hit region the pointer is over, which
+// widget holds the pointer, and what `ui::press` answers.
+//
+// This file is the subsystem's place in the Ui: `ui.interact` is its state. `make` builds the
+// state, `begin_frame` calls `reset_state` after the input is sealed (`ui.emit.hits` holds the last
+// finished frame's hit regions, topmost last, with `area` already empty behind a modal tree), and
+// `end_frame` calls `finish_frame` after the frame is emitted.
+namespace ui {
+    namespace interact {
+        struct State {}
+
+        fn make_state(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !State {
+            return State{}
+        }
+
+        fn reset_state { mut ui: Ui } {}
+
+        fn finish_frame { mut ui: Ui } {}
+    }
+}

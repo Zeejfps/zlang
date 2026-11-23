@@ -1,0 +1,20 @@
+// ui::focus: the focused id, the tab stops of the frame in recording order, and the links between
+// widgets (plan section 2.5).
+//
+// This file is the subsystem's place in the Ui: `ui.focus` is its state. `make` builds the state,
+// `begin_frame` calls `reset_state`, and `end_frame` calls `finish_frame` after the frame is
+// emitted, which is where focus moves. By then `ui.emit.floor` is the order of the frontmost modal
+// tree (0 when none is up): what was recorded in a tree of a smaller order takes no keys.
+namespace ui {
+    namespace focus {
+        struct State {}
+
+        fn make_state(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !State {
+            return State{}
+        }
+
+        fn reset_state { mut ui: Ui } {}
+
+        fn finish_frame { mut ui: Ui } {}
+    }
+}

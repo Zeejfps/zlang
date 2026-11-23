@@ -1,0 +1,391 @@
+// ui::emit: the solved tree as shapes in the draw list and as hit regions (plan section 2.4,
+// "Emit").
+//
+// Trees are emitted in the order of their roots' `order` (ties as recorded), each in pre-order: an
+// element's decoration, then its paints and children as they were recorded.
+//
+//  - Every rectangle edge and every text position is put on the device grid on its own, with
+//    `floor(v * scale + 0.5) / scale` per axis, and sizes are the differences of the snapped edges,
+//    so edges that meet in layout meet on screen at a fractional scale. A paint is snapped as the
+//    absolute rectangle it covers; an image's rectangle is already the one it covers after its
+//    quarter turns. Lines are not snapped.
+//  - A clipping element adds its rectangle, cut to the clips around it, to the draw list's clip
+//    table (equal entries are shared), and everything under it names that entry. With a radius its
+//    own rectangle is also the entry's rounded rectangle; a plain clip inside keeps the rounded
+//    rectangle of the nearest rounded clip around it. The table holds one radius an entry, so an
+//    element with four different radii clips to the smallest of them: nothing that should show is
+//    cut. Its own decoration is drawn under the clip around it, not its own.
+//  - What lies wholly outside its clip is not emitted, nor is a shape that would draw nothing (no
+//    alpha, no size). When the clip table is full, the shapes under the clip that did not fit are
+//    dropped and counted; nothing is ever drawn unclipped in their place.
+//  - Opacity multiplies down the tree into the alpha of every colour.
+//  - Every element with an id adds a hit region, in emission order: `rect` is its snapped
+//    rectangle, `area` that rectangle grown by its hit outset and cut to its clip, which is where
+//    it takes the pointer. The topmost region under a point is the last one whose `area` holds it.
+//    `area` is empty for an element that is out of sight, for a tree that makes no hits, and for
+//    every tree behind a modal one.
+//
+// The regions of the last finished frame stay in `ui.emit.hits` until the next end_frame: that is
+// what interaction and `get_rect` read while the next frame is recorded.
+namespace ui {
+    // An identified element as it was emitted. `order` is its tree's place among the layers.
+    struct Hit { id: Id = NO_ID, rect: Rect = Rect{ .. }, area: Rect = Rect{ .. }, order: u32 = 0 }
+
+    // The rectangle the element with this id had in the last finished frame, snapped; null when
+    // that frame had none.
+    fn get_rect { ui: Ui, id: Id } -> ?Rect {
+        if id == NO_ID { return null }
+        let mut i: usize = 0
+        while i < @as(usize, ui.emit.hit_count) {
+            if ui.emit.hits[i].id == id { return ui.emit.hits[i].rect }
+            i = i + 1
+        }
+        return null
+    }
+
+    namespace emit {
+        // What an element hands down to its content: the clip (its rectangle, its rounded
+        // rectangle and its index in the table, or `lost` when the table had no room for it) and
+        // the opacity so far.
+        struct Level { rect: Rect, round: Rect, radius: f32, clip: u16, lost: bool, opacity: f32 }
+
+        struct State {
+            hits: []mut Hit, hit_count: u32,        // the last finished frame's regions
+            next: []mut Hit, next_count: u32,       // the frame being emitted; the two swap
+            levels: []mut Level,                    // one a depth of the tree being walked
+            order: []mut u32,                       // indices of `ui.tree.roots`, back to front
+            floor: u32,                             // the order of the frontmost modal tree; 0 when none is up
+        }
+
+        fn make_state(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !State {
+            let hits = try alloc::make(Hit, S){ realloc, &heap, count = @as(usize, cap.hits) }
+            let next = try alloc::make(Hit, S){ realloc, &heap, count = @as(usize, cap.hits) }
+            // An open element is an open scope, so a tree is never deeper than the scope stack.
+            let levels = try alloc::make(Level, S){ realloc, &heap, count = @as(usize, cap.scopes) + 2 }
+            let order = try alloc::make(u32, S){ realloc, &heap, count = @as(usize, cap.layers) + 1 }
+            return State{ hits, hit_count = 0, next, next_count = 0, levels, order, floor = 0 }
+        }
+
+        // Nothing to empty at begin_frame: the last frame's regions stay until this one is emitted.
+        fn reset_state { mut ui: Ui } {
+            ui.emit.next_count = 0
+        }
+
+        // ---- geometry
+
+        fn snap_rect { r: Rect, sx: f32, sy: f32 } -> Rect {
+            let x0 = snap_f32{ v = r.x, scale = sx }
+            let y0 = snap_f32{ v = r.y, scale = sy }
+            let x1 = snap_f32{ v = r.x + r.w, scale = sx }
+            let y1 = snap_f32{ v = r.y + r.h, scale = sy }
+            return Rect{ x = x0, y = y0, w = x1 - x0, h = y1 - y0 }
+        }
+
+        fn has_area { r: Rect } -> bool {
+            return r.w > 0.0 and r.h > 0.0
+        }
+
+        // The part of `a` inside `b`; no size when they do not meet.
+        fn cut_rect { a: Rect, b: Rect } -> Rect {
+            let x0 = pick_max_f32{ a = a.x, b = b.x }
+            let y0 = pick_max_f32{ a = a.y, b = b.y }
+            let x1 = pick_min_f32{ a = a.x + a.w, b = b.x + b.w }
+            let y1 = pick_min_f32{ a = a.y + a.h, b = b.y + b.h }
+            return Rect{ x = x0, y = y0, w = pick_max_f32{ a = 0.0, b = x1 - x0 }, h = pick_max_f32{ a = 0.0, b = y1 - y0 } }
+        }
+
+        // Whether some of `r` shows inside `clip`.
+        fn is_shown { clip: Rect, r: Rect } -> bool {
+            return has_area{ r } and has_area{ r = cut_rect{ a = clip, b = r } }
+        }
+
+        // ---- colours
+
+        fn fade_color { c: Color, opacity: f32 } -> Color {
+            let a = floor_f32{ x = @as(f32, c.a) * opacity + 0.5 }
+            let alpha: u8 = if not (a > 0.0) { 0 } else if a >= 255.0 { 255 } else { @as(u8, a) }
+            return Color{ r = c.r, g = c.g, b = c.b, a = alpha }
+        }
+
+        fn fade_style { style: RectStyle, opacity: f32 } -> RectStyle {
+            if opacity >= 1.0 { return style }
+            return RectStyle{
+                fill = fade_color{ c = style.fill, opacity },
+                radius = style.radius,
+                border = style.border,
+                border_color = SideColors{
+                    top = fade_color{ c = style.border_color.top, opacity },
+                    right = fade_color{ c = style.border_color.right, opacity },
+                    bottom = fade_color{ c = style.border_color.bottom, opacity },
+                    left = fade_color{ c = style.border_color.left, opacity },
+                },
+            }
+        }
+
+        // Whether a rectangle of this look draws anything: a fill, or a border side with a width
+        // and a colour.
+        fn has_ink { style: RectStyle } -> bool {
+            if style.fill.a > 0 { return true }
+            return (style.border.top > 0.0 and style.border_color.top.a > 0) or
+                   (style.border.right > 0.0 and style.border_color.right.a > 0) or
+                   (style.border.bottom > 0.0 and style.border_color.bottom.a > 0) or
+                   (style.border.left > 0.0 and style.border_color.left.a > 0)
+        }
+
+        // The one radius a clip table entry can hold for these four.
+        fn pick_clip_radius { c: Corners } -> f32 {
+            let r = pick_min_f32{ a = pick_min_f32{ a = c.top_left, b = c.top_right }, b = pick_min_f32{ a = c.bottom_right, b = c.bottom_left } }
+            return if r > 0.0 { r } else { 0.0 }
+        }
+
+        // ---- shapes
+
+        // Appends a clipped shape under `level`: dropped and counted when the level's clip did
+        // not fit the table.
+        fn put_shape { mut ui: Ui, level: Level, cmd: Cmd } {
+            if level.lost {
+                ui.draw.dropped = add_count{ a = ui.draw.dropped, b = 1 }
+                return
+            }
+            draw::add{ list = &ui.draw, cmd }
+        }
+
+        // The kept start of a text and then "...", as new text in the arena. Null, and one drop
+        // counted, when the arena has no room.
+        fn join_dots { mut ui: Ui, start: usize, len: usize } -> ?Span {
+            let at = @as(usize, ui.draw.text_len)
+            let dots = text::DOTS
+            if len + dots.len > ui.draw.text.len - at {
+                report_drop{ &ui, kind = ProblemKind::text_full }
+                return null
+            }
+            let mut k: usize = 0
+            while k < len {
+                ui.draw.text[at + k] = ui.draw.text[start + k]
+                k = k + 1
+            }
+            k = 0
+            while k < dots.len {
+                ui.draw.text[at + len + k] = dots[k]
+                k = k + 1
+            }
+            ui.draw.text_len = @as(u32, at + len + dots.len)
+            ui.pending = ui.draw.text_len
+            return Span{ start = @as(u32, at), len = @as(u32, len + dots.len) }
+        }
+
+        // The lines the layout gave a text element, each at its place in the element's inner width.
+        fn emit_lines { mut ui: Ui, e: tree::Element, level: Level, opacity: f32 } {
+            if not draw::has_font{ list = ui.draw, font = e.font } { return }
+            let color = fade_color{ c = e.color, opacity }
+            if color.a == 0 { return }
+            let left = e.x + e.padding.left
+            let top = e.y + e.padding.top
+            let inner = pick_max_f32{ a = 0.0, b = e.w - e.padding.left - e.padding.right }
+            let factor = layout::get_factor{ align = e.text_align }
+            let mut i: usize = 0
+            while i < @as(usize, e.line_count) {
+                let at = @as(usize, e.first_line) + i
+                if at >= ui.layout.lines.len { break }
+                let line = ui.layout.lines[at]
+                let dotted = e.dots and i + 1 == @as(usize, e.line_count)
+                let end = pick_min_u32{ a = line.end, b = e.text.len }
+                let start = pick_min_u32{ a = line.start, b = end }
+                let x = snap_f32{ v = left + pick_max_f32{ a = 0.0, b = inner - line.width } * factor, scale = ui.draw.scale_x }
+                let y = snap_f32{ v = top + @as(f32, i) * e.line_height, scale = ui.draw.scale_y }
+                i = i + 1
+                if end == start and not dotted { continue }
+                if not is_text_shown{ clip = level.rect, x, y, height = e.line_height } { continue }
+                let mut span = Span{ start = e.text.start + start, len = end - start }
+                if dotted {
+                    span = join_dots{ &ui, start = @as(usize, span.start), len = @as(usize, span.len) } ifnull { continue }
+                }
+                put_shape{ &ui, level, cmd = Cmd::text{ font = e.font, size = e.text_size, x, y, text = span, color, clip = level.clip } }
+            }
+        }
+
+        // Whether a line of text starting at (`x`, `y`) can show inside `clip`. Its width is not
+        // asked for: text only runs right from its start.
+        fn is_text_shown { clip: Rect, x: f32, y: f32, height: f32 } -> bool {
+            if not has_area{ r = clip } { return false }
+            return x < clip.x + clip.w and y < clip.y + clip.h and y + height > clip.y
+        }
+
+        // A paint: its shape moved from its element's coordinates to the surface's.
+        fn emit_paint { mut ui: Ui, e: tree::Element, level: Level } {
+            if e.parent == tree::NONE or @as(usize, e.data) >= @as(usize, ui.tree.paint_count) { return }
+            if not (level.opacity > 0.0) { return }
+            let ox = ui.tree.elements[@as(usize, e.parent)].x
+            let oy = ui.tree.elements[@as(usize, e.parent)].y
+            let sx = ui.draw.scale_x
+            let sy = ui.draw.scale_y
+            let shape = ui.tree.paints[@as(usize, e.data)]
+            match shape {
+                rect{ rect, style } => {
+                    let r = snap_rect{ r = Rect{ x = ox + rect.x, y = oy + rect.y, w = rect.w, h = rect.h }, sx, sy }
+                    let faded = fade_style{ style, opacity = level.opacity }
+                    if is_shown{ clip = level.rect, r } and has_ink{ style = faded } {
+                        put_shape{ &ui, level, cmd = Cmd::rect{ rect = r, style = faded, clip = level.clip } }
+                    }
+                }
+                image{ rect, image, uv, tint, quarter, angle, radius, blend } => {
+                    let r = snap_rect{ r = Rect{ x = ox + rect.x, y = oy + rect.y, w = rect.w, h = rect.h }, sx, sy }
+                    let faded = fade_color{ c = tint, opacity = level.opacity }
+                    // A picture turned by a free angle covers more than its rectangle: the square
+                    // around its centre that holds it at any angle.
+                    let mut reach = r
+                    if angle != 0.0 {
+                        let half = sqrt_f32{ x = r.w * r.w + r.h * r.h } * 0.5
+                        reach = Rect{ x = r.x + r.w * 0.5 - half, y = r.y + r.h * 0.5 - half, w = half * 2.0, h = half * 2.0 }
+                    }
+                    if has_area{ r } and is_shown{ clip = level.rect, r = reach } and faded.a > 0 {
+                        put_shape{ &ui, level, cmd = Cmd::image{ rect = r, image, uv, tint = faded, quarter, angle, radius, blend, clip = level.clip } }
+                    }
+                }
+                text{ font, size, x, y, text, color } => {
+                    let faded = fade_color{ c = color, opacity = level.opacity }
+                    let px = snap_f32{ v = ox + x, scale = sx }
+                    let py = snap_f32{ v = oy + y, scale = sy }
+                    if faded.a > 0 and text.len > 0 and is_text_shown{ clip = level.rect, x = px, y = py, height = size } {
+                        put_shape{ &ui, level, cmd = Cmd::text{ font, size, x = px, y = py, text, color = faded, clip = level.clip } }
+                    }
+                }
+                line{ x0, y0, x1, y1, width, color, cap } => {
+                    let faded = fade_color{ c = color, opacity = level.opacity }
+                    // A cap reaches half the width past each end, so the box is grown by the width.
+                    let lo_x = pick_min_f32{ a = x0, b = x1 } - width
+                    let lo_y = pick_min_f32{ a = y0, b = y1 } - width
+                    let hi_x = pick_max_f32{ a = x0, b = x1 } + width
+                    let hi_y = pick_max_f32{ a = y0, b = y1 } + width
+                    let reach = Rect{ x = ox + lo_x, y = oy + lo_y, w = hi_x - lo_x, h = hi_y - lo_y }
+                    if width > 0.0 and faded.a > 0 and is_shown{ clip = level.rect, r = reach } {
+                        put_shape{ &ui, level, cmd = Cmd::line{ x0 = ox + x0, y0 = oy + y0, x1 = ox + x1, y1 = oy + y1, width, color = faded, cap, clip = level.clip } }
+                    }
+                }
+                host => {}
+            }
+        }
+
+        // The hit region of an identified element. `takes` is false where the tree takes no pointer.
+        fn add_hit { mut ui: Ui, e: tree::Element, rect: Rect, clip: Rect, order: u32, takes: bool } {
+            let n = @as(usize, ui.emit.next_count)
+            if n >= ui.emit.next.len {
+                report_drop{ &ui, kind = ProblemKind::hits_full }
+                return
+            }
+            // An element with no hit area has an area of no size at its own top left.
+            let none = Rect{ x = rect.x, y = rect.y, w = 0.0, h = 0.0 }
+            let mut area = none
+            if takes and has_area{ r = rect } {
+                let o = e.hit_outset
+                area = cut_rect{ a = clip, b = Rect{ x = rect.x - o.left, y = rect.y - o.top, w = rect.w + o.left + o.right, h = rect.h + o.top + o.bottom } }
+                if not has_area{ r = area } { area = none }
+            }
+            ui.emit.next[n] = Hit{ id = e.id, rect, area, order }
+            ui.emit.next_count = ui.emit.next_count + 1
+        }
+
+        // One element under `level`; the result is the level of its own content.
+        fn emit_element { mut ui: Ui, index: u32, level: Level, order: u32, takes: bool } -> Level {
+            let e = ui.tree.elements[@as(usize, index)]
+            if e.kind == tree::Kind::paint {
+                emit_paint{ &ui, e, level }
+                return level
+            }
+            let rect = snap_rect{ r = Rect{ x = e.x, y = e.y, w = e.w, h = e.h }, sx = ui.draw.scale_x, sy = ui.draw.scale_y }
+            if e.id != NO_ID { add_hit{ &ui, e, rect, clip = level.rect, order, takes } }
+            let opacity = level.opacity * e.opacity
+            if opacity > 0.0 and is_shown{ clip = level.rect, r = rect } {
+                let style = fade_style{ style = e.style, opacity }
+                if has_ink{ style } { put_shape{ &ui, level, cmd = Cmd::rect{ rect, style, clip = level.clip } } }
+                if e.kind == tree::Kind::text { emit_lines{ &ui, e, level, opacity } }
+                if e.kind == tree::Kind::host { draw::add_host{ list = &ui.draw, slot = e.data, rect } }
+            }
+            let mut inner = Level{ rect = level.rect, round = level.round, radius = level.radius, clip = level.clip, lost = level.lost, opacity }
+            if e.clip {
+                inner.rect = cut_rect{ a = level.rect, b = rect }
+                let radius = pick_clip_radius{ c = e.style.radius }
+                if radius > 0.0 {
+                    inner.round = rect
+                    inner.radius = radius
+                }
+                // Nothing shows inside an empty clip, so it needs no entry.
+                if not level.lost and has_area{ r = inner.rect } {
+                    if let slot = draw::add_clip{ list = &ui.draw, clip = Clip{ rect = inner.rect, round = inner.round, radius = inner.radius } } {
+                        inner.clip = slot
+                    } else {
+                        inner.lost = true
+                        if not has_problem{ ui, kind = ProblemKind::clips_full } { report_problem{ &ui, kind = ProblemKind::clips_full, id = NO_ID } }
+                    }
+                }
+            }
+            return inner
+        }
+
+        // One tree, in pre-order, without recursion: `levels[d]` is what the elements at depth d
+        // stand under.
+        fn emit_tree { mut ui: Ui, root: tree::Root, takes: bool } {
+            let top = root.element
+            if @as(usize, top) >= @as(usize, ui.tree.count) or ui.emit.levels.len == 0 { return }
+            ui.emit.levels[0] = Level{
+                rect = Rect{ x = 0.0, y = 0.0, w = ui.draw.width, h = ui.draw.height },
+                round = Rect{ .. }, radius = 0.0, clip = 0, lost = false, opacity = 1.0,
+            }
+            let mut depth: usize = 0
+            let mut cur = top
+            while true {
+                let inner = emit_element{ &ui, index = cur, level = ui.emit.levels[depth], order = root.order, takes }
+                let first = ui.tree.elements[@as(usize, cur)].first_child
+                if first != tree::NONE and depth + 1 < ui.emit.levels.len {
+                    depth = depth + 1
+                    ui.emit.levels[depth] = inner
+                    cur = first
+                    continue
+                }
+                // The next element: a sibling, or the sibling of the nearest ancestor that has one.
+                while cur != top {
+                    let next = ui.tree.elements[@as(usize, cur)].next
+                    if next != tree::NONE {
+                        cur = next
+                        break
+                    }
+                    cur = ui.tree.elements[@as(usize, cur)].parent
+                    if depth > 0 { depth = depth - 1 }
+                }
+                if cur == top { break }
+            }
+        }
+
+        // Emits the frame: every tree, back to front, then makes its regions the current ones.
+        fn emit_frame { mut ui: Ui } {
+            ui.emit.next_count = 0
+            // The roots by order, kept as recorded where orders are equal (an insertion sort: a
+            // frame has few trees).
+            let mut count: usize = 0
+            let mut floor: u32 = 0
+            while count < @as(usize, ui.tree.root_count) and count < ui.emit.order.len {
+                let root = ui.tree.roots[count]
+                if root.modal and root.order > floor { floor = root.order }
+                let mut at = count
+                while at > 0 and ui.tree.roots[@as(usize, ui.emit.order[at - 1])].order > root.order {
+                    ui.emit.order[at] = ui.emit.order[at - 1]
+                    at = at - 1
+                }
+                ui.emit.order[at] = @as(u32, count)
+                count = count + 1
+            }
+            ui.emit.floor = floor
+            let mut k: usize = 0
+            while k < count {
+                let root = ui.tree.roots[@as(usize, ui.emit.order[k])]
+                emit_tree{ &ui, root, takes = root.hits and root.order >= floor }
+                k = k + 1
+            }
+            let finished = ui.emit.next
+            ui.emit.next = ui.emit.hits
+            ui.emit.hits = finished
+            ui.emit.hit_count = ui.emit.next_count
+            ui.emit.next_count = 0
+        }
+    }
+}

@@ -1,0 +1,22 @@
+// ui::input: what the host pushed since the last frame (plan sections 2.5 and 2.8): the events
+// and the frame's sealed input (pointer position, buttons, wheel, key strokes, typed text), the
+// clocks that `frame.dt` advances, and the requests the host applies after the frame.
+//
+// This file is the subsystem's place in the Ui: `ui.input` is its state. `make` builds the state,
+// `begin_frame` calls `reset_state` first of the interaction subsystems (the frame's buffers are
+// empty by then and `ui.emit.hits` still holds the last frame's hit regions), and `end_frame` calls
+// `finish_frame` last, after the frame is emitted and every other subsystem has finished, which is
+// where the requests are filled.
+namespace ui {
+    namespace input {
+        struct State {}
+
+        fn make_state(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !State {
+            return State{}
+        }
+
+        fn reset_state { mut ui: Ui } {}
+
+        fn finish_frame { mut ui: Ui } {}
+    }
+}

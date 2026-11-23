@@ -1,0 +1,20 @@
+// ui::state: per-widget state (plan section 2.3): plain values in a fixed table keyed by id, and
+// the sweep that frees what nothing asked for.
+//
+// This file is the subsystem's place in the Ui: `ui.state` is its state, with room for
+// `Capacity.states` entries. `make` builds it, `begin_frame` calls `reset_state`, and `end_frame`
+// calls `finish_frame` after the frame is emitted, which is where the sweep runs. A table that is
+// full is reported as `ProblemKind::states_full`.
+namespace ui {
+    namespace state {
+        struct State {}
+
+        fn make_state(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !State {
+            return State{}
+        }
+
+        fn reset_state { mut ui: Ui } {}
+
+        fn finish_frame { mut ui: Ui } {}
+    }
+}

@@ -1,0 +1,185 @@
+// ui::layout: the solver (plan section 2.4, "Solve"). `end_frame` calls `solve`, and `position`
+// again when a scroll region or a layer moved something after it.
+//
+// What this solver does, in order:
+//
+//   1. Sizes, last element to first (children before parents), widths and then heights. `fix` is
+//      exactly its value. `FIT` is the content's size plus padding, held between `min` and `max`:
+//      a text's content is its measured line, a box's is the sum of its flow children along its
+//      axis plus the gaps between them, and the largest of them across it. `GROW` is sized as
+//      `FIT` and `take` as its `min`: nothing here shares a parent's room among its children.
+//   2. Text: each text element is one line, the whole of its text.
+//   3. Positions, first element to last: a root at its anchor on the surface; flow children one
+//      after another along the parent's axis from its padding edge, `gap` apart, moved by
+//      `spare * align` on each axis (spare is never negative) and by the parent's scroll offset;
+//      placed children at parent.xy + parent.wh * anchor + offset.
+//
+// A paint takes no part: it is drawn in its parent's coordinates. A placed child and a root add
+// nothing to a parent's size.
+//
+// What emit reads of a solve: `x`, `y`, `w`, `h` of every element that is not a paint, and for a
+// text element `first_line`, `line_count` and `dots`, with its lines in `ui.layout.lines` (byte
+// ranges of the element's own text, and each line's width).
+namespace ui {
+    namespace layout {
+        // The lines of every text element of the frame, in element order.
+        struct State { lines: []mut text::Line, line_count: u32 }
+
+        fn make_state(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !State {
+            let lines = try alloc::make(text::Line, S){ realloc, &heap, count = @as(usize, cap.lines) }
+            return State{ lines, line_count = 0 }
+        }
+
+        fn reset_state { mut ui: Ui } {
+            ui.layout.line_count = 0
+        }
+
+        fn solve { mut ui: Ui } {
+            fit_sizes{ &ui, wide = true }
+            lay_text{ &ui }
+            fit_sizes{ &ui, wide = false }
+            position{ &ui }
+        }
+
+        // Whether a child takes room in its parent's flow.
+        fn is_flow { e: tree::Element } -> bool {
+            return e.kind != tree::Kind::paint and not e.placed and not e.root
+        }
+
+        // 0 for start, 0.5 for center, 1 for end.
+        fn get_factor { align: Align } -> f32 {
+            match align {
+                start => { return 0.0 }
+                center => { return 0.5 }
+                end => { return 1.0 }
+            }
+        }
+
+        // The size `size` asks for when the content with its padding is `content`. Never negative.
+        fn resolve_size { size: Size, content: f32 } -> f32 {
+            let mut v: f32 = 0.0
+            match size.kind {
+                fixed => { v = size.value }
+                part => { v = clamp_f32{ v = 0.0, lo = size.min, hi = size.max } }
+                else => { v = clamp_f32{ v = content, lo = size.min, hi = size.max } }
+            }
+            return if v > 0.0 { v } else { 0.0 }
+        }
+
+        // Step 1 along one axis: widths when `wide`, otherwise heights.
+        fn fit_sizes { mut ui: Ui, wide: bool } {
+            let mut i = @as(usize, ui.tree.count)
+            while i > 0 {
+                i = i - 1
+                let e = ui.tree.elements[i]
+                if e.kind == tree::Kind::paint { continue }
+                let mut content = if wide { e.content_w } else { e.content_h }
+                if e.kind == tree::Kind::box {
+                    let main = (e.axis == Axis::row) == wide
+                    let mut sum: f32 = 0.0
+                    let mut largest: f32 = 0.0
+                    let mut flowing: u32 = 0
+                    let mut c = e.first_child
+                    while c != tree::NONE {
+                        let child = ui.tree.elements[@as(usize, c)]
+                        if is_flow{ e = child } {
+                            let size = if wide { child.w } else { child.h }
+                            sum = sum + size
+                            largest = pick_max_f32{ a = largest, b = size }
+                            flowing = flowing + 1
+                        }
+                        c = child.next
+                    }
+                    let gaps = if flowing > 1 { e.gap * @as(f32, flowing - 1) } else { 0.0 }
+                    content = if main { sum + gaps } else { largest }
+                    if wide { ui.tree.elements[i].content_w = content } else { ui.tree.elements[i].content_h = content }
+                }
+                let padding = if wide { e.padding.left + e.padding.right } else { e.padding.top + e.padding.bottom }
+                let size = resolve_size{ size = if wide { e.width } else { e.height }, content = content + padding }
+                if wide { ui.tree.elements[i].w = size } else { ui.tree.elements[i].h = size }
+            }
+        }
+
+        // Step 2: one line a text element. A text that finds the line table full has no line and
+        // is not drawn, which is counted.
+        fn lay_text { mut ui: Ui } {
+            ui.layout.line_count = 0
+            let mut i: usize = 0
+            while i < @as(usize, ui.tree.count) {
+                if ui.tree.elements[i].kind == tree::Kind::text {
+                    let at = @as(usize, ui.layout.line_count)
+                    ui.tree.elements[i].first_line = ui.layout.line_count
+                    ui.tree.elements[i].dots = false
+                    if at < ui.layout.lines.len {
+                        ui.layout.lines[at] = text::Line{ start = 0, end = ui.tree.elements[i].text.len, width = ui.tree.elements[i].content_w }
+                        ui.layout.line_count = ui.layout.line_count + 1
+                        ui.tree.elements[i].line_count = 1
+                    } else {
+                        ui.tree.elements[i].line_count = 0
+                        report_drop{ &ui, kind = ProblemKind::lines_full }
+                    }
+                }
+                i = i + 1
+            }
+        }
+
+        // Step 3. Sizes are final when it runs; it may run again after something moved.
+        fn position { mut ui: Ui } {
+            let mut i: usize = 0
+            while i < @as(usize, ui.tree.count) {
+                let mut e = ui.tree.elements[i]
+                i = i + 1
+                if e.kind == tree::Kind::paint { continue }
+                if e.root {
+                    e.x = ui.draw.width * e.anchor_x + e.offset_x
+                    e.y = ui.draw.height * e.anchor_y + e.offset_y
+                    ui.tree.elements[i - 1].x = e.x
+                    ui.tree.elements[i - 1].y = e.y
+                }
+                if e.first_child == tree::NONE { continue }
+
+                let row = e.axis == Axis::row
+                let inner_w = e.w - e.padding.left - e.padding.right
+                let inner_h = e.h - e.padding.top - e.padding.bottom
+                let start_x = e.x + e.padding.left - e.scroll_x
+                let start_y = e.y + e.padding.top - e.scroll_y
+
+                let mut used: f32 = 0.0
+                let mut flowing: u32 = 0
+                let mut c = e.first_child
+                while c != tree::NONE {
+                    let child = ui.tree.elements[@as(usize, c)]
+                    if is_flow{ e = child } {
+                        used = used + (if row { child.w } else { child.h })
+                        flowing = flowing + 1
+                    }
+                    c = child.next
+                }
+                if flowing > 1 { used = used + e.gap * @as(f32, flowing - 1) }
+                let spare = (if row { inner_w } else { inner_h }) - used
+                let mut cursor = pick_max_f32{ a = 0.0, b = spare } * get_factor{ align = if row { e.align_x } else { e.align_y } }
+                let across = get_factor{ align = if row { e.align_y } else { e.align_x } }
+
+                c = e.first_child
+                while c != tree::NONE {
+                    let at = @as(usize, c)
+                    let child = ui.tree.elements[at]
+                    c = child.next
+                    if child.kind == tree::Kind::paint { continue }
+                    if child.placed {
+                        ui.tree.elements[at].x = e.x + e.w * child.anchor_x + child.offset_x
+                        ui.tree.elements[at].y = e.y + e.h * child.anchor_y + child.offset_y
+                    } else if row {
+                        ui.tree.elements[at].x = start_x + cursor
+                        ui.tree.elements[at].y = start_y + pick_max_f32{ a = 0.0, b = inner_h - child.h } * across
+                        cursor = cursor + child.w + e.gap
+                    } else {
+                        ui.tree.elements[at].y = start_y + cursor
+                        ui.tree.elements[at].x = start_x + pick_max_f32{ a = 0.0, b = inner_w - child.w } * across
+                        cursor = cursor + child.h + e.gap
+                    }
+                }
+            }
+        }
+    }
+}

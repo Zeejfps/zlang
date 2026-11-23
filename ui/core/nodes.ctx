@@ -1,0 +1,23 @@
+// ui::nodes: what tests and scripts see (plan section 2.5): each described widget with its role,
+// label, value, flags, path and solved rectangle.
+//
+// This file is the subsystem's place in the Ui: `ui.nodes` is its state, with room for
+// `Capacity.nodes` nodes. `make` builds it, `begin_frame` calls `reset_state`, and `end_frame` calls
+// `finish_frame` first after the frame is emitted: `ui.emit.hits` then holds this frame's identified
+// elements with their rectangles, which is where a node's rectangle comes from. The path of what is
+// being recorded is `id::write_path` (the names of the open id scopes). The frame's text arena is
+// emptied by the next `begin_frame`, so text that a node keeps for the next frame is the
+// subsystem's own. A list that is full is reported as `ProblemKind::nodes_full`.
+namespace ui {
+    namespace nodes {
+        struct State {}
+
+        fn make_state(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !State {
+            return State{}
+        }
+
+        fn reset_state { mut ui: Ui } {}
+
+        fn finish_frame { mut ui: Ui } {}
+    }
+}

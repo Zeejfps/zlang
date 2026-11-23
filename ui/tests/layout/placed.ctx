@@ -1,0 +1,279 @@
+// The scenes whose draw lists are pinned by golden files: placed layout, clips, opacity, paint
+// order, a host slot, snapping at scale 1.5 and children stacked in the flow. Each golden is the
+// frame's draw list as `ui_rec` writes it, followed by the frame's hit regions, one a line:
+//
+//   hit X,Y WxH area X,Y WxH        the element's rectangle, then where it takes the pointer
+//
+// Every number in the goldens was worked out by hand from the scene; the comments here say how.
+
+const PANEL: ui::Color = ui::Color{ r = 32, g = 35, b = 42, .. }
+const EDGE: ui::Color = ui::Color{ r = 64, g = 69, b = 82, .. }
+const CONTROL: ui::Color = ui::Color{ r = 48, g = 52, b = 62, .. }
+const ACCENT: ui::Color = ui::Color{ r = 74, g = 144, b = 226, .. }
+const TRACK: ui::Color = ui::Color{ r = 20, g = 22, b = 27, .. }
+const WHITE: ui::Color = ui::Color{ r = 255, g = 255, b = 255, .. }
+const PICTURE: ui::Image = ui::Image{ id = 7, width = 64.0, height = 64.0 }
+
+fn fill_with { color: ui::Color } -> ui::RectStyle {
+    return ui::RectStyle{ fill = color, .. }
+}
+
+// A box at an explicit rectangle in its parent, filled.
+fn place_filled { x: f32, y: f32, w: f32, h: f32, color: ui::Color } -> ui::Box {
+    let mut box = ui::place{ x, y, w, h }
+    box.fill = color
+    return box
+}
+
+// A box at an explicit rectangle in its parent that clips its content.
+fn place_clip { x: f32, y: f32, w: f32, h: f32 } -> ui::Box {
+    let mut box = ui::place{ x, y, w, h }
+    box.clip = true
+    return box
+}
+
+// A button built from the primitives: a filled, rounded element 100 by 30 with its label in the
+// middle. The test font is 8 wide a character and 16 high, so the label starts at
+// ((100 - 8 * length) / 2, 7).
+fn show_button { mut ui: ui::Ui, name: []u8, label: []u8, x: f32, y: f32 } {
+    let mut box = place_filled{ x, y, w = 100.0, h = 30.0, color = CONTROL }
+    box.radius = ui::round{ radius = 4.0 }
+    let el = ui::begin_element{ &ui, id = ui::make_id{ ui, name }, axis = ui::Axis::row, box }
+    ui::paint_text{ &ui, font = ui.theme.font, size = 16.0, x = (100.0 - 8.0 * @as(f32, label.len)) / 2.0, y = 7.0, text = label, color = ui.theme.text }
+    ui::end{ &ui, scope = el }
+}
+
+// A panel of 400 by 300 placed at the centre of the 800 by 600 surface: anchor (0.5, 0.5) and
+// offset (-200, -150) put it at (200, 150). It clips, and its radius makes the clip a rounded one.
+// Five placed controls: a title, a picture turned a quarter, a slider, and two buttons, the second
+// of which hangs over the panel's right edge (x 540 to 640 against 600), so its hit area is cut.
+fn show_panel { mut ui: ui::Ui } {
+    let outer = ui::push_id{ &ui, name = "options" }
+    let box = ui::Box{
+        width = ui::fix{ px = 400.0 }, height = ui::fix{ px = 300.0 }, clip = true,
+        fill = PANEL, border = ui::color_sides{ color = EDGE }, border_width = ui::stroke{ width = 2.0 }, radius = ui::round{ radius = 8.0 },
+        place = ui::Place{ anchor_x = 0.5, anchor_y = 0.5, x = -200.0, y = -150.0 }, ..
+    }
+    _ = ui::begin_element{ &ui, id = ui::make_id{ ui, name = "panel" }, axis = ui::Axis::column, box }
+
+    ui::add_text{ &ui, text = "Options", style = ui::TextStyle{ .. }, box = ui::place{ x = 20.0, y = 16.0, w = 200.0, h = 16.0 } }
+
+    let art = ui::begin_element{ &ui, id = ui::make_id{ ui, name = "art" }, axis = ui::Axis::row, box = ui::place{ x = 20.0, y = 48.0, w = 64.0, h = 64.0 } }
+    ui::paint_image{ &ui, rect = ui::Rect{ w = 64.0, h = 64.0, .. }, image = PICTURE, uv = ui::Uv{ .. }, tint = WHITE, quarter = 1, angle = 0.0, blend = ui::Blend::alpha }
+    ui::end{ &ui, scope = art }
+
+    let volume = ui::begin_element{ &ui, id = ui::make_id{ ui, name = "volume" }, axis = ui::Axis::row, box = ui::place{ x = 120.0, y = 60.0, w = 240.0, h = 20.0 } }
+    ui::paint_rect{ &ui, rect = ui::Rect{ x = 0.0, y = 8.0, w = 240.0, h = 4.0 }, style = ui::RectStyle{ fill = TRACK, radius = ui::round{ radius = 2.0 }, .. } }
+    ui::paint_rect{ &ui, rect = ui::Rect{ x = 110.0, y = 0.0, w = 20.0, h = 20.0 }, style = ui::RectStyle{ fill = ACCENT, radius = ui::round{ radius = 10.0 }, .. } }
+    ui::end{ &ui, scope = volume }
+
+    show_button{ &ui, name = "ok", label = "OK", x = 20.0, y = 250.0 }
+    show_button{ &ui, name = "cancel", label = "Cancel", x = 340.0, y = 250.0 }
+    ui::end{ &ui, scope = outer }       // ends the panel element opened inside it too
+}
+
+// A parent of `w` by `h` at (50, 40) with a child of 40 by 20 at each of the anchors 0, 0.5 and 1:
+// (4, 4) from its top left, centred on its centre, and (4, 4) inside its bottom right.
+fn show_anchors { mut ui: ui::Ui, w: f32, h: f32 } {
+    let parent = ui::begin_element{ &ui, id = ui::make_id{ ui, name = "parent" }, axis = ui::Axis::column, box = place_filled{ x = 50.0, y = 40.0, w, h, color = PANEL } }
+    let mut box = ui::Box{ width = ui::fix{ px = 40.0 }, height = ui::fix{ px = 20.0 }, fill = ACCENT, .. }
+    box.place = ui::Place{ x = 4.0, y = 4.0, .. }
+    let a = ui::begin_element{ &ui, id = ui::make_id{ ui, name = "a" }, axis = ui::Axis::row, box }
+    ui::end{ &ui, scope = a }
+    box.place = ui::Place{ anchor_x = 0.5, anchor_y = 0.5, x = -20.0, y = -10.0 }
+    let b = ui::begin_element{ &ui, id = ui::make_id{ ui, name = "b" }, axis = ui::Axis::row, box }
+    ui::end{ &ui, scope = b }
+    box.place = ui::Place{ anchor_x = 1.0, anchor_y = 1.0, x = -44.0, y = -24.0 }
+    let c = ui::begin_element{ &ui, id = ui::make_id{ ui, name = "c" }, axis = ui::Axis::row, box }
+    ui::end{ &ui, scope = c }
+    ui::end{ &ui, scope = parent }
+}
+
+// Clips. The table entries come in emission order:
+//   1  A          20,20 200x120
+//   2  A1         (120,80 200x100) cut to A: 120,80 100x60
+//   3  B          300,20 200x120
+//   4  B1         320,40 100x60, rounded by 10: a rounded clip inside a plain one
+//   5  B2         (370,70 100x100) cut to B1: 370,70 50x30; plain, so it keeps B1's rounded rectangle
+//   6  C          20,200 200x120, rounded by 16
+//   7  C1         (170,280 100x100) cut to C: 170,280 50x40; a plain clip inside a rounded one
+//   8  C2         30,210 60x40 rounded by 6: a rounded clip inside a rounded one replaces it
+//   9  D1 and D2  300,200 100x50 twice: equal clips share an entry
+//   10 E          450,200 100x50, whose content lies outside it and is not emitted
+fn show_clips { mut ui: ui::Ui } {
+    let a = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = place_clip{ x = 20.0, y = 20.0, w = 200.0, h = 120.0 } }
+    let a1 = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = place_clip{ x = 100.0, y = 60.0, w = 200.0, h = 100.0 } }
+    ui::paint_rect{ &ui, rect = ui::Rect{ w = 300.0, h = 300.0, .. }, style = fill_with{ color = ACCENT } }
+    ui::end{ &ui, scope = a1 }
+    ui::paint_rect{ &ui, rect = ui::Rect{ w = 10.0, h = 10.0, .. }, style = fill_with{ color = WHITE } }
+    ui::end{ &ui, scope = a }
+
+    let b = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = place_clip{ x = 300.0, y = 20.0, w = 200.0, h = 120.0 } }
+    let mut rounded = place_clip{ x = 20.0, y = 20.0, w = 100.0, h = 60.0 }
+    rounded.radius = ui::round{ radius = 10.0 }
+    rounded.fill = CONTROL
+    let b1 = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = rounded }
+    let b2 = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = place_clip{ x = 50.0, y = 30.0, w = 100.0, h = 100.0 } }
+    ui::paint_rect{ &ui, rect = ui::Rect{ w = 100.0, h = 100.0, .. }, style = fill_with{ color = ACCENT } }
+    ui::end{ &ui, scope = b }           // b1 and b2 with it
+
+    let mut outer = place_clip{ x = 20.0, y = 200.0, w = 200.0, h = 120.0 }
+    outer.radius = ui::round{ radius = 16.0 }
+    outer.fill = PANEL
+    let c = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = outer }
+    let c1 = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = place_clip{ x = 150.0, y = 80.0, w = 100.0, h = 100.0 } }
+    ui::paint_rect{ &ui, rect = ui::Rect{ w = 100.0, h = 100.0, .. }, style = fill_with{ color = ACCENT } }
+    ui::end{ &ui, scope = c1 }
+    let mut inner = place_clip{ x = 10.0, y = 10.0, w = 60.0, h = 40.0 }
+    inner.radius = ui::round{ radius = 6.0 }
+    let c2 = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = inner }
+    ui::paint_rect{ &ui, rect = ui::Rect{ w = 60.0, h = 40.0, .. }, style = fill_with{ color = WHITE } }
+    ui::end{ &ui, scope = c2 }
+    ui::end{ &ui, scope = c }
+
+    let d1 = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = place_clip{ x = 300.0, y = 200.0, w = 100.0, h = 50.0 } }
+    ui::paint_rect{ &ui, rect = ui::Rect{ w = 100.0, h = 50.0, .. }, style = fill_with{ color = ACCENT } }
+    ui::end{ &ui, scope = d1 }
+    let d2 = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = place_clip{ x = 300.0, y = 200.0, w = 100.0, h = 50.0 } }
+    ui::paint_rect{ &ui, rect = ui::Rect{ w = 100.0, h = 50.0, .. }, style = fill_with{ color = WHITE } }
+    ui::end{ &ui, scope = d2 }
+
+    // The child is at (650, 200), right of its parent's clip (450 to 550), and the paint at
+    // (450, 300), below it: neither is emitted. The child still has its rectangle, and no hit area.
+    let e = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = place_clip{ x = 450.0, y = 200.0, w = 100.0, h = 50.0 } }
+    let hidden = ui::begin_element{ &ui, id = ui::make_id{ ui, name = "hidden" }, axis = ui::Axis::row, box = place_filled{ x = 200.0, y = 0.0, w = 40.0, h = 40.0, color = ACCENT } }
+    ui::end{ &ui, scope = hidden }
+    ui::paint_rect{ &ui, rect = ui::Rect{ x = 0.0, y = 100.0, w = 10.0, h = 10.0 }, style = fill_with{ color = WHITE } }
+    ui::end{ &ui, scope = e }
+}
+
+// Opacity multiplies down the tree into every alpha, rounded to the nearest of 255:
+//   0.5         255 -> 128 (80), 200 -> 100 (64)
+//   0.5 * 0.5   255 -> 64 (40)
+//   0           nothing is emitted
+// and it does not reach an element recorded after the faded one.
+fn show_opacity { mut ui: ui::Ui } {
+    let mut box = place_filled{ x = 20.0, y = 20.0, w = 200.0, h = 100.0, color = ui::Color{ r = 255, .. } }
+    box.border = ui::color_sides{ color = ui::Color{ a = 200, .. } }
+    box.border_width = ui::stroke{ width = 2.0 }
+    box.opacity = 0.5
+    let outer = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box }
+    ui::paint_rect{ &ui, rect = ui::Rect{ x = 10.0, y = 10.0, w = 20.0, h = 20.0 }, style = fill_with{ color = ui::Color{ g = 255, .. } } }
+    ui::paint_text{ &ui, font = ui.theme.font, size = 16.0, x = 10.0, y = 40.0, text = "Hi", color = WHITE }
+    ui::paint_image{ &ui, rect = ui::Rect{ x = 40.0, y = 10.0, w = 16.0, h = 16.0 }, image = PICTURE, uv = ui::Uv{ .. }, tint = WHITE, quarter = 0, angle = 0.0, blend = ui::Blend::additive }
+    ui::paint_line{ &ui, x0 = 10.0, y0 = 80.0, x1 = 60.0, y1 = 80.0, width = 2.0, color = ui::Color{ b = 255, .. }, cap = ui::Cap::round }
+
+    let mut half = place_filled{ x = 100.0, y = 10.0, w = 80.0, h = 80.0, color = ui::Color{ b = 255, .. } }
+    half.opacity = 0.5
+    let inner = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = half }
+    ui::add_text{ &ui, text = "x", style = ui::TextStyle{ .. }, box = ui::place{ x = 4.0, y = 4.0, w = 8.0, h = 16.0 } }
+    let mut gone = place_filled{ x = 0.0, y = 40.0, w = 80.0, h = 40.0, color = WHITE }
+    gone.opacity = 0.0
+    let none = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = gone }
+    ui::paint_rect{ &ui, rect = ui::Rect{ w = 10.0, h = 10.0, .. }, style = fill_with{ color = WHITE } }
+    ui::end{ &ui, scope = outer }       // all three
+
+    let after = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = place_filled{ x = 300.0, y = 20.0, w = 50.0, h = 50.0, color = WHITE } }
+    ui::end{ &ui, scope = after }
+}
+
+// Paint order: an element's decoration, then its paints and children in the order of the calls.
+fn show_order { mut ui: ui::Ui } {
+    let a = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = place_filled{ x = 20.0, y = 20.0, w = 300.0, h = 200.0, color = PANEL } }
+    ui::paint_rect{ &ui, rect = ui::Rect{ w = 300.0, h = 24.0, .. }, style = fill_with{ color = CONTROL } }
+    let b = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = place_filled{ x = 10.0, y = 10.0, w = 100.0, h = 100.0, color = ACCENT } }
+    ui::paint_text{ &ui, font = ui.theme.font, size = 16.0, x = 4.0, y = 4.0, text = "B", color = ui.theme.text }
+    ui::end{ &ui, scope = b }
+    ui::paint_rect{ &ui, rect = ui::Rect{ x = 50.0, y = 50.0, w = 100.0, h = 100.0 }, style = fill_with{ color = WHITE } }
+    let c = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = place_filled{ x = 60.0, y = 60.0, w = 100.0, h = 100.0, color = TRACK } }
+    ui::end{ &ui, scope = c }
+    ui::paint_line{ &ui, x0 = 0.0, y0 = 0.0, x1 = 300.0, y1 = 200.0, width = 1.0, color = ui.theme.text, cap = ui::Cap::butt }
+    ui::end{ &ui, scope = a }
+}
+
+// A host slot inside a clipping panel at (100, 50): the view is at (320, 60), with one shape
+// recorded before it and two after, which draw over it.
+fn show_host { mut ui: ui::Ui } {
+    let mut box = place_filled{ x = 100.0, y = 50.0, w = 600.0, h = 500.0, color = PANEL }
+    box.clip = true
+    let panel = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box }
+    ui::paint_rect{ &ui, rect = ui::Rect{ w = 600.0, h = 30.0, .. }, style = fill_with{ color = CONTROL } }
+    ui::add_host_slot{ &ui, slot = 1, box = ui::place{ x = 220.0, y = 10.0, w = 280.0, h = 360.0 } }
+    ui::paint_rect{ &ui, rect = ui::Rect{ x = 230.0, y = 20.0, w = 40.0, h = 40.0 }, style = fill_with{ color = ACCENT } }
+    ui::add_text{ &ui, text = "over", style = ui::TextStyle{ .. }, box = ui::place{ x = 240.0, y = 300.0, w = 100.0, h = 16.0 } }
+    ui::end{ &ui, scope = panel }
+}
+
+// Snapping at scale 1.5: every edge is floor(v * 1.5 + 0.5) / 1.5 on its own, and a size is the
+// difference of its two snapped edges.
+//
+//   10.4 -> floor(16.1)  = 16 -> 10.6667      30.4 -> floor(46.1)  = 46 -> 30.6667   (width 20)
+//   11   -> floor(17.0)  = 17 -> 11.3333      21   -> floor(32.0)  = 32 -> 21.3333   (height 10)
+//   100  -> floor(150.5) = 150 -> 100         101  -> floor(152.0) = 152 -> 101.3333
+//   102  -> floor(153.5) = 153 -> 102         so two pieces 1 wide are 1.3333 and 0.6667 and meet
+//   100.4 -> floor(151.1) = 151 -> 100.6667   120.3 -> floor(180.95) = 180 -> 120     (a text position)
+//   110.2 -> floor(165.8) = 165 -> 110        119.2 -> floor(179.3) = 179 -> 119.3333 (width 9.3333)
+//   130.2 -> floor(195.8) = 195 -> 130        151.2 -> floor(227.3) = 227 -> 151.3333 (height 21.3333)
+//   200.3 -> floor(300.95) = 300 -> 200       250.3 -> floor(375.95) = 375 -> 250     (the clip)
+//   200.8 -> floor(301.7) = 301 -> 200.6667   210.8 -> floor(316.7) = 316 -> 210.6667 (width 10)
+//
+// A line is not snapped. The hit area of "s" is its snapped rectangle grown by 2 on every side.
+fn show_scaled { mut ui: ui::Ui } {
+    let mut box = place_filled{ x = 10.4, y = 11.0, w = 20.0, h = 10.0, color = PANEL }
+    box.hit_outset = ui::Insets{ left = 2.0, top = 2.0, right = 2.0, bottom = 2.0 }
+    let s = ui::begin_element{ &ui, id = ui::make_id{ ui, name = "s" }, axis = ui::Axis::row, box }
+    ui::end{ &ui, scope = s }
+
+    let p = ui::begin_element{ &ui, id = ui::make_id{ ui, name = "p" }, axis = ui::Axis::row, box = ui::place{ x = 100.0, y = 100.0, w = 50.0, h = 50.0 } }
+    ui::paint_rect{ &ui, rect = ui::Rect{ x = 0.0, y = 0.0, w = 1.0, h = 10.0 }, style = fill_with{ color = WHITE } }
+    ui::paint_rect{ &ui, rect = ui::Rect{ x = 1.0, y = 0.0, w = 1.0, h = 10.0 }, style = fill_with{ color = ACCENT } }
+    ui::paint_text{ &ui, font = ui.theme.font, size = 16.0, x = 0.4, y = 20.3, text = "snap", color = ui.theme.text }
+    ui::paint_image{ &ui, rect = ui::Rect{ x = 10.2, y = 30.2, w = 9.0, h = 21.0 }, image = PICTURE, uv = ui::Uv{ .. }, tint = WHITE, quarter = 1, angle = 0.0, blend = ui::Blend::alpha }
+    ui::paint_line{ &ui, x0 = 0.4, y0 = 40.4, x1 = 30.4, y1 = 40.4, width = 1.0, color = ui.theme.text, cap = ui::Cap::butt }
+    ui::end{ &ui, scope = p }
+
+    let clip = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::row, box = place_clip{ x = 200.3, y = 100.3, w = 50.0, h = 50.0 } }
+    ui::paint_rect{ &ui, rect = ui::Rect{ x = 0.5, y = 0.5, w = 10.0, h = 10.0 }, style = fill_with{ color = WHITE } }
+    ui::end{ &ui, scope = clip }
+}
+
+// Children in the flow, stacked along the parent's axis from its padding edge, `gap` apart.
+//
+// The column is at (40, 30), 300 by 260, padding 10 left and 20 top, gap 5. Its children start at
+// x 50 and at y 50, 75 (50 + 20 + 5), 110 (75 + 30 + 5), 131 (110 + 16 + 5) and 156 (131 + 20 + 5):
+//   a box of 50 by 20, a box of 60 by 30, the text "Hello" (5 * 8 by 16, fitted),
+//   a row fitted to its content, and a fitted box with padding 3 around one child.
+// The row holds 10x10, 20x20 and 30x15 with gap 4: it is 10 + 4 + 20 + 4 + 30 = 68 wide and 20
+// high (its tallest child), and its children are at x 50, 64 and 88. The placed child in it adds
+// nothing to its size. The last box is 3 + 12 + 3 = 18 wide and 3 + 7 + 3 = 13 high around its
+// child at (53, 159).
+fn show_stack { mut ui: ui::Ui } {
+    let mut box = place_filled{ x = 40.0, y = 30.0, w = 300.0, h = 260.0, color = PANEL }
+    box.padding = ui::Insets{ left = 10.0, top = 20.0, right = 10.0, bottom = 20.0 }
+    box.gap = 5.0
+    let column = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box }
+    show_fixed{ &ui, w = 50.0, h = 20.0, color = ACCENT }
+    show_fixed{ &ui, w = 60.0, h = 30.0, color = CONTROL }
+    ui::add_text{ &ui, text = "Hello", style = ui::TextStyle{ .. }, box = ui::Box{ .. } }
+
+    let row = ui::begin_element{ &ui, id = ui::make_id{ ui, name = "row" }, axis = ui::Axis::row, box = ui::Box{ gap = 4.0, fill = TRACK, .. } }
+    show_fixed{ &ui, w = 10.0, h = 10.0, color = WHITE }
+    show_fixed{ &ui, w = 20.0, h = 20.0, color = ACCENT }
+    let floating = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::row, box = place_filled{ x = 100.0, y = 0.0, w = 200.0, h = 100.0, color = EDGE } }
+    ui::end{ &ui, scope = floating }
+    show_fixed{ &ui, w = 30.0, h = 15.0, color = CONTROL }
+    ui::end{ &ui, scope = row }
+
+    let mut fitted = ui::Box{ fill = EDGE, .. }
+    fitted.padding = ui::Insets{ left = 3.0, top = 3.0, right = 3.0, bottom = 3.0 }
+    let wrap = ui::begin_element{ &ui, id = ui::make_id{ ui, name = "wrap" }, axis = ui::Axis::column, box = fitted }
+    show_fixed{ &ui, w = 12.0, h = 7.0, color = WHITE }
+    ui::end{ &ui, scope = wrap }
+    ui::end{ &ui, scope = column }
+}
+
+// A filled box of a fixed size in the flow.
+fn show_fixed { mut ui: ui::Ui, w: f32, h: f32, color: ui::Color } {
+    let el = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ px = w }, height = ui::fix{ px = h }, fill = color, .. } }
+    ui::end{ &ui, scope = el }
+}
