@@ -1196,7 +1196,8 @@ namespace eval {
         let v = try value{ &m, x = c.value }
         let n = size{ ts = m.types, t = c.ty }
         let a = try static_bytes{ &m, n, align = align{ ts = m.types, t = c.ty } }
-        slice::copy(u8){ dst = try at{ &m, a, n }, src = try at{ &m, a = v, n } }
+        let dst = try at{ &m, a, n }
+        slice::copy(u8){ dst, src = try at{ &m, a = v, n } }
         try! map::put{ m = &m.known, key, value = a }
         return a
     }

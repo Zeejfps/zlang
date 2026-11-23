@@ -38,6 +38,20 @@ f{ a = expr, b = &place, c, &d, .. }
 7. Forwarding: a trailing `..` supplies each remaining field `F` from the local or context field named `F`. In a struct's literal it takes fields from their defaults instead (§7, rule 4). Namespace and top-level names are not considered. It supplies `F = F` for a read-only field and `F = &F` for a `mut` field. It is an error if `F` isn't in scope, or if `F` is `mut` and the name isn't a mutable place.
 8. `..`, when present, must be the last item.
 9. A call's result may be discarded.
+10. **Argument order.** The items of one call or literal may be written in any order (rule 2) and are evaluated in the order they are written, so no item may change a place that another item reads or changes while they are evaluated: the result would depend on the order the fields are written in. That is a compile error, which names both items and the place. Computing one of them in a `let` before the call says which comes first.
+    - An item **changes** a place `p` if, while it is evaluated, it calls a function that is given `&p`, or `&` of a place within `p`, for a `mut` field and changes that part; calls a bound function that holds `p` (§3.1), or a function it gives one to; assigns `p` in a block; or gives `&p`, or a view of an array `p`, to a function that writes through a pointer or a slice.
+    - It **reads** `p` if its value depends on `p`'s: it uses `p`, or gives it read-only to a function that reads it. The call's own callee reads what it is given read-only in the same way.
+    - What a function reads and changes of its fields is what its body does, through the functions it calls. A function value, an extern fn or a capability's field may read and change all of what it is given.
+    - Places are compared field by field, as §3.1 compares them: changing `s.n` doesn't conflict with reading `s.m`. Places through a pointer or a slice aren't checked (§3.1, rule 6).
+    - A `&p` the call itself takes for a `mut` field is neither a read nor a change: the callee gets the place, as it is when the callee runs. Nor is a bound function the call is given: it runs only when it is called.
+
+```
+show{ n = s.n, z = bump{ &s } }     // error: `n` reads `s.n`, which `z` changes, in one call
+let z = bump{ &s }                  // the change first,
+show{ n = s.n, z }                  // then the read: n sees it
+show{ n = s.m, z = bump{ &s } }     // fine: bump changes only s.n
+v = Vec3{ x = rand{ &rng }, y = rand{ &rng }, z = 0.0 }   // error: both change `rng`
+```
 
 ### 3.1 Exclusivity
 

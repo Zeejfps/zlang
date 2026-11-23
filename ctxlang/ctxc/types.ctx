@@ -203,7 +203,8 @@ namespace types {
                 return sum{ &s, decl = d, args = subst_all{ &s, ts = xs, decl, args } }
             }
             distinct{ decl = d, args = xs, base } => {
-                return distinct{ &s, decl = d, args = subst_all{ &s, ts = xs, decl, args }, base = subst{ &s, t = base, decl, args } }
+                let now = subst_all{ &s, ts = xs, decl, args }
+                return distinct{ &s, decl = d, args = now, base = subst{ &s, t = base, decl, args } }
             }
             func{ fields, ret, bound, external } => {
                 let mut fs = list::new(Field){ realloc = arena::alloc, heap = s.heap }
@@ -216,7 +217,10 @@ namespace types {
                 return func{ &s, fields = list::items{ list = fs }, ret = subst{ &s, t = ret, decl, args }, bound, external }
             }
             // A set may be a generic parameter (`E: error`, §9): an instance's is its argument.
-            res{ ok, errs } => { return res{ &s, ok = subst{ &s, t = ok, decl, args }, errs = subst{ &s, t = errs, decl, args } } }
+            res{ ok, errs } => {
+                let now = subst{ &s, t = ok, decl, args }
+                return res{ &s, ok = now, errs = subst{ &s, t = errs, decl, args } }
+            }
             else => { return t }
         }
     }
@@ -406,7 +410,10 @@ namespace types {
             array{ n, elem } => { return array{ &s, n, elem = zonk{ &s, t = elem } } }
             record{ decl, args } => { return record{ &s, decl, args = zonk_all{ &s, ts = args } } }
             sum{ decl, args } => { return sum{ &s, decl, args = zonk_all{ &s, ts = args } } }
-            distinct{ decl, args, base } => { return distinct{ &s, decl, args = zonk_all{ &s, ts = args }, base = zonk{ &s, t = base } } }
+            distinct{ decl, args, base } => {
+                let now = zonk_all{ &s, ts = args }
+                return distinct{ &s, decl, args = now, base = zonk{ &s, t = base } }
+            }
             func{ fields, ret, bound, external } => {
                 let mut fs = list::new(Field){ realloc = arena::alloc, heap = s.heap }
                 let mut i: usize = 0
@@ -417,7 +424,10 @@ namespace types {
                 }
                 return func{ &s, fields = list::items{ list = fs }, ret = zonk{ &s, t = ret }, bound, external }
             }
-            res{ ok, errs } => { return res{ &s, ok = zonk{ &s, t = ok }, errs = zonk{ &s, t = errs } } }
+            res{ ok, errs } => {
+                let now = zonk{ &s, t = ok }
+                return res{ &s, ok = now, errs = zonk{ &s, t = errs } }
+            }
             else => { return x }
         }
     }

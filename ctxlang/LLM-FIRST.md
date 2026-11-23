@@ -17,13 +17,19 @@ entries are cited by number, e.g. F#24) and [kotor/docs/tooling-gaps.md](../koto
 
 ## 1. Silent wrong answers
 
-- [ ] **1.1 Reject a read-only argument that a later argument's call changes.**
+- [x] **1.1 Reject a read-only argument that a later argument's call changes.**
   `types::prune{ s = c.ty, t = expr{ &c, e } }` copies `c.ty`, then `expr` changes `c`, and
   `prune` reads the stale copy. `show{ n = c.n, z = bump{ &c } }` passes the old `c.n` silently.
   §3.1 checks overlap between one call's own arguments, not a `&c` inside a nested call.
   Either reject it, or evaluate nested calls before plain arguments, and say which in the spec.
   - Details: F#24 (the only entry giving a wrong answer, 8 sites in ctxc); [spec §3.1](spec.md#31-exclusivity), [§14 rule 6](spec.md#14-memory).
   - *Done when:* both examples above are compile errors (or provably read the new value), with tests.
+  - *Done:* rejected, not reordered (reordering silently picks the new value where the old may
+    have been meant). [spec §3, rule 10](spec.md#3-calls): no item of one call or literal may
+    change a place another reads or changes. Precise by field, from summaries of what each fn
+    reads and changes of its fields; strict for allocations too. It found 27 conflicts in ctxc
+    and 13 in KOTOR (among them RNG draws in `Vec3{ x = rand, y = rand }` and a stale copy of
+    `h.lists[1]` in the HUD), each fixed with a `let` in today's order.
 
 - [ ] **1.2 Give unchecked pointer indexing its own syntax.**
   `q[i]` on a `*T` is `(q + i).*`, unchecked, but looks the same as the bounds-checked `s[i]` on

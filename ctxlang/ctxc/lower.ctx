@@ -864,7 +864,8 @@ namespace lower {
         let v = local_of{ l, k = check::stmt_key{ s } }
         let t = T{ &l, t = check::get_var{ c = l.c.*, v }.ty }
         if not check::holds_handle{ c = l.c.*, t } { return }
-        let place = mk{ ty = tid{ &l, t }, k = ir::ExprKind::local{ slot = slot{ &l, v } } }
+        let ty = tid{ &l, t }
+        let place = mk{ ty, k = ir::ExprKind::local{ slot = slot{ &l, v } } }
         let mut body = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
         end_handles{ &l, out = &body, place, t }
         try! list::push{ list = &xs, item = ir::Stmt::deferred{ body = ir::Block{ stmts = list::items{ list = body }, result = null } } }
@@ -883,7 +884,8 @@ namespace lower {
                 end_handles{ &l, out = &body, place = at, t = elem }
                 let next = mk{ ty = ut, k = ir::ExprKind::arith{ op = ir::ArithOp::add, a = box{ l, e = iv }, b = box{ l, e = int_lit{ &l, t = types::USIZE, n = 1 } }, pos = none, trap = ir::NO_TRAP } }
                 try! list::push{ list = &body, item = ir::Stmt::assign{ place = iv, value = next } }
-                let c = mk{ ty = tid{ &l, t = types::BOOL }, k = ir::ExprKind::cmp{ op = ir::CmpOp::lt, a = box{ l, e = iv }, b = box{ l, e = int_lit{ &l, t = types::USIZE, n } } } }
+                let bool_ty = tid{ &l, t = types::BOOL }
+                let c = mk{ ty = bool_ty, k = ir::ExprKind::cmp{ op = ir::CmpOp::lt, a = box{ l, e = iv }, b = box{ l, e = int_lit{ &l, t = types::USIZE, n } } } }
                 try! list::push{ list = &out, item = ir::Stmt::loop{ c, body = ir::Block{ stmts = list::items{ list = body }, result = null }, label = null } }
             }
             record{ decl, args } => {
@@ -1167,7 +1169,8 @@ namespace lower {
             add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = 0, binds = none } }, body = ir::Block{ stmts = slice::empty(ir::Stmt){}, result = null } }
             let arm = x.arms[1]
             let p = arm.pats[0]
-            add_arm{ l, xs = &out, pats = one_pat{ l, p = ir::Pat{ variant = 1, binds = binds{ &l, binders = p.binders, fields = vs[1].fields } } }, body = block{ &l, b = arm.body } }
+            let pats = one_pat{ l, p = ir::Pat{ variant = 1, binds = binds{ &l, binders = p.binders, fields = vs[1].fields } } }
+            add_arm{ l, xs = &out, pats, body = block{ &l, b = arm.body } }
             return list::items{ list = out }
         }
         // The slot `err` binds the error to: its own binding's, or a new one.
@@ -2194,7 +2197,8 @@ namespace lower {
             overflow{ e = x, els } => { return ovf_expr{ &l, e, x = x.*, els, t } }
             trye{ e = x, panics } => {
                 let scrut = ex{ &l, e = x.* }
-                return mk{ ty = tid{ &l, t }, k = ir::ExprKind::matchx{ scrut = box{ l, e = scrut }, through = false, arms = try_arms{ &l, x = x.*, value = true, panics, pos = epos{ &l, e } } } }
+                let ty = tid{ &l, t }
+                return mk{ ty, k = ir::ExprKind::matchx{ scrut = box{ l, e = scrut }, through = false, arms = try_arms{ &l, x = x.*, value = true, panics, pos = epos{ &l, e } } } }
             }
             isx{ e = x, pats } => {
                 let rs = map::get{ m = l.c.int_cases, key = check::expr_key{ e } }
@@ -2362,7 +2366,8 @@ namespace lower {
         let s = temp{ &l, ty = a }
         let local = mk{ ty = a, k = ir::ExprKind::local{ slot = s } }
         let view = to_slice{ &l, t, p = first_of{ &l, place = local, array = at, t }, n = array_len{ l, t = at } }
-        return mk{ ty = tid{ &l, t }, k = ir::ExprKind::with{ slot = s, init = box{ l, e = array_ex{ &l, e, t = at } }, body = box{ l, e = view } } }
+        let ty = tid{ &l, t }
+        return mk{ ty, k = ir::ExprKind::with{ slot = s, init = box{ l, e = array_ex{ &l, e, t = at } }, body = box{ l, e = view } } }
     }
 
     // A pointer to the first element of `place`, an array of type `array`, as one to an element
@@ -2760,8 +2765,10 @@ namespace lower {
         let mut r = mk{ ty, k = ir::ExprKind::cmp{ op = ir::CmpOp::eq, a = box{ l, e = va }, b = box{ l, e = vb } } }
         if tagged {
             if ao and bo {
-                let none = mk{ ty, k = ir::ExprKind::land{ a = box{ l, e = test_null{ &l, x = ra, holds = false } }, b = box{ l, e = test_null{ &l, x = rb, holds = false } } } }
-                let some = mk{ ty, k = ir::ExprKind::land{ a = box{ l, e = test_null{ &l, x = ra, holds = true } }, b = box{ l, e = test_null{ &l, x = rb, holds = true } } } }
+                let none_a = test_null{ &l, x = ra, holds = false }
+                let none = mk{ ty, k = ir::ExprKind::land{ a = box{ l, e = none_a }, b = box{ l, e = test_null{ &l, x = rb, holds = false } } } }
+                let some_a = test_null{ &l, x = ra, holds = true }
+                let some = mk{ ty, k = ir::ExprKind::land{ a = box{ l, e = some_a }, b = box{ l, e = test_null{ &l, x = rb, holds = true } } } }
                 r = mk{ ty, k = ir::ExprKind::lor{ a = box{ l, e = none }, b = box{ l, e = mk{ ty, k = ir::ExprKind::land{ a = box{ l, e = some }, b = box{ l, e = r } } } } } }
             } else {
                 r = mk{ ty, k = ir::ExprKind::land{ a = box{ l, e = test_null{ &l, x = if ao { ra } else { rb }, holds = true } }, b = box{ l, e = r } } }
@@ -3014,14 +3021,16 @@ namespace lower {
             return int_lit{ &l, t, n = off }
         }
         if slice::eq_bytes{ a = name, b = "record_size" } {
-            return mk{ ty = tid{ &l, t }, k = ir::ExprKind::rsize{ e = box{ l, e = ex{ &l, e = args[0] } } } }
+            let ty = tid{ &l, t }
+            return mk{ ty, k = ir::ExprKind::rsize{ e = box{ l, e = ex{ &l, e = args[0] } } } }
         }
         if slice::eq_bytes{ a = name, b = "record_copy" } {
             // The copy, then the entry thunk for run's result type, as a `fn` value.
             let run = ex{ &l, e = args[0] }
             let rt = T{ &l, t = check::type_of_expr{ c = l.c.*, e = args[0] } }
             let func{ ret = r } = get{ l, t = rt } else { @panic("lower: @record_copy of a non-function") }
-            let copy = mk{ ty = tid{ &l, t = types::VOID }, k = ir::ExprKind::rcopy{ e = box{ l, e = run }, into = box{ l, e = ex{ &l, e = args[1] } } } }
+            let void_ty = tid{ &l, t = types::VOID }
+            let copy = mk{ ty = void_ty, k = ir::ExprKind::rcopy{ e = box{ l, e = run }, into = box{ l, e = ex{ &l, e = args[1] } } } }
             let ty = tid{ &l, t }
             let thunk = mk{ ty, k = ir::ExprKind::fnref{ callee = entry_id{ &l, r } } }
             return mk{ ty, k = ir::ExprKind::seq{ first = box{ l, e = copy }, then = box{ l, e = thunk } } }
@@ -3385,7 +3394,8 @@ namespace lower {
         let ret = types::subst{ s = &l.c.ty, t = x.ret, decl = w.decl, args = targs }
         let call = mk{ ty = tid{ &l, t = ret }, k = ir::ExprKind::call{ callee = fid, args = list::items{ list = out } } }
         if types::prune{ s = l.c.ty, t = ret } == types::VOID {
-            return mk{ ty = tid{ &l, t = rt }, k = ir::ExprKind::seq{ first = box{ l, e = call }, then = box{ l, e = ok_of{ &l, rt } } } }
+            let ty = tid{ &l, t = rt }
+            return mk{ ty, k = ir::ExprKind::seq{ first = box{ l, e = call }, then = box{ l, e = ok_of{ &l, rt } } } }
         }
         return lift{ &l, x = call, frm = ret, to = rt }
     }

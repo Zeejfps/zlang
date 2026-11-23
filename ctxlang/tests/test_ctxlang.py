@@ -2067,6 +2067,82 @@ class Safety(Base):
         ]:
             self.assertSafetyError(src + '\nfn main {} {}', msg, line, col)
 
+    # Argument order (§3, rule 10): no item of one braces changes a place another reads or changes.
+    ORDER = """struct S { n: i32, m: i32 }
+fn bump { mut s: S } -> i32 {
+    s.n = s.n + 1
+    return s.n
+}
+fn show { n: i32, z: i32 } { let t = n + z }
+"""
+
+    def test_argument_order(self):
+        reads = ', in one call: the order of the fields would decide what it reads; compute one of them in a `let` before the call'
+        for src, msg, line, col in [
+            # FRICTION.md's case: `n` copied s.n before `z`'s call changed it.
+            ('fn f { mut s: S } {\n    show{ n = s.n, z = bump{ &s } }\n}',
+             '`n` reads `s.n`, which `z` changes' + reads, 8, 20),
+            # Through helpers: get_n reads s.n, twice changes it through bump.
+            ('fn get_n { s: S } -> i32 { return s.n }\nfn twice { mut s: S } -> i32 { return bump{ &s } + bump{ &s } }\n'
+             'fn f { mut s: S } {\n    show{ n = get_n{ s }, z = twice{ &s } }\n}',
+             '`n` reads `s.n`, which `z` changes' + reads, 10, 27),
+            ('fn f { mut s: S } {\n    show{ n = bump{ &s }, z = bump{ &s } }\n}',
+             '`n` and `z` both change `s.n` in one call: the order of the fields would decide which goes first; '
+             'compute one of them in a `let` before the call', 8, 27),
+            ('struct P2 { a: i32, b: i32 }\nfn f { mut s: S } -> P2 {\n    return P2{ a = s.n, b = bump{ &s } }\n}',
+             '`a` reads `s.n`, which `b` changes, in one literal: the order of the fields would decide what it reads; '
+             'compute one of them in a `let` before the literal', 9, 25),
+            # A bound function holding x, called by a call that runs.
+            ('fn inc { mut x: i32 } { x = x + 1 }\nfn call_it { f: &fn{} } -> i32 {\n    f{}\n    return 0\n}\n'
+             'fn f {} {\n    let mut x = 0\n    show{ n = x, z = call_it{ f = inc{ &x, _ } } }\n}',
+             '`n` reads `x`, which `z` changes' + reads, 14, 18),
+            ('fn f { c: bool } {\n    let mut x = 0\n    show{ n = x, z = if c { x = 2; 0 } else { 1 } }\n}',
+             '`n` reads `x`, which `z` changes' + reads, 9, 18),
+            # An address given to a call that writes through a pointer.
+            ('fn set { p: *mut i32 } -> i32 {\n    p.* = 5\n    return 0\n}\nfn f {} {\n    let mut x = 0\n    show{ n = x, z = set{ p = &x } }\n}',
+             '`n` reads `x`, which `z` changes' + reads, 13, 18),
+            # A wider place changed than the one read.
+            ('fn reset { mut s: S } -> i32 {\n    s = S{ n = 0, m = 0 }\n    return 0\n}\nfn f { mut s: S } {\n    show{ n = s.m, z = reset{ &s } }\n}',
+             '`n` reads `s.m`, and `z` changes `s`' + reads, 12, 20),
+            # A match on `&w.u` changes w.u through its binding.
+            ('union U { a{ x: i32 }, b }\nstruct W { u: U, k: i32 }\nfn set_a { mut w: W } -> i32 {\n    match &w.u {\n'
+             '        a{ &x } => { x = 5 }\n        b => {}\n    }\n    return 0\n}\nfn ux { u: U } -> i32 {\n    match u {\n'
+             '        a{ x } => { return x }\n        b => { return 0 }\n    }\n}\nfn f { mut w: W } {\n'
+             '    show{ n = ux{ u = w.u }, z = set_a{ &w } }\n    show{ n = w.k, z = set_a{ &w } }\n}',
+             '`n` reads `w.u`, which `z` changes' + reads, 23, 30),
+        ]:
+            self.assertSafetyError(self.ORDER + src + '\nfn main {} {}', msg, line, col)
+
+    def test_argument_order_allowed(self):
+        self.assertOutput(self.ORDER + """
+fn bump_m { mut s: S } -> i32 {
+    s.m = s.m + 1
+    return s.m
+}
+fn get_n { s: S } -> i32 { return s.n }
+fn peek { p: *i32 } -> i32 { return p.* }
+fn keep { p: *mut i32 } -> i32 { return 0 }
+fn depth { mut s: S, k: i32 } -> i32 {
+    if k == 0 {
+        s.m = s.m + 1
+        return 0
+    }
+    return depth{ &s, k = k - 1 }
+}
+fn put { mut io: Io, n: i32, z: i32 } { io::println_i64{ &io, n = @as(i64, n + z) } }
+fn main { mut io: Io } {
+    let mut s = S{ n = 1, m = 10 }
+    put{ &io, n = s.n, z = bump_m{ &s } }           // another field
+    put{ &io, n = get_n{ s }, z = bump_m{ &s } }    // get_n reads only s.n
+    let mut x = 3
+    put{ &io, n = x, z = peek{ p = &x } }           // only reads through the pointer
+    put{ &io, n = x, z = keep{ p = &x } }           // uses no pointer
+    put{ &io, n = bump{ &s }, z = 0 }               // nothing else uses s
+    put{ &io, n = s.n, z = depth{ &s, k = 3 } }     // recursion changes only s.m
+    show{ n = s.n, z = s.m }                        // nothing runs
+}
+""", '12\n13\n6\n3\n2\n2\n')
+
     def test_checks(self):
         for src in [
             'fn g { mut x: i32, y: i32 } {}\nfn f {} {\n    let mut n = 0\n    g{ x = &n, y = n }\n}',
@@ -9711,7 +9787,9 @@ fn pair { a: i32, b: i32 } -> i32 { return a * 10 + b }
 fn main { mut io: Io } {
     let mut x = 1
     io::println_i64{ &io, n = x + bump{ n = &x } }             // 1 + 2
-    io::println_i64{ &io, n = pair{ b = bump{ n = &x }, a = bump{ n = &x } } }
+    // Through a pointer, which §3 rule 10 doesn't follow, the order of the fields still shows.
+    let px = &x
+    io::println_i64{ &io, n = pair{ b = bump{ n = px }, a = bump{ n = px } } }
     let mut a = [0, 0, 0]
     a[@as(usize, bump{ n = &x } - 5)] = bump{ n = &x }             // value first, then the place
     io::println_i64{ &io, n = a[1] * 100 + a[2] }
@@ -9952,7 +10030,8 @@ fn main { mut io: Io } {
     b.a[3] = 5
     io::println_i64{ &io, n = sum{ b } }                       // 6
     io::println_i64{ &io, n = bump_then_sum{ b, x = &b.n } }   // copy: 6
-    io::println_i64{ &io, n = pair{ b, v = set{ &b, v = 7 } } } // copy before set: 6*10000+7
+    let pb = &b                                                // a pointer: §3 rule 10 doesn't follow it
+    io::println_i64{ &io, n = pair{ b, v = set{ b = pb, v = 7 } } } // copy before set: 6*10000+7
     io::println_i64{ &io, n = sum{ b } }                       // 12
     io::println_i64{ &io, n = twice{ b, f = set{ &b, v = 100, _ } } } // copy: 12, 12, 100
     io::println_i64{ &io, n = sum{ b } }                       // 105
@@ -10017,7 +10096,8 @@ fn main { mut io: Io } {
     io::println_i64{ &io, n = cb{ b } }                   // 70: b copied, cb holds &b
     io::println_i64{ &io, n = sum{ b } }                  // 20
     let mut s = State{ big = b, k = 0 }
-    io::println_i64{ &io, n = both{ b = s.big, n = take{ &s } } }   // 2001: copied before take
+    let pm = &s                                                     // a pointer: §3 rule 10 doesn't follow it
+    io::println_i64{ &io, n = both{ b = s.big, n = take{ s = pm } } }   // 2001: copied before take
     let ps = &s
     io::println_i64{ &io, n = both{ b = ps.*.big, n = s.k } }       // 2100
     let bs = [b, b]

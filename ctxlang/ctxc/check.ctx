@@ -290,6 +290,27 @@ namespace check {
         treport:   bool = false,
         tsums:     map::Map(u32, TaskSum, Heap),
         tsum_busy: map::Map(u32, bool, Heap),
+        // Argument order (§3, rule 10; order_post): the braces the first walk finds a conflict
+        // in, then, walking them again precisely, the fns' summaries of what they read and
+        // change of their context fields, computed to a fixpoint over a queue.
+        ord_cands:   list::List(OrdCand, Heap),
+        ord_precise: bool = false,
+        ord_state:   map::Map(u32, u8, Heap),           // 1 walked, 2 summarized
+        ord_sum_ix:  map::Map(u32, u32, Heap),          // a fn's summary in ord_lists
+        ord_lists:   list::List(list::List(ParamUse, Heap), Heap),
+        ord_calls:   map::Map(u32, []OrdCall, Heap),
+        ord_deps:    map::Map(u32, []u32, Heap),        // a fn's callers, grown again when it grows
+        ord_found:   list::List(OrdCall, Heap),
+        ord_flags:   map::Map(u32, u8, Heap),           // 1: reads through a pointer, 2: writes through one
+        ord_callees: map::Map(u32, []u32, Heap),
+        ord_flag_now: u8 = 0,
+        ord_seen:    list::List(usize, Heap),           // by OrdCall.id: how much of its callee's summary it passed on
+        ord_keys:    map::Map(u64, u8, Heap),           // a summary's paths, hashed with their fn: 1 read, 2 written
+        ord_callees_now: list::List(u32, Heap),
+        ord_extracting: bool = false,
+        ord_owner:   u32 = 0,
+        ord_first:   u32 = 0,
+        ord_lending: bool = false,                    // an address taken now reaches code that runs
     }
 
     // What flows into a function's error set: the errors it returns (atoms), the functions whose
@@ -501,6 +522,18 @@ namespace check {
             tloops = list::new(TLoop){ realloc = arena::alloc, &heap },
             tsums = map::new(u32, TaskSum){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             tsum_busy = map::new(u32, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            ord_cands = list::new(OrdCand){ realloc = arena::alloc, &heap },
+            ord_state = map::new(u32, u8){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            ord_sum_ix = map::new(u32, u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            ord_lists = list::new(list::List(ParamUse, Heap)){ realloc = arena::alloc, &heap },
+            ord_calls = map::new(u32, []OrdCall){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            ord_deps = map::new(u32, []u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            ord_found = list::new(OrdCall){ realloc = arena::alloc, &heap },
+            ord_flags = map::new(u32, u8){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            ord_callees = map::new(u32, []u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            ord_callees_now = ids{ &heap },
+            ord_seen = list::new(usize){ realloc = arena::alloc, &heap },
+            ord_keys = map::new(u64, u8){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             ..
         }
         _ = space{ &c, name = "", parent = NONE }
@@ -555,6 +588,7 @@ namespace check {
         check_declared{ &c }
         finish_escapes{ &c }
         task_borrows{ &c }
+        order_post{ &c }
         evaluate{ &c }
         check_main{ &c }
         unmarked_externs{ &c }
@@ -7348,7 +7382,10 @@ namespace check {
             }
             ifx{ x } => { return derives_if{ &c, x } }
             matchx{ x } => { return derives_match{ &c, x } }
-            overflow{ e = x, els } => { return set_union{ c, a = derives{ &c, e = x.* }, b = derives_block{ &c, b = els } } }
+            overflow{ e = x, els } => {
+                let a = derives{ &c, e = x.* }
+                return set_union{ c, a, b = derives_block{ &c, b = els } }
+            }
             trye{ e = x } => {
                 let saved = c.borrow_error
                 let saved_success = c.borrow_success
@@ -7761,6 +7798,776 @@ namespace check {
             i = i + 1
         }
         return list::items{ list = out }
+    }
+
+    // ---- argument order (§3, rule 10): the fields of one braces may be written in any order, so
+    // no argument may change a place another reads or changes while they are evaluated.
+    //
+    // While the bodies are checked, check_order walks each braces that runs code taking a call's
+    // `&p` for a `mut` field as reading and changing all of p, and keeps the braces where that
+    // finds a conflict. Once every body is checked, order_post walks those again precisely, with
+    // each fn's summary of the paths of its context fields it reads and changes (fn_uses), and
+    // reports what conflicts still.
+
+    // A read or a write of place p by part `part` of a braces: its callee (0), an item (1 on), or
+    // a field its `..` supplies (after the items).
+    struct Use { p: Place, part: u32, write: bool }
+
+    // A path of a fn's context field `field` that its body, or a fn it calls, reads or changes.
+    struct ParamUse { field: []u8, steps: [][]u8, write: bool }
+
+    struct OrdCand { e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item }
+
+    // A conflict between two uses of different parts: w writes, r reads or writes.
+    struct Clash { w: Use, r: Use }
+
+    const ORD_STEPS: usize = 3      // a summary's paths are cut to this many steps
+
+    // Whether e changes no checked place when it is evaluated: no call or block runs in it. A
+    // bind runs nothing but its arguments.
+    fn calm { e: syntax::Expr } -> bool {
+        match e.k {
+            field{ base } => { return calm{ e = base.* } }
+            deref{ base } => { return calm{ e = base.* } }
+            index{ base, i } => { return calm{ e = base.* } and calm{ e = i.* } }
+            addr{ e = x } => { return calm{ e = x.* } }
+            neg{ e = x } => { return calm{ e = x.* } }
+            lnot{ e = x } => { return calm{ e = x.* } }
+            bnot{ e = x } => { return calm{ e = x.* } }
+            binary{ a, b } => { return calm{ e = a.* } and calm{ e = b.* } }
+            isx{ e = x } => { return calm{ e = x.* } }
+            braced{ callee, items, bind } => {
+                if not bind or not calm{ e = callee.* } { return false }
+                let mut i: usize = 0
+                while i < items.len {
+                    if not calm{ e = items[i].value } { return false }
+                    i = i + 1
+                }
+                return true
+            }
+            path | int | float | str | boolean | nil | error => { return true }
+            else => { return false }
+        }
+    }
+
+    // Braces e, of a call, a bind or a literal, while its body is checked: kept for order_post
+    // if a part may change a place another reads or changes.
+    fn check_order { mut c: Checker, e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item } {
+        if not c.borrow_ready { return }
+        let mut quiet = calm{ e = callee }
+        let mut i: usize = 0
+        while i < items.len and quiet {
+            if not calm{ e = items[i].value } { quiet = false }
+            i = i + 1
+        }
+        if quiet { return }
+        if order_clash{ &c, e, callee, items } != null {
+            try! list::push{ list = &c.ord_cands, item = OrdCand{ e, callee, items } }
+        }
+    }
+
+    // The braces check_order kept, walked with the fns' summaries: an error for each that still
+    // has a conflict.
+    fn order_post { mut c: Checker } {
+        if c.diags.errors > 0 { return }
+        c.ord_precise = true
+        let xs = list::items{ list = c.ord_cands }
+        let mut i: usize = 0
+        while i < xs.len {
+            let k = xs[i]
+            if let x = order_clash{ &c, e = k.e, callee = k.callee, items = k.items } { order_error{ &c, e = k.e, callee = k.callee, items = k.items, x } }
+            i = i + 1
+        }
+        c.ord_precise = false
+    }
+
+    fn order_error { mut c: Checker, e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item, x: Clash } {
+        let fw = map::get{ m = c.forwards, key = expr_key{ e } } ifnull { slice::empty(Forward){} }
+        let local_callee = map::get{ m = c.refs, key = expr_key{ e = callee } } is local
+        let what: utf8::String = if not (callee.k is path) or local_callee or call_fn{ c, e = callee } != NONE { "call" } else { "literal" }
+        let wn = part_name{ c, callee, items, fw, part = x.w.part }
+        let rn = part_name{ c, callee, items, fw, part = x.r.part }
+        let mut m = message{ c }
+        let mut at = x.w.part
+        if x.r.write {
+            // Both write: named in the order they are written, at the second.
+            let first = if x.r.part < x.w.part { rn } else { wn }
+            let second = if x.r.part < x.w.part { wn } else { rn }
+            at = if x.r.part < x.w.part { x.w.part } else { x.r.part }
+            let p = if x.w.p.steps.len <= x.r.p.steps.len { x.w.p } else { x.r.p }
+            try! @fmt(&m, "`{}` and `{}` both change `{}` in one {}: the order of the fields would decide which goes first; compute one of them in a `let` before the {}", first, second, place_str{ c, p }, what, what)
+        } else if x.r.p.root == x.w.p.root and same_steps{ a = x.r.p.steps, b = x.w.p.steps } {
+            try! @fmt(&m, "`{}` reads `{}`, which `{}` changes, in one {}: the order of the fields would decide what it reads; compute one of them in a `let` before the {}", rn, place_str{ c, p = x.r.p }, wn, what, what)
+        } else {
+            try! @fmt(&m, "`{}` reads `{}`, and `{}` changes `{}`, in one {}: the order of the fields would decide what it reads; compute one of them in a `let` before the {}", rn, place_str{ c, p = x.r.p }, wn, place_str{ c, p = x.w.p }, what, what)
+        }
+        error{ &c, at = part_at{ e, callee, items, part = at }, msg = utf8::view{ b = m } }
+    }
+
+    // The uses of braces e's parts, and the first two of different parts that conflict.
+    fn order_clash { mut c: Checker, e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item } -> ?Clash {
+        let fw = map::get{ m = c.forwards, key = expr_key{ e } } ifnull { slice::empty(Forward){} }
+        let mut us = list::new(Use){ realloc = arena::alloc, heap = c.heap }
+        let local_callee = map::get{ m = c.refs, key = expr_key{ e = callee } } is local
+        if not (callee.k is path) or local_callee { ord_expr{ &c, e = callee, part = 0, &us } }
+        // The callee reads only what its summary says of what it is given read-only, and what it
+        // gets as `&p` it gets as the place, once it runs.
+        let d = if callee.k is path { call_fn{ c, e = callee } } else { NONE }
+        let fields = map::get{ m = c.braces, key = expr_key{ e } } ifnull { slice::empty(types::Field){} }
+        let mut i: usize = 0
+        while i < items.len {
+            let it = items[i]
+            let part = @as(u32, i + 1)
+            let f = types::find_field{ fields, name = it.name.text }
+            let mutable = if let x = f { x.mutable } else { false }
+            let p = if mutable or it.spread { null } else { place_path{ c, e = it.value } }
+            if let q = p {
+                ord_indexes{ &c, e = it.value, part, &us }
+                ord_param{ &c, d, name = it.name.text, p = q, mutable = false, part, &us }
+            } else {
+                ord_expr{ &c, e = it.value, part, &us }
+            }
+            i = i + 1
+        }
+        i = 0
+        while i < fw.len {
+            if not fw[i].mutable {
+                let p = Place{ root = root_var{ c, v = fw[i].var }, steps = slice::empty([]u8){} }
+                ord_param{ &c, d, name = fw[i].name, p, mutable = false, part = @as(u32, items.len + 1 + i), &us }
+            }
+            i = i + 1
+        }
+        let xs = list::items{ list = us }
+        i = 0
+        while i < xs.len {
+            let mut j = i + 1
+            while j < xs.len {
+                let a = xs[i]
+                let b = xs[j]
+                if a.part != b.part and (a.write or b.write) and overlap{ p = a.p, q = b.p } {
+                    // Two parts that both change it are reported so, whichever use came first.
+                    if let x = both_write{ xs, pa = a.part, pb = b.part } { return x }
+                    if a.write { return Clash{ w = a, r = b } }
+                    return Clash{ w = b, r = a }
+                }
+                j = j + 1
+            }
+            i = i + 1
+        }
+        return null
+    }
+
+    // A write of part pa and one of part pb that overlap, if there are.
+    fn both_write { xs: []Use, pa: u32, pb: u32 } -> ?Clash {
+        let mut i: usize = 0
+        while i < xs.len {
+            if xs[i].write and xs[i].part == pa {
+                let mut j: usize = 0
+                while j < xs.len {
+                    if xs[j].write and xs[j].part == pb and overlap{ p = xs[i].p, q = xs[j].p } { return Clash{ w = xs[i], r = xs[j] } }
+                    j = j + 1
+                }
+            }
+            i = i + 1
+        }
+        return null
+    }
+
+    // How a message names part n of a braces.
+    fn part_name { c: Checker, callee: syntax::Expr, items: []syntax::Item, fw: []Forward, part: u32 } -> utf8::String {
+        let n = @as(usize, part)
+        if n == 0 { return str{ s = source_text{ c, span = callee.span } } }
+        if n <= items.len {
+            let it = items[n - 1]
+            if it.spread { return str{ s = source_text{ c, span = it.span } } }
+            return str{ s = it.name.text }
+        }
+        return str{ s = fw[n - 1 - items.len].name }
+    }
+
+    fn part_at { e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item, part: u32 } -> source::Span {
+        let n = @as(usize, part)
+        if n == 0 { return expr_at{ e = callee } }
+        if n <= items.len { return items[n - 1].span }
+        return expr_at{ e }
+    }
+
+    fn ord_use { mut c: Checker, p: Place, part: u32, write: bool, mut us: list::List(Use, Heap) } {
+        // A capability never changes (§15, rule 8).
+        if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = get_var{ c, v = p.root }.ty } } is cap { return }
+        try! list::push{ list = &us, item = Use{ p, part, write } }
+    }
+
+    // A read, and a write if the pointer or view made of it is mutable: what code that runs and
+    // is given an address may do through it. An address the braces only pass on is neither: the
+    // callee gets the place as it is when it runs.
+    fn ord_lent { mut c: Checker, p: Place, e: syntax::Expr, part: u32, mut us: list::List(Use, Heap) } {
+        ord_lend{ &c, d = NONE, name = "", p, e, part, &us }
+    }
+
+    // The same, for an address or view e of p given to fn d's read-only field name: only if d
+    // reads, or writes, through a pointer at all.
+    fn ord_lend { mut c: Checker, d: u32, name: []u8, p: Place, e: syntax::Expr, part: u32, mut us: list::List(Use, Heap) } {
+        if not c.ord_lending { return }
+        let t = types::prune{ s = c.ty, t = type_of_expr{ c, e } }
+        let w = match types::get{ s = c.ty, id = t } {
+            ptr{ mutable } => { mutable }
+            slice{ mutable } => { mutable }
+            else => { false }
+        }
+        if d != NONE and c.ord_precise and summed{ c, d } {
+            if c.ord_extracting {
+                if let f = ord_field{ c, d = c.ord_owner, first = c.ord_first, root = p.root } {
+                    try! list::push{ list = &c.ord_found, item = OrdCall{ id = ord_call_id{ &c }, callee = d, arg = name, field = f, steps = p.steps, mutable = w, lent = true } }
+                }
+                return
+            }
+            _ = fn_uses{ &c, d }
+            let fl = map::get{ m = c.ord_flags, key = d } ifnull { 3 }
+            if fl & 1 != 0 { ord_use{ &c, p, part, write = false, &us } }
+            if fl & 2 != 0 and w { ord_use{ &c, p, part, write = true, &us } }
+            return
+        }
+        ord_use{ &c, p, part, write = false, &us }
+        if w { ord_use{ &c, p, part, write = true, &us } }
+    }
+
+    // What evaluating e reads and changes.
+    fn ord_expr { mut c: Checker, e: syntax::Expr, part: u32, mut us: list::List(Use, Heap) } {
+        match e.k {
+            path | field | index | deref => { ord_place{ &c, e, part, write = false, addr = false, &us } }
+            addr{ e = x } => {
+                // An address that goes on to code that runs, which may read and change through it.
+                if let p = place_path{ c, e = x.* } {
+                    ord_indexes{ &c, e = x.*, part, &us }
+                    ord_lent{ &c, p, e, part, &us }
+                } else {
+                    ord_place{ &c, e = x.*, part, write = false, addr = true, &us }
+                }
+            }
+            braced{ callee, items, bind } => { ord_braced{ &c, e, callee = callee.*, items, bind, part, &us } }
+            neg{ e = x } => { ord_expr{ &c, e = x.*, part, &us } }
+            lnot{ e = x } => { ord_expr{ &c, e = x.*, part, &us } }
+            bnot{ e = x } => { ord_expr{ &c, e = x.*, part, &us } }
+            binary{ a, b } => {
+                ord_expr{ &c, e = a.*, part, &us }
+                ord_expr{ &c, e = b.*, part, &us }
+            }
+            array{ elems } => { ord_list{ &c, xs = elems, part, &us } }
+            repeat{ elem, count } => {
+                ord_expr{ &c, e = elem.*, part, &us }
+                ord_expr{ &c, e = count.*, part, &us }
+            }
+            range{ base, lo, hi } => {
+                // A view of an array lends it, as `&` does; slicing a slice reads it.
+                let viewed = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e = base.* } } } is array
+                let p = if viewed { place_path{ c, e = base.* } } else { null }
+                if let q = p {
+                    ord_indexes{ &c, e = base.*, part, &us }
+                    ord_lent{ &c, p = q, e, part, &us }
+                } else {
+                    ord_place{ &c, e = base.*, part, write = false, addr = viewed, &us }
+                }
+                if let x = lo { ord_expr{ &c, e = x.*, part, &us } }
+                if let x = hi { ord_expr{ &c, e = x.*, part, &us } }
+            }
+            builtin{ name, args } => { ord_builtin{ &c, name = name.text, args, part, &us } }
+            ifx{ x } => { ord_if{ &c, x, part, &us } }
+            matchx{ x } => { ord_match{ &c, x, part, &us } }
+            overflow{ e = x, els } => {
+                ord_expr{ &c, e = x.*, part, &us }
+                ord_block{ &c, b = els, part, &us }
+            }
+            trye{ e = x } => { ord_expr{ &c, e = x.*, part, &us } }
+            isx{ e = x } => { ord_expr{ &c, e = x.*, part, &us } }
+            else => {}
+        }
+    }
+
+    fn ord_list { mut c: Checker, xs: []syntax::Expr, part: u32, mut us: list::List(Use, Heap) } {
+        let mut i: usize = 0
+        while i < xs.len {
+            ord_expr{ &c, e = xs[i], part, &us }
+            i = i + 1
+        }
+    }
+
+    // A use of e: a read or a write of the place it names, after its indexes; or, through a
+    // pointer, a read of what leads to it. With addr, the place itself is neither read nor
+    // written: its address is taken, and goes nowhere that runs.
+    fn ord_place { mut c: Checker, e: syntax::Expr, part: u32, write: bool, addr: bool, mut us: list::List(Use, Heap) } {
+        if let p = place_path{ c, e } {
+            ord_indexes{ &c, e, part, &us }
+            if not addr { ord_use{ &c, p, part, write, &us } }
+            return
+        }
+        if c.ord_extracting and not addr and not (e.k is path) { c.ord_flag_now = c.ord_flag_now | if write { 3 } else { 1 } }
+        match e.k {
+            field{ base } => { ord_expr{ &c, e = base.*, part, &us } }
+            deref{ base } => { ord_expr{ &c, e = base.*, part, &us } }
+            index{ base, i } => {
+                ord_expr{ &c, e = base.*, part, &us }
+                ord_expr{ &c, e = i.*, part, &us }
+            }
+            path => {}
+            else => { ord_expr{ &c, e, part, &us } }
+        }
+    }
+
+    // The indexes along place e.
+    fn ord_indexes { mut c: Checker, e: syntax::Expr, part: u32, mut us: list::List(Use, Heap) } {
+        match e.k {
+            field{ base } => { ord_indexes{ &c, e = base.*, part, &us } }
+            index{ base, i } => {
+                ord_indexes{ &c, e = base.*, part, &us }
+                ord_expr{ &c, e = i.*, part, &us }
+            }
+            else => {}
+        }
+    }
+
+    // p with steps after it, cut to ORD_STEPS steps.
+    fn ord_extend { c: Checker, p: Place, steps: [][]u8 } -> Place {
+        let mut out = list::new([]u8){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < p.steps.len + steps.len and i < ORD_STEPS {
+            try! list::push{ list = &out, item = if i < p.steps.len { p.steps[i] } else { steps[i - p.steps.len] } }
+            i = i + 1
+        }
+        return Place{ root = p.root, steps = list::items{ list = out } }
+    }
+
+    // What fn d reads and changes of its field name: uses of p, the place given for it. Without
+    // a summary, all of p, a write for a `mut` field. While a summary is walked for, the call
+    // is kept for it instead, if p is one of its fn's fields.
+    fn ord_param { mut c: Checker, d: u32, name: []u8, p: Place, mutable: bool, part: u32, mut us: list::List(Use, Heap) } {
+        if d == NONE or not c.ord_precise or not summed{ c, d } {
+            ord_use{ &c, p, part, write = mutable, &us }
+            return
+        }
+        if c.ord_extracting {
+            if let f = ord_field{ c, d = c.ord_owner, first = c.ord_first, root = p.root } {
+                try! list::push{ list = &c.ord_found, item = OrdCall{ id = ord_call_id{ &c }, callee = d, arg = name, field = f, steps = p.steps, mutable, lent = false } }
+            }
+            return
+        }
+        let s = fn_uses{ &c, d }
+        let mut i: usize = 0
+        while i < s.len {
+            if slice::eq_bytes{ a = s[i].field, b = name } { ord_use{ &c, p = ord_extend{ c, p, steps = s[i].steps }, part, write = s[i].write and mutable, &us } }
+            i = i + 1
+        }
+    }
+
+    // Braces evaluated inside a part. A call that runs reads and changes what it gets for its
+    // fields, as its summary says, and changes what the bound functions it is called through or
+    // given hold; a bind only reads its arguments.
+    fn ord_braced { mut c: Checker, e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item, bind: bool, part: u32, mut us: list::List(Use, Heap) } {
+        let fields = map::get{ m = c.braces, key = expr_key{ e } } ifnull { slice::empty(types::Field){} }
+        let r = map::get{ m = c.refs, key = expr_key{ e = callee } }
+        if r is local{ var } {
+            ord_place{ &c, e = callee, part, write = false, addr = false, &us }
+            if not bind { ord_held{ &c, places = held_by{ c, v = var }, part, &us } }
+        } else if not (callee.k is path) {
+            ord_expr{ &c, e = callee, part, &us }
+        }
+        let d = if callee.k is path { call_fn{ c, e = callee } } else { NONE }
+        let call = not (callee.k is path) or r is local or d != NONE
+        if c.ord_extracting and call {
+            if d != NONE and summed{ c, d } {
+                push{ xs = &c.ord_callees_now, n = d }
+            } else if not bind {
+                c.ord_flag_now = 3                       // a fn value or an extern fn: anything
+            }
+        }
+        // What a call that runs is given, it may read and change through.
+        let lending = c.ord_lending
+        if not bind and call { c.ord_lending = true }
+        defer c.ord_lending = lending
+        let mut i: usize = 0
+        while i < items.len {
+            let it = items[i]
+            let f = types::find_field{ fields, name = it.name.text }
+            let mutable = if let x = f { x.mutable } else { false }
+            let p = if it.value.k is addr{ e = x } and mutable { place_path{ c, e = x.* } } else if not mutable { place_path{ c, e = it.value } } else { null }
+            if let q = p {
+                if mutable {
+                    let addr{ e = x } = it.value.k else { @panic("check: not an address") }
+                    ord_indexes{ &c, e = x.*, part, &us }
+                    if not bind { ord_param{ &c, d, name = it.name.text, p = q, mutable = true, part, &us } }
+                } else {
+                    ord_indexes{ &c, e = it.value, part, &us }
+                    ord_param{ &c, d, name = it.name.text, p = q, mutable = false, part, &us }
+                    if not bind { ord_held{ &c, places = held_of{ c, e = it.value }, part, &us } }
+                }
+            } else if mutable and it.value.k is addr {
+                let addr{ e = x } = it.value.k else { @panic("check: not an address") }
+                ord_place{ &c, e = x.*, part, write = false, addr = true, &us }
+            } else if let q = ord_lent_place{ c, e = it.value } {
+                // An address or a view given to a read-only field: as the callee uses pointers.
+                ord_lent_parts{ &c, e = it.value, part, &us }
+                ord_lend{ &c, d = if bind { NONE } else { d }, name = it.name.text, p = q, e = it.value, part, &us }
+            } else {
+                ord_expr{ &c, e = it.value, part, &us }
+                if not bind { ord_held{ &c, places = held_of{ c, e = it.value }, part, &us } }
+            }
+            i = i + 1
+        }
+        if let fw = map::get{ m = c.forwards, key = expr_key{ e } } {
+            i = 0
+            while i < fw.len {
+                let p = Place{ root = root_var{ c, v = fw[i].var }, steps = slice::empty([]u8){} }
+                if fw[i].mutable {
+                    if not bind { ord_param{ &c, d, name = fw[i].name, p, mutable = true, part, &us } }
+                } else {
+                    ord_param{ &c, d, name = fw[i].name, p, mutable = false, part, &us }
+                    if not bind and fw[i].conv == null { ord_held{ &c, places = held_by{ c, v = fw[i].var }, part, &us } }
+                }
+                i = i + 1
+            }
+        }
+    }
+
+    // The place e lends, if e is `&p` or a view `a[lo..hi]` of an array place.
+    fn ord_lent_place { c: Checker, e: syntax::Expr } -> ?Place {
+        match e.k {
+            addr{ e = x } => { return place_path{ c, e = x.* } }
+            range{ base } => {
+                if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e = base.* } } } is array { return place_path{ c, e = base.* } }
+            }
+            else => {}
+        }
+        return null
+    }
+
+    // What ord_lent_place's e evaluates besides the place: its indexes and bounds.
+    fn ord_lent_parts { mut c: Checker, e: syntax::Expr, part: u32, mut us: list::List(Use, Heap) } {
+        match e.k {
+            addr{ e = x } => { ord_indexes{ &c, e = x.*, part, &us } }
+            range{ base, lo, hi } => {
+                ord_indexes{ &c, e = base.*, part, &us }
+                if let x = lo { ord_expr{ &c, e = x.*, part, &us } }
+                if let x = hi { ord_expr{ &c, e = x.*, part, &us } }
+            }
+            else => {}
+        }
+    }
+
+    fn ord_held { mut c: Checker, places: []Place, part: u32, mut us: list::List(Use, Heap) } {
+        let mut i: usize = 0
+        while i < places.len {
+            ord_use{ &c, p = places[i], part, write = true, &us }
+            i = i + 1
+        }
+    }
+
+    // A builtin: `@fmt` with a sink writes it, and calls the function values among its
+    // arguments; an atomic reads, and if it stores writes, what it points to.
+    fn ord_builtin { mut c: Checker, name: []u8, args: []syntax::Expr, part: u32, mut us: list::List(Use, Heap) } {
+        let fmt = slice::eq_bytes{ a = name, b = "fmt" }
+        let sink = fmt and args.len > 0 and not (args[0].k is str)
+        let atomic = name.len > 7 and slice::eq_bytes{ a = name[..7], b = "atomic_" }
+        if c.ord_extracting and (sink or atomic) { c.ord_flag_now = 3 }
+        let mut i: usize = 0
+        while i < args.len {
+            let a = args[i]
+            ord_expr{ &c, e = a, part, &us }
+            if sink and i > 0 { ord_held{ &c, places = held_of{ c, e = a }, part, &us } }
+            i = i + 1
+        }
+    }
+
+    fn ord_if { mut c: Checker, x: syntax::If, part: u32, mut us: list::List(Use, Heap) } {
+        ord_expr{ &c, e = x.c.*, part, &us }
+        ord_block{ &c, b = x.then, part, &us }
+        if let b = x.els { ord_block{ &c, b, part, &us } }
+    }
+
+    // A match on `&p` whose arms bind a field by reference may change p through it.
+    fn ord_match { mut c: Checker, x: syntax::Match, part: u32, mut us: list::List(Use, Heap) } {
+        ord_expr{ &c, e = x.scrut.*, part, &us }
+        let mut by_ref = false
+        let mut i: usize = 0
+        while i < x.arms.len {
+            let ps = x.arms[i].pats
+            let mut k: usize = 0
+            while k < ps.len {
+                let bs = ps[k].binders
+                let mut j: usize = 0
+                while j < bs.len {
+                    if bs[j].by_ref { by_ref = true }
+                    j = j + 1
+                }
+                k = k + 1
+            }
+            ord_block{ &c, b = x.arms[i].body, part, &us }
+            i = i + 1
+        }
+        if by_ref and x.scrut.*.k is addr{ e = y } {
+            if let p = place_path{ c, e = y.* } { ord_use{ &c, p, part, write = true, &us } }
+        }
+    }
+
+    fn ord_block { mut c: Checker, b: syntax::Block, part: u32, mut us: list::List(Use, Heap) } {
+        let mut i: usize = 0
+        while i < b.stmts.len {
+            ord_stmt{ &c, s = b.stmts[i], part, &us }
+            i = i + 1
+        }
+    }
+
+    // An address stored in a local may be written through later; one returned can't be while
+    // the call runs.
+    fn ord_stmt { mut c: Checker, s: syntax::Stmt, part: u32, mut us: list::List(Use, Heap) } {
+        let lending = c.ord_lending
+        defer c.ord_lending = lending
+        match s.k {
+            local{ init } => {
+                c.ord_lending = true
+                if let e = init { ord_expr{ &c, e, part, &us } }
+            }
+            let_else{ init, els } => {
+                c.ord_lending = true
+                ord_expr{ &c, e = init, part, &us }
+                c.ord_lending = lending
+                ord_block{ &c, b = els, part, &us }
+            }
+            assign{ place, value } => {
+                c.ord_lending = true
+                ord_expr{ &c, e = value, part, &us }
+                ord_place{ &c, e = place, part, write = true, addr = false, &us }
+            }
+            eval{ e } => { ord_expr{ &c, e, part, &us } }
+            discard{ e } => { ord_expr{ &c, e, part, &us } }
+            cond{ x } => { ord_if{ &c, x, part, &us } }
+            loop{ c = cond, body } => {
+                ord_expr{ &c, e = cond, part, &us }
+                ord_block{ &c, b = body, part, &us }
+            }
+            choose{ x } => { ord_match{ &c, x, part, &us } }
+            ret{ value } => {
+                c.ord_lending = false
+                if let e = value { ord_expr{ &c, e, part, &us } }
+            }
+            deferred{ body } => { ord_block{ &c, b = body, part, &us } }
+            else => {}
+        }
+    }
+
+    // ---- summaries for argument order: what a fn reads and changes of its context fields
+    //
+    // Each fn's body is walked once (ord_extract): what it reads and changes of its context
+    // fields directly, and its calls that pass one on (OrdCall). The summaries are then grown
+    // over those calls alone, until none grows.
+
+    // Fn owner passes field `field`'s path steps to callee's field `arg`: `&p` for a `mut` arg
+    // when mutable. When lent, it passes an address of it, or a view, to a read-only field, and
+    // the callee reads, and through a mutable one changes, it if it reads or writes through a
+    // pointer at all.
+    struct OrdCall { id: u32, callee: u32, arg: []u8, field: []u8, steps: [][]u8, mutable: bool, lent: bool }
+
+    // Whether fn d has a body ctxc checked, which a summary is made from.
+    fn summed { c: Checker, d: u32 } -> bool {
+        let x = get_decl{ c, d }
+        let func{ external } = x.syn.k else { return false }
+        return not external and map::get{ m = c.first_var, key = d } != null
+    }
+
+    // Fn d's summary, made first for d and every fn it reaches that has none.
+    fn fn_uses { mut c: Checker, d: u32 } -> []ParamUse {
+        if map::get{ m = c.ord_state, key = d } != 2 { ord_summarize{ &c, d } }
+        return ord_sum{ c, d }
+    }
+
+    fn ord_sum { c: Checker, d: u32 } -> []ParamUse {
+        let ix = map::get{ m = c.ord_sum_ix, key = d } ifnull { return slice::empty(ParamUse){} }
+        return list::items{ list = list::items{ list = c.ord_lists }[@as(usize, ix)] }
+    }
+
+    fn ord_summarize { mut c: Checker, d: u32 } {
+        // The fns to walk: d and what it reaches.
+        let mut stack = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        let mut found = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        push{ xs = &stack, n = d }
+        while stack.len > 0 {
+            let g = list::pop{ list = &stack } ifnull { @panic("check: the order stack emptied") }
+            if map::get{ m = c.ord_state, key = g } != null { continue }
+            try! map::put{ m = &c.ord_state, key = g, value = 1 }
+            push{ xs = &found, n = g }
+            let callees = ord_extract{ &c, d = g }
+            let mut i: usize = 0
+            while i < callees.len {
+                let h = callees[i]
+                let deps = map::get{ m = c.ord_deps, key = h } ifnull { slice::empty(u32){} }
+                if not has_id{ xs = deps, n = g } { try! map::put{ m = &c.ord_deps, key = h, value = set_add{ c, xs = deps, n = g } } }
+                if map::get{ m = c.ord_state, key = h } == null { push{ xs = &stack, n = h } }
+                i = i + 1
+            }
+        }
+        // Grow them until none grows: a fn whose summary grew has its callers grown again.
+        let fs = list::items{ list = found }
+        let mut queue = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        let mut queued = map::new(u32, bool){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u32, eq = map::eq_u32 }
+        let mut i: usize = 0
+        while i < fs.len {
+            push{ xs = &queue, n = fs[i] }
+            try! map::put{ m = &queued, key = fs[i], value = true }
+            i = i + 1
+        }
+        while queue.len > 0 {
+            let g = list::pop{ list = &queue } ifnull { @panic("check: the order queue emptied") }
+            try! map::put{ m = &queued, key = g, value = false }
+            if ord_grow{ &c, d = g } {
+                let deps = map::get{ m = c.ord_deps, key = g } ifnull { slice::empty(u32){} }
+                let mut k: usize = 0
+                while k < deps.len {
+                    if map::get{ m = c.ord_state, key = deps[k] } == 1 and map::get{ m = queued, key = deps[k] } != true {
+                        push{ xs = &queue, n = deps[k] }
+                        try! map::put{ m = &queued, key = deps[k], value = true }
+                    }
+                    k = k + 1
+                }
+            }
+        }
+        i = 0
+        while i < fs.len {
+            try! map::put{ m = &c.ord_state, key = fs[i], value = 2 }
+            i = i + 1
+        }
+    }
+
+    // Fn d's direct uses of its context fields, as its summary so far, its calls that pass one
+    // on, and whether it reads or writes through pointers itself. Gives the fns it calls.
+    fn ord_extract { mut c: Checker, d: u32 } -> []u32 {
+        let ix = @as(u32, c.ord_lists.len)
+        try! list::push{ list = &c.ord_lists, item = list::new(ParamUse){ realloc = arena::alloc, heap = c.heap } }
+        try! map::put{ m = &c.ord_sum_ix, key = d, value = ix }
+        let x = get_decl{ c, d }
+        let func{ body } = x.syn.k else { return slice::empty(u32){} }
+        let first = map::get{ m = c.first_var, key = d } ifnull { return slice::empty(u32){} }
+        let mut us = list::new(Use){ realloc = arena::alloc, heap = c.heap }
+        c.ord_found = list::new(OrdCall){ realloc = arena::alloc, heap = c.heap }
+        c.ord_callees_now = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        c.ord_flag_now = 0
+        c.ord_owner = d
+        c.ord_first = first
+        c.ord_extracting = true
+        let lending = c.ord_lending
+        c.ord_lending = false
+        ord_block{ &c, b = body, part = 0, &us }
+        c.ord_lending = lending
+        c.ord_extracting = false
+        let calls = list::items{ list = c.ord_found }
+        try! map::put{ m = &c.ord_calls, key = d, value = calls }
+        try! map::put{ m = &c.ord_flags, key = d, value = c.ord_flag_now }
+        try! map::put{ m = &c.ord_callees, key = d, value = list::items{ list = c.ord_callees_now } }
+        let xs = list::items{ list = us }
+        let out = list::at{ list = c.ord_lists, i = @as(usize, ix) }
+        let none = slice::empty([]u8){}
+        let mut i: usize = 0
+        while i < xs.len {
+            if let f = ord_field{ c, d, first, root = xs[i].p.root } {
+                _ = ord_add{ &c, d, out, field = f, a = xs[i].p.steps, b = none, write = xs[i].write }
+            }
+            i = i + 1
+        }
+        return list::items{ list = c.ord_callees_now }
+    }
+
+    // The name of fn d's context field whose local is root, if it is one.
+    fn ord_field { c: Checker, d: u32, first: u32, root: u32 } -> ?[]u8 {
+        let fs = get_decl{ c, d }.fields
+        if root < first or root - first >= @as(u32, fs.len) { return null }
+        return fs[@as(usize, root - first)].name
+    }
+
+    // Grows fn d's summary by what its calls pass on; whether it grew.
+    fn ord_grow { mut c: Checker, d: u32 } -> bool {
+        let calls = map::get{ m = c.ord_calls, key = d } ifnull { return false }
+        let ix = map::get{ m = c.ord_sum_ix, key = d } ifnull { return false }
+        let out = list::at{ list = c.ord_lists, i = @as(usize, ix) }
+        let mut grew = false
+        let callees = map::get{ m = c.ord_callees, key = d } ifnull { slice::empty(u32){} }
+        let before = map::get{ m = c.ord_flags, key = d } ifnull { 0 }
+        let mut fl = before
+        let mut i: usize = 0
+        while i < callees.len {
+            fl = fl | (map::get{ m = c.ord_flags, key = callees[i] } ifnull { 3 })
+            i = i + 1
+        }
+        if fl != before {
+            try! map::put{ m = &c.ord_flags, key = d, value = fl }
+            grew = true
+        }
+        let none = slice::empty([]u8){}
+        i = 0
+        while i < calls.len {
+            let k = calls[i]
+            if k.lent {
+                let kf = map::get{ m = c.ord_flags, key = k.callee } ifnull { 3 }
+                if kf & 1 != 0 and ord_add{ &c, d, out, field = k.field, a = k.steps, b = none, write = false } { grew = true }
+                if kf & 2 != 0 and k.mutable and ord_add{ &c, d, out, field = k.field, a = k.steps, b = none, write = true } { grew = true }
+                i = i + 1
+                continue
+            }
+            // Only what the callee's summary gained since this call last passed it on. It is
+            // fetched again each time round: a fn that calls itself grows the list it reads.
+            let mut j = list::items{ list = c.ord_seen }[@as(usize, k.id)]
+            while j < ord_sum{ c, d = k.callee }.len {
+                let u = ord_sum{ c, d = k.callee }[j]
+                if slice::eq_bytes{ a = u.field, b = k.arg } {
+                    if ord_add{ &c, d, out, field = k.field, a = k.steps, b = u.steps, write = u.write and k.mutable } { grew = true }
+                }
+                j = j + 1
+            }
+            list::items{ list = c.ord_seen }[@as(usize, k.id)] = j
+            i = i + 1
+        }
+        return grew
+    }
+
+    fn ord_call_id { mut c: Checker } -> u32 {
+        let id = @as(u32, c.ord_seen.len)
+        try! list::push{ list = &c.ord_seen, item = 0 }
+        return id
+    }
+
+    // FNV-1a over bytes, from h.
+    fn ord_hash { h: u64, bytes: []u8 } -> u64 {
+        let mut x = h
+        let mut i: usize = 0
+        while i < bytes.len {
+            x = (x ^ @as(u64, bytes[i])) *% 1099511628211
+            i = i + 1
+        }
+        return x
+    }
+
+    // Adds the use of field's path a then b, cut to ORD_STEPS steps, to fn d's summary out,
+    // unless a use there covers it: a use of a path covers those below it, and a write covers a
+    // read. The paths are found by a hash of d, the field and the steps (ord_keys). Whether it
+    // added it.
+    fn ord_add { mut c: Checker, d: u32, out: *mut list::List(ParamUse, Heap), field: []u8, a: [][]u8, b: [][]u8, write: bool } -> bool {
+        let n = if a.len + b.len < ORD_STEPS { a.len + b.len } else { ORD_STEPS }
+        let mut h = ord_hash{ h = (14695981039346656037 ^ @as(u64, d)) *% 1099511628211, bytes = field }
+        let mut k: usize = 0
+        while true {
+            let f = map::get{ m = c.ord_keys, key = h } ifnull { 0 }
+            if f & 2 != 0 or (not write and f & 1 != 0) { return false }
+            if k == n { break }
+            h = ord_hash{ h = (h ^ 255) *% 1099511628211, bytes = if k < a.len { a[k] } else { b[k - a.len] } }
+            k = k + 1
+        }
+        let f = map::get{ m = c.ord_keys, key = h } ifnull { 0 }
+        try! map::put{ m = &c.ord_keys, key = h, value = f | if write { 2 } else { 1 } }
+        let mut steps = list::new([]u8){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < n {
+            try! list::push{ list = &steps, item = if i < a.len { a[i] } else { b[i - a.len] } }
+            i = i + 1
+        }
+        try! list::push{ list = out, item = ParamUse{ field, steps = list::items{ list = steps }, write } }
+        return true
     }
 
     // Two places overlap if one's steps are a prefix of the other's, from the same root. Any two
@@ -8807,7 +9614,8 @@ namespace check {
             let theirs = map::get{ m = c.sets, key = d.owner } ifnull { no_vars{} }
             if map::has{ m = c.open_sets, key = d.owner } and not open_set{ c, t = d.into } {
                 let mut b = message{ c }
-                try! set_text{ c, t = types::errs{ s = &c.ty, owner = d.owner, one = NONE }, &b }
+                let set = types::errs{ s = &c.ty, owner = d.owner, one = NONE }
+                try! set_text{ c, t = set, &b }
                 try! utf8::push{ &b, s = " are an open set, which closed " }
                 try! write_type{ c, t = d.into, &b }
                 try! utf8::push{ &b, s = " can't hold: it may gain errors" }
@@ -8819,7 +9627,8 @@ namespace check {
             while k < theirs.len {
                 if not has_id{ xs = holds, n = theirs[k] } {
                     let mut b = message{ c }
-                    try! set_text{ c, t = types::errs{ s = &c.ty, owner = d.owner, one = NONE }, &b }
+                    let set = types::errs{ s = &c.ty, owner = d.owner, one = NONE }
+                    try! set_text{ c, t = set, &b }
                     try! @fmt(&b, " include `{}`, which isn't one of ", str{ s = get_decl{ c, d = theirs[k] }.qual })
                     try! write_type{ c, t = d.into, &b }
                     try! utf8::push{ &b, s = ": a declared set holds only its own errors" }
@@ -9698,6 +10507,7 @@ namespace check {
     fn braced { mut c: Checker, e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item, forward: bool, bind: bool, exp: Id } -> Id {
         let t = braced_as{ &c, e, callee, items, forward, bind, exp }
         if not map::has{ m = c.spreads, key = expr_key{ e } } { no_spread{ &c, e, items } }
+        if t != types::ERROR { check_order{ &c, e, callee, items } }
         return t
     }
 

@@ -227,7 +227,8 @@ namespace drive {
         while i < ts.len {
             let t = ts[i]
             let digit: [1]u8 = [t.level + '0']
-            add_bytes{ xs = &text, s = cat{ &heap, a = cat{ &heap, a = "exe\t", b = t.name }, b = cat{ &heap, a = "\nlevel\t", b = digit[..] } } }
+            let head = cat{ &heap, a = "exe\t", b = t.name }
+            add_bytes{ xs = &text, s = cat{ &heap, a = head, b = cat{ &heap, a = "\nlevel\t", b = digit[..] } } }
             let files = program_files{ &io, &fs, &heap, d, path, t } ifnull {
                 why = Why::errors
                 return false
@@ -324,7 +325,8 @@ namespace drive {
         while k < ts.len {
             let mut j: usize = 0
             while j < k {
-                if slice::eq_bytes{ a = fold{ &heap, s = ts[j].name, os = d.os }, b = fold{ &heap, s = ts[k].name, os = d.os } } {
+                let fj = fold{ &heap, s = ts[j].name, os = d.os }
+                if slice::eq_bytes{ a = fj, b = fold{ &heap, s = ts[k].name, os = d.os } } {
                     cannot{ &io, path = build_file, what = "describes two executables of the same name" }
                     return 1
                 }
@@ -819,8 +821,10 @@ namespace drive {
                     let file = cat{ &heap, a = gens[k].name, b = ".ctx" }
                     let mut j: usize = 0
                     while j < k {
-                        if slice::eq_bytes{ a = fold{ &heap, s = gens[j].name, os = d.os }, b = fold{ &heap, s = gens[k].name, os = d.os } } {
-                            let what = cat{ &heap, a = cat{ &heap, a = "gives executable ", b = t.name }, b = cat{ &heap, a = " two files named ", b = file } }
+                        let fj = fold{ &heap, s = gens[j].name, os = d.os }
+                        if slice::eq_bytes{ a = fj, b = fold{ &heap, s = gens[k].name, os = d.os } } {
+                            let head = cat{ &heap, a = "gives executable ", b = t.name }
+                            let what = cat{ &heap, a = head, b = cat{ &heap, a = " two files named ", b = file } }
                             cannot{ &io, path = build_file, what = utf8::String{ bytes = what } }
                             return false
                         }
@@ -856,7 +860,8 @@ namespace drive {
             let mut gens: []Gen = slice::empty(Gen){}
             let mut k: usize = 0
             while k < ts.len {
-                if slice::eq_bytes{ a = fold{ &heap, s = ts[k].name, os }, b = fold{ &heap, s = dirs[i], os } } { gens = list::items{ list = ts[k].gens } }
+                let fk = fold{ &heap, s = ts[k].name, os }
+                if slice::eq_bytes{ a = fk, b = fold{ &heap, s = dirs[i], os } } { gens = list::items{ list = ts[k].gens } }
                 k = k + 1
             }
             if gens.len > 0 { any = true }
@@ -996,7 +1001,9 @@ namespace drive {
         i = 0
         while i < subs.len {
             let sub = subs[i]
-            let m = add_tree{ &io, &fs, &heap, os, &found, dir = join{ &heap, a = dir, b = sub }, key = join{ &heap, a = key, b = fold{ &heap, s = sub, os } }, deep } ifnull { return null }
+            let sub_dir = join{ &heap, a = dir, b = sub }
+            let sub_key = join{ &heap, a = key, b = fold{ &heap, s = sub, os } }
+            let m = add_tree{ &io, &fs, &heap, os, &found, dir = sub_dir, key = sub_key, deep } ifnull { return null }
             seen = seen + m
             i = i + 1
         }
@@ -1256,7 +1263,8 @@ namespace drive {
         h = mix_all{ h, xs = d.cc }
         h = mix_all{ h, xs = cflags }
         let base = join{ &heap, a = d.runs, b = name }
-        let obj = cat{ &heap, a = cat{ &heap, a = base, b = "-" }, b = cat{ &heap, a = hex{ &heap, n = h }, b = ".o" } }
+        let head = cat{ &heap, a = base, b = "-" }
+        let obj = cat{ &heap, a = head, b = cat{ &heap, a = hex{ &heap, n = h }, b = ".o" } }
         if kind_of{ &fs, path = obj } == 1 { return obj }
         let tmp = claim{ &io, &fs, &heap, base, ext = ".o" } ifnull { return null }
         let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
@@ -1335,7 +1343,8 @@ namespace drive {
         let digits = try! alloc::make(u8, Heap){ realloc = arena::alloc, &heap, count = 20 }
         let mut n: u64 = 0
         while n < 1000 {
-            let p = cat{ &heap, a = cat{ &heap, a = base, b = "." }, b = cat{ &heap, a = utf8::fmt_u64{ n, into = digits }.bytes, b = ext } }
+            let head = cat{ &heap, a = base, b = "." }
+            let p = cat{ &heap, a = head, b = cat{ &heap, a = utf8::fmt_u64{ n, into = digits }.bytes, b = ext } }
             match fs::open{ &fs, path = p, mode = fs::Mode::create } {
                 ok{ value } => {
                     _ = fs::close{ &fs, file = value }
@@ -1474,7 +1483,8 @@ namespace drive {
 
     // "NAME-" and n in hexadecimal.
     fn tagged { mut heap: Heap, name: []u8, n: u64 } -> []u8 {
-        return cat{ &heap, a = cat{ &heap, a = name, b = "-" }, b = hex{ &heap, n } }
+        let head = cat{ &heap, a = name, b = "-" }
+        return cat{ &heap, a = head, b = hex{ &heap, n } }
     }
 
     // ---- finding things

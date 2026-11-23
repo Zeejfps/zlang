@@ -10,8 +10,7 @@ KOTOR port's, by subsystem: **ctxc**, **glspike** (the platform and GL spike), *
 routines, scene, saves), **data** (resources and formats), **audio**, **dialog**, **gui**, **hud**
 (HUD and in-game menus), **chargen**, **minigames**, **models**, **render**, **rules**,
 **screens**, **script** (NCS and the VM), **video** (Bink) and **walk** (walkmeshes). Counts are
-as the write-ups gave them. Ranking by count understates #24: it is the one entry that gives a
-wrong answer instead of a compile error.
+as the write-ups gave them.
 
 ## Ranked
 
@@ -170,15 +169,6 @@ wrong answer instead of a compile error.
 23. **No scoped lock.** Every public fn of the mixer starts with `mutex::lock{ mutex = &m.lock }`
     and `defer mutex::unlock{ mutex = &m.lock }`, naming the lock twice. A block form (`with`-like)
     would do without destructors. *Hit by 1:* audio (21 pairs, kotor/lib/audio/mix.ctx).
-
-24. **A read-only argument can be copied before a later argument changes it.** Arguments are
-    evaluated in order, so `types::prune{ s = c.ty, t = expr{ &c, e } }` copies the type store,
-    then `expr` adds a type to the real one, and `prune` indexes the stale copy out of bounds.
-    §3.1 checks overlap between one call's arguments only, not a `&c` inside a nested call. The
-    fix is a local first (`check::typed`). Still silent: `show{ n = c.n, z = bump{ &c } }` passes
-    the old `c.n`. A rule that rejects this, or evaluates nested calls before plain arguments,
-    would have caught eight such calls. *Hit by 1:* ctxc (8). The only entry that gives a wrong
-    answer.
 
 25. **A slice that will be freed stays `[]mut`.** Freeing hands the memory back to the allocator
     as `[]mut u8`, and a `[]T` can't become a `[]mut T` again, so a slice or a field that is only
