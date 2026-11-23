@@ -1,0 +1,19 @@
+// Stage 3's screenshots: the conformance list drawn by the OpenGL backend in a hidden SDL window.
+// How to run it: ui/AGENTS.md. Needs a GPU, so ui/tools/check does not run it.
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "ui_test_shots", root = "." }
+    build::add_sources{ &b, exe, dir = "../../core" }
+    build::add_sources{ &b, exe, dir = "../../stage" }
+    build::add_sources{ &b, exe, dir = "../../record" }
+    build::add_sources{ &b, exe, dir = "../../test" }
+    build::add_sources{ &b, exe, dir = "../../gl" }
+    build::add_sources{ &b, exe, dir = "../../sdl" }
+    match build::os{ &b } {
+        macos => {
+            build::lib_path{ &b, exe, path = "/opt/homebrew/lib" }        // Homebrew's SDL2
+            build::link{ &b, exe, lib = "SDL2" }
+        }
+        windows => { build::link{ &b, exe, lib = "SDL2" } }
+        linux => { build::link{ &b, exe, lib = "SDL2" } }
+    }
+}

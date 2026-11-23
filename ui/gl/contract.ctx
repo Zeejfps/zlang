@@ -1,0 +1,22 @@
+// The backend's public functions as values of their function types (plan section 4), so a change to
+// a signature breaks the build here and not in a program. Nothing calls `check`; compiling it is the
+// test. A function converts to its type if it takes no field the type lacks, each with the same type
+// and mutability, and returns the same result type (spec §5). Stage 14's ui_vk has the same shapes.
+namespace ui_gl_contract {
+    fn check {} {
+        let open: fn{
+            get_proc: &fn{ name: c::String } -> ?extern fn{}, realloc: alloc::Fn(arena::Arena), mut heap: arena::Arena,
+            options: ui_gl::Options, log: []mut u8,
+        } -> !ui_gl::Device = ui_gl::open
+        let close: fn{ mut dev: ui_gl::Device } = ui_gl::close
+        let create_image: fn{ mut dev: ui_gl::Device, width: u32, height: u32, rgba: []u8, smooth: bool } -> !ui::Image = ui_gl::create_image
+        let update_image: fn{ mut dev: ui_gl::Device, image: ui::Image, rgba: []u8 } -> ! = ui_gl::update_image
+        let free_image: fn{ mut dev: ui_gl::Device, image: ui::Image } = ui_gl::free_image
+        let render: fn{ mut dev: ui_gl::Device, staged: *ui_stage::Staged } -> ! = ui_gl::render
+        let render_pass: fn{ mut dev: ui_gl::Device, staged: *ui_stage::Staged, pass: u32 } -> ! = ui_gl::render_pass
+        let read_pixels: fn{ mut dev: ui_gl::Device, into: []mut u8 } -> ! = ui_gl::read_pixels
+        let make_target: fn{ mut dev: ui_gl::Device, width: u32, height: u32 } -> ! = ui_gl::make_target
+        let free_target: fn{ mut dev: ui_gl::Device } = ui_gl::free_target
+        let clear: fn{ mut dev: ui_gl::Device, color: ui::Color } = ui_gl::clear
+    }
+}

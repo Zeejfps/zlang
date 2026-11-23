@@ -1,0 +1,296 @@
+// ui_gl: the subset of OpenGL 4.1 core the backend calls, looked up at run time.
+//
+// `Gl` is a capability whose fields are GL's functions; only `load` makes one, from a function that
+// finds GL's symbols in the context current on this thread (a host's, such as
+// `ui_sdl::get_gl_proc{ &sdl, _ }`), so the backend depends on no host. A field is GL's function
+// without its `gl` prefix, in snake case, with GL's parameter names and order and GL's types as
+// ctxlang's: GLenum, GLuint and GLbitfield `u32`, GLint and GLsizei `i32`, GLsizeiptr and GLintptr
+// `i64`, GLboolean `u8`, GLfloat `f32`, a pointer GL reads `*u8` (`?*u8` where null is allowed), and
+// a buffer offset GL takes as a pointer a `usize`.
+//
+// glDrawArraysInstancedBaseInstance is GL 4.2, so it is apart (`BaseInstance`), loaded where the
+// context's version has it and the driver hands out the entry point, as ZGF decides
+// [OpenGlRenderedCanvas.DetectBaseInstanceSupport], and also where a 4.1 context has it through
+// GL_ARB_base_instance, as NVIDIA's 4.1 core contexts do.
+namespace ui_gl {
+    error too_old{ major: i32, minor: i32 }     // the context's version, older than 4.1
+    error missing{ name: c::String }            // a 4.1 function the context did not give
+
+    // ---- constants
+    const NO_ERROR: u32 = 0
+    const INVALID_ENUM: u32 = 0x0500
+    const INVALID_VALUE: u32 = 0x0501
+    const INVALID_OPERATION: u32 = 0x0502
+    const OUT_OF_MEMORY: u32 = 0x0505
+    const INVALID_FRAMEBUFFER_OPERATION: u32 = 0x0506
+
+    const VENDOR: u32 = 0x1F00
+    const RENDERER: u32 = 0x1F01
+    const VERSION: u32 = 0x1F02
+    const MAJOR_VERSION: u32 = 0x821B
+    const MINOR_VERSION: u32 = 0x821C
+    const EXTENSIONS: u32 = 0x1F03
+    const NUM_EXTENSIONS: u32 = 0x821D
+
+    const BLEND: u32 = 0x0BE2
+    const DEPTH_TEST: u32 = 0x0B71
+    const SCISSOR_TEST: u32 = 0x0C11
+    const CULL_FACE: u32 = 0x0B44
+    const STENCIL_TEST: u32 = 0x0B90
+    const FRAMEBUFFER_SRGB: u32 = 0x8DB9
+    const ZERO: u32 = 0
+    const ONE: u32 = 1
+    const SRC_ALPHA: u32 = 0x0302
+    const ONE_MINUS_SRC_ALPHA: u32 = 0x0303
+    const FUNC_ADD: u32 = 0x8006
+    const COLOR_BUFFER_BIT: u32 = 0x4000
+
+    const TRIANGLES: u32 = 0x0004
+    const UNSIGNED_BYTE: u32 = 0x1401
+    const UNSIGNED_INT: u32 = 0x1405
+    const FLOAT: u32 = 0x1406
+    const FALSE: u8 = 0
+    const TRUE: u8 = 1
+
+    const ARRAY_BUFFER: u32 = 0x8892
+    const UNIFORM_BUFFER: u32 = 0x8A11
+    const STATIC_DRAW: u32 = 0x88E4
+    const DYNAMIC_DRAW: u32 = 0x88E8
+
+    const VERTEX_SHADER: u32 = 0x8B31
+    const FRAGMENT_SHADER: u32 = 0x8B30
+    const COMPILE_STATUS: u32 = 0x8B81
+    const LINK_STATUS: u32 = 0x8B82
+    const INVALID_INDEX: u32 = 0xFFFFFFFF
+
+    const TEXTURE_2D: u32 = 0x0DE1
+    const TEXTURE0: u32 = 0x84C0
+    const TEXTURE_MAG_FILTER: u32 = 0x2800
+    const TEXTURE_MIN_FILTER: u32 = 0x2801
+    const TEXTURE_WRAP_S: u32 = 0x2802
+    const TEXTURE_WRAP_T: u32 = 0x2803
+    const NEAREST: i32 = 0x2600
+    const LINEAR: i32 = 0x2601
+    const CLAMP_TO_EDGE: i32 = 0x812F
+    const RED: u32 = 0x1903
+    const RGBA: u32 = 0x1908
+    const R8: i32 = 0x8229
+    const RGBA8: i32 = 0x8058
+    const UNPACK_ROW_LENGTH: u32 = 0x0CF2
+    const UNPACK_ALIGNMENT: u32 = 0x0CF5
+    const PACK_ROW_LENGTH: u32 = 0x0D02
+    const PACK_ALIGNMENT: u32 = 0x0D05
+
+    const FRAMEBUFFER: u32 = 0x8D40
+    const READ_FRAMEBUFFER: u32 = 0x8CA8
+    const DRAW_FRAMEBUFFER: u32 = 0x8CA9
+    const COLOR_ATTACHMENT0: u32 = 0x8CE0
+    const FRAMEBUFFER_COMPLETE: u32 = 0x8CD5
+    const BACK: u32 = 0x0405
+
+    capability Gl {
+        // state and queries
+        get_error: extern fn{} -> u32,
+        get_string: extern fn{ name: u32 } -> ?c::String,
+        get_stringi: extern fn{ name: u32, index: u32 } -> ?c::String,
+        get_integerv: extern fn{ pname: u32, data: *mut i32 },
+        enable: extern fn{ cap: u32 },
+        disable: extern fn{ cap: u32 },
+        viewport: extern fn{ x: i32, y: i32, width: i32, height: i32 },
+        clear_color: extern fn{ red: f32, green: f32, blue: f32, alpha: f32 },
+        clear: extern fn{ mask: u32 },
+        blend_func_separate: extern fn{ sfactor_rgb: u32, dfactor_rgb: u32, sfactor_alpha: u32, dfactor_alpha: u32 },
+        blend_equation: extern fn{ mode: u32 },
+        pixel_storei: extern fn{ pname: u32, param: i32 },
+
+        // shaders and programs
+        create_shader: extern fn{ kind: u32 } -> u32,
+        shader_source: extern fn{ shader: u32, count: i32, strings: *c::String, lengths: ?*i32 },
+        compile_shader: extern fn{ shader: u32 },
+        get_shaderiv: extern fn{ shader: u32, pname: u32, params: *mut i32 },
+        get_shader_info_log: extern fn{ shader: u32, buf_size: i32, length: *mut i32, info_log: *mut u8 },
+        delete_shader: extern fn{ shader: u32 },
+        create_program: extern fn{} -> u32,
+        attach_shader: extern fn{ program: u32, shader: u32 },
+        detach_shader: extern fn{ program: u32, shader: u32 },
+        link_program: extern fn{ program: u32 },
+        get_programiv: extern fn{ program: u32, pname: u32, params: *mut i32 },
+        get_program_info_log: extern fn{ program: u32, buf_size: i32, length: *mut i32, info_log: *mut u8 },
+        use_program: extern fn{ program: u32 },
+        delete_program: extern fn{ program: u32 },
+        get_uniform_location: extern fn{ program: u32, name: c::String } -> i32,
+        uniform1i: extern fn{ location: i32, v0: i32 },
+        get_uniform_block_index: extern fn{ program: u32, name: c::String } -> u32,
+        uniform_block_binding: extern fn{ program: u32, block_index: u32, binding: u32 },
+
+        // buffers
+        gen_buffers: extern fn{ n: i32, buffers: *mut u32 },
+        delete_buffers: extern fn{ n: i32, buffers: *u32 },
+        bind_buffer: extern fn{ target: u32, buffer: u32 },
+        buffer_data: extern fn{ target: u32, size: i64, data: ?*u8, usage: u32 },
+        buffer_sub_data: extern fn{ target: u32, offset: i64, size: i64, data: *u8 },
+        bind_buffer_base: extern fn{ target: u32, index: u32, buffer: u32 },
+
+        // vertex arrays and drawing
+        gen_vertex_arrays: extern fn{ n: i32, arrays: *mut u32 },
+        delete_vertex_arrays: extern fn{ n: i32, arrays: *u32 },
+        bind_vertex_array: extern fn{ array: u32 },
+        enable_vertex_attrib_array: extern fn{ index: u32 },
+        vertex_attrib_pointer: extern fn{ index: u32, size: i32, kind: u32, normalized: u8, stride: i32, offset: usize },
+        vertex_attrib_ipointer: extern fn{ index: u32, size: i32, kind: u32, stride: i32, offset: usize },
+        vertex_attrib_divisor: extern fn{ index: u32, divisor: u32 },
+        draw_arrays_instanced: extern fn{ mode: u32, first: i32, count: i32, instance_count: i32 },
+
+        // textures
+        gen_textures: extern fn{ n: i32, textures: *mut u32 },
+        delete_textures: extern fn{ n: i32, textures: *u32 },
+        bind_texture: extern fn{ target: u32, texture: u32 },
+        active_texture: extern fn{ texture: u32 },
+        tex_image_2d: extern fn{ target: u32, level: i32, internal_format: i32, width: i32, height: i32, border: i32, format: u32, kind: u32, pixels: ?*u8 },
+        tex_sub_image_2d: extern fn{ target: u32, level: i32, xoffset: i32, yoffset: i32, width: i32, height: i32, format: u32, kind: u32, pixels: *u8 },
+        tex_parameteri: extern fn{ target: u32, pname: u32, param: i32 },
+
+        // framebuffers
+        gen_framebuffers: extern fn{ n: i32, framebuffers: *mut u32 },
+        delete_framebuffers: extern fn{ n: i32, framebuffers: *u32 },
+        bind_framebuffer: extern fn{ target: u32, framebuffer: u32 },
+        framebuffer_texture_2d: extern fn{ target: u32, attachment: u32, textarget: u32, texture: u32, level: i32 },
+        check_framebuffer_status: extern fn{ target: u32 } -> u32,
+        read_buffer: extern fn{ src: u32 },
+        read_pixels: extern fn{ x: i32, y: i32, width: i32, height: i32, format: u32, kind: u32, pixels: *mut u8 },
+    }
+
+    // GL 4.2's instanced draw that starts the instance attributes at `base_instance`.
+    capability BaseInstance {
+        draw_arrays_instanced_base_instance: extern fn{ mode: u32, first: i32, count: i32, instance_count: i32, base_instance: u32 },
+    }
+
+    // Loads every function of `Gl` from `get_proc`. Fails with `too_old` for a context before 4.1
+    // and `missing` when one is not there.
+    fn load { get_proc: &fn{ name: c::String } -> ?extern fn{} } -> !Gl {
+        // The version first, through glGetIntegerv alone: on an old context the rest need not exist.
+        let get_integerv = @cast(extern fn{ pname: u32, data: *mut i32 }, try find_proc{ get_proc, name = "glGetIntegerv" })
+        let mut major: i32 = 0
+        let mut minor: i32 = 0
+        get_integerv{ pname = MAJOR_VERSION, data = &major }     // GL_INVALID_ENUM before 3.0: stays 0
+        get_integerv{ pname = MINOR_VERSION, data = &minor }
+        if major < 4 or (major == 4 and minor < 1) { return too_old{ major, minor } }
+        return Gl{
+            get_error = @cast(_, try find_proc{ get_proc, name = "glGetError" }),
+            get_string = @cast(_, try find_proc{ get_proc, name = "glGetString" }),
+            get_stringi = @cast(_, try find_proc{ get_proc, name = "glGetStringi" }),
+            get_integerv = @cast(_, try find_proc{ get_proc, name = "glGetIntegerv" }),
+            enable = @cast(_, try find_proc{ get_proc, name = "glEnable" }),
+            disable = @cast(_, try find_proc{ get_proc, name = "glDisable" }),
+            viewport = @cast(_, try find_proc{ get_proc, name = "glViewport" }),
+            clear_color = @cast(_, try find_proc{ get_proc, name = "glClearColor" }),
+            clear = @cast(_, try find_proc{ get_proc, name = "glClear" }),
+            blend_func_separate = @cast(_, try find_proc{ get_proc, name = "glBlendFuncSeparate" }),
+            blend_equation = @cast(_, try find_proc{ get_proc, name = "glBlendEquation" }),
+            pixel_storei = @cast(_, try find_proc{ get_proc, name = "glPixelStorei" }),
+
+            create_shader = @cast(_, try find_proc{ get_proc, name = "glCreateShader" }),
+            shader_source = @cast(_, try find_proc{ get_proc, name = "glShaderSource" }),
+            compile_shader = @cast(_, try find_proc{ get_proc, name = "glCompileShader" }),
+            get_shaderiv = @cast(_, try find_proc{ get_proc, name = "glGetShaderiv" }),
+            get_shader_info_log = @cast(_, try find_proc{ get_proc, name = "glGetShaderInfoLog" }),
+            delete_shader = @cast(_, try find_proc{ get_proc, name = "glDeleteShader" }),
+            create_program = @cast(_, try find_proc{ get_proc, name = "glCreateProgram" }),
+            attach_shader = @cast(_, try find_proc{ get_proc, name = "glAttachShader" }),
+            detach_shader = @cast(_, try find_proc{ get_proc, name = "glDetachShader" }),
+            link_program = @cast(_, try find_proc{ get_proc, name = "glLinkProgram" }),
+            get_programiv = @cast(_, try find_proc{ get_proc, name = "glGetProgramiv" }),
+            get_program_info_log = @cast(_, try find_proc{ get_proc, name = "glGetProgramInfoLog" }),
+            use_program = @cast(_, try find_proc{ get_proc, name = "glUseProgram" }),
+            delete_program = @cast(_, try find_proc{ get_proc, name = "glDeleteProgram" }),
+            get_uniform_location = @cast(_, try find_proc{ get_proc, name = "glGetUniformLocation" }),
+            uniform1i = @cast(_, try find_proc{ get_proc, name = "glUniform1i" }),
+            get_uniform_block_index = @cast(_, try find_proc{ get_proc, name = "glGetUniformBlockIndex" }),
+            uniform_block_binding = @cast(_, try find_proc{ get_proc, name = "glUniformBlockBinding" }),
+
+            gen_buffers = @cast(_, try find_proc{ get_proc, name = "glGenBuffers" }),
+            delete_buffers = @cast(_, try find_proc{ get_proc, name = "glDeleteBuffers" }),
+            bind_buffer = @cast(_, try find_proc{ get_proc, name = "glBindBuffer" }),
+            buffer_data = @cast(_, try find_proc{ get_proc, name = "glBufferData" }),
+            buffer_sub_data = @cast(_, try find_proc{ get_proc, name = "glBufferSubData" }),
+            bind_buffer_base = @cast(_, try find_proc{ get_proc, name = "glBindBufferBase" }),
+
+            gen_vertex_arrays = @cast(_, try find_proc{ get_proc, name = "glGenVertexArrays" }),
+            delete_vertex_arrays = @cast(_, try find_proc{ get_proc, name = "glDeleteVertexArrays" }),
+            bind_vertex_array = @cast(_, try find_proc{ get_proc, name = "glBindVertexArray" }),
+            enable_vertex_attrib_array = @cast(_, try find_proc{ get_proc, name = "glEnableVertexAttribArray" }),
+            vertex_attrib_pointer = @cast(_, try find_proc{ get_proc, name = "glVertexAttribPointer" }),
+            vertex_attrib_ipointer = @cast(_, try find_proc{ get_proc, name = "glVertexAttribIPointer" }),
+            vertex_attrib_divisor = @cast(_, try find_proc{ get_proc, name = "glVertexAttribDivisor" }),
+            draw_arrays_instanced = @cast(_, try find_proc{ get_proc, name = "glDrawArraysInstanced" }),
+
+            gen_textures = @cast(_, try find_proc{ get_proc, name = "glGenTextures" }),
+            delete_textures = @cast(_, try find_proc{ get_proc, name = "glDeleteTextures" }),
+            bind_texture = @cast(_, try find_proc{ get_proc, name = "glBindTexture" }),
+            active_texture = @cast(_, try find_proc{ get_proc, name = "glActiveTexture" }),
+            tex_image_2d = @cast(_, try find_proc{ get_proc, name = "glTexImage2D" }),
+            tex_sub_image_2d = @cast(_, try find_proc{ get_proc, name = "glTexSubImage2D" }),
+            tex_parameteri = @cast(_, try find_proc{ get_proc, name = "glTexParameteri" }),
+
+            gen_framebuffers = @cast(_, try find_proc{ get_proc, name = "glGenFramebuffers" }),
+            delete_framebuffers = @cast(_, try find_proc{ get_proc, name = "glDeleteFramebuffers" }),
+            bind_framebuffer = @cast(_, try find_proc{ get_proc, name = "glBindFramebuffer" }),
+            framebuffer_texture_2d = @cast(_, try find_proc{ get_proc, name = "glFramebufferTexture2D" }),
+            check_framebuffer_status = @cast(_, try find_proc{ get_proc, name = "glCheckFramebufferStatus" }),
+            read_buffer = @cast(_, try find_proc{ get_proc, name = "glReadBuffer" }),
+            read_pixels = @cast(_, try find_proc{ get_proc, name = "glReadPixels" }),
+        }
+    }
+
+    // glDrawArraysInstancedBaseInstance, or null when the context is older than 4.2 and lacks
+    // GL_ARB_base_instance, or the driver does not hand the entry point out: a driver can report
+    // 4.2 and still not have it.
+    fn load_base_instance { get_proc: &fn{ name: c::String } -> ?extern fn{}, mut gl: Gl } -> ?BaseInstance {
+        let major = get_int{ &gl, pname = MAJOR_VERSION }
+        let minor = get_int{ &gl, pname = MINOR_VERSION }
+        let core = major > 4 or (major == 4 and minor >= 2)
+        if not core and not has_extension{ &gl, name = "GL_ARB_base_instance" } { return null }
+        let p = get_proc{ name = "glDrawArraysInstancedBaseInstance" } ifnull { return null }
+        return BaseInstance{ draw_arrays_instanced_base_instance = @cast(_, p) }
+    }
+
+    // get_proc's function `name`. The literal names it for get_proc and the error alike.
+    fn find_proc { get_proc: &fn{ name: c::String } -> ?extern fn{}, name: c::String } -> !extern fn{} {
+        return get_proc{ name } ifnull { return missing{ name } }
+    }
+
+    // Whether the context has extension `name`, as glGetStringi lists them.
+    fn has_extension { mut gl: Gl, name: []u8 } -> bool {
+        let n = get_int{ &gl, pname = NUM_EXTENSIONS }
+        let mut i: i32 = 0
+        while i < n {
+            if let s = gl.get_stringi{ name = EXTENSIONS, index = @as(u32, i) } {
+                if slice::eq_bytes{ a = c::bytes{ s }, b = name } { return true }
+            }
+            i = i + 1
+        }
+        return false
+    }
+
+    fn get_int { mut gl: Gl, pname: u32 } -> i32 {
+        let mut n: i32 = 0
+        gl.get_integerv{ pname, data = &n }
+        return n
+    }
+
+    // glGetString's text, or "" when the driver gives none.
+    fn get_gl_string { mut gl: Gl, name: u32 } -> []u8 {
+        let s = gl.get_string{ name } ifnull { return "" }
+        return c::bytes{ s }
+    }
+
+    // glGetError's code by name.
+    fn name_gl_error { code: u32 } -> []u8 {
+        if code == INVALID_ENUM { return "GL_INVALID_ENUM" }
+        if code == INVALID_VALUE { return "GL_INVALID_VALUE" }
+        if code == INVALID_OPERATION { return "GL_INVALID_OPERATION" }
+        if code == OUT_OF_MEMORY { return "GL_OUT_OF_MEMORY" }
+        if code == INVALID_FRAMEBUFFER_OPERATION { return "GL_INVALID_FRAMEBUFFER_OPERATION" }
+        return "unknown GL error"
+    }
+}

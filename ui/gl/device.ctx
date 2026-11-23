@@ -1,0 +1,746 @@
+// ui_gl: the OpenGL 4.1 core backend (plan section 4.2), a port of the structure of ZGF's
+// OpenGlRenderedCanvas and GlSharedResources. It draws a ui_stage::Staged and knows nothing of
+// widgets or fonts.
+//
+// Four programs, one per instance kind, from ZGF's shaders (ui/shaders, embedded in
+// shaders_glsl.ctx). Each has the unit quad (two triangles) per vertex and one instance buffer whose
+// attribute layout is the instance struct, offsets from @offset_of. The clip table and the canvas
+// block are uniform blocks bound by glUniformBlockBinding (GLSL 410 has no `binding`): the clip table
+// to 0, as ZGF binds it, and the canvas to 1. A draw is six vertices instanced `count` times from
+// `first`: with GL 4.2's base instance where the driver has it, otherwise by pointing the instance
+// attributes at `first` before the draw, as ZGF does.
+//
+// Uploads happen once per staged revision: a second frame with the same revision of the same Staged
+// uploads nothing. The atlas is an R8 texture updated by its dirty rectangle, or made again whole
+// when its version changed (or when a revision was missed, since the dirty rectangle only covers the
+// last stage call). A program's images are RGBA8 textures, top row first.
+//
+// Nothing here panics on what it is given: a draw naming an image this device does not have is
+// skipped and counted (`stats.dropped`). GL errors are reported with glGetError's code and where
+// (`gl_failed`), a shader that does not compile or link with the driver's log.
+namespace ui_gl {
+    error compile_failed{ shader: c::String, log_len: usize }   // the driver's log is log[..log_len] of open's `log`
+    error link_failed{ program: c::String, log_len: usize }
+    error gl_failed{ code: u32, what: c::String }               // glGetError's code after `what`
+    error incomplete{ status: u32 }                             // the offscreen target's framebuffer status
+    error no_room                                               // the image table is full
+    error bad_image                                             // an image this device does not have
+    error bad_size                                              // a size, or a buffer that does not fit it
+
+    // `images` is how many images the device holds at once (at most 65535); `instances` the room each
+    // instance buffer starts with, which grows as a frame needs it.
+    struct Options { images: u32 = 1024, instances: u32 = 1024 }
+
+    // What the last frame did: counted from `render`, or from `render_pass` of pass 0.
+    struct Stats {
+        draws: u32 = 0,         // draw calls issued
+        instances: u32 = 0,     // instances those draws drew
+        passes: u32 = 0,
+        uploads: u32 = 0,       // buffer and texture uploads
+        upload_bytes: u64 = 0,  // bytes those uploads sent
+        atlas_bytes: u64 = 0,   // of which atlas texels
+        dropped: u32 = 0,       // draws skipped: an image this device does not have
+    }
+
+    // One instance attribute: its location, its component count, whether the shader reads it as an
+    // integer (glVertexAttribIPointer), and its offset in the instance struct.
+    struct Attr { location: u32, size: i32, integer: bool, offset: usize }
+
+    const RECT_ATTRS: [9]Attr = [
+        Attr{ location = 1, size = 4, integer = false, offset = @offset_of(ui_stage::RectInstance, x) },
+        Attr{ location = 2, size = 4, integer = false, offset = @offset_of(ui_stage::RectInstance, radius_tl) },
+        Attr{ location = 3, size = 4, integer = false, offset = @offset_of(ui_stage::RectInstance, border_top) },
+        Attr{ location = 4, size = 1, integer = true, offset = @offset_of(ui_stage::RectInstance, fill) },
+        Attr{ location = 5, size = 1, integer = true, offset = @offset_of(ui_stage::RectInstance, color_top) },
+        Attr{ location = 6, size = 1, integer = true, offset = @offset_of(ui_stage::RectInstance, color_right) },
+        Attr{ location = 7, size = 1, integer = true, offset = @offset_of(ui_stage::RectInstance, color_bottom) },
+        Attr{ location = 8, size = 1, integer = true, offset = @offset_of(ui_stage::RectInstance, color_left) },
+        Attr{ location = 9, size = 1, integer = true, offset = @offset_of(ui_stage::RectInstance, clip) },
+    ]
+    const GLYPH_ATTRS: [5]Attr = [
+        Attr{ location = 1, size = 4, integer = false, offset = @offset_of(ui_stage::GlyphInstance, x) },
+        Attr{ location = 2, size = 4, integer = false, offset = @offset_of(ui_stage::GlyphInstance, u) },
+        Attr{ location = 3, size = 1, integer = true, offset = @offset_of(ui_stage::GlyphInstance, color) },
+        Attr{ location = 4, size = 1, integer = true, offset = @offset_of(ui_stage::GlyphInstance, clip) },
+        Attr{ location = 5, size = 1, integer = false, offset = @offset_of(ui_stage::GlyphInstance, angle) },
+    ]
+    const IMAGE_ATTRS: [6]Attr = [
+        Attr{ location = 1, size = 4, integer = false, offset = @offset_of(ui_stage::ImageInstance, x) },
+        Attr{ location = 2, size = 4, integer = false, offset = @offset_of(ui_stage::ImageInstance, u) },
+        Attr{ location = 3, size = 1, integer = true, offset = @offset_of(ui_stage::ImageInstance, tint) },
+        Attr{ location = 4, size = 1, integer = true, offset = @offset_of(ui_stage::ImageInstance, clip) },
+        Attr{ location = 5, size = 1, integer = false, offset = @offset_of(ui_stage::ImageInstance, angle) },
+        Attr{ location = 6, size = 4, integer = false, offset = @offset_of(ui_stage::ImageInstance, radius_tl) },
+    ]
+    const SHAPE_ATTRS: [9]Attr = [
+        Attr{ location = 1, size = 4, integer = false, offset = @offset_of(ui_stage::ShapeInstance, x) },
+        Attr{ location = 2, size = 4, integer = false, offset = @offset_of(ui_stage::ShapeInstance, data) },
+        Attr{ location = 3, size = 4, integer = false, offset = @offset_of(ui_stage::ShapeInstance, data2) },
+        Attr{ location = 4, size = 1, integer = false, offset = @offset_of(ui_stage::ShapeInstance, half_width) },
+        Attr{ location = 5, size = 1, integer = true, offset = @offset_of(ui_stage::ShapeInstance, color) },
+        Attr{ location = 6, size = 1, integer = true, offset = @offset_of(ui_stage::ShapeInstance, kind) },
+        Attr{ location = 7, size = 1, integer = true, offset = @offset_of(ui_stage::ShapeInstance, clip) },
+        Attr{ location = 8, size = 1, integer = true, offset = @offset_of(ui_stage::ShapeInstance, color2) },
+        Attr{ location = 9, size = 1, integer = true, offset = @offset_of(ui_stage::ShapeInstance, flags) },
+    ]
+
+    // A kind's program, vertex array and instance buffer. `capacity` is the buffer's room in
+    // instances; `base` is the instance the attributes point at now (0 but on the path without a
+    // base instance).
+    struct Program { id: u32, vao: u32, vbo: u32, stride: u32, capacity: u32, base: u32 }
+
+    // An image: its texture, size, and the generation its id carries, so a freed image's id is not
+    // taken for the next image in its slot.
+    struct Slot { texture: u32, width: u32, height: u32, generation: u32, live: bool }
+
+    // The offscreen framebuffer `render` draws into when the program made one (`make_target`).
+    struct Target { framebuffer: u32, texture: u32, width: u32, height: u32 }
+
+    const CLIP_BINDING: u32 = 0
+    const CANVAS_BINDING: u32 = 1
+    // The ClipRects block, std140: 256 rectangles, 256 rounded rectangles, 256 radii, a vec4 each.
+    const CLIP_ROW_FLOATS: usize = 1024
+    const CANVAS_FLOATS: usize = 20                 // mat4 u_projection, vec4 u_canvasMetrics
+
+    struct Device {
+        gl: Gl,
+        base_instance: ?BaseInstance,
+        // Draw with the base instance when the driver has it. A program may turn it off to draw the
+        // way a 4.1 driver must; the pictures are the same.
+        use_base_instance: bool,
+        programs: [4]Program,                       // rect, glyph, image, shape: ui_stage::Kind's order
+        quad: u32, canvas_ubo: u32, clip_ubo: u32,
+        atlas: u32, atlas_width: u32, atlas_height: u32, atlas_version: u32, has_atlas: bool,
+        clip_rows: []mut f32,                       // the ClipRects block as it is uploaded
+        images: []mut Slot,
+        has_frame: bool, frame_at: usize, revision: u64,   // the Staged and the revision uploaded last
+        width: u32, height: u32,                    // the device pixels of the last frame drawn
+        target: Target,
+        stats: Stats,
+    }
+
+    // Starts the backend on the context current on this thread. `get_proc` finds GL's functions in
+    // it (`ui_sdl::get_gl_proc{ &sdl, _ }`). A shader that does not compile or link fails with the
+    // driver's log in `log`.
+    fn open(S) { get_proc: &fn{ name: c::String } -> ?extern fn{}, realloc: alloc::Fn(S), mut heap: S, options: Options, log: []mut u8 } -> !Device {
+        let mut gl = try load{ get_proc }
+        let base_instance = load_base_instance{ get_proc, &gl }
+        let clip_rows = try alloc::make(f32, S){ realloc, &heap, count = CLIP_ROW_FLOATS * 3 }
+        let room = if options.images < 1 { 1 } else if options.images > 65535 { 65535 } else { options.images }
+        let images = try alloc::make(Slot, S){ realloc, &heap, count = @as(usize, room) }
+        while gl.get_error{} != NO_ERROR {}         // what the program left is not ours to report
+
+        let rect = try make_program{ &gl, vertex = CANVAS_RECT_VERT[..], fragment = CANVAS_RECT_FRAG[..],
+            vertex_name = "canvas_rect.vert.glsl", fragment_name = "canvas_rect.frag.glsl", log }
+        let glyph = make_program{ &gl, vertex = CANVAS_GLYPH_VERT[..], fragment = CANVAS_GLYPH_FRAG[..],
+            vertex_name = "canvas_glyph.vert.glsl", fragment_name = "canvas_glyph.frag.glsl", log } iferr err{ error } {
+            gl.delete_program{ program = rect }
+            return error
+        }
+        let image = make_program{ &gl, vertex = CANVAS_IMAGE_VERT[..], fragment = CANVAS_IMAGE_FRAG[..],
+            vertex_name = "canvas_image.vert.glsl", fragment_name = "canvas_image.frag.glsl", log } iferr err{ error } {
+            gl.delete_program{ program = rect }
+            gl.delete_program{ program = glyph }
+            return error
+        }
+        let shape = make_program{ &gl, vertex = CANVAS_SHAPE_VERT[..], fragment = CANVAS_SHAPE_FRAG[..],
+            vertex_name = "canvas_shape.vert.glsl", fragment_name = "canvas_shape.frag.glsl", log } iferr err{ error } {
+            gl.delete_program{ program = rect }
+            gl.delete_program{ program = glyph }
+            gl.delete_program{ program = image }
+            return error
+        }
+
+        // The unit quad, two triangles, as ZGF's.
+        let corners: [12]f32 = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0]
+        let quad = make_buffer{ &gl, target = ARRAY_BUFFER, size = 48, data = @cast(*u8, &corners), usage = STATIC_DRAW }
+        let capacity = if options.instances < 1 { 1 } else { options.instances }
+        let programs: [4]Program = [
+            make_kind{ &gl, program = rect, quad, stride = @as(u32, @size_of(ui_stage::RectInstance)), attrs = RECT_ATTRS[..], capacity },
+            make_kind{ &gl, program = glyph, quad, stride = @as(u32, @size_of(ui_stage::GlyphInstance)), attrs = GLYPH_ATTRS[..], capacity },
+            make_kind{ &gl, program = image, quad, stride = @as(u32, @size_of(ui_stage::ImageInstance)), attrs = IMAGE_ATTRS[..], capacity },
+            make_kind{ &gl, program = shape, quad, stride = @as(u32, @size_of(ui_stage::ShapeInstance)), attrs = SHAPE_ATTRS[..], capacity },
+        ]
+        let clip_ubo = make_buffer{ &gl, target = UNIFORM_BUFFER, size = @as(i64, CLIP_ROW_FLOATS * 3 * 4), data = null, usage = DYNAMIC_DRAW }
+        let canvas_ubo = make_buffer{ &gl, target = UNIFORM_BUFFER, size = @as(i64, CANVAS_FLOATS * 4), data = null, usage = DYNAMIC_DRAW }
+
+        let mut atlas: u32 = 0
+        gl.gen_textures{ n = 1, textures = &atlas }
+        gl.bind_texture{ target = TEXTURE_2D, texture = atlas }
+        set_filter{ &gl, smooth = true }
+        gl.bind_texture{ target = TEXTURE_2D, texture = 0 }
+
+        let mut dev = Device{
+            gl, base_instance, use_base_instance = true, programs,
+            quad, canvas_ubo, clip_ubo,
+            atlas, atlas_width = 0, atlas_height = 0, atlas_version = 0, has_atlas = false,
+            clip_rows, images,
+            has_frame = false, frame_at = 0, revision = 0, width = 0, height = 0,
+            target = Target{ framebuffer = 0, texture = 0, width = 0, height = 0 },
+            stats = Stats{ .. },
+        }
+        check_gl{ gl = &dev.gl, what = "ui_gl::open" } iferr err{ error } {
+            close{ &dev }
+            return error
+        }
+        return dev
+    }
+
+    // Gives back every GL object the device made. The context must be current.
+    fn close { mut dev: Device } {
+        free_target{ &dev }
+        let mut i: usize = 0
+        while i < dev.images.len {
+            if dev.images[i].live {
+                let texture = dev.images[i].texture
+                dev.gl.delete_textures{ n = 1, textures = &texture }
+                dev.images[i].live = false
+            }
+            i = i + 1
+        }
+        i = 0
+        while i < 4 {
+            let p = dev.programs[i]
+            dev.gl.delete_vertex_arrays{ n = 1, arrays = &p.vao }
+            dev.gl.delete_buffers{ n = 1, buffers = &p.vbo }
+            dev.gl.delete_program{ program = p.id }
+            i = i + 1
+        }
+        let buffers: [3]u32 = [dev.quad, dev.canvas_ubo, dev.clip_ubo]
+        dev.gl.delete_buffers{ n = 3, buffers = &buffers[0] }
+        dev.gl.delete_textures{ n = 1, textures = &dev.atlas }
+    }
+
+    // Fails with `gl_failed` when a GL call since the last check went wrong; `what` says where.
+    fn check_gl { mut gl: Gl, what: c::String } -> ! {
+        let code = gl.get_error{}
+        if code != NO_ERROR {
+            while gl.get_error{} != NO_ERROR {}     // GL may hold several
+            return gl_failed{ code, what }
+        }
+    }
+
+    // ---- programs and vertex arrays
+
+    fn compile_shader { mut gl: Gl, stage: u32, source: []c::String, name: c::String, log: []mut u8 } -> !u32 {
+        let shader = gl.create_shader{ kind = stage }
+        gl.shader_source{ shader, count = @as(i32, source.len), strings = source.ptr, lengths = null }
+        gl.compile_shader{ shader }
+        let mut ok: i32 = 0
+        gl.get_shaderiv{ shader, pname = COMPILE_STATUS, params = &ok }
+        if ok == 0 {
+            let mut n: i32 = 0
+            if log.len > 0 { gl.get_shader_info_log{ shader, buf_size = @as(i32, log.len), length = &n, info_log = log.ptr } }
+            gl.delete_shader{ shader }
+            return compile_failed{ shader = name, log_len = @as(usize, n) }
+        }
+        return shader
+    }
+
+    // A program of the two stages, with its blocks bound and its sampler on texture unit 0.
+    fn make_program { mut gl: Gl, vertex: []c::String, fragment: []c::String, vertex_name: c::String, fragment_name: c::String, log: []mut u8 } -> !u32 {
+        let vs = try compile_shader{ &gl, stage = VERTEX_SHADER, source = vertex, name = vertex_name, log }
+        let fs = compile_shader{ &gl, stage = FRAGMENT_SHADER, source = fragment, name = fragment_name, log } iferr err{ error } {
+            gl.delete_shader{ shader = vs }
+            return error
+        }
+        let program = gl.create_program{}
+        gl.attach_shader{ program, shader = vs }
+        gl.attach_shader{ program, shader = fs }
+        gl.link_program{ program }
+        gl.detach_shader{ program, shader = vs }
+        gl.detach_shader{ program, shader = fs }
+        gl.delete_shader{ shader = vs }
+        gl.delete_shader{ shader = fs }
+        let mut ok: i32 = 0
+        gl.get_programiv{ program, pname = LINK_STATUS, params = &ok }
+        if ok == 0 {
+            let mut n: i32 = 0
+            if log.len > 0 { gl.get_program_info_log{ program, buf_size = @as(i32, log.len), length = &n, info_log = log.ptr } }
+            gl.delete_program{ program }
+            return link_failed{ program = vertex_name, log_len = @as(usize, n) }
+        }
+        bind_block{ &gl, program, name = "ClipRects", binding = CLIP_BINDING }
+        bind_block{ &gl, program, name = "Canvas", binding = CANVAS_BINDING }
+        gl.use_program{ program }
+        let atlas = gl.get_uniform_location{ program, name = "u_atlas" }
+        if atlas >= 0 { gl.uniform1i{ location = atlas, v0 = 0 } }
+        let texture = gl.get_uniform_location{ program, name = "u_texture" }
+        if texture >= 0 { gl.uniform1i{ location = texture, v0 = 0 } }
+        gl.use_program{ program = 0 }
+        return program
+    }
+
+    // A block the driver dropped (unused in both stages) has no index and needs no binding.
+    fn bind_block { mut gl: Gl, program: u32, name: c::String, binding: u32 } {
+        let index = gl.get_uniform_block_index{ program, name }
+        if index != INVALID_INDEX { gl.uniform_block_binding{ program, block_index = index, binding } }
+    }
+
+    fn make_buffer { mut gl: Gl, target: u32, size: i64, data: ?*u8, usage: u32 } -> u32 {
+        let mut buffer: u32 = 0
+        gl.gen_buffers{ n = 1, buffers = &buffer }
+        gl.bind_buffer{ target, buffer }
+        gl.buffer_data{ target, size, data, usage }
+        gl.bind_buffer{ target, buffer = 0 }
+        return buffer
+    }
+
+    // A kind's vertex array: the unit quad at location 0, then the instance struct's fields.
+    fn make_kind { mut gl: Gl, program: u32, quad: u32, stride: u32, attrs: []Attr, capacity: u32 } -> Program {
+        let vbo = make_buffer{ &gl, target = ARRAY_BUFFER, size = @as(i64, capacity) * @as(i64, stride), data = null, usage = DYNAMIC_DRAW }
+        let mut vao: u32 = 0
+        gl.gen_vertex_arrays{ n = 1, arrays = &vao }
+        gl.bind_vertex_array{ array = vao }
+        gl.bind_buffer{ target = ARRAY_BUFFER, buffer = quad }
+        gl.vertex_attrib_pointer{ index = 0, size = 2, kind = FLOAT, normalized = FALSE, stride = 8, offset = 0 }
+        gl.enable_vertex_attrib_array{ index = 0 }
+        gl.bind_buffer{ target = ARRAY_BUFFER, buffer = vbo }
+        point_attrs{ &gl, attrs, stride, base = 0 }
+        let mut i: usize = 0
+        while i < attrs.len {
+            gl.enable_vertex_attrib_array{ index = attrs[i].location }
+            gl.vertex_attrib_divisor{ index = attrs[i].location, divisor = 1 }
+            i = i + 1
+        }
+        gl.bind_vertex_array{ array = 0 }
+        gl.bind_buffer{ target = ARRAY_BUFFER, buffer = 0 }
+        return Program{ id = program, vao, vbo, stride, capacity, base = 0 }
+    }
+
+    // Points the instance attributes at instance `base` of the buffer bound to ARRAY_BUFFER, in the
+    // vertex array bound now.
+    fn point_attrs { mut gl: Gl, attrs: []Attr, stride: u32, base: u32 } {
+        let start = @as(usize, base) * @as(usize, stride)
+        let mut i: usize = 0
+        while i < attrs.len {
+            let a = attrs[i]
+            if a.integer {
+                gl.vertex_attrib_ipointer{ index = a.location, size = a.size, kind = UNSIGNED_INT, stride = @as(i32, stride), offset = start + a.offset }
+            } else {
+                gl.vertex_attrib_pointer{ index = a.location, size = a.size, kind = FLOAT, normalized = FALSE, stride = @as(i32, stride), offset = start + a.offset }
+            }
+            i = i + 1
+        }
+    }
+
+    fn get_attrs { kind: usize } -> []Attr {
+        return if kind == 0 { RECT_ATTRS[..] } else if kind == 1 { GLYPH_ATTRS[..] } else if kind == 2 { IMAGE_ATTRS[..] } else { SHAPE_ATTRS[..] }
+    }
+
+    fn get_kind_index { kind: ui_stage::Kind } -> usize {
+        return match kind {
+            rect => { 0 }
+            glyph => { 1 }
+            image => { 2 }
+            shape => { 3 }
+        }
+    }
+
+    fn set_filter { mut gl: Gl, smooth: bool } {
+        let filter = if smooth { LINEAR } else { NEAREST }
+        gl.tex_parameteri{ target = TEXTURE_2D, pname = TEXTURE_MIN_FILTER, param = filter }
+        gl.tex_parameteri{ target = TEXTURE_2D, pname = TEXTURE_MAG_FILTER, param = filter }
+        gl.tex_parameteri{ target = TEXTURE_2D, pname = TEXTURE_WRAP_S, param = CLAMP_TO_EDGE }
+        gl.tex_parameteri{ target = TEXTURE_2D, pname = TEXTURE_WRAP_T, param = CLAMP_TO_EDGE }
+    }
+
+    // ---- images
+
+    // An RGBA8 image of `width` by `height` from `rgba` (straight alpha, top row first, at least
+    // width * height * 4 bytes), filtered linearly when `smooth` and by nearest texel otherwise,
+    // clamped at its edges.
+    fn create_image { mut dev: Device, width: u32, height: u32, rgba: []u8, smooth: bool } -> !ui::Image {
+        if width == 0 or height == 0 or width > 32768 or height > 32768 { return bad_size }
+        if @as(u64, rgba.len) < @as(u64, width) * @as(u64, height) * 4 { return bad_size }
+        let mut index: usize = 0
+        while index < dev.images.len and dev.images[index].live { index = index + 1 }
+        if index >= dev.images.len { return no_room }
+        let mut texture: u32 = 0
+        dev.gl.gen_textures{ n = 1, textures = &texture }
+        dev.gl.bind_texture{ target = TEXTURE_2D, texture }
+        set_filter{ gl = &dev.gl, smooth }
+        dev.gl.pixel_storei{ pname = UNPACK_ALIGNMENT, param = 1 }
+        dev.gl.pixel_storei{ pname = UNPACK_ROW_LENGTH, param = 0 }
+        dev.gl.tex_image_2d{ target = TEXTURE_2D, level = 0, internal_format = RGBA8, width = @as(i32, width), height = @as(i32, height),
+            border = 0, format = RGBA, kind = UNSIGNED_BYTE, pixels = rgba.ptr }
+        dev.gl.bind_texture{ target = TEXTURE_2D, texture = 0 }
+        check_gl{ gl = &dev.gl, what = "ui_gl::create_image" } iferr err{ error } {
+            dev.gl.delete_textures{ n = 1, textures = &texture }
+            return error
+        }
+        let generation = (dev.images[index].generation + 1) & 0xFFFF
+        dev.images[index] = Slot{ texture, width, height, generation, live = true }
+        let id = (generation << 16) | @as(u32, index + 1)
+        return ui::Image{ id, width = @as(f32, width), height = @as(f32, height) }
+    }
+
+    // Replaces an image's pixels; `rgba` is as create_image takes it, at the image's size.
+    fn update_image { mut dev: Device, image: ui::Image, rgba: []u8 } -> ! {
+        let index = find_image{ dev, id = image.id } ifnull { return bad_image }
+        let slot = dev.images[index]
+        if @as(u64, rgba.len) < @as(u64, slot.width) * @as(u64, slot.height) * 4 { return bad_size }
+        dev.gl.bind_texture{ target = TEXTURE_2D, texture = slot.texture }
+        dev.gl.pixel_storei{ pname = UNPACK_ALIGNMENT, param = 1 }
+        dev.gl.pixel_storei{ pname = UNPACK_ROW_LENGTH, param = 0 }
+        dev.gl.tex_sub_image_2d{ target = TEXTURE_2D, level = 0, xoffset = 0, yoffset = 0, width = @as(i32, slot.width), height = @as(i32, slot.height),
+            format = RGBA, kind = UNSIGNED_BYTE, pixels = rgba.ptr }
+        dev.gl.bind_texture{ target = TEXTURE_2D, texture = 0 }
+        try check_gl{ gl = &dev.gl, what = "ui_gl::update_image" }
+    }
+
+    // Deletes an image. An id this device does not have is ignored.
+    fn free_image { mut dev: Device, image: ui::Image } {
+        let index = find_image{ dev, id = image.id } ifnull { return }
+        let texture = dev.images[index].texture
+        dev.gl.delete_textures{ n = 1, textures = &texture }
+        dev.images[index].live = false
+    }
+
+    // The slot of image `id`: its low 16 bits are the slot plus one, its high bits the generation.
+    fn find_image { dev: Device, id: u32 } -> ?usize {
+        let low = id & 0xFFFF
+        if low == 0 { return null }
+        let index = @as(usize, low - 1)
+        if index >= dev.images.len { return null }
+        let slot = dev.images[index]
+        if not slot.live or slot.generation != (id >> 16) { return null }
+        return index
+    }
+
+    // ---- the offscreen target
+
+    // Makes `render` draw into a framebuffer of its own, `width` by `height` RGBA8, which
+    // `read_pixels` reads: a screenshot, or a window that is hidden. Replaces the one made before.
+    fn make_target { mut dev: Device, width: u32, height: u32 } -> ! {
+        if width == 0 or height == 0 or width > 16384 or height > 16384 { return bad_size }
+        free_target{ &dev }
+        let mut texture: u32 = 0
+        dev.gl.gen_textures{ n = 1, textures = &texture }
+        dev.gl.bind_texture{ target = TEXTURE_2D, texture }
+        set_filter{ gl = &dev.gl, smooth = false }
+        dev.gl.tex_image_2d{ target = TEXTURE_2D, level = 0, internal_format = RGBA8, width = @as(i32, width), height = @as(i32, height),
+            border = 0, format = RGBA, kind = UNSIGNED_BYTE, pixels = null }
+        dev.gl.bind_texture{ target = TEXTURE_2D, texture = 0 }
+        let mut framebuffer: u32 = 0
+        dev.gl.gen_framebuffers{ n = 1, framebuffers = &framebuffer }
+        dev.gl.bind_framebuffer{ target = FRAMEBUFFER, framebuffer }
+        dev.gl.framebuffer_texture_2d{ target = FRAMEBUFFER, attachment = COLOR_ATTACHMENT0, textarget = TEXTURE_2D, texture, level = 0 }
+        let status = dev.gl.check_framebuffer_status{ target = FRAMEBUFFER }
+        dev.gl.bind_framebuffer{ target = FRAMEBUFFER, framebuffer = 0 }
+        dev.target = Target{ framebuffer, texture, width, height }
+        if status != FRAMEBUFFER_COMPLETE {
+            free_target{ &dev }
+            return incomplete{ status }
+        }
+        try check_gl{ gl = &dev.gl, what = "ui_gl::make_target" }
+    }
+
+    // Goes back to drawing into the framebuffer the program has bound.
+    fn free_target { mut dev: Device } {
+        if dev.target.framebuffer != 0 { dev.gl.delete_framebuffers{ n = 1, framebuffers = &dev.target.framebuffer } }
+        if dev.target.texture != 0 { dev.gl.delete_textures{ n = 1, textures = &dev.target.texture } }
+        dev.target = Target{ framebuffer = 0, texture = 0, width = 0, height = 0 }
+    }
+
+    fn bind_target { mut dev: Device } {
+        if dev.target.framebuffer != 0 { dev.gl.bind_framebuffer{ target = FRAMEBUFFER, framebuffer = dev.target.framebuffer } }
+    }
+
+    // Clears the target, or the framebuffer the program has bound, to `color`.
+    fn clear { mut dev: Device, color: ui::Color } {
+        bind_target{ &dev }
+        dev.gl.disable{ cap = SCISSOR_TEST }
+        dev.gl.clear_color{ red = @as(f32, color.r) / 255.0, green = @as(f32, color.g) / 255.0, blue = @as(f32, color.b) / 255.0, alpha = @as(f32, color.a) / 255.0 }
+        dev.gl.clear{ mask = COLOR_BUFFER_BIT }
+    }
+
+    // The last frame's pixels, RGBA8 top row first: width * height * 4 bytes of `into`, the size
+    // being the staged canvas's device size. From the target, or from the back buffer when there is
+    // none (call it before the swap).
+    fn read_pixels { mut dev: Device, into: []mut u8 } -> ! {
+        let width = @as(usize, dev.width)
+        let height = @as(usize, dev.height)
+        let row = width * 4
+        if width == 0 or height == 0 or into.len < row * height { return bad_size }
+        dev.gl.bind_framebuffer{ target = READ_FRAMEBUFFER, framebuffer = dev.target.framebuffer }
+        if dev.target.framebuffer == 0 { dev.gl.read_buffer{ src = BACK } }
+        dev.gl.pixel_storei{ pname = PACK_ALIGNMENT, param = 1 }
+        dev.gl.pixel_storei{ pname = PACK_ROW_LENGTH, param = 0 }
+        dev.gl.read_pixels{ x = 0, y = 0, width = @as(i32, width), height = @as(i32, height), format = RGBA, kind = UNSIGNED_BYTE, pixels = into.ptr }
+        try check_gl{ gl = &dev.gl, what = "ui_gl::read_pixels" }
+        // GL's rows are bottom first.
+        let mut top: usize = 0
+        let mut bottom = height - 1
+        while top < bottom {
+            let mut i: usize = 0
+            while i < row {
+                let a = into[top * row + i]
+                into[top * row + i] = into[bottom * row + i]
+                into[bottom * row + i] = a
+                i = i + 1
+            }
+            top = top + 1
+            bottom = bottom - 1
+        }
+    }
+
+    // ---- uploads
+
+    // Uploads what `staged` holds unless this revision of it is already up: the instance arrays,
+    // the clip table, the canvas block and the atlas.
+    fn upload { mut dev: Device, staged: *ui_stage::Staged } -> ! {
+        let at = @addr(staged)
+        let same_staged = dev.has_frame and dev.frame_at == at
+        if same_staged and dev.revision == staged.revision { return }
+        let missed = not (same_staged and dev.revision + 1 == staged.revision)
+        upload_instances(ui_stage::RectInstance){ &dev, kind = 0, items = staged.rects, count = staged.rect_count }
+        upload_instances(ui_stage::GlyphInstance){ &dev, kind = 1, items = staged.glyphs, count = staged.glyph_count }
+        upload_instances(ui_stage::ImageInstance){ &dev, kind = 2, items = staged.images, count = staged.image_count }
+        upload_instances(ui_stage::ShapeInstance){ &dev, kind = 3, items = staged.shapes, count = staged.shape_count }
+        upload_clips{ &dev, staged }
+        upload_canvas{ &dev, staged }
+        upload_atlas{ &dev, atlas = staged.atlas, whole = missed }
+        dev.has_frame = true
+        dev.frame_at = at
+        dev.revision = staged.revision
+        try check_gl{ gl = &dev.gl, what = "ui_gl::render (upload)" }
+    }
+
+    // A kind's instances, growing its buffer (geometrically, as ZGF's EnsureInstanceCapacity) when
+    // they do not fit. A grown buffer keeps its name, so the vertex array still points at it.
+    fn upload_instances(T) { mut dev: Device, kind: usize, items: []mut T, count: u32 } {
+        let n = if @as(usize, count) < items.len { count } else { @as(u32, items.len) }
+        if n == 0 { return }
+        let mut p = dev.programs[kind]
+        dev.gl.bind_buffer{ target = ARRAY_BUFFER, buffer = p.vbo }
+        if n > p.capacity {
+            let doubled = if p.capacity > 0x7FFFFFFF { p.capacity } else { p.capacity * 2 }
+            p.capacity = if n > doubled { n } else { doubled }
+            dev.gl.buffer_data{ target = ARRAY_BUFFER, size = @as(i64, p.capacity) * @as(i64, p.stride), data = null, usage = DYNAMIC_DRAW }
+            dev.programs[kind] = p
+        }
+        let bytes = @as(u64, n) * @as(u64, p.stride)
+        dev.gl.buffer_sub_data{ target = ARRAY_BUFFER, offset = 0, size = @as(i64, bytes), data = @cast(*u8, items.ptr) }
+        dev.gl.bind_buffer{ target = ARRAY_BUFFER, buffer = 0 }
+        count_upload{ &dev, bytes }
+    }
+
+    fn count_upload { mut dev: Device, bytes: u64 } {
+        dev.stats.uploads = dev.stats.uploads + 1
+        dev.stats.upload_bytes = dev.stats.upload_bytes + bytes
+    }
+
+    // The clip table into the ClipRects block's three arrays, entry for entry.
+    fn upload_clips { mut dev: Device, staged: *ui_stage::Staged } {
+        let count = if staged.clip_count < 256 { @as(usize, staged.clip_count) } else { 256 }
+        if count == 0 { return }
+        let mut i: usize = 0
+        while i < count {
+            let c = staged.clips[i]
+            let r = i * 4
+            dev.clip_rows[r] = c.left
+            dev.clip_rows[r + 1] = c.bottom
+            dev.clip_rows[r + 2] = c.right
+            dev.clip_rows[r + 3] = c.top
+            dev.clip_rows[CLIP_ROW_FLOATS + r] = c.round_left
+            dev.clip_rows[CLIP_ROW_FLOATS + r + 1] = c.round_bottom
+            dev.clip_rows[CLIP_ROW_FLOATS + r + 2] = c.round_right
+            dev.clip_rows[CLIP_ROW_FLOATS + r + 3] = c.round_top
+            dev.clip_rows[CLIP_ROW_FLOATS * 2 + r] = c.radius
+            dev.clip_rows[CLIP_ROW_FLOATS * 2 + r + 1] = 0.0
+            dev.clip_rows[CLIP_ROW_FLOATS * 2 + r + 2] = 0.0
+            dev.clip_rows[CLIP_ROW_FLOATS * 2 + r + 3] = 0.0
+            i = i + 1
+        }
+        let bytes = count * 16
+        dev.gl.bind_buffer{ target = UNIFORM_BUFFER, buffer = dev.clip_ubo }
+        let mut row: usize = 0
+        while row < 3 {
+            let start = CLIP_ROW_FLOATS * row
+            dev.gl.buffer_sub_data{ target = UNIFORM_BUFFER, offset = @as(i64, start * 4), size = @as(i64, bytes),
+                data = @cast(*u8, dev.clip_rows[start..].ptr) }
+            count_upload{ &dev, bytes = @as(u64, bytes) }
+            row = row + 1
+        }
+        dev.gl.bind_buffer{ target = UNIFORM_BUFFER, buffer = 0 }
+    }
+
+    // ZGF's projection, an orthographic one from the canvas (0, 0) .. (width, height), y up, as
+    // System.Numerics' CreateOrthographicOffCenter makes it with near -1 and far 1; then the
+    // canvas's logical size and its device pixels.
+    fn upload_canvas { mut dev: Device, staged: *ui_stage::Staged } {
+        let w = if staged.width > 0.0 { staged.width } else { 1.0 }
+        let h = if staged.height > 0.0 { staged.height } else { 1.0 }
+        let block: [20]f32 = [
+            2.0 / w, 0.0, 0.0, 0.0,
+            0.0, 2.0 / h, 0.0, 0.0,
+            0.0, 0.0, -0.5, 0.0,
+            -1.0, -1.0, 0.5, 1.0,
+            staged.width, staged.height, staged.pixel_width, staged.pixel_height,
+        ]
+        dev.gl.bind_buffer{ target = UNIFORM_BUFFER, buffer = dev.canvas_ubo }
+        dev.gl.buffer_sub_data{ target = UNIFORM_BUFFER, offset = 0, size = 80, data = @cast(*u8, &block) }
+        dev.gl.bind_buffer{ target = UNIFORM_BUFFER, buffer = 0 }
+        count_upload{ &dev, bytes = 80 }
+    }
+
+    // The whole atlas when it is new, grew (its version), or `whole`; else its dirty rectangle.
+    // Rows are bottom first in the atlas and in the texture alike.
+    fn upload_atlas { mut dev: Device, atlas: ui_stage::Atlas, whole: bool } {
+        if atlas.width == 0 or atlas.height == 0 { return }
+        if @as(u64, atlas.pixels.len) < @as(u64, atlas.width) * @as(u64, atlas.height) { return }
+        let fresh = not dev.has_atlas or dev.atlas_version != atlas.version or dev.atlas_width != atlas.width or dev.atlas_height != atlas.height
+        dev.gl.bind_texture{ target = TEXTURE_2D, texture = dev.atlas }
+        dev.gl.pixel_storei{ pname = UNPACK_ALIGNMENT, param = 1 }
+        if fresh or whole {
+            dev.gl.pixel_storei{ pname = UNPACK_ROW_LENGTH, param = 0 }
+            dev.gl.tex_image_2d{ target = TEXTURE_2D, level = 0, internal_format = R8, width = @as(i32, atlas.width), height = @as(i32, atlas.height),
+                border = 0, format = RED, kind = UNSIGNED_BYTE, pixels = atlas.pixels.ptr }
+            dev.has_atlas = true
+            dev.atlas_version = atlas.version
+            dev.atlas_width = atlas.width
+            dev.atlas_height = atlas.height
+            let bytes = @as(u64, atlas.width) * @as(u64, atlas.height)
+            count_upload{ &dev, bytes }
+            dev.stats.atlas_bytes = dev.stats.atlas_bytes + bytes
+        } else if atlas.dirty_x1 > atlas.dirty_x0 and atlas.dirty_y1 > atlas.dirty_y0 {
+            let x1 = if atlas.dirty_x1 < atlas.width { atlas.dirty_x1 } else { atlas.width }
+            let y1 = if atlas.dirty_y1 < atlas.height { atlas.dirty_y1 } else { atlas.height }
+            if x1 > atlas.dirty_x0 and y1 > atlas.dirty_y0 {
+                let w = x1 - atlas.dirty_x0
+                let h = y1 - atlas.dirty_y0
+                let start = @as(usize, atlas.dirty_y0) * @as(usize, atlas.width) + @as(usize, atlas.dirty_x0)
+                dev.gl.pixel_storei{ pname = UNPACK_ROW_LENGTH, param = @as(i32, atlas.width) }
+                dev.gl.tex_sub_image_2d{ target = TEXTURE_2D, level = 0, xoffset = @as(i32, atlas.dirty_x0), yoffset = @as(i32, atlas.dirty_y0),
+                    width = @as(i32, w), height = @as(i32, h), format = RED, kind = UNSIGNED_BYTE, pixels = atlas.pixels[start..].ptr }
+                dev.gl.pixel_storei{ pname = UNPACK_ROW_LENGTH, param = 0 }
+                let bytes = @as(u64, w) * @as(u64, h)
+                count_upload{ &dev, bytes }
+                dev.stats.atlas_bytes = dev.stats.atlas_bytes + bytes
+            }
+        }
+        dev.gl.bind_texture{ target = TEXTURE_2D, texture = 0 }
+    }
+
+    // ---- drawing
+
+    // Uploads `staged` if it changed and draws every pass. The host slots between passes are left
+    // as they are: a program that draws into them uses render_pass.
+    fn render { mut dev: Device, staged: *ui_stage::Staged } -> ! {
+        dev.stats = Stats{ .. }
+        try upload{ &dev, staged }
+        let mut pass: u32 = 0
+        while pass < staged.pass_count {
+            try draw_pass{ &dev, staged, pass }
+            pass = pass + 1
+        }
+    }
+
+    // Draws one pass (uploading first if `staged` changed), for a program that draws its own
+    // content into the host slots between passes. Pass 0 starts the frame's statistics.
+    fn render_pass { mut dev: Device, staged: *ui_stage::Staged, pass: u32 } -> ! {
+        if pass == 0 { dev.stats = Stats{ .. } }
+        try upload{ &dev, staged }
+        try draw_pass{ &dev, staged, pass }
+    }
+
+    const BLEND_NONE: u8 = 0
+    const BLEND_ALPHA: u8 = 1
+    const BLEND_ADDITIVE: u8 = 2
+
+    fn draw_pass { mut dev: Device, staged: *ui_stage::Staged, pass: u32 } -> ! {
+        if pass >= staged.pass_count or @as(usize, pass) >= staged.passes.len { return }
+        let p = staged.passes[@as(usize, pass)]
+        let width = if staged.pixel_width >= 1.0 { @as(u32, staged.pixel_width) } else { 1 }
+        let height = if staged.pixel_height >= 1.0 { @as(u32, staged.pixel_height) } else { 1 }
+        dev.width = width
+        dev.height = height
+        dev.stats.passes = dev.stats.passes + 1
+
+        bind_target{ &dev }
+        dev.gl.viewport{ x = 0, y = 0, width = @as(i32, width), height = @as(i32, height) }
+        dev.gl.disable{ cap = DEPTH_TEST }
+        dev.gl.disable{ cap = SCISSOR_TEST }
+        dev.gl.disable{ cap = CULL_FACE }
+        dev.gl.disable{ cap = STENCIL_TEST }
+        dev.gl.disable{ cap = FRAMEBUFFER_SRGB }
+        dev.gl.enable{ cap = BLEND }
+        dev.gl.blend_equation{ mode = FUNC_ADD }
+        dev.gl.active_texture{ texture = TEXTURE0 }
+        dev.gl.bind_buffer_base{ target = UNIFORM_BUFFER, index = CLIP_BINDING, buffer = dev.clip_ubo }
+        dev.gl.bind_buffer_base{ target = UNIFORM_BUFFER, index = CANVAS_BINDING, buffer = dev.canvas_ubo }
+
+        let mut bound_kind: usize = 4
+        let mut bound_texture: u32 = 0
+        let mut bound_blend = BLEND_NONE
+        let end = @as(usize, p.first) + @as(usize, p.count)
+        let mut i = @as(usize, p.first)
+        while i < end and i < @as(usize, staged.draw_count) and i < staged.draws.len {
+            let d = staged.draws[i]
+            i = i + 1
+            if d.count == 0 { continue }
+            let kind = get_kind_index{ kind = d.kind }
+            let mut texture: u32 = 0
+            if kind == 2 {
+                let slot = find_image{ dev, id = d.image } ifnull {
+                    dev.stats.dropped = dev.stats.dropped + 1
+                    continue
+                }
+                texture = dev.images[slot].texture
+            }
+            if kind != bound_kind {
+                dev.gl.use_program{ program = dev.programs[kind].id }
+                dev.gl.bind_vertex_array{ array = dev.programs[kind].vao }
+                bound_kind = kind
+                if kind == 1 {
+                    dev.gl.bind_texture{ target = TEXTURE_2D, texture = dev.atlas }
+                    bound_texture = dev.atlas
+                }
+            }
+            if kind == 2 and texture != bound_texture {
+                dev.gl.bind_texture{ target = TEXTURE_2D, texture }
+                bound_texture = texture
+            }
+            let blend = if kind == 2 and d.blend == ui::Blend::additive { BLEND_ADDITIVE } else { BLEND_ALPHA }
+            if blend != bound_blend {
+                // Separate alpha factors, so destination alpha ends up as real coverage (ZGF's
+                // comment: the usual factors applied to alpha square it). Additive swaps the colour's.
+                let dst = if blend == BLEND_ADDITIVE { ONE } else { ONE_MINUS_SRC_ALPHA }
+                dev.gl.blend_func_separate{ sfactor_rgb = SRC_ALPHA, dfactor_rgb = dst, sfactor_alpha = ONE, dfactor_alpha = ONE_MINUS_SRC_ALPHA }
+                bound_blend = blend
+            }
+            issue_draw{ &dev, kind, first = d.first, count = d.count }
+        }
+        dev.gl.bind_vertex_array{ array = 0 }
+        dev.gl.use_program{ program = 0 }
+        dev.gl.bind_texture{ target = TEXTURE_2D, texture = 0 }
+        try check_gl{ gl = &dev.gl, what = "ui_gl::render" }
+    }
+
+    // `count` instances of the kind's quad from instance `first`: with the base instance, or by
+    // pointing the attributes at `first` (the vertex array of the kind is bound).
+    fn issue_draw { mut dev: Device, kind: usize, first: u32, count: u32 } {
+        let mut p = dev.programs[kind]
+        let found = if dev.use_base_instance { dev.base_instance } else { null }
+        if found != null {
+            let mut call = found
+            if p.base != 0 {
+                dev.gl.bind_buffer{ target = ARRAY_BUFFER, buffer = p.vbo }
+                point_attrs{ gl = &dev.gl, attrs = get_attrs{ kind }, stride = p.stride, base = 0 }
+                p.base = 0
+            }
+            call.draw_arrays_instanced_base_instance{ mode = TRIANGLES, first = 0, count = 6, instance_count = @as(i32, count), base_instance = first }
+        } else {
+            if p.base != first {
+                dev.gl.bind_buffer{ target = ARRAY_BUFFER, buffer = p.vbo }
+                point_attrs{ gl = &dev.gl, attrs = get_attrs{ kind }, stride = p.stride, base = first }
+                p.base = first
+            }
+            dev.gl.draw_arrays_instanced{ mode = TRIANGLES, first = 0, count = 6, instance_count = @as(i32, count) }
+        }
+        dev.programs[kind] = p
+        dev.stats.draws = dev.stats.draws + 1
+        dev.stats.instances = dev.stats.instances + count
+    }
+}

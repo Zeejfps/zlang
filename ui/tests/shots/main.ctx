@@ -1,0 +1,405 @@
+// Stage 3's test: first pixels. The conformance list (every shape; radii and borders that differ per
+// corner and side; a disc and a ring; lines at angles with each cap; test-font text; nested clips and
+// a rounded clip cutting every kind; the four quarter turns; an additive picture; a magnified atlas
+// piece) staged and drawn by ui_gl into an offscreen target of a hidden SDL window, at scales 1, 1.5
+// and 2, read back and written as PNG to look at.
+//
+//   kotor/tools/ctxc run ui/tests/shots                      (from the repository root)
+//   kotor/tools/ctxc run ui/tests/shots -- --out ui/out      the directory the pictures go to
+//
+// Writes conformance-gl.png (the three scales one above another) and conformance-gl-1x.png,
+// -1.5x.png and -2x.png. Checks what a program can: pixel values at known places (inside a fill,
+// inside each border side, outside a clip, inside and outside a rounded clip, the centre of the
+// additive picture, the edge of the magnified atlas piece), the device's draw count against the
+// staged draw count, that a second identical frame uploads nothing, and that drawing without the
+// base instance gives the same pixels. Exits 1 when any check fails.
+
+const WIDTH: f32 = 480.0
+const HEIGHT: f32 = 408.0
+const OUT_DEFAULT: []u8 = "ui/out"
+
+// The background every frame is cleared to, and colours the checks look for.
+const BG: ui::Color = ui::Color{ r = 24, g = 26, b = 32, a = 255 }
+const BLUE_FILL: ui::Color = ui::Color{ r = 70, g = 130, b = 220, a = 255 }
+const BORDER_FILL: ui::Color = ui::Color{ r = 60, g = 60, b = 70, a = 255 }
+const TOP: ui::Color = ui::Color{ r = 230, g = 60, b = 60, a = 255 }
+const RIGHT: ui::Color = ui::Color{ r = 60, g = 200, b = 90, a = 255 }
+const BOTTOM: ui::Color = ui::Color{ r = 70, g = 110, b = 240, a = 255 }
+const LEFT: ui::Color = ui::Color{ r = 240, g = 210, b = 60, a = 255 }
+const PANEL: ui::Color = ui::Color{ r = 50, g = 54, b = 64, a = 255 }
+const PINK: ui::Color = ui::Color{ r = 230, g = 80, b = 160, a = 255 }
+const UNDER_ADD: ui::Color = ui::Color{ r = 64, g = 32, b = 16, a = 255 }
+const ADDED: ui::Color = ui::Color{ r = 164, g = 132, b = 116, a = 255 }    // UNDER_ADD + 100 grey, additively
+const DISC_FILL: ui::Color = ui::Color{ r = 90, g = 200, b = 120, a = 255 }
+const INK: ui::Color = ui::Color{ r = 228, g = 231, b = 237, a = 255 }
+
+struct Images { flag: ui::Image, grey: ui::Image, sheet: ui::Image, gradient: ui::Image }
+
+// One scale's picture, kept to put the three together.
+struct Shot { pixels: []mut u8, width: u32, height: u32 }
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: ui_sdl::Sdl, args: Args } -> i32 {
+    let mut t = ui_test::Tally{ run = 0, failed = 0 }
+    let out_dir = find_option{ args, name = "--out" } ifnull { OUT_DEFAULT }
+    let buf = mem::pages{ &mem, size = 268435456 } ifnull {
+        io::eprintln{ &io, s = "ui/tests/shots: out of memory" }
+        return 1
+    }
+    let mut heap = arena::new{ buf }
+    let mut log: [16384]u8
+    run{ &io, &fs, &sdl, &t, &heap, out_dir, log = log[..] } iferr err{ error } {
+        _ = @fmt(&io, "ui/tests/shots: failed: {}\n", error)
+        match error {
+            ui_gl::compile_failed{ shader, log_len } => { _ = @fmt(&io, "{}:\n{}\n", shader, log[..log_len]) }
+            ui_gl::link_failed{ program, log_len } => { _ = @fmt(&io, "{}:\n{}\n", program, log[..log_len]) }
+            ui_gl::gl_failed{ code, what } => { _ = @fmt(&io, "{} after {}\n", ui_gl::name_gl_error{ code }, what) }
+            ui_sdl::failed => { _ = @fmt(&io, "SDL: {}\n", ui_sdl::get_last_error{ &sdl }) }
+            else => {}
+        }
+        io::flush{ &io }
+        return 1
+    }
+    _ = @fmt(&io, "ui/tests/shots: {} checks, {} failed\n", t.run, t.failed)
+    io::flush{ &io }
+    return if t.failed == 0 { 0 } else { 1 }
+}
+
+// The value after `name` in the arguments, or null.
+fn find_option { args: Args, name: []u8 } -> ?[]u8 {
+    let mut i: usize = 0
+    while i + 1 < args.len {
+        if slice::eq_bytes{ a = args[i], b = name } { return args[i + 1] }
+        i = i + 1
+    }
+    return null
+}
+
+fn run { mut io: Io, mut fs: Fs, mut sdl: ui_sdl::Sdl, mut t: ui_test::Tally, mut heap: arena::Arena, out_dir: []u8, log: []mut u8 } -> ! {
+    try ui_sdl::init{ &sdl }
+    defer ui_sdl::quit{ &sdl }
+    let mut host = try ui_sdl::open_gl_window{ &sdl, realloc = arena::alloc, &heap, title = "ui shots",
+        width = 480, height = 408, hidden = true, resizable = false, clipboard = 4096 }
+    defer ui_sdl::close_window{ &sdl, &host }
+    let mut dev = try ui_gl::open{ get_proc = ui_sdl::get_gl_proc{ &sdl, _ }, realloc = arena::alloc, &heap, options = ui_gl::Options{ .. }, log }
+    defer ui_gl::close{ &dev }
+    let base = if dev.base_instance != null { "yes" } else { "no" }
+    _ = @fmt(&io, "GL: {} ({}); base instance: {}\n", ui_gl::get_gl_string{ gl = &dev.gl, name = ui_gl::VERSION },
+        ui_gl::get_gl_string{ gl = &dev.gl, name = ui_gl::RENDERER }, base)
+
+    let font = try ui_test::make_test_font{ realloc = arena::alloc, &heap }
+    let images = try make_images{ &dev, &heap }
+    let mut staged = try ui_stage::make{ realloc = arena::alloc, &heap, cap = ui_stage::Capacity{
+        rects = 512, glyphs = 2048, images = 256, shapes = 256, draws = 256, passes = 4,
+        atlas_width = 512, atlas_height = 256, atlas_max_height = 1024, glyph_cache = 1024, raster_bytes = 4096 } }
+    let mut list = try ui::draw::make{ realloc = arena::alloc, &heap, cmds = 512, text = 4096, clips = 64, fonts = 4 }
+    _ = ui::draw::add_font{ &list, font }
+
+    _ = fs::make_dir{ &fs, path = out_dir }
+    let one = try shoot{ &io, &fs, &t, &heap, &dev, &staged, &list, images, scale = 1.0, name = "conformance-gl-1x", out_dir }
+    let half = try shoot{ &io, &fs, &t, &heap, &dev, &staged, &list, images, scale = 1.5, name = "conformance-gl-1.5x", out_dir }
+    let two = try shoot{ &io, &fs, &t, &heap, &dev, &staged, &list, images, scale = 2.0, name = "conformance-gl-2x", out_dir }
+    try write_together{ &io, &fs, &heap, one, half, two, out_dir }
+}
+
+// ---- the pictures a program supplies
+
+fn make_images { mut dev: ui_gl::Device, mut heap: arena::Arena } -> !Images {
+    // An F-like flag, 8 by 12, so each quarter turn shows which way it went: a red bar down the
+    // left, a yellow bar along the top, a green bar across the middle, a blue block bottom right.
+    let flag = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 8 * 12 * 4 }
+    let mut y: usize = 0
+    while y < 12 {
+        let mut x: usize = 0
+        while x < 8 {
+            let mut c = ui::Color{ r = 40, g = 40, b = 48, .. }
+            if x < 2 { c = ui::Color{ r = 220, g = 50, b = 50, .. } }
+            if y < 2 { c = ui::Color{ r = 240, g = 220, b = 60, .. } }
+            if y >= 5 and y < 7 and x < 6 { c = ui::Color{ r = 60, g = 200, b = 90, .. } }
+            if y >= 10 and x >= 6 { c = ui::Color{ r = 60, g = 90, b = 230, .. } }
+            put_texel{ rgba = flag, width = 8, x, y, c }
+            x = x + 1
+        }
+        y = y + 1
+    }
+    // Plain grey, to add.
+    let grey = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 4 * 4 * 4 }
+    let mut i: usize = 0
+    while i < 16 {
+        put_texel{ rgba = grey, width = 4, x = i % 4, y = i / 4, c = ui::Color{ r = 100, g = 100, b = 100, .. } }
+        i = i + 1
+    }
+    // A sheet of two 8 by 8 pieces, each with one texel of padding that repeats its edge: orange
+    // and teal halves, then magenta. Drawn magnified, the first piece must show no magenta.
+    let sheet = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 20 * 10 * 4 }
+    y = 0
+    while y < 10 {
+        let mut x: usize = 0
+        while x < 20 {
+            let inner = if x < 10 { ui::pick_max_u32{ a = 1, b = ui::pick_min_u32{ a = @as(u32, x), b = 8 } } } else { 0 }
+            let mut c = ui::Color{ r = 255, g = 0, b = 255, .. }
+            if x < 10 { c = if inner <= 4 { ui::Color{ r = 240, g = 140, b = 40, .. } } else { ui::Color{ r = 0, g = 160, b = 160, .. } } }
+            put_texel{ rgba = sheet, width = 20, x, y, c }
+            x = x + 1
+        }
+        y = y + 1
+    }
+    // A 16 by 16 gradient, smooth.
+    let gradient = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 16 * 16 * 4 }
+    y = 0
+    while y < 16 {
+        let mut x: usize = 0
+        while x < 16 {
+            put_texel{ rgba = gradient, width = 16, x, y, c = ui::Color{ r = @as(u8, x * 16), g = @as(u8, y * 16), b = 200, .. } }
+            x = x + 1
+        }
+        y = y + 1
+    }
+    return Images{
+        flag = try ui_gl::create_image{ &dev, width = 8, height = 12, rgba = flag, smooth = false },
+        grey = try ui_gl::create_image{ &dev, width = 4, height = 4, rgba = grey, smooth = true },
+        sheet = try ui_gl::create_image{ &dev, width = 20, height = 10, rgba = sheet, smooth = true },
+        gradient = try ui_gl::create_image{ &dev, width = 16, height = 16, rgba = gradient, smooth = true },
+    }
+}
+
+fn put_texel { rgba: []mut u8, width: usize, x: usize, y: usize, c: ui::Color } {
+    let at = (y * width + x) * 4
+    rgba[at] = c.r
+    rgba[at + 1] = c.g
+    rgba[at + 2] = c.b
+    rgba[at + 3] = c.a
+}
+
+// ---- the conformance list
+
+fn make_rect { x: f32, y: f32, w: f32, h: f32 } -> ui::Rect { return ui::Rect{ x, y, w, h } }
+
+fn add_clip { mut list: ui::DrawList, rect: ui::Rect, radius: f32 } -> u16 {
+    let round = if radius > 0.0 { rect } else { ui::Rect{ .. } }
+    return ui::draw::add_clip{ &list, clip = ui::Clip{ rect, round, radius } } ifnull { return 0 }
+}
+
+fn add_picture { mut list: ui::DrawList, rect: ui::Rect, image: ui::Image, uv: ui::Uv, quarter: u8, blend: ui::Blend, clip: u16 } {
+    ui::draw::add_image{ &list, rect, region = ui::Region{ image, uv, width = image.width, height = image.height },
+        tint = ui::Color{ r = 255, g = 255, b = 255, .. }, quarter, angle = 0.0, radius = ui::Corners{ .. }, blend, clip }
+}
+
+fn build_conformance { mut list: ui::DrawList, images: Images } {
+    // Row 1: a rounded fill; four different radii; four different borders; radii and borders together.
+    ui::draw::add_rect{ &list, rect = make_rect{ x = 16.0, y = 16.0, w = 96.0, h = 56.0 }, clip = 0,
+        style = ui::RectStyle{ fill = BLUE_FILL, radius = ui::round{ radius = 14.0 }, .. } }
+    ui::draw::add_rect{ &list, rect = make_rect{ x = 128.0, y = 16.0, w = 96.0, h = 56.0 }, clip = 0,
+        style = ui::RectStyle{ fill = ui::Color{ r = 220, g = 120, b = 60, .. },
+            radius = ui::Corners{ top_left = 0.0, top_right = 8.0, bottom_right = 20.0, bottom_left = 28.0 }, .. } }
+    ui::draw::add_rect{ &list, rect = make_rect{ x = 240.0, y = 16.0, w = 112.0, h = 56.0 }, clip = 0,
+        style = ui::RectStyle{ fill = BORDER_FILL,
+            border = ui::Sides{ top = 2.0, right = 6.0, bottom = 10.0, left = 14.0 },
+            border_color = ui::SideColors{ top = TOP, right = RIGHT, bottom = BOTTOM, left = LEFT }, .. } }
+    ui::draw::add_rect{ &list, rect = make_rect{ x = 368.0, y = 16.0, w = 96.0, h = 56.0 }, clip = 0,
+        style = ui::RectStyle{ fill = ui::Color{ r = 36, g = 40, b = 52, .. },
+            radius = ui::Corners{ top_left = 4.0, top_right = 10.0, bottom_right = 16.0, bottom_left = 22.0 },
+            border = ui::Sides{ top = 1.0, right = 2.0, bottom = 3.0, left = 4.0 },
+            border_color = ui::SideColors{ top = TOP, right = RIGHT, bottom = BOTTOM, left = LEFT }, .. } }
+
+    // Row 2: a disc, a ring, and lines at eight angles with each cap (round, butt, square).
+    ui::draw::add_rect{ &list, rect = make_rect{ x = 16.0, y = 88.0, w = 56.0, h = 56.0 }, clip = 0,
+        style = ui::RectStyle{ fill = ui::Color{ r = 240, g = 180, b = 60, .. }, radius = ui::round{ radius = 28.0 }, .. } }
+    ui::draw::add_rect{ &list, rect = make_rect{ x = 88.0, y = 88.0, w = 56.0, h = 56.0 }, clip = 0,
+        style = ui::RectStyle{ radius = ui::round{ radius = 28.0 }, border = ui::stroke{ width = 4.0 },
+            border_color = ui::color_sides{ color = ui::Color{ r = 100, g = 220, b = 200, .. } }, .. } }
+    let degrees: [8]f32 = [0.0, 30.0, 45.0, 60.0, 90.0, 135.0, 200.0, 300.0]
+    let mut cap: u32 = 0
+    while cap < 3 {
+        let cx = 160.0 + @as(f32, cap) * 104.0 + 48.0
+        let cy: f32 = 116.0
+        let kind = if cap == 0 { ui::Cap::round } else if cap == 1 { ui::Cap::butt } else { ui::Cap::square }
+        let color = if cap == 0 { ui::Color{ r = 240, g = 200, b = 80, .. } } else if cap == 1 { ui::Color{ r = 120, g = 220, b = 140, .. } } else { ui::Color{ r = 140, g = 170, b = 250, .. } }
+        let mut k: usize = 0
+        while k < 8 {
+            let a = degrees[k] * 0.017453292
+            let c = ui::cos_f32{ x = a }
+            let s = ui::sin_f32{ x = a }
+            ui::draw::add_line{ &list, x0 = cx + c * 9.0, y0 = cy - s * 9.0, x1 = cx + c * 24.0, y1 = cy - s * 24.0,
+                width = 5.0, color, cap = kind, clip = 0 }
+            k = k + 1
+        }
+        cap = cap + 1
+    }
+
+    // Row 3: the test font at 16 and 12, and magnified four times (its atlas pieces, padded);
+    // nested clips: a panel, a clip inside it, and a clip that reaches out of it, cut to it.
+    let font = ui::Font{ index = 0 }
+    ui::draw::add_text{ &list, font, size = 16.0, x = 16.0, y = 160.0, text = "Hello, 0123", color = INK, clip = 0 }
+    ui::draw::add_text{ &list, font, size = 12.0, x = 16.0, y = 182.0, text = "size 12 snaps", color = INK, clip = 0 }
+    ui::draw::add_text{ &list, font, size = 32.0, x = 16.0, y = 198.0, text = "Big", color = ui::Color{ r = 240, g = 200, b = 80, .. }, clip = 0 }
+    ui::draw::add_text{ &list, font, size = 64.0, x = 160.0, y = 160.0, text = "Ag", color = INK, clip = 0 }
+    ui::draw::add_rect{ &list, rect = make_rect{ x = 240.0, y = 160.0, w = 224.0, h = 72.0 }, clip = 0, style = ui::RectStyle{ fill = PANEL, .. } }
+    let inner = add_clip{ &list, rect = make_rect{ x = 256.0, y = 170.0, w = 150.0, h = 40.0 }, radius = 0.0 }
+    let outer_cut = add_clip{ &list, rect = make_rect{ x = 400.0, y = 160.0, w = 64.0, h = 50.0 }, radius = 0.0 }   // (400, 150, 100, 60) cut to the panel
+    ui::draw::add_rect{ &list, rect = make_rect{ x = 230.0, y = 150.0, w = 260.0, h = 100.0 }, clip = inner, style = ui::RectStyle{ fill = PINK, .. } }
+    ui::draw::add_text{ &list, font, size = 16.0, x = 250.0, y = 182.0, text = "clipped text runs out", color = ui::Color{ r = 20, g = 20, b = 30, .. }, clip = inner }
+    ui::draw::add_line{ &list, x0 = 390.0, y0 = 150.0, x1 = 480.0, y1 = 240.0, width = 8.0, color = ui::Color{ r = 120, g = 220, b = 140, .. }, cap = ui::Cap::butt, clip = outer_cut }
+    add_picture{ &list, rect = make_rect{ x = 420.0, y = 196.0, w = 60.0, h = 40.0 }, image = images.gradient, uv = ui::Uv{ .. }, quarter = 0, blend = ui::Blend::alpha, clip = outer_cut }
+
+    // Row 4: the four quarter turns of the flag; an additive picture over a rectangle; a piece of
+    // a sheet magnified eight times with smooth filtering.
+    add_picture{ &list, rect = make_rect{ x = 16.0, y = 248.0, w = 32.0, h = 48.0 }, image = images.flag, uv = ui::Uv{ .. }, quarter = 0, blend = ui::Blend::alpha, clip = 0 }
+    add_picture{ &list, rect = make_rect{ x = 60.0, y = 256.0, w = 48.0, h = 32.0 }, image = images.flag, uv = ui::Uv{ .. }, quarter = 1, blend = ui::Blend::alpha, clip = 0 }
+    add_picture{ &list, rect = make_rect{ x = 120.0, y = 248.0, w = 32.0, h = 48.0 }, image = images.flag, uv = ui::Uv{ .. }, quarter = 2, blend = ui::Blend::alpha, clip = 0 }
+    add_picture{ &list, rect = make_rect{ x = 164.0, y = 256.0, w = 48.0, h = 32.0 }, image = images.flag, uv = ui::Uv{ .. }, quarter = 3, blend = ui::Blend::alpha, clip = 0 }
+    ui::draw::add_rect{ &list, rect = make_rect{ x = 240.0, y = 248.0, w = 64.0, h = 64.0 }, clip = 0, style = ui::RectStyle{ fill = UNDER_ADD, .. } }
+    add_picture{ &list, rect = make_rect{ x = 248.0, y = 256.0, w = 48.0, h = 48.0 }, image = images.grey, uv = ui::Uv{ .. }, quarter = 0, blend = ui::Blend::additive, clip = 0 }
+    add_picture{ &list, rect = make_rect{ x = 320.0, y = 248.0, w = 64.0, h = 64.0 }, image = images.sheet,
+        uv = ui::Uv{ u0 = 1.0 / 20.0, v0 = 1.0 / 10.0, u1 = 9.0 / 20.0, v1 = 9.0 / 10.0 }, quarter = 0, blend = ui::Blend::alpha, clip = 0 }
+    add_picture{ &list, rect = make_rect{ x = 400.0, y = 248.0, w = 64.0, h = 64.0 }, image = images.sheet,
+        uv = ui::Uv{ u0 = 11.0 / 20.0, v0 = 1.0 / 10.0, u1 = 19.0 / 20.0, v1 = 9.0 / 10.0 }, quarter = 0, blend = ui::Blend::alpha, clip = 0 }
+
+    // Row 5: a round clip (a circle) cutting each kind, and a rounded clip over a rectangle, a line
+    // and text that all run past its corners.
+    let circle_rect = add_clip{ &list, rect = make_rect{ x = 16.0, y = 328.0, w = 64.0, h = 64.0 }, radius = 32.0 }
+    let circle_image = add_clip{ &list, rect = make_rect{ x = 88.0, y = 328.0, w = 64.0, h = 64.0 }, radius = 32.0 }
+    let circle_text = add_clip{ &list, rect = make_rect{ x = 160.0, y = 328.0, w = 64.0, h = 64.0 }, radius = 32.0 }
+    let circle_line = add_clip{ &list, rect = make_rect{ x = 232.0, y = 328.0, w = 64.0, h = 64.0 }, radius = 32.0 }
+    let rounded = add_clip{ &list, rect = make_rect{ x = 304.0, y = 328.0, w = 160.0, h = 64.0 }, radius = 16.0 }
+    ui::draw::add_rect{ &list, rect = make_rect{ x = 8.0, y = 320.0, w = 80.0, h = 80.0 }, clip = circle_rect, style = ui::RectStyle{ fill = DISC_FILL, .. } }
+    add_picture{ &list, rect = make_rect{ x = 80.0, y = 320.0, w = 80.0, h = 80.0 }, image = images.gradient, uv = ui::Uv{ .. }, quarter = 0, blend = ui::Blend::alpha, clip = circle_image }
+    ui::draw::add_text{ &list, font, size = 64.0, x = 160.0, y = 328.0, text = "WM", color = INK, clip = circle_text }
+    ui::draw::add_line{ &list, x0 = 226.0, y0 = 322.0, x1 = 302.0, y1 = 398.0, width = 20.0, color = ui::Color{ r = 240, g = 120, b = 60, .. }, cap = ui::Cap::butt, clip = circle_line }
+    ui::draw::add_rect{ &list, rect = make_rect{ x = 296.0, y = 320.0, w = 176.0, h = 80.0 }, clip = rounded, style = ui::RectStyle{ fill = PANEL, .. } }
+    ui::draw::add_line{ &list, x0 = 300.0, y0 = 324.0, x1 = 470.0, y1 = 396.0, width = 6.0, color = PINK, cap = ui::Cap::round, clip = rounded }
+    ui::draw::add_text{ &list, font, size = 32.0, x = 300.0, y = 360.0, text = "rounded clip", color = INK, clip = rounded }
+}
+
+// ---- one scale
+
+fn shoot {
+    mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, mut dev: ui_gl::Device,
+    mut staged: ui_stage::Staged, mut list: ui::DrawList, images: Images, scale: f32, name: []u8, out_dir: []u8,
+} -> !Shot {
+    ui::draw::reset{ &list, width = WIDTH, height = HEIGHT, scale_x = scale, scale_y = scale }
+    build_conformance{ &list, images }
+    ui_test::expect{ &io, &t, ok = list.dropped == 0, what = "the conformance list was built with nothing dropped" }
+    ui_stage::stage{ out = &staged, list = &list, provider = null }
+    ui_test::expect{ &io, &t, ok = staged.dropped == 0, what = "the conformance list stages with nothing dropped" }
+    let width = @as(u32, staged.pixel_width)
+    let height = @as(u32, staged.pixel_height)
+    try ui_gl::make_target{ &dev, width, height }
+    ui_gl::clear{ &dev, color = BG }
+    try ui_gl::render{ &dev, staged = &staged }
+    _ = @fmt(&io, "scale {}: {}x{} pixels, {} draws ({} rect, {} glyph, {} image, {} shape instances), {} uploads, {} bytes, {} atlas bytes\n",
+        name, width, height, dev.stats.draws, staged.rect_count, staged.glyph_count, staged.image_count, staged.shape_count,
+        dev.stats.uploads, dev.stats.upload_bytes, dev.stats.atlas_bytes)
+    ui_test::expect{ &io, &t, ok = dev.stats.draws == staged.draw_count, what = "the device drew as many draws as were staged" }
+    ui_test::expect{ &io, &t, ok = dev.stats.dropped == 0, what = "the device skipped no draw" }
+    ui_test::expect{ &io, &t, ok = dev.stats.uploads > 0, what = "the first frame uploaded" }
+
+    let pixels = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = @as(usize, width) * @as(usize, height) * 4 }
+    try ui_gl::read_pixels{ &dev, into = pixels }
+    let shot = Shot{ pixels, width, height }
+    try write_shot{ &io, &fs, &heap, shot, name, out_dir }
+    check_pixels{ &io, &t, shot, scale }
+
+    // The same list again: the same revision, and the device uploads nothing.
+    let revision = staged.revision
+    ui::draw::reset{ &list, width = WIDTH, height = HEIGHT, scale_x = scale, scale_y = scale }
+    build_conformance{ &list, images }
+    ui_stage::stage{ out = &staged, list = &list, provider = null }
+    ui_test::expect{ &io, &t, ok = staged.revision == revision, what = "the same list stages to the same revision" }
+    ui_gl::clear{ &dev, color = BG }
+    try ui_gl::render{ &dev, staged = &staged }
+    ui_test::expect{ &io, &t, ok = dev.stats.uploads == 0 and dev.stats.upload_bytes == 0, what = "a second identical frame uploads nothing" }
+    ui_test::expect{ &io, &t, ok = dev.stats.draws == staged.draw_count, what = "the second frame drew as many draws as were staged" }
+    let again = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = pixels.len }
+    try ui_gl::read_pixels{ &dev, into = again }
+    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = again, b = pixels }, what = "the second frame has the same pixels" }
+
+    // Without the base instance, pointing the attributes per draw as a 4.1 driver must: the same pixels.
+    let had_base = dev.use_base_instance
+    dev.use_base_instance = false
+    ui_gl::clear{ &dev, color = BG }
+    try ui_gl::render{ &dev, staged = &staged }
+    try ui_gl::read_pixels{ &dev, into = again }
+    dev.use_base_instance = had_base
+    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = again, b = pixels }, what = "drawing without the base instance gives the same pixels" }
+    ui_test::expect{ &io, &t, ok = dev.stats.draws == staged.draw_count, what = "the draw count is the same without the base instance" }
+    return shot
+}
+
+// The pixel at logical (x, y) of a shot at `scale`, against `want`, each channel within `slack`.
+fn check_pixel { mut io: Io, mut t: ui_test::Tally, shot: Shot, scale: f32, x: f32, y: f32, want: ui::Color, slack: u8, what: strlit } {
+    let px = @as(usize, ui::floor_f32{ x = x * scale })
+    let py = @as(usize, ui::floor_f32{ x = y * scale })
+    let at = (py * @as(usize, shot.width) + px) * 4
+    let r = shot.pixels[at]
+    let g = shot.pixels[at + 1]
+    let b = shot.pixels[at + 2]
+    let ok = is_near{ a = r, b = want.r, slack } and is_near{ a = g, b = want.g, slack } and is_near{ a = b, b = want.b, slack }
+    ui_test::expect{ &io, &t, ok, what }
+    if not ok { _ = @fmt(&io, "  at ({}, {}) pixel ({}, {}): got {} {} {}, want {} {} {}\n", x, y, px, py, r, g, b, want.r, want.g, want.b) }
+}
+
+fn is_near { a: u8, b: u8, slack: u8 } -> bool {
+    return if a > b { a - b <= slack } else { b - a <= slack }
+}
+
+fn check_pixels { mut io: Io, mut t: ui_test::Tally, shot: Shot, scale: f32 } {
+    check_pixel{ &io, &t, shot, scale, x = 64.0, y = 44.0, want = BLUE_FILL, slack = 1, what = "inside a fill: the fill's colour" }
+    check_pixel{ &io, &t, shot, scale, x = 296.0, y = 44.0, want = BORDER_FILL, slack = 1, what = "inside the bordered rectangle's fill" }
+    check_pixel{ &io, &t, shot, scale, x = 296.0, y = 16.5, want = TOP, slack = 1, what = "inside the top border (2 wide)" }
+    check_pixel{ &io, &t, shot, scale, x = 349.0, y = 44.0, want = RIGHT, slack = 1, what = "inside the right border (6 wide)" }
+    check_pixel{ &io, &t, shot, scale, x = 296.0, y = 67.0, want = BOTTOM, slack = 1, what = "inside the bottom border (10 wide)" }
+    check_pixel{ &io, &t, shot, scale, x = 247.0, y = 44.0, want = LEFT, slack = 1, what = "inside the left border (14 wide)" }
+    check_pixel{ &io, &t, shot, scale, x = 248.0, y = 196.0, want = PANEL, slack = 1, what = "outside a clip: the panel, not the clipped rectangle" }
+    check_pixel{ &io, &t, shot, scale, x = 300.0, y = 175.0, want = PINK, slack = 1, what = "inside the clip: the clipped rectangle" }
+    check_pixel{ &io, &t, shot, scale, x = 236.0, y = 196.0, want = BG, slack = 1, what = "outside the panel: the clipped rectangle stays in its clip" }
+    check_pixel{ &io, &t, shot, scale, x = 272.0, y = 280.0, want = ADDED, slack = 2, what = "the centre of the additive picture: the sum" }
+    check_pixel{ &io, &t, shot, scale, x = 48.0, y = 360.0, want = DISC_FILL, slack = 1, what = "inside a round clip: the rectangle" }
+    check_pixel{ &io, &t, shot, scale, x = 19.0, y = 331.0, want = BG, slack = 1, what = "in the round clip's corner: cut away" }
+    // The magnified piece's right edge, just inside: teal, with no magenta from the next piece.
+    let edge = 384.0 - 0.5 / scale
+    check_pixel{ &io, &t, shot, scale, x = edge, y = 280.0, want = ui::Color{ r = 0, g = 160, b = 160, .. }, slack = 2, what = "a magnified atlas piece's edge does not bleed" }
+}
+
+// ---- PNG files
+
+fn write_shot { mut io: Io, mut fs: Fs, mut heap: arena::Arena, shot: Shot, name: []u8, out_dir: []u8 } -> ! {
+    let mut path_buf: [512]u8
+    let n = ui_test::join_path{ dir = out_dir, name, suffix = ".png", out = path_buf[..] }
+    if n == 0 { return alloc::out_of_memory }
+    let path = path_buf[..n]
+    let picture = ui_test::Picture{ width = shot.width, height = shot.height, channels = 4, pixels = shot.pixels }
+    try ui_test::write_png{ &fs, realloc = arena::alloc, &heap, path, picture, bottom_up = false }
+    _ = @fmt(&io, "wrote {} ({}x{})\n", path, shot.width, shot.height)
+}
+
+// The three scales one above another, on the background colour, in conformance-gl.png.
+fn write_together { mut io: Io, mut fs: Fs, mut heap: arena::Arena, one: Shot, half: Shot, two: Shot, out_dir: []u8 } -> ! {
+    let width = ui::pick_max_u32{ a = one.width, b = ui::pick_max_u32{ a = half.width, b = two.width } }
+    let height = one.height + half.height + two.height
+    let pixels = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = @as(usize, width) * @as(usize, height) * 4 }
+    let mut i: usize = 0
+    while i < pixels.len {
+        pixels[i] = BG.r
+        pixels[i + 1] = BG.g
+        pixels[i + 2] = BG.b
+        pixels[i + 3] = 255
+        i = i + 4
+    }
+    let mut top: u32 = 0
+    place_shot{ into = pixels, width, top, shot = one }
+    top = top + one.height
+    place_shot{ into = pixels, width, top, shot = half }
+    top = top + half.height
+    place_shot{ into = pixels, width, top, shot = two }
+    try write_shot{ &io, &fs, &heap, shot = Shot{ pixels, width, height }, name = "conformance-gl", out_dir }
+}
+
+fn place_shot { into: []mut u8, width: u32, top: u32, shot: Shot } {
+    let row = @as(usize, shot.width) * 4
+    let mut y: usize = 0
+    while y < @as(usize, shot.height) {
+        let to = ((@as(usize, top) + y) * @as(usize, width)) * 4
+        slice::copy(u8){ dst = into[to..to + row], src = shot.pixels[y * row..y * row + row] }
+        y = y + 1
+    }
+}

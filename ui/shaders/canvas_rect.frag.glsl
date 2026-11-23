@@ -1,0 +1,182 @@
+#version 410
+
+layout(location = 0) flat in vec2 v_rectOrigin;
+layout(location = 1) flat in vec4 v_rectSize;
+layout(location = 2) flat in vec4 v_borderRadius;
+layout(location = 3) flat in vec4 v_borderSize;
+layout(location = 4) flat in uint v_bgColor;
+layout(location = 5) flat in uint v_borderColorTop;
+layout(location = 6) flat in uint v_borderColorRight;
+layout(location = 7) flat in uint v_borderColorBottom;
+layout(location = 8) flat in uint v_borderColorLeft;
+layout(location = 9) flat in uint v_clipIndex;
+layout(location = 10) flat in float v_fadesEdges;
+
+// Binding point is assigned from C# via glUniformBlockBinding because the
+// `binding = N` layout qualifier requires GLSL 420 / ARB_shading_language_420pack,
+// which is not available on macOS (capped at 4.1 / GLSL 410).
+layout(std140) uniform ClipRects {
+    vec4 u_clipRects[256];  // (left, bottom, right, top)
+    vec4 u_clipRounds[256]; // the rounded rect the clip is also cut to, (left, bottom, right, top)
+    vec4 u_clipRadii[256];  // that rect's corner radius in x; 0 when the clip is not rounded
+};
+
+out vec4 f_Color;
+
+// The projection, then the logical canvas size followed by the actual, rounded framebuffer size.
+// One std140 block, the same in every canvas shader: Vulkan's GLSL has no plain uniforms.
+layout(std140) uniform Canvas {
+    mat4 u_projection;
+    vec4 u_canvasMetrics;
+};
+
+vec4 unpackARGB(uint c) {
+    float a = float((c >> 24) & 0xFFu) / 255.0;
+    float r = float((c >> 16) & 0xFFu) / 255.0;
+    float g = float((c >>  8) & 0xFFu) / 255.0;
+    float b = float( c        & 0xFFu) / 255.0;
+    return vec4(r, g, b, a);
+}
+
+// How much of the pixel at p the clip's rounded rect covers: 1 inside it, 0 outside, and between over
+// the device pixel its edge crosses. Always 1 for a clip that is not rounded.
+float clipCoverage(vec2 p, uint index) {
+    float pixel = max(fwidth(p.x), 1e-4);
+    float r = u_clipRadii[index].x;
+    if (r <= 0.0) return 1.0;
+    vec4 rounded = u_clipRounds[index];
+    vec2 halfSize = (rounded.zw - rounded.xy) * 0.5;
+    vec2 q = abs(p - (rounded.xy + rounded.zw) * 0.5) - (halfSize - vec2(r));
+    float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+    return clamp(0.5 - d / pixel, 0.0, 1.0);
+}
+
+void main() {
+    // Interpolated local coordinates can fall on opposite sides of an exact border
+    // boundary along the same pixel row. Reconstruct from the fragment's pixel center
+    // and flat instance data so straight borders have uniform thickness at any DPI.
+#ifdef VULKAN
+    // Vulkan counts gl_FragCoord.y from the framebuffer's top; the canvas counts from its bottom.
+    vec2 fragCoord = vec2(gl_FragCoord.x, u_canvasMetrics.w - gl_FragCoord.y);
+#else
+    vec2 fragCoord = gl_FragCoord.xy;
+#endif
+    vec2 v_pixelPos = fragCoord * (u_canvasMetrics.xy / u_canvasMetrics.zw);
+    vec2 v_localPos = v_pixelPos - v_rectOrigin;
+    // --- Clip test ---
+    float clipCover = clipCoverage(v_pixelPos, v_clipIndex);
+    vec4 clip = u_clipRects[v_clipIndex];
+    // Discarded only once clipCoverage's derivative is taken: fwidth reads the 2x2 quad's neighbours,
+    // which must all still run the same code for it to be defined.
+    bool clippedOut = v_pixelPos.x < clip.x || v_pixelPos.x >= clip.z ||
+                      v_pixelPos.y < clip.y || v_pixelPos.y >= clip.w || clipCover <= 0.0;
+
+    float rectW = v_rectSize.x;
+    float rectH = v_rectSize.y;
+    float halfW = rectW * 0.5;
+    float halfH = rectH * 0.5;
+
+    vec2 mirror = abs(v_localPos - vec2(halfW, halfH)); // 0 at center, halfX at edges
+
+    // Pick the radius for this quadrant.
+    // borderRadius = (tl, tr, br, bl). v_localPos.y > halfH means upper, .x > halfW means right.
+    bool right = v_localPos.x > halfW;
+    bool top   = v_localPos.y > halfH;
+    float radius =
+        top  ? (right ? v_borderRadius.y : v_borderRadius.x)   // tr : tl
+             : (right ? v_borderRadius.z : v_borderRadius.w);  // br : bl
+
+    // Border thickness for the active quadrant (used for rounded-corner pivot test).
+    float borderW = right ? v_borderSize.y : v_borderSize.w;
+    float borderH = top   ? v_borderSize.x : v_borderSize.z;
+
+    vec2 pivot = vec2(halfW - radius, halfH - radius);
+    bool inCornerZone = (mirror.x > pivot.x) && (mirror.y > pivot.y);
+
+    // A rounded corner's two edges ramp over one device pixel, each by how far its value moves across one,
+    // worked out from the geometry rather than taken with fwidth: the compiler is free to compute a value
+    // only inside the branch that uses it, so a 2x2 quad straddling where the corner starts read undefined
+    // neighbours there, which left a 1-device-pixel seam down the corner at 1x, where corners start mid-quad.
+    vec2 logicalPerDevice = u_canvasMetrics.xy / u_canvasMetrics.zw;
+    vec2 fromPivot = mirror - pivot;
+    float d = length(fromPivot);
+    float aa = max(dot(abs(fromPivot), logicalPerDevice) / max(d, 1e-6), 1e-6);
+
+    // The inner (fill vs border) ellipse e == 1 and how far e moves across a device pixel.
+    float innerW = max(radius - borderW, 1e-6);
+    float innerH = max(radius - borderH, 1e-6);
+    float ix = (mirror.x - pivot.x) / innerW;
+    float iy = (mirror.y - pivot.y) / innerH;
+    float e = ix * ix + iy * iy;
+    float aaInner = max(dot(abs(vec2(2.0 * ix / innerW, 2.0 * iy / innerH)), logicalPerDevice), 1e-6);
+
+    if (clippedOut) discard;
+
+    // At fractional display scales an outer edge can pass through a pixel center.
+    // A zero-width side must still count as fill there, not borrow another side's color.
+    bool inBottom = v_borderSize.z > 0.0 && v_localPos.y < v_borderSize.z;
+    bool inTop    = v_borderSize.x > 0.0 && v_localPos.y >= rectH - v_borderSize.x;
+    bool inRight  = v_borderSize.y > 0.0 && v_localPos.x >= rectW - v_borderSize.y;
+    bool inLeft   = v_borderSize.w > 0.0 && v_localPos.x < v_borderSize.w;
+
+    float coverage = 1.0;   // outer silhouette (shape vs background)
+    float fillFactor;       // 1 = fill, 0 = border, ramped across the inner boundary
+    if (inCornerZone && radius > 0.0) {
+        // Antialiased outer edge of the rounded corner: 1 inside, 0 outside, ramped over one pixel.
+        coverage = clamp((radius - d) / aa + 0.5, 0.0, 1.0);
+        if (coverage <= 0.0) discard;
+        if (borderW < radius && borderH < radius) {
+            // Antialiased INNER boundary (fill vs border): the ellipse e == 1, ramped like the outer
+            // edge. Keeps a filled corner smooth even with a transparent border — a hard test would
+            // leave the fill's own corner aliased (reads as square).
+            fillFactor = clamp((1.0 - e) / aaInner + 0.5, 0.0, 1.0);
+        } else {
+            fillFactor = 0.0; // border thicker than the radius: the whole corner is border
+        }
+    } else if (v_fadesEdges > 0.0) {
+        // Straight edges a transform left between device pixels: the outer edge and the border's inner
+        // edge each fade the pixels they partly cover, so the rect moves smoothly instead of a pixel at a
+        // time. A side with no border lets the fill run to the outer edge.
+        vec2 devicePerLogical = u_canvasMetrics.zw / u_canvasMetrics.xy;
+        vec2 inside = (vec2(halfW, halfH) - mirror) * devicePerLogical;
+        coverage = clamp(inside.x + 0.5, 0.0, 1.0) * clamp(inside.y + 0.5, 0.0, 1.0);
+        if (coverage <= 0.0) discard;
+        const float noBorder = 1.0e6;
+        float fromLeft   = v_borderSize.w > 0.0 ? v_localPos.x - v_borderSize.w : noBorder;
+        float fromRight  = v_borderSize.y > 0.0 ? rectW - v_borderSize.y - v_localPos.x : noBorder;
+        float fromBottom = v_borderSize.z > 0.0 ? v_localPos.y - v_borderSize.z : noBorder;
+        float fromTop    = v_borderSize.x > 0.0 ? rectH - v_borderSize.x - v_localPos.y : noBorder;
+        vec2 intoFill = vec2(min(fromLeft, fromRight), min(fromBottom, fromTop)) * devicePerLogical;
+        fillFactor = clamp(intoFill.x + 0.5, 0.0, 1.0) * clamp(intoFill.y + 0.5, 0.0, 1.0);
+        // A pixel whose center is just inside the fill takes the nearest side's border color for its share.
+        if (!(inBottom || inTop || inRight || inLeft)) {
+            float nearest = min(min(fromLeft, fromRight), min(fromBottom, fromTop));
+            inBottom = nearest == fromBottom && v_borderSize.z > 0.0;
+            inTop    = !inBottom && nearest == fromTop && v_borderSize.x > 0.0;
+            inRight  = !inBottom && !inTop && nearest == fromRight && v_borderSize.y > 0.0;
+            inLeft   = !inBottom && !inTop && !inRight && nearest == fromLeft && v_borderSize.w > 0.0;
+        }
+    } else {
+        // Straight-edge zone on the pixel grid: axis-aligned, needs no antialiasing.
+        fillFactor = (inBottom || inTop || inRight || inLeft) ? 0.0 : 1.0;
+    }
+
+    // Border side priority: bottom > top > right > left (matches software canvas).
+    uint pickedColor;
+    if (inBottom)      pickedColor = v_borderColorBottom;
+    else if (inTop)    pickedColor = v_borderColorTop;
+    else if (inRight)  pickedColor = v_borderColorRight;
+    else if (inLeft)   pickedColor = v_borderColorLeft;
+    else               pickedColor = top ? v_borderColorTop : v_borderColorBottom;
+
+    // Composite fill over border in premultiplied space, then unpremultiply, so a transparent border
+    // lets the fill's rounded corner fade correctly (a straight-alpha mix would darken the edge).
+    // coverage applies the outer silhouette.
+    vec4 fillCol   = unpackARGB(v_bgColor);
+    vec4 borderCol = unpackARGB(pickedColor);
+    float outA     = mix(borderCol.a, fillCol.a, fillFactor);
+    vec3 outPre    = mix(borderCol.rgb * borderCol.a, fillCol.rgb * fillCol.a, fillFactor);
+    vec3 outRgb    = outA > 0.0 ? outPre / outA : vec3(0.0);
+    f_Color = vec4(outRgb, outA * coverage);
+    f_Color.a *= clipCover;
+}

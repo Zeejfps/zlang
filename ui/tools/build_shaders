@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Validates the shaders in ui/shaders and embeds them in ui/gl/shaders_glsl.ctx (plan section 2.6).
+#
+#   ui/tools/build_shaders            validate, then write ui/gl/shaders_glsl.ctx
+#   ui/tools/build_shaders --check    validate, then fail if ui/gl/shaders_glsl.ctx is not what the
+#                                     shaders make (writes nothing)
+#
+# Validation: each file must be valid OpenGL GLSL 4.10 (glslangValidator) and must compile to
+# SPIR-V for Vulkan 1.0 with VULKAN defined (glslc), so the one source serves both backends. The
+# SPIR-V goes to a temporary directory and is thrown away: embedding it is the Vulkan backend's.
+# The fragment output f_Color has no location in the source (the ported files keep ZGF's), so glslc
+# places it with -fauto-map-locations; every value passed between stages has an explicit location.
+# With --check, a missing validator skips validation with a message; the generated file is
+# compared either way. Run it from anywhere; it works from the repository root.
+set -eu
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$HERE/../.." && pwd)"
+cd "$ROOT"
+
+SHADERS="ui/shaders"
+OUT="ui/gl/shaders_glsl.ctx"
+CHECK=0
+case "${1:-}" in
+    --check) CHECK=1 ;;
+    "") ;;
+    *) echo "usage: ui/tools/build_shaders [--check]" >&2; exit 2 ;;
+esac
+
+# MSYS2's tools, where this machine keeps glslc and glslangValidator, if they are not on PATH.
+if ! command -v glslc >/dev/null 2>&1 && [ -d /g/Dev/msys64/mingw64/bin ]; then
+    export PATH="/g/Dev/msys64/mingw64/bin:$PATH"
+fi
+
+# A Python that runs (Windows has a python3 that only opens the Store).
+PYTHON=""
+for candidate in python3 python; do
+    if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c "import sys" >/dev/null 2>&1; then
+        PYTHON="$candidate"
+        break
+    fi
+done
+if [ -z "$PYTHON" ]; then
+    echo "ui/tools/build_shaders: no Python found (python3 or python)" >&2
+    exit 1
+fi
+
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+if command -v glslangValidator >/dev/null 2>&1 && command -v glslc >/dev/null 2>&1; then
+    failed=0
+    for file in "$SHADERS"/*.glsl; do
+        name="$(basename "$file" .glsl)"
+        stage="${name##*.}"
+        if ! glslangValidator -S "$stage" "$file" >"$TMP/gl.log" 2>&1; then
+            echo "FAILED: $file is not valid OpenGL GLSL:" >&2
+            cat "$TMP/gl.log" >&2
+            failed=1
+        fi
+        if ! glslc -fshader-stage="$stage" --target-env=vulkan1.0 -fauto-bind-uniforms -fauto-map-locations \
+                -o "$TMP/$name.spv" "$file" 2>"$TMP/spv.log"; then
+            echo "FAILED: $file does not compile to SPIR-V:" >&2
+            cat "$TMP/spv.log" >&2
+            failed=1
+        fi
+    done
+    if [ "$failed" -ne 0 ]; then exit 1; fi
+    echo "ui/tools/build_shaders: $(ls "$SHADERS"/*.glsl | wc -l) shaders are valid GLSL 4.10 and compile to SPIR-V"
+elif [ "$CHECK" -eq 1 ]; then
+    echo "ui/tools/build_shaders: glslangValidator or glslc not found; validation skipped"
+else
+    echo "ui/tools/build_shaders: glslangValidator and glslc are needed to validate the shaders" >&2
+    exit 1
+fi
+
+"$PYTHON" "$HERE/embed_shaders.py" "$SHADERS" "$TMP/shaders_glsl.ctx"
+if [ "$CHECK" -eq 1 ]; then
+    if ! cmp -s "$TMP/shaders_glsl.ctx" "$OUT"; then
+        echo "FAILED: $OUT does not match $SHADERS; run ui/tools/build_shaders" >&2
+        exit 1
+    fi
+    echo "ui/tools/build_shaders: $OUT matches $SHADERS"
+else
+    cp "$TMP/shaders_glsl.ctx" "$OUT"
+    echo "ui/tools/build_shaders: wrote $OUT"
+fi

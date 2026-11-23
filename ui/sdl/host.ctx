@@ -1,0 +1,403 @@
+// ui_sdl: the SDL2 host (plan section 4.3). A window with an OpenGL 4.1 core context, SDL's events as
+// the core's (`to_event`), the core's requests applied to the OS (`apply_requests`), the sizes a
+// frame is laid out in, a clock for `dt`, and a wait for programs that draw only when something
+// happened. A program on another platform writes the same few things for it and uses none of this.
+//
+// Units: SDL reports the pointer in window coordinates. `Sizes.scale` is window coordinates per
+// logical unit, which `to_event` divides by, so the core sees logical units, y down.
+namespace ui_sdl {
+    // An SDL call that failed; `get_last_error` says why.
+    error failed{ call: c::String }
+    error bad_layout                               // this binding's structs are not SDL's size here
+
+    // Starts SDL's video. Windows is told first that the program handles each monitor's scaling
+    // itself, so the window and the drawable are in real pixels and the core's scale does the rest.
+    fn init { mut sdl: Sdl } -> ! {
+        if not check_layout{} { return bad_layout }
+        _ = SDL_SetHint{ &sdl, name = "SDL_WINDOWS_DPI_AWARENESS", value = "permonitorv2" }
+        if SDL_Init{ &sdl, flags = INIT_VIDEO } != 0 { return failed{ call = "SDL_Init" } }
+    }
+
+    fn quit { mut sdl: Sdl } { SDL_Quit{ &sdl } }
+
+    // The message of the SDL call that failed last; SDL's, valid until the next SDL call.
+    fn get_last_error { mut sdl: Sdl } -> c::String { return SDL_GetError{ &sdl } }
+
+    // A window with its GL context, and what the host keeps between frames.
+    struct Host {
+        window: *mut Window,
+        context: *mut GlContext,
+        cursors: [8]?*mut Cursor,                  // SDL's system cursors by ui::Cursor, made when first asked for
+        cursor: ui::Cursor, has_cursor: bool,      // the cursor set last
+        text_input: bool, text_rect: Rect,         // whether OS text input is on, and its rectangle
+        copy: []mut u8,                            // the clipboard text going out, NUL-terminated for SDL
+        paste: []mut u8, paste_len: usize, has_paste: bool,   // the clipboard text coming in
+        cut: u64,                                  // clipboard bytes that did not fit `copy` or `paste`
+        counter: u64,                              // SDL's performance counter at the last get_dt
+    }
+
+    // Opens a window of `width` by `height` (window coordinates) with an OpenGL 4.1 core,
+    // forward-compatible context current on this thread, 8-bit RGBA, double-buffered, no depth.
+    // `hidden` makes no visible window, for drawing offscreen. `clipboard` is the most bytes of
+    // clipboard text the host carries each way; longer text is cut at a character and counted.
+    fn open_gl_window(S) {
+        mut sdl: Sdl, realloc: alloc::Fn(S), mut heap: S,
+        title: c::String, width: i32, height: i32, hidden: bool, resizable: bool, clipboard: u32,
+    } -> !Host {
+        let room = @as(usize, if clipboard < 16 { 16 } else { clipboard })
+        let copy = try alloc::make(u8, S){ realloc, &heap, count = room + 1 }
+        let paste = try alloc::make(u8, S){ realloc, &heap, count = room }
+        SDL_GL_ResetAttributes{ &sdl }
+        try set_gl{ &sdl, attr = GlAttr::context_major_version, value = 4 }
+        try set_gl{ &sdl, attr = GlAttr::context_minor_version, value = 1 }
+        try set_gl{ &sdl, attr = GlAttr::context_profile_mask, value = GL_CONTEXT_PROFILE_CORE }
+        try set_gl{ &sdl, attr = GlAttr::context_flags, value = GL_CONTEXT_FORWARD_COMPATIBLE_FLAG }
+        try set_gl{ &sdl, attr = GlAttr::red_size, value = 8 }
+        try set_gl{ &sdl, attr = GlAttr::green_size, value = 8 }
+        try set_gl{ &sdl, attr = GlAttr::blue_size, value = 8 }
+        try set_gl{ &sdl, attr = GlAttr::alpha_size, value = 8 }
+        try set_gl{ &sdl, attr = GlAttr::depth_size, value = 0 }
+        try set_gl{ &sdl, attr = GlAttr::stencil_size, value = 0 }
+        try set_gl{ &sdl, attr = GlAttr::doublebuffer, value = 1 }
+
+        let mut flags = WINDOW_OPENGL | WINDOW_ALLOW_HIGHDPI
+        flags = flags | (if hidden { WINDOW_HIDDEN } else { WINDOW_SHOWN })
+        if resizable { flags = flags | WINDOW_RESIZABLE }
+        let window = SDL_CreateWindow{ &sdl, title, x = WINDOWPOS_CENTERED, y = WINDOWPOS_CENTERED, w = width, h = height, flags } ifnull {
+            return failed{ call = "SDL_CreateWindow" }
+        }
+        let context = SDL_GL_CreateContext{ &sdl, window } ifnull {
+            SDL_DestroyWindow{ &sdl, window }
+            return failed{ call = "SDL_GL_CreateContext" }
+        }
+        if SDL_GL_MakeCurrent{ &sdl, window, context } != 0 {
+            SDL_GL_DeleteContext{ &sdl, context }
+            SDL_DestroyWindow{ &sdl, window }
+            return failed{ call = "SDL_GL_MakeCurrent" }
+        }
+        return Host{
+            window, context, cursors = [null; 8], cursor = ui::Cursor::arrow, has_cursor = false,
+            text_input = false, text_rect = Rect{ x = 0, y = 0, w = 0, h = 0 },
+            copy, paste, paste_len = 0, has_paste = false, cut = 0,
+            counter = SDL_GetPerformanceCounter{ &sdl },
+        }
+    }
+
+    fn close_window { mut sdl: Sdl, mut host: Host } {
+        let mut i: usize = 0
+        while i < 8 {
+            if let c = host.cursors[i] { SDL_FreeCursor{ &sdl, cursor = c } }
+            host.cursors[i] = null
+            i = i + 1
+        }
+        if host.text_input { SDL_StopTextInput{ &sdl } }
+        SDL_GL_DeleteContext{ &sdl, context = host.context }
+        SDL_DestroyWindow{ &sdl, window = host.window }
+    }
+
+    fn set_gl { mut sdl: Sdl, attr: GlAttr, value: i32 } -> ! {
+        if SDL_GL_SetAttribute{ &sdl, attr, value } != 0 { return failed{ call = "SDL_GL_SetAttribute" } }
+    }
+
+    // The GL function `name` of the current context, or null: what ui_gl::open takes, bound as
+    // `ui_sdl::get_gl_proc{ &sdl, _ }`.
+    fn get_gl_proc { mut sdl: Sdl, name: c::String } -> ?extern fn{} {
+        return SDL_GL_GetProcAddress{ &sdl, name }
+    }
+
+    // 1 waits for the vertical blank, 0 does not, -1 adapts. Fails when the driver cannot.
+    fn set_swap_interval { mut sdl: Sdl, interval: i32 } -> ! {
+        if SDL_GL_SetSwapInterval{ &sdl, interval } != 0 { return failed{ call = "SDL_GL_SetSwapInterval" } }
+    }
+
+    fn swap { mut sdl: Sdl, host: Host } { SDL_GL_SwapWindow{ &sdl, window = host.window } }
+
+    // ---- sizes and time
+
+    // What a frame is laid out in: the logical size, the device size (the drawable, in pixels), and
+    // window coordinates per logical unit, which pointer positions are divided by. With them a
+    // program fills ui::FrameInfo (width, height, pixel_width, pixel_height, and `dt` from get_dt).
+    struct Sizes { width: f32, height: f32, pixel_width: f32, pixel_height: f32, scale: f32 }
+
+    // The sizes at `zoom`: logical = pixels / (monitor scale * zoom), as plan section 2.8 has a tool
+    // do. The monitor's scale is the drawable's pixels per window coordinate where the OS scales the
+    // window (macOS), and the display's DPI over 96 where it does not (Windows, which `init` makes
+    // hand over real pixels).
+    fn get_sizes { mut sdl: Sdl, host: Host, zoom: f32 } -> Sizes {
+        let mut ww: i32 = 0
+        let mut wh: i32 = 0
+        SDL_GetWindowSize{ &sdl, window = host.window, w = &ww, h = &wh }
+        let mut pw: i32 = 0
+        let mut ph: i32 = 0
+        SDL_GL_GetDrawableSize{ &sdl, window = host.window, w = &pw, h = &ph }
+        let window_w = if ww > 0 { @as(f32, ww) } else { 1.0 }
+        let pixel_w = if pw > 0 { @as(f32, pw) } else { 1.0 }
+        let pixel_h = if ph > 0 { @as(f32, ph) } else { 1.0 }
+        let per_window = pixel_w / window_w
+        let mut monitor: f32 = 1.0
+        if per_window > 1.01 {
+            monitor = per_window
+        } else {
+            let mut dpi: f32 = 0.0
+            let display = SDL_GetWindowDisplayIndex{ &sdl, window = host.window }
+            if display >= 0 and SDL_GetDisplayDPI{ &sdl, display, ddpi = &dpi, hdpi = null, vdpi = null } == 0 and dpi > 0.0 {
+                monitor = dpi / 96.0
+            }
+        }
+        let z = if zoom > 0.0 { zoom } else { 1.0 }
+        let units = monitor * z                    // device pixels per logical unit
+        return Sizes{ width = pixel_w / units, height = pixel_h / units, pixel_width = pixel_w, pixel_height = pixel_h, scale = units / per_window }
+    }
+
+    // Seconds since the last call (or since the window opened), from SDL's performance counter.
+    fn get_dt { mut sdl: Sdl, mut host: Host } -> f32 {
+        let now = SDL_GetPerformanceCounter{ &sdl }
+        let frequency = SDL_GetPerformanceFrequency{ &sdl }
+        let ticks = if now > host.counter { now - host.counter } else { 0 }
+        host.counter = now
+        if frequency == 0 { return 0.0 }
+        return @as(f32, @as(f64, ticks) / @as(f64, frequency))
+    }
+
+    // ---- events
+
+    // An event as the host sees it: what the core takes (to_event), and what the program handles
+    // itself (quit, close, resized, exposed).
+    union Event {
+        quit,                                      // the last window closed, or the OS asked
+        close,                                     // the window's close button
+        resized{ width: i32, height: i32 },        // window coordinates: get_sizes has the rest
+        exposed,                                   // the window needs drawing again
+        focus{ gained: bool },
+        leave,                                     // the pointer left the window
+        key{ down: bool, repeat: bool, keycode: i32, mods: u16 },
+        text{ bytes: [32]u8, len: u8 },            // UTF-8 typed while text input is on
+        motion{ x: i32, y: i32 },                  // window coordinates
+        button{ down: bool, button: u8, clicks: u8, x: i32, y: i32 },
+        wheel{ dx: f32, dy: f32 },                 // positive dy away from the user
+        paste{ text: []u8 },                       // the clipboard, answering Requests.paste; the host's bytes, valid until the next apply_requests
+        other{ kind: u32 },                        // anything else, by SDL's event type
+    }
+
+    // The next event, or null when none is pending. A paste the core asked for comes first.
+    fn poll { mut sdl: Sdl, mut host: Host } -> ?Event {
+        if let p = take_paste{ &host } { return p }
+        let mut raw: RawEvent
+        if SDL_PollEvent{ &sdl, event = &raw } == 0 { return null }
+        return decode{ &sdl, raw }
+    }
+
+    // The next event, waiting up to `timeout` milliseconds for one: for a program that draws only
+    // when something happened (or the core asked to animate). Null when none came.
+    fn wait_event { mut sdl: Sdl, mut host: Host, timeout: i32 } -> ?Event {
+        if let p = take_paste{ &host } { return p }
+        let mut raw: RawEvent
+        if SDL_WaitEventTimeout{ &sdl, event = &raw, timeout } == 0 { return null }
+        return decode{ &sdl, raw }
+    }
+
+    fn take_paste { mut host: Host } -> ?Event {
+        if not host.has_paste { return null }
+        host.has_paste = false
+        return Event::paste{ text = host.paste[..host.paste_len] }
+    }
+
+    fn decode { mut sdl: Sdl, raw: RawEvent } -> Event {
+        let kind = raw.kind
+        if kind == QUIT { return Event::quit }
+        if kind == WINDOWEVENT {
+            let w = raw.window
+            if w.event == WINDOWEVENT_SIZE_CHANGED { return Event::resized{ width = w.data1, height = w.data2 } }
+            if w.event == WINDOWEVENT_FOCUS_GAINED { return Event::focus{ gained = true } }
+            if w.event == WINDOWEVENT_FOCUS_LOST { return Event::focus{ gained = false } }
+            if w.event == WINDOWEVENT_LEAVE { return Event::leave }
+            if w.event == WINDOWEVENT_EXPOSED { return Event::exposed }
+            if w.event == WINDOWEVENT_CLOSE { return Event::close }
+            return Event::other{ kind }
+        }
+        if kind == KEYDOWN or kind == KEYUP {
+            let k = raw.key
+            return Event::key{ down = kind == KEYDOWN, repeat = k.repeat != 0, keycode = k.keysym.sym, mods = k.keysym.mods }
+        }
+        if kind == TEXTINPUT {
+            let t = raw.text
+            let mut len: usize = 0
+            while len < t.text.len and t.text[len] != 0 { len = len + 1 }
+            return Event::text{ bytes = t.text, len = @as(u8, len) }
+        }
+        if kind == MOUSEMOTION {
+            let m = raw.motion
+            return Event::motion{ x = m.x, y = m.y }
+        }
+        if kind == MOUSEBUTTONDOWN or kind == MOUSEBUTTONUP {
+            let b = raw.button
+            return Event::button{ down = kind == MOUSEBUTTONDOWN, button = b.button, clicks = b.clicks, x = b.x, y = b.y }
+        }
+        if kind == MOUSEWHEEL {
+            let w = raw.wheel
+            // SDL_MOUSEWHEEL_FLIPPED: the OS reversed the wheel ("natural scrolling").
+            let sign: f32 = if w.direction == 1 { -1.0 } else { 1.0 }
+            return Event::wheel{ dx = w.precise_x * sign, dy = w.precise_y * sign }
+        }
+        if kind == DROPFILE or kind == DROPTEXT { SDL_free{ &sdl, mem = raw.drop.file } }
+        return Event::other{ kind }
+    }
+
+    // The core's event for a host event, or null for one the core does not take (quit, resize, a
+    // key it has no name for). Pointer positions are divided by `scale` (Sizes.scale) into logical
+    // units. A button event's position comes as the motion events before it: SDL sends a motion
+    // to where a button goes down.
+    fn to_event { event: Event, scale: f32 } -> ?ui::Event {
+        let s = if scale > 0.0 { scale } else { 1.0 }
+        match event {
+            motion{ x, y } => { return ui::Event::pointer_move{ x = @as(f32, x) / s, y = @as(f32, y) / s } }
+            button{ down, button, clicks } => { return ui::Event::pointer_button{ button, down, clicks } }
+            leave => { return ui::Event::pointer_leave }
+            wheel{ dx, dy } => { return ui::Event::wheel{ dx, dy } }
+            key{ down, repeat, keycode, mods } => {
+                let k = to_key{ keycode } ifnull { return null }
+                return ui::Event::key{ key = k, down, repeat, mods = to_mods{ mods } }
+            }
+            text{ bytes, len } => { return ui::Event::text{ bytes, len } }
+            paste{ text } => { return ui::Event::paste{ text } }
+            focus{ gained } => { return ui::Event::focus{ gained } }
+            else => { return null }
+        }
+    }
+
+    // A key the core names, by SDL keycode; null for the rest.
+    fn to_key { keycode: i32 } -> ?ui::Key {
+        if keycode == key::TAB { return ui::Key::tab }
+        if keycode == key::RETURN or keycode == key::KP_ENTER { return ui::Key::enter }
+        if keycode == key::ESCAPE { return ui::Key::escape }
+        if keycode == key::BACKSPACE { return ui::Key::backspace }
+        if keycode == key::DELETE { return ui::Key::delete }
+        if keycode == key::LEFT { return ui::Key::left }
+        if keycode == key::RIGHT { return ui::Key::right }
+        if keycode == key::UP { return ui::Key::up }
+        if keycode == key::DOWN { return ui::Key::down }
+        if keycode == key::HOME { return ui::Key::home }
+        if keycode == key::END { return ui::Key::end }
+        if keycode == key::PAGEUP { return ui::Key::page_up }
+        if keycode == key::PAGEDOWN { return ui::Key::page_down }
+        if keycode == key::SPACE { return ui::Key::space }
+        if keycode == key::A { return ui::Key::a }
+        if keycode == key::C { return ui::Key::c }
+        if keycode == key::V { return ui::Key::v }
+        if keycode == key::X { return ui::Key::x }
+        if keycode == key::Y { return ui::Key::y }
+        if keycode == key::Z { return ui::Key::z }
+        return null
+    }
+
+    fn to_mods { mods: u16 } -> u8 {
+        let mut m: u8 = 0
+        if (mods & KMOD_SHIFT) != 0 { m = m | ui::MOD_SHIFT }
+        if (mods & KMOD_CTRL) != 0 { m = m | ui::MOD_CTRL }
+        if (mods & KMOD_ALT) != 0 { m = m | ui::MOD_ALT }
+        return m
+    }
+
+    // ---- requests
+
+    // Applies what the core asked for after a frame: the system cursor, OS text input on or off with
+    // the caret's rectangle (logical units, times `scale` into window coordinates), the clipboard set
+    // from `copy`, and on `paste` the clipboard read into the host, which `poll` hands over next as
+    // Event::paste. Nothing is done twice: the cursor and text input change only when the request does.
+    fn apply_requests { mut sdl: Sdl, mut host: Host, requests: ui::Requests, scale: f32 } {
+        set_cursor{ &sdl, &host, cursor = requests.cursor }
+        if requests.text_input {
+            let s = if scale > 0.0 { scale } else { 1.0 }
+            let r = requests.text_rect
+            let rect = Rect{ x = to_int{ v = r.x * s }, y = to_int{ v = r.y * s }, w = to_int{ v = r.w * s }, h = to_int{ v = r.h * s } }
+            if not host.text_input {
+                SDL_StartTextInput{ &sdl }
+                host.text_input = true
+            }
+            if rect.x != host.text_rect.x or rect.y != host.text_rect.y or rect.w != host.text_rect.w or rect.h != host.text_rect.h {
+                SDL_SetTextInputRect{ &sdl, rect = &rect }
+                host.text_rect = rect
+            }
+        } else if host.text_input {
+            SDL_StopTextInput{ &sdl }
+            host.text_input = false
+        }
+        if requests.copy.len > 0 { set_clipboard{ &sdl, &host, text = requests.copy } }
+        if requests.paste { read_clipboard{ &sdl, &host } }
+    }
+
+    fn to_int { v: f32 } -> i32 {
+        if not (v > -1000000.0) { return -1000000 }
+        if v > 1000000.0 { return 1000000 }
+        return @as(i32, ui::round_f32{ x = v })
+    }
+
+    fn set_cursor { mut sdl: Sdl, mut host: Host, cursor: ui::Cursor } {
+        if host.has_cursor and host.cursor == cursor { return }
+        host.cursor = cursor
+        host.has_cursor = true
+        if cursor == ui::Cursor::hidden {
+            _ = SDL_ShowCursor{ &sdl, toggle = 0 }
+            return
+        }
+        _ = SDL_ShowCursor{ &sdl, toggle = 1 }
+        let slot = get_cursor_slot{ cursor }
+        if host.cursors[slot] == null { host.cursors[slot] = SDL_CreateSystemCursor{ &sdl, id = get_system_cursor{ cursor } } }
+        if let c = host.cursors[slot] { SDL_SetCursor{ &sdl, cursor = c } }
+    }
+
+    fn get_cursor_slot { cursor: ui::Cursor } -> usize {
+        return match cursor {
+            arrow => { 0 }
+            text => { 1 }
+            hand => { 2 }
+            resize_h => { 3 }
+            resize_v => { 4 }
+            resize_diag => { 5 }
+            move => { 6 }
+            hidden => { 7 }
+        }
+    }
+
+    fn get_system_cursor { cursor: ui::Cursor } -> i32 {
+        return match cursor {
+            arrow => { SYSTEM_CURSOR_ARROW }
+            text => { SYSTEM_CURSOR_IBEAM }
+            hand => { SYSTEM_CURSOR_HAND }
+            resize_h => { SYSTEM_CURSOR_SIZEWE }
+            resize_v => { SYSTEM_CURSOR_SIZENS }
+            resize_diag => { SYSTEM_CURSOR_SIZENWSE }
+            move => { SYSTEM_CURSOR_SIZEALL }
+            hidden => { SYSTEM_CURSOR_ARROW }
+        }
+    }
+
+    // How many bytes of `text` fit `room` without cutting a UTF-8 character.
+    fn fit_utf8 { text: []u8, room: usize } -> usize {
+        if text.len <= room { return text.len }
+        let mut n = room
+        while n > 0 and text[n] >= 0x80 and text[n] < 0xC0 { n = n - 1 }
+        return n
+    }
+
+    fn set_clipboard { mut sdl: Sdl, mut host: Host, text: []u8 } {
+        let n = fit_utf8{ text, room = host.copy.len - 1 }
+        host.cut = host.cut + @as(u64, text.len - n)
+        slice::copy(u8){ dst = host.copy[..n], src = text[..n] }
+        host.copy[n] = 0
+        _ = SDL_SetClipboardText{ &sdl, text = host.copy.ptr }
+    }
+
+    fn read_clipboard { mut sdl: Sdl, mut host: Host } {
+        let p = SDL_GetClipboardText{ &sdl } ifnull { return }
+        let mut len: usize = 0
+        while (p + len).* != 0 { len = len + 1 }
+        let text = @slice(p, len)
+        let n = fit_utf8{ text, room = host.paste.len }
+        host.cut = host.cut + @as(u64, len - n)
+        slice::copy(u8){ dst = host.paste[..n], src = text[..n] }
+        host.paste_len = n
+        host.has_paste = true
+        SDL_free{ &sdl, mem = p }
+    }
+}

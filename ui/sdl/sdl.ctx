@@ -1,0 +1,174 @@
+// ui_sdl: the part of SDL2 (SDL.h, 2.0.18 or later) the UI host uses: a window with an OpenGL
+// context, events, the cursor, text input, the clipboard and a clock. ui carries its own binding, so
+// a program needs nothing under kotor/ (plan section 2.1).
+//
+// The extern fns are SDL's own, under their C names. Layouts are those of 64-bit targets; each
+// struct below matches SDL's field for field, padding included, and `check_layout` checks the sizes.
+namespace ui_sdl {
+    // Permission to call SDL: `fn main { ..., mut sdl: ui_sdl::Sdl }`.
+    capability Sdl
+
+    const INIT_VIDEO: u32 = 0x20                 // implies the events subsystem
+
+    extern fn SDL_Init { mut sdl: Sdl, flags: u32 } -> i32
+    extern fn SDL_Quit { mut sdl: Sdl }
+    extern fn SDL_GetError { mut sdl: Sdl } -> c::String          // the last error, owned by SDL
+    extern fn SDL_SetHint { mut sdl: Sdl, name: c::String, value: c::String } -> i32
+    extern fn SDL_free { mut sdl: Sdl, mem: ?*mut u8 }
+
+    // ---- windows and OpenGL
+
+    struct Window {}                               // opaque: only ever behind a pointer
+    struct GlContext {}                            // SDL_GLContext, a void *
+    struct Rect { x: i32, y: i32, w: i32, h: i32 }
+
+    const WINDOW_OPENGL: u32 = 0x2
+    const WINDOW_SHOWN: u32 = 0x4
+    const WINDOW_HIDDEN: u32 = 0x8
+    const WINDOW_RESIZABLE: u32 = 0x20
+    const WINDOW_ALLOW_HIGHDPI: u32 = 0x2000       // macOS: a drawable in pixels, larger than the window
+    const WINDOWPOS_CENTERED: i32 = 0x2FFF0000
+
+    extern fn SDL_CreateWindow { mut sdl: Sdl, title: c::String, x: i32, y: i32, w: i32, h: i32, flags: u32 } -> ?*mut Window
+    extern fn SDL_DestroyWindow { mut sdl: Sdl, window: *mut Window }
+    extern fn SDL_GetWindowSize { mut sdl: Sdl, window: *mut Window, w: ?*mut i32, h: ?*mut i32 }
+    extern fn SDL_GetWindowDisplayIndex { mut sdl: Sdl, window: *mut Window } -> i32
+    extern fn SDL_GetDisplayDPI { mut sdl: Sdl, display: i32, ddpi: ?*mut f32, hdpi: ?*mut f32, vdpi: ?*mut f32 } -> i32
+
+    // SDL_GLattr, a C enum.
+    enum GlAttr: i32 {
+        red_size, green_size, blue_size, alpha_size, buffer_size, doublebuffer, depth_size,
+        stencil_size, accum_red_size, accum_green_size, accum_blue_size, accum_alpha_size, stereo,
+        multisamplebuffers, multisamplesamples, accelerated_visual, retained_backing,
+        context_major_version, context_minor_version, context_egl, context_flags,
+        context_profile_mask, share_with_current_context, framebuffer_srgb_capable,
+        context_release_behavior, context_reset_notification, context_no_error, floatbuffers,
+    }
+    const GL_CONTEXT_PROFILE_CORE: i32 = 0x1
+    const GL_CONTEXT_FORWARD_COMPATIBLE_FLAG: i32 = 0x2
+
+    extern fn SDL_GL_SetAttribute { mut sdl: Sdl, attr: GlAttr, value: i32 } -> i32
+    extern fn SDL_GL_ResetAttributes { mut sdl: Sdl }
+    extern fn SDL_GL_CreateContext { mut sdl: Sdl, window: *mut Window } -> ?*mut GlContext
+    extern fn SDL_GL_DeleteContext { mut sdl: Sdl, context: *mut GlContext }
+    extern fn SDL_GL_MakeCurrent { mut sdl: Sdl, window: *mut Window, context: *mut GlContext } -> i32
+    extern fn SDL_GL_SetSwapInterval { mut sdl: Sdl, interval: i32 } -> i32
+    extern fn SDL_GL_SwapWindow { mut sdl: Sdl, window: *mut Window }
+    extern fn SDL_GL_GetDrawableSize { mut sdl: Sdl, window: *mut Window, w: ?*mut i32, h: ?*mut i32 }
+    // The address of GL function `name` in the current context, or null, typed as a C function of no
+    // particular type for ui_gl to cast to each function's own.
+    extern fn SDL_GL_GetProcAddress { mut sdl: Sdl, name: c::String } -> ?extern fn{}
+
+    // ---- the cursor, text input, the clipboard, time
+
+    struct Cursor {}                               // opaque
+    // SDL_SystemCursor
+    const SYSTEM_CURSOR_ARROW: i32 = 0
+    const SYSTEM_CURSOR_IBEAM: i32 = 1
+    const SYSTEM_CURSOR_SIZENWSE: i32 = 5
+    const SYSTEM_CURSOR_SIZEWE: i32 = 7
+    const SYSTEM_CURSOR_SIZENS: i32 = 8
+    const SYSTEM_CURSOR_SIZEALL: i32 = 9
+    const SYSTEM_CURSOR_HAND: i32 = 11
+
+    extern fn SDL_CreateSystemCursor { mut sdl: Sdl, id: i32 } -> ?*mut Cursor
+    extern fn SDL_SetCursor { mut sdl: Sdl, cursor: *mut Cursor }
+    extern fn SDL_FreeCursor { mut sdl: Sdl, cursor: *mut Cursor }
+    extern fn SDL_ShowCursor { mut sdl: Sdl, toggle: i32 } -> i32
+    extern fn SDL_StartTextInput { mut sdl: Sdl }
+    extern fn SDL_StopTextInput { mut sdl: Sdl }
+    extern fn SDL_SetTextInputRect { mut sdl: Sdl, rect: *Rect }
+    extern fn SDL_SetClipboardText { mut sdl: Sdl, text: *u8 } -> i32          // a C string
+    extern fn SDL_GetClipboardText { mut sdl: Sdl } -> ?*mut u8               // a C string to SDL_free; "" when empty
+    extern fn SDL_GetPerformanceCounter { mut sdl: Sdl } -> u64
+    extern fn SDL_GetPerformanceFrequency { mut sdl: Sdl } -> u64
+
+    // ---- events: SDL_Event and the members of it the host reads
+
+    const QUIT: u32 = 0x100
+    const WINDOWEVENT: u32 = 0x200
+    const KEYDOWN: u32 = 0x300
+    const KEYUP: u32 = 0x301
+    const TEXTINPUT: u32 = 0x303
+    const MOUSEMOTION: u32 = 0x400
+    const MOUSEBUTTONDOWN: u32 = 0x401
+    const MOUSEBUTTONUP: u32 = 0x402
+    const MOUSEWHEEL: u32 = 0x403
+    const DROPFILE: u32 = 0x1000
+    const DROPTEXT: u32 = 0x1001
+
+    // SDL_WindowEventID: WindowEvent.event
+    const WINDOWEVENT_EXPOSED: u8 = 3
+    const WINDOWEVENT_SIZE_CHANGED: u8 = 6
+    const WINDOWEVENT_LEAVE: u8 = 11
+    const WINDOWEVENT_FOCUS_GAINED: u8 = 12
+    const WINDOWEVENT_FOCUS_LOST: u8 = 13
+    const WINDOWEVENT_CLOSE: u8 = 14
+
+    // SDL_Keymod bits
+    const KMOD_SHIFT: u16 = 0x3
+    const KMOD_CTRL: u16 = 0xC0
+    const KMOD_ALT: u16 = 0x300
+
+    struct CommonEvent { kind: u32, timestamp: u32 }
+    struct WindowEvent { kind: u32, timestamp: u32, window_id: u32, event: u8, padding1: u8, padding2: u8, padding3: u8, data1: i32, data2: i32 }
+    struct Keysym { scancode: i32, sym: i32, mods: u16, unused: u32 }
+    struct KeyboardEvent { kind: u32, timestamp: u32, window_id: u32, state: u8, repeat: u8, padding2: u8, padding3: u8, keysym: Keysym }
+    struct TextInputEvent { kind: u32, timestamp: u32, window_id: u32, text: [32]u8 }
+    struct MouseMotionEvent { kind: u32, timestamp: u32, window_id: u32, which: u32, state: u32, x: i32, y: i32, xrel: i32, yrel: i32 }
+    struct MouseButtonEvent { kind: u32, timestamp: u32, window_id: u32, which: u32, button: u8, state: u8, clicks: u8, padding1: u8, x: i32, y: i32 }
+    struct MouseWheelEvent { kind: u32, timestamp: u32, window_id: u32, which: u32, x: i32, y: i32, direction: u32, precise_x: f32, precise_y: f32, mouse_x: i32, mouse_y: i32 }
+    struct DropEvent { kind: u32, timestamp: u32, file: ?*mut u8, window_id: u32 }      // file: SDL_free it
+
+    // SDL_Event: 56 bytes, 8-aligned (its pointer members), on 64-bit targets.
+    extern union RawEvent {
+        kind: u32,
+        common: CommonEvent,
+        window: WindowEvent,
+        key: KeyboardEvent,
+        text: TextInputEvent,
+        motion: MouseMotionEvent,
+        button: MouseButtonEvent,
+        wheel: MouseWheelEvent,
+        drop: DropEvent,
+        padding: [56]u8,
+    }
+
+    extern fn SDL_PollEvent { mut sdl: Sdl, mut event: RawEvent } -> i32
+    extern fn SDL_WaitEventTimeout { mut sdl: Sdl, mut event: RawEvent, timeout: i32 } -> i32
+
+    // Whether this file's structs have SDL's sizes on this target. Checked by `init`.
+    fn check_layout {} -> bool {
+        return @size_of(RawEvent) == 56 and @align_of(RawEvent) == 8
+            and @size_of(WindowEvent) == 24 and @size_of(Keysym) == 16
+            and @size_of(KeyboardEvent) == 32 and @size_of(TextInputEvent) == 44
+            and @size_of(MouseMotionEvent) == 36 and @size_of(MouseButtonEvent) == 28
+            and @size_of(MouseWheelEvent) == 44 and @size_of(DropEvent) == 24 and @size_of(Rect) == 16
+    }
+
+    // SDL_Keycode values the host turns into ui::Key: a printable key's is its character, others'
+    // their scancode with bit 30 set.
+    namespace key {
+        const BACKSPACE: i32 = 8
+        const TAB: i32 = 9
+        const RETURN: i32 = 13
+        const ESCAPE: i32 = 27
+        const SPACE: i32 = 32
+        const A: i32 = 97
+        const C: i32 = 99
+        const V: i32 = 118
+        const X: i32 = 120
+        const Y: i32 = 121
+        const Z: i32 = 122
+        const DELETE: i32 = 127
+        const HOME: i32 = 0x4000004A
+        const PAGEUP: i32 = 0x4000004B
+        const END: i32 = 0x4000004D
+        const PAGEDOWN: i32 = 0x4000004E
+        const RIGHT: i32 = 0x4000004F
+        const LEFT: i32 = 0x40000050
+        const DOWN: i32 = 0x40000051
+        const UP: i32 = 0x40000052
+        const KP_ENTER: i32 = 0x40000058
+    }
+}

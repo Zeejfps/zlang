@@ -10,6 +10,14 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 cd "$ROOT"
 
 failed=0
+# The embedded shaders match ui/shaders (plan section 2.6), checked where glslc is installed.
+if command -v glslc >/dev/null 2>&1 || [ -x /g/Dev/msys64/mingw64/bin/glslc ]; then
+    echo "== ui/tools/build_shaders --check"
+    if ! ui/tools/build_shaders --check; then
+        echo "FAILED: ui/tools/build_shaders --check"
+        failed=$((failed + 1))
+    fi
+fi
 for dir in ui/tests/*/; do
     dir="${dir%/}"
     name="$(basename "$dir")"

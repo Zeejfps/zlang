@@ -1,0 +1,29 @@
+// ui: the host seam's input and requests (plan section 2.8). Everything on the OS side is input the
+// host pushes (`Event`) or a request the host applies after the frame (`Requests`); the core calls
+// nothing. `FrameInfo`, the third piece, is declared with the frame in ui.ctx.
+//
+// Positions are logical units, y down. Typed text is in the focused font's encoding.
+namespace ui {
+    enum Key: u8 { none, tab, enter, escape, backspace, delete, left, right, up, down, home, end, page_up, page_down, space, a, c, v, x, y, z }
+    const MOD_SHIFT: u8 = 1
+    const MOD_CTRL: u8 = 2
+    const MOD_ALT: u8 = 4
+    union Event {
+        pointer_move{ x: f32, y: f32 },                    // logical units
+        pointer_button{ button: u8, down: bool, clicks: u8 },
+        pointer_leave,
+        wheel{ dx: f32, dy: f32 },
+        key{ key: Key, down: bool, repeat: bool, mods: u8 },
+        text{ bytes: [32]u8, len: u8 },                    // committed text, in the focused font's encoding
+        paste{ text: []u8 },                               // the host's answer to Requests.paste; copied at the push
+        focus{ gained: bool },
+    }
+    enum Cursor: u8 { arrow, text, hand, resize_h, resize_v, resize_diag, move, hidden }
+    struct Requests {
+        cursor: Cursor = Cursor::arrow,
+        wants_pointer: bool = false, wants_keys: bool = false,
+        text_input: bool = false, text_rect: Rect = Rect{ .. },   // turn OS text input on; where the caret is
+        copy: []u8 = "", paste: bool = false,                     // set the clipboard; send me a paste event
+        animating: bool = false,                                  // something moves with time: draw another frame
+    }
+}

@@ -1,3 +1,5 @@
 # LF on every checkout: tools/check is a bash script, and goldens are compared byte for byte.
 tools/* text eol=lf
 tests/**/golden/*.txt text eol=lf
+shaders/*.glsl text eol=lf
+gl/shaders_glsl.ctx text eol=lf
