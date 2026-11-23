@@ -1003,9 +1003,11 @@ fn check_defaults { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } 
         ui_test::expect{ &io, &t, ok = false, what = "a Ui of the default capacities is made" }
         return
     }
-    // 7.1 MB when this was written: 8193 elements of 256 bytes, 32768 shapes of 80, and the rest.
+    // 7.1 MB at stage 5: 8193 elements of 256 bytes, 32768 shapes of 80, and the rest. Stage 7
+    // added 1.4 MB: two node lists of 8192 and their text, the state table, the tab stops and
+    // links, and the input's paste buffers (8.6 MB in all).
     let taken = before - arena::remaining{ heap }
-    ui_test::expect{ &io, &t, ok = taken < 8388608, what = "a Ui of the default capacities takes less than 8 MB" }
+    ui_test::expect{ &io, &t, ok = taken < 10485760, what = "a Ui of the default capacities takes less than 10 MB" }
     start_frame{ ui = &gui, scale = 1.0 }
     show_panel{ ui = &gui }
     ui::end_frame{ ui = &gui }

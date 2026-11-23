@@ -1,23 +1,212 @@
 // ui::nodes: what tests and scripts see (plan section 2.5): each described widget with its role,
 // label, value, flags, path and solved rectangle.
 //
+// A widget calls `describe` while it is recorded. Its node's path is the names of the id scopes
+// open there, outermost first, then its label, joined with `/` (`optgameplay/BTN_BACK`,
+// `items/#3/Buy milk`): a widget's own id name is never recorded (`make_id` changes nothing), so
+// the label stands for it. At end_frame each node takes the rectangle the element with its id was
+// emitted with (the last one, if two had it); a node whose id no element of the frame had has an
+// empty rectangle. `find_node` and `get_node` read the last finished frame's list, so a script
+// finds a widget where it was drawn.
+//
 // This file is the subsystem's place in the Ui: `ui.nodes` is its state, with room for
 // `Capacity.nodes` nodes. `make` builds it, `begin_frame` calls `reset_state`, and `end_frame` calls
 // `finish_frame` first after the frame is emitted: `ui.emit.hits` then holds this frame's identified
-// elements with their rectangles, which is where a node's rectangle comes from. The path of what is
-// being recorded is `id::write_path` (the names of the open id scopes). The frame's text arena is
-// emptied by the next `begin_frame`, so text that a node keeps for the next frame is the
-// subsystem's own. A list that is full is reported as `ProblemKind::nodes_full`.
+// elements with their rectangles, which is where a node's rectangle comes from. A node keeps the
+// place of its region in `ui.emit.hits`, which changes at the same end_frame as the node list. The
+// frame's text arena is emptied by the next `begin_frame`, so paths are copied into the
+// subsystem's own text, half the size of the arena for each of the two lists. A list or a text
+// that is full is reported as `ProblemKind::nodes_full`. With `config.nodes` false nothing is
+// described and the list is empty.
 namespace ui {
-    namespace nodes {
-        struct State {}
+    // What a node is, for scripts and snapshots.
+    enum Role: u8 {
+        none, label, button, checkbox, radio, slider, progress, image, separator, panel, row, column,
+        text_field, number, window, popup, dialog, menu_bar, menu, menu_item, combo, list, list_row,
+        tree_node, tabs, tab, table, table_row, cell, plot, color_edit, tooltip, scroll, overlay, host,
+    }
 
-        fn make_state(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !State {
-            return State{}
+    // Node flags: what a widget says about itself.
+    const NODE_DISABLED: u8 = 1
+    const NODE_CHECKED: u8 = 2
+    const NODE_SELECTED: u8 = 4
+    const NODE_OPEN: u8 = 8
+    const NODE_FOCUSED: u8 = 16
+    const NODE_PRESSED: u8 = 32
+
+    // `label` and `path` are the node list's own text, valid until the second end_frame after the
+    // one that made the list. `label` is the end of `path`.
+    struct Node { id: Id = NO_ID, role: Role = Role::none, rect: Rect = Rect{ .. }, flags: u8 = 0, value: f32 = 0.0, label: []u8 = "", path: []u8 = "" }
+
+    fn describe { mut ui: Ui, id: Id, role: Role, label: []u8, value: f32, flags: u8 } {
+        if not tree::can_record{ &ui } or not ui.config.nodes { return }
+        let n = @as(usize, ui.nodes.next_count)
+        if n >= ui.nodes.next.len {
+            report_drop{ &ui, kind = ProblemKind::nodes_full }
+            return
+        }
+        let top = id::get_top{ ui }
+        let mut need = label.len
+        let mut parts: usize = if label.len > 0 { 1 } else { 0 }
+        let mut i: usize = 1
+        while i <= top {
+            let e = ui.ids.entries[i]
+            if e.named {
+                need = need + @as(usize, e.name.len)
+                parts = parts + 1
+            }
+            i = i + 1
+        }
+        if parts > 1 { need = need + parts - 1 }
+        let start = @as(usize, ui.nodes.next_len)
+        if need > ui.nodes.next_text.len - start {
+            report_drop{ &ui, kind = ProblemKind::nodes_full }
+            return
+        }
+        let mut at = start
+        let mut written: usize = 0
+        i = 1
+        while i <= top {
+            let e = ui.ids.entries[i]
+            if e.named {
+                if written > 0 {
+                    ui.nodes.next_text[at] = '/'
+                    at = at + 1
+                }
+                let name = get_text{ ui, span = e.name }
+                slice::copy(u8){ dst = ui.nodes.next_text[at..at + name.len], src = name }
+                at = at + name.len
+                written = written + 1
+            }
+            i = i + 1
+        }
+        if label.len > 0 {
+            if written > 0 {
+                ui.nodes.next_text[at] = '/'
+                at = at + 1
+            }
+            slice::copy(u8){ dst = ui.nodes.next_text[at..at + label.len], src = label }
+            at = at + label.len
+        }
+        ui.nodes.next_len = @as(u32, at)
+        ui.nodes.next[n] = nodes::Item{
+            id, role, flags, value, path = Span{ start = @as(u32, start), len = @as(u32, at - start) },
+            label = @as(u32, label.len), hit = tree::NONE,
+        }
+        ui.nodes.next_count = ui.nodes.next_count + 1
+    }
+
+    // The node of the last finished frame whose path is `path`; or else the one node whose path
+    // ends with `/` and `path`. Null when there is none, and when the suffix fits more than one.
+    fn find_node { ui: Ui, path: []u8 } -> ?Node {
+        if path.len == 0 { return null }
+        let count = @as(usize, ui.nodes.count)
+        for i in 0..count {
+            if slice::eq_bytes{ a = nodes::get_path{ ui, item = ui.nodes.list[i] }, b = path } { return nodes::make_node{ ui, item = ui.nodes.list[i] } }
+        }
+        let mut found: usize = count
+        let mut matches: u32 = 0
+        for i in 0..count {
+            if nodes::has_suffix{ path = nodes::get_path{ ui, item = ui.nodes.list[i] }, suffix = path } {
+                found = i
+                matches = matches + 1
+            }
+        }
+        if matches != 1 { return null }
+        return nodes::make_node{ ui, item = ui.nodes.list[found] }
+    }
+
+    // How many nodes the last finished frame described.
+    fn get_node_count { ui: Ui } -> u32 {
+        return ui.nodes.count
+    }
+
+    // Node `index` of the last finished frame, in the order they were described; null past the end.
+    fn get_node { ui: Ui, index: u32 } -> ?Node {
+        if index >= ui.nodes.count { return null }
+        return nodes::make_node{ ui, item = ui.nodes.list[@as(usize, index)] }
+    }
+
+    namespace nodes {
+        // A node as it is kept: its path in the list's text, the length of its label (the end of
+        // the path), and its region's place in `ui.emit.hits` (NONE when it has none).
+        struct Item { id: Id, path: Span, label: u32, hit: u32, value: f32, role: Role, flags: u8 }
+
+        struct State {
+            list: []mut Item, count: u32, text: []mut u8,                          // the last finished frame's
+            next: []mut Item, next_count: u32, next_text: []mut u8, next_len: u32, // this frame's
+            index: []mut u32,       // by id: a region's place plus one; a power of two over twice the regions
         }
 
-        fn reset_state { mut ui: Ui } {}
+        fn make_state(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !State {
+            let list = try alloc::make(Item, S){ realloc, &heap, count = @as(usize, cap.nodes) }
+            let next = try alloc::make(Item, S){ realloc, &heap, count = @as(usize, cap.nodes) }
+            let text = try alloc::make(u8, S){ realloc, &heap, count = @as(usize, cap.text / 2) }
+            let next_text = try alloc::make(u8, S){ realloc, &heap, count = @as(usize, cap.text / 2) }
+            let mut n: usize = 2
+            while n < @as(usize, cap.hits) * 2 { n = n * 2 }
+            let index = try alloc::make(u32, S){ realloc, &heap, count = n }
+            return State{ list, count = 0, text, next, next_count = 0, next_text, next_len = 0, index }
+        }
 
-        fn finish_frame { mut ui: Ui } {}
+        fn reset_state { mut ui: Ui } {
+            ui.nodes.next_count = 0
+            ui.nodes.next_len = 0
+        }
+
+        // After emit: each node finds its region, and this frame's list becomes the one scripts
+        // read.
+        fn finish_frame { mut ui: Ui } {
+            if ui.nodes.next_count > 0 {
+                for &s in ui.nodes.index { s = 0 }
+                for h in 0..@as(usize, ui.emit.hit_count) {
+                    let at = find_slot{ ui, id = ui.emit.hits[h].id }
+                    ui.nodes.index[at] = @as(u32, h + 1)
+                }
+                for &item in ui.nodes.next[..@as(usize, ui.nodes.next_count)] {
+                    let slot = ui.nodes.index[find_slot{ ui, id = item.id }]
+                    if slot != 0 { item.hit = slot - 1 }
+                }
+            }
+            let list = ui.nodes.list
+            ui.nodes.list = ui.nodes.next
+            ui.nodes.next = list
+            let text = ui.nodes.text
+            ui.nodes.text = ui.nodes.next_text
+            ui.nodes.next_text = text
+            ui.nodes.count = ui.nodes.next_count
+            ui.nodes.next_count = 0
+            ui.nodes.next_len = 0
+        }
+
+        // The index slot of the region with `id`, or the free slot where it would go.
+        fn find_slot { ui: Ui, id: Id } -> usize {
+            let mask = ui.nodes.index.len - 1
+            let mut at = @as(usize, @as(u64, id) & @as(u64, mask))
+            while ui.nodes.index[at] != 0 {
+                if ui.emit.hits[@as(usize, ui.nodes.index[at] - 1)].id == id { return at }
+                at = (at + 1) & mask
+            }
+            return at
+        }
+
+        fn get_path { ui: Ui, item: Item } -> []u8 {
+            let start = @as(usize, item.path.start)
+            return ui.nodes.text[start..start + @as(usize, item.path.len)]
+        }
+
+        fn make_node { ui: Ui, item: Item } -> Node {
+            let path = get_path{ ui, item }
+            let mut rect = Rect{ .. }
+            if item.hit != tree::NONE and item.hit < ui.emit.hit_count { rect = ui.emit.hits[@as(usize, item.hit)].rect }
+            return Node{ id = item.id, role = item.role, rect, flags = item.flags, value = item.value, label = path[path.len - @as(usize, item.label)..], path }
+        }
+
+        // Whether `path` ends with `/` and `suffix`.
+        fn has_suffix { path: []u8, suffix: []u8 } -> bool {
+            if path.len <= suffix.len { return false }
+            let cut = path.len - suffix.len
+            return path[cut - 1] == '/' and slice::eq_bytes{ a = path[cut..], b = suffix }
+        }
     }
 }

@@ -1,0 +1,150 @@
+// ui_test: the scripted driver (plan sections 2.8 and 6.1). It is a host with no OS: it steps
+// frames of a fixed size, scale and `dt`, pushes pointer, key and text events, applies the
+// requests with a fake clipboard, and addresses widgets by node path.
+//
+// The program's frame is a bound function, `show = show_app{ &app, _ }`, which the driver calls
+// between `begin_frame` and `end_frame`. Interaction is answered from the last frame's regions, so
+// a click on a node takes three frames: the pointer moves over the node's centre and a frame runs
+// (the node is hovered in it), the button goes down and a frame runs (pressed), the button comes up
+// and a frame runs (clicked). Before each step the driver checks that the node's centre is still
+// the node's own region, the topmost one, so a click on something covered fails instead of
+// clicking what covers it.
+//
+// After a frame the driver keeps its requests in `requests`: a `copy` goes on the fake clipboard,
+// and a `paste` is answered with `Event::paste` of the clipboard before the next frame, as a real
+// host does. A frame that dropped something or recorded a problem is counted in `unclean`.
+namespace ui_test {
+    struct Driver {
+        info: ui::FrameInfo,            // what every frame is stepped with
+        clipboard: []mut u8, clip_len: usize,
+        requests: ui::Requests,         // the last frame's; `copy` is valid until the next frame
+        frames: u32,                    // frames stepped
+        unclean: u32,                   // of them, those with a drop or a problem
+        first_unclean: u32,             // the number of the first of them (counting from 1); 0 none
+    }
+
+    // A driver for frames of `width` by `height` logical units at `scale` device pixels a unit,
+    // `dt` seconds apart, with a clipboard of `clipboard` bytes.
+    fn make_driver(S) { realloc: alloc::Fn(S), mut heap: S, width: f32, height: f32, scale: f32, dt: f32, clipboard: usize } -> !Driver {
+        let clip = try alloc::make(u8, S){ realloc, &heap, count = clipboard }
+        return Driver{
+            info = ui::FrameInfo{ width, height, pixel_width = width * scale, pixel_height = height * scale, dt },
+            clipboard = clip, clip_len = 0, requests = ui::Requests{ .. },
+            frames = 0, unclean = 0, first_unclean = 0,
+        }
+    }
+
+    // What is on the fake clipboard.
+    fn get_clipboard { d: Driver } -> []u8 {
+        return d.clipboard[..d.clip_len]
+    }
+
+    // Puts `text` on the fake clipboard (cut to its size), as another program would.
+    fn set_clipboard { mut d: Driver, text: []u8 } {
+        let n = if text.len < d.clipboard.len { text.len } else { d.clipboard.len }
+        slice::copy(u8){ dst = d.clipboard[..n], src = text[..n] }
+        d.clip_len = n
+    }
+
+    // One frame, then the host's side of its requests.
+    fn step_frame { mut d: Driver, mut ui: ui::Ui, show: &fn{ mut ui: ui::Ui } } {
+        ui::begin_frame{ &ui, frame = d.info }
+        show{ &ui }
+        ui::end_frame{ &ui }
+        d.frames = d.frames + 1
+        if ui.stats.dropped != 0 or ui.stats.problems != 0 or ui.draw.dropped != 0 {
+            d.unclean = d.unclean + 1
+            if d.first_unclean == 0 { d.first_unclean = d.frames }
+        }
+        d.requests = ui::take_requests{ &ui }
+        let copy = d.requests.copy
+        if copy.len > 0 { set_clipboard{ &d, text = copy } }
+        if d.requests.paste { _ = ui::push_event{ &ui, event = ui::Event::paste{ text = d.clipboard[..d.clip_len] } } }
+    }
+
+    fn step_frames { mut d: Driver, mut ui: ui::Ui, show: &fn{ mut ui: ui::Ui }, count: u32 } {
+        for _ in 0..count { step_frame{ &d, &ui, show } }
+    }
+
+    // ---- events: each answers what `push_event` answered
+
+    fn move_pointer { mut ui: ui::Ui, x: f32, y: f32 } -> bool {
+        return ui::push_event{ &ui, event = ui::Event::pointer_move{ x, y } }
+    }
+
+    fn push_button { mut ui: ui::Ui, button: u8, down: bool, clicks: u8 } -> bool {
+        return ui::push_event{ &ui, event = ui::Event::pointer_button{ button, down, clicks } }
+    }
+
+    fn leave_window { mut ui: ui::Ui } -> bool {
+        return ui::push_event{ &ui, event = ui::Event::pointer_leave }
+    }
+
+    fn turn_wheel { mut ui: ui::Ui, dx: f32, dy: f32 } -> bool {
+        return ui::push_event{ &ui, event = ui::Event::wheel{ dx, dy } }
+    }
+
+    // A key going down and coming up.
+    fn tap_key { mut ui: ui::Ui, key: ui::Key, mods: u8 } -> bool {
+        let taken = ui::push_event{ &ui, event = ui::Event::key{ key, down = true, repeat = false, mods } }
+        _ = ui::push_event{ &ui, event = ui::Event::key{ key, down = false, repeat = false, mods } }
+        return taken
+    }
+
+    // Typed text, in events of up to 32 bytes as a host sends it.
+    fn type_text { mut ui: ui::Ui, text: []u8 } -> bool {
+        let mut taken = false
+        let mut at: usize = 0
+        while at < text.len {
+            let n = if text.len - at < 32 { text.len - at } else { 32 }
+            let mut bytes: [32]u8
+            slice::copy(u8){ dst = bytes[..n], src = text[at..at + n] }
+            if ui::push_event{ &ui, event = ui::Event::text{ bytes, len = @as(u8, n) } } { taken = true }
+            at = at + n
+        }
+        return taken
+    }
+
+    // ---- nodes
+
+    // The centre of the last frame's node at `path`, when the node is there and its centre is its
+    // own region, the topmost one; null otherwise.
+    fn find_center { ui: ui::Ui, path: []u8 } -> ?ui::Point {
+        let node = ui::find_node{ ui, path } ifnull { return null }
+        let x = node.rect.x + node.rect.w * 0.5
+        let y = node.rect.y + node.rect.h * 0.5
+        let top = ui::interact::find_topmost{ ui, x, y }
+        if top == ui::tree::NONE or ui.emit.hits[@as(usize, top)].id != node.id { return null }
+        return ui::Point{ x, y }
+    }
+
+    // Clicks the node at `path` with the left button over three frames (move, press, release).
+    // False, with what was done so far, when the node cannot be reached at a step.
+    fn click { mut d: Driver, mut ui: ui::Ui, path: []u8, show: &fn{ mut ui: ui::Ui } } -> bool {
+        let at = find_center{ ui, path } ifnull { return false }
+        _ = move_pointer{ &ui, x = at.x, y = at.y }
+        step_frame{ &d, &ui, show }
+        if find_center{ ui, path } == null { return false }
+        _ = push_button{ &ui, button = 0, down = true, clicks = 1 }
+        step_frame{ &d, &ui, show }
+        _ = push_button{ &ui, button = 0, down = false, clicks = 1 }
+        step_frame{ &d, &ui, show }
+        return true
+    }
+
+    // Drags the node at `path` by (`dx`, `dy`) with the left button over four frames (move,
+    // press, move, release). False when the node cannot be reached.
+    fn drag { mut d: Driver, mut ui: ui::Ui, path: []u8, dx: f32, dy: f32, show: &fn{ mut ui: ui::Ui } } -> bool {
+        let at = find_center{ ui, path } ifnull { return false }
+        _ = move_pointer{ &ui, x = at.x, y = at.y }
+        step_frame{ &d, &ui, show }
+        if find_center{ ui, path } == null { return false }
+        _ = push_button{ &ui, button = 0, down = true, clicks = 1 }
+        step_frame{ &d, &ui, show }
+        _ = move_pointer{ &ui, x = at.x + dx, y = at.y + dy }
+        step_frame{ &d, &ui, show }
+        _ = push_button{ &ui, button = 0, down = false, clicks = 1 }
+        step_frame{ &d, &ui, show }
+        return true
+    }
+}

@@ -1,20 +1,185 @@
 // ui::focus: the focused id, the tab stops of the frame in recording order, and the links between
 // widgets (plan section 2.5).
 //
+//  - One id has the keyboard focus. A focusable `press` is a tab stop, in the order the frame
+//    records them, and takes focus when it is pressed (or, with `focus_on_hover`, when its hover
+//    begins). `set_focus` gives it to any id.
+//  - Focus is dropped at end_frame when its owner was not recorded (no `press` of it and no
+//    `set_focus` of it that frame), and when a left press of the frame went to no focusable widget
+//    (a click on empty space or on a widget that takes no focus ends a text field's editing).
+//  - The key strokes nobody took during the frame then move focus, in the order they were pushed:
+//    Tab and Shift+Tab to the next and the previous tab stop (wrapping; from no focus to the first
+//    or the last), an arrow key with no modifier along the focused widget's link in that direction.
+//    Only the stops of the frontmost modal tree and the trees in front of it count, and a link to an
+//    id that is not one of them is not followed. Tab with no stops does nothing.
+//
 // This file is the subsystem's place in the Ui: `ui.focus` is its state. `make` builds the state,
 // `begin_frame` calls `reset_state`, and `end_frame` calls `finish_frame` after the frame is
 // emitted, which is where focus moves. By then `ui.emit.floor` is the order of the frontmost modal
 // tree (0 when none is up): what was recorded in a tree of a smaller order takes no keys.
 namespace ui {
-    namespace focus {
-        struct State {}
+    // The ids focus moves to from a widget with each arrow key; null: that key does nothing there.
+    struct Links { up: ?Id = null, down: ?Id = null, left: ?Id = null, right: ?Id = null }
 
-        fn make_state(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !State {
-            return State{}
+    // Gives the widget `id` its neighbours for the arrow keys this frame (KOTOR's MOVETO). Call it
+    // every frame the widget is recorded; a later call for the same id wins.
+    fn set_links { mut ui: Ui, id: Id, links: Links } {
+        if not tree::can_record{ &ui } or id == NO_ID { return }
+        let n = @as(usize, ui.focus.link_count)
+        if n >= ui.focus.links.len {
+            report_drop{ &ui, kind = ProblemKind::hits_full }
+            return
+        }
+        ui.focus.links[n] = focus::Link{ id, links }
+        ui.focus.link_count = ui.focus.link_count + 1
+    }
+
+    // Gives `id` the keyboard focus now (NO_ID: nobody has it). It is kept while the widget with
+    // that id is recorded.
+    fn set_focus { mut ui: Ui, id: Id } {
+        focus::take_focus{ &ui, id, claimed = false }
+    }
+
+    fn is_focused { ui: Ui, id: Id } -> bool {
+        return id != NO_ID and ui.focus.focused == id
+    }
+
+    namespace focus {
+        // A tab stop and the order of the tree it was recorded in.
+        struct Stop { id: Id, order: u32 }
+        struct Link { id: Id, links: Links }
+
+        struct State {
+            focused: Id,
+            seen: bool,                 // its owner was recorded this frame
+            claimed: bool,              // a pressed focusable widget took focus this frame
+            stops: []mut Stop, stop_count: u32,
+            links: []mut Link, link_count: u32,
         }
 
-        fn reset_state { mut ui: Ui } {}
+        // A frame has as many tab stops as it has room for hit regions (each belongs to an
+        // identified element), and links for a quarter of them (only screens laid out by hand, as
+        // KOTOR's, give them). What does not fit is counted as `hits_full`.
+        fn make_state(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !State {
+            let stops = try alloc::make(Stop, S){ realloc, &heap, count = @as(usize, cap.hits) }
+            let links = try alloc::make(Link, S){ realloc, &heap, count = @as(usize, cap.hits / 4) }
+            return State{ focused = NO_ID, seen = false, claimed = false, stops, stop_count = 0, links, link_count = 0 }
+        }
 
-        fn finish_frame { mut ui: Ui } {}
+        fn reset_state { mut ui: Ui } {
+            ui.focus.seen = false
+            ui.focus.claimed = false
+            ui.focus.stop_count = 0
+            ui.focus.link_count = 0
+        }
+
+        fn take_focus { mut ui: Ui, id: Id, claimed: bool } {
+            ui.focus.focused = id
+            ui.focus.seen = true
+            if claimed { ui.focus.claimed = true }
+        }
+
+        // A tab stop, once: a second press of the same id right after is not another stop.
+        fn add_stop { mut ui: Ui, id: Id } {
+            let n = @as(usize, ui.focus.stop_count)
+            if n > 0 and ui.focus.stops[n - 1].id == id { return }
+            if n >= ui.focus.stops.len {
+                report_drop{ &ui, kind = ProblemKind::hits_full }
+                return
+            }
+            ui.focus.stops[n] = Stop{ id, order = tree::get_order{ ui } }
+            ui.focus.stop_count = ui.focus.stop_count + 1
+        }
+
+        fn finish_frame { mut ui: Ui } {
+            if ui.focus.focused != NO_ID and not ui.focus.seen { ui.focus.focused = NO_ID }
+            if ui.input.now.pressed[0] and not ui.focus.claimed { ui.focus.focused = NO_ID }
+            let mut i: usize = 0
+            while i < @as(usize, ui.input.now.keys) {
+                let k = ui.input.keys[i]
+                i = i + 1
+                if k.key == Key::tab and (k.mods & (MOD_CTRL | MOD_ALT)) == 0 {
+                    step_focus{ &ui, forward = (k.mods & MOD_SHIFT) == 0 }
+                } else if k.mods == 0 {
+                    if k.key == Key::up or k.key == Key::down or k.key == Key::left or k.key == Key::right {
+                        follow_link{ &ui, key = k.key }
+                    }
+                }
+            }
+        }
+
+        // Whether stop `s` is in front of the frame's frontmost modal tree, or in it.
+        fn is_reachable { ui: Ui, s: Stop } -> bool {
+            return s.order >= ui.emit.floor
+        }
+
+        // Moves focus to the next or the previous reachable stop.
+        fn step_focus { mut ui: Ui, forward: bool } {
+            let mut count: usize = 0
+            let mut at: usize = 0
+            let mut found = false
+            let mut i: usize = 0
+            while i < @as(usize, ui.focus.stop_count) {
+                let s = ui.focus.stops[i]
+                if is_reachable{ ui, s } {
+                    if not found and s.id == ui.focus.focused {
+                        at = count
+                        found = true
+                    }
+                    count = count + 1
+                }
+                i = i + 1
+            }
+            if count == 0 { return }
+            let mut next: usize = if forward { 0 } else { count - 1 }
+            if found { next = if forward { (at + 1) % count } else { (at + count - 1) % count } }
+            let mut k: usize = 0
+            i = 0
+            while i < @as(usize, ui.focus.stop_count) {
+                let s = ui.focus.stops[i]
+                if is_reachable{ ui, s } {
+                    if k == next {
+                        ui.focus.focused = s.id
+                        return
+                    }
+                    k = k + 1
+                }
+                i = i + 1
+            }
+        }
+
+        // Moves focus along the focused widget's link for an arrow key, when that link names a
+        // reachable stop of this frame.
+        fn follow_link { mut ui: Ui, key: Key } {
+            let from = ui.focus.focused
+            if from == NO_ID { return }
+            let mut target: ?Id = null
+            let mut i: usize = 0
+            while i < @as(usize, ui.focus.link_count) {
+                let l = ui.focus.links[i]
+                if l.id == from {
+                    if key == Key::up {
+                        target = l.links.up
+                    } else if key == Key::down {
+                        target = l.links.down
+                    } else if key == Key::left {
+                        target = l.links.left
+                    } else {
+                        target = l.links.right
+                    }
+                }
+                i = i + 1
+            }
+            let to = target ifnull { return }
+            i = 0
+            while i < @as(usize, ui.focus.stop_count) {
+                let s = ui.focus.stops[i]
+                if s.id == to and is_reachable{ ui, s } {
+                    ui.focus.focused = to
+                    return
+                }
+                i = i + 1
+            }
+        }
     }
 }

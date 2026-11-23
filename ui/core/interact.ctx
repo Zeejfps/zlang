@@ -1,20 +1,198 @@
 // ui::interact: hot and active (plan section 2.5): which hit region the pointer is over, which
 // widget holds the pointer, and what `ui::press` answers.
 //
+// Interaction is answered from the last finished frame's hit regions, by id, so a widget is
+// interactive from its second frame:
+//
+//  - `hot` is worked out once, at begin_frame: the topmost region of the last frame under the
+//    pointer (the last one emitted whose `area` holds it). Regions behind a modal tree have an empty
+//    area, so they are never hot.
+//  - `hover` is `hot` unless another widget is active: while something holds the pointer nothing
+//    else is hovered. A widget's hover begins (`entered`) on the frame `hover` becomes its id.
+//  - A press of the button a widget listens for, on the hovered widget, with nothing active, makes
+//    it `active` (pointer capture). The release ends it, and is a click only if the pointer is still
+//    over the same id and the release was not a cancel (the window lost the keyboard). A widget that
+//    is active but not recorded for a frame loses the capture at that frame's end.
+//
 // This file is the subsystem's place in the Ui: `ui.interact` is its state. `make` builds the
 // state, `begin_frame` calls `reset_state` after the input is sealed (`ui.emit.hits` holds the last
 // finished frame's hit regions, topmost last, with `area` already empty behind a modal tree), and
 // `end_frame` calls `finish_frame` after the frame is emitted.
 namespace ui {
-    namespace interact {
-        struct State {}
+    // How `press` treats a widget. `button` is the pointer button it listens for (0 left, 1
+    // right, 2 middle). A focusable widget is a tab stop and takes focus when it is pressed; with
+    // `focus_on_hover` it also takes focus when its hover begins. A widget that is not enabled is
+    // hovered but never pressed, active or focused.
+    struct PressOpts { enabled: bool = true, focusable: bool = true, focus_on_hover: bool = false, button: u8 = 0 }
 
-        fn make_state(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !State {
-            return State{}
+    // What happened to a widget this frame.
+    //
+    //   hovered   the pointer is over it, and no other widget holds the pointer
+    //   entered   its hover began this frame
+    //   pressed   the press that made it active came this frame
+    //   held      it holds the pointer this frame (also on the frame of the press and of the release)
+    //   clicked   the release came this frame, over it
+    //   clicks    on the frames with `pressed` or `clicked`: which click of a series the press was
+    //             (2 for a double click), as the host counted; 0 otherwise
+    //   focused   it has the keyboard focus
+    //   drag_x/y  while held: how far the pointer is from where the press was
+    struct Interaction {
+        id: Id,
+        hovered: bool = false, entered: bool = false,
+        pressed: bool = false, held: bool = false, clicked: bool = false, clicks: u8 = 0,
+        focused: bool = false,
+        drag_x: f32 = 0.0, drag_y: f32 = 0.0,
+    }
+
+    // The one behaviour primitive: hover, press, hold, click, focus. Record an element with the
+    // same id in the frame so it can be hit next frame; call `press` once a frame for an id (a
+    // second call for the same button sees the press already taken).
+    fn press { mut ui: Ui, id: Id, opts: PressOpts } -> Interaction {
+        let mut it = Interaction{ id, .. }
+        if not ui.in_frame {
+            report_problem{ &ui, kind = ProblemKind::frame_not_open, id }
+            return it
+        }
+        if id == NO_ID { return it }
+        it.hovered = ui.interact.hover == id
+        it.entered = it.hovered and ui.interact.entered == id
+        if not opts.enabled {
+            if ui.interact.active == id { ui.interact.active = NO_ID }
+            return it
+        }
+        let b = @as(usize, opts.button)
+        if b >= BUTTONS { return it }
+        let now = ui.input.now
+        if it.hovered and now.pressed[b] and ui.interact.active == NO_ID {
+            ui.interact.active = id
+            ui.interact.active_button = opts.button
+            ui.interact.active_clicks = now.clicks[b]
+            it.pressed = true
+            it.clicks = now.clicks[b]
+            if opts.focusable { focus::take_focus{ &ui, id, claimed = true } }
+        }
+        if ui.interact.active == id and ui.interact.active_button == opts.button {
+            ui.interact.active_seen = true
+            it.held = true
+            it.drag_x = now.x - now.press_x[b]
+            it.drag_y = now.y - now.press_y[b]
+            if now.released[b] or not now.down[b] {
+                it.clicked = now.released[b] and not now.cancelled[b] and ui.interact.hot == id
+                if it.clicked { it.clicks = ui.interact.active_clicks }
+                ui.interact.active = NO_ID
+            }
+        }
+        if opts.focusable {
+            focus::add_stop{ &ui, id }
+            if opts.focus_on_hover and it.entered { focus::take_focus{ &ui, id, claimed = false } }
+            if ui.focus.focused == id {
+                ui.focus.seen = true
+                it.focused = true
+            }
+        }
+        return it
+    }
+
+    // How long the pointer has been over the widget with `id`, in seconds of frame time: 0 on the
+    // frame its hover began, and 0 for a widget that is not hovered.
+    fn get_hover_time { ui: Ui, id: Id } -> f32 {
+        if id == NO_ID or ui.interact.hover != id { return 0.0 }
+        return @as(f32, ui.input.time - ui.interact.hover_since)
+    }
+
+    // The frame's vertical wheel movement, given to the widget with `id` only while the pointer
+    // is over it or over something inside it (a region of its tree emitted after it); then nobody
+    // else gets it. 0 otherwise.
+    fn take_wheel { mut ui: Ui, id: Id } -> f32 {
+        if ui.input.now.wheel_y == 0.0 or not interact::is_under_pointer{ ui, id } { return 0.0 }
+        let dy = ui.input.now.wheel_y
+        ui.input.now.wheel_y = 0.0
+        return dy
+    }
+
+    // `take_wheel` for the horizontal movement.
+    fn take_wheel_x { mut ui: Ui, id: Id } -> f32 {
+        if ui.input.now.wheel_x == 0.0 or not interact::is_under_pointer{ ui, id } { return 0.0 }
+        let dx = ui.input.now.wheel_x
+        ui.input.now.wheel_x = 0.0
+        return dx
+    }
+
+    namespace interact {
+        struct State {
+            hot: Id,                // the topmost region under the pointer, at begin_frame
+            hover: Id,              // hot, unless another widget is active
+            entered: Id,            // the hover that began this frame
+            hover_since: f64,       // the time `hover` began
+            active: Id,             // what holds the pointer
+            active_button: u8,      // with which button
+            active_clicks: u8,      // which click of a series its press was
+            active_seen: bool,      // its `press` was called this frame
         }
 
-        fn reset_state { mut ui: Ui } {}
+        fn make_state(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !State {
+            return State{
+                hot = NO_ID, hover = NO_ID, entered = NO_ID, hover_since = 0.0,
+                active = NO_ID, active_button = 0, active_clicks = 0, active_seen = false,
+            }
+        }
 
-        fn finish_frame { mut ui: Ui } {}
+        // begin_frame, after the input is sealed: the hot id from the last frame's regions.
+        fn reset_state { mut ui: Ui } {
+            let mut hot = NO_ID
+            if ui.input.now.inside {
+                let at = find_topmost{ ui, x = ui.input.now.x, y = ui.input.now.y }
+                if at != tree::NONE { hot = ui.emit.hits[@as(usize, at)].id }
+            }
+            ui.interact.hot = hot
+            let active = ui.interact.active
+            let hover = if active == NO_ID or active == hot { hot } else { NO_ID }
+            if hover != ui.interact.hover {
+                ui.interact.entered = hover
+                ui.interact.hover_since = ui.input.time
+            } else {
+                ui.interact.entered = NO_ID
+            }
+            ui.interact.hover = hover
+            ui.interact.active_seen = false
+        }
+
+        // end_frame: an active widget that was not recorded this frame lets go.
+        fn finish_frame { mut ui: Ui } {
+            if ui.interact.active != NO_ID and not ui.interact.active_seen { ui.interact.active = NO_ID }
+        }
+
+        fn contains { r: Rect, x: f32, y: f32 } -> bool {
+            return x >= r.x and x < r.x + r.w and y >= r.y and y < r.y + r.h
+        }
+
+        // The index in `ui.emit.hits` of the topmost region whose area holds (x, y), or NONE.
+        fn find_topmost { ui: Ui, x: f32, y: f32 } -> u32 {
+            let mut i = @as(usize, ui.emit.hit_count)
+            while i > 0 {
+                i = i - 1
+                if contains{ r = ui.emit.hits[i].area, x, y } { return @as(u32, i) }
+            }
+            return tree::NONE
+        }
+
+        // Whether the pointer is over the region of `id` and what is topmost there is that region
+        // or one emitted after it in the same tree (its content, as far as the regions tell).
+        fn is_under_pointer { ui: Ui, id: Id } -> bool {
+            if id == NO_ID or not ui.input.now.inside { return false }
+            let x = ui.input.now.x
+            let y = ui.input.now.y
+            let top = find_topmost{ ui, x, y }
+            if top == tree::NONE { return false }
+            let mut i: usize = 0
+            while i <= @as(usize, top) {
+                let hit = ui.emit.hits[i]
+                if hit.id == id and contains{ r = hit.area, x, y } {
+                    return ui.emit.hits[@as(usize, top)].order == hit.order
+                }
+                i = i + 1
+            }
+            return false
+        }
     }
 }

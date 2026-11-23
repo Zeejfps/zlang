@@ -61,6 +61,7 @@ kotor/tools/ctxc run ui/tests/draw                     # stage 0: draw list, rec
 kotor/tools/ctxc run ui/tests/text                     # stage 1: fonts, measuring, wrapping, caret
 kotor/tools/ctxc run ui/tests/stage                    # stage 2: instances, atlas, batching; writes ui/out/stage-atlas.png
 kotor/tools/ctxc run ui/tests/layout                   # stage 5: the Ui, ids, the tree, placed layout, emit
+kotor/tools/ctxc run ui/tests/input                    # stage 7: input, interaction, focus, state, nodes, the driver
 kotor/tools/ctxc run ui/tests/draw -- --update         # rewrite goldens after an intended change
 kotor/tools/ctxc run kotor/tools/uicompat              # ui built beside kotor's libraries
 ui/tools/check                                         # every headless ui test in turn, then uicompat
@@ -100,7 +101,7 @@ ui/
   record/     namespace ui_rec     the recorder: Sink with its own #write fns, write_list, write_quoted
   record_stage/ namespace ui_rec   write_staged, the dump of a Staged: its own directory, because it names ui_stage
                                    and a program that records only draw lists should not have to add ui/stage
-  test/       namespace ui_test    Tally, expect, has_flag, compare_golden, make_test_font, write_png (later: scripted driver)
+  test/       namespace ui_test    Tally, expect, has_flag, compare_golden, make_test_font, write_png, Driver (the scripted host)
   tests/<name>/                    programs: build.ctx, main.ctx, golden/*.txt
   tools/check                      bash loop over the headless tests
   out/                             (ignored) screenshots from later stages

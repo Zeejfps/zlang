@@ -1,20 +1,221 @@
 // ui::state: per-widget state (plan section 2.3): plain values in a fixed table keyed by id, and
 // the sweep that frees what nothing asked for.
 //
+// State is copied in and out (`load_state`, `store_state`), so nothing holds a pointer into the
+// table. An entry is asked for when it is loaded, stored or kept. Every 64 frames a sweep frees
+// each entry that was not asked for within `config.state_ttl` frames, unless it is pinned: its id,
+// or the id of an element it was asked for inside of, was given to `keep_state` within that time.
+// That is how the content of a hidden tab keeps its state: the tab calls `keep_state` with the id
+// of the element its content is recorded in, for every frame the content is not recorded.
+//
+// The elements an entry was asked for inside of are kept as a 128-bit filter of their ids (two
+// bits an id), so a sweep can tell without the tree. The filter never misses an element; now and
+// then it takes an entry for one that holds it, which keeps that entry longer and nothing worse.
+//
 // This file is the subsystem's place in the Ui: `ui.state` is its state, with room for
 // `Capacity.states` entries. `make` builds it, `begin_frame` calls `reset_state`, and `end_frame`
 // calls `finish_frame` after the frame is emitted, which is where the sweep runs. A table that is
-// full is reported as `ProblemKind::states_full`.
+// full is reported as `ProblemKind::states_full`, and what did not fit is not kept.
 namespace ui {
+    // A widget's state: zero when new.
+    struct Values { f: [6]f32, i: [2]i64 }
+
+    // The state of `id`: what was stored for it, or zeros when nothing is.
+    fn load_state { mut ui: Ui, id: Id } -> Values {
+        let mut v: Values
+        let at = state::find_entry{ ui, id } ifnull { return v }
+        state::touch_entry{ &ui, at }
+        return ui.state.entries[at].values
+    }
+
+    fn store_state { mut ui: Ui, id: Id, values: Values } {
+        let at = state::add_entry{ &ui, id } ifnull { return }
+        ui.state.entries[at].values = values
+    }
+
+    // Keeps the state of `id`, and of everything asked for inside the element with that id, alive
+    // through this frame although its widget is not recorded (a hidden tab).
+    fn keep_state { mut ui: Ui, id: Id } {
+        let at = state::add_entry{ &ui, id } ifnull { return }
+        ui.state.entries[at].kept = ui.frame
+    }
+
+    // A value that follows `target` at `rate` units a second of frame time and reaches it exactly:
+    // the value for this frame. It starts at its first target. It is kept as widget state under an
+    // id made from `id`, so a widget's own `load_state{ id }` is not touched. While it has not
+    // reached its target the frame asks for another (`Requests.animating`).
+    fn animate { mut ui: Ui, id: Id, target: f32, rate: f32 } -> f32 {
+        if id == NO_ID { return target }
+        let key = state::get_animation_id{ id }
+        let fresh = state::find_entry{ ui, id = key } == null
+        let at = state::add_entry{ &ui, id = key } ifnull { return target }
+        let mut v = ui.state.entries[at].values.f[0]
+        let dt = ui.info.dt
+        let step = if rate > 0.0 and dt > 0.0 { rate * dt } else { 0.0 }
+        if fresh or not (v - v == 0.0) or not (step > 0.0) {
+            v = target
+        } else if v < target {
+            v = pick_min_f32{ a = v + step, b = target }
+        } else if v > target {
+            v = pick_max_f32{ a = v - step, b = target }
+        }
+        ui.state.entries[at].values.f[0] = v
+        if v != target { set_animating{ &ui } }
+        return v
+    }
+
     namespace state {
-        struct State {}
+        // How often the sweep runs, in frames.
+        const SWEEP_FRAMES: u64 = 64
+
+        struct Entry {
+            id: Id,
+            values: Values,
+            last: u64,              // the frame it was last asked for
+            kept: u64,              // the frame keep_state last named it; 0 never
+            within: [2]u64,         // the filter of the elements it was asked for inside of
+        }
+
+        // The entries are `entries[..count]`. `index` finds them by id: open addressing with
+        // linear probing over a power of two at least twice `entries.len`, so a probe always ends
+        // at a free slot; a slot holds an entry's place plus one, 0 when it is free. `kept` holds
+        // the pinning ids while a sweep runs.
+        struct State { entries: []mut Entry, count: u32, index: []mut u32, kept: []mut Id }
 
         fn make_state(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !State {
-            return State{}
+            let limit: usize = if cap.states > 1073741824 { 1073741824 } else { @as(usize, cap.states) }
+            let mut n: usize = 2
+            while n < limit * 2 { n = n * 2 }
+            let entries = try alloc::make(Entry, S){ realloc, &heap, count = limit }
+            let index = try alloc::make(u32, S){ realloc, &heap, count = n }
+            let kept = try alloc::make(Id, S){ realloc, &heap, count = limit }
+            return State{ entries, count = 0, index, kept }
         }
 
         fn reset_state { mut ui: Ui } {}
 
-        fn finish_frame { mut ui: Ui } {}
+        // The sweep, every SWEEP_FRAMES frames.
+        fn finish_frame { mut ui: Ui } {
+            if ui.frame % SWEEP_FRAMES == 0 { sweep_entries{ &ui } }
+        }
+
+        // The id `animate` keeps its value under: `id` hashed on with a name no widget uses.
+        fn get_animation_id { id: Id } -> Id {
+            let h = hash_bytes{ seed = @as(u64, id), bytes = "\x00animate" }
+            return @as(Id, if h == 0 { 1 } else { h })
+        }
+
+        fn get_home { ui: Ui, id: Id } -> usize {
+            return @as(usize, @as(u64, id) & @as(u64, ui.state.index.len - 1))
+        }
+
+        // The index slot that holds `id`, or the free slot where it would go.
+        fn find_slot { ui: Ui, id: Id } -> usize {
+            let mask = ui.state.index.len - 1
+            let mut at = get_home{ ui, id }
+            while ui.state.index[at] != 0 {
+                if ui.state.entries[@as(usize, ui.state.index[at] - 1)].id == id { return at }
+                at = (at + 1) & mask
+            }
+            return at
+        }
+
+        // Where the entry of `id` is in `entries`; null when there is none. Asks for nothing.
+        fn find_entry { ui: Ui, id: Id } -> ?usize {
+            if id == NO_ID { return null }
+            let slot = ui.state.index[find_slot{ ui, id }]
+            if slot == 0 { return null }
+            return @as(usize, slot - 1)
+        }
+
+        // Whether an entry for `id` is in the table (asks for nothing).
+        fn has_entry { ui: Ui, id: Id } -> bool {
+            return find_entry{ ui, id } != null
+        }
+
+        // The entry of `id`, made (with zero values) when there is none; null, counted and
+        // reported, when the table is full. The entry is asked for.
+        fn add_entry { mut ui: Ui, id: Id } -> ?usize {
+            if id == NO_ID { return null }
+            let slot = find_slot{ ui, id }
+            let mut at = @as(usize, ui.state.count)
+            if ui.state.index[slot] != 0 {
+                at = @as(usize, ui.state.index[slot] - 1)
+            } else {
+                if at >= ui.state.entries.len {
+                    report_drop{ &ui, kind = ProblemKind::states_full }
+                    return null
+                }
+                let mut e: Entry
+                e.id = id
+                ui.state.entries[at] = e
+                ui.state.index[slot] = @as(u32, at + 1)
+                ui.state.count = ui.state.count + 1
+            }
+            touch_entry{ &ui, at }
+            return at
+        }
+
+        // Asked for now, inside the elements that are open.
+        fn touch_entry { mut ui: Ui, at: usize } {
+            ui.state.entries[at].last = ui.frame
+            let mut within: [2]u64
+            let mut el = tree::get_open{ ui }
+            while el != tree::NONE and @as(usize, el) < @as(usize, ui.tree.count) {
+                let e = ui.tree.elements[@as(usize, el)]
+                if e.id != NO_ID { add_bits{ &within, id = e.id } }
+                el = e.parent
+            }
+            ui.state.entries[at].within = within
+        }
+
+        fn add_bits { mut within: [2]u64, id: Id } {
+            let h = @as(u64, id)
+            let a = h & 127
+            let b = (h >> 7) & 127
+            within[@as(usize, a >> 6)] = within[@as(usize, a >> 6)] | (@as(u64, 1) << (a & 63))
+            within[@as(usize, b >> 6)] = within[@as(usize, b >> 6)] | (@as(u64, 1) << (b & 63))
+        }
+
+        fn has_bits { within: [2]u64, id: Id } -> bool {
+            let mut one: [2]u64
+            add_bits{ within = &one, id }
+            return (within[0] & one[0]) == one[0] and (within[1] & one[1]) == one[1]
+        }
+
+        // Frees what was not asked for within the TTL and is not pinned: the entries left close
+        // up in their order, and the index is built again, so no slot is a tombstone.
+        fn sweep_entries { mut ui: Ui } {
+            let ttl = @as(u64, ui.config.state_ttl)
+            let frame = ui.frame
+            let count = @as(usize, ui.state.count)
+            let mut kept: usize = 0
+            for e in ui.state.entries[..count] {
+                if e.kept != 0 and frame - e.kept <= ttl and kept < ui.state.kept.len {
+                    ui.state.kept[kept] = e.id
+                    kept = kept + 1
+                }
+            }
+            let mut left: usize = 0
+            for i in 0..count {
+                let e = ui.state.entries[i]
+                let mut live = frame - e.last <= ttl
+                let mut k: usize = 0
+                while not live and k < kept {
+                    if has_bits{ within = e.within, id = ui.state.kept[k] } { live = true }
+                    k = k + 1
+                }
+                if live {
+                    ui.state.entries[left] = e
+                    left = left + 1
+                }
+            }
+            ui.state.count = @as(u32, left)
+            for &s in ui.state.index { s = 0 }
+            for i in 0..left {
+                let slot = find_slot{ ui, id = ui.state.entries[i].id }
+                ui.state.index[slot] = @as(u32, i + 1)
+            }
+        }
     }
 }

@@ -1,6 +1,18 @@
-// ui::input: what the host pushed since the last frame (plan sections 2.5 and 2.8): the events
-// and the frame's sealed input (pointer position, buttons, wheel, key strokes, typed text), the
-// clocks that `frame.dt` advances, and the requests the host applies after the frame.
+// ui::input: what the host pushed since the last frame (plan sections 2.2, 2.5 and 2.8): the
+// events and the frame's sealed input (pointer position, buttons, wheel, key strokes, typed and
+// pasted text), the clock that `frame.dt` advances, and the requests the host applies after the
+// frame. The event and request types are the host seam's (host.ctx).
+//
+// The host pushes events between frames with `push_event`. They go into the pending input, not
+// into the frame being recorded: `begin_frame` seals the pending input as the frame's own, so
+// every widget of a frame sees the same input whatever order it is recorded in, and an event
+// pushed while a frame is open belongs to the next frame. Buttons are kept as flags (down now,
+// went down, went up), so a press and a release pushed before one frame still make a click.
+// Event text and paste text are copied at the push. What does not fit (more than KEYS strokes,
+// TYPED bytes of text or PASTE bytes of paste in one frame) is dropped and counted, and the frame
+// that would have had it reports `events_full`.
+//
+// Time is `frame.dt` only: `begin_frame` adds it to the clock, and the core reads no other.
 //
 // This file is the subsystem's place in the Ui: `ui.input` is its state. `make` builds the state,
 // `begin_frame` calls `reset_state` first of the interaction subsystems (the frame's buffers are
@@ -8,15 +20,327 @@
 // `finish_frame` last, after the frame is emitted and every other subsystem has finished, which is
 // where the requests are filled.
 namespace ui {
-    namespace input {
-        struct State {}
+    struct Point { x: f32 = 0.0, y: f32 = 0.0 }
 
-        fn make_state(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !State {
-            return State{}
+    // One key going down (or repeating) with the modifiers held, in the order they were pushed.
+    struct KeyStroke { key: Key = Key::none, mods: u8 = 0, repeat: bool = false }
+
+    // Pointer buttons: 0 left, 1 right, 2 middle, 3 back, 4 forward. Others are ignored.
+    const BUTTONS: usize = 5
+
+    // Answers whether the UI takes the event: a pointer event when the pointer is over a hit
+    // region of the last finished frame, a widget holds the pointer, or a modal tree is up; a key
+    // or text event when the last frame asked for text input or a modal tree is up; a paste
+    // always (it answers the UI's own request). The event is queued for the next `begin_frame`.
+    fn push_event { mut ui: Ui, event: Event } -> bool {
+        match event {
+            pointer_move{ x, y } => {
+                ui.input.pending.x = x
+                ui.input.pending.y = y
+                ui.input.pending.inside = true
+                return input::is_pointer_taken{ ui }
+            }
+            pointer_button{ button, down, clicks } => {
+                let b = @as(usize, button)
+                if b >= BUTTONS { return false }
+                if down {
+                    ui.input.pending.down[b] = true
+                    ui.input.pending.pressed[b] = true
+                    ui.input.pending.press_x[b] = ui.input.pending.x
+                    ui.input.pending.press_y[b] = ui.input.pending.y
+                    ui.input.pending.clicks[b] = if clicks == 0 { 1 } else { clicks }
+                } else if ui.input.pending.down[b] {
+                    ui.input.pending.down[b] = false
+                    ui.input.pending.released[b] = true
+                }
+                return input::is_pointer_taken{ ui }
+            }
+            pointer_leave => {
+                ui.input.pending.inside = false
+                return ui.interact.active != NO_ID
+            }
+            wheel{ dx, dy } => {
+                // A NaN or an infinity would stay in the sum for the rest of the frame.
+                if input::is_finite{ x = dx } { ui.input.pending.wheel_x = ui.input.pending.wheel_x + dx }
+                if input::is_finite{ x = dy } { ui.input.pending.wheel_y = ui.input.pending.wheel_y + dy }
+                return input::is_pointer_taken{ ui }
+            }
+            key{ key, down, repeat, mods } => {
+                ui.input.pending.mods = mods
+                if down {
+                    let n = @as(usize, ui.input.pending.keys)
+                    if n < ui.input.pending_keys.len {
+                        ui.input.pending_keys[n] = KeyStroke{ key, mods, repeat }
+                        ui.input.pending.keys = ui.input.pending.keys + 1
+                    } else {
+                        input::count_lost{ &ui }
+                    }
+                }
+                return input::is_keys_taken{ ui }
+            }
+            text{ bytes, len } => {
+                let n = if @as(usize, len) < bytes.len { @as(usize, len) } else { bytes.len }
+                let at = @as(usize, ui.input.pending.typed)
+                if n > ui.input.pending_typed.len - at {
+                    input::count_lost{ &ui }
+                } else {
+                    slice::copy(u8){ dst = ui.input.pending_typed[at..at + n], src = bytes[..n] }
+                    ui.input.pending.typed = @as(u32, at + n)
+                }
+                return input::is_keys_taken{ ui }
+            }
+            paste{ text } => {
+                let at = @as(usize, ui.input.pending.paste)
+                if text.len > ui.input.pending_paste.len - at {
+                    input::count_lost{ &ui }
+                } else {
+                    slice::copy(u8){ dst = ui.input.pending_paste[at..at + text.len], src = text }
+                    ui.input.pending.paste = @as(u32, at + text.len)
+                }
+                return true
+            }
+            focus{ gained } => {
+                // The window lost the keyboard: buttons that are down come up as cancelled, which
+                // ends a capture and clicks nothing, and no modifier is held any more.
+                if not gained {
+                    let mut b: usize = 0
+                    while b < BUTTONS {
+                        if ui.input.pending.down[b] {
+                            ui.input.pending.down[b] = false
+                            ui.input.pending.released[b] = true
+                            ui.input.pending.cancelled[b] = true
+                        }
+                        b = b + 1
+                    }
+                    ui.input.pending.mods = 0
+                }
+                return false
+            }
+        }
+    }
+
+    // Where the pointer is in this frame's input, in logical units.
+    fn get_pointer { ui: Ui } -> Point {
+        return Point{ x = ui.input.now.x, y = ui.input.now.y }
+    }
+
+    // The sum of every frame's `dt` so far, in seconds.
+    fn get_time { ui: Ui } -> f32 {
+        return @as(f32, ui.input.time)
+    }
+
+    // Consumes the first key stroke of this frame that is `key` with exactly the modifiers `mods`,
+    // so later code (and the focus traversal at end_frame) does not see it. False when there is
+    // none, and for code recorded in a tree behind the modal tree that was up in the last frame.
+    fn take_key { mut ui: Ui, key: Key, mods: u8 } -> bool {
+        if input::is_blocked{ ui } { return false }
+        let mut i: usize = 0
+        while i < @as(usize, ui.input.now.keys) {
+            let k = ui.input.keys[i]
+            if k.key == key and k.mods == mods {
+                take_key_at{ &ui, index = i }
+                return true
+            }
+            i = i + 1
+        }
+        return false
+    }
+
+    // This frame's key strokes that nobody has taken yet, in the order they were pushed: what a
+    // widget that reads many keys in order (a text field) walks, taking each it uses with
+    // `take_key_at`. Empty for code recorded behind the last frame's modal tree.
+    fn get_keys { ui: Ui } -> []KeyStroke {
+        if input::is_blocked{ ui } { return ui.input.keys[..0] }
+        return ui.input.keys[..@as(usize, ui.input.now.keys)]
+    }
+
+    // Consumes stroke `index` of `get_keys`; the strokes after it move down one. An index past
+    // the end does nothing.
+    fn take_key_at { mut ui: Ui, index: usize } {
+        let n = @as(usize, ui.input.now.keys)
+        if index >= n { return }
+        let mut i = index
+        while i + 1 < n {
+            ui.input.keys[i] = ui.input.keys[i + 1]
+            i = i + 1
+        }
+        ui.input.now.keys = ui.input.now.keys - 1
+    }
+
+    // The text typed this frame, in the order it was typed; empties it, so later code does not
+    // see it. Valid until the next begin_frame. Empty behind the last frame's modal tree.
+    fn take_typed { mut ui: Ui } -> []u8 {
+        if input::is_blocked{ ui } { return "" }
+        let n = @as(usize, ui.input.now.typed)
+        ui.input.now.typed = 0
+        return ui.input.typed[..n]
+    }
+
+    // The text the host pasted for this frame (its answer to `ask_paste`); empties it. Valid
+    // until the next begin_frame. Empty behind the last frame's modal tree.
+    fn take_paste { mut ui: Ui } -> []u8 {
+        if input::is_blocked{ ui } { return "" }
+        let n = @as(usize, ui.input.now.paste)
+        ui.input.now.paste = 0
+        return ui.input.paste[..n]
+    }
+
+    // ---- requests: what the host applies after the frame
+
+    // The pointer's look for after this frame; the last call of a frame wins.
+    fn set_cursor { mut ui: Ui, cursor: Cursor } {
+        ui.input.asked.cursor = cursor
+    }
+
+    // Asks for the OS's text input after this frame, with the caret's rectangle (logical units)
+    // for the candidate window. A focused text field calls it every frame it has focus.
+    fn set_text_input { mut ui: Ui, rect: Rect } {
+        ui.input.asked.text_input = true
+        ui.input.asked.text_rect = rect
+    }
+
+    // Asks the host to put `text` on the clipboard. The text is copied; the last call of a frame
+    // wins.
+    fn copy_text { mut ui: Ui, text: []u8 } {
+        let span = keep_text{ &ui, text } ifnull { return }
+        ui.input.asked.copy = get_text{ ui, span }
+    }
+
+    // Asks the host to answer with `Event::paste` before the next frame.
+    fn ask_paste { mut ui: Ui } {
+        ui.input.asked.paste = true
+    }
+
+    // Says something moves with time, so an event-driven host draws another frame.
+    fn set_animating { mut ui: Ui } {
+        ui.input.asked.animating = true
+    }
+
+    // The requests of the last finished frame. The clipboard ones (`copy`, `paste`) are handed
+    // over once: a second call before the next frame has them empty. `copy` is valid until the
+    // next begin_frame.
+    fn take_requests { mut ui: Ui } -> Requests {
+        let r = ui.input.requests
+        ui.input.requests.copy = ""
+        ui.input.requests.paste = false
+        return r
+    }
+
+    namespace input {
+        // The most a frame takes of each kind of input; more is dropped and counted.
+        const KEYS: usize = 64
+        const TYPED: usize = 1024
+        const PASTE: usize = 65536
+
+        // A frame's input. `keys`, `typed` and `paste` count what is in the buffers of the same
+        // names in `State`.
+        struct Frame {
+            x: f32, y: f32, inside: bool,               // the pointer; `inside` false after pointer_leave
+            down: [5]bool,                              // held at the end of the frame's events
+            pressed: [5]bool, released: [5]bool,        // went down, went up, during them
+            cancelled: [5]bool,                         // went up because the window lost the keyboard
+            press_x: [5]f32, press_y: [5]f32,           // where each last went down
+            clicks: [5]u8,                              // which click of a series that press was
+            wheel_x: f32, wheel_y: f32,
+            mods: u8,                                   // the modifiers of the last key event
+            keys: u32, typed: u32, paste: u32,
         }
 
-        fn reset_state { mut ui: Ui } {}
+        struct State {
+            pending: Frame, now: Frame,                 // what the host is pushing; the frame's own
+            pending_keys: []mut KeyStroke, keys: []mut KeyStroke,
+            pending_typed: []mut u8, typed: []mut u8,
+            pending_paste: []mut u8, paste: []mut u8,
+            lost: u32,                                  // pushed since the last begin_frame and dropped
+            time: f64,                                  // the sum of every frame's dt
+            asked: Requests,                            // what the frame being recorded asked for
+            requests: Requests,                         // what the last finished frame asked for
+        }
 
-        fn finish_frame { mut ui: Ui } {}
+        fn make_state(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !State {
+            let pending_keys = try alloc::make(KeyStroke, S){ realloc, &heap, count = KEYS }
+            let keys = try alloc::make(KeyStroke, S){ realloc, &heap, count = KEYS }
+            let pending_typed = try alloc::make(u8, S){ realloc, &heap, count = TYPED }
+            let typed = try alloc::make(u8, S){ realloc, &heap, count = TYPED }
+            let pending_paste = try alloc::make(u8, S){ realloc, &heap, count = PASTE }
+            let paste = try alloc::make(u8, S){ realloc, &heap, count = PASTE }
+            let mut pending: Frame
+            let mut now: Frame
+            return State{
+                pending, now, pending_keys, keys, pending_typed, typed, pending_paste, paste,
+                lost = 0, time = 0.0, asked = Requests{ .. }, requests = Requests{ .. },
+            }
+        }
+
+        // begin_frame: the pending input becomes the frame's, and the next frame's starts with
+        // what lasts (the pointer, the buttons held, the modifiers, where each button went down).
+        fn reset_state { mut ui: Ui } {
+            if ui.input.lost > 0 {
+                ui.stats.dropped = add_count{ a = ui.stats.dropped, b = ui.input.lost }
+                ui.input.lost = 0
+                if not has_problem{ ui, kind = ProblemKind::events_full } { report_problem{ &ui, kind = ProblemKind::events_full, id = NO_ID } }
+            }
+            ui.input.now = ui.input.pending
+            let keys = ui.input.keys
+            ui.input.keys = ui.input.pending_keys
+            ui.input.pending_keys = keys
+            let typed = ui.input.typed
+            ui.input.typed = ui.input.pending_typed
+            ui.input.pending_typed = typed
+            let paste = ui.input.paste
+            ui.input.paste = ui.input.pending_paste
+            ui.input.pending_paste = paste
+            let mut b: usize = 0
+            while b < BUTTONS {
+                ui.input.pending.pressed[b] = false
+                ui.input.pending.released[b] = false
+                ui.input.pending.cancelled[b] = false
+                ui.input.pending.clicks[b] = 0
+                b = b + 1
+            }
+            ui.input.pending.wheel_x = 0.0
+            ui.input.pending.wheel_y = 0.0
+            ui.input.pending.keys = 0
+            ui.input.pending.typed = 0
+            ui.input.pending.paste = 0
+            let dt = ui.info.dt
+            if dt > 0.0 and dt < 3600.0 { ui.input.time = ui.input.time + @as(f64, dt) }
+            ui.input.asked = Requests{ .. }
+        }
+
+        // end_frame, last: the frame's requests, with what the host should take from now on
+        // (this frame's regions are the current ones by now).
+        fn finish_frame { mut ui: Ui } {
+            let mut r = ui.input.asked
+            r.wants_pointer = is_pointer_taken{ ui }
+            r.wants_keys = r.text_input or ui.emit.floor != 0
+            ui.input.requests = r
+        }
+
+        // Neither NaN nor an infinity (either gives NaN when taken from itself).
+        fn is_finite { x: f32 } -> bool {
+            return x - x == 0.0
+        }
+
+        fn count_lost { mut ui: Ui } {
+            if ui.input.lost < 4294967295 { ui.input.lost = ui.input.lost + 1 }
+        }
+
+        // Whether a pointer event at the pending pointer is the UI's (push_event's answer).
+        fn is_pointer_taken { ui: Ui } -> bool {
+            if ui.interact.active != NO_ID or ui.emit.floor != 0 { return true }
+            if not ui.input.pending.inside { return false }
+            return interact::find_topmost{ ui, x = ui.input.pending.x, y = ui.input.pending.y } != tree::NONE
+        }
+
+        fn is_keys_taken { ui: Ui } -> bool {
+            return ui.input.requests.text_input or ui.emit.floor != 0
+        }
+
+        // Whether code recorded here is behind the modal tree that was up in the last frame, which
+        // takes the keys for itself.
+        fn is_blocked { ui: Ui } -> bool {
+            return tree::get_order{ ui } < ui.emit.floor
+        }
     }
 }
