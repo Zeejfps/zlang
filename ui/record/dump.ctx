@@ -1,0 +1,225 @@
+// ui_rec: the recorder. It writes a draw list as text, one shape a line, for golden files. It has
+// no device, and the text is the same on every machine: numbers are written by the sink's own
+// writers (fixed-point, no exponents), and a float has no writer at all, so a stray `{}` of an
+// f32 in a dump is a compile error and not a number that differs between std versions.
+//
+// The format (plan section 4.1):
+//
+//   frame 800x600 scale 1.5x1.5
+//   clip 1 16,16 400x300 round 16,16 400x300 r=8
+//   rect 16,16 120x28 fill=30343EFF radius=4,4,0,0 border=1,1,0,1 404552FF,404552FF,00000000,404552FF clip=1
+//   text 24,22 font=0 size=16 E4E7EDFF clip=1 "Add"
+//   image 10,10 32x32 img=3 uv=0,0,1,1 tint=FFFFFFFF quarter=1 angle=0 radius=0,0,0,0 blend=alpha clip=0
+//   line 40,60 52,72 width=2 cap=round E4E7EDFF clip=0
+//   host 1 320,60 280x360
+//
+// Radii run top-left, top-right, bottom-right, bottom-left; border widths and colours run top,
+// right, bottom, left; colours are RRGGBBAA. Entry 0 of the clip table is the whole surface and
+// is not listed.
+namespace ui_rec {
+    // How many digits a number keeps after the point (trailing zeros are not written).
+    const NUMBER_DIGITS: u32 = 4
+
+    // Where a dump goes: a caller's bytes. What does not fit is counted in `lost`, never written.
+    struct Sink { bytes: []mut u8, len: usize, lost: usize }
+
+    fn make_sink { bytes: []mut u8 } -> Sink {
+        return Sink{ bytes, len = 0, lost = 0 }
+    }
+
+    fn reset_sink { mut sink: Sink } {
+        sink.len = 0
+        sink.lost = 0
+    }
+
+    // What was written so far. Invalidated by the next write.
+    fn get_text { sink: Sink } -> []u8 {
+        return sink.bytes[..sink.len]
+    }
+
+    #write
+    fn write_bytes { mut sink: Sink, s: []u8 } {
+        let mut i: usize = 0
+        while i < s.len {
+            if sink.len < sink.bytes.len {
+                sink.bytes[sink.len] = s[i]
+                sink.len = sink.len + 1
+            } else {
+                sink.lost = sink.lost + 1
+            }
+            i = i + 1
+        }
+    }
+
+    #write
+    fn write_literal { mut sink: Sink, s: strlit } { write_bytes{ &sink, s = s.bytes } }
+
+    #write
+    fn write_bool { mut sink: Sink, v: bool } { write_bytes{ &sink, s = if v { "true" } else { "false" } } }
+
+    #write
+    fn write_i64 { mut sink: Sink, n: i64 } {
+        let mut buf: [20]u8
+        write_bytes{ &sink, s = utf8::fmt_i64{ n, into = buf[..] }.bytes }
+    }
+
+    #write
+    fn write_u64 { mut sink: Sink, n: u64 } {
+        let mut buf: [20]u8
+        write_bytes{ &sink, s = utf8::fmt_u64{ n, into = buf[..] }.bytes }
+    }
+
+    #write
+    fn write_i32 { mut sink: Sink, n: i32 } { write_i64{ &sink, n } }
+    #write
+    fn write_u8 { mut sink: Sink, n: u8 } { write_u64{ &sink, n } }
+    #write
+    fn write_u16 { mut sink: Sink, n: u16 } { write_u64{ &sink, n } }
+    #write
+    fn write_u32 { mut sink: Sink, n: u32 } { write_u64{ &sink, n } }
+    #write
+    fn write_usize { mut sink: Sink, n: usize } { write_u64{ &sink, n } }
+
+    // Writers to name in an @fmt hole: `@fmt(&sink, "{}", ui_rec::write_number{ v = x, _ })`.
+    // `write_number` keeps up to NUMBER_DIGITS digits and drops trailing zeros (`10`, `0.5`,
+    // `-3.25`); `write_fixed` keeps exactly `digits`; `write_hex` is uppercase and zero padded;
+    // `write_color` is RRGGBBAA. None of them fails: the result is only the shape @fmt needs.
+    fn write_number { mut sink: Sink, v: f32 } -> ! {
+        let mut buf: [48]u8
+        let n = ui::format_fixed{ v, digits = NUMBER_DIGITS, trim = true, into = buf[..] }
+        write_bytes{ &sink, s = buf[..n] }
+    }
+
+    fn write_fixed { mut sink: Sink, v: f32, digits: u32 } -> ! {
+        let mut buf: [48]u8
+        let n = ui::format_fixed{ v, digits, trim = false, into = buf[..] }
+        write_bytes{ &sink, s = buf[..n] }
+    }
+
+    fn write_hex { mut sink: Sink, n: u64, digits: u32 } -> ! {
+        let mut buf: [16]u8
+        let len = ui::format_hex{ n, digits, into = buf[..] }
+        write_bytes{ &sink, s = buf[..len] }
+    }
+
+    fn write_color { mut sink: Sink, color: ui::Color } -> ! {
+        let mut buf: [16]u8
+        let len = ui::format_color{ color, into = buf[..] }
+        write_bytes{ &sink, s = buf[..len] }
+    }
+
+    // Text between quotes, with `"` and `\` escaped, newline, return and tab as `\n`, `\r` and
+    // `\t`, and every other byte outside printable ASCII as `\xNN`.
+    fn write_quoted { mut sink: Sink, s: []u8 } -> ! {
+        write_bytes{ &sink, s = "\"" }
+        let mut i: usize = 0
+        while i < s.len {
+            let c = s[i]
+            if c == '"' {
+                write_bytes{ &sink, s = "\\\"" }
+            } else if c == '\\' {
+                write_bytes{ &sink, s = "\\\\" }
+            } else if c == '\n' {
+                write_bytes{ &sink, s = "\\n" }
+            } else if c == '\r' {
+                write_bytes{ &sink, s = "\\r" }
+            } else if c == '\t' {
+                write_bytes{ &sink, s = "\\t" }
+            } else if c < 32 or c > 126 {
+                let mut hex: [2]u8
+                _ = ui::format_hex{ n = @as(u64, c), digits = 2, into = hex[..] }
+                write_bytes{ &sink, s = "\\x" }
+                write_bytes{ &sink, s = hex[..] }
+            } else {
+                write_bytes{ &sink, s = s[i..i + 1] }
+            }
+            i = i + 1
+        }
+        write_bytes{ &sink, s = "\"" }
+    }
+
+    fn name_cap { cap: ui::Cap } -> []u8 {
+        match cap {
+            round => { return "round" }
+            butt => { return "butt" }
+            square => { return "square" }
+        }
+    }
+
+    fn name_blend { blend: ui::Blend } -> []u8 {
+        match blend {
+            alpha => { return "alpha" }
+            additive => { return "additive" }
+        }
+    }
+
+    fn write_corners { mut sink: Sink, c: ui::Corners } -> ! {
+        try @fmt(&sink, "{},{},{},{}", write_number{ v = c.top_left, _ }, write_number{ v = c.top_right, _ }, write_number{ v = c.bottom_right, _ }, write_number{ v = c.bottom_left, _ })
+    }
+
+    fn write_sides { mut sink: Sink, s: ui::Sides } -> ! {
+        try @fmt(&sink, "{},{},{},{}", write_number{ v = s.top, _ }, write_number{ v = s.right, _ }, write_number{ v = s.bottom, _ }, write_number{ v = s.left, _ })
+    }
+
+    fn write_side_colors { mut sink: Sink, c: ui::SideColors } -> ! {
+        try @fmt(&sink, "{},{},{},{}", write_color{ color = c.top, _ }, write_color{ color = c.right, _ }, write_color{ color = c.bottom, _ }, write_color{ color = c.left, _ })
+    }
+
+    fn write_rect { mut sink: Sink, rect: ui::Rect } -> ! {
+        try @fmt(&sink, "{},{} {}x{}", write_number{ v = rect.x, _ }, write_number{ v = rect.y, _ }, write_number{ v = rect.w, _ }, write_number{ v = rect.h, _ })
+    }
+
+    // One clip table entry, as its own line.
+    fn write_clip { mut sink: Sink, index: usize, clip: ui::Clip } -> ! {
+        try @fmt(&sink, "clip {} {}", index, write_rect{ rect = clip.rect, _ })
+        if clip.radius > 0.0 {
+            try @fmt(&sink, " round {} r={}", write_rect{ rect = clip.round, _ }, write_number{ v = clip.radius, _ })
+        }
+        write_bytes{ &sink, s = "\n" }
+    }
+
+    fn write_cmd { mut sink: Sink, list: *ui::DrawList, cmd: ui::Cmd } -> ! {
+        match cmd {
+            rect{ rect, style, clip } => {
+                try @fmt(&sink, "rect {} fill={} radius={} border={} {} clip={}\n", write_rect{ rect, _ }, write_color{ color = style.fill, _ },
+                    write_corners{ c = style.radius, _ }, write_sides{ s = style.border, _ }, write_side_colors{ c = style.border_color, _ }, clip)
+            }
+            image{ rect, image, uv, tint, quarter, angle, radius, blend, clip } => {
+                try @fmt(&sink, "image {} img={} uv={},{},{},{} tint={} quarter={} angle={} radius={} blend={} clip={}\n", write_rect{ rect, _ }, image.id,
+                    write_number{ v = uv.u0, _ }, write_number{ v = uv.v0, _ }, write_number{ v = uv.u1, _ }, write_number{ v = uv.v1, _ },
+                    write_color{ color = tint, _ }, quarter, write_number{ v = angle, _ }, write_corners{ c = radius, _ }, name_blend{ blend }, clip)
+            }
+            text{ font, size, x, y, text, color, clip } => {
+                try @fmt(&sink, "text {},{} font={} size={} {} clip={} {}\n", write_number{ v = x, _ }, write_number{ v = y, _ }, font.index,
+                    write_number{ v = size, _ }, write_color{ color, _ }, clip, write_quoted{ s = ui::draw::get_text{ list = list.*, span = text }, _ })
+            }
+            line{ x0, y0, x1, y1, width, color, cap, clip } => {
+                try @fmt(&sink, "line {},{} {},{} width={} cap={} {} clip={}\n", write_number{ v = x0, _ }, write_number{ v = y0, _ },
+                    write_number{ v = x1, _ }, write_number{ v = y1, _ }, write_number{ v = width, _ }, name_cap{ cap }, write_color{ color, _ }, clip)
+            }
+            host{ slot, rect } => {
+                try @fmt(&sink, "host {} {}\n", slot, write_rect{ rect, _ })
+            }
+        }
+    }
+
+    // The whole list: the frame line, the clip table, then every shape in paint order. A list that
+    // dropped shapes ends with a `dropped N` line, so a golden file cannot hide a drop.
+    fn write_list { mut sink: Sink, list: *ui::DrawList } -> ! {
+        try @fmt(&sink, "frame {}x{} scale {}x{}\n", write_number{ v = list.width, _ }, write_number{ v = list.height, _ },
+            write_number{ v = list.scale_x, _ }, write_number{ v = list.scale_y, _ })
+        let mut i: usize = 1
+        while i < @as(usize, list.clip_count) {
+            try write_clip{ &sink, index = i, clip = list.clips[i] }
+            i = i + 1
+        }
+        i = 0
+        while i < @as(usize, list.count) {
+            try write_cmd{ &sink, list, cmd = list.cmds[i] }
+            i = i + 1
+        }
+        if list.dropped > 0 {
+            try @fmt(&sink, "dropped {}\n", list.dropped)
+        }
+    }
+}

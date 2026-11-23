@@ -1,0 +1,1977 @@
+# An immediate-mode GUI framework in ctxlang: architecture and staged plan
+
+Written 2026-11-23 against worktree `G:\Dev\zlang-worktree-1` (branch `gui-framework`, HEAD `cc3090a8`).
+Inputs: `research-ctxlang.md`, `research-zgf.md`, `research-kotor-ui.md` (same scratchpad), plus the
+sources they cite where a decision hinged on a claim.
+
+**How to read the evidence marks.**
+
+- **[compiled]**: I compiled and ran a probe with the scratch `CTX_HOME`. The probes are in
+  `C:\Users\zeejf\AppData\Local\Temp\claude\613df46367a5c2b2\8a1fe282-b229-4acf-a4f6-415dcf773e73\scratchpad\ctxprobe\`
+  (`a1` to `a10` and `spv`; the appendix says what each one shows).
+- **[read]**: I read the source myself (not only the report).
+- Everything else is design intent. No behaviour of the framework has been run: only the shape of its
+  declarations and of code written against them, and that the native libraries can be called.
+
+Nothing in the repository was modified (`git status` is clean), and nothing was installed.
+
+**Decided by the owner.** These are settled and are not among the open decisions:
+
+1. The seam is a limited set of high-level shapes whose purpose is batching: few instance kinds, each
+   drawn by its own instanced shader, with textured quads from an atlas as the games path.
+2. "Native APIs" are GPU APIs: OpenGL, Vulkan, Metal. Every backend consumes the staged instances.
+3. A rectangle has a radius per corner and a border width and colour per side, as ZGF's `DrawRect`.
+4. The shaders are ZGF's, ported, not new ones.
+5. The core ships no font. The program registers the fonts it wants.
+6. Real text is FreeType and HarfBuzz, as `ZGF.Fonts` does it.
+7. The library is `ui/` at the top level, namespace `ui`. The SDL host is its own library, and nothing
+   under `ui/` adds a `kotor/` directory. A program composes the core and the backend and host it needs.
+8. Vulkan is the second backend, as a stage. Metal is specified, not staged.
+9. Functions, widgets included, have verb names.
+
+---
+
+## 1. Goals, non-goals, name and location
+
+### 1.1 Goals
+
+1. **A general-purpose immediate-mode GUI library in ctxlang**, for ordinary desktop software (tools,
+   editors, applications) as much as for games. The application describes its whole UI every frame,
+   widgets return what happened, and there are no retained widget objects or callbacks. The core needs
+   std alone.
+2. **Rendering behind a seam of a few high-level shapes.** The core emits a list of shapes as plain data
+   and never calls a backend. A shared CPU layer stages the list into ZGF's instance kinds (rounded
+   rectangle, glyph, image, line), each drawn by one instanced shader ported from ZGF, in batches. A GPU
+   backend (OpenGL, Vulkan, Metal, kotor's `render::Frame`) uploads and draws them.
+3. **Real text for applications, glyph tables for games.** A font is either an outline font the program
+   loaded (TrueType or OpenType bytes, shaped by HarfBuzz, rasterised by FreeType into the glyph atlas)
+   or a glyph table the program built (KOTOR's byte-indexed bitmap fonts).
+4. **One layout model for two kinds of UI**: tool and application UI that lays itself out (rows,
+   columns, fit, grow), and screens whose every rectangle comes from data (KOTOR's `.gui` files).
+5. **Deterministic and testable without a window**: time and input come only from the host, the draw
+   list dumps to text for golden files, widgets are addressable by name, and screenshots come from a real
+   backend rendering offscreen.
+6. **Enough for the KOTOR UI to be rebuilt on it**, shown by one existing screen drawn through the
+   framework and compared with the current renderer, and by a developer overlay in the game.
+
+### 1.2 Non-goals, each with its reason
+
+| Left out | Why |
+|---|---|
+| Rewriting the KOTOR screens | The owner put it outside this plan; one screen is proved (stage 16). |
+| Backends on 2D drawing APIs (Direct2D, CoreGraphics) | The owner's "native APIs" are GPU APIs. |
+| A Metal backend | It cannot be built or run on this Windows machine. Section 4.5 specifies it from ZGF's Metal backend. |
+| Popups, tooltips or dialogs as separate OS windows | A game's UI lives in one surface, and separate windows need a windowing seam on every platform that is larger than the render seam. Popups are a top layer of the one surface. |
+| A font rasteriser or shaper written in ctxlang | FreeType and HarfBuzz do both, and ZGF uses them. |
+| Bidirectional reordering (ZGF's `Bidi.cs`) | No program in this plan shows right-to-left text. A line that is wholly right-to-left still shapes correctly, because HarfBuzz orders the run; a line that mixes directions is not reordered. The port would be `Bidi.cs` (371 lines) and `ShapeBidi` in the font package, plus caret mapping in the text field. |
+| Finding system fonts and fallbacks automatically (ZGF's `SystemFallbackFonts`) | The owner's rule is that the program loads the fonts it wants. The program registers its fallback fonts the same way, in the order to try them. |
+| Synthetic bold, OpenType feature selection | No widget asks for either. Bold is a bold face the program registers. |
+| Inline display of an IME composition | Committed text arrives and the OS candidate window is placed at the caret. Drawing the composition inside the field is a second editing path (its own caret and underline) with no program here that needs it. |
+| Docking, rich text and markdown, web view, multi-line editor, selectable text | No consumer: neither developer tools nor any KOTOR screen needs them. |
+| Blur shadows (ZGF's `DrawBoxShadow`) | A fifth instance kind: one more pipeline, instance buffer and upload in each GPU backend, one more kind for the batcher to interleave under every popup, and nothing kotor's renderer could draw. Popups and dialogs are set off by a border and a scrim. ZGF's shadow shader exists to port if the owner wants it. |
+| Curves, dashes and line gradients | The ported line shader can draw them, but no widget does, so the seam does not expose them. |
+| Gamepad and touch devices | kotor has no gamepad input path [read: only an init constant]. Navigation is already device-neutral (keys and designer links, section 2.5), so a device is a host mapping onto existing events. |
+| Painter hooks in the theme (ZGF's `ButtonPainter`) | The way to replace a look is to write a widget over the public primitives. The KOTOR widget set is exactly that. |
+| Growing buffers | Fixed capacities are what make every widget call infallible (section 2.10). Overflow is counted and reported. |
+| Accessibility bridges (UI Automation, NSAccessibility) | The node list (section 2.5) holds what a bridge would need, but nothing consumes one. |
+| Spring and tween animation | `ui::animate` (a rate towards a target) covers tooltips, slides and fades. |
+
+### 1.3 Name and location
+
+A top-level directory `G:\Dev\zlang-worktree-1\ui\`, namespace `ui` (decided).
+
+- `ui` is unused by std and by kotor [read: no `namespace ui` anywhere in `kotor/` or `ctxlang/`]. The
+  sketches compile beside `kotor/lib/base` and `kotor/lib/platform` [compiled, a5].
+- A context field named `ui` and the namespace `ui` coexist: `fn f { mut ui: ui::Ui }` with
+  `ui::add_button{ &ui, .. }` [compiled, a4].
+- Library namespaces: `ui_stage`, `ui_fonts`, `ui_gl`, `ui_vk`, `ui_sdl`, `ui_rec`, `ui_test`. On the
+  kotor side: `ui_kotor` (adapter) and `kui` (the KOTOR widget set).
+
+---
+
+## 2. Architecture
+
+### 2.0 The six tensions, decided
+
+**1. The seam level (owner's decision): a limited set of high-level shapes, staged into ZGF's instance
+kinds and drawn by ZGF's shaders.**
+
+*How ZGF's canvases are implemented* [read: `ZGF.Gui/ICanvas.cs`, `ZGF.Gui/RenderedCanvasBase.cs`,
+`ZGF.Gui.OpenGL/OpenGlRenderedCanvas.cs` and all of its `canvas_rect`, `canvas_glyph`, `canvas_image`
+and `canvas_shape` shaders, `ZGF.Gui.Metal/MetalRenderedCanvas.cs`]:
+
+- `ICanvas` is the shape level: nine draw calls plus clip, opacity and transform stacks.
+- `RenderedCanvasBase` is a shared CPU layer. Each draw call is *staged* as one of five plain instance
+  structs (`RectInstance`, `GlyphInstance`, `ImageInstance`, `ShadowInstance`, `ShapeInstance`). Opacity
+  is multiplied into the colours, edges are snapped to device pixels, and every instance carries an
+  index into a per-frame table of at most 256 clips, interned by a linear scan. A clip is a rectangle
+  and, optionally, one rounded rectangle.
+- `BuildBatches` walks the instances in paint order and appends each to the most recent draw call of its
+  own kind (and texture, for images) that it can reach without passing a draw call of another kind whose
+  bounds it overlaps. The result paints the same picture as strict order with far fewer draw calls.
+- A frame whose staged bytes equal the last frame's skips sorting, uploading and batching.
+- A backend only uploads the instance arrays and the clip table and issues the draw calls: one program
+  and one vertex array per kind, a unit quad drawn instanced from a base instance, the texture bound per
+  image draw. The clip table is a uniform block tested per fragment, so there is no scissor and a clip
+  never breaks a batch. The Metal backend is the same with pipelines in place of programs.
+
+The plan keeps that structure, ports the shaders, and cuts the set where a cut has a reason of its own:
+
+| ZGF | Here | Why |
+|---|---|---|
+| `DrawRect` (radius per corner, border size and colour per side) | **kept as it is**: `rect` | The shader-drawn primitive, with the shader ported unchanged. |
+| `DrawCircle` (disc, ring) | **a case of `rect`** | A square with every radius `w / 2`, with or without a border. It then batches with the other rectangles. |
+| `DrawLine` | **kept**: `line` with a width, a colour and a cap | ZGF's rectangle shader has no turn, and it is ported unchanged, so a line cannot be a turned rectangle. The stock widgets' marks (check, arrows, cross) are drawn as lines, because there is no built-in font to take them from. Drawn by ZGF's `canvas_shape` shader. |
+| `DrawImage` (string id, aspect fit, corner radius, rotation) | **kept**: `image` with an explicit rectangle, a UV region, tint, rotation and corner radius, plus exact quarter turns and a blend | The games primitive. Aspect fit belongs to layout. Images are numbers, not strings. |
+| `DrawText` (shaped) | **kept**: `text`, one run | Staged to one glyph instance per glyph from the atlas, as ZGF does. |
+| `DrawGlyphRun` (monospace grid) | dropped | A terminal's primitive; no widget here needs it. |
+| `DrawBoxShadow` | dropped | A fifth instance kind: a pipeline, an instance buffer and an upload path in each GPU backend, one more kind for the batcher to interleave, and nothing kotor's renderer could draw. |
+| `DrawBezier`, `DrawCubicBezier`, dashes, line gradients | not exposed | The code comes with the ported shape shader, but no widget draws them. |
+| `PushClip` as a table index, with the rounded clip | **both kept** | The ported shaders already test both in every kind; the rounded clip costs two more rows in the uniform block. ZGF's rule is kept too: one rounded level at a time. |
+| `PushOpacity` | **kept in the core** | Baked into colours at emit, as ZGF bakes it at staging. |
+| `PushTranslation`, `PushScale` | dropped | The core has no transforms. The shaders' edge-fading path for off-grid edges stays in the port and never triggers. |
+| Z index and sort | dropped | The core emits in paint order, layer by layer. |
+| Overlap-aware batching, idle-frame skip | **kept** | The point of the level. |
+| Five instance kinds | **four** | `RectInstance`, `GlyphInstance`, `ImageInstance`, `ShapeInstance`, each with ZGF's fields in the order its shader reads them. |
+| Y-up canvas space | **kept below the seam only** | The staged instances are in ZGF's canvas space so the shaders port unchanged. The shape list and everything above it are y-down; `stage` flips once. |
+| Images by string id, silent clip overflow | dropped | Images are numbers; a full clip table drops the shape and counts it. |
+
+*Glyph and image stay separate kinds*, as in ZGF, because their shaders differ in ways that matter: the
+glyph shader reads one channel of coverage from the one glyph atlas and takes its colour from the
+instance; the image shader reads RGBA from any texture, clamps to its region, and rounds corners. One
+merged kind would be a new shader, which the owner ruled out.
+
+*The games path is the image kind as ZGF has it.* `ImageInstance` already carries what kotor's
+`render::Quad` does: rectangle, UV region, tint, rotation about the centre [read: `render.ctx:529`,
+`canvas_image.vert.glsl`]. Two things are added, neither in the shader:
+
+- **Additive blend** is a field of the draw, not of the instance. The backend sets the blend state per
+  draw, and blend joins the batching key.
+- **Quarter turns** are exact at the seam (`quarter`) and become `i_rotation` with a transposed
+  rectangle when staged.
+- An atlas region crosses the seam as an image number and a UV rectangle, which the `image` shape
+  already carries. `ui::Region{ image, uv, width, height }` is the value a sprite or atlas entry is held
+  as. kotor's rotated-corner, segmented-edge borders are runs of such images (sketch, section 3.2).
+- A UI drawn from one atlas is one draw. A UI drawn from many small textures, as kotor's art is today,
+  batches per texture, as kotor's `draw_ui` does now.
+
+*Why the shape list is still what the core emits*, now that no backend draws it directly:
+
+- It is the core's output in the UI's own terms: y down, logical units, text as runs of bytes, a
+  rectangle's look as one value. The core therefore needs no atlas, no rasteriser and no font library,
+  and stays std-only.
+- Golden files of layout and widgets are dumps of this list. They are readable (`text ... "Add"`) and
+  stable. A dump of glyph instances would change whenever atlas packing or a font version changed.
+- Staging holds state the core must not: the atlas, the glyph cache, the batcher. A program may also
+  stage a list that no `Ui` made (kotor's minimap pass).
+- It is ZGF's `ICanvas` level, as data instead of an interface, which ctxlang does not have.
+
+**2. Backend selection: the program composes at build time; the core has no backend at all.** Because
+the seam is data, the core never dispatches. A program's `build.ctx` adds the core, the widgets, the
+staged level, one GPU backend, and the host it needs (section 2.1). Each frame it stages the draw list
+and hands the result to the backend's `render`.
+
+- Backends and hosts keep their own namespaces instead of kotor's one shared `gpu` namespace, so two
+  can be in one program: the recorder beside OpenGL in the screenshot tests, OpenGL beside Vulkan in a
+  comparison.
+- Each backend has a contract file in kotor's manner that pins its function shapes [compiled, a4
+  `ui_shapes::check`].
+- The single runtime hook is the font provider for outline fonts: a struct of three `fn` values and an
+  opaque state pointer, not generic [compiled, a1, a4, a10]. A program that uses only glyph tables has
+  no hook at all.
+
+**3. Layout: record, solve, emit (ZGF and Clay), with explicit placement as a first-class sizing mode.**
+An element is either in its parent's flow or *placed*: out of flow, at an anchor fraction of the parent
+plus an offset, with its own size.
+
+- KOTOR's screens are placed elements throughout: a panel is placed at the centre of the logical screen,
+  a control at its file rectangle inside the panel. The HUD's thirds rule is anchor 0, 0.5 or 1.
+- Tool UI uses flow (fit, grow, fixed, part of the parent). Both kinds mix freely in one tree.
+- A cursor layout (Dear ImGui) cannot centre, right-align, or draw a background behind content of
+  unknown size without a second pass, which is why it was not chosen.
+- Interaction is answered from the previous frame's emitted rectangles by id, as ZGF does [read:
+  `Ui.cs:455`]. On a static KOTOR screen last frame's rectangles are this frame's.
+
+**4. KOTOR's needs without KOTOR in the framework.** Each need is met by a general feature, and the
+KOTOR part lives in kotor:
+
+| KOTOR need | General feature in `ui` | KOTOR part (in `kotor/lib/kui`) |
+|---|---|---|
+| Rotated-corner, segmented-edge borders | the `image` shape with a UV region, tint, exact quarter turns, free angle, additive blend; device-pixel snapping at emit | `kui::paint_border` emits the pieces (sketch, section 3.2) |
+| 3D views inside the UI z-order | `ui::add_host_slot`: a `host` shape that ends a UI pass | the adapter starts a new `render::begin_ui` run after each view |
+| Controls addressable by tag | names of id scopes are kept; `ui::find_node{ path }` | TAG is the id name |
+| Hover is focus | `PressOpts.focus_on_hover` | kui widgets set it |
+| Designer navigation links | `ui::set_links{ id, links }` | from `MOVETO` |
+| cp1252 text in byte-indexed fonts | a glyph-table font with `Encoding::bytes` | kotor's fonts register as glyph tables on their own textures |
+| Exact wrap and metric rules | `ui::paint_text` draws one run where it is told | kui keeps the original's layout rules and paints line by line |
+
+**5. Language constraints.** All of these are in the compiled sketches unless marked.
+
+- One widget call per statement: the API is statements by design, and containers return a `Scope`
+  token closed by `ui::end` (with `defer` where a function returns early) [compiled, a1].
+- No default arguments: every widget takes `opts: ui::Opts`, a struct whose fields all have defaults,
+  and a call's trailing `..` fills `ui` and `opts` from the caller's own names, so a call is as short as
+  `ui::add_label{ text = "Settings", .. }` [compiled, a4 `show_settings`].
+- "Unset" versus zero: option fields are optionals with `null` defaults (`padding: ?Insets = null`),
+  merged with `ifnull` [compiled, a1].
+- Label text is copied into the frame's text arena at the call, because the escape check does not catch
+  a stack slice stored through a call.
+- Number formatting is the framework's: `@fmt(&ui, "{} %", ui::write_fixed{ v, digits = 1, _ })` writes
+  into the frame arena through the framework's own `#write` functions [compiled, a4: prints
+  `Volume 37.5 %`].
+- kotor's `math` shadows std's: the core declares the few libm functions it needs itself, `#pure`, in
+  its own namespace [compiled, a1; a5 builds beside kotor's `math`].
+- `add_sources` is recursive: core, each backend, samples and tests are sibling directories.
+- Per-widget state without a GC: plain values in a fixed table keyed by id (section 2.3).
+- A bare `{ ... }` block is not a statement [compiled, a1: "expected an expression"]. Group a container's
+  content in its own function.
+- Two libraries in one program may bind the same C symbol, each under its own capability and with its
+  own opaque types [compiled, a9], so `ui/sdl`'s SDL binding and kotor's can coexist.
+
+**6. Testing.** The tests' font is a glyph table built in code, every cell 8 by 16, so metrics are fixed
+and no font file is committed (section 6.1). The recorder dumps a draw list as text for golden files;
+names give stable identity for scripted input; screenshots come from the OpenGL backend with a hidden
+window, the way kotor's tools do.
+
+### 2.1 Packages and dependencies
+
+Every row is a directory; `add_sources` takes exactly the ones a program needs.
+
+```
+ui/core      namespace ui         values, draw list, font table and text, ids, state, tree, layout,
+                                  emit, input, interaction, focus, layers, scrolling    needs: std
+ui/widgets   namespace ui         the stock widgets, their marks, the theme             needs: core
+ui/stage     namespace ui_stage   draw list -> four instance kinds, clip table, batched draws,
+                                  passes, the glyph atlas and glyph cache               needs: core
+ui/fonts     namespace ui_fonts   outline fonts: FreeType rasterises, HarfBuzz shapes   needs: core;
+                                                                                        links freetype, harfbuzz
+ui/shaders   (GLSL, no ctxlang)   ZGF's four shader pairs, one source for OpenGL and Vulkan
+ui/gl        namespace ui_gl      OpenGL 4.1 core backend                               needs: core, stage
+ui/vulkan    namespace ui_vk      Vulkan backend                                        needs: core, stage;
+                                                                                        links vulkan-1
+ui/sdl       namespace ui_sdl     the SDL2 host: its own SDL binding, a window with a GL context or a
+                                  Vulkan surface, events -> ui::Event, requests -> SDL  needs: core; links SDL2
+ui/record    namespace ui_rec     draw list, staged draws and node list as text         needs: core, stage
+ui/test      namespace ui_test    tally, golden compare, scripted driver, the test font,
+                                  a PNG writer                                          needs: core, record
+ui/samples/gallery   namespace gallery   one UI that shows every widget (no main)       needs: core, widgets
+ui/samples/demo_gl, demo_vulkan          programs: the gallery on a backend
+ui/samples/tasks                         program: a desktop application
+ui/tests/<name>                          programs: one per package (section 6)
+
+kotor/lib/ui_kotor   namespace ui_kotor  staged instances -> render::Frame, fonts, events   needs: core, stage, kotor render
+kotor/lib/kui        namespace kui       the KOTOR widget set and .gui replay               needs: core, kotor gui data
+```
+
+A program composes what it needs. The OpenGL demo's build program:
+
+```
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "demo_gl", root = "." }
+    build::add_sources{ &b, exe, dir = "../../core" }
+    build::add_sources{ &b, exe, dir = "../../widgets" }
+    build::add_sources{ &b, exe, dir = "../../stage" }
+    build::add_sources{ &b, exe, dir = "../../fonts" }       // only a program that wants outline fonts
+    build::add_sources{ &b, exe, dir = "../../gl" }          // the backend it draws with
+    build::add_sources{ &b, exe, dir = "../../sdl" }         // the host it runs on
+    build::add_sources{ &b, exe, dir = "../gallery" }
+    build::link{ &b, exe, lib = "SDL2" }
+    build::link{ &b, exe, lib = "freetype" }
+    build::link{ &b, exe, lib = "harfbuzz" }
+}
+```
+
+Rules that keep this true:
+
+- Nothing under `ui/` adds a directory under `kotor/`. `ui/sdl` carries its own SDL binding and
+  `ui/test` its own PNG writer (uncompressed, about 100 lines). The duplication is about 450 lines
+  against kotor's two files, and it is what lets `ui/` be used without kotor.
+- `ui/core` uses std only and never `math::` (kotor shadows it).
+- `ui/widgets` calls only the public primitives of section 3.3, never the core's internals. The core's
+  internals sit in nested namespaces (`ui::tree`, `ui::layout`, `ui::emit`), so the check is a grep with
+  no matches: `grep -rn "ui::\(tree\|layout\|emit\)::" ui/widgets`.
+- A backend never depends on a host: `ui_gl::open` takes a function that looks up GL symbols, and
+  `ui_vk::open` takes a surface. The host supplies both.
+- kotor's rule 2 (no native library beyond SDL2, OpenGL, libc and libm) is untouched: kotor adds the
+  core, the staged level and its own adapter, and never `ui/fonts` or `ui/vulkan`.
+
+### 2.2 Frame lifecycle
+
+```
+host                                   core
+----                                   ----
+ui::push_event{ &ui, event } -> bool   queue it; answer "the UI takes this" from last frame's regions
+ui::begin_frame{ &ui, frame }          seal input; pick the hot id from last frame's regions; route the
+                                       wheel; advance clocks by frame.dt; empty the frame's buffers
+(application records widgets)          each call: answer interaction now, append elements and paints
+ui::end_frame{ &ui }                   close open scopes; solve; settle scrolls; place popups; emit the
+                                       draw list, hit regions and nodes; move focus; sweep state; fill
+                                       the requests
+ui_stage::stage{ &staged, list, .. }   shapes -> instances, clip table, batched draws; glyphs into the atlas
+backend render{ &dev, staged }         uploads and draws; knows nothing of widgets or fonts
+ui::take_requests{ &ui }               host applies cursor, text input, clipboard
+```
+
+- The application's code runs exactly once per frame.
+- A widget is interactive from its second frame, and geometry queries (`ui::get_rect`) return the
+  previous frame's rectangles. After `end_frame` the current rectangles are in the draw list, which is
+  how a host places a 3D view in the same frame (host slots carry their solved rectangle).
+- `push_event` answers per event, which is kotor's contract (`gui::handle_event -> bool`): a pointer
+  event is taken when the pointer is over a hit region, a widget holds the pointer, or a modal layer is
+  up; a key or text event when a text field has focus or a layer takes keys.
+
+### 2.3 Identity and state
+
+- `type Id = distinct u64`: FNV-1a 64 of (enclosing scope's id, name bytes). Deterministic across runs,
+  unlike ZGF's `HashCode.Combine`. Id 0 means anonymous: not hit-testable, not addressable.
+- A widget's id name is its label unless `opts.id` is set. `ui::push_id{ name }` and
+  `ui::push_key{ key: u64 }` open id scopes (a list row pushes its index or the item's own key).
+- The names of open scopes are kept in the frame's text arena, so every identified element has a path
+  (`optgameplay/BTN_BACK`, `items/#3/done`). That path is the stable identity for tests and scripts.
+- Two elements with one id in a frame are counted in `ui.stats.duplicate_ids` and listed in the
+  problems (section 2.11).
+- **Application state stays in the application**, passed as `mut` fields: `value = &app.volume`,
+  `text = &app.draft`, `open = &app.open`.
+- **Widget state** (scroll offset, caret and selection, window position and size, tree node open,
+  animation value) is plain data in a fixed table keyed by id:
+
+```
+struct Values { f: [6]f32, i: [2]i64 }                     // zero when new
+fn load_state { mut ui: Ui, id: Id } -> Values
+fn store_state { mut ui: Ui, id: Id, values: Values }
+fn keep_state { mut ui: Ui, id: Id }                       // pin while its widget is not recorded (a hidden tab)
+fn animate { mut ui: Ui, id: Id, target: f32, rate: f32 } -> f32
+```
+
+- State is copied in and out, so nothing holds a pointer into the table and nothing needs a destructor.
+  An entry not asked for within `config.state_ttl` frames (default 600) is freed by a sweep every 64
+  frames unless pinned.
+- Variable-size state exists in one place only: the undo history of the focused text field, a single
+  16 KiB ring in the `Ui`, emptied when focus moves. One field is edited at a time, so one ring is
+  enough.
+
+### 2.4 Layout
+
+**Record.** Elements go into a flat array in pre-order, linked by indices (`parent`, `first_child`,
+`last_child`, `next`), as ZGF's `LayoutTree` does [read: 929 lines of C#]. Paint items
+(`ui::paint_rect` and friends) are leaf elements that take no part in layout, so emission is simply
+pre-order and a widget chooses what draws over what by the order of its calls.
+
+**Declaration.** `ui::Box` (section 3.3) carries the layout inputs; an unset field takes the widget's
+default.
+
+| Sizing | Meaning |
+|---|---|
+| `ui::FIT` | The content's size, clamped to `min..max`. |
+| `ui::GROW` | Starts at content size and shares the parent's spare room along the main axis; fills the parent on the cross axis. When the parent is short, grow children shrink towards `min` first. |
+| `ui::fix{ px }` | Exactly that size. |
+| `ui::take{ part }` | That fraction of the parent's inner size (minus gaps on the main axis). |
+
+Plus `padding`, `gap`, `align_x`, `align_y` (start, center, end) for children, `clip`, `opacity`, and
+`place` for an element out of the flow:
+`top-left = parent.xy + parent.wh * (anchor_x, anchor_y) + (x, y)`. `ui::place{ x, y, w, h }` is the
+explicit rectangle. A placed element adds nothing to its parent's fitted size.
+
+**Solve**, at `end_frame`, in ZGF's order [read: `LayoutTree.cs:239`]:
+
+1. Fit widths, last element to first (children before parents): a leaf's content is its measured text;
+   a container's is the sum (main axis) or maximum (cross axis) of its flow children, plus padding and
+   gaps.
+2. Distribute widths, first to last: resolve `take`, fill cross-axis `grow`, share main-axis spare room
+   among grow children equally with each capped at its `max` and the remainder re-shared; when room is
+   short, shrink grow children equally towards `min`.
+3. Wrap text at the widths now known; ellipsize single-line text marked `Overflow::ellipsis`.
+4. Fit heights, then distribute heights, the same way.
+5. Position, first to last: flow children from the padding edge, offset by `spare * align` (spare never
+   negative), minus the scroll offset; placed children by their anchor.
+
+**Emit**, layer by layer (section 2.5), pre-order within a layer:
+
+- Every rectangle edge is snapped to the device grid with `floor(v * scale + 0.5) / scale`, per axis.
+  This is kotor's own `snap` [read: `draw.ctx:56`], so border pieces that meet in layout meet on
+  screen at fractional scales, and a replayed KOTOR panel lands on the same pixels.
+- An image with quarter turns is snapped as the rectangle it covers after turning, which is what
+  kotor's `put_piece` does [read: `draw.ctx:64`].
+- A clipping element adds its absolute, already intersected rectangle to the draw list's clip table
+  (or finds the equal entry), and every shape under it carries that index. A clipping element with a
+  radius also makes its rectangle the entry's rounded rectangle. Elements wholly outside their clip are
+  skipped. Snapping each edge on its own and deriving sizes from the snapped edges is
+  also ZGF's rule [read: `RenderedCanvasBase.DrawRect`].
+- `opacity` multiplies the alpha of every shape in the subtree. No backend is involved.
+- Each identified element adds a hit region: its rectangle (grown by `hit_outset`) intersected with the
+  clip, in emission order. The topmost region under the pointer is the last one emitted that contains
+  it, so "what is drawn on top takes the pointer" is one rule.
+
+**Not in the layout**, each because no widget in the inventory needs it: wrapping of children onto
+lines, margins, grid, aspect-ratio sizing, baseline alignment, ZGF's `Shrink` with priorities,
+transforms.
+
+### 2.5 Input, focus and navigation
+
+**Events** are the framework's own, backend-neutral (declaration in section 2.8). The host converts
+(`ui_sdl::to_event`, `ui_kotor::to_event`) and pushes them between frames. A frame's input is the
+events since the last `begin_frame`: pointer position, per-button down, pressed and released, wheel, an
+ordered list of key strokes, typed text.
+
+**Hot, active, focus**: the Dear ImGui and ZGF model.
+
+- `hot` is computed once at `begin_frame`: the topmost hit region under the pointer, ignoring regions
+  below a modal layer.
+- `ui::press{ &ui, id, opts } -> Interaction` is the one behaviour primitive. A left press on the hot
+  id makes it `active` (pointer capture). While something is active nothing else is hovered. Release
+  gives `clicked` only if the pointer is still over the same id. A widget that is active but not
+  recorded for a frame loses capture.
+- `Interaction` also reports `entered` (hover began this frame, for a hover sound), `clicks` (multi-click
+  count), and `drag_x`, `drag_y` (pointer movement since the press, for sliders, thumbs and splitters).
+- `ui::take_wheel{ &ui, id }` gives the wheel to a widget only while the pointer is over it or inside
+  it. `ui::take_key{ &ui, key, mods }` consumes a key stroke so later code does not see it.
+
+**Focus.**
+
+- One focused id. A focusable `press` is a tab stop in recording order. Unconsumed Tab and Shift+Tab
+  move focus at `end_frame`. Focus is dropped when its owner is not recorded for a frame.
+- **Links**: `ui::set_links{ &ui, id, links }` gives a widget up, down, left and right neighbours by id.
+  An unconsumed arrow key moves focus along the focused widget's link. This is KOTOR's `MOVETO`, and any
+  application may use it.
+- **Hover is focus**: with `PressOpts.focus_on_hover` the hovered widget takes focus. The stock widgets
+  use `ui.config.hover_focus` (false by default); kui passes true.
+- Highlighting a parent with its focused child (KOTOR's `Obj_Parent`) is kui asking
+  `ui::is_focused{ ui, id }` for the child and choosing the lit border itself.
+
+**Layers**, back to front: back overlay, the base tree, windows (by last-focused order), modals,
+popups, tooltips, front overlay.
+
+- `ui::begin_overlay{ front }` is a full-surface layer with no hit testing, for raw drawing in logical
+  coordinates: world-attached labels, reticles, fades, a software cursor, a drag ghost.
+- A modal layer blocks pointer and keys for everything below it and remembers the focus to restore.
+- A popup closes on a press outside it or on Escape, and is placed below or beside its anchor, flipped
+  and clamped to the surface.
+- Layer content is recorded where the code is but emitted with its layer.
+
+**Nodes: what tests and scripts see.** A widget calls
+`ui::describe{ &ui, id, role, label, value, flags }`. At emit each described element becomes a
+`ui::Node` with its path and solved rectangle. `ui::find_node{ ui, path }` finds one from the last
+frame, by full path or by a suffix that matches exactly one node. kotor's `ui clickctl TAG` and
+`ui ctl TAG` become `find_node` plus injected events. The list costs a few kilobytes a frame and is
+switched by `config.nodes`.
+
+### 2.6 The render seam
+
+The seam has two faces, as ZGF's does: the **shape list** the core emits, and the **staged instances**
+the shared CPU layer makes from it, which every backend draws. All declarations below are compiled as
+written [compiled, a4].
+
+#### The shape list
+
+```
+namespace ui {
+    struct Rect { x: f32 = 0.0, y: f32 = 0.0, w: f32 = 0.0, h: f32 = 0.0 }
+    struct Color { r: u8 = 0, g: u8 = 0, b: u8 = 0, a: u8 = 255 }      // sRGB, straight alpha
+    struct Uv { u0: f32 = 0.0, v0: f32 = 0.0, u1: f32 = 1.0, v1: f32 = 1.0 }
+    struct Span { start: u32 = 0, len: u32 = 0 }                       // bytes of DrawList.text
+    struct Image { id: u32 = 0, width: f32 = 0.0, height: f32 = 0.0 }  // made by a backend; id 0 is none
+    struct Font { index: u16 = 0 }                                     // an index into DrawList.fonts
+    enum Blend: u8 { alpha, additive }
+
+    // A rectangle's look, as ZGF's DrawRect has it: a radius for each corner, a border width and colour for each side.
+    struct Corners { top_left: f32 = 0.0, top_right: f32 = 0.0, bottom_right: f32 = 0.0, bottom_left: f32 = 0.0 }
+    struct Sides { top: f32 = 0.0, right: f32 = 0.0, bottom: f32 = 0.0, left: f32 = 0.0 }
+    struct SideColors {
+        top: Color = Color{ a = 0, .. }, right: Color = Color{ a = 0, .. },
+        bottom: Color = Color{ a = 0, .. }, left: Color = Color{ a = 0, .. },
+    }
+    struct RectStyle {
+        fill: Color = Color{ a = 0, .. },
+        radius: Corners = Corners{ .. },
+        border: Sides = Sides{ .. },
+        border_color: SideColors = SideColors{ .. },
+    }
+    fn round { radius: f32 } -> Corners               // the same radius at every corner
+    fn stroke { width: f32 } -> Sides                 // the same width on every side
+    fn color_sides { color: Color } -> SideColors     // the same colour on every side
+    enum Cap: u8 { round, butt, square }
+
+    union Cmd {
+        rect{ rect: Rect, style: RectStyle, clip: u16 },
+        image{ rect: Rect, image: Image, uv: Uv, tint: Color, quarter: u8, angle: f32, radius: Corners, blend: Blend, clip: u16 },
+        text{ font: Font, size: f32, x: f32, y: f32, text: Span, color: Color, clip: u16 },
+        line{ x0: f32, y0: f32, x1: f32, y1: f32, width: f32, color: Color, cap: Cap, clip: u16 },
+        host{ slot: u32, rect: Rect },
+    }
+    // A piece of a picture: how a sprite or an atlas entry is named.
+    struct Region { image: Image = Image{ .. }, uv: Uv = Uv{ .. }, width: f32 = 0.0, height: f32 = 0.0 }
+    // What shapes are cut to: a rectangle, and optionally a rounded rectangle as well (radius 0: none).
+    struct Clip { rect: Rect = Rect{ .. }, round: Rect = Rect{ .. }, radius: f32 = 0.0 }
+
+    struct DrawList {
+        cmds: []mut Cmd, count: u32,          // in paint order: a later shape draws over an earlier one
+        text: []mut u8, text_len: u32,        // what the Spans point into
+        fonts: []mut FontDef, font_count: u32,
+        clips: []mut Clip, clip_count: u32,   // the clip table; clips[0] is the whole surface
+        width: f32, height: f32,              // the logical size the shapes are laid out in
+        scale_x: f32, scale_y: f32,           // device pixels per logical unit
+        dropped: u32,                         // shapes that did not fit
+    }
+}
+```
+
+| Shape | Meaning |
+|---|---|
+| `rect` | `rect` filled with `fill` (alpha 0: no fill), each corner rounded by its own radius, each side with its own border width and colour, drawn inside the edge. A disc or ring is a square with every radius `w / 2`. |
+| `image` | The part `uv` of `image` over `rect`, multiplied by `tint`, corners rounded by `radius`. `uv` (0, 0) is the picture's top left. `rect` is where the picture ends up after `quarter` counterclockwise quarter turns; `angle` (radians, counterclockwise) then turns it about the rectangle's centre. `blend` is alpha or additive. |
+| `text` | One line of `text` in `font` at `size` (the line height wanted, in logical units) with the line box's top left at (`x`, `y`). Wrapping and alignment are already done. |
+| `line` | A straight segment `width` thick with the given cap, antialiased at any angle. |
+| `host` | A rectangle the host draws itself, in order: shapes before it are under it, shapes after are over it. |
+
+- **Clips are a table**, as in ZGF: each shape names what it is cut to by index. An entry's rectangle
+  is absolute and already the intersection of every enclosing clip. Its rounded rectangle, when it has
+  one, is that of the nearest enclosing rounded clip (one rounded level at a time: an inner rounded clip
+  replaces it, a plain one keeps it) [read: `RenderedCanvasBase.PushClip`]. Equal entries are shared. A
+  full table (256) drops the shape and counts it; it never draws unclipped.
+- Coordinates are logical units, y down, origin top left. Rectangles and text positions are snapped to
+  device pixels by the core, each edge on its own with sizes derived from the snapped edges, which is
+  ZGF's rule [read: `RenderedCanvasBase.DrawRect`] and kotor's [read: `draw.ctx:56`].
+- Filtering and wrap are properties of an image, set when the backend creates it.
+
+The draw list is usable without a `Ui`, for a surface with no widgets (kotor's minimap pass into a
+render target):
+
+```
+namespace ui { namespace draw {
+    fn make(S) { realloc: alloc::Fn(S), mut heap: S, cmds: u32, text: u32, clips: u32, fonts: u32 } -> !DrawList
+    fn reset { mut list: DrawList, width: f32, height: f32, scale_x: f32, scale_y: f32 }
+    fn add { mut list: DrawList, cmd: Cmd }
+    fn add_clip { mut list: DrawList, clip: Clip } -> ?u16        // the entry's index; null when the table is full
+    fn add_rect { mut list: DrawList, rect: Rect, style: RectStyle, clip: u16 }
+    fn add_image { mut list: DrawList, rect: Rect, region: Region, tint: Color, quarter: u8, angle: f32, radius: Corners, blend: Blend, clip: u16 }
+    fn add_line { mut list: DrawList, x0: f32, y0: f32, x1: f32, y1: f32, width: f32, color: Color, cap: Cap, clip: u16 }
+    // add_text, add_host: the same pattern
+} }
+```
+
+#### The staged instances
+
+Each struct is ZGF's, field for field in the order its shader's attributes read them [read: the four
+`canvas_*.vert.glsl` files and the structs at the top of `RenderedCanvasBase.cs`].
+
+```
+namespace ui_stage {
+    // canvas_rect: i_rect, i_borderRadius (tl, tr, br, bl), i_borderSize (top, right, bottom, left), five colours, i_clipIndex.
+    struct RectInstance {
+        x: f32, y: f32, w: f32, h: f32,
+        radius_tl: f32, radius_tr: f32, radius_br: f32, radius_bl: f32,
+        border_top: f32, border_right: f32, border_bottom: f32, border_left: f32,
+        fill: u32, color_top: u32, color_right: u32, color_bottom: u32, color_left: u32,
+        clip: u32,
+    }
+    // canvas_glyph: i_rect, i_atlasUV (u, v, w, h), i_color, i_clipIndex, i_rotation.
+    struct GlyphInstance { x: f32, y: f32, w: f32, h: f32, u: f32, v: f32, uw: f32, vh: f32, color: u32, clip: u32, angle: f32 }
+    // canvas_image: i_rect, i_srcUV (u, v, w, h), i_tint, i_clipIndex, i_rotation, i_cornerRadius (tl, tr, br, bl).
+    struct ImageInstance {
+        x: f32, y: f32, w: f32, h: f32, u: f32, v: f32, uw: f32, vh: f32, tint: u32, clip: u32, angle: f32,
+        radius_tl: f32, radius_tr: f32, radius_br: f32, radius_bl: f32,
+    }
+    // canvas_shape: i_outerRect, i_shapeData, i_shapeData2, i_halfWidth, i_color, i_shapeType, i_clipIndex, i_color2, i_flags.
+    struct ShapeInstance {
+        x: f32, y: f32, w: f32, h: f32, data: [4]f32, data2: [4]f32,
+        half_width: f32, color: u32, kind: u32, clip: u32, color2: u32, flags: u32,
+    }
+    const SHAPE_LINE: u32 = 2
+    // The clip uniform block's three rows for one entry: (left, bottom, right, top), the rounded rectangle, its radius.
+    struct ClipSlot { left: f32, bottom: f32, right: f32, top: f32, round_left: f32, round_bottom: f32, round_right: f32, round_top: f32, radius: f32 }
+    enum Kind: u8 { rect, glyph, image, shape }
+    struct Draw { kind: Kind, first: u32, count: u32, image: u32, blend: ui::Blend }     // image: for an image draw
+    struct Pass { first: u32, count: u32, host: bool, slot: u32, rect: ui::Rect }        // draws up to a host slot
+    // One byte of coverage a texel, bottom row first, as ZGF's glyph atlas is.
+    struct Atlas { pixels: []mut u8, width: u32, height: u32, version: u32, dirty_x0: u32, dirty_y0: u32, dirty_x1: u32, dirty_y1: u32 }
+    struct Staged {
+        rects: []mut RectInstance, rect_count: u32,
+        glyphs: []mut GlyphInstance, glyph_count: u32,
+        images: []mut ImageInstance, image_count: u32,
+        shapes: []mut ShapeInstance, shape_count: u32,
+        clips: []mut ClipSlot, clip_count: u32,
+        draws: []mut Draw, draw_count: u32,
+        passes: []mut Pass, pass_count: u32,
+        atlas: Atlas,
+        width: f32, height: f32, pixel_width: f32, pixel_height: f32,   // u_canvasMetrics
+        revision: u64,          // changes only when the staged bytes differ from the last frame's
+        dropped: u32,
+    }
+    struct Capacity { rects: u32 = 4096, glyphs: u32 = 16384, images: u32 = 16384, shapes: u32 = 2048, draws: u32 = 1024, passes: u32 = 16, atlas_width: u32 = 2048, atlas_height: u32 = 2048 }
+    fn make(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !Staged
+    fn stage { mut out: Staged, list: *ui::DrawList, provider: ?ui::TextProvider }
+}
+```
+
+The default capacities for rectangles, glyphs and shapes are ZGF's (`MaxRects` 4096, `MaxGlyphs` 16384,
+`MaxShapes` 2048). Images get 16384 instead of ZGF's 1024, because a KOTOR panel is thousands of image
+pieces.
+
+What `stage` does with each shape:
+
+- Everything is flipped into ZGF's canvas space (y up, origin bottom left) as it is written. Colours
+  are packed as ARGB.
+- `rect` becomes one `RectInstance`.
+- `image` becomes one `ImageInstance`. A quarter turn becomes part of the rotation, with the rectangle
+  transposed about its centre for odd turns. The V of the region is flipped, so backends keep images
+  top row first.
+- `text` in an outline font is shaped by the provider and becomes one `GlyphInstance` per glyph. A
+  glyph not yet in the atlas is rasterised into it by the provider. The glyph cache is keyed as ZGF
+  keys it: (sized face, glyph index) [read: `FreeTypeFontBackend.MakeKey`].
+- `text` in a glyph table whose pixels the program supplied is packed into the atlas once and becomes
+  `GlyphInstance`s. In a glyph table that lives on a backend image (KOTOR's fonts) it becomes
+  `ImageInstance`s on that image, tinted.
+- `line` becomes one `ShapeInstance` of type 2, as `RenderedCanvasBase.DrawLine` builds it: the padded
+  bounding rectangle, the two end points, the half width, the cap in the flags.
+- `host` ends a pass. Draws never span passes.
+- The clip table is converted entry for entry.
+
+**The atlas** is a port of ZGF's `GlyphAtlas` [read: 375 lines]: skyline packing with one texel of
+padding, reuse of freed rectangles, a quarantine of four frames before freed space is reused, growth in
+height up to a limit with `version` raised when the texture must be made again, and a dirty rectangle
+so a backend uploads only what changed. Glyphs are freed when their font is released. When the atlas
+is full at its limit, the frame's missing glyphs are counted as dropped, and the cache is emptied at
+the end of the frame so the next frame refills it.
+
+**Batching** is ZGF's rule: walking instances in paint order, each joins the most recent draw of its
+kind (and, for images, its texture and blend) that it can reach without passing a draw of another kind
+whose bounds (clipped, and widened for a rotation) it overlaps. Instances are then laid out per kind in
+draw order. A tool UI is a few draws; a KOTOR panel is one draw per texture it uses.
+
+**What a backend does with a `Staged`:**
+
+1. Skip all uploads when `revision` is unchanged.
+2. Upload the four instance arrays and the clip table; upload the atlas's dirty rectangle, or all of it
+   when `version` changed.
+3. For each pass, for each draw: bind the pipeline of its kind, the atlas for a glyph draw or the
+   draw's image for an image draw, the blend, and draw `count` instances from `first` of a unit quad.
+
+#### The shaders
+
+They are ZGF's, kept as GLSL files in `ui/shaders/` and not rewritten. The instance structs above carry
+exactly what they read.
+
+| Shader pair (ZGF.Gui.OpenGL/Assets/Shaders) | Lines | Draws |
+|---|---|---|
+| `canvas_rect.vert.glsl`, `canvas_rect.frag.glsl` | 59 + 172 | `RectInstance` |
+| `canvas_glyph.vert.glsl`, `canvas_glyph.frag.glsl` | 38 + 54 | `GlyphInstance` |
+| `canvas_image.vert.glsl`, `canvas_image.frag.glsl` | 63 + 83 | `ImageInstance` |
+| `canvas_shape.vert.glsl`, `canvas_shape.frag.glsl` | 42 + 192 | `ShapeInstance` |
+
+What I checked in them before deciding to change nothing in their drawing:
+
+- The rectangle shader **already** works out a rounded corner's coverage from the geometry and not from
+  screen-space derivatives, and already rebuilds the fragment's position from `gl_FragCoord` so straight
+  borders are even at any scale [read: the comments and code of `canvas_rect.frag.glsl`]. Nothing is
+  redesigned.
+- The image shader already does what the games quad needs: rotation about the centre, a UV region, a
+  tint, and sampling clamped to the region [read: `canvas_image.vert.glsl`, `canvas_image.frag.glsl`].
+  No field is added to it. It clamps to the region's edge, not to its texel centres, so an atlas keeps
+  one texel of padding around each entry, as ZGF's glyph atlas does.
+- The rounded clip's coverage uses `fwidth`, in every kind. It is ported as it is.
+
+Deliberate changes, each with its reason:
+
+| Change | Reason | Evidence |
+|---|---|---|
+| `u_projection` and `u_canvasMetrics` move from two plain uniforms into one `std140` block, the same in all eight files | Vulkan's GLSL does not allow plain non-opaque uniforms. A block is valid in OpenGL 4.1 too, so one source serves both backends. | With only this edit and the next, all eight files compile to SPIR-V with `glslc`, and the same files still validate as OpenGL GLSL 4.10 [compiled, `spv`]. |
+| `canvas_rect.frag` flips `gl_FragCoord.y` under `#ifdef VULKAN` | Vulkan counts `gl_FragCoord.y` from the top; the shader assumes the bottom. | Same probe. |
+| Explicit `layout(location = N)` on the values passed from vertex to fragment shader | SPIR-V matches them by location. The probe relied on `glslc` numbering them in declaration order, which holds today but is fragile. | Design intent. |
+| Additive blend is a state of the draw | ZGF has one blend mode. kotor's art needs additive. No shader changes. | Design intent. |
+| The shadow shader is not ported | Section 1.2. | |
+
+`ui/tools/build_shaders` (a script) validates each file as OpenGL GLSL, compiles it to SPIR-V with
+`glslc`, and writes two generated data files: `ui/gl/shaders_glsl.ctx` (the sources as multi-line
+literals) and `ui/vulkan/shaders_spv.ctx` (the SPIR-V as byte strings). Both are committed, so building
+a program needs neither tool, in the way `ctxlang/bootstrap/ctxc.windows.c` is committed. The script's
+`--check` mode fails when a generated file does not match its source, and the test runner calls it when
+`glslc` is present.
+
+### 2.7 Text and fonts
+
+The core ships no font. A program registers each font it wants with `ui::add_font` and names one in the
+theme. Text drawn in a font that is not registered is skipped and reported (section 2.11).
+
+```
+namespace ui {
+    enum Encoding: u8 { utf8, bytes }
+    struct Glyph { uv: Uv = Uv{ .. }, width: f32 = 0.0, height: f32 = 0.0, left: f32 = 0.0, top: f32 = 0.0, advance: f32 = 0.0 }
+    union FontKind {
+        bitmap{ image: Image, glyphs: []Glyph, first: u32, pixels: []u8, pixels_width: u32, pixels_height: u32 },
+        outline{ handle: u32 },
+    }
+    struct FontDef { kind: FontKind, encoding: Encoding, height: f32, ascent: f32, snap: bool }
+    fn add_font { mut ui: Ui, font: FontDef } -> ?Font            // null when the font table is full
+
+    // What serves outline fonts (TrueType, OpenType): line metrics, shaping, and one glyph's coverage.
+    struct Opaque {}
+    struct LineMetrics { height: f32 = 0.0, ascent: f32 = 0.0 }
+    struct Shaped { glyph: u32 = 0, face: u32 = 0, x_offset: f32 = 0.0, y_offset: f32 = 0.0, x_advance: f32 = 0.0, cluster: u32 = 0 }
+    struct GlyphBitmap { pixels: []mut u8, width: u32, height: u32, left: i32, top: i32 }
+    type MetricsFn = fn{ mut state: Opaque, handle: u32, pixels: u32 } -> LineMetrics
+    type ShapeFn = fn{ mut state: Opaque, handle: u32, pixels: u32, text: []u8, out: []mut Shaped } -> usize
+    type RasterFn = fn{ mut state: Opaque, face: u32, glyph: u32, mut out: GlyphBitmap } -> bool
+    struct TextProvider { state: *mut Opaque, metrics: MetricsFn, shape: ShapeFn, rasterize: RasterFn }
+    fn set_provider { mut ui: Ui, provider: TextProvider }
+
+    struct Placed { rect: Rect, uv: Uv }
+    fn lay_glyphs { font: FontDef, size: f32, x: f32, y: f32, text: []u8, scale_x: f32, scale_y: f32, out: []mut Placed } -> usize
+}
+```
+
+`Shaped` is ZGF's `ShapedGlyph`: the glyph's index, the sized face it came from (which may be a
+fallback), its offsets and advance in device pixels, and the byte offset of its cluster in the text
+[read: `ShapedGlyph.cs`].
+
+**Outline fonts (`outline`): ordinary software.** The package `ui/fonts` is designed after `ZGF.Fonts`
+[read: `FreeTypeFontBackend.cs`, `GlyphAtlas.cs`, `ShapedGlyph.cs`, `GlyphRef.cs`,
+`GlyphRenderInfo.cs`, `SystemFallbackFonts.cs`]:
+
+```
+namespace ui_fonts {
+    capability Fonts                 // main receives it; every FreeType and HarfBuzz call takes it
+    struct Library { ... }           // FreeType's library, the faces, their sized variants, the shaped-run cache
+    struct Face { id: u32 }
+    fn open(S) { mut fonts: Fonts, realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !Library
+    fn add_face { mut lib: Library, data: []u8, index: u32 } -> !Face     // TrueType or OpenType bytes the program loaded and keeps alive
+    fn add_fallback { mut lib: Library, face: Face }                      // tried in this order when a face lacks a character
+    fn make_font { mut lib: Library, mut ui: ui::Ui, face: Face } -> ?ui::Font     // registers FontKind::outline with the core
+    fn get_provider { lib: *mut Library } -> ui::TextProvider
+    fn release_face { mut lib: Library, face: Face }
+    fn close { mut lib: Library }
+}
+```
+
+| ZGF.Fonts | `ui/fonts` |
+|---|---|
+| `LoadFontFromMemory(data, pixelSize)`: a FreeType face over pinned bytes | `add_face`: the program reads the file and passes the bytes. `FT_New_Memory_Face` over them. |
+| `GetSizedVariant(font, pixelSize)`: one face per pixel size, each with its own id | The same: a sized variant is made the first time a size is asked for, and its id is the `face` in `Shaped`. Sizes are device pixels (`size * scale`), so text is rasterised at the pixels it is shown at. |
+| `TryGetGlyph`: `FT_Load_Glyph` with `FT_LOAD_RENDER`, `FT_LOAD_NO_BITMAP`, `FT_LOAD_TARGET_NORMAL`; 8-bit coverage into the atlas | `rasterize`: the same call and flags, copied into the caller's buffer. The atlas and the glyph cache live in `ui_stage`, so glyph-table fonts share them. |
+| `GetShapedText`: HarfBuzz per run, positions in 26.6 units divided by 64, results cached per font by text in two generations of 256 | `shape`: the same, with the same cache, so measuring and then staging a line shapes it once. |
+| `ShapeWithFallback`: the line split into runs by which face covers each character (`FT_Get_Char_Index`), each run shaped by its face | The same, over the faces the program gave `add_fallback`. |
+| `ShapeBidi`, `Bidi.cs` | Excluded (section 1.2). |
+| `SystemFallbackFonts`, `SystemFonts/*` | Excluded (section 1.2). |
+| Emboldened variants, `FontFeatureSet` | Excluded (section 1.2). |
+| `GetMetrics`: ascender, descender, line height of the sized face | `metrics`. |
+
+- The core measures a run by shaping it and summing the advances; a text field takes its caret
+  positions from the clusters. The core caches a frame's measurements by a hash of font, size and
+  bytes.
+- The provider's functions get only the opaque state pointer, so the `Library` holds the `Fonts`
+  capability itself [compiled, a10].
+- **Verified on this machine** [compiled and run, a7]: a ctxlang program read `segoeui.ttf`, FreeType
+  rasterised 'A' at 32 pixels (21 by 23, 138 covered pixels, line height 43) and HarfBuzz shaped two
+  strings (kerned advances of 78 and 92 pixels). Both libraries are the MSYS2 packages already
+  installed (FreeType 2.13.3, HarfBuzz 11.2.1), linked from `build.ctx` with
+  `build::link{ lib = "freetype" }` and `"harfbuzz"`.
+- FreeType has no accessor functions for a face's glyph slot and size, so the binding mirrors the heads
+  of three C structs. Their offsets depend on the size of C's `long` (4 bytes on Windows, 8 elsewhere),
+  so the mirrors are per platform, chosen in `build.ctx` as kotor chooses its backend directory. The
+  probe's offsets came from a C program compiled against the installed headers.
+
+**Glyph tables (`bitmap`): games, and tests.**
+
+- `glyphs[c - first]` is the glyph of character `c`: its box in the picture, its size in font units, its
+  offset from the pen, its advance. `height` is the line height in font units, so a text shape at `size`
+  draws at `size / height`. With `snap`, the scale is rounded so that one font pixel covers whole device
+  pixels and each glyph starts on a device pixel.
+- The picture is either a backend image (KOTOR's TPC textures), or 8-bit coverage in `pixels` with
+  `image.id` 0, which the staged level packs into its atlas.
+- **KOTOR fonts.** `ui_kotor::from_font` turns a `render::Font` into a glyph table with
+  `Encoding::bytes`, `snap` false and `advance` equal to the glyph width (the original zeroes spacing
+  when drawing [read: report 2.6]). kui keeps the original's wrapping, integer line widths and alignment
+  rules and calls `ui::paint_text` once per line, so the general wrapping code never has to match the
+  original engine. kotor's developer overlay uses the game's own console font this way, as `fxhud` does
+  today [read: `fxhud.ctx`].
+- **The test font** is a glyph table built in code (section 6.1).
+
+**Where a sample gets a font file.** A sample takes `--font PATH` and otherwise tries a system path for
+its platform (`C:\Windows\Fonts\segoeui.ttf`, `/System/Library/Fonts/Helvetica.ttc`,
+`/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf`), reads the bytes with `fs::read_all`, and exits with
+a message naming the option when none is found. Nothing font-shaped is committed.
+
+**Encoding.** `bytes`: one byte is one character and indexes the glyph table (KOTOR's cp1252 text).
+`utf8`: text is decoded by code point. The encoding also decides how a text field's caret steps in a
+glyph table; in an outline font the caret steps by cluster.
+
+**General wrapping** (for stock widgets): break at spaces and after hyphens, split an unbreakable word
+at the width; `Overflow::ellipsis` cuts a single line and appends `...`. Widths come from the glyph
+table or from the provider, so the same code wraps both kinds.
+
+**Formatting numbers.** `ui::Ui` is an `@fmt` sink: the core has `#write` functions for integers, byte
+slices and literals, and `ui::write_fixed{ v, digits, _ }` for decimals. `ui::take_text{ &ui }` returns
+the formatted bytes, which live in the frame arena until the next `begin_frame`:
+
+```
+_ = @fmt(&ui, "{} of {} done", done, app.count)
+ui::add_label{ &ui, text = ui::take_text{ &ui }, opts }          // the nested call is allowed [compiled, a6]
+```
+
+### 2.8 The host and platform seam
+
+Everything on the OS side is either input the host pushes or a request the host applies after the
+frame. The core calls nothing. Declarations [compiled, a4]:
+
+```
+namespace ui {
+    enum Key: u8 { none, tab, enter, escape, backspace, delete, left, right, up, down, home, end, page_up, page_down, space, a, c, v, x, y, z }
+    const MOD_SHIFT: u8 = 1
+    const MOD_CTRL: u8 = 2
+    const MOD_ALT: u8 = 4
+    union Event {
+        pointer_move{ x: f32, y: f32 },                    // logical units
+        pointer_button{ button: u8, down: bool, clicks: u8 },
+        pointer_leave,
+        wheel{ dx: f32, dy: f32 },
+        key{ key: Key, down: bool, repeat: bool, mods: u8 },
+        text{ bytes: [32]u8, len: u8 },                    // committed text, in the focused font's encoding
+        paste{ text: []u8 },                               // the host's answer to Requests.paste; copied at the push
+        focus{ gained: bool },
+    }
+    enum Cursor: u8 { arrow, text, hand, resize_h, resize_v, resize_diag, move, hidden }
+    struct Requests {
+        cursor: Cursor = Cursor::arrow,
+        wants_pointer: bool = false, wants_keys: bool = false,
+        text_input: bool = false, text_rect: Rect = Rect{ .. },   // turn OS text input on; where the caret is
+        copy: []u8 = "", paste: bool = false,                     // set the clipboard; send me a paste event
+        animating: bool = false,                                  // something moves with time: draw another frame
+    }
+    struct FrameInfo { width: f32, height: f32, pixel_width: f32, pixel_height: f32, dt: f32 }
+}
+```
+
+- **DPI and scale.** The host states the logical size and the device size each frame; the core derives
+  the scale per axis. A tool passes `pixels / (monitor scale * zoom)`. kotor passes its `ui_w`, `ui_h`
+  (window divided by the quarter-step scale) and the drawable size, which reproduces its `Grid` exactly
+  [read: `draw.ctx:44`].
+- **Clipboard** is two requests and one event, so no call leaves the core mid-frame: Ctrl+C sets
+  `copy`, Ctrl+V sets `paste` and the host answers with `Event::paste` before the next frame.
+- **Text input.** `text_input` follows whether a text field has focus (the host calls
+  `sdl::set_text_input`), and `text_rect` places the OS candidate window.
+- **Time** is `frame.dt` only. The core reads no clock, so a scripted run with fixed `dt` repeats
+  exactly.
+- **Event-driven hosts** redraw when events arrived or `animating` is set; a game ignores it and draws
+  every frame.
+- The test driver is a host with a fake clipboard, which is why the tests need no OS.
+
+### 2.9 Theme
+
+- `ui::Theme` is a plain struct in `ui.theme`, read when each widget is recorded, so assigning a field
+  mid-frame changes what comes after. There is no style stack.
+- Colours are named by role (ZGF's scheme): `background`, `surface`, `control`, `field`, `accent`,
+  `on_accent`, `text`, `text_muted`, `text_disabled`, `border`, `selection`, `focus_ring`, `scrim`,
+  `danger`. State colours (`control_hovered`, `control_pressed`, `accent_hovered`) are filled in from
+  the base roles by `ui::derive_theme{ theme }` when left at alpha 0.
+- Metrics: `font_size`, `gap`, `padding`, `control_height`, `row_height`, `radius`, `border_width`,
+  `scrollbar`, `tip_delay`.
+- `font` is a font the program registered. The theme has no default for it: a program sets
+  `ui.theme.font` from what `ui::add_font` or `ui_fonts::make_font` returned.
+- `ui::make_dark_theme{}` and `ui::make_light_theme{}` are the two built in.
+- One widget's look is changed through `opts.box`: fill, a border width and colour per side, a radius
+  per corner, padding, size. A different look altogether is a different widget over the primitives.
+
+### 2.10 Memory
+
+- `ui::make(S){ realloc, &heap, cap }` allocates every buffer once from the caller's allocator. `Ui`
+  itself is not generic, so neither is any widget or any user function that takes `mut ui: ui::Ui`
+  [compiled, a1 and a4]. This is the pattern of `render::make_frame` [read: `render.ctx:589`].
+- `ui::Capacity` has a default for every count: elements 8192, text 256 KiB, shapes 32768, clips 256, hit
+  regions 8192, states 2048, nodes 8192, fonts 16, scopes 128, layers 64. About 5 MB at the defaults; a
+  program passes smaller or larger numbers.
+- The staged level is made the same way (`ui_stage::make`), with its own capacities and the atlas
+  (2048 by 2048 bytes to start). The font library allocates through FreeType and HarfBuzz, which use
+  the C allocator.
+- Per frame nothing is allocated. `begin_frame` resets counts. Hit regions and nodes are kept in two
+  buffers that swap, because this frame's interaction reads last frame's.
+- Text lives in one frame arena: copies of labels, names of id scopes, formatted text. Slices from
+  `take_text` and the `Span`s in the draw list are valid until the next `begin_frame`.
+- A text field's text is the application's: `ui::TextBuf{ bytes: []mut u8, len: usize }`, edited in
+  place, never reallocated.
+
+### 2.11 Error handling
+
+- Widget calls cannot fail, so there is no `try` on a widget. `ui::make` and a backend's `open` and
+  `create_image` return `!T`.
+- **Overflow** drops the item and counts it (`ui.stats`, `DrawList.dropped`, `Staged.dropped`), as
+  `render::Frame` does.
+- **Misuse** is recorded, never a panic: a scope left open at `end_frame` (closed for the caller, and
+  counted), `ui::end` with a scope that is not open, a duplicate id, a state table that is full, text
+  in a font that was never registered (it is skipped). `ui.problems` holds the first 16 of a frame with
+  kind, id and path.
+- The tests assert that `stats` shows no drops and `problems` is empty after every frame; the gallery
+  shows both in a corner.
+- `ui::end{ &ui, scope }` closes that scope and everything opened inside it that is still open, so an
+  early `return` between a `begin` and its `end` cannot corrupt the tree (ZGF's depth rule).
+
+---
+
+## 3. API sketch
+
+Both sketches below are compiled and run against stub declarations (real signatures, placeholder
+bodies): `ctxprobe/a4/app.ctx` and `ctxprobe/a4/kotor_style.ctx` over `ui_stub.ctx` and `ui_stub2.ctx`
+[compiled, a4], and again beside kotor's `lib/base` and `lib/platform` [compiled, a5]. The stub lays
+nothing out, so this checks that the API can be written and called in today's ctxlang, not that it
+behaves.
+
+### 3.1 A frame of application code
+
+```
+struct Todo { title: [48]u8, len: usize, done: bool }
+struct App { open: bool, draft: ui::TextBuf, items: [64]Todo, count: usize, selected: i32, menu_for: i32, volume: f32, dark: bool }
+
+fn show_app { mut ui: ui::Ui, mut app: App } {
+    let opts = ui::Opts{ .. }
+    let win = ui::begin_window{ &ui, title = "Tasks", open = &app.open, window = ui::WindowOpts{ width = 420.0, height = 560.0, .. }, opts }
+    if win.open {
+        show_entry{ &ui, &app }
+        show_settings{ &ui, &app }
+        show_items{ &ui, &app }
+        show_item_menu{ &ui, &app }
+    }
+    ui::end{ &ui, scope = win }
+}
+
+// A row: a text field that takes the spare width, and a button.
+fn show_entry { mut ui: ui::Ui, mut app: App } {
+    let opts = ui::Opts{ .. }
+    let mut done: usize = 0
+    let mut i: usize = 0
+    while i < app.count {
+        if app.items[i].done { done = done + 1 }
+        i = i + 1
+    }
+    _ = @fmt(&ui, "{} of {} done", done, app.count)
+    let summary = ui::take_text{ &ui }
+    ui::add_label{ &ui, text = summary, opts }
+
+    let row = ui::begin_row{ &ui, opts }
+    defer ui::end{ &ui, scope = row }
+    let entered = ui::add_text_field{
+        &ui, label = "draft", text = &app.draft, rules = ui::TextRules{ hint = "What needs doing?", .. },
+        opts = ui::Opts{ box = ui::Box{ width = ui::GROW, .. }, .. },
+    }
+    let add = ui::add_button{ &ui, label = "Add", opts = ui::Opts{ enabled = app.draft.len > 0, tip = "Add the task", .. } }
+    if (entered or add) and app.draft.len > 0 and app.count < 64 {
+        let n = if app.draft.len < 48 { app.draft.len } else { 48 }
+        slice::copy(u8){ dst = app.items[app.count].title[..n], src = app.draft.bytes[..n] }
+        app.items[app.count].len = n
+        app.items[app.count].done = false
+        app.count = app.count + 1
+        app.draft.len = 0
+    }
+}
+
+// A panel with a checkbox and a slider. `..` fills `ui` and `opts` from this function's own names:
+// the short way to write a widget call.
+fn show_settings { mut ui: ui::Ui, mut app: App } {
+    let opts = ui::Opts{ .. }
+    let panel = ui::begin_panel{ .. }
+    ui::add_label{ text = "Settings", .. }
+    _ = ui::add_checkbox{ label = "Dark mode", value = &app.dark, .. }
+    let row = ui::begin_row{ .. }
+    _ = @fmt(&ui, "Volume {} %", ui::write_fixed{ v = app.volume * 100.0, digits = 1, _ })
+    let text = ui::take_text{ &ui }
+    ui::add_label{ text, .. }
+    _ = ui::add_slider{ label = "volume", value = &app.volume, range = ui::Range{ step = 0.05, .. }, .. }
+    ui::end{ scope = row, .. }
+    ui::end{ scope = panel, .. }
+}
+
+// A scroll area holding a virtual list: only the rows in view are recorded.
+fn show_items { mut ui: ui::Ui, mut app: App } {
+    let opts = ui::Opts{ .. }
+    let scroll = ui::begin_scroll{ &ui, id = "tasks", opts = ui::Opts{ box = ui::Box{ height = ui::GROW, .. }, .. } }
+    let list = ui::begin_list{ &ui, id = "items", count = @as(u32, app.count), row_height = 28.0, opts }
+    let mut removed: i32 = -1
+    let mut i = list.first
+    while i < list.last {
+        let item = &app.items[@as(usize, i)]
+        let row = ui::begin_list_row{ &ui, list, index = i, selected = app.selected == @as(i32, i) }
+        if row.clicked { app.selected = @as(i32, i) }
+        if row.context {
+            app.menu_for = @as(i32, i)
+            ui::open_popup{ &ui, id = "item-menu" }
+        }
+        _ = ui::add_checkbox{ &ui, label = item.title[..item.len], value = &item.done, opts = ui::Opts{ id = "done", .. } }
+        ui::add_spacer{ &ui }
+        if ui::add_button{ &ui, label = "x", opts = ui::Opts{ id = "delete", tip = "Delete", .. } } { removed = @as(i32, i) }
+        ui::end{ &ui, scope = row.scope }
+        i = i + 1
+    }
+    ui::end{ &ui, scope = list.scope }
+    ui::end{ &ui, scope = scroll }
+    if removed >= 0 { remove_item{ &app, at = @as(usize, removed) } }
+}
+
+// A popup: recorded only while it is open, closed by the item that was picked.
+fn show_item_menu { mut ui: ui::Ui, mut app: App } {
+    let opts = ui::Opts{ .. }
+    let menu = ui::begin_popup{ &ui, id = "item-menu", opts }
+    if menu.open and app.menu_for >= 0 {
+        let at = @as(usize, app.menu_for)
+        if ui::add_menu_item{ &ui, label = "Toggle done", opts } {
+            app.items[at].done = not app.items[at].done
+            ui::close_popup{ &ui }
+        }
+        if ui::add_menu_item{ &ui, label = "Delete", opts } {
+            remove_item{ &app, at }
+            ui::close_popup{ &ui }
+        }
+    }
+    ui::end{ &ui, scope = menu }
+}
+```
+
+The host loop around it, as the probe's `main` has it:
+
+```
+let mut gui = ui::make{ realloc = arena::alloc, &heap, cap = ui::Capacity{ .. } } iferr { return 1 }
+// The program registers the fonts it wants; here the tests' glyph table built in code.
+let test_font = ui_test::make_test_font{ realloc = arena::alloc, &heap } iferr { return 1 }
+gui.theme.font = ui::add_font{ ui = &gui, font = test_font } ifnull { return 1 }
+let mut staged = ui_stage::make{ realloc = arena::alloc, &heap, cap = ui_stage::Capacity{ .. } } iferr { return 1 }
+// each frame:
+let used = ui::push_event{ ui = &gui, event = ui::Event::pointer_move{ x = 40.0, y = 60.0 } }
+ui::begin_frame{ ui = &gui, frame = ui::FrameInfo{ width = 800.0, height = 600.0, pixel_width = 1200.0, pixel_height = 900.0, dt = 0.016 } }
+show_app{ ui = &gui, &app }
+ui::end_frame{ ui = &gui }
+let req = ui::take_requests{ ui = &gui }
+ui_stage::stage{ out = &staged, list = &gui.draw, provider = null }     // null: glyph tables only
+// then: a GPU backend's render{ &dev, staged = &staged }, and the host applies req
+```
+
+A program with outline fonts differs in three lines (design intent, with each call's shape compiled in
+a4 or a7): it opens a `ui_fonts::Library`, adds a face from bytes it read, sets
+`gui.theme.font = ui_fonts::make_font{ &lib, ui = &gui, face }`, and passes
+`ui_fonts::get_provider{ lib = &lib }` to `ui::set_provider` and to `stage`.
+
+Two things the sketch shows about writing against this API:
+
+- With `..`, any local that has a widget field's name is passed too (`text`, `label`, `value`). That is
+  the language's rule. Library code spells `&ui` and `opts` out; the short form is for application code.
+- A container's content that needs an early `return` goes in its own function with
+  `defer ui::end{ ... }`, since a bare block is not a statement.
+
+### 3.2 An explicit-rectangle, data-driven screen in KOTOR's manner
+
+`kui` is the KOTOR widget set. Its widgets are written over `ui`'s primitives exactly as the stock
+widgets are. Controls come from a table the `.gui` loader filled once; a control's TAG is its id.
+
+```
+namespace kui {
+    struct Art { image: ui::Image = ui::Image{ .. }, additive: bool = false }
+    struct Border {
+        corner: Art = Art{ .. }, edge: Art = Art{ .. }, fill: Art = Art{ .. },
+        dimension: f32 = 0.0, tint: ui::Color = ui::Color{ r = 255, g = 255, b = 255, .. }, pulsing: bool = false,
+    }
+    struct Control {
+        tag: []u8,
+        x: f32, y: f32, w: f32, h: f32,                 // pixels in the panel, as the file has them
+        border: Border = Border{ .. }, hilight: Border = Border{ .. }, selected: Border = Border{ .. },
+        font: ui::Font = ui::Font{ .. },
+        text_color: ui::Color = ui::Color{ r = 0, g = 168, b = 250, .. },
+        up: []u8 = "", down: []u8 = "", left: []u8 = "", right: []u8 = "",      // MOVETO, by TAG
+    }
+    struct Panel { name: []u8, w: f32, h: f32, controls: []Control }
+    struct Skin { pulse: f32 = 1.0, lit_text: ui::Color = ui::Color{ r = 250, g = 255, b = 0, .. } }
+
+    // The panel: rigid, centred in the logical screen, its controls placed in its own pixels.
+    fn begin_panel { mut ui: ui::Ui, panel: *Panel } -> ui::Scope {
+        let outer = ui::push_id{ &ui, name = panel.name }
+        let box = ui::Box{
+            width = ui::fix{ px = panel.w }, height = ui::fix{ px = panel.h }, clip = true,
+            place = ui::Place{ anchor_x = 0.5, anchor_y = 0.5, x = 0.0 - panel.w / 2.0, y = 0.0 - panel.h / 2.0 }, ..
+        }
+        _ = ui::begin_element{ &ui, id = ui::make_id{ ui, name = "panel" }, axis = ui::Axis::column, box }
+        return outer                                        // ending the id scope ends the element opened inside it
+    }
+
+    // CSWGuiBorder's scheme: one corner picture turned four ways, one edge picture in whole segments,
+    // then the fill. Every piece is an ordinary image shape, one quad once staged; the quarter turns are exact.
+    fn paint_border { mut ui: ui::Ui, skin: Skin, b: Border, w: f32, h: f32 } {
+        let tint = mul_alpha{ c = b.tint, a = if b.pulsing { skin.pulse } else { 1.0 } }
+        let c = b.dimension
+        let uv = ui::Uv{ .. }
+        if b.corner.image.id != 0 and c > 0.0 {
+            let blend = if b.corner.additive { ui::Blend::additive } else { ui::Blend::alpha }
+            ui::paint_image{ &ui, rect = ui::Rect{ x = 0.0, y = 0.0, w = c, h = c }, image = b.corner.image, uv, tint, quarter = 0, angle = 0.0, blend }
+            ui::paint_image{ &ui, rect = ui::Rect{ x = 0.0, y = h - c, w = c, h = c }, image = b.corner.image, uv, tint, quarter = 1, angle = 0.0, blend }
+            ui::paint_image{ &ui, rect = ui::Rect{ x = w - c, y = h - c, w = c, h = c }, image = b.corner.image, uv, tint, quarter = 2, angle = 0.0, blend }
+            ui::paint_image{ &ui, rect = ui::Rect{ x = w - c, y = 0.0, w = c, h = c }, image = b.corner.image, uv, tint, quarter = 3, angle = 0.0, blend }
+        }
+        // ... edge runs (quarter 0 and 2 along the top and bottom, 1 and 3 down the sides) and the fill: in the probe file
+    }
+
+    // A button: hover is focus, the hilight border and yellow pulsing text while it has it, MOVETO links.
+    fn add_button { mut ui: ui::Ui, skin: Skin, panel: *Panel, tag: []u8, text: []u8 } -> bool {
+        let c = find_control{ panel, tag } ifnull { return false }
+        let id = ui::make_id{ ui, name = tag }
+        let it = ui::press{ &ui, id, opts = ui::PressOpts{ focus_on_hover = true, .. } }
+        ui::set_links{ &ui, id, links = ui::Links{ up = link_of{ ui, tag = c.up }, down = link_of{ ui, tag = c.down }, left = link_of{ ui, tag = c.left }, right = link_of{ ui, tag = c.right } } }
+        let lit = it.focused or it.hovered
+        let el = ui::begin_element{ &ui, id, axis = ui::Axis::row, box = ui::place{ x = c.x, y = c.y, w = c.w, h = c.h } }
+        paint_border{ &ui, skin, b = if lit { c.hilight } else { c.border }, w = c.w, h = c.h }
+        let size: f32 = 16.0
+        let tw = ui::measure_text{ &ui, font = c.font, size, text }
+        let color = if lit { mul_alpha{ c = skin.lit_text, a = skin.pulse } } else { c.text_color }
+        ui::paint_text{ &ui, font = c.font, size, x = (c.w - tw) / 2.0, y = (c.h - size) / 2.0, text, color }
+        ui::end{ &ui, scope = el }
+        return it.clicked
+    }
+
+    // A list that scrolls by whole rows, as the original's do: its scroll position is the widget's own
+    // state, the wheel is taken only while the pointer is over it, and rows are placed, never flowed.
+    fn begin_rows { mut ui: ui::Ui, panel: *Panel, tag: []u8, count: i32, row_h: f32 } -> ui::List {
+        let c = find_control{ panel, tag } ifnull { return ui::List{ scope = ui::Scope{ .. }, first = 0, last = 0 } }
+        let id = ui::make_id{ ui, name = tag }
+        let mut st = ui::load_state{ &ui, id }
+        let visible = @as(i64, c.h / row_h)
+        let max = if @as(i64, count) > visible { @as(i64, count) - visible } else { 0 }
+        st.i[0] = st.i[0] - @as(i64, ui::take_wheel{ &ui, id })
+        if st.i[0] > max { st.i[0] = max }
+        if st.i[0] < 0 { st.i[0] = 0 }
+        ui::store_state{ &ui, id, values = st }
+        ui::describe{ &ui, id, role = ui::Role::list, label = tag, value = @as(f32, st.i[0]), flags = 0 }
+        let mut box = ui::place{ x = c.x, y = c.y, w = c.w, h = c.h }
+        box.clip = true
+        let scope = ui::begin_element{ &ui, id, axis = ui::Axis::column, box }
+        return ui::List{ scope, first = @as(u32, st.i[0]), last = @as(u32, st.i[0] + (if max > 0 { visible } else { @as(i64, count) })) }
+    }
+
+    // A 3D view inside the panel's z-order: the host draws it between the UI passes on either side.
+    fn add_view { mut ui: ui::Ui, panel: *Panel, tag: []u8, slot: u32 } {
+        let c = find_control{ panel, tag } ifnull { return }
+        ui::add_host_slot{ &ui, slot, box = ui::place{ x = c.x, y = c.y, w = c.w, h = c.h } }
+    }
+}
+
+// The Gameplay options screen: what kotor's tag-keyed glue becomes.
+fn show_gameplay_options { mut ui: ui::Ui, skin: kui::Skin, panel: *kui::Panel, mut settings: Settings } -> Action {
+    let mut action = Action::none
+    let p = kui::begin_panel{ &ui, panel }
+    kui::add_label{ &ui, skin, panel, tag = "LBL_TITLE", text = "Gameplay" }
+    kui::add_view{ &ui, panel, tag = "LBL_3DVIEW", slot = 1 }
+    _ = kui::add_check{ &ui, skin, panel, tag = "CB_AUTOSAVE", value = &settings.autosave }
+    if kui::add_button{ &ui, skin, panel, tag = "BTN_DIFFICULTY", text = "Difficulty" } { action = Action::pick_difficulty }
+    if kui::add_button{ &ui, skin, panel, tag = "BTN_BACK", text = "Close" } { action = Action::close }
+    ui::end{ &ui, scope = p }
+    return action
+}
+```
+
+The host side of a 3D view inside the UI, as the probe's `walk_passes` does it: each run of shapes up
+to a `host` shape is one UI pass (a `ui_stage::Pass` once staged), then the host draws its view in the
+slot's rectangle.
+
+```
+// printed by the probe for the screen above:
+//   ui pass: commands 0..1
+//   host slot 1 at 340,70
+//   ui pass: commands 2..7
+```
+
+### 3.3 The rest of the public surface
+
+All compiled in the stub [compiled, a4]. Common options:
+
+```
+struct Size { kind: SizeKind = SizeKind::fit, value: f32 = 0.0, min: f32 = 0.0, max: f32 = 100000.0 }
+const FIT: Size = Size{ .. }
+const GROW: Size = Size{ kind = SizeKind::grow, .. }
+fn fix { px: f32 } -> Size
+fn take { part: f32 } -> Size
+struct Place { anchor_x: f32 = 0.0, anchor_y: f32 = 0.0, x: f32 = 0.0, y: f32 = 0.0 }
+struct Box {
+    width: ?Size = null, height: ?Size = null,
+    padding: ?Insets = null, gap: ?f32 = null,
+    align_x: ?Align = null, align_y: ?Align = null,
+    fill: ?Color = null, border: ?SideColors = null, border_width: ?Sides = null, radius: ?Corners = null,
+    clip: ?bool = null, opacity: ?f32 = null,
+    place: ?Place = null,
+    hit_outset: ?Insets = null,
+}
+fn place { x: f32, y: f32, w: f32, h: f32 } -> Box
+struct Opts { id: []u8 = "", box: Box = Box{ .. }, enabled: bool = true, tip: []u8 = "" }
+struct Range { min: f32 = 0.0, max: f32 = 1.0, step: f32 = 0.0, digits: u32 = 2 }
+struct TextRules { hint: []u8 = "", max_chars: u32 = 0, password: bool = false, filter: ?fn{ c: u32 } -> bool = null }
+struct WindowOpts { x: f32 = 40.0, y: f32 = 40.0, width: f32 = 360.0, height: f32 = 0.0, movable: bool = true, resizable: bool = true, closable: bool = true }
+struct TextBuf { bytes: []mut u8, len: usize }
+```
+
+A clipping element with a radius clips its children to the rounded shape (the clip table's rounded
+entry).
+
+Primitives, which the stock widgets and kui are both built from:
+
+```
+struct Scope { depth: u32 = 0, open: bool = false }
+fn make_id { ui: Ui, name: []u8 } -> Id
+fn push_id { mut ui: Ui, name: []u8 } -> Scope
+fn push_key { mut ui: Ui, key: u64 } -> Scope
+fn begin_element { mut ui: Ui, id: Id, axis: Axis, box: Box } -> Scope
+fn end { mut ui: Ui, scope: Scope }
+fn add_text { mut ui: Ui, text: []u8, style: TextStyle, box: Box }                 // flowed, wrapped or ellipsized
+fn add_host_slot { mut ui: Ui, slot: u32, box: Box }
+fn paint_rect { mut ui: Ui, rect: Rect, style: RectStyle }                         // relative to the open element
+fn paint_image { mut ui: Ui, rect: Rect, image: Image, uv: Uv, tint: Color, quarter: u8, angle: f32, blend: Blend }
+fn paint_region { mut ui: Ui, rect: Rect, region: Region, tint: Color }            // a sprite or an atlas entry
+fn paint_rounded_image { mut ui: Ui, rect: Rect, region: Region, tint: Color, radius: Corners }
+fn paint_text { mut ui: Ui, font: Font, size: f32, x: f32, y: f32, text: []u8, color: Color }
+fn paint_line { mut ui: Ui, x0: f32, y0: f32, x1: f32, y1: f32, width: f32, color: Color, cap: Cap }
+enum Icon: u8 { check, cross, arrow_right, arrow_down, arrow_up, arrow_left }
+fn paint_icon { mut ui: Ui, icon: Icon, rect: Rect, color: Color }                 // a stock mark, drawn as lines
+struct PressOpts { enabled: bool = true, focusable: bool = true, focus_on_hover: bool = false, button: u8 = 0 }
+struct Interaction {
+    id: Id,
+    hovered: bool = false, entered: bool = false,
+    pressed: bool = false, held: bool = false, clicked: bool = false, clicks: u8 = 0,
+    focused: bool = false,
+    drag_x: f32 = 0.0, drag_y: f32 = 0.0,
+}
+fn press { mut ui: Ui, id: Id, opts: PressOpts } -> Interaction
+struct Links { up: ?Id = null, down: ?Id = null, left: ?Id = null, right: ?Id = null }
+fn set_links { mut ui: Ui, id: Id, links: Links }
+fn set_focus { mut ui: Ui, id: Id }
+fn is_focused { ui: Ui, id: Id } -> bool
+fn take_wheel { mut ui: Ui, id: Id } -> f32
+fn take_key { mut ui: Ui, key: Key, mods: u8 } -> bool
+fn get_pointer { ui: Ui } -> Point
+fn get_time { ui: Ui } -> f32
+fn get_hover_time { ui: Ui, id: Id } -> f32
+fn get_rect { ui: Ui, id: Id } -> ?Rect                                            // last frame's
+fn measure_text { mut ui: Ui, font: Font, size: f32, text: []u8 } -> f32
+fn begin_overlay { mut ui: Ui, front: bool } -> Scope
+fn begin_modal { mut ui: Ui, id: []u8, opts: Opts } -> Scope
+fn describe { mut ui: Ui, id: Id, role: Role, label: []u8, value: f32, flags: u8 }
+struct Node { id: Id, role: Role, rect: Rect, flags: u8, value: f32, label: []u8, path: []u8 }
+fn find_node { ui: Ui, path: []u8 } -> ?Node
+```
+
+**The stock marks need no font and no picture.** A check mark, a cross and the four arrows are each two
+round-capped lines scaled to the rectangle they are given, so a checkbox, a tree node, a combo and a
+window's close button draw the same with any font the program registered, or with none. A radio button's
+dot and a slider's knob are rectangles with every radius half their size.
+
+**On names.** Every function is a verb or verb phrase (decided): `begin_*` and `end` for containers,
+`add_*` for a widget or element that the call adds to this frame's tree, `paint_*` for drawing in the
+open element, `take_*` for something consumed, and `make_*`, `push_*`, `set_*`, `get_*`, `find_*`,
+`load_*`, `store_*`. `add_` matches `render::add_quad`.
+
+---
+
+## 4. Backends and the host
+
+A backend is an ordinary library with its own namespace that draws a `ui_stage::Staged`. The
+conventional shapes (compiled as a contract check in a4):
+
+```
+fn open ... -> !Device                                                     // per backend: what it needs to start
+fn create_image { mut dev: Device, width: u32, height: u32, rgba: []u8, smooth: bool } -> !ui::Image
+fn update_image / free_image
+fn render { mut dev: Device, staged: *ui_stage::Staged } -> !
+fn read_pixels { mut dev: Device, into: []mut u8 } -> !                    // RGBA8, top row first, for screenshots
+```
+
+| Backend | Shaders | Plan |
+|---|---|---|
+| Recorder | none: writes text | stage 0 (shapes), stage 2 (staged) |
+| OpenGL 4.1 core | the four ported pairs, as GLSL | stage 3 |
+| Vulkan | the same four pairs, as SPIR-V | stage 14 |
+| Metal | ZGF's four `.gen.metal` files | specified in 4.5, not staged |
+| kotor `render::Frame` | kotor's own quad shader | stage 15 (section 8.1) |
+
+### 4.1 Recorder (`ui/record`, `ui_rec`)
+
+Writes a draw list as text, one shape a line, into its own byte sink (with its own `#write` functions,
+so numbers are fixed-point and stable), then the clip table and the node list as an indented tree. From
+stage 2 it also writes a `Staged`: the draws with their kinds, counts, images and blends, which is how
+batching is pinned by golden files. It has no device. Intended format:
+
+```
+frame 800x600 scale 1.5x1.5
+clip 1 16,16 400x300 round 16,16 400x300 r=8
+rect 16,16 120x28 fill=30343EFF radius=4,4,0,0 border=1,1,0,1 404552FF,404552FF,00000000,404552FF clip=1
+text 24,22 font=0 size=16 E4E7EDFF clip=1 "Add"
+image 10,10 32x32 img=3 uv=0,0,1,1 tint=FFFFFFFF quarter=1 angle=0 radius=0,0,0,0 blend=alpha clip=0
+line 40,60 52,72 width=2 cap=round E4E7EDFF clip=0
+host 1 320,60 280x360
+```
+
+### 4.2 OpenGL 4.1 core (`ui/gl`, `ui_gl`)
+
+A port of the structure of ZGF's `OpenGlRenderedCanvas` [read: 560 lines].
+
+- `ui_gl::open{ get_proc, realloc, &heap, ... }` takes a bound function that looks up GL symbols, so
+  the backend does not depend on a host. It holds its GL functions in a device-owned capability struct,
+  as kotor's `gl::Gl` does [read], which is also ZGF's stated lesson about static GL entry points. Its
+  own binding of about 45 functions lives in `ui_gl`.
+- Four programs, each with the unit quad and one instance buffer whose attribute layout is the instance
+  struct. The clip table and the canvas block are uniform blocks bound by `glUniformBlockBinding`,
+  since GLSL 410 has no `binding` qualifier [read: `canvas_rect.frag.glsl`].
+- Draws use a base instance where the driver has it and re-point the instance attributes per draw where
+  it does not (GL 4.1 on macOS), as ZGF does [read: `OpenGlRenderedCanvas.cs:232`].
+- Blending keeps destination alpha as real coverage (separate alpha factors) [read: the same file];
+  an additive draw swaps the colour factors.
+- The atlas is an R8 texture updated by dirty rectangle; a program's images are RGBA8.
+- `ui_gl::render` draws every pass; `ui_gl::render_pass{ &dev, staged, pass }` draws one, for a program
+  that draws its own 3D between them.
+
+### 4.3 The SDL host (`ui/sdl`, `ui_sdl`)
+
+Its own library, with its own SDL2 binding (decided). A program that runs on something else writes the
+same three things for its platform and uses none of this.
+
+- A window with an OpenGL 4.1 core context (`open_gl_window`, `get_gl_proc`, `swap`) or with a Vulkan
+  surface (`open_vulkan_window`, `get_vulkan_extensions`, `create_vulkan_surface`).
+- `to_event{ event, scale } -> ?ui::Event`: SDL's events as the core's, pointer positions in logical
+  units, keys as `ui::Key`.
+- `apply_requests{ &host, requests }`: the system cursor, text input on and off with its rectangle,
+  the clipboard (set on `copy`, an `Event::paste` pushed on `paste`).
+- The logical and device sizes for `ui::FrameInfo`, a clock for `dt`, and a wait-for-event call for
+  programs that draw only when something happened.
+- About 350 lines, written against SDL2's headers; kotor's `sdl.ctx` shows the binding style [read].
+
+### 4.4 Vulkan (`ui/vulkan`, `ui_vk`)
+
+The second GPU backend (decided), drawing the same `Staged` with the same shader sources compiled to
+SPIR-V.
+
+**What is on this machine** [run]:
+
+| Present | |
+|---|---|
+| The loader | `vulkan-1.dll` 1.4.341 in System32; MSYS2's import library `libvulkan-1.dll.a`. A ctxlang program linked it, made an instance and listed the devices [compiled and run, a8]. |
+| A device | NVIDIA GeForce RTX 4090, API 1.4.351, with `VK_KHR_surface` and `VK_KHR_win32_surface`. |
+| The shader compiler | `glslc` (shaderc 2025.2), `glslangValidator` and `spirv-cross` in MSYS2. All eight ported shader files compile to SPIR-V [compiled, `spv`]. |
+| SDL's Vulkan support | MSYS2's SDL2 import library exports `SDL_Vulkan_CreateSurface`, `SDL_Vulkan_GetInstanceExtensions` and `SDL_Vulkan_GetDrawableSize`. |
+| A capture tool | The RenderDoc layer is installed. |
+
+| Missing | What to install |
+|---|---|
+| The Khronos validation layer (`VK_LAYER_KHRONOS_validation` is not among the layers `vulkaninfo` lists) | MSYS2 package `mingw-w64-x86_64-vulkan-validation-layers`, or the LunarG Vulkan SDK. Stage 14 should not start without it: a Vulkan backend written without validation is wrong in ways that show only on another driver. |
+| The Vulkan headers (no `include/vulkan`) | MSYS2 package `mingw-w64-x86_64-vulkan-headers`. ctxlang does not read them; they are the reference the hand-written binding is checked against. |
+
+I installed neither.
+
+**Design.**
+
+- The program makes the instance with the extensions the host asks for, the host makes the surface,
+  and `ui_vk::open{ instance, surface, ... }` picks a device and queue family and makes the device, the
+  swapchain, one render pass with a colour attachment and no depth, and the framebuffers.
+- Five pipelines: rectangle, glyph and shape with alpha blending, image with alpha and image with
+  additive blending. Each has two vertex bindings: the unit quad per vertex, the instance struct per
+  instance, with attribute formats that match the struct (colours as 32-bit unsigned integers).
+- The viewport has a negative height (core since Vulkan 1.1), so ZGF's projection and y-up canvas
+  space apply unchanged. `gl_FragCoord` is the one place that differs, handled in the shader source
+  (section 2.6).
+- Descriptor set 0 holds the canvas block and the clip block, rewritten each frame. Set 1 holds one
+  sampled texture: the atlas for glyph draws, or an image for image draws. Each image gets its set when
+  it is created.
+- Instance buffers are host-visible and stay mapped, one per kind per frame in flight.
+- A draw is `vkCmdDraw(6, count, 0, first)`: the first instance is part of core Vulkan, so there is no
+  fallback path.
+- `ui_vk::render` acquires, draws every pass and presents. `ui_vk::record{ &dev, staged, pass, cmd }`
+  records one pass into a command buffer the program owns, inside its render pass, for a program with
+  its own Vulkan renderer.
+- An offscreen target with readback serves `read_pixels`.
+- The swapchain and the offscreen target use a UNORM format, so colours match the OpenGL backend's.
+- The binding is hand-written in `ui/vulkan/api.ctx`: about 70 functions and 40 structs.
+
+### 4.5 Metal: specified, not staged
+
+Reason: it cannot be built or tested on this machine. The source to port is ZGF's own Metal backend:
+
+- `ZGF.Gui.Metal/MetalRenderedCanvas.cs` (423 lines), `MetalSharedResources.cs` and
+  `MetalImageManager.cs` for the structure: one render pipeline per kind, shared-storage instance
+  buffers grown geometrically and bound at encode time, the clip table in a buffer bound to the fragment
+  functions, `drawPrimitives:vertexStart:vertexCount:instanceCount:baseInstance:` per draw [read].
+- `ZGF.Gui.Metal/Assets/Shaders/canvas_rect.gen.metal`, `canvas_glyph.gen.metal`,
+  `canvas_image.gen.metal` and `canvas_shape.gen.metal` for the shaders. They are generated from Slang
+  sources that live in ZGF's sandbox repository, so the generated files are what is ported.
+  `canvas_shadow.gen.metal` is left out with the shadow.
+- ZGF's plan records one open fault in that backend: shared-storage textures fail on Intel and AMD
+  Macs. A port inherits it unless it uses managed storage there.
+- The Objective-C runtime is called through `objc_msgSend` cast to a typed C function pointer per
+  selector. Casting a C function pointer to a typed one and calling it works in ctxlang [compiled and
+  run, a2].
+- Fonts need nothing new: FreeType and HarfBuzz build on macOS, and the atlas is one R8 `MTLTexture`.
+
+### 4.6 kotor's renderer (`kotor/lib/ui_kotor`)
+
+Section 8.1.
+
+---
+
+## 5. Widget inventory by stage
+
+| Stage | Package | Widgets and primitives |
+|---|---|---|
+| 5 | core | `begin_element`, `end`, `add_text` (single line), `paint_rect`, `paint_image`, `paint_region`, `paint_rounded_image`, `paint_text`, `paint_line`, `add_host_slot`, `place`, `push_id`, `push_key` |
+| 6 | core | flow sizing (`FIT`, `GROW`, `fix`, `take`), alignment, wrapped and ellipsized `add_text` |
+| 7 | core | `press`, `take_wheel`, `take_key`, focus and tab order, `set_links`, hover-focus, `load_state`, `store_state`, `keep_state`, `animate`, `describe`, `find_node` |
+| 8 | core | `begin_overlay`, `begin_modal`, popup layer, window layer order, tooltip layer, `begin_scroll` with bars, virtual range helper |
+| 9 | widgets | `paint_icon` (the stock marks), `add_label`, `add_button`, `add_checkbox`, `add_radio`, `add_slider`, `add_progress`, `add_image`, `add_separator`, `add_spacer`, `begin_row`, `begin_column`, `begin_panel`, `add_tooltip`, the two themes |
+| 10 | widgets | `add_text_field` (caret, selection, clipboard, undo, hint, password, filter, maximum length), `add_number` (type or drag) |
+| 11 | widgets | `begin_window` (move, resize, collapse, close, bring to front), `begin_popup`, `open_popup`, `close_popup`, `begin_dialog` (modal card), `begin_menu_bar`, `begin_menu`, `add_menu_item`, context menu, `add_combo`, drag and drop (`begin_drag`, `accept_drop`, ghost in the front overlay) |
+| 12 | widgets | `begin_list` and `begin_list_row` (virtual, selection, activation), `begin_tree_node`, `begin_tabs` and `begin_tab`, `begin_table` with `begin_table_row` and `next_cell` (fixed and grow columns, header, virtual rows), `add_plot` (line plot of `[]f32`), `add_color_edit` (swatch, channel sliders, hex field) |
+| 16 | kui (kotor) | panel placement modes, border painter, label, button, check and toggle, slider, progress, list with prototype rows and scroll bar, text block with the original's wrap rules, 3D view slot, tooltip |
+
+The stock set (stages 9 to 12) is what ordinary desktop software is built from: windows and dialogs,
+a menu bar and context menus, text and number entry with selection and the clipboard, lists, trees,
+tabs and tables. Rounded panels, tabs rounded on top only, and joined button groups come from the
+per-corner radius; separators and underlined tabs from the per-side border. Two samples show the set.
+The gallery shows every widget in both themes. The tasks application (stage 13) is a normal desktop
+program: a font it loaded, a resizable DPI-aware window, menus, a dialog, and no frames drawn while
+idle. kui (stage 16) is the games counterpart: the same primitives with every look taken from textures.
+
+Excluded from the stock set, each with its reason:
+
+- Table column resizing and sorting: the table is for inspectors and logs, which need neither.
+- A colour picker square: it needs gradients, which are not in the seam.
+- Range slider, segmented control, spinner: no consumer; each is a short composition of the primitives.
+
+---
+
+## 6. Testing
+
+### 6.1 Strategy
+
+There is no test runner in the language, so tests are programs in kotor's manner (`Tally`, `expect`,
+exit code 1 on any failure) [read: `kotor/tools/basetest/main.ctx`], one per package, under
+`ui/tests/`.
+
+**The test font.** `ui_test::make_test_font` builds a glyph table in code [compiled and run, a4]: 95
+cells of 8 by 16 for the printable ASCII characters, each cell's coverage a frame with the character's
+bits as marks inside it, so glyphs differ from one another. Every metric is fixed (advance 8, line
+height 16), so layout goldens are the same on every machine, and no font file exists anywhere under
+`ui/` for the core's tests. Text in it is not readable, which is why screenshots meant to be looked at
+use an outline font from stage 4 on.
+
+Four kinds of check:
+
+1. **Unit checks** on pure functions: ids, formatting, wrapping, glyph placement, layout arithmetic,
+   atlas packing, batching.
+2. **Golden draw dumps.** A test builds a UI, runs frames, and compares `ui_rec`'s text of the draw
+   list with a file under `ui/tests/<name>/golden/`. The staged level is pinned the same way: its dump
+   lists the draws, so a change that breaks batching shows as a diff. On a mismatch the test prints the
+   first differing line both ways and writes `<name>.actual.txt` beside the golden (ignored by git).
+   `-- --update` rewrites the goldens after an intended change; the reviewer reads the git diff of the
+   golden files. This pins a widget's look without pixels (ZGF's `StockLookTests`).
+3. **Scripted interaction** through `ui_test::Driver`, which is a host: it steps frames with a fixed
+   `dt`, pushes pointer, key and text events, and addresses widgets by node path
+   (`click{ &d, path = "tasks/add" }` finds the node's rectangle from the last frame, then moves,
+   presses and releases over three frames). Checks read application state, `find_node` flags and
+   values, and the requests (cursor, clipboard, text input).
+4. **Screenshots from a real backend.** The OpenGL backend with a hidden window renders a hand-built
+   conformance list (every shape, radii and borders that differ per corner and side, a rounded clip,
+   lines at angles, quarter turns, additive, text at scales 1, 1.5 and 2) and the gallery to PNG under
+   `ui/out/` (ignored by git), written by `ui_test`'s own PNG writer. The implementing agent looks at
+   the PNG with the Read tool, as kotor's rule 6 requires. PNGs are not compared byte for byte within
+   one backend, because GPUs differ. Stage 14 renders the same conformance list with Vulkan and counts
+   the pixels that differ from the OpenGL picture, which is the conformance check between backends that
+   ZGF's own plan lists as not built.
+
+Every test also asserts, after each frame, that nothing was dropped and no problem was recorded.
+
+Rules that keep the tooling honest: no Python in any test path (the driver, the script reader and the
+golden compare are ctxlang). The one script that writes ctxlang is the shader embedder, which copies
+bytes into data literals and never reads ctxlang.
+
+### 6.2 Commands
+
+From the repository root, in Git Bash (the wrapper builds the compiler on first use):
+
+```
+kotor/tools/ctxc run ui/tests/draw                     # stage 0: draw list, recorder, formatting
+kotor/tools/ctxc run kotor/tools/uicompat              # stage 0 on: ui's libraries built beside kotor's
+kotor/tools/ctxc run ui/tests/text                     # stage 1
+kotor/tools/ctxc run ui/tests/stage                    # stage 2: instances, atlas, batching
+ui/tools/build_shaders --check                         # stage 3: generated shader files match ui/shaders
+kotor/tools/ctxc run ui/tests/shots -- --out ui/out    # stage 3 on: ui/out/conformance-gl.png, gallery-*.png
+kotor/tools/ctxc run ui/tests/fonts                    # stage 4: FreeType and HarfBuzz; takes --font PATH
+kotor/tools/ctxc run ui/tests/layout                   # stages 5 and 6
+kotor/tools/ctxc run ui/tests/input                    # stage 7
+kotor/tools/ctxc run ui/tests/layers                   # stage 8
+kotor/tools/ctxc run ui/tests/widgets                  # stages 9 to 12
+kotor/tools/ctxc run ui/tests/widgets -- --update      # rewrite goldens after an intended change
+kotor/tools/ctxc run ui/samples/demo_gl                # the gallery, interactive
+kotor/tools/ctxc run ui/samples/demo_gl -- --headless --script ui/samples/gallery/tour.txt --shot ui/out/tour.png
+kotor/tools/ctxc run ui/samples/tasks                  # stage 13: the desktop application
+kotor/tools/ctxc run ui/samples/demo_vulkan            # stage 14
+kotor/tools/ctxc run ui/tests/shots_vulkan -- --out ui/out --against ui/out/conformance-gl.png   # stage 14
+kotor/tools/ctxc run kotor/tools/uispike -- --headless --out kotor/out/uispike.png   # stage 15
+kotor/tools/ctxc run kotor/tools/uiview -- optgameplay --scale 1.5 --out kotor/out/uiview   # stage 16
+ui/tools/check                                         # every headless ui test in turn; non-zero if one fails
+```
+
+`ui/tools/check` is a bash loop over the test directories. Measured on this machine with the probes: a
+small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
+
+---
+
+## 7. Staged implementation plan
+
+**Conventions for every stage.**
+
+- A stage ends at a commit candidate: it builds, its tests pass, the earlier stages' tests still pass,
+  and the agent reports what it ran. The agent does not commit; the owner decides.
+- An agent touches only the files its stage lists. Where two stages may run together, the note says
+  which files each owns.
+- To make that possible, stage 5 creates every core subsystem file with its state struct and its
+  `make_*` and `reset_*` functions as empty shells, and `Ui` gets one field per subsystem. Later core
+  stages fill in their own file and never edit `ui.ctx`. Stage 9 does the same for the widget tests and
+  the gallery pages.
+- Model tiers are suggestions: **fable** for the stages where a subtle mistake is expensive, **opus**
+  for stateful, geometric or native-library work, **sonnet** for well-specified work with goldens to
+  check against.
+
+### Stage 0: the seam, the recorder, the test harness
+
+- **Scope.** Values, `RectStyle`, `Cmd`, `DrawList` with its clip table, `ui::draw::*`, the libm
+  externs and small float helpers (min, max, clamp, snap), fixed-point and hex number writing, the
+  recorder's sink and `write_list`, the test tally and golden compare, the agent guide, and a kotor-side
+  build check.
+- **Files.** `ui/AGENTS.md` (rules, commands, layout: this plan's sections 2.1, 6.2 and conventions),
+  `ui/PLAN.md` (this plan), `ui/.gitignore` (`/out/`, `*.actual.txt`), `ui/core/types.ctx`,
+  `ui/core/draw.ctx`, `ui/core/num.ctx`, `ui/core/format.ctx`, `ui/record/dump.ctx`,
+  `ui/test/harness.ctx`, `ui/tests/draw/{build.ctx, main.ctx, golden/list.txt}`, `ui/tools/check`,
+  `kotor/tools/uicompat/{build.ctx, main.ctx}`.
+- **Acceptance.** `ui/tests/draw` exits 0: a hand-built list with all five shapes and three clips, one
+  of them rounded, matches its golden; equal clips share a table entry; the overflow of a 4-shape list
+  and of a full clip table is counted; fixed-point writing gives `10`, `0.5`, `-3.25`, `100` for the
+  values std prints as `1e+01` and `1e+02`. `kotor/tools/uicompat` builds `ui/core` and `ui/record`
+  beside `kotor/lib/base`, `lib/platform`, `lib/render` and `lib/gui` and runs. No `build.ctx` under
+  `ui/` names a `kotor` path.
+- **Agent.** sonnet, medium effort. **Depends on:** nothing. **Alone.**
+
+### Stage 1: text
+
+- **Scope.** The font table and `add_font`, the provider hook, measuring (glyph tables directly,
+  outline fonts through `shape`, with the frame cache), `lay_glyphs` with snapping, UTF-8 and byte
+  stepping, wrapping into line ranges, ellipsis, caret offsets and the index under an x (from glyph
+  advances or from clusters), and the test font.
+- **Files.** `ui/core/font.ctx`, `ui/core/text.ctx`, `ui/test/font.ctx`,
+  `ui/tests/text/{build.ctx, main.ctx, golden/*.txt}`.
+- **Acceptance.** In the test font "Hello" measures 40 at size 16 and 80 at size 32; wrap goldens for
+  spaces, hyphens, a word longer than the width and explicit newlines; ellipsis; a byte-encoded and a
+  UTF-8 glyph table give different caret steps for `é`; glyph rectangles at scale 1.5 fall on device
+  pixels. A fake provider (7 pixels a byte, one cluster a byte, and a two-byte ligature) measures an
+  outline font, wraps with its widths, and gives caret offsets that step over the ligature as one.
+  Drawing in a font that was never registered is reported, not drawn.
+- **Agent.** sonnet, medium effort. **Depends on:** stage 0. **Alone.**
+
+### Stage 2: the staged level
+
+- **Scope.** `ui_stage`: the four instance types, the flip into canvas space, staging of every shape,
+  the clip table's conversion, the atlas (a port of ZGF's `GlyphAtlas`), the glyph cache, glyph-table
+  pixels packed into the atlas, the overlap-aware batching, passes, the revision, and the recorder's
+  dump of a `Staged`. Outline text is exercised with a fake provider that rasterises boxes.
+- **Files.** `ui/stage/types.ctx`, `ui/stage/atlas.ctx`, `ui/stage/stage.ctx`, `ui/stage/batch.ctx`,
+  `ui/record/staged.ctx`, `ui/tests/stage/{build.ctx, main.ctx, golden/*.txt}`.
+- **Acceptance.** Golden dumps for the stage 0 list, with every field of every instance: per-corner
+  radii and per-side borders arrive in the shader's order; a rectangle at the top left of a 100-high
+  list has canvas y 90; a rounded clip fills all three rows of its slot. 200 buttons side by side (a
+  rectangle and a text each) stage to 2 draws. A rectangle recorded between two texts and overlapping
+  the first forces a third draw, and the dump shows paint order kept. Pictures from two textures that do
+  not overlap stage to 2 draws however they are interleaved; an additive picture gets its own draw. A
+  host slot gives two passes and no draw spans them. An odd quarter turn gives a transposed rectangle
+  and the right rotation. The same list twice gives the same revision; one changed colour gives a new
+  one. A glyph drawn twice is rasterised once; releasing its font frees its atlas space after four
+  frames; a full atlas grows and raises `version`; at the limit the missing glyphs are counted and the
+  next frame refills. Overflow of each array is counted. The atlas is written as a PNG and looked at.
+- **Agent.** opus, high effort. **Depends on:** stage 1. **May run with stage 5** (it owns `ui/stage`,
+  `ui/record/staged.ctx` and `ui/tests/stage` only).
+
+### Stage 3: the shaders, the OpenGL backend, the SDL host, first pixels
+
+- **Scope.** The four shader pairs copied from ZGF with the changes section 2.6 lists and no others;
+  the script that validates, compiles and embeds them; `ui_gl` (GL subset binding, device, images, the
+  four programs, the uniform blocks, `render`, `render_pass`, `read_pixels`); `ui_sdl` (its own SDL
+  binding, the window with a GL context, events, requests); `ui_test`'s PNG writer; the screenshot
+  program with the conformance list.
+- **Files.** `ui/shaders/canvas_{rect,glyph,image,shape}.{vert,frag}.glsl`, `ui/tools/build_shaders`,
+  `ui/tools/embed_shaders.py`, `ui/gl/api.ctx`, `ui/gl/device.ctx`, `ui/gl/shaders_glsl.ctx`
+  (generated), `ui/gl/contract.ctx`, `ui/sdl/sdl.ctx`, `ui/sdl/host.ctx`, `ui/test/png.ctx`,
+  `ui/tests/shots/{build.ctx, main.ctx}`.
+- **Acceptance.** The agent shows the `diff` of each shader file against ZGF's: only the listed
+  changes. `build_shaders --check` passes. `ui/tests/shots` writes `ui/out/conformance-gl.png` at scales
+  1, 1.5 and 2 with a hidden window; the agent looks at each and confirms smooth rounded corners with
+  no seam where a corner starts, four different radii on one rectangle, four different border widths
+  and colours on one rectangle, a disc and a ring, lines at several angles with each cap, test-font
+  glyphs on the pixel grid, nested clips and a rounded clip cutting every kind, the four quarter turns,
+  an additive image, and a magnified atlas piece with no bleed. The draw count the device reports equals
+  the staged draw count, and a second identical frame uploads nothing. The contract file compiles.
+- **Agent.** opus, high effort. **Depends on:** stage 2. **May run with stages 6 and 7** (it owns
+  `ui/shaders`, `ui/tools`, `ui/gl`, `ui/sdl`, `ui/test/png.ctx`, `ui/tests/shots`).
+
+### Stage 4: outline fonts with FreeType and HarfBuzz
+
+- **Scope.** `ui_fonts` (section 2.7): the two bindings, the library, faces and sized variants, the
+  provider's `metrics`, `shape` (with the shaped-run cache and fallback runs) and `rasterize`; a real
+  font in a screenshot.
+- **Files.** `ui/fonts/freetype.ctx`, `ui/fonts/harfbuzz.ctx`, `ui/fonts/library.ctx`,
+  `ui/fonts/shape.ctx`, `ui/tests/fonts/{build.ctx, main.ctx}`, `ui/tests/shots/text.ctx` and the two
+  lines in stage 3's `ui/tests/shots/{build.ctx, main.ctx}` that add and call it.
+- **Acceptance.** With a system font (`--font`, or the platform's default path; the test prints why and
+  exits 0 when there is none): a face loads and a start-up check of the mirrored FreeType fields passes
+  (units per em and glyph count in range), so wrong offsets fail at once; 'A' rasterises to a non-empty
+  bitmap; "AV" is narrower than 'A' plus 'V' in a font with kerning; a second shaping of the same text
+  is a cache hit; with a CJK font registered as fallback, a line mixing Latin and CJK comes back as runs
+  from two faces; releasing a face frees its glyphs. `ui/out/text-gl.png` at scales 1 and 1.5 shows
+  proportional, kerned, readable text on the pixel grid, and a second identical frame uploads no atlas
+  bytes.
+- **Agent.** opus, high effort. **Depends on:** stage 3. **May run with stage 8** (it owns `ui/fonts`,
+  `ui/tests/fonts`, `ui/tests/shots/text.ctx`).
+
+### Stage 5: the tree, placed layout, emit
+
+- **Scope.** `Ui`, `Capacity`, `make`, `begin_frame` and `end_frame` (without input), ids and scopes,
+  element and paint recording, layout for fixed sizes and placed elements (flow children stacked along
+  the axis with padding and gap), clips into the table (plain and rounded), opacity, snapping, emission
+  order, hit regions, problems and stats. Shells for the later core subsystems.
+- **Files.** `ui/core/ui.ctx`, `ui/core/id.ctx`, `ui/core/tree.ctx`, `ui/core/layout.ctx`,
+  `ui/core/emit.ctx`, shells `ui/core/{input,interact,focus,state,nodes,layers,scroll}.ctx`,
+  `ui/tests/layout/{build.ctx, main.ctx, placed.ctx, golden/*.txt}`.
+- **Acceptance.** Goldens: a panel placed at the screen centre with five placed controls; anchors 0,
+  0.5 and 1 on a resized parent; nested clips, and a rounded clip inside a plain one and the reverse;
+  opacity; paint order (decoration, then paints and children as recorded); a host slot; the same input
+  twice gives byte-identical dumps; the snap rule at scale 1.5 matches `floor(v * s + 0.5) / s` on
+  hand-computed cases; an unclosed scope and a duplicate id are reported and nothing panics; a full
+  element array drops and counts.
+- **Agent.** fable, high effort. **Depends on:** stage 1. **May run with stage 2.**
+
+### Stage 6: flow layout
+
+- **Scope.** The solver of section 2.4: fit, grow, fix, take, min and max, alignment, wrapped text
+  between the width and height passes, ellipsis, shrinking when short.
+- **Files.** `ui/core/layout.ctx`, `ui/tests/layout/{flow.ctx, golden/flow-*.txt}`.
+- **Acceptance.** Goldens: equal split of three grow children; grow capped by `max` with the remainder
+  re-shared; `take` beside `fix`; centre and end alignment on both axes; a fit panel around wrapped
+  text; text ellipsized when its row is short; overflow that starts at the start edge; a placed child
+  inside a flow parent leaves the parent's size alone.
+- **Agent.** fable, high effort. **Depends on:** stage 5. **May run with stages 3 and 7** (it owns
+  `layout.ctx` and the `flow` test files only).
+
+### Stage 7: input, interaction, focus, state, nodes
+
+- **Scope.** Events and frame input, `push_event`'s answer, hot and active, `press`, wheel and key
+  taking, focus, tab order, links, hover-focus, the state table and sweep, `animate`, requests,
+  `describe` and `find_node`, the scripted driver.
+- **Files.** `ui/core/input.ctx`, `ui/core/interact.ctx`, `ui/core/focus.ctx`, `ui/core/state.ctx`,
+  `ui/core/nodes.ctx`, `ui/test/driver.ctx`, `ui/tests/input/{build.ctx, main.ctx}`.
+- **Acceptance.** Scripted: a press and release over a primitive-built button gives `clicked` exactly
+  once; a release elsewhere gives none; press and release within one frame still clicks; a held widget
+  hides hover from others; Tab and Shift+Tab walk recording order; an arrow key follows a link; hover-
+  focus moves focus; state survives while asked for, is freed after the TTL and is kept when pinned;
+  `push_event` answers true over a region and false over empty space; `find_node` by full path and by
+  unique suffix.
+- **Agent.** opus, high effort. **Depends on:** stage 5. **May run with stages 3 and 6.**
+
+### Stage 8: layers and scrolling
+
+- **Scope.** Overlays, modal blocking and focus restore, popup placement and dismissal, window layer
+  order, the tooltip layer and hover timing, scroll regions (offset state, bars as placed children,
+  wheel routing to the innermost region that can move, one re-solve when a bar appears), the virtual
+  range helper.
+- **Files.** `ui/core/layers.ctx`, `ui/core/scroll.ctx`, `ui/tests/layers/{build.ctx, main.ctx, golden/*.txt}`.
+- **Acceptance.** Goldens of emission order across layers; a modal swallows a click on what is under
+  it; a popup at the right edge flips; Escape and an outside press close it; the wheel scrolls the inner
+  region until its end and then the outer; a thumb drag moves the offset by the right ratio; a 10,000
+  row virtual list records only the rows in view.
+- **Agent.** opus, high effort. **Depends on:** stages 6 and 7. **May run with stage 4.**
+
+### Stage 9: stock widgets I, the theme, the marks, the gallery
+
+- **Scope.** `Opts`, the theme and its two palettes, `paint_icon`, the stage 9 row of section 5, the
+  gallery (page switcher and the first page), the OpenGL demo program with `--font`, `--headless`,
+  `--script` and `--shot`, and shells for the later widget test files and gallery pages.
+- **Files.** `ui/widgets/theme.ctx`, `ui/widgets/opts.ctx`, `ui/widgets/icons.ctx`,
+  `ui/widgets/basic.ctx`, `ui/widgets/slider.ctx`, `ui/samples/gallery/{gallery.ctx, page_basic.ctx}`
+  plus shells `page_text.ctx`, `page_windows.ctx`, `page_data.ctx`,
+  `ui/samples/demo_gl/{build.ctx, main.ctx}`,
+  `ui/tests/widgets/{build.ctx, main.ctx, basic.ctx, golden/basic-*.txt}` plus shells `field.ctx`,
+  `windows.ctx`, `data.ctx`.
+- **Acceptance.** Golden dumps (test font) of each widget at rest, hovered, pressed, focused and
+  disabled in both themes; no golden of a widget's mark contains a `text` shape; node snapshots;
+  scripted: a click toggles a checkbox, a drag moves a slider by the right amount and respects `step`,
+  Enter and Space activate a focused button; the grep of section 2.1 finds no use of core internals;
+  `ui/out/gallery-basic.png` in an outline font looked at in both themes.
+- **Agent.** sonnet, medium effort. **Depends on:** stages 4 and 8. **Alone.**
+
+### Stage 10: text field
+
+- **Scope.** `add_text_field` and `add_number`: caret, selection by keyboard and pointer, word steps,
+  clipboard through requests, the undo ring, horizontal scroll of long text, hint, password, filter,
+  maximum length, glyph tables in both encodings and outline fonts by cluster.
+- **Files.** `ui/widgets/field.ctx`, `ui/samples/gallery/page_text.ctx`,
+  `ui/tests/widgets/{field.ctx, golden/field-*.txt}`.
+- **Acceptance.** Scripted: type, move, select, delete, cut, copy and paste against the driver's fake
+  clipboard; undo and redo; a full buffer refuses input without corrupting; a click places the caret at
+  the right character; double-click selects a word; with the fake provider's ligature the caret never
+  stops inside a cluster; the requests show text input on with the caret rectangle while focused and
+  off after; Enter returns true once.
+- **Agent.** opus, high effort. **Depends on:** stage 9. **May run with stages 11 and 12.**
+
+### Stage 11: windows, popups, menus, combo, tooltips, drag and drop
+
+- **Scope.** The stage 11 row of section 5.
+- **Files.** `ui/widgets/window.ctx`, `ui/widgets/popup.ctx`, `ui/widgets/menu.ctx`,
+  `ui/widgets/drag.ctx`, `ui/samples/gallery/page_windows.ctx`,
+  `ui/tests/widgets/{windows.ctx, golden/windows-*.txt}`.
+- **Acceptance.** Scripted: drag a window by its title, resize by its corner, collapse, close (the
+  `open` flag goes false), click to bring to front (emission order changes); a menu opens, a submenu
+  follows the pointer, an item click closes all and returns true once; a combo picks; a tooltip appears
+  after `tip_delay` and not before; a drag passes the threshold, the ghost is in the front overlay, and
+  the drop target reports the payload.
+- **Agent.** opus, medium effort. **Depends on:** stage 9. **May run with stages 10 and 12.**
+
+### Stage 12: lists, trees, tabs, tables, plot, colour
+
+- **Scope.** The stage 12 row of section 5.
+- **Files.** `ui/widgets/list.ctx`, `ui/widgets/tree.ctx`, `ui/widgets/tabs.ctx`,
+  `ui/widgets/table.ctx`, `ui/widgets/plot.ctx`, `ui/widgets/color.ctx`,
+  `ui/samples/gallery/page_data.ctx`, `ui/tests/widgets/{data.ctx, golden/data-*.txt}`.
+- **Acceptance.** Scripted: list selection by click and arrow keys, activation by Enter and
+  double-click, the selection scrolls into view; a tree node's open state persists and survives a
+  hidden tab with `keep_state`; table columns share widths between header and rows; the plot's golden
+  is `line` shapes; the colour editor round-trips a hex value.
+- **Agent.** sonnet, medium effort. **Depends on:** stage 9. **May run with stages 10 and 11.**
+
+### Stage 13: a desktop application
+
+- **Scope.** The task list of section 3.1 as a normal desktop program: a menu bar, a dialog, a
+  resizable DPI-aware window, a font it loads from a path, a fallback font, the clipboard, and a loop
+  that draws only when events arrive or `animating` is set.
+- **Files.** `ui/samples/tasks/{build.ctx, main.ctx, app.ctx}`.
+- **Acceptance.** A scripted run adds, checks and deletes tasks through the menu and the keyboard;
+  `ui/out/tasks.png` is looked at, at scales 1 and 1.5; the program draws no frame during two idle
+  seconds of the script; resizing the window re-lays the content with nothing clipped.
+- **Agent.** sonnet, medium effort. **Depends on:** stages 10, 11 and 12. **May run with stages 14 and
+  15.**
+
+### Stage 14: the Vulkan backend
+
+- **Scope.** Section 4.4: the binding, the device and swapchain, the five pipelines from the embedded
+  SPIR-V, descriptor sets, instance buffers, the atlas and images, `render`, `record`, the offscreen
+  target and `read_pixels`; `ui_sdl`'s Vulkan window and surface; the gallery on Vulkan.
+- **Files.** `ui/vulkan/api.ctx`, `ui/vulkan/device.ctx`, `ui/vulkan/pipelines.ctx`,
+  `ui/vulkan/shaders_spv.ctx` (generated), `ui/vulkan/contract.ctx`, `ui/sdl/vulkan.ctx`,
+  `ui/samples/demo_vulkan/{build.ctx, main.ctx}`, `ui/tests/shots_vulkan/{build.ctx, main.ctx}`.
+- **Before it starts.** The Khronos validation layer must be installed (section 4.4).
+- **Acceptance.** Every run in the tests has the validation layer on and ends with no message.
+  `ui/out/conformance-vulkan.png` at scales 1, 1.5 and 2 is compared with the OpenGL picture and the
+  count of differing pixels is reported and explained (antialiased edges may differ by a level; nothing
+  else may). The gallery in an outline font matches `gallery-basic.png` the same way. A second
+  identical frame uploads nothing. Resizing recreates the swapchain without a validation message.
+- **Agent.** fable, high effort. **Depends on:** stages 3 and 9. **May run with stages 13 and 15.**
+
+### Stage 15: the kotor adapter and a developer overlay
+
+- **Scope.** `ui_kotor`, as section 8.1 maps it: staged passes into `render::Frame`, `from_font`,
+  `to_event` (with kotor's `to_ui` scaling and cp1252 mapping of typed text), a spike tool that shows
+  the gallery through kotor's renderer in the game's console font, and the GPU timing overlay drawn
+  with the stock widgets beside the existing `fxhud`.
+- **Files.** `kotor/lib/ui_kotor/{adapter.ctx, font.ctx, events.ctx}`,
+  `kotor/tools/uispike/{build.ctx, main.ctx}`, `kotor/game/devui.ctx` and the two call sites in
+  `kotor/game/play.ctx` (open decision 1).
+- **Acceptance.** `uispike --headless` writes a PNG of the gallery drawn by `gpu::submit`; it matches
+  the OpenGL gallery to the eye apart from what section 8.1 says kotor's renderer cannot draw;
+  `frame.dropped` is 0; the quads and UI draws that `gpu::get_stats` reports are logged; the game with
+  the timing option shows the new overlay and still builds in the usual time; `fxhud` is untouched;
+  kotor's build adds no `ui/fonts` and links nothing new.
+- **Agent.** opus, medium effort. **Depends on:** stages 2 and 9. **May run with stages 13 and 14.**
+
+### Stage 16: kui, and one KOTOR screen through the framework
+
+- **Scope.** The KOTOR widget set over `ui`'s primitives, reading the control data that the existing
+  loader produces (`gui::open` already resolves textures and fonts; kui reads those panels and does not
+  load files itself); the replay of a whole panel; one screen's glue written against kui; a tool that
+  draws a `.gui` both ways.
+- **Files.** `kotor/lib/kui/{skin.ctx, border.ctx, text.ctx, controls.ctx, list.ctx, panel.ctx}`,
+  `kotor/tools/uiview/{build.ctx, main.ctx}`.
+- **Acceptance.** `uiview optgameplay` writes the panel drawn by `lib/gui` and by kui and the count of
+  differing pixels: 0 at scale 1.0 and at 1.5, or each difference explained. A scripted run addresses
+  `CB_AUTOSAVE` by tag, clicks it, and the setting flips; arrow keys follow `MOVETO`; hover lights a
+  button and plays through `Interaction.entered`. A sweep over all `.gui` files prints how many panels
+  already match, as the measure of the remaining work.
+- **Agent.** fable, high effort. **Depends on:** stages 8 and 15. **Alone.**
+
+### Order and concurrency
+
+```
+0 -> 1 -> { 2 | 5 } -> { 3 | 6 | 7 } -> { 4 | 8 } -> 9 -> { 10 | 11 | 12 } -> { 13 | 14 | 15 } -> 16
+```
+
+Braces are stages that may run together, never more than three. With two agents: run 6 and 7 together
+and 3 after; 10 with 11, then 12; 14 with 15, then 13. Every stage in braces owns disjoint files, as its
+entry says.
+
+---
+
+## 8. The path to KOTOR
+
+### 8.1 The adapter
+
+`kotor/lib/ui_kotor` turns a `Staged` into kotor's `render::Frame`. kotor's own art crosses exactly,
+because the staged image is kotor's `render::Quad` [read: `render.ctx:529`]. What kotor's renderer has
+no primitive for is drawn in a reduced form.
+
+| `ui_stage` | `render` | Exact? |
+|---|---|---|
+| `Pass` | one `render::begin_ui{ &frame, width = ui_w, height = ui_h, target }` run | yes |
+| `ImageInstance` | one `render::Quad`: the rectangle flipped back to y down, the same rotation, the tint as floats, the UV region in kotor's convention (textures are stored bottom row first) | yes, apart from rounded corners, which are not drawn |
+| the instance's `clip` index | `Quad.clip`: the table's rectangle, or null for entry 0 | yes for rectangles; a rounded clip cuts square |
+| `Draw.image` n | `render::Texture{ id = n }`: kui makes each `ui::Image` from a `gui::Img`, so the id is the texture's | yes |
+| `Draw.blend` | `render::Blend::alpha` or `additive` | yes |
+| `Pass.host` | the caller adds its `render::add_view` there, with the slot's rectangle as the viewport | yes |
+| `RectInstance` | one quad for the fill and one for each side's border in its colour | square corners: `render` has no rounded primitive |
+| `ShapeInstance` (a line) | one solid quad of the line's length and width, turned | no antialiasing, butt caps |
+| `GlyphInstance` | one quad on the atlas, kept by the adapter as an RGBA texture (white, coverage as alpha) because kotor's one-channel format samples as grey with alpha 1 [read: `render.ctx:87`] | yes |
+
+- KOTOR's screens use image instances only: borders, fills, pictures, and its fonts, which are glyph
+  tables on their own textures. Those are the exact rows.
+- The stock widgets inside kotor (the developer overlay) therefore look plainer than on the OpenGL or
+  Vulkan backend: square corners, discs drawn as squares, marks without antialiasing. Whether kotor's
+  renderer should draw the staged instances properly is open decision 2.
+- kotor's `draw_ui` batches the quads its own way (consecutive quads of one texture, blend and clip, by
+  scissor), so the adapter passes instances in staged order.
+
+The frame composition a screen with a 3D view uses today (`draw_panels_under_views`, the views,
+`draw_overlay`) becomes a loop over passes. UI into a render target (minimap, map) is a second
+`ui::DrawList` built with `ui::draw::*`, staged, and submitted with a target.
+
+**The atlas path for KOTOR's art.** kui holds every piece of border and picture art as a `ui::Region`.
+Today a region is a whole texture, so a panel is a draw per texture, which is what kotor does now.
+Packing the GUI's textures into atlas pages when a panel opens turns the same panel into a draw or two
+and changes only where kui's regions point: no framework code, no seam change. It works because the
+original stretches whole edge segments instead of relying on texture repeat [read: `draw.ctx:211`].
+Excluded from this plan: it is an optimisation of kotor's material loading, and it can be measured only
+once screens run on kui (stage 15 logs the draw counts it would improve).
+
+Input: `ui_kotor::to_event` converts kotor's `sdl::Event` with the same window-to-UI scaling
+`gui::handle_event` uses, and `ui::push_event`'s answer is what the game loop already expects from
+`gui::handle_event`. kotor keeps its own SDL binding and does not add `ui/sdl`.
+
+### 8.2 Two ways to move a screen, both on kui
+
+- **Replay.** kui draws a whole loaded panel from its control table each frame and reports what
+  happened through a queue with the shapes of today's `gui::Event`. Properties the glue sets by tag
+  (text, visibility, checked, picture) stay in the table. A screen moved this way changes `gui::` to
+  `kui::` in its glue and nothing else. This is the route for the bulk of the 28k lines of glue.
+- **Immediate.** The screen's code calls `kui::add_button{ tag = ... }` and friends itself and reads
+  results, as in section 3.2. It suits screens that are mostly computed each frame anyway: the HUD,
+  which today caches what it last set so as to set only what changed [read: report 2.1].
+
+During the move both toolkits run: each screen belongs to one of them, the host's screen stack records
+which, and the frame gets the old GUI's passes and the new one's in stack order.
+
+### 8.3 Order in which screens could move
+
+Simplest art and behaviour first, so each step adds one kui capability:
+
+1. The developer overlay (stage 15): new UI, stock widgets, the game's console font.
+2. Message boxes and the tooltip: one border, wrapped text, one or two buttons, modal.
+3. Options panels: labels, buttons, checks, sliders, MOVETO, no lists. Stage 16 proves `optgameplay`.
+4. Main menu and front end: the 3D background through a host slot.
+5. Save and load: list boxes, scroll bars, row stretching, pictures set from code.
+6. In-game menus: equipment and inventory (item entries), character sheet (3D view), abilities (cell
+   rows), journal (text-mode list scrolled by lines), map (a render target as a picture), messages,
+   party selection.
+7. Store, container, level-up, galaxy map, upgrade bench.
+8. Character generation: the edit box, 3D previews.
+9. Conversation panels and barks: laid out by code, fades in an overlay.
+10. The HUD: anchoring by thirds, the target block and reticles in an overlay, the minimap pass.
+11. Pazaak: drag and drop.
+
+`lib/gui`'s loader and types move into kui when the last screen has moved; until then kui reads them
+where they are.
+
+---
+
+## 9. Open decisions for the owner
+
+Both are about how far the adapter stage reaches into kotor.
+
+1. **The game.** Recommendation: add the new developer overlay behind the same option and leave `fxhud`
+   in place, in a commit separate from the adapter. Alternative: tool only (`uispike`), nothing under
+   `kotor/game`. What changes: two call sites in `play.ctx` and one file.
+2. **kotor's renderer.** Recommendation: leave it alone for this plan, so stock widgets inside kotor
+   draw in the reduced form of section 8.1 while KOTOR's own art is exact. Alternative: make kotor's
+   OpenGL backend draw a `Staged` itself (the four programs and the draw loop of `ui/gl`, written
+   against kotor's `gl` binding, about 400 lines, plus one entry in `render`'s contract), so everything
+   looks as it does on the other backends. What changes: `render.ctx`, `contract.ctx`, `gpu.ctx`,
+   `shaders.ctx`, and the adapter shrinks to a call.
+
+Already decided, and so not on this list: the seam level, GPU-only backends, the rectangle's per-corner
+and per-side fields, ZGF's shaders, no built-in font, FreeType and HarfBuzz, the location and the SDL
+library, Vulkan, verb names.
+
+---
+
+## 10. Risks, and language gaps
+
+### 10.1 Risks
+
+| Risk | Why it matters | What the plan does |
+|---|---|---|
+| Interaction lags layout by a frame | A widget cannot be clicked on its first frame; moving content is hit-tested where it was. Scripted tests must step frames. | One rule everywhere, stated in the guide; the driver steps for the caller; KOTOR's screens are static so last frame equals this frame. |
+| The layout solver is the hardest code | A wrong pass order shows only in some trees. | Split in two stages (placed first, then flow), goldens before any widget exists, the strongest model. |
+| Fixed capacities | A big screen silently loses widgets. | Never silent: counted, asserted zero in every test, shown in the gallery; capacities are a `make` argument. |
+| The staged level is y up and everything above it is y down | A missed flip puts a corner radius or a border on the wrong side, and only asymmetric cases show it. | One function does the flip; stage 2's goldens and stage 3's picture use four different radii and four different borders on one rectangle. |
+| Instance structs must match the shaders' attributes | A field out of order draws garbage. | The structs are ZGF's in ZGF's order; each backend sets attribute offsets from `@offset_of`; the conformance picture exercises every field. |
+| Shader edits drift from ZGF | Later fixes in ZGF would be hard to take. | The files stay as files, the changes are few and listed, and stage 3 shows the diff. |
+| Batching that reorders | A wrong overlap test paints in the wrong order, and only in some layouts. | ZGF's rule, taken as written; goldens with overlapping and non-overlapping interleavings; draws never span a pass. |
+| The clip table fills (256) | A deep UI with many distinct clips loses shapes. | Equal clips share an entry; overflow drops and counts, never draws unclipped; asserted zero in tests. |
+| The atlas fills | A program with many fonts, sizes or scripts exhausts it. | ZGF's atlas: growth to a limit, reuse of freed space; at the limit the frame's misses are counted and the cache refills next frame. |
+| FreeType's struct layouts | The binding mirrors three C structs whose offsets depend on the platform's `long`. A wrong offset reads garbage. | Offsets chosen by `target::OS`; a start-up check of mirrored fields on every face; the probe's offsets came from a C program against the installed headers. |
+| Vulkan without validation | A backend that works on one driver and breaks on another. | Stage 14 requires the validation layer and a clean run with it on; it is not installed today. |
+| Vulkan's size | It is the largest single backend (binding, swapchain, pipelines). | Its own stage with the strongest model, after OpenGL has fixed what a backend does; nothing else depends on it. |
+| Pixel parity with `lib/gui` | The proof screen must match the original's borders, wrap and snapping. | The core's snap is kotor's formula; kui keeps kotor's wrap; `uiview` counts differing pixels and sweeps every `.gui`. |
+| Stock widgets look plainer inside kotor | `render` has no rounded or antialiased primitive. | Stated in section 8.1, with the alternative priced (decision 2). KOTOR's own art is unaffected. |
+| Two SDL bindings in the repository | kotor's and `ui/sdl`'s can diverge. | They serve different programs and may even share one [compiled, a9]; `ui/sdl` is small and only what a UI host needs. |
+| `..` forwarding binds any same-named local | `ui::add_label{ .. }` picks up a stray local called `text`. | Library code never uses it; the guide says to keep widget field names out of local names in functions that use it. |
+| Frame-arena slices outlive the frame | `take_text` results kept across frames point at reused bytes; the escape check cannot see it. | Documented at the function; nothing in the library keeps one. |
+| Two widget sets drift | Stock widgets and kui both grow. | Both use only the public primitives; kui lives in kotor and has its own parity tool. |
+| Hover-as-focus one frame late | KOTOR's hover sound and highlight follow the pointer a frame behind. | 16 ms at 60 frames a second. Checked by eye in stage 16. |
+| A machine without a system font | Samples and the font tests need a font file. | `--font PATH`; the font test says so and passes without one; the core's tests need no file at all. |
+
+### 10.2 Language and std gaps
+
+None of these blocks the plan. Each is either worked around inside `ui` with a few lines, or better
+fixed in the language on its own branch, as kotor's rules require.
+
+| Gap | In the plan | Better fixed in ctxlang or std? |
+|---|---|---|
+| Float formatting (`10.0` prints `1e+01`), no precision | `ui::write_fixed`, about 20 lines [compiled, a4]. | **Yes: add fixed-digit formatting to std's `utf8`.** `fxhud` already hand-rolls the same thing [read: `fxhud.ctx:39`], so this is the third copy. Not required by any stage. |
+| A program's `math` shadows std's (kotor) | The core declares its own few libm externs [compiled, a1, a5]. | The fix belongs in kotor (stop shadowing, or carry the missing functions), not in the GUI and not in the language. |
+| The escape check misses a stack slice stored through a call | All text is copied at the call. | **Yes: a compiler fix would turn this class of bug into an error.** It affects every library that keeps slices. |
+| No C `long` type and no way to mirror a C struct from its header | `ui/fonts` computes FreeType's offsets from `target::OS` and checks them at start-up. | A `c::Long` in std would remove the per-platform arithmetic. Small, and other bindings would use it. |
+| No `ctxc check` (front end only) | Builds are fast enough (0.4 s for small programs). | Useful for agents, not needed. |
+| No test runner (`#test`) | Programs with a tally, kotor's convention. | When it lands the tests move; nothing waits for it. |
+| No sort, no integer min and max | Only tiny insertion sorts (at most 64 layers) and three-line helpers. | No: not worth a std change for this. |
+| No vector or rectangle math in std | `ui::Rect` and four helpers. | No: kotor's and ui's types differ for good reasons (f32 colours versus bytes). |
+| No bare block statement | Group content in functions; use `defer`. | No change asked for; a note in the guide. |
+| No default arguments | `Opts` with defaults and `..` forwarding [compiled]. | No: the workaround reads well. |
+| No clock without `Threads` | The host passes `dt`. | No: it is the right design for determinism. |
+| A build program cannot run a tool | The shader files are generated by a script and committed. | No: committed generated files have a precedent in `ctxlang/bootstrap`. |
+
+---
+
+## Appendix: the probes
+
+All under `scratchpad\ctxprobe\`, built with `ctxc0.exe` and `CTX_HOME=ctxprobe\home`.
+
+| Probe | Shows |
+|---|---|
+| `a1` | Scope tokens closed by `defer` across an early return; optional option fields with `null` defaults merged by `ifnull`; a non-generic `Ui` made by a generic `make`; an opaque-state hook (the font provider's shape) called through a `fn` value; a `?fn{ mut ui: Ui }` stored in a theme inside `Ui`; a pointer into the context's own buffer returned; `distinct u64` ids hashed with wrapping multiply; libm externs declared in `ui` beside a program `math` that binds the same symbol. Also that a bare block is rejected. |
+| `a2` | C function pointers read from a table, cast to typed `extern fn` pointers and called (Windows COM methods). The evidence for the `objc_msgSend` technique in the Metal specification. |
+| `a3` | A 4 KiB constant table as an array literal and as a byte-string literal, which is how the generated SPIR-V is embedded. |
+| `a4` | Every declaration of sections 2.6, 2.7, 2.8 and 3.3 as written: the shape list with `RectStyle`, the `line` shape and the clip table; the four instance structs, `Draw`, `Pass`, `Atlas`, `Staged`; the font provider; the test font built in code; both sketches of section 3; the recorder's dump loop; the pass split at a host slot; a trivial `stage` that fills rectangle, image and line instances; the backend and provider contract check. 1,178 lines, builds and runs. Rebuilt after each of the owner's decisions. |
+| `a5` | `a4` again with `kotor/lib/base` and `kotor/lib/platform` added: no name clashes, kotor's `math` present. |
+| `a6` | A widget call whose argument is another call on the same context (`text = ui::take_text{ &ui }`); an extern function declared under another namespace's capability. |
+| `a7` | FreeType and HarfBuzz linked from `build.ctx` and called: a font file read by the program, a glyph rasterised, two strings shaped. |
+| `a8` | Vulkan linked and called: the loader's version, an instance, the device list. |
+| `a9` | Two namespaces binding the same C symbol, each under its own capability and with its own opaque type, in one program. |
+| `a10` | A capability stored in a library struct and used by a `fn` value that gets only an opaque pointer to it. |
+| `spv` | ZGF's eight shader files with the two edits of section 2.6: all compile to SPIR-V with `glslc` and still validate as OpenGL GLSL 4.10 with `glslangValidator`. |
+| `ccheck` | A C program against the installed FreeType and HarfBuzz headers printing the struct offsets `a7` uses. |

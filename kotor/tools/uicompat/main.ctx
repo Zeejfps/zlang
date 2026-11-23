@@ -1,0 +1,35 @@
+// uicompat: ui/core and ui/record compiled and run in the same program as kotor's base, platform,
+// render and gui libraries. Nothing here tests ui (ui/tests/ does that); it fails to build when a
+// ui name collides with a kotor name, or when ui reaches for kotor's `math`, and it checks that
+// both `math`s work side by side. Exits 1 on any failure.
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+    let buf = mem::pages{ &mem, size = 1048576 } ifnull { return 1 }
+    let mut heap = arena::new{ buf }
+    let mut failed: u32 = 0
+
+    let mut list = ui::draw::make{ realloc = arena::alloc, &heap, cmds = 16, text = 256, clips = 4, fonts = 1 } iferr { return 1 }
+    ui::draw::reset{ &list, width = 640.0, height = 480.0, scale_x = 1.0, scale_y = 1.0 }
+    let clip = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = ui::Rect{ x = 8.0, y = 8.0, w = 100.0, h = 40.0 }, .. } } ifnull { return 1 }
+    ui::draw::add_rect{ &list, rect = ui::Rect{ x = 10.0, y = 10.0, w = 50.0, h = 20.0 }, style = ui::RectStyle{ fill = ui::Color{ r = 255, .. }, .. }, clip }
+    ui::draw::add_text{ &list, font = ui::Font{ .. }, size = 16.0, x = 12.0, y = 12.0, text = "kotor", color = ui::Color{ .. }, clip }
+
+    let mut store: [1024]u8
+    let mut sink = ui_rec::make_sink{ bytes = store[..] }
+    ui_rec::write_list{ &sink, list = &list } iferr { return 1 }
+    let want = "frame 640x480 scale 1x1\nclip 1 8,8 100x40\nrect 10,10 50x20 fill=FF0000FF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=1\ntext 12,12 font=0 size=16 000000FF clip=1 \"kotor\"\n"
+    if not slice::eq_bytes{ a = ui_rec::get_text{ sink }, b = want } {
+        _ = @fmt(&io, "FAIL: the dump differs:\n{}\n", ui_rec::get_text{ sink })
+        failed = failed + 1
+    }
+
+    // kotor's `math` and ui's own libm functions are both there.
+    let a = math::sqrtf{ x = 16.0 }
+    let b = ui::sqrt_f32{ x = 16.0 }
+    if a != 4.0 or b != 4.0 {
+        _ = @fmt(&io, "FAIL: sqrt: kotor math {} ui {}\n", @as(i32, a), @as(i32, b))
+        failed = failed + 1
+    }
+    _ = @fmt(&io, "uicompat: {} failed\n", failed)
+    io::flush{ &io }
+    return if failed == 0 { 0 } else { 1 }
+}

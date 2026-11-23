@@ -1,0 +1,139 @@
+// ui_test: the test harness, in the manner of kotor's `basetest`: a tally, `expect`, and the golden
+// compare. A test is a program that exits 1 when any check failed.
+//
+// Golden files live beside the test (`ui/tests/<name>/golden/<name>.txt`). On a mismatch the
+// compare prints the first differing line both ways and writes `<name>.actual.txt` next to the
+// golden (git ignores it). With `update` it rewrites the golden instead, and the reviewer reads
+// the git diff of the golden files.
+namespace ui_test {
+    struct Tally { run: u32, failed: u32 }
+
+    fn expect { mut io: Io, mut t: Tally, ok: bool, what: strlit } {
+        t.run = t.run + 1
+        if not ok {
+            t.failed = t.failed + 1
+            _ = @fmt(&io, "FAIL: {}\n", what)
+        }
+    }
+
+    // Whether the arguments hold `flag` (for `--update`).
+    fn has_flag { args: Args, flag: []u8 } -> bool {
+        let mut i: usize = 0
+        while i < args.len {
+            if slice::eq_bytes{ a = args[i], b = flag } { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // `dir`/`name`+`suffix` in `out`; the length, or 0 when it does not fit.
+    fn join_path { dir: []u8, name: []u8, suffix: []u8, out: []mut u8 } -> usize {
+        let total = dir.len + 1 + name.len + suffix.len
+        if total > out.len { return 0 }
+        let mut n: usize = 0
+        slice::copy(u8){ dst = out[n..n + dir.len], src = dir }
+        n = n + dir.len
+        out[n] = '/'
+        n = n + 1
+        slice::copy(u8){ dst = out[n..n + name.len], src = name }
+        n = n + name.len
+        slice::copy(u8){ dst = out[n..n + suffix.len], src = suffix }
+        return total
+    }
+
+    // Reads the file into `into` leaving out every carriage return, so a golden checked out with
+    // Windows line ends still matches. Fails when the file is bigger than `into`.
+    fn read_text { mut fs: Fs, path: []u8, into: []mut u8 } -> ![]u8 {
+        let file = try fs::open{ &fs, path, mode = fs::Mode::read }
+        defer _ = fs::close{ &fs, file }
+        let mut chunk: [4096]u8
+        let mut n: usize = 0
+        while true {
+            let got = try fs::read{ &fs, file, into = chunk[..] }
+            if got == 0 { break }
+            let mut i: usize = 0
+            while i < got {
+                if chunk[i] != '\r' {
+                    if n >= into.len { return alloc::out_of_memory }
+                    into[n] = chunk[i]
+                    n = n + 1
+                }
+                i = i + 1
+            }
+        }
+        return into[..n]
+    }
+
+    // Where the first line that differs starts, ends, and which line it is (counting from 1).
+    struct Line { start: usize, end: usize, number: usize }
+
+    fn find_line { text: []u8, at: usize } -> Line {
+        let mut start = at
+        if start > text.len { start = text.len }
+        while start > 0 and text[start - 1] != '\n' { start = start - 1 }
+        let mut end = at
+        if end > text.len { end = text.len }
+        while end < text.len and text[end] != '\n' { end = end + 1 }
+        let mut number: usize = 1
+        let mut i: usize = 0
+        while i < start {
+            if text[i] == '\n' { number = number + 1 }
+            i = i + 1
+        }
+        return Line{ start, end, number }
+    }
+
+    // The offset of the first byte where a and b differ, or the length of the shorter one.
+    fn find_difference { a: []u8, b: []u8 } -> usize {
+        let mut i: usize = 0
+        while i < a.len and i < b.len and a[i] == b[i] { i = i + 1 }
+        return i
+    }
+
+    // Checks `actual` against `dir`/`name`.txt. `scratch` holds the golden while it is compared, so
+    // it must be bigger than the golden file. One check in the tally.
+    fn compare_golden { mut io: Io, mut fs: Fs, mut t: Tally, dir: []u8, name: []u8, actual: []u8, scratch: []mut u8, update: bool } {
+        t.run = t.run + 1
+        let mut golden_buf: [512]u8
+        let mut actual_buf: [512]u8
+        let golden_len = join_path{ dir, name, suffix = ".txt", out = golden_buf[..] }
+        let actual_len = join_path{ dir, name, suffix = ".actual.txt", out = actual_buf[..] }
+        if golden_len == 0 or actual_len == 0 {
+            t.failed = t.failed + 1
+            _ = @fmt(&io, "FAIL: golden path too long: {}/{}\n", dir, name)
+            return
+        }
+        let golden_path = golden_buf[..golden_len]
+        let actual_path = actual_buf[..actual_len]
+        if update {
+            if fs::write_all{ &fs, path = golden_path, bytes = actual } is err {
+                t.failed = t.failed + 1
+                _ = @fmt(&io, "FAIL: cannot write {}\n", golden_path)
+            } else {
+                _ = @fmt(&io, "updated {}\n", golden_path)
+            }
+            return
+        }
+        let golden = match read_text{ &fs, path = golden_path, into = scratch } {
+            ok{ value } => { value }
+            err => {
+                t.failed = t.failed + 1
+                _ = @fmt(&io, "FAIL: cannot read golden {} (run with -- --update to create it)\n", golden_path)
+                _ = fs::write_all{ &fs, path = actual_path, bytes = actual }
+                return
+            }
+        }
+        if slice::eq_bytes{ a = golden, b = actual } {
+            // A leftover from an earlier failure would only mislead.
+            _ = fs::remove{ &fs, path = actual_path }
+            return
+        }
+        t.failed = t.failed + 1
+        let at = find_difference{ a = golden, b = actual }
+        let g = find_line{ text = golden, at }
+        let a = find_line{ text = actual, at }
+        _ = @fmt(&io, "FAIL: {} differs from the golden at line {}\n  golden: {}\n  actual: {}\n  full actual output: {}\n", name, g.number,
+            golden[g.start..g.end], actual[a.start..a.end], actual_path)
+        _ = fs::write_all{ &fs, path = actual_path, bytes = actual }
+    }
+}

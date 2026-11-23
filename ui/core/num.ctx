@@ -1,0 +1,57 @@
+// ui: libm and small float helpers. The core never uses the `math::` namespace: kotor declares
+// its own `math`, which shadows std's whole namespace of that name in a kotor build. So the few
+// libm functions the library needs are declared here, in `ui`, the same on every platform.
+namespace ui {
+    #c::symbol{ name = "floorf" }
+    #pure
+    extern fn floor_f32 { x: f32 } -> f32
+    #c::symbol{ name = "ceilf" }
+    #pure
+    extern fn ceil_f32 { x: f32 } -> f32
+    #c::symbol{ name = "roundf" }
+    #pure
+    extern fn round_f32 { x: f32 } -> f32
+    #c::symbol{ name = "truncf" }
+    #pure
+    extern fn trunc_f32 { x: f32 } -> f32
+    #c::symbol{ name = "fabsf" }
+    #pure
+    extern fn abs_f32 { x: f32 } -> f32
+    #c::symbol{ name = "sqrtf" }
+    #pure
+    extern fn sqrt_f32 { x: f32 } -> f32
+    #c::symbol{ name = "sinf" }
+    #pure
+    extern fn sin_f32 { x: f32 } -> f32
+    #c::symbol{ name = "cosf" }
+    #pure
+    extern fn cos_f32 { x: f32 } -> f32
+    #c::symbol{ name = "atan2f" }
+    #pure
+    extern fn atan2_f32 { y: f32, x: f32 } -> f32
+    #c::symbol{ name = "powf" }
+    #pure
+    extern fn pow_f32 { x: f32, y: f32 } -> f32
+    #c::symbol{ name = "fmodf" }
+    #pure
+    extern fn mod_f32 { x: f32, y: f32 } -> f32
+
+    fn pick_min_f32 { a: f32, b: f32 } -> f32 { return if b < a { b } else { a } }
+    fn pick_max_f32 { a: f32, b: f32 } -> f32 { return if b > a { b } else { a } }
+    fn pick_min_u32 { a: u32, b: u32 } -> u32 { return if b < a { b } else { a } }
+    fn pick_max_u32 { a: u32, b: u32 } -> u32 { return if b > a { b } else { a } }
+
+    // `v` held between `lo` and `hi`. When lo > hi the result is lo.
+    fn clamp_f32 { v: f32, lo: f32, hi: f32 } -> f32 {
+        if v > hi { return if hi < lo { lo } else { hi } }
+        return if v < lo { lo } else { v }
+    }
+
+    // `v` on the device grid: floor(v * scale + 0.5) / scale. The same rule as kotor's `snap` and
+    // as ZGF's, which is what makes edges that meet in layout meet on screen at fractional
+    // scales. A scale that is not positive leaves `v` as it is.
+    fn snap_f32 { v: f32, scale: f32 } -> f32 {
+        if not (scale > 0.0) { return v }
+        return floor_f32{ x = v * scale + 0.5 } / scale
+    }
+}

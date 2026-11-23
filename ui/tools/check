@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Runs every headless ui test in turn, then kotor/tools/uicompat, and exits non-zero if any failed.
+# Tests that need a window (ui/tests/shots*) are not run here: they take a GPU and write pictures
+# to look at. Run it from anywhere; it works from the repository root.
+#
+#   ui/tools/check
+set -u
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$HERE/../.." && pwd)"
+cd "$ROOT"
+
+failed=0
+for dir in ui/tests/*/; do
+    dir="${dir%/}"
+    name="$(basename "$dir")"
+    [ -f "$dir/build.ctx" ] || continue
+    case "$name" in shots*) continue ;; esac
+    echo "== $dir"
+    if ! kotor/tools/ctxc run "$dir"; then
+        echo "FAILED: $dir"
+        failed=$((failed + 1))
+    fi
+done
+
+echo "== kotor/tools/uicompat"
+if ! kotor/tools/ctxc run kotor/tools/uicompat; then
+    echo "FAILED: kotor/tools/uicompat"
+    failed=$((failed + 1))
+fi
+
+if [ "$failed" -ne 0 ]; then
+    echo "ui/tools/check: $failed failed"
+    exit 1
+fi
+echo "ui/tools/check: all passed"

@@ -1,0 +1,27 @@
+// The ui libraries built beside kotor's: `kotor/tools/ctxc run kotor/tools/uicompat`. It checks
+// that ui's namespaces do not collide with kotor's and that ui/core does not depend on kotor's
+// `math`, which shadows std's. The kotor directories are the ones lib/gui needs to compile, as
+// in kotor/tools/guiview.
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "uicompat", root = "." }
+    build::add_sources{ &b, exe, dir = "../../lib/base" }
+    build::add_sources{ &b, exe, dir = "../../lib/res" }
+    build::add_sources{ &b, exe, dir = "../../lib/formats" }
+    build::add_sources{ &b, exe, dir = "../../lib/tex" }
+    build::add_sources{ &b, exe, dir = "../../lib/material" }
+    build::add_sources{ &b, exe, dir = "../../lib/platform" }
+    build::add_sources{ &b, exe, dir = "../../lib/render" }
+    build::add_sources{ &b, exe, dir = "../../lib/render_gl" }
+    build::add_sources{ &b, exe, dir = "../../lib/audio" }
+    build::add_sources{ &b, exe, dir = "../../lib/gui" }
+    build::add_sources{ &b, exe, dir = "../../../ui/core" }
+    build::add_sources{ &b, exe, dir = "../../../ui/record" }
+    match build::os{ &b } {
+        macos => {
+            build::lib_path{ &b, exe, path = "/opt/homebrew/lib" }
+            build::link{ &b, exe, lib = "SDL2" }
+        }
+        windows => { build::link{ &b, exe, lib = "SDL2" } }
+        linux => { build::link{ &b, exe, lib = "SDL2" } }
+    }
+}
