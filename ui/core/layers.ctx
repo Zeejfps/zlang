@@ -1,31 +1,640 @@
-// ui::layers: the trees beside the base one (plan section 2.5): overlays, windows, modals, popups
-// and tooltips, back to front.
+// ui::layers: the trees beside the base one (plan section 2.5). Back to front:
 //
-// A layer is a tree of its own: `tree::open_element` with `root` set records it where the code is,
-// and emit draws the trees in the order of their roots' `order` (`tree::BASE_ORDER` is the base
-// tree's). A root is placed on the surface by its box: anchor fractions of the surface plus an
-// offset.
+//   back overlay    begin_overlay{ front = false }: the whole surface, drawn under everything, no hits
+//   the base tree   what begin_frame opens
+//   windows         begin_window_layer: in the order they were last pressed in or raised
+//   modals          begin_modal: the whole surface; everything behind the frontmost one takes no
+//                   pointer and no keys, and the focus it put aside comes back when it goes
+//   popups          begin_popup, while open_popup has it open: below or beside an anchor
+//   tooltips        begin_tooltip: at the pointer or below an anchor; takes no pointer
+//   front overlay   begin_overlay{ front = true }: the whole surface, drawn over everything, no hits
 //
-// This file is the subsystem's place in the Ui: `ui.layers` is its state. `make` builds it and
-// `begin_frame` calls `reset_state`. `end_frame` calls `place_layers` once the layout is solved and
-// the scroll regions have settled: it may move a root (a popup that would leave the surface) and
-// answers whether it did, in which case positions are worked out again before the frame is
-// emitted. `finish_frame` runs after the frame is emitted.
+// A layer is a tree of its own (`tree::open_element` with `root`), recorded where the code is and
+// emitted with its layer: its root's `order` is its band's base plus its place in the band (a
+// window's rank, how many modals came before it this frame, a popup's depth), and emit draws trees
+// by order, trees of one order as they were recorded. Layer content is never clipped by what it
+// was recorded in: a popup opened from a row of a scroll region is a tree of its own.
+//
+// Popups. `open_popup` and `open_popup_on` open one by name, `begin_popup` records it while it is
+// open (a popup that is not open gives a closed scope, and its content is not recorded), and
+// `close_popup` closes the one being recorded. Open popups are a stack: a popup opened while
+// another is being recorded is that one's child, one above it; opening a popup closes the popups
+// at its depth and above it that are not it. A popup closes, with every popup above it:
+//
+//  - on a press of the left, right or middle button that is outside it and its children, unless
+//    the press is on its anchor (the anchor's widget toggles it itself);
+//  - on Escape, the frontmost one only (the key stroke is taken);
+//  - when a frame neither begins it nor opens it;
+//  - when its anchor is not in the frame (the anchor's widget went): it is not shown in that frame.
+//
+// A popup's name is the same in every id scope (`make_popup_id`), so `open_popup` in a row of a
+// list and `begin_popup` outside the list name one popup. Its place is worked out after the
+// layout, in device pixels, from its anchor's rectangle in the same frame (the rectangle
+// `get_rect` answers for it the next frame) and its own solved size: below the anchor, lined up
+// with its left edge, or with its right edge where the left one would run off the surface, and
+// above it where there is no room below but room above; beside it (to the right, or to the left
+// where there is no room on the right), lined up with its top, or with its bottom where the top one
+// would run off. It is then held inside the surface, its left and top edges winning where it is
+// larger than the surface. A popup with no anchor is placed at the pointer where it was opened.
+//
+// Windows are ranked in a list that lasts from frame to frame: a new one goes in front, a press
+// that lands in one brings it to the front (at begin_frame, from the last frame's regions), and so
+// does `raise_window`. A window that a frame does not begin leaves the list.
+//
+// Modals keep a stack too. The frame a modal is first begun it puts the focus aside and nothing has
+// focus, so Tab goes into it; the frame after the last that began it, the focus comes back, unless
+// a press gave focus to something that frame. A modal that goes while one in front of it stays
+// hands the focus it kept to that one.
+//
+// This file is the subsystem's place in the Ui: `ui.layers` is its state. `begin_frame` calls
+// `reset_state`, where presses raise windows and dismiss popups; `end_frame` calls `place_layers`
+// once the layout is solved and the scroll regions have settled (windows take their final order,
+// popups and tooltips their places, and a popup that closed in the frame is hidden), and asks for
+// positions again when a root moved. `finish_frame`, after the frame is emitted, closes the popups
+// the frame did not record and gives back the focus of the modals that went.
 namespace ui {
+    // Where a popup goes from its anchor: below it (a menu, a combo's list), or beside it (a submenu).
+    enum PopupSide: u8 { below, beside }
+
+    // ---- overlays
+
+    // A tree that covers the surface and takes no pointer: for drawing on the surface's own pixels
+    // (labels on things in a 3D view, a reticle, a fade, a drag's ghost). Behind everything with
+    // `front` false, in front of everything with it true; overlays of one kind are drawn in the order
+    // they are recorded. What is recorded inside takes no pointer either.
+    fn begin_overlay { mut ui: Ui, front: bool } -> Scope {
+        let order = if front { layers::FRONT_ORDER } else { layers::BACK_ORDER }
+        let box = Box{ width = GROW, height = GROW, .. }
+        return tree::open_element{ &ui, id = NO_ID, axis = Axis::column, box, root = tree::RootOpts{ order, modal = false, hits = false }, on_end = null }
+    }
+
+    // ---- modals
+
+    // A tree that covers the surface, in front of the base tree and the windows, and blocks them:
+    // nothing behind the frontmost modal is hit, takes keys or is a tab stop. `opts.box` lays its
+    // content out (centred unless it says otherwise) and gives its backdrop (the theme's scrim
+    // unless it gives a fill); its size and place are the surface's. A modal begun while another is
+    // up, inside it or after it, is in front of it. The frame a modal first appears it puts the
+    // focus aside, and it gives it back the frame after it goes.
+    fn begin_modal { mut ui: Ui, id: []u8, opts: Opts } -> Scope {
+        if not tree::can_record{ &ui } { return Scope{ .. } }
+        let modal = make_id{ ui, name = id }
+        let mut box = opts.box
+        box.width = GROW
+        box.height = GROW
+        box.place = null
+        box.pixels = null
+        box.fill = opts.box.fill ifnull ui.theme.scrim
+        box.align_x = opts.box.align_x ifnull Align::center
+        box.align_y = opts.box.align_y ifnull Align::center
+        let order = layers::MODAL_ORDER + layers::hold_rank{ n = ui.layers.modals_begun }
+        ui.layers.modals_begun = add_count{ a = ui.layers.modals_begun, b = 1 }
+        let scope = tree::open_element{ &ui, id = modal, axis = Axis::column, box, root = tree::RootOpts{ order, modal = true, hits = true }, on_end = null }
+        if tree::get_open{ ui } != tree::NONE { layers::note_modal{ &ui, id = modal } }
+        return scope
+    }
+
+    // ---- windows
+
+    // A window's tree: in front of the base tree, among the windows in the order they were last
+    // pressed in or raised, a new one in front. `box` places it on the surface and sizes it (a
+    // window widget keeps its place as state and passes `ui::place`); it has no look of its own.
+    fn begin_window_layer { mut ui: Ui, id: Id, box: Box } -> Scope {
+        if not tree::can_record{ &ui } { return Scope{ .. } }
+        let rank = layers::note_window{ &ui, id }
+        let scope = tree::open_element{ &ui, id, axis = Axis::column, box, root = tree::RootOpts{ order = layers::WINDOW_ORDER + rank, modal = false, hits = true }, on_end = null }
+        let element = tree::get_open{ ui }
+        if element != tree::NONE { layers::add_placed{ &ui, kind = layers::Kind::window, element, id, anchor = NO_ID } }
+        return scope
+    }
+
+    // Brings the window with `id` in front of the others, from this frame's emission on.
+    fn raise_window { mut ui: Ui, id: Id } {
+        let n = @as(usize, ui.layers.window_count)
+        for i in 0..n {
+            if ui.layers.windows[i].id != id { continue }
+            let w = ui.layers.windows[i]
+            for k in i..n - 1 { ui.layers.windows[k] = ui.layers.windows[k + 1] }
+            ui.layers.windows[n - 1] = w
+            return
+        }
+    }
+
+    // ---- popups
+
+    // The id of the popup named `name`: the same in every id scope. An empty name is no popup.
+    fn make_popup_id { name: []u8 } -> Id {
+        if name.len == 0 { return NO_ID }
+        let h = hash_bytes{ seed = hash_bytes{ seed = FNV_BASIS, bytes = "\x00popup" }, bytes = name }
+        return @as(Id, if h == 0 { 1 } else { h })
+    }
+
+    // Opens the popup `id` at the pointer, below and to the right of it (a context menu).
+    fn open_popup { mut ui: Ui, id: []u8 } {
+        open_popup_on{ &ui, id, anchor = NO_ID, side = PopupSide::below }
+    }
+
+    // Opens the popup `id` below or beside the element with id `anchor`, wherever that element is
+    // drawn in each frame. With no anchor (NO_ID) it is placed at the pointer. Called while a popup
+    // is being recorded, the new one is that popup's child. Opening a popup that is open already at
+    // that depth only moves it to the new anchor.
+    fn open_popup_on { mut ui: Ui, id: []u8, anchor: Id, side: PopupSide } {
+        let popup = make_popup_id{ name = id }
+        if popup == NO_ID { return }
+        let level = layers::get_level{ ui }
+        let at = get_pointer{ ui }
+        if let k = layers::find_popup{ ui, id = popup } {
+            // Open below the popup being recorded: it is that popup or one it was opened from.
+            if k < level { return }
+            if k == level {
+                let p = ui.layers.popups[@as(usize, k)]
+                if p.anchor == anchor and p.side == side and (anchor != NO_ID or (p.at.x == at.x and p.at.y == at.y)) { return }
+                ui.layers.popups[@as(usize, k)].anchor = anchor
+                ui.layers.popups[@as(usize, k)].side = side
+                ui.layers.popups[@as(usize, k)].at = at
+                ui.layers.popup_count = level + 1
+                return
+            }
+        }
+        if @as(usize, level) >= ui.layers.popups.len {
+            report_drop{ &ui, kind = ProblemKind::layers_full }
+            return
+        }
+        ui.layers.popups[@as(usize, level)] = layers::Popup{ id = popup, anchor, side, at, opened = ui.frame, .. }
+        ui.layers.popup_count = level + 1
+    }
+
+    // Closes the popup being recorded and every popup opened from it. It is not drawn in this
+    // frame, and `begin_popup` gives a closed scope from the next. Outside a popup it does nothing.
+    fn close_popup { mut ui: Ui } {
+        let n = @as(usize, ui.layers.open_count)
+        if n == 0 { return }
+        if let k = layers::find_popup{ ui, id = ui.layers.open[n - 1].id } { ui.layers.popup_count = k }
+    }
+
+    // Closes every popup (a menu item that was picked closes the whole menu).
+    fn close_popups { mut ui: Ui } {
+        ui.layers.popup_count = 0
+    }
+
+    fn is_popup_open { ui: Ui, id: []u8 } -> bool {
+        let popup = make_popup_id{ name = id }
+        return popup != NO_ID and layers::find_popup{ ui, id = popup } != null
+    }
+
+    // Records the popup `id` while it is open, and gives a closed scope (`open` false: record
+    // nothing, and `ui::end` of it does nothing) while it is not. It is a tree of its own in front
+    // of the modals, sized by `opts.box` (fitted to its content unless the box sizes it) and placed
+    // from its anchor after the layout; the box's `place` is not read. Its look is the theme's
+    // (surface fill, border, radius, half the padding) where the box gives none. Its region takes
+    // the pointer, so what is under it is not hit.
+    fn begin_popup { mut ui: Ui, id: []u8, opts: Opts } -> Scope {
+        if not tree::can_record{ &ui } { return Scope{ .. } }
+        let popup = make_popup_id{ name = id }
+        let k = layers::find_popup{ ui, id = popup } ifnull { return Scope{ .. } }
+        let at = @as(usize, k)
+        ui.layers.popups[at].seen = true
+        let box = layers::make_card{ ui, box = opts.box }
+        let order = layers::POPUP_ORDER + layers::hold_rank{ n = k }
+        let scope = tree::open_element{ &ui, id = popup, axis = Axis::column, box, root = tree::RootOpts{ order, modal = false, hits = true }, on_end = layers::end_popup }
+        let element = tree::get_open{ ui }
+        if element == tree::NONE { return scope }
+        // Where it was placed last, until place_layers places it for this frame.
+        ui.tree.elements[@as(usize, element)].offset_x = ui.layers.popups[at].x
+        ui.tree.elements[@as(usize, element)].offset_y = ui.layers.popups[at].y
+        layers::push_open{ &ui, id = popup, element }
+        layers::add_placed{ &ui, kind = layers::Kind::popup, element, id = popup, anchor = NO_ID }
+        describe{ &ui, id = popup, role = Role::popup, label = id, value = 0.0, flags = NODE_OPEN }
+        return scope
+    }
+
+    // ---- tooltips
+
+    // Whether the tooltip of the widget with `id` is due: it has been hovered, with nothing held,
+    // for the theme's `tip_delay` seconds of frame time. While it is hovered and not due yet the
+    // frame asks for another (`Requests.animating`), so an event-driven host draws the frame the
+    // tooltip appears in.
+    fn is_tip_due { mut ui: Ui, id: Id } -> bool {
+        if id == NO_ID or ui.interact.hover != id or ui.interact.active != NO_ID { return false }
+        if get_hover_time{ ui, id } >= ui.theme.tip_delay { return true }
+        set_animating{ &ui }
+        return false
+    }
+
+    // A tooltip's tree: in front of the popups, taking no pointer, so the pointer goes on to what is
+    // under it. It is placed below the element with id `anchor`, or with no anchor (NO_ID) below
+    // the pointer by a pointer's height (16 units), and held inside the surface as a popup is. Its
+    // look is the theme's where `box` gives none.
+    fn begin_tooltip { mut ui: Ui, anchor: Id, box: Box } -> Scope {
+        if not tree::can_record{ &ui } { return Scope{ .. } }
+        let card = layers::make_card{ ui, box }
+        let scope = tree::open_element{ &ui, id = NO_ID, axis = Axis::column, box = card, root = tree::RootOpts{ order = layers::TIP_ORDER, modal = false, hits = false }, on_end = null }
+        let element = tree::get_open{ ui }
+        if element != tree::NONE { layers::add_placed{ &ui, kind = layers::Kind::tip, element, id = NO_ID, anchor } }
+        return scope
+    }
+
     namespace layers {
-        struct State {}
+        // Each kind of layer has a band of orders of its own; a layer's place in its band is held
+        // below BAND.
+        const BAND: u32 = 65536
+        const BACK_ORDER: u32 = tree::BASE_ORDER - 1
+        const WINDOW_ORDER: u32 = tree::BASE_ORDER + BAND
+        const MODAL_ORDER: u32 = tree::BASE_ORDER + BAND * 2
+        const POPUP_ORDER: u32 = tree::BASE_ORDER + BAND * 3
+        const TIP_ORDER: u32 = tree::BASE_ORDER + BAND * 4
+        const FRONT_ORDER: u32 = tree::BASE_ORDER + BAND * 5
 
+        // How far below the pointer a tooltip with no anchor goes: a pointer's height, in logical units.
+        const CURSOR: f32 = 16.0
+
+        enum Kind: u8 { window, popup, tip }
+
+        // An open popup. `at` is the pointer when it was opened; `x`, `y` where it was placed last.
+        struct Popup {
+            id: Id = NO_ID, anchor: Id = NO_ID, side: PopupSide = PopupSide::below, at: Point = Point{ .. },
+            x: i32 = 0, y: i32 = 0,
+            seen: bool = false,         // begun this frame
+            opened: u64 = 0,            // the frame it was opened in
+        }
+        // An open modal and the focus it put aside.
+        struct Modal { id: Id, saved: Id, seen: bool }
+        struct Window { id: Id, seen: bool }
+        // A popup being recorded.
+        struct Open { id: Id, element: u32 }
+        // A root of this frame that place_layers works on: its element, its place in `ui.tree.roots`.
+        struct Placed { kind: Kind, element: u32, root: u32, id: Id, anchor: Id, at: Point }
+
+        struct State {
+            popups: []mut Popup, popup_count: u32,      // open, from the bottom of the stack up
+            open: []mut Open, open_count: u32,          // being recorded, innermost last
+            modals: []mut Modal, modal_count: u32,      // up, in the order they came
+            modals_begun: u32,                          // this frame
+            windows: []mut Window, window_count: u32,   // back to front
+            placed: []mut Placed, placed_count: u32,    // this frame's
+        }
+
+        // A layer of each kind is a root, so every table has a root's room: `Capacity.layers`, and
+        // the base tree's.
         fn make_state(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !State {
-            return State{}
+            let room = @as(usize, cap.layers) + 1
+            let popups = try alloc::make(Popup, S){ realloc, &heap, count = room }
+            let open = try alloc::make(Open, S){ realloc, &heap, count = room }
+            let modals = try alloc::make(Modal, S){ realloc, &heap, count = room }
+            let windows = try alloc::make(Window, S){ realloc, &heap, count = room }
+            let placed = try alloc::make(Placed, S){ realloc, &heap, count = room }
+            return State{
+                popups, popup_count = 0, open, open_count = 0, modals, modal_count = 0, modals_begun = 0,
+                windows, window_count = 0, placed, placed_count = 0,
+            }
         }
 
-        fn reset_state { mut ui: Ui } {}
+        // begin_frame, after the hot id is known: a press raises the window it lands in and closes
+        // the popups it is outside of, and Escape closes the frontmost popup.
+        fn reset_state { mut ui: Ui } {
+            ui.layers.open_count = 0
+            ui.layers.placed_count = 0
+            ui.layers.modals_begun = 0
+            raise_pressed{ &ui }
+            for &m in ui.layers.modals[..@as(usize, ui.layers.modal_count)] { m.seen = false }
+            for &w in ui.layers.windows[..@as(usize, ui.layers.window_count)] { w.seen = false }
+            for &p in ui.layers.popups[..@as(usize, ui.layers.popup_count)] { p.seen = false }
+            dismiss_popups{ &ui }
+        }
 
-        // Whether a root was moved after the solve, so that positions must be worked out again.
+        // A band's place, held below BAND.
+        fn hold_rank { n: u32 } -> u32 {
+            return if n < BAND - 1 { n } else { BAND - 1 }
+        }
+
+        // Whether a pointer button that opens or dismisses things (left, right, middle) went down.
+        fn is_pressed { ui: Ui } -> bool {
+            return ui.input.now.pressed[0] or ui.input.now.pressed[1] or ui.input.now.pressed[2]
+        }
+
+        // A press over a window brings it to the front.
+        fn raise_pressed { mut ui: Ui } {
+            if not is_pressed{ ui } or not ui.input.now.inside { return }
+            let top = interact::find_topmost{ ui, x = ui.input.now.x, y = ui.input.now.y }
+            if top == tree::NONE { return }
+            let order = ui.emit.hits[@as(usize, top)].order
+            if order < WINDOW_ORDER or order >= WINDOW_ORDER + BAND { return }
+            let rank = @as(usize, order - WINDOW_ORDER)
+            if rank >= @as(usize, ui.layers.window_count) { return }
+            let id = ui.layers.windows[rank].id
+            raise_window{ &ui, id }
+        }
+
+        // Whether the pointer is in the last frame's rectangle of `id`.
+        fn is_inside { ui: Ui, id: Id } -> bool {
+            if not ui.input.now.inside { return false }
+            let r = get_rect{ ui, id } ifnull { return false }
+            return interact::contains{ r, x = ui.input.now.x, y = ui.input.now.y }
+        }
+
+        fn dismiss_popups { mut ui: Ui } {
+            if ui.layers.popup_count == 0 { return }
+            for i in 0..@as(usize, ui.input.now.keys) {
+                let k = ui.input.keys[i]
+                if k.key == Key::escape and k.mods == 0 {
+                    take_key_at{ &ui, index = i }
+                    ui.layers.popup_count = ui.layers.popup_count - 1
+                    break
+                }
+            }
+            if not is_pressed{ ui } { return }
+            // The popups kept are those up to the frontmost one the press is in, or on whose anchor
+            // it is; with none of them, all close.
+            let mut keep: u32 = 0
+            let mut i = ui.layers.popup_count
+            while i > 0 {
+                i = i - 1
+                let p = ui.layers.popups[@as(usize, i)]
+                if is_inside{ ui, id = p.id } or (p.anchor != NO_ID and p.anchor == ui.interact.hot) {
+                    keep = i + 1
+                    break
+                }
+            }
+            ui.layers.popup_count = keep
+        }
+
+        // Where the popup with `id` is in the stack.
+        fn find_popup { ui: Ui, id: Id } -> ?u32 {
+            if id == NO_ID { return null }
+            for p at i in ui.layers.popups[..@as(usize, ui.layers.popup_count)] {
+                if p.id == id { return @as(u32, i) }
+            }
+            return null
+        }
+
+        // The depth a popup opened now goes to: one above the popup being recorded, or the bottom.
+        fn get_level { ui: Ui } -> u32 {
+            let n = @as(usize, ui.layers.open_count)
+            if n == 0 { return 0 }
+            let k = find_popup{ ui, id = ui.layers.open[n - 1].id } ifnull { return ui.layers.popup_count }
+            return k + 1
+        }
+
+        fn push_open { mut ui: Ui, id: Id, element: u32 } {
+            let n = @as(usize, ui.layers.open_count)
+            if n >= ui.layers.open.len { return }
+            ui.layers.open[n] = Open{ id, element }
+            ui.layers.open_count = ui.layers.open_count + 1
+        }
+
+        // The end of a popup's scope.
+        fn end_popup { mut ui: Ui, element: u32 } {
+            let n = @as(usize, ui.layers.open_count)
+            if n > 0 and ui.layers.open[n - 1].element == element { ui.layers.open_count = ui.layers.open_count - 1 }
+        }
+
+        // A popup's or a tooltip's box: the theme's card where `box` says nothing, placed by the layer.
+        fn make_card { ui: Ui, box: Box } -> Box {
+            let mut b = box
+            b.fill = box.fill ifnull ui.theme.surface
+            b.border = box.border ifnull color_sides{ color = ui.theme.border }
+            b.border_width = box.border_width ifnull inset{ by = ui.theme.border_width }
+            b.radius = box.radius ifnull round{ radius = ui.theme.radius }
+            b.padding = box.padding ifnull inset{ by = ui.theme.padding * 0.5 }
+            b.place = null
+            return b
+        }
+
+        // The modal with `id` was begun: a new one puts the focus aside.
+        fn note_modal { mut ui: Ui, id: Id } {
+            let n = @as(usize, ui.layers.modal_count)
+            for i in 0..n {
+                if ui.layers.modals[i].id == id {
+                    ui.layers.modals[i].seen = true
+                    return
+                }
+            }
+            if n >= ui.layers.modals.len {
+                report_drop{ &ui, kind = ProblemKind::layers_full }
+                return
+            }
+            ui.layers.modals[n] = Modal{ id, saved = ui.focus.focused, seen = true }
+            ui.layers.modal_count = ui.layers.modal_count + 1
+            ui.focus.focused = NO_ID
+        }
+
+        // The window with `id` was begun: its rank, a new one in front.
+        fn note_window { mut ui: Ui, id: Id } -> u32 {
+            if id == NO_ID { return 0 }
+            let n = @as(usize, ui.layers.window_count)
+            for i in 0..n {
+                if ui.layers.windows[i].id == id {
+                    ui.layers.windows[i].seen = true
+                    return hold_rank{ n = @as(u32, i) }
+                }
+            }
+            if n >= ui.layers.windows.len {
+                report_drop{ &ui, kind = ProblemKind::layers_full }
+                return hold_rank{ n = @as(u32, n) }
+            }
+            ui.layers.windows[n] = Window{ id, seen = true }
+            ui.layers.window_count = ui.layers.window_count + 1
+            return hold_rank{ n = @as(u32, n) }
+        }
+
+        fn find_window { ui: Ui, id: Id } -> ?u32 {
+            for w at i in ui.layers.windows[..@as(usize, ui.layers.window_count)] {
+                if w.id == id { return @as(u32, i) }
+            }
+            return null
+        }
+
+        // A root of this frame for place_layers: the last root recorded.
+        fn add_placed { mut ui: Ui, kind: Kind, element: u32, id: Id, anchor: Id } {
+            let n = @as(usize, ui.layers.placed_count)
+            if n >= ui.layers.placed.len or ui.tree.root_count == 0 { return }
+            ui.layers.placed[n] = Placed{ kind, element, root = ui.tree.root_count - 1, id, anchor, at = get_pointer{ ui } }
+            ui.layers.placed_count = ui.layers.placed_count + 1
+        }
+
+        // end_frame, after the scroll regions settled: windows take their final order, popups and
+        // tooltips their places. True when a root moved, so that positions are worked out again.
         fn place_layers { mut ui: Ui } -> bool {
-            return false
+            order_windows{ &ui }
+            let mut moved = false
+            for i in 0..@as(usize, ui.layers.placed_count) {
+                let p = ui.layers.placed[i]
+                if p.kind == Kind::window { continue }
+                if place_root{ &ui, p } { moved = true }
+            }
+            return moved
         }
 
-        fn finish_frame { mut ui: Ui } {}
+        // The windows the frame did not begin leave the list, and every window's tree takes the
+        // order of its rank, raises of this frame included.
+        fn order_windows { mut ui: Ui } {
+            let mut left: usize = 0
+            for i in 0..@as(usize, ui.layers.window_count) {
+                if ui.layers.windows[i].seen {
+                    ui.layers.windows[left] = ui.layers.windows[i]
+                    left = left + 1
+                }
+            }
+            ui.layers.window_count = @as(u32, left)
+            for p in ui.layers.placed[..@as(usize, ui.layers.placed_count)] {
+                if p.kind != Kind::window or p.root >= ui.tree.root_count { continue }
+                let rank = find_window{ ui, id = p.id } ifnull { continue }
+                ui.tree.roots[@as(usize, p.root)].order = WINDOW_ORDER + hold_rank{ n = rank }
+            }
+        }
+
+        // Places a popup's or a tooltip's root. True when it moved.
+        fn place_root { mut ui: Ui, p: Placed } -> bool {
+            let at = @as(usize, p.element)
+            let mut anchor = make_cursor{ ui, at = p.at }
+            let mut side = PopupSide::below
+            let mut slot: usize = 0
+            if p.kind == Kind::popup {
+                // Closed while it was recorded, or with the popup it was opened from.
+                let k = find_popup{ ui, id = p.id } ifnull {
+                    hide_root{ &ui, p }
+                    return false
+                }
+                slot = @as(usize, k)
+                let pop = ui.layers.popups[slot]
+                side = pop.side
+                anchor = Rect{ x = pop.at.x, y = pop.at.y, w = 0, h = 0 }
+                if pop.anchor != NO_ID {
+                    anchor = find_anchor{ ui, id = pop.anchor } ifnull {
+                        // Its anchor went: it closes, with the popups opened from it, unseen.
+                        ui.layers.popup_count = k
+                        hide_root{ &ui, p }
+                        return false
+                    }
+                }
+            } else if p.anchor != NO_ID {
+                anchor = find_anchor{ ui, id = p.anchor } ifnull make_cursor{ ui, at = p.at }
+            }
+            let e = ui.tree.elements[at]
+            let spot = place_rect{ anchor, w = e.w, h = e.h, side, width = ui.draw.width, height = ui.draw.height }
+            if p.kind == Kind::popup {
+                ui.layers.popups[slot].x = spot.x
+                ui.layers.popups[slot].y = spot.y
+            }
+            if spot.x == e.offset_x and spot.y == e.offset_y and e.anchor_x == 0.0 and e.anchor_y == 0.0 and e.x == spot.x and e.y == spot.y { return false }
+            ui.tree.elements[at].anchor_x = 0.0
+            ui.tree.elements[at].anchor_y = 0.0
+            ui.tree.elements[at].offset_x = spot.x
+            ui.tree.elements[at].offset_y = spot.y
+            return true
+        }
+
+        // A root that is not shown this frame: no shapes and no hits.
+        fn hide_root { mut ui: Ui, p: Placed } {
+            ui.tree.elements[@as(usize, p.element)].opacity = 0.0
+            if p.root < ui.tree.root_count { ui.tree.roots[@as(usize, p.root)].hits = false }
+        }
+
+        // The pointer where the root was recorded, a pointer's height tall: what a tooltip goes below.
+        fn make_cursor { ui: Ui, at: Point } -> Rect {
+            return Rect{ x = at.x, y = at.y, w = 0, h = pick_max_i32{ a = 0, b = to_pixels{ ui, length = CURSOR } } }
+        }
+
+        // The rectangle the element with `id` has in this frame (the last one recorded with it), as
+        // it will be emitted: moved by however far its tree's root has been placed since positions
+        // were last worked out (a submenu's anchor is in a menu placed just before it).
+        fn find_anchor { ui: Ui, id: Id } -> ?Rect {
+            let mut i = @as(usize, ui.tree.count)
+            while i > 0 {
+                i = i - 1
+                let e = ui.tree.elements[i]
+                if e.id != id or e.kind != tree::Kind::box { continue }
+                let mut top = i
+                while ui.tree.elements[top].parent != tree::NONE { top = @as(usize, ui.tree.elements[top].parent) }
+                let r = ui.tree.elements[top]
+                let rx = add_pixels{ a = take_fraction{ whole = ui.draw.width, fraction = r.anchor_x }, b = r.offset_x }
+                let ry = add_pixels{ a = take_fraction{ whole = ui.draw.height, fraction = r.anchor_y }, b = r.offset_y }
+                return Rect{
+                    x = hold_pixels{ v = @as(i64, e.x) + @as(i64, rx) - @as(i64, r.x) },
+                    y = hold_pixels{ v = @as(i64, e.y) + @as(i64, ry) - @as(i64, r.y) },
+                    w = e.w, h = e.h,
+                }
+            }
+            return null
+        }
+
+        // `v` held between `lo` and `hi`; `lo` wins when it is larger.
+        fn hold_between { v: i64, lo: i64, hi: i64 } -> i64 {
+            if v > hi { return if hi < lo { lo } else { hi } }
+            return if v < lo { lo } else { v }
+        }
+
+        // Where a root of `w` by `h` pixels goes from `anchor` on a surface of `width` by `height`
+        // (the rules are at the top of the file).
+        fn place_rect { anchor: Rect, w: i32, h: i32, side: PopupSide, width: i32, height: i32 } -> Point {
+            let left = @as(i64, anchor.x)
+            let top = @as(i64, anchor.y)
+            let right = left + @as(i64, anchor.w)
+            let bottom = top + @as(i64, anchor.h)
+            let ww = @as(i64, w)
+            let hh = @as(i64, h)
+            let sw = @as(i64, width)
+            let sh = @as(i64, height)
+            let mut x = left
+            let mut y = bottom
+            match side {
+                below => {
+                    if x + ww > sw { x = right - ww }
+                    if y + hh > sh and top - hh >= 0 { y = top - hh }
+                }
+                beside => {
+                    x = right
+                    y = top
+                    if x + ww > sw and left - ww >= 0 { x = left - ww }
+                    if y + hh > sh { y = bottom - hh }
+                }
+            }
+            x = hold_between{ v = x, lo = 0, hi = sw - ww }
+            y = hold_between{ v = y, lo = 0, hi = sh - hh }
+            return Point{ x = hold_pixels{ v = x }, y = hold_pixels{ v = y } }
+        }
+
+        // end_frame, after the frame is emitted: the popups the frame did not record close, and the
+        // modals that went give the focus back.
+        fn finish_frame { mut ui: Ui } {
+            ui.layers.open_count = 0
+            for i in 0..@as(usize, ui.layers.popup_count) {
+                let p = ui.layers.popups[i]
+                if not p.seen and p.opened != ui.frame {
+                    ui.layers.popup_count = @as(u32, i)
+                    break
+                }
+            }
+            // From the front: a modal that went hands what it kept to the nearest modal in front of
+            // it that stays, or else gives it back. Going from the front, when several go at once
+            // the focus from before the backmost of them is the one that comes back.
+            let n = @as(usize, ui.layers.modal_count)
+            let mut i = n
+            while i > 0 {
+                i = i - 1
+                let m = ui.layers.modals[i]
+                if m.seen { continue }
+                let mut above = n
+                for j in (i + 1)..n {
+                    if ui.layers.modals[j].seen {
+                        above = j
+                        break
+                    }
+                }
+                if above < n {
+                    ui.layers.modals[above].saved = m.saved
+                } else if not ui.focus.claimed {
+                    ui.focus.focused = m.saved
+                }
+            }
+            let mut left: usize = 0
+            for k in 0..n {
+                if ui.layers.modals[k].seen {
+                    ui.layers.modals[left] = ui.layers.modals[k]
+                    left = left + 1
+                }
+            }
+            ui.layers.modal_count = @as(u32, left)
+        }
     }
 }

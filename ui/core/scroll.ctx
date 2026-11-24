@@ -1,34 +1,686 @@
-// ui::scroll: scroll regions (plan stage 8): their offsets, their bars, and where the wheel goes.
+// ui::scroll: scroll regions (plan section 2.4 and stage 8): their offsets, their bars, where the
+// wheel goes, and the rows of a virtual list.
 //
-// A region is an element whose flow children are moved by `scroll_x`, `scroll_y` (fields of
-// `tree::Element`, which the layout subtracts when it positions them); `content_w` and `content_h`
-// are the size of its content without padding once the layout is solved. What a region must record
-// after its content (its bars, over the content) it records from the `on_end` of
-// `tree::open_element`, which runs while the element is still open.
+// A region is a clipping element whose flow children are moved by its offset (`scroll_x`,
+// `scroll_y` of its element, which the layout subtracts when it positions them). Everything about
+// it is whole device pixels:
 //
-// This file is the subsystem's place in the Ui: `ui.scroll` is its state. `make` builds it and
-// `begin_frame` calls `reset_state`. `end_frame` calls `settle_regions` once the layout is solved:
-// it holds every offset inside its range and answers what that changed. `relayout` (a bar appeared
-// or went, so a region's padding changed) makes `end_frame` solve again and settle once more;
-// `reposition` (only offsets changed) makes it work out positions again. `finish_frame` runs after
-// the frame is emitted.
+//  - The offset is widget state (`Values.i[0]` across, `i[1]` down), so it lasts while the region
+//    is recorded and goes with the state's TTL when it is not. It is held to 0..content - view
+//    every frame, `content` being the size of the region's content without padding (`content_w`,
+//    `content_h`, which the layout leaves) and `view` the region's size less its padding and its
+//    bars. Content that shrinks below the view takes the offset back with it in the same frame.
+//  - A bar is two placed children recorded after the content (from the `on_end` of the region's
+//    element), so they draw over it and are not moved by the offset: a track the theme's
+//    `scrollbar` thick along the inside of the region's border, and a thumb in it. A bar is shown
+//    while the content overflows the view along its axis, and the content is narrowed to make room
+//    for it (the region's padding grows by the bar's thickness). The bars a region starts a frame
+//    with are the last frame's; when the solved frame shows that one must appear or go, the padding
+//    changes and the frame is solved once more, so the first frame whose content overflows already
+//    has its bar and its narrowed content. The second solve does not change the bars again. (A
+//    region on both axes whose second bar is needed only because the first one narrowed it gets
+//    that bar the frame after.)
+//  - The thumb's length is the track's share of what is in view, rounded down, and never less than
+//    16 units (or the track); its place is the travel's share of the offset, rounded down, so it
+//    touches the track's end exactly at the largest offset. A thumb drag moves the offset by the
+//    pointer's movement times the offset's range over the thumb's travel, rounded to the nearest
+//    pixel (a half up), from the offset at the press, with the last frame's range and travel.
+//  - The wheel arrives in notches. A notch is WHEEL_STEP logical units (`to_pixels`); what a smooth
+//    wheel turns past a whole pixel is kept in `Values.f` (f[0] across, f[1] down) and added to the
+//    next turn, and dropped when the offset meets either end. Up (a positive notch) moves towards
+//    the start, and so does left (a negative one). Wheels turned past an i32 are held.
+//  - Where the wheel goes is decided at begin_frame from the last frame: among the regions under
+//    the pointer in the tree that is topmost there, the innermost that can still move that way
+//    takes it, so a nested region scrolls until its end and then the region around it does. The
+//    region takes it from the frame's input when it is chosen (`take_wheel` gets nothing more) and
+//    applies it when it is begun. With no region that can move along the vertical wheel's axis, the
+//    innermost region that scrolls only sideways takes the vertical wheel as sideways (down is
+//    right). A region that is not enabled takes neither the wheel nor a drag, and passes the wheel
+//    on.
+//
+// A region needs its size from outside (fixed, `take`, or GROW in a parent with a size): fitted,
+// or GROW in a parent that fits its content, it is as large as its content and has nothing to
+// scroll, which is not an error.
+//
+// This file is the subsystem's place in the Ui: `ui.scroll` is its state. `begin_frame` calls
+// `reset_state`, which routes the wheel. `end_frame` calls `settle_regions` once the layout is
+// solved: it decides the bars, holds every offset in its range, and places the bars, and answers
+// `relayout` when a bar appeared or went (one more solve, then one more settle) or else
+// `reposition`; `finish_frame`, after the frame is emitted, notes each region's hit area and where
+// its content starts, and the frame's regions become the last frame's.
 namespace ui {
+    // The axes a region scrolls along.
+    enum ScrollAxes: u8 { vertical, horizontal, both }
+
+    // A region as the last frame left it, in device pixels: its offset and the largest it can be,
+    // the size of its view (less padding and bars) and of its content.
+    struct ScrollView {
+        x: i32 = 0, y: i32 = 0, max_x: i32 = 0, max_y: i32 = 0,
+        view_w: i32 = 0, view_h: i32 = 0, content_w: i32 = 0, content_h: i32 = 0,
+    }
+
+    // The rows of a virtual list to record this frame: `first` up to but not including `last`, each
+    // `row` pixels high, after a spacer of `before` pixels and followed by one of `after`.
+    struct Rows { first: u32 = 0, last: u32 = 0, row: i32 = 0, before: i32 = 0, after: i32 = 0 }
+
+    // A region that scrolls down, its content a column. Its id is made from `id`; `opts.box` lays it
+    // out (it fills its parent, GROW on both axes, unless the box sizes it; it always clips). It
+    // describes itself as a `scroll` node whose value is its offset down.
+    fn begin_scroll { mut ui: Ui, id: []u8, opts: Opts } -> Scope {
+        return begin_scroll_with{ &ui, id, axes = ScrollAxes::vertical, axis = Axis::column, opts }
+    }
+
+    // A region that scrolls along `axes`, its content laid out along `axis`.
+    fn begin_scroll_with { mut ui: Ui, id: []u8, axes: ScrollAxes, axis: Axis, opts: Opts } -> Scope {
+        if not tree::can_record{ &ui } { return Scope{ .. } }
+        let region = make_id{ ui, name = id }
+        let wide = axes != ScrollAxes::vertical
+        let tall = axes != ScrollAxes::horizontal
+        let last = scroll::find_last{ ui, id = region }
+        let mut values = load_state{ &ui, id = region }
+        let mut r = scroll::Region{ id = region, axes, enabled = opts.enabled, .. }
+        if wide { r.x = scroll::hold_offset{ v = values.i[0] } }
+        if tall { r.y = scroll::hold_offset{ v = values.i[1] } }
+        let max_x = if let l = last { l.max_x } else { 0 }
+        let max_y = if let l = last { l.max_y } else { 0 }
+        if let l = last {
+            r.bar_x = wide and l.bar_x
+            r.bar_y = tall and l.bar_y
+        }
+
+        // The wheel routed to it at begin_frame.
+        if opts.enabled and region != NO_ID {
+            let step = to_pixels{ ui, length = scroll::WHEEL_STEP }
+            if wide and ui.scroll.wheel_x_to == region {
+                let turn = scroll::turn_wheel{ offset = r.x, notches = ui.scroll.wheel_x, rest = values.f[0], step, max = max_x }
+                r.x = turn.offset
+                values.f[0] = turn.rest
+                ui.scroll.wheel_x_to = NO_ID
+            }
+            if tall and ui.scroll.wheel_y_to == region {
+                let turn = scroll::turn_wheel{ offset = r.y, notches = -ui.scroll.wheel_y, rest = values.f[1], step, max = max_y }
+                r.y = turn.offset
+                values.f[1] = turn.rest
+                ui.scroll.wheel_y_to = NO_ID
+            }
+        }
+
+        // The thumbs, held as any widget is: from the last frame's regions.
+        let grip = PressOpts{ enabled = opts.enabled, focusable = false, .. }
+        if wide {
+            let it = press{ &ui, id = scroll::get_part_id{ id = region, part = "\x00thumb_x" }, opts = grip }
+            r.look_x = scroll::get_look{ it }
+            r.press_x = if it.pressed { r.x } else if let l = last { l.press_x } else { r.x }
+            if it.held { r.x = scroll::drag_thumb{ start = r.press_x, drag = it.drag_x, max = max_x, travel = if let l = last { l.travel_x } else { 0 } } }
+        }
+        if tall {
+            let it = press{ &ui, id = scroll::get_part_id{ id = region, part = "\x00thumb_y" }, opts = grip }
+            r.look_y = scroll::get_look{ it }
+            r.press_y = if it.pressed { r.y } else if let l = last { l.press_y } else { r.y }
+            if it.held { r.y = scroll::drag_thumb{ start = r.press_y, drag = it.drag_y, max = max_y, travel = if let l = last { l.travel_y } else { 0 } } }
+        }
+        values.i[0] = @as(i64, r.x)
+        values.i[1] = @as(i64, r.y)
+        if region != NO_ID { store_state{ &ui, id = region, values } }
+        r.want_x = r.x
+        r.want_y = r.y
+
+        let mut box = opts.box
+        box.clip = true
+        box.width = opts.box.width ifnull GROW
+        box.height = opts.box.height ifnull GROW
+        let scope = tree::open_element{ &ui, id = region, axis, box, root = null, on_end = scroll::end_region }
+        let element = tree::get_open{ ui }
+        if element == tree::NONE { return scope }
+        let at = @as(usize, element)
+        r.element = element
+        r.order = tree::get_order{ ui }
+        r.padding = ui.tree.elements[at].padding
+        r.parent = scroll::find_open{ ui, order = r.order }
+        if scroll::add_region{ &ui, r } {
+            let size = scroll::get_thickness{ ui }
+            ui.tree.elements[at].padding = scroll::add_gutters{ padding = r.padding, size, bar_x = r.bar_x, bar_y = r.bar_y }
+            ui.tree.elements[at].scroll_x = r.x
+            ui.tree.elements[at].scroll_y = r.y
+        }
+        describe{ &ui, id = region, role = Role::scroll, label = id, value = @as(f32, r.y), flags = 0 }
+        return scope
+    }
+
+    // How the region with `id` stood at the end of the last frame; null when it was not recorded.
+    fn get_scroll { ui: Ui, id: Id } -> ?ScrollView {
+        let r = scroll::find_last{ ui, id } ifnull { return null }
+        return ScrollView{
+            x = r.x, y = r.y, max_x = r.max_x, max_y = r.max_y,
+            view_w = r.view_w, view_h = r.view_h, content_w = r.content_w, content_h = r.content_h,
+        }
+    }
+
+    // Scrolls the region with `id` to the offset (`x`, `y`) in pixels, held to its range when it is
+    // next laid out: in this frame if it is recorded in it (before or after the call), otherwise
+    // when it next is. A wheel's leftover fraction is dropped.
+    fn set_scroll { mut ui: Ui, id: Id, x: i32, y: i32 } {
+        if id == NO_ID { return }
+        let hx = clamp_i32{ v = x, lo = 0, hi = MAX_PIXELS }
+        let hy = clamp_i32{ v = y, lo = 0, hi = MAX_PIXELS }
+        if let at = state::find_entry{ ui, id } {
+            ui.state.entries[at].values.i[0] = @as(i64, hx)
+            ui.state.entries[at].values.i[1] = @as(i64, hy)
+            ui.state.entries[at].values.f[0] = 0.0
+            ui.state.entries[at].values.f[1] = 0.0
+        } else {
+            let mut v: Values
+            v.i[0] = @as(i64, hx)
+            v.i[1] = @as(i64, hy)
+            store_state{ &ui, id, values = v }
+        }
+        for at in 0..@as(usize, ui.scroll.count) {
+            let r = ui.scroll.regions[at]
+            if r.id != id { continue }
+            let rx = if r.axes != ScrollAxes::vertical { hx } else { 0 }
+            let ry = if r.axes != ScrollAxes::horizontal { hy } else { 0 }
+            ui.scroll.regions[at].want_x = rx
+            ui.scroll.regions[at].want_y = ry
+            ui.tree.elements[@as(usize, r.element)].scroll_x = rx
+            ui.tree.elements[@as(usize, r.element)].scroll_y = ry
+        }
+    }
+
+    // The rows of a virtual list of `count` rows `row_height` units high (`to_pixels`, at least a
+    // pixel) that are in view: the list is the element open now, in the scroll region open now, and
+    // its rows are to touch. The first row is the offset into the list over the row height, the last
+    // the end of the view over it rounded up, both from the region's offset in this frame (after its
+    // wheel and drag) and the size of its view and the list's place in its content in the last
+    // frame. The offset used is held to the list's own range, so content that shrank shows rows,
+    // not a gap. Outside a region, or in a region's first frame, the view is the surface's height.
+    // The spacers are `first` and `count - last` rows, held at MAX_PIXELS.
+    fn find_rows { ui: Ui, count: u32, row_height: f32 } -> Rows {
+        let row = pick_max_i32{ a = 1, b = to_pixels{ ui, length = row_height } }
+        let mut offset: i64 = 0
+        let mut view = @as(i64, pick_max_i32{ a = 0, b = ui.draw.height })
+        let mut top: i64 = 0
+        let open = scroll::find_open{ ui, order = tree::get_order{ ui } }
+        if open != tree::NONE {
+            let r = ui.scroll.regions[@as(usize, open)]
+            offset = @as(i64, r.y)
+            if let l = scroll::find_last{ ui, id = r.id } {
+                if l.view_h > 0 { view = @as(i64, l.view_h) }
+                let list = tree::get_open{ ui }
+                if list != tree::NONE and list != r.element {
+                    if let rect = get_rect{ ui, id = ui.tree.elements[@as(usize, list)].id } { top = @as(i64, rect.y) - @as(i64, l.origin_y) }
+                }
+            }
+        }
+        let rows = @as(i64, count)
+        let step = @as(i64, row)
+        let mut from = offset - top
+        if from > rows * step - view { from = rows * step - view }
+        if from < 0 { from = 0 }
+        let first = from / step
+        let mut last = (from + view + step - 1) / step
+        if last > rows { last = rows }
+        return Rows{
+            first = @as(u32, first), last = @as(u32, last), row,
+            before = hold_pixels{ v = first * step }, after = hold_pixels{ v = (rows - last) * step },
+        }
+    }
+
     namespace scroll {
         // What settling the scroll regions changed.
         enum Settle: u8 { none, reposition, relayout }
 
-        struct State {}
+        // How far a notch of the wheel scrolls, and the shortest a thumb is, in logical units.
+        const WHEEL_STEP: f32 = 40.0
+        const MIN_THUMB: f32 = 16.0
 
+        // A region of a frame. `parent` is the region it is inside in the same tree (its place in the
+        // same table), `want_x`, `want_y` the offset it was recorded with, `x`, `y` the offset held
+        // to its range. `look_x`, `look_y`: its thumb at rest 0, hovered 1, held 2. `press_x`,
+        // `press_y`: the offset when a thumb was pressed. `area` is where its element took the
+        // pointer and `order` its tree's, and `origin_y` where its content's top was, as emitted.
+        struct Region {
+            id: Id = NO_ID, element: u32 = tree::NONE, parent: u32 = tree::NONE, order: u32 = 0,
+            axes: ScrollAxes = ScrollAxes::vertical, enabled: bool = true,
+            padding: Sides = Sides{ .. },
+            bar_x: bool = false, bar_y: bool = false,
+            track_x: u32 = tree::NONE, thumb_x: u32 = tree::NONE, track_y: u32 = tree::NONE, thumb_y: u32 = tree::NONE,
+            look_x: u8 = 0, look_y: u8 = 0,
+            want_x: i32 = 0, want_y: i32 = 0, x: i32 = 0, y: i32 = 0,
+            max_x: i32 = 0, max_y: i32 = 0, view_w: i32 = 0, view_h: i32 = 0, content_w: i32 = 0, content_h: i32 = 0,
+            travel_x: i32 = 0, travel_y: i32 = 0, press_x: i32 = 0, press_y: i32 = 0,
+            area: Rect = Rect{ .. }, origin_y: i32 = 0,
+        }
+
+        // `index` finds a region of `last` by id: open addressing over a power of two at least twice
+        // the table, a slot holding a place plus one.
+        struct State {
+            regions: []mut Region, count: u32,          // this frame's, in the order they were begun
+            last: []mut Region, last_count: u32,        // the last finished frame's
+            open: []mut u32, open_count: u32,           // being recorded, innermost last
+            index: []mut u32,
+            pass: u32,                                  // settle_regions calls this frame
+            wheel_x_to: Id, wheel_y_to: Id,             // where this frame's wheel went
+            wheel_x: f32, wheel_y: f32,
+        }
+
+        // A region is an identified element with a track and a thumb on each axis, so a frame has
+        // room for an eighth of its hit regions' worth of them; more are counted as `hits_full`
+        // and are plain clipping elements that do not scroll.
         fn make_state(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !State {
-            return State{}
+            let room = @as(usize, cap.hits / 8) + 4
+            let regions = try alloc::make(Region, S){ realloc, &heap, count = room }
+            let last = try alloc::make(Region, S){ realloc, &heap, count = room }
+            let open = try alloc::make(u32, S){ realloc, &heap, count = @as(usize, cap.scopes) + 1 }
+            let mut slots: usize = 2
+            while slots < room * 2 { slots = slots * 2 }
+            let index = try alloc::make(u32, S){ realloc, &heap, count = slots }
+            return State{
+                regions, count = 0, last, last_count = 0, open, open_count = 0, index, pass = 0,
+                wheel_x_to = NO_ID, wheel_y_to = NO_ID, wheel_x = 0.0, wheel_y = 0.0,
+            }
         }
 
-        fn reset_state { mut ui: Ui } {}
+        // begin_frame, after the input is sealed: the wheel goes to a region.
+        fn reset_state { mut ui: Ui } {
+            ui.scroll.count = 0
+            ui.scroll.open_count = 0
+            ui.scroll.pass = 0
+            route_wheel{ &ui }
+        }
 
+        // An offset from the state table: 0 to MAX_PIXELS.
+        fn hold_offset { v: i64 } -> i32 {
+            if v <= 0 { return 0 }
+            return if v > 1000000000 { MAX_PIXELS } else { @as(i32, v) }
+        }
+
+        // The id of a region's track or thumb: the region's id hashed on with a name no widget has.
+        fn get_part_id { id: Id, part: []u8 } -> Id {
+            if id == NO_ID { return NO_ID }
+            let h = hash_bytes{ seed = @as(u64, id), bytes = part }
+            return @as(Id, if h == 0 { 1 } else { h })
+        }
+
+        fn get_look { it: Interaction } -> u8 {
+            return if it.held { 2 } else if it.hovered { 1 } else { 0 }
+        }
+
+        // A bar's thickness, in pixels: the theme's `scrollbar`.
+        fn get_thickness { ui: Ui } -> i32 {
+            return pick_max_i32{ a = 0, b = to_pixels{ ui, length = ui.theme.scrollbar } }
+        }
+
+        // A region's padding with room for the bars it shows: at the right for the one down, at the
+        // bottom for the one across.
+        fn add_gutters { padding: Sides, size: i32, bar_x: bool, bar_y: bool } -> Sides {
+            let mut p = padding
+            if bar_y { p.right = add_pixels{ a = p.right, b = size } }
+            if bar_x { p.bottom = add_pixels{ a = p.bottom, b = size } }
+            return p
+        }
+
+        // The size of an element less its padding, along one axis; never below 0.
+        fn get_inner { e: tree::Element, wide: bool } -> i32 {
+            let v = if wide { @as(i64, e.w) - @as(i64, e.padding.left) - @as(i64, e.padding.right) } else { @as(i64, e.h) - @as(i64, e.padding.top) - @as(i64, e.padding.bottom) }
+            return pick_max_i32{ a = 0, b = hold_pixels{ v } }
+        }
+
+        // `a / b` rounded down, for a `b` above 0.
+        fn divide_down { a: i64, b: i64 } -> i64 {
+            let q = a / b
+            return if a % b != 0 and a < 0 { q - 1 } else { q }
+        }
+
+        // An offset turned by `notches` of `step` pixels (positive towards the end), with what a
+        // smooth wheel left over before; held to 0..max, which drops the leftover.
+        struct Turn { offset: i32, rest: f32 }
+
+        fn turn_wheel { offset: i32, notches: f32, rest: f32, step: i32, max: i32 } -> Turn {
+            let kept = if rest > -1.0 and rest < 1.0 { rest } else { 0.0 }
+            let total = kept + notches * @as(f32, step)
+            let whole = if total >= 0.0 { floor_pixels{ v = total } } else { ceil_pixels{ v = total } }
+            let left = total - @as(f32, whole)
+            let next = @as(i64, offset) + @as(i64, whole)
+            let top = @as(i64, pick_max_i32{ a = 0, b = max })
+            if next <= 0 { return Turn{ offset = 0, rest = 0.0 } }
+            if next >= top { return Turn{ offset = @as(i32, top), rest = 0.0 } }
+            return Turn{ offset = @as(i32, next), rest = if left > -1.0 and left < 1.0 { left } else { 0.0 } }
+        }
+
+        // The offset a thumb dragged `drag` pixels gives: `start` plus drag * max / travel, rounded
+        // to the nearest pixel (a half up), held to 0..max.
+        fn drag_thumb { start: i32, drag: i32, max: i32, travel: i32 } -> i32 {
+            let top = pick_max_i32{ a = 0, b = max }
+            if max <= 0 or travel <= 0 { return clamp_i32{ v = start, lo = 0, hi = top } }
+            let den = @as(i64, travel)
+            let moved = divide_down{ a = @as(i64, drag) * @as(i64, max) * 2 + den, b = den * 2 }
+            let next = @as(i64, start) + moved
+            if next <= 0 { return 0 }
+            if next >= @as(i64, top) { return top }
+            return @as(i32, next)
+        }
+
+        // A thumb's length on a track of `track` pixels: the track's share of what is in view,
+        // rounded down, at least `least` (or the whole track when that is shorter).
+        fn get_thumb_length { track: i32, view: i32, content: i32, least: i32 } -> i32 {
+            if track <= 0 { return 0 }
+            if content <= 0 or view >= content { return track }
+            let len = @as(i64, track) * @as(i64, pick_max_i32{ a = 0, b = view }) / @as(i64, content)
+            let low = @as(i64, pick_min_i32{ a = pick_max_i32{ a = 0, b = least }, b = track })
+            return @as(i32, if len < low { low } else { len })
+        }
+
+        // Where a thumb is on its travel: the travel's share of the offset, rounded down.
+        fn get_thumb_spot { travel: i32, offset: i32, max: i32 } -> i32 {
+            if travel <= 0 or max <= 0 or offset <= 0 { return 0 }
+            if offset >= max { return travel }
+            return @as(i32, @as(i64, travel) * @as(i64, offset) / @as(i64, max))
+        }
+
+        // ---- the tables
+
+        fn find_slot { ui: Ui, id: Id, table: []Region } -> usize {
+            let mask = ui.scroll.index.len - 1
+            let mut at = @as(usize, @as(u64, id) & @as(u64, mask))
+            while ui.scroll.index[at] != 0 {
+                let k = @as(usize, ui.scroll.index[at] - 1)
+                if k < table.len and table[k].id == id { return at }
+                at = (at + 1) & mask
+            }
+            return at
+        }
+
+        // The last frame's region with `id`.
+        fn find_last { ui: Ui, id: Id } -> ?Region {
+            if id == NO_ID or ui.scroll.last_count == 0 { return null }
+            let slot = ui.scroll.index[find_slot{ ui, id, table = ui.scroll.last[..@as(usize, ui.scroll.last_count)] }]
+            if slot == 0 { return null }
+            return ui.scroll.last[@as(usize, slot - 1)]
+        }
+
+        // The region being recorded, when it is in the tree of `order`; NONE otherwise.
+        fn find_open { ui: Ui, order: u32 } -> u32 {
+            let n = @as(usize, ui.scroll.open_count)
+            if n == 0 { return tree::NONE }
+            let at = ui.scroll.open[n - 1]
+            return if ui.scroll.regions[@as(usize, at)].order == order { at } else { tree::NONE }
+        }
+
+        // Adds a region of this frame and opens it. False, and one drop counted, when the table is
+        // full.
+        fn add_region { mut ui: Ui, r: Region } -> bool {
+            let n = @as(usize, ui.scroll.count)
+            if n >= ui.scroll.regions.len or @as(usize, ui.scroll.open_count) >= ui.scroll.open.len {
+                report_drop{ &ui, kind = ProblemKind::hits_full }
+                return false
+            }
+            ui.scroll.regions[n] = r
+            ui.scroll.count = ui.scroll.count + 1
+            ui.scroll.open[@as(usize, ui.scroll.open_count)] = @as(u32, n)
+            ui.scroll.open_count = ui.scroll.open_count + 1
+            return true
+        }
+
+        // ---- the bars
+
+        struct Bar { track: u32, thumb: u32 }
+
+        // The end of a region's scope: its bars, over its content. Their places and sizes are
+        // settle_regions'.
+        fn end_region { mut ui: Ui, element: u32 } {
+            let n = @as(usize, ui.scroll.open_count)
+            if n == 0 { return }
+            let at = @as(usize, ui.scroll.open[n - 1])
+            if ui.scroll.regions[at].element != element { return }
+            ui.scroll.open_count = ui.scroll.open_count - 1
+            let r = ui.scroll.regions[at]
+            if r.axes != ScrollAxes::vertical {
+                let bar = add_bar{ &ui, id = r.id, wide = true, look = r.look_x }
+                ui.scroll.regions[at].track_x = bar.track
+                ui.scroll.regions[at].thumb_x = bar.thumb
+            }
+            if r.axes != ScrollAxes::horizontal {
+                let bar = add_bar{ &ui, id = r.id, wide = false, look = r.look_y }
+                ui.scroll.regions[at].track_y = bar.track
+                ui.scroll.regions[at].thumb_y = bar.thumb
+            }
+        }
+
+        // A track and its thumb, placed in the region, with no size yet. The thumb is the theme's
+        // border colour at rest, its muted text colour hovered and its accent held.
+        fn add_bar { mut ui: Ui, id: Id, wide: bool, look: u8 } -> Bar {
+            let track_id = get_part_id{ id, part = if wide { "\x00track_x" } else { "\x00track_y" } }
+            let thumb_id = get_part_id{ id, part = if wide { "\x00thumb_x" } else { "\x00thumb_y" } }
+            let fill = if look == 2 { ui.theme.accent } else if look == 1 { ui.theme.text_muted } else { ui.theme.border }
+            let track = tree::open_element{ &ui, id = track_id, axis = Axis::column, box = place_pixels{ rect = Rect{ .. } }, root = null, on_end = null }
+            let track_at = tree::get_open{ ui }
+            let thumb = tree::open_element{ &ui, id = thumb_id, axis = Axis::column, box = Box{ pixels = Rect{ .. }, fill, .. }, root = null, on_end = null }
+            let thumb_at = tree::get_open{ ui }
+            end{ &ui, scope = thumb }
+            end{ &ui, scope = track }
+            return Bar{ track = track_at, thumb = thumb_at }
+        }
+
+        // Puts a placed child of a solved tree on `rect` of its parent, with corners of `radius`.
+        fn put_rect { mut ui: Ui, element: u32, rect: Rect, radius: f32 } {
+            if element == tree::NONE or element >= ui.tree.count { return }
+            let at = @as(usize, element)
+            let w = pick_max_i32{ a = 0, b = rect.w }
+            let h = pick_max_i32{ a = 0, b = rect.h }
+            ui.tree.elements[at].offset_x = rect.x
+            ui.tree.elements[at].offset_y = rect.y
+            ui.tree.elements[at].width = tree::Extent{ kind = SizeKind::fixed, value = w, .. }
+            ui.tree.elements[at].height = tree::Extent{ kind = SizeKind::fixed, value = h, .. }
+            ui.tree.elements[at].w = w
+            ui.tree.elements[at].h = h
+            ui.tree.elements[at].style.radius = round{ radius }
+        }
+
+        // ---- settling
+
+        // end_frame, after a solve. The first call decides each region's bars (`relayout` when one
+        // appeared or went); every call holds the offsets to their ranges and places the bars.
         fn settle_regions { mut ui: Ui } -> Settle {
-            return Settle::none
+            let count = @as(usize, ui.scroll.count)
+            if count == 0 { return Settle::none }
+            ui.scroll.pass = add_count{ a = ui.scroll.pass, b = 1 }
+            let first = ui.scroll.pass == 1
+            let size = get_thickness{ ui }
+            let mut result = Settle::reposition
+            for at in 0..count {
+                if settle_region{ &ui, at, first, size } { result = Settle::relayout }
+            }
+            return result
         }
 
-        fn finish_frame { mut ui: Ui } {}
+        fn settle_region { mut ui: Ui, at: usize, first: bool, size: i32 } -> bool {
+            let r = ui.scroll.regions[at]
+            let el = @as(usize, r.element)
+            let wide = r.axes != ScrollAxes::vertical
+            let tall = r.axes != ScrollAxes::horizontal
+            let mut relayout = false
+            if first {
+                let solved = ui.tree.elements[el]
+                let need_x = wide and solved.content_w > get_inner{ e = solved, wide = true }
+                let need_y = tall and solved.content_h > get_inner{ e = solved, wide = false }
+                if need_x != r.bar_x or need_y != r.bar_y {
+                    ui.scroll.regions[at].bar_x = need_x
+                    ui.scroll.regions[at].bar_y = need_y
+                    ui.tree.elements[el].padding = add_gutters{ padding = r.padding, size, bar_x = need_x, bar_y = need_y }
+                    relayout = true
+                }
+            }
+            let e = ui.tree.elements[el]
+            let view_w = get_inner{ e, wide = true }
+            let view_h = get_inner{ e, wide = false }
+            let max_x = if wide { pick_max_i32{ a = 0, b = sub_pixels{ a = e.content_w, b = view_w } } } else { 0 }
+            let max_y = if tall { pick_max_i32{ a = 0, b = sub_pixels{ a = e.content_h, b = view_h } } } else { 0 }
+            let x = clamp_i32{ v = r.want_x, lo = 0, hi = max_x }
+            let y = clamp_i32{ v = r.want_y, lo = 0, hi = max_y }
+            ui.tree.elements[el].scroll_x = x
+            ui.tree.elements[el].scroll_y = y
+            ui.scroll.regions[at].x = x
+            ui.scroll.regions[at].y = y
+            ui.scroll.regions[at].max_x = max_x
+            ui.scroll.regions[at].max_y = max_y
+            ui.scroll.regions[at].view_w = view_w
+            ui.scroll.regions[at].view_h = view_h
+            ui.scroll.regions[at].content_w = e.content_w
+            ui.scroll.regions[at].content_h = e.content_h
+            write_offsets{ &ui, id = r.id, x, y, cut_x = x != r.want_x, cut_y = y != r.want_y }
+            place_bars{ &ui, at, size }
+            return relayout
+        }
+
+        // The held offsets back into the region's state, without asking for it (which would forget
+        // the elements it was asked for inside of).
+        fn write_offsets { mut ui: Ui, id: Id, x: i32, y: i32, cut_x: bool, cut_y: bool } {
+            let at = state::find_entry{ ui, id } ifnull { return }
+            ui.state.entries[at].values.i[0] = @as(i64, x)
+            ui.state.entries[at].values.i[1] = @as(i64, y)
+            if cut_x { ui.state.entries[at].values.f[0] = 0.0 }
+            if cut_y { ui.state.entries[at].values.f[1] = 0.0 }
+        }
+
+        // The bars of region `at` on the region's solved rectangle: a bar it does not show has no size.
+        fn place_bars { mut ui: Ui, at: usize, size: i32 } {
+            let r = ui.scroll.regions[at]
+            let e = ui.tree.elements[@as(usize, r.element)]
+            let edge = e.style.border
+            let least = to_pixels{ ui, length = MIN_THUMB }
+            let radius = @as(f32, size) * 0.5
+            let none = Rect{ .. }
+            if r.track_y != tree::NONE {
+                let track = pick_max_i32{ a = 0, b = hold_pixels{ v = @as(i64, e.h) - @as(i64, edge.top) - @as(i64, edge.bottom) - @as(i64, if r.bar_x { size } else { 0 }) } }
+                let len = get_thumb_length{ track, view = r.view_h, content = r.content_h, least }
+                let travel = track - len
+                let spot = get_thumb_spot{ travel, offset = r.y, max = r.max_y }
+                let x = hold_pixels{ v = @as(i64, e.w) - @as(i64, edge.right) - @as(i64, size) }
+                put_rect{ &ui, element = r.track_y, rect = if r.bar_y { Rect{ x, y = edge.top, w = size, h = track } } else { none }, radius = 0.0 }
+                put_rect{ &ui, element = r.thumb_y, rect = if r.bar_y { Rect{ x = 0, y = spot, w = size, h = len } } else { none }, radius }
+                ui.scroll.regions[at].travel_y = if r.bar_y { travel } else { 0 }
+            }
+            if r.track_x != tree::NONE {
+                let track = pick_max_i32{ a = 0, b = hold_pixels{ v = @as(i64, e.w) - @as(i64, edge.left) - @as(i64, edge.right) - @as(i64, if r.bar_y { size } else { 0 }) } }
+                let len = get_thumb_length{ track, view = r.view_w, content = r.content_w, least }
+                let travel = track - len
+                let spot = get_thumb_spot{ travel, offset = r.x, max = r.max_x }
+                let y = hold_pixels{ v = @as(i64, e.h) - @as(i64, edge.bottom) - @as(i64, size) }
+                put_rect{ &ui, element = r.track_x, rect = if r.bar_x { Rect{ x = edge.left, y, w = track, h = size } } else { none }, radius = 0.0 }
+                put_rect{ &ui, element = r.thumb_x, rect = if r.bar_x { Rect{ x = spot, y = 0, w = len, h = size } } else { none }, radius }
+                ui.scroll.regions[at].travel_x = if r.bar_x { travel } else { 0 }
+            }
+        }
+
+        // ---- the wheel
+
+        // The region the wheel goes to on each axis, from the last frame's hit regions and scroll regions.
+        fn route_wheel { mut ui: Ui } {
+            ui.scroll.wheel_x_to = NO_ID
+            ui.scroll.wheel_y_to = NO_ID
+            ui.scroll.wheel_x = 0.0
+            ui.scroll.wheel_y = 0.0
+            let now = ui.input.now
+            if not now.inside or (now.wheel_x == 0.0 and now.wheel_y == 0.0) { return }
+            let inner = find_under{ ui, x = now.x, y = now.y }
+            if inner == tree::NONE { return }
+            if now.wheel_x != 0.0 {
+                let k = find_mover{ ui, from = inner, wide = true, forward = now.wheel_x > 0.0, sideways = false }
+                if k != tree::NONE {
+                    ui.scroll.wheel_x_to = ui.scroll.last[@as(usize, k)].id
+                    ui.scroll.wheel_x = now.wheel_x
+                    ui.input.now.wheel_x = 0.0
+                }
+            }
+            if now.wheel_y != 0.0 {
+                let k = find_mover{ ui, from = inner, wide = false, forward = now.wheel_y < 0.0, sideways = false }
+                if k != tree::NONE {
+                    ui.scroll.wheel_y_to = ui.scroll.last[@as(usize, k)].id
+                    ui.scroll.wheel_y = now.wheel_y
+                    ui.input.now.wheel_y = 0.0
+                    return
+                }
+                let s = find_mover{ ui, from = inner, wide = true, forward = now.wheel_y < 0.0, sideways = true }
+                if s == tree::NONE { return }
+                let id = ui.scroll.last[@as(usize, s)].id
+                if ui.scroll.wheel_x_to != NO_ID and ui.scroll.wheel_x_to != id { return }
+                ui.scroll.wheel_x_to = id
+                ui.scroll.wheel_x = ui.scroll.wheel_x - now.wheel_y
+                ui.input.now.wheel_y = 0.0
+            }
+        }
+
+        // The innermost of the last frame's regions under (x, y) in the tree topmost there: the one
+        // recorded last among them.
+        fn find_under { ui: Ui, x: i32, y: i32 } -> u32 {
+            let top = interact::find_topmost{ ui, x, y }
+            if top == tree::NONE { return tree::NONE }
+            let order = ui.emit.hits[@as(usize, top)].order
+            let mut found = tree::NONE
+            let mut deepest: u32 = 0
+            for g at i in ui.scroll.last[..@as(usize, ui.scroll.last_count)] {
+                if g.order != order or not interact::contains{ r = g.area, x, y } { continue }
+                if found == tree::NONE or g.element >= deepest {
+                    found = @as(u32, i)
+                    deepest = g.element
+                }
+            }
+            return found
+        }
+
+        // From region `from` outwards, the first that can move along an axis (`forward`: towards
+        // the end); with `sideways`, only a region that scrolls across and not down counts.
+        fn find_mover { ui: Ui, from: u32, wide: bool, forward: bool, sideways: bool } -> u32 {
+            let mut k = from
+            while k != tree::NONE and k < ui.scroll.last_count {
+                let g = ui.scroll.last[@as(usize, k)]
+                let along = if wide { g.axes != ScrollAxes::vertical } else { g.axes != ScrollAxes::horizontal }
+                let fits = not sideways or g.axes == ScrollAxes::horizontal
+                let offset = if wide { g.x } else { g.y }
+                let max = if wide { g.max_x } else { g.max_y }
+                let moves = if forward { offset < max } else { offset > 0 }
+                if g.enabled and g.id != NO_ID and along and fits and moves { return k }
+                // A region's parent was begun before it, so this ends.
+                if g.parent >= k { return tree::NONE }
+                k = g.parent
+            }
+            return tree::NONE
+        }
+
+        // ---- after the frame
+
+        // Each region's hit area and its content's top as emitted; then this frame's regions are
+        // the last frame's, found by id through `index`.
+        fn finish_frame { mut ui: Ui } {
+            let count = @as(usize, ui.scroll.count)
+            if count > 0 or ui.scroll.last_count > 0 {
+                for &s in ui.scroll.index { s = 0 }
+            }
+            for at in 0..count {
+                let r = ui.scroll.regions[at]
+                let e = ui.tree.elements[@as(usize, r.element)]
+                ui.scroll.regions[at].origin_y = hold_pixels{ v = @as(i64, e.y) + @as(i64, e.padding.top) - @as(i64, e.scroll_y) }
+                ui.scroll.regions[at].area = Rect{ .. }
+                if r.id == NO_ID { continue }
+                let slot = find_slot{ ui, id = r.id, table = ui.scroll.regions[..count] }
+                if ui.scroll.index[slot] == 0 { ui.scroll.index[slot] = @as(u32, at + 1) }
+            }
+            if count > 0 {
+                for h in ui.emit.hits[..@as(usize, ui.emit.hit_count)] {
+                    if h.id == NO_ID { continue }
+                    let slot = ui.scroll.index[find_slot{ ui, id = h.id, table = ui.scroll.regions[..count] }]
+                    if slot == 0 { continue }
+                    ui.scroll.regions[@as(usize, slot - 1)].area = h.area
+                    ui.scroll.regions[@as(usize, slot - 1)].order = h.order
+                }
+            }
+            let done = ui.scroll.regions
+            ui.scroll.regions = ui.scroll.last
+            ui.scroll.last = done
+            ui.scroll.last_count = ui.scroll.count
+            ui.scroll.count = 0
+            ui.scroll.open_count = 0
+            ui.scroll.pass = 0
+        }
     }
 }

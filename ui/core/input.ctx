@@ -314,7 +314,7 @@ namespace ui {
         fn finish_frame { mut ui: Ui } {
             let mut r = ui.input.asked
             r.wants_pointer = is_pointer_taken{ ui }
-            r.wants_keys = r.text_input or ui.emit.floor != 0
+            r.wants_keys = r.text_input or ui.emit.floor != 0 or ui.layers.popup_count > 0
             ui.input.requests = r
         }
 
@@ -334,8 +334,9 @@ namespace ui {
             return interact::find_topmost{ ui, x = ui.input.pending.x, y = ui.input.pending.y } != tree::NONE
         }
 
+        // An open popup takes keys too: Escape closes it.
         fn is_keys_taken { ui: Ui } -> bool {
-            return ui.input.requests.text_input or ui.emit.floor != 0
+            return ui.input.requests.text_input or ui.emit.floor != 0 or ui.layers.popup_count > 0
         }
 
         // Whether code recorded here is behind the modal tree that was up in the last frame, which

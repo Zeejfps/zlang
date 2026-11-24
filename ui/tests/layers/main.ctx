@@ -1,0 +1,869 @@
+// Stage 8's test: layers (overlays, windows, modals, popups, tooltips) in this file, scroll regions
+// and virtual rows in scroll.ctx.
+//
+//   kotor/tools/ctxc run ui/tests/layers                  (from the repository root)
+//   kotor/tools/ctxc run ui/tests/layers -- --update      rewrite the goldens after an intended change
+//
+// Interaction lags layout by a frame by design, so every scripted check names the frame a result
+// appears on and checks the frames around it. Frames are counted from 1 in each check. Exits 1
+// when any check fails.
+
+const GOLDEN_DIR: []u8 = "ui/tests/layers/golden"
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let mut t = ui_test::Tally{ run = 0, failed = 0 }
+    let buf = mem::pages{ &mem, size = 268435456 } ifnull { return 1 }
+    let mut heap = arena::new{ buf }
+    let update = ui_test::has_flag{ args, flag = "--update" }
+
+    check_order{ &io, &fs, &t, &heap, update }
+    check_raise{ &io, &t, &heap }
+    check_overlay_hits{ &io, &t, &heap }
+    check_modal_click{ &io, &t, &heap }
+    check_nested_modals{ &io, &t, &heap }
+    check_popup_dismiss{ &io, &t, &heap }
+    check_anchor_gone{ &io, &t, &heap }
+    check_popup_edges{ &io, &t, &heap }
+    check_popup_children{ &io, &t, &heap }
+    check_popup_in_scroll{ &io, &t, &heap }
+    check_tooltip{ &io, &t, &heap }
+    check_open_at_end{ &io, &t, &heap }
+    check_full_layers{ &io, &t, &heap }
+    check_place_extremes{ &io, &t }
+
+    check_bar_appears{ &io, &t, &heap }
+    check_wheel_nested{ &io, &t, &heap }
+    check_wheel_both{ &io, &t, &heap }
+    check_thumb_drag{ &io, &t, &heap }
+    check_virtual{ &io, &t, &heap }
+    check_one_pixel{ &io, &t, &heap }
+    check_held{ &io, &t, &heap }
+    check_thickness{ &io, &t, &heap }
+    check_shrink{ &io, &t, &heap }
+    check_ttl{ &io, &t, &heap }
+    check_unsized{ &io, &t, &heap }
+    check_scroll_golden{ &io, &fs, &t, &heap, update }
+
+    _ = @fmt(&io, "ui/tests/layers: {} checks, {} failed\n", t.run, t.failed)
+    io::flush{ &io }
+    return if t.failed == 0 { 0 } else { 1 }
+}
+
+// ---- helpers
+
+const RED: ui::Color = ui::Color{ r = 255, g = 0, b = 0, .. }
+const GREEN: ui::Color = ui::Color{ r = 0, g = 160, b = 0, .. }
+const BLUE: ui::Color = ui::Color{ r = 0, g = 0, b = 255, .. }
+const YELLOW: ui::Color = ui::Color{ r = 255, g = 255, b = 0, .. }
+const PURPLE: ui::Color = ui::Color{ r = 128, g = 0, b = 128, .. }
+const GRAY: ui::Color = ui::Color{ r = 128, g = 128, b = 128, .. }
+const SLATE: ui::Color = ui::Color{ r = 64, g = 80, b = 96, .. }
+const WHITE: ui::Color = ui::Color{ r = 255, g = 255, b = 255, .. }
+const CONTROL: ui::Color = ui::Color{ r = 48, g = 52, b = 62, .. }
+const PANEL: ui::Color = ui::Color{ r = 32, g = 35, b = 42, .. }
+const EDGE: ui::Color = ui::Color{ r = 64, g = 69, b = 82, .. }
+const ACCENT: ui::Color = ui::Color{ r = 74, g = 144, b = 226, .. }
+
+fn get_small { } -> ui::Capacity {
+    return ui::Capacity{
+        elements = 1024, text = 16384, cmds = 1024, clips = 32, hits = 512, states = 64, nodes = 64,
+        fonts = 4, scopes = 32, layers = 8, lines = 64, measures = 16, shaped = 16,
+    }
+}
+
+fn make_ui { mut heap: arena::Arena, cap: ui::Capacity } -> !ui::Ui {
+    let mut gui = try ui::make{ realloc = arena::alloc, &heap, cap }
+    let def = try ui_test::make_test_font{ realloc = arena::alloc, &heap }
+    if let font = ui::add_font{ ui = &gui, font = def } { gui.theme.font = font }
+    return gui
+}
+
+// Frames of `width` by `height` pixels at `scale`, an eighth of a second apart (a dt whose sums
+// are exact).
+fn make_driver { mut heap: arena::Arena, width: i32, height: i32, scale: f32 } -> !ui_test::Driver {
+    return ui_test::make_driver{ realloc = arena::alloc, &heap, width, height, scale, dt = 0.125, clipboard = 64 }
+}
+
+fn is_clean { ui: ui::Ui } -> bool {
+    return ui.stats.dropped == 0 and ui.stats.problems == 0 and ui.problem_count == 0 and ui.draw.dropped == 0
+}
+
+fn has_kept { ui: ui::Ui, kind: ui::ProblemKind } -> bool {
+    for i in 0..@as(usize, ui.problem_count) {
+        if ui.problems[i].kind == kind { return true }
+    }
+    return false
+}
+
+// The last finished frame's rectangle of `id`, or one of -1s when it had none.
+fn find_rect { ui: ui::Ui, id: ui::Id } -> ui::Rect {
+    return ui::get_rect{ ui, id } ifnull ui::Rect{ x = -1, y = -1, w = -1, h = -1 }
+}
+
+// The area where `id` took the pointer in the last finished frame, or one of -1s.
+fn find_area { ui: ui::Ui, id: ui::Id } -> ui::Rect {
+    for h in ui.emit.hits[..@as(usize, ui.emit.hit_count)] {
+        if h.id == id { return h.area }
+    }
+    return ui::Rect{ x = -1, y = -1, w = -1, h = -1 }
+}
+
+fn is_rect { r: ui::Rect, x: i32, y: i32, w: i32, h: i32 } -> bool {
+    return r.x == x and r.y == y and r.w == w and r.h == h
+}
+
+fn top_id { ui: ui::Ui, name: []u8 } -> ui::Id {
+    return ui::make_id{ ui, name }
+}
+
+// Where the first rect shape filled with `color` is in the draw list; -1 when there is none.
+fn find_fill { ui: ui::Ui, color: ui::Color } -> i32 {
+    for i in 0..@as(usize, ui.draw.count) {
+        match ui.draw.cmds[i] {
+            rect{ style } => {
+                let c = style.fill
+                if c.r == color.r and c.g == color.g and c.b == color.b and c.a == color.a { return @as(i32, i) }
+            }
+            else => {}
+        }
+    }
+    return -1
+}
+
+// The first rect shape filled with `color`, and its clip; a rect of -1s when there is none.
+struct Shape { rect: ui::Rect, clip: u16 }
+
+fn find_shape { ui: ui::Ui, color: ui::Color } -> Shape {
+    let at = find_fill{ ui, color }
+    if at >= 0 {
+        match ui.draw.cmds[@as(usize, at)] {
+            rect{ rect, clip } => { return Shape{ rect, clip } }
+            else => {}
+        }
+    }
+    return Shape{ rect = ui::Rect{ x = -1, y = -1, w = -1, h = -1 }, clip = 0 }
+}
+
+fn fill_with { color: ui::Color } -> ui::RectStyle {
+    return ui::RectStyle{ fill = color, .. }
+}
+
+fn place_filled { x: f32, y: f32, w: f32, h: f32, color: ui::Color } -> ui::Box {
+    let mut box = ui::place{ x, y, w, h }
+    box.fill = color
+    return box
+}
+
+// A filled element placed in the open element, with `id`.
+fn add_block { mut ui: ui::Ui, id: ui::Id, x: f32, y: f32, w: f32, h: f32, color: ui::Color } {
+    let el = ui::begin_element{ &ui, id, axis = ui::Axis::row, box = place_filled{ x, y, w, h, color } }
+    ui::end{ &ui, scope = el }
+}
+
+// A filled element in the open element's flow, `w` by `h` units.
+fn add_cell { mut ui: ui::Ui, w: f32, h: f32, color: ui::Color } {
+    let el = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ size = w }, height = ui::fix{ size = h }, fill = color, .. } }
+    ui::end{ &ui, scope = el }
+}
+
+// A button built from the primitives: `press`, a node, and a placed element with the same id.
+fn add_button { mut ui: ui::Ui, name: []u8, x: f32, y: f32, w: f32, h: f32 } -> ui::Interaction {
+    let id = ui::make_id{ ui, name }
+    let it = ui::press{ &ui, id, opts = ui::PressOpts{ .. } }
+    ui::describe{ &ui, id, role = ui::Role::button, label = name, value = 0.0, flags = 0 }
+    add_block{ &ui, id, x, y, w, h, color = CONTROL }
+    return it
+}
+
+// An item in the open element's flow, 80 by 40, that can be pressed.
+fn add_item { mut ui: ui::Ui, name: []u8 } -> ui::Interaction {
+    let id = ui::make_id{ ui, name }
+    let it = ui::press{ &ui, id, opts = ui::PressOpts{ .. } }
+    let el = ui::begin_element{ &ui, id, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ size = 80.0 }, height = ui::fix{ size = 40.0 }, fill = GREEN, .. } }
+    ui::end{ &ui, scope = el }
+    return it
+}
+
+fn move_to { mut ui: ui::Ui, x: i32, y: i32 } {
+    _ = ui_test::move_pointer{ &ui, x, y }
+}
+
+fn press_left { mut ui: ui::Ui } {
+    _ = ui_test::push_button{ &ui, button = 0, down = true, clicks = 1 }
+}
+
+fn release_left { mut ui: ui::Ui } {
+    _ = ui_test::push_button{ &ui, button = 0, down = false, clicks = 1 }
+}
+
+// The frame as the goldens hold it: a title line, the draw list, then the hit regions.
+fn write_frame { mut sink: ui_rec::Sink, ui: ui::Ui, name: []u8 } -> ! {
+    try @fmt(&sink, "== {}\n", name)
+    try ui_rec::write_list{ &sink, list = &ui.draw }
+    for hit in ui.emit.hits[..@as(usize, ui.emit.hit_count)] {
+        try @fmt(&sink, "hit {} area {}\n", ui_rec::write_rect{ rect = hit.rect, _ }, ui_rec::write_rect{ rect = hit.area, _ })
+    }
+}
+
+// ---- emission order across layers
+
+struct Order { frame: u32, modal: bool, raise: bool }
+
+// Every kind of layer, recorded out of order: the front overlay first, the back overlay last.
+fn show_order { mut ui: ui::Ui, mut s: Order } {
+    s.frame = s.frame + 1
+    let base = ui::make_id{ ui, name = "base" }
+    let w1 = ui::make_id{ ui, name = "w1" }
+    let w2 = ui::make_id{ ui, name = "w2" }
+    if s.frame == 1 { ui::open_popup_on{ &ui, id = "menu", anchor = base, side = ui::PopupSide::below } }
+    if s.raise { ui::raise_window{ &ui, id = w2 } }
+    let front = ui::begin_overlay{ &ui, front = true }
+    ui::paint_rect{ &ui, rect = ui::Rect{ x = 0, y = 0, w = 400, h = 4 }, style = fill_with{ color = RED } }
+    ui::end{ &ui, scope = front }
+    let menu = ui::begin_popup{ &ui, id = "menu", opts = ui::Opts{ .. } }
+    if menu.open { add_cell{ &ui, w = 80.0, h = 40.0, color = GREEN } }
+    ui::end{ &ui, scope = menu }
+    add_block{ &ui, id = base, x = 20.0, y = 20.0, w = 100.0, h = 30.0, color = BLUE }
+    let tip = ui::begin_tooltip{ &ui, anchor = base, box = ui::Box{ .. } }
+    add_cell{ &ui, w = 60.0, h = 20.0, color = YELLOW }
+    ui::end{ &ui, scope = tip }
+    let second = ui::begin_window_layer{ &ui, id = w2, box = place_filled{ x = 200.0, y = 20.0, w = 150.0, h = 100.0, color = GRAY } }
+    ui::end{ &ui, scope = second }
+    if s.modal {
+        let modal = ui::begin_modal{ &ui, id = "dialog", opts = ui::Opts{ .. } }
+        add_cell{ &ui, w = 120.0, h = 60.0, color = WHITE }
+        ui::end{ &ui, scope = modal }
+    }
+    let first = ui::begin_window_layer{ &ui, id = w1, box = place_filled{ x = 180.0, y = 60.0, w = 150.0, h = 100.0, color = SLATE } }
+    ui::end{ &ui, scope = first }
+    let back = ui::begin_overlay{ &ui, front = false }
+    ui::paint_rect{ &ui, rect = ui::Rect{ x = 0, y = 296, w = 400, h = 4 }, style = fill_with{ color = PURPLE } }
+    ui::end{ &ui, scope = back }
+}
+
+fn check_order { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, update: bool } {
+    let out = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65536 } iferr { return }
+    let scratch = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65536 } iferr { return }
+    let mut sink = ui_rec::make_sink{ bytes = out }
+    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s = Order{ frame = 0, modal = true, raise = false }
+    ui_test::step_frame{ &d, ui = &gui, show = show_order{ &s, _ } }                // 1
+    write_frame{ &sink, ui = gui, name = "back overlay, base, windows, a modal, a popup, a tooltip, front overlay" } iferr { return }
+    let menu = ui::make_popup_id{ name = "menu" }
+    ui_test::expect{ &io, &t, ok = gui.emit.floor == ui::layers::MODAL_ORDER, what = "frame 1: the modal's order is the floor" }
+    ui_test::expect{ &io, &t, ok = is_rect{ r = find_area{ ui = gui, id = top_id{ ui = gui, name = "base" } }, x = 20, y = 20, w = 0, h = 0 } and is_rect{ r = find_area{ ui = gui, id = menu }, x = 20, y = 50, w = 88, h = 48 },
+        what = "frame 1: what is behind the modal takes no pointer, the popup in front of it does" }
+    s.modal = false
+    s.raise = true
+    ui_test::step_frame{ &d, ui = &gui, show = show_order{ &s, _ } }                // 2
+    write_frame{ &sink, ui = gui, name = "the same with no modal, and w2 raised: w1 is drawn before it" } iferr { return }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "order", actual = ui_rec::get_text{ sink }, scratch, update }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "the order frames are clean" }
+}
+
+// A press over a window brings it to the front in the frame of the press.
+struct Windows { first: bool }
+
+fn show_windows { mut ui: ui::Ui, mut s: Windows } {
+    let a = ui::make_id{ ui, name = "wa" }
+    let b = ui::make_id{ ui, name = "wb" }
+    let wa = ui::begin_window_layer{ &ui, id = a, box = place_filled{ x = 10.0, y = 10.0, w = 200.0, h = 150.0, color = GRAY } }
+    ui::end{ &ui, scope = wa }
+    let wb = ui::begin_window_layer{ &ui, id = b, box = place_filled{ x = 100.0, y = 50.0, w = 200.0, h = 150.0, color = SLATE } }
+    ui::end{ &ui, scope = wb }
+}
+
+fn check_raise { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s = Windows{ first = true }
+    ui_test::step_frame{ &d, ui = &gui, show = show_windows{ &s, _ } }              // 1
+    ui_test::expect{ &io, &t, ok = find_fill{ ui = gui, color = GRAY } < find_fill{ ui = gui, color = SLATE }, what = "frame 1: the window begun second is new, so in front" }
+    move_to{ ui = &gui, x = 20, y = 20 }
+    press_left{ ui = &gui }
+    ui_test::step_frame{ &d, ui = &gui, show = show_windows{ &s, _ } }              // 2
+    ui_test::expect{ &io, &t, ok = find_fill{ ui = gui, color = SLATE } < find_fill{ ui = gui, color = GRAY }, what = "frame 2: a press over the first window brings it to the front in the frame of the press" }
+    release_left{ ui = &gui }
+    move_to{ ui = &gui, x = 250, y = 180 }
+    press_left{ ui = &gui }
+    ui_test::step_frame{ &d, ui = &gui, show = show_windows{ &s, _ } }              // 3
+    ui_test::expect{ &io, &t, ok = find_fill{ ui = gui, color = GRAY } < find_fill{ ui = gui, color = SLATE }, what = "frame 3: a press over the second brings it back to the front" }
+    release_left{ ui = &gui }
+    ui_test::step_frame{ &d, ui = &gui, show = show_windows{ &s, _ } }              // 4
+    ui_test::expect{ &io, &t, ok = find_fill{ ui = gui, color = GRAY } < find_fill{ ui = gui, color = SLATE } and d.unclean == 0, what = "frame 4: the order lasts, and the frames are clean" }
+}
+
+// An element in an overlay takes no pointer: the button under it is hot.
+struct Spots { b: ui::Interaction, c: ui::Interaction, due: bool, always: bool, front: bool }
+
+fn show_overlay_spot { mut ui: ui::Ui, mut s: Spots } {
+    s.b = add_button{ &ui, name = "B", x = 10.0, y = 10.0, w = 100.0, h = 40.0 }
+    let over = ui::begin_overlay{ &ui, front = s.front }
+    add_block{ &ui, id = ui::make_id{ ui, name = "ghost" }, x = 0.0, y = 0.0, w = 200.0, h = 200.0, color = RED }
+    ui::end{ &ui, scope = over }
+}
+
+fn check_overlay_hits { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s: Spots
+    s.front = true
+    ui_test::step_frame{ &d, ui = &gui, show = show_overlay_spot{ &s, _ } }         // 1
+    move_to{ ui = &gui, x = 60, y = 30 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_overlay_spot{ &s, _ } }         // 2
+    let ghost = top_id{ ui = gui, name = "ghost" }
+    ui_test::expect{ &io, &t, ok = s.b.hovered and gui.interact.hot == s.b.id, what = "frame 2: the button under a front overlay's element is hot" }
+    ui_test::expect{ &io, &t, ok = find_area{ ui = gui, id = ghost }.w == 0 and find_fill{ ui = gui, color = RED } > find_fill{ ui = gui, color = CONTROL },
+        what = "frame 2: the overlay's element has no hit area and is drawn over the button" }
+    s.front = false
+    ui_test::step_frame{ &d, ui = &gui, show = show_overlay_spot{ &s, _ } }         // 3
+    ui_test::expect{ &io, &t, ok = s.b.hovered and find_fill{ ui = gui, color = RED } < find_fill{ ui = gui, color = CONTROL } and d.unclean == 0,
+        what = "frame 3: a back overlay is drawn under the button and takes no pointer either" }
+}
+
+// ---- modals
+
+struct Dialogs {
+    m1: bool, m2: bool,
+    a: ui::Interaction, ok1: ui::Interaction, ok2: ui::Interaction,
+    a_clicks: u32, ok1_clicks: u32,
+    m1_took: bool, m2_took: bool,
+}
+
+fn show_dialogs { mut ui: ui::Ui, mut s: Dialogs } {
+    s.a = add_button{ &ui, name = "A", x = 10.0, y = 10.0, w = 100.0, h = 40.0 }
+    if s.a.clicked { s.a_clicks = s.a_clicks + 1 }
+    s.m1_took = false
+    s.m2_took = false
+    if s.m1 {
+        let m = ui::begin_modal{ &ui, id = "m1", opts = ui::Opts{ .. } }
+        s.ok1 = add_button{ &ui, name = "ok1", x = 100.0, y = 100.0, w = 80.0, h = 30.0 }
+        if s.ok1.clicked { s.ok1_clicks = s.ok1_clicks + 1 }
+        s.m1_took = ui::take_key{ &ui, key = ui::Key::enter, mods = 0 }
+        ui::end{ &ui, scope = m }
+    }
+    if s.m2 {
+        let m = ui::begin_modal{ &ui, id = "m2", opts = ui::Opts{ .. } }
+        s.ok2 = add_button{ &ui, name = "ok2", x = 300.0, y = 200.0, w = 80.0, h = 30.0 }
+        s.m2_took = ui::take_key{ &ui, key = ui::Key::enter, mods = 0 }
+        ui::end{ &ui, scope = m }
+    }
+}
+
+// A modal swallows a click on what is under it.
+fn check_modal_click { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s: Dialogs
+    s.m1 = true
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 1: the modal is up
+    ui_test::expect{ &io, &t, ok = ui_test::move_pointer{ ui = &gui, x = 60, y = 30 }, what = "with a modal up a move over A is the UI's" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 2
+    ui_test::expect{ &io, &t, ok = not s.a.hovered and gui.interact.hot == top_id{ ui = gui, name = "m1" }, what = "frame 2: A under the modal is not hovered; the modal's backdrop is hot" }
+    press_left{ ui = &gui }
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 3
+    ui_test::expect{ &io, &t, ok = not s.a.pressed and not s.a.held, what = "frame 3: the press does not reach A" }
+    release_left{ ui = &gui }
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 4
+    ui_test::expect{ &io, &t, ok = s.a_clicks == 0, what = "frame 4: the modal swallowed the click" }
+    s.m1 = false
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 5: the modal goes
+    press_left{ ui = &gui }
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 6
+    release_left{ ui = &gui }
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 7
+    ui_test::expect{ &io, &t, ok = s.a_clicks == 1 and s.a.clicked, what = "frame 7: with the modal gone the same click clicks A" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "the modal click frames are clean" }
+}
+
+// A modal over a modal takes the input; closing it gives the focus back to the one below, and
+// closing that gives back the focus from before both.
+fn check_nested_modals { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s: Dialogs
+    let a = top_id{ ui = gui, name = "A" }
+    let ok1 = top_id{ ui = gui, name = "ok1" }
+    let ok2 = top_id{ ui = gui, name = "ok2" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 1
+    ui::set_focus{ ui = &gui, id = a }
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 2
+    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = a }, what = "frame 2: A has the focus" }
+    s.m1 = true
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 3: the first modal comes
+    ui_test::expect{ &io, &t, ok = gui.focus.focused == ui::NO_ID, what = "frame 3: the modal puts A's focus aside" }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 4
+    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = ok1 }, what = "frame 4: Tab goes to the modal's own button" }
+    s.m2 = true
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 5: the second comes over it
+    ui_test::expect{ &io, &t, ok = gui.focus.focused == ui::NO_ID and gui.emit.floor == ui::layers::MODAL_ORDER + 1, what = "frame 5: the second modal is the floor and puts ok1's focus aside" }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 6
+    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = ok2 }, what = "frame 6: Tab walks the top modal's stops only (two Tabs come back to ok2)" }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::enter, mods = 0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 7
+    ui_test::expect{ &io, &t, ok = not s.m1_took and s.m2_took, what = "frame 7: the first modal's code takes no key, the top one's takes Enter" }
+    move_to{ ui = &gui, x = 140, y = 115 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 8
+    press_left{ ui = &gui }
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 9
+    release_left{ ui = &gui }
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 10
+    ui_test::expect{ &io, &t, ok = s.ok1_clicks == 0 and not s.ok1.hovered and gui.interact.hot == top_id{ ui = gui, name = "m2" }, what = "frame 10: a click on ok1 under the top modal does nothing" }
+    ui_test::expect{ &io, &t, ok = gui.focus.focused == ui::NO_ID, what = "frame 10: the press on the top modal's backdrop dropped the focus" }
+    ui::set_focus{ ui = &gui, id = ok2 }
+    s.m2 = false
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 11: the top modal goes
+    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = ok1 }, what = "frame 11: closing the top modal gives the focus back to ok1" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 12
+    ui_test::expect{ &io, &t, ok = s.ok1.focused and ui::is_focused{ ui = gui, id = ok1 }, what = "frame 12: ok1 keeps it" }
+    s.m1 = false
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 13: the first goes
+    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = a }, what = "frame 13: closing the first modal gives the focus back to A" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 14
+    ui_test::expect{ &io, &t, ok = s.a.focused, what = "frame 14: A keeps it" }
+
+    // Both at once: the focus from before both comes back.
+    s.m1 = true
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 15
+    s.m2 = true
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 16
+    s.m1 = false
+    s.m2 = false
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 17
+    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = a }, what = "frame 17: two modals going at once give back the focus from before the first" }
+
+    // The one behind goes first: the one in front keeps what it had put aside, and gives it back.
+    s.m1 = true
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 18
+    s.m2 = true
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 19
+    s.m1 = false
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 20
+    ui_test::expect{ &io, &t, ok = gui.focus.focused == ui::NO_ID and gui.layers.modal_count == 1, what = "frame 20: the modal behind went, the one in front still holds the focus aside" }
+    s.m2 = false
+    ui_test::step_frame{ &d, ui = &gui, show = show_dialogs{ &s, _ } }              // 21
+    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = a } and gui.layers.modal_count == 0, what = "frame 21: the last modal going gives back A's focus" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "the nested modal frames are clean" }
+}
+
+// ---- popups
+
+struct Menus {
+    frame: u32, anchored: bool,
+    opener: ui::Interaction, other: ui::Interaction, item: ui::Interaction,
+    item_clicks: u32, other_presses: u32, shown: bool,
+}
+
+fn show_menus { mut ui: ui::Ui, mut s: Menus } {
+    s.frame = s.frame + 1
+    if s.anchored {
+        s.opener = add_button{ &ui, name = "opener", x = 10.0, y = 10.0, w = 100.0, h = 30.0 }
+        if s.opener.clicked {
+            if ui::is_popup_open{ ui, id = "menu" } {
+                ui::close_popups{ &ui }
+            } else {
+                ui::open_popup_on{ &ui, id = "menu", anchor = s.opener.id, side = ui::PopupSide::below }
+            }
+        }
+    }
+    s.other = add_button{ &ui, name = "other", x = 200.0, y = 200.0, w = 100.0, h = 30.0 }
+    if s.other.pressed { s.other_presses = s.other_presses + 1 }
+    let menu = ui::begin_popup{ &ui, id = "menu", opts = ui::Opts{ .. } }
+    s.shown = menu.open
+    if menu.open {
+        s.item = add_item{ &ui, name = "item" }
+        if s.item.clicked {
+            s.item_clicks = s.item_clicks + 1
+            ui::close_popup{ &ui }
+        }
+    }
+    ui::end{ &ui, scope = menu }
+}
+
+fn open_menu { mut d: ui_test::Driver, mut ui: ui::Ui, mut s: Menus } -> bool {
+    return ui_test::click{ &d, &ui, path = "opener", show = show_menus{ &s, _ } }
+}
+
+// The popup opens on the opener's click; Escape, a click on an item that closes it, a press
+// outside, and the opener's own toggle close it, each on the frame it happens in.
+fn check_popup_dismiss { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s: Menus
+    s.anchored = true
+    let menu = ui::make_popup_id{ name = "menu" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_menus{ &s, _ } }                // 1
+    ui_test::expect{ &io, &t, ok = open_menu{ &d, ui = &gui, &s } and s.frame == 4, what = "the opener is clicked over frames 2 to 4" }
+    ui_test::expect{ &io, &t, ok = s.shown and ui::is_popup_open{ ui = gui, id = "menu" } and is_rect{ r = find_rect{ ui = gui, id = menu }, x = 10, y = 40, w = 88, h = 48 },
+        what = "frame 4: the click opens the popup below its opener, in the same frame" }
+    ui_test::expect{ &io, &t, ok = ui::find_node{ ui = gui, path = "menu" } != null, what = "frame 4: the popup describes itself" }
+
+    ui_test::expect{ &io, &t, ok = ui_test::tap_key{ ui = &gui, key = ui::Key::escape, mods = 0 }, what = "with a popup open the UI takes Escape" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_menus{ &s, _ } }                // 5
+    ui_test::expect{ &io, &t, ok = not s.shown and not ui::is_popup_open{ ui = gui, id = "menu" } and ui::get_rect{ ui = gui, id = menu } == null and find_fill{ ui = gui, color = GREEN } < 0,
+        what = "frame 5: Escape closes it in the frame it is pressed in" }
+
+    _ = open_menu{ &d, ui = &gui, &s }                                              // 6, 7, 8
+    move_to{ ui = &gui, x = 54, y = 64 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_menus{ &s, _ } }                // 9
+    press_left{ ui = &gui }
+    ui_test::step_frame{ &d, ui = &gui, show = show_menus{ &s, _ } }                // 10
+    ui_test::expect{ &io, &t, ok = s.shown and s.item.pressed, what = "frame 10: a press inside the popup keeps it open and presses the item" }
+    release_left{ ui = &gui }
+    ui_test::step_frame{ &d, ui = &gui, show = show_menus{ &s, _ } }                // 11
+    ui_test::expect{ &io, &t, ok = s.item_clicks == 1 and find_fill{ ui = gui, color = GREEN } < 0 and find_area{ ui = gui, id = menu }.w == 0,
+        what = "frame 11: the item's click closes the popup, which is not drawn and takes no pointer in that frame" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_menus{ &s, _ } }                // 12
+    ui_test::expect{ &io, &t, ok = not s.shown and not ui::is_popup_open{ ui = gui, id = "menu" }, what = "frame 12: and it stays closed" }
+
+    _ = open_menu{ &d, ui = &gui, &s }                                              // 13, 14, 15
+    move_to{ ui = &gui, x = 250, y = 215 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_menus{ &s, _ } }                // 16
+    ui_test::expect{ &io, &t, ok = s.shown, what = "frame 16: moving away does not close it" }
+    press_left{ ui = &gui }
+    ui_test::step_frame{ &d, ui = &gui, show = show_menus{ &s, _ } }                // 17
+    ui_test::expect{ &io, &t, ok = not s.shown and s.other_presses == 1, what = "frame 17: a press outside closes it in the frame of the press, and reaches what is under it" }
+    release_left{ ui = &gui }
+    ui_test::step_frame{ &d, ui = &gui, show = show_menus{ &s, _ } }                // 18
+
+    _ = open_menu{ &d, ui = &gui, &s }                                              // 19, 20, 21
+    ui_test::expect{ &io, &t, ok = s.shown, what = "frame 21: open again" }
+    press_left{ ui = &gui }
+    ui_test::step_frame{ &d, ui = &gui, show = show_menus{ &s, _ } }                // 22
+    ui_test::expect{ &io, &t, ok = s.shown and s.opener.pressed, what = "frame 22: a press on the popup's own anchor leaves it to the anchor's widget" }
+    release_left{ ui = &gui }
+    ui_test::step_frame{ &d, ui = &gui, show = show_menus{ &s, _ } }                // 23
+    ui_test::expect{ &io, &t, ok = s.opener.clicked and not s.shown and not ui::is_popup_open{ ui = gui, id = "menu" }, what = "frame 23: whose click toggles it closed" }
+
+    _ = open_menu{ &d, ui = &gui, &s }                                              // 24, 25, 26
+    move_to{ ui = &gui, x = 380, y = 120 }
+    _ = ui_test::push_button{ ui = &gui, button = 1, down = true, clicks = 1 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_menus{ &s, _ } }                // 27
+    ui_test::expect{ &io, &t, ok = not s.shown, what = "frame 27: a right press outside closes it too" }
+    _ = ui_test::push_button{ ui = &gui, button = 1, down = false, clicks = 1 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_menus{ &s, _ } }                // 28
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "the popup frames are clean" }
+}
+
+// A popup whose anchor is not recorded closes, and is not shown in that frame.
+fn check_anchor_gone { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s: Menus
+    s.anchored = true
+    let menu = ui::make_popup_id{ name = "menu" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_menus{ &s, _ } }                // 1
+    _ = open_menu{ &d, ui = &gui, &s }                                              // 2, 3, 4
+    ui_test::expect{ &io, &t, ok = s.shown, what = "frame 4: open" }
+    s.anchored = false
+    ui_test::step_frame{ &d, ui = &gui, show = show_menus{ &s, _ } }                // 5
+    ui_test::expect{ &io, &t, ok = s.shown and find_fill{ ui = gui, color = GREEN } < 0 and find_area{ ui = gui, id = menu }.w == 0 and not ui::is_popup_open{ ui = gui, id = "menu" },
+        what = "frame 5: its anchor went: recorded, but not drawn, taking no pointer, and closed" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_menus{ &s, _ } }                // 6
+    ui_test::expect{ &io, &t, ok = not s.shown and d.unclean == 0, what = "frame 6: closed; every frame is clean" }
+}
+
+// Where a popup goes near each edge of the surface, and on a surface smaller than it.
+struct Edges { anchor: ui::Rect, side: ui::PopupSide, at_pointer: bool }
+
+fn show_edges { mut ui: ui::Ui, mut s: Edges } {
+    let edge = ui::make_id{ ui, name = "edge" }
+    let mut box = ui::place_pixels{ rect = s.anchor }
+    box.fill = BLUE
+    let el = ui::begin_element{ &ui, id = edge, axis = ui::Axis::row, box }
+    ui::end{ &ui, scope = el }
+    if s.at_pointer {
+        ui::open_popup{ &ui, id = "menu" }
+    } else {
+        ui::open_popup_on{ &ui, id = "menu", anchor = edge, side = s.side }
+    }
+    let menu = ui::begin_popup{ &ui, id = "menu", opts = ui::Opts{ .. } }
+    if menu.open { add_cell{ &ui, w = 80.0, h = 40.0, color = GREEN } }
+    ui::end{ &ui, scope = menu }
+}
+
+fn place_probe { mut d: ui_test::Driver, mut ui: ui::Ui, mut s: Edges, anchor: ui::Rect, side: ui::PopupSide } -> ui::Rect {
+    s.anchor = anchor
+    s.side = side
+    s.at_pointer = false
+    ui_test::step_frame{ &d, &ui, show = show_edges{ &s, _ } }
+    return find_rect{ ui, id = ui::make_popup_id{ name = "menu" } }
+}
+
+fn check_popup_edges { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s = Edges{ anchor = ui::Rect{ .. }, side = ui::PopupSide::below, at_pointer = false }
+    let below = ui::PopupSide::below
+    let beside = ui::PopupSide::beside
+    // The popup is 80 by 40 inside half the theme's padding: 88 by 48.
+    let r1 = place_probe{ &d, ui = &gui, &s, anchor = ui::Rect{ x = 100, y = 100, w = 40, h = 20 }, side = below }
+    ui_test::expect{ &io, &t, ok = is_rect{ r = r1, x = 100, y = 120, w = 88, h = 48 }, what = "with room, a popup is below its anchor, at its left edge" }
+    let r2 = place_probe{ &d, ui = &gui, &s, anchor = ui::Rect{ x = 350, y = 10, w = 40, h = 20 }, side = below }
+    ui_test::expect{ &io, &t, ok = is_rect{ r = r2, x = 302, y = 30, w = 88, h = 48 }, what = "at the right edge it flips to line up with its anchor's right edge" }
+    let r3 = place_probe{ &d, ui = &gui, &s, anchor = ui::Rect{ x = 350, y = 10, w = 40, h = 20 }, side = beside }
+    ui_test::expect{ &io, &t, ok = is_rect{ r = r3, x = 262, y = 10, w = 88, h = 48 }, what = "beside, at the right edge it flips to the anchor's left" }
+    let r4 = place_probe{ &d, ui = &gui, &s, anchor = ui::Rect{ x = 100, y = 280, w = 40, h = 20 }, side = below }
+    ui_test::expect{ &io, &t, ok = is_rect{ r = r4, x = 100, y = 232, w = 88, h = 48 }, what = "at the bottom edge it flips above its anchor" }
+    let r5 = place_probe{ &d, ui = &gui, &s, anchor = ui::Rect{ x = 100, y = 280, w = 40, h = 20 }, side = beside }
+    ui_test::expect{ &io, &t, ok = is_rect{ r = r5, x = 140, y = 252, w = 88, h = 48 }, what = "beside, at the bottom edge it lines up with its anchor's bottom" }
+    let r6 = place_probe{ &d, ui = &gui, &s, anchor = ui::Rect{ x = -30, y = 100, w = 40, h = 20 }, side = below }
+    ui_test::expect{ &io, &t, ok = is_rect{ r = r6, x = 0, y = 120, w = 88, h = 48 }, what = "past the left edge it is held on the surface" }
+    let r7 = place_probe{ &d, ui = &gui, &s, anchor = ui::Rect{ x = 100, y = -15, w = 40, h = 20 }, side = beside }
+    ui_test::expect{ &io, &t, ok = is_rect{ r = r7, x = 140, y = 0, w = 88, h = 48 }, what = "past the top edge it is held on the surface" }
+
+    // With no anchor it goes at the pointer, flipping at the right and bottom edges.
+    move_to{ ui = &gui, x = 395, y = 295 }
+    s.at_pointer = true
+    ui_test::step_frame{ &d, ui = &gui, show = show_edges{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = is_rect{ r = find_rect{ ui = gui, id = ui::make_popup_id{ name = "menu" } }, x = 307, y = 247, w = 88, h = 48 },
+        what = "at the pointer in the bottom right corner it is to the left of and above the pointer" }
+    move_to{ ui = &gui, x = 50, y = 60 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_edges{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = is_rect{ r = find_rect{ ui = gui, id = ui::make_popup_id{ name = "menu" } }, x = 50, y = 60, w = 88, h = 48 },
+        what = "opened again at the pointer, it moves to where the pointer is now" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "the edge frames are clean" }
+
+    // A surface smaller than the popup: its top left corner is the surface's.
+    let mut small = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut ds = make_driver{ &heap, width = 60, height = 40, scale = 1.0 } iferr { return }
+    let r8 = place_probe{ d = &ds, ui = &small, &s, anchor = ui::Rect{ x = 10, y = 10, w = 20, h = 10 }, side = below }
+    ui_test::expect{ &io, &t, ok = is_rect{ r = r8, x = 0, y = 0, w = 88, h = 48 } and ds.unclean == 0, what = "on a surface smaller than it, it is at the surface's top left" }
+}
+
+// A popup opened while another is recorded is its child: beside its item, closed with it, and a
+// press in the child keeps both.
+struct Chain { frame: u32, open_child: bool, child_shown: bool, parent_shown: bool }
+
+fn show_chain { mut ui: ui::Ui, mut s: Chain } {
+    s.frame = s.frame + 1
+    let root = ui::make_id{ ui, name = "root" }
+    add_block{ &ui, id = root, x = 10.0, y = 10.0, w = 60.0, h = 20.0, color = BLUE }
+    if s.frame == 1 { ui::open_popup_on{ &ui, id = "file", anchor = root, side = ui::PopupSide::below } }
+    let file = ui::begin_popup{ &ui, id = "file", opts = ui::Opts{ .. } }
+    s.parent_shown = file.open
+    if file.open {
+        let item = ui::make_id{ ui, name = "recent" }
+        let el = ui::begin_element{ &ui, id = item, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ size = 80.0 }, height = ui::fix{ size = 20.0 }, fill = GRAY, .. } }
+        ui::end{ &ui, scope = el }
+        if s.open_child { ui::open_popup_on{ &ui, id = "recent", anchor = item, side = ui::PopupSide::beside } }
+        let child = ui::begin_popup{ &ui, id = "recent", opts = ui::Opts{ .. } }
+        s.child_shown = child.open
+        if child.open { add_cell{ &ui, w = 50.0, h = 30.0, color = GREEN } }
+        ui::end{ &ui, scope = child }
+    } else {
+        s.child_shown = false
+    }
+    ui::end{ &ui, scope = file }
+}
+
+fn check_popup_children { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s = Chain{ frame = 0, open_child = false, child_shown = false, parent_shown = false }
+    ui_test::step_frame{ &d, ui = &gui, show = show_chain{ &s, _ } }                // 1
+    s.open_child = true
+    ui_test::step_frame{ &d, ui = &gui, show = show_chain{ &s, _ } }                // 2
+    // The parent is at (10, 30), 88 by 28; its item at (14, 34), 80 by 20; the child beside the item.
+    let child = ui::make_popup_id{ name = "recent" }
+    ui_test::expect{ &io, &t, ok = s.parent_shown and s.child_shown and gui.layers.popup_count == 2 and is_rect{ r = find_rect{ ui = gui, id = child }, x = 94, y = 34, w = 58, h = 38 },
+        what = "frame 2: a popup opened inside another is its child, beside its item" }
+    ui_test::expect{ &io, &t, ok = find_fill{ ui = gui, color = GRAY } < find_fill{ ui = gui, color = GREEN }, what = "frame 2: the child is drawn over its parent" }
+    s.open_child = false
+    move_to{ ui = &gui, x = 120, y = 50 }
+    press_left{ ui = &gui }
+    ui_test::step_frame{ &d, ui = &gui, show = show_chain{ &s, _ } }                // 3
+    ui_test::expect{ &io, &t, ok = s.parent_shown and s.child_shown, what = "frame 3: a press in the child keeps it and its parent" }
+    release_left{ ui = &gui }
+    move_to{ ui = &gui, x = 20, y = 50 }
+    press_left{ ui = &gui }
+    ui_test::step_frame{ &d, ui = &gui, show = show_chain{ &s, _ } }                // 4
+    ui_test::expect{ &io, &t, ok = s.parent_shown and s.child_shown, what = "frame 4: a press on the child's anchor, the parent's item, leaves the child to it" }
+    release_left{ ui = &gui }
+    move_to{ ui = &gui, x = 20, y = 56 }
+    press_left{ ui = &gui }
+    ui_test::step_frame{ &d, ui = &gui, show = show_chain{ &s, _ } }                // 5
+    ui_test::expect{ &io, &t, ok = s.parent_shown and not s.child_shown, what = "frame 5: a press elsewhere in the parent closes only the child" }
+    release_left{ ui = &gui }
+    s.open_child = true
+    ui_test::step_frame{ &d, ui = &gui, show = show_chain{ &s, _ } }                // 6
+    ui_test::expect{ &io, &t, ok = s.child_shown, what = "frame 6: the child is open again" }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::escape, mods = 0 }
+    s.open_child = false
+    ui_test::step_frame{ &d, ui = &gui, show = show_chain{ &s, _ } }                // 7
+    ui_test::expect{ &io, &t, ok = s.parent_shown and not s.child_shown, what = "frame 7: Escape closes the frontmost popup only" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "the child popup frames are clean" }
+}
+
+// A popup recorded in a scroll region is a tree of its own: the region's clip does not cut it.
+struct Scrolled { frame: u32 }
+
+fn show_scrolled_popup { mut ui: ui::Ui, mut s: Scrolled } {
+    let pane = ui::begin_scroll{ &ui, id = "pane", opts = ui::Opts{ box = ui::place{ x = 0.0, y = 0.0, w = 200.0, h = 100.0 }, .. } }
+    add_cell{ &ui, w = 180.0, h = 70.0, color = GRAY }
+    let row = ui::make_id{ ui, name = "row" }
+    let el = ui::begin_element{ &ui, id = row, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ size = 180.0 }, height = ui::fix{ size = 20.0 }, fill = BLUE, .. } }
+    ui::end{ &ui, scope = el }
+    ui::open_popup_on{ &ui, id = "menu", anchor = row, side = ui::PopupSide::below }
+    let menu = ui::begin_popup{ &ui, id = "menu", opts = ui::Opts{ .. } }
+    if menu.open { add_cell{ &ui, w = 80.0, h = 40.0, color = GREEN } }
+    ui::end{ &ui, scope = menu }
+    add_cell{ &ui, w = 180.0, h = 100.0, color = SLATE }
+    ui::end{ &ui, scope = pane }
+}
+
+fn check_popup_in_scroll { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s = Scrolled{ frame = 0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scrolled_popup{ &s, _ } }       // 1
+    let popup = find_shape{ ui = gui, color = GREEN }
+    let row = find_shape{ ui = gui, color = BLUE }
+    ui_test::expect{ &io, &t, ok = row.clip == 1 and is_rect{ r = row.rect, x = 0, y = 70, w = 180, h = 20 }, what = "the row is clipped by the region" }
+    ui_test::expect{ &io, &t, ok = popup.clip == 0 and is_rect{ r = popup.rect, x = 4, y = 94, w = 80, h = 40 }, what = "the popup below it runs past the region's bottom and is not clipped" }
+    ui_test::expect{ &io, &t, ok = is_rect{ r = find_rect{ ui = gui, id = ui::make_popup_id{ name = "menu" } }, x = 0, y = 90, w = 88, h = 48 } and d.unclean == 0,
+        what = "it is placed below the row, and the frame is clean" }
+}
+
+// ---- tooltips
+
+fn show_tips { mut ui: ui::Ui, mut s: Spots } {
+    s.b = add_button{ &ui, name = "B", x = 10.0, y = 10.0, w = 100.0, h = 40.0 }
+    s.c = add_button{ &ui, name = "C", x = 10.0, y = 60.0, w = 100.0, h = 40.0 }
+    s.due = ui::is_tip_due{ &ui, id = s.b.id }
+    if s.due or s.always {
+        let tip = ui::begin_tooltip{ &ui, anchor = s.b.id, box = ui::Box{ .. } }
+        add_cell{ &ui, w = 60.0, h = 20.0, color = YELLOW }
+        ui::end{ &ui, scope = tip }
+    }
+}
+
+// A tooltip is due after the theme's delay of hovering, not before, and takes no pointer.
+fn check_tooltip { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s: Spots
+    ui_test::step_frame{ &d, ui = &gui, show = show_tips{ &s, _ } }                 // 1
+    move_to{ ui = &gui, x = 60, y = 30 }
+    // The hover begins on frame 2; with a delay of 0.6 s and frames 0.125 s apart the tooltip is
+    // due on frame 7 (0.625 s of hovering) and not on frame 6 (0.5 s).
+    let mut due_early = false
+    let mut asked = true
+    for _ in 2..7 {
+        ui_test::step_frame{ &d, ui = &gui, show = show_tips{ &s, _ } }             // 2 to 6
+        if s.due or find_fill{ ui = gui, color = YELLOW } >= 0 { due_early = true }
+        if not d.requests.animating { asked = false }
+    }
+    ui_test::expect{ &io, &t, ok = not due_early and asked, what = "frames 2 to 6: no tooltip, and each asks for another frame" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_tips{ &s, _ } }                 // 7
+    ui_test::expect{ &io, &t, ok = s.due and is_rect{ r = find_shape{ ui = gui, color = YELLOW }.rect, x = 14, y = 54, w = 60, h = 20 } and not d.requests.animating,
+        what = "frame 7: the tooltip is due, below its anchor, and asks for nothing more" }
+    press_left{ ui = &gui }
+    ui_test::step_frame{ &d, ui = &gui, show = show_tips{ &s, _ } }                 // 8
+    ui_test::expect{ &io, &t, ok = not s.due, what = "frame 8: not while a widget is held" }
+    release_left{ ui = &gui }
+    ui_test::step_frame{ &d, ui = &gui, show = show_tips{ &s, _ } }                 // 9
+
+    // Shown over C, the tooltip does not take the pointer: C under it is hot.
+    s.always = true
+    move_to{ ui = &gui, x = 20, y = 65 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_tips{ &s, _ } }                 // 10
+    ui_test::step_frame{ &d, ui = &gui, show = show_tips{ &s, _ } }                 // 11
+    ui_test::expect{ &io, &t, ok = find_fill{ ui = gui, color = YELLOW } >= 0 and s.c.hovered and gui.interact.hot == s.c.id, what = "frame 11: the pointer over the tooltip hovers C under it" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "the tooltip frames are clean" }
+}
+
+// ---- misuse
+
+// Layers left open at end_frame are closed for the caller and reported; their hooks still run.
+struct Nothing { n: u32 }
+
+fn show_left_open { mut ui: ui::Ui, mut s: Nothing } {
+    ui::open_popup{ &ui, id = "menu" }
+    _ = ui::begin_popup{ &ui, id = "menu", opts = ui::Opts{ .. } }
+    _ = ui::begin_scroll{ &ui, id = "pane", opts = ui::Opts{ box = ui::Box{ width = ui::fix{ size = 100.0 }, height = ui::fix{ size = 50.0 }, .. }, .. } }
+    add_cell{ &ui, w = 50.0, h = 200.0, color = GREEN }
+    _ = ui::begin_modal{ &ui, id = "dialog", opts = ui::Opts{ .. } }
+}
+
+fn show_closed { mut ui: ui::Ui, mut s: Nothing } {
+    let pane = ui::begin_scroll{ &ui, id = "pane", opts = ui::Opts{ box = ui::Box{ width = ui::fix{ size = 100.0 }, height = ui::fix{ size = 50.0 }, .. }, .. } }
+    add_cell{ &ui, w = 50.0, h = 200.0, color = GREEN }
+    ui::end{ &ui, scope = pane }
+}
+
+fn check_open_at_end { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s = Nothing{ n = 0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_left_open{ &s, _ } }            // 1
+    let pane = top_id{ ui = gui, name = "pane" }
+    let thumb = ui::scroll::get_part_id{ id = pane, part = "\x00thumb_y" }
+    ui_test::expect{ &io, &t, ok = has_kept{ ui = gui, kind = ui::ProblemKind::unclosed_scope } and gui.stats.unclosed == 3, what = "frame 1: the three layers left open are closed and reported" }
+    ui_test::expect{ &io, &t, ok = gui.layers.open_count == 0 and gui.scroll.open_count == 0 and gui.ids.depth == 0, what = "frame 1: nothing is left open" }
+    ui_test::expect{ &io, &t, ok = find_rect{ ui = gui, id = thumb }.w == 10 and gui.emit.floor == ui::layers::MODAL_ORDER, what = "frame 1: the region still got its bar, and the modal is up" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_closed{ &s, _ } }               // 2
+    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and gui.emit.floor == 0 and not ui::is_popup_open{ ui = gui, id = "menu" }, what = "frame 2: closed properly, the next frame is clean" }
+}
+
+// Full tables: layers past `Capacity.layers` and popups nested past it are dropped and counted.
+fn show_crowd { mut ui: ui::Ui, mut s: Nothing } {
+    s.n = s.n + 1
+    for i in 0..4 {
+        let w = ui::begin_window_layer{ &ui, id = ui::make_id{ ui, name = if i == 0 { "w0" } else if i == 1 { "w1" } else if i == 2 { "w2" } else { "w3" } }, box = place_filled{ x = 0.0, y = 0.0, w = 10.0, h = 10.0, color = GRAY } }
+        ui::end{ &ui, scope = w }
+    }
+    let m = ui::begin_modal{ &ui, id = "m", opts = ui::Opts{ .. } }
+    ui::end{ &ui, scope = m }
+    open_nested{ &ui, depth = 0 }
+}
+
+// Popups opened each inside the last, five deep.
+fn open_nested { mut ui: ui::Ui, depth: u32 } {
+    if depth >= 5 { return }
+    let name = if depth == 0 { "p0" } else if depth == 1 { "p1" } else if depth == 2 { "p2" } else if depth == 3 { "p3" } else { "p4" }
+    ui::open_popup{ &ui, id = name }
+    let p = ui::begin_popup{ &ui, id = name, opts = ui::Opts{ .. } }
+    if p.open { open_nested{ &ui, depth = depth + 1 } }
+    ui::end{ &ui, scope = p }
+}
+
+fn show_few { mut ui: ui::Ui, mut s: Nothing } {
+    let w = ui::begin_window_layer{ &ui, id = ui::make_id{ ui, name = "w0" }, box = place_filled{ x = 0.0, y = 0.0, w = 10.0, h = 10.0, color = GRAY } }
+    ui::end{ &ui, scope = w }
+}
+
+fn check_full_layers { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut cap = get_small{}
+    cap.layers = 2
+    let mut gui = make_ui{ &heap, cap } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s = Nothing{ n = 0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_crowd{ &s, _ } }                // 1
+    ui_test::expect{ &io, &t, ok = gui.stats.dropped > 0 and has_kept{ ui = gui, kind = ui::ProblemKind::layers_full } and gui.layers.popup_count <= 3,
+        what = "layers past the table are dropped and counted as layers_full" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_crowd{ &s, _ } }                // 2
+    ui_test::expect{ &io, &t, ok = has_kept{ ui = gui, kind = ui::ProblemKind::layers_full }, what = "and again the next frame, without a panic" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_few{ &s, _ } }                  // 3
+    ui_test::step_frame{ &d, ui = &gui, show = show_few{ &s, _ } }                  // 4
+    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and gui.layers.window_count == 1 and gui.layers.modal_count == 0 and gui.layers.popup_count == 0,
+        what = "a frame with fewer layers is clean, and the tables hold only what is up" }
+    // Popups and anchors that do not exist, and calls with no popup open, do nothing.
+    ui::close_popup{ ui = &gui }
+    ui::close_popups{ ui = &gui }
+    ui::open_popup{ ui = &gui, id = "" }
+    ui_test::expect{ &io, &t, ok = gui.layers.popup_count == 0 and not ui::is_popup_open{ ui = gui, id = "" }, what = "an empty popup name opens nothing" }
+}
+
+// Placement with the largest numbers an i32 holds does not overflow.
+fn check_place_extremes { mut io: Io, mut t: ui_test::Tally } {
+    let big = 2147483647
+    let a = ui::layers::place_rect{ anchor = ui::Rect{ x = big, y = big, w = big, h = big }, w = big, h = big, side = ui::PopupSide::below, width = big, height = big }
+    let b = ui::layers::place_rect{ anchor = ui::Rect{ x = -big, y = -big, w = big, h = big }, w = 10, h = 10, side = ui::PopupSide::beside, width = 100, height = 100 }
+    let c = ui::layers::place_rect{ anchor = ui::Rect{ x = 50, y = 50, w = 0, h = 0 }, w = 10, h = 10, side = ui::PopupSide::below, width = 0, height = -5 }
+    ui_test::expect{ &io, &t, ok = a.x == 0 and a.y == 0 and b.x == 0 and b.y == 0 and c.x == 0 and c.y == 0, what = "extreme placements are held on the surface without overflowing" }
+}

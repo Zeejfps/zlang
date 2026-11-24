@@ -1,0 +1,520 @@
+// Stage 8's test, scroll regions: bars that appear in the frame the content overflows, the wheel
+// routed to the innermost region that can move, thumb drags, virtual rows, and the pixel
+// properties (an offset moves every edge by exactly its pixels and changes no size; a bar is the
+// same thickness at every offset).
+
+const ROW_NAMES: [_][]u8 = ["row0", "row1", "row2", "row3", "row4", "row5", "row6", "row7", "row8", "row9", "row10", "row11", "row12", "row13", "row14", "row15"]
+
+// A region "pane" placed at (x, y), w by h units, holding `rows` rows `row_h` high, as wide as the
+// region (GROW) unless `row_w` is more than 0.
+struct Pane {
+    shown: bool = true,
+    x: f32 = 0.0, y: f32 = 0.0, w: f32 = 200.0, h: f32 = 100.0,
+    axes: ui::ScrollAxes = ui::ScrollAxes::vertical,
+    rows: u32 = 0, row_h: f32 = 20.0, row_w: f32 = 0.0,
+}
+
+fn show_pane { mut ui: ui::Ui, mut p: Pane } {
+    if not p.shown { return }
+    let pane = ui::begin_scroll_with{ &ui, id = "pane", axes = p.axes, axis = ui::Axis::column, opts = ui::Opts{ box = ui::place{ x = p.x, y = p.y, w = p.w, h = p.h }, .. } }
+    for i in 0..p.rows {
+        let width = if p.row_w > 0.0 { ui::fix{ size = p.row_w } } else { ui::GROW }
+        add_row{ &ui, index = i, width, height = p.row_h }
+    }
+    ui::end{ &ui, scope = pane }
+}
+
+// Row `index` of a region, named from ROW_NAMES while there are names.
+fn add_row { mut ui: ui::Ui, index: u32, width: ui::Size, height: f32 } {
+    let name: []u8 = if index < 16 { ROW_NAMES[index] } else { "" }
+    let id = ui::make_id{ ui, name }
+    let el = ui::begin_element{ &ui, id, axis = ui::Axis::row, box = ui::Box{ width, height = ui::fix{ size = height }, fill = if index % 2 == 0 { GRAY } else { SLATE }, .. } }
+    ui::end{ &ui, scope = el }
+}
+
+fn find_row { ui: ui::Ui, index: u32 } -> ui::Rect {
+    return find_rect{ ui, id = ui::make_id{ ui, name = ROW_NAMES[index] } }
+}
+
+fn get_part { ui: ui::Ui, region: []u8, part: []u8 } -> ui::Rect {
+    return find_rect{ ui, id = ui::scroll::get_part_id{ id = ui::make_id{ ui, name = region }, part } }
+}
+
+fn get_view { ui: ui::Ui, name: []u8 } -> ui::ScrollView {
+    return ui::get_scroll{ ui, id = ui::make_id{ ui, name } } ifnull ui::ScrollView{ x = -1, y = -1, .. }
+}
+
+fn turn { mut ui: ui::Ui, dx: f32, dy: f32 } {
+    _ = ui_test::turn_wheel{ &ui, dx, dy }
+}
+
+// The first frame whose content overflows already has its bar and narrowed content; the frame
+// whose content fits again has neither.
+fn check_bar_appears { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut p = Pane{ rows = 4, .. }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 1: 80 of 100
+    ui_test::expect{ &io, &t, ok = is_rect{ r = find_row{ ui = gui, index = 0 }, x = 0, y = 0, w = 200, h = 20 } and get_part{ ui = gui, region = "pane", part = "\x00thumb_y" }.w == 0,
+        what = "frame 1: content that fits has no bar and is as wide as the region" }
+    p.rows = 5
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 2: 100 of 100
+    ui_test::expect{ &io, &t, ok = find_row{ ui = gui, index = 0 }.w == 200 and get_view{ ui = gui, name = "pane" }.max_y == 0, what = "frame 2: content exactly as high as the view has no bar either" }
+    p.rows = 8
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 3: 160 of 100
+    let v = get_view{ ui = gui, name = "pane" }
+    ui_test::expect{ &io, &t, ok = is_rect{ r = find_row{ ui = gui, index = 0 }, x = 0, y = 0, w = 190, h = 20 }, what = "frame 3: the frame the content overflows already has it narrowed by the bar" }
+    ui_test::expect{ &io, &t, ok = is_rect{ r = get_part{ ui = gui, region = "pane", part = "\x00track_y" }, x = 190, y = 0, w = 10, h = 100 } and is_rect{ r = get_part{ ui = gui, region = "pane", part = "\x00thumb_y" }, x = 190, y = 0, w = 10, h = 62 },
+        what = "frame 3: and its bar: a track the theme's 10 units thick, a thumb of 100 * 100 / 160 rounded down" }
+    ui_test::expect{ &io, &t, ok = v.view_w == 190 and v.view_h == 100 and v.content_h == 160 and v.max_y == 60 and v.y == 0, what = "frame 3: the view, the content and the range" }
+    ui_test::expect{ &io, &t, ok = ui::find_node{ ui = gui, path = "pane" } != null, what = "the region describes itself" }
+    p.rows = 4
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 4
+    ui_test::expect{ &io, &t, ok = find_row{ ui = gui, index = 0 }.w == 200 and get_part{ ui = gui, region = "pane", part = "\x00thumb_y" }.w == 0,
+        what = "frame 4: the frame it fits again the bar is gone and the content is as wide as the region" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "the bar frames are clean" }
+}
+
+// A region in a region: the wheel scrolls the inner one until its end, then the outer one; over an
+// inner region that cannot move it goes to the outer at once.
+struct Nest { inner_rows: u32 }
+
+fn show_nest { mut ui: ui::Ui, mut s: Nest } {
+    let outer = ui::begin_scroll{ &ui, id = "outer", opts = ui::Opts{ box = ui::place{ x = 0.0, y = 0.0, w = 200.0, h = 100.0 }, .. } }
+    add_row{ &ui, index = 100, width = ui::GROW, height = 50.0 }
+    let inner = ui::begin_scroll{ &ui, id = "inner", opts = ui::Opts{ box = ui::Box{ height = ui::fix{ size = 60.0 }, .. }, .. } }
+    for i in 0..s.inner_rows { add_row{ &ui, index = i, width = ui::GROW, height = 20.0 } }
+    ui::end{ &ui, scope = inner }
+    add_row{ &ui, index = 101, width = ui::GROW, height = 200.0 }
+    ui::end{ &ui, scope = outer }
+}
+
+fn check_wheel_nested { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s = Nest{ inner_rows = 6 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_nest{ &s, _ } }                 // 1
+    // The outer content is 50 + 60 + 200 high in a view of 100: a range of 210. The inner one is
+    // 120 in 60: a range of 60. A notch is 40 pixels.
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "outer" }.max_y == 210 and get_view{ ui = gui, name = "inner" }.max_y == 60, what = "frame 1: the two ranges" }
+    move_to{ ui = &gui, x = 50, y = 60 }
+    turn{ ui = &gui, dx = 0.0, dy = -1.0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_nest{ &s, _ } }                 // 2
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "inner" }.y == 40 and get_view{ ui = gui, name = "outer" }.y == 0, what = "frame 2: a notch down over the inner region scrolls it" }
+    turn{ ui = &gui, dx = 0.0, dy = -1.0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_nest{ &s, _ } }                 // 3
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "inner" }.y == 60 and get_view{ ui = gui, name = "outer" }.y == 0, what = "frame 3: to its end, and no further" }
+    turn{ ui = &gui, dx = 0.0, dy = -1.0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_nest{ &s, _ } }                 // 4
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "inner" }.y == 60 and get_view{ ui = gui, name = "outer" }.y == 40, what = "frame 4: at its end, the outer region takes the wheel" }
+    turn{ ui = &gui, dx = 0.0, dy = 1.0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_nest{ &s, _ } }                 // 5
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "inner" }.y == 20 and get_view{ ui = gui, name = "outer" }.y == 40, what = "frame 5: a notch up goes to the inner region again, which can move up" }
+    s.inner_rows = 2
+    ui_test::step_frame{ &d, ui = &gui, show = show_nest{ &s, _ } }                 // 6
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "inner" }.y == 0 and get_view{ ui = gui, name = "inner" }.max_y == 0, what = "frame 6: the inner content shrank below its view, which takes its offset to 0" }
+    turn{ ui = &gui, dx = 0.0, dy = -1.0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_nest{ &s, _ } }                 // 7
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "outer" }.y == 80, what = "frame 7: over an inner region that cannot move the wheel goes to the outer at once" }
+    // A widget asking for the wheel after a region took it gets nothing.
+    turn{ ui = &gui, dx = 0.0, dy = -1.0 }
+    ui::begin_frame{ ui = &gui, frame = d.info }                                    // 8
+    ui_test::expect{ &io, &t, ok = ui::take_wheel{ ui = &gui, id = top_id{ ui = gui, name = "outer" } } == 0.0, what = "frame 8: the wheel routed to a region is not left for take_wheel" }
+    show_nest{ ui = &gui, &s }
+    ui::end_frame{ ui = &gui }
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "outer" }.y == 120 and is_clean{ ui = gui } and d.unclean == 0, what = "frame 8: the region scrolled; the nested wheel frames are clean" }
+}
+
+// Regions on both axes inside one on both axes; and a region that scrolls only sideways turns with
+// the vertical wheel.
+struct Both { strip: bool }
+
+fn show_both { mut ui: ui::Ui, mut s: Both } {
+    let outer = ui::begin_scroll_with{ &ui, id = "outer", axes = ui::ScrollAxes::both, axis = ui::Axis::column, opts = ui::Opts{ box = ui::place{ x = 0.0, y = 0.0, w = 200.0, h = 150.0 }, .. } }
+    add_cell{ &ui, w = 400.0, h = 50.0, color = GRAY }
+    let inner = ui::begin_scroll_with{ &ui, id = "inner", axes = ui::ScrollAxes::both, axis = ui::Axis::column, opts = ui::Opts{ box = ui::Box{ width = ui::fix{ size = 150.0 }, height = ui::fix{ size = 100.0 }, .. }, .. } }
+    add_cell{ &ui, w = 300.0, h = 300.0, color = SLATE }
+    ui::end{ &ui, scope = inner }
+    add_cell{ &ui, w = 100.0, h = 100.0, color = GRAY }
+    ui::end{ &ui, scope = outer }
+    if s.strip {
+        let strip = ui::begin_scroll_with{ &ui, id = "strip", axes = ui::ScrollAxes::horizontal, axis = ui::Axis::row, opts = ui::Opts{ box = ui::place{ x = 0.0, y = 200.0, w = 200.0, h = 50.0 }, .. } }
+        add_cell{ &ui, w = 600.0, h = 30.0, color = GREEN }
+        ui::end{ &ui, scope = strip }
+    }
+}
+
+fn check_wheel_both { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s = Both{ strip = true }
+    ui_test::step_frame{ &d, ui = &gui, show = show_both{ &s, _ } }                 // 1
+    // Outer: 400 by 250 in 200 by 150, less its two bars: 190 by 140, ranges 210 and 110.
+    // Inner: 300 by 300 in 150 by 100, less its bars: 140 by 90, ranges 160 and 210.
+    let o = get_view{ ui = gui, name = "outer" }
+    let i = get_view{ ui = gui, name = "inner" }
+    ui_test::expect{ &io, &t, ok = o.max_x == 210 and o.max_y == 110 and i.max_x == 160 and i.max_y == 210, what = "frame 1: both regions have both bars from their first frame" }
+    ui_test::expect{ &io, &t, ok = is_rect{ r = get_part{ ui = gui, region = "inner", part = "\x00thumb_x" }, x = 0, y = 140, w = 65, h = 10 } and is_rect{ r = get_part{ ui = gui, region = "inner", part = "\x00thumb_y" }, x = 140, y = 50, w = 10, h = 27 },
+        what = "frame 1: the inner thumbs: 140 * 140 / 300 and 90 * 90 / 300, rounded down" }
+    move_to{ ui = &gui, x = 70, y = 100 }
+    turn{ ui = &gui, dx = 1.0, dy = -1.0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_both{ &s, _ } }                 // 2
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "inner" }.x == 40 and get_view{ ui = gui, name = "inner" }.y == 40 and get_view{ ui = gui, name = "outer" }.x == 0,
+        what = "frame 2: the wheel on both axes scrolls the inner region on both" }
+    turn{ ui = &gui, dx = 5.0, dy = 0.0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_both{ &s, _ } }                 // 3
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "inner" }.x == 160 and get_view{ ui = gui, name = "outer" }.x == 0, what = "frame 3: five notches right hold it at its end" }
+    turn{ ui = &gui, dx = 1.0, dy = 0.0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_both{ &s, _ } }                 // 4
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "inner" }.x == 160 and get_view{ ui = gui, name = "outer" }.x == 40, what = "frame 4: then the outer region moves across" }
+    turn{ ui = &gui, dx = 0.0, dy = 1.0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_both{ &s, _ } }                 // 5
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "inner" }.y == 0 and get_view{ ui = gui, name = "outer" }.y == 0, what = "frame 5: up again on the inner one" }
+    turn{ ui = &gui, dx = 0.0, dy = 1.0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_both{ &s, _ } }                 // 6
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "inner" }.y == 0 and get_view{ ui = gui, name = "outer" }.y == 0 and get_view{ ui = gui, name = "outer" }.x == 40,
+        what = "frame 6: where nothing can move up the wheel moves nothing" }
+    move_to{ ui = &gui, x = 100, y = 220 }
+    turn{ ui = &gui, dx = 0.0, dy = -1.0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_both{ &s, _ } }                 // 7
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "strip" }.x == 40, what = "frame 7: a region that scrolls only across turns right with the wheel turned down" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "the both-axes frames are clean" }
+}
+
+// A thumb drag moves the offset by the pointer's movement times range over travel, rounded to the
+// nearest pixel, from the offset at the press.
+fn check_thumb_drag { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut p = Pane{ rows = 14, row_h = 25.0, .. }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 1
+    // 350 in 100: a range of 250; the thumb is 100 * 100 / 350 = 28 of a 100 track, so it travels 72.
+    ui_test::expect{ &io, &t, ok = is_rect{ r = get_part{ ui = gui, region = "pane", part = "\x00thumb_y" }, x = 190, y = 0, w = 10, h = 28 } and get_view{ ui = gui, name = "pane" }.max_y == 250,
+        what = "frame 1: the thumb and the range" }
+    ui_test::expect{ &io, &t, ok = find_shape{ ui = gui, color = gui.theme.border }.rect.h == 28, what = "frame 1: a thumb at rest has the theme's border colour" }
+    move_to{ ui = &gui, x = 195, y = 14 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 2
+    ui_test::expect{ &io, &t, ok = find_shape{ ui = gui, color = gui.theme.text_muted }.rect.h == 28, what = "frame 2: hovered, its muted text colour" }
+    press_left{ ui = &gui }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 3
+    ui_test::expect{ &io, &t, ok = find_shape{ ui = gui, color = gui.theme.accent }.rect.h == 28 and get_view{ ui = gui, name = "pane" }.y == 0, what = "frame 3: held, its accent; the press moves nothing" }
+    move_to{ ui = &gui, x = 195, y = 24 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 4
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "pane" }.y == 35 and get_part{ ui = gui, region = "pane", part = "\x00thumb_y" }.y == 10,
+        what = "frame 4: 10 pixels of drag are 10 * 250 / 72 = 34.7, so 35; the thumb is then at 72 * 35 / 250 = 10" }
+    move_to{ ui = &gui, x = 195, y = 32 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 5
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "pane" }.y == 63, what = "frame 5: 18 pixels are 62.5, and a half rounds up: 63" }
+    move_to{ ui = &gui, x = 195, y = 50 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 6
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "pane" }.y == 125 and get_part{ ui = gui, region = "pane", part = "\x00thumb_y" }.y == 36, what = "frame 6: 36 pixels are 125 exactly, and the thumb is 36 down" }
+    move_to{ ui = &gui, x = 300, y = 4 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 7
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "pane" }.y == 0, what = "frame 7: dragged above where it started, and off the bar, it is held at 0" }
+    move_to{ ui = &gui, x = 195, y = 290 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 8
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "pane" }.y == 250 and get_part{ ui = gui, region = "pane", part = "\x00thumb_y" }.y == 72, what = "frame 8: far below, at the end, the thumb at the end of its travel" }
+    release_left{ ui = &gui }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 9
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 10
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "pane" }.y == 250 and find_shape{ ui = gui, color = gui.theme.border }.rect.h == 28 and d.unclean == 0,
+        what = "frame 10: released, the offset stays and the thumb is at rest; the drag frames are clean" }
+}
+
+// A virtual list of 10,000 rows records only the rows in view.
+struct Long { count: u32, header: bool, first: u32, last: u32, recorded: u32, first_id: ui::Id }
+
+fn show_long { mut ui: ui::Ui, mut s: Long } {
+    let pane = ui::begin_scroll{ &ui, id = "list", opts = ui::Opts{ box = ui::place{ x = 0.0, y = 0.0, w = 200.0, h = 100.0 }, .. } }
+    if s.header { add_cell{ &ui, w = 100.0, h = 30.0, color = BLUE } }
+    let items = ui::make_id{ ui, name = "items" }
+    let list = ui::begin_element{ &ui, id = items, axis = ui::Axis::column, box = ui::Box{ width = ui::GROW, .. } }
+    let rows = ui::find_rows{ ui, count = s.count, row_height = 20.0 }
+    s.first = rows.first
+    s.last = rows.last
+    s.recorded = 0
+    add_spacer{ &ui, height = rows.before }
+    for i in rows.first..rows.last {
+        let key = ui::push_key{ &ui, key = @as(u64, i) }
+        let id = ui::make_id{ ui, name = "row" }
+        if i == rows.first { s.first_id = id }
+        let el = ui::begin_element{ &ui, id, axis = ui::Axis::row, box = ui::Box{ width = ui::GROW, height = ui::fix_pixels{ size = rows.row }, fill = GRAY, .. } }
+        ui::end{ &ui, scope = el }
+        ui::end{ &ui, scope = key }
+        s.recorded = s.recorded + 1
+    }
+    add_spacer{ &ui, height = rows.after }
+    ui::end{ &ui, scope = list }
+    ui::end{ &ui, scope = pane }
+}
+
+fn add_spacer { mut ui: ui::Ui, height: i32 } {
+    let el = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{ width = ui::GROW, height = ui::fix_pixels{ size = height }, .. } }
+    ui::end{ &ui, scope = el }
+}
+
+fn check_virtual { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s = Long{ count = 10000, header = false, first = 0, last = 0, recorded = 0, first_id = ui::NO_ID }
+    let list = top_id{ ui = gui, name = "list" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_long{ &s, _ } }                 // 1
+    ui_test::expect{ &io, &t, ok = s.first == 0 and s.last == 15 and s.recorded == 15, what = "frame 1: before the view is known, a surface's height of rows" }
+    let v = get_view{ ui = gui, name = "list" }
+    ui_test::expect{ &io, &t, ok = v.content_h == 200000 and v.max_y == 199900 and v.view_h == 100, what = "frame 1: the spacers make the content 10,000 rows high" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_long{ &s, _ } }                 // 2
+    ui_test::expect{ &io, &t, ok = s.first == 0 and s.last == 5 and s.recorded == 5, what = "frame 2: only the 5 rows in view are recorded" }
+    ui::set_scroll{ ui = &gui, id = list, x = 0, y = 1010 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_long{ &s, _ } }                 // 3
+    ui_test::expect{ &io, &t, ok = s.first == 50 and s.last == 56 and s.recorded == 6 and is_rect{ r = find_rect{ ui = gui, id = s.first_id }, x = 0, y = -10, w = 190, h = 20 },
+        what = "frame 3: scrolled to 1010, rows 50 to 55 are recorded, the first 10 pixels above the view" }
+    ui::set_scroll{ ui = &gui, id = list, x = 0, y = 500000 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_long{ &s, _ } }                 // 4
+    ui_test::expect{ &io, &t, ok = s.first == 9995 and s.last == 10000 and get_view{ ui = gui, name = "list" }.y == 199900 and is_rect{ r = find_rect{ ui = gui, id = s.first_id }, x = 0, y = 0, w = 190, h = 20 },
+        what = "frame 4: past the end, the offset and the rows are held to the last view" }
+    s.header = true
+    ui::set_scroll{ ui = &gui, id = list, x = 0, y = 1010 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_long{ &s, _ } }                 // 5
+    ui_test::step_frame{ &d, ui = &gui, show = show_long{ &s, _ } }                 // 6
+    ui_test::expect{ &io, &t, ok = s.first == 49 and s.last == 54 and is_rect{ r = find_rect{ ui = gui, id = s.first_id }, x = 0, y = 0, w = 190, h = 20 },
+        what = "frame 6: under a 30 pixel header, the rows are found from the list's own place in the content" }
+    s.count = 4000000000
+    s.header = false
+    ui::set_scroll{ ui = &gui, id = list, x = 0, y = 2000000000 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_long{ &s, _ } }                 // 7
+    ui_test::step_frame{ &d, ui = &gui, show = show_long{ &s, _ } }                 // 8
+    ui_test::expect{ &io, &t, ok = s.recorded <= 6 and get_view{ ui = gui, name = "list" }.content_h == ui::MAX_PIXELS, what = "frame 8: four thousand million rows are held at MAX_PIXELS without overflowing" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "the virtual list frames are clean" }
+}
+
+// Scrolling by one pixel moves every edge of the content by exactly one pixel and changes no size.
+fn show_mixed { mut ui: ui::Ui, mut p: Pane } {
+    let mut box = ui::place{ x = 10.0, y = 10.0, w = 200.0, h = 120.0 }
+    box.padding = ui::inset{ by = 5.0 }
+    box.gap = 3.0
+    box.border_width = ui::inset{ by = 1.0 }
+    box.border = ui::color_sides{ color = EDGE }
+    box.fill = PANEL
+    let pane = ui::begin_scroll{ &ui, id = "pane", opts = ui::Opts{ box, .. } }
+    ui::add_text{ &ui, text = "Hello", style = ui::TextStyle{ .. }, box = ui::Box{ .. } }
+    let group = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{ width = ui::GROW, padding = ui::inset{ by = 4.0 }, gap = 2.5, fill = SLATE, .. } }
+    add_cell{ &ui, w = 33.3, h = 17.7, color = GRAY }
+    let grow = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{ width = ui::GROW, height = ui::fix{ size = 11.0 }, fill = GREEN, .. } }
+    ui::end{ &ui, scope = grow }
+    ui::end{ &ui, scope = group }
+    for i in 0..p.rows { add_row{ &ui, index = i, width = ui::GROW, height = p.row_h } }
+    ui::paint_rect{ &ui, rect = ui::Rect{ x = 2, y = 2, w = 5, h = 5 }, style = fill_with{ color = RED } }
+    ui::end{ &ui, scope = pane }
+}
+
+struct Snapshot { rects: [64]ui::Rect, count: usize }
+
+// The rectangles of the region's content (not its bars, not paints), in tree order.
+fn take_snapshot { ui: ui::Ui } -> Snapshot {
+    let mut s: Snapshot
+    if ui.scroll.last_count == 0 { return s }
+    let region = ui.scroll.last[0]
+    let from = @as(usize, region.element) + 1
+    let to = @as(usize, region.track_y)
+    for i in from..to {
+        let e = ui.tree.elements[i]
+        if e.kind == ui::tree::Kind::paint or s.count >= 64 { continue }
+        s.rects[s.count] = ui::Rect{ x = e.x, y = e.y, w = e.w, h = e.h }
+        s.count = s.count + 1
+    }
+    return s
+}
+
+fn check_one_pixel { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let scales: [2]f32 = [1.0, 1.5]
+    for scale in scales {
+        let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+        let mut d = make_driver{ &heap, width = ui::round_pixels{ v = 400.0 * scale }, height = ui::round_pixels{ v = 300.0 * scale }, scale } iferr { return }
+        let mut p = Pane{ rows = 12, row_h = 13.3, .. }
+        let pane = top_id{ ui = gui, name = "pane" }
+        ui_test::step_frame{ &d, ui = &gui, show = show_mixed{ &p, _ } }
+        let base = take_snapshot{ ui = gui }
+        let mut exact = base.count > 10
+        let mut moved: i32 = 0
+        for k in 1..41 {
+            ui::set_scroll{ ui = &gui, id = pane, x = 0, y = k }
+            ui_test::step_frame{ &d, ui = &gui, show = show_mixed{ &p, _ } }
+            let now = take_snapshot{ ui = gui }
+            moved = get_view{ ui = gui, name = "pane" }.y
+            if now.count != base.count or moved != k { exact = false }
+            for i in 0..base.count {
+                let a = base.rects[i]
+                let b = now.rects[i]
+                if b.x != a.x or b.y != a.y - k or b.w != a.w or b.h != a.h { exact = false }
+            }
+        }
+        ui_test::expect{ &io, &t, ok = exact and moved == 40, what = "each pixel of offset moves every edge of the content by exactly a pixel and changes no size (scales 1 and 1.5)" }
+        ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "the one-pixel frames are clean" }
+    }
+}
+
+// An offset past either end is held, whether it comes from set_scroll, the wheel or the state.
+fn check_held { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut p = Pane{ rows = 8, .. }
+    let pane = top_id{ ui = gui, name = "pane" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 1: a range of 60
+    ui::set_scroll{ ui = &gui, id = pane, x = -50, y = -50 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 2
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "pane" }.y == 0 and find_row{ ui = gui, index = 0 }.y == 0, what = "frame 2: an offset before the start is held at 0" }
+    ui::set_scroll{ ui = &gui, id = pane, x = 2147483647, y = 2147483647 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 3
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "pane" }.y == 60 and find_row{ ui = gui, index = 0 }.y == -60, what = "frame 3: the largest i32 is held at the end" }
+    move_to{ ui = &gui, x = 50, y = 50 }
+    turn{ ui = &gui, dx = 0.0, dy = 1.0e30 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 4
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "pane" }.y == 0, what = "frame 4: a wheel turned past any range up is held at the start" }
+    turn{ ui = &gui, dx = 0.0, dy = -1.0e30 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 5
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "pane" }.y == 60, what = "frame 5: and down at the end" }
+    let mut v: ui::Values
+    v.i[0] = 9223372036854775807
+    v.i[1] = -9223372036854775807
+    v.f[1] = 1.0e30
+    ui::store_state{ ui = &gui, id = pane, values = v }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 6
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "pane" }.y == 0, what = "frame 6: offsets in the state past an i32 are held" }
+    // A smooth wheel: a quarter notch is 10 pixels, and three tenths keep their fraction.
+    turn{ ui = &gui, dx = 0.0, dy = -0.25 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 7
+    let a = get_view{ ui = gui, name = "pane" }.y
+    turn{ ui = &gui, dx = 0.0, dy = -0.03 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 8
+    let b = get_view{ ui = gui, name = "pane" }.y
+    turn{ ui = &gui, dx = 0.0, dy = -0.03 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 9
+    let c = get_view{ ui = gui, name = "pane" }.y
+    ui_test::expect{ &io, &t, ok = a == 10 and b == 11 and c == 12, what = "frames 7 to 9: a smooth wheel's fractions of a pixel are kept: 10, then 1.2, then 0.2 + 1.2" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "the held frames are clean" }
+}
+
+// A bar is the same whole number of pixels thick at every offset, and its thumb stays in its track
+// and meets its end at the largest offset.
+fn check_thickness { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let scales: [2]f32 = [1.0, 1.5]
+    for scale in scales {
+        let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+        let mut d = make_driver{ &heap, width = ui::round_pixels{ v = 400.0 * scale }, height = ui::round_pixels{ v = 300.0 * scale }, scale } iferr { return }
+        let mut p = Pane{ rows = 10, .. }
+        let pane = top_id{ ui = gui, name = "pane" }
+        ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }
+        let thick = ui::to_pixels{ ui = gui, length = 10.0 }
+        let max = get_view{ ui = gui, name = "pane" }.max_y
+        let mut same = max > 0
+        let mut at_end = false
+        let mut y: i32 = 0
+        while y <= max + 7 {
+            ui::set_scroll{ ui = &gui, id = pane, x = 0, y }
+            ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }
+            let track = get_part{ ui = gui, region = "pane", part = "\x00track_y" }
+            let thumb = get_part{ ui = gui, region = "pane", part = "\x00thumb_y" }
+            if track.w != thick or thumb.w != thick or thumb.y < track.y or thumb.y + thumb.h > track.y + track.h { same = false }
+            if y >= max { at_end = thumb.y + thumb.h == track.y + track.h }
+            y = y + 7
+        }
+        ui_test::expect{ &io, &t, ok = same and at_end and (scale == 1.0 or thick == 15), what = "the bar is as thick at every offset (10 pixels at scale 1, 15 at 1.5), its thumb in its track and at its end at the end" }
+        ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "the thickness frames are clean" }
+    }
+}
+
+// Content that shrinks takes the offset back with it in the same frame.
+fn check_shrink { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut p = Pane{ rows = 8, .. }
+    let pane = top_id{ ui = gui, name = "pane" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 1
+    ui::set_scroll{ ui = &gui, id = pane, x = 0, y = 60 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 2
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "pane" }.y == 60 and find_row{ ui = gui, index = 0 }.y == -60, what = "frame 2: at the end of 160 in 100" }
+    p.rows = 6
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 3
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "pane" }.y == 20 and find_row{ ui = gui, index = 0 }.y == -20 and find_row{ ui = gui, index = 5 }.y == 80,
+        what = "frame 3: content of 120 holds the offset at 20 in the frame it shrank, its last row on the view's bottom" }
+    p.rows = 3
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 4
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "pane" }.y == 0 and is_rect{ r = find_row{ ui = gui, index = 0 }, x = 0, y = 0, w = 200, h = 20 },
+        what = "frame 4: content that fits takes it to 0, and the bar goes in the same frame" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "the shrinking frames are clean" }
+}
+
+// The offset is widget state: it lasts while the region is recorded, and goes with the TTL when
+// it is not.
+fn check_ttl { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    gui.config.state_ttl = 10
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut p = Pane{ rows = 8, .. }
+    let pane = top_id{ ui = gui, name = "pane" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 1
+    ui::set_scroll{ ui = &gui, id = pane, x = 0, y = 40 }
+    ui_test::step_frames{ &d, ui = &gui, show = show_pane{ &p, _ }, count = 4 }    // 2 to 5
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "pane" }.y == 40 and ui::load_state{ ui = &gui, id = pane }.i[1] == 40, what = "frames 2 to 5: the offset lasts" }
+    p.shown = false
+    ui_test::step_frames{ &d, ui = &gui, show = show_pane{ &p, _ }, count = 58 }   // 6 to 63
+    let kept_63 = ui::state::has_entry{ ui = gui, id = pane }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 64: the sweep
+    let kept_64 = ui::state::has_entry{ ui = gui, id = pane }
+    ui_test::expect{ &io, &t, ok = kept_63 and not kept_64, what = "the offset of a region not recorded since frame 5 is there until the sweep of frame 64, which frees it" }
+    p.shown = true
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 65
+    ui_test::expect{ &io, &t, ok = get_view{ ui = gui, name = "pane" }.y == 0 and d.unclean == 0, what = "frame 65: recorded again, it starts at 0; every frame is clean" }
+}
+
+// A region that has no size from outside is as large as its content: nothing to scroll, no bar,
+// no problem.
+fn show_unsized { mut ui: ui::Ui, mut p: Pane } {
+    let holder = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = ui::Box{ place = ui::Place{ .. }, .. } }
+    let pane = ui::begin_scroll{ &ui, id = "pane", opts = ui::Opts{ .. } }
+    for i in 0..p.rows { add_row{ &ui, index = i, width = ui::fix{ size = 150.0 }, height = 50.0 } }
+    ui::end{ &ui, scope = pane }
+    ui::end{ &ui, scope = holder }
+}
+
+fn check_unsized { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut p = Pane{ rows = 8, .. }
+    ui_test::step_frame{ &d, ui = &gui, show = show_unsized{ &p, _ } }              // 1
+    ui_test::step_frame{ &d, ui = &gui, show = show_unsized{ &p, _ } }              // 2
+    let v = get_view{ ui = gui, name = "pane" }
+    ui_test::expect{ &io, &t, ok = v.view_h == 400 and v.max_y == 0 and get_part{ ui = gui, region = "pane", part = "\x00thumb_y" }.w == 0 and d.unclean == 0,
+        what = "a region in a parent that fits its content is as large as its content, with nothing to scroll and no problem" }
+}
+
+// The bars at scale 1.5, by hand: a region on both axes with a border of 1 unit (2 pixels) and a
+// padding of 2 (3), 100 by 60 units (150 by 90) at (15, 15), holding 200 by 100 units (300 by 150).
+// The bars are 15 pixels and the shortest thumb 24.
+fn show_golden_pane { mut ui: ui::Ui, mut p: Pane } {
+    let mut box = ui::place{ x = 10.0, y = 10.0, w = 100.0, h = 60.0 }
+    box.padding = ui::inset{ by = 2.0 }
+    box.border_width = ui::inset{ by = 1.0 }
+    box.border = ui::color_sides{ color = EDGE }
+    box.fill = PANEL
+    let pane = ui::begin_scroll_with{ &ui, id = "pane", axes = ui::ScrollAxes::both, axis = ui::Axis::column, opts = ui::Opts{ box, .. } }
+    add_cell{ &ui, w = 200.0, h = 100.0, color = ACCENT }
+    ui::end{ &ui, scope = pane }
+}
+
+fn check_scroll_golden { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, update: bool } {
+    let out = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65536 } iferr { return }
+    let scratch = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65536 } iferr { return }
+    let mut sink = ui_rec::make_sink{ bytes = out }
+    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut d = make_driver{ &heap, width = 300, height = 225, scale = 1.5 } iferr { return }
+    let mut p = Pane{ .. }
+    let pane = top_id{ ui = gui, name = "pane" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_golden_pane{ &p, _ } }
+    write_frame{ &sink, ui = gui, name = "a region on both axes at scale 1.5, at offset 0: both bars from its first frame" } iferr { return }
+    ui::set_scroll{ ui = &gui, id = pane, x = 40, y = 30 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_golden_pane{ &p, _ } }
+    write_frame{ &sink, ui = gui, name = "the same at offset 40, 30" } iferr { return }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "bars", actual = ui_rec::get_text{ sink }, scratch, update }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "the golden frames are clean" }
+}

@@ -1,0 +1,8 @@
+// The layers test: overlays, windows, modals, popups, tooltips and scroll regions (stage 8). How
+// to run it: ui/AGENTS.md.
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "ui_test_layers", root = "." }
+    build::add_sources{ &b, exe, dir = "../../core" }
+    build::add_sources{ &b, exe, dir = "../../record" }
+    build::add_sources{ &b, exe, dir = "../../test" }
+}

@@ -106,6 +106,7 @@ kotor/tools/ctxc run ui/tests/stage                    # stage 2: instances, atl
 kotor/tools/ctxc run ui/tests/fonts                    # stage 4: FreeType and HarfBuzz; takes --font PATH
 kotor/tools/ctxc run ui/tests/layout                   # stages 5 and 6: the Ui, ids, the tree, layout, emit, the pixel properties
 kotor/tools/ctxc run ui/tests/input                    # stage 7: input, interaction, focus, state, nodes, the driver
+kotor/tools/ctxc run ui/tests/layers                   # stage 8: overlays, windows, modals, popups, tooltips, scroll regions
 kotor/tools/ctxc run ui/tests/shots -- --out ui/out    # stages 3 and 4: pictures from the OpenGL backend (needs a GPU); look at them
 kotor/tools/ctxc run ui/tests/draw -- --update         # rewrite goldens after an intended change
 kotor/tools/ctxc run kotor/tools/uicompat              # ui built beside kotor's libraries
@@ -142,7 +143,7 @@ ui/
                 to_pixel_position, to_pixels_f32, to_font_size, to_pixel_sides, to_pixel_corners, get_scale);
                 the Ui as an @fmt sink, write_fixed, take_text
     id.ctx      Id, Scope, make_id, push_id, push_key, end; ui::id: the scope stack, write_path
-    tree.ctx    Box, Size, Place, Insets, TextStyle (logical units); fix, fix_pixels, take, place, place_pixels, inset;
+    tree.ctx    Box, Size, Place, Insets, TextStyle, Opts (logical units); fix, fix_pixels, take, place, place_pixels, inset;
                 begin_element, add_text, add_host_slot, paint_* (pixels); ui::tree: Element (pixels), Extent, open_element
     layout.ctx  ui::layout: solve, position: the flow solver in integer pixels (fit, grow, fix, take, min and max,
                 alignment, wrapped text and dots); its rounding rules are the comment at its top
@@ -150,6 +151,9 @@ ui/
     host.ctx    Event (the pointer in device pixels), Key, Cursor, Requests
     input.ctx interact.ctx focus.ctx state.ctx nodes.ctx layers.ctx scroll.ctx
                 one subsystem each: its state (a field of Ui) and make_state, reset_state, finish_frame
+    layers.ctx  begin_overlay, begin_modal, begin_window_layer, raise_window, open_popup, open_popup_on, begin_popup,
+                close_popup, close_popups, is_popup_open, make_popup_id, is_tip_due, begin_tooltip
+    scroll.ctx  begin_scroll, begin_scroll_with, get_scroll, set_scroll, find_rows (a virtual list's rows in view)
   stage/      namespace ui_stage   the staged level: instances, clip slots, atlas and glyph cache, batching, passes;
                                    its canvas is the surface in device pixels
   fonts/      namespace ui_fonts   outline fonts: FreeType rasterises, HarfBuzz shapes; the TextProvider
