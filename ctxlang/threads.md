@@ -743,7 +743,7 @@ Language work on its own branch (kotor/AGENTS.md, rule 1), one step at a time.
    through a `mut` field), a held place used before the wait (also through a caller), a handle as a
    struct's field, a result or a read-only field, `wait` on a handle zero on every path. The
    interpreter running `start` programs and refusing `start_concurrent`. Then the bootstrap refresh
-   (ctxlang/PLAN.md, "Changing the language").
+   (ctxlang/internals.md, "Changing the language").
 8. **net.md and http.md**, written against this contract, then built.
 9. **The Evented backend**: the stack switch on each ABI first, then the per-fiber state's audit, the
    stack bounds of task fns, then the loops.

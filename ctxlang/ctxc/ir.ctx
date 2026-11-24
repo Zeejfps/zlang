@@ -4,8 +4,7 @@
 // T to ?T, function value conversions, narrowed locals, `mut` fields as pointers). Types are
 // interned: two types are equal exactly when their ids are. lower.ctx builds a Program from the
 // checked program; ir_print.ctx writes its text form and ir_read.ctx reads it back. The text
-// form was first specified by ctxi/irdump.py, the Python front end's writer (removed in stage 8,
-// see PLAN.md).
+// form was first specified by ctxi/irdump.py, the Python front end's writer (since removed).
 //
 // Nothing here owns memory: a Program lives in the arena it was read into.
 

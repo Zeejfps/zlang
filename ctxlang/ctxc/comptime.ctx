@@ -1,8 +1,8 @@
 // Compile-time consts (§14): a const whose initializer folding can't compute is evaluated. The
 // initializer is lowered as a program of its own (lower::alone), run in the interpreter
 // (eval.ctx) without the externs `ctxc interp` emulates, and its result read back by the const's
-// type into a check::Val, the value folding would have computed. A converted literal (PLAN.md
-// 4.5) is computed the same way, by running its `#convert` fn on its bytes.
+// type into a check::Val, the value folding would have computed. A converted literal (spec
+// §18) is computed the same way, by running its `#convert` fn on its bytes.
 //
 //   let v = comptime::value{ &c, d, e }            // const d, whose initializer is e; null after an error
 //   let v = comptime::literal{ &c, f, e, bytes }   // literal e, converted by fn f

@@ -159,7 +159,7 @@ as the write-ups gave them.
 
 32. **A pattern can't bind a mutable local.** *Mostly solved:* `ifnull` unwraps into any `let`,
     including `let mut`. A pattern's own bindings are still read-only (`let some{ value = mut g }
-    = ...` is a syntax error), and PLAN.md 1.1 would take the rest. *Hit by 1:* ctxc.
+    = ...` is a syntax error), and that isn't planned. *Hit by 1:* ctxc.
 
 33. **No pointer from an integer.** GL takes buffer offsets as `const void *`; the binding
     declares them `offset: usize`, which works only because 64-bit ABIs pass the two alike.

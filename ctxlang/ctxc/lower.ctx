@@ -2500,7 +2500,7 @@ namespace lower {
         return mk{ ty = pe, k = ir::ExprKind::cast{ e = box{ l, e = a } } }
     }
 
-    // A string literal: what its conversion gave it while compiling (PLAN.md 4.5), or a [N]u8
+    // A string literal: what its conversion gave it while compiling (spec §18), or a [N]u8
     // array, or a view of static bytes as a []u8 or a strlit.
     fn str_lit { mut l: Lower, e: syntax::Expr, bytes: []u8, t: Id } -> ir::Expr {
         if map::has{ m = l.c.lit_convs, key = check::expr_key{ e } } {

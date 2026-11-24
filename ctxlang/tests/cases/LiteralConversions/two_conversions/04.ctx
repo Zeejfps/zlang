@@ -1,4 +1,4 @@
-// Two conversions to one T (PLAN.md 4.6) are an error where a literal would use them,
+// Two conversions to one T (spec §18) are an error where a literal would use them,
 // naming both, and not before: a program that calls one directly is fine.
 
 struct Celsius { deg: i32 }

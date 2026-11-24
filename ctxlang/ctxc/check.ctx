@@ -3,7 +3,7 @@
 // const initializers, function bodies with their statements, expressions, calls, binds,
 // `match`, `let ... else` and narrowing (§8), definite initialization (§11), the safety checks
 // (exclusivity §3.1, escape analysis §14, bound-function scope §6), and the rules for `main`
-// (§15). Monomorphization and IR come next (PLAN.md stage 6).
+// (§15). Monomorphization and IR are lower.ctx's.
 //
 //   let mut c = check::new{ files, std_files, &heap, &diags }
 //   check::program{ &c }
@@ -251,7 +251,7 @@ namespace check {
         fuel:      u64 = comptime::FUEL,              // the steps evaluating a const may take
         stack:     u64 = comptime::STACK,             // the bytes of ctxc's stack its calls may take
         scratch:   alloc::Bytes,                      // the interpreter's memory, for one const at a time
-        // Literal conversions (PLAN.md 4.4): a literal where a T is expected is the result of
+        // Literal conversions (spec §18): a literal where a T is expected is the result of
         // the conversion to T, which runs once the bodies are checked, as an evaluated const.
         lit_convs: map::Map(u64, u32, Heap),          // a literal's conversion, by its key; NONE once it failed
         lit_list:  list::List(syntax::Expr, Heap),    // the converted literals, in the order they were checked
@@ -409,7 +409,7 @@ namespace check {
         held:       u32,
     }
 
-    // Where a name of a local is in scope, for an editor (PLAN.md 5): var, from the offset `from`,
+    // Where a name of a local is in scope, for an editor (todo.md, Language server): var, from the offset `from`,
     // where it takes effect, to `to`, where its scope ends, both in the file of var's `at`. A
     // local declared again, or narrowed, has another, from where that takes effect; the one with
     // the latest `from` is the name's there. A local without a name (a view's) has none.
@@ -682,7 +682,7 @@ namespace check {
     const WAIT_CONSTS: u8 = 4
 
     // The consts folding can't compute (§14), evaluated in order, or earlier where another const
-    // needs one, then the converted literals (PLAN.md 4.5), then the arrays of array literals'
+    // needs one, then the converted literals (spec §18), then the arrays of array literals'
     // static views (§11, Literals), so that what stops one is reported here. Only a program
     // without errors is: lowering needs every body it reaches checked.
     fn evaluate { mut c: Checker } {
@@ -2620,7 +2620,7 @@ namespace check {
         }
     }
 
-    // The conversion that makes a literal in namespace ns a t (PLAN.md 4.4), or null if there
+    // The conversion that makes a literal in namespace ns a t (spec §18), or null if there
     // is none. Only one that code in ns could name counts: std's code sees std's conversions,
     // and the program's sees std's and its own.
     fn conversion { c: Checker, t: Id, ns: u32 } -> ?u32 {
@@ -2635,7 +2635,7 @@ namespace check {
     }
 
     // A conversion to t other than f that a literal in namespace ns sees, or null if f is the
-    // only one (PLAN.md 4.6).
+    // only one (spec §18).
     fn other_conversion { c: Checker, t: Id, f: u32, ns: u32 } -> ?u32 {
         let fs = list::items{ list = c.converts }
         let mut i: usize = 0
@@ -2710,7 +2710,7 @@ namespace check {
         return v
     }
 
-    // ---- attributes (§18; PLAN.md stage 3 gives them to generators)
+    // ---- attributes (§18; build::declarations gives them to generators, §19)
 
     // Every declaration's attributes, and its fields', each checked as a const literal of the
     // struct it names. The compiler acts on std's `c::symbol` and `c::callback` and ignores the
@@ -5882,7 +5882,7 @@ namespace check {
     }
 
     // Branches that are bare string literals, retyped when another branch is of a type a
-    // literal can be, a strlit, a []u8 or one with a conversion (PLAN.md 4.4):
+    // literal can be, a strlit, a []u8 or one with a conversion (spec §18):
     // `match p { a => { name } b => { "text" } }` gives a utf8::String when `name` is one.
     fn view_literals { mut c: Checker, bs: []mut Branch } {
         let mut hint = types::NO_TYPE
@@ -11223,7 +11223,7 @@ namespace check {
     }
 
     // A string literal is a strlit where one is expected (also inside ?), the result of the
-    // conversion to T where a T is (PLAN.md 4.4), a [N]u8 array value where a [N]u8 is, and a
+    // conversion to T where a T is (spec §18), a [N]u8 array value where a [N]u8 is, and a
     // view of static bytes, a []u8, otherwise. What text or a C string is, std's conversions
     // say. Where a ?T is expected, a conversion to ?T comes before one to T.
     fn str_lit { mut c: Checker, e: syntax::Expr, bytes: []u8, exp: Id } -> Id {
@@ -11648,7 +11648,7 @@ namespace check {
     }
 
     // The fields supplied in braces e must exist and be supplied once. `what` names the callee.
-    // e takes fields, for an editor (PLAN.md 5).
+    // e takes fields, for an editor (todo.md, Language server).
     fn supplied { mut c: Checker, e: syntax::Expr, items: []syntax::Item, fields: []types::Field, what: utf8::String } {
         try! map::put{ m = &c.braces, key = expr_key{ e }, value = fields }
         let mut i: usize = 0
