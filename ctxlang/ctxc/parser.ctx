@@ -34,6 +34,13 @@ namespace parser {
         errored: bool,                 // an error has been reported, when the
         err_at:  usize,                // parser was at this token
         hand:    Handler,              // what null_expr last returned
+        // The token after a block's `}` in a condition, where the `}` ends a line and the next
+        // starts with `-` or `&`: a statement begins there, which the condition may have been
+        // meant to go on with (brace_is_call). 0 for none. cond_mark: the diagnostics before
+        // that block. cond_items: the block's braces could hold a call's items instead.
+        cond_break: usize,
+        cond_mark:  diag::Mark,
+        cond_items: bool,
     }
 
     // Whether the expression null_expr returned is a handler's, `l ifnull r`, `l iferr r` or
@@ -47,6 +54,7 @@ namespace parser {
             text, file, toks = tokens, i = 0, heap = &heap, diags = &diags, ids = 0,
             in_cond = false, depth = 0, bad = false, errored = false, err_at = 0,
             hand = Handler{ bare = false, block = false, first = tokens[0], last = tokens[0], left_end = 0, right_start = 0 },
+            cond_break = 0, cond_mark = diag::mark{ diags }, cond_items = false,
         }
         let decls = decl_list{ &p, top = true }
         return syntax::File{ decls, ids = p.ids }
@@ -517,9 +525,32 @@ namespace parser {
                 break
             }
             let s = p.i
-            try! list::push{ list = &xs, item = stmt{ &p } }
+            let broke = s > 0 and s == p.cond_break and opens_block{ p }
+            let seen = p.cond_mark
+            let items = p.cond_items
+            let st = stmt{ &p }
+            try! list::push{ list = &xs, item = st }
             if not p.bad and not (nl{ p } or next_is{ p, k = tok::Kind::semi } or next_is{ p, k = tok::Kind::rbrace }) {
                 expected{ &p, what = "a newline or ';' after statement" }
+            }
+            // The braces before this line don't hold statements, or the line isn't one: the
+            // condition was meant to go on here. Or both parse, but the braces could be a
+            // call's and the line ends in braces that could be the block: either reading
+            // stands, and only the types would tell. That is the one error, in place of any
+            // others, and neither the statement before nor this one is left for the checker.
+            let failed = broke and p.diags.errors > seen.errors
+            if failed or (broke and items and ends_in_braces{ s = st }) {
+                diag::rewind{ diags = p.diags, to = seen }
+                let mut b = message{ p }
+                let op = utf8::String{ bytes = text_of{ p, t = p.toks[s] } }
+                try! @fmt(&b, "a condition can't go on with a line that starts with `{}`, which may begin a statement: end the line before with the `{}`, or put the condition in parentheses", op, op)
+                if not failed { try! @fmt(&b, "; if this line is a value of its own, put that in parentheses") }
+                diag::error{ diags = p.diags, span = p.toks[s].span, msg = utf8::view{ b } }
+                xs.items[xs.len - 1].k = syntax::StmtKind::error
+                if xs.len >= 2 { xs.items[xs.len - 2].k = syntax::StmtKind::error }
+                p.bad = true
+                p.errored = true
+                p.err_at = p.i
             }
             if p.bad {
                 sync{ &p, start = s, in_block = true, top = false }
@@ -751,7 +782,7 @@ namespace parser {
             variant = ident{ &p }
         }
         let mut bs: []syntax::Binder = none
-        if next_is{ p, k = tok::Kind::lbrace } and (not test or (not nl{ p } and (not p.in_cond or brace_is_call{ p }))) {
+        if next_is{ p, k = tok::Kind::lbrace } and (not test or (not nl{ p } and (not p.in_cond or brace_is_call{ &p }))) {
             bs = binder_list{ &p }
         }
         let qs = list::items{ list = quals }
@@ -849,26 +880,129 @@ namespace parser {
     }
 
     // In a condition, whether the `{` here begins a call or literal rather than the block:
-    // whether the token after its matching `}` is on the same line and could continue an
-    // expression.
-    fn brace_is_call { p: Parser } -> bool {
+    // whether the token after its matching `}` goes on with the expression (§11, rules 2 and
+    // 3). On the same line, any token that could; on the next line, one that can only continue
+    // an expression (continues), unless the braces hold a match's arms: `match x { ... }` may
+    // be an operand itself, with an operator on the line after it.
+    fn brace_is_call { mut p: Parser } -> bool {
         if p.bad { return false }
         let mut depth: u32 = 0
+        let mut arms = false
         let mut k = p.i
         while p.toks[k].kind != tok::Kind::eof {
             let x = p.toks[k].kind
             if x == tok::Kind::lbrace {
                 depth = depth + 1
+            } else if x == tok::Kind::fat_arrow {
+                if depth == 1 { arms = true }
             } else if x == tok::Kind::rbrace {
                 depth = depth - 1
                 if depth == 0 {
                     let after = p.toks[k + 1]
                     let a = after.kind
-                    if after.nl or a == tok::Kind::eof or a == tok::Kind::kw_else { return false }
+                    if a == tok::Kind::eof or a == tok::Kind::kw_else { return false }
+                    if after.nl {
+                        if arms { return false }
+                        if continues{ k = a } { return true }
+                        if a == tok::Kind::minus or a == tok::Kind::amp {
+                            p.cond_break = k + 1
+                            p.cond_mark = diag::mark{ diags = p.diags.* }
+                            p.cond_items = items_like{ p, close = k }
+                        }
+                        return false
+                    }
                     return not (a == tok::Kind::semi or a == tok::Kind::rbrace or a == tok::Kind::comma
                                 or a == tok::Kind::rparen or a == tok::Kind::rbracket)
                 }
             }
+            k = k + 1
+        }
+        return false
+    }
+
+    // Whether a line that starts with k goes on with the expression before it, whatever that
+    // ends in: k continues an expression and begins none, and so no statement. `-` and `&`
+    // begin one (`-1`, `&x`), and a postfix `(`, `[` or `{` must be on its expression's line.
+    fn continues { k: tok::Kind } -> bool {
+        return k == tok::Kind::kw_and or k == tok::Kind::kw_or or k == tok::Kind::kw_is or is_cmp{ k } or is_handler{ k }
+               or k == tok::Kind::plus or k == tok::Kind::plus_wrap or k == tok::Kind::minus_wrap
+               or k == tok::Kind::star or k == tok::Kind::star_wrap or k == tok::Kind::slash or k == tok::Kind::percent
+               or k == tok::Kind::pipe or k == tok::Kind::caret or k == tok::Kind::shl or k == tok::Kind::shr
+               or k == tok::Kind::dot
+    }
+
+    // Whether the braces from the `{` here to the `}` at token `close` could hold a call's
+    // items, by their tokens: nothing, or items between commas, each `name = e`, or a pun or a
+    // spread, which has no `=`; and a line begins only after a comma. A block of statements
+    // that looks so is `{}`, `{ x }` and `{ x = e }`.
+    fn items_like { p: Parser, close: usize } -> bool {
+        let mut depth: u32 = 0
+        let mut first = true                // at an item's first token
+        let mut named = false               // the item began `name =`
+        let mut k = p.i + 1
+        while k < close {
+            let t = p.toks[k]
+            let x = t.kind
+            if depth == 0 {
+                if x == tok::Kind::semi or x == tok::Kind::fat_arrow { return false }
+                if t.nl and not first and k > p.i + 1 { return false }
+                if first {
+                    named = x == tok::Kind::ident and p.toks[k + 1].kind == tok::Kind::assign
+                    if not (x == tok::Kind::ident or x == tok::Kind::amp or x == tok::Kind::dots) { return false }
+                    if x == tok::Kind::ident {
+                        let y = p.toks[k + 1].kind
+                        if y == tok::Kind::lbrace or y == tok::Kind::lparen or y == tok::Kind::colons { return false }
+                    }
+                    first = false
+                } else if x == tok::Kind::comma {
+                    first = true
+                } else if x == tok::Kind::assign and not (named and k >= 1 and p.toks[k - 1].kind == tok::Kind::ident and is_item_start{ p, k = k - 1 }) {
+                    return false
+                }
+            }
+            if x == tok::Kind::lbrace or x == tok::Kind::lparen or x == tok::Kind::lbracket {
+                depth = depth + 1
+            } else if (x == tok::Kind::rbrace or x == tok::Kind::rparen or x == tok::Kind::rbracket) and depth > 0 {
+                depth = depth - 1
+            }
+            k = k + 1
+        }
+        return true
+    }
+
+    // Whether token k begins an item of the braces at the current token: it follows the `{`
+    // or a comma.
+    fn is_item_start { p: Parser, k: usize } -> bool {
+        return k == p.i + 1 or p.toks[k - 1].kind == tok::Kind::comma
+    }
+
+    // Whether statement s is an expression that ends in a call's or a literal's braces.
+    fn ends_in_braces { s: syntax::Stmt } -> bool {
+        match s.k {
+            eval{ e } => { return braces_last{ e } }
+            else => { return false }
+        }
+    }
+
+    fn braces_last { e: syntax::Expr } -> bool {
+        match e.k {
+            braced => { return true }
+            binary{ b } => { return b.span.end == e.span.end and braces_last{ e = b.* } }
+            neg{ e = x } | lnot{ e = x } | bnot{ e = x } | addr{ e = x } => { return x.span.end == e.span.end and braces_last{ e = x.* } }
+            else => { return false }
+        }
+    }
+
+    // At a line that starts with `-` or `&` after a condition's block (cond_break): whether a
+    // `{` comes before the statement there could end, as a condition's block would, were the
+    // condition meant to go on with this line and those that continue it.
+    fn opens_block { p: Parser } -> bool {
+        let mut k = p.i + 1
+        while p.toks[k].kind != tok::Kind::eof {
+            let t = p.toks[k]
+            if t.kind == tok::Kind::lbrace { return true }
+            if t.kind == tok::Kind::rbrace or t.kind == tok::Kind::semi { return false }
+            if t.nl and not (continues{ k = t.kind } or t.kind == tok::Kind::minus or t.kind == tok::Kind::amp) { return false }
             k = k + 1
         }
         return false
@@ -1407,7 +1541,7 @@ namespace parser {
                     }
                 }
             } else if k == tok::Kind::lbrace and not t.nl {
-                if p.in_cond and not brace_is_call{ p } { return e }
+                if p.in_cond and not brace_is_call{ &p } { return e }
                 e = braced{ &p, start, callee = e }
             } else {
                 return e

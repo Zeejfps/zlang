@@ -81,9 +81,6 @@ as the write-ups gave them.
     bools), walk (84), video.
 
 
-9. **A condition continued on the next line must break after the operator.** `if a\n or b {`
-    is a parse error, since a call's `}` ending a line starts the block, and the error points at
-    the wrong place. *Hit by 3:* data (1), rules (2), script (1).
 
 10. **Enums only compare for equality, and their count isn't a constant.** Sorting by an enum is
     `@as(u8, a.class) >= @as(u8, b.class)`; `@as(usize, Class::last) + 1` isn't folded, so a

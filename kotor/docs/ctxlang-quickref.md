@@ -140,8 +140,9 @@ defer list::free{ list = &xs }                    // runs at block exit
   `!?T` apart, its error first. Beside `==`, `<`, `is`, `and` or `or`, put the handler in
   parentheses, `x == (f{} ifnull y)` and `(m ifnull 0) > 3`, and after arithmetic too:
   `a + (f{} ifnull 0)`. The compiler's error shows the spelling.
-- A `{` after an expression in a condition is a call only if the line continues after its `}`.
-  Break long conditions after an operator, not after a call's `}`.
+- A long condition, like any expression, goes on to a next line that starts with `and`, `or`,
+  a comparison, `is`, a handler, `.` or a binary operator: `if a{ x }` then `or b {`. Not
+  with `-` or `&`, which could begin a statement: end the line before with those (§11, rule 3).
 
 ## Errors (§8 Errors)
 

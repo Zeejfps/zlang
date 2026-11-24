@@ -38,4 +38,19 @@ namespace diag {
     fn items { diags: Diags } -> []Diag {
         return list::items{ list = diags.items }
     }
+
+    // Where the diagnostics stand, for rewind.
+    struct Mark { len: usize, errors: usize, dropped: usize }
+
+    fn mark { diags: Diags } -> Mark {
+        return Mark{ len = diags.items.len, errors = diags.errors, dropped = diags.dropped }
+    }
+
+    // Drops what was reported since `to` was taken, for a phase that then has one diagnostic
+    // to give in place of all of it.
+    fn rewind { mut diags: Diags, to: Mark } {
+        diags.items.len = to.len
+        diags.errors = to.errors
+        diags.dropped = to.dropped
+    }
 }

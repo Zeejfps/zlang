@@ -260,12 +260,34 @@ What a model writes by default should compile, or fail with the exact fix.
     agree. No site in ctxc, std or KOTOR mixed a handler with a comparison; three of the
     suite's programs did, on purpose, and are now written with parentheses.
 
-- [ ] **3.5 A condition may continue on the next line.**
+- [x] **3.5 A condition may continue on the next line.**
   `if a\n or b {` is a parse error pointing at the wrong place, since a call's `}` ending a line
   starts the block. At minimum, a line starting with `and`/`or`/a binary operator continues the
   condition, and the error points at the break.
   - Details: F#9; [spec §11, rule 2](spec.md#11-statements-and-control-flow).
   - *Done when:* `if a\n or b {` compiles, with tests.
+  - *Done:* [spec §11, rules 2 and 3](spec.md#11-statements-and-control-flow). An expression
+    goes on to a line that starts with a token that continues an expression and begins none: a
+    binary operator other than `-` and `&`, `and`, `or`, `is`, a handler, or `.`. Binary
+    operators already went on across lines everywhere but one place, a call's `}` that ended a
+    line in a condition, where the `{` was taken for the block; now the `{` is a call's there
+    when such a token starts the next line. Every such program was a syntax error before (an
+    `if`, `while` or `for` followed by a statement that starts with an operator), so nothing
+    that compiled changes: the syntax dumps of all 519 files of std, ctxc, the examples and
+    KOTOR are byte-identical before and after. Braces that hold a match's arms are never a
+    call's, so `match k { ... }` with `+ 10` on the next line is still the match plus ten.
+    Excluded, with the reason: `-` and `&` after such a `}`. They begin an expression too, and
+    `if c { f{} }` with `-1` or `&x` on the next line is an `if` and its block's value today,
+    so there the `{` still begins the block. If the condition was meant to go on, the error
+    is at the line's `-`, in place of the old one inside the braces: ``a condition can't go on
+    with a line that starts with `-`, which may begin a statement: end the line before with
+    the `-`, or put the condition in parentheses``. It is given where the line isn't a
+    statement or the braces aren't statements, and also where both readings parse and only the
+    types would tell (`if f{ n }`, then `- 1 > 0 { i = 1 }`): that last case rejects a
+    one-line `if c { x = e }` followed by a value that starts with `-` or `&` and ends in a
+    call's braces, which compiled before, and the error says to put such a value in
+    parentheses. No file of the corpus has one. A postfix `(`, `[` or `{` stays on its
+    expression's line (rule 3, as before).
 
 - [ ] **3.6 Small syntax.**
   A bare `{ ... }` block as a statement; `defer if c { ... }`; a one-expression match arm without

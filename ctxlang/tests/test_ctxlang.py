@@ -814,6 +814,135 @@ fn main { mut io: Io } {
                 self.assertErrorAt(body, msg, line, col)
 
 
+class ContinuedLines(Base):
+    """§11, rules 2 and 3: an expression goes on to a line that starts with a token that
+    continues one and begins none, after a call's `}` in a condition too."""
+
+    DECLS = r"""
+struct W { open: bool, n: i32 }
+union K { a, b }
+fn ok { n: i32 } -> bool { return n > 0 }
+fn num { n: i32 } -> i32 { return n }
+fn opt { n: i32 } -> ?i32 { if n == 0 { return null }; return n }
+fn flag { n: i32 } -> ?bool { if n == 0 { return null }; return n > 0 }
+fn w { n: i32 } -> W { return W{ open = n > 0, n } }
+"""
+    MAIN = DECLS + 'fn main { mut io: Io } {\n    let n = 3\n    let mut i = 0\n    %s\n}\n'
+    BREAK = ("a condition can't go on with a line that starts with `%s`, which may begin a statement: "
+             "end the line before with the `%s`, or put the condition in parentheses")
+
+    def test_a_condition_goes_on_after_a_call(self):
+        self.assertOutput(self.MAIN % r"""let b = true
+    if ok{ n = 0 }
+       or b { io::println{ &io, s = "or" } }
+    if ok{ n }
+       and b { io::println{ &io, s = "and" } }
+    if num{ n }
+       == 3 { io::println{ &io, s = "==" } }
+    if num{ n }
+       + num{ n }
+       * 2 > 8 { io::println{ &io, s = "+ *" } }
+    if num{ n }
+       | 4 == 7 and num{ n }
+       << 1 == 6 { io::println{ &io, s = "| <<" } }
+    if flag{ n = 0 }
+       ifnull true { io::println{ &io, s = "ifnull" } }
+    if w{ n }
+       .open { io::println{ &io, s = "." } }
+    if opt{ n }
+       is some{ value }                             // the pattern's braces, then `and`
+       and value == 3 { io::println{ &io, s = "is" } }
+    while num{ n = i }
+          < 2 { i = i + 1 }
+    match num{ n }
+          + 0 {
+        3 => { io::println{ &io, s = "match" } }
+        else => {}
+    }
+    for x in [num{ n }
+              * 2] { io::println_i64{ &io, n = x } }
+    let v = if ok{ n }
+               and b { 1 } else { 2 }
+    _ = @fmt(&io, "{} {}\n", i, v)""", 'or\nand\n==\n+ *\n| <<\nifnull\n.\nis\nmatch\n6\n2 1\n')
+
+    def test_any_expression_goes_on(self):
+        self.assertOutput(self.DECLS + r"""
+fn both { a: bool, b: bool } -> bool {
+    return a
+        and b
+}
+fn main { mut io: Io } {
+    let n = 3
+    let total = num{ n }
+        + num{ n }
+        - 1                                         // `-` after an expression is the operator
+    let mut m = n
+    m = m
+        * 2
+    let o = opt{ n = 0 }
+        ifnull 9
+    _ = @fmt(&io, "{} {} {} {} {}\n", total, m, o, both{ a = true, b = n
+        > 2 }, w{ n }
+        .n)
+}
+""", '5 6 9 true 3\n')
+
+    def test_a_statement_after_a_block_stays_one(self):
+        # What compiled before means the same: `-1` after an `if`'s block is the branch's value,
+        # and an operator on the line after a `match` expression applies to the match.
+        self.assertOutput(self.DECLS + r"""
+fn pick { c: bool, d: bool, mut io: Io } -> i32 {
+    let v = if c {
+        if d { io::println{ &io, s = "d" } }
+        -1
+    } else { 0 }
+    return v
+}
+fn main { mut io: Io } {
+    let k = K::b
+    let y = match k { a => { 1 } b => { 2 } }
+        + 10
+    let q = &y
+    let p = if y > 0 {
+        if y > 100 { io::println{ &io, s = "big" } }
+        &y
+    } else { q }
+    _ = @fmt(&io, "{} {} {} {}\n", pick{ c = true, d = true, &io }, pick{ c = false, d = true, &io }, y, p.*)
+}
+""", 'd\n-1 0 12 12\n')
+
+    def test_a_line_that_starts_with_minus_or_amp(self):
+        ambiguous = '; if this line is a value of its own, put that in parentheses'
+        for body, msg, line, col in [
+            # The line is no statement.
+            ('if num{ n }\n       - 1 > 0 { io::println{ &io, s = "a" } }', self.BREAK % ('-', '-'), 13, 8),
+            ('if num{ n }\n       - 1 > 0 {\n        i = 1\n        io::println{ &io, s = "a" }\n    }', self.BREAK % ('-', '-'), 13, 8),
+            ('if num{ n }\n       & 1 == 1 { io::println{ &io, s = "a" } }', self.BREAK % ('&', '&'), 13, 8),
+            ('if n > 0 and num{ n }\n       - 1 > 0 { io::println{ &io, s = "a" } }', self.BREAK % ('-', '-'), 13, 8),
+            # The call's braces are no block of statements.
+            ('match num{ n }\n          - 0 {\n        3 => { }\n        else => {}\n    }', self.BREAK % ('-', '-'), 13, 11),
+            # Both parse: the braces could be a call's, and the line ends in braces.
+            ('if num{ n }\n       - 1 > 0 { i = 1 }', self.BREAK % ('-', '-') + ambiguous, 13, 8),
+            ('if num{ n }\n       - 1 > 0 { }', self.BREAK % ('-', '-') + ambiguous, 13, 8),
+            ('while num{ n = i }\n          - 1 < 2 { i = i + 1 }', self.BREAK % ('-', '-') + ambiguous, 13, 11),
+        ]:
+            with self.subTest(body=body):
+                with self.assertRaises(CompileError) as cm:
+                    run(self.MAIN % body)
+                self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), body)
+                self.assertEqual(cm.exception.text.count('error:'), 1, cm.exception.text)
+        # Each fix the error names.
+        self.assertOutput(self.MAIN % r"""if num{ n } -
+       1 > 0 { io::println{ &io, s = "after" } }
+    if (num{ n }
+       - 1) > 0 { io::println{ &io, s = "parens" } }
+    let v = if n > 0 {
+        if n > 5 { i = 1 }
+        (-num{ n })
+    } else { 0 }
+    io::println_i64{ &io, n = v }""", 'after\nparens\n-3\n')
+
+
 class ListExample(Base):
     def test_runs(self):
         self.assertOutput(LIST_SRC, '10\n20\n30\n40\n100\n10\n')
