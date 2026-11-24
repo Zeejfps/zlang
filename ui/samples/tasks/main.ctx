@@ -56,27 +56,52 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: ui_sdl::Sdl, mut fonts:
         io::eprintln{ &io, s = "usage: tasks [--font PATH] [--fallback PATH] [--theme dark|light] [--scale S] [--size WxH] [--script PATH] [--frames N] [--headless] [--shot PATH]" }
         return 2
     }
-    let buf = mem::pages{ &mem, size = 268435456 } ifnull {
+    let buf = mem::reserve{ &mem, size = 268435456 } ifnull {
         io::eprintln{ &io, s = "tasks: out of memory" }
         return 1
     }
     let mut heap = arena::new{ buf }
+    // The font library copies a face's bytes (add_face), so a file is read into the arena only
+    // for as long as that takes and its room is given back: a fallback font of 20 MB is held
+    // once, by the library, and not a second time by the program.
+    let mut lib = ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } } iferr {
+        io::eprintln{ &io, s = "tasks: the font library did not start" }
+        return 1
+    }
+    defer ui_fonts::close{ &lib }
+    let files = arena::mark{ heap }
     let font = read_font{ &fs, &heap, path = opts.font, windows = FONT_WINDOWS[..], macos = FONT_MACOS[..], linux = FONT_LINUX[..] }
     let bytes = font.bytes ifnull {
         _ = @fmt(&io, "tasks: no font found at {}. Pass --font PATH to a TrueType or OpenType file.\n", font.path)
         io::flush{ &io }
         return 1
     }
+    let face = ui_fonts::add_face{ &lib, data = bytes, index = 0 } iferr {
+        _ = @fmt(&io, "tasks: {} is not a font the library can read\n", font.path)
+        io::flush{ &io }
+        return 1
+    }
+    arena::restore{ &heap, to = files }
     let fallback = read_font{ &fs, &heap, path = opts.fallback, windows = FALLBACK_WINDOWS[..], macos = FALLBACK_MACOS[..], linux = FALLBACK_LINUX[..] }
     if fallback.bytes == null and opts.fallback != null {
         _ = @fmt(&io, "tasks: no fallback font at {}\n", fallback.path)
         io::flush{ &io }
         return 1
     }
-    _ = @fmt(&io, "tasks: font {}; fallback {}\n", font.path, if fallback.bytes != null { fallback.path } else { "none (characters the font lacks are not drawn)" })
+    let has_fallback = fallback.bytes != null
+    if let more = fallback.bytes {
+        let extra = ui_fonts::add_face{ &lib, data = more, index = 0 } iferr {
+            _ = @fmt(&io, "tasks: {} is not a font the library can read\n", fallback.path)
+            io::flush{ &io }
+            return 1
+        }
+        ui_fonts::add_fallback{ &lib, face = extra }
+    }
+    arena::restore{ &heap, to = files }
+    _ = @fmt(&io, "tasks: font {}; fallback {}\n", font.path, if has_fallback { fallback.path } else { "none (characters the font lacks are not drawn)" })
     io::flush{ &io }
     let mut log: [16384]u8
-    let code = run{ &io, &fs, &sdl, &fonts, &heap, opts, font = bytes, fallback = fallback.bytes, log = log[..] } iferr err{ error } {
+    let code = run{ &io, &fs, &sdl, &lib, face, &heap, opts, log = log[..] } iferr err{ error } {
         _ = @fmt(&io, "tasks: failed: {}\n", error)
         match error {
             ui_gl::compile_failed{ shader, log_len } => { _ = @fmt(&io, "{}:\n{}\n", shader, log[..log_len]) }
@@ -193,8 +218,8 @@ struct Shell {
 }
 
 fn run {
-    mut io: Io, mut fs: Fs, mut sdl: ui_sdl::Sdl, mut fonts: ui_fonts::Fonts, mut heap: arena::Arena,
-    opts: Options, font: []u8, fallback: ?[]u8, log: []mut u8,
+    mut io: Io, mut fs: Fs, mut sdl: ui_sdl::Sdl, mut lib: ui_fonts::Library, face: ui_fonts::Face, mut heap: arena::Arena,
+    opts: Options, log: []mut u8,
 } -> !i32 {
     try ui_sdl::init{ &sdl }
     defer ui_sdl::quit{ &sdl }
@@ -208,13 +233,6 @@ fn run {
     let mut dev = try ui_gl::open{ get_proc = ui_sdl::get_gl_proc{ &sdl, _ }, realloc = arena::alloc, &heap, options = ui_gl::Options{ .. }, log }
     defer ui_gl::close{ &dev }
 
-    let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
-    defer ui_fonts::close{ &lib }
-    let face = try ui_fonts::add_face{ &lib, data = font, index = 0 }
-    if let more = fallback {
-        let extra = try ui_fonts::add_face{ &lib, data = more, index = 0 }
-        ui_fonts::add_fallback{ &lib, face = extra }
-    }
     let mut gui = try ui::make{ realloc = arena::alloc, &heap, cap = ui::Capacity{ .. } }
     let text_font = ui_fonts::make_font{ &lib, ui = &gui, face } ifnull { return ui_fonts::closed }
     let provider = ui_fonts::get_provider{ lib = &lib }
