@@ -6,4 +6,4 @@
 //| ./t.ctx:2:49: fail: another_message: panic: index 2 out of bounds for length 2
 //| ./t.ctx:9: fail: another_message: its panic's message doesn't contain `overflow`
 //| ./t.ctx:11: fail: returns: it didn't panic: a panic with `out of bounds` was expected
-//| tests: 5 run, 3 passed, 2 failed, 0 skipped, 0 not selected
+//| tests: 5 run, 3 passed, 2 failed, 0 skipped, 0 not selected, 0 checks

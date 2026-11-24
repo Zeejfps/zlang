@@ -10,7 +10,7 @@
 //| app/main_test.ctx:5: fail: beside_the_root: test::dir{ &t } == "?": {dir}/app == ?
 //| lib/deep/more_test.ctx:6: fail: deep::in_an_added_directory: test::dir{ &t } == "?": {dir}/lib/deep == ?
 //| {work:.}/gen/app/made.ctx:2: fail: in_a_generated_file: test::dir{ &t } == "?": {work:.}/gen/app == ?
-//| tests: 3 run, 0 passed, 3 failed, 0 skipped, 0 not selected
+//| tests: 3 run, 0 passed, 3 failed, 0 skipped, 0 not selected, 5 checks
 
 // From another working directory the files are named from there, and the directories are
 // the same.
@@ -20,4 +20,4 @@
 //# stdout:
 //| ../app/main_test.ctx:5: fail: beside_the_root: test::dir{ &t } == "?": {dir}/app == ?
 //| ../lib/deep/more_test.ctx:6: fail: deep::in_an_added_directory: test::dir{ &t } == "?": {dir}/lib/deep == ?
-//| tests: 2 run, 0 passed, 2 failed, 0 skipped, 1 not selected
+//| tests: 2 run, 0 passed, 2 failed, 0 skipped, 1 not selected, 4 checks

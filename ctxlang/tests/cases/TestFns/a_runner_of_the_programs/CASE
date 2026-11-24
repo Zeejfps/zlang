@@ -1,11 +1,12 @@
 // A `#test_main` fn replaces std's: here one that runs every test in its own process,
 // with test::run_here for each. A test's Case has its name, its file and line, its file's
-// directory, and what its `#test` says.
+// directory, and what its `#test` says; test::checks is how many checks the test that
+// test::run_here ran made. Nothing is added to what the tests write.
 //# $ ctxc test . x y
 //# exit: 21
 //# stdout:
-//| one at ./t.ctx:3 in {dir} gave 0, panics false ``
-//| two at ./t.ctx:5 in {dir} gave 1, panics false ``
-//| three at ./t.ctx:7 in {dir} gave 0, panics true `never`
+//| one at ./t.ctx:3 in {dir} gave 0 after 2 checks, panics false ``
+//| two at ./t.ctx:8 in {dir} gave 1 after 1 checks, panics false ``
+//| three at ./t.ctx:10 in {dir} gave 0 after 0 checks, panics true `never`
 //# stderr:
-//| ./t.ctx:5: fail: two: 2 == 3: 2 == 3
+//| ./t.ctx:8: fail: two: 2 == 3: 2 == 3

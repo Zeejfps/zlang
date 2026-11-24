@@ -3,4 +3,4 @@
 //# exit: 1
 //# stdout:
 //| ./t.ctx:14: fail: tasks_check: n < 3: 5 < 3
-//| tests: 2 run, 1 passed, 1 failed, 0 skipped, 0 not selected
+//| tests: 2 run, 1 passed, 1 failed, 0 skipped, 0 not selected, 5 checks

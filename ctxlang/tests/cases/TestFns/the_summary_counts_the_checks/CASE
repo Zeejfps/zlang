@@ -1,0 +1,25 @@
+// The summary ends with the number of checks the tests made, `@expect`s and `@require`s,
+// held or not, in the test or in a fn it calls: here 5, 3, 2 up to the `@require` that
+// ended its test, and 2 before a skip. A test reports its checks as it ends, so one whose
+// process ends in another way, by a panic, also one it must make, or by exiting, adds
+// none: the last three made 4 that aren't counted. A test that exits by itself, even with
+// 0, failed: it never said what it checked.
+//# $ ctxc test .
+//# exit: 1
+//# stdout:
+//| ./t.ctx:18: fail: two_of_three_hold: XS[1] == 1: 2 == 1
+//| ./t.ctx:24: fail: ends_at_its_second: required: XS[1] == 1: 2 == 1
+//| ./t.ctx:28: skip: skips_after_two: its two checks are counted
+//| ./t.ctx:1:49: fail: panics_after_two: panic: index 3 out of bounds for length 3
+//| ./t.ctx:45: fail: leaves_after_one: its process ended with exit code 0
+//| tests: 7 run, 2 passed, 4 failed, 1 skipped, 0 not selected, 12 checks
+
+// The checks of the tests that were selected.
+//# $ ctxc test . five
+//# exit: 0
+//# stdout:
+//| tests: 1 run, 1 passed, 0 failed, 0 skipped, 6 not selected, 5 checks
+//# $ ctxc test . must_panic
+//# exit: 0
+//# stdout:
+//| tests: 1 run, 1 passed, 0 failed, 0 skipped, 6 not selected, 0 checks

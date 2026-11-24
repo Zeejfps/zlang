@@ -8,7 +8,7 @@
 //# exit: 0
 //# stdout:
 //| ./t.ctx:4: skip: the_install_has_its_key_file: no game install: give its directory after `--`
-//| tests: 2 run, 1 passed, 0 failed, 1 skipped, 2 not selected
+//| tests: 2 run, 1 passed, 0 failed, 1 skipped, 2 not selected, 1 checks
 
 // With the directory: it runs. Filters and options come before the `--`.
 //# $ ctxc test . -v install -- {dir}/game
@@ -16,14 +16,14 @@
 //# stdout:
 //| ./t.ctx:4: pass: the_install_has_its_key_file
 //| ./t.ctx:17: pass: needs_no_install
-//| tests: 2 run, 2 passed, 0 failed, 0 skipped, 2 not selected
+//| tests: 2 run, 2 passed, 0 failed, 0 skipped, 2 not selected, 3 checks
 
 // A directory without the game: the test fails with the error it returned.
 //# $ ctxc test . key_file -- {dir}/nowhere
 //# exit: 1
 //# stdout:
 //| ./t.ctx:4: fail: the_install_has_its_key_file: error: fs::not_found
-//| tests: 1 run, 0 passed, 1 failed, 0 skipped, 3 not selected
+//| tests: 1 run, 0 passed, 1 failed, 0 skipped, 3 not selected, 0 checks
 
 // Everything after the first `--` is the tests', whatever it looks like: an option, a
 // test's name, an empty word, another `--`. Each test is given all of it.
@@ -36,17 +36,17 @@
 //| argument 3: `--`
 //| argument 4: `two words`
 //| ./t.ctx:22: fail: shows_its_arguments: test::args{ &t }.len == 0: 5 == 0
-//| tests: 1 run, 0 passed, 1 failed, 0 skipped, 3 not selected
+//| tests: 1 run, 0 passed, 1 failed, 0 skipped, 3 not selected, 1 checks
 
 // A `--` with nothing after it, and no `--`: no arguments.
 //# $ ctxc test . shows --
 //# exit: 0
 //# stdout:
-//| tests: 1 run, 1 passed, 0 failed, 0 skipped, 3 not selected
+//| tests: 1 run, 1 passed, 0 failed, 0 skipped, 3 not selected, 1 checks
 //# $ ctxc test . shows
 //# exit: 0
 //# stdout:
-//| tests: 1 run, 1 passed, 0 failed, 0 skipped, 3 not selected
+//| tests: 1 run, 1 passed, 0 failed, 0 skipped, 3 not selected, 1 checks
 
 // An option after the `--` is not the runner's, and one it doesn't know before it is.
 //# $ ctxc test . --list shows -- --nope
@@ -64,9 +64,9 @@
 //# env: GAME_DIR=elsewhere
 //# exit: 0
 //# stdout:
-//| tests: 1 run, 1 passed, 0 failed, 0 skipped, 3 not selected
+//| tests: 1 run, 1 passed, 0 failed, 0 skipped, 3 not selected, 1 checks
 //# $ ctxc test . environment
 //# exit: 1
 //# stdout:
 //| ./t.ctx:28: fail: reads_the_environment: proc::env{ &proc, name = "GAME_DIR" } == "elsewhere": null == elsewhere
-//| tests: 1 run, 0 passed, 1 failed, 0 skipped, 3 not selected
+//| tests: 1 run, 0 passed, 1 failed, 0 skipped, 3 not selected, 1 checks

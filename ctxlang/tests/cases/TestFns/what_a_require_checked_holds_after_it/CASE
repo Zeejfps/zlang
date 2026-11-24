@@ -8,4 +8,4 @@
 //| ./t.ctx:13: fail: an_optional_is_its_value: row.next + 1 == 5: 4 == 5
 //| ./t.ctx:19: fail: a_pattern_binds: r == 3: 2 == 3
 //| ./t.ctx:24: fail: the_test_ends_at_a_null: required: row != null: null != null
-//| tests: 3 run, 0 passed, 3 failed, 0 skipped, 0 not selected
+//| tests: 3 run, 0 passed, 3 failed, 0 skipped, 0 not selected, 7 checks

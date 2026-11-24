@@ -5,4 +5,4 @@
 //# stdout:
 //| ./t.ctx:3: fail: hangs: timed out after 1 s
 //| ./t.ctx:9: fail: leaves: its process ended with exit code 3
-//| tests: 3 run, 1 passed, 2 failed, 0 skipped, 0 not selected
+//| tests: 3 run, 1 passed, 2 failed, 0 skipped, 0 not selected, 1 checks

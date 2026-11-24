@@ -450,6 +450,9 @@ steps 1 and 3 are done. None blocks the other stages.
    - **A run gives its tests arguments** (spec §20, rule 13): `ctxc test PATH [FILTER...] --
      ARGS...`, read with `test::args{ &t }`, for what the source can't know, as a game's
      directory. The environment already reaches a test through a `Proc`, and stays that.
+   - **The summary counts the checks** (spec §20, rule 9): `, C checks` at its end, from a
+     report each test's process writes as its last line. A test that panics or is ended
+     reports none.
    - *Not built, each for its reason* (spec §20, rule 14): a leak check (std's one allocator is
      the arena, which has nothing to leak), a temporary directory, and tests over a table of
      cases.

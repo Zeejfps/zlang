@@ -1,0 +1,48 @@
+fn at { xs: []i32, i: usize } -> i32 { return xs[i] }
+const XS: [3]i32 = [1, 2, 3]
+
+// A fn that checks for a test: its checks are the test's.
+fn all_positive { mut t: Test, xs: []i32 } {
+    for x in xs { @expect(&t, x > 0) }
+}
+
+#test
+fn five_that_hold { mut t: Test } {
+    @expect(&t, XS.len == 3)
+    @require(&t, XS[0] == 1)
+    all_positive{ &t, xs = XS[..] }
+}
+#test
+fn two_of_three_hold { mut t: Test } {
+    @expect(&t, XS[0] == 1)
+    @expect(&t, XS[1] == 1)
+    @expect(&t, XS[2] == 3)
+}
+#test
+fn ends_at_its_second { mut t: Test } {
+    @expect(&t, XS[0] == 1)
+    @require(&t, XS[1] == 1)
+    @expect(&t, XS[2] == 3)
+}
+#test
+fn skips_after_two { mut t: Test } {
+    @expect(&t, XS[0] == 1)
+    @expect(&t, XS[1] == 2)
+    test::skip{ &t, why = "its two checks are counted" }
+}
+#test
+fn panics_after_two { mut t: Test } {
+    @expect(&t, XS[0] == 1)
+    @expect(&t, XS[1] == 2)
+    _ = at{ xs = XS[..], i = 3 }
+}
+#test{ panics = "out of bounds" }
+fn must_panic_after_one { mut t: Test } {
+    @expect(&t, XS[0] == 1)
+    _ = at{ xs = XS[..], i = 3 }
+}
+#test
+fn leaves_after_one { mut t: Test, mut proc: Proc } {
+    @expect(&t, XS[0] == 1)
+    os::exit{ &proc, code = 0 }
+}

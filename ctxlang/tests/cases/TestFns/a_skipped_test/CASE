@@ -16,7 +16,7 @@
 //| ./t.ctx:39: skip: must_panic_and_is_not_run: it would not panic
 //| ./t.ctx:41: skip: must_panic_and_skips: before its panic
 //| ./t.ctx:46: fail: leaves_with_the_code_of_a_skip: its process ended with exit code 77
-//| tests: 9 run, 1 passed, 2 failed, 6 skipped, 0 not selected
+//| tests: 9 run, 1 passed, 2 failed, 6 skipped, 0 not selected, 3 checks
 
 // With `-v`, among the passing tests' lines.
 //# $ ctxc test . -v passes skip
@@ -28,7 +28,7 @@
 //| ./t.ctx:28: fail: fails_and_then_skips: XS.len == 3: 2 == 3
 //| ./t.ctx:41: skip: must_panic_and_skips: before its panic
 //| ./t.ctx:46: fail: leaves_with_the_code_of_a_skip: its process ended with exit code 77
-//| tests: 6 run, 1 passed, 2 failed, 3 skipped, 3 not selected
+//| tests: 6 run, 1 passed, 2 failed, 3 skipped, 3 not selected, 3 checks
 
 // Every selected test skipped: the exit code is 0, and the lines and the summary say that
 // none passed.
@@ -38,18 +38,18 @@
 //| ./t.ctx:12: skip: is_not_run: the parser is being rewritten
 //| ./t.ctx:17: skip: ends_at_its_skip: no game install
 //| ./t.ctx:39: skip: must_panic_and_is_not_run: it would not panic
-//| tests: 3 run, 0 passed, 0 failed, 3 skipped, 6 not selected
+//| tests: 3 run, 0 passed, 0 failed, 3 skipped, 6 not selected, 1 checks
 
 // `--no-skips`: a skipped test makes the exit code 1, with the same lines.
 //# $ ctxc test . --no-skips passes its_skip
 //# exit: 1
 //# stdout:
 //| ./t.ctx:17: skip: ends_at_its_skip: no game install
-//| tests: 2 run, 1 passed, 0 failed, 1 skipped, 7 not selected
+//| tests: 2 run, 1 passed, 0 failed, 1 skipped, 7 not selected, 2 checks
 //# $ ctxc test . --no-skips passes
 //# exit: 0
 //# stdout:
-//| tests: 1 run, 1 passed, 0 failed, 0 skipped, 8 not selected
+//| tests: 1 run, 1 passed, 0 failed, 0 skipped, 8 not selected, 1 checks
 
 // `--list` lists a test that would be skipped as any other.
 //# $ ctxc test . --list not_run

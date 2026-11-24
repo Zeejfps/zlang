@@ -5,4 +5,4 @@
 //# stdout:
 //| ./t.ctx:10: fail: ends_before_its_panic: required: XS.len == 3: 2 == 3
 //| ./t.ctx:14: fail: requires_and_returns: it didn't panic: a panic with `out of bounds` was expected
-//| tests: 3 run, 1 passed, 2 failed, 0 skipped, 0 not selected
+//| tests: 3 run, 1 passed, 2 failed, 0 skipped, 0 not selected, 2 checks

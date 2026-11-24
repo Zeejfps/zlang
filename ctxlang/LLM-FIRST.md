@@ -569,7 +569,7 @@ What a model writes by default should compile, or fail with the exact fix.
       with its message, no static leaks from one test to the next, and tests run at once;
       a test that doesn't end is ended after `--timeout` seconds. One line for each failure,
       `FILE:LINE: fail: NAME: ...`, then `tests: N run, P passed, F failed, K skipped, S not
-      selected`; the exit code is 1 if a test failed.
+      selected, C checks`; the exit code is 1 if a test failed.
     - Rule 1, no silent pass: a test that made no check fails (`no check ran`), a filter that
       matches nothing and a program without tests exit with 1 and say so, and a test whose
       process ends in any way but a pass is a failure with its exit code.
@@ -600,6 +600,12 @@ What a model writes by default should compile, or fail with the exact fix.
       game's directory, which a test skips without. Everything after the first `--` is the
       tests'; a `#test_main` fn hands them on with `test::pass_args{ &t, args }`. The
       environment needed nothing: a test that takes a `Proc` reads it with `proc::env`.
+    - The summary counts checks, not only tests ([spec §20, rule 9](spec.md#20-tests)), so a
+      program whose own runner printed `49 checks, 0 failed` shows as much as a `ctxc test`
+      program: `, C checks` at the line's end, every `@expect` and `@require` evaluated.
+      Each test reports its count as its process's last line, also at a `@require` that
+      ends it and at a skip; one that panics, is ended as late or exits by itself reports
+      none, and a test that exits with 0 is no longer a pass (rule 1).
     - Not built, each for its reason ([spec §20, rule 14](spec.md#20-tests)): a leak check
       (std's one allocator is the arena), a temporary directory, tests over a table of cases. JSON
       output is 6.2's.

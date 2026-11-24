@@ -19,4 +19,4 @@
 //| ./t.ctx:33: fail: values_without_a_writer: o == 5: null == 5
 //| ./t.ctx:34: fail: values_without_a_writer: o != null: null != null
 //| ./t.ctx:36: fail: values_without_a_writer: p == null: Point{ x = 0, y = 0 } == null
-//| tests: 2 run, 0 passed, 2 failed, 0 skipped, 0 not selected
+//| tests: 2 run, 0 passed, 2 failed, 0 skipped, 0 not selected, 16 checks

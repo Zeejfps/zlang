@@ -1,6 +1,9 @@
 
 #test
-fn one { mut t: Test } { @expect(&t, 1 == 1) }
+fn one { mut t: Test } {
+    @expect(&t, 1 == 1)
+    @expect(&t, 1 != 2)
+}
 #test
 fn two { mut t: Test } -> ! { @expect(&t, 2 == 3) }
 #test{ panics = "never" }
@@ -12,7 +15,7 @@ fn runner { mut io: Io, mut t: Test, args: Args, count: usize, case: &fn{ index:
     for i in 0..count {
         let c = case{ index = i }
         let code = test::run_here{ &t, c, index = i, run }
-        _ = @fmt(&io, "{} at {}:{} in {} gave {}, panics {} `{}`\n", c.name, c.file, c.line, c.dir, code, c.panics, c.message)
+        _ = @fmt(&io, "{} at {}:{} in {} gave {} after {} checks, panics {} `{}`\n", c.name, c.file, c.line, c.dir, code, test::checks{ &t }, c.panics, c.message)
         failed = failed + code
     }
     return failed + @as(i32, args.len) * 10

@@ -291,12 +291,15 @@ namespace twoda_tests {
   after the test's earlier failures. It is a statement, with no value (don't write
   `if not @expect(&t, c) { return }`). After `@require(&t, row != null)` a `let row: ?Row` is its
   `Row`. It works in a helper that holds the `Test` too. No `defer` runs when it ends the test.
-- A test that returns an error, panics, runs over 60 s or makes no check fails.
+- The summary's last number is the checks the tests made, every `@expect` and `@require`
+  evaluated: a tool that printed `49 checks, 0 failed` keeps its count as `#test` fns. A test
+  that panics or times out adds none of its own.
+- A test that returns an error, panics, runs over 60 s, exits by itself or makes no check fails.
   `#test{ panics = "out of bounds" }` passes by panicking with that text.
 - `test::skip{ &t, why = "no game install" }` ends the test there as skipped, when it finds
   that what it needs isn't on this machine; `#test{ skip = "why" }` on a test keeps it from
   running at all. Each prints `FILE:LINE: skip: NAME: WHY` and is counted in the summary
-  (`tests: 5 run, 4 passed, 0 failed, 1 skipped, 0 not selected`); the exit code stays 0, or
+  (`tests: 5 run, 4 passed, 0 failed, 1 skipped, 0 not selected, 31 checks`); the exit code stays 0, or
   1 with `--no-skips`. `skip` never returns, but the checker doesn't know: in an `ifnull`
   block write `return` after it. Never filter tests out with a `#test_main` of your own.
 - A file a test reads is kept beside the test, and found with `test::dir{ &t }`, the absolute
