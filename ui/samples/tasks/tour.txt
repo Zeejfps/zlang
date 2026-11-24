@@ -226,15 +226,18 @@ shot ui/out/tasks-small.png
 resize 520 620
 frames 3
 
-# Idle: with nothing focused that blinks and nothing moving, no frame is drawn; with the caret
-# blinking in the field, frames are drawn all along.
+# Idle: with nothing focused that blinks and nothing moving, no frame is drawn and none is asked
+# for; with the caret blinking in the field, a frame is drawn at each blink (every 0.53 s) and no
+# more: 3 or 4 in two seconds, not 120.
 click tasks/#0
 move 2 300
 frames 3
+wake none
 idle 2 0 0
 click "new task"
 frames 2
-idle 1 5 400
+wake 0.01 0.53
+idle 2 3 4
 key escape
 click tasks/#0
 frames 3

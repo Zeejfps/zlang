@@ -1008,6 +1008,7 @@ namespace ui {
         text_input: bool = false, text_rect: Rect = Rect{ .. },   // turn OS text input on; where the caret is, in device pixels
         copy: []u8 = "", paste: bool = false,                     // set the clipboard; send me a paste event
         animating: bool = false,                                  // something moves with time: draw another frame
+        wake: ?f32 = null,                                        // draw a frame this many seconds on (a caret's blink, a tip's delay)
     }
     // The surface in device pixels, device pixels a logical unit, seconds since the last frame.
     struct FrameInfo { width: i32, height: i32, scale: f32, dt: f32 }
@@ -1030,7 +1031,8 @@ namespace ui {
   `sdl::set_text_input`), and `text_rect` places the OS candidate window.
 - **Time** is `frame.dt` only. The core reads no clock, so a scripted run with fixed `dt` repeats
   exactly.
-- **Event-driven hosts** redraw when events arrived or `animating` is set; a game ignores it and draws
+- **Event-driven hosts** redraw when events arrived, `animating` is set or `wake` seconds have passed
+  (`ui::ask_wake`: the soonest a widget asked for; `ui_sdl::get_wait` and `is_frame_due`); a game ignores them and draws
   every frame.
 - The test driver is a host with a fake clipboard, which is why the tests need no OS.
 
@@ -2116,7 +2118,7 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
 
 - **Scope.** The task list of section 3.1 as a normal desktop program: a menu bar, a dialog, a
   resizable DPI-aware window, a font it loads from a path, a fallback font, the clipboard, and a loop
-  that draws only when events arrive or `animating` is set. DPI-aware means: each frame the program
+  that draws only when events arrive, `animating` is set or `wake` is due. DPI-aware means: each frame the program
   takes `ui_sdl::get_sizes{ zoom }` (the drawable in pixels, the monitor's scale times its zoom) and
   passes them on with `ui_sdl::make_frame`; nothing in the application mentions pixels.
 - **Files.** `ui/samples/tasks/{build.ctx, main.ctx, app.ctx}`.

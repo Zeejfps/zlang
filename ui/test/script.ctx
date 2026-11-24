@@ -24,10 +24,13 @@
 //                            focused, disabled, enabled, selected, open, pressed
 //   value PATH NUMBER        the node's value is NUMBER, to a thousandth
 //   text PATH TEXT           the node's text value (a text field's text, `ui::describe_text`) is TEXT
+//   wake LEAST MOST          the last frame asked to be woken (`Requests.wake`) from LEAST to MOST
+//                            seconds on, and not to animate
+//   wake none                the last frame asked to be woken at no time and not to animate
 //   resize W H               the host makes its surface W by H device pixels
 //   idle SECONDS LEAST MOST  the host runs its own loop for SECONDS with no input from the script,
 //                            drawing only the frames it decides to (an event-driven host: those an
-//                            event or `Requests.animating` asks for), and the line holds when it drew
+//                            event, `Requests.animating` or `Requests.wake` asks for), and the line holds when it drew
 //                            from LEAST to MOST frames. Run a frame after the last input first: what
 //                            the script pushed is the host's to draw, and it does not know of it.
 //
@@ -155,6 +158,22 @@ namespace ui_test {
             if slice::eq_bytes{ a = node.text, b = words[2] } { return true }
             _ = @fmt(&io, "script: \"{}\" has the text \"{}\"\n", words[1], node.text)
             return false
+        }
+        if is_word{ a = verb, b = "wake" } and (words.len == 2 or words.len == 3) {
+            let r = ui.input.requests
+            if words.len == 2 and is_word{ a = words[1], b = "none" } {
+                if r.wake == null and not r.animating { return true }
+                _ = @fmt(&io, "script: the last frame asked to be woken or to animate\n")
+                return false
+            }
+            if words.len != 3 { return false }
+            let least = parse_decimal{ s = words[1] } ifnull { return false }
+            let most = parse_decimal{ s = words[2] } ifnull { return false }
+            let w = r.wake ifnull {
+                _ = @fmt(&io, "script: the last frame asked to be woken at no time\n")
+                return false
+            }
+            return not r.animating and w >= least and w <= most
         }
         if is_word{ a = verb, b = "resize" } and words.len == 3 {
             let width = parse_int{ s = words[1] } ifnull { return false }

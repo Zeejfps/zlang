@@ -184,6 +184,38 @@ namespace ui_sdl {
         return @as(f32, @as(f64, ticks) / @as(f64, frequency))
     }
 
+    // Seconds on SDL's performance counter, from an origin of its own: what a host measures the
+    // time since its last frame with, for `get_wait` and `is_frame_due`.
+    fn get_seconds { mut sdl: Sdl } -> f64 {
+        let frequency = SDL_GetPerformanceFrequency{ &sdl }
+        if frequency == 0 { return 0.0 }
+        return @as(f64, SDL_GetPerformanceCounter{ &sdl }) / @as(f64, frequency)
+    }
+
+    // How many milliseconds a host that draws only when something happened waits for an event
+    // after a frame with `requests`, `since` seconds after it was drawn: 0 when the frame asked to
+    // animate; the time left until `requests.wake` when it asked for a frame then (rounded up to a
+    // millisecond, so the frame drawn on waking is never early); and `most` when it asked for
+    // neither, or when that is sooner.
+    fn get_wait { requests: ui::Requests, since: f64, most: i32 } -> i32 {
+        if requests.animating { return 0 }
+        let wake = requests.wake ifnull { return most }
+        let left = @as(f64, wake) - since
+        if not (left > 0.0) { return 0 }
+        let ms = left * 1000.0
+        if ms >= @as(f64, most) { return most }
+        let whole = @as(i32, ms)
+        return if @as(f64, whole) < ms { whole + 1 } else { whole }
+    }
+
+    // Whether `requests` make a frame due `since` seconds after the frame that made them: it asked
+    // to animate, or the time it asked to wake at has come.
+    fn is_frame_due { requests: ui::Requests, since: f64 } -> bool {
+        if requests.animating { return true }
+        let wake = requests.wake ifnull { return false }
+        return since >= @as(f64, wake)
+    }
+
     // ---- events
 
     // An event as the host sees it: what the core takes (to_event), and what the program handles

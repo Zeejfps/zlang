@@ -249,6 +249,19 @@ namespace ui {
         ui.input.asked.animating = true
     }
 
+    // Asks for a frame `after` seconds of frame time from this one (a caret's next blink, a
+    // tooltip's delay), so an event-driven host that has no other reason to draw sleeps until then
+    // and no longer. The soonest of a frame's asks is `Requests.wake`; a time that is not a number is
+    // ignored, and one below 0 is 0.
+    fn ask_wake { mut ui: Ui, after: f32 } {
+        if not (after == after) { return }
+        let a = if after > 0.0 { after } else { 0.0 }
+        if let w = ui.input.asked.wake {
+            if w <= a { return }
+        }
+        ui.input.asked.wake = a
+    }
+
     // The requests of the last finished frame. The clipboard ones (`copy`, `paste`) are handed
     // over once: a second call before the next frame has them empty. `copy` is valid until the
     // next begin_frame.

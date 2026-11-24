@@ -142,13 +142,14 @@ script, then stop), `--frames N` (headless without a script: 2), `--headless` (a
 of a hidden window), `--shot PATH` (the last frame as a PNG when it stops). It exits 1 when a
 frame was not well formed, GL reported an error, the font library refused something or a script
 line failed. A script (`ui/test/script.ctx` has the commands: frames, wait, move, down, up, click,
-drag, key, type, wheel, shot, expect, value, text, resize, idle) is how a screenshot shows a menu
+drag, key, type, wheel, shot, expect, value, text, wake, resize, idle) is how a screenshot shows a menu
 open, a combo open, a tooltip or a drag in progress. `resize` and `idle` are asked of the host:
 demo_gl has neither, tasks has both (`idle 2 0 0`: two seconds of its event loop draw no frame).
 
 tasks takes the same options but `--page` (its `--size` default is 520x620), and `--fallback PATH`
 (a face for the characters the font lacks; default the platform's CJK face, `msyh.ttc` on
-Windows). It draws only when an event came, its state changed or a frame asked to animate.
+Windows). It draws only when an event came, its state changed, a frame asked to animate or the time a frame
+asked to be woken at came (`Requests.wake`: a caret blinking draws two frames a second).
 
 Later stages add `ui/tests/<name>` programs (PLAN.md section 6.2 lists them with their stage). A test
 exits 1 when any check fails and prints each failure; `ui/tools/check` exits non-zero if any test does.
@@ -189,7 +190,9 @@ ui/
     input.ctx interact.ctx focus.ctx state.ctx nodes.ctx layers.ctx scroll.ctx
                 one subsystem each: its state (a field of Ui) and make_state, reset_state, finish_frame
     input.ctx   push_event, get_pointer, get_time, is_released, take_key, get_keys, take_key_at, take_typed,
-                take_typed_before (typed text and strokes in the order they came), take_paste, set_cursor, set_text_input, copy_text, ask_paste, set_animating, take_requests
+                take_typed_before (typed text and strokes in the order they came), take_paste, set_cursor,
+                set_text_input, copy_text, ask_paste, set_animating, ask_wake (a frame at a time: `Requests.wake`),
+                take_requests
     interact.ctx PressOpts, Interaction, press, get_hover_time, take_wheel, take_wheel_x, is_pointer_over
     focus.ctx   Links, set_links, set_focus, claim_focus (a press's focus, for a widget's part), is_focused,
                 is_focus_visible and set_focus_visible (the focus came by keys or by hover-focus: draw the ring;

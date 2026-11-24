@@ -27,5 +27,9 @@ namespace ui {
         text_input: bool = false, text_rect: Rect = Rect{ .. },   // turn OS text input on; where the caret is, in device pixels
         copy: []u8 = "", paste: bool = false,                     // set the clipboard; send me a paste event
         animating: bool = false,                                  // something moves with time: draw another frame
+        // Something changes at a known time (a caret's blink, a tooltip's delay): draw a frame this
+        // many seconds of frame time after this one, or sooner. Null: nothing is waiting. With
+        // `animating` the next frame is due at once anyway.
+        wake: ?f32 = null,
     }
 }

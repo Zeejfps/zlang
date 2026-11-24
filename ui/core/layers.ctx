@@ -219,12 +219,13 @@ namespace ui {
 
     // Whether the tooltip of the widget with `id` is due: it has been hovered, with nothing held,
     // for the theme's `tip_delay` seconds of frame time. While it is hovered and not due yet the
-    // frame asks for another (`Requests.animating`), so an event-driven host draws the frame the
-    // tooltip appears in.
+    // frame asks for one at the time it falls due (`ask_wake`, `Requests.wake`), so an
+    // event-driven host draws the frame the tooltip appears in and none before it.
     fn is_tip_due { mut ui: Ui, id: Id } -> bool {
         if id == NO_ID or ui.interact.hover != id or ui.interact.active != NO_ID { return false }
-        if get_hover_time{ ui, id } >= ui.theme.tip_delay { return true }
-        set_animating{ &ui }
+        let hovered = get_hover_time{ ui, id }
+        if hovered >= ui.theme.tip_delay { return true }
+        ask_wake{ &ui, after = ui.theme.tip_delay - hovered }
         return false
     }
 

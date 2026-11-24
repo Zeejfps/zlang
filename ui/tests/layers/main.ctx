@@ -755,14 +755,16 @@ fn check_tooltip { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     // due on frame 7 (0.625 s of hovering) and not on frame 6 (0.5 s).
     let mut due_early = false
     let mut asked = true
-    for _ in 2..7 {
+    for k in 2..7 {
         ui_test::step_frame{ &d, ui = &gui, show = show_tips{ &s, _ } }             // 2 to 6
         if s.due or find_fill{ ui = gui, color = YELLOW } >= 0 { due_early = true }
-        if not d.requests.animating { asked = false }
+        // Each asks to be woken when the delay is up (0.6, 0.475, ... 0.1 s on), not to animate.
+        let left = 0.6 - 0.125 * @as(f32, k - 2)
+        if d.requests.animating or not ui_test::has_wake{ requests = d.requests, want = left } { asked = false }
     }
-    ui_test::expect{ &io, &t, ok = not due_early and asked, what = "frames 2 to 6: no tooltip, and each asks for another frame" }
+    ui_test::expect{ &io, &t, ok = not due_early and asked, what = "frames 2 to 6: no tooltip, and each asks for a frame when the delay is up, not to animate" }
     ui_test::step_frame{ &d, ui = &gui, show = show_tips{ &s, _ } }                 // 7
-    ui_test::expect{ &io, &t, ok = s.due and is_rect{ r = find_shape{ ui = gui, color = YELLOW }.rect, x = 14, y = 54, w = 60, h = 20 } and not d.requests.animating,
+    ui_test::expect{ &io, &t, ok = s.due and is_rect{ r = find_shape{ ui = gui, color = YELLOW }.rect, x = 14, y = 54, w = 60, h = 20 } and not d.requests.animating and d.requests.wake == null,
         what = "frame 7: the tooltip is due, below its anchor, and asks for nothing more" }
     press_left{ ui = &gui }
     ui_test::step_frame{ &d, ui = &gui, show = show_tips{ &s, _ } }                 // 8

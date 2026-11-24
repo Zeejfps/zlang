@@ -16,6 +16,13 @@ namespace ui_test {
         }
     }
 
+    // Whether a frame's requests ask to be woken `want` seconds on (`Requests.wake`), to a ten
+    // thousandth of a second: a wake is a sum of frame times in f32, which a test cannot hit exactly.
+    fn has_wake { requests: ui::Requests, want: f32 } -> bool {
+        let w = requests.wake ifnull { return false }
+        return w - want < 0.0001 and want - w < 0.0001
+    }
+
     // Whether the arguments hold `flag` (for `--update`).
     fn has_flag { args: Args, flag: []u8 } -> bool {
         let mut i: usize = 0

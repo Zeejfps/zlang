@@ -28,6 +28,7 @@ fn main { mut io: Io, mut mem: Mem } -> i32 {
     check_leave{ &io, &t, &heap }
     check_full_input{ &io, &t, &heap }
     check_keys{ &io, &t, &heap }
+    check_wake{ &io, &t, &heap }
     check_wheel{ &io, &t, &heap }
     check_tab{ &io, &t, &heap }
     check_no_stops{ &io, &t, &heap }
@@ -573,6 +574,30 @@ fn check_full_input { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = ui::take_paste{ ui = &gui }, b = "ok" } and ui::take_paste{ ui = &gui }.len == 0, what = "frame 3: only the paste that fits arrives, and only once" }
     ui::end_frame{ ui = &gui }
     ui_test::expect{ &io, &t, ok = gui.stats.dropped == 1 and ui::has_problem{ ui = gui, kind = ui::ProblemKind::events_full }, what = "frame 3: the big paste is counted" }
+}
+
+// ask_wake: a frame's soonest ask is its Requests.wake; a NaN is ignored, a negative time is 0,
+// and the next frame starts with none.
+fn check_wake { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap } iferr { return }
+    let mut d = make_driver{ &heap } iferr { return }
+    ui::begin_frame{ ui = &gui, frame = d.info }
+    ui::ask_wake{ ui = &gui, after = 0.5 }
+    ui::ask_wake{ ui = &gui, after = 0.25 }
+    ui::ask_wake{ ui = &gui, after = 0.75 }
+    ui::ask_wake{ ui = &gui, after = 0.0 / 0.0 }
+    ui::end_frame{ ui = &gui }
+    let r1 = ui::take_requests{ ui = &gui }
+    ui_test::expect{ &io, &t, ok = ui_test::has_wake{ requests = r1, want = 0.25 } and not r1.animating, what = "wake: the soonest of 0.5, 0.25, 0.75 and a NaN" }
+    ui::begin_frame{ ui = &gui, frame = d.info }
+    ui::ask_wake{ ui = &gui, after = -3.0 }
+    ui::end_frame{ ui = &gui }
+    let r2 = ui::take_requests{ ui = &gui }
+    ui_test::expect{ &io, &t, ok = ui_test::has_wake{ requests = r2, want = 0.0 }, what = "wake: a time before now is now" }
+    ui::begin_frame{ ui = &gui, frame = d.info }
+    ui::end_frame{ ui = &gui }
+    let r3 = ui::take_requests{ ui = &gui }
+    ui_test::expect{ &io, &t, ok = r3.wake == null and is_clean{ ui = gui }, what = "wake: a frame that asks for none has none" }
 }
 
 // take_key consumes a stroke so later code does not see it; get_keys and take_key_at walk them.

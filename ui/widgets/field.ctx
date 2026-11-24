@@ -49,7 +49,7 @@
 // keeps the caret in view is whole pixels, kept in `Values.i`. What the field reads back (its
 // rectangle, the pointer) is last frame's pixels, as for every widget. The caret blinks by frame
 // time (`get_time`, the sum of `frame.dt`): the core reads no clock, and a focused field asks for
-// frames (`Requests.animating`) so the blink goes on.
+// a frame at its caret's next show or hide (`ask_wake`, `Requests.wake`), two a second, so the blink goes on.
 //
 // The number entry is a field over a number: it shows `value` with `range.digits` digits, against
 // its end. A press and a drag sideways moves the value a step every four units the pointer goes; a
@@ -1126,10 +1126,20 @@ namespace ui {
             return phase < BLINK
         }
 
+        // The time to the caret's next blink, from `now`: when it next shows or hides.
+        fn get_blink_wait { f: Field, now: f32 } -> f32 {
+            let since = now - f.blink
+            if not (since > 0.0) { return BLINK }
+            let period = BLINK * 2.0
+            let phase = since - floor_f32{ x = since / period } * period
+            return if phase < BLINK { BLINK - phase } else { period - phase }
+        }
+
         // The OS's text input on, its candidate window at the caret (last frame's place, surface
-        // pixels), and frames asked for so the caret blinks.
+        // pixels), and a frame asked for at the caret's next blink, so the caret blinks with two
+        // frames a second and no more.
         fn ask_text_input { mut ui: Ui, f: Field, text: []u8 } {
-            set_animating{ &ui }
+            ask_wake{ &ui, after = get_blink_wait{ f, now = get_time{ ui } } }
             if not f.has_area {
                 set_text_input{ &ui, rect = Rect{ .. } }
                 return

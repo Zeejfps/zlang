@@ -264,11 +264,12 @@ fn record_tooltip { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: are
         ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
         if count_text{ ui = gui } > 1 { early = true }
     }
-    let asking = d.requests.animating
+    // Hovered for 0.375 s at frame 5: it asks to be woken when the rest of the theme's 0.5 s is up.
+    let asking = not d.requests.animating and ui_test::has_wake{ requests = d.requests, want = 0.125 }
     ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
     write_frame{ &sink, ui = gui, name = "the tooltip, half a second after the hover began" } iferr { return }
     ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "basic-tooltip", actual = ui_rec::get_text{ sink }, scratch, update }
-    ui_test::expect{ &io, &t, ok = not early and asking and count_text{ ui = gui } == 2, what = "tooltip: shown after tip_delay and not before, with frames asked for while waiting" }
+    ui_test::expect{ &io, &t, ok = not early and asking and count_text{ ui = gui } == 2, what = "tooltip: shown after tip_delay and not before, with a frame asked for at the delay while waiting" }
     ui_test::expect{ &io, &t, ok = ui::find_node{ ui = gui, path = "Writes the file" } != null, what = "tooltip: it is a node" }
     ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "tooltip: every frame is clean" }
 }

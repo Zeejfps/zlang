@@ -1,8 +1,9 @@
 // Tasks: a to-do list as an ordinary desktop program (plan stage 13). The application is app.ctx;
 // this file is its host: an SDL window with an OpenGL context, a font loaded from a path and a
 // fallback face for the characters it lacks, the clipboard, and a loop that draws only when an
-// event came, the program's state changed, or the interface asked to animate (a caret blinking, a
-// tooltip on its way).
+// event came, the program's state changed, the interface asked to animate, or the time it asked to
+// be woken at came (`Requests.wake`: a caret's next blink, a tooltip's delay), so a focused field
+// left alone draws two frames a second.
 //
 //   kotor/tools/ctxc run ui/samples/tasks                                    a window; close it to quit
 //   kotor/tools/ctxc run ui/samples/tasks -- --headless --shot ui/out/tasks.png
@@ -187,7 +188,7 @@ struct Shell {
     owed: u32,                              // frames still to draw: after an event, a change of state, a resize
     idle_time: f32,                         // headless: time that passed with no frame, which the next frame's dt takes
     frames: u32, unclean: u32, dropped: u32,
-    active: bool,                           // the window has the OS's focus
+    drawn_at: f64,                          // in a window: when the last frame was drawn, by ui_sdl::get_seconds
     quit: bool, failed: bool,
 }
 
@@ -227,7 +228,7 @@ fn run {
         host, dev, staged, provider, app, headless = opts.headless, scripted = opts.script != null,
         width, height, zoom = opts.scale, pointer_scale = 1.0, monitor = 0.0, least_scale = 0.0,
         requests = ui::Requests{ .. }, background = ui::Color{ .. }, owed = 2, idle_time = 0.0,
-        frames = 0, unclean = 0, dropped = 0, active = true, quit = false, failed = false,
+        frames = 0, unclean = 0, dropped = 0, drawn_at = 0.0, quit = false, failed = false,
     }
     if opts.headless {
         try ui_gl::make_target{ dev = &shell.dev, width = @as(u32, width), height = @as(u32, height) }
@@ -341,28 +342,30 @@ fn run_frames { mut shell: Shell, mut sdl: ui_sdl::Sdl, mut io: Io, mut ui: ui::
     }
 }
 
-// One turn of the event-driven loop: wait up to `timeout` milliseconds for an event while nothing
-// is owed and nothing animates, then draw a frame if one is due. False when the program is to stop.
-// Whether it drew is in `shell.frames`. While the window is in the background, what animates (a
-// caret blinking in a field left focused) is drawn twice a second, not at the display's rate.
+// One turn of the event-driven loop: wait for an event while nothing is owed, for at most
+// `timeout` milliseconds and no longer than until the frame the interface asked for
+// (`Requests.wake`: a caret's next blink, a tooltip's delay; none at all while it animates), then
+// draw a frame if one is due. False when the program is to stop. Whether it drew is in
+// `shell.frames`.
 fn step_loop { mut shell: Shell, mut sdl: ui_sdl::Sdl, mut io: Io, mut ui: ui::Ui, timeout: i32 } -> bool {
-    let busy = shell.owed > 0 or (shell.requests.animating and shell.active)
-    _ = pump_events{ &shell, &sdl, &ui, wait = not busy, timeout = if shell.requests.animating { @min(timeout, 500) } else { timeout } }
+    let busy = shell.owed > 0
+    let wait = if busy { 0 } else { ui_sdl::get_wait{ requests = shell.requests, since = ui_sdl::get_seconds{ &sdl } - shell.drawn_at, most = timeout } }
+    _ = pump_events{ &shell, &sdl, &ui, wait = wait > 0, timeout = wait }
     if shell.quit { return false }
-    if shell.owed == 0 and not shell.requests.animating { return true }
+    if shell.owed == 0 and not ui_sdl::is_frame_due{ requests = shell.requests, since = ui_sdl::get_seconds{ &sdl } - shell.drawn_at } { return true }
     return draw_frame{ &shell, &sdl, &io, &ui }
 }
 
 // The loop for `seconds` with no input from a script: in a window, the real loop for that long by
-// the clock; headless, a 60th of a second at a time, a frame drawn only when one is due. How many
-// frames it drew.
+// the clock; headless, a 60th of a second at a time, a frame drawn only when one is due (owed, or
+// asked for by `Requests`). How many frames it drew.
 fn run_idle { mut shell: Shell, mut sdl: ui_sdl::Sdl, mut io: Io, mut ui: ui::Ui, seconds: f32 } -> u32 {
     let before = shell.frames
     if shell.headless {
         let ticks = ui::ceil_pixels{ v = seconds / STEP_DT }
         for _ in 0..ticks {
             _ = pump_events{ &shell, &sdl, &ui, wait = false, timeout = 0 }
-            if shell.owed > 0 or shell.requests.animating {
+            if shell.owed > 0 or ui_sdl::is_frame_due{ requests = shell.requests, since = @as(f64, shell.idle_time + STEP_DT) } {
                 if not draw_frame{ &shell, &sdl, &io, &ui } { break }
             } else {
                 shell.idle_time = shell.idle_time + STEP_DT
@@ -370,12 +373,12 @@ fn run_idle { mut shell: Shell, mut sdl: ui_sdl::Sdl, mut io: Io, mut ui: ui::Ui
         }
         return shell.frames - before
     }
-    let mut passed: f32 = 0.0
-    _ = ui_sdl::get_dt{ &sdl, host = &shell.host }
-    while passed < seconds and not shell.quit {
-        let left = ui::ceil_pixels{ v = (seconds - passed) * 1000.0 }
+    let start = ui_sdl::get_seconds{ &sdl }
+    while not shell.quit {
+        let passed = ui_sdl::get_seconds{ &sdl } - start
+        if passed >= @as(f64, seconds) { break }
+        let left = ui::ceil_pixels{ v = @as(f32, @as(f64, seconds) - passed) * 1000.0 }
         if not step_loop{ &shell, &sdl, &io, &ui, timeout = @clamp(left, 1, 100) } { break }
-        passed = passed + ui_sdl::get_dt{ &sdl, host = &shell.host }
     }
     return shell.frames - before
 }
@@ -394,10 +397,6 @@ fn pump_events { mut shell: Shell, mut sdl: ui_sdl::Sdl, mut ui: ui::Ui, wait: b
         match e {
             quit | close => { shell.quit = true }
             other => { continue }
-            focus{ gained } => {
-                shell.active = gained
-                if let event = ui_sdl::to_event{ event = e, pointer_scale = shell.pointer_scale } { _ = ui::push_event{ &ui, event } }
-            }
             else => {
                 if let event = ui_sdl::to_event{ event = e, pointer_scale = shell.pointer_scale } { _ = ui::push_event{ &ui, event } }
             }
@@ -451,6 +450,7 @@ fn draw_frame { mut shell: Shell, mut sdl: ui_sdl::Sdl, mut io: Io, mut ui: ui::
     }
     if shell.dev.stats.dropped != 0 { shell.dropped = shell.dropped + shell.dev.stats.dropped }
     if not shell.headless { ui_sdl::swap{ &sdl, host = shell.host } }
+    shell.drawn_at = ui_sdl::get_seconds{ &sdl }
     return true
 }
 

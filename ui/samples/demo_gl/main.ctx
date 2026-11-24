@@ -163,6 +163,7 @@ struct Demo {
     requests: ui::Requests,                 // the last frame's
     background: ui::Color,                  // what the last frame was cleared to
     frames: u32, unclean: u32, dropped: u32,
+    drawn_at: f64,                          // in a window: when the last frame was drawn, by ui_sdl::get_seconds
     quit: bool, failed: bool,
 }
 
@@ -205,7 +206,7 @@ fn run {
     let mut demo = Demo{
         host, dev, staged, gallery = g, provider, headless = opts.headless, scripted = opts.script != null,
         width, height, scale = opts.scale, zoom = opts.scale, pointer_scale = 1.0,
-        requests = ui::Requests{ .. }, background = ui::Color{ .. }, frames = 0, unclean = 0, dropped = 0, quit = false, failed = false,
+        requests = ui::Requests{ .. }, background = ui::Color{ .. }, frames = 0, unclean = 0, dropped = 0, drawn_at = 0.0, quit = false, failed = false,
     }
     if opts.headless { try ui_gl::make_target{ dev = &demo.dev, width = @as(u32, width), height = @as(u32, height) } }
 
@@ -278,7 +279,7 @@ fn take_action { mut demo: Demo, mut sdl: ui_sdl::Sdl, mut io: Io, mut fs: Fs, m
     match action {
         step => {
             if not demo.headless {
-                _ = pump_events{ &demo, &sdl, &ui, wait = false }
+                _ = pump_events{ &demo, &sdl, &ui, wait = 0 }
                 if demo.quit { return false }
             }
             return draw_frame{ &demo, &sdl, &io, &ui }
@@ -289,28 +290,30 @@ fn take_action { mut demo: Demo, mut sdl: ui_sdl::Sdl, mut io: Io, mut fs: Fs, m
 }
 
 // Frames until `limit` (-1: until the window closes). In a window with no limit it waits for an
-// event when nothing moves, so an idle gallery draws nothing; with a limit it draws every frame,
+// event when nothing moves, at most until the time the last frame asked to be woken at (a caret's
+// blink, a tooltip's delay), so an idle gallery draws nothing; with a limit it draws every frame,
 // so the run ends.
 fn run_frames { mut demo: Demo, mut sdl: ui_sdl::Sdl, mut io: Io, mut ui: ui::Ui, limit: i32 } {
     while not demo.quit {
         if limit >= 0 and demo.frames >= @as(u32, limit) { break }
         if not demo.headless {
-            let idle = limit < 0 and demo.frames > 1 and not demo.requests.animating
-            let woke = pump_events{ &demo, &sdl, &ui, wait = idle }
+            let idle = limit < 0 and demo.frames > 1
+            let wait = if idle { ui_sdl::get_wait{ requests = demo.requests, since = ui_sdl::get_seconds{ &sdl } - demo.drawn_at, most = 500 } } else { 0 }
+            let woke = pump_events{ &demo, &sdl, &ui, wait }
             if demo.quit { break }
-            if idle and not woke { continue }
+            if idle and not woke and not ui_sdl::is_frame_due{ requests = demo.requests, since = ui_sdl::get_seconds{ &sdl } - demo.drawn_at } { continue }
         }
         if not draw_frame{ &demo, &sdl, &io, &ui } { break }
     }
 }
 
-// Hands the window's events to the Ui; with `wait`, waits up to half a second for the first.
-// Whether any came.
-fn pump_events { mut demo: Demo, mut sdl: ui_sdl::Sdl, mut ui: ui::Ui, wait: bool } -> bool {
+// Hands the window's events to the Ui; waits up to `wait` milliseconds for the first. Whether any
+// came.
+fn pump_events { mut demo: Demo, mut sdl: ui_sdl::Sdl, mut ui: ui::Ui, wait: i32 } -> bool {
     let mut any = false
     let mut first = true
     while true {
-        let next = if first and wait { ui_sdl::wait_event{ &sdl, host = &demo.host, timeout = 500 } } else { ui_sdl::poll{ &sdl, host = &demo.host } }
+        let next = if first and wait > 0 { ui_sdl::wait_event{ &sdl, host = &demo.host, timeout = wait } } else { ui_sdl::poll{ &sdl, host = &demo.host } }
         first = false
         let e = next ifnull { break }
         any = true
@@ -357,6 +360,7 @@ fn draw_frame { mut demo: Demo, mut sdl: ui_sdl::Sdl, mut io: Io, mut ui: ui::Ui
     }
     if demo.dev.stats.dropped != 0 { demo.dropped = demo.dropped + demo.dev.stats.dropped }
     if not demo.headless { ui_sdl::swap{ &sdl, host = demo.host } }
+    demo.drawn_at = ui_sdl::get_seconds{ &sdl }
     return true
 }
 

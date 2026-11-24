@@ -874,25 +874,33 @@ fn check_requests { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } 
     step{ &r, &f }
     step{ &r, &f }
     let a = get_area{ ui = r.ui, path = "name" }
-    let off_before = not r.d.requests.text_input and not r.d.requests.animating
+    let off_before = not r.d.requests.text_input and not r.d.requests.animating and r.d.requests.wake == null
     _ = ui_test::move_pointer{ ui = &r.ui, x = a.x + 3, y = a.y + 3 }
     step{ &r, &f }
     let cursor = r.d.requests.cursor == ui::Cursor::text
     click_at{ &r, &f, x = a.x + a.w - 2, y = a.y + 3, clicks = 1 }
     let rect = r.d.requests.text_rect
-    let on = r.d.requests.text_input and r.d.requests.animating and r.d.requests.wants_keys
-    ui_test::expect{ &io, &t, ok = off_before and cursor, what = "requests: no text input before the focus, the text cursor over the field" }
+    // The press put the caret down a frame ago (0.125 s): it shows for 0.53 s from then, so the
+    // frame asks to be woken 0.405 s on, when it hides, and does not ask to animate.
+    let on = r.d.requests.text_input and not r.d.requests.animating and ui_test::has_wake{ requests = r.d.requests, want = 0.405 } and r.d.requests.wants_keys
+    ui_test::expect{ &io, &t, ok = off_before and cursor, what = "requests: no text input and no wake before the focus, the text cursor over the field" }
     ui_test::expect{ &io, &t, ok = on and rect.x == a.x + 14 and rect.y == a.y and rect.w == 1 and rect.h == 14 and a.y == 17,
-        what = "requests: text input on while focused, with the caret's rectangle in pixels, and frames asked for" }
-    // dt is 0.125: the caret shows for its first 0.53 s (five frames), then not.
+        what = "requests: text input on while focused, with the caret's rectangle in pixels, and a frame asked for at its next blink" }
+    // dt is 0.125: the caret shows for 0.53 s, hides for 0.53 s, and so on. Each frame asks to be
+    // woken at the next edge (0.53, 1.06, 1.59 s after the caret was put down), less the time since.
     let mut shown: u32 = 0
-    for _ in 0..8 {
+    let mut waits = true
+    for k in 2..10 {
         step{ &r, &f }
         if has_caret{ ui = r.ui, x = rect.x } { shown = shown + 1 }
+        let since = 0.125 * @as(f32, k)
+        let edge: f32 = if since < 0.53 { 0.53 } else if since < 1.06 { 1.06 } else { 1.59 }
+        if r.d.requests.animating or not ui_test::has_wake{ requests = r.d.requests, want = edge - since } { waits = false }
     }
-    ui_test::expect{ &io, &t, ok = shown > 0 and shown < 8, what = "requests: the caret blinks by frame time" }
+    ui_test::expect{ &io, &t, ok = shown == 4 and waits,
+        what = "requests: the caret blinks by frame time (shown at 0.25 to 0.5 s and 1.125 s), each frame asking for the next edge" }
     click_at{ &r, &f, x = 200, y = 200, clicks = 1 }
-    ui_test::expect{ &io, &t, ok = not r.d.requests.text_input and not r.d.requests.animating, what = "requests: text input off after the focus goes" }
+    ui_test::expect{ &io, &t, ok = not r.d.requests.text_input and not r.d.requests.animating and r.d.requests.wake == null, what = "requests: text input off and no wake after the focus goes" }
     ui_test::expect{ &io, &t, ok = is_clean_rig{ r }, what = "requests: every frame is clean" }
 }
 
