@@ -1,0 +1,66 @@
+// Tests of std's list and map over an arena (spec §17).
+
+namespace container_tests {
+    struct Key { file: u32, name: []u8 }
+
+    fn heap { mut mem: Mem } -> !arena::Arena {
+        let pages = mem::pages{ &mem, size = 1048576 } ifnull { return alloc::out_of_memory }
+        return arena::new{ buf = pages }
+    }
+
+    #test
+    fn a_list_grows_and_shrinks { mut t: Test, mut mem: Mem } -> ! {
+        let mut h = try heap{ &mem }
+        let mut xs = list::new(i32){ realloc = arena::alloc, heap = &h }
+        @expect(&t, xs.len == 0)
+        @expect(&t, list::pop{ list = &xs } == null)
+        for i in 0..100 { try list::push{ list = &xs, item = @as(i32, i) * 2 } }
+        @expect(&t, xs.len == 100)
+        @expect(&t, list::get{ list = xs, i = 7 } == 14)
+        @expect(&t, list::get{ list = xs, i = 100 } == null)
+        @expect(&t, list::set{ list = &xs, i = 7, item = -1 })
+        @expect(&t, not list::set{ list = &xs, i = 100, item = -1 })
+        @expect(&t, list::items{ list = xs }[7] == -1)
+        @expect(&t, list::pop{ list = &xs } == 198)
+        @expect(&t, xs.len == 99)
+        list::clear{ list = &xs }
+        @expect(&t, list::items{ list = xs }.len == 0)
+    }
+
+    #test{ panics = "list::at: index out of bounds" }
+    fn at_past_the_end_panics { mut mem: Mem } {
+        let mut h = heap{ &mem } iferr { return }
+        let mut xs = list::new(i32){ realloc = arena::alloc, heap = &h }
+        _ = list::push{ list = &xs, item = 1 } iferr { return }
+        _ = list::at{ list = xs, i = 1 }
+    }
+
+    #test
+    fn a_map_keeps_what_it_is_given { mut t: Test, mut mem: Mem } -> ! {
+        let mut h = try heap{ &mem }
+        let mut m = map::make(u32, i64){ realloc = arena::alloc, heap = &h }
+        for i in 0..1000 { try map::put{ m = &m, key = @as(u32, i), value = @as(i64, i) * 3 } }
+        @expect(&t, map::len{ m } == 1000)
+        @expect(&t, map::get{ m, key = 999 } == 2997)
+        @expect(&t, map::get{ m, key = 1000 } == null)
+        try map::put{ m = &m, key = 5, value = -5 }
+        @expect(&t, map::len{ m } == 1000)
+        @expect(&t, map::get{ m, key = 5 } == -5)
+        @expect(&t, map::remove{ m = &m, key = 5 } == -5)
+        @expect(&t, map::remove{ m = &m, key = 5 } == null)
+        @expect(&t, not map::has{ m, key = 5 })
+        @expect(&t, map::len{ m } == 999)
+    }
+
+    #test
+    fn a_struct_is_a_key { mut t: Test, mut mem: Mem } -> ! {
+        let mut h = try heap{ &mem }
+        let mut m = map::make(Key, u32){ realloc = arena::alloc, heap = &h }
+        try map::put{ m = &m, key = Key{ file = 1, name = "main" }, value = 10 }
+        try map::put{ m = &m, key = Key{ file = 2, name = "main" }, value = 20 }
+        let other: []u8 = "main"
+        @expect(&t, map::get{ m, key = Key{ file = 2, name = other } } == 20)
+        @expect(&t, map::get{ m, key = Key{ file = 2, name = "mai" } } == null)
+        @expect(&t, Key{ file = 1, name = "a" } != Key{ file = 1, name = "b" })
+    }
+}

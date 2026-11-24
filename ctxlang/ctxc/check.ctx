@@ -99,7 +99,7 @@ namespace check {
     // conversions), `#write` (§13, Formatting), `#start` and `#panic` (§15, Entry point),
     // `#stack_limit` and `#thread_local` on a static (§15, rule 13), `#pure` on an extern fn (§18, Extern functions, rule 8), and tasks' (§15, Tasks): `#task`
     // on a fn, `#thread_bound` on a capability, and std's `#starts_task` and `#task_handle`.
-    enum Attribute: u8 { convert, write, start, panic, stack_limit, thread_local, pure, task, thread_bound, starts_task, task_handle }
+    enum Attribute: u8 { convert, write, start, panic, stack_limit, thread_local, pure, task, thread_bound, starts_task, task_handle, test, test_main }
 
     struct Space {
         name:   []u8,
@@ -162,6 +162,12 @@ namespace check {
         // without one. The program's replaces std's (start_fn, panic_fn).
         starts:    [2]u32 = [NONE, NONE],
         panics:    [2]u32 = [NONE, NONE],
+        // A test build (§20): the entry point is the `#test_main` fn, std's or the program's,
+        // in place of `main`, and the compiler gives it the program's `#test` fns, which are
+        // here in declaration order in any build.
+        testing:   bool = false,
+        test_mains: [2]u32 = [NONE, NONE],
+        tests:     list::List(TestFn, Heap),
         // The statics with a valid `#stack_limit` (§15, rule 13): std's and the program's, each
         // a capability's decl and the static's name, NONE without one. The program's replaces
         // std's (stack_limit).
@@ -176,6 +182,7 @@ namespace check {
         ovfs:      list::List(syntax::Expr, Heap),    // `ifoverflow`s, whose coverage is settled at the end
         gvars:     list::List(GVar, Heap),            // generic arguments to infer
         fmts:      list::List(syntax::Expr, Heap),    // the body's @fmt calls, whose writers are settled at the end
+        expects:   list::List(syntax::Expr, Heap),    // the body's @expect calls, whose sides' writers are looked at at the end
         eq_uses:   list::List(EqUse, Heap),           // the body's `==`, `@hash` and `<` that need a type to have them, checked at its end
         needs:     list::List(Need, Heap),            // generic parameters that must have `==`, `@hash` or an order
         generic_uses: list::List(GenericUse, Heap),   // generic fns named with type arguments, in every body
@@ -486,6 +493,8 @@ namespace check {
             ovfs = list::new(syntax::Expr){ realloc = arena::alloc, &heap },
             gvars = list::new(GVar){ realloc = arena::alloc, &heap },
             fmts = list::new(syntax::Expr){ realloc = arena::alloc, &heap },
+            expects = list::new(syntax::Expr){ realloc = arena::alloc, &heap },
+            tests = list::new(TestFn){ realloc = arena::alloc, &heap },
             eq_uses = list::new(EqUse){ realloc = arena::alloc, &heap },
             needs = list::new(Need){ realloc = arena::alloc, &heap },
             generic_uses = list::new(GenericUse){ realloc = arena::alloc, &heap },
@@ -593,6 +602,8 @@ namespace check {
         put_name{ &c, ns = UNIVERSE, values = false, name = "thread_bound", e = Entry::attr{ a = Attribute::thread_bound } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "starts_task", e = Entry::attr{ a = Attribute::starts_task } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "task_handle", e = Entry::attr{ a = Attribute::task_handle } }
+        put_name{ &c, ns = UNIVERSE, values = false, name = "test", e = Entry::attr{ a = Attribute::test } }
+        put_name{ &c, ns = UNIVERSE, values = false, name = "test_main", e = Entry::attr{ a = Attribute::test_main } }
         return c
     }
 
@@ -1600,7 +1611,8 @@ namespace check {
             entry = "build"
         }
         if m == NONE {
-            error{ &c, at = nowhere{}, msg = "no `fn main` entry point" }
+            // A test build needs no `main`: a library's directory has its tests alone.
+            if c.testing { test_entry{ &c } } else { error{ &c, at = nowhere{}, msg = "no `fn main` entry point" } }
             return
         }
         let x = get_decl{ c, d = m }
@@ -1627,6 +1639,8 @@ namespace check {
                     cap{ decl } => {
                         if decl == build_cap and slice::eq_bytes{ a = entry, b = "main" } {
                             error{ &c, at, msg = "`main` cannot take a Build: only a build program's `fn build` receives one" }
+                        } else if decl != NONE and decl == std_decl_top{ c, name = "Test" } {
+                            errorf{ &c, at, msg = @fmt("`{}` cannot take a Test: only a `test` fn and the `test_main` fn receive one", str{ s = entry }) }
                         } else if loaded_cap{ c, t } {
                             errorf{ &c, at, msg = @fmt("`{}` cannot take `{}`: a capability with fields comes from a function of its namespace, not the runtime", str{ s = entry }, tstr{ c, t }) }
                         }
@@ -1639,6 +1653,13 @@ namespace check {
             i = i + 1
         }
         if c.diags.errors == bad { c.main = m }
+        if c.testing { test_entry{ &c } }
+    }
+
+    // A test build's entry point (§20): the `#test_main` fn, whatever `main` the program has.
+    fn test_entry { mut c: Checker } {
+        c.main = test_main_fn{ c }
+        if c.main == NONE { error{ &c, at = nowhere{}, msg = "no `test_main` fn to run the tests: this program's std has no `test::main`, and the program declares none" } }
     }
 
     // Whether t is `!` or `!i32`: what an entry point may return besides an exit code or nothing
@@ -1652,6 +1673,10 @@ namespace check {
     // The entry point that returns `!` or `!i32` gets a site that writes its error (exit_site),
     // before the bodies are checked, so that the site's writers are found as the sets are inferred.
     fn entry_site { mut c: Checker } {
+        if c.testing {
+            test_sites{ &c }
+            return
+        }
         let mut m = root_fn{ c, name = "main" }
         if m == NONE { m = root_fn{ c, name = "build" } }
         if m == NONE { return }
@@ -1730,6 +1755,8 @@ namespace check {
             let mut seen_bound = false
             let mut seen_starts = false
             let mut seen_handle = false
+            let mut seen_test = false
+            let mut seen_runner = false
             let mut k: usize = 0
             while k < x.attrs.len {
                 let a = x.attrs[k]
@@ -1779,6 +1806,14 @@ namespace check {
                             handle_attr{ &c, x, file, a, seen = seen_handle }
                             seen_handle = true
                         }
+                        test => {
+                            test_attr{ &c, x, file, a, seen = seen_test }
+                            seen_test = true
+                        }
+                        test_main => {
+                            hook_attr{ &c, x, file, a, which, seen = seen_runner }
+                            seen_runner = true
+                        }
                     }
                 }
                 k = k + 1
@@ -1794,7 +1829,7 @@ namespace check {
 
     // A compiler attribute's name, for messages.
     fn attr_name { a: Attribute } -> []u8 {
-        return match a { convert => { "convert" } write => { "write" } start => { "start" } panic => { "panic" } stack_limit => { "stack_limit" } thread_local => { "thread_local" } pure => { "pure" } task => { "task" } thread_bound => { "thread_bound" } starts_task => { "starts_task" } task_handle => { "task_handle" } }
+        return match a { convert => { "convert" } write => { "write" } start => { "start" } panic => { "panic" } stack_limit => { "stack_limit" } thread_local => { "thread_local" } pure => { "pure" } task => { "task" } thread_bound => { "thread_bound" } starts_task => { "starts_task" } task_handle => { "task_handle" } test => { "test" } test_main => { "test_main" } }
     }
 
     // The attribute the compiler declares that a names, if it is one: `#convert` or `#write`
@@ -1816,7 +1851,8 @@ namespace check {
         let braced{ callee, items } = a.value.k else { return }
         let path{ segs } = callee.k else { return }
         use{ &c, n = segs[0].name, r = Ref::attr{ a = which } }
-        if items.len > 0 {
+        // `#test{ panics = "text" }` is the one with a field (test_attr).
+        if items.len > 0 and which != Attribute::test {
             errorf{ &c, at = items[0].span, msg = @fmt("`{}` takes no fields", str{ s = segs[0].name.text }) }
         }
     }
@@ -1894,6 +1930,9 @@ namespace check {
         if which == Attribute::start and r != types::I32 and r != types::ERROR {
             error{ &c, at = ret_at, msg = "a `start` fn returns the exit code, an i32" }
         }
+        if which == Attribute::test_main and r != types::I32 and r != types::ERROR {
+            error{ &c, at = ret_at, msg = "a `test_main` fn returns the exit code, an i32" }
+        }
         if which == Attribute::panic and r != types::VOID and r != types::ERROR {
             error{ &c, at = ret_at, msg = "a `panic` fn returns nothing" }
         }
@@ -1909,12 +1948,16 @@ namespace check {
             if types::get{ s = c.ty, id = t } is cap{ decl } {
                 if decl == std_decl_top{ c, name = "Build" } {
                     errorf{ &c, at, msg = @fmt("a `{}` fn cannot take a Build: only a build program's `fn build` receives one", str{ s = name }) }
+                } else if decl == std_decl_top{ c, name = "Test" } and which != Attribute::test_main {
+                    errorf{ &c, at, msg = @fmt("a `{}` fn cannot take a Test: only a `test` fn and the `test_main` fn receive one", str{ s = name }) }
                 } else if loaded_cap{ c, t } {
                     errorf{ &c, at, msg = @fmt("a `{}` fn cannot take `{}`: a capability with fields comes from a function of its namespace, not the runtime", str{ s = name }, tstr{ c, t }) }
                 }
-            } else if f.mutable or not hook_field{ c, which, name = f.name, t } {
+            } else if f.mutable or not hook_field{ &c, which, name = f.name, t } {
                 if which == Attribute::start {
                     errorf{ &c, at, msg = @fmt("a `start` fn's context is capabilities, `argc: i32`, `argv: *?*u8` and `main: &fn{{ args: Args }} -> i32`, not `{}: {}`", str{ s = f.name }, tstr{ c, t }) }
+                } else if which == Attribute::test_main {
+                    errorf{ &c, at, msg = @fmt("a `test_main` fn's context is capabilities, `args: Args`, `count: usize`, `case: &fn{{ index: usize }} -> test::Case` and `run: &fn{{ index: usize }} -> i32`, not `{}: {}`", str{ s = f.name }, tstr{ c, t }) }
                 } else {
                     errorf{ &c, at, msg = @fmt("a `panic` fn's context is capabilities, `msg: []u8`, `file: []u8`, `line: u32` and `col: u32`, not `{}: {}`", str{ s = f.name }, tstr{ c, t }) }
                 }
@@ -1923,13 +1966,112 @@ namespace check {
         }
         if c.diags.errors != bad { return }
         let own: usize = if @as(usize, file) < c.std_files { 0 } else { 1 }
-        let had = if which == Attribute::start { c.starts[own] } else { c.panics[own] }
+        let had = if which == Attribute::start { c.starts[own] } else if which == Attribute::test_main { c.test_mains[own] } else { c.panics[own] }
         if had != NONE {
             let whose = if own == 0 { "std's" } else { "the program's" }
             errorf{ &c, at = a.span, msg = @fmt("a second `{}` fn: `{}` is {} already", str{ s = name }, str{ s = get_decl{ c, d = had }.name.text }, str{ s = whose }) }
             return
         }
-        if which == Attribute::start { c.starts[own] = d } else { c.panics[own] = d }
+        if which == Attribute::start { c.starts[own] = d } else if which == Attribute::test_main { c.test_mains[own] = d } else { c.panics[own] = d }
+    }
+
+    // ---- tests (§20)
+
+    // A `#test` fn of the program's: with `#test{ panics = "text" }`, the text its panic's
+    // message must contain.
+    struct TestFn { decl: u32, panics: ?[]u8 }
+
+    // `#test` on x (§20): a fn with a body and no generic parameters, which a test build
+    // runs. Its context is capabilities without fields, which the runner's process supplies as
+    // `main`'s are, one of them a `Test`, and its result nothing or a bare `!`. std's own
+    // aren't the program's tests.
+    fn test_attr { mut c: Checker, x: syntax::Decl, file: u32, a: syntax::Attr, seen: bool } {
+        let func{ tparams, params, ret, external } = x.k else {
+            error{ &c, at = a.span, msg = "`test` applies only to a fn" }
+            return
+        }
+        if external {
+            error{ &c, at = a.span, msg = "`test` applies only to a fn with a body, not an extern fn" }
+            return
+        }
+        if seen {
+            error{ &c, at = a.span, msg = "duplicate `test` attribute" }
+            return
+        }
+        if tparams.len > 0 {
+            error{ &c, at = a.span, msg = "a `test` fn can't be generic" }
+            return
+        }
+        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
+        let fd = get_decl{ c, d }
+        let bad = c.diags.errors
+        // `#test{ panics = "text" }`
+        let mut panics: ?[]u8 = null
+        let mut fielded = false
+        if a.value.k is braced{ items } {
+            fielded = items.len > 0
+            for item in items {
+                if slice::eq_bytes{ a = item.name.text, b = "panics" } and not item.pun and not item.spread and item.value.k is str{ bytes } {
+                    if panics != null { error{ &c, at = item.span, msg = "`panics` is given twice" } }
+                    panics = bytes
+                } else {
+                    error{ &c, at = item.span, msg = "`test` takes one field, `panics = \"text\"`: a string literal that the message of the test's panic must contain" }
+                }
+            }
+        }
+        let r = types::prune{ s = c.ty, t = fd.ret }
+        if r != types::VOID and r != types::ERROR and not void_result{ c, t = r } {
+            let ret_at = if ret == null { x.span } else { ret.span }
+            errorf{ &c, at = ret_at, msg = @fmt("a `test` fn returns nothing, or a `!` for the errors it passes up, not {}", tstr{ c, t = r }) }
+        }
+        let test = std_decl_top{ c, name = "Test" }
+        let mut takes = false
+        let mut i: usize = 0
+        while i < fd.fields.len {
+            let f = fd.fields[i]
+            let t = types::prune{ s = c.ty, t = f.ty }
+            let at = if i < params.len { params[i].span } else { x.span }
+            if t == types::ERROR {
+                takes = true
+            } else if types::get{ s = c.ty, id = t } is cap{ decl } {
+                if decl == test { takes = true }
+                if decl == std_decl_top{ c, name = "Build" } {
+                    error{ &c, at, msg = "a `test` fn cannot take a Build: only a build program's `fn build` receives one" }
+                } else if loaded_cap{ c, t } {
+                    errorf{ &c, at, msg = @fmt("a `test` fn cannot take `{}`: a capability with fields comes from a function of its namespace, not the runner", tstr{ c, t }) }
+                }
+            } else {
+                errorf{ &c, at, msg = @fmt("a `test` fn's context is capabilities, which the runner supplies as `main`'s are, and `{}` is {}: make it in the test", str{ s = f.name }, a_type{ c, t }) }
+            }
+            i = i + 1
+        }
+        // A test that must panic passes by that, and may check nothing.
+        if not takes and test != NONE and not fielded {
+            errorf{ &c, at = fd.name.span, msg = @fmt("a `test` fn takes a `Test`, as `mut t: Test`, which its checks report to: a test passes by what `@expect(&t, ...)` checks, and `{}` could check nothing", str{ s = fd.name.text }) }
+        }
+        if c.diags.errors != bad or @as(usize, file) < c.std_files { return }
+        try! list::push{ list = &c.tests, item = TestFn{ decl = d, panics } }
+    }
+
+    // The fn a test build runs in place of `main` (§20): the program's `#test_main` fn, or
+    // std's; NONE for neither.
+    fn test_main_fn { c: Checker } -> u32 {
+        return if c.test_mains[1] != NONE { c.test_mains[1] } else { c.test_mains[0] }
+    }
+
+    // In a test build, each `#test` fn that returns a `!` gets the site that writes its error
+    // (exit_site), as a failure's line: `FILE:LINE: fail: NAME: error: ` and the error.
+    fn test_sites { mut c: Checker } {
+        for t in list::items{ list = c.tests } {
+            let x = get_decl{ c, d = t.decl }
+            if not void_result{ c, t = x.ret } { continue }
+            let at = x.name.span
+            let f = c.files[at.file]
+            let p = source::position{ text = f.text, lines = f.lines, offset = at.start }
+            let mut b = message{ c }
+            try! @fmt(&b, "{}:{}: fail: {}: error: ", str{ s = f.name }, p.line, str{ s = x.qual })
+            exit_site{ &c, d = t.decl, before = utf8::view{ b }.bytes }
+        }
     }
 
     // ---- tasks (§15, Tasks)
@@ -2348,7 +2490,7 @@ namespace check {
     // A start fn may take `argc` and `argv`, C's, and `main`, which calls the program's entry
     // point with its capabilities and `args`. A panic fn may take the message, the file, line
     // and column of the panic, which are 0 for a panic without a position.
-    fn hook_field { c: Checker, which: Attribute, name: []u8, t: Id } -> bool {
+    fn hook_field { mut c: Checker, which: Attribute, name: []u8, t: Id } -> bool {
         if which == Attribute::start {
             if slice::eq_bytes{ a = name, b = "argc" } { return t == types::I32 }
             if slice::eq_bytes{ a = name, b = "argv" } {
@@ -2364,6 +2506,24 @@ namespace check {
                 if arg.mutable or not slice::eq_bytes{ a = arg.name, b = "args" } { return false }
                 let slice{ elem, mutable } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = arg.ty } } else { return false }
                 return not mutable and is_bytes{ c, t = elem }
+            }
+            return false
+        }
+        if which == Attribute::test_main {
+            // `args`, as `main`'s; how many tests the program has; test `index`'s name and
+            // position, a `test::Case`; and the fn that runs test `index` and gives its exit code.
+            if slice::eq_bytes{ a = name, b = "args" } {
+                let slice{ elem, mutable } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } else { return false }
+                return not mutable and is_bytes{ c, t = elem }
+            }
+            if slice::eq_bytes{ a = name, b = "count" } { return t == types::USIZE }
+            if slice::eq_bytes{ a = name, b = "case" } or slice::eq_bytes{ a = name, b = "run" } {
+                let func{ fields, ret, external } = types::get{ s = c.ty, id = t } else { return false }
+                if external or fields.len != 1 or fields[0].mutable or not slice::eq_bytes{ a = fields[0].name, b = "index" } { return false }
+                if types::prune{ s = c.ty, t = fields[0].ty } != types::USIZE { return false }
+                let r = types::prune{ s = c.ty, t = ret }
+                if slice::eq_bytes{ a = name, b = "run" } { return r == types::I32 }
+                return r != types::ERROR and r == std_type_in{ &c, space = "test", name = "Case" }
             }
             return false
         }
@@ -3674,6 +3834,7 @@ namespace check {
         list::clear{ list = &c.ovfs }
         list::clear{ list = &c.gvars }
         list::clear{ list = &c.fmts }
+        list::clear{ list = &c.expects }
         list::clear{ list = &c.eq_uses }
         list::clear{ list = &c.scope }
         list::clear{ list = &c.marks }
@@ -3718,6 +3879,12 @@ namespace check {
         i = 0
         while i < fs.len {
             fmt_calls{ &c, e = fs[i] }
+            i = i + 1
+        }
+        let es = list::items{ list = c.expects }
+        i = 0
+        while i < es.len {
+            expect_sides{ &c, e = es[i] }
             i = i + 1
         }
         derived_checks{ &c }
@@ -4961,6 +5128,8 @@ namespace check {
             builtin{ name = n } => {
                 t = typed{ &c, e }
                 if slice::eq_bytes{ a = n.text, b = "panic" } { c.dead = true }
+                // `@expect(&t, c)` alone is a check that goes on: whether it held may be dropped.
+                if slice::eq_bytes{ a = n.text, b = "expect" } { return }
                 let mut b = message{ c }
                 try! @fmt(&b, "@{}", str{ s = n.text })
                 name = utf8::view{ b }
@@ -12419,6 +12588,7 @@ namespace check {
             return types::VOID
         }
         if slice::eq_bytes{ a = n, b = "fmt" } { return fmt_builtin{ &c, e, args, exp } }
+        if slice::eq_bytes{ a = n, b = "expect" } { return expect_builtin{ &c, e, args } }
         if slice::eq_bytes{ a = n, b = "as" } {
             let x = args[0]
             // A distinct type converts to and from its base only (§12, Distinct types).
@@ -12793,6 +12963,119 @@ namespace check {
         try! list::push{ list = &c.fmts, item = e }
         if value { try! map::put{ m = &c.holds, key = expr_key{ e }, value = held } }
         return ty
+    }
+
+    // `@expect(t, c)` (§13, Checks): t is a `*mut Test`, and c a condition; its value is c's.
+    // If c doesn't hold, std's `test::check` counts the failure and starts its line, and the
+    // rest of the line is a site's, as an @fmt's to an `io::Stderr`: for a comparison `: `,
+    // both sides with the operator between them, and a line break; for any other condition the
+    // line break alone. The sides are holes whose push is `shown`: each is written by the
+    // writer the site sees for its type, or by its derived text (§13, Formatting, rule 10),
+    // which lowering finds once the types are those of an instance (lower.ctx, expect). A side
+    // that is `null` is written as that. The site's own set is any error: nothing reads its
+    // result.
+    fn expect_builtin { mut c: Checker, e: syntax::Expr, args: []syntax::Expr } -> Id {
+        let test = std_decl_top{ c, name = "Test" }
+        let tt = typed{ &c, e = args[0] }
+        let mut ok = tt != types::ERROR
+        if ok {
+            let mut is_test = false
+            let mut writable = false
+            if types::get{ s = c.ty, id = tt } is ptr{ elem, mutable } {
+                if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = elem } } is cap{ decl } { is_test = test != NONE and decl == test }
+                writable = mutable
+            }
+            if not is_test {
+                errorf{ &c, at = expr_at{ e = args[0] }, msg = @fmt("@expect takes the test it reports to first, a `*mut Test`, as `@expect(&t, a == b)`, got {}", tstr{ c, t = tt }) }
+                ok = false
+            } else if not writable {
+                if args[0].k is addr{ e = x } {
+                    check_mutable{ &c, e = x.* }
+                } else {
+                    errorf{ &c, at = expr_at{ e = args[0] }, msg = @fmt("@expect takes the test it reports to first, a `*mut Test`, as `@expect(&t, a == b)`, got {}", tstr{ c, t = tt }) }
+                }
+                ok = false
+            }
+        }
+        let ct = expr{ &c, e = args[1], exp = types::BOOL }
+        if ct != types::ERROR and not types::unify{ s = &c.ty, a = ct, b = types::BOOL } {
+            errorf{ &c, at = expr_at{ e = args[1] }, msg = @fmt("@expect checks a condition, a bool, got {}", tstr{ c, t = ct }) }
+            ok = false
+        }
+        if not ok or ct == types::ERROR { return types::BOOL }
+        let at = expr_at{ e }
+        let sink = std_type_in{ &c, space = "io", name = "Stderr" }
+        let text = if sink == types::ERROR { no_writer{} } else { writers_of{ &c, b = sink, t = types::STRLIT, ns = c.sc.ns }.one }
+        if text.decl == NONE or std_fn{ c, space = "test", name = "check" } == NONE {
+            error{ &c, at, msg = "@expect needs std's `test::check` and an `io::Stderr` with a writer of text, which this program's std doesn't declare" }
+            return types::BOOL
+        }
+        let mut pieces = list::new(Piece){ realloc = arena::alloc, heap = c.heap }
+        let mut holes = list::new(syntax::Expr){ realloc = arena::alloc, heap = c.heap }
+        if args[1].k is binary{ op, a, b } {
+            let word = compare_word{ op }
+            if word.len > 0 {
+                try! list::push{ list = &pieces, item = Piece{ hole = false, text = ": ", push = "write", writer = text, ty = types::STRLIT, at, spec = no_spec{}, wrap = types::NO_TYPE } }
+                expect_side{ &c, x = a.*, text, &pieces, &holes }
+                try! list::push{ list = &pieces, item = Piece{ hole = false, text = word, push = "write", writer = text, ty = types::STRLIT, at, spec = no_spec{}, wrap = types::NO_TYPE } }
+                expect_side{ &c, x = b.*, text, &pieces, &holes }
+            }
+        }
+        try! list::push{ list = &pieces, item = Piece{ hole = false, text = "\n", push = "write", writer = text, ty = types::STRLIT, at, spec = no_spec{}, wrap = types::NO_TYPE } }
+        let si = @as(u32, c.sites.len)
+        let rt = types::res{ s = &c.ty, ok = types::VOID, errs = types::errs{ s = &c.ty, owner = SITE + si, one = NONE } }
+        let st = Site{
+            at, ns = c.sc.ns, sink, ptr = types::ptr{ s = &c.ty, elem = sink, mutable = true }, sink_at = at,
+            pieces = list::items{ list = pieces }, holes = list::items{ list = holes }, faults = no_vars{}, value = false, ty = rt,
+        }
+        try! list::push{ list = &c.sites, item = st }
+        try! map::put{ m = &c.site_of, key = expr_key{ e }, value = si }
+        try! map::put{ m = &c.flows, key = SITE + si, value = Flow{ atoms = no_vars{}, subs = no_vars{}, any = true, open = false } }
+        try! list::push{ list = &c.expects, item = e }
+        return types::BOOL
+    }
+
+    // A comparison's operator, with a space each side, or nothing for any other operator.
+    fn compare_word { op: tok::Kind } -> []u8 {
+        if op == tok::Kind::eq { return " == " }
+        if op == tok::Kind::ne { return " != " }
+        if op == tok::Kind::lt { return " < " }
+        if op == tok::Kind::le { return " <= " }
+        if op == tok::Kind::gt { return " > " }
+        if op == tok::Kind::ge { return " >= " }
+        return ""
+    }
+
+    // One side of an @expect's comparison: `null` as text, or a hole for its value.
+    fn expect_side { mut c: Checker, x: syntax::Expr, text: Writer, mut pieces: list::List(Piece, Heap), mut holes: list::List(syntax::Expr, Heap) } {
+        let at = expr_at{ e = x }
+        if is_null{ e = x } {
+            try! list::push{ list = &pieces, item = Piece{ hole = false, text = "null", push = "write", writer = text, ty = types::STRLIT, at, spec = no_spec{}, wrap = types::NO_TYPE } }
+            return
+        }
+        try! list::push{ list = &pieces, item = Piece{ hole = true, text = "", push = "shown", writer = text, ty = types::NO_TYPE, at, spec = no_spec{}, wrap = types::NO_TYPE } }
+        try! list::push{ list = &holes, item = x }
+    }
+
+    // The sides of an @expect, once the body's types are settled: two writers that the site
+    // sees for one side's type, or for a part of it, are an error. A side whose type has a
+    // generic parameter in it is looked at in each instance, by lowering, where the first of
+    // two writes it.
+    fn expect_sides { mut c: Checker, e: syntax::Expr } {
+        let si = map::get{ m = c.site_of, key = expr_key{ e } } ifnull { return }
+        let st = list::items{ list = c.sites }[@as(usize, si)]
+        let mut flow = Flow{ atoms = no_vars{}, subs = no_vars{}, any = true, open = false }
+        for x in st.holes {
+            let t = types::zonk{ s = &c.ty, t = value_ty{ c, k = expr_key{ e = x } } }
+            if t == types::ERROR or types::has_params{ s = c.ty, t } { continue }
+            let found = writers_of{ &c, b = st.sink, t, ns = st.ns }
+            if found.two != NONE {
+                errorf{ &c, at = expr_at{ e = x }, msg = @fmt("@expect has two writers of {} to io::Stderr: `{}` and `{}`", tstr{ c, t }, str{ s = get_decl{ c, d = found.one.decl }.qual }, str{ s = get_decl{ c, d = found.two }.qual }) }
+            } else if found.one.decl == NONE {
+                let mut seen = ids{ heap = c.heap }
+                shown_parts{ &c, b = st.sink, ns = st.ns, t, &flow, at = expr_at{ e = x }, why = ", for a part of this side of an @expect", &seen }
+            }
+        }
     }
 
     // The pieces of format f, after the arguments' values in holes, each typed: a string

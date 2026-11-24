@@ -1,0 +1,70 @@
+// Tests of std's utf8, and of `@fmt` with specs into a Builder (spec §13, Formatting; §17).
+
+namespace utf8_tests {
+    #test
+    fn from_checks_the_bytes { mut t: Test } {
+        @expect(&t, utf8::from{ bytes = "plain" } is ok)
+        let bad: [3]u8 = ['a', 0xFF, 'b']
+        let at: usize = match utf8::from{ bytes = bad[..] } {
+            ok => { 99 }
+            utf8::invalid{ at = i } => { i }
+        }
+        @expect(&t, at == 1)
+    }
+
+    #test
+    fn counts_and_finds { mut t: Test } {
+        let s: utf8::String = "na\xc3\xafve"
+        @expect(&t, utf8::len{ s } == 6)
+        @expect(&t, utf8::count{ s } == 5)
+        @expect(&t, utf8::find{ s, c = 'v' } == 4)
+        @expect(&t, utf8::find{ s, c = 'x' } == null)
+        @expect(&t, utf8::starts_with{ s, prefix = "na" })
+        @expect(&t, not utf8::ends_with{ s, suffix = "na" })
+    }
+
+    #test
+    fn splits_and_trims { mut t: Test } {
+        let parts = utf8::split_once{ s = "key=value=x", c = '=' } ifnull {
+            @expect(&t, false)
+            return
+        }
+        @expect(&t, parts.head.bytes == "key")
+        @expect(&t, parts.tail.bytes == "value=x")
+        @expect(&t, utf8::split_once{ s = "none", c = '=' } == null)
+        @expect(&t, utf8::trim{ s = "  \t padded \n" }.bytes == "padded")
+    }
+
+    #test
+    fn parses_numbers { mut t: Test } {
+        @expect(&t, utf8::parse_i64{ s = "-42" } == -42)
+        @expect(&t, utf8::parse_i64{ s = "9223372036854775807" } == 9223372036854775807)
+        @expect(&t, utf8::parse_i64{ s = "9223372036854775808" } == null)
+        @expect(&t, utf8::parse_u64{ s = "18446744073709551615" } == 18446744073709551615)
+        @expect(&t, utf8::parse_u64{ s = "-1" } == null)
+        @expect(&t, utf8::parse_u64{ s = "" } == null)
+        @expect(&t, utf8::parse_f64{ s = "2.5" } == 2.5)
+    }
+
+    #test
+    fn fmt_writes_values_and_specs { mut t: Test, mut mem: Mem } -> ! {
+        let pages = mem::pages{ &mem, size = 4096 } ifnull { return alloc::out_of_memory }
+        let mut heap = arena::new{ buf = pages }
+        let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+        let name: []u8 = "abc"
+        try @fmt(&b, "{}|{}|{}|{}", 42, -7, true, name)
+        @expect(&t, utf8::view{ b }.bytes == "42|-7|true|abc")
+        utf8::clear{ &b }
+        try @fmt(&b, "{:>6}|{:<6}|{:^6}|{:06}", 42, 42, 42, -42)
+        @expect(&t, utf8::view{ b }.bytes == "    42|42    |  42  |-00042")
+        utf8::clear{ &b }
+        try @fmt(&b, "{:x}|{:X}|{:08x}|{:b}|{:o}", 255, 255, 255, 5, 8)
+        @expect(&t, utf8::view{ b }.bytes == "ff|FF|000000ff|101|10")
+        utf8::clear{ &b }
+        try @fmt(&b, "{:.3}|{:.0}|{:8.2}|{}|{}", 3.14159, 2.5, 3.14159, 100.0, 0.1)
+        @expect(&t, utf8::view{ b }.bytes == "3.142|2|    3.14|100.0|0.1")
+        utf8::clear{ &b }
+        try @fmt(&b, "{:<5}|{:>5}|{{}}", name, name)
+        @expect(&t, utf8::view{ b }.bytes == "abc  |  abc|{}")
+    }
+}

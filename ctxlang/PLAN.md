@@ -369,7 +369,8 @@ definition, hover and completion work on `ctxc/` itself. The editor-query fixtur
 
 Python is left in development only: about 8,100 lines in `tests/` and `tools/`. ctxc and std have
 none, and `ctxc run` and `exe` drive a build themselves. Steps 1–2 replace the Python and stand
-alone; step 3 gives programs a test framework of their own. None blocks the other stages.
+alone; step 3, which is done, gives programs a test framework of their own. None blocks the
+other stages.
 
 1. **Tests as files.** The 454 tests are programs in Python strings (`tests/test_ctxlang.py`).
    Each becomes a `.ctx` file, or a directory for a multi-file program, that states its
@@ -381,37 +382,44 @@ alone; step 3 gives programs a test framework of their own. None blocks the othe
 2. **`corpus.py` and `recover.py` in ctxlang.** Both run many processes at once, with
    `proc::spawn` and `wait`, which the driver's parallel compiles use too. With tests as files,
    the corpus is mostly the test directory itself.
-3. **`#test` functions** for std, ctxc's internals and programs, next to the code they test. The
-   compiler's own suite stays as files (6.1): a program can't catch its own compile error.
+3. **`#test` functions.** *Done* (spec §20 and §13, Checks; std/test.ctx; ctxc/check.ctx,
+   `test_attr` and `expect_builtin`; ctxc/lower.ctx, `expect` and `test_given`; ctxc/drive.ctx,
+   `test`). Tests are fns next to the code they test, run by `ctxc test PATH`. The compiler's
+   own suite stays as files (6.1): a program can't catch its own compile error.
    ```
    #test
-   fn reads_config { mut fs: Fs } -> ! {
-       let text = try fs::read_all{ &fs, ... }
-       @expect(text.len == 42)                 // fails with "text.len == 42: 17 == 42"
+   fn reads_config { mut t: Test, mut fs: Fs } -> ! {
+       let text = try read{ &fs, path = "app.cfg" }
+       @expect(&t, text.len == 42)         // cfg.ctx:4: fail: reads_config: text.len == 42: 17 == 42
    }
 
    #test{ panics = "integer overflow" }
    fn add_overflows {} { _ = max_i32{} + 1 }
    ```
-   - **A test's context is what it needs.** One without capabilities is deterministic by
-     construction, so it can run in parallel, and could run while compiling, as consts do. One that takes `Fs`
-     says so, and the runner supplies it as `main`'s are supplied.
+   - **A test's context is what it needs:** capabilities, supplied as `main`'s are. One that
+     takes no `Fs` can't reach a file.
    - **No mocking framework.** Behaviour is already passed as values (capabilities with fields,
      `map::Map`'s hash): a test passes a fake.
    - **A test returns `!`,** so it can `try`; an error fails it, printed as `main`'s is (3.1).
-   - **`@expect(c)`**, a builtin: on failure it records the condition's text and, for a
-     comparison, both sides, and the test goes on. With no sink of the program's, the compiler
-     prints them as 3.1's `main -> !` prints an error's fields, which needs settling first. ctxlang has no macros or
-     generic printing (FRICTION #30), so a library `assert_eq` couldn't show the values.
-   - **Leaks.** A std counting allocator fails a test that doesn't free what it took, as Zig's
-     `std.testing.allocator` does.
+   - **`@expect(&t, c)`** is the one builtin: the report needs the check's position, its
+     condition's text and both sides of a comparison in it, which only the compiler has. It
+     reports through a `Test` the test passes down, not through hidden state, so a build that
+     isn't a test build can't reach one. Both sides are written with the `#write` fns an
+     `@fmt` would use, or from their parts (3.1's derived text). The check goes on; its value
+     is the condition's, for a test that must stop.
+   - **A test that checks nothing fails,** as does a filter that selects none: neither is
+     reported as a pass.
+   - **A process for each test** (testing.md): a panic fails one test, statics don't leak
+     from one to the next, and tests run at once. The runner is std's `test::main`, a
+     `#test_main` fn that a program may replace; it starts the test build's own executable
+     again for each test, with its output in a file, so it needs no threads.
    - **No `cfg(test)`.** Lowering starts from `main`, so tests never reach a normal build.
-   - **The compiler knows nothing of tests.** `#test` is std's attribute, and a build program
-     finds the tests with `build::declarations` (3.2) and writes a runner `main` with `build::gen_file`
-     (3.1). Only `@expect` is the compiler's. A test that expects a panic runs in its own
-     process, with `proc::spawn`.
-   - *Needs* 3.1 and 3.2. It is a first real user of
-     `build::declarations`, next to the JSON generator.
+   - **The compiler finds the tests,** and not a build program with `build::declarations`, as
+     this plan first had it: `#test` is checked where it is written, in every build, with
+     errors at the fn, and a test may take any capability `main` may, which a generated
+     `main` in source could only name by guessing at how its type is spelled.
+   - *Not built, each for its reason* (spec §20, rule 11): a leak check (std's one allocator is
+     the arena, which has nothing to leak), a temporary directory, and tests with arguments.
    - *Considered:* finding tests by name (Go's `TestXxx`) is magic by name; `test "name" { }`
      blocks (Zig) are syntax an attribute already gives; fixtures by parameter name (pytest) are
      hidden injection that capabilities make explicit; mocks that patch code at run time (Jest)
@@ -524,6 +532,8 @@ program asks for one (spec §19).
 
 - **The suite.** `python -m unittest discover tests` runs every program through the native ctxc
   and cc (`tools/toolchain.py`), and checks its output, exit code, panic or first error.
+- **`#test` fns** (spec §20). `ctxc test std/tests` runs std's own, which are a program beside
+  std, and `ctxc test DIR` any program's; the suite's `TestFns` checks the runner's lines.
 - **The interpreter.** `run_sources` also runs each program with `ctxc interp` and requires the
   same stdout, stderr, exit code and panic (a trap is 132 for both); one that calls an extern fn
   the interpreter doesn't emulate, does what std/os/interp can't, or recurses too deep, is

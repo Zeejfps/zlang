@@ -132,7 +132,10 @@ as the write-ups gave them.
 22. **An inferred slice type is too mutable.** `let mut bs = list::items{ list = xs }` gives `bs`
     `[]mut T`, so a later `bs = f{}` with a `[]T` result is an error; the same for
     `slice::empty(T){}`. Inferring the type from every assignment, as literals are, would fix it.
-    *Hit by 1:* ctxc (about 30).
+    The same mutability stops a comparison: what `fs::read_all` returns, an `alloc::Bytes`, is
+    a `[]mut u8`, and `back == "hello"` is "a string literal is read-only; it cannot be a
+    []mut u8" until it is copied to a `let got: []u8 = back`. *Hit by 2:* ctxc (about 30), a
+    test of std's (1).
 
 23. **No scoped lock.** Every public fn of the mixer starts with `mutex::lock{ mutex = &m.lock }`
     and `defer mutex::unlock{ mutex = &m.lock }`, naming the lock twice. A block form (`with`-like)
@@ -184,3 +187,10 @@ as the write-ups gave them.
     @size_of(u32)` or `const N: u8 = 255 +% 2`, both folded, is "an array length must be a
     compile-time integer constant" in `[N]u8`. Folding them with the typed folder, or the spec
     narrowing what they may use, would fix it. *Hit by 0:* found reviewing the wrapping operators.
+
+38. **No clock without `Threads`.** `os::now` and `thread::sleep` take a `Threads`, and taking
+    one makes a program threaded (§15, Entry point, rule 8). std's test runner only waits for
+    processes, so it has none, and counts a test's time limit in its own 20 ms waits
+    (std/test.ctx, `SLICE`): a limit is at least what it says, and nothing can print how long
+    a test took. A monotonic clock under a capability that doesn't start threads would fix it.
+    *Hit by 1:* std's test runner.

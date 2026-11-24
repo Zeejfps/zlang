@@ -1,7 +1,8 @@
-// fmttest: checks of lib/formats and lib/res that the corpus can't make: the text 2DA form (no
-// shipped table uses it), building a GFF from scratch through gffw's API, writing and reading back
-// an ERF, malformed input that must fail cleanly, and a few values of real tables against what
-// docs/formats/2da.md says they hold.
+// fmttest: checks of lib/formats and lib/res that the corpus can't make: building a GFF from
+// scratch through gffw's API, writing and reading back an ERF, malformed input that must fail
+// cleanly, and a few values of real tables against what docs/formats/2da.md says they hold.
+// The 2DA parser's checks on tables made by hand are `#test` fns beside it now
+// (lib/formats/twoda_test.ctx), run by `kotor/tools/ctxc test kotor/tools/fmttest`.
 
 const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
 
@@ -13,8 +14,6 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let mut h = heap::new{ &mem }
     let pages = mem::pages{ &mem, size = 16777216 } ifnull { return 1 }
     let mut scratch = arena::new{ buf = pages }
-    check_text_2da{ &io, &t, &scratch }
-    arena::reset{ heap = &scratch }
     check_gff_builder{ &io, &t, &scratch }
     arena::reset{ heap = &scratch }
     check_erf{ &io, &t, &scratch }
@@ -40,40 +39,6 @@ fn expect { mut io: Io, mut t: Tally, ok: bool, what: strlit } {
 fn str_is { s: ?[]u8, want: []u8 } -> bool {
     if s == null { return false }
     return slice::eq_bytes{ a = s, b = want }
-}
-
-fn check_text_2da { mut io: Io, mut t: Tally, mut scratch: arena::Arena } {
-    // The column line names the columns after the row labels' own.
-    let src = "2DA V2.0\r\n\r\nDEFAULT: 7\r\n   Name  \"Value\"\tHex\r\n0 first \"two words\" 0x10\r\n1 ****  ****  010\r\nRow2 short\r\n\r\n"
-    let tb = twoda::parse{ data = src, realloc = arena::alloc, heap = &scratch } iferr err{ error } {
-        _ = @fmt(&io, "FAIL: text 2da parse: {}\n", error)
-        t.failed = t.failed + 1
-        return
-    }
-    expect{ &io, &t, ok = tb.columns.len == 3 and twoda::rows{ t = tb } == 3, what = "text 2da shape" }
-    expect{ &io, &t, ok = (twoda::find_column{ t = tb, name = "VALUE" } ifnull 9) == 1, what = "text 2da columns lowered, found ignoring case" }
-    expect{ &io, &t, ok = str_is{ s = twoda::get_string{ t = tb, row = 2, column = "hex" }, want = "7" }, what = "text 2da short row takes the default" }
-    expect{ &io, &t, ok = str_is{ s = twoda::get_string{ t = tb, row = 0, column = "value" }, want = "two words" }, what = "text 2da quoted cell" }
-    expect{ &io, &t, ok = twoda::get_string{ t = tb, row = 1, column = "name" } == null, what = "text 2da **** is blank" }
-    expect{ &io, &t, ok = (twoda::get_int{ t = tb, row = 0, column = "hex" } ifnull 0) == 16, what = "text 2da 0x hex" }
-    expect{ &io, &t, ok = (twoda::get_int{ t = tb, row = 1, column = "hex" } ifnull 0) == 10, what = "text 2da integers are decimal (atol)" }
-    expect{ &io, &t, ok = str_is{ s = twoda::get_string{ t = tb, row = 2, column = "value" }, want = "7" }, what = "text 2da missing cell takes the default" }
-    expect{ &io, &t, ok = (twoda::find_row{ t = tb, label = "ROW2" } ifnull 9) == 2, what = "text 2da label lookup" }
-    expect{ &io, &t, ok = twoda::get_string{ t = tb, row = 9, column = "label" } == null, what = "row out of range" }
-
-    // Binary: the engine's octal %i; NUL separators accepted.
-    // Columns a, b ended by NULs; rows 0, 1; cells "", "010", "x", "0x1F".
-    let bin = "2DA V2.b\na\x00b\x00\x00\x02\x00\x00\x000\x001\x00\x00\x00\x01\x00\x05\x00\x07\x00\x0c\x00\x00010\x00x\x000x1F\x00"
-    let tb2 = twoda::parse{ data = bin, realloc = arena::alloc, heap = &scratch } iferr err{ error } {
-        _ = @fmt(&io, "FAIL: binary 2da parse: {}\n", error)
-        t.failed = t.failed + 1
-        return
-    }
-    expect{ &io, &t, ok = tb2.columns.len == 2 and twoda::rows{ t = tb2 } == 2, what = "binary 2da with NUL separators" }
-    expect{ &io, &t, ok = (twoda::get_int{ t = tb2, row = 0, column = "b" } ifnull 0) == 8, what = "binary 2da %i octal" }
-    expect{ &io, &t, ok = (twoda::get_int{ t = tb2, row = 1, column = "a" } ifnull 9) == 0, what = "binary 2da non-number is 0, found" }
-    expect{ &io, &t, ok = (twoda::get_int{ t = tb2, row = 1, column = "b" } ifnull 0) == 31, what = "binary 2da %i hex" }
-    expect{ &io, &t, ok = twoda::get_string{ t = tb2, row = 0, column = "a" } == null, what = "binary 2da empty cell is blank" }
 }
 
 fn check_vis { mut io: Io, mut t: Tally, mut scratch: arena::Arena } {

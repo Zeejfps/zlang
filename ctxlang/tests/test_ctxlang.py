@@ -16609,6 +16609,504 @@ fn main { mut io: Io } -> ! {
         self.assertCompileError('fn main(T) {} -> ! {}', '`main` cannot be generic')
 
 
+class TestFns(Base):
+    """`#test` fns, `@expect` and `ctxc test` (spec §20; §13, Checks): the runner's lines are an
+    interface, so they are compared whole."""
+
+    TYPES = '''
+struct Point { x: i32, y: i32 }
+enum Kind: u8 { byte, char }
+union Shape { none, circle{ r: f64 } }
+error bad{ at: usize, why: Kind }
+'''
+
+    # CtxcDriver's helpers: a project's directory, ctxc, and the directory it builds in.
+    project = CtxcDriver.project
+    ctxc = CtxcDriver.ctxc
+    work_dir = CtxcDriver.work_dir
+
+    def run_tests(self, files, *args):
+        """`ctxc test . ARGS` in a directory of files (or of one, t.ctx): (exit code, stdout,
+        stderr)."""
+        if isinstance(files, str):
+            files = {'t.ctx': files}
+        d = self.project(files)
+        self.work_dir('.', d)
+        return self.ctxc('test', '.', *args, cwd=d)
+
+    def assertTests(self, files, lines, code, *args):
+        self.assertEqual(self.run_tests(files, *args), (code, ''.join(line + '\n' for line in lines), ''))
+
+    def test_passing(self):
+        src = '''
+fn double { n: i32 } -> i32 { return n * 2 }
+#test
+fn doubles { mut t: Test } {
+    @expect(&t, double{ n = 2 } == 4)
+    @expect(&t, double{ n = -1 } < 0)
+}
+namespace more {
+    #test
+    fn passes_an_error_up { mut t: Test } -> ! {
+        @expect(&t, try parse{ s = "7" } == 7)
+    }
+    fn parse { s: []u8 } -> !i32 {
+        if s.len == 0 { return alloc::out_of_memory }
+        return 7
+    }
+}
+'''
+        # No `main`: a library and its tests are a program to test.
+        self.assertTests(src, ['tests: 2 run, 2 passed, 0 failed, 0 not selected'], 0)
+        self.assertTests(src, ['./t.ctx:4: pass: doubles', './t.ctx:10: pass: more::passes_an_error_up',
+                               'tests: 2 run, 2 passed, 0 failed, 0 not selected'], 0, '-v')
+
+    def test_a_failure_shows_both_sides(self):
+        src = self.TYPES + '''
+fn add { a: i32, b: i32 } -> i32 { return a + b }
+#test
+fn sides { mut t: Test } {
+    @expect(&t, add{ a = 1, b = 2 } == 4)
+    @expect(&t, add{ a = 1, b = 2 } != 3)
+    @expect(&t, 2 < 1)
+    @expect(&t, 1.5 >= 2.5)
+    let wide: i64 = 5000000000
+    let narrow: u8 = 7
+    @expect(&t, wide <= narrow)
+    @expect(&t, true == false)
+    let name: []u8 = "abc"
+    @expect(&t, name == "abd")
+    let s: utf8::String = "x y"
+    @expect(&t, s.bytes.len > 3)
+}
+#test
+fn values_without_a_writer { mut t: Test } {
+    @expect(&t, Point{ x = 1, y = 2 } == Point{ x = 1, y = 3 })
+    @expect(&t, Kind::byte == Kind::char)
+    @expect(&t, Shape::circle{ r = 0.5 } == Shape::none)
+    let xs: [3]i32 = [1, 2, 3]
+    let ys: [3]i32 = [1, 2, 4]
+    @expect(&t, xs == ys)
+    @expect(&t, xs[..2] == ys[1..])
+    let o: ?i32 = null
+    @expect(&t, o == 5)
+    @expect(&t, o != null)
+    let p: ?Point = Point{ x = 0, y = 0 }
+    @expect(&t, p == null)
+}
+'''
+        self.assertTests(src, [
+            './t.ctx:10: fail: sides: add{ a = 1, b = 2 } == 4: 3 == 4',
+            './t.ctx:11: fail: sides: add{ a = 1, b = 2 } != 3: 3 != 3',
+            './t.ctx:12: fail: sides: 2 < 1: 2 < 1',
+            './t.ctx:13: fail: sides: 1.5 >= 2.5: 1.5 >= 2.5',
+            './t.ctx:16: fail: sides: wide <= narrow: 5000000000 <= 7',
+            './t.ctx:17: fail: sides: true == false: true == false',
+            './t.ctx:19: fail: sides: name == "abd": abc == abd',
+            './t.ctx:21: fail: sides: s.bytes.len > 3: 3 > 3',
+            './t.ctx:25: fail: values_without_a_writer: Point{ x = 1, y = 2 } == Point{ x = 1, y = 3 }: Point{ x = 1, y = 2 } == Point{ x = 1, y = 3 }',
+            './t.ctx:26: fail: values_without_a_writer: Kind::byte == Kind::char: Kind::byte == Kind::char',
+            './t.ctx:27: fail: values_without_a_writer: Shape::circle{ r = 0.5 } == Shape::none: Shape::circle{ r = 0.5 } == Shape::none',
+            './t.ctx:30: fail: values_without_a_writer: xs == ys: [1, 2, 3] == [1, 2, 4]',
+            './t.ctx:31: fail: values_without_a_writer: xs[..2] == ys[1..]: [1, 2] == [2, 4]',
+            './t.ctx:33: fail: values_without_a_writer: o == 5: null == 5',
+            './t.ctx:34: fail: values_without_a_writer: o != null: null != null',
+            './t.ctx:36: fail: values_without_a_writer: p == null: Point{ x = 0, y = 0 } == null',
+            'tests: 2 run, 0 passed, 2 failed, 0 not selected'], 1)
+
+    def test_a_condition_that_is_no_comparison_has_its_text(self):
+        src = '''
+fn small { n: i32 } -> bool { return n < 3 }
+#test
+fn conditions { mut t: Test } {
+    @expect(&t, small{ n = 5 })
+    @expect(&t, small{ n = 1 } and small{ n = 9 })
+    @expect(&t, not small{ n = 1 })
+    let o: ?i32 = null
+    @expect(&t, o is some)
+    @expect(&t, small{ n = 7 }
+                or small{   n = 8 })
+    @expect(&t, (1 + 1 == 3) == true)
+}
+'''
+        self.assertTests(src, [
+            './t.ctx:5: fail: conditions: small{ n = 5 }',
+            './t.ctx:6: fail: conditions: small{ n = 1 } and small{ n = 9 }',
+            './t.ctx:7: fail: conditions: not small{ n = 1 }',
+            './t.ctx:9: fail: conditions: o is some',
+            './t.ctx:10: fail: conditions: small{ n = 7 } or small{ n = 8 }',
+            './t.ctx:12: fail: conditions: (1 + 1 == 3) == true: false == true',
+            'tests: 1 run, 0 passed, 1 failed, 0 not selected'], 1)
+
+    def test_each_side_is_evaluated_once_and_the_test_goes_on(self):
+        # A side with an effect runs once, the left one first; the value of @expect is the
+        # condition's, so a test may stop on it.
+        src = '''
+fn next { mut n: i32 } -> i32 {
+    n = n + 1
+    return n
+}
+#test
+fn once { mut t: Test } {
+    let mut n = 0
+    @expect(&t, next{ &n } == 2)
+    @expect(&t, n == 1)
+    let mut a = 0
+    let mut b = 10
+    @expect(&t, next{ n = &a } > next{ n = &b })
+    @expect(&t, a + b == 12)
+    let held = @expect(&t, n == 1)
+    @expect(&t, held)
+    if not @expect(&t, n == 5) { return }
+    @expect(&t, false)
+}
+'''
+        self.assertTests(src, [
+            './t.ctx:9: fail: once: next{ &n } == 2: 1 == 2',
+            './t.ctx:13: fail: once: next{ n = &a } > next{ n = &b }: 1 > 11',
+            './t.ctx:17: fail: once: n == 5: 1 == 5',
+            'tests: 1 run, 0 passed, 1 failed, 0 not selected'], 1)
+
+    def test_a_panic_fails_its_test_alone(self):
+        src = '''
+#test
+fn first { mut t: Test } { @expect(&t, 1 == 1) }
+#test
+fn overflows { mut t: Test } {
+    let xs: [3]i32 = [1, 2, 3]
+    let mut i: usize = 5
+    @expect(&t, xs[0] == 2)
+    @expect(&t, xs[i] == 1)
+}
+#test
+fn says_why { mut t: Test } {
+    @panic("the reason")
+}
+#test
+fn last { mut t: Test } { @expect(&t, 2 == 2) }
+'''
+        self.assertTests(src, [
+            './t.ctx:8: fail: overflows: xs[0] == 2: 1 == 2',
+            './t.ctx:9:19: fail: overflows: panic: index 5 out of bounds for length 3',
+            './t.ctx:13:5: fail: says_why: panic: the reason',
+            'tests: 4 run, 2 passed, 2 failed, 0 not selected'], 1)
+
+    def test_a_returned_error_fails_its_test(self):
+        src = self.TYPES + '''
+fn parse { s: []u8 } -> !i32 {
+    if s.len == 0 { return bad{ at = 3, why = Kind::char } }
+    return 1
+}
+#test
+fn fails { mut t: Test } -> ! {
+    @expect(&t, try parse{ s = "1" } == 1)
+    _ = try parse{ s = "" }
+    @expect(&t, false)
+}
+#test
+fn missing_file { mut t: Test, mut fs: Fs } -> ! {
+    @expect(&t, try fs::size{ &fs, path = "no/such/file" } == 0)
+}
+'''
+        self.assertTests(src, [
+            './t.ctx:12: fail: fails: error: bad{ at = 3, why = Kind::char }',
+            './t.ctx:18: fail: missing_file: error: fs::not_found',
+            'tests: 2 run, 0 passed, 2 failed, 0 not selected'], 1)
+
+    def test_a_test_without_a_check_fails(self):
+        src = '''
+fn work {} -> i32 { return 1 }
+#test
+fn checks_nothing { mut t: Test } { _ = work{} }
+#test
+fn skips_its_check { mut t: Test } {
+    if work{} == 2 { @expect(&t, true) }
+}
+#test
+fn checks { mut t: Test } { @expect(&t, work{} == 1) }
+'''
+        self.assertTests(src, [
+            './t.ctx:4: fail: checks_nothing: no check ran: a test passes by the `@expect`s it makes',
+            './t.ctx:6: fail: skips_its_check: no check ran: a test passes by the `@expect`s it makes',
+            'tests: 3 run, 1 passed, 2 failed, 0 not selected'], 1)
+
+    def test_a_test_that_must_panic(self):
+        src = '''
+fn at { xs: []i32, i: usize } -> i32 { return xs[i] }
+const XS: [2]i32 = [1, 2]
+#test{ panics = "out of bounds for length 2" }
+fn past_the_end {} { _ = at{ xs = XS[..], i = 2 } }
+#test{ panics = "" }
+fn any_panic {} { @panic("whatever") }
+#test{ panics = "overflow" }
+fn another_message {} { _ = at{ xs = XS[..], i = 2 } }
+#test{ panics = "out of bounds" }
+fn returns {} { _ = at{ xs = XS[..], i = 1 } }
+#test{ panics = "out of bounds" }
+fn checks_first { mut t: Test } {
+    @expect(&t, at{ xs = XS[..], i = 0 } == 5)
+    _ = at{ xs = XS[..], i = 2 }
+}
+'''
+        self.assertTests(src, [
+            './t.ctx:2:49: fail: another_message: panic: index 2 out of bounds for length 2',
+            "./t.ctx:9: fail: another_message: its panic's message doesn't contain `overflow`",
+            "./t.ctx:11: fail: returns: it didn't panic: a panic with `out of bounds` was expected",
+            'tests: 5 run, 3 passed, 2 failed, 0 not selected'], 1)
+
+    def test_filters_and_lists(self):
+        src = '''
+namespace a {
+    #test
+    fn one { mut t: Test } { @expect(&t, 1 == 1) }
+    #test
+    fn two { mut t: Test } { @expect(&t, 1 == 2) }
+}
+namespace b {
+    #test
+    fn one { mut t: Test } { @expect(&t, 1 == 1) }
+}
+'''
+        self.assertTests(src, ['tests: 2 run, 2 passed, 0 failed, 1 not selected'], 0, 'one')
+        self.assertTests(src, ['./t.ctx:6: fail: a::two: 1 == 2: 1 == 2', 'tests: 2 run, 1 passed, 1 failed, 1 not selected'], 1, 'a::')
+        self.assertTests(src, ['./t.ctx:6: fail: a::two: 1 == 2: 1 == 2', 'tests: 2 run, 1 passed, 1 failed, 1 not selected'], 1, 'two', 'b::')
+        self.assertTests(src, ['./t.ctx:6: fail: a::two: 1 == 2: 1 == 2', 'tests: 3 run, 2 passed, 1 failed, 0 not selected'], 1, '--jobs', '1')
+        self.assertTests(src, ['./t.ctx:4: a::one', './t.ctx:6: a::two', './t.ctx:10: b::one'], 0, '--list')
+        self.assertTests(src, ['./t.ctx:10: b::one'], 0, '--list', 'b::')
+        # A filter that matches nothing, and a program without tests, are not a pass.
+        self.assertTests(src, ["tests: 0 run: no test's name contains `three`, of 3"], 1, 'three')
+        self.assertTests(src, ["tests: 0 run: no test's name contains `x` or `y`, of 3"], 1, 'x', 'y')
+        self.assertTests('fn main {} {}\n', ['tests: 0 run: the program has no `#test` fn'], 1)
+        code, out, err = self.run_tests(src, '--nope')
+        self.assertEqual((code, out), (2, ''))
+        self.assertIn('usage: ', err)
+        code, out, err = self.run_tests(src, '--jobs', 'many')
+        self.assertEqual((code, out), (2, ''))
+
+    def test_a_program_of_several_files(self):
+        # The tests of every file of the executable, a directory's files before those of the
+        # directories in it, each named by its path; `main` is not run, and `ctxc run` runs no test.
+        files = {
+            'build.ctx': 'fn build { mut b: Build } {\n    let exe = build::exe{ &b, name = "app", root = "app" }\n    build::add_sources{ &b, exe, dir = "lib" }\n}\n',
+            'app/main.ctx': 'fn main { mut io: Io } { io::println_i64{ &io, n = shapes::area{ w = 2, h = 3 } } }\n',
+            'lib/shapes.ctx': 'namespace shapes {\n    fn area { w: i64, h: i64 } -> i64 { return w * h }\n}\n',
+            'lib/shapes_test.ctx': 'namespace shapes {\n    #test\n    fn area_of_a_rect { mut t: Test } { @expect(&t, area{ w = 2, h = 3 } == 5) }\n}\n',
+            'lib/deep/more_test.ctx': '#test\nfn at_the_top { mut t: Test } { @expect(&t, shapes::area{ w = 1, h = 1 } == 1) }\n',
+        }
+        self.assertTests(files, ['lib/shapes_test.ctx:3: fail: shapes::area_of_a_rect: area{ w = 2, h = 3 } == 5: 6 == 5',
+                                 'tests: 2 run, 1 passed, 1 failed, 0 not selected'], 1)
+        self.assertTests(files, ['lib/shapes_test.ctx:3: shapes::area_of_a_rect', 'lib/deep/more_test.ctx:2: at_the_top'], 0, '--list')
+        d = self.project(files)
+        self.assertEqual(self.ctxc('exe', '.', '-o', os.path.join(d, 'app.exe'), cwd=d), (0, '', ''))
+        from toolchain import run_exe
+        out = io.StringIO()
+        self.assertEqual((run_exe(os.path.join(d, 'app.exe'), out=out), out.getvalue()), (0, '6\n'))
+        # A compile error is the build's: ctxc's errors, and no summary.
+        files['lib/shapes_test.ctx'] = '#test\nfn broken { mut t: Test } { @expect(&t, nothing == 1) }\n'
+        code, out, err = self.run_tests(files)
+        self.assertEqual((code, out), (1, ''))
+        self.assertIn('lib/shapes_test.ctx:2:41: error: ', err)
+
+    def test_generic_code_checks(self):
+        # A side whose type is a parameter's is written as each instance's type says: by the
+        # program's writer for the type and an io::Stderr, or from its parts.
+        src = self.TYPES + '''
+#write
+fn write_point { mut e: io::Stderr, p: Point } { _ = @fmt(&e, "({},{})", p.x, p.y) }
+
+fn all_are(T) { mut t: Test, xs: []T, want: T } {
+    for x in xs { @expect(&t, x == want) }
+}
+struct Pair(T) { a: T, b: T }
+
+#test
+fn instances { mut t: Test } {
+    let ns: [3]i64 = [1, 2, 1]
+    all_are(i64){ &t, xs = ns[..], want = 1 }
+    let ps: [2]Point = [Point{ x = 1, y = 1 }, Point{ x = 1, y = 2 }]
+    all_are(Point){ &t, xs = ps[..], want = Point{ x = 1, y = 1 } }
+    let ks: [2]Kind = [Kind::char, Kind::byte]
+    all_are(Kind){ &t, xs = ks[..], want = Kind::byte }
+    @expect(&t, Pair(Point){ a = ps[0], b = ps[1] } == Pair(Point){ a = ps[1], b = ps[0] })
+    @expect(&t, Pair(u8){ a = 1, b = 2 } == Pair(u8){ a = 1, b = 3 })
+}
+'''
+        self.assertTests(src, [
+            './t.ctx:11: fail: instances: x == want: 2 == 1',
+            './t.ctx:11: fail: instances: x == want: (1,2) == (1,1)',
+            './t.ctx:11: fail: instances: x == want: Kind::char == Kind::byte',
+            './t.ctx:23: fail: instances: Pair(Point){ a = ps[0], b = ps[1] } == Pair(Point){ a = ps[1], b = ps[0] }: Pair{ a = (1,1), b = (1,2) } == Pair{ a = (1,2), b = (1,1) }',
+            './t.ctx:24: fail: instances: Pair(u8){ a = 1, b = 2 } == Pair(u8){ a = 1, b = 3 }: Pair{ a = 1, b = 2 } == Pair{ a = 1, b = 3 }',
+            'tests: 1 run, 0 passed, 1 failed, 0 not selected'], 1)
+
+    def test_each_test_has_its_own_process(self):
+        # A static keeps nothing from one test to the next, and a failing test's own output is
+        # printed with its lines, in the order it was written; a passing test's is dropped.
+        src = '''
+capability Counter { ..counter::State }
+namespace counter {
+    capability State { static n: u32 }
+    fn bump { mut c: Counter } -> u32 {
+        c.n = c.n + 1
+        return c.n
+    }
+}
+#test
+fn first { mut t: Test, mut c: Counter } { @expect(&t, counter::bump{ &c } == 1) }
+#test
+fn second { mut t: Test, mut c: Counter, mut io: Io } {
+    io::println{ &io, s = "second ran" }
+    @expect(&t, counter::bump{ &c } == 1)
+}
+#test
+fn prints { mut t: Test, mut io: Io } {
+    io::println{ &io, s = "to standard output" }
+    io::eprintln{ &io, s = "to standard error" }
+    @expect(&t, 1 == 2)
+    io::println{ &io, s = "after the check" }
+}
+'''
+        self.assertTests(src, [
+            'to standard output',
+            'to standard error',
+            './t.ctx:21: fail: prints: 1 == 2: 1 == 2',
+            'after the check',
+            'tests: 3 run, 2 passed, 1 failed, 0 not selected'], 1)
+
+    def test_a_test_takes_what_it_declares(self):
+        # Capabilities as main's: files, memory, tasks, whose checks report through the same Test.
+        src = '''
+#test
+fn writes_and_reads { mut t: Test, mut fs: Fs, mut mem: Mem } -> ! {
+    let pages = mem::pages{ &mem, size = 4096 } ifnull { return alloc::out_of_memory }
+    let mut heap = arena::new{ buf = pages }
+    _ = try fs::write_all{ &fs, path = "scratch.txt", bytes = "hello" }
+    let back = try fs::read_all{ &fs, &heap, realloc = arena::alloc, path = "scratch.txt" }
+    try fs::remove{ &fs, path = "scratch.txt" }
+    let got: []u8 = back
+    @expect(&t, got == "hello")
+}
+#task
+fn work { mut t: Test, n: i32 } -> i32 {
+    @expect(&t, n < 3)
+    return n * 2
+}
+#test
+fn tasks_check { mut t: Test, mut threads: Threads } {
+    let mut a: task::Task(i32)
+    let mut b: task::Task(i32)
+    task::start{ &threads, task = &a, run = work{ &t, n = 1, _ } }
+    task::start{ &threads, task = &b, run = work{ &t, n = 5, _ } }
+    @expect(&t, task::wait{ &threads, task = &a } == 2)
+    @expect(&t, task::wait{ &threads, task = &b } == 10)
+}
+'''
+        self.assertTests(src, ['./t.ctx:14: fail: tasks_check: n < 3: 5 < 3', 'tests: 2 run, 1 passed, 1 failed, 0 not selected'], 1)
+
+    def test_a_test_that_does_not_end(self):
+        src = '''
+#test
+fn hangs { mut t: Test } {
+    let mut n: u64 = 0
+    while true { n = n +% 1 }
+}
+extern fn exit { mut proc: Proc, code: i32 }
+#test
+fn leaves { mut t: Test, mut proc: Proc } {
+    @expect(&t, 1 == 1)
+    exit{ &proc, code = 3 }
+}
+#test
+fn fine { mut t: Test } { @expect(&t, 1 == 1) }
+'''
+        self.assertTests(src, [
+            './t.ctx:3: fail: hangs: timed out after 1 s',
+            './t.ctx:9: fail: leaves: its process ended with exit code 3',
+            'tests: 3 run, 1 passed, 2 failed, 0 not selected'], 1, '--timeout', '1')
+
+    def test_a_runner_of_the_programs(self):
+        # A `#test_main` fn replaces std's: here one that runs every test in its own process,
+        # with test::run_here for each.
+        src = '''
+#test
+fn one { mut t: Test } { @expect(&t, 1 == 1) }
+#test
+fn two { mut t: Test } -> ! { @expect(&t, 2 == 3) }
+#test{ panics = "never" }
+fn three {} {}
+
+#test_main
+fn runner { mut io: Io, mut t: Test, args: Args, count: usize, case: &fn{ index: usize } -> test::Case, run: &fn{ index: usize } -> i32 } -> i32 {
+    let mut failed: i32 = 0
+    for i in 0..count {
+        let c = case{ index = i }
+        let code = test::run_here{ &t, c, index = i, run }
+        _ = @fmt(&io, "{} at {}:{} gave {}, panics {} `{}`\\n", c.name, c.file, c.line, code, c.panics, c.message)
+        failed = failed + code
+    }
+    return failed + @as(i32, args.len) * 10
+}
+'''
+        code, out, err = self.run_tests(src, 'x', 'y')
+        self.assertEqual((code, out, err), (21, 'one at ./t.ctx:3 gave 0, panics false ``\ntwo at ./t.ctx:5 gave 1, panics false ``\nthree at ./t.ctx:7 gave 0, panics true `never`\n',
+                                            './t.ctx:5: fail: two: 2 == 3: 2 == 3\n'))
+
+    def test_tests_are_not_in_a_programs_own_build(self):
+        # A `#test` fn is checked in every build, and run by none but a test build.
+        src = '''
+#test
+fn never_run { mut t: Test } { @expect(&t, 1 == 2) }
+fn helper(T) { mut t: Test, a: T, b: T } -> bool { return @expect(&t, a == b) }
+fn main { mut io: Io } { io::println{ &io, s = "main" } }
+'''
+        self.assertOutput(src, 'main\n')
+
+    def test_signature_errors(self):
+        for src, msg in [
+            ('fn main { mut t: Test } {}', '`main` cannot take a Test: only a `test` fn and the `test_main` fn receive one'),
+            ('#test\nstruct S {}', '`test` applies only to a fn'),
+            ('#test\nextern fn f { mut io: Io }', '`test` applies only to a fn with a body, not an extern fn'),
+            ('#test\n#test\nfn a { mut t: Test } {}', 'duplicate `test` attribute'),
+            ('#test\nfn a(T) { mut t: Test } {}', "a `test` fn can't be generic"),
+            ('#test\nfn a { mut t: Test, n: i32 } {}',
+             "a `test` fn's context is capabilities, which the runner supplies as `main`'s are, and `n` is an i32: make it in the test"),
+            ('#test\nfn a { mut t: Test, mut b: Build } {}', "a `test` fn cannot take a Build: only a build program's `fn build` receives one"),
+            ('#test\nfn a { mut t: Test } -> i32 { return 1 }', "a `test` fn returns nothing, or a `!` for the errors it passes up, not i32"),
+            ('#test\nfn a { mut t: Test } -> !i32 { return 1 }', "a `test` fn returns nothing, or a `!` for the errors it passes up, not !i32"),
+            ('#test\nfn a { mut fs: Fs } {}',
+             'a `test` fn takes a `Test`, as `mut t: Test`, which its checks report to: a test passes by what `@expect(&t, ...)` checks, and `a` could check nothing'),
+            ('#test{ panics = 3 }\nfn a {} {}', '`test` takes one field, `panics = "text"`: a string literal that the message of the test\'s panic must contain'),
+            ('#test{ message = "x" }\nfn a {} {}', '`test` takes one field, `panics = "text"`'),
+            ('#test{ panics = "a", panics = "b" }\nfn a {} {}', '`panics` is given twice'),
+            ('#test_main\nfn r { n: i32 } -> i32 { return 0 }',
+             "a `test_main` fn's context is capabilities, `args: Args`, `count: usize`, `case: &fn{ index: usize } -> test::Case` and `run: &fn{ index: usize } -> i32`, not `n: i32`"),
+            ('#test_main\nfn r { run: &fn{ index: u32 } -> i32 } -> i32 { return 0 }', "a `test_main` fn's context is capabilities"),
+            ('#test_main\nfn r {} {}', 'a `test_main` fn returns the exit code, an i32'),
+            ('#test_main\nfn r {} -> i32 { return 0 }\n#test_main\nfn q {} -> i32 { return 0 }', "a second `test_main` fn: `r` is the program's already"),
+            ('#start\nfn s { mut t: Test, main: &fn{ args: Args } -> i32 } -> i32 { return 0 }',
+             'a `start` fn cannot take a Test: only a `test` fn and the `test_main` fn receive one'),
+            ('#test\nfn a { mut t: Test } { @expect(&t, 3) }', '@expect checks a condition, a bool, got {integer}'),
+            ('#test\nfn a { mut t: Test } { @expect(t, 1 == 1) }', '@expect takes the test it reports to first, a `*mut Test`, as `@expect(&t, a == b)`, got Test'),
+            ('#test\nfn a { mut t: Test } { let n = 1\n @expect(&n, 1 == 1) }', '@expect takes the test it reports to first, a `*mut Test`'),
+            ('fn help { t: Test } { @expect(&t, 1 == 1) }', '`t` is not a mutable place'),
+            ('#test\nfn a { mut t: Test } { @expect(&t) }', 'wrong number of arguments: @expect(&t, condition)'),
+            ('#test\nfn a { mut t: Test } { let b: i32 = @expect(&t, 1 == 1) }', 'expected i32, got bool'),
+        ]:
+            with self.subTest(src=src):
+                self.assertCompileError(src if src.startswith('fn main') else src + '\nfn main {} {}\n', msg)
+        # Two writers for a side's type.
+        two = self.TYPES + '''
+#write
+fn one { mut e: io::Stderr, p: Point } {}
+#write
+fn two { mut e: io::Stderr, p: Point } {}
+#test
+fn a { mut t: Test } { @expect(&t, Point{ x = 1, y = 1 } == Point{ x = 1, y = 1 }) }
+fn main {} {}
+'''
+        self.assertCompileError(two, '@expect has two writers of Point to io::Stderr: `one` and `two`')
+
+
 class CLib(Base):
     """A program over a small C library: LIB_C as libctxtest.a, HEAD before each main."""
 

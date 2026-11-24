@@ -1,0 +1,73 @@
+// Tests of twoda.ctx on tables made here, which need no game install: the text form (no shipped
+// table uses it), and a binary table with the separators and number forms the engine accepts.
+//
+//   kotor/tools/ctxc test kotor/tools/fmttest            every test of lib/base, lib/res and lib/formats
+//   kotor/tools/ctxc test kotor/tools/fmttest twoda      these
+//
+// They were fmttest's `check_text_2da`; what needs the game's own tables stays in fmttest.
+namespace twoda_tests {
+    // The column line names the columns after the row labels' own.
+    const TEXT: []u8 = "2DA V2.0\r\n\r\nDEFAULT: 7\r\n   Name  \"Value\"\tHex\r\n0 first \"two words\" 0x10\r\n1 ****  ****  010\r\nRow2 short\r\n\r\n"
+
+    // Columns a, b ended by NULs; rows 0, 1; cells "", "010", "x", "0x1F".
+    const BINARY: []u8 = "2DA V2.b\na\x00b\x00\x00\x02\x00\x00\x000\x001\x00\x00\x00\x01\x00\x05\x00\x07\x00\x0c\x00\x00010\x00x\x000x1F\x00"
+
+    fn scratch { mut mem: Mem } -> !arena::Arena {
+        let pages = mem::pages{ &mem, size = 1048576 } ifnull { return alloc::out_of_memory }
+        return arena::new{ buf = pages }
+    }
+
+    #test
+    fn a_text_table_has_its_columns_and_rows { mut t: Test, mut mem: Mem } -> ! {
+        let mut heap = try scratch{ &mem }
+        let table = try twoda::parse{ data = TEXT, realloc = arena::alloc, &heap }
+        @expect(&t, not table.binary)
+        @expect(&t, table.columns.len == 3)
+        @expect(&t, twoda::rows{ t = table } == 3)
+        // Column names are lowered, and found ignoring case; so are row labels.
+        @expect(&t, twoda::find_column{ t = table, name = "VALUE" } == 1)
+        @expect(&t, twoda::find_column{ t = table, name = "missing" } == null)
+        @expect(&t, twoda::find_row{ t = table, label = "ROW2" } == 2)
+    }
+
+    #test
+    fn a_text_tables_cells { mut t: Test, mut mem: Mem } -> ! {
+        let mut heap = try scratch{ &mem }
+        let table = try twoda::parse{ data = TEXT, realloc = arena::alloc, &heap }
+        @expect(&t, twoda::get_string{ t = table, row = 0, column = "value" } == "two words")   // quoted
+        @expect(&t, twoda::get_string{ t = table, row = 1, column = "name" } == null)          // **** is blank
+        // A short row's missing cells take the DEFAULT: value.
+        @expect(&t, twoda::get_string{ t = table, row = 2, column = "value" } == "7")
+        @expect(&t, twoda::get_string{ t = table, row = 2, column = "hex" } == "7")
+        @expect(&t, twoda::get_string{ t = table, row = 9, column = "name" } == null)          // no such row
+    }
+
+    #test
+    fn a_text_tables_integers_are_decimal_or_hex { mut t: Test, mut mem: Mem } -> ! {
+        let mut heap = try scratch{ &mem }
+        let table = try twoda::parse{ data = TEXT, realloc = arena::alloc, &heap }
+        @expect(&t, twoda::get_int{ t = table, row = 0, column = "hex" } == 16)     // 0x10
+        @expect(&t, twoda::get_int{ t = table, row = 1, column = "hex" } == 10)     // 010, as atol reads it
+    }
+
+    #test
+    fn a_binary_table_reads_integers_as_sscanf_does { mut t: Test, mut mem: Mem } -> ! {
+        let mut heap = try scratch{ &mem }
+        let table = try twoda::parse{ data = BINARY, realloc = arena::alloc, &heap }
+        @expect(&t, table.binary)
+        @expect(&t, table.columns.len == 2)
+        @expect(&t, twoda::rows{ t = table } == 2)
+        @expect(&t, twoda::get_int{ t = table, row = 0, column = "b" } == 8)        // 010 is octal to %i
+        @expect(&t, twoda::get_int{ t = table, row = 1, column = "a" } == 0)        // "x": no number is 0, and found
+        @expect(&t, twoda::get_int{ t = table, row = 1, column = "b" } == 31)       // 0x1F
+        @expect(&t, twoda::get_string{ t = table, row = 0, column = "a" } == null)  // an empty cell is blank
+    }
+
+    #test
+    fn bad_tables_are_errors { mut t: Test, mut mem: Mem } -> ! {
+        let mut heap = try scratch{ &mem }
+        @expect(&t, twoda::parse{ data = "2DA V9.9\n", realloc = arena::alloc, &heap } is twoda::bad_magic)
+        @expect(&t, twoda::parse{ data = "2DA V2.b\nlabel\t\x00\x05\x00\x00\x00", realloc = arena::alloc, &heap } is twoda::truncated)
+        @expect(&t, twoda::parse{ data = "2DA V2.0\r\n\r\n", realloc = arena::alloc, &heap } is twoda::no_columns)
+    }
+}

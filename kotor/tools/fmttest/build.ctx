@@ -1,5 +1,7 @@
 // Unit checks for lib/formats and lib/res on hand-made inputs and a few known resources:
 // `kotor/tools/ctxc run kotor/tools/fmttest -- [--game DIR]`. Exits 1 on any failure.
+// `kotor/tools/ctxc test kotor/tools/fmttest [FILTER...]` runs the `#test` fns of the
+// libraries it adds, which need no game install (lib/formats/twoda_test.ctx).
 fn build { mut b: Build } {
     let exe = build::exe{ &b, name = "fmttest", root = "." }
     build::add_sources{ &b, exe, dir = "../../lib/base" }

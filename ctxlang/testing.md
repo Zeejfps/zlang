@@ -1,7 +1,11 @@
 # Testing: research
 
-Status: the test framework is **research only**. Its prerequisite, child processes in std's `proc`,
-is designed below ("Child processes"), and its first part is built. This collects what the current
+Status: the first layer, unit tests in the language, is **built** (spec §20: `#test` fns, `@expect`,
+`ctxc test`), on `proc`'s first part alone: one process for each test, whose output goes to a file,
+so the runner needs neither `capture` nor tasks, which stay the design for a program that reads a
+child's streams while it runs. The second layer, expected-output tests for the compiler,
+is still research. Child processes in std's `proc` are designed below ("Child processes"), and their
+first part is built. This collects what the current
 tests are, what is missing for ctxlang to run them itself, and what makes a good test framework in
 other languages (Rust, Zig, Odin, Go, C#, Swift). The open questions at the end come before a design.
 

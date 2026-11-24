@@ -9,6 +9,10 @@
 //                                               directory, maybe with a build.ctx) with the C
 //                                               compiler and runs it (drive.ctx)
 //   ctxc exe PATH -o OUT                        builds it into the executable OUT
+//   ctxc test PATH [ARGS...]                    builds it with std's test runner as its entry
+//                                               point and runs that: the program's `#test` fns,
+//                                               those whose names contain one of ARGS
+//                                               (spec §20; drive.ctx)
 //   ctxc graph DIR GEN LIST                     runs DIR's build program as `run` does, and
 //                                               writes what it describes to LIST and its
 //                                               generated files to GEN, for
@@ -48,6 +52,9 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> 
     if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "exe" } {
         return drive::command{ run = false, .. }
     }
+    if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "test" } {
+        return drive::test{ .. }
+    }
     if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "graph" } {
         return drive::graph{ .. }
     }
@@ -75,7 +82,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> 
     if args.len == 3 and slice::eq_bytes{ a = args[0], b = "c" } {
         to_c = true
     } else if args.len != 2 or not slice::eq_bytes{ a = args[0], b = "roundtrip" } {
-        io::eprintln{ &io, s = "usage: ctxc run PATH [-- ARGS...] | ctxc exe PATH -o OUT | ctxc graph DIR GEN LIST | ctxc interp PATH [-- ARGS...] | ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c | ctxc tokens|syntax FILE... | ctxc recover FILE FROM TO [-v] [--every N] [-- FILE...] | ctxc decls|ir STD... -- FILE... | ctxc build OUT.c STD... -- FILE... (FILE...: also --deny-unchecked, --allow-unchecked)" }
+        io::eprintln{ &io, s = "usage: ctxc run PATH [-- ARGS...] | ctxc exe PATH -o OUT | ctxc test PATH [ARGS...] | ctxc graph DIR GEN LIST | ctxc interp PATH [-- ARGS...] | ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c | ctxc tokens|syntax FILE... | ctxc recover FILE FROM TO [-v] [--every N] [-- FILE...] | ctxc decls|ir STD... -- FILE... | ctxc build OUT.c STD... -- FILE... (FILE...: also --deny-unchecked, --allow-unchecked)" }
         return 2
     }
     let path = args[1]
@@ -208,7 +215,7 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
     }
     let out: []u8 = if mode == Mode::build { args[1] } else { "" }
     let mut units: [][]u8 = slice::empty([]u8){}
-    return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = split - first, extras = slice::empty([]u8){}, mode, out, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = list::items{ list = denied } }
+    return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = split - first, extras = slice::empty([]u8){}, mode, out, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = list::items{ list = denied }, testing = false }
 }
 
 // Checks the program of `paths`, std's files first, and acts on it as `mode` says: for build,
@@ -221,8 +228,9 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
 // files a build program generates, so what is compiled is the driver's, whatever another ctxc
 // does to the file meanwhile. If the program is a build program (`builds`), extras are std's
 // files too, after paths' (drive.ctx, `build_extras`). denied says which of paths are denied
-// the unchecked operations (spec §13), one for each, or is empty for none.
-fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8, std_files: usize, extras: [][]u8, mode: Mode, out: []u8, argv: [][]u8, env: [][]u8, stack: u64, size: usize, copy: usize, mut made: [][]u8, texts: [][]u8, denied: []bool } -> i32 {
+// the unchecked operations (spec §13), one for each, or is empty for none. testing makes it a
+// test build (spec §20): its entry point is the `#test_main` fn, in place of `main`.
+fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8, std_files: usize, extras: [][]u8, mode: Mode, out: []u8, argv: [][]u8, env: [][]u8, stack: u64, size: usize, copy: usize, mut made: [][]u8, texts: [][]u8, denied: []bool, testing: bool } -> i32 {
     let given = paths.len - texts.len               // paths[given..] are texts'
     let mut total: u64 = 0
     let mut i: usize = 0
@@ -307,6 +315,7 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8
     }
     let mut c = check::new{ files = list::items{ list = files }, std_files = std_count, &heap, &diags }
     c.stack = drive::host_stack{ &proc } / 2
+    c.testing = testing
     let fuel = proc::env{ &proc, name = "CTX_CONST_FUEL" }
     if fuel != null {
         let n = utf8::parse_u64{ s = utf8::String{ bytes = fuel } }

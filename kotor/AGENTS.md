@@ -46,7 +46,10 @@ saves, minigames, music and movies.
    projects in commits. `kotor/re/`, `kotor/extract/` and `kotor/out/` are git-ignored: put such
    things there. Notes describing formats and behaviour in our own words belong in `kotor/docs/`.
 6. **Verify against the real data.** Every parser has a tool that runs it over *every* resource of
-   its type in the install and reports what failed. Every renderer feature is checked by rendering
+   its type in the install and reports what failed. What can be checked on inputs made by hand
+   (a parser's edge cases, a table's lookups) is a `#test` fn beside the code, in
+   `NAME_test.ctx`, run with `kotor/tools/ctxc test kotor/tools/<a tool that adds the library>`
+   (quick reference, Tests; `lib/formats/twoda_test.ctx` is the model): write those first. Every renderer feature is checked by rendering
    offscreen to a PNG under `kotor/out/` and looking at it with the Read tool. Don't report
    something as working that you haven't run.
 7. **Git.** Commit only on the branch or worktree you were given, with messages in the repository's

@@ -1914,6 +1914,7 @@ namespace parser {
         Builtin{ name = "round_saturate", types = 1, lo = 1, hi = 1, usage = "@round_saturate(T, x)" },
         Builtin{ name = "panic",    types = 0, lo = 0, hi = 1, usage = "@panic() or @panic(\"reason\")" },
         Builtin{ name = "fmt",      types = 0, lo = 1, hi = ANY, usage = "@fmt(b, \"format\", args...) or @fmt(\"format\", args...)" },
+        Builtin{ name = "expect",   types = 0, lo = 2, hi = 2, usage = "@expect(&t, condition)" },
         Builtin{ name = "atomic_load", types = 0, lo = 2, hi = 2, usage = "@atomic_load(p, order)" },
         Builtin{ name = "atomic_store", types = 0, lo = 3, hi = 3, usage = "@atomic_store(p, value, order)" },
         Builtin{ name = "atomic_exchange", types = 0, lo = 3, hi = 3, usage = "@atomic_exchange(p, value, order)" },

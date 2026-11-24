@@ -143,7 +143,7 @@ namespace drive {
             add_all{ xs = &flags, ys = list::items{ list = t.paths } }
             add_all{ xs = &flags, ys = list::items{ list = t.libs } }
             let out: []u8 = if i == 0 and not run { args[3] } else { "" }
-            let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = d.work, name = t.name, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, level = t.level, flags = list::items{ list = flags }, out, &why } ifnull { return 1 }
+            let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = d.work, name = t.name, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, level = t.level, flags = list::items{ list = flags }, out, testing = false, &why } ifnull { return 1 }
             if i == 0 { first = exe }
             i = i + 1
         }
@@ -157,6 +157,45 @@ namespace drive {
         let own = proc::exe_path{ &proc }
         if own.len > 0 { try! list::push{ list = &env, item = cat{ &heap, a = "CTX_CTXC=", b = own } } }
         return started{ &io, r = proc::run{ &proc, argv = list::items{ list = argv }, env = list::items{ list = env } }, what = first }
+    }
+
+    // `ctxc test PATH [ARGS...]` (spec §20): builds the first executable of the program at PATH
+    // as `run` does, but as a test build, whose entry point is std's test runner in place of
+    // the program's `main`, and runs it with ARGS: parts of the names of the tests to run, and
+    // the runner's options (std/test.ctx). It is built as NAME.test, beside the program's own
+    // build, which it leaves alone. The exit code is the runner's.
+    fn test { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> i32 {
+        if args.len < 2 {
+            io::eprintln{ &io, s = "usage: ctxc test PATH [--list] [-v] [--jobs N] [--timeout SECONDS] [FILTER...]" }
+            return 2
+        }
+        let path = trim_slash{ path = args[1] }
+        let pages = mem::reserve{ &mem, size = 16777216 } ifnull {
+            io::eprintln{ &io, s = "out of memory" }
+            return 1
+        }
+        let mut heap = arena::new{ buf = pages }
+        let d = setup{ &io, &fs, &proc, &heap, path } ifnull { return 1 }
+        let mut targets = list::new(Target){ realloc = arena::alloc, &heap }
+        let mut why = Why::failed
+        let code = describe{ &io, &fs, &mem, &proc, &heap, d, path, &targets, &why }
+        if code != 0 { return code }
+        if targets.len == 0 {
+            cannot{ &io, path, what = "no executable to test in" }
+            return 1
+        }
+        let t = list::items{ list = targets }[0]
+        let files = program_files{ &io, &fs, &heap, d, path, t } ifnull { return 1 }
+        let no = denied{ &io, &fs, &heap, d, dir = path, t, files } ifnull { return 1 }
+        let mut flags = list::new([]u8){ realloc = arena::alloc, &heap }
+        add_all{ xs = &flags, ys = list::items{ list = t.paths } }
+        add_all{ xs = &flags, ys = list::items{ list = t.libs } }
+        let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = d.work, name = cat{ &heap, a = t.name, b = ".test" }, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, level = t.level, flags = list::items{ list = flags }, out = "", testing = true, &why } ifnull { return 1 }
+        let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
+        try! list::push{ list = &argv, item = exe }
+        let rest: usize = if args.len > 2 and slice::eq_bytes{ a = args[2], b = "--" } { 3 } else { 2 }
+        add_all{ xs = &argv, ys = args[rest..] }
+        return started{ &io, r = proc::run{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} }, what = exe }
     }
 
     // `ctxc graph DIR GEN LIST`: runs the build program of directory DIR as `run` does, generated
@@ -425,7 +464,7 @@ namespace drive {
             env = kept
             k = k + 2
         }
-        return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = std.len, extras, mode = Mode::interp, out = stem{ path = base{ path } }, argv, env = list::items{ list = env }, stack, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = slice::empty(bool){} }
+        return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = std.len, extras, mode = Mode::interp, out = stem{ path = base{ path } }, argv, env = list::items{ list = env }, stack, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = slice::empty(bool){}, testing = false }
     }
 
     // About how many bytes of C a unit has: CTX_UNIT_SIZE, or UNIT_SIZE.
@@ -461,7 +500,7 @@ namespace drive {
             why = Why::errors
             return 1
         }
-        let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = work, name = "build", files, gens = slice::empty(Gen){}, denied = slice::empty(bool){}, deny = false, level = 1, flags = slice::empty([]u8){}, out = "", &why } ifnull { return 1 }
+        let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = work, name = "build", files, gens = slice::empty(Gen){}, denied = slice::empty(bool){}, deny = false, level = 1, flags = slice::empty([]u8){}, out = "", testing = false, &why } ifnull { return 1 }
         let graph = claim{ &io, &fs, &heap, base = join{ &heap, a = work, b = "graph" }, ext = ".txt" } ifnull { return 1 }
         defer _ = fs::remove{ &fs, path = graph }
         let mut env = list::new([]u8){ realloc = arena::alloc, &heap }
@@ -1095,7 +1134,7 @@ namespace drive {
     // If deny, denied says which of files are denied the unchecked operations (`denied`), and
     // gens are denied them too. Returns the executable; null after saying why there is none,
     // and setting why to errors if the program has errors.
-    fn compile { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, dir: []u8, name: []u8, files: [][]u8, gens: []Gen, denied: []bool, deny: bool, level: u8, flags: [][]u8, out: []u8, mut why: Why } -> ?[]u8 {
+    fn compile { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, dir: []u8, name: []u8, files: [][]u8, gens: []Gen, denied: []bool, deny: bool, level: u8, flags: [][]u8, out: []u8, testing: bool, mut why: Why } -> ?[]u8 {
         let base = join{ &heap, a = dir, b = name }
         let mut paths = list::new([]u8){ realloc = arena::alloc, &heap }
         add_all{ xs = &paths, ys = d.std }
@@ -1122,7 +1161,7 @@ namespace drive {
             no = all
         }
         let mut units: [][]u8 = slice::empty([]u8){}
-        let code = analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = d.std.len, extras = d.extras, mode = Mode::units, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = d.unit, copy = if level == 0 { 0 } else { d.copy }, made = &units, texts = list::items{ list = texts }, denied = no }
+        let code = analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = d.std.len, extras = d.extras, mode = Mode::units, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = d.unit, copy = if level == 0 { 0 } else { d.copy }, made = &units, texts = list::items{ list = texts }, denied = no, testing }
         if code != 0 {
             why = Why::errors
             return null

@@ -254,3 +254,37 @@ const MESH_VS: c::String =
 `kotor/tools/ctxc run DIR -- ARGS` builds DIR's `build.ctx` program and runs it (see AGENTS.md
 for the template). Big programs compile as parallel C units; unchanged units are cached.
 Compile errors name `file:line:col`. Keep tool output short (`| tail`, `| grep`).
+
+## Tests (§20)
+
+A test is a fn beside the code it tests, in a file of its own (`twoda_test.ctx` next to
+`twoda.ctx`), not a tool with a `Tally`:
+
+```
+namespace twoda_tests {
+    #test
+    fn a_short_row_takes_the_default { mut t: Test, mut mem: Mem } -> ! {
+        let pages = mem::pages{ &mem, size = 1048576 } ifnull { return alloc::out_of_memory }
+        let mut heap = arena::new{ buf = pages }
+        let table = try twoda::parse{ data = TEXT, realloc = arena::alloc, &heap }
+        @expect(&t, table.columns.len == 3)
+        @expect(&t, twoda::get_string{ t = table, row = 2, column = "hex" } == "7")
+    }
+}
+```
+
+- `kotor/tools/ctxc test kotor/tools/fmttest` runs every `#test` fn of that tool's files, its
+  libraries' included; `... test kotor/tools/fmttest twoda` those whose names contain `twoda`;
+  `--list` lists them. The program's `main` isn't run. Exit code 1 if a test failed or none ran.
+- A test takes `mut t: Test` and the capabilities it needs (`mut fs: Fs`, `mut mem: Mem`), as
+  `main` does, and returns nothing or a `!`, so it can `try`.
+- `@expect(&t, a == b)` checks and goes on. A failure is one line with both sides:
+  `lib/formats/twoda_test.ctx:40: fail: twoda_tests::a_text_tables_cells: twoda::get_string{ ... } == "8": 7 == 8`.
+  Write the comparison inside the `@expect` (`==`, `!=`, `<`, `<=`, `>`, `>=`) to get the values:
+  a struct, an enum, an optional and a slice print too. `x == null` and `r is ok` work as
+  conditions. Stop a test with `if not @expect(&t, p != null) { return }`.
+- A test that returns an error, panics, runs over 60 s or makes no check fails.
+  `#test{ panics = "out of bounds" }` passes by panicking with that text.
+- Pass `&t` down to helpers that check (`fn same_rows { mut t: Test, a: Table, b: Table }`).
+- Each test runs in its own process, several at once: don't rely on another test's files or
+  state. A test that needs the game install belongs in a tool, as before.

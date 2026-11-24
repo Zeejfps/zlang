@@ -57,6 +57,11 @@ namespace lower {
         // operations it covers (check's traps) leave for. Trap ids are unique in the program.
         trap_ids:  map::Map(u64, u32, Heap),
         traps:     u32,
+        // The operands of the @expect being lowered that are held in locals, by expr key: the
+        // comparison reads them there (ex).
+        kept:      map::Map(u64, Kept, Heap),
+        // In a test build, the fn that runs each of the checker's tests, in their order.
+        test_ids:  list::List(u32, Heap),
     }
 
     fn program { mut c: check::Checker } -> ir::Program {
@@ -64,6 +69,13 @@ namespace lower {
         // An entry point that returns `!` or `!i32` is run through the fn that gives its exit
         // code (coding).
         let main = if map::has{ m = c.exit_sites, key = c.main } { coded_id{ &l, d = c.main } } else { fn_id{ &l, decl = c.main, targs = no_ids{} } }
+        // A test build's tests, each through the fn that gives its exit code if it returns a `!`.
+        if c.testing {
+            for t in list::items{ list = c.tests } {
+                let id = if map::has{ m = c.exit_sites, key = t.decl } { coded_id{ &l, d = t.decl } } else { fn_id{ &l, decl = t.decl, targs = no_ids{} } }
+                try! list::push{ list = &l.test_ids, item = id }
+            }
+        }
         let s = check::start_fn{ c }
         let start = if s == NONE { NONE } else { fn_id{ &l, decl = s, targs = no_ids{} } }
         let h = check::panic_fn{ c }
@@ -112,6 +124,8 @@ namespace lower {
             locals = list::new(ir::Local){ realloc = arena::alloc, heap = c.heap },
             failed = false,
             trap_ids = map::new(u64, u32){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u64, eq = map::eq_u64 },
+            kept = map::new(u64, Kept){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u64, eq = map::eq_u64 },
+            test_ids = list::new(u32){ realloc = arena::alloc, heap = c.heap },
             traps = 0,
         }
     }
@@ -168,6 +182,12 @@ namespace lower {
         if threads != check::NONE {
             if takes_cap{ l, d = q[main].decl, decl = threads } { return true }
             if start != NONE and takes_cap{ l, d = q[start].decl, decl = threads } { return true }
+            // A test runs in the test build's program, with its capabilities.
+            if l.c.testing {
+                for t in list::items{ list = l.c.tests } {
+                    if takes_cap{ l, d = t.decl, decl = threads } { return true }
+                }
+            }
         }
         let mut i: usize = 0
         while i < q.len {
@@ -214,6 +234,8 @@ namespace lower {
         let m = list::items{ list = l.fns }[main]
         let i32t = tid{ &l, t = types::I32 }
         let mut out = Entry{ entry = NONE, on_panic = NONE }
+        // In a test build main is the `#test_main` fn, which is given the tests too.
+        let tests = if l.c.testing { test_given{ &l, m } } else { slice::empty(Given){} }
 
         // main as a function value, for the start fn's `main`
         let mut value: ?ir::Expr = null
@@ -225,6 +247,7 @@ namespace lower {
                 let func{ params } = list::items{ list = l.types }[ft] else { @panic("lower: a start fn's main isn't a function") }
                 let mut a = adapter{ l }
                 let mut given = list::new(Given){ realloc = arena::alloc, heap = l.heap }
+                for g in tests { try! list::push{ list = &given, item = g } }
                 let mut i: usize = 0
                 while i < params.len {
                     try! list::push{ list = &a.locals, item = ir::Local{ name = params[i].name, ty = params[i].ty } }
@@ -259,6 +282,7 @@ namespace lower {
             let call = supply_call{ &l, &a, f = s, given = list::items{ list = given } }
             try! list::push{ list = &a.stmts, item = ir::Stmt::ret{ value = call } }
         } else {
+            for g in tests { try! list::push{ list = &given, item = g } }
             returns_code{ &l, &a, call = supply_call{ &l, &a, f = m, given = list::items{ list = given } }, i32t }
         }
         out.entry = add_adapter{ &l, a, name = "<entry>", params = list::items{ list = params }, ret = i32t, near = m }
@@ -2120,6 +2144,9 @@ namespace lower {
 
     // e as ctxi's tree has it: the node, inside the conversion the checker recorded for it.
     fn ex { mut l: Lower, e: syntax::Expr } -> ir::Expr {
+        if l.kept.len > 0 {
+            if let k = map::get{ m = l.kept, key = check::expr_key{ e } } { return slot_ex{ ty = k.ty, slot = k.slot } }
+        }
         let conv = map::get{ m = l.c.convs, key = check::expr_key{ e } }
         if conv == null { return node{ &l, e } }
         match conv {
@@ -3096,6 +3123,7 @@ namespace lower {
 
     fn builtin { mut l: Lower, e: syntax::Expr, name: []u8, targ: ?*syntax::TypeExpr, args: []syntax::Expr, t: Id } -> ir::Expr {
         if slice::eq_bytes{ a = name, b = "fmt" } { return fmt{ &l, e, args } }
+        if slice::eq_bytes{ a = name, b = "expect" } { return expect{ &l, e, args } }
         if slice::eq_bytes{ a = name, b = "size_of" } or slice::eq_bytes{ a = name, b = "align_of" } {
             let tt = T{ &l, t = targ_type{ l, targ } }
             let lay = check::layout{ c = l.c, t = norm_layout{ &l, t = tt } }
@@ -3874,6 +3902,7 @@ namespace lower {
         let s = w.s
         let rt = w.rt
         if slice::eq_bytes{ a = p.push, b = "error" } { return error_write{ &l, w, h, text = p.writer } }
+        if slice::eq_bytes{ a = p.push, b = "shown" } { return shown{ &l, w, t = w.tys[h], v = w.vals[h], text = p.writer } }
         if slice::eq_bytes{ a = p.push, b = "spec" } { return write_call{ &l, s, w = p.writer, v = with_spec{ &l, p, v = w.vals[h], t = w.tys[h] }, rt, at = p.at } }
         if slice::eq_bytes{ a = p.push, b = "write" } {
             if not p.hole { return text_write{ &l, s, w = p.writer, bytes = p.text, rt } }
@@ -4121,6 +4150,192 @@ namespace lower {
         try! list::push{ list = &out, item = ir::Stmt::define{ slot = at, init = mk{ ty = tid{ &l, t = pt }, k = ir::ExprKind::addr{ place = box{ l, e = slot_ex{ ty = st_ty, slot = held } } } } } }
         let none = syntax::Expr{ id = 0, span = st.at, at = st.at.start, k = syntax::ExprKind::error }
         return Sink{ e = none, ty = pt, slot = at, at = st.at }
+    }
+
+    // ---- @expect (spec §13, Checks)
+
+    // An operand of an @expect's comparison that is held in a local: its slot and IR type.
+    struct Kept { slot: u32, ty: u32 }
+
+    // t in the function being lowered, with the distinct types as they are written, which
+    // lowering otherwise sees through: what a writer is looked up for (shown_writer).
+    fn written { mut l: Lower, t: Id } -> Id {
+        l.c.ty.erased = false
+        let x = T{ &l, t }
+        l.c.ty.erased = true
+        return x
+    }
+
+    // `@expect(t, c)`: c's value, after std's `test::check` has counted it and, for one that
+    // didn't hold, started the failure's line, which the site's pieces then end
+    // (check.ctx, expect_builtin). The sides of a comparison are evaluated once, the left
+    // first, into locals that the comparison and the pieces both read.
+    fn expect { mut l: Lower, e: syntax::Expr, args: []syntax::Expr } -> ir::Expr {
+        let si = map::get{ m = l.c.site_of, key = check::expr_key{ e } } ifnull { @panic("lower: an @expect that wasn't checked") }
+        let st = list::items{ list = l.c.sites }[@as(usize, si)]
+        let bool_ty = tid{ &l, t = types::BOOL }
+        let mut slots = list::new(u32){ realloc = arena::alloc, heap = l.heap }
+        let mut inits = list::new(ir::Expr){ realloc = arena::alloc, heap = l.heap }
+        let mut vals = list::new(ir::Expr){ realloc = arena::alloc, heap = l.heap }
+        let mut tys = list::new(Id){ realloc = arena::alloc, heap = l.heap }
+        for h in st.holes {
+            let mut v = ex{ &l, e = h }
+            if not (v.k is local | int | float | boolean | str | sbytes) {
+                let slot = temp{ &l, ty = v.ty }
+                try! list::push{ list = &slots, item = slot }
+                try! list::push{ list = &inits, item = v }
+                try! map::put{ m = &l.kept, key = check::expr_key{ e = h }, value = Kept{ slot, ty = v.ty } }
+                v = slot_ex{ ty = v.ty, slot }
+            }
+            try! list::push{ list = &vals, item = v }
+            try! list::push{ list = &tys, item = written{ &l, t = check::value_ty{ c = l.c.*, k = check::expr_key{ e = h } } } }
+        }
+        let held = ex{ &l, e = args[1] }
+        for h in st.holes { _ = map::remove{ m = &l.kept, key = check::expr_key{ e = h } } }
+
+        // test::check{ &t, held, file, line, text }
+        let check = check::std_fn{ c = l.c.*, space = "test", name = "check" }
+        if check == NONE { @panic("lower: an @expect without std's test::check") }
+        let x = check::get_decl{ c = l.c.*, d = check }
+        let p = pos{ &l, at = st.at }
+        let mut call = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
+        for f at k in x.fields {
+            let to = arg_type{ &l, f, ptrs = true }
+            let at = tid{ &l, t = to }
+            let mut value = held
+            if slice::eq_bytes{ a = f.name, b = "t" } {
+                value = coerce{ &l, x = ex{ &l, e = args[0] }, frm = T{ &l, t = check::type_of_expr{ c = l.c.*, e = args[0] } }, to, at = st.at }
+            } else if slice::eq_bytes{ a = f.name, b = "file" } {
+                value = mk{ ty = at, k = ir::ExprKind::sbytes{ bytes = l.c.files[st.at.file].name } }
+            } else if slice::eq_bytes{ a = f.name, b = "line" } {
+                value = mk{ ty = at, k = ir::ExprKind::int{ negative = false, value = p.line } }
+            } else if slice::eq_bytes{ a = f.name, b = "text" } {
+                value = mk{ ty = at, k = ir::ExprKind::sbytes{ bytes = one_line{ l, s = check::source_text{ c = l.c.*, span = args[1].span } } } }
+            } else if not slice::eq_bytes{ a = f.name, b = "held" } {
+                @panic("lower: a field of std's test::check that @expect doesn't know")
+            }
+            add_arg{ xs = &call, a = ir::Arg{ index = @as(u32, k), value } }
+        }
+        let called = mk{ ty = bool_ty, k = ir::ExprKind::call{ callee = fn_id{ &l, decl = check, targs = no_ids{} }, args = list::items{ list = call } } }
+
+        // If it didn't hold: the rest of the failure's line.
+        let k = temp{ &l, ty = bool_ty }
+        let mut failed = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
+        let sink = stderr_sink{ &l, out = &failed, st }
+        let w = Writes{ s = sink, vals = list::items{ list = vals }, tys = list::items{ list = tys }, si, rt = site_result{ &l, si } }
+        try! list::push{ list = &failed, item = ir::Stmt::eval{ e = pieces{ &l, w, ps = st.pieces } } }
+        let yes = mk{ ty = bool_ty, k = ir::ExprKind::boolean{ value = true } }
+        let no = mk{ ty = bool_ty, k = ir::ExprKind::boolean{ value = false } }
+        let then = ir::Block{ stmts = slice::empty(ir::Stmt){}, result = box{ l, e = yes } }
+        let els = ir::Block{ stmts = list::items{ list = failed }, result = box{ l, e = no } }
+        let body = mk{ ty = bool_ty, k = ir::ExprKind::ifx{ c = box{ l, e = slot_ex{ ty = bool_ty, slot = k } }, then, els } }
+        let mut r = mk{ ty = bool_ty, k = ir::ExprKind::with{ slot = k, init = box{ l, e = called }, body = box{ l, e = body } } }
+        let ss = list::items{ list = slots }
+        let xs = list::items{ list = inits }
+        let mut n = ss.len
+        while n > 0 {
+            n = n - 1
+            r = mk{ ty = r.ty, k = ir::ExprKind::with{ slot = ss[n], init = box{ l, e = xs[n] }, body = box{ l, e = r } } }
+        }
+        return r
+    }
+
+    // s on one line: each run of spaces, tabs and line breaks as one space.
+    fn one_line { l: Lower, s: []u8 } -> []u8 {
+        let mut out = list::new(u8){ realloc = arena::alloc, heap = l.heap }
+        let mut gap = false
+        for ch in s {
+            if ch == ' ' or ch == '\t' or ch == '\r' or ch == '\n' {
+                gap = true
+            } else {
+                if gap and out.len > 0 { try! list::push{ list = &out, item = ' ' } }
+                gap = false
+                try! list::push{ list = &out, item = ch }
+            }
+        }
+        return list::items{ list = out }
+    }
+
+    // ---- a test build's entry (spec §20)
+
+    // What the `#test_main` fn m is given besides `args`: `count`, how many tests the program
+    // has; `case`, a fn that gives test `index`'s test::Case; and `run`, a fn that runs test
+    // `index`, with its capabilities from nothing as main's are, and gives its exit code. Any
+    // other index gives an empty Case, and 2.
+    fn test_given { mut l: Lower, m: ir::Func } -> []Given {
+        let mut out = list::new(Given){ realloc = arena::alloc, heap = l.heap }
+        let tests = list::items{ list = l.c.tests }
+        let ids = list::items{ list = l.test_ids }
+        let i32t = tid{ &l, t = types::I32 }
+        for q in m.params {
+            if slice::eq_bytes{ a = q.name, b = "count" } {
+                try! list::push{ list = &out, item = Given{ name = q.name, value = mk{ ty = q.ty, k = ir::ExprKind::int{ negative = false, value = tests.len } } } }
+            }
+            let cases = slice::eq_bytes{ a = q.name, b = "case" }
+            if not cases and not slice::eq_bytes{ a = q.name, b = "run" } { continue }
+            let func{ params, ret } = list::items{ list = l.types }[q.ty] else { continue }
+            let mut a = adapter{ l }
+            try! list::push{ list = &a.locals, item = ir::Local{ name = params[0].name, ty = params[0].ty } }
+            let mut arms = list::new(ir::Case){ realloc = arena::alloc, heap = l.heap }
+            for t at i in tests {
+                let outer = a.stmts
+                a.stmts = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
+                if cases {
+                    try! list::push{ list = &a.stmts, item = ir::Stmt::ret{ value = case_of{ &l, ty = ret, t } } }
+                } else {
+                    returns_code{ &l, &a, call = supply_call{ &l, &a, f = list::items{ list = l.fns }[ids[i]], given = slice::empty(Given){} }, i32t }
+                }
+                let mut values = list::new(ir::Int){ realloc = arena::alloc, heap = l.heap }
+                try! list::push{ list = &values, item = ir::Int{ negative = false, value = i } }
+                try! list::push{ list = &arms, item = ir::Case{ values = list::items{ list = values }, ranges = slice::empty(ir::Range){}, body = ir::Block{ stmts = list::items{ list = a.stmts }, result = null } } }
+                a.stmts = outer
+            }
+            try! list::push{ list = &a.stmts, item = ir::Stmt::switch{ scrut = slot_ex{ ty = params[0].ty, slot = 0 }, cases = list::items{ list = arms } } }
+            let other = if cases { case_of{ &l, ty = ret, t = null } } else { mk{ ty = i32t, k = ir::ExprKind::int{ negative = false, value = 2 } } }
+            try! list::push{ list = &a.stmts, item = ir::Stmt::ret{ value = other } }
+            let id = add_adapter{ &l, a, name = if cases { "<test case>" } else { "<run test>" }, params, ret, near = m }
+            try! list::push{ list = &out, item = Given{ name = q.name, value = mk{ ty = q.ty, k = ir::ExprKind::fnref{ callee = id } } } }
+        }
+        return list::items{ list = out }
+    }
+
+    // Test t as a value of std's test::Case, IR type ty: its fn's name with its namespaces, its
+    // file as the compiler was given it, its line, and for `#test{ panics = "text" }` that it
+    // must panic, with the text. Without a test, a Case of nothing.
+    fn case_of { mut l: Lower, ty: u32, t: ?check::TestFn } -> ir::Expr {
+        let record{ fields } = list::items{ list = l.types }[ty] else { @panic("lower: a test::Case that isn't a struct") }
+        let mut name = ""
+        let mut file = ""
+        let mut line: u64 = 0
+        let mut panics = false
+        let mut message = ""
+        if let test = t {
+            let x = check::get_decl{ c = l.c.*, d = test.decl }
+            name = x.qual
+            file = l.c.files[x.name.span.file].name
+            line = pos{ &l, at = x.name.span }.line
+            if let text = test.panics {
+                panics = true
+                message = text
+            }
+        }
+        let mut items = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
+        for f at i in fields {
+            let mut k = ir::ExprKind::sbytes{ bytes = name }
+            if slice::eq_bytes{ a = f.name, b = "file" } {
+                k = ir::ExprKind::sbytes{ bytes = file }
+            } else if slice::eq_bytes{ a = f.name, b = "line" } {
+                k = ir::ExprKind::int{ negative = false, value = line }
+            } else if slice::eq_bytes{ a = f.name, b = "panics" } {
+                k = ir::ExprKind::boolean{ value = panics }
+            } else if slice::eq_bytes{ a = f.name, b = "message" } {
+                k = ir::ExprKind::sbytes{ bytes = message }
+            } else if not slice::eq_bytes{ a = f.name, b = "name" } {
+                @panic("lower: a field of std's test::Case that the compiler doesn't know")
+            }
+            add_arg{ xs = &items, a = ir::Arg{ index = @as(u32, i), value = mk{ ty = f.ty, k } } }
+        }
+        return mk{ ty, k = ir::ExprKind::record{ items = list::items{ list = items } } }
     }
 
     // ---- a value's derived text (spec §13, Formatting, rule 10; check.ctx, shown_parts)

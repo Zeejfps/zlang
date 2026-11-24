@@ -547,12 +547,61 @@ What a model writes by default should compile, or fail with the exact fix.
 
 ## 5. Tests
 
-- [ ] **5.1 `#test` functions, `@expect` and a runner.**
+- [x] **5.1 `#test` functions, `@expect` and a runner.**
   Models work best test-first; today each KOTOR parser needs its own tool program to be tested.
   The design is written: [PLAN 6.3](PLAN.md#6-tools-in-ctxlang). Prerequisite: settling how
   `main -> !` prints an error ([PLAN 3.1](PLAN.md#3-metaprogramming)), which `@expect` shares.
   - *Done when:* `ctxc test DIR` runs a program's `#test` fns, prints failures with both sides of
     a comparison, and a std test and a kotor parser test use it.
+  - *Done:* [spec §20](spec.md#20-tests) and [§13, Checks](spec.md#checks).
+    - The prerequisite first: `main` and `build` may return `!` or `!i32`
+      ([spec §15, Entry point, rule 4](spec.md#entry-point)), and the error is printed by
+      ctxlang code the compiler writes around the entry point, with the pieces an `@fmt` to
+      std's `io::Stderr` has, not by a second formatter in the C runtime: the program's
+      `#write` fns are used, and the interpreter agrees. A payload field without a writer was
+      `_` in every `@fmt` of an error; a struct, a union, an enum, an optional, an array and a
+      slice are now written from their parts, `Point{ x = 1, y = 2 }`
+      ([spec §13, Formatting, rule 10](spec.md#formatting)), which is also what shows a
+      check's two sides.
+    - `#test fn reads { mut t: Test, mut fs: Fs } -> ! { ... }`: a test takes capabilities, as
+      `main` does, one of them a `Test`, and returns nothing or a `!`.
+      `#test{ panics = "text" }` passes by panicking with that text.
+    - `@expect(&t, text.len == 42)` is the one builtin, and
+      [§13, Checks, rule 5](spec.md#checks) says why no function could be it: the report is
+      `cfg.ctx:9: fail: cfg_tests::reads: text.len == 42: 17 == 42`, and a function is given
+      values, without the check's position, its condition's text, or the two sides of a
+      comparison inside it. `test::expect_equal{ &t, a, b }` was weighed first: a
+      generic fn can compare its `T`s since 4.1, but it has no line to report and no
+      condition to quote, a hole of an `@fmt` in it can't be a `T`, and a position builtin
+      passed by hand, `at = @here()`, makes the unsafe form (leaving it out, or pasting
+      another line's) the easy one. Everything but those three things is std's: the builtin calls
+      `test::check`, and writes the sides with the `#write` fns any `@fmt` uses. It reports
+      through the `Test` the test passes down, so no state is hidden and a build that isn't
+      a test build can't reach a check. The check goes on, and its value is the condition's:
+      `if not @expect(&t, p != null) { return }`.
+    - `ctxc test PATH [FILTER...]`, with or without a build.ctx, builds the program with std's
+      runner as its entry point in place of `main` (which needn't exist) and runs it. Each
+      test runs in a process of its own (testing.md's conclusion), so a panic fails one test
+      with its message, no static leaks from one test to the next, and tests run at once;
+      a test that doesn't end is ended after `--timeout` seconds. One line for each failure,
+      `FILE:LINE: fail: NAME: ...`, then `tests: N run, P passed, F failed, S not selected`;
+      the exit code is 1 if a test failed.
+    - Rule 1, no silent pass: a test that made no check fails (`no check ran`), a filter that
+      matches nothing and a program without tests exit with 1 and say so, and a test whose
+      process ends in any way but a pass is a failure with its exit code.
+    - The compiler finds the tests, where PLAN 6.3 had a build program generate a `main`:
+      a `#test` is checked where it is written, in every build, and takes any capability
+      `main` may. The runner is std's `test::main`, a `#test_main` fn a program can replace.
+      It needs no threads and no `proc::capture` (which isn't built): a test's output goes to
+      a file, and the runner waits with `proc::wait_for`.
+    - Used: [std/tests](std/tests) (15 tests of `cmp`, `utf8`, `@fmt`'s specs, `list` and
+      `map`, `ctxc test std/tests`), and KOTOR's 2DA parser
+      ([kotor/lib/formats/twoda_test.ctx](../kotor/lib/formats/twoda_test.ctx), 5 tests on
+      tables made by hand, no game install: `ctxc test kotor/tools/fmttest twoda`), which were
+      fmttest's `check_text_2da` with its hand-rolled `Tally` and `expect`.
+    - Not built, each for its reason ([spec §20, rule 11](spec.md#20-tests)): a leak check
+      (std's one allocator is the arena), a temporary directory, tests with arguments. JSON
+      output is 6.2's.
 
 - [ ] **5.2 Tests as files.**
   The suite's 750+ programs are Python strings; as `.ctx` files with an expected-output header

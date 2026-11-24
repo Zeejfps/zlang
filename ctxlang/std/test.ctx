@@ -1,0 +1,351 @@
+// std: test. What runs a program's tests (spec §20). `ctxc test PATH` builds the program with
+// `test::main` as its entry point, in place of the program's own `main`, and the compiler gives
+// it the program's `#test` fns: how many there are, each one's name and position (`case`), and a
+// fn that runs one and gives its exit code (`run`).
+//
+// Each test runs in a process of its own: this program, started again with `--run INDEX`. So a
+// test's panic, or anything else that ends its process, fails that test alone; no test sees what
+// another left in a static; and tests run several at once. A test's output, standard output and
+// standard error together, goes to a file beside the executable, which the runner reads once the
+// test has ended, prints if the test failed, and removes.
+//
+// A program replaces the runner with a `#test_main` fn of its own, as it replaces `rt::start`.
+
+// What a test reports to: `@expect(&t, c)` notes its checks and writes its failures through it
+// (spec §13). Only a `#test` fn and the `#test_main` fn receive one, and pass it down. It
+// includes an Io, where the failures go as they happen.
+capability Test { ..Io, ..test::State }
+
+namespace test {
+    // The running test's name, and what it has checked so far: whether it has made a check,
+    // and whether one didn't hold, each 0 or 1, set atomically, since a test's tasks may check
+    // at once.
+    capability State {
+        static name: [512]u8,
+        static name_len: usize,
+        static checked: u32,
+        static failed: u32,
+    }
+
+    // A test, as the compiler lists it: its fn's name with its namespaces, its file as the
+    // compiler was given it, and its line; and for `#test{ panics = "text" }`, that it passes
+    // by panicking, with a message that contains the text.
+    struct Case { name: []u8, file: []u8, line: u32, panics: bool, message: []u8 }
+
+    // What `@expect(&t, c)` calls with the condition's value (spec §13, Checks): it notes that
+    // the test has made a check, and for one that didn't hold that it has failed, and starts
+    // the failure's line on standard error, `FILE:LINE: fail: NAME: TEXT`. The `@expect` ends
+    // the line, after both sides of a comparison. Returns held.
+    fn check { mut t: Test, held: bool, file: []u8, line: u32, text: []u8 } -> bool {
+        @atomic_store(&t.checked, 1, atomic::Order::relaxed)
+        if held { return true }
+        @atomic_store(&t.failed, 1, atomic::Order::relaxed)
+        fail_line{ &t, file, line }
+        io::write{ io = &t, to = io::Stream::err, bytes = text }
+        return false
+    }
+
+    // `FILE:LINE: fail: NAME: `, on standard error.
+    fn fail_line { mut t: Test, file: []u8, line: u32 } {
+        let mut digits: [20]u8
+        io::write{ io = &t, to = io::Stream::err, bytes = file }
+        io::write{ io = &t, to = io::Stream::err, bytes = ":" }
+        io::write{ io = &t, to = io::Stream::err, bytes = utf8::fmt_u64{ n = line, into = digits[..] }.bytes }
+        io::write{ io = &t, to = io::Stream::err, bytes = ": fail: " }
+        io::write{ io = &t, to = io::Stream::err, bytes = t.name[..t.name_len] }
+        io::write{ io = &t, to = io::Stream::err, bytes = ": " }
+    }
+
+    const USAGE: []u8 = "usage: ctxc test PATH [--list] [-v] [--jobs N] [--timeout SECONDS] [FILTER...]: runs the tests whose names contain a FILTER, or all of them\n"
+
+    // How long the runner waits for a test before it looks at the others again, in nanoseconds:
+    // long enough that a wait takes about as long as it says on every platform, since the
+    // waits are the runner's clock.
+    const SLICE: u64 = 20000000
+
+    // The most tests the runner has running at once, whatever `--jobs` says.
+    const MOST: usize = 64
+
+    struct Options { list: bool, verbose: bool, jobs: usize, timeout: u64, filters: [][]u8 }
+
+    // A test that is running: which of the picked tests it is, its process, the file its output
+    // goes to, and the runner's clock when it started.
+    struct Running { slot: usize, child: proc::Child, path: []u8, began: u64 }
+
+    // What became of a picked test: nothing yet, passed, or failed with the lines to print.
+    union Outcome { pending, passed, failed{ lines: []u8 } }
+
+    type Heap = arena::Arena
+
+    // The program's entry point in a test build (spec §20): with `--run INDEX`, test INDEX,
+    // in this process; otherwise the runner, which starts a process for each test it picks and
+    // prints the failures and a summary. Exits with 0 if every picked test passed, 1 if one
+    // failed or none ran, 2 for arguments it doesn't know.
+    #test_main
+    fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut t: Test, args: Args, count: usize, case: &fn{ index: usize } -> Case, run: &fn{ index: usize } -> i32 } -> i32 {
+        if args.len == 2 and slice::eq_bytes{ a = args[0], b = "--run" } {
+            let n = utf8::parse_u64{ s = utf8::String{ bytes = args[1] } } ifnull { return 2 }
+            if n >= count { return 2 }
+            let index = @as(usize, n)
+            return run_here{ &t, c = case{ index }, index, run }
+        }
+        let pages = mem::reserve{ &mem, size = 1073741824 } ifnull {
+            io::eprintln{ &io, s = "tests: out of memory" }
+            return 1
+        }
+        let mut heap = arena::new{ buf = pages }
+        let mut filters = list::new([]u8){ realloc = arena::alloc, &heap }
+        let mut o = Options{ list = false, verbose = false, jobs = @as(usize, proc::processors{ &proc }), timeout = 60, filters = slice::empty([]u8){} }
+        let mut i: usize = 0
+        while i < args.len {
+            let a = args[i]
+            if slice::eq_bytes{ a, b = "--list" } {
+                o.list = true
+            } else if slice::eq_bytes{ a, b = "-v" } {
+                o.verbose = true
+            } else if (slice::eq_bytes{ a, b = "--jobs" } or slice::eq_bytes{ a, b = "--timeout" }) and i + 1 < args.len {
+                let n = utf8::parse_u64{ s = utf8::String{ bytes = args[i + 1] } } ifnull {
+                    io::write{ &io, to = io::Stream::err, bytes = USAGE }
+                    return 2
+                }
+                if slice::eq_bytes{ a, b = "--jobs" } { o.jobs = @as(usize, cmp::clamp{ x = n, lo = 1, hi = MOST }) } else { o.timeout = n }
+                i = i + 1
+            } else if a.len > 0 and a[0] == '-' {
+                io::write{ &io, to = io::Stream::err, bytes = USAGE }
+                return 2
+            } else {
+                try! list::push{ list = &filters, item = a }
+            }
+            i = i + 1
+        }
+        o.filters = list::items{ list = filters }
+        o.jobs = cmp::clamp{ x = o.jobs, lo = 1, hi = MOST }
+
+        let mut picked = list::new(usize){ realloc = arena::alloc, &heap }
+        for k in 0..count {
+            if picks{ name = case{ index = k }.name, filters = o.filters } { try! list::push{ list = &picked, item = k } }
+        }
+        let tests = list::items{ list = picked }
+        if o.list {
+            for k in tests {
+                let c = case{ index = k }
+                _ = @fmt(&io, "{}:{}: {}\n", c.file, c.line, c.name)
+            }
+            return 0
+        }
+        if count == 0 {
+            io::println{ &io, s = "tests: 0 run: the program has no `#test` fn" }
+            return 1
+        }
+        if tests.len == 0 {
+            io::print{ &io, s = "tests: 0 run: no test's name contains" }
+            for f at k in o.filters { _ = @fmt(&io, "{} `{}`", if k == 0 { "" } else { " or" }, f) }
+            _ = @fmt(&io, ", of {}\n", count)
+            return 1
+        }
+        let failed = run_all{ &io, &fs, &proc, &heap, o, tests, case }
+        _ = @fmt(&io, "tests: {} run, {} passed, {} failed, {} not selected\n", tests.len, tests.len - failed, failed, count - tests.len)
+        return if failed == 0 { 0 } else { 1 }
+    }
+
+    // Whether a test of this name is picked: with no filter, or if its name contains one.
+    fn picks { name: []u8, filters: [][]u8 } -> bool {
+        if filters.len == 0 { return true }
+        for f in filters {
+            if find{ s = name, part = f } != null { return true }
+        }
+        return false
+    }
+
+    // ---- a test, in a process
+
+    // Runs test `index`, c, in this process, and gives whether it passed: 0, or 1 if it returned
+    // an error or a check of its didn't hold, each written to standard error by then, with its
+    // name, or if it made no check, which this says. `run` is the compiler's, which only calls
+    // the test. A test that must panic and returned is 0: its runner sees that it didn't. For a
+    // `#test_main` fn: std's calls it in the test's own process, and one that runs its tests
+    // in one process calls it for each.
+    fn run_here { mut t: Test, c: Case, index: usize, run: &fn{ index: usize } -> i32 } -> i32 {
+        let n = cmp::min{ a = c.name.len, b = t.name.len }
+        slice::copy(u8){ dst = t.name[..n], src = c.name[..n] }
+        t.name_len = n
+        t.checked = 0
+        t.failed = 0
+        let code = run{ index }
+        if code != 0 or t.failed != 0 { return 1 }
+        if t.checked == 0 and not c.panics {
+            fail_line{ &t, file = c.file, line = c.line }
+            io::write{ io = &t, to = io::Stream::err, bytes = "no check ran: a test passes by the `@expect`s it makes\n" }
+            return 1
+        }
+        return 0
+    }
+
+    // ---- the runner
+
+    // Runs the picked tests, at most o.jobs at once, each in a process of its own, and prints
+    // each failed one's lines, in the tests' order. Returns how many failed.
+    fn run_all { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, o: Options, tests: []usize, case: &fn{ index: usize } -> Case } -> usize {
+        let exe = proc::exe_path{ &proc }
+        let outcomes = try! alloc::make(Outcome, Heap){ realloc = arena::alloc, &heap, count = tests.len }
+        let mut active = list::new(Running){ realloc = arena::alloc, &heap }
+        let mut clock: u64 = 0          // nanoseconds spent waiting: what a test's time is counted in
+        let mut next: usize = 0
+        let mut printed: usize = 0
+        let mut failed: usize = 0
+        while printed < tests.len {
+            while active.len < o.jobs and next < tests.len {
+                let c = case{ index = tests[next] }
+                match start{ &fs, &proc, &heap, exe, index = tests[next] } {
+                    ok{ value } => { try! list::push{ list = &active, item = Running{ slot = next, child = value.child, path = value.path, began = clock } } }
+                    err{ error } => {
+                        let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+                        _ = @fmt(&b, "{}:{}: fail: {}: its process didn't start: {}\n", c.file, c.line, c.name, error)
+                        outcomes[next] = Outcome::failed{ lines = utf8::view{ b }.bytes }
+                    }
+                }
+                next = next + 1
+            }
+            // Each running test: ended, over its time, or still running. The first is waited
+            // for a slice, so that the loop doesn't spin; the others are only looked at.
+            let mut k: usize = 0
+            let mut waited = false
+            while k < active.len {
+                let a = list::at{ list = active, i = k }
+                let c = case{ index = tests[a.slot] }
+                let wait: u64 = if k == 0 { SLICE } else { 0 }
+                let mut code: ?i32 = proc::wait_for{ &proc, child = &a.child, nanoseconds = wait } iferr { 1 }
+                if code == null and k == 0 { waited = true }
+                let late = code == null and o.timeout != 0 and (clock - a.began) / 1000000000 >= o.timeout
+                if late {
+                    _ = proc::kill{ &proc, child = a.child } iferr {}
+                    code = proc::wait{ &proc, child = &a.child } iferr { proc::KILLED }
+                }
+                if let ended = code {
+                    outcomes[a.slot] = finish{ &fs, &heap, c, code = ended, late, timeout = o.timeout, path = a.path }
+                    let last = list::pop{ list = &active } ifnull { break }
+                    if k < active.len { _ = list::set{ list = &active, i = k, item = last } }
+                } else {
+                    k = k + 1
+                }
+            }
+            if waited { clock = clock + SLICE }
+            while printed < tests.len and not (outcomes[printed] is pending) {
+                let c = case{ index = tests[printed] }
+                match outcomes[printed] {
+                    failed{ lines } => {
+                        failed = failed + 1
+                        io::write{ &io, to = io::Stream::out, bytes = lines }
+                    }
+                    else => {
+                        if o.verbose { _ = @fmt(&io, "{}:{}: pass: {}\n", c.file, c.line, c.name) }
+                    }
+                }
+                io::flush{ &io }
+                printed = printed + 1
+            }
+        }
+        return failed
+    }
+
+    struct Started { child: proc::Child, path: []u8 }
+
+    // Starts test `index` in a process of its own, a group that ends with this program, whose
+    // output goes to a new file beside the executable: EXE.INDEX.out, or with a number more
+    // if another run of the tests has that one.
+    fn start { mut fs: Fs, mut proc: Proc, mut heap: Heap, exe: []u8, index: usize } -> !Started {
+        let mut digits: [20]u8
+        let number = utf8::fmt_u64{ n = index, into = digits[..] }.bytes
+        let mut again: u64 = 0
+        while true {
+            let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+            try! @fmt(&b, "{}.{}", exe, number)
+            if again > 0 { try! @fmt(&b, ".{}", again) }
+            try! utf8::push{ &b, s = ".out" }
+            let path = utf8::view{ b }.bytes
+            let file = match fs::open{ &fs, path, mode = fs::Mode::create } {
+                ok{ value } => { value }
+                fs::exists => {
+                    again = again + 1
+                    continue
+                }
+                err{ error } => { return error }
+            }
+            let argv: [3][]u8 = [exe, "--run", number]
+            let options = proc::Options{ stdin = proc::Stdio::ignore, stdout = proc::Stdio::file{ file }, stderr = proc::Stdio::file{ file }, group = true, die_with_parent = true, .. }
+            let child = proc::spawn{ &proc, argv = argv[..], options }
+            _ = fs::close{ &fs, file } iferr {}
+            return Started{ child = try child, path }
+        }
+        return fs::bad_file
+    }
+
+    // What became of a test whose process ended with `code`, or was ended as late: its output
+    // is read and its file removed. One that passed is `passed`. One that failed has its
+    // output for lines, with the test's name in its panic's line, and a line of the runner's
+    // if nothing in the output says why it failed. A test that must panic passes if it did,
+    // with a message that contains its text.
+    fn finish { mut fs: Fs, mut heap: Heap, c: Case, code: i32, late: bool, timeout: u64, path: []u8 } -> Outcome {
+        let out: []u8 = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } iferr { "" }
+        _ = fs::remove{ &fs, path } iferr {}
+        if code == 0 and not late and not c.panics { return Outcome::passed }
+        let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+        let mut mark = utf8::builder{ realloc = arena::alloc, &heap }
+        try! @fmt(&mark, ": fail: {}: ", c.name)
+        let named = utf8::view{ b = mark }.bytes
+        // The last line that reports a panic, if the test panicked: std's report is
+        // `FILE:LINE:COL: panic: MESSAGE`, or `: panic in task NAME: MESSAGE`.
+        let mut panic_at: ?usize = null
+        let mut from: usize = 0
+        while code == 134 and not late and from < out.len {
+            let end = line_end{ s = out, from }
+            if find{ s = out[from..end], part = ": panic" } != null { panic_at = from }
+            from = end + 1
+        }
+        if c.panics and panic_at != null {
+            let at = panic_at ifnull { 0 }
+            if find{ s = out[at..line_end{ s = out, from = at }], part = c.message } != null { return Outcome::passed }
+        }
+        let mut says = false
+        from = 0
+        while from < out.len {
+            let end = line_end{ s = out, from }
+            let line = out[from..end]
+            if panic_at != null and panic_at == from {
+                let at = find{ s = line, part = ": panic" } ifnull { 0 }
+                try! @fmt(&b, "{}{}{}\n", line[..at], named, line[at + 2..])
+                says = true
+            } else {
+                try! @fmt(&b, "{}\n", line)
+                if find{ s = line, part = named } != null { says = true }
+            }
+            from = end + 1
+        }
+        if late {
+            try! @fmt(&b, "{}:{}{}timed out after {} s\n", c.file, c.line, named, timeout)
+        } else if c.panics and panic_at != null {
+            try! @fmt(&b, "{}:{}{}its panic's message doesn't contain `{}`\n", c.file, c.line, named, c.message)
+        } else if c.panics and code == 0 {
+            try! @fmt(&b, "{}:{}{}it didn't panic: a panic with `{}` was expected\n", c.file, c.line, named, c.message)
+        } else if not says {
+            try! @fmt(&b, "{}:{}{}its process ended with exit code {}\n", c.file, c.line, named, code)
+        }
+        return Outcome::failed{ lines = utf8::view{ b }.bytes }
+    }
+
+    // The end of the line of s that starts at `from`: its line break's offset, or s's end.
+    fn line_end { s: []u8, from: usize } -> usize {
+        let mut i = from
+        while i < s.len and s[i] != '\n' { i = i + 1 }
+        return i
+    }
+
+    // Where `part` first is in s, or null.
+    fn find { s: []u8, part: []u8 } -> ?usize {
+        if part.len > s.len { return null }
+        for i in 0..s.len - part.len + 1 {
+            if slice::eq_bytes{ a = s[i..i + part.len], b = part } { return i }
+        }
+        return null
+    }
+}
