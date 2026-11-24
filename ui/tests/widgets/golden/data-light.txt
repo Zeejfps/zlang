@@ -1,0 +1,81 @@
+== every data widget in the light theme
+frame 340x900
+clip 1 10,10 300x122
+clip 2 10,140 300x28
+clip 3 10,214 300x146
+clip 4 11,239 298x120
+clip 5 10,368 300x84
+clip 6 10,460 28x28
+clip 7 46,460 79x28 round 46,460 79x28 r=4
+rect 10,10 300x122 fill=FFFFFFFF radius=0,0,0,0 border=1,1,1,1 BBC3CFFF,BBC3CFFF,BBC3CFFF,BBC3CFFF clip=0
+text 19,16 font=0 size=14 242A35FF clip=1 "Item 0"
+text 19,40 font=0 size=14 242A35FF clip=1 "Item 1"
+rect 11,59 288x24 fill=DCE8FFFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=1
+text 19,64 font=0 size=14 242A35FF clip=1 "Item 2"
+text 19,88 font=0 size=14 242A35FF clip=1 "Item 3"
+text 19,112 font=0 size=14 242A35FF clip=1 "Item 4"
+rect 299,11 10x75 fill=BBC3CFFF radius=5,5,5,5 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=1
+rect 10,140 300x28 fill=00000000 radius=0,0,0,0 border=0,0,1,0 BBC3CFFF,BBC3CFFF,BBC3CFFF,BBC3CFFF clip=0
+rect 10,140 73x28 fill=F0F2F5FF radius=4,4,0,0 border=1,1,0,1 BBC3CFFF,BBC3CFFF,BBC3CFFF,BBC3CFFF clip=2
+text 22,147 font=0 size=14 242A35FF clip=2 "General"
+text 95,147 font=0 size=14 5D6675FF clip=2 "Tree"
+text 147,147 font=0 size=14 5D6675FF clip=2 "About"
+rect 10,168 300x38 fill=F0F2F5FF radius=0,0,0,0 border=0,1,1,1 BBC3CFFF,BBC3CFFF,BBC3CFFF,BBC3CFFF clip=0
+text 22,180 font=0 size=14 242A35FF clip=0 "General settings"
+rect 10,214 300x146 fill=FFFFFFFF radius=0,0,0,0 border=1,1,1,1 BBC3CFFF,BBC3CFFF,BBC3CFFF,BBC3CFFF clip=0
+rect 11,215 298x24 fill=F0F2F5FF radius=0,0,0,0 border=0,0,1,0 BBC3CFFF,BBC3CFFF,BBC3CFFF,BBC3CFFF clip=3
+text 15,220 font=0 size=14 5D6675FF clip=3 "Name"
+text 129,220 font=0 size=14 5D6675FF clip=3 "Size"
+text 189,220 font=0 size=14 5D6675FF clip=3 "Kind"
+text 15,244 font=0 size=14 242A35FF clip=4 "file0.txt"
+text 129,244 font=0 size=14 242A35FF clip=4 "0 KB"
+text 189,244 font=0 size=14 242A35FF clip=4 "text"
+rect 11,263 288x24 fill=DCE8FFFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=4
+text 15,268 font=0 size=14 242A35FF clip=4 "file1.txt"
+text 129,268 font=0 size=14 242A35FF clip=4 "3 KB"
+text 189,268 font=0 size=14 242A35FF clip=4 "text"
+text 15,292 font=0 size=14 242A35FF clip=4 "A name far t..."
+text 129,292 font=0 size=14 242A35FF clip=4 "6 KB"
+text 189,292 font=0 size=14 242A35FF clip=4 "text"
+text 15,316 font=0 size=14 242A35FF clip=4 "file3.txt"
+text 129,316 font=0 size=14 242A35FF clip=4 "9 KB"
+text 189,316 font=0 size=14 242A35FF clip=4 "text"
+text 15,340 font=0 size=14 242A35FF clip=4 "file4.txt"
+text 129,340 font=0 size=14 242A35FF clip=4 "12 KB"
+text 189,340 font=0 size=14 242A35FF clip=4 "text"
+rect 299,239 10x16 fill=BBC3CFFF radius=5,5,5,5 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=4
+rect 10,368 300x84 fill=FFFFFFFF radius=0,0,0,0 border=1,1,1,1 BBC3CFFF,BBC3CFFF,BBC3CFFF,BBC3CFFF clip=0
+rect 15,391 290x1 fill=D0D6DEFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=5
+rect 15,410 290x1 fill=D0D6DEFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=5
+rect 15,428 290x1 fill=D0D6DEFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=5
+line 15,447 56.4286,410 width=1.5 cap=round 245FCCFF clip=5
+line 56.4286,410 97.8571,428.5 width=1.5 cap=round 245FCCFF clip=5
+line 97.8571,428.5 139.2857,391.5 width=1.5 cap=round 245FCCFF clip=5
+line 139.2857,391.5 180.7143,400.75 width=1.5 cap=round 245FCCFF clip=5
+line 180.7143,400.75 222.1429,373 width=1.5 cap=round 245FCCFF clip=5
+line 222.1429,373 263.5714,391.5 width=1.5 cap=round 245FCCFF clip=5
+line 263.5714,391.5 305,382.25 width=1.5 cap=round 245FCCFF clip=5
+rect 10,460 28x28 fill=00000000 radius=0,0,0,0 border=1,1,1,1 BBC3CFFF,BBC3CFFF,BBC3CFFF,BBC3CFFF clip=0
+rect 10,460 14x14 fill=FFFFFFFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=6
+rect 24,460 14x14 fill=D0D6DEFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=6
+rect 10,474 14x14 fill=D0D6DEFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=6
+rect 24,474 14x14 fill=FFFFFFFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=6
+rect 10,460 28x28 fill=112233FF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=6
+rect 46,460 79x28 fill=FFFFFFFF radius=4,4,4,4 border=1,1,1,1 BBC3CFFF,BBC3CFFF,BBC3CFFF,BBC3CFFF clip=0
+text 54,467 font=0 size=14 242A35FF clip=7 "#112233FF"
+text 10,499 font=0 size=14 5D6675FF clip=0 "R"
+rect 40,504 262x4 fill=D0D6DEFF radius=2,2,2,2 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 40,504 17x4 fill=245FCCFF radius=2,2,2,2 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 49,498 16x16 fill=FFFFFFFF radius=8,8,8,8 border=1,1,1,1 7F8691FF,7F8691FF,7F8691FF,7F8691FF clip=0
+text 10,531 font=0 size=14 5D6675FF clip=0 "G"
+rect 40,536 262x4 fill=D0D6DEFF radius=2,2,2,2 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 40,536 34x4 fill=245FCCFF radius=2,2,2,2 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 66,530 16x16 fill=FFFFFFFF radius=8,8,8,8 border=1,1,1,1 7F8691FF,7F8691FF,7F8691FF,7F8691FF clip=0
+text 10,563 font=0 size=14 5D6675FF clip=0 "B"
+rect 40,568 262x4 fill=D0D6DEFF radius=2,2,2,2 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 40,568 52x4 fill=245FCCFF radius=2,2,2,2 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 84,562 16x16 fill=FFFFFFFF radius=8,8,8,8 border=1,1,1,1 7F8691FF,7F8691FF,7F8691FF,7F8691FF clip=0
+text 10,595 font=0 size=14 5D6675FF clip=0 "A"
+rect 40,600 262x4 fill=D0D6DEFF radius=2,2,2,2 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 40,600 262x4 fill=245FCCFF radius=2,2,2,2 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 294,594 16x16 fill=FFFFFFFF radius=8,8,8,8 border=1,1,1,1 7F8691FF,7F8691FF,7F8691FF,7F8691FF clip=0

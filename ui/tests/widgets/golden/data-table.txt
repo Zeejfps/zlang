@@ -1,0 +1,79 @@
+== at rest
+frame 340x400
+clip 1 10,10 300x146
+clip 2 11,35 298x120
+rect 10,10 300x146 fill=191C22FF radius=0,0,0,0 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+rect 11,11 298x24 fill=22252CFF radius=0,0,0,0 border=0,0,1,0 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=1
+text 15,16 font=0 size=14 A6ACB8FF clip=1 "Name"
+text 129,16 font=0 size=14 A6ACB8FF clip=1 "Size"
+text 189,16 font=0 size=14 A6ACB8FF clip=1 "Kind"
+text 15,40 font=0 size=14 E4E7EDFF clip=2 "file0.txt"
+text 129,40 font=0 size=14 E4E7EDFF clip=2 "0 KB"
+text 189,40 font=0 size=14 E4E7EDFF clip=2 "text"
+text 15,64 font=0 size=14 E4E7EDFF clip=2 "file1.txt"
+text 129,64 font=0 size=14 E4E7EDFF clip=2 "3 KB"
+text 189,64 font=0 size=14 E4E7EDFF clip=2 "text"
+text 15,88 font=0 size=14 E4E7EDFF clip=2 "A name far t..."
+text 129,88 font=0 size=14 E4E7EDFF clip=2 "6 KB"
+text 189,88 font=0 size=14 E4E7EDFF clip=2 "text"
+text 15,112 font=0 size=14 E4E7EDFF clip=2 "file3.txt"
+text 129,112 font=0 size=14 E4E7EDFF clip=2 "9 KB"
+text 189,112 font=0 size=14 E4E7EDFF clip=2 "text"
+text 15,136 font=0 size=14 E4E7EDFF clip=2 "file4.txt"
+text 129,136 font=0 size=14 E4E7EDFF clip=2 "12 KB"
+text 189,136 font=0 size=14 E4E7EDFF clip=2 "text"
+rect 299,35 10x16 fill=4B5362FF radius=5,5,5,5 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=2
+== clicked, the pointer still over it
+frame 340x400
+clip 1 10,10 300x146
+clip 2 11,35 298x120
+rect 10,10 300x146 fill=191C22FF radius=0,0,0,0 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+rect 11,11 298x24 fill=22252CFF radius=0,0,0,0 border=0,0,1,0 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=1
+text 15,16 font=0 size=14 A6ACB8FF clip=1 "Name"
+text 129,16 font=0 size=14 A6ACB8FF clip=1 "Size"
+text 189,16 font=0 size=14 A6ACB8FF clip=1 "Kind"
+text 15,40 font=0 size=14 E4E7EDFF clip=2 "file0.txt"
+text 129,40 font=0 size=14 E4E7EDFF clip=2 "0 KB"
+text 189,40 font=0 size=14 E4E7EDFF clip=2 "text"
+text 15,64 font=0 size=14 E4E7EDFF clip=2 "file1.txt"
+text 129,64 font=0 size=14 E4E7EDFF clip=2 "3 KB"
+text 189,64 font=0 size=14 E4E7EDFF clip=2 "text"
+text 15,88 font=0 size=14 E4E7EDFF clip=2 "A name far t..."
+text 129,88 font=0 size=14 E4E7EDFF clip=2 "6 KB"
+text 189,88 font=0 size=14 E4E7EDFF clip=2 "text"
+rect 11,107 288x24 fill=293D60FF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=2
+rect 11,107 288x24 fill=00000000 radius=0,0,0,0 border=2,2,2,2 7AA7FFFF,7AA7FFFF,7AA7FFFF,7AA7FFFF clip=2
+text 15,112 font=0 size=14 E4E7EDFF clip=2 "file3.txt"
+text 129,112 font=0 size=14 E4E7EDFF clip=2 "9 KB"
+text 189,112 font=0 size=14 E4E7EDFF clip=2 "text"
+text 15,136 font=0 size=14 E4E7EDFF clip=2 "file4.txt"
+text 129,136 font=0 size=14 E4E7EDFF clip=2 "12 KB"
+text 189,136 font=0 size=14 E4E7EDFF clip=2 "text"
+rect 299,35 10x16 fill=4B5362FF radius=5,5,5,5 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=2
+== the pointer gone
+frame 340x400
+clip 1 10,10 300x146
+clip 2 11,35 298x120
+rect 10,10 300x146 fill=191C22FF radius=0,0,0,0 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+rect 11,11 298x24 fill=22252CFF radius=0,0,0,0 border=0,0,1,0 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=1
+text 15,16 font=0 size=14 A6ACB8FF clip=1 "Name"
+text 129,16 font=0 size=14 A6ACB8FF clip=1 "Size"
+text 189,16 font=0 size=14 A6ACB8FF clip=1 "Kind"
+text 15,40 font=0 size=14 E4E7EDFF clip=2 "file0.txt"
+text 129,40 font=0 size=14 E4E7EDFF clip=2 "0 KB"
+text 189,40 font=0 size=14 E4E7EDFF clip=2 "text"
+text 15,64 font=0 size=14 E4E7EDFF clip=2 "file1.txt"
+text 129,64 font=0 size=14 E4E7EDFF clip=2 "3 KB"
+text 189,64 font=0 size=14 E4E7EDFF clip=2 "text"
+text 15,88 font=0 size=14 E4E7EDFF clip=2 "A name far t..."
+text 129,88 font=0 size=14 E4E7EDFF clip=2 "6 KB"
+text 189,88 font=0 size=14 E4E7EDFF clip=2 "text"
+rect 11,107 288x24 fill=293D60FF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=2
+rect 11,107 288x24 fill=00000000 radius=0,0,0,0 border=2,2,2,2 7AA7FFFF,7AA7FFFF,7AA7FFFF,7AA7FFFF clip=2
+text 15,112 font=0 size=14 E4E7EDFF clip=2 "file3.txt"
+text 129,112 font=0 size=14 E4E7EDFF clip=2 "9 KB"
+text 189,112 font=0 size=14 E4E7EDFF clip=2 "text"
+text 15,136 font=0 size=14 E4E7EDFF clip=2 "file4.txt"
+text 129,136 font=0 size=14 E4E7EDFF clip=2 "12 KB"
+text 189,136 font=0 size=14 E4E7EDFF clip=2 "text"
+rect 299,35 10x16 fill=4B5362FF radius=5,5,5,5 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=2

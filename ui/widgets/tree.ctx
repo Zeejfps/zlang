@@ -1,0 +1,138 @@
+// ui: the tree node (plan sections 2.3 and 5, stage 12): `begin_tree_node`.
+//
+// A node is a header row (an arrow, then its label) and, while it is open, its children: whatever
+// the program records before it ends the node's scope, indented so that a child's arrow stands
+// under its parent's label. Whether a node is open is widget state (plan section 2.3), kept under
+// the node's id; a leaf has no arrow and never opens.
+//
+//  - A click on the header, or Enter or Space while the node has the focus, opens or closes it, and
+//    the call says `clicked` (a leaf says only that).
+//  - Every node is a tab stop. Focused, Up and Down move the focus to the node recorded before and
+//    after it in the frame (whatever their depth: the nodes as they are shown); Right opens a
+//    closed node, and on an open one goes on to its first child; Left closes an open node, and on a
+//    closed one or a leaf goes to its parent. A node takes one of those keys a frame, so a second
+//    goes to the node the first moved to when that one is recorded after it.
+//  - A node's parent is the node whose scope it is recorded directly in. The nodes find each other
+//    through the state table: an open node notes its id under the id its children's scope gives
+//    the name TREE_TOKEN, and one entry (TREE_REGISTER) holds the node recorded last this frame and
+//    whether the focus is to pass on to the next.
+//  - An open node's children are in an identified column. While the node is closed it calls
+//    `keep_state` with that column's id, so the state of everything below it (a child's own open
+//    state, a scroll offset) survives the collapse; a node in a tab that is hidden is kept by the
+//    tab the same way.
+//
+// Units. The header is `row_height` high, its arrow a box of the theme's mark size (`font_size`
+// plus 2) in which `paint_icon` draws on the box's pixels, and the indent is that box and half a
+// gap, all logical units the core converts.
+namespace ui {
+    // A node being recorded: `scope` is closed by `ui::end`; `open` says whether to record its
+    // children; `clicked`, whether it was clicked or worked from the keyboard this frame.
+    struct TreeNode { scope: Scope = Scope{ .. }, open: bool = false, clicked: bool = false }
+
+    const TREE_TOKEN: []u8 = "\x00tree"
+    const TREE_REGISTER: []u8 = "\x00tree register"
+
+    // A node named `label` (its id and node; `opts.id` instead when set). A `leaf` has no children.
+    fn begin_tree_node { mut ui: Ui, label: []u8, leaf: bool, opts: Opts } -> TreeNode {
+        let t = derive_theme{ theme = ui.theme }
+        let name = get_widget_name{ opts, label }
+        let id = make_id{ ui, name }
+        let frame = @trunc(i64, ui.frame)
+
+        // The node before it this frame, and its parent.
+        let reg_id = @as(Id, hash_bytes{ seed = FNV_BASIS, bytes = TREE_REGISTER })
+        let mut reg = load_state{ &ui, id = reg_id }
+        if reg.i[0] != frame {
+            let mut fresh: Values
+            reg = fresh
+            reg.i[0] = frame
+        }
+        let prev = @as(Id, @trunc(u64, reg.i[1]))
+        let parent = find_tree_parent{ &ui, token = make_id{ ui, name = TREE_TOKEN }, frame }
+        let pass = reg.f[0]
+        reg.f[0] = 0.0
+        if opts.enabled and id != NO_ID and (pass == 1.0 or (pass == 2.0 and prev != NO_ID and parent == prev)) { set_focus{ &ui, id } }
+
+        let it = press{ &ui, id, opts = make_press_opts{ ui, opts } }
+        let mut values = load_state{ &ui, id }
+        let mut open = not leaf and values.i[0] != 0
+        let keyed = opts.enabled and take_activation{ &ui, it }
+        let clicked = opts.enabled and (it.clicked or keyed)
+        if clicked and not leaf { open = not open }
+        if it.focused and opts.enabled {
+            let mut i: usize = 0
+            while i < get_keys{ ui }.len {
+                let k = get_keys{ ui }[i]
+                if k.mods != 0 or not (k.key == Key::up or k.key == Key::down or k.key == Key::left or k.key == Key::right) {
+                    i = i + 1
+                    continue
+                }
+                take_key_at{ &ui, index = i }
+                match k.key {
+                    up => { if prev != NO_ID { set_focus{ &ui, id = prev } } }
+                    down => { reg.f[0] = 1.0 }
+                    right => {
+                        if open { reg.f[0] = 2.0 } else if not leaf { open = true }
+                    }
+                    else => {
+                        if open { open = false } else if parent != NO_ID { set_focus{ &ui, id = parent } }
+                    }
+                }
+                break
+            }
+        }
+        values.i[0] = if open { 1 } else { 0 }
+        store_state{ &ui, id, values }
+        reg.i[1] = @trunc(i64, @as(u64, id))
+        store_state{ &ui, id = reg_id, values = reg }
+
+        // The header.
+        let group = begin_element{ &ui, id = NO_ID, axis = Axis::column, box = merge_box{ box = opts.box, base = Box{ width = GROW, .. } } }
+        let fill = if it.hovered and opts.enabled { get_row_hover_color{ theme = t } } else { Color{ a = 0, .. } }
+        let header = begin_element{ &ui, id, axis = Axis::row, box = Box{
+            width = GROW, height = fix{ size = t.row_height },
+            padding = Insets{ left = t.padding * 0.5, right = t.padding * 0.5, .. }, gap = t.gap * 0.5,
+            align_y = Align::center, fill, ..
+        } }
+        let mark = get_mark_size{ theme = t }
+        let arrow = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{ width = fix{ size = mark }, height = fix{ size = mark }, .. } }
+        if not leaf {
+            let side = to_pixels{ ui, length = mark }
+            let ink = if opts.enabled { t.text_muted } else { t.text_disabled }
+            paint_icon{ &ui, icon = if open { Icon::arrow_down } else { Icon::arrow_right }, rect = Rect{ x = 0, y = 0, w = side, h = side }, color = ink }
+        }
+        end{ &ui, scope = arrow }
+        let color = if opts.enabled { t.text } else { t.text_disabled }
+        add_text{ &ui, text = label, style = TextStyle{ color, overflow = Overflow::ellipsis, .. }, box = Box{ .. } }
+        if it.focused { add_focus_ring{ &ui, radius = 0.0 } }
+        end{ &ui, scope = header }
+        let mut flags = get_widget_flags{ opts, it }
+        if open { flags = flags | NODE_OPEN }
+        describe{ &ui, id, role = Role::tree_node, label = name, value = if open { 1.0 } else { 0.0 }, flags }
+        finish_widget{ &ui, id, it, opts }
+
+        // The children's scope, and their column while the node is open.
+        _ = push_id{ &ui, name }
+        let children = make_id{ ui, name = "\x00children" }
+        if open {
+            let mut note: Values
+            note.i[0] = @trunc(i64, @as(u64, id))
+            note.i[1] = frame
+            store_state{ &ui, id = make_id{ ui, name = TREE_TOKEN }, values = note }
+            _ = begin_element{ &ui, id = children, axis = Axis::column, box = Box{
+                width = GROW, padding = Insets{ left = mark + t.gap * 0.5, .. }, ..
+            } }
+        } else if not leaf {
+            keep_state{ &ui, id = children }
+        }
+        return TreeNode{ scope = group, open, clicked }
+    }
+
+    // The node that noted `token` this frame: the parent of a node recorded in the scope that gives
+    // it. NO_ID for a node at the top of its tree.
+    fn find_tree_parent { mut ui: Ui, token: Id, frame: i64 } -> Id {
+        let v = load_state{ &ui, id = token }
+        if v.i[1] != frame { return NO_ID }
+        return @as(Id, @trunc(u64, v.i[0]))
+    }
+}

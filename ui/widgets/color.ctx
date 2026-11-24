@@ -1,0 +1,209 @@
+// ui: the colour editor (plan section 5, stage 12): `add_color_edit`, a swatch, a hex field and a
+// slider for each channel. There is no picker square: it needs gradients, which the seam does not
+// have (plan section 5).
+//
+//  - The swatch shows the colour over a two-tone check, so its alpha shows. It takes no input.
+//  - The sliders are stock sliders (slider.ctx) over 0 to 255 in steps of 1, named `r`, `g`, `b`
+//    and `a`, each with its letter beside it; they work by pointer and by keyboard as any slider.
+//  - The hex field shows `#RRGGBBAA`. It is a tab stop, focused by a click. While it has the focus
+//    it edits a copy of the digits: when it takes the focus the whole value is chosen (drawn on the
+//    selection colour), so the first digit typed replaces it; then digits are added at the end, up
+//    to eight; Backspace takes the last one off (or all of them while they are chosen). What is
+//    typed that is not a hex digit is refused. Enter sets the colour from 6 digits (RRGGBB, alpha
+//    kept) or 8 (RRGGBBAA) and chooses the whole value again; any other count is not a colour and
+//    the colour keeps its old value. Escape, and the focus leaving, drop the edit. While it has the
+//    focus it asks the host for text input at its caret.
+//
+// The call is true on the frame it changes `value`, and the editor is described as a colour node
+// whose value is the colour's red, green and blue packed as 0xRRGGBB (exact in an f32), with the
+// hex field as a text field node `hex` under it.
+//
+// This hex field is the editor's own, over the core's primitives, so the editor does not depend on
+// the text field of stage 10 (field.ctx).
+//
+// Units. Everything is declared in logical units; the caret is a rectangle a unit wide (through
+// `to_pixels`) at the measured width of the text before it, both pixels, and as high as a line.
+namespace ui {
+    // A colour editor named `label` for `value`. True on the frame it changes `value`.
+    fn add_color_edit { mut ui: Ui, label: []u8, mut value: Color, opts: Opts } -> bool {
+        let t = derive_theme{ theme = ui.theme }
+        let name = get_widget_name{ opts, label }
+        let id = make_id{ ui, name }
+        let before = value
+        let group = begin_element{ &ui, id, axis = Axis::column, box = merge_box{ box = opts.box, base = Box{ width = GROW, gap = t.gap * 0.5, .. } } }
+        _ = push_id{ &ui, name }
+        {
+            let top = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{ width = GROW, gap = t.gap, align_y = Align::center, .. } }
+            add_swatch{ &ui, color = value }
+            edit_hex{ &ui, &value, enabled = opts.enabled }
+            end{ &ui, scope = top }
+        }
+        edit_channel{ &ui, letter = "R", name = "r", channel = &value.r, enabled = opts.enabled }
+        edit_channel{ &ui, letter = "G", name = "g", channel = &value.g, enabled = opts.enabled }
+        edit_channel{ &ui, letter = "B", name = "b", channel = &value.b, enabled = opts.enabled }
+        edit_channel{ &ui, letter = "A", name = "a", channel = &value.a, enabled = opts.enabled }
+        end{ &ui, scope = group }
+        let packed = (@as(u32, value.r) << 16) | (@as(u32, value.g) << 8) | @as(u32, value.b)
+        describe{ &ui, id, role = Role::color_edit, label = name, value = @as(f32, packed), flags = if opts.enabled { 0 } else { NODE_DISABLED } }
+        if opts.tip.len > 0 { add_tooltip{ &ui, anchor = id, text = opts.tip } }
+        return value.r != before.r or value.g != before.g or value.b != before.b or value.a != before.a
+    }
+
+    // The colour in a square the control height a side, over a check of the field and the border
+    // colours in quarters, so its alpha shows.
+    fn add_swatch { mut ui: Ui, color: Color } {
+        let t = ui.theme
+        let side = t.control_height
+        let el = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{
+            width = fix{ size = side }, height = fix{ size = side },
+            border = color_sides{ color = t.border }, border_width = inset{ by = t.border_width }, clip = true, ..
+        } }
+        let px = to_pixels{ ui, length = side }
+        let half = px / 2
+        let light = t.field
+        let dark = get_rule_color{ theme = t }
+        paint_rect{ &ui, rect = Rect{ x = 0, y = 0, w = half, h = half }, style = RectStyle{ fill = light, .. } }
+        paint_rect{ &ui, rect = Rect{ x = half, y = 0, w = px - half, h = half }, style = RectStyle{ fill = dark, .. } }
+        paint_rect{ &ui, rect = Rect{ x = 0, y = half, w = half, h = px - half }, style = RectStyle{ fill = dark, .. } }
+        paint_rect{ &ui, rect = Rect{ x = half, y = half, w = px - half, h = px - half }, style = RectStyle{ fill = light, .. } }
+        paint_rect{ &ui, rect = Rect{ x = 0, y = 0, w = px, h = px }, style = RectStyle{ fill = color, .. } }
+        end{ &ui, scope = el }
+    }
+
+    // A channel's row: its letter, then a slider over 0 to 255.
+    fn edit_channel { mut ui: Ui, letter: []u8, name: []u8, mut channel: u8, enabled: bool } {
+        let t = ui.theme
+        let row = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{ width = GROW, gap = t.gap, align_y = Align::center, .. } }
+        add_text{ &ui, text = letter, style = TextStyle{ color = if enabled { t.text_muted } else { t.text_disabled }, .. }, box = Box{ width = fix{ size = t.font_size }, .. } }
+        let mut v = @as(f32, channel)
+        if add_slider{ &ui, label = name, value = &v, range = Range{ min = 0.0, max = 255.0, step = 1.0, digits = 0 }, opts = Opts{ enabled, .. } } {
+            channel = @round_saturate(u8, v)
+        }
+        end{ &ui, scope = row }
+    }
+
+    // The hex field's edit, kept as its state: the digits typed (`i[0]`), and in `i[1]` how many
+    // there are (the low byte), whether an edit is on (HEX_EDITING) and whether the whole value is
+    // chosen (HEX_CHOSEN).
+    const HEX_EDITING: i64 = 256
+    const HEX_CHOSEN: i64 = 512
+
+    // The hex field: `#` and the digits, in a field the width of nine characters and the padding.
+    fn edit_hex { mut ui: Ui, mut value: Color, enabled: bool } {
+        let t = derive_theme{ theme = ui.theme }
+        let id = make_id{ ui, name = "hex" }
+        let it = press{ &ui, id, opts = PressOpts{ enabled, focusable = true, focus_on_hover = ui.config.hover_focus, .. } }
+        let mut st = load_state{ &ui, id }
+        let mut digits = @as(u32, @saturate(u32, st.i[0]))
+        let mut count = @as(u32, st.i[1] & 255)
+        let mut editing = (st.i[1] & HEX_EDITING) != 0
+        let mut chosen = (st.i[1] & HEX_CHOSEN) != 0
+        let focused = it.focused and enabled
+        let packed = pack_color{ color = value }
+        if focused and not editing {
+            editing = true
+            chosen = true
+            digits = packed
+            count = 8
+        }
+        if not focused and editing { editing = false }
+        if focused {
+            for c in take_typed{ &ui } {
+                let d = read_hex_digit{ c } ifnull { continue }
+                if chosen {
+                    digits = 0
+                    count = 0
+                    chosen = false
+                }
+                if count < 8 {
+                    digits = @wrap_shl(digits, 4) | d
+                    count = count + 1
+                }
+            }
+            let mut i: usize = 0
+            while i < get_keys{ ui }.len {
+                let k = get_keys{ ui }[i]
+                if k.mods != 0 or not (k.key == Key::backspace or k.key == Key::enter or k.key == Key::escape) {
+                    i = i + 1
+                    continue
+                }
+                take_key_at{ &ui, index = i }
+                if k.key == Key::backspace {
+                    if chosen {
+                        digits = 0
+                        count = 0
+                        chosen = false
+                    } else if count > 0 {
+                        digits = digits >> 4
+                        count = count - 1
+                    }
+                } else {
+                    if k.key == Key::enter {
+                        if count == 6 {
+                            value = Color{ r = @as(u8, (digits >> 16) & 255), g = @as(u8, (digits >> 8) & 255), b = @as(u8, digits & 255), a = value.a }
+                        } else if count == 8 {
+                            value = Color{ r = @as(u8, digits >> 24), g = @as(u8, (digits >> 16) & 255), b = @as(u8, (digits >> 8) & 255), a = @as(u8, digits & 255) }
+                        }
+                    }
+                    digits = pack_color{ color = value }
+                    count = 8
+                    chosen = true
+                }
+            }
+        }
+        st.i[0] = @as(i64, digits)
+        st.i[1] = @as(i64, count) | (if editing { HEX_EDITING } else { 0 }) | (if chosen { HEX_CHOSEN } else { 0 })
+        store_state{ &ui, id, values = st }
+
+        // The text: the edit while there is one, the colour otherwise.
+        let mut text: [9]u8
+        text[0] = '#'
+        let shown = if editing { count } else { 8 }
+        let mut n: usize = 1
+        if shown > 0 { n = 1 + format_hex{ n = @as(u64, if editing { digits } else { packed }), digits = shown, into = text[1..] } }
+        let size = to_font_size{ ui, size = t.font_size }
+        let line = measure_line{ &ui, font = t.font, size }
+        let wide = add_pixels{ a = measure_text{ &ui, font = t.font, size, text = "#WWWWWWWW" }, b = 2 * to_pixels{ ui, length = t.padding } }
+        let edge = if focused { t.focus_ring } else if it.hovered and enabled { get_border_strong{ theme = t } } else { t.border }
+        let el = begin_element{ &ui, id, axis = Axis::row, box = Box{
+            width = fix_pixels{ size = wide }, height = fix{ size = t.control_height },
+            padding = Insets{ left = t.padding, right = t.padding, .. }, align_y = Align::center,
+            fill = t.field, border = color_sides{ color = edge }, border_width = inset{ by = t.border_width },
+            radius = round{ radius = t.radius }, clip = true, ..
+        } }
+        let pad = to_pixels{ ui, length = t.padding }
+        let box_h = to_pixels{ ui, length = t.control_height }
+        let y = (box_h - line.height) / 2
+        let used = measure_text{ &ui, font = t.font, size, text = text[..n] }
+        if focused and chosen and n > 1 {
+            let hash = measure_text{ &ui, font = t.font, size, text = "#" }
+            paint_rect{ &ui, rect = Rect{ x = add_pixels{ a = pad, b = hash }, y, w = sub_pixels{ a = used, b = hash }, h = line.height }, style = RectStyle{ fill = t.selection, .. } }
+        }
+        paint_text{ &ui, font = t.font, size, x = pad, y, text = text[..n], color = if enabled { t.text } else { t.text_disabled } }
+        if focused {
+            let caret = Rect{ x = add_pixels{ a = pad, b = used }, y, w = to_pixels{ ui, length = 1.0 }, h = line.height }
+            paint_rect{ &ui, rect = caret, style = RectStyle{ fill = t.text, .. } }
+            if let r = get_rect{ ui, id } {
+                set_text_input{ &ui, rect = Rect{ x = add_pixels{ a = r.x, b = caret.x }, y = add_pixels{ a = r.y, b = caret.y }, w = caret.w, h = caret.h } }
+            }
+        }
+        end{ &ui, scope = el }
+        let mut flags = get_widget_flags{ opts = Opts{ enabled, .. }, it }
+        if focused and chosen { flags = flags | NODE_SELECTED }
+        describe{ &ui, id, role = Role::text_field, label = "hex", value = @as(f32, if editing { count } else { 8 }), flags }
+        if enabled and it.hovered { set_cursor{ &ui, cursor = Cursor::text } }
+    }
+
+    // A colour as 0xRRGGBBAA.
+    fn pack_color { color: Color } -> u32 {
+        return (@as(u32, color.r) << 24) | (@as(u32, color.g) << 16) | (@as(u32, color.b) << 8) | @as(u32, color.a)
+    }
+
+    // The value of a hex digit, either case; null for any other byte.
+    fn read_hex_digit { c: u8 } -> ?u32 {
+        if c >= '0' and c <= '9' { return @as(u32, c - '0') }
+        if c >= 'a' and c <= 'f' { return @as(u32, c - 'a') + 10 }
+        if c >= 'A' and c <= 'F' { return @as(u32, c - 'A') + 10 }
+        return null
+    }
+}

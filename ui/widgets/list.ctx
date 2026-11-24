@@ -1,0 +1,260 @@
+// ui: the virtual list (plan sections 3.1 and 5, stage 12): `begin_list` and `begin_list_row`. The
+// table (table.ctx) is a header over the same rows.
+//
+// A list is a scroll region of its own (its id is made from `id`; it fills its parent unless
+// `opts.box` sizes it) holding `count` rows of one height, of which only the rows in view are
+// recorded: `begin_list` answers `first` and `last`, and the program records each row from `first`
+// up to but not including `last` with `begin_list_row`, whatever the count.
+//
+// Units. `row_height` is logical units, converted once a frame (`ui::to_pixels`, at least a pixel),
+// so every row is the same whole number of pixels and row i starts exactly i rows down the list's
+// content. The content is one column `count` rows high (`ui::fix_pixels`, held at MAX_PIXELS by
+// the core), whose first child is a spacer of the rows above the view, so nothing below the last
+// recorded row needs recording. Every offset is worked out in i64 and held, so a list of a million
+// rows (or four thousand million) never overflows.
+//
+// Behaviour. The application owns the selection: it passes `selected` for each row and selects a
+// row when the row's call says `clicked`. The list keeps what it needs of its own as widget state:
+// the row it knows as selected (its cursor: the row a key moved to, the row last clicked, or a row
+// recorded `selected` in a frame no key moved the cursor in) and whether that row is still to be
+// scrolled into view.
+//
+//  - The list is one tab stop. A press on a row, with either button, focuses the list (and the
+//    focus ring is drawn on the cursor's row while it has it).
+//  - A left click on a row is `clicked`; a second press of a double click is `activated`; a right
+//    press is `context` (there is no key for it: the host's keys have no Menu key). A clicked row
+//    is scrolled wholly into view in the next frame.
+//  - Focused, Up and Down move the cursor a row, PageUp and PageDown by a view's worth (the rows
+//    the view holds whole, at least one), Home and End to the ends; with no cursor, Up, Down and
+//    PageUp go to the first row. The result is held to the rows there are: no wrapping at either end,
+//    and after the count shrank below the cursor any key lands on a row. The row moved to is
+//    scrolled into view in the same frame (by the fewest pixels that show it whole) and its
+//    `begin_list_row` says `clicked`, so the application selects it as it does on a click. Enter
+//    scrolls the cursor's row into view and makes its call say `activated`.
+//  - A row's look: the selection colour while `selected` (or picked this frame), a faint wash while
+//    hovered, the row's content laid out across it, the theme's padding at each end.
+//
+// The keys move from the row the list knows: when the application selects a row that is out of
+// view, the list learns it the next time that row is recorded.
+namespace ui {
+    // A list being recorded. `scope` is closed by `ui::end`. `first` up to but not including `last`
+    // are the rows to record. The rest is for `begin_list_row`: the id of the list (its scroll
+    // region, which holds the focus), its state's id, its count, a row's height in pixels, whether
+    // it has the focus and takes input, the row it knows as selected (`cursor`, -1 for none), the
+    // row a key moved to this frame (`picked`, -1 for none), and whether Enter was pressed.
+    struct List {
+        scope: Scope = Scope{ .. },
+        first: u32 = 0, last: u32 = 0,
+        id: Id = NO_ID, state_id: Id = NO_ID,
+        count: u32 = 0, row: i32 = 0,
+        focused: bool = false, enabled: bool = true,
+        cursor: i64 = -1, picked: i64 = -1, activated: bool = false,
+    }
+
+    // A row being recorded, and what happened to it. `scope` is closed by `ui::end`. `clicked`: a
+    // click, or a key moved the selection to it: select it. `activated`: a double click, or Enter
+    // while it is the list's cursor. `context`: a right press, for a context menu. `selected`: it
+    // is drawn selected.
+    struct ListRow {
+        scope: Scope = Scope{ .. },
+        clicked: bool = false, activated: bool = false, context: bool = false,
+        hovered: bool = false, selected: bool = false,
+    }
+
+    // A list of `count` rows `row_height` logical units high, named `id`: a field-coloured region
+    // with a border, which grows in its parent unless `opts.box` sizes it. Its rows' paths are
+    // `id/#index`.
+    fn begin_list { mut ui: Ui, id: []u8, count: u32, row_height: f32, opts: Opts } -> List {
+        let t = ui.theme
+        let base = Box{
+            width = GROW, height = GROW, fill = t.field,
+            border = color_sides{ color = t.border }, border_width = inset{ by = t.border_width },
+            padding = inset{ by = t.border_width }, ..
+        }
+        let box = merge_box{ box = opts.box, base }
+        let list = open_list{ &ui, name = id, count, row_height, box, enabled = opts.enabled, node = true }
+        // The rows' scope, inside the list's: closed with it.
+        _ = push_id{ &ui, name = id }
+        return list
+    }
+
+    // Row `index` of `list`, drawn selected when `selected`, `list.row` pixels high. The caller
+    // records the row's content and ends `scope`.
+    fn begin_list_row { mut ui: Ui, list: List, index: u32, selected: bool } -> ListRow {
+        let t = ui.theme
+        return open_list_row{ &ui, list, index, selected, padding = t.padding, gap = t.gap, parts = [] }
+    }
+
+    // ---- what the list and the table share
+
+    // The colour a row under the pointer is washed with: the field a step towards the text.
+    fn get_row_hover_color { theme: Theme } -> Color {
+        return mix_color{ a = theme.field, b = theme.text, amount = 0.06 }
+    }
+
+    // An id for a part of the widget with `id`: `id` hashed on with a name no widget has.
+    fn make_part_id { id: Id, part: []u8 } -> Id {
+        if id == NO_ID { return NO_ID }
+        let h = hash_bytes{ seed = @as(u64, id), bytes = part }
+        return @as(Id, if h == 0 { 1 } else { h })
+    }
+
+    // The scroll region of a list named `name` in the id scope open now, laid out by `box`, with its
+    // keys handled and its rows found. `node`: it describes itself as a list.
+    fn open_list { mut ui: Ui, name: []u8, count: u32, row_height: f32, box: Box, enabled: bool, node: bool } -> List {
+        let region = make_id{ ui, name }
+        let key = make_part_id{ id = region, part = "\x00list" }
+        let row = pick_max_i32{ a = 1, b = to_pixels{ ui, length = row_height } }
+        let mut values = load_state{ &ui, id = key }
+        let mut cursor = values.i[0] - 1
+        let mut reveal = (values.i[1] & 1) != 0
+        let it = press{ &ui, id = region, opts = PressOpts{ enabled, focusable = true, .. } }
+        let focused = it.focused and enabled
+        let view = get_scroll{ ui, id = region }
+        let mut list = List{ id = region, state_id = key, count, row, focused, enabled, .. }
+
+        if focused and count > 0 {
+            let page: i64 = if let v = view { @as(i64, pick_max_i32{ a = 1, b = v.view_h / row }) } else { 1 }
+            let last = @as(i64, count) - 1
+            let mut moved = false
+            let mut i: usize = 0
+            while i < get_keys{ ui }.len {
+                let k = get_keys{ ui }[i]
+                let mut to: ?i64 = null
+                if k.mods == 0 {
+                    match k.key {
+                        up => { to = if cursor < 0 { 0 } else { cursor - 1 } }
+                        down => { to = cursor + 1 }
+                        page_up => { to = if cursor < 0 { 0 } else { cursor - page } }
+                        page_down => { to = pick_max_i64{ a = cursor, b = 0 } + page }
+                        home => { to = 0 }
+                        end => { to = last }
+                        enter => {
+                            if cursor >= 0 and cursor <= last {
+                                list.activated = true
+                                reveal = true
+                            }
+                            take_key_at{ &ui, index = i }
+                            continue
+                        }
+                        else => {}
+                    }
+                }
+                if let n = to {
+                    cursor = @clamp(n, 0, last)
+                    moved = true
+                    take_key_at{ &ui, index = i }
+                    continue
+                }
+                i = i + 1
+            }
+            if moved {
+                list.picked = cursor
+                reveal = true
+            }
+        }
+
+        // The cursor's row wholly in view, by the fewest pixels: from the last frame's view, so
+        // the reveal waits for a list's second frame.
+        if reveal {
+            if cursor < 0 or cursor >= @as(i64, count) {
+                reveal = false
+            } else if let v = view {
+                let top = cursor * @as(i64, row)
+                let bottom = top + @as(i64, row)
+                let mut y = @as(i64, v.y)
+                if bottom > y + @as(i64, v.view_h) { y = bottom - @as(i64, v.view_h) }
+                if top < y { y = top }
+                if y != @as(i64, v.y) { set_scroll{ &ui, id = region, x = 0, y = hold_pixels{ v = y } } }
+                reveal = false
+            }
+        }
+        values.i[0] = cursor + 1
+        values.i[1] = if reveal { 1 } else { 0 }
+        store_state{ &ui, id = key, values }
+        list.cursor = cursor
+
+        if node {
+            let mut flags: u8 = 0
+            if not enabled { flags = flags | NODE_DISABLED }
+            if focused { flags = flags | NODE_FOCUSED }
+            describe{ &ui, id = region, role = Role::list, label = name, value = @as(f32, cursor), flags }
+        }
+        list.scope = begin_scroll_with{ &ui, id = name, axes = ScrollAxes::vertical, axis = Axis::column, opts = Opts{ box, enabled, .. } }
+        let rows = find_rows{ ui, count, row_height }
+        list.first = rows.first
+        list.last = rows.last
+        // The content: a column all the rows high, the rows above the view a spacer at its top.
+        let total = hold_pixels{ v = @as(i64, count) * @as(i64, row) }
+        _ = begin_element{ &ui, id = NO_ID, axis = Axis::column, box = Box{ width = GROW, height = fix_pixels{ size = total }, .. } }
+        if rows.before > 0 {
+            let above = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{ width = GROW, height = fix_pixels{ size = rows.before }, .. } }
+            end{ &ui, scope = above }
+        }
+        return list
+    }
+
+    fn pick_max_i64 { a: i64, b: i64 } -> i64 { return if b > a { b } else { a } }
+
+    // A row of `list`: its id scope `#index` and its element, padded by `padding` at each end with
+    // `gap` between its children (logical units). `parts` names the row's own identified children
+    // (a table's cells, which cover it): a press on one of them is a press on the row.
+    fn open_list_row { mut ui: Ui, list: List, index: u32, selected: bool, padding: f32, gap: f32, parts: []Column } -> ListRow {
+        let t = ui.theme
+        let scope = push_key{ &ui, key = @as(u64, index) }
+        let id = make_id{ ui, name = "row" }
+        let mut it = press{ &ui, id, opts = PressOpts{ enabled = list.enabled, focusable = false, .. } }
+        let mut menu = press{ &ui, id, opts = PressOpts{ enabled = list.enabled, focusable = false, button = 1, .. } }
+        for p in parts {
+            let part = make_id{ ui, name = p.title }
+            if part == NO_ID or part == id { continue }
+            it = merge_press{ a = it, b = press{ &ui, id = part, opts = PressOpts{ enabled = list.enabled, focusable = false, .. } } }
+            menu = merge_press{ a = menu, b = press{ &ui, id = part, opts = PressOpts{ enabled = list.enabled, focusable = false, button = 1, .. } } }
+        }
+        if it.pressed or menu.pressed { claim_focus{ &ui, id = list.id } }
+        let at = @as(i64, index)
+        let clicked = it.clicked or list.picked == at
+        let activated = (it.pressed and it.clicks == 2) or (list.activated and list.cursor == at)
+        let pointed = it.clicked or menu.pressed
+        if pointed or (selected and list.cursor != at and list.picked < 0) { note_list_row{ &ui, list, index = at, reveal = pointed } }
+        let shown = selected or clicked
+        let fill = if shown { t.selection } else if it.hovered or menu.hovered { get_row_hover_color{ theme = t } } else { Color{ a = 0, .. } }
+        _ = begin_element{ &ui, id, axis = Axis::row, box = Box{
+            width = GROW, height = fix_pixels{ size = list.row },
+            padding = Insets{ left = padding, right = padding, .. }, gap, align_y = Align::center, fill, ..
+        } }
+        if list.focused and list.cursor == at { add_focus_ring{ &ui, radius = 0.0 } }
+        let mut flags: u8 = 0
+        if shown { flags = flags | NODE_SELECTED }
+        if not list.enabled { flags = flags | NODE_DISABLED }
+        if it.held { flags = flags | NODE_PRESSED }
+        describe{ &ui, id, role = Role::list_row, label = "", value = @as(f32, index), flags }
+        return ListRow{ scope, clicked, activated, context = menu.pressed, hovered = it.hovered or menu.hovered, selected = shown }
+    }
+
+    // What happened to a row and to one of its parts, as one: either one hovered, pressed, held or
+    // clicked (the clicks of the one that was pressed or clicked).
+    fn merge_press { a: Interaction, b: Interaction } -> Interaction {
+        let mut m = a
+        m.hovered = a.hovered or b.hovered
+        m.entered = a.entered or b.entered
+        m.pressed = a.pressed or b.pressed
+        m.held = a.held or b.held
+        m.clicked = a.clicked or b.clicked
+        if b.pressed or b.clicked { m.clicks = b.clicks }
+        if b.held {
+            m.drag_x = b.drag_x
+            m.drag_y = b.drag_y
+        }
+        return m
+    }
+
+    // The list learns its cursor from a row: a row recorded selected, or pointed at (which is then
+    // to be scrolled into view).
+    fn note_list_row { mut ui: Ui, list: List, index: i64, reveal: bool } {
+        let mut values = load_state{ &ui, id = list.state_id }
+        values.i[0] = index + 1
+        if reveal { values.i[1] = values.i[1] | 1 }
+        store_state{ &ui, id = list.state_id, values }
+    }
+}

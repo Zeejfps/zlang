@@ -40,6 +40,13 @@ namespace ui {
         focus::take_focus{ &ui, id, claimed = false }
     }
 
+    // Gives `id` the keyboard focus as a press of a focusable widget does: kept through the end of
+    // a frame whose left press would otherwise drop it. What a widget calls when a press on one of
+    // its parts (a list's row, a tab) is to focus the whole widget.
+    fn claim_focus { mut ui: Ui, id: Id } {
+        focus::take_focus{ &ui, id, claimed = true }
+    }
+
     fn is_focused { ui: Ui, id: Id } -> bool {
         return id != NO_ID and ui.focus.focused == id
     }

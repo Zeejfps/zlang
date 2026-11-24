@@ -1,14 +1,183 @@
-// gallery: the data page, which shows lists, trees, tabs, tables, the plot and the colour editor
-// (plan section 7, stage 12). The stage that builds those widgets fills `DataPage`, `make_data_page`
-// and `show_data_page`, and lists the page by setting DATA_PAGE_LISTED; the switcher leaves out a
-// page that is not listed.
+// gallery: the data page (stage 12): a virtual list of ten thousand rows, a tree, tabs whose pages
+// keep their state while hidden, a table of a thousand rows with a fixed column and two that grow,
+// a line plot with a gap, and the colour editor, in two columns of panels.
 namespace gallery {
     const DATA_PAGE_TITLE: []u8 = "Data"
-    const DATA_PAGE_LISTED: bool = false
+    const DATA_PAGE_LISTED: bool = true
 
-    struct DataPage {}
+    const DATA_SAMPLES: usize = 64
 
-    fn make_data_page {} -> DataPage { return DataPage{} }
+    struct DataPage {
+        selected: i64, activated: i64, context: i64,
+        tab: u32,
+        row: i64,
+        samples: [64]f32,
+        color: ui::Color,
+    }
 
-    fn show_data_page { mut ui: ui::Ui, mut page: DataPage } {}
+    // The plot's series: a sine and a slower one, with three values missing (NaN) in the middle.
+    fn make_data_page {} -> DataPage {
+        let mut page = DataPage{
+            selected = 2, activated = -1, context = -1, tab = 0, row = -1,
+            samples = [0.0; 64], color = ui::Color{ r = 53, g = 111, b = 224, a = 255 },
+        }
+        let nan: f32 = 0.0 / 0.0
+        for i in 0..DATA_SAMPLES {
+            let x = @as(f32, i) * 0.2
+            page.samples[i] = if i >= 30 and i < 33 { nan } else { ui::sin_f32{ x } + 0.5 * ui::sin_f32{ x = x * 0.37 } }
+        }
+        return page
+    }
+
+    fn show_data_page { mut ui: ui::Ui, mut page: DataPage } {
+        let t = ui.theme
+        let columns = ui::begin_row{ &ui, opts = ui::Opts{ id = "data", box = ui::Box{ width = ui::GROW, align_y = ui::Align::start, gap = t.gap * 2.0, .. }, .. } }
+        {
+            let left = ui::begin_column{ &ui, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, gap = t.gap * 2.0, .. }, .. } }
+            show_data_list{ &ui, &page }
+            show_data_tabs{ &ui, &page }
+            ui::end{ &ui, scope = left }
+        }
+        {
+            let right = ui::begin_column{ &ui, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, gap = t.gap * 2.0, .. }, .. } }
+            show_data_table{ &ui, &page }
+            show_data_plot{ &ui, &page }
+            show_data_color{ &ui, &page }
+            ui::end{ &ui, scope = right }
+        }
+        ui::end{ &ui, scope = columns }
+    }
+
+    // Ten thousand rows, of which only those in view are recorded.
+    fn show_data_list { mut ui: ui::Ui, mut page: DataPage } {
+        let t = ui.theme
+        let panel = begin_section{ &ui, id = "list", title = "A virtual list of 10,000 rows (click, arrows, PageUp/PageDown, Home/End, Enter)" }
+        let list = ui::begin_list{ &ui, id = "items", count = 10000, row_height = t.row_height, opts = ui::Opts{
+            box = ui::Box{ height = ui::fix{ size = t.row_height * 7.0 + 2.0 * t.border_width }, .. }, ..
+        } }
+        for i in list.first..list.last {
+            let row = ui::begin_list_row{ &ui, list, index = i, selected = page.selected == @as(i64, i) }
+            if row.clicked { page.selected = @as(i64, i) }
+            if row.activated { page.activated = @as(i64, i) }
+            if row.context { page.context = @as(i64, i) }
+            _ = @fmt(&ui, "Item {}", i + 1)
+            let text = ui::take_text{ &ui }
+            ui::add_label{ &ui, text, opts = ui::Opts{ .. } }
+            ui::add_spacer{ &ui }
+            _ = @fmt(&ui, "{} KB", (i * 37) % 1000)
+            let size = ui::take_text{ &ui }
+            ui::add_text{ &ui, text = size, style = ui::TextStyle{ color = t.text_muted, .. }, box = ui::Box{ .. } }
+            ui::end{ &ui, scope = row.scope }
+        }
+        ui::end{ &ui, scope = list.scope }
+        _ = @fmt(&ui, "Selected {}, activated {}, menu asked on {}", page.selected + 1, page.activated + 1, page.context + 1)
+        let text = ui::take_text{ &ui }
+        ui::add_label{ &ui, text, opts = ui::Opts{ enabled = false, .. } }
+        ui::end{ &ui, scope = panel }
+    }
+
+    // Tabs: a tree in one, whose open nodes stay open while another tab is shown.
+    fn show_data_tabs { mut ui: ui::Ui, mut page: DataPage } {
+        let opts = ui::Opts{ .. }
+        let panel = begin_section{ &ui, id = "tabs", title = "Tabs and a tree (Left/Right on the tabs; arrows on the tree)" }
+        let tabs = ui::begin_tabs{ &ui, id = "views", labels = ["Files", "Notes", "About this page"], value = &page.tab, opts }
+        {
+            let files = ui::begin_tab{ &ui, tabs, index = 0 }
+            if files.open { show_data_tree{ &ui } }
+            ui::end{ &ui, scope = files.scope }
+        }
+        {
+            let notes = ui::begin_tab{ &ui, tabs, index = 1 }
+            if notes.open {
+                ui::add_label{ &ui, text = "The tree's open folders are kept while this tab is shown.", opts }
+                ui::add_label{ &ui, text = "Its state is pinned with keep_state on the hidden tab's page.", opts }
+            }
+            ui::end{ &ui, scope = notes.scope }
+        }
+        {
+            let about = ui::begin_tab{ &ui, tabs, index = 2 }
+            if about.open { ui::add_label{ &ui, text = "Rows, tabs and nodes are found by path: views/Files/src.", opts } }
+            ui::end{ &ui, scope = about.scope }
+        }
+        ui::end{ &ui, scope = tabs.scope }
+        ui::end{ &ui, scope = panel }
+    }
+
+    // The tree's nodes one under another with no gap, as a child's nodes are.
+    fn show_data_tree { mut ui: ui::Ui } {
+        let opts = ui::Opts{ .. }
+        let tree = ui::begin_column{ &ui, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, gap = 0.0, .. }, .. } }
+        defer ui::end{ &ui, scope = tree }
+        let src = ui::begin_tree_node{ &ui, label = "src", leaf = false, opts }
+        if src.open {
+            let core = ui::begin_tree_node{ &ui, label = "core", leaf = false, opts }
+            if core.open {
+                show_data_leaf{ &ui, label = "layout.ctx" }
+                show_data_leaf{ &ui, label = "scroll.ctx" }
+            }
+            ui::end{ &ui, scope = core.scope }
+            let widgets = ui::begin_tree_node{ &ui, label = "widgets", leaf = false, opts }
+            if widgets.open {
+                show_data_leaf{ &ui, label = "list.ctx" }
+                show_data_leaf{ &ui, label = "tree.ctx" }
+                show_data_leaf{ &ui, label = "table.ctx" }
+            }
+            ui::end{ &ui, scope = widgets.scope }
+            show_data_leaf{ &ui, label = "main.ctx" }
+        }
+        ui::end{ &ui, scope = src.scope }
+        let docs = ui::begin_tree_node{ &ui, label = "docs", leaf = false, opts }
+        if docs.open { show_data_leaf{ &ui, label = "PLAN.md" } }
+        ui::end{ &ui, scope = docs.scope }
+        show_data_leaf{ &ui, label = "README" }
+    }
+
+    fn show_data_leaf { mut ui: ui::Ui, label: []u8 } {
+        let node = ui::begin_tree_node{ &ui, label, leaf = true, opts = ui::Opts{ .. } }
+        ui::end{ &ui, scope = node.scope }
+    }
+
+    // A log of a thousand rows: a fixed column between two that share the rest.
+    fn show_data_table { mut ui: ui::Ui, mut page: DataPage } {
+        let t = ui.theme
+        let panel = begin_section{ &ui, id = "table", title = "A table of 1,000 rows: Time fixed, Source and Message grow" }
+        let columns = [
+            ui::Column{ title = "Time", width = 64.0, .. },
+            ui::Column{ title = "Source", width = 60.0, grow = true },
+            ui::Column{ title = "Message", width = 80.0, grow = true },
+        ]
+        let table = ui::begin_table{ &ui, id = "log", columns = columns[..], count = 1000, row_height = t.row_height, opts = ui::Opts{
+            box = ui::Box{ height = ui::fix{ size = t.row_height * 7.0 + 2.0 * t.border_width }, .. }, ..
+        } }
+        for i in table.first..table.last {
+            let mut row = ui::begin_table_row{ &ui, table, index = i, selected = page.row == @as(i64, i) }
+            if row.clicked { page.row = @as(i64, i) }
+            _ = @fmt(&ui, "{}:{}", 10 + i / 60 % 14, 10 + i % 50)
+            let time = ui::take_text{ &ui }
+            ui::add_cell_text{ &ui, &row, text = time }
+            ui::add_cell_text{ &ui, &row, text = if i % 3 == 0 { "renderer" } else if i % 3 == 1 { "audio" } else { "scripts" } }
+            if i % 4 == 1 {
+                ui::add_cell_text{ &ui, &row, text = "A message long enough that its cell cuts it short with dots" }
+            } else {
+                _ = @fmt(&ui, "Event {} handled", i)
+                let message = ui::take_text{ &ui }
+                ui::add_cell_text{ &ui, &row, text = message }
+            }
+            ui::end{ &ui, scope = row.scope }
+        }
+        ui::end{ &ui, scope = table.scope }
+        ui::end{ &ui, scope = panel }
+    }
+
+    fn show_data_plot { mut ui: ui::Ui, mut page: DataPage } {
+        let panel = begin_section{ &ui, id = "plot", title = "A line plot of 64 values, three of them NaN" }
+        ui::add_plot{ &ui, label = "signal", values = page.samples[..], opts = ui::Opts{ .. } }
+        ui::end{ &ui, scope = panel }
+    }
+
+    fn show_data_color { mut ui: ui::Ui, mut page: DataPage } {
+        let panel = begin_section{ &ui, id = "colour", title = "Colour: type hex and press Enter, or drag a channel" }
+        _ = ui::add_color_edit{ &ui, label = "accent", value = &page.color, opts = ui::Opts{ .. } }
+        ui::end{ &ui, scope = panel }
+    }
 }

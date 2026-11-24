@@ -1,4 +1,833 @@
-// The checks of lists, trees, tabs, tables, the plot and the colour editor (plan section 7, stage
-// 12), with their goldens named golden/data-*.txt. `main` calls `check_data`; the stage that builds
-// those widgets writes its checks in it, using the helpers of main.ctx.
-fn check_data { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, update: bool } {}
+// Stage 12's checks: the list, the tree, tabs, the table, the plot and the colour editor.
+//
+//  - Goldens (golden/data-*.txt) of each widget in the dark theme, of all of them in the light one,
+//    of all of them at scale 1.5 (where every border is the same on all four sides), and a node
+//    snapshot.
+//  - Scripted: list selection by click and by the keys at both ends, PageUp and PageDown, Home and
+//    End, activation by Enter and by a double click, a right press for a context menu, the
+//    selection scrolled into view from below and from above by exactly the pixels needed, an
+//    empty list, a list shorter than its view, a count that shrank below the selection, 10,000
+//    and 1,000,000 rows; a tree three levels deep by the arrow keys, its open state surviving a
+//    collapse of its parent and a hidden tab; tabs by click and by the keys, a strip wider than its
+//    room, a hidden tab's state kept; a table's header and rows lined up to the pixel at scales 1
+//    and 1.5 through a resize, a long cell ellipsized, a row selected; the plot with no value, one,
+//    a constant series and NaN; the colour editor round-tripping hex, refusing an invalid one, and
+//    alpha.
+//
+// How the goldens' numbers come about, at scale 1 in the tests' font at the themes' 14 units (a
+// character 7 pixels wide, a line 14 high): a list row is 24 high, its text 5 below its top; a list
+// has a 1 pixel border and 1 of padding, so its rows start a pixel in; a tree node's header is 24
+// high with its arrow box 16 square 4 in, and a child is indented 20; a tab header is 28 high and
+// its label's width plus 12 at each end wide; a table cell is padded 4 at each end.
+
+fn check_data { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, update: bool } {
+    let out = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 262144 } iferr { return }
+    let scratch = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 262144 } iferr { return }
+    record_data_widget{ &io, &fs, &t, &heap, out, scratch, update, widget = DataWidget::list, name = "data-list" }
+    record_data_widget{ &io, &fs, &t, &heap, out, scratch, update, widget = DataWidget::tree, name = "data-tree" }
+    record_data_widget{ &io, &fs, &t, &heap, out, scratch, update, widget = DataWidget::tabs, name = "data-tabs" }
+    record_data_widget{ &io, &fs, &t, &heap, out, scratch, update, widget = DataWidget::table, name = "data-table" }
+    record_data_widget{ &io, &fs, &t, &heap, out, scratch, update, widget = DataWidget::plot, name = "data-plot" }
+    record_data_widget{ &io, &fs, &t, &heap, out, scratch, update, widget = DataWidget::color, name = "data-color" }
+    record_data_light{ &io, &fs, &t, &heap, out, scratch, update }
+    record_data_scaled{ &io, &fs, &t, &heap, out, scratch, update }
+    record_data_nodes{ &io, &fs, &t, &heap, out, scratch, update }
+    check_list_pointer{ &io, &t, &heap }
+    check_list_keys{ &io, &t, &heap }
+    check_list_reveal{ &io, &t, &heap }
+    check_list_edges{ &io, &t, &heap }
+    check_list_long{ &io, &t, &heap, count = 10000 }
+    check_list_long{ &io, &t, &heap, count = 1000000 }
+    check_tree_keys{ &io, &t, &heap }
+    check_tree_kept{ &io, &t, &heap }
+    check_tabs_use{ &io, &t, &heap }
+    check_tabs_crowded{ &io, &t, &heap }
+    check_table_lines{ &io, &t, &heap, scale = 1.0 }
+    check_table_lines{ &io, &t, &heap, scale = 1.5 }
+    check_table_use{ &io, &t, &heap }
+    check_plot_series{ &io, &t, &heap }
+    check_color_hex{ &io, &t, &heap }
+}
+
+// ---- the scenes
+
+enum DataWidget: u8 { list, tree, tabs, table, plot, color, all }
+
+// What a scene shows and the application state its widgets change.
+struct DataScene {
+    widget: DataWidget,
+    width: f32,                                     // the scene's column, in logical units
+    // the list
+    count: u32, view: f32, selected: i64, activated: i64, activations: u32, context: i64,
+    first: u32, last: u32, recorded: u32,
+    // the tree, and whether it is recorded at all
+    tree_shown: bool, tree_clicks: u32,
+    // tabs
+    tab: u32, tab_changes: u32, tabs_width: f32,
+    // the table
+    table_count: u32, table_selected: i64,
+    // the plot
+    values: []f32,
+    // the colour editor
+    color: ui::Color, color_changes: u32,
+}
+
+const PLOT_VALUES: [8]f32 = [0.0, 2.0, 1.0, 3.0, 2.5, 4.0, 3.0, 3.5]
+const TAB_LABELS: [3][]u8 = ["General", "Tree", "About"]
+
+fn make_data_scene { widget: DataWidget } -> DataScene {
+    return DataScene{
+        widget, width = 300.0,
+        count = 50, view = 122.0, selected = -1, activated = -1, activations = 0, context = -1,
+        first = 0, last = 0, recorded = 0,
+        tree_shown = true, tree_clicks = 0,
+        tab = 0, tab_changes = 0, tabs_width = 300.0,
+        table_count = 40, table_selected = -1,
+        values = PLOT_VALUES[..],
+        color = ui::Color{ r = 0x11, g = 0x22, b = 0x33, a = 0xFF }, color_changes = 0,
+    }
+}
+
+// The scene's column: `s.width` units wide at (10, 10).
+fn show_data_scene { mut ui: ui::Ui, mut s: DataScene } {
+    let mut box = ui::place{ x = 10.0, y = 10.0, w = s.width, h = 2000.0 }
+    box.gap = ui.theme.gap
+    let col = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box }
+    match s.widget {
+        list => show_list_scene{ &ui, &s }
+        tree => show_tree_scene{ &ui, &s }
+        tabs => show_tabs_scene{ &ui, &s }
+        table => show_table_scene{ &ui, &s }
+        plot => show_plot_scene{ &ui, &s }
+        color => show_color_scene{ &ui, &s }
+        all => {
+            show_list_scene{ &ui, &s }
+            show_tabs_scene{ &ui, &s }
+            show_table_scene{ &ui, &s }
+            show_plot_scene{ &ui, &s }
+            show_color_scene{ &ui, &s }
+        }
+    }
+    ui::end{ &ui, scope = col }
+}
+
+// A list of `s.count` rows of the theme's row height, in a box `s.view` units high: 122 is a
+// border and a padding at each end and five rows.
+fn show_list_scene { mut ui: ui::Ui, mut s: DataScene } {
+    let list = ui::begin_list{ &ui, id = "items", count = s.count, row_height = ui.theme.row_height, opts = ui::Opts{
+        box = ui::Box{ width = ui::GROW, height = ui::fix{ size = s.view }, .. }, ..
+    } }
+    s.first = list.first
+    s.last = list.last
+    s.recorded = 0
+    for i in list.first..list.last {
+        let row = ui::begin_list_row{ &ui, list, index = i, selected = s.selected == @as(i64, i) }
+        if row.clicked { s.selected = @as(i64, i) }
+        if row.activated {
+            s.activated = @as(i64, i)
+            s.activations = s.activations + 1
+        }
+        if row.context { s.context = @as(i64, i) }
+        _ = @fmt(&ui, "Item {}", i)
+        let text = ui::take_text{ &ui }
+        ui::add_label{ &ui, text, opts = ui::Opts{ .. } }
+        ui::end{ &ui, scope = row.scope }
+        s.recorded = s.recorded + 1
+    }
+    ui::end{ &ui, scope = list.scope }
+}
+
+// A tree three levels deep: Animals > Mammals > Cat, Dog; Animals > Fish; Plants.
+fn show_tree_scene { mut ui: ui::Ui, mut s: DataScene } {
+    if not s.tree_shown { return }
+    let opts = ui::Opts{ .. }
+    let tree = ui::begin_column{ &ui, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, gap = 0.0, .. }, .. } }
+    defer ui::end{ &ui, scope = tree }
+    let animals = ui::begin_tree_node{ &ui, label = "Animals", leaf = false, opts }
+    if animals.clicked { s.tree_clicks = s.tree_clicks + 1 }
+    if animals.open {
+        let mammals = ui::begin_tree_node{ &ui, label = "Mammals", leaf = false, opts }
+        if mammals.open {
+            let cat = ui::begin_tree_node{ &ui, label = "Cat", leaf = true, opts }
+            ui::end{ &ui, scope = cat.scope }
+            let dog = ui::begin_tree_node{ &ui, label = "Dog", leaf = true, opts }
+            ui::end{ &ui, scope = dog.scope }
+        }
+        ui::end{ &ui, scope = mammals.scope }
+        let fish = ui::begin_tree_node{ &ui, label = "Fish", leaf = true, opts }
+        ui::end{ &ui, scope = fish.scope }
+    }
+    ui::end{ &ui, scope = animals.scope }
+    let plants = ui::begin_tree_node{ &ui, label = "Plants", leaf = false, opts }
+    ui::end{ &ui, scope = plants.scope }
+}
+
+// Three tabs `s.tabs_width` units wide: a label, the tree, a checkbox-free note.
+fn show_tabs_scene { mut ui: ui::Ui, mut s: DataScene } {
+    let tabs = ui::begin_tabs{ &ui, id = "views", labels = TAB_LABELS[..], value = &s.tab, opts = ui::Opts{
+        box = ui::Box{ width = ui::fix{ size = s.tabs_width }, .. }, ..
+    } }
+    if tabs.changed { s.tab_changes = s.tab_changes + 1 }
+    {
+        let page = ui::begin_tab{ &ui, tabs, index = 0 }
+        if page.open { ui::add_label{ &ui, text = "General settings", opts = ui::Opts{ .. } } }
+        ui::end{ &ui, scope = page.scope }
+    }
+    {
+        let page = ui::begin_tab{ &ui, tabs, index = 1 }
+        if page.open { show_tree_scene{ &ui, &s } }
+        ui::end{ &ui, scope = page.scope }
+    }
+    {
+        let page = ui::begin_tab{ &ui, tabs, index = 2 }
+        if page.open { ui::add_label{ &ui, text = "Version 1", opts = ui::Opts{ .. } } }
+        ui::end{ &ui, scope = page.scope }
+    }
+    ui::end{ &ui, scope = tabs.scope }
+}
+
+const FILE_COLUMNS: [3]ui::Column = [
+    ui::Column{ title = "Name", width = 60.0, grow = true },
+    ui::Column{ title = "Size", width = 60.0, .. },
+    ui::Column{ title = "Kind", width = 40.0, grow = true },
+]
+
+// A table of `s.table_count` files, five rows in view; row 2 has a name too long for its cell.
+fn show_table_scene { mut ui: ui::Ui, mut s: DataScene } {
+    let table = ui::begin_table{ &ui, id = "files", columns = FILE_COLUMNS[..], count = s.table_count, row_height = ui.theme.row_height, opts = ui::Opts{
+        box = ui::Box{ width = ui::GROW, height = ui::fix{ size = 146.0 }, .. }, ..
+    } }
+    for i in table.first..table.last {
+        let mut row = ui::begin_table_row{ &ui, table, index = i, selected = s.table_selected == @as(i64, i) }
+        if row.clicked { s.table_selected = @as(i64, i) }
+        if i == 2 {
+            ui::add_cell_text{ &ui, &row, text = "A name far too long for its column" }
+        } else {
+            _ = @fmt(&ui, "file{}.txt", i)
+            let name = ui::take_text{ &ui }
+            ui::add_cell_text{ &ui, &row, text = name }
+        }
+        _ = @fmt(&ui, "{} KB", i * 3)
+        let size = ui::take_text{ &ui }
+        ui::add_cell_text{ &ui, &row, text = size }
+        ui::add_cell_text{ &ui, &row, text = "text" }
+        ui::end{ &ui, scope = row.scope }
+    }
+    ui::end{ &ui, scope = table.scope }
+}
+
+fn show_plot_scene { mut ui: ui::Ui, mut s: DataScene } {
+    ui::add_plot{ &ui, label = "load", values = s.values, opts = ui::Opts{ .. } }
+}
+
+fn show_color_scene { mut ui: ui::Ui, mut s: DataScene } {
+    if ui::add_color_edit{ &ui, label = "accent", value = &s.color, opts = ui::Opts{ .. } } { s.color_changes = s.color_changes + 1 }
+}
+
+// ---- helpers
+
+fn find_data_view { ui: ui::Ui, name: []u8 } -> ui::ScrollView {
+    return ui::get_scroll{ ui, id = ui::make_id{ ui, name } } ifnull ui::ScrollView{ .. }
+}
+
+fn find_data_node { ui: ui::Ui, path: []u8 } -> ui::Node {
+    return ui::find_node{ ui, path } ifnull ui::Node{ .. }
+}
+
+fn has_node_flag { ui: ui::Ui, path: []u8, flag: u8 } -> bool {
+    let n = ui::find_node{ ui, path } ifnull { return false }
+    return (n.flags & flag) != 0
+}
+
+// Taps `key` and runs a frame.
+fn press_data_key { mut d: ui_test::Driver, mut ui: ui::Ui, mut s: DataScene, key: ui::Key } {
+    _ = ui_test::tap_key{ &ui, key, mods = 0 }
+    ui_test::step_frame{ &d, &ui, show = show_data_scene{ &s, _ } }
+}
+
+// Presses the pointer button over the node at `path` and lets it go, with `clicks` as the host
+// counted them, a frame each. False when the node is not there.
+fn tap_data_node { mut d: ui_test::Driver, mut ui: ui::Ui, mut s: DataScene, path: []u8, button: u8, clicks: u8 } -> bool {
+    let at = ui_test::find_center{ ui, path } ifnull { return false }
+    _ = ui_test::move_pointer{ &ui, x = at.x, y = at.y }
+    ui_test::step_frame{ &d, &ui, show = show_data_scene{ &s, _ } }
+    _ = ui_test::push_button{ &ui, button, down = true, clicks }
+    ui_test::step_frame{ &d, &ui, show = show_data_scene{ &s, _ } }
+    _ = ui_test::push_button{ &ui, button, down = false, clicks }
+    ui_test::step_frame{ &d, &ui, show = show_data_scene{ &s, _ } }
+    return true
+}
+
+// How many line shapes the last frame drew, and whether every coordinate of them is a number.
+struct DataLines { count: u32, finite: bool, flat: bool, y: f32 }
+
+fn count_data_lines { ui: ui::Ui } -> DataLines {
+    let mut r = DataLines{ count = 0, finite = true, flat = true, y = 0.0 }
+    for i in 0..@as(usize, ui.draw.count) {
+        match ui.draw.cmds[i] {
+            line{ x0, y0, x1, y1 } => {
+                if not (x0 - x0 == 0.0 and y0 - y0 == 0.0 and x1 - x1 == 0.0 and y1 - y1 == 0.0) { r.finite = false }
+                if r.count == 0 { r.y = y0 }
+                if y0 != r.y or y1 != r.y { r.flat = false }
+                r.count = r.count + 1
+            }
+            else => {}
+        }
+    }
+    return r
+}
+
+// Whether every border the last frame drew is `width` pixels on each side it is drawn on: a box's
+// four sides, and the sides a rule or a tab's three are drawn on, alike.
+fn has_even_data_borders { ui: ui::Ui, width: i32 } -> bool {
+    for i in 0..@as(usize, ui.draw.count) {
+        match ui.draw.cmds[i] {
+            rect{ style } => {
+                let b = style.border
+                for side in [b.top, b.right, b.bottom, b.left] {
+                    if side != 0 and side != width { return false }
+                }
+            }
+            else => {}
+        }
+    }
+    return true
+}
+
+// Whether the last frame drew a text shape that is `text`, or (with `tail`) that ends with it.
+fn has_data_text { ui: ui::Ui, text: []u8, tail: bool } -> bool {
+    for i in 0..@as(usize, ui.draw.count) {
+        match ui.draw.cmds[i] {
+            text{ text = span } => {
+                let s = ui::get_text{ ui, span }
+                if slice::eq_bytes{ a = s, b = text } { return true }
+                if tail and s.len >= text.len and slice::eq_bytes{ a = s[s.len - text.len..], b = text } { return true }
+            }
+            else => {}
+        }
+    }
+    return false
+}
+
+// ---- goldens
+
+// One widget in the dark theme over a few frames: at rest, then after the interactions that show
+// its states (a selection, the focus, the pointer over a part).
+fn record_data_widget {
+    mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool,
+    widget: DataWidget, name: []u8,
+} {
+    let mut sink = ui_rec::make_sink{ bytes = out }
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+    let mut s = make_data_scene{ widget }
+    s.count = 8
+    s.selected = 1
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    write_frame{ &sink, ui = gui, name = "at rest" } iferr { return }
+    let path: []u8 = match widget {
+        list => "items/#3", tree => "Animals", tabs => "About", table => "files/#3/Size", plot => "load", color => "accent/hex", all => "items/#3",
+    }
+    if not tap_data_node{ &d, ui = &gui, &s, path, button = 0, clicks = 1 } {
+        ui_test::expect{ &io, &t, ok = false, what = "data goldens: the widget's part is found" }
+        return
+    }
+    ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
+    write_frame{ &sink, ui = gui, name = "clicked, the pointer still over it" } iferr { return }
+    if widget == DataWidget::color { _ = ui_test::type_text{ ui = &gui, text = "3366" } }
+    _ = ui_test::move_pointer{ ui = &gui, x = 335, y = 395 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
+    write_frame{ &sink, ui = gui, name = "the pointer gone" } iferr { return }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name, actual = ui_rec::get_text{ sink }, scratch, update }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0 and sink.lost == 0, what = "data goldens: every frame is clean" }
+}
+
+// Every widget in the light theme, at rest.
+fn record_data_light { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } {
+    let mut sink = ui_rec::make_sink{ bytes = out }
+    let mut gui = make_ui{ &heap, dark = false } iferr { return }
+    let mut d = make_driver{ &heap, width = 340, height = 900, scale = 1.0 } iferr { return }
+    let mut s = make_data_scene{ widget = DataWidget::all }
+    s.count = 8
+    s.selected = 2
+    s.table_selected = 1
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    write_frame{ &sink, ui = gui, name = "every data widget in the light theme" } iferr { return }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "data-light", actual = ui_rec::get_text{ sink }, scratch, update }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0 and sink.lost == 0, what = "data light: every frame is clean" }
+}
+
+// Every widget at scale 1.5: every border the same on all four sides, a row 36 pixels high.
+fn record_data_scaled { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } {
+    let mut sink = ui_rec::make_sink{ bytes = out }
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 510, height = 1350, scale = 1.5 } iferr { return }
+    let mut s = make_data_scene{ widget = DataWidget::all }
+    s.count = 8
+    s.selected = 2
+    s.table_selected = 1
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    write_frame{ &sink, ui = gui, name = "every data widget at scale 1.5" } iferr { return }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "data-scale", actual = ui_rec::get_text{ sink }, scratch, update }
+    let row = find_data_node{ ui = gui, path = "items/#2" }
+    ui_test::expect{ &io, &t, ok = has_even_data_borders{ ui = gui, width = 2 }, what = "data scale 1.5: every border, and every side a rule or a tab is drawn on, is 2 pixels" }
+    ui_test::expect{ &io, &t, ok = row.rect.h == 36 and row.rect.y == find_data_node{ ui = gui, path = "items/#0" }.rect.y + 72,
+        what = "data scale 1.5: a row of 24 units is 36 pixels, and row 2 starts 72 below row 0" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0 and sink.lost == 0, what = "data scale 1.5: every frame is clean" }
+}
+
+// The nodes the data widgets describe.
+fn record_data_nodes { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } {
+    let mut sink = ui_rec::make_sink{ bytes = out }
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 340, height = 900, scale = 1.0 } iferr { return }
+    let mut s = make_data_scene{ widget = DataWidget::all }
+    s.count = 3
+    s.table_count = 2
+    s.selected = 1
+    s.tab = 1
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    write_nodes{ &sink, ui = gui, name = "every data widget's nodes" } iferr { return }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "data-nodes", actual = ui_rec::get_text{ sink }, scratch, update }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0 and sink.lost == 0, what = "data nodes: every frame is clean" }
+}
+
+// ---- the list
+
+// A click selects a row; a double click activates it; a right press asks for a context menu; a
+// clicked row half out of view is scrolled wholly into view in the next frame.
+fn check_list_pointer { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+    let mut s = make_data_scene{ widget = DataWidget::list }
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    let clicked = ui_test::click{ &d, ui = &gui, path = "items/#3", show = show_data_scene{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = clicked and s.selected == 3 and has_node_flag{ ui = gui, path = "items/#3", flag = ui::NODE_SELECTED },
+        what = "list: a click selects the row, and its node says so" }
+    ui_test::expect{ &io, &t, ok = has_node_flag{ ui = gui, path = "items", flag = ui::NODE_FOCUSED }, what = "list: a click on a row focuses the list" }
+    _ = tap_data_node{ &d, ui = &gui, &s, path = "items/#4", button = 0, clicks = 1 }
+    _ = ui_test::push_button{ ui = &gui, button = 0, down = true, clicks = 2 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
+    _ = ui_test::push_button{ ui = &gui, button = 0, down = false, clicks = 2 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = s.selected == 4 and s.activated == 4 and s.activations == 1, what = "list: a double click activates the row, once" }
+    _ = tap_data_node{ &d, ui = &gui, &s, path = "items/#1", button = 1, clicks = 1 }
+    ui_test::expect{ &io, &t, ok = s.context == 1 and s.selected == 4, what = "list: a right press asks for a context menu and leaves the selection" }
+    // Scrolled 10 pixels down, row 0 shows its lower 14 pixels; a click on it scrolls back to 0.
+    ui::set_scroll{ ui = &gui, id = ui::make_id{ ui = gui, name = "items" }, x = 0, y = 10 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
+    let before = find_data_view{ ui = gui, name = "items" }.y
+    _ = tap_data_node{ &d, ui = &gui, &s, path = "items/#0", button = 0, clicks = 1 }
+    let after_click = find_data_view{ ui = gui, name = "items" }.y
+    ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = before == 10 and s.selected == 0 and after_click == 10 and find_data_view{ ui = gui, name = "items" }.y == 0,
+        what = "list: a clicked row half out of view is scrolled wholly into view in the next frame" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "list pointer: every frame is clean" }
+}
+
+// The keys: Down and Up a row, no wrapping at either end; PageDown and PageUp by the five rows the
+// view holds; Home and End; Enter activates the selected row.
+fn check_list_keys { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+    let mut s = make_data_scene{ widget = DataWidget::list }
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    _ = ui_test::click{ &d, ui = &gui, path = "items/#0", show = show_data_scene{ &s, _ } }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::up }
+    let top = s.selected == 0
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::down }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::down }
+    let down = s.selected == 2
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::up }
+    let up = s.selected == 1
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::page_down }
+    let page_down = s.selected == 6
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::page_down }
+    let page_again = s.selected == 11
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::page_up }
+    let page_up = s.selected == 6
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::end }
+    let end = s.selected == 49 and find_data_view{ ui = gui, name = "items" }.y == 50 * 24 - 120
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::down }
+    let bottom = s.selected == 49
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::page_down }
+    let bottom_page = s.selected == 49
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::home }
+    let home = s.selected == 0 and find_data_view{ ui = gui, name = "items" }.y == 0
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::page_up }
+    let top_page = s.selected == 0
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::enter }
+    let entered = s.activated == 0 and s.activations == 1
+    ui_test::expect{ &io, &t, ok = top and bottom, what = "list keys: Up at the first row and Down at the last stay there (no wrapping)" }
+    ui_test::expect{ &io, &t, ok = down and up, what = "list keys: Down and Up move the selection a row" }
+    ui_test::expect{ &io, &t, ok = page_down and page_again and page_up and bottom_page and top_page, what = "list keys: PageDown and PageUp move by the five rows in view, held at the ends" }
+    ui_test::expect{ &io, &t, ok = end and home, what = "list keys: End and Home go to the last and the first row, and scroll to them" }
+    ui_test::expect{ &io, &t, ok = entered, what = "list keys: Enter activates the selected row" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "list keys: every frame is clean" }
+}
+
+// The selection scrolled into view by exactly the pixels needed: from below (the row's bottom at
+// the view's), from above (its top at the view's top), and not at all when it is in view.
+fn check_list_reveal { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+    let mut s = make_data_scene{ widget = DataWidget::list }
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    _ = ui_test::click{ &d, ui = &gui, path = "items/#4", show = show_data_scene{ &s, _ } }
+    let still = find_data_view{ ui = gui, name = "items" }.y == 0
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::down }
+    let below = s.selected == 5 and find_data_view{ ui = gui, name = "items" }.y == 24
+    let shown = s.first <= 5 and s.last > 5
+    ui::set_scroll{ ui = &gui, id = ui::make_id{ ui = gui, name = "items" }, x = 0, y = 200 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::up }
+    let above = s.selected == 4 and find_data_view{ ui = gui, name = "items" }.y == 96
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::down }
+    let inside = s.selected == 5 and find_data_view{ ui = gui, name = "items" }.y == 96
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    ui_test::expect{ &io, &t, ok = still, what = "list reveal: a click on a row in view scrolls nothing" }
+    ui_test::expect{ &io, &t, ok = below and shown, what = "list reveal: Down past the view scrolls 24 pixels, the row's bottom at the view's, in the same frame" }
+    ui_test::expect{ &io, &t, ok = above, what = "list reveal: Up from below a view scrolled past it puts the row's top at the view's top (96)" }
+    ui_test::expect{ &io, &t, ok = inside, what = "list reveal: a row already in view scrolls nothing" }
+    ui_test::expect{ &io, &t, ok = gui.stats.solves == 1, what = "list reveal: a list whose bars do not change is solved once a frame" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "list reveal: every frame is clean" }
+}
+
+// An empty list, a list shorter than its view, and a count that shrank below the selection.
+fn check_list_edges { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+    let mut s = make_data_scene{ widget = DataWidget::list }
+    s.count = 0
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    let focused = ui_test::click{ &d, ui = &gui, path = "items", show = show_data_scene{ &s, _ } }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::down }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::end }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::enter }
+    ui_test::expect{ &io, &t, ok = focused and has_node_flag{ ui = gui, path = "items", flag = ui::NODE_FOCUSED } and s.recorded == 0 and s.selected == -1 and s.activations == 0,
+        what = "list edges: an empty list takes the focus, records no row, and its keys select nothing" }
+    s.count = 3
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    let v = find_data_view{ ui = gui, name = "items" }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::end }
+    ui_test::expect{ &io, &t, ok = s.recorded == 3 and v.max_y == 0 and v.content_h == 72 and gui.stats.solves == 1 and s.selected == 2,
+        what = "list edges: three rows in a view of five: all recorded, nothing to scroll, one solve, End selects the third" }
+    s.count = 50
+    s.selected = 40
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::end }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::up }
+    let at = s.selected == 48
+    s.count = 30
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    let held = find_data_view{ ui = gui, name = "items" }.y == 30 * 24 - 120 and s.last == 30
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::up }
+    ui_test::expect{ &io, &t, ok = at and held and s.selected == 29, what = "list edges: after the count shrank below the selection, the offset is held and Up lands on the last row" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "list edges: every frame is clean" }
+}
+
+// A long list records only the rows in view, wherever it is scrolled, and End reaches the last row
+// without overflowing.
+fn check_list_long { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, count: u32 } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+    let mut s = make_data_scene{ widget = DataWidget::list }
+    s.count = count
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    let few = s.recorded <= 6
+    _ = ui_test::click{ &d, ui = &gui, path = "items/#1", show = show_data_scene{ &s, _ } }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::end }
+    ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
+    let last = @as(i64, count) - 1
+    let v = find_data_view{ ui = gui, name = "items" }
+    let end = s.selected == last and s.last == count and s.recorded <= 6 and @as(i64, v.y) == @as(i64, count) * 24 - 120
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::page_up }
+    let page = s.selected == last - 5 and s.recorded <= 6
+    let node = find_data_node{ ui = gui, path = "items/#0" }
+    ui_test::expect{ &io, &t, ok = few and end and page and node.id == ui::NO_ID, what = "list long: only the rows in view are recorded, and End and PageUp reach the far end" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "list long: every frame is clean" }
+}
+
+// ---- the tree
+
+// Three levels by the keys: Right opens and then enters, Left closes and then goes to the parent,
+// Up and Down go to the node shown before and after.
+fn check_tree_keys { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+    let mut s = make_data_scene{ widget = DataWidget::tree }
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    _ = ui_test::click{ &d, ui = &gui, path = "Animals", show = show_data_scene{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
+    let opened = s.tree_clicks == 1 and has_node_flag{ ui = gui, path = "Animals", flag = ui::NODE_OPEN } and has_node_flag{ ui = gui, path = "Animals", flag = ui::NODE_FOCUSED }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::right }
+    let entered = has_node_flag{ ui = gui, path = "Animals/Mammals", flag = ui::NODE_FOCUSED }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::right }
+    let mammals_open = has_node_flag{ ui = gui, path = "Animals/Mammals", flag = ui::NODE_OPEN }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::right }
+    let cat = has_node_flag{ ui = gui, path = "Animals/Mammals/Cat", flag = ui::NODE_FOCUSED }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::down }
+    let dog = has_node_flag{ ui = gui, path = "Animals/Mammals/Dog", flag = ui::NODE_FOCUSED }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::down }
+    let fish = has_node_flag{ ui = gui, path = "Animals/Fish", flag = ui::NODE_FOCUSED }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::up }
+    ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
+    let back = has_node_flag{ ui = gui, path = "Animals/Mammals/Dog", flag = ui::NODE_FOCUSED }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::left }
+    ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
+    let parent = has_node_flag{ ui = gui, path = "Animals/Mammals", flag = ui::NODE_FOCUSED }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::left }
+    let closed = not has_node_flag{ ui = gui, path = "Animals/Mammals", flag = ui::NODE_OPEN } and ui::find_node{ ui = gui, path = "Animals/Mammals/Cat" } == null
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::left }
+    ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
+    let root = has_node_flag{ ui = gui, path = "Animals", flag = ui::NODE_FOCUSED }
+    ui_test::expect{ &io, &t, ok = opened, what = "tree keys: a click opens a node and focuses it" }
+    ui_test::expect{ &io, &t, ok = entered and mammals_open and cat, what = "tree keys: Right enters an open node's first child, and opens a closed one" }
+    ui_test::expect{ &io, &t, ok = dog and fish and back, what = "tree keys: Down and Up go to the node shown after and before, across levels" }
+    ui_test::expect{ &io, &t, ok = parent and closed and root, what = "tree keys: Left goes from a leaf to its parent, closes an open node, then goes to its parent" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "tree keys: every frame is clean" }
+}
+
+// A node's open state survives its parent's collapse, and a hidden tab, for longer than the state's
+// lifetime; without either keeping it, it is gone.
+fn check_tree_kept { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    gui.config.state_ttl = 4
+    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+    let mut s = make_data_scene{ widget = DataWidget::tree }
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    _ = ui_test::click{ &d, ui = &gui, path = "Animals", show = show_data_scene{ &s, _ } }
+    _ = ui_test::click{ &d, ui = &gui, path = "Animals/Mammals", show = show_data_scene{ &s, _ } }
+    _ = ui_test::click{ &d, ui = &gui, path = "Animals", show = show_data_scene{ &s, _ } }
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 140 }
+    _ = ui_test::click{ &d, ui = &gui, path = "Animals", show = show_data_scene{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = has_node_flag{ ui = gui, path = "Animals/Mammals", flag = ui::NODE_OPEN } and ui::find_node{ ui = gui, path = "Animals/Mammals/Cat" } != null,
+        what = "tree kept: a child stays open through 140 frames of its parent's collapse" }
+
+    // In a hidden tab.
+    s.widget = DataWidget::tabs
+    s.tab = 1
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    _ = ui_test::click{ &d, ui = &gui, path = "views/Tree/Animals", show = show_data_scene{ &s, _ } }
+    _ = ui_test::click{ &d, ui = &gui, path = "views/Tree/Animals/Mammals", show = show_data_scene{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
+    let in_tab =has_node_flag{ ui = gui, path = "views/Tree/Animals/Mammals", flag = ui::NODE_OPEN }
+    s.tab = 0
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 140 }
+    s.tab = 1
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    ui_test::expect{ &io, &t, ok = in_tab and has_node_flag{ ui = gui, path = "views/Tree/Animals/Mammals", flag = ui::NODE_OPEN },
+        what = "tree kept: the tree's open nodes stay open through 140 frames of its tab hidden" }
+
+    // Not recorded and not kept, the state goes.
+    s.tree_shown = false
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 140 }
+    s.tree_shown = true
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    ui_test::expect{ &io, &t, ok = ui::find_node{ ui = gui, path = "views/Tree/Animals" } != null and not has_node_flag{ ui = gui, path = "views/Tree/Animals", flag = ui::NODE_OPEN },
+        what = "tree kept: a tree neither recorded nor kept loses its state, so the checks above are not empty" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "tree kept: every frame is clean" }
+}
+
+// ---- tabs
+
+// A click shows a tab; Left and Right step, held at the ends; Home and End.
+fn check_tabs_use { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+    let mut s = make_data_scene{ widget = DataWidget::tabs }
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    let first = has_data_text{ ui = gui, text = "General settings", tail = false }
+    _ = ui_test::click{ &d, ui = &gui, path = "views/About", show = show_data_scene{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
+    let clicked = s.tab == 2 and s.tab_changes == 1 and has_data_text{ ui = gui, text = "Version 1", tail = false } and not has_data_text{ ui = gui, text = "General settings", tail = false }
+        and has_node_flag{ ui = gui, path = "views/About", flag = ui::NODE_SELECTED } and has_node_flag{ ui = gui, path = "views", flag = ui::NODE_FOCUSED }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::right }
+    let held = s.tab == 2
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::left }
+    let left = s.tab == 1
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::home }
+    let home = s.tab == 0
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::left }
+    let start = s.tab == 0
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::end }
+    let end = s.tab == 2
+    ui_test::expect{ &io, &t, ok = first and clicked, what = "tabs: a click on a header shows its tab and focuses the strip" }
+    ui_test::expect{ &io, &t, ok = held and left and home and start and end, what = "tabs: Left and Right step, held at the ends; Home and End" }
+    // The shown header joins the panel: its bottom edge is the strip's foot, which it covers.
+    let header = find_data_node{ ui = gui, path = "views/About" }
+    let strip = find_data_node{ ui = gui, path = "views" }
+    ui_test::expect{ &io, &t, ok = header.rect.h == 28 and header.rect.y == strip.rect.y, what = "tabs: a header is 28 high at the strip's top" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "tabs: every frame is clean" }
+}
+
+// A strip wider than its room: the headers are cut to the largest common width that fits (40 of
+// 120), and never below the control height (28), past which the strip is clipped.
+fn check_tabs_crowded { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+    let mut s = make_data_scene{ widget = DataWidget::tabs }
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    let wide = find_data_node{ ui = gui, path = "views/General" }.rect.w == 73 and find_data_node{ ui = gui, path = "views/Tree" }.rect.w == 52
+    s.tabs_width = 120.0
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    let general = find_data_node{ ui = gui, path = "views/General" }
+    let tree = find_data_node{ ui = gui, path = "views/Tree" }
+    let about = find_data_node{ ui = gui, path = "views/About" }
+    let cut = general.rect.w == 40 and tree.rect.w == 40 and about.rect.w == 40 and about.rect.x == general.rect.x + 80
+    let dots = has_data_text{ ui = gui, text = "...", tail = true }
+    s.tabs_width = 60.0
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    let least = find_data_node{ ui = gui, path = "views/General" }.rect.w == 28 and find_data_node{ ui = gui, path = "views/About" }.rect.w == 28
+    _ = ui_test::click{ &d, ui = &gui, path = "views/General", show = show_data_scene{ &s, _ } }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::end }
+    ui_test::expect{ &io, &t, ok = wide, what = "tabs crowded: with room, each header is its label and the padding wide" }
+    ui_test::expect{ &io, &t, ok = cut and dots, what = "tabs crowded: in 120 pixels three headers are cut to 40 each, their labels ending in dots" }
+    ui_test::expect{ &io, &t, ok = least and s.tab == 2, what = "tabs crowded: never below 28, the strip clipped, and a hidden header still reached by End" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "tabs crowded: every frame is clean" }
+}
+
+// ---- the table
+
+// The header's cells and the rows' cells have the same pixels, column by column, through resizes of
+// the surface; the columns fill the rows' view exactly, the grow columns sharing what the fixed one
+// leaves with the odd pixel to the first.
+fn check_table_lines { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, scale: f32 } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 400, scale } iferr { return }
+    let mut s = make_data_scene{ widget = DataWidget::table }
+    let mut lined = true
+    let mut filled = true
+    let mut shared = true
+    for k in 0..4 {
+        let w: i32 = match k { 0 => 400, 1 => 471, 2 => 333, else => 520 }
+        d.info.width = w
+        s.width = @as(f32, w) / scale - 20.0
+        ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+        let row = find_data_node{ ui = gui, path = "files/#1" }
+        let mut sum: i32 = 0
+        for c in FILE_COLUMNS {
+            let mut head: [16]u8
+            let mut cell: [24]u8
+            let hn = join_data_path{ out = head[..], a = "files/", b = "", c = c.title }
+            let cn = join_data_path{ out = cell[..], a = "files/", b = "#1/", c = c.title }
+            let h = find_data_node{ ui = gui, path = head[..hn] }
+            let r = find_data_node{ ui = gui, path = cell[..cn] }
+            if h.rect.w == 0 or h.rect.x != r.rect.x or h.rect.w != r.rect.w { lined = false }
+            sum = sum + r.rect.w
+        }
+        if sum != row.rect.w { filled = false }
+        let name = find_data_node{ ui = gui, path = "files/#1/Name" }.rect.w
+        let kind = find_data_node{ ui = gui, path = "files/#1/Kind" }.rect.w
+        if name != kind and name != kind + 1 { shared = false }
+    }
+    let size = find_data_node{ ui = gui, path = "files/Size" }.rect.w == ui::to_pixels{ ui = gui, length = 60.0 }
+    ui_test::expect{ &io, &t, ok = lined, what = "table: every header cell has its rows' cells' pixels, through four widths" }
+    ui_test::expect{ &io, &t, ok = filled and shared and size, what = "table: the columns fill the rows' view, the fixed one its length, the grow ones equal but for the first's odd pixel" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "table lines: every frame is clean" }
+}
+
+fn join_data_path { out: []mut u8, a: []u8, b: []u8, c: []u8 } -> usize {
+    let n = a.len + b.len + c.len
+    if n > out.len { return 0 }
+    slice::copy(u8){ dst = out[..a.len], src = a }
+    slice::copy(u8){ dst = out[a.len..a.len + b.len], src = b }
+    slice::copy(u8){ dst = out[a.len + b.len..n], src = c }
+    return n
+}
+
+// A click selects a row; a long name ends in dots; the keys move the selection as a list's do.
+fn check_table_use { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+    let mut s = make_data_scene{ widget = DataWidget::table }
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    let dots = has_data_text{ ui = gui, text = "...", tail = true } and not has_data_text{ ui = gui, text = "A name far too long for its column", tail = false }
+    _ = ui_test::click{ &d, ui = &gui, path = "files/#3/Size", show = show_data_scene{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
+    let picked = s.table_selected == 3 and has_node_flag{ ui = gui, path = "files/#3", flag = ui::NODE_SELECTED }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::down }
+    ui_test::expect{ &io, &t, ok = dots, what = "table: a cell's text too long for it ends in dots" }
+    ui_test::expect{ &io, &t, ok = picked and s.table_selected == 4, what = "table: a click selects a row, and Down the next" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "table use: every frame is clean" }
+}
+
+// ---- the plot
+
+const PLOT_ONE: [1]f32 = [2.0]
+const PLOT_FLAT: [4]f32 = [3.0, 3.0, 3.0, 3.0]
+
+fn check_plot_series { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+    let mut s = make_data_scene{ widget = DataWidget::plot }
+    let nan: f32 = 0.0 / 0.0
+    let gaps: [6]f32 = [1.0, nan, 2.0, 3.0, nan, 4.0]
+    let all_nan: [2]f32 = [nan, nan]
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    let full = count_data_lines{ ui = gui }
+    s.values = []
+    ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
+    let none = count_data_lines{ ui = gui }
+    s.values = PLOT_ONE[..]
+    ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
+    let one = count_data_lines{ ui = gui }
+    s.values = PLOT_FLAT[..]
+    ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
+    let flat = count_data_lines{ ui = gui }
+    let node = find_data_node{ ui = gui, path = "load" }
+    let middle = node.rect.y + node.rect.h / 2
+    s.values = gaps[..]
+    ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
+    let gapped = count_data_lines{ ui = gui }
+    s.values = all_nan[..]
+    ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
+    let blank = count_data_lines{ ui = gui }
+    ui_test::expect{ &io, &t, ok = full.count == 7 and full.finite, what = "plot: eight values are seven segments" }
+    ui_test::expect{ &io, &t, ok = none.count == 0 and blank.count == 0, what = "plot: no values, or only NaN, draw no line" }
+    ui_test::expect{ &io, &t, ok = one.count == 1 and one.flat, what = "plot: one value is a dot" }
+    ui_test::expect{ &io, &t, ok = flat.count == 3 and flat.flat and flat.y == @as(f32, middle), what = "plot: a constant series is a flat line across the middle" }
+    ui_test::expect{ &io, &t, ok = gapped.count == 3 and gapped.finite, what = "plot: NaN is a gap: a dot, a segment and a dot for 1, NaN, 2, 3, NaN, 4" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "plot: every frame is clean" }
+}
+
+// ---- the colour editor
+
+fn check_color_hex { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+    let mut s = make_data_scene{ widget = DataWidget::color }
+    ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+    let shows = has_data_text{ ui = gui, text = "#112233FF", tail = false }
+    _ = ui_test::click{ &d, ui = &gui, path = "accent/hex", show = show_data_scene{ &s, _ } }
+    let focused = has_node_flag{ ui = gui, path = "accent/hex", flag = ui::NODE_FOCUSED } and d.requests.text_input
+    _ = ui_test::type_text{ ui = &gui, text = "3366cc" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
+    let typed = has_data_text{ ui = gui, text = "#3366CC", tail = false } and s.color_changes == 0
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::enter }
+    ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
+    let set = s.color.r == 0x33 and s.color.g == 0x66 and s.color.b == 0xCC and s.color.a == 0xFF and s.color_changes == 1
+        and has_data_text{ ui = gui, text = "#3366CCFF", tail = false } and find_data_node{ ui = gui, path = "accent" }.value == @as(f32, 0x3366CC)
+    _ = ui_test::type_text{ ui = &gui, text = "12G4" }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::enter }
+    let refused = s.color.r == 0x33 and s.color.b == 0xCC and s.color_changes == 1
+    _ = ui_test::type_text{ ui = &gui, text = "AABBCC80" }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::enter }
+    let alpha = s.color.r == 0xAA and s.color.g == 0xBB and s.color.b == 0xCC and s.color.a == 0x80
+    _ = ui_test::type_text{ ui = &gui, text = "00" }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::escape }
+    let escaped = s.color.r == 0xAA and has_data_text{ ui = gui, text = "#AABBCC80", tail = false }
+    // The alpha slider by the keyboard: a click on it, then Home and End.
+    _ = ui_test::click{ &d, ui = &gui, path = "accent/a", show = show_data_scene{ &s, _ } }
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::home }
+    let clear = s.color.a == 0 and s.color.r == 0xAA
+    press_data_key{ &d, ui = &gui, &s, key = ui::Key::end }
+    ui_test::expect{ &io, &t, ok = shows and focused, what = "colour: the hex field shows the colour, and a click focuses it and asks for text input" }
+    ui_test::expect{ &io, &t, ok = typed and set, what = "colour: six digits typed and Enter set the colour, alpha kept, and the field shows it" }
+    ui_test::expect{ &io, &t, ok = refused, what = "colour: an invalid hex value (a G refused, three digits left) keeps the old colour" }
+    ui_test::expect{ &io, &t, ok = alpha and escaped, what = "colour: eight digits set the alpha too; Escape drops an edit" }
+    ui_test::expect{ &io, &t, ok = clear and s.color.a == 255, what = "colour: the alpha slider goes to 0 and 255 by Home and End" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "colour: every frame is clean" }
+}

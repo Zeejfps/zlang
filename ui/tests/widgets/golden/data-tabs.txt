@@ -1,0 +1,32 @@
+== at rest
+frame 340x400
+clip 1 10,10 300x28
+rect 10,10 300x28 fill=00000000 radius=0,0,0,0 border=0,0,1,0 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+rect 10,10 73x28 fill=22252CFF radius=4,4,0,0 border=1,1,0,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=1
+text 22,17 font=0 size=14 E4E7EDFF clip=1 "General"
+text 95,17 font=0 size=14 A6ACB8FF clip=1 "Tree"
+text 147,17 font=0 size=14 A6ACB8FF clip=1 "About"
+rect 10,38 300x38 fill=22252CFF radius=0,0,0,0 border=0,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 22,50 font=0 size=14 E4E7EDFF clip=0 "General settings"
+== clicked, the pointer still over it
+frame 340x400
+clip 1 10,10 300x28
+rect 10,10 300x28 fill=00000000 radius=0,0,0,0 border=0,0,1,0 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 22,17 font=0 size=14 A6ACB8FF clip=1 "General"
+text 95,17 font=0 size=14 A6ACB8FF clip=1 "Tree"
+rect 135,10 59x28 fill=22252CFF radius=4,4,0,0 border=1,1,0,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=1
+text 147,17 font=0 size=14 E4E7EDFF clip=1 "About"
+rect 135,10 59x28 fill=00000000 radius=4,4,4,4 border=2,2,2,2 7AA7FFFF,7AA7FFFF,7AA7FFFF,7AA7FFFF clip=1
+rect 10,38 300x38 fill=22252CFF radius=0,0,0,0 border=0,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 22,50 font=0 size=14 E4E7EDFF clip=0 "Version 1"
+== the pointer gone
+frame 340x400
+clip 1 10,10 300x28
+rect 10,10 300x28 fill=00000000 radius=0,0,0,0 border=0,0,1,0 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 22,17 font=0 size=14 A6ACB8FF clip=1 "General"
+text 95,17 font=0 size=14 A6ACB8FF clip=1 "Tree"
+rect 135,10 59x28 fill=22252CFF radius=4,4,0,0 border=1,1,0,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=1
+text 147,17 font=0 size=14 E4E7EDFF clip=1 "About"
+rect 135,10 59x28 fill=00000000 radius=4,4,4,4 border=2,2,2,2 7AA7FFFF,7AA7FFFF,7AA7FFFF,7AA7FFFF clip=1
+rect 10,38 300x38 fill=22252CFF radius=0,0,0,0 border=0,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 22,50 font=0 size=14 E4E7EDFF clip=0 "Version 1"

@@ -1,0 +1,104 @@
+// ui: the line plot (plan section 5, stage 12): `add_plot`, a line through a series of `f32`.
+//
+// The plot is a field with a border, a grid of three rules at the quarters of its height, and the
+// series drawn across its inner width from first to last value, scaled so its smallest and largest
+// finite values touch the bottom and the top. It takes no input and is described as a plot node
+// whose value is the series' last value (0 when there is none).
+//
+//  - A value that is NaN or infinite is a gap: no segment touches it, and it plays no part in the
+//    scale. A series with no finite value draws no line.
+//  - A constant series (every finite value the same) is drawn across the middle.
+//  - One value, or one finite value between gaps, is a dot: a round-capped line as long as it is
+//    thick.
+//  - Every pair of neighbouring values is one segment, so a series much longer than the plot is
+//    wide draws more segments than it has pixels: thinning it is the program's choice.
+//
+// Units. The plot's frame and grid are whole pixels: its border is its element's, and each rule is
+// a rectangle a border thick at `floor(height * k / 4)` pixels down the inner rectangle. The line
+// is the one shape that is fractional: its points are `f32` pixels inside the plot's inner
+// rectangle, from the size the element had in the last frame (so a plot that changed size is drawn
+// at its new size one frame later, and nothing is drawn in its first frame), and its width is 1.5
+// units through `to_pixels_f32`.
+namespace ui {
+    const PLOT_STROKE: f32 = 1.5
+
+    // A plot of `values` named `label`. It grows across its parent from four controls' widths and
+    // is three controls high unless `opts.box` sizes it.
+    fn add_plot { mut ui: Ui, label: []u8, values: []f32, opts: Opts } {
+        let t = ui.theme
+        let name = get_widget_name{ opts, label }
+        let id = make_id{ ui, name }
+        let base = Box{
+            width = Size{ kind = SizeKind::grow, min = t.control_height * 4.0, .. }, height = fix{ size = t.control_height * 3.0 },
+            fill = t.field, border = color_sides{ color = t.border }, border_width = inset{ by = t.border_width }, clip = true, ..
+        }
+        let last = get_rect{ ui, id }
+        let el = begin_element{ &ui, id, axis = Axis::column, box = merge_box{ box = opts.box, base } }
+        if let r = last { paint_plot{ &ui, w = r.w, h = r.h, values, enabled = opts.enabled } }
+        end{ &ui, scope = el }
+        let mut tail: f32 = 0.0
+        if values.len > 0 and is_finite_f32{ v = values[values.len - 1] } { tail = values[values.len - 1] }
+        describe{ &ui, id, role = Role::plot, label = name, value = tail, flags = if opts.enabled { 0 } else { NODE_DISABLED } }
+        if opts.tip.len > 0 { add_tooltip{ &ui, anchor = id, text = opts.tip } }
+    }
+
+    // Neither NaN nor an infinity.
+    fn is_finite_f32 { v: f32 } -> bool {
+        return v - v == 0.0
+    }
+
+    // The grid and the line in a plot `w` by `h` pixels.
+    fn paint_plot { mut ui: Ui, w: i32, h: i32, values: []f32, enabled: bool } {
+        let t = ui.theme
+        let edge = to_pixels{ ui, length = t.border_width }
+        let pad = to_pixels{ ui, length = t.padding * 0.5 }
+        let inset = add_pixels{ a = edge, b = pad }
+        let inner = Rect{ x = inset, y = inset, w = pick_max_i32{ a = 0, b = sub_pixels{ a = w, b = 2 * inset } }, h = pick_max_i32{ a = 0, b = sub_pixels{ a = h, b = 2 * inset } } }
+        let rule = pick_max_i32{ a = 1, b = edge }
+        let grid = get_rule_color{ theme = t }
+        for k in 1..4 {
+            let y = inner.y + @as(i32, @as(i64, inner.h) * @as(i64, k) / 4)
+            paint_rect{ &ui, rect = Rect{ x = inner.x, y, w = inner.w, h = rule }, style = RectStyle{ fill = grid, .. } }
+        }
+
+        // The scale: the finite values' range, a constant one opened around its value.
+        let mut lo: f32 = 0.0
+        let mut hi: f32 = 0.0
+        let mut finite: usize = 0
+        for v in values {
+            if not is_finite_f32{ v } { continue }
+            if finite == 0 or v < lo { lo = v }
+            if finite == 0 or v > hi { hi = v }
+            finite = finite + 1
+        }
+        if finite == 0 or inner.w <= 0 or inner.h <= 0 { return }
+        if not (hi > lo) {
+            lo = lo - 1.0
+            hi = hi + 1.0
+        }
+        let span = hi - lo
+        let width = to_pixels_f32{ ui, length = PLOT_STROKE }
+        let color = if enabled { t.accent } else { t.text_disabled }
+        let left = @as(f32, inner.x)
+        let top = @as(f32, inner.y)
+        let fw = @as(f32, inner.w)
+        let fh = @as(f32, inner.h)
+        let n = values.len
+        let step = if n > 1 { fw / @as(f32, n - 1) } else { 0.0 }
+        for v at i in values {
+            if not is_finite_f32{ v } { continue }
+            let x = if n > 1 { left + step * @as(f32, i) } else { left + fw * 0.5 }
+            let y = top + (hi - v) / span * fh
+            let before = i > 0 and is_finite_f32{ v = values[i - 1] }
+            let after = i + 1 < n and is_finite_f32{ v = values[i + 1] }
+            if after {
+                let x1 = left + step * @as(f32, i + 1)
+                let y1 = top + (hi - values[i + 1]) / span * fh
+                paint_line{ &ui, x0 = x, y0 = y, x1, y1, width, color, cap = Cap::round }
+            } else if not before {
+                // A value alone: a dot.
+                paint_line{ &ui, x0 = x - width * 0.5, y0 = y, x1 = x + width * 0.5, y1 = y, width, color, cap = Cap::round }
+            }
+        }
+    }
+}

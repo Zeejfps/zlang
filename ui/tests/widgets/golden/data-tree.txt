@@ -1,0 +1,35 @@
+== at rest
+frame 340x400
+line 20.08,17.52 24.24,22 width=1.75 cap=round A6ACB8FF clip=0
+line 24.24,22 20.08,26.48 width=1.75 cap=round A6ACB8FF clip=0
+text 34,15 font=0 size=14 E4E7EDFF clip=0 "Animals"
+line 20.08,41.52 24.24,46 width=1.75 cap=round A6ACB8FF clip=0
+line 24.24,46 20.08,50.48 width=1.75 cap=round A6ACB8FF clip=0
+text 34,39 font=0 size=14 E4E7EDFF clip=0 "Plants"
+== clicked, the pointer still over it
+frame 340x400
+rect 10,10 300x24 fill=25282EFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+line 17.52,20.08 22,24.24 width=1.75 cap=round A6ACB8FF clip=0
+line 22,24.24 26.48,20.08 width=1.75 cap=round A6ACB8FF clip=0
+text 34,15 font=0 size=14 E4E7EDFF clip=0 "Animals"
+rect 10,10 300x24 fill=00000000 radius=0,0,0,0 border=2,2,2,2 7AA7FFFF,7AA7FFFF,7AA7FFFF,7AA7FFFF clip=0
+line 40.08,41.52 44.24,46 width=1.75 cap=round A6ACB8FF clip=0
+line 44.24,46 40.08,50.48 width=1.75 cap=round A6ACB8FF clip=0
+text 54,39 font=0 size=14 E4E7EDFF clip=0 "Mammals"
+text 54,63 font=0 size=14 E4E7EDFF clip=0 "Fish"
+line 20.08,89.52 24.24,94 width=1.75 cap=round A6ACB8FF clip=0
+line 24.24,94 20.08,98.48 width=1.75 cap=round A6ACB8FF clip=0
+text 34,87 font=0 size=14 E4E7EDFF clip=0 "Plants"
+== the pointer gone
+frame 340x400
+line 17.52,20.08 22,24.24 width=1.75 cap=round A6ACB8FF clip=0
+line 22,24.24 26.48,20.08 width=1.75 cap=round A6ACB8FF clip=0
+text 34,15 font=0 size=14 E4E7EDFF clip=0 "Animals"
+rect 10,10 300x24 fill=00000000 radius=0,0,0,0 border=2,2,2,2 7AA7FFFF,7AA7FFFF,7AA7FFFF,7AA7FFFF clip=0
+line 40.08,41.52 44.24,46 width=1.75 cap=round A6ACB8FF clip=0
+line 44.24,46 40.08,50.48 width=1.75 cap=round A6ACB8FF clip=0
+text 54,39 font=0 size=14 E4E7EDFF clip=0 "Mammals"
+text 54,63 font=0 size=14 E4E7EDFF clip=0 "Fish"
+line 20.08,89.52 24.24,94 width=1.75 cap=round A6ACB8FF clip=0
+line 24.24,94 20.08,98.48 width=1.75 cap=round A6ACB8FF clip=0
+text 34,87 font=0 size=14 E4E7EDFF clip=0 "Plants"

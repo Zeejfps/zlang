@@ -1,0 +1,188 @@
+// ui: tabs (plan section 5, stage 12): `begin_tabs` and `begin_tab`.
+//
+// `begin_tabs` records the strip of tab headers, one a label, and opens the panel under it;
+// `begin_tab` then opens the page of one tab inside the panel, which is open (to record into)
+// only for the tab shown. The application owns which tab is shown (`value`, an index into
+// `labels`), as it owns any other choice.
+//
+//  - A click on a header shows its tab. The strip is one tab stop, focused by a click on any
+//    header; focused, Left and Right show the tab before and after (held at the ends, no
+//    wrapping), Home and End the first and the last. The call says `changed` on the frame it sets
+//    `value`. A `value` past the last tab shows none until a click or a key sets it.
+//  - The shown tab's header is the panel's colour, with a border on three sides and its top
+//    corners rounded, and covers the rule along the strip's foot, so it is joined to the panel
+//    below; the others are plain text in the muted colour, washed while hovered.
+//  - A tab's page is an identified column (its id made from the name "\x00page" in an id scope
+//    of the tab's label, so the page's widgets have paths `id/label/...`). While a tab is hidden
+//    `begin_tab` calls `keep_state` with that id, so the state of its widgets (a tree node's open
+//    state, a scroll offset) survives while another tab is shown.
+//
+// Units. A header is the control height high and its label's width plus one and a half paddings at
+// each end wide, in pixels (`measure_text` and `to_pixels`). When the headers are wider together
+// than the strip's room (its width in the last frame) the widest are cut to a common width, the
+// largest whole number of pixels at which they all fit, and their labels end in dots; a header is
+// never cut below the control height, and when even that does not fit the strip is clipped at its
+// right end (the hidden headers are still reached by the keys). What is left over after the cut,
+// fewer pixels than there are headers, stays at the strip's end.
+namespace ui {
+    // Tabs being recorded. `scope` is closed by `ui::end` after the pages. `value` is the tab shown
+    // (`count` when none is); `changed` says a click or a key set it this frame.
+    struct Tabs {
+        scope: Scope = Scope{ .. }, id: Id = NO_ID,
+        labels: [][]u8 = [], count: u32 = 0, value: u32 = 0, changed: bool = false,
+    }
+
+    // A tab's page: `open` when it is the tab shown, to record its content into; `scope` is closed
+    // by `ui::end` either way.
+    struct TabPage { scope: Scope = Scope{ .. }, open: bool = false }
+
+    // The most tabs a strip has headers for; more are not shown and are counted as dropped.
+    const MAX_TABS: usize = 32
+
+    // A strip of tabs named `id` with one header each of `labels`, showing tab `value`, over the
+    // panel the pages go in. It grows across its parent unless `opts.box` sizes it.
+    fn begin_tabs { mut ui: Ui, id: []u8, labels: [][]u8, mut value: u32, opts: Opts } -> Tabs {
+        let t = derive_theme{ theme = ui.theme }
+        let tabs_id = make_id{ ui, name = id }
+        let mut count = @as(u32, labels.len) ifoverflow 4294967295
+        if @as(usize, count) > MAX_TABS {
+            report_drop{ &ui, kind = ProblemKind::elements_full }
+            count = @as(u32, MAX_TABS)
+        }
+        let outer = begin_element{ &ui, id = tabs_id, axis = Axis::column, box = merge_box{ box = opts.box, base = Box{ width = GROW, .. } } }
+        _ = push_id{ &ui, name = id }
+        let strip_id = make_id{ ui, name = "\x00strip" }
+        let strip = press{ &ui, id = strip_id, opts = PressOpts{ enabled = opts.enabled, focusable = true, .. } }
+        let focused = strip.focused and opts.enabled
+        let before = value
+
+        // The headers' clicks, before any is drawn, so every header shows the tab that is chosen.
+        let mut hits: [32]Interaction
+        for k in 0..@as(usize, count) {
+            let hit = press{ &ui, id = make_id{ ui, name = labels[k] }, opts = PressOpts{ enabled = opts.enabled, focusable = false, .. } }
+            hits[k] = hit
+            if hit.pressed { claim_focus{ &ui, id = strip_id } }
+            if hit.clicked { value = @as(u32, k) }
+        }
+        if focused and count > 0 {
+            let last = count - 1
+            let mut i: usize = 0
+            while i < get_keys{ ui }.len {
+                let k = get_keys{ ui }[i]
+                let mut to: ?u32 = null
+                if k.mods == 0 {
+                    match k.key {
+                        left => { to = if value > last { 0 } else if value > 0 { value - 1 } else { 0 } }
+                        right => { to = if value >= last { last } else { value + 1 } }
+                        home => { to = 0 }
+                        end => { to = last }
+                        else => {}
+                    }
+                }
+                if let n = to {
+                    value = n
+                    take_key_at{ &ui, index = i }
+                    continue
+                }
+                i = i + 1
+            }
+        }
+        let shown = value
+
+        // The headers' widths, cut when they do not fit the strip's room.
+        let size = to_font_size{ ui, size = t.font_size }
+        let pad = to_pixels{ ui, length = t.padding * 1.5 }
+        let least = to_pixels{ ui, length = t.control_height }
+        let mut widths: [32]i32
+        let mut total: i64 = 0
+        for k in 0..@as(usize, count) {
+            let w = add_pixels{ a = measure_text{ &ui, font = t.font, size, text = labels[k] }, b = 2 * pad }
+            widths[k] = pick_max_i32{ a = w, b = least }
+            total = total + @as(i64, widths[k])
+        }
+        if let room = get_rect{ ui, id = strip_id } {
+            if total > @as(i64, room.w) {
+                let cap = find_tab_cap{ widths = widths[..@as(usize, count)], room = room.w, least }
+                for k in 0..@as(usize, count) { widths[k] = pick_min_i32{ a = widths[k], b = cap } }
+            }
+        }
+
+        // The strip: a rule along its foot, which the shown tab's header covers.
+        let row = begin_element{ &ui, id = strip_id, axis = Axis::row, box = Box{
+            width = GROW, clip = true,
+            border = color_sides{ color = t.border }, border_width = Insets{ bottom = t.border_width, .. }, ..
+        } }
+        for k in 0..@as(usize, count) {
+            let hid = make_id{ ui, name = labels[k] }
+            let on = @as(u32, k) == shown
+            let hit = hits[k]
+            let mut box = Box{
+                width = fix_pixels{ size = widths[k] }, height = fix{ size = t.control_height },
+                padding = Insets{ left = t.padding * 1.5, right = t.padding * 1.5, .. },
+                align_x = Align::center, align_y = Align::center, ..
+            }
+            if on {
+                box.fill = t.surface
+                box.border = color_sides{ color = t.border }
+                box.border_width = Insets{ left = t.border_width, top = t.border_width, right = t.border_width, .. }
+                box.radius = Corners{ top_left = t.radius, top_right = t.radius, .. }
+            } else if hit.hovered and opts.enabled {
+                box.fill = get_row_hover_color{ theme = t }
+                box.radius = Corners{ top_left = t.radius, top_right = t.radius, .. }
+            }
+            let header = begin_element{ &ui, id = hid, axis = Axis::row, box }
+            let color = if not opts.enabled { t.text_disabled } else if on { t.text } else { t.text_muted }
+            add_text{ &ui, text = labels[k], style = TextStyle{ color, align = Align::center, overflow = Overflow::ellipsis, .. }, box = Box{ width = GROW, .. } }
+            if on and focused { add_focus_ring{ &ui, radius = t.radius } }
+            end{ &ui, scope = header }
+            let mut flags: u8 = 0
+            if on { flags = flags | NODE_SELECTED }
+            if not opts.enabled { flags = flags | NODE_DISABLED }
+            if hit.held { flags = flags | NODE_PRESSED }
+            describe{ &ui, id = hid, role = Role::tab, label = labels[k], value = @as(f32, k), flags }
+            if opts.enabled and hit.hovered { set_cursor{ &ui, cursor = Cursor::hand } }
+        }
+        end{ &ui, scope = row }
+        let mut flags: u8 = 0
+        if focused { flags = flags | NODE_FOCUSED }
+        if not opts.enabled { flags = flags | NODE_DISABLED }
+        // In its own id scope, so with no label its path is `id`, as its headers' are `id/label`.
+        describe{ &ui, id = tabs_id, role = Role::tabs, label = "", value = @as(f32, shown), flags }
+
+        // The panel the pages go in: the strip's rule is its top edge.
+        _ = begin_element{ &ui, id = NO_ID, axis = Axis::column, box = Box{
+            width = GROW, height = GROW, fill = t.surface, padding = inset{ by = t.padding * 1.5 }, gap = t.gap,
+            border = color_sides{ color = t.border }, border_width = Insets{ left = t.border_width, right = t.border_width, bottom = t.border_width, .. }, ..
+        } }
+        return Tabs{ scope = outer, id = tabs_id, labels, count, value = if shown < count { shown } else { count }, changed = value != before }
+    }
+
+    // The page of tab `index` of `tabs`: open when it is the tab shown.
+    fn begin_tab { mut ui: Ui, tabs: Tabs, index: u32 } -> TabPage {
+        if index >= tabs.count { return TabPage{ .. } }
+        let scope = push_id{ &ui, name = tabs.labels[@as(usize, index)] }
+        let page = make_id{ ui, name = "\x00page" }
+        if index != tabs.value {
+            keep_state{ &ui, id = page }
+            end{ &ui, scope }
+            return TabPage{ .. }
+        }
+        _ = begin_element{ &ui, id = page, axis = Axis::column, box = Box{ width = GROW, gap = ui.theme.gap, .. } }
+        return TabPage{ scope, open = true }
+    }
+
+    // The largest width at which `widths`, each cut to it, fit in `room` together; never below
+    // `least`. Found by halving the range between `least` and the widest.
+    fn find_tab_cap { widths: []i32, room: i32, least: i32 } -> i32 {
+        let mut lo = least
+        let mut hi: i32 = least
+        for w in widths { hi = pick_max_i32{ a = hi, b = w } }
+        while lo < hi {
+            let mid = lo + (hi - lo + 1) / 2
+            let mut sum: i64 = 0
+            for w in widths { sum = sum + @as(i64, pick_min_i32{ a = w, b = mid }) }
+            if sum <= @as(i64, room) { lo = mid } else { hi = mid - 1 }
+        }
+        return lo
+    }
+}

@@ -1,0 +1,176 @@
+// ui: the table (plan section 5, stage 12): `begin_table`, `begin_table_row`, `next_cell` and
+// `add_cell_text`.
+//
+// A table is a header row of column titles over a virtual list of rows (list.ctx): the rows in
+// view are recorded, a row is selected, clicked, activated and worked from the keyboard exactly as
+// a list's, and a row is cells side by side. Columns are not resized or sorted (plan section 5).
+//
+// Units, and how header and rows line up. The layout gives two grow children with different
+// content different widths (plan section 2.4), so the table does not leave its columns to it: it
+// works every column's width out in whole pixels once a frame and declares the header's cells and
+// every row's cells with those same pixels (`ui::fix_pixels`), so a column's edges are the same
+// integers in the header and in every row, at any scale.
+//
+//  - A fixed column is its `width` (logical units) through `ui::to_pixels`.
+//  - The grow columns share what the fixed ones leave of the room equally, and the pixels left
+//    over go one each to the first grow columns (the layout's rule); a grow column is never
+//    narrower than its `width`, which is its least. The room is the width of the rows' view in the
+//    last frame (less the scroll bar when the rows show one, which the header then leaves empty
+//    too); in the table's first frame, before there is one, each grow column is its least.
+//  - The header row and the rows' region are each `take{ 1.0 }` of the table, which counts for
+//    nothing when the table is fitted: the cells' pixels, which come from the table's own last
+//    width, never hold the table at that width, so it grows and shrinks with its parent.
+//  - A cell does not clip (a clip entry a cell would fill the frame's clip table with a few rows
+//    of a wide table): `add_cell_text` is a cell holding one line of text that ends in dots when it
+//    is wider than the cell, and other content is the program's to keep inside its cell. A cell
+//    past the last column is 0 pixels wide and clips, so what is recorded in it is not seen.
+//  - A cell is identified, so it has a rectangle and a node (`id/#index/title`), which makes it
+//    the topmost region over its part of the row: `begin_table_row` presses each cell's id along
+//    with the row's, so a press anywhere on the row is the row's.
+//
+// A table has at most MAX_COLUMNS columns (its widths travel in the `Table` value, which is
+// copied into every row); more are dropped and counted.
+namespace ui {
+    // A column: its title, and its width in logical units: exactly that, or, when it `grow`s, the
+    // least it takes of what the fixed columns leave.
+    struct Column { title: []u8 = "", width: f32 = 0.0, grow: bool = false }
+
+    const MAX_COLUMNS: usize = 16
+
+    // A table being recorded: closed with `ui::end` on `scope`. `first` up to but not including
+    // `last` are the rows to record, as a list's. `widths` holds each column's width in pixels.
+    struct Table {
+        scope: Scope = Scope{ .. },
+        first: u32 = 0, last: u32 = 0,
+        list: List = List{ .. },
+        columns: []Column = [], count: u32 = 0,
+        widths: [16]i32 = [0; 16],
+    }
+
+    // A row being recorded: what happened to it (as a list row's), and its cells so far. Its
+    // cells are opened with `next_cell`; `scope` closes the row and its last cell.
+    struct TableRow {
+        scope: Scope = Scope{ .. },
+        clicked: bool = false, activated: bool = false, context: bool = false,
+        hovered: bool = false, selected: bool = false,
+        columns: []Column = [], count: u32 = 0, widths: [16]i32 = [0; 16],
+        cell: u32 = 0, cell_scope: Scope = Scope{ .. },
+    }
+
+    // A table named `id` with `columns`, of `count` rows `row_height` logical units high: a field
+    // with a border that grows in its parent unless `opts.box` sizes it. Its header cells' paths are
+    // `id/title`, its rows' `id/#index` and their cells' `id/#index/title`.
+    fn begin_table { mut ui: Ui, id: []u8, columns: []Column, count: u32, row_height: f32, opts: Opts } -> Table {
+        let t = ui.theme
+        let table_id = make_id{ ui, name = id }
+        let mut n = columns.len
+        if n > MAX_COLUMNS {
+            report_drop{ &ui, kind = ProblemKind::elements_full }
+            n = MAX_COLUMNS
+        }
+        let base = Box{
+            width = GROW, height = GROW, fill = t.field, clip = true,
+            border = color_sides{ color = t.border }, border_width = inset{ by = t.border_width },
+            padding = inset{ by = t.border_width }, ..
+        }
+        let outer = begin_element{ &ui, id = table_id, axis = Axis::column, box = merge_box{ box = opts.box, base } }
+        describe{ &ui, id = table_id, role = Role::table, label = id, value = @as(f32, count), flags = if opts.enabled { 0 } else { NODE_DISABLED } }
+        _ = push_id{ &ui, name = id }
+
+        // The widths, from the rows' view in the last frame.
+        let rows_name = "#rows"
+        let room: ?i32 = if let v = get_scroll{ ui, id = make_id{ ui, name = rows_name } } { v.view_w } else { null }
+        let mut table = Table{ columns = columns[..n], count = @as(u32, n), .. }
+        share_columns{ ui, columns = columns[..n], room, widths = table.widths[..] }
+
+        // The header: each title in a cell of its column's width, over a rule.
+        let header = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{
+            width = take{ part = 1.0 }, height = fix{ size = row_height }, fill = t.surface,
+            border = color_sides{ color = t.border }, border_width = Insets{ bottom = t.border_width, .. }, ..
+        } }
+        for k in 0..n {
+            let title = columns[k].title
+            let cid = make_id{ ui, name = title }
+            let cell = begin_element{ &ui, id = cid, axis = Axis::row, box = get_cell_box{ theme = t, width = table.widths[k] } }
+            add_text{ &ui, text = title, style = TextStyle{ color = if opts.enabled { t.text_muted } else { t.text_disabled }, overflow = Overflow::ellipsis, .. }, box = Box{ width = GROW, .. } }
+            end{ &ui, scope = cell }
+            describe{ &ui, id = cid, role = Role::cell, label = title, value = @as(f32, k), flags = 0 }
+        }
+        end{ &ui, scope = header }
+
+        table.list = open_list{ &ui, name = rows_name, count, row_height, box = Box{ width = take{ part = 1.0 }, height = GROW, .. }, enabled = opts.enabled, node = false }
+        table.first = table.list.first
+        table.last = table.list.last
+        // The table's scope closes the rows' region, which is inside it.
+        table.scope = outer
+        return table
+    }
+
+    // Row `index` of `table`, drawn selected when `selected`. Record its cells with `next_cell`.
+    fn begin_table_row { mut ui: Ui, table: Table, index: u32, selected: bool } -> TableRow {
+        let r = open_list_row{ &ui, list = table.list, index, selected, padding = 0.0, gap = 0.0, parts = table.columns }
+        return TableRow{
+            scope = r.scope, clicked = r.clicked, activated = r.activated, context = r.context,
+            hovered = r.hovered, selected = r.selected,
+            columns = table.columns, count = table.count, widths = table.widths, ..
+        }
+    }
+
+    // Ends the row's cell that is open and opens its next one, as wide as its column; what is
+    // recorded next goes in it. A cell past the last column is 0 pixels wide, so its content is
+    // clipped away and the columns stay lined up.
+    fn next_cell { mut ui: Ui, mut row: TableRow } {
+        end{ &ui, scope = row.cell_scope }
+        let k = row.cell
+        row.cell = row.cell + 1 ifoverflow row.cell
+        let at = @as(usize, k)
+        let title: []u8 = if k < row.count { row.columns[at].title } else { "" }
+        let width = if k < row.count { row.widths[at] } else { 0 }
+        let id = make_id{ ui, name = title }
+        let mut box = get_cell_box{ theme = ui.theme, width }
+        if k >= row.count { box.clip = true }
+        row.cell_scope = begin_element{ &ui, id, axis = Axis::row, box }
+        if id != NO_ID { describe{ &ui, id, role = Role::cell, label = title, value = @as(f32, k), flags = 0 } }
+    }
+
+    // The next cell, holding `text` in the theme's text colour, ending in dots when it is wider than
+    // the cell.
+    fn add_cell_text { mut ui: Ui, mut row: TableRow, text: []u8 } {
+        next_cell{ &ui, &row }
+        add_text{ &ui, text, style = TextStyle{ overflow = Overflow::ellipsis, .. }, box = Box{ width = GROW, .. } }
+    }
+
+    // A cell `width` pixels wide and as high as its row, padded across by half a padding.
+    fn get_cell_box { theme: Theme, width: i32 } -> Box {
+        return Box{
+            width = fix_pixels{ size = width }, height = GROW,
+            padding = Insets{ left = theme.padding * 0.5, right = theme.padding * 0.5, .. },
+            gap = theme.gap * 0.5, align_y = Align::center, ..
+        }
+    }
+
+    // Each column's width in pixels, into `widths`: fixed ones by the length rule, grow ones sharing
+    // what is left of `room` (null: no room known, each grow column its least).
+    fn share_columns { ui: Ui, columns: []Column, room: ?i32, widths: []mut i32 } {
+        let mut fixed: i64 = 0
+        let mut grow: i64 = 0
+        for c at k in columns {
+            widths[k] = pick_max_i32{ a = 0, b = to_pixels{ ui, length = c.width } }
+            if c.grow { grow = grow + 1 } else { fixed = fixed + @as(i64, widths[k]) }
+        }
+        let r = room ifnull { return }
+        if grow == 0 { return }
+        let spare = pick_max_i64{ a = 0, b = @as(i64, r) - fixed }
+        let share = spare / grow
+        let mut extra = spare % grow
+        for c at k in columns {
+            if not c.grow { continue }
+            let mut w = share
+            if extra > 0 {
+                w = w + 1
+                extra = extra - 1
+            }
+            widths[k] = pick_max_i32{ a = widths[k], b = hold_pixels{ v = w } }
+        }
+    }
+}
