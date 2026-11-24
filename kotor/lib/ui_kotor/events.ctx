@@ -1,0 +1,149 @@
+// kotor's SDL events (lib/platform/sdl.ctx) as the library's (ui/core/host.ctx), and the library's requests applied
+// back (ui/PLAN.md sections 2.8 and 8.1).
+//
+// The pointer arrives in the coordinates the caller has the event in, and becomes device pixels of the UI pass by
+// `pointer_scale` (device pixels a coordinate): 1 for an event the game has already mapped to render pixels
+// (display::map_event), the drawable's pixels a window coordinate for an event straight from SDL. lib/gui divides by
+// its scale into GUI pixels instead; the library takes pixels. Typed text is UTF-8 from SDL and becomes cp1252, the
+// encoding of kotor's fonts (Encoding::bytes): a character cp1252 has no byte for is left out.
+namespace ui_kotor {
+    // The library's event for `event`, or null for one it has no use for. A button's position is not in it: the
+    // library takes the pointer's last move (push_event moves it there first).
+    fn to_event { event: sdl::Event, pointer_scale: f32 } -> ?ui::Event {
+        let s = if pointer_scale > 0.0 { pointer_scale } else { 1.0 }
+        match event {
+            mouse_motion{ x, y } => { return ui::Event::pointer_move{ x = to_pixel{ v = x, s }, y = to_pixel{ v = y, s } } }
+            mouse_button{ down, button, clicks } => {
+                let b = to_button{ button } ifnull { return null }
+                return ui::Event::pointer_button{ button = b, down, clicks }
+            }
+            mouse_wheel{ dx, dy } => { return ui::Event::wheel{ dx, dy } }
+            key{ down, repeat, keycode, mods } => {
+                // A key the library has no name for (Shift itself among them) still says which modifiers are held.
+                let k = to_key{ keycode } ifnull ui::Key::none
+                return ui::Event::key{ key = k, down, repeat, mods = to_mods{ mods } }
+            }
+            text{ bytes, len } => {
+                let n = if len < 32 { len } else { 32 }
+                return to_cp1252_event{ text = bytes[..n] }
+            }
+            focus{ gained } => { return ui::Event::focus{ gained } }
+            else => { return null }
+        }
+    }
+
+    // Hands `event` to the Ui and says whether the UI takes it (ui::push_event's answer, which is what the game's
+    // loop asks of gui::handle_event). A button is preceded by a move to where it was pressed, so a press the
+    // window never moved to first (a scripted click) lands where it says.
+    fn push_event { mut ui: ui::Ui, event: sdl::Event, pointer_scale: f32 } -> bool {
+        if event is mouse_button{ x, y } {
+            let s = if pointer_scale > 0.0 { pointer_scale } else { 1.0 }
+            _ = ui::push_event{ &ui, event = ui::Event::pointer_move{ x = to_pixel{ v = x, s }, y = to_pixel{ v = y, s } } }
+        }
+        let e = to_event{ event, pointer_scale } ifnull { return false }
+        return ui::push_event{ &ui, event = e }
+    }
+
+    // The library's number of an SDL button: 0 the primary (SDL's left, 1), 1 the secondary that opens context menus
+    // (SDL's right, 3), 2 the middle (2), then the side buttons; null for any other.
+    fn to_button { button: u8 } -> ?u8 {
+        if button == 1 { return 0 }
+        if button == 3 { return 1 }
+        if button == 2 { return 2 }
+        if button == 4 or button == 5 { return button - 1 }
+        return null
+    }
+
+    fn to_pixel { v: i32, s: f32 } -> i32 {
+        return ui::floor_pixels{ v = @as(f32, v) * s }
+    }
+
+    // SDL keycodes kotor's binding does not name, by their scancodes (SDL_scancode.h).
+    const SCANCODE_HOME: i32 = 74
+    const SCANCODE_PAGEUP: i32 = 75
+    const SCANCODE_END: i32 = 77
+    const SCANCODE_PAGEDOWN: i32 = 78
+    const SCANCODE_KP_ENTER: i32 = 88
+    const SCANCODE_APPLICATION: i32 = 101
+
+    // A key the library names, by SDL keycode; null for the rest.
+    fn to_key { keycode: i32 } -> ?ui::Key {
+        if keycode == sdl::key::TAB { return ui::Key::tab }
+        if keycode == sdl::key::RETURN or keycode == sdl::key::of_scancode{ scancode = SCANCODE_KP_ENTER } { return ui::Key::enter }
+        if keycode == sdl::key::ESCAPE { return ui::Key::escape }
+        if keycode == sdl::key::BACKSPACE { return ui::Key::backspace }
+        if keycode == sdl::key::DELETE { return ui::Key::delete }
+        if keycode == sdl::key::LEFT { return ui::Key::left }
+        if keycode == sdl::key::RIGHT { return ui::Key::right }
+        if keycode == sdl::key::UP { return ui::Key::up }
+        if keycode == sdl::key::DOWN { return ui::Key::down }
+        if keycode == sdl::key::of_scancode{ scancode = SCANCODE_HOME } { return ui::Key::home }
+        if keycode == sdl::key::of_scancode{ scancode = SCANCODE_END } { return ui::Key::end }
+        if keycode == sdl::key::of_scancode{ scancode = SCANCODE_PAGEUP } { return ui::Key::page_up }
+        if keycode == sdl::key::of_scancode{ scancode = SCANCODE_PAGEDOWN } { return ui::Key::page_down }
+        if keycode == sdl::key::SPACE { return ui::Key::space }
+        if keycode == 'a' { return ui::Key::a }
+        if keycode == 'c' { return ui::Key::c }
+        if keycode == 'v' { return ui::Key::v }
+        if keycode == 'x' { return ui::Key::x }
+        if keycode == 'y' { return ui::Key::y }
+        if keycode == 'z' { return ui::Key::z }
+        if keycode == sdl::key::of_scancode{ scancode = SCANCODE_APPLICATION } { return ui::Key::menu }
+        return null
+    }
+
+    fn to_mods { mods: u16 } -> u8 {
+        let mut m: u8 = 0
+        if (mods & sdl::KMOD_SHIFT) != 0 { m = m | ui::MOD_SHIFT }
+        if (mods & sdl::KMOD_CTRL) != 0 { m = m | ui::MOD_CTRL }
+        if (mods & sdl::KMOD_ALT) != 0 { m = m | ui::MOD_ALT }
+        return m
+    }
+
+    // Typed UTF-8 as a text event in cp1252, or null when none of it has a cp1252 byte.
+    fn to_cp1252_event { text: []u8 } -> ?ui::Event {
+        let mut bytes: [32]u8 = [0; 32]
+        let mut n: usize = 0
+        let mut at: usize = 0
+        while at < text.len and n < 32 {
+            let d = ui::decode_char{ text, at, encoding = ui::Encoding::utf8 }
+            if d.len == 0 { break }
+            at = at + @as(usize, d.len)
+            let b = to_cp1252{ code = d.code } ifnull { continue }
+            bytes[n] = b
+            n = n + 1
+        }
+        if n == 0 { return null }
+        return ui::Event::text{ bytes, len = @as(u8, n) }
+    }
+
+    // The cp1252 byte of a code point, or null when it has none: ASCII and Latin-1 are themselves, the 27
+    // characters Windows put at 0x80..0x9F are theirs, and the C1 controls, which cp1252 does not have, are none.
+    fn to_cp1252 { code: u32 } -> ?u8 {
+        if code < 0x80 or (code >= 0xA0 and code <= 0xFF) { return @trunc(u8, code) }
+        for i in 0..CP1252_HIGH.len {
+            if CP1252_HIGH[i] == code and code != 0 { return @trunc(u8, 0x80 + i) }
+        }
+        return null
+    }
+
+    // The code points of bytes 0x80..0x9F in cp1252; 0 where it has none (0x81, 0x8D, 0x8F, 0x90, 0x9D).
+    const CP1252_HIGH: [32]u32 = [
+        0x20AC, 0, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0, 0x017D, 0,
+        0, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0, 0x017E, 0x0178,
+    ]
+
+    // What the host keeps between frames to apply the library's requests: whether it has OS text input on.
+    struct Host { text_input: bool = false }
+
+    // Applies what the library asked for after a frame: OS text input on while a text field has focus, off after.
+    // The rest stays with the game: kotor draws its own pointer (Requests.cursor is not the OS's here), and its SDL
+    // binding has no clipboard, so `copy` and `paste` are not applied: no screen built on this adapter has a field
+    // that copies or pastes.
+    fn apply_requests { mut sdl: sdl::Sdl, mut host: Host, requests: ui::Requests } {
+        if requests.text_input != host.text_input {
+            sdl::set_text_input{ &sdl, on = requests.text_input }
+            host.text_input = requests.text_input
+        }
+    }
+}

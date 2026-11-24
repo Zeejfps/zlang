@@ -1,0 +1,73 @@
+// ui_kotor: the ui library (ui/, ui/PLAN.md section 8.1) on kotor's renderer, fonts and events. A program builds
+// its UI with ui's core and widgets, stages the draw list (ui_stage::stage), and hands the staged passes to the
+// frame here; the backend draws them with the library's own shaders (lib/render_gl/canvas.ctx), so a UI looks the
+// same in kotor as on the library's OpenGL backend.
+//
+// Units (ui/PLAN.md section 2.0): the library works in whole device pixels. Its UI pass is the screen target, one
+// unit a pixel (gpu::screen_size, what lib/gui's passes stretch their GUI pixels over), not the GUI's pixel space.
+// The FrameInfo is that size and the GUI's quarter-step scale (device pixels a logical unit), and the pointer comes
+// in render pixels (events.ctx). kotor's own textures cross as images whose id is the texture's (to_image), its
+// bitmap fonts as glyph tables on those textures (font.ctx).
+//
+//   ui::begin_frame{ &ui, frame = ui_kotor::make_frame_info{ size = gpu::screen_size{ dev }, scale, dt } }
+//   ... widgets ...
+//   ui::end_frame{ &ui }
+//   ui_stage::stage{ out = &staged, list = &ui.draw, provider = null }
+//   ui_kotor::submit{ &frame, staged = &staged, target = null }       // before gpu::submit; staged lives until then
+namespace ui_kotor {
+    // Every pass of `staged` into `frame` after what it holds, drawn into `target` (null: the screen). The host
+    // slots between passes stay empty: a UI with 3D views in it adds its passes one at a time (add_pass) and its
+    // view after each pass that ends at a slot (get_slot).
+    fn submit { mut frame: render::Frame, staged: *ui_stage::Staged, target: ?render::Target } {
+        let mut pass: u32 = 0
+        while pass < staged.pass_count {
+            render::add_staged{ &frame, staged, pass, target }
+            pass = pass + 1
+        }
+    }
+
+    // Pass `pass` of `staged` into `frame`.
+    fn add_pass { mut frame: render::Frame, staged: *ui_stage::Staged, pass: u32, target: ?render::Target } {
+        render::add_staged{ &frame, staged, pass, target }
+    }
+
+    // A host slot a pass ends at: the slot the UI named (ui::add_host_slot), and its rectangle as a View's
+    // viewport (device pixels, top left origin), which is where the caller's view goes.
+    struct Slot { slot: u32, viewport: render::Rect }
+
+    // The slot pass `pass` ends at, or null when it ends at none (the last pass never does).
+    fn get_slot { staged: *ui_stage::Staged, pass: u32 } -> ?Slot {
+        if pass >= staged.pass_count or @as(usize, pass) >= staged.passes.len { return null }
+        let p = staged.passes[@as(usize, pass)]
+        if not p.host { return null }
+        let r = p.rect
+        return Slot{ slot = p.slot, viewport = render::Rect{ x = @as(f32, r.x), y = @as(f32, r.y), w = @as(f32, r.w), h = @as(f32, r.h) } }
+    }
+
+    // What kotor tells the library each frame: the UI pass's size in device pixels (the screen target's), the GUI's
+    // quarter-step scale, and the seconds since the last frame.
+    fn make_frame_info { size: render::Size, scale: f32, dt: f32 } -> ui::FrameInfo {
+        return ui::FrameInfo{ width = clamp_size{ v = size.width }, height = clamp_size{ v = size.height }, scale, dt }
+    }
+
+    fn clamp_size { v: u32 } -> i32 {
+        return if v > @as(u32, ui::MAX_PIXELS) { ui::MAX_PIXELS } else { @as(i32, v) }
+    }
+
+    // A texture as an image the library draws: its id is the texture's, its size the texture's in texels.
+    fn to_image { texture: render::Texture, size: render::Size } -> ui::Image {
+        return ui::Image{ id = texture.id, width = clamp_size{ v = size.width }, height = clamp_size{ v = size.height } }
+    }
+
+    // to_image with the size the device has for the texture.
+    fn get_image { dev: gpu::Device, texture: render::Texture } -> ui::Image {
+        return to_image{ texture, size = gpu::texture_size{ dev, t = texture } }
+    }
+
+    // The whole texture as a region (ui::paint_region, ui::add_image): uv (0, 0) is the picture's top left, as
+    // everywhere in the library; the backend knows textures are stored bottom row first.
+    fn get_region { dev: gpu::Device, texture: render::Texture } -> ui::Region {
+        let image = get_image{ dev, texture }
+        return ui::Region{ image, uv = ui::Uv{ .. }, width = image.width, height = image.height }
+    }
+}

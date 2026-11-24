@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Writes ui/gl/shaders_glsl.ctx: the GLSL files of ui/shaders as ctxlang string constants.
+"""Writes ui/gl/glsl/shaders_glsl.ctx: the GLSL files of ui/shaders as ctxlang string constants.
 
     embed_shaders.py SHADER_DIR OUT_FILE      (ui/tools/build_shaders runs it; OUT_FILE - is stdout)
 

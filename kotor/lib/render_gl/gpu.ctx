@@ -128,6 +128,7 @@ namespace gpu {
         ssr: SsrState,              // fx_ssr.ctx
         ofx: OrigFx,                // orig_fx.ctx: the original look's shadow volumes, glow and distortion
         pointer: PointerState,      // pointer.ctx: the OS's pointer with the GUI's pictures (EnableHardwareMouse)
+        canvas: Canvas,             // canvas.ctx: the ui library's staged passes (render::add_staged)
     }
 
     // ---- opening and closing
@@ -179,6 +180,8 @@ namespace gpu {
         let sort_tmp = try alloc::make(SortItem, S){ realloc, &heap, count = SORT_ITEMS }
         let log = try alloc::make(u8, S){ realloc, &heap, count = 8192 }
         let pixels = try alloc::make(u8, S){ realloc, &heap, count = POINTER_BYTES * 2 }
+        let clip_rows = try alloc::make(f32, S){ realloc, &heap, count = CANVAS_CLIP_FLOATS * 3 }
+        let flipped = try alloc::make(ui_stage::ImageInstance, S){ realloc, &heap, count = CANVAS_FLIP_ROOM }
         let mut dev = Device{
             gl, win, config, info, debug_on, debug_log,
             textures,
@@ -197,7 +200,7 @@ namespace gpu {
             scene_fx = ScenePrograms{ .. }, particle_fx = ParticleProgram{ .. },
             fxp = FxPrograms{ .. }, fxt = FxTargets{ .. }, cur = ScenePrograms{ .. }, cur_particle = ParticleProgram{ .. },
             timer = Timer{ .. }, atmos = AtmosPrograms{ .. }, aa = AaPrograms{ .. }, shadow = no_shadows{}, scene_tess = ScenePrograms{ .. }, aos = AoState{ .. }, dof = DofState{ .. }, ssr = SsrState{ .. }, ofx = no_orig_fx{},
-            pointer = no_pointer_state{ pixels },
+            pointer = no_pointer_state{ pixels }, canvas = Canvas{ .. },
             ..
         }
         clear_tables{ &dev }
@@ -211,6 +214,7 @@ namespace gpu {
         try make_ssr_program{ &dev }
         try make_tess_program{ &dev }
         try make_orig_fx_programs{ &dev }
+        try make_canvas{ &dev, clip_rows, flipped }
         dev.cur = dev.scene
         dev.cur_particle = dev.particle
         make_buffers{ &dev }
@@ -274,6 +278,7 @@ namespace gpu {
         free_pointers{ &dev, &sdl }
         free_ssr{ &dev }
         free_orig_fx{ &dev }
+        free_canvas{ &dev }
         dev.gl.delete_program{ program = dev.scene_tess.id }
         free_fx_targets{ &dev }
         free_timer{ &dev }
@@ -1341,7 +1346,7 @@ namespace gpu {
 
     // Draws the frame: its passes in order, each view's opaque surfaces sorted by state, then
     // shadows, then transparent surfaces and particles back to front, then debug geometry; and
-    // the UI runs over them.
+    // the UI runs and staged passes (canvas.ctx) over them.
     fn submit { mut dev: Device, frame: *render::Frame } -> ! {
         dev.stats = render::Stats{ draws = 0, triangles = 0, culled = 0, state_changes = 0, quads = 0, particles = 0, ui_draws = 0 }
         dev.state = State{ .. }
@@ -1366,6 +1371,11 @@ namespace gpu {
                 }
                 ui => {
                     try draw_ui{ &dev, frame, step }
+                    resolve_target{ &dev, target = step.target }
+                    timer_mark{ &dev, name = "ui" }
+                }
+                staged => {
+                    try draw_staged{ &dev, step }
                     resolve_target{ &dev, target = step.target }
                     timer_mark{ &dev, name = "ui" }
                 }

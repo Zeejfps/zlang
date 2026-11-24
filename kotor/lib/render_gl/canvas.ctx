@@ -1,0 +1,425 @@
+// The frame's passes of the ui library's staged instances (render::add_staged; ui/PLAN.md sections 2.6 and 8.1),
+// drawn as that library's own OpenGL backend draws them (ui/gl/device.ctx), so a UI looks the same here as there:
+// its four programs from its shaders (ui/shaders, whose text ui/gl/glsl/shaders_glsl.ctx holds; not copied here),
+// one per instance kind, each with the unit quad per vertex and one instance buffer whose attribute layout is the
+// instance struct, offsets from @offset_of. The clip table and the canvas are uniform blocks, bound to points 2 and 3
+// (the scene's Frame block has 0). GL 4.1 has no base instance, so a draw points the instance attributes at its
+// first instance, as the library does on such a driver.
+//
+// What differs from the library's backend, and why:
+// - An image is a texture of this device: a ui::Image's id is a render::Texture's. Textures here are stored bottom
+//   row first (render.ctx), the library's top row first, so an image instance's V is flipped as it is uploaded
+//   (v' = 1 - v, the height negated); the glyph atlas is bottom row first in both and is not.
+// - The state the rest of this backend caches (program, vertex array, unit 0, blend, depth, cull, stencil) goes
+//   through its helpers or is marked unknown afterwards, so a later draw sets what it needs.
+//
+// Uploads happen once per revision of a Staged: the passes of one staged frame upload it at the first and draw the
+// rest from what is up. Two Staged in one frame upload in turn (the atlas whole when it changes hands).
+namespace gpu {
+    const CANVAS_CLIP_BINDING: u32 = 2
+    const CANVAS_BINDING: u32 = 3
+    // The ClipRects block, std140: 256 rectangles, 256 rounded rectangles, 256 radii, a vec4 each.
+    const CANVAS_CLIP_FLOATS: usize = 1024
+    // Image instances flipped at a time on their way up.
+    const CANVAS_FLIP_ROOM: usize = 4096
+    // Instances each kind's buffer starts with room for; it grows as a frame needs.
+    const CANVAS_START_ROOM: u32 = 1024
+
+    // One instance attribute: its location, components, whether the shader reads it as an integer
+    // (glVertexAttribIPointer), and its offset in the instance struct.
+    struct CanvasAttr { location: u32, size: i32, integer: bool, offset: usize }
+
+    const CANVAS_RECT_ATTRS: [9]CanvasAttr = [
+        CanvasAttr{ location = 1, size = 4, integer = false, offset = @offset_of(ui_stage::RectInstance, x) },
+        CanvasAttr{ location = 2, size = 4, integer = false, offset = @offset_of(ui_stage::RectInstance, radius_tl) },
+        CanvasAttr{ location = 3, size = 4, integer = false, offset = @offset_of(ui_stage::RectInstance, border_top) },
+        CanvasAttr{ location = 4, size = 1, integer = true, offset = @offset_of(ui_stage::RectInstance, fill) },
+        CanvasAttr{ location = 5, size = 1, integer = true, offset = @offset_of(ui_stage::RectInstance, color_top) },
+        CanvasAttr{ location = 6, size = 1, integer = true, offset = @offset_of(ui_stage::RectInstance, color_right) },
+        CanvasAttr{ location = 7, size = 1, integer = true, offset = @offset_of(ui_stage::RectInstance, color_bottom) },
+        CanvasAttr{ location = 8, size = 1, integer = true, offset = @offset_of(ui_stage::RectInstance, color_left) },
+        CanvasAttr{ location = 9, size = 1, integer = true, offset = @offset_of(ui_stage::RectInstance, clip) },
+    ]
+    const CANVAS_GLYPH_ATTRS: [5]CanvasAttr = [
+        CanvasAttr{ location = 1, size = 4, integer = false, offset = @offset_of(ui_stage::GlyphInstance, x) },
+        CanvasAttr{ location = 2, size = 4, integer = false, offset = @offset_of(ui_stage::GlyphInstance, u) },
+        CanvasAttr{ location = 3, size = 1, integer = true, offset = @offset_of(ui_stage::GlyphInstance, color) },
+        CanvasAttr{ location = 4, size = 1, integer = true, offset = @offset_of(ui_stage::GlyphInstance, clip) },
+        CanvasAttr{ location = 5, size = 1, integer = false, offset = @offset_of(ui_stage::GlyphInstance, angle) },
+    ]
+    const CANVAS_IMAGE_ATTRS: [6]CanvasAttr = [
+        CanvasAttr{ location = 1, size = 4, integer = false, offset = @offset_of(ui_stage::ImageInstance, x) },
+        CanvasAttr{ location = 2, size = 4, integer = false, offset = @offset_of(ui_stage::ImageInstance, u) },
+        CanvasAttr{ location = 3, size = 1, integer = true, offset = @offset_of(ui_stage::ImageInstance, tint) },
+        CanvasAttr{ location = 4, size = 1, integer = true, offset = @offset_of(ui_stage::ImageInstance, clip) },
+        CanvasAttr{ location = 5, size = 1, integer = false, offset = @offset_of(ui_stage::ImageInstance, angle) },
+        CanvasAttr{ location = 6, size = 4, integer = false, offset = @offset_of(ui_stage::ImageInstance, radius_tl) },
+    ]
+    const CANVAS_SHAPE_ATTRS: [9]CanvasAttr = [
+        CanvasAttr{ location = 1, size = 4, integer = false, offset = @offset_of(ui_stage::ShapeInstance, x) },
+        CanvasAttr{ location = 2, size = 4, integer = false, offset = @offset_of(ui_stage::ShapeInstance, data) },
+        CanvasAttr{ location = 3, size = 4, integer = false, offset = @offset_of(ui_stage::ShapeInstance, data2) },
+        CanvasAttr{ location = 4, size = 1, integer = false, offset = @offset_of(ui_stage::ShapeInstance, half_width) },
+        CanvasAttr{ location = 5, size = 1, integer = true, offset = @offset_of(ui_stage::ShapeInstance, color) },
+        CanvasAttr{ location = 6, size = 1, integer = true, offset = @offset_of(ui_stage::ShapeInstance, kind) },
+        CanvasAttr{ location = 7, size = 1, integer = true, offset = @offset_of(ui_stage::ShapeInstance, clip) },
+        CanvasAttr{ location = 8, size = 1, integer = true, offset = @offset_of(ui_stage::ShapeInstance, color2) },
+        CanvasAttr{ location = 9, size = 1, integer = true, offset = @offset_of(ui_stage::ShapeInstance, flags) },
+    ]
+
+    // A kind's program, vertex array and instance buffer: `capacity` instances of `stride` bytes; `base` is the
+    // instance the attributes point at now.
+    struct CanvasKind { program: u32 = 0, vao: u32 = 0, vbo: u32 = 0, stride: u32 = 0, capacity: u32 = 0, base: u32 = 0 }
+
+    struct Canvas {
+        kinds: [4]CanvasKind = [CanvasKind{ .. }; 4],     // rect, glyph, image, shape: ui_stage::Kind's order
+        quad: u32 = 0, clip_ubo: u32 = 0, canvas_ubo: u32 = 0,
+        atlas: u32 = 0, atlas_width: u32 = 0, atlas_height: u32 = 0, atlas_version: u32 = 0, has_atlas: bool = false,
+        clip_rows: []mut f32 = slice::empty(f32){},                       // the ClipRects block as it is uploaded
+        flipped: []mut ui_stage::ImageInstance = slice::empty(ui_stage::ImageInstance){},
+        has_frame: bool = false, frame_at: usize = 0, revision: u64 = 0,   // the Staged and its revision up now
+        dropped: u32 = 0,           // image draws skipped since open: a texture this device does not have
+    }
+
+    // The four programs and their buffers, from the library's shader text. `clip_rows` and `flipped` are the
+    // canvas's own memory (CANVAS_CLIP_FLOATS * 3 and CANVAS_FLIP_ROOM).
+    fn make_canvas { mut dev: Device, clip_rows: []mut f32, flipped: []mut ui_stage::ImageInstance } -> ! {
+        let rect_vs = ui_gl::CANVAS_RECT_VERT
+        let rect_fs = ui_gl::CANVAS_RECT_FRAG
+        let glyph_vs = ui_gl::CANVAS_GLYPH_VERT
+        let glyph_fs = ui_gl::CANVAS_GLYPH_FRAG
+        let image_vs = ui_gl::CANVAS_IMAGE_VERT
+        let image_fs = ui_gl::CANVAS_IMAGE_FRAG
+        let shape_vs = ui_gl::CANVAS_SHAPE_VERT
+        let shape_fs = ui_gl::CANVAS_SHAPE_FRAG
+        let mut n: usize = 0
+        let rect = try_link{ gl = &dev.gl, vertex = &rect_vs, fragment = &rect_fs, log = dev.log, log_len = &n }
+        if rect == 0 { return shader_failed{ log = dev.log[..n] } }
+        let glyph = try_link{ gl = &dev.gl, vertex = &glyph_vs, fragment = &glyph_fs, log = dev.log, log_len = &n }
+        if glyph == 0 { return shader_failed{ log = dev.log[..n] } }
+        let image = try_link{ gl = &dev.gl, vertex = &image_vs, fragment = &image_fs, log = dev.log, log_len = &n }
+        if image == 0 { return shader_failed{ log = dev.log[..n] } }
+        let shape = try_link{ gl = &dev.gl, vertex = &shape_vs, fragment = &shape_fs, log = dev.log, log_len = &n }
+        if shape == 0 { return shader_failed{ log = dev.log[..n] } }
+
+        // The unit quad, two triangles, as the library's.
+        let corners: [12]f32 = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0]
+        let quad = gl::make_buffer{ gl = &dev.gl, target = gl::ARRAY_BUFFER, bytes = gl::bytes_of(f32){ s = corners[..] }, usage = gl::STATIC_DRAW }
+        let programs: [4]u32 = [rect, glyph, image, shape]
+        let mut c = Canvas{ quad, clip_rows, flipped, .. }
+        for k in 0..4 {
+            let attrs = get_canvas_attrs{ kind = k }
+            c.kinds[k] = make_canvas_kind{ gl = &dev.gl, program = programs[k], quad, stride = get_canvas_stride{ kind = k }, attrs }
+        }
+        c.clip_ubo = gl::gen_buffer{ gl = &dev.gl }
+        dev.gl.bind_buffer{ target = gl::UNIFORM_BUFFER, buffer = c.clip_ubo }
+        dev.gl.buffer_data{ target = gl::UNIFORM_BUFFER, size = @as(i64, CANVAS_CLIP_FLOATS * 3 * 4), data = null, usage = gl::DYNAMIC_DRAW }
+        c.canvas_ubo = gl::gen_buffer{ gl = &dev.gl }
+        dev.gl.bind_buffer{ target = gl::UNIFORM_BUFFER, buffer = c.canvas_ubo }
+        dev.gl.buffer_data{ target = gl::UNIFORM_BUFFER, size = 80, data = null, usage = gl::DYNAMIC_DRAW }
+        dev.gl.bind_buffer{ target = gl::UNIFORM_BUFFER, buffer = 0 }
+        c.atlas = gl::gen_texture{ gl = &dev.gl }
+        dev.gl.bind_texture{ target = gl::TEXTURE_2D, texture = c.atlas }
+        dev.gl.tex_parameteri{ target = gl::TEXTURE_2D, pname = gl::TEXTURE_MIN_FILTER, param = @as(i32, gl::LINEAR) }
+        dev.gl.tex_parameteri{ target = gl::TEXTURE_2D, pname = gl::TEXTURE_MAG_FILTER, param = @as(i32, gl::LINEAR) }
+        dev.gl.tex_parameteri{ target = gl::TEXTURE_2D, pname = gl::TEXTURE_WRAP_S, param = @as(i32, gl::CLAMP_TO_EDGE) }
+        dev.gl.tex_parameteri{ target = gl::TEXTURE_2D, pname = gl::TEXTURE_WRAP_T, param = @as(i32, gl::CLAMP_TO_EDGE) }
+        dev.gl.tex_parameteri{ target = gl::TEXTURE_2D, pname = gl::TEXTURE_MAX_LEVEL, param = 0 }
+        dev.gl.bind_texture{ target = gl::TEXTURE_2D, texture = 0 }
+        dev.canvas = c
+        try gl::check{ gl = &dev.gl, what = "gpu::make_canvas" }
+    }
+
+    fn free_canvas { mut dev: Device } {
+        let mut k: usize = 0
+        while k < 4 {
+            let p = dev.canvas.kinds[k]
+            if p.program != 0 { dev.gl.delete_program{ program = p.program } }
+            if p.vao != 0 { gl::delete_vertex_array{ gl = &dev.gl, id = p.vao } }
+            if p.vbo != 0 { gl::delete_buffer{ gl = &dev.gl, id = p.vbo } }
+            k = k + 1
+        }
+        if dev.canvas.quad != 0 { gl::delete_buffer{ gl = &dev.gl, id = dev.canvas.quad } }
+        if dev.canvas.clip_ubo != 0 { gl::delete_buffer{ gl = &dev.gl, id = dev.canvas.clip_ubo } }
+        if dev.canvas.canvas_ubo != 0 { gl::delete_buffer{ gl = &dev.gl, id = dev.canvas.canvas_ubo } }
+        if dev.canvas.atlas != 0 { gl::delete_texture{ gl = &dev.gl, id = dev.canvas.atlas } }
+        dev.canvas = Canvas{ .. }
+    }
+
+    fn get_canvas_attrs { kind: usize } -> []CanvasAttr {
+        return if kind == 0 { CANVAS_RECT_ATTRS[..] } else if kind == 1 { CANVAS_GLYPH_ATTRS[..] } else if kind == 2 { CANVAS_IMAGE_ATTRS[..] } else { CANVAS_SHAPE_ATTRS[..] }
+    }
+
+    fn get_canvas_stride { kind: usize } -> u32 {
+        let size = if kind == 0 { @size_of(ui_stage::RectInstance) } else if kind == 1 { @size_of(ui_stage::GlyphInstance) }
+            else if kind == 2 { @size_of(ui_stage::ImageInstance) } else { @size_of(ui_stage::ShapeInstance) }
+        return @as(u32, size)
+    }
+
+    fn get_canvas_kind { kind: ui_stage::Kind } -> usize {
+        return match kind {
+            rect => { 0 }
+            glyph => { 1 }
+            image => { 2 }
+            shape => { 3 }
+        }
+    }
+
+    // A kind's vertex array: the unit quad at location 0, then the instance struct's fields; its blocks bound to
+    // this backend's points and its sampler to unit 0.
+    fn make_canvas_kind { mut gl: gl::Gl, program: u32, quad: u32, stride: u32, attrs: []CanvasAttr } -> CanvasKind {
+        let clips = gl.get_uniform_block_index{ program, name = "ClipRects" }
+        if clips != gl::INVALID_INDEX { gl.uniform_block_binding{ program, block_index = clips, binding = CANVAS_CLIP_BINDING } }
+        let canvas = gl.get_uniform_block_index{ program, name = "Canvas" }
+        if canvas != gl::INVALID_INDEX { gl.uniform_block_binding{ program, block_index = canvas, binding = CANVAS_BINDING } }
+        gl.use_program{ program }
+        let atlas = gl.get_uniform_location{ program, name = "u_atlas" }
+        if atlas >= 0 { gl.uniform1i{ location = atlas, v0 = 0 } }
+        let texture = gl.get_uniform_location{ program, name = "u_texture" }
+        if texture >= 0 { gl.uniform1i{ location = texture, v0 = 0 } }
+        gl.use_program{ program = 0 }
+
+        let vbo = gl::gen_buffer{ &gl }
+        gl.bind_buffer{ target = gl::ARRAY_BUFFER, buffer = vbo }
+        gl.buffer_data{ target = gl::ARRAY_BUFFER, size = @as(i64, CANVAS_START_ROOM) * @as(i64, stride), data = null, usage = gl::DYNAMIC_DRAW }
+        let vao = gl::gen_vertex_array{ &gl }
+        gl.bind_vertex_array{ array = vao }
+        gl.bind_buffer{ target = gl::ARRAY_BUFFER, buffer = quad }
+        gl.vertex_attrib_pointer{ index = 0, size = 2, kind = gl::FLOAT, normalized = gl::FALSE, stride = 8, offset = 0 }
+        gl.enable_vertex_attrib_array{ index = 0 }
+        gl.bind_buffer{ target = gl::ARRAY_BUFFER, buffer = vbo }
+        point_canvas_attrs{ &gl, attrs, stride, base = 0 }
+        for a in attrs {
+            gl.enable_vertex_attrib_array{ index = a.location }
+            gl.vertex_attrib_divisor{ index = a.location, divisor = 1 }
+        }
+        gl.bind_vertex_array{ array = 0 }
+        gl.bind_buffer{ target = gl::ARRAY_BUFFER, buffer = 0 }
+        return CanvasKind{ program, vao, vbo, stride, capacity = CANVAS_START_ROOM, base = 0 }
+    }
+
+    // Points the instance attributes at instance `base` of the buffer bound to ARRAY_BUFFER, in the vertex array
+    // bound now.
+    fn point_canvas_attrs { mut gl: gl::Gl, attrs: []CanvasAttr, stride: u32, base: u32 } {
+        let start = @as(usize, base) * @as(usize, stride)
+        for a in attrs {
+            if a.integer {
+                gl.vertex_attrib_ipointer{ index = a.location, size = a.size, kind = gl::UNSIGNED_INT, stride = @as(i32, stride), offset = start + a.offset }
+            } else {
+                gl.vertex_attrib_pointer{ index = a.location, size = a.size, kind = gl::FLOAT, normalized = gl::FALSE, stride = @as(i32, stride), offset = start + a.offset }
+            }
+        }
+    }
+
+    // ---- uploads
+
+    // What `staged` holds, unless this revision of it is up already: the instance arrays, the clip table, the
+    // canvas block and the atlas.
+    fn upload_staged { mut dev: Device, staged: *ui_stage::Staged } {
+        let at = @addr(staged)
+        let same = dev.canvas.has_frame and dev.canvas.frame_at == at
+        if same and dev.canvas.revision == staged.revision { return }
+        // The atlas's dirty rectangle covers the last stage call only: a revision missed takes the whole atlas.
+        let missed = not (same and dev.canvas.revision + 1 == staged.revision)
+        upload_canvas_items(ui_stage::RectInstance){ &dev, kind = 0, items = staged.rects, count = staged.rect_count }
+        upload_canvas_items(ui_stage::GlyphInstance){ &dev, kind = 1, items = staged.glyphs, count = staged.glyph_count }
+        upload_flipped_images{ &dev, items = staged.images, count = staged.image_count }
+        upload_canvas_items(ui_stage::ShapeInstance){ &dev, kind = 3, items = staged.shapes, count = staged.shape_count }
+        upload_canvas_clips{ &dev, staged }
+        upload_canvas_block{ &dev, staged }
+        upload_canvas_atlas{ &dev, atlas = staged.atlas, whole = missed }
+        dev.gl.bind_buffer{ target = gl::ARRAY_BUFFER, buffer = 0 }
+        dev.canvas.has_frame = true
+        dev.canvas.frame_at = at
+        dev.canvas.revision = staged.revision
+    }
+
+    // Room in a kind's buffer for `n` instances, growing it (doubling, or to `n`) when they do not fit. A grown
+    // buffer keeps its name, so the vertex array still points at it. Leaves the buffer bound to ARRAY_BUFFER.
+    fn hold_canvas_room { mut dev: Device, kind: usize, n: u32 } -> CanvasKind {
+        let mut p = dev.canvas.kinds[kind]
+        dev.gl.bind_buffer{ target = gl::ARRAY_BUFFER, buffer = p.vbo }
+        if n > p.capacity {
+            let doubled = if p.capacity > 0x7FFFFFFF { p.capacity } else { p.capacity * 2 }
+            p.capacity = if n > doubled { n } else { doubled }
+            dev.gl.buffer_data{ target = gl::ARRAY_BUFFER, size = @as(i64, p.capacity) * @as(i64, p.stride), data = null, usage = gl::DYNAMIC_DRAW }
+            dev.canvas.kinds[kind] = p
+        }
+        return p
+    }
+
+    fn upload_canvas_items(T) { mut dev: Device, kind: usize, items: []mut T, count: u32 } {
+        let n = if @as(usize, count) < items.len { count } else { @as(u32, items.len) }
+        if n == 0 { return }
+        let p = hold_canvas_room{ &dev, kind, n }
+        let bytes = @as(i64, n) * @as(i64, p.stride)
+        dev.gl.buffer_sub_data{ target = gl::ARRAY_BUFFER, offset = 0, size = bytes, data = @cast(*u8, items.ptr) }
+    }
+
+    // Image instances with their V flipped for textures stored bottom row first, a scratch's worth at a time.
+    fn upload_flipped_images { mut dev: Device, items: []mut ui_stage::ImageInstance, count: u32 } {
+        let n = if @as(usize, count) < items.len { @as(usize, count) } else { items.len }
+        if n == 0 or dev.canvas.flipped.len == 0 { return }
+        let p = hold_canvas_room{ &dev, kind = 2, n = @as(u32, n) }
+        let room = dev.canvas.flipped.len
+        let mut done: usize = 0
+        while done < n {
+            let take = if n - done < room { n - done } else { room }
+            for i in 0..take {
+                let mut inst = items[done + i]
+                inst.v = 1.0 - inst.v
+                inst.vh = 0.0 - inst.vh
+                dev.canvas.flipped[i] = inst
+            }
+            dev.gl.buffer_sub_data{ target = gl::ARRAY_BUFFER, offset = @as(i64, done) * @as(i64, p.stride), size = @as(i64, take) * @as(i64, p.stride),
+                data = @cast(*u8, dev.canvas.flipped.ptr) }
+            done = done + take
+        }
+    }
+
+    // The clip table into the ClipRects block's three arrays, entry for entry.
+    fn upload_canvas_clips { mut dev: Device, staged: *ui_stage::Staged } {
+        let count = if staged.clip_count < 256 { @as(usize, staged.clip_count) } else { 256 }
+        if count == 0 { return }
+        let rows = dev.canvas.clip_rows
+        for i in 0..count {
+            let c = staged.clips[i]
+            let r = i * 4
+            rows[r] = c.left
+            rows[r + 1] = c.bottom
+            rows[r + 2] = c.right
+            rows[r + 3] = c.top
+            rows[CANVAS_CLIP_FLOATS + r] = c.round_left
+            rows[CANVAS_CLIP_FLOATS + r + 1] = c.round_bottom
+            rows[CANVAS_CLIP_FLOATS + r + 2] = c.round_right
+            rows[CANVAS_CLIP_FLOATS + r + 3] = c.round_top
+            rows[CANVAS_CLIP_FLOATS * 2 + r] = c.radius
+            rows[CANVAS_CLIP_FLOATS * 2 + r + 1] = 0.0
+            rows[CANVAS_CLIP_FLOATS * 2 + r + 2] = 0.0
+            rows[CANVAS_CLIP_FLOATS * 2 + r + 3] = 0.0
+        }
+        let bytes = count * 16
+        dev.gl.bind_buffer{ target = gl::UNIFORM_BUFFER, buffer = dev.canvas.clip_ubo }
+        for row in 0..3 {
+            let start = CANVAS_CLIP_FLOATS * row
+            dev.gl.buffer_sub_data{ target = gl::UNIFORM_BUFFER, offset = @as(i64, start * 4), size = @as(i64, bytes), data = @cast(*u8, rows[start..].ptr) }
+        }
+        dev.gl.bind_buffer{ target = gl::UNIFORM_BUFFER, buffer = 0 }
+    }
+
+    // The library's projection, orthographic from the canvas (0, 0) .. (width, height), y up, then the canvas's size
+    // twice (its logical and device sizes, which are the same: one unit a pixel).
+    fn upload_canvas_block { mut dev: Device, staged: *ui_stage::Staged } {
+        let w = @as(f32, if staged.width > 1 { staged.width } else { 1 })
+        let h = @as(f32, if staged.height > 1 { staged.height } else { 1 })
+        let block: [20]f32 = [
+            2.0 / w, 0.0, 0.0, 0.0,
+            0.0, 2.0 / h, 0.0, 0.0,
+            0.0, 0.0, -0.5, 0.0,
+            -1.0, -1.0, 0.5, 1.0,
+            w, h, w, h,
+        ]
+        dev.gl.bind_buffer{ target = gl::UNIFORM_BUFFER, buffer = dev.canvas.canvas_ubo }
+        dev.gl.buffer_sub_data{ target = gl::UNIFORM_BUFFER, offset = 0, size = 80, data = @cast(*u8, &block) }
+        dev.gl.bind_buffer{ target = gl::UNIFORM_BUFFER, buffer = 0 }
+    }
+
+    // The whole atlas when it is new, grew (its version), or `whole`; else its dirty rectangle. Rows are bottom
+    // first in the atlas and in the texture alike.
+    fn upload_canvas_atlas { mut dev: Device, atlas: ui_stage::Atlas, whole: bool } {
+        if atlas.width == 0 or atlas.height == 0 { return }
+        if @as(u64, atlas.pixels.len) < @as(u64, atlas.width) * @as(u64, atlas.height) { return }
+        let c = dev.canvas
+        let fresh = not c.has_atlas or c.atlas_version != atlas.version or c.atlas_width != atlas.width or c.atlas_height != atlas.height
+        bind_unit{ &dev, unit = 0, target = gl::TEXTURE_2D, name = c.atlas }
+        if fresh or whole {
+            dev.gl.pixel_storei{ pname = gl::UNPACK_ROW_LENGTH, param = 0 }
+            dev.gl.tex_image_2d{ target = gl::TEXTURE_2D, level = 0, internal_format = @as(i32, gl::R8), width = @as(i32, atlas.width), height = @as(i32, atlas.height),
+                border = 0, format = gl::RED, kind = gl::UNSIGNED_BYTE, pixels = atlas.pixels.ptr }
+            dev.canvas.has_atlas = true
+            dev.canvas.atlas_version = atlas.version
+            dev.canvas.atlas_width = atlas.width
+            dev.canvas.atlas_height = atlas.height
+        } else if atlas.dirty_x1 > atlas.dirty_x0 and atlas.dirty_y1 > atlas.dirty_y0 {
+            let x1 = if atlas.dirty_x1 < atlas.width { atlas.dirty_x1 } else { atlas.width }
+            let y1 = if atlas.dirty_y1 < atlas.height { atlas.dirty_y1 } else { atlas.height }
+            if x1 > atlas.dirty_x0 and y1 > atlas.dirty_y0 {
+                let start = @as(usize, atlas.dirty_y0) * @as(usize, atlas.width) + @as(usize, atlas.dirty_x0)
+                dev.gl.pixel_storei{ pname = gl::UNPACK_ROW_LENGTH, param = @as(i32, atlas.width) }
+                dev.gl.tex_sub_image_2d{ target = gl::TEXTURE_2D, level = 0, xoffset = @as(i32, atlas.dirty_x0), yoffset = @as(i32, atlas.dirty_y0),
+                    width = @as(i32, x1 - atlas.dirty_x0), height = @as(i32, y1 - atlas.dirty_y0), format = gl::RED, kind = gl::UNSIGNED_BYTE, pixels = atlas.pixels[start..].ptr }
+                dev.gl.pixel_storei{ pname = gl::UNPACK_ROW_LENGTH, param = 0 }
+            }
+        }
+    }
+
+    // ---- drawing
+
+    // One staged pass (render::add_staged) into the step's target, its canvas anchored at the target's top left.
+    fn draw_staged { mut dev: Device, step: render::Step } -> ! {
+        let staged = step.staged ifnull { return }
+        if step.first >= staged.pass_count or @as(usize, step.first) >= staged.passes.len { return }
+        let pass = staged.passes[@as(usize, step.first)]
+        upload_staged{ &dev, staged }
+        let b = try bind_target{ &dev, target = step.target }
+        let w = if staged.width > 1 { staged.width } else { 1 }
+        let h = if staged.height > 1 { staged.height } else { 1 }
+        dev.gl.viewport{ x = 0, y = b.height - h, width = w, height = h }
+        set_depth{ &dev, test = false, write = false }
+        set_cull{ &dev, on = false }
+        set_offset{ &dev, on = false }
+        set_stencil{ &dev, on = false }
+        dev.gl.disable{ cap = gl::SCISSOR_TEST }
+        dev.gl.enable{ cap = gl::BLEND }
+        dev.gl.blend_equation{ mode = gl::FUNC_ADD }
+        dev.gl.bind_buffer_base{ target = gl::UNIFORM_BUFFER, index = CANVAS_CLIP_BINDING, buffer = dev.canvas.clip_ubo }
+        dev.gl.bind_buffer_base{ target = gl::UNIFORM_BUFFER, index = CANVAS_BINDING, buffer = dev.canvas.canvas_ubo }
+        // Separate alpha factors, so the target's alpha ends up as real coverage, as the library blends; an additive
+        // image draw adds its colour. Not this backend's render::Blend states: they are marked unknown after.
+        let mut blend_set: i32 = -1
+        let end = @as(usize, pass.first) + @as(usize, pass.count)
+        let mut i = @as(usize, pass.first)
+        while i < end and i < @as(usize, staged.draw_count) and i < staged.draws.len {
+            let d = staged.draws[i]
+            i = i + 1
+            if d.count == 0 { continue }
+            let kind = get_canvas_kind{ kind = d.kind }
+            let mut texture = dev.canvas.atlas
+            if kind == 2 {
+                let slot = texture_slot{ dev, t = render::Texture{ id = d.image } }
+                if slot == NO_SLOT or dev.textures[slot].cube {
+                    dev.canvas.dropped = dev.canvas.dropped + 1
+                    continue
+                }
+                texture = dev.textures[slot].name
+            }
+            use_program{ &dev, program = dev.canvas.kinds[kind].program }
+            bind_vao{ &dev, vao = dev.canvas.kinds[kind].vao }
+            if kind == 1 or kind == 2 { bind_unit{ &dev, unit = 0, target = gl::TEXTURE_2D, name = texture } }
+            let blend: i32 = if kind == 2 and d.blend == ui::Blend::additive { 1 } else { 0 }
+            if blend != blend_set {
+                let dst = if blend == 1 { gl::ONE } else { gl::ONE_MINUS_SRC_ALPHA }
+                dev.gl.blend_func_separate{ sfactor_rgb = gl::SRC_ALPHA, dfactor_rgb = dst, sfactor_alpha = gl::ONE, dfactor_alpha = gl::ONE_MINUS_SRC_ALPHA }
+                blend_set = blend
+            }
+            issue_canvas_draw{ &dev, kind, first = d.first, count = d.count }
+        }
+        dev.state.blend = -2
+        dev.gl.bind_buffer{ target = gl::ARRAY_BUFFER, buffer = 0 }
+    }
+
+    // `count` instances of the kind's quad from instance `first`, by pointing the attributes at `first` (the kind's
+    // vertex array is bound).
+    fn issue_canvas_draw { mut dev: Device, kind: usize, first: u32, count: u32 } {
+        let p = dev.canvas.kinds[kind]
+        if p.base != first {
+            dev.gl.bind_buffer{ target = gl::ARRAY_BUFFER, buffer = p.vbo }
+            point_canvas_attrs{ gl = &dev.gl, attrs = get_canvas_attrs{ kind }, stride = p.stride, base = first }
+            dev.canvas.kinds[kind].base = first
+        }
+        dev.gl.draw_arrays_instanced{ mode = gl::TRIANGLES, first = 0, count = 6, instance_count = @as(i32, count) }
+        dev.stats.draws = dev.stats.draws + 1
+        dev.stats.ui_draws = dev.stats.ui_draws + 1
+        dev.stats.quads = dev.stats.quads + count
+    }
+}

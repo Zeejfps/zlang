@@ -2,4 +2,4 @@
 tools/* text eol=lf
 tests/**/golden/*.txt text eol=lf
 shaders/*.glsl text eol=lf
-gl/shaders_glsl.ctx text eol=lf
+gl/glsl/shaders_glsl.ctx text eol=lf

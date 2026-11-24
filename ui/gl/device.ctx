@@ -3,7 +3,7 @@
 // widgets or fonts.
 //
 // Four programs, one per instance kind, from ZGF's shaders (ui/shaders, embedded in
-// shaders_glsl.ctx). Each has the unit quad (two triangles) per vertex and one instance buffer whose
+// glsl/shaders_glsl.ctx). Each has the unit quad (two triangles) per vertex and one instance buffer whose
 // attribute layout is the instance struct, offsets from @offset_of. The clip table and the canvas
 // block are uniform blocks bound by glUniformBlockBinding (GLSL 410 has no `binding`): the clip table
 // to 0, as ZGF binds it, and the canvas to 1. A draw is six vertices instanced `count` times from

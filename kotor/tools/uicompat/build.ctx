@@ -12,6 +12,8 @@ fn build { mut b: Build } {
     build::add_sources{ &b, exe, dir = "../../lib/platform" }
     build::add_sources{ &b, exe, dir = "../../lib/render" }
     build::add_sources{ &b, exe, dir = "../../lib/render_gl" }
+    build::add_sources{ &b, exe, dir = "../../../ui/stage" }
+    build::add_sources{ &b, exe, dir = "../../../ui/gl/glsl" }     // the ui library's shaders, which render_gl draws it with
     build::add_sources{ &b, exe, dir = "../../lib/audio" }
     build::add_sources{ &b, exe, dir = "../../lib/gui" }
     build::add_sources{ &b, exe, dir = "../../../ui/core" }

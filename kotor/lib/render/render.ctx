@@ -15,6 +15,10 @@
 // convention adjust inside. Texture data is stored **bottom row first**: texture coordinate v = 0
 // is the first stored row, the bottom of the picture, as TPC, TGA and the MDL UVs have it. 2D is
 // in pixels with the origin at the top left and y down.
+//
+// A frame may also hold passes of the ui library's staged instances (add_staged; ui/PLAN.md section 8.1), which a
+// backend draws with that library's shaders. So a program that adds this directory adds ui/core and ui/stage too, and
+// one with lib/render_gl adds ui/gl/glsl, where those shaders' text is.
 namespace render {
     // ---- handles to GPU resources, made by the gpu namespace. An id is never 0.
     struct Texture { id: u32 }
@@ -545,15 +549,17 @@ namespace render {
         angle: f32,                 // radians, counterclockwise on screen about the rect's centre
     }
 
-    enum StepKind: u8 { view, ui }
+    enum StepKind: u8 { view, ui, staged }
 
-    // The frame's passes, in order: a view's 3D drawing, or a run of 2D quads.
+    // The frame's passes, in order: a view's 3D drawing, a run of 2D quads, or a pass of the ui library's staged
+    // instances (add_staged).
     struct Step {
         kind: StepKind,
         view: u32,                  // view: its index
-        target: ?Target,            // ui: null for the screen
+        target: ?Target,            // ui, staged: null for the screen
         width: f32, height: f32,    // ui: the pixel size the quads are laid out in, stretched over the target
-        first: u32, count: u32,     // ui: frame.quads[first .. first + count]
+        first: u32, count: u32,     // ui: frame.quads[first .. first + count]; staged: `first` is the pass
+        staged: ?*ui_stage::Staged = null,  // staged: what the pass is of
     }
 
     // How many of each thing a frame can hold. What doesn't fit is dropped and counted.
@@ -656,7 +662,7 @@ namespace render {
         frame.views[index] = view
         frame.view_count = index + 1
         frame.steps[frame.step_count] = Step{
-            kind = StepKind::view, view = index, target = view.target, width = 0.0, height = 0.0, first = 0, count = 0,
+            kind = StepKind::view, view = index, target = view.target, width = 0.0, height = 0.0, first = 0, count = 0, staged = null,
         }
         frame.step_count = frame.step_count + 1
         return index
@@ -787,7 +793,24 @@ namespace render {
             return
         }
         frame.steps[frame.step_count] = Step{
-            kind = StepKind::ui, view = 0, target, width, height, first = frame.quad_count, count = 0,
+            kind = StepKind::ui, view = 0, target, width, height, first = frame.quad_count, count = 0, staged = null,
+        }
+        frame.step_count = frame.step_count + 1
+    }
+
+    // Adds pass `pass` of `staged`, the ui library's staged instances (ui/stage, ui/PLAN.md section 2.6), drawn over
+    // what came before into `target` (null: the screen) by the backend with the library's own shaders. The pass is
+    // in the canvas's device pixels, one unit a pixel, from the target's top left: `staged.width` by `staged.height`
+    // should be the target's size. Its images are textures: a ui::Image's id is a Texture's. Nothing is copied:
+    // `staged` is read when the frame is submitted and must not change before. Quads added after it go into a
+    // new begin_ui run.
+    fn add_staged { mut frame: Frame, staged: *ui_stage::Staged, pass: u32, target: ?Target } {
+        if frame.step_count >= frame.steps.len {
+            frame.dropped = frame.dropped + 1
+            return
+        }
+        frame.steps[frame.step_count] = Step{
+            kind = StepKind::staged, view = 0, target, width = 0.0, height = 0.0, first = pass, count = 0, staged,
         }
         frame.step_count = frame.step_count + 1
     }

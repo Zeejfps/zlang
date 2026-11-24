@@ -20,6 +20,9 @@ fn build { mut b: Build } {
     build::add_sources{ &b, exe, dir = "lib/platform" }
     build::add_sources{ &b, exe, dir = "lib/render" }
     build::add_sources{ &b, exe, dir = "lib/render_gl" }
+    build::add_sources{ &b, exe, dir = "../ui/core" }           // the ui library (ui/PLAN.md): render::add_staged names ui_stage::Staged
+    build::add_sources{ &b, exe, dir = "../ui/stage" }
+    build::add_sources{ &b, exe, dir = "../ui/gl/glsl" }        // its shaders' text, which render_gl draws its passes with
     build::add_sources{ &b, exe, dir = "lib/engine" }
     build::add_sources{ &b, exe, dir = "lib/save" }
     build::add_sources{ &b, exe, dir = "lib/rules" }
@@ -46,6 +49,7 @@ fn build { mut b: Build } {
         "lib/script",       // the NCS VM: its stack through pointers, and its untagged Cell
         "lib/video",        // the Bink decoder's inner loops
         "lib/audio",        // the mixer's and the MP3 decoder's inner loops
+        "../ui/core",       // the ui library's own declarations of libm's functions (ui/core/num.ctx)
     ] }
     build::optimize{ &b, exe, level = 2 }
     match build::os{ &b } {

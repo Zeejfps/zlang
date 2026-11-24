@@ -119,7 +119,7 @@ material can then show it: GUI 3D views (the main menu's character), portraits, 
 | `Emitter` + `Particle`s | a texture with a sprite grid, a blend, how particles face, their space; each particle's position, size, angle, colour, cell, direction |
 | `Line`, `Tri` | debug geometry in world space, depth-tested or on top |
 | `Quad` | a 2D rectangle: UVs, colour, an image (none, a texture, or a video frame's YUV planes), blend, clip rectangle, angle |
-| `Step` | the passes in order: a view's 3D drawing (`add_view`), or a run of quads (`begin_ui`) |
+| `Step` | the passes in order: a view's 3D drawing (`add_view`), a run of quads (`begin_ui`), or a pass of the ui library's staged instances (`add_staged`: a `*ui_stage::Staged` and a pass of it, drawn in device pixels of the target with that library's own shaders; ui/PLAN.md section 8.1, `lib/render_gl/canvas.ctx`) |
 
 Passes run in the order they were added, so a GUI can draw a panel, then a 3D view into a target
 or a viewport, then more GUI over it.

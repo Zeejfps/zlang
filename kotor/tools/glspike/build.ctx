@@ -5,6 +5,9 @@ fn build { mut b: Build } {
     build::add_sources{ &b, exe, dir = "../../lib/platform" }
     build::add_sources{ &b, exe, dir = "../../lib/render" }
     build::add_sources{ &b, exe, dir = "../../lib/render_gl" }
+    build::add_sources{ &b, exe, dir = "../../../ui/core" }        // render::add_staged names ui_stage::Staged
+    build::add_sources{ &b, exe, dir = "../../../ui/stage" }
+    build::add_sources{ &b, exe, dir = "../../../ui/gl/glsl" }     // the ui library's shaders, which render_gl draws it with
     match build::os{ &b } {
         macos => {
             build::lib_path{ &b, exe, path = "/opt/homebrew/lib" }        // Homebrew's SDL2

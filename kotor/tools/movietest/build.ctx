@@ -10,6 +10,9 @@ fn build { mut b: Build } {
     build::add_sources{ &b, exe, dir = "../../lib/platform" }
     build::add_sources{ &b, exe, dir = "../../lib/render" }
     build::add_sources{ &b, exe, dir = "../../lib/render_gl" }
+    build::add_sources{ &b, exe, dir = "../../../ui/core" }        // render::add_staged names ui_stage::Staged
+    build::add_sources{ &b, exe, dir = "../../../ui/stage" }
+    build::add_sources{ &b, exe, dir = "../../../ui/gl/glsl" }     // the ui library's shaders, which render_gl draws it with
     build::add_sources{ &b, exe, dir = "../../lib/frontend/movie" }
     build::add_sources{ &b, exe, dir = "../common" }
     build::optimize{ &b, exe, level = 2 }

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Validates the shaders in ui/shaders and embeds them in ui/gl/shaders_glsl.ctx (plan section 2.6).
+# Validates the shaders in ui/shaders and embeds them in ui/gl/glsl/shaders_glsl.ctx (plan section 2.6).
 #
-#   ui/tools/build_shaders            validate, then write ui/gl/shaders_glsl.ctx
-#   ui/tools/build_shaders --check    validate, then fail if ui/gl/shaders_glsl.ctx is not what the
+#   ui/tools/build_shaders            validate, then write ui/gl/glsl/shaders_glsl.ctx
+#   ui/tools/build_shaders --check    validate, then fail if ui/gl/glsl/shaders_glsl.ctx is not what the
 #                                     shaders make (writes nothing)
 #
 # Validation: each file must be valid OpenGL GLSL 4.10 (glslangValidator) and must compile to
@@ -18,7 +18,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 cd "$ROOT"
 
 SHADERS="ui/shaders"
-OUT="ui/gl/shaders_glsl.ctx"
+OUT="ui/gl/glsl/shaders_glsl.ctx"
 CHECK=0
 case "${1:-}" in
     --check) CHECK=1 ;;

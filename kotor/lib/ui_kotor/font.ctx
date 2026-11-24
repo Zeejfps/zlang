@@ -1,0 +1,36 @@
+// kotor's bitmap fonts (lib/material/font.ctx) as the library's glyph tables (ui/PLAN.md section 2.7): one byte one
+// character (cp1252, `Encoding::bytes`), each glyph a box of the font's texture, drawn by the backend as an image
+// on that texture, tinted.
+//
+// A render::Font is in texels: a glyph's box is its uv rectangle times the texture's size, a line `height` high
+// with its baseline `baseline` below its top. The glyph table keeps those numbers as font units, so text at a
+// size of the font's height draws texel for pixel, and any other size magnifies by size / height with every
+// glyph on whole pixels (ui::lay_glyphs). Each glyph advances by its own width: the original zeroes the TXI's
+// spacing when it draws (ui/PLAN.md section 2.7), and lib/gui lays its text out the same way. A glyph's quad starts
+// at the pen and at the line's top, as render::draw_text puts it.
+namespace ui_kotor {
+    // `font` as a glyph table, its glyphs written into `glyphs` (256 hold every font's), which must live as long as
+    // the table does. Register it with ui::add_font. A glyph's uv is the library's: (0, 0) is the picture's top left,
+    // where render::Glyph counts v up from the bottom row.
+    fn from_font { font: render::Font, glyphs: []mut ui::Glyph } -> ui::FontDef {
+        let n = if font.glyphs.len < glyphs.len { font.glyphs.len } else { glyphs.len }
+        for i in 0..n {
+            let g = font.glyphs[i]
+            let w = (g.u1 - g.u0) * font.texture_width
+            let h = (g.v0 - g.v1) * font.texture_height
+            glyphs[i] = ui::Glyph{
+                uv = ui::Uv{ u0 = g.u0, v0 = 1.0 - g.v0, u1 = g.u1, v1 = 1.0 - g.v1 },
+                width = if w > 0.0 { w } else { 0.0 }, height = if h > 0.0 { h } else { 0.0 },
+                left = 0.0, top = 0.0, advance = if w > 0.0 { w } else { 0.0 },
+            }
+        }
+        let image = ui::Image{
+            id = font.texture.id,
+            width = @as(i32, font.texture_width), height = @as(i32, font.texture_height),
+        }
+        return ui::FontDef{
+            kind = ui::FontKind::bitmap{ image, glyphs = glyphs[..n], first = 0, pixels = "", pixels_width = 0, pixels_height = 0 },
+            encoding = ui::Encoding::bytes, height = font.height, ascent = font.baseline,
+        }
+    }
+}
