@@ -12,7 +12,7 @@ fn runner { mut io: Io, mut t: Test, args: Args, count: usize, case: &fn{ index:
     for i in 0..count {
         let c = case{ index = i }
         let code = test::run_here{ &t, c, index = i, run }
-        _ = @fmt(&io, "{} at {}:{} gave {}, panics {} `{}`\n", c.name, c.file, c.line, code, c.panics, c.message)
+        _ = @fmt(&io, "{} at {}:{} in {} gave {}, panics {} `{}`\n", c.name, c.file, c.line, c.dir, code, c.panics, c.message)
         failed = failed + code
     }
     return failed + @as(i32, args.len) * 10

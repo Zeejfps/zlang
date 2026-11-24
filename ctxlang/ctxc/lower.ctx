@@ -4356,7 +4356,7 @@ namespace lower {
     }
 
     // Test t as a value of std's test::Case, IR type ty: its fn's name with its namespaces, its
-    // file as the compiler was given it, its line, for `#test{ panics = "text" }` that it
+    // file as the compiler was given it, its line, that file's directory, for `#test{ panics = "text" }` that it
     // must panic, with the text, and for `#test{ skip = "why" }` that it isn't run, and why.
     // Without a test, a Case of nothing.
     fn case_of { mut l: Lower, ty: u32, t: ?check::TestFn } -> ir::Expr {
@@ -4364,6 +4364,7 @@ namespace lower {
         let mut name = ""
         let mut file = ""
         let mut line: u64 = 0
+        let mut dir = ""
         let mut panics = false
         let mut message = ""
         let mut skips = false
@@ -4372,6 +4373,7 @@ namespace lower {
             let x = check::get_decl{ c = l.c.*, d = test.decl }
             name = x.qual
             file = l.c.files[x.name.span.file].name
+            dir = l.c.files[x.name.span.file].dir
             line = pos{ &l, at = x.name.span }.line
             if let text = test.panics {
                 panics = true
@@ -4389,6 +4391,8 @@ namespace lower {
                 k = ir::ExprKind::sbytes{ bytes = file }
             } else if slice::eq_bytes{ a = f.name, b = "line" } {
                 k = ir::ExprKind::int{ negative = false, value = line }
+            } else if slice::eq_bytes{ a = f.name, b = "dir" } {
+                k = ir::ExprKind::sbytes{ bytes = dir }
             } else if slice::eq_bytes{ a = f.name, b = "panics" } {
                 k = ir::ExprKind::boolean{ value = panics }
             } else if slice::eq_bytes{ a = f.name, b = "message" } {

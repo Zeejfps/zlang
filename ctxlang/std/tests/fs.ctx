@@ -1,0 +1,26 @@
+// Tests of std's fs on a file kept beside this one, words.txt, which `test::dir` finds
+// wherever the tests are run from (spec §20, rule 12).
+
+namespace fs_tests {
+    #test
+    fn reads_a_file_beside_the_test { mut t: Test, mut fs: Fs, mut mem: Mem } -> ! {
+        let pages = mem::pages{ &mem, size = 65536 } ifnull { return alloc::out_of_memory }
+        let mut heap = arena::new{ buf = pages }
+        let mut path = utf8::builder{ realloc = arena::alloc, &heap }
+        try @fmt(&path, "{}/words.txt", test::dir{ &t })
+        let words = utf8::view{ b = path }.bytes
+        @expect(&t, fs::is_absolute{ path = words })
+        let text: []u8 = try fs::read_all{ &fs, &heap, realloc = arena::alloc, path = words }
+        @expect(&t, text == "alpha beta gamma")
+        @expect(&t, try fs::size{ &fs, path = words } == 16)
+    }
+
+    #test
+    fn a_file_that_is_not_there { mut t: Test, mut fs: Fs, mut mem: Mem } -> ! {
+        let pages = mem::pages{ &mem, size = 65536 } ifnull { return alloc::out_of_memory }
+        let mut heap = arena::new{ buf = pages }
+        let mut path = utf8::builder{ realloc = arena::alloc, &heap }
+        try @fmt(&path, "{}/no_such_file.txt", test::dir{ &t })
+        @expect(&t, fs::size{ &fs, path = utf8::view{ b = path }.bytes } is fs::not_found)
+    }
+}

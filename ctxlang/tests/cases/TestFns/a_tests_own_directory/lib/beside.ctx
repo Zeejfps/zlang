@@ -1,0 +1,11 @@
+// A helper in another directory than the tests that call it: test::dir is the test's
+// directory, not this file's.
+namespace beside {
+    fn read { mut t: Test, mut fs: Fs, mut mem: Mem, name: []u8 } -> ![]u8 {
+        let pages = mem::pages{ &mem, size = 65536 } ifnull { return alloc::out_of_memory }
+        let mut heap = arena::new{ buf = pages }
+        let mut path = utf8::builder{ realloc = arena::alloc, &heap }
+        try @fmt(&path, "{}/{}", test::dir{ &t }, name)
+        return try fs::read_all{ &fs, &heap, realloc = arena::alloc, path = utf8::view{ b = path }.bytes }
+    }
+}

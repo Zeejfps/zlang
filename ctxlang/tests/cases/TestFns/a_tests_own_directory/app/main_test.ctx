@@ -1,0 +1,6 @@
+#test
+fn beside_the_root { mut t: Test, mut fs: Fs, mut mem: Mem } -> ! {
+    let text = try beside::read{ &t, &fs, &mem, name = "greeting.txt" }
+    @expect(&t, text == "hello from app\n")
+    @expect(&t, test::dir{ &t } == "?")
+}

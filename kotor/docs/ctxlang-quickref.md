@@ -299,6 +299,11 @@ namespace twoda_tests {
   (`tests: 5 run, 4 passed, 0 failed, 1 skipped, 0 not selected`); the exit code stays 0, or
   1 with `--no-skips`. `skip` never returns, but the checker doesn't know: in an `ifnull`
   block write `return` after it. Never filter tests out with a `#test_main` of your own.
+- A file a test reads is kept beside the test, and found with `test::dir{ &t }`, the absolute
+  path of the directory of the test's own `.ctx` file (no `/` at its end), so the test runs
+  from any working directory: `try @fmt(&path, "{}/rows.2da", test::dir{ &t })` into a
+  `utf8::builder`, then `fs::read_all{ ..., path = utf8::view{ b = path }.bytes }`. Never a
+  path from the repository's root. A helper in another file gets the calling test's directory.
 - Pass `&t` down to helpers that check (`fn same_rows { mut t: Test, a: Table, b: Table }`).
 - Each test runs in its own process, several at once: don't rely on another test's files or
   state. A test that needs the game install belongs in a tool, as before.

@@ -1,0 +1,5 @@
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "app", root = "app" }
+    build::add_sources{ &b, exe, dir = "lib" }
+    build::gen_file{ &b, exe, name = "made", text = "#test\nfn in_a_generated_file { mut t: Test } { @expect(&t, test::dir{ &t } == \"?\") }\n" }
+}

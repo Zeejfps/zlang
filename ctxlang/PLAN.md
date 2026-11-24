@@ -443,7 +443,11 @@ steps 1 and 3 are done. None blocks the other stages.
      ends the test where it finds what it lacks, and `#test{ skip = "why" }` isn't run. Each
      has a line, `FILE:LINE: skip: NAME: WHY`, and the summary counts them; the exit code
      stays 0 unless `--no-skips` is given. A function and an attribute's field, no builtin.
-   - *Not built, each for its reason* (spec §20, rule 12): a leak check (std's one allocator is
+   - **A test knows its own directory** (spec §20, rule 12): `test::dir{ &t }`, the absolute
+     path of the directory of the test's source file, for a file kept beside it. The compiler
+     has each test's file for its lines, and gives its directory with it; the working
+     directory is left alone.
+   - *Not built, each for its reason* (spec §20, rule 13): a leak check (std's one allocator is
      the arena, which has nothing to leak), a temporary directory, and tests with arguments.
    - *Considered:* finding tests by name (Go's `TestXxx`) is magic by name; `test "name" { }`
      blocks (Zig) are syntax an attribute already gives; fixtures by parameter name (pytest) are

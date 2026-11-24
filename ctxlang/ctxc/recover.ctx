@@ -141,7 +141,7 @@ namespace recover {
         }
         if not checked { return null }
         let f = program.files[program.at]
-        program.files[program.at] = check::File{ name = f.name, text, lines = source::line_starts{ text, &heap }, tree, denied = f.denied }
+        program.files[program.at] = check::File{ name = f.name, text, lines = source::line_starts{ text, &heap }, tree, denied = f.denied, dir = f.dir }
         let mut c = check::new{ files = program.files, std_files = program.std_files, &heap, &diags }
         c.stack = program.stack
         check::program{ &c }

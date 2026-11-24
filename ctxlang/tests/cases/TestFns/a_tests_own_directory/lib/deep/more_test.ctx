@@ -1,0 +1,8 @@
+namespace deep {
+    #test
+    fn in_an_added_directory { mut t: Test, mut fs: Fs, mut mem: Mem } -> ! {
+        let text = try beside::read{ &t, &fs, &mem, name = "greeting.txt" }
+        @expect(&t, text == "hello from lib/deep\n")
+        @expect(&t, test::dir{ &t } == "?")
+    }
+}

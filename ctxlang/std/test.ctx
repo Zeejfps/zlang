@@ -17,23 +17,37 @@
 capability Test { ..Io, ..test::State }
 
 namespace test {
-    // The running test's name and where its fn is, for its lines, and what it has checked so
-    // far: whether it has made a check, and whether one didn't hold, each 0 or 1, set
-    // atomically, since a test's tasks may check at once.
+    // The running test's name and where its fn is, for its lines, the directory of its file
+    // (`dir`), and what it has checked so far: whether it has made a check, and whether one
+    // didn't hold, each 0 or 1, set atomically, since a test's tasks may check at once.
     capability State {
         static name: [512]u8,
         static name_len: usize,
         static file: []u8,
         static line: u32,
+        static dir: []u8,
         static checked: u32,
         static failed: u32,
     }
 
     // A test, as the compiler lists it: its fn's name with its namespaces, its file as the
-    // compiler was given it, and its line; for `#test{ panics = "text" }`, that it passes by
+    // compiler was given it, and its line; the directory of that file, as an absolute path
+    // (`dir`); for `#test{ panics = "text" }`, that it passes by
     // panicking, with a message that contains the text; and for `#test{ skip = "why" }`, that
     // it isn't run, and why.
-    struct Case { name: []u8, file: []u8, line: u32, panics: bool, message: []u8, skips: bool, why: []u8 }
+    struct Case { name: []u8, file: []u8, line: u32, dir: []u8, panics: bool, message: []u8, skips: bool, why: []u8 }
+
+    // The directory of the running test's own source file, the one its `#test` fn is in
+    // (spec §20, rule 12): where a test finds a file kept beside it, wherever `ctxc test` was
+    // run from, and whichever fn asks. An absolute path with `/` between its parts and none at
+    // its end, as it was when the test build was made. A file in it is `DIR/NAME`:
+    //
+    //   let mut path = utf8::builder{ realloc = arena::alloc, &heap }
+    //   try @fmt(&path, "{}/rows.2da", test::dir{ &t })
+    //   let data = try fs::read_all{ &fs, &heap, realloc = arena::alloc, path = utf8::view{ b = path }.bytes }
+    fn dir { mut t: Test } -> []u8 {
+        return t.dir
+    }
 
     // The exit code of a test that was skipped: what `skip` ends its process with, and what
     // `run_here` gives for a `#test{ skip = "why" }`. It is the code other test runners
@@ -241,6 +255,7 @@ namespace test {
         t.name_len = n
         t.file = c.file
         t.line = c.line
+        t.dir = c.dir
         t.checked = 0
         t.failed = 0
         if c.skips {

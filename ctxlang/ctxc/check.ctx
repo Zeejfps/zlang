@@ -42,8 +42,10 @@ namespace check {
 
     // A source file: std's files come first, then the program's. In one that is `denied`, the
     // unchecked operations are errors (spec §13, Unchecked operations): one of an executable's
-    // files that its build program's `build::deny_unchecked` doesn't except (§19).
-    struct File { name: []u8, text: []u8, lines: []u32, tree: syntax::File, denied: bool }
+    // files that its build program's `build::deny_unchecked` doesn't except (§19). In a test
+    // build, `dir` is the directory of a file of the program's, as an absolute path (§20, rule
+    // 12): what a test of that file is given as its own directory.
+    struct File { name: []u8, text: []u8, lines: []u32, tree: syntax::File, denied: bool, dir: []u8 }
 
     enum Kind: u8 { func, record, sum, enumeration, alias, constant, external, cap, fault }
 

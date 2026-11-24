@@ -578,8 +578,8 @@ What a model writes by default should compile, or fail with the exact fix.
       `main` may. The runner is std's `test::main`, a `#test_main` fn a program can replace.
       It needs no threads and no `proc::capture` (which isn't built): a test's output goes to
       a file, and the runner waits with `proc::wait_for`.
-    - Used: [std/tests](std/tests) (15 tests of `@min`, `@max`, `@clamp`, `cmp`, `utf8`, `@fmt`'s specs, `list` and
-      `map`, `ctxc test std/tests`), and KOTOR's 2DA parser
+    - Used: [std/tests](std/tests) (17 tests of `@min`, `@max`, `@clamp`, `cmp`, `utf8`, `@fmt`'s specs, `list`,
+      `map` and `fs`, `ctxc test std/tests`), and KOTOR's 2DA parser
       ([kotor/lib/formats/twoda_test.ctx](../kotor/lib/formats/twoda_test.ctx), 5 tests on
       tables made by hand, no game install: `ctxc test kotor/tools/fmttest twoda`), which were
       fmttest's `check_text_2da` with its hand-rolled `Tally` and `expect`.
@@ -590,7 +590,12 @@ What a model writes by default should compile, or fail with the exact fix.
       NAME: WHY`, and is counted, a test that failed before its skip stays failed, and
       `--no-skips` makes a skip exit with 1. Both are std's: a function, and a field the
       runner reads.
-    - Not built, each for its reason ([spec §20, rule 12](spec.md#20-tests)): a leak check
+    - A test's own directory, since a test that opens a file beside it otherwise runs only
+      from the repository's root ([spec §20, rule 12](spec.md#20-tests)): `test::dir{ &t }` is
+      the directory of the test's file as an absolute path, fixed when the test build is
+      made, the same in a helper of another file. The working directory stays the caller's.
+      std's own use: [std/tests/fs.ctx](std/tests/fs.ctx) reads `words.txt` beside it.
+    - Not built, each for its reason ([spec §20, rule 13](spec.md#20-tests)): a leak check
       (std's one allocator is the arena), a temporary directory, tests with arguments. JSON
       output is 6.2's.
 

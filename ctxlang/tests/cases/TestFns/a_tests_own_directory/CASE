@@ -1,0 +1,23 @@
+// test::dir is the directory of the running test's own file, as an absolute path: a test
+// reads a file kept beside it wherever `ctxc test` is run from. It is the test's, also in
+// a fn of another file that the test calls (lib/beside.ctx), and each directory of the
+// program has its own: the root's, and one that `build::add_sources` adds. A generated
+// file's test is given the directory ctxc wrote the file in. Each test here passes its
+// first check, of the file's text, and fails the second to show its directory.
+//# $ ctxc test .
+//# exit: 1
+//# stdout:
+//| app/main_test.ctx:5: fail: beside_the_root: test::dir{ &t } == "?": {dir}/app == ?
+//| lib/deep/more_test.ctx:6: fail: deep::in_an_added_directory: test::dir{ &t } == "?": {dir}/lib/deep == ?
+//| {work:.}/gen/app/made.ctx:2: fail: in_a_generated_file: test::dir{ &t } == "?": {work:.}/gen/app == ?
+//| tests: 3 run, 0 passed, 3 failed, 0 skipped, 0 not selected
+
+// From another working directory the files are named from there, and the directories are
+// the same.
+//# $ ctxc test .. beside deep
+//# cwd: elsewhere
+//# exit: 1
+//# stdout:
+//| ../app/main_test.ctx:5: fail: beside_the_root: test::dir{ &t } == "?": {dir}/app == ?
+//| ../lib/deep/more_test.ctx:6: fail: deep::in_an_added_directory: test::dir{ &t } == "?": {dir}/lib/deep == ?
+//| tests: 2 run, 0 passed, 2 failed, 0 skipped, 1 not selected

@@ -313,6 +313,18 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8
         diags.errors = errors
         diags.dropped = diags.dropped + own.dropped
     }
+    // A test is given the directory of its own file (spec §20, rule 12): each of the program's
+    // files' directories as an absolute path, from the working directory, which the files'
+    // names are relative to.
+    if testing {
+        let here = drive::absolute{ &io, &fs, &heap, path = "." } ifnull { return 1 }
+        let own_files = list::items{ list = files }
+        i = std_count
+        while i < own_files.len {
+            own_files[i].dir = drive::place{ &heap, dir = here, rel = drive::parent{ path = own_files[i].name } }
+            i = i + 1
+        }
+    }
     let mut c = check::new{ files = list::items{ list = files }, std_files = std_count, &heap, &diags }
     c.stack = drive::host_stack{ &proc } / 2
     c.testing = testing
@@ -444,7 +456,7 @@ fn add_file { mut files: list::List(check::File, arena::Arena), mut heap: arena:
     let lexed = lexer::lex{ text, file, &heap, &diags }
     let tree = parser::parse{ text, file, tokens = lexed.tokens, &heap, &diags }
     let lines = source::line_starts{ text, &heap }
-    try! list::push{ list = &files, item = check::File{ name, text, lines, tree, denied } }
+    try! list::push{ list = &files, item = check::File{ name, text, lines, tree, denied, dir = "" } }
 }
 
 // `ctxc recover FILE FROM TO [-v] [--every N] [-- FILE...]` (recover.ctx). The program's files
