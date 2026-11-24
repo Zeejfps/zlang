@@ -303,8 +303,8 @@ may already name another descriptor. The program cancels and waits for the tasks
 
 **Signals.** A send to a peer that has gone raises SIGPIPE on Linux and macOS unless asked not to:
 the Linux layer sends with `MSG_NOSIGNAL`, and the macOS layer sets `SO_NOSIGPIPE` on each socket it
-makes or accepts. `send` then fails with `closed`. testing.md's broken-pipe setting on `main` is about
-pipes and standard output; sockets never raise the signal, whatever it says.
+makes or accepts. `send` then fails with `closed`. A setting on `main` for broken pipes, which isn't
+built, would be about pipes and standard output; sockets never raise the signal, whatever it says.
 
 **Inheritance.** Sockets aren't inherited by children `proc` starts: `SOCK_CLOEXEC` and `accept4` on
 Linux, which forks; on macOS `posix_spawn`'s `POSIX_SPAWN_CLOEXEC_DEFAULT` already keeps them, and

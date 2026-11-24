@@ -565,7 +565,7 @@ What a model writes by default should compile, or fail with the exact fix.
       doesn't hold ([§13, Checks, rule 6](spec.md#checks)).
     - `ctxc test PATH [FILTER...]`, with or without a build.ctx, builds the program with std's
       runner as its entry point in place of `main` (which needn't exist) and runs it. Each
-      test runs in a process of its own (testing.md's conclusion), so a panic fails one test
+      test runs in a process of its own ([spec §20, rule 6](spec.md#20-tests)), so a panic fails one test
       with its message, no static leaks from one test to the next, and tests run at once;
       a test that doesn't end is ended after `--timeout` seconds. One line for each failure,
       `FILE:LINE: fail: NAME: ...`, then `tests: N run, P passed, F failed, S not selected`;

@@ -430,7 +430,7 @@ steps 1 and 3 are done. None blocks the other stages.
      statement, which ends the test where `c` doesn't hold.
    - **A test that checks nothing fails,** as does a filter that selects none: neither is
      reported as a pass.
-   - **A process for each test** (testing.md): a panic fails one test, statics don't leak
+   - **A process for each test** (spec §20, rule 6): a panic fails one test, statics don't leak
      from one to the next, and tests run at once. The runner is std's `test::main`, a
      `#test_main` fn that a program may replace; it starts the test build's own executable
      again for each test, with its output in a file, so it needs no threads.
