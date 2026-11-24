@@ -51,7 +51,10 @@ namespace ui {
         let parent = find_tree_parent{ &ui, token = make_id{ ui, name = TREE_TOKEN }, frame }
         let pass = reg.f[0]
         reg.f[0] = 0.0
-        if opts.enabled and id != NO_ID and (pass == 1.0 or (pass == 2.0 and prev != NO_ID and parent == prev)) { set_focus{ &ui, id } }
+        if opts.enabled and id != NO_ID and (pass == 1.0 or (pass == 2.0 and prev != NO_ID and parent == prev)) {
+            set_focus{ &ui, id }
+            set_focus_visible{ &ui, visible = true }
+        }
 
         let it = press{ &ui, id, opts = make_press_opts{ ui, opts } }
         let mut values = load_state{ &ui, id }
@@ -69,13 +72,23 @@ namespace ui {
                 }
                 take_key_at{ &ui, index = i }
                 match k.key {
-                    up => { if prev != NO_ID { set_focus{ &ui, id = prev } } }
+                    up => {
+                        if prev != NO_ID {
+                            set_focus{ &ui, id = prev }
+                            set_focus_visible{ &ui, visible = true }
+                        }
+                    }
                     down => { reg.f[0] = 1.0 }
                     right => {
                         if open { reg.f[0] = 2.0 } else if not leaf { open = true }
                     }
                     else => {
-                        if open { open = false } else if parent != NO_ID { set_focus{ &ui, id = parent } }
+                        if open {
+                            open = false
+                        } else if parent != NO_ID {
+                            set_focus{ &ui, id = parent }
+                            set_focus_visible{ &ui, visible = true }
+                        }
                     }
                 }
                 break

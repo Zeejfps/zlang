@@ -81,6 +81,7 @@ namespace ui {
                 }
                 if let n = to {
                     value = n
+                    set_focus_visible{ &ui, visible = true }
                     take_key_at{ &ui, index = i }
                     continue
                 }

@@ -338,6 +338,15 @@ fn record_data_widget {
     _ = ui_test::move_pointer{ ui = &gui, x = 335, y = 395 }
     ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
     write_frame{ &sink, ui = gui, name = "the pointer gone" } iferr { return }
+    // The click's focus draws no ring; a key that moves the widget's cursor or focus does.
+    let keyed = widget == DataWidget::list or widget == DataWidget::tree or widget == DataWidget::tabs or widget == DataWidget::table
+    if keyed {
+        let unringed = not has_ring{ ui = gui }
+        _ = ui_test::tap_key{ ui = &gui, key = if widget == DataWidget::tabs { ui::Key::right } else { ui::Key::down }, mods = 0 }
+        ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
+        write_frame{ &sink, ui = gui, name = "moved by a key" } iferr { return }
+        ui_test::expect{ &io, &t, ok = unringed and has_ring{ ui = gui }, what = "data goldens: a click's focus draws no ring, a key's move draws it" }
+    }
     ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name, actual = ui_rec::get_text{ sink }, scratch, update }
     ui_test::expect{ &io, &t, ok = d.unclean == 0 and sink.lost == 0, what = "data goldens: every frame is clean" }
 }

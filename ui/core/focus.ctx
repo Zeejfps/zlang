@@ -49,9 +49,11 @@ namespace ui {
 
     // Gives `id` the keyboard focus as a press of a focusable widget does: kept through the end of
     // a frame whose left press would otherwise drop it. What a widget calls when a press on one of
-    // its parts (a list's row, a tab) is to focus the whole widget.
+    // its parts (a list's row, a tab) is to focus the whole widget. A pointer gave it, so the focus
+    // is not shown (`is_focus_visible`) until keys move it.
     fn claim_focus { mut ui: Ui, id: Id } {
         focus::take_focus{ &ui, id, claimed = true }
+        ui.focus.visible = false
     }
 
     fn is_focused { ui: Ui, id: Id } -> bool {

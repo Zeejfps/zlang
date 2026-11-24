@@ -149,6 +149,7 @@ namespace ui {
                 i = i + 1
             }
             if moved {
+                set_focus_visible{ &ui, visible = true }
                 list.picked = cursor
                 reveal = true
             }
