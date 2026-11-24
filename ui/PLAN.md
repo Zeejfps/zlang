@@ -1751,8 +1751,9 @@ Four kinds of check:
    lists the draws, so a change that breaks batching shows as a diff. On a mismatch the test prints the
    first differing line both ways and writes `<name>.actual.txt` beside the golden (ignored by git);
    the check is `@expect(&t, ui_check::compare_golden{ ... })`, so the failure's line is the test's.
-   `UI_UPDATE_GOLDENS=1` in the environment rewrites the goldens after an intended change (`ctxc test`
-   passes a test no arguments, and each test's process inherits the runner's environment); the
+   `ctxc test PACKAGE -- --update-goldens` rewrites the goldens after an intended change (the
+   argument reaches every test through `test::args`); a golden is found from the test's own directory
+   (`test::dir`), so a package runs from any working directory; the
    reviewer reads the git diff of the golden files. This pins a widget's look without pixels (ZGF's
    `StockLookTests`).
 3. **Scripted interaction** through `ui_test::Driver`, which is a host: it steps frames with a fixed
@@ -1773,11 +1774,12 @@ Four kinds of check:
 Every test also asserts, after each frame, that nothing was dropped and no problem was recorded.
 
 **What a machine may lack.** The font tests need a system font and the screenshots an OpenGL window.
-`ctxc test` has no skip, and a test that checks nothing fails, so a package whose tests need either
-declares its own `#test_main` fn, which finds out what is there and runs std's runner through
-`ui_check::run_tests_without`: each test it leaves out gets a line `FILE:LINE: skip: NAME: REASON`,
-and the runner's summary counts it as not selected, never as passed. Only a missing font file or a
-window SDL cannot open leaves a test out; a failure of `ui_gl` or `ui_fonts` is the test's own.
+A test that needs either finds out at its start and skips itself with `test::skip`
+(`ui_check::get_latin_font`, `get_cjk_font` and the shots package's `skip_without_gl_window`): the
+runner prints `FILE:LINE: skip: NAME: REASON` and counts it as skipped in its summary, never as
+passed or failed, and exits 0 (`--no-skips` makes it 1, for a machine that must lack nothing). Only a
+missing font file or a window SDL cannot open skips a test; a failure of `ui_gl` or `ui_fonts` is the
+test's own.
 
 Rules that keep the tooling honest: no Python in any test path (the driver, the script reader and the
 golden compare are ctxlang). The one script that writes ctxlang is the shader embedder, which copies
@@ -1785,7 +1787,8 @@ bytes into data literals and never reads ctxlang.
 
 ### 6.2 Commands
 
-From the repository root, in Git Bash (the wrapper builds the compiler on first use):
+In Git Bash (the wrapper builds the compiler on first use), from any working directory; the paths
+below are from the repository root:
 
 ```
 kotor/tools/ctxc test ui/tests/draw                    # stage 0: draw list, recorder, formatting
@@ -1800,7 +1803,8 @@ kotor/tools/ctxc test ui/tests/input                   # stage 7
 kotor/tools/ctxc test ui/tests/layers                  # stage 8
 kotor/tools/ctxc test ui/tests/widgets                 # stages 9 to 12
 kotor/tools/ctxc test ui/tests/widgets field_          # only the tests whose names contain a filter
-UI_UPDATE_GOLDENS=1 kotor/tools/ctxc test ui/tests/widgets   # rewrite goldens after an intended change
+kotor/tools/ctxc test ui/tests/widgets -- --update-goldens   # rewrite goldens after an intended change
+kotor/tools/ctxc check ui/tests/widgets                # every error of a package from the front end alone, nothing built
 kotor/tools/ctxc run ui/samples/demo_gl                # the gallery, interactive
 kotor/tools/ctxc run ui/samples/demo_gl -- --headless --script ui/samples/gallery/tour.txt --shot ui/out/tour.png
 kotor/tools/ctxc run ui/samples/tasks                  # stage 13: the desktop application
@@ -1956,7 +1960,7 @@ ctxlang: the tests are found by the compiler. Measured on this machine: the whol
   `ui/fonts/shape.ctx`, `ui/tests/fonts/{build.ctx, main.ctx}`, `ui/tests/shots/text.ctx` and the two
   lines in stage 3's `ui/tests/shots/{build.ctx, main.ctx}` that add and call it.
 - **Acceptance.** With a system font (UI_FONT, or the platform's default path; with none the package's
-  `#test_main` leaves every test out on a `skip:` line each): a face loads and a start-up check of the mirrored FreeType fields passes
+  every test is skipped, each on a `skip:` line with the reason): a face loads and a start-up check of the mirrored FreeType fields passes
   (units per em and glyph count in range), so wrong offsets fail at once; 'A' rasterises to a non-empty
   bitmap; "AV" is narrower than 'A' plus 'V' in a font with kerning; a second shaping of the same text
   is a cache hit; with a CJK font registered as fallback, a line mixing Latin and CJK comes back as runs
@@ -2408,7 +2412,7 @@ stage reaches into kotor:
 | Frame-arena slices outlive the frame | `take_text` results kept across frames point at reused bytes; the escape check cannot see it. | Documented at the function; nothing in the library keeps one. |
 | Two widget sets drift | Stock widgets and kui both grow. | Both use only the public primitives; kui lives in kotor and has its own parity tool. |
 | Hover-as-focus one frame late | KOTOR's hover sound and highlight follow the pointer a frame behind. | 16 ms at 60 frames a second. Checked by eye in stage 16. |
-| A machine without a system font | Samples and the font tests need a font file. | `--font PATH` for a sample, UI_FONT for the tests; without one the font tests are left out by name on `skip:` lines, never passed; the core's tests need no file at all. |
+| A machine without a system font | Samples and the font tests need a font file. | `--font PATH` for a sample, UI_FONT for the tests; without one the font tests are skipped, each on a `skip:` line with the reason and counted as skipped, never passed; the core's tests need no file at all. |
 
 ### 10.2 Language and std gaps
 
@@ -2421,8 +2425,9 @@ fixed in the language on its own branch, as kotor's rules require.
 | A program's `math` shadows std's (kotor) | The core declares its own few libm externs [compiled, a1, a5]. | The fix belongs in kotor (stop shadowing, or carry the missing functions), not in the GUI and not in the language. |
 | The escape check misses a stack slice stored through a call | All text is copied at the call. | **Yes: a compiler fix would turn this class of bug into an error.** It affects every library that keeps slices. |
 | No C `long` type and no way to mirror a C struct from its header | `ui/fonts` computes FreeType's offsets from `target::OS` and checks them at start-up. | A `c::Long` in std would remove the per-platform arithmetic. Small, and other bindings would use it. |
-| No `ctxc check` (front end only) | Builds are fast enough (0.4 s for small programs). | Useful for agents, not needed. |
-| No skip in `ctxc test` (`#test`, `@expect` and the runner landed: spec section 20) | The tests are `#test` fns; a package that needs a font or an OpenGL window has a `#test_main` that leaves out what cannot run, by name, on a `skip:` line, so the summary counts it as not selected (section 6.1). | A skip in the runner would remove the two `#test_main` fns and count skips in the summary. |
+| No `ctxc check` (front end only) | Done in the language: `ctxc check PATH` gives every error of a program, a test package included, with nothing built (about 3 s for `ui/tests/widgets`). | Done. |
+| The test framework's gaps (`#test`, `@expect`, `@require` and the runner landed: spec section 20): no skip, no arguments to a test, no directory of a test's own file, no count of checks | All four are in the language and used: `test::skip` and `#test{ skip }` (a missing font or OpenGL window; the summary counts skips), `test::args` (`-- --update-goldens`), `test::dir` (goldens and scratch files found from the test's file, so a package runs from any working directory) and the summary's check count (the record of what a change kept). The custom `#test_main` fns, `ui_check::run_tests_without` and the `UI_UPDATE_GOLDENS` variable are gone (section 6.1). | Done. |
+| A check in a helper reports the helper's line, not the caller's | A helper that decides returns a `bool` for the test's own `@expect` (`compare_golden`); one that checks takes `mut t: Test` and prints what it looked at first. | **Yes, if a check could name the line of the call it was made for** (spec section 13, Checks, rule 2 says the line is the `@expect`'s own): a golden or an invariant checked in a helper would then fail at the test. |
 | No sort, no integer min and max | Only tiny insertion sorts (at most 64 layers) and three-line helpers. | No: not worth a std change for this. |
 | No vector or rectangle math in std | `ui::Rect` and four helpers. | No: kotor's and ui's types differ for good reasons (f32 colours versus bytes). |
 | No bare block statement | Closed: ctxlang now has block statements (spec section 11, rule 4). | Done in the language. |

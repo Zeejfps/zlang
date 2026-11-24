@@ -2,11 +2,18 @@
 # Verifies ui/ in one command, and exits non-zero if anything failed: the shader check, every test
 # package under ui/tests through `ctxc test` (each prints its failures and a summary line), the
 # samples' scripted tours (the only end-to-end checks of the programs), then kotor/tools/uicompat.
-# Tests that need what this machine lacks (a font, an OpenGL window) are left out by their
-# package's `#test_main` with a `skip:` line each; the tours need an OpenGL window. Run it from
-# anywhere; it works from the repository root, where the goldens' paths start.
+# Tests that need what this machine lacks (a font, an OpenGL window) skip themselves with
+# `test::skip`: each has a `skip:` line, and its package's summary counts it as skipped, which
+# does not fail the run (add `--no-skips` to a package's `ctxc test` to make it). The tours need
+# an OpenGL window. Each package's summary line ends with how many checks its tests made, the
+# record that a change to the tests kept every one. Run it from anywhere: the packages find their
+# own goldens, and the script runs from the repository root only for the paths below.
 #
 #   ui/tools/check
+#
+# To see the errors of one package fast, without building or running anything:
+#
+#   kotor/tools/ctxc check ui/tests/widgets
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"

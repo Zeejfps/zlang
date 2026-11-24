@@ -114,8 +114,10 @@ What follows from it, and what a reviewer checks:
 
 ## Commands
 
-From the repository root, in **Git Bash** (PowerShell's `bash` is WSL's). The wrapper builds the
-compiler on first use; a cached rerun of a small program takes about 0.1 s.
+In **Git Bash** (PowerShell's `bash` is WSL's); the commands below are written from the repository
+root, and every `ctxc test` of a package works from any working directory (give its path as `ctxc`
+takes it from there). The wrapper builds the compiler on first use; a cached rerun of a small
+program takes about 0.1 s.
 
 ```
 kotor/tools/ctxc test ui/tests/draw                    # stage 0: draw list, recorder, formatting, the unit conversions
@@ -130,7 +132,11 @@ kotor/tools/ctxc test ui/tests/sdl                     # the SDL host's conversi
 kotor/tools/ctxc test ui/tests/shots                   # stages 3 and 4: pictures from the OpenGL backend in ui/out (UI_SHOTS_DIR); look at them
 kotor/tools/ctxc test ui/tests/widgets slider          # only the tests whose names contain `slider` (any number of filters)
 kotor/tools/ctxc test ui/tests/widgets --list          # the tests, FILE:LINE: NAME, without running them (also -v, --jobs N, --timeout S)
-UI_UPDATE_GOLDENS=1 kotor/tools/ctxc test ui/tests/draw   # rewrite the goldens after an intended change (any package)
+kotor/tools/ctxc test ui/tests/draw -- --update-goldens   # rewrite the goldens after an intended change (any package; everything after `--` is the tests')
+kotor/tools/ctxc test ui/tests/widgets slider -- --update-goldens   # the goldens of the tests that match, only
+kotor/tools/ctxc test ui/tests/fonts --no-skips        # exit 1 if a test was skipped (a machine that must lack nothing)
+UI_FONT=C:/no/such.ttf kotor/tools/ctxc test ui/tests/fonts   # every test skipped, each with its reason: `17 run, 0 passed, 0 failed, 17 skipped`
+kotor/tools/ctxc check ui/tests/widgets                # the front end alone: every error of the package, nothing built (about 3 s)
 kotor/tools/ctxc run ui/samples/demo_gl                # the gallery in a window
 kotor/tools/ctxc run ui/samples/demo_gl -- --headless --page Windows --theme light --scale 1.5 --shot ui/out/windows.png
 kotor/tools/ctxc run ui/samples/demo_gl -- --headless --script ui/samples/gallery/tour.txt --shot ui/out/tour.png
@@ -172,17 +178,25 @@ rules (path encoding, errors) are the comment at `add_face_file`.
 run by `ctxc test`, each in a process of its own. The runner prints one line a failure, at the
 check, with both sides of a comparison (`ui/tests/draw/main.ctx:105: fail: counts_what_does_not_fit:
 rect_x_of{ cmd = list.cmds[3] } == 3: 4 == 3`) after what the test printed, and last
-`tests: N run, P passed, F failed, S not selected`; it exits 1 if a test failed or none ran.
-Run a package from the repository root (the goldens' paths start there); filters pick the tests
-whose names contain one, and `--list` names them. `ui/tools/check` exits non-zero if any package,
-tour or uicompat does.
+`tests: N run, P passed, F failed, K skipped, S not selected, C checks`; it exits 1 if a test failed
+or none ran, and 0 when tests were only skipped. A package runs from any working directory: its tests
+find their goldens and scratch files from `test::dir`, the directory of their own file. Filters pick
+the tests whose names contain one, and `--list` names them. What follows `--` goes to every test
+(`test::args`): `-- --update-goldens` is the only argument the tests read. `ctxc check PACKAGE`
+(front end alone, every error, nothing built) is the quick way to see what is wrong with a package
+before running it. `ui/tools/check` exits non-zero if any package, tour or uicompat does, and each
+package's summary line in its output is the record of how many checks it made: a change that keeps
+every test keeps every count (a check removed shows as a smaller `C`).
 
 Writing one:
 
 - Put it in the package of what it tests (PLAN.md section 6.2 lists them), never beside the code: a
   program that adds `ui/core` would compile it. A new package is a directory with a `build.ctx` that
   adds what it tests, `../../test` and `../support`, and links what it needs; `ui/tools/check` finds
-  it by its `build.ctx`.
+  it by its `build.ctx`. Name a file the test reads or writes from its own directory, never from the
+  working directory: `ui_check::make_path{ &t, relative, out }` is a file beside the test's file and
+  `ui_check::make_out_path{ &t, name, out }` one in `ui/out` (a package is `ui/tests/<name>/`, so
+  that is `../../out`).
 - One coherent case a test, named for what it checks with a verb (`clicks_on_the_frame_after_the_release`,
   `wraps_as_the_golden`); a case run at two scales or in both themes is a test for each, over a
   helper that takes the scale. A test takes the capabilities it uses, a `Test` among them:
@@ -190,23 +204,32 @@ Writing one:
 - Check with `@expect(&t, condition)` where the condition is decided, so the failure points there;
   compare values with `==` and friends so both sides are printed. A comment above the check says what
   it means. What cannot fail in a passing run (an allocation, a write into a sink) is `try`, and the
-  test returns its error; a check in a helper reports the helper's line, so a helper that checks takes
-  `mut t: Test` and prints what it looked at before its `@expect`.
-- A test that needs what a machine may lack (a font, an OpenGL window) goes in a package whose
-  `#test_main` fn leaves it out with `ui_check::run_tests_without` when that is missing (fonts' and
-  shots' `main.ctx`). The runner has no skip: a test left out has its own `skip:` line and counts as
-  not selected.
+  test returns its error; a check in a helper reports the helper's own line (the language has no way
+  to attribute it to the caller: spec section 13, Checks, rule 2), so a helper that checks takes
+  `mut t: Test` and prints what it looked at before its `@expect`, and a helper that only decides
+  returns the `bool` for the test's own `@expect`, as `compare_golden` does. A check that the next
+  lines need is `@require(&t, c)`, which ends the test.
+- A test that needs what a machine may lack (a font, an OpenGL window) skips itself with
+  `test::skip{ &t, why }` once it finds it missing, from whatever fn finds out: `ui_check::get_latin_font`
+  and `get_cjk_font` (the fonts' paths, found by `UI_FONT`, `UI_CJK_FONT`, else the platform's) and
+  `skip_without_gl_window` in `ui/tests/shots` do. The runner prints `FILE:LINE: skip: NAME: WHY` and
+  counts it as skipped, and the test ends there, so a `return` follows `skip` where a path must end.
+  A test that must not run at all is `#test{ skip = "why" }`. The font paths stay environment
+  variables: they are what a machine has once for every run, where `--update-goldens` is what one
+  run names.
 - Helpers that take a `Test` or exist only for tests go in `ui/tests/support` (namespace `ui_check`),
   which no program adds. `ui/test` is for what the samples use too (the driver, the script reader,
   the test font, the PNG writer), so nothing there takes a `Test`.
 
 **Golden files.** A test builds something, writes it as text with `ui_rec`, and checks it with
-`@expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name, actual, scratch, update })`
-against `ui/tests/<name>/golden/<name>.txt`. On a mismatch the compare prints the first differing line
-both ways and writes `<name>.actual.txt` beside the golden (git ignores it). `update` is
-`ui_check::is_updating{ &proc }`: run with `UI_UPDATE_GOLDENS=1` to rewrite the goldens after an
-intended change (an environment variable, because `ctxc test` passes a test no arguments and each
-test's process inherits the runner's environment). A golden is written by hand from what the test
+`@expect(&t, ui_check::compare_golden{ &io, &fs, &t, name, actual, scratch })`
+against `golden/<name>.txt` in the directory of the test's own file (`test::dir`), so
+`ui/tests/<name>/golden/<name>.txt` from any working directory. On a mismatch the compare prints the
+first differing line both ways and writes `<name>.actual.txt` beside the golden (git ignores it).
+It rewrites the golden instead when the run was given the argument `--update-goldens`, which it reads
+with `test::args`: `ctxc test PACKAGE -- --update-goldens` after an intended change (add filters
+before the `--` to rewrite the matching tests' goldens only). An argument and not the environment
+variable this was: it is in the command, where a typing mistake is seen, and it names one run. A golden is written by hand from what the test
 built, or reviewed line by line against it when an update produced it: a golden that merely records
 what the code printed proves nothing. The reviewer reads the git diff of goldens. Carriage returns
 are ignored in the compare, so a checkout with Windows line ends still matches.
@@ -299,9 +322,11 @@ ui/
     script.ctx  run_script: the text scripts demo_gl's --script runs (the commands are its top comment)
   tests/<name>/                    `#test` packages run by `ctxc test`: build.ctx, main.ctx, golden/*.txt
   tests/support/ namespace ui_check  what the tests share and no program adds: compare_golden, is_updating
-                                   (UI_UPDATE_GOLDENS), make_heap, has_wake (golden.ctx); run_tests_without
-                                   and the system fonts a test may need, found by path, not read (skip.ctx)
-  tests/fonts/, tests/shots/       each with a `#test_main` that leaves out what the machine lacks
+                                   (`--update-goldens`), make_heap, has_wake (golden.ctx); make_path and
+                                   make_out_path, the paths from a test's own directory (paths.ctx); the system
+                                   fonts a test may need, found by path, not read, and the skip when one is missing
+                                   (font.ctx)
+  tests/fonts/, tests/shots/       their tests skip themselves (`test::skip`) when the machine lacks a font or an OpenGL window
   tests/widgets/                   main.ctx (make_ui, make_driver, make_dump, write_frame, write_nodes, count_text)
                                    and a file of tests a stage: basic.ctx (9), field.ctx (10), windows.ctx (11), data.ctx
                                    (12), with goldens golden/basic-*, field-*, windows-*, data-*
