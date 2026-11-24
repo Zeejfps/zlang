@@ -1,0 +1,28 @@
+// Every kind of hole: numbers of any type, a bool, text, a literal, an error, a function
+// and a nested writer, whose pieces are the outer one's.
+
+error bad{ code: i32, why: utf8::String }
+fn report { mut io: Io, mut heap: arena::Arena, msg: utf8::Fmt(arena::Arena) } {
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    msg{ &b } iferr { io::println{ &io, s = "failed" } }
+    io::println{ &io, s = utf8::view{ b } }
+}
+fn next { mut n: i32 } -> i32 {
+    n = n + 1
+    return n
+}
+fn main { mut io: Io } {
+    let mut mem: [8192]u8
+    let mut heap = arena::new{ buf = mem[..] }
+
+    let name: utf8::String = "name"
+    let small: u8 = 7
+    let lit: strlit = "strlit"
+    let e = bad{ code = 3, why = "why" }
+    report{ &io, &heap, msg = @fmt("{} {} {} {} {} {} {} {}", -1, small, @as(u64, 9), 2.5, true, name, "lit", lit) }
+    report{ &io, &heap, msg = @fmt("{} [{}] {}", e, @fmt("in {} {}", 1, @fmt("deep {}", 2)), utf8::write_hex{ n = 255, _ }) }
+}
+
+//# stdout:
+//| -1 7 9 2.5 true name lit strlit
+//| bad{ code = 3, why = why } [in 1 deep 2] ff

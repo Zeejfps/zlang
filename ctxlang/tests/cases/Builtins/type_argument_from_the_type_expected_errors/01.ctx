@@ -1,0 +1,2 @@
+fn main {} { let big: i64 = 3
+    let x = @as(_, big) }  //~ error at 17: @as(_, ...) takes the type expected here, and nothing here expects one: write the type

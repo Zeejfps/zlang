@@ -1,0 +1,7 @@
+struct S { f: i32 }
+fn f {} {
+    let mut x: ?S = null
+    if x == null { return }
+    let y = x.f  //~ error at 14: ?S has no field `f`: `x` is mutable, so testing it for null doesn't narrow it; unwrap it with `if let v = x { ... }` or `let v = x ifnull { return }`
+}
+fn main {} {}

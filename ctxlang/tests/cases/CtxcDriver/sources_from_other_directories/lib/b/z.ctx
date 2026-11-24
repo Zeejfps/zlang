@@ -1,0 +1,1 @@
+namespace z { fn n {} -> i64 { return 300 } }

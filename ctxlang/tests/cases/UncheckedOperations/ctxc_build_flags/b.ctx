@@ -1,0 +1,1 @@
+fn b { p: *u8 } -> u8 { return (p + 1).* }

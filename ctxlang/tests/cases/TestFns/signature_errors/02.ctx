@@ -1,0 +1,3 @@
+#test  //~ error at 1: `test` applies only to a fn
+struct S {}
+fn main {} {}

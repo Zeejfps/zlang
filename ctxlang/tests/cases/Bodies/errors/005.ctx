@@ -1,0 +1,8 @@
+union U { a, b{ x: i32 } }
+fn f { u: *U } {
+    match u {
+        a => {}
+        b{ &x } => { x = 2 }  //~ error at 22: cannot assign to `x`: it is bound through a read-only pointer
+    }
+}
+fn main {} {}

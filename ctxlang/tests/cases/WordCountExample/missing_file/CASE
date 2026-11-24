@@ -1,0 +1,8 @@
+// examples/wordcount.ctx: a file that is not there is reported by its path, with exit code 1.
+//# make dir tmp
+//# program: {home}/examples/wordcount.ctx
+//# args: {dir}/tmp/nope.txt
+//# interp: cannot run
+//# exit: 1
+//# stderr:
+//| {dir}/tmp/nope.txt: no such file

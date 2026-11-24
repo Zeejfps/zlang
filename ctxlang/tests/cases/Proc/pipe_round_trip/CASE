@@ -1,0 +1,17 @@
+// 200000 bytes into the child's input, which it closes, then all of its output, which is
+// the input in upper case, and its error, a pipe of its own: more than a pipe holds, so
+// each side waits for the other.
+// The child is tests/helpers/child.ctx, as `upper_whole`: once its input has ended, that in
+// upper case to its output, and `E` to its error.
+//# build child: {home}/tests/helpers/child.ctx
+//# build program: main.ctx
+//# $ {program} {child}
+//# timeout: 60
+//# exit: 0
+//# stdout:
+//| 200000
+//| true
+//| 200000
+//| true
+//| E
+//| 0

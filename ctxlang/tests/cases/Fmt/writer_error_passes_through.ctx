@@ -1,0 +1,26 @@
+// A writer's own error is the @fmt's, and the pieces after it aren't pushed.
+
+error bad{ code: i64 }
+fn fails { mut b: utf8::Builder(arena::Arena), code: i64 } -> ! {
+    try utf8::push{ &b, s = "[" }
+    return bad{ code }
+}
+fn main { mut io: Io } {
+    let mut mem: [64]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    match @fmt(&b, "a{}b", fails{ code = 7, _ }) {
+        ok => { io::println{ &io, s = "ok" } }
+        err{ error } => {
+            match error {
+                bad{ code } => { io::println_i64{ &io, n = code } }
+                else        => { io::println{ &io, s = "other" } }
+            }
+        }
+    }
+    io::println{ &io, s = utf8::view{ b } }
+}
+
+//# stdout:
+//| 7
+//| a[

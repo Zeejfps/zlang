@@ -1,0 +1,7 @@
+fn main {} {
+    let x = a.
+}
+
+//# errors:
+//| 19.ctx:3:1: error: expected a name, found '}'
+//| 19.ctx:2:13: error: unknown name `a`

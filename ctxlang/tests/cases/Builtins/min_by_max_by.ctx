@@ -1,0 +1,32 @@
+// §17, `cmp`: `min_by` and `max_by` take the order as a function, plain or bound, for a
+// type without one; the first argument where neither comes before the other.
+
+struct P { name: []u8, age: u8 }
+struct Near { to: i32 }
+fn younger { a: P, b: P } -> bool { return a.age < b.age }
+fn nearer { n: Near, a: i32, b: i32 } -> bool {
+    let da = if a < n.to { n.to - a } else { a - n.to }
+    let db = if b < n.to { n.to - b } else { b - n.to }
+    return da < db
+}
+fn oldest { ps: []P } -> P {
+    let mut best = ps[0]
+    for p in ps { best = cmp::max_by{ a = best, b = p, less = younger } }
+    return best
+}
+const FIRST: P = cmp::min_by{ a = P{ name = "ann", age = 30 }, b = P{ name = "bob", age = 30 }, less = younger }
+
+fn main { mut io: Io } {
+    let ann = P{ name = "ann", age = 30 }
+    let bob = P{ name = "bob", age = 30 }
+    let cy = P{ name = "cy", age = 31 }
+    _ = @fmt(&io, "{} {} {} {}\n", cmp::min_by{ a = ann, b = bob, less = younger }.name, cmp::max_by{ a = ann, b = bob, less = younger }.name, cmp::min_by{ a = cy, b = bob, less = younger }.name, cmp::max_by{ a = ann, b = cy, less = younger }.name)
+    _ = @fmt(&io, "{} {}\n", oldest{ ps = [ann, cy, bob] }.name, FIRST.name)
+    let n = Near{ to = 10 }
+    _ = @fmt(&io, "{} {} {}\n", cmp::min_by{ a = 4, b = 13, less = nearer{ n, _ } }, cmp::max_by{ a = 4, b = 13, less = nearer{ n, _ } }, cmp::min_by{ a = 8, b = 12, less = nearer{ n, _ } })
+}
+
+//# stdout:
+//| ann ann bob cy
+//| cy ann
+//| 13 4 8

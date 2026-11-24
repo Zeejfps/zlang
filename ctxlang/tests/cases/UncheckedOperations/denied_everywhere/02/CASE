@@ -1,0 +1,5 @@
+// `except = []`: the program's own directories are all denied, its root too.
+//# $ ctxc run .
+//# exit: 1
+//# stderr:
+//| src/main.ctx:3:38: error: pointer arithmetic is unchecked, and `build::deny_unchecked` in build.ctx denies it here: index an array or a slice (`s[i]`, which is bounds-checked), or write it in a directory its `except` lists

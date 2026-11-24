@@ -1,0 +1,7 @@
+// examples/json with a path: an index past the array's end is no value (exit code 1).
+//# program: {home}/examples/json/main.ctx {home}/examples/json/parser.ctx {home}/examples/json/printer.ctx {home}/examples/json/value.ctx
+//# args: {dir}/tmp/in.json users.2
+//# interp: cannot run
+//# exit: 1
+//# stderr:
+//| no value at users.2

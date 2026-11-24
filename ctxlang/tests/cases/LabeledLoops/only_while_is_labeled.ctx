@@ -1,0 +1,3 @@
+fn main {} {
+    a: if true { }  //~ error at 8: only a `while` or a `for` can be labeled, found 'if'
+}

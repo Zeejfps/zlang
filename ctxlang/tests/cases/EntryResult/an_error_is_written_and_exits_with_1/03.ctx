@@ -1,0 +1,23 @@
+
+namespace parse {
+    error empty
+    error bad_digit{ at: usize, found: u8 }
+}
+fn number { s: []u8 } -> !u64 {
+    if s.len == 0 { return parse::empty }
+    if s[0] < '0' or s[0] > '9' { return parse::bad_digit{ at = 0, found = s[0] } }
+    return s[0] - '0'
+}
+fn main { mut io: Io, args: Args } -> !i32 {
+    io::println{ &io, s = "before" }
+    let n = try number{ s = args[0] }
+    io::println{ &io, s = "after" }
+    return @as(i32, n)
+}
+
+//# args: x
+//# exit: 1
+//# stdout:
+//| before
+//# stderr:
+//| error: parse::bad_digit{ at = 0, found = 120 }

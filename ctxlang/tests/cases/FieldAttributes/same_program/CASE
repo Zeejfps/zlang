@@ -1,0 +1,33 @@
+// Field attributes are data alone: the IR and the C are the same, byte for byte, as with
+// their lines left blank, so that every position stays where it was.
+// with/main.ctx is the program, and blank/main.ctx the same with each field attribute's line
+// left blank: the two `#` left in it are a declaration's attributes.
+//# build text: {home}/tests/helpers/text.ctx
+//# $ {text} count blank/main.ctx "#"
+//# stdout:
+//| 2
+//# $ {text} count with/main.ctx "#"
+//# stdout:
+//| 12
+
+// The IR
+//# $ {text} to ../with.ir {ctxc} ir {std} -- main.ctx
+//# cwd: with
+//# exit: 0
+//# $ {text} to ../blank.ir {ctxc} ir {std} -- main.ctx
+//# cwd: blank
+//# exit: 0
+//# $ {text} same with.ir blank.ir
+//# stdout:
+//| same
+
+// The C
+//# $ ctxc build main.c {std} -- main.ctx
+//# cwd: with
+//# exit: 0
+//# $ ctxc build main.c {std} -- main.ctx
+//# cwd: blank
+//# exit: 0
+//# $ {text} same with/main.c blank/main.c
+//# stdout:
+//| same

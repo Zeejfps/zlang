@@ -1,0 +1,10 @@
+
+fn f {} -> i32 { return 1 }
+fn g {} -> i32 { return 2 }
+fn main { mut io: Io } {
+    let f = g
+    io::println_i64{ &io, n = f{} }
+}
+
+//# stdout:
+//| 2

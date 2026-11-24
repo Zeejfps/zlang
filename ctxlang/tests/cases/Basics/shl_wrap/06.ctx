@@ -1,0 +1,6 @@
+// §11, Expressions, rule 4: `a <<% n` is `a << n` with the bits shifted out dropped. It
+// has `<<`'s operands, result type and precedence, and its count is checked the same.
+
+fn main {} {
+    let x = 1.5 <<% 2  //~ error at 17: `<<%` needs an integer to shift, got {float}
+}

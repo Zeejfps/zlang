@@ -1,0 +1,2 @@
+type A = A  //~ error at 10: type alias `A` refers to itself
+fn main {} {}

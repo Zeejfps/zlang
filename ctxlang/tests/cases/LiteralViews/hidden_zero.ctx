@@ -1,0 +1,25 @@
+// A literal's view is followed by a 0 byte that isn't part of it (§11, Literals), even
+// when it is empty, in both backends.
+
+fn after { b: []u8 } -> u8 { return (b.ptr + b.len).* }
+const WORD: []u8 = "const"
+const EMPTY: []u8 = ""
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = after{ b = "abc" } }
+    io::println_u64{ &io, n = after{ b = "" } }
+    io::println_u64{ &io, n = after{ b = WORD } + after{ b = EMPTY } }
+    let s: utf8::String = "text"
+    io::println_u64{ &io, n = after{ b = s.bytes } }
+    let o: ?[]u8 = "maybe"
+    if o != null { io::println_u64{ &io, n = after{ b = o } } }
+    let b: []u8 = "a\0b"
+    io::println_u64{ &io, n = b.len + @as(u64, after{ b }) }
+}
+
+//# stdout:
+//| 0
+//| 0
+//| 0
+//| 0
+//| 0
+//| 3

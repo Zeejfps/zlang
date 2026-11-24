@@ -1,0 +1,6 @@
+/* #build::sources{ dir = "missing" } */
+#build::sources { dir = "tools", }      // the generator
+// #build::sources{ dir = "missing" }
+fn build { mut b: Build } {
+    build::gen_file{ &b, exe = build::exe{ &b, name = "t", root = "src" }, name = "answer", text = tools::text{} }
+}

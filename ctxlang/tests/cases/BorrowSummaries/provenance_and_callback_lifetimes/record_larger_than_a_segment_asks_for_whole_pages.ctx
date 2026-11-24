@@ -1,0 +1,25 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// record larger than a segment asks for whole pages: accepted, and it runs.
+
+struct Big { a: [40000]i64 }
+fn read { b: Big } -> i64 { return b.a[0] }
+#c::callback
+fn strict_pages { mut mem: Mem, size: usize } -> ?*mut u8 {
+    if size % mem::PAGE != 0 { @panic("record page request is not page-sized") }
+    return os::pages{ &mem, size }
+}
+fn main { mut mem: Mem, mut io: Io } {
+    rt::pages_set{ &mem, pages = strict_pages }
+    let mut b = Big{ a = [0; 40000] }
+    let mut f = read{ b, _ }
+    let mut i = 0
+    while i < 2 {
+        b.a[0] = i + 1
+        f = read{ b, _ }
+        i = i + 1
+    }
+    io::println_i64{ &io, n = f{} }
+}
+
+//# stdout:
+//| 2

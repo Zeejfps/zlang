@@ -1,0 +1,11 @@
+// A side whose type is a parameter's is written as each instance's type says: by the
+// program's writer for the type and an io::Stderr, or from its parts.
+//# $ ctxc test .
+//# exit: 1
+//# stdout:
+//| ./t.ctx:11: fail: instances: x == want: 2 == 1
+//| ./t.ctx:11: fail: instances: x == want: (1,2) == (1,1)
+//| ./t.ctx:11: fail: instances: x == want: Kind::char == Kind::byte
+//| ./t.ctx:23: fail: instances: Pair(Point){ a = ps[0], b = ps[1] } == Pair(Point){ a = ps[1], b = ps[0] }: Pair{ a = (1,1), b = (1,2) } == Pair{ a = (1,2), b = (1,1) }
+//| ./t.ctx:24: fail: instances: Pair(u8){ a = 1, b = 2 } == Pair(u8){ a = 1, b = 3 }: Pair{ a = 1, b = 2 } == Pair{ a = 1, b = 3 }
+//| tests: 1 run, 0 passed, 1 failed, 0 not selected

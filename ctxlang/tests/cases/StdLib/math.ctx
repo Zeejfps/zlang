@@ -1,0 +1,11 @@
+
+fn main { mut io: Io } {
+    _ = @fmt(&io, "{} {} {}\n", math::sqrt{ x = 2.0 }, math::floorf{ x = 2.5 }, math::atan2{ y = 1.0, x = 1.0 } * 4.0 == math::PI)
+    _ = @fmt(&io, "{} {} {}\n", math::powf{ x = 2.0, y = 10.0 }, math::fmod{ x = -7.0, y = 2.0 }, math::round{ x = -2.5 })
+    _ = @fmt(&io, "{} {} {} {}\n", math::is_nan{ x = 0.0 / 0.0 }, math::is_inf{ x = -1.0 / 0.0 }, math::is_finite{ x = 1.0 / 0.0 }, math::is_nan{ x = math::PI_F32 })
+}
+
+//# stdout:
+//| 1.4142135623730951 2.0 true
+//| 1024.0 -1.0 -3.0
+//| true true false false

@@ -1,0 +1,9 @@
+fn w { mut b: utf8::Builder(arena::Arena) } -> ! {}
+
+fn main { mut io: Io } {
+    let mut mem: [4096]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+@fmt(&b, "x")  //~ error at 1: the result of `@fmt` (!) is unused: use it, or discard it with `_ = ...`
+    io::println{ &io, s = utf8::view{ b } }
+}

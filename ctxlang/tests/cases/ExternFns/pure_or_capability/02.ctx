@@ -1,0 +1,7 @@
+// Every extern fn says what C does (spec §18, Extern functions, rule 8): a capability
+// field for what it touches, or `#pure`.
+
+namespace c2 {
+    extern fn clock {} -> i64  //~ error at 15: extern fn `clock` takes no capability: add a capability field for what it touches, or `#pure` if it touches only its arguments and the memory they point to
+}
+fn main {} {}

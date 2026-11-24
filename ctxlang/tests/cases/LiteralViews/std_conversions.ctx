@@ -1,0 +1,20 @@
+// std's conversions are fns as any other, which a call runs when the program does.
+
+fn main { mut io: Io } {
+    io::println{ &io, s = try! utf8::from_literal{ s = "direct" } }
+    match utf8::from_literal{ s = "ok\xff" } {
+        ok => {}
+        utf8::invalid{ at } => { io::println_u64{ &io, n = at } }
+    }
+    io::println_u64{ &io, n = c::len{ s = try! c::from_literal{ s = "cstr" } } }
+    match c::from_literal{ s = "a\0b" } {
+        ok => {}
+        c::has_nul{ at } => { io::println_u64{ &io, n = at } }
+    }
+}
+
+//# stdout:
+//| direct
+//| 2
+//| 4
+//| 1

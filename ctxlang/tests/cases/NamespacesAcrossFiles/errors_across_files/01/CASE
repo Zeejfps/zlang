@@ -1,0 +1,5 @@
+// Two `namespace` declarations of one name are one namespace, in several files too: a fn
+// declared in both files is declared twice, an error at the second.
+//# program: a.ctx b.ctx
+//# errors:
+//| b.ctx:2:5: error: `f` is already declared in this scope

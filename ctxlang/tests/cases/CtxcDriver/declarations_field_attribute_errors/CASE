@@ -1,0 +1,21 @@
+// A malformed attribute before a field is a syntax error as one before a declaration
+// is: its declaration is there as far as it parsed, and the next ones are whole.
+// `ctxc graph` runs the build program without building the executables, whose files needn't
+// compile. ctxc's own directory for it is removed before and after: the runner clears those of
+// `ctxc run` commands only.
+//# remove {work:.}
+//# $ ctxc graph . {dir}/graph-gen {dir}/graph.txt
+//# stdout escaped:
+//| file src/a.ctx
+//| struct Before @ src/a.ctx:1:1
+//|   #ecs::key
+//|   a: i32
+//|   :\x20
+//| fn broken @ src/a.ctx:7:1
+//|   :\x20
+//| struct After @ src/a.ctx:10:1
+//|   #ecs::key
+//|   c: u8
+//| error src/a.ctx:4:6: expected a struct name after '#', found '5'
+//| error src/a.ctx:8:15: an attribute goes on its own line, before a field
+//# remove {work:.}

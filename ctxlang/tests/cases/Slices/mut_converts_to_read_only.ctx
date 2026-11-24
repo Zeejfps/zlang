@@ -1,0 +1,17 @@
+
+fn first { xs: []i32 } -> i32 { return xs[0] }
+fn opt { xs: ?[]i32 } -> usize {
+    let some{ value } = xs else { return 0 }
+    return value.len
+}
+fn main { mut io: Io } {
+    let mut a = [7, 8]
+    let m: []mut i32 = &a
+    let o: ?[]mut i32 = m
+    io::println_i64{ &io, n = first{ xs = m } }
+    io::println_u64{ &io, n = opt{ xs = o } }
+}
+
+//# stdout:
+//| 7
+//| 2

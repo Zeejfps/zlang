@@ -1,0 +1,2 @@
+fn main {} {}
+#c::symbol{ name = "a" }

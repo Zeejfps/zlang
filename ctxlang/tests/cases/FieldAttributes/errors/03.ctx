@@ -1,0 +1,11 @@
+
+namespace ecs {
+    struct key {}
+    struct cascade { depth: i32, deep: bool }
+    struct by { name: []u8, n: u32 }
+}
+const DEPTH: i32 = 2 + 1
+union U { v{
+    #ecs::cascade{ dpth = 1 }  //~ error at 20: struct `cascade` has no field `dpth`
+    a: i32 } }
+fn main {} {}

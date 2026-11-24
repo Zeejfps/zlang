@@ -1,0 +1,6 @@
+// Two `namespace` declarations of one name in one scope are one namespace (spec §10), in
+// several files: gff/write.ctx adds to gff, and to gff::inner, and names their items unqualified.
+//# program: gff/read.ctx gff/write.ctx main.ctx
+//# interp: off: the files are in two directories, and the interpreter takes one directory's
+//# stdout:
+//| 121

@@ -1,0 +1,1 @@
+fn main { mut t: Test } {}  //~ error at 1: `main` cannot take a Test: only a `test` fn and the `test_main` fn receive one

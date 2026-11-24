@@ -1,0 +1,13 @@
+
+namespace cmath {
+    #c::symbol{ name = "sqrt" }
+    #pure
+    extern fn root { x: f64 } -> f64
+}
+fn apply { f: fn{ x: f64 } -> f64, x: f64 } -> f64 { return f{ x } }
+fn main { mut io: Io } {
+    io::println_f64{ &io, n = apply{ f = cmath::root, x = 16.0 } }
+}
+
+//# stdout:
+//| 4.0

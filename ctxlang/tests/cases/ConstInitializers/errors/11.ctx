@@ -1,0 +1,3 @@
+struct S { a: i32 }
+const A: S = S{ a = 1, a = 2 }  //~ error at 24: `a` is supplied more than once
+fn main {} {}

@@ -1,0 +1,7 @@
+
+struct S { a: ?i32 }
+fn f { p: *S } -> i32 {
+    if p.a != null { return p.a }  //~ error at 30: expected i32, got ?i32: `p.a` is reached through a pointer, so testing it for null doesn't narrow it; unwrap it with `if let v = p.a { ... }` or `let v = p.a ifnull { return }`
+    return 0
+}
+fn main {} { }

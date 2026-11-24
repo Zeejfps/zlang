@@ -1,0 +1,20 @@
+
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+
+    let mut buf: [16]u8
+    let mut heap = arena::new{ buf = buf[..] }
+    match alloc::new{ realloc = arena::alloc, &heap, value = [1, 2, 3, 4, 5] } {
+        ok                    => { io::println{ &io, s = "ok" } }
+        alloc::out_of_memory  => { io::println{ &io, s = "oom" } }
+    }
+    match alloc::new{ realloc = arena::alloc, &heap, value = 5 } {
+        ok                    => { io::println{ &io, s = "ok" } }
+        alloc::out_of_memory  => { io::println{ &io, s = "oom" } }
+    }
+    return 0
+
+}
+
+//# stdout:
+//| oom
+//| ok

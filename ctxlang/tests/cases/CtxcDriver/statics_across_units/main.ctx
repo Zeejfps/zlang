@@ -1,0 +1,6 @@
+
+fn main { mut io: Io, mut c: count::C } {
+    count::add{ &c, k = 1 }
+    count::add{ &c, k = 3 }
+    io::println_u64{ &io, n = count::total{ c } }
+}

@@ -1,0 +1,7 @@
+fn main { mut io: Io } {
+    let lit = "caf\xc3\xa9 \xe2\x82\xac=\xf0\x9f\x98\x80!"
+    let s = utf8::of{ chars = lit }
+    let c = utf8::at{ s, i = 4 }
+}
+
+//# panic: std/utf8.ctx:722:58: panic: utf8: offset is not the start of a character

@@ -1,0 +1,10 @@
+
+fn build { mut b: Build } {
+    let os: []u8 = match build::os{ &b } {
+        windows => { "windows" }
+        macos   => { "macos" }
+        linux   => { "linux" }
+    }
+    _ = build::exe{ &b, name = os, root = "one" }
+    _ = build::exe{ &b, name = "two", root = "." }
+}

@@ -1,0 +1,1 @@
+fn main { mut io: Io } { let x = @as(i32) }  //~ error at 41: wrong number of arguments: @as(T, x)

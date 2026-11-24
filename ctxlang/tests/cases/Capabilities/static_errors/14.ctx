@@ -1,0 +1,5 @@
+capability O {
+    #stack_limit  //~ error at 5: `stack_limit` applies only to a capability's static, `static name: usize`
+    extern n: usize
+}
+fn main {} {}

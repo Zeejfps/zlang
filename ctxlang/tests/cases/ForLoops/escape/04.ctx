@@ -1,0 +1,9 @@
+// §14: `&x` of a `for &x` points into what is gone over, and an element's copy holds
+// what the array's elements hold.
+
+struct Keep { p: ?*mut i32 }
+fn f { mut k: Keep } {
+    let mut a = [1, 2]
+    for &x in a { k.p = &x }  //~ error at 19: cannot store the address of local `a` in `k`, which belongs to the caller
+}
+fn main {} { let mut k = Keep{ p = null }; f{ &k } }

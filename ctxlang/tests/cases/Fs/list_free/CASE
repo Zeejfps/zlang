@@ -1,0 +1,9 @@
+// One allocation, which list_free gives back whole; an empty directory allocates nothing.
+//# make dir tmp/empty
+//# program: main.ctx
+//# args: {dir}/tmp {dir}/tmp/empty
+//# interp: cannot run
+//# stdout:
+//| 4 a 79
+//| 0 0
+//| 0

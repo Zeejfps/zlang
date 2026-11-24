@@ -1,0 +1,52 @@
+// Integers, floats and a distinct type of one, through generic fns between, with all
+// four operators; in a const and at run time.
+
+type Meters = distinct f64
+struct Pair(A) { a: A, b: A }
+
+fn least(T) { a: T, b: T } -> T {
+    if b < a { return b }
+    return a
+}
+fn most(T) { a: T, b: T } -> T {
+    if b > a { return b }
+    return a
+}
+fn bound(T) { x: T, lo: T, hi: T } -> T { return least{ a = most{ a = x, b = lo }, b = hi } }
+fn sorted(T) { xs: []T } -> bool {
+    for i in 1..xs.len {
+        if not (xs[i - 1] <= xs[i]) { return false }
+    }
+    return true
+}
+fn ordered(A) { p: Pair(A) } -> bool { return p.b >= p.a }
+fn largest(U) { xs: []U } -> U {
+    let mut best = xs[0]
+    for x in xs { best = most{ a = best, b = x } }
+    return best
+}
+
+const K: i32 = bound{ x = 50, lo = 0, hi = 10 }
+const F: f32 = least{ a = 2.5, b = -1.5 }
+
+fn main { mut io: Io } {
+    let n: usize = 7
+    let i: i32 = -9
+    let u: u8 = 4
+    // A literal takes the other argument's type, and an argument widens to the parameter's.
+    _ = @fmt(&io, "{} {} {} {}\n", least{ a = n, b = 3 }, most{ a = 1, b = n }, least{ a = i, b = u }, bound{ x = 12.5, lo = 0.0, hi = 1.0 })
+    let m: Meters = 2.0
+    let far = most{ a = m, b = 3.5 }
+    _ = @fmt(&io, "{} {} {}\n", @as(f64, far), K, F)
+    _ = @fmt(&io, "{} {} {} {}\n", sorted{ xs = [1, 2, 2, 5] }, sorted{ xs = [1.5, 0.5] }, sorted{ xs = "abc" }, sorted{ xs = [m, far, m] })
+    _ = @fmt(&io, "{} {} {}\n", ordered{ p = Pair{ a = u, b = u } }, ordered{ p = Pair{ a = 2.0, b = 1.0 } }, largest{ xs = [3, 9, -2] })
+    // A NaN is neither below nor above anything.
+    _ = @fmt(&io, "{} {}\n", least{ a = 1.0, b = math::NAN }, sorted{ xs = [1.0, math::NAN] })
+}
+
+//# stdout:
+//| 3 7 -9 1.0
+//| 3.5 10 -1.5
+//| true false true false
+//| true false 9
+//| 1.0 false

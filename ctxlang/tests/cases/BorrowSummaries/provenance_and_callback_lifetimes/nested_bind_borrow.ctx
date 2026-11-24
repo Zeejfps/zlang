@@ -1,0 +1,6 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// nested bind borrow: rejected. It is never run: it would use a dangling pointer.
+
+fn view { s: []u8, n: i32 } -> []u8 { return s }
+fn load {} -> []u8 { let buf: [3]u8 = [1,2,3]; let call = view{ s = buf[..], _ }; let again = call{ n = 0, _ }; return again{} }  //~ error at 113: returned value holds the address of local `buf`
+fn main {} { _ = load{} }

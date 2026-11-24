@@ -1,0 +1,3 @@
+#c::callback  //~ error at 1: `c::callback` applies only to a fn with a body, not an extern fn
+extern fn f { n: i64 }  //~ error at 11: extern fn `f` takes no capability: add a capability field for what it touches, or `#pure` if it touches only its arguments and the memory they point to
+fn main {} {}

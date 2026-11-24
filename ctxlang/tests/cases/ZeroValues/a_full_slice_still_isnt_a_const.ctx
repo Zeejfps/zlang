@@ -1,0 +1,5 @@
+
+fn ones { mut heap: arena::Arena } -> []i32 { return try! alloc::resize(i32, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(i32){}, count = 2 } }
+fn make {} -> []i32 { let mut mem: [64]u8; let mut heap = arena::Arena{ buf = mem[..], used = 0, handed = 0 }; return ones{ &heap } }
+const S: []i32 = make{}  //~ error at 22: const `S` can't hold a pointer to the stack: it would point to memory that doesn't outlive compiling
+fn main {} {}

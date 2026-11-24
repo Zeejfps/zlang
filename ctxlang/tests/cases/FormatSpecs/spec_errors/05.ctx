@@ -1,0 +1,9 @@
+struct P { x: i32 }
+fn w { mut io: Io } -> ! { return }
+fn main { mut io: Io } {
+    let n: i32 = 1
+    let x = 1.5
+    let s: utf8::String = "s"
+    let p = P{ x = 1 }
+    _ = @fmt(&io, "{:+8}", n)  //~ error at 19: bad format spec `{:+8}`: a spec is `{:[<>^][0][width][.precision][x|X|b|o]}`, in that order, as `{:>8}`, `{:08x}` or `{:.3}`; a hole without one is `{}`
+}

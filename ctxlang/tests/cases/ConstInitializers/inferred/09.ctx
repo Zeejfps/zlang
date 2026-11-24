@@ -1,0 +1,5 @@
+const A: usize = N
+const N: u8 = 3
+fn main {} {}
+
+//# exit: 0

@@ -1,0 +1,10 @@
+fn f { n: i32 } -> i32 {
+    if n < 0 { @panic("negative") }
+    if n > 100 { @panic() }
+    return n
+}
+fn main {} {
+    _ = f{ n = 1 }
+}
+
+//# exit: 0

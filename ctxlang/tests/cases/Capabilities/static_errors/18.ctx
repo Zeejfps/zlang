@@ -1,0 +1,9 @@
+capability O {
+    #stack_limit
+    static n: usize,
+    #stack_limit  //~ error at 5: a second `stack_limit` static: `n` is the program's already
+    static m: usize
+}
+#start
+fn go {} -> i32 { return 0 }
+fn main {} {}

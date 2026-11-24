@@ -1,0 +1,2 @@
+
+fn main { mut io: Io } { let a: i32 = 1; let b: u32 = 2; let c = a + b }  //~ error at 68: operands of `+` have incompatible types: i32 and u32; convert one with @as

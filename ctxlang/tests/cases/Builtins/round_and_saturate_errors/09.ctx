@@ -1,0 +1,3 @@
+fn main {} {
+    let m = @saturate(u8)  //~ error at 25: wrong number of arguments: @saturate(T, x)
+}

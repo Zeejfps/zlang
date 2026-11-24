@@ -1,0 +1,4 @@
+fn f { q: *mut i32 } -> *mut i32 {
+    return &q[2]  //~ error at 14: cannot index *mut i32: a pointer has no length to check against; write `(q + 2).*`, which isn't checked
+}
+fn main {} {}

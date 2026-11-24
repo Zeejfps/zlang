@@ -1,0 +1,5 @@
+union U { a, b{ x: i32 } }
+fn f { u: *U } {
+    let b{ x } = u else { return }  //~ error at 18: a `let` pattern cannot match through a pointer; use `match`
+}
+fn main {} {}

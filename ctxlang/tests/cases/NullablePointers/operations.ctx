@@ -1,0 +1,58 @@
+
+struct Node { v: i32, next: ?*Node }
+struct Holder { p: ?*i32 }
+const EMPTY: Holder = Holder{ p = null }
+const NOTHING: ?*i32 = null
+
+fn first { n: ?*Node } -> i32 {
+    let some{ value = p } = n else { return -1 }
+    return p.v
+}
+fn describe { n: ?*Node } -> i32 {
+    return match n {
+        null          => { 0 }
+        some{ value } => { value.v }
+    }
+}
+fn pick { take: bool, p: *Node } -> ?*Node {
+    if take { return p }
+    return null
+}
+fn apply { f: fn{ n: ?*Node } -> i32, n: ?*Node } -> i32 { return f{ n } }
+
+fn main { mut io: Io } {
+    let a = Node{ v = 5, next = null }
+    let b = Node{ v = 7, next = &a }
+    io::println_i64{ &io, n = first{ n = &b } }
+    io::println_i64{ &io, n = first{ n = null } }
+    io::println_i64{ &io, n = describe{ n = b.next } }
+    io::println_i64{ &io, n = describe{ n = a.next } }
+    io::println_bool{ &io, n = pick{ take = false, p = &a } == null }
+    let x = pick{ take = true, p = &b }
+    if x != null { io::println_i64{ &io, n = x.v } }
+    io::println_i64{ &io, n = apply{ f = describe, n = &a } }
+    io::println_bool{ &io, n = EMPTY.p == null and NOTHING == null }
+
+    // through a pointer: the binding is the place of the pointer itself
+    let mut m: ?*Node = &a
+    match &m {
+        some{ &value } => { io::println_i64{ &io, n = value.*.v } }
+        null           => {}
+    }
+
+    // an optional of a nullable pointer stays tagged around it
+    let q: ??*Node = null
+    io::println_bool{ &io, n = q == null }
+}
+
+//# stdout:
+//| 7
+//| -1
+//| 5
+//| 0
+//| true
+//| 7
+//| 5
+//| true
+//| 5
+//| true

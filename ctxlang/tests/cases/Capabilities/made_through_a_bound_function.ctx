@@ -1,0 +1,29 @@
+// A bound function may hold a capability (spec §1.3), so a load that takes only a lookup
+// can make one and names no library: here the lookup is lib's, bound to its capability.
+
+namespace lib {
+    capability Lib
+    #c::symbol{ name = "llabs" }
+    #pure
+    extern fn long_abs { n: i64 } -> i64
+    fn find { mut l: Lib, name: c::String } -> ?extern fn{ n: i64 } -> i64 { return long_abs }
+}
+
+namespace m {
+    capability M { f: extern fn{ n: i64 } -> i64 }
+    fn load { find: &fn{ name: c::String } -> ?extern fn{ n: i64 } -> i64 } -> ?M {
+        let some{ value = f } = find{ name = "llabs" } else { return null }
+        return M{ f }
+    }
+}
+
+fn main { mut io: Io, mut l: lib::Lib } -> i32 {
+    let some{ value = loaded } = m::load{ find = lib::find{ &l, _ } } else { return 1 }
+    let mut x = loaded
+    io::println_i64{ &io, n = x.f{ n = -9 } }
+    return 0
+}
+
+//# interp: cannot run
+//# stdout:
+//| 9

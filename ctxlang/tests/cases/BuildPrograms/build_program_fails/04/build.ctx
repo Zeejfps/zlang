@@ -1,0 +1,3 @@
+fn build { mut b: Build } -> ! {
+    _ = build::exe{ &b, name = "t", root = "." }
+}

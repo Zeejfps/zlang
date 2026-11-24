@@ -1,0 +1,13 @@
+// Defaults are for literals: a `let` without one, like any memory, starts at zero.
+
+struct S { a: i32 = 5, b: bool = true }
+fn main { mut io: Io } {
+    let mut s: S
+    _ = @fmt(&io, "{} {}\n", s.a, s.b)
+    s = S{ .. }
+    _ = @fmt(&io, "{} {}\n", s.a, s.b)
+}
+
+//# stdout:
+//| 0 false
+//| 5 true

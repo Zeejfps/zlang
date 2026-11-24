@@ -1,0 +1,29 @@
+struct Node { v: i64, next: ?*mut Node }
+
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+
+    let some{ value = buf } = mem::pages{ &mem, size = 4096 } else { return 1 }
+    let mut heap = arena::new{ buf }
+    let mut head: ?*mut Node = null
+    let mut i: i64 = 1
+    while i <= 4 {
+        let n = alloc::new{ realloc = arena::alloc, &heap, value = Node{ v = i, next = head } } iferr { return 2 }
+        head = n
+        i = i + 1
+    }
+    let mut total: i64 = 0
+    let mut cur = head
+    while true {
+        let some{ value = n } = cur else { break }
+        total = total * 10 + n.v
+        cur = n.next
+    }
+    io::println_i64{ &io, n = total }
+    let some{ value = h } = head else { return 3 }
+    alloc::free{ realloc = arena::alloc, &heap, p = h }
+    return 0
+
+}
+
+//# stdout:
+//| 4321

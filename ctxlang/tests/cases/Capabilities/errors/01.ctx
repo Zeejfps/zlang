@@ -1,0 +1,2 @@
+capability C
+fn main {} { let c = C{} }  //~ error at 22: `C` is a capability: only `main` receives one, from the runtime

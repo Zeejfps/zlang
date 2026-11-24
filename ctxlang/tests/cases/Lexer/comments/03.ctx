@@ -1,0 +1,6 @@
+// café ☃
+fn main { mut io: Io } { /* é
+ */ io::println_i64{ &io, n = 1 } }
+
+//# stdout:
+//| 1

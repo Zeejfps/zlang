@@ -1,0 +1,2 @@
+capability C {}  //~ error at 14: a capability without fields has no braces: write `capability Name`
+fn main {} {}

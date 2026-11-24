@@ -1,0 +1,2 @@
+type Id = distinct u32
+fn main {} { let xs = [1, 2, 3]; let k: Id = 1; let x = xs[k] }  //~ error at 60: an index is an integer, got Id: convert it to its base with @as

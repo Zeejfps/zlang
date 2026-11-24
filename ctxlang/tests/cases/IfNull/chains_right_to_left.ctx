@@ -1,0 +1,16 @@
+// `a ifnull b ifnull c` is `a ifnull (b ifnull c)`. An optional default gives an optional.
+
+fn main { mut io: Io } {
+    let a: ?i32 = null
+    let b: ?i32 = 8
+    let c: ?i32 = null
+    io::println_i64{ &io, n = a ifnull b ifnull 0 }
+    io::println_i64{ &io, n = a ifnull c ifnull 0 }
+    let d = a ifnull c
+    io::println_bool{ &io, n = d == null }
+}
+
+//# stdout:
+//| 8
+//| 0
+//| true

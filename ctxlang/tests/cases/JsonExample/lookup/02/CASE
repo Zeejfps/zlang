@@ -1,0 +1,6 @@
+// examples/json with a path: of a key written twice in an object, the last duplicate wins.
+//# program: {home}/examples/json/main.ctx {home}/examples/json/parser.ctx {home}/examples/json/printer.ctx {home}/examples/json/value.ctx
+//# args: {dir}/tmp/in.json users.1.x
+//# interp: cannot run
+//# stdout:
+//| 2

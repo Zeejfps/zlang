@@ -1,0 +1,3 @@
+#write  //~ error at 1: `write` applies only to a fn
+struct S {}
+fn main {} {}

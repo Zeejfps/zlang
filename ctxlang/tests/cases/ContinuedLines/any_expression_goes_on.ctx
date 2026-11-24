@@ -1,0 +1,30 @@
+
+struct W { open: bool, n: i32 }
+union K { a, b }
+fn ok { n: i32 } -> bool { return n > 0 }
+fn num { n: i32 } -> i32 { return n }
+fn opt { n: i32 } -> ?i32 { if n == 0 { return null }; return n }
+fn flag { n: i32 } -> ?bool { if n == 0 { return null }; return n > 0 }
+fn w { n: i32 } -> W { return W{ open = n > 0, n } }
+
+fn both { a: bool, b: bool } -> bool {
+    return a
+        and b
+}
+fn main { mut io: Io } {
+    let n = 3
+    let total = num{ n }
+        + num{ n }
+        - 1                                         // `-` after an expression is the operator
+    let mut m = n
+    m = m
+        * 2
+    let o = opt{ n = 0 }
+        ifnull 9
+    _ = @fmt(&io, "{} {} {} {} {}\n", total, m, o, both{ a = true, b = n
+        > 2 }, w{ n }
+        .n)
+}
+
+//# stdout:
+//| 5 6 9 true 3

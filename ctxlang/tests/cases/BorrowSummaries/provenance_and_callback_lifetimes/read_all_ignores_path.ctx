@@ -1,0 +1,14 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// read all ignores path: accepted. It only compiles.
+
+fn load { mut fs: Fs, mut heap: arena::Arena } -> ![]u8 {
+    let p: [5]u8 = [110,111,110,101,0]
+    return try fs::read_all{ &fs, &heap, realloc = arena::alloc, path = p[..4] }
+}
+fn main { mut fs: Fs } {
+    let mut mem: [4096]u8
+    let mut heap = arena::Arena{ buf = mem[..], used = 0, handed = 0 }
+    _ = load{ &fs, &heap }
+}
+
+//# compiles

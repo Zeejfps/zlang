@@ -1,0 +1,2 @@
+fn f { s: strlit } { _ = s.ptr }  //~ error at 27: strlit has no field `ptr`
+fn main {} {}

@@ -1,0 +1,5 @@
+fn f {} -> i32 { return 1 }
+const A: i32 = f{}
+fn main {} {}
+
+//# exit: 0

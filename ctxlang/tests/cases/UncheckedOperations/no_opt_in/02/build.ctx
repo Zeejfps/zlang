@@ -1,0 +1,6 @@
+fn build { mut b: Build } {
+    let free = build::exe{ &b, name = "free", root = "src" }
+    let strict = build::exe{ &b, name = "strict", root = "strict" }
+    build::add_sources{ &b, exe = free, dir = "lib" }
+    build::deny_unchecked{ &b, exe = strict, except = [] }
+}

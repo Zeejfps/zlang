@@ -1,0 +1,7 @@
+// `--list` prints each test's position and name, and runs none.
+//# $ ctxc test . --list
+//# exit: 0
+//# stdout:
+//| ./t.ctx:4: a::one
+//| ./t.ctx:6: a::two
+//| ./t.ctx:10: b::one

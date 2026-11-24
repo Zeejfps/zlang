@@ -1,0 +1,7 @@
+error a
+error b
+error c
+type O = error(a, ..)
+fn o {} -> O!u64 { return a }
+fn run { f: fn{} -> error(a)!u64 } -> error(a)!u64 { return try f{} }
+fn main {} { _ = run{ f = o } }  //~ error at 27: error(a, ..) can't join error(a): it is open, and may gain errors a closed set doesn't hold

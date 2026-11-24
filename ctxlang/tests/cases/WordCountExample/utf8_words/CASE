@@ -1,0 +1,10 @@
+// examples/wordcount.ctx: a word may hold letters beyond ASCII (`café`, `Naïve`); `Café` and
+// `café` are one word.
+//# program: {home}/examples/wordcount.ctx
+//# args: {dir}/tmp/utf8.txt
+//# interp: cannot run
+//# stdout:
+//| lines: 1
+//| words: 7
+//| distinct: 5
+//| most common: café 3

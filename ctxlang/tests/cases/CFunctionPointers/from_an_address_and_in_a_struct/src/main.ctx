@@ -1,0 +1,26 @@
+
+type Op = extern fn{ a: i32, b: i32 } -> i32
+#pure
+extern fn ctxtest_op { which: i32 } -> ?*u8
+#pure
+extern fn ctxtest_op_typed { which: i32 } -> ?Op
+#pure
+extern fn ctxtest_apply { f: Op, a: i32, b: i32 } -> i32
+#pure
+extern fn ctxtest_sub { a: i32, b: i32 } -> i32
+#pure
+extern fn ctxtest_out { f: Op, mut out: i32 }
+
+capability Lib
+struct Ops { add: Op, gated: extern fn{ mut lib: Lib, a: i32, b: i32 } -> i32 }
+fn main { mut io: Io, mut lib: Lib } {
+    let some{ value = p } = ctxtest_op{ which = 0 } else { return }
+    let add = @cast(Op, p)
+    io::println_i64{ &io, n = add{ a = 2, b = 3 } }
+    // Fields go to C in declaration order, whatever order they are written in.
+    let ops = Ops{ add, gated = @cast(extern fn{ mut lib: Lib, a: i32, b: i32 } -> i32, p) }
+    io::println_i64{ &io, n = ops.add{ b = 10, a = 4 } }
+    io::println_i64{ &io, n = ops.gated{ &lib, a = 1, b = 1 } }
+    let back = @cast(*u8, add)
+    io::println_bool{ &io, n = @addr(back) == @addr(p) }
+}

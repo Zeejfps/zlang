@@ -1,0 +1,32 @@
+// Starts `ctxc run .` (ctxc is args[0]) in each directory after it, all at once, then waits
+// for each in turn and prints `DIR: exit CODE, wrote TEXT`, TEXT being its standard output
+// without the spaces and line breaks at its end.
+fn main { mut io: Io, mut proc: Proc, args: Args } -> i32 {
+    if args.len < 2 { return 64 }
+    let mut pages: [65536]u8
+    let mut heap = arena::new{ buf = pages[..] }
+    let mut running = list::new(proc::Child){ realloc = arena::alloc, &heap }
+    for i in 1..args.len {
+        let argv: [3][]u8 = [args[0], "run", "."]
+        let child = proc::spawn{ &proc, argv = argv[..], options = proc::Options{ dir = args[i], stdout = proc::Stdio::pipe, .. } } iferr {
+            _ = @fmt(&io, "{}: ctxc didn't start\n", args[i])
+            return 1
+        }
+        try! list::push{ list = &running, item = child }
+    }
+    for i in 1..args.len {
+        let mut child = list::items{ list = running }[i - 1]
+        let pipe = child.stdout ifnull { return 70 }
+        let mut text: [4096]u8
+        let mut n: usize = 0
+        while n < text.len {
+            let got = proc::read{ &proc, pipe, into = text[n..] } iferr { 0 }
+            if got == 0 { break }
+            n = n + got
+        }
+        let code = proc::wait{ &proc, &child } iferr { -1 }
+        while n > 0 and ascii::is_space{ c = text[n - 1] } { n = n - 1 }
+        _ = @fmt(&io, "{}: exit {}, wrote {}\n", args[i], code, text[..n])
+    }
+    return 0
+}

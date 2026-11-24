@@ -1,0 +1,34 @@
+// `error(a, b, ..)` is open (spec §8, Errors, rule 15): it may gain errors, so a match on
+// it, or on a set it joined, needs `else` or `err` even when it lists every one.
+
+namespace store {
+    error missing
+    error locked
+    type Error = error(missing, locked, ..)
+    fn get { n: u32 } -> Error!u32 {
+        if n == 0 { return missing }
+        if n == 1 { return locked }
+        return n
+    }
+    fn twice { n: u32 } -> !u32 { return try get{ n } * 2 }
+    fn wider { n: u32 } -> error(Error, missing)!u32 { return try twice{ n } }
+}
+fn main { mut io: Io } {
+    match store::get{ n = 0 } {
+        ok{ value } => { io::println_u64{ &io, n = value } }
+        store::missing => { io::println{ &io, s = "missing" } }
+        store::locked => { io::println{ &io, s = "locked" } }
+        else => { io::println{ &io, s = "other" } }
+    }
+    match store::twice{ n = 1 } {
+        ok{ value } => {}
+        store::locked => { io::println{ &io, s = "locked" } }
+        err{ error } => {}
+    }
+    io::println_u64{ &io, n = store::wider{ n = 4 } iferr 0 }
+}
+
+//# stdout:
+//| missing
+//| locked
+//| 8

@@ -1,0 +1,12 @@
+// An error of a generic set is written as any error is: by its own writer, per instance.
+
+error a
+error b{ n: u64 }
+fn db {} -> error(b)!u64 { return b{ n = 7 } }
+fn show(E: error) { mut io: Io, f: &fn{} -> E!u64 } {
+    match f{} { ok => {} err{ error } => { _ = @fmt(&io, "{}\n", error) } }
+}
+fn main { mut io: Io } { show{ &io, f = db } }
+
+//# stdout:
+//| b{ n = 7 }

@@ -1,0 +1,2 @@
+enum E: u8 { a = 1, b = 0, c }  //~ error at 28: `c` has the same value (1) as `a`
+fn main {} {}

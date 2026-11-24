@@ -1,0 +1,5 @@
+fn main {} {
+    let mut n: u32 = 0
+    let o = atomic::Order::relaxed
+    _ = @atomic_load(&n, o)  //~ error at 26: the order of @atomic_load must be a constant: an atomic::Order value, or a const of one
+}

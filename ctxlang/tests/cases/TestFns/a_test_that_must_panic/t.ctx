@@ -1,0 +1,16 @@
+
+fn at { xs: []i32, i: usize } -> i32 { return xs[i] }
+const XS: [2]i32 = [1, 2]
+#test{ panics = "out of bounds for length 2" }
+fn past_the_end {} { _ = at{ xs = XS[..], i = 2 } }
+#test{ panics = "" }
+fn any_panic {} { @panic("whatever") }
+#test{ panics = "overflow" }
+fn another_message {} { _ = at{ xs = XS[..], i = 2 } }
+#test{ panics = "out of bounds" }
+fn returns {} { _ = at{ xs = XS[..], i = 1 } }
+#test{ panics = "out of bounds" }
+fn checks_first { mut t: Test } {
+    @expect(&t, at{ xs = XS[..], i = 0 } == 5)
+    _ = at{ xs = XS[..], i = 2 }
+}

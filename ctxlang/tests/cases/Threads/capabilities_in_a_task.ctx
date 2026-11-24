@@ -1,0 +1,19 @@
+// A task takes Io from its bind: its standard output is written out when it ends,
+// before its end is published.
+
+#task
+fn hello { mut io: Io, n: u32 } -> ! {
+    io::println_u64{ &io, n = @as(u64, n) }
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let mut t: task::Task(!)
+    task::start{ &threads, task = &t, run = hello{ &io, n = 42, _ } }
+    task::wait{ &threads, task = &t } iferr { return 1 }
+    io::println{ &io, s = "waited" }
+    return 0
+}
+
+//# stdout:
+//| 42
+//| waited

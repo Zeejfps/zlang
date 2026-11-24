@@ -1,0 +1,2 @@
+struct S { a: Nope }  //~ error at 15: unknown type or namespace `Nope`
+fn main {} {}

@@ -1,0 +1,1 @@
+fn main { mut io: Io } { let a: u64 = 1; let b: usize = a }  //~ error at 57: expected usize, got u64

@@ -1,0 +1,15 @@
+// `static` is a keyword only before a name in a capability's braces.
+
+struct S { static: i32 }
+capability C { static static: i32 }
+fn get { mut c: C } -> i32 {
+    c.static = c.static + 5
+    return c.static
+}
+fn main { mut io: Io, mut c: C } {
+    let static = S{ static = 4 }
+    io::println_i64{ &io, n = static.static + get{ &c } }
+}
+
+//# stdout:
+//| 9

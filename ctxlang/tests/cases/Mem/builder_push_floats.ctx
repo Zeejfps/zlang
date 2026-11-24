@@ -1,0 +1,23 @@
+
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+
+    let some{ value = buf } = mem::pages{ &mem, size = 4096 } else { return 1 }
+    let mut heap = arena::new{ buf }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    _ = utf8::push_f64{ &b, n = 0.1 }
+    _ = utf8::push_char{ &b, c = ' ' }
+    _ = utf8::push_f32{ &b, n = 0.1 }
+    _ = utf8::push_char{ &b, c = ' ' }
+    _ = utf8::push_f64{ &b, n = 1e100 }
+    io::println{ &io, s = utf8::view{ b } }
+    let mut u = utf8::builder{ realloc = arena::alloc, &heap }
+    _ = utf8::push_f64{ b = &u, n = -2.5 }
+    _ = utf8::push_f32{ b = &u, n = 3.0 }
+    io::println{ &io, s = utf8::view{ b = u } }
+    return 0
+
+}
+
+//# stdout:
+//| 0.1 0.1 1e+100
+//| -2.53.0

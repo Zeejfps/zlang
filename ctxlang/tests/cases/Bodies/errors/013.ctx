@@ -1,0 +1,4 @@
+fn f {} {
+    defer { return }  //~ error at 13: cannot `return` from a defer
+}
+fn main {} {}

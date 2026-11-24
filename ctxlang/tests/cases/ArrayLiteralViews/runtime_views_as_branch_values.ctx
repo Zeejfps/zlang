@@ -1,0 +1,35 @@
+// A branch's value leaves the branch, so a view in it is a local of the block around the
+// `if` or `match`: the outermost one's, when they nest.
+
+fn show { mut io: Io, pages: []u32 } {
+    let mut sum: u32 = 0
+    let mut i: usize = 0
+    while i < pages.len { sum = sum + pages[i]; i = i + 1 }
+    _ = @fmt(&io, "{} {}\n", pages.len, sum)
+}
+
+struct Pages { xs: []u32 }
+fn main { mut io: Io } {
+    let mut a: u32 = 1
+    while a <= 2 {
+        let c = a == 1
+        show{ &io, pages = if c { [a, 2] } else { [3] } }
+        let xs: []u32 = if c { [a, 2] } else { [3] }
+        show{ &io, pages = xs }
+        let rows: [][]u32 = match a { 1 => { [[a], [a, a]] } else => { if c { [[0]] } else { [[a; 3]] } } }
+        show{ &io, pages = rows[rows.len - 1] }
+        let p = if c { Pages{ xs = [a, 5] } } else { Pages{ xs = [a] } }
+        show{ &io, pages = p.xs }
+        a = a + 1
+    }
+}
+
+//# stdout:
+//| 2 3
+//| 2 3
+//| 2 2
+//| 2 6
+//| 1 3
+//| 1 3
+//| 3 6
+//| 1 2

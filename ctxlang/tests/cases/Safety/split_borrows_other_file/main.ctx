@@ -1,0 +1,4 @@
+fn main {} {
+    let mut e = E{ n = 0, list = L{ len = 0 } }
+    f{ &e, xs = &e.list }
+}

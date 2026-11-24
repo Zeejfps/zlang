@@ -1,0 +1,6 @@
+struct K {}
+enum E: u8 {
+    #K  //~ error at 5: expected a name, found '#'
+    a  //~ error at 5: expected a declaration after an attribute, found 'a'
+}
+fn main {} {}

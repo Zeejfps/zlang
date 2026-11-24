@@ -1,0 +1,2 @@
+union U { a{ x: i32 = 1 } }  //~ error at 23: a union variant's field can't have a default: only a struct's can
+fn main {} {}

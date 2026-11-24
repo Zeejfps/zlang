@@ -1,0 +1,14 @@
+struct D { y: u32 }
+fn w_d { mut b: utf8::Builder(arena::Arena), d: D } -> ! {
+    return @fmt(&b, "{}", utf8::push_uint{ n = d.y, width = 4, zero = true, _ })
+}
+fn main {} {
+    let mut mem: [256]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    let d = D{ y = 7 }
+    let name: utf8::String = "ab"
+    _ = @fmt(&b, "[{}] {} {} {} {} {} {} {{}}", utf8::push_int{ n = 42, width = 5, zero = false, _ }, utf8::write_hex{ n = 255, _ }, utf8::push_hex{ n = 48879, width = 8, zero = true, _ }, utf8::write_char{ c = 65, _ }, utf8::push_padded{ s = name, width = 6, zero = false, _ }, true, w_d{ d, _ })
+}
+
+//# exit: 0

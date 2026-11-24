@@ -1,0 +1,6 @@
+
+fn main { mut io: Io } {
+    let mut mem: [64]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let m = map::new(i32, i32){ realloc = arena::alloc, &heap, hash = map::hash_i64, eq = map::eq_i32 }  //~ error at 71: expected fn{ key: i32 } -> u64, got fn{ key: i64 } -> u64
+}

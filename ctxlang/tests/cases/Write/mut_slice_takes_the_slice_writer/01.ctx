@@ -1,0 +1,17 @@
+// A []mut T hole with no writer of its own is written by the []T one.
+
+struct Out { n: usize }
+#write
+fn text { mut o: Out, s: strlit } { o.n = o.n + s.bytes.len }
+#write
+fn bytes { mut o: Out, b: []u8 } { o.n = o.n + 100 * b.len }
+fn main { mut io: Io } {
+    let mut o = Out{ n = 0 }
+    let mut buf: [3]u8 = [1, 2, 3]
+    let m: []mut u8 = buf[..]
+    _ = @fmt(&o, "ab{}", m)
+    io::println_u64{ &io, n = o.n }
+}
+
+//# stdout:
+//| 302

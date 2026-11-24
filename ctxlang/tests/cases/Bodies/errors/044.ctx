@@ -1,0 +1,7 @@
+union U { a, b{ x: i32 } }
+fn f { u: U } {
+    let b{ x } = u else {  //~ error at 25: the `else` of a `let` pattern must leave: end it with `return`, `break`, `continue` or `@panic()`
+        let y = 1
+    }
+}
+fn main {} {}

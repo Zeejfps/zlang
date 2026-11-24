@@ -1,0 +1,14 @@
+// ctxc's errors: a compile error and a file it can't read end with 1, with the error on
+// standard error; no path is a usage error, 2.
+//# $ ctxc run {dir}/bad.ctx
+//# exit: 1
+//# stderr:
+//| {dir}/bad.ctx:1:27: error: expected i32, got bool
+//# $ ctxc run {dir}/missing.ctx
+//# exit: 1
+//# stderr:
+//| {dir}/missing.ctx: cannot read
+//# $ ctxc run
+//# exit: 2
+//# stderr:
+//| usage: ctxc run PATH [-- ARGS...] | ctxc exe PATH -o OUT

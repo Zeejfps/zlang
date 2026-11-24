@@ -1,0 +1,31 @@
+// The items in an allocation of their size, which frees as one: nothing is left live.
+
+struct Counted { a: arena::Arena, live: usize }
+fn counted { mut heap: Counted, mem: alloc::Bytes, new: usize, align: usize } -> ?alloc::Bytes {
+    let out = arena::alloc{ heap = &heap.a, mem, new, align } ifnull { return null }
+    heap.live = heap.live + new - mem.len
+    return out
+}
+
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+
+    let mut buf: [1024]u8
+    let mut c = Counted{ a = arena::new{ buf = buf[..] }, live = 0 }
+    let mut xs = list::new(u16){ realloc = counted, heap = &c }
+    list::push{ list = &xs, item = 3 } iferr { return 1 }
+    list::push{ list = &xs, item = 4 } iferr { return 2 }
+    list::push{ list = &xs, item = 5 } iferr { return 3 }
+    list::push{ list = &xs, item = 6 } iferr { return 4 }
+    list::push{ list = &xs, item = 7 } iferr { return 5 }
+    let before = c.live
+    let items = list::take{ list = &xs } iferr { return 6 }
+    _ = @fmt(&io, "{} {} {} {} {}\n", before, c.live, items.len, items[4], xs.len)
+    _ = alloc::resize(u16, Counted){ realloc = counted, heap = &c, mem = items, count = 0 }
+    _ = @fmt(&io, "{}\n", c.live)
+    return 0
+
+}
+
+//# stdout:
+//| 16 10 5 7 0
+//| 0

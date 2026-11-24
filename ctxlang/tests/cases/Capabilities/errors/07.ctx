@@ -1,0 +1,4 @@
+capability C
+fn main {} { let c: C
+    f{ c } }  //~ error at 8: `c` may be read before it is assigned
+fn f { c: C } {}

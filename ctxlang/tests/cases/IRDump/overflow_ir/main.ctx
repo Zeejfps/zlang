@@ -1,0 +1,5 @@
+
+fn main {} -> i32 {
+    let a: i32 = 5
+    return a * a + 1 ifoverflow -1
+}

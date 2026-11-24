@@ -1,0 +1,7 @@
+// The tests of every file of the executable, a directory's files before those of the
+// directories in it, each named by its path; `main` is not run, and `ctxc run` runs no test.
+//# $ ctxc test .
+//# exit: 1
+//# stdout:
+//| lib/shapes_test.ctx:3: fail: shapes::area_of_a_rect: area{ w = 2, h = 3 } == 5: 6 == 5
+//| tests: 2 run, 1 passed, 1 failed, 0 not selected

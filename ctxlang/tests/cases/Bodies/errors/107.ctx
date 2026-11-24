@@ -1,0 +1,6 @@
+fn f {} {
+    while true {
+        defer { break }  //~ error at 17: `break` outside a loop in this defer
+    }
+}
+fn main {} {}

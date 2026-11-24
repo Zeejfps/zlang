@@ -1,0 +1,8 @@
+union U { a, b{ x: i32 }, c{ x: i32, y: bool } }
+fn f { u: U } {
+    match u {
+        a => {}
+        b{ x } | c{ y = x } => {}  //~ error at 21: `x` is i32 in `b` but bool in `c`
+    }
+}
+fn main {} {}

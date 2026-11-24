@@ -1,0 +1,5 @@
+
+fn main {} {
+    let x: ?i32 = 1
+    let ok{ value } = x else { return }  //~ error at 5: ?i32 has no variant `ok`
+}

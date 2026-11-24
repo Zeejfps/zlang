@@ -1,0 +1,4 @@
+fn f { a: [2]i32 } {
+    let p = &a.len  //~ error at 15: `.len` is not a place
+}
+fn main {} {}

@@ -1,0 +1,6 @@
+// A const array in one unit, viewed and pointed into from another: CTX_UNIT_SIZE=1 puts each
+// function in a unit of its own.
+//# $ ctxc run {dir}
+//# env: CTX_UNIT_SIZE=1
+//# stdout:
+//| 50

@@ -1,0 +1,10 @@
+// A killed child's exit code is 128 + 9, as for SIGKILL, on every platform.
+// The child is tests/helpers/child.ctx, as `sleep 60000 0`: the timeout says the program
+// didn't wait the minute out.
+//# build child: {home}/tests/helpers/child.ctx
+//# build program: main.ctx
+//# $ {program} {child}
+//# timeout: 30
+//# exit: 0
+//# stdout:
+//| 137

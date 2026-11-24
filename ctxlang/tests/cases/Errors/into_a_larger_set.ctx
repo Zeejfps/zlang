@@ -1,0 +1,32 @@
+// An error keeps its payload when it joins a set that numbers it differently.
+
+error x
+error y{ k: u8, m: i64 }
+error z
+fn only_y {} -> !i32 { return y{ k = 7, m = -9 } }
+fn generic(T) { xs: []T } -> !T {
+    if xs.len == 0 { return z }
+    return xs[0]
+}
+fn mixed { which: i32 } -> !i32 {
+    if which == 0 { return x }
+    if which == 1 { return only_y{} }
+    return try generic{ xs = slice::empty(i32){} }
+}
+fn main { mut io: Io } {
+    let mut mem: [512]u8 = [0; 512]
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    let mut i = 0
+    while i < 3 {
+        match mixed{ which = i } {
+            ok => {}
+            err{ error } => { _ = @fmt(&b, "{} ", error) }
+        }
+        i = i + 1
+    }
+    io::println{ &io, s = utf8::view{ b } }
+}
+
+//# stdout escaped:
+//| x y{ k = 7, m = -9 } z\x20

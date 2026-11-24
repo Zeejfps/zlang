@@ -1,0 +1,23 @@
+
+struct Counted { a: arena::Arena, live: usize }
+fn counted { mut heap: Counted, mem: alloc::Bytes, new: usize, align: usize } -> ?alloc::Bytes {
+    let out = arena::alloc{ heap = &heap.a, mem, new, align } ifnull { return null }
+    heap.live = heap.live + new - mem.len
+    return out
+}
+
+fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
+    let mut mem: [65536]u8
+    let mut heap = arena::new{ buf = mem[..] }
+
+    let mut c = Counted{ a = heap, live = 0 }
+    let names = fs::list{ &fs, heap = &c, realloc = counted, path = args[0] } iferr { return 1 }
+    _ = @fmt(&io, "{} {} {}\n", names.len, names[0], c.live)
+    fs::list_free{ heap = &c, realloc = counted, names }
+    let none = fs::list{ &fs, heap = &c, realloc = counted, path = args[1] } iferr { return 2 }
+    _ = @fmt(&io, "{} {}\n", none.len, c.live)
+    fs::list_free{ heap = &c, realloc = counted, names = none }
+    _ = @fmt(&io, "{}\n", c.live)
+    return 0
+
+}

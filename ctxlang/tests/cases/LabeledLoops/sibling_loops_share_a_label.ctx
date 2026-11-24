@@ -1,0 +1,9 @@
+
+fn main { mut io: Io } {
+    a: while true { break a }
+    a: while true { break a }
+    io::println_i64{ &io, n = 1 }
+}
+
+//# stdout:
+//| 1

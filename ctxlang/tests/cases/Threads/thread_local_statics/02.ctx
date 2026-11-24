@@ -1,0 +1,25 @@
+// Each worker counts in its own static; a program that isn't threaded has one.
+
+namespace counts {
+    capability Counts {
+        #thread_local
+        static n: u64
+    }
+
+    fn bump { mut c: Counts } -> u64 {
+        c.n = c.n + 1
+        return c.n
+    }
+}
+
+fn main { mut io: Io, mut counts: counts::Counts } -> i32 {
+    _ = counts::bump{ c = &counts }
+    _ = counts::bump{ c = &counts }
+    _ = counts::bump{ c = &counts }
+    _ = counts::bump{ c = &counts }
+    io::println_u64{ &io, n = counts::bump{ c = &counts } }
+    return 0
+}
+
+//# stdout:
+//| 5

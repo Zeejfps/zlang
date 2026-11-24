@@ -1,0 +1,18 @@
+// 2^62 bytes is more than any 64-bit OS maps; the largest usize can't be rounded up to
+// a page at all.
+
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+
+    let some{ value = z } = mem::pages{ &mem, size = 0 } else { return 1 }
+    io::println_u64{ &io, n = z.len }
+    if mem::pages{ &mem, size = 4611686018427387904 } == null { io::println_i64{ &io, n = -1 } }
+    if mem::pages{ &mem, size = 18446744073709551615 } == null { io::println_i64{ &io, n = -2 } }
+    return 0
+
+}
+
+//# interp: cannot run
+//# stdout:
+//| 0
+//| -1
+//| -2

@@ -1,0 +1,61 @@
+// A generic calling a generic, inferred and given, recursion, an inferred caller, and an
+// instance widening into any error or a larger declared set, each renumbered.
+
+error a
+error b{ n: u64 }
+error c{ x: u32, y: u32 }
+fn da {} -> error(a)!u64 { return a }
+fn db {} -> error(b)!u64 { return b{ n = 7 } }
+fn dc {} -> !u64 { return c{ x = 1, y = 2 } }
+fn dmix { k: u64 } -> !u64 {
+    if k == 0 { return b{ n = 5 } }
+    if k == 1 { return c{ x = 3, y = 4 } }
+    return k
+}
+fn retry(T, E: error) { f: &fn{} -> E!T, times: u32 } -> E!T {
+    let mut i: u32 = 1
+    while i < times {
+        match f{} { ok{ value } => { return value } err => {} }
+        i = i + 1
+    }
+    return f{}
+}
+fn fwd(E: error) { f: &fn{} -> E!u64 } -> E!u64 { return retry{ f, times = 2 } }
+fn fwd2(E: error) { f: &fn{} -> E!u64 } -> E!u64 { let v = try retry(u64, E){ f, times = 2 }
+    return v + 1 }
+fn rec(E: error) { f: &fn{} -> E!u64, n: u32 } -> E!u64 {
+    if n == 0 { return f{} }
+    return rec{ f, n = n - 1 }
+}
+fn inf(E: error) { f: &fn{} -> E!u64 } -> !u64 { return try fwd{ f } }
+fn up(E: error) { f: &fn{} -> E!u64 } -> error!u64 { return try f{} }
+fn wide(E: error) { f: &fn{} -> E!u64 } -> u64 {
+    let g: &fn{} -> !u64 = f
+    return g{} iferr 99
+}
+fn main { mut io: Io } {
+    match fwd{ f = db } { ok => {} b{ n } => { _ = @fmt(&io, "1 {}\n", n) } }
+    match fwd{ f = da } { ok => {} a => { _ = @fmt(&io, "2 a\n") } }
+    match fwd2{ f = dmix{ k = 1, _ } } { ok => {} b{ n } => { _ = @fmt(&io, "3b {}\n", n) } c{ x, y } => { _ = @fmt(&io, "3c {} {}\n", x, y) } }
+    match fwd2{ f = dmix{ k = 0, _ } } { ok => {} b{ n } => { _ = @fmt(&io, "4b {}\n", n) } c{ x, y } => { _ = @fmt(&io, "4c {} {}\n", x, y) } }
+    match rec{ f = dc, n = 3 } { ok => {} err{ error } => { _ = @fmt(&io, "5 {}\n", error) } }
+    match inf{ f = db } { ok => {} err{ error } => { _ = @fmt(&io, "6 {}\n", error) } }
+    match inf{ f = dmix{ k = 1, _ } } { ok => {} err{ error } => { _ = @fmt(&io, "7 {}\n", error) } }
+    match up{ f = db } { ok => {} err{ error } => { _ = @fmt(&io, "8 {}\n", error) } }
+    _ = @fmt(&io, "9 {}\n", wide{ f = da })
+    match retry(u64, error){ f = db, times = 1 } { ok => {} err{ error } => { _ = @fmt(&io, "10 {}\n", error) } }
+    match retry(u64, error(a, b)){ f = db, times = 1 } { ok => {} a => {} b{ n } => { _ = @fmt(&io, "11 {}\n", n) } }
+}
+
+//# stdout:
+//| 1 7
+//| 2 a
+//| 3c 3 4
+//| 4b 5
+//| 5 c{ x = 1, y = 2 }
+//| 6 b{ n = 7 }
+//| 7 c{ x = 3, y = 4 }
+//| 8 b{ n = 7 }
+//| 9 99
+//| 10 b{ n = 7 }
+//| 11 7

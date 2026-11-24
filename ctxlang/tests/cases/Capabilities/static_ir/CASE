@@ -1,0 +1,21 @@
+// A static is an item, declared once however many capabilities reach it, and a use is a
+// deref of its address.
+//# build text: {home}/tests/helpers/text.ctx
+
+// The IR is the program's and std's, with ids that change when std does: `{n}` is an id.
+// The second and third are std's stack limit, which every function's frame is checked against.
+//# $ ctxc ir {std} -- main0.ctx
+//# exit: 0
+//# stdout has escaped:
+//| (saddr\x20
+//# stdout has:
+//| (static {n} "rt::Stack::limit" {n} 0)
+//# stdout has:
+//| (stack_limit {n})
+
+// Declared once, though `O` and `X` both reach it.
+//# $ {text} to p.ir {ctxc} ir {std} -- main0.ctx
+//# exit: 0
+//# $ {text} count p.ir "(static {n} \x22g::O::n\x22 {n} 0)"
+//# stdout:
+//| 1

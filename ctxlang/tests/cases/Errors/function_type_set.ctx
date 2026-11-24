@@ -1,0 +1,44 @@
+// A function type may declare its set (spec §8, Errors, rule 14): a value converts to it
+// if its errors are in it, renumbered by a thunk, and a call through it fails with that
+// set, which a match lists without `else`.
+
+error a
+error b
+error c{ n: u64 }
+type Small = error(a)
+type Wide = error(a, b, c)
+fn da {} -> Small!u64 { return a }
+fn inf { n: u64 } -> !u64 {
+    if n == 0 { return b }
+    if n == 1 { return c{ n = 7 } }
+    return n
+}
+fn run { f: fn{} -> Wide!u64 } -> Wide!u64 { return try f{} }
+fn each { f: fn{ n: u64 } -> Wide!u64, n: u64 } -> Wide!u64 { return try f{ n } }
+struct Handler { on: fn{ n: u64 } -> Wide!u64 }
+fn main { mut io: Io } {
+    match run{ f = da } {
+        ok => {}
+        a => { io::println{ &io, s = "a" } }
+        b | c => {}
+    }
+    match each{ f = inf, n = 1 } {
+        ok => {}
+        a | b => {}
+        c{ n } => { io::println_u64{ &io, n } }
+    }
+    let h = Handler{ on = inf }
+    match h.on{ n = 0 } {
+        ok => {}
+        b => { io::println{ &io, s = "b" } }
+        a | c => {}
+    }
+    let g: fn{} -> !u64 = da
+    match g{} { ok => {} a => { io::println{ &io, s = "any a" } } else => {} }
+}
+
+//# stdout:
+//| a
+//| 7
+//| b
+//| any a

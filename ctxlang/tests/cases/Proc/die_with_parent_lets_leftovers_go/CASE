@@ -1,0 +1,45 @@
+// die_with_parent covers the child until it ends: a grandchild it started, still running
+// when the child is waited for, outlives this program too, which ends normally, unless
+// wait ends it (group with leftovers = kill, Proc/leftovers). On Windows wait clears the
+// Job Object's KILL_ON_JOB_CLOSE before it closes it; on Linux PR_SET_PDEATHSIG was only
+// ever the child's.
+// The child is tests/helpers/child.ctx, as `start_beat PATH go`: it starts a grandchild that
+// makes the file PATH grow for a minute, prints `started` and ends. That the grandchild still
+// runs is the file growing in the second after (`beats PATH`), and that it has ended is the
+// file no longer growing (`ends PATH`); `stop_beat` ends a grandchild that was left running.
+//# build child: {home}/tests/helpers/child.ctx
+//# build program: main.ctx
+
+// the child without a group
+//# make dir plain
+//# $ {program} {child} plain plain/file
+//# timeout: 30
+//# exit: 0
+//# stdout:
+//| started
+//| 0
+//# $ {child} beats plain/file
+//# exit: 0
+//# stdout:
+//| running
+//# $ {child} stop_beat plain/file
+//# exit: 0
+//# stdout:
+//| stopped
+
+// the child in a group of its own
+//# make dir group
+//# $ {program} {child} group group/file
+//# timeout: 30
+//# exit: 0
+//# stdout:
+//| started
+//| 0
+//# $ {child} beats group/file
+//# exit: 0
+//# stdout:
+//| running
+//# $ {child} stop_beat group/file
+//# exit: 0
+//# stdout:
+//| stopped

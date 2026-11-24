@@ -1,0 +1,3 @@
+const C: [3]i32 = [1, 2, 3]
+const VIEW: []i32 = C[..]  //~ error at 22: const `VIEW` can't hold a pointer into const storage: const values cannot retain array views
+fn main {} {}

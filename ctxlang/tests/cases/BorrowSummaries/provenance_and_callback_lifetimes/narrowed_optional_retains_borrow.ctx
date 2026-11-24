@@ -1,0 +1,6 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// narrowed optional retains borrow: rejected. It is never run: it would use a dangling pointer.
+
+fn unwrap { s: ?[]u8 } -> []u8 { if s != null { return s }; return "" }
+fn load {} -> []u8 { let buf: [3]u8 = [1,2,3]; return unwrap{ s = buf[..] } }  //~ error at 48: returned value holds the address of local `buf`
+fn main {} { _ = load{} }

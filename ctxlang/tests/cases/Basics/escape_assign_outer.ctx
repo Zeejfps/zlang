@@ -1,0 +1,9 @@
+
+fn main { mut io: Io } {
+    let mut x: i32 = 1
+    let mut p = &x
+    if true {
+        let mut y: i32 = 2
+        p = &y  //~ error at 9: `p` outlives local `y` whose address it would hold
+    }
+}

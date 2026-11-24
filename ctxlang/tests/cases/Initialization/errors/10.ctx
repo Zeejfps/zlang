@@ -1,0 +1,7 @@
+fn f { c: bool } -> i32 {
+    let x: i32
+    let some{ value } = if c { 1 } else { null } else { x = 0; return x }
+    x = value  //~ error at 5: `x` may be assigned more than once
+    return x
+}
+fn main {} {}

@@ -1,0 +1,3 @@
+fn main {} {
+    let t: []u8 = \\café  //~ error at 24: a multi-line literal holds ASCII characters only
+}

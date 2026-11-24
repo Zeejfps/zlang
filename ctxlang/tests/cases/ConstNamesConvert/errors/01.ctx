@@ -1,0 +1,9 @@
+
+namespace gl {
+    const LINEAR: u32 = 9729
+    const BIG: u32 = 4000000000
+    const NEG: i32 = -1
+    const SMALL: i64 = 7
+}
+fn take { param: i32 } -> i32 { return param }
+fn main {} { _ = take{ param = gl::BIG } }  //~ error at 32: expected i32, got u32: `gl::BIG` is 4000000000, which doesn't fit i32

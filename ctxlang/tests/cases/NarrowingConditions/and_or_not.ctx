@@ -1,0 +1,32 @@
+
+fn both { a: ?i32, b: ?i32 } -> i32 {
+    if a != null and b != null { return a + b }
+    return 0
+}
+fn big { a: ?i32 } -> bool { return a == null or a > 3 }
+fn inv { a: ?i32 } -> i32 {
+    if not (a == null) { return a }
+    return -1
+}
+fn after { a: ?i32, b: ?i32 } -> i32 {
+    if a == null or b == null { return 0 }
+    return a * b
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = both{ a = 2, b = 3 } }
+    io::println_i64{ &io, n = both{ a = 2, b = null } }
+    io::println_bool{ &io, n = big{ a = null } }
+    io::println_bool{ &io, n = big{ a = 2 } }
+    io::println_i64{ &io, n = inv{ a = 7 } }
+    io::println_i64{ &io, n = after{ a = 4, b = 5 } }
+    io::println_i64{ &io, n = after{ a = null, b = 5 } }
+}
+
+//# stdout:
+//| 5
+//| 0
+//| true
+//| false
+//| 7
+//| 20
+//| 0

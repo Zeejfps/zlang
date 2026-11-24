@@ -1,0 +1,5 @@
+fn f {} -> strlit {
+    let s = "abc"
+    return s  //~ error at 12: expected strlit, got []u8
+}
+fn main {} {}

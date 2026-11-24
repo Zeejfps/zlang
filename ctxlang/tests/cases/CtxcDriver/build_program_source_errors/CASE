@@ -1,0 +1,160 @@
+// A project of libraries in lib/ and a tool that uses them, in tools/tool.
+// Errors in `#build::sources` are at their positions in build.ctx. The driver reads the
+// attribute before the checker runs, so `dir` is a literal; the checker checks the rest.
+// `ctxc graph`, for the `project` step, reports the same.
+
+//# write tools/tool/build.ctx:
+//| #build::sources{ dir = "../../lib/missing" }
+//| fn build { mut b: Build } {}
+//# $ ctxc run .
+//# cwd: tools/tool
+//# exit: 1
+//# stderr:
+//| build.ctx:1:24: error: no directory ../../lib/missing
+//# project
+//# cwd: tools/tool
+//# errors:
+//| build.ctx:1:24: error: no directory ../../lib/missing
+
+//# write tools/tool/build.ctx:
+//| #build::sources{ dir = "../../lib/empty" }
+//| fn build { mut b: Build } {}
+//# $ ctxc run .
+//# cwd: tools/tool
+//# exit: 1
+//# stderr:
+//| build.ctx:1:24: error: no .ctx files in ../../lib/empty or below
+//# project
+//# cwd: tools/tool
+//# errors:
+//| build.ctx:1:24: error: no .ctx files in ../../lib/empty or below
+
+//# write tools/tool/build.ctx:
+//| namespace n {
+//|     #build::sources{ dir = "../../lib/a" }
+//|     fn build {} {}
+//| }
+//| fn build { mut b: Build } {}
+//# $ ctxc run .
+//# cwd: tools/tool
+//# exit: 1
+//# stderr:
+//| build.ctx:2:5: error: `build::sources` applies only to the build program's `fn build`
+//# project
+//# cwd: tools/tool
+//# errors:
+//| build.ctx:2:5: error: `build::sources` applies only to the build program's `fn build`
+
+//# write tools/tool/build.ctx:
+//| #build::sources{ dir = "../../lib/a" }
+//| struct S {}
+//| fn build { mut b: Build } {}
+//# $ ctxc run .
+//# cwd: tools/tool
+//# exit: 1
+//# stderr:
+//| build.ctx:1:1: error: `build::sources` applies only to the build program's `fn build`
+//# project
+//# cwd: tools/tool
+//# errors:
+//| build.ctx:1:1: error: `build::sources` applies only to the build program's `fn build`
+
+// nor on any field, `fn build`'s own context's included
+//# write tools/tool/build.ctx:
+//| struct S {
+//|     #build::sources{ dir = "../../lib/a" }
+//|     x: i32
+//| }
+//| fn build { mut b: Build } {}
+//# $ ctxc run .
+//# cwd: tools/tool
+//# exit: 1
+//# stderr:
+//| build.ctx:2:5: error: `build::sources` applies only to the build program's `fn build`
+//# project
+//# cwd: tools/tool
+//# errors:
+//| build.ctx:2:5: error: `build::sources` applies only to the build program's `fn build`
+
+//# write tools/tool/build.ctx:
+//| union U { v{
+//|     #build::sources{ dir = "../../lib/a" }
+//|     x: i32 } }
+//| fn build { mut b: Build } {}
+//# $ ctxc run .
+//# cwd: tools/tool
+//# exit: 1
+//# stderr:
+//| build.ctx:2:5: error: `build::sources` applies only to the build program's `fn build`
+//# project
+//# cwd: tools/tool
+//# errors:
+//| build.ctx:2:5: error: `build::sources` applies only to the build program's `fn build`
+
+//# write tools/tool/build.ctx:
+//| fn build {
+//|     #build::sources{ dir = "../../lib/a" }
+//|     mut b: Build
+//| } {}
+//# $ ctxc run .
+//# cwd: tools/tool
+//# exit: 1
+//# stderr:
+//| build.ctx:2:5: error: `build::sources` applies only to the build program's `fn build`
+//# project
+//# cwd: tools/tool
+//# errors:
+//| build.ctx:2:5: error: `build::sources` applies only to the build program's `fn build`
+
+//# write tools/tool/build.ctx:
+//| const D: []u8 = "../../lib/a"
+//| #build::sources{ dir = D }
+//| fn build { mut b: Build } {}
+//# $ ctxc run .
+//# cwd: tools/tool
+//# exit: 1
+//# stderr:
+//| build.ctx:2:24: error: `build::sources` takes `dir`, a string literal that isn't empty
+//# project
+//# cwd: tools/tool
+//# errors:
+//| build.ctx:2:24: error: `build::sources` takes `dir`, a string literal that isn't empty
+
+//# write tools/tool/build.ctx:
+//| #build::sources
+//| fn build { mut b: Build } {}
+//# $ ctxc run .
+//# cwd: tools/tool
+//# exit: 1
+//# stderr:
+//| build.ctx:1:1: error: `build::sources` takes `dir`, a string literal that isn't empty
+//# project
+//# cwd: tools/tool
+//# errors:
+//| build.ctx:1:1: error: `build::sources` takes `dir`, a string literal that isn't empty
+
+//# write tools/tool/build.ctx:
+//| #build::sources{ dir = "" }
+//| fn build { mut b: Build } {}
+//# $ ctxc run .
+//# cwd: tools/tool
+//# exit: 1
+//# stderr:
+//| build.ctx:1:24: error: `build::sources` takes `dir`, a string literal that isn't empty
+//# project
+//# cwd: tools/tool
+//# errors:
+//| build.ctx:1:24: error: `build::sources` takes `dir`, a string literal that isn't empty
+
+//# write tools/tool/build.ctx:
+//| #build::sources{ dir = "../../lib/a", deep = true }
+//| fn build { mut b: Build } {}
+//# $ ctxc run .
+//# cwd: tools/tool
+//# exit: 1
+//# stderr:
+//| build.ctx:1:39: error: struct `sources` has no field `deep`
+//# project
+//# cwd: tools/tool
+//# errors:
+//| build.ctx:1:39: error: struct `sources` has no field `deep`

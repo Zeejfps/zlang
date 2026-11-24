@@ -1,0 +1,11 @@
+
+fn twice { f: fn{ x: i64 } -> i64, x: i64 } -> i64 { return f{ x = f{ x } } }
+
+fn main { mut io: Io, args: Args } {
+    let n: i64 = if args.len > 0 { 0 } else { 5 }
+    io::println_i64{ &io, n = a::big{ n = 10 } }
+    io::println_i64{ &io, n = a::small{ x = n } }
+    io::println_i64{ &io, n = twice{ f = a::value, x = 4 } }
+    let f: &fn{ x: i64 } -> i64 = a::add{ k = 5, _ }
+    io::println_i64{ &io, n = f{ x = 1 } }
+}

@@ -1,0 +1,9 @@
+
+const K: usize = 1 << 3
+fn main { mut io: Io } {
+    let mut a: [K | 1]u8
+    io::println_u64{ &io, n = a.len }
+}
+
+//# stdout:
+//| 9

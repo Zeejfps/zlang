@@ -1,0 +1,10 @@
+
+struct Buf { data: []u8, n: i32 }
+fn main { mut io: Io } {
+    let mut s: []u8
+    let mut b: Buf
+    io::println_u64{ &io, n = s.len + b.data.len + s[0..0].len }
+}
+
+//# stdout:
+//| 0

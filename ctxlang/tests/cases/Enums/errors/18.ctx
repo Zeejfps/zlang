@@ -1,0 +1,11 @@
+
+enum Kind: u8 {
+    ident,
+    number,
+    lbrace = 40,
+    rbrace,
+}
+
+enum Sign: i8 { minus = -1, zero, plus }
+fn f {} { let x = @as(f64, Kind::ident) }  //~ error at 19: @as converts an enum to an integer type, not f64
+fn main {} {}

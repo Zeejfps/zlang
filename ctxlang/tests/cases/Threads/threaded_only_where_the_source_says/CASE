@@ -1,0 +1,16 @@
+// A program is threaded if main takes Threads (spec §15, Entry point, rule 8): only then
+// is its C, and the stack limit and `#thread_local` statics in it, per thread.
+//# $ ctxc build plain.c {std} -- plain.ctx
+//# exit: 0
+//# file plain.c lacks:
+//| CTX_THREADS
+//# file plain.c lacks:
+//| _Thread_local
+//# $ ctxc build threaded.c {std} -- threaded.ctx
+//# exit: 0
+//# file threaded.c has:
+//| #define CTX_THREADS 1
+//# file threaded.c has:
+//| _Thread_local
+//# file threaded.c has:
+//| ctx_thread_setup();

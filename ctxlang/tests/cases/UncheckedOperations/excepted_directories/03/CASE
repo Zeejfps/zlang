@@ -1,0 +1,7 @@
+// Code in a denied directory uses what an excepted one made, and std: only writing an
+// unchecked operation is denied. A directory is named as add_sources names one, and
+// several calls add up.
+//# $ ctxc run .
+//# exit: 0
+//# stdout:
+//| 14

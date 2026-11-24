@@ -1,0 +1,15 @@
+// Each kind is an error where it is written, saying what to write instead; lib/raw and
+// what is below it are excepted, and std's files always are.
+//# $ ctxc run .
+//# exit: 1
+//# stderr:
+//| lib/game/game.ctx:4:15: error: an extern fn is unchecked, and `build::deny_unchecked` in build.ctx denies it here: it has no checked form, so write it in a directory its `except` lists
+//| lib/game/game.ctx:5:18: error: an extern union is unchecked, and `build::deny_unchecked` in build.ctx denies it here: use a `union`, which says which variant it holds, or write it in a directory its `except` lists
+//| lib/game/game.ctx:6:29: error: a C variable is unchecked, and `build::deny_unchecked` in build.ctx denies it here: it has no checked form, so write it in a directory its `except` lists
+//| lib/game/game.ctx:8:8: error: a `#c::callback` fn is unchecked, and `build::deny_unchecked` in build.ctx denies it here: it has no checked form, so write it in a directory its `except` lists
+//| lib/game/game.ctx:11:17: error: `@cast` is unchecked, and `build::deny_unchecked` in build.ctx denies it here: it has no checked form, so write it in a directory its `except` lists
+//| lib/game/game.ctx:12:17: error: `@slice` is unchecked, and `build::deny_unchecked` in build.ctx denies it here: slice an array or a slice (`a[lo..hi]`, which is bounds-checked), or write it in a directory its `except` lists
+//| lib/game/game.ctx:14:11: error: a `c::String` made from a pointer is unchecked, and `build::deny_unchecked` in build.ctx denies it here: use a string literal, which its hidden zero ends, or write it in a directory its `except` lists
+//| lib/game/game.ctx:15:18: error: a `c::String` made from a pointer is unchecked, and `build::deny_unchecked` in build.ctx denies it here: use a string literal, which its hidden zero ends, or write it in a directory its `except` lists
+//| lib/game/game.ctx:16:29: error: a `c::String` made from a pointer is unchecked, and `build::deny_unchecked` in build.ctx denies it here: use a string literal, which its hidden zero ends, or write it in a directory its `except` lists
+//| lib/game/game.ctx:17:19: error: pointer arithmetic is unchecked, and `build::deny_unchecked` in build.ctx denies it here: index an array or a slice (`s[i]`, which is bounds-checked), or write it in a directory its `except` lists

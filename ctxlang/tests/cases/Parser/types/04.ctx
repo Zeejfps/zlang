@@ -1,0 +1,3 @@
+fn main {} {
+    let f: list::List(i32 = g
+}

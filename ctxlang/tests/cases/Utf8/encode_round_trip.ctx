@@ -1,0 +1,55 @@
+fn main { mut io: Io } {
+    let mut buf: [4]u8
+    let e0 = utf8::encode{ c = 0, into = buf[..] }
+    io::println_u64{ &io, n = utf8::len{ s = e0 } }
+    io::println_bool{ &io, n = utf8::at{ s = e0, i = 0 } == 0 }
+    let e1 = utf8::encode{ c = 127, into = buf[..] }
+    io::println_u64{ &io, n = utf8::len{ s = e1 } }
+    io::println_bool{ &io, n = utf8::at{ s = e1, i = 0 } == 127 }
+    let e2 = utf8::encode{ c = 128, into = buf[..] }
+    io::println_u64{ &io, n = utf8::len{ s = e2 } }
+    io::println_bool{ &io, n = utf8::at{ s = e2, i = 0 } == 128 }
+    let e3 = utf8::encode{ c = 2047, into = buf[..] }
+    io::println_u64{ &io, n = utf8::len{ s = e3 } }
+    io::println_bool{ &io, n = utf8::at{ s = e3, i = 0 } == 2047 }
+    let e4 = utf8::encode{ c = 2048, into = buf[..] }
+    io::println_u64{ &io, n = utf8::len{ s = e4 } }
+    io::println_bool{ &io, n = utf8::at{ s = e4, i = 0 } == 2048 }
+    let e5 = utf8::encode{ c = 55295, into = buf[..] }
+    io::println_u64{ &io, n = utf8::len{ s = e5 } }
+    io::println_bool{ &io, n = utf8::at{ s = e5, i = 0 } == 55295 }
+    let e6 = utf8::encode{ c = 57344, into = buf[..] }
+    io::println_u64{ &io, n = utf8::len{ s = e6 } }
+    io::println_bool{ &io, n = utf8::at{ s = e6, i = 0 } == 57344 }
+    let e7 = utf8::encode{ c = 65535, into = buf[..] }
+    io::println_u64{ &io, n = utf8::len{ s = e7 } }
+    io::println_bool{ &io, n = utf8::at{ s = e7, i = 0 } == 65535 }
+    let e8 = utf8::encode{ c = 65536, into = buf[..] }
+    io::println_u64{ &io, n = utf8::len{ s = e8 } }
+    io::println_bool{ &io, n = utf8::at{ s = e8, i = 0 } == 65536 }
+    let e9 = utf8::encode{ c = 1114111, into = buf[..] }
+    io::println_u64{ &io, n = utf8::len{ s = e9 } }
+    io::println_bool{ &io, n = utf8::at{ s = e9, i = 0 } == 1114111 }
+}
+
+//# stdout:
+//| 1
+//| true
+//| 1
+//| true
+//| 2
+//| true
+//| 2
+//| true
+//| 3
+//| true
+//| 3
+//| true
+//| 3
+//| true
+//| 3
+//| true
+//| 4
+//| true
+//| 4
+//| true

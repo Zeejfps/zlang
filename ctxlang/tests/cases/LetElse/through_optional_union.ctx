@@ -1,0 +1,17 @@
+// On a `?U`, the pattern may name U's variant; the else takes null and U's others.
+
+union Decl { var{ i: i32 }, func{ name: i32 } }
+fn index { found: ?Decl } -> i32 {
+    let var{ i } = found else { return -1 }
+    return i
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = index{ found = Decl::var{ i = 4 } } }
+    io::println_i64{ &io, n = index{ found = Decl::func{ name = 2 } } }
+    io::println_i64{ &io, n = index{ found = null } }
+}
+
+//# stdout:
+//| 4
+//| -1
+//| -1

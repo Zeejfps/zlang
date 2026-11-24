@@ -1,0 +1,4 @@
+struct S(T) { x: T }
+#write
+fn w(T) { mut s: S(T), v: T } {}  //~ error at 24: a `write` fn's value can't be a bare type parameter
+fn main {} {}

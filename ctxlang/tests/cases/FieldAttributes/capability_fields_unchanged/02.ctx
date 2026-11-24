@@ -1,0 +1,9 @@
+// A capability's field still takes `thread_local` on a static (and `c::symbol` on a C
+// variable, `stack_limit` on a static: Capabilities), and any other as data, beside a
+// struct's.
+
+capability O {
+    #c::symbol{ name = "x" }  //~ error at 5: `c::symbol` on a capability's field applies only to a C variable, `extern name: T`
+    f: extern fn{}
+}
+fn main {} {}

@@ -1,0 +1,8 @@
+// A narrowed x is its T: an optional's test of it says so.
+
+struct S { a: ?i32 }
+fn f { p: ?i32 } -> i32 {
+    if p == 3 { return p ifnull 0 }  //~ error at 24: `p` isn't null here, where a test narrowed it to i32: use it as it is, without `ifnull`
+    return 0
+}
+fn main {} { }

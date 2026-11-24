@@ -1,0 +1,23 @@
+
+capability Counter { ..counter::State }
+namespace counter {
+    capability State { static n: u32 }
+    fn bump { mut c: Counter } -> u32 {
+        c.n = c.n + 1
+        return c.n
+    }
+}
+#test
+fn first { mut t: Test, mut c: Counter } { @expect(&t, counter::bump{ &c } == 1) }
+#test
+fn second { mut t: Test, mut c: Counter, mut io: Io } {
+    io::println{ &io, s = "second ran" }
+    @expect(&t, counter::bump{ &c } == 1)
+}
+#test
+fn prints { mut t: Test, mut io: Io } {
+    io::println{ &io, s = "to standard output" }
+    io::eprintln{ &io, s = "to standard error" }
+    @expect(&t, 1 == 2)
+    io::println{ &io, s = "after the check" }
+}

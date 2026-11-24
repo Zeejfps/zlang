@@ -1,0 +1,20 @@
+
+#panic
+fn caught { mut io: Io, msg: []u8, line: u32 } {
+    io::print{ &io, s = "caught: " }
+    io::write{ &io, to = io::Stream::out, bytes = msg }
+    io::print{ &io, s = " at " }
+    io::println_u64{ &io, n = line }
+    io::flush{ &io }
+}
+fn main { mut io: Io } {
+    let xs = [1, 2]
+    let i: usize = 2
+    io::println_i64{ &io, n = xs[i] }
+}
+
+// A panic fn that returns stops the program at once (ctxrt.c, `report`), without std's
+// report and its exit code 134.
+//# exit: -1073741795
+//# stdout:
+//| caught: index 2 out of bounds for length 2 at 13

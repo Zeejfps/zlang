@@ -1,0 +1,3 @@
+#c::callback
+fn f { x: ?i32 } {}  //~ error at 8: callback `f` can't pass `x` to C: it has type ?i32, which C has no equivalent of
+fn main {} {}

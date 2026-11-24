@@ -1,0 +1,1 @@
+fn main {} { let a = [] }  //~ error at 22: an empty array literal needs a known type

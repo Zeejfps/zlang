@@ -1,0 +1,10 @@
+fn main {} {
+    let mut a: [4]u8 = [0; 4]
+    let s = a[0..2]
+    s[1] = 7
+    let p = &a
+    p[3] = 1
+    _ = p.len
+}
+
+//# exit: 0

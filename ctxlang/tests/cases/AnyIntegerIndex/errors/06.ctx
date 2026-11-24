@@ -1,0 +1,2 @@
+enum K: u8 { a, b }
+fn main {} { let xs = [1, 2, 3]; let k = K::b; let x = xs[k] }  //~ error at 59: an index is an integer, got K: convert it with @as(usize, x)

@@ -1,0 +1,10 @@
+// `S` names both a struct and a local; in a type position it can only be the struct.
+
+struct S { a: u8, b: u32 }
+fn main { mut io: Io } {
+    let S: u8 = 1
+    io::println_u64{ &io, n = @size_of(S) + @align_of(*S) + @as(u64, S) }
+}
+
+//# stdout:
+//| 17

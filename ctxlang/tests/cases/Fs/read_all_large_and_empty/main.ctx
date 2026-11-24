@@ -1,0 +1,19 @@
+
+fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
+    let mut mem: [65536]u8
+    let mut heap = arena::new{ buf = mem[..] }
+
+    let a = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = args[0] } iferr { return 1 }
+    io::println_u64{ &io, n = a.len }
+    let mut sum: u64 = 0
+    let mut i: usize = 0
+    while i < a.len {
+        sum = sum + a[i]
+        i = i + 1
+    }
+    io::println_u64{ &io, n = sum }
+    let b = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = args[1] } iferr { return 1 }
+    io::println_u64{ &io, n = b.len }
+    return 0
+
+}

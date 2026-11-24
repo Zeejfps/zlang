@@ -1,0 +1,6 @@
+// An extern fn the interpreter doesn't emulate is refused before the program starts: nothing
+// of "first" is written.
+//# $ ctxc interp {dir}/c.ctx
+//# exit: 1
+//# stderr:
+//| ctxc interp: extern fn abs (C's `abs`) is not supported by interp

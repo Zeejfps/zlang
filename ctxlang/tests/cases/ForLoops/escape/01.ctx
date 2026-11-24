@@ -1,0 +1,19 @@
+// §14: `&x` of a `for &x` points into what is gone over, and an element's copy holds
+// what the array's elements hold.
+
+fn first { xs: []*i32 } -> *i32 {
+    for p in xs { return p }
+    @panic()
+}
+fn fixed {} -> *i32 {
+    for &x in [1, 2] { return &x }                  // a static view
+    @panic()
+}
+fn main { mut io: Io } {
+    let a = [7, 8]
+    let ps: [1]*i32 = [&a[0]]
+    _ = @fmt(&io, "{} {}\n", first{ xs = ps[..] }.*, fixed{}.*)
+}
+
+//# stdout:
+//| 7 1

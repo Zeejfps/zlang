@@ -1,0 +1,15 @@
+
+namespace geo {
+    struct Pair(T) { a: T, b: T }
+    enum Side: u8 { left, right }
+    union Hit(T) { miss, at{ where_: T } }
+    error off{ p: Pair(i32), s: Side, h: Hit(Pair(u8)), parts: [2]Pair(bool) }
+}
+fn main {} -> ! {
+    return geo::off{ p = geo::Pair(i32){ a = 1, b = 2 }, s = geo::Side::right, h = geo::Hit(geo::Pair(u8))::at{ where_ = geo::Pair(u8){ a = 3, b = 4 } },
+                     parts = [geo::Pair(bool){ a = true, b = false }, geo::Pair(bool){ a = false, b = false }] }
+}
+
+//# exit: 1
+//# stderr:
+//| error: geo::off{ p = geo::Pair{ a = 1, b = 2 }, s = geo::Side::right, h = geo::Hit::at{ where_ = geo::Pair{ a = 3, b = 4 } }, parts = [geo::Pair{ a = true, b = false }, geo::Pair{ a = false, b = false }] }

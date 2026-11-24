@@ -1,0 +1,150 @@
+// A program for the cases that state something of a command's whole output that `has` and
+// `lacks` can't: that two outputs are the same bytes, how often a text is there, that two
+// numbers of a line are the same one (cases/IRDump, cases/Capabilities, cases/FieldAttributes,
+// cases/BorrowSummaries). A case builds it, `//# build text: {home}/tests/helpers/text.ctx`.
+// What it does is its first argument:
+//
+//   to FILE COMMAND ARG...        runs COMMAND with its standard output written to FILE (a `$`
+//                                 step has no redirection), and ends with its exit code:
+//                                 `//# $ {text} to p.ir {ctxc} ir {std} -- main.ctx`
+//   both FILE COMMAND ARG...      as `to`, with COMMAND's standard error written to FILE too, in
+//                                 the order it writes the two: a shell's `> FILE 2>&1`
+//   same A B                      prints `same` if the files A and B hold the same bytes, and
+//                                 at least one; else `differ at byte N` with their sizes
+//   count FILE [within START END] PATTERN...
+//                                 prints, on a line for each PATTERN, how often it is in FILE,
+//                                 counted from the left without overlaps. With `within`,
+//                                 only in the part of FILE from its first START to the next END
+//                                 after it, both included, or to FILE's end if END is "";
+//                                 `no START` or `no END` (exit code 1) if they aren't there.
+//
+// A PATTERN is text with these in it, as in a case's expected text:
+//
+//   {n}      one or more digits (as many as there are)
+//   {a}      one or more digits, the same ones at each `{a}` of the pattern: a regular
+//            expression's `(\d+)` and `\1`
+//   {any}    any text of one line, the shortest that lets the rest match: `.*?`
+//
+// Exit code 64 for arguments it doesn't know, 65 for a file it can't read.
+
+type Heap = arena::Arena
+
+fn main { mut io: Io, mut fs: Fs, mut proc: Proc, mut mem: Mem, args: Args } -> i32 {
+    let mut heap = arena::new{ buf = mem::reserve{ &mem, size = 1073741824 } ifnull { return 70 } }
+    if args.len == 0 { return 64 }
+    let what = args[0]
+    if is{ what, name = "to" } and args.len >= 3 { return run_to{ &fs, &proc, path = args[1], argv = args[2..], both = false } }
+    if is{ what, name = "both" } and args.len >= 3 { return run_to{ &fs, &proc, path = args[1], argv = args[2..], both = true } }
+    if is{ what, name = "same" } and args.len == 3 {
+        let a = fs::read_all(Heap){ &fs, &heap, realloc = arena::alloc, path = args[1] } iferr { return 65 }
+        let b = fs::read_all(Heap){ &fs, &heap, realloc = arena::alloc, path = args[2] } iferr { return 65 }
+        if a.len > 0 and slice::eq_bytes{ a, b } {
+            _ = @fmt(&io, "same\n")
+            return 0
+        }
+        let mut at: usize = 0
+        while at < a.len and at < b.len and a[at] == b[at] { at = at + 1 }
+        _ = @fmt(&io, "differ at byte {}: {} is {} bytes, {} is {}\n", at, args[1], a.len, args[2], b.len)
+        return 0
+    }
+    if is{ what, name = "count" } and args.len >= 3 {
+        let whole = fs::read_all(Heap){ &fs, &heap, realloc = arena::alloc, path = args[1] } iferr { return 65 }
+        let mut text: []u8 = whole
+        let mut first: usize = 2
+        if is{ what = args[2], name = "within" } {
+            if args.len < 6 { return 64 }
+            let from = find{ text, part = args[3], from = 0 } ifnull {
+                _ = @fmt(&io, "no START\n")
+                return 1
+            }
+            let to = if args[4].len == 0 { text.len } else {
+                find{ text, part = args[4], from = from + args[3].len } ifnull {
+                    _ = @fmt(&io, "no END\n")
+                    return 1
+                }
+            }
+            text = text[from..to + args[4].len]
+            first = 5
+        }
+        for i in first..args.len { _ = @fmt(&io, "{}\n", count{ text, pattern = args[i] }) }
+        return 0
+    }
+    return 64
+}
+
+fn is { what: []u8, name: []u8 } -> bool { return slice::eq_bytes{ a = what, b = name } }
+
+// Runs argv with its standard output in the file at path, and with `both` its standard error.
+fn run_to { mut fs: Fs, mut proc: Proc, path: []u8, argv: [][]u8, both: bool } -> i32 {
+    let file = fs::open{ &fs, path, mode = fs::Mode::write } iferr { return 65 }
+    let stderr = if both { proc::Stdio::file{ file } } else { proc::Stdio::inherit }
+    let mut child = proc::spawn{ &proc, argv, options = proc::Options{ stdout = proc::Stdio::file{ file }, stderr, .. } } iferr {
+        _ = fs::close{ &fs, file }
+        return 66
+    }
+    let code = proc::wait{ &proc, &child } iferr { 67 }
+    _ = fs::close{ &fs, file }
+    return code
+}
+
+// Where part first is in text at or after from.
+fn find { text: []u8, part: []u8, from: usize } -> ?usize {
+    if part.len > text.len { return null }
+    for at in from..text.len - part.len + 1 {
+        if slice::eq_bytes{ a = text[at..at + part.len], b = part } { return at }
+    }
+    return null
+}
+
+// How often pattern matches in text, from the left, without overlaps.
+fn count { text: []u8, pattern: []u8 } -> u64 {
+    let mut n: u64 = 0
+    let mut at: usize = 0
+    while at < text.len {
+        let end = match_at{ text, at, pattern, same = "" } ifnull {
+            at = at + 1
+            continue
+        }
+        n = n + 1
+        at = if end > at { end } else { at + 1 }
+    }
+    return n
+}
+
+fn starts { s: []u8, prefix: []u8 } -> bool {
+    return s.len >= prefix.len and slice::eq_bytes{ a = s[..prefix.len], b = prefix }
+}
+
+fn digits_at { text: []u8, at: usize } -> usize {
+    let mut n: usize = 0
+    while at + n < text.len and text[at + n] >= '0' and text[at + n] <= '9' { n = n + 1 }
+    return n
+}
+
+// Where a match of pattern that starts at text[at] ends, if there is one. `same` is the digits
+// an earlier `{a}` took, or "" before the first.
+fn match_at { text: []u8, at: usize, pattern: []u8, same: []u8 } -> ?usize {
+    if pattern.len == 0 { return at }
+    if starts{ s = pattern, prefix = "{n}" } {
+        let n = digits_at{ text, at }
+        if n == 0 { return null }
+        return match_at{ text, at = at + n, pattern = pattern[3..], same }
+    }
+    if starts{ s = pattern, prefix = "{a}" } {
+        let n = digits_at{ text, at }
+        if n == 0 { return null }
+        if same.len > 0 and not slice::eq_bytes{ a = same, b = text[at..at + n] } { return null }
+        return match_at{ text, at = at + n, pattern = pattern[3..], same = text[at..at + n] }
+    }
+    if starts{ s = pattern, prefix = "{any}" } {
+        let mut end = at
+        while true {
+            let found = match_at{ text, at = end, pattern = pattern[5..], same }
+            if found != null { return found }
+            if end >= text.len or text[end] == '\n' { return null }
+            end = end + 1
+        }
+    }
+    if at >= text.len or text[at] != pattern[0] { return null }
+    return match_at{ text, at = at + 1, pattern = pattern[1..], same }
+}

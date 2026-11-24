@@ -1,0 +1,12 @@
+// Two children run at once: the first waits for a file that only the second makes. Each
+// is waited for, in any order.
+// The children are tests/helpers/child.ctx: `wait_file PATH 3` and `make_file PATH 4`.
+//# build child: {home}/tests/helpers/child.ctx
+//# program: main.ctx
+//# args: {child} {dir}/flag
+//# interp: cannot run
+//# stdout:
+//| 4
+//| 3
+//| true
+//# exists flag

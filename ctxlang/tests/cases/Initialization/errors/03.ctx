@@ -1,0 +1,7 @@
+fn f { c: bool } -> i32 {
+    let mut x: *i32
+    let y = 1
+    if c { x = &y }
+    return x.*  //~ error at 12: `x` may be read before it is assigned
+}
+fn main {} {}

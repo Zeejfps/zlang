@@ -1,0 +1,14 @@
+// The prototype has its own C name, so a signature that differs from string.h's doesn't
+// clash with it.
+
+#pure
+extern fn memset { dst: *mut u8, value: i32, n: usize } -> *mut u8
+fn main { mut io: Io } {
+    let mut buf: [4]u8 = [0; 4]
+    _ = memset{ dst = &buf[0], value = 7, n = 3 }
+    io::println_i64{ &io, n = buf[0] + buf[2] + buf[3] }
+}
+
+//# interp: cannot run
+//# stdout:
+//| 14

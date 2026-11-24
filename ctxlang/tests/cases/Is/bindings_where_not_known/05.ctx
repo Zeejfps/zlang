@@ -1,0 +1,17 @@
+// Outside the test, on one side of `or`, bound twice, after an `if` that doesn't leave.
+
+union Ref { local{ var: i32 }, constant{ value: i64 }, variant, enumval }
+enum Color: u8 { red, green, blue }
+fn find { n: i32 } -> ?Ref {
+    if n == 0 { return null }
+    if n == 1 { return Ref::local{ var = 7 } }
+    if n == 2 { return Ref::constant{ value = 9 } }
+    return Ref::variant
+}
+
+fn main {} {
+    let r = find{ n = 1 }
+    let s = find{ n = 2 }
+    if not (r is local{ var }) { }
+    _ = var  //~ error at 9: unknown name `var`
+}

@@ -1,0 +1,6 @@
+fn f {} -> i32 {
+    let x: ?i32
+    if x == null { return 0 }  //~ error at 8: `x` may be read before it is assigned
+    return x  //~ error at 12: `x` may be read before it is assigned
+}
+fn main {} {}

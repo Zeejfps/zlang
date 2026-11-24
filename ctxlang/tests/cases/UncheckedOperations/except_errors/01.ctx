@@ -1,0 +1,8 @@
+// A build program run directly: an empty directory in `except` is its panic.
+
+fn build { mut b: Build } { build::deny_unchecked{ &b, exe = build::exe{ &b, name = "a", root = "." }, except = [""] } }
+
+//# interp: cannot run
+//# stdout escaped:
+//| exe\t0\ta\t.
+//# panic: program: panic: build: empty directory

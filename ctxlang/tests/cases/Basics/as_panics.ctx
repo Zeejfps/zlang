@@ -1,0 +1,2 @@
+
+fn main { mut io: Io } { let x: i32 = 300; io::println_u64{ &io, n = @as(u8, x) } }  //~ panic at 70: @as: 300 is not representable in u8

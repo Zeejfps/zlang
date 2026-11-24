@@ -1,0 +1,10 @@
+// A wrapping operator never overflows, but ifoverflow covers what its operands cover.
+
+fn main { mut io: Io } {
+    let a: u8 = 250
+    let b: u8 = 10
+    _ = @fmt(&io, "{} {}\n", (a +% b) * 30 ifoverflow 1, (a * b) +% 1 ifoverflow 2)
+}
+
+//# stdout:
+//| 120 2

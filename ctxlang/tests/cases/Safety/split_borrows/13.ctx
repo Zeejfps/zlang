@@ -1,0 +1,16 @@
+struct L { len: i32, cap: i32 }
+struct In { a: i32, l: L }
+struct E { n: i32, list: L, arr: [3]i32, sub: In }
+fn push { mut l: L } { l.len = l.len + 1 }
+fn count { l: L } -> i32 { return l.len }
+fn f { mut e: E, mut x: i32 } {
+    let mut i: usize = 0
+    while i < 3 {
+        x = x + e.arr[i]
+        i = i + 1
+    }
+}
+fn t { mut e: E } {
+    f{ &e, x = &e.arr[1] }  //~ error at 6: two mut references to `e` in one call: `f` reads `e.arr[_]` through its field `e` at 9:17, and changes `e.arr[_]` through its field `x` at 9:9; pass one of them, or change `f` to use `e.arr[_]` through one of them only
+}
+fn main {} {}

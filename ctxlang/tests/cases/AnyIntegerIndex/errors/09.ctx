@@ -1,0 +1,2 @@
+fn f { q: *i32, i: i32 } -> []i32 { return q[i..2] }  //~ error at 45: cannot slice *i32: a pointer has no length to check against; write `@slice(q + lo, n)` for `n` elements from `lo`, which isn't checked
+fn main {} {}

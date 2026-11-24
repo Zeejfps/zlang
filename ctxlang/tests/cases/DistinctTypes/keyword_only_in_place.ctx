@@ -1,0 +1,13 @@
+
+struct distinct { v: i32 }
+type Plain = distinct
+type Meters = distinct f64
+
+fn main { mut io: Io } {
+    let distinct = Plain{ v = 4 }
+    let m: Meters = 1.0
+    io::println_i64{ &io, n = distinct.v }
+}
+
+//# stdout:
+//| 4

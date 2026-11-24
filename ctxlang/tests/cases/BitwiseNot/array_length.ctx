@@ -1,0 +1,8 @@
+
+fn main { mut io: Io } {
+    let a: [~-4]u8 = [0; 3]
+    _ = @fmt(&io, "{}\n", a.len)
+}
+
+//# stdout:
+//| 3

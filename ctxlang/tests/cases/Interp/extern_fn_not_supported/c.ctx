@@ -1,0 +1,7 @@
+
+#pure
+extern fn abs { n: i32 } -> i32
+fn main { mut io: Io } {
+    io::println{ &io, s = "first" }
+    io::println_i64{ &io, n = abs{ n = -3 } }
+}

@@ -1,0 +1,1 @@
+fn main { mut io: Io } { let d: build::Decl }

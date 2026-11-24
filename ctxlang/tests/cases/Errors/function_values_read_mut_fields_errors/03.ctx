@@ -1,0 +1,4 @@
+// Only a read-only field converts to a `mut` one: not the other way, nor to another type.
+
+fn read { n: i64 } {}
+fn main {} { let f: fn{ mut n: i32 } = read }  //~ error at 40: expected fn{ mut n: i32 }, got fn{ n: i64 }

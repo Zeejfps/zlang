@@ -1,0 +1,18 @@
+
+union Cmd { add{ n: i32 }, stop }
+fn main { mut io: Io } {
+    let cmds = [Cmd::add{ n = 2 }, Cmd::add{ n = 5 }, Cmd::stop, Cmd::add{ n = 100 }]
+    let mut total = 0
+    let mut i: usize = 0
+    while i < cmds.len {
+        match cmds[i] {
+            add{ n } => { total = total + n }
+            stop     => { break }
+        }
+        i = i + 1
+    }
+    io::println_i64{ &io, n = total }
+}
+
+//# stdout:
+//| 7

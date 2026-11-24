@@ -1,0 +1,15 @@
+
+fn main { mut io: Io, mut proc: Proc, args: Args } -> i32 {
+    let mut mem: [65536]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
+    let mut env = list::new([]u8){ realloc = arena::alloc, &heap }
+
+    _ = list::push{ list = &argv, item = "x" }
+    _ = list::push{ list = &env, item = "NOEQUALS" }
+    _ = proc::run{ &proc, argv = list::items{ list = argv }, env = list::items{ list = env } }
+    return 0
+
+}
+
+//# panic: program: panic: proc: an environment entry is KEY=VALUE

@@ -1,0 +1,12 @@
+// Borrowed callback records are freed on normal and on `try` returns.
+// 3000 invocations borrow 9000 records, more than the runtime's first 64 KiB holds:
+// released on every return, they never need a second segment.
+//# $ ctxc build program.c {std} -- main.ctx
+//# exit: 0
+
+// At exit, the record stack is back at the start of the runtime's first segment, which
+// was enough: account.c checks it, and aborts with `records not released` if not.
+//# $ cc {cflags} -I {home}/ctxc/rt program.c {home}/ctxc/rt/ctxrt.c account.c -lm -o records{exe} {stack}
+//# exit: 0
+//# $ ./records{exe}
+//# exit: 0

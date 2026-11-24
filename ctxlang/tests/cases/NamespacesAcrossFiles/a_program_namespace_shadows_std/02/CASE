@@ -1,0 +1,5 @@
+// A program's `list` is its own, in however many files: it doesn't join std's, so std's
+// `list::new` isn't in it.
+//# program: a.ctx b.ctx
+//# errors:
+//| b.ctx:1:29: error: `new` not found in namespace `list`

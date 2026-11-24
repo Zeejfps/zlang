@@ -1,0 +1,5 @@
+fn w { mut b: utf8::Builder(arena::Arena) } -> ! {
+    let s = "x"
+    return @fmt(&b, s)  //~ error at 21: @fmt takes its format as a string literal
+}
+fn main {} {}

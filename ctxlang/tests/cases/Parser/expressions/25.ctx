@@ -1,0 +1,3 @@
+fn main {} {
+    @panic
+}  //~ error at 1: expected '(' after @panic: @panic() or @panic("reason")

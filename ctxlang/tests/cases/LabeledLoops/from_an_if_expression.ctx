@@ -1,0 +1,19 @@
+
+fn main { mut io: Io } {
+    let mut i = 0
+    outer:
+    while i < 10 {
+        i = i + 1
+        while true {
+            let d = if i < 3 { i * 2 } else { break outer }
+            io::println_i64{ &io, n = d }
+            break
+        }
+    }
+    io::println_i64{ &io, n = i }
+}
+
+//# stdout:
+//| 2
+//| 4
+//| 3

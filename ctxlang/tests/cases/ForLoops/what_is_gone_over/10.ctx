@@ -1,0 +1,6 @@
+#task
+fn work {} -> i32 { return 1 }
+fn main { mut threads: Threads } {
+    let mut ts: [2]task::Task(i32)
+    for &t in ts { _ = task::wait{ &threads, task = &t } }  //~ error at 10: a `for` can't go over tasks' handles, which are never copied or renamed: count the indexes, `for i in 0..tasks.len`, and write `tasks[i]` //~ error at 30: cannot infer type parameter `R` of `wait`
+}

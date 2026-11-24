@@ -1,0 +1,29 @@
+
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = -9223372036854775808 }
+    io::println_i64{ &io, n = 0 }
+    io::println_u64{ &io, n = 18446744073709551615 }
+    io::println_i64{ &io, n = -128 }
+    io::println_u64{ &io, n = 7 }
+    io::println_f64{ &io, n = 3.0 }
+    io::println_f64{ &io, n = 1e100 }
+    io::println_f64{ &io, n = -0.1 }
+    io::println_f32{ &io, n = 1.1 }
+    io::println_bool{ &io, n = false }
+    io::print_i64{ &io, n = 1 }
+    io::print_i64{ &io, n = 2 }
+    io::newline{ &io }
+}
+
+//# stdout:
+//| -9223372036854775808
+//| 0
+//| 18446744073709551615
+//| -128
+//| 7
+//| 3.0
+//| 1e+100
+//| -0.1
+//| 1.1
+//| false
+//| 12

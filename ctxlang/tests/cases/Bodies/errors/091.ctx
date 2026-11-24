@@ -1,0 +1,4 @@
+fn f { n: i32 } {
+    let a = @addr(n)  //~ error at 19: @addr needs a pointer argument
+}
+fn main {} {}

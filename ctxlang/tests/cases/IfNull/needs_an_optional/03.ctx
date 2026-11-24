@@ -1,0 +1,4 @@
+fn main {} {
+    let n: ?i32 = 3
+    if n != null { let y = n ifnull 0 }  //~ error at 28: `n` isn't null here, where a test narrowed it to i32: use it as it is, without `ifnull`
+}

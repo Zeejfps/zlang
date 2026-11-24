@@ -1,0 +1,2 @@
+fn f { x: ?u32, v: i32 } -> bool { return x == v }  //~ error at 45: cannot compare ?u32 with i32
+fn main {} { }

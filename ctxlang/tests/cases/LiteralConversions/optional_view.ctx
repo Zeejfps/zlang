@@ -1,0 +1,13 @@
+// Where a ?[]u8 or ?strlit is expected, a literal is the language's own view or strlit,
+// which no conversion can take over.
+
+fn main { mut io: Io } {
+    let x: ?[]u8 = "abc"
+    let s: ?strlit = "de"
+    if x != null { io::println_u64{ &io, n = x.len } }
+    if s != null { io::println_u64{ &io, n = s.bytes.len } }
+}
+
+//# stdout:
+//| 3
+//| 2

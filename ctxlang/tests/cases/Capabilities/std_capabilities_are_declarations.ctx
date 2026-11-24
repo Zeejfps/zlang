@@ -1,0 +1,6 @@
+// Io is std's `capability Io`; a program's own declaration of the name shadows it.
+
+capability Io
+fn main { mut io: Io, mut fs: Fs } -> i32 { return @as(i32, @size_of(Io)) + 3 }
+
+//# exit: 3

@@ -1,0 +1,26 @@
+
+namespace kw {
+    const WORDS: [3][]u8 = ["fn", "let", "match"]
+    const NAMES: [2]utf8::String = ["zero", "one"]
+    const COPY: [3][]u8 = WORDS
+    struct Entry { name: utf8::String, arity: i32 }
+    const ENTRIES: [2]Entry = [Entry{ name = "add", arity = 2 }, Entry{ name = "neg", arity = 1 }]
+}
+fn name { i: usize } -> utf8::String { return kw::NAMES[i] }
+fn main { mut io: Io } {
+    let mut i: usize = 0
+    while i < kw::WORDS.len { io::println_u64{ &io, n = kw::WORDS[i].len }; i = i + 1 }
+    io::println{ &io, s = name{ i = 1 } }
+    io::println_u64{ &io, n = kw::COPY[0].len }
+    io::println{ &io, s = kw::ENTRIES[1].name }
+    io::println_i64{ &io, n = kw::ENTRIES[0].arity }
+}
+
+//# stdout:
+//| 2
+//| 3
+//| 5
+//| one
+//| 2
+//| neg
+//| 2

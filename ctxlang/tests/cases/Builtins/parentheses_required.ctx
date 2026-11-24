@@ -1,0 +1,1 @@
+fn main { mut io: Io } { @panic }  //~ error at 33: expected '(' after @panic: @panic() or @panic("reason")

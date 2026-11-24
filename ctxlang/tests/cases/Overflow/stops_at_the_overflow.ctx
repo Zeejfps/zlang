@@ -1,0 +1,18 @@
+// The first tick has run when the * overflows; the second doesn't.
+
+fn tick { mut n: i32 } -> i32 {
+    n = n + 1
+    return 7
+}
+
+fn main { mut io: Io } {
+    let mut n: i32 = 0
+    let r = tick{ &n } * 1000000000 + tick{ &n } ifoverflow -1
+    _ = @fmt(&io, "{} {}\n", r, n)
+    let s = tick{ &n } * 2 + tick{ &n } ifoverflow -1
+    _ = @fmt(&io, "{} {}\n", s, n)
+}
+
+//# stdout:
+//| -1 1
+//| 21 3

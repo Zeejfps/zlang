@@ -1,0 +1,2 @@
+namespace g { capability O { extern opterr: i32 } }
+fn main { mut o: g::O } -> i32 { return o.opterr }  //~ error at 42: `opterr` is a C variable of capability `O`: only a function of namespace `g`, which declares it, can read it

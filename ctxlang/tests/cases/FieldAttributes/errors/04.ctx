@@ -1,0 +1,11 @@
+
+namespace ecs {
+    struct key {}
+    struct cascade { depth: i32, deep: bool }
+    struct by { name: []u8, n: u32 }
+}
+const DEPTH: i32 = 2 + 1
+error e{
+    #ecs::by  //~ error at 6: struct `by` is missing `name`
+    a: i32 }
+fn main {} {}

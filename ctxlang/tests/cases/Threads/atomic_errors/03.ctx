@@ -1,0 +1,4 @@
+fn main {} {
+    let mut n: u32 = 0
+    @atomic_store(&n, 1, atomic::Order::acquire)  //~ error at 26: @atomic_store can't be `acquire` or `acquire_release`: a store only releases
+}

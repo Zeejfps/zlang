@@ -1,0 +1,7 @@
+namespace parser { fn parse {} -> i64 { return 7 } }
+namespace syntax { struct Decl { n: i64 } }
+fn counted { mut heap: arena::Arena, n: usize } -> []u8 {
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    _ = @fmt(&b, "const COUNT: usize = {}\n", n)
+    return utf8::view{ b }.bytes
+}

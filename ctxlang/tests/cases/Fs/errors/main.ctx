@@ -1,0 +1,31 @@
+
+fn show { mut io: Io, e: error } {
+    let code = match e {
+        fs::not_found => { 1 } fs::permission_denied => { 2 } fs::is_directory => { 3 } fs::exists => { 4 }
+        fs::not_directory => { 5 } fs::bad_file => { 6 } alloc::out_of_memory => { 7 } fs::other => { 8 }
+        else => { 9 }
+    }
+    io::println_i64{ &io, n = code }
+}
+
+fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
+    let mut mem: [65536]u8
+    let mut heap = arena::new{ buf = mem[..] }
+
+    let there = args[0]
+    let missing = args[1]
+    let dir = args[2]
+    let nested = args[3]
+    match fs::open{ &fs, path = missing, mode = fs::Mode::read } { ok => {} err{ error } => { show{ &io, e = error } } }
+    match fs::open{ &fs, path = there, mode = fs::Mode::create } { ok => {} err{ error } => { show{ &io, e = error } } }
+    match fs::read_all{ &fs, &heap, realloc = arena::alloc, path = dir } { ok => {} err{ error } => { show{ &io, e = error } } }
+    fs::close{ &fs, file = fs::File{ id = 999 } } iferr err{ error } { show{ &io, e = error } }
+    fs::remove{ &fs, path = missing } iferr err{ error } { show{ &io, e = error } }
+    io::println_bool{ &io, n = match fs::remove{ &fs, path = there } { ok => { true } err => { false } } }
+    io::println_bool{ &io, n = match fs::size{ &fs, path = there } { ok => { false } err => { true } } }
+    match fs::open{ &fs, path = nested, mode = fs::Mode::write } { ok => {} err{ error } => { show{ &io, e = error } } }
+    let empty = slice::empty(u8){}
+    match fs::size{ &fs, path = empty } { ok => {} err{ error } => { show{ &io, e = error } } }
+    return 0
+
+}

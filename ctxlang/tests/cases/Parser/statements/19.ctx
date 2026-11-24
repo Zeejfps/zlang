@@ -1,0 +1,3 @@
+fn main {} {
+    if x { } else y  //~ error at 19: expected '{', found 'y' //~ error at 8: unknown name `x`
+}

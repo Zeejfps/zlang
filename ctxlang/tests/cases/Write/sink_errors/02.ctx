@@ -1,0 +1,8 @@
+struct S {}
+error e
+#write
+fn w { mut s: S, v: i32 } {}
+fn f { mut s: S } {
+    @fmt(&s, "{}", e) iferr {}  //~ error at 20: @fmt has no writer of strlit to S, for an error's name
+}
+fn main {} {}

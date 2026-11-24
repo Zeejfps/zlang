@@ -1,0 +1,2 @@
+struct S { f: extern fn{} -> [4]u8 }  //~ error at 30: an extern fn type can't return [4]u8: C has no equivalent of it
+fn main {} {}

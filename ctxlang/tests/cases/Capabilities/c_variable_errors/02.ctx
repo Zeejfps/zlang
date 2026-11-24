@@ -1,0 +1,3 @@
+capability O { extern opterr: i32 }
+namespace q { fn f { mut o: O } -> i32 { return o.opterr } }  //~ error at 50: `opterr` is a C variable of capability `O`: only a function at the top level, which declares it, can read it
+fn main {} {}

@@ -1,0 +1,2 @@
+struct S { a: [1 << 64]u8 }  //~ error at 18: shift count out of range in constant
+fn main {} {}

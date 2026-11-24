@@ -1,0 +1,12 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// byte copy allocates independently: accepted. It only compiles.
+
+fn copy { mut heap: arena::Arena, s: []u8 } -> ![]mut u8 {
+    let out = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = s.len }
+    slice::copy(u8){ dst = out, src = s }
+    return out
+}
+fn load { mut heap: arena::Arena } -> ![]mut u8 { let buf: [3]u8 = [1,2,3]; return try copy{ &heap, s = buf[..] } }
+fn main {} { let mut mem: [1024]u8; let mut heap = arena::Arena{ buf = mem[..], used = 0, handed = 0 }; _ = load{ &heap } }
+
+//# compiles

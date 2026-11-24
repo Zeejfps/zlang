@@ -1,0 +1,11 @@
+
+fn main { mut io: Io } {
+    let a = 7.5
+    let b: f32 = -7.5
+    io::println_f64{ &io, n = a % 2.0 }
+    io::println_f32{ &io, n = b % 2.0 }
+}
+
+//# stdout:
+//| 1.5
+//| -1.5

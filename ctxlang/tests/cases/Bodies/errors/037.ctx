@@ -1,0 +1,8 @@
+union U { a, b{ x: i32 }, c{ x: i32, y: bool } }
+fn f { u: U } {
+    match u {
+        a => {}
+        b{ x } | c{ x, y } => {}  //~ error at 24: `c` binds `y`, which `b` in the same arm does not
+    }
+}
+fn main {} {}

@@ -1,0 +1,9 @@
+
+namespace raw {
+    #pure
+    extern fn abs { n: i32 } -> i32
+    extern union Bits { f: f32, u: u32 }
+    fn second { p: *u8 } -> u64 { return (p + 1).* }
+    fn view { p: *u8, n: usize } -> []u8 { return @slice(p, n) }
+    fn as_u32 { p: *u8 } -> *u32 { return @cast(*u32, p) }
+}

@@ -1,0 +1,47 @@
+// The executable's files as they are at the call, found as the driver finds them: its
+// root's, but not its subdirectories', and each added directory's at any depth, each
+// file once, never one named build.ctx nor a generated one. Paths are relative to
+// build.ctx's directory, and name files from the working directory.
+// `ctxc graph` runs the build program without building the executables, whose files needn't
+// compile. ctxc's own directory for it is removed before and after: the runner clears those of
+// `ctxc run` commands only.
+//# remove {work:app}
+//# $ ctxc graph app {dir}/graph-gen {dir}/graph.txt
+//# stdout:
+//| file app/src/main.ctx
+//| file lib/a/x.ctx
+//| file lib/a/deeper/y.ctx
+//| struct Main @ app/src/main.ctx:1:1
+//| struct X @ lib/a/x.ctx:1:1
+//| struct Y @ lib/a/deeper/y.ctx:1:1
+//| file app/src/main.ctx
+//| file lib/a/x.ctx
+//| file lib/a/deeper/y.ctx
+//| file lib/b/z.ctx
+//| struct Main @ app/src/main.ctx:1:1
+//| struct X @ lib/a/x.ctx:1:1
+//| struct Y @ lib/a/deeper/y.ctx:1:1
+//| struct Z @ lib/b/z.ctx:1:1
+//| file lib/b/z.ctx
+//| struct Z @ lib/b/z.ctx:1:1
+// From build.ctx's own directory, the same files have other paths.
+//# $ ctxc graph . {dir}/app/graph-gen {dir}/app/graph.txt
+//# cwd: app
+//# stdout:
+//| file src/main.ctx
+//| file ../lib/a/x.ctx
+//| file ../lib/a/deeper/y.ctx
+//| struct Main @ src/main.ctx:1:1
+//| struct X @ ../lib/a/x.ctx:1:1
+//| struct Y @ ../lib/a/deeper/y.ctx:1:1
+//| file src/main.ctx
+//| file ../lib/a/x.ctx
+//| file ../lib/a/deeper/y.ctx
+//| file ../lib/b/z.ctx
+//| struct Main @ src/main.ctx:1:1
+//| struct X @ ../lib/a/x.ctx:1:1
+//| struct Y @ ../lib/a/deeper/y.ctx:1:1
+//| struct Z @ ../lib/b/z.ctx:1:1
+//| file ../lib/b/z.ctx
+//| struct Z @ ../lib/b/z.ctx:1:1
+//# remove {work:app}

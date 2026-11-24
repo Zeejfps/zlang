@@ -1,0 +1,40 @@
+
+struct S { is: bool }
+union U { is, isnt{ is: i32 } }
+namespace is { fn two {} -> i32 { return 2 } }
+fn is { a: i32, b: i32 } -> bool { return a == b }
+fn pick { is: bool } -> U { if is { return U::is }; return U::isnt{ is = 4 } }
+fn main { mut io: Io } {
+    let same = is{ a = 1, b = 1 }                   // a fn,
+    let s = S{ is = same }                          // a field,
+    let u = pick{ is = s.is }
+    io::println_bool{ &io, n = u is is }            // the operator, then a variant
+    io::println_bool{ &io, n = s.is and u is is | isnt }
+    let v = pick{ is = false }
+    if v is isnt{ is } { io::println_i64{ &io, n = is } }     // a binding
+    let t = v
+        is isnt | is                                // the operator: a pattern follows on its line
+    let mut is = t                                  // a local
+    is = not is                                     // a statement that begins with the name
+    io::println_bool{ &io, n = is }
+    let n = match u {
+        is => 1
+        isnt{ is } => is
+    }
+    let w = if is { 1 } else { n
+        + is::two{} }                               // a namespace
+    io::println_i64{ &io, n = w }
+    for is in [1, 2] { io::println_i64{ &io, n = is } }
+    if u
+       is is { io::println{ &io, s = "next line" } }
+}
+
+//# stdout:
+//| true
+//| true
+//| 4
+//| false
+//| 3
+//| 1
+//| 2
+//| next line

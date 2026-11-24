@@ -1,0 +1,4 @@
+fn main {} {
+    let x = 2.5
+    let m = @saturate(_, x)  //~ error at 23: @saturate(_, ...) takes the type expected here, and nothing here expects one: write the type
+}

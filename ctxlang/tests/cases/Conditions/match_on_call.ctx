@@ -1,0 +1,14 @@
+
+fn pick { n: i32 } -> ?i32 { if n > 0 { return n } else { return null } }
+fn main { mut io: Io } {
+    match pick{ n = 5 } {
+        some{ value } => { io::println_i64{ &io, n = value } }
+        null          => { }
+    }
+    let k = match pick{ n = -1 } { some{ value } => { value } null => { 0 } }
+    io::println_i64{ &io, n = k }
+}
+
+//# stdout:
+//| 5
+//| 0

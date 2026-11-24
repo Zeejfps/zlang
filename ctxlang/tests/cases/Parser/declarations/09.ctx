@@ -1,0 +1,6 @@
+type T =
+fn main {} {}
+
+//# errors:
+//| 09.ctx:2:4: error: expected '{', found 'main'
+//| 09.ctx:1:1: error: no `fn main` entry point

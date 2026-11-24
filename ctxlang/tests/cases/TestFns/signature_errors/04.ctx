@@ -1,0 +1,4 @@
+#test
+#test  //~ error at 1: duplicate `test` attribute
+fn a { mut t: Test } {}
+fn main {} {}

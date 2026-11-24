@@ -1,0 +1,4 @@
+// An error in the build program is ctxc's, at its position in build.ctx.
+//# project
+//# errors:
+//| build.ctx:2:16: error: call to `build::link` is missing `exe`

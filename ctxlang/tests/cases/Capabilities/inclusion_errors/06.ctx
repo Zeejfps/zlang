@@ -1,0 +1,7 @@
+capability P { ..Q, f: extern fn{} }
+capability Q { ..P }
+fn main {} {}
+
+//# errors:
+//| 06.ctx:2:16: error: capability `P` includes itself, through `Q`
+//| 06.ctx:1:16: error: capability `P` can't include `Q`: it has no fields

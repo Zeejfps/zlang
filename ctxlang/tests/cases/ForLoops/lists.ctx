@@ -1,0 +1,15 @@
+// What is gone over is read once: a list that grows is gone over by index.
+
+fn main { mut io: Io, mut mem: Mem } {
+    let pages = mem::pages{ &mem, size = 65536 } ifnull { return }
+    let mut heap = arena::new{ buf = pages }
+    let mut xs = list::new(i32){ realloc = arena::alloc, &heap }
+    for i in 0..4 { try! list::push{ list = &xs, item = i } }
+    for i in 0..xs.len { try! list::push{ list = &xs, item = xs.items[i] * 10 } }   // 4 turns
+    for x in list::items{ list = xs } { _ = @fmt(&io, "{} ", x) }
+    for &x in list::items{ list = xs } { x = x + 1 }
+    _ = @fmt(&io, "{}\n", xs.items[7])
+}
+
+//# stdout:
+//| 0 1 2 3 0 10 20 30 31

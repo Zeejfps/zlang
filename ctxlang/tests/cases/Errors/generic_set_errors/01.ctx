@@ -1,0 +1,6 @@
+error a
+error b
+fn da {} -> error(a)!u64 { return a }
+fn fwd(E: error) { f: &fn{} -> E!u64 } -> E!u64 { return try f{} }
+fn add(E: error) { f: &fn{} -> E!u64 } -> E!u64 { return b }  //~ error at 58: `b` can't join E: a generic set holds only the errors of its argument
+fn main {} {}

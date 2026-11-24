@@ -1,0 +1,3 @@
+#panic
+fn halt { mut b: Build } {}  //~ error at 11: a `panic` fn cannot take a Build: only a build program's `fn build` receives one
+fn main {} {}

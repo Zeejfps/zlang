@@ -1,0 +1,6 @@
+fn f {} -> []u8 {
+    return "static"
+}
+fn main {} {}
+
+//# exit: 0

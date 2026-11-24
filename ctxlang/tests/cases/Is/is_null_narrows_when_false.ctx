@@ -1,0 +1,26 @@
+
+union Ref { local{ var: i32 }, constant{ value: i64 }, variant, enumval }
+enum Color: u8 { red, green, blue }
+fn find { n: i32 } -> ?Ref {
+    if n == 0 { return null }
+    if n == 1 { return Ref::local{ var = 7 } }
+    if n == 2 { return Ref::constant{ value = 9 } }
+    return Ref::variant
+}
+
+fn var_of { r: Ref } -> i32 { return if r is local{ var } { var } else { 0 } }
+fn f { r: ?Ref } -> i32 {
+    if r is null { return -1 }
+    return var_of{ r }
+}
+fn g { r: ?Ref } -> i32 { return if r is null { -1 } else { var_of{ r } } }
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = f{ r = find{ n = 1 } } }
+    io::println_i64{ &io, n = f{ r = null } }
+    io::println_i64{ &io, n = g{ r = find{ n = 1 } } }
+}
+
+//# stdout:
+//| 7
+//| -1
+//| 7

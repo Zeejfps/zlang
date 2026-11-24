@@ -1,0 +1,19 @@
+// A match on an error of a generic set has `else`.
+
+error a
+error b{ n: u64 }
+fn db {} -> error(b)!u64 { return b{ n = 7 } }
+fn show(E: error) { mut io: Io, f: &fn{} -> E!u64 } {
+    match f{} {
+        ok => {}
+        err{ error } => {
+            match error {
+                else => { io::println{ &io, s = "an error" } }
+            }
+        }
+    }
+}
+fn main { mut io: Io } { show{ &io, f = db } }
+
+//# stdout:
+//| an error

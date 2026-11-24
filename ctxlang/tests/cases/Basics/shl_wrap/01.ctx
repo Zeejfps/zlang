@@ -1,0 +1,55 @@
+// §11, Expressions, rule 4: `a <<% n` is `a << n` with the bits shifted out dropped. It
+// has `<<`'s operands, result type and precedence, and its count is checked the same.
+
+type Bits = distinct u16
+const TOP: i32 = 1 <<% 31
+const LOW: u8 = 0x81 <<% 1
+const NONE: i8 = -1 <<% 7 <<% 1
+
+fn main { mut io: Io } {
+    let a: u8 = 0x81
+    io::println_u64{ &io, n = a <<% 1 }
+    let b: i8 = 1
+    io::println_i64{ &io, n = b <<% 7 }
+    let c: u64 = 0xFFFFFFFFFFFFFFFF
+    let n: i32 = 60
+    io::println_u64{ &io, n = c <<% n }
+    io::println_i64{ &io, n = @as(i32, 0x40000001) <<% 1 }
+    // Folded in a const as it runs.
+    _ = @fmt(&io, "{} {} {}\n", TOP, LOW, NONE)
+    // One level with `<<` and `>>`, left to right: below `+`, above `&`.
+    _ = @fmt(&io, "{} {} {} {}\n", a <<% 1 + 1, a <<% 4 >> 4, a <<% 1 & 0xF, 1 | a <<% 7)
+    // The count has any integer type, and the result the left operand's.
+    let k: u8 = 3
+    let wide: u64 = a <<% k
+    _ = @fmt(&io, "{}\n", wide)
+    // A line may start with it.
+    let h: u32 = 0xDEADBEEF
+    let mixed = h
+        <<% 5
+    _ = @fmt(&io, "{}\n", mixed ^ h)
+    // A distinct type keeps its type.
+    let w: Bits = 0x8001
+    let twice: Bits = w <<% 1
+    _ = @fmt(&io, "{}\n", @as(u16, twice))
+    // An `ifoverflow` covers its operands' arithmetic, and never the shift.
+    let x: i32 = 2000000000
+    _ = @fmt(&io, "{} {}\n", (x + x) <<% 1 ifoverflow -1, (x + 1) <<% 4 ifoverflow -1)
+    // After a `.`, `*` is still a dereference: `p.*%2` is `p.* % 2`.
+    let seven: i32 = 7
+    let p = &seven
+    _ = @fmt(&io, "{} {}\n", p.*%2, p.* <<% 1)
+}
+
+//# stdout:
+//| 2
+//| -128
+//| 17293822569102704640
+//| -2147483646
+//| -2147483648 2 0
+//| 4 1 2 129
+//| 8
+//| 186278671
+//| 2
+//| -1 1935228944
+//| 1 14

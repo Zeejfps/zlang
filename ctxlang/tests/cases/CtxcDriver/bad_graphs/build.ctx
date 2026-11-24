@@ -1,0 +1,5 @@
+
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "t", root = "src" }
+    build::gen_file{ &b, exe, name = "keep", text = "namespace keep { fn n {} -> i64 { return 5 } }\n" }
+}

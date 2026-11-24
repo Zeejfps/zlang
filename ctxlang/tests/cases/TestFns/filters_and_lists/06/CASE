@@ -1,0 +1,5 @@
+// `--list` with a filter.
+//# $ ctxc test . --list b::
+//# exit: 0
+//# stdout:
+//| ./t.ctx:10: b::one

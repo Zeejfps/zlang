@@ -1,0 +1,18 @@
+enum Dir: u8 { n, e, s, w }
+fn turn { d: Dir } -> Dir {
+    return match d {
+        n => { Dir::e }
+        e => { Dir::s }
+        s => { Dir::w }
+        else => { Dir::n }
+    }
+}
+fn main {} {
+    let d = turn{ d = Dir::w }
+    match d {
+        n | s => {}
+        e | w => {}
+    }
+}
+
+//# exit: 0

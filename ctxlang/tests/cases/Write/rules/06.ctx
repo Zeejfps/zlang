@@ -1,0 +1,4 @@
+struct S {}
+#write
+fn w { mut s: S, v: i32, k: i32 } {}  //~ error at 8: a `write` fn takes two fields: the sink, `mut`, and the value, read-only
+fn main {} {}

@@ -1,0 +1,5 @@
+error a
+error b
+error c
+fn f {} -> error(a, b)!u64 { return a }
+fn main {} { match f{} { ok => {} a => {} b => {} c => {} } }  //~ error at 51: error `c` can't happen here: this fails only with a, b

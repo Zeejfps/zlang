@@ -1,0 +1,21 @@
+
+struct Inner { tag: ?i64 }
+struct Node { kids: ?[]i32, inner: Inner }
+fn tag { o: ?Node } -> i64 {
+    if o == null or o.inner.tag == null { return 0 }
+    let p = &o.inner.tag
+    return o.inner.tag + p.*
+}
+fn main { mut io: Io } -> i32 {
+    let ks = [3, 4]
+    let n = Node{ kids = ks[..], inner = Inner{ tag = 5 } }
+    io::println_i64{ &io, n = tag{ o = n } }
+    io::println_i64{ &io, n = tag{ o = null } }
+    if n.kids == null { return 1 }
+    return n.kids[1]
+}
+
+//# exit: 4
+//# stdout:
+//| 10
+//| 0

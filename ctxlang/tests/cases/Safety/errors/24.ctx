@@ -1,0 +1,10 @@
+fn f {} {
+    let mut p: *i32
+    let a = 1
+    p = &a
+    if true {
+        let x = 1
+        p = &x  //~ error at 9: `p` outlives local `x` whose address it would hold
+    }
+}
+fn main {} {}

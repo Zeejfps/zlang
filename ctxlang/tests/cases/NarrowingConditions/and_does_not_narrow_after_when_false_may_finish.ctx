@@ -1,0 +1,6 @@
+
+fn f { a: ?i32 } -> i32 {
+    if a != null and a > 0 { }
+    return a  //~ error at 12: expected i32, got ?i32
+}
+fn main {} { }

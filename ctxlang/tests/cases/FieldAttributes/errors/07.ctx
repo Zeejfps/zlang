@@ -1,0 +1,13 @@
+
+namespace ecs {
+    struct key {}
+    struct cascade { depth: i32, deep: bool }
+    struct by { name: []u8, n: u32 }
+}
+const DEPTH: i32 = 2 + 1
+fn g {} -> i32 { return 1 }
+struct S {
+    #ecs::cascade{ depth = g{} }  //~ error at 29: an attribute cannot call a function
+    a: i32
+}
+fn main {} {}

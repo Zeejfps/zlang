@@ -1,0 +1,14 @@
+// fs::make_dir makes a directory, and fails with fs::exists the second time; fs::list gives a
+// directory's names, sorted, the new directory among them, and fails with fs::not_found for
+// a missing one (the exit code 0).
+//# program: main.ctx
+//# args: {dir}/tmp {dir}/tmp/sub {dir}/tmp/missing
+//# interp: cannot run
+//# stdout:
+//| true
+//| true
+//| a.ctx
+//| b.txt
+//| c
+//| sub
+//# exists tmp/sub

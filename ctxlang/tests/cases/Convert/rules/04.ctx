@@ -1,0 +1,3 @@
+#convert  //~ error at 1: a `convert` fn can't be generic
+fn f(T) { s: strlit } -> i32 { return 1 }
+fn main {} {}

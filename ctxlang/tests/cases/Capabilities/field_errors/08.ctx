@@ -1,0 +1,10 @@
+namespace m {
+    capability M { f: extern fn{} }
+    extern fn g {}
+    const X: M = M{ f = g }
+}
+fn main {} {}
+
+//# errors:
+//| 08.ctx:4:18: error: capability `M` can only be made by a function of namespace `m`, which declares it
+//| 08.ctx:3:15: error: extern fn `g` takes no capability: add a capability field for what it touches, or `#pure` if it touches only its arguments and the memory they point to

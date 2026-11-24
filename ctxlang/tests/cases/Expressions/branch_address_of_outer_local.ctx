@@ -1,0 +1,10 @@
+
+fn main { mut io: Io } {
+    let a = 1
+    let b = 2
+    let p = if true { &a } else { &b }
+    io::println_i64{ &io, n = p.* }
+}
+
+//# stdout:
+//| 1

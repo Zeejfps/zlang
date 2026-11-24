@@ -1,0 +1,8 @@
+// The tests of every file of the executable, a directory's files before those of the
+// directories in it, each named by its path; `main` is not run, and `ctxc run` runs no test.
+// Here the program built by `ctxc exe` and run: its `main` alone, and no test.
+//# $ ctxc exe . -o {dir}/app.exe
+//# exit: 0
+//# $ ./app.exe
+//# stdout:
+//| 6

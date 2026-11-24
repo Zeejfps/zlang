@@ -1,0 +1,13 @@
+union P { anon, named{ n: utf8::String } }
+fn name { p: P } -> utf8::String {
+    let s = match p {
+        anon => { "anonymous" }
+        named{ n } => { n }
+    }
+    return s
+}
+fn main {} {
+    _ = name{ p = P::anon }
+}
+
+//# exit: 0

@@ -1,0 +1,6 @@
+fn f { mut n: i32 } -> *mut i32 {
+    return &n
+}
+fn main {} {}
+
+//# exit: 0

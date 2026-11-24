@@ -1,0 +1,7 @@
+fn twice { f: fn{ n: i32 } -> i32, n: i32 } -> i32 { return f{ n = f{ n } } }
+fn inc { n: i32 } -> i32 { return n + 1 }
+fn main {} {
+    _ = twice{ f = inc, n = 1 }
+}
+
+//# exit: 0

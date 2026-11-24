@@ -1,0 +1,11 @@
+struct S { n: i32, m: i32 }
+fn bump { mut s: S } -> i32 {
+    s.n = s.n + 1
+    return s.n
+}
+fn show { n: i32, z: i32 } { let t = n + z }
+struct P2 { a: i32, b: i32 }
+fn f { mut s: S } -> P2 {
+    return P2{ a = s.n, b = bump{ &s } }  //~ error at 25: `a` reads `s.n`, which `b` changes, in one literal: the order of the fields would decide what it reads; compute one of them in a `let` before the literal
+}
+fn main {} {}

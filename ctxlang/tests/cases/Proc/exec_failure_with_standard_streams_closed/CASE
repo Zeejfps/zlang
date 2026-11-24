@@ -1,0 +1,13 @@
+// This program has none of 0, 1 and 2 open, so the descriptors spawn makes would take
+// them: the null device for the child's stderr, and the pipe a child reports a failed
+// exec through. spawn keeps them above 2, so the child putting its stderr in place
+// doesn't replace the report, and a missing program is still not_found.
+//
+// closed.ctx becomes the program with those descriptors closed, as the shell's
+// `exec PROGRAM <&- >&- 2>&-` does.
+//# only: posix: descriptors are POSIX
+//# build closed: closed.ctx
+//# build program: main.ctx
+//# $ {closed} 012 {program}
+//# timeout: 60
+//# exit: 0

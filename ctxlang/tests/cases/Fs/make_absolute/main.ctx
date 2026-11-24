@@ -1,0 +1,52 @@
+// The first argument is the working directory as the case knows it; the others are made
+// absolute and printed, as they come.
+
+fn fold { c: u8 } -> u8 {
+    if c == '\\' { return '/' }
+    if c >= 'A' and c <= 'Z' { return c + 32 }
+    return c
+}
+
+// Whether two paths are the same but for `\` and `/` and the case of ASCII letters.
+fn same_path { a: []u8, b: []u8 } -> bool {
+    if a.len != b.len { return false }
+    let mut i: usize = 0
+    while i < a.len {
+        if fold{ c = a[i] } != fold{ c = b[i] } { return false }
+        i = i + 1
+    }
+    return true
+}
+
+fn equal { a: []u8, b: []u8 } -> bool {
+    if a.len != b.len { return false }
+    let mut i: usize = 0
+    while i < a.len {
+        if a[i] != b[i] { return false }
+        i = i + 1
+    }
+    return true
+}
+
+fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
+    let mut mem: [65536]u8
+    let mut heap = arena::new{ buf = mem[..] }
+
+    let mut i: usize = 1
+    while i < args.len {
+        let p = fs::make_absolute{ &fs, &heap, realloc = arena::alloc, path = args[i] } iferr { return 1 }
+        io::println_bool{ &io, n = fs::is_absolute{ path = p } }
+        io::println{ &io, s = utf8::of{ chars = p } }
+        i = i + 1
+    }
+
+    // The empty path is the working directory itself: the one the case ran this in.
+    let here = fs::make_absolute{ &fs, &heap, realloc = arena::alloc, path = args[2] } iferr { return 2 }
+    io::println_bool{ &io, n = same_path{ a = here, b = args[0] } }
+    // A relative path is joined to the working directory as it is, `..` and all.
+    let joined = fs::make_absolute{ &fs, &heap, realloc = arena::alloc, path = args[1] } iferr { return 3 }
+    let tail = "/x/../y.ctx"
+    let whole = joined.len == here.len + tail.len and equal{ a = joined[..here.len], b = here } and equal{ a = joined[here.len..], b = tail[..] }
+    io::println_bool{ &io, n = whole }
+    return 0
+}

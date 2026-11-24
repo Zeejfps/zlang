@@ -1,0 +1,12 @@
+
+namespace ecs {
+    struct key {}
+    struct cascade { depth: i32, deep: bool }
+    struct by { name: []u8, n: u32 }
+}
+const DEPTH: i32 = 2 + 1
+fn f {
+    #write  //~ error at 5: `write` applies only to a fn
+    a: i32
+} {}
+fn main {} {}

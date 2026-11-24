@@ -1,0 +1,21 @@
+// Looser than arithmetic; beside a comparison or `and`, in parentheses (class Handlers).
+
+fn main { mut io: Io } {
+    let n: ?i32 = null
+    let m: ?i32 = 2
+    io::println_i64{ &io, n = n ifnull 1 + 1 }
+    io::println_i64{ &io, n = m ifnull 1 + 1 }
+    io::println_bool{ &io, n = (m ifnull 0) == 2 }
+    let b: ?bool = null
+    io::println_bool{ &io, n = (b ifnull true) and false }
+    if (n ifnull 0) < 1 { io::println{ &io, s = "cond" } }
+    if b ifnull { true } { io::println{ &io, s = "block" } }
+}
+
+//# stdout:
+//| 2
+//| 2
+//| true
+//| false
+//| cond
+//| block

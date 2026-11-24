@@ -1,0 +1,8 @@
+struct P { n: usize }
+extern union Raw { o: ?P, w: [2]u64 }
+#convert
+fn mk { s: strlit } -> ?P {
+    let r = Raw{ w = [5, 0] }
+    return r.o
+}
+fn main {} { let x: ?P = "abc" }  //~ error at 26: string literal can't hold a ?P with tag 5: it has no such variant

@@ -1,0 +1,4 @@
+fn f {} { let mut s: strlit
+    _ = s.bytes  //~ error at 9: `s` may be read before it is assigned
+}
+fn main {} {}

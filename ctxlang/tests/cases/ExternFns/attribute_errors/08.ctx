@@ -1,0 +1,4 @@
+fn g {} -> i32 { return 1 }
+struct S { x: i32 }
+#S{ x = g{} }  //~ error at 10: an attribute cannot call a function
+fn main {} {}

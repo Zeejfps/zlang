@@ -1,0 +1,2 @@
+fn f { x: convert } {}  //~ error at 11: `convert` is an attribute, not a type
+fn main {} {}

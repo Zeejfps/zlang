@@ -1,0 +1,10 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// nested call preserves outer callback: accepted, and it runs.
+
+fn read { n: i32 } -> i32 { return n }
+fn inner { call: &fn{} -> i32 } -> i32 { let other = read{ n = 4, _ }; return call{} + other{} }
+fn outer {} -> i32 { let call = read{ n = 7, _ }; return inner{ call } + call{} }
+fn main { mut io: Io } { io::println_i64{ &io, n = outer{} } }
+
+//# stdout:
+//| 18

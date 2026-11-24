@@ -1,0 +1,15 @@
+
+#task
+fn fill { mut buf: [8]u8, n: u8 } -> ! { buf[0] = n }
+
+#task
+fn look { s: []u8 } -> !u64 { return @as(u64, s.len) }
+
+#task
+fn sq { n: u64 } -> !u64 { return n * n }
+
+fn into { mut threads: Threads, mut h: task::Task(!) } {
+    let mut mine: [8]u8
+    task::start{ &threads, task = &h, run = fill{ buf = &mine, n = 1, _ } }  //~ error at 16: `h` is the caller's handle, and its task borrows `mine`, which ends when this fn returns
+}
+fn main {} {}

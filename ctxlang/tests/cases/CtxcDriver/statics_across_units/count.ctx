@@ -1,0 +1,6 @@
+
+namespace count {
+    capability C { static n: u64, static xs: [3]u64 }
+    fn add { mut c: C, k: u64 } { c.n = c.n + k; c.xs[@as(usize, k % 3)] = c.n }
+    fn total { c: C } -> u64 { return c.n + c.xs[1] }
+}

@@ -1,0 +1,9 @@
+
+namespace gl {
+    const LINEAR: u32 = 9729
+    const BIG: u32 = 4000000000
+    const NEG: i32 = -1
+    const SMALL: i64 = 7
+}
+const BAD: u8 = gl::NEG  //~ error at 17: expected u8, got i32: `gl::NEG` is -1, which doesn't fit u8
+fn main {} { _ = BAD }

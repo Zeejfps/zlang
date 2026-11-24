@@ -1,0 +1,8 @@
+// A value whose inferred type holds a `&fn` is an error, as the written type is.
+
+fn read { n: i32 } -> i32 { return n }
+fn f {} {
+    let g = read{ n = 1, _ }
+    let a = [g, g]  //~ error at 13: `&fn` can only be the type of a local or a read-only context field
+}
+fn main {} {}

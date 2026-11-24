@@ -1,0 +1,5 @@
+// A filter selects the tests whose names contain it; the rest are counted as not selected.
+//# $ ctxc test . one
+//# exit: 0
+//# stdout:
+//| tests: 2 run, 2 passed, 0 failed, 1 not selected

@@ -1,0 +1,11 @@
+
+enum Kind: u8 {
+    ident,
+    number,
+    lbrace = 40,
+    rbrace,
+}
+
+enum Sign: i8 { minus = -1, zero, plus }
+fn f { k: Kind } { match k { ident => {} number => {} } }  //~ error at 20: match isn't exhaustive: missing lbrace, rbrace
+fn main {} {}

@@ -1,0 +1,10 @@
+
+fn main { mut io: Io } {
+    let mut a: i32 = 1
+    let m: ?*mut i32 = &a
+    let r: *i32 = &a
+    io::println_bool{ &io, n = m == r }
+}
+
+//# stdout:
+//| true

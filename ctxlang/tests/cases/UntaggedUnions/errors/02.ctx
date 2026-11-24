@@ -1,0 +1,2 @@
+extern union U { a: i32, b: f32 }
+fn main {} { let u = U{} }  //~ error at 23: extern union `U` literal must set exactly one field

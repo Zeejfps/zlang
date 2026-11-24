@@ -1,0 +1,3 @@
+struct S { a: i32, b: i32 = 2 }
+const A: S = S{ .. }  //~ error at 15: struct `S` is missing `a`
+fn main {} {}

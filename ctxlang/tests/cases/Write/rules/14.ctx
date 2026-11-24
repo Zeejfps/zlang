@@ -1,0 +1,4 @@
+struct S {}
+#write{ x = 1 }  //~ error at 9: `write` takes no fields
+fn w { mut s: S, v: i32 } {}
+fn main {} {}

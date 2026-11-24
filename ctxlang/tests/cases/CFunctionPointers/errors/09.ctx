@@ -1,0 +1,2 @@
+fn main {} { let x: i32 = 5
+  let f = @cast(extern fn{}, x) }  //~ error at 30: @cast needs a pointer or extern fn argument

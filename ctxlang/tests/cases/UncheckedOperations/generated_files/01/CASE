@@ -1,0 +1,5 @@
+// A generated file is under no directory of the program's, so it is always denied:
+// without build::deny_unchecked, its pointer arithmetic compiles.
+//# $ ctxc run {dir}
+//# stdout:
+//| 99

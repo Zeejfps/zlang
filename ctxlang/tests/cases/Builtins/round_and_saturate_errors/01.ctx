@@ -1,0 +1,4 @@
+fn main {} {
+    let a: i32 = 1
+    let m = @round(i32, a)  //~ error at 25: @round rounds a float, and this is an integer, i32: write `@as` to convert it, or `@saturate` to clamp it
+}

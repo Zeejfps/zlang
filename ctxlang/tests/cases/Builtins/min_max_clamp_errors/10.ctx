@@ -1,0 +1,3 @@
+fn main {} {
+    let m = @max(1, 2, 3)  //~ error at 24: wrong number of arguments: @max(a, b)
+}

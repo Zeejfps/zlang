@@ -1,0 +1,5 @@
+const C: i32 = 1
+fn f {} {
+    let p = &C  //~ error at 14: `C` is a const, not a place
+}
+fn main {} {}

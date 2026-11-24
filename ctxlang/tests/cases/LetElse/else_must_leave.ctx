@@ -1,0 +1,5 @@
+
+fn main { mut io: Io } {
+    let x: ?i32 = 1
+    let some{ value } = x else { io::println_i64{ &io, n = 0 } }  //~ error at 32: the `else` of a `let` pattern must leave: end it with `return`, `break`, `continue` or `@panic()`
+}

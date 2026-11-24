@@ -1,0 +1,8 @@
+fn main { mut io: Io } {
+    io::println{ &io, s = "a" }
+    io::println{ &io, s = "b" }
+}
+
+//# stdout:
+//| a
+//| c

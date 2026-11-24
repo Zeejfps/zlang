@@ -1,0 +1,49 @@
+
+namespace gl {
+    const LINEAR: u32 = 9729
+    const BIG: u32 = 4000000000
+    const NEG: i32 = -1
+    const SMALL: i64 = 7
+}
+
+const AS_I32: i32 = gl::LINEAR              // in a const's initializer
+const EARLY: u8 = LATER                     // before the const it names
+const LATER: i64 = 12
+struct S { n: i32 = gl::LINEAR }
+fn take { param: i32 } -> i32 { return param }
+fn byte { b: u8 } -> u8 { return b }
+fn opt { x: ?i32 } -> i32 { return x ifnull 0 }
+fn res {} -> !i32 { return gl::LINEAR }
+fn twice { x: i32 } -> i32 { return x * 2 + gl::LINEAR }
+const RUN: i32 = twice{ x = gl::SMALL }     // while compiling
+fn main { mut io: Io } {
+    let x: i32 = 9729
+    let a = take{ param = gl::LINEAR }      // an argument
+    let b: i16 = gl::LINEAR                 // a let with a type
+    let mut c: i32 = 0
+    c = gl::LINEAR                          // an assignment
+    let e = [x, gl::LINEAR]                 // an element
+    let s = S{ .. }                         // a field's default
+    let u = gl::LINEAR                      // nothing is expected: still a u32
+    let w: u64 = u
+    _ = @fmt(&io, "{} {} {} {} {} {} {} {} {}\n", a, b, c, e[1], s.n, w, AS_I32, EARLY, RUN)
+    _ = @fmt(&io, "{} {} {} {}\n", x == gl::LINEAR, gl::LINEAR == x, x + gl::SMALL, gl::SMALL * x)
+    _ = @fmt(&io, "{} {} {}\n", byte{ b = gl::SMALL }, opt{ x = gl::LINEAR }, res{} iferr 0)
+    let smooth = true
+    _ = @fmt(&io, "{}\n", take{ param = if smooth { gl::LINEAR } else { gl::SMALL } })     // a branch's value
+    match x {
+        gl::LINEAR => { _ = @fmt(&io, "linear\n") }                                        // a pattern
+        else => {}
+    }
+    let k: u8 = 7
+    let neg: i64 = gl::NEG
+    _ = @fmt(&io, "{} {} {}\n", k is gl::SMALL, neg, gl::SMALL == k)
+}
+
+//# stdout:
+//| 9729 9729 9729 9729 9729 9729 9729 12 9743
+//| true true 9736 68103
+//| 7 9729 9729
+//| 9729
+//| linear
+//| true -1 true

@@ -1,0 +1,2 @@
+#stack_limit  //~ error at 1: `stack_limit` applies only to a capability's static, `static name: usize`
+fn main {} {}

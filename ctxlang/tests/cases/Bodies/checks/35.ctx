@@ -1,0 +1,11 @@
+struct P { x: i32 }
+fn set { p: *mut P } { p.x = 3 }
+fn main {} {
+    let mut p = P{ x = 0 }
+    set{ p = &p }
+    let q = &p
+    q.*.x = 4
+    q.* = P{ x = 5 }
+}
+
+//# exit: 0

@@ -1,0 +1,2 @@
+
+fn main { mut io: Io } { let s = @slice(3, 2) }  //~ error at 41: @slice needs a pointer, got {integer}

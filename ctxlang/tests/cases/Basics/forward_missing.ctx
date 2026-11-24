@@ -1,0 +1,3 @@
+
+fn f { a: i32 } { }
+fn main { mut io: Io } { f{ .. } }  //~ error at 27: `..` cannot supply `a`: no local or context field named `a`

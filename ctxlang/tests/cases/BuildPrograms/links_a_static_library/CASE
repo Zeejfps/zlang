@@ -1,0 +1,11 @@
+// A build program links a static library, made here from lib/add.c, by build::lib_path and
+// build::link; the executable has the name the build program gave it.
+//# needs: ar
+//# $ cc -c {dir}/lib/add.c -o {dir}/lib/add.o
+//# exit: 0
+//# $ ar rcs {dir}/lib/libctxtest.a {dir}/lib/add.o
+//# exit: 0
+//# project
+//# $ {adder}
+//# stdout:
+//| 42

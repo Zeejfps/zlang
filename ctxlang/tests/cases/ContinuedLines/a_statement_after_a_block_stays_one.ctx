@@ -1,0 +1,33 @@
+// What compiled before means the same: `-1` after an `if`'s block is the branch's value,
+// and an operator on the line after a `match` expression applies to the match.
+
+struct W { open: bool, n: i32 }
+union K { a, b }
+fn ok { n: i32 } -> bool { return n > 0 }
+fn num { n: i32 } -> i32 { return n }
+fn opt { n: i32 } -> ?i32 { if n == 0 { return null }; return n }
+fn flag { n: i32 } -> ?bool { if n == 0 { return null }; return n > 0 }
+fn w { n: i32 } -> W { return W{ open = n > 0, n } }
+
+fn pick { c: bool, d: bool, mut io: Io } -> i32 {
+    let v = if c {
+        if d { io::println{ &io, s = "d" } }
+        -1
+    } else { 0 }
+    return v
+}
+fn main { mut io: Io } {
+    let k = K::b
+    let y = match k { a => { 1 } b => { 2 } }
+        + 10
+    let q = &y
+    let p = if y > 0 {
+        if y > 100 { io::println{ &io, s = "big" } }
+        &y
+    } else { q }
+    _ = @fmt(&io, "{} {} {} {}\n", pick{ c = true, d = true, &io }, pick{ c = false, d = true, &io }, y, p.*)
+}
+
+//# stdout:
+//| d
+//| -1 0 12 12

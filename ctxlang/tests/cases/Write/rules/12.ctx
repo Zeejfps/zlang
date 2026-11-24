@@ -1,0 +1,4 @@
+struct S {}
+#write
+fn w { mut s: S, v: fn{} } {}  //~ error at 18: a `write` fn's value can't be a function: an @fmt hole calls a function with the sink
+fn main {} {}

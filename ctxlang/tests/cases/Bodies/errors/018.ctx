@@ -1,0 +1,6 @@
+fn f {} {
+    while true {
+        break inner  //~ error at 9: no enclosing loop is labeled `inner`
+    }
+}
+fn main {} {}

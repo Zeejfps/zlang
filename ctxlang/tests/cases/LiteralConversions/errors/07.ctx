@@ -1,0 +1,12 @@
+namespace w {
+    struct W { b: []u8 }
+    fn keep { mut w: W, b: []u8 } { w.b = b }
+    #convert
+    fn from_literal { s: strlit } -> W {
+        let buf: [3]u8 = [1, 2, 3]
+        let mut w = W{ b = s.bytes }
+        keep{ &w, b = buf[..] }
+        return w
+    }
+}
+fn main {} { let x: w::W = "abc" }  //~ error at 28: string literal can't hold a pointer to the stack: it would point to memory that doesn't outlive compiling

@@ -1,0 +1,8 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// transitive store then read: rejected. It is never run: it would use a dangling pointer.
+
+struct Holder { s: []u8 }
+fn put { mut h: Holder, s: []u8 } { h.s = s }
+fn store { mut h: Holder, s: []u8 } -> []u8 { put{ &h, s }; return h.s }
+fn load { mut h: Holder } -> []u8 { let buf: [3]u8 = [1,2,3]; return store{ &h, s = buf[..] } }  //~ error at 63: returned value holds the address of local `buf`
+fn main {} { let mut h: Holder; _ = load{ &h } }

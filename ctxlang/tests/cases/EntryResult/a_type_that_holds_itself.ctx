@@ -1,0 +1,9 @@
+
+struct Tree { n: i32, kids: []Tree }
+error deep{ t: Tree }
+const LEAVES: [2]Tree = [Tree{ n = 2, kids = [] }, Tree{ n = 3, kids = [] }]
+fn main {} -> ! { return deep{ t = Tree{ n = 1, kids = LEAVES[..] } } }
+
+//# exit: 1
+//# stderr:
+//| error: deep{ t = Tree{ n = 1, kids = [Tree{ n = 2, kids = [] }, Tree{ n = 3, kids = [] }] } }

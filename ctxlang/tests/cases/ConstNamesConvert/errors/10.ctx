@@ -1,0 +1,9 @@
+
+namespace gl {
+    const LINEAR: u32 = 9729
+    const BIG: u32 = 4000000000
+    const NEG: i32 = -1
+    const SMALL: i64 = 7
+}
+type Id = distinct u32
+fn main {} { let x: Id = gl::LINEAR }  //~ error at 26: expected Id, got u32: convert with @as(Id, x)

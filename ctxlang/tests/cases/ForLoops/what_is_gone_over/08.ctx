@@ -1,0 +1,1 @@
+fn main {} { for i in 0.0..3.0 { } }  //~ error at 23: a `for`'s range counts integers, got {float}: count with an integer, and convert it with @as in the body

@@ -1,0 +1,27 @@
+// Programs at the same relative path from different directories, built at once: all.ctx
+// starts a `ctxc run .` in each of the four directories before it waits for any. Each program
+// is named `p`, and prints its own number; each is built in a directory of its own.
+//# build all: spawn/all.ctx
+// ctxc's directories for them, which only `ctxc` commands of the case itself are cleared of.
+//# remove {work:a/p}
+//# remove {work:b/p}
+//# remove {work:c/p}
+//# remove {work:d/p}
+//# $ {all} {ctxc} a/p b/p c/p d/p
+//# env: CTX_HOME={home}
+//# stack: 209715200
+//# stdout:
+//| a/p: exit 0, wrote 0
+//| b/p: exit 0, wrote 1
+//| c/p: exit 0, wrote 2
+//| d/p: exit 0, wrote 3
+// Four directories, each ctxc's own for one of them: `{work:PATH}` is `p` and a hash of the
+// program's path, as ctxc names it.
+//# exists {work:a/p}/build
+//# exists {work:b/p}/build
+//# exists {work:c/p}/build
+//# exists {work:d/p}/build
+//# remove {work:a/p}
+//# remove {work:b/p}
+//# remove {work:c/p}
+//# remove {work:d/p}

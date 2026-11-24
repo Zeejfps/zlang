@@ -1,0 +1,16 @@
+// At the start of a line, `is` is the operator only before a pattern.
+
+fn is { mut io: Io, n: i32 } { io::println_i64{ &io, n } }
+struct P { x: i32 }
+fn main { mut io: Io } {
+    let a = 1
+    is{ &io, n = a }                                // not `a is ...`: a call
+    let mut is = P{ x = 2 }
+    let b = a
+    is.x = b + 5
+    io::println_i64{ &io, n = is.x }
+}
+
+//# stdout:
+//| 1
+//| 6

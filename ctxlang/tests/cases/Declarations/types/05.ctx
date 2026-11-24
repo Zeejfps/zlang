@@ -1,0 +1,2 @@
+fn f { mut g: &fn{} } {}  //~ error at 15: `&fn` can only be the type of a local or a read-only context field
+fn main {} {}

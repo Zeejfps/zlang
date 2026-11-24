@@ -1,0 +1,5 @@
+// Filters that match nothing are not a pass: the line names each.
+//# $ ctxc test . x y
+//# exit: 1
+//# stdout:
+//| tests: 0 run: no test's name contains `x` or `y`, of 3

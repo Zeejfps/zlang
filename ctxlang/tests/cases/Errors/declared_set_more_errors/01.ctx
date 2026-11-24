@@ -1,0 +1,8 @@
+error a
+error b
+fn g {} -> !u64 { return b }
+const N: u64 = g{} iferr err{ error } {
+    let e: error(a) = error  //~ error at 23: the errors of `g` include `b`, which isn't one of error(a): a declared set holds only its own errors
+    0
+}
+fn main {} { _ = N }

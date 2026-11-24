@@ -1,0 +1,36 @@
+// A `let x: T` of a capability is assigned once, and a value holding one may still have
+// its other fields assigned (spec §15, rule 8).
+
+namespace m {
+    capability L
+    #c::symbol{ name = "llabs" }
+    #pure
+    extern fn abs { n: i64 } -> i64
+    #c::symbol{ name = "strlen" }
+    #pure
+    extern fn len { s: c::String } -> usize
+    #c::symbol{ name = "atoi" }
+    #pure
+    extern fn int { s: c::String } -> i32
+    capability A { abs: extern fn{ n: i64 } -> i64 }
+    capability B { ..A, len: extern fn{ s: c::String } -> usize }
+    capability C { int: extern fn{ s: c::String } -> i32, ..B }
+    fn load_a { mut l: L } -> A { return A{ abs } }
+    fn load_b { mut l: L } -> B { return B{ ..load_a{ &l }, len } }
+    fn load_c { mut l: L } -> C { return C{ int, ..load_b{ &l } } }
+}
+
+struct H { c: m::C, n: i64 }
+fn main { mut io: Io, mut l: m::L } -> i32 {
+    let a: m::A
+    if true { a = m::load_a{ &l } } else { a = m::load_c{ &l } }
+    let mut h = H{ c = m::load_c{ &l }, n = -1 }
+    h.n = h.n - 1
+    let mut b = a
+    io::println_i64{ &io, n = b.abs{ n = h.n } }
+    return 0
+}
+
+//# interp: cannot run
+//# stdout:
+//| 2

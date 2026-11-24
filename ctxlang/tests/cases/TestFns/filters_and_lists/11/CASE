@@ -1,0 +1,5 @@
+// `--jobs` takes a number: the usage, and exit code 2.
+//# $ ctxc test . --jobs many
+//# exit: 2
+//# stderr:
+//| usage: ctxc test PATH [--list] [-v] [--jobs N] [--timeout SECONDS] [FILTER...]: runs the tests whose names contain a FILTER, or all of them

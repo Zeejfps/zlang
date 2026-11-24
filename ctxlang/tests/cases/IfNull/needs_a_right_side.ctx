@@ -1,0 +1,5 @@
+
+fn main {} {
+    let n: ?i32 = null
+    let x = n ifnull
+}  //~ error at 1: expected an expression, found '}'

@@ -1,0 +1,20 @@
+
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+
+    let some{ value = a } = mem::pages{ &mem, size = 10 } else { return 1 }
+    let some{ value = b } = mem::pages{ &mem, size = 5000 } else { return 1 }
+    io::println_u64{ &io, n = a.len }
+    io::println_u64{ &io, n = b.len }
+    slice::fill{ s = a, v = 1 }
+    slice::fill{ s = b, v = 2 }
+    io::println_u64{ &io, n = a[a.len - 1] }
+    io::println_bool{ &io, n = @addr(&b[0]) > @addr(&a[a.len - 1]) or @addr(&a[0]) > @addr(&b[b.len - 1]) }
+    return 0
+
+}
+
+//# stdout:
+//| 4096
+//| 8192
+//| 1
+//| true

@@ -1,0 +1,7 @@
+
+fn bump { mut n: i32 } { n = n + 1 }
+fn main {} -> i32 {
+    let mut n = 1
+    bump{ &n }
+    return n
+}

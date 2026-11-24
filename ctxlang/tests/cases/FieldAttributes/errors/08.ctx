@@ -1,0 +1,14 @@
+
+namespace ecs {
+    struct key {}
+    struct cascade { depth: i32, deep: bool }
+    struct by { name: []u8, n: u32 }
+}
+const DEPTH: i32 = 2 + 1
+fn three {} -> i32 { return 3 }
+const N: i32 = three{}
+struct S {
+    #ecs::cascade{ depth = N }  //~ error at 18: an attribute can't use `N`: its value is computed by running code
+    a: i32
+}
+fn main {} {}

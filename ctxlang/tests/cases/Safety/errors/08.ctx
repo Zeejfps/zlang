@@ -1,0 +1,6 @@
+fn two { mut a: i32, mut b: i32 } { a = b }
+fn f {} {
+    let mut n = 0
+    let h = two{ a = &n, b = &n, _ }  //~ error at 16: two mut references to `n` in one call: `two` changes `n` through its field `a` at 1:37, and reads `n` through its field `b` at 1:41; pass one of them, or change `two` to use `n` through one of them only
+}
+fn main {} {}

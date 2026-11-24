@@ -1,0 +1,15 @@
+
+namespace out {
+    #write
+    fn text { mut io: Io, s: strlit } { io::write{ &io, to = io::Stream::out, bytes = s.bytes } }
+    #write
+    fn number { mut io: Io, n: i64 } { io::print_i64{ &io, n } }
+    #write
+    fn word { mut io: Io, n: i32 } { io::print_i64{ &io, n } }
+    #write
+    fn yes { mut io: Io, n: bool } { io::print_bool{ &io, n } }
+}
+
+fn main { mut io: Io, args: Args } -> i32 {
+    return @as(i32, b::run{ &io, deep = args.len > 0 })
+}

@@ -1,0 +1,30 @@
+
+const ORIGIN: a::Point = a::Point{ x = 3, y = 4 }
+
+namespace a {
+    struct Point { x: i64, y: i64 }
+
+    #pure
+    extern fn labs { n: i64 } -> i64
+    #pure
+    extern fn qsort { base: *mut u8, n: usize, size: usize, cmp: extern fn{ x: *u8, y: *u8 } -> i32 }
+
+    #c::callback
+    fn descending { x: *u8, y: *u8 } -> i32 {
+        let p = @cast(*i32, x).*
+        let q = @cast(*i32, y).*
+        return if p < q { 1 } else if p > q { -1 } else { 0 }
+    }
+
+    fn sort { mut xs: [4]i32 } { qsort{ base = @cast(*mut u8, &xs), n = 4, size = 4, cmp = descending } }
+
+    // descending's address as C sees it, from this file's unit.
+    fn here {} -> usize {
+        let f: extern fn{ x: *u8, y: *u8 } -> i32 = descending
+        return @addr(@cast(*u8, f))
+    }
+
+    fn inc { x: i64 } -> i64 { return x + labs{ n = -1 } }
+
+    fn norm { p: Point } -> i64 { return labs{ n = p.x } + labs{ n = p.y } }
+}

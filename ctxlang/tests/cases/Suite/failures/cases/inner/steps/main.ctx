@@ -1,0 +1,4 @@
+fn main { mut io: Io, args: Args } -> i32 {
+    io::println{ &io, s = "ran" }
+    return @as(i32, args.len)
+}

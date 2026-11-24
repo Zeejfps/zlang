@@ -1,0 +1,7 @@
+extern fn labs { n: i64 } -> i64
+fn main {} { let f: extern fn{ n: i64 } -> i64 = labs
+  let g = f{ _ } }
+
+//# errors:
+//| 08.ctx:3:12: error: a C function pointer can't be bound with `_`: call it with every field
+//| 08.ctx:1:11: error: extern fn `labs` takes no capability: add a capability field for what it touches, or `#pure` if it touches only its arguments and the memory they point to

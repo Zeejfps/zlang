@@ -1,0 +1,181 @@
+// lib/a.ctx is a unit and main.ctx another (emit_c.ctx, `share`): a function no other unit
+// names is static in its own; a small one another calls, directly or through a bind, is
+// copied into that unit, static; a big one, or one only passed as a value, is extern.
+// Panic positions in a copy are its file's. An edit to a copied function recompiles the
+// units that copy it.
+//
+// logcc is the C compiler, and logs its command lines in the directory each command names
+// (tests/helpers/logcc.ctx); units reads the C that ctxc wrote (checker/units.ctx).
+//# build logcc: {home}/tests/helpers/logcc.ctx
+//# build units: checker/units.ctx
+
+//# $ ctxc run {dir}
+//# env: CTX_CC={logcc}
+//# env: LOGCC_CC={cc}
+//# env: LOGCC_DIR={dir}/log1
+//# env: CTX_UNIT_SIZE=4096
+//# env: CTX_COPY_SIZE=32
+//# stdout:
+//| 56
+//| 20
+//| 2
+//| 6
+//# $ {units} {work:.} a.ctx hidden a.ctx big a.ctx value main.ctx small main.ctx add main.ctx big main.ctx value main.ctx hidden
+//# stdout:
+//| a.ctx hidden: defined static
+//| a.ctx big: defined extern
+//| a.ctx value: defined extern
+//| main.ctx small: defined static
+//| main.ctx add: defined static
+//| main.ctx big: not defined, declared extern
+//| main.ctx value: not defined, declared extern
+//| main.ctx hidden: not defined
+
+// `small` panics in main.ctx's copy of it, at its place in lib/a.ctx.
+//# $ ctxc run {dir} -- deep
+//# env: CTX_CC={logcc}
+//# env: LOGCC_CC={cc}
+//# env: LOGCC_DIR={dir}/log2
+//# env: CTX_UNIT_SIZE=4096
+//# env: CTX_COPY_SIZE=32
+//# stdout:
+//| 56
+//# panic: {dir}/lib/a.ctx:18:45: panic: division by zero
+
+// hidden and value are in a's unit alone; small is copied into main.ctx's too.
+// `hidden`:
+//# write lib/a.ctx:
+//|
+//| namespace a {
+//|     // Only a's unit calls it.
+//|     fn hidden { x: i64 } -> i64 { return x * 4 }
+//|
+//|     // Called from main.ctx's unit, and too big to copy.
+//|     fn big { n: i64 } -> i64 {
+//|         let mut s: i64 = 0
+//|         let mut i: i64 = 0
+//|         while i < n {
+//|             if i % 3 == 0 { s = s + hidden{ x = i } } else if i % 3 == 1 { s = s - i * 2 } else { s = s + i / 2 }
+//|             if s > 1000 { s = s - 1000 } else if s < -1000 { s = s + 1000 }
+//|             i = i + 1
+//|         }
+//|         return s + small{ x = n } + small{ x = n + 1 }
+//|     }
+//|
+//|     fn small { x: i64 } -> i64 { return 100 / x }
+//|
+//|     fn add { k: i64, x: i64 } -> i64 { return x + k }
+//|
+//|     fn value { x: i64 } -> i64 { return x - 1 }
+//| }
+//# $ ctxc run {dir}
+//# env: CTX_CC={logcc}
+//# env: LOGCC_CC={cc}
+//# env: LOGCC_DIR={dir}/log3
+//# env: CTX_UNIT_SIZE=4096
+//# env: CTX_COPY_SIZE=32
+//# stdout:
+//| 74
+//| 20
+//| 2
+//| 6
+//# $ {logcc} --logcc-count lines {dir}/log3 has " -c "
+//# stdout:
+//| 1
+
+// `value`:
+//# write lib/a.ctx:
+//|
+//| namespace a {
+//|     // Only a's unit calls it.
+//|     fn hidden { x: i64 } -> i64 { return x * 4 }
+//|
+//|     // Called from main.ctx's unit, and too big to copy.
+//|     fn big { n: i64 } -> i64 {
+//|         let mut s: i64 = 0
+//|         let mut i: i64 = 0
+//|         while i < n {
+//|             if i % 3 == 0 { s = s + hidden{ x = i } } else if i % 3 == 1 { s = s - i * 2 } else { s = s + i / 2 }
+//|             if s > 1000 { s = s - 1000 } else if s < -1000 { s = s + 1000 }
+//|             i = i + 1
+//|         }
+//|         return s + small{ x = n } + small{ x = n + 1 }
+//|     }
+//|
+//|     fn small { x: i64 } -> i64 { return 100 / x }
+//|
+//|     fn add { k: i64, x: i64 } -> i64 { return x + k }
+//|
+//|     fn value { x: i64 } -> i64 { return x - 2 }
+//| }
+//# $ ctxc run {dir}
+//# env: CTX_CC={logcc}
+//# env: LOGCC_CC={cc}
+//# env: LOGCC_DIR={dir}/log4
+//# env: CTX_UNIT_SIZE=4096
+//# env: CTX_COPY_SIZE=32
+//# stdout:
+//| 74
+//| 20
+//| 0
+//| 6
+//# $ {logcc} --logcc-count lines {dir}/log4 has " -c "
+//# stdout:
+//| 1
+
+// `small`, which two units hold:
+//# write lib/a.ctx:
+//|
+//| namespace a {
+//|     // Only a's unit calls it.
+//|     fn hidden { x: i64 } -> i64 { return x * 4 }
+//|
+//|     // Called from main.ctx's unit, and too big to copy.
+//|     fn big { n: i64 } -> i64 {
+//|         let mut s: i64 = 0
+//|         let mut i: i64 = 0
+//|         while i < n {
+//|             if i % 3 == 0 { s = s + hidden{ x = i } } else if i % 3 == 1 { s = s - i * 2 } else { s = s + i / 2 }
+//|             if s > 1000 { s = s - 1000 } else if s < -1000 { s = s + 1000 }
+//|             i = i + 1
+//|         }
+//|         return s + small{ x = n } + small{ x = n + 1 }
+//|     }
+//|
+//|     fn small { x: i64 } -> i64 { return 200 / x }
+//|
+//|     fn add { k: i64, x: i64 } -> i64 { return x + k }
+//|
+//|     fn value { x: i64 } -> i64 { return x - 2 }
+//| }
+//# $ ctxc run {dir}
+//# env: CTX_CC={logcc}
+//# env: LOGCC_CC={cc}
+//# env: LOGCC_DIR={dir}/log5
+//# env: CTX_UNIT_SIZE=4096
+//# env: CTX_COPY_SIZE=32
+//# stdout:
+//| 93
+//| 40
+//| 0
+//| 6
+//# $ {logcc} --logcc-count lines {dir}/log5 has " -c "
+//# stdout:
+//| 2
+
+// Without copies, main.ctx's unit calls small in a's.
+//# $ ctxc run {dir}
+//# env: CTX_CC={logcc}
+//# env: LOGCC_CC={cc}
+//# env: LOGCC_DIR={dir}/log6
+//# env: CTX_UNIT_SIZE=4096
+//# env: CTX_COPY_SIZE=0
+//# stdout:
+//| 93
+//| 40
+//| 0
+//| 6
+//# $ {units} {work:.} a.ctx small main.ctx small
+//# stdout:
+//| a.ctx small: defined extern
+//| main.ctx small: not defined, declared extern

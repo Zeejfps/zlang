@@ -1,0 +1,35 @@
+// fs::make_absolute joins a relative path to the working directory as it is, `..` and all,
+// and leaves an absolute one as it came; the empty path gives the working directory.
+//
+// The program is run in tmp/ with the paths `x/../y.ctx`, the empty one and tmp/sub's
+// absolute one. Each is printed after `true`, that fs::is_absolute holds of the result.
+// Then two lines the program checks itself: that the working directory is {dir}/tmp but for
+// `\` against `/` and the case of letters, and that the first path is exactly the working
+// directory, `/x/../y.ctx` after it.
+//
+// The working directory is printed as the system reports it: on Windows with `\` (and the
+// drive's letter as the process was given it), so its head is `{any}` there and the program's
+// own comparison states the rest; elsewhere it is {dir}/tmp exactly.
+//# build abs: main.ctx
+//# make dir tmp/sub
+//# $ {abs} {dir}/tmp x/../y.ctx "" {dir}/tmp/sub
+//# cwd: tmp
+//# exit: 0
+//# [windows] stdout:
+//| true
+//| {any}\work\Fs\make_absolute\tmp/x/../y.ctx
+//| true
+//| {any}\work\Fs\make_absolute\tmp
+//| true
+//| {dir}/tmp/sub
+//| true
+//| true
+//# [posix] stdout:
+//| true
+//| {dir}/tmp/x/../y.ctx
+//| true
+//| {dir}/tmp
+//| true
+//| {dir}/tmp/sub
+//| true
+//| true

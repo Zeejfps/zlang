@@ -1,0 +1,17 @@
+
+fn double { n: i32 } -> i32 { return n * 2 }
+#test
+fn doubles { mut t: Test } {
+    @expect(&t, double{ n = 2 } == 4)
+    @expect(&t, double{ n = -1 } < 0)
+}
+namespace more {
+    #test
+    fn passes_an_error_up { mut t: Test } -> ! {
+        @expect(&t, try parse{ s = "7" } == 7)
+    }
+    fn parse { s: []u8 } -> !i32 {
+        if s.len == 0 { return alloc::out_of_memory }
+        return 7
+    }
+}

@@ -1,0 +1,13 @@
+// fs::read_at doesn't use the file's position: 8 tasks read one open file at once, each
+// its own blocks, again and again, and every byte is where it should be.
+// make.ctx writes the file first: 1 MiB, the byte at i being i * 7 % 251.
+//# build make: make.ctx
+//# $ {make} blocks.bin
+//# exit: 0
+//# stdout:
+//| 1048576
+//# program: main.ctx
+//# args: {dir}/blocks.bin
+//# interp: cannot run
+//# stdout:
+//| 0

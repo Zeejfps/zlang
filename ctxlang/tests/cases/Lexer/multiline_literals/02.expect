@@ -1,0 +1,4 @@
+// `\\` lines (spec §11, Literals): raw text, joined with \n; a \r that ends a line isn't
+// part of it.
+//# stdout:
+//| 3

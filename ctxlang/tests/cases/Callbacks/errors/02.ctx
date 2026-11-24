@@ -1,0 +1,3 @@
+#c::callback  //~ error at 1: `c::callback` applies only to a fn
+struct S {}
+fn main {} {}

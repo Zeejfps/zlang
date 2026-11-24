@@ -1,0 +1,14 @@
+
+fn main { mut io: Io, mut proc: Proc, args: Args } -> i32 {
+    let mut mem: [65536]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
+    let mut env = list::new([]u8){ realloc = arena::alloc, &heap }
+
+    let cmd: [4][]u8 = [args[0], "sleep", "60000", "0"]
+    let mut child = proc::spawn{ &proc, argv = cmd[..], options = proc::Options{ .. } } iferr { return 1 }
+    proc::kill{ &proc, child } iferr { return 2 }
+    io::println_i64{ &io, n = proc::wait{ &proc, &child } iferr { return 3 } }
+    return 0
+
+}

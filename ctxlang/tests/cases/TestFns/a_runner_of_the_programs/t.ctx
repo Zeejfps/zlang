@@ -1,0 +1,19 @@
+
+#test
+fn one { mut t: Test } { @expect(&t, 1 == 1) }
+#test
+fn two { mut t: Test } -> ! { @expect(&t, 2 == 3) }
+#test{ panics = "never" }
+fn three {} {}
+
+#test_main
+fn runner { mut io: Io, mut t: Test, args: Args, count: usize, case: &fn{ index: usize } -> test::Case, run: &fn{ index: usize } -> i32 } -> i32 {
+    let mut failed: i32 = 0
+    for i in 0..count {
+        let c = case{ index = i }
+        let code = test::run_here{ &t, c, index = i, run }
+        _ = @fmt(&io, "{} at {}:{} gave {}, panics {} `{}`\n", c.name, c.file, c.line, code, c.panics, c.message)
+        failed = failed + code
+    }
+    return failed + @as(i32, args.len) * 10
+}

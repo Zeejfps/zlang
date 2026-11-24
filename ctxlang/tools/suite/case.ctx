@@ -1,0 +1,685 @@
+// A case, as its files state it (tests/README.md is the format's specification).
+//
+// A case is a `.ctx` file, whose directives are its `//#` comment lines (or those of NAME.expect
+// beside it, which leaves the program's bytes alone), or a directory with a file CASE, which
+// holds the directives. A directive line is `//# KEY: VALUE`, `//# KEY:` with a block of `//| `
+// lines after it, or `//# WORD...`; a program's lines may end in `//~ error at COL: MESSAGE`
+// or `//~ panic at COL: MESSAGE`.
+
+namespace case {
+    // How a text is compared with what a step wrote.
+    enum Mode: u8 { exact, has, lacks, any }
+
+    // What is compared: a step's standard output, its standard error, a file, or the names in a
+    // directory.
+    enum Stream: u8 { out, err, file, list }
+
+    // An expected text, stated on `line`.
+    struct Expect { line: u32, stream: Stream, mode: Mode, path: []u8, text: []u8 }
+
+    // An error or a panic a program's line states, by `//~`: the file as the program names it,
+    // the line it is on, and the column and message it gives.
+    struct Marker { file: []u8, line: u32, col: u32, panic: bool, text: []u8 }
+
+    // What a step does.
+    enum Kind: u8 {
+        program,        // builds a program, runs it and compares it with the interpreter
+        build,          // builds a program, for later steps to run
+        project,        // builds a build.ctx project's executables, through `ctxc graph`
+        command,        // runs ctxc, the C compiler, ar, or an executable an earlier step built
+        write,          // writes a file
+        remove,         // removes a file or a directory
+        make_dir,       // makes a directory
+        exists,         // expects a file or a directory
+        missing,        // expects neither
+    }
+
+    // Whether a program is also run in the interpreter: it is, and must give the same; it
+    // isn't, for the reason given; or it is, and the interpreter must refuse it.
+    enum Interp: u8 { same, off, cannot }
+
+    struct Step {
+        kind: Kind,
+        line: u32,              // of the directive that starts it; 1 for a file case's program
+        name: []u8,             // a build's or a program's name; a write's, remove's, make_dir's, exists's or missing's path
+        words: [][]u8,          // a program's files; a command's words
+        text: []u8,             // a write's text
+        input: []u8,
+        env: [][]u8,
+        cwd: []u8,
+        stack: u64,             // CTX_STACK for the run; 0 is the default
+        timeout: u64,           // seconds; 0 is the default
+        exit: ?i64,
+        exit_line: u32,
+        panic: ?[]u8,           // the last line of standard error, with exit code 134
+        panic_line: u32,
+        errors: ?[]u8,          // ctxc's standard error, whole
+        errors_line: u32,
+        markers: []Marker,
+        expects: []Expect,
+        interp: Interp,
+        interp_line: u32,
+        compiles: bool,         // only built
+    }
+
+    // A problem with how a case is written, at `line` of `file`.
+    struct Problem { file: []u8, line: u32, text: []u8 }
+
+    struct Case {
+        name: []u8,             // its path under the cases' directory, without `.ctx`
+        path: []u8,             // the file, or the directory
+        file: []u8,             // the file that holds its directives
+        is_dir: bool,
+        only: []u8,             // the platforms it runs on, as written; "" for all
+        only_why: []u8,
+        only_line: u32,
+        needs: [][]u8,          // tools it is skipped without
+        steps: []Step,
+        problems: []Problem,
+        outside: bool,          // it names files outside itself, so its result isn't cached
+    }
+
+    // What reading a case needs to know of where it runs.
+    struct Host { os: build::Os }
+
+    struct Parser {
+        heap: *mut Heap,
+        file: []u8,
+        host: Host,
+        steps: list::List(Step, Heap),
+        problems: list::List(Problem, Heap),
+        expects: list::List(Expect, Heap),
+        markers: list::List(Marker, Heap),
+        env: Strs,
+        only: []u8,
+        only_why: []u8,
+        only_line: u32,
+        needs: Strs,
+        open: bool,             // a step is being read, into `step`
+        step: Step,
+        outside: bool,
+    }
+
+    fn empty_step { kind: Kind, line: u32 } -> Step {
+        return Step{
+            kind, line, name = "", words = slice::empty([]u8){}, text = "", input = "", env = slice::empty([]u8){}, cwd = "",
+            stack = 0, timeout = 0, exit = null, exit_line = 0, panic = null, panic_line = 0, errors = null, errors_line = 0,
+            markers = slice::empty(Marker){}, expects = slice::empty(Expect){}, interp = Interp::same, interp_line = 0,
+            compiles = false,
+        }
+    }
+
+    fn problem { mut p: Parser, line: u32, text: []u8 } {
+        try! list::push{ list = &p.problems, item = Problem{ file = p.file, line, text } }
+    }
+
+    // Ends the step being read, if one is: it takes the expectations and the environment read
+    // since it began.
+    fn close_step { mut p: Parser } {
+        if not p.open { return }
+        p.step.expects = try! list::take{ list = &p.expects }
+        p.step.env = try! list::take{ list = &p.env }
+        if p.step.kind == Kind::program or p.step.kind == Kind::build { p.step.markers = try! list::take{ list = &p.markers } }
+        try! list::push{ list = &p.steps, item = p.step }
+        p.open = false
+    }
+
+    fn open_step { mut p: Parser, kind: Kind, line: u32 } {
+        close_step{ &p }
+        p.step = empty_step{ kind, line }
+        p.open = true
+    }
+
+    // Reads the case at path, a file or a directory with a CASE, named `name`.
+    fn read { mut fs: Fs, mut heap: Heap, host: Host, path: []u8, name: []u8, is_dir: bool } -> Case {
+        let mut p = Parser{
+            heap = &heap, file = path, host, steps = list::new(Step){ realloc = arena::alloc, &heap },
+            problems = list::new(Problem){ realloc = arena::alloc, &heap }, expects = list::new(Expect){ realloc = arena::alloc, &heap },
+            markers = list::new(Marker){ realloc = arena::alloc, &heap }, env = strs{ &heap }, only = "", only_why = "", only_line = 0,
+            needs = strs{ &heap }, open = false, step = empty_step{ kind = Kind::program, line = 1 }, outside = false,
+        }
+        if is_dir {
+            p.file = join{ &heap, a = path, b = "CASE" }
+            let script = read_file{ &fs, &heap, path = p.file } ifnull { "" }
+            directives{ &p, &heap, script, strict = true }
+            close_step{ &p }
+            // Each built program's files state its errors and panic by `//~`.
+            let steps = list::items{ list = p.steps }
+            for &s in steps {
+                if s.kind != Kind::program and s.kind != Kind::build { continue }
+                for f in files{ s } {
+                    // A file outside the case (`{home}/...`) is another program's, with no markers.
+                    if f.len > 0 and f[0] == '{' { continue }
+                    // A file that isn't there is one an earlier step writes: it has no markers,
+                    // and if no step writes it, ctxc says that it can't read it.
+                    let source = read_file{ &fs, &heap, path = join{ &heap, a = path, b = f } } ifnull { continue }
+                    p.file = join{ &heap, a = path, b = f }
+                    markers{ &p, &heap, source, file = f }
+                }
+                s.markers = try! list::take{ list = &p.markers }
+            }
+            p.file = join{ &heap, a = path, b = "CASE" }
+        } else {
+            let source = read_file{ &fs, &heap, path } ifnull { "" }
+            let beside = cat{ &heap, a = path[..path.len - 4], b = ".expect" }
+            open_step{ &p, kind = Kind::program, line = 1 }
+            let one = strs_of{ &heap, s = base{ path } }
+            p.step.words = one
+            if kind_of{ &fs, path = beside } == 1 {
+                p.file = beside
+                let script = read_file{ &fs, &heap, path = beside } ifnull { "" }
+                directives{ &p, &heap, script, strict = true }
+            } else {
+                directives{ &p, &heap, script = source, strict = false }
+                markers{ &p, &heap, source, file = base{ path } }
+            }
+            close_step{ &p }
+        }
+        let mut c = Case{
+            name, path, file = p.file, is_dir, only = p.only, only_why = p.only_why, only_line = p.only_line,
+            needs = list::items{ list = p.needs }, steps = list::items{ list = p.steps }, problems = slice::empty(Problem){},
+            outside = p.outside,
+        }
+        check{ &p, c }
+        c.problems = list::items{ list = p.problems }
+        return c
+    }
+
+    fn strs_of { mut heap: Heap, s: []u8 } -> [][]u8 {
+        let mut xs = strs{ &heap }
+        try! list::push{ list = &xs, item = s }
+        return list::items{ list = xs }
+    }
+
+    // What every case must say: each step that runs something states what is expected of it.
+    fn check { mut p: Parser, c: Case } {
+        if c.steps.len == 0 { problem{ &p, line = 1, text = "the case has no step: a CASE names a `program:`, or commands" } }
+        let mut checks = false
+        for s in c.steps {
+            let stated = s.exit != null or s.panic != null or s.errors != null or s.expects.len > 0 or s.compiles or s.markers.len > 0
+            match s.kind {
+                program => {
+                    checks = true
+                    if not stated { problem{ &p, line = s.line, text = "the program states no expectation: say what it prints (`//# stdout:`), its `//# exit:`, its error or its panic, or `//# compiles`" } }
+                    let errors = s.errors != null or has_errors{ ms = s.markers }
+                    if errors and (s.exit != null or s.panic != null or s.expects.len > 0 or s.compiles or has_panic{ ms = s.markers }) {
+                        problem{ &p, line = s.line, text = "a program with a compile error isn't run: it states only its errors" }
+                    }
+                    if s.errors != null and has_errors{ ms = s.markers } { problem{ &p, line = s.errors_line, text = "errors are stated by `//~ error` or by `//# errors:`, not both" } }
+                    if s.panic != null and has_panic{ ms = s.markers } { problem{ &p, line = s.panic_line, text = "the panic is stated by `//~ panic` or by `//# panic:`, not both" } }
+                    if s.panic != null or has_panic{ ms = s.markers } {
+                        if let code = s.exit {
+                            if code != 134 { problem{ &p, line = s.exit_line, text = "a program that panics exits with 134" } }
+                        }
+                    }
+                    if count_panics{ ms = s.markers } > 1 { problem{ &p, line = s.line, text = "a program panics once: it has several `//~ panic`" } }
+                }
+                build => {
+                    if s.exit != null or s.panic != null or s.expects.len > 0 or has_panic{ ms = s.markers } {
+                        problem{ &p, line = s.line, text = "a `build` states only errors: a command runs what it builds" }
+                    }
+                    if s.errors != null or has_errors{ ms = s.markers } { checks = true }
+                }
+                project => {
+                    checks = true
+                }
+                command => {
+                    checks = true
+                    if not stated { problem{ &p, line = s.line, text = "the command states no expectation: say its `//# exit:`, `//# stdout:` or `//# stderr:`" } }
+                }
+                exists | missing => { checks = true }
+                else => {}
+            }
+            for e in s.expects {
+                if (e.stream == Stream::file or e.stream == Stream::list) and s.kind != Kind::command and s.kind != Kind::program and s.kind != Kind::project {
+                    problem{ &p, line = e.line, text = "a `file` or a `list` expectation follows the step that writes there" }
+                }
+            }
+        }
+        if c.steps.len > 0 and not checks { problem{ &p, line = 1, text = "the case checks nothing" } }
+    }
+
+    fn has_errors { ms: []Marker } -> bool {
+        for m in ms {
+            if not m.panic { return true }
+        }
+        return false
+    }
+
+    fn has_panic { ms: []Marker } -> bool {
+        return count_panics{ ms } > 0
+    }
+
+    fn count_panics { ms: []Marker } -> usize {
+        let mut n: usize = 0
+        for m in ms {
+            if m.panic { n = n + 1 }
+        }
+        return n
+    }
+
+    // ---- `//~`
+
+    // Adds the markers of a program's file, named `file` in its positions.
+    fn markers { mut p: Parser, mut heap: Heap, source: []u8, file: []u8 } {
+        let mut from: usize = 0
+        let mut line: u32 = 1
+        while from < source.len {
+            let end = line_end{ s = source, from }
+            let mut text = source[from..end]
+            if text.len > 0 and text[text.len - 1] == '\r' { text = text[..text.len - 1] }
+            let mut at = find{ s = text, part = "//~" }
+            while at != null {
+                let start = (at ifnull { 0 }) + 3
+                let next = find_from{ s = text, part = "//~", from = start }
+                let piece = trim{ s = text[start..next ifnull { text.len }] }
+                marker{ &p, &heap, piece, file, line }
+                at = next
+            }
+            from = end + 1
+            line = line + 1
+        }
+    }
+
+    // One marker's text: `error at COL: MESSAGE` or `panic at COL: MESSAGE`.
+    fn marker { mut p: Parser, mut heap: Heap, piece: []u8, file: []u8, line: u32 } {
+        let panic = starts_with{ s = piece, prefix = "panic at " }
+        if not panic and not starts_with{ s = piece, prefix = "error at " } {
+            problem{ &p, line, text = "`//~` is followed by `error at COL: MESSAGE` or `panic at COL: MESSAGE`" }
+            return
+        }
+        let rest = piece[9..]
+        let colon = find{ s = rest, part = ": " } ifnull {
+            problem{ &p, line, text = "`//~` is followed by `error at COL: MESSAGE` or `panic at COL: MESSAGE`" }
+            return
+        }
+        let col = utf8::parse_u64{ s = utf8::of{ chars = rest[..colon] } } ifnull {
+            problem{ &p, line, text = "the column after `at` is a number" }
+            return
+        }
+        try! list::push{ list = &p.markers, item = Marker{ file, line, col = @as(u32, col), panic, text = rest[colon + 2..] } }
+    }
+
+    // ---- `//#`
+
+    // Reads the directives of `script`: every line of a CASE or a NAME.expect is one, a
+    // block's line, a comment or blank (`strict`); a program's other lines are its own.
+    fn directives { mut p: Parser, mut heap: Heap, script: []u8, strict: bool } {
+        let mut from: usize = 0
+        let mut line: u32 = 1
+        while from < script.len {
+            let end = line_end{ s = script, from }
+            let mut text = script[from..end]
+            if text.len > 0 and text[text.len - 1] == '\r' { text = text[..text.len - 1] }
+            from = end + 1
+            let at = line
+            line = line + 1
+            if starts_with{ s = text, prefix = "//#" } {
+                // The block that follows it, if any.
+                let mut block = text_of{ &heap }
+                let mut lines: usize = 0
+                while from < script.len {
+                    let e = line_end{ s = script, from }
+                    let mut t = script[from..e]
+                    if t.len > 0 and t[t.len - 1] == '\r' { t = t[..t.len - 1] }
+                    if not starts_with{ s = t, prefix = "//|" } { break }
+                    if t.len > 3 and t[3] != ' ' { problem{ &p, line, text = "a block's line is `//| ` and its text, or `//|` alone for an empty line" } }
+                    try! utf8::push_bytes{ b = &block, s = if t.len > 4 { t[4..] } else { "" } }
+                    try! utf8::push_bytes{ b = &block, s = "\n" }
+                    lines = lines + 1
+                    from = e + 1
+                    line = line + 1
+                }
+                directive{ &p, &heap, text = trim{ s = text[3..] }, line = at, block = utf8::view{ b = block }.bytes, has_block = lines > 0 }
+            } else if starts_with{ s = text, prefix = "//|" } {
+                problem{ &p, line = at, text = "a `//|` line follows a `//#` directive that takes a block" }
+            } else if strict and trim{ s = text }.len > 0 and not starts_with{ s = text, prefix = "//" } {
+                problem{ &p, line = at, text = "a line here is a `//#` directive, a `//|` line of a block, or a `//` comment" }
+            }
+        }
+    }
+
+    fn text_of { mut heap: Heap } -> Text {
+        return utf8::builder{ realloc = arena::alloc, &heap }
+    }
+
+    // Whether a directive tagged `[tag]` applies on this platform; null for a tag that names none.
+    fn applies { tag: []u8, os: build::Os } -> ?bool {
+        if eq{ a = tag, b = "windows" } { return os == build::Os::windows }
+        if eq{ a = tag, b = "linux" } { return os == build::Os::linux }
+        if eq{ a = tag, b = "macos" } { return os == build::Os::macos }
+        if eq{ a = tag, b = "posix" } { return os != build::Os::windows }
+        return null
+    }
+
+    // The escapes of a block marked `escaped`: `\\`, `\n`, `\r`, `\t`, `\xNN`, and a `\` at a
+    // line's end, which takes the line break away.
+    fn unescaped { mut p: Parser, mut heap: Heap, s: []u8, line: u32 } -> []u8 {
+        let mut b = text_of{ &heap }
+        let mut i: usize = 0
+        while i < s.len {
+            let c = s[i]
+            if c != '\\' {
+                try! list::push{ list = &b.bytes, item = c }
+                i = i + 1
+                continue
+            }
+            let n: u8 = if i + 1 < s.len { s[i + 1] } else { 0 }
+            if n == '\\' {
+                try! list::push{ list = &b.bytes, item = '\\' }
+                i = i + 2
+            } else if n == 'n' {
+                try! list::push{ list = &b.bytes, item = '\n' }
+                i = i + 2
+            } else if n == 'r' {
+                try! list::push{ list = &b.bytes, item = '\r' }
+                i = i + 2
+            } else if n == 't' {
+                try! list::push{ list = &b.bytes, item = '\t' }
+                i = i + 2
+            } else if n == '"' {
+                try! list::push{ list = &b.bytes, item = '"' }
+                i = i + 2
+            } else if n == '\n' {
+                i = i + 2
+            } else if n == 'x' and i + 3 < s.len and hex_digit{ c = s[i + 2] } != null and hex_digit{ c = s[i + 3] } != null {
+                let hi = hex_digit{ c = s[i + 2] } ifnull { 0 }
+                let lo = hex_digit{ c = s[i + 3] } ifnull { 0 }
+                try! list::push{ list = &b.bytes, item = hi * 16 + lo }
+                i = i + 4
+            } else {
+                problem{ &p, line, text = "an escape is `\\\\`, `\\n`, `\\r`, `\\t`, `\\xNN`, or a `\\` that ends a line" }
+                i = i + 1
+            }
+        }
+        return utf8::view{ b }.bytes
+    }
+
+    fn hex_digit { c: u8 } -> ?u8 {
+        if c >= '0' and c <= '9' { return c - '0' }
+        if c >= 'a' and c <= 'f' { return c - 'a' + 10 }
+        if c >= 'A' and c <= 'F' { return c - 'A' + 10 }
+        return null
+    }
+
+    // The words of a line: separated by spaces; one in double quotes holds spaces and the
+    // escapes of a block, and `""` is the empty word.
+    fn words { mut p: Parser, mut heap: Heap, s: []u8, line: u32 } -> [][]u8 {
+        let mut out = strs{ &heap }
+        let mut i: usize = 0
+        while i < s.len {
+            if s[i] == ' ' or s[i] == '\t' {
+                i = i + 1
+                continue
+            }
+            if s[i] == '"' {
+                let mut j = i + 1
+                while j < s.len and s[j] != '"' {
+                    if s[j] == '\\' and j + 1 < s.len { j = j + 1 }
+                    j = j + 1
+                }
+                if j >= s.len {
+                    problem{ &p, line, text = "a quoted word ends with `\"`" }
+                    break
+                }
+                try! list::push{ list = &out, item = unescaped{ &p, &heap, s = s[i + 1..j], line } }
+                i = j + 1
+            } else {
+                let start = i
+                while i < s.len and s[i] != ' ' and s[i] != '\t' { i = i + 1 }
+                try! list::push{ list = &out, item = s[start..i] }
+            }
+        }
+        return list::items{ list = out }
+    }
+
+    // The step a directive of a run belongs to: the one being read, which must run something.
+    fn runs { mut p: Parser, line: u32, key: []u8 } -> bool {
+        if p.open and (p.step.kind == Kind::program or p.step.kind == Kind::command) { return true }
+        if p.open and p.step.kind == Kind::project and (eq{ a = key, b = "exit" } or eq{ a = key, b = "panic" } or eq{ a = key, b = "errors" } or eq{ a = key, b = "stdout" } or eq{ a = key, b = "stderr" } or eq{ a = key, b = "file" } or eq{ a = key, b = "list" } or eq{ a = key, b = "env" } or eq{ a = key, b = "cwd" }) { return true }
+        if p.open and p.step.kind == Kind::build and (eq{ a = key, b = "errors" } or eq{ a = key, b = "env" }) { return true }
+        problem{ &p, line, text = cat3{ heap = p.heap, a = "`", b = key, c = "` follows the step it is about: a `program:`, a `$` command, a `project` or a `build`" } }
+        return false
+    }
+
+    // One directive: `text` is what follows `//#`, `block` its block's text.
+    fn directive { mut p: Parser, mut heap: Heap, text: []u8, line: u32, block: []u8, has_block: bool } {
+        let mut d = text
+        if d.len > 0 and d[0] == '[' {
+            let close = find{ s = d, part = "]" } ifnull {
+                problem{ &p, line, text = "a platform tag is `[windows]`, `[linux]`, `[macos]` or `[posix]`" }
+                return
+            }
+            let on = applies{ tag = d[1..close], os = p.host.os } ifnull {
+                problem{ &p, line, text = "a platform tag is `[windows]`, `[linux]`, `[macos]` or `[posix]`" }
+                return
+            }
+            if not on { return }
+            d = trim{ s = d[close + 1..] }
+        }
+        if d.len == 0 {
+            problem{ &p, line, text = "an empty directive" }
+            return
+        }
+        // A command: `$ WORD...`.
+        if d[0] == '$' {
+            open_step{ &p, kind = Kind::command, line }
+            p.step.words = words{ &p, &heap, s = d[1..], line }
+            if p.step.words.len == 0 { problem{ &p, line, text = "a command names what it runs: `ctxc`, `cc`, `ar`, `suite`, `{NAME}`, an executable a step built, or `./PATH`" } }
+            if has_block { problem{ &p, line, text = "a command takes no block" } }
+            note_outside{ &p, ws = p.step.words }
+            return
+        }
+        // `KEY: VALUE`, `KEY:` and a block, or words alone.
+        let mut key = d
+        let mut value: []u8 = ""
+        let mut colon = false
+        if let at = find{ s = d, part = ": " } {
+            key = d[..at]
+            value = trim{ s = d[at + 2..] }
+            colon = true
+        } else if d[d.len - 1] == ':' {
+            key = d[..d.len - 1]
+            colon = true
+        }
+        let ws = words{ &p, &heap, s = key, line }
+        if ws.len == 0 {
+            problem{ &p, line, text = "an empty directive" }
+            return
+        }
+        let head = ws[0]
+        if has_block and value.len > 0 {
+            problem{ &p, line, text = "a directive has a value on its line or a block after it, not both" }
+            return
+        }
+        if eq{ a = head, b = "only" } and colon {
+            let at = find{ s = value, part = ": " } ifnull {
+                problem{ &p, line, text = "`only: PLATFORM...: REASON` says why the case runs on those platforms alone" }
+                return
+            }
+            p.only = value[..at]
+            p.only_why = value[at + 2..]
+            p.only_line = line
+            for w in words{ &p, &heap, s = p.only, line } {
+                if applies{ tag = w, os = p.host.os } == null { problem{ &p, line, text = "a platform is `windows`, `linux`, `macos` or `posix`" } }
+            }
+        } else if eq{ a = head, b = "needs" } and colon {
+            for w in words{ &p, &heap, s = value, line } { try! list::push{ list = &p.needs, item = w } }
+        } else if eq{ a = head, b = "program" } and colon {
+            if p.open and p.step.kind == Kind::program and p.step.words.len == 0 {
+                problem{ &p, line, text = "one `program:` for each program" }
+            }
+            open_step{ &p, kind = Kind::program, line }
+            p.step.words = words{ &p, &heap, s = value, line }
+            if p.step.words.len == 0 { problem{ &p, line, text = "`program: FILE...` names the program's files" } }
+            note_outside{ &p, ws = p.step.words }
+        } else if eq{ a = head, b = "build" } and colon and ws.len == 2 {
+            open_step{ &p, kind = Kind::build, line }
+            p.step.name = ws[1]
+            p.step.words = words{ &p, &heap, s = value, line }
+            if p.step.words.len == 0 { problem{ &p, line, text = "`build NAME: FILE...` names the program's files" } }
+            note_outside{ &p, ws = p.step.words }
+        } else if eq{ a = head, b = "project" } and ws.len == 1 and not colon {
+            open_step{ &p, kind = Kind::project, line }
+        } else if eq{ a = head, b = "write" } and colon and ws.len >= 2 {
+            open_step{ &p, kind = Kind::write, line }
+            p.step.name = ws[1]
+            p.step.text = if ws.len == 3 and eq{ a = ws[2], b = "escaped" } { unescaped{ &p, &heap, s = block, line } } else { block }
+            if ws.len > 3 or (ws.len == 3 and not eq{ a = ws[2], b = "escaped" }) or value.len > 0 { problem{ &p, line, text = "`write PATH:` or `write PATH escaped:`, then the file's text as a block" } }
+            close_step{ &p }
+        } else if (eq{ a = head, b = "remove" } or eq{ a = head, b = "exists" } or eq{ a = head, b = "missing" }) and ws.len == 2 and not colon {
+            let kind = if eq{ a = head, b = "remove" } { Kind::remove } else if eq{ a = head, b = "exists" } { Kind::exists } else { Kind::missing }
+            open_step{ &p, kind, line }
+            p.step.name = ws[1]
+            close_step{ &p }
+        } else if eq{ a = head, b = "make" } and ws.len == 3 and eq{ a = ws[1], b = "dir" } and not colon {
+            open_step{ &p, kind = Kind::make_dir, line }
+            p.step.name = ws[2]
+            close_step{ &p }
+        } else if eq{ a = head, b = "compiles" } and ws.len == 1 and not colon {
+            if p.open and p.step.kind == Kind::program { p.step.compiles = true } else { problem{ &p, line, text = "`compiles` is said of a program" } }
+        } else if eq{ a = head, b = "args" } and colon {
+            if p.open and p.step.kind == Kind::program {
+                let files = p.step.words
+                let mut all = strs{ &heap }
+                // A program's words are its files, then `--`, then its arguments.
+                for f in files { try! list::push{ list = &all, item = f } }
+                try! list::push{ list = &all, item = "--" }
+                for w in words{ &p, &heap, s = value, line } { try! list::push{ list = &all, item = w } }
+                p.step.words = list::items{ list = all }
+            } else {
+                problem{ &p, line, text = "`args:` gives a program's arguments; a command's are on its line" }
+            }
+        } else if eq{ a = head, b = "stdin" } and colon {
+            if runs{ &p, line, key = "stdin" } { p.step.input = if ws.len == 2 and eq{ a = ws[1], b = "escaped" } { unescaped{ &p, &heap, s = block, line } } else { block } }
+        } else if eq{ a = head, b = "env" } and colon {
+            if runs{ &p, line, key = "env" } {
+                if find{ s = value, part = "=" } == null { problem{ &p, line, text = "`env: NAME=VALUE`" } }
+                try! list::push{ list = &p.env, item = value }
+            }
+        } else if eq{ a = head, b = "cwd" } and colon {
+            if runs{ &p, line, key = "cwd" } { p.step.cwd = value }
+        } else if eq{ a = head, b = "stack" } and colon {
+            if runs{ &p, line, key = "stack" } { p.step.stack = number_of{ &p, s = value, line } }
+        } else if eq{ a = head, b = "timeout" } and colon {
+            if runs{ &p, line, key = "timeout" } { p.step.timeout = number_of{ &p, s = value, line } }
+        } else if eq{ a = head, b = "exit" } and colon {
+            if runs{ &p, line, key = "exit" } {
+                if p.step.exit != null { problem{ &p, line, text = "one `exit:` for each step" } }
+                p.step.exit = utf8::parse_i64{ s = utf8::of{ chars = value } } ifnull {
+                    problem{ &p, line, text = "`exit: N` gives the exit code" }
+                    0
+                }
+                p.step.exit_line = line
+            }
+        } else if eq{ a = head, b = "panic" } and colon {
+            if runs{ &p, line, key = "panic" } {
+                if p.step.panic != null { problem{ &p, line, text = "one `panic:` for each step" } }
+                p.step.panic = value
+                p.step.panic_line = line
+            }
+        } else if eq{ a = head, b = "errors" } and colon {
+            if runs{ &p, line, key = "errors" } {
+                if p.step.errors != null { problem{ &p, line, text = "one `errors:` for each step" } }
+                p.step.errors = block
+                p.step.errors_line = line
+                if value.len > 0 { problem{ &p, line, text = "`errors:` takes ctxc's standard error as a block" } }
+            }
+        } else if eq{ a = head, b = "interp" } and colon {
+            if p.open and p.step.kind == Kind::program {
+                p.step.interp_line = line
+                if eq{ a = value, b = "cannot run" } {
+                    p.step.interp = Interp::cannot
+                } else if starts_with{ s = value, prefix = "off: " } and value.len > 5 {
+                    p.step.interp = Interp::off
+                } else {
+                    problem{ &p, line, text = "`interp: cannot run`, or `interp: off: REASON`" }
+                }
+            } else {
+                problem{ &p, line, text = "`interp:` is said of a program" }
+            }
+        } else if eq{ a = head, b = "stdout" } or eq{ a = head, b = "stderr" } or eq{ a = head, b = "file" } or eq{ a = head, b = "list" } {
+            let stream = if eq{ a = head, b = "stdout" } { Stream::out } else if eq{ a = head, b = "stderr" } { Stream::err } else if eq{ a = head, b = "file" } { Stream::file } else { Stream::list }
+            let mut k: usize = 1
+            let mut path: []u8 = ""
+            if stream == Stream::file or stream == Stream::list {
+                if ws.len < 2 {
+                    problem{ &p, line, text = "`file PATH:` names the file, and `list PATH:` the directory" }
+                    return
+                }
+                path = ws[1]
+                k = 2
+            }
+            let mut mode = Mode::exact
+            let mut escaped = false
+            let mut bad = false
+            while k < ws.len {
+                if eq{ a = ws[k], b = "has" } and mode == Mode::exact {
+                    mode = Mode::has
+                } else if eq{ a = ws[k], b = "lacks" } and mode == Mode::exact {
+                    mode = Mode::lacks
+                } else if eq{ a = ws[k], b = "any" } and mode == Mode::exact and not colon {
+                    mode = Mode::any
+                } else if eq{ a = ws[k], b = "escaped" } {
+                    escaped = true
+                } else {
+                    bad = true
+                }
+                k = k + 1
+            }
+            if bad or (mode == Mode::any) == colon or value.len > 0 {
+                problem{ &p, line, text = "an expected text is `stdout:`, `stdout has:`, `stdout lacks:` (each may end in `escaped`) and a block, or `stdout any`; `stderr` and `file PATH` take the same" }
+                return
+            }
+            if (mode == Mode::has or mode == Mode::lacks) and block.len == 0 {
+                problem{ &p, line, text = "`has:` and `lacks:` take a text" }
+                return
+            }
+            if runs{ &p, line, key = head } {
+                // A text to find is a fragment: its block's last line break isn't part of it.
+                let part = if (mode == Mode::has or mode == Mode::lacks) and block.len > 0 { block[..block.len - 1] } else { block }
+                let text = if escaped { unescaped{ &p, &heap, s = part, line } } else { part }
+                if mode == Mode::exact or mode == Mode::any {
+                    for e in list::items{ list = p.expects } {
+                        if e.stream == stream and eq{ a = e.path, b = path } and (e.mode == Mode::exact or e.mode == Mode::any) {
+                            problem{ &p, line, text = "this text is stated twice" }
+                        }
+                    }
+                }
+                try! list::push{ list = &p.expects, item = Expect{ line, stream, mode, path, text } }
+            }
+        } else {
+            problem{ &p, line, text = cat3{ &heap, a = "unknown directive `", b = d, c = "`" } }
+        }
+    }
+
+    fn number_of { mut p: Parser, s: []u8, line: u32 } -> u64 {
+        return utf8::parse_u64{ s = utf8::of{ chars = s } } ifnull {
+            problem{ &p, line, text = "a number is expected" }
+            0
+        }
+    }
+
+    // Notes whether the words name a file outside the case: `{home}` or `{repo}`.
+    fn note_outside { mut p: Parser, ws: [][]u8 } {
+        for w in ws {
+            if has{ s = w, part = "{home}" } or has{ s = w, part = "{repo}" } { p.outside = true }
+        }
+    }
+
+    // A program step's files: its words before `--`.
+    fn files { s: Step } -> [][]u8 {
+        for w at i in s.words {
+            if eq{ a = w, b = "--" } { return s.words[..i] }
+        }
+        return s.words
+    }
+
+    // A program step's arguments: its words after `--`.
+    fn args { s: Step } -> [][]u8 {
+        for w at i in s.words {
+            if eq{ a = w, b = "--" } { return s.words[i + 1..] }
+        }
+        return s.words[s.words.len..]
+    }
+}

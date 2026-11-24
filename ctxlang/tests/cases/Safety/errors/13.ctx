@@ -1,0 +1,9 @@
+struct S { u: U, n: i32 }
+union U { a{ x: i32 }, b }
+fn f { mut s: S } {
+    match &s.u {
+        a{ &x } => { x = s.n; s.u = U::b }  //~ error at 32: s.u overlaps the match scrutinee; access it only through `x`
+        b => {}
+    }
+}
+fn main {} {}

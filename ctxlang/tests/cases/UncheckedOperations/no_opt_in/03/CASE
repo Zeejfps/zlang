@@ -1,0 +1,6 @@
+// Without the call, an executable uses them anywhere, as a program without a build
+// program does: this one has none.
+//# $ ctxc run .
+//# exit: 0
+//# stdout:
+//| 9

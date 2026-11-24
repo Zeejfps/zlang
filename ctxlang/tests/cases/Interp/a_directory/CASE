@@ -1,0 +1,5 @@
+// `ctxc interp DIR` runs the program of a directory's files, as `ctxc run DIR` does.
+//# $ ctxc interp {dir}
+//# exit: 0
+//# stdout:
+//| 7

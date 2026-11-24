@@ -1,0 +1,1 @@
+fn main { let n = 1² }  //~ error at 20: unexpected character '²' (U+00B2) //~ error at 9: a function's context comes before its body: write `fn main {} { ... }`

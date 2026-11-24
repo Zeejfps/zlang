@@ -1,0 +1,2 @@
+fn f { s: strlit } -> []u8 { return s }  //~ error at 37: expected []u8, got strlit
+fn main {} {}

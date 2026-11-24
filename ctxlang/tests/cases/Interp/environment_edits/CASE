@@ -1,0 +1,21 @@
+// `--env NAME=VALUE` sets the program's NAME, and `--env NAME` removes it, whatever
+// ctxc's own: CTX_STACK, here, is both ctxc's stack and the program's to read.
+// ctxc itself is given CTX_TEST_ENV=ctxc, which `--env CTX_TEST_ENV` takes from the program.
+//# $ ctxc interp --env CTX_STACK=12345 --env CTX_TEST_ENV {dir}/env.ctx
+//# env: CTX_TEST_ENV=ctxc
+//# exit: 0
+//# stdout:
+//| 12345
+//| unset
+// Without `--env CTX_TEST_ENV` the program sees ctxc's: so the line above is the option's doing.
+//# $ ctxc interp --env CTX_STACK=12345 {dir}/env.ctx
+//# env: CTX_TEST_ENV=ctxc
+//# exit: 0
+//# stdout:
+//| 12345
+//| ctxc
+// `--env` without a name is a usage error.
+//# $ ctxc interp --env
+//# exit: 2
+//# stderr:
+//| usage: ctxc interp [--env NAME=VALUE | --env NAME]... PATH [-- ARGS...]

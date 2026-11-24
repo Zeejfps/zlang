@@ -1,0 +1,6 @@
+struct L { len: i32 }
+struct E { n: i32, list: L }
+fn f { mut e: E, mut xs: L } {
+    e.list.len = 0
+    xs.len = 1
+}

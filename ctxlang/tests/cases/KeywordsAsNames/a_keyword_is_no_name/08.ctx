@@ -1,0 +1,5 @@
+
+struct S { a: i32 }
+fn f { a: i32 } -> i32 { return a }
+const and: i32 = 1  //~ error at 7: expected a name, found 'and': `and` is a keyword and can't be a name; use another, such as `and_`
+fn main {} {}

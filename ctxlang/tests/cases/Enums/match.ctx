@@ -1,0 +1,32 @@
+
+enum Kind: u8 {
+    ident,
+    number,
+    lbrace = 40,
+    rbrace,
+}
+
+enum Sign: i8 { minus = -1, zero, plus }
+
+fn name { k: Kind } -> utf8::String {
+    return match k {
+        ident => { "ident" }
+        lbrace | rbrace => { "brace" }
+        else => { "other" }
+    }
+}
+
+fn main { mut io: Io } {
+    io::println{ &io, s = name{ k = Kind::rbrace } }
+    io::println{ &io, s = name{ k = Kind::number } }
+    let s = Sign::minus
+    match s {
+        minus => { io::println{ &io, s = "minus" } }
+        zero | plus => { io::println{ &io, s = "not minus" } }
+    }
+}
+
+//# stdout:
+//| brace
+//| other
+//| minus

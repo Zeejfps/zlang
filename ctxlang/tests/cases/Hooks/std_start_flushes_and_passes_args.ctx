@@ -1,0 +1,9 @@
+fn main { mut io: Io, args: Args } -> i32 {
+    io::print{ &io, s = utf8::of{ chars = args[1] } }
+    return @as(i32, args.len)
+}
+
+//# args: a "b c"
+//# exit: 2
+//# stdout escaped:
+//| b c\

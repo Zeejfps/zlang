@@ -1,0 +1,14 @@
+// A main whose set is every error of the program: one that calls through a function type.
+
+error first{ n: i32 }
+error second{ s: []u8 }
+fn a {} -> ! { return first{ n = 1 } }
+fn b {} -> ! { return second{ s = "two" } }
+fn main { args: Args } -> ! {
+    let fs: [2]fn{} -> ! = [a, b]
+    try fs[args.len]{}
+}
+
+//# exit: 1
+//# stderr:
+//| error: first{ n = 1 }

@@ -1,0 +1,6 @@
+// The example program examples/glfw/src lowers to the typed IR (`ctxc ir`), down to its `main`.
+// The IR is long, and changes with the example and with std: only that it is whole is stated,
+// by the line that names its `main`.
+//# $ ctxc ir {std} -- {home}/examples/glfw/src/gl.ctx {home}/examples/glfw/src/glfw.ctx {home}/examples/glfw/src/main.ctx
+//# stdout has:
+//| (main {n})

@@ -1,0 +1,13 @@
+// A file's path is its directory's and its name, which isn't normalized, as the
+// driver's errors name it: `\` is part of a name on POSIX.
+//# only: posix: a file name with a backslash
+//
+// The file is written by a step, since a checkout on Windows couldn't hold it.
+//# write src/a\b.ctx:
+//| struct AB {}
+//# remove {work:.}
+//# $ ctxc graph . {dir}/graph-gen {dir}/graph.txt
+//# stdout:
+//| file src/a\b.ctx
+//| struct AB @ src/a\b.ctx:1:1
+//# remove {work:.}

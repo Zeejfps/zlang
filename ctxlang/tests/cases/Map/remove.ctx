@@ -1,0 +1,40 @@
+
+fn main { mut io: Io } {
+    let mut mem: [262144]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut m = map::new(i32, i64){ realloc = arena::alloc, &heap, hash = map::hash_i32, eq = map::eq_i32 }
+
+    let mut i = 0
+    while i < 50 {
+        _ = map::put{ &m, key = i, value = i }
+        i = i + 1
+    }
+    i = 0
+    while i < 50 {
+        if i % 2 == 0 { _ = map::remove{ &m, key = i } }
+        i = i + 1
+    }
+    io::println_u64{ &io, n = map::len{ m } }
+    io::println_bool{ &io, n = map::remove{ &m, key = 4 } == null }
+    let r = map::remove{ &m, key = 7 }
+    if r != null { io::println_i64{ &io, n = r } }
+    io::println_bool{ &io, n = map::has{ m, key = 9 } and not map::has{ m, key = 10 } }
+    // Churn: removed slots are reused or dropped, so the table doesn't fill with them.
+    i = 0
+    while i < 2000 {
+        _ = map::put{ &m, key = 100, value = i }
+        _ = map::remove{ &m, key = 100 }
+        i = i + 1
+    }
+    io::println_u64{ &io, n = map::len{ m } }
+    io::println_bool{ &io, n = m.slots.len <= 128 }
+
+}
+
+//# stdout:
+//| 25
+//| true
+//| 7
+//| true
+//| 24
+//| true

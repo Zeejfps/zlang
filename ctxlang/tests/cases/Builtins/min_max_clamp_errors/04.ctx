@@ -1,0 +1,3 @@
+fn main {} {
+    let m = @min(true, false)  //~ error at 13: @min needs numbers, got bool
+}

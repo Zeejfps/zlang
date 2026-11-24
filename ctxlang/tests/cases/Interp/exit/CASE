@@ -1,0 +1,9 @@
+// os::exit ends the run with its code, a negative one too, after nothing else: the buffered
+// line is never written. `ctxc interp` and `ctxc run` end the same way; the code is -3 as
+// Windows reports it, and its low byte, 253, elsewhere.
+//# $ ctxc interp {dir}/exit.ctx --
+//# [windows] exit: -3
+//# [posix] exit: 253
+//# $ ctxc run {dir}/exit.ctx --
+//# [windows] exit: -3
+//# [posix] exit: 253

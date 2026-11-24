@@ -1,0 +1,10 @@
+// `error` begins a declaration only before a name: elsewhere it is a name itself.
+
+fn error { n: i32 } -> i32 { return n + 1 }
+fn main { mut io: Io } {
+    let error = error{ n = 1 }
+    io::println_i64{ &io, n = error }
+}
+
+//# stdout:
+//| 2

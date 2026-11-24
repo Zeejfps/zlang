@@ -1,0 +1,5 @@
+// An option ctxc test doesn't know: its usage, and exit code 2.
+//# $ ctxc test . --nope
+//# exit: 2
+//# stderr:
+//| usage: ctxc test PATH [--list] [-v] [--jobs N] [--timeout SECONDS] [FILTER...]: runs the tests whose names contain a FILTER, or all of them

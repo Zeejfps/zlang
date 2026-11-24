@@ -1,0 +1,11 @@
+struct L { len: i32, cap: i32 }
+struct In { a: i32, l: L }
+struct E { n: i32, list: L, arr: [3]i32, sub: In }
+fn push { mut l: L } { l.len = l.len + 1 }
+fn count { l: L } -> i32 { return l.len }
+#pure
+extern fn c_both { mut e: E, mut xs: L }
+fn t { mut e: E } {
+    c_both{ &e, xs = &e.list }  //~ error at 11: two mut references to `e` in one call: only a call to a named function with a body may be given places that overlap, and only where the function uses them apart; pass one of them
+}
+fn main {} {}

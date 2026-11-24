@@ -1,0 +1,2 @@
+struct S { a: [1 / 0]u8 }  //~ error at 18: division by zero in constant
+fn main {} {}

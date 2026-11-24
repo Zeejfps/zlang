@@ -1,0 +1,22 @@
+
+fn main { mut io: Io } {
+    let a: u32 = 0xF0
+    let n: usize = 24
+    io::println_u64{ &io, n = a << n }
+    io::println_u64{ &io, n = a <<% 28 }
+    io::println_u64{ &io, n = a >> 4 }
+    let one: i8 = 1
+    io::println_i64{ &io, n = one <<% 7 }
+    let b: i8 = -128
+    io::println_i64{ &io, n = b >> 7 }
+    let big: u64 = 256 << 20
+    io::println_u64{ &io, n = big }
+}
+
+//# stdout:
+//| 4026531840
+//| 0
+//| 15
+//| -128
+//| -1
+//| 268435456

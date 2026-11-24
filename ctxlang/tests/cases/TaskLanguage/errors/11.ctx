@@ -1,0 +1,14 @@
+
+#task
+fn fill { mut buf: [8]u8, n: u8 } -> ! { buf[0] = n }
+
+#task
+fn look { s: []u8 } -> !u64 { return @as(u64, s.len) }
+
+#task
+fn sq { n: u64 } -> !u64 { return n * n }
+
+fn main {} {
+    let mut t: task::Task(!)
+    let mut u = t  //~ error at 5: task::Task(!) holds a task handle, which is never copied: declare it without a value, and start a task into it
+}

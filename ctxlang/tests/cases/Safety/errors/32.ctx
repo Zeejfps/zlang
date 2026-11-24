@@ -1,0 +1,12 @@
+fn first { s: []u8, k: u8 } -> u8 { return s[0] + k }
+fn f { c: bool } {
+    let h: &fn{ k: u8 } -> u8
+    if c {
+        let buf: [2]u8 = [1, 2]
+        let g = first{ s = buf[..], _ }
+        h = g  //~ error at 9: `h` outlives local `buf` whose address it would hold
+    } else {
+        h = first{ s = "a", _ }
+    }
+}
+fn main {} {}

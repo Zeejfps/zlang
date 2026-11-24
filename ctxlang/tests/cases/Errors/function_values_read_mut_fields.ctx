@@ -1,0 +1,82 @@
+// A field a function takes read-only may be `mut` in the type it converts to (§5): the
+// value reads it through the pointer it is given, when it is called. A scalar, a struct
+// over 32 bytes (passed by reference), through a name, a bind, a struct field, a `&fn`
+// local, a generic function, a `?`, a function value and a bind of one, with a widened
+// error and with a dropped field.
+
+struct Big { a: i64, b: i64, c: i64, d: i64, e: i64 }
+struct H { f: fn{ mut a: i64 } -> i64 }
+error neg{ n: i64 }
+
+fn tens { a: i64 } -> i64 { return a * 10 }
+fn add { k: i64, a: i64 } -> i64 { return a + k }
+fn total { b: Big } -> i64 { return b.a + b.b + b.c + b.d + b.e }
+fn second(T) { x: T, y: T } -> T { return y }
+fn positive { a: i64 } -> !i64 {
+    if a < 0 { return neg{ n = a } }
+    return a
+}
+fn step { mut n: i64, a: i64 } { n = n + a }
+
+fn each { mut a: i64, f: &fn{ mut a: i64 } -> i64 } -> i64 { return f{ &a } }
+fn each_big { mut b: Big, f: &fn{ mut b: Big } -> i64 } -> i64 {
+    b.e = b.e + 100
+    return f{ &b }
+}
+fn show { mut io: Io, r: !i64 } {
+    match r {
+        ok{ value } => { _ = @fmt(&io, "ok {}\n", value) }
+        err{ error } => { _ = @fmt(&io, "err {}\n", error) }
+    }
+}
+
+fn main { mut io: Io } {
+    let mut x: i64 = 5
+    let f: fn{ mut a: i64 } -> i64 = tens
+    _ = @fmt(&io, "{} ", f{ a = &x })
+    x = 7
+    _ = @fmt(&io, "{}\n", f{ a = &x })
+    _ = @fmt(&io, "{} {}\n", each{ a = &x, f = tens }, each{ a = &x, f = add{ k = 1, _ } })
+    let h = H{ f = tens }
+    let g: &fn{ mut a: i64 } -> i64 = add{ k = 2, _ }
+    _ = @fmt(&io, "{} {}\n", h.f{ a = &x }, g{ a = &x })
+    let mut big = Big{ a = 1, b = 2, c = 3, d = 4, e = 5 }
+    let t: fn{ mut b: Big } -> i64 = total
+    _ = @fmt(&io, "{} {} {}\n", t{ b = &big }, each_big{ b = &big, f = total }, big.e)
+    let s: fn{ mut x: i64, y: i64 } -> i64 = second(i64)
+    let si: fn{ x: i64, mut y: i64 } -> i64 = second
+    _ = @fmt(&io, "{} {}\n", s{ x = &x, y = 3 }, si{ x = 1, y = &x })
+    let p: fn{ mut a: i64 } -> !i64 = positive
+    show{ &io, r = p{ a = &x } }
+    let mut m: i64 = -3
+    show{ &io, r = p{ a = &m } }
+    let d: fn{ mut a: i64, extra: u8 } -> i64 = tens
+    let o: ?fn{ mut a: i64 } -> i64 = tens
+    if o != null { _ = @fmt(&io, "{} {}\n", d{ a = &m, extra = 1 }, o{ a = &m }) }
+    let v: fn{ a: i64 } -> i64 = tens
+    let w: fn{ mut a: i64 } -> i64 = v
+    let kv: fn{ k: i64, a: i64 } -> i64 = add
+    let kb: &fn{ mut a: i64, extra: u8 } -> i64 = kv{ k = 100, _ }
+    let pv = positive
+    let pw: fn{ mut a: i64, extra: u8 } -> !i64 = pv
+    _ = @fmt(&io, "{} {} ", w{ a = &x }, kb{ a = &x, extra = 0 })
+    show{ &io, r = pw{ a = &m, extra = 0 } }
+    let mut n: i64 = 0
+    let both: fn{ mut n: i64, mut a: i64 } = step
+    both{ &n, a = &x }
+    let sb: &fn{ mut a: i64 } = step{ &n, _ }
+    sb{ a = &x }
+    _ = @fmt(&io, "{} {}\n", n, x)
+}
+
+//# stdout:
+//| 50 70
+//| 70 8
+//| 70 9
+//| 15 115 105
+//| 3 7
+//| ok 7
+//| err neg{ n = -3 }
+//| -30 -30
+//| 70 107 err neg{ n = -3 }
+//| 14 7

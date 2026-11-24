@@ -1,0 +1,7 @@
+fn main {} {
+    while true {}
+}
+
+//# timeout: 1
+//# exit: 0
+//# interp: off: it never ends

@@ -1,0 +1,21 @@
+// The parser recovers: what parsed around an error is there, and the errors are too,
+// at their positions. Names may refer to anything; nothing is resolved.
+// `ctxc graph` runs the build program without building the executables, whose files needn't
+// compile. ctxc's own directory for it is removed before and after: the runner clears those of
+// `ctxc run` commands only.
+//# remove {work:.}
+//# $ ctxc graph . {dir}/graph-gen {dir}/graph.txt
+//# stdout:
+//| file src/a.ctx
+//| file src/b.ctx
+//| struct Before @ src/a.ctx:1:1
+//|   a: gen::NotYet
+//| fn broken @ src/a.ctx:2:1
+//|   x: i32
+//| struct After @ src/a.ctx:3:1
+//|   b: u8
+//| const C : i32 @ src/a.ctx:4:1
+//| struct Fine @ src/b.ctx:1:1
+//| error src/a.ctx:2:25: expected a type, found '{'
+//| error src/a.ctx:4:16: expected an expression, found '='
+//# remove {work:.}

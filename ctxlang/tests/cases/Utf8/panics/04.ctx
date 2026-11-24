@@ -1,0 +1,7 @@
+
+fn main { mut io: Io } {
+    let bad = "\xff"
+    let s = utf8::of{ chars = bad }
+}
+
+//# panic: std/utf8.ctx:50:46: panic: utf8::of: the bytes aren't valid UTF-8

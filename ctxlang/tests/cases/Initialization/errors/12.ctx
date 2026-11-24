@@ -1,0 +1,8 @@
+fn f { c: bool } {
+    let x: i32
+    while c {  //~ error at 5: `x` may be assigned more than once: it is assigned in a loop that can repeat; declare it with `let mut`
+        if c { x = 1; continue }
+        break
+    }
+}
+fn main {} {}

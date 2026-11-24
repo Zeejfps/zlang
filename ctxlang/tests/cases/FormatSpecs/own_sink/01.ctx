@@ -1,0 +1,53 @@
+// A sink of the program's own writes a spec's hole with its writers of std's fmt::Int,
+// Uint and Text, while compiling too.
+
+// A sink of the program's own: specs go to its writers of std's fmt types.
+struct Line { buf: [48]u8, len: usize }
+
+fn put { mut l: Line, bytes: []u8 } {
+    for b in bytes {
+        if l.len < l.buf.len {
+            l.buf[l.len] = b
+            l.len = l.len + 1
+        }
+    }
+}
+
+#write
+fn put_text { mut l: Line, s: strlit } { put{ &l, bytes = s.bytes } }
+#write
+fn put_int { mut l: Line, v: fmt::Int } {
+    let mut buf: [fmt::LONGEST]u8
+    put{ &l, bytes = fmt::format_int{ v, into = buf[..] } }
+}
+#write
+fn put_uint { mut l: Line, v: fmt::Uint } {
+    let mut buf: [fmt::LONGEST]u8
+    put{ &l, bytes = fmt::format_uint{ v, into = buf[..] } }
+}
+#write
+fn put_padded { mut l: Line, v: fmt::Text } {
+    put{ &l, bytes = fmt::spaces{ n = fmt::pad_before{ v } } }
+    put{ &l, bytes = v.s }
+    put{ &l, bytes = fmt::spaces{ n = fmt::pad_after{ v } } }
+}
+
+fn row { name: []u8, at: u32, n: i32 } -> Line {
+    let mut l: Line
+    _ = @fmt(&l, "{:<6}|{:08x}|{:>5}|{:^5}|", name, at, n, "ok")
+    return l
+}
+
+// Its text is computed while compiling too.
+const HEAD: Line = row{ name = "boot", at = 0xBEEF, n = -7 }
+
+fn main { mut io: Io } {
+    let now = row{ name = "boot", at = 0xBEEF, n = -7 }
+    let head = HEAD
+    _ = @fmt(&io, "{}\n{}\n{}\n", head.buf[..head.len], now.buf[..now.len], head.len == now.len)
+}
+
+//# stdout:
+//| boot  |0000beef|   -7| ok  |
+//| boot  |0000beef|   -7| ok  |
+//| true

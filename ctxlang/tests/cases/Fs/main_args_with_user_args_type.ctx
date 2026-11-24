@@ -1,0 +1,4 @@
+struct Args { n: i32 }
+fn main { args: [][]u8 } { }
+
+//# exit: 0

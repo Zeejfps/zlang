@@ -1,0 +1,5 @@
+
+fn main { mut io: Io } -> i32 {
+    io::println_i64{ &io, n = gff::write{ f = gff::read{ n = 5 } } + gff::again{} }
+    return 0
+}

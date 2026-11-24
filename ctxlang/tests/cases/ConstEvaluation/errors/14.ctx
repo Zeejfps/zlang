@@ -1,0 +1,4 @@
+fn three {} -> usize { return 3 }
+const N: usize = three{}
+struct S { a: [N]u8 }  //~ error at 16: an array length can't use `N`: its value is computed by calling a function
+fn main {} {}

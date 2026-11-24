@@ -1,0 +1,1 @@
+fn main { mut io: Io } { @panic("a", "b") }  //~ error at 38: wrong number of arguments: @panic() or @panic("reason")

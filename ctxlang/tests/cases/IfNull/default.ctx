@@ -1,0 +1,19 @@
+
+fn find { xs: []i32, want: i32 } -> ?usize {
+    let mut i: usize = 0
+    while i < xs.len {
+        if xs[i] == want { return i }
+        i = i + 1
+    }
+    return null
+}
+
+fn main { mut io: Io } {
+    let xs = [3, 5, 7]
+    io::println_u64{ &io, n = find{ xs = xs[..], want = 5 } ifnull 99 }
+    io::println_u64{ &io, n = find{ xs = xs[..], want = 4 } ifnull 99 }
+}
+
+//# stdout:
+//| 1
+//| 99

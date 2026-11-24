@@ -1,0 +1,48 @@
+
+error bad
+fn f { n: i32 } -> !?i32 {
+    if n == 0 { return null }
+    if n < 0 { return bad }
+    return n
+}
+fn g { n: i32 } -> ?i32 { if n == 0 { return null }; return n }
+fn r { n: i32 } -> !i32 { if n == 0 { return bad }; return n }
+fn h { n: i32 } -> ?!i32 {
+    if n == 0 { return null }
+    let x: !i32 = if n < 0 { bad } else { n }
+    return x
+}
+fn t { n: i32 } -> ?bool { if n == 0 { return null }; return n > 0 }
+
+fn both { n: i32 } -> i32 { return f{ n } iferr { return -1 } ifnull { return 0 } }
+fn next_line { n: i32 } -> i32 {
+    let v = f{ n } iferr { -1 }
+        ifnull 7                                    // a handler may begin the next line
+    return v
+}
+fn bound { n: i32 } -> i32 {
+    // the last `ifnull` is the right side of the one before it
+    return f{ n } iferr err{ error } { return -2 } ifnull g{ n = n + 5 } ifnull 4
+}
+fn inside_out { n: i32 } -> i32 { return h{ n } ifnull { return 0 } iferr 5 }      // a ?!T: its null first
+fn parens { n: i32 } -> i32 { return (f{ n } iferr null) ifnull 9 }
+fn dropped { mut io: Io, n: i32 } {
+    _ = f{ n } iferr { io::println{ &io, s = "err" }; return } ifnull { io::println{ &io, s = "null" }; return }
+    io::println{ &io, s = "value" }
+}
+fn main { mut io: Io } {
+    for n in [1, 0, -1, -5] {
+        _ = @fmt(&io, "{} {} {} {} {}\n", both{ n }, next_line{ n }, bound{ n }, inside_out{ n }, parens{ n })
+        dropped{ &io, n }
+    }
+}
+
+//# stdout:
+//| 1 1 1 1 1
+//| value
+//| 0 7 5 0 9
+//| null
+//| -1 -1 -2 5 9
+//| err
+//| -1 -1 -2 5 9
+//| err

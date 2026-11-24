@@ -1,0 +1,2 @@
+extern union U(T) { a: T }  //~ error at 15: an extern union cannot have generic parameters
+fn main {} {}

@@ -1,0 +1,22 @@
+
+fn main { mut io: Io } {
+    let mut i = 0
+    top:
+    while i < 3 {
+        i = i + 1
+        defer { io::println_i64{ &io, n = -i } }
+        while true {
+            defer { io::println_i64{ &io, n = 100 } }
+            while true {
+                if i == 2 { break top }
+                continue top
+            }
+        }
+    }
+}
+
+//# stdout:
+//| 100
+//| -1
+//| 100
+//| -2

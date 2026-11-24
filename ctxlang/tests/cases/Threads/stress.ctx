@@ -1,0 +1,39 @@
+// 8 tasks each add 1,000,000 times to one atomic counter and to one counter under a
+// mutex: both totals are exact.
+
+struct Shared { atomic: u64, lock: mutex::Mutex, locked: u64 }
+
+#task
+fn add { data: *mut Shared } -> ! {
+    let mut i: u32 = 0
+    while i < 1000000 {
+        _ = @atomic_add(&data.atomic, 1, atomic::Order::relaxed)
+        mutex::lock{ mutex = &data.lock }
+        data.locked = data.locked + 1
+        mutex::unlock{ mutex = &data.lock }
+        i = i + 1
+    }
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let mut s = Shared{ atomic = 0, lock = mutex::make{}, locked = 0 }
+    let mut ts: [8]task::Task(!)
+    let mut i: usize = 0
+    while i < 8 {
+        task::start_concurrent{ &threads, task = &ts[i], run = add{ data = &s, _ } } iferr { return 1 }
+        i = i + 1
+    }
+    i = 0
+    while i < 8 {
+        task::wait{ &threads, task = &ts[i] } iferr { return 1 }
+        i = i + 1
+    }
+    io::println_u64{ &io, n = @atomic_load(&s.atomic, atomic::Order::acquire) }
+    io::println_u64{ &io, n = s.locked }
+    return 0
+}
+
+//# interp: cannot run
+//# stdout:
+//| 8000000
+//| 8000000

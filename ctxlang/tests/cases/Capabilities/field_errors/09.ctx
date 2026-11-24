@@ -1,0 +1,8 @@
+capability M { f: extern fn{} }
+extern fn g {}
+namespace q { fn make { mut io: Io } -> M { return M{ f = g } } }
+fn main {} {}
+
+//# errors:
+//| 09.ctx:3:52: error: capability `M` can only be made by a function at the top level, which declares it
+//| 09.ctx:2:11: error: extern fn `g` takes no capability: add a capability field for what it touches, or `#pure` if it touches only its arguments and the memory they point to

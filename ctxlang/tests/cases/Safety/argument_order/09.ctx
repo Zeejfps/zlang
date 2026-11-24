@@ -1,0 +1,26 @@
+struct S { n: i32, m: i32 }
+fn bump { mut s: S } -> i32 {
+    s.n = s.n + 1
+    return s.n
+}
+fn show { n: i32, z: i32 } { let t = n + z }
+union U { a{ x: i32 }, b }
+struct W { u: U, k: i32 }
+fn set_a { mut w: W } -> i32 {
+    match &w.u {
+        a{ &x } => { x = 5 }
+        b => {}
+    }
+    return 0
+}
+fn ux { u: U } -> i32 {
+    match u {
+        a{ x } => { return x }
+        b => { return 0 }
+    }
+}
+fn f { mut w: W } {
+    show{ n = ux{ u = w.u }, z = set_a{ &w } }  //~ error at 30: `n` reads `w.u`, which `z` changes, in one call: the order of the fields would decide what it reads; compute one of them in a `let` before the call
+    show{ n = w.k, z = set_a{ &w } }
+}
+fn main {} {}

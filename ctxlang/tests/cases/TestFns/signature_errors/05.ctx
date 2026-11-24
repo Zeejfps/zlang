@@ -1,0 +1,3 @@
+#test  //~ error at 1: a `test` fn can't be generic
+fn a(T) { mut t: Test } {}
+fn main {} {}

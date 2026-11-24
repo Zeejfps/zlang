@@ -1,0 +1,5 @@
+// A build program run directly: an executable that isn't there is its panic.
+
+fn build { mut b: Build } { build::deny_unchecked{ &b, exe = build::Exe{ id = 3 }, except = [] } }
+
+//# panic: program: panic: build: no executable 3

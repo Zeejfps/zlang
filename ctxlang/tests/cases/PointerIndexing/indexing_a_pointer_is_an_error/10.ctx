@@ -1,0 +1,4 @@
+fn f { q: *u8, b: bool } -> u8 {
+    return q[if b { 1 } else { 0 }]  //~ error at 13: cannot index *u8: a pointer has no length to check against; write `(q + (if b { 1 } else { 0 })).*`, which isn't checked
+}
+fn main {} {}

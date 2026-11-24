@@ -1,0 +1,7 @@
+fn main {} {
+    while x
+}
+
+//# errors:
+//| 20.ctx:3:1: error: expected '{', found '}'
+//| 20.ctx:2:11: error: unknown name `x`

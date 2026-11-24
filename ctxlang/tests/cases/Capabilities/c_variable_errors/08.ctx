@@ -1,0 +1,2 @@
+capability O { extern x: fn{} }  //~ error at 16: capability `O`'s C variable `x` can't have type fn{}: C has no equivalent of it
+fn main {} {}

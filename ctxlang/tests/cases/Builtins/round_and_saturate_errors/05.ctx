@@ -1,0 +1,3 @@
+fn main {} {
+    let m = @round_saturate(bool, 1.5)  //~ error at 13: @round_saturate needs an integer target type, got bool
+}

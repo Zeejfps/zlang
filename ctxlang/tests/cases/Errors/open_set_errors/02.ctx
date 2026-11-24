@@ -1,0 +1,6 @@
+error a
+error b
+type O = error(a, b, ..)
+fn f {} -> O!u64 { return a }
+fn g {} -> !u64 { return try f{} }
+fn main {} { match g{} { ok => {} a => {} b => {} } }  //~ error at 14: a match on an open error set needs `else` or `err`: error of `g` may gain errors

@@ -1,0 +1,8 @@
+fn f { c: bool } -> i32 {
+    let x: i32
+    if c { x = 1 } else { @panic() }
+    return x
+}
+fn main {} {}
+
+//# exit: 0

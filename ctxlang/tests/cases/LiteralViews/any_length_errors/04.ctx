@@ -1,0 +1,2 @@
+fn f { a: [_]u8 } {}  //~ error at 11: `[_]` is only a let's or a const's type, whose initializer gives the length
+fn main {} {}

@@ -1,0 +1,6 @@
+
+fn main { mut io: Io } {
+    let mut x: ?i32 = 1
+    if x == null { return }
+    let y = x + 1  //~ error at 15: operands of `+` have incompatible types: ?i32 and {integer}; convert one with @as
+}

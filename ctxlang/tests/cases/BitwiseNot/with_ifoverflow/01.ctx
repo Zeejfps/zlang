@@ -1,0 +1,10 @@
+// `~` never overflows, but ifoverflow covers what its operand covers.
+
+fn main { mut io: Io } {
+    let a: u8 = 0
+    let b: u8 = 200
+    _ = @fmt(&io, "{} {}\n", ~a * 2 ifoverflow 7, ~(b * 2) ifoverflow 9)
+}
+
+//# stdout:
+//| 7 9

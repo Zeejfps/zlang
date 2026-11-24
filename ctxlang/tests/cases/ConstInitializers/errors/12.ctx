@@ -1,0 +1,3 @@
+union U { a, b{ x: i32 } }
+const A: U = U::b  //~ error at 14: variant `b` has a payload; construct it with `U::b{ ... }`
+fn main {} {}

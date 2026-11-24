@@ -1,0 +1,5 @@
+fn main {} {
+    let a: i64 = 1
+    let x: f64 = 2.0
+    let m = @max(a, x)  //~ error at 13: @max needs two numbers of one type, got i64 and f64: convert one with @as
+}

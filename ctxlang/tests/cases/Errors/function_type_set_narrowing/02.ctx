@@ -1,0 +1,6 @@
+error a
+fn ia { k: u64, n: u64 } -> !u64 { return a }
+fn main {} {
+    let m: fn{ n: u64 } -> error(a)!u64 = ia{ k = 1, _ }  //~ error at 45: expected fn{ n: u64 } -> error(a)!u64, got &fn{ n: u64 } -> !u64
+    _ = m
+}

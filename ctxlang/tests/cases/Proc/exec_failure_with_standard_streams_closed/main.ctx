@@ -1,0 +1,9 @@
+
+fn main { mut proc: Proc } -> i32 {
+    let cmd: [1][]u8 = ["ctx-no-such-program-anywhere"]
+    match proc::spawn{ &proc, argv = cmd[..], options = proc::Options{ stderr = proc::Stdio::ignore, .. } } {
+        ok              => { return 1 }
+        proc::not_found => { return 0 }
+        else            => { return 2 }
+    }
+}

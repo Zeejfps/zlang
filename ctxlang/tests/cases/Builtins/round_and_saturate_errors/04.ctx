@@ -1,0 +1,3 @@
+fn main {} {
+    let m = @saturate(f64, 1.5)  //~ error at 13: @saturate needs an integer target type, got f64
+}

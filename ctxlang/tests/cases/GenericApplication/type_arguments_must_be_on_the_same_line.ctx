@@ -1,0 +1,9 @@
+
+fn main { mut io: Io } {
+    let e = slice::empty
+    (u8){}
+}
+
+//# errors:
+//| type_arguments_must_be_on_the_same_line.ctx:4:6: error: `u8` is not a struct
+//| type_arguments_must_be_on_the_same_line.ctx:3:20: error: cannot infer type parameter `T` of `empty`

@@ -1,0 +1,3 @@
+struct P(T) { a: T }
+struct S { a: P(i32, u8) }  //~ error at 15: `P` expects 1 type argument(s), got 2
+fn main {} {}

@@ -1,0 +1,18 @@
+// Any struct can be an attribute, on any declaration; the compiler checks it and ignores
+// it.
+
+struct Tag {}
+struct Rename { to: []u8, n: i32 }
+const N: i32 = 3
+namespace n {
+    #Tag
+    struct S { x: i32 }
+}
+#Rename{ to = "x", n = N + 1 }
+#Tag
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = 1 }
+}
+
+//# stdout:
+//| 1

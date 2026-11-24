@@ -1,0 +1,14 @@
+// Where the types agree or widen, nothing changes: a `u8` const beside a `u32` is still
+// widened, and two consts convert whichever way fits.
+
+const C: u8 = 200
+const A: u8 = 5
+const B: i8 = -1
+fn main { mut io: Io } {
+    let x: u32 = 1000
+    let z: i64 = C
+    _ = @fmt(&io, "{} {} {}\n", x + C, z, A == B)
+}
+
+//# stdout:
+//| 1200 200 false

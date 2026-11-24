@@ -1,0 +1,32 @@
+
+union Result(T, E) { ok{ value: T }, err{ error: E } }
+union E { odd{ n: i32 }, negative }
+fn half { n: i32 } -> Result(i32, E) {
+    if n < 0 { return Result::err{ error = E::negative } }
+    if n % 2 != 0 { return Result::err{ error = E::odd{ n } } }
+    return Result::ok{ value = n / 2 }
+}
+
+fn quarter { n: i32 } -> Result(i32, E) {
+    let ok{ value = h } = half{ n } else err{ error } { return Result::err{ error } }
+    let ok{ value } = half{ n = h } else err{ error } { return Result::err{ error } }
+    return Result::ok{ value }
+}
+fn show { mut io: Io, r: Result(i32, E) } {
+    let ok{ value } = r else err{ error } {
+        let odd{ n } = error else { io::println_i64{ &io, n = -1000 }; return }
+        io::println_i64{ &io, n = -n }
+        return
+    }
+    io::println_i64{ &io, n = value }
+}
+fn main { mut io: Io } {
+    show{ &io, r = quarter{ n = 12 } }
+    show{ &io, r = quarter{ n = 6 } }
+    show{ &io, r = quarter{ n = -4 } }
+}
+
+//# stdout:
+//| 3
+//| -3
+//| -1000

@@ -1,0 +1,7 @@
+union U { a, b{ x: i32 }, c{ x: i32, y: bool } }
+fn f { u: U } {
+    match u {  //~ error at 5: match isn't exhaustive: missing a, c
+        b => {}
+    }
+}
+fn main {} {}

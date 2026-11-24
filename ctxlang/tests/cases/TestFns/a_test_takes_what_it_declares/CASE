@@ -1,0 +1,6 @@
+// Capabilities as main's: files, memory, tasks, whose checks report through the same Test.
+//# $ ctxc test .
+//# exit: 1
+//# stdout:
+//| ./t.ctx:14: fail: tasks_check: n < 3: 5 < 3
+//| tests: 2 run, 1 passed, 1 failed, 0 not selected

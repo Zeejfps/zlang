@@ -1,0 +1,16 @@
+
+fn has(T) { x: ?T } -> bool { return x is some }
+fn main { mut io: Io } {
+    let a: ?i32 = 5
+    let b: ?i32 = null
+    if a is some{ value } { io::println_i64{ &io, n = value } }
+    if b is some{ value = v } { io::println_i64{ &io, n = v } } else { io::println{ &io, s = "null" } }
+    io::println_bool{ &io, n = b is null }
+    io::println_bool{ &io, n = has{ x = a } }
+}
+
+//# stdout:
+//| 5
+//| null
+//| true
+//| true

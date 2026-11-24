@@ -1,0 +1,25 @@
+
+error closed
+fn close { fail: bool } -> ! {
+    if fail { return closed }
+}
+fn both { fail: bool } -> ! {
+    try close{ fail = false }
+    try close{ fail }
+    return
+}
+fn main { mut io: Io } -> i32 {
+    both{ fail = false } iferr { return 1 }
+    io::println{ &io, s = "closed" }
+    match both{ fail = true } {
+        ok     => { io::println{ &io, s = "no" } }
+        closed => { io::println{ &io, s = "failed" } }
+    }
+    both{ fail = true } iferr err{ error } { return 3 }
+    return 0
+}
+
+//# exit: 3
+//# stdout:
+//| closed
+//| failed

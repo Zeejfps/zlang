@@ -1,0 +1,11 @@
+
+fn main { mut io: Io } {
+    let is = 1; let at = 2; let in = 3; let distinct = 4; let error = 5; let static = 6
+    for in in [is, at] { io::println_i64{ &io, n = in } }
+    io::println_i64{ &io, n = in + distinct + error + static }
+}
+
+//# stdout:
+//| 1
+//| 2
+//| 18

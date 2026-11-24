@@ -1,0 +1,9 @@
+// A panic fails its test alone: its line is the panic's, with its position, and the tests
+// after it run.
+//# $ ctxc test .
+//# exit: 1
+//# stdout:
+//| ./t.ctx:8: fail: overflows: xs[0] == 2: 1 == 2
+//| ./t.ctx:9:19: fail: overflows: panic: index 5 out of bounds for length 3
+//| ./t.ctx:13:5: fail: says_why: panic: the reason
+//| tests: 4 run, 2 passed, 2 failed, 0 not selected

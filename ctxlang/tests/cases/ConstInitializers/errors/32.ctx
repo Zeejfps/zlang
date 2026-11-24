@@ -1,0 +1,3 @@
+const A: u8 = N  //~ error at 15: expected u8, got i64: `N` is 300, which doesn't fit u8
+const N: i64 = 300
+fn main {} {}

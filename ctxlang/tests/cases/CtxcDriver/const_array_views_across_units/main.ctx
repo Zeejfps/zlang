@@ -1,0 +1,5 @@
+
+fn main { mut io: Io } {
+    let xs = tables::view{}
+    io::println_i64{ &io, n = xs[0] + (tables::pointer{} + 2).* }
+}

@@ -1,0 +1,22 @@
+error stopped
+fn read { n: i32 } -> i32 { return n }
+fn fail {} -> ! { return stopped }
+fn invoke { n: i32 } -> ! {
+    let mut first = read{ n = -1, _ }
+    let mut last = read{ n = -1, _ }
+    let mut i = 0
+    while i < 3 {
+        let call = read{ n = i, _ }
+        if i == 0 { first = call } else { last = call }
+        i = i + 1
+    }
+    defer {
+        if first{} != 0 or last{} != 2 { @panic("lost callback snapshot") }
+    }
+    if n % 2 == 0 { try fail{} }
+    _ = last{}
+}
+fn main {} {
+    let mut i = 0
+    while i < 3000 { _ = invoke{ n = i }; i = i + 1 }
+}

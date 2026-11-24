@@ -1,0 +1,6 @@
+fn g { n: i32 } {}
+fn f {} {
+    let n: i32
+    g{ .. }  //~ error at 6: `n` may be read before it is assigned
+}
+fn main {} {}

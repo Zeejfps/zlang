@@ -1,0 +1,31 @@
+
+union Shape { circle{ r: f64 }, square{ side: f64 }, none }
+fn area { s: *mut Shape } -> f64 {
+    return match s {
+        circle{ &r } => { r = r * 2.0; r }
+        square{ side } => { side * side }
+        else => { 0.0 }
+    }
+}
+fn first { xs: []i32 } -> ?i32 {
+    if xs.len == 0 { return null }
+    return xs[0]
+}
+fn main { mut io: Io, args: Args } -> i32 {
+    let mut c = Shape::circle{ r = 1.5 }
+    io::println_f64{ &io, n = area{ s = &c } }
+    io::println_f64{ &io, n = area{ s = &c } }
+    let mut sq = Shape::square{ side = 3.0 }
+    io::println_f64{ &io, n = area{ s = &sq } }
+    let mut nums = [4, 5]
+    let some{ value } = first{ xs = nums[..] } else { return 1 }
+    let null = first{ xs = slice::empty(i32){} } else { return 2 }
+    return value + @as(i32, args.len)
+}
+
+//# args: x y
+//# exit: 6
+//# stdout:
+//| 3.0
+//| 6.0
+//| 9.0

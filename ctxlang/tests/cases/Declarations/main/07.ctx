@@ -1,0 +1,1 @@
+fn main { mut args: Args } {}  //~ error at 1: `main` context field `args` must have a capability type or be `args: Args`, got [][]u8

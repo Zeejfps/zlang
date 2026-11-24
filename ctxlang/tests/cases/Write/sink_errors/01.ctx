@@ -1,0 +1,7 @@
+struct S {}
+#write
+fn w { mut s: S, v: i32 } {}
+fn f { mut s: S } {
+    @fmt(&s, "x{}", 1) iferr {}  //~ error at 14: @fmt has no writer of strlit to S, for its text
+}
+fn main {} {}

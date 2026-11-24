@@ -1,0 +1,2 @@
+union U { a{ x: i32 } b }  //~ error at 23: expected '}', found 'b'
+fn main {} {}

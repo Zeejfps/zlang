@@ -1,0 +1,18 @@
+
+namespace geo {
+    const N: usize = 4
+    struct V { x: i32, y: i32 }
+    const ORIGIN: V = V{ x = 1, y = 2 }
+    fn dot { a: V, b: V } -> i32 { return a.x * b.x + a.y * b.y }
+}
+fn main { mut io: Io } {
+    let mut arr: [geo::N * 2]u8
+    io::println_u64{ &io, n = arr.len }
+    io::println_i64{ &io, n = geo::dot{ a = geo::ORIGIN, b = geo::V{ x = 3, y = 4 } } }
+    io::println_u64{ &io, n = @size_of(geo::V) }
+}
+
+//# stdout:
+//| 8
+//| 11
+//| 8

@@ -1,0 +1,2 @@
+extern f {}  //~ error at 8: expected 'fn', found 'f' //~ error at 7: extern fn `` takes no capability: add a capability field for what it touches, or `#pure` if it touches only its arguments and the memory they point to
+fn main {} {}

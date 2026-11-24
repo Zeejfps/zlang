@@ -1,0 +1,18 @@
+// A `let mut` local doesn't narrow; `x is null` doesn't narrow when true; nor does
+// either side of an `or` alone.
+
+union Ref { local{ var: i32 }, constant{ value: i64 }, variant, enumval }
+enum Color: u8 { red, green, blue }
+fn find { n: i32 } -> ?Ref {
+    if n == 0 { return null }
+    if n == 1 { return Ref::local{ var = 7 } }
+    if n == 2 { return Ref::constant{ value = 9 } }
+    return Ref::variant
+}
+
+fn take { r: Ref } {}
+fn main {} {
+    let r = find{ n = 1 }
+    let mut m = find{ n = 1 }
+    if m is local { take{ r = m } }  //~ error at 31: expected Ref, got ?Ref: `m` is mutable, so testing it for null doesn't narrow it; unwrap it with `if let v = m { ... }` or `let v = m ifnull { return }`
+}

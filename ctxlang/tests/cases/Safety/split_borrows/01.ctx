@@ -1,0 +1,13 @@
+struct L { len: i32, cap: i32 }
+struct In { a: i32, l: L }
+struct E { n: i32, list: L, arr: [3]i32, sub: In }
+fn push { mut l: L } { l.len = l.len + 1 }
+fn count { l: L } -> i32 { return l.len }
+fn f { mut e: E, mut xs: L } {
+    e.n = e.list.len
+    push{ l = &xs }
+}
+fn t { mut e: E } {
+    f{ &e, xs = &e.list }  //~ error at 6: two mut references to `e` in one call: `f` reads `e.list.len` through its field `e` at 7:11, and changes `e.list.len` through its field `xs` at 8:15 (the access is in `push`); pass one of them, or change `f` to use `e.list.len` through one of them only
+}
+fn main {} {}

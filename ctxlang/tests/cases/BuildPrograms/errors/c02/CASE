@@ -1,0 +1,3 @@
+// A panic of the build program's, here std's for an executable without a name.
+//# project
+//# panic: build: panic: build: empty name

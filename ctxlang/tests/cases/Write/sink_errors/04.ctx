@@ -1,0 +1,7 @@
+struct S {}
+#write
+fn w { mut s: S, v: strlit } {}
+fn f { mut s: S } {
+    @fmt(&s, "\xff") iferr {}  //~ error at 14: string literal is not valid UTF-8 (byte 0)
+}
+fn main {} {}

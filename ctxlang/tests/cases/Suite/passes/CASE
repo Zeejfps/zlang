@@ -1,0 +1,14 @@
+// The runner on a case that passes and one that lacks a tool it needs: the skipped case is
+// printed and counted, and the run passes.
+//# $ suite --cases cases --fresh --jobs 1
+//# exit: 0
+//# stdout:
+//| {dir}/cases/inner/needs.ctx:1: skip: inner/needs: needs ctx-no-such-tool
+//| interp: 1 programs the same, 0 it cannot run, 0 off
+//| cases: 2 run, 1 passed (0 from the cache), 0 failed, 1 skipped, 0 not selected
+// `--list` names the cases and runs none.
+//# $ suite --cases cases --list
+//# exit: 0
+//# stdout:
+//| {dir}/cases/inner/needs.ctx: inner/needs
+//| {dir}/cases/inner/prints.ctx: inner/prints

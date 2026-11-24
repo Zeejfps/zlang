@@ -1,0 +1,14 @@
+// `[_]T` in a let's or a const's type takes its length from the literal it holds.
+
+const NAMES: [_][]u8 = ["fn", "let", "match"]
+const TEXTS: [_]utf8::String = ["a", "bb"]
+const GRID: [_][2]u8 = [[1, 2], [3, 4], [5, 6]]
+fn main { mut io: Io } {
+    let xs: [_]u32 = [1, 2, 3, 4]
+    let mut s: [_]u8 = "abc"
+    s[0] = 'x'
+    _ = @fmt(&io, "{} {} {} {} {} {}\n", NAMES.len, NAMES[2], TEXTS.len, GRID.len, xs.len, s[..])
+}
+
+//# stdout:
+//| 3 match 2 3 4 xbc

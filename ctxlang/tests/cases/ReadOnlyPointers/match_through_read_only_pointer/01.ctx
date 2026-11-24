@@ -1,0 +1,16 @@
+
+union Shape { circle{ r: i32 }, square{ side: i32 }, rect{ w: i32, h: i32 }, dot, line }
+
+fn size { s: *Shape } -> i32 {
+    match s {
+        circle{ &r } => { return r }
+        else         => { return 0 }
+    }
+}
+fn main { mut io: Io } {
+    let s = Shape::circle{ r = 3 }
+    io::println_i64{ &io, n = size{ s = &s } }
+}
+
+//# stdout:
+//| 3

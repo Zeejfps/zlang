@@ -1,0 +1,1 @@
+fn main { mut b: Build } {}  //~ error at 1: `main` cannot take a Build: only a build program's `fn build` receives one

@@ -1,0 +1,6 @@
+// The example program examples/json lowers to the typed IR (`ctxc ir`), down to its `main`.
+// The IR is long, and changes with the example and with std: only that it is whole is stated,
+// by the line that names its `main`.
+//# $ ctxc ir {std} -- {home}/examples/json/main.ctx {home}/examples/json/parser.ctx {home}/examples/json/printer.ctx {home}/examples/json/value.ctx
+//# stdout has:
+//| (main {n})

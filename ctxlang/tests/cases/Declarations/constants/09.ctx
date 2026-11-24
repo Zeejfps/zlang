@@ -1,0 +1,7 @@
+namespace n { const N: usize = 2 }
+struct S { a: [n::N * 3 - 1]u8 }
+const B: [5]u8 = [0; 5]
+fn f { s: S } { let b: [5]u8 = s.a }
+fn main {} {}
+
+//# exit: 0

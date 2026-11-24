@@ -1,0 +1,9 @@
+
+fn f { b: u8 } -> i32 {
+    match b {
+1..5 => {}  //~ error at 2: a range pattern is `lo..=hi`, which includes hi
+else => {}
+    }
+    return 0
+}
+fn main {} { _ = f{ b = 1 } }

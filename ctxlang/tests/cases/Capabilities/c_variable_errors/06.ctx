@@ -1,0 +1,2 @@
+capability O { extern x: []u8 }  //~ error at 16: capability `O`'s C variable `x` can't have type []u8: C has no equivalent of it
+fn main {} {}

@@ -1,0 +1,4 @@
+fn f { p: *i32 } {
+    let q = @cast(*mut u8, p)  //~ error at 28: @cast cannot make *i32 writable
+}
+fn main {} {}

@@ -1,0 +1,2 @@
+fn f { n: usize } { for i in n { } }  //~ error at 30: a `for` goes over a range `lo..hi`, a slice or an array, not usize: to count up to it, write `0..n`
+fn main {} { f{ n = 1 } }

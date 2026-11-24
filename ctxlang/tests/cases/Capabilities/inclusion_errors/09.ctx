@@ -1,0 +1,21 @@
+namespace m {
+    capability L
+    #c::symbol{ name = "llabs" }
+    #pure
+    extern fn abs { n: i64 } -> i64
+    #c::symbol{ name = "strlen" }
+    #pure
+    extern fn len { s: c::String } -> usize
+    #c::symbol{ name = "atoi" }
+    #pure
+    extern fn int { s: c::String } -> i32
+    capability A { abs: extern fn{ n: i64 } -> i64 }
+    capability B { ..A, len: extern fn{ s: c::String } -> usize }
+    capability C { int: extern fn{ s: c::String } -> i32, ..B }
+    fn load_a { mut l: L } -> A { return A{ abs } }
+    fn load_b { mut l: L } -> B { return B{ ..load_a{ &l }, len } }
+    fn load_c { mut l: L } -> C { return C{ int, ..load_b{ &l } } }
+}
+capability L
+capability X { ..m::A, ..L }  //~ error at 24: capability `X` can't include `L`: it has no fields
+fn main {} {}

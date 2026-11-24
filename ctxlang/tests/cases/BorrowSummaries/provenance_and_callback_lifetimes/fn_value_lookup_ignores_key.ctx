@@ -1,0 +1,10 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// fn value lookup ignores key: accepted. It only compiles.
+
+struct T { items: [][]u8, h: fn{ key: []u8 } -> u64 }
+fn get { t: T, key: []u8 } -> []u8 { if t.h{ key } == 0 { return "none" }; return t.items[0] }
+fn hb { key: []u8 } -> u64 { return 1 }
+fn load { t: T } -> []u8 { let buf: [3]u8 = [1,2,3]; return get{ t, key = buf[..] } }
+fn main {} { let items: [1][]u8 = ["okay"]; _ = load{ t = T{ items = items[..], h = hb } } }
+
+//# compiles

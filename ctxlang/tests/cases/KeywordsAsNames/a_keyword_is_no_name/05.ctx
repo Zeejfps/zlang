@@ -1,0 +1,5 @@
+
+struct S { a: i32 }
+fn f { a: i32 } -> i32 { return a }
+struct T { type: i32 }  //~ error at 12: expected a name, found 'type': `type` is a keyword and can't be a name; use another, such as `type_`
+fn main {} {}

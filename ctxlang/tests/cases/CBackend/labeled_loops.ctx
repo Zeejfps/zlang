@@ -1,0 +1,35 @@
+
+fn main { mut io: Io } -> i32 {
+    let mut i = 0
+    let mut hits = 0
+    outer:
+    while i < 5 {
+        i = i + 1
+        defer {
+            // copied to each exit of the body: its labels must not clash
+            let mut k = 0
+            inner: while true { while true { k = k + 1; if k == 2 { break inner } } }
+            hits = hits + 100 * k / 2
+        }
+        let mut j = 0
+        while j < 5 {
+            j = j + 1
+            if j == 2 { continue outer }
+            if i == 4 { break outer }
+            hits = hits + 1
+        }
+    }
+    io::println_i64{ &io, n = hits }
+    let d = if hits > 0 { 1 } else { 2 }
+    top: while true {
+        while true {
+            let v = if d == 1 { break top } else { 5 }
+            return v
+        }
+    }
+    return i
+}
+
+//# exit: 4
+//# stdout:
+//| 403

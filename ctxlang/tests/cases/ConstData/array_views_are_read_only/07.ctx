@@ -1,0 +1,3 @@
+const C: [3]i32 = [1, 2, 3]
+const ROWS: [2][3]i32 = [C, C]
+fn main {} { ROWS[0][..][0] = 9 }  //~ error at 25: cannot write through []i32; it needs to be a `[]mut`

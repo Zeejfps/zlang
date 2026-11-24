@@ -1,0 +1,9 @@
+struct P { a: i32, b: i32 }
+fn g { mut x: i32, mut y: i32 } {}
+fn f {} {
+    let mut p = P{ a = 1, b = 2 }
+    g{ x = &p.a, y = &p.b }
+}
+fn main {} {}
+
+//# exit: 0

@@ -1,0 +1,29 @@
+
+fn f { mut io: Io, n: i32 } -> i32 {
+    defer io::println_i64{ &io, n = 100 }
+    let mut i = 0
+    while true {
+        defer io::println_i64{ &io, n = i }
+        i = i + 1
+        if i == 2 { continue }
+        if i == 3 { break }
+    }
+    let v = if n > 0 { return n } else { 7 }
+    return v
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = f{ &io, n = 5 } }
+    io::println_i64{ &io, n = f{ &io, n = 0 } }
+}
+
+//# stdout:
+//| 1
+//| 2
+//| 3
+//| 100
+//| 5
+//| 1
+//| 2
+//| 3
+//| 100
+//| 7

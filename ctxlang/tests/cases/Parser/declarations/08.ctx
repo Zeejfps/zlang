@@ -1,0 +1,2 @@
+struct S { a: 5 }  //~ error at 15: expected a type, found '5'
+fn main {} {}

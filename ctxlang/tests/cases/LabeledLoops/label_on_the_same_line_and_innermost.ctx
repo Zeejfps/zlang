@@ -1,0 +1,12 @@
+
+fn main { mut io: Io } {
+    let mut n = 0
+    a: while true {
+        n = n + 1
+        if n == 3 { break a }
+    }
+    io::println_i64{ &io, n }
+}
+
+//# stdout:
+//| 3

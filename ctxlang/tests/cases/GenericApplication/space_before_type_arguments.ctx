@@ -1,0 +1,9 @@
+
+fn main { mut io: Io } {
+    let e = slice::empty (u8) {}
+    let s: ?list::List (i32, arena::Arena) = null
+    io::println_bool{ &io, n = e.len == 0 and s == null }
+}
+
+//# stdout:
+//| true

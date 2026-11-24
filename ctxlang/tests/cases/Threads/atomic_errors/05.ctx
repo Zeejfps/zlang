@@ -1,0 +1,4 @@
+fn main {} {
+    let n: u32 = 0
+    @atomic_store(&n, 1, atomic::Order::relaxed)  //~ error at 19: @atomic_store writes through its pointer, which must be a *mut T, not *u32
+}

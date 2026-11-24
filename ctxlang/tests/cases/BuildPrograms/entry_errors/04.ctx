@@ -1,0 +1,5 @@
+fn build {} -> i32 { return 7 }
+fn main { mut io: Io } { io::println_i64{ &io, n = build{} } }
+
+//# stdout:
+//| 7

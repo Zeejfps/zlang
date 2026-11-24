@@ -1,0 +1,29 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// record in defers: accepted, and it runs.
+
+error stop
+fn read { n: i64 } -> i64 { return n }
+fn show { mut io: Io, f: &fn{} -> i64 } { io::println_i64{ &io, n = f{} } }
+fn work { mut io: Io, n: i64 } -> ! {
+    defer show{ &io, f = read{ n = n * 100, _ } }
+    let mut i: i64 = 0
+    while i < 3 {
+        defer show{ &io, f = read{ n = n + i, _ } }
+        if i == n { return stop }
+        i = i + 1
+    }
+}
+fn main { mut io: Io } {
+    work{ &io, n = 1 } iferr { io::println_i64{ &io, n = -1 } }
+    work{ &io, n = 7 } iferr { io::println_i64{ &io, n = -1 } }
+}
+
+//# stdout:
+//| 2
+//| 2
+//| 100
+//| -1
+//| 8
+//| 9
+//| 10
+//| 700

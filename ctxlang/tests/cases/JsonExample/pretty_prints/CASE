@@ -1,0 +1,18 @@
+// examples/json: a program made of a directory of files. Without a path it prints the document, two spaces
+// to a level, an empty array and object on one line.
+//# program: {home}/examples/json/main.ctx {home}/examples/json/parser.ctx {home}/examples/json/printer.ctx {home}/examples/json/value.ctx
+//# args: {dir}/tmp/in.json
+//# interp: cannot run
+//# stdout:
+//| {
+//|   "a": [
+//|     1,
+//|     2.5,
+//|     {}
+//|   ],
+//|   "b": {
+//|     "c": null,
+//|     "d": []
+//|   },
+//|   "e": true
+//| }

@@ -1,0 +1,6 @@
+struct P { x: i32, y: i32 }
+fn g { mut p: P } {}
+fn f { q: *mut P } {
+    g{ p = &q[1] }  //~ error at 14: cannot index *mut P: a pointer has no length to check against; write `(q + 1).*`, which isn't checked
+}
+fn main {} {}

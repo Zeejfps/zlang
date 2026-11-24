@@ -1,0 +1,8 @@
+// A narrowed x is its T: an optional's test of it says so.
+
+struct S { a: ?i32 }
+fn f { p: *i32 } -> i32 {
+    if p is some{ value = q } { return q.* }  //~ error at 8: `is` cannot test through a pointer; use `match`
+    return 0
+}
+fn main {} { }

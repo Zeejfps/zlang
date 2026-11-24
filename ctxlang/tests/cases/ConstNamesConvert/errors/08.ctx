@@ -1,0 +1,8 @@
+
+namespace gl {
+    const LINEAR: u32 = 9729
+    const BIG: u32 = 4000000000
+    const NEG: i32 = -1
+    const SMALL: i64 = 7
+}
+fn main {} { let a = gl::LINEAR; let x: i32 = a }  //~ error at 47: expected i32, got u32

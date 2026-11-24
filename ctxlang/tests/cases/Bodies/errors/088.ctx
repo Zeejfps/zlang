@@ -1,0 +1,4 @@
+fn f { n: i32 } {
+    let q = @cast(*u8, n)  //~ error at 24: @cast needs a pointer or extern fn argument
+}
+fn main {} {}

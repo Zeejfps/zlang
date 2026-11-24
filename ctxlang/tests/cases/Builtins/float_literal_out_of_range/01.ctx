@@ -1,0 +1,4 @@
+// §11, Literals, rule 2: a float literal that would round to an infinity in its type is
+// an error, however it takes the type; `@as` gives the infinity.
+
+fn main {} { let y: f32 = 1e300 }  //~ error at 27: 1e300 doesn't fit f32 (its largest value is about 3.4e38): write `math::INF_F32` if infinity is meant

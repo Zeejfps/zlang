@@ -1,0 +1,11 @@
+
+fn binders {} -> i32 { return 7 }
+fn twice { n: i32 } -> i32 { return n * 2 }
+fn main { mut io: Io } {
+    let binders = binders{}
+    let twice = 3
+    io::println_i64{ &io, n = binders + twice{ n = twice } }
+}
+
+//# stdout:
+//| 13

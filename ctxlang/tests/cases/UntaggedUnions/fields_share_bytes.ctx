@@ -1,0 +1,27 @@
+
+extern union Bits { f: f32, u: u32, b: u8 }
+struct Holder { tag: u8, bits: Bits }
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = @size_of(Bits) + @align_of(Bits) * 10 }
+    // a literal sets one field; the other bytes are zero
+    let mut x = Bits{ b = 255 }
+    io::println_u64{ &io, n = x.u }
+    x.f = 1.0
+    io::println_u64{ &io, n = x.u }
+    // the zero value: every byte zero
+    let mut z: Bits
+    io::println_u64{ &io, n = z.u }
+    let mut h = Holder{ tag = 1, bits = Bits{ u = 7 } }
+    h.bits.b = 9
+    io::println_u64{ &io, n = h.bits.u }
+    let p = &h.bits
+    io::println_u64{ &io, n = p.u }
+}
+
+//# stdout:
+//| 44
+//| 255
+//| 1065353216
+//| 0
+//| 9
+//| 9

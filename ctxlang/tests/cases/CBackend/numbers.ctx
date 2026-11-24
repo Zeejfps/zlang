@@ -1,0 +1,29 @@
+
+fn main { mut io: Io } {
+    let x: f32 = 0.1
+    io::println_f32{ &io, n = x }
+    io::println_f64{ &io, n = x }
+    io::println_f64{ &io, n = 1e16 }
+    io::println_f64{ &io, n = 0.0001 }
+    io::println_f64{ &io, n = 0.00001 }
+    io::println_f64{ &io, n = -2.5 / 0.0 }
+    let big: i64 = -9223372036854775807 - 1
+    io::println_i64{ &io, n = big % -1 }
+    io::println_i64{ &io, n = -7 / 2 }
+    io::println_u64{ &io, n = @as(u64, 3) *% 18446744073709551615 }
+    io::println_i64{ &io, n = @trunc(i8, 300) }
+    io::println_i64{ &io, n = @as(i64, 2.9) }
+}
+
+//# stdout:
+//| 0.1
+//| 0.10000000149011612
+//| 1e+16
+//| 0.0001
+//| 1e-05
+//| -inf
+//| 0
+//| -3
+//| 18446744073709551613
+//| 44
+//| 2

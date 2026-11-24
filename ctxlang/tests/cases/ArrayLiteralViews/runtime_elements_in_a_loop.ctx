@@ -1,0 +1,27 @@
+// With an element known only at run time the array is a local, set each time the
+// literal runs.
+
+fn show { mut io: Io, pages: []u32 } {
+    let mut sum: u32 = 0
+    let mut i: usize = 0
+    while i < pages.len { sum = sum + pages[i]; i = i + 1 }
+    _ = @fmt(&io, "{} {}\n", pages.len, sum)
+}
+
+fn main { mut io: Io } {
+    let mut k: u32 = 1
+    while k <= 3 {
+        show{ &io, pages = [k, k * 10] }
+        let rows: [][]u32 = [[k], [1, 2], [k; 2]]
+        show{ &io, pages = rows[2] }
+        k = k + 1
+    }
+}
+
+//# stdout:
+//| 2 11
+//| 2 2
+//| 2 22
+//| 2 4
+//| 2 33
+//| 2 6

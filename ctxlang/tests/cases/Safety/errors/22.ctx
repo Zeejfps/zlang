@@ -1,0 +1,5 @@
+fn f { mut out: *i32 } {
+    let x = 1
+    out = &x  //~ error at 5: cannot store the address of local `x` in `out`, which belongs to the caller
+}
+fn main {} {}

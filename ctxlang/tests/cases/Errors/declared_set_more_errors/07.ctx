@@ -1,0 +1,5 @@
+error a
+error b
+fn g {} -> error(a)!u64 { return 1 }
+fn main {} { let e: error(a) = g{}  //~ error at 33: expected error(a), got error(a)!u64
+    _ = e }

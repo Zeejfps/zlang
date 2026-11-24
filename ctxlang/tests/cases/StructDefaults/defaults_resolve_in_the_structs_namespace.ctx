@@ -1,0 +1,13 @@
+
+namespace game {
+    const START: i32 = 100
+    struct Run { score: i32 = START + 1 }
+}
+const START: i32 = 0
+fn main { mut io: Io } {
+    let r = game::Run{ .. }
+    _ = @fmt(&io, "{}\n", r.score)
+}
+
+//# stdout:
+//| 101

@@ -1,0 +1,8 @@
+
+fn main { mut io: Io } {
+    let mut a: [2]u8
+    let b: [4]u8 = [1, 2, 3, 4]
+    slice::copy{ dst = a[..], src = b[..] }
+}
+
+//# panic: std/slice.ctx:20:32: panic: slice::copy: destination is shorter than source

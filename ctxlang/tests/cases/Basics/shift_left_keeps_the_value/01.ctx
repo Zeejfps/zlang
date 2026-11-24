@@ -1,0 +1,21 @@
+// a << n is a * 2^n: it panics where that doesn't fit, as the multiply would
+
+fn main { mut io: Io } {
+    let a: u8 = 0x7F
+    io::println_u64{ &io, n = a << 1 }
+    let b: i8 = -64
+    io::println_i64{ &io, n = b << 1 }
+    let c: i8 = 1
+    io::println_i64{ &io, n = c << 6 }
+    let d: i64 = -1
+    io::println_i64{ &io, n = d << 63 }
+    let e: u64 = 1
+    io::println_u64{ &io, n = e << 63 }
+}
+
+//# stdout:
+//| 254
+//| -128
+//| 64
+//| -9223372036854775808
+//| 9223372036854775808

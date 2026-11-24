@@ -1,0 +1,24 @@
+// The game's copy helpers and its table lookup pass the borrow check: a copy of a local
+// buffer's bytes is independent of the buffer, and a lookup's result doesn't borrow its key.
+// The helpers are `copy_bytes` and `copy_lower` of kotor/lib/engine/object.ctx as they are
+// today, cut out of it by cut.ctx into copies.ctx; kotor-probe.ctx calls them, and
+// `twoda::get_string`, with locals.
+//# build cut: cut.ctx
+//# $ {cut} {repo}/kotor/lib/engine/object.ctx copies.ctx copy_bytes copy_lower
+//# stdout:
+//| fn copy_bytes: {n} bytes
+//| fn copy_lower: {n} bytes
+//# file copies.ctx has:
+//| namespace object {
+//|     fn copy_bytes {any}
+//# file copies.ctx has:
+//|     }
+//|     fn copy_lower {any}
+
+// The program builds: ctxc gives its C without an error, and the
+// C compiles and links. It isn't run: its `main` is empty.
+//# $ ctxc build probe.c {std} -- {repo}/kotor/lib/base/heap.ctx {repo}/kotor/lib/base/ci.ctx {repo}/kotor/lib/base/le.ctx {repo}/kotor/lib/base/text.ctx {repo}/kotor/lib/formats/twoda.ctx copies.ctx kotor-probe.ctx
+//# exit: 0
+//# $ cc {cflags} -I {home}/ctxc/rt probe.c {home}/ctxc/rt/ctxrt.c -lm -o probe{exe} {stack}
+//# exit: 0
+//# exists probe{exe}

@@ -1,0 +1,3 @@
+fn main {} {
+    for i in 0..=n {}  //~ error at 17: a `for`'s range is `lo..hi`, which leaves `hi` out: to include it, write `lo..hi + 1`
+}

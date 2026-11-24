@@ -1,0 +1,26 @@
+
+error bad
+fn f { n: i32 } -> !?i32 {
+    if n == 0 { return null }
+    if n < 0 { return bad }
+    return n
+}
+fn g { n: i32 } -> ?i32 { if n == 0 { return null }; return n }
+fn r { n: i32 } -> !i32 { if n == 0 { return bad }; return n }
+fn h { n: i32 } -> ?!i32 {
+    if n == 0 { return null }
+    let x: !i32 = if n < 0 { bad } else { n }
+    return x
+}
+fn t { n: i32 } -> ?bool { if n == 0 { return null }; return n > 0 }
+
+fn main { mut io: Io } {
+    let a = g{ n = 0 } ifnull g{ n = 0 } ifnull 3           // a ifnull (b ifnull 3)
+    let b = g{ n = 0 } ifnull r{ n = 0 } iferr 4            // a ifnull (b iferr 4)
+    let c = r{ n = 0 } iferr 2147483647 + 1 ifoverflow 5    // a iferr (b + 1 ifoverflow 5)
+    let d = g{ n = 0 } ifnull c + 1                         // a ifnull (c + 1)
+    _ = @fmt(&io, "{} {} {} {}\n", a, b, c, d)
+}
+
+//# stdout:
+//| 3 4 5 6

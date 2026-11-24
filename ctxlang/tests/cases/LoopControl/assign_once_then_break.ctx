@@ -1,0 +1,9 @@
+
+fn main { mut io: Io } {
+    let x: i32
+    while true { x = 7; break }
+    io::println_i64{ &io, n = x }
+}
+
+//# stdout:
+//| 7

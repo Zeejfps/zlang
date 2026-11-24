@@ -1,0 +1,4 @@
+fn f { p: *i32 } {
+    let q = p - 1  //~ error at 15: `-` is not defined on pointers
+}
+fn main {} {}

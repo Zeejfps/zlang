@@ -1,0 +1,2 @@
+const A: bool = 1 == null  //~ error at 19: only an optional can be compared with null, got {integer}
+fn main {} {}

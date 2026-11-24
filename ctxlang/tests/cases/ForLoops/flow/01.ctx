@@ -1,0 +1,35 @@
+// A `for` may run no turn: it ends no path, and assigns nothing for sure. Narrowing, a
+// handle's scope and shadowing work in its body as in a `while`'s.
+
+#task
+fn work { n: i32 } -> i32 { return n * 2 }
+fn known { xs: []?i32 } -> i32 {
+    let mut t = 0
+    for x in xs {
+        if x == null { continue }
+        t = t + x
+    }
+    return t
+}
+fn first { xs: []i32 } -> i32 {
+    for x in xs {
+        while true { return x }
+    }
+    return -1
+}
+fn main { mut io: Io, mut threads: Threads } {
+    let i = 100
+    let x = 7
+    for i in 0..2 { _ = @fmt(&io, "{} ", i) }
+    for x at i in [x, x + 1] { _ = @fmt(&io, "{}:{} ", i, x) }
+    let mut total = 0
+    for n in 0..3 {
+        let mut t: task::Task(i32)
+        task::start{ &threads, task = &t, run = work{ n, _ } }
+        total = total + task::wait{ &threads, task = &t }
+    }
+    _ = @fmt(&io, "{} {} {} {} {}\n", i, x, known{ xs = [1, null, 3] }, first{ xs = [] }, total)
+}
+
+//# stdout:
+//| 0 1 0:7 1:8 100 7 4 -1 6

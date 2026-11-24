@@ -1,0 +1,4 @@
+extern union X { a: i32, b: f32 }
+fn f {} -> X { return X{ a = 1 } }
+const A: X = f{}  //~ error at 15: const `A` can't hold an extern union
+fn main {} {}

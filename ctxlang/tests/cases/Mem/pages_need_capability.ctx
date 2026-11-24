@@ -1,0 +1,3 @@
+
+fn grab {} { mem::pages{ size = 10 } }  //~ error at 24: call to `mem::pages` is missing `mem` //~ error at 24: the result of `mem::pages` (?[]mut u8) is unused: use it, or discard it with `_ = ...`
+fn main { mut mem: Mem } { }

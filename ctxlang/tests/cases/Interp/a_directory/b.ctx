@@ -1,0 +1,1 @@
+namespace b { fn n {} -> i64 { return 7 } }

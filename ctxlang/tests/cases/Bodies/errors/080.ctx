@@ -1,0 +1,5 @@
+fn f {} {
+    let m = "x"
+    @panic(m)  //~ error at 12: @panic takes a string literal
+}
+fn main {} {}

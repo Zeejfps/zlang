@@ -1,0 +1,9 @@
+namespace w {
+    struct W { n: usize }
+    #convert
+    fn from_literal { s: strlit } -> W {
+        let other: W = "x"  //~ error at 24: string literal needs `w::from_literal` to run while compiling, and running `w::from_literal` needs this literal's value
+        return W{ n = s.bytes.len + other.n }
+    }
+}
+fn main {} { let x: w::W = "abc" }  //~ error at 28: string literal couldn't be computed while compiling

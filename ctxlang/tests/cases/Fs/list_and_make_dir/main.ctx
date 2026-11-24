@@ -1,0 +1,21 @@
+
+fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
+    let mut mem: [65536]u8
+    let mut heap = arena::new{ buf = mem[..] }
+
+    io::println_bool{ &io, n = match fs::make_dir{ &fs, path = args[1] } { ok => { true } err => { false } } }
+    let again = match fs::make_dir{ &fs, path = args[1] } { ok => { false } fs::exists => { true } else => { false } }
+    io::println_bool{ &io, n = again }
+    let names = fs::list{ &fs, &heap, realloc = arena::alloc, path = args[0] } iferr { return 1 }
+    let mut i: usize = 0
+    while i < names.len {
+        io::println{ &io, s = utf8::of{ chars = names[i] } }
+        i = i + 1
+    }
+    match fs::list{ &fs, &heap, realloc = arena::alloc, path = args[2] } {
+        ok            => { return 2 }
+        fs::not_found => { return 0 }
+        else          => { return 3 }
+    }
+
+}

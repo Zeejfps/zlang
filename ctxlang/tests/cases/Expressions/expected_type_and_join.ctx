@@ -1,0 +1,21 @@
+
+fn main { mut io: Io } {
+    let small: u8 = 3
+    let w = if true { small } else { 100 }      // the literal becomes u8
+    let wide: i64 = if false { small } else { -1 }
+    let o: ?i32 = if false { 5 } else { null }
+    let p = if true { 5 } else { null }           // joins to ?i32
+    let f: f64 = if true { 1.5 } else { 2.0 }
+    io::println_u64{ &io, n = w }
+    io::println_i64{ &io, n = wide }
+    io::println_bool{ &io, n = o == null }
+    io::println_bool{ &io, n = p != null }
+    io::println_f64{ &io, n = f }
+}
+
+//# stdout:
+//| 3
+//| -1
+//| true
+//| true
+//| 1.5

@@ -1,0 +1,39 @@
+
+struct Rng { s: u32 }
+struct Player { hp: i32 }
+struct Game { rng: Rng, player: Player, d: i32, xs: [3]i32 }
+struct World { g: Game }
+struct Pair { hp: i32, s: u32 }
+union Seen { both{ hp: i32, s: u32 }, none }
+fn deal { mut rng: Rng, mut player: Player, d: i32 } { rng.s = rng.s + 1; player.hp = player.hp + d }
+fn show { mut io: Io, hp: i32, s: u32 } { _ = @fmt(&io, "{} {}\n", hp, s) }
+fn count { len: usize } -> usize { return len }
+fn bump { mut s: u32 } -> u32 { s = s + 1; return s }
+fn world {} -> World { return World{ g = Game{ rng = Rng{ s = 1 }, player = Player{ hp = 10 }, d = 5, xs = [1, 2, 3] } } }
+
+fn main { mut io: Io } {
+    let mut w = world{}
+    deal{ &w.g.rng, &w.g.player, w.g.d }            // a call: rng, player and d
+    show{ &io, w.g.player.hp, w.g.rng.s }
+    let p = Pair{ w.g.player.hp, w.g.rng.s }        // a struct literal
+    let f = show{ &io, p.hp, _ }                    // a bind
+    f{ p.s }
+    let q = &w
+    deal{ &q.g.rng, &q.*.g.player, q.g.d }          // through a pointer, and its deref
+    match Seen::both{ w.g.player.hp, w.g.rng.s } {  // a variant's payload
+        both{ hp, s } => { show{ &io, hp, s } }
+        none => {}
+    }
+    let ws: [2]World = [world{}, w]
+    let i: usize = 1
+    show{ &io, ws[i].g.player.hp, ws[i].g.rng.s }   // an index on the way to the name
+    let all = ws[..]
+    _ = @fmt(&io, "{}\n", count{ all.len })         // a slice's len
+}
+
+//# stdout:
+//| 15 2
+//| 15 2
+//| 20 3
+//| 20 3
+//| 2

@@ -1,0 +1,23 @@
+
+union Shape { circle{ r: i32 }, square{ side: i32 }, rect{ w: i32, h: i32 }, dot, line }
+
+fn size { s: Shape } -> i32 {
+    return match s {
+        circle{ r = n } | square{ side = n } => { n }
+        rect{ w, h }                         => { w * h }
+        dot
+        | line                               => { 0 }
+    }
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = size{ s = Shape::circle{ r = 7 } } }
+    io::println_i64{ &io, n = size{ s = Shape::square{ side = 4 } } }
+    io::println_i64{ &io, n = size{ s = Shape::rect{ w = 2, h = 3 } } }
+    io::println_i64{ &io, n = size{ s = Shape::line } }
+}
+
+//# stdout:
+//| 7
+//| 4
+//| 6
+//| 0

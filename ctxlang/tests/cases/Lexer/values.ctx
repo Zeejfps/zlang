@@ -1,0 +1,11 @@
+
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = 0x_ff + 0b1_0 + 1_000 }
+    io::println_u64{ &io, n = '\'' + '\x41' }
+    io::println_f64{ &io, n = 1_0.2_5e1 }
+}
+
+//# stdout:
+//| 1257
+//| 104
+//| 102.5

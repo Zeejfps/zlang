@@ -1,0 +1,10 @@
+// A filter that no case's name contains selects nothing, which is a failure, not a pass.
+//# $ suite --cases cases nomatch other
+//# exit: 1
+//# stdout:
+//| cases: 0 run: no case's name contains `nomatch` or `other`, of 1
+// An option the runner doesn't know: its usage, and exit code 2.
+//# $ suite --nope
+//# exit: 2
+//# stderr:
+//| usage: ctxc run ctxlang/tools/suite [-- [--list] [-v] [--fresh] [--jobs N] [--cases DIR] [--corpus OUT] [FILTER...]]: runs the cases whose names contain a FILTER, or all of them

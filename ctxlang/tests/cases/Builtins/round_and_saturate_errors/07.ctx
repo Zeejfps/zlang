@@ -1,0 +1,3 @@
+fn main {} {
+    let m = @round_saturate(i8, "x")  //~ error at 33: @round_saturate rounds a float, got []u8
+}

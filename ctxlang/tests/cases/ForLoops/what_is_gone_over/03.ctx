@@ -1,0 +1,2 @@
+fn f { p: *i32 } { for x in p { } }  //~ error at 29: a `for` goes over a range `lo..hi`, a slice or an array, not *i32: a pointer has no length; go over `@slice(p, n)` for its `n` elements, which isn't checked
+fn main {} { let a = 1; f{ p = &a } }

@@ -1,0 +1,4 @@
+fn main {} {
+    let mut n: u32 = 0
+    @atomic_add(&n, 1, atomic::Order::relaxed)  //~ error at 5: the result of `@atomic_add` (u32) is unused: use it, or discard it with `_ = ...`
+}

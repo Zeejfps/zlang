@@ -1,0 +1,48 @@
+// An error in a generated file is at its path in the build directory, which a person
+// can open.
+//# $ ctxc run {dir}
+//# exit: 1
+//# stderr:
+//| {work:.}/gen/t/bad.ctx:1:41: error: expected i64, got bool
+//# file {work:.}/gen/t/bad.ctx:
+//| namespace bad { fn n {} -> i64 { return true } }
+
+// A file the driver can't replace is an error, though it compiles its own copy.
+//# write build.ctx:
+//|
+//| fn build { mut b: Build } {
+//|     let exe = build::exe{ &b, name = "t", root = "src" }
+//|     build::gen_file{ &b, exe, name = "bad", text = "namespace bad { fn n {} -> i64 { return 3 } }\n" }
+//| }
+//# remove {work:.}/gen/t/bad.ctx
+//# make dir {work:.}/gen/t/bad.ctx
+//# $ ctxc run {dir}
+//# exit: 1
+//# stderr:
+//| {work:.}/gen/t/bad.ctx: cannot write
+//# remove {work:.}/gen/t/bad.ctx
+
+// A build program never sees the files it generates, though they are there.
+//# write build.ctx:
+//|
+//| fn build { mut b: Build } {
+//|     let exe = build::exe{ &b, name = "t", root = "src" }
+//|     build::gen_file{ &b, exe, name = "own", text = "namespace own { fn n {} -> i64 { return 4 } }\n" }
+//| }
+//# write src/main.ctx:
+//| fn main { mut io: Io } { io::println_i64{ &io, n = own::n{} } }
+//# $ ctxc run {dir}
+//# stdout:
+//| 4
+//# write build.ctx:
+//|
+//| fn build { mut b: Build } {
+//|     let exe = build::exe{ &b, name = "t", root = "src" }
+//|     build::gen_file{ &b, exe, name = "own", text = "namespace own { fn n {} -> i64 { return 4 } }\n" }
+//| }
+//| fn peek {} -> i64 { return own::n{} }
+//# $ ctxc run {dir}
+//# exit: 1
+//# stderr:
+//| {dir}/build.ctx:6:28: error: unknown type or namespace `own`
+//# exists {work:.}/gen/t/own.ctx

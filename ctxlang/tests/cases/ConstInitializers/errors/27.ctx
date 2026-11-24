@@ -1,0 +1,2 @@
+const A: bool = true < false  //~ error at 22: `<` needs numbers, got bool
+fn main {} {}

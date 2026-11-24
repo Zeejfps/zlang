@@ -1,0 +1,13 @@
+union U { a, b{ x: i32, y: i32 } }
+fn bump { u: *mut U } {
+    match u {
+        a => {}
+        b{ &x, y } => { x = x + y }
+    }
+}
+fn main {} {
+    let mut u = U::b{ x = 1, y = 2 }
+    bump{ u = &u }
+}
+
+//# exit: 0

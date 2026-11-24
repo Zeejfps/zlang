@@ -1,0 +1,4 @@
+fn main {} {}
+
+//# needs: ctx-no-such-tool
+//# exit: 0

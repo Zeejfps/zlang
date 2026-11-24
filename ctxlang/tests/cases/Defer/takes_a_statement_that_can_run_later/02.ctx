@@ -1,0 +1,3 @@
+// Rule 1; each kind runs in class SmallSyntax.
+
+fn main { mut io: Io } { defer defer io::println{ &io, s = "x" } }  //~ error at 26: `defer` takes a call, an assignment, `_ = e`, an `if`, a `match`, a loop or a block

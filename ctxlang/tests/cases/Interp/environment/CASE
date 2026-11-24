@@ -1,0 +1,14 @@
+// The interpreter's program sees the environment `ctxc interp` was given: the same as the
+// compiled program sees of `ctxc run`'s.
+//# $ ctxc interp {dir}/env.ctx --
+//# env: CTX_TEST_ENV=seen
+//# exit: 0
+//# stdout:
+//| seen
+//| true
+//# $ ctxc run {dir}/env.ctx --
+//# env: CTX_TEST_ENV=seen
+//# exit: 0
+//# stdout:
+//| seen
+//| true

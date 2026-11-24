@@ -1,0 +1,2 @@
+fn convert { x: f32 } -> i64 { return @as(i64, x) }  //~ panic at 39: @as: inf is not representable in i64
+fn main {} { _ = convert{ x = 1.0 / 0.0 } }

@@ -1,0 +1,9 @@
+// fs::read_all of a file larger than one read (10000 bytes, byte i is i % 251: their sum is
+// printed), and of an empty one.
+//# program: main.ctx
+//# args: {dir}/tmp/big.bin {dir}/tmp/empty.bin
+//# interp: cannot run
+//# stdout:
+//| 10000
+//| 1245780
+//| 0

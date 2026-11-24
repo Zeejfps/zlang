@@ -1,0 +1,16 @@
+
+fn main { mut io: Io } {
+    let x: u8 = 250
+    io::println_u64{ &io, n = x +% 10 }
+    io::println_i64{ &io, n = @trunc(i8, 200) }
+    io::println_i64{ &io, n = @as(i32, 3.9) }
+    io::println_i64{ &io, n = @as(i32, -3.9) }
+    io::println_f64{ &io, n = @as(f64, 7) }
+}
+
+//# stdout:
+//| 4
+//| -56
+//| 3
+//| -3
+//| 7.0

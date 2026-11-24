@@ -1,0 +1,2 @@
+fn make {} -> [3]i32 { return [1, 2, 3] }
+fn main {} { for x in make{} { } }  //~ error at 27: a `for` goes over an array through a view of it, which needs a place: keep the array in a `let` first, and go over that

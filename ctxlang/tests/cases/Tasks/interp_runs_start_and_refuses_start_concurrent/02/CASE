@@ -1,0 +1,6 @@
+// The interpreter runs `start`'s tasks at once, and stops at start_concurrent, which
+// it can't keep the promise of. Here, start_concurrent: `ctxc interp` refuses the program.
+//# $ ctxc interp main.ctx
+//# exit: 1
+//# stderr:
+//| ctxc interp: task::start_concurrent and task::start_blocking is not supported by interp

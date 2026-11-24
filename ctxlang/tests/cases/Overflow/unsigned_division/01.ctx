@@ -1,0 +1,11 @@
+// An unsigned `/` can't overflow, but what its operands cover is covered, once the
+// types of the literals are settled.
+
+fn main { mut io: Io } {
+    let a: u32 = 4000000000
+    let b: u32 = 2
+    _ = @fmt(&io, "{}\n", (a + a) / b ifoverflow 7)
+}
+
+//# stdout:
+//| 7

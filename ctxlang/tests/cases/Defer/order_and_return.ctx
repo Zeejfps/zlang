@@ -1,0 +1,24 @@
+
+fn say { mut io: Io, n: i64 } { io::println_i64{ &io, n } }
+fn early { mut io: Io, stop: bool } -> i64 {
+    defer say{ &io, n = 1 }
+    defer { say{ &io, n = 2 }; say{ &io, n = 3 } }
+    if stop { return 10 }
+    say{ &io, n = 4 }
+    return 20
+}
+fn main { mut io: Io } {
+    say{ &io, n = early{ &io, stop = true } }
+    say{ &io, n = early{ &io, stop = false } }
+}
+
+//# stdout:
+//| 2
+//| 3
+//| 1
+//| 10
+//| 4
+//| 2
+//| 3
+//| 1
+//| 20

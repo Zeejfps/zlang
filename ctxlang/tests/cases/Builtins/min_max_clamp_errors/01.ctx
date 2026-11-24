@@ -1,0 +1,5 @@
+fn main {} {
+    let a: i32 = 1
+    let u: u32 = 2
+    let m = @min(a, u)  //~ error at 13: @min needs two numbers of one type, got i32 and u32: convert one with @as
+}

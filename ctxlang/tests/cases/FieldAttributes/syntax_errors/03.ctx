@@ -1,0 +1,6 @@
+struct K {}
+struct S {
+    a: i32,
+    #K
+}  //~ error at 1: expected a field after an attribute, found '}'
+fn main {} {}

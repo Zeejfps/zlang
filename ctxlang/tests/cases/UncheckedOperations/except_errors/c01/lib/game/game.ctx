@@ -1,0 +1,13 @@
+
+namespace game {
+    fn sum { s: []u8 } -> u64 {
+        let cs: c::String = "xy"
+        let b = raw::Bits{ u = 0 }
+        let mut buf: [64]u8
+        let mut heap = arena::new{ buf = buf[..] }
+        let mut xs = list::new(u8){ realloc = arena::alloc, &heap }
+        try! list::push{ list = &xs, item = s[1] }
+        let n = list::items{ list = xs }[0] + raw::second{ p = s.ptr } + raw::view{ p = s.ptr, n = 2 }.len + c::len{ s = cs }
+        return n + @as(u64, raw::abs{ n = -1 }) + @as(u64, b.f) + @addr(s.ptr) % 1
+    }
+}

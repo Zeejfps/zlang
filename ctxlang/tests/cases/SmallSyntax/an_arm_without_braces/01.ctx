@@ -1,0 +1,53 @@
+
+error bad
+struct P { x: i32, y: i32 }
+struct R { r: !i32 }
+union K { a, b, c }
+fn say { mut io: Io, s: utf8::String } { io::println{ &io, s } }
+fn mk { n: i32 } -> !P { if n < 0 { return bad }; return P{ x = n, y = n * 2 } }
+fn rr { n: i32 } -> R { let r: !i32 = n; return R{ r } }
+
+fn name { k: K } -> utf8::String {
+    return match k {
+        a => "A"                                    // ends with its line,
+        b => "B",                                   // at a comma,
+        c => { "C" }                                // or is a block, as before
+    }
+}
+fn sign { n: i32 } -> i32 {
+    match n {
+        0 => return 0
+        -1 => return -1                             // a `-` and a literal begin the next arm
+        1 | 2 => return 1
+        else => {}
+    }
+    let v = match n {
+        3 => n
+            - 1                                     // an operator goes on with the arm's value
+        -8..=-2 => 0 - n
+        -9 | -10 => 99
+        else => if n > 100 { 100 } else { n * 2 }
+    }
+    return v
+}
+fn main { mut io: Io } {
+    let mut total = 0
+    for k in [K::a, K::b, K::c] {
+        match k {
+            a => total = total + 1                  // an assignment
+            b => continue
+            c => say{ &io, s = name{ k } }          // a call
+        }
+        say{ &io, s = name{ k } }
+    }
+    let one = match K::b { a => 1, b => 2, c => 3, }
+    _ = @fmt(&io, "{} {}", total, one)
+    for n in [0, -1, 2, 3, -5, -9, 6, 500] { _ = @fmt(&io, " {}", sign{ n }) }
+    io::println{ &io, s = "" }
+}
+
+//# stdout:
+//| A
+//| C
+//| C
+//| 1 2 0 -1 1 2 5 99 12 100

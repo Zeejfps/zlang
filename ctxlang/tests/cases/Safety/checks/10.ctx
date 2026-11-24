@@ -1,0 +1,9 @@
+fn first { s: []u8, k: u8 } -> u8 { return s[0] + k }
+fn f {} -> u8 {
+    let mut h = first{ s = "a", _ }
+    if true { h = first{ s = "b", _ } }
+    return h{ k = 1 }
+}
+fn main {} {}
+
+//# exit: 0

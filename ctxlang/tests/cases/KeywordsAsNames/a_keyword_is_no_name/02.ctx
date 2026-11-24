@@ -1,0 +1,5 @@
+
+struct S { a: i32 }
+fn f { a: i32 } -> i32 { return a }
+fn g {} { let mut try = 1 }  //~ error at 19: expected a name, found 'try': `try` is a keyword and can't be a name; use another, such as `try_`
+fn main {} {}

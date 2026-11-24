@@ -1,0 +1,50 @@
+// With the limit at 0, `start` runs a task at once, on the caller's thread; with the
+// default, on a worker.
+
+#task
+fn nap { mut threads: Threads, ns: u64 } -> !u64 {
+    thread::sleep{ &threads, nanoseconds = ns }
+    try task::check_cancelled{ &threads }
+    return 7
+}
+
+#task
+fn same_thread { mut threads: Threads, id: u64 } -> !bool {
+    return thread::current_id{ &threads } == id
+}
+
+#task
+fn fails_after { mut threads: Threads, ns: u64 } -> ! {
+    thread::sleep{ &threads, nanoseconds = ns }
+    try task::check_cancelled{ &threads }
+    return task::out_of_resources
+}
+
+fn show(T) { mut io: Io, r: !T, what: []u8 } {
+    match r {
+        ok => { _ = @fmt(&io, "{}: ok\n", what) }
+        err{ error } => {
+            match error {
+                task::cancelled => { _ = @fmt(&io, "{}: cancelled\n", what) }
+                else => { _ = @fmt(&io, "{}: failed\n", what) }
+            }
+        }
+    }
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let me = thread::current_id{ &threads }
+    let mut a: task::Task(!bool)
+    task::start{ &threads, task = &a, run = same_thread{ &threads, id = me, _ } }
+    io::println_bool{ &io, n = task::wait{ &threads, task = &a } iferr { true } }
+    task::set_limit{ &threads, workers = 0 }
+    let mut b: task::Task(!bool)
+    task::start{ &threads, task = &b, run = same_thread{ &threads, id = me, _ } }
+    io::println_bool{ &io, n = task::wait{ &threads, task = &b } iferr { false } }
+    return 0
+}
+
+//# interp: off: the interpreter runs a `start`ed task at once, on the caller's thread, whatever the limit
+//# stdout:
+//| false
+//| true

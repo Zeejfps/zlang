@@ -1,0 +1,28 @@
+
+fn show { mut io: Io, pages: []u32 } {
+    let mut sum: u32 = 0
+    let mut i: usize = 0
+    while i < pages.len { sum = sum + pages[i]; i = i + 1 }
+    _ = @fmt(&io, "{} {}\n", pages.len, sum)
+}
+
+struct Book { pages: []u32 }
+fn main { mut io: Io } {
+    show{ &io, pages = [1, 2, 3] }
+    let b = Book{ pages = [4, 5] }
+    show{ &io, pages = b.pages }
+    let o: ?[]u32 = [10, 20]
+    if o != null { show{ &io, pages = o } }
+    show{ &io, pages = [6; 4] }
+    show{ &io, pages = [] }
+    let xs: []u32 = [7]
+    show{ &io, pages = xs }
+}
+
+//# stdout:
+//| 3 6
+//| 2 9
+//| 2 30
+//| 4 24
+//| 0 0
+//| 1 7

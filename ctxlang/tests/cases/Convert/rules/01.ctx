@@ -1,0 +1,3 @@
+#convert  //~ error at 1: `convert` applies only to a fn
+struct S {}
+fn main {} {}

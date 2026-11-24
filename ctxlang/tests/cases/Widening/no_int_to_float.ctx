@@ -1,0 +1,1 @@
+fn main { mut io: Io } { let a: i32 = 1; let b: f64 = a }  //~ error at 55: expected f64, got i32

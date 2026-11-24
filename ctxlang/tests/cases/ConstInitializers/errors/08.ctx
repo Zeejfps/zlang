@@ -1,0 +1,3 @@
+struct P(T) { a: T }
+const A: P(u8) = P{ a = 300 }  //~ error at 25: literal 300 does not fit in u8
+fn main {} {}

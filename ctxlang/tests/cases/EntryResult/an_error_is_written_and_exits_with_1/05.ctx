@@ -1,0 +1,8 @@
+fn main { mut fs: Fs } -> ! {
+    _ = try fs::size{ &fs, path = "no/such/file" }
+}
+
+//# interp: cannot run
+//# exit: 1
+//# stderr:
+//| error: fs::not_found

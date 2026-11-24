@@ -1,0 +1,3 @@
+
+fn helper { path: []u8 } { fs::remove{ path } }  //~ error at 38: call to `fs::remove` is missing `fs` //~ error at 38: the result of `fs::remove` (!) is unused: use it, or discard it with `_ = ...`
+fn main { mut fs: Fs } { }

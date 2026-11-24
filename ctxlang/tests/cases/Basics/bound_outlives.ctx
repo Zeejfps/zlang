@@ -1,0 +1,10 @@
+
+fn count { mut n: i32, by: i32 } { n = n + by }
+fn main { mut io: Io } {
+    let mut c = 0
+    let mut f = count{ n = &c, _ }
+    if true {
+        let mut d = 0
+        f = count{ n = &d, _ }  //~ error at 9: bound function stored in `f` holds `d`, which does not live as long
+    }
+}

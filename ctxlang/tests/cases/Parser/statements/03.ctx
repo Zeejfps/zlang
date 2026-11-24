@@ -1,0 +1,3 @@
+fn main {} {
+    let x  //~ error at 5: `let x` needs a type or an initializer
+}

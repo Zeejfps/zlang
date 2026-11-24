@@ -1,0 +1,32 @@
+
+fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
+    let mut mem: [65536]u8
+    let mut heap = arena::new{ buf = mem[..] }
+
+    let path = args[0]
+    let w = fs::open{ &fs, path, mode = fs::Mode::create } iferr { return 1 }
+    let a = "abc"
+    _ = fs::write{ &fs, file = w, bytes = a[..] }
+    io::println_bool{ &io, n = match fs::close{ &fs, file = w } { ok => { true } err => { false } } }
+    match fs::open{ &fs, path, mode = fs::Mode::append } {
+        ok{ value } => {
+            let d = "de"
+            _ = fs::write{ &fs, file = value, bytes = d[..] }
+        }
+        err => {}
+    }
+    let r = fs::open{ &fs, path, mode = fs::Mode::read } iferr { return 1 }
+    defer _ = fs::close{ &fs, file = r }
+    let mut buf: [2]u8
+    let mut total: usize = 0
+    while true {
+        let n = fs::read{ &fs, file = r, into = buf[..] } iferr { return 1 }
+        if n == 0 { break }
+        io::print{ &io, s = utf8::of{ chars = buf[..][..n] } }
+        total = total + n
+    }
+    io::newline{ &io }
+    io::println_u64{ &io, n = total }
+    return 0
+
+}

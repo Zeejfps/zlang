@@ -1,0 +1,12 @@
+
+namespace ecs {
+    struct key {}
+    struct cascade { depth: i32, deep: bool }
+    struct by { name: []u8, n: u32 }
+}
+const DEPTH: i32 = 2 + 1
+extern union X {
+    #c::symbol{ name = "x" }  //~ error at 5: `c::symbol` on a field applies only to a capability's C variable, `extern name: T`
+    a: i32
+}
+fn main {} {}

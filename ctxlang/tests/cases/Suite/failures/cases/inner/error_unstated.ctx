@@ -1,0 +1,4 @@
+fn main {} {
+    let x: i32 = true  //~ error at 18: expected i32, got bool
+    let y: bool = 1
+}

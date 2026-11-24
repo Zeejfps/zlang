@@ -1,0 +1,14 @@
+
+union Result(T, E) { ok{ value: T }, err{ error: E } }
+union E { odd{ n: i32 }, negative }
+fn half { n: i32 } -> Result(i32, E) {
+    if n < 0 { return Result::err{ error = E::negative } }
+    if n % 2 != 0 { return Result::err{ error = E::odd{ n } } }
+    return Result::ok{ value = n / 2 }
+}
+
+union T { a, b, c }
+fn main {} {
+    let t = T::a
+    let a = t else b { return }  //~ error at 22: `else b` would skip c; a pattern after `else` must name the only other variant
+}

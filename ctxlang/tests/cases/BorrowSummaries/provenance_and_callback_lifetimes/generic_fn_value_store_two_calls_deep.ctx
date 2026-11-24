@@ -1,0 +1,12 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// generic fn value store two calls deep: rejected. It is never run: it would use a dangling pointer.
+
+struct T(K) { h: fn{ key: K, s: []u8 }, items: [][]u8 }
+fn call(K) { t: T(K), key: K, s: []u8 } { t.h{ key, s } }
+fn get(K) { t: T(K), key: K, s: []u8 } -> []u8 { call{ t, key, s }; return t.items[0] }
+fn keep { key: *mut []u8, s: []u8 } { key.* = s }
+fn leak { items: [][]u8, slot: *mut []u8 } -> []u8 {
+    let buf: [3]u8 = [1,2,3]
+    return get{ t = T(*mut []u8){ h = keep, items }, key = slot, s = buf[..] }  //~ error at 5: returned value holds the address of local `buf`
+}
+fn main {} { let items: [1][]u8 = ["okay"]; let mut x: []u8 = "a"; _ = leak{ items = items[..], slot = &x } }

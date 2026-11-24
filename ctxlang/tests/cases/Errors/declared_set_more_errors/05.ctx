@@ -1,0 +1,8 @@
+error a
+error b
+fn g {} -> !u64 { return b }
+fn main {} {
+    let mut r: error(a)!u64 = 1
+    r = g{}  //~ error at 10: the errors of `g` include `b`, which isn't one of error(a): a declared set holds only its own errors
+    _ = r
+}

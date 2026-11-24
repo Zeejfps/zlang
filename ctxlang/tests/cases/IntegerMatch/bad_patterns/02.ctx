@@ -1,0 +1,9 @@
+
+fn f { b: u8 } -> i32 {
+    match b {
+300 => {}  //~ error at 1: literal 300 does not fit in u8
+else => {}
+    }
+    return 0
+}
+fn main {} { _ = f{ b = 1 } }

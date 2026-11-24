@@ -1,0 +1,5 @@
+const C: i32 = 1
+fn f {} {
+    _ = C{}  //~ error at 9: `C` has type i32 and cannot be called
+}
+fn main {} {}

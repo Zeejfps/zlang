@@ -1,0 +1,2 @@
+struct S { a: i32::x }  //~ error at 15: `i32` is not a namespace
+fn main {} {}

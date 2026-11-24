@@ -1,0 +1,26 @@
+union Shape { circle{ r: i32 }, square{ side: i32 } }
+
+fn area { s: Shape, o: ?i32 } -> i32 {
+    let k = 2
+    let some{ value = extra } = o else { return 0 }
+    match s {
+        circle{ r } => { return r * k + extra }
+        square{ side } => {
+            let a = side * side
+            return a
+        }
+    }
+}
+
+fn narrow { s: Shape, o: ?i32 } -> i32 {
+    if o == null { return 0 }
+    let y = o + 1
+    if s is circle{ r } and r > 1 { return r }
+    while y > 0 {
+        let t = y
+        return t
+    }
+    return y
+}
+
+fn main {} {}

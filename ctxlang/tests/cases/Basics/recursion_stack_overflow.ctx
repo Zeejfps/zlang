@@ -1,0 +1,7 @@
+
+fn r { n: u64 } -> u64 { let mut big: [1024]u64; return r{ n = n + 1 } }
+fn main { mut io: Io } { let x = r{ n = 0 } }
+
+//# stack: 1048576
+//# interp: cannot run
+//# panic: program: panic: stack overflow

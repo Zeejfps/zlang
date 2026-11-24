@@ -1,0 +1,10 @@
+#pure
+#c::symbol{ name = "sqrt" }
+extern fn rootf { x: f32 } -> f32
+const A: f32 = rootf{ x = 9.0 }
+
+// A program's own declaration of one of the C library's math functions runs while
+// compiling too: it is the same C function. Another extern fn still stops a const.
+//# errors:
+//| 04.ctx:4:21: error: const `A` calls extern fn `rootf`, which can't run while compiling
+//| 04.ctx:1:1: error: no `fn main` entry point

@@ -1,0 +1,27 @@
+
+struct Color { r: f32, g: f32, b: f32, a: f32 }
+struct DepthStencil { depth: f32, stencil: u32 }
+extern union ClearValue { color: Color, depth_stencil: DepthStencil }
+struct Attachment { kind: u32, value: ClearValue, last: u8 }
+#pure
+extern fn ctxtest_size {} -> u64
+#pure
+extern fn ctxtest_align {} -> u64
+#pure
+extern fn ctxtest_attachment_size {} -> u64
+#pure
+extern fn ctxtest_last_offset {} -> u64
+#pure
+extern fn ctxtest_depth { d: f32, s: u32 } -> ClearValue
+#pure
+extern fn ctxtest_sum { v: ClearValue } -> f32
+#pure
+extern fn ctxtest_attachment { a: Attachment } -> u32
+
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = ctxtest_size{} - @size_of(ClearValue) }
+    io::println_u64{ &io, n = ctxtest_align{} - @align_of(ClearValue) }
+    io::println_u64{ &io, n = ctxtest_attachment_size{} - @size_of(Attachment) }
+    io::println_u64{ &io, n = @size_of(ClearValue) }
+    io::println_u64{ &io, n = ctxtest_last_offset{} }
+}

@@ -1,0 +1,10 @@
+fn first(T) { a: T, b: T } -> T { return a }
+fn wrap(T) { v: T } -> ?T { return v }
+fn main {} {
+    let x: i64 = first{ a = 1, b = 2 }
+    let o = wrap{ v = true }
+    if o != null { _ = first{ a = o, b = false } }
+    _ = x
+}
+
+//# exit: 0

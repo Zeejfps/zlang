@@ -1,0 +1,8 @@
+
+fn view {} -> []u8 { return "same" }
+fn main { mut io: Io } {
+    io::println_bool{ &io, n = view{}.ptr == view{}.ptr }
+}
+
+//# stdout:
+//| true

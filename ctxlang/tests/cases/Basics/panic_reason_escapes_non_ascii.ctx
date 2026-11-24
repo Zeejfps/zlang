@@ -1,0 +1,1 @@
+fn main { mut io: Io } { @panic("caf\xe9") }  //~ panic at 26: caf\xe9

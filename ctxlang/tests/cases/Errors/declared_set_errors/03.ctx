@@ -1,0 +1,6 @@
+error a
+error b
+error c
+fn f {} -> error(a, b)!u64 { return a }
+fn k {} -> error(a)! { _ = try f{} }  //~ error at 28: `try` passes up error(a, b), not all of which are in error(a): a declared set holds only its own errors
+fn main {} { _ = k{} }

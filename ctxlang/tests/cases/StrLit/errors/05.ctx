@@ -1,0 +1,2 @@
+fn f {} { let s = strlit{ bytes = "x" } }  //~ error at 19: `strlit` is not a struct
+fn main {} {}

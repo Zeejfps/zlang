@@ -1,0 +1,75 @@
+
+#task
+fn nap { mut threads: Threads, ns: u64 } -> !u64 {
+    thread::sleep{ &threads, nanoseconds = ns }
+    try task::check_cancelled{ &threads }
+    return 7
+}
+
+#task
+fn same_thread { mut threads: Threads, id: u64 } -> !bool {
+    return thread::current_id{ &threads } == id
+}
+
+#task
+fn fails_after { mut threads: Threads, ns: u64 } -> ! {
+    thread::sleep{ &threads, nanoseconds = ns }
+    try task::check_cancelled{ &threads }
+    return task::out_of_resources
+}
+
+fn show(T) { mut io: Io, r: !T, what: []u8 } {
+    match r {
+        ok => { _ = @fmt(&io, "{}: ok\n", what) }
+        err{ error } => {
+            match error {
+                task::cancelled => { _ = @fmt(&io, "{}: cancelled\n", what) }
+                else => { _ = @fmt(&io, "{}: failed\n", what) }
+            }
+        }
+    }
+}
+
+#task
+fn drain { mut proc: Proc, pipe: proc::Pipe } -> !usize {
+    let mut buf: [4096]u8
+    let mut total: usize = 0
+    while true {
+        let n = try proc::read{ &proc, pipe, into = buf[..] }
+        if n == 0 { break }
+        total = total + n
+    }
+    return total
+}
+
+#task
+fn wait_child { mut proc: Proc, mut child: proc::Child } -> !i32 {
+    return proc::wait{ &proc, &child }
+}
+
+fn main { mut io: Io, mut proc: Proc, mut threads: Threads, args: Args } -> i32 {
+    let options = proc::Options{ stdout = proc::Stdio::pipe, stderr = proc::Stdio::pipe, .. }
+    let mut child = proc::spawn{ &proc, argv = [args[0], "flood", "2000"], options } iferr { return 1 }
+    let out_pipe = child.stdout ifnull { return 2 }
+    let err_pipe = child.stderr ifnull { return 2 }
+    let mut errs: task::Task(!usize)
+    task::start_concurrent{ &threads, task = &errs, run = drain{ &proc, pipe = err_pipe, _ } } iferr { return 3 }
+    let outs = drain{ &proc, pipe = out_pipe } iferr { 0 }
+    let n = task::wait{ &threads, task = &errs } iferr { 0 }
+    _ = proc::wait{ &proc, &child } iferr { 0 }
+    _ = @fmt(&io, "{} {}\n", outs, n)
+
+    let mut sleeper = proc::spawn{ &proc, argv = [args[0], "sleep", "30000", "0"], options } iferr { return 4 }
+    let sout = sleeper.stdout ifnull { return 5 }
+    let mut r: task::Task(!usize)
+    task::start_concurrent{ &threads, task = &r, run = drain{ &proc, pipe = sout, _ } } iferr { return 6 }
+    thread::sleep{ &threads, nanoseconds = 100000000 }
+    show(usize){ &io, r = task::cancel{ &threads, task = &r }, what = "read" }
+    let mut w: task::Task(!i32)
+    task::start_concurrent{ &threads, task = &w, run = wait_child{ &proc, child = &sleeper, _ } } iferr { return 7 }
+    thread::sleep{ &threads, nanoseconds = 100000000 }
+    show(i32){ &io, r = task::cancel{ &threads, task = &w }, what = "wait" }
+    proc::kill{ &proc, child = sleeper } iferr {}
+    io::println_i64{ &io, n = proc::wait{ &proc, child = &sleeper } iferr { -1 } }
+    return 0
+}

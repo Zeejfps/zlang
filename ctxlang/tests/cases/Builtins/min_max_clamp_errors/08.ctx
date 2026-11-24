@@ -1,0 +1,5 @@
+fn main {} {
+    let m0: i32 = 0
+    let p = &m0
+    let m = @clamp(p, p, p)  //~ error at 13: @clamp needs numbers, got *i32
+}

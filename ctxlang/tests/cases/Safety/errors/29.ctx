@@ -1,0 +1,12 @@
+fn inc { mut n: i32 } { n = n + 1 }
+fn f {} {
+    let mut m = 0
+    let mut h: &fn{} = inc{ n = &m, _ }
+    while true {
+        let mut n = 0
+        let k = inc{ &n, _ }
+        h = k  //~ error at 9: bound function stored in `h` holds `n`, which does not live as long
+        break
+    }
+}
+fn main {} {}

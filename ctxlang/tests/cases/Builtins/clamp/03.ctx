@@ -1,0 +1,7 @@
+// §13: `@clamp(x, lo, hi)`, the bounds widening with the value; a NaN value stays NaN,
+// and bounds out of order panic, or are an error where both are integer literals.
+
+fn main { mut io: Io } {
+    let x: f64 = 0.5
+    io::println_f64{ &io, n = @clamp(x, math::NAN, 1.0) }  //~ panic at 31: @clamp: the low bound is above the high bound, or one of them is NaN
+}

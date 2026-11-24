@@ -1,0 +1,13 @@
+union U { a, b{ x: i32 } }
+fn f { u: U } -> i32 {
+    let x = match u {
+        a => { @panic("no") }
+        b{ x } => { x }
+    }
+    return x
+}
+fn main {} {
+    _ = f{ u = U::b{ x = 1 } }
+}
+
+//# exit: 0

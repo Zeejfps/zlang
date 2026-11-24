@@ -1,0 +1,13 @@
+struct L { len: i32, cap: i32 }
+struct In { a: i32, l: L }
+struct E { n: i32, list: L, arr: [3]i32, sub: In }
+fn push { mut l: L } { l.len = l.len + 1 }
+fn count { l: L } -> i32 { return l.len }
+fn step { mut e: E, note: &fn{} } {
+    e.n = e.list.len
+    note{}
+}
+fn t { mut e: E } {
+    step{ &e, note = push{ l = &e.list, _ } }  //~ error at 9: `e` overlaps a place held by `note`: `step` reads `e.list.len` through its field `e` at 7:11, and `note` may change `e.list` whenever it is called; pass one of them, or change `step` to leave `e.list.len` to `note`
+}
+fn main {} {}

@@ -1,0 +1,7 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// recursive real borrow: rejected. It is never run: it would use a dangling pointer.
+
+fn first { s: []u8, n: i32 } -> []u8 { if n > 0 { return second{ s, n = n - 1 } }; return s }
+fn second { s: []u8, n: i32 } -> []u8 { return first{ s, n } }
+fn load {} -> []u8 { let buf: [3]u8 = [1,2,3]; return first{ s = buf[..], n = 1 } }  //~ error at 48: returned value holds the address of local `buf`
+fn main {} { _ = load{} }

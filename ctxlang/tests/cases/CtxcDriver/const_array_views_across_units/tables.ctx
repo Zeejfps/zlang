@@ -1,0 +1,6 @@
+
+namespace tables {
+    const C: [3]i32 = [10, 20, 30]
+    fn view {} -> []i32 { return C[1..] }
+    fn pointer {} -> *i32 { return C[..].ptr }
+}

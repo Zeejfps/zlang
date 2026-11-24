@@ -1,0 +1,20 @@
+// Inside its namespace an error needs no path.
+
+namespace fsx {
+    error not_found
+    fn open { name: []u8 } -> !i32 {
+        if name.len == 0 { return not_found }
+        return 3
+    }
+    fn missing { name: []u8 } -> bool {
+        return match open{ name } { ok => { false } not_found => { true } }
+    }
+}
+fn main { mut io: Io } {
+    io::println_bool{ &io, n = fsx::missing{ name = "" } }
+    io::println_bool{ &io, n = fsx::missing{ name = "f" } }
+}
+
+//# stdout:
+//| true
+//| false

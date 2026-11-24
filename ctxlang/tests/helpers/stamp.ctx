@@ -1,0 +1,71 @@
+// Whether a file was written since a moment, for the cases that say a tool leaves a file as it
+// is (cases/CtxcDriver): by the file's time of modification, as C's `stat` gives it. A case
+// builds it, `//# build stamp: {home}/tests/helpers/stamp.ctx`.
+//
+//   save FILE STAMP    sets FILE's time of modification to a day in 2002, writes what the OS
+//                      then says of FILE to the file STAMP, and prints `saved`
+//   same FILE STAMP    prints `not written since` if FILE's time of modification, and of its
+//                      status's change, are as they were at the `save`, or `written since`
+//
+// The time is set to the past, so that a write a moment later shows whatever the clock's
+// resolution is (C's `stat` gives seconds on Windows). Where C keeps the time in what `stat`
+// fills differs from platform to platform, so `save` finds it: the bytes that change when it
+// sets another time are the time's, and STAMP holds which they are. The time of last access is
+// not among them: a read doesn't count.
+
+#c::symbol{ name = "stat" }
+extern fn file_status { mut fs: Fs, path: c::String, into: *mut [512]u8 } -> i32
+
+// `times` is C's `struct utimbuf`: the times of access and of modification, in seconds.
+#c::symbol{ name = "utime" }
+extern fn set_times { mut fs: Fs, path: c::String, times: *[2]i64 } -> i32
+
+const THEN: i64 = 1000000000        // 2001-09-09
+const LATER: i64 = 1034560000       // 400 days after it: 2002-10-14
+
+fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
+    if args.len != 3 { return 64 }
+    let mut pages: [8192]u8
+    let mut heap = arena::new{ buf = pages[..] }
+    let path = c::copy{ realloc = arena::alloc, &heap, bytes = args[1] } iferr { return 64 }
+    if slice::eq_bytes{ a = args[0], b = "save" } {
+        let mut first: [512]u8
+        let mut second: [512]u8
+        let then: [2]i64 = [THEN, THEN]
+        let later: [2]i64 = [THEN, LATER]
+        if set_times{ &fs, path, times = &then } != 0 or file_status{ &fs, path, into = &first } != 0 { return 65 }
+        if set_times{ &fs, path, times = &later } != 0 or file_status{ &fs, path, into = &second } != 0 { return 65 }
+        // The stamp: what stat said, then a byte for each of its bytes, 1 if it is a time's.
+        // A time is whole words of 8 bytes.
+        let mut stamp: [1024]u8
+        let mut found = false
+        for i in 0..512 {
+            stamp[i] = second[i]
+            if first[i] != second[i] {
+                found = true
+                let word = i / 8 * 8
+                for k in word..word + 8 { stamp[512 + k] = 1 }
+            }
+        }
+        if not found { return 66 }
+        _ = fs::write_all{ &fs, path = args[2], bytes = stamp[..] } iferr { return 65 }
+        io::println{ &io, s = "saved" }
+        return 0
+    }
+    if slice::eq_bytes{ a = args[0], b = "same" } {
+        let mut stamp: [1024]u8
+        let file = fs::open{ &fs, path = args[2], mode = fs::Mode::read } iferr { return 65 }
+        let n = fs::read{ &fs, file, into = stamp[..] } iferr { return 65 }
+        _ = fs::close{ &fs, file } iferr { return 65 }
+        if n != 1024 { return 65 }
+        let mut now: [512]u8
+        if file_status{ &fs, path, into = &now } != 0 { return 65 }
+        let mut same = true
+        for i in 0..512 {
+            if stamp[512 + i] == 1 and stamp[i] != now[i] { same = false }
+        }
+        io::println{ &io, s = if same { "not written since" } else { "written since" } }
+        return 0
+    }
+    return 64
+}

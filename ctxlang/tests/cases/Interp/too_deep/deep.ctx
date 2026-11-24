@@ -1,0 +1,3 @@
+
+fn down { n: u64 } -> u64 { return down{ n = n + 1 } + 1 }
+fn main { mut io: Io } { io::println_u64{ &io, n = down{ n = 0 } } }

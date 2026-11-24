@@ -1,0 +1,3 @@
+fn main {} {
+    for x of xs {}  //~ error at 11: expected `in` after a `for`'s name, as in `for x in xs` or `for i in 0..n`, found 'of'
+}

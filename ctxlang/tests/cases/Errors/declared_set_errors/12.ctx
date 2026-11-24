@@ -1,0 +1,10 @@
+error a
+error b
+error c
+type R = error(a)!u64
+type F = fn{} -> R
+fn da {} -> error(a)!u64 { return a }
+fn main {} {
+    let f: F = da
+    match f{} { ok => {} a => {} b => {} }  //~ error at 34: error `b` can't happen here: this fails only with a
+}

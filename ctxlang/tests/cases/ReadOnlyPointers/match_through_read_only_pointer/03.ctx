@@ -1,0 +1,7 @@
+
+union Shape { circle{ r: i32 }, square{ side: i32 }, rect{ w: i32, h: i32 }, dot, line }
+
+fn main { mut io: Io } {
+    let s = Shape::circle{ r = 3 }
+    match &s { circle{ &r } => { r = 4 } else => { } }  //~ error at 34: cannot assign to `r`: it is bound through a read-only pointer
+}

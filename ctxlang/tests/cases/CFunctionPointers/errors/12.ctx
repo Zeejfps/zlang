@@ -1,0 +1,1 @@
+fn main {} { let f = @cast(fn{}, 0) }  //~ error at 22: @cast needs a pointer or extern fn target type, got fn{} //~ error at 34: @cast needs a pointer or extern fn argument

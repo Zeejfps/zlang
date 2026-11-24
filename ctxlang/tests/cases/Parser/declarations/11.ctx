@@ -1,0 +1,2 @@
+fn f(T {} {}  //~ error at 8: expected ')', found '{'
+fn main {} {}

@@ -1,0 +1,9 @@
+// §14: `&x` of a `for &x` points into what is gone over, and an element's copy holds
+// what the array's elements hold.
+
+fn f {} -> *i32 {
+    let a = [1, 2]
+    for &x in a { return &x }  //~ error at 19: returned value holds the address of local `a`
+    @panic()
+}
+fn main {} { _ = f{} }

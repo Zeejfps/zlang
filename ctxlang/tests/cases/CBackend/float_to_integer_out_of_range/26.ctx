@@ -1,0 +1,2 @@
+fn convert { x: f32 } -> u16 { return @as(u16, x) }  //~ panic at 39: @as: 65536.0 is not representable in u16
+fn main {} { _ = convert{ x = 65536.0 } }

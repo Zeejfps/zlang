@@ -1,0 +1,5 @@
+fn f { c: bool } -> i32 {
+    let x = if c { let y = 1 } else { 2 }  //~ error at 18: this branch must end in a value, or leave with `return`, `break`, `continue` or `@panic()`
+    return x
+}
+fn main {} {}

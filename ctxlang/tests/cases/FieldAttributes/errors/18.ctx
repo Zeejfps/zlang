@@ -1,0 +1,12 @@
+
+namespace ecs {
+    struct key {}
+    struct cascade { depth: i32, deep: bool }
+    struct by { name: []u8, n: u32 }
+}
+const DEPTH: i32 = 2 + 1
+struct S {
+    #convert{ x = 1 }  //~ error at 15: `convert` takes no fields //~ error at 5: `convert` applies only to a fn
+    a: i32
+}
+fn main {} {}

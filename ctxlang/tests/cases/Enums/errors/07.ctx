@@ -1,0 +1,11 @@
+
+enum Kind: u8 {
+    ident,
+    number,
+    lbrace = 40,
+    rbrace,
+}
+
+enum Sign: i8 { minus = -1, zero, plus }
+fn f {} { let x = Kind::ident < Kind::number }  //~ error at 31: `<` needs numbers, got Kind
+fn main {} {}

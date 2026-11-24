@@ -1,0 +1,2 @@
+fn f { xs: ?[]i32 } { for x in xs { } }  //~ error at 32: a `for` goes over a range `lo..hi`, a slice or an array, not ?[]i32: unwrap it first, as `if let xs = ... { for x in xs { ... } }`
+fn main {} { f{ xs = null } }

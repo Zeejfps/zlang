@@ -1,0 +1,2 @@
+fn f { a i32 } {}  //~ error at 10: expected ':', found 'i32'
+fn main {} {}

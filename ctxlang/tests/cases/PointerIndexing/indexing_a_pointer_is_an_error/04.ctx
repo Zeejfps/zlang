@@ -1,0 +1,4 @@
+fn f { q: *mut i32 } {
+    q[0] = q[1] + 1  //~ error at 6: cannot index *mut i32: a pointer has no length to check against; write `(q + 0).*`, which isn't checked //~ error at 13: cannot index *mut i32: a pointer has no length to check against; write `(q + 1).*`, which isn't checked
+}
+fn main {} {}

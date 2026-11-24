@@ -1,0 +1,3 @@
+fn main {} {
+    return 1 2  //~ error at 14: expected a newline or ';' after statement, found '2' //~ error at 5: this function has no return type
+}

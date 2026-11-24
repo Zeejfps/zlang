@@ -1,0 +1,6 @@
+capability O {
+    #c::symbol{ name = "x" }
+    #c::symbol{ name = "y" }  //~ error at 5: duplicate `c::symbol` attribute
+    extern a: i32
+}
+fn main {} {}

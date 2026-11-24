@@ -1,0 +1,14 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// defer uses callback before free: accepted, and it runs.
+
+fn read { n: i32 } -> i32 { return n }
+fn work { mut io: Io } -> i32 {
+    let call = read{ n = 7, _ }
+    defer io::println_i64{ &io, n = call{} }
+    return call{}
+}
+fn main { mut io: Io } { io::println_i64{ &io, n = work{ &io } } }
+
+//# stdout:
+//| 7
+//| 7

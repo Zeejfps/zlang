@@ -1,0 +1,8 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// generic error relay: rejected. It is never run: it would use a dangling pointer.
+
+error bad{ p: *i32 }
+fn id(T) { x: T } -> T { return x }
+fn relay { p: *i32 } -> ! { let r: !*i32 = bad{p}; _ = try id{ x=r } }
+fn leak {} -> ! { let x: i32=1; try relay{p=&x} }  //~ error at 33: `try` would return an error that may hold the address of local `x`
+fn main {} { _ = leak{} }

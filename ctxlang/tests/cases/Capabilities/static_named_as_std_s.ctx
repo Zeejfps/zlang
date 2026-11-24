@@ -1,0 +1,13 @@
+// A program's `io::State::out` is its own, not std's standard output buffer, which the
+// interpreter writes out when main ends.
+
+namespace io {
+    capability State { static out: i32 }
+    fn set { mut s: State } -> i32 {
+        s.out = s.out + 1
+        return s.out
+    }
+}
+fn main { mut s: io::State } -> i32 { return io::set{ &s } - 1 }
+
+//# exit: 0

@@ -1,0 +1,39 @@
+// In the `if`'s first branch, after `and`, in an `if` expression and in a `while` body.
+
+union Ref { local{ var: i32 }, constant{ value: i64 }, variant, enumval }
+enum Color: u8 { red, green, blue }
+fn find { n: i32 } -> ?Ref {
+    if n == 0 { return null }
+    if n == 1 { return Ref::local{ var = 7 } }
+    if n == 2 { return Ref::constant{ value = 9 } }
+    return Ref::variant
+}
+
+fn main { mut io: Io } {
+    let mut i = 0
+    while i < 4 {
+        let r = find{ n = i }
+        if r is local{ var } { io::println_i64{ &io, n = var } }
+        if r is constant{ value = v } and v > 5 { io::println_i64{ &io, n = v } }
+        io::println_i64{ &io, n = if not (r is local{ var }) { -1 } else { var * 2 } }
+        i = i + 1
+    }
+    let xs: [3]?i32 = [1, 2, null]
+    let mut k: usize = 0
+    let mut x = xs[0]
+    while x is some{ value } {
+        io::println_i64{ &io, n = value * 10 }
+        k = k + 1
+        x = xs[k]
+    }
+}
+
+//# stdout:
+//| -1
+//| 7
+//| 14
+//| 9
+//| -1
+//| -1
+//| 10
+//| 20

@@ -1,0 +1,8 @@
+// The handler may run before or after what e assigns.
+
+fn main { mut io: Io } {
+    let a: i32 = 5
+    let x: i32
+    let y = a * (if a > 3 { x = 1; 2 } else { x = 2; 3 }) ifoverflow 0
+    _ = @fmt(&io, "{} {}\n", x, y)  //~ error at 30: `x` may be read before it is assigned
+}

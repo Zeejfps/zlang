@@ -1,0 +1,4 @@
+fn main { mut fs: Fs, args: Args } -> i32 {
+    _ = fs::write_all{ &fs, path = args[0], bytes = "one\n" } iferr { return 1 }
+    return 0
+}

@@ -1,0 +1,8 @@
+union U { a{ x: i32 }, b }
+fn f { mut u: U } {
+    match &u {
+        a{ &x } => { x = 3 }
+        b => { u = U::b }  //~ error at 16: u overlaps the match scrutinee; access it only through the arm bindings
+    }
+}
+fn main {} {}

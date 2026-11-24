@@ -1,0 +1,5 @@
+// §11, Expressions, rule 4: `a <<% n` is `a << n` with the bits shifted out dropped. It
+// has `<<`'s operands, result type and precedence, and its count is checked the same.
+
+const A: i64 = 1 <<% -1  //~ error at 18: shift count out of range in constant
+fn main {} { _ = A }

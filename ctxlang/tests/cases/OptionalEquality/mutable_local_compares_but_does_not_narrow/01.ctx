@@ -1,0 +1,11 @@
+
+fn main { mut io: Io } {
+    let mut x: ?i32 = null
+    io::println_bool{ &io, n = x == 1 }
+    x = 1
+    io::println_bool{ &io, n = x == 1 }
+}
+
+//# stdout:
+//| false
+//| true

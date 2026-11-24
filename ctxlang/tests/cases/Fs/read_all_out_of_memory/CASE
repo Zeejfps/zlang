@@ -1,0 +1,6 @@
+// fs::read_all of 5000 bytes into an arena of 100 fails with alloc::out_of_memory (7).
+//# program: main.ctx
+//# args: {dir}/tmp/big.bin
+//# interp: cannot run
+//# stdout:
+//| 7

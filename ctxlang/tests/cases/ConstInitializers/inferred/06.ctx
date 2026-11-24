@@ -1,0 +1,4 @@
+const A: ?[]u8 = "x"
+fn main {} {}
+
+//# exit: 0

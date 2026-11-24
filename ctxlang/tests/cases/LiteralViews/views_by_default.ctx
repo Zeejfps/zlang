@@ -1,0 +1,29 @@
+// With no type expected a literal is a []u8, so literals of different lengths join, fill
+// one array, go to a []u8 field and into an @fmt hole; a [N]u8 is one only where expected.
+
+fn pick { c: bool } -> u64 {
+    let s = if c { "yes" } else { "no" }
+    return s.len
+}
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = pick{ c = true } + pick{ c = false } }
+    let k: u32 = 2
+    let word = match k { 1 => { "one" } else => { "three" } }
+    _ = @fmt(&io, "{} {}\n", word, if k == 1 { "a" } else { "bbbb" })
+    let pre = "gui_"
+    let mut buf: [8]u8
+    slice::copy{ dst = buf[..], src = pre }
+    _ = @fmt(&io, "{}\n", buf[..pre.len])
+    let names = ["a", "bb", "ccc"]
+    io::println_u64{ &io, n = names.len + names[2].len }
+    let mut arr: [3]u8 = "abc"
+    arr[0] = 'x'
+    _ = @fmt(&io, "{}\n", arr[..])
+}
+
+//# stdout:
+//| 5
+//| three bbbb
+//| gui_
+//| 6
+//| xbc

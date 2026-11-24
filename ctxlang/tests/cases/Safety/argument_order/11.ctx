@@ -1,0 +1,18 @@
+struct S { n: i32, m: i32 }
+fn bump { mut s: S } -> i32 {
+    s.n = s.n + 1
+    return s.n
+}
+fn show { n: i32, z: i32 } { let t = n + z }
+struct B { len: i32 }
+struct T { n: i32, out: B }
+#write
+fn write_i { mut b: B, v: i32 } { b.len = b.len + 1 }
+fn log { mut t: T } -> i32 {
+    _ = @fmt(&t.out, "{}", t.n)
+    return 0
+}
+fn f { mut t: T } {
+    show{ n = t.out.len, z = log{ &t } }  //~ error at 26: `n` reads `t.out.len`, and `z` changes `t.out`, in one call: the order of the fields would decide what it reads; compute one of them in a `let` before the call
+}
+fn main {} {}

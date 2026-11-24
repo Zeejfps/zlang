@@ -1,0 +1,11 @@
+// The driver reads the attribute from build.ctx's syntax tree: with any spacing, a
+// trailing comma or comment, and not in a comment.
+//# $ ctxc run .
+//# exit: 0
+//# stdout:
+//| 42
+//# project
+//# $ {t}
+//# exit: 0
+//# stdout:
+//| 42

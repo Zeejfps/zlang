@@ -1,0 +1,63 @@
+// `E!T` declares the errors a function may fail with (spec §8, Errors, rule 14): its
+// callers see that set, whatever its body returns, and match against it. `huge` is
+// never returned, but bounded's callers must allow it.
+
+namespace p {
+    error empty
+    error bad{ at: usize }
+    error huge
+
+    type ParseError = error(empty, bad)
+    type Error = error(ParseError, huge)
+
+    fn digit { s: []u8 } -> ParseError!u64 {
+        if s.len == 0 { return empty }
+        if s[0] < '0' or s[0] > '9' { return bad{ at = 0 } }
+        return @as(u64, s[0] - '0')
+    }
+
+    fn inferred { s: []u8 } -> !u64 {
+        return try digit{ s }
+    }
+
+    fn bounded { s: []u8 } -> Error!u64 {
+        let d = try digit{ s }
+        let e = try inferred{ s }
+        return d + e
+    }
+
+    fn checked { s: []u8 } -> error(huge, bad, empty)! {
+        _ = try bounded{ s }
+    }
+}
+
+fn main { mut io: Io } {
+    match p::digit{ s = "7" } {
+        ok{ value } => { io::println_u64{ &io, n = value } }
+        p::empty => { io::println{ &io, s = "empty" } }
+        p::bad{ at } => { io::println_u64{ &io, n = at } }
+    }
+    match p::bounded{ s = "x" } {
+        ok{ value } => { io::println_u64{ &io, n = value } }
+        p::bad{ at } => { io::println{ &io, s = "bad" } }
+        p::empty | p::huge => { io::println{ &io, s = "other" } }
+    }
+    let e: p::Error!u64 = p::digit{ s = "" }
+    io::println_bool{ &io, n = match e { ok => { false } err{ error } => { true } } }
+    p::checked{ s = "" } iferr err{ error } { io::println{ &io, s = "failed" } }
+    show_set{ &io, r = p::bounded{ s = "" } }
+}
+
+fn show_set { mut io: Io, r: p::Error!u64 } {
+    match r {
+        ok => {}
+        err{ error } => { _ = @fmt(&io, "{}\n", error) }
+    }
+}
+
+//# stdout:
+//| 7
+//| bad
+//| true
+//| failed
+//| p::empty

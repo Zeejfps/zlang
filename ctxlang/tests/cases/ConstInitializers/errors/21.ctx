@@ -1,0 +1,2 @@
+const A: []mut u8 = "x"  //~ error at 21: a string literal is read-only; it cannot be a []mut u8 //~ error at 21: expected []mut u8, got []u8
+fn main {} {}

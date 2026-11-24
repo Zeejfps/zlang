@@ -1,0 +1,4 @@
+fn main { mut io: Io } {
+    let f = 1e300
+    io::println_i64{ &io, n = @as(i32, f) }  //~ panic at 31: @as: 1e+300 is not representable in i32
+}

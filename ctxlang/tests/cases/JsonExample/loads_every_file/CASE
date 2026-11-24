@@ -1,0 +1,14 @@
+// examples/json is a program made of a directory of files: naming the directory loads every
+// .ctx file in it, which are these four (sample.json beside them is a document to try).
+// The program runs only with all of them: main.ctx calls the parser and the printer, and all
+// three use value.ctx. Without arguments it prints its usage.
+//# $ ctxc interp {home}/examples/json
+//# exit: 2
+//# stderr:
+//| usage: json FILE [PATH]
+//# list {home}/examples/json:
+//| main.ctx
+//| parser.ctx
+//| printer.ctx
+//| sample.json
+//| value.ctx

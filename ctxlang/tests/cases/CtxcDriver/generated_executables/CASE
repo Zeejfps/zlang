@@ -1,0 +1,47 @@
+// An executable may be made of generated files alone. Through `ctxc graph`, generated
+// files are named by their text's hash and kept, so the same text keeps its path, and an
+// error in one names a file that is there.
+//# $ ctxc run .
+//# stdout:
+//| 6
+//# project
+//# list {gen}/t:
+//| main-{hex}.ctx
+//# $ {t}
+//# stdout:
+//| 6
+
+// The same text again: the one file, at its path.
+//# project
+//# list {gen}/t:
+//| main-{hex}.ctx
+//# project
+//# list {gen}/t:
+//| main-{hex}.ctx
+
+// Another text is another file beside the first, which is kept; the error is in it.
+//# write build.ctx:
+//| fn build { mut b: Build } {
+//|     build::gen_file{ &b, exe = build::exe{ &b, name = "t", root = "empty" }, name = "main", text = "fn main { mut io: Io } { io::println_i64{ &io, n = true } }\n" }
+//| }
+//# $ ctxc run .
+//# exit: 1
+//# stderr:
+//| {work:.}/gen/t/main.ctx:1:52: error: expected i64, got bool
+//# project
+//# errors:
+//| {gen}/t/main-{hex}.ctx:1:52: error: expected i64, got bool
+//# list {gen}/t:
+//| main-{hex}.ctx
+//| main-{hex}.ctx
+
+// With nothing generated, the root's lack of files is an error again.
+//# write build.ctx:
+//| fn build { mut b: Build } { _ = build::exe{ &b, name = "t", root = "empty" } }
+//# $ ctxc run .
+//# exit: 1
+//# stderr:
+//| empty: no .ctx files in directory
+//# project
+//# errors:
+//| empty: no .ctx files in directory

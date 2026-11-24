@@ -1,0 +1,8 @@
+
+namespace ctxtest {
+    capability Lib
+    extern fn ctxtest_add { mut lib: Lib, a: i32, b: i32 } -> i32
+}
+fn main { mut io: Io, mut lib: ctxtest::Lib } {
+    io::println_i64{ &io, n = ctxtest::ctxtest_add{ &lib, a = 40, b = 2 } }
+}

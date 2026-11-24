@@ -1,0 +1,11 @@
+struct In { b: ?i32 }
+struct Out { a: In }
+fn f { o: Out } -> i32 {
+    if o.a.b != null { return o.a.b }
+    return 0
+}
+fn main {} {
+    _ = f{ o = Out{ a = In{ b = 4 } } }
+}
+
+//# exit: 0

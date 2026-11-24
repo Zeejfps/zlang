@@ -1,0 +1,7 @@
+
+fn main { mut io: Io } {
+    io::println{ &io, s = "before" }
+    let xs = [1, 2, 3]
+    let mut i: usize = 0
+    while true { i = i + xs[i] }
+}

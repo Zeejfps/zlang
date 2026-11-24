@@ -1,0 +1,4 @@
+const A: i32 = @as(i32, 1)
+fn main {} {}
+
+//# exit: 0

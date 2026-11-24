@@ -1,0 +1,1 @@
+fn main { mut io: Io } { let mut a: i32 = 1; let p: *i64 = &a }  //~ error at 60: expected *i64, got *mut i32

@@ -1,0 +1,6 @@
+
+struct Result { n: i32 }
+fn main { mut io: Io } { io::println_i64{ &io, n = Result{ n = 3 }.n } }
+
+//# stdout:
+//| 3

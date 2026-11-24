@@ -1,0 +1,14 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// record chain past first segment: accepted, and it runs.
+
+fn zero {} -> i64 { return 0 }
+fn next { previous: &fn{} -> i64, k: i64 } -> i64 { return previous{} + k }
+fn main { mut io: Io } {
+    let mut f: &fn{} -> i64 = zero
+    let mut i: i64 = 0
+    while i < 5000 { f = next{ previous = f, k = i, _ }; i = i + 1 }
+    io::println_i64{ &io, n = f{} }
+}
+
+//# stdout:
+//| 12497500

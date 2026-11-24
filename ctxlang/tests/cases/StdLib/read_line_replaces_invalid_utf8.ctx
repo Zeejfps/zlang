@@ -1,0 +1,20 @@
+
+fn main { mut io: Io } {
+    let mut buf: [8]u8
+    while true {
+        let line = io::read_line{ &io, into = buf[..] }
+        if line == null { break }
+        io::println{ &io, s = line }
+    }
+}
+
+//# stdin escaped:
+//| café
+//| x\xffy
+//| abcdefgé
+//# interp: cannot run
+//# stdout:
+//| café
+//| x?y
+//| abcdefg?
+//| ?

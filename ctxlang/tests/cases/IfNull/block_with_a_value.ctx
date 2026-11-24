@@ -1,0 +1,8 @@
+
+fn main { mut io: Io } {
+    let n: ?i32 = null
+    io::println_i64{ &io, n = n ifnull { let k = 40; k + 2 } }
+}
+
+//# stdout:
+//| 42

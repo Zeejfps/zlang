@@ -1,0 +1,24 @@
+
+union Ref { local{ var: i32 }, constant{ value: i64 }, variant, enumval }
+enum Color: u8 { red, green, blue }
+fn find { n: i32 } -> ?Ref {
+    if n == 0 { return null }
+    if n == 1 { return Ref::local{ var = 7 } }
+    if n == 2 { return Ref::constant{ value = 9 } }
+    return Ref::variant
+}
+
+fn main { mut io: Io } {
+    let a = Ref::local{ var = 1 }
+    let b = Ref::enumval
+    io::println_bool{ &io, n = a is local }
+    io::println_bool{ &io, n = a is variant }
+    io::println_bool{ &io, n = b is constant | variant | enumval }
+    io::println_bool{ &io, n = not a is local }
+}
+
+//# stdout:
+//| true
+//| false
+//| true
+//| false

@@ -1,0 +1,2 @@
+capability C(T)  //~ error at 13: a capability cannot have generic parameters
+fn main {} {}

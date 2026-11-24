@@ -1,0 +1,11 @@
+
+enum Kind: u8 {
+    ident,
+    number,
+    lbrace = 40,
+    rbrace,
+}
+
+enum Sign: i8 { minus = -1, zero, plus }
+fn f { k: *Kind } { match k { ident => {} else => {} } }  //~ error at 27: match cannot go through a pointer to an enum; match on the value with `.*`
+fn main {} {}

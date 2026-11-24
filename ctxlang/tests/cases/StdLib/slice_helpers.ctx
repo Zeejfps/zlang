@@ -1,0 +1,15 @@
+
+fn main { mut io: Io } {
+    let mut a: [5]i32
+    let s = a[..]
+    slice::fill{ s, v = 3 }
+    s[4] = 9
+    io::println_i64{ &io, n = a[0] + a[4] }
+    io::println_u64{ &io, n = s.len }
+    io::println_u64{ &io, n = s[2..2].len + s[3..].len + s[..4].len }
+}
+
+//# stdout:
+//| 12
+//| 5
+//| 6

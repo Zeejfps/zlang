@@ -1,0 +1,13 @@
+// fs::read_all gives a file's bytes, fs::write_all writes them to another and says how many,
+// and fs::size agrees.
+//# program: main.ctx
+//# args: {dir}/tmp/in.txt {dir}/tmp/out.txt
+//# interp: cannot run
+//# stdout:
+//| hello
+//| from a file
+//| 18
+//| 18
+//# file tmp/out.txt:
+//| hello
+//| from a file

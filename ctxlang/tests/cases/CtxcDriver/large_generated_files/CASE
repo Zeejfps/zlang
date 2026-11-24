@@ -1,0 +1,14 @@
+// A generator may write megabytes: the graph and generated text don't live in the
+// driver's heap.
+//# build size: size.ctx
+//# $ ctxc run .
+//# stdout:
+//| 7
+//# project
+//# $ {t}
+//# stdout:
+//| 7
+// The file ctxc wrote is more than 4 MiB.
+//# $ {size} {work:.}/gen/t/big.ctx 4194304
+//# stdout:
+//| more than 4194304 bytes

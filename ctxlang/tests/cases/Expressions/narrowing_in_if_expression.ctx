@@ -1,0 +1,10 @@
+
+fn main { mut io: Io } {
+    let o = utf8::parse_i64{ s = utf8::empty{} }
+    let x = if o != null { o } else { 42 }
+    let y = if o == null { 1 } else { o }
+    io::println_i64{ &io, n = x + y }
+}
+
+//# stdout:
+//| 43

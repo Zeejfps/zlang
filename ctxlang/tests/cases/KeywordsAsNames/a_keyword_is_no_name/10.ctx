@@ -1,0 +1,5 @@
+
+struct S { a: i32 }
+fn f { a: i32 } -> i32 { return a }
+fn g {} { _ = f{ if = 1 } }  //~ error at 18: expected a name, found 'if': `if` is a keyword and can't be a name; use another, such as `if_`
+fn main {} {}

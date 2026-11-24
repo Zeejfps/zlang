@@ -1,0 +1,7 @@
+
+fn id(T) { x: T } -> T { return x }
+fn main {} -> i32 {
+    let a = id{ x = 1 }
+    let b = id{ x = true }
+    return a
+}

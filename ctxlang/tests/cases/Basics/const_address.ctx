@@ -1,0 +1,3 @@
+
+const C: i32 = 1
+fn main { mut io: Io } { let p = &C }  //~ error at 35: `C` is a const, not a place

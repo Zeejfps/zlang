@@ -1,0 +1,10 @@
+fn three {} -> u8 { return 3 }
+const K: u8 = three{}
+fn f { b: u8 } -> i32 {
+    match b {
+K => {}  //~ error at 1: an integer pattern must be a literal or a const whose value is folded
+else => {}
+    }
+    return 0
+}
+fn main {} { _ = f{ b = 1 } }

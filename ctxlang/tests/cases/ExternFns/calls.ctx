@@ -1,0 +1,31 @@
+
+struct DivT { quot: i32, rem: i32 }
+
+#c::symbol{ name = "labs" }
+#pure
+extern fn long_abs { n: i64 } -> i64
+#pure
+extern fn strlen { s: *u8 } -> usize
+#pure
+extern fn frexp { x: f64, mut exp: i32 } -> f64
+#pure
+extern fn div { numer: i32, denom: i32 } -> DivT
+
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = long_abs{ n = -42 } }
+    let s: []u8 = "hello\0"
+    io::println_u64{ &io, n = strlen{ s = s.ptr } }
+    let mut e: i32 = 0
+    io::println_f64{ &io, n = frexp{ x = 8.0, exp = &e } }
+    io::println_i64{ &io, n = e }
+    let d = div{ numer = 17, denom = 5 }
+    io::println_i64{ &io, n = d.quot * 10 + d.rem }
+}
+
+//# interp: cannot run
+//# stdout:
+//| 42
+//| 5
+//| 0.5
+//| 4
+//| 32

@@ -1,0 +1,4 @@
+fn f { c: bool } -> i32 {  //~ error at 1: `f` must end every path in `return` or `@panic()`
+    if c { return 1 }
+}
+fn main {} {}

@@ -1,0 +1,16 @@
+// This program's stdin is closed, so the pipe for the child's stdout would take 0: the
+// child's stdin, inherited, is closed too, not this program's end of that pipe.
+//
+// closed.ctx becomes the program with descriptor 0 closed, as the shell's `exec PROGRAM <&-`
+// does. The child is tests/helpers/child.ctx, as `input_open`: it prints `open` if its
+// standard input is open, or `closed`.
+//# only: posix: descriptors are POSIX
+//# build child: {home}/tests/helpers/child.ctx
+//# build closed: closed.ctx
+//# build program: main.ctx
+//# $ {closed} 0 {program} {child}
+//# timeout: 60
+//# exit: 0
+//# stdout:
+//| closed
+//| 0

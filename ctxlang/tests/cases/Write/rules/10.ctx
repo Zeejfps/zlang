@@ -1,0 +1,3 @@
+#write
+fn w(T) { mut s: T, v: i32 } {}  //~ error at 11: a `write` fn's sink can't be a bare type parameter
+fn main {} {}

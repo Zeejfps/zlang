@@ -1,0 +1,5 @@
+// One executable's call doesn't deny another's files.
+//# $ ctxc run .
+//# exit: 0
+//# stdout:
+//| 99

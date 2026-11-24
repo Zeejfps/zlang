@@ -1,0 +1,6 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// generic identity borrow: rejected. It is never run: it would use a dangling pointer.
+
+fn identity(T) { x: T } -> T { return x }
+fn load {} -> []u8 { let buf: [3]u8 = [1,2,3]; return identity{ x = buf[..] } }  //~ error at 48: returned value holds the address of local `buf`
+fn main {} { _ = load{} }

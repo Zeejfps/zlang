@@ -1,0 +1,4 @@
+fn f { s: []mut u8 } -> []mut u8 {
+    return s.ptr[..]  //~ error at 17: cannot slice *mut u8: a pointer has no length to check against; write `@slice(s.ptr + lo, n)` for `n` elements from `lo`, which isn't checked
+}
+fn main {} {}

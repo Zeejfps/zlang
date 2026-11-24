@@ -1,0 +1,1 @@
+namespace list { fn mine {} -> i64 { return 4 } }

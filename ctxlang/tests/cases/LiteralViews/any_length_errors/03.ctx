@@ -1,0 +1,2 @@
+struct S { a: [_]u8 }  //~ error at 15: `[_]` is only a let's or a const's type, whose initializer gives the length
+fn main {} {}

@@ -1,0 +1,505 @@
+// The harness: ctxc for the current source, the C compiler, the runtime's objects, and how a
+// program is built and a process run. It does what tools/toolchain.py did for the Python tests:
+// the same compiler, flags, cache keys by hash, and stack.
+
+namespace tool {
+    // No sibling calls: clang makes them at -O1, and a call must take a frame for unbounded
+    // recursion to overflow the stack rather than loop forever. No strict aliasing: @cast reads
+    // memory as another type than it was written as, and so does a pointer to a capability
+    // passed as one it includes, which clang's type-based alias analysis (on at -O1) may assume
+    // it doesn't.
+    const CFLAGS: [_][]u8 = ["-std=gnu11", "-O1", "-w", "-fwrapv", "-fno-optimize-sibling-calls", "-fno-strict-aliasing"]
+
+    // The stack reserved for a program's main thread, 256 MiB; std's rt checks against
+    // CTX_STACK, at most 200 MiB.
+    const STACK_WINDOWS: []u8 = "-Wl,--stack,268435456"
+    const STACK_MACOS: []u8 = "-Wl,-stack_size,0x10000000"
+
+    // ctxc's own stack: 200 MiB.
+    const CTXC_STACK: []u8 = "CTX_STACK=209715200"
+
+    // A program's stack unless its case says otherwise: 16 MiB.
+    const PROGRAM_STACK: u64 = 16777216
+
+    // How long a process may run unless its case says otherwise, in seconds.
+    const TIMEOUT: u64 = 600
+
+    // What a run of the suite knows, which each case's process reads from the run's file.
+    struct Session {
+        home: []u8,             // ctxlang/, absolute, with `/`
+        os: build::Os,
+        ctxc: []u8,             // ctxc built from ctxc's current source
+        cc: [][]u8,             // the C compiler's command
+        cc_env: [][]u8,         // and the environment entries it runs with
+        rt: []u8,               // a hash of the runtime and of how it is compiled
+        key: []u8,              // a hash of all a case's result depends on but the case
+        run: []u8,              // this run's directory, in HOME/build/suite
+        cache: []u8,            // HOME/build/suite
+    }
+
+    // Where a process's files go, and how many it has had.
+    struct Scratch { dir: []u8, seq: u64 }
+
+    // What became of a process: whether it started; its exit code; whether it was ended as
+    // late; and what it wrote.
+    struct Ran { started: bool, code: i32, late: bool, out: []u8, err: []u8 }
+
+    fn os_name { os: build::Os } -> []u8 {
+        match os {
+            linux => { return "linux" }
+            macos => { return "macos" }
+            windows => { return "windows" }
+        }
+    }
+
+    fn exe_suffix { os: build::Os } -> []u8 {
+        return if os == build::Os::windows { ".exe" } else { "" }
+    }
+
+    // Runs argv in directory dir ("" is this program's) with env added to the environment and
+    // `input` for its standard input, for at most `seconds`; its output goes to files in the
+    // scratch directory, which are read and removed once it has ended. The process has a group
+    // of its own, which a late one is ended with; what it leaves running is left.
+    fn run { mut fs: Fs, mut proc: Proc, mut heap: Heap, mut scratch: Scratch, argv: [][]u8, env: [][]u8, dir: []u8, input: []u8, seconds: u64 } -> Ran {
+        scratch.seq = scratch.seq + 1
+        let stem = join{ &heap, a = scratch.dir, b = cat{ &heap, a = "p", b = number{ &heap, n = scratch.seq } } }
+        let out_path = cat{ &heap, a = stem, b = ".out" }
+        let err_path = cat{ &heap, a = stem, b = ".err" }
+        let in_path = cat{ &heap, a = stem, b = ".in" }
+        let none = Ran{ started = false, code = 0, late = false, out = "", err = "the runner can't write its files in build/suite" }
+        let out_file = fs::open{ &fs, path = out_path, mode = fs::Mode::write } iferr { return none }
+        let err_file = fs::open{ &fs, path = err_path, mode = fs::Mode::write } iferr { return none }
+        let mut stdin = proc::Stdio::ignore
+        let mut in_file: ?fs::File = null
+        if input.len > 0 {
+            if not write_file{ &fs, path = in_path, bytes = input } { return none }
+            let f = fs::open{ &fs, path = in_path, mode = fs::Mode::read } iferr { return none }
+            stdin = proc::Stdio::file{ file = f }
+            in_file = f
+        }
+        let options = proc::Options{
+            env, dir, stdin, stdout = proc::Stdio::file{ file = out_file }, stderr = proc::Stdio::file{ file = err_file },
+            group = true, leftovers = proc::Leftovers::keep, die_with_parent = true,
+        }
+        let spawned = proc::spawn{ &proc, argv, options }
+        _ = fs::close{ &fs, file = out_file } iferr {}
+        _ = fs::close{ &fs, file = err_file } iferr {}
+        if let f = in_file { _ = fs::close{ &fs, file = f } iferr {} }
+        let mut ran = Ran{ started = true, code = 0, late = false, out = "", err = "" }
+        match spawned {
+            ok{ value } => {
+                let mut child = value
+                let limit = if seconds == 0 { TIMEOUT } else { seconds }
+                let mut code: ?i32 = proc::wait_for{ &proc, child = &child, nanoseconds = limit * 1000000000 } iferr { 1 }
+                if code == null {
+                    ran.late = true
+                    _ = proc::kill{ &proc, child } iferr {}
+                    code = proc::wait{ &proc, child = &child } iferr { proc::KILLED }
+                }
+                ran.code = code ifnull { 1 }
+                ran.out = read_file{ &fs, &heap, path = out_path } ifnull { "" }
+                ran.err = read_file{ &fs, &heap, path = err_path } ifnull { "" }
+            }
+            err{ error } => {
+                let mut b = text{ &heap }
+                try! @fmt(&b, "{}", error)
+                ran = Ran{ started = false, code = 0, late = false, out = "", err = utf8::view{ b }.bytes }
+            }
+        }
+        _ = fs::remove{ &fs, path = out_path } iferr {}
+        _ = fs::remove{ &fs, path = err_path } iferr {}
+        if input.len > 0 { _ = fs::remove{ &fs, path = in_path } iferr {} }
+        return ran
+    }
+
+    // ---- hashes
+
+    fn hex_of { mut heap: Heap, h: sha256::Hash } -> []u8 {
+        let out = try! alloc::make(u8, Heap){ realloc = arena::alloc, &heap, count = 64 }
+        _ = sha256::finish{ s = h, into = out }
+        return out
+    }
+
+    // Adds a file's name and bytes to h; false if it can't be read.
+    fn add_file { mut fs: Fs, mut heap: Heap, mut h: sha256::Hash, path: []u8, name: []u8 } -> bool {
+        let mark = arena::mark{ heap }
+        let bytes = read_file{ &fs, &heap, path } ifnull { return false }
+        sha256::add_field{ s = &h, bytes = name }
+        sha256::add_field{ s = &h, bytes }
+        arena::restore{ &heap, to = mark }
+        return true
+    }
+
+    // Adds every file under directory dir, by name, to h.
+    fn add_tree { mut fs: Fs, mut heap: Heap, mut h: sha256::Hash, dir: []u8, name: []u8 } {
+        for n in names_in{ &fs, &heap, path = dir } {
+            let path = join{ &heap, a = dir, b = n }
+            let named = cat3{ &heap, a = name, b = "/", c = n }
+            if kind_of{ &fs, path } == 2 {
+                add_tree{ &fs, &heap, &h, dir = path, name = named }
+            } else {
+                _ = add_file{ &fs, &heap, &h, path, name = named }
+            }
+        }
+    }
+
+    // ---- the C compiler
+
+    // The C compiler's command: `zig cc` with CTX_CC=zig, or else the first of gcc, cc and clang
+    // on PATH, by its path. Null if there is none.
+    fn compiler { mut fs: Fs, mut proc: Proc, mut heap: Heap, os: build::Os } -> ?[][]u8 {
+        let mut words = strs{ &heap }
+        let set = proc::env{ &proc, name = "CTX_CC" } ifnull { "" }
+        if eq{ a = set, b = "zig" } {
+            try! list::push{ list = &words, item = "zig" }
+            try! list::push{ list = &words, item = "cc" }
+            return list::items{ list = words }
+        }
+        let names: [3][]u8 = ["gcc", "cc", "clang"]
+        for name in names {
+            if let found = on_path{ &fs, &proc, &heap, name, os } {
+                try! list::push{ list = &words, item = found }
+                return list::items{ list = words }
+            }
+        }
+        return null
+    }
+
+    // Where the program `name` is on PATH: DIR/name, or DIR/name.exe on Windows.
+    fn on_path { mut fs: Fs, mut proc: Proc, mut heap: Heap, name: []u8, os: build::Os } -> ?[]u8 {
+        let path = proc::env{ &proc, name = "PATH" } ifnull { return null }
+        let windows = os == build::Os::windows
+        let file = if windows { cat{ &heap, a = name, b = ".exe" } } else { name }
+        let sep: u8 = if windows { ';' } else { ':' }
+        let mut start: usize = 0
+        for i in 0..path.len + 1 {
+            if i == path.len or path[i] == sep {
+                if i > start {
+                    let at = join{ &heap, a = path[start..i], b = file }
+                    if kind_of{ &fs, path = at } == 1 { return at }
+                }
+                start = i + 1
+            }
+        }
+        return null
+    }
+
+    // The C compiler's environment entries: PATH with the compiler's own directory first, so
+    // that MinGW's cc1 finds its DLLs before any other MinGW's (Git Bash's). None for `zig cc`.
+    fn compiler_env { mut proc: Proc, mut heap: Heap, cc: [][]u8, os: build::Os } -> [][]u8 {
+        let mut out = strs{ &heap }
+        let dir = parent{ path = cc[0] }
+        if dir.len == 0 { return list::items{ list = out } }
+        let sep = if os == build::Os::windows { ";" } else { ":" }
+        let rest = proc::env{ &proc, name = "PATH" } ifnull { "" }
+        try! list::push{ list = &out, item = cat3{ &heap, a = cat{ &heap, a = "PATH=", b = dir }, b = sep, c = rest } }
+        return list::items{ list = out }
+    }
+
+    // Linker flags that reserve the stack for the main thread.
+    fn stack_flags { mut heap: Heap, os: build::Os } -> [][]u8 {
+        let mut out = strs{ &heap }
+        match os {
+            windows => { try! list::push{ list = &out, item = STACK_WINDOWS } }
+            macos => { try! list::push{ list = &out, item = STACK_MACOS } }
+            linux => {}
+        }
+        return list::items{ list = out }
+    }
+
+    // What every executable depends on besides its C: the runtime, and how it is compiled.
+    fn runtime_hash { mut fs: Fs, mut proc: Proc, mut heap: Heap, home: []u8, os: build::Os } -> []u8 {
+        let mut h = sha256::new{}
+        add_tree{ &fs, &heap, &h, dir = join{ &heap, a = home, b = "ctxc/rt" }, name = "ctxc/rt" }
+        for f in CFLAGS { sha256::add_field{ s = &h, bytes = f } }
+        for f in stack_flags{ &heap, os } { sha256::add_field{ s = &h, bytes = f } }
+        sha256::add_field{ s = &h, bytes = proc::env{ &proc, name = "CTX_CC" } ifnull { "" } }
+        return hex_of{ &heap, h }
+    }
+
+    // The object of the runtime's NAME.c, compiled if it isn't cached. Null after saying why.
+    fn runtime_object { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, s: Session, mut scratch: Scratch, name: []u8 } -> ?[]u8 {
+        let dir = join{ &heap, a = s.cache, b = "rt" }
+        let obj = join{ &heap, a = dir, b = cat3{ &heap, a = cat3{ &heap, a = name, b = "-", c = s.rt[..16] }, b = ".o", c = "" } }
+        if kind_of{ &fs, path = obj } == 1 { return obj }
+        if not made{ &fs, &heap, path = dir } { return null }
+        let tmp = cat3{ &heap, a = obj, b = ".", c = cat{ &heap, a = base{ path = scratch.dir }, b = ".tmp" } }
+        let mut argv = strs{ &heap }
+        for w in s.cc { try! list::push{ list = &argv, item = w } }
+        for f in CFLAGS { try! list::push{ list = &argv, item = f } }
+        try! list::push{ list = &argv, item = "-c" }
+        try! list::push{ list = &argv, item = join{ &heap, a = s.home, b = cat3{ &heap, a = "ctxc/rt/", b = name, c = ".c" } } }
+        try! list::push{ list = &argv, item = "-o" }
+        try! list::push{ list = &argv, item = tmp }
+        let r = run{ &fs, &proc, &heap, &scratch, argv = list::items{ list = argv }, env = s.cc_env, dir = "", input = "", seconds = 0 }
+        if not r.started or r.code != 0 {
+            _ = @fmt(&io, "suite: the C compiler failed on {}.c:\n{}\n", name, r.err)
+            return null
+        }
+        moved{ &fs, from = tmp, to = obj }
+        return obj
+    }
+
+    // Renames `from` to `to`. If another process got there first, keeps theirs.
+    fn moved { mut fs: Fs, from: []u8, to: []u8 } {
+        match fs::rename{ &fs, from, to } {
+            ok => {}
+            else => { _ = fs::remove{ &fs, path = from } iferr {} }
+        }
+    }
+
+    // Compiles the C at tmp_c, with the runtime, into exe, with linker flags, and removes
+    // tmp_c. The runtime is linked as ctxc's driver links it: ctxfloat's object if the C calls
+    // it, and ctxthread's for a threaded program. Null if all went well, or the C compiler's
+    // words.
+    fn link { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, s: Session, mut scratch: Scratch, tmp_c: []u8, exe: []u8, name: []u8, flags: [][]u8, cflags: [][]u8 } -> ?[]u8 {
+        let c = read_file{ &fs, &heap, path = tmp_c } ifnull { return "the C can't be read" }
+        let float = has{ s = c, part = "ctx_float_" } or has{ s = c, part = "ctx_f2i_" }
+        let threads = has{ s = c, part = "ctx_thread_" }
+        let mut argv = strs{ &heap }
+        for w in s.cc { try! list::push{ list = &argv, item = w } }
+        for f in cflags { try! list::push{ list = &argv, item = f } }
+        try! list::push{ list = &argv, item = "-I" }
+        try! list::push{ list = &argv, item = join{ &heap, a = s.home, b = "ctxc/rt" } }
+        try! list::push{ list = &argv, item = cat3{ &heap, a = "-DCTX_PROGRAM_NAME=\"", b = quoted{ &heap, s = name }, c = "\"" } }
+        try! list::push{ list = &argv, item = tmp_c }
+        try! list::push{ list = &argv, item = runtime_object{ &io, &fs, &proc, &heap, s, &scratch, name = "ctxrt" } ifnull { return "the runtime didn't compile" } }
+        if float { try! list::push{ list = &argv, item = runtime_object{ &io, &fs, &proc, &heap, s, &scratch, name = "ctxfloat" } ifnull { return "the runtime didn't compile" } } }
+        if threads { try! list::push{ list = &argv, item = runtime_object{ &io, &fs, &proc, &heap, s, &scratch, name = "ctxthread" } ifnull { return "the runtime didn't compile" } } }
+        let tmp_exe = cat3{ &heap, a = exe, b = ".", c = cat{ &heap, a = base{ path = scratch.dir }, b = ".tmp" } }
+        try! list::push{ list = &argv, item = "-o" }
+        try! list::push{ list = &argv, item = tmp_exe }
+        for f in flags { try! list::push{ list = &argv, item = f } }
+        try! list::push{ list = &argv, item = "-lm" }
+        // glibc before 2.34 keeps threads in a library of their own.
+        if s.os == build::Os::linux and threads { try! list::push{ list = &argv, item = "-lpthread" } }
+        for f in stack_flags{ &heap, os = s.os } { try! list::push{ list = &argv, item = f } }
+        let r = run{ &fs, &proc, &heap, &scratch, argv = list::items{ list = argv }, env = s.cc_env, dir = "", input = "", seconds = 0 }
+        _ = fs::remove{ &fs, path = tmp_c } iferr {}
+        if not r.started { return cat{ &heap, a = "the C compiler didn't start: ", b = r.err } }
+        if r.code != 0 { return cat{ &heap, a = "the C compiler failed:\n", b = r.err } }
+        moved{ &fs, from = tmp_exe, to = exe }
+        return null
+    }
+
+    // s as the text of a C string literal's inside.
+    fn quoted { mut heap: Heap, s: []u8 } -> []u8 {
+        return replaced{ &heap, s = replaced{ &heap, s, from = "\\", to = "\\\\" }, from = "\"", to = "\\\"" }
+    }
+
+    // ---- ctxc
+
+    // std's files for platform's layer, as paths from `up` (a run of `../`, or HOME and a `/`):
+    // std's, then std/os/posix's unless it is Windows', then std/os/PLATFORM's, each sorted.
+    fn std_files { mut fs: Fs, mut heap: Heap, home: []u8, up: []u8, platform: []u8, mut out: Strs } {
+        ctx_files{ &fs, &heap, home, up, dir = "std", &out }
+        if not eq{ a = platform, b = "windows" } { ctx_files{ &fs, &heap, home, up, dir = "std/os/posix", &out } }
+        ctx_files{ &fs, &heap, home, up, dir = cat{ &heap, a = "std/os/", b = platform }, &out }
+    }
+
+    // Adds HOME/dir's .ctx files to out, as UP + dir/NAME, sorted by name.
+    fn ctx_files { mut fs: Fs, mut heap: Heap, home: []u8, up: []u8, dir: []u8, mut out: Strs } {
+        for name in names_in{ &fs, &heap, path = join{ &heap, a = home, b = dir } } {
+            if name.len > 4 and ends_with{ s = name, suffix = ".ctx" } {
+                try! list::push{ list = &out, item = cat{ &heap, a = up, b = cat3{ &heap, a = dir, b = "/", c = name } } }
+            }
+        }
+    }
+
+    // `ctxc build OUT.c STD... -- FILE...` in directory dir, std's files named from `up`, with
+    // the files of `denied` denied the unchecked operations: each follows a `--deny-unchecked`,
+    // and each that isn't, after one that is, an `--allow-unchecked`.
+    fn ctxc_build { mut fs: Fs, mut proc: Proc, mut heap: Heap, s: Session, mut scratch: Scratch, ctxc: []u8, out_c: []u8, files: [][]u8, denied: [][]u8, dir: []u8, up: []u8, platform: []u8, env: [][]u8 } -> Ran {
+        let mut argv = strs{ &heap }
+        try! list::push{ list = &argv, item = ctxc }
+        try! list::push{ list = &argv, item = "build" }
+        try! list::push{ list = &argv, item = out_c }
+        std_files{ &fs, &heap, home = s.home, up, platform, out = &argv }
+        try! list::push{ list = &argv, item = "--" }
+        let mut deny = false
+        for f in files {
+            let mut is = false
+            for d in denied {
+                if eq{ a = d, b = f } { is = true }
+            }
+            if is != deny {
+                deny = not deny
+                try! list::push{ list = &argv, item = if deny { "--deny-unchecked" } else { "--allow-unchecked" } }
+            }
+            try! list::push{ list = &argv, item = f }
+        }
+        let mut all = strs{ &heap }
+        for e in env { try! list::push{ list = &all, item = e } }
+        try! list::push{ list = &all, item = CTXC_STACK }
+        return run{ &fs, &proc, &heap, &scratch, argv = list::items{ list = argv }, env = list::items{ list = all }, dir, input = "", seconds = 0 }
+    }
+
+    // What building a program gave: its executable, or ctxc's errors (its standard error), or
+    // what else went wrong.
+    union Built { exe{ path: []u8 }, errors{ text: []u8 }, failed{ why: []u8 } }
+
+    // Builds the program of files, in directory dir, into an executable in the cache, named by
+    // a hash of its C and of all that compiles it: built once, however many cases have the same.
+    // ctxc runs with `env` added to its environment.
+    fn build { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, s: Session, mut scratch: Scratch, files: [][]u8, denied: [][]u8, dir: []u8, up: []u8, name: []u8, flags: [][]u8, level: u8, env: [][]u8 } -> Built {
+        scratch.seq = scratch.seq + 1
+        let tmp_c = join{ &heap, a = scratch.dir, b = cat3{ &heap, a = "c", b = number{ &heap, n = scratch.seq }, c = ".c" } }
+        _ = fs::remove{ &fs, path = tmp_c } iferr {}
+        let r = ctxc_build{ &fs, &proc, &heap, s, &scratch, ctxc = s.ctxc, out_c = tmp_c, files, denied, dir, up, platform = os_name{ os = s.os }, env }
+        if not r.started { return Built::failed{ why = cat{ &heap, a = "ctxc didn't start: ", b = r.err } } }
+        if r.late { return Built::failed{ why = "ctxc build didn't end" } }
+        let wrote = kind_of{ &fs, path = tmp_c } == 1
+        if r.code == 1 and not wrote { return Built::errors{ text = r.err } }
+        if r.code != 0 or not wrote {
+            let mut b = text{ &heap }
+            try! @fmt(&b, "ctxc build exited with {}:\n{}", r.code, r.err)
+            _ = fs::remove{ &fs, path = tmp_c } iferr {}
+            return Built::failed{ why = utf8::view{ b }.bytes }
+        }
+        let mut cflags = strs{ &heap }
+        for f in CFLAGS {
+            if eq{ a = f, b = "-O1" } {
+                let o: [3]u8 = ['-', 'O', '0' + level]
+                try! list::push{ list = &cflags, item = copy_of{ &heap, s = o[..] } }
+            } else {
+                try! list::push{ list = &cflags, item = f }
+            }
+        }
+        let mut h = sha256::new{}
+        sha256::add_field{ s = &h, bytes = s.rt }
+        sha256::add_field{ s = &h, bytes = name }
+        for f in flags { sha256::add_field{ s = &h, bytes = f } }
+        sha256::add_field{ s = &h, bytes = "" }
+        for f in list::items{ list = cflags } { sha256::add_field{ s = &h, bytes = f } }
+        sha256::add_field{ s = &h, bytes = "" }
+        let c = read_file{ &fs, &heap, path = tmp_c } ifnull { return Built::failed{ why = "the C can't be read" } }
+        sha256::add{ s = &h, bytes = c }
+        let dir_exe = join{ &heap, a = s.cache, b = "exe" }
+        let exe = join{ &heap, a = dir_exe, b = cat{ &heap, a = hex_of{ &heap, h }[..24], b = exe_suffix{ os = s.os } } }
+        if kind_of{ &fs, path = exe } == 1 {
+            _ = fs::remove{ &fs, path = tmp_c } iferr {}
+            return Built::exe{ path = exe }
+        }
+        if not made{ &fs, &heap, path = dir_exe } { return Built::failed{ why = "the runner can't write in build/suite" } }
+        if let why = link{ &io, &fs, &proc, &heap, s, &scratch, tmp_c, exe, name, flags, cflags = list::items{ list = cflags } } {
+            return Built::failed{ why }
+        }
+        return Built::exe{ path = exe }
+    }
+
+    // ---- the session
+
+    // Writes s to path, a line for each value: `NAME<tab>VALUE`.
+    fn save { mut fs: Fs, mut heap: Heap, s: Session, path: []u8 } -> bool {
+        let mut b = text{ &heap }
+        try! @fmt(&b, "home\t{}\nos\t{}\nctxc\t{}\nrt\t{}\nkey\t{}\nrun\t{}\ncache\t{}\n", s.home, os_name{ os = s.os }, s.ctxc, s.rt, s.key, s.run, s.cache)
+        for w in s.cc { try! @fmt(&b, "cc\t{}\n", w) }
+        for w in s.cc_env { try! @fmt(&b, "cc_env\t{}\n", w) }
+        return write_file{ &fs, path, bytes = utf8::view{ b }.bytes }
+    }
+
+    fn load { mut fs: Fs, mut heap: Heap, path: []u8 } -> ?Session {
+        let all = read_file{ &fs, &heap, path } ifnull { return null }
+        let mut s = Session{ home = "", os = build::Os::linux, ctxc = "", cc = slice::empty([]u8){}, cc_env = slice::empty([]u8){}, rt = "", key = "", run = "", cache = "" }
+        let mut cc = strs{ &heap }
+        let mut cc_env = strs{ &heap }
+        let mut from: usize = 0
+        while from < all.len {
+            let end = line_end{ s = all, from }
+            let line = all[from..end]
+            from = end + 1
+            let tab = find{ s = line, part = "\t" } ifnull { continue }
+            let name = line[..tab]
+            let value = line[tab + 1..]
+            if eq{ a = name, b = "home" } {
+                s.home = value
+            } else if eq{ a = name, b = "os" } {
+                s.os = if eq{ a = value, b = "windows" } { build::Os::windows } else if eq{ a = value, b = "macos" } { build::Os::macos } else { build::Os::linux }
+            } else if eq{ a = name, b = "ctxc" } {
+                s.ctxc = value
+            } else if eq{ a = name, b = "rt" } {
+                s.rt = value
+            } else if eq{ a = name, b = "key" } {
+                s.key = value
+            } else if eq{ a = name, b = "run" } {
+                s.run = value
+            } else if eq{ a = name, b = "cache" } {
+                s.cache = value
+            } else if eq{ a = name, b = "cc" } {
+                try! list::push{ list = &cc, item = value }
+            } else if eq{ a = name, b = "cc_env" } {
+                try! list::push{ list = &cc_env, item = value }
+            }
+        }
+        s.cc = list::items{ list = cc }
+        s.cc_env = list::items{ list = cc_env }
+        return s
+    }
+
+    // ctxc for ctxc's current source, built if it isn't cached, as toolchain.py's native_ctxc
+    // built it: the bootstrap's C is compiled to a seed, and the seed compiles the current
+    // source; if that gives the bootstrap's C again, the seed is the current ctxc. Null after
+    // saying why there is none. s needs its home, os, cc, rt and cache.
+    fn native_ctxc { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, s: Session, mut scratch: Scratch } -> ?[]u8 {
+        let dir = join{ &heap, a = s.cache, b = "ctxc" }
+        if not made{ &fs, &heap, path = dir } { return null }
+        let suffix = exe_suffix{ os = s.os }
+        let platform = os_name{ os = s.os }
+        let boot_name = cat3{ &heap, a = "bootstrap/ctxc.", b = platform, c = ".c" }
+        let boot = join{ &heap, a = s.home, b = boot_name }
+        let mut h = sha256::new{}
+        sha256::add_field{ s = &h, bytes = s.rt }
+        if not add_file{ &fs, &heap, &h, path = boot, name = boot_name } {
+            _ = @fmt(&io, "suite: no {}\n", boot)
+            return null
+        }
+        let seed = join{ &heap, a = dir, b = cat3{ &heap, a = "seed-", b = hex_of{ &heap, h }[..16], c = suffix } }
+        let none: [0][]u8 = []
+        if kind_of{ &fs, path = seed } != 1 {
+            io::println{ &io, s = "suite: building ctxc from the bootstrap ..." }
+            io::flush{ &io }
+            let tmp = join{ &heap, a = scratch.dir, b = "seed.c" }
+            if not copy_tree{ &fs, &heap, from = boot, to = tmp } { return null }
+            if let why = link{ &io, &fs, &proc, &heap, s, &scratch, tmp_c = tmp, exe = seed, name = "ctxc", flags = none[..], cflags = CFLAGS[..] } {
+                _ = @fmt(&io, "suite: the bootstrap didn't build: {}\n", why)
+                return null
+            }
+        }
+        // The current source: ctxc's files and std's, with this platform's layer.
+        let mut files = strs{ &heap }
+        ctx_files{ &fs, &heap, home = s.home, up = "", dir = "ctxc", out = &files }
+        let mut std = strs{ &heap }
+        std_files{ &fs, &heap, home = s.home, up = "", platform, out = &std }
+        let mut k = sha256::new{}
+        sha256::add_field{ s = &k, bytes = s.rt }
+        _ = add_file{ &fs, &heap, h = &k, path = boot, name = boot_name }
+        for f in list::items{ list = files } { _ = add_file{ &fs, &heap, h = &k, path = join{ &heap, a = s.home, b = f }, name = f } }
+        for f in list::items{ list = std } { _ = add_file{ &fs, &heap, h = &k, path = join{ &heap, a = s.home, b = f }, name = f } }
+        let exe = join{ &heap, a = dir, b = cat3{ &heap, a = "ctxc-", b = hex_of{ &heap, h = k }[..16], c = suffix } }
+        // A file beside it says that the seed is the current ctxc.
+        let same = cat{ &heap, a = exe, b = ".seed" }
+        if kind_of{ &fs, path = same } == 1 { return seed }
+        if kind_of{ &fs, path = exe } == 1 { return exe }
+        io::println{ &io, s = "suite: building ctxc from its source ..." }
+        io::flush{ &io }
+        let tmp = join{ &heap, a = scratch.dir, b = "ctxc.c" }
+        _ = fs::remove{ &fs, path = tmp } iferr {}
+        let r = ctxc_build{ &fs, &proc, &heap, s, &scratch, ctxc = seed, out_c = tmp, files = list::items{ list = files }, denied = none[..], dir = s.home, up = "", platform, env = none[..] }
+        if not r.started or r.code != 0 {
+            _ = @fmt(&io, "suite: the bootstrap ctxc can't compile ctxc's source:\n{}\n", r.err)
+            return null
+        }
+        let new = read_file{ &fs, &heap, path = tmp } ifnull { return null }
+        let old = read_file{ &fs, &heap, path = boot } ifnull { return null }
+        if eq{ a = new, b = old } {
+            _ = fs::remove{ &fs, path = tmp } iferr {}
+            if not write_file{ &fs, path = same, bytes = "" } { return null }
+            return seed
+        }
+        if let why = link{ &io, &fs, &proc, &heap, s, &scratch, tmp_c = tmp, exe, name = "ctxc", flags = none[..], cflags = CFLAGS[..] } {
+            _ = @fmt(&io, "suite: ctxc didn't build: {}\n", why)
+            return null
+        }
+        return exe
+    }
+}

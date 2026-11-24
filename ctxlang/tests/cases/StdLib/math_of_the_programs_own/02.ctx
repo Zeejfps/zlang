@@ -1,0 +1,9 @@
+#pure
+extern fn labs { n: i64 } -> i64
+const A: i64 = labs{ n = -3 }
+
+// A program's own declaration of one of the C library's math functions runs while
+// compiling too: it is the same C function. Another extern fn still stops a const.
+//# errors:
+//| 02.ctx:3:20: error: const `A` calls extern fn `labs`, which can't run while compiling
+//| 02.ctx:1:1: error: no `fn main` entry point

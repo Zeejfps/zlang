@@ -1,0 +1,3 @@
+fn main {} {
+    let x = )  //~ error at 13: expected an expression, found ')'
+}

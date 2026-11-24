@@ -1,0 +1,14 @@
+
+fn main { mut io: Io } {
+    let mut mem: [4096]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+
+    let name = utf8::of{ chars = "caf\xc3\xa9" }
+    let small: u8 = 7
+    _ = @fmt(&b, "{} {} {} {} {} {}|{}|{{}}|{}", -3, small, 1.5, true, name, @as(f32, 0.5), utf8::write_char{ c = 'A', _ }, "lit")
+    io::println{ &io, s = utf8::view{ b } }
+}
+
+//# stdout:
+//| -3 7 1.5 true café 0.5|A|{}|lit

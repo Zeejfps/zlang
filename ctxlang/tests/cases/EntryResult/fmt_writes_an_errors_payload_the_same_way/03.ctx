@@ -1,0 +1,22 @@
+// In any @fmt, to any sink: the parts' writers' errors join the @fmt's set, so this
+// match lists all of them.
+
+struct Point { x: i32, y: i32 }
+struct Empty {}
+struct Line { a: Point, b: Point, tag: Tag }
+type Meters = distinct f32
+enum Tag: u8 { thin, thick = 7 }
+union Shape { none, dot{}, circle{ r: f64, at: Point } }
+
+error lost{ l: Line }
+#write
+fn one { mut io: Io, p: Point } {}
+#write
+fn two { mut io: Io, p: Point } {}
+fn go {} -> ! { return lost{ l = Line{ a = Point{ x = 0, y = 0 }, b = Point{ x = 3, y = 4 }, tag = Tag::thin } } }
+fn main { mut io: Io } {
+    match go{} {
+        ok => {}
+        err{ error } => { _ = @fmt(&io, "{}", error) }  //~ error at 47: @fmt has two writers of Point to Io, for a part of `lost`'s field `l`: `one` and `two`
+    }
+}

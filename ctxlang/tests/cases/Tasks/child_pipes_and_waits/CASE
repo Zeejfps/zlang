@@ -1,0 +1,15 @@
+// A child's standard error read by a task while this code reads its standard output,
+// which must run concurrently; then a blocked pipe read and a child wait, each cancelled,
+// which leaves the child to be killed and waited for.
+// The children are tests/helpers/child.ctx: `flood 2000` writes 2000 lines of 100 `e` to its
+// standard error and of 100 `o` to its standard output, in turn, 202000 bytes each, which is
+// more than a pipe holds; `sleep 30000 0` sleeps.
+//# build child: {home}/tests/helpers/child.ctx
+//# program: main.ctx
+//# args: {child}
+//# interp: cannot run
+//# stdout:
+//| 202000 202000
+//| read: cancelled
+//| wait: cancelled
+//| 137

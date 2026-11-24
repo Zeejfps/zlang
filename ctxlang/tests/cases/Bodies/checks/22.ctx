@@ -1,0 +1,9 @@
+fn bump { mut n: i32, by: i32 } { n = n + by }
+fn main {} {
+    let mut n = 0
+    let by = 2
+    bump{ .. }
+    bump{ by = 3, .. }
+}
+
+//# exit: 0

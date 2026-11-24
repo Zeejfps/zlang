@@ -1,0 +1,99 @@
+
+fn table {} -> [256]u8 {
+    let mut t: [256]u8
+    let mut i: usize = 0
+    while i < t.len {
+        t[i] = @trunc(u8, i * 37 % 256)
+        i = i + 1
+    }
+    return t
+}
+fn fib { n: u64 } -> u64 {
+    if n < 2 { return n }
+    return fib{ n = n - 1 } + fib{ n = n - 2 }
+}
+fn pair(T) { x: T, y: T } -> [2]T { return [x, y] }
+struct Point { x: i32, y: i32 }
+union Shape { dot, circle{ at: Point, r: f64 } }
+fn origin { d: i32 } -> Point { return Point{ x = -d, y = d * 2 } }
+fn circle {} -> Shape { return Shape::circle{ at = origin{ d = 1 }, r = 2.5 } }
+fn find { xs: []u8, b: u8 } -> ?usize {
+    let mut i: usize = 0
+    while i < xs.len {
+        if xs[i] == b { return i }
+        i = i + 1
+    }
+    return null
+}
+fn word {} -> []u8 {
+    let s: []u8 = "lookup table"
+    return s[7..]
+}
+fn greeting {} -> utf8::String { return "hello" }
+fn tail {} -> c::String {
+    let s: c::String = "a C string"
+    return c::String{ ptr = s.ptr + 2 }
+}
+fn squares {} -> [8]u32 {
+    let mut buf: [256]u8
+    let mut heap = arena::new{ buf = buf[..] }
+    let mut xs = list::new(u32){ realloc = arena::alloc, &heap }
+    let mut i: u32 = 0
+    while i < 8 {
+        try! list::push{ list = &xs, item = i * i }
+        i = i + 1
+    }
+    let mut out: [8]u32
+    slice::copy(u32){ dst = out[..], src = list::items{ list = xs } }
+    return out
+}
+const T: [256]u8 = table{}
+const FIB: u64 = fib{ n = 20 }
+const P: [2]i16 = pair(i16){ x = -3, y = 4 }
+const O: Point = origin{ d = 5 }
+const S: Shape = circle{}
+const AT: ?usize = find{ xs = "abc", b = 'c' }
+const MISSING: ?usize = find{ xs = "abc", b = 'z' }
+const NEXT: u64 = FIB + @as(u64, T[3])
+const FIFTH: u64 = FIB / 5
+const WORD: []u8 = word{}
+const HI: utf8::String = greeting{}
+const TAIL: c::String = tail{}
+const SQ: [8]u32 = squares{}
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = @as(u64, T[3]) }
+    io::println_u64{ &io, n = FIB + 1 }
+    io::println_i64{ &io, n = P[0] * P[1] }
+    io::println_i64{ &io, n = O.x + O.y }
+    match S {
+        circle{ at, r } => {
+            io::println_i64{ &io, n = at.y }
+            io::println_f64{ &io, n = r }
+        }
+        dot => {}
+    }
+    io::println_u64{ &io, n = AT ifnull { 99 } }
+    io::println_u64{ &io, n = MISSING ifnull { 99 } }
+    io::println_u64{ &io, n = NEXT }
+    io::println_u64{ &io, n = FIFTH }
+    io::println{ &io, s = utf8::String{ bytes = WORD } }
+    io::println{ &io, s = HI }
+    io::println{ &io, s = utf8::String{ bytes = c::bytes{ s = TAIL } } }
+    io::println_u64{ &io, n = @as(u64, SQ[7]) }
+}
+
+//# stdout:
+//| 111
+//| 6766
+//| -12
+//| 5
+//| 2
+//| 2.5
+//| 2
+//| 99
+//| 6876
+//| 1353
+//| table
+//| hello
+//| C string
+//| 49

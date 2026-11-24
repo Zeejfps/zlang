@@ -1,0 +1,10 @@
+// A capability's fields in the typed IR (`ctxc ir`): one without fields is a `cap` with only
+// its name, and one with a C function is 8 bytes, aligned to 8, with the field at 0.
+// The IR is the program's and std's, with ids that change when std does: what is stated is
+// the part the test is about, with `{n}` for the ids.
+//# $ ctxc ir {std} -- main0.ctx
+//# exit: 0
+//# stdout has:
+//| (cap "m::L"))
+//# stdout has:
+//| (cap "m::M" 8 8 [("f" {n} 0)])

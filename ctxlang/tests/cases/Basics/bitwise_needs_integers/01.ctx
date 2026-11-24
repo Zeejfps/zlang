@@ -1,0 +1,2 @@
+
+fn main { mut io: Io } { let x = 1.5 & 2.0 }  //~ error at 38: `&` needs integers, got {float}

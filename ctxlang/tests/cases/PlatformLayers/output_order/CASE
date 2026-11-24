@@ -1,0 +1,12 @@
+// std's platform layers (std/os/PLATFORM, spec §17), and standard output's buffer, which std
+// fills and the runtime flushes.
+// Standard output is written out before standard error, and a panic writes out what is
+// left before its message.
+//# build text: {home}/tests/helpers/text.ctx
+//# build program: main.ctx
+
+// Both streams go to one file, in the order the program writes them.
+//# $ {text} both out.txt {program}
+//# exit: 134
+//# file out.txt:
+//| 12345main.ctx:8:5: panic: 6

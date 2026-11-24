@@ -1,0 +1,29 @@
+// Every alternative binds the same names: on a union, and through a ?U.
+
+union Conv { none, some{ to: i32 }, slice{ to: i32, n: u8 }, addr{ to: i32 } }
+fn target { c: Conv } -> i32 {
+    if c is some{ to } | slice{ to } | addr{ to } { return to }
+    return -1
+}
+fn opt_target { c: ?Conv } -> i32 {
+    if c is slice{ to = t } | addr{ to = t } { return t }
+    return -1
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = target{ c = Conv::slice{ to = 4, n = 1 } } }
+    io::println_i64{ &io, n = target{ c = Conv::addr{ to = 5 } } }
+    io::println_i64{ &io, n = target{ c = Conv::none } }
+    io::println_i64{ &io, n = opt_target{ c = Conv::addr{ to = 6 } } }
+    io::println_i64{ &io, n = opt_target{ c = Conv::slice{ to = 7, n = 2 } } }
+    io::println_i64{ &io, n = opt_target{ c = Conv::some{ to = 8 } } }
+    io::println_i64{ &io, n = opt_target{ c = null } }
+}
+
+//# stdout:
+//| 4
+//| 5
+//| -1
+//| 6
+//| 7
+//| -1
+//| -1

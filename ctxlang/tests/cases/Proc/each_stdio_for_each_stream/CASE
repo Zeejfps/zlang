@@ -1,0 +1,69 @@
+// Each of a child's three streams goes, in turn, to each Stdio: this program's own
+// (inherit), the null device (ignore), a file, and a pipe. The child copies its input
+// into its output, and writes ERR to its error.
+// The child is tests/helpers/child.ctx, as `echo`: it writes `OUT[` its input `]`. The program
+// is given `from parent` as its own input, the file in holds `from file`, and the program
+// writes `piped input` into a pipe. What went to a pipe the program prints after `out pipe: `
+// or `err pipe: `; what went to its own streams is in its output as it is.
+//# build child: {home}/tests/helpers/child.ctx
+//# build program: main.ctx
+
+// stdin inherit, stdout ignore, stderr file
+//# write in0 escaped:
+//| from file\
+//# $ {program} {child} inherit ignore file in0 out0 err0
+//# stdin escaped:
+//| from parent\
+//# exit: 0
+//# stdout:
+//| exit 0
+//# file out0 escaped:
+//| \
+//# file err0 escaped:
+//| ERR\
+
+// stdin ignore, stdout file, stderr pipe
+//# write in1 escaped:
+//| from file\
+//# $ {program} {child} ignore file pipe in1 out1 err1
+//# stdin escaped:
+//| from parent\
+//# exit: 0
+//# stdout:
+//| err pipe: ERR
+//| exit 0
+//# file out1 escaped:
+//| OUT[]\
+//# file err1 escaped:
+//| \
+
+// stdin file, stdout pipe, stderr inherit
+//# write in2 escaped:
+//| from file\
+//# $ {program} {child} file pipe inherit in2 out2 err2
+//# stdin escaped:
+//| from parent\
+//# exit: 0
+//# stdout:
+//| out pipe: OUT[from file]
+//| exit 0
+//# stderr escaped:
+//| ERR\
+//# file out2 escaped:
+//| \
+//# file err2 escaped:
+//| \
+
+// stdin pipe, stdout inherit, stderr ignore
+//# write in3 escaped:
+//| from file\
+//# $ {program} {child} pipe inherit ignore in3 out3 err3
+//# stdin escaped:
+//| from parent\
+//# exit: 0
+//# stdout:
+//| OUT[piped input]exit 0
+//# file out3 escaped:
+//| \
+//# file err3 escaped:
+//| \

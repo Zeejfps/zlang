@@ -1,0 +1,2 @@
+fn f { b: []mut u32 } { }
+fn main {} { f{ b = [1, 2] } }  //~ error at 21: an array literal is read-only; it cannot be a []mut u32 //~ error at 21: expected []mut u32, got []u32

@@ -1,0 +1,44 @@
+// An array of handles, a group's first error, and a scope left with tasks in it.
+
+#task
+fn fill { mut buf: [8]u8, n: u8 } -> ! { buf[0] = n }
+
+#task
+fn look { s: []u8 } -> !u64 { return @as(u64, s.len) }
+
+#task
+fn sq { n: u64 } -> !u64 { return n * n }
+
+#task
+fn fails { n: u64 } -> ! { if n == 2 { return task::cancelled } }
+
+fn sum { mut threads: Threads, stop: bool } -> !u64 {
+    let mut ts: [4]task::Task(!u64)
+    let mut i: usize = 0
+    while i < 4 {
+        task::start{ &threads, task = &ts[i], run = sq{ n = @as(u64, i), _ } }
+        i = i + 1
+    }
+    if stop { return 0 }
+    let mut total: u64 = 0
+    i = 0
+    while i < 4 {
+        total = total + try task::wait{ &threads, task = &ts[i] }
+        i = i + 1
+    }
+    let mut g: task::Group
+    task::start_in{ &threads, group = &g, run = fails{ n = 1, _ } }
+    task::start_in{ &threads, group = &g, run = fails{ n = 2, _ } }
+    task::wait_all{ &threads, group = &g } iferr { total = total + 1000 }
+    return total
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    io::println_u64{ &io, n = sum{ &threads, stop = false } iferr { 99 } }
+    io::println_u64{ &io, n = sum{ &threads, stop = true } iferr { 99 } }
+    return 0
+}
+
+//# stdout:
+//| 1014
+//| 0

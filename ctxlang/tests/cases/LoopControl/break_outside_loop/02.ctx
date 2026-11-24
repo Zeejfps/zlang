@@ -1,0 +1,1 @@
+fn main { mut io: Io } { continue }  //~ error at 26: `continue` outside a loop

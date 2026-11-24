@@ -1,0 +1,25 @@
+// Two conversions to one T (PLAN.md 4.6) are an error where a literal would use them,
+// naming both, and not before: a program that calls one directly is fine.
+
+struct Celsius { deg: i32 }
+fn degrees { s: strlit } -> i32 {
+    let mut n = 0
+    let mut i: usize = 0
+    while i < s.bytes.len and s.bytes[i] >= '0' and s.bytes[i] <= '9' {
+        n = n * 10 + @as(i32, s.bytes[i] - '0')
+        i = i + 1
+    }
+    return n
+}
+namespace metric {
+    #convert
+    fn from_literal { s: strlit } -> Celsius { return Celsius{ deg = degrees{ s } } }
+}
+namespace imperial {
+    #convert
+    fn from_literal { s: strlit } -> Celsius { return Celsius{ deg = (degrees{ s } - 32) * 5 / 9 } }
+}
+fn main {} {
+    let c = Celsius{ deg = 1 }
+    let d = if c.deg > 0 { c } else { "0" }  //~ error at 39: string literal has two conversions to Celsius: `metric::from_literal` and `imperial::from_literal`
+}

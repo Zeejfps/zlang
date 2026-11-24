@@ -1,0 +1,4 @@
+fn f { s: []i32 } {
+    s[0] = 1  //~ error at 6: cannot write through []i32; it needs to be a `[]mut`
+}
+fn main {} {}

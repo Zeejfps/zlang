@@ -1,0 +1,10 @@
+
+fn f { x: ?i32 } -> i32 {
+    if x == null { return 0 }
+    let x = x * 10
+    return x
+}
+fn main { mut io: Io } { io::println_i64{ &io, n = f{ x = 7 } } }
+
+//# stdout:
+//| 70

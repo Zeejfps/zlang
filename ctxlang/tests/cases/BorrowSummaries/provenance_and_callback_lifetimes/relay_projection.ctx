@@ -1,0 +1,9 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// relay projection: rejected. It is never run: it would use a dangling pointer.
+
+error bad{ p: *i32 }
+struct Last { r: !*i32 }
+fn mk { p: *i32 } -> Last { return Last{ r = bad{ p } } }
+fn relay { p: *i32 } -> !*i32 { return mk{ p }.r }
+fn leak {} -> ! { let x: i32 = 1; _ = try relay{ p = &x } }  //~ error at 39: `try` would return an error that may hold the address of local `x`
+fn main {} { _ = leak{} }

@@ -1,0 +1,11 @@
+
+namespace a {
+    #test
+    fn one { mut t: Test } { @expect(&t, 1 == 1) }
+    #test
+    fn two { mut t: Test } { @expect(&t, 1 == 2) }
+}
+namespace b {
+    #test
+    fn one { mut t: Test } { @expect(&t, 1 == 1) }
+}

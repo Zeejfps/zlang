@@ -1,0 +1,1 @@
+namespace tools { fn text {} -> []u8 { return "const ANSWER: i64 = 42\n" } }

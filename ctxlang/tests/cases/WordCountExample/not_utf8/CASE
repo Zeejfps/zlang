@@ -1,0 +1,7 @@
+// examples/wordcount.ctx: a file that is not UTF-8 (`caf\xe9`) is refused, with exit code 1.
+//# program: {home}/examples/wordcount.ctx
+//# args: {dir}/tmp/bin
+//# interp: cannot run
+//# exit: 1
+//# stderr:
+//| not a UTF-8 text file

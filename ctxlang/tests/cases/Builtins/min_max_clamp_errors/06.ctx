@@ -1,0 +1,4 @@
+fn main {} {
+    let a = 3
+    let m = @clamp(a, 1, -1)  //~ error at 23: @clamp's low bound, 1, is above its high bound, -1: write `@clamp(x, -1, 1)`
+}

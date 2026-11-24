@@ -1,0 +1,12 @@
+// wait closes the pipes still open and sets them to null; Stdio::inherit has none.
+// The child is tests/helpers/child.ctx, as `exit 0`.
+//# build child: {home}/tests/helpers/child.ctx
+//# program: main.ctx
+//# args: {child}
+//# interp: cannot run
+//# stdout:
+//| true
+//| 0
+//| true
+//| true
+//| 0

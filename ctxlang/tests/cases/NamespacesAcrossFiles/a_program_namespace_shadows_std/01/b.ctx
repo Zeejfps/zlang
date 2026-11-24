@@ -1,0 +1,2 @@
+namespace list { fn yours {} -> i64 { return mine{} + 1 } }
+fn main { mut io: Io } { io::println_i64{ &io, n = list::yours{} } }

@@ -1,0 +1,13 @@
+
+type Meters = distinct f64
+type Seconds = distinct f64
+type UserId = distinct u64
+type Small = distinct u8
+type Name = distinct []u8
+struct P { x: i32, y: i32 }
+type Pos = distinct P
+type Flag = distinct bool
+type Id(T) = distinct u32
+fn f {} { let p = @as(Pos, P{ x = 1, y = 2 })
+ let x = p.x }  //~ error at 11: Pos has no field `x`: a distinct type has none of its own; convert it with @as(P, x)
+fn main {} {}

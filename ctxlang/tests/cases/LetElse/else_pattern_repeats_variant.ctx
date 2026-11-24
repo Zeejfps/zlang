@@ -1,0 +1,5 @@
+
+fn main {} {
+    let x: ?i32 = 1
+    let some{ value } = x else some { return }  //~ error at 37: variant `some` appears on both sides of the `else`
+}

@@ -1,0 +1,8 @@
+// examples/json reports a file that is not UTF-8 at the first bad byte (0xE9 alone, the
+// file is `"caf\xe9"`), with exit code 1.
+//# program: {home}/examples/json/main.ctx {home}/examples/json/parser.ctx {home}/examples/json/printer.ctx {home}/examples/json/value.ctx
+//# args: {dir}/tmp/in.json
+//# interp: cannot run
+//# exit: 1
+//# stderr:
+//| {dir}/tmp/in.json:1:5: not UTF-8 text

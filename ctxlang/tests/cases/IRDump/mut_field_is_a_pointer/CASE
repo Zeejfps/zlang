@@ -1,0 +1,10 @@
+// The typed IR (`ctxc ir`): a `mut` field is a pointer. Assigning it sets a `deref` of the
+// local, and `&n` passes an `addr`.
+// The IR is the program's and std's, with ids that change when std does: what is stated is
+// the part the test is about, with `{n}` for the ids.
+//# $ ctxc ir {std} -- main0.ctx
+//# exit: 0
+//# stdout has:
+//| (set (deref {n} (local {n} 0) {n} {n} {n})
+//# stdout has escaped:
+//| (addr\x20

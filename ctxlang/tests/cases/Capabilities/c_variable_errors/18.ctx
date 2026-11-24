@@ -1,0 +1,5 @@
+capability O {
+    #c::symbl{ name = "x" }  //~ error at 9: `symbl` not found in namespace `c`
+    extern a: i32
+}
+fn main {} {}

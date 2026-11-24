@@ -1,0 +1,35 @@
+// `_` is the type expected: a local's, an assignment's, a field's, a return type, the
+// other operand's, and an optional's payload.
+
+#c::symbol{ name = "llabs" }
+#pure
+extern fn long_abs { n: i64 } -> i64
+type Abs = extern fn{ n: i64 } -> i64
+struct Fns { abs: Abs }
+
+fn small { n: i32 } -> i32 { return n }
+fn back { p: *u8 } -> ?Abs { return @cast(_, p) }
+
+fn main { mut io: Io } -> i32 {
+    let f: Abs = long_abs
+    let p: *u8 = @cast(_, f)
+    let mut g: Abs = long_abs
+    g = @cast(_, p)
+    let fns = Fns{ abs = @cast(_, p) }
+    let big: i64 = 300
+    let a: i32 = @as(_, big)
+    let o: ?i16 = @as(_, big)
+    let t: u8 = @trunc(_, big)
+    let some{ value = h } = back{ p } else { return 1 }
+    let some{ value = s } = o else { return 1 }
+    io::println_i64{ &io, n = g{ n = -4 } + fns.abs{ n = -2 } + h{ n = -1 } }
+    io::println_i64{ &io, n = small{ n = @as(_, big) } + a + 1 }
+    io::println_i64{ &io, n = @as(i64, t) + s }
+    return 0
+}
+
+//# interp: cannot run
+//# stdout:
+//| 7
+//| 601
+//| 344

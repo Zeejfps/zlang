@@ -1,0 +1,5 @@
+error a
+error b
+error c
+fn f {} -> error(a)!u64 { return b }  //~ error at 34: `b` can't join error(a): a declared set holds only its own errors
+fn main {} { _ = f{} }

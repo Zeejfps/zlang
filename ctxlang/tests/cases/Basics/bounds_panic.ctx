@@ -1,0 +1,6 @@
+
+fn main { mut io: Io } {
+    let a = [1, 2, 3]
+    let mut i: usize = 3
+    io::println_i64{ &io, n = a[i] }  //~ panic at 32: index 3 out of bounds for length 3
+}

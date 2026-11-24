@@ -1,0 +1,1 @@
+fn main {} { let a = [1, 2, 3]; let f = 1.0; let x = a[f] }  //~ error at 56: an index is an integer, got {float}

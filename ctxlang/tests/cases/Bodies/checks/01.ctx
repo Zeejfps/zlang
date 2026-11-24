@@ -1,0 +1,9 @@
+fn f { o: ?i32 } -> i32 {
+    if o != null { return o + 1 }
+    return 0
+}
+fn main {} {
+    _ = f{ o = 1 }
+}
+
+//# exit: 0

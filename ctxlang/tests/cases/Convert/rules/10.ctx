@@ -1,0 +1,3 @@
+#convert
+fn f { s: strlit } -> ! { }  //~ error at 23: a `convert` fn must return a T or a !T: the literal's value
+fn main {} {}

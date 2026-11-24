@@ -1,0 +1,14 @@
+
+fn say { mut io: Io, n: i64 } { io::println_i64{ &io, n } }
+fn main { mut io: Io } {
+    if true {
+        defer say{ &io, n = 1 }
+        say{ &io, n = 2 }
+    }
+    say{ &io, n = 3 }
+}
+
+//# stdout:
+//| 2
+//| 1
+//| 3

@@ -1,0 +1,15 @@
+// utf8::push_bytes: bytes as text, a byte that starts no valid sequence as U+FFFD.
+
+fn main { mut io: Io } {
+    let mut mem: [256]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    let raw: []u8 = "ok\xff\xc3\xa9!"
+    let mut buf: [2]u8 = ['h', 'i']
+    let m: []mut u8 = buf[..]
+    try! @fmt(&b, "[{}] [{}]", raw, m)
+    io::println{ &io, s = utf8::view{ b } }
+}
+
+//# stdout:
+//| [ok�é!] [hi]

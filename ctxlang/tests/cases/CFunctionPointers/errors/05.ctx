@@ -1,0 +1,7 @@
+extern fn labs { n: i64 } -> i64
+fn main {} { let h: extern fn{ n: i64 } -> i64 = labs
+  let k: fn{ n: i64 } -> i64 = h }
+
+//# errors:
+//| 05.ctx:3:32: error: a C function pointer (extern fn{ n: i64 } -> i64) can't be used as a ctxlang fn{ n: i64 } -> i64
+//| 05.ctx:1:11: error: extern fn `labs` takes no capability: add a capability field for what it touches, or `#pure` if it touches only its arguments and the memory they point to

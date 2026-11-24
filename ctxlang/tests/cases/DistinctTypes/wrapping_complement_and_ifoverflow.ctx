@@ -1,0 +1,17 @@
+// `+%`, `~` and `ifoverflow` take a distinct integer as its base, and a field default
+// of one is a literal of it.
+
+type Meters = distinct u32
+type Flags = distinct u8
+struct Track { len: Meters = 7, f: Flags = 0 }
+
+fn main { mut io: Io } {
+    let a: Meters = 4000000000
+    let b: Meters = 1000000000
+    let f: Flags = 0x0F
+    let t = Track{ .. }
+    _ = @fmt(&io, "{} {} {} {} {}\n", a + b ifoverflow @as(Meters, 1), a +% b, ~f, t.len, a <<% 4)
+}
+
+//# stdout:
+//| 1 705032704 240 7 3870457856

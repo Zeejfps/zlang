@@ -1,0 +1,6 @@
+// examples/json prints text beyond ASCII in a string as it is.
+//# program: {home}/examples/json/main.ctx {home}/examples/json/parser.ctx {home}/examples/json/printer.ctx {home}/examples/json/value.ctx
+//# args: {dir}/tmp/in.json
+//# interp: cannot run
+//# stdout:
+//| "Zoë ☃"

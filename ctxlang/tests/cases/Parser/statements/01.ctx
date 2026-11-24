@@ -1,0 +1,3 @@
+fn main {} {
+    let x = 1 let y = 2  //~ error at 15: expected a newline or ';' after statement, found 'let'
+}

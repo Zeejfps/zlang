@@ -1,0 +1,2 @@
+const A: i32 = 1.5  //~ error at 16: expected i32, got {float}
+fn main {} {}

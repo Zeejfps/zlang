@@ -1,0 +1,5 @@
+
+union Shape { circle{ r: i32 }, square{ side: i32 }, rect{ w: i32, h: i32 }, dot, line }
+
+fn f { s: Shape } { match s { dot | else => { } } }  //~ error at 37: expected a name, found 'else': `else` is a keyword and can't be a name; use another, such as `else_` //~ error at 21: match isn't exhaustive: missing circle, square, rect, line
+fn main { mut io: Io } { }

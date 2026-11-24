@@ -1,0 +1,6 @@
+fn main { let c = ''' }
+
+//# errors:
+//| 06.ctx:1:19: error: a character literal holds exactly one character
+//| 06.ctx:1:21: error: a character literal holds exactly one character
+//| 06.ctx:1:11: error: expected a name, found 'let': `let` is a keyword and can't be a name; use another, such as `let_`

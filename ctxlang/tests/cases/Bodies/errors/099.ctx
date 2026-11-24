@@ -1,0 +1,4 @@
+fn w { mut b: utf8::Builder(arena::Arena) } -> ! {
+    return @fmt(&b, "{}")  //~ error at 12: the format has 1 hole but 0 arguments follow it
+}
+fn main {} {}

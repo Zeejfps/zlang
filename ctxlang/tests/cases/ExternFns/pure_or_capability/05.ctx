@@ -1,0 +1,6 @@
+// Every extern fn says what C does (spec §18, Extern functions, rule 8): a capability
+// field for what it touches, or `#pure`.
+
+#pure  //~ error at 1: `pure` applies only to an extern fn
+struct S { x: i32 }
+fn main {} {}

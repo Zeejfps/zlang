@@ -1,0 +1,4 @@
+fn f { a: i32, b: f64 } {
+    let c = a +% b  //~ error at 15: operands of `+%` have incompatible types: i32 and f64; convert one with @as
+}
+fn main {} {}

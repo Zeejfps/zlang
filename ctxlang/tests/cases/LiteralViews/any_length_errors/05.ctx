@@ -1,0 +1,2 @@
+const M: [2][_]u8 = [[1, 2], [3, 4]]  //~ error at 13: `[_]` is only a let's or a const's type, whose initializer gives the length
+fn main {} {}

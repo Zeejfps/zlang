@@ -1,0 +1,18 @@
+
+#task
+fn fail { n: u32 } -> !u32 {
+    let xs: [2]u32 = [1, 2]
+    return xs[@as(usize, n)]
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let mut t: task::Task(!u32)
+    task::start_concurrent{ &threads, task = &t, run = fail{ n = 5, _ } } iferr { return 1 }
+    _ = task::wait{ &threads, task = &t }
+    io::println{ &io, s = "not reached" }
+    return 0
+}
+
+// A panic in a task is reported with its task fn's name.
+//# interp: cannot run
+//# panic: panic_in_a_task.ctx:5:14: panic in task fail: index 5 out of bounds for length 2

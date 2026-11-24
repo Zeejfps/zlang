@@ -1,0 +1,23 @@
+// A bind passed to a call, a confined local's and a writer's are frame slots, and an
+// adapter of a named function is static: a loop in main borrows nothing.
+//# build text: {home}/tests/helpers/text.ctx
+//# $ ctxc build program.c {std} -- main.ctx
+//# exit: 0
+
+// main's C, from its `// main` line to the `}` that ends it, borrows no record and adapts
+// nothing: how often each of the three names is in it.
+//# $ {text} count program.c within "\n// main\n" "\n}\n" ctx_rec_alloc CTX_RECORDS ctx_adapt(
+//# stdout:
+//| 0
+//| 0
+//| 0
+
+// At exit, the record stack is back at the start of the runtime's first segment, which
+// was enough: account.c checks it, and aborts with `records not released` if not.
+//# $ cc {cflags} -I {home}/ctxc/rt program.c {home}/ctxc/rt/ctxrt.c account.c -lm -o records{exe} {stack}
+//# exit: 0
+//# $ ./records{exe}
+//# exit: 0
+//# stdout:
+//| 5
+//| 25000750005

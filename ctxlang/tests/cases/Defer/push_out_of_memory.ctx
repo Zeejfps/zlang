@@ -1,0 +1,23 @@
+// push fails with alloc::out_of_memory, leaving the list as it was, and try passes it up.
+
+fn fill(S) { mut xs: list::List(i64, S), n: i64 } -> ! {
+    let mut i: i64 = 0
+    while i < n {
+        try list::push{ list = &xs, item = i }
+        i = i + 1
+    }
+}
+fn main { mut io: Io } {
+    let mut mem: [100]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut xs = list::new(i64){ realloc = arena::alloc, &heap }
+    match fill{ &xs, n = 100 } {
+        ok                   => { io::println{ &io, s = "ok" } }
+        alloc::out_of_memory => { io::println_u64{ &io, n = xs.len } }
+    }
+    io::println_i64{ &io, n = list::at{ list = xs, i = xs.len - 1 }.* }
+}
+
+//# stdout:
+//| 8
+//| 7

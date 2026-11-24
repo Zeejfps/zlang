@@ -1,0 +1,6 @@
+fn id { p: *i32 } -> *i32 { return p }
+fn f {} -> *i32 {
+    let x = 1
+    return id{ p = &x }  //~ error at 5: returned value holds the address of local `x`
+}
+fn main {} {}

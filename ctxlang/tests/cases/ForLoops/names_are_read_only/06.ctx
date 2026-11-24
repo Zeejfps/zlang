@@ -1,0 +1,2 @@
+fn bump { mut n: i32 } { n = n + 1 }
+fn main {} { for i in 0..3 { bump{ n = &i } } }  //~ error at 41: `i` is not a mutable place: its `for` sets it each time round; pass a copy of it, a `let mut` //~ error at 40: expected *mut i32, got *{integer}

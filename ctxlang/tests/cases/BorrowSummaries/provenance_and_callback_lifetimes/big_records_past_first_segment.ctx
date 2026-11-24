@@ -1,0 +1,24 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// big records past first segment: accepted, and it runs.
+
+struct Big { a: [64]i64 }
+fn sum { b: Big, k: i64 } -> i64 { return b.a[0] + b.a[63] + k }
+fn main { mut io: Io } {
+    let mut fs: &fn{ k: i64 } -> i64 = sum{ b = Big{ a = [0; 64] }, _ }
+    let mut keep = fs
+    let mut i: i64 = 0
+    let mut t: i64 = 0
+    while i < 2000 {
+        let mut b = Big{ a = [0; 64] }
+        b.a[0] = i
+        b.a[63] = 1
+        keep = fs
+        fs = sum{ b, _ }
+        t = t + keep{ k = 0 }
+        i = i + 1
+    }
+    io::println_i64{ &io, n = t + fs{ k = 0 } }
+}
+
+//# stdout:
+//| 2001000

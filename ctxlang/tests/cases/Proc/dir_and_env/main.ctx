@@ -1,0 +1,23 @@
+
+fn main { mut io: Io, mut proc: Proc, args: Args } -> i32 {
+    let mut mem: [65536]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
+    let mut env = list::new([]u8){ realloc = arena::alloc, &heap }
+
+    let cmd: [3][]u8 = [args[0], "where_slashes", "CTX_TEST_DIR_ENV"]
+    let entries: [1][]u8 = ["CTX_TEST_DIR_ENV=here"]
+    let options = proc::Options{ env = entries[..], dir = args[1], stdout = proc::Stdio::pipe, .. }
+    let mut child = proc::spawn{ &proc, argv = cmd[..], options } iferr { return 1 }
+    let r = child.stdout ifnull { return 2 }
+    let mut got: [4096]u8
+    let mut n: usize = 0
+    while true {
+        let k = proc::read{ &proc, pipe = r, into = got[n..] } iferr { return 3 }
+        if k == 0 { break }
+        n = n + k
+    }
+    io::println{ &io, s = utf8::of{ chars = got[..n] } }
+    return proc::wait{ &proc, &child } iferr { 4 }
+
+}

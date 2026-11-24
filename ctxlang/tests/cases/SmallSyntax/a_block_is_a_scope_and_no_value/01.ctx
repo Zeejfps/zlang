@@ -1,0 +1,14 @@
+
+error bad
+struct P { x: i32, y: i32 }
+struct R { r: !i32 }
+union K { a, b, c }
+fn say { mut io: Io, s: utf8::String } { io::println{ &io, s } }
+fn mk { n: i32 } -> !P { if n < 0 { return bad }; return P{ x = n, y = n * 2 } }
+fn rr { n: i32 } -> R { let r: !i32 = n; return R{ r } }
+fn run { mut io: Io, n: i32, k: K } -> !i32 {
+    { let a = 1 }
+    return a  //~ error at 12: unknown name `a`
+    return 0
+}
+fn main { mut io: Io } { _ = @fmt(&io, "{}\n", run{ &io, n = 1, k = K::a } iferr -1) }

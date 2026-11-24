@@ -1,0 +1,13 @@
+
+struct Point { x: i32, y: i32 }
+enum Kind: u8 { byte, char }
+union Shape { none, circle{ r: f64 } }
+error bad{ at: usize, why: Kind }
+
+#write
+fn one { mut e: io::Stderr, p: Point } {}
+#write
+fn two { mut e: io::Stderr, p: Point } {}
+#test
+fn a { mut t: Test } { @expect(&t, Point{ x = 1, y = 1 } == Point{ x = 1, y = 1 }) }  //~ error at 41: @expect has two writers of Point to io::Stderr: `one` and `two` //~ error at 66: @expect has two writers of Point to io::Stderr: `one` and `two`
+fn main {} {}

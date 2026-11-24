@@ -1,0 +1,7 @@
+
+fn main {} {
+    a: while true {
+        defer { while true { break a } }  //~ error at 30: no enclosing loop is labeled `a` in this defer
+        break
+    }
+}

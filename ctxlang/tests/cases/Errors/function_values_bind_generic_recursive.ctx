@@ -1,0 +1,107 @@
+// Binds, `mut` fields, a generic function, a bare `!`, and functions that convert
+// themselves or each other while their sets are inferred.
+
+error empty
+error too_big{ n: i32 }
+error deep{ depth: u32 }
+
+fn bump { mut n: i32, by: i32 } -> !i32 {
+    if by > 10 { return too_big{ n = by } }
+    n = n + by
+    return n
+}
+
+fn first(T) { xs: []T } -> !T {
+    if xs.len == 0 { return empty }
+    return xs[0]
+}
+
+fn say { mut io: Io, text: []u8 } -> ! {
+    if text.len == 0 { return empty }
+    _ = @fmt(&io, "say {}\n", utf8::of{ chars = text })
+}
+
+fn walk { n: u32 } -> !u32 {
+    if n > 5 { return deep{ depth = n } }
+    if n == 0 { return 100 }
+    let me: fn{ n: u32 } -> !u32 = walk
+    return try me{ n = n - 1 }
+}
+
+fn down { n: u32 } -> !u32 {
+    if n == 0 { return deep{ depth = 0 } }
+    let up: fn{ n: u32 } -> !u32 = up_again
+    return try up{ n = n - 1 }
+}
+
+fn up_again { n: u32 } -> !u32 {
+    if n == 7 { return empty }
+    return try down{ n }
+}
+
+fn report { mut io: Io, r: !i32 } {
+    match r {
+        ok{ value } => { _ = @fmt(&io, "ok {}\n", value) }
+        err{ error } => {
+            match error {
+                too_big{ n } => { _ = @fmt(&io, "too big {}\n", n) }
+                else => { _ = @fmt(&io, "err {}\n", error) }
+            }
+        }
+    }
+}
+
+fn twice { f: &fn{ by: i32 } -> !i32 } -> !i32 {
+    _ = try f{ by = 1 }
+    return f{ by = 2 }
+}
+
+fn main { mut io: Io } {
+    let mut n: i32 = 1
+    let b: fn{ mut n: i32, by: i32 } -> !i32 = bump
+    report{ &io, r = b{ &n, by = 2 } }
+    report{ &io, r = b{ &n, by = 20 } }
+    let bb = bump{ &n, _ }
+    report{ &io, r = twice{ f = bb } }
+    report{ &io, r = twice{ f = bump{ &n, _ } } }
+    let wide: &fn{ by: i32, z: u8 } -> !i32 = bump{ &n, _ }
+    report{ &io, r = wide{ by = 4, z = 0 } }
+    let dup: &fn{ by: i32, n: i32 } -> !i32 = bump{ &n, _ }      // its `n` is dropped
+    report{ &io, r = dup{ by = 5, n = 99 } }
+    let xs: [2]i32 = [7, 8]
+    let fi: fn{ xs: []i32 } -> !i32 = first(i32)
+    report{ &io, r = fi{ xs = xs[..] } }
+    report{ &io, r = fi{ xs = xs[0..0] } }
+    let fj: fn{ xs: []i32 } -> !i32 = first
+    report{ &io, r = fj{ xs = xs[1..] } }
+    let s: fn{ mut io: Io, text: []u8 } -> ! = say
+    s{ &io, text = "hi" } iferr { _ = @fmt(&io, "say failed\n") }
+    s{ &io, text = "" } iferr err{ error } { _ = @fmt(&io, "say failed: {}\n", error) }
+    let w: fn{ n: u32 } -> !u32 = walk
+    _ = @fmt(&io, "walk {}\n", w{ n = 3 } iferr 0)
+    match w{ n = 9 } {
+        ok{ value } => { _ = @fmt(&io, "walk {}\n", value) }
+        err{ error } => { _ = @fmt(&io, "walk err {}\n", error) }
+    }
+    let d: fn{ n: u32 } -> !u32 = down
+    match d{ n = 3 } {
+        ok{ value } => { _ = @fmt(&io, "down {}\n", value) }
+        err{ error } => { _ = @fmt(&io, "down err {}\n", error) }
+    }
+}
+
+//# stdout:
+//| ok 3
+//| too big 20
+//| ok 6
+//| ok 9
+//| ok 13
+//| ok 18
+//| ok 7
+//| err empty
+//| ok 8
+//| say hi
+//| say failed: empty
+//| walk 100
+//| walk err deep{ depth = 9 }
+//| down err deep{ depth = 0 }

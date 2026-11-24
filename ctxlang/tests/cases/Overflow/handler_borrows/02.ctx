@@ -1,0 +1,10 @@
+// The handler's return, and its value, count where the function's result comes from.
+
+error bad{ p: *i32 }
+fn failure { p: *i32 } -> !i32 { return bad{ p } }
+fn leak {} -> !i32 {
+    let x: i32 = 42
+    let n: i32 = 50000
+    return n * n ifoverflow failure{ p = &x }  //~ error at 5: returned value holds the address of local `x`
+}
+fn main {} { _ = leak{} }

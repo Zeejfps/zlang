@@ -1,0 +1,6 @@
+// The project step passes what `ctxc graph` lists as denied on to `ctxc build`.
+// A generated file is listed as denied: its error is the only one, main.ctx's own pointer
+// arithmetic being excepted. The file is named by its text's hash.
+//# project
+//# errors:
+//| {gen}/t/gen-e65ef3e7170f1b46.ctx:1:56: error: pointer arithmetic is unchecked, and `build::deny_unchecked` in build.ctx denies it here: index an array or a slice (`s[i]`, which is bounds-checked), or write it in a directory its `except` lists

@@ -1,0 +1,5 @@
+
+fn main { mut io: Io } {
+    let o: ?i32 = null
+    let x = match o { null => { @panic() } some{ value } => { value } }  //~ panic at 33: @panic()
+}

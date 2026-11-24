@@ -1,0 +1,2 @@
+const A: bool = not 1  //~ error at 21: expected bool, got {integer}
+fn main {} {}

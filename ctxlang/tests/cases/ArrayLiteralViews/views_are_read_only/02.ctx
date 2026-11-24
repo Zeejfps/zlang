@@ -1,0 +1,4 @@
+fn main {} {
+    let xs: []u32 = [1, 2]
+    xs[0] = 3  //~ error at 7: cannot write through []u32; it needs to be a `[]mut`
+}

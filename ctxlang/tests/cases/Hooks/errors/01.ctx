@@ -1,0 +1,3 @@
+#start
+fn boot {} -> u8 { return 0 }  //~ error at 15: a `start` fn returns the exit code, an i32
+fn main {} {}

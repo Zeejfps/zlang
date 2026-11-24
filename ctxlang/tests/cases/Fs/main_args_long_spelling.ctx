@@ -1,0 +1,4 @@
+fn main { args: [][]u8 } -> i32 { return @as(i32, args.len) }
+
+//# args: a b
+//# exit: 2

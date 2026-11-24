@@ -1,0 +1,21 @@
+// std's writers onto an Io (standard output) and an io::Stderr; a []mut u8 takes the
+// []u8 one, and bytes go as they are.
+
+fn main { mut io: Io } {
+    let n: u8 = 7
+    let s: utf8::String = "caf\xc3\xa9"
+    let mut buf: [3]u8 = ['a', 'b', 'c']
+    let m: []mut u8 = buf[..]
+    _ = @fmt(&io, "{} {} {} {} {} {} {} {}\n", n, -5, true, 1.5, s, m, @as(f32, 0.1), @as(usize, 9))
+    let mut err = io::to_stderr{ &io }
+    _ = @fmt(&err, "warning: {} of {}\n", 3, @as(u16, 4))
+    let raw: []u8 = "\xff"
+    let cs: c::String = "hi"
+    _ = @fmt(&io, "{}|{}\n", raw.len, cs)
+}
+
+//# stdout:
+//| 7 -5 true 1.5 café abc 0.1 9
+//| 1|hi
+//# stderr:
+//| warning: 3 of 4

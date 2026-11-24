@@ -1,0 +1,2 @@
+struct S { f: extern fn{ x: ?i32 } }  //~ error at 26: an extern fn type can't pass `x` to C: it has type ?i32, which C has no equivalent of
+fn main {} {}

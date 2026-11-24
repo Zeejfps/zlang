@@ -1,0 +1,5 @@
+struct S { a: i32 }
+fn f {} {
+    S{ a = 1 }  //~ error at 6: an expression statement must be a call
+}
+fn main {} {}

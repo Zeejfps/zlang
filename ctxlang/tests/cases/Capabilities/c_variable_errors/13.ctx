@@ -1,0 +1,2 @@
+struct S { extern x: i32 }  //~ error at 12: expected a name, found 'extern': `extern` is a keyword and can't be a name; use another, such as `extern_`
+fn main {} {}

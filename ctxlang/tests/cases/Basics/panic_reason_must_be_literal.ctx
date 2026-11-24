@@ -1,0 +1,5 @@
+
+fn main { mut io: Io } {
+    let why = "no"
+    @panic(why)  //~ error at 12: @panic takes a string literal
+}

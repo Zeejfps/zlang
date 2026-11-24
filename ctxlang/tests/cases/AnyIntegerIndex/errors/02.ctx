@@ -1,0 +1,1 @@
+fn main {} { let a = [1, 2, 3]; let x = a[-1..2] }  //~ error at 43: literal -1 does not fit in usize

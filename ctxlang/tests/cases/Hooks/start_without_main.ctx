@@ -1,0 +1,7 @@
+// The start fn needn't take main, nor anything else.
+
+#start
+fn boot {} -> i32 { return 7 }
+fn main {} {}
+
+//# exit: 7

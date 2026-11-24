@@ -1,0 +1,7 @@
+error a
+error b
+fn main {} {
+    let mut e: error(a) = a
+    e = b  //~ error at 9: `b` can't join error(a): a declared set holds only its own errors
+    _ = e
+}

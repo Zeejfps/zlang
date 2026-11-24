@@ -1,0 +1,8 @@
+union U { a, b{ x: i32 } }
+fn f { u: U } {
+    match u {
+        a => {}
+        b{ z } => {}  //~ error at 12: variant `b` has no field `z`
+    }
+}
+fn main {} {}

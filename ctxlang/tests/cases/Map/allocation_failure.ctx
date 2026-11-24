@@ -1,0 +1,19 @@
+
+fn main { mut io: Io } {
+    let mut mem: [256]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut m = map::new(u64, u64){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 }
+    let mut i: u64 = 0
+    while true {
+        map::put{ &m, key = i, value = i } iferr { break }
+        i = i + 1
+    }
+    io::println_u64{ &io, n = i }
+    io::println_u64{ &io, n = map::len{ m } }
+    io::println_bool{ &io, n = map::has{ m, key = i - 1 } and not map::has{ m, key = i } }
+}
+
+//# stdout:
+//| 6
+//| 6
+//| true

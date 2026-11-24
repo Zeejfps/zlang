@@ -1,0 +1,5 @@
+error no_assets{ dir: []u8, tried: u32 }
+fn build { mut b: Build } -> ! {
+    io::println{ io = &b, s = "said" }
+    return no_assets{ dir = "art", tried = 2 }
+}

@@ -1,0 +1,9 @@
+namespace w {
+    struct C { p: *u8 }
+    error bad{ n: i32, f: f32, t: utf8::String, b: bool, p: *u8 }
+    #convert
+    fn from_literal { s: strlit } -> !C {
+        return bad{ n = -3, f = 1.5, t = "text", b = true, p = s.bytes.ptr }
+    }
+}
+fn main {} { let c: w::C = "" }  //~ error at 28: string literal: w::bad{ n = -3, f = 1.5, t = _, b = true, p = _ }

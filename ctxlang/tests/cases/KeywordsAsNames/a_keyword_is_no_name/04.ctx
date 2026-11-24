@@ -1,0 +1,5 @@
+
+struct S { a: i32 }
+fn f { a: i32 } -> i32 { return a }
+fn g { while: i32 } {}  //~ error at 8: expected a name, found 'while': `while` is a keyword and can't be a name; use another, such as `while_`
+fn main {} {}

@@ -1,0 +1,6 @@
+// Several filters: a test is selected by any of them.
+//# $ ctxc test . two b::
+//# exit: 1
+//# stdout:
+//| ./t.ctx:6: fail: a::two: 1 == 2: 1 == 2
+//| tests: 2 run, 1 passed, 1 failed, 1 not selected

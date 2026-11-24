@@ -1,0 +1,27 @@
+// A capability's field still takes `thread_local` on a static (and `c::symbol` on a C
+// variable, `stack_limit` on a static: Capabilities), and any other as data, beside a
+// struct's.
+
+namespace ecs {
+    struct key {}
+    struct cascade { depth: i32, deep: bool }
+    struct by { name: []u8, n: u32 }
+}
+const DEPTH: i32 = 2 + 1
+
+capability Counter {
+    #thread_local
+    #ecs::key
+    static n: i64,
+}
+struct S {
+    #ecs::key
+    n: i64,
+}
+fn main { mut io: Io, mut counter: Counter } {
+    counter.n = counter.n + S{ n = 5 }.n
+    io::println_i64{ &io, n = counter.n }
+}
+
+//# stdout:
+//| 5

@@ -1,0 +1,6 @@
+
+fn f { x: i64 } -> i64 { return x }
+fn main { mut io: Io } {
+    let a: i32 = 5
+    io::println_i64{ &io, n = f{ x = a } }
+}

@@ -1,0 +1,3 @@
+#convert
+fn f { mut s: strlit } -> i32 { return 1 }  //~ error at 8: a `convert` fn takes one read-only field of a literal type: `s: strlit`
+fn main {} {}

@@ -1,0 +1,7 @@
+fn inc { mut n: i32 } { n = n + 1 }
+fn g { mut n: i32, f: &fn{} } { n = 0 }
+fn f {} {
+    let mut n = 0
+    g{ &n, f = inc{ &n, _ } }  //~ error at 6: `n` overlaps a place held by `f`: `g` changes `n` through its field `n` at 2:33, and `f` may change `n` whenever it is called; pass one of them, or change `g` to leave `n` to `f`
+}
+fn main {} {}

@@ -1,0 +1,4 @@
+fn f {} {
+    let n = @as(i32, true)  //~ error at 22: @as converts numbers only
+}
+fn main {} {}

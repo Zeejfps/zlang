@@ -1,0 +1,19 @@
+// With die_with_parent, a child the program doesn't wait for ends when the program does:
+// on Linux PR_SET_PDEATHSIG, on Windows a Job Object that ends it when it is closed.
+// The program starts a child that runs for a minute, says so, and ends without waiting for
+// it. The child is tests/helpers/child.ctx, as `beat_aloud PATH`: it makes the file PATH
+// grow, and prints `beating`.
+// That the child has ended is the file no longer growing (`ends PATH`).
+//# only: windows linux: macOS has no way for a child to end with its parent
+//# build child: {home}/tests/helpers/child.ctx
+//# build program: main.ctx
+//# make dir beat
+//# $ {program} {child} true beat/file
+//# timeout: 30
+//# exit: 0
+//# stdout:
+//| beating
+//# $ {child} ends beat/file
+//# exit: 0
+//# stdout:
+//| ended

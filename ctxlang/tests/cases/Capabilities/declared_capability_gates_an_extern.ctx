@@ -1,0 +1,20 @@
+
+namespace clib {
+    // Permission to call the C library's math.
+    capability Lib
+
+    #c::symbol{ name = "labs" }
+    extern fn long_abs { mut lib: Lib, n: i64 } -> i64
+}
+
+fn magnitude { mut lib: clib::Lib, n: i64 } -> i64 {
+    return clib::long_abs{ &lib, n }
+}
+
+fn main { mut io: Io, mut lib: clib::Lib } {
+    io::println_i64{ &io, n = magnitude{ &lib, n = -12 } }
+}
+
+//# interp: cannot run
+//# stdout:
+//| 12

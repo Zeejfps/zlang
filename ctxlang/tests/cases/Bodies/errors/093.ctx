@@ -1,0 +1,4 @@
+fn w { mut n: i32 } -> ! {
+    return @fmt(&n, "x")  //~ error at 17: @fmt has no writer to i32: no `#write` fn it sees has a sink of that type
+}
+fn main {} {}

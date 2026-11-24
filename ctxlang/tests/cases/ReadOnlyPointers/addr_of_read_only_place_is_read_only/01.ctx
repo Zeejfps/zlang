@@ -1,0 +1,2 @@
+
+fn main { mut io: Io } { let a: i32 = 1; let p = &a; p.* = 2 }  //~ error at 55: cannot write through *i32; it needs to be a `*mut`

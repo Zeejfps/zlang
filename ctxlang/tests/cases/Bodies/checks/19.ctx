@@ -1,0 +1,13 @@
+fn f { mut n: i32 } {
+    defer n = n + 1
+    defer {
+        n = n * 2
+    }
+    n = 3
+}
+fn main {} {
+    let mut n = 0
+    f{ &n }
+}
+
+//# exit: 0

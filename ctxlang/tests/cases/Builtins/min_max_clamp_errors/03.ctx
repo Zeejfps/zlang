@@ -1,0 +1,3 @@
+fn main {} {
+    let m = @max("a", "b")  //~ error at 13: @max needs numbers, got []u8
+}

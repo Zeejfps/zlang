@@ -1,0 +1,6 @@
+
+namespace gff {
+    struct Field { label: u32, value: i64 }
+    fn read { n: i64 } -> Field { return Field{ label = LABEL, value = twice{ n } } }
+    namespace inner { fn base {} -> i64 { return 100 } }
+}

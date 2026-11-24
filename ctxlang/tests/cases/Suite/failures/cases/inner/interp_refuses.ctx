@@ -1,0 +1,5 @@
+fn main { mut fs: Fs } {
+    _ = fs::size{ &fs, path = "no-such-file" } iferr { 0 }
+}
+
+//# exit: 0

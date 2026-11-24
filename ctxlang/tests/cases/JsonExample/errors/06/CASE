@@ -1,0 +1,9 @@
+// examples/json reports a syntax error as FILE:LINE:COL: MESSAGE, with exit code 1:
+// a number with a leading zero,
+// `[01]`.
+//# program: {home}/examples/json/main.ctx {home}/examples/json/parser.ctx {home}/examples/json/printer.ctx {home}/examples/json/value.ctx
+//# args: {dir}/tmp/in.json
+//# interp: cannot run
+//# exit: 1
+//# stderr:
+//| {dir}/tmp/in.json:1:2: invalid number

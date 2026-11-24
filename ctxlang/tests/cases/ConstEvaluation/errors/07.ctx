@@ -1,0 +1,4 @@
+fn f {} -> i32 { return B }
+const A: i32 = f{}
+const B: i32 = A  //~ error at 16: const `A` refers to itself
+fn main {} {}

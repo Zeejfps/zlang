@@ -1,0 +1,7 @@
+struct T { n: i32 }
+struct W { t: ?T }
+fn g { t: T } {}
+fn f { w: *mut W } {
+    if w.t != null { g{ t = w.t } }  //~ error at 30: expected T, got ?T: `w.t` is reached through a pointer, so testing it for null doesn't narrow it; unwrap it with `if let v = w.t { ... }` or `let v = w.t ifnull { return }`
+}
+fn main {} {}

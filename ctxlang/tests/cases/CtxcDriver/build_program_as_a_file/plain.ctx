@@ -1,0 +1,2 @@
+fn build {} { let d: build::Decl }
+fn main {} {}

@@ -1,0 +1,3 @@
+#convert
+fn f { s: strlit } -> ?[]u8 { return null }  //~ error at 23: a `convert` fn can't give a ?[]u8: a string literal is one already
+fn main {} {}

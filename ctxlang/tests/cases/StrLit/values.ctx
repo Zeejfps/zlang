@@ -1,0 +1,31 @@
+
+struct Named { name: strlit, n: i32 }
+fn size { s: strlit } -> usize { return s.bytes.len }
+fn view { s: strlit } -> []u8 { return s.bytes }
+fn same { s: strlit } -> strlit { return s }
+fn pick { b: bool } -> strlit { return if b { "yes" } else { "no" } }
+const FOLDED: strlit = "folded"
+const RUN: strlit = same{ s = "evaluated" }
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = size{ s = "hello" } + size{ s = "" } }
+    let s: strlit = "abc"
+    io::println_u64{ &io, n = s.bytes.len + @as(u64, (s.bytes.ptr + 3).*) }
+    io::println{ &io, s = utf8::of{ chars = view{ s = "view" } } }
+    let n = Named{ name = "named", n = 2 }
+    io::println_u64{ &io, n = n.name.bytes.len }
+    io::println_u64{ &io, n = FOLDED.bytes.len + @size_of(strlit) }
+    io::println_u64{ &io, n = RUN.bytes.len + @as(u64, (RUN.bytes.ptr + 9).*) }
+    io::println{ &io, s = utf8::of{ chars = pick{ b = false }.bytes } }
+    let o: ?strlit = "maybe"
+    if o != null { io::println_u64{ &io, n = o.bytes.len } }
+}
+
+//# stdout:
+//| 5
+//| 3
+//| view
+//| 5
+//| 22
+//| 9
+//| no
+//| 5

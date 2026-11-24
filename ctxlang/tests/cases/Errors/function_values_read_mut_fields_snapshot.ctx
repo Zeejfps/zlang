@@ -1,0 +1,34 @@
+// The converted value passes what it reads as the argument's value (§14, rule 6): a
+// struct over 32 bytes, which another argument points into, is a copy, as in a direct
+// call. Through a name, a function value, and a bind of one.
+
+struct Big { a: i64, b: i64, c: i64, d: i64, e: i64 }
+
+fn inspect { b: Big, p: *mut i64 } -> i64 {
+    p.* = 99
+    return b.a
+}
+
+fn inspect_io { mut io: Io, b: Big, p: *mut i64 } -> i64 {
+    p.* = 99
+    return b.a
+}
+
+fn main { mut io: Io } {
+    let mut big = Big{ a = 1, b = 2, c = 3, d = 4, e = 5 }
+    _ = @fmt(&io, "{} ", inspect{ b = big, p = &big.a })
+    big.a = 1
+    let f: fn{ mut b: Big, p: *mut i64 } -> i64 = inspect
+    _ = @fmt(&io, "{} ", f{ b = &big, p = &big.a })
+    big.a = 1
+    let v: fn{ b: Big, p: *mut i64 } -> i64 = inspect
+    let w: fn{ mut b: Big, p: *mut i64 } -> i64 = v
+    _ = @fmt(&io, "{} ", w{ b = &big, p = &big.a })
+    big.a = 1
+    let k: fn{ mut io: Io, b: Big, p: *mut i64 } -> i64 = inspect_io
+    let kb: &fn{ mut b: Big, p: *mut i64 } -> i64 = k{ &io, _ }
+    _ = @fmt(&io, "{} {}\n", kb{ b = &big, p = &big.a }, big.a)
+}
+
+//# stdout:
+//| 1 1 1 1 99

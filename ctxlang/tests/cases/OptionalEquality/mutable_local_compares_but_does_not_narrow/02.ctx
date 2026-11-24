@@ -1,0 +1,7 @@
+
+fn f {} -> i32 {
+    let mut x: ?i32 = 1
+    if x == 1 { return x }  //~ error at 24: expected i32, got ?i32: `x` is mutable, so testing it for null doesn't narrow it; unwrap it with `if let v = x { ... }` or `let v = x ifnull { return }`
+    return 0
+}
+fn main {} { }

@@ -1,0 +1,22 @@
+// `ctxc build`, `ir` and `decls` take the files to deny after `--deny-unchecked`, up to
+// the next `--allow-unchecked`.
+//# $ ctxc ir {std} -- a.ctx b.ctx c.ctx
+// Nothing is denied: no error. (The IR itself is not this case's subject.)
+//# exit: 0
+//# stdout lacks:
+//|  is unchecked, 
+//# $ ctxc ir {std} -- a.ctx --deny-unchecked b.ctx --allow-unchecked c.ctx
+//# exit: 1
+//# stdout:
+//| error b.ctx:1:35 pointer arithmetic is unchecked, and `build::deny_unchecked` in build.ctx denies it here: index an array or a slice (`s[i]`, which is bounds-checked), or write it in a directory its `except` lists
+//# $ ctxc ir {std} -- --deny-unchecked a.ctx --allow-unchecked b.ctx --deny-unchecked c.ctx
+//# exit: 1
+//# stdout:
+//| error a.ctx:2:35 pointer arithmetic is unchecked, and `build::deny_unchecked` in build.ctx denies it here: index an array or a slice (`s[i]`, which is bounds-checked), or write it in a directory its `except` lists
+//| error c.ctx:1:35 pointer arithmetic is unchecked, and `build::deny_unchecked` in build.ctx denies it here: index an array or a slice (`s[i]`, which is bounds-checked), or write it in a directory its `except` lists
+//# $ ctxc ir {std} -- --deny-unchecked a.ctx b.ctx c.ctx
+//# exit: 1
+//# stdout:
+//| error a.ctx:2:35 pointer arithmetic is unchecked, and `build::deny_unchecked` in build.ctx denies it here: index an array or a slice (`s[i]`, which is bounds-checked), or write it in a directory its `except` lists
+//| error b.ctx:1:35 pointer arithmetic is unchecked, and `build::deny_unchecked` in build.ctx denies it here: index an array or a slice (`s[i]`, which is bounds-checked), or write it in a directory its `except` lists
+//| error c.ctx:1:35 pointer arithmetic is unchecked, and `build::deny_unchecked` in build.ctx denies it here: index an array or a slice (`s[i]`, which is bounds-checked), or write it in a directory its `except` lists

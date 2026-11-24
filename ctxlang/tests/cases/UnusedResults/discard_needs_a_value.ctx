@@ -1,0 +1,3 @@
+
+fn nothing {} { }
+fn main { mut io: Io } { _ = nothing{} }  //~ error at 37: nothing to discard: this returns no value

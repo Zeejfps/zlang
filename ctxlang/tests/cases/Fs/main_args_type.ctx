@@ -1,0 +1,1 @@
+fn main { args: []u8 } { }  //~ error at 1: `main` context field `args` must have type Args, got []u8

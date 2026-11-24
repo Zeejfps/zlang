@@ -1,0 +1,1 @@
+fn main { let c = '' }  //~ error at 19: a character literal holds exactly one character //~ error at 9: a function's context comes before its body: write `fn main {} { ... }`

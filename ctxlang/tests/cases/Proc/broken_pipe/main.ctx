@@ -1,0 +1,21 @@
+
+extern fn signal { mut proc: Proc, number: i32, handler: u64 } -> u64
+
+fn main { mut io: Io, mut proc: Proc, args: Args } -> i32 {
+    if proc::os{ &proc } != build::Os::windows { _ = signal{ &proc, number = 13, handler = 1 } }      // SIGPIPE, SIG_IGN
+    let cmd: [2][]u8 = [args[0], "close_input"]
+    let options = proc::Options{ stdin = proc::Stdio::pipe, stdout = proc::Stdio::pipe, .. }
+    let mut child = proc::spawn{ &proc, argv = cmd[..], options } iferr { return 1 }
+    let w = child.stdin ifnull { return 2 }
+    let r = child.stdout ifnull { return 3 }
+    let mut got: [64]u8
+    _ = proc::read{ &proc, pipe = r, into = got[..] } iferr { return 4 }
+    match proc::write{ &proc, pipe = w, bytes = "more" } {
+        ok                => { io::println{ &io, s = "written" } }
+        proc::broken_pipe => { io::println{ &io, s = "broken pipe" } }
+        else              => { io::println{ &io, s = "other" } }
+    }
+    proc::kill{ &proc, child } iferr { return 5 }
+    io::println_i64{ &io, n = proc::wait{ &proc, &child } iferr { return 6 } }
+    return 0
+}

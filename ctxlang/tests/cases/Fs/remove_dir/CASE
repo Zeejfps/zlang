@@ -1,0 +1,13 @@
+// fs::remove_dir refuses a directory with a file in it (fs::not_empty), removes an empty one,
+// fails with fs::not_found once it is gone, and with fs::not_directory for a file, which
+// stays.
+//# program: main.ctx
+//# args: {dir}/tmp/sub {dir}/tmp/sub/in.txt {dir}/tmp/file.txt
+//# interp: cannot run
+//# stdout:
+//| true
+//| true
+//| true
+//| true
+//# missing tmp/sub
+//# exists tmp/file.txt

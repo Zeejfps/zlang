@@ -1,0 +1,55 @@
+// `error`, and `!T` outside a function's own result, hold any error.
+
+namespace parse {
+    error empty
+    error bad_digit{ at: usize }
+    error too_big
+}
+
+fn number { s: []u8 } -> !u64 {
+    if s.len == 0 { return parse::empty }
+    let mut n: u64 = 0
+    let mut i: usize = 0
+    while i < s.len {
+        if s[i] < '0' or s[i] > '9' { return parse::bad_digit{ at = i } }
+        if n > 100000 { return parse::too_big }
+        n = n * 10 + @as(u64, s[i] - '0')
+        i = i + 1
+    }
+    return n
+}
+
+fn show { mut io: Io, r: !u64 } {
+    let mut mem: [256]u8 = [0; 256]
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    match r {
+        ok{ value }  => { _ = @fmt(&b, "ok {}", value) }
+        err{ error } => { _ = @fmt(&b, "err {}", error) }
+    }
+    io::println{ &io, s = utf8::view{ b } }
+}
+
+error other
+struct Last { r: !u64 }
+fn report { mut io: Io, e: error } {
+    match e {
+        parse::empty => { io::println{ &io, s = "empty" } }
+        else         => { io::println{ &io, s = "something else" } }
+    }
+}
+fn main { mut io: Io } {
+    let last = Last{ r = number{ s = "" } }
+    match last.r {
+        ok => {}
+        err{ error } => { report{ &io, e = error } }
+    }
+    report{ &io, e = other }
+    let e: error = parse::too_big
+    report{ &io, e }
+}
+
+//# stdout:
+//| empty
+//| something else
+//| something else

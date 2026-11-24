@@ -1,0 +1,5 @@
+// §11, Literals, rule 2: a float literal that would round to an infinity in its type is
+// an error, however it takes the type; `@as` gives the infinity.
+
+const BIG: f32 = -1e39  //~ error at 18: -1e39 doesn't fit f32 (its largest value is about 3.4e38): write `-math::INF_F32` if infinity is meant
+fn main {} { _ = BIG }

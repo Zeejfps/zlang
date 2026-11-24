@@ -1,0 +1,18 @@
+
+union Shape { circle{ r: i32 }, square{ side: i32 }, rect{ w: i32, h: i32 }, dot, line }
+
+fn grow { s: *mut Shape } {
+    match s {
+        circle{ &r = n } | square{ &side = n } => { n = n + 1 }
+        else                                   => { }
+    }
+}
+fn main { mut io: Io } {
+    let mut s = Shape::square{ side = 4 }
+    grow{ s = &s }
+    let square{ side } = s else { @panic() }
+    io::println_i64{ &io, n = side }
+}
+
+//# stdout:
+//| 5

@@ -1,0 +1,7 @@
+// A `for` may run no turn: it ends no path, and assigns nothing for sure. Narrowing, a
+// handle's scope and shadowing work in its body as in a `while`'s.
+
+fn main {} {
+    let x: i32
+    for i in 0..3 { x = i }  //~ error at 5: `x` may be assigned more than once: it is assigned in a loop that can repeat; declare it with `let mut`
+}

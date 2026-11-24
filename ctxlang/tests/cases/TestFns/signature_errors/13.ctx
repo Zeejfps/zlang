@@ -1,0 +1,3 @@
+#test{ panics = "a", panics = "b" }  //~ error at 22: `panics` is given twice
+fn a {} {}
+fn main {} {}

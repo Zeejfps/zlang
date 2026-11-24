@@ -1,0 +1,4 @@
+fn main { mut io: Io } {
+    let x: i32 = 2147483647
+    io::println_i64{ &io, n = x + 1 }  //~ panic at 33: integer overflow
+}

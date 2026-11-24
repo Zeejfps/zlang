@@ -1,0 +1,9 @@
+fn f { c: bool } -> ?i32 {
+    let x = if c { 1 } else { null }
+    return x
+}
+fn main {} {
+    _ = f{ c = true }
+}
+
+//# exit: 0

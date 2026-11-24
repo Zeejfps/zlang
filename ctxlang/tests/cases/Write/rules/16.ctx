@@ -1,0 +1,2 @@
+fn f { x: write } {}  //~ error at 11: `write` is an attribute, not a type
+fn main {} {}

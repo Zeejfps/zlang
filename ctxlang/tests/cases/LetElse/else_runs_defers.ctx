@@ -1,0 +1,15 @@
+
+fn f { mut io: Io, x: ?i32 } {
+    defer io::println_i64{ &io, n = 99 }
+    let some{ value } = x else { return }
+    io::println_i64{ &io, n = value }
+}
+fn main { mut io: Io } {
+    f{ &io, x = 5 }
+    f{ &io, x = null }
+}
+
+//# stdout:
+//| 5
+//| 99
+//| 99

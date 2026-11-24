@@ -1,0 +1,5 @@
+fn f {} {
+    let x = 1
+    x{}  //~ error at 5: `x` has type {integer} and cannot be called
+}
+fn main {} {}

@@ -1,0 +1,8 @@
+// §11, Expressions, rule 4: `a <<% n` is `a << n` with the bits shifted out dropped. It
+// has `<<`'s operands, result type and precedence, and its count is checked the same.
+
+fn main {} {
+    let a: u8 = 1
+    let n: i64 = -1
+    let y = a <<% n  //~ panic at 15: shift count -1 out of range for a 8-bit integer
+}

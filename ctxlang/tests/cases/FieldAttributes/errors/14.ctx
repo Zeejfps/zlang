@@ -1,0 +1,12 @@
+
+namespace ecs {
+    struct key {}
+    struct cascade { depth: i32, deep: bool }
+    struct by { name: []u8, n: u32 }
+}
+const DEPTH: i32 = 2 + 1
+fn f {
+    #thread_local  //~ error at 5: `thread_local` applies only to a capability's static, `static name: T`
+    a: i32
+} {}
+fn main {} {}

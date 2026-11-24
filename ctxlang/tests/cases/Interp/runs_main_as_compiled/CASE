@@ -1,0 +1,21 @@
+// `ctxc interp` (ctxc/eval.ctx) runs main in the interpreter over the IR, as `ctxc run` runs
+// it compiled: arguments, a defer, a partial application, f32's printing, both streams and
+// main's exit code.
+//# $ ctxc interp {dir}/hello.ctx -- a "b c"
+//# exit: 2
+//# stdout:
+//| b c
+//| 42
+//| 0.3
+//| deferred
+//# stderr:
+//| to stderr
+//# $ ctxc run {dir}/hello.ctx -- a "b c"
+//# exit: 2
+//# stdout:
+//| b c
+//| 42
+//| 0.3
+//| deferred
+//# stderr:
+//| to stderr

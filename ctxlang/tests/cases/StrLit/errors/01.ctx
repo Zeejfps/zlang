@@ -1,0 +1,6 @@
+fn f { s: strlit, t: strlit } -> strlit {
+    let mut x = s
+    x.bytes = t.bytes  //~ error at 6: `.bytes` is not a place
+    return x
+}
+fn main {} {}

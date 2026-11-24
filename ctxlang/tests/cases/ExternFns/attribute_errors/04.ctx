@@ -1,0 +1,4 @@
+#c::symbol{ name = "a" }
+#c::symbol{ name = "b" }  //~ error at 1: duplicate `c::symbol` attribute
+extern fn f {}  //~ error at 11: extern fn `f` takes no capability: add a capability field for what it touches, or `#pure` if it touches only its arguments and the memory they point to
+fn main {} {}

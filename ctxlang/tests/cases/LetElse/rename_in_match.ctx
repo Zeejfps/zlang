@@ -1,0 +1,10 @@
+
+union P { pt{ x: i32, y: i32 } }
+fn main { mut io: Io } {
+    let mut p = P::pt{ x = 1, y = 2 }
+    match &p { pt{ &x = a, y = b } => { a = a + b } }
+    match p { pt{ x = a } => { io::println_i64{ &io, n = a } } }
+}
+
+//# stdout:
+//| 3

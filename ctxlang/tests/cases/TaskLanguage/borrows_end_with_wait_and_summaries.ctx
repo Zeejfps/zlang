@@ -1,0 +1,41 @@
+// A held place is the starter's again once the task is waited for, also when a fn it
+// calls starts the task into its handle and another waits for it.
+
+#task
+fn fill { mut buf: [8]u8, n: u8 } -> ! { buf[0] = n }
+
+#task
+fn look { s: []u8 } -> !u64 { return @as(u64, s.len) }
+
+#task
+fn sq { n: u64 } -> !u64 { return n * n }
+
+fn start_into { mut threads: Threads, mut buf: [8]u8, mut h: task::Task(!) } {
+    task::start{ &threads, task = &h, run = fill{ &buf, n = 5, _ } }
+}
+
+fn stop { mut threads: Threads, mut h: task::Task(!) } {
+    task::wait{ &threads, task = &h } iferr {}
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let mut buf: [8]u8
+    let mut t: task::Task(!)
+    task::start{ &threads, task = &t, run = fill{ &buf, n = 1, _ } }
+    task::wait{ &threads, task = &t } iferr {}
+    buf[1] = buf[0] + 1
+    let mut h: task::Task(!)
+    start_into{ &threads, &buf, &h }
+    stop{ &threads, &h }
+    io::println_u64{ &io, n = @as(u64, buf[0]) + @as(u64, buf[1]) }
+    let mut i: usize = 0
+    while i < 3 {
+        let mut u: task::Task(!)
+        task::start{ &threads, task = &u, run = fill{ &buf, n = 1, _ } }
+        i = i + 1
+    }
+    return 0
+}
+
+//# stdout:
+//| 7

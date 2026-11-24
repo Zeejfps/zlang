@@ -1,0 +1,1 @@
+fn main {} { let a = [1, 2]; for &x in a { x = 5 } }  //~ error at 44: cannot assign to `x`: it is an element of a read-only array or slice; `for &x` changes the elements of a `let mut` array or a `[]mut T`

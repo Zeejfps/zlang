@@ -1,0 +1,8 @@
+union U { a, b{ x: i32 } }
+fn f { u: U } {
+    match u {
+        a => {}
+        b{ x, x = y } => {}  //~ error at 15: `x` is bound twice
+    }
+}
+fn main {} {}

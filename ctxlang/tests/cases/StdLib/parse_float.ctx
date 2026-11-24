@@ -1,0 +1,56 @@
+
+fn show { mut io: Io, r: ?f64 } {
+    match r {
+        null => { io::println_bool{ &io, n = false } }
+        some{ value } => { io::println_f64{ &io, n = value } }
+    }
+}
+fn show32 { mut io: Io, r: ?f32 } {
+    match r {
+        null => { io::println_bool{ &io, n = false } }
+        some{ value } => { io::println_f32{ &io, n = value } }
+    }
+}
+fn main { mut io: Io } {
+    let a = "-0.25"
+    let b = "6.02E23"
+    let c = "1e+100"
+    let d = "3"
+    let e = "-inf"
+    let f = "1e999"
+    let g = "1."
+    let h = ".5"
+    let i = "1e"
+    let j = "+1"
+    show{ &io, r = utf8::parse_f64{ s = utf8::of{ chars = a } } }
+    show{ &io, r = utf8::parse_f64{ s = utf8::of{ chars = b } } }
+    show{ &io, r = utf8::parse_f64{ s = utf8::of{ chars = c } } }
+    show{ &io, r = utf8::parse_f64{ s = utf8::of{ chars = d } } }
+    show{ &io, r = utf8::parse_f64{ s = utf8::of{ chars = e } } }
+    show{ &io, r = utf8::parse_f64{ s = utf8::of{ chars = f } } }
+    show{ &io, r = utf8::parse_f64{ s = utf8::of{ chars = g } } }
+    show{ &io, r = utf8::parse_f64{ s = utf8::of{ chars = h } } }
+    show{ &io, r = utf8::parse_f64{ s = utf8::of{ chars = i } } }
+    show{ &io, r = utf8::parse_f64{ s = utf8::of{ chars = j } } }
+    let k = "1.1"
+    let l = "1e39"
+    let m = "1.000000059604644775390625000001"
+    show32{ &io, r = utf8::parse_f32{ s = utf8::of{ chars = k } } }
+    show32{ &io, r = utf8::parse_f32{ s = utf8::of{ chars = l } } }
+    show32{ &io, r = utf8::parse_f32{ s = utf8::of{ chars = m } } }
+}
+
+//# stdout:
+//| -0.25
+//| 6.02e+23
+//| 1e+100
+//| 3.0
+//| -inf
+//| false
+//| false
+//| false
+//| false
+//| false
+//| 1.1
+//| false
+//| 1.0000001

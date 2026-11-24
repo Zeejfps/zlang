@@ -1,0 +1,11 @@
+// A []mut T hole with no writer of its own is written by the []T one.
+
+struct Out { n: usize }
+#write
+fn text { mut o: Out, s: strlit } {}
+fn main {} {
+    let mut o = Out{ n = 0 }
+    let mut buf: [3]u8 = [1, 2, 3]
+    let m: []mut u8 = buf[..]
+    _ = @fmt(&o, "{}", m)  //~ error at 24: @fmt has no writer of []mut u8 to Out
+}

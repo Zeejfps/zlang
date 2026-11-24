@@ -1,0 +1,5 @@
+error a
+error b
+error c
+fn f {} -> error(a, u64)!u64 { return a }  //~ error at 21: u64 is not an error set: a set is `error(...)`, an alias of one, or one error
+fn main {} {}

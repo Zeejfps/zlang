@@ -1,0 +1,4 @@
+// A static view's array is computed while compiling, as a const's is.
+
+fn f {} -> []u8 { return [200 + 100] }  //~ error at 31: integer overflow in constant //~ error at 26: array literal couldn't be computed while compiling
+fn main {} { _ = f{} }

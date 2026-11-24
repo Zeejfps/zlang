@@ -1,0 +1,19 @@
+
+namespace k {
+    capability C { static n: u64 }
+    fn bump { mut c: C } { c.n = c.n + 1 }
+    fn get { mut c: C } -> u64 { return c.n }
+}
+capability A { ..k::C }
+capability B { ..k::C }
+capability AB { ..A, ..B }
+
+fn main { mut io: Io, mut ab: AB } -> i32 {
+    k::bump{ c = &ab }
+    k::bump{ c = &ab }
+    io::println_u64{ &io, n = k::get{ c = &ab } }
+    return 0
+}
+
+//# stdout:
+//| 2

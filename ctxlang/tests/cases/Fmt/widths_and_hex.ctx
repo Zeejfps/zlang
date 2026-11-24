@@ -1,0 +1,15 @@
+
+fn main { mut io: Io } {
+    let mut mem: [4096]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+
+    let name = utf8::of{ chars = "ab" }
+    _ = @fmt(&b, "[{}][{}][{}][{}][{}][{}][{}]", utf8::push_int{ n = 42, width = 5, zero = false, _ }, utf8::push_int{ n = 42, width = 5, zero = true, _ },
+        utf8::push_int{ n = -42, width = 5, zero = true, _ }, utf8::write_hex{ n = 255, _ }, utf8::push_hex{ n = 48879, width = 8, zero = true, _ },
+        utf8::push_padded{ s = name, width = 4, zero = false, _ }, utf8::push_padded{ s = name, width = 1, zero = false, _ })
+    io::println{ &io, s = utf8::view{ b } }
+}
+
+//# stdout:
+//| [   42][00042][-0042][ff][0000beef][  ab][ab]

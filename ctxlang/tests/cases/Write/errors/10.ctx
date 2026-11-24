@@ -1,0 +1,42 @@
+
+namespace out {
+    error full
+    struct Line { b: utf8::Builder(arena::Arena), pieces: u32, cap: u32 }
+    fn line { mut heap: arena::Arena, cap: u32 } -> Line {
+        return Line{ b = utf8::builder{ realloc = arena::alloc, &heap }, pieces = 0, cap }
+    }
+    fn count { mut l: Line } -> ! {
+        if l.pieces == l.cap { return full }
+        l.pieces = l.pieces + 1
+    }
+    #write
+    fn text { mut l: Line, s: strlit } -> ! {
+        try count{ &l }
+        try! utf8::push{ b = &l.b, s = utf8::String{ bytes = s.bytes } }
+    }
+    #write
+    fn number { mut l: Line, n: i32 } -> ! {
+        try count{ &l }
+        try! utf8::push_i64{ b = &l.b, n }
+    }
+    #write
+    fn flag { v: bool, mut l: Line } {
+        try! utf8::push{ b = &l.b, s = if v { "yes" } else { "no" } }
+    }
+}
+enum E: u8 { a }
+error other
+fn fails {} -> ! { return other }
+fn w { mut l: out::Line } -> ! {}
+
+fn main { mut io: Io } {
+    let mut mem: [1024]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut line = out::line{ &heap, cap = 100 }
+    match @fmt(&line, "{}", 1) {
+        ok => {}
+        other => {}  //~ error at 9: error `other` can't happen here: this fails only with out::full
+        else => {}
+    }
+    io::println{ &io, s = utf8::view{ b = line.b } }
+}

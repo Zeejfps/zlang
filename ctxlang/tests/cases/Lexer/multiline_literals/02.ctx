@@ -1,0 +1,6 @@
+fn main { mut io: Io } {
+    let t: []u8 =
+        \\a
+        \\b
+    io::println_u64{ &io, n = t.len }
+}

@@ -1,0 +1,19 @@
+// A child in a group of its own starts a grandchild that sleeps, and says so: kill
+// ends both.
+// The child is tests/helpers/child.ctx, as `start_beat PATH stay`: it starts a grandchild
+// that makes the file PATH grow for a minute, prints `started` and sleeps for a minute. That
+// the grandchild has ended is the file no longer growing (`ends PATH`).
+//# build child: {home}/tests/helpers/child.ctx
+//# build program: main.ctx
+//# make dir beat
+//# $ {program} {child} beat/file
+//# timeout: 30
+//# exit: 0
+//# stdout:
+//| true
+//| started
+//| 137
+//# $ {child} ends beat/file
+//# exit: 0
+//# stdout:
+//| ended

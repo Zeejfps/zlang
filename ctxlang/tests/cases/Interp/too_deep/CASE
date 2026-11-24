@@ -1,0 +1,6 @@
+// A recursion without an end is refused at the interpreter's depth limit, with the fn it was
+// in; the number of calls depends on the stack ctxc was given.
+//# $ ctxc interp {dir}/deep.ctx
+//# exit: 1
+//# stderr:
+//| ctxc interp: too deep: {n} nested calls, at down

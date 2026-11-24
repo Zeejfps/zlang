@@ -1,0 +1,8 @@
+union U { a, b{ x: i32 }, c{ x: i32, y: bool } }
+fn f { u: *mut U } {
+    match u {
+        a => {}
+        b{ &x } | c{ x } => {}  //~ error at 22: `x` must be bound with `&` in both `b` and `c`, or in neither
+    }
+}
+fn main {} {}

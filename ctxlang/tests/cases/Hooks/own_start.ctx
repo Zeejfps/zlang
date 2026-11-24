@@ -1,0 +1,18 @@
+
+#start
+fn boot { mut io: Io, main: &fn{ args: Args } -> i32 } -> i32 {
+    io::println{ &io, s = "boot" }
+    let code = main{ args = slice::empty([]u8){} }
+    io::flush{ &io }
+    return code + 1
+}
+fn main { mut io: Io, args: Args } -> i32 {
+    io::println_u64{ &io, n = args.len }
+    return 41
+}
+
+//# args: x
+//# exit: 42
+//# stdout escaped:
+//| boot\r
+//| 0\r

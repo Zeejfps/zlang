@@ -1,0 +1,2 @@
+enum E(T): u8 { a }  //~ error at 7: an enum cannot have generic parameters
+fn main {} {}

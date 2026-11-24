@@ -1,0 +1,6 @@
+error a
+error b
+fn da {} -> error(a)!u64 { return a }
+fn fwd(E: error) { f: &fn{} -> E!u64 } -> E!u64 { return try f{} }
+fn c(E: error) { f: &fn{} -> E!u64 } -> error(a)!u64 { return try f{} }  //~ error at 63: `try` passes up E, an open set, which closed error(a) can't hold: it may gain errors
+fn main {} {}

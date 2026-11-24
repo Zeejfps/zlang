@@ -1,0 +1,29 @@
+struct Pos {
+    #ecs::key
+    #ecs::cascade{ depth = 2, deep = true }
+    x: i32,
+    y: i32,
+}
+union Shape { circle{
+    #ecs::by{ name = "r" }
+    r: f32 }, dot }
+error bad{
+    #ecs::key
+    at: usize
+}
+extern union Bits {
+    #ecs::key
+    i: u32,
+    f: f32,
+}
+#ecs::system
+fn step {
+    #ecs::by{ name = "pos", n = -1 }
+    mut pos: Pos,
+    #ecs::key
+    dt: f32,
+} {}
+extern fn abs {
+    #ecs::key
+    n: i32
+} -> i32

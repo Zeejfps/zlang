@@ -1,0 +1,12 @@
+
+struct Tlk { n: i32 }
+struct World { tlk: ?Tlk, count: i32 }
+fn bump { mut t: Tlk } { t.n = t.n + 1 }
+fn find { n: i32 } -> ?i32 {
+    if n > 0 { return n * 10 }
+    return null
+}
+fn tick { mut w: World } {
+    if let &t = w.tlk { bump{ &t } }  //~ error at 18: `if let &t` binds a place inside the optional, so it needs a pointer to one: write `if let &t = &w.tlk` //~ error at 32: `t` is not a mutable place: it is bound through a read-only pointer //~ error at 31: expected *mut Tlk, got *{error}
+}
+fn main {} {}

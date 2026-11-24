@@ -1,0 +1,2 @@
+
+fn main { mut io: Io } { let x = true | false }  //~ error at 39: `|` needs integers, got bool

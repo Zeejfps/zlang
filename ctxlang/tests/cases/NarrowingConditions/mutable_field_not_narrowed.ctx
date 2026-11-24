@@ -1,0 +1,6 @@
+
+struct S { a: ?i32 }
+fn main { mut io: Io } {
+    let mut s = S{ a = 1 }
+    if s.a != null { io::println_i64{ &io, n = s.a } }  //~ error at 49: expected i64, got ?i32
+}

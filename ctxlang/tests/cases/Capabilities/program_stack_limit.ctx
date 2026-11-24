@@ -1,0 +1,42 @@
+// A program's own start sets its own limit, which every frame is checked against.
+
+namespace g {
+    capability O {
+        #stack_limit
+        static n: usize
+    }
+
+    #start
+    fn go { mut o: O, mut io: Io, main: &fn{ args: Args } -> i32 } -> i32 {
+        let here: u8 = 0
+        o.n = @addr(&here) - 65536
+        let code = main{ args = slice::empty([]u8){} }
+        io::flush{ &io }
+        return code
+    }
+
+    fn deep { n: u64 } -> u64 {
+        if n == 0 { return 0 }
+        let pad: [64]u8 = [0; 64]
+        return @as(u64, pad[0]) + 1 + deep{ n = n - 1 }
+    }
+}
+
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = g::deep{ n = 10 } }
+    io::println_u64{ &io, n = g::deep{ n = 100000 } }
+}
+
+// The program's own start leaves the standard streams as the C library opens them, so on
+// Windows today each line it writes ends in a CR and a line break, the panic's line too (which
+// `panic:` therefore can't state there: the exit code and standard error are stated instead).
+// The interpreter refuses the recursion as too deep.
+//# interp: cannot run
+//# [windows] exit: 134
+//# [windows] stdout escaped:
+//| 10\r
+//# [windows] stderr escaped:
+//| program: panic: stack overflow\r
+//# [posix] stdout:
+//| 10
+//# [posix] panic: program: panic: stack overflow

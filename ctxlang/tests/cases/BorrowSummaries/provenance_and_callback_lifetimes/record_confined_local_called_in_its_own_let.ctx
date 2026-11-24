@@ -1,0 +1,20 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// record confined local called in its own let: accepted, and it runs.
+
+fn add { a: i64, b: i64 } -> i64 { return a + b }
+fn use { f: &fn{ b: i64 } -> i64 } -> i64 { return f{ b = 1 } }
+fn main { mut io: Io } {
+    let mut s: i64 = 0
+    let mut i: i64 = 0
+    while i < 1000 {
+        let g = add{ a = i, _ }
+        s = s + use{ f = g } + g{ b = 2 }
+        let h = add{ a = use{ f = g }, _ }
+        s = s + h{ b = 0 }
+        i = i + 1
+    }
+    io::println_i64{ &io, n = s }
+}
+
+//# stdout:
+//| 1502500

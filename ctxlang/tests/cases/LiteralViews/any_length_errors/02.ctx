@@ -1,0 +1,3 @@
+const A: [2]u8 = [1, 2]
+const B: [_]u8 = A  //~ error at 10: `[_]` takes its length from an initializer that is an array or string literal
+fn main {} {}

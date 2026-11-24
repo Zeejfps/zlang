@@ -1,0 +1,39 @@
+
+// The clock: a task that ends after `ns`.
+#task
+fn nap { mut threads: Threads, ns: u64 } -> !u64 {
+    thread::sleep{ &threads, nanoseconds = ns }
+    try task::check_cancelled{ &threads }
+    return 7
+}
+
+fn main { mut io: Io, mut proc: Proc, mut threads: Threads, args: Args } -> i32 {
+    let mut mem: [65536]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
+    let mut env = list::new([]u8){ realloc = arena::alloc, &heap }
+
+    if slice::eq_bytes{ a = args[1], b = "quick" } {
+        let quick: [4][]u8 = [args[0], "sleep", "500", "5"]
+        let mut other = proc::spawn{ &proc, argv = quick[..], options = proc::Options{ .. } } iferr { return 1 }
+        let code = proc::wait_for{ &proc, child = &other, nanoseconds = 60000000000 } iferr { return 2 }
+        io::println_i64{ &io, n = code ifnull -1 }
+        return 0
+    }
+    let sleeper: [4][]u8 = [args[0], "sleep", "60000", "0"]
+    let mut child = proc::spawn{ &proc, argv = sleeper[..], options = proc::Options{ .. } } iferr { return 3 }
+    let wait: u64 = if slice::eq_bytes{ a = args[1], b = "0" } { 0 } else { 300000000 }
+    let mut clock: task::Task(!u64)
+    task::start_concurrent{ &threads, task = &clock, run = nap{ &threads, ns = 200000000, _ } } iferr { return 7 }
+    let now = proc::wait_for{ &proc, &child, nanoseconds = wait } iferr { return 4 }
+    let waited = task::wait_for{ &threads, task = &clock, nanoseconds = 0 }
+    _ = task::cancel{ &threads, task = &clock } iferr { 0 }
+    io::println_bool{ &io, n = now == null }
+    io::print{ &io, s = "waited: " }
+    io::println_bool{ &io, n = waited }
+    proc::kill{ &proc, child } iferr { return 5 }
+    let killed = proc::wait_for{ &proc, &child, nanoseconds = 60000000000 } iferr { return 6 }
+    io::println_i64{ &io, n = killed ifnull -1 }
+    return 0
+
+}

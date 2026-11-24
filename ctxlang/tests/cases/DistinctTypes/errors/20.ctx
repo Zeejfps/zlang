@@ -1,0 +1,12 @@
+
+type Meters = distinct f64
+type Seconds = distinct f64
+type UserId = distinct u64
+type Small = distinct u8
+type Name = distinct []u8
+struct P { x: i32, y: i32 }
+type Pos = distinct P
+type Flag = distinct bool
+type Id(T) = distinct u32
+type Loop = distinct ?*Loop  //~ error at 24: type alias `Loop` refers to itself
+fn main {} {}

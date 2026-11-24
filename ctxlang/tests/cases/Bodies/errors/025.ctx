@@ -1,0 +1,8 @@
+union U { a, b{ x: i32 } }
+fn f { u: U } {
+    match u {
+        else => {}  //~ error at 9: `else` must be the last arm
+        a => {}
+    }
+}
+fn main {} {}

@@ -1,0 +1,6 @@
+fn inc { mut n: i32 } { n = n + 1 }
+fn f { c: bool } {
+    let mut m = 0
+    let h = if c { let mut n = 0; inc{ &n, _ } } else { inc{ n = &m, _ } }  //~ error at 38: the value of this branch holds `n`, which ends with the branch //~ error at 5: bound function stored in `h` holds `n`, which does not live as long
+}
+fn main {} {}

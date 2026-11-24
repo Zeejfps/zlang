@@ -1,0 +1,1 @@
+fn build { mut b: Build } { build::add_sources{ &b, exe = build::exe{ &b, name = "t", root = "." }, dir = "../../lib/missing" } }

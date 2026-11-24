@@ -1,0 +1,36 @@
+
+struct P { hp: i32 }
+fn double { xs: []mut i32 } { for &x in xs { x = x * 2 } }
+fn heal { mut p: P } { p.hp = p.hp + 100 }
+fn at { xs: []mut i32, want: i32 } -> ?*mut i32 {
+    for &x in xs { if x == want { return &x } }     // a pointer into the caller's slice
+    return null
+}
+fn main { mut io: Io } {
+    let mut a = [1, 2, 3]
+    for &x in a { x = x + 1 }
+    double{ xs = a[..] }
+    for &x at i in a { x = x + @as(i32, i) }
+    for x in a { _ = @fmt(&io, "{} ", x) }
+    let mut ps = [P{ hp = 1 }, P{ hp = 2 }]
+    for &p in ps {
+        p.hp = p.hp * 10
+        heal{ &p }
+    }
+    for &p in ps { _ = @fmt(&io, "{} ", p.hp) }     // read-only places: nothing is copied
+    // A later turn sees what an earlier one changed.
+    let mut b = [1, 1, 1, 1]
+    for x at i in b { if i + 1 < b.len { b[i + 1] = x + 1 } }
+    for x in b { _ = @fmt(&io, "{} ", x) }
+    // A copy is not the element.
+    for x in a {
+        let mut y = x
+        y = 0
+    }
+    let p = at{ xs = a[..], want = 7 } ifnull { return }
+    p.* = 70
+    _ = @fmt(&io, "{} {}\n", a[0], a[1])
+}
+
+//# stdout:
+//| 4 7 10 110 120 1 2 3 4 4 70

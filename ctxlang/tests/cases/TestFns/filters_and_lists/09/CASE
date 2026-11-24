@@ -1,0 +1,5 @@
+// A program without tests is not a pass.
+//# $ ctxc test .
+//# exit: 1
+//# stdout:
+//| tests: 0 run: the program has no `#test` fn

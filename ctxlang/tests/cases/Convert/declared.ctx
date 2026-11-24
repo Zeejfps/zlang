@@ -1,0 +1,29 @@
+// Any namespace may declare one, and a program's own `convert` shadows the compiler's.
+// A conversion is an ordinary fn too, which a call runs when the program does.
+
+namespace words {
+    struct Count { n: usize }
+    error empty
+    #convert
+    fn from_literal { s: strlit } -> !Count {
+        if s.bytes.len == 0 { return empty }
+        return Count{ n = s.bytes.len }
+    }
+}
+namespace mine {
+    struct convert { why: []u8 }
+    #convert{ why = "data" }
+    struct S {}
+}
+fn main { mut io: Io } {
+    let c = words::from_literal{ s = "four" } iferr { words::Count{ n = 0 } }
+    io::println_u64{ &io, n = c.n }
+    match words::from_literal{ s = "" } {
+        ok => {}
+        words::empty => { io::println{ &io, s = "empty" } }
+    }
+}
+
+//# stdout:
+//| 4
+//| empty

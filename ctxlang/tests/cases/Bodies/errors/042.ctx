@@ -1,0 +1,5 @@
+union U { a, b{ x: i32 } }
+fn f { u: U } {
+    let b{ x } = u else b { return }  //~ error at 27: variant `b` appears on both sides of the `else`
+}
+fn main {} {}

@@ -1,0 +1,5 @@
+
+fn main {} {
+    let f: f64 = 1.5
+    _ = ~f  //~ error at 9: unary `~` needs an integer, got f64
+}

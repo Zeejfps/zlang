@@ -1,0 +1,11 @@
+
+const WORDS: [3][]u8 = ["fn", "let", "match"]
+const NAMES: [2]utf8::String = ["zero", "caf\xc3\xa9"]
+fn main { mut io: Io } -> i32 {
+    io::println{ &io, s = NAMES[1] }
+    return @as(i32, WORDS[2].len)
+}
+
+//# exit: 5
+//# stdout:
+//| café

@@ -1,0 +1,8 @@
+union Shape { dot, line{ n: usize } }
+extern union Raw { s: Shape, w: [2]u64 }
+#convert
+fn mk { s: strlit } -> Shape {
+    let r = Raw{ w = [99, 0] }
+    return r.s
+}
+fn main {} { let x: Shape = "abc" }  //~ error at 29: string literal can't hold a Shape with tag 99: it has no such variant

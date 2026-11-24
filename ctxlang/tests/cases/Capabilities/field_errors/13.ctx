@@ -1,0 +1,11 @@
+namespace m {
+    capability L
+    capability M { f: extern fn{ n: i64 } -> i64 }
+    #c::symbol{ name = "llabs" }
+    #pure
+    extern fn abs { n: i64 } -> i64
+    fn load { mut l: L } -> M { return M{ f = abs } }
+}
+fn main { mut l: m::L } -> i32 { let mut x = m::load{ &l }
+    if x.f == m::abs { return 1 }  //~ error at 9: `f` is a field of capability M: it can only be called, as `x.f{ ... }` //~ error at 12: extern fn{ n: i64 } -> i64 has no `==`: it is a function, which has no `==`
+    return 0 }

@@ -1,0 +1,2 @@
+struct S(T) { a: T(i32) }  //~ error at 18: generic parameter `T` takes no type arguments
+fn main {} {}

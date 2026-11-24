@@ -1,0 +1,75 @@
+// A read-only struct over 32 bytes is passed by reference (spec §14.6), but copied where
+// a `mut` reference of the same call overlaps it, a later argument may write it, or a
+// bind passed with it holds it: the callee sees the value it had when evaluated.
+
+struct Big { a: [20]i64, n: i64 }
+
+fn sum { b: Big } -> i64 {
+    let mut s: i64 = 0
+    let mut i = 0
+    while i < 20 { s = s + b.a[i]; i = i + 1 }
+    return s + b.n
+}
+
+// reads b after changing x: b must be a copy when x overlaps it
+fn bump_then_sum { b: Big, mut x: i64 } -> i64 {
+    x = x + 1000
+    return sum{ b }
+}
+
+fn set { mut b: Big, v: i64 } -> i64 {
+    b.n = v
+    return v
+}
+
+fn pair { b: Big, v: i64 } -> i64 { return sum{ b } * 10000 + v }
+
+fn twice { b: Big, f: &fn{} -> i64 } -> i64 {
+    let before = sum{ b }
+    let r = f{}
+    return before * 1000000 + sum{ b } * 1000 + r
+}
+
+fn ident { b: Big } -> Big { return b }
+
+fn apply { g: fn{ b: Big } -> i64, b: Big } -> i64 { return g{ b } }
+
+const K: Big = Big{ a = [1; 20], n = 2 }
+
+fn main { mut io: Io } {
+    let mut b = Big{ a = [0; 20], n = 1 }
+    b.a[3] = 5
+    io::println_i64{ &io, n = sum{ b } }                       // 6
+    io::println_i64{ &io, n = bump_then_sum{ b, x = &b.n } }   // copy: 6
+    let pb = &b                                                // a pointer: §3 rule 10 doesn't follow it
+    io::println_i64{ &io, n = pair{ b, v = set{ b = pb, v = 7 } } } // copy before set: 6*10000+7
+    io::println_i64{ &io, n = sum{ b } }                       // 12
+    io::println_i64{ &io, n = twice{ b, f = set{ &b, v = 100, _ } } } // copy: 12, 12, 100
+    io::println_i64{ &io, n = sum{ b } }                       // 105
+    io::println_i64{ &io, n = sum{ b = ident{ b } } }           // 105
+    io::println_i64{ &io, n = sum{ b = K } }                    // 22
+    io::println_i64{ &io, n = apply{ g = sum, b } }             // 105
+    let p = &b
+    io::println_i64{ &io, n = sum{ b = p.* } }                  // 105
+    let mut bs = [b, K]
+    io::println_i64{ &io, n = sum{ b = bs[1] } }                // 22
+    let s = bs[..]
+    io::println_i64{ &io, n = sum{ b = s[0] } }                 // 105
+    let o: ?Big = b
+    if o != null { io::println_i64{ &io, n = sum{ b = o } } }   // 105
+}
+
+//# stdout:
+//| 6
+//| 6
+//| 10060007
+//| 12
+//| 12012100
+//| 105
+//| 105
+//| 22
+//| 105
+//| 105
+//| 22
+//| 105
+//| 105

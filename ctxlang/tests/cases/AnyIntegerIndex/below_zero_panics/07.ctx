@@ -1,0 +1,6 @@
+fn main { mut io: Io } {
+    let mut a = [1, 2, 3]
+    let s = a[..]
+    let lo: i32 = -1
+    _ = @fmt(&io, "{}", s[lo..2].len)  //~ panic at 26: range -1..2 out of bounds for length 3
+}

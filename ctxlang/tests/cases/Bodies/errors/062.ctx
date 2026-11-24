@@ -1,0 +1,5 @@
+fn g { a: i32, n: i32 } {}
+fn f { a: i32 } {
+    g{ .. }  //~ error at 6: `..` cannot supply `n`: no local or context field named `n`
+}
+fn main {} {}

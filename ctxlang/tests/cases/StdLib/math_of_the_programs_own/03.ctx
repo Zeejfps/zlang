@@ -1,0 +1,10 @@
+#pure
+#c::symbol{ name = "sqrt" }
+extern fn isqrt { n: i64 } -> i64
+const A: i64 = isqrt{ n = 9 }
+
+// A program's own declaration of one of the C library's math functions runs while
+// compiling too: it is the same C function. Another extern fn still stops a const.
+//# errors:
+//| 03.ctx:4:21: error: const `A` calls extern fn `isqrt`, which can't run while compiling
+//| 03.ctx:1:1: error: no `fn main` entry point

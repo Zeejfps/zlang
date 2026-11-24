@@ -1,0 +1,1 @@
+fn main { mut io: Io } { io::println_u64{ &io, n = (gen::third{ p = "abc".ptr } + ("a".ptr + 0).*) } }

@@ -1,0 +1,10 @@
+// A type of a set's name comes before an error of the same name (§10).
+
+error E
+error b
+type E = error(b)
+fn f {} -> E!u64 { return b }
+fn main { mut io: Io } { match f{} { ok => {} b => { io::println{ &io, s = "b" } } } }
+
+//# stdout:
+//| b

@@ -1,0 +1,24 @@
+// A `#write` fn of the program's to an io::Stderr writes its type, alone and inside
+// another value, and replaces std's for a type std writes too.
+
+struct Point { x: i32, y: i32 }
+struct Empty {}
+struct Line { a: Point, b: Point, tag: Tag }
+type Meters = distinct f32
+enum Tag: u8 { thin, thick = 7 }
+union Shape { none, dot{}, circle{ r: f64, at: Point } }
+
+error far{ p: Point, l: Line, n: i32, m: Meters }
+#write
+fn write_point { mut e: io::Stderr, p: Point } { _ = @fmt(&e, "({}, {})", p.x, p.y) }
+#write
+fn write_i32 { mut e: io::Stderr, n: i32 } { _ = @fmt(&e, "#{}", @as(i64, n)) }
+#write
+fn write_meters { mut e: io::Stderr, m: Meters } { _ = @fmt(&e, "{}m", @as(f32, m)) }
+fn main {} -> ! {
+    return far{ p = Point{ x = 1, y = 2 }, l = Line{ a = Point{ x = 0, y = 0 }, b = Point{ x = 3, y = 4 }, tag = Tag::thin }, n = 6, m = @as(Meters, 1.5) }
+}
+
+//# exit: 1
+//# stderr:
+//| error: far{ p = (#1, #2), l = Line{ a = (#0, #0), b = (#3, #4), tag = Tag::thin }, n = #6, m = 1.5m }

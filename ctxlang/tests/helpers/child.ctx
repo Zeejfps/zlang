@@ -1,0 +1,228 @@
+// A program for the cases that start other programs (cases/Proc, cases/Tasks): what it does is
+// its first argument. A case builds it, `//# build child: {home}/tests/helpers/child.ctx`, and
+// gives its path to the program under test, `//# args: {child}`.
+//
+//   exit CODE                 ends with CODE
+//   env NAME CODE             prints the environment's NAME, and ends with CODE
+//   wait_file PATH CODE       waits until the file PATH is there, and ends with CODE
+//   make_file PATH CODE       makes the file PATH, and ends with CODE
+//   echo                      reads standard input to its end, writes `OUT[` it `]` to standard
+//                             output and `ERR` to standard error
+//   upper                     writes standard input in upper case to standard output as it
+//                             reads it, then `E` to standard error
+//   where NAME                prints its working directory, then the environment's NAME
+//   sleep MILLISECONDS CODE   sleeps, and ends with CODE
+//   beat PATH                 for a minute, adds a byte to the file PATH every 50 ms: a process
+//                             another can see running, by the file growing
+//   start_beat PATH stay|go   starts itself again as `beat PATH`, without waiting for it, prints
+//                             `started` once the file is there, and sleeps for a minute (stay)
+//                             or ends at once (go)
+//   beats PATH                prints `running` if the file PATH grows within a second, or `ended`
+//   ends PATH                 prints `ended` once the file PATH hasn't grown for a second, or
+//                             `running` if it still grows after 20 s
+//   close_input               closes its standard input, prints `closed`, and sleeps for a minute
+//   input_open                prints `open` if its standard input is open, or `closed`
+//   beat_aloud PATH           as `beat`, and prints `beating` once the file is there
+//   stop_beat DIR/NAME        ends a `beat DIR/NAME`, by removing the file and its directory DIR,
+//                             which holds nothing else: prints `stopped`, or `still there` if
+//                             they can't be removed within 10 s
+//   where_slashes NAME        as `where`, with `/` for each `\` of the directory: Windows' path as
+//                             a case's `{dir}` writes it
+//   upper_whole               as `upper`, writing nothing before its standard input has ended:
+//                             for a program that writes all of the input before it reads
+//   flood LINES               writes LINES lines of 100 `e` to standard error and of 100 `o` to
+//                             standard output, in turn
+
+extern fn close { mut proc: Proc, fd: i32 } -> i32
+
+#c::symbol{ name = "fstat" }
+extern fn file_status { mut proc: Proc, fd: i32, into: *mut [256]u8 } -> i32
+
+fn main { mut io: Io, mut fs: Fs, mut proc: Proc, mut threads: Threads, args: Args } -> i32 {
+    if args.len == 0 { return 64 }
+    let what = args[0]
+    if is{ what, name = "exit" } and args.len == 2 { return code_of{ s = args[1] } }
+    if is{ what, name = "env" } and args.len == 3 {
+        io::println{ &io, s = utf8::of{ chars = proc::env{ &proc, name = args[1] } ifnull { "(unset)" } } }
+        return code_of{ s = args[2] }
+    }
+    if is{ what, name = "wait_file" } and args.len == 3 {
+        while not there{ &fs, path = args[1] } { thread::sleep{ &threads, nanoseconds = 10000000 } }
+        return code_of{ s = args[2] }
+    }
+    if is{ what, name = "make_file" } and args.len == 3 {
+        _ = fs::write_all{ &fs, path = args[1], bytes = "" } iferr { return 65 }
+        return code_of{ s = args[2] }
+    }
+    if is{ what, name = "echo" } or is{ what, name = "upper" } {
+        let upper = is{ what, name = "upper" }
+        if not upper { io::write{ &io, to = io::Stream::out, bytes = "OUT[" } }
+        let mut buf: [4096]u8
+        while true {
+            let n = io::read{ &io, into = buf[..] }
+            if n == 0 { break }
+            if upper {
+                for &c in buf[..n] { c = ascii::to_upper{ c } }
+            }
+            io::write{ &io, to = io::Stream::out, bytes = buf[..n] }
+        }
+        if not upper { io::write{ &io, to = io::Stream::out, bytes = "]" } }
+        io::flush{ &io }
+        io::write{ &io, to = io::Stream::err, bytes = if upper { "E" } else { "ERR" } }
+        return 0
+    }
+    if is{ what, name = "where" } and args.len == 2 {
+        let mut pages: [40000]u8
+        let mut heap = arena::new{ buf = pages[..] }
+        let here = fs::make_absolute{ &fs, &heap, realloc = arena::alloc, path = "." } iferr { return 65 }
+        io::println{ &io, s = utf8::of{ chars = here[..here.len - 2] } }
+        io::println{ &io, s = utf8::of{ chars = proc::env{ &proc, name = args[1] } ifnull { "(unset)" } } }
+        return 0
+    }
+    if is{ what, name = "sleep" } and args.len == 3 {
+        let ms = utf8::parse_u64{ s = utf8::of{ chars = args[1] } } ifnull { return 64 }
+        thread::sleep{ &threads, nanoseconds = ms * 1000000 }
+        return code_of{ s = args[2] }
+    }
+    if is{ what, name = "beat" } and args.len == 2 {
+        for _ in 0..1200 {
+            let file = fs::open{ &fs, path = args[1], mode = fs::Mode::append } iferr { return 65 }
+            _ = fs::write{ &fs, file, bytes = "." } iferr { return 65 }
+            _ = fs::close{ &fs, file } iferr { return 65 }
+            thread::sleep{ &threads, nanoseconds = 50000000 }
+        }
+        return 0
+    }
+    if is{ what, name = "beat_aloud" } and args.len == 2 {
+        for i in 0..1200 {
+            let file = fs::open{ &fs, path = args[1], mode = fs::Mode::append } iferr { return 65 }
+            _ = fs::write{ &fs, file, bytes = "." } iferr { return 65 }
+            _ = fs::close{ &fs, file } iferr { return 65 }
+            if i == 0 {
+                io::println{ &io, s = "beating" }
+                io::flush{ &io }
+            }
+            thread::sleep{ &threads, nanoseconds = 50000000 }
+        }
+        return 0
+    }
+    if is{ what, name = "stop_beat" } and args.len == 2 {
+        // The beat may have the file open, or make it again before its directory goes: again,
+        // until the directory is gone, and then the beat's next open fails, which ends it.
+        let path = args[1]
+        let mut cut = path.len
+        while cut > 0 and path[cut - 1] != '/' { cut = cut - 1 }
+        if cut < 2 { return 64 }
+        for _ in 0..2000 {
+            _ = fs::remove{ &fs, path } iferr {}
+            _ = fs::remove_dir{ &fs, path = path[..cut - 1] } iferr {}
+            if not there{ &fs, path = path[..cut - 1] } {
+                thread::sleep{ &threads, nanoseconds = 300000000 }
+                io::println{ &io, s = "stopped" }
+                return 0
+            }
+            thread::sleep{ &threads, nanoseconds = 5000000 }
+        }
+        io::println{ &io, s = "still there" }
+        return 0
+    }
+    if is{ what, name = "where_slashes" } and args.len == 2 {
+        let mut pages: [40000]u8
+        let mut heap = arena::new{ buf = pages[..] }
+        let here = fs::make_absolute{ &fs, &heap, realloc = arena::alloc, path = "." } iferr { return 65 }
+        for &c in here { if c == '\\' { c = '/' } }
+        io::println{ &io, s = utf8::of{ chars = here[..here.len - 2] } }
+        io::println{ &io, s = utf8::of{ chars = proc::env{ &proc, name = args[1] } ifnull { "(unset)" } } }
+        return 0
+    }
+    if is{ what, name = "upper_whole" } {
+        let mut all: [1048576]u8
+        let mut n: usize = 0
+        while n < all.len {
+            let k = io::read{ &io, into = all[n..] }
+            if k == 0 { break }
+            n = n + k
+        }
+        for &c in all[..n] { c = ascii::to_upper{ c } }
+        io::write{ &io, to = io::Stream::out, bytes = all[..n] }
+        io::flush{ &io }
+        io::write{ &io, to = io::Stream::err, bytes = "E" }
+        return 0
+    }
+    if is{ what, name = "flood" } and args.len == 2 {
+        let lines = utf8::parse_u64{ s = utf8::of{ chars = args[1] } } ifnull { return 64 }
+        let mut e: [101]u8
+        let mut o: [101]u8
+        for i in 0..100 {
+            e[i] = 'e'
+            o[i] = 'o'
+        }
+        e[100] = '\n'
+        o[100] = '\n'
+        for _ in 0..lines {
+            io::write{ &io, to = io::Stream::err, bytes = e[..] }
+            io::write{ &io, to = io::Stream::out, bytes = o[..] }
+        }
+        io::flush{ &io }
+        return 0
+    }
+    if is{ what, name = "start_beat" } and args.len == 3 {
+        let argv: [3][]u8 = [proc::exe_path{ &proc }, "beat", args[1]]
+        let options = proc::Options{ stdin = proc::Stdio::ignore, stdout = proc::Stdio::ignore, stderr = proc::Stdio::ignore, .. }
+        _ = proc::spawn{ &proc, argv = argv[..], options } iferr { return 66 }
+        while not there{ &fs, path = args[1] } { thread::sleep{ &threads, nanoseconds = 10000000 } }
+        io::println{ &io, s = "started" }
+        io::flush{ &io }
+        if is{ what = args[2], name = "stay" } { thread::sleep{ &threads, nanoseconds = 60000000000 } }
+        return 0
+    }
+    if is{ what, name = "beats" } and args.len == 2 {
+        let before = fs::size{ &fs, path = args[1] } iferr { 0 }
+        thread::sleep{ &threads, nanoseconds = 1000000000 }
+        let after = fs::size{ &fs, path = args[1] } iferr { 0 }
+        io::println{ &io, s = if after > before { "running" } else { "ended" } }
+        return 0
+    }
+    if is{ what, name = "ends" } and args.len == 2 {
+        let mut last = fs::size{ &fs, path = args[1] } iferr { 0 }
+        for _ in 0..20 {
+            thread::sleep{ &threads, nanoseconds = 1000000000 }
+            let now = fs::size{ &fs, path = args[1] } iferr { 0 }
+            if now == last {
+                io::println{ &io, s = "ended" }
+                return 0
+            }
+            last = now
+        }
+        io::println{ &io, s = "running" }
+        return 0
+    }
+    if is{ what, name = "close_input" } {
+        _ = close{ &proc, fd = 0 }
+        io::println{ &io, s = "closed" }
+        io::flush{ &io }
+        thread::sleep{ &threads, nanoseconds = 60000000000 }
+        return 0
+    }
+    if is{ what, name = "input_open" } {
+        let mut status: [256]u8
+        io::println{ &io, s = if file_status{ &proc, fd = 0, into = &status } == 0 { "open" } else { "closed" } }
+        return 0
+    }
+    return 64
+}
+
+fn is { what: []u8, name: []u8 } -> bool {
+    return slice::eq_bytes{ a = what, b = name }
+}
+
+fn code_of { s: []u8 } -> i32 {
+    return @as(i32, utf8::parse_i64{ s = utf8::of{ chars = s } } ifnull { 64 })
+}
+
+fn there { mut fs: Fs, path: []u8 } -> bool {
+    match fs::size{ &fs, path } {
+        ok => { return true }
+        else => { return false }
+    }
+}

@@ -1,0 +1,6 @@
+error lost{ name: []u8, code: i64, big: bool, ratio: f64 }
+fn main {} -> ! { return lost{ name = "a b", code = -5, big = true, ratio = 0.5 } }
+
+//# exit: 1
+//# stderr:
+//| error: lost{ name = a b, code = -5, big = true, ratio = 0.5 }

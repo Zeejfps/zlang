@@ -1,0 +1,3 @@
+fn first { q: *u8 } -> u8 { return q[0] }  //~ error at 37: cannot index *u8: a pointer has no length to check against; write `(q + 0).*`, which isn't checked
+const C: u8 = first{ q = "abc".ptr }
+fn main {} {}

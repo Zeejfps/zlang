@@ -1,0 +1,16 @@
+// A defer's body is written at each exit, with labels of its own each time.
+
+fn run { mut io: Io, a: i32 } {
+    defer _ = @fmt(&io, "{}\n", a * a ifoverflow -1)
+    if a > 0 { return }
+    _ = @fmt(&io, "body\n")
+}
+fn main { mut io: Io } {
+    run{ &io, a = 70000 }
+    run{ &io, a = 0 }
+}
+
+//# stdout:
+//| -1
+//| body
+//| 0

@@ -1,0 +1,14 @@
+struct S { n: i32, m: i32 }
+fn bump { mut s: S } -> i32 {
+    s.n = s.n + 1
+    return s.n
+}
+fn show { n: i32, z: i32 } { let t = n + z }
+fn reset { mut s: S } -> i32 {
+    s = S{ n = 0, m = 0 }
+    return 0
+}
+fn f { mut s: S } {
+    show{ n = s.m, z = reset{ &s } }  //~ error at 20: `n` reads `s.m`, and `z` changes `s`, in one call: the order of the fields would decide what it reads; compute one of them in a `let` before the call
+}
+fn main {} {}

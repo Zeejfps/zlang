@@ -1,0 +1,7 @@
+// §13: `@clamp(x, lo, hi)`, the bounds widening with the value; a NaN value stays NaN,
+// and bounds out of order panic, or are an error where both are integer literals.
+
+fn at { n: i32 } -> i32 { return n }
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = @clamp(5, at{ n = 9 }, at{ n = 2 }) }  //~ panic at 31: @clamp: the low bound is above the high bound
+}

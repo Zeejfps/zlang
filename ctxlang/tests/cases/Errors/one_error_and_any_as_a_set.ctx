@@ -1,0 +1,18 @@
+// One error is a set of its own, and `error!T` fails with any error, as `!T` written
+// outside a function's result does.
+
+error a
+error b
+fn one {} -> a!u64 { return a }
+fn any { n: u64 } -> error!u64 {
+    if n == 0 { return a }
+    return b
+}
+fn main { mut io: Io } {
+    match one{} { ok => {} a => { io::println{ &io, s = "a" } } }
+    match any{ n = 1 } { ok => {} a => {} else => { io::println{ &io, s = "b" } } }
+}
+
+//# stdout:
+//| a
+//| b

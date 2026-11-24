@@ -1,0 +1,4 @@
+namespace shapes {
+    #test
+    fn area_of_a_rect { mut t: Test } { @expect(&t, area{ w = 2, h = 3 } == 5) }
+}

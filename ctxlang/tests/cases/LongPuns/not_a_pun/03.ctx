@@ -1,0 +1,17 @@
+// One error, the parser's: the item may be meant for any field, so none is missing.
+
+struct Rng { s: u32 }
+struct Player { hp: i32 }
+struct Game { rng: Rng, player: Player, d: i32, xs: [3]i32 }
+struct World { g: Game }
+struct Pair { hp: i32, s: u32 }
+union Seen { both{ hp: i32, s: u32 }, none }
+fn deal { mut rng: Rng, mut player: Player, d: i32 } { rng.s = rng.s + 1; player.hp = player.hp + d }
+fn show { mut io: Io, hp: i32, s: u32 } { _ = @fmt(&io, "{} {}\n", hp, s) }
+fn count { len: usize } -> usize { return len }
+fn bump { mut s: u32 } -> u32 { s = s + 1; return s }
+fn world {} -> World { return World{ g = Game{ rng = Rng{ s = 1 }, player = Player{ hp = 10 }, d = 5, xs = [1, 2, 3] } } }
+fn main { mut io: Io } {
+    let mut w = world{}
+    deal{ &w.g.rng, &w.g.player, w.g.d + 1 }  //~ error at 34: a pun is a place that ends in a field's name, as `&g.rng` is for `rng`, and this one is an expression: write the field's name, as `name = w.g.d + 1`
+}

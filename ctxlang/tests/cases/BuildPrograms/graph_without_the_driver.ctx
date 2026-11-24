@@ -1,0 +1,23 @@
+// Run directly, a build program prints its records.
+
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "demo", root = "src" }
+    build::add_sources{ &b, exe, dir = "../lib" }
+    build::optimize{ &b, exe, level = 2 }
+    build::link{ &b, exe, lib = "m" }
+    build::framework{ &b, exe, name = "Cocoa" }
+    build::lib_path{ &b, exe, path = "/opt/lib" }
+    build::gen_file{ &b, exe, name = "g", text = "a\tb\nc" }
+}
+
+//# interp: cannot run
+//# stdout escaped:
+//| exe\t0\tdemo\tsrc
+//| sources\t0\t../lib
+//| optimize\t0\t2
+//| link\t0\tm
+//| framework\t0\tCocoa
+//| libpath\t0\t/opt/lib
+//| gen\t0\tg\t5
+//| a\tb
+//| c

@@ -1,0 +1,10 @@
+// Running out of fuel, here a test-sized budget (CTX_CONST_FUEL).
+
+fn spin {} -> i32 {
+    while true {}
+    return 0
+}
+const A: i32 = spin{}  //~ error at 20: const `A` ran out of fuel while compiling: it took more than 100000 steps
+fn main {} {}
+
+//# env: CTX_CONST_FUEL=100000

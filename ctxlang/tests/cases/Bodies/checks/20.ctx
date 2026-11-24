@@ -1,0 +1,9 @@
+fn add { a: i32, b: i32 } -> i32 { return a + b }
+fn main {} {
+    let inc = add{ a = 1, _ }
+    _ = inc{ b = 2 }
+    let g: &fn{ b: i32 } -> i32 = inc
+    _ = g{ b = 3 }
+}
+
+//# exit: 0

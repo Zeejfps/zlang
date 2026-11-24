@@ -1,0 +1,59 @@
+// The runner on cases that are each wrong in one way (cases/inner): every one fails, with a
+// line that names the statement that didn't hold, and what was expected and what came. A
+// file that is no case fails the run too. This is how the suite checks that it checks.
+//# $ suite --cases cases --fresh --jobs 1
+//# timeout: 300
+//# exit: 1
+//# stdout escaped:
+//| {dir}/cases/inner/stray.txt:1: fail: a file under the cases' directory that is no case: a case is a `.ctx` file or a directory with a CASE
+//| {dir}/cases/inner/does_not_compile.ctx:1: fail: inner/does_not_compile: the program doesn't compile
+//|   ctxc:
+//|     | does_not_compile.ctx:2:27: error: unknown name `missing`
+//| {dir}/cases/inner/error_column.ctx:2: fail: inner/error_column: ctxc's errors differ at line 1 of them
+//|   expected: | error_column.ctx:2:17: error: expected i32, got bool
+//|   actual:   | error_column.ctx:2:18: error: expected i32, got bool
+//|   actual, whole:
+//|     | error_column.ctx:2:18: error: expected i32, got bool
+//| {dir}/cases/inner/error_expected.ctx:2: fail: inner/error_expected: the program compiles: an error was expected
+//| {dir}/cases/inner/error_unstated.ctx:2: fail: inner/error_unstated: ctxc's errors differ at line 2 of them
+//|   expected: |\x20
+//|   actual:   | error_unstated.ctx:3:19: error: expected bool, got {integer}
+//|   actual, whole:
+//|     | error_unstated.ctx:2:18: error: expected i32, got bool
+//|     | error_unstated.ctx:3:19: error: expected bool, got {integer}
+//| {dir}/cases/inner/exit.ctx:3: fail: inner/exit: the program exited with 3, not 2
+//| {dir}/cases/inner/files/CASE:5: fail: inner/files: file `out/a.txt` differs at its line 1
+//|   expected line: | two
+//|   actual line:   | one
+//|   actual, whole:
+//|     | one
+//| {dir}/cases/inner/files/CASE:7: fail: inner/files: the listing of `out` differs at its line 1
+//|   expected line: | b.txt
+//|   actual line:   | a.txt
+//|   actual, whole:
+//|     | a.txt
+//| {dir}/cases/inner/interp_refuses.ctx:1: fail: inner/interp_refuses: the interpreter can't run the program: if that is as it should be, say `//# interp: cannot run`
+//|   it says:
+//|     | ctxc interp: files is not supported by interp
+//| {dir}/cases/inner/interp_runs.ctx:4: fail: inner/interp_runs: the interpreter runs the program, which says `interp: cannot run`: take that out
+//| {dir}/cases/inner/never_ends.ctx:1: fail: inner/never_ends: the program was ended after 1 s, still running
+//| {dir}/cases/inner/no_expectation.ctx:1: fail: inner/no_expectation: the program states no expectation: say what it prints (`//# stdout:`), its `//# exit:`, its error or its panic, or `//# compiles`
+//| {dir}/cases/inner/panic.ctx:4: fail: inner/panic: the program didn't panic as expected
+//|   expected, as standard error's last line:
+//|     | panic.ctx:4:9: panic: index 4 out of bounds for length 3
+//|   actual standard error:
+//|     | panic.ctx:4:11: panic: index 3 out of bounds for length 3
+//| {dir}/cases/inner/stderr.ctx:1: fail: inner/stderr: stderr isn't empty, and nothing is expected of it
+//|   actual:
+//|     | to standard error
+//| {dir}/cases/inner/stdout.ctx:6: fail: inner/stdout: stdout differs at its line 2
+//|   expected line: | c
+//|   actual line:   | b
+//|   actual, whole:
+//|     | a
+//|     | b
+//| {dir}/cases/inner/steps/CASE:3: fail: inner/steps: `{tool}` exited with 2, not 3
+//| {dir}/cases/inner/unknown_directive.ctx:3: fail: inner/unknown_directive: unknown directive `stdot:`
+//| {dir}/cases/inner/unknown_directive.ctx:1: fail: inner/unknown_directive: the program states no expectation: say what it prints (`//# stdout:`), its `//# exit:`, its error or its panic, or `//# compiles`
+//| interp: 4 programs the same, 0 it cannot run, 0 off
+//| cases: 15 run, 0 passed (0 from the cache), 15 failed, 0 skipped, 0 not selected

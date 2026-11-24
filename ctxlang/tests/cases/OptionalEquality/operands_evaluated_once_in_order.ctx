@@ -1,0 +1,20 @@
+
+struct Box { v: ?i32 }
+fn take { mut io: Io, v: ?i32 } -> Box {
+    io::print_i64{ &io, n = v ifnull -1 }
+    return Box{ v }
+}
+fn num { mut io: Io, n: i32 } -> i32 {
+    io::print_i64{ &io, n }
+    return n
+}
+fn main { mut io: Io } {
+    io::println_bool{ &io, n = take{ &io, v = 2 }.v == num{ &io, n = 2 } }
+    io::println_bool{ &io, n = take{ &io, v = null }.v != num{ &io, n = 2 } }
+    io::println_bool{ &io, n = take{ &io, v = 4 }.v == take{ &io, v = 4 }.v }
+}
+
+//# stdout:
+//| 22true
+//| -12true
+//| 44true

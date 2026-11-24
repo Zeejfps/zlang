@@ -1,0 +1,21 @@
+
+fn main { mut io: Io } {
+    let mut mem: [262144]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut m = map::new(i32, i64){ realloc = arena::alloc, &heap, hash = map::hash_i32, eq = map::eq_i32 }
+
+    _ = map::put{ &m, key = -5, value = 1 }
+    _ = map::put{ &m, key = -5, value = 2 }
+    io::println_u64{ &io, n = map::len{ m } }
+    let p = map::at{ m, key = -5 }
+    if p != null { p.* = p.* + 40 }
+    let v = map::get{ m, key = -5 }
+    if v != null { io::println_i64{ &io, n = v } }
+    io::println_bool{ &io, n = map::at{ m, key = 6 } == null }
+
+}
+
+//# stdout:
+//| 1
+//| 42
+//| true

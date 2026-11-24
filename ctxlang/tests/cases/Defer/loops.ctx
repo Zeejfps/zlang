@@ -1,0 +1,18 @@
+
+fn say { mut io: Io, n: i64 } { io::println_i64{ &io, n } }
+fn main { mut io: Io } {
+    let mut i = 0
+    while i < 3 {
+        defer say{ &io, n = 100 + i }     // evaluated at exit, after i changes
+        i = i + 1
+        if i == 2 { continue }
+        if i == 3 { break }
+        say{ &io, n = i }
+    }
+}
+
+//# stdout:
+//| 1
+//| 101
+//| 102
+//| 103

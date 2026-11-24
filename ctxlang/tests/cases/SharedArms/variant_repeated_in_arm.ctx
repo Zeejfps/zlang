@@ -1,0 +1,5 @@
+
+union Shape { circle{ r: i32 }, square{ side: i32 }, rect{ w: i32, h: i32 }, dot, line }
+
+fn f { s: Shape } { match s { dot | dot => { } else => { } } }  //~ error at 37: variant `dot` appears in more than one arm
+fn main { mut io: Io } { }

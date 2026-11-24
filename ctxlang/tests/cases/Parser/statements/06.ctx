@@ -1,0 +1,3 @@
+fn main {} {
+    for a, b in xs {}  //~ error at 10: a `for` names one element: write `for x at i in xs` for each element `x` and its index `i`
+}

@@ -1,0 +1,1 @@
+fn main { mut io: Io } { let x = if true { 1 } else { true } }  //~ error at 34: branches have different types: {integer} and bool

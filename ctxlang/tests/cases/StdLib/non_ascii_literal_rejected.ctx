@@ -1,0 +1,1 @@
+fn main { mut io: Io } { let b = "café" }  //~ error at 34: non-ASCII character 'é' (U+00E9) in literal; use a \x escape //~ error at 39: invalid UTF-8

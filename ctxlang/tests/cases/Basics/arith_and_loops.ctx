@@ -1,0 +1,24 @@
+
+fn fib { n: u64 } -> u64 {
+    if n < 2 { return n }
+    return fib{ n = n - 1 } + fib{ n = n - 2 }
+}
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = fib{ n = 20 } }
+    let mut i = 0
+    let mut s: i64
+    while i < 10 { s = s + @as(i64, i); i = i + 1 }
+    io::println_i64{ &io, n = s }
+    io::println_i64{ &io, n = -7 / 2 }
+    io::println_i64{ &io, n = -7 % 2 }
+    io::println_f64{ &io, n = 1.5 * 2.0 }
+    io::println_bool{ &io, n = 3 > 2 and not (1 == 2) }
+}
+
+//# stdout:
+//| 6765
+//| 45
+//| -3
+//| -1
+//| 3.0
+//| true

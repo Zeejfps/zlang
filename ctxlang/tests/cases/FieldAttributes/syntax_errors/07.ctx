@@ -1,0 +1,6 @@
+struct K {}
+type F = fn{
+    #K  //~ error at 5: a function type's fields can't have attributes: only a declaration's fields can
+    a: i32  //~ error at 5: expected a declaration after an attribute, found 'a'
+}
+fn main {} {}

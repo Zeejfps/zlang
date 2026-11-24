@@ -1,0 +1,6 @@
+// examples/json prints a number as the shortest text of its f64: `123456789012345678` is `1.2345678901234568e+17`.
+//# program: {home}/examples/json/main.ctx {home}/examples/json/parser.ctx {home}/examples/json/printer.ctx {home}/examples/json/value.ctx
+//# args: {dir}/tmp/in.json
+//# interp: cannot run
+//# stdout:
+//| 1.2345678901234568e+17

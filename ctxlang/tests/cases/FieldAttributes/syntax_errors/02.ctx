@@ -1,0 +1,5 @@
+struct K {}
+fn f {
+    #K mut a: i32  //~ error at 8: an attribute goes on its own line, before a field
+} {}
+fn main {} {}

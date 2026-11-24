@@ -1,0 +1,2 @@
+enum E: u8 { a = 255, b }  //~ error at 23: value 256 of `b` does not fit in u8
+fn main {} {}

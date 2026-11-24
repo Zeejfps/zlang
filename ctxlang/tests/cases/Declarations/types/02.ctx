@@ -1,0 +1,2 @@
+type F = fn{ a: i32, a: i32 }  //~ error at 22: duplicate context field `a`
+fn main {} {}

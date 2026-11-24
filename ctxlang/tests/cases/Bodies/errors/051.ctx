@@ -1,0 +1,5 @@
+fn g { a: i32, b: i32 } {}
+fn f {} {
+    g{ a = 1, a = 2, b = 3 }  //~ error at 15: `a` is supplied more than once
+}
+fn main {} {}

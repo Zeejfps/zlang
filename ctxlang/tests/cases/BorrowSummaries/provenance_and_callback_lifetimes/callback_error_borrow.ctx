@@ -1,0 +1,7 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// callback error borrow: rejected. It is never run: it would use a dangling pointer.
+
+error bad{ text: []u8 }
+fn fail { s: []u8 } -> ! { return bad{ text = s } }
+fn load {} -> ! { let buf: [3]u8 = [1,2,3]; let call = fail{ s = buf[..], _ }; try call{} }  //~ error at 80: `try` would return an error that may hold the address of local `buf`
+fn main {} { _ = load{} }

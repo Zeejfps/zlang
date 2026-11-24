@@ -1,0 +1,10 @@
+// `.*` then `%` stays two operators: `p.*%2` is `p.* % 2`.
+
+fn main { mut io: Io } {
+    let x: u32 = 5
+    let p = &x
+    _ = @fmt(&io, "{}\n", p.*%2)
+}
+
+//# stdout:
+//| 1

@@ -1,0 +1,43 @@
+
+namespace parse {
+    error empty
+    error bad_digit{ at: usize }
+    error too_big
+}
+
+fn number { s: []u8 } -> !u64 {
+    if s.len == 0 { return parse::empty }
+    let mut n: u64 = 0
+    let mut i: usize = 0
+    while i < s.len {
+        if s[i] < '0' or s[i] > '9' { return parse::bad_digit{ at = i } }
+        if n > 100000 { return parse::too_big }
+        n = n * 10 + @as(u64, s[i] - '0')
+        i = i + 1
+    }
+    return n
+}
+
+fn show { mut io: Io, r: !u64 } {
+    let mut mem: [256]u8 = [0; 256]
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    match r {
+        ok{ value }  => { _ = @fmt(&b, "ok {}", value) }
+        err{ error } => { _ = @fmt(&b, "err {}", error) }
+    }
+    io::println{ &io, s = utf8::view{ b } }
+}
+
+fn main { mut io: Io } {
+    show{ &io, r = number{ s = "42" } }
+    show{ &io, r = number{ s = "" } }
+    show{ &io, r = number{ s = "4x2" } }
+    show{ &io, r = number{ s = "99999999" } }
+}
+
+//# stdout:
+//| ok 42
+//| err parse::empty
+//| err parse::bad_digit{ at = 1 }
+//| err parse::too_big

@@ -1,0 +1,18 @@
+
+fn bump { mut n: i32 } -> i32 { n = n + 1; return n }
+fn pair { a: i32, b: i32 } -> i32 { return a * 10 + b }
+fn main { mut io: Io } {
+    let mut x = 1
+    io::println_i64{ &io, n = x + bump{ n = &x } }             // 1 + 2
+    // Through a pointer, which §3 rule 10 doesn't follow, the order of the fields still shows.
+    let px = &x
+    io::println_i64{ &io, n = pair{ b = bump{ n = px }, a = bump{ n = px } } }
+    let mut a = [0, 0, 0]
+    a[@as(usize, bump{ n = &x } - 5)] = bump{ n = &x }             // value first, then the place
+    io::println_i64{ &io, n = a[1] * 100 + a[2] }
+}
+
+//# stdout:
+//| 3
+//| 43
+//| 500

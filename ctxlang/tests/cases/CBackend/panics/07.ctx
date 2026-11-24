@@ -1,0 +1,6 @@
+fn main { mut io: Io } {
+    let mut a: [3]u8
+    let s = a[..]
+    let i: usize = 3
+    s[i] = 1  //~ panic at 6: index 3 out of bounds for length 3
+}

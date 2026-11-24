@@ -1,0 +1,3 @@
+capability V { static x: i32 }
+capability O { ..V, static x: i32 }  //~ error at 21: capability `O` declares `x`, which it includes from `V`
+fn main {} {}

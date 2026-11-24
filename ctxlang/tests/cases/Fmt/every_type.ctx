@@ -1,0 +1,25 @@
+// std's utf8 has one writer for each: every integer type, f32, f64, bool, String and
+// strlit. A u32 is a number; write_char and write_hex write a character and hex.
+
+fn main { mut io: Io } {
+    let mut mem: [4096]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+
+    let a: i8 = -1
+    let c: i16 = -2
+    let d: i32 = -3
+    let e: i64 = -4
+    let f: u8 = 5
+    let g: u16 = 6
+    let h: u32 = 65
+    let i: u64 = 8
+    let j: usize = 9
+    let s: utf8::String = "str"
+    _ = @fmt(&b, "{} {} {} {} {} {} {} {} {} {} {} {} {} {}", a, c, d, e, f, g, h, i, j, @as(f32, 0.5), 1.25, false, s, "lit")
+    _ = @fmt(&b, " {}{}", utf8::write_char{ c = h, _ }, utf8::write_hex{ n = 255, _ })
+    io::println{ &io, s = utf8::view{ b } }
+}
+
+//# stdout:
+//| -1 -2 -3 -4 5 6 65 8 9 0.5 1.25 false str lit Aff

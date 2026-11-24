@@ -1,0 +1,3 @@
+fn main {} {
+    let m = @round(1.5)  //~ error at 20: expected a type, found '1.5'
+}

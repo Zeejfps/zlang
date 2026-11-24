@@ -1,0 +1,41 @@
+
+const PRIMES: [4]u32 = [2, 3, 5, 7]
+struct P { hp: i32 }
+fn sum { xs: []i32 } -> i32 {
+    let mut t = 0
+    for x in xs { t = t + x }
+    return t
+}
+fn total(T) { xs: []T, add: fn{ a: i32, x: T } -> i32 } -> i32 {
+    let mut t = 0
+    for x in xs { t = add{ a = t, x } }
+    return t
+}
+fn add_p { a: i32, x: P } -> i32 { return a + x.hp }
+fn main { mut io: Io } {
+    let a = [1, 2, 3]
+    _ = @fmt(&io, "{} {}\n", sum{ xs = a[..] }, sum{ xs = a[1..] })
+    let mut t = 0
+    for x in a { t = t + x }                        // an array place, as its view
+    for p in PRIMES { t = t + @as(i32, p) }         // a const array
+    for x in [10, 20] { t = t + x }                 // an array literal
+    for x in [1; 4] { t = t + x }
+    let q = &a
+    for x in q { t = t + x }                        // a pointer to an array
+    for b in "ab" { t = t + @as(i32, b) }           // a string literal's bytes
+    _ = @fmt(&io, "{}\n", t)
+    let ps = [P{ hp = 1 }, P{ hp = 2 }]
+    _ = @fmt(&io, "{}\n", total{ xs = ps[..], add = add_p })
+    let grid = [[1, 2], [3, 4]]
+    for row in grid { for v in row { _ = @fmt(&io, "{} ", v) } }
+    for x at i in a[1..] { _ = @fmt(&io, "{}:{} ", i, x) }     // the index, from 0
+    let none: []i32 = []
+    for x in none { _ = @fmt(&io, "never {}", x) }
+    _ = @fmt(&io, "\n")
+}
+
+//# stdout escaped:
+//| 6 5
+//| 258
+//| 3
+//| 1 2 3 4 0:2 1:3\x20

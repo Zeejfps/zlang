@@ -1,0 +1,30 @@
+
+union Result(T) { ok{ value: T }, err{ code: i32 } }
+fn half { n: i32 } -> Result(i32) {
+    if n % 2 != 0 { return Result::err{ code = n } }
+    return Result::ok{ value = n / 2 }
+}
+fn show { mut io: Io, r: Result(i32) } {
+    match r {
+        ok{ value } => { io::println_i64{ &io, n = value } }
+        err{ code } => { io::println_i64{ &io, n = -code } }
+    }
+}
+fn first(T) { a: [3]T } -> ?T { return a[0] }
+fn main { mut io: Io } {
+    show{ &io, r = half{ n = 10 } }
+    show{ &io, r = half{ n = 7 } }
+    let f = first{ a = [4, 5, 6] }
+    if f == null { } else { io::println_i64{ &io, n = f } }
+    let none: ?i32 = null
+    match none {
+        null => { io::println_i64{ &io, n = 0 } }
+        some{ value } => { io::println_i64{ &io, n = value } }
+    }
+}
+
+//# stdout:
+//| 5
+//| -7
+//| 4
+//| 0

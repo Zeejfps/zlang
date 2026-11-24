@@ -1,0 +1,4 @@
+struct P { p: *i32 }
+extern union V { a: i32, p: P }
+fn main { mut io: Io } { let mut v: V
+    io::println_i64{ &io, n = v.a } }  //~ error at 31: `v` may be read before it is assigned

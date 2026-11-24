@@ -1,0 +1,14 @@
+// `ctxc interp` reports a program's compile errors, refuses a directory with a build program,
+// and without a path prints its usage: exit code 1, 1 and 2.
+//# $ ctxc interp {dir}/bad.ctx
+//# exit: 1
+//# stderr:
+//| {dir}/bad.ctx:1:27: error: expected i32, got bool
+//# $ ctxc interp {dir}/built
+//# exit: 1
+//# stderr:
+//| {dir}/built: has a build program, which interp doesn't run
+//# $ ctxc interp
+//# exit: 2
+//# stderr:
+//| usage: ctxc interp [--env NAME=VALUE | --env NAME]... PATH [-- ARGS...]

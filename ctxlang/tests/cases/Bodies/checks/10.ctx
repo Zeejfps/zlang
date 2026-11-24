@@ -1,0 +1,8 @@
+fn name { c: bool, s: utf8::String } -> utf8::String {
+    return if c { s } else { "none" }
+}
+fn main {} {
+    _ = name{ c = false, s = "x" }
+}
+
+//# exit: 0

@@ -1,0 +1,2 @@
+extern fn f(T) { x: T }  //~ error at 12: an extern fn cannot have generic parameters //~ error at 11: extern fn `f` takes no capability: add a capability field for what it touches, or `#pure` if it touches only its arguments and the memory they point to
+fn main {} {}

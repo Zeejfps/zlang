@@ -1,0 +1,13 @@
+// A writer of a type that declares a set holds only its errors, and a function value
+// written by an @fmt adds its type's declared set, not any error.
+
+error a
+fn show { mut io: Io, w: &fn{ mut io: Io } -> error(a)! } -> error(a)! { try @fmt(&io, "x{}", w) }
+fn main { mut io: Io } {
+    let w: &fn{ mut io: Io } -> error(a)! = @fmt("y")
+    show{ &io, w } iferr {}
+    io::println{ &io, s = "" }
+}
+
+//# stdout:
+//| xy

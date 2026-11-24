@@ -1,0 +1,7 @@
+// §13: `@as` to a float type rounds, an f64 past f32's range to an infinity, at run time
+// and in a const alike, and no `ifoverflow` covers it.
+
+fn main { mut io: Io } {
+    let x = 1e300
+    let y = @as(f32, x) ifoverflow 0.0  //~ error at 25: nothing before `ifoverflow` can overflow: it covers the integer `+`, `-`, `*` and `/`, unary `-`, and `@as` and `@round` to an integer written before it, and the operands of those in turn
+}

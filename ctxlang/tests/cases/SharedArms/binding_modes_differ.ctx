@@ -1,0 +1,5 @@
+
+union Shape { circle{ r: i32 }, square{ side: i32 }, rect{ w: i32, h: i32 }, dot, line }
+
+fn f { s: *Shape } { match s { circle{ &r } | square{ side = r } => { } else => { } } }  //~ error at 55: `r` must be bound with `&` in both `circle` and `square`, or in neither
+fn main { mut io: Io } { }

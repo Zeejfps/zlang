@@ -1,0 +1,8 @@
+union U { a, b{ x: i32 } }
+fn f { u: U } {
+    match u {
+        a => {}
+        b{ &x } => {}  //~ error at 12: `&x` needs a pointer scrutinee
+    }
+}
+fn main {} {}

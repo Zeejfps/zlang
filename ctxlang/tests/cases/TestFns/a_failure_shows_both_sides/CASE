@@ -1,0 +1,22 @@
+// A failure shows both sides: the comparison as written, then each side's value, written
+// from its parts where its type has no writer.
+//# $ ctxc test .
+//# exit: 1
+//# stdout:
+//| ./t.ctx:10: fail: sides: add{ a = 1, b = 2 } == 4: 3 == 4
+//| ./t.ctx:11: fail: sides: add{ a = 1, b = 2 } != 3: 3 != 3
+//| ./t.ctx:12: fail: sides: 2 < 1: 2 < 1
+//| ./t.ctx:13: fail: sides: 1.5 >= 2.5: 1.5 >= 2.5
+//| ./t.ctx:16: fail: sides: wide <= narrow: 5000000000 <= 7
+//| ./t.ctx:17: fail: sides: true == false: true == false
+//| ./t.ctx:19: fail: sides: name == "abd": abc == abd
+//| ./t.ctx:21: fail: sides: s.bytes.len > 3: 3 > 3
+//| ./t.ctx:25: fail: values_without_a_writer: Point{ x = 1, y = 2 } == Point{ x = 1, y = 3 }: Point{ x = 1, y = 2 } == Point{ x = 1, y = 3 }
+//| ./t.ctx:26: fail: values_without_a_writer: Kind::byte == Kind::char: Kind::byte == Kind::char
+//| ./t.ctx:27: fail: values_without_a_writer: Shape::circle{ r = 0.5 } == Shape::none: Shape::circle{ r = 0.5 } == Shape::none
+//| ./t.ctx:30: fail: values_without_a_writer: xs == ys: [1, 2, 3] == [1, 2, 4]
+//| ./t.ctx:31: fail: values_without_a_writer: xs[..2] == ys[1..]: [1, 2] == [2, 4]
+//| ./t.ctx:33: fail: values_without_a_writer: o == 5: null == 5
+//| ./t.ctx:34: fail: values_without_a_writer: o != null: null != null
+//| ./t.ctx:36: fail: values_without_a_writer: p == null: Point{ x = 0, y = 0 } == null
+//| tests: 2 run, 0 passed, 2 failed, 0 not selected

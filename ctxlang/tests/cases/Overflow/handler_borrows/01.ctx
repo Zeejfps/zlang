@@ -1,0 +1,12 @@
+// The handler's return, and its value, count where the function's result comes from.
+
+fn pick { p: *i32 } -> ?*i32 {
+    let n: i32 = 2147483647
+    _ = n + 1 ifoverflow { return p }
+    return null
+}
+fn leak {} -> ?*i32 {
+    let x: i32 = 42
+    return pick{ p = &x }  //~ error at 5: returned value holds the address of local `x`
+}
+fn main {} { _ = leak{} }

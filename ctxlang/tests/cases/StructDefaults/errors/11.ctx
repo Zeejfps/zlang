@@ -1,0 +1,2 @@
+extern union U { x: i32 = 1, y: f32 }  //~ error at 27: an extern union's field can't have a default: only a struct's can
+fn main {} {}

@@ -1,0 +1,12 @@
+union U { a{ n: i32 }, b{ n: i32 }, c }
+fn f { u: U } -> i32 {
+    return match u {
+        a{ n } | b{ n } => { n }
+        c => { 0 }
+    }
+}
+fn main {} {
+    _ = f{ u = U::c }
+}
+
+//# exit: 0

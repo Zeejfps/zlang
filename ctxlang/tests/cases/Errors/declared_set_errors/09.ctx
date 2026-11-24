@@ -1,0 +1,6 @@
+error a
+error b
+error c
+fn g {} -> !u64 { return b }
+fn run { f: fn{} -> error(a)!u64 } -> error(a)!u64 { return try f{} }
+fn main {} { _ = run{ f = g } }  //~ error at 27: the errors of `g` include `b`, which isn't one of error(a): a declared set holds only its own errors

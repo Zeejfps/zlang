@@ -1,0 +1,2 @@
+const A: utf8::String = "\xff"  //~ error at 25: string literal: utf8::invalid{ at = 0 }
+fn main {} {}

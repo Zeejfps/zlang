@@ -1,0 +1,6 @@
+fn at { i: usize } -> u8 {
+    let xs = [1, 2]
+    return xs[i]
+}
+const A: u8 = at{ i = 2 }  //~ error at 17: const `A` panicked while compiling: index 2 out of bounds for length 2, at 3:14
+fn main {} {}

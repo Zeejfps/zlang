@@ -1,0 +1,18 @@
+// Each failure of fs is its own error: a missing file is not_found (1), creating one that is
+// there exists (4), reading a directory is_directory (3), closing a file never opened
+// bad_file (6); a removed file is gone; a path under a missing directory and the empty path
+// are not_found.
+//# program: main.ctx
+//# args: {dir}/tmp/there.txt {dir}/tmp/missing.txt {dir}/tmp {dir}/tmp/no_such_dir/x.txt
+//# interp: cannot run
+//# stdout:
+//| 1
+//| 4
+//| 3
+//| 6
+//| 1
+//| true
+//| true
+//| 1
+//| 1
+//# missing tmp/there.txt

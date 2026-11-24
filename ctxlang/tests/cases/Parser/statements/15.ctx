@@ -1,0 +1,8 @@
+fn main {} {
+    let null = x
+}
+
+//# errors:
+//| 15.ctx:3:1: error: a `let` with a pattern needs an `else`
+//| 15.ctx:2:16: error: unknown name `x`
+//| 15.ctx:2:17: error: the `else` of a `let` pattern must leave: end it with `return`, `break`, `continue` or `@panic()`

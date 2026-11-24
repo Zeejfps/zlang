@@ -1,0 +1,19 @@
+
+fn main { mut io: Io } {
+    let xs = [0.1, -2.5e-300, 1.7976931348623157e308, 5e-324, 123456.789]
+    let mut buf: [32]u8
+    let mut i: usize = 0
+    while i < xs.len {
+        let text = utf8::fmt_f64{ n = xs[i], into = buf[..] }
+        let back = utf8::parse_f64{ s = text }
+        if back != null { io::println_bool{ &io, n = back == xs[i] } }
+        i = i + 1
+    }
+}
+
+//# stdout:
+//| true
+//| true
+//| true
+//| true
+//| true

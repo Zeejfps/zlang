@@ -1,0 +1,3 @@
+fn main {} {
+    let m = cmp::max{ a = 1, b = 2 }  //~ error at 18: `max` not found in namespace `cmp`
+}

@@ -1,0 +1,3 @@
+fn main { args: [][]u8, mut io: Io, fs: Fs, mut mem: Mem } -> i32 { return 0 }
+
+//# exit: 0

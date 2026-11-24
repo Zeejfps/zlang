@@ -1,0 +1,5 @@
+
+struct S { a: i32 }
+fn f { a: i32 } -> i32 { return a }
+fn g { s: S } -> i32 { return s.else }  //~ error at 33: expected a name, found 'else': `else` is a keyword and can't be a name; use another, such as `else_`
+fn main {} {}

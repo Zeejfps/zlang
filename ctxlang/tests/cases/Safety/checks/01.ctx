@@ -1,0 +1,8 @@
+fn g { mut x: i32, y: i32 } {}
+fn f {} {
+    let mut n = 0
+    g{ x = &n, y = n }
+}
+fn main {} {}
+
+//# exit: 0

@@ -1,0 +1,17 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// widened fn values in a loop: accepted, and it runs.
+
+error bad
+fn ok { x: i64 } -> !i64 { if x < 0 { return bad }; return x }
+struct H { f: fn{ x: i64 } -> !i64 }
+fn call_any { f: fn{ x: i64 } -> !i64, x: i64 } -> i64 { return f{ x } iferr { -1 } }
+fn main { mut io: Io } {
+    let h = H{ f = ok }
+    let mut i: i64 = 0
+    let mut s: i64 = 0
+    while i < 1000 { s = s + call_any{ f = h.f, x = i - 5 }; i = i + 1 }
+    io::println_i64{ &io, n = s }
+}
+
+//# stdout:
+//| 494510

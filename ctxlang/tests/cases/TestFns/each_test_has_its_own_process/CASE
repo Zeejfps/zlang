@@ -1,0 +1,10 @@
+// A static keeps nothing from one test to the next, and a failing test's own output is
+// printed with its lines, in the order it was written; a passing test's is dropped.
+//# $ ctxc test .
+//# exit: 1
+//# stdout:
+//| to standard output
+//| to standard error
+//| ./t.ctx:21: fail: prints: 1 == 2: 1 == 2
+//| after the check
+//| tests: 3 run, 2 passed, 1 failed, 0 not selected

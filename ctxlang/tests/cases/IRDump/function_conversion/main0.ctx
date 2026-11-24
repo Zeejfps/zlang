@@ -1,0 +1,6 @@
+
+fn g { a: i32 } -> i32 { return a }
+fn main {} -> i32 {
+    let h: fn{ a: i32, b: i32 } -> i32 = g
+    return h{ a = 1, b = 2 }
+}

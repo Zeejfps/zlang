@@ -1,0 +1,4 @@
+fn f {} {
+    let n = @trunc(u8, 1.5)  //~ error at 24: @trunc converts integers only
+}
+fn main {} {}

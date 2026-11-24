@@ -1,0 +1,2 @@
+
+fn main { mut io: Io } { let x: u8 = 1; @trunc(u8, x) }  //~ error at 41: the result of `@trunc` (u8) is unused: use it, or discard it with `_ = ...`

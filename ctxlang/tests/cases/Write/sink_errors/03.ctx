@@ -1,0 +1,15 @@
+struct S {}
+namespace a {
+    #write
+    fn w { mut s: S, v: i32 } {}
+}
+namespace b {
+    #write
+    fn w { mut s: S, v: i32 } {}
+}
+#write
+fn t { mut s: S, v: strlit } {}
+fn f { mut s: S } {
+    @fmt(&s, "{}", 1) iferr {}  //~ error at 20: @fmt has two writers of i32 to S: `a::w` and `b::w`
+}
+fn main {} {}

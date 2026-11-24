@@ -1,0 +1,4 @@
+namespace g {
+    fn f {} -> i32 { return 2 }
+}
+fn main {} {}

@@ -1,0 +1,3 @@
+const C: [3]i32 = [1, 2, 3]
+const ROWS: [2][3]i32 = [C, C]
+fn main {} { _ = ROWS[2][..] }  //~ panic at 22: index 2 out of bounds for length 2

@@ -1,0 +1,12 @@
+
+union Result(T, E) { ok{ value: T }, err{ error: E } }
+fn main { mut io: Io } {
+    let x: ?i32 = null
+    let null = x else { @panic() }
+    let r: Result(i32, bool) = Result::ok{ value = 1 }
+    let ok = r else { @panic() }
+    io::println_i64{ &io, n = 1 }
+}
+
+//# stdout:
+//| 1

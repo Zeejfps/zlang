@@ -1,0 +1,507 @@
+// The suite's runner: every case under tests/cases, each a `.ctx` file or a directory with a
+// CASE, built with ctxc for the current source, run, and checked against what it states
+// (tests/README.md). From anywhere:
+//
+//   ctxc run ctxlang/tools/suite [-- [--list] [-v] [--fresh] [--jobs N] [--cases DIR] [FILTER...]]
+//   ctxc run ctxlang/tools/suite -- --corpus OUT [FILTER...]
+//
+// A FILTER selects the cases whose names contain it; a case's name is its path under the cases'
+// directory, as `Basics/arithmetic`. Each case runs in a process of its own, this program started
+// again with `--case`, several at once, so a case that ends the runner fails alone. A failure is
+// printed as `ctxc test` prints one, `FILE:LINE: fail: NAME: WHAT`, with what was expected and
+// what came under it, and the last line counts the cases. The exit code is 1 if a case failed,
+// none was selected, or a file under the cases' directory is no case.
+//
+// A case that passed isn't run again while nothing it depends on has changed: ctxc's source, std,
+// the runtime, the C compiler, this runner and the case's files, by their hash. `--fresh` runs
+// every selected case.
+//
+// `--corpus OUT` runs nothing: it writes every program of the selected cases, and of examples/,
+// to OUT, each once, for the recovery test (tools/recover.py), which damages their files:
+//
+//   OUT/0001/case.json          {"files": [[NAME, NAME], ...]}
+//   OUT/0001/NAME               each of the program's files
+
+const USAGE: []u8 = "usage: ctxc run ctxlang/tools/suite [-- [--list] [-v] [--fresh] [--jobs N] [--cases DIR] [--corpus OUT] [FILTER...]]: runs the cases whose names contain a FILTER, or all of them\n"
+
+// How long the runner waits for a case before it looks at the others again, in nanoseconds.
+const SLICE: u64 = 20000000
+
+// The most cases the runner has running at once, whatever `--jobs` says.
+const MOST: usize = 64
+
+struct Options { list: bool, verbose: bool, fresh: bool, jobs: usize, cases: []u8, corpus: []u8, filters: [][]u8 }
+
+// A case found: its name, its file or directory, and which it is.
+struct Found { name: []u8, path: []u8, is_dir: bool }
+
+// A case that is running: which of the selected cases, its process, and where its result and
+// the process's own output go.
+struct Running { slot: usize, child: proc::Child, result: []u8, log: []u8 }
+
+// What became of a selected case.
+union Outcome {
+    pending,
+    passed{ cached: bool, interp: []u8 },
+    skipped{ why: []u8 },
+    failed{ lines: []u8, interp: []u8 },
+}
+
+// How the interpreter fared over the programs of the cases that ran.
+struct Interp { same: usize, cannot: usize, off: usize, reasons: Strs, counts: list::List(usize, Heap) }
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> i32 {
+    let pages = mem::reserve{ &mem, size = 4294967296 } ifnull {
+        io::eprintln{ &io, s = "suite: out of memory" }
+        return 3
+    }
+    let mut heap = arena::new{ buf = pages }
+    if args.len == 7 and eq{ a = args[0], b = "--case" } {
+        let s = tool::load{ &fs, &heap, path = args[1] } ifnull {
+            io::eprintln{ &io, s = "suite: the run's file can't be read" }
+            return 3
+        }
+        return work::main{ &io, &fs, &proc, &heap, s, path = args[2], name = args[3], is_dir = eq{ a = args[4], b = "d" }, slot = args[5], result = args[6] }
+    }
+    let mut filters = strs{ &heap }
+    let mut o = Options{ list = false, verbose = false, fresh = false, jobs = @as(usize, proc::processors{ &proc }), cases = "", corpus = "", filters = slice::empty([]u8){} }
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        if eq{ a, b = "--list" } {
+            o.list = true
+        } else if eq{ a, b = "-v" } {
+            o.verbose = true
+        } else if eq{ a, b = "--fresh" } {
+            o.fresh = true
+        } else if eq{ a, b = "--jobs" } and i + 1 < args.len {
+            let n = utf8::parse_u64{ s = utf8::of{ chars = args[i + 1] } } ifnull {
+                io::write{ &io, to = io::Stream::err, bytes = USAGE }
+                return 2
+            }
+            o.jobs = @as(usize, @clamp(n, 1, MOST))
+            i = i + 1
+        } else if eq{ a, b = "--cases" } and i + 1 < args.len {
+            o.cases = args[i + 1]
+            i = i + 1
+        } else if eq{ a, b = "--corpus" } and i + 1 < args.len {
+            o.corpus = args[i + 1]
+            i = i + 1
+        } else if a.len > 0 and a[0] == '-' {
+            io::write{ &io, to = io::Stream::err, bytes = USAGE }
+            return 2
+        } else {
+            try! list::push{ list = &filters, item = a }
+        }
+        i = i + 1
+    }
+    o.filters = list::items{ list = filters }
+    o.jobs = @clamp(o.jobs, 1, MOST)
+
+    // ctxlang/: CTX_HOME, which `ctxc run` of the checkout's ctxc sets, or the working directory.
+    let given = proc::env{ &proc, name = "CTX_HOME" } ifnull { "." }
+    let full = fs::make_absolute{ &fs, &heap, realloc = arena::alloc, path = given } iferr {
+        io::eprintln{ &io, s = "suite: cannot find the working directory" }
+        return 3
+    }
+    let home = work::normal{ &heap, path = full }
+    if kind_of{ &fs, path = join{ &heap, a = home, b = "std/io.ctx" } } != 1 or kind_of{ &fs, path = join{ &heap, a = home, b = "ctxc/main.ctx" } } != 1 {
+        io::eprintln{ &io, s = "suite: run it with the checkout's ctxc, which names ctxlang/ in CTX_HOME, or from ctxlang/" }
+        return 3
+    }
+    let cases_dir = if o.cases.len > 0 {
+        work::normal{ &heap, path = fs::make_absolute{ &fs, &heap, realloc = arena::alloc, path = o.cases } iferr { o.cases } }
+    } else {
+        join{ &heap, a = home, b = "tests/cases" }
+    }
+
+    // The cases, and the files that are none.
+    let mut found = list::new(Found){ realloc = arena::alloc, &heap }
+    let mut strays = strs{ &heap }
+    if kind_of{ &fs, path = cases_dir } != 2 {
+        _ = @fmt(&io, "suite: no directory {}\n", cases_dir)
+        return 1
+    }
+    find_cases{ &fs, &heap, dir = cases_dir, name = "", &found, &strays }
+    let all = list::items{ list = found }
+    let mut picked = list::new(Found){ realloc = arena::alloc, &heap }
+    for c in all {
+        if picks{ name = c.name, filters = o.filters } { try! list::push{ list = &picked, item = c } }
+    }
+    let cases = list::items{ list = picked }
+    if o.list {
+        for c in cases { _ = @fmt(&io, "{}: {}\n", c.path, c.name) }
+        return 0
+    }
+    for s in list::items{ list = strays } { _ = @fmt(&io, "{}:1: fail: a file under the cases' directory that is no case: a case is a `.ctx` file or a directory with a CASE\n", s) }
+    if all.len == 0 {
+        _ = @fmt(&io, "cases: 0 run: no case under {}\n", cases_dir)
+        return 1
+    }
+    if cases.len == 0 {
+        io::print{ &io, s = "cases: 0 run: no case's name contains" }
+        for f at k in o.filters { _ = @fmt(&io, "{} `{}`", if k == 0 { "" } else { " or" }, f) }
+        _ = @fmt(&io, ", of {}\n", all.len)
+        return 1
+    }
+
+    if o.corpus.len > 0 { return write_corpus{ &io, &fs, &proc, &heap, home, out = o.corpus, cases } }
+
+    // The run's directory, which no other run has, and what the cases' processes need.
+    let cache = join{ &heap, a = home, b = "build/suite" }
+    if not made{ &fs, &heap, path = cache } {
+        io::eprintln{ &io, s = "suite: cannot create build/suite" }
+        return 3
+    }
+    let mut run: []u8 = ""
+    let mut k: u64 = 0
+    while true {
+        run = join{ &heap, a = cache, b = cat{ &heap, a = "run-", b = number{ &heap, n = k } } }
+        match fs::make_dir{ &fs, path = run } {
+            ok => { break }
+            fs::exists => { k = k + 1 }
+            else => {
+                io::eprintln{ &io, s = "suite: cannot create a directory in build/suite" }
+                return 3
+            }
+        }
+    }
+    let os = proc::os{ &proc }
+    let cc = tool::compiler{ &fs, &proc, &heap, os } ifnull {
+        io::eprintln{ &io, s = "suite: no C compiler: install gcc or clang, or set CTX_CC=zig" }
+        remove_tree{ &fs, &heap, path = run }
+        return 3
+    }
+    let cc_env = tool::compiler_env{ &proc, &heap, cc, os }
+    let rt = tool::runtime_hash{ &fs, &proc, &heap, home, os }
+    let mut s = tool::Session{ home, os, ctxc = "", cc, cc_env, rt, key = "", run, cache }
+    let mut scratch = tool::Scratch{ dir = run, seq = 0 }
+    s.ctxc = tool::native_ctxc{ &io, &fs, &proc, &heap, s, &scratch } ifnull {
+        remove_tree{ &fs, &heap, path = run }
+        return 3
+    }
+    // What a case's result depends on besides its own files: ctxc (its name is a hash of its
+    // source), std with every layer, the runtime and how it is compiled, the C compiler, and
+    // this runner.
+    let mut h = sha256::new{}
+    sha256::add_field{ s = &h, bytes = s.ctxc }
+    sha256::add_field{ s = &h, bytes = s.rt }
+    for w in cc { sha256::add_field{ s = &h, bytes = w } }
+    tool::add_tree{ &fs, &heap, &h, dir = join{ &heap, a = home, b = "std" }, name = "std" }
+    _ = tool::add_file{ &fs, &heap, &h, path = proc::exe_path{ &proc }, name = "suite" }
+    s.key = tool::hex_of{ &heap, h }
+    let session = join{ &heap, a = run, b = "session.txt" }
+    if not tool::save{ &fs, &heap, s, path = session } {
+        io::eprintln{ &io, s = "suite: cannot write in build/suite" }
+        return 3
+    }
+
+    let outcomes = try! alloc::make(Outcome, Heap){ realloc = arena::alloc, &heap, count = cases.len }
+    run_all{ &io, &fs, &proc, &heap, o, s, session, cases, outcomes }
+    remove_tree{ &fs, &heap, path = run }
+
+    let mut passed: usize = 0
+    let mut cached_n: usize = 0
+    let mut failed: usize = 0
+    let mut skipped: usize = 0
+    let mut interp = Interp{ same = 0, cannot = 0, off = 0, reasons = strs{ &heap }, counts = list::new(usize){ realloc = arena::alloc, &heap } }
+    for out in outcomes {
+        match out {
+            passed{ cached, interp = lines } => {
+                passed = passed + 1
+                if cached { cached_n = cached_n + 1 }
+                count_interp{ &interp, lines }
+            }
+            failed{ lines, interp = ran } => {
+                failed = failed + 1
+                count_interp{ &interp, lines = ran }
+            }
+            skipped => { skipped = skipped + 1 }
+            pending => { failed = failed + 1 }
+        }
+    }
+    if o.verbose {
+        let rs = list::items{ list = interp.reasons }
+        for reason at n in rs { _ = @fmt(&io, "interp: cannot run {:>4}: {}\n", list::items{ list = interp.counts }[n], reason) }
+    }
+    _ = @fmt(&io, "interp: {} programs the same, {} it cannot run, {} off\n", interp.same, interp.cannot, interp.off)
+    _ = @fmt(&io, "cases: {} run, {} passed ({} from the cache), {} failed, {} skipped, {} not selected\n", cases.len, passed, cached_n, failed, skipped, all.len - cases.len)
+    return if failed == 0 and strays.len == 0 { 0 } else { 1 }
+}
+
+// A program of the corpus: its files' names, as the program names them, and where each is.
+struct Program { names: [][]u8, paths: [][]u8 }
+
+// Writes the corpus to `out`: the programs of the cases, then those of examples/ (each file,
+// and each directory's files). A program whose files another has, bytes and names, is written
+// once. Returns the exit code.
+fn write_corpus { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, home: []u8, out: []u8, cases: []Found } -> i32 {
+    let mut programs = list::new(Program){ realloc = arena::alloc, &heap }
+    let host = case::Host{ os = proc::os{ &proc } }
+    for c in cases {
+        let read = case::read{ &fs, &heap, host, path = c.path, name = c.name, is_dir = c.is_dir }
+        let dir = if c.is_dir { c.path } else { parent{ path = c.path } }
+        for step in read.steps {
+            if step.kind != case::Kind::program and step.kind != case::Kind::build { continue }
+            let mut names = strs{ &heap }
+            let mut paths = strs{ &heap }
+            for f in case::files{ s = step } {
+                // A file outside the case is examples/'s or another tree's, not the case's.
+                if f.len == 0 or f[0] == '{' { continue }
+                try! list::push{ list = &names, item = f }
+                try! list::push{ list = &paths, item = join{ &heap, a = dir, b = f } }
+            }
+            if names.len > 0 { try! list::push{ list = &programs, item = Program{ names = list::items{ list = names }, paths = list::items{ list = paths } } } }
+        }
+    }
+    let examples = join{ &heap, a = home, b = "examples" }
+    for n in names_in{ &fs, &heap, path = examples } {
+        let path = join{ &heap, a = examples, b = n }
+        let mut names = strs{ &heap }
+        let mut paths = strs{ &heap }
+        if kind_of{ &fs, path } == 2 {
+            for f in names_in{ &fs, &heap, path } {
+                if f.len > 4 and ends_with{ s = f, suffix = ".ctx" } {
+                    try! list::push{ list = &names, item = cat3{ &heap, a = cat{ &heap, a = "examples/", b = n }, b = "/", c = f } }
+                    try! list::push{ list = &paths, item = join{ &heap, a = path, b = f } }
+                }
+            }
+        } else if n.len > 4 and ends_with{ s = n, suffix = ".ctx" } {
+            try! list::push{ list = &names, item = cat{ &heap, a = "examples/", b = n } }
+            try! list::push{ list = &paths, item = path }
+        }
+        if names.len > 0 { try! list::push{ list = &programs, item = Program{ names = list::items{ list = names }, paths = list::items{ list = paths } } } }
+    }
+    remove_tree{ &fs, &heap, path = out }
+    let mut seen = strs{ &heap }
+    let mut written: u64 = 0
+    for program in list::items{ list = programs } {
+        let mut h = sha256::new{}
+        let mut readable = true
+        for name at k in program.names {
+            if not tool::add_file{ &fs, &heap, &h, path = program.paths[k], name } { readable = false }
+        }
+        if not readable { continue }
+        let key = tool::hex_of{ &heap, h }
+        let mut again = false
+        for other in list::items{ list = seen } {
+            if eq{ a = other, b = key } { again = true }
+        }
+        if again { continue }
+        try! list::push{ list = &seen, item = key }
+        written = written + 1
+        let mut digits = text_of{ &heap }
+        try! @fmt(&digits, "{:04}", written)
+        let dir = join{ &heap, a = out, b = utf8::view{ b = digits }.bytes }
+        let mut json = text_of{ &heap }
+        try! utf8::push_bytes{ b = &json, s = "{\"files\": [" }
+        for name at k in program.names {
+            let to = join{ &heap, a = dir, b = name }
+            if not made{ &fs, &heap, path = parent{ path = to } } or not copy_tree{ &fs, &heap, from = program.paths[k], to } {
+                _ = @fmt(&io, "suite: cannot write {}\n", to)
+                return 3
+            }
+            let quoted = tool::quoted{ &heap, s = name }
+            try! @fmt(&json, "{}[\"{}\", \"{}\"]", if k == 0 { "" } else { ", " }, quoted, quoted)
+        }
+        try! utf8::push_bytes{ b = &json, s = "]}\n" }
+        if not write_file{ &fs, path = join{ &heap, a = dir, b = "case.json" }, bytes = utf8::view{ b = json }.bytes } { return 3 }
+    }
+    _ = @fmt(&io, "{} programs in {}\n", written, out)
+    return 0
+}
+
+// Counts the `interp` lines of a case's result.
+fn count_interp { mut interp: Interp, lines: []u8 } {
+    let mut from: usize = 0
+    while from < lines.len {
+        let end = line_end{ s = lines, from }
+        let line = lines[from..end]
+        from = end + 1
+        if eq{ a = line, b = "same" } {
+            interp.same = interp.same + 1
+        } else if eq{ a = line, b = "off" } {
+            interp.off = interp.off + 1
+        } else if starts_with{ s = line, prefix = "cannot\t" } {
+            interp.cannot = interp.cannot + 1
+            let reason = line[7..]
+            let mut at: ?usize = null
+            for r at n in list::items{ list = interp.reasons } {
+                if eq{ a = r, b = reason } { at = n }
+            }
+            if let n = at {
+                list::items{ list = interp.counts }[n] = list::items{ list = interp.counts }[n] + 1
+            } else {
+                try! list::push{ list = &interp.reasons, item = reason }
+                try! list::push{ list = &interp.counts, item = 1 }
+            }
+        }
+    }
+}
+
+// Whether a case of this name is picked: with no filter, or if its name contains one.
+fn picks { name: []u8, filters: [][]u8 } -> bool {
+    if filters.len == 0 { return true }
+    for f in filters {
+        if has{ s = name, part = f } { return true }
+    }
+    return false
+}
+
+// Adds the cases under dir, whose names start with `name`, in the order of their names: a
+// directory with a CASE is one, and nothing in it is another; a `.ctx` file is one. Any other
+// file is a stray, but a NAME.expect beside its NAME.ctx and a README.md.
+fn find_cases { mut fs: Fs, mut heap: Heap, dir: []u8, name: []u8, mut found: list::List(Found, Heap), mut strays: Strs } {
+    for n in names_in{ &fs, &heap, path = dir } {
+        let path = join{ &heap, a = dir, b = n }
+        let named = if name.len == 0 { n } else { cat3{ &heap, a = name, b = "/", c = n } }
+        if kind_of{ &fs, path } == 2 {
+            if kind_of{ &fs, path = join{ &heap, a = path, b = "CASE" } } == 1 {
+                try! list::push{ list = &found, item = Found{ name = named, path, is_dir = true } }
+            } else {
+                find_cases{ &fs, &heap, dir = path, name = named, &found, &strays }
+            }
+        } else if n.len > 4 and ends_with{ s = n, suffix = ".ctx" } {
+            try! list::push{ list = &found, item = Found{ name = named[..named.len - 4], path, is_dir = false } }
+        } else if n.len > 7 and ends_with{ s = n, suffix = ".expect" } and kind_of{ &fs, path = cat{ &heap, a = path[..path.len - 7], b = ".ctx" } } == 1 {
+        } else if eq{ a = n, b = "README.md" } {
+        } else {
+            try! list::push{ list = &strays, item = path }
+        }
+    }
+}
+
+// The key of a case's result in the cache: a hash of the run's key, the case's name, and its
+// files (the file and its NAME.expect, or everything in its directory).
+fn case_key { mut fs: Fs, mut heap: Heap, s: tool::Session, c: Found } -> []u8 {
+    let mut h = sha256::new{}
+    sha256::add_field{ s = &h, bytes = s.key }
+    sha256::add_field{ s = &h, bytes = c.name }
+    if c.is_dir {
+        tool::add_tree{ &fs, &heap, &h, dir = c.path, name = "" }
+    } else {
+        _ = tool::add_file{ &fs, &heap, &h, path = c.path, name = "ctx" }
+        _ = tool::add_file{ &fs, &heap, &h, path = cat{ &heap, a = c.path[..c.path.len - 4], b = ".expect" }, name = "expect" }
+    }
+    return tool::hex_of{ &heap, h }
+}
+
+// Runs the cases, at most o.jobs at once, each in a process of its own, and prints each failed
+// or skipped one's lines, in the cases' order.
+fn run_all { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, o: Options, s: tool::Session, session: []u8, cases: []Found, outcomes: []mut Outcome } {
+    let exe = proc::exe_path{ &proc }
+    let pass_dir = join{ &heap, a = s.cache, b = "pass" }
+    _ = made{ &fs, &heap, path = pass_dir }
+    let keys = try! alloc::make([]u8, Heap){ realloc = arena::alloc, &heap, count = cases.len }
+    let mut active = list::new(Running){ realloc = arena::alloc, &heap }
+    let mut next: usize = 0
+    let mut printed: usize = 0
+    while printed < cases.len {
+        while active.len < o.jobs and next < cases.len {
+            let c = cases[next]
+            keys[next] = join{ &heap, a = pass_dir, b = case_key{ &fs, &heap, s, c } }
+            if not o.fresh {
+                if let lines = read_file{ &fs, &heap, path = keys[next] } {
+                    outcomes[next] = Outcome::passed{ cached = true, interp = lines }
+                    next = next + 1
+                    continue
+                }
+            }
+            match start{ &fs, &proc, &heap, exe, session, s, c, slot = next } {
+                ok{ value } => { try! list::push{ list = &active, item = value } }
+                err{ error } => {
+                    let mut b = text{ &heap }
+                    try! @fmt(&b, "{}:1: fail: {}: the runner's process for it didn't start: {}\n", c.path, c.name, error)
+                    outcomes[next] = Outcome::failed{ lines = utf8::view{ b }.bytes, interp = "" }
+                }
+            }
+            next = next + 1
+        }
+        // Each running case: ended, or still running. The first is waited for a slice, so that
+        // the loop doesn't spin; the others are only looked at.
+        let mut k: usize = 0
+        while k < active.len {
+            let a = list::at{ list = active, i = k }
+            let wait: u64 = if k == 0 { SLICE } else { 0 }
+            let code: ?i32 = proc::wait_for{ &proc, child = &a.child, nanoseconds = wait } iferr { 3 }
+            if let ended = code {
+                outcomes[a.slot] = finish{ &fs, &heap, c = cases[a.slot], code = ended, result = a.result, log = a.log, key = keys[a.slot] }
+                let last = list::pop{ list = &active } ifnull { break }
+                if k < active.len { _ = list::set{ list = &active, i = k, item = last } }
+            } else {
+                k = k + 1
+            }
+        }
+        while printed < cases.len and not (outcomes[printed] is pending) {
+            let c = cases[printed]
+            match outcomes[printed] {
+                failed{ lines } => { io::write{ &io, to = io::Stream::out, bytes = lines } }
+                skipped{ why } => { _ = @fmt(&io, "{}:1: skip: {}: {}\n", c.path, c.name, why) }
+                passed{ cached } => {
+                    if o.verbose { _ = @fmt(&io, "{}:1: pass: {}{}\n", c.path, c.name, if cached { " (from the cache)" } else { "" }) }
+                }
+                pending => {}
+            }
+            io::flush{ &io }
+            printed = printed + 1
+        }
+    }
+}
+
+// Starts a case in a process of its own, a group that ends with this program, whose own output
+// goes to a file in the run's directory.
+fn start { mut fs: Fs, mut proc: Proc, mut heap: Heap, exe: []u8, session: []u8, s: tool::Session, c: Found, slot: usize } -> !Running {
+    let number = number{ &heap, n = slot }
+    let result = join{ &heap, a = s.run, b = cat{ &heap, a = number, b = ".result" } }
+    let log = join{ &heap, a = s.run, b = cat{ &heap, a = number, b = ".log" } }
+    let file = try fs::open{ &fs, path = log, mode = fs::Mode::write }
+    let argv: [8][]u8 = [exe, "--case", session, c.path, c.name, if c.is_dir { "d" } else { "f" }, cat{ &heap, a = "w", b = number }, result]
+    let options = proc::Options{ stdin = proc::Stdio::ignore, stdout = proc::Stdio::file{ file }, stderr = proc::Stdio::file{ file }, die_with_parent = true, .. }
+    let child = proc::spawn{ &proc, argv = argv[..], options }
+    _ = fs::close{ &fs, file } iferr {}
+    return Running{ slot, child = try child, result, log }
+}
+
+// What became of a case whose process ended with `code`: its result is read, and a pass is
+// noted in the cache. A process that wrote no result, or ended with a code that isn't a
+// case's, is the runner's own failure, reported with what it wrote.
+fn finish { mut fs: Fs, mut heap: Heap, c: Found, code: i32, result: []u8, log: []u8, key: []u8 } -> Outcome {
+    let said: []u8 = read_file{ &fs, &heap, path = log } ifnull { "" }
+    let text: ?[]u8 = read_file{ &fs, &heap, path = result }
+    _ = fs::remove{ &fs, path = log } iferr {}
+    _ = fs::remove{ &fs, path = result } iferr {}
+    let mut b = text_of{ &heap }
+    let all = text ifnull { "" }
+    let head = all[..line_end{ s = all, from = 0 }]
+    let mut interp = text_of{ &heap }
+    let mut from = head.len + 1
+    let mut lines: []u8 = ""
+    while from < all.len {
+        let end = line_end{ s = all, from }
+        let line = all[from..end]
+        from = end + 1
+        if eq{ a = line, b = "text" } {
+            lines = all[@min(from, all.len)..]
+            break
+        }
+        if starts_with{ s = line, prefix = "interp " } { try! @fmt(&interp, "{}\n", line[7..]) }
+    }
+    let ran = utf8::view{ b = interp }.bytes
+    if text == null or (code != 0 and code != 1) or said.len > 0 or (code == 0) != (eq{ a = head, b = "pass" } or starts_with{ s = head, prefix = "skip " }) {
+        try! @fmt(&b, "{}:1: fail: {}: the runner's process for it ended with exit code {}", c.path, c.name, code)
+        try! @fmt(&b, "{}\n{}", if text == null { ", without a result" } else { "" }, lines)
+        if said.len > 0 { try! @fmt(&b, "  it wrote:\n{}{}", said, if said[said.len - 1] == '\n' { "" } else { "\n" }) }
+        return Outcome::failed{ lines = utf8::view{ b }.bytes, interp = ran }
+    }
+    if starts_with{ s = head, prefix = "skip " } { return Outcome::skipped{ why = head[5..] } }
+    if code == 0 {
+        // A case that names files outside itself isn't cached: its files don't say all it reads.
+        if not has{ s = ran, part = "outside\n" } { _ = write_file{ &fs, path = key, bytes = ran } }
+        return Outcome::passed{ cached = false, interp = ran }
+    }
+    return Outcome::failed{ lines, interp = ran }
+}
+
+fn text_of { mut heap: Heap } -> Text {
+    return utf8::builder{ realloc = arena::alloc, &heap }
+}

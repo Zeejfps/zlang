@@ -1,0 +1,23 @@
+
+fn size_of { count: u32 } -> ?u32 {
+    return count * 16 ifoverflow { return null }
+}
+
+fn count { xs: []i32 } -> i32 {
+    let mut n: i32 = 0
+    let mut i: usize = 0
+    while i < xs.len {
+        let sq = xs[i] * xs[i] ifoverflow { i = i + 1; continue }
+        if sq > 0 { n = n + 1 }
+        i = i + 1
+    }
+    return n
+}
+
+fn main { mut io: Io } {
+    let xs: [_]i32 = [3, 100000, 4]
+    _ = @fmt(&io, "{} {} {}\n", size_of{ count = 3 } ifnull 0, size_of{ count = 300000000 } == null, count{ xs = xs[..] })
+}
+
+//# stdout:
+//| 48 true 2

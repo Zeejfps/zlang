@@ -1,0 +1,3 @@
+fn main {} {
+    let m = @round(f32, 1.5)  //~ error at 13: @round needs an integer target type, got f32
+}

@@ -1,0 +1,2 @@
+fn main {} { let x: u8 = 3
+    let p = @cast(_, &x) }  //~ error at 19: @cast(_, ...) takes the type expected here, and nothing here expects one: write the type

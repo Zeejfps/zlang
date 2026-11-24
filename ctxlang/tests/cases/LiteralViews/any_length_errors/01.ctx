@@ -1,0 +1,1 @@
+fn main {} { let mut xs: [_]u32 }  //~ error at 26: `[_]` takes its length from an initializer that is an array or string literal

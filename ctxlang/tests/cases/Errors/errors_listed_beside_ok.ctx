@@ -1,0 +1,65 @@
+
+namespace parse {
+    error empty
+    error bad_digit{ at: usize }
+    error too_big
+}
+
+fn number { s: []u8 } -> !u64 {
+    if s.len == 0 { return parse::empty }
+    let mut n: u64 = 0
+    let mut i: usize = 0
+    while i < s.len {
+        if s[i] < '0' or s[i] > '9' { return parse::bad_digit{ at = i } }
+        if n > 100000 { return parse::too_big }
+        n = n * 10 + @as(u64, s[i] - '0')
+        i = i + 1
+    }
+    return n
+}
+
+fn show { mut io: Io, r: !u64 } {
+    let mut mem: [256]u8 = [0; 256]
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    match r {
+        ok{ value }  => { _ = @fmt(&b, "ok {}", value) }
+        err{ error } => { _ = @fmt(&b, "err {}", error) }
+    }
+    io::println{ &io, s = utf8::view{ b } }
+}
+
+fn kind { s: []u8 } -> i32 {
+    return match number{ s } {
+        ok                 => { 0 }
+        parse::empty       => { 1 }
+        parse::bad_digit | parse::too_big => { 2 }
+    }
+}
+fn rest { s: []u8 } -> i32 {
+    match number{ s } {
+        ok{ value }    => { return @as(i32, value) }
+        parse::empty   => { return -1 }
+        err{ error }   => {
+            return match error { parse::too_big => { -3 } else => { -2 } }
+        }
+    }
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = kind{ s = "5" } }
+    io::println_i64{ &io, n = kind{ s = "" } }
+    io::println_i64{ &io, n = kind{ s = "x" } }
+    io::println_i64{ &io, n = rest{ s = "5" } }
+    io::println_i64{ &io, n = rest{ s = "" } }
+    io::println_i64{ &io, n = rest{ s = "x" } }
+    io::println_i64{ &io, n = rest{ s = "1234567" } }
+}
+
+//# stdout:
+//| 0
+//| 1
+//| 2
+//| 5
+//| -1
+//| -2
+//| -3

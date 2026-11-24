@@ -1,0 +1,14 @@
+
+fn main { mut io: Io, mut proc: Proc, args: Args } -> i32 {
+    let mut mem: [65536]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
+    let mut env = list::new([]u8){ realloc = arena::alloc, &heap }
+
+    let v = proc::env{ &proc, name = "CTX_TEST_ENV" }
+    if v != null { io::println{ &io, s = utf8::of{ chars = v } } }
+    io::println_bool{ &io, n = proc::env{ &proc, name = "CTX_TEST_UNSET_VAR" } == null }
+    io::println_bool{ &io, n = proc::exe_path{ &proc }.len > 0 }
+    return 0
+
+}

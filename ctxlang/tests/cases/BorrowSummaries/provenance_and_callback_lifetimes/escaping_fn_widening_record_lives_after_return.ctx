@@ -1,0 +1,18 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// escaping fn widening record lives after return: accepted, and it runs.
+
+error failed
+fn number {} -> !i32 { return 42 }
+fn read { n: i32 } -> i32 { return n }
+struct Saved { f: fn{} -> !i32 }
+fn make {} -> Saved { let f = number; return Saved{ f } }
+fn churn {} { let call = read{ n = 9, _ }; _ = call{} }
+fn main { mut io: Io } {
+    let saved = make{}
+    let mut i = 0
+    while i < 100 { churn{}; i = i + 1 }
+    io::println_i64{ &io, n = try! saved.f{} }
+}
+
+//# stdout:
+//| 42

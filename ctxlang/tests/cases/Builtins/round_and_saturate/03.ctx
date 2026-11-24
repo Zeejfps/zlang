@@ -1,0 +1,8 @@
+// §13: `@round` (to the nearest integer, halfway cases to the even one, checked as `@as`
+// is), `@saturate` (toward zero, clamped to the type's range, NaN 0; an integer clamped)
+// and `@round_saturate` (both), with the same results while compiling and at run time.
+
+fn main { mut io: Io } {
+    let x: f64 = 3e9
+    io::println_i64{ &io, n = @as(i64, @round(u8, -x)) }  //~ panic at 40: @as: -3000000000.0 is not representable in u8
+}

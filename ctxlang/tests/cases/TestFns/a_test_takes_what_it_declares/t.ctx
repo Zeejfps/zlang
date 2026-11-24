@@ -1,0 +1,25 @@
+
+#test
+fn writes_and_reads { mut t: Test, mut fs: Fs, mut mem: Mem } -> ! {
+    let pages = mem::pages{ &mem, size = 4096 } ifnull { return alloc::out_of_memory }
+    let mut heap = arena::new{ buf = pages }
+    _ = try fs::write_all{ &fs, path = "scratch.txt", bytes = "hello" }
+    let back = try fs::read_all{ &fs, &heap, realloc = arena::alloc, path = "scratch.txt" }
+    try fs::remove{ &fs, path = "scratch.txt" }
+    let got: []u8 = back
+    @expect(&t, got == "hello")
+}
+#task
+fn work { mut t: Test, n: i32 } -> i32 {
+    @expect(&t, n < 3)
+    return n * 2
+}
+#test
+fn tasks_check { mut t: Test, mut threads: Threads } {
+    let mut a: task::Task(i32)
+    let mut b: task::Task(i32)
+    task::start{ &threads, task = &a, run = work{ &t, n = 1, _ } }
+    task::start{ &threads, task = &b, run = work{ &t, n = 5, _ } }
+    @expect(&t, task::wait{ &threads, task = &a } == 2)
+    @expect(&t, task::wait{ &threads, task = &b } == 10)
+}

@@ -1,0 +1,5 @@
+// examples/json without arguments prints its usage, with exit code 2.
+//# program: {home}/examples/json/main.ctx {home}/examples/json/parser.ctx {home}/examples/json/printer.ctx {home}/examples/json/value.ctx
+//# exit: 2
+//# stderr:
+//| usage: json FILE [PATH]

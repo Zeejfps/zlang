@@ -1,0 +1,3 @@
+union U { a{ x: i32 } }
+#U::a{ x = 1 }  //~ error at 6: an attribute must be a struct literal
+fn main {} {}

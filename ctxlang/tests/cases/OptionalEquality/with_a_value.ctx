@@ -1,0 +1,22 @@
+
+fn show { mut io: Io, x: ?i32 } {
+    io::println_bool{ &io, n = x == 3 }
+    io::println_bool{ &io, n = x != 3 }
+    io::println_bool{ &io, n = 3 == x }
+}
+fn main { mut io: Io } {
+    show{ &io, x = 3 }
+    show{ &io, x = 4 }
+    show{ &io, x = null }
+}
+
+//# stdout:
+//| true
+//| false
+//| true
+//| false
+//| true
+//| false
+//| false
+//| true
+//| false

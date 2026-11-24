@@ -1,0 +1,9 @@
+
+fn small {} -> ?i8 { return null }
+fn main { mut io: Io } {
+    let n: i64 = small{} ifnull 1000
+    io::println_i64{ &io, n }
+}
+
+//# stdout:
+//| 1000

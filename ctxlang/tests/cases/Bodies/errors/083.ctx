@@ -1,0 +1,4 @@
+fn f {} {
+    let n = @as(bool, 1)  //~ error at 13: @as needs a numeric target type, got bool
+}
+fn main {} {}

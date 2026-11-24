@@ -1,0 +1,3 @@
+namespace n {}
+const A: i32 = n::x  //~ error at 19: `x` not found in namespace `n`
+fn main {} {}

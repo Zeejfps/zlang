@@ -1,0 +1,3 @@
+
+fn f {} -> i32 { while true { break } }  //~ error at 1: `f` must end every path in `return` or `@panic()`
+fn main { mut io: Io } { }

@@ -1,0 +1,13 @@
+
+fn spin {} -> i32 {
+    let mut n = 0
+    while true {
+        n = n + 1
+        if n < 10 { continue }
+        return n
+    }
+}
+fn main { mut io: Io } { io::println_i64{ &io, n = spin{} } }
+
+//# stdout:
+//| 10

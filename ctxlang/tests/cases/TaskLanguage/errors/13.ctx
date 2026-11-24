@@ -1,0 +1,14 @@
+
+#task
+fn fill { mut buf: [8]u8, n: u8 } -> ! { buf[0] = n }
+
+#task
+fn look { s: []u8 } -> !u64 { return @as(u64, s.len) }
+
+#task
+fn sq { n: u64 } -> !u64 { return n * n }
+
+fn main { mut threads: Threads } {
+    let mut t: task::Task(!u64)
+    _ = task::wait{ &threads, task = &t }  //~ error at 38: `t` holds no task here, on every path: start one into it first
+}

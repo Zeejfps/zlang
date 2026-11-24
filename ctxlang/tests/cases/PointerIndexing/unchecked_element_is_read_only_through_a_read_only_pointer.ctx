@@ -1,0 +1,3 @@
+
+fn f { q: *i32 } { (q + 1).* = 2 }  //~ error at 27: cannot write through *i32; it needs to be a `*mut`
+fn main {} {}

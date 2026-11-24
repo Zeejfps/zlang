@@ -1,0 +1,33 @@
+// Each wait is in a run of its own. A child that sleeps for a minute: wait_for with 0 says
+// it is running without waiting, and with 300 ms after waiting that long. Once it is killed,
+// wait_for gives its code without waiting the 60 s it was given. A child that ends after
+// half a second wakes a wait_for of a minute then.
+//
+// The suite has no clock to time a run with, so the program has one: a task that sleeps for
+// 200 ms, started just before the wait_for. After a wait_for of 0 it still runs (`waited:
+// false`: the wait took less than 200 ms), and after one of 300 ms it has ended (`waited:
+// true`: the wait took 200 ms at least, the 100 ms between them being room for the task's
+// start). That a wait of a minute ends early is the step's timeout.
+// The children are tests/helpers/child.ctx, as `sleep MILLISECONDS CODE`.
+//# build child: {home}/tests/helpers/child.ctx
+//# build program: main.ctx
+//# $ {program} {child} 0
+//# timeout: 30
+//# exit: 0
+//# stdout:
+//| true
+//| waited: false
+//| 137
+//# $ {program} {child} 300
+//# timeout: 30
+//# exit: 0
+//# stdout:
+//| true
+//| waited: true
+//| 137
+// The child ends with 5 after 500 ms: wait_for gives 5, not null, so it waited until then.
+//# $ {program} {child} quick
+//# timeout: 30
+//# exit: 0
+//# stdout:
+//| 5

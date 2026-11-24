@@ -1,0 +1,3 @@
+const C: [3]i32 = [1, 2, 3]
+fn bad {} -> []i32 { let copy = C; return copy[..] }  //~ error at 36: returned value holds the address of local `copy`
+fn main {} {}

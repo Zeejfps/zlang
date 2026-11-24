@@ -1,0 +1,3 @@
+fn f {} {}
+const A: fn{} = f  //~ error at 17: const `A` can't hold a function value: it would point to memory that doesn't outlive compiling
+fn main {} {}

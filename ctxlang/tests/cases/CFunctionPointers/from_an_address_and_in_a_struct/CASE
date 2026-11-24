@@ -1,0 +1,16 @@
+// `extern fn{...} -> R`, a C function pointer (spec §12, §18), over a small C library
+// (lib/op.c as libctxtest.a): from an address with @cast, as a struct's field, called with
+// its fields in C's order, and back to an address.
+//# needs: ar
+//# $ cc -c {dir}/lib/op.c -o {dir}/lib/op.o
+//# exit: 0
+//# $ ar rcs {dir}/lib/libctxtest.a {dir}/lib/op.o
+//# exit: 0
+//# project
+//# $ {cfn}
+//# exit: 0
+//# stdout:
+//| 5
+//| 14
+//| 2
+//| true

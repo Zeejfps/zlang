@@ -1,0 +1,1 @@
+fn main { mut io: Io } { let x = @wrap_add(1, 2) }  //~ error at 34: unknown builtin `@wrap_add`

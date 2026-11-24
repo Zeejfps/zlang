@@ -1,0 +1,3 @@
+capability C
+struct S { a: C(u8) }  //~ error at 15: `C` takes no type arguments
+fn main {} {}

@@ -1,0 +1,6 @@
+// Passing tests print the count alone. No `main`: a library and its tests are a program
+// to test.
+//# $ ctxc test .
+//# exit: 0
+//# stdout:
+//| tests: 2 run, 2 passed, 0 failed, 0 not selected

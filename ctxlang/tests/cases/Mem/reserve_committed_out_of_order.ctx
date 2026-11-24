@@ -1,0 +1,21 @@
+// An arena over the upper half of a reservation commits pages there first; one over all
+// of it then allocates across both halves, and must find the lower half's pages
+// uncommitted though its last byte's are (on Windows, std/os/windows `commit`).
+
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+
+    let some{ value = buf } = mem::reserve{ &mem, size = 4194304 } else { return 1 }
+    let mut high = arena::new{ buf = buf[2097152..] }
+    let some{ value = a } = arena::alloc{ heap = &high, mem = slice::empty(u8){}, new = 16, align = 8 } else { return 2 }
+    a[0] = 1
+    let mut all = arena::new{ buf }
+    let some{ value = b } = arena::alloc{ heap = &all, mem = slice::empty(u8){}, new = 2097169, align = 8 } else { return 3 }
+    b[0] = 5
+    b[1048576] = 6
+    b[b.len - 1] = 7
+    io::println_u64{ &io, n = b[0] + b[1048576] + b[b.len - 1] }
+    return 0
+}
+
+//# stdout:
+//| 18

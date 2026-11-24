@@ -1,0 +1,16 @@
+struct W { out: utf8::Builder(arena::Arena) }
+
+fn main { mut io: Io } {
+    let mut mem: [4096]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+
+    let mut w = W{ out = utf8::builder{ realloc = arena::alloc, &heap } }
+    let ok = match @fmt(&w.out, "{}+{}", 1, 2) { ok => { true } err => { false } }
+    _ = @fmt(&b, "{}", ok)
+    _ = utf8::push{ &b, s = utf8::view{ b = w.out } }
+    io::println{ &io, s = utf8::view{ b } }
+}
+
+//# stdout:
+//| true1+2

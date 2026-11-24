@@ -1,0 +1,5 @@
+
+struct S { a: i32 }
+fn f { a: i32 } -> i32 { return a }
+union U { null }  //~ error at 11: expected a name, found 'null': `null` is a keyword and can't be a name; use another, such as `null_`
+fn main {} {}

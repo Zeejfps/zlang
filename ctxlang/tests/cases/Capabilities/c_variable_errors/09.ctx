@@ -1,0 +1,2 @@
+capability O { extern x: i32, x: extern fn{} }  //~ error at 31: duplicate field `x`
+fn main {} {}

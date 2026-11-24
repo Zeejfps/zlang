@@ -1,0 +1,13 @@
+
+fn main { mut io: Io } {
+    let c: i32 = -2147483648
+    let big: u64 = 5000000000
+    let f: f64 = 1e20
+    let nan = 0.0 / 0.0
+    _ = @fmt(&io, "{} {} {}\n", @as(u8, c) ifoverflow 3, @as(u32, big) ifoverflow 4, @as(i64, big) ifoverflow 5)
+    _ = @fmt(&io, "{} {} {} {}\n", @as(i32, f) ifoverflow 6, @as(i32, nan) ifoverflow 7, @as(i8, 127.75) ifoverflow 8, @as(u32, -0.75) ifoverflow 9)
+}
+
+//# stdout:
+//| 3 4 5000000000
+//| 6 7 127 0

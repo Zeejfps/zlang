@@ -1,0 +1,23 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// record from branches: accepted, and it runs.
+
+fn read { n: i64 } -> i64 { return n }
+fn pick { c: bool } -> i64 {
+    let f = if c { read{ n = 1, _ } } else { read{ n = 2, _ } }
+    return f{}
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = pick{ c = true } + pick{ c = false } * 10 }
+    let mut i: i64 = 0
+    let mut s: i64 = 0
+    while i < 4 {
+        let f = if i % 2 == 0 { read{ n = i, _ } } else { read{ n = 100, _ } }
+        s = s + f{}
+        i = i + 1
+    }
+    io::println_i64{ &io, n = s }
+}
+
+//# stdout:
+//| 21
+//| 202

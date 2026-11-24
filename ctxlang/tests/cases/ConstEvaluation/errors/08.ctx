@@ -1,0 +1,10 @@
+struct S { p: ?*i32 }
+fn keep { mut s: S, p: *i32 } { s.p = p }
+fn f {} -> S {
+    let x: i32 = 1
+    let mut s = S{ p = null }
+    keep{ &s, p = &x }
+    return s
+}
+const A: S = f{}  //~ error at 15: const `A` can't hold a pointer to the stack: it would point to memory that doesn't outlive compiling
+fn main {} {}

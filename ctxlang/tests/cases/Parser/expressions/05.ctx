@@ -1,0 +1,3 @@
+fn main {} {
+    f{ .., a }  //~ error at 12: '..' must be the last item //~ error at 5: unknown name `f`
+}

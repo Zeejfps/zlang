@@ -1,0 +1,3 @@
+
+fn two {} -> i32 { return 2 }
+fn main { mut io: Io } { two{} }  //~ error at 29: the result of `two` (i32) is unused: use it, or discard it with `_ = ...`

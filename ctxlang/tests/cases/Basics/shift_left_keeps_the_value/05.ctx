@@ -1,0 +1,6 @@
+// a << n is a * 2^n: it panics where that doesn't fit, as the multiply would
+
+fn main {} {
+    let x: i32 = 0x40000000
+    let y = x << 1  //~ panic at 15: integer overflow
+}

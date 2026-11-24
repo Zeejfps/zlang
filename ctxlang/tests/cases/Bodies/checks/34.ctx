@@ -1,0 +1,11 @@
+fn f { o: ?i32 } -> i32 {
+    match o {
+        null => { return 0 }
+        some{ value } => { return value }
+    }
+}
+fn main {} {
+    _ = f{ o = null }
+}
+
+//# exit: 0

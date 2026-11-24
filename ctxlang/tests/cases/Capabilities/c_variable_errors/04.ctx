@@ -1,0 +1,2 @@
+capability O { extern opterr: i32 }
+fn main { mut o: O } { o.opterr = 1 }  //~ error at 25: `.opterr` is not a place

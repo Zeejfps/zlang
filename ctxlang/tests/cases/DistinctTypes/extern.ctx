@@ -1,0 +1,17 @@
+
+type Len = distinct f64
+type Code = distinct i32
+#pure
+extern fn sqrt { x: Len } -> Len
+#pure
+extern fn abs { x: Code } -> Code
+
+fn main { mut io: Io } {
+    io::println_f64{ &io, n = @as(f64, sqrt{ x = 16.0 }) }
+    io::println_i64{ &io, n = @as(i32, abs{ x = -7 }) }
+}
+
+//# interp: cannot run
+//# stdout:
+//| 4.0
+//| 7

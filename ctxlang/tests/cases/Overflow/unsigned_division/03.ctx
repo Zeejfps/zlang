@@ -1,0 +1,9 @@
+// An unsigned `/` can't overflow, but what its operands cover is covered, once the
+// types of the literals are settled.
+
+fn main {} {
+    let a: u32 = 4
+    let b = a / 2 ifoverflow 0  //~ error at 19: nothing before `ifoverflow` can overflow: it covers the integer `+`, `-`, `*` and `/`, unary `-`, and `@as` and `@round` to an integer written before it, and the operands of those in turn
+    let c: u32 = b
+    _ = c
+}

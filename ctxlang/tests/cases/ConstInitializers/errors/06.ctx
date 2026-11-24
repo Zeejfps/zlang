@@ -1,0 +1,2 @@
+const A: [2]u8 = [1, true]  //~ error at 22: expected u8, got bool
+fn main {} {}

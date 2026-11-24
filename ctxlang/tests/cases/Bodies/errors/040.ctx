@@ -1,0 +1,5 @@
+union U { a, b{ x: i32 } }
+fn f { u: U } {
+    let z{ x } = u else { return }  //~ error at 5: U has no variant `z`
+}
+fn main {} {}

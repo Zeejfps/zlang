@@ -1,0 +1,5 @@
+// A token is described as it is written.
+
+fn main {} {
+    let x = "a" "b"  //~ error at 17: expected a newline or ';' after statement, found '"b"'
+}

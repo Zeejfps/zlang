@@ -1,0 +1,6 @@
+fn f {} {
+    let x: i32
+    defer x = 1  //~ error at 5: cannot assign `x` in a defer: declare it with `let mut`
+    x = 2
+}
+fn main {} {}

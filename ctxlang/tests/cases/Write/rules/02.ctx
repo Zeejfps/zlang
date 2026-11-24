@@ -1,0 +1,5 @@
+struct S {}
+#write
+#write  //~ error at 1: duplicate `write` attribute
+fn w { mut s: S, v: i32 } {}
+fn main {} {}

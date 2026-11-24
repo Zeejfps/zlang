@@ -1,0 +1,5 @@
+// A const's value is computed at compile time (§14): what would panic at run time is a
+// compile error at the operation.
+
+const A: i32 = 1 / 0  //~ error at 18: division by zero in constant
+fn main {} {}

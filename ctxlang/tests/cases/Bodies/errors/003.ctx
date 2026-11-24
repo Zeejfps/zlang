@@ -1,0 +1,8 @@
+fn f {} {
+    let x = 1
+    if true {
+        let y = 2
+        let y = 3  //~ error at 9: `y` is already declared in this scope
+    }
+}
+fn main {} {}

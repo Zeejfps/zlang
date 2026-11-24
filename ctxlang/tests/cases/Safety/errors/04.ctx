@@ -1,0 +1,6 @@
+fn g { mut x: i32, mut y: i32 } { x = y }
+fn f { mut x: i32, mut y: i32 } {
+    g{ &x, .. }
+    g{ y = &x, .. }  //~ error at 6: two mut references to `x` in one call: `g` reads `x` through its field `y` at 1:39, and changes `x` through its field `x` at 1:35; pass one of them, or change `g` to use `x` through one of them only
+}
+fn main {} {}

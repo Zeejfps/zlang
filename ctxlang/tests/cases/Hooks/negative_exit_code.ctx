@@ -1,0 +1,6 @@
+// Only a trap's code is taken for one when the interpreter's run is compared
+// (toolchain.diff): -4 is SIGILL's on Linux and macOS, and an exit code on Windows.
+
+fn main {} -> i32 { return -4 }
+
+//# exit: -4

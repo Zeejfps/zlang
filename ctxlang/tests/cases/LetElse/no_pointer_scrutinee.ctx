@@ -1,0 +1,6 @@
+
+fn main {} {
+    let x: ?i32 = 1
+    let p = &x
+    let some{ value } = p else { return }  //~ error at 25: a `let` pattern cannot match through a pointer; use `match`
+}

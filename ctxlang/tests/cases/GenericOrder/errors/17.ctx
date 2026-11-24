@@ -1,0 +1,20 @@
+struct Point { x: i32, y: i32 }
+struct Pair(A) { a: A, b: A }
+enum Kind: u8 { a, b }
+union Shape { dot, line{ n: u8 } }
+type Id(T) = distinct T
+extern union Bits { a: u32, b: f32 }
+fn least(T) { a: T, b: T } -> T {
+    if b < a { return b }
+    return a
+}
+fn pick(U) { xs: []U } -> U { return least{ a = xs[0], b = xs[1] } }
+fn ordered(A) { p: Pair(A) } -> bool { return p.b >= p.a }
+fn below(T) { a: Id(T), b: Id(T) } -> bool { return a <= b }
+fn same_least(T) { a: T, b: T } -> bool { return least{ a, b } == a }
+fn f(T) { a: ?T, b: T } -> bool { return a > b }  //~ error at 44: cannot compare ?T with T
+fn main { mut io: Io } {
+    let p = Point{ x = 1, y = 2 }
+    let u: u8 = 1
+    
+}

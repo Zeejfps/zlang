@@ -1,0 +1,1 @@
+fn main { mut io: Io } { let a: i32 = 1; let b: u32 = 2; let c = a < b }  //~ error at 68: cannot compare i32 with u32

@@ -1,0 +1,4 @@
+fn main { mut io: Io } {
+    let n: i64 = -1
+    io::println_u64{ &io, n = @as(u32, n) }  //~ panic at 31: @as: -1 is not representable in u32
+}

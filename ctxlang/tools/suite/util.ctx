@@ -1,0 +1,201 @@
+// Text, paths and files for the suite's runner. Everything is allocated in one arena, which
+// lives as long as the process does: the runner starts a process for each case.
+
+type Heap = arena::Arena
+type Strs = list::List([]u8, Heap)
+type Text = utf8::Builder(Heap)
+
+fn strs { mut heap: Heap } -> Strs {
+    return list::new([]u8){ realloc = arena::alloc, &heap }
+}
+
+fn text { mut heap: Heap } -> Text {
+    return utf8::builder{ realloc = arena::alloc, &heap }
+}
+
+fn eq { a: []u8, b: []u8 } -> bool {
+    return slice::eq_bytes{ a, b }
+}
+
+fn starts_with { s: []u8, prefix: []u8 } -> bool {
+    return s.len >= prefix.len and slice::eq_bytes{ a = s[..prefix.len], b = prefix }
+}
+
+fn ends_with { s: []u8, suffix: []u8 } -> bool {
+    return s.len >= suffix.len and slice::eq_bytes{ a = s[s.len - suffix.len..], b = suffix }
+}
+
+// Where `part` first is in s at or after `from`, or null.
+fn find_from { s: []u8, part: []u8, from: usize } -> ?usize {
+    if part.len > s.len { return null }
+    let mut i = from
+    while i + part.len <= s.len {
+        if slice::eq_bytes{ a = s[i..i + part.len], b = part } { return i }
+        i = i + 1
+    }
+    return null
+}
+
+fn find { s: []u8, part: []u8 } -> ?usize {
+    return find_from{ s, part, from = 0 }
+}
+
+fn has { s: []u8, part: []u8 } -> bool {
+    return find_from{ s, part, from = 0 } != null
+}
+
+// The end of the line of s that starts at `from`: its line break's offset, or s's end.
+fn line_end { s: []u8, from: usize } -> usize {
+    let mut i = from
+    while i < s.len and s[i] != '\n' { i = i + 1 }
+    return i
+}
+
+// s without the spaces and tabs at its ends.
+fn trim { s: []u8 } -> []u8 {
+    let mut lo: usize = 0
+    let mut hi = s.len
+    while lo < hi and (s[lo] == ' ' or s[lo] == '\t') { lo = lo + 1 }
+    while hi > lo and (s[hi - 1] == ' ' or s[hi - 1] == '\t') { hi = hi - 1 }
+    return s[lo..hi]
+}
+
+fn cat { mut heap: Heap, a: []u8, b: []u8 } -> []u8 {
+    let out = try! alloc::make(u8, Heap){ realloc = arena::alloc, &heap, count = a.len + b.len }
+    slice::copy{ dst = out[..a.len], src = a }
+    slice::copy{ dst = out[a.len..], src = b }
+    return out
+}
+
+fn cat3 { mut heap: Heap, a: []u8, b: []u8, c: []u8 } -> []u8 {
+    return cat{ &heap, a = cat{ &heap, a, b }, b = c }
+}
+
+fn copy_of { mut heap: Heap, s: []u8 } -> []u8 {
+    return cat{ &heap, a = s, b = "" }
+}
+
+// Whether c separates a path's names: `/`, and on Windows `\` too. Elsewhere a `\` is a
+// character of a name.
+fn separates { c: u8 } -> bool {
+    return c == '/' or (c == '\\' and os::OS == build::Os::windows)
+}
+
+// a/b; b alone if a is empty or ".", or b is absolute.
+fn join { mut heap: Heap, a: []u8, b: []u8 } -> []u8 {
+    if a.len == 0 or eq{ a, b = "." } or fs::is_absolute{ path = b } { return b }
+    if separates{ c = a[a.len - 1] } { return cat{ &heap, a, b } }
+    return cat3{ &heap, a, b = "/", c = b }
+}
+
+// The directory of path: what is before its last separator, or "".
+fn parent { path: []u8 } -> []u8 {
+    let mut i = path.len
+    while i > 0 {
+        if separates{ c = path[i - 1] } { return path[..i - 1] }
+        i = i - 1
+    }
+    return ""
+}
+
+// The last name of path: what is after its last separator.
+fn base { path: []u8 } -> []u8 {
+    let mut i = path.len
+    while i > 0 {
+        if separates{ c = path[i - 1] } { return path[i..] }
+        i = i - 1
+    }
+    return path
+}
+
+// s with every `from` replaced by `to`.
+fn replaced { mut heap: Heap, s: []u8, from: []u8, to: []u8 } -> []u8 {
+    if from.len == 0 or not has{ s, part = from } { return s }
+    let mut b = text{ &heap }
+    let mut i: usize = 0
+    while i < s.len {
+        if i + from.len <= s.len and slice::eq_bytes{ a = s[i..i + from.len], b = from } {
+            try! utf8::push_bytes{ &b, s = to }
+            i = i + from.len
+        } else {
+            try! list::push{ list = &b.bytes, item = s[i] }
+            i = i + 1
+        }
+    }
+    return utf8::view{ b }.bytes
+}
+
+fn number { mut heap: Heap, n: u64 } -> []u8 {
+    let mut digits: [20]u8
+    return copy_of{ &heap, s = utf8::fmt_u64{ n, into = digits[..] }.bytes }
+}
+
+fn signed { mut heap: Heap, n: i64 } -> []u8 {
+    let mut digits: [24]u8
+    return copy_of{ &heap, s = utf8::fmt_i64{ n, into = digits[..] }.bytes }
+}
+
+// ---- files
+
+// 1 for a file, 2 for a directory, 0 for neither.
+fn kind_of { mut fs: Fs, path: []u8 } -> u8 {
+    match fs::size{ &fs, path } {
+        ok => { return 1 }
+        fs::is_directory => { return 2 }
+        else => { return 0 }
+    }
+}
+
+// Creates directory path, and those above it that are missing; false if it can't.
+fn made { mut fs: Fs, mut heap: Heap, path: []u8 } -> bool {
+    if kind_of{ &fs, path } == 2 { return true }
+    let up = parent{ path }
+    if up.len > 0 and up.len < path.len and kind_of{ &fs, path = up } != 2 {
+        if not made{ &fs, &heap, path = up } { return false }
+    }
+    match fs::make_dir{ &fs, path } {
+        ok => { return true }
+        fs::exists => { return true }
+        else => { return false }
+    }
+}
+
+fn read_file { mut fs: Fs, mut heap: Heap, path: []u8 } -> ?[]u8 {
+    let bytes = fs::read_all(Heap){ &fs, &heap, realloc = arena::alloc, path } iferr { return null }
+    return bytes
+}
+
+fn write_file { mut fs: Fs, path: []u8, bytes: []u8 } -> bool {
+    _ = fs::write_all{ &fs, path, bytes } iferr { return false }
+    return true
+}
+
+// The names in directory path, sorted; none if it can't be listed.
+fn names_in { mut fs: Fs, mut heap: Heap, path: []u8 } -> [][]u8 {
+    let names = fs::list(Heap){ &fs, &heap, realloc = arena::alloc, path } iferr { return slice::empty([]u8){} }
+    return names
+}
+
+// Removes path and, if it is a directory, all it holds.
+fn remove_tree { mut fs: Fs, mut heap: Heap, path: []u8 } {
+    if kind_of{ &fs, path } == 2 {
+        for name in names_in{ &fs, &heap, path } { remove_tree{ &fs, &heap, path = join{ &heap, a = path, b = name } } }
+        _ = fs::remove_dir{ &fs, path } iferr {}
+    } else {
+        _ = fs::remove{ &fs, path } iferr {}
+    }
+}
+
+// Copies the tree at `from` to `to`; false if a file can't be read or written.
+fn copy_tree { mut fs: Fs, mut heap: Heap, from: []u8, to: []u8 } -> bool {
+    if kind_of{ &fs, path = from } == 2 {
+        if not made{ &fs, &heap, path = to } { return false }
+        for name in names_in{ &fs, &heap, path = from } {
+            let source = join{ &heap, a = from, b = name }
+            if not copy_tree{ &fs, &heap, from = source, to = join{ &heap, a = to, b = name } } { return false }
+        }
+        return true
+    }
+    let bytes = read_file{ &fs, &heap, path = from } ifnull { return false }
+    return write_file{ &fs, path = to, bytes }
+}

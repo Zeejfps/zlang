@@ -1,0 +1,26 @@
+// §11 Initialization: memory a program hasn't written is zero, even where the arena
+// handed it out before a reset or a restore, and past what a resize keeps.
+
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+
+    let mut buf: [256]u8
+    let mut heap = arena::new{ buf = buf[..] }
+    let a = alloc::make(u32, arena::Arena){ realloc = arena::alloc, &heap, count = 8 } iferr { return 1 }
+    slice::fill(u32){ s = a, v = 7 }
+    arena::reset{ &heap }
+    let b = alloc::make(u32, arena::Arena){ realloc = arena::alloc, &heap, count = 8 } iferr { return 2 }
+    let m = arena::mark{ heap }
+    let c = alloc::make(u32, arena::Arena){ realloc = arena::alloc, &heap, count = 4 } iferr { return 3 }
+    slice::fill(u32){ s = c, v = 9 }
+    arena::restore{ &heap, to = m }
+    let mut d = alloc::make(u32, arena::Arena){ realloc = arena::alloc, &heap, count = 2 } iferr { return 4 }
+    d[0] = 5
+    d[1] = 6
+    d = alloc::resize(u32, arena::Arena){ realloc = arena::alloc, &heap, mem = d, count = 6 } iferr { return 5 }
+    _ = @fmt(&io, "{} {} {} {} {} {} {}\n", b[0], b[7], d[0], d[1], d[2], d[5], heap.used)
+    return 0
+
+}
+
+//# stdout:
+//| 0 0 5 6 0 0 64

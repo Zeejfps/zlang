@@ -1,0 +1,10 @@
+// `ctxc run DIR` runs the first executable DIR's build program describes, and `ctxc exe DIR
+// -o OUT` links it into OUT.
+//# $ ctxc run {dir}
+//# stdout:
+//| from app
+//# $ ctxc exe {dir} -o {dir}/prog
+//# exit: 0
+//# $ ./prog
+//# stdout:
+//| from app

@@ -1,0 +1,3 @@
+union U { a, b{ x: i32 } }
+const A: U = U::c  //~ error at 17: U has no variant `c`
+fn main {} {}

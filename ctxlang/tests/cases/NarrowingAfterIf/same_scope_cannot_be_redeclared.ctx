@@ -1,0 +1,6 @@
+
+fn main {} {
+    let x: ?i32 = 1
+    if x == null { return }
+    let x = 2  //~ error at 5: `x` is already declared in this scope
+}

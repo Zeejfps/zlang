@@ -1,0 +1,20 @@
+
+#task
+fn add { a: u64, b: u64, mut out: u64 } -> !u64 {
+    out = a + b
+    return a * b
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let mut o: u64 = 0
+    let mut t: task::Task(!u64)
+    task::start{ &threads, task = &t, run = add{ a = 3, b = 4, out = &o, _ } }
+    let r = task::wait{ &threads, task = &t } iferr { return 1 }
+    io::println_u64{ &io, n = r }
+    io::println_u64{ &io, n = o }
+    return 0
+}
+
+//# stdout:
+//| 12
+//| 7

@@ -1,0 +1,5 @@
+// Main's unit defines every static, and the others declare those they use.
+//# $ ctxc run {dir}
+//# env: CTX_UNIT_SIZE=1
+//# stdout:
+//| 5

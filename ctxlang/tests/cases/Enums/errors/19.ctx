@@ -1,0 +1,4 @@
+enum Late: u8 { a = 1, b }
+fn f {} { let mut k: Late
+ let j = k }  //~ error at 10: `k` may be read before it is assigned
+fn main {} {}

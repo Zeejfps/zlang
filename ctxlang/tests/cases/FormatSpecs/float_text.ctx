@@ -1,0 +1,33 @@
+// Rule 9: an f32 or an f64 is its shortest digits that read back, plainly with a point
+// from 1e-4 up to 1e16 (100.0 was `1e+02` for an f32), in exponent form outside.
+
+// A float's text: the shortest digits that read back as it, plainly from 1e-4 up to 1e16.
+fn main { mut io: Io } {
+    let fs: [18]f32 = [100.0, 1200.0, 0.5, 0.1, 16777216.0, 1e10, 9.999999e15, 1e16, 3.4028235e38, 0.001, 0.0001, 0.00001, 1.1754944e-38, 1e-45, 123456.79, -0.0, 0.0, -2.5e-7]
+    for f in fs[..] { _ = @fmt(&io, "{} ", f) }
+    _ = @fmt(&io, "\n")
+    let ds: [16]f64 = [100.0, 1200.0, 0.5, 0.1, 16777217.0, 1e15, 9999999999999998.0, 1e16, 1.7976931348623157e308, 0.001, 0.0001, 0.00001, 5e-324, 123456.789, -0.0, 1e22]
+    for d in ds[..] { _ = @fmt(&io, "{} ", d) }
+    _ = @fmt(&io, "\n{} {} {} {} {} {}\n", math::INF, -math::INF, math::NAN, math::INF_F32, -math::INF_F32, math::NAN_F32)
+    // The same text through io's prints and into a buffer.
+    io::print_f32{ &io, n = 100.0 }
+    io::put_char{ &io, c = ' ' }
+    io::println_f64{ &io, n = 100.0 }
+    let mut buf: [32]u8
+    io::println{ &io, s = utf8::fmt_f32{ n = 2500000.0, into = buf[..] } }
+    // What is written reads back as the same value.
+    let mut same = 0
+    for f in fs[..] {
+        let text = utf8::fmt_f32{ n = f, into = buf[..] }
+        if (utf8::parse_f32{ s = text } ifnull 99.0) == f { same = same + 1 }
+    }
+    _ = @fmt(&io, "{} of {} read back\n", same, fs.len)
+}
+
+//# stdout escaped:
+//| 100.0 1200.0 0.5 0.1 16777216.0 10000000000.0 9999999000000000.0 1e+16 3.4028235e+38 0.001 0.0001 1e-05 1.1754944e-38 1e-45 123456.79 -0.0 0.0 -2.5e-07\x20
+//| 100.0 1200.0 0.5 0.1 16777217.0 1000000000000000.0 9999999999999998.0 1e+16 1.7976931348623157e+308 0.001 0.0001 1e-05 5e-324 123456.789 -0.0 1e+22\x20
+//| inf -inf nan inf -inf nan
+//| 100.0 100.0
+//| 2500000.0
+//| 18 of 18 read back

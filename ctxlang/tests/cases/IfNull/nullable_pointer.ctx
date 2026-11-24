@@ -1,0 +1,15 @@
+
+fn first { xs: []i32 } -> ?*i32 {
+    if xs.len == 0 { return null }
+    return &xs[0]
+}
+fn main { mut io: Io } {
+    let xs = [3, 5]
+    let zero = 0
+    io::println_i64{ &io, n = (first{ xs = xs[..] } ifnull { @panic() }).* }
+    io::println_i64{ &io, n = (first{ xs = xs[..0] } ifnull &zero).* }
+}
+
+//# stdout:
+//| 3
+//| 0

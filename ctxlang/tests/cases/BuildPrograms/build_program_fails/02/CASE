@@ -1,0 +1,6 @@
+// Through `ctxc graph`, a build program that exits with 1 isn't a compile error, and its
+// output reaches out and err either way: here one that panics, after it wrote.
+//# project
+//# stdout:
+//| said
+//# panic: build.ctx:3:5: panic: broken

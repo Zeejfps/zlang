@@ -1,0 +1,13 @@
+// A project of libraries in lib/ and a tool that uses them, in tools/tool.
+// An added directory brings its subdirectories' files, and a file reached twice is
+// compiled once. The root's subdirectories are not its.
+//# $ ctxc run {dir}/tools/tool
+//# stdout:
+//| 321
+// Errors name files by their paths from the working directory, without `..`.
+//# write lib/a/deeper/y.ctx:
+//| namespace y { fn n {} -> i64 { return true } }
+//# $ ctxc run tools/tool
+//# exit: 1
+//# stderr:
+//| lib/a/deeper/y.ctx:1:39: error: expected i64, got bool

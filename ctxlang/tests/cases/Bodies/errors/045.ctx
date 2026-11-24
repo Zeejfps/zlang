@@ -1,0 +1,4 @@
+fn f {} {
+    let x = y  //~ error at 13: unknown name `y`
+}
+fn main {} {}

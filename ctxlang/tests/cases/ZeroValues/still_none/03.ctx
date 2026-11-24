@@ -1,0 +1,7 @@
+// Zero bytes aren't a value of these: an enum without a variant 0, a union whose first
+// variant holds a pointer, and what holds one of them.
+
+enum E: u8 { a = 1 }
+struct S { e: E }
+fn main {} { let mut s: S
+ let t = s }  //~ error at 10: `s` may be read before it is assigned

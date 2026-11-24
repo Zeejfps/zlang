@@ -1,0 +1,14 @@
+
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+
+    let mut buf: [64]u8
+    let mut heap = arena::new{ buf = buf[..] }
+    _ = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 8 } iferr { return 1 }
+    let m = arena::mark{ heap }
+    arena::reset{ &heap }
+    arena::restore{ &heap, to = m }
+    return 0
+
+}
+
+//# panic: std/arena.ctx:67:29: panic: arena::restore: the arena was reset or restored past this mark

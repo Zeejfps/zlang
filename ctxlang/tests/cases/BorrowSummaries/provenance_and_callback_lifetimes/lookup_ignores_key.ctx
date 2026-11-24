@@ -1,0 +1,8 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// lookup ignores key: accepted. It only compiles.
+
+fn get { items: [][]u8, key: []u8 } -> []u8 { if key.len == 0 { return "none" }; return items[0] }
+fn load { items: [][]u8 } -> []u8 { let buf: [3]u8 = [1,2,3]; return get{ items, key = buf[..] } }
+fn main {} { let items: [1][]u8 = ["okay"]; _ = load{ items = items[..] } }
+
+//# compiles

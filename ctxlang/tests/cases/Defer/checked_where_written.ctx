@@ -1,0 +1,6 @@
+
+fn main { mut io: Io } {
+    let x: i32
+    defer io::println_i64{ &io, n = x }  //~ error at 37: `x` may be read before it is assigned
+    x = 2
+}

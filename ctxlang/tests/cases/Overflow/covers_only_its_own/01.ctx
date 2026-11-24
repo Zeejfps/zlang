@@ -1,0 +1,11 @@
+// A call's argument, an index and a nested ifoverflow are evaluated as usual.
+
+fn twice(T) { x: T } -> T { return x }
+fn main { mut io: Io } {
+    let a: u8 = 200
+    let big: u32 = 4000000000
+    _ = @fmt(&io, "{} {}\n", (a + a ifoverflow 9) + 1 ifoverflow 0, twice(u32){ x = big } * 3 ifoverflow 7)
+}
+
+//# stdout:
+//| 10 7

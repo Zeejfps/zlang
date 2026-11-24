@@ -1,0 +1,9 @@
+// A binding holds what the tested value holds.
+
+fn f {} -> *i32 {
+    let x = 1
+    let p: ?*i32 = &x
+    if p is some{ value } { return value }  //~ error at 29: returned value holds the address of local `x`
+    @panic()
+}
+fn main {} { _ = f{} }

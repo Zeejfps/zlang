@@ -1,0 +1,5 @@
+capability O {
+    #c::symbol{ name = "not ok" }  //~ error at 5: `not ok` is not a C identifier
+    extern a: i32
+}
+fn main {} {}

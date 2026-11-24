@@ -1,0 +1,2 @@
+capability C { f: extern fn{}, f: extern fn{} }  //~ error at 32: duplicate field `f`
+fn main {} {}

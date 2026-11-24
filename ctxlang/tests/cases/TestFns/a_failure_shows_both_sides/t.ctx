@@ -1,0 +1,37 @@
+
+struct Point { x: i32, y: i32 }
+enum Kind: u8 { byte, char }
+union Shape { none, circle{ r: f64 } }
+error bad{ at: usize, why: Kind }
+
+fn add { a: i32, b: i32 } -> i32 { return a + b }
+#test
+fn sides { mut t: Test } {
+    @expect(&t, add{ a = 1, b = 2 } == 4)
+    @expect(&t, add{ a = 1, b = 2 } != 3)
+    @expect(&t, 2 < 1)
+    @expect(&t, 1.5 >= 2.5)
+    let wide: i64 = 5000000000
+    let narrow: u8 = 7
+    @expect(&t, wide <= narrow)
+    @expect(&t, true == false)
+    let name: []u8 = "abc"
+    @expect(&t, name == "abd")
+    let s: utf8::String = "x y"
+    @expect(&t, s.bytes.len > 3)
+}
+#test
+fn values_without_a_writer { mut t: Test } {
+    @expect(&t, Point{ x = 1, y = 2 } == Point{ x = 1, y = 3 })
+    @expect(&t, Kind::byte == Kind::char)
+    @expect(&t, Shape::circle{ r = 0.5 } == Shape::none)
+    let xs: [3]i32 = [1, 2, 3]
+    let ys: [3]i32 = [1, 2, 4]
+    @expect(&t, xs == ys)
+    @expect(&t, xs[..2] == ys[1..])
+    let o: ?i32 = null
+    @expect(&t, o == 5)
+    @expect(&t, o != null)
+    let p: ?Point = Point{ x = 0, y = 0 }
+    @expect(&t, p == null)
+}

@@ -1,0 +1,8 @@
+
+#build::sources{ dir = "../../lib/a" }
+#build::sources{ dir = "../../lib/a/deeper" }
+#build::sources{ dir = "../..//lib/./b" }
+fn build { mut b: Build } {
+    io::println_i64{ io = &b, n = x::n{} + y::n{} + z::n{} }
+    _ = build::exe{ &b, name = "t", root = "sub" }
+}

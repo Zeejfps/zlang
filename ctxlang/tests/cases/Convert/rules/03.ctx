@@ -1,0 +1,4 @@
+#convert
+#convert  //~ error at 1: duplicate `convert` attribute
+fn f { s: strlit } -> i32 { return 1 }
+fn main {} {}

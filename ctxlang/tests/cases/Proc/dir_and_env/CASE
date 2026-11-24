@@ -1,0 +1,13 @@
+// The child starts in Options' dir, with Options' env besides this program's.
+// The child is tests/helpers/child.ctx, as `where_slashes NAME`: it prints its working
+// directory, with `/` for Windows' `\`, then the environment's NAME. The program prints what
+// the child wrote, and a line break.
+//# build child: {home}/tests/helpers/child.ctx
+//# build program: main.ctx
+//# make dir sub
+//# $ {program} {child} {dir}/sub
+//# exit: 0
+//# stdout:
+//| {dir}/sub
+//| here
+//|

@@ -1,0 +1,6 @@
+
+fn main {} {
+    a: while true {
+        a: while true { break a }  //~ error at 9: loop label `a` is already used by an enclosing loop
+    }
+}

@@ -1,0 +1,5 @@
+fn g {} {}
+fn f {} {
+    let p = &g  //~ error at 14: `g` is not a place
+}
+fn main {} {}

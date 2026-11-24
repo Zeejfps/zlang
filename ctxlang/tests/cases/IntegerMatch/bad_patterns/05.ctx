@@ -1,0 +1,9 @@
+
+fn f { b: u8 } -> i32 {
+    match b {
+v{ a } => {}  //~ error at 1: an integer pattern is a literal, a const or a range `lo..=hi`, with no bindings
+else => {}
+    }
+    return 0
+}
+fn main {} { _ = f{ b = 1 } }

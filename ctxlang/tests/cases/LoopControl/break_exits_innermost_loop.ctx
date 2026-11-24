@@ -1,0 +1,18 @@
+
+fn main { mut io: Io } {
+    let mut i = 0
+    let mut hits = 0
+    while i < 3 {
+        let mut j = 0
+        while true {
+            j = j + 1
+            if j == 4 { break }
+            hits = hits + 1
+        }
+        i = i + 1
+    }
+    io::println_i64{ &io, n = hits }
+}
+
+//# stdout:
+//| 9

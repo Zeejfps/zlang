@@ -1,0 +1,13 @@
+
+struct P { x: i32 }
+fn set { p: *mut P, v: i32 } { p.x = v }
+fn main { mut io: Io } {
+    let mut a = P{ x = 1 }
+    set{ p = &a, v = 5 }
+    let q = &a.x
+    q.* = q.* + 1
+    io::println_i64{ &io, n = a.x }
+}
+
+//# stdout:
+//| 6

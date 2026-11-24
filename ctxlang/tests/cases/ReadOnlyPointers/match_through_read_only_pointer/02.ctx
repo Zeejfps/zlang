@@ -1,0 +1,7 @@
+
+union Shape { circle{ r: i32 }, square{ side: i32 }, rect{ w: i32, h: i32 }, dot, line }
+
+fn grow { s: *Shape } {
+    match s { circle{ &r } => { r = r + 1 } else => { } }  //~ error at 33: cannot assign to `r`: it is bound through a read-only pointer
+}
+fn main { mut io: Io } { }

@@ -1,0 +1,3 @@
+fn main {} {
+    for &i in 0..n {}  //~ error at 9: a range's numbers aren't places: write `for i in lo..hi`, without the `&`
+}

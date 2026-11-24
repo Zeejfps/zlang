@@ -1,0 +1,9 @@
+fn keep { mut s: utf8::String, bytes: []u8 } { s.bytes = bytes }
+fn made {} -> utf8::String {
+    let buf: [4]u8 = "made"
+    let mut s: utf8::String = ""
+    keep{ &s, bytes = buf[..] }
+    return s
+}
+const A: utf8::String = made{}  //~ error at 29: const `A` can't hold a pointer to the stack: it would point to memory that doesn't outlive compiling
+fn main {} {}

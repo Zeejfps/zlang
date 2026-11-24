@@ -1,0 +1,6 @@
+
+fn keep { mut p: *mut u64 } {
+    let mut x: u64 = 1
+    @atomic_store(&p, &x, atomic::Order::release)  //~ error at 23: cannot store the address of local `x` through a pointer
+}
+fn main {} {}

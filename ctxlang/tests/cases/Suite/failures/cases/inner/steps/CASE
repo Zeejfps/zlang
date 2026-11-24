@@ -1,0 +1,8 @@
+//# build tool: main.ctx
+//# $ {tool} a b
+//# exit: 3
+//# stdout:
+//| ran
+//# $ {tool}
+//# stdout has:
+//| walked

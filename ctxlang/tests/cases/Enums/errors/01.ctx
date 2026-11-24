@@ -1,0 +1,2 @@
+enum E: f64 { a }  //~ error at 9: enum `E` needs an integer base type, got f64
+fn main {} {}

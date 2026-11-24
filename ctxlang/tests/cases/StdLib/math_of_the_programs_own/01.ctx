@@ -1,0 +1,18 @@
+// A program's own declaration of one of the C library's math functions runs while
+// compiling too: it is the same C function. Another extern fn still stops a const.
+
+namespace cm {
+    #pure
+    extern fn cos { x: f64 } -> f64
+    #pure
+    #c::symbol{ name = "sqrtf" }
+    extern fn root { x: f32 } -> f32
+}
+const C: f64 = cm::cos{ x = 0.0 }
+const R: f32 = cm::root{ x = 6.25 }
+fn main { mut io: Io } {
+    _ = @fmt(&io, "{} {}\n", C, R)
+}
+
+//# stdout:
+//| 1.0 2.5

@@ -1,0 +1,7 @@
+// The project step passes what `ctxc graph` lists as denied on to `ctxc build`: a program
+// that writes its unchecked operations in the excepted directory builds and runs.
+//# project
+//# $ {t}
+//# exit: 0
+//# stdout:
+//| 14

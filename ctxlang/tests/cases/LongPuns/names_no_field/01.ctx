@@ -1,0 +1,16 @@
+
+struct Rng { s: u32 }
+struct Player { hp: i32 }
+struct Game { rng: Rng, player: Player, d: i32, xs: [3]i32 }
+struct World { g: Game }
+struct Pair { hp: i32, s: u32 }
+union Seen { both{ hp: i32, s: u32 }, none }
+fn deal { mut rng: Rng, mut player: Player, d: i32 } { rng.s = rng.s + 1; player.hp = player.hp + d }
+fn show { mut io: Io, hp: i32, s: u32 } { _ = @fmt(&io, "{} {}\n", hp, s) }
+fn count { len: usize } -> usize { return len }
+fn bump { mut s: u32 } -> u32 { s = s + 1; return s }
+fn world {} -> World { return World{ g = Game{ rng = Rng{ s = 1 }, player = Player{ hp = 10 }, d = 5, xs = [1, 2, 3] } } }
+fn main { mut io: Io } {
+    let mut w = world{}
+    deal{ rng = &w.g.rng, &w.g.player, w.g.xs }  //~ error at 40: `deal` has no field `xs`: write `d = w.g.xs` //~ error at 9: call to `deal` is missing `d`
+}

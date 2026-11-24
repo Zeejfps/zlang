@@ -1,0 +1,16 @@
+// A generic set is inferred from the result expected, as a type is (spec §9, rule 3).
+
+error a
+fn mk(E: error) { n: u64 } -> E!u64 { return n }
+fn mkt(T) { n: u64 } -> ?T { return null }
+fn g {} -> error(a)!u64 { return mk{ n = 3 } }
+fn main { mut io: Io } {
+    let x: error(a)!u64 = mk{ n = 1 }
+    let y: ?u32 = mkt{ n = 1 }
+    _ = @fmt(&io, "{}\n", x iferr 0)
+    _ = @fmt(&io, "{}\n", g{} iferr 0)
+}
+
+//# stdout:
+//| 1
+//| 3

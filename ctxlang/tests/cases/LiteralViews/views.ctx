@@ -1,0 +1,31 @@
+
+struct Named { name: utf8::String }
+fn greet {} -> utf8::String {
+    return "from a function"
+}
+fn show { mut io: Io, b: []u8 } {
+    io::println_u64{ &io, n = b.len }
+}
+fn main { mut io: Io } {
+    io::println{ &io, s = "hello" }
+    io::println{ &io, s = greet{} }
+    show{ &io, b = "abc" }
+    show{ &io, b = "\xff" }
+    show{ &io, b = "" }
+    let o: ?[]u8 = "xy"
+    if o != null { io::println_u64{ &io, n = o.len } }
+    let n = Named{ name = "caf\xc3\xa9" }
+    io::println{ &io, s = n.name }
+    let arr = "four"
+    io::println_u64{ &io, n = arr.len + @size_of([4]u8) }
+}
+
+//# stdout:
+//| hello
+//| from a function
+//| 3
+//| 1
+//| 0
+//| 2
+//| café
+//| 8

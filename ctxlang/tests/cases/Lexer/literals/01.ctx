@@ -1,0 +1,7 @@
+fn main {
+    let s = "abc
+}
+
+//# errors:
+//| 01.ctx:2:13: error: unterminated literal
+//| 01.ctx:1:9: error: a function's context comes before its body: write `fn main {} { ... }`

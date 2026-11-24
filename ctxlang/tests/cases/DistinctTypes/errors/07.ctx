@@ -1,0 +1,13 @@
+
+type Meters = distinct f64
+type Seconds = distinct f64
+type UserId = distinct u64
+type Small = distinct u8
+type Name = distinct []u8
+struct P { x: i32, y: i32 }
+type Pos = distinct P
+type Flag = distinct bool
+type Id(T) = distinct u32
+fn f {} { let s: Seconds = 2.0
+ let d = @as(Meters, s) }  //~ error at 22: @as converts to Meters only from its base, f64, got Seconds
+fn main {} {}

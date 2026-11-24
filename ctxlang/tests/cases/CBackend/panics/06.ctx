@@ -1,0 +1,3 @@
+fn main { mut io: Io } {
+    @panic("bad \"thing\"")  //~ panic at 5: bad "thing"
+}

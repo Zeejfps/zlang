@@ -1,0 +1,16 @@
+fn add { a: i64, b: i64 } -> i64 { return a + b }
+fn one { x: i64 } -> i64 { return x }
+fn call { f: &fn{ b: i64 } -> i64 } -> i64 { return f{ b = 1 } }
+fn wide { f: fn{ x: i64, extra: i64 } -> i64, x: i64 } -> i64 { return f{ x, extra = 1 } }
+fn bwide { f: &fn{ b: i64, extra: i64 } -> i64 } -> i64 { return f{ b = 2, extra = 1 } }
+fn main { mut io: Io } {
+    let mut i: i64 = 0
+    let mut s: i64 = 0
+    while i < 200000 {
+        s = s + call{ f = add{ a = i, _ } } + wide{ f = one, x = i } + bwide{ f = add{ a = i, _ } }
+        let g = add{ a = i, _ }
+        s = s + g{ b = 1 } + call{ f = g }
+        if i % 100000 == 0 { _ = @fmt(&io, "{}\n", s) }
+        i = i + 1
+    }
+}

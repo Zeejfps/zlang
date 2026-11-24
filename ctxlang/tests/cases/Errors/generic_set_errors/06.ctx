@@ -1,0 +1,6 @@
+error a
+error b
+fn da {} -> error(a)!u64 { return a }
+fn fwd(E: error) { f: &fn{} -> E!u64 } -> E!u64 { return try f{} }
+fn k(T) { x: T } -> T!u64 { return 1 }  //~ error at 21: T is not an error set: a set is `error(...)`, an alias of one, or one error
+fn main {} {}

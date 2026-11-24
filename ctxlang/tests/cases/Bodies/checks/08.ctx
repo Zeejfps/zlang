@@ -1,0 +1,13 @@
+fn f { o: ?i32, c: bool } -> i32 {
+    if o == null {
+        return 0
+    } else if c {
+        return 1
+    }
+    return o
+}
+fn main {} {
+    _ = f{ o = 5, c = false }
+}
+
+//# exit: 0

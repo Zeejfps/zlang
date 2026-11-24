@@ -1,0 +1,2 @@
+namespace g { capability O { static n: i32 } }
+fn main { mut o: g::O } -> i32 { return o.n }  //~ error at 42: `n` is a static of capability `O`: only a function of namespace `g`, which declares it, can use it

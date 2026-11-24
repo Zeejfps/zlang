@@ -1,0 +1,5 @@
+fn g {} -> i32 { return 1 }
+fn f {} {
+    g{}  //~ error at 6: the result of `g` (i32) is unused: use it, or discard it with `_ = ...`
+}
+fn main {} {}

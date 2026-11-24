@@ -1,0 +1,4 @@
+// Only a read-only field converts to a `mut` one: not the other way, nor to another type.
+
+fn bump { mut n: i64, by: i64 } {}
+fn main {} { let f: &fn{ n: i64 } = bump{ by = 1, _ } }  //~ error at 41: expected &fn{ n: i64 }, got &fn{ mut n: i64 }

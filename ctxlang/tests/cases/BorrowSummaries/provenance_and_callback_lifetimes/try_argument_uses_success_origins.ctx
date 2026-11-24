@@ -1,0 +1,8 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// try argument uses success origins: rejected. It is never run: it would use a dangling pointer.
+
+error bad{ text: []u8 }
+fn view { s: []u8 } -> []u8 { return s }
+fn fail { s: []u8 } -> ! { return bad{ text = s } }
+fn load {} -> ! { let buf: [3]u8 = [1,2,3]; try fail{ s = view{ s = buf[..] } } }  //~ error at 45: `try` would return an error that may hold the address of local `buf`
+fn main {} { _ = load{} }

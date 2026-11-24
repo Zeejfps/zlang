@@ -1,0 +1,20 @@
+
+fn add { a: i32, b: i32 } -> i32 { return a + b }
+fn one { a: i32 } -> i32 { return a }
+fn apply { f: &fn{ a: i32 } -> i32, a: i32 } -> i32 { return f{ a } }
+fn wide { f: fn{ a: i32, b: i32 } -> i32 } -> i32 { return f{ a = 3, b = 4 } }
+fn main { mut io: Io } {
+    let add2 = add{ b = 2, _ }
+    io::println_i64{ &io, n = apply{ f = add2, a = 5 } }
+    io::println_i64{ &io, n = apply{ f = one, a = 6 } }
+    io::println_i64{ &io, n = wide{ f = one } }
+    let g: fn{ a: i32, b: i32 } -> i32 = add
+    let h = g{ a = 1, _ }
+    io::println_i64{ &io, n = h{ b = 9 } }
+}
+
+//# stdout:
+//| 7
+//| 6
+//| 3
+//| 10

@@ -1,0 +1,5 @@
+
+fn main { mut io: Io } {
+    let a: usize = 1
+    let b = a - 2  //~ panic at 15: integer overflow
+}

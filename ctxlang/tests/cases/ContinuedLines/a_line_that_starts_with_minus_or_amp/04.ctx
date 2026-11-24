@@ -1,0 +1,14 @@
+
+struct W { open: bool, n: i32 }
+union K { a, b }
+fn ok { n: i32 } -> bool { return n > 0 }
+fn num { n: i32 } -> i32 { return n }
+fn opt { n: i32 } -> ?i32 { if n == 0 { return null }; return n }
+fn flag { n: i32 } -> ?bool { if n == 0 { return null }; return n > 0 }
+fn w { n: i32 } -> W { return W{ open = n > 0, n } }
+fn main { mut io: Io } {
+    let n = 3
+    let mut i = 0
+    if n > 0 and num{ n }
+       - 1 > 0 { io::println{ &io, s = "a" } }  //~ error at 8: a condition can't go on with a line that starts with `-`, which may begin a statement: end the line before with the `-`, or put the condition in parentheses
+}

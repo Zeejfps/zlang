@@ -1,0 +1,1 @@
+fn main { let s = "café" }  //~ error at 19: non-ASCII character 'é' (U+00E9) in literal; use a \x escape //~ error at 24: invalid UTF-8 //~ error at 9: a function's context comes before its body: write `fn main {} { ... }`

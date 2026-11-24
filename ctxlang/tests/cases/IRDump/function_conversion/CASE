@@ -1,0 +1,10 @@
+// The typed IR (`ctxc ir`): a fn used as a function type with more fields is a `fnconv` of
+// its `fnref`, and a call through the value is a `dcall`.
+// The IR is the program's and std's, with ids that change when std does: what is stated is
+// the part the test is about, with `{n}` for the ids.
+//# $ ctxc ir {std} -- main0.ctx
+//# exit: 0
+//# stdout has:
+//| (let 0 (fnconv {n} (fnref {n} {n})))
+//# stdout has escaped:
+//| (dcall\x20

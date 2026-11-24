@@ -1,0 +1,13 @@
+// §11, Literals, rule 2: a float literal that would round to an infinity in its type is
+// an error, however it takes the type; `@as` gives the infinity.
+
+fn main { mut io: Io } {
+    let a: f32 = math::INF_F32
+    let b: f32 = -math::INF_F32
+    let c = math::INF
+    let d: f64 = -math::INF
+    _ = @fmt(&io, "{} {} {} {} {}\n", a, b, c, d, a == @as(f32, 1e300))
+}
+
+//# stdout:
+//| inf -inf inf -inf true

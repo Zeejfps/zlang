@@ -1,0 +1,23 @@
+
+type Op = extern fn{ a: i32, b: i32 } -> i32
+#pure
+extern fn ctxtest_op { which: i32 } -> ?*u8
+#pure
+extern fn ctxtest_op_typed { which: i32 } -> ?Op
+#pure
+extern fn ctxtest_apply { f: Op, a: i32, b: i32 } -> i32
+#pure
+extern fn ctxtest_sub { a: i32, b: i32 } -> i32
+#pure
+extern fn ctxtest_out { f: Op, mut out: i32 }
+
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = ctxtest_apply{ f = ctxtest_sub, a = 10, b = 4 } }
+    let sub: Op = ctxtest_sub
+    io::println_i64{ &io, n = ctxtest_apply{ f = sub, a = 1, b = 4 } }
+    let mut got: i32 = 0
+    ctxtest_out{ f = sub, out = &got }
+    io::println_i64{ &io, n = got }
+    let maybe: ?Op = ctxtest_sub
+    if maybe != null { io::println_i64{ &io, n = maybe{ a = 9, b = 9 } } }
+}

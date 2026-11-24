@@ -1,0 +1,41 @@
+// A build program chooses by build::os, and names several executables: the first is named
+// after the platform, the second `two`, in the order the build program named them.
+// The top directory's .ctx files are an executable's, but build.ctx never is.
+//
+// What `ctxc graph` lists, whole: the executables in order, each with its files.
+//# $ ctxc graph . {dir}/gen listed.txt
+//# exit: 0
+//# [windows] file listed.txt escaped:
+//| status	ok
+//| exe	windows
+//| level	1
+//| file	{dir}/one/main.ctx
+//| exe	two
+//| level	1
+//| file	{dir}/main.ctx
+//# [macos] file listed.txt escaped:
+//| status	ok
+//| exe	macos
+//| level	1
+//| file	{dir}/one/main.ctx
+//| exe	two
+//| level	1
+//| file	{dir}/main.ctx
+//# [linux] file listed.txt escaped:
+//| status	ok
+//| exe	linux
+//| level	1
+//| file	{dir}/one/main.ctx
+//| exe	two
+//| level	1
+//| file	{dir}/main.ctx
+//# remove listed.txt
+//# project
+//# [windows] $ {windows}
+//# [macos] $ {macos}
+//# [linux] $ {linux}
+//# stdout:
+//| one
+//# $ {two}
+//# stdout:
+//| two

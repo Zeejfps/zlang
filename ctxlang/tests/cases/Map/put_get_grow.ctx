@@ -1,0 +1,28 @@
+
+fn main { mut io: Io } {
+    let mut mem: [262144]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut m = map::new(i32, i64){ realloc = arena::alloc, &heap, hash = map::hash_i32, eq = map::eq_i32 }
+
+    let mut i = 0
+    while i < 1000 {
+        _ = map::put{ &m, key = i * 7, value = i }
+        i = i + 1
+    }
+    io::println_u64{ &io, n = map::len{ m } }
+    let mut sum: i64 = 0
+    i = 0
+    while i < 1000 {
+        let v = map::get{ m, key = i * 7 }
+        if v != null { sum = sum + v }
+        i = i + 1
+    }
+    io::println_i64{ &io, n = sum }
+    io::println_bool{ &io, n = map::has{ m, key = 8 } }
+
+}
+
+//# stdout:
+//| 1000
+//| 499500
+//| false

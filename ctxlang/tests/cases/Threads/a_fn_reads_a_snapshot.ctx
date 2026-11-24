@@ -1,0 +1,21 @@
+// What a converted function reads through the pointer is a copy, which another
+// argument pointing into the struct (over 32 bytes) doesn't change (§14, rule 6).
+
+struct Big { a: i64, b: i64, c: i64, d: i64, e: i64 }
+
+fn inspect { mut io: Io, b: Big, p: *mut i64 } -> i64 {
+    p.* = 99
+    return b.a
+}
+
+fn go { run: &fn{ mut b: Big, p: *mut i64 } -> i64 } -> i64 {
+    let mut big = Big{ a = 1, b = 2, c = 3, d = 4, e = 5 }
+    return run{ b = &big, p = &big.a }
+}
+
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = go{ run = inspect{ &io, _ } } }
+}
+
+//# stdout:
+//| 1

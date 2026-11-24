@@ -1,0 +1,5 @@
+fn g {} {}
+fn f {} {
+    _ = g{}  //~ error at 10: nothing to discard: this returns no value
+}
+fn main {} {}

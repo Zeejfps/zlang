@@ -1,0 +1,22 @@
+// Without die_with_parent, which is the default, the child goes on running.
+// The program starts a child that runs for a minute, says so, and ends without waiting for
+// it. The child is tests/helpers/child.ctx, as `beat_aloud PATH`: it makes the file PATH
+// grow, and prints `beating`.
+// That the child still runs is the file growing in the second after (`beats PATH`); the
+// last step ends the child.
+//# build child: {home}/tests/helpers/child.ctx
+//# build program: main.ctx
+//# make dir beat
+//# $ {program} {child} false beat/file
+//# timeout: 30
+//# exit: 0
+//# stdout:
+//| beating
+//# $ {child} beats beat/file
+//# exit: 0
+//# stdout:
+//| running
+//# $ {child} stop_beat beat/file
+//# exit: 0
+//# stdout:
+//| stopped

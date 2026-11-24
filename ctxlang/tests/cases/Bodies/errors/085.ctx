@@ -1,0 +1,4 @@
+fn f {} {
+    let n = @trunc(bool, 1)  //~ error at 13: @trunc needs an integer target type, got bool
+}
+fn main {} {}

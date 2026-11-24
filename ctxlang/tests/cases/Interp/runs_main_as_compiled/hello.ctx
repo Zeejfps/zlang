@@ -1,0 +1,11 @@
+
+fn twice { f: &fn{ n: i64 } -> i64, n: i64 } -> i64 { return f{ n = f{ n } } }
+fn add { k: i64, n: i64 } -> i64 { return k + n }
+fn main { mut io: Io, args: Args } -> i32 {
+    defer io::println{ &io, s = "deferred" }
+    io::println{ &io, s = utf8::of{ chars = args[1] } }
+    io::eprintln{ &io, s = "to stderr" }
+    io::println_i64{ &io, n = twice{ f = add{ k = 20, _ }, n = 2 } }
+    io::println_f32{ &io, n = @as(f32, 0.1) + @as(f32, 0.2) }
+    return @as(i32, args.len)
+}

@@ -1,0 +1,16 @@
+// A literal uses only the conversions its code could name (§10, Name lookup): std's
+// code names none of the program's, so a program's own conversion to utf8::String leaves
+// std's literals alone, and is ambiguous only in the program's code, where a literal would
+// use both. A namespace of the program names another's by path.
+
+namespace mine {
+    #convert
+    fn from_literal { s: strlit } -> !utf8::String { return utf8::from{ bytes = s.bytes } }
+}
+
+fn main { mut io: Io } {
+    io::println{ &io, s = utf8::of{ chars = "std's literals are std's" } }
+}
+
+//# stdout:
+//| std's literals are std's

@@ -1,0 +1,4 @@
+fn w { mut b: utf8::Builder(arena::Arena) } -> ! {
+    return @fmt(&b, "{q}", 1)  //~ error at 21: bad hole `{q}` in the format: a hole is `{}`, or with a spec after a colon `{:>8}`, `{:08x}` or `{:.3}`, and a function writes a value another way, as `utf8::write_char{ c, _ }`
+}
+fn main {} {}

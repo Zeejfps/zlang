@@ -1,0 +1,11 @@
+
+enum Kind: u8 {
+    ident,
+    number,
+    lbrace = 40,
+    rbrace,
+}
+
+enum Sign: i8 { minus = -1, zero, plus }
+fn main {} { let n: u16 = 300
+ let k = @as(Kind, n) }  //~ panic at 10: @as: no variant of Kind has this value

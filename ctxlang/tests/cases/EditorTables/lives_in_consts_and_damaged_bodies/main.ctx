@@ -1,0 +1,10 @@
+union U { a{ x: i32 }, b }
+const C: i32 = match U::a{ x = 1 } { a{ x } => { x } b => { 0 } }
+
+fn f {} -> i32 {
+    let z = nope
+    let w = 1
+    return w
+}
+
+fn main {} {}

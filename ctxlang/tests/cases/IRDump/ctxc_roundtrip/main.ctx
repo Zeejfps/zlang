@@ -1,0 +1,11 @@
+
+fn main { mut io: Io } -> i32 {
+    let s = "a \"quoted\" \n line"
+    let v: []u8 = "a \xff view"
+    let x: f32 = 0.1
+    let y = -2.5
+    let n: i64 = -9223372036854775807 - 1
+    let o: ?i32 = 3
+    io::println_f64{ &io, n = x + y }
+    return if (n < 0) { 1 } else { match (o) { null => { 0 } some{ value } => { value } } }
+}

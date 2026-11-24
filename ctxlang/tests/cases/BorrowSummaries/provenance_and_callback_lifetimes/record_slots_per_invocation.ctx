@@ -1,0 +1,16 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// record slots per invocation: accepted, and it runs.
+
+fn read { n: i64 } -> i64 { return n }
+fn rec { n: i64, f: &fn{} -> i64 } -> i64 {
+    let g = read{ n = n, _ }
+    if n == 0 { return f{} }
+    let r = rec{ n = n - 1, f = g }
+    return r * 10 + g{}
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = rec{ n = 4, f = read{ n = 9, _ } } }
+}
+
+//# stdout:
+//| 11234

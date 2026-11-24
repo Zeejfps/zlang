@@ -1,0 +1,5 @@
+fn three {} -> usize { return 3 }
+const N: usize = three{}
+const M: usize = N + 1  //~ error at 18: an array length can't use `N`: its value is computed by calling a function
+fn g {} { let xs = [0; M] }
+fn main {} {}

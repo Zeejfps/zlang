@@ -1,0 +1,202 @@
+// A C compiler that logs its command lines, for the cases that say what ctxc compiles and links
+// (cases/CtxcDriver). A case builds it, `//# build logcc: {home}/tests/helpers/logcc.ctx`, and
+// gives it to ctxc as its C compiler:
+//
+//   //# $ ctxc run .
+//   //# env: CTX_CC={logcc}
+//   //# env: LOGCC_CC={cc}
+//   //# env: LOGCC_DIR={dir}/log1
+//
+// Run so, with a C compiler's arguments, it writes them as one line, joined by spaces, to a new
+// file in the directory LOGCC_DIR, which it makes (a file for each run: ctxc runs several
+// compilers at once, and they can't share one), then runs the compiler LOGCC_CC with them (one
+// file's path, or a command split at spaces) and ends with its exit code. A case gives each
+// ctxc command a directory of its own, so that it can ask what that command compiled.
+//
+// Run with a first argument that starts with `--logcc-`, it says what was logged. A QUERY
+// counts, and is one of
+//
+//   lines DIR [has TEXT | lacks TEXT]...    the lines logged in DIR that hold each TEXT of a
+//                                           `has` and none of a `lacks`; 0 if DIR isn't there
+//   files DIR PREFIX SUFFIX                 the names in DIR that are PREFIX, hexadecimal
+//                                           digits and SUFFIX (ctxc's `NAME-HASH.o`)
+//
+//   --logcc-count QUERY [/ QUERY]...        prints each query's count, on a line of its own
+//   --logcc-more N QUERY                    prints `more than N`, or the count if it isn't
+//   --logcc-equal QUERY / QUERY             prints `equal`, or `A and B`, the two counts
+//   --logcc-all QUERY / QUERY               prints `all of N` if the first query's lines are N,
+//                                           not 0, and the second's are as many, or `A of N`;
+//                                           the second states the first's conditions again
+
+type Heap = arena::Arena
+
+fn main { mut io: Io, mut fs: Fs, mut proc: Proc, mut mem: Mem, args: Args } -> i32 {
+    let mut heap = arena::new{ buf = mem::reserve{ &mem, size = 268435456 } ifnull { return 70 } }
+    if args.len > 0 and starts_with{ s = args[0], prefix = "--logcc-" } { return report{ &io, &fs, &heap, args } }
+    return compile{ &io, &fs, &proc, &heap, args }
+}
+
+// ---- the compiler
+
+fn compile { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, args: Args } -> i32 {
+    let mut err = io::to_stderr{ &io }
+    let dir = proc::env{ &proc, name = "LOGCC_DIR" } ifnull {
+        _ = @fmt(&err, "logcc: LOGCC_DIR isn't set\n")
+        return 70
+    }
+    let cc = proc::env{ &proc, name = "LOGCC_CC" } ifnull {
+        _ = @fmt(&err, "logcc: LOGCC_CC isn't set\n")
+        return 70
+    }
+    let mut line = utf8::builder{ realloc = arena::alloc, &heap }
+    for i in 0..args.len { try! @fmt(&line, "{}{}", if i == 0 { "" } else { " " }, args[i]) }
+    try! @fmt(&line, "\n")
+    // Another compiler may be making the directory, or a file of the same name, right now.
+    _ = fs::make_dir{ &fs, path = dir } iferr {}
+    let mut n: u64 = 0
+    while true {
+        let mut path = utf8::builder{ realloc = arena::alloc, &heap }
+        try! @fmt(&path, "{}/{:06}.txt", dir, n)
+        match fs::open{ &fs, path = utf8::view{ b = path }.bytes, mode = fs::Mode::create } {
+            ok{ value } => {
+                _ = fs::write{ &fs, file = value, bytes = utf8::view{ b = line }.bytes } iferr { return 70 }
+                _ = fs::close{ &fs, file = value } iferr { return 70 }
+                break
+            }
+            fs::exists => { n = n + 1 }
+            else => {
+                _ = @fmt(&err, "logcc: cannot write in {}\n", dir)
+                return 70
+            }
+        }
+    }
+    let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
+    if is_file{ &fs, path = cc } {
+        try! list::push{ list = &argv, item = cc }
+    } else {
+        let mut start: usize = 0
+        for i in 0..cc.len + 1 {
+            if i == cc.len or cc[i] == ' ' {
+                if i > start { try! list::push{ list = &argv, item = cc[start..i] } }
+                start = i + 1
+            }
+        }
+    }
+    for i in 0..args.len { try! list::push{ list = &argv, item = args[i] } }
+    let none: [0][]u8 = []
+    let code = proc::run{ &proc, argv = list::items{ list = argv }, env = none[..] } iferr {
+        _ = @fmt(&err, "logcc: cannot run {}\n", cc)
+        return 70
+    }
+    return code
+}
+
+// ---- what was logged
+
+fn report { mut io: Io, mut fs: Fs, mut heap: Heap, args: Args } -> i32 {
+    let mode = args[0]
+    let mut at: usize = 1
+    let mut limit: u64 = 0
+    if eq{ a = mode, b = "--logcc-more" } {
+        if args.len < 2 { return 64 }
+        limit = utf8::parse_u64{ s = utf8::of{ chars = args[1] } } ifnull { return 64 }
+        at = 2
+    }
+    // Each query's count.
+    let mut counts = list::new(u64){ realloc = arena::alloc, &heap }
+    while at < args.len {
+        let mut end = at
+        while end < args.len and not eq{ a = args[end], b = "/" } { end = end + 1 }
+        let n = count{ &fs, &heap, args, from = at, to = end } ifnull { return 64 }
+        try! list::push{ list = &counts, item = n }
+        at = end + 1
+    }
+    let ns = list::items{ list = counts }
+    if eq{ a = mode, b = "--logcc-count" } and ns.len > 0 {
+        for n in ns { _ = @fmt(&io, "{}\n", n) }
+    } else if eq{ a = mode, b = "--logcc-more" } and ns.len == 1 {
+        if ns[0] > limit { _ = @fmt(&io, "more than {}\n", limit) } else { _ = @fmt(&io, "{}\n", ns[0]) }
+    } else if eq{ a = mode, b = "--logcc-equal" } and ns.len == 2 {
+        if ns[0] == ns[1] { _ = @fmt(&io, "equal\n") } else { _ = @fmt(&io, "{} and {}\n", ns[0], ns[1]) }
+    } else if eq{ a = mode, b = "--logcc-all" } and ns.len == 2 {
+        if ns[0] > 0 and ns[0] == ns[1] { _ = @fmt(&io, "all of {}\n", ns[0]) } else { _ = @fmt(&io, "{} of {}\n", ns[1], ns[0]) }
+    } else {
+        return 64
+    }
+    return 0
+}
+
+// What the query in args[from..to] counts; null if it isn't one.
+fn count { mut fs: Fs, mut heap: Heap, args: Args, from: usize, to: usize } -> ?u64 {
+    if to < from + 2 { return null }
+    let dir = args[from + 1]
+    let names = fs::list(Heap){ &fs, &heap, realloc = arena::alloc, path = dir } iferr { slice::empty([]u8){} }
+    let mut n: u64 = 0
+    if eq{ a = args[from], b = "files" } {
+        if to != from + 4 { return null }
+        let prefix = args[from + 2]
+        let suffix = args[from + 3]
+        for name in names {
+            if name.len <= prefix.len + suffix.len or not starts_with{ s = name, prefix } { continue }
+            if not eq{ a = name[name.len - suffix.len..], b = suffix } { continue }
+            let mut hex = true
+            for c in name[prefix.len..name.len - suffix.len] {
+                if not ((c >= '0' and c <= '9') or (c >= 'a' and c <= 'f')) { hex = false }
+            }
+            if hex { n = n + 1 }
+        }
+        return n
+    }
+    if not eq{ a = args[from], b = "lines" } or (to - from) % 2 != 0 { return null }
+    let mut k = from + 2
+    while k < to {
+        if not eq{ a = args[k], b = "has" } and not eq{ a = args[k], b = "lacks" } { return null }
+        k = k + 2
+    }
+    for name in names {
+        let mut p = utf8::builder{ realloc = arena::alloc, &heap }
+        try! @fmt(&p, "{}/{}", dir, name)
+        let bytes = fs::read_all(Heap){ &fs, &heap, realloc = arena::alloc, path = utf8::view{ b = p }.bytes } iferr { continue }
+        let text: []u8 = bytes
+        let mut start: usize = 0
+        while start < text.len {
+            let mut end = start
+            while end < text.len and text[end] != '\n' { end = end + 1 }
+            let line = text[start..end]
+            let mut fits = true
+            k = from + 2
+            while k < to {
+                if has{ s = line, part = args[k + 1] } != eq{ a = args[k], b = "has" } { fits = false }
+                k = k + 2
+            }
+            if fits { n = n + 1 }
+            start = end + 1
+        }
+    }
+    return n
+}
+
+// ---- text
+
+fn eq { a: []u8, b: []u8 } -> bool {
+    return slice::eq_bytes{ a, b }
+}
+
+fn starts_with { s: []u8, prefix: []u8 } -> bool {
+    return s.len >= prefix.len and slice::eq_bytes{ a = s[..prefix.len], b = prefix }
+}
+
+fn has { s: []u8, part: []u8 } -> bool {
+    if part.len > s.len { return false }
+    for i in 0..s.len - part.len + 1 {
+        if slice::eq_bytes{ a = s[i..i + part.len], b = part } { return true }
+    }
+    return false
+}
+
+fn is_file { mut fs: Fs, path: []u8 } -> bool {
+    match fs::size{ &fs, path } {
+        ok => { return true }
+        else => { return false }
+    }
+}

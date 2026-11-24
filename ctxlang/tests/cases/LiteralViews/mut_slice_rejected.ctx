@@ -1,0 +1,2 @@
+fn f { b: []mut u8 } { }
+fn main { mut io: Io } { f{ b = "abc" } }  //~ error at 33: a string literal is read-only; it cannot be a []mut u8 //~ error at 33: expected []mut u8, got []u8

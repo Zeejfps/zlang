@@ -1,0 +1,19 @@
+
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+
+    let some{ value = buf } = mem::pages{ &mem, size = 268435456 } else { return 1 }
+    io::println_u64{ &io, n = buf.len }
+    io::println_u64{ &io, n = @addr(&buf[0]) % 4096 }
+    io::println_u64{ &io, n = buf[buf.len - 1] }
+    buf[buf.len - 1] = 7
+    io::println_u64{ &io, n = buf[buf.len - 1] }
+    return 0
+
+}
+
+//# interp: cannot run
+//# stdout:
+//| 268435456
+//| 0
+//| 0
+//| 7

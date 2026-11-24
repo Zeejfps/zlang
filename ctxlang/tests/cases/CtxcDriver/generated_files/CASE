@@ -1,0 +1,102 @@
+// build::gen_file's files join the executable, from the program's build directory. One
+// whose text is the same isn't written again, so its C isn't compiled again; those this
+// build doesn't generate are removed.
+//
+// logcc is the C compiler, and logs its command lines in the directory each command names
+// (tests/helpers/logcc.ctx); stamp says whether a file was written since (stamp.ctx).
+//# build logcc: {home}/tests/helpers/logcc.ctx
+//# build stamp: {home}/tests/helpers/stamp.ctx
+
+//# $ ctxc run {dir}
+//# env: CTX_CC={logcc}
+//# env: LOGCC_CC={cc}
+//# env: LOGCC_DIR={dir}/log1
+//# stdout:
+//| 3
+//# list {work:.}/gen/t:
+//| one.ctx
+//| two.ctx
+//# file {work:.}/gen/t/one.ctx:
+//| namespace one { fn n {} -> i64 { return 1 } }
+//# $ {stamp} save {work:.}/gen/t/one.ctx {dir}/one.stamp
+//# stdout:
+//| saved
+
+// The same again: no C is compiled, and one.ctx isn't written.
+//# $ ctxc run {dir}
+//# env: CTX_CC={logcc}
+//# env: LOGCC_CC={cc}
+//# env: LOGCC_DIR={dir}/log2
+//# stdout:
+//| 3
+//# $ {logcc} --logcc-count lines {dir}/log2
+//# stdout:
+//| 0
+//# $ {stamp} same {work:.}/gen/t/one.ctx {dir}/one.stamp
+//# stdout:
+//| not written since
+
+// two.ctx goes; three.ctx comes; one.ctx stays as it was.
+//# write build.ctx:
+//|
+//| fn build { mut b: Build } {
+//|     let exe = build::exe{ &b, name = "t", root = "src" }
+//|     build::gen_file{ &b, exe, name = "one", text = "namespace one { fn n {} -> i64 { return 1 } }\n" }
+//|     build::gen_file{ &b, exe, name = "three", text = "namespace two { fn n {} -> i64 { return 20 } }\n" }
+//| }
+//# $ ctxc run {dir}
+//# env: CTX_CC={logcc}
+//# env: LOGCC_CC={cc}
+//# env: LOGCC_DIR={dir}/log3
+//# stdout:
+//| 21
+//# list {work:.}/gen/t:
+//| one.ctx
+//| three.ctx
+//# $ {stamp} same {work:.}/gen/t/one.ctx {dir}/one.stamp
+//# stdout:
+//| not written since
+
+// The executable is compiled from what the build program generates, not from the
+// directory, whose other .ctx files go; nothing else there is touched, nor anything
+// below it.
+//# write {work:.}/gen/t/mine.ctx:
+//| not ctxlang
+//# write {work:.}/gen/t/notes.txt:
+//| not ctxlang
+//# write {work:.}/gen/t/below/deeper.ctx:
+//| not ctxlang
+//# $ ctxc run {dir}
+//# env: CTX_CC={logcc}
+//# env: LOGCC_CC={cc}
+//# env: LOGCC_DIR={dir}/log4
+//# stdout:
+//| 21
+//# list {work:.}/gen/t:
+//| below
+//| notes.txt
+//| one.ctx
+//| three.ctx
+//# list {work:.}/gen/t/below:
+//| deeper.ctx
+
+// An executable that generates nothing has no directory, once it is empty.
+//# write build.ctx:
+//| fn build { mut b: Build } { _ = build::exe{ &b, name = "t", root = "plain" } }
+//# $ ctxc run {dir}
+//# env: CTX_CC={logcc}
+//# env: LOGCC_CC={cc}
+//# env: LOGCC_DIR={dir}/log5
+//# stdout:
+//| plain
+//# list {work:.}/gen/t:
+//| below
+//| notes.txt
+//# remove {work:.}/gen/t
+//# $ ctxc run {dir}
+//# env: CTX_CC={logcc}
+//# env: LOGCC_CC={cc}
+//# env: LOGCC_DIR={dir}/log6
+//# stdout:
+//| plain
+//# missing {work:.}/gen

@@ -1,0 +1,50 @@
+// Every kind of declaration, as written: generics, a fn's context with `mut`, a union's
+// variants and their payloads, an enum's values, attributes, on a capability's fields
+// too, and namespaces, nested and across files. Types are spelled one way; values and
+// attributes' fields are their text, with what a literal holds.
+// `ctxc graph` runs the build program without building the executables, whose files needn't
+// compile. ctxc's own directory for it is removed before and after: the runner clears those of
+// `ctxc run` commands only.
+//# remove {work:.}
+//# $ ctxc graph . {dir}/graph-gen {dir}/graph.txt
+//# stdout:
+//| file src/a.ctx
+//| file src/b.ctx
+//| struct game::Pos(T) @ src/a.ctx:4:5
+//|   #ecs::component
+//|   x: T
+//|   y: list::List(T, T)
+//|   n: u8 = 2 + 1
+//| fn game::world::step(T, E) -> E!i32 @ src/a.ctx:10:9
+//|   #ecs::system every=2 (i 2) name="mo\"ve" (s mo"ve) on=true (b true) key='k' (i 107) neg=-3 (i -3) off=OFF + 1 (?)
+//|   #inline
+//|   mut pos: Pos(T)
+//|   vel: *mut [4 * 2]f32
+//|   f: &fn{ a: i32, mut b: E!u8 } -> ?*u8
+//| union game::world::Shape(T) @ src/b.ctx:2:23
+//|   | circle{}
+//|     r: T
+//|     at: [2]T
+//|   | dot
+//|   | empty{}
+//| enum game::Color : u8 @ src/b.ctx:3:5
+//|   | red
+//|   | green = 1 + 2
+//|   | blue
+//| const game::N : [2]i32 = [1, 2] @ src/b.ctx:4:5
+//| type game::Slot(T) : ?[]mut T @ src/b.ctx:5:5
+//| capability game::Gl @ src/b.ctx:6:5
+//|   clear: extern fn{ mask: u32 }
+//|   #c::symbol name="gl_env" (s gl_env)
+//|   env: *u8
+//| capability game::Plain @ src/b.ctx:12:5
+//| error game::bad @ src/b.ctx:13:5
+//|   code: i64
+//| error game::plain @ src/b.ctx:14:5
+//| extern fn game::puts -> i32 @ src/b.ctx:15:5
+//|   s: c::String
+//| extern union game::Bits @ src/b.ctx:16:5
+//|   i: u32
+//|   f: f32
+//| fn main @ src/b.ctx:18:1
+//# remove {work:.}

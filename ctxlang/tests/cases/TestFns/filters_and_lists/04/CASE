@@ -1,0 +1,6 @@
+// `--jobs 1` runs the tests one at a time, with the same lines.
+//# $ ctxc test . --jobs 1
+//# exit: 1
+//# stdout:
+//| ./t.ctx:6: fail: a::two: 1 == 2: 1 == 2
+//| tests: 3 run, 2 passed, 1 failed, 0 not selected

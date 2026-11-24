@@ -1,0 +1,6 @@
+// Every extern fn says what C does (spec §18, Extern functions, rule 8): a capability
+// field for what it touches, or `#pure`.
+
+#pure{ x = 1 }  //~ error at 8: `pure` takes no fields
+extern fn labs { n: i64 } -> i64
+fn main {} {}

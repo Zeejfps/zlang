@@ -1,0 +1,26 @@
+
+type Op = extern fn{ a: i32, b: i32 } -> i32
+#pure
+extern fn ctxtest_op { which: i32 } -> ?*u8
+#pure
+extern fn ctxtest_op_typed { which: i32 } -> ?Op
+#pure
+extern fn ctxtest_apply { f: Op, a: i32, b: i32 } -> i32
+#pure
+extern fn ctxtest_sub { a: i32, b: i32 } -> i32
+#pure
+extern fn ctxtest_out { f: Op, mut out: i32 }
+
+fn main { mut io: Io } {
+    let m = ctxtest_op_typed{ which = 1 }
+    if m != null { io::println_i64{ &io, n = m{ a = 6, b = 7 } } }
+    let none = ctxtest_op_typed{ which = 5 }
+    if none == null { io::println{ &io, s = "null" } }
+    let some{ value = add } = ctxtest_op_typed{ which = 0 } else { return }
+    io::println_i64{ &io, n = add{ a = 1, b = 2 } }
+    match ctxtest_op_typed{ which = 1 } {
+        null => { io::println{ &io, s = "missing" } }
+        some{ value = mul } => { io::println_i64{ &io, n = mul{ a = 3, b = 3 } } }
+    }
+    io::println_i64{ &io, n = @as(i64, @size_of(?Op)) }
+}

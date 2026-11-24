@@ -1,0 +1,13 @@
+
+fn next { mut calls: i32 } -> f64 { calls = calls + 1; return -0.75 }
+fn main { mut io: Io } {
+    let mut calls = 0
+    io::println_u64{ &io, n = @as(usize, next{ &calls }) }
+    io::println_i64{ &io, n = @as(i32, next{ &calls }) }
+    io::println_i64{ &io, n = calls }
+}
+
+//# stdout:
+//| 0
+//| 0
+//| 2

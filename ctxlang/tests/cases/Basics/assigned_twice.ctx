@@ -1,0 +1,2 @@
+
+fn main { mut io: Io } { let x: i32; x = 1; x = 2 }  //~ error at 45: `x` may be assigned more than once

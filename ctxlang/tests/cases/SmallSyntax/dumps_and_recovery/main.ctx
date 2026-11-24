@@ -1,0 +1,23 @@
+
+error bad
+struct P { x: i32, y: i32 }
+struct R { r: !i32 }
+union K { a, b, c }
+fn say { mut io: Io, s: utf8::String } { io::println{ &io, s } }
+fn mk { n: i32 } -> !P { if n < 0 { return bad }; return P{ x = n, y = n * 2 } }
+fn rr { n: i32 } -> R { let r: !i32 = n; return R{ r } }
+
+fn run { mut io: Io, k: K, n: i32 } -> !i32 {
+    {
+        let a = try mk{ n }.x
+        defer if a > 0 { say{ &io, s = "defer" } }
+        { say{ &io, s = "block" } }
+    }
+    let v = match k {
+        a => 1
+        b => 2,
+        else => return 0
+    }
+    return v
+}
+fn main { mut io: Io } { _ = run{ &io, k = K::a, n = 1 } iferr 0 }

@@ -1,0 +1,2 @@
+
+fn main { mut io: Io } { let a: u32 = 4000000000; let b: u8 = 1; let c = a * b * @as(u32, 2) }  //~ panic at 80: integer overflow

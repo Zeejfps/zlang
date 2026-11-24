@@ -1,0 +1,36 @@
+
+fn add { mut total: i64, key: i32, value: i64 } { total = total + value }
+
+fn main { mut io: Io } {
+    let mut mem: [262144]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut m = map::new(i32, i64){ realloc = arena::alloc, &heap, hash = map::hash_i32, eq = map::eq_i32 }
+
+    let mut i = 1
+    while i <= 10 {
+        _ = map::put{ &m, key = i, value = i * 100 }
+        i = i + 1
+    }
+    let mut keys: i32 = 0
+    let mut cursor: usize = 0
+    while true {
+        match map::next{ m, &cursor } {
+            null => { break }
+            some{ value } => {
+                keys = keys + value.key
+                if value.key % 2 == 0 { _ = map::remove{ &m, key = value.key } }
+            }
+        }
+    }
+    io::println_i64{ &io, n = keys }
+    io::println_u64{ &io, n = map::len{ m } }
+    let mut total: i64 = 0
+    map::each{ m, f = add{ &total, _ } }
+    io::println_i64{ &io, n = total }
+
+}
+
+//# stdout:
+//| 55
+//| 5
+//| 2500

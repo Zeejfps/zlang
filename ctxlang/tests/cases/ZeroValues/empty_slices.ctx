@@ -1,0 +1,11 @@
+
+struct Pt { x: i32 }
+const NONE: []Pt = slice::empty(Pt){}
+struct Bag { items: []i32 = slice::empty(i32){}, points: []Pt = NONE, name: []u8 = "", n: i32 }
+fn main { mut io: Io } {
+    let b = Bag{ n = 2, .. }
+    _ = @fmt(&io, "{} {} {} {} {}\n", b.items.len, b.points.len, b.name.len, b.n, NONE.len)
+}
+
+//# stdout:
+//| 0 0 0 2 0

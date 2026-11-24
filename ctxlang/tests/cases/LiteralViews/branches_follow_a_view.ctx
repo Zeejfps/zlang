@@ -1,0 +1,21 @@
+
+union Kind { a, b, c }
+fn name { k: Kind, other: utf8::String } -> utf8::String {
+    let s = match k {
+        a => { "first" }
+        b => { other }
+        c => { "third" }
+    }
+    return s
+}
+fn main { mut io: Io } {
+    io::println{ &io, s = name{ k = Kind::a, other = "x" } }
+    io::println{ &io, s = name{ k = Kind::b, other = "second" } }
+    let n = if true { "yes" } else { name{ k = Kind::c, other = "x" } }
+    io::println{ &io, s = n }
+}
+
+//# stdout:
+//| first
+//| second
+//| yes

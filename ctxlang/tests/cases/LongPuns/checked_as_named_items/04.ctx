@@ -1,0 +1,14 @@
+// Argument order (§3, rule 10) and split borrows (§3.1, rule 8) see a pun's place.
+
+struct List { len: i32 }
+struct E { n: i32, list: List }
+struct W { e: E }
+fn push { mut list: List } -> i32 { list.len = list.len + 1; return list.len }
+fn add { mut e: E, mut list: List } { e.n = e.n + 1; _ = push{ &list } }
+fn reset { mut e: E, mut list: List } { e.list.len = 0; _ = push{ &list } }
+fn show { mut io: Io, n: i32, len: i32 } { _ = @fmt(&io, "{} {}\n", n, len) }
+fn both { mut list: List, mut l: List } { list.len = 1; l.len = 2 }
+fn main { mut io: Io } {
+    let mut w = W{ e = E{ n = 0, list = List{ len = 0 } } }
+    show{ &io, w.e.list.len, n = push{ &w.e.list } }  //~ error at 30: `len` reads `w.e.list.len`, which `n` changes, in one call: the order of the fields would decide what it reads; compute one of them in a `let` before the call
+}

@@ -1,0 +1,16 @@
+// The typed IR (`ctxc ir`): a loop gets an id only if an inner loop's jump leaves or repeats
+// it; a labeled jump to the innermost loop is plain.
+// The IR is the program's and std's, with ids that change when std does: what is stated is
+// the part the test is about, with `{n}` for the ids.
+//# $ ctxc ir {std} -- main0.ctx
+//# exit: 0
+//# stdout has:
+//| (continue 1)
+//# stdout has:
+//| (break 2)
+//# stdout has:
+//| (break)
+//# stdout has:
+//|
+//|     } 1)
+//|   } 2)

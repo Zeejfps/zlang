@@ -1,0 +1,10 @@
+// A pointer to a B is one to an A; to pass a C as an A, its function is copied into a
+// local, `with` sets it, and its address is passed.
+//# $ ctxc ir {std} -- main0.ctx
+//# exit: 0
+//# stdout has:
+//| (cap "m::C" 24 8 [("int" {n} 0) ("abs" {n} 8) ("len" {n} 16)])
+//# stdout has:
+//| (0 (cast {n} (addr {n} (local {n} 1))))
+//# stdout has:
+//| (0 (with {n} 3 (struct {n} [(0 (field {n} (deref {n} (addr {n} (local {n} 2)) {any}) 1))]) (addr {n} (local {n} 3))))

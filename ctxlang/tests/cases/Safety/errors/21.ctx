@@ -1,0 +1,6 @@
+struct B { p: *i32 }
+fn f {} -> B {
+    let x = 1
+    return B{ p = &x }  //~ error at 5: returned value holds the address of local `x`
+}
+fn main {} {}

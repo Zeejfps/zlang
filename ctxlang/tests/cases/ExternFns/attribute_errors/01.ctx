@@ -1,0 +1,3 @@
+#c::symbol{ name = "x" }  //~ error at 1: `c::symbol` applies only to an extern fn
+fn f {} {}
+fn main {} {}

@@ -1,0 +1,1 @@
+fn build {} -> u8 { return 1 }  //~ error at 1: `build` can only return i32 (the exit code), `!` or `!i32`, not u8

@@ -1,0 +1,62 @@
+
+namespace ecs {
+    struct key {}
+    struct cascade { depth: i32, deep: bool }
+    struct by { name: []u8, n: u32 }
+}
+const DEPTH: i32 = 2 + 1
+
+struct Pos {
+    #ecs::key
+    #ecs::cascade{ depth = DEPTH, deep = true }
+    x: i32,
+    #ecs::cascade{ depth = -1 }
+    y: i32,
+}
+
+union Shape {
+    circle{
+        #ecs::by{ name = "r" }
+        r: i32
+    },
+    dot,
+}
+
+namespace parse {
+    error bad{
+        #ecs::key
+        at: usize
+    }
+}
+
+extern union Bits {
+    #ecs::key
+    i: u32,
+    f: f32,
+}
+
+fn step {
+    #ecs::by{ name = "pos", n = 1 }
+    #ecs::key
+    mut pos: Pos,
+    #ecs::cascade
+    by: i32,
+} -> !i32 {
+    if by < 0 { return parse::bad{ at = 0 } }
+    pos.x = pos.x + by
+    return pos.x
+}
+
+#ecs::key
+#pure
+extern fn abs {
+    #ecs::key
+    n: i32
+} -> i32
+
+fn main { mut io: Io } {
+    let mut p = Pos{ x = 1, y = 2 }
+    let n = step{ pos = &p, by = 3 } iferr { 0 }
+    let s = Shape::circle{ r = abs{ n = -4 } }
+    if s is circle{ r } { io::println_i64{ &io, n = @as(i64, n + r) } }
+}

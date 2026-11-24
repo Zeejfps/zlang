@@ -1,0 +1,8 @@
+// The recovery test (ctxc/recover.ctx) on every token of a program with field
+// attributes: each damaged copy parses to a well-formed tree, attributes' spans before
+// their fields'. A malformed one recovers as before a declaration (CtxcDriver).
+//# $ ctxc recover main.ctx 0 100000
+//# exit: 0
+// `done` and the number of damaged copies it tried.
+//# stdout:
+//| done {n}

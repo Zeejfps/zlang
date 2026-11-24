@@ -1,0 +1,13 @@
+
+fn f { x: ?i32 } -> i32 {
+    if x == null { return -1 }
+    return x + 1
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = f{ x = 4 } }
+    io::println_i64{ &io, n = f{ x = null } }
+}
+
+//# stdout:
+//| 5
+//| -1

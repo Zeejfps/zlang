@@ -1,0 +1,10 @@
+
+fn pick { n: i32 } -> i32 {
+    let r = if n == 1 { 10 } else { @panic("unexpected n") }
+    if n > 0 { return r }
+    @panic("n must be positive")
+}
+fn main { mut io: Io } { io::println_i64{ &io, n = pick{ n = 1 } } }
+
+//# stdout:
+//| 10

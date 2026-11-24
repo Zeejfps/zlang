@@ -1,0 +1,6 @@
+// A generated file is under no directory of the program's, so it is always denied: here
+// with `except = ["src"]`. The file is in the directory ctxc builds the program in.
+//# $ ctxc run {dir}
+//# exit: 1
+//# stderr:
+//| {work:.}/gen/t/gen.ctx:1:56: error: pointer arithmetic is unchecked, and `build::deny_unchecked` in build.ctx denies it here: index an array or a slice (`s[i]`, which is bounds-checked), or write it in a directory its `except` lists

@@ -1,0 +1,7 @@
+
+fn main { mut io: Io } {
+    let b: u8 = 3
+    let mut x = 0
+    x = 1000  //~ error at 9: literal 1000 does not fit in u8, which it gets from `b` at 6:35
+    io::println_u64{ &io, n = x + b }
+}

@@ -1,0 +1,10 @@
+union U { a, b{ x: i32 } }
+fn f { u: U } -> i32 {
+    let b{ x } = u else { return 0 }
+    return x
+}
+fn main {} {
+    _ = f{ u = U::a }
+}
+
+//# exit: 0

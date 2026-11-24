@@ -1,0 +1,2 @@
+
+fn main { mut io: Io } { let a = [1, 2]; let s = a[..]; let n: usize = 3; let t = s[1..n] }  //~ panic at 84: range 1..3 out of bounds for length 2

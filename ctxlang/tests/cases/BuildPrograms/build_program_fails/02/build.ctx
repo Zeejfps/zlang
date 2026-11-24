@@ -1,0 +1,4 @@
+fn build { mut b: Build } {
+    io::println{ io = &b, s = "said" }
+    @panic("broken")
+}

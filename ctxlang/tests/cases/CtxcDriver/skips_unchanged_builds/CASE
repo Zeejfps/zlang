@@ -1,0 +1,64 @@
+// `ctxc run` skips what hasn't changed: the C compiler runs only for what did. logcc (see
+// tests/helpers/logcc.ctx) is the C compiler, and logs each of its command lines in the
+// directory the command names.
+//# build logcc: {home}/tests/helpers/logcc.ctx
+
+//# $ ctxc run {dir}
+//# env: CTX_CC={logcc}
+//# env: LOGCC_CC={cc}
+//# env: LOGCC_DIR={dir}/log1
+//# stdout:
+//| one
+//# exists {work:.}/build
+// The build program's C was compiled.
+//# $ {logcc} --logcc-more 0 lines {dir}/log1 has " -c " has "CTX_PROGRAM_NAME=\x22build\x22"
+//# stdout:
+//| more than 0
+
+// Nothing changed: the C compiler doesn't run.
+//# $ ctxc run {dir}
+//# env: CTX_CC={logcc}
+//# env: LOGCC_CC={cc}
+//# env: LOGCC_DIR={dir}/log2
+//# stdout:
+//| one
+//# $ {logcc} --logcc-count lines {dir}/log2
+//# stdout:
+//| 0
+
+// The program changed: only its C is compiled, and the executable linked. The older one
+// is removed.
+//# write src/main.ctx:
+//| fn main { mut io: Io } { io::println{ &io, s = "two" } }
+//# $ ctxc run {dir}
+//# env: CTX_CC={logcc}
+//# env: LOGCC_CC={cc}
+//# env: LOGCC_DIR={dir}/log3
+//# stdout:
+//| two
+// Two command lines: one compiles, and not the runtime, and the other links.
+//# $ {logcc} --logcc-count lines {dir}/log3 / lines {dir}/log3 has " -c " lacks ctxrt.c / lines {dir}/log3 lacks " -c "
+//# stdout:
+//| 2
+//| 1
+//| 1
+// One executable, one object and one C file of t's are in ctxc's directory.
+//# $ {logcc} --logcc-count files {work:.} t- {exe} / files {work:.} t- .o / files {work:.} t- .c
+//# stdout:
+//| 1
+//| 1
+//| 1
+
+// `exe` links its object into OUT.
+//# $ ctxc exe {dir} -o {dir}/prog{exe}
+//# env: CTX_CC={logcc}
+//# env: LOGCC_CC={cc}
+//# env: LOGCC_DIR={dir}/log4
+//# exit: 0
+//# $ {logcc} --logcc-count lines {dir}/log4 / lines {dir}/log4 lacks " -c "
+//# stdout:
+//| 1
+//| 1
+//# $ ./prog{exe}
+//# stdout:
+//| two

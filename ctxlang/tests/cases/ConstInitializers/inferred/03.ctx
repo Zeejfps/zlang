@@ -1,0 +1,4 @@
+const A: u64 = @size_of(u32) * 2
+fn main {} {}
+
+//# exit: 0

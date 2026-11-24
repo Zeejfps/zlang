@@ -1,0 +1,9 @@
+
+namespace gl {
+    const LINEAR: u32 = 9729
+    const BIG: u32 = 4000000000
+    const NEG: i32 = -1
+    const SMALL: i64 = 7
+}
+fn g { mut x: i32 } {}
+fn main {} { g{ x = gl::LINEAR } }  //~ error at 21: expected *mut i32, got u32

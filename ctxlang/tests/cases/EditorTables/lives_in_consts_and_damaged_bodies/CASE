@@ -1,0 +1,20 @@
+// What the checker records for an editor (PLAN.md 5), as `ctxc decls` prints it.
+// A const's binders have theirs too; a body with errors still records what it declared.
+//# build text: {home}/tests/helpers/text.ctx
+
+// `ctxc decls` prints std's declarations too, thousands of lines that change with std, so the
+// output isn't stated whole: its `live` lines are these, in a row,
+//# $ ctxc decls {std:abs} -- main.ctx
+//# stdout has:
+//|
+//| live x i32 main.ctx:2:48-2:53
+//| live z {error} main.ctx:5:17-8:2
+//| live w i32 main.ctx:6:14-8:2
+//|
+
+// and it has no other line that starts with `live `.
+//# $ {text} to out.txt {ctxc} decls {std:abs} -- main.ctx
+//# exit: 0
+//# $ {text} count out.txt "\nlive "
+//# stdout:
+//| 3

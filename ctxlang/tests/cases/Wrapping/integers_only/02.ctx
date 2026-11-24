@@ -1,0 +1,7 @@
+
+fn main {} {
+    let f: f64 = 1.5
+    let x: i32 = 1
+    let p = &x
+    _ = p *% 2  //~ error at 11: `*%` is not defined on pointers
+}

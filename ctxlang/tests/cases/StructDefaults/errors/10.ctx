@@ -1,0 +1,2 @@
+error bad{ x: i32 = 1 }  //~ error at 21: an error's field can't have a default: only a struct's can
+fn main {} {}

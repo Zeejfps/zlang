@@ -1,0 +1,1 @@
+fn build { mut b: Build } { build::optimize{ &b, exe = build::exe{ &b, name = "t", root = "src" }, level = 2 } }

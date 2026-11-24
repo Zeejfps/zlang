@@ -1,0 +1,5 @@
+
+struct S { a: i32 }
+fn f { a: i32 } -> i32 { return a }
+fn g {} { let for = 1 }  //~ error at 15: expected a name, found 'for': `for` is a keyword and can't be a name; use another, such as `for_`
+fn main {} {}

@@ -1,0 +1,19 @@
+
+fn main { mut io: Io } {
+    let mut mem: [1024]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    let name = "count"
+    _ = utf8::push{ &b, s = utf8::of{ chars = name } }
+    _ = utf8::push_char{ &b, c = '=' }
+    _ = utf8::push_i64{ &b, n = -1234567 }
+    _ = utf8::push_char{ &b, c = ' ' }
+    _ = utf8::push_u64{ &b, n = 99 }
+    io::println{ &io, s = utf8::view{ b } }
+    utf8::free{ &b}
+    io::println_u64{ &io, n = utf8::len{ s = utf8::view{ b } } }
+}
+
+//# stdout:
+//| count=-1234567 99
+//| 0

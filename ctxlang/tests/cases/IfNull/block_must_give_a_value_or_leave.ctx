@@ -1,0 +1,5 @@
+
+fn main {} {
+    let n: ?i32 = null
+    let x = n ifnull { }  //~ error at 22: this branch must end in a value, or leave with `return`, `break`, `continue` or `@panic()`
+}

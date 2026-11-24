@@ -1,0 +1,3 @@
+#convert
+fn f { s: strlit } -> ?strlit { return null }  //~ error at 23: a `convert` fn can't give a ?strlit: a string literal is one already
+fn main {} {}

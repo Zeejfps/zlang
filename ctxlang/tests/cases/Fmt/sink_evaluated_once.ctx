@@ -1,0 +1,23 @@
+// The sink may be any `*mut` expression: it is evaluated once, before the pieces.
+
+fn next { mut n: usize } -> usize {
+    n = n + 1
+    return n
+}
+fn pick { mut bs: [2]utf8::Builder(arena::Arena), i: usize } -> *mut utf8::Builder(arena::Arena) { return &bs[i] }
+
+fn main { mut io: Io } {
+    let mut mem: [4096]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+
+    let mut bs = [utf8::builder{ realloc = arena::alloc, &heap }, utf8::builder{ realloc = arena::alloc, &heap }]
+    let mut n: usize = 0
+    _ = @fmt(pick{ &bs, i = next{ &n } }, "{}{}{}", 1, 2, 3)
+    _ = @fmt(&bs[0], "[{}]", n)
+    _ = @fmt(&b, "{}{}", utf8::view{ b = bs[0] }, utf8::view{ b = bs[1] })
+    io::println{ &io, s = utf8::view{ b } }
+}
+
+//# stdout:
+//| [1]123

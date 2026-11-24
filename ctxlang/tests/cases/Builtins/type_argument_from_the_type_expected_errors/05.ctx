@@ -1,0 +1,2 @@
+fn main {} { let x: u8 = 3
+    let s: []u8 = @cast(_, &x) }  //~ error at 19: @cast needs a pointer or extern fn target type, got []u8

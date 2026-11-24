@@ -1,0 +1,5 @@
+
+fn main { mut io: Io } {
+    let b: []u8 = "abc"
+    io::println{ &io, s = "hi" }
+}

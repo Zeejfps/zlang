@@ -1,0 +1,15 @@
+// `extern union` (spec §12, Untagged unions): C's union, passed to C and returned from it by
+// value, alone and in a struct, checked against C through a static library built here.
+//# needs: ar
+//# $ cc -c {dir}/lib/op.c -o {dir}/lib/op.o
+//# exit: 0
+//# $ ar rcs {dir}/lib/libctxtest.a {dir}/lib/op.o
+//# exit: 0
+//# project
+//# $ {cfn}
+//# exit: 0
+//# stdout:
+//| 0.5
+//| 7
+//| 10.0
+//| 3059

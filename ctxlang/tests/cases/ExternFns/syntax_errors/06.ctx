@@ -1,0 +1,2 @@
+#S{ _ }  //~ error at 2: an attribute is a struct name or a struct literal
+fn main {} {}

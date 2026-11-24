@@ -1,0 +1,28 @@
+
+type Meters = distinct f64
+type Seconds = distinct f64
+type UserId = distinct u64
+type Small = distinct u8
+type Name = distinct []u8
+struct P { x: i32, y: i32 }
+type Pos = distinct P
+type Flag = distinct bool
+type Id(T) = distinct u32
+
+type Kg = distinct f64
+
+#write
+fn write_kg { mut io: Io, w: Kg } -> ! {
+    try @fmt(&io, "{}kg", @as(f64, w))
+}
+
+fn main { mut io: Io } {
+    let d: Meters = 2.5
+    let u: UserId = 7
+    let w: Kg = 3.0
+    let a: Id(P) = 9
+    try! @fmt(&io, "{} {} {} {}\n", d, u, w, a)
+}
+
+//# stdout:
+//| 2.5 7 3.0kg 9

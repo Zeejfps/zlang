@@ -1,0 +1,2 @@
+fn f { q: *i32, i: i32 } -> i32 { return q[i] }  //~ error at 43: cannot index *i32: a pointer has no length to check against; write `(q + @as(usize, i)).*`, which isn't checked
+fn main {} {}

@@ -1,0 +1,6 @@
+namespace w {
+    struct W { n: u8 }
+    #convert
+    fn from_literal { s: strlit } -> W { return W{ n = s.bytes[5] } }
+}
+fn main {} { let x: w::W = "abc" }  //~ error at 28: string literal panicked while compiling: index 5 out of bounds for length 3, at 4:63

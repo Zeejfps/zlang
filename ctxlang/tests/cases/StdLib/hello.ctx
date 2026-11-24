@@ -1,0 +1,11 @@
+
+fn main { mut io: Io } {
+    let hi = "hello, \"world\"\t!"
+    io::println{ &io, s = utf8::of{ chars = hi } }
+    io::put_char{ &io, c = 'x' }
+    io::newline{ &io }
+}
+
+//# stdout escaped:
+//| hello, "world"\t!
+//| x

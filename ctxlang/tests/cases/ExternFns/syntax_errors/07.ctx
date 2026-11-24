@@ -1,0 +1,2 @@
+#c::symbol{ name = "a" } fn f {} {}  //~ error at 26: an attribute goes on its own line, before a declaration
+fn main {} {}

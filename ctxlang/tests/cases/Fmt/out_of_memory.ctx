@@ -1,0 +1,20 @@
+
+fn main { mut io: Io } {
+    let mut mem: [8]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    match @fmt(&b, "{}", 1234) {
+        ok                   => { io::println{ &io, s = "ok" } }
+        alloc::out_of_memory => { io::println{ &io, s = "oom" } }
+    }
+    match @fmt(&b, "{} and more than eight bytes", 5) {
+        ok                   => { io::println{ &io, s = "ok" } }
+        alloc::out_of_memory => { io::println{ &io, s = "oom" } }
+    }
+    io::println{ &io, s = utf8::view{ b } }    // the pieces before the one that failed
+}
+
+//# stdout:
+//| ok
+//| oom
+//| 1234

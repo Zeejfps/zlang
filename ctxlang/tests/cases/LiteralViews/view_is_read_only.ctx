@@ -1,0 +1,4 @@
+fn main { mut io: Io } {
+    let b: []u8 = "abc"
+    b[0] = 1  //~ error at 6: cannot write through []u8; it needs to be a `[]mut`
+}

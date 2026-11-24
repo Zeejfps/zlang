@@ -1,0 +1,2 @@
+struct S { a: i32 = true }  //~ error at 21: expected i32, got bool
+fn main {} {}

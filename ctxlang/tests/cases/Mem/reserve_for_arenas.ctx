@@ -1,0 +1,30 @@
+// mem::reserve's memory is made usable as an arena reaches it (on Windows, committed a
+// MiB at a time): allocations that end in other MiBs, a big one, and two arenas over
+// the halves of one reservation, the upper one first. A 1-byte block reads 2 twice.
+
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+
+    let some{ value = buf } = mem::reserve{ &mem, size = 1073741824 } else { return 1 }
+    io::println_u64{ &io, n = @addr(&buf[0]) % 4096 }
+    let mut low = arena::new{ buf = buf[..536870912] }
+    let mut high = arena::new{ buf = buf[536870912..] }
+    let mut total: u64 = 0
+    let sizes = [100, 1048576, 3, 300000000, 5000000, 1]
+    let mut i: usize = 0
+    while i < sizes.len {
+        let h = if i % 2 == 0 { &high } else { &low }
+        let some{ value = b } = arena::alloc{ heap = h, mem = slice::empty(u8){}, new = sizes[i], align = 8 } else { return 2 }
+        total = total + b[0] + b[b.len - 1]
+        b[0] = 1
+        b[b.len - 1] = 2
+        total = total + b[0] + b[b.len - 1]
+        i = i + 1
+    }
+    io::println_u64{ &io, n = total }
+    return 0
+}
+
+//# interp: cannot run
+//# stdout:
+//| 0
+//| 19

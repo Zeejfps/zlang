@@ -1,0 +1,6 @@
+// Every extern fn says what C does (spec §18, Extern functions, rule 8): a capability
+// field for what it touches, or `#pure`.
+
+#pure  //~ error at 1: `pure` applies only to an extern fn: a fn with a body shows what it touches
+fn f {} -> i32 { return 1 }
+fn main {} {}

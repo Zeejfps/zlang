@@ -1,0 +1,12 @@
+// ctxc's reader and printer for the typed IR: `ctxc roundtrip` of a program's IR (`ctxc ir`)
+// gives the same text back, with its strings' escapes, its bytes, floats, a negative i64 and
+// an optional.
+//# build text: {home}/tests/helpers/text.ctx
+
+//# $ {text} to p.ir {ctxc} ir {std} -- main.ctx
+//# exit: 0
+//# $ {text} to q.ir {ctxc} roundtrip p.ir
+//# exit: 0
+//# $ {text} same p.ir q.ir
+//# stdout:
+//| same

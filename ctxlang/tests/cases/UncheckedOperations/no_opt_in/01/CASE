@@ -1,0 +1,5 @@
+// Without the call, an executable uses them anywhere.
+//# $ ctxc run .
+//# exit: 0
+//# stdout:
+//| 9

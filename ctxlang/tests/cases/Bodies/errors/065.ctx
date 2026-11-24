@@ -1,0 +1,6 @@
+fn g { mut a: i32 } {}
+fn f {} {
+    let x = 1
+    g{ a = &x }  //~ error at 13: `x` is not a mutable place //~ error at 12: expected *mut i32, got *{integer}
+}
+fn main {} {}

@@ -1,0 +1,5 @@
+error a
+error b
+error c
+fn f {} -> error(a, b)!u64 { return a }
+fn main {} { match f{} { ok => {} a => {} } }  //~ error at 14: match isn't exhaustive: missing b

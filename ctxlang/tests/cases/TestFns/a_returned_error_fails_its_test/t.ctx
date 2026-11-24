@@ -1,0 +1,20 @@
+
+struct Point { x: i32, y: i32 }
+enum Kind: u8 { byte, char }
+union Shape { none, circle{ r: f64 } }
+error bad{ at: usize, why: Kind }
+
+fn parse { s: []u8 } -> !i32 {
+    if s.len == 0 { return bad{ at = 3, why = Kind::char } }
+    return 1
+}
+#test
+fn fails { mut t: Test } -> ! {
+    @expect(&t, try parse{ s = "1" } == 1)
+    _ = try parse{ s = "" }
+    @expect(&t, false)
+}
+#test
+fn missing_file { mut t: Test, mut fs: Fs } -> ! {
+    @expect(&t, try fs::size{ &fs, path = "no/such/file" } == 0)
+}

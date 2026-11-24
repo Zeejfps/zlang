@@ -1,0 +1,12 @@
+union U { a, b{ x: i32 } }
+fn f { u: U } {
+    match u {
+        a => {}
+        z => {}
+    }
+}
+fn main {} {}
+
+//# errors:
+//| 027.ctx:5:9: error: U has no variant `z`
+//| 027.ctx:3:5: error: match isn't exhaustive: missing b

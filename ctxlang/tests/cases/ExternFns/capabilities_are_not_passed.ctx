@@ -1,0 +1,10 @@
+// abs takes one int: the capability only says who may call it.
+
+extern fn abs { mut io: Io, n: i32 } -> i32
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = abs{ &io, n = -7 } }
+}
+
+//# interp: cannot run
+//# stdout:
+//| 7

@@ -1,0 +1,6 @@
+// `ctxc run FILE -- ARGS` builds one file and runs it with the arguments: the program's
+// output and exit code are ctxc's.
+//# $ ctxc run {dir}/hello.ctx -- hi
+//# exit: 3
+//# stdout:
+//| hi

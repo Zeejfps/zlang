@@ -1,0 +1,2 @@
+fn f {} -> &fn{} {}  //~ error at 12: `&fn` can only be the type of a local or a read-only context field
+fn main {} {}

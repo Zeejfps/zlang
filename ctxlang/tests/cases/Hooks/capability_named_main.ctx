@@ -1,0 +1,13 @@
+// A capability may be any of a start fn's fields, `main` among them.
+
+#start
+fn boot { mut main: Io, other: Io } -> i32 {
+    io::println_u64{ io = &main, n = 5 }
+    io::flush{ io = &main }
+    return 3
+}
+fn main {} {}
+
+//# exit: 3
+//# stdout escaped:
+//| 5\r

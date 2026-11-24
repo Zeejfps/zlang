@@ -1,0 +1,1 @@
+fn build { n: i32 } {}  //~ error at 1: `build` context field `n` must have a capability type or be `args: Args`, got i32

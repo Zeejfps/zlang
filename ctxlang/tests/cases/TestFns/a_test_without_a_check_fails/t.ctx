@@ -1,0 +1,10 @@
+
+fn work {} -> i32 { return 1 }
+#test
+fn checks_nothing { mut t: Test } { _ = work{} }
+#test
+fn skips_its_check { mut t: Test } {
+    if work{} == 2 { @expect(&t, true) }
+}
+#test
+fn checks { mut t: Test } { @expect(&t, work{} == 1) }

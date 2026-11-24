@@ -1,0 +1,2 @@
+
+fn main { mut io: Io } { let mut s: []u8; s.len = 3 }  //~ error at 44: `.len` is not a place

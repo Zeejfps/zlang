@@ -1,0 +1,6 @@
+fn f {} {
+    outer: while true {
+        outer: while true { break }  //~ error at 9: loop label `outer` is already used by an enclosing loop
+    }
+}
+fn main {} {}

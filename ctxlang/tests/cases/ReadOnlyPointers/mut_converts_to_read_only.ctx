@@ -1,0 +1,18 @@
+
+fn get { p: *i32 } -> i32 { return p.* }
+fn first { p: ?*i32 } -> i32 {
+    let some{ value } = p else { return 0 }
+    return value.*
+}
+fn main { mut io: Io } {
+    let mut a: i32 = 7
+    let p: *mut i32 = &a
+    let q: *i32 = p
+    let o: ?*mut i32 = p
+    io::println_i64{ &io, n = get{ p } + first{ p = o } + q.* }
+    io::println_bool{ &io, n = p == q }
+}
+
+//# stdout:
+//| 21
+//| true

@@ -1,0 +1,16 @@
+// Text is the lexer's tokens with one space between them: a string literal is as it is
+// written, `//` and spaces and all, and a multi-line one keeps its lines.
+// `ctxc graph` runs the build program without building the executables, whose files needn't
+// compile. ctxc's own directory for it is removed before and after: the runner clears those of
+// `ctxc run` commands only.
+//# remove {work:.}
+//# $ ctxc graph . {dir}/graph-gen {dir}/graph.txt
+//# stdout:
+//| file src/a.ctx
+//| const URL : []u8 = \\https://example.com  // not a comment
+//|     \\  two  spaces @ src/a.ctx:1:1
+//| struct Doc @ src/a.ctx:9:1
+//|   #doc text=\\one // line
+//|     \\two (s one // line
+//| two) n=1 + 2 (?) s="a  //b" (s a  //b)
+//# remove {work:.}

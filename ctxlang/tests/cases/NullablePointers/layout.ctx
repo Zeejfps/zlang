@@ -1,0 +1,16 @@
+
+struct S { a: u8, p: ?*i32 }
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = @size_of(?*i32) }
+    io::println_u64{ &io, n = @align_of(?*mut i32) }
+    io::println_u64{ &io, n = @size_of(S) }
+    io::println_u64{ &io, n = @size_of(??*i32) }
+    io::println_u64{ &io, n = @size_of(?[]u8) }
+}
+
+//# stdout:
+//| 8
+//| 8
+//| 16
+//| 16
+//| 24

@@ -1,0 +1,22 @@
+
+union Shape { circle{ r: i32 }, square{ side: i32 }, rect{ w: i32, h: i32 }, dot, line }
+
+fn round { s: Shape } -> bool {
+    return match s {
+        circle | dot => { true }
+        else         => { false }
+    }
+}
+fn main { mut io: Io } {
+    io::println_bool{ &io, n = round{ s = Shape::dot } }
+    io::println_bool{ &io, n = round{ s = Shape::circle{ r = 1 } } }
+    io::println_bool{ &io, n = round{ s = Shape::line } }
+    let o: ?i32 = 3
+    match o { null | some => { io::println_i64{ &io, n = 1 } } }
+}
+
+//# stdout:
+//| true
+//| true
+//| false
+//| 1

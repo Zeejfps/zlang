@@ -1,0 +1,6 @@
+
+union Decl { var{ i: i32 }, func{ name: i32 } }
+fn main {} {
+    let found: ?Decl = null
+    let var{ i } = found else func{ name } { return }  //~ error at 44: `else func` can't follow `var` of an optional's value: the `else` takes null too
+}

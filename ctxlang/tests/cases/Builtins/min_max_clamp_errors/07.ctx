@@ -1,0 +1,5 @@
+fn main {} {
+    let a: i8 = 3
+    let hi: u8 = 5
+    let m = @clamp(a, 0, hi)  //~ error at 13: @clamp needs three numbers of one type, got i8, i8 and u8: convert with @as
+}

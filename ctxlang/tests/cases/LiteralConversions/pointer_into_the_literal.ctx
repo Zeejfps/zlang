@@ -1,0 +1,21 @@
+// A result may point into the literal's bytes, which are static data: a []u8 or a *u8,
+// followed by the hidden zero.
+
+namespace cstr {
+    struct C { p: *u8, n: usize }
+    #pure
+    extern fn strlen { s: *u8 } -> usize
+    #convert
+    fn from_literal { s: strlit } -> C { return C{ p = s.bytes.ptr, n = s.bytes.len } }
+}
+fn main { mut io: Io } {
+    let c: cstr::C = "four"
+    io::println_u64{ &io, n = cstr::strlen{ s = c.p } + c.n }
+    let e: cstr::C = ""
+    io::println_u64{ &io, n = cstr::strlen{ s = e.p } }
+}
+
+//# interp: cannot run
+//# stdout:
+//| 8
+//| 0

@@ -1,0 +1,1 @@
+fn other {} -> syntax::File { return parser::parse{} }

@@ -1,0 +1,4 @@
+// The program that main.ctx starts by its relative path.
+fn main {} -> i32 {
+    return 2
+}

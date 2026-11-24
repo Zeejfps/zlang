@@ -1,0 +1,6 @@
+fn build { mut b: Build } { build::gen_file{ &b, exe = build::exe{ &b, name = "a", root = "." }, name = "a/b", text = "" } }
+
+//# interp: cannot run
+//# stdout escaped:
+//| exe\t0\ta\t.
+//# panic: program: panic: build: a file name can hold only ASCII letters, digits, _ and -

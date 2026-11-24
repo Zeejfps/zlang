@@ -1,0 +1,20 @@
+
+fn add { a: i32, b: i32 } -> i32 { return a + b }
+fn apply { f: &fn{ b: i32 } -> i32, x: i32 } -> i32 { return f{ b = x } }
+fn twice { f: fn{ a: i32, b: i32 } -> i32 } -> i32 { return f{ a = 2, b = 3 } * 2 }
+fn count { mut n: i32, by: i32 } { n = n + by }
+fn main { mut io: Io } {
+    let add5 = add{ a = 5, _ }
+    io::println_i64{ &io, n = apply{ f = add5, x = 10 } }
+    io::println_i64{ &io, n = twice{ f = add } }
+    let mut c = 0
+    let inc = count{ n = &c, _ }
+    inc{ by = 3 }
+    inc{ by = 4 }
+    io::println_i64{ &io, n = c }
+}
+
+//# stdout:
+//| 15
+//| 10
+//| 7

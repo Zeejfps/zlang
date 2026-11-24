@@ -1,0 +1,2 @@
+struct S { a i32 }  //~ error at 14: expected ':', found 'i32'
+fn main {} {}

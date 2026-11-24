@@ -1,0 +1,6 @@
+
+fn f {} -> i32 {
+    let x = if true { return 1 } else { return 2 }  //~ error at 13: no branch of this expression produces a value; use a statement instead
+    return x
+}
+fn main { mut io: Io } { }

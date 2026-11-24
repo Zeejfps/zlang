@@ -1,0 +1,6 @@
+
+fn at { q: *[3]i32, i: usize } -> i32 { return q[i] }  //~ panic at 49: index 3 out of bounds for length 3
+fn main { mut io: Io } {
+    let a = [1, 2, 3]
+    io::println_i64{ &io, n = at{ q = &a, i = 3 } }
+}

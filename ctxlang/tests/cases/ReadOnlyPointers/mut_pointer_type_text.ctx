@@ -1,0 +1,2 @@
+
+fn main { mut io: Io } { let mut a: i32 = 1; let p: **mut i32 = &a }  //~ error at 65: expected **mut i32, got *mut i32

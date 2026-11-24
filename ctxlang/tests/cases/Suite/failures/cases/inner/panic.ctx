@@ -1,0 +1,5 @@
+fn main {} {
+    let xs = [1, 2, 3]
+    let mut i = 3
+    _ = xs[i]  //~ panic at 9: index 4 out of bounds for length 3
+}

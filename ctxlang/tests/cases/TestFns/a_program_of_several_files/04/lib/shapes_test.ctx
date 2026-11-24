@@ -1,0 +1,2 @@
+#test
+fn broken { mut t: Test } { @expect(&t, nothing == 1) }

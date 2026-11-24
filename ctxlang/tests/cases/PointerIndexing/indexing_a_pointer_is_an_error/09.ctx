@@ -1,0 +1,4 @@
+fn f { q: *u8, i: usize } -> u8 {
+    return q[i << 2]  //~ error at 13: cannot index *u8: a pointer has no length to check against; write `(q + (i << 2)).*`, which isn't checked
+}
+fn main {} {}

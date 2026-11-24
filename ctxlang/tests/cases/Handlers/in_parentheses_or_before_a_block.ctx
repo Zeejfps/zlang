@@ -1,0 +1,27 @@
+
+error bad
+fn f { n: i32 } -> !?i32 {
+    if n == 0 { return null }
+    if n < 0 { return bad }
+    return n
+}
+fn g { n: i32 } -> ?i32 { if n == 0 { return null }; return n }
+fn r { n: i32 } -> !i32 { if n == 0 { return bad }; return n }
+fn h { n: i32 } -> ?!i32 {
+    if n == 0 { return null }
+    let x: !i32 = if n < 0 { bad } else { n }
+    return x
+}
+fn t { n: i32 } -> ?bool { if n == 0 { return null }; return n > 0 }
+fn main { mut io: Io } {
+    let n = 1
+    let x = (g{ n } ifnull 0) == n and (t{ n } ifnull false)
+    let y = g{ n } ifnull { 0 } == n                // one reading: a block ends the handler
+    let z = n == (g{ n = 0 } ifnull 5) or (t{ n = 0 } ifnull { false })
+    if (g{ n = 0 } ifnull 7) > 6 and r{ n = 0 } iferr { 2 } is 2 { io::println{ &io, s = "cond" } }
+    _ = @fmt(&io, "{} {} {}\n", x, y, z)
+}
+
+//# stdout:
+//| cond
+//| true true false

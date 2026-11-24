@@ -1,0 +1,13 @@
+
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = 1 | 2 ^ 3 & 4 << 1 }
+    io::println_i64{ &io, n = 1 << 2 + 1 }
+    io::println_bool{ &io, n = 6 & 1 == 0 }
+    io::println_i64{ &io, n = (1 | 2) ^ 3 }
+}
+
+//# stdout:
+//| 3
+//| 8
+//| true
+//| 0

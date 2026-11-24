@@ -1,0 +1,3 @@
+
+fn f { q: ?*u8 } -> u8 { return q[0] }  //~ error at 34: cannot index ?*u8
+fn main {} {}

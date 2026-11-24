@@ -1,0 +1,1 @@
+fn main { mut io: Io } { let x = @trunc(u8) }  //~ error at 43: wrong number of arguments: @trunc(T, x)

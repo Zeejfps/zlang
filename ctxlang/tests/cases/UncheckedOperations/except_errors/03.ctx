@@ -1,0 +1,10 @@
+// Run directly, a build program prints its records.
+
+fn build { mut b: Build } { build::deny_unchecked{ &b, exe = build::exe{ &b, name = "a", root = "." }, except = ["x", "y/z"] } }
+
+//# interp: cannot run
+//# stdout escaped:
+//| exe\t0\ta\t.
+//| deny\t0\t2
+//| except\t0\tx
+//| except\t0\ty/z

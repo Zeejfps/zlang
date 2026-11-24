@@ -1,0 +1,5 @@
+fn main { mut io: Io } {
+    io::eprintln{ &io, s = "to standard error" }
+}
+
+//# exit: 0

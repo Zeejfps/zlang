@@ -1,0 +1,76 @@
+
+const OP_ADD: u8 = 0x14
+const OP_SUB: u8 = OP_ADD + 1
+
+namespace gl {
+    const TRIANGLES: u32 = 4
+    const LINES: u32 = 1
+}
+
+fn op_name { op: u8 } -> utf8::String {
+    return match op {
+        0 => { "nop" }
+        OP_ADD => { "add" }
+        OP_SUB | 0x20 => { "sub" }
+        'a'..='z' => { "letter" }
+        0xf0..=0xff => { "high" }
+        else => { "?" }
+    }
+}
+
+fn sign { n: i64 } -> i32 {
+    match n {
+        -9223372036854775808..=-1 => { return -1 }
+        0 => { return 0 }
+        else => { return 1 }
+    }
+}
+
+fn prim { mode: u32 } -> u32 {
+    let mut n: u32 = 0
+    match mode {
+        gl::TRIANGLES => { n = 3 }
+        gl::LINES => { n = 2 }
+        else => { n = 1 }
+    }
+    return n
+}
+
+fn main { mut io: Io } {
+    let ops = [0, 0x14, 0x15, 0x20, 'q', 0xf7, 7]
+    let mut i = 0
+    while i < ops.len {
+        io::println{ &io, s = op_name{ op = ops[i] } }
+        i = i + 1
+    }
+    io::println_i64{ &io, n = sign{ n = -5 } }
+    io::println_i64{ &io, n = sign{ n = 0 } }
+    io::println_i64{ &io, n = sign{ n = 9 } }
+    io::println_u64{ &io, n = prim{ mode = 4 } }
+    io::println_u64{ &io, n = prim{ mode = 9 } }
+    let c: u8 = '_'
+    if c is 'a'..='z' | 'A'..='Z' | '_' { io::println{ &io, s = "ident" } }
+    if not (c is '0'..='9') { io::println{ &io, s = "not a digit" } }
+    let big: u64 = 18446744073709551615
+    match big {
+        18446744073709551615 => { io::println{ &io, s = "max" } }
+        else => {}
+    }
+}
+
+//# stdout:
+//| nop
+//| add
+//| sub
+//| sub
+//| letter
+//| high
+//| ?
+//| -1
+//| 0
+//| 1
+//| 3
+//| 1
+//| ident
+//| not a digit
+//| max

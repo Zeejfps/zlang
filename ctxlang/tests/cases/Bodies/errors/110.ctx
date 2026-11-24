@@ -1,0 +1,7 @@
+fn f(T) { u: ?T } -> T {
+    match u {
+        null => { return y }  //~ error at 26: unknown name `y`
+        some{ value } => { return value }
+    }
+}
+fn main {} {}

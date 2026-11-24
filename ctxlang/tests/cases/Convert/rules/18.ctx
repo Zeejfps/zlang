@@ -1,0 +1,5 @@
+capability C {
+    #convert  //~ error at 5: `convert` applies only to a fn
+    extern x: i32
+}
+fn main {} {}

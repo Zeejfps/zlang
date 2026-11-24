@@ -1,0 +1,43 @@
+
+type Meters = distinct f64
+type Seconds = distinct f64
+type UserId = distinct u64
+type Small = distinct u8
+type Name = distinct []u8
+struct P { x: i32, y: i32 }
+type Pos = distinct P
+type Flag = distinct bool
+type Id(T) = distinct u32
+
+struct Row { d: Meters, ids: [2]Id(P), name: Name }
+const LIMIT: Meters = 100.0
+const ROW: Row = Row{ d = 1.5, ids = [3, 4], name = @as(Name, "row") }
+const HALF: Meters = @as(Meters, 0.5)
+
+fn twice(T) { x: T } -> [2]T { return [x, x] }
+
+fn main { mut io: Io } {
+    let mut r: Row
+    io::println_f64{ &io, n = @as(f64, r.d) + @as(f64, LIMIT) + @as(f64, HALF) }
+    io::println_u64{ &io, n = @as(u32, ROW.ids[0]) + @as([]u8, r.name).len }
+    let a: Id(P) = 7
+    let b: Id(P) = 8
+    io::println_bool{ &io, n = a < b }
+    let m = twice(Meters){ x = 1.0 }
+    let f = twice(f64){ x = 2.0 }
+    io::println_f64{ &io, n = @as(f64, m[1]) + f[1] }
+    match a {
+        0 => { io::println{ &io, s = "zero" } }
+        1..=7 => { io::println{ &io, s = "small" } }
+        else => { io::println{ &io, s = "big" } }
+    }
+    io::println_bool{ &io, n = b is 8 | 9 }
+}
+
+//# stdout:
+//| 100.5
+//| 3
+//| true
+//| 3.0
+//| small
+//| true

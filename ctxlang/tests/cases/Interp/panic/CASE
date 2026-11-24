@@ -1,0 +1,14 @@
+// Standard output's buffer is written before the panic, as std's rt::report does.
+// `ctxc interp` and `ctxc run` give the same exit code, output and panic line.
+//# $ ctxc interp {dir}/boom.ctx --
+//# exit: 134
+//# stdout:
+//| before
+//# stderr:
+//| {dir}/boom.ctx:6:28: panic: index 3 out of bounds for length 3
+//# $ ctxc run {dir}/boom.ctx --
+//# exit: 134
+//# stdout:
+//| before
+//# stderr:
+//| {dir}/boom.ctx:6:28: panic: index 3 out of bounds for length 3

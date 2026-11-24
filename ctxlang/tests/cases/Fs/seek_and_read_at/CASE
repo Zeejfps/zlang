@@ -1,0 +1,14 @@
+// fs::read_at reads inside the file, at its end (a short read) and past it (nothing); fs::seek
+// goes back to the start. read_at doesn't use the position, and leaves it unspecified: a read
+// after seeks first.
+//# program: main.ctx
+//# args: {dir}/tmp/f.bin
+//# interp: cannot run
+//# stdout:
+//| 4
+//| 3456
+//| 2
+//| 89
+//| 0
+//| 0
+//| 789

@@ -1,0 +1,55 @@
+
+namespace parse {
+    error empty
+    error bad_digit{ at: usize }
+    error too_big
+}
+
+fn number { s: []u8 } -> !u64 {
+    if s.len == 0 { return parse::empty }
+    let mut n: u64 = 0
+    let mut i: usize = 0
+    while i < s.len {
+        if s[i] < '0' or s[i] > '9' { return parse::bad_digit{ at = i } }
+        if n > 100000 { return parse::too_big }
+        n = n * 10 + @as(u64, s[i] - '0')
+        i = i + 1
+    }
+    return n
+}
+
+fn show { mut io: Io, r: !u64 } {
+    let mut mem: [256]u8 = [0; 256]
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    match r {
+        ok{ value }  => { _ = @fmt(&b, "ok {}", value) }
+        err{ error } => { _ = @fmt(&b, "err {}", error) }
+    }
+    io::println{ &io, s = utf8::view{ b } }
+}
+
+fn or_neg { s: []u8 } -> i64 {
+    let n = number{ s } iferr { return -1 }
+    return @as(i64, n)
+}
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = number{ s = "12" } iferr 0 }
+    io::println_u64{ &io, n = number{ s = "1x" } iferr 0 }
+    io::println_i64{ &io, n = or_neg{ s = "" } }
+    io::println_u64{ &io, n = number{ s = "" } iferr number{ s = "x" } iferr 5 }
+    let at = number{ s = "12x" } iferr err{ error } {
+        match error {
+            parse::bad_digit{ at } => { @as(u64, at) }
+            else => { 0 }
+        }
+    }
+    io::println_u64{ &io, n = at }
+}
+
+//# stdout:
+//| 12
+//| 0
+//| -1
+//| 5
+//| 2

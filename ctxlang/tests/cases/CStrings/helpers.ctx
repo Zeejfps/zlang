@@ -1,0 +1,35 @@
+
+fn main { mut io: Io } {
+    let s: c::String = "abc"
+    io::println_u64{ &io, n = c::len{ s } }
+    io::println{ &io, s = utf8::of{ chars = c::bytes{ s } } }
+    io::println_u64{ &io, n = c::len{ s = "" } }
+    let mut mem: [16]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let ok{ value = t } = c::copy{ realloc = arena::alloc, &heap, bytes = "built" } else { return }
+    io::println_u64{ &io, n = c::len{ s = t } }
+    let bad: []u8 = "a\0b"
+    match c::copy{ realloc = arena::alloc, &heap, bytes = bad } {
+        ok => {}
+        err{ error } => {
+            match error {
+                c::has_nul{ at } => { io::println_u64{ &io, n = at } }
+                alloc::out_of_memory => { io::println{ &io, s = "oom" } }
+            }
+        }
+    }
+    let big: []u8 = "this does not fit in what is left"
+    match c::copy{ realloc = arena::alloc, &heap, bytes = big } {
+        ok               => {}
+        c::has_nul       => {}
+        alloc::out_of_memory => { io::println{ &io, s = "oom" } }
+    }
+}
+
+//# stdout:
+//| 3
+//| abc
+//| 0
+//| 5
+//| 1
+//| oom

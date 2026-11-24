@@ -1,0 +1,7 @@
+// A directory that holds none of the executable's files excepts nothing: misspelt, gone,
+// or another executable's. Here: `elsewhere`, a directory without files.
+//# make dir elsewhere
+//# $ ctxc run .
+//# exit: 1
+//# stderr:
+//| elsewhere: holds no file of executable t, so build::deny_unchecked can't except it

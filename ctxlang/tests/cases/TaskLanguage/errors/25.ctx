@@ -1,0 +1,13 @@
+
+#task
+fn fill { mut buf: [8]u8, n: u8 } -> ! { buf[0] = n }
+
+#task
+fn look { s: []u8 } -> !u64 { return @as(u64, s.len) }
+
+#task
+fn sq { n: u64 } -> !u64 { return n * n }
+
+#task_handle  //~ error at 1: `task_handle` applies only to a struct
+fn h {} {}
+fn main {} {}

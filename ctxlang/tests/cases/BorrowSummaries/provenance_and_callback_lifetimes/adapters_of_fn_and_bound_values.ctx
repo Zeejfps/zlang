@@ -1,0 +1,27 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// adapters of fn and bound values: accepted, and it runs.
+
+fn one { x: i64 } -> i64 { return x }
+fn two { x: i64 } -> i64 { return x * 2 }
+struct H { f: fn{ x: i64 } -> i64 }
+fn wide { f: fn{ x: i64, extra: i64 } -> i64, x: i64 } -> i64 { return f{ x, extra = 1 } }
+fn bwide { f: &fn{ x: i64, extra: i64 } -> i64, x: i64 } -> i64 { return f{ x, extra = 1 } }
+fn add { a: i64, x: i64 } -> i64 { return a + x }
+fn main { mut io: Io } {
+    let hs = [H{ f = one }, H{ f = two }]
+    let mut keep: &fn{ x: i64, extra: i64 } -> i64 = add{ a = 0, _ }
+    let mut i: i64 = 0
+    let mut s: i64 = 0
+    while i < 1000 {
+        s = s + wide{ f = hs[@as(usize, i % 2)].f, x = i }
+        s = s + bwide{ f = add{ a = i, _ }, x = 1 }
+        let g: &fn{ x: i64, extra: i64 } -> i64 = add{ a = 1, _ }
+        if i == 3 { keep = add{ a = i, _ } }
+        s = s + g{ x = 2, extra = 3 }
+        i = i + 1
+    }
+    io::println_i64{ &io, n = s + keep{ x = 0, extra = 0 } }
+}
+
+//# stdout:
+//| 1253003

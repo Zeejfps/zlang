@@ -1,0 +1,20 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// record held through another record: accepted, and it runs.
+
+fn zero {} -> i64 { return 0 }
+fn read { n: i64 } -> i64 { return n }
+fn invoke { f: &fn{} -> i64 } -> i64 { return f{} }
+fn main { mut io: Io } {
+    let mut saved: &fn{} -> i64 = zero
+    let mut i: i64 = 0
+    while i < 2 {
+        let inner = read{ n = i + 10, _ }
+        let outer = invoke{ f = inner, _ }
+        if i == 0 { saved = outer }
+        i = i + 1
+    }
+    io::println_i64{ &io, n = saved{} }
+}
+
+//# stdout:
+//| 10

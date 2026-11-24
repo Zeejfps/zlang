@@ -1,0 +1,12 @@
+
+fn main { mut io: Io } {
+    if true { io::println_i64{ &io, n = 1 } }
+    match utf8::parse_i64{ s = utf8::empty{} } {
+        null => { io::println_i64{ &io, n = 2 } }
+        else => { }
+    }
+}
+
+//# stdout:
+//| 1
+//| 2

@@ -1,0 +1,22 @@
+// A variable is an item, declared once however many capabilities read it, and a read is
+// its value.
+//# build text: {home}/tests/helpers/text.ctx
+
+// The IR is the program's and std's, with ids that change when std does: `{n}` is an id.
+//# $ ctxc ir {std} -- main0.ctx
+//# stdout has:
+//| (var 0 "optind" "optind" {n})
+
+// The program's variable is the only one, but for std's: std's start reads environ on Linux
+// and macOS, a variable of its own. The two reads, in `a` and in `b`, are each a `cvar`.
+//# $ {text} to p.ir {ctxc} ir {std} -- main0.ctx
+//# exit: 0
+//# $ {text} count p.ir "(var " "(var 1 \x22environ\x22 \x22environ\x22" "(cvar {n} 0)"
+//# [windows] stdout:
+//| 1
+//| 0
+//| 2
+//# [posix] stdout:
+//| 2
+//| 1
+//| 2

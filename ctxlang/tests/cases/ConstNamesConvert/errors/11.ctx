@@ -1,0 +1,10 @@
+
+namespace gl {
+    const LINEAR: u32 = 9729
+    const BIG: u32 = 4000000000
+    const NEG: i32 = -1
+    const SMALL: i64 = 7
+}
+type Id = distinct u32
+const D: Id = 5
+fn main {} { let y: u32 = D }  //~ error at 27: expected u32, got Id: convert with @as(u32, x)

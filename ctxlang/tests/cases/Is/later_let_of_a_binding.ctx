@@ -1,0 +1,16 @@
+// After a leaving `if`, a binding is declared in the block, as by let-else.
+
+union Ref { local{ var: i32 }, constant{ value: i64 }, variant, enumval }
+enum Color: u8 { red, green, blue }
+fn find { n: i32 } -> ?Ref {
+    if n == 0 { return null }
+    if n == 1 { return Ref::local{ var = 7 } }
+    if n == 2 { return Ref::constant{ value = 9 } }
+    return Ref::variant
+}
+
+fn main {} {
+    let r = find{ n = 1 }
+    if not (r is local{ var }) { return }
+    let var = 2  //~ error at 5: `var` is already declared in this scope
+}

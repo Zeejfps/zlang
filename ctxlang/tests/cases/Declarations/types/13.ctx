@@ -1,0 +1,7 @@
+type A = B
+type B = A
+fn main {} {}
+
+//# errors:
+//| 13.ctx:2:10: error: type alias `A` refers to itself
+//| 13.ctx:1:10: error: type alias `B` refers to itself

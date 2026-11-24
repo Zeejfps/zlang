@@ -1,0 +1,28 @@
+
+#pure
+extern fn strlen { s: c::String } -> usize
+#pure
+extern fn strcmp { a: c::String, b: c::String } -> i32
+#pure
+extern fn strchr { s: c::String, ch: i32 } -> ?c::String
+const GREETING: c::String = "hello"
+fn pick { b: bool } -> c::String { return if b { "yes" } else { "no" } }
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = strlen{ s = "hello" } }
+    io::println_i64{ &io, n = strcmp{ a = "abc", b = "abc" } }
+    io::println_u64{ &io, n = strlen{ s = GREETING } + strlen{ s = pick{ b = true } } }
+    let hit = strchr{ s = "hello", ch = 'l' }
+    match hit {
+        null => { io::println{ &io, s = "none" } }
+        some{ value } => { io::println{ &io, s = utf8::of{ chars = c::bytes{ s = value } } } }
+    }
+    io::println_bool{ &io, n = strchr{ s = "hello", ch = 'z' } == null }
+}
+
+//# interp: cannot run
+//# stdout:
+//| 5
+//| 0
+//| 8
+//| llo
+//| true

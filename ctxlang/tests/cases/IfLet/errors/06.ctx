@@ -1,0 +1,13 @@
+
+struct Tlk { n: i32 }
+struct World { tlk: ?Tlk, count: i32 }
+fn bump { mut t: Tlk } { t.n = t.n + 1 }
+fn find { n: i32 } -> ?i32 {
+    if n > 0 { return n * 10 }
+    return null
+}
+fn tick { mut w: World } {
+    if let t = w.tlk { } else { return }
+    let n = t.n  //~ error at 13: unknown name `t`
+}
+fn main {} {}

@@ -1,0 +1,4 @@
+
+struct P { x: i32 }
+fn f { p: P } { p.x = 1 }  //~ error at 17: `p` is not a mutable place
+fn main { mut io: Io } { }

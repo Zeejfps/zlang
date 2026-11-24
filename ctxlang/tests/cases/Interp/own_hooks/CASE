@@ -1,0 +1,26 @@
+// The interpreter runs a program's own start and panic fns, as C's main and the runtime
+// do (lower.ctx, entry_fns): here a start without std's binary mode, so that on Windows
+// "\n" is written as "\r\n", and a panic fn that returns, which traps (132).
+// The compiled program's trap is Windows' illegal instruction exception (0xC000001D), or
+// SIGILL, which is 132 as a shell reports it; its output is the interpreter's.
+//# $ ctxc interp {dir}/hooks.ctx -- a
+//# exit: 132
+//# [windows] stdout escaped:
+//| 2\r
+//| main\r
+//| index 2 out of bounds for length 219\r
+//# [posix] stdout:
+//| 2
+//| main
+//| index 2 out of bounds for length 219
+//# $ ctxc run {dir}/hooks.ctx -- a
+//# [windows] exit: -1073741795
+//# [posix] exit: 132
+//# [windows] stdout escaped:
+//| 2\r
+//| main\r
+//| index 2 out of bounds for length 219\r
+//# [posix] stdout:
+//| 2
+//| main
+//| index 2 out of bounds for length 219

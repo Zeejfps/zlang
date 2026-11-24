@@ -1,0 +1,59 @@
+// `static name: T` in a capability is storage for the whole program (spec §15, rule
+// 13): zeroed, one however many capabilities include it, and taking no space in them. A
+// function of the declaring namespace uses it as a place, through the capability, one
+// that includes it, or a pointer to either; mutable when the capability is. Its address
+// outlives any local holding the capability.
+
+namespace counter {
+    struct Totals { n: i64, seen: [4]u8, last: ?u32, name: []u8 }
+    capability Count { static totals: Totals, static hits: u64 }
+
+    fn bump { mut c: Count } -> i64 {
+        c.totals.n = c.totals.n + 1
+        c.hits = c.hits + 2
+        c.totals.seen[1] = 7
+        return c.totals.n
+    }
+    fn hits { c: Count } -> u64 { return c.hits }
+    fn through { p: *mut Count } -> i64 {
+        p.totals.n = p.totals.n + 10
+        return p.totals.n
+    }
+    fn place { mut c: Count } -> *mut Totals { return &c.totals }
+    fn kept { c: Count } -> *u64 {
+        let local = c
+        let p = &local
+        return &p.hits
+    }
+    fn named { mut c: Count } -> []u8 {
+        if c.totals.name.len == 0 { c.totals.name = "counter" }
+        return c.totals.name
+    }
+}
+
+capability All { ..counter::Count }
+
+fn main { mut io: Io, mut all: All, mut c: counter::Count } -> i32 {
+    io::println_i64{ &io, n = counter::bump{ &c } }
+    io::println_i64{ &io, n = counter::bump{ c = &all } }
+    io::println_u64{ &io, n = counter::hits{ c } }
+    io::println_i64{ &io, n = counter::through{ p = &c } }
+    let t = counter::place{ &c }
+    t.n = 100
+    io::println_i64{ &io, n = counter::bump{ &c } }
+    io::println_u64{ &io, n = @as(u64, t.seen[1]) + counter::kept{ c }.* }
+    io::println_bool{ &io, n = t.last == null }
+    io::print{ &io, s = utf8::String{ bytes = counter::named{ &c } } }
+    io::println_u64{ &io, n = @size_of(counter::Count) + @size_of(All) }
+    return 0
+}
+
+//# stdout:
+//| 1
+//| 2
+//| 4
+//| 12
+//| 101
+//| 13
+//| true
+//| counter0

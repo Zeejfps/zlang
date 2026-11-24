@@ -1,0 +1,5 @@
+fn f { c: bool } -> i32 {
+    let x = if c { 1 } else { true }  //~ error at 13: branches have different types: {integer} and bool
+    return x
+}
+fn main {} {}

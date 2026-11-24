@@ -1,0 +1,19 @@
+struct Node { next: ?*Node, v: i32 }
+fn sum { n: *Node } -> i32 {
+    let mut total = n.v
+    let mut p: ?*Node = n.next
+    while true {
+        let q = p
+        if q == null { break }
+        total = total + q.v
+        p = q.next
+    }
+    return total
+}
+fn main {} {
+    let c = Node{ next = null, v = 2 }
+    let a = Node{ next = &c, v = 1 }
+    _ = sum{ n = &a }
+}
+
+//# exit: 0

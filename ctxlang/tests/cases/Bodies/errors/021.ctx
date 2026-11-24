@@ -1,0 +1,7 @@
+fn f { c: bool } -> i32 {
+    while true {
+        let x = if c { break } else { continue }  //~ error at 17: no branch of this expression produces a value; use a statement instead
+    }
+    return 1
+}
+fn main {} {}

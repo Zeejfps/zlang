@@ -1,0 +1,6 @@
+extern fn puts { s: c::String } -> i32
+fn main {} { _ = puts{ s = "a\0b" } }
+
+//# errors:
+//| nul_in_a_literal.ctx:2:28: error: string literal: c::has_nul{ at = 1 }
+//| nul_in_a_literal.ctx:1:11: error: extern fn `puts` takes no capability: add a capability field for what it touches, or `#pure` if it touches only its arguments and the memory they point to

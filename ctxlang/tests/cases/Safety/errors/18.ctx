@@ -1,0 +1,5 @@
+fn f {} -> *u8 {
+    let a = [1, 2]
+    return @cast(*u8, &a) + 1  //~ error at 5: returned value holds the address of local `a`
+}
+fn main {} {}

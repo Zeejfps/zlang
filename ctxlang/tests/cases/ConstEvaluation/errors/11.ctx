@@ -1,0 +1,4 @@
+fn g {} {}
+fn f {} -> fn{} { return g }
+const A: fn{} = f{}  //~ error at 18: const `A` can't hold a function value: it would point to memory that doesn't outlive compiling
+fn main {} {}

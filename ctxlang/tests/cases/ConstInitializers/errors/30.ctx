@@ -1,0 +1,2 @@
+const A: [3]u8 = [7; 4]  //~ error at 18: expected [3]u8, got [4]u8
+fn main {} {}

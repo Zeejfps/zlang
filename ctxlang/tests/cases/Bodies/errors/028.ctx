@@ -1,0 +1,8 @@
+union U { a, b{ x: i32 } }
+fn f { u: U } {
+    match u {
+        a => {}
+        a | b => {}  //~ error at 9: variant `a` appears in more than one arm
+    }
+}
+fn main {} {}

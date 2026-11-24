@@ -1,0 +1,9 @@
+union U { a, b{ x: i32 } }
+fn f { u: U } {
+    match u {
+        a => {}
+        b => {}
+        else => {}  //~ error at 9: `else` is unreachable: every variant is already listed
+    }
+}
+fn main {} {}

@@ -1,0 +1,6 @@
+
+fn main { mut io: Io } {
+    let x: i32
+    let mut i = 0
+    while i < 3 { x = i; i = i + 1 }  //~ error at 5: `x` may be assigned more than once: it is assigned in a loop that can repeat; declare it with `let mut`
+}

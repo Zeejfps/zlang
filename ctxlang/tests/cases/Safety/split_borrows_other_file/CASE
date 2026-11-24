@@ -1,0 +1,4 @@
+// An access in another file is named with its file.
+//# program: lib/e.ctx main.ctx
+//# errors:
+//| main.ctx:3:6: error: two mut references to `e` in one call: `f` changes `e.list.len` through its field `e` at lib/e.ctx:4:5, and changes `e.list.len` through its field `xs` at lib/e.ctx:5:5; pass one of them, or change `f` to use `e.list.len` through one of them only

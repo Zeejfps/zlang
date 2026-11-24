@@ -1,0 +1,8 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// late declared static: accepted. It only compiles.
+
+fn load {} -> []u8 { let buf: [3]u8 = [1,2,3]; return lookup{ key = buf[..] } }
+fn lookup { key: []u8 } -> []u8 { return "static" }
+fn main {} { _ = load{} }
+
+//# compiles

@@ -1,0 +1,43 @@
+
+type Meters = distinct f64
+type Seconds = distinct f64
+type UserId = distinct u64
+type Small = distinct u8
+type Name = distinct []u8
+struct P { x: i32, y: i32 }
+type Pos = distinct P
+type Flag = distinct bool
+type Id(T) = distinct u32
+
+type Handle = distinct *P
+type Km = distinct Meters
+
+fn first { h: ?Handle } -> i32 {
+    let p = h ifnull { return -1 }
+    return @as(*P, p).y
+}
+
+fn main { mut io: Io } {
+    let n = @as(Name, "bob")
+    io::println{ &io, s = utf8::String{ bytes = @as([]u8, n) } }
+    let p = @as(Pos, P{ x = 1, y = 2 })
+    io::println_i64{ &io, n = @as(P, p).y }
+    let f = @as(Flag, true)
+    io::println_bool{ &io, n = f == f and @as(bool, f) }
+    let q = P{ x = 3, y = 4 }
+    let h = @as(Handle, &q)
+    io::println_i64{ &io, n = first{ h } + first{ h = null } }
+    io::println_bool{ &io, n = h == h }
+    let k = @as(Km, @as(Meters, 2.5))
+    io::println_f64{ &io, n = @as(f64, @as(Meters, k)) }
+    io::println_u64{ &io, n = @size_of(Pos) + @align_of(Pos) + @size_of(?Handle) + @size_of(Name) }
+}
+
+//# stdout:
+//| bob
+//| 2
+//| true
+//| 3
+//| true
+//| 2.5
+//| 36

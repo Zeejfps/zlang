@@ -1,0 +1,3 @@
+fn main {} {
+    for i at k in 0..n {}  //~ error at 11: a range's number is its own index: write `for i in lo..hi`, without the `at`
+}

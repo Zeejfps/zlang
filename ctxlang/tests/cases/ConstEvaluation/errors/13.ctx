@@ -1,0 +1,8 @@
+union Shape { dot, line{ n: usize } }
+extern union Raw { s: Shape, w: [2]u64 }
+fn mk {} -> Shape {
+    let r = Raw{ w = [99, 0] }
+    return r.s
+}
+const S: Shape = mk{}  //~ error at 20: const `S` can't hold a Shape with tag 99: it has no such variant
+fn main {} {}

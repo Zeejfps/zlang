@@ -1,0 +1,4 @@
+fn f {} {
+    let x = null  //~ error at 13: cannot infer the type of `null` here; add a type
+}
+fn main {} {}

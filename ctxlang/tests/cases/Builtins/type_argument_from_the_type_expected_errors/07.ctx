@@ -1,0 +1,1 @@
+fn main {} { let n = @size_of(_) }  //~ error at 31: `_` is a type only as the type argument of @as, @trunc or @cast, where it is the type expected

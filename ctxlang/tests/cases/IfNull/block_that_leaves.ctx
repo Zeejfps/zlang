@@ -1,0 +1,32 @@
+
+fn find { xs: []i32, want: i32 } -> ?usize {
+    let mut i: usize = 0
+    while i < xs.len {
+        if xs[i] == want { return i }
+        i = i + 1
+    }
+    return null
+}
+
+fn index_of { xs: []i32, want: i32 } -> i32 {
+    let i = find{ xs, want } ifnull { return -1 }
+    return @as(i32, i)
+}
+fn main { mut io: Io } {
+    let xs = [3, 5, 7]
+    io::println_i64{ &io, n = index_of{ xs = xs[..], want = 7 } }
+    io::println_i64{ &io, n = index_of{ xs = xs[..], want = 8 } }
+    let ys: [3]?i32 = [1, null, 3]
+    let mut i: usize = 0
+    while i < ys.len {
+        let y = ys[i]
+        i = i + 1
+        io::println_i64{ &io, n = y ifnull { continue } }
+    }
+}
+
+//# stdout:
+//| 2
+//| -1
+//| 1
+//| 3

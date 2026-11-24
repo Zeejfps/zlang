@@ -1,0 +1,6 @@
+// examples/json with a path prints the value there: a key, then an index, then a key.
+//# program: {home}/examples/json/main.ctx {home}/examples/json/parser.ctx {home}/examples/json/printer.ctx {home}/examples/json/value.ctx
+//# args: {dir}/tmp/in.json users.1.name
+//# interp: cannot run
+//# stdout:
+//| "Zoë"

@@ -1,0 +1,44 @@
+// A capability with fields holds C function pointers, which only its namespace's `load`
+// can set; holding one is the permission to call them, through it.
+
+namespace clib {
+    capability Loader
+
+    #c::symbol{ name = "llabs" }
+    #pure
+    extern fn long_abs { n: i64 } -> i64
+    #c::symbol{ name = "strlen" }
+    #pure
+    extern fn str_len { s: c::String } -> usize
+
+    capability Math {
+        abs: extern fn{ n: i64 } -> i64,
+        len: extern fn{ s: c::String } -> usize,
+    }
+
+    fn load { mut loader: Loader } -> ?Math {
+        return Math{ abs = long_abs, len = str_len }
+    }
+}
+
+fn twice { mut m: clib::Math, n: i64 } -> i64 { return m.abs{ n } * 2 }
+fn through { p: *mut clib::Math } -> i64 { return p.abs{ n = -3 } }
+
+fn main { mut io: Io, mut loader: clib::Loader } -> i32 {
+    let some{ value = loaded } = clib::load{ &loader } else { return 1 }
+    let mut m = loaded
+    io::println_i64{ &io, n = m.abs{ n = -12 } }
+    io::println_i64{ &io, n = twice{ &m, n = -5 } }
+    io::println_i64{ &io, n = through{ p = &m } }
+    io::println_u64{ &io, n = m.len{ s = "hello" } }
+    io::println_u64{ &io, n = @size_of(clib::Math) }
+    return 0
+}
+
+//# interp: cannot run
+//# stdout:
+//| 12
+//| 10
+//| 3
+//| 5
+//| 16

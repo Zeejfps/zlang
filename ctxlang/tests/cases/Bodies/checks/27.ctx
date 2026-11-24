@@ -1,0 +1,21 @@
+enum E: u8 { a, b }
+fn main {} {
+    let n: i64 = 300
+    let x = @as(f64, n)
+    let y = @trunc(u8, n)
+    let e = @as(E, 1)
+    let k = @as(u32, e)
+    let w = y +% @as(u8, 250)
+    let v = y -% w
+    let m = y *% v
+    let s = @size_of(i64) + @align_of(u32)
+    let mut arr: [4]u8 = [0; 4]
+    let sl = @slice(&arr[0], 2)
+    sl[0] = 1
+    let addr = @addr(&arr)
+    let bp = @cast(*u8, &arr)
+    _ = addr + s + @as(usize, m) + @as(usize, k) + @as(usize, bp.*)
+    _ = x
+}
+
+//# exit: 0

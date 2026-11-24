@@ -1,0 +1,11 @@
+
+enum Kind: u8 {
+    ident,
+    number,
+    lbrace = 40,
+    rbrace,
+}
+
+enum Sign: i8 { minus = -1, zero, plus }
+fn f {} { let k = Kind::ident{} }  //~ error at 30: `Kind::ident` is an enum value; write it without braces
+fn main {} {}

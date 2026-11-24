@@ -1,0 +1,2 @@
+const A: i8 = -129  //~ error at 15: literal -129 does not fit in i8
+fn main {} {}

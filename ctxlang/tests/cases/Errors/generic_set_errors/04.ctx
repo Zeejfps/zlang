@@ -1,0 +1,6 @@
+error a
+error b
+fn da {} -> error(a)!u64 { return a }
+fn fwd(E: error) { f: &fn{} -> E!u64 } -> E!u64 { return try f{} }
+fn inf(E: error) { f: &fn{} -> E!u64 } -> !u64 { return try f{} }
+fn main {} { match inf{ f = da } { ok => {} a => {} } }  //~ error at 14: a match on an open error set needs `else` or `err`: error of `inf` may gain errors

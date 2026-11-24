@@ -1,0 +1,5 @@
+// The word count example as it is in the tree, without an argument: its usage, and exit code 2.
+//# program: {home}/examples/wordcount.ctx
+//# exit: 2
+//# stderr:
+//| usage: wordcount FILE

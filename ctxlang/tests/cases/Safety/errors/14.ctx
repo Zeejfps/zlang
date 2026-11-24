@@ -1,0 +1,5 @@
+fn f {} -> *i32 {
+    let x = 1
+    return &x  //~ error at 5: returned value holds the address of local `x`
+}
+fn main {} {}

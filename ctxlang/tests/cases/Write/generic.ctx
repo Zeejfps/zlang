@@ -1,0 +1,21 @@
+// A generic writer and sink, used from a generic function: B is Log(S) there.
+
+namespace log {
+    struct Log(S) { b: utf8::Builder(S) }
+    #write
+    fn num(S) { mut l: Log(S), n: i64 } -> ! { return utf8::push_i64{ b = &l.b, n } }
+    #write
+    fn text(S) { mut l: Log(S), s: strlit } -> ! { return utf8::push{ b = &l.b, s = utf8::String{ bytes = s.bytes } } }
+}
+fn report(S) { mut l: log::Log(S), n: i64 } -> ! { return @fmt(&l, "n={};", n) }
+fn main { mut io: Io } {
+    let mut mem: [256]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut l = log::Log{ b = utf8::builder{ realloc = arena::alloc, &heap } }
+    try! report{ &l, n = 4 }
+    try! @fmt(&l, "{}", @as(i64, 5))
+    io::println{ &io, s = utf8::view{ b = l.b } }
+}
+
+//# stdout:
+//| n=4;5

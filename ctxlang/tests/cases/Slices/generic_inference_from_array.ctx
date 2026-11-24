@@ -1,0 +1,9 @@
+
+fn count(T) { xs: []T } -> usize { return xs.len }
+fn main { mut io: Io } {
+    let a = [1.5, 2.5]
+    io::println_u64{ &io, n = count{ xs = &a } }
+}
+
+//# stdout:
+//| 2

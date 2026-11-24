@@ -1,0 +1,24 @@
+// ctxc's parser is std's in a build program, so a library of the program's may have a
+// namespace of the same name: it shadows ctxc's, in the checker and in C. An ordinary
+// program has neither (case 02).
+//
+// The build program prints what its own `parser` and `syntax` give, 7 + 1, then the
+// declarations it found, and generates their count for the executable to print. `ctxc run .`
+// runs both; the `project` step runs the build program through `ctxc graph`, and `{t}` is the
+// executable.
+//# $ ctxc run .
+//# stdout:
+//| 8
+//| file src/main.ctx
+//| fn main @ src/main.ctx:1:1
+//|   mut io: Io
+//| 1
+//# project
+//# stdout:
+//| 8
+//| file src/main.ctx
+//| fn main @ src/main.ctx:1:1
+//|   mut io: Io
+//# $ {t}
+//# stdout:
+//| 1

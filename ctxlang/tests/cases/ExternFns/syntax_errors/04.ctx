@@ -1,0 +1,2 @@
+#5  //~ error at 2: expected a struct name after '#', found '5'
+fn main {} {}

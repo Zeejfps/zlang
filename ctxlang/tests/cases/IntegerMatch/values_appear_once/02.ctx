@@ -1,0 +1,10 @@
+
+fn f { b: u8 } -> i32 {
+    match b {
+'a'..='z' => {}
+'q' => {}  //~ error at 1: 113 is already matched by an earlier pattern
+else => {}
+    }
+    return 0
+}
+fn main {} { _ = f{ b = 1 } }

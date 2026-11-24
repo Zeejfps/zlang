@@ -1,0 +1,7 @@
+
+union Shape { circle{ r: i32 }, square{ side: i32 }, rect{ w: i32, h: i32 }, dot, line }
+
+fn f { s: Shape } -> i32 {
+    match s { circle{ r } | rect{ w = r, h } => { return r } else => { return 0 } }  //~ error at 42: `rect` binds `h`, which `circle` in the same arm does not
+}
+fn main { mut io: Io } { }

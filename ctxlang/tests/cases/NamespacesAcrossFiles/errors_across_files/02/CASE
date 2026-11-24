@@ -1,0 +1,4 @@
+// A namespace's name is taken by a struct of another file: an error at the namespace.
+//# program: a.ctx b.ctx
+//# errors:
+//| b.ctx:1:1: error: `g` is already declared in this scope

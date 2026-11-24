@@ -1,0 +1,5 @@
+fn g { mut a: i32 } {}
+fn f { p: *i32 } {
+    g{ a = p }  //~ error at 12: expected *mut i32, got *i32
+}
+fn main {} {}

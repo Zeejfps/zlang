@@ -1,0 +1,11 @@
+
+enum Kind: u8 {
+    ident,
+    number,
+    lbrace = 40,
+    rbrace,
+}
+
+enum Sign: i8 { minus = -1, zero, plus }
+fn f {} { let k: Kind = 3 }  //~ error at 25: expected Kind, got {integer}
+fn main {} {}

@@ -1,0 +1,5 @@
+error a
+error b
+fn da {} -> error(a)!u64 { return a }
+fn fwd(E: error) { f: &fn{} -> E!u64 } -> E!u64 { return try f{} }
+fn main {} { _ = fwd(u64){ f = da } }  //~ error at 18: type parameter `E` of `fwd` is an error set, `E: error`, not u64 //~ error at 32: expected &fn{} -> !u64 failing with u64, got one failing with error(a): errors join only the result of the function that returns them

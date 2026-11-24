@@ -1,0 +1,5 @@
+struct S { f: i32 }
+fn f { o: ?S } {
+    let y = o.f  //~ error at 14: ?S has no field `f`
+}
+fn main {} {}

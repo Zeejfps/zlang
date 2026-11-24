@@ -1,0 +1,3 @@
+fn main {} {
+    let b = r is a == b  //~ error at 20: comparisons do not chain //~ error at 13: unknown name `r`
+}

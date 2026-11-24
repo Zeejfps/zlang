@@ -1,0 +1,33 @@
+// In any @fmt, to any sink: the parts' writers' errors join the @fmt's set, so this
+// match lists all of them.
+
+struct Point { x: i32, y: i32 }
+struct Empty {}
+struct Line { a: Point, b: Point, tag: Tag }
+type Meters = distinct f32
+enum Tag: u8 { thin, thick = 7 }
+union Shape { none, dot{}, circle{ r: f64, at: Point } }
+
+error lost{ where_: Point, o: ?Point, t: Tag }
+fn go {} -> ! { return lost{ where_ = Point{ x = 3, y = 4 }, o = null, t = Tag::thick } }
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+    let pages = mem::pages{ &mem, size = 4096 } ifnull { return 1 }
+    let mut heap = arena::new{ buf = pages }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    match go{} {
+        ok => {}
+        err{ error } => {
+            match @fmt(&b, "got {}", error) {
+                ok => {}
+                alloc::out_of_memory => { return 2 }
+            }
+            _ = @fmt(&io, "{}\n", error)
+        }
+    }
+    io::println{ &io, s = utf8::view{ b } }
+    return 0
+}
+
+//# stdout:
+//| lost{ where_ = Point{ x = 3, y = 4 }, o = null, t = Tag::thick }
+//| got lost{ where_ = Point{ x = 3, y = 4 }, o = null, t = Tag::thick }

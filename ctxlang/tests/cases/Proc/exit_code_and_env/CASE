@@ -1,0 +1,12 @@
+// proc::run gives the child's exit code, and the child has the environment's entries it
+// was given. The child's output comes after "before": proc::run flushes this program's first.
+// The child is tests/helpers/child.ctx: `env NAME CODE` prints the environment's NAME and
+// ends with CODE.
+//# build child: {home}/tests/helpers/child.ctx
+//# program: main.ctx
+//# args: {child}
+//# interp: cannot run
+//# stdout:
+//| before
+//| bar baz
+//| 7

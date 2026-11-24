@@ -1,0 +1,2 @@
+const A: i32 = 1 + 1.5  //~ error at 18: operands of `+` have incompatible types: {integer} and {float}; convert one with @as
+fn main {} {}

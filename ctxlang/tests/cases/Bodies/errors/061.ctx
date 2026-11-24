@@ -1,0 +1,7 @@
+struct T { n: i32 }
+struct W { t: ?T }
+fn g { t: T } {}
+fn f { w: W } {
+    g{ t = w.t }  //~ error at 13: expected T, got ?T
+}
+fn main {} {}

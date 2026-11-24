@@ -1,0 +1,9 @@
+
+fn f { b: ?u8 } -> i32 {
+    match b {
+1 => {}  //~ error at 1: an integer pattern needs an integer to match, got ?u8
+else => {}
+    }
+    return 0
+}
+fn main {} { _ = f{ b = null } }

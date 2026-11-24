@@ -1,0 +1,22 @@
+// A project of libraries in lib/ and a tool that uses them, in tools/tool: what the driver
+// says of an added directory that isn't there, of one without files, and of two executables
+// of one name.
+//# $ ctxc run tools/tool
+//# exit: 1
+//# stderr:
+//| lib/missing: cannot list
+//# write tools/tool/build.ctx:
+//| fn build { mut b: Build } { build::add_sources{ &b, exe = build::exe{ &b, name = "t", root = "." }, dir = "../../lib/empty" } }
+//# $ ctxc run tools/tool
+//# exit: 1
+//# stderr:
+//| lib/empty: no .ctx files in directory or below
+//# write tools/tool/build.ctx:
+//| fn build { mut b: Build } {
+//|     _ = build::exe{ &b, name = "t", root = "." }
+//|     _ = build::exe{ &b, name = "t", root = "sub" }
+//| }
+//# $ ctxc run tools/tool
+//# exit: 1
+//# stderr:
+//| tools/tool/build.ctx: describes two executables of the same name

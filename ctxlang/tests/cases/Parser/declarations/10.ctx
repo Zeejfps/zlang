@@ -1,0 +1,2 @@
+const N: i32 5  //~ error at 14: expected '=', found '5'
+fn main {} {}

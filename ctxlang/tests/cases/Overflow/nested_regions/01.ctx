@@ -1,0 +1,11 @@
+// A callee's ifoverflow is its own; the fallback isn't covered.
+
+fn inner { a: i32 } -> i32 { return a * a ifoverflow 5 }
+fn main { mut io: Io } {
+    let a: i32 = 100000
+    _ = @fmt(&io, "{} {}\n", inner{ a } * 1000000000 ifoverflow 9, inner{ a } + 1 ifoverflow 9)
+    
+}
+
+//# stdout:
+//| 9 6

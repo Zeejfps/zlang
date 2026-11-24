@@ -1,0 +1,2 @@
+fn make {} -> [2]i32 { return [1, 2] }
+fn main {} { _ = make{}[..] }  //~ error at 22: expression is not a place

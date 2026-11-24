@@ -1,0 +1,6 @@
+fn build { mut b: Build } { build::add_sources{ &b, exe = build::exe{ &b, name = "a", root = "." }, dir = "" } }
+
+//# interp: cannot run
+//# stdout escaped:
+//| exe\t0\ta\t.
+//# panic: program: panic: build: empty directory

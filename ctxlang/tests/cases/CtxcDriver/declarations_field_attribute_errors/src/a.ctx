@@ -1,0 +1,13 @@
+struct Before {
+    #ecs::key
+    a: i32,
+    #5
+    b: i32
+}
+fn broken {
+    #ecs::key b: i32
+} {}
+struct After {
+    #ecs::key
+    c: u8
+}

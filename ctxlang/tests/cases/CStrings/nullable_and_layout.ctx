@@ -1,0 +1,19 @@
+
+const NONE: ?c::String = null
+const SOME: ?c::String = "set"
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = @size_of(?c::String) + @size_of(c::String) }
+    let mut z: ?c::String
+    let s = SOME
+    io::println_bool{ &io, n = z == null and NONE == null and s != null }
+    if s != null { io::println_u64{ &io, n = c::len{ s } } }
+    z = "now"
+    let some{ value = v } = z else { return }
+    io::println_u64{ &io, n = c::len{ s = v } }
+}
+
+//# stdout:
+//| 16
+//| true
+//| 3
+//| 3

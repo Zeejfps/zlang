@@ -1,0 +1,2 @@
+fn f { x: ??u32 } -> bool { return x == x }  //~ error at 38: ??u32 has no `==`: it is an optional of an optional, which compares only with `null`
+fn main {} { }

@@ -1,0 +1,9 @@
+
+fn even { n: i32 } -> bool { return n % 2 == 0 }
+fn main { mut io: Io } {
+    let a = 3
+    if even{ n = if a > 2 { 4 } else { 5 } } { io::println_i64{ &io, n = 1 } }
+}
+
+//# stdout:
+//| 1

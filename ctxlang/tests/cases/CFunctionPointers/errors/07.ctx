@@ -1,0 +1,6 @@
+extern fn labs { n: i64 } -> i64
+fn main {} { let f: extern fn{ mut n: i64 } -> i64 = labs }
+
+//# errors:
+//| 07.ctx:2:54: error: expected extern fn{ mut n: i64 } -> i64, got extern fn{ n: i64 } -> i64
+//| 07.ctx:1:11: error: extern fn `labs` takes no capability: add a capability field for what it touches, or `#pure` if it touches only its arguments and the memory they point to

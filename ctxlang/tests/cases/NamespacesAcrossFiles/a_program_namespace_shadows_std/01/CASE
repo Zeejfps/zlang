@@ -1,0 +1,4 @@
+// A program's `list` is its own, in however many files: it doesn't join std's.
+//# program: a.ctx b.ctx
+//# stdout:
+//| 5

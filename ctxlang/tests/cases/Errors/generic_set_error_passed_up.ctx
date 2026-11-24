@@ -1,0 +1,22 @@
+// An error of a generic set, bound by a match, goes back up into E.
+
+error a
+error b{ n: u64 }
+fn da {} -> error(a)!u64 { return a }
+fn db {} -> error(b)!u64 { return b{ n = 7 } }
+// catch E's error and pass it up into E
+fn pass(E: error) { f: &fn{} -> E!u64 } -> E!u64 {
+    match f{} {
+        ok{ value } => { return value }
+        err{ error } => { return error }
+    }
+}
+fn main { mut io: Io } {
+    match pass{ f = db } {
+        ok => {}
+        b{ n } => { io::println_u64{ &io, n } }
+    }
+}
+
+//# stdout:
+//| 7

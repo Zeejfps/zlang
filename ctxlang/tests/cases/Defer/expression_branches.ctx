@@ -1,0 +1,19 @@
+
+fn say { mut io: Io, n: i64 } { io::println_i64{ &io, n } }
+fn branch { mut io: Io, o: ?i64 } -> i64 {
+    let v = match o {
+        null => { defer say{ &io, n = -1 }; return 0 }
+        some{ value } => { defer say{ &io, n = -2 }; value * 2 }
+    }
+    return v
+}
+fn main { mut io: Io } {
+    say{ &io, n = branch{ &io, o = null } }
+    say{ &io, n = branch{ &io, o = 21 } }
+}
+
+//# stdout:
+//| -1
+//| 0
+//| -2
+//| 42

@@ -1,0 +1,8 @@
+
+namespace g {
+    capability O { static n: i32 }
+    fn a { mut o: O } -> i32 { o.n = o.n + 1; return o.n }
+    fn b { p: *O } -> i32 { return p.n }
+}
+capability X { ..g::O }
+fn main { mut o: g::O, mut x: X } -> i32 { return g::a{ &o } + g::b{ p = &o } + g::a{ o = &x } }

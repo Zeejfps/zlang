@@ -1,0 +1,4 @@
+// A root that isn't there: ctxc's error, without a position.
+//# project
+//# errors:
+//| nothing: cannot list

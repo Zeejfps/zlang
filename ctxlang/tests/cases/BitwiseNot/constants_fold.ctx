@@ -1,0 +1,10 @@
+// Folded while compiling (§14), at the type's width.
+
+const MASK: u32 = ~1
+const LOW: i8 = ~127
+const ALL: u16 = ~0
+const SHIFTED: u8 = ~(1 << 7)
+fn main { mut io: Io } { _ = @fmt(&io, "{} {} {} {}\n", MASK, LOW, ALL, SHIFTED) }
+
+//# stdout:
+//| 4294967294 -128 65535 127

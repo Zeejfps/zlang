@@ -1,0 +1,4 @@
+// A call that returns nothing still has nothing to discard.
+
+fn nothing {} {}
+fn main {} { _ = nothing{} }  //~ error at 25: nothing to discard: this returns no value

@@ -1,0 +1,7 @@
+fn f { p: *i32 } -> *i32 {
+    let q = p
+    return q
+}
+fn main {} {}
+
+//# exit: 0

@@ -1,0 +1,5 @@
+#panic
+fn a {} {}
+#panic  //~ error at 1: a second `panic` fn: `a` is the program's already
+fn b {} {}
+fn main {} {}

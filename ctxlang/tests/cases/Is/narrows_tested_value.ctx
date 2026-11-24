@@ -1,0 +1,34 @@
+// In the `if`, after `and`, and after a leaving `if not (x is P)`, x: ?Ref is a Ref.
+
+union Ref { local{ var: i32 }, constant{ value: i64 }, variant, enumval }
+enum Color: u8 { red, green, blue }
+fn find { n: i32 } -> ?Ref {
+    if n == 0 { return null }
+    if n == 1 { return Ref::local{ var = 7 } }
+    if n == 2 { return Ref::constant{ value = 9 } }
+    return Ref::variant
+}
+
+fn var_of { r: Ref } -> i32 { return if r is local{ var } { var } else { 0 } }
+fn after_leaving { r: ?Ref } -> i32 {
+    if not (r is local) { return -1 }
+    return var_of{ r }
+}
+fn main { mut io: Io } {
+    let mut i = 0
+    while i < 4 {
+        let r = find{ n = i }
+        if r is local{ var } { io::println_i64{ &io, n = var_of{ r } + var } }
+        if r is local | constant and var_of{ r } == 0 { io::println{ &io, s = "constant" } }
+        io::println_i64{ &io, n = after_leaving{ r } }
+        i = i + 1
+    }
+}
+
+//# stdout:
+//| -1
+//| 14
+//| 7
+//| constant
+//| -1
+//| -1

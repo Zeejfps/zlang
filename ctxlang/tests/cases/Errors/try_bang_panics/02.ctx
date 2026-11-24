@@ -1,0 +1,2 @@
+fn main {} { let n: i64 = 1
+    let m = try! n }  //~ error at 18: `try!` needs a `!T` value, got i64

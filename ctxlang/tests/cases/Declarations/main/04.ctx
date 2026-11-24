@@ -1,0 +1,2 @@
+fn f {} {}
+fn main {} -> i64 { return 0 }  //~ error at 1: `main` can only return i32 (the exit code), `!` or `!i32`, not i64

@@ -1,0 +1,13 @@
+// Writing to a child's input after it closed it fails with broken_pipe. On Linux and
+// macOS the write also raises SIGPIPE, which this program ignores itself: std leaves
+// that to the program.
+// The child is tests/helpers/child.ctx, as `close_input`: it closes its standard input, prints
+// `closed`, and sleeps for a minute.
+//# build child: {home}/tests/helpers/child.ctx
+//# build program: main.ctx
+//# $ {program} {child}
+//# timeout: 30
+//# exit: 0
+//# stdout:
+//| broken pipe
+//| 137

@@ -1,0 +1,21 @@
+// A function that takes a field read-only where the type it converts to has it `mut`
+// reads it through the pointer (§5), bound with capabilities or not.
+
+fn go { run: &fn{ mut n: u32 } } {
+    let mut k: u32 = 4
+    run{ n = &k }
+    k = 9
+    run{ n = &k }
+}
+
+fn show { mut io: Io, n: u32 } { io::println_u64{ &io, n = @as(u64, n) } }
+fn ignore { n: u32 } {}
+
+fn main { mut io: Io } {
+    go{ run = show{ &io, _ } }
+    go{ run = ignore }
+}
+
+//# stdout:
+//| 4
+//| 9

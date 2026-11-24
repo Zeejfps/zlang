@@ -1,0 +1,4 @@
+struct S {}
+#write
+fn w(T) { mut s: S, v: i32 } {}  //~ error at 6: a `write` fn's type parameter `T` must appear in its fields
+fn main {} {}

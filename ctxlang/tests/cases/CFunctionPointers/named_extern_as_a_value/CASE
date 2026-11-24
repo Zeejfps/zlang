@@ -1,0 +1,15 @@
+// `extern fn{...} -> R`, a C function pointer (spec §12, §18), over a small C library
+// (lib/op.c as libctxtest.a): a named extern fn is a value of the type, nullable too.
+//# needs: ar
+//# $ cc -c {dir}/lib/op.c -o {dir}/lib/op.o
+//# exit: 0
+//# $ ar rcs {dir}/lib/libctxtest.a {dir}/lib/op.o
+//# exit: 0
+//# project
+//# $ {cfn}
+//# exit: 0
+//# stdout:
+//| 6
+//| -3
+//| -2
+//| 0

@@ -1,0 +1,4 @@
+extern union U { a: i32, b: f32 }
+fn f { mut x: i32, mut y: f32 } { x = 1; y = 2.0 }
+fn main {} { let mut u = U{ a = 1 }
+    f{ x = &u.a, y = &u.b } }  //~ error at 6: two mut references to `u.a` in one call: `f` changes `u.a` through its field `x` at 2:35, and changes `u.b` through its field `y` at 2:42; pass one of them, or change `f` to use `u.a` through one of them only

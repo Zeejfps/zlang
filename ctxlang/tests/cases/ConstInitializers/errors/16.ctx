@@ -1,0 +1,3 @@
+struct S { a: i32 }
+const A: S = S  //~ error at 14: `S` is a type, not a value
+fn main {} {}

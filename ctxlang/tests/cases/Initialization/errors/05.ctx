@@ -1,0 +1,5 @@
+fn f {} {
+    let g: fn{}
+    g{}  //~ error at 5: `g` may be read before it is assigned
+}
+fn main {} {}

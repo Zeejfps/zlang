@@ -1,0 +1,15 @@
+
+struct S { limit: ?i32 }
+fn count { s: S } -> i32 {
+    let mut n = 0
+    while s.limit != null and n < s.limit { n = n + 1 }
+    return n
+}
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = count{ s = S{ limit = 4 } } }
+    io::println_i64{ &io, n = count{ s = S{ limit = null } } }
+}
+
+//# stdout:
+//| 4
+//| 0

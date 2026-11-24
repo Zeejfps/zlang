@@ -1,0 +1,3 @@
+capability L
+capability X { f: extern fn{}, ..L }  //~ error at 32: capability `X` can't include `L`: it has no fields
+fn main {} {}

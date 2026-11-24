@@ -1,0 +1,4 @@
+struct Before { a: gen::NotYet }
+fn broken { x: i32 } -> {}
+struct After { b: u8 }
+const C: i32 = = 1

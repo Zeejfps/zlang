@@ -1,0 +1,3 @@
+
+fn f { xs: []mut i32 } { }
+fn main { mut io: Io } { let a: [2]i32 = [1, 2]; f{ xs = &a } }  //~ error at 58: expected []mut i32, got *[2]i32

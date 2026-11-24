@@ -1,0 +1,20 @@
+// On Linux spawn forks, and the child says exec failed through a pipe: spawn fails with
+// not_found, not a child that exits with 127. Its stdout pipe is closed again.
+
+fn main { mut io: Io, mut proc: Proc, args: Args } -> i32 {
+    let mut mem: [65536]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
+    let mut env = list::new([]u8){ realloc = arena::alloc, &heap }
+
+    let cmd: [1][]u8 = ["ctx-no-such-program-anywhere"]
+    match proc::spawn{ &proc, argv = cmd[..], options = proc::Options{ stdout = proc::Stdio::pipe, group = true, .. } } {
+        ok              => { return 1 }
+        proc::not_found => { return 0 }
+        else            => { return 2 }
+    }
+
+}
+
+//# interp: cannot run
+//# exit: 0

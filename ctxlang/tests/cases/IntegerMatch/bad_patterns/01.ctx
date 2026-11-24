@@ -1,0 +1,9 @@
+
+fn f { b: u8 } -> i32 {
+    match b {
+5..=1 => {}  //~ error at 1: range 5..=1 is empty
+else => {}
+    }
+    return 0
+}
+fn main {} { _ = f{ b = 1 } }

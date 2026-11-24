@@ -1,0 +1,6 @@
+// C's offsetof: a folded const, so it may be a const's value; an extern union's are 0.
+
+struct Event { kind: u32, time: u64 }
+fn main { mut io: Io } {
+    let n = @offset_of(i32, z)  //~ error at 29: @offset_of needs a struct, got i32
+}

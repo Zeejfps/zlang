@@ -1,0 +1,9 @@
+// §1, rule 4; class KeywordsAsNames has the rest.
+
+fn main { mut io: Io } {
+    let is: ?i32 = 1
+    io::println_bool{ &io, n = is is some }
+}
+
+//# stdout:
+//| true

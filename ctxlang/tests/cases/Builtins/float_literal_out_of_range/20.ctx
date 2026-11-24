@@ -1,0 +1,20 @@
+// §11, Literals, rule 2: a float literal that would round to an infinity in its type is
+// an error, however it takes the type; `@as` gives the infinity.
+
+const TINY: f32 = 1e-60
+const INF: f64 = @as(f32, 1e300)
+fn main { mut io: Io } {
+    let a: f32 = 0.1
+    let b: f32 = 1e-50
+    let c: f32 = 1e-40
+    let d: f32 = 3.4e38
+    let e = 1e-999
+    let f = 1.7e308
+    let g: f64 = @as(f32, -1e300)
+    _ = @fmt(&io, "{} {} {} {} {} {}\n", a, b, c > 0.0, d > 1e38, e, f > 1e307)
+    _ = @fmt(&io, "{} {} {} {}\n", TINY, INF, g, @as(f32, 1e39))
+}
+
+//# stdout:
+//| 0.1 0.0 true true 0.0 true
+//| 0.0 inf -inf inf

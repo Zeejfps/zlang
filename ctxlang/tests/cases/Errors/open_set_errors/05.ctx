@@ -1,0 +1,6 @@
+error a
+error b
+type O = error(a, b, ..)
+fn f {} -> O!u64 { return a }
+fn main {} { let r: error(a, b)!u64 = f{}  //~ error at 40: error(a, b, ..) can't join error(a, b): it is open, and may gain errors a closed set doesn't hold
+    _ = r }

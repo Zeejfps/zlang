@@ -1,0 +1,18 @@
+struct L { len: i32, cap: i32 }
+struct In { a: i32, l: L }
+struct E { n: i32, list: L, arr: [3]i32, sub: In }
+fn push { mut l: L } { l.len = l.len + 1 }
+fn count { l: L } -> i32 { return l.len }
+union U { a{ x: i32 }, b }
+struct W { u: U, k: i32 }
+fn f { mut w: W, mut u: U } {
+    match &u {
+        a{ &x } => { x = w.k }
+        b => {}
+    }
+    w.u = U::b
+}
+fn t { mut w: W } {
+    f{ &w, u = &w.u }  //~ error at 6: two mut references to `w` in one call: `f` changes `w.u` through its field `w` at 13:5, and reads `w.u` through its field `u` at 9:12; pass one of them, or change `f` to use `w.u` through one of them only
+}
+fn main {} {}

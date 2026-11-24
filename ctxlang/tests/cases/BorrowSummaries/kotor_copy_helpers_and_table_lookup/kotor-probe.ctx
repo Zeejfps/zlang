@@ -1,0 +1,14 @@
+
+fn bytes { mut h: heap::Heap } -> ![]mut u8 {
+    let buf: [3]u8 = [1, 2, 3]
+    return try object::copy_bytes{ heap = &h, s = buf[..] }
+}
+fn lower { mut h: heap::Heap } -> ![]mut u8 {
+    let buf: [3]u8 = [65, 66, 67]
+    return try object::copy_lower{ heap = &h, s = buf[..] }
+}
+fn lookup { t: twoda::Table } -> ?[]u8 {
+    let key: [4]u8 = [110, 97, 109, 101]
+    return twoda::get_string{ t, row = 0, column = key[..] }
+}
+fn main {} {}

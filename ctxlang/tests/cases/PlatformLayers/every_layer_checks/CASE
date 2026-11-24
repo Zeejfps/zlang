@@ -1,0 +1,138 @@
+// std's platform layers (std/os/PLATFORM, spec §17).
+// A build checks only its own layer, so each is checked here from any machine, with the
+// C symbols it calls.
+
+// linux
+//# $ ctxc build linux.c {std:linux} -- main.ctx
+//# exit: 0
+// Linux's and macOS's share std/os/posix; the interpreter's is std/os/interp.
+//# list {home}/std/os:
+//| interp
+//| linux
+//| macos
+//| posix
+//| windows
+//# file linux.c has:
+//| CTX_SYMBOL("write")
+//# file linux.c has:
+//| CTX_SYMBOL("read")
+//# file linux.c has:
+//| CTX_SYMBOL("aligned_alloc")
+//# file linux.c has:
+//| CTX_SYMBOL("memset")
+//# file linux.c has:
+//| CTX_SYMBOL("open")
+//# file linux.c has:
+//| CTX_SYMBOL("close")
+//# file linux.c has:
+//| CTX_SYMBOL("opendir")
+//# file linux.c has:
+//| CTX_SYMBOL("readdir")
+//# file linux.c has:
+//| CTX_SYMBOL("rename")
+//# file linux.c has:
+//| CTX_SYMBOL("getcwd")
+//# file linux.c has:
+//| CTX_SYMBOL("waitpid")
+//# file linux.c has:
+//| CTX_SYMBOL("kill")
+//# file linux.c has:
+//| CTX_SYMBOL("fcntl")
+//# file linux.c has:
+//| CTX_SYMBOL("__errno_location")
+//# file linux.c has:
+//| CTX_SYMBOL("fork")
+//# file linux.c has:
+//| CTX_SYMBOL("prctl")
+//# file linux.c has:
+//| CTX_SYMBOL("execve")
+//# file linux.c has:
+//| CTX_SYMBOL("pipe2")
+//# file linux.c has:
+//| CTX_SYMBOL("syscall")
+//# file linux.c has:
+//| CTX_SYMBOL("poll")
+
+// macos
+//# $ ctxc build macos.c {std:macos} -- main.ctx
+//# exit: 0
+//# file macos.c has:
+//| CTX_SYMBOL("write")
+//# file macos.c has:
+//| CTX_SYMBOL("read")
+//# file macos.c has:
+//| CTX_SYMBOL("aligned_alloc")
+//# file macos.c has:
+//| CTX_SYMBOL("memset")
+//# file macos.c has:
+//| CTX_SYMBOL("open")
+//# file macos.c has:
+//| CTX_SYMBOL("close")
+//# file macos.c has:
+//| CTX_SYMBOL("opendir")
+//# file macos.c has:
+//| CTX_SYMBOL("readdir")
+//# file macos.c has:
+//| CTX_SYMBOL("rename")
+//# file macos.c has:
+//| CTX_SYMBOL("getcwd")
+//# file macos.c has:
+//| CTX_SYMBOL("waitpid")
+//# file macos.c has:
+//| CTX_SYMBOL("kill")
+//# file macos.c has:
+//| CTX_SYMBOL("fcntl")
+//# file macos.c has:
+//| CTX_SYMBOL("__error")
+//# file macos.c has:
+//| CTX_SYMBOL("posix_spawnp")
+//# file macos.c has:
+//| CTX_SYMBOL("posix_spawn_file_actions_addinherit_np")
+//# file macos.c has:
+//| CTX_SYMBOL("posix_spawnattr_setpgroup")
+//# file macos.c has:
+//| CTX_SYMBOL("pipe")
+//# file macos.c has:
+//| CTX_SYMBOL("kqueue")
+//# file macos.c has:
+//| CTX_SYMBOL("kevent")
+
+// windows
+//# $ ctxc build windows.c {std:windows} -- main.ctx
+//# exit: 0
+//# file windows.c has:
+//| CTX_SYMBOL("_write")
+//# file windows.c has:
+//| CTX_SYMBOL("_read")
+//# file windows.c has:
+//| CTX_SYMBOL("VirtualAlloc")
+//# file windows.c has:
+//| CTX_SYMBOL("CreateFileW")
+//# file windows.c has:
+//| CTX_SYMBOL("FindFirstFileW")
+//# file windows.c has:
+//| CTX_SYMBOL("MoveFileExW")
+//# file windows.c has:
+//| CTX_SYMBOL("GetCurrentDirectoryW")
+//# file windows.c has:
+//| CTX_SYMBOL("CreateProcessW")
+//# file windows.c has:
+//| CTX_SYMBOL("CreateNamedPipeW")
+//# file windows.c has:
+//| CTX_SYMBOL("UpdateProcThreadAttribute")
+//# file windows.c has:
+//| CTX_SYMBOL("AssignProcessToJobObject")
+//# file windows.c has:
+//| CTX_SYMBOL("TerminateJobObject")
+//# file windows.c has:
+//| CTX_SYMBOL("GetOverlappedResult")
+
+// interp
+//# $ ctxc build interp.c {std:interp} -- main.ctx
+//# exit: 0
+//# file interp.c has:
+//| CTX_SYMBOL("ctx_interp_write")
+//# file interp.c has:
+//| CTX_SYMBOL("ctx_interp_pages")
+//# file interp.c has:
+//| CTX_SYMBOL("ctx_interp_unsupported")

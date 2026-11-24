@@ -1,0 +1,28 @@
+
+fn main { mut io: Io } {
+    let raw = "  Hello, World \n"
+    let s = utf8::trim{ s = utf8::of{ chars = raw } }
+    io::println{ &io, s }
+    io::println_u64{ &io, n = utf8::len{ s } }
+    let hel = "Hello"
+    let rld = "rld"
+    io::println_bool{ &io, n = utf8::starts_with{ s, prefix = utf8::of{ chars = hel } } }
+    io::println_bool{ &io, n = utf8::ends_with{ s, suffix = utf8::of{ chars = rld } } }
+    io::println_bool{ &io, n = utf8::eq{ a = s, b = utf8::of{ chars = hel } } }
+    let comma = utf8::find{ s, c = ',' }
+    if comma != null {
+        io::println{ &io, s = utf8::sub{ s, lo = 0, hi = comma } }
+    }
+    io::put_char{ &io, c = ascii::to_upper{ c = 'q' } }
+    io::put_char{ &io, c = ascii::to_lower{ c = 'Q' } }
+    io::newline{ &io }
+}
+
+//# stdout:
+//| Hello, World
+//| 12
+//| true
+//| true
+//| false
+//| Hello
+//| Qq

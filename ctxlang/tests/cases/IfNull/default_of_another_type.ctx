@@ -1,0 +1,5 @@
+
+fn main {} {
+    let n: ?i32 = null
+    let x = n ifnull true  //~ error at 15: branches have different types: i32 and bool
+}

@@ -1,0 +1,9 @@
+fn w { mut b: utf8::Builder(arena::Arena) } -> ! {}
+
+fn main { mut io: Io } {
+    let mut mem: [4096]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+_ = @fmt(&b, "{}", w{ &b, _ })  //~ error at 5: `b` overlaps a place held by `w{ &b, _ }` //~ error at 21: @fmt has no writer of &fn{} -> ! to utf8::Builder(arena::Arena)
+    io::println{ &io, s = utf8::view{ b } }
+}

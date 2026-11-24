@@ -1,0 +1,14 @@
+// build::optimize's level is the C compiler's -O for the program's units, beside the flags
+// ctxc always gives. logcc is the C compiler, and logs its command lines
+// (tests/helpers/logcc.ctx).
+//# build logcc: {home}/tests/helpers/logcc.ctx
+//# $ ctxc run {dir}
+//# env: CTX_CC={logcc}
+//# env: LOGCC_CC={cc}
+//# env: LOGCC_DIR={dir}/log
+//# stdout:
+//| 42
+// Every command line for the program t, and there are some, has -O2 and -fwrapv, and not -O1.
+//# $ {logcc} --logcc-all lines {dir}/log has "CTX_PROGRAM_NAME=\x22t\x22" / lines {dir}/log has "CTX_PROGRAM_NAME=\x22t\x22" has -O2 has -fwrapv lacks -O1
+//# stdout:
+//| all of {n}

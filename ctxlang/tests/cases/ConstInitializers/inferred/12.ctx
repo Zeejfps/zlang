@@ -1,0 +1,4 @@
+const A: bool = false and 1 / 0 == 1
+fn main {} {}
+
+//# exit: 0

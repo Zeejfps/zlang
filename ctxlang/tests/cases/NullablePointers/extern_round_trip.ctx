@@ -1,0 +1,24 @@
+
+#pure
+extern fn strchr { s: *u8, c: i32 } -> ?*u8
+#pure
+extern fn strtol { s: *u8, end: ?*mut *u8, base: i32 } -> i64
+
+fn main { mut io: Io } {
+    let s: []u8 = "hello\0"
+    let hit = strchr{ s = s.ptr, c = 'l' }
+    if hit != null { io::println_u64{ &io, n = @addr(hit) - @addr(s.ptr) } }
+    io::println_bool{ &io, n = strchr{ s = s.ptr, c = 'z' } == null }
+    let n: []u8 = "42xyz\0"
+    io::println_i64{ &io, n = strtol{ s = n.ptr, end = null, base = 10 } }
+    let mut end: *u8 = n.ptr
+    _ = strtol{ s = n.ptr, end = &end, base = 10 }
+    io::println_u64{ &io, n = @addr(end) - @addr(n.ptr) }
+}
+
+//# interp: cannot run
+//# stdout:
+//| 2
+//| true
+//| 42
+//| 2

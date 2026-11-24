@@ -1,0 +1,8 @@
+extern fn labs { n: i64 } -> i64
+fn main {} { let f: extern fn{ n: i64 } -> i64 = labs
+  _ = f{ m = 1 } }
+
+//# errors:
+//| 03.ctx:3:10: error: `f` has no field `m`
+//| 03.ctx:3:8: error: call to `f` is missing `n`
+//| 03.ctx:1:11: error: extern fn `labs` takes no capability: add a capability field for what it touches, or `#pure` if it touches only its arguments and the memory they point to

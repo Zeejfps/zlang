@@ -1,0 +1,14 @@
+// Each element is checked against the slice's element type, so string literals become
+// utf8::Strings.
+
+fn names {} -> []utf8::String { return ["a", "bb", "ccc"] }
+fn last { xs: []utf8::String } -> utf8::String { return xs[xs.len - 1] }
+fn main { mut io: Io } {
+    io::println{ &io, s = names{}[1] }
+    let s: utf8::String = "dd"
+    io::println{ &io, s = last{ xs = ["x", s] } }
+}
+
+//# stdout:
+//| bb
+//| dd

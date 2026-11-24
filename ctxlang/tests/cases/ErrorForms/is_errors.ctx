@@ -1,0 +1,62 @@
+// Errors listed on a `!T` or an error value, with their payloads; the value is evaluated once.
+
+namespace parse {
+    error empty
+    error bad_digit{ at: usize }
+    error too_big
+}
+
+fn number { s: []u8 } -> !u64 {
+    if s.len == 0 { return parse::empty }
+    let mut n: u64 = 0
+    let mut i: usize = 0
+    while i < s.len {
+        if s[i] < '0' or s[i] > '9' { return parse::bad_digit{ at = i } }
+        if n > 100000 { return parse::too_big }
+        n = n * 10 + @as(u64, s[i] - '0')
+        i = i + 1
+    }
+    return n
+}
+
+fn show { mut io: Io, r: !u64 } {
+    let mut mem: [256]u8 = [0; 256]
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    match r {
+        ok{ value }  => { _ = @fmt(&b, "ok {}", value) }
+        err{ error } => { _ = @fmt(&b, "err {}", error) }
+    }
+    io::println{ &io, s = utf8::view{ b } }
+}
+
+fn act { s: []u8 } -> ! {
+    _ = try number{ s }
+}
+fn get { s: []u8 } -> ?u64 {
+    return number{ s } iferr null
+}
+
+fn count { mut n: i32, s: []u8 } -> !u64 {
+    n = n + 1
+    return number{ s }
+}
+fn main { mut io: Io } {
+    let mut n: i32 = 0
+    if count{ &n, s = "" } is parse::empty { io::println{ &io, s = "empty" } }
+    if count{ &n, s = "1q" } is parse::bad_digit{ at } { _ = @fmt(&io, "bad at {}\n", at) }
+    if count{ &n, s = "5" } is parse::empty | parse::too_big { io::println{ &io, s = "never" } }
+    let r = number{ s = "123456789" }
+    if r is err{ error } {
+        if error is parse::too_big | parse::empty { io::println{ &io, s = "too big or empty" } }
+        if not (error is parse::bad_digit) { io::println{ &io, s = "not a digit error" } }
+    }
+    _ = @fmt(&io, "{}\n", n)
+}
+
+//# stdout:
+//| empty
+//| bad at 1
+//| too big or empty
+//| not a digit error
+//| 3

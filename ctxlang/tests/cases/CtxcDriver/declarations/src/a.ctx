@@ -1,0 +1,12 @@
+// game's components
+namespace game {
+    #ecs::component
+    struct Pos(T) { x: T, /* across */ y: list::List( T,
+        T ), n: u8 = 2 +   /* three */ 1 }
+
+    namespace world {
+        #ecs::system{ every = 2, name = "mo\"ve", on = true, key = 'k', neg = -3, off = OFF + 1, }
+        #inline
+        fn step(T, E: error) { mut pos: Pos(T), vel: *mut [4 * 2]f32, f: &fn{ a: i32, mut b: E!u8 } -> ?*u8 } -> E!i32 { return 0 }
+    }
+}

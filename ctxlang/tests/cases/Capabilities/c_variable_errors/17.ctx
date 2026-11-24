@@ -1,0 +1,5 @@
+capability O {
+    #c::callback  //~ error at 5: `c::callback` applies only to a fn
+    extern a: i32
+}
+fn main {} {}

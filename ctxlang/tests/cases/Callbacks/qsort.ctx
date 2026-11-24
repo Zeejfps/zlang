@@ -1,0 +1,25 @@
+
+#pure
+extern fn qsort { base: *mut u8, n: usize, size: usize, cmp: extern fn{ a: *u8, b: *u8 } -> i32 }
+
+#c::callback
+fn descending { a: *u8, b: *u8 } -> i32 {
+    let x = @cast(*i32, a).*
+    let y = @cast(*i32, b).*
+    return if x < y { 1 } else if x > y { -1 } else { 0 }
+}
+
+fn main { mut io: Io } {
+    let mut xs: [5]i32 = [3, 1, 4, 1, 5]
+    qsort{ base = @cast(*mut u8, &xs), n = 5, size = 4, cmp = descending }
+    let mut i: usize = 0
+    while i < 5 { io::println_i64{ &io, n = xs[i] }; i = i + 1 }
+}
+
+//# interp: cannot run
+//# stdout:
+//| 5
+//| 4
+//| 3
+//| 1
+//| 1

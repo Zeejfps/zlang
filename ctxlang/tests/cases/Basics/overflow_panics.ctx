@@ -1,0 +1,5 @@
+
+fn main { mut io: Io } {
+    let mut x: u8 = 250
+    while true { x = x + 1 }  //~ panic at 24: integer overflow
+}

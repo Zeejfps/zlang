@@ -1,0 +1,1 @@
+fn main {} { while true { break nope } }  //~ error at 27: no enclosing loop is labeled `nope`

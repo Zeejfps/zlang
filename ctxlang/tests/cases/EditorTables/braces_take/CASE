@@ -1,0 +1,66 @@
+// What the checker records for an editor (PLAN.md 5), as `ctxc decls` prints it.
+// The fields each braces take: a call's (a generic one's with its type arguments
+// inferred, a function value's), a struct's, a variant's and an error's. Braces whose
+// callee doesn't resolve take nothing the checker knows.
+//# build text: {home}/tests/helpers/text.ctx
+
+// `ctxc decls` prints std's declarations too, thousands of lines that change with std, so the
+// output isn't stated whole: what it prints of the program's fns is this,
+// each `braced` with what it takes,
+//# $ ctxc decls {std:abs} -- main.ctx
+//# stdout has:
+//|
+//| fn add { a: i32, mut b: i32 } -> i32
+//|   assign
+//|     path i32
+//|     binary + i32
+//|       path i32
+//|       path i32
+//|   return
+//|     path i32
+//| fn pick(T) { a: T, b: T } -> T
+//|   return
+//|     path T
+//| fn fails {} -> !i32
+//|   return
+//|     braced bad takes{ code: i32 }
+//|       int i32
+//| fn main {}
+//|   let p: P
+//|     braced P takes{ x: i32, y: i32 }
+//|       int i32
+//|   let s: Shape
+//|     braced Shape takes{ r: i32 }
+//|       field x i32
+//|         path P
+//|   let mut n: i32
+//|     int i32
+//|   let k: i32
+//|     braced i32 takes{ a: i32, mut b: i32 }
+//|       int i32
+//|       addr *mut i32
+//|         path i32
+//|   let q: P
+//|     braced P takes{ a: P, b: P }
+//|       path P
+//|       braced P takes{ x: i32, y: i32 }
+//|         int i32
+//|         int i32
+//|   let f: fn{ v: i32 } -> i32
+//|     addr *mut {error}
+//|       ? {error}
+//|   let w: i32
+//|     braced i32 takes{ v: i32 }
+//|       int i32
+//|   let z: {error}
+//|     braced {error}
+//|       int none
+//| main
+//|
+
+// and from `fn add` to the output's end no other line says `braced`.
+//# $ {text} to out.txt {ctxc} decls {std:abs} -- main.ctx
+//# exit: 0
+//# $ {text} count out.txt within "\nfn add " "" braced
+//# stdout:
+//| 8

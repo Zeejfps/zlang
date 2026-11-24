@@ -1,0 +1,33 @@
+
+enum Access: u8 { field, method }
+fn main { mut io: Io } {
+    let w: ?u64 = 300
+    let small: u16 = 300
+    io::println_bool{ &io, n = w == small }
+    let k: ?Access = Access::method
+    io::println_bool{ &io, n = k == Access::method }
+    io::println_bool{ &io, n = k == Access::field }
+    let f: ?bool = false
+    io::println_bool{ &io, n = f == false }
+    let r: ?f64 = 1.5
+    io::println_bool{ &io, n = r == 1.5 }
+    let a: i32 = 1
+    let b: i32 = 1
+    let p: ?*i32 = &a
+    let q: ?*i32 = null
+    io::println_bool{ &io, n = p == &a }
+    io::println_bool{ &io, n = p == &b }
+    io::println_bool{ &io, n = q != &a }
+    io::println_bool{ &io, n = p == q }
+}
+
+//# stdout:
+//| true
+//| true
+//| false
+//| true
+//| true
+//| true
+//| false
+//| true
+//| false

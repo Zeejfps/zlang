@@ -1,0 +1,56 @@
+
+fn main { mut io: Io } {
+    let lit = "caf\xc3\xa9 \xe2\x82\xac=\xf0\x9f\x98\x80!"
+    let s = utf8::of{ chars = lit }
+
+    io::println{ &io, s }
+    io::println_u64{ &io, n = utf8::len{ s } }
+    io::println_u64{ &io, n = utf8::count{ s } }
+    io::println_u64{ &io, n = utf8::at{ s, i = 3 } }
+    io::println_bool{ &io, n = utf8::is_boundary{ s, i = 4 } }
+    io::println_bool{ &io, n = utf8::is_boundary{ s, i = 5 } }
+    io::println_bool{ &io, n = utf8::is_boundary{ s, i = 15 } }
+    io::println{ &io, s = utf8::sub{ s, lo = 6, hi = 9 } }
+    let euro = "\xe2\x82\xac"
+    opt{ &io, n = utf8::find_str{ s, needle = utf8::of{ chars = euro } } }
+    opt{ &io, n = utf8::find{ s, c = 128512 } }
+    opt{ &io, n = utf8::find{ s, c = 234 } }
+    let caf = "caf"
+    io::println_bool{ &io, n = utf8::starts_with{ s, prefix = utf8::of{ chars = caf } } }
+    let bang = "\xf0\x9f\x98\x80!"
+    io::println_bool{ &io, n = utf8::ends_with{ s, suffix = utf8::of{ chars = bang } } }
+    let sp = utf8::split_once{ s, c = 8364 }
+    if sp != null {
+        io::println{ &io, s = sp.head }
+        io::println{ &io, s = sp.tail }
+    }
+    let hi = "  hi\t"
+    io::println{ &io, s = utf8::trim{ s = utf8::of{ chars = hi } } }
+    io::eprintln{ &io, s = utf8::sub{ s, lo = 0, hi = 5 } }
+}
+fn opt { mut io: Io, n: ?usize } {
+    match n {
+        null          => { io::println_i64{ &io, n = -1 } }
+        some{ value } => { io::println_u64{ &io, n = value } }
+    }
+}
+
+//# stdout escaped:
+//| café €=😀!
+//| 15
+//| 9
+//| 233
+//| false
+//| true
+//| true
+//| €
+//| 6
+//| 10
+//| -1
+//| true
+//| true
+//| café\x20
+//| =😀!
+//| hi
+//# stderr:
+//| café

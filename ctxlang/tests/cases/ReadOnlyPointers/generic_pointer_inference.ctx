@@ -1,0 +1,9 @@
+
+fn get(T) { p: *T } -> T { return p.* }
+fn main { mut io: Io } {
+    let mut a: i32 = 4
+    io::println_i64{ &io, n = get{ p = &a } }
+}
+
+//# stdout:
+//| 4

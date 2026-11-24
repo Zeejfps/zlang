@@ -1,0 +1,9 @@
+
+fn main {} {
+    let x: ?i32 = 1
+    let some{ value } = x
+}
+
+//# errors:
+//| needs_else.ctx:5:1: error: a `let` with a pattern needs an `else`
+//| needs_else.ctx:4:26: error: the `else` of a `let` pattern must leave: end it with `return`, `break`, `continue` or `@panic()`

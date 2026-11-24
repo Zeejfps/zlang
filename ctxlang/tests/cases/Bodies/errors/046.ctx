@@ -1,0 +1,5 @@
+fn f {} {
+    let x = 1
+    let y = x(i32)  //~ error at 13: `x` is not generic
+}
+fn main {} {}

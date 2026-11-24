@@ -1,0 +1,3 @@
+#test_main
+fn r {} {}  //~ error at 1: a `test_main` fn returns the exit code, an i32
+fn main {} {}

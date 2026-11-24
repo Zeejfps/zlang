@@ -1,0 +1,3 @@
+fn main {} {
+    let m = @round_saturate(u8, 300)  //~ error at 33: @round_saturate rounds a float, and this is an integer, {integer}: write `@as` to convert it, or `@saturate` to clamp it
+}

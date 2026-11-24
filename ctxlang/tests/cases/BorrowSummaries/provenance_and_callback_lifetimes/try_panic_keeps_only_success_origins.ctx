@@ -1,0 +1,9 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// try panic keeps only success origins: accepted. It only compiles.
+
+error bad{ text: []u8 }
+fn fresh { s: []u8 } -> ![]u8 { if s.len == 0 { return bad{ text = s } }; let text: []u8 = "static"; return text }
+fn load {} -> []u8 { let buf: [3]u8 = [1,2,3]; return try! fresh{ s = buf[..] } }
+fn main {} { _ = load{} }
+
+//# compiles

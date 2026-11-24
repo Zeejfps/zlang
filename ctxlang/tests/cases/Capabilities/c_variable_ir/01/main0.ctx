@@ -1,0 +1,7 @@
+
+namespace g {
+    capability O { extern optind: i32 }
+    fn a { mut o: O } -> i32 { return o.optind }
+    fn b { p: *O } -> i32 { return p.optind }
+}
+fn main { mut o: g::O } -> i32 { return g::a{ &o } + g::b{ p = &o } }

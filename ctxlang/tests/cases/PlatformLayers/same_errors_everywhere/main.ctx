@@ -1,0 +1,17 @@
+
+fn main { mut io: Io, mut fs: Fs, mut proc: Proc } -> i32 {
+    match fs::open{ &fs, path = "x", mode = fs::Mode::read } {
+        ok => { return 0 }
+        fs::not_found | fs::permission_denied | fs::is_directory | fs::exists => { return 1 }
+        fs::not_directory | fs::bad_file => { return 2 }
+        fs::other{ code } => { return 3 }
+        else => { return 4 }
+    }
+    let mut child = proc::Child{ id = 0, group = 0, cleanup = 0, stdin = null, stdout = null, stderr = null }
+    match proc::wait{ &proc, &child } {
+        ok => { return 0 }
+        proc::not_found | proc::permission_denied => { return 1 }
+        proc::broken_pipe | proc::other => { return 2 }
+        else => { return 3 }
+    }
+}

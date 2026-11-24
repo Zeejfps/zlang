@@ -1,0 +1,14 @@
+// §11, If and match expressions, rule 9.
+
+struct P { x: i32 }
+fn main { mut io: Io } {
+    let a = P{ x = 1 }
+    let b = P{ x = 2 }
+    io::println_i64{ &io, n = (if a.x > 1 { a } else { b }).x }
+    let o: ?P = a
+    io::println_i64{ &io, n = (match o { some{ value } => { value } null => { b } }).x }
+}
+
+//# stdout:
+//| 2
+//| 1

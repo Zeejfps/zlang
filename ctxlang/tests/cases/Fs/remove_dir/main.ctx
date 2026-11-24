@@ -1,0 +1,19 @@
+
+fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
+    let mut mem: [65536]u8
+    let mut heap = arena::new{ buf = mem[..] }
+
+    let dir = args[0]
+    fs::make_dir{ &fs, path = dir } iferr { return 1 }
+    _ = fs::write_all{ &fs, path = args[1], bytes = "x" } iferr { return 2 }
+    let full = match fs::remove_dir{ &fs, path = dir } { ok => { false } fs::not_empty => { true } else => { false } }
+    io::println_bool{ &io, n = full }
+    fs::remove{ &fs, path = args[1] } iferr { return 3 }
+    io::println_bool{ &io, n = match fs::remove_dir{ &fs, path = dir } { ok => { true } err => { false } } }
+    let gone = match fs::remove_dir{ &fs, path = dir } { ok => { false } fs::not_found => { true } else => { false } }
+    io::println_bool{ &io, n = gone }
+    let file = match fs::remove_dir{ &fs, path = args[2] } { ok => { false } fs::not_directory => { true } else => { false } }
+    io::println_bool{ &io, n = file }
+    return 0
+
+}

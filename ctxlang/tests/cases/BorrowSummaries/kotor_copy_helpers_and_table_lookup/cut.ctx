@@ -1,0 +1,45 @@
+// cut FROM TO NAME...: cuts the fns NAME out of the file FROM, each from its `    fn NAME ` to
+// the next line that is `    }`, and writes them to the file TO inside `namespace object { }`.
+// Prints what it wrote, or what it didn't find (exit code 1).
+
+type Heap = arena::Arena
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    if args.len < 3 { return 64 }
+    let mut heap = arena::new{ buf = mem::reserve{ &mem, size = 268435456 } ifnull { return 70 } }
+    let text = fs::read_all(Heap){ &fs, &heap, realloc = arena::alloc, path = args[0] } iferr {
+        _ = @fmt(&io, "cannot read {}\n", args[0])
+        return 1
+    }
+    let mut out = utf8::builder{ realloc = arena::alloc, &heap }
+    try! @fmt(&out, "namespace object {{\n")
+    for i in 2..args.len {
+        let mut head = utf8::builder{ realloc = arena::alloc, &heap }
+        try! @fmt(&head, "    fn {} ", args[i])
+        let start = find{ text, part = utf8::view{ b = head }.bytes, from = 0 } ifnull {
+            _ = @fmt(&io, "no fn {}\n", args[i])
+            return 1
+        }
+        let close = find{ text, part = "\n    }", from = start } ifnull {
+            _ = @fmt(&io, "fn {} doesn't end\n", args[i])
+            return 1
+        }
+        try! @fmt(&out, "{}\n", text[start..close + 6])
+        _ = @fmt(&io, "fn {}: {} bytes\n", args[i], close + 6 - start)
+    }
+    try! @fmt(&out, "}}")
+    _ = fs::write_all{ &fs, path = args[1], bytes = utf8::view{ b = out }.bytes } iferr {
+        _ = @fmt(&io, "cannot write {}\n", args[1])
+        return 1
+    }
+    return 0
+}
+
+// Where part first is in text at or after from.
+fn find { text: []u8, part: []u8, from: usize } -> ?usize {
+    if part.len > text.len { return null }
+    for at in from..text.len - part.len + 1 {
+        if slice::eq_bytes{ a = text[at..at + part.len], b = part } { return at }
+    }
+    return null
+}

@@ -1,0 +1,2 @@
+fn convert { x: f32 } -> u8 { return @as(u8, x) }  //~ panic at 38: @as: 256.0 is not representable in u8
+fn main {} { _ = convert{ x = 256.0 } }

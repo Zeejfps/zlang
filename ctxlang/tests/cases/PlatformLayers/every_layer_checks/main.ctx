@@ -1,0 +1,24 @@
+
+fn main { mut io: Io, mut mem: Mem, mut fs: Fs, mut proc: Proc } -> i32 {
+    let options = proc::Options{ dir = "d", stdin = proc::Stdio::ignore, stdout = proc::Stdio::pipe, group = true, leftovers = proc::Leftovers::keep, die_with_parent = true, .. }
+    let mut child = proc::spawn{ &proc, argv = ["p"], options } iferr { return 1 }
+    let mut got: [8]u8
+    if let r = child.stdout { _ = proc::read{ &proc, pipe = r, into = got[..] } iferr { 0 } }
+    if let w = child.stdin { _ = proc::write{ &proc, pipe = w, bytes = "x" } iferr { 0 } }
+    _ = proc::wait_for{ &proc, &child, nanoseconds = 1 } iferr { null }
+    proc::kill{ &proc, child } iferr { return 1 }
+    _ = proc::wait{ &proc, &child } iferr { 1 }
+    let mut line: [16]u8
+    _ = io::read_line{ &io, into = line[..] }
+    io::eprintln{ &io, s = "e" }
+    let some{ value = buf } = mem::pages{ &mem, size = 1 } else { return 1 }
+    io::println_u64{ &io, n = buf.len }
+    let mut heap = arena::new{ buf = line[..] }
+    let f = fs::open{ &fs, path = "x", mode = fs::Mode::create } iferr { return 1 }
+    _ = fs::write{ &fs, file = f, bytes = "y" }
+    _ = fs::close{ &fs, file = f }
+    _ = fs::list{ &fs, &heap, realloc = arena::alloc, path = "." }
+    _ = fs::rename{ &fs, from = "x", to = "z" }
+    _ = fs::make_absolute{ &fs, &heap, realloc = arena::alloc, path = "z" }
+    return 0
+}

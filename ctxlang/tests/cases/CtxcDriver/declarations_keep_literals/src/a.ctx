@@ -1,0 +1,9 @@
+const URL: []u8 =
+    \\https://example.com  // not a comment
+    \\  two  spaces
+#doc{ text =
+    \\one // line
+    \\two
+, n = 1 /* gone */ +
+    2, s = "a  //b" }   // gone
+struct Doc {}

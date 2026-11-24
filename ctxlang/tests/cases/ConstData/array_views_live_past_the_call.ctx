@@ -1,0 +1,18 @@
+
+namespace tables {
+    const NUMS: [4]i32 = [10, 20, 30, 40]
+    fn view { lo: usize, hi: usize } -> []i32 { return NUMS[lo..hi] }
+    fn pointer {} -> *i32 { return NUMS[1..].ptr }
+}
+fn save { mut out: []i32 } { out = tables::NUMS[..] }
+fn main { mut io: Io } {
+    let xs = tables::view{ lo = 1, hi = 3 }
+    let mut saved: []i32
+    save{ out = &saved }
+    io::println_i64{ &io, n = xs[0] + (xs.ptr + 1).* + tables::pointer{}.* + saved[3] }
+    io::println_u64{ &io, n = tables::NUMS[..0].len + tables::NUMS[4..].len }
+}
+
+//# stdout:
+//| 110
+//| 0

@@ -1,0 +1,3 @@
+fn main {} {
+    let x = @fmt()  //~ error at 18: wrong number of arguments: @fmt(b, "format", args...) or @fmt("format", args...)
+}

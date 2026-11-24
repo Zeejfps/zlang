@@ -1,0 +1,8 @@
+fn two {} -> i32 { return 2 }
+const A: i32 = @clamp(5, 9, two{})
+fn main {} { _ = A }
+
+// §13: `@clamp(x, lo, hi)`, the bounds widening with the value; a NaN value stays NaN,
+// and bounds out of order panic, or are an error where both are integer literals.
+//# errors:
+//| 04.ctx:2:16: error: const `A` panicked while compiling: @clamp: the low bound is above the high bound, at 2:16

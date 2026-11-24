@@ -1,0 +1,4 @@
+// A static view's array is computed while compiling, as a const's is.
+
+const NAMES: []utf8::String = ["a", "b"]  //~ error at 31: const `NAMES` can't hold a pointer into const storage: const values cannot retain array views
+fn main {} {}

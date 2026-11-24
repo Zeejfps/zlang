@@ -1,0 +1,1 @@
+fn main {} { let x: _ = 1 }  //~ error at 21: `_` is a type only as the type argument of @as, @trunc or @cast, where it is the type expected

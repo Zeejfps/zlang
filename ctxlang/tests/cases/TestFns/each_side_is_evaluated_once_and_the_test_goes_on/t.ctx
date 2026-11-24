@@ -1,0 +1,19 @@
+
+fn next { mut n: i32 } -> i32 {
+    n = n + 1
+    return n
+}
+#test
+fn once { mut t: Test } {
+    let mut n = 0
+    @expect(&t, next{ &n } == 2)
+    @expect(&t, n == 1)
+    let mut a = 0
+    let mut b = 10
+    @expect(&t, next{ n = &a } > next{ n = &b })
+    @expect(&t, a + b == 12)
+    let held = @expect(&t, n == 1)
+    @expect(&t, held)
+    if not @expect(&t, n == 5) { return }
+    @expect(&t, false)
+}

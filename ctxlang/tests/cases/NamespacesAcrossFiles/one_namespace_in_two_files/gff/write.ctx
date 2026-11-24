@@ -1,0 +1,9 @@
+
+// Another file adds to gff, and to gff::inner, and names their items unqualified.
+namespace gff {
+    const LABEL: u32 = 7
+    fn twice { n: i64 } -> i64 { return 2 * n + inner::more{} }
+    fn write { f: Field } -> i64 { return @as(i64, f.label) + f.value }
+    namespace inner { fn more {} -> i64 { return base{} + 1 } }
+}
+namespace gff { fn again {} -> i64 { return 3 } }

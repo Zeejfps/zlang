@@ -1,0 +1,1 @@
+fn main { mut io: Io } { @panic("cache is cold") }  //~ panic at 26: cache is cold

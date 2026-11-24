@@ -1,0 +1,4 @@
+fn f { n: i32 } {
+    let y = n.*  //~ error at 14: `.*` needs a pointer, got i32
+}
+fn main {} {}

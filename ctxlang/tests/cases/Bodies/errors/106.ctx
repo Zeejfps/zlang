@@ -1,0 +1,4 @@
+fn f { n: i32 } {
+    if n == null { return }  //~ error at 10: only an optional can be compared with null, got i32
+}
+fn main {} {}

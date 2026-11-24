@@ -1,0 +1,9 @@
+//# make dir out
+//# build writer: main.ctx
+//# $ {writer} out/a.txt
+//# exit: 0
+//# file out/a.txt:
+//| two
+//# list out:
+//| b.txt
+//# exists out/b.txt

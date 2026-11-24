@@ -1,0 +1,6 @@
+
+fn main { mut io: Io } {
+    let x: i64 = 1
+    let n = -1
+    io::println_i64{ &io, n = x >> n }  //~ panic at 33: shift count -1 out of range for a 64-bit integer
+}

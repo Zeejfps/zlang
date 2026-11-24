@@ -1,0 +1,5 @@
+
+struct S { a: i32 }
+fn f { a: i32 } -> i32 { return a }
+enum E: u8 { true, false }  //~ error at 14: expected a name, found 'true': `true` is a keyword and can't be a name; use another, such as `true_`
+fn main {} {}

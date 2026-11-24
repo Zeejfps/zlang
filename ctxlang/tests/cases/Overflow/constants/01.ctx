@@ -1,0 +1,6 @@
+
+const BIG: i64 = 9223372036854775807 + 1 ifoverflow -1
+fn main { mut io: Io } { _ = @fmt(&io, "{}\n", BIG) }
+
+//# stdout:
+//| -1

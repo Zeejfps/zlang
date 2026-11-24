@@ -1,0 +1,2 @@
+fn main {} {}
+fn f { a: i32 }

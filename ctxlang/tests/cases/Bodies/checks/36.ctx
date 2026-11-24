@@ -1,0 +1,11 @@
+fn g {} -> i32 { return 1 }
+fn main {} {
+    let x = 1
+    if true {
+        let x = true
+        _ = x
+    }
+    _ = g{} + x
+}
+
+//# exit: 0

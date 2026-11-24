@@ -1,0 +1,7 @@
+struct T { n: i32 }
+fn g { t: T } {}
+fn f {} {
+    let mut a: ?T = null
+    if a != null { g{ t = a } }  //~ error at 27: expected T, got ?T: `a` is mutable, so testing it for null doesn't narrow it; unwrap it with `if let v = a { ... }` or `let v = a ifnull { return }`
+}
+fn main {} {}

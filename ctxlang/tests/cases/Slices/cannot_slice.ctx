@@ -1,0 +1,2 @@
+
+fn main { mut io: Io } { let x = 3; let s = x[..] }  //~ error at 46: cannot slice {integer}

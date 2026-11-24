@@ -1,0 +1,13 @@
+
+type Meters = distinct f64
+type Seconds = distinct f64
+type UserId = distinct u64
+type Small = distinct u8
+type Name = distinct []u8
+struct P { x: i32, y: i32 }
+type Pos = distinct P
+type Flag = distinct bool
+type Id(T) = distinct u32
+fn f {} { let n = @as(Name, "bob")
+ let k = n.len }  //~ error at 11: Name has no field `len`: a distinct type has none of its own; convert it with @as([]u8, x)
+fn main {} {}

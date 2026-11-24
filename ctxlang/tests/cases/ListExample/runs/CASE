@@ -1,0 +1,9 @@
+// The list example as it is in the tree: it builds, runs, and prints this.
+//# program: {home}/examples/list.ctx
+//# stdout:
+//| 10
+//| 20
+//| 30
+//| 40
+//| 100
+//| 10

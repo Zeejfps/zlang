@@ -1,0 +1,200 @@
+// The driver checks the graph where names leave it, and rejects one cut short before it
+// writes or removes anything. Each build is run by `ctxc run .` and by `ctxc graph`, for the
+// `project` step. The first generates keep.ctx, which is still there after each bad graph.
+//# $ ctxc run .
+//# stdout:
+//| 5
+//# project
+//# $ {t}
+//# stdout:
+//| 5
+//# exists {work:.}/gen/t/keep.ctx
+
+// cut short
+//# write build.ctx:
+//| fn build { mut fs: Fs, mut proc: Proc } {
+//|     let path = proc::env{ &proc, name = "CTX_BUILD_OUT" } ifnull { return }
+//|     _ = fs::write_all{ &fs, path, bytes = "exe\t0\tt\tsrc" }
+//| }
+//# $ ctxc run .
+//# exit: 1
+//# stderr:
+//| {any}: is not a build graph
+//# project
+//# errors:
+//| {any}: is not a build graph
+//# exists {work:.}/gen/t/keep.ctx
+
+// cut short in a gen record
+//# write build.ctx:
+//| fn build { mut fs: Fs, mut proc: Proc } {
+//|     let path = proc::env{ &proc, name = "CTX_BUILD_OUT" } ifnull { return }
+//|     _ = fs::write_all{ &fs, path, bytes = "exe\t0\tt\tsrc\ngen\t0\tx" }
+//| }
+//# $ ctxc run .
+//# exit: 1
+//# stderr:
+//| {any}: is not a build graph
+//# project
+//# errors:
+//| {any}: is not a build graph
+//# exists {work:.}/gen/t/keep.ctx
+
+// its size past the end
+//# write build.ctx:
+//| fn build { mut fs: Fs, mut proc: Proc } {
+//|     let path = proc::env{ &proc, name = "CTX_BUILD_OUT" } ifnull { return }
+//|     _ = fs::write_all{ &fs, path, bytes = "exe\t0\tt\tsrc\ngen\t0\tx\t99\nab\n" }
+//| }
+//# $ ctxc run .
+//# exit: 1
+//# stderr:
+//| {any}: is not a build graph
+//# project
+//# errors:
+//| {any}: is not a build graph
+//# exists {work:.}/gen/t/keep.ctx
+
+// no line break after its text
+//# write build.ctx:
+//| fn build { mut fs: Fs, mut proc: Proc } {
+//|     let path = proc::env{ &proc, name = "CTX_BUILD_OUT" } ifnull { return }
+//|     _ = fs::write_all{ &fs, path, bytes = "exe\t0\tt\tsrc\ngen\t0\tx\t2\nabX\n" }
+//| }
+//# $ ctxc run .
+//# exit: 1
+//# stderr:
+//| {any}: is not a build graph
+//# project
+//# errors:
+//| {any}: is not a build graph
+//# exists {work:.}/gen/t/keep.ctx
+
+// a negative size
+//# write build.ctx:
+//| fn build { mut fs: Fs, mut proc: Proc } {
+//|     let path = proc::env{ &proc, name = "CTX_BUILD_OUT" } ifnull { return }
+//|     _ = fs::write_all{ &fs, path, bytes = "exe\t0\tt\tsrc\ngen\t0\tx\t-1\n\n" }
+//| }
+//# $ ctxc run .
+//# exit: 1
+//# stderr:
+//| {any}: is not a build graph
+//# project
+//# errors:
+//| {any}: is not a build graph
+//# exists {work:.}/gen/t/keep.ctx
+
+// a path for a name
+//# write build.ctx:
+//| fn build { mut fs: Fs, mut proc: Proc } {
+//|     let path = proc::env{ &proc, name = "CTX_BUILD_OUT" } ifnull { return }
+//|     _ = fs::write_all{ &fs, path, bytes = "exe\t0\tt\tsrc\ngen\t0\t../x\t0\n\n" }
+//| }
+//# $ ctxc run .
+//# exit: 1
+//# stderr:
+//| {any}: is not a build graph
+//# project
+//# errors:
+//| {any}: is not a build graph
+//# exists {work:.}/gen/t/keep.ctx
+
+// build.ctx
+//# write build.ctx:
+//| fn build { mut fs: Fs, mut proc: Proc } {
+//|     let path = proc::env{ &proc, name = "CTX_BUILD_OUT" } ifnull { return }
+//|     _ = fs::write_all{ &fs, path, bytes = "exe\t0\tt\tsrc\ngen\t0\tBuild\t0\n\n" }
+//| }
+//# $ ctxc run .
+//# exit: 1
+//# stderr:
+//| {any}: is not a build graph
+//# project
+//# errors:
+//| {any}: is not a build graph
+//# exists {work:.}/gen/t/keep.ctx
+
+// an executable's path
+//# write build.ctx:
+//| fn build { mut fs: Fs, mut proc: Proc } {
+//|     let path = proc::env{ &proc, name = "CTX_BUILD_OUT" } ifnull { return }
+//|     _ = fs::write_all{ &fs, path, bytes = "exe\t0\t../../victim\tsrc\ngen\t0\tx\t0\n\n" }
+//| }
+//# $ ctxc run .
+//# exit: 1
+//# stderr:
+//| {any}: is not a build graph
+//# project
+//# errors:
+//| {any}: is not a build graph
+//# exists {work:.}/gen/t/keep.ctx
+
+// which Windows calls t
+//# write build.ctx:
+//| fn build { mut fs: Fs, mut proc: Proc } {
+//|     let path = proc::env{ &proc, name = "CTX_BUILD_OUT" } ifnull { return }
+//|     _ = fs::write_all{ &fs, path, bytes = "exe\t0\tt.\tsrc\n" }
+//| }
+//# $ ctxc run .
+//# exit: 1
+//# stderr:
+//| {any}: is not a build graph
+//# project
+//# errors:
+//| {any}: is not a build graph
+//# exists {work:.}/gen/t/keep.ctx
+
+// not ASCII
+//# write build.ctx:
+//| fn build { mut fs: Fs, mut proc: Proc } {
+//|     let path = proc::env{ &proc, name = "CTX_BUILD_OUT" } ifnull { return }
+//|     _ = fs::write_all{ &fs, path, bytes = "exe\t0\tt\xc3\xa9\tsrc\n" }
+//| }
+//# $ ctxc run .
+//# exit: 1
+//# stderr:
+//| {any}: is not a build graph
+//# project
+//# errors:
+//| {any}: is not a build graph
+//# exists {work:.}/gen/t/keep.ctx
+
+// Two files of one name, and on Windows, whose names ignore case, two executables whose
+// names differ only in case.
+//# write build.ctx:
+//| fn build { mut b: Build } {
+//|     let exe = build::exe{ &b, name = "t", root = "src" }
+//|     build::gen_file{ &b, exe, name = "x", text = "" }
+//|     build::gen_file{ &b, exe, name = "y", text = "" }
+//|     build::gen_file{ &b, exe, name = "x", text = "" }
+//| }
+//# $ ctxc run .
+//# exit: 1
+//# stderr:
+//| build.ctx: gives executable t two files named x.ctx
+//# project
+//# errors:
+//| build.ctx: gives executable t two files named x.ctx
+
+//# write build.ctx:
+//| fn build { mut b: Build } {
+//|     _ = build::exe{ &b, name = "t", root = "src" }
+//|     _ = build::exe{ &b, name = "T", root = "plain" }
+//| }
+//# [windows] $ ctxc run .
+//# [windows] exit: 1
+//# [windows] stderr:
+//| build.ctx: describes two executables of the same name
+//# [windows] project
+//# [windows] errors:
+//| build.ctx: describes two executables of the same name
+// Elsewhere they are two executables: `ctxc run .` ends with 0, and the build's first
+// executable prints `plain`.
+//# [posix] $ ctxc run .
+//# [posix] exit: 0
+//# [posix] stdout any
+//# [posix] project
+//# [posix] $ {t}
+//# [posix] stdout:
+//| plain

@@ -1,0 +1,24 @@
+struct Node { v: i32, next: ?*Node }
+struct F { f: fn{} -> i32 }
+struct V { x: f32, y: f32 }
+extern union U { a: u32, b: f32 }
+struct W { u: U }
+struct P { x: i32 }
+struct Q { ps: []*P }
+union Sh { a, b{ p: *u8 } }
+fn one {} -> i32 { return 1 }
+fn fails {} -> ! { return }
+fn index_of(T) { xs: []T, x: T } -> ?usize {
+    for v at i in xs {
+        if v == x { return i }
+    }
+    return null
+}
+fn has(T) { xs: []T, x: T } -> bool { return index_of{ xs, x } != null }
+fn main { mut io: Io, mut mem: Mem } {
+    let pages = mem::pages{ &mem, size = 65536 } ifnull { return }
+    let mut heap = arena::new{ buf = pages }
+    let n = Node{ v = 1, next = null }
+    let ns: [1]Node = [n]
+    let b = io == io  //~ error at 16: Io has no `==`: it is a capability, which has no `==`
+}

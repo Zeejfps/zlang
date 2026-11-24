@@ -1,0 +1,29 @@
+
+fn main { mut io: Io } {
+    let kv = "key=val=ue"
+    let s = utf8::of{ chars = kv }
+    let sp = utf8::split_once{ s, c = '=' }
+    if sp != null {
+        io::println{ &io, s = sp.head }
+        io::println{ &io, s = sp.tail }
+    }
+    io::println_bool{ &io, n = utf8::split_once{ s, c = ';' } == null }
+    let val = "val"
+    let at = utf8::find_str{ s, needle = utf8::of{ chars = val } }
+    if at != null { io::println_u64{ &io, n = at } }
+    let long = "key=val=ue!"
+    io::println_bool{ &io, n = utf8::find_str{ s, needle = utf8::of{ chars = long } } == null }
+    let padded = "  x  "
+    let p = utf8::of{ chars = padded }
+    io::println_u64{ &io, n = utf8::len{ s = utf8::trim_start{ s = p } } }
+    io::println_u64{ &io, n = utf8::len{ s = utf8::trim_end{ s = p } } }
+}
+
+//# stdout:
+//| key
+//| val=ue
+//| true
+//| 4
+//| true
+//| 3
+//| 3

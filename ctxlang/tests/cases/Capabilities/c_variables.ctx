@@ -1,0 +1,51 @@
+// `extern name: T` in a capability is the C variable `name` (spec §15): getopt's here,
+// which every libc has. A function of the namespace that declares it reads it through
+// the capability, or a pointer to one; it takes no space, so a capability with only
+// variables is one `main` receives. One without fields may be included by one that has
+// none either, and converts to it, so another namespace can hold a platform's.
+// `#c::symbol` names a variable's symbol, as an extern fn's, through inclusions too.
+
+namespace getopt {
+    capability Opts {
+        #c::symbol{ name = "opterr" }
+        extern reports: i32,
+        extern optind: i32,
+    }
+    fn errors_on { mut o: Opts } -> bool { return o.reports != 0 }
+    fn index { p: *Opts } -> i32 { return p.optind }
+}
+
+namespace m {
+    capability L
+    #c::symbol{ name = "llabs" }
+    #pure
+    extern fn abs { n: i64 } -> i64
+    capability M { f: extern fn{ n: i64 } -> i64, extern optind: i32 }
+    fn load { mut l: L } -> M { return M{ f = abs } }
+    fn next { mut x: M } -> i64 { return x.f{ n = -10 } + @as(i64, x.optind) }
+}
+
+capability Bare
+capability Mine { ..getopt::Opts, ..Bare }
+
+fn bare { mut b: Bare } -> i32 { return 3 }
+
+fn main { mut io: Io, mut o: getopt::Opts, mut mine: Mine, mut l: m::L } -> i32 {
+    io::println_bool{ &io, n = getopt::errors_on{ &o } }
+    io::println_i64{ &io, n = getopt::index{ p = &o } }
+    io::println_bool{ &io, n = getopt::errors_on{ o = &mine } }
+    io::println_i64{ &io, n = bare{ b = &mine } }
+    let mut x = m::load{ &l }
+    io::println_i64{ &io, n = m::next{ &x } }
+    io::println_u64{ &io, n = @size_of(getopt::Opts) + @size_of(Mine) + @size_of(m::M) }
+    return 0
+}
+
+//# interp: cannot run
+//# stdout:
+//| true
+//| 1
+//| true
+//| 3
+//| 11
+//| 8

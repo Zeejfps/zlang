@@ -1,0 +1,5 @@
+fn main { mut io: Io } {
+    let a: [3]u8 = [1, 2, 3]
+    let s = a[1..]
+    let t = s[..3]  //~ panic at 14: range 0..3 out of bounds for length 2
+}

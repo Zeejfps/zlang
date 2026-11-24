@@ -1,0 +1,14 @@
+// A type of a set's name comes before an error of the same name (§10).
+
+error write
+error c
+fn f {} -> write!u64 { return write }
+fn g {} -> error(c)! { return c }
+fn main { mut io: Io } {
+    match f{} { ok => {} write => { io::println{ &io, s = "write" } } }
+    match g{} { ok => {} c => { io::println{ &io, s = "c" } } }
+}
+
+//# stdout:
+//| write
+//| c

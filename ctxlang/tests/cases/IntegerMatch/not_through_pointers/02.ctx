@@ -1,0 +1,3 @@
+
+union U { a, b }
+fn main {} { let u = U::a; _ = u is 3 }  //~ error at 37: an integer pattern needs an integer to test, got U

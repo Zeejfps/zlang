@@ -1,0 +1,5 @@
+// A directory without a case in it is a failure, not a pass.
+//# $ suite --cases cases
+//# exit: 1
+//# stdout:
+//| cases: 0 run: no case under {dir}/cases

@@ -1,0 +1,6 @@
+
+namespace slice { fn answer {} -> i32 { return 42 } }
+fn main { mut io: Io } { io::println_i64{ &io, n = slice::answer{} } }
+
+//# stdout:
+//| 42

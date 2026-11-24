@@ -1,0 +1,5 @@
+struct W { xs: ?[]i32 }
+fn f { mut w: W } {
+    if w.xs != null { let n = w.xs[0] }  //~ error at 35: cannot index ?[]i32: `w.xs` is mutable, so testing it for null doesn't narrow it; unwrap it with `if let v = w.xs { ... }` or `let v = w.xs ifnull { return }`
+}
+fn main {} {}

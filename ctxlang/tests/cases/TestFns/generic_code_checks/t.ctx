@@ -1,0 +1,25 @@
+
+struct Point { x: i32, y: i32 }
+enum Kind: u8 { byte, char }
+union Shape { none, circle{ r: f64 } }
+error bad{ at: usize, why: Kind }
+
+#write
+fn write_point { mut e: io::Stderr, p: Point } { _ = @fmt(&e, "({},{})", p.x, p.y) }
+
+fn all_are(T) { mut t: Test, xs: []T, want: T } {
+    for x in xs { @expect(&t, x == want) }
+}
+struct Pair(T) { a: T, b: T }
+
+#test
+fn instances { mut t: Test } {
+    let ns: [3]i64 = [1, 2, 1]
+    all_are(i64){ &t, xs = ns[..], want = 1 }
+    let ps: [2]Point = [Point{ x = 1, y = 1 }, Point{ x = 1, y = 2 }]
+    all_are(Point){ &t, xs = ps[..], want = Point{ x = 1, y = 1 } }
+    let ks: [2]Kind = [Kind::char, Kind::byte]
+    all_are(Kind){ &t, xs = ks[..], want = Kind::byte }
+    @expect(&t, Pair(Point){ a = ps[0], b = ps[1] } == Pair(Point){ a = ps[1], b = ps[0] })
+    @expect(&t, Pair(u8){ a = 1, b = 2 } == Pair(u8){ a = 1, b = 3 })
+}

@@ -1,0 +1,6 @@
+error a
+error b
+type O = error(a, b, ..)
+fn f {} -> O!u64 { return a }
+type X = u64(..)  //~ error at 10: `..` follows only the errors of a set, `error(a, b, ..)`
+fn main {} {}

@@ -1,0 +1,5 @@
+fn f {} -> []i32 {
+    let a = [1, 2]
+    return a[..]  //~ error at 5: returned value holds the address of local `a`
+}
+fn main {} {}

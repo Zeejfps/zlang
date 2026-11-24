@@ -1,0 +1,2 @@
+fn f(T, T) {} {}  //~ error at 1: duplicate generic parameter in `f`
+fn main {} {}

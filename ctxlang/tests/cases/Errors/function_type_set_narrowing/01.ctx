@@ -1,0 +1,8 @@
+error a
+error b
+fn d {} -> error(a, b)!u64 { return a }
+fn main {} {
+    let f: fn{} -> error(a, b)!u64 = d
+    let g: fn{} -> error(a)!u64 = f  //~ error at 35: error(a, b) can't join error(a): a declared set holds only its own errors
+    _ = g
+}

@@ -1,0 +1,2 @@
+const A: i32 = 1 << true  //~ error at 18: a shift count must be an integer, got bool
+fn main {} {}

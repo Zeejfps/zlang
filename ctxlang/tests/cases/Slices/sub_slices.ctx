@@ -1,0 +1,22 @@
+
+fn show { mut io: Io, xs: []i32 } {
+    let mut i: usize = 0
+    while i < xs.len { io::print_i64{ &io, n = xs[i] }; i = i + 1 }
+    io::newline{ &io }
+}
+fn main { mut io: Io } {
+    let a = [1, 2, 3, 4, 5]
+    show{ &io, xs = a[1..3] }
+    show{ &io, xs = a[..2] }
+    show{ &io, xs = a[3..] }
+    show{ &io, xs = a[..] }
+    let p = &a
+    show{ &io, xs = p[2..4][1..] }
+}
+
+//# stdout:
+//| 23
+//| 12
+//| 45
+//| 12345
+//| 4

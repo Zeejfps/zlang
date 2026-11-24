@@ -1,0 +1,4 @@
+struct tag { n: i32 = 3 }
+#tag  //~ error at 2: struct `tag` is missing `n`: `..` at the end takes it from its default
+fn f {} {}
+fn main {} {}

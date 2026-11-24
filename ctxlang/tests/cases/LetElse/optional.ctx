@@ -1,0 +1,16 @@
+
+fn main { mut io: Io } {
+    let xs: [3]?i32 = [1, null, 3]
+    let mut i: usize = 0
+    while i < xs.len {
+        let x = xs[i]
+        i = i + 1
+        let some{ value = v } = x else { io::println_i64{ &io, n = 0 }; continue }
+        io::println_i64{ &io, n = v }
+    }
+}
+
+//# stdout:
+//| 1
+//| 0
+//| 3

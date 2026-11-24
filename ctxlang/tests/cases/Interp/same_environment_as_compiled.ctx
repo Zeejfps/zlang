@@ -1,0 +1,14 @@
+// The comparison gives the interpreted program the compiled run's CTX_STACK and
+// CTX_HOME, not ctxc's own: the runner compares this program's output in `ctxc interp` with
+// the compiled program's, so it passes only if both see the same two.
+// CTX_HOME is always set under this runner: the checkout's ctxc, which runs the runner, sets it, and
+// the program inherits it. CTX_STACK is the 16 MiB the runner runs every program with.
+
+fn main { mut io: Io, mut proc: Proc } {
+    io::println{ &io, s = utf8::String{ bytes = proc::env{ &proc, name = "CTX_STACK" } ifnull { "unset" } } }
+    io::println_bool{ &io, n = proc::env{ &proc, name = "CTX_HOME" } == null }
+}
+
+//# stdout:
+//| 16777216
+//| false

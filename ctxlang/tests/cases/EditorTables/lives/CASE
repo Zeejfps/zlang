@@ -1,0 +1,34 @@
+// What the checker records for an editor (PLAN.md 5), as `ctxc decls` prints it.
+// Each local's name is in scope from where it takes effect to the end of its scope: a
+// context field's in the whole body, a let's after its statement, a pattern's binders in
+// their arm or after the let-else, a narrowed view after the `if` that narrows it, and an
+// `is` binder on the right of `and` and in the branch. Bodies checked twice record once.
+//# build text: {home}/tests/helpers/text.ctx
+
+// `ctxc decls` prints std's declarations too, thousands of lines that change with std, so the
+// output isn't stated whole: its `live` lines are these, in a row,
+//# $ ctxc decls {std:abs} -- main.ctx
+//# stdout has:
+//|
+//| live s Shape main.ctx:3:38-13:2
+//| live o ?i32 main.ctx:3:38-13:2
+//| live k i32 main.ctx:4:14-13:2
+//| live extra i32 main.ctx:5:52-13:2
+//| live r i32 main.ctx:7:24-7:48
+//| live side i32 main.ctx:8:27-11:10
+//| live a i32 main.ctx:9:32-11:10
+//| live s Shape main.ctx:15:40-24:2
+//| live o ?i32 main.ctx:15:40-24:2
+//| live o i32 main.ctx:16:30-24:2
+//| live y i32 main.ctx:17:18-24:2
+//| live r i32 main.ctx:18:29-18:34
+//| live r i32 main.ctx:18:35-18:47
+//| live t i32 main.ctx:20:18-22:6
+//|
+
+// and it has no other line that starts with `live `.
+//# $ {text} to out.txt {ctxc} decls {std:abs} -- main.ctx
+//# exit: 0
+//# $ {text} count out.txt "\nlive "
+//# stdout:
+//| 14

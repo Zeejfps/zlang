@@ -1,0 +1,1 @@
+fn main {} { let a = [1, 2]; for x at i in a { i = 5 } }  //~ error at 48: cannot assign to `i`: it is set by its `for` each time round; change a copy of it, a `let mut`

@@ -1,0 +1,4 @@
+fn f { n: i32 } {
+    let a = n else { return }  //~ error at 13: a `let` pattern needs a union or optional value, got i32
+}
+fn main {} {}

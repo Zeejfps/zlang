@@ -1,0 +1,14 @@
+
+fn main { mut io: Io } {
+    let mut a = [10, 20, 30]
+    let s: []mut i32 = &a
+    s[1] = s[1] + 1
+    io::println_i64{ &io, n = a[1] }
+    io::println_u64{ &io, n = s.len }
+    io::println_i64{ &io, n = (s.ptr + 2).* }
+}
+
+//# stdout:
+//| 21
+//| 3
+//| 30

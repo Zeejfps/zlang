@@ -1,0 +1,5 @@
+// A directory added after the call is denied as one added before it.
+//# $ ctxc run .
+//# exit: 1
+//# stderr:
+//| lib/deep.ctx:1:57: error: pointer arithmetic is unchecked, and `build::deny_unchecked` in build.ctx denies it here: index an array or a slice (`s[i]`, which is bounds-checked), or write it in a directory its `except` lists

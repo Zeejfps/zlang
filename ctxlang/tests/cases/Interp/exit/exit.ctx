@@ -1,0 +1,5 @@
+
+fn main { mut io: Io, mut proc: Proc } {
+    io::println{ &io, s = "unflushed" }
+    os::exit{ &proc, code = -3 }
+}

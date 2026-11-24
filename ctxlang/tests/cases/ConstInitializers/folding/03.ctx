@@ -1,0 +1,5 @@
+// A const's value is computed at compile time (§14): what would panic at run time is a
+// compile error at the operation.
+
+const A: [1]u8 = [200 + 100]  //~ error at 23: integer overflow in constant
+fn main {} {}

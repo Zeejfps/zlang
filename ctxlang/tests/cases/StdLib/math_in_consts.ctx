@@ -1,0 +1,83 @@
+// §14, rule 1: the C library's math functions run while compiling, and a const's call
+// gives the bits the program's call gives: every function of std's `math`, for f64 and
+// f32, over zeros, negatives, tiny and huge values, the infinities and NaN.
+
+const XS: [_]f64 = [0.0, -0.0, 1.0, -1.0, 0.5, -2.5, 3.0, 0.1, 1e-300, 1e300, 123456789.125, 1e22, math::INF, -math::INF, math::NAN]
+const N: usize = 15
+
+fn row { x: f64, y: f64 } -> [28]u64 {
+    let vs: [28]f64 = [
+        math::sqrt{ x }, math::cbrt{ x }, math::hypot{ x, y }, math::pow{ x, y }, math::exp{ x }, math::exp2{ x },
+        math::log{ x }, math::log2{ x }, math::log10{ x }, math::sin{ x }, math::cos{ x }, math::tan{ x },
+        math::asin{ x }, math::acos{ x }, math::atan{ x }, math::atan2{ y = x, x = y }, math::sinh{ x }, math::cosh{ x },
+        math::tanh{ x }, math::floor{ x }, math::ceil{ x }, math::round{ x }, math::trunc{ x }, math::fabs{ x },
+        math::fmod{ x, y }, math::fmin{ x, y }, math::fmax{ x, y }, math::copysign{ x, y },
+    ]
+    let mut out: [28]u64
+    for v at i in vs[..] { out[i] = math::f64_to_bits{ x = v } }
+    return out
+}
+
+fn rowf { x: f32, y: f32 } -> [28]u32 {
+    let vs: [28]f32 = [
+        math::sqrtf{ x }, math::cbrtf{ x }, math::hypotf{ x, y }, math::powf{ x, y }, math::expf{ x }, math::exp2f{ x },
+        math::logf{ x }, math::log2f{ x }, math::log10f{ x }, math::sinf{ x }, math::cosf{ x }, math::tanf{ x },
+        math::asinf{ x }, math::acosf{ x }, math::atanf{ x }, math::atan2f{ y = x, x = y }, math::sinhf{ x }, math::coshf{ x },
+        math::tanhf{ x }, math::floorf{ x }, math::ceilf{ x }, math::roundf{ x }, math::truncf{ x }, math::fabsf{ x },
+        math::fmodf{ x, y }, math::fminf{ x, y }, math::fmaxf{ x, y }, math::copysignf{ x, y },
+    ]
+    let mut out: [28]u32
+    for v at i in vs[..] { out[i] = math::f32_to_bits{ x = v } }
+    return out
+}
+
+fn rows {} -> [15][28]u64 {
+    let mut out: [15][28]u64
+    for i in 0..N { out[i] = row{ x = XS[i], y = XS[(i * 7 + 3) % N] } }
+    return out
+}
+
+fn rowsf {} -> [15][28]u32 {
+    let mut out: [15][28]u32
+    for i in 0..N { out[i] = rowf{ x = @as(f32, XS[i]), y = @as(f32, XS[(i * 7 + 3) % N]) } }
+    return out
+}
+
+const ROWS: [15][28]u64 = rows{}
+const ROWSF: [15][28]u32 = rowsf{}
+const ROOT2: f64 = math::sqrt{ x = 2.0 }
+const WINDOW: [4]f32 = window{}
+const NO_ROOT: f64 = math::sqrt{ x = -1.0 }
+
+fn window {} -> [4]f32 {
+    let mut w: [4]f32
+    for i in 0..4 { w[i] = math::floorf{ x = 10.0 * math::sinf{ x = math::PI_F32 * (@as(f32, i) + 0.5) / 8.0 } } }
+    return w
+}
+
+fn minus_one {} -> f64 { return -1.0 }
+
+fn main { mut io: Io } {
+    let now = rows{}
+    let nowf = rowsf{}
+    let mut differ = 0
+    for i in 0..N {
+        for k in 0..28 {
+            if ROWS[i][k] != now[i][k] { differ = differ + 1 }
+            if ROWSF[i][k] != nowf[i][k] { differ = differ + 1 }
+        }
+    }
+    _ = @fmt(&io, "{} of {} differ\n", differ, N * 56)
+    _ = @fmt(&io, "{} {} {} {} {}\n", ROOT2, WINDOW[0], WINDOW[1], WINDOW[2], WINDOW[3])
+    _ = @fmt(&io, "{} {}\n", NO_ROOT, math::f64_to_bits{ x = NO_ROOT } == math::f64_to_bits{ x = math::sqrt{ x = minus_one{} } })
+    // Exact ones, whose values every C library agrees on: floor, ceil, round, trunc and fabs of -2.5.
+    _ = @fmt(&io, "{} {} {} {} {}\n", math::f64_from_bits{ bits = ROWS[5][19] }, math::f64_from_bits{ bits = ROWS[5][20] }, math::f64_from_bits{ bits = ROWS[5][21] }, math::f64_from_bits{ bits = ROWS[5][22] }, math::f64_from_bits{ bits = ROWS[5][23] })
+    _ = @fmt(&io, "{} {} {}\n", math::f64_from_bits{ bits = ROWS[12][0] }, math::f64_from_bits{ bits = ROWS[13][23] }, math::f32_from_bits{ bits = ROWSF[6][0] } == math::sqrtf{ x = 3.0 })
+}
+
+//# stdout:
+//| 0 of 840 differ
+//| 1.4142135623730951 1.0 5.0 8.0 9.0
+//| nan true
+//| -3.0 -2.0 -3.0 -2.0 2.5
+//| inf inf true

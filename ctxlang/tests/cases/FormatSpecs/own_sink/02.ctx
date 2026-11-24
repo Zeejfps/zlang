@@ -1,0 +1,13 @@
+// A sink of the program's own writes a spec's hole with its writers of std's fmt::Int,
+// Uint and Text, while compiling too.
+
+struct Line { n: usize }
+#write
+fn put_text { mut l: Line, s: strlit } { l.n = l.n + s.bytes.len }
+#write
+fn put_i32 { mut l: Line, v: i32 } { l.n = l.n + 1 }
+fn main {} {
+    let mut l: Line
+    let v: i32 = 5
+    _ = @fmt(&l, "{:>8}", v)  //~ error at 27: @fmt has no writer of fmt::Int to Line, which writes `{:>8}`
+}

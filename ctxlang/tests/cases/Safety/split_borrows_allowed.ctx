@@ -1,0 +1,89 @@
+struct L { len: i32, cap: i32 }
+struct In { a: i32, l: L }
+struct E { n: i32, list: L, arr: [3]i32, sub: In }
+fn push { mut l: L } { l.len = l.len + 1 }
+fn count { l: L } -> i32 { return l.len }
+
+// Disjoint fields: e.n through e, e.list through xs.
+fn add { mut e: E, mut xs: L } {
+    e.n = e.n + 1
+    push{ l = &xs }
+}
+// Nested fields: e.sub.a through e, e.sub.l through xs.
+fn nested { mut e: E, mut xs: L } {
+    e.sub.a = e.sub.a + 10
+    xs.cap = xs.cap * 2
+}
+// An array's element against another field.
+fn element { mut e: E, mut x: i32 } {
+    x = x + e.n
+    e.list.cap = 9
+}
+// Through a chain of calls.
+fn inner { mut e: E } { e.n = e.n + 100 }
+fn mid { mut e: E } { inner{ &e } }
+fn chain { mut e: E, mut xs: L } {
+    mid{ &e }
+    push{ l = &xs }
+    push{ l = &xs }
+}
+// Both only read it.
+fn sum { mut a: E, mut b: E } -> i32 { return a.n + b.n }
+// Recursion that keeps them apart.
+fn depth { mut e: E, mut xs: L, k: i32 } {
+    if k == 0 { return }
+    e.n = e.n + 1
+    push{ l = &xs }
+    depth{ &e, &xs, k = k - 1 }
+}
+// A bound function beside a `&` of what it doesn't hold.
+fn step { mut e: E, note: &fn{} } {
+    e.n = e.n + 1000
+    note{}
+}
+// An address of another part given out.
+fn at_n { mut e: E, mut xs: L } -> *mut i32 {
+    push{ l = &xs }
+    return &e.n
+}
+// From a `mut` field of the caller's own.
+fn top { mut e: E } { add{ &e, xs = &e.list } }
+
+fn show { mut io: Io, e: E } {
+    _ = @fmt(&io, "{} {} {} {} {} {} {}\n", e.n, e.list.len, e.list.cap, e.arr[1], e.sub.a, e.sub.l.len, e.sub.l.cap)
+}
+
+fn main { mut io: Io } {
+    let mut e = E{ n = 1, list = L{ len = 0, cap = 4 }, arr = [5, 6, 7], sub = In{ a = 2, l = L{ len = 0, cap = 3 } } }
+    add{ &e, xs = &e.list }
+    show{ &io, e }
+    nested{ &e, xs = &e.sub.l }
+    show{ &io, e }
+    element{ &e, x = &e.arr[1] }
+    show{ &io, e }
+    chain{ &e, xs = &e.list }
+    show{ &io, e }
+    io::println_i64{ &io, n = @as(i64, sum{ a = &e, b = &e }) }
+    depth{ &e, xs = &e.list, k = 3 }
+    show{ &io, e }
+    step{ &e, note = push{ l = &e.list, _ } }
+    show{ &io, e }
+    let p = at_n{ &e, xs = &e.sub.l }
+    p.* = 7
+    show{ &io, e }
+    top{ &e }
+    let bound = add{ &e, xs = &e.sub.l, _ }     // a bind, as a call
+    bound{}
+    show{ &io, e }
+}
+
+//# stdout:
+//| 2 1 4 6 2 0 3
+//| 2 1 4 6 12 0 6
+//| 2 1 9 8 12 0 6
+//| 102 3 9 8 12 0 6
+//| 204
+//| 105 6 9 8 12 0 6
+//| 1105 7 9 8 12 0 6
+//| 7 7 9 8 12 1 6
+//| 9 8 9 8 12 2 6

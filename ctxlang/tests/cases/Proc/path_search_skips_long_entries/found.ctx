@@ -1,0 +1,4 @@
+// The program that main.ctx starts by its name, found through PATH.
+fn main { mut io: Io } {
+    io::println{ &io, s = "found" }
+}

@@ -1,0 +1,18 @@
+namespace game {
+    namespace world { union Shape(T) { circle{ r: T, at: [2]T }, dot, empty{} } }
+    enum Color: u8 { red, green = 1 + /* two */ 2, blue }
+    const N: [2]i32 = [1,   2]   // the comment isn't the value's
+    type Slot(T) = ?[]mut T
+    capability Gl {
+        ..Base,
+        clear: extern fn{ mask: u32 },
+        #c::symbol{ name = "gl_env" }
+        extern env: *u8,
+    }
+    capability Plain
+    error bad{ code: i64 }
+    error plain
+    extern fn puts { s: c::String } -> i32
+    extern union Bits { i: u32, f: f32 }
+}
+fn main {} {}

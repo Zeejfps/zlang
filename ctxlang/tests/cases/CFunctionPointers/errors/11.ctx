@@ -1,0 +1,2 @@
+fn g {} {}
+fn main {} { let f = @cast(*u8, g) }  //~ error at 33: @cast can't take a ctxlang function: only a pointer or an extern fn value

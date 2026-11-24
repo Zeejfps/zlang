@@ -1,0 +1,6 @@
+fn g { mut a: i32, mut b: i32, n: i32 } {}
+fn f {} {
+    let mut x = 1
+    g{ &x }  //~ error at 8: `g` has no field `x`: write `a = &x` or `b = &x` //~ error at 6: call to `g` is missing `a`, `b`, `n`
+}
+fn main {} {}

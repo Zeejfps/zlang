@@ -1,0 +1,4 @@
+fn w { mut b: utf8::Builder(arena::Arena) } -> ! {
+    return @fmt(&b, "a}")  //~ error at 21: the format has a `}` without a `{`; write `}}` for a brace
+}
+fn main {} {}

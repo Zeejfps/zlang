@@ -1,0 +1,9 @@
+fn inc { mut n: i32 } { n = n + 1 }
+fn f {} {
+    let mut n = 0
+    let h = inc{ &n, _ }
+    h{}
+}
+fn main {} {}
+
+//# exit: 0

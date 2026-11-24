@@ -1,0 +1,57 @@
+// A consumer waits on a condition for what a producer task adds. The interpreter can't
+// run a task that waits for another.
+
+struct Queue { lock: mutex::Mutex, ready: condition::Condition, items: [16]u32, count: u32, done: bool }
+
+#task
+fn produce { mut threads: Threads, data: *mut Queue } -> ! {
+    let mut i: u32 = 1
+    while i <= 10 {
+        mutex::lock{ mutex = &data.lock }
+        data.items[@as(usize, data.count)] = i
+        data.count = data.count + 1
+        condition::signal{ condition = &data.ready }
+        mutex::unlock{ mutex = &data.lock }
+        thread::yield_now{ &threads }
+        i = i + 1
+    }
+    mutex::lock{ mutex = &data.lock }
+    data.done = true
+    condition::broadcast{ condition = &data.ready }
+    mutex::unlock{ mutex = &data.lock }
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    // The queue is shared through a pointer, as threads share memory: the task's borrow of `q`
+    // is only of the pointer's origin, and a write through `qp` isn't a write of `q` (§15, Tasks, rule 9).
+    let mut q = Queue{ lock = mutex::make{}, ready = condition::make{}, items = [0; 16], count = 0, done = false }
+    let qp = &q
+    let mut t: task::Task(!)
+    task::start_concurrent{ &threads, task = &t, run = produce{ &threads, data = qp, _ } } iferr { return 1 }
+    let mut total: u32 = 0
+    mutex::lock{ mutex = &qp.lock }
+    while true {
+        while qp.count > 0 {
+            qp.count = qp.count - 1
+            total = total + qp.items[@as(usize, qp.count)]
+        }
+        if qp.done { break }
+        condition::wait{ condition = &qp.ready, mutex = &qp.lock }
+    }
+    mutex::unlock{ mutex = &qp.lock }
+    task::wait{ &threads, task = &t } iferr { return 2 }
+    // nothing signals it now: it gives up
+    mutex::lock{ mutex = &qp.lock }
+    let woke = condition::wait_for{ &threads, condition = &qp.ready, mutex = &qp.lock, nanoseconds = 1000000 }
+    mutex::unlock{ mutex = &qp.lock }
+    condition::free{ condition = &qp.ready }
+    mutex::free{ mutex = &qp.lock }
+    io::println_u64{ &io, n = @as(u64, total) }
+    io::println_bool{ &io, n = woke }
+    return 0
+}
+
+//# interp: cannot run
+//# stdout:
+//| 55
+//| false

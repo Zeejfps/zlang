@@ -1,0 +1,20 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// loop snapshots: accepted, and it runs.
+
+fn read { n: i32 } -> i32 { return n }
+fn main { mut io: Io } {
+    let mut first = read{ n = -1, _ }
+    let mut last = read{ n = -1, _ }
+    let mut i: i32 = 0
+    while i < 3 {
+        let call = read{ n = i, _ }
+        if i == 0 { first = call } else { last = call }
+        i = i + 1
+    }
+    io::println_i64{ &io, n = first{} }
+    io::println_i64{ &io, n = last{} }
+}
+
+//# stdout:
+//| 0
+//| 2

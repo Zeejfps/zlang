@@ -1,0 +1,2 @@
+struct S { a: i32, a: u8 }  //~ error at 20: duplicate field `a`
+fn main {} {}

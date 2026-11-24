@@ -1,0 +1,2 @@
+struct S(T) { a: ?T = null }  //~ error at 23: field `a` can't have a default: its type mentions a generic parameter
+fn main {} {}

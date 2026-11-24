@@ -1,0 +1,33 @@
+// even fails with a, odd with b, and each passes the other's up: both sets are {a, b},
+// so listing a and b is exhaustive.
+
+error a
+error b{ n: i32 }
+fn even { n: i32 } -> !bool {
+    if n < 0 { return a }
+    if n == 0 { return true }
+    return try odd{ n = n - 1 }
+}
+fn odd { n: i32 } -> !bool {
+    if n > 100 { return b{ n } }
+    if n == 0 { return false }
+    return try even{ n = n - 1 }
+}
+fn main { mut io: Io } {
+    let ns = [4, 7, -1, 300]
+    let mut i: usize = 0
+    while i < ns.len {
+        match even{ n = ns[i] } {
+            ok{ value } => { io::println_bool{ &io, n = value } }
+            a           => { io::println{ &io, s = "a" } }
+            b{ n }      => { io::println_i64{ &io, n } }
+        }
+        i = i + 1
+    }
+}
+
+//# stdout:
+//| true
+//| false
+//| a
+//| 299

@@ -1,0 +1,21 @@
+
+struct Named { name: ?c::String, n: i32 }
+type Pick = extern fn{ i: i32 } -> ?c::String
+#pure
+extern fn ctxtest_named { x: Named } -> u64
+#pure
+extern fn ctxtest_echo { s: ?c::String } -> ?c::String
+#pure
+extern fn ctxtest_picker {} -> Pick
+
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = ctxtest_named{ x = Named{ name = "four", n = 2 } } }
+    io::println_u64{ &io, n = ctxtest_named{ x = Named{ name = null, n = 7 } } }
+    io::println_bool{ &io, n = ctxtest_echo{ s = null } == null }
+    let e = ctxtest_echo{ s = "back" }
+    if e != null { io::println{ &io, s = utf8::of{ chars = c::bytes{ s = e } } } }
+    let pick = ctxtest_picker{}
+    let one = pick{ i = 1 }
+    if one != null { io::println_u64{ &io, n = c::len{ s = one } } }
+    io::println_bool{ &io, n = pick{ i = 0 } == null }
+}

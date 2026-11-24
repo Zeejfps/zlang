@@ -1,0 +1,9 @@
+fn w { mut b: utf8::Builder(arena::Arena) } -> ! {}
+
+fn main { mut io: Io } {
+    let mut mem: [4096]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+_ = @fmt(&b, "}")  //~ error at 14: the format has a `}` without a `{`; write `}}` for a brace
+    io::println{ &io, s = utf8::view{ b } }
+}

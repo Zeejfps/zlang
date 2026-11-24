@@ -1,0 +1,17 @@
+// The typed IR (`ctxc ir`) of `e ifoverflow x`: an `ovf` whose flag, a local, is the one each
+// arithmetic operation of e sets; and ctxc's reader and printer give the same text back.
+//# build text: {home}/tests/helpers/text.ctx
+
+//# $ {text} to p.ir {ctxc} ir {std} -- main.ctx
+//# exit: 0
+
+// The flag's number, `{a}`, is the same in the three places.
+//# $ {text} count p.ir "(ovf {n} {a} (arith {n} add (arith {n} mul {any} {a}) {any} {a}) "
+//# stdout:
+//| 1
+
+//# $ {text} to q.ir {ctxc} roundtrip p.ir
+//# exit: 0
+//# $ {text} same p.ir q.ir
+//# stdout:
+//| same

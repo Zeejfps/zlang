@@ -1,0 +1,4 @@
+fn main {} {
+    let mut n: u32 = 0
+    _ = @atomic_load(&n, atomic::Order::release)  //~ error at 26: @atomic_load can't be `release` or `acquire_release`: a load only acquires
+}

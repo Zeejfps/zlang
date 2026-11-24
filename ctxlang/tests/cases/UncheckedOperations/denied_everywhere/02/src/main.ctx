@@ -1,0 +1,4 @@
+fn main { mut io: Io } {
+    let a: [2]u8 = [1, 2]
+    io::println_u64{ &io, n = (&a[0] + 1).* }
+}

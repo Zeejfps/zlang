@@ -1,0 +1,2 @@
+struct S { a: [0 - 1]u8 }  //~ error at 15: array length must not be negative
+fn main {} {}

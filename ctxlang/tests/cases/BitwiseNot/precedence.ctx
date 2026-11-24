@@ -1,0 +1,9 @@
+// A prefix operator, as `-` is: `~x + 1` is `(~x) + 1`, which is -x.
+
+fn main { mut io: Io } {
+    let x: i32 = 9
+    _ = @fmt(&io, "{} {} {}\n", ~x + 1, -~x, ~(x + 1))
+}
+
+//# stdout:
+//| -9 10 -11

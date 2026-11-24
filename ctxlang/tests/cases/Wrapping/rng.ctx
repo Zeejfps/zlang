@@ -1,0 +1,13 @@
+// The C library's rand, whose state wraps.
+
+fn rng { mut state: u32 } -> u32 {
+    state = state *% 214013 +% 2531011
+    return (state >> 16) & 32767
+}
+fn main { mut io: Io } {
+    let mut s: u32 = 1
+    _ = @fmt(&io, "{} {} {}\n", rng{ state = &s }, rng{ state = &s }, rng{ state = &s })
+}
+
+//# stdout:
+//| 41 18467 6334

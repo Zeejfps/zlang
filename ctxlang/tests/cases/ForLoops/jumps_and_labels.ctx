@@ -1,0 +1,39 @@
+
+fn show { mut io: Io, n: i32 } { _ = @fmt(&io, "{} ", n) }
+fn main { mut io: Io } {
+    for i in 0..10 {
+        if i % 2 == 0 { continue }                  // on to the next number
+        if i > 7 { break }
+        _ = @fmt(&io, "{} ", i)
+    }
+    let grid = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+    rows:
+    for row at r in grid {
+        for v in row {
+            if v == 2 { continue rows }
+            if v == 8 { break rows }
+            _ = @fmt(&io, "{}:{} ", r, v)
+        }
+    }
+    outer: for i in 0..3 {
+        let mut j = 0
+        while true {
+            j = j + 1
+            if j > i { continue outer }
+            if i == 2 { break outer }
+        }
+    }
+    for i in 0..3 {
+        defer _ = @fmt(&io, "d{} ", i)              // a defer runs each turn
+        if i == 1 { continue }
+        _ = @fmt(&io, "b{} ", i)
+    }
+    for i in 0..2 {
+        let g = show{ &io, n = i, _ }               // a bind holds that turn's value
+        g{}
+    }
+    _ = @fmt(&io, "\n")
+}
+
+//# stdout escaped:
+//| 1 3 5 7 0:1 1:4 1:5 1:6 2:7 b0 d0 d1 b2 d2 0 1\x20

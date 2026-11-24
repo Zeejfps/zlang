@@ -1,0 +1,19 @@
+
+namespace game {
+    #pure
+    extern fn labs { n: i64 } -> i64
+    extern union Bits { f: f32, u: u32 }
+    capability Lib { extern ctxtest_count: i32 }
+    #c::callback
+    fn on_key { key: i32 } {}
+    fn sum { s: []u8 } -> u64 {
+        let p = s.ptr
+        let q = @cast(*u32, p)
+        let v = @slice(p, 2)
+        let mut cs: c::String = "x"
+        cs.ptr = p
+        let pp = &cs.ptr
+        let made = c::String{ ptr = p }
+        return (p + 1).* + v.len
+    }
+}

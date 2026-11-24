@@ -1,0 +1,5 @@
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "t", root = "." }
+    build::deny_unchecked{ &b, exe, except = ["."] }
+    build::gen_file{ &b, exe, name = "gen", text = "namespace gen { fn third { p: *u8 } -> u64 { return (p + 2).* } }\n" }
+}

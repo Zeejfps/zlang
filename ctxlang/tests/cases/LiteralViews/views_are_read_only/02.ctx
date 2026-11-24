@@ -1,0 +1,1 @@
+fn main {} { let s: [4]u8 = "abc" }  //~ error at 29: expected [4]u8, got [3]u8

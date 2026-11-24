@@ -1,0 +1,1 @@
+namespace deep { fn third { p: *u8 } -> u64 { return (p + 2).* } }

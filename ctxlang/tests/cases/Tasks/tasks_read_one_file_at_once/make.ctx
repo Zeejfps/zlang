@@ -1,0 +1,19 @@
+// Writes the file args[0]: 1 MiB, the byte at i being i * 7 % 251. Prints its size.
+fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
+    let file = fs::open{ &fs, path = args[0], mode = fs::Mode::write } iferr { return 1 }
+    let mut block: [4096]u8
+    let mut at: u64 = 0
+    while at < 1048576 {
+        let mut i: usize = 0
+        while i < block.len {
+            block[i] = @as(u8, (at + @as(u64, i)) * 7 % 251)
+            i = i + 1
+        }
+        let n = fs::write{ &fs, file, bytes = block[..] } iferr { return 2 }
+        if n != block.len { return 3 }
+        at = at + 4096
+    }
+    _ = fs::close{ &fs, file } iferr { return 4 }
+    io::println_u64{ &io, n = fs::size{ &fs, path = args[0] } iferr { return 5 } }
+    return 0
+}

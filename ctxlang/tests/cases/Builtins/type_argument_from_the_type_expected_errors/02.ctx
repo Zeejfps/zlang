@@ -1,0 +1,2 @@
+fn main {} { let big: i64 = 3
+    if @trunc(_, big) == 3 {} }  //~ error at 15: @trunc(_, ...) takes the type expected here, and nothing here expects one: write the type

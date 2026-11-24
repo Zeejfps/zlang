@@ -1,0 +1,25 @@
+
+error bad
+struct P { x: i32, y: i32 }
+struct R { r: !i32 }
+union K { a, b, c }
+fn say { mut io: Io, s: utf8::String } { io::println{ &io, s } }
+fn mk { n: i32 } -> !P { if n < 0 { return bad }; return P{ x = n, y = n * 2 } }
+fn rr { n: i32 } -> R { let r: !i32 = n; return R{ r } }
+
+struct Maker { make: fn{ n: i32 } -> !P }
+fn sum { n: i32 } -> !i32 {
+    let m = Maker{ make = mk }
+    let x = try mk{ n }.x                           // (try mk{ n }).x
+    let y = try! mk{ n }.y + try m.make{ n }.y      // the callee's path is before the call
+    let r = rr{ n }
+    return x + y + try r.r + try (rr{ n }.r)        // no call: the whole of `r.r`
+}
+fn main { mut io: Io } {
+    _ = @fmt(&io, "{} {}\n", sum{ n = 2 } iferr -1, sum{ n = -2 } iferr -1)
+    if try! mk{ n = 1 }.x == 1 { io::println{ &io, s = "cond" } }
+}
+
+//# stdout:
+//| 14 -1
+//| cond

@@ -1,0 +1,10 @@
+namespace m {
+    capability M { f: extern fn{} }
+    extern fn g {}
+    fn load { find: fn{} -> ?extern fn{} } -> M { return M{ f = g } }
+}
+fn main {} {}
+
+//# errors:
+//| 07.ctx:4:58: error: capability `M` can only be made by a function that holds a capability or a bound function: `load` takes neither
+//| 07.ctx:3:15: error: extern fn `g` takes no capability: add a capability field for what it touches, or `#pure` if it touches only its arguments and the memory they point to

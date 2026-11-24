@@ -1,0 +1,5 @@
+// With its own directory excepted, every kind compiles.
+//# $ ctxc run .
+//# exit: 0
+//# stdout:
+//| 9

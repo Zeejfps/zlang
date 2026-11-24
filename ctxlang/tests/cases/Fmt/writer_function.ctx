@@ -1,0 +1,22 @@
+
+struct Date { y: u32, m: u32, d: u32 }
+fn write_iso { mut b: utf8::Builder(arena::Arena), d: Date } -> ! {
+    return @fmt(&b, "{}-{}-{}", utf8::push_uint{ n = d.y, width = 4, zero = true, _ }, two{ n = d.m, _ }, two{ n = d.d, _ })
+}
+fn write_us { mut out: utf8::Builder(arena::Arena), d: Date, sep: u8 } -> ! {
+    return @fmt(&out, "{}{}{}{}{}", two{ n = d.m, _ }, utf8::write_char{ c = sep, _ }, two{ n = d.d, _ }, utf8::write_char{ c = sep, _ }, d.y)
+}
+fn two { mut b: utf8::Builder(arena::Arena), n: u32 } -> ! { return utf8::push_uint{ &b, n, width = 2, zero = true } }
+
+fn main { mut io: Io } {
+    let mut mem: [4096]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+
+    let d = Date{ y = 2026, m = 9, d = 30 }
+    _ = @fmt(&b, "due {}, or {}", write_iso{ d, _ }, write_us{ d, sep = '/', _ })
+    io::println{ &io, s = utf8::view{ b } }
+}
+
+//# stdout:
+//| due 2026-09-30, or 09/30/2026

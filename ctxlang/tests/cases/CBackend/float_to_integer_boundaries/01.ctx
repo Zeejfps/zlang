@@ -1,0 +1,126 @@
+// Every integer width, from both float types. In particular, a negative fraction is
+// valid for unsigned destinations, and the float just below 2^64 still fits in u64.
+
+fn to_i8 { x: f32 } -> i8 { return @as(i8, x) }
+fn to_i16 { x: f32 } -> i16 { return @as(i16, x) }
+fn to_i32 { x: f32 } -> i32 { return @as(i32, x) }
+fn to_i64 { x: f32 } -> i64 { return @as(i64, x) }
+fn to_u8 { x: f32 } -> u8 { return @as(u8, x) }
+fn to_u16 { x: f32 } -> u16 { return @as(u16, x) }
+fn to_u32 { x: f32 } -> u32 { return @as(u32, x) }
+fn to_u64 { x: f32 } -> u64 { return @as(u64, x) }
+fn to_usize { x: f32 } -> usize { return @as(usize, x) }
+fn main { mut io: Io } {
+io::println_i64{ &io, n = to_i8{ x = 0.0 } }
+io::println_i64{ &io, n = to_i8{ x = -0.0 } }
+io::println_i64{ &io, n = to_i8{ x = -0.75 } }
+io::println_i64{ &io, n = to_i8{ x = 3.75 } }
+io::println_i64{ &io, n = to_i8{ x = 127.99999237060547 } }
+io::println_i64{ &io, n = to_i8{ x = -3.75 } }
+io::println_i64{ &io, n = to_i8{ x = -128.0 } }
+io::println_i64{ &io, n = to_i8{ x = -128.75 } }
+io::println_i64{ &io, n = to_i16{ x = 0.0 } }
+io::println_i64{ &io, n = to_i16{ x = -0.0 } }
+io::println_i64{ &io, n = to_i16{ x = -0.75 } }
+io::println_i64{ &io, n = to_i16{ x = 3.75 } }
+io::println_i64{ &io, n = to_i16{ x = 32767.998046875 } }
+io::println_i64{ &io, n = to_i16{ x = -3.75 } }
+io::println_i64{ &io, n = to_i16{ x = -32768.0 } }
+io::println_i64{ &io, n = to_i16{ x = -32768.75 } }
+io::println_i64{ &io, n = to_i32{ x = 0.0 } }
+io::println_i64{ &io, n = to_i32{ x = -0.0 } }
+io::println_i64{ &io, n = to_i32{ x = -0.75 } }
+io::println_i64{ &io, n = to_i32{ x = 3.75 } }
+io::println_i64{ &io, n = to_i32{ x = 2147483520.0 } }
+io::println_i64{ &io, n = to_i32{ x = -3.75 } }
+io::println_i64{ &io, n = to_i32{ x = -2147483648.0 } }
+io::println_i64{ &io, n = to_i64{ x = 0.0 } }
+io::println_i64{ &io, n = to_i64{ x = -0.0 } }
+io::println_i64{ &io, n = to_i64{ x = -0.75 } }
+io::println_i64{ &io, n = to_i64{ x = 3.75 } }
+io::println_i64{ &io, n = to_i64{ x = 9.223371487098962e+18 } }
+io::println_i64{ &io, n = to_i64{ x = -3.75 } }
+io::println_i64{ &io, n = to_i64{ x = -9.223372036854776e+18 } }
+io::println_u64{ &io, n = to_u8{ x = 0.0 } }
+io::println_u64{ &io, n = to_u8{ x = -0.0 } }
+io::println_u64{ &io, n = to_u8{ x = -0.75 } }
+io::println_u64{ &io, n = to_u8{ x = 3.75 } }
+io::println_u64{ &io, n = to_u8{ x = 255.99998474121094 } }
+io::println_u64{ &io, n = to_u16{ x = 0.0 } }
+io::println_u64{ &io, n = to_u16{ x = -0.0 } }
+io::println_u64{ &io, n = to_u16{ x = -0.75 } }
+io::println_u64{ &io, n = to_u16{ x = 3.75 } }
+io::println_u64{ &io, n = to_u16{ x = 65535.99609375 } }
+io::println_u64{ &io, n = to_u32{ x = 0.0 } }
+io::println_u64{ &io, n = to_u32{ x = -0.0 } }
+io::println_u64{ &io, n = to_u32{ x = -0.75 } }
+io::println_u64{ &io, n = to_u32{ x = 3.75 } }
+io::println_u64{ &io, n = to_u32{ x = 4294967040.0 } }
+io::println_u64{ &io, n = to_u64{ x = 0.0 } }
+io::println_u64{ &io, n = to_u64{ x = -0.0 } }
+io::println_u64{ &io, n = to_u64{ x = -0.75 } }
+io::println_u64{ &io, n = to_u64{ x = 3.75 } }
+io::println_u64{ &io, n = to_u64{ x = 1.8446742974197924e+19 } }
+io::println_u64{ &io, n = to_usize{ x = 0.0 } }
+io::println_u64{ &io, n = to_usize{ x = -0.0 } }
+io::println_u64{ &io, n = to_usize{ x = -0.75 } }
+io::println_u64{ &io, n = to_usize{ x = 3.75 } }
+io::println_u64{ &io, n = to_usize{ x = 1.8446742974197924e+19 } }
+}
+
+//# stdout:
+//| 0
+//| 0
+//| 0
+//| 3
+//| 127
+//| -3
+//| -128
+//| -128
+//| 0
+//| 0
+//| 0
+//| 3
+//| 32767
+//| -3
+//| -32768
+//| -32768
+//| 0
+//| 0
+//| 0
+//| 3
+//| 2147483520
+//| -3
+//| -2147483648
+//| 0
+//| 0
+//| 0
+//| 3
+//| 9223371487098961920
+//| -3
+//| -9223372036854775808
+//| 0
+//| 0
+//| 0
+//| 3
+//| 255
+//| 0
+//| 0
+//| 0
+//| 3
+//| 65535
+//| 0
+//| 0
+//| 0
+//| 3
+//| 4294967040
+//| 0
+//| 0
+//| 0
+//| 3
+//| 18446742974197923840
+//| 0
+//| 0
+//| 0
+//| 3
+//| 18446742974197923840

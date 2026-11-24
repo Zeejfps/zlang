@@ -1,0 +1,8 @@
+// The tests of every file of the executable, a directory's files before those of the
+// directories in it, each named by its path; `main` is not run, and `ctxc run` runs no test.
+// Here `--list`, in that order.
+//# $ ctxc test . --list
+//# exit: 0
+//# stdout:
+//| lib/shapes_test.ctx:3: shapes::area_of_a_rect
+//| lib/deep/more_test.ctx:2: at_the_top

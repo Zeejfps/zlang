@@ -1,0 +1,4 @@
+fn f { p: *i32 } {
+    let y = p.b  //~ error at 14: *i32 has no field `b`
+}
+fn main {} {}

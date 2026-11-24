@@ -1,0 +1,47 @@
+
+fn stdio_of { name: []u8, file: fs::File } -> proc::Stdio {
+    if slice::eq_bytes{ a = name, b = "ignore" } { return proc::Stdio::ignore }
+    if slice::eq_bytes{ a = name, b = "file" } { return proc::Stdio::file{ file } }
+    if slice::eq_bytes{ a = name, b = "pipe" } { return proc::Stdio::pipe }
+    return proc::Stdio::inherit
+}
+
+// All that a pipe gives, after its name.
+fn drain { mut io: Io, mut proc: Proc, pipe: ?proc::Pipe, name: []u8 } -> bool {
+    let r = pipe ifnull { return true }
+    let mut got: [4096]u8
+    let mut n: usize = 0
+    while true {
+        let k = proc::read{ &proc, pipe = r, into = got[n..] } iferr { return false }
+        if k == 0 { break }
+        n = n + k
+    }
+    _ = @fmt(&io, "{} pipe: {}\n", name, got[..n])
+    return true
+}
+
+// args: the child (tests/helpers/child.ctx, run as `echo`), the Stdio of its stdin, stdout and
+// stderr, and a file for each.
+fn main { mut io: Io, mut fs: Fs, mut proc: Proc, args: Args } -> i32 {
+    let input = fs::open{ &fs, path = args[4], mode = fs::Mode::read } iferr { return 10 }
+    let output = fs::open{ &fs, path = args[5], mode = fs::Mode::write } iferr { return 11 }
+    let error = fs::open{ &fs, path = args[6], mode = fs::Mode::write } iferr { return 12 }
+    let argv: [2][]u8 = [args[0], "echo"]
+    let options = proc::Options{
+        stdin = stdio_of{ name = args[1], file = input },
+        stdout = stdio_of{ name = args[2], file = output },
+        stderr = stdio_of{ name = args[3], file = error },
+        ..
+    }
+    let mut child = proc::spawn{ &proc, argv = argv[..], options } iferr { return 13 }
+    if let w = child.stdin { _ = proc::write{ &proc, pipe = w, bytes = "piped input" } iferr { return 14 } }
+    proc::close{ &proc, pipe = &child.stdin }
+    if not drain{ &io, &proc, pipe = child.stdout, name = "out" } { return 15 }
+    if not drain{ &io, &proc, pipe = child.stderr, name = "err" } { return 16 }
+    let code = proc::wait{ &proc, &child } iferr { return 17 }
+    _ = fs::close{ &fs, file = input }
+    _ = fs::close{ &fs, file = output }
+    _ = fs::close{ &fs, file = error }
+    _ = @fmt(&io, "exit {}\n", code)
+    return 0
+}

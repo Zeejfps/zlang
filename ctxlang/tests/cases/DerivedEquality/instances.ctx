@@ -1,0 +1,46 @@
+// Instances of generic structs and unions, a distinct struct, nested arrays and a
+// const; each operand is evaluated once, and `x == v` narrows an optional struct.
+
+struct P { x: i32, y: i32 }
+type Pos = distinct P
+struct Pair(A, B) { a: A, b: B }
+union Slot(K, V) { empty, full{ k: K, v: V } }
+struct Wide { n: i64, p: Pair(u8, []u8), s: Slot(P, ?u16), z: [0]u8 }
+
+fn same(T) { a: T, b: T } -> bool { return a == b }
+fn pair_eq(A, B) { x: Pair(A, B), y: Pair(A, B) } -> bool { return x == y and @hash(x) == @hash(y) }
+fn noisy { mut io: Io, n: i32 } -> P {
+    _ = @fmt(&io, "<{}>", n)
+    return P{ x = n, y = n }
+}
+
+const WIDE: Wide = Wide{ n = -1, p = Pair{ a = 7, b = "seven" }, s = Slot::full{ k = P{ x = 1, y = 2 }, v = null }, z = [] }
+const SAME: bool = same{ a = WIDE, b = WIDE }
+
+fn main { mut io: Io } {
+    let a = @as(Pos, P{ x = 1, y = 2 })
+    let b = @as(Pos, P{ x = 1, y = 2 })
+    let mut w = WIDE
+    let mut seven: [5]u8 = "seven"
+    w.p.b = seven[..]
+    _ = @fmt(&io, "{} {} {} {}\n", a == b, same{ a, b }, w == WIDE, SAME)
+    w.s = Slot::full{ k = P{ x = 1, y = 2 }, v = 3 }
+    _ = @fmt(&io, "{} {} {}\n", w == WIDE, w.s == Slot::empty, pair_eq{ x = w.p, y = WIDE.p })
+    // Each operand once, the left first.
+    _ = @fmt(&io, " {}\n", noisy{ &io, n = 1 } == noisy{ &io, n = 2 })
+    // An optional narrows as it does for a number.
+    let o: ?P = P{ x = 5, y = 6 }
+    if o == P{ x = 5, y = 6 } { _ = @fmt(&io, "{}\n", o.x + o.y) }
+    let grid: [2][2]P = [[P{ x = 0, y = 0 }, P{ x = 0, y = 1 }], [P{ x = 1, y = 0 }, P{ x = 1, y = 1 }]]
+    let mut other = grid
+    _ = @fmt(&io, "{} ", grid == other)
+    other[1][1].y = 9
+    _ = @fmt(&io, "{} {}\n", grid == other, @hash(grid) == @hash(other))
+}
+
+//# stdout:
+//| true true true true
+//| false false true
+//| <1><2> false
+//| 11
+//| true false false

@@ -1,0 +1,10 @@
+
+fn f { b: u8 } -> i32 {
+    match b {
+0..=9 => {}
+5..=20 => {}  //~ error at 1: range 5..=20 overlaps an earlier pattern
+else => {}
+    }
+    return 0
+}
+fn main {} { _ = f{ b = 1 } }

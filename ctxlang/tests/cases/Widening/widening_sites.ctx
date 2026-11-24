@@ -1,0 +1,36 @@
+
+struct S { big: i64 }
+fn take { n: u64 } -> u64 { return n }
+fn ret { n: i8 } -> i32 { return n }
+fn main { mut io: Io } {
+    let a: u8 = 200
+    let b: i16 = -300
+    let c: u32 = 4000000000
+    let len: usize = 3
+    io::println_u64{ &io, n = take{ n = a } }
+    io::println_u64{ &io, n = len }
+    io::println_i64{ &io, n = b }
+    io::println_i64{ &io, n = c }
+    io::println_i64{ &io, n = ret{ n = -5 } }
+    let s = S{ big = a }
+    io::println_i64{ &io, n = s.big }
+    let o: ?i64 = b
+    if o != null { io::println_i64{ &io, n = o } }
+    let mut w: i64 = 0
+    w = c
+    io::println_i64{ &io, n = w }
+    let f: f32 = 0.5
+    let d: f64 = f
+    io::println_f64{ &io, n = d }
+}
+
+//# stdout:
+//| 200
+//| 3
+//| -300
+//| 4000000000
+//| -5
+//| 200
+//| -300
+//| 4000000000
+//| 0.5

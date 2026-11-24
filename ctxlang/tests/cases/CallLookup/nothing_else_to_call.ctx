@@ -1,0 +1,5 @@
+
+fn main {} {
+    let n = 1
+    _ = n{}  //~ error at 9: `n` has type {integer} and cannot be called
+}

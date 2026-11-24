@@ -1,0 +1,1 @@
+fn main {} { let mut s = "abc"; s[0] = 'x' }  //~ error at 34: cannot write through []u8; it needs to be a `[]mut`

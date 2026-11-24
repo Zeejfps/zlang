@@ -1,0 +1,8 @@
+// With `-v`, a line for each passing test, then the count. No `main`: a library and its
+// tests are a program to test.
+//# $ ctxc test . -v
+//# exit: 0
+//# stdout:
+//| ./t.ctx:4: pass: doubles
+//| ./t.ctx:10: pass: more::passes_an_error_up
+//| tests: 2 run, 2 passed, 0 failed, 0 not selected

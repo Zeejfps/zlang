@@ -1,0 +1,9 @@
+union U { a{ x: i32 }, b }
+fn g { u: U } {}
+fn f { mut u: U } {
+    match &u {
+        a{ &x } => { g{ .. } }  //~ error at 23: u overlaps the match scrutinee; access it only through `x`
+        b => {}
+    }
+}
+fn main {} {}

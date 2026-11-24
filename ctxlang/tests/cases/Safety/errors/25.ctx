@@ -1,0 +1,10 @@
+fn f {} {
+    let a = 1
+    let mut p = &a
+    if true {
+        let x = 1
+        let q = &x
+        p = q  //~ error at 9: `p` outlives local `x` whose address it would hold
+    }
+}
+fn main {} {}

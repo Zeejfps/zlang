@@ -1,0 +1,6 @@
+struct S { x: i32 }
+fn three {} -> i32 { return 3 }
+const N: i32 = three{}
+#S{ x = N }  //~ error at 3: an attribute can't use `N`: its value is computed by running code
+fn g {} {}
+fn main {} {}

@@ -1,0 +1,42 @@
+
+#task
+fn check { mut fs: Fs, file: fs::File, first: u64 } -> !u64 {
+    let mut buf: [4096]u8
+    let mut bad: u64 = 0
+    let mut round: u64 = 0
+    while round < 20 {
+        let mut k: u64 = first
+        while k < 256 {
+            let at = k * 4096
+            let n = try fs::read_at{ &fs, file, offset = at, into = buf[..] }
+            if n != 4096 { bad = bad + 1 }
+            let mut i: usize = 0
+            while i < n {
+                if @as(u64, buf[i]) != (at + @as(u64, i)) * 7 % 251 { bad = bad + 1 }
+                i = i + 1
+            }
+            k = k + 8
+        }
+        round = round + 1
+    }
+    return bad
+}
+
+fn main { mut io: Io, mut fs: Fs, mut threads: Threads, args: Args } -> i32 {
+    let file = fs::open{ &fs, path = args[0], mode = fs::Mode::read } iferr { return 1 }
+    defer _ = fs::close{ &fs, file }
+    let mut ts: [8]task::Task(!u64)
+    let mut i: usize = 0
+    while i < 8 {
+        task::start_concurrent{ &threads, task = &ts[i], run = check{ &fs, file, first = @as(u64, i), _ } } iferr { return 2 }
+        i = i + 1
+    }
+    let mut bad: u64 = 0
+    i = 0
+    while i < 8 {
+        bad = bad + (task::wait{ &threads, task = &ts[i] } iferr { 1000000 })
+        i = i + 1
+    }
+    io::println_u64{ &io, n = bad }
+    return 0
+}

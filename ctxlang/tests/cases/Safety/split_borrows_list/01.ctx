@@ -1,0 +1,20 @@
+// A struct and its list (FRICTION's case): allowed while the callee uses the list
+// through `xs` alone, and an error once it reads it through `e` too, in std's own fns.
+
+type Heap = arena::Arena
+struct E { n: i32, list: list::List(i32, Heap) }
+fn add { mut e: E, mut xs: list::List(i32, Heap), item: i32 } -> ! {
+    e.n = e.n + 1
+    try list::push{ list = &xs, item }
+}
+fn main { mut io: Io } {
+    let mut mem: [4096]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut e = E{ n = 0, list = list::new(i32){ realloc = arena::alloc, &heap } }
+    try! add{ &e, xs = &e.list, item = 5 }
+    try! add{ &e, xs = &e.list, item = 6 }
+    io::println_i64{ &io, n = @as(i64, e.n * 100 + e.list.items[1] * 10 + @as(i32, e.list.len)) }
+}
+
+//# stdout:
+//| 262

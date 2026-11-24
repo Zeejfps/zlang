@@ -1,0 +1,4 @@
+fn f { p: *i32 } {
+    let q = @cast(i32, p)  //~ error at 13: @cast needs a pointer or extern fn target type, got i32
+}
+fn main {} {}

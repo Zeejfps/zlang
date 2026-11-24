@@ -1,0 +1,1 @@
+fn main { mut io: Io } { while true { defer { break } } }  //~ error at 47: `break` outside a loop in this defer

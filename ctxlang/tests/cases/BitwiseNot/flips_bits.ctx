@@ -1,0 +1,11 @@
+
+fn main { mut io: Io } {
+    let a: u8 = 5
+    let b: i32 = 5
+    let z: u64 = 0
+    let m: i64 = -1
+    _ = @fmt(&io, "{} {} {} {} {}\n", ~a, ~b, ~z, ~m, ~~a)
+}
+
+//# stdout:
+//| 250 -6 18446744073709551615 0 5

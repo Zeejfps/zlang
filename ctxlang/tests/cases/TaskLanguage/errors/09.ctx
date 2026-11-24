@@ -1,0 +1,12 @@
+
+#task
+fn fill { mut buf: [8]u8, n: u8 } -> ! { buf[0] = n }
+
+#task
+fn look { s: []u8 } -> !u64 { return @as(u64, s.len) }
+
+#task
+fn sq { n: u64 } -> !u64 { return n * n }
+
+fn look_at { t: task::Task(!) } {}  //~ error at 4: fn `look_at`'s field `t` holds a task handle: a task's handle is only a local, a local array's element, or a `mut` field, and is never copied
+fn main {} {}

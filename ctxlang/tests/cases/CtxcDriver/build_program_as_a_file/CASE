@@ -1,0 +1,25 @@
+// A program whose entry is `fn build` is a build program however ctxc is asked to build
+// it (spec §19, rule 2), so it has build::declarations as a file too. Run that way, its
+// graph goes to standard output, and its paths are from the working directory. A program
+// with a `main` isn't one, whatever else it declares.
+//# $ ctxc run build.ctx
+//# cwd: app
+//# stdout escaped:
+//| exe\t0\tt\tsrc
+//| file src/main.ctx
+//| struct Main @ src/main.ctx:1:1
+//# $ ctxc exe build.ctx -o {dir}/built
+//# cwd: app
+//# exit: 0
+// The interpreter takes it for a build program too: it reports no error in it. (It doesn't
+// run it, for the memory it reserves, which isn't this case's subject: only that standard
+// error has no `error:` is said.)
+//# $ ctxc interp build.ctx
+//# cwd: app
+//# exit: 1
+//# stderr lacks:
+//| error:
+//# $ ctxc run plain.ctx
+//# exit: 1
+//# stderr:
+//| plain.ctx:1:29: error: no type or namespace `Decl` in `build`

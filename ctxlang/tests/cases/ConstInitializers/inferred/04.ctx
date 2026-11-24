@@ -1,0 +1,5 @@
+union U(T) { a, b{ x: T } }
+const A: U(u8) = U::b{ x = 1 }
+fn main {} {}
+
+//# exit: 0

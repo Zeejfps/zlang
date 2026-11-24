@@ -1,0 +1,3 @@
+type A(T) = T(i32)  //~ error at 13: generic parameter `T` takes no type arguments
+struct S { a: A(u8) }
+fn main {} {}

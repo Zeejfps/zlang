@@ -1,0 +1,8 @@
+// ctxc's parser is std's in a build program (case 01). An ordinary program has neither
+// `build`'s declarations nor ctxc's `syntax` and `parser`.
+//# $ ctxc run {dir}
+//# exit: 1
+//# stderr:
+//| {dir}/other.ctx:1:16: error: unknown type or namespace `syntax`
+//| {dir}/main.ctx:1:40: error: no type or namespace `Decl` in `build`
+//| {dir}/other.ctx:1:38: error: unknown type or namespace `parser`

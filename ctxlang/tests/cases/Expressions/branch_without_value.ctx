@@ -1,0 +1,1 @@
+fn main { mut io: Io } { let x = if true { let a = 1 } else { 1 } }  //~ error at 42: this branch must end in a value, or leave with `return`, `break`, `continue` or `@panic()`

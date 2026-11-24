@@ -1,0 +1,41 @@
+
+fn bound { mut calls: i32, v: i32 } -> i32 { calls = calls + 1; return v }
+fn main { mut io: Io } {
+    let mut total = 0
+    for i in 0..5 { total = total + i }
+    _ = @fmt(&io, "{}\n", total)
+    let n: u8 = 3
+    for i in 0..n { io::println_u64{ &io, n = i } }           // i: u8, n's type
+    let lo: u8 = 250
+    let hi: usize = 260
+    let mut sum: usize = 0
+    for i in lo..hi { sum = sum + i }                           // i: usize, which lo widens to
+    _ = @fmt(&io, "{}\n", sum)
+    for i in -2..2 { _ = @fmt(&io, "{} ", i) }
+    for i in 5..5 { _ = @fmt(&io, "never {}", i) }             // empty
+    for i in 5..2 { _ = @fmt(&io, "never {}", i) }             // and never counts down
+    let mut calls = 0
+    let mut end = 3
+    let mut turns = 0
+    for i in bound{ &calls, v = 1 }..bound{ &calls, v = end } {
+        end = 10                                                // the bounds were read once
+        turns = turns + 1
+    }
+    _ = @fmt(&io, "\n{} {} {}\n", calls, end, turns)
+    let top: i64 = 9223372036854775807
+    for i in top - 2..top { _ = @fmt(&io, "{} ", i) }          // counting never overflows
+    let b: u8 = 255
+    for i in 253..b { _ = @fmt(&io, "{} ", i) }
+    for _ in 0..3 { _ = @fmt(&io, ".") }
+    _ = @fmt(&io, "\n")
+}
+
+//# stdout escaped:
+//| 10
+//| 0
+//| 1
+//| 2
+//| 2545
+//| -2 -1 0 1\x20
+//| 2 10 2
+//| 9223372036854775805 9223372036854775806 253 254 ...

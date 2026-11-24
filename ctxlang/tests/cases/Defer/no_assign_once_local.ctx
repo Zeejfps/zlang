@@ -1,0 +1,1 @@
+fn main { mut io: Io } { let x: i32; defer { x = 1 }; x = 2 }  //~ error at 38: cannot assign `x` in a defer: declare it with `let mut`

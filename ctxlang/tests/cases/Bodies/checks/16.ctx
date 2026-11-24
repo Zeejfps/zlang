@@ -1,0 +1,12 @@
+union R { ok{ v: i32 }, err{ code: i32 } }
+fn f { r: R } -> i32 {
+    let ok{ v } = r else err{ code } {
+        return code
+    }
+    return v
+}
+fn main {} {
+    _ = f{ r = R::err{ code = 2 } }
+}
+
+//# exit: 0

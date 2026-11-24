@@ -1,0 +1,16 @@
+
+#test
+fn first { mut t: Test } { @expect(&t, 1 == 1) }
+#test
+fn overflows { mut t: Test } {
+    let xs: [3]i32 = [1, 2, 3]
+    let mut i: usize = 5
+    @expect(&t, xs[0] == 2)
+    @expect(&t, xs[i] == 1)
+}
+#test
+fn says_why { mut t: Test } {
+    @panic("the reason")
+}
+#test
+fn last { mut t: Test } { @expect(&t, 2 == 2) }

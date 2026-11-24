@@ -1,0 +1,8 @@
+union U { a, b{ x: i32 } }
+fn f { u: U } {
+    match u {
+        a{ x } => {}  //~ error at 9: variant `a` has no payload
+        b => {}
+    }
+}
+fn main {} {}

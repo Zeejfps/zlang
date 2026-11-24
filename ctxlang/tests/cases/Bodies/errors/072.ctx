@@ -1,0 +1,5 @@
+fn f {} {
+    let x = 1
+    let y = x.f  //~ error at 14: the type of this expression must be known before `.f`
+}
+fn main {} {}

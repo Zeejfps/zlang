@@ -1,0 +1,22 @@
+
+fn show { mut io: Io, e: error } {
+    let code = match e {
+        fs::not_found => { 1 } fs::permission_denied => { 2 } fs::is_directory => { 3 } fs::exists => { 4 }
+        fs::not_directory => { 5 } fs::bad_file => { 6 } alloc::out_of_memory => { 7 } fs::other => { 8 }
+        else => { 9 }
+    }
+    io::println_i64{ &io, n = code }
+}
+
+fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
+    let mut mem: [65536]u8
+    let mut heap = arena::new{ buf = mem[..] }
+
+    fs::rename{ &fs, from = args[0], to = args[1] } iferr { return 1 }
+    io::println_bool{ &io, n = match fs::size{ &fs, path = args[0] } { ok => { false } fs::not_found => { true } else => { false } } }
+    let text = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = args[1] } iferr { return 2 }
+    io::println{ &io, s = utf8::of{ chars = text } }
+    fs::rename{ &fs, from = args[2], to = args[1] } iferr err{ error } { show{ &io, e = error } }
+    return 0
+
+}

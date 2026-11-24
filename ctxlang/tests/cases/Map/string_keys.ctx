@@ -1,0 +1,28 @@
+
+fn main { mut io: Io } {
+    let mut mem: [8192]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut counts = map::new(utf8::String, i32){
+        realloc = arena::alloc, &heap, hash = map::hash_string, eq = utf8::eq,
+    }
+    let text = "the cat and the dog and the bird"
+    let mut cur = utf8::cursor{ s = utf8::of{ chars = text } }
+    while not utf8::done{ cur } {
+        let word = utf8::take_while{ &cur, f = utf8::is_alpha }
+        let p = map::at{ m = counts, key = word }
+        if p != null {
+            p.* = p.* + 1
+        } else {
+            _ = map::put{ m = &counts, key = word, value = 1 }
+        }
+        utf8::skip_space{ &cur }
+    }
+    io::println_u64{ &io, n = map::len{ m = counts } }
+    let the = "the"
+    let n = map::get{ m = counts, key = utf8::of{ chars = the } }
+    if n != null { io::println_i64{ &io, n } }
+}
+
+//# stdout:
+//| 5
+//| 3

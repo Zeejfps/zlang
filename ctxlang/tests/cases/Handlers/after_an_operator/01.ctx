@@ -1,0 +1,20 @@
+// One error each: the handler's left side isn't checked as it stands.
+
+error bad
+fn f { n: i32 } -> !?i32 {
+    if n == 0 { return null }
+    if n < 0 { return bad }
+    return n
+}
+fn g { n: i32 } -> ?i32 { if n == 0 { return null }; return n }
+fn r { n: i32 } -> !i32 { if n == 0 { return bad }; return n }
+fn h { n: i32 } -> ?!i32 {
+    if n == 0 { return null }
+    let x: !i32 = if n < 0 { bad } else { n }
+    return x
+}
+fn t { n: i32 } -> ?bool { if n == 0 { return null }; return n > 0 }
+fn main { mut io: Io } {
+    let n = 1
+    let x = n + g{ n } ifnull 0  //~ error at 24: `ifnull` takes all of `n + g{ n }` before it, which is never optional: write `n + (g{ n } ifnull 0)`
+}

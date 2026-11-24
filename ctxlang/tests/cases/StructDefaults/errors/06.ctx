@@ -1,0 +1,2 @@
+struct S { a: i32, b: i32 = a }  //~ error at 29: unknown name `a`
+fn main {} {}

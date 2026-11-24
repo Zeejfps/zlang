@@ -1,0 +1,10 @@
+// examples/wordcount.ctx counts lines (the last has no line break), words whatever their
+// case and the punctuation beside them, the distinct ones, and names the most common.
+//# program: {home}/examples/wordcount.ctx
+//# args: {dir}/tmp/words.txt
+//# interp: cannot run
+//# stdout:
+//| lines: 3
+//| words: 12
+//| distinct: 7
+//| most common: the 4

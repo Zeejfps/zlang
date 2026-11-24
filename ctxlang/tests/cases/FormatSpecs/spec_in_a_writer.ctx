@@ -1,0 +1,21 @@
+// An @fmt without a sink keeps each hole's spec, and an inner one its own.
+
+type Heap = arena::Arena
+
+fn report { mut b: utf8::Builder(Heap), msg: utf8::Fmt(Heap) } {
+    try! msg{ &b }
+}
+
+fn main { mut io: Io, mut mem: Mem } {
+    let pages = mem::pages{ &mem, size = 65536 } ifnull { return }
+    let mut heap = arena::new{ buf = pages }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    let at: u32 = 4660
+    let name: []u8 = "pc"
+    // A writer holds the spec with the value, and an inner @fmt keeps its own.
+    report{ &b, msg = @fmt("{:<4}= {}{:06x} ({:.2})", name, @fmt("{}{:>3}", "0x", 7), at, 0.125) }
+    io::println{ &io, s = utf8::view{ b } }
+}
+
+//# stdout:
+//| pc  = 0x  7001234 (0.12)

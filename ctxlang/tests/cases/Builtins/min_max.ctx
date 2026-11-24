@@ -1,0 +1,55 @@
+// §13: `@min` and `@max` of two numbers of one type after widening, each evaluated once;
+// for floats a NaN operand gives NaN, and equal operands the first. In consts too.
+
+type Meters = distinct f32
+const LOW: i32 = @min(3, -4)
+const HIGH: u64 = @max(SEVEN, 9)
+const SEVEN: u8 = 7
+const FLOATS: [4]f64 = [@min(1.5, math::NAN), @max(math::NAN, 1.5), @min(-0.0, 0.0), @max(-0.0, 0.0)]
+
+fn noisy { mut io: Io, n: i32 } -> i32 {
+    _ = @fmt(&io, "<{}>", n)
+    return n
+}
+fn f { x: f64 } -> f64 { return x }
+fn g { x: f32 } -> f32 { return x }
+
+fn main { mut io: Io } {
+    let a: i32 = 7
+    let b: u8 = 200
+    let c: i64 = -5
+    let u: usize = 3
+    // One type after widening, as `<` has it: an i32 and a u8 are compared as i32s.
+    _ = @fmt(&io, "{} {} {} {}\n", @min(a, b), @max(a, b), @min(c, a), @max(c, a))
+    // A literal takes the other operand's type, and the result the type expected.
+    let small: u8 = @min(b, 9)
+    let wide: i64 = @max(a, 3)
+    _ = @fmt(&io, "{} {} {} {}\n", small, wide, @min(u, 10), @max(@min(a, 5), 2))
+    // Each operand is evaluated once, the first first.
+    _ = @fmt(&io, " {}\n", @min(noisy{ &io, n = 4 }, noisy{ &io, n = 2 }))
+    _ = @fmt(&io, " {}\n", @max(noisy{ &io, n = 4 }, noisy{ &io, n = 2 }))
+    _ = @fmt(&io, "{} {} {} {}\n", LOW, HIGH, @min(-128, 127), @max(18446744073709551615, u))
+    // Floats: a NaN operand gives NaN; equal operands, as zeros of both signs are, give the first.
+    _ = @fmt(&io, "{} {} {} {}\n", @min(f{ x = 1.5 }, 2.5), @max(f{ x = 1.5 }, 2.5), @min(g{ x = -1.0 }, g{ x = -2.0 }), @max(g{ x = 1.0 }, f{ x = 0.5 }))
+    _ = @fmt(&io, "{} {} {} {}\n", @min(f{ x = 1.5 }, math::NAN), @min(math::NAN, f{ x = 1.5 }), @max(f{ x = 1.5 }, math::NAN), @max(math::NAN_F32, g{ x = 1.5 }))
+    _ = @fmt(&io, "{} {} {} {}\n", @min(f{ x = -0.0 }, 0.0), @min(f{ x = 0.0 }, -0.0), @max(f{ x = -0.0 }, 0.0), @max(f{ x = 0.0 }, -0.0))
+    _ = @fmt(&io, "{} {} {} {}\n", @min(math::INF, f{ x = 1.0 }), @max(-math::INF, f{ x = 1.0 }), @min(-math::INF, math::INF), @max(-math::INF, math::INF))
+    _ = @fmt(&io, "{} {} {} {}\n", FLOATS[0], FLOATS[1], FLOATS[2], FLOATS[3])
+    // A distinct type keeps its type.
+    let m: Meters = 2.5
+    let far: Meters = @max(m, 4.0)
+    _ = @fmt(&io, "{}\n", @as(f32, far))
+}
+
+//# stdout:
+//| 7 200 -5 7
+//| 9 7 3 5
+//| <4><2> 2
+//| <4><2> 4
+//| -4 9 -128 18446744073709551615
+//| 1.5 2.5 -2.0 1.0
+//| nan nan nan nan
+//| -0.0 0.0 -0.0 0.0
+//| 1.0 1.0 -inf inf
+//| nan nan -0.0 -0.0
+//| 4.0

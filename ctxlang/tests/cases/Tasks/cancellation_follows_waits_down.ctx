@@ -1,0 +1,76 @@
+// A task that waits for another and is cancelled cancels it; a task run at once is
+// cancelled with its starter; cancel_all reaches a task that waits.
+
+#task
+fn nap { mut threads: Threads, ns: u64 } -> !u64 {
+    thread::sleep{ &threads, nanoseconds = ns }
+    try task::check_cancelled{ &threads }
+    return 7
+}
+
+#task
+fn same_thread { mut threads: Threads, id: u64 } -> !bool {
+    return thread::current_id{ &threads } == id
+}
+
+#task
+fn fails_after { mut threads: Threads, ns: u64 } -> ! {
+    thread::sleep{ &threads, nanoseconds = ns }
+    try task::check_cancelled{ &threads }
+    return task::out_of_resources
+}
+
+fn show(T) { mut io: Io, r: !T, what: []u8 } {
+    match r {
+        ok => { _ = @fmt(&io, "{}: ok\n", what) }
+        err{ error } => {
+            match error {
+                task::cancelled => { _ = @fmt(&io, "{}: cancelled\n", what) }
+                else => { _ = @fmt(&io, "{}: failed\n", what) }
+            }
+        }
+    }
+}
+
+#task
+fn outer { mut threads: Threads } -> !u64 {
+    let mut inner: task::Task(!u64)
+    try task::start_concurrent{ &threads, task = &inner, run = nap{ &threads, ns = 30000000000, _ } }
+    return task::wait{ &threads, task = &inner }
+}
+
+#task
+fn at_once { mut threads: Threads } -> !u64 {
+    task::set_limit{ &threads, workers = 0 }
+    let mut inner: task::Task(!u64)
+    task::start{ &threads, task = &inner, run = nap{ &threads, ns = 30000000000, _ } }
+    return task::wait{ &threads, task = &inner }
+}
+
+#task
+fn waits_in_group { mut threads: Threads } -> ! {
+    _ = try outer{ &threads }
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let mut t: task::Task(!u64)
+    task::start_concurrent{ &threads, task = &t, run = outer{ &threads, _ } } iferr { return 1 }
+    thread::sleep{ &threads, nanoseconds = 20000000 }
+    show(u64){ &io, r = task::cancel{ &threads, task = &t }, what = "outer" }
+    task::start_concurrent{ &threads, task = &t, run = at_once{ &threads, _ } } iferr { return 1 }
+    thread::sleep{ &threads, nanoseconds = 20000000 }
+    show(u64){ &io, r = task::cancel{ &threads, task = &t }, what = "at once" }
+    task::set_limit{ &threads, workers = 64 }
+    let mut g: task::Group
+    task::start_concurrent_in{ &threads, group = &g, run = waits_in_group{ &threads, _ } } iferr { return 2 }
+    thread::sleep{ &threads, nanoseconds = 20000000 }
+    task::cancel_all{ &threads, group = &g }
+    io::println{ &io, s = "group: stopped" }
+    return 0
+}
+
+//# interp: cannot run
+//# stdout:
+//| outer: cancelled
+//| at once: cancelled
+//| group: stopped

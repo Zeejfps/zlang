@@ -1,0 +1,24 @@
+
+error bad{ code: i32, why: utf8::String }
+fn report { mut io: Io, mut heap: arena::Arena, msg: utf8::Fmt(arena::Arena) } {
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    msg{ &b } iferr { io::println{ &io, s = "failed" } }
+    io::println{ &io, s = utf8::view{ b } }
+}
+fn next { mut n: i32 } -> i32 {
+    n = n + 1
+    return n
+}
+fn main { mut io: Io } {
+    let mut mem: [8192]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut w: utf8::Fmt(arena::Arena) = @fmt("x")
+    if true {
+        let buf: [2]u8 = [1, 2]
+        w = @fmt("{}", @as(i32, buf[..][0]))
+        w = @fmt("{}", view{ s = buf[..], _ })  //~ error at 9: `w` outlives local `buf` whose address it would hold
+    }
+}
+
+fn bump { mut heap: arena::Arena, mut b: utf8::Builder(arena::Arena) } -> ! {}
+fn view { mut b: utf8::Builder(arena::Arena), s: []u8 } -> ! {}

@@ -1,0 +1,5 @@
+fn f { x: u32 } {
+    let mut keep: []u32 = [1]
+    if x > 0 { keep = [x] }  //~ error at 16: `keep` outlives an array literal whose address it would hold
+}
+fn main {} {}

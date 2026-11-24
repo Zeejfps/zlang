@@ -1,0 +1,2 @@
+//# errors:
+//| 02.ctx:1:18: error: expected a name, found end of file

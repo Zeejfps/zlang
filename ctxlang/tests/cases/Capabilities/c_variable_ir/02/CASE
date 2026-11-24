@@ -1,0 +1,8 @@
+// A variable is an item, declared once however many capabilities read it, and a read is
+// its value: `c::symbol` names the C variable, after the field's own name.
+// The IR is the program's and std's, with ids that change when std does: what is stated is
+// the part the test is about, with `{n}` for the ids.
+//# $ ctxc ir {std} -- main0.ctx
+//# exit: 0
+//# stdout has:
+//| (var 0 "reports" "opterr" {n})

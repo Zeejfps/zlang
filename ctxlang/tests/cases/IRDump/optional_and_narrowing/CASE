@@ -1,0 +1,12 @@
+// The typed IR (`ctxc ir`): a value made optional is a `some`, `x != null` a `notnull`, and
+// the narrowed `x` the optional's `payload`.
+// The IR is the program's and std's, with ids that change when std does: what is stated is
+// the part the test is about, with `{n}` for the ids.
+//# $ ctxc ir {std} -- main0.ctx
+//# exit: 0
+//# stdout has escaped:
+//| (let 0 (some\x20
+//# stdout has escaped:
+//| (notnull\x20
+//# stdout has:
+//| (return (payload {n} (local {n} 0) 1 0))

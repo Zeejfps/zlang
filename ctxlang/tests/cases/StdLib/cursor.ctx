@@ -1,0 +1,37 @@
+
+fn main { mut io: Io } {
+    let src = "  let x1 = 42 -> y"
+    let mut cur = utf8::cursor{ s = utf8::of{ chars = src } }
+    utf8::skip_space{ &cur }
+    io::println{ &io, s = utf8::take_while{ &cur, f = utf8::is_alpha } }
+    utf8::skip_space{ &cur }
+    io::println{ &io, s = utf8::take_while{ &cur, f = utf8::is_alnum } }
+    utf8::skip_space{ &cur }
+    io::println_bool{ &io, n = utf8::eat{ &cur, ch = '+' } }
+    io::println_bool{ &io, n = utf8::eat{ &cur, ch = '=' } }
+    utf8::skip_space{ &cur }
+    let n = utf8::parse_i64{ s = utf8::take_while{ &cur, f = utf8::is_digit } }
+    if n != null { io::println_i64{ &io, n } }
+    utf8::skip_space{ &cur }
+    let c = utf8::peek_at{ cur, ahead = 1 }
+    if c != null { io::put_char{ &io, c } }
+    let arrow = "->"
+    io::println_bool{ &io, n = utf8::eat_str{ &cur, s = utf8::of{ chars = arrow } } }
+    io::println{ &io, s = utf8::rest{ cur } }
+    _ = utf8::bump{ &cur }
+    let y = utf8::bump{ &cur }
+    if y != null { io::put_char{ &io, c = y } }
+    io::println_bool{ &io, n = utf8::done{ cur } }
+    io::println_bool{ &io, n = utf8::bump{ &cur } == null and utf8::peek{ cur } == null }
+}
+
+//# stdout:
+//| let
+//| x1
+//| false
+//| true
+//| 42
+//| >true
+//|  y
+//| ytrue
+//| true

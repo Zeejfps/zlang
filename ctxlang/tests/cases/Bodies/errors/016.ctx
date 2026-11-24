@@ -1,0 +1,4 @@
+fn f {} {
+    break  //~ error at 5: `break` outside a loop
+}
+fn main {} {}

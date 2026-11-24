@@ -1,0 +1,22 @@
+// Infinity and NaN by name, for f64 and f32: the NaNs are the quiet ones with no sign or
+// payload. They are consts, so a const may use them.
+
+const EDGES: [4]f64 = [math::INF, -math::INF, math::NAN, math::PI]
+const SMALL: f32 = -math::INF_F32
+
+fn main { mut io: Io } {
+    _ = @fmt(&io, "{} {} {} {}\n", math::INF, -math::INF, math::NAN, EDGES[3])
+    _ = @fmt(&io, "{} {} {} {}\n", math::INF_F32, SMALL, math::NAN_F32, math::PI_F32)
+    _ = @fmt(&io, "{} {} {}\n", math::f64_to_bits{ x = math::INF }, math::f64_to_bits{ x = math::NAN }, math::f64_to_bits{ x = EDGES[2] })
+    _ = @fmt(&io, "{} {} {}\n", math::f32_to_bits{ x = math::INF_F32 }, math::f32_to_bits{ x = SMALL }, math::f32_to_bits{ x = math::NAN_F32 })
+    _ = @fmt(&io, "{} {} {}\n", math::NAN == math::NAN, math::is_nan{ x = math::NAN_F32 }, math::is_inf{ x = EDGES[1] })
+    _ = @fmt(&io, "{} {}\n", math::INF > 1.7e308, 1.0 / math::INF)
+}
+
+//# stdout:
+//| inf -inf nan 3.141592653589793
+//| inf -inf nan 3.1415927
+//| 9218868437227405312 9221120237041090560 9221120237041090560
+//| 2139095040 4286578688 2143289344
+//| false true true
+//| true 0.0

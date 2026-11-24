@@ -1,0 +1,58 @@
+namespace pattern {
+    // An atom matches one byte in lo..hi: itself, any (`.`) or a range (`[a-z]`), and with `+`
+    // one or more.
+    struct Atom { lo: u8, hi: u8, more: bool }
+    struct Pattern { atoms: [8]Atom, n: usize, source: []u8 }
+
+    error unclosed{ at: usize }
+    error nothing_to_repeat{ at: usize }
+    error too_long
+
+    #convert
+    fn from_literal { s: strlit } -> !Pattern {
+        let b = s.bytes
+        let mut p = Pattern{ atoms = [Atom{ lo = 0, hi = 0, more = false }; 8], n = 0, source = b }
+        let mut i: usize = 0
+        while i < b.len {
+            if b[i] == '+' {
+                if p.n == 0 { return nothing_to_repeat{ at = i } }
+                p.atoms[p.n - 1].more = true
+            } else {
+                if p.n == p.atoms.len { return too_long }
+                let mut a = Atom{ lo = b[i], hi = b[i], more = false }
+                if b[i] == '.' { a = Atom{ lo = 0, hi = 255, more = false } }
+                if b[i] == '[' {
+                    if i + 4 >= b.len or b[i + 2] != '-' or b[i + 4] != ']' { return unclosed{ at = i } }
+                    a = Atom{ lo = b[i + 1], hi = b[i + 3], more = false }
+                    i = i + 4
+                }
+                p.atoms[p.n] = a
+                p.n = p.n + 1
+            }
+            i = i + 1
+        }
+        return p
+    }
+
+    // Whether p matches all of text. An atom with `+` takes all the bytes it can, then gives
+    // them back one at a time.
+    fn matches { p: Pattern, text: []u8 } -> bool { return from{ p, k = 0, text, i = 0 } }
+
+    fn from { p: Pattern, k: usize, text: []u8, i: usize } -> bool {
+        if k == p.n { return i == text.len }
+        let a = p.atoms[k]
+        if i >= text.len or text[i] < a.lo or text[i] > a.hi { return false }
+        if not a.more { return from{ p, k = k + 1, text, i = i + 1 } }
+        let mut j = i + 1
+        while j < text.len and text[j] >= a.lo and text[j] <= a.hi { j = j + 1 }
+        while j > i {
+            if from{ p, k = k + 1, text, i = j } { return true }
+            j = j - 1
+        }
+        return false
+    }
+}
+fn main {} {
+    let s: strlit = "a"
+    let p: pattern::Pattern = s  //~ error at 31: expected pattern::Pattern, got strlit
+}

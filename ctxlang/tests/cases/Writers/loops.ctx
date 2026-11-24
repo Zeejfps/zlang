@@ -1,0 +1,27 @@
+
+error bad{ code: i32, why: utf8::String }
+fn report { mut io: Io, mut heap: arena::Arena, msg: utf8::Fmt(arena::Arena) } {
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    msg{ &b } iferr { io::println{ &io, s = "failed" } }
+    io::println{ &io, s = utf8::view{ b } }
+}
+fn next { mut n: i32 } -> i32 {
+    n = n + 1
+    return n
+}
+fn main { mut io: Io } {
+    let mut mem: [8192]u8
+    let mut heap = arena::new{ buf = mem[..] }
+
+    let mut i = 0
+    while i < 3 {
+        let w: utf8::Fmt(arena::Arena) = @fmt("loop {}", i)
+        report{ &io, &heap, msg = w }
+        i = i + 1
+    }
+}
+
+//# stdout:
+//| loop 0
+//| loop 1
+//| loop 2

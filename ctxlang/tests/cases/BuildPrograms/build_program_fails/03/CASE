@@ -1,0 +1,8 @@
+// A build program that returns a `!` (spec §19, rule 2): its error is written as main's is,
+// and it exits with 1.
+//# project
+//# exit: 1
+//# stdout:
+//| said
+//# stderr:
+//| error: no_assets{ dir = art, tried = 2 }

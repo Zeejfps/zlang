@@ -1,0 +1,17 @@
+// The pushes are chosen once the body is checked, so `n` is still free to become a usize.
+
+fn main { mut io: Io } {
+    let mut mem: [4096]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+
+    let mut n = 0
+    _ = @fmt(&b, "{}", n)
+    let xs: [2]usize = [1, 2]
+    while n < xs.len { n = n + 1 }
+    _ = @fmt(&b, " {}", n)
+    io::println{ &io, s = utf8::view{ b } }
+}
+
+//# stdout:
+//| 0 2

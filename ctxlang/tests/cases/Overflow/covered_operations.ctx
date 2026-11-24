@@ -1,0 +1,19 @@
+
+fn main { mut io: Io } {
+    let a: u8 = 200
+    let b: u8 = 100
+    let c: i32 = -2147483648
+    _ = @fmt(&io, "{} {} {}\n", a + b ifoverflow 0, a - b ifoverflow 0, a * 2 ifoverflow 255)
+    _ = @fmt(&io, "{} {} {}\n", -c ifoverflow 1, c / -1 ifoverflow 2, c % -1)
+    let u: u32 = 5
+    let zero: u32 = 0
+    _ = @fmt(&io, "{} {}\n", -u ifoverflow 42, -zero ifoverflow 42)
+    let w: u8 = 7
+    _ = @fmt(&io, "{} {}\n", (w << 1) + 250 ifoverflow 1, a * b + 1 - 1 ifoverflow 3)
+}
+
+//# stdout:
+//| 0 100 255
+//| 1 2 0
+//| 42 0
+//| 1 3

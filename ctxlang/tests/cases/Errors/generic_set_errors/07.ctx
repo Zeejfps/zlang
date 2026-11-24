@@ -1,0 +1,6 @@
+error a
+error b
+fn da {} -> error(a)!u64 { return a }
+fn fwd(E: error) { f: &fn{} -> E!u64 } -> E!u64 { return try f{} }
+fn bad(E: errorx) {} {}  //~ error at 17: a generic parameter's kind is `error`, an error set: `E: error`
+fn main {} {}

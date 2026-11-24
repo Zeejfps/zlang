@@ -1,0 +1,8 @@
+
+fn f { p: *u8 } -> i32 {
+    match p {  //~ error at 11: match cannot go through a pointer to an integer; match on the value with `.*`
+        1 => { return 1 }
+        else => { return 0 }
+    }
+}
+fn main {} { let b: u8 = 1; _ = f{ p = &b } }

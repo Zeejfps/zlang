@@ -1,0 +1,9 @@
+// Folded while compiling (§14).
+
+const SEED: u32 = 4000000000 *% 3 +% 7
+const NEG: i8 = 127 +% 1
+const LOW: u8 = 0 -% 1
+fn main { mut io: Io } { _ = @fmt(&io, "{} {} {}\n", SEED, NEG, LOW) }
+
+//# stdout:
+//| 3410065415 -128 255

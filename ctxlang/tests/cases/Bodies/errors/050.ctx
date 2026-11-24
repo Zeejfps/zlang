@@ -1,0 +1,5 @@
+fn g { a: i32, b: i32 } {}
+fn f {} {
+    g{ a = 1, b = 2, z = 3 }  //~ error at 22: `g` has no field `z`
+}
+fn main {} {}

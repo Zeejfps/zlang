@@ -1,0 +1,21 @@
+// std's platform layers (std/os/PLATFORM, spec §17).
+// Every layer declares the same sets (fs::Error, proc::Error; spec §8, Errors, rule 14),
+// so a match that lists every error a platform function may fail with checks the same on
+// every platform and in the interpreter. The sets are open (rule 15): it needs `else`.
+// The program builds without an error against each layer.
+
+//# $ ctxc build linux.c {std:linux} -- main.ctx
+//# exit: 0
+//# exists linux.c
+
+//# $ ctxc build macos.c {std:macos} -- main.ctx
+//# exit: 0
+//# exists macos.c
+
+//# $ ctxc build windows.c {std:windows} -- main.ctx
+//# exit: 0
+//# exists windows.c
+
+//# $ ctxc build interp.c {std:interp} -- main.ctx
+//# exit: 0
+//# exists interp.c

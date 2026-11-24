@@ -1,0 +1,55 @@
+// A generic fn may compare and hash its parameter's values, and `map::make` keys a
+// map by a struct, a string, a union, bytes or a pointer's address.
+
+type Heap = arena::Arena
+struct Cell { x: i32, y: i32 }
+struct Tag { name: []u8, kind: u8 }
+union Key { none, id{ n: u32 }, named{ t: Tag } }
+
+fn index_of(T) { xs: []T, x: T } -> ?usize {
+    for v at i in xs {
+        if v == x { return i }
+    }
+    return null
+}
+
+fn both(T) { xs: []T, x: T } -> u64 {
+    return if index_of{ xs, x } != null { @hash(x) } else { 0 }
+}
+
+fn main { mut io: Io, mut mem: Mem } {
+    let pages = mem::pages{ &mem, size = 1048576 } ifnull { return }
+    let mut heap = arena::new{ buf = pages }
+    let mut seen = map::make(Cell, i32){ realloc = arena::alloc, &heap }
+    for i in 0..100 {
+        try! map::put{ m = &seen, key = Cell{ x = i % 10, y = i / 10 }, value = i }
+    }
+    _ = @fmt(&io, "{} {} {} {}\n", map::len{ m = seen }, map::get{ m = seen, key = Cell{ x = 3, y = 4 } } ifnull -1, map::has{ m = seen, key = Cell{ x = 10, y = 0 } }, map::remove{ m = &seen, key = Cell{ x = 0, y = 0 } } ifnull -1)
+    let mut ages = map::make(utf8::String, i64){ realloc = arena::alloc, &heap }
+    try! map::put{ m = &ages, key = "ann", value = 42 }
+    try! map::put{ m = &ages, key = "bob", value = 7 }
+    try! map::put{ m = &ages, key = "ann", value = 43 }
+    let mut name: [3]u8 = "bob"
+    _ = @fmt(&io, "{} {} {} {}\n", map::len{ m = ages }, map::get{ m = ages, key = "ann" } ifnull -1, map::get{ m = ages, key = utf8::of{ chars = name[..] } } ifnull -1, map::has{ m = ages, key = "cy" })
+    let mut by_key = map::make(Key, u8){ realloc = arena::alloc, &heap }
+    try! map::put{ m = &by_key, key = Key::none, value = 1 }
+    try! map::put{ m = &by_key, key = Key::id{ n = 5 }, value = 2 }
+    try! map::put{ m = &by_key, key = Key::named{ t = Tag{ name = "bob", kind = 1 } }, value = 3 }
+    _ = @fmt(&io, "{} {} {} {}\n", map::get{ m = by_key, key = Key::none } ifnull 0, map::get{ m = by_key, key = Key::id{ n = 5 } } ifnull 0, map::get{ m = by_key, key = Key::named{ t = Tag{ name = name[..], kind = 1 } } } ifnull 0, map::get{ m = by_key, key = Key::id{ n = 6 } } ifnull 0)
+    let mut bytes = map::make([]u8, u32){ realloc = arena::alloc, &heap }
+    try! map::put{ m = &bytes, key = "fn", value = 1 }
+    let mut ptrs = map::make(*Cell, u32){ realloc = arena::alloc, &heap }
+    let c1 = Cell{ x = 1, y = 1 }
+    let c2 = Cell{ x = 1, y = 1 }
+    try! map::put{ m = &ptrs, key = &c1, value = 1 }
+    _ = @fmt(&io, "{} {} {}\n", map::get{ m = bytes, key = name[..2] } ifnull 0, map::has{ m = ptrs, key = &c1 }, map::has{ m = ptrs, key = &c2 })
+    let cells: [2]Cell = [c1, Cell{ x = 2, y = 2 }]
+    _ = @fmt(&io, "{} {} {}\n", index_of{ xs = cells[..], x = Cell{ x = 2, y = 2 } } ifnull 99, index_of{ xs = "abc", x = 'c' } ifnull 99, both{ xs = cells[..], x = c2 } == @hash(c1))
+}
+
+//# stdout:
+//| 100 43 false 0
+//| 2 43 7 false
+//| 1 2 3 0
+//| 0 true false
+//| 1 2 true

@@ -1,0 +1,6 @@
+// The project step reads the records as ctxc's driver does (CtxcDriver): add_sources'
+// directories and the optimization level.
+//# project
+//# $ {t}
+//# stdout:
+//| 21

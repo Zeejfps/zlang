@@ -1,0 +1,2 @@
+capability C { f: ?extern fn{} }  //~ error at 16: capability `C`'s field `f` must be a C function pointer, `extern fn{ ... }`, not ?extern fn{}
+fn main {} {}

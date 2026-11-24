@@ -1,0 +1,13 @@
+
+fn build { mut b: Build, mut mem: Mem } {
+    let exe = build::exe{ &b, name = "t", root = "src" }
+    let mut heap = arena::new{ buf = mem::reserve{ &mem, size = 67108864 } ifnull { return } }
+    let mut text = utf8::builder{ realloc = arena::alloc, &heap }
+    let mut i: u64 = 0
+    while i < 80000 {
+        _ = @fmt(&text, "// a line of a generated file a few megabytes long, number {}\n", i)
+        i = i + 1
+    }
+    _ = @fmt(&text, "const BIG: i64 = 7\n")
+    build::gen_file{ &b, exe, name = "big", text = utf8::view{ b = text }.bytes }
+}

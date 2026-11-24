@@ -1,0 +1,9 @@
+
+fn f { b: u8 } -> i32 {
+    match b {
+x => {}  //~ error at 1: unknown name `x`
+else => {}
+    }
+    return 0
+}
+fn main {} { _ = f{ b = 1 } }

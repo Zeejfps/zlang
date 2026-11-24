@@ -1,0 +1,6 @@
+struct K {}
+error e{
+    #K
+    ..Io  //~ error at 5: expected a field after an attribute, found '..'
+}
+fn main {} {}

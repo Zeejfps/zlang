@@ -1,0 +1,229 @@
+// `ctxc syntax`, `ctxc decls` and the recovery test (ctxc/recover.ctx) take each form.
+//# $ ctxc recover main.ctx 0 100000
+//# exit: 0
+// `done` and the number of damaged copies it tried.
+//# stdout:
+//| done {n}
+// The tree is the program's alone, so it is stated whole: the block is a `scope` (11:5), the
+// `try` is the operand of `.x` (12:28), the defer holds an `if` (13:15), and an arm without
+// braces is a block of one `do` (17:14).
+//# $ ctxc syntax main.ctx
+//# exit: 0
+//# stdout:
+//| file main.ctx
+//| 2:1 error bad
+//|
+//| 3:1 struct P
+//|   3:12 field x
+//|     3:15 tpath
+//|       3:15 seg i32
+//|   3:20 field y
+//|     3:23 tpath
+//|       3:23 seg i32
+//| 4:1 struct R
+//|   4:12 field r
+//|     4:15 tfail
+//|       4:16 tpath
+//|         4:16 seg i32
+//| 5:1 union K
+//|   5:11 variant a
+//|   5:14 variant b
+//|   5:17 variant c
+//| 6:1 fn say
+//|   6:10 field mut io
+//|     6:18 tpath
+//|       6:18 seg Io
+//|   6:22 field s
+//|     6:25 tpath
+//|       6:25 seg utf8
+//|       6:31 seg String
+//|   -
+//|   6:40 block
+//|     6:42 do
+//|       6:53 braced
+//|         6:42 path
+//|           6:42 seg io
+//|           6:46 seg println
+//|         6:55 item io
+//|           6:55 addr
+//|             6:56 path
+//|               6:56 seg io
+//|         6:60 item s
+//|           6:60 path
+//|             6:60 seg s
+//| 7:1 fn mk
+//|   7:9 field n
+//|     7:12 tpath
+//|       7:12 seg i32
+//|   7:21 tfail
+//|     7:22 tpath
+//|       7:22 seg P
+//|   7:24 block
+//|     7:26 if
+//|       7:31 binary <
+//|         7:29 path
+//|           7:29 seg n
+//|         7:33 int 0
+//|       7:35 block
+//|         7:37 return
+//|           7:44 path
+//|             7:44 seg bad
+//|       -
+//|     7:51 return
+//|       7:59 braced
+//|         7:58 path
+//|           7:58 seg P
+//|         7:61 item x
+//|           7:65 path
+//|             7:65 seg n
+//|         7:68 item y
+//|           7:74 binary *
+//|             7:72 path
+//|               7:72 seg n
+//|             7:76 int 2
+//| 8:1 fn rr
+//|   8:9 field n
+//|     8:12 tpath
+//|       8:12 seg i32
+//|   8:21 tpath
+//|     8:21 seg R
+//|   8:23 block
+//|     8:25 let r
+//|       8:32 tfail
+//|         8:33 tpath
+//|           8:33 seg i32
+//|       8:39 path
+//|         8:39 seg n
+//|     8:42 return
+//|       8:50 braced
+//|         8:49 path
+//|           8:49 seg R
+//|         8:52 item r
+//|           8:52 path
+//|             8:52 seg r
+//| 10:1 fn run
+//|   10:10 field mut io
+//|     10:18 tpath
+//|       10:18 seg Io
+//|   10:22 field k
+//|     10:25 tpath
+//|       10:25 seg K
+//|   10:28 field n
+//|     10:31 tpath
+//|       10:31 seg i32
+//|   10:40 tfail
+//|     10:41 tpath
+//|       10:41 seg i32
+//|   10:45 block
+//|     11:5 scope
+//|       11:5 block
+//|         12:9 let a
+//|           -
+//|           12:28 dot x
+//|             12:17 try
+//|               12:23 braced
+//|                 12:21 path
+//|                   12:21 seg mk
+//|                 12:25 item n
+//|                   12:25 path
+//|                     12:25 seg n
+//|         13:9 defer
+//|           13:15 block
+//|             13:15 if
+//|               13:20 binary >
+//|                 13:18 path
+//|                   13:18 seg a
+//|                 13:22 int 0
+//|               13:24 block
+//|                 13:26 do
+//|                   13:29 braced
+//|                     13:26 path
+//|                       13:26 seg say
+//|                     13:31 item io
+//|                       13:31 addr
+//|                         13:32 path
+//|                           13:32 seg io
+//|                     13:36 item s
+//|                       13:40 str "defer"
+//|               -
+//|         14:9 scope
+//|           14:9 block
+//|             14:11 do
+//|               14:14 braced
+//|                 14:11 path
+//|                   14:11 seg say
+//|                 14:16 item io
+//|                   14:16 addr
+//|                     14:17 path
+//|                       14:17 seg io
+//|                 14:21 item s
+//|                   14:25 str "block"
+//|     16:5 let v
+//|       -
+//|       16:13 match
+//|         16:19 path
+//|           16:19 seg k
+//|         17:9 arm
+//|           17:9 pat a
+//|           17:14 block
+//|             17:14 do
+//|               17:14 int 1
+//|         18:9 arm
+//|           18:9 pat b
+//|           18:14 block
+//|             18:14 do
+//|               18:14 int 2
+//|         19:9 arm
+//|           19:17 block
+//|             19:17 return
+//|               19:24 int 0
+//|     21:5 return
+//|       21:12 path
+//|         21:12 seg v
+//| 23:1 fn main
+//|   23:11 field mut io
+//|     23:19 tpath
+//|       23:19 seg Io
+//|   -
+//|   23:24 block
+//|     23:26 discard
+//|       23:58 match iferr
+//|         23:33 braced
+//|           23:30 path
+//|             23:30 seg run
+//|           23:35 item io
+//|             23:35 addr
+//|               23:36 path
+//|                 23:36 seg io
+//|           23:40 item k
+//|             23:44 path
+//|               23:44 seg K
+//|               23:47 seg a
+//|           23:50 item n
+//|             23:54 int 1
+//|         23:58 arm
+//|           23:58 pat ok
+//|             23:58 bind value
+//|           23:58 block
+//|             23:58 do
+//|               23:58 path
+//|                 23:58 seg value
+//|         23:58 arm
+//|           23:58 pat err
+//|           23:64 block
+//|             23:64 do
+//|               23:64 int 0
+// `ctxc decls` prints std's declarations too, so only the program's lines are stated: the
+// block's scope, and `a` live to the end of its block.
+//# $ ctxc decls {std:abs} -- main.ctx
+//# exit: 0
+//# stdout has:
+//|
+//|   scope
+//|     let a: i32
+//|       field x i32
+//|         try P
+//|
+//# stdout has:
+//| live a i32 main.ctx:12:30-15:6
+//|

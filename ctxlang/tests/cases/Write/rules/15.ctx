@@ -1,0 +1,5 @@
+capability C {
+    #write  //~ error at 5: `write` applies only to a fn
+    extern x: i32
+}
+fn main {} {}

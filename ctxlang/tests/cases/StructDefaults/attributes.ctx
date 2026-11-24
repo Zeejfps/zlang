@@ -1,0 +1,12 @@
+// An attribute is a struct literal: `..` takes its defaults, and a number left out of
+// one is 0 only if it has none.
+
+struct tag { n: i32 = 3, name: []u8 = "t", flag: bool }
+#tag{ .. }
+fn f {} {}
+#tag{ n = 4, flag = true, .. }
+fn g {} {}
+fn main { mut io: Io } { f{}; g{}; _ = @fmt(&io, "ok\n") }
+
+//# stdout:
+//| ok

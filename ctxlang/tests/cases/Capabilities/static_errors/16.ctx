@@ -1,0 +1,5 @@
+capability O {
+    #stack_limit  //~ error at 5: a program's `stack_limit` static needs the program's own `start` fn, which sets it: std's sets std's
+    static n: usize
+}
+fn main {} {}

@@ -1,0 +1,16 @@
+// `extern union` (spec §12, Untagged unions): C's union, every field at offset 0: its size,
+// alignment and place in a struct are C's, checked through a static library built here.
+//# needs: ar
+//# $ cc -c {dir}/lib/op.c -o {dir}/lib/op.o
+//# exit: 0
+//# $ ar rcs {dir}/lib/libctxtest.a {dir}/lib/op.o
+//# exit: 0
+//# project
+//# $ {cfn}
+//# exit: 0
+//# stdout:
+//| 0
+//| 0
+//| 0
+//| 16
+//| 20

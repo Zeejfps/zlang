@@ -1,0 +1,11 @@
+
+fn third { q: *[3]i32 } -> i32 { return q[2] }
+fn main { mut io: Io } {
+    let mut a = [1, 2, 3]
+    let q = &a
+    q[0] = 5
+    io::println_i64{ &io, n = third{ q } + q[0] + @as(i32, q[1..].len) }
+}
+
+//# stdout:
+//| 10

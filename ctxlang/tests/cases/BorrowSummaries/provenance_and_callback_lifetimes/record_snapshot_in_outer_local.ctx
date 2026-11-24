@@ -1,0 +1,16 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// record snapshot in outer local: accepted, and it runs.
+
+fn read { n: i64 } -> i64 { return n }
+fn main { mut io: Io } {
+    let mut cur = read{ n = -1, _ }
+    let mut prev = cur
+    let mut i: i64 = 0
+    while i < 3 { prev = cur; cur = read{ n = i, _ }; i = i + 1 }
+    io::println_i64{ &io, n = prev{} }
+    io::println_i64{ &io, n = cur{} }
+}
+
+//# stdout:
+//| 1
+//| 2

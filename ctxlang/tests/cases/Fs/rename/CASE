@@ -1,0 +1,12 @@
+// fs::rename replaces a file already at `to`; the old name is gone; renaming a missing file
+// is fs::not_found (1).
+//# program: main.ctx
+//# args: {dir}/tmp/a.txt {dir}/tmp/b.txt {dir}/tmp/missing.txt
+//# interp: cannot run
+//# stdout:
+//| true
+//| new
+//| 1
+//# file tmp/b.txt escaped:
+//| new\
+//# missing tmp/a.txt

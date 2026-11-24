@@ -1,0 +1,9 @@
+fn f {} {
+    outer: while true {
+        defer {
+            while true { break outer }  //~ error at 26: no enclosing loop is labeled `outer` in this defer
+        }
+        break
+    }
+}
+fn main {} {}

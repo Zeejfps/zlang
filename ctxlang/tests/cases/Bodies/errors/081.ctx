@@ -1,0 +1,5 @@
+enum E: u8 { a }
+fn f {} {
+    let e = @as(E, true)  //~ error at 20: @as to an enum takes an integer, got bool
+}
+fn main {} {}

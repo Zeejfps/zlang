@@ -1,0 +1,16 @@
+// A switch case lists its values, then its ranges, LO..HI with both ends included.
+//# build text: {home}/tests/helpers/text.ctx
+
+// The IR is the program's and std's, so only the case's line is stated.
+//# $ ctxc ir {std} -- main.ctx
+//# stdout has:
+//| [10 -3..7]
+
+// `ctxc roundtrip` reads the IR and prints the same text.
+//# $ {text} to p.ir {ctxc} ir {std} -- main.ctx
+//# exit: 0
+//# $ {text} to q.ir {ctxc} roundtrip p.ir
+//# exit: 0
+//# $ {text} same p.ir q.ir
+//# stdout:
+//| same

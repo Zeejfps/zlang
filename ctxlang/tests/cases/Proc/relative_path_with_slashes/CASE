@@ -1,0 +1,10 @@
+// A program by a relative path with `/` in it, which Windows finds only with `\`: a
+// program built into bin/, from the case's directory, which exits with 2.
+//# make dir bin
+//# $ ctxc exe tool.ctx -o {dir}/bin/tool{exe}
+//# exit: 0
+//# build program: main.ctx
+//# $ {program} bin/tool{exe}
+//# exit: 0
+//# stdout:
+//| 2

@@ -1,0 +1,6 @@
+//# env: CTX_TEST_ENV=set
+//# interp: cannot run
+//# stdout:
+//| set
+//| true
+//| true

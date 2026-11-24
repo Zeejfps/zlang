@@ -1,0 +1,10 @@
+
+fn main { mut io: Io } {
+    a: while true {
+        b: while true {
+            while true { continue b }
+            if true { break b }
+            break a
+        }
+    }
+}

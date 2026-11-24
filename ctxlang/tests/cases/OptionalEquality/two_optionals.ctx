@@ -1,0 +1,17 @@
+// Two nulls are equal; a null and a value aren't.
+
+fn eq { a: ?u8, b: ?u32 } -> bool { return a == b }
+fn main { mut io: Io } {
+    io::println_bool{ &io, n = eq{ a = null, b = null } }
+    io::println_bool{ &io, n = eq{ a = 5, b = null } }
+    io::println_bool{ &io, n = eq{ a = null, b = 5 } }
+    io::println_bool{ &io, n = eq{ a = 5, b = 5 } }
+    io::println_bool{ &io, n = eq{ a = 5, b = 6 } }
+}
+
+//# stdout:
+//| true
+//| false
+//| false
+//| true
+//| false

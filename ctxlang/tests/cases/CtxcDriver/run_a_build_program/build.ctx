@@ -1,0 +1,5 @@
+
+fn build { mut b: Build } {
+    _ = build::exe{ &b, name = "first", root = "app" }
+    _ = build::exe{ &b, name = "second", root = "." }
+}

@@ -1,0 +1,33 @@
+
+fn main { mut io: Io } {
+    let mut buf: [8]u8
+    let mut total: i64 = 0
+    let mut more = true
+    while more {
+        let line = io::read_line{ &io, into = buf[..] }
+        if line == null {
+            more = false
+        } else {
+            let n = utf8::parse_i64{ s = utf8::trim{ s = line } }
+            if n != null { total = total + n }
+            io::println{ &io, s = line }
+        }
+    }
+    io::println_i64{ &io, n = total }
+}
+
+//# stdin escaped:
+//| 12\r
+//| 30
+//| abcdefghij
+//|   -2
+//| last\
+//# interp: cannot run
+//# stdout:
+//| 12
+//| 30
+//| abcdefgh
+//| ij
+//|   -2
+//| last
+//| 40

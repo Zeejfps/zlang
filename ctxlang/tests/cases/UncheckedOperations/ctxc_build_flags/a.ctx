@@ -1,0 +1,2 @@
+fn main {} { _ = a{ p = "ab".ptr } + b{ p = "ab".ptr } + c{ p = "ab".ptr } }
+fn a { p: *u8 } -> u8 { return (p + 1).* }

@@ -1,0 +1,4 @@
+fn main {  //~ error at 9: a function's context comes before its body: write `fn main {} { ... }`
+    run{ n = 1 }
+}
+fn run { n: i32 } {}

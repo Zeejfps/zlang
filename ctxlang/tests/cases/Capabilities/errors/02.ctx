@@ -1,0 +1,1 @@
+fn main {} { let x = Io{} }  //~ error at 22: `Io` is a capability: only `main` receives one, from the runtime

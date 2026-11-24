@@ -1,0 +1,12 @@
+// A file is created and written, closed, appended to, and read back two bytes at a time to
+// its end.
+//# make dir tmp
+//# program: main.ctx
+//# args: {dir}/tmp/f.txt
+//# interp: cannot run
+//# stdout:
+//| true
+//| abcde
+//| 5
+//# file tmp/f.txt escaped:
+//| abcde\

@@ -1,0 +1,20 @@
+
+fn main { mut io: Io } {
+    let a: u32 = 0xF0
+    io::println_u64{ &io, n = a & 0x3C }
+    io::println_u64{ &io, n = a | 0x0F }
+    io::println_u64{ &io, n = a ^ 0xFF }
+    let b: i8 = -6
+    io::println_i64{ &io, n = b & 0x0F }
+    io::println_i64{ &io, n = b ^ -1 }
+    let c: u8 = 3
+    io::println_u64{ &io, n = a | c }
+}
+
+//# stdout:
+//| 48
+//| 255
+//| 15
+//| 10
+//| 5
+//| 243

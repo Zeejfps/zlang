@@ -1,0 +1,4 @@
+capability V { extern x: i32 }
+capability W { extern x: i32 }
+capability O { ..V, ..W }  //~ error at 21: capability `O` includes `x` twice: from `V` and from `W`
+fn main {} {}

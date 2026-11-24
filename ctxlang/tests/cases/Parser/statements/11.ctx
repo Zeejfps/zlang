@@ -1,0 +1,3 @@
+fn main {} {
+    for i in range(n) {}  //~ error at 14: a `for` counts over a range written `lo..hi`: write `for i in 0..n`
+}

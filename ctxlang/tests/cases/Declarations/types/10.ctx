@@ -1,0 +1,2 @@
+struct S { a: Io(u8) }  //~ error at 15: `Io` takes no type arguments
+fn main {} {}

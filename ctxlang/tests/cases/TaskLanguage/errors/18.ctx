@@ -1,0 +1,17 @@
+
+#task
+fn fill { mut buf: [8]u8, n: u8 } -> ! { buf[0] = n }
+
+#task
+fn look { s: []u8 } -> !u64 { return @as(u64, s.len) }
+
+#task
+fn sq { n: u64 } -> !u64 { return n * n }
+
+fn main { mut threads: Threads } {
+    let mut data: [8]u8
+    let mut t: task::Task(!u64)
+    task::start{ &threads, task = &t, run = look{ s = data[..], _ } }
+    let y = data[0]
+    data[0] = 1  //~ error at 9: `data` is read by the task started at 14:16: it can't be written until the task is waited for or cancelled
+}

@@ -1,0 +1,6 @@
+// A build program that returns a `!` (spec §19, rule 2) and no error: the project is built.
+// Its executable runs, too.
+//# project
+//# $ {t}
+//# stdout:
+//| built

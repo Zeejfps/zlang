@@ -1,0 +1,9 @@
+const K: i32 = 300
+fn f { b: u8 } -> i32 {
+    match b {
+K => {}  //~ error at 1: expected u8, got i32: `K` is 300, which doesn't fit u8
+else => {}
+    }
+    return 0
+}
+fn main {} { _ = f{ b = 1 } }

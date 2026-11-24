@@ -1,0 +1,18 @@
+// A float const may fold to an infinity or a NaN, which no literal can be.
+
+const G: f64 = 1.0 / 0.0
+const M: f32 = -1.0 / 0.0
+const N: f64 = 0.0 / 0.0
+const A: [2]f64 = [G, N]
+fn main { mut io: Io } {
+    io::println_f64{ &io, n = G }
+    io::println_f32{ &io, n = M }
+    io::println_f64{ &io, n = N }
+    io::println_f64{ &io, n = A[0] }
+}
+
+//# stdout:
+//| inf
+//| -inf
+//| nan
+//| inf

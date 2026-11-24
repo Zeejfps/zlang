@@ -1,0 +1,6 @@
+fn main { mut io: Io } {
+    let mut a = [1, 2, 3]
+    let s = a[..]
+    let i: u64 = 18446744073709551615
+    _ = @fmt(&io, "{}", s[i])  //~ panic at 26: index 18446744073709551615 out of bounds for length 3
+}

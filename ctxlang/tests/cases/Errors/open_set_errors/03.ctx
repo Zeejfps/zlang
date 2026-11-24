@@ -1,0 +1,6 @@
+error a
+error b
+type O = error(a, b, ..)
+fn f {} -> O!u64 { return a }
+fn g {} -> error(a, b)!u64 { return try f{} }  //~ error at 37: `try` passes up error(a, b, ..), an open set, which closed error(a, b) can't hold: it may gain errors
+fn main {} { _ = g{} }

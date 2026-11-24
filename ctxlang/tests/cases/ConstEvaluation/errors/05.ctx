@@ -1,0 +1,2 @@
+const A: i32 = @as(i32, A)  //~ error at 25: const `A` refers to itself
+fn main {} {}

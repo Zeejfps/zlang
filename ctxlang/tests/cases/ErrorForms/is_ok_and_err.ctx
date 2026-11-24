@@ -1,0 +1,52 @@
+
+namespace parse {
+    error empty
+    error bad_digit{ at: usize }
+    error too_big
+}
+
+fn number { s: []u8 } -> !u64 {
+    if s.len == 0 { return parse::empty }
+    let mut n: u64 = 0
+    let mut i: usize = 0
+    while i < s.len {
+        if s[i] < '0' or s[i] > '9' { return parse::bad_digit{ at = i } }
+        if n > 100000 { return parse::too_big }
+        n = n * 10 + @as(u64, s[i] - '0')
+        i = i + 1
+    }
+    return n
+}
+
+fn show { mut io: Io, r: !u64 } {
+    let mut mem: [256]u8 = [0; 256]
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    match r {
+        ok{ value }  => { _ = @fmt(&b, "ok {}", value) }
+        err{ error } => { _ = @fmt(&b, "err {}", error) }
+    }
+    io::println{ &io, s = utf8::view{ b } }
+}
+
+fn act { s: []u8 } -> ! {
+    _ = try number{ s }
+}
+fn get { s: []u8 } -> ?u64 {
+    return number{ s } iferr null
+}
+
+fn main { mut io: Io } {
+    let a = number{ s = "12" }
+    let b = number{ s = "1y" }
+    _ = @fmt(&io, "{} {} {} {}\n", a is ok, a is err, b is ok, not (b is ok))
+    if a is ok{ value = v } and v > 10 { _ = @fmt(&io, "value {}\n", v) }
+    if b is err{ error = e } { _ = @fmt(&io, "error {}\n", e) }
+    if act{ s = "3" } is ok { io::println{ &io, s = "bare ok" } }
+}
+
+//# stdout:
+//| true false false true
+//| value 12
+//| error parse::bad_digit{ at = 1 }
+//| bare ok

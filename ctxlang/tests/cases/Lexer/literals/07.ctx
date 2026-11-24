@@ -1,0 +1,1 @@
+fn main { let s = "\q" }  //~ error at 19: unknown escape \q //~ error at 9: a function's context comes before its body: write `fn main {} { ... }`

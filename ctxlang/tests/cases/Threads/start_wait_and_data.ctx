@@ -1,0 +1,23 @@
+
+struct Job { input: u64, output: u64 }
+
+#task
+fn square { data: *mut Job } -> ! {
+    data.output = data.input * data.input
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let mut a = Job{ input = 7, output = 0 }
+    let mut b = Job{ input = 12, output = 0 }
+    let mut ta: task::Task(!)
+    let mut tb: task::Task(!)
+    task::start{ &threads, task = &ta, run = square{ data = &a, _ } }
+    task::start{ &threads, task = &tb, run = square{ data = &b, _ } }
+    task::wait{ &threads, task = &ta } iferr { return 1 }
+    task::wait{ &threads, task = &tb } iferr { return 1 }
+    io::println_u64{ &io, n = a.output + b.output }
+    return 0
+}
+
+//# stdout:
+//| 193

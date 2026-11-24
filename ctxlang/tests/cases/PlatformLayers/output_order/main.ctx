@@ -1,0 +1,9 @@
+
+fn main { mut io: Io } {
+    io::print{ &io, s = "1" }
+    io::eprint{ &io, s = "2" }
+    io::print{ &io, s = "3" }
+    io::eprint{ &io, s = "4" }
+    io::print{ &io, s = "5" }
+    @panic("6")
+}

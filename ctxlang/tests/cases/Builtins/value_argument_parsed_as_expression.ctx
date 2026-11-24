@@ -1,0 +1,1 @@
+fn main { mut io: Io } { let x = @addr(i32) }  //~ error at 40: `i32` is a type, not a value

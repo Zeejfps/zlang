@@ -1,0 +1,16 @@
+
+fn main { mut io: Io } {
+    let mut n = 0
+    defer n = n + 1
+    defer {
+        let mut i = 0
+        while true {
+            i = i + 1
+            if i == 3 { break }
+        }
+        io::println_i64{ &io, n = n + i }
+    }
+}
+
+//# stdout:
+//| 3

@@ -1,0 +1,11 @@
+// The driver names build.ctx's directory to the build program in ASCII, so std's C
+// getenv, which gives the ANSI code page's bytes on Windows, reads it as it is.
+// `ctxc graph` runs the build program without building the executables, whose files needn't
+// compile. ctxc's own directory for it is removed before and after: the runner clears those of
+// `ctxc run` commands only.
+//# remove {work:café}
+//# $ ctxc graph café {dir}/graph-gen {dir}/graph.txt
+//# stdout:
+//| file café/src/main.ctx
+//| struct Main @ café/src/main.ctx:1:1
+//# remove {work:café}

@@ -1,0 +1,4 @@
+
+fn bump { mut n: i32 } { n = n + 1 }
+fn f { p: *i32 } { bump{ n = p } }  //~ error at 30: expected *mut i32, got *i32
+fn main { mut io: Io } { }

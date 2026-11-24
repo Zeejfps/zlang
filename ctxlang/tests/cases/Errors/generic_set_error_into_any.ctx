@@ -1,0 +1,22 @@
+// An error of a generic set goes up into any error.
+
+error a
+error b{ n: u64 }
+fn db {} -> error(b)!u64 { return b{ n = 7 } }
+// widen E's error into any error, by value
+fn up(E: error) { f: &fn{} -> E!u64 } -> error!u64 {
+    match f{} {
+        ok{ value } => { return value }
+        err{ error } => { return error }
+    }
+}
+fn main { mut io: Io } {
+    match up{ f = db } {
+        ok => {}
+        b{ n } => { io::println_u64{ &io, n } }
+        else => { io::println{ &io, s = "other" } }
+    }
+}
+
+//# stdout:
+//| 7

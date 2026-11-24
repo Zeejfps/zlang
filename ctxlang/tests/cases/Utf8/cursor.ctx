@@ -1,0 +1,34 @@
+
+fn main { mut io: Io } {
+    let lit = "  \xc3\xa9t\xc3\xa9=42 \xe2\x82\xac"
+    let mut cur = utf8::cursor{ s = utf8::of{ chars = lit } }
+    utf8::skip_space{ &cur }
+    opt{ &io, n = utf8::peek{ cur } }
+    opt{ &io, n = utf8::peek_at{ cur, ahead = 1 } }
+    io::println{ &io, s = utf8::take_while{ &cur, f = not_eq } }
+    io::println_bool{ &io, n = utf8::eat{ &cur, ch = '=' } }
+    io::println{ &io, s = utf8::take_while{ &cur, f = utf8::is_digit } }
+    utf8::skip_space{ &cur }
+    io::println_bool{ &io, n = utf8::eat{ &cur, ch = 8364 } }
+    io::println_bool{ &io, n = utf8::done{ cur } }
+    io::println_bool{ &io, n = utf8::bump{ &cur } == null }
+    io::println_bool{ &io, n = utf8::peek_at{ cur, ahead = 0 } == null }
+}
+fn not_eq { c: u32 } -> bool { return c != '=' }
+fn opt { mut io: Io, n: ?u32 } {
+    match n {
+        null          => { io::println_i64{ &io, n = -1 } }
+        some{ value } => { io::println_u64{ &io, n = value } }
+    }
+}
+
+//# stdout:
+//| 233
+//| 116
+//| été
+//| true
+//| 42
+//| true
+//| true
+//| true
+//| true

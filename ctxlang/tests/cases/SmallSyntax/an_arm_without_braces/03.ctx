@@ -1,0 +1,13 @@
+
+error bad
+struct P { x: i32, y: i32 }
+struct R { r: !i32 }
+union K { a, b, c }
+fn say { mut io: Io, s: utf8::String } { io::println{ &io, s } }
+fn mk { n: i32 } -> !P { if n < 0 { return bad }; return P{ x = n, y = n * 2 } }
+fn rr { n: i32 } -> R { let r: !i32 = n; return R{ r } }
+fn run { mut io: Io, n: i32, k: K } -> !i32 {
+    let v = match k { a => let x = 1, else => 2 }  //~ error at 28: a match arm without braces is an expression or one statement, and not a `let` or a `defer`, which need a block: write `=> { ... }` //~ error at 28: this branch must end in a value, or leave with `return`, `break`, `continue` or `@panic()` //~ error at 13: match isn't exhaustive: missing b, c //~ error at 13: no branch of this expression produces a value; use a statement instead
+    return 0
+}
+fn main { mut io: Io } { _ = @fmt(&io, "{}\n", run{ &io, n = 1, k = K::a } iferr -1) }

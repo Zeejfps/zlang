@@ -1,0 +1,13 @@
+// An open set's openness reaches every inferred set its errors reach, however they get
+// there: a chain of `try`, recursion, an error rebound and returned, a function value (any
+// error, which is open too), and a writer that declares one.
+
+error a
+error b
+type O = error(a, b, ..)
+fn f {} -> O!u64 { return a }
+fn h {} -> !u64 {
+    let v = f{} iferr err{ error } { return error }
+    return v
+}
+fn main { mut io: Io } { match h{} { ok => {} a => {} b => {} } }  //~ error at 26: a match on an open error set needs `else` or `err`: error of `h` may gain errors

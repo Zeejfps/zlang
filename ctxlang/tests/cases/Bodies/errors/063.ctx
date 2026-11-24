@@ -1,0 +1,5 @@
+fn g { a: i32, b: i32 } {}
+fn f {} {
+    let h: fn{ a: i32 } = g  //~ error at 27: function needs `b`, which fn{ a: i32 } doesn't provide
+}
+fn main {} {}

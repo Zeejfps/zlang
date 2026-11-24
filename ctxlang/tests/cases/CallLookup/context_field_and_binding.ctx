@@ -1,0 +1,16 @@
+
+struct span { a: i32 }
+union U { one{ name: i32 } }
+fn name { x: i32 } -> i32 { return x + 1 }
+fn show { mut io: Io, name: i32 } {
+    match U::one{ name = 40 } {
+        one{ name = n } => { io::println_i64{ &io, n = name{ x = n } + name } }
+    }
+    let span = span{ a = name }
+    io::println_i64{ &io, n = span.a }
+}
+fn main { mut io: Io } { show{ &io, name = 1 } }
+
+//# stdout:
+//| 42
+//| 1

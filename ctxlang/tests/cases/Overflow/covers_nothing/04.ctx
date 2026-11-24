@@ -1,0 +1,6 @@
+
+fn main { mut io: Io } {
+    let x: i32 = 5
+    let f: f64 = 2.0
+    _ = x & x ifoverflow 0  //~ error at 15: nothing before `ifoverflow` can overflow: it covers the integer `+`, `-`, `*` and `/`, unary `-`, and `@as` and `@round` to an integer written before it, and the operands of those in turn
+}

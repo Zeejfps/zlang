@@ -1,0 +1,5 @@
+#test_main
+fn r {} -> i32 { return 0 }
+#test_main  //~ error at 1: a second `test_main` fn: `r` is the program's already
+fn q {} -> i32 { return 0 }
+fn main {} {}

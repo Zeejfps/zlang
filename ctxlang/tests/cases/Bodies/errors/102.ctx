@@ -1,0 +1,5 @@
+fn w { mut b: utf8::Builder(arena::Arena) } -> ! {
+    let n: i64 = 65
+    return @fmt(&b, "{}", utf8::write_char{ c = n, _ })  //~ error at 49: expected u32, got i64
+}
+fn main {} {}

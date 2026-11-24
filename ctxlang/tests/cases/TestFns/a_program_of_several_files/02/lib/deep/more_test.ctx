@@ -1,0 +1,2 @@
+#test
+fn at_the_top { mut t: Test } { @expect(&t, shapes::area{ w = 1, h = 1 } == 1) }

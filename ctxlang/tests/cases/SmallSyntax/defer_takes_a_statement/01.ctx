@@ -1,0 +1,28 @@
+
+error bad
+struct P { x: i32, y: i32 }
+struct R { r: !i32 }
+union K { a, b, c }
+fn say { mut io: Io, s: utf8::String } { io::println{ &io, s } }
+fn mk { n: i32 } -> !P { if n < 0 { return bad }; return P{ x = n, y = n * 2 } }
+fn rr { n: i32 } -> R { let r: !i32 = n; return R{ r } }
+
+fn main { mut io: Io } {
+    let k = K::b
+    let mut c = false
+    defer if c { say{ &io, s = "if" } }             // tested when it runs: c is true by then
+    defer if let v = (mk{ n = 3 } iferr null) { io::println_i64{ &io, n = v.y } }
+    defer match k { b => say{ &io, s = "match" }, else => {} }
+    defer for i in 0..2 { io::println_u64{ &io, n = i } }
+    defer while c { c = false; say{ &io, s = "while" } }
+    c = true
+    say{ &io, s = "body" }
+}
+
+//# stdout:
+//| body
+//| while
+//| 0
+//| 1
+//| match
+//| 6

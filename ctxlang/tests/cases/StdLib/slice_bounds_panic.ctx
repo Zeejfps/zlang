@@ -1,0 +1,6 @@
+
+fn main { mut io: Io } {
+    let mut a: [2]u8
+    let s = a[..]
+    let x = s[2]  //~ panic at 14: index 2 out of bounds for length 2
+}

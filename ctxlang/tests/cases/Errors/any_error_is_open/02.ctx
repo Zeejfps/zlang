@@ -1,0 +1,13 @@
+// Any error, here a function type's `!T`, is open: a match on it needs `else`, which is
+// never unreachable, however many errors it lists.
+
+error a
+error b
+fn f {} -> error(a, b)!u64 { return a }
+fn main { mut io: Io } {
+    let v: fn{} -> !u64 = f
+    match v{} { ok => {} a => { io::println{ &io, s = "a" } } b => {} else => {} }
+}
+
+//# stdout:
+//| a

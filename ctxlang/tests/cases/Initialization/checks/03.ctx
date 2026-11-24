@@ -1,0 +1,11 @@
+fn f { c: bool } -> i32 {
+    let x: i32
+    while true {
+        x = 1
+        break
+    }
+    return x
+}
+fn main {} {}
+
+//# exit: 0

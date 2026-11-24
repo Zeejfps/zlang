@@ -1,0 +1,23 @@
+
+enum Kind: u8 {
+    ident,
+    number,
+    lbrace = 40,
+    rbrace,
+}
+
+enum Sign: i8 { minus = -1, zero, plus }
+
+const FIRST: Kind = Kind::lbrace
+const ORDER: [3]Kind = [Kind::rbrace, Kind::ident, Kind::number]
+const BASE: u8 = 200
+enum Big: u8 { a = BASE + 1, b, c = 2 * 3 }
+
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = @as(u64, ORDER[0]) + @as(u64, FIRST) }
+    io::println_u64{ &io, n = @as(u64, Big::b) + @as(u64, Big::c) }
+}
+
+//# stdout:
+//| 81
+//| 208

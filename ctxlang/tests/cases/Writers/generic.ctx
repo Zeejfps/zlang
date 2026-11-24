@@ -1,0 +1,37 @@
+// Each instance of a generic fn has its own hidden fn for the writer in it.
+
+struct Pool { a: arena::Arena }
+fn pool_alloc { mut heap: Pool, mem: alloc::Bytes, new: usize, align: usize } -> ?alloc::Bytes {
+    return arena::alloc{ heap = &heap.a, mem, new, align }
+}
+fn show(S) { mut b: utf8::Builder(S), n: i32 } -> ! {
+    let w: utf8::Fmt(S) = @fmt("g{}", n)
+    return w{ &b }
+}
+
+error bad{ code: i32, why: utf8::String }
+fn report { mut io: Io, mut heap: arena::Arena, msg: utf8::Fmt(arena::Arena) } {
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    msg{ &b } iferr { io::println{ &io, s = "failed" } }
+    io::println{ &io, s = utf8::view{ b } }
+}
+fn next { mut n: i32 } -> i32 {
+    n = n + 1
+    return n
+}
+fn main { mut io: Io } {
+    let mut mem: [8192]u8
+    let mut heap = arena::new{ buf = mem[..] }
+
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    try! show{ &b, n = 1 }
+    let mut p = Pool{ a = arena::new{ buf = mem[4096..] } }
+    let mut q = utf8::builder{ realloc = pool_alloc, heap = &p }
+    try! show{ b = &q, n = 2 }
+    io::println{ &io, s = utf8::view{ b } }
+    io::println{ &io, s = utf8::view{ b = q } }
+}
+
+//# stdout:
+//| g1
+//| g2

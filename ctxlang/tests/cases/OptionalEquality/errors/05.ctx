@@ -1,0 +1,2 @@
+fn f { x: ?i32 } -> bool { return x < 3 }  //~ error at 37: cannot compare ?i32 with {integer}
+fn main {} { }

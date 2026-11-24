@@ -1,0 +1,70 @@
+// A payload may hold pointers (§8, Errors): here text from literals, and a view into the
+// caller's bytes. `try number{ s = buf[..] }` passes up only parse's errors, whose
+// payloads hold no pointer, so it may take a local's address although `bad`'s holds one.
+
+namespace parse {
+    error empty
+    error bad_digit{ at: usize }
+    error too_big
+}
+
+fn number { s: []u8 } -> !u64 {
+    if s.len == 0 { return parse::empty }
+    let mut n: u64 = 0
+    let mut i: usize = 0
+    while i < s.len {
+        if s[i] < '0' or s[i] > '9' { return parse::bad_digit{ at = i } }
+        if n > 100000 { return parse::too_big }
+        n = n * 10 + @as(u64, s[i] - '0')
+        i = i + 1
+    }
+    return n
+}
+
+fn show { mut io: Io, r: !u64 } {
+    let mut mem: [256]u8 = [0; 256]
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    match r {
+        ok{ value }  => { _ = @fmt(&b, "ok {}", value) }
+        err{ error } => { _ = @fmt(&b, "err {}", error) }
+    }
+    io::println{ &io, s = utf8::view{ b } }
+}
+
+error bad{ text: []u8 }
+error named{ c: c::String, u: utf8::String }
+fn head { s: []u8 } -> !u64 {
+    if s[0] == 'x' { return bad{ text = s[0..3] } }
+    return s.len
+}
+fn lookup { have: bool } -> !i32 {
+    if not have { return named{ c = "glCreateShader", u = "h\xc3\xa9llo" } }
+    return 1
+}
+fn sum { s: []u8 } -> !u64 {
+    let buf: [3]u8 = ['1', '2', '3']
+    let n = try number{ s = buf[..] }
+    return n + s.len
+}
+fn main { mut io: Io } {
+    match lookup{ have = false } {
+        ok => {}
+        named{ c, u } => {
+            io::println{ &io, s = utf8::of{ chars = c::bytes{ s = c } } }
+            io::println{ &io, s = u }
+        }
+    }
+    let input: [5]u8 = ['x', 'y', 'z', 'z', 'y']
+    match head{ s = input[..] } {
+        ok{ value } => { io::println_u64{ &io, n = value } }
+        bad{ text } => { io::println{ &io, s = utf8::of{ chars = text } } }
+    }
+    io::println_u64{ &io, n = sum{ s = "ab" } iferr 0 }
+}
+
+//# stdout:
+//| glCreateShader
+//| héllo
+//| xyz
+//| 125

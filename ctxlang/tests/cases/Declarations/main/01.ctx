@@ -1,0 +1,3 @@
+
+//# errors:
+//| 01.ctx:1:1: error: no `fn main` entry point

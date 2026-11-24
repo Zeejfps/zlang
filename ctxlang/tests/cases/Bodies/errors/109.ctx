@@ -1,0 +1,9 @@
+fn g { mut a: i32 } {}
+union U { a, b{ x: i32 } }
+fn f { u: *U } {
+    match u {
+        a => {}
+        b{ &x } => { g{ a = &x } }  //~ error at 30: `x` is not a mutable place: it is bound through a read-only pointer //~ error at 29: expected *mut i32, got *i32
+    }
+}
+fn main {} {}

@@ -1,0 +1,56 @@
+// `E: error` is a generic parameter that is an error set (spec §9): a function forwards
+// its callback's own set, which its callers match without `else`, inferred or given.
+
+error busy
+error gone{ id: u64 }
+error broke
+
+namespace net {
+    type Error = error(busy, gone)
+    fn load { n: u64 } -> Error!u64 {
+        if n == 0 { return busy }
+        if n == 1 { return gone{ id = 9 } }
+        return n * 10
+    }
+}
+
+// Forwards the callback's own set: callers see net::Error, not any error.
+fn retry(T, E: error) { f: &fn{} -> E!T, times: u32 } -> E!T {
+    let mut i: u32 = 1
+    while i < times {
+        match f{} {
+            ok{ value } => { return value }
+            err => {}
+        }
+        i = i + 1
+    }
+    return f{}
+}
+
+// An inferred caller of a set-generic one.
+fn twice { n: u64 } -> !u64 {
+    let v = try retry{ f = net::load{ n, _ }, times = 2 }
+    return v + 1
+}
+
+fn main { mut io: Io } {
+    match retry{ f = net::load{ n = 0, _ }, times = 3 } {
+        ok{ value } => { io::println_u64{ &io, n = value } }
+        busy => { io::println{ &io, s = "busy" } }
+        gone{ id } => { io::println_u64{ &io, n = id } }
+    }
+    match retry(u64, net::Error){ f = net::load{ n = 1, _ }, times = 1 } {
+        ok => {}
+        busy => {}
+        gone{ id } => { io::println_u64{ &io, n = id } }
+    }
+    match twice{ n = 4 } {
+        ok{ value } => { io::println_u64{ &io, n = value } }
+        busy | gone => {}
+    }
+}
+
+//# stdout:
+//| busy
+//| 9
+//| 41

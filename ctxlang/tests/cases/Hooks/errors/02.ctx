@@ -1,0 +1,3 @@
+#start
+fn boot { n: i64 } -> i32 { return 0 }  //~ error at 11: a `start` fn's context is capabilities, `argc: i32`, `argv: *?*u8` and `main: &fn{ args: Args } -> i32`, not `n: i64`
+fn main {} {}

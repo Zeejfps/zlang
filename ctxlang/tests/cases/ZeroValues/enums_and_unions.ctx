@@ -1,0 +1,32 @@
+
+enum Kind: u8 { none, panel, button }
+enum Late: i32 { a = -1, zero = 0, b = 1 }
+union Shape { dot, circle{ r: f32 } }
+union Box { full{ n: i32, on: bool }, empty }
+union Opt(T) { none, some{ v: T } }
+struct Control { kind: Kind, shape: Shape, id: i32 }
+capability Store { static last: Kind }
+fn name { k: Kind } -> []u8 { match k { none => { return "none" } panel => { return "panel" } button => { return "button" } } }
+fn show { mut io: Io, s: Store } {
+    let mut k: Kind
+    let mut l: Late
+    let mut sh: Shape
+    let mut b: Box
+    let mut o: Opt(*i32)
+    let mut c: Control
+    let mut many: [3]Kind
+    let lz: []u8 = if l == Late::zero { "zero" } else { "other" }
+    let sd: []u8 = if sh is dot { "dot" } else { "circle" }
+    _ = @fmt(&io, "{} {} {}\n", name{ k }, lz, sd)
+    match b { full{ n, on } => { _ = @fmt(&io, "full {} {}\n", n, on) } empty => {} }
+    let on: []u8 = if o is none { "none" } else { "some" }
+    _ = @fmt(&io, "{} {} {} {}\n", on, name{ k = c.kind }, c.id, name{ k = many[2] })
+    _ = @fmt(&io, "{}\n", name{ k = s.last })
+}
+fn main { mut io: Io, s: Store } { show{ &io, s } }
+
+//# stdout:
+//| none zero dot
+//| full 0 false
+//| none none 0 none
+//| none

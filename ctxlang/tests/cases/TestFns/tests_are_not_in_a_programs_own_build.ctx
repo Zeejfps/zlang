@@ -1,0 +1,9 @@
+// A `#test` fn is checked in every build, and run by none but a test build.
+
+#test
+fn never_run { mut t: Test } { @expect(&t, 1 == 2) }
+fn helper(T) { mut t: Test, a: T, b: T } -> bool { return @expect(&t, a == b) }
+fn main { mut io: Io } { io::println{ &io, s = "main" } }
+
+//# stdout:
+//| main

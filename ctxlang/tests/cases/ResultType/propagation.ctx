@@ -1,0 +1,38 @@
+
+error empty
+error bad{ at: usize }
+fn parse_one { s: utf8::String } -> !i64 {
+    if utf8::len{ s } == 0 { return empty }
+    let mut i: usize = 0
+    while i < utf8::len{ s } {
+        if not utf8::is_digit{ c = utf8::at{ s, i } } { return bad{ at = i } }
+        i = i + 1
+    }
+    return utf8::parse_i64{ s } ifnull { return bad{ at = 0 } }
+}
+fn sum { s: utf8::String } -> !i64 {
+    let parts = utf8::split_once{ s, c = ',' } ifnull { return empty }
+    let x = try parse_one{ s = parts.head }
+    let y = try parse_one{ s = parts.tail }
+    return x + y
+}
+fn report { mut io: Io, r: !i64 } {
+    let code = match r {
+        ok{ value }  => { value }
+        err{ error } => { match error { empty => { -1 } bad{ at } => { -100 - @as(i64, at) } else => { -2 } } }
+    }
+    io::println_i64{ &io, n = code }
+}
+fn main { mut io: Io } {
+    let a = "12,30"
+    let b = "12,3x"
+    let c = "12"
+    report{ &io, r = sum{ s = utf8::of{ chars = a } } }
+    report{ &io, r = sum{ s = utf8::of{ chars = b } } }
+    report{ &io, r = sum{ s = utf8::of{ chars = c } } }
+}
+
+//# stdout:
+//| 42
+//| -101
+//| -1

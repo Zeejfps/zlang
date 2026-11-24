@@ -1,0 +1,6 @@
+fn f { n: f64 } {
+    match n {  //~ error at 11: match needs a union, enum, optional or integer value, got f64
+        a => {}
+    }
+}
+fn main {} {}

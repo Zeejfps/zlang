@@ -1,0 +1,4 @@
+fn build { mut b: Build } -> i32 {
+    io::println{ io = &b, s = "said" }
+    return 1
+}

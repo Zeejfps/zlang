@@ -1,0 +1,3 @@
+enum E: u8 { a }
+const A: E = E::a{}  //~ error at 18: `E::a` is an enum value; write it without braces
+fn main {} {}

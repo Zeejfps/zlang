@@ -1,0 +1,1 @@
+fn main { mut io: Io } { io::println{ &io, s = "ok\xc3" } }  //~ error at 48: string literal: utf8::invalid{ at = 2 }

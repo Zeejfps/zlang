@@ -1,0 +1,2 @@
+fn f { x: u32 } -> []u32 { return [x, 1] }  //~ error at 28: returned value holds the address of an array literal
+fn main {} {}

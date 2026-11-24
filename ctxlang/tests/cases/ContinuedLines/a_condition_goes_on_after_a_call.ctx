@@ -1,0 +1,57 @@
+
+struct W { open: bool, n: i32 }
+union K { a, b }
+fn ok { n: i32 } -> bool { return n > 0 }
+fn num { n: i32 } -> i32 { return n }
+fn opt { n: i32 } -> ?i32 { if n == 0 { return null }; return n }
+fn flag { n: i32 } -> ?bool { if n == 0 { return null }; return n > 0 }
+fn w { n: i32 } -> W { return W{ open = n > 0, n } }
+fn main { mut io: Io } {
+    let n = 3
+    let mut i = 0
+    let b = true
+    if ok{ n = 0 }
+       or b { io::println{ &io, s = "or" } }
+    if ok{ n }
+       and b { io::println{ &io, s = "and" } }
+    if num{ n }
+       == 3 { io::println{ &io, s = "==" } }
+    if num{ n }
+       + num{ n }
+       * 2 > 8 { io::println{ &io, s = "+ *" } }
+    if num{ n }
+       | 4 == 7 and num{ n }
+       << 1 == 6 { io::println{ &io, s = "| <<" } }
+    if flag{ n = 0 }
+       ifnull true { io::println{ &io, s = "ifnull" } }
+    if w{ n }
+       .open { io::println{ &io, s = "." } }
+    if opt{ n }
+       is some{ value }                             // the pattern's braces, then `and`
+       and value == 3 { io::println{ &io, s = "is" } }
+    while num{ n = i }
+          < 2 { i = i + 1 }
+    match num{ n }
+          + 0 {
+        3 => { io::println{ &io, s = "match" } }
+        else => {}
+    }
+    for x in [num{ n }
+              * 2] { io::println_i64{ &io, n = x } }
+    let v = if ok{ n }
+               and b { 1 } else { 2 }
+    _ = @fmt(&io, "{} {}\n", i, v)
+}
+
+//# stdout:
+//| or
+//| and
+//| ==
+//| + *
+//| | <<
+//| ifnull
+//| .
+//| is
+//| match
+//| 6
+//| 2 1

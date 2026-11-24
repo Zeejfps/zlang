@@ -1,0 +1,971 @@
+// One case, in a process of its own: its steps run in order, and what each expects is checked.
+// The result goes to a file the runner reads.
+
+namespace work {
+    // An executable a step built, by the name later steps run it by.
+    struct Exe { name: []u8, path: []u8 }
+
+    // A case as it runs.
+    struct Run {
+        s: tool::Session,
+        scratch: tool::Scratch,
+        c: case::Case,
+        dir: []u8,              // where its steps run: its own directory, or a copy of it
+        up: []u8,               // from there to ctxlang/: a run of `../`, or the absolute path and a `/`
+        gen: []u8,              // where a project's generated files go
+        fails: Text,            // the failures' lines
+        failed: bool,
+        exes: list::List(Exe, Heap),
+        interp: Text,           // a line for each program: how the interpreter fared
+        work_dirs: Strs,        // ctxc's own directories for what the case's commands build
+    }
+
+    // ---- reporting
+
+    // Starts a failure's line: `FILE:LINE: fail: NAME: `.
+    fn fail { mut r: Run, line: u32, what: []u8 } {
+        r.failed = true
+        try! @fmt(&r.fails, "{}:{}: fail: {}: {}\n", r.c.file, line, r.c.name, what)
+    }
+
+    // Adds one line of text to the last failure, after a heading.
+    fn excerpt { mut r: Run, heading: []u8, line: []u8 } {
+        try! @fmt(&r.fails, "  {} | ", heading)
+        printable{ b = &r.fails, s = line }
+        try! utf8::push_bytes{ b = &r.fails, s = "\n" }
+    }
+
+    // Adds text to the last failure, each line indented, under a heading.
+    fn detail { mut r: Run, heading: []u8, body: []u8 } {
+        try! @fmt(&r.fails, "  {}\n", heading)
+        let mut from: usize = 0
+        let mut lines: usize = 0
+        while from < body.len {
+            let end = line_end{ s = body, from }
+            if lines == 60 {
+                try! @fmt(&r.fails, "    ... ({} bytes more)\n", body.len - from)
+                break
+            }
+            try! utf8::push_bytes{ b = &r.fails, s = "    | " }
+            printable{ b = &r.fails, s = body[from..end] }
+            try! utf8::push_bytes{ b = &r.fails, s = "\n" }
+            lines = lines + 1
+            from = end + 1
+        }
+        if body.len > 0 and body[body.len - 1] != '\n' { try! utf8::push_bytes{ b = &r.fails, s = "    (no line break at the end)\n" } }
+    }
+
+    // s with what a terminal wouldn't show as it is written as an escape: `\r`, `\t`, `\xNN`.
+    fn printable { mut b: Text, s: []u8 } {
+        let digits = "0123456789abcdef"
+        for c in s {
+            if c == '\r' {
+                try! utf8::push_bytes{ &b, s = "\\r" }
+            } else if c == '\t' {
+                try! utf8::push_bytes{ &b, s = "\\t" }
+            } else if c < 32 or c == 127 {
+                let x: [4]u8 = ['\\', 'x', digits[c >> 4], digits[c & 15]]
+                try! utf8::push_bytes{ &b, s = x[..] }
+            } else {
+                try! list::push{ list = &b.bytes, item = c }
+            }
+        }
+    }
+
+    // ---- text
+
+    // `text` with each placeholder it holds replaced: `{dir}`, `{home}`, `{repo}`, `{gen}`,
+    // `{exe}`, `{ctxc}`, `{cc}`, `{work:PATH}`, and `{NAME}` for each executable built.
+    fn filled { mut r: Run, mut heap: Heap, s: []u8 } -> []u8 {
+        if not has{ s, part = "{" } { return s }
+        let mut out = s
+        out = replaced{ &heap, s = out, from = "{dir}", to = r.dir }
+        out = replaced{ &heap, s = out, from = "{home}", to = r.s.home }
+        out = replaced{ &heap, s = out, from = "{repo}", to = parent{ path = r.s.home } }
+        out = replaced{ &heap, s = out, from = "{gen}", to = r.gen }
+        out = replaced{ &heap, s = out, from = "{exe}", to = tool::exe_suffix{ os = r.s.os } }
+        out = replaced{ &heap, s = out, from = "{ctxc}", to = r.s.ctxc }
+        if has{ s = out, part = "{cc}" } {
+            let mut cc = text{ &heap }
+            for w at i in r.s.cc { try! @fmt(&cc, "{}{}", if i == 0 { "" } else { " " }, w) }
+            out = replaced{ &heap, s = out, from = "{cc}", to = utf8::view{ b = cc }.bytes }
+        }
+        // `{work:PATH}`: the directory ctxc builds the program at PATH in.
+        while true {
+            let at = find{ s = out, part = "{work:" } ifnull { break }
+            let end = find_from{ s = out, part = "}", from = at } ifnull { break }
+            let work = ctxc_work_dir{ &heap, s = r.s, path = join{ &heap, a = r.dir, b = out[at + 6..end] } }
+            out = cat3{ &heap, a = out[..at], b = work, c = out[end + 1..] }
+        }
+        for e in list::items{ list = r.exes } { out = replaced{ &heap, s = out, from = cat3{ &heap, a = "{", b = e.name, c = "}" }, to = e.path } }
+        return out
+    }
+
+    // Output as it is compared: a run of `../` before `std/` is dropped, so that a position in
+    // std reads `std/list.ctx:9:5` wherever the case is.
+    fn settled { mut heap: Heap, s: []u8 } -> []u8 {
+        if not has{ s, part = "../std/" } { return s }
+        let mut b = text{ &heap }
+        let mut i: usize = 0
+        while i < s.len {
+            if starts_with{ s = s[i..], prefix = "../" } and (i == 0 or (s[i - 1] != '/' and s[i - 1] != '.')) {
+                let mut j = i
+                while starts_with{ s = s[j..], prefix = "../" } { j = j + 3 }
+                if starts_with{ s = s[j..], prefix = "std/" } {
+                    i = j
+                    continue
+                }
+                try! utf8::push_bytes{ &b, s = s[i..j] }
+                i = j
+                continue
+            }
+            try! list::push{ list = &b.bytes, item = s[i] }
+            i = i + 1
+        }
+        return utf8::view{ b }.bytes
+    }
+
+    // Whether an expected text holds a wildcard: `{n}`, one or more digits, `{hex}`, one or more
+    // digits in hexadecimal (lower case), or `{any}`, any text to a line's end or to what
+    // follows it.
+    fn wild { want: []u8 } -> bool {
+        return has{ s = want, part = "{n}" } or has{ s = want, part = "{any}" } or has{ s = want, part = "{hex}" }
+    }
+
+    // Where in `got`, from `at`, the pattern `want` ends if it matches there; null if it
+    // doesn't. A wildcard never takes a line break.
+    fn matched { want: []u8, got: []u8, at: usize } -> ?usize {
+        let mut w: usize = 0
+        let mut g = at
+        while w < want.len {
+            let hex = starts_with{ s = want[w..], prefix = "{hex}" }
+            if hex or starts_with{ s = want[w..], prefix = "{n}" } {
+                let start = g
+                while g < got.len and ((got[g] >= '0' and got[g] <= '9') or (hex and got[g] >= 'a' and got[g] <= 'f')) { g = g + 1 }
+                // Fewer digits, if what follows needs some of them.
+                let after: usize = if hex { 5 } else { 3 }
+                while g > start {
+                    if let end = matched{ want = want[w + after..], got, at = g } { return end }
+                    g = g - 1
+                }
+                return null
+            }
+            if starts_with{ s = want[w..], prefix = "{any}" } {
+                let mut end = g
+                while true {
+                    if let done = matched{ want = want[w + 5..], got, at = end } { return done }
+                    if end >= got.len or got[end] == '\n' { return null }
+                    end = end + 1
+                }
+            }
+            if g >= got.len or got[g] != want[w] { return null }
+            w = w + 1
+            g = g + 1
+        }
+        return g
+    }
+
+    // Whether `got` is the text `want`, wildcards and all.
+    fn same { want: []u8, got: []u8 } -> bool {
+        if not wild{ want } { return eq{ a = want, b = got } }
+        let end = matched{ want, got, at = 0 } ifnull { return false }
+        return end == got.len
+    }
+
+    // Whether `got` holds the text `want`, wildcards and all.
+    fn holds { want: []u8, got: []u8 } -> bool {
+        if not wild{ want } { return has{ s = got, part = want } }
+        for at in 0..got.len + 1 {
+            if matched{ want, got, at } != null { return true }
+        }
+        return false
+    }
+
+    // The first line where `got` isn't `want`, from 1.
+    fn first_difference { a: []u8, b: []u8 } -> u32 {
+        let mut line: u32 = 1
+        let mut x: usize = 0
+        let mut y: usize = 0
+        while x < a.len and y < b.len {
+            let xe = line_end{ s = a, from = x }
+            let ye = line_end{ s = b, from = y }
+            if not same{ want = a[x..xe], got = b[y..ye] } { return line }
+            if (xe < a.len) != (ye < b.len) { return line }
+            x = xe + 1
+            y = ye + 1
+            line = line + 1
+        }
+        return line
+    }
+
+    // Line `n` of s, from 1; "" past its end.
+    fn line_of { s: []u8, n: u32 } -> []u8 {
+        let mut from: usize = 0
+        let mut k: u32 = 1
+        while from < s.len {
+            let end = line_end{ s, from }
+            if k == n { return s[from..end] }
+            from = end + 1
+            k = k + 1
+        }
+        return ""
+    }
+
+    // Checks what a step wrote to a stream against the texts expected of it: with none stated,
+    // it must have written nothing.
+    fn check_stream { mut r: Run, mut heap: Heap, step: case::Step, stream: case::Stream, name: []u8, actual: []u8 } {
+        let mut stated = false
+        for e in step.expects {
+            if e.stream != stream { continue }
+            stated = true
+            check_text{ &r, &heap, e, name, actual }
+        }
+        if not stated and actual.len > 0 {
+            fail{ &r, line = step.line, what = cat{ &heap, a = name, b = " isn't empty, and nothing is expected of it" } }
+            detail{ &r, heading = "actual:", body = actual }
+        }
+    }
+
+    fn check_text { mut r: Run, mut heap: Heap, e: case::Expect, name: []u8, actual: []u8 } {
+        let want = filled{ &r, &heap, s = e.text }
+        match e.mode {
+            any => {}
+            exact => {
+                if same{ want, got = actual } { return }
+                let n = first_difference{ a = want, b = actual }
+                let mut b = text{ &heap }
+                try! @fmt(&b, "{} differs at its line {}", name, n)
+                fail{ &r, line = e.line, what = utf8::view{ b }.bytes }
+                excerpt{ &r, heading = "expected line:", line = line_of{ s = want, n } }
+                excerpt{ &r, heading = "actual line:  ", line = line_of{ s = actual, n } }
+                detail{ &r, heading = "actual, whole:", body = actual }
+            }
+            has => {
+                if holds{ want, got = actual } { return }
+                fail{ &r, line = e.line, what = cat{ &heap, a = name, b = " doesn't have the text" } }
+                detail{ &r, heading = "expected to have:", body = want }
+                detail{ &r, heading = "actual:", body = actual }
+            }
+            lacks => {
+                if not holds{ want, got = actual } { return }
+                fail{ &r, line = e.line, what = cat{ &heap, a = name, b = " has the text it must lack" } }
+                detail{ &r, heading = "expected to lack:", body = want }
+                detail{ &r, heading = "actual:", body = actual }
+            }
+        }
+    }
+
+    // Checks the files a step's `file PATH` expectations name.
+    fn check_files { mut fs: Fs, mut r: Run, mut heap: Heap, step: case::Step } {
+        for e in step.expects {
+            if e.stream == case::Stream::list {
+                // A directory's names, sorted, a line for each.
+                let path = join{ &heap, a = r.dir, b = filled{ &r, &heap, s = e.path } }
+                if kind_of{ &fs, path } != 2 {
+                    fail{ &r, line = e.line, what = cat3{ &heap, a = "no directory `", b = e.path, c = "`" } }
+                    continue
+                }
+                let mut names = text{ &heap }
+                for n in names_in{ &fs, &heap, path } { try! @fmt(&names, "{}\n", n) }
+                check_text{ &r, &heap, e, name = cat3{ &heap, a = "the listing of `", b = e.path, c = "`" }, actual = utf8::view{ b = names }.bytes }
+                continue
+            }
+            if e.stream != case::Stream::file { continue }
+            let path = join{ &heap, a = r.dir, b = filled{ &r, &heap, s = e.path } }
+            let actual = read_file{ &fs, &heap, path } ifnull {
+                fail{ &r, line = e.line, what = cat3{ &heap, a = "no file `", b = e.path, c = "`" } }
+                continue
+            }
+            check_text{ &r, &heap, e, name = cat3{ &heap, a = "file `", b = e.path, c = "`" }, actual }
+        }
+    }
+
+    // ---- a run's outcome
+
+    // Checks a process that ran against a step's exit code, panic and texts: `what` names it.
+    fn check_ran { mut fs: Fs, mut r: Run, mut heap: Heap, step: case::Step, ran: tool::Ran, what: []u8, panic: ?[]u8, panic_line: u32 } {
+        if not ran.started {
+            fail{ &r, line = step.line, what = cat3{ &heap, a = what, b = " didn't start: ", c = ran.err } }
+            return
+        }
+        let out = settled{ &heap, s = ran.out }
+        let mut err = settled{ &heap, s = ran.err }
+        if ran.late {
+            let mut b = text{ &heap }
+            try! @fmt(&b, "{} was ended after {} s, still running", what, if step.timeout == 0 { tool::TIMEOUT } else { step.timeout })
+            fail{ &r, line = step.line, what = utf8::view{ b }.bytes }
+            if out.len > 0 { detail{ &r, heading = "stdout:", body = out } }
+            if err.len > 0 { detail{ &r, heading = "stderr:", body = err } }
+            return
+        }
+        let want_code: i64 = step.exit ifnull { if panic != null { 134 } else { 0 } }
+        if ran.code != want_code {
+            let mut b = text{ &heap }
+            try! @fmt(&b, "{} exited with {}, not {}", what, ran.code, want_code)
+            fail{ &r, line = if step.exit != null { step.exit_line } else if panic != null { panic_line } else { step.line }, what = utf8::view{ b }.bytes }
+            if err.len > 0 { detail{ &r, heading = "stderr:", body = err } }
+        }
+        let mut stderr_checked = true
+        if let message = panic {
+            // The panic is standard error's last line; what is before it is compared as the rest.
+            let want = filled{ &r, &heap, s = message }
+            let mut end = err.len
+            if end > 0 and err[end - 1] == '\n' { end = end - 1 }
+            let mut start = end
+            while start > 0 and err[start - 1] != '\n' { start = start - 1 }
+            let last = err[start..end]
+            if not same{ want, got = last } {
+                fail{ &r, line = panic_line, what = cat{ &heap, a = what, b = " didn't panic as expected" } }
+                detail{ &r, heading = "expected, as standard error's last line:", body = cat{ &heap, a = want, b = "\n" } }
+                detail{ &r, heading = "actual standard error:", body = err }
+                stderr_checked = false
+            } else {
+                err = err[..start]
+            }
+        }
+        check_stream{ &r, &heap, step, stream = case::Stream::out, name = "stdout", actual = out }
+        if stderr_checked { check_stream{ &r, &heap, step, stream = case::Stream::err, name = "stderr", actual = err } }
+        check_files{ &fs, &r, &heap, step }
+    }
+
+    // ---- a program
+
+    // The errors a step expects of ctxc, as its standard error: the `errors:` block, or a line
+    // for each `//~ error`; null if it expects none.
+    fn expected_errors { mut r: Run, mut heap: Heap, step: case::Step } -> ?[]u8 {
+        if let block = step.errors { return filled{ &r, &heap, s = block } }
+        if not case::has_errors{ ms = step.markers } { return null }
+        let mut b = text{ &heap }
+        for m in step.markers {
+            if not m.panic { try! @fmt(&b, "{}:{}:{}: error: {}\n", m.file, m.line, m.col, m.text) }
+        }
+        return utf8::view{ b }.bytes
+    }
+
+    fn errors_line { step: case::Step } -> u32 {
+        if step.errors != null { return step.errors_line }
+        for m in step.markers {
+            if not m.panic { return m.line }
+        }
+        return step.line
+    }
+
+    // Compares ctxc's errors with those expected, whole.
+    fn check_errors { mut r: Run, mut heap: Heap, step: case::Step, want: []u8, actual: []u8 } {
+        let got = settled{ &heap, s = actual }
+        if same{ want, got } { return }
+        let n = first_difference{ a = want, b = got }
+        let mut b = text{ &heap }
+        try! @fmt(&b, "ctxc's errors differ at line {} of them", n)
+        fail{ &r, line = errors_line{ step }, what = utf8::view{ b }.bytes }
+        excerpt{ &r, heading = "expected:", line = line_of{ s = want, n } }
+        excerpt{ &r, heading = "actual:  ", line = line_of{ s = got, n } }
+        detail{ &r, heading = "actual, whole:", body = got }
+    }
+
+    // Builds a step's program. Null if there is no executable to run: the step expected errors
+    // (checked here), or the build failed (reported here).
+    fn built { mut io: Io, mut fs: Fs, mut proc: Proc, mut r: Run, mut heap: Heap, step: case::Step, name: []u8 } -> ?[]u8 {
+        let none: [0][]u8 = []
+        let want = expected_errors{ &r, &heap, step }
+        let files = case::files{ s = step }
+        let mut named = strs{ &heap }
+        for f in files { try! list::push{ list = &named, item = filled{ &r, &heap, s = f } } }
+        let mut env = strs{ &heap }
+        for e in step.env { try! list::push{ list = &env, item = filled{ &r, &heap, s = e } } }
+        match tool::build{ &io, &fs, &proc, &heap, s = r.s, scratch = &r.scratch, files = list::items{ list = named }, denied = none[..], dir = r.dir, up = r.up, name, flags = none[..], level = 1, env = list::items{ list = env } } {
+            exe{ path } => {
+                if want != null {
+                    fail{ &r, line = errors_line{ step }, what = "the program compiles: an error was expected" }
+                    return null
+                }
+                return copy_of{ &heap, s = path }
+            }
+            errors{ text } => {
+                if let w = want {
+                    check_errors{ &r, &heap, step, want = w, actual = text }
+                } else {
+                    fail{ &r, line = step.line, what = "the program doesn't compile" }
+                    detail{ &r, heading = "ctxc:", body = settled{ &heap, s = text } }
+                }
+                return null
+            }
+            failed{ why } => {
+                fail{ &r, line = step.line, what = "the program didn't build" }
+                detail{ &r, heading = "why:", body = why }
+                return null
+            }
+        }
+    }
+
+    // The environment a program runs in: the step's entries, and CTX_STACK.
+    fn program_env { mut heap: Heap, step: case::Step, mut r: Run } -> [][]u8 {
+        let mut env = strs{ &heap }
+        for e in step.env { try! list::push{ list = &env, item = filled{ &r, &heap, s = e } } }
+        try! list::push{ list = &env, item = cat{ &heap, a = "CTX_STACK=", b = number{ &heap, n = if step.stack == 0 { tool::PROGRAM_STACK } else { step.stack } } } }
+        return list::items{ list = env }
+    }
+
+    // The panic a program step expects, as standard error's last line.
+    fn expected_panic { mut heap: Heap, step: case::Step } -> ?[]u8 {
+        if let p = step.panic { return p }
+        for m in step.markers {
+            if m.panic {
+                let mut b = text{ &heap }
+                try! @fmt(&b, "{}:{}:{}: panic: {}", m.file, m.line, m.col, m.text)
+                return utf8::view{ b }.bytes
+            }
+        }
+        return null
+    }
+
+    fn panic_line { step: case::Step } -> u32 {
+        if step.panic != null { return step.panic_line }
+        for m in step.markers {
+            if m.panic { return m.line }
+        }
+        return step.line
+    }
+
+    fn program { mut io: Io, mut fs: Fs, mut proc: Proc, mut r: Run, mut heap: Heap, step: case::Step } {
+        let exe = built{ &io, &fs, &proc, &r, &heap, step, name = "program" } ifnull { return }
+        if step.compiles { return }
+        let mut argv = strs{ &heap }
+        try! list::push{ list = &argv, item = exe }
+        for a in case::args{ s = step } { try! list::push{ list = &argv, item = filled{ &r, &heap, s = a } } }
+        let env = program_env{ &heap, step, &r }
+        let dir = if step.cwd.len > 0 { join{ &heap, a = r.dir, b = filled{ &r, &heap, s = step.cwd } } } else { r.dir }
+        let ran = tool::run{ &fs, &proc, &heap, scratch = &r.scratch, argv = list::items{ list = argv }, env, dir, input = step.input, seconds = step.timeout }
+        let before = r.failed
+        check_ran{ &fs, &r, &heap, step, ran, what = "the program", panic = expected_panic{ &heap, step }, panic_line = panic_line{ step } }
+        if not ran.started or ran.late { return }
+        match step.interp {
+            off => { try! utf8::push_bytes{ b = &r.interp, s = "off\n" } }
+            else => { interpreted{ &fs, &proc, &r, &heap, step, ran, args = list::items{ list = argv }[1..], env, dir } }
+        }
+        _ = before
+    }
+
+    // Runs a step's program in ctxc's interpreter, a second implementation, and compares it
+    // with the compiled run: standard output, standard error and the exit code must be the
+    // same. A program the interpreter refuses (its last line is `ctxc interp: REASON`, with
+    // exit code 1) must say so: `//# interp: cannot run`.
+    fn interpreted { mut fs: Fs, mut proc: Proc, mut r: Run, mut heap: Heap, step: case::Step, ran: tool::Ran, args: [][]u8, env: [][]u8, dir: []u8 } {
+        let mut named = strs{ &heap }
+        for f in case::files{ s = step } { try! list::push{ list = &named, item = filled{ &r, &heap, s = f } } }
+        let files = list::items{ list = named }
+        let line = if step.interp_line != 0 { step.interp_line } else { step.line }
+        // One file is the program; several are their directory, if it holds just them.
+        let mut path = files[0]
+        if files.len > 1 {
+            path = parent{ path = files[0] }
+            let mut just = true
+            for f in files {
+                if not eq{ a = parent{ path = f }, b = path } { just = false }
+            }
+            let mut count: usize = 0
+            for n in names_in{ &fs, &heap, path = join{ &heap, a = r.dir, b = path } } {
+                if n.len > 4 and ends_with{ s = n, suffix = ".ctx" } { count = count + 1 }
+            }
+            if not just or count != files.len {
+                fail{ &r, line, what = "the interpreter takes one file or a directory of just the program's files: say `//# interp: off: REASON`" }
+                return
+            }
+            if path.len == 0 { path = "." }
+        }
+        let mut argv = strs{ &heap }
+        try! list::push{ list = &argv, item = r.s.ctxc }
+        try! list::push{ list = &argv, item = "interp" }
+        // ctxc's own CTX_HOME and CTX_STACK aren't the program's: it gets the compiled run's.
+        try! list::push{ list = &argv, item = "--env" }
+        if let home = proc::env{ &proc, name = "CTX_HOME" } {
+            try! list::push{ list = &argv, item = cat{ &heap, a = "CTX_HOME=", b = home } }
+        } else {
+            try! list::push{ list = &argv, item = "CTX_HOME" }
+        }
+        try! list::push{ list = &argv, item = "--env" }
+        try! list::push{ list = &argv, item = env[env.len - 1] }
+        try! list::push{ list = &argv, item = path }
+        try! list::push{ list = &argv, item = "--" }
+        for a in args { try! list::push{ list = &argv, item = a } }
+        let mut own = strs{ &heap }
+        for e in env[..env.len - 1] { try! list::push{ list = &own, item = e } }
+        // ctxc finds std from the program's directory, as it is named when compiled, so that a
+        // position in std reads the same both ways.
+        let away = cat{ &heap, a = ups{ &heap, path = step.cwd }, b = r.up }
+        let home = if fs::is_absolute{ path = r.up } { r.s.home } else if away.len == 0 { "." } else { away[..away.len - 1] }
+        try! list::push{ list = &own, item = cat{ &heap, a = "CTX_HOME=", b = home } }
+        try! list::push{ list = &own, item = tool::CTXC_STACK }
+        let i = tool::run{ &fs, &proc, &heap, scratch = &r.scratch, argv = list::items{ list = argv }, env = list::items{ list = own }, dir, input = step.input, seconds = step.timeout }
+        if not i.started {
+            fail{ &r, line, what = cat{ &heap, a = "ctxc interp didn't start: ", b = i.err } }
+            return
+        }
+        if i.late {
+            fail{ &r, line, what = "the interpreter didn't end in time: if it is too slow for this program, say `//# interp: off: REASON`" }
+            return
+        }
+        let got_err = settled{ &heap, s = i.err }
+        let mut end = got_err.len
+        if end > 0 and got_err[end - 1] == '\n' { end = end - 1 }
+        let mut start = end
+        while start > 0 and got_err[start - 1] != '\n' { start = start - 1 }
+        let last = got_err[start..end]
+        let refused = i.code == 1 and starts_with{ s = last, prefix = "ctxc interp: " }
+        if refused {
+            if step.interp == case::Interp::cannot {
+                try! @fmt(&r.interp, "cannot\t{}\n", reason{ &heap, message = last[13..] })
+            } else {
+                fail{ &r, line, what = "the interpreter can't run the program: if that is as it should be, say `//# interp: cannot run`" }
+                detail{ &r, heading = "it says:", body = cat{ &heap, a = last, b = "\n" } }
+            }
+            return
+        }
+        if step.interp == case::Interp::cannot {
+            fail{ &r, line, what = "the interpreter runs the program, which says `interp: cannot run`: take that out" }
+            return
+        }
+        // A panic without a position names the program: `program` when compiled, the file's
+        // stem when interpreted, as with `ctxc run`.
+        let mut stem = base{ path = if files.len == 1 { files[0] } else { path } }
+        if ends_with{ s = stem, suffix = ".ctx" } and stem.len > 4 { stem = stem[..stem.len - 4] }
+        let mut want_err = replaced{ &heap, s = settled{ &heap, s = ran.err }, from = "\nprogram: panic: ", to = cat3{ &heap, a = "\n", b = stem, c = ": panic: " } }
+        if starts_with{ s = want_err, prefix = "program: panic: " } { want_err = cat{ &heap, a = stem, b = want_err[7..] } }
+        // A trap: Windows' illegal instruction exception, which `ctxc interp` reports as a
+        // shell reports SIGILL, 132.
+        let want_code: i32 = if r.s.os == build::Os::windows and ran.code == -1073741795 { 132 } else { ran.code }
+        if eq{ a = i.out, b = ran.out } and eq{ a = got_err, b = want_err } and i.code == want_code {
+            try! utf8::push_bytes{ b = &r.interp, s = "same\n" }
+            return
+        }
+        fail{ &r, line, what = "the interpreter differs from the compiled program" }
+        let mut b = text{ &heap }
+        try! @fmt(&b, "compiled: exit {}; interpreted: exit {}", want_code, i.code)
+        detail{ &r, heading = utf8::view{ b }.bytes, body = "" }
+        if not eq{ a = i.out, b = ran.out } {
+            detail{ &r, heading = "compiled stdout:", body = ran.out }
+            detail{ &r, heading = "interpreted stdout:", body = i.out }
+        }
+        if not eq{ a = got_err, b = want_err } {
+            detail{ &r, heading = "compiled stderr:", body = want_err }
+            detail{ &r, heading = "interpreted stderr:", body = got_err }
+        }
+    }
+
+    // What a message of `ctxc interp`'s says it couldn't do, to count the refusals by.
+    fn reason { mut heap: Heap, message: []u8 } -> []u8 {
+        if starts_with{ s = message, prefix = "extern fn " } {
+            let rest = message[10..]
+            let end = find{ s = rest, part = " " } ifnull { rest.len }
+            return cat{ &heap, a = "extern fn ", b = rest[..end] }
+        }
+        if starts_with{ s = message, prefix = "C variable " } {
+            let rest = message[11..]
+            let end = find{ s = rest, part = " " } ifnull { rest.len }
+            return cat{ &heap, a = "C variable ", b = rest[..end] }
+        }
+        if starts_with{ s = message, prefix = "too deep" } { return "too deep" }
+        if starts_with{ s = message, prefix = "out of fuel" } { return "out of fuel" }
+        return message
+    }
+
+    // ---- commands
+
+    // The words of a command, each placeholder filled: `{std}` is std's files for this
+    // platform's layer, as paths from the command's directory, `{std:abs}` by their absolute
+    // paths, and `{std:PLATFORM}` another layer's (`interp` is the interpreter's); `{cflags}` is
+    // the flags the harness compiles C with, and `{stack}` those that reserve its stack.
+    fn command_words { mut fs: Fs, mut r: Run, mut heap: Heap, step: case::Step, up: []u8 } -> [][]u8 {
+        let mut out = strs{ &heap }
+        for w in step.words {
+            if eq{ a = w, b = "{cflags}" } {
+                for f in tool::CFLAGS { try! list::push{ list = &out, item = f } }
+            } else if eq{ a = w, b = "{stack}" } {
+                for f in tool::stack_flags{ &heap, os = r.s.os } { try! list::push{ list = &out, item = f } }
+            } else if starts_with{ s = w, prefix = "{std" } and w[w.len - 1] == '}' {
+                let which = if w.len > 5 { w[5..w.len - 1] } else { "" }
+                let host = tool::os_name{ os = r.s.os }
+                if eq{ a = which, b = "abs" } {
+                    tool::std_files{ &fs, &heap, home = r.s.home, up = cat{ &heap, a = r.s.home, b = "/" }, platform = host, &out }
+                } else if eq{ a = which, b = "interp" } {
+                    tool::ctx_files{ &fs, &heap, home = r.s.home, up, dir = "std", &out }
+                    tool::ctx_files{ &fs, &heap, home = r.s.home, up, dir = "std/os/interp", &out }
+                    try! list::push{ list = &out, item = cat{ &heap, a = up, b = cat3{ &heap, a = "std/os/", b = host, c = "/target.ctx" } } }
+                } else {
+                    tool::std_files{ &fs, &heap, home = r.s.home, up, platform = if which.len > 0 { which } else { host }, &out }
+                }
+            } else {
+                try! list::push{ list = &out, item = filled{ &r, &heap, s = w } }
+            }
+        }
+        return list::items{ list = out }
+    }
+
+    // `../` for each directory of `path`, a relative path.
+    fn ups { mut heap: Heap, path: []u8 } -> []u8 {
+        let mut out: []u8 = ""
+        let mut i: usize = 0
+        while i < path.len {
+            while i < path.len and separates{ c = path[i] } { i = i + 1 }
+            let start = i
+            while i < path.len and not separates{ c = path[i] } { i = i + 1 }
+            if i > start and not eq{ a = path[start..i], b = "." } { out = cat{ &heap, a = out, b = "../" } }
+        }
+        return out
+    }
+
+    fn command { mut io: Io, mut fs: Fs, mut proc: Proc, mut r: Run, mut heap: Heap, step: case::Step } {
+        let dir = if step.cwd.len > 0 { join{ &heap, a = r.dir, b = filled{ &r, &heap, s = step.cwd } } } else { r.dir }
+        let up = if fs::is_absolute{ path = r.up } { r.up } else { cat{ &heap, a = ups{ &heap, path = step.cwd }, b = r.up } }
+        let ws = command_words{ &fs, &r, &heap, step, up }
+        let mut argv = strs{ &heap }
+        let mut env = strs{ &heap }
+        for e in step.env { try! list::push{ list = &env, item = filled{ &r, &heap, s = e } } }
+        let head = step.words[0]
+        let mut what: []u8 = head
+        if eq{ a = head, b = "ctxc" } {
+            try! list::push{ list = &argv, item = r.s.ctxc }
+            try! list::push{ list = &env, item = cat{ &heap, a = "CTX_HOME=", b = r.s.home } }
+        } else if eq{ a = head, b = "cc" } {
+            for w in r.s.cc { try! list::push{ list = &argv, item = w } }
+            for e in r.s.cc_env { try! list::push{ list = &env, item = e } }
+        } else if eq{ a = head, b = "ar" } {
+            try! list::push{ list = &argv, item = tool::on_path{ &fs, &proc, &heap, name = "ar", os = r.s.os } ifnull { "ar" } }
+        } else if eq{ a = head, b = "suite" } {
+            // This runner, on other cases: how the suite checks that it checks (cases/Suite).
+            try! list::push{ list = &argv, item = proc::exe_path{ &proc } }
+            try! list::push{ list = &env, item = cat{ &heap, a = "CTX_HOME=", b = r.s.home } }
+        } else if (head.len > 2 and head[0] == '{' and head[head.len - 1] == '}' and not eq{ a = ws[0], b = head }) or starts_with{ s = head, prefix = "./" } {
+            // An executable a step built, or one a command made, by its path from the case's directory.
+            try! list::push{ list = &argv, item = if head[0] == '.' { join{ &heap, a = r.dir, b = ws[0][2..] } } else { ws[0] } }
+            try! list::push{ list = &env, item = cat{ &heap, a = "CTX_STACK=", b = number{ &heap, n = if step.stack == 0 { tool::PROGRAM_STACK } else { step.stack } } } }
+            what = head
+        } else {
+            fail{ &r, line = step.line, what = cat3{ &heap, a = "a command runs `ctxc`, `cc`, `ar`, `suite`, `{NAME}`, an executable an earlier step built, or `./PATH`, one a command made, not `", b = head, c = "`" } }
+            return
+        }
+        for w in ws[1..] { try! list::push{ list = &argv, item = w } }
+        let ran = tool::run{ &fs, &proc, &heap, scratch = &r.scratch, argv = list::items{ list = argv }, env = list::items{ list = env }, dir, input = step.input, seconds = step.timeout }
+        check_ran{ &fs, &r, &heap, step, ran, what = cat3{ &heap, a = "`", b = what, c = "`" }, panic = step.panic, panic_line = step.panic_line }
+    }
+
+    // ---- projects
+
+    // Builds the build.ctx project in the case's directory as toolchain.py's build_project
+    // did: `ctxc graph . GEN LIST` compiles and runs the build program and lists each
+    // executable it describes, with its files and link flags, and each is then built as any
+    // program. The executables are run by their names, `{NAME}`.
+    fn project { mut io: Io, mut fs: Fs, mut proc: Proc, mut r: Run, mut heap: Heap, step: case::Step } {
+        let dir = if step.cwd.len > 0 { join{ &heap, a = r.dir, b = filled{ &r, &heap, s = step.cwd } } } else { r.dir }
+        r.scratch.seq = r.scratch.seq + 1
+        let listed = join{ &heap, a = r.scratch.dir, b = cat3{ &heap, a = "graph", b = number{ &heap, n = r.scratch.seq }, c = ".txt" } }
+        let mut env = strs{ &heap }
+        for e in step.env { try! list::push{ list = &env, item = filled{ &r, &heap, s = e } } }
+        try! list::push{ list = &env, item = cat{ &heap, a = "CTX_HOME=", b = r.s.home } }
+        try! list::push{ list = &env, item = tool::CTXC_STACK }
+        let mut cc = text{ &heap }
+        for w at i in r.s.cc { try! @fmt(&cc, "{}{}", if i == 0 { "" } else { " " }, w) }
+        try! list::push{ list = &env, item = cat{ &heap, a = "CTX_CC=", b = utf8::view{ b = cc }.bytes } }
+        let argv: [5][]u8 = [r.s.ctxc, "graph", ".", r.gen, listed]
+        _ = made{ &fs, &heap, path = parent{ path = r.gen } }
+        let ran = tool::run{ &fs, &proc, &heap, scratch = &r.scratch, argv = argv[..], env = list::items{ list = env }, dir, input = "", seconds = step.timeout }
+        if not ran.started or ran.late {
+            fail{ &r, line = step.line, what = if ran.late { "`ctxc graph` didn't end" } else { "`ctxc graph` didn't start" } }
+            return
+        }
+        let records = read_file{ &fs, &heap, path = listed } ifnull { "" }
+        _ = fs::remove{ &fs, path = listed } iferr {}
+        let first = records[..line_end{ s = records, from = 0 }]
+        let want_errors = step.errors
+        let mut err = settled{ &heap, s = ran.err }
+        let out = settled{ &heap, s = ran.out }
+        if eq{ a = first, b = "status\terrors" } {
+            if let w = want_errors {
+                check_errors{ &r, &heap, step, want = filled{ &r, &heap, s = w }, actual = ran.err }
+                check_stream{ &r, &heap, step, stream = case::Stream::out, name = "stdout", actual = out }
+            } else {
+                fail{ &r, line = step.line, what = "the project has errors" }
+                detail{ &r, heading = "ctxc:", body = err }
+            }
+            return
+        }
+        if starts_with{ s = first, prefix = "status\texited\t" } {
+            let code = utf8::parse_i64{ s = utf8::of{ chars = first[14..] } } ifnull { -1 }
+            let exited = tool::Ran{ started = true, code = @as(i32, code), late = false, out = ran.out, err = ran.err }
+            if step.exit == null and step.panic == null {
+                let mut b = text{ &heap }
+                try! @fmt(&b, "the build program exited with {}", code)
+                fail{ &r, line = step.line, what = utf8::view{ b }.bytes }
+                detail{ &r, heading = "stderr:", body = err }
+                return
+            }
+            check_ran{ &fs, &r, &heap, step, ran = exited, what = "the build program", panic = step.panic, panic_line = step.panic_line }
+            return
+        }
+        if not eq{ a = first, b = "status\tok" } {
+            let mut b = text{ &heap }
+            try! @fmt(&b, "`ctxc graph` failed ({})", ran.code)
+            fail{ &r, line = step.line, what = utf8::view{ b }.bytes }
+            detail{ &r, heading = "stderr:", body = err }
+            return
+        }
+        if step.panic != null or (step.exit ifnull { 0 }) != 0 {
+            fail{ &r, line = step.line, what = "the build program ended well: another end was expected" }
+            return
+        }
+        // Each executable: its name, level, files, those denied the unchecked operations, flags.
+        let none: [0][]u8 = []
+        let mut names = strs{ &heap }
+        let mut from = line_end{ s = records, from = 0 } + 1
+        let mut name: []u8 = ""
+        let mut level: u8 = 1
+        let mut files = strs{ &heap }
+        let mut denied = strs{ &heap }
+        let mut flags = strs{ &heap }
+        let mut compiled = true
+        while from <= records.len and compiled {
+            let end = if from < records.len { line_end{ s = records, from } } else { from }
+            let line = if from < records.len { records[from..end] } else { "" }
+            from = end + 1
+            let tab = find{ s = line, part = "\t" } ifnull { line.len }
+            let kind = line[..tab]
+            let value = if tab < line.len { line[tab + 1..] } else { "" }
+            let last = from > records.len
+            if (eq{ a = kind, b = "exe" } or last) and name.len > 0 {
+                match tool::build{ &io, &fs, &proc, &heap, s = r.s, scratch = &r.scratch, files = list::items{ list = files }, denied = list::items{ list = denied }, dir, up = cat{ &heap, a = r.s.home, b = "/" }, name, flags = list::items{ list = flags }, level, env = none[..] } {
+                    exe{ path } => { try! list::push{ list = &r.exes, item = Exe{ name, path } } }
+                    errors{ text } => {
+                        compiled = false
+                        if let w = want_errors {
+                            check_errors{ &r, &heap, step, want = filled{ &r, &heap, s = w }, actual = text }
+                        } else {
+                            fail{ &r, line = step.line, what = cat3{ &heap, a = "the project's `", b = name, c = "` doesn't compile" } }
+                            detail{ &r, heading = "ctxc:", body = settled{ &heap, s = text } }
+                        }
+                    }
+                    failed{ why } => {
+                        compiled = false
+                        fail{ &r, line = step.line, what = cat3{ &heap, a = "the project's `", b = name, c = "` didn't build" } }
+                        detail{ &r, heading = "why:", body = why }
+                    }
+                }
+                files = strs{ &heap }
+                denied = strs{ &heap }
+                flags = strs{ &heap }
+            }
+            if eq{ a = kind, b = "exe" } {
+                name = value
+                level = 1
+                try! list::push{ list = &names, item = value }
+            } else if eq{ a = kind, b = "level" } {
+                level = @as(u8, utf8::parse_u64{ s = utf8::of{ chars = value } } ifnull { 1 })
+            } else if eq{ a = kind, b = "file" } {
+                try! list::push{ list = &files, item = value }
+            } else if eq{ a = kind, b = "denied" } {
+                try! list::push{ list = &files, item = value }
+                try! list::push{ list = &denied, item = value }
+            } else if eq{ a = kind, b = "flag" } {
+                try! list::push{ list = &flags, item = value }
+            }
+        }
+        if compiled and want_errors != null {
+            fail{ &r, line = step.errors_line, what = "the project builds: errors were expected" }
+            return
+        }
+        if not compiled and want_errors != null { err = "" }
+        check_stream{ &r, &heap, step, stream = case::Stream::out, name = "stdout", actual = out }
+        check_stream{ &r, &heap, step, stream = case::Stream::err, name = "stderr", actual = err }
+        check_files{ &fs, &r, &heap, step }
+    }
+
+    // ---- ctxc's own directories
+
+    // path as a person would write it: components joined by `/`, none of them empty or `.`,
+    // and each `..` taking away the one before it. A drive (`C:`) and a root stay.
+    fn normal { mut heap: Heap, path: []u8 } -> []u8 {
+        let mut parts = strs{ &heap }
+        let mut b = text{ &heap }
+        let mut i: usize = 0
+        if path.len >= 2 and path[1] == ':' {
+            try! utf8::push_bytes{ &b, s = path[..2] }
+            i = 2
+        }
+        if i < path.len and separates{ c = path[i] } { try! utf8::push_bytes{ &b, s = "/" } }
+        while i < path.len {
+            while i < path.len and separates{ c = path[i] } { i = i + 1 }
+            let start = i
+            while i < path.len and not separates{ c = path[i] } { i = i + 1 }
+            let part = path[start..i]
+            if part.len == 0 or eq{ a = part, b = "." } { continue }
+            if eq{ a = part, b = ".." } and parts.len > 0 {
+                _ = list::pop{ list = &parts }
+            } else {
+                try! list::push{ list = &parts, item = part }
+            }
+        }
+        for part at k in list::items{ list = parts } {
+            if k > 0 { try! utf8::push_bytes{ &b, s = "/" } }
+            try! utf8::push_bytes{ &b, s = part }
+        }
+        return utf8::view{ b }.bytes
+    }
+
+    // The directory in HOME/build/run that ctxc builds the program at path in (ctxc/drive.ctx,
+    // `setup`): the program's name, and the FNV-1a hash of its absolute path, normalized, in
+    // lower case on Windows.
+    fn ctxc_work_dir { mut heap: Heap, s: tool::Session, path: []u8 } -> []u8 {
+        let full = normal{ &heap, path }
+        let mut h: u64 = 14695981039346656037
+        for c in full {
+            let folded = if s.os == build::Os::windows { ascii::to_lower{ c } } else { c }
+            h = (h ^ @as(u64, folded)) *% 1099511628211
+        }
+        let mut name = base{ path = full }
+        if ends_with{ s = name, suffix = ".ctx" } and name.len > 4 { name = name[..name.len - 4] }
+        let digits = "0123456789abcdef"
+        let mut hex: [16]u8
+        for k in 0..16 { hex[15 - k] = digits[(h >> (4 * @as(u64, k))) & 15] }
+        return join{ &heap, a = s.home, b = cat3{ &heap, a = "build/run/", b = name, c = cat{ &heap, a = "-", b = hex[..] } } }
+    }
+
+    // Notes ctxc's directory for each program the case's `ctxc run`, `exe`, `test` and `graph`
+    // commands name, and removes it, so that each run of the case builds from nothing.
+    fn clear_work_dirs { mut fs: Fs, mut r: Run, mut heap: Heap } {
+        for step in r.c.steps {
+            if step.kind != case::Kind::command or step.words.len < 3 or not eq{ a = step.words[0], b = "ctxc" } { continue }
+            let verb = step.words[1]
+            if not eq{ a = verb, b = "run" } and not eq{ a = verb, b = "exe" } and not eq{ a = verb, b = "test" } and not eq{ a = verb, b = "graph" } { continue }
+            let dir = if step.cwd.len > 0 { join{ &heap, a = r.dir, b = filled{ &r, &heap, s = step.cwd } } } else { r.dir }
+            let path = join{ &heap, a = dir, b = filled{ &r, &heap, s = step.words[2] } }
+            let work = ctxc_work_dir{ &heap, s = r.s, path }
+            try! list::push{ list = &r.work_dirs, item = work }
+            remove_tree{ &fs, &heap, path = work }
+        }
+    }
+
+    // ---- a case
+
+    // Whether the case runs on this platform.
+    fn on_this_platform { mut heap: Heap, c: case::Case, os: build::Os } -> bool {
+        if c.only.len == 0 { return true }
+        let mut i: usize = 0
+        while i < c.only.len {
+            while i < c.only.len and c.only[i] == ' ' { i = i + 1 }
+            let start = i
+            while i < c.only.len and c.only[i] != ' ' { i = i + 1 }
+            if i > start and (case::applies{ tag = c.only[start..i], os } ifnull { false }) { return true }
+        }
+        return false
+    }
+
+    // Runs the case at path and writes what became of it to `result`:
+    //
+    //   pass | fail | skip REASON     its first line
+    //   interp ...                    a line for each program the interpreter was to run
+    //   text                          then the failures' lines, to the end
+    fn main { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, s: tool::Session, path: []u8, name: []u8, is_dir: bool, slot: []u8, result: []u8 } -> i32 {
+        let c = case::read{ &fs, &heap, host = case::Host{ os = s.os }, path, name, is_dir }
+        let scratch_dir = join{ &heap, a = s.run, b = slot }
+        if not made{ &fs, &heap, path = scratch_dir } { return 3 }
+        let mut r = Run{
+            s, scratch = tool::Scratch{ dir = scratch_dir, seq = 0 }, c, dir = "", up = "", gen = "", fails = text{ &heap }, failed = false,
+            exes = list::new(Exe){ realloc = arena::alloc, &heap }, interp = text{ &heap }, work_dirs = strs{ &heap },
+        }
+        let mut status: []u8 = "pass"
+        if c.outside { try! utf8::push_bytes{ b = &r.interp, s = "outside\n" } }
+        if c.problems.len > 0 {
+            for p in c.problems {
+                r.failed = true
+                try! @fmt(&r.fails, "{}:{}: fail: {}: {}\n", p.file, p.line, c.name, p.text)
+            }
+        } else if not on_this_platform{ &heap, c, os = s.os } {
+            status = cat3{ &heap, a = "skip only on ", b = c.only, c = cat{ &heap, a = ": ", b = c.only_why } }
+        } else {
+            let mut lacks: []u8 = ""
+            for n in c.needs {
+                if tool::on_path{ &fs, &proc, &heap, name = n, os = s.os } == null { lacks = n }
+            }
+            if lacks.len > 0 {
+                status = cat{ &heap, a = "skip needs ", b = lacks }
+            } else {
+                steps{ &io, &fs, &proc, &r, &heap }
+            }
+        }
+        if r.failed { status = "fail" }
+        let mut b = text{ &heap }
+        try! @fmt(&b, "{}\n", status)
+        let interp = utf8::view{ b = r.interp }.bytes
+        let mut from: usize = 0
+        while from < interp.len {
+            let end = line_end{ s = interp, from }
+            try! @fmt(&b, "interp {}\n", interp[from..end])
+            from = end + 1
+        }
+        try! @fmt(&b, "text\n{}", utf8::view{ b = r.fails }.bytes)
+        if not write_file{ &fs, path = result, bytes = utf8::view{ b }.bytes } { return 3 }
+        _ = fs::remove_dir{ &fs, path = scratch_dir } iferr {}
+        return if r.failed { 1 } else { 0 }
+    }
+
+    // Where the case runs, and its steps in order, until one fails.
+    fn steps { mut io: Io, mut fs: Fs, mut proc: Proc, mut r: Run, mut heap: Heap } {
+        let c = r.c
+        let home = r.s.home
+        let mut rel: []u8 = ""
+        if c.is_dir {
+            // A directory case runs in a copy of itself, which it may write in.
+            rel = cat{ &heap, a = "build/suite/work/", b = c.name }
+            r.dir = join{ &heap, a = home, b = rel }
+            r.gen = join{ &heap, a = home, b = cat{ &heap, a = "build/suite/gen/", b = c.name } }
+            remove_tree{ &fs, &heap, path = r.dir }
+            remove_tree{ &fs, &heap, path = r.gen }
+            if not copy_tree{ &fs, &heap, from = c.path, to = r.dir } {
+                fail{ &r, line = 1, what = "the runner can't copy the case to build/suite/work" }
+                return
+            }
+            _ = fs::remove{ &fs, path = join{ &heap, a = r.dir, b = "CASE" } } iferr {}
+            r.up = ups{ &heap, path = rel }
+        } else {
+            r.dir = parent{ path = c.path }
+            // The case's directory is under ctxlang/, so std is a run of `../` away; elsewhere
+            // std's files are named by their absolute paths.
+            if starts_with{ s = r.dir, prefix = cat{ &heap, a = home, b = "/" } } {
+                r.up = ups{ &heap, path = r.dir[home.len + 1..] }
+            } else {
+                r.up = cat{ &heap, a = home, b = "/" }
+            }
+        }
+        clear_work_dirs{ &fs, &r, &heap }
+        for step in c.steps {
+            match step.kind {
+                program => { program{ &io, &fs, &proc, &r, &heap, step } }
+                build => {
+                    if let path = built{ &io, &fs, &proc, &r, &heap, step, name = step.name } { try! list::push{ list = &r.exes, item = Exe{ name = step.name, path } } }
+                }
+                project => { project{ &io, &fs, &proc, &r, &heap, step } }
+                command => { command{ &io, &fs, &proc, &r, &heap, step } }
+                write => {
+                    let path = join{ &heap, a = r.dir, b = filled{ &r, &heap, s = step.name } }
+                    _ = made{ &fs, &heap, path = parent{ path } }
+                    if not write_file{ &fs, path, bytes = filled{ &r, &heap, s = step.text } } { fail{ &r, line = step.line, what = "the file can't be written" } }
+                }
+                remove => { remove_tree{ &fs, &heap, path = join{ &heap, a = r.dir, b = filled{ &r, &heap, s = step.name } } } }
+                make_dir => {
+                    if not made{ &fs, &heap, path = join{ &heap, a = r.dir, b = filled{ &r, &heap, s = step.name } } } { fail{ &r, line = step.line, what = "the directory can't be made" } }
+                }
+                exists => {
+                    if kind_of{ &fs, path = join{ &heap, a = r.dir, b = filled{ &r, &heap, s = step.name } } } == 0 { fail{ &r, line = step.line, what = cat3{ &heap, a = "`", b = step.name, c = "` doesn't exist" } } }
+                }
+                missing => {
+                    if kind_of{ &fs, path = join{ &heap, a = r.dir, b = filled{ &r, &heap, s = step.name } } } != 0 { fail{ &r, line = step.line, what = cat3{ &heap, a = "`", b = step.name, c = "` exists" } } }
+                }
+            }
+            if r.failed { break }
+        }
+        for w in list::items{ list = r.work_dirs } { remove_tree{ &fs, &heap, path = w } }
+        if c.is_dir and not r.failed {
+            remove_tree{ &fs, &heap, path = r.dir }
+            remove_tree{ &fs, &heap, path = r.gen }
+        }
+    }
+}

@@ -1,0 +1,2 @@
+const C: Nope = 1  //~ error at 10: unknown type or namespace `Nope`
+fn main {} {}

@@ -1,0 +1,19 @@
+
+enum Kind: u8 {
+    ident,
+    number,
+    lbrace = 40,
+    rbrace,
+}
+
+enum Sign: i8 { minus = -1, zero, plus }
+
+fn main { mut io: Io } {
+    let n: u32 = 41
+    let k = @as(Kind, n)
+    io::print_bool{ &io, n = k == Kind::rbrace }
+    io::println_bool{ &io, n = @as(Sign, -1) == Sign::minus }
+}
+
+//# stdout:
+//| truetrue

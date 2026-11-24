@@ -1,0 +1,11 @@
+
+enum Kind: u8 {
+    ident,
+    number,
+    lbrace = 40,
+    rbrace,
+}
+
+enum Sign: i8 { minus = -1, zero, plus }
+fn f {} { let x = Kind::ident == 0 }  //~ error at 31: cannot compare Kind with {integer}
+fn main {} {}

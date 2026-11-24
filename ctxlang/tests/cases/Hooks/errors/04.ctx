@@ -1,0 +1,3 @@
+#panic
+fn halt { msg: []u8 } -> i32 { return 0 }  //~ error at 26: a `panic` fn returns nothing
+fn main {} {}

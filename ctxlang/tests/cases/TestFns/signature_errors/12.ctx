@@ -1,0 +1,3 @@
+#test{ message = "x" }  //~ error at 8: `test` takes one field, `panics = "text"`: a string literal that the message of the test's panic must contain
+fn a {} {}
+fn main {} {}

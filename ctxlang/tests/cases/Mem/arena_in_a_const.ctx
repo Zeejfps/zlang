@@ -1,0 +1,15 @@
+// arena::alloc's call into the runtime runs while compiling too.
+
+fn squares {} -> [3]i32 {
+    let mut mem: [64]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut xs = list::new(i32){ realloc = arena::alloc, &heap }
+    let mut i = 1
+    while i <= 3 { try! list::push{ list = &xs, item = i * i }; i = i + 1 }
+    return [list::items{ list = xs }[0], list::items{ list = xs }[1], list::items{ list = xs }[2]]
+}
+const SQUARES: [3]i32 = squares{}
+fn main { mut io: Io } { io::println_i64{ &io, n = SQUARES[2] } }
+
+//# stdout:
+//| 9

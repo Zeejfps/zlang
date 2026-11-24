@@ -1,0 +1,9 @@
+fn half { n: i32 } -> !i32 { return n / 2 }
+fn main { mut io: Io } -> !i32 {
+    io::println{ &io, s = "hi" }
+    return try half{ n = 10 }
+}
+
+//# exit: 5
+//# stdout:
+//| hi

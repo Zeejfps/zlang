@@ -1,0 +1,37 @@
+// A field's attributes, as written, on a struct's, a union variant's payload's, an
+// error's, an extern union's and a fn's or extern fn's context fields, as on a
+// capability's. Names needn't resolve: the build program checks nothing.
+// `ctxc graph` runs the build program without building the executables, whose files needn't
+// compile. ctxc's own directory for it is removed before and after: the runner clears those of
+// `ctxc run` commands only.
+//# remove {work:.}
+//# $ ctxc graph . {dir}/graph-gen {dir}/graph.txt
+//# stdout:
+//| file src/a.ctx
+//| struct Pos @ src/a.ctx:1:1
+//|   #ecs::key
+//|   #ecs::cascade depth=2 (i 2) deep=true (b true)
+//|   x: i32
+//|   y: i32
+//| union Shape @ src/a.ctx:7:1
+//|   | circle{}
+//|     #ecs::by name="r" (s r)
+//|     r: f32
+//|   | dot
+//| error bad @ src/a.ctx:10:1
+//|   #ecs::key
+//|   at: usize
+//| extern union Bits @ src/a.ctx:14:1
+//|   #ecs::key
+//|   i: u32
+//|   f: f32
+//| fn step @ src/a.ctx:20:1
+//|   #ecs::system
+//|   #ecs::by name="pos" (s pos) n=-1 (i -1)
+//|   mut pos: Pos
+//|   #ecs::key
+//|   dt: f32
+//| extern fn abs -> i32 @ src/a.ctx:26:1
+//|   #ecs::key
+//|   n: i32
+//# remove {work:.}

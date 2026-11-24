@@ -1,0 +1,4 @@
+fn f(T) { x: T } {
+    let y = x.b  //~ error at 14: T has no field `b`
+}
+fn main {} {}

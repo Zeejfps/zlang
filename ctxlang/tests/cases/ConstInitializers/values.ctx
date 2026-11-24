@@ -1,0 +1,30 @@
+// Folded values reach the program: a const's uses read what the checker computed.
+
+struct P { a: u64, b: ?u8 }
+const N: u8 = 200
+const M: u64 = 1000000
+const W: u64 = M * 5000000 + N
+const F: f32 = 1.1 * 3.0
+const H: i32 = -7 / 2 + (-7 % 2) + (1 << 30) + (-8 >> 1)
+const K: i8 = -64 << 1
+const Q: P = P{ b = N - 1, a = W }
+const Z: [4]i64 = [N; 4]
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = W }
+    io::println_f64{ &io, n = F }
+    io::println_i64{ &io, n = H }
+    io::println_i64{ &io, n = K }
+    io::println_u64{ &io, n = Q.a }
+    let b = Q.b
+    if b != null { io::println_u64{ &io, n = b } }
+    io::println_i64{ &io, n = Z[3] }
+}
+
+//# stdout:
+//| 5000000000200
+//| 3.3000001907348633
+//| 1073741816
+//| -128
+//| 5000000000200
+//| 199
+//| 200

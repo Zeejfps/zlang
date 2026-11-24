@@ -1,0 +1,2 @@
+capability P { ..P }  //~ error at 16: capability `P` includes itself
+fn main {} {}

@@ -1,0 +1,3 @@
+struct S { a: i32 }
+const A: S = S{ .. }  //~ error at 15: `..` takes fields from their defaults, and struct `S` has none //~ error at 15: struct `S` is missing `a`
+fn main {} {}

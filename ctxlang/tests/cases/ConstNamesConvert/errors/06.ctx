@@ -1,0 +1,10 @@
+
+namespace gl {
+    const LINEAR: u32 = 9729
+    const BIG: u32 = 4000000000
+    const NEG: i32 = -1
+    const SMALL: i64 = 7
+}
+fn three {} -> u32 { return 3 }
+const R: u32 = three{}
+fn main {} { let x: i32 = R }  //~ error at 27: expected i32, got u32: `R` is computed by running code, so only a const whose value is folded converts; write @as(i32, R)

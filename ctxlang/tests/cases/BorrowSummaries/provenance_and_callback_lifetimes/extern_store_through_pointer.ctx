@@ -1,0 +1,12 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// extern store through pointer: rejected. It is never run: it would use a dangling pointer.
+// (ctxc also says, after it, that the probe's extern fn takes no capability.)
+
+extern fn keep { slot: *mut []u8, s: []u8 }
+fn stored { slot: *mut []u8, s: []u8 } -> []u8 { keep{ slot, s }; return slot.* }
+fn leak { slot: *mut []u8 } -> []u8 { let buf: [3]u8 = [1,2,3]; return stored{ slot, s = buf[..] } }
+fn main {} { let mut x: []u8 = "a"; _ = leak{ slot = &x } }
+
+//# errors:
+//| extern_store_through_pointer.ctx:7:65: error: returned value holds the address of local `buf`
+//| extern_store_through_pointer.ctx:5:11: error: extern fn `keep` takes no capability: add a capability field for what it touches, or `#pure` if it touches only its arguments and the memory they point to

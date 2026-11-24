@@ -1,0 +1,7 @@
+// A `for` may run no turn: it ends no path, and assigns nothing for sure. Narrowing, a
+// handle's scope and shadowing work in its body as in a `while`'s.
+
+fn f {} -> i32 {  //~ error at 1: `f` must end every path in `return` or `@panic()`
+    for i in 0..3 { return i }
+}
+fn main {} { _ = f{} }

@@ -1,0 +1,12 @@
+// A condition that is no comparison has its text: a failure's line is the condition as
+// written, on one line, and a comparison of a comparison has its sides.
+//# $ ctxc test .
+//# exit: 1
+//# stdout:
+//| ./t.ctx:5: fail: conditions: small{ n = 5 }
+//| ./t.ctx:6: fail: conditions: small{ n = 1 } and small{ n = 9 }
+//| ./t.ctx:7: fail: conditions: not small{ n = 1 }
+//| ./t.ctx:9: fail: conditions: o is some
+//| ./t.ctx:10: fail: conditions: small{ n = 7 } or small{ n = 8 }
+//| ./t.ctx:12: fail: conditions: (1 + 1 == 3) == true: false == true
+//| tests: 1 run, 0 passed, 1 failed, 0 not selected

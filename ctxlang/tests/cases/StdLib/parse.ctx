@@ -1,0 +1,29 @@
+
+fn show { mut io: Io, r: ?i64 } {
+    match r {
+        null => { io::println_i64{ &io, n = 0 } }
+        some{ value } => { io::println_i64{ &io, n = value } }
+    }
+}
+fn main { mut io: Io } {
+    let a = "-9223372036854775808"
+    let b = "9223372036854775808"
+    let c = "12x"
+    let d = "-"
+    let e = "0042"
+    show{ &io, r = utf8::parse_i64{ s = utf8::of{ chars = a } } }
+    show{ &io, r = utf8::parse_i64{ s = utf8::of{ chars = b } } }
+    show{ &io, r = utf8::parse_i64{ s = utf8::of{ chars = c } } }
+    show{ &io, r = utf8::parse_i64{ s = utf8::of{ chars = d } } }
+    show{ &io, r = utf8::parse_i64{ s = utf8::of{ chars = e } } }
+    let u = "18446744073709551616"
+    io::println_bool{ &io, n = utf8::parse_u64{ s = utf8::of{ chars = u } } == null }
+}
+
+//# stdout:
+//| -9223372036854775808
+//| 0
+//| 0
+//| 0
+//| 42
+//| true

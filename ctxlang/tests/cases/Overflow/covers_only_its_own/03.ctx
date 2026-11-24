@@ -1,0 +1,7 @@
+// A call's argument, an index and a nested ifoverflow are evaluated as usual.
+
+fn main { mut io: Io } {
+    let a: i32 = 5
+    let z: i32 = 0
+    _ = @fmt(&io, "{}\n", a / z ifoverflow 0)  //~ panic at 29: division by zero
+}

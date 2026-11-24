@@ -1,0 +1,13 @@
+// Memory from pages doesn't extend the stack: deep recursion still overflows.
+
+fn down { n: i32 } -> i32 { let big: [1048576]u8 = [0; 1048576]; if (n == 20) { return 0 }; return down{ n = n + 1 } + @as(i32, big[@as(usize, n)]) }
+
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+
+    _ = mem::pages{ &mem, size = 67108864 }
+    return down{ n = 0 }
+
+}
+
+//# interp: cannot run
+//# panic: program: panic: stack overflow

@@ -1,0 +1,3 @@
+const N: usize = N  //~ error at 18: const `N` refers to itself
+struct S { a: [N]u8 }
+fn main {} {}

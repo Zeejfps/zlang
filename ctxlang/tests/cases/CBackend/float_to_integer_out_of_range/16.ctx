@@ -1,0 +1,2 @@
+fn convert { x: f32 } -> i64 { return @as(i64, x) }  //~ panic at 39: @as: 9.223372036854776e+18 is not representable in i64
+fn main {} { _ = convert{ x = 9.223372036854776e+18 } }

@@ -1,0 +1,11 @@
+// A field whose type doesn't mention a generic parameter may have one.
+
+struct Box(T) { value: T, count: usize = 3 }
+fn main { mut io: Io } {
+    let a = Box{ value = "a", .. }
+    let b = Box(i32){ value = 4, count = 9, .. }
+    _ = @fmt(&io, "{} {} {} {}\n", a.value, a.count, b.value, b.count)
+}
+
+//# stdout:
+//| a 3 4 9

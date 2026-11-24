@@ -1,0 +1,7 @@
+error a
+error b
+fn da {} -> error(a)!u64 { return a }
+fn fwd(E: error) { f: &fn{} -> E!u64 } -> E!u64 { return try f{} }
+fn m(E: error) { f: &fn{} -> E!u64 } { match f{} { ok => {} else => {} } }
+fn n(E: error) { f: &fn{} -> E!u64 } { match f{} { ok => {} a => {} else => {} } }  //~ error at 61: error `a` can't happen here: E is a generic set, whose errors are its argument's
+fn main {} {}

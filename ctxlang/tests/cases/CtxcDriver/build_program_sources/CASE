@@ -1,0 +1,14 @@
+// `#build::sources` on `fn build` makes the files under a directory the build program's,
+// as add_sources makes them an executable's: at any depth, each once, none named
+// build.ctx. They aren't the executable's.
+//# $ ctxc run tools/tool
+//# stdout:
+//| 321
+//# write tools/tool/sub/main.ctx:
+//| fn main {} { _ = x::n{} }
+//# $ ctxc run tools/tool
+//# exit: 1
+//# stdout:
+//| 321
+//# stderr:
+//| tools/tool/sub/main.ctx:1:18: error: unknown type or namespace `x`

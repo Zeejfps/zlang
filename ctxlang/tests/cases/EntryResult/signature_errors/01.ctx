@@ -1,0 +1,1 @@
+fn main {} -> !u8 { return 1 }  //~ error at 1: `main` can only return i32 (the exit code), `!` or `!i32`, not !u8

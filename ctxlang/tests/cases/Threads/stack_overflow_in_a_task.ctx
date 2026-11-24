@@ -1,0 +1,23 @@
+// A worker's stack limit is its own: a recursion in a task on a small stack
+// (task::set_stack) panics there, as the main thread's would.
+
+fn down { n: u64 } -> u64 {
+    let pad: [64]u64 = [n; 64]
+    return down{ n = n + 1 } + pad[3]
+}
+
+#task
+fn deep {} -> !u64 {
+    return down{ n = 0 }
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    task::set_stack{ &threads, bytes = 262144 }
+    let mut t: task::Task(!u64)
+    task::start_concurrent{ &threads, task = &t, run = deep{ _ } } iferr { return 1 }
+    _ = task::wait{ &threads, task = &t }
+    return 0
+}
+
+//# interp: cannot run
+//# panic: program: panic in task deep: stack overflow

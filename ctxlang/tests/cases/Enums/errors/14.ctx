@@ -1,0 +1,11 @@
+
+enum Kind: u8 {
+    ident,
+    number,
+    lbrace = 40,
+    rbrace,
+}
+
+enum Sign: i8 { minus = -1, zero, plus }
+fn f { k: Kind } { match k { ident{ x } => {} else => {} } }  //~ error at 30: variant `ident` has no payload
+fn main {} {}

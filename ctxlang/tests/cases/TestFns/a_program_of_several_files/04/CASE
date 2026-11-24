@@ -1,0 +1,5 @@
+// A compile error is the build's: ctxc's errors, and no summary.
+//# $ ctxc test .
+//# exit: 1
+//# stderr:
+//| lib/shapes_test.ctx:2:41: error: unknown name `nothing`

@@ -1,0 +1,2 @@
+struct S { a: [3 << 62]u8 }  //~ error at 18: integer constant is too large
+fn main {} {}

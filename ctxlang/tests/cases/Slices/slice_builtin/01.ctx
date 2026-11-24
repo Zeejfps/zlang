@@ -1,0 +1,10 @@
+
+fn main { mut io: Io } {
+    let mut a = [1, 2, 3]
+    let s = @slice(&a[1], 2)
+    s[1] = 9
+    io::println_i64{ &io, n = a[2] }
+}
+
+//# stdout:
+//| 9

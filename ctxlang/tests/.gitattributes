@@ -1,0 +1,2 @@
+# Cases are stored byte for byte: a program's line ends and bytes are part of what it tests.
+cases/** -text

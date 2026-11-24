@@ -1,0 +1,1 @@
+fn main { let n = 12ab }  //~ error at 19: invalid number literal //~ error at 9: a function's context comes before its body: write `fn main {} { ... }`

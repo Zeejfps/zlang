@@ -1,0 +1,9 @@
+fn f { a: ?i32 } -> i32 {
+    if not (a == null) { return a }
+    return 0
+}
+fn main {} {
+    _ = f{ a = 3 }
+}
+
+//# exit: 0

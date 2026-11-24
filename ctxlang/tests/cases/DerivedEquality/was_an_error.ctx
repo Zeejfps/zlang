@@ -1,0 +1,19 @@
+// What had no equality and now compares: a distinct slice, a strlit, a ?T of a struct
+// with a T, and a ?[]u8 with a []u8.
+
+type Name = distinct []u8
+struct S { a: i32 }
+fn lit { s: strlit, t: strlit } -> bool { return s == t }
+fn main { mut io: Io } {
+    let n = @as(Name, "bob")
+    let m = @as(Name, "bo")
+    let x: ?S = S{ a = 1 }
+    let none: ?S = null
+    let bytes: ?[]u8 = "ab"
+    _ = @fmt(&io, "{} {} {} {}\n", n == n, n != m, lit{ s = "a", t = "a" }, lit{ s = "a", t = "b" })
+    _ = @fmt(&io, "{} {} {} {} {}\n", x == S{ a = 1 }, x == S{ a = 2 }, none == S{ a = 1 }, bytes == "ab", bytes != "abc")
+}
+
+//# stdout:
+//| true true true false
+//| true false false true true

@@ -1,0 +1,13 @@
+
+#task
+fn fill { mut buf: [8]u8, n: u8 } -> ! { buf[0] = n }
+
+#task
+fn look { s: []u8 } -> !u64 { return @as(u64, s.len) }
+
+#task
+fn sq { n: u64 } -> !u64 { return n * n }
+
+#starts_task
+fn go { run: &fn{} -> u8 } {}  //~ error at 4: `starts_task` fn `go` takes `run: &fn{} -> R`, the task, and a handle it starts it into: `mut task` or `mut group`, of a `task_handle` type
+fn main {} {}

@@ -1,0 +1,3 @@
+
+fn f { p: *u8 } { let q = @cast(*mut i8, p) }  //~ error at 42: @cast cannot make *u8 writable
+fn main { mut io: Io } { }

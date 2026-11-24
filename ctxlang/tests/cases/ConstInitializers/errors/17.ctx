@@ -1,0 +1,2 @@
+const A: i32 = nope  //~ error at 16: unknown name `nope`
+fn main {} {}

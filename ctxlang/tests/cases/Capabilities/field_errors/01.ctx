@@ -1,0 +1,2 @@
+capability C { x: i32 }  //~ error at 16: capability `C`'s field `x` must be a C function pointer, `extern fn{ ... }`, not i32
+fn main {} {}

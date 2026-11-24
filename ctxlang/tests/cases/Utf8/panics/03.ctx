@@ -1,0 +1,7 @@
+
+fn main { mut io: Io } {
+    let mut buf: [4]u8
+    let e = utf8::encode{ c = 55296, into = buf[..] }
+}
+
+//# panic: std/utf8.ctx:194:33: panic: utf8::encode: not a Unicode scalar value

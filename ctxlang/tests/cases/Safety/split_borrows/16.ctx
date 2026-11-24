@@ -1,0 +1,13 @@
+struct L { len: i32, cap: i32 }
+struct In { a: i32, l: L }
+struct E { n: i32, list: L, arr: [3]i32, sub: In }
+fn push { mut l: L } { l.len = l.len + 1 }
+fn count { l: L } -> i32 { return l.len }
+fn both { f: &fn{}, g: &fn{} } {
+    f{}
+    g{}
+}
+fn t { mut e: E } {
+    both{ f = push{ l = &e.list, _ }, g = push{ l = &e.list, _ } }  //~ error at 9: `e.list` overlaps a place held by `g`: `f` may change it too, whenever it is called; pass one of them
+}
+fn main {} {}

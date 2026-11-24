@@ -1,0 +1,10 @@
+// Any error, here a function type's `!T`, is open: a match on it needs `else`, which is
+// never unreachable, however many errors it lists.
+
+error a
+error b
+fn f {} -> error(a, b)!u64 { return a }
+fn main {} {
+    let v: fn{} -> !u64 = f
+    match v{} { ok => {} a => {} b => {} }  //~ error at 5: a match on an open error set needs `else` or `err`: error may gain errors
+}

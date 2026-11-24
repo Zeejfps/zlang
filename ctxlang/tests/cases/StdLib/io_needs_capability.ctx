@@ -1,0 +1,3 @@
+
+fn helper { n: i32 } { io::println_i64{ n } }  //~ error at 39: call to `io::println_i64` is missing `io`
+fn main { mut io: Io } { }

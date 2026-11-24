@@ -1,0 +1,7 @@
+// A call's argument, an index and a nested ifoverflow are evaluated as usual.
+
+fn id { n: u8 } -> u8 { return n }
+fn main { mut io: Io } {
+    let a: u8 = 200
+    _ = @fmt(&io, "{}\n", id{ n = a + a } + 1 ifoverflow 0)  //~ panic at 37: integer overflow
+}

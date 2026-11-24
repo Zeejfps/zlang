@@ -1,0 +1,3 @@
+union U { a, b }
+extern fn f {} -> U  //~ error at 19: extern fn `f` can't return U: C has no equivalent of it //~ error at 11: extern fn `f` takes no capability: add a capability field for what it touches, or `#pure` if it touches only its arguments and the memory they point to
+fn main {} {}

@@ -1,0 +1,10 @@
+fn f { o: ?i32 } -> i32 {
+    let mut n = 0
+    while o != null and n < o { n = n + 1 }
+    return n
+}
+fn main {} {
+    _ = f{ o = 3 }
+}
+
+//# exit: 0

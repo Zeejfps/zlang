@@ -1,0 +1,10 @@
+
+fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
+    let mut mem: [65536]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    io::println_u64{ &io, n = args.len }
+    return 0
+}
+
+//# stdout:
+//| 0

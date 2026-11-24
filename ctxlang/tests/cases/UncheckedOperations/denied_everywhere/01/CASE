@@ -1,0 +1,11 @@
+// `except = []`: the program's own directories are all denied, its root too. Here the
+// errors are those of lib/raw and lib/raw/deep, every one.
+//# $ ctxc run .
+//# exit: 1
+//# stderr:
+//| lib/raw/raw.ctx:4:15: error: an extern fn is unchecked, and `build::deny_unchecked` in build.ctx denies it here: it has no checked form, so write it in a directory its `except` lists
+//| lib/raw/raw.ctx:5:18: error: an extern union is unchecked, and `build::deny_unchecked` in build.ctx denies it here: use a `union`, which says which variant it holds, or write it in a directory its `except` lists
+//| lib/raw/raw.ctx:6:45: error: pointer arithmetic is unchecked, and `build::deny_unchecked` in build.ctx denies it here: index an array or a slice (`s[i]`, which is bounds-checked), or write it in a directory its `except` lists
+//| lib/raw/raw.ctx:7:51: error: `@slice` is unchecked, and `build::deny_unchecked` in build.ctx denies it here: slice an array or a slice (`a[lo..hi]`, which is bounds-checked), or write it in a directory its `except` lists
+//| lib/raw/raw.ctx:8:43: error: `@cast` is unchecked, and `build::deny_unchecked` in build.ctx denies it here: it has no checked form, so write it in a directory its `except` lists
+//| lib/raw/deep/deep.ctx:1:57: error: pointer arithmetic is unchecked, and `build::deny_unchecked` in build.ctx denies it here: index an array or a slice (`s[i]`, which is bounds-checked), or write it in a directory its `except` lists

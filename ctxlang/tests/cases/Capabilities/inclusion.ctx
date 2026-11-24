@@ -1,0 +1,60 @@
+// `..A` gives a capability A's fields where it stands (spec §15), and it converts to A:
+// a `mut` field takes a pointer to it, as is when A's fields come first (B's `..A`) and
+// as a copy when they don't (C's), and a value converts too. A literal of one made in
+// its namespace may spread one it includes.
+
+namespace m {
+    capability L
+    #c::symbol{ name = "llabs" }
+    #pure
+    extern fn abs { n: i64 } -> i64
+    #c::symbol{ name = "strlen" }
+    #pure
+    extern fn len { s: c::String } -> usize
+    #c::symbol{ name = "atoi" }
+    #pure
+    extern fn int { s: c::String } -> i32
+    capability A { abs: extern fn{ n: i64 } -> i64 }
+    capability B { ..A, len: extern fn{ s: c::String } -> usize }
+    capability C { int: extern fn{ s: c::String } -> i32, ..B }
+    fn load_a { mut l: L } -> A { return A{ abs } }
+    fn load_b { mut l: L } -> B { return B{ ..load_a{ &l }, len } }
+    fn load_c { mut l: L } -> C { return C{ int, ..load_b{ &l } } }
+}
+
+fn mag { mut a: m::A, n: i64 } -> i64 { return a.abs{ n } }
+fn size { mut b: m::B, s: c::String } -> usize { return b.len{ s } }
+fn via { p: *mut m::C } -> i64 { return mag{ a = p, n = -8 } }
+fn fwd { mut a: m::C, n: i64 } -> i64 { return mag{ .. } }
+fn first { a: m::A } -> ?m::A { return a }
+
+fn main { mut io: Io, mut l: m::L } -> i32 {
+    let mut b = m::load_b{ &l }
+    let mut c = m::load_c{ &l }
+    io::println_i64{ &io, n = b.abs{ n = -1 } + c.abs{ n = -2 } }
+    io::println_u64{ &io, n = b.len{ s = "four" } + c.len{ s = "five!" } }
+    io::println_i64{ &io, n = @as(i64, c.int{ s = "42" }) }
+    io::println_i64{ &io, n = mag{ a = &b, n = -3 } }
+    io::println_i64{ &io, n = mag{ a = &c, n = -4 } }
+    io::println_u64{ &io, n = size{ b = &c, s = "seven!!" } }
+    io::println_i64{ &io, n = via{ p = &c } }
+    io::println_i64{ &io, n = fwd{ a = &c, n = -9 } }
+    let mut a: m::A = c
+    let mut a2 = first{ a = b } ifnull { return 1 }
+    io::println_i64{ &io, n = a.abs{ n = -5 } + a2.abs{ n = -6 } }
+    io::println_u64{ &io, n = @size_of(m::B) + @size_of(m::C) }
+    return 0
+}
+
+//# interp: cannot run
+//# stdout:
+//| 3
+//| 9
+//| 42
+//| 3
+//| 4
+//| 7
+//| 8
+//| 9
+//| 11
+//| 40

@@ -1,0 +1,6 @@
+fn g { m: i32 } {}
+fn f {} {
+    let movie = 1
+    g{ m = 1, movie }  //~ error at 15: `g` has no field `movie`: its field, `m`, is supplied already
+}
+fn main {} {}

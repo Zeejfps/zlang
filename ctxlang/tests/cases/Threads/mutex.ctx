@@ -1,0 +1,14 @@
+
+fn main { mut io: Io } {
+    let mut m = mutex::make{}
+    mutex::lock{ mutex = &m }
+    io::println_bool{ &io, n = mutex::try_lock{ mutex = &m } }
+    mutex::unlock{ mutex = &m }
+    io::println_bool{ &io, n = mutex::try_lock{ mutex = &m } }
+    mutex::unlock{ mutex = &m }
+    mutex::free{ mutex = &m }
+}
+
+//# stdout:
+//| false
+//| true

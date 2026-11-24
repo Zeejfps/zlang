@@ -1,0 +1,3 @@
+fn f {} -> i32 { @panic("no") }
+const A: i32 = f{}  //~ error at 17: const `A` panicked while compiling: no, at 1:18
+fn main {} {}

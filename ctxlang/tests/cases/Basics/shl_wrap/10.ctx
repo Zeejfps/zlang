@@ -1,0 +1,7 @@
+// §11, Expressions, rule 4: `a <<% n` is `a << n` with the bits shifted out dropped. It
+// has `<<`'s operands, result type and precedence, and its count is checked the same.
+
+fn main {} {
+    let a: u8 = 1
+    let x = a << % 2  //~ error at 18: expected an expression, found '%'
+}

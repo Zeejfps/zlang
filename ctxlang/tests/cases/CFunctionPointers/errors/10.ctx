@@ -1,0 +1,2 @@
+fn main {} { let p: ?*u8 = null
+  let f = @cast(extern fn{}, p) }  //~ error at 30: @cast needs a value that isn't null: check the optional first

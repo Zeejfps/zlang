@@ -1,0 +1,25 @@
+// `try @fmt` fails a writer with alloc::out_of_memory alone, so this match is exhaustive.
+
+fn pair { mut b: utf8::Builder(arena::Arena), x: i64, y: i64 } -> ! {
+    try @fmt(&b, "<{}, {}>", x, y)
+}
+fn show { mut io: Io, mut b: utf8::Builder(arena::Arena) } {
+    match pair{ &b, x = 1, y = 2 } {
+        ok                   => { io::println{ &io, s = utf8::view{ b } } }
+        alloc::out_of_memory => { io::println{ &io, s = "oom" } }
+    }
+}
+fn main { mut io: Io } {
+    let mut mem: [64]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    show{ &io, &b }
+    let mut small: [4]u8
+    let mut tiny = arena::new{ buf = small[..] }
+    let mut t = utf8::builder{ realloc = arena::alloc, heap = &tiny }
+    show{ &io, b = &t }
+}
+
+//# stdout:
+//| <1, 2>
+//| oom

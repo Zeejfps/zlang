@@ -1,0 +1,15 @@
+
+fn view {} -> []u8 { return "q\"?\\\x00\xff" }
+fn main { mut io: Io } -> i32 {
+    io::println{ &io, s = "caf\xc3\xa9" }
+    let v = view{}
+    io::println_u64{ &io, n = v.len }
+    io::println_u64{ &io, n = v[5] }
+    let e: []u8 = ""
+    return @as(i32, e.len)
+}
+
+//# stdout:
+//| café
+//| 6
+//| 255

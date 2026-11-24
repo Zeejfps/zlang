@@ -1,0 +1,3 @@
+#panic  //~ error at 1: `panic` applies only to a fn
+struct S {}
+fn main {} {}

@@ -1,0 +1,29 @@
+// A declared writer's errors reach an @fmt also when it writes an error's payload, and
+// one declaring `error!` makes the @fmt's set any error.
+
+error a
+struct P { n: u32 }
+error holds{ p: P }
+#write
+fn write_p { mut io: Io, p: P } -> error(a)! {
+    if p.n == 0 { return a }
+    io::print_u64{ &io, n = @as(u64, p.n) }
+}
+struct Q { n: u32 }
+#write
+fn write_q { mut io: Io, q: Q } -> error! {
+    if q.n == 0 { return a }
+    io::print_u64{ &io, n = @as(u64, q.n) }
+}
+fn show { mut io: Io, e: error(holds) } -> !u64 {
+    try @fmt(&io, "{}\n", e)
+    return 1
+}
+fn main { mut io: Io } {
+    match show{ &io, e = holds{ p = P{ n = 0 } } } { ok => {} a => { io::println{ &io, s = "a" } } }
+    match @fmt(&io, "{}\n", Q{ n = 0 }) { ok => {} else => { io::println{ &io, s = "any" } } }
+}
+
+//# stdout:
+//| holds{ p = a
+//| any

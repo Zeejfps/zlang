@@ -1,0 +1,33 @@
+
+struct Tlk { n: i32 }
+struct World { tlk: ?Tlk, count: i32 }
+fn bump { mut t: Tlk } { t.n = t.n + 1 }
+fn find { n: i32 } -> ?i32 {
+    if n > 0 { return n * 10 }
+    return null
+}
+
+fn tick { mut io: Io, mut w: World } {
+    if w.count > 5 {
+        _ = @fmt(&io, "big\n")
+    } else if let t = w.tlk {
+        _ = @fmt(&io, "{}\n", t.n)
+    } else if let v = find{ n = w.count + 4 } {
+        _ = @fmt(&io, "found {}\n", v)
+    }
+    let n = if let t = w.tlk { t.n } else if let v = find{ n = w.count } { v } else { 42 }
+    _ = @fmt(&io, "{}\n", n)
+}
+
+fn main { mut io: Io } {
+    let mut w = World{ tlk = Tlk{ n = 1 }, count = 0 }
+    let mut e = World{ tlk = null, count = 0 }
+    tick{ &io, &w }
+    tick{ &io, w = &e }
+}
+
+//# stdout:
+//| 1
+//| 1
+//| found 40
+//| 42

@@ -1,0 +1,3 @@
+#start
+fn s { mut t: Test, main: &fn{ args: Args } -> i32 } -> i32 { return 0 }  //~ error at 8: a `start` fn cannot take a Test: only a `test` fn and the `test_main` fn receive one
+fn main {} {}

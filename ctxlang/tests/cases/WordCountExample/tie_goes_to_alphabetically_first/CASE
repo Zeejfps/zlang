@@ -1,0 +1,9 @@
+// examples/wordcount.ctx: of words equally common, the alphabetically first is named.
+//# program: {home}/examples/wordcount.ctx
+//# args: {dir}/tmp/tie.txt
+//# interp: cannot run
+//# stdout:
+//| lines: 1
+//| words: 5
+//| distinct: 3
+//| most common: a 2

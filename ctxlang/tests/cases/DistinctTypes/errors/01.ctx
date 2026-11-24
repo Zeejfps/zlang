@@ -1,0 +1,14 @@
+
+type Meters = distinct f64
+type Seconds = distinct f64
+type UserId = distinct u64
+type Small = distinct u8
+type Name = distinct []u8
+struct P { x: i32, y: i32 }
+type Pos = distinct P
+type Flag = distinct bool
+type Id(T) = distinct u32
+fn f { m: Meters } {}
+fn g {} { let x: f64 = 1.0
+ f{ m = x } }  //~ error at 9: expected Meters, got f64: convert with @as(Meters, x)
+fn main {} {}

@@ -1,0 +1,5 @@
+error a
+error b
+error c
+fn f {} -> error(error)!u64 { return a }  //~ error at 18: `error` is every error already: a set lists errors and sets
+fn main {} {}

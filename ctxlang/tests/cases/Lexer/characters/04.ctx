@@ -1,0 +1,1 @@
+fn main { let café = 1 }  //~ error at 18: unexpected character 'é' (U+00E9) //~ error at 9: a function's context comes before its body: write `fn main {} { ... }`

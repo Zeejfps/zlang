@@ -1,0 +1,3 @@
+// Rule 1; each kind runs in class SmallSyntax.
+
+fn main { mut io: Io } { defer let x = 1 }  //~ error at 26: `defer let` declares a local that nothing could use: put the `let` and what uses it in a block, `defer { ... }`

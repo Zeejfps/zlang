@@ -1,0 +1,5 @@
+capability O {
+    #stack_limit
+    static n: i32  //~ error at 5: a `stack_limit` static is a usize, an address, not i32
+}
+fn main {} {}

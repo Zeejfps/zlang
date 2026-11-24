@@ -1,0 +1,6 @@
+fn f {} {
+    let x: i32
+    x = 1
+    x = 2  //~ error at 5: `x` may be assigned more than once
+}
+fn main {} {}

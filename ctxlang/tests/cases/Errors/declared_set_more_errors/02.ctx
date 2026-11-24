@@ -1,0 +1,5 @@
+error a
+error b
+fn g {} -> error(a)!u8 { return 1 }
+fn f {} -> error(a)!u64 { return g{} }  //~ error at 35: expected error(a)!u64, got error(a)!u8
+fn main {} { _ = f{} }

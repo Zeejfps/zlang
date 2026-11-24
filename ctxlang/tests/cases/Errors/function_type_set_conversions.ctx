@@ -1,0 +1,55 @@
+// A bind of a declared function, a generic instance's bind, an array and an optional of
+// function values convert to a function type's declared set, each renumbered.
+
+error a
+error b
+error c{ n: u64 }
+type Wide = error(a, b, c)
+
+fn da {} -> error(a)!u64 { return a }
+fn inf { n: u64 } -> !u64 {
+    if n == 0 { return b }
+    if n == 1 { return c{ n = 7 } }
+    return n
+}
+fn add { k: u64, n: u64 } -> error(c)!u64 {
+    if n == 3 { return c{ n = k } }
+    return k + n
+}
+fn gen(T) { x: T, n: u64 } -> error(b)!u64 {
+    if n == 0 { return b }
+    return n
+}
+
+fn each { f: fn{ n: u64 } -> Wide!u64, n: u64 } -> Wide!u64 { return try f{ n } }
+fn each_bound { f: &fn{ n: u64 } -> Wide!u64, n: u64 } -> Wide!u64 { return try f{ n } }
+
+fn show { mut io: Io, r: Wide!u64 } {
+    match r {
+        ok{ value } => { io::println_u64{ &io, n = value } }
+        a => { io::println{ &io, s = "a" } }
+        b => { io::println{ &io, s = "b" } }
+        c{ n } => { io::println_u64{ &io, n = 1000 + n } }
+    }
+}
+
+fn main { mut io: Io } {
+    // a bind of a declared function
+    show{ &io, r = each_bound{ f = add{ k = 5, _ }, n = 3 } }
+    show{ &io, r = each_bound{ f = add{ k = 5, _ }, n = 4 } }
+    // a generic instance
+    show{ &io, r = each_bound{ f = gen(u8){ x = 1, _ }, n = 0 } }
+    // an array of function values of the declared type
+    let fs: [2]fn{ n: u64 } -> Wide!u64 = [inf, inf]
+    show{ &io, r = fs[1]{ n = 1 } }
+    // a struct field and an optional
+    let maybe: ?fn{ n: u64 } -> Wide!u64 = inf
+    if maybe is some{ value } { show{ &io, r = value{ n = 0 } } }
+}
+
+//# stdout:
+//| 1005
+//| 9
+//| b
+//| 1007
+//| b

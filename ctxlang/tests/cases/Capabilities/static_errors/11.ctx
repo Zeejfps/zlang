@@ -1,0 +1,3 @@
+capability V { static x: i32 }
+capability X { f: extern fn{}, ..V }  //~ error at 32: capability `X` can't include `V`: it has only statics
+fn main {} {}

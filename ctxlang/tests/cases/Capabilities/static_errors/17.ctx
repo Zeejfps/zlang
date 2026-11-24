@@ -1,0 +1,8 @@
+capability O {
+    #stack_limit
+    #stack_limit  //~ error at 5: duplicate `stack_limit` attribute
+    static n: usize
+}
+#start
+fn go {} -> i32 { return 0 }
+fn main {} {}

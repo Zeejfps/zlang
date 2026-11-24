@@ -1,0 +1,108 @@
+// A function whose set is inferred is a value of a function type whose `!T` may fail
+// with any error (§5): in a local, a struct field, an array, a `?`, an argument and a
+// list, whose errors come back with their payloads.
+
+namespace parse {
+    error empty
+    error bad_digit{ at: usize }
+    error too_big
+}
+
+fn number { s: []u8 } -> !u64 {
+    if s.len == 0 { return parse::empty }
+    let mut n: u64 = 0
+    let mut i: usize = 0
+    while i < s.len {
+        if s[i] < '0' or s[i] > '9' { return parse::bad_digit{ at = i } }
+        if n > 100000 { return parse::too_big }
+        n = n * 10 + @as(u64, s[i] - '0')
+        i = i + 1
+    }
+    return n
+}
+
+fn show { mut io: Io, r: !u64 } {
+    let mut mem: [256]u8 = [0; 256]
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    match r {
+        ok{ value }  => { _ = @fmt(&b, "ok {}", value) }
+        err{ error } => { _ = @fmt(&b, "err {}", error) }
+    }
+    io::println{ &io, s = utf8::view{ b } }
+}
+
+error named{ text: []u8 }
+
+fn other { s: []u8 } -> !u64 {
+    if s.len > 3 { return named{ text = s[1..] } }
+    return 7
+}
+
+fn report { mut io: Io, r: !u64 } {
+    match r {
+        ok{ value } => { _ = @fmt(&io, "ok {}\n", value) }
+        err{ error } => {
+            match error {
+                parse::bad_digit{ at } => { _ = @fmt(&io, "bad digit at {}\n", at) }
+                named{ text } => { _ = @fmt(&io, "named {}\n", utf8::of{ chars = text }) }
+                else => { _ = @fmt(&io, "err {}\n", error) }
+            }
+        }
+    }
+}
+
+struct Parser { run: fn{ s: []u8 } -> !u64, name: []u8 }
+
+fn apply { f: &fn{ s: []u8 } -> !u64, s: []u8 } -> !u64 {
+    let n = try f{ s }
+    return n + 1
+}
+
+fn main { mut io: Io } {
+    let f: fn{ s: []u8 } -> !u64 = number
+    report{ &io, r = f{ s = "42" } }
+    report{ &io, r = f{ s = "" } }
+    report{ &io, r = f{ s = "4x" } }
+    let ps: [2]Parser = [Parser{ run = number, name = "number" }, Parser{ run = other, name = "other" }]
+    let mut i: usize = 0
+    while i < ps.len {
+        report{ &io, r = ps[i].run{ s = "abcd" } }
+        i = i + 1
+    }
+    let o: ?fn{ s: []u8 } -> !u64 = other
+    if o != null { report{ &io, r = o{ s = "wxyz" } } }
+    report{ &io, r = apply{ f = number, s = "9" } }
+    report{ &io, r = apply{ f = number, s = "9q" } }
+    let g = number                          // number's own type, its set: held by a thunk
+    report{ &io, r = apply{ f = g, s = "19" } }
+    let wide: fn{ s: []u8, extra: i32 } -> !u64 = number
+    report{ &io, r = wide{ s = "5", extra = 3 } }
+    let table: [3]fn{ s: []u8 } -> !u64 = [other; 3]
+    report{ &io, r = table[2]{ s = "12345" } }
+    let mut mem: [1024]u8 = [0; 1024]
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut fs = list::new(fn{ s: []u8 } -> !u64){ realloc = arena::alloc, &heap }
+    try! list::push{ list = &fs, item = number }
+    report{ &io, r = list::items{ list = fs }[0]{ s = "1234567" } }
+    match f{ s = "" } {
+        ok => { _ = @fmt(&io, "ok\n") }
+        parse::empty => { _ = @fmt(&io, "empty\n") }
+        else => { _ = @fmt(&io, "else\n") }
+    }
+}
+
+//# stdout:
+//| ok 42
+//| err parse::empty
+//| bad digit at 1
+//| bad digit at 0
+//| named bcd
+//| named xyz
+//| ok 10
+//| bad digit at 1
+//| ok 20
+//| ok 5
+//| named 2345
+//| err parse::too_big
+//| empty

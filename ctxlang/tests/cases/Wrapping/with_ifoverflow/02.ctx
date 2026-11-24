@@ -1,0 +1,6 @@
+// A wrapping operator never overflows, but ifoverflow covers what its operands cover.
+
+fn main {} {
+    let a: u8 = 250
+    _ = a +% a ifoverflow 0  //~ error at 16: nothing before `ifoverflow` can overflow: it covers the integer `+`, `-`, `*` and `/`, unary `-`, and `@as` and `@round` to an integer written before it, and the operands of those in turn
+}

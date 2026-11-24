@@ -1,0 +1,5 @@
+fn wr { mut b: i32 } -> ! { }
+fn w { mut b: utf8::Builder(arena::Arena) } -> ! {
+    return @fmt(&b, "{}", wr)  //~ error at 17: expected *mut i32, got *mut utf8::Builder(arena::Arena)
+}
+fn main {} {}

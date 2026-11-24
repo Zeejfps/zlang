@@ -1,0 +1,23 @@
+
+namespace a {
+    // Only a's unit calls it.
+    fn hidden { x: i64 } -> i64 { return x * 3 }
+
+    // Called from main.ctx's unit, and too big to copy.
+    fn big { n: i64 } -> i64 {
+        let mut s: i64 = 0
+        let mut i: i64 = 0
+        while i < n {
+            if i % 3 == 0 { s = s + hidden{ x = i } } else if i % 3 == 1 { s = s - i * 2 } else { s = s + i / 2 }
+            if s > 1000 { s = s - 1000 } else if s < -1000 { s = s + 1000 }
+            i = i + 1
+        }
+        return s + small{ x = n } + small{ x = n + 1 }
+    }
+
+    fn small { x: i64 } -> i64 { return 100 / x }
+
+    fn add { k: i64, x: i64 } -> i64 { return x + k }
+
+    fn value { x: i64 } -> i64 { return x - 1 }
+}

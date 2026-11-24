@@ -1,0 +1,2 @@
+fn f { x: ?_ } {}  //~ error at 12: `_` is a type only as the type argument of @as, @trunc or @cast, where it is the type expected
+fn main {} {}

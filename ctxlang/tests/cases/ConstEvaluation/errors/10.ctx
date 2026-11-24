@@ -1,0 +1,6 @@
+fn f {} -> *i8 {
+    let s: []u8 = "abc"
+    return @cast(*i8, s.ptr)
+}
+const A: *i8 = f{}  //~ error at 17: const `A` can't hold a *i8 into a literal: only a []u8 or a *u8 can point into one
+fn main {} {}

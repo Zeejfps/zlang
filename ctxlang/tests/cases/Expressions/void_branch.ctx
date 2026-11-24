@@ -1,0 +1,1 @@
+fn main { mut io: Io } { let x = if true { io::newline{ &io } } else { 1 } }  //~ error at 55: this branch has no value: its last expression returns nothing

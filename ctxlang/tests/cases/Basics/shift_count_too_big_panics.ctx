@@ -1,0 +1,6 @@
+
+fn main { mut io: Io } {
+    let x: u32 = 1
+    let n: u8 = 32
+    io::println_u64{ &io, n = x << n }  //~ panic at 33: shift count 32 out of range for a 32-bit integer
+}

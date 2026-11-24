@@ -1,0 +1,2 @@
+fn convert { x: f32 } -> usize { return @as(usize, x) }  //~ panic at 41: @as: -inf is not representable in usize
+fn main {} { _ = convert{ x = -1.0 / 0.0 } }

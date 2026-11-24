@@ -1,0 +1,37 @@
+// Each worker counts in its own static; a program that isn't threaded has one.
+
+namespace counts {
+    capability Counts {
+        #thread_local
+        static n: u64
+    }
+
+    fn bump { mut c: Counts } -> u64 {
+        c.n = c.n + 1
+        return c.n
+    }
+}
+
+#task
+fn worker { mut counts: counts::Counts, mut seen: u64 } -> ! {
+    _ = counts::bump{ c = &counts }
+    seen = counts::bump{ c = &counts }
+}
+
+fn main { mut io: Io, mut counts: counts::Counts, mut threads: Threads } -> i32 {
+    _ = counts::bump{ c = &counts }
+    _ = counts::bump{ c = &counts }
+    _ = counts::bump{ c = &counts }
+    let mut seen: u64 = 0
+    let mut t: task::Task(!)
+    task::start_concurrent{ &threads, task = &t, run = worker{ &counts, &seen, _ } } iferr { return 1 }
+    task::wait{ &threads, task = &t } iferr { return 1 }
+    io::println_u64{ &io, n = seen }
+    io::println_u64{ &io, n = counts::bump{ c = &counts } }
+    return 0
+}
+
+//# interp: cannot run
+//# stdout:
+//| 2
+//| 4

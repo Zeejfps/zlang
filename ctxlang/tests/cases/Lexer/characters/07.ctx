@@ -1,0 +1,1 @@
+fn main { @ size_of(i32) }  //~ error at 11: expected a builtin name after '@' //~ error at 9: a function's context comes before its body: write `fn main {} { ... }`

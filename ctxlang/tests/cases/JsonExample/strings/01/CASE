@@ -1,0 +1,7 @@
+// examples/json prints a string with the escapes it needs: `\/` is `/`, a control character
+// stays `\u001f`, and text beyond ASCII is written as it is.
+//# program: {home}/examples/json/main.ctx {home}/examples/json/parser.ctx {home}/examples/json/printer.ctx {home}/examples/json/value.ctx
+//# args: {dir}/tmp/in.json
+//# interp: cannot run
+//# stdout:
+//| "t\t \"q\" \\ / é 😀 \u001f"

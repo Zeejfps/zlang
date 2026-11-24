@@ -1,0 +1,9 @@
+// Borrowing summaries and callback records (provenance and callback lifetimes):
+// static error: accepted. It only compiles.
+
+error bad{ text: []u8 }
+fn check { data: []u8 } -> ! { if data.len > 0 { return bad{ text = "bad" } } }
+fn load {} -> ! { let buf: [3]u8 = [1,2,3]; try check{ data = buf[..] } }
+fn main {} { _ = load{} }
+
+//# compiles

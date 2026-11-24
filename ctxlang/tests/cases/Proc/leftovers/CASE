@@ -1,0 +1,39 @@
+// A child in a group of its own starts a grandchild that sleeps, says so, and ends.
+// wait then ends the grandchild, with leftovers = kill, the default, or leaves it
+// running, with keep.
+// The child is tests/helpers/child.ctx, as `start_beat PATH go`: it starts a grandchild that
+// makes the file PATH grow for a minute, prints `started` and ends. That the grandchild still
+// runs is the file growing in the second after (`beats PATH`), and that it has ended is the
+// file no longer growing (`ends PATH`); `stop_beat` ends a grandchild that was left running.
+//# build child: {home}/tests/helpers/child.ctx
+//# build program: main.ctx
+
+// leftovers = kill
+//# make dir kill
+//# $ {program} {child} kill kill/file
+//# timeout: 30
+//# exit: 0
+//# stdout:
+//| started
+//| 0
+//# $ {child} ends kill/file
+//# exit: 0
+//# stdout:
+//| ended
+
+// leftovers = keep
+//# make dir keep
+//# $ {program} {child} keep keep/file
+//# timeout: 30
+//# exit: 0
+//# stdout:
+//| started
+//| 0
+//# $ {child} beats keep/file
+//# exit: 0
+//# stdout:
+//| running
+//# $ {child} stop_beat keep/file
+//# exit: 0
+//# stdout:
+//| stopped

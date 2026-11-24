@@ -1,0 +1,16 @@
+
+fn loud { mut io: Io } -> i32 {
+    io::println{ &io, s = "loud" }
+    return 0
+}
+fn main { mut io: Io } {
+    let a: ?i32 = 5
+    let b: ?i32 = null
+    io::println_i64{ &io, n = a ifnull loud{ &io } }
+    io::println_i64{ &io, n = b ifnull loud{ &io } }
+}
+
+//# stdout:
+//| 5
+//| loud
+//| 0

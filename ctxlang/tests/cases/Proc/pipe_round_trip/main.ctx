@@ -1,0 +1,43 @@
+
+fn main { mut io: Io, mut proc: Proc, args: Args } -> i32 {
+    let mut mem: [65536]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
+    let mut env = list::new([]u8){ realloc = arena::alloc, &heap }
+
+    let mut sent: [200000]u8
+    let mut i: usize = 0
+    while i < sent.len {
+        sent[i] = @as(u8, 97 + i % 26)
+        i = i + 1
+    }
+    let cmd: [2][]u8 = [args[0], "upper_whole"]
+    let options = proc::Options{ stdin = proc::Stdio::pipe, stdout = proc::Stdio::pipe, stderr = proc::Stdio::pipe, .. }
+    let mut child = proc::spawn{ &proc, argv = cmd[..], options } iferr { return 1 }
+    let w = child.stdin ifnull { return 2 }
+    let r = child.stdout ifnull { return 3 }
+    let e = child.stderr ifnull { return 4 }
+    io::println_u64{ &io, n = proc::write{ &proc, pipe = w, bytes = sent[..] } iferr { return 5 } }
+    proc::close{ &proc, pipe = &child.stdin }
+    io::println_bool{ &io, n = child.stdin == null }
+    let mut got: [4096]u8
+    let mut total: usize = 0
+    let mut same = true
+    while true {
+        let n = proc::read{ &proc, pipe = r, into = got[..] } iferr { return 6 }
+        if n == 0 { break }
+        let mut k: usize = 0
+        while k < n {
+            if total + k >= sent.len or got[k] != sent[total + k] - 32 { same = false }
+            k = k + 1
+        }
+        total = total + n
+    }
+    io::println_u64{ &io, n = total }
+    io::println_bool{ &io, n = same }
+    let n = proc::read{ &proc, pipe = e, into = got[..] } iferr { return 7 }
+    io::println{ &io, s = utf8::of{ chars = got[..n] } }
+    io::println_i64{ &io, n = proc::wait{ &proc, &child } iferr { return 8 } }
+    return 0
+
+}

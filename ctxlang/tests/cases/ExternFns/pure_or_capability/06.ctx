@@ -1,0 +1,8 @@
+// Every extern fn says what C does (spec §18, Extern functions, rule 8): a capability
+// field for what it touches, or `#pure`.
+
+capability C {
+    #pure  //~ error at 5: `pure` applies only to an extern fn
+    f: extern fn{}
+}
+fn main {} {}

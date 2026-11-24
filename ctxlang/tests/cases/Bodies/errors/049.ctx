@@ -1,0 +1,5 @@
+fn g { a: i32, b: i32 } {}
+fn f {} {
+    g{}  //~ error at 6: call to `g` is missing `a`, `b`
+}
+fn main {} {}

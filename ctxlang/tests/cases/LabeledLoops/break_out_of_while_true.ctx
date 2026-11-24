@@ -1,0 +1,26 @@
+
+fn find { xs: [3][3]i32, want: i32 } -> i32 {
+    let mut found: i32
+    let mut r: usize = 0
+    rows:
+    while true {
+        let mut c: usize = 0
+        while true {
+            if xs[r][c] == want { found = @as(i32, r * 3 + c); break rows }
+            c = c + 1
+            if c == 3 { break }
+        }
+        r = r + 1
+        if r == 3 { found = -1; break }
+    }
+    return found
+}
+fn main { mut io: Io } {
+    let xs = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+    io::println_i64{ &io, n = find{ xs, want = 6 } }
+    io::println_i64{ &io, n = find{ xs, want = 0 } }
+}
+
+//# stdout:
+//| 5
+//| -1

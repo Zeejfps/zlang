@@ -1,0 +1,27 @@
+
+struct Point { x: i32, y: i32 }
+struct Empty {}
+struct Line { a: Point, b: Point, tag: Tag }
+type Meters = distinct f32
+enum Tag: u8 { thin, thick = 7 }
+union Shape { none, dot{}, circle{ r: f64, at: Point } }
+
+error full{ p: Point, e: Empty, l: Line, m: Meters, t: Tag, s: Shape, d: Shape, n: Shape }
+error more{ o: ?i32, z: ?i32, op: ?Point, xs: [3]u8, ys: []i32, none: []Point, q: ?*i32, r: ?*i32, f: fn{} -> i32, at: *i32 }
+const YS: [2]i32 = [4, -5]
+fn seven {} -> i32 { return 7 }
+fn go { n: usize } -> ! {
+    if n == 0 {
+        return full{
+            p = Point{ x = 1, y = -2 }, e = Empty{}, l = Line{ a = Point{ x = 0, y = 0 }, b = Point{ x = 3, y = 4 }, tag = Tag::thick },
+            m = @as(Meters, 2.5), t = Tag::thin, s = Shape::circle{ r = 1.5, at = Point{ x = 9, y = 8 } }, d = Shape::dot{}, n = Shape::none,
+        }
+    }
+    return more{ o = 5, z = null, op = Point{ x = 1, y = 1 }, xs = [1, 2, 3], ys = YS[..], none = slice::empty(Point){}, q = null, r = YS[..].ptr, f = seven, at = YS[..].ptr }
+}
+fn main { args: Args } -> ! { try go{ n = args.len } }
+
+//# args: x
+//# exit: 1
+//# stderr:
+//| error: more{ o = 5, z = null, op = Point{ x = 1, y = 1 }, xs = [1, 2, 3], ys = [4, -5], none = [], q = null, r = _, f = _, at = _ }

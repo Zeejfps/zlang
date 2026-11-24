@@ -1,0 +1,3 @@
+fn main { mut io: Io } { }
+
+//# exit: 0

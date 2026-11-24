@@ -1,0 +1,5 @@
+fn main {} {
+    let n: ?i32 = null
+    let p = &n
+    let x = p ifnull 0  //~ error at 13: `ifnull` needs an optional value, got *?i32
+}
