@@ -1,0 +1,273 @@
+// kui: the KOTOR widget set, written over the ui library's public primitives exactly as its stock widgets are
+// (ui/PLAN.md sections 3.2 and 8, stage 16). It reads the control tables lib/gui's loader filled (gui::open resolves
+// textures and fonts; kui loads no file) and draws and drives them through a ui::Ui: an element a control placed on
+// exact device pixels, borders and pictures as image shapes, text a line at a time, hover as focus, MOVETO as links.
+//
+//   let mut kit = try kui::make_kit(arena::Arena){ realloc = arena::alloc, &heap }
+//   // each frame, between ui::begin_frame and ui::end_frame
+//   kui::begin_frame{ &kit, &ui, g }                      // the scale, the pulse clock, the fonts the Gui has loaded
+//   kui::replay_panel{ &ui, &kit, panel }                 // a whole panel from its table, events into the kit's queue
+//   for e in kui::take_events{ &kit } { ... }             // gui::Event, as lib/gui's glue reads them
+//
+// or the screen's own code, a control a call (the immediate route):
+//
+//   let scope = kui::begin_panel{ &ui, &kit, panel }
+//   if kui::add_button{ &ui, &kit, panel, tag = "BTN_BACK" } { ... }
+//   _ = kui::add_check{ &ui, &kit, panel, tag = "CB_AUTOSAVE", value = &settings.autosave }
+//   ui::end{ &ui, scope }
+//
+// Units. kui works in the original's design pixels (a .gui file's coordinates, the GUI's pixel space) and in device
+// pixels, never in the library's logical units. Every edge of a border piece goes on the device grid by lib/gui's
+// own rule (`snap`: floor(v * scale + 0.5), a size the difference of two snapped edges), so a piece covers the
+// pixels lib/gui's covers; the pixels go to ui::place_pixels and the paint_* calls as they are. What lib/gui draws
+// without snapping (a flat fill, a thumb, an arrow, an icon) goes on the pixels its quad covers (`cover`). Text
+// follows the library's one rule: a whole pixel size, the line's origin on the snapped pixel, every glyph on whole
+// pixels; its lines break where lib/gui's do, because the breaking is lib/gui's own, in design pixels.
+//
+// The table is the retained state both routes share, as it is lib/gui's: a control's hilight, a check box's mark, a
+// slider's value, a list's rows, scroll position and selection are written there by kui as lib/gui's input writes
+// them, so glue that reads them (gui::is_checked, gui::list_selected) reads the same.
+namespace kui {
+    const MAX_FONTS: usize = 24
+    const MAX_EVENTS: usize = 128
+    const MAX_SOUNDS: usize = 16
+    const MAX_CONTROLS: usize = 512         // the most controls of one panel replay_panel drives
+
+    // What a frame draws with: device pixels a design pixel along each axis (lib/gui's Grid: the screen over the
+    // GUI's pixel space), and the pulse the hilighted things breathe by.
+    struct Skin { sx: f32 = 1.0, sy: f32 = 1.0, pulse: f32 = 1.0 }
+
+    // A font of the Gui as the library has it: the handle, and lib/gui's own font the lines are broken with.
+    struct FontEntry { ok: bool, texture: u32, font: ui::Font, source: render::Font }
+
+    // How far the glyphs kui painted lie from where lib/gui puts the same glyphs, summed while `measure` is on
+    // (uiview's report). lib/gui draws a glyph at (line x + pen) * scale, unrounded, the glyph's own width times the
+    // scale wide; the library puts it on whole pixels.
+    struct TextStats {
+        lines: u32 = 0, glyphs: u32 = 0,
+        off_grid: u32 = 0,                  // glyphs lib/gui draws between device pixels (a fractional left, top or size)
+        max_dx: f32 = 0.0, max_dy: f32 = 0.0, max_dw: f32 = 0.0, max_dh: f32 = 0.0,
+        sum_dx: f32 = 0.0, sum_dy: f32 = 0.0,
+        // Lines wider in device pixels than the rectangle they were broken for, as the library draws them and as
+        // lib/gui does, and the most a line of the library's is over.
+        over_box: u32 = 0, over_box_theirs: u32 = 0, max_over: f32 = 0.0,
+    }
+
+    // The panel being recorded: where it stands and the ids its controls' bookkeeping is kept under.
+    struct Open {
+        state: ui::Id = ui::NO_ID,          // the panel's own state: who is lit and why
+        first: bool = true,                 // no control of it has been pressed this frame yet
+        keys: bool = false,                 // it takes the keyboard (begin_panel's `keys`)
+        ox: i32 = 0, oy: i32 = 0,           // the panel element's top left, device pixels
+    }
+
+    struct Kit {
+        skin: Skin,
+        fonts: [MAX_FONTS]FontEntry, glyphs: []mut ui::Glyph,
+        lines: []mut gui::Line,             // scratch for breaking a text
+        events: []mut gui::Event, event_count: usize, dropped_events: u32,
+        sounds: []mut i32, sound_count: usize,
+        open: Open,
+        measure: bool, stats: TextStats,
+        rows_skipped: u32,                  // lists whose rows kui does not draw (list.ctx), counted as they are met
+        pictures_between: u32,              // pictures lib/gui draws between device pixels (paint_picture), counted as they are painted
+        // replay_panel's scratch: what each control did this frame
+        outcomes: []mut Outcome,
+    }
+
+    fn make_kit(S) { realloc: alloc::Fn(S), mut heap: S } -> !Kit {
+        let glyphs = try alloc::make(ui::Glyph, S){ realloc, &heap, count = 256 * MAX_FONTS }
+        let lines = try alloc::make(gui::Line, S){ realloc, &heap, count = gui::MAX_LINES }
+        let events = try alloc::make(gui::Event, S){ realloc, &heap, count = MAX_EVENTS }
+        let outcomes = try alloc::make(Outcome, S){ realloc, &heap, count = MAX_CONTROLS }
+        let mut fonts: [MAX_FONTS]FontEntry
+        let sounds = try alloc::make(i32, S){ realloc, &heap, count = MAX_SOUNDS }
+        return Kit{
+            skin = Skin{ .. }, fonts, glyphs, lines, events, event_count = 0, dropped_events = 0, sounds, sound_count = 0,
+            open = Open{ .. }, measure = false, stats = TextStats{ .. }, rows_skipped = 0, pictures_between = 0, outcomes,
+        }
+    }
+
+    // Starts a frame of kui: the skin from the Gui's screen and clock, and every font the Gui has loaded since the
+    // last call registered with the Ui. Call it after ui::begin_frame and before any panel.
+    fn begin_frame { mut kit: Kit, mut ui: ui::Ui, g: gui::Gui } {
+        let grid = gui::grid_of{ g }
+        kit.skin = Skin{ sx = grid.sx, sy = grid.sy, pulse = g.pulse_border }
+        sync_fonts{ &kit, &ui, g }
+    }
+
+    // Registers the Gui's fonts the Ui does not have yet: each as a glyph table on the font's own texture
+    // (ui_kotor::from_font). A slot whose font changed (the small-fonts option reloads them) is registered again
+    // under a new handle, since the library never forgets a font. What the Ui has no room for is reported by the
+    // Ui when text asks for it (an unknown font draws nothing).
+    fn sync_fonts { mut kit: Kit, mut ui: ui::Ui, g: gui::Gui } {
+        let slots = list::items{ list = g.fonts }
+        for slot at i in slots {
+            if i >= MAX_FONTS { break }
+            if not slot.ok {
+                kit.fonts[i].ok = false
+                continue
+            }
+            if kit.fonts[i].ok and kit.fonts[i].texture == slot.font.texture.id { continue }
+            let def = ui_kotor::from_font{ font = slot.font, glyphs = kit.glyphs[i * 256..(i + 1) * 256] }
+            let font = ui::add_font{ &ui, font = def } ifnull {
+                kit.fonts[i].ok = false
+                continue
+            }
+            kit.fonts[i] = FontEntry{ ok = true, texture = slot.font.texture.id, font, source = slot.font }
+        }
+    }
+
+    // ---- pixels
+
+    // lib/gui's snap: the device pixel boundary a design coordinate goes to, floor(v * s + 0.5).
+    fn snap { v: f32, s: f32 } -> i32 {
+        return ui::round_pixels{ v = v * s }
+    }
+
+    // Across, the first device pixel a quad whose edge lies at design coordinate `v` covers when the edge is its
+    // left one, and the pixel after its last when it is its right one: lib/gui hands such a quad (a flat fill, a
+    // thumb, an icon) to the rasteriser unsnapped, which draws the pixels whose centres are inside, a centre exactly
+    // on a left edge included and on a right edge not. That is ceil(v * s - 0.5): where `snap` rounds a half up,
+    // this rounds it down. Down the rows the rasteriser's rule is the other way up (a centre on the top edge is
+    // out, on the bottom edge in, the frame buffer's rows running upwards), which is `snap` itself. Measured: the
+    // sweep at scale 1.5 differs in 13424 pixels with this, 14520 with `cover` both ways and 28195 with `snap` both.
+    fn cover { v: f32, s: f32 } -> i32 {
+        return ui::ceil_pixels{ v = v * s - 0.5 }
+    }
+
+    // Where the open element is: the scale, and the element's top left in device pixels. Pieces are worked out in
+    // the screen's coordinates, edge by edge, and answered in the element's own pixels, which is what a placement
+    // in a parent and a paint in an element take.
+    struct Grid { sx: f32, sy: f32, ox: i32, oy: i32 }
+
+    // The design rectangle (x0, y0) to (x1, y1) of the GUI's pixel space, each edge snapped, in the element's pixels.
+    fn snap_rect { g: Grid, x0: f32, y0: f32, x1: f32, y1: f32 } -> ui::Rect {
+        let left = snap{ v = x0, s = g.sx }
+        let top = snap{ v = y0, s = g.sy }
+        return ui::Rect{ x = left - g.ox, y = top - g.oy, w = snap{ v = x1, s = g.sx } - left, h = snap{ v = y1, s = g.sy } - top }
+    }
+
+    // The same for whole design pixels.
+    fn snap_box { g: Grid, x: i32, y: i32, w: i32, h: i32 } -> ui::Rect {
+        return snap_rect{ g, x0 = @as(f32, x), y0 = @as(f32, y), x1 = @as(f32, x + w), y1 = @as(f32, y + h) }
+    }
+
+    // The pixels an unsnapped quad over the design rectangle covers (`cover` across, `snap` down), in the element's
+    // pixels.
+    fn cover_rect { g: Grid, x0: f32, y0: f32, x1: f32, y1: f32 } -> ui::Rect {
+        let left = cover{ v = x0, s = g.sx }
+        let top = snap{ v = y0, s = g.sy }
+        return ui::Rect{ x = left - g.ox, y = top - g.oy, w = cover{ v = x1, s = g.sx } - left, h = snap{ v = y1, s = g.sy } - top }
+    }
+
+    // The pixels kotor's renderer cuts to, or gives a view, for the design rectangle (x, y, w, h) (render_gl's
+    // gl_rect, which lib/gui's panel and list clips and its glue's viewports go through): the corner snapped, and
+    // the size rounded on its own, floor(w * s + 0.5), not the difference of two snapped edges. So a clip may reach
+    // a pixel past the border pieces of the same rectangle, or stop a pixel short of them, as lib/gui's does.
+    fn clip_box { g: Grid, x: i32, y: i32, w: i32, h: i32 } -> ui::Rect {
+        let wide = ui::round_pixels{ v = @as(f32, w) * g.sx }
+        let high = ui::round_pixels{ v = @as(f32, h) * g.sy }
+        return ui::Rect{
+            x = snap{ v = @as(f32, x), s = g.sx } - g.ox, y = snap{ v = @as(f32, y), s = g.sy } - g.oy,
+            w = if wide > 0 { wide } else { 0 }, h = if high > 0 { high } else { 0 },
+        }
+    }
+
+    // ---- colours and pictures
+
+    // A channel of lib/gui's float colours as one of the library's 256 steps: the nearest.
+    fn to_channel { v: f32 } -> u8 {
+        let x = v * 255.0 + 0.5
+        if not (x > 0.0) { return 0 }
+        if x >= 255.0 { return 255 }
+        return @as(u8, x)
+    }
+
+    fn to_color { c: render::Color } -> ui::Color {
+        return ui::Color{ r = to_channel{ v = c.r }, g = to_channel{ v = c.g }, b = to_channel{ v = c.b }, a = to_channel{ v = c.a } }
+    }
+
+    // A loaded picture as the library's image: the texture's own number, which kotor's renderer draws by.
+    fn to_image { img: gui::Img } -> ui::Image {
+        return ui::Image{ id = img.tex.id, width = @as(i32, img.w), height = @as(i32, img.h) }
+    }
+
+    fn get_blend { img: gui::Img } -> ui::Blend {
+        return if img.additive { ui::Blend::additive } else { ui::Blend::alpha }
+    }
+
+    // lib/gui's put_piece: the picture over the design rectangle with its edges snapped, turned `turns` quarter
+    // turns counterclockwise; the rectangle is the one it fills after turning.
+    fn paint_piece { mut ui: ui::Ui, g: Grid, img: gui::Img, x0: f32, y0: f32, x1: f32, y1: f32, turns: i32, color: render::Color } {
+        if not img.ok { return }
+        let rect = snap_rect{ g, x0, y0, x1, y1 }
+        if rect.w <= 0 or rect.h <= 0 { return }
+        ui::paint_image{ &ui, rect, image = to_image{ img }, uv = ui::Uv{ .. }, tint = to_color{ c = color }, quarter = @as(u8, turns & 3), angle = 0.0, blend = get_blend{ img } }
+    }
+
+    // lib/gui's put_image: the picture over the design rectangle as it is, on the pixels the unsnapped quad covers.
+    // Where the quad's edges are between device pixels lib/gui's picture lies between them too, which the library
+    // does not draw: the picture here is on whole pixels, up to half a pixel from lib/gui's (counted in
+    // `kit.pictures_between`).
+    fn paint_picture { mut ui: ui::Ui, mut kit: Kit, g: Grid, img: gui::Img, x: f32, y: f32, w: f32, h: f32, turns: i32, color: render::Color } {
+        if not img.ok or w <= 0.0 or h <= 0.0 { return }
+        if is_fraction{ v = x * g.sx } or is_fraction{ v = (x + w) * g.sx } or is_fraction{ v = y * g.sy } or is_fraction{ v = (y + h) * g.sy } {
+            kit.pictures_between = kit.pictures_between + 1
+        }
+        let rect = cover_rect{ g, x0 = x, y0 = y, x1 = x + w, y1 = y + h }
+        if rect.w <= 0 or rect.h <= 0 { return }
+        ui::paint_image{ &ui, rect, image = to_image{ img }, uv = ui::Uv{ .. }, tint = to_color{ c = color }, quarter = @as(u8, turns & 3), angle = 0.0, blend = get_blend{ img } }
+    }
+
+    // lib/gui's put_fill: a flat colour over the pixels the unsnapped quad covers.
+    fn paint_fill { mut ui: ui::Ui, g: Grid, x: f32, y: f32, w: f32, h: f32, color: render::Color } {
+        if w <= 0.0 or h <= 0.0 { return }
+        let rect = cover_rect{ g, x0 = x, y0 = y, x1 = x + w, y1 = y + h }
+        if rect.w <= 0 or rect.h <= 0 { return }
+        ui::paint_rect{ &ui, rect, style = ui::RectStyle{ fill = to_color{ c = color }, .. } }
+    }
+
+    // ---- events and sounds for the owner
+
+    fn push_event { mut kit: Kit, kind: gui::EventKind, p: *gui::Panel, index: i32, value: i32, row: i32, user: i64 } {
+        if kit.event_count >= kit.events.len {
+            kit.dropped_events = kit.dropped_events + 1
+            return
+        }
+        let mut id: i32 = -1
+        let mut tag: []u8 = ""
+        if index >= 0 and @as(usize, index) < p.controls.len {
+            let c = list::at{ list = p.controls, i = @as(usize, index) }
+            id = c.id
+            tag = c.tag
+        }
+        kit.events[kit.event_count] = gui::Event{ kind, panel = p.id, control = id, tag, value, row, user, target = "" }
+        kit.event_count = kit.event_count + 1
+    }
+
+    // The events since the last clear_events, oldest first, in lib/gui's own shapes (gui::Event). Their tags are
+    // valid while their panel is open.
+    fn take_events { kit: Kit } -> []gui::Event {
+        return kit.events[..kit.event_count]
+    }
+
+    fn clear_events { mut kit: Kit } {
+        kit.event_count = 0
+    }
+
+    // A sound of guisounds.2da to play (a control's hover or click sound): kui has no mixer, the host plays them
+    // (gui::play_sound) after the frame.
+    fn push_sound { mut kit: Kit, n: i32 } {
+        if n < 0 or kit.sound_count >= kit.sounds.len { return }
+        kit.sounds[kit.sound_count] = n
+        kit.sound_count = kit.sound_count + 1
+    }
+
+    // The sounds asked for since the last call; empties the queue. Valid until the next kui call.
+    fn take_sounds { mut kit: Kit } -> []i32 {
+        let n = kit.sound_count
+        kit.sound_count = 0
+        return kit.sounds[..n]
+    }
+}

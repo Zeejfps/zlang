@@ -1,0 +1,332 @@
+// kui: list boxes (lib/gui's draw_list, draw_row, draw_scrollbar and the list's part of input.ctx; docs/re/gui.md
+// section 6). A KOTOR list scrolls by whole rows (or, showing one tall text, by whole lines), stretches its rows
+// to fill its box, and draws its scroll bar from its own art, so it is not the library's scroll region
+// (ui::begin_scroll scrolls by pixels behind its own bars, and ui::find_rows answers for a list inside one): the
+// list is one identified element, its row area a clipping element inside it, its rows and its bar paints at the
+// places lib/gui's layout gives (gui::list_layout, gui::row_slot, gui::thumb_of), and the pointer's row and bar part
+// are found from the pointer's place as lib/gui finds them. The scroll position, the selection and the row under
+// the pointer live in the table.
+//
+// Not drawn here: item entries (Control.entry_rows) and cell rows (Control.cell_art.on), which code builds and no
+// .gui file has; a list of either draws its border, colour and scroll bar and no rows, and counts in
+// `kit.rows_skipped`.
+namespace kui {
+    // lib/gui's text_scroll: where a text-mode list's text stands when it is taller than its box.
+    fn get_text_scroll { mut kit: Kit, panel: *gui::Panel, c: *gui::Control, l: gui::ListLayout } -> gui::TextScroll {
+        let mut r = gui::TextScroll{ on = false, line_h = 0, text_h = 0, steps = 1, page = 1, step = 0, top = c.padding }
+        if not c.text_mode or c.row_count == 0 or c.proto < 0 { return r }
+        let pc = list::at{ list = panel.controls, i = @as(usize, c.proto) }
+        if pc.text.font < 0 or @as(usize, pc.text.font) >= MAX_FONTS or not kit.fonts[pc.text.font].ok { return r }
+        let font = kit.fonts[pc.text.font].source
+        let n = gui::layout{ font, text = c.rows[0].text, width = l.aw - 2 * c.padding, lines = kit.lines }
+        r.line_h = gui::lines_height{ font, count = 1 }
+        if r.line_h <= 0 { return r }
+        r.text_h = gui::lines_height{ font, count = n }
+        if l.ah >= r.text_h + c.padding { return r }
+        r.on = true
+        r.page = l.ah / r.line_h
+        r.steps = @as(i32, n) - r.page + 1
+        if r.steps < 1 { r.steps = 1 }
+        r.step = ui::clamp_i32{ v = c.text_step, lo = 0, hi = r.steps - 1 }
+        r.top = if r.step == r.steps - 1 { l.ah - r.text_h - c.padding } else { c.padding - r.step * r.line_h }
+        return r
+    }
+
+    // lib/gui's bar_values: the scroll bar's maximum, current and visible values as the list sets them.
+    fn get_bar_values { mut kit: Kit, panel: *gui::Panel, c: *gui::Control, l: gui::ListLayout } -> gui::BarValues {
+        if c.text_mode {
+            let ts = get_text_scroll{ &kit, panel, c, l }
+            if not ts.on { return gui::BarValues{ max = 1, cur = 0, visible = 1 } }
+            let mx = ts.text_h - l.ah + 1
+            let mut cur: i32 = 0
+            if ts.step == ts.steps - 1 { cur = mx } else if ts.step > 0 { cur = @as(i32, @as(f32, ts.step) / @as(f32, ts.steps - 1) * @as(f32, ts.text_h - l.ah)) }
+            return gui::BarValues{ max = mx, cur, visible = l.ah }
+        }
+        let count = @as(i32, c.row_count)
+        let mx = ui::pick_max_i32{ a = count - l.visible + 1, b = 1 }
+        let vis = ui::pick_max_i32{ a = ui::pick_min_i32{ a = l.visible, b = count }, b = 1 }
+        return gui::BarValues{ max = mx, cur = c.first_row, visible = vis }
+    }
+
+    // Scrolls the list by `delta` rows, or its tall text by `delta` lines. True when it moved.
+    fn scroll_list { mut kit: Kit, panel: *mut gui::Panel, c: *mut gui::Control, delta: i32 } -> bool {
+        if c.text_mode {
+            let ts = get_text_scroll{ &kit, panel, c, l = gui::list_layout{ p = panel, c } }
+            let s = ui::clamp_i32{ v = ts.step + delta, lo = 0, hi = ts.steps - 1 }
+            c.text_step = s
+            return s != ts.step
+        }
+        let before = c.first_row
+        c.first_row = c.first_row + delta
+        gui::clamp_first{ p = panel, c }
+        return c.first_row != before
+    }
+
+    fn get_scroll_position { mut kit: Kit, panel: *gui::Panel, c: *gui::Control } -> i32 {
+        if c.text_mode { return get_text_scroll{ &kit, panel, c, l = gui::list_layout{ p = panel, c } }.step }
+        return c.first_row
+    }
+
+    // Which part of the list's scroll bar the panel-relative design point is on (gui::PART_*).
+    fn find_bar_part { mut kit: Kit, panel: *gui::Panel, c: *gui::Control, lx: i32, ly: i32 } -> i32 {
+        let l = gui::list_layout{ p = panel, c }
+        if not gui::bar_shown{ c, l, count = @as(i32, c.row_count) } { return gui::PART_BODY }
+        if lx < l.sx or lx > l.sx + l.sw or ly < l.sy or ly > l.sy + l.sh { return gui::PART_BODY }
+        if ly < l.sy + l.sw { return gui::PART_UP }
+        if ly > l.sy + l.sh - l.sw { return gui::PART_DOWN }
+        let t = gui::thumb_of{ l, b = get_bar_values{ &kit, panel, c, l } }
+        if ly >= t.y and ly <= t.y + t.h { return gui::PART_THUMB }
+        return gui::PART_TRACK
+    }
+
+    fn select_row { panel: *mut gui::Panel, c: *mut gui::Control, row: i32, mut out: Outcome } {
+        if row < 0 or row >= @as(i32, c.row_count) { return }
+        c.selected_row = row
+        gui::ensure_row_visible{ p = panel, c }
+        out.row_selected = row
+    }
+
+    // The list's part of press_control. `it` is the list element's own interaction; `keys`: it has the focus and its
+    // panel takes the keyboard. The capture a press began is kept as the list's widget state: i[0] the part
+    // pressed, i[1] the scroll position then, f[0] the pointer's design y then, f[1] 1 when the press landed on the
+    // row that was already selected.
+    fn press_list { mut ui: ui::Ui, mut kit: Kit, panel: *mut gui::Panel, index: usize, it: ui::Interaction, keys: bool, mut out: Outcome } {
+        let c = list::at{ list = panel.controls, i = index }
+        let at = get_design_pointer{ ui, skin = kit.skin }
+        let lx = at.x - panel.sx
+        let ly = at.y - panel.sy
+        let count = @as(i32, c.row_count)
+        let wheel = ui::take_wheel{ &ui, id = it.id }
+        if wheel != 0.0 {
+            if scroll_list{ &kit, panel, c, delta = if wheel > 0.0 { -1 } else { 1 } } { out.scrolled = true }
+        }
+        // A list's rows hilight under the pointer.
+        if it.hovered and not c.inert_rows {
+            let r = gui::row_at{ p = panel, c, lx, ly }
+            if r != c.hover_row {
+                c.hover_row = r
+                if r >= 0 {
+                    push_sound{ &kit, n = c.hover_sound }
+                    if c.click_rows and c.rows[r].enabled { out.row_hover = r }
+                }
+            }
+        }
+        let mut st = ui::load_state{ &ui, id = it.id }
+        if it.pressed {
+            let part = find_bar_part{ &kit, panel, c, lx, ly }
+            st.i[0] = @as(i64, part)
+            st.i[1] = @as(i64, get_scroll_position{ &kit, panel, c })
+            st.f[0] = @as(f32, ly)
+            st.f[1] = 0.0
+            if part == gui::PART_UP {
+                if scroll_list{ &kit, panel, c, delta = -1 } { out.scrolled = true }
+            } else if part == gui::PART_DOWN {
+                if scroll_list{ &kit, panel, c, delta = 1 } { out.scrolled = true }
+            } else if part == gui::PART_TRACK {
+                // A press on the track pages: a tall text by the whole lines its box holds, rows by the rows shown.
+                let l = gui::list_layout{ p = panel, c }
+                let bv = get_bar_values{ &kit, panel, c, l }
+                let t = gui::thumb_of{ l, b = bv }
+                let page = if c.text_mode { get_text_scroll{ &kit, panel, c, l }.page } else { bv.visible }
+                if scroll_list{ &kit, panel, c, delta = if ly < t.y { -page } else { page } } { out.scrolled = true }
+            } else if not c.text_mode and not c.cell_art.on {
+                let r = gui::row_at{ p = panel, c, lx, ly }
+                if r >= 0 and r == c.selected_row { st.f[1] = 1.0 }
+                if r >= 0 and c.rows[r].enabled and not c.inert_rows { select_row{ panel, c, row = r, out = &out } }
+            }
+            ui::store_state{ &ui, id = it.id, values = st }
+        } else if it.held and st.i[0] == @as(i64, gui::PART_THUMB) {
+            // The thumb follows the pointer from where it was pressed: the positions past the first spread over the
+            // track the thumb does not cover, rounded (counted from 1, as the original's position is).
+            let l = gui::list_layout{ p = panel, c }
+            let bv = get_bar_values{ &kit, panel, c, l }
+            let t = gui::thumb_of{ l, b = bv }
+            let room = l.sh - 2 * l.sw - t.h
+            let last = if c.text_mode { get_text_scroll{ &kit, panel, c, l }.steps - 1 } else { bv.max - 1 }
+            if room > 0 and last > 0 {
+                let want = @as(i32, @as(f32, st.i[1] + 1) + (@as(f32, ly) - st.f[0]) * @as(f32, last) / @as(f32, room) + 0.5) - 1
+                if scroll_list{ &kit, panel, c, delta = want - get_scroll_position{ &kit, panel, c } } { out.scrolled = true }
+            }
+        }
+        if it.clicked {
+            // Releasing on a row that was already selected when pressed activates it (a second click); the rows of
+            // an item list are buttons, where one click does it.
+            let r = gui::row_at{ p = panel, c, lx, ly }
+            let again = st.f[1] != 0.0 or c.click_rows
+            if r >= 0 and r == c.selected_row and again and not c.text_mode and find_bar_part{ &kit, panel, c, lx, ly } == gui::PART_BODY {
+                push_sound{ &kit, n = c.click_sound }
+                out.row_activated = true
+            }
+        }
+        if not keys or c.cell_art.on { return }
+        let up = ui::Key::up
+        let down = ui::Key::down
+        if c.text_mode or c.inert_rows {
+            // Up and down scroll a tall text a line, with the list's move sound.
+            let mut delta: i32 = 0
+            if ui::take_key{ &ui, key = up, mods = 0 } { delta = -1 }
+            if ui::take_key{ &ui, key = down, mods = 0 } { delta = delta + 1 }
+            if delta != 0 and scroll_list{ &kit, panel, c, delta } {
+                out.scrolled = true
+                push_sound{ &kit, n = c.hover_sound }
+            }
+        } else if count > 0 {
+            let mut r = c.selected_row
+            if ui::take_key{ &ui, key = up, mods = 0 } {
+                r = if r <= 0 { (if c.looping { count - 1 } else { 0 }) } else { r - 1 }
+            }
+            if ui::take_key{ &ui, key = down, mods = 0 } {
+                r = if r < 0 { 0 } else if r >= count - 1 { (if c.looping { 0 } else { count - 1 }) } else { r + 1 }
+            }
+            if r != c.selected_row {
+                select_row{ panel, c, row = r, out = &out }
+                push_sound{ &kit, n = c.hover_sound }
+            }
+        }
+        if ui::take_key{ &ui, key = ui::Key::enter, mods = 0 } and c.selected_row >= 0 and c.selected_row < count {
+            push_sound{ &kit, n = c.click_sound }
+            out.row_activated = true
+        }
+    }
+
+    // The list's paints inside its own element (lib/gui's draw_list). `g` is the list element's grid.
+    fn draw_list { mut ui: ui::Ui, mut kit: Kit, g: Grid, panel: *mut gui::Panel, index: usize } {
+        let c = list::at{ list = panel.controls, i = index }
+        let skin = kit.skin
+        let l = gui::list_layout{ p = panel, c }
+        let ox = panel.sx
+        let oy = panel.sy
+        let alpha = panel.alpha
+        paint_border{ &ui, skin, g, b = c.border, x = ox + c.x, y = oy + c.y, w = c.w, h = c.h, alpha, override = gui::Img{ .. } }
+        if c.list_tinted {
+            paint_fill{ &ui, g, x = @as(f32, ox + l.ax), y = @as(f32, oy + l.ay), w = @as(f32, l.aw), h = @as(f32, l.ah), color = render::Color{ r = c.list_color.r, g = c.list_color.g, b = c.list_color.b, a = alpha } }
+        }
+        let count = @as(i32, c.row_count)
+        // The rows are cut to the row area: a clipping element on the pixels lib/gui's scissor lets through.
+        let mut box = ui::place_pixels{ rect = clip_box{ g, x = ox + l.ax, y = oy + l.ay, w = l.aw, h = l.ah } }
+        box.clip = true
+        let area = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box }
+        let ag = Grid{ sx = g.sx, sy = g.sy, ox = snap{ v = @as(f32, ox + l.ax), s = g.sx }, oy = snap{ v = @as(f32, oy + l.ay), s = g.sy } }
+        if c.text_mode {
+            // One wrapped text in the prototype's font, colour and alignment; a text taller than the box is one
+            // tall row moved up by whole lines.
+            if count > 0 and c.proto >= 0 {
+                let pc = list::at{ list = panel.controls, i = @as(usize, c.proto) }
+                let col = mul_alpha{ c = pc.text.color, a = alpha }
+                let ts = get_text_scroll{ &kit, panel, c, l }
+                let tx = ox + l.ax + c.padding
+                let tw = l.aw - 2 * c.padding
+                if ts.on {
+                    paint_text_in{ &ui, &kit, g = ag, t = pc.text, text = c.rows[0].text, color = col, x = tx, y = oy + l.ay + ts.top, w = tw, h = ts.text_h }
+                } else {
+                    paint_text_in{ &ui, &kit, g = ag, t = pc.text, text = c.rows[0].text, color = col, x = tx, y = oy + l.ay + c.padding, w = tw, h = l.ah - 2 * c.padding }
+                }
+            }
+        } else if c.entry_rows or c.cell_art.on {
+            if count > 0 { kit.rows_skipped = kit.rows_skipped + 1 }
+        } else {
+            for k in 0..l.visible {
+                let idx = c.first_row + k
+                if idx >= count { break }
+                let s = gui::row_slot{ l, padding = c.padding, k }
+                paint_row{ &ui, &kit, g = ag, panel, c, idx, x = ox + l.ax + c.padding, y = oy + l.ay + s.y, w = l.aw - 2 * c.padding, h = s.h, alpha }
+            }
+        }
+        ui::end{ &ui, scope = area }
+        if gui::bar_shown{ c, l, count } { paint_scrollbar{ &ui, &kit, g, panel, c, l, alpha } }
+    }
+
+    // One row of a list (lib/gui's draw_row): the prototype's border for the row's state, its icon, its text, and
+    // the text at its right edge.
+    fn paint_row { mut ui: ui::Ui, mut kit: Kit, g: Grid, panel: *mut gui::Panel, c: *gui::Control, idx: i32, x: i32, y: i32, w: i32, h: i32, alpha: f32 } {
+        if c.proto < 0 { return }
+        let skin = kit.skin
+        let pc = list::at{ list = panel.controls, i = @as(usize, c.proto) }
+        let row = c.rows[idx]
+        let selected = c.selected_row == idx
+        let hover = c.hover_row == idx
+        // The rows of an item list are buttons: only the one under the pointer is hilighted, the selected one when
+        // the pointer is elsewhere.
+        let lit = if c.click_rows { (if c.hover_row >= 0 { hover } else { selected }) } else { selected or hover }
+        let mut b = pc.border
+        let menu_check = pc.kind == gui::Kind::check and (pc.flags & gui::F_MENU_CHECK) != 0
+        if pc.kind == gui::Kind::check {
+            let hot = if menu_check { lit } else { hover }
+            if row.checked {
+                b = if hot and pc.hilight_selected.present { pc.hilight_selected } else if pc.selected.present { pc.selected } else { pc.border }
+            } else {
+                b = if hot and pc.hilight.present { pc.hilight } else { pc.border }
+            }
+        } else if selected and hover and pc.hilight_selected.present {
+            b = pc.hilight_selected
+        } else if selected and pc.selected.present {
+            b = pc.selected
+        } else if lit and pc.hilight.present {
+            b = pc.hilight
+        }
+        if menu_check {
+            let mut fl = gui::F_ENABLED
+            if lit { fl = fl | gui::F_HILIGHT }
+            if not row.enabled { fl = fl & ~gui::F_ENABLED }
+            paint_menu_check{ &ui, &kit, g, b, t = pc.text, text = row.text, flags = fl, x, y, w, h, alpha }
+            return
+        }
+        let mut row_alpha = alpha
+        let waiting = row.frame == gui::FRAME_WAITING
+        if row.frame != gui::FRAME_FILE {
+            // An item row's frames are painted by its state; the file's near-white is not used.
+            b.tinted = true
+            b.color = gui::item_frame_color{ frame = row.frame, hot = lit }
+            if not lit { row_alpha = alpha * c.row_frame_alpha * (if row.frame == gui::FRAME_NEW { 0.5 } else { 1.0 }) }
+            if waiting { row_alpha = alpha * skin.pulse }
+            if lit and c.hilight_pulses { row_alpha = alpha * skin.pulse }
+        }
+        paint_border{ &ui, skin, g, b, x, y, w, h, alpha = row_alpha, override = gui::Img{ .. } }
+        let a = gui::text_area{ b = pc.border, x, y, w, h }
+        let mut ax = a.x
+        let mut aw = a.w
+        if row.icon.ok {
+            let iw = @as(i32, row.icon.w)
+            let ih = @as(i32, row.icon.h)
+            paint_picture{ &ui, &kit, g, img = row.icon, x = @as(f32, ax), y = @as(f32, y + (h - ih) / 2), w = @as(f32, iw), h = @as(f32, ih), turns = 0, color = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = alpha } }
+            ax = ax + iw + 4
+            aw = aw - iw - 4
+        }
+        let button = pc.kind == gui::Kind::button
+        let mut col = pc.text.color
+        if row.has_color { col = row.color }
+        if (lit or waiting) and button and not row.has_color { col = gui::color_hilight{} }
+        if not row.enabled { col = gui::color_disabled{} }
+        if (lit or waiting) and button { col = mul_alpha{ c = col, a = skin.pulse } }
+        col = mul_alpha{ c = col, a = alpha }
+        paint_text_in{ &ui, &kit, g, t = pc.text, text = row.text, color = col, x = ax, y = a.y, w = aw, h = a.h }
+        if row.aside.len > 0 {
+            let mut t = pc.text
+            t.align = (t.align & ~(gui::A_LEFT | gui::A_CENTRE | gui::A_RIGHT)) | gui::A_RIGHT
+            paint_text_in{ &ui, &kit, g, t, text = row.aside, color = col, x = ax, y = a.y, w = aw, h = a.h }
+        }
+    }
+
+    // The scroll bar of a list box (lib/gui's draw_scrollbar): border, thumb and arrows; with DRAWMODE 1 only the
+    // arrows, each while scrolling that way is possible. The thumb and the arrows are pictures lib/gui does not snap.
+    fn paint_scrollbar { mut ui: ui::Ui, mut kit: Kit, g: Grid, panel: *mut gui::Panel, c: *gui::Control, l: gui::ListLayout, alpha: f32 } {
+        let sb = list::at{ list = panel.controls, i = @as(usize, c.scrollbar) }
+        let x = panel.sx + l.sx
+        let y = panel.sy + l.sy
+        let w = l.sw
+        let h = l.sh
+        let col = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = alpha }
+        let bv = get_bar_values{ &kit, panel, c, l }
+        let can_up = bv.visible < bv.max and bv.cur >= 1
+        let end = if bv.visible < 2 and bv.cur != bv.max { bv.max + 1 } else { bv.max }
+        let can_down = bv.visible < bv.max and bv.cur + bv.visible < end
+        if sb.draw_mode == 0 {
+            paint_border{ &ui, skin = kit.skin, g, b = sb.border, x, y, w, h, alpha, override = gui::Img{ .. } }
+            let t = gui::thumb_of{ l, b = bv }
+            if t.h > 0 { paint_picture{ &ui, &kit, g, img = sb.thumb, x = @as(f32, x), y = @as(f32, panel.sy + t.y), w = @as(f32, w), h = @as(f32, t.h), turns = 0, color = col } }
+        }
+        let aw = @as(f32, w)
+        if sb.draw_mode == 0 or can_up { paint_picture{ &ui, &kit, g, img = sb.arrow, x = @as(f32, x), y = @as(f32, y), w = aw, h = aw, turns = 0, color = col } }
+        if sb.draw_mode == 0 or can_down { paint_picture{ &ui, &kit, g, img = sb.arrow, x = @as(f32, x), y = @as(f32, y + h - w), w = aw, h = aw, turns = 2, color = col } }
+    }
+}

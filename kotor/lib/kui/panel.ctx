@@ -1,0 +1,141 @@
+// kui: a panel through the ui library (lib/gui's draw_panel and the panel's part of input.ctx): the element the
+// panel's controls are placed in, and the replay of a whole loaded panel from its control table (ui/PLAN.md section
+// 8.2), which reports what happened through a queue in the shapes of lib/gui's own gui::Event, so glue written
+// against lib/gui's events reads kui's the same way.
+namespace kui {
+    // Opens panel `panel`: an id scope of the panel's name (a control's path is `optgameplay/BTN_BACK`) and, inside
+    // it, the panel's element on the pixels lib/gui's scissor lets the panel draw on (clip_box), clipping its controls
+    // as lib/gui's panel does, with the panel's own colour and border painted. `keys`: the panel takes the keyboard (lib/gui
+    // gives the keys to the top modal or full-screen panel; the host's screen stack says which that is). End it
+    // with ui::end on the scope returned, which closes the element too.
+    //
+    // On the panel's first frame the control lib/gui's glue focused (gui::set_focus) takes the library's focus.
+    fn begin_panel { mut ui: ui::Ui, mut kit: Kit, panel: *mut gui::Panel, keys: bool } -> ui::Scope {
+        let outer = ui::push_id{ &ui, name = resref::bytes{ r = &panel.name } }
+        let skin = kit.skin
+        let screen = Grid{ sx = skin.sx, sy = skin.sy, ox = 0, oy = 0 }
+        let rect = clip_box{ g = screen, x = panel.sx, y = panel.sy, w = panel.w, h = panel.h }
+        let mut box = ui::place_pixels{ rect }
+        box.clip = true
+        _ = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box }
+        kit.open = Open{ state = ui::make_id{ ui, name = "#panel" }, first = true, keys, ox = rect.x, oy = rect.y }
+        let mut st = ui::load_state{ &ui, id = kit.open.state }
+        if st.f[1] == 0.0 {
+            st.f[1] = 1.0
+            if keys and panel.focus >= 0 and @as(usize, panel.focus) < panel.controls.len {
+                let c = list::at{ list = panel.controls, i = @as(usize, panel.focus) }
+                if gui::is_interactive{ c } and (c.flags & gui::F_HILIGHT) != 0 {
+                    let mut name: [72]u8
+                    let n = write_name{ panel, index = @as(usize, panel.focus), into = name[..] }
+                    let id = ui::make_id{ ui, name = name[..n] }
+                    ui::set_focus{ &ui, id }
+                    ui::set_focus_visible{ &ui, visible = true }
+                    st.i[0] = to_bits{ id }
+                    st.f[0] = 1.0
+                }
+            }
+            ui::store_state{ &ui, id = kit.open.state, values = st }
+        }
+        let g = Grid{ sx = skin.sx, sy = skin.sy, ox = rect.x, oy = rect.y }
+        if panel.has_color and panel.background {
+            paint_fill{ &ui, g, x = @as(f32, panel.sx), y = @as(f32, panel.sy), w = @as(f32, panel.w), h = @as(f32, panel.h), color = render::Color{ r = panel.color.r, g = panel.color.g, b = panel.color.b, a = panel.alpha } }
+        }
+        if panel.background {
+            paint_border{ &ui, skin, g, b = panel.border, x = panel.sx, y = panel.sy, w = panel.w, h = panel.h, alpha = panel.alpha, override = gui::Img{ .. } }
+        }
+        return outer
+    }
+
+    // Draws and drives the whole panel from its table for this frame: every visible control in the table's order,
+    // which is the file's draw order. What happened goes into the kit's queue (take_events) in lib/gui's shapes and
+    // order: Escape is `cancel`; a panel that asked for the arrow keys (gui::set_key_events) gets `arrow` before
+    // the focus moves; a control losing its hilight is `unhilight`, before the one gaining it is `hilight`; then
+    // each control's `row_hover`, `scrolled`, `row_selected`, `row_activated`, `value_changed`, `activate` (an edit
+    // box's is `text_accepted`) and `right_click`.
+    //
+    // A panel whose owner draws a 3D view inside it (gui::set_overlay_after) gets a host slot on that control's
+    // rectangle, numbered with the control's file ID, after the control and before the ones that cover the view.
+    fn replay_panel { mut ui: ui::Ui, mut kit: Kit, panel: *mut gui::Panel, keys: bool } {
+        if panel.w <= 0 or panel.h <= 0 { return }
+        let scope = begin_panel{ &ui, &kit, panel, keys }
+        let count = if panel.controls.len < kit.outcomes.len { panel.controls.len } else { kit.outcomes.len }
+        if keys {
+            if ui::take_key{ &ui, key = ui::Key::escape, mods = 0 } {
+                push_event{ &kit, kind = gui::EventKind::cancel, p = panel, index = -1, value = 0, row = -1, user = 0 }
+            }
+            if panel.key_events {
+                for k in ui::get_keys{ ui } {
+                    if k.mods != 0 { continue }
+                    let dir: i32 = if k.key == ui::Key::up { 0 } else if k.key == ui::Key::down { 1 } else if k.key == ui::Key::left { 2 } else if k.key == ui::Key::right { 3 } else { -1 }
+                    if dir >= 0 { push_event{ &kit, kind = gui::EventKind::arrow, p = panel, index = panel.focus, value = dir, row = -1, user = 0 } }
+                }
+            }
+        }
+        // What happened to each control, before any is drawn: a control's look this frame may hang on a later one's.
+        for i in 0..count {
+            let c = list::at{ list = panel.controls, i }
+            let mut out = Outcome{ index = @as(i32, i), .. }
+            if (c.flags & gui::F_VISIBLE) != 0 and (c.flags & gui::F_INTERNAL) == 0 { out = press_control{ &ui, &kit, panel, index = i } }
+            kit.outcomes[i] = out
+        }
+        // A control that lost the focus to one pressed after it was still lit when its own press ran: it goes dark
+        // now, so one control is lit in a frame, as in lib/gui.
+        for i in 0..count {
+            let o = kit.outcomes[i]
+            if o.interactive and o.lit and not ui::is_focused{ ui, id = o.id } {
+                let c = list::at{ list = panel.controls, i }
+                gui::apply_hilight{ c, on = false }
+                gui::hilight_ancestors{ p = panel, ci = @as(i32, i), on = false }
+                c.hover_row = -1
+                kit.outcomes[i].lit = false
+            }
+        }
+        for i in 0..count {
+            let o = kit.outcomes[i]
+            if o.was_lit and not o.lit { push_event{ &kit, kind = gui::EventKind::unhilight, p = panel, index = o.index, value = 0, row = -1, user = 0 } }
+        }
+        for i in 0..count {
+            let o = kit.outcomes[i]
+            if o.lit and not o.was_lit { push_event{ &kit, kind = gui::EventKind::hilight, p = panel, index = o.index, value = 0, row = -1, user = 0 } }
+        }
+        for i in 0..count {
+            let o = kit.outcomes[i]
+            if o.interactive { push_outcome{ &kit, panel, o } }
+        }
+        for i in 0..count {
+            let c = list::at{ list = panel.controls, i }
+            if (c.flags & gui::F_VISIBLE) != 0 and (c.flags & gui::F_INTERNAL) == 0 { draw_control{ &ui, &kit, panel, index = i } }
+            if panel.overlay_from > 0 and i + 1 == @as(usize, panel.overlay_from) {
+                add_slot{ &ui, kit, panel, index = i, slot = if c.id >= 0 { @as(u32, c.id) } else { 0 } }
+            }
+        }
+        ui::end{ &ui, scope }
+    }
+
+    // One control's outcome as lib/gui's events.
+    fn push_outcome { mut kit: Kit, panel: *mut gui::Panel, o: Outcome } {
+        let c = list::at{ list = panel.controls, i = @as(usize, o.index) }
+        if o.row_hover >= 0 {
+            push_event{ &kit, kind = gui::EventKind::row_hover, p = panel, index = o.index, value = o.row_hover, row = o.row_hover, user = gui::focused_user{ c, row = o.row_hover } }
+        }
+        if o.scrolled {
+            push_event{ &kit, kind = gui::EventKind::scrolled, p = panel, index = o.index, value = if c.text_mode { c.text_step } else { c.first_row }, row = -1, user = 0 }
+        }
+        if o.row_selected >= 0 {
+            push_event{ &kit, kind = gui::EventKind::row_selected, p = panel, index = o.index, value = o.row_selected, row = o.row_selected, user = gui::focused_user{ c, row = o.row_selected } }
+        }
+        if o.row_activated {
+            push_event{ &kit, kind = gui::EventKind::row_activated, p = panel, index = o.index, value = c.selected_row, row = c.selected_row, user = gui::focused_user{ c, row = c.selected_row } }
+        }
+        if o.changed {
+            push_event{ &kit, kind = gui::EventKind::value_changed, p = panel, index = o.index, value = o.value, row = -1, user = 0 }
+        }
+        if o.activated {
+            let kind = if c.kind == gui::Kind::edit { gui::EventKind::text_accepted } else { gui::EventKind::activate }
+            push_event{ &kit, kind, p = panel, index = o.index, value = 0, row = -1, user = 0 }
+        }
+        if o.right_clicked {
+            push_event{ &kit, kind = gui::EventKind::right_click, p = panel, index = o.index, value = 0, row = -1, user = 0 }
+        }
+    }
+}

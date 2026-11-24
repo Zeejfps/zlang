@@ -1,0 +1,128 @@
+// kui: a control's text (lib/gui's draw_text_in and draw_lines, docs/re/gui.md section 5). The lines are broken by
+// lib/gui's own layout, in design pixels with its whole glyph widths, so a line ends where lib/gui ends it; each
+// line's place in its rectangle is worked out in design pixels as lib/gui does (alignment, the leading lines an
+// overflowing block drops). What differs is the drawing, by the owner's decision (ui/PLAN.md section 2.7): a line
+// is one ui::paint_text at the whole pixel size the font's design height times the scale comes to, its origin on
+// the pixel the snap gives, every glyph on whole pixels, where lib/gui draws glyphs unrounded.
+namespace kui {
+    // The font's size in device pixels: its design height at the vertical scale, as a whole pixel size.
+    fn get_text_size { font: render::Font, s: f32 } -> i32 {
+        return ui::scale_font_size{ size = font.height, scale = s }
+    }
+
+    // Lays out and paints `text` in the design rectangle (x, y, w, h) by the text's font and alignment.
+    fn paint_text_in { mut ui: ui::Ui, mut kit: Kit, g: Grid, t: gui::Text, text: []u8, color: render::Color, x: i32, y: i32, w: i32, h: i32 } {
+        if text.len == 0 { return }
+        if t.font < 0 or @as(usize, t.font) >= MAX_FONTS { return }
+        let entry = kit.fonts[t.font]
+        if not entry.ok { return }
+        let count = gui::layout{ font = entry.source, text, width = w, lines = kit.lines }
+        paint_lines{ &ui, &kit, g, entry, text, count, x, y, w, h, align = t.align, color }
+    }
+
+    // Paints the first `count` lines of kit.lines in the design rectangle by `align` (gui::A_*).
+    fn paint_lines { mut ui: ui::Ui, mut kit: Kit, g: Grid, entry: FontEntry, text: []u8, count: usize, x: i32, y: i32, w: i32, h: i32, align: u32, color: render::Color } {
+        if count == 0 { return }
+        let line_h = @as(i32, entry.source.height)
+        if line_h <= 0 { return }
+        let mut first: usize = 0
+        let mut shown = count
+        let vertical = align & 56
+        let mut oy: i32 = 0
+        if vertical == gui::A_MIDDLE or vertical == gui::A_BOTTOM {
+            // Overflowing text drops its leading lines, so the end shows.
+            while shown > 1 and @as(i32, shown) * line_h > h {
+                shown = shown - 1
+                first = first + 1
+            }
+            let block = @as(i32, shown) * line_h
+            oy = if vertical == gui::A_MIDDLE { (h - block) / 2 } else { h - block }
+        }
+        let size = get_text_size{ font = entry.source, s = g.sy }
+        let tint = to_color{ c = color }
+        let horizontal = align & 7
+        let mut joined: [512]u8
+        for k in 0..shown {
+            let ln = kit.lines[first + k]
+            let ly = y + oy + @as(i32, k) * line_h
+            // A line is drawn while its top is above the rectangle's bottom.
+            if ly >= y + h and k > 0 and vertical != gui::A_MIDDLE and vertical != gui::A_BOTTOM { break }
+            let mut lx = x
+            if horizontal == gui::A_CENTRE { lx = x + (w - ln.width) / 2 } else if horizontal == gui::A_RIGHT { lx = x + w - ln.width }
+            let mut seg = text[ln.start..ln.start + ln.len]
+            if ln.hyphen and seg.len < joined.len {
+                // The hyphen of a split word follows the last glyph in the same run, where the pen is.
+                slice::copy(u8){ dst = joined[..seg.len], src = seg }
+                joined[seg.len] = '-'
+                seg = joined[..seg.len + 1]
+            }
+            let px = snap{ v = @as(f32, lx), s = g.sx }
+            let py = snap{ v = @as(f32, ly), s = g.sy }
+            ui::paint_text{ &ui, font = entry.font, size, x = px - g.ox, y = py - g.oy, text = seg, color = tint }
+            if kit.measure {
+                let room = snap{ v = @as(f32, x + w), s = g.sx } - snap{ v = @as(f32, x), s = g.sx }
+                note_line{ &kit, g, font = entry.source, size, lx, ly, px, py, text = seg, room }
+            }
+        }
+    }
+
+    // Adds a painted line to the kit's TextStats: for each glyph with ink, how far its quad as the library lays it
+    // (ui::lay_glyphs: left the pen rounded, top the line's, each extent the glyph's own magnified and rounded) is
+    // from lib/gui's (the pen, the line's top and the extents all times the scale, unrounded).
+    // `room` is the width in device pixels of the rectangle the line was broken for.
+    fn note_line { mut kit: Kit, g: Grid, font: render::Font, size: i32, lx: i32, ly: i32, px: i32, py: i32, text: []u8, room: i32 } {
+        if not (font.height > 0.0) { return }
+        let k = @as(f32, size) / font.height
+        kit.stats.lines = kit.stats.lines + 1
+        let mut pen_theirs: f32 = 0.0
+        let mut pen_ours: f32 = 0.0
+        let top_theirs = @as(f32, ly) * g.sy
+        for c in text {
+            if @as(usize, c) >= font.glyphs.len { continue }
+            let gl = font.glyphs[c]
+            let gw = (gl.u1 - gl.u0) * font.texture_width
+            let gh = (gl.v0 - gl.v1) * font.texture_height
+            if gw > 0.0 and gh > 0.0 {
+                let left_theirs = (@as(f32, lx) + pen_theirs) * g.sx
+                let left_ours = @as(f32, px + ui::round_pixels{ v = pen_ours })
+                let w_ours = @as(f32, ui::pick_max_i32{ a = 1, b = ui::round_pixels{ v = gw * k } })
+                let h_ours = @as(f32, ui::pick_max_i32{ a = 1, b = ui::round_pixels{ v = gh * k } })
+                let dx = get_distance{ a = left_ours, b = left_theirs }
+                let dy = get_distance{ a = @as(f32, py), b = top_theirs }
+                let dw = get_distance{ a = w_ours, b = gw * g.sx }
+                let dh = get_distance{ a = h_ours, b = gh * g.sy }
+                kit.stats.glyphs = kit.stats.glyphs + 1
+                if is_fraction{ v = left_theirs } or is_fraction{ v = top_theirs } or is_fraction{ v = gw * g.sx } or is_fraction{ v = gh * g.sy } {
+                    kit.stats.off_grid = kit.stats.off_grid + 1
+                }
+                kit.stats.max_dx = ui::pick_max_f32{ a = kit.stats.max_dx, b = dx }
+                kit.stats.max_dy = ui::pick_max_f32{ a = kit.stats.max_dy, b = dy }
+                kit.stats.max_dw = ui::pick_max_f32{ a = kit.stats.max_dw, b = dw }
+                kit.stats.max_dh = ui::pick_max_f32{ a = kit.stats.max_dh, b = dh }
+                kit.stats.sum_dx = kit.stats.sum_dx + dx
+                kit.stats.sum_dy = kit.stats.sum_dy + dy
+            }
+            if gw > 0.0 {
+                pen_theirs = pen_theirs + gw
+                pen_ours = pen_ours + gw * k
+            }
+        }
+        // A width a hair over a whole pixel is that pixel (the library's own rule for a measured width).
+        let over = pen_ours - 0.001 - @as(f32, room)
+        if over > 0.0 {
+            kit.stats.over_box = kit.stats.over_box + 1
+            kit.stats.max_over = ui::pick_max_f32{ a = kit.stats.max_over, b = over }
+        }
+        if pen_theirs * g.sx - 0.001 > @as(f32, room) { kit.stats.over_box_theirs = kit.stats.over_box_theirs + 1 }
+    }
+
+    fn get_distance { a: f32, b: f32 } -> f32 {
+        return if a > b { a - b } else { b - a }
+    }
+
+    // Whether a device coordinate is between pixels (by more than float noise).
+    fn is_fraction { v: f32 } -> bool {
+        let d = v - ui::floor_f32{ x = v }
+        return d > 0.01 and d < 0.99
+    }
+}

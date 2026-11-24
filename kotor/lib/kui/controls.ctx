@@ -1,0 +1,408 @@
+// kui: one control of a panel through the ui library: what the pointer and the keys did to it (press_control) and
+// its element and paints (draw_control), and the immediate widgets a screen's own code calls, each of them the two
+// in turn. The rules are lib/gui's (input.ctx, draw.ctx; docs/re/gui.md sections 6 to 8), met by general features:
+//
+//  - A control's TAG is its id name, so `ui::find_node{ path = "optgameplay/CB_AUTOSAVE" }` finds it. A tag a
+//    panel uses twice (or not at all) gets `#` and the control's index after it.
+//  - Only what lib/gui lets the pointer hit has an id (buttons, check boxes, sliders, list boxes, edit boxes and
+//    hilighting labels, enabled and visible): labels, progress bars and disabled controls are elements with no id,
+//    so the pointer goes through them to what is under, as in lib/gui.
+//  - Hover is focus: `PressOpts.focus_on_hover`. A control is lit (lib/gui's F_HILIGHT) while it has the focus and
+//    the pointer is on it, or the keys gave it the focus; a control the pointer walked away from goes dark although
+//    the library keeps its focus, which is lib/gui's dropped hilight: the next arrow key moves on from it.
+//  - MOVETO is `ui::set_links`, each link the first control along the chain the pointer could hit (lib/gui's
+//    move_focus skips the others).
+//  - What a control keeps (its hilight and text colour, a check box's mark, a slider's value) is written to the
+//    table the way lib/gui's input writes it, and drawn from there.
+namespace kui {
+    // What a control did this frame.
+    struct Outcome {
+        id: ui::Id = ui::NO_ID,
+        index: i32 = -1,
+        interactive: bool = false,      // the pointer can hit it
+        hovered: bool = false,
+        entered: bool = false,          // its hover began this frame: ui::Interaction.entered, once a hover
+        lit: bool = false, was_lit: bool = false,
+        activated: bool = false,        // a click released on it, or Enter while it has the focus
+        right_clicked: bool = false,
+        changed: bool = false,          // a check box toggled or a slider moved; `value` is what it is now
+        value: i32 = 0,
+        row_selected: i32 = -1,         // a list: the row a press or a key chose
+        row_hover: i32 = -1,            // a click_rows list: the row the pointer came onto
+        row_activated: bool = false,    // a list: its selected row was clicked again, or Enter
+        scrolled: bool = false,         // a list: its scroll position moved (the table has it)
+    }
+
+    fn to_bits { id: ui::Id } -> i64 { return @trunc(i64, @as(u64, id)) }
+    fn from_bits { bits: i64 } -> ui::Id { return @as(ui::Id, @trunc(u64, bits)) }
+
+    // The name control `index` has in the library: its TAG, with `#` and the index when an earlier control of the
+    // panel has the same tag or it has none. Written into `into`; the length.
+    fn write_name { panel: *gui::Panel, index: usize, into: []mut u8 } -> usize {
+        let cs = list::items{ list = panel.controls }
+        let tag = cs[index].tag
+        let room = into.len - 12
+        let n = if tag.len < room { tag.len } else { room }
+        slice::copy(u8){ dst = into[..n], src = tag[..n] }
+        let mut twice = n == 0
+        for i in 0..index {
+            if (cs[i].flags & gui::F_INTERNAL) == 0 and slice::eq_bytes{ a = cs[i].tag, b = tag } { twice = true }
+        }
+        if not twice { return n }
+        into[n] = '#'
+        return n + 1 + gui::put_digits{ into = into[n + 1..], n = @as(i32, index) }
+    }
+
+    // The index of the control tagged `tag`, or null.
+    fn find_index { panel: *mut gui::Panel, tag: []u8 } -> ?usize {
+        let i = gui::find_by_tag{ p = panel, tag }
+        if i < 0 { return null }
+        return @as(usize, i)
+    }
+
+    // The id of the control lib/gui's move_focus reaches from control `index` in direction `dir` (0 up, 1 down,
+    // 2 left, 3 right): along MOVETO, past what the pointer cannot hit. Null when the chain ends or comes back.
+    fn find_link { ui: ui::Ui, panel: *mut gui::Panel, index: usize, dir: usize } -> ?ui::Id {
+        let mut cur = index
+        for _ in 0..panel.controls.len {
+            let want = list::at{ list = panel.controls, i = cur }.moveto[dir]
+            if want < 0 { return null }
+            let found = gui::find_by_id{ p = panel, id = want }
+            if found < 0 or @as(usize, found) == index { return null }
+            let t = list::at{ list = panel.controls, i = @as(usize, found) }
+            if gui::is_interactive{ c = t } {
+                let mut name: [72]u8
+                let n = write_name{ panel, index = @as(usize, found), into = name[..] }
+                return ui::make_id{ ui, name = name[..n] }
+            }
+            cur = @as(usize, found)
+        }
+        return null
+    }
+
+    // The pointer in the GUI's pixel space, as lib/gui's handle_event has it: device pixels over the scale, cut.
+    struct DesignPoint { x: i32, y: i32 }
+    fn get_design_pointer { ui: ui::Ui, skin: Skin } -> DesignPoint {
+        let at = ui::get_pointer{ ui }
+        return DesignPoint{ x = @as(i32, @as(f32, at.x) / skin.sx), y = @as(i32, @as(f32, at.y) / skin.sy) }
+    }
+
+    // An arrow key with no modifier among the frame's key strokes nobody took: its place, or null.
+    fn find_arrow { ui: ui::Ui } -> ?usize {
+        for k at i in ui::get_keys{ ui } {
+            if k.mods == 0 and (k.key == ui::Key::up or k.key == ui::Key::down or k.key == ui::Key::left or k.key == ui::Key::right) { return i }
+        }
+        return null
+    }
+
+    // What the pointer and the keys did to control `index` this frame, written into the table as lib/gui's input
+    // writes it. Call it once a frame for a control that is visible, inside its panel (begin_panel), before or
+    // after its draw_control: the ids are the same.
+    fn press_control { mut ui: ui::Ui, mut kit: Kit, panel: *mut gui::Panel, index: usize } -> Outcome {
+        let c = list::at{ list = panel.controls, i = index }
+        let mut out = Outcome{ index = @as(i32, index), .. }
+        out.was_lit = (c.flags & gui::F_HILIGHT) != 0
+        out.lit = out.was_lit
+        if not gui::is_interactive{ c } { return out }
+        out.interactive = true
+        let mut name: [72]u8
+        let n = write_name{ panel, index, into = name[..] }
+        let id = ui::make_id{ ui, name = name[..n] }
+        out.id = id
+        let me = to_bits{ id }
+        let mut st = ui::load_state{ &ui, id = kit.open.state }
+        if kit.open.first {
+            kit.open.first = false
+            // An arrow key while nothing of the panel has the focus: the control that last had it gets it back and
+            // the key moves on from there (lib/gui keeps a panel's focus when the hilight is dropped); with none
+            // yet, the first control the pointer could hit takes it and the key.
+            if kit.open.keys and not ui::is_focused{ ui, id = from_bits{ bits = st.i[0] } } {
+                if let at = find_arrow{ ui } {
+                    if st.i[0] != 0 {
+                        ui::set_focus{ &ui, id = from_bits{ bits = st.i[0] } }
+                        st.i[0] = 0
+                    } else {
+                        ui::take_key_at{ &ui, index = at }
+                        ui::set_focus{ &ui, id }
+                    }
+                    ui::set_focus_visible{ &ui, visible = true }
+                }
+            }
+        }
+        let it = ui::press{ &ui, id, opts = ui::PressOpts{ focus_on_hover = true, .. } }
+        ui::set_links{ &ui, id, links = ui::Links{
+            up = find_link{ ui, panel, index, dir = 0 }, down = find_link{ ui, panel, index, dir = 1 },
+            left = find_link{ ui, panel, index, dir = 2 }, right = find_link{ ui, panel, index, dir = 3 },
+        } }
+        out.hovered = it.hovered
+        out.entered = it.entered
+
+        // Who is lit. st.i[0]: the control that last had the focus; st.i[1]: the one the pointer is on; st.f[0]: 1
+        // while the focus came by keys (so it shows with the pointer elsewhere).
+        let mut by_keys = false
+        if it.hovered {
+            st.i[1] = me
+        } else if st.i[1] == me {
+            st.i[1] = 0
+            st.f[0] = 0.0
+        }
+        if it.entered { st.f[0] = 0.0 }
+        if it.focused and st.i[0] != me {
+            st.i[0] = me
+            if not it.hovered {
+                st.f[0] = 1.0
+                by_keys = true
+            }
+        }
+        out.lit = it.focused and (it.hovered or st.f[0] != 0.0)
+        ui::store_state{ &ui, id = kit.open.state, values = st }
+        if out.lit != out.was_lit {
+            gui::apply_hilight{ c, on = out.lit }
+            gui::hilight_ancestors{ p = panel, ci = @as(i32, index), on = out.lit }
+            if out.lit {
+                panel.focus = @as(i32, index)
+                // The hover sound: once as the hover begins (Interaction.entered), or as the keys move the focus here.
+                if it.entered or by_keys { push_sound{ &kit, n = c.hover_sound } }
+            } else {
+                c.hover_row = -1
+            }
+        }
+
+        let right = ui::press{ &ui, id, opts = ui::PressOpts{ focusable = false, button = 1, .. } }
+        out.right_clicked = right.clicked
+        let keys = kit.open.keys and it.focused
+        if c.kind == gui::Kind::list {
+            press_list{ &ui, &kit, panel, index, it, keys, out = &out }
+            return out
+        }
+        if c.kind == gui::Kind::slider {
+            let mx = if c.max > 0 { c.max } else { 1 }
+            let mut v = c.value
+            if it.held {
+                let at = get_design_pointer{ ui, skin = kit.skin }
+                v = gui::slider_from_point{ c, lx = at.x - panel.sx, ly = at.y - panel.sy }
+            }
+            let wheel = ui::take_wheel{ &ui, id }
+            if wheel > 0.0 { v = c.value + 1 } else if wheel < 0.0 { v = c.value - 1 }
+            if keys {
+                if ui::take_key{ &ui, key = ui::Key::left, mods = 0 } { v = c.value - 1 }
+                if ui::take_key{ &ui, key = ui::Key::right, mods = 0 } { v = c.value + 1 }
+            }
+            v = ui::clamp_i32{ v, lo = 0, hi = mx }
+            if v != c.value {
+                c.value = v
+                out.changed = true
+                push_sound{ &kit, n = 0 }
+            }
+            out.value = c.value
+            return out
+        }
+        out.activated = it.clicked and c.kind != gui::Kind::edit
+        if keys and ui::take_key{ &ui, key = ui::Key::enter, mods = 0 } { out.activated = true }
+        if out.activated and (c.kind == gui::Kind::button or c.kind == gui::Kind::check) {
+            push_sound{ &kit, n = c.click_sound }
+            if c.kind == gui::Kind::check {
+                c.flags = c.flags ^ gui::F_CHECKED
+                out.changed = true
+            }
+        }
+        out.value = if (c.flags & gui::F_CHECKED) != 0 { 1 } else { 0 }
+        return out
+    }
+
+    // The element and the paints of control `index`, as the table has it now (lib/gui's draw_control).
+    fn draw_control { mut ui: ui::Ui, mut kit: Kit, panel: *mut gui::Panel, index: usize } {
+        let c = list::at{ list = panel.controls, i = index }
+        let skin = kit.skin
+        let x = panel.sx + c.x
+        let y = panel.sy + c.y
+        let alpha = panel.alpha
+        let interactive = gui::is_interactive{ c }
+        let mut name: [72]u8
+        let n = write_name{ panel, index, into = name[..] }
+        let id = if interactive { ui::make_id{ ui, name = name[..n] } } else { ui::NO_ID }
+        let within = Grid{ sx = skin.sx, sy = skin.sy, ox = kit.open.ox, oy = kit.open.oy }
+        let mut box = ui::place_pixels{ rect = snap_box{ g = within, x, y, w = c.w, h = c.h } }
+        // lib/gui's hit test takes the right and the bottom edge's design pixel as inside.
+        if interactive { box.hit_outset = ui::Insets{ right = 1.0, bottom = 1.0, .. } }
+        let scope = ui::begin_element{ &ui, id, axis = ui::Axis::row, box }
+        let g = Grid{ sx = skin.sx, sy = skin.sy, ox = snap{ v = @as(f32, x), s = skin.sx }, oy = snap{ v = @as(f32, y), s = skin.sy } }
+        let hl = (c.flags & gui::F_HILIGHT) != 0
+        let k = c.kind
+        let mut role = ui::Role::label
+        if k == gui::Kind::list {
+            role = ui::Role::list
+            draw_list{ &ui, &kit, g, panel, index }
+        } else if k == gui::Kind::progress {
+            role = ui::Role::progress
+            paint_progress{ &ui, skin, g, c, x, y, alpha }
+        } else if k == gui::Kind::check and (c.flags & gui::F_MENU_CHECK) != 0 {
+            role = ui::Role::checkbox
+            paint_menu_check{ &ui, &kit, g, b = gui::border_for{ c, hilighted = hl }, t = c.text, text = c.text.text, flags = c.flags, x, y, w = c.w, h = c.h, alpha }
+        } else {
+            role = if k == gui::Kind::check { ui::Role::checkbox } else if k == gui::Kind::slider { ui::Role::slider } else if k == gui::Kind::edit { ui::Role::text_field } else { ui::Role::button }
+            let lights = k == gui::Kind::button or k == gui::Kind::check or k == gui::Kind::proto or k == gui::Kind::slider or k == gui::Kind::edit
+            let b = gui::border_for{ c, hilighted = hl and lights }
+            paint_border{ &ui, skin, g, b, x, y, w = c.w, h = c.h, alpha = if c.override_fill.ok { alpha * c.picture_alpha } else { alpha }, override = c.override_fill }
+            if k == gui::Kind::slider { paint_slider_thumb{ &ui, &kit, g, c, x, y, alpha } }
+            if c.text.present and c.text.text.len > 0 or k == gui::Kind::edit {
+                let a = gui::text_area{ b = c.border, x, y, w = c.w, h = c.h }
+                let mut col = c.text.color
+                if (c.flags & gui::F_PULSE_TEXT) != 0 or c.text.pulsing { col = mul_alpha{ c = col, a = skin.pulse } }
+                col = mul_alpha{ c = col, a = alpha }
+                if k == gui::Kind::edit and hl {
+                    // A caret after the typed text while the box has the focus.
+                    let len = c.text.text.len
+                    let mut buf: [256]u8
+                    if len + 1 <= 255 {
+                        slice::copy(u8){ dst = buf[..len], src = c.text.text }
+                        buf[len] = '_'
+                        paint_text_in{ &ui, &kit, g, t = c.text, text = buf[..len + 1], color = col, x = a.x, y = a.y, w = a.w, h = a.h }
+                    }
+                } else {
+                    paint_text_in{ &ui, &kit, g, t = c.text, text = c.text.text, color = col, x = a.x, y = a.y, w = a.w, h = a.h }
+                }
+            }
+        }
+        ui::end{ &ui, scope }
+        if interactive {
+            let mut flags: u8 = 0
+            if (c.flags & gui::F_CHECKED) != 0 { flags = flags | ui::NODE_CHECKED }
+            if hl { flags = flags | ui::NODE_FOCUSED }
+            ui::describe{ &ui, id, role, label = name[..n], value = @as(f32, c.value), flags }
+        }
+    }
+
+    // ---- check boxes of the options panels (lib/gui's draw_menu_check): the four borders in a square at the left
+    // of the extent, two pixels below its vertical middle, and the text in the rest. The hit area stays the extent.
+
+    fn paint_menu_check { mut ui: ui::Ui, mut kit: Kit, g: Grid, b: gui::Border, t: gui::Text, text: []u8, flags: u32, x: i32, y: i32, w: i32, h: i32, alpha: f32 } {
+        let size = gui::MENU_CHECK_SIZE
+        paint_border{ &ui, skin = kit.skin, g, b, x, y = y + gui::menu_check_box_y{ h }, w = size, h = size, alpha, override = gui::Img{ .. } }
+        if not t.present or text.len == 0 { return }
+        // Yellow and pulsing while hilighted, dim blue while disabled, else menu blue.
+        let mut col = gui::color_menu{}
+        if (flags & gui::F_HILIGHT) != 0 {
+            col = mul_alpha{ c = gui::color_hilight{}, a = kit.skin.pulse }
+        } else if (flags & gui::F_ENABLED) == 0 {
+            col = gui::color_disabled{}
+        }
+        paint_text_in{ &ui, &kit, g, t, text, color = mul_alpha{ c = col, a = alpha }, x = x + gui::MENU_CHECK_TEXT_X, y, w = w - gui::MENU_CHECK_TEXT_X, h }
+    }
+
+    // lib/gui's draw_progress: the border, then the PROGRESS border over CURVALUE / MAXVALUE of the inner
+    // rectangle's long axis.
+    fn paint_progress { mut ui: ui::Ui, skin: Skin, g: Grid, c: *gui::Control, x: i32, y: i32, alpha: f32 } {
+        paint_border{ &ui, skin, g, b = c.border, x, y, w = c.w, h = c.h, alpha, override = gui::Img{ .. } }
+        let a = gui::text_area{ b = c.border, x, y, w = c.w, h = c.h }
+        let mut ax = a.x
+        let mut ay = a.y
+        let mut aw = a.w
+        let mut ah = a.h
+        if c.max > 0 {
+            let v = ui::clamp_i32{ v = c.value, lo = 0, hi = c.max }
+            let frac = @as(f32, v) / @as(f32, c.max)
+            if ah > aw {
+                let len = @as(i32, frac * @as(f32, ah))
+                if not c.from_left { ay = ay + (ah - len) }
+                ah = len
+            } else {
+                let len = @as(i32, frac * @as(f32, aw))
+                if not c.from_left { ax = ax + (aw - len) }
+                aw = len
+            }
+        }
+        if aw > 0 and ah > 0 { paint_border{ &ui, skin, g, b = c.progress, x = ax, y = ay, w = aw, h = ah, alpha, override = gui::Img{ .. } } }
+    }
+
+    // lib/gui's draw_slider_thumb: the thumb keeps its picture's length along the slider and fills it across.
+    fn paint_slider_thumb { mut ui: ui::Ui, mut kit: Kit, g: Grid, c: *gui::Control, x: i32, y: i32, alpha: f32 } {
+        if not c.thumb.ok { return }
+        let tw = @as(i32, c.thumb.w)
+        let th = @as(i32, c.thumb.h)
+        let mx = if c.max > 0 { c.max } else { 1 }
+        let v = ui::clamp_i32{ v = c.value, lo = 0, hi = mx }
+        let col = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = alpha }
+        if c.w >= c.h {
+            let len = if tw < c.w { tw } else { c.w }
+            let pos = if tw < c.w { x + (c.w - tw) * v / mx } else { x }
+            paint_picture{ &ui, &kit, g, img = c.thumb, x = @as(f32, pos), y = @as(f32, y), w = @as(f32, len), h = @as(f32, c.h), turns = 0, color = col }
+        } else {
+            let len = if th < c.h { th } else { c.h }
+            let pos = if th < c.h { y + (c.h - th) * v / mx } else { y }
+            paint_picture{ &ui, &kit, g, img = c.thumb, x = @as(f32, x), y = @as(f32, pos), w = @as(f32, c.w), h = @as(f32, len), turns = 0, color = col }
+        }
+    }
+
+    // ---- the immediate widgets: a control by its TAG, pressed and drawn where the code is. Each is recorded inside
+    // its panel's begin_panel. A tag the panel does not have, and a control that is not visible, does nothing.
+
+    // Control `tag` whatever it is: what it did this frame.
+    fn add_control { mut ui: ui::Ui, mut kit: Kit, panel: *mut gui::Panel, tag: []u8 } -> Outcome {
+        let index = find_index{ panel, tag } ifnull { return Outcome{ .. } }
+        let c = list::at{ list = panel.controls, i = index }
+        if (c.flags & gui::F_VISIBLE) == 0 { return Outcome{ index = @as(i32, index), .. } }
+        let out = press_control{ &ui, &kit, panel, index }
+        draw_control{ &ui, &kit, panel, index }
+        return out
+    }
+
+    // A label, a picture, a progress bar: drawn, never pressed.
+    fn add_label { mut ui: ui::Ui, mut kit: Kit, panel: *mut gui::Panel, tag: []u8 } {
+        _ = add_control{ &ui, &kit, panel, tag }
+    }
+
+    // A button: true on the frame it is clicked, or Enter is pressed while it has the focus.
+    fn add_button { mut ui: ui::Ui, mut kit: Kit, panel: *mut gui::Panel, tag: []u8 } -> bool {
+        return add_control{ &ui, &kit, panel, tag }.activated
+    }
+
+    // Marks check box `tag` in the table, or clears its mark: what add_check does with its value, for code that
+    // reads the box's Outcome itself (add_control).
+    fn set_checked { panel: *mut gui::Panel, tag: []u8, on: bool } {
+        let index = find_index{ panel, tag } ifnull { return }
+        let c = list::at{ list = panel.controls, i = index }
+        c.flags = if on { c.flags | gui::F_CHECKED } else { c.flags & ~gui::F_CHECKED }
+    }
+
+    // A check box showing `value`: a click flips it. True on the frame it changed.
+    fn add_check { mut ui: ui::Ui, mut kit: Kit, panel: *mut gui::Panel, tag: []u8, mut value: bool } -> bool {
+        set_checked{ panel, tag, on = value }
+        let out = add_control{ &ui, &kit, panel, tag }
+        if out.changed { value = out.value != 0 }
+        return out.changed
+    }
+
+    // A slider showing `value` of the control's MAXVALUE. True on the frame it moved.
+    fn add_slider { mut ui: ui::Ui, mut kit: Kit, panel: *mut gui::Panel, tag: []u8, mut value: i32 } -> bool {
+        let index = find_index{ panel, tag } ifnull { return false }
+        list::at{ list = panel.controls, i = index }.value = value
+        let out = add_control{ &ui, &kit, panel, tag }
+        if out.changed { value = out.value }
+        return out.changed
+    }
+
+    // A list box with the rows the table has (gui::list_add, gui::set_list_text): the outcome says which row was
+    // chosen (`row_selected`), whether the chosen row was activated, and whether it scrolled.
+    fn add_list { mut ui: ui::Ui, mut kit: Kit, panel: *mut gui::Panel, tag: []u8 } -> Outcome {
+        return add_control{ &ui, &kit, panel, tag }
+    }
+
+    // A 3D view where control `tag` is: the control as the file draws it, then a host slot on its rectangle, so
+    // what is recorded before is under the view and what comes after is over it. The host draws the view between
+    // the passes (ui_kotor::get_slot gives the slot and its viewport).
+    fn add_view { mut ui: ui::Ui, mut kit: Kit, panel: *mut gui::Panel, tag: []u8, slot: u32 } {
+        let index = find_index{ panel, tag } ifnull { return }
+        let c = list::at{ list = panel.controls, i = index }
+        if (c.flags & gui::F_VISIBLE) != 0 { draw_control{ &ui, &kit, panel, index } }
+        add_slot{ &ui, kit, panel, index, slot }
+    }
+
+    // A host slot on control `index`'s rectangle, in the panel's element: the pixels kotor's renderer gives a view
+    // whose viewport is that rectangle (clip_box), which is how lib/gui's glue places its views.
+    fn add_slot { mut ui: ui::Ui, kit: Kit, panel: *mut gui::Panel, index: usize, slot: u32 } {
+        let c = list::at{ list = panel.controls, i = index }
+        let within = Grid{ sx = kit.skin.sx, sy = kit.skin.sy, ox = kit.open.ox, oy = kit.open.oy }
+        ui::add_host_slot{ &ui, slot, box = ui::place_pixels{ rect = clip_box{ g = within, x = panel.sx + c.x, y = panel.sy + c.y, w = c.w, h = c.h } } }
+    }
+}

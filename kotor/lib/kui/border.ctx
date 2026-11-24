@@ -1,0 +1,107 @@
+// kui: CSWGuiBorder's scheme as image shapes (lib/gui's draw_border, docs/re/gui.md sections 3 and 4): one corner
+// picture turned four ways, one edge picture in whole segments along each side with the remainder spread over the
+// first ones, then the fill, stretched, centred or tiled. Every piece is one ui::paint_image whose rectangle is the
+// piece's design rectangle with each edge snapped (paint_piece), so neighbours share the edge they meet on and the
+// pieces cover the device pixels lib/gui's cover. The quarter turns are exact at the seam.
+namespace kui {
+    fn mul_alpha { c: render::Color, a: f32 } -> render::Color {
+        return render::Color{ r = c.r, g = c.g, b = c.b, a = c.a * a }
+    }
+
+    // One border around the design rectangle (x, y, w, h) of the GUI's pixel space. `alpha` is the panel's;
+    // `override` is a picture code gave the control, drawn as the fill when ok.
+    fn paint_border { mut ui: ui::Ui, skin: Skin, g: Grid, b: gui::Border, x: i32, y: i32, w: i32, h: i32, alpha: f32, override: gui::Img } {
+        if not b.present or w <= 0 or h <= 0 { return }
+        let tint = if b.tinted { b.color } else { render::Color{ r = 1.0, g = 1.0, b = 1.0, a = 1.0 } }
+        let a_frame = alpha * (if (b.pulsing & 1) != 0 { skin.pulse } else { 1.0 })
+        let a_fill = alpha * (if (b.pulsing & 2) != 0 { skin.pulse } else { 1.0 })
+        let m = gui::border_metrics{ b }
+        let mut csz = m.corner
+        if csz * 2 > w { csz = w / 2 }
+        if csz * 2 > h { csz = h / 2 }
+        let ct = mul_alpha{ c = tint, a = a_frame }
+        let fx = @as(f32, x)
+        let fy = @as(f32, y)
+        let fw = @as(f32, w)
+        let fh = @as(f32, h)
+        if b.corner.ok and csz > 0 {
+            let c = @as(f32, csz)
+            paint_piece{ &ui, g, img = b.corner, x0 = fx, y0 = fy, x1 = fx + c, y1 = fy + c, turns = 0, color = ct }
+            paint_piece{ &ui, g, img = b.corner, x0 = fx, y0 = fy + fh - c, x1 = fx + c, y1 = fy + fh, turns = 1, color = ct }
+            paint_piece{ &ui, g, img = b.corner, x0 = fx + fw - c, y0 = fy + fh - c, x1 = fx + fw, y1 = fy + fh, turns = 2, color = ct }
+            paint_piece{ &ui, g, img = b.corner, x0 = fx + fw - c, y0 = fy, x1 = fx + fw, y1 = fy + c, turns = 3, color = ct }
+        }
+        if b.edge.ok and m.thick > 0 {
+            let t = m.thick
+            let gap_h = w - 2 * csz
+            let gap_v = h - 2 * csz
+            paint_edge_run{ &ui, g, img = b.edge, x0 = x + csz, y0 = y, gap = gap_h, seg = m.seg, thick = t, side = 0, color = ct }
+            paint_edge_run{ &ui, g, img = b.edge, x0 = x + csz, y0 = y + h - t, gap = gap_h, seg = m.seg, thick = t, side = 2, color = ct }
+            paint_edge_run{ &ui, g, img = b.edge, x0 = x, y0 = y + csz, gap = gap_v, seg = m.seg, thick = t, side = 1, color = ct }
+            paint_edge_run{ &ui, g, img = b.edge, x0 = x + w - t, y0 = y + csz, gap = gap_v, seg = m.seg, thick = t, side = 3, color = ct }
+        }
+        // The fill: inside the corners, or the whole extent without a corner texture.
+        let inset = if b.corner.ok { csz } else { 0 }
+        let ax = x + inset
+        let ay = y + inset
+        let aw = w - 2 * inset
+        let ah = h - 2 * inset
+        let fill = if override.ok { override } else { b.fill }
+        if not fill.ok or aw <= 0 or ah <= 0 { return }
+        let fc = mul_alpha{ c = tint, a = a_fill }
+        let style = if override.ok { gui::FILL_STRETCHED } else { b.fill_style }
+        if style == gui::FILL_STRETCHED {
+            paint_piece{ &ui, g, img = fill, x0 = @as(f32, ax), y0 = @as(f32, ay), x1 = @as(f32, ax + aw), y1 = @as(f32, ay + ah), turns = if override.ok { 0 } else { b.fill_turns & 3 }, color = fc }
+        } else if style == gui::FILL_CENTRED {
+            let mut tw = @as(i32, fill.w)
+            let mut th = @as(i32, fill.h)
+            if tw > aw { tw = aw }
+            if th > ah { th = ah }
+            let tx = ax + (aw - tw) / 2
+            let ty = ay + (ah - th) / 2
+            paint_piece{ &ui, g, img = fill, x0 = @as(f32, tx), y0 = @as(f32, ty), x1 = @as(f32, tx + tw), y1 = @as(f32, ty + th), turns = 0, color = fc }
+        } else {
+            // Tiled: whole tiles of the texture's size, each stretched to fill exactly. A tile's far side is the
+            // next one's near side, worked out the same way, so the two snap to one edge.
+            let tw = if fill.w < 1.0 { 1 } else { @as(i32, fill.w) }
+            let th = if fill.h < 1.0 { 1 } else { @as(i32, fill.h) }
+            let mut nx = aw / tw
+            let mut ny = ah / th
+            if nx < 1 { nx = 1 }
+            if ny < 1 { ny = 1 }
+            let cw = @as(f32, aw) / @as(f32, nx)
+            let chh = @as(f32, ah) / @as(f32, ny)
+            for j in 0..ny {
+                for i in 0..nx {
+                    let tx0 = @as(f32, ax) + cw * @as(f32, i)
+                    let ty0 = @as(f32, ay) + chh * @as(f32, j)
+                    let tx1 = @as(f32, ax) + cw * @as(f32, i + 1)
+                    let ty1 = @as(f32, ay) + chh * @as(f32, j + 1)
+                    paint_piece{ &ui, g, img = fill, x0 = tx0, y0 = ty0, x1 = tx1, y1 = ty1, turns = 0, color = fc }
+                }
+            }
+        }
+    }
+
+    // A run of edge segments along one side. `side`: 0 top, 1 left, 2 bottom, 3 right; the art is the top edge and
+    // turns a quarter for each step. (x0, y0) is the run's first design pixel. The gap is cut into whole segments
+    // (one when at least half a segment fits), and what is left over is spread a pixel each over the first ones.
+    fn paint_edge_run { mut ui: ui::Ui, g: Grid, img: gui::Img, x0: i32, y0: i32, gap: i32, seg: i32, thick: i32, side: i32, color: render::Color } {
+        if gap <= 0 { return }
+        let mut n = gap / seg
+        if n == 0 and gap * 2 >= seg { n = 1 }
+        if n == 0 { return }
+        let base = gap / n
+        let extra = gap - base * n
+        let mut off: i32 = 0
+        for k in 0..n {
+            let len = base + (if k < extra { 1 } else { 0 })
+            if side == 0 or side == 2 {
+                paint_piece{ &ui, g, img, x0 = @as(f32, x0 + off), y0 = @as(f32, y0), x1 = @as(f32, x0 + off + len), y1 = @as(f32, y0 + thick), turns = (if side == 0 { 0 } else { 2 }), color }
+            } else {
+                paint_piece{ &ui, g, img, x0 = @as(f32, x0), y0 = @as(f32, y0 + off), x1 = @as(f32, x0 + thick), y1 = @as(f32, y0 + off + len), turns = (if side == 1 { 1 } else { 3 }), color }
+            }
+            off = off + len
+        }
+    }
+}
