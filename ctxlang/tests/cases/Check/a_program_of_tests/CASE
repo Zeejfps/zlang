@@ -1,0 +1,23 @@
+// `ctxc check` checks a program as `ctxc run` and as `ctxc test` build it, at once. A
+// directory of `#test` fns alone needs no `main`, as for `ctxc test`.
+//# $ ctxc check {dir}/tests
+//# stderr:
+//| check: no errors
+//# $ ctxc run {dir}/tests
+//# exit: 1
+//# stderr:
+//| {dir}/tests/t.ctx:1:1: error: no `fn main` entry point
+
+// A program with a `main` and tests has both checked.
+//# $ ctxc check {dir}/both
+//# exit: 1
+//# stderr:
+//| {dir}/both/t.ctx:6:12: error: unknown name `wrong`
+//| check: 1 error; not checked until the program has no other error: the order of a call's fields, what tasks borrow, consts computed by running code
+
+// With neither a `main` nor a test there is nothing to run.
+//# $ ctxc check {dir}/neither
+//# exit: 1
+//# stderr:
+//| {dir}/neither/t.ctx:1:1: error: no `fn main` entry point
+//| check: 1 error

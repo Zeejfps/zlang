@@ -10,13 +10,19 @@ namespace diag {
 
     struct Diag { severity: Severity, span: source::Span, msg: utf8::String, notes: []Note }
 
-    // At most CAP are kept, so a broken file can't flood an editor. `dropped` counts the rest.
+    // At most `cap` are kept, CAP unless `keep_all` lifts it, so a broken file can't flood an
+    // editor. `dropped` counts the rest, which the driver says after those it shows (report.ctx).
     const CAP: usize = 100
 
-    struct Diags { items: list::List(Diag, arena::Arena), errors: usize, dropped: usize }
+    struct Diags { items: list::List(Diag, arena::Arena), errors: usize, dropped: usize, cap: usize }
 
     fn new { heap: *mut arena::Arena } -> Diags {
-        return Diags{ items = list::new(Diag){ realloc = arena::alloc, heap }, errors = 0, dropped = 0 }
+        return Diags{ items = list::new(Diag){ realloc = arena::alloc, heap }, errors = 0, dropped = 0, cap = CAP }
+    }
+
+    // Lifts the cap, for `ctxc check`: every diagnostic is kept.
+    fn keep_all { mut diags: Diags } {
+        diags.cap = 18446744073709551615
     }
 
     fn error { mut diags: Diags, span: source::Span, msg: utf8::String } {
@@ -28,7 +34,7 @@ namespace diag {
             error => { diags.errors = diags.errors + 1 }
             warning => {}
         }
-        if diags.items.len >= CAP {
+        if diags.items.len >= diags.cap {
             diags.dropped = diags.dropped + 1
             return
         }

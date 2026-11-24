@@ -1,0 +1,7 @@
+fn main { mut io: Io } { io::println{ &io, s = "ok" } }
+
+#test
+fn fails { mut t: Test } -> ! {
+    @expect(&t, 1 + 1 == 2)
+    return wrong{}
+}

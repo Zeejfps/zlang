@@ -1,0 +1,13 @@
+struct P { x: i32, y: i32 }
+fn far {} -> *i32 {
+    let v: i32 = 1
+    return &v
+}
+fn main { mut io: Io } {
+    let p = P{ x = 1, y = 2 }
+    let t: u8 = "s"
+    let u = p.zz
+    _ = @fmt(&io, "{}\n", u + 1)
+    match p.x { 1 => {} }
+    missing{}
+}

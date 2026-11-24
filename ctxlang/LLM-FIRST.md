@@ -668,10 +668,38 @@ What a model writes by default should compile, or fail with the exact fix.
 
 ## 6. Feedback built for agents
 
-- [ ] **6.1 `ctxc check`.**
+- [x] **6.1 `ctxc check`.**
   Front end only, no C compile: every error in the program, not only the first, fast. Today
   agents use `run` or `exe`.
   - *Done when:* `ctxc check DIR` (with or without a build.ctx) reports all errors and exits non-zero.
+  - *Done:* [spec §21](spec.md#21-checking-and-diagnostics).
+    - `ctxc check PATH` takes what `run` takes, checks, and builds nothing: without a build.ctx
+      it writes no file. Its last line is `check: no errors` or `check: N errors`; the exit
+      code is 1 with an error.
+    - **With a build.ctx** the build program is compiled and run, as nothing else says what
+      the executables are (the interpreter can't run one: it writes its graph through C's
+      `fopen`); it is built again only when it changes. Then every executable is checked,
+      where `run` stops at the first with an error, with its generated files and what its
+      `deny_unchecked` denies, and an error in a file two executables share is reported once.
+    - **As `run` and as `test`:** one pass checks both builds' entry points, and a directory
+      of `#test` fns without a `main` is no error, so `check` covers what `ctxc test` reports.
+    - **What "every" is.** The front end never stopped at the first error: a file that doesn't
+      parse is parsed on and the others are checked, and every body is checked to its end.
+      What did stop was the count, at 100, without a word (rule 1): `run`, `exe` and `test`
+      now end with `ctxc: more than 100 errors: these are the first 100, and `ctxc check`
+      reports every one`, and `check` has no cap. Three things are still held back, and
+      [spec §21, rule 5](spec.md#21-checking-and-diagnostics) says so exactly: in a body with
+      an error, the checks along its paths (assignment, escapes, overlapping places); and for
+      a program with any error, the order of a call's fields, what tasks borrow and consts
+      computed by running code, which read every function the program reaches. Running those
+      on a program with errors was not cheap to make sound, so `check`'s last line names the
+      ones that didn't run instead: `; not checked until the program has no other error:
+      ...`. A program can take three runs to be shown clean, and is told each time.
+    - **Speed** (Windows, 32 threads): ctxc itself, 1.8 MB of source, 1.9 s against `exe`'s
+      2.2 s with nothing to recompile; KOTOR, 5.9 MB, 11.4 s against 12.1 s with nothing to
+      recompile and 16 s from nothing. The front end is most of a build: `check` saves the C
+      compiler and the link, and what is left to make faster is the checker.
+    - Cases: [tests/cases/Check](tests/cases/Check).
 
 - [ ] **6.2 JSON diagnostics with related locations.**
   `--json` on check, run and exe: file, line, column, end, message, and notes pointing at the

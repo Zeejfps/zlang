@@ -1,0 +1,29 @@
+// `ctxc check` reports every error in a program, where it is: those of every file, a file
+// that doesn't parse or not, and of every function, whatever went wrong before it. It
+// builds nothing, and writes nothing.
+//# $ ctxc check {dir}/prog
+//# exit: 1
+//# stderr:
+//| {dir}/prog/b.ctx:3:1: error: expected an expression, found '}'
+//| {dir}/prog/b.ctx:4:1: error: expected '}', found 'fn'
+//| {dir}/prog/b.ctx:5:15: error: unknown type or namespace `Queue`
+//| {dir}/prog/a.ctx:8:17: error: expected u8, got []u8
+//| {dir}/prog/a.ctx:9:14: error: P has no field `zz`
+//| {dir}/prog/a.ctx:11:5: error: a match on an integer needs an `else` arm
+//| {dir}/prog/a.ctx:12:5: error: unknown name `missing`
+//| {dir}/prog/b.ctx:1:1: error: `sum` must end every path in `return` or `@panic()`
+//| {dir}/prog/b.ctx:4:28: error: literal 999 does not fit in u8
+//| {dir}/prog/a.ctx:4:5: error: returned value holds the address of local `v`
+//| check: 10 errors; not checked until the program has no other error: the order of a call's fields, what tasks borrow, consts computed by running code
+//# missing {work:prog}
+
+// One file is a program too.
+//# $ ctxc check {dir}/prog/a.ctx
+//# exit: 1
+//# stderr:
+//| {dir}/prog/a.ctx:8:17: error: expected u8, got []u8
+//| {dir}/prog/a.ctx:9:14: error: P has no field `zz`
+//| {dir}/prog/a.ctx:11:5: error: a match on an integer needs an `else` arm
+//| {dir}/prog/a.ctx:12:5: error: unknown name `missing`
+//| {dir}/prog/a.ctx:4:5: error: returned value holds the address of local `v`
+//| check: 5 errors; not checked until the program has no other error: the order of a call's fields, what tasks borrow, consts computed by running code

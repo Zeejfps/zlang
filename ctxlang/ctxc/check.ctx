@@ -168,6 +168,14 @@ namespace check {
         // in place of `main`, and the compiler gives it the program's `#test` fns, which are
         // here in declaration order in any build.
         testing:   bool = false,
+        // `ctxc check`: the program is checked both as it is built and as a test build, so
+        // that one check finds what `run` and `test` would each report. The entry point's
+        // checks are both builds' (check_main, entry_site), and `main` may be missing from a
+        // program that has `#test` fns.
+        checking:  bool = false,
+        // Which checks didn't run because the program had errors by then (WAIT_ORDER,
+        // WAIT_TASKS, WAIT_CONSTS): they wait for a program without errors.
+        waiting:   u8 = 0,
         test_mains: [2]u32 = [NONE, NONE],
         tests:     list::List(TestFn, Heap),
         // The statics with a valid `#stack_limit` (§15, rule 13): std's and the program's, each
@@ -649,12 +657,22 @@ namespace check {
         unmarked_externs{ &c }
     }
 
+    // The checks that wait for a program without errors, as bits of Checker.waiting: the order
+    // of a call's fields and split borrows (order_post), what tasks borrow (task_borrows), and
+    // the consts and literals computed by running code (evaluate).
+    const WAIT_ORDER: u8 = 1
+    const WAIT_TASKS: u8 = 2
+    const WAIT_CONSTS: u8 = 4
+
     // The consts folding can't compute (§14), evaluated in order, or earlier where another const
     // needs one, then the converted literals (PLAN.md 4.5), then the arrays of array literals'
     // static views (§11, Literals), so that what stops one is reported here. Only a program
     // without errors is: lowering needs every body it reaches checked.
     fn evaluate { mut c: Checker } {
-        if c.diags.errors > 0 { return }
+        if c.diags.errors > 0 {
+            c.waiting = c.waiting | WAIT_CONSTS
+            return
+        }
         c.can_eval = true
         each{ &c, xs = c.consts, what = Phase::fold }
         let ls = list::items{ list = c.lit_list }
@@ -1616,7 +1634,7 @@ namespace check {
         }
         if m == NONE {
             // A test build needs no `main`: a library's directory has its tests alone.
-            if c.testing { test_entry{ &c } } else { error{ &c, at = nowhere{}, msg = "no `fn main` entry point" } }
+            if c.testing or (c.checking and c.tests.len > 0) { test_entry{ &c } } else { error{ &c, at = nowhere{}, msg = "no `fn main` entry point" } }
             return
         }
         let x = get_decl{ c, d = m }
@@ -1657,7 +1675,7 @@ namespace check {
             i = i + 1
         }
         if c.diags.errors == bad { c.main = m }
-        if c.testing { test_entry{ &c } }
+        if c.testing or (c.checking and c.tests.len > 0) { test_entry{ &c } }
     }
 
     // A test build's entry point (§20): the `#test_main` fn, whatever `main` the program has.
@@ -1677,10 +1695,8 @@ namespace check {
     // The entry point that returns `!` or `!i32` gets a site that writes its error (exit_site),
     // before the bodies are checked, so that the site's writers are found as the sets are inferred.
     fn entry_site { mut c: Checker } {
-        if c.testing {
-            test_sites{ &c }
-            return
-        }
+        if c.testing or c.checking { test_sites{ &c } }
+        if c.testing { return }
         let mut m = root_fn{ c, name = "main" }
         if m == NONE { m = root_fn{ c, name = "build" } }
         if m == NONE { return }
@@ -8494,7 +8510,10 @@ namespace check {
     // The braces check_order kept, walked with the fns' summaries: an error for each that still
     // has a conflict.
     fn order_post { mut c: Checker } {
-        if c.diags.errors > 0 { return }
+        if c.diags.errors > 0 {
+            c.waiting = c.waiting | WAIT_ORDER
+            return
+        }
         c.ord_precise = true
         split_post{ &c }
         let xs = list::items{ list = c.ord_cands }
@@ -9327,7 +9346,10 @@ namespace check {
     }
 
     fn task_borrows { mut c: Checker } {
-        if c.diags.errors > 0 { return }
+        if c.diags.errors > 0 {
+            c.waiting = c.waiting | WAIT_TASKS
+            return
+        }
         let ds = list::items{ list = c.tasky }
         let mut i: usize = 0
         while i < ds.len {

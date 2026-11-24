@@ -1,0 +1,49 @@
+// Three checks need the rest of the program to be right, so they wait for a program without
+// errors: the order of a call's fields, with what a call's places share (§11); what tasks
+// borrow (§15); and the consts computed by running code (§14). `ctxc check` names those that
+// didn't run in its last line, so a clean run after a fix is known to be due.
+//# $ ctxc check {dir}/a.ctx
+//# exit: 1
+//# stderr:
+//| {dir}/a.ctx:13:17: error: literal 300 does not fit in u8
+//| check: 1 error; not checked until the program has no other error: the order of a call's fields, what tasks borrow, consts computed by running code
+
+// Without that error, the call's two places are checked, and the const still waits.
+//# write a.ctx:
+//| struct P { x: i32, y: i32 }
+//| const LAST: u8 = pick{ at = 5 }
+//| fn pick { at: usize } -> u8 {
+//|     let xs: [3]u8 = [1, 2, 3]
+//|     return xs[at]
+//| }
+//| fn swap { mut a: P, mut b: P } {
+//|     a.x = b.x
+//| }
+//| fn main { mut io: Io } {
+//|     let mut p = P{ x = 1, y = 2 }
+//|     swap{ a = &p, b = &p }
+//|     _ = @fmt(&io, "{} {}\n", p.x, LAST)
+//| }
+//# $ ctxc check {dir}/a.ctx
+//# exit: 1
+//# stderr:
+//| {dir}/a.ctx:12:9: error: two mut references to `p` in one call: `swap` changes `p.x` through its field `a` at 8:5, and reads `p.x` through its field `b` at 8:11; pass one of them, or change `swap` to use `p.x` through one of them only
+//| check: 1 error; not checked until the program has no other error: consts computed by running code
+
+// And then the const is computed.
+//# write a.ctx:
+//| struct P { x: i32, y: i32 }
+//| const LAST: u8 = pick{ at = 5 }
+//| fn pick { at: usize } -> u8 {
+//|     let xs: [3]u8 = [1, 2, 3]
+//|     return xs[at]
+//| }
+//| fn main { mut io: Io } {
+//|     let p = P{ x = 1, y = 2 }
+//|     _ = @fmt(&io, "{} {}\n", p.x, LAST)
+//| }
+//# $ ctxc check {dir}/a.ctx
+//# exit: 1
+//# stderr:
+//| {dir}/a.ctx:2:22: error: const `LAST` panicked while compiling: index 5 out of bounds for length 3, at 5:14
+//| check: 1 error

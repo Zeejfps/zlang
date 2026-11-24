@@ -1,0 +1,21 @@
+// `ctxc run` shows the first 100 errors and says there are more; `ctxc check` shows every one.
+// many.ctx has 102, the literals 300 to 401. Only the lines around the cap are stated: the
+// others differ by their numbers alone.
+//# $ ctxc run {dir}/many.ctx
+//# exit: 1
+//# stderr has:
+//| {dir}/many.ctx:101:20: error: literal 399 does not fit in u8
+//| ctxc: more than 100 errors: these are the first 100, and `ctxc check` reports every one
+//|
+//# stderr lacks:
+//| literal 400
+//# $ ctxc check {dir}/many.ctx
+//# exit: 1
+//# stderr has:
+//| {dir}/many.ctx:101:20: error: literal 399 does not fit in u8
+//| {dir}/many.ctx:102:20: error: literal 400 does not fit in u8
+//| {dir}/many.ctx:103:20: error: literal 401 does not fit in u8
+//| check: 102 errors; not checked until the program has no other error: the order of a call's fields, what tasks borrow, consts computed by running code
+//|
+//# stderr lacks:
+//| more than 100

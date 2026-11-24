@@ -1,9 +1,9 @@
 // ctxc: the ctxlang compiler, written in ctxlang. A directory is one program: this file holds
 // the driver; source.ctx, diag.ctx, lexer.ctx, syntax.ctx, parser.ctx, types.ctx and check.ctx
-// the front end; lower.ctx the checked program as IR; ir.ctx the typed IR, ir_read.ctx and
-// ir_print.ctx its text form; emit_c.ctx the C backend; eval.ctx an interpreter over the IR,
-// which comptime.ctx runs consts in; dump.ctx text dumps for tests; drive.ctx the driver, which
-// runs the C compiler.
+// the front end, and report.ctx its diagnostics as they are shown; lower.ctx the checked
+// program as IR; ir.ctx the typed IR, ir_read.ctx and ir_print.ctx its text form; emit_c.ctx
+// the C backend; eval.ctx an interpreter over the IR, which comptime.ctx runs consts in;
+// dump.ctx text dumps for tests; drive.ctx the driver, which runs the C compiler.
 //
 //   ctxc run PATH [-- ARGS...]                  builds the program at PATH (a .ctx file, or a
 //                                               directory, maybe with a build.ctx) with the C
@@ -13,6 +13,10 @@
 //                                               point and runs that: the program's `#test` fns,
 //                                               those whose names contain one of ARGS
 //                                               (spec §20; drive.ctx)
+//   ctxc check PATH                             checks the program at PATH, and each executable
+//                                               its build program describes, and reports every
+//                                               error: the front end alone, with no C compiler
+//                                               (drive.ctx)
 //   ctxc graph DIR GEN LIST                     runs DIR's build program as `run` does, and
 //                                               writes what it describes to LIST and its
 //                                               generated files to GEN, for
@@ -55,6 +59,9 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> 
     if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "test" } {
         return drive::test{ .. }
     }
+    if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "check" } {
+        return drive::check{ .. }
+    }
     if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "graph" } {
         return drive::graph{ .. }
     }
@@ -82,7 +89,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> 
     if args.len == 3 and slice::eq_bytes{ a = args[0], b = "c" } {
         to_c = true
     } else if args.len != 2 or not slice::eq_bytes{ a = args[0], b = "roundtrip" } {
-        io::eprintln{ &io, s = "usage: ctxc run PATH [-- ARGS...] | ctxc exe PATH -o OUT | ctxc test PATH [ARGS...] | ctxc graph DIR GEN LIST | ctxc interp PATH [-- ARGS...] | ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c | ctxc tokens|syntax FILE... | ctxc recover FILE FROM TO [-v] [--every N] [-- FILE...] | ctxc decls|ir STD... -- FILE... | ctxc build OUT.c STD... -- FILE... (FILE...: also --deny-unchecked, --allow-unchecked)" }
+        io::eprintln{ &io, s = "usage: ctxc run PATH [-- ARGS...] | ctxc exe PATH -o OUT | ctxc test PATH [ARGS...] | ctxc check PATH | ctxc graph DIR GEN LIST | ctxc interp PATH [-- ARGS...] | ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c | ctxc tokens|syntax FILE... | ctxc recover FILE FROM TO [-v] [--every N] [-- FILE...] | ctxc decls|ir STD... -- FILE... | ctxc build OUT.c STD... -- FILE... (FILE...: also --deny-unchecked, --allow-unchecked)" }
         return 2
     }
     let path = args[1]
@@ -174,7 +181,7 @@ fn dumps { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args, trees: bool } -> i3
 }
 
 // What `analyze` does with the checked program.
-enum Mode: u8 { decls, ir, build, interp, units }
+enum Mode: u8 { decls, ir, build, interp, units, check }
 
 // `ctxc decls STD... -- FILE...`: lexes and parses every file, then checks the program, all in
 // one arena. `ctxc ir ...` prints the program's IR instead, if it has no errors, and
@@ -215,7 +222,8 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
     }
     let out: []u8 = if mode == Mode::build { args[1] } else { "" }
     let mut units: [][]u8 = slice::empty([]u8){}
-    return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = split - first, extras = slice::empty([]u8){}, mode, out, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = list::items{ list = denied }, testing = false }
+    let mut found = report::found{ &heap }
+    return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = split - first, extras = slice::empty([]u8){}, mode, out, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = list::items{ list = denied }, testing = false, &found }
 }
 
 // Checks the program of `paths`, std's files first, and acts on it as `mode` says: for build,
@@ -229,8 +237,11 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
 // does to the file meanwhile. If the program is a build program (`builds`), extras are std's
 // files too, after paths' (drive.ctx, `build_extras`). denied says which of paths are denied
 // the unchecked operations (spec §13), one for each, or is empty for none. testing makes it a
-// test build (spec §20): its entry point is the `#test_main` fn, in place of `main`.
-fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8, std_files: usize, extras: [][]u8, mode: Mode, out: []u8, argv: [][]u8, env: [][]u8, stack: u64, size: usize, copy: usize, mut made: [][]u8, texts: [][]u8, denied: []bool, testing: bool } -> i32 {
+// test build (spec §20): its entry point is the `#test_main` fn, in place of `main`. For check,
+// nothing is made of the program: every diagnostic is kept, whatever their number, the program
+// is checked as a test build as well (check::Checker.checking), and its errors are added to
+// found, which the caller shows.
+fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8, std_files: usize, extras: [][]u8, mode: Mode, out: []u8, argv: [][]u8, env: [][]u8, stack: u64, size: usize, copy: usize, mut made: [][]u8, texts: [][]u8, denied: []bool, testing: bool, mut found: report::Found } -> i32 {
     let given = paths.len - texts.len               // paths[given..] are texts'
     let mut total: u64 = 0
     let mut i: usize = 0
@@ -254,6 +265,7 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8
     }
     let mut heap = arena::new{ buf = pages }
     let mut diags = diag::new{ &heap }
+    if mode == Mode::check { diag::keep_all{ &diags } }
     let mut files = list::new(check::File){ realloc = arena::alloc, &heap }
     let mut read = list::new([]u8){ realloc = arena::alloc, &heap }
     i = 0
@@ -275,6 +287,7 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8
     // The program's files are parsed with diagnostics of their own until it is known whether it
     // is a build program, whose files come after the extras.
     let mut own = diag::new{ &heap }
+    if mode == Mode::check { diag::keep_all{ diags = &own } }
     i = 0
     while i < paths.len {
         if i < std_files {
@@ -328,12 +341,19 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8
     let mut c = check::new{ files = list::items{ list = files }, std_files = std_count, &heap, &diags }
     c.stack = drive::host_stack{ &proc } / 2
     c.testing = testing
+    c.checking = mode == Mode::check
     let fuel = proc::env{ &proc, name = "CTX_CONST_FUEL" }
     if fuel != null {
         let n = utf8::parse_u64{ s = utf8::String{ bytes = fuel } }
         if n != null { c.fuel = n }
     }
     check::program{ &c }
+    if mode == Mode::check {
+        if diags.errors == 0 { return 0 }
+        report::keep{ &found, es = report::resolve{ &heap, c, ds = diag::items{ diags } } }
+        found.waiting = found.waiting | c.waiting
+        return 1
+    }
     if mode == Mode::build or mode == Mode::interp or mode == Mode::units {
         if diags.errors == 0 and mode == Mode::interp {
             return interpret{ &io, &heap, p = lower::program{ &c }, name = out, argv, env, stack }
@@ -350,14 +370,7 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8
             }
             return 0
         }
-        let mut errs = utf8::builder{ realloc = arena::alloc, &heap }
-        let ds = diag::items{ diags }
-        let mut k: usize = 0
-        while k < ds.len {
-            error{ out = &errs, c, d = ds[k] }
-            k = k + 1
-        }
-        io::write{ &io, to = io::Stream::err, bytes = utf8::view{ b = errs }.bytes }
+        report::write{ &io, &heap, es = report::resolve{ &heap, c, ds = diag::items{ diags } }, dropped = diags.dropped }
         return 1
     }
     if mode == Mode::ir {
@@ -414,19 +427,6 @@ fn interpret { mut io: Io, mut heap: arena::Arena, p: ir::Program, name: []u8, a
             return 1
         }
     }
-}
-
-// "PATH:LINE:COL: error: MESSAGE". An error about the whole
-// program, such as a missing `main`, is at the start of its first file.
-fn error { mut out: utf8::Builder(arena::Arena), c: check::Checker, d: diag::Diag } {
-    if d.span.file == check::NO_FILE {
-        _ = @fmt(&out, "{}:1:1", check::str{ s = c.files[c.std_files].name })
-    } else {
-        let f = c.files[d.span.file]
-        let p = source::position{ text = f.text, lines = f.lines, offset = d.span.start }
-        _ = @fmt(&out, "{}:{}:{}", check::str{ s = f.name }, p.line, p.col)
-    }
-    _ = @fmt(&out, ": error: {}\n", d.msg)
 }
 
 // Whether the program of files is a build program (spec §19, rule 2): one whose entry is a

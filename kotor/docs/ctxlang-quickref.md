@@ -255,6 +255,12 @@ const MESH_VS: c::String =
 for the template). Big programs compile as parallel C units; unchanged units are cached.
 Compile errors name `file:line:col`. Keep tool output short (`| tail`, `| grep`).
 
+`kotor/tools/ctxc check DIR` reports every compile error and builds nothing (spec §21): each
+executable of the `build.ctx`, the `#test` fns included, all the errors rather than the first
+100. The last line is `check: no errors` or `check: N errors`, and names the checks that the
+errors shown hold back (the order of a call's fields, what tasks borrow, consts computed by
+running code): fix, and check again until it says `no errors`.
+
 ## Tests (§20)
 
 A test is a fn beside the code it tests, in a file of its own (`twoda_test.ctx` next to

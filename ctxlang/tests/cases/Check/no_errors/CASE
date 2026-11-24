@@ -1,0 +1,18 @@
+// A program without errors: one line says so, the exit code is 0, and nothing was built. A
+// path that isn't there ends with 1, and no path or more than one is a usage error, 2.
+//# $ ctxc check {dir}/ok.ctx
+//# stderr:
+//| check: no errors
+//# missing {work:ok.ctx}
+//# $ ctxc check {dir}/missing.ctx
+//# exit: 1
+//# stderr:
+//| {dir}/missing.ctx: cannot read
+//# $ ctxc check
+//# exit: 2
+//# stderr:
+//| usage: ctxc check PATH
+//# $ ctxc check {dir}/ok.ctx {dir}/ok.ctx
+//# exit: 2
+//# stderr:
+//| usage: ctxc check PATH

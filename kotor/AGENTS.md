@@ -69,7 +69,14 @@ saves, minigames, music and movies.
 ```
 kotor/tools/ctxc run PROGRAM_DIR -- ARGS...     # build and run (a dir with build.ctx, or a dir of .ctx files)
 kotor/tools/ctxc exe PROGRAM_DIR -o OUT.exe     # build only
+kotor/tools/ctxc check PROGRAM_DIR              # every compile error, nothing built
 ```
+
+**Check before you build.** `ctxc check` runs the compiler's front end alone and reports every
+error in the program, not the first 100, for every executable of a `build.ctx` and for its
+`#test` fns too. Its last line counts them (`check: no errors`), and says when checks are still
+held back by the errors shown, so run it again after fixing them. Use `run` or `exe` once it is
+clean.
 
 `kotor/tools/ctxc` builds ctxc from `ctxlang/bootstrap/ctxc.windows.c` when needed and sets
 `CTX_HOME`. In Git Bash, MSYS2's gcc fails silently unless `/g/Dev/msys64/mingw64/bin` comes first

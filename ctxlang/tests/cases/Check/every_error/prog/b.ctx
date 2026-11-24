@@ -1,0 +1,5 @@
+fn sum { a: i32 } -> i32 {
+    let b = (a +
+}
+fn small {} -> u8 { return 999 }
+fn other { q: Queue } {}

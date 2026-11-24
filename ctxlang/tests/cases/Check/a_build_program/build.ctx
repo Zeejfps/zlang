@@ -1,0 +1,10 @@
+// Two executables that share lib/, one of them with a generated file, the other denied the
+// unchecked operations.
+fn build { mut b: Build } {
+    let one = build::exe{ &b, name = "one", root = "one" }
+    build::add_sources{ &b, exe = one, dir = "lib" }
+    build::gen_file{ &b, exe = one, name = "made", text = "namespace made { fn n {} -> i64 { return true } }\n" }
+    let two = build::exe{ &b, name = "two", root = "two" }
+    build::add_sources{ &b, exe = two, dir = "lib" }
+    build::deny_unchecked{ &b, exe = two, except = slice::empty([]u8){} }
+}

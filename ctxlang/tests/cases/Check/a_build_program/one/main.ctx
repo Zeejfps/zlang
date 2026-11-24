@@ -1,0 +1,3 @@
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = made::n{} + lib::half{ n = 8 } }
+}

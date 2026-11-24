@@ -1,0 +1,6 @@
+fn double { n: i32 } -> i32 { return n * 2 }
+
+#test
+fn doubles { mut t: Test } {
+    @expect(&t, double{ n = 2 } == 4)
+}

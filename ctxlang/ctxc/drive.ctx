@@ -4,6 +4,7 @@
 //   ctxc run PATH [-- ARGS...]      builds the program at PATH and runs it with ARGS
 //   ctxc exe PATH -o OUT            builds it into the executable OUT
 //   ctxc interp PATH [-- ARGS...]   checks it, and runs it in the interpreter (eval.ctx)
+//   ctxc check PATH                 checks it and reports every error, building nothing
 //
 // PATH is a .ctx file, or a directory: one program of all its .ctx files, or, if it has a
 // build.ctx, the executables its build program describes (spec §19), of which `run` runs the
@@ -127,7 +128,7 @@ namespace drive {
             return 1
         }
         let mut heap = arena::new{ buf = pages }
-        let d = setup{ &io, &fs, &proc, &heap, path } ifnull { return 1 }
+        let d = setup{ &io, &fs, &proc, &heap, path, builds = true } ifnull { return 1 }
         let mut targets = list::new(Target){ realloc = arena::alloc, &heap }
         let mut why = Why::failed
         let code = describe{ &io, &fs, &mem, &proc, &heap, d, path, &targets, &why }
@@ -159,6 +160,76 @@ namespace drive {
         return started{ &io, r = proc::run{ &proc, argv = list::items{ list = argv }, env = list::items{ list = env } }, what = first }
     }
 
+    // `ctxc check PATH` (spec §21): checks the program at PATH with the front end alone, and
+    // reports every error in it, each once: the cap on how many are shown doesn't apply
+    // (diag::keep_all). PATH is found as `run` finds it. With a build.ctx, the build program
+    // is compiled and run as `run` does it, since only running it says which executables
+    // there are, with which files; then each executable is checked, not only the first, with
+    // the files it generates and the unchecked operations it denies. Without one nothing is
+    // written and no C compiler runs. A program is checked as `run` and as `test` build it at
+    // once (check::Checker.checking). The last line counts the errors, and names the checks
+    // that wait for a program without errors, if they didn't run. Exits with 1 if there is
+    // an error.
+    fn check { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> i32 {
+        if args.len != 2 {
+            io::eprintln{ &io, s = "usage: ctxc check PATH" }
+            return 2
+        }
+        let path = trim_slash{ path = args[1] }
+        let pages = mem::reserve{ &mem, size = 16777216 } ifnull {
+            io::eprintln{ &io, s = "out of memory" }
+            return 1
+        }
+        let mut heap = arena::new{ buf = pages }
+        let has_build = kind_of{ &fs, path } == 2 and kind_of{ &fs, path = join{ &heap, a = path, b = "build.ctx" } } == 1
+        let d = setup{ &io, &fs, &proc, &heap, path, builds = has_build } ifnull { return 1 }
+        let mut targets = list::new(Target){ realloc = arena::alloc, &heap }
+        let mut why = Why::failed
+        let code = describe{ &io, &fs, &mem, &proc, &heap, d, path, &targets, &why }
+        if code != 0 { return code }
+
+        let mut found = report::found{ &heap }
+        let mut failed = false
+        let mut i: usize = 0
+        while i < targets.len {
+            let t = list::items{ list = targets }[i]
+            i = i + 1
+            let files = program_files{ &io, &fs, &heap, d, path, t } ifnull {
+                failed = true
+                continue
+            }
+            let no = denied{ &io, &fs, &heap, d, dir = path, t, files } ifnull {
+                failed = true
+                continue
+            }
+            let mut units: [][]u8 = slice::empty([]u8){}
+            let all = program_paths{ &heap, d, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny }
+            let r = analyze{ &io, &fs, &mem, &proc, paths = all.paths, std_files = d.std.len, extras = d.extras, mode = Mode::check, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = all.texts, denied = all.denied, testing = false, &found }
+            // 1 with errors, which are in found, or after saying what else stopped it.
+            if r != 0 and found.entries.len == 0 { failed = true }
+        }
+        let es = list::items{ list = found.entries }
+        report::write{ &io, &heap, es, dropped = 0 }
+        let mut line = utf8::builder{ realloc = arena::alloc, &heap }
+        if es.len == 0 {
+            if failed { return 1 }
+            try! utf8::push{ b = &line, s = "check: no errors\n" }
+        } else {
+            try! @fmt(&line, "check: {} {}", es.len, utf8::String{ bytes = if es.len == 1 { "error" } else { "errors" } })
+            let names: [3]utf8::String = ["the order of a call's fields", "what tasks borrow", "consts computed by running code"]
+            let mut n: usize = 0
+            for name at k in names {
+                if found.waiting & (@as(u8, 1) << @as(u8, k)) == 0 { continue }
+                try! utf8::push{ b = &line, s = if n == 0 { "; not checked until the program has no other error: " } else { ", " } }
+                try! utf8::push{ b = &line, s = name }
+                n = n + 1
+            }
+            try! utf8::push{ b = &line, s = "\n" }
+        }
+        io::write{ &io, to = io::Stream::err, bytes = utf8::view{ b = line }.bytes }
+        return if es.len > 0 or failed { 1 } else { 0 }
+    }
+
     // `ctxc test PATH [ARGS...]` (spec §20): builds the first executable of the program at PATH
     // as `run` does, but as a test build, whose entry point is std's test runner in place of
     // the program's `main`, and runs it with ARGS as they are: the runner's options, parts of
@@ -175,7 +246,7 @@ namespace drive {
             return 1
         }
         let mut heap = arena::new{ buf = pages }
-        let d = setup{ &io, &fs, &proc, &heap, path } ifnull { return 1 }
+        let d = setup{ &io, &fs, &proc, &heap, path, builds = true } ifnull { return 1 }
         let mut targets = list::new(Target){ realloc = arena::alloc, &heap }
         let mut why = Why::failed
         let code = describe{ &io, &fs, &mem, &proc, &heap, d, path, &targets, &why }
@@ -259,7 +330,7 @@ namespace drive {
     // For `graph`: describes the program at path into text, writing generated files to gen.
     // False after saying why it can't, and setting why.
     fn describe_all { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, path: []u8, gen: []u8, mut text: list::List(u8, Heap), mut why: Why } -> bool {
-        let d = setup{ &io, &fs, &proc, &heap, path } ifnull { return false }
+        let d = setup{ &io, &fs, &proc, &heap, path, builds = true } ifnull { return false }
         if kind_of{ &fs, path = join{ &heap, a = path, b = "build.ctx" } } != 1 {
             cannot{ &io, path, what = "has no build program" }
             why = Why::errors
@@ -325,7 +396,9 @@ namespace drive {
 
     // The driver for the program at path: ctxc's home, the program's directory in HOME/build/run,
     // std's files, the runtime's hash and the C compiler. Null after saying why there is none.
-    fn setup { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, path: []u8 } -> ?Driver {
+    // Unless it `builds`, it is for a check that makes nothing: no directory is made, and it
+    // has no runtime's hash and no C compiler.
+    fn setup { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, path: []u8, builds: bool } -> ?Driver {
         let home = find_home{ &fs, &proc, &heap } ifnull {
             io::eprintln{ &io, s = "ctxc: cannot find std/ and ctxc/rt/; set CTX_HOME to the directory that holds them" }
             return null
@@ -340,9 +413,15 @@ namespace drive {
         let build_dir = join{ &heap, a = home, b = "build" }
         let runs = join{ &heap, a = build_dir, b = "run" }
         let work = join{ &heap, a = runs, b = tagged{ &heap, name = program, n = mix{ h = FNV_BASIS, bytes = fold{ &heap, s = full, os } } } }
-        if not made{ &io, &fs, path = build_dir } or not made{ &io, &fs, path = runs } or not made{ &io, &fs, path = work } { return null }
         let std = std_files{ &io, &fs, &heap, home, os, interp = false } ifnull { return null }
         let extras = build_extras{ &io, &fs, &heap, home } ifnull { return null }
+        if not builds {
+            return Driver{
+                home, runs, work, program, std, extras, os, cc = slice::empty([]u8){}, cc_env = slice::empty([]u8){}, rt = 0,
+                unit = 0, copy = 0, jobs = 0,
+            }
+        }
+        if not made{ &io, &fs, path = build_dir } or not made{ &io, &fs, path = runs } or not made{ &io, &fs, path = work } { return null }
         let rt = runtime_hash{ &io, &fs, &heap, home } ifnull { return null }
         let cc = compiler{ &fs, &proc, &heap, os }
         return Driver{
@@ -463,7 +542,8 @@ namespace drive {
             env = kept
             k = k + 2
         }
-        return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = std.len, extras, mode = Mode::interp, out = stem{ path = base{ path } }, argv, env = list::items{ list = env }, stack, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = slice::empty(bool){}, testing = false }
+        let mut found = report::found{ &heap }
+        return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = std.len, extras, mode = Mode::interp, out = stem{ path = base{ path } }, argv, env = list::items{ list = env }, stack, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = slice::empty(bool){}, testing = false, &found }
     }
 
     // About how many bytes of C a unit has: CTX_UNIT_SIZE, or UNIT_SIZE.
@@ -1127,14 +1207,13 @@ namespace drive {
 
     // ---- compiling
 
-    // Builds the program of files and gens, with std's, into an executable: `out`, or if out is
-    // empty dir/NAME-HASH, which stays to be run again while HASH is the same. Each unit of its C
-    // is compiled into dir/NAME-HASH.o unless that is there, its C going to dir/NAME-HASH.c.
-    // If deny, denied says which of files are denied the unchecked operations (`denied`), and
-    // gens are denied them too. Returns the executable; null after saying why there is none,
-    // and setting why to errors if the program has errors.
-    fn compile { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, dir: []u8, name: []u8, files: [][]u8, gens: []Gen, denied: []bool, deny: bool, level: u8, flags: [][]u8, out: []u8, testing: bool, mut why: Why } -> ?[]u8 {
-        let base = join{ &heap, a = dir, b = name }
+    // What `analyze` is given for a program: std's files and its own, then those it generates,
+    // whose text the driver holds, and which of them all are denied the unchecked operations.
+    struct Paths { paths: [][]u8, texts: [][]u8, denied: []bool }
+
+    // The program of files and gens, with std's. If deny, denied says which of files are
+    // denied the unchecked operations (`denied`), and gens are denied them too.
+    fn program_paths { mut heap: Heap, d: Driver, files: [][]u8, gens: []Gen, denied: []bool, deny: bool } -> Paths {
         let mut paths = list::new([]u8){ realloc = arena::alloc, &heap }
         add_all{ xs = &paths, ys = d.std }
         add_all{ xs = &paths, ys = files }
@@ -1159,8 +1238,21 @@ namespace drive {
             }
             no = all
         }
+        return Paths{ paths = list::items{ list = paths }, texts = list::items{ list = texts }, denied = no }
+    }
+
+    // Builds the program of files and gens, with std's, into an executable: `out`, or if out is
+    // empty dir/NAME-HASH, which stays to be run again while HASH is the same. Each unit of its C
+    // is compiled into dir/NAME-HASH.o unless that is there, its C going to dir/NAME-HASH.c.
+    // If deny, denied says which of files are denied the unchecked operations (`denied`), and
+    // gens are denied them too. Returns the executable; null after saying why there is none,
+    // and setting why to errors if the program has errors.
+    fn compile { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, dir: []u8, name: []u8, files: [][]u8, gens: []Gen, denied: []bool, deny: bool, level: u8, flags: [][]u8, out: []u8, testing: bool, mut why: Why } -> ?[]u8 {
+        let base = join{ &heap, a = dir, b = name }
+        let all = program_paths{ &heap, d, files, gens, denied, deny }
         let mut units: [][]u8 = slice::empty([]u8){}
-        let code = analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = d.std.len, extras = d.extras, mode = Mode::units, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = d.unit, copy = if level == 0 { 0 } else { d.copy }, made = &units, texts = list::items{ list = texts }, denied = no, testing }
+        let mut found = report::found{ &heap }
+        let code = analyze{ &io, &fs, &mem, &proc, paths = all.paths, std_files = d.std.len, extras = d.extras, mode = Mode::units, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = d.unit, copy = if level == 0 { 0 } else { d.copy }, made = &units, texts = all.texts, denied = all.denied, testing, &found }
         if code != 0 {
             why = Why::errors
             return null

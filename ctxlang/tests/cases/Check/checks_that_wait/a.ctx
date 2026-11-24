@@ -1,0 +1,15 @@
+struct P { x: i32, y: i32 }
+const LAST: u8 = pick{ at = 5 }
+fn pick { at: usize } -> u8 {
+    let xs: [3]u8 = [1, 2, 3]
+    return xs[at]
+}
+fn swap { mut a: P, mut b: P } {
+    a.x = b.x
+}
+fn main { mut io: Io } {
+    let mut p = P{ x = 1, y = 2 }
+    swap{ a = &p, b = &p }
+    let n: u8 = 300
+    _ = @fmt(&io, "{} {}\n", p.x, LAST)
+}

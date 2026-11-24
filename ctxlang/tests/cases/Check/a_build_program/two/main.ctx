@@ -1,0 +1,5 @@
+fn main { mut io: Io } {
+    let n: i64 = 5
+    let p = @cast(*u8, &n)
+    io::println_i64{ &io, n = lib::half{ n = "eight" } + p.* }
+}

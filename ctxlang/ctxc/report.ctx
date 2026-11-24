@@ -1,0 +1,84 @@
+// What ctxc shows of the front end's diagnostics (diag.ctx). A diagnostic names a span of a
+// file by the checker's ids; an Entry is the same with the file's path and its lines and
+// columns, which stands by itself, so that `ctxc check` can gather the entries of several
+// executables, each checked by a checker of its own, and show each once.
+//
+//   PATH:LINE:COL: error: MESSAGE
+//
+// An error about the whole program, such as a missing `main`, is at the start of its first
+// file. If the cap dropped some (diag::CAP), a last line says so.
+
+namespace report {
+    type Heap = arena::Arena
+
+    // Where a diagnostic points: lines and columns from 1, columns counted in characters, up
+    // to but not including the end.
+    struct Place { path: []u8, line: u32, col: u32, end_line: u32, end_col: u32 }
+
+    struct Entry { at: Place, msg: []u8 }
+
+    // What a command that checks several programs has gathered (`ctxc check`): each entry
+    // once, however many of the programs have it; how many the cap dropped; and which checks
+    // waited for a program without errors (check::WAIT_ORDER and the others).
+    struct Found { entries: list::List(Entry, Heap), dropped: usize, waiting: u8 }
+
+    fn found { heap: *mut Heap } -> Found {
+        return Found{ entries = list::new(Entry){ realloc = arena::alloc, heap }, dropped = 0, waiting = 0 }
+    }
+
+    // The diagnostics of checker c as entries, in order.
+    fn resolve { mut heap: Heap, c: check::Checker, ds: []diag::Diag } -> []Entry {
+        let mut out = list::new(Entry){ realloc = arena::alloc, &heap }
+        for d in ds {
+            try! list::push{ list = &out, item = Entry{ at = place{ c, span = d.span }, msg = d.msg.bytes } }
+        }
+        return list::items{ list = out }
+    }
+
+    fn place { c: check::Checker, span: source::Span } -> Place {
+        if span.file == check::NO_FILE {
+            return Place{ path = c.files[c.std_files].name, line = 1, col = 1, end_line = 1, end_col = 1 }
+        }
+        let f = c.files[span.file]
+        let a = source::position{ text = f.text, lines = f.lines, offset = span.start }
+        let b = source::position{ text = f.text, lines = f.lines, offset = if span.end < span.start { span.start } else { span.end } }
+        return Place{ path = f.name, line = a.line, col = a.col, end_line = b.line, end_col = b.col }
+    }
+
+    // Adds to found those of es it doesn't have.
+    fn keep { mut found: Found, es: []Entry } {
+        for e in es {
+            let mut had = false
+            for o in list::items{ list = found.entries } {
+                if same{ a = o, b = e } {
+                    had = true
+                    break
+                }
+            }
+            if not had { try! list::push{ list = &found.entries, item = e } }
+        }
+    }
+
+    fn same { a: Entry, b: Entry } -> bool {
+        return a.at.line == b.at.line and a.at.col == b.at.col and a.at.end_line == b.at.end_line and a.at.end_col == b.at.end_col
+               and slice::eq_bytes{ a = a.at.path, b = b.at.path } and slice::eq_bytes{ a = a.msg, b = b.msg }
+    }
+
+    // Writes es to standard error, a line for each, and after them whether the cap dropped
+    // others.
+    fn write { mut io: Io, mut heap: Heap, es: []Entry, dropped: usize } {
+        let mut out = utf8::builder{ realloc = arena::alloc, &heap }
+        for e in es { text{ &out, e } }
+        // How many more isn't known: a body is checked twice, and an error that was dropped
+        // twice was counted twice.
+        if dropped > 0 {
+            try! @fmt(&out, "ctxc: more than {} errors: these are the first {}, and `ctxc check` reports every one\n", diag::CAP, diag::CAP)
+        }
+        io::write{ &io, to = io::Stream::err, bytes = utf8::view{ b = out }.bytes }
+    }
+
+    // "PATH:LINE:COL: error: MESSAGE"
+    fn text { mut out: utf8::Builder(Heap), e: Entry } {
+        try! @fmt(&out, "{}:{}:{}: error: {}\n", utf8::String{ bytes = e.at.path }, e.at.line, e.at.col, utf8::String{ bytes = e.msg })
+    }
+}

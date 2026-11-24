@@ -1,0 +1,34 @@
+// `ctxc check` on a directory with a build.ctx checks every executable the build program
+// describes, with the file it generates and the unchecked operations it denies. An error in
+// a file two executables share is reported once.
+//# $ ctxc check {dir}
+//# exit: 1
+//# stderr:
+//| {dir}/lib/lib.ctx:2:42: error: operands of `/` have incompatible types: i64 and {float}; convert one with @as
+//| {work:.}/gen/one/made.ctx:1:42: error: expected i64, got bool
+//| {dir}/two/main.ctx:3:13: error: `@cast` is unchecked, and `build::deny_unchecked` in build.ctx denies it here: it has no checked form, so write it in a directory its `except` lists
+//| {dir}/two/main.ctx:4:46: error: expected i64, got []u8
+//| check: 4 errors; not checked until the program has no other error: the order of a call's fields, what tasks borrow, consts computed by running code
+
+// The build program is built and run to say what there is to check, and no executable is.
+//# list {work:.}:
+//| build
+//| gen
+
+// `run` stops at the first executable with an error.
+//# $ ctxc run {dir}
+//# exit: 1
+//# stderr:
+//| {dir}/lib/lib.ctx:2:42: error: operands of `/` have incompatible types: i64 and {float}; convert one with @as
+//| {work:.}/gen/one/made.ctx:1:42: error: expected i64, got bool
+
+// An error in the build program itself is all there is to report: nothing says what the
+// executables are.
+//# write build.ctx:
+//| fn build { mut b: Build } {
+//|     let one = build::exe{ &b, name = 1, root = "one" }
+//| }
+//# $ ctxc check {dir}
+//# exit: 1
+//# stderr:
+//| {dir}/build.ctx:2:38: error: expected []u8, got {integer}
