@@ -1,0 +1,590 @@
+// uispike: the ui library's gallery (ui/samples/gallery) drawn through kotor's renderer (ui/PLAN.md stage 15): the
+// stock widgets laid out by the library, staged, and handed to a render::Frame by lib/ui_kotor, which gpu::submit
+// draws with the library's own shaders.
+//
+//   kotor/tools/ctxc run kotor/tools/uispike -- --headless --out kotor/out/uispike.png
+//       the gallery in the game's console font (fnt_console, from the install), as kotor's overlay draws text
+//   kotor/tools/ctxc run kotor/tools/uispike -- --headless --font C:/Windows/Fonts/segoeui.ttf --out kotor/out/uispike-outline.png --against ui/out/gallery-basic.png
+//       in an outline font, as ui/samples/demo_gl draws it, and compared pixel for pixel with demo_gl's picture
+//       (`kotor/tools/ctxc run ui/samples/demo_gl -- --headless --shot ui/out/gallery-basic.png`; the same --theme,
+//       --page, --scale and --size on both)
+//   kotor/tools/ctxc run kotor/tools/uispike                                  a window; close it to quit
+//
+//   --game DIR       the install (default F:/Steam/steamapps/common/swkotor), for the console font
+//   --font PATH      an outline font instead of the console font
+//   --theme dark|light, --page TITLE, --scale S, --size WxH     as demo_gl's (default dark, Basic, 1, 1040x720)
+//   --frames N       headless: frames drawn before the picture (default 2, as demo_gl's)
+//   --headless       a hidden window
+//   --out PATH       the last frame as a PNG (RGBA, as demo_gl writes it)
+//   --against PATH   a PNG to compare the last frame with: the count of differing pixels, where they are, and the
+//                    largest difference in a channel. Reads the uncompressed PNGs demo_gl and kotor write.
+//
+// It also checks the adapter's conversions that need no window (the cp1252 typed text, the keys, the pointer, a
+// pass's host slot) and, headless, a frame with a 3D view between two staged passes (each pixel shows what is on top).
+// It exits 1 when one fails, a frame was not well formed (the Ui or the staged level dropped something,
+// render::Frame.dropped, a draw of an image the device does not have), GL failed, or the picture differs from
+// --against; 2 on bad options.
+
+const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
+const STEP_DT: f32 = 0.0166667                  // a headless frame's time, demo_gl's
+
+struct Options {
+    game: []u8, font: ?[]u8, out: ?[]u8, against: ?[]u8, page: ?[]u8,
+    headless: bool, dark: bool,
+    scale: f32, width: f32, height: f32,
+    frames: i32,
+}
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, mut fonts: ui_fonts::Fonts, args: Args } -> i32 {
+    let o = read_options{ &io, args } ifnull {
+        io::eprintln{ &io, s = "usage: uispike [--game DIR] [--font PATH] [--theme dark|light] [--page TITLE] [--scale S] [--size WxH] [--frames N] [--headless] [--out PNG] [--against PNG]" }
+        return 2
+    }
+    let pages = mem::pages{ &mem, size = 536870912 } ifnull {
+        io::eprintln{ &io, s = "uispike: out of memory" }
+        return 1
+    }
+    let mut heap = arena::new{ buf = pages }
+    let mut h = heap::new{ &mem }
+    let mut failed = check_adapter{ &io } + check_slots{ &io, &heap }
+    let code = run{ &io, &fs, &sdl, &fonts, &heap, &h, o } iferr err{ error } {
+        _ = @fmt(&io, "uispike: failed: {}\n", error)
+        match error {
+            gpu::shader_failed{ log } => { _ = @fmt(&io, "{}\n", log) }
+            sdl::failed => { _ = @fmt(&io, "SDL: {}\n", sdl::last_error{ &sdl }) }
+            else => {}
+        }
+        io::flush{ &io }
+        return 1
+    }
+    if code != 0 { failed = failed + 1 }
+    _ = @fmt(&io, "uispike: {}\n", if failed == 0 { "ok" } else { "FAILED" })
+    io::flush{ &io }
+    return if failed == 0 { 0 } else { 1 }
+}
+
+// ---- options
+
+fn read_options { mut io: Io, args: Args } -> ?Options {
+    let mut o = Options{
+        game = DEFAULT_GAME, font = null, out = null, against = null, page = null, headless = false, dark = true,
+        scale = 1.0, width = 1040.0, height = 720.0, frames = -1,
+    }
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        if slice::eq_bytes{ a, b = "--headless" } {
+            o.headless = true
+            i = i + 1
+            continue
+        }
+        if i + 1 >= args.len {
+            _ = @fmt(&io, "uispike: {} needs a value or is not an option\n", a)
+            return null
+        }
+        let v = args[i + 1]
+        i = i + 2
+        if slice::eq_bytes{ a, b = "--game" } {
+            o.game = v
+        } else if slice::eq_bytes{ a, b = "--font" } {
+            o.font = v
+        } else if slice::eq_bytes{ a, b = "--out" } {
+            o.out = v
+        } else if slice::eq_bytes{ a, b = "--against" } {
+            o.against = v
+        } else if slice::eq_bytes{ a, b = "--page" } {
+            o.page = v
+        } else if slice::eq_bytes{ a, b = "--theme" } {
+            if slice::eq_bytes{ a = v, b = "light" } { o.dark = false } else if slice::eq_bytes{ a = v, b = "dark" } { o.dark = true } else { return null }
+        } else if slice::eq_bytes{ a, b = "--scale" } {
+            let s = text::scan_f32{ s = v } ifnull { return null }
+            if not (s > 0.0) or s > 8.0 { return null }
+            o.scale = s
+        } else if slice::eq_bytes{ a, b = "--frames" } {
+            let n = text::scan_decimal{ s = v }
+            if n < 1 or n > 100000 { return null }
+            o.frames = @as(i32, n)
+        } else if slice::eq_bytes{ a, b = "--size" } {
+            let mut x: usize = 0
+            while x < v.len and v[x] != 'x' { x = x + 1 }
+            if x >= v.len { return null }
+            let w = text::scan_decimal{ s = v[..x] }
+            let hh = text::scan_decimal{ s = v[x + 1..] }
+            if w < 64 or hh < 64 or w > 4096 or hh > 4096 { return null }
+            o.width = @as(f32, w)
+            o.height = @as(f32, hh)
+        } else {
+            _ = @fmt(&io, "uispike: unknown option {}\n", a)
+            return null
+        }
+    }
+    if o.headless and o.frames < 0 { o.frames = 2 }
+    return o
+}
+
+// ---- the program
+
+struct Spike {
+    dev: *mut gpu::Device, frame: *mut render::Frame, staged: *mut ui_stage::Staged,
+    gallery: gallery::Gallery, provider: ?ui::TextProvider,
+    width: i32, height: i32, scale: f32,       // headless: the surface in pixels and the scale
+    pointer_scale: f32,                         // in a window: device pixels a window coordinate
+    frames: u32, unclean: u32, dropped: u32,
+}
+
+fn run {
+    mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut fonts: ui_fonts::Fonts, mut heap: arena::Arena, mut h: heap::Heap,
+    o: Options,
+} -> !i32 {
+    try sdl::init{ &sdl, flags = sdl::INIT_VIDEO | sdl::INIT_EVENTS }
+    defer sdl::quit{ &sdl }
+    let width = ui::round_pixels{ v = o.width * o.scale }
+    let height = ui::round_pixels{ v = o.height * o.scale }
+    let mut config = render::make_config{ title = "uispike", width, height, hidden = o.headless }
+    config.debug = true
+    let mut dev = try gpu::open{ &sdl, realloc = arena::alloc, &heap, config }
+    defer gpu::close{ &dev, &sdl }
+    _ = @fmt(&io, "uispike: {} on {}\n", dev.info.api, dev.info.device)
+    let mut frame = try render::make_frame(arena::Arena){ realloc = arena::alloc, &heap, cap = render::default_capacity{} }
+    let mut gui = try ui::make{ realloc = arena::alloc, &heap, cap = ui::Capacity{ .. } }
+
+    // The font: an outline one through FreeType and HarfBuzz, or the game's console font as a glyph table.
+    let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
+    defer ui_fonts::close{ &lib }
+    let mut provider: ?ui::TextProvider = null
+    let mut glyphs: [256]ui::Glyph
+    let mut kotor_glyphs: [256]render::Glyph
+    if let path = o.font {
+        let bytes = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } iferr {
+            _ = @fmt(&io, "uispike: cannot read the font {}\n", path)
+            return 2
+        }
+        let face = try ui_fonts::add_face{ &lib, data = bytes, index = 0 }
+        gui.theme.font = ui_fonts::make_font{ &lib, ui = &gui, face } ifnull { return ui_fonts::closed }
+        let p = ui_fonts::get_provider{ lib = &lib }
+        ui::set_provider{ ui = &gui, provider = p }
+        provider = p
+        _ = @fmt(&io, "uispike: font {}\n", path)
+    } else {
+        let mut rm = try res::open{ &fs, heap = &h, game = o.game }
+        defer res::close{ &fs, &rm }
+        let found = try font::load{ &fs, &dev, &h, rm, name = "fnt_console", variant = false, glyphs = kotor_glyphs[..] }
+        let f = found ifnull {
+            _ = @fmt(&io, "uispike: no fnt_console in {}\n", o.game)
+            return 1
+        }
+        let def = ui_kotor::from_font{ font = f, glyphs = glyphs[..] }
+        gui.theme.font = ui::add_font{ ui = &gui, font = def } ifnull { return 1 }
+        _ = @fmt(&io, "uispike: the console font, {} glyphs, {} texels high\n", f.glyphs.len, f.height)
+    }
+
+    let picture = try make_picture{ &dev, &heap }
+    let mut staged = try ui_stage::make{ realloc = arena::alloc, &heap, cap = ui_stage::Capacity{ .. } }
+    let mut g = gallery::make_gallery{ picture }
+    g.dark = o.dark
+    if let title = o.page {
+        g.page = gallery::find_page{ title } ifnull {
+            _ = @fmt(&io, "uispike: the gallery lists no page {}\n", title)
+            return 2
+        }
+    }
+    let size = gpu::screen_size{ dev }
+    if o.headless and (@as(i32, size.width) != width or @as(i32, size.height) != height) {
+        _ = @fmt(&io, "uispike: the screen is {}x{}, not the {}x{} asked for\n", size.width, size.height, width, height)
+        return 1
+    }
+    let mut spike = Spike{
+        dev = &dev, frame = &frame, staged = &staged, gallery = g, provider,
+        width, height, scale = o.scale, pointer_scale = 1.0, frames = 0, unclean = 0, dropped = 0,
+    }
+
+    if o.headless {
+        while spike.frames < @as(u32, o.frames) {
+            try draw_frame{ &spike, &io, ui = &gui, dt = STEP_DT }
+        }
+    } else {
+        let freq = sdl::counter_frequency{ &sdl }
+        let mut last = sdl::counter{ &sdl }
+        let mut quit = false
+        while not quit {
+            while true {
+                let e = sdl::poll{ &sdl } ifnull { break }
+                if e is quit | close {
+                    quit = true
+                } else if e is resized {
+                    let d = gpu::drawable_size{ &sdl, dev }
+                    try gpu::resize{ &dev, width = d.width, height = d.height }
+                } else {
+                    _ = ui_kotor::push_event{ ui = &gui, event = e, pointer_scale = spike.pointer_scale }
+                }
+            }
+            let win = gpu::window_size{ &sdl, dev }
+            let d = gpu::drawable_size{ &sdl, dev }
+            spike.pointer_scale = if win.width > 0 { @as(f32, d.width) / @as(f32, win.width) } else { 1.0 }
+            let now = sdl::counter{ &sdl }
+            let dt = @as(f32, @as(f64, now - last) / @as(f64, freq))
+            last = now
+            try draw_frame{ &spike, &io, ui = &gui, dt }
+            gpu::present{ &dev, &sdl }
+        }
+    }
+
+    let st = gpu::get_stats{ dev }
+    _ = @fmt(&io, "uispike: {} frames, {} not well formed, {} dropped; the last: {} UI draws, {} quads (instances), {} staged passes\n",
+        spike.frames, spike.unclean, spike.dropped, st.ui_draws, st.quads, staged.pass_count)
+    _ = @fmt(&io, "uispike: staged {} rects, {} glyphs, {} images, {} shapes in {} draws\n",
+        staged.rect_count, staged.glyph_count, staged.image_count, staged.shape_count, staged.draw_count)
+    let messages = gpu::messages{ dev }
+    if messages.len > 0 { _ = @fmt(&io, "uispike: GL said:\n{}\n", messages) }
+    let mut failed = spike.unclean > 0 or spike.dropped > 0 or dev.canvas.dropped > 0
+    if let path = o.out { if not write_picture{ &io, &fs, &dev, &heap, path } { failed = true } }
+    if let path = o.against { if not compare_picture{ &io, &fs, &dev, &heap, path } { failed = true } }
+    if o.headless and not check_host_slot{ &io, &dev, &frame, &heap } { failed = true }
+    gpu::free_texture{ &dev, t = render::Texture{ id = picture.image.id } }
+    return if failed { 1 } else { 0 }
+}
+
+// The gallery's picture, as demo_gl's: 64 by 48 texels drawn in code, a diagonal blend from blue to orange under a
+// light frame, with a darker disc in the middle, filtered linearly and clamped at its edges. A kotor texture is
+// stored bottom row first, so the rows go in the other way up.
+fn make_picture { mut dev: gpu::Device, mut heap: arena::Arena } -> !ui::Region {
+    let w: usize = 64
+    let h: usize = 48
+    let rgba = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = w * h * 4 }
+    for y in 0..h {
+        for x in 0..w {
+            let t = @as(f32, x + y) / @as(f32, w + h - 2)
+            let mut r = 40.0 + 200.0 * t
+            let mut g = 110.0 + 40.0 * t
+            let mut b = 220.0 - 170.0 * t
+            let dx = @as(f32, x) - 31.5
+            let dy = @as(f32, y) - 23.5
+            if dx * dx + dy * dy < 144.0 {
+                r = r * 0.55
+                g = g * 0.55
+                b = b * 0.55
+            }
+            if x < 2 or y < 2 or x >= w - 2 or y >= h - 2 {
+                r = 235.0
+                g = 238.0
+                b = 245.0
+            }
+            let at = ((h - 1 - y) * w + x) * 4
+            rgba[at] = @as(u8, r)
+            rgba[at + 1] = @as(u8, g)
+            rgba[at + 2] = @as(u8, b)
+            rgba[at + 3] = 255
+        }
+    }
+    let mut desc = render::make_texture_desc{ format = render::PixelFormat::rgba8, width = 64, height = 48, levels = 1 }
+    desc.mipmap = false
+    desc.wrap_u = render::Wrap::clamp
+    desc.wrap_v = render::Wrap::clamp
+    let texture = try gpu::create_texture{ &dev, desc, data = rgba }
+    return ui_kotor::get_region{ dev, texture }
+}
+
+// One frame of the gallery: recorded, staged, and drawn by kotor's renderer over the theme's background.
+fn draw_frame { mut spike: Spike, mut io: Io, mut ui: ui::Ui, dt: f32 } -> ! {
+    let size = gpu::screen_size{ dev = spike.dev.* }
+    let info = ui_kotor::make_frame_info{ size, scale = spike.scale, dt }
+    ui::begin_frame{ &ui, frame = info }
+    gallery::show_gallery{ &ui, g = &spike.gallery }
+    ui::end_frame{ &ui }
+    spike.frames = spike.frames + 1
+    spike.gallery.stats = ui.stats
+    if ui.stats.dropped != 0 or ui.stats.problems != 0 or ui.draw.dropped != 0 {
+        spike.unclean = spike.unclean + 1
+        if spike.unclean == 1 { _ = @fmt(&io, "uispike: frame {}: {} dropped, {} problems, {} shapes dropped\n", ui.frame, ui.stats.dropped, ui.stats.problems, ui.draw.dropped) }
+    }
+    _ = ui::take_requests{ &ui }
+    ui_stage::stage{ out = spike.staged, list = &ui.draw, provider = spike.provider }
+    spike.dropped = spike.dropped + spike.staged.dropped
+
+    let frame = spike.frame
+    render::begin_frame{ frame, time = 0.0 }
+    let bg = ui.theme.background
+    render::begin_ui{ frame, width = @as(f32, size.width), height = @as(f32, size.height), target = null }
+    render::fill_rect{ frame, rect = render::rect{ x = 0.0, y = 0.0, w = @as(f32, size.width), h = @as(f32, size.height) },
+        color = render::rgba{ r = @as(f32, bg.r) / 255.0, g = @as(f32, bg.g) / 255.0, b = @as(f32, bg.b) / 255.0, a = @as(f32, bg.a) / 255.0 } }
+    ui_kotor::submit{ frame, staged = spike.staged, target = null }
+    if frame.dropped != 0 {
+        spike.dropped = spike.dropped + frame.dropped
+        _ = @fmt(&io, "uispike: the render frame dropped {}\n", frame.dropped)
+    }
+    try gpu::submit{ dev = spike.dev, frame }
+}
+
+// A frame as a screen with a 3D view inside its UI draws it: the first pass (a grey background), a view in the host
+// slot's viewport (cleared red), and the second pass (a blue square over the slot's corner). Each pixel shows what is
+// on top there: the view where nothing covers it, the square over the view, the background beside it. True when
+// it does.
+fn check_host_slot { mut io: Io, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena } -> bool {
+    let size = gpu::screen_size{ dev }
+    let w = @as(i32, size.width)
+    let h = @as(i32, size.height)
+    let mut list = ui::draw::make{ realloc = arena::alloc, &heap, cmds = 8, text = 64, clips = 4, fonts = 1 } iferr { return false }
+    ui::draw::reset{ &list, width = w, height = h }
+    ui::draw::add_rect{ &list, rect = ui::Rect{ x = 0, y = 0, w, h }, style = ui::RectStyle{ fill = ui::Color{ r = 128, g = 128, b = 128, .. }, .. }, clip = 0 }
+    ui::draw::add_host{ &list, slot = 1, rect = ui::Rect{ x = 100, y = 50, w = 200, h = 100 } }
+    ui::draw::add_rect{ &list, rect = ui::Rect{ x = 250, y = 120, w = 100, h = 100 }, style = ui::RectStyle{ fill = ui::Color{ b = 255, .. }, .. }, clip = 0 }
+    let cap = ui_stage::Capacity{ rects = 8, glyphs = 8, images = 8, shapes = 8, draws = 8, passes = 4, atlas_width = 8, atlas_height = 8, atlas_max_height = 8, glyph_cache = 8, raster_bytes = 64 }
+    let mut st = ui_stage::make{ realloc = arena::alloc, &heap, cap } iferr { return false }
+    ui_stage::stage{ out = &st, list = &list, provider = null }
+    render::begin_frame{ &frame, time = 0.0 }
+    for pass in 0..st.pass_count {
+        ui_kotor::add_pass{ &frame, staged = &st, pass, target = null }
+        if let slot = ui_kotor::get_slot{ staged = &st, pass } {
+            let camera = render::Camera{ view = math::mat4::identity{}, proj = math::mat4::identity{}, eye = math::vec3::zero{} }
+            let mut view = render::make_view{ camera }
+            view.viewport = slot.viewport
+            view.clear_color = render::rgba{ r = 1.0, g = 0.0, b = 0.0, a = 1.0 }
+            _ = render::add_view{ &frame, view }
+        }
+    }
+    gpu::submit{ &dev, frame = &frame } iferr {
+        _ = @fmt(&io, "FAIL: the frame with a host slot did not draw\n")
+        return false
+    }
+    let pixels = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = @as(usize, size.width) * @as(usize, size.height) * 4 } iferr { return false }
+    _ = gpu::read_screen{ &dev, into = pixels } iferr { return false }
+    let at_view = read_pixel{ pixels, width = size.width, x = 150, y = 80 }
+    let at_square = read_pixel{ pixels, width = size.width, x = 270, y = 140 }
+    let at_side = read_pixel{ pixels, width = size.width, x = 50, y = 80 }
+    let ok = at_view == 0xFF0000FF and at_square == 0x0000FFFF and at_side == 0x808080FF and frame.dropped == 0
+    if not ok {
+        _ = @fmt(&io, "FAIL: a host slot: the view {}, the square over it {}, beside it {} (RRGGBBAA as numbers), {} dropped\n", at_view, at_square, at_side, frame.dropped)
+        return false
+    }
+    _ = @fmt(&io, "uispike: a host slot between two passes draws in order: the view, the square over it, the background beside\n")
+    return true
+}
+
+// A pixel of an RGBA picture as RRGGBBAA.
+fn read_pixel { pixels: []u8, width: u32, x: usize, y: usize } -> u32 {
+    let at = (y * @as(usize, width) + x) * 4
+    return (@as(u32, pixels[at]) << 24) | (@as(u32, pixels[at + 1]) << 16) | (@as(u32, pixels[at + 2]) << 8) | @as(u32, pixels[at + 3])
+}
+
+// ---- pictures
+
+fn write_picture { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut heap: arena::Arena, path: []u8 } -> bool {
+    let size = gpu::screen_size{ dev }
+    let pixels = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = @as(usize, size.width) * @as(usize, size.height) * 4 } iferr { return false }
+    _ = gpu::read_screen{ &dev, into = pixels } iferr { return false }
+    png::save{ &fs, realloc = arena::alloc, &heap, path, image = png::Image{ width = size.width, height = size.height, rgba = pixels }, alpha = true, bottom_up = false } iferr {
+        _ = @fmt(&io, "uispike: cannot write {}\n", path)
+        return false
+    }
+    _ = @fmt(&io, "uispike: wrote {} ({}x{})\n", path, size.width, size.height)
+    return true
+}
+
+// The screen against the PNG at `path`: true when every pixel is the same, RGBA byte for byte.
+fn compare_picture { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut heap: arena::Arena, path: []u8 } -> bool {
+    let size = gpu::screen_size{ dev }
+    let pixels = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = @as(usize, size.width) * @as(usize, size.height) * 4 } iferr { return false }
+    _ = gpu::read_screen{ &dev, into = pixels } iferr { return false }
+    let bytes = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } iferr {
+        _ = @fmt(&io, "uispike: cannot read {}\n", path)
+        return false
+    }
+    let want = read_stored_png{ &heap, bytes } ifnull {
+        _ = @fmt(&io, "uispike: {} is not an 8-bit RGB or RGBA PNG of stored (uncompressed) blocks, as demo_gl and kotor write\n", path)
+        return false
+    }
+    if want.width != size.width or want.height != size.height {
+        _ = @fmt(&io, "uispike: {} is {}x{}, the screen {}x{}\n", path, want.width, want.height, size.width, size.height)
+        return false
+    }
+    let mut differ: u64 = 0
+    let mut biggest: i32 = 0
+    let mut x0 = size.width
+    let mut y0 = size.height
+    let mut x1: u32 = 0
+    let mut y1: u32 = 0
+    let mut listed: u32 = 0
+    for y in 0..size.height {
+        for x in 0..size.width {
+            let at = (@as(usize, y) * @as(usize, size.width) + @as(usize, x)) * 4
+            let mut worst: i32 = 0
+            for c in 0..4 {
+                let d = @as(i32, pixels[at + c]) - @as(i32, want.rgba[at + c])
+                let a = if d < 0 { 0 - d } else { d }
+                if a > worst { worst = a }
+            }
+            if worst == 0 { continue }
+            differ = differ + 1
+            if worst > biggest { biggest = worst }
+            if x < x0 { x0 = x }
+            if y < y0 { y0 = y }
+            if x > x1 { x1 = x }
+            if y > y1 { y1 = y }
+            if listed < 12 {
+                _ = @fmt(&io, "  differs at {},{}: kotor {} {} {} {}, {} {} {} {} {}\n", x, y,
+                    pixels[at], pixels[at + 1], pixels[at + 2], pixels[at + 3], path, want.rgba[at], want.rgba[at + 1], want.rgba[at + 2], want.rgba[at + 3])
+                listed = listed + 1
+            }
+        }
+    }
+    if differ == 0 {
+        _ = @fmt(&io, "uispike: the screen and {} are the same: 0 of {} pixels differ\n", path, @as(u64, size.width) * @as(u64, size.height))
+        return true
+    }
+    _ = @fmt(&io, "uispike: {} of {} pixels differ from {}, within x {}..{}, y {}..{}; the largest difference in a channel is {}\n",
+        differ, @as(u64, size.width) * @as(u64, size.height), path, x0, x1, y0, y1, biggest)
+    return false
+}
+
+// A PNG's pixels as RGBA, top row first.
+struct Decoded { width: u32, height: u32, rgba: []u8 }
+
+// Reads what kotor's png and the library's ui_test write: 8-bit RGB or RGBA, not interlaced, its IDAT a zlib stream
+// of stored deflate blocks, every row's filter 0. Null for anything else: this is no general PNG reader.
+fn read_stored_png { mut heap: arena::Arena, bytes: []u8 } -> ?Decoded {
+    let signature: [8]u8 = [137, 80, 78, 71, 13, 10, 26, 10]
+    if bytes.len < 8 or not slice::eq_bytes{ a = bytes[..8], b = signature[..] } { return null }
+    let mut width: u32 = 0
+    let mut height: u32 = 0
+    let mut channels: usize = 0
+    let zlib = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = bytes.len } iferr { return null }
+    let mut zlen: usize = 0
+    let mut at: usize = 8
+    while at + 12 <= bytes.len {
+        let len = @as(usize, read_be32{ b = bytes[at..at + 4] })
+        let kind = bytes[at + 4..at + 8]
+        if at + 12 + len > bytes.len { return null }
+        let data = bytes[at + 8..at + 8 + len]
+        if slice::eq_bytes{ a = kind, b = "IHDR" } {
+            if len < 13 { return null }
+            width = read_be32{ b = data[0..4] }
+            height = read_be32{ b = data[4..8] }
+            if data[8] != 8 or data[12] != 0 { return null }
+            channels = if data[9] == 6 { 4 } else if data[9] == 2 { 3 } else { 0 }
+            if channels == 0 { return null }
+        } else if slice::eq_bytes{ a = kind, b = "IDAT" } {
+            slice::copy(u8){ dst = zlib[zlen..zlen + len], src = data }
+            zlen = zlen + len
+        } else if slice::eq_bytes{ a = kind, b = "IEND" } {
+            break
+        }
+        at = at + 12 + len
+    }
+    if width == 0 or height == 0 or width > 16384 or height > 16384 { return null }
+    let row = @as(usize, width) * channels
+    let raw_len = (row + 1) * @as(usize, height)
+    let raw = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = raw_len } iferr { return null }
+    // zlib: two header bytes, then deflate's blocks; a stored block is a header byte (its last flag and type 00),
+    // LEN and its complement, then LEN bytes.
+    let mut z: usize = 2
+    let mut got: usize = 0
+    while true {
+        if z + 5 > zlen { return null }
+        let head = zlib[z]
+        if (head & 6) != 0 { return null }
+        let n = @as(usize, zlib[z + 1]) | (@as(usize, zlib[z + 2]) << 8)
+        z = z + 5
+        if z + n > zlen or got + n > raw_len { return null }
+        slice::copy(u8){ dst = raw[got..got + n], src = zlib[z..z + n] }
+        got = got + n
+        z = z + n
+        if (head & 1) != 0 { break }
+    }
+    if got != raw_len { return null }
+    let rgba = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = @as(usize, width) * @as(usize, height) * 4 } iferr { return null }
+    for y in 0..@as(usize, height) {
+        let src = raw[y * (row + 1)..(y + 1) * (row + 1)]
+        if src[0] != 0 { return null }
+        for x in 0..@as(usize, width) {
+            let o = (y * @as(usize, width) + x) * 4
+            rgba[o] = src[1 + x * channels]
+            rgba[o + 1] = src[2 + x * channels]
+            rgba[o + 2] = src[3 + x * channels]
+            rgba[o + 3] = if channels == 4 { src[4 + x * channels] } else { 255 }
+        }
+    }
+    return Decoded{ width, height, rgba }
+}
+
+fn read_be32 { b: []u8 } -> u32 {
+    return (@as(u32, b[0]) << 24) | (@as(u32, b[1]) << 16) | (@as(u32, b[2]) << 8) | @as(u32, b[3])
+}
+
+// ---- the adapter's conversions
+
+// The conversions that need no window: typed UTF-8 to cp1252, keys, the pointer in pixels. The count that failed.
+fn check_adapter { mut io: Io } -> u32 {
+    let mut failed: u32 = 0
+    // a, e acute (U+00E9, Latin-1), the euro sign (U+20AC, cp1252's 0x80) and a snowman (U+2603), which cp1252 has no byte for.
+    let mut typed: [32]u8 = [0; 32]
+    let utf8: [9]u8 = ['a', 0xC3, 0xA9, 0xE2, 0x82, 0xAC, 0xE2, 0x98, 0x83]
+    slice::copy(u8){ dst = typed[..9], src = utf8[..] }
+    let e = ui_kotor::to_event{ event = sdl::Event::text{ bytes = typed, len = 9 }, pointer_scale = 1.0 }
+    let mut ok = false
+    if let got = e {
+        if got is text{ bytes, len } { ok = len == 3 and bytes[0] == 'a' and bytes[1] == 0xE9 and bytes[2] == 0x80 }
+    }
+    if not ok {
+        _ = @fmt(&io, "FAIL: typed UTF-8 \"a\\u00e9\\u20ac\\u2603\" is not cp1252 61 E9 80\n")
+        failed = failed + 1
+    }
+    let snow: [3]u8 = [0xE2, 0x98, 0x83]
+    let mut only_snow: [32]u8 = [0; 32]
+    slice::copy(u8){ dst = only_snow[..3], src = snow[..] }
+    if ui_kotor::to_event{ event = sdl::Event::text{ bytes = only_snow, len = 3 }, pointer_scale = 1.0 } != null {
+        _ = @fmt(&io, "FAIL: text with no cp1252 character is an event\n")
+        failed = failed + 1
+    }
+    let trade = ui_kotor::to_cp1252{ code = 0x2122 } ifnull 0
+    if ui_kotor::to_cp1252{ code = 0x81 } != null or trade != 0x99 {
+        _ = @fmt(&io, "FAIL: cp1252: U+0081 has no byte, U+2122 is 0x99\n")
+        failed = failed + 1
+    }
+    // Keys: Home by its scancode, Return, the letters.
+    let home = ui_kotor::to_key{ keycode = sdl::key::of_scancode{ scancode = 74 } } ifnull ui::Key::none
+    let enter = ui_kotor::to_key{ keycode = sdl::key::RETURN } ifnull ui::Key::none
+    let zed = ui_kotor::to_key{ keycode = 'z' } ifnull ui::Key::none
+    if home != ui::Key::home or enter != ui::Key::enter or zed != ui::Key::z or ui_kotor::to_key{ keycode = sdl::key::F1 } != null {
+        _ = @fmt(&io, "FAIL: SDL keycodes as the library's keys\n")
+        failed = failed + 1
+    }
+    // A pointer at window (10, 21) with two drawable pixels a coordinate is device pixel (20, 42).
+    let moved = ui_kotor::to_event{ event = sdl::Event::mouse_motion{ x = 10, y = 21, dx = 0, dy = 0, buttons = 0 }, pointer_scale = 2.0 }
+    let mut at_ok = false
+    if let m = moved { if m is pointer_move{ x, y } { at_ok = x == 20 and y == 42 } }
+    if not at_ok {
+        _ = @fmt(&io, "FAIL: a pointer at window (10, 21) at 2 pixels a coordinate is not pixel (20, 42)\n")
+        failed = failed + 1
+    }
+    if failed == 0 { _ = @fmt(&io, "uispike: the adapter's conversions hold\n") }
+    return failed
+}
+
+// A list with a host slot between two rectangles stages to two passes: the first ends at the slot, whose viewport
+// is the slot's rectangle, the second at none, and both go into a frame as staged steps. The count that failed.
+fn check_slots { mut io: Io, mut heap: arena::Arena } -> u32 {
+    let mut list = ui::draw::make{ realloc = arena::alloc, &heap, cmds = 8, text = 64, clips = 4, fonts = 1 } iferr { return 1 }
+    ui::draw::reset{ &list, width = 200, height = 100 }
+    let style = ui::RectStyle{ fill = ui::Color{ r = 200, .. }, .. }
+    ui::draw::add_rect{ &list, rect = ui::Rect{ x = 0, y = 0, w = 200, h = 100 }, style, clip = 0 }
+    ui::draw::add_host{ &list, slot = 7, rect = ui::Rect{ x = 10, y = 20, w = 30, h = 40 } }
+    ui::draw::add_rect{ &list, rect = ui::Rect{ x = 5, y = 5, w = 10, h = 10 }, style, clip = 0 }
+    let cap = ui_stage::Capacity{ rects = 8, glyphs = 8, images = 8, shapes = 8, draws = 8, passes = 4, atlas_width = 8, atlas_height = 8, atlas_max_height = 8, glyph_cache = 8, raster_bytes = 64 }
+    let mut st = ui_stage::make{ realloc = arena::alloc, &heap, cap } iferr { return 1 }
+    ui_stage::stage{ out = &st, list = &list, provider = null }
+    let mut frame = render::make_frame(arena::Arena){ realloc = arena::alloc, &heap, cap = render::default_capacity{} } iferr { return 1 }
+    render::begin_frame{ &frame, time = 0.0 }
+    ui_kotor::submit{ &frame, staged = &st, target = null }
+    let mut ok = st.pass_count == 2 and frame.step_count == 2 and frame.steps[1].kind == render::StepKind::staged and frame.steps[1].first == 1
+    if let s = ui_kotor::get_slot{ staged = &st, pass = 0 } {
+        ok = ok and s.slot == 7 and s.viewport.x == 10.0 and s.viewport.y == 20.0 and s.viewport.w == 30.0 and s.viewport.h == 40.0
+    } else {
+        ok = false
+    }
+    if ui_kotor::get_slot{ staged = &st, pass = 1 } != null { ok = false }
+    if not ok {
+        _ = @fmt(&io, "FAIL: a host slot between two rectangles: {} passes, {} steps\n", st.pass_count, frame.step_count)
+        return 1
+    }
+    return 0
+}

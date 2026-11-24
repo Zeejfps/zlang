@@ -1,0 +1,32 @@
+// uispike: the ui library's gallery drawn through kotor's renderer (ui/PLAN.md stage 15). How to run it: the top
+// of main.ctx. It links FreeType and HarfBuzz for --font, which draws the gallery in an outline font as the library's
+// own sample does, to compare the two pictures; the game links neither (kotor/AGENTS.md rule 2).
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "uispike", root = "." }
+    build::add_sources{ &b, exe, dir = "../../lib/base" }
+    build::add_sources{ &b, exe, dir = "../../lib/res" }
+    build::add_sources{ &b, exe, dir = "../../lib/formats" }
+    build::add_sources{ &b, exe, dir = "../../lib/tex" }
+    build::add_sources{ &b, exe, dir = "../../lib/material" }
+    build::add_sources{ &b, exe, dir = "../../lib/platform" }
+    build::add_sources{ &b, exe, dir = "../../lib/render" }
+    build::add_sources{ &b, exe, dir = "../../lib/render_gl" }
+    build::add_sources{ &b, exe, dir = "../../lib/ui_kotor" }
+    build::add_sources{ &b, exe, dir = "../../../ui/core" }
+    build::add_sources{ &b, exe, dir = "../../../ui/widgets" }
+    build::add_sources{ &b, exe, dir = "../../../ui/stage" }
+    build::add_sources{ &b, exe, dir = "../../../ui/gl/glsl" }
+    build::add_sources{ &b, exe, dir = "../../../ui/fonts" }
+    build::add_sources{ &b, exe, dir = "../../../ui/samples/gallery" }
+    build::optimize{ &b, exe, level = 2 }
+    match build::os{ &b } {
+        macos => {
+            build::lib_path{ &b, exe, path = "/opt/homebrew/lib" }
+            build::link{ &b, exe, lib = "SDL2" }
+        }
+        windows => { build::link{ &b, exe, lib = "SDL2" } }
+        linux => { build::link{ &b, exe, lib = "SDL2" } }
+    }
+    build::link{ &b, exe, lib = "freetype" }
+    build::link{ &b, exe, lib = "harfbuzz" }
+}
