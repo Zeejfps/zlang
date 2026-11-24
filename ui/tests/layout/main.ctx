@@ -1,45 +1,11 @@
-// Stage 5's test: the Ui, ids and scopes, recording, placed layout, emit, and what misuse and full
-// tables do. The scenes pinned by golden files are in placed.ctx.
+// Stage 5's tests: the Ui, ids and scopes, recording, placed layout, emit, and what misuse and full
+// tables do. The scenes pinned by golden files are in placed.ctx; the flow solver's tests are in
+// flow.ctx, and the properties of whole pixels in pixels.ctx.
 //
-//   kotor/tools/ctxc run ui/tests/layout                 (from the repository root)
-//   kotor/tools/ctxc run ui/tests/layout -- --update     rewrite the goldens after an intended change
-//
-// Exits 1 when any check fails.
+//   kotor/tools/ctxc test ui/tests/layout                          (from the repository root)
+//   UI_UPDATE_GOLDENS=1 kotor/tools/ctxc test ui/tests/layout      rewrite the goldens after an intended change
 
 const GOLDEN_DIR: []u8 = "ui/tests/layout/golden"
-
-fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
-    let mut t = ui_test::Tally{ run = 0, failed = 0 }
-    let buf = mem::pages{ &mem, size = 67108864 } ifnull { return 1 }
-    let mut heap = arena::new{ buf }
-    let update = ui_test::has_flag{ args, flag = "--update" }
-
-    check_ids{ &io, &t, &heap }
-    check_goldens{ &io, &fs, &t, &heap, update }
-    check_repeat{ &io, &t, &heap }
-    check_flow{ &io, &t, &heap }
-    check_rects{ &io, &t, &heap }
-    check_sink{ &io, &t, &heap }
-    check_scopes{ &io, &t, &heap }
-    check_duplicates{ &io, &t, &heap }
-    check_frames{ &io, &t, &heap }
-    check_full_elements{ &io, &t, &heap }
-    check_full_clips{ &io, &t, &heap }
-    check_full_scopes{ &io, &t, &heap }
-    check_full_tables{ &io, &t, &heap }
-    check_fonts{ &io, &t, &heap }
-    check_odd_values{ &io, &t, &heap }
-    check_layers{ &io, &t, &heap }
-    check_end_hook{ &io, &t, &heap }
-    check_lines{ &io, &t, &heap }
-    check_defaults{ &io, &t, &heap }
-    check_solver{ &io, &fs, &t, &heap, update }
-    check_pixels{ &io, &t, &heap }
-
-    _ = @fmt(&io, "ui/tests/layout: {} checks, {} failed\n", t.run, t.failed)
-    io::flush{ &io }
-    return if t.failed == 0 { 0 } else { 1 }
-}
 
 // ---- helpers
 
@@ -144,17 +110,39 @@ fn write_frame { mut sink: ui_rec::Sink, ui: ui::Ui, name: []u8 } -> ! {
     }
 }
 
+// What a golden test records into: a Ui on the tests' font, a sink for its frames and the buffer
+// a golden is read into.
+struct Scene { gui: ui::Ui, sink: ui_rec::Sink, scratch: []mut u8 }
+
+fn make_scene { mut heap: arena::Arena } -> !Scene {
+    let out = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65536 }
+    let scratch = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65536 }
+    let gui = try make_ui{ &heap, cap = get_small{} }
+    return Scene{ gui, sink = ui_rec::make_sink{ bytes = out }, scratch }
+}
+
+// Whether the scene's frames, in its sink, are the golden `name`; says why not.
+fn compare_scene { mut io: Io, mut fs: Fs, mut proc: Proc, s: Scene, name: []u8 } -> bool {
+    return ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name, actual = ui_rec::get_text{ sink = s.sink }, scratch = s.scratch, update = ui_check::is_updating{ &proc } }
+}
+
 // ---- ids
 
-fn check_ids { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+#test
+fn makes_ids_from_names_keys_and_scopes { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap, cap = get_small{} }
     start_frame{ ui = &gui, scale = 1.0 }
     // FNV-1a 64 of "abc" from the offset basis is the published E71FA2190541574B.
     let abc = ui::make_id{ ui = gui, name = "abc" }
-    ui_test::expect{ &io, &t, ok = @as(u64, abc) == 0xE71FA2190541574B, what = "an id at the top level is FNV-1a 64 of its name" }
-    ui_test::expect{ &io, &t, ok = ui::make_id{ ui = gui, name = "abc" } == abc, what = "the same name gives the same id" }
-    ui_test::expect{ &io, &t, ok = ui::make_id{ ui = gui, name = "abd" } != abc, what = "another name gives another id" }
-    ui_test::expect{ &io, &t, ok = ui::make_id{ ui = gui, name = "" } == ui::NO_ID, what = "an empty name is anonymous" }
+    // an id at the top level is FNV-1a 64 of its name
+    @expect(&t, @as(u64, abc) == 0xE71FA2190541574B)
+    // the same name gives the same id
+    @expect(&t, ui::make_id{ ui = gui, name = "abc" } == abc)
+    // another name gives another id
+    @expect(&t, ui::make_id{ ui = gui, name = "abd" } != abc)
+    // an empty name is anonymous
+    @expect(&t, ui::make_id{ ui = gui, name = "" } == ui::NO_ID)
 
     let a = ui::push_id{ ui = &gui, name = "a" }
     let a_bc = ui::make_id{ ui = gui, name = "bc" }
@@ -163,9 +151,12 @@ fn check_ids { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     let ab = ui::push_id{ ui = &gui, name = "ab" }
     let ab_c = ui::make_id{ ui = gui, name = "c" }
     ui::end{ ui = &gui, scope = ab }
-    ui_test::expect{ &io, &t, ok = a_b != ui::make_id{ ui = gui, name = "b" }, what = "a name inside a scope differs from the name outside it" }
-    ui_test::expect{ &io, &t, ok = a_bc != ab_c and a_bc != abc and ab_c != abc, what = "scopes \"a\" > \"bc\" and \"ab\" > \"c\" and the name \"abc\" are three ids" }
-    ui_test::expect{ &io, &t, ok = ui::make_id{ ui = gui, name = "abc" } == abc, what = "ending a scope brings its parent's ids back" }
+    // a name inside a scope differs from the name outside it
+    @expect(&t, a_b != ui::make_id{ ui = gui, name = "b" })
+    // scopes "a" > "bc" and "ab" > "c" and the name "abc" are three ids
+    @expect(&t, a_bc != ab_c and a_bc != abc and ab_c != abc)
+    // ending a scope brings its parent's ids back
+    @expect(&t, ui::make_id{ ui = gui, name = "abc" } == abc)
 
     let k3 = ui::push_key{ ui = &gui, key = 3 }
     let done3 = ui::make_id{ ui = gui, name = "done" }
@@ -176,120 +167,196 @@ fn check_ids { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     let k3_again = ui::push_key{ ui = &gui, key = 3 }
     let done3_again = ui::make_id{ ui = gui, name = "done" }
     ui::end{ ui = &gui, scope = k3_again }
-    ui_test::expect{ &io, &t, ok = done3 != done4 and done3 == done3_again, what = "a key scope separates rows and is the same for the same key" }
+    // a key scope separates rows and is the same for the same key
+    @expect(&t, done3 != done4 and done3 == done3_again)
 
     // An element scope does not change ids: only id scopes do.
     let el = ui::begin_element{ ui = &gui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{ .. } }
-    ui_test::expect{ &io, &t, ok = ui::make_id{ ui = gui, name = "abc" } == abc, what = "an element is not an id scope" }
+    // an element is not an id scope
+    @expect(&t, ui::make_id{ ui = gui, name = "abc" } == abc)
     ui::end{ ui = &gui, scope = el }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "the id frame is clean" }
+    // the id frame is clean
+    @expect(&t, is_clean{ ui = gui })
 
     // Ids are the same in another frame and in another Ui.
-    let mut other = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut other = try make_ui{ &heap, cap = get_small{} }
     start_frame{ ui = &other, scale = 2.0 }
     let k = ui::push_key{ ui = &other, key = 3 }
-    ui_test::expect{ &io, &t, ok = ui::make_id{ ui = other, name = "done" } == done3, what = "ids do not depend on the Ui or the frame" }
+    // ids do not depend on the Ui or the frame
+    @expect(&t, ui::make_id{ ui = other, name = "done" } == done3)
     ui::end{ ui = &other, scope = k }
     ui::end_frame{ ui = &other }
 }
 
 // ---- the goldens
 
-fn check_goldens { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, update: bool } {
-    let out = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65536 } iferr { return }
-    let scratch = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65536 } iferr { return }
-    let mut sink = ui_rec::make_sink{ bytes = out }
-    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
-
+#test
+fn places_a_panel_of_five_controls_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let update = ui_check::is_updating{ &proc }
+    let s = try make_scene{ &heap }
+    let scratch = s.scratch
+    let mut sink = s.sink
+    let mut gui = s.gui
     start_frame{ ui = &gui, scale = 1.0 }
     show_panel{ ui = &gui }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "the panel frame is clean" }
-    write_frame{ &sink, ui = gui, name = "a panel at the centre of 800 by 600 with five placed controls" } iferr { return }
-    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "panel", actual = ui_rec::get_text{ sink }, scratch, update }
+    // the panel frame is clean
+    @expect(&t, is_clean{ ui = gui })
+    try write_frame{ &sink, ui = gui, name = "a panel at the centre of 800 by 600 with five placed controls" }
+    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "panel", actual = ui_rec::get_text{ sink }, scratch, update })
     // The panel, its title, the picture and its image, the slider and its two paints, and two
     // buttons with a label each; every one but the picture's own element draws a shape.
-    ui_test::expect{ &io, &t, ok = gui.stats.elements == 11 and gui.stats.shapes == 9 and gui.stats.hits == 5, what = "the panel is 11 elements, 9 shapes and 5 hit regions" }
+    // the panel is 11 elements, 9 shapes and 5 hit regions
+    @expect(&t, gui.stats.elements == 11 and gui.stats.shapes == 9 and gui.stats.hits == 5)
+}
 
-    ui_rec::reset_sink{ &sink }
+#test
+fn anchors_placed_children_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let update = ui_check::is_updating{ &proc }
+    let s = try make_scene{ &heap }
+    let scratch = s.scratch
+    let mut sink = s.sink
+    let mut gui = s.gui
     start_frame{ ui = &gui, scale = 1.0 }
     show_anchors{ ui = &gui, w = 300.0, h = 200.0 }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "the first anchors frame is clean" }
-    write_frame{ &sink, ui = gui, name = "anchors 0, 0.5 and 1 in a parent of 300 by 200" } iferr { return }
+    // the first anchors frame is clean
+    @expect(&t, is_clean{ ui = gui })
+    try write_frame{ &sink, ui = gui, name = "anchors 0, 0.5 and 1 in a parent of 300 by 200" }
     start_frame{ ui = &gui, scale = 1.0 }
     show_anchors{ ui = &gui, w = 500.0, h = 320.0 }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "the second anchors frame is clean" }
-    write_frame{ &sink, ui = gui, name = "the same in a parent of 500 by 320" } iferr { return }
-    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "anchors", actual = ui_rec::get_text{ sink }, scratch, update }
+    // the second anchors frame is clean
+    @expect(&t, is_clean{ ui = gui })
+    try write_frame{ &sink, ui = gui, name = "the same in a parent of 500 by 320" }
+    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "anchors", actual = ui_rec::get_text{ sink }, scratch, update })
+}
 
-    ui_rec::reset_sink{ &sink }
+#test
+fn nests_plain_and_rounded_clips_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let update = ui_check::is_updating{ &proc }
+    let s = try make_scene{ &heap }
+    let scratch = s.scratch
+    let mut sink = s.sink
+    let mut gui = s.gui
     start_frame{ ui = &gui, scale = 1.0 }
     show_clips{ ui = &gui }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "the clips frame is clean" }
-    write_frame{ &sink, ui = gui, name = "nested clips, plain and rounded" } iferr { return }
-    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "clips", actual = ui_rec::get_text{ sink }, scratch, update }
+    // the clips frame is clean
+    @expect(&t, is_clean{ ui = gui })
+    try write_frame{ &sink, ui = gui, name = "nested clips, plain and rounded" }
+    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "clips", actual = ui_rec::get_text{ sink }, scratch, update })
+}
 
-    ui_rec::reset_sink{ &sink }
+#test
+fn multiplies_opacity_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let update = ui_check::is_updating{ &proc }
+    let s = try make_scene{ &heap }
+    let scratch = s.scratch
+    let mut sink = s.sink
+    let mut gui = s.gui
     start_frame{ ui = &gui, scale = 1.0 }
     show_opacity{ ui = &gui }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "the opacity frame is clean" }
-    write_frame{ &sink, ui = gui, name = "opacity 0.5, 0.5 inside it, and 0" } iferr { return }
-    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "opacity", actual = ui_rec::get_text{ sink }, scratch, update }
+    // the opacity frame is clean
+    @expect(&t, is_clean{ ui = gui })
+    try write_frame{ &sink, ui = gui, name = "opacity 0.5, 0.5 inside it, and 0" }
+    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "opacity", actual = ui_rec::get_text{ sink }, scratch, update })
+}
 
-    ui_rec::reset_sink{ &sink }
+#test
+fn paints_decoration_then_children_in_order_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let update = ui_check::is_updating{ &proc }
+    let s = try make_scene{ &heap }
+    let scratch = s.scratch
+    let mut sink = s.sink
+    let mut gui = s.gui
     start_frame{ ui = &gui, scale = 1.0 }
     show_order{ ui = &gui }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "the order frame is clean" }
-    write_frame{ &sink, ui = gui, name = "decoration, then paints and children as recorded" } iferr { return }
-    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "order", actual = ui_rec::get_text{ sink }, scratch, update }
+    // the order frame is clean
+    @expect(&t, is_clean{ ui = gui })
+    try write_frame{ &sink, ui = gui, name = "decoration, then paints and children as recorded" }
+    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "order", actual = ui_rec::get_text{ sink }, scratch, update })
+}
 
-    ui_rec::reset_sink{ &sink }
+#test
+fn draws_around_a_host_slot_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let update = ui_check::is_updating{ &proc }
+    let s = try make_scene{ &heap }
+    let scratch = s.scratch
+    let mut sink = s.sink
+    let mut gui = s.gui
     start_frame{ ui = &gui, scale = 1.0 }
     show_host{ ui = &gui }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "the host frame is clean" }
-    write_frame{ &sink, ui = gui, name = "a host slot with shapes under and over it" } iferr { return }
-    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "host", actual = ui_rec::get_text{ sink }, scratch, update }
-    ui_test::expect{ &io, &t, ok = gui.draw.count == 5 and gui.draw.cmds[2] is host, what = "the host shape is the third of five: two shapes under it, two over" }
+    // the host frame is clean
+    @expect(&t, is_clean{ ui = gui })
+    try write_frame{ &sink, ui = gui, name = "a host slot with shapes under and over it" }
+    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "host", actual = ui_rec::get_text{ sink }, scratch, update })
+    // the host shape is the third of five: two shapes under it, two over
+    @expect(&t, gui.draw.count == 5 and gui.draw.cmds[2] is host)
+}
 
-    ui_rec::reset_sink{ &sink }
+#test
+fn places_whole_pixels_at_scale_1_5_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let update = ui_check::is_updating{ &proc }
+    let s = try make_scene{ &heap }
+    let scratch = s.scratch
+    let mut sink = s.sink
+    let mut gui = s.gui
     start_frame{ ui = &gui, scale = 1.5 }
     show_scaled{ ui = &gui }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "the scaled frame is clean" }
-    write_frame{ &sink, ui = gui, name = "whole pixels at scale 1.5" } iferr { return }
-    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "scaled", actual = ui_rec::get_text{ sink }, scratch, update }
+    // the scaled frame is clean
+    @expect(&t, is_clean{ ui = gui })
+    try write_frame{ &sink, ui = gui, name = "whole pixels at scale 1.5" }
+    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "scaled", actual = ui_rec::get_text{ sink }, scratch, update })
+}
 
-    ui_rec::reset_sink{ &sink }
+#test
+fn stacks_flow_children_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let update = ui_check::is_updating{ &proc }
+    let s = try make_scene{ &heap }
+    let scratch = s.scratch
+    let mut sink = s.sink
+    let mut gui = s.gui
     start_frame{ ui = &gui, scale = 1.0 }
     show_stack{ ui = &gui }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "the stack frame is clean" }
-    write_frame{ &sink, ui = gui, name = "flow children stacked with padding and gap" } iferr { return }
-    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "stack", actual = ui_rec::get_text{ sink }, scratch, update }
-    ui_test::expect{ &io, &t, ok = sink.lost == 0, what = "the dumps fit their buffer" }
+    // the stack frame is clean
+    @expect(&t, is_clean{ ui = gui })
+    try write_frame{ &sink, ui = gui, name = "flow children stacked with padding and gap" }
+    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "stack", actual = ui_rec::get_text{ sink }, scratch, update })
+    // the dumps fit their buffer
+    @expect(&t, sink.lost == 0)
 }
 
 // The same input twice gives byte-identical dumps: in two frames of one Ui, with other frames
 // between them, and in a Ui made afresh.
-fn check_repeat { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let first_out = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 32768 } iferr { return }
-    let again_out = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 32768 } iferr { return }
+#test
+fn dumps_the_same_input_identically { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let first_out = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 32768 }
+    let again_out = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 32768 }
     let mut first = ui_rec::make_sink{ bytes = first_out }
     let mut again = ui_rec::make_sink{ bytes = again_out }
-    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut gui = try make_ui{ &heap, cap = get_small{} }
 
     start_frame{ ui = &gui, scale = 1.5 }
     show_panel{ ui = &gui }
     show_clips{ ui = &gui }
     ui::end_frame{ ui = &gui }
-    write_frame{ sink = &first, ui = gui, name = "frame" } iferr { return }
+    try write_frame{ sink = &first, ui = gui, name = "frame" }
 
     start_frame{ ui = &gui, scale = 1.0 }
     show_opacity{ ui = &gui }
@@ -299,25 +366,27 @@ fn check_repeat { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     show_panel{ ui = &gui }
     show_clips{ ui = &gui }
     ui::end_frame{ ui = &gui }
-    write_frame{ sink = &again, ui = gui, name = "frame" } iferr { return }
-    ui_test::expect{ &io, &t, ok = first.len > 1000 and slice::eq_bytes{ a = ui_rec::get_text{ sink = first }, b = ui_rec::get_text{ sink = again } },
-        what = "the same input two frames on gives a byte-identical dump" }
+    try write_frame{ sink = &again, ui = gui, name = "frame" }
+    // the same input two frames on gives a byte-identical dump
+    @expect(&t, first.len > 1000 and slice::eq_bytes{ a = ui_rec::get_text{ sink = first }, b = ui_rec::get_text{ sink = again } })
 
-    let mut fresh = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut fresh = try make_ui{ &heap, cap = get_small{} }
     ui_rec::reset_sink{ sink = &again }
     start_frame{ ui = &fresh, scale = 1.5 }
     show_panel{ ui = &fresh }
     show_clips{ ui = &fresh }
     ui::end_frame{ ui = &fresh }
-    write_frame{ sink = &again, ui = fresh, name = "frame" } iferr { return }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = ui_rec::get_text{ sink = first }, b = ui_rec::get_text{ sink = again } },
-        what = "the same input in another Ui gives a byte-identical dump" }
+    try write_frame{ sink = &again, ui = fresh, name = "frame" }
+    // the same input in another Ui gives a byte-identical dump
+    @expect(&t, slice::eq_bytes{ a = ui_rec::get_text{ sink = first }, b = ui_rec::get_text{ sink = again } })
 }
 
 // ---- flow and alignment
 
-fn check_flow { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+#test
+fn lays_out_flow_and_alignment { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap, cap = get_small{} }
     let one = ui::make_id{ ui = gui, name = "one" }
     let two = ui::make_id{ ui = gui, name = "two" }
     let top = ui::make_id{ ui = gui, name = "top" }
@@ -339,10 +408,14 @@ fn check_flow { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     ui::end{ ui = &gui, scope = b }
     ui::end{ ui = &gui, scope = row }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "the aligned row's frame is clean" }
-    ui_test::expect{ &io, &t, ok = is_same_rect{ r = find_rect{ ui = gui, id = top }, x = 0, y = 0, w = 200, h = 100 }, what = "an element in the flow of the surface starts at its top left" }
-    ui_test::expect{ &io, &t, ok = is_same_rect{ r = find_rect{ ui = gui, id = one }, x = 47, y = 70, w = 40, h = 20 }, what = "a centred row moves its first child by half the spare room, rounded down" }
-    ui_test::expect{ &io, &t, ok = is_same_rect{ r = find_rect{ ui = gui, id = two }, x = 92, y = 60, w = 60, h = 30 }, what = "the second child follows the first by its width and the gap" }
+    // the aligned row's frame is clean
+    @expect(&t, is_clean{ ui = gui })
+    // an element in the flow of the surface starts at its top left
+    @expect(&t, is_same_rect{ r = find_rect{ ui = gui, id = top }, x = 0, y = 0, w = 200, h = 100 })
+    // a centred row moves its first child by half the spare room, rounded down
+    @expect(&t, is_same_rect{ r = find_rect{ ui = gui, id = one }, x = 47, y = 70, w = 40, h = 20 })
+    // the second child follows the first by its width and the gap
+    @expect(&t, is_same_rect{ r = find_rect{ ui = gui, id = two }, x = 92, y = 60, w = 60, h = 30 })
 
     // The same in a column that is too small: spare room is never negative, so children start at
     // the padding edge and run past the far one. A scroll offset moves the flow children up.
@@ -359,44 +432,58 @@ fn check_flow { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     ui::end{ ui = &gui, scope = d }
     ui::end{ ui = &gui, scope = column }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_same_rect{ r = find_rect{ ui = gui, id = one }, x = 10, y = -8, w = 40, h = 20 }, what = "a short column starts its children at the start edge, less the scroll offset" }
-    ui_test::expect{ &io, &t, ok = is_same_rect{ r = find_rect{ ui = gui, id = two }, x = 0, y = 17, w = 60, h = 30 }, what = "a child wider than its column starts at the column's edge" }
+    // a short column starts its children at the start edge, less the scroll offset
+    @expect(&t, is_same_rect{ r = find_rect{ ui = gui, id = one }, x = 10, y = -8, w = 40, h = 20 })
+    // a child wider than its column starts at the column's edge
+    @expect(&t, is_same_rect{ r = find_rect{ ui = gui, id = two }, x = 0, y = 17, w = 60, h = 30 })
 }
 
 // ---- get_rect: the last finished frame's rectangles
 
-fn check_rects { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+#test
+fn answers_get_rect_from_the_last_frame { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap, cap = get_small{} }
     let id = ui::make_id{ ui = gui, name = "mover" }
-    ui_test::expect{ &io, &t, ok = ui::get_rect{ ui = gui, id } == null, what = "before any frame an id has no rectangle" }
+    // before any frame an id has no rectangle
+    @expect(&t, ui::get_rect{ ui = gui, id } == null)
 
     start_frame{ ui = &gui, scale = 1.0 }
     add_box{ ui = &gui, id, x = 10.0, y = 20.0, w = 30.0, h = 40.0 }
-    ui_test::expect{ &io, &t, ok = ui::get_rect{ ui = gui, id } == null, what = "an element has no rectangle in the frame that first records it" }
+    // an element has no rectangle in the frame that first records it
+    @expect(&t, ui::get_rect{ ui = gui, id } == null)
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_same_rect{ r = find_rect{ ui = gui, id }, x = 10, y = 20, w = 30, h = 40 }, what = "after end_frame the rectangle is this frame's" }
+    // after end_frame the rectangle is this frame's
+    @expect(&t, is_same_rect{ r = find_rect{ ui = gui, id }, x = 10, y = 20, w = 30, h = 40 })
 
     start_frame{ ui = &gui, scale = 1.0 }
     add_box{ ui = &gui, id, x = 100.0, y = 200.0, w = 50.0, h = 60.0 }
-    ui_test::expect{ &io, &t, ok = is_same_rect{ r = find_rect{ ui = gui, id }, x = 10, y = 20, w = 30, h = 40 }, what = "while a frame is recorded get_rect answers the previous frame's rectangle" }
+    // while a frame is recorded get_rect answers the previous frame's rectangle
+    @expect(&t, is_same_rect{ r = find_rect{ ui = gui, id }, x = 10, y = 20, w = 30, h = 40 })
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_same_rect{ r = find_rect{ ui = gui, id }, x = 100, y = 200, w = 50, h = 60 }, what = "and the new one once the frame has ended" }
-    ui_test::expect{ &io, &t, ok = ui::get_rect{ ui = gui, id = ui::NO_ID } == null, what = "the anonymous id has no rectangle" }
+    // and the new one once the frame has ended
+    @expect(&t, is_same_rect{ r = find_rect{ ui = gui, id }, x = 100, y = 200, w = 50, h = 60 })
+    // the anonymous id has no rectangle
+    @expect(&t, ui::get_rect{ ui = gui, id = ui::NO_ID } == null)
 
     start_frame{ ui = &gui, scale = 1.0 }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = ui::get_rect{ ui = gui, id } == null and gui.stats.hits == 0, what = "an element that is no longer recorded has no rectangle" }
+    // an element that is no longer recorded has no rectangle
+    @expect(&t, ui::get_rect{ ui = gui, id } == null and gui.stats.hits == 0)
 }
 
 // ---- the Ui as an @fmt sink
 
-fn check_sink { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+#test
+fn formats_into_the_ui_as_a_sink { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap, cap = get_small{} }
     start_frame{ ui = &gui, scale = 1.0 }
     let level: f32 = 0.375
     _ = @fmt(&gui, "Volume {:.1} %", level * 100.0)
     let volume = ui::take_text{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = volume, b = "Volume 37.5 %" }, what = "a decimal formats into the frame's arena with a spec" }
+    // a decimal formats into the frame's arena with a spec
+    @expect(&t, slice::eq_bytes{ a = volume, b = "Volume 37.5 %" })
     // Floats without a spec are written plainly, as std writes them; every spec works.
     let ten: f32 = 10.0
     let tenth: f32 = 0.1
@@ -404,32 +491,40 @@ fn check_sink { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     let tiny: f32 = 0.00001
     _ = @fmt(&gui, "{} {} {} {} {}", ten, tenth, -2.5, wide, tiny)
     let plain = ui::take_text{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = plain, b = "10.0 0.1 -2.5 1234567.0 1e-05" }, what = "f32 and f64 without a spec: std's shortest text" }
+    // f32 and f64 without a spec: std's shortest text
+    @expect(&t, slice::eq_bytes{ a = plain, b = "10.0 0.1 -2.5 1234567.0 1e-05" })
     let n: i32 = -42
     let id: u32 = 255
     let digits: u32 = 2
     _ = @fmt(&gui, "[{:>6}] [{:<6}] [{:06}] [{:08X}] [{:b}] [{:8.2}] [{:^9}] [{}]", n, id, n, id, 5, ten / 3.0, "mid", ui::write_fixed{ v = ten / 3.0, digits, _ })
     let specs = ui::take_text{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = specs, b = "[   -42] [255   ] [-00042] [000000FF] [101] [    3.33] [   mid   ] [3.33]" },
-        what = "specs in the Ui sink: width, alignment, zeros, bases, a precision, text; write_fixed with a digit count at run time" }
+    // specs in the Ui sink: width, alignment, zeros, bases, a precision, text; write_fixed with a digit count at run time
+    @expect(&t, slice::eq_bytes{ a = specs, b = "[   -42] [255   ] [-00042] [000000FF] [101] [    3.33] [   mid   ] [3.33]" })
     let done: usize = 3
     let count: u32 = 12
     _ = @fmt(&gui, "{} of {} done, {}", done, count, true)
     let summary = ui::take_text{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = summary, b = "3 of 12 done, true" }, what = "integers and a bool format, and take_text starts after the last one" }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = volume, b = "Volume 37.5 %" }, what = "the text taken first is still there" }
-    ui_test::expect{ &io, &t, ok = ui::take_text{ ui = &gui }.len == 0, what = "nothing formatted is nothing taken" }
+    // integers and a bool format, and take_text starts after the last one
+    @expect(&t, slice::eq_bytes{ a = summary, b = "3 of 12 done, true" })
+    // the text taken first is still there
+    @expect(&t, slice::eq_bytes{ a = volume, b = "Volume 37.5 %" })
+    // nothing formatted is nothing taken
+    @expect(&t, ui::take_text{ ui = &gui }.len == 0)
     // Formatted text is a label like any other.
     ui::add_text{ ui = &gui, text = summary, style = ui::TextStyle{ .. }, box = ui::Box{ .. } }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and gui.draw.count == 1, what = "formatted text draws as a label" }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = volume, b = "Volume 37.5 %" }, what = "taken text lives until the next begin_frame" }
+    // formatted text draws as a label
+    @expect(&t, is_clean{ ui = gui } and gui.draw.count == 1)
+    // taken text lives until the next begin_frame
+    @expect(&t, slice::eq_bytes{ a = volume, b = "Volume 37.5 %" })
 }
 
 // ---- scopes: unclosed, stray ends, an outer end with inner scopes open
 
-fn check_scopes { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+#test
+fn recovers_from_unclosed_and_stray_scopes { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap, cap = get_small{} }
     let first = ui::make_id{ ui = gui, name = "first" }
     let after = ui::make_id{ ui = gui, name = "after" }
 
@@ -439,36 +534,48 @@ fn check_scopes { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     _ = ui::begin_element{ ui = &gui, id = first, axis = ui::Axis::row, box = place_filled{ x = 10.0, y = 10.0, w = 20.0, h = 20.0, color = ACCENT } }
     _ = ui::push_key{ ui = &gui, key = 7 }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.stats.unclosed == 3, what = "three scopes left open are counted" }
-    ui_test::expect{ &io, &t, ok = gui.stats.problems == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::unclosed_scope }, what = "and reported as one problem" }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = get_path{ ui = gui, kind = ui::ProblemKind::unclosed_scope }, b = "left/#7" }, what = "whose path is the id scopes that were open" }
-    ui_test::expect{ &io, &t, ok = gui.draw.count == 1 and gui.stats.dropped == 0, what = "the frame is still emitted" }
+    // three scopes left open are counted
+    @expect(&t, gui.stats.unclosed == 3)
+    // and reported as one problem
+    @expect(&t, gui.stats.problems == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::unclosed_scope })
+    // whose path is the id scopes that were open
+    @expect(&t, slice::eq_bytes{ a = get_path{ ui = gui, kind = ui::ProblemKind::unclosed_scope }, b = "left/#7" })
+    // the frame is still emitted
+    @expect(&t, gui.draw.count == 1 and gui.stats.dropped == 0)
 
     // The next frame starts from nothing.
     start_frame{ ui = &gui, scale = 1.0 }
     add_box{ ui = &gui, id = after, x = 0.0, y = 0.0, w = 5.0, h = 5.0 }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and gui.stats.unclosed == 0, what = "the frame after an unclosed one is clean" }
-    ui_test::expect{ &io, &t, ok = gui.tree.elements[1].parent == 0, what = "and records at the top level again" }
+    // the frame after an unclosed one is clean
+    @expect(&t, is_clean{ ui = gui } and gui.stats.unclosed == 0)
+    // and records at the top level again
+    @expect(&t, gui.tree.elements[1].parent == 0)
 
     // ui::end with a scope that is not open closes nothing and is reported.
     start_frame{ ui = &gui, scale = 1.0 }
     let once = ui::begin_element{ ui = &gui, id = first, axis = ui::Axis::row, box = ui::Box{ .. } }
     ui::end{ ui = &gui, scope = once }
     ui::end{ ui = &gui, scope = once }
-    ui_test::expect{ &io, &t, ok = gui.stats.stray_ends == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::stray_end }, what = "ending a scope twice is a stray end" }
+    // ending a scope twice is a stray end
+    @expect(&t, gui.stats.stray_ends == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::stray_end })
     ui::end{ ui = &gui, scope = ui::Scope{ depth = 5, open = true, serial = 99 } }
-    ui_test::expect{ &io, &t, ok = gui.stats.stray_ends == 2, what = "ending a scope that never was is a stray end" }
+    // ending a scope that never was is a stray end
+    @expect(&t, gui.stats.stray_ends == 2)
     ui::end{ ui = &gui, scope = ui::Scope{ .. } }
-    ui_test::expect{ &io, &t, ok = gui.stats.stray_ends == 2, what = "ending a closed widget's scope does nothing and is no problem" }
+    // ending a closed widget's scope does nothing and is no problem
+    @expect(&t, gui.stats.stray_ends == 2)
     // A stale token at a depth that is open again closes nothing either.
     let reopened = ui::begin_element{ ui = &gui, id = after, axis = ui::Axis::row, box = ui::Box{ .. } }
     ui::end{ ui = &gui, scope = once }
-    ui_test::expect{ &io, &t, ok = gui.stats.stray_ends == 3 and gui.ids.depth == 1, what = "an ended scope's token does not close the scope opened after it" }
+    // an ended scope's token does not close the scope opened after it
+    @expect(&t, gui.stats.stray_ends == 3 and gui.ids.depth == 1)
     ui::end{ ui = &gui, scope = reopened }
-    ui_test::expect{ &io, &t, ok = gui.ids.depth == 0, what = "which its own token closes" }
+    // which its own token closes
+    @expect(&t, gui.ids.depth == 0)
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.stats.unclosed == 0 and gui.stats.problems == 3 and gui.stats.dropped == 0, what = "three stray ends are three problems and nothing else" }
+    // three stray ends are three problems and nothing else
+    @expect(&t, gui.stats.unclosed == 0 and gui.stats.problems == 3 and gui.stats.dropped == 0)
 
     // Ending an outer scope ends what is still open inside it: that is the rule, not a problem.
     start_frame{ ui = &gui, scale = 1.0 }
@@ -477,21 +584,28 @@ fn check_scopes { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     let inner = ui::begin_element{ ui = &gui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{ .. } }
     let in_scope = ui::make_id{ ui = gui, name = "x" }
     ui::end{ ui = &gui, scope = outer }
-    ui_test::expect{ &io, &t, ok = gui.ids.depth == 0 and gui.stats.problems == 0, what = "ending the outer scope closes the two inside it, with no problem" }
-    ui_test::expect{ &io, &t, ok = ui::make_id{ ui = gui, name = "x" } != in_scope, what = "and ids are the top level's again" }
+    // ending the outer scope closes the two inside it, with no problem
+    @expect(&t, gui.ids.depth == 0 and gui.stats.problems == 0)
+    // and ids are the top level's again
+    @expect(&t, ui::make_id{ ui = gui, name = "x" } != in_scope)
     add_box{ ui = &gui, id = after, x = 0.0, y = 0.0, w = 5.0, h = 5.0 }
-    ui_test::expect{ &io, &t, ok = gui.tree.elements[3].parent == 0, what = "what is recorded next is a child of the surface" }
+    // what is recorded next is a child of the surface
+    @expect(&t, gui.tree.elements[3].parent == 0)
     ui::end{ ui = &gui, scope = inner }
     ui::end{ ui = &gui, scope = mid }
-    ui_test::expect{ &io, &t, ok = gui.stats.stray_ends == 2, what = "the inner scopes' own ends are then stray" }
+    // the inner scopes' own ends are then stray
+    @expect(&t, gui.stats.stray_ends == 2)
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.stats.unclosed == 0 and gui.draw.count == 2, what = "and the frame is emitted whole" }
+    // and the frame is emitted whole
+    @expect(&t, gui.stats.unclosed == 0 and gui.draw.count == 2)
 }
 
 // ---- duplicate ids
 
-fn check_duplicates { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+#test
+fn reports_duplicate_ids { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap, cap = get_small{} }
     start_frame{ ui = &gui, scale = 1.0 }
     let items = ui::push_id{ ui = &gui, name = "items" }
     let row = ui::push_key{ ui = &gui, key = 3 }
@@ -506,26 +620,34 @@ fn check_duplicates { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     ui::end{ ui = &gui, scope = other }
     ui::end{ ui = &gui, scope = items }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.stats.duplicate_ids == 1 and gui.stats.problems == 1, what = "two elements with one id are one duplicate; anonymous ones and other rows are none" }
-    ui_test::expect{ &io, &t, ok = gui.problem_count == 1 and gui.problems[0].kind == ui::ProblemKind::duplicate_id and gui.problems[0].id == id, what = "the problem names the id" }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = get_path{ ui = gui, kind = ui::ProblemKind::duplicate_id }, b = "items/#3" }, what = "and the path of the scopes around it" }
-    ui_test::expect{ &io, &t, ok = gui.draw.count == 5 and gui.stats.hits == 3 and gui.stats.dropped == 0, what = "both elements are recorded, drawn and hit-testable" }
+    // two elements with one id are one duplicate; anonymous ones and other rows are none
+    @expect(&t, gui.stats.duplicate_ids == 1 and gui.stats.problems == 1)
+    // the problem names the id
+    @expect(&t, gui.problem_count == 1 and gui.problems[0].kind == ui::ProblemKind::duplicate_id and gui.problems[0].id == id)
+    // and the path of the scopes around it
+    @expect(&t, slice::eq_bytes{ a = get_path{ ui = gui, kind = ui::ProblemKind::duplicate_id }, b = "items/#3" })
+    // both elements are recorded, drawn and hit-testable
+    @expect(&t, gui.draw.count == 5 and gui.stats.hits == 3 and gui.stats.dropped == 0)
 
     // The same id in the next frame is not a duplicate.
     start_frame{ ui = &gui, scale = 1.0 }
     add_box{ ui = &gui, id, x = 0.0, y = 0.0, w = 10.0, h = 10.0 }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and gui.stats.duplicate_ids == 0, what = "an id used once a frame is never a duplicate" }
+    // an id used once a frame is never a duplicate
+    @expect(&t, is_clean{ ui = gui } and gui.stats.duplicate_ids == 0)
 }
 
 // ---- frames: begin twice, end without begin, calls outside a frame
 
-fn check_frames { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+#test
+fn reports_frames_begun_twice_or_never { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap, cap = get_small{} }
 
     // Before any frame: nothing panics, nothing is recorded, each call is reported.
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.stats.problems == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::frame_not_open }, what = "end_frame before any begin_frame is reported" }
+    // end_frame before any begin_frame is reported
+    @expect(&t, gui.stats.problems == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::frame_not_open })
     let s = ui::begin_element{ ui = &gui, id = ui::make_id{ ui = gui, name = "early" }, axis = ui::Axis::row, box = ui::Box{ .. } }
     ui::paint_rect{ ui = &gui, rect = ui::Rect{ w = 5, h = 5, .. }, style = fill_with{ color = WHITE } }
     ui::paint_text{ ui = &gui, font = gui.theme.font, size = 16, x = 0, y = 0, text = "early", color = WHITE }
@@ -536,18 +658,24 @@ fn check_frames { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     ui::end{ ui = &gui, scope = k }
     ui::end{ ui = &gui, scope = p }
     ui::end{ ui = &gui, scope = s }
-    ui_test::expect{ &io, &t, ok = not s.open and not p.open and not k.open, what = "a begin outside a frame returns a closed scope" }
-    ui_test::expect{ &io, &t, ok = gui.stats.problems == 8 and count_kept{ ui = gui, kind = ui::ProblemKind::frame_not_open } == 8, what = "every call outside a frame is reported" }
-    ui_test::expect{ &io, &t, ok = gui.tree.count == 0 and gui.draw.count == 0, what = "and records nothing" }
+    // a begin outside a frame returns a closed scope
+    @expect(&t, not s.open and not p.open and not k.open)
+    // every call outside a frame is reported
+    @expect(&t, gui.stats.problems == 8 and count_kept{ ui = gui, kind = ui::ProblemKind::frame_not_open } == 8)
+    // and records nothing
+    @expect(&t, gui.tree.count == 0 and gui.draw.count == 0)
 
     // A frame, then end_frame twice: the second does nothing, and the draw list stays.
     start_frame{ ui = &gui, scale = 1.0 }
     add_box{ ui = &gui, id = ui::NO_ID, x = 0.0, y = 0.0, w = 10.0, h = 10.0 }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and gui.draw.count == 1, what = "begin_frame clears the problems of before" }
+    // begin_frame clears the problems of before
+    @expect(&t, is_clean{ ui = gui } and gui.draw.count == 1)
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.stats.problems == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::frame_not_open }, what = "end_frame twice is reported" }
-    ui_test::expect{ &io, &t, ok = gui.draw.count == 1 and is_same_rect{ r = get_shape_rect{ ui = gui, at = 0 }, x = 0, y = 0, w = 10, h = 10 }, what = "and leaves the draw list as it was" }
+    // end_frame twice is reported
+    @expect(&t, gui.stats.problems == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::frame_not_open })
+    // and leaves the draw list as it was
+    @expect(&t, gui.draw.count == 1 and is_same_rect{ r = get_shape_rect{ ui = gui, at = 0 }, x = 0, y = 0, w = 10, h = 10 })
 
     // begin_frame twice: the open frame is abandoned and the new one reports it.
     start_frame{ ui = &gui, scale = 1.0 }
@@ -556,39 +684,50 @@ fn check_frames { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     start_frame{ ui = &gui, scale = 1.0 }
     add_box{ ui = &gui, id = ui::make_id{ ui = gui, name = "kept" }, x = 50.0, y = 50.0, w = 10.0, h = 10.0 }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.stats.problems == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::frame_open }, what = "begin_frame twice is reported, once" }
-    ui_test::expect{ &io, &t, ok = gui.draw.count == 1 and is_same_rect{ r = get_shape_rect{ ui = gui, at = 0 }, x = 50, y = 50, w = 10, h = 10 }, what = "only the second frame is emitted" }
-    ui_test::expect{ &io, &t, ok = gui.stats.unclosed == 0 and gui.stats.elements == 1 and gui.stats.dropped == 0, what = "nothing of the abandoned frame is left" }
-    ui_test::expect{ &io, &t, ok = ui::get_rect{ ui = gui, id = ui::make_id{ ui = gui, name = "lost" } } == null, what = "the abandoned frame's element has no rectangle" }
+    // begin_frame twice is reported, once
+    @expect(&t, gui.stats.problems == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::frame_open })
+    // only the second frame is emitted
+    @expect(&t, gui.draw.count == 1 and is_same_rect{ r = get_shape_rect{ ui = gui, at = 0 }, x = 50, y = 50, w = 10, h = 10 })
+    // nothing of the abandoned frame is left
+    @expect(&t, gui.stats.unclosed == 0 and gui.stats.elements == 1 and gui.stats.dropped == 0)
+    // the abandoned frame's element has no rectangle
+    @expect(&t, ui::get_rect{ ui = gui, id = ui::make_id{ ui = gui, name = "lost" } } == null)
 
     // A surface of no size, and one whose numbers are not sizes or scales.
     ui::begin_frame{ ui = &gui, frame = ui::FrameInfo{ width = 0, height = 0, scale = 1.0, dt = 0.0 } }
     add_box{ ui = &gui, id = ui::make_id{ ui = gui, name = "kept" }, x = 0.0, y = 0.0, w = 10.0, h = 10.0 }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.draw.count == 0 and gui.scale == 1.0 and is_clean{ ui = gui }, what = "a surface of no size emits nothing and is no problem" }
+    // a surface of no size emits nothing and is no problem
+    @expect(&t, gui.draw.count == 0 and gui.scale == 1.0 and is_clean{ ui = gui })
     let nan: f32 = ui::sqrt_f32{ x = -1.0 }
     ui::begin_frame{ ui = &gui, frame = ui::FrameInfo{ width = -5, height = -2147483648, scale = nan, dt = nan } }
     add_box{ ui = &gui, id = ui::NO_ID, x = 0.0, y = 0.0, w = 10.0, h = 10.0 }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.draw.width == 0 and gui.draw.height == 0 and gui.draw.count == 0, what = "a negative size is no size" }
-    ui_test::expect{ &io, &t, ok = gui.scale == 1.0 and ui::get_scale{ ui = gui } == 1.0 and gui.stats.dropped == 0, what = "a scale that is not a number is 1" }
+    // a negative size is no size
+    @expect(&t, gui.draw.width == 0 and gui.draw.height == 0 and gui.draw.count == 0)
+    // a scale that is not a number is 1
+    @expect(&t, gui.scale == 1.0 and ui::get_scale{ ui = gui } == 1.0 and gui.stats.dropped == 0)
 
     // A scale of 0, a negative one and an absurd one: the frame is laid out at 1, 1 and 64, and
     // a length still converts by the rule.
     let probe = ui::make_id{ ui = gui, name = "probe" }
     ui::begin_frame{ ui = &gui, frame = ui::FrameInfo{ width = 800, height = 600, scale = 0.0, dt = 0.016 } }
     add_box{ ui = &gui, id = probe, x = 10.0, y = 20.0, w = 30.0, h = 40.0 }
-    ui_test::expect{ &io, &t, ok = ui::to_pixels{ ui = gui, length = 10.4 } == 10 and ui::to_pixels{ ui = gui, length = 0.2 } == 1, what = "at a scale of 0 a length converts at scale 1" }
+    // at a scale of 0 a length converts at scale 1
+    @expect(&t, ui::to_pixels{ ui = gui, length = 10.4 } == 10 and ui::to_pixels{ ui = gui, length = 0.2 } == 1)
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and is_same_rect{ r = find_rect{ ui = gui, id = probe }, x = 10, y = 20, w = 30, h = 40 }, what = "a scale of 0 lays the frame out at scale 1" }
+    // a scale of 0 lays the frame out at scale 1
+    @expect(&t, is_clean{ ui = gui } and is_same_rect{ r = find_rect{ ui = gui, id = probe }, x = 10, y = 20, w = 30, h = 40 })
     ui::begin_frame{ ui = &gui, frame = ui::FrameInfo{ width = 800, height = 600, scale = -2.0, dt = 0.016 } }
     add_box{ ui = &gui, id = probe, x = 10.0, y = 20.0, w = 30.0, h = 40.0 }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and is_same_rect{ r = find_rect{ ui = gui, id = probe }, x = 10, y = 20, w = 30, h = 40 }, what = "a negative scale lays the frame out at scale 1" }
+    // a negative scale lays the frame out at scale 1
+    @expect(&t, is_clean{ ui = gui } and is_same_rect{ r = find_rect{ ui = gui, id = probe }, x = 10, y = 20, w = 30, h = 40 })
     ui::begin_frame{ ui = &gui, frame = ui::FrameInfo{ width = 800, height = 600, scale = 1.0e30, dt = 0.016 } }
     add_box{ ui = &gui, id = probe, x = 1.0, y = 2.0, w = 3.0, h = 4.0 }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.scale == 64.0 and is_clean{ ui = gui } and is_same_rect{ r = find_rect{ ui = gui, id = probe }, x = 64, y = 128, w = 192, h = 256 }, what = "an absurd scale is held at 64" }
+    // an absurd scale is held at 64
+    @expect(&t, gui.scale == 64.0 and is_clean{ ui = gui } and is_same_rect{ r = find_rect{ ui = gui, id = probe }, x = 64, y = 128, w = 192, h = 256 })
 
     // The largest surface an i32 can name: it is held at MAX_PIXELS, and nothing overflows when
     // an element is placed at its far corner, fills it, or is centred in it.
@@ -605,16 +744,20 @@ fn check_frames { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     ui::end{ ui = &gui, scope = far }
     ui::end_frame{ ui = &gui }
     let big = find_rect{ ui = gui, id = probe }
-    ui_test::expect{ &io, &t, ok = gui.draw.width == ui::MAX_PIXELS and gui.draw.height == ui::MAX_PIXELS and gui.stats.dropped == 0, what = "the largest surface is held at MAX_PIXELS and drops nothing" }
-    ui_test::expect{ &io, &t, ok = big.x == ui::MAX_PIXELS and big.y == ui::MAX_PIXELS and big.w == ui::MAX_PIXELS and big.h == ui::MAX_PIXELS, what = "an element that fills it from its far corner is held too, with no overflow" }
+    // the largest surface is held at MAX_PIXELS and drops nothing
+    @expect(&t, gui.draw.width == ui::MAX_PIXELS and gui.draw.height == ui::MAX_PIXELS and gui.stats.dropped == 0)
+    // an element that fills it from its far corner is held too, with no overflow
+    @expect(&t, big.x == ui::MAX_PIXELS and big.y == ui::MAX_PIXELS and big.w == ui::MAX_PIXELS and big.h == ui::MAX_PIXELS)
 }
 
 // ---- a full element array
 
-fn check_full_elements { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+#test
+fn drops_elements_past_a_full_array { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
     let mut cap = get_small{}
     cap.elements = 8
-    let mut gui = make_ui{ &heap, cap } iferr { return }
+    let mut gui = try make_ui{ &heap, cap }
     start_frame{ ui = &gui, scale = 1.0 }
     let mut i: u32 = 0
     while i < 12 {
@@ -622,10 +765,14 @@ fn check_full_elements { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Are
         i = i + 1
     }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.stats.elements == 8 and gui.draw.count == 8, what = "an array of 8 elements keeps the first 8" }
-    ui_test::expect{ &io, &t, ok = gui.stats.dropped == 4, what = "and counts the 4 that did not fit" }
-    ui_test::expect{ &io, &t, ok = gui.stats.problems == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::elements_full }, what = "reporting the full array once" }
-    ui_test::expect{ &io, &t, ok = gui.stats.unclosed == 0 and gui.stats.stray_ends == 0, what = "a dropped element's begin and end still pair" }
+    // an array of 8 elements keeps the first 8
+    @expect(&t, gui.stats.elements == 8 and gui.draw.count == 8)
+    // and counts the 4 that did not fit
+    @expect(&t, gui.stats.dropped == 4)
+    // reporting the full array once
+    @expect(&t, gui.stats.problems == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::elements_full })
+    // a dropped element's begin and end still pair
+    @expect(&t, gui.stats.unclosed == 0 and gui.stats.stray_ends == 0)
 
     // What is recorded inside an element that did not fit is dropped with it, paints, text and
     // host slots too, and the tree is whole again after its end.
@@ -636,31 +783,38 @@ fn check_full_elements { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Are
         i = i + 1
     }
     let lost = ui::begin_element{ ui = &gui, id = ui::make_id{ ui = gui, name = "lost" }, axis = ui::Axis::row, box = place_filled{ x = 0.0, y = 50.0, w = 100.0, h = 100.0, color = ACCENT } }
-    ui_test::expect{ &io, &t, ok = lost.open and ui::tree::get_open{ ui = gui } == ui::tree::NONE, what = "an element that did not fit opens a scope with no element in it" }
+    // an element that did not fit opens a scope with no element in it
+    @expect(&t, lost.open and ui::tree::get_open{ ui = gui } == ui::tree::NONE)
     ui::paint_rect{ ui = &gui, rect = ui::Rect{ w = 5, h = 5, .. }, style = fill_with{ color = WHITE } }
     ui::add_text{ ui = &gui, text = "lost", style = ui::TextStyle{ .. }, box = ui::Box{ .. } }
     ui::add_host_slot{ ui = &gui, slot = 2, box = ui::Box{ .. } }
     let inner = ui::begin_element{ ui = &gui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{ .. } }
     ui::end{ ui = &gui, scope = inner }
     ui::end{ ui = &gui, scope = lost }
-    ui_test::expect{ &io, &t, ok = gui.ids.depth == 0 and ui::tree::get_open{ ui = gui } == 0, what = "after its end the surface is the open element again" }
+    // after its end the surface is the open element again
+    @expect(&t, gui.ids.depth == 0 and ui::tree::get_open{ ui = gui } == 0)
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.stats.elements == 8 and gui.draw.count == 8 and gui.stats.dropped == 5, what = "the element and the four things inside it are five drops" }
-    ui_test::expect{ &io, &t, ok = gui.stats.hits == 0 and gui.stats.stray_ends == 0 and gui.stats.unclosed == 0, what = "and nothing of it is emitted" }
+    // the element and the four things inside it are five drops
+    @expect(&t, gui.stats.elements == 8 and gui.draw.count == 8 and gui.stats.dropped == 5)
+    // and nothing of it is emitted
+    @expect(&t, gui.stats.hits == 0 and gui.stats.stray_ends == 0 and gui.stats.unclosed == 0)
 
     // The frame after a full one is whole.
     start_frame{ ui = &gui, scale = 1.0 }
     add_box{ ui = &gui, id = ui::NO_ID, x = 0.0, y = 0.0, w = 10.0, h = 10.0 }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and gui.draw.count == 1, what = "the frame after a full one is clean" }
+    // the frame after a full one is clean
+    @expect(&t, is_clean{ ui = gui } and gui.draw.count == 1)
 }
 
 // ---- a full clip table
 
-fn check_full_clips { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+#test
+fn drops_clips_past_a_full_table { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
     let mut cap = get_small{}
     cap.clips = 3       // the whole surface and two more
-    let mut gui = make_ui{ &heap, cap } iferr { return }
+    let mut gui = try make_ui{ &heap, cap }
     start_frame{ ui = &gui, scale = 1.0 }
     let mut i: u32 = 0
     while i < 4 {
@@ -675,9 +829,12 @@ fn check_full_clips { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     ui::end_frame{ ui = &gui }
     // Four decorations (drawn under the clip around each element, which is the surface), and the
     // two shapes inside each of the two clips that fit.
-    ui_test::expect{ &io, &t, ok = gui.draw.clip_count == 3 and gui.draw.count == 8, what = "a table of three clips holds two elements' clips and draws their content" }
-    ui_test::expect{ &io, &t, ok = gui.draw.dropped == 6 and gui.stats.dropped == 6, what = "the two clips that did not fit and the two shapes under each are dropped and counted" }
-    ui_test::expect{ &io, &t, ok = gui.stats.problems == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::clips_full }, what = "the full clip table is reported once" }
+    // a table of three clips holds two elements' clips and draws their content
+    @expect(&t, gui.draw.clip_count == 3 and gui.draw.count == 8)
+    // the two clips that did not fit and the two shapes under each are dropped and counted
+    @expect(&t, gui.draw.dropped == 6 and gui.stats.dropped == 6)
+    // the full clip table is reported once
+    @expect(&t, gui.stats.problems == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::clips_full })
     let mut unclipped = false
     let mut k: usize = 0
     while k < @as(usize, gui.draw.count) {
@@ -688,17 +845,21 @@ fn check_full_clips { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
         }
         k = k + 1
     }
-    ui_test::expect{ &io, &t, ok = not unclipped, what = "nothing is drawn unclipped in place of what could not be clipped" }
+    // nothing is drawn unclipped in place of what could not be clipped
+    @expect(&t, not unclipped)
     let last = find_rect{ ui = gui, id = ui::make_id{ ui = gui, name = "last" } }
-    ui_test::expect{ &io, &t, ok = is_same_rect{ r = last, x = 300, y = 0, w = 50, h = 50 }, what = "an element whose clip did not fit still has its rectangle" }
+    // an element whose clip did not fit still has its rectangle
+    @expect(&t, is_same_rect{ r = last, x = 300, y = 0, w = 50, h = 50 })
 }
 
 // ---- a full scope stack
 
-fn check_full_scopes { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+#test
+fn drops_scopes_past_a_full_stack { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
     let mut cap = get_small{}
     cap.scopes = 4
-    let mut gui = make_ui{ &heap, cap } iferr { return }
+    let mut gui = try make_ui{ &heap, cap }
     let mut scopes: [8]ui::Scope
     start_frame{ ui = &gui, scale = 1.0 }
     let mut i: usize = 0
@@ -706,25 +867,32 @@ fn check_full_scopes { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena
         scopes[i] = ui::begin_element{ ui = &gui, id = ui::NO_ID, axis = ui::Axis::row, box = place_filled{ x = 2.0, y = 2.0, w = 100.0 - @as(f32, i) * 10.0, h = 100.0 - @as(f32, i) * 10.0, color = ACCENT } }
         i = i + 1
     }
-    ui_test::expect{ &io, &t, ok = gui.ids.depth == 8 and gui.tree.count == 5, what = "eight nested elements on a stack of four: four are kept, all eight are counted" }
+    // eight nested elements on a stack of four: four are kept, all eight are counted
+    @expect(&t, gui.ids.depth == 8 and gui.tree.count == 5)
     ui::paint_rect{ ui = &gui, rect = ui::Rect{ w = 5, h = 5, .. }, style = fill_with{ color = WHITE } }
     let deep = ui::push_id{ ui = &gui, name = "deep" }
     ui::end{ ui = &gui, scope = deep }
-    ui_test::expect{ &io, &t, ok = gui.ids.depth == 8 and gui.stats.stray_ends == 0, what = "a scope past the stack still pairs with its end" }
+    // a scope past the stack still pairs with its end
+    @expect(&t, gui.ids.depth == 8 and gui.stats.stray_ends == 0)
     i = 8
     while i > 0 {
         i = i - 1
         ui::end{ ui = &gui, scope = scopes[i] }
     }
-    ui_test::expect{ &io, &t, ok = gui.ids.depth == 0 and gui.stats.stray_ends == 0, what = "every end finds its begin" }
+    // every end finds its begin
+    @expect(&t, gui.ids.depth == 0 and gui.stats.stray_ends == 0)
     add_box{ ui = &gui, id = ui::NO_ID, x = 300.0, y = 0.0, w = 10.0, h = 10.0 }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.tree.elements[5].parent == 0, what = "after the ends the surface is the open element again" }
+    // after the ends the surface is the open element again
+    @expect(&t, gui.tree.elements[5].parent == 0)
     // Dropped: the four elements past the stack (each counted by the scope it could not open),
     // the paint inside them, and the id scope past the stack.
-    ui_test::expect{ &io, &t, ok = gui.stats.dropped == 6 and gui.stats.elements == 5 and gui.draw.count == 5, what = "what was recorded past the stack is dropped and counted" }
-    ui_test::expect{ &io, &t, ok = gui.stats.problems == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::scopes_full }, what = "the full scope stack is reported once" }
-    ui_test::expect{ &io, &t, ok = gui.stats.unclosed == 0, what = "and nothing is left open" }
+    // what was recorded past the stack is dropped and counted
+    @expect(&t, gui.stats.dropped == 6 and gui.stats.elements == 5 and gui.draw.count == 5)
+    // the full scope stack is reported once
+    @expect(&t, gui.stats.problems == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::scopes_full })
+    // and nothing is left open
+    @expect(&t, gui.stats.unclosed == 0)
 
     // Id scopes alone overflow the same way, and end_frame closes whatever is left.
     start_frame{ ui = &gui, scale = 1.0 }
@@ -734,19 +902,23 @@ fn check_full_scopes { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena
         i = i + 1
     }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.stats.unclosed == 10 and gui.stats.dropped == 6, what = "ten id scopes left open on a stack of four are closed by end_frame" }
+    // ten id scopes left open on a stack of four are closed by end_frame
+    @expect(&t, gui.stats.unclosed == 10 and gui.stats.dropped == 6)
     start_frame{ ui = &gui, scale = 1.0 }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "and the next frame is clean" }
+    // and the next frame is clean
+    @expect(&t, is_clean{ ui = gui })
 }
 
 // ---- the other tables: text, hits, shapes, lines
 
-fn check_full_tables { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+#test
+fn drops_past_full_text_hit_shape_and_line_tables { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
     // The text arena: 16 bytes hold "0123456789" and not a second copy.
     let mut cap = get_small{}
     cap.text = 16
-    let mut gui = make_ui{ &heap, cap } iferr { return }
+    let mut gui = try make_ui{ &heap, cap }
     start_frame{ ui = &gui, scale = 1.0 }
     ui::add_text{ ui = &gui, text = "0123456789", style = ui::TextStyle{ .. }, box = ui::Box{ .. } }
     ui::add_text{ ui = &gui, text = "0123456789", style = ui::TextStyle{ .. }, box = ui::Box{ .. } }
@@ -754,43 +926,51 @@ fn check_full_tables { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena
     _ = @fmt(&gui, "{}", "0123456789")
     let cut = ui::take_text{ ui = &gui }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.draw.count == 1 and gui.stats.elements == 1, what = "text that does not fit the arena is not recorded" }
-    ui_test::expect{ &io, &t, ok = gui.stats.dropped == 3 and gui.stats.problems == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::text_full }, what = "three texts that did not fit are counted and the arena reported once" }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = cut, b = "012345" }, what = "formatted text is cut where the arena ends" }
+    // text that does not fit the arena is not recorded
+    @expect(&t, gui.draw.count == 1 and gui.stats.elements == 1)
+    // three texts that did not fit are counted and the arena reported once
+    @expect(&t, gui.stats.dropped == 3 and gui.stats.problems == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::text_full })
+    // formatted text is cut where the arena ends
+    @expect(&t, slice::eq_bytes{ a = cut, b = "012345" })
 
     // Hit regions.
     cap = get_small{}
     cap.hits = 2
-    let mut few = make_ui{ &heap, cap } iferr { return }
+    let mut few = try make_ui{ &heap, cap }
     start_frame{ ui = &few, scale = 1.0 }
     add_box{ ui = &few, id = ui::make_id{ ui = few, name = "a" }, x = 0.0, y = 0.0, w = 10.0, h = 10.0 }
     add_box{ ui = &few, id = ui::make_id{ ui = few, name = "b" }, x = 20.0, y = 0.0, w = 10.0, h = 10.0 }
     add_box{ ui = &few, id = ui::make_id{ ui = few, name = "c" }, x = 40.0, y = 0.0, w = 10.0, h = 10.0 }
     ui::end_frame{ ui = &few }
-    ui_test::expect{ &io, &t, ok = few.stats.hits == 2 and few.stats.dropped == 1 and has_kept{ ui = few, kind = ui::ProblemKind::hits_full }, what = "a third hit region in a table of two is dropped and counted" }
-    ui_test::expect{ &io, &t, ok = few.draw.count == 3, what = "its element is still drawn" }
+    // a third hit region in a table of two is dropped and counted
+    @expect(&t, few.stats.hits == 2 and few.stats.dropped == 1 and has_kept{ ui = few, kind = ui::ProblemKind::hits_full })
+    // its element is still drawn
+    @expect(&t, few.draw.count == 3)
 
     // Shapes.
     cap = get_small{}
     cap.cmds = 2
-    let mut short = make_ui{ &heap, cap } iferr { return }
+    let mut short = try make_ui{ &heap, cap }
     start_frame{ ui = &short, scale = 1.0 }
     add_box{ ui = &short, id = ui::NO_ID, x = 0.0, y = 0.0, w = 10.0, h = 10.0 }
     add_box{ ui = &short, id = ui::NO_ID, x = 20.0, y = 0.0, w = 10.0, h = 10.0 }
     add_box{ ui = &short, id = ui::NO_ID, x = 40.0, y = 0.0, w = 10.0, h = 10.0 }
     ui::end_frame{ ui = &short }
-    ui_test::expect{ &io, &t, ok = short.draw.count == 2 and short.draw.dropped == 1 and short.stats.dropped == 1, what = "a third shape in a list of two is dropped and counted" }
-    ui_test::expect{ &io, &t, ok = short.stats.problems == 1 and has_kept{ ui = short, kind = ui::ProblemKind::shapes_full }, what = "and the full list is reported" }
+    // a third shape in a list of two is dropped and counted
+    @expect(&t, short.draw.count == 2 and short.draw.dropped == 1 and short.stats.dropped == 1)
+    // and the full list is reported
+    @expect(&t, short.stats.problems == 1 and has_kept{ ui = short, kind = ui::ProblemKind::shapes_full })
 
     // Lines of text.
     cap = get_small{}
     cap.lines = 1
-    let mut lines = make_ui{ &heap, cap } iferr { return }
+    let mut lines = try make_ui{ &heap, cap }
     start_frame{ ui = &lines, scale = 1.0 }
     ui::add_text{ ui = &lines, text = "one", style = ui::TextStyle{ .. }, box = ui::Box{ .. } }
     ui::add_text{ ui = &lines, text = "two", style = ui::TextStyle{ .. }, box = ui::Box{ .. } }
     ui::end_frame{ ui = &lines }
-    ui_test::expect{ &io, &t, ok = lines.draw.count == 1 and lines.stats.dropped == 1 and has_kept{ ui = lines, kind = ui::ProblemKind::lines_full }, what = "a text with no room in the line table is not drawn, and is counted" }
+    // a text with no room in the line table is not drawn, and is counted
+    @expect(&t, lines.draw.count == 1 and lines.stats.dropped == 1 and has_kept{ ui = lines, kind = ui::ProblemKind::lines_full })
 }
 
 // ---- fonts
@@ -815,14 +995,19 @@ fn fake_raster { mut state: ui::Opaque, face: u32, glyph: u32, mut out: ui::Glyp
 
 struct Fake { calls: u32 }
 
-fn check_fonts { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+#test
+fn measures_through_the_ui_and_its_fonts { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap, cap = get_small{} }
     let known = gui.theme.font
     start_frame{ ui = &gui, scale = 1.0 }
-    ui_test::expect{ &io, &t, ok = ui::measure_text{ ui = &gui, font = known, size = 16, text = "Hello" } == 40, what = "\"Hello\" in the test font measures 40 through the Ui" }
-    ui_test::expect{ &io, &t, ok = ui::measure_text{ ui = &gui, font = known, size = 32, text = "Hello" } == 80, what = "and 80 at size 32" }
+    // "Hello" in the test font measures 40 through the Ui
+    @expect(&t, ui::measure_text{ ui = &gui, font = known, size = 16, text = "Hello" } == 40)
+    // and 80 at size 32
+    @expect(&t, ui::measure_text{ ui = &gui, font = known, size = 32, text = "Hello" } == 80)
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "measuring in a registered font is no problem" }
+    // measuring in a registered font is no problem
+    @expect(&t, is_clean{ ui = gui })
 
     // Text in a font that was never registered is reported with where it was recorded, and not drawn.
     let unknown = ui::Font{ index = 9 }
@@ -833,27 +1018,34 @@ fn check_fonts { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     ui::add_text{ ui = &gui, text = "kept", style = ui::TextStyle{ .. }, box = ui::Box{ .. } }
     ui::end{ ui = &gui, scope }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.draw.count == 1 and gui.draw.dropped == 0, what = "text in an unregistered font is not drawn; text in a registered one is" }
-    ui_test::expect{ &io, &t, ok = gui.stats.problems == 2 and count_kept{ ui = gui, kind = ui::ProblemKind::unknown_font } == 2, what = "each text in an unregistered font is a problem" }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = get_path{ ui = gui, kind = ui::ProblemKind::unknown_font }, b = "page" }, what = "with the path of where it was recorded" }
+    // text in an unregistered font is not drawn; text in a registered one is
+    @expect(&t, gui.draw.count == 1 and gui.draw.dropped == 0)
+    // each text in an unregistered font is a problem
+    @expect(&t, gui.stats.problems == 2 and count_kept{ ui = gui, kind = ui::ProblemKind::unknown_font } == 2)
+    // with the path of where it was recorded
+    @expect(&t, slice::eq_bytes{ a = get_path{ ui = gui, kind = ui::ProblemKind::unknown_font }, b = "page" })
 
     // Measuring alone in such a font is reported too, once, at end_frame.
     start_frame{ ui = &gui, scale = 1.0 }
-    ui_test::expect{ &io, &t, ok = ui::measure_text{ ui = &gui, font = unknown, size = 16, text = "Hello" } == 0, what = "text in an unregistered font has no width" }
+    // text in an unregistered font has no width
+    @expect(&t, ui::measure_text{ ui = &gui, font = unknown, size = 16, text = "Hello" } == 0)
     _ = ui::measure_text{ ui = &gui, font = unknown, size = 16, text = "again" }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.stats.problems == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::unknown_font }, what = "measuring in an unregistered font is one problem a frame" }
+    // measuring in an unregistered font is one problem a frame
+    @expect(&t, gui.stats.problems == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::unknown_font })
 
     // An outline font with no provider measures nothing and is reported; with one it measures.
     let outline_def = ui::FontDef{ kind = ui::FontKind::outline{ handle = 5 }, encoding = ui::Encoding::utf8, height = 0.0, ascent = 0.0 }
     let outline = ui::add_font{ ui = &gui, font = outline_def } ifnull {
-        ui_test::expect{ &io, &t, ok = false, what = "the font table has room for a second font" }
+        // the font table has room for a second font
+        @expect(&t, false)
         return
     }
     start_frame{ ui = &gui, scale = 1.0 }
     ui::add_text{ ui = &gui, text = "abc", style = ui::TextStyle{ font = outline, .. }, box = ui::Box{ .. } }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.stats.problems == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::no_provider }, what = "an outline font with no provider is reported" }
+    // an outline font with no provider is reported
+    @expect(&t, gui.stats.problems == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::no_provider })
 
     let mut fake = Fake{ calls = 0 }
     ui::set_provider{ ui = &gui, provider = ui::TextProvider{ state = @cast(*mut ui::Opaque, &fake), metrics = fake_metrics, shape = fake_shape, rasterize = fake_raster } }
@@ -864,19 +1056,23 @@ fn check_fonts { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     ui::end{ ui = &gui, scope = fitted }
     ui::end_frame{ ui = &gui }
     // Three bytes of 7 are 21 wide; the fake face's line is 1.25 times its 16 pixels high.
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and is_same_rect{ r = find_rect{ ui = gui, id = wide }, x = 0, y = 0, w = 21, h = 20 }, what = "with a provider an outline text is sized by its shaped width and its face's line" }
+    // with a provider an outline text is sized by its shaped width and its face's line
+    @expect(&t, is_clean{ ui = gui } and is_same_rect{ r = find_rect{ ui = gui, id = wide }, x = 0, y = 0, w = 21, h = 20 })
 
     // A full font table answers null.
     let mut cap = get_small{}
     cap.fonts = 1
-    let mut one = make_ui{ &heap, cap } iferr { return }
-    ui_test::expect{ &io, &t, ok = ui::add_font{ ui = &one, font = outline_def } == null, what = "a font past the table's room is refused" }
+    let mut one = try make_ui{ &heap, cap }
+    // a font past the table's room is refused
+    @expect(&t, ui::add_font{ ui = &one, font = outline_def } == null)
 }
 
 // ---- values that are not sizes
 
-fn check_odd_values { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+#test
+fn converts_values_that_are_not_sizes { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap, cap = get_small{} }
     let nan: f32 = ui::sqrt_f32{ x = -1.0 }
     let huge: f32 = 3.0e38
     start_frame{ ui = &gui, scale = 1.5 }
@@ -911,31 +1107,38 @@ fn check_odd_values { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     ui::end{ ui = &gui, scope = d }
     ui::end{ ui = &gui, scope = a }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.stats.dropped == 0 and gui.stats.unclosed == 0, what = "sizes that are not numbers, or are huge or negative, drop nothing and do not panic" }
-    ui_test::expect{ &io, &t, ok = gui.stats.elements == 14 and gui.stats.hits == 2, what = "and every element is still recorded" }
+    // sizes that are not numbers, or are huge or negative, drop nothing and do not panic
+    @expect(&t, gui.stats.dropped == 0 and gui.stats.unclosed == 0)
+    // and every element is still recorded
+    @expect(&t, gui.stats.elements == 14 and gui.stats.hits == 2)
     let placed = find_rect{ ui = gui, id = ui::make_id{ ui = gui, name = "pixels" } }
-    ui_test::expect{ &io, &t, ok = placed.w == ui::MAX_PIXELS and placed.h == 0 and placed.x <= ui::MAX_PIXELS and placed.y >= -ui::MAX_PIXELS, what = "a pixel placement is held: a negative height is 0, the largest width MAX_PIXELS" }
+    // a pixel placement is held: a negative height is 0, the largest width MAX_PIXELS
+    @expect(&t, placed.w == ui::MAX_PIXELS and placed.h == 0 and placed.x <= ui::MAX_PIXELS and placed.y >= -ui::MAX_PIXELS)
     let own = find_rect{ ui = gui, id = ui::make_id{ ui = gui, name = "odd" } }
-    ui_test::expect{ &io, &t, ok = own.w == 0 and own.h == 0, what = "a size that is not a number is 0, and so is a negative one" }
+    // a size that is not a number is 0, and so is a negative one
+    @expect(&t, own.w == 0 and own.h == 0)
 
     // Every length of a frame at scale 1.5 that is not a number: the conversions answer 0.
     start_frame{ ui = &gui, scale = 1.5 }
-    ui_test::expect{ &io, &t, ok = ui::to_pixels{ ui = gui, length = nan } == 0 and ui::to_pixel_position{ ui = gui, position = nan } == 0 and ui::to_pixels_f32{ ui = gui, length = nan } == 0.0
-        and ui::to_font_size{ ui = gui, size = nan } == 1 and ui::to_font_size{ ui = gui, size = -3.0 } == 1 and ui::to_font_size{ ui = gui, size = 0.0 } == 1,
-        what = "a length that is not a number converts to 0, and a font size is a pixel at least" }
-    ui_test::expect{ &io, &t, ok = ui::to_pixels{ ui = gui, length = huge } == ui::MAX_PIXELS and ui::to_pixels{ ui = gui, length = -huge } == -ui::MAX_PIXELS and ui::to_pixel_position{ ui = gui, position = huge } == ui::MAX_PIXELS,
-        what = "a huge length is held at MAX_PIXELS" }
+    // a length that is not a number converts to 0, and a font size is a pixel at least
+    @expect(&t, ui::to_pixels{ ui = gui, length = nan } == 0 and ui::to_pixel_position{ ui = gui, position = nan } == 0 and ui::to_pixels_f32{ ui = gui, length = nan } == 0.0
+        and ui::to_font_size{ ui = gui, size = nan } == 1 and ui::to_font_size{ ui = gui, size = -3.0 } == 1 and ui::to_font_size{ ui = gui, size = 0.0 } == 1)
+    // a huge length is held at MAX_PIXELS
+    @expect(&t, ui::to_pixels{ ui = gui, length = huge } == ui::MAX_PIXELS and ui::to_pixels{ ui = gui, length = -huge } == -ui::MAX_PIXELS and ui::to_pixel_position{ ui = gui, position = huge } == ui::MAX_PIXELS)
     let sides = ui::to_pixel_sides{ ui = gui, insets = ui::Insets{ left = nan, top = huge, right = -3.0, bottom = 1.0 } }
-    ui_test::expect{ &io, &t, ok = sides.left == 0 and sides.top == ui::MAX_PIXELS and sides.right == 0 and sides.bottom == 2, what = "insets convert side by side: not a number and negative are 0" }
+    // insets convert side by side: not a number and negative are 0
+    @expect(&t, sides.left == 0 and sides.top == ui::MAX_PIXELS and sides.right == 0 and sides.bottom == 2)
     ui::end_frame{ ui = &gui }
 }
 
 // ---- trees beside the base one: what the layers are built on
 
-fn check_layers { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+#test
+fn records_trees_beside_the_base_one { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
     let mut cap = get_small{}
     cap.layers = 2
-    let mut gui = make_ui{ &heap, cap } iferr { return }
+    let mut gui = try make_ui{ &heap, cap }
     let under = ui::make_id{ ui = gui, name = "under" }
     let behind = ui::make_id{ ui = gui, name = "behind" }
     let front = ui::make_id{ ui = gui, name = "front" }
@@ -947,31 +1150,39 @@ fn check_layers { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
         root = ui::tree::RootOpts{ order = ui::tree::BASE_ORDER + 5, .. }, on_end = null }
     add_box{ ui = &gui, id = inside, x = 10.0, y = 10.0, w = 20.0, h = 20.0 }
     let named = ui::push_id{ ui = &gui, name = "in front" }
-    ui_test::expect{ &io, &t, ok = ui::tree::get_order{ ui = gui } == ui::tree::BASE_ORDER + 5, what = "what is recorded inside a tree knows the tree's order" }
+    // what is recorded inside a tree knows the tree's order
+    @expect(&t, ui::tree::get_order{ ui = gui } == ui::tree::BASE_ORDER + 5)
     ui::end{ ui = &gui, scope = over }
-    ui_test::expect{ &io, &t, ok = named.open and ui::tree::get_order{ ui = gui } == ui::tree::BASE_ORDER, what = "and the base tree's after it" }
+    // and the base tree's after it
+    @expect(&t, named.open and ui::tree::get_order{ ui = gui } == ui::tree::BASE_ORDER)
     let base = ui::begin_element{ ui = &gui, id = under, axis = ui::Axis::column, box = place_filled{ x = 0.0, y = 0.0, w = 50.0, h = 50.0, color = PANEL } }
     let back = ui::tree::open_element{ ui = &gui, id = behind, axis = ui::Axis::column, box = place_filled{ x = 500.0, y = 0.0, w = 60.0, h = 60.0, color = TRACK },
         root = ui::tree::RootOpts{ order = ui::tree::BASE_ORDER - 5, hits = false, .. }, on_end = null }
     ui::end{ ui = &gui, scope = back }
     // Elements: 0 the surface, 1 the tree in front, 2 the box in it, 3 "under", 4 the tree behind.
-    ui_test::expect{ &io, &t, ok = ui::tree::get_open{ ui = gui } == 3 and gui.tree.elements[3].parent == 0 and gui.tree.elements[4].parent == ui::tree::NONE,
-        what = "a root has no parent, and after its end recording goes on where it was" }
+    // a root has no parent, and after its end recording goes on where it was
+    @expect(&t, ui::tree::get_open{ ui = gui } == 3 and gui.tree.elements[3].parent == 0 and gui.tree.elements[4].parent == ui::tree::NONE)
     ui::paint_rect{ ui = &gui, rect = ui::Rect{ w = 5, h = 5, .. }, style = fill_with{ color = ACCENT } }
     ui::end{ ui = &gui, scope = base }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and gui.draw.count == 5, what = "three trees emit five shapes" }
+    // three trees emit five shapes
+    @expect(&t, is_clean{ ui = gui } and gui.draw.count == 5)
     // Back to front: the tree behind (500, 0), the base tree (0, 0) and its paint, the tree in
     // front (300, 300) and the element in it at (310, 310).
-    ui_test::expect{ &io, &t, ok = is_same_rect{ r = get_shape_rect{ ui = gui, at = 0 }, x = 500, y = 0, w = 60, h = 60 }, what = "the tree of the smallest order is emitted first" }
-    ui_test::expect{ &io, &t, ok = is_same_rect{ r = get_shape_rect{ ui = gui, at = 1 }, x = 0, y = 0, w = 50, h = 50 } and
-        is_same_rect{ r = get_shape_rect{ ui = gui, at = 2 }, x = 0, y = 0, w = 5, h = 5 }, what = "then the base tree, without the root recorded inside it" }
-    ui_test::expect{ &io, &t, ok = is_same_rect{ r = get_shape_rect{ ui = gui, at = 3 }, x = 300, y = 300, w = 100, h = 100 } and
-        is_same_rect{ r = get_shape_rect{ ui = gui, at = 4 }, x = 310, y = 310, w = 20, h = 20 }, what = "then the tree in front, which is placed on the surface, with its content" }
-    ui_test::expect{ &io, &t, ok = gui.stats.hits == 4 and gui.emit.hits[0].id == behind and gui.emit.hits[1].id == under and gui.emit.hits[3].id == inside, what = "hit regions are in emission order, the topmost last" }
-    ui_test::expect{ &io, &t, ok = gui.emit.hits[0].area.w == 0 and gui.emit.hits[1].area.w == 50 and gui.emit.hits[0].order == ui::tree::BASE_ORDER - 5,
-        what = "a tree that makes no hits has rectangles and no hit areas" }
-    ui_test::expect{ &io, &t, ok = gui.emit.floor == 0, what = "with no modal tree nothing is blocked" }
+    // the tree of the smallest order is emitted first
+    @expect(&t, is_same_rect{ r = get_shape_rect{ ui = gui, at = 0 }, x = 500, y = 0, w = 60, h = 60 })
+    // then the base tree, without the root recorded inside it
+    @expect(&t, is_same_rect{ r = get_shape_rect{ ui = gui, at = 1 }, x = 0, y = 0, w = 50, h = 50 } and
+        is_same_rect{ r = get_shape_rect{ ui = gui, at = 2 }, x = 0, y = 0, w = 5, h = 5 })
+    // then the tree in front, which is placed on the surface, with its content
+    @expect(&t, is_same_rect{ r = get_shape_rect{ ui = gui, at = 3 }, x = 300, y = 300, w = 100, h = 100 } and
+        is_same_rect{ r = get_shape_rect{ ui = gui, at = 4 }, x = 310, y = 310, w = 20, h = 20 })
+    // hit regions are in emission order, the topmost last
+    @expect(&t, gui.stats.hits == 4 and gui.emit.hits[0].id == behind and gui.emit.hits[1].id == under and gui.emit.hits[3].id == inside)
+    // a tree that makes no hits has rectangles and no hit areas
+    @expect(&t, gui.emit.hits[0].area.w == 0 and gui.emit.hits[1].area.w == 50 and gui.emit.hits[0].order == ui::tree::BASE_ORDER - 5)
+    // with no modal tree nothing is blocked
+    @expect(&t, gui.emit.floor == 0)
 
     // A modal tree switches off the hit areas of every tree behind it.
     start_frame{ ui = &gui, scale = 1.0 }
@@ -983,10 +1194,12 @@ fn check_layers { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
         root = ui::tree::RootOpts{ order = ui::tree::BASE_ORDER + 20, .. }, on_end = null }
     ui::end{ ui = &gui, scope = above }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and gui.emit.floor == ui::tree::BASE_ORDER + 10, what = "the frontmost modal tree's order is the floor" }
-    ui_test::expect{ &io, &t, ok = gui.emit.hits[0].id == under and gui.emit.hits[0].area.w == 0 and is_same_rect{ r = gui.emit.hits[0].rect, x = 0, y = 0, w = 50, h = 50 },
-        what = "what is behind a modal tree keeps its rectangle and loses its hit area" }
-    ui_test::expect{ &io, &t, ok = gui.emit.hits[1].area.w == 200 and gui.emit.hits[2].area.w == 20, what = "the modal tree and what is in front of it take the pointer" }
+    // the frontmost modal tree's order is the floor
+    @expect(&t, is_clean{ ui = gui } and gui.emit.floor == ui::tree::BASE_ORDER + 10)
+    // what is behind a modal tree keeps its rectangle and loses its hit area
+    @expect(&t, gui.emit.hits[0].id == under and gui.emit.hits[0].area.w == 0 and is_same_rect{ r = gui.emit.hits[0].rect, x = 0, y = 0, w = 50, h = 50 })
+    // the modal tree and what is in front of it take the pointer
+    @expect(&t, gui.emit.hits[1].area.w == 200 and gui.emit.hits[2].area.w == 20)
 
     // More trees than there is room for: the one that does not fit is dropped with its content.
     start_frame{ ui = &gui, scale = 1.0 }
@@ -1000,9 +1213,12 @@ fn check_layers { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     }
     add_box{ ui = &gui, id = ui::NO_ID, x = 0.0, y = 100.0, w = 10.0, h = 10.0 }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.draw.count == 5 and gui.stats.dropped == 2, what = "a third tree with room for two is dropped with the paint inside it" }
-    ui_test::expect{ &io, &t, ok = gui.stats.problems == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::layers_full } and gui.stats.unclosed == 0, what = "and reported once" }
-    ui_test::expect{ &io, &t, ok = is_same_rect{ r = get_shape_rect{ ui = gui, at = 0 }, x = 0, y = 100, w = 10, h = 10 }, what = "the base tree goes on after it" }
+    // a third tree with room for two is dropped with the paint inside it
+    @expect(&t, gui.draw.count == 5 and gui.stats.dropped == 2)
+    // and reported once
+    @expect(&t, gui.stats.problems == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::layers_full } and gui.stats.unclosed == 0)
+    // the base tree goes on after it
+    @expect(&t, is_same_rect{ r = get_shape_rect{ ui = gui, at = 0 }, x = 0, y = 100, w = 10, h = 10 })
 }
 
 // ---- what runs when an element's scope closes
@@ -1015,28 +1231,34 @@ fn paint_bar { mut ui: ui::Ui, element: u32 } {
     if element == 4294967295 { ui::end{ &ui, scope = inner } }
 }
 
-fn check_end_hook { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+#test
+fn calls_a_scopes_end_hook { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
     let mut cap = get_small{}
     cap.elements = 6
-    let mut gui = make_ui{ &heap, cap } iferr { return }
+    let mut gui = try make_ui{ &heap, cap }
     start_frame{ ui = &gui, scale = 1.0 }
     let region = ui::tree::open_element{ ui = &gui, id = ui::NO_ID, axis = ui::Axis::column, box = place_filled{ x = 200.0, y = 100.0, w = 100.0, h = 100.0, color = PANEL }, root = null, on_end = paint_bar }
     add_box{ ui = &gui, id = ui::NO_ID, x = 0.0, y = 0.0, w = 10.0, h = 10.0 }
     ui::end{ ui = &gui, scope = region }
-    ui_test::expect{ &io, &t, ok = gui.ids.depth == 0 and gui.tree.count == 5, what = "the hook ran once, and the element it left open was closed with the scope" }
+    // the hook ran once, and the element it left open was closed with the scope
+    @expect(&t, gui.ids.depth == 0 and gui.tree.count == 5)
     ui::end{ ui = &gui, scope = region }
-    ui_test::expect{ &io, &t, ok = gui.tree.count == 5 and gui.stats.stray_ends == 1, what = "a second end does not run it again" }
+    // a second end does not run it again
+    @expect(&t, gui.tree.count == 5 and gui.stats.stray_ends == 1)
     ui::end_frame{ ui = &gui }
     // The region, its content, then what the hook recorded: the bar at (200, 190) and a paint as
     // wide as the region's index, 1.
-    ui_test::expect{ &io, &t, ok = gui.draw.count == 4 and is_same_rect{ r = get_shape_rect{ ui = gui, at = 2 }, x = 200, y = 190, w = 100, h = 10 } and
-        is_same_rect{ r = get_shape_rect{ ui = gui, at = 3 }, x = 200, y = 190, w = 1, h = 4 }, what = "what the hook records lands inside the element, after its content" }
+    // what the hook records lands inside the element, after its content
+    @expect(&t, gui.draw.count == 4 and is_same_rect{ r = get_shape_rect{ ui = gui, at = 2 }, x = 200, y = 190, w = 100, h = 10 } and
+        is_same_rect{ r = get_shape_rect{ ui = gui, at = 3 }, x = 200, y = 190, w = 1, h = 4 })
 
     // end_frame runs it for a scope left open; it does not run for an element that was dropped.
     start_frame{ ui = &gui, scale = 1.0 }
     _ = ui::tree::open_element{ ui = &gui, id = ui::NO_ID, axis = ui::Axis::column, box = place_filled{ x = 0.0, y = 0.0, w = 100.0, h = 100.0, color = PANEL }, root = null, on_end = paint_bar }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.stats.unclosed == 1 and gui.draw.count == 3, what = "end_frame runs the hook of a scope it closes" }
+    // end_frame runs the hook of a scope it closes
+    @expect(&t, gui.stats.unclosed == 1 and gui.draw.count == 3)
     start_frame{ ui = &gui, scale = 1.0 }
     let mut i: u32 = 0
     while i < 6 {
@@ -1046,15 +1268,18 @@ fn check_end_hook { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } 
     let dropped = ui::tree::open_element{ ui = &gui, id = ui::NO_ID, axis = ui::Axis::column, box = ui::Box{ .. }, root = null, on_end = paint_bar }
     ui::end{ ui = &gui, scope = dropped }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.stats.dropped == 1 and gui.draw.count == 6, what = "the hook of an element that did not fit does not run" }
+    // the hook of an element that did not fit does not run
+    @expect(&t, gui.stats.dropped == 1 and gui.draw.count == 6)
 }
 
 // ---- what emit draws of a text element: the lines the layout gave it
 
-fn check_lines { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let out = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 4096 } iferr { return }
+#test
+fn emits_the_lines_the_layout_gave_a_text { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let out = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 4096 }
     let mut sink = ui_rec::make_sink{ bytes = out }
-    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut gui = try make_ui{ &heap, cap = get_small{} }
     // The frame's steps one by one, as end_frame takes them, with the lines of the one text
     // element replaced between the solve and the emit by what a wrapping layout would give:
     // "hello" and "wor" followed by dots, each 40 wide, in an inner width of 100, right-aligned.
@@ -1064,7 +1289,8 @@ fn check_lines { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     ui::add_text{ ui = &gui, text = "hello world", style = ui::TextStyle{ align = ui::Align::end, .. }, box }
     ui::id::close_frame{ ui = &gui }
     ui::layout::solve{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.tree.elements[1].line_count == 1 and gui.layout.line_count == 1 and gui.layout.lines[0].end == 11, what = "the solver gives a text element one line, the whole text" }
+    // the solver gives a text element one line, the whole text
+    @expect(&t, gui.tree.elements[1].line_count == 1 and gui.layout.line_count == 1 and gui.layout.lines[0].end == 11)
     gui.layout.lines[0] = ui::text::Line{ start = 0, end = 5, width = 40 }
     gui.layout.lines[1] = ui::text::Line{ start = 6, end = 9, width = 48 }
     gui.layout.line_count = 2
@@ -1076,40 +1302,41 @@ fn check_lines { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     // The inner box is (30, 35) 100 wide; the lines are 16 apart; a line 40 wide ends at 130, one
     // 48 wide starts at 82.
     let want = "frame 800x600\ntext 90,35 font=0 size=16 E4E7EDFF clip=0 \"hello\"\ntext 82,51 font=0 size=16 E4E7EDFF clip=0 \"wor...\"\n"
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = ui_rec::get_text{ sink }, b = want }, what = "emit draws each line at its place, the last with its dots" }
+    // emit draws each line at its place, the last with its dots
+    @expect(&t, slice::eq_bytes{ a = ui_rec::get_text{ sink }, b = want })
     if not slice::eq_bytes{ a = ui_rec::get_text{ sink }, b = want } { _ = @fmt(&io, "{}", ui_rec::get_text{ sink }) }
 }
 
 // ---- the default capacities, and none at all
 
-fn check_defaults { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+#test
+fn makes_a_ui_with_default_and_no_capacities { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
     let before = arena::remaining{ heap }
-    let mut gui = make_ui{ &heap, cap = ui::Capacity{ .. } } iferr {
-        ui_test::expect{ &io, &t, ok = false, what = "a Ui of the default capacities is made" }
-        return
-    }
+    let mut gui = try make_ui{ &heap, cap = ui::Capacity{ .. } }
     // 7.1 MB at stage 5: 8193 elements of 256 bytes, 32768 shapes of 80, and the rest. Stage 7
     // added 1.4 MB: two node lists of 8192 and their text, the state table, the tab stops and
     // links, and the input's paste buffers (8.6 MB in all).
     let taken = before - arena::remaining{ heap }
-    ui_test::expect{ &io, &t, ok = taken < 10485760, what = "a Ui of the default capacities takes less than 10 MB" }
+    // a Ui of the default capacities takes less than 10 MB
+    @expect(&t, taken < 10485760)
     start_frame{ ui = &gui, scale = 1.0 }
     show_panel{ ui = &gui }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and gui.draw.count == 9, what = "a Ui of the default capacities draws the panel" }
+    // a Ui of the default capacities draws the panel
+    @expect(&t, is_clean{ ui = gui } and gui.draw.count == 9)
 
     // A Ui with room for nothing: every call still returns.
     let none = ui::Capacity{ elements = 0, text = 0, cmds = 0, clips = 0, hits = 0, states = 0, nodes = 0, fonts = 0, scopes = 0, layers = 0, lines = 0, measures = 0, shaped = 0 }
-    let mut empty = ui::make{ realloc = arena::alloc, &heap, cap = none } iferr {
-        ui_test::expect{ &io, &t, ok = false, what = "a Ui with room for nothing is made" }
-        return
-    }
+    let mut empty = try ui::make{ realloc = arena::alloc, &heap, cap = none }
     start_frame{ ui = &empty, scale = 1.0 }
     show_panel{ ui = &empty }
     show_clips{ ui = &empty }
     _ = @fmt(&empty, "{} and {}", 12, "text")
     _ = ui::take_text{ ui = &empty }
     ui::end_frame{ ui = &empty }
-    ui_test::expect{ &io, &t, ok = empty.draw.count == 0 and empty.stats.elements == 0 and empty.stats.dropped > 0, what = "a Ui with room for nothing drops everything and does not panic" }
-    ui_test::expect{ &io, &t, ok = empty.stats.unclosed == 0 and empty.stats.stray_ends == 0, what = "and its scopes still pair" }
+    // a Ui with room for nothing drops everything and does not panic
+    @expect(&t, empty.draw.count == 0 and empty.stats.elements == 0 and empty.stats.dropped > 0)
+    // and its scopes still pair
+    @expect(&t, empty.stats.unclosed == 0 and empty.stats.stray_ends == 0)
 }

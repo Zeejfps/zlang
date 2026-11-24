@@ -1,4 +1,4 @@
-// Stage 6's test: the flow solver (ui/core/layout.ctx). `check_solver` is called from main.ctx.
+// Stage 6's tests: the flow solver (ui/core/layout.ctx).
 //
 // The scenes at the top are pinned by the goldens `flow-*.txt`, in the form placed.ctx describes.
 // Every number in those goldens was worked out by hand from the rules at the top of layout.ctx
@@ -503,62 +503,115 @@ fn show_nested { mut ui: ui::Ui } {
 
 // ---- the checks
 
-fn check_solver { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, update: bool } {
-    check_flow_goldens{ &io, &fs, &t, &heap, update }
-    check_flow_repeat{ &io, &t, &heap }
-    check_flow_rules{ &io, &t, &heap }
-    check_flow_text{ &io, &t, &heap }
-    check_flow_limits{ &io, &t, &heap }
-    check_flow_random{ &io, &t, &heap }
-}
-
 // One frame of `show` at `scale`, written to the sink under `title`.
-fn record_scene { mut io: Io, mut t: ui_test::Tally, mut sink: ui_rec::Sink, mut ui: ui::Ui, scale: f32, title: []u8, show: fn{ mut ui: ui::Ui } } {
+fn record_scene { mut io: Io, mut t: Test, mut sink: ui_rec::Sink, mut ui: ui::Ui, scale: f32, title: []u8, show: fn{ mut ui: ui::Ui } } -> ! {
     start_frame{ &ui, scale }
     show{ &ui }
     ui::end_frame{ &ui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui }, what = "a flow scene's frame is clean" }
+    // a flow scene's frame is clean
+    @expect(&t, is_clean{ ui })
     if not is_clean{ ui } { _ = @fmt(&io, "  the scene: {}\n", title) }
-    write_frame{ &sink, ui, name = title } iferr { return }
+    try write_frame{ &sink, ui, name = title }
 }
 
-// A scene of one frame against the golden `name`.
-fn check_scene { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut sink: ui_rec::Sink, mut ui: ui::Ui, scratch: []mut u8, update: bool,
-                 name: []u8, title: []u8, show: fn{ mut ui: ui::Ui } } {
-    ui_rec::reset_sink{ &sink }
-    record_scene{ &io, &t, &sink, &ui, scale = 1.0, title, show }
-    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name, actual = ui_rec::get_text{ sink }, scratch, update }
-}
-
-fn check_flow_goldens { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, update: bool } {
-    let out = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65536 } iferr { return }
-    let scratch = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65536 } iferr { return }
-    let mut sink = ui_rec::make_sink{ bytes = out }
-    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
-
-    record_scene{ &io, &t, &sink, ui = &gui, scale = 1.0, show = show_grow,
+#test
+fn shares_grow_room_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut s = try make_scene{ &heap }
+    try record_scene{ &io, &t, sink = &s.sink, ui = &s.gui, scale = 1.0, show = show_grow,
         title = "grow: an equal split, a max with the rest shared again, a min above the share, content first, shrinking" }
-    record_scene{ &io, &t, &sink, ui = &gui, scale = 1.5, show = show_thirds, title = "three grow children share 100 at scale 1.5" }
-    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "flow-grow", actual = ui_rec::get_text{ sink }, scratch, update }
+    try record_scene{ &io, &t, sink = &s.sink, ui = &s.gui, scale = 1.5, show = show_thirds, title = "three grow children share 100 at scale 1.5" }
+    // the flow dump fit its buffer
+    @expect(&t, s.sink.lost == 0)
+    @expect(&t, compare_scene{ &io, &fs, &proc, s, name = "flow-grow" })
+}
 
-    check_scene{ &io, &fs, &t, &sink, ui = &gui, scratch, update, name = "flow-pixels", show = show_remainders,
+#test
+fn divides_whole_pixels_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut s = try make_scene{ &heap }
+    try record_scene{ &io, &t, sink = &s.sink, ui = &s.gui, scale = 1.0, show = show_remainders,
         title = "whole pixels: 100 among three, 101 with a cap, shrinking by 20 among three, an odd spare centred, take rounds down, 100 among seven" }
+    // the flow dump fit its buffer
+    @expect(&t, s.sink.lost == 0)
+    @expect(&t, compare_scene{ &io, &fs, &proc, s, name = "flow-pixels" })
+}
 
-    check_scene{ &io, &fs, &t, &sink, ui = &gui, scratch, update, name = "flow-take", show = show_take,
+#test
+fn takes_parts_of_the_room_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut s = try make_scene{ &heap }
+    try record_scene{ &io, &t, sink = &s.sink, ui = &s.gui, scale = 1.0, show = show_take,
         title = "take: beside fix, across the axis, past the whole, with min and max, in a fit parent, placed" }
-    check_scene{ &io, &fs, &t, &sink, ui = &gui, scratch, update, name = "flow-align", show = show_align,
+    // the flow dump fit its buffer
+    @expect(&t, s.sink.lost == 0)
+    @expect(&t, compare_scene{ &io, &fs, &proc, s, name = "flow-take" })
+}
+
+#test
+fn aligns_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut s = try make_scene{ &heap }
+    try record_scene{ &io, &t, sink = &s.sink, ui = &s.gui, scale = 1.0, show = show_align,
         title = "alignment: centre and end on both axes, in a row and in a column; grow leaves nothing to align" }
-    check_scene{ &io, &fs, &t, &sink, ui = &gui, scratch, update, name = "flow-text", show = show_text,
+    // the flow dump fit its buffer
+    @expect(&t, s.sink.lost == 0)
+    @expect(&t, compare_scene{ &io, &fs, &proc, s, name = "flow-align" })
+}
+
+#test
+fn wraps_flow_text_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut s = try make_scene{ &heap }
+    try record_scene{ &io, &t, sink = &s.sink, ui = &s.gui, scale = 1.0, show = show_text,
         title = "wrapped text: in a fit panel, in a grow column, with a newline in a fixed width, beside a fixed sibling" }
-    check_scene{ &io, &fs, &t, &sink, ui = &gui, scratch, update, name = "flow-ellipsis", show = show_ellipsis,
+    // the flow dump fit its buffer
+    @expect(&t, s.sink.lost == 0)
+    @expect(&t, compare_scene{ &io, &fs, &proc, s, name = "flow-text" })
+}
+
+#test
+fn cuts_text_with_dots_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut s = try make_scene{ &heap }
+    try record_scene{ &io, &t, sink = &s.sink, ui = &s.gui, scale = 1.0, show = show_ellipsis,
         title = "ellipsis: a short row, a row with room, a narrow column, a fixed width, clip, no room for the dots, an exact fit" }
-    check_scene{ &io, &fs, &t, &sink, ui = &gui, scratch, update, name = "flow-overflow", show = show_overflow,
+    // the flow dump fit its buffer
+    @expect(&t, s.sink.lost == 0)
+    @expect(&t, compare_scene{ &io, &fs, &proc, s, name = "flow-ellipsis" })
+}
+
+#test
+fn overflows_from_the_start_edge_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut s = try make_scene{ &heap }
+    try record_scene{ &io, &t, sink = &s.sink, ui = &s.gui, scale = 1.0, show = show_overflow,
         title = "overflow starts at the start edge whatever the alignment, and leaves the parent's size alone" }
-    check_scene{ &io, &fs, &t, &sink, ui = &gui, scratch, update, name = "flow-placed", show = show_placed,
+    // the flow dump fit its buffer
+    @expect(&t, s.sink.lost == 0)
+    @expect(&t, compare_scene{ &io, &fs, &proc, s, name = "flow-overflow" })
+}
+
+#test
+fn places_children_outside_the_flow_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut s = try make_scene{ &heap }
+    try record_scene{ &io, &t, sink = &s.sink, ui = &s.gui, scale = 1.0, show = show_placed,
         title = "placed children and paints take no room: a fit parent keeps its size, grow siblings share as if alone" }
-    check_scene{ &io, &fs, &t, &sink, ui = &gui, scratch, update, name = "flow-nested", show = show_nested,
+    // the flow dump fit its buffer
+    @expect(&t, s.sink.lost == 0)
+    @expect(&t, compare_scene{ &io, &fs, &proc, s, name = "flow-placed" })
+}
+
+#test
+fn nests_grow_rows_in_a_column_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut s = try make_scene{ &heap }
+    try record_scene{ &io, &t, sink = &s.sink, ui = &s.gui, scale = 1.0, show = show_nested,
         title = "rows inside a column with grow at both levels" }
-    ui_test::expect{ &io, &t, ok = sink.lost == 0, what = "the flow dumps fit their buffer" }
+    // the flow dump fit its buffer
+    @expect(&t, s.sink.lost == 0)
+    @expect(&t, compare_scene{ &io, &fs, &proc, s, name = "flow-nested" })
 }
 
 // The frame every repeat check records: grow at two levels, wrapped text and text with dots.
@@ -569,25 +622,27 @@ fn show_everything { mut ui: ui::Ui } {
 }
 
 // The same tree twice gives byte-identical dumps: two frames on in one Ui, and in a Ui made afresh.
-fn check_flow_repeat { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let first_out = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 32768 } iferr { return }
-    let again_out = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 32768 } iferr { return }
+#test
+fn solves_the_same_tree_identically { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let first_out = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 32768 }
+    let again_out = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 32768 }
     let mut first = ui_rec::make_sink{ bytes = first_out }
     let mut again = ui_rec::make_sink{ bytes = again_out }
-    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut gui = try make_ui{ &heap, cap = get_small{} }
 
-    record_scene{ &io, &t, sink = &first, ui = &gui, scale = 1.5, title = "frame", show = show_everything }
-    record_scene{ &io, &t, sink = &again, ui = &gui, scale = 1.0, title = "between", show = show_grow }
+    try record_scene{ &io, &t, sink = &first, ui = &gui, scale = 1.5, title = "frame", show = show_everything }
+    try record_scene{ &io, &t, sink = &again, ui = &gui, scale = 1.0, title = "between", show = show_grow }
     ui_rec::reset_sink{ sink = &again }
-    record_scene{ &io, &t, sink = &again, ui = &gui, scale = 1.5, title = "frame", show = show_everything }
-    ui_test::expect{ &io, &t, ok = first.len > 2000 and slice::eq_bytes{ a = ui_rec::get_text{ sink = first }, b = ui_rec::get_text{ sink = again } },
-        what = "the same flow tree two frames on gives a byte-identical dump" }
+    try record_scene{ &io, &t, sink = &again, ui = &gui, scale = 1.5, title = "frame", show = show_everything }
+    // the same flow tree two frames on gives a byte-identical dump
+    @expect(&t, first.len > 2000 and slice::eq_bytes{ a = ui_rec::get_text{ sink = first }, b = ui_rec::get_text{ sink = again } })
 
-    let mut fresh = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut fresh = try make_ui{ &heap, cap = get_small{} }
     ui_rec::reset_sink{ sink = &again }
-    record_scene{ &io, &t, sink = &again, ui = &fresh, scale = 1.5, title = "frame", show = show_everything }
-    ui_test::expect{ &io, &t, ok = first.lost == 0 and slice::eq_bytes{ a = ui_rec::get_text{ sink = first }, b = ui_rec::get_text{ sink = again } },
-        what = "the same flow tree in another Ui gives a byte-identical dump" }
+    try record_scene{ &io, &t, sink = &again, ui = &fresh, scale = 1.5, title = "frame", show = show_everything }
+    // the same flow tree in another Ui gives a byte-identical dump
+    @expect(&t, first.lost == 0 and slice::eq_bytes{ a = ui_rec::get_text{ sink = first }, b = ui_rec::get_text{ sink = again } })
 }
 
 // The solved rectangle of element `at`, as the layout left it: whole pixels, which is what emit draws.
@@ -603,8 +658,10 @@ fn has_solved { ui: ui::Ui, at: usize, x: i32, y: i32, w: i32, h: i32 } -> bool 
 
 // ---- single rules, read from the tree. Element 0 is the surface; the rest are numbered as recorded.
 
-fn check_flow_rules { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+#test
+fn solves_each_single_rule { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap, cap = get_small{} }
     let high = ui::fix{ size = 20.0 }
 
     // What a box's content comes to, which is what a scroll region measures its range by: a
@@ -618,10 +675,11 @@ fn check_flow_rules { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     add_cell{ ui = &gui, width = ui::fix{ size = 80.0 }, height = ui::fix{ size = 30.0 }, color = ACCENT }
     ui::end{ ui = &gui, scope = region }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and gui.tree.elements[1].content_w == 80 and gui.tree.elements[1].content_h == 100,
-        what = "a box's content is what its flow children take: the largest across its axis, their sum and gaps along it" }
-    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 1, x = 0, y = 0, w = 100, h = 50 } and has_solved{ ui = gui, at = 2, x = 4, y = -16, w = 80, h = 30 } and
-        has_solved{ ui = gui, at = 4, x = 4, y = 54, w = 80, h = 30 }, what = "children that overflow keep their sizes and are moved by the scroll offset" }
+    // a box's content is what its flow children take: the largest across its axis, their sum and gaps along it
+    @expect(&t, is_clean{ ui = gui } and gui.tree.elements[1].content_w == 80 and gui.tree.elements[1].content_h == 100)
+    // children that overflow keep their sizes and are moved by the scroll offset
+    @expect(&t, has_solved{ ui = gui, at = 1, x = 0, y = 0, w = 100, h = 50 } and has_solved{ ui = gui, at = 2, x = 4, y = -16, w = 80, h = 30 } and
+        has_solved{ ui = gui, at = 4, x = 4, y = 54, w = 80, h = 30 })
 
     // The content is of the final sizes: a grow child fitted to 200 and shrunk to 60 counts as 60.
     start_frame{ ui = &gui, scale = 1.0 }
@@ -630,8 +688,8 @@ fn check_flow_rules { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     add_cell{ ui = &gui, width = ui::fix{ size = 40.0 }, height = high, color = ACCENT }
     ui::end{ ui = &gui, scope = short }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.tree.elements[2].w == 60 and gui.tree.elements[1].content_w == 100 and gui.tree.elements[2].content_w == 200,
-        what = "a box's content counts a shrunk child at the size it ended with" }
+    // a box's content counts a shrunk child at the size it ended with
+    @expect(&t, gui.tree.elements[2].w == 60 and gui.tree.elements[1].content_w == 100 and gui.tree.elements[2].content_w == 200)
 
     // What a scroll region is built on: a column of 200 by 100 with a header and a footer of 20
     // and between them a region that grows both ways and holds ten rows of 30. The region is
@@ -647,10 +705,11 @@ fn check_flow_rules { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     ui::end{ ui = &gui, scope = window }
     ui::end_frame{ ui = &gui }
     // Elements: 1 the column, 2 the header, 3 the region, 4 to 13 its rows, 14 the footer.
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and has_solved{ ui = gui, at = 3, x = 0, y = 20, w = 200, h = 60 } and has_solved{ ui = gui, at = 14, x = 0, y = 80, w = 200, h = 20 },
-        what = "a grow region between a header and a footer gets the room they leave, whatever it holds" }
-    ui_test::expect{ &io, &t, ok = gui.tree.elements[3].content_h == 300 and gui.tree.elements[3].content_w == 200 and
-        has_solved{ ui = gui, at = 13, x = 0, y = 290, w = 200, h = 30 }, what = "its content keeps its size, runs past it and is measured whole" }
+    // a grow region between a header and a footer gets the room they leave, whatever it holds
+    @expect(&t, is_clean{ ui = gui } and has_solved{ ui = gui, at = 3, x = 0, y = 20, w = 200, h = 60 } and has_solved{ ui = gui, at = 14, x = 0, y = 80, w = 200, h = 20 })
+    // its content keeps its size, runs past it and is measured whole
+    @expect(&t, gui.tree.elements[3].content_h == 300 and gui.tree.elements[3].content_w == 200 and
+        has_solved{ ui = gui, at = 13, x = 0, y = 290, w = 200, h = 30 })
 
     // A FIT parent has no spare room. Along its axis a grow child keeps the size it was fitted
     // to; across it a grow child fills the parent, which is as large as the largest sibling.
@@ -661,9 +720,12 @@ fn check_flow_rules { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     add_cell{ ui = &gui, width = ui::fix{ size = 10.0 }, height = ui::GROW, color = ACCENT }
     ui::end{ ui = &gui, scope = fitted }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 1, x = 0, y = 0, w = 90, h = 40 }, what = "a fit row is as wide as its children and as high as the highest" }
-    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 2, x = 0, y = 0, w = 30, h = 20 }, what = "a grow child along a fit parent's axis keeps its fitted size" }
-    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 5, x = 80, y = 0, w = 10, h = 40 }, what = "a grow child across a fit parent's axis fills it: as high as the highest sibling" }
+    // a fit row is as wide as its children and as high as the highest
+    @expect(&t, has_solved{ ui = gui, at = 1, x = 0, y = 0, w = 90, h = 40 })
+    // a grow child along a fit parent's axis keeps its fitted size
+    @expect(&t, has_solved{ ui = gui, at = 2, x = 0, y = 0, w = 30, h = 20 })
+    // a grow child across a fit parent's axis fills it: as high as the highest sibling
+    @expect(&t, has_solved{ ui = gui, at = 5, x = 80, y = 0, w = 10, h = 40 })
 
     // min wins over max, and a child held by its min takes no share.
     start_frame{ ui = &gui, scale = 1.0 }
@@ -674,9 +736,10 @@ fn check_flow_rules { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     add_cell{ ui = &gui, width = take_within{ part = 0.5, min = 20.0, max = 5.0 }, height = high, color = ACCENT }
     ui::end{ ui = &gui, scope = limits }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.tree.elements[2].w == 80 and gui.tree.elements[4].w == 30 and gui.tree.elements[5].w == 20,
-        what = "a min larger than the max wins, for grow, fit and take" }
-    ui_test::expect{ &io, &t, ok = gui.tree.elements[3].w == 170 and gui.tree.elements[5].x == 280, what = "and the grow child beside them takes all that is left" }
+    // a min larger than the max wins, for grow, fit and take
+    @expect(&t, gui.tree.elements[2].w == 80 and gui.tree.elements[4].w == 30 and gui.tree.elements[5].w == 20)
+    // and the grow child beside them takes all that is left
+    @expect(&t, gui.tree.elements[3].w == 170 and gui.tree.elements[5].x == 280)
 
     // A root stands in the surface as a placed child stands in its parent: GROW fills it, take
     // is a fraction of it. Its own children are laid out in it as in any element.
@@ -690,9 +753,12 @@ fn check_flow_rules { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     add_cell{ ui = &gui, width = ui::fix{ size = 50.0 }, height = high, color = ACCENT }
     ui::end{ ui = &gui, scope = tip }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and has_solved{ ui = gui, at = 1, x = 0, y = 0, w = 800, h = 300 }, what = "a root that grows fills the surface, and one that takes a part takes it of the surface" }
-    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 2, x = 10, y = 10, w = 780, h = 280 }, what = "a root's children are laid out inside it" }
-    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 3, x = 700, y = 40, w = 56, h = 26 }, what = "a fit root is sized by its content and stands at its anchor" }
+    // a root that grows fills the surface, and one that takes a part takes it of the surface
+    @expect(&t, is_clean{ ui = gui } and has_solved{ ui = gui, at = 1, x = 0, y = 0, w = 800, h = 300 })
+    // a root's children are laid out inside it
+    @expect(&t, has_solved{ ui = gui, at = 2, x = 10, y = 10, w = 780, h = 280 })
+    // a fit root is sized by its content and stands at its anchor
+    @expect(&t, has_solved{ ui = gui, at = 3, x = 700, y = 40, w = 56, h = 26 })
 
     // Many grow children, each with its own max: child k stops at 3 * k * k, the room is 20000,
     // and all of it is given out, to the pixel. The first 14 stop at their caps, which add up to
@@ -700,7 +766,7 @@ fn check_flow_rules { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     // three of them, children 15, 16 and 17.
     let mut big = get_small{}
     big.cmds = 1024
-    let mut many = make_ui{ &heap, cap = big } iferr { return }
+    let mut many = try make_ui{ &heap, cap = big }
     start_frame{ ui = &many, scale = 1.0 }
     let wide = begin_at{ ui = &many, x = 0.0, y = 0.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ size = 20000.0 }, .. } }
     for k in 1..41 {
@@ -716,10 +782,12 @@ fn check_flow_rules { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
         total = total + w
         if w > 3 * k * k { past = true }
     }
-    ui_test::expect{ &io, &t, ok = not past and total == 20000, what = "forty grow children with forty different caps share all the room, to the pixel, and none passes its cap" }
-    ui_test::expect{ &io, &t, ok = many.tree.elements[2].w == 3 and many.tree.elements[13].w == 432 and many.tree.elements[15].w == 588, what = "the children with small caps stop at them" }
-    ui_test::expect{ &io, &t, ok = many.tree.elements[16].w == 653 and many.tree.elements[18].w == 653 and many.tree.elements[19].w == 652 and many.tree.elements[41].w == 652,
-        what = "the children that did not stop all grew by the same amount, the pixels left over going to the first of them" }
+    // forty grow children with forty different caps share all the room, to the pixel, and none passes its cap
+    @expect(&t, not past and total == 20000)
+    // the children with small caps stop at them
+    @expect(&t, many.tree.elements[2].w == 3 and many.tree.elements[13].w == 432 and many.tree.elements[15].w == 588)
+    // the children that did not stop all grew by the same amount, the pixels left over going to the first of them
+    @expect(&t, many.tree.elements[16].w == 653 and many.tree.elements[18].w == 653 and many.tree.elements[19].w == 652 and many.tree.elements[41].w == 652)
 
     // The integer rules, one at a time, read from the tree (the golden flow-pixels pins the same
     // as shapes). 100 among three; 101 with a cap; shrinking 20 among three; an odd spare
@@ -730,20 +798,26 @@ fn check_flow_rules { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     // Elements: 1 the first row and 2 to 4 its children; 5 the second row, 6 and 7; 8 the third
     // row, its holders 9, 11 and 13 (each with a cell inside); 15 the fourth row and 16 its
     // child; 17 the fifth row, 18 and 19.
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and gui.tree.elements[2].w == 34 and gui.tree.elements[3].w == 33 and gui.tree.elements[4].w == 33,
-        what = "100 pixels among three grow children are 34, 33 and 33" }
-    ui_test::expect{ &io, &t, ok = gui.tree.elements[4].x + gui.tree.elements[4].w == gui.tree.elements[1].x + gui.tree.elements[1].w, what = "and they fill the row exactly" }
-    ui_test::expect{ &io, &t, ok = gui.tree.elements[6].w == 30 and gui.tree.elements[7].w == 71, what = "101 pixels among a grow child capped at 30 and another are 30 and 71" }
-    ui_test::expect{ &io, &t, ok = gui.tree.elements[9].w == 34 and gui.tree.elements[11].w == 33 and gui.tree.elements[13].w == 33,
-        what = "three grow children of 40 in 100 pixels give up 6, 7 and 7: the last ones give the odd pixels" }
-    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 16, x = 40, y = 105, w = 40, h = 10 }, what = "an odd spare is centred rounded down: 61 puts 30 before, 11 puts 5 above" }
-    ui_test::expect{ &io, &t, ok = gui.tree.elements[18].w == 50 and gui.tree.elements[19].w == 50 and gui.tree.elements[19].x == 60, what = "take 0.5 of 101 pixels is 50: a fraction rounds down" }
+    // 100 pixels among three grow children are 34, 33 and 33
+    @expect(&t, is_clean{ ui = gui } and gui.tree.elements[2].w == 34 and gui.tree.elements[3].w == 33 and gui.tree.elements[4].w == 33)
+    // and they fill the row exactly
+    @expect(&t, gui.tree.elements[4].x + gui.tree.elements[4].w == gui.tree.elements[1].x + gui.tree.elements[1].w)
+    // 101 pixels among a grow child capped at 30 and another are 30 and 71
+    @expect(&t, gui.tree.elements[6].w == 30 and gui.tree.elements[7].w == 71)
+    // three grow children of 40 in 100 pixels give up 6, 7 and 7: the last ones give the odd pixels
+    @expect(&t, gui.tree.elements[9].w == 34 and gui.tree.elements[11].w == 33 and gui.tree.elements[13].w == 33)
+    // an odd spare is centred rounded down: 61 puts 30 before, 11 puts 5 above
+    @expect(&t, has_solved{ ui = gui, at = 16, x = 40, y = 105, w = 40, h = 10 })
+    // take 0.5 of 101 pixels is 50: a fraction rounds down
+    @expect(&t, gui.tree.elements[18].w == 50 and gui.tree.elements[19].w == 50 and gui.tree.elements[19].x == 60)
 }
 
 // ---- text between the width pass and the height pass
 
-fn check_flow_text { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+#test
+fn wraps_text_between_the_width_and_height_passes { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap, cap = get_small{} }
     let wrapped = ui::TextStyle{ wrap = true, .. }
 
     // The same wrapped text in a grow column beside a fixed cell, in rows of two widths: the
@@ -765,17 +839,18 @@ fn check_flow_text { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena }
     ui::end{ ui = &gui, scope = tight }
     ui::end_frame{ ui = &gui }
     // Elements: 1 the first row, 2 its cell, 3 its column, 4 its text; 5 to 8 the second row's.
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and has_solved{ ui = gui, at = 4, x = 100, y = 0, w = 200, h = 16 } and gui.tree.elements[4].line_count == 1,
-        what = "wrapped text in a grow column with room is one line" }
-    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 8, x = 100, y = 100, w = 96, h = 32 } and gui.tree.elements[8].line_count == 2,
-        what = "the same text in a column that sharing left narrower is wrapped at that width" }
-    ui_test::expect{ &io, &t, ok = gui.tree.elements[1].h == 16 and gui.tree.elements[7].h == 32 and gui.tree.elements[5].h == 32,
-        what = "and the column and the row are as high as the wrapped lines" }
+    // wrapped text in a grow column with room is one line
+    @expect(&t, is_clean{ ui = gui } and has_solved{ ui = gui, at = 4, x = 100, y = 0, w = 200, h = 16 } and gui.tree.elements[4].line_count == 1)
+    // the same text in a column that sharing left narrower is wrapped at that width
+    @expect(&t, has_solved{ ui = gui, at = 8, x = 100, y = 100, w = 96, h = 32 } and gui.tree.elements[8].line_count == 2)
+    // and the column and the row are as high as the wrapped lines
+    @expect(&t, gui.tree.elements[1].h == 16 and gui.tree.elements[7].h == 32 and gui.tree.elements[5].h == 32)
     let lines = gui.layout.lines
-    ui_test::expect{ &io, &t, ok = gui.layout.line_count == 3 and gui.tree.elements[8].first_line == 1 and lines[1].start == 0 and lines[1].end == 11 and lines[2].start == 12 and lines[2].end == 23 and
-        lines[1].width == 88, what = "its lines are byte ranges of its own text, after the lines of the texts before it" }
-    ui_test::expect{ &io, &t, ok = gui.tree.elements[8].content_h == 32 and gui.tree.elements[8].content_w == 184,
-        what = "a text's content is as high as its lines and as wide as its one line was measured" }
+    // its lines are byte ranges of its own text, after the lines of the texts before it
+    @expect(&t, gui.layout.line_count == 3 and gui.tree.elements[8].first_line == 1 and lines[1].start == 0 and lines[1].end == 11 and lines[2].start == 12 and lines[2].end == 23 and
+        lines[1].width == 88)
+    // a text's content is as high as its lines and as wide as its one line was measured
+    @expect(&t, gui.tree.elements[8].content_h == 32 and gui.tree.elements[8].content_w == 184)
 
     // Wrapped text that holds a newline asks for its longest paragraph, not for all of it on one
     // line: "ab\ncdefgh" is 48 wide in a fit box, and two lines high.
@@ -784,8 +859,8 @@ fn check_flow_text { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena }
     ui::add_text{ ui = &gui, text = "ab\ncdefgh", style = wrapped, box = ui::Box{ .. } }
     ui::end{ ui = &gui, scope = around }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 1, x = 0, y = 0, w = 48, h = 32 } and gui.tree.elements[2].line_count == 2,
-        what = "a fit box around wrapped text with a newline is as wide as its longest paragraph" }
+    // a fit box around wrapped text with a newline is as wide as its longest paragraph
+    @expect(&t, has_solved{ ui = gui, at = 1, x = 0, y = 0, w = 48, h = 32 } and gui.tree.elements[2].line_count == 2)
 
     // Text that neither wraps nor has dots keeps its width whatever its parent has, and is one
     // line: 14 characters and a newline, which has no width.
@@ -794,8 +869,8 @@ fn check_flow_text { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena }
     ui::add_text{ ui = &gui, text = "plain text\nkept", style = ui::TextStyle{ .. }, box = ui::Box{ .. } }
     ui::end{ ui = &gui, scope = narrow }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 2, x = 0, y = 0, w = 112, h = 16 } and gui.tree.elements[2].line_count == 1 and not gui.tree.elements[2].dots,
-        what = "text that does not wrap is one line of its own width" }
+    // text that does not wrap is one line of its own width
+    @expect(&t, has_solved{ ui = gui, at = 2, x = 0, y = 0, w = 112, h = 16 } and gui.tree.elements[2].line_count == 1 and not gui.tree.elements[2].dots)
 
     // A status bar: a note that may be cut and counts that must not be, in a row too short for
     // both (200 for 304 and 120). The note is GROW with dots; the counts are plain text, FIT, which
@@ -808,9 +883,9 @@ fn check_flow_text { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena }
     ui::add_text{ ui = &gui, text = counts, style = ui::TextStyle{ .. }, box = ui::Box{ .. } }
     ui::end{ ui = &gui, scope = bar }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and has_solved{ ui = gui, at = 2, x = 0, y = 0, w = 80, h = 16 } and gui.tree.elements[2].dots
-        and has_solved{ ui = gui, at = 3, x = 80, y = 0, w = 120, h = 16 } and not gui.tree.elements[3].dots,
-        what = "status bar: plain counts keep their width, and the note that may be cut gives up the room, with dots" }
+    // status bar: plain counts keep their width, and the note that may be cut gives up the room, with dots
+    @expect(&t, is_clean{ ui = gui } and has_solved{ ui = gui, at = 2, x = 0, y = 0, w = 80, h = 16 } and gui.tree.elements[2].dots
+        and has_solved{ ui = gui, at = 3, x = 80, y = 0, w = 120, h = 16 } and not gui.tree.elements[3].dots)
     // The same counts marked `Overflow::ellipsis` with no width of their own may give room up too
     // (a FIT line with dots is sized GROW, at most its own width): the bar is 224 short, and the
     // two give it up alike, 112 each, so the counts are cut. This is the rule the
@@ -821,14 +896,14 @@ fn check_flow_text { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena }
     ui::add_text{ ui = &gui, text = counts, style = ui::TextStyle{ overflow = ui::Overflow::ellipsis, .. }, box = ui::Box{ .. } }
     ui::end{ ui = &gui, scope = bar2 }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and has_solved{ ui = gui, at = 2, x = 0, y = 0, w = 192, h = 16 } and has_solved{ ui = gui, at = 3, x = 192, y = 0, w = 8, h = 16 },
-        what = "status bar: counts with dots and no width give room up alike with the note: 192 and 8, too narrow even for the dots" }
+    // status bar: counts with dots and no width give room up alike with the note: 192 and 8, too narrow even for the dots
+    @expect(&t, is_clean{ ui = gui } and has_solved{ ui = gui, at = 2, x = 0, y = 0, w = 192, h = 16 } and has_solved{ ui = gui, at = 3, x = 192, y = 0, w = 8, h = 16 })
 
     // A line table too small: the lines that fit are laid out, the text that lost lines and the
     // text that got none are each counted once, and solving the frame again does not count them twice.
     let mut cap = get_small{}
     cap.lines = 2
-    let mut few = make_ui{ &heap, cap } iferr { return }
+    let mut few = try make_ui{ &heap, cap }
     start_frame{ ui = &few, scale = 1.0 }
     let column = begin_at{ ui = &few, x = 0.0, y = 0.0, axis = ui::Axis::column, box = ui::Box{ width = ui::fix{ size = 64.0 }, .. } }
     ui::add_text{ ui = &few, text = "aa bb cc dd ee ff gg hh", style = wrapped, box = ui::Box{ .. } }
@@ -836,13 +911,16 @@ fn check_flow_text { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena }
     ui::add_text{ ui = &few, text = "z", style = ui::TextStyle{ .. }, box = ui::Box{ .. } }
     ui::end{ ui = &few, scope = column }
     ui::end_frame{ ui = &few }
-    ui_test::expect{ &io, &t, ok = few.tree.elements[2].line_count == 2 and few.tree.elements[3].line_count == 0 and few.tree.elements[4].line_count == 0 and few.layout.line_count == 2,
-        what = "a full line table keeps the lines that fitted and gives the texts after it none" }
-    ui_test::expect{ &io, &t, ok = few.stats.dropped == 3 and few.stats.problems == 1 and has_kept{ ui = few, kind = ui::ProblemKind::lines_full }, what = "each text that lost lines is counted once and the full table reported once" }
-    ui_test::expect{ &io, &t, ok = few.tree.elements[2].h == 32 and few.tree.elements[3].h == 16 and few.draw.count == 2, what = "what was laid out is drawn, and a text with no lines keeps the height of one" }
+    // a full line table keeps the lines that fitted and gives the texts after it none
+    @expect(&t, few.tree.elements[2].line_count == 2 and few.tree.elements[3].line_count == 0 and few.tree.elements[4].line_count == 0 and few.layout.line_count == 2)
+    // each text that lost lines is counted once and the full table reported once
+    @expect(&t, few.stats.dropped == 3 and few.stats.problems == 1 and has_kept{ ui = few, kind = ui::ProblemKind::lines_full })
+    // what was laid out is drawn, and a text with no lines keeps the height of one
+    @expect(&t, few.tree.elements[2].h == 32 and few.tree.elements[3].h == 16 and few.draw.count == 2)
     ui::layout::solve{ ui = &few }
     ui::layout::solve{ ui = &few }
-    ui_test::expect{ &io, &t, ok = few.stats.dropped == 3 and few.stats.problems == 1 and few.layout.line_count == 2, what = "solving the same frame again counts nothing twice" }
+    // solving the same frame again counts nothing twice
+    @expect(&t, few.stats.dropped == 3 and few.stats.problems == 1 and few.layout.line_count == 2)
 }
 
 // ---- trees the solver must survive
@@ -861,32 +939,36 @@ fn show_nest { mut ui: ui::Ui, depth: u32, grow: bool } {
     ui::end{ &ui, scope = outer }       // every box opened inside the first too
 }
 
-fn check_flow_limits { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+#test
+fn solves_at_the_deepest_nesting_and_largest_sizes { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
     // The deepest nesting a scope stack of 128 allows: 127 boxes and the cell in the last, each
     // an open scope. Growing, box k (from 1) is 800 - 2 * (k - 1) wide at x k - 1, so the last is
     // 548 by 348 at (126, 126) and the cell inside it is at (127, 127). Fitted, box k is
     // 10 + 2 * (128 - k), so the first is 264 and the last 12.
     let mut cap = get_small{}
     cap.scopes = 128
-    let mut deep = make_ui{ &heap, cap } iferr { return }
+    let mut deep = try make_ui{ &heap, cap }
     start_frame{ ui = &deep, scale = 1.0 }
     show_nest{ ui = &deep, depth = 127, grow = true }
     ui::end_frame{ ui = &deep }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = deep } and deep.stats.elements == 128, what = "127 boxes inside one another are recorded on a scope stack of 128" }
-    ui_test::expect{ &io, &t, ok = has_solved{ ui = deep, at = 1, x = 0, y = 0, w = 800, h = 600 } and has_solved{ ui = deep, at = 127, x = 126, y = 126, w = 548, h = 348 } and
-        has_solved{ ui = deep, at = 128, x = 127, y = 127, w = 10, h = 10 }, what = "growing sizes reach the innermost of 127 nested boxes" }
+    // 127 boxes inside one another are recorded on a scope stack of 128
+    @expect(&t, is_clean{ ui = deep } and deep.stats.elements == 128)
+    // growing sizes reach the innermost of 127 nested boxes
+    @expect(&t, has_solved{ ui = deep, at = 1, x = 0, y = 0, w = 800, h = 600 } and has_solved{ ui = deep, at = 127, x = 126, y = 126, w = 548, h = 348 } and
+        has_solved{ ui = deep, at = 128, x = 127, y = 127, w = 10, h = 10 })
     start_frame{ ui = &deep, scale = 1.0 }
     show_nest{ ui = &deep, depth = 127, grow = false }
     ui::end_frame{ ui = &deep }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = deep } and has_solved{ ui = deep, at = 1, x = 0, y = 0, w = 264, h = 264 } and has_solved{ ui = deep, at = 127, x = 126, y = 126, w = 12, h = 12 },
-        what = "fitted sizes reach the outermost of 127 nested boxes" }
+    // fitted sizes reach the outermost of 127 nested boxes
+    @expect(&t, is_clean{ ui = deep } and has_solved{ ui = deep, at = 1, x = 0, y = 0, w = 264, h = 264 } and has_solved{ ui = deep, at = 127, x = 126, y = 126, w = 12, h = 12 })
 
     // Thousands of elements: a row of 800 pixels holding 4000 grow children, and a column of 600
     // holding 1000 grow rows of two children each: 7002 elements. There are fewer pixels than
     // children, so the share is 0 and the pixels left over, all of them, go one each to the first
     // 800 children and the first 600 rows; the rest have no size and stand at the far edge. Sums
     // of thousands of whole sizes are exact: the last child ends on the row's last pixel.
-    let mut gui = make_ui{ &heap, cap = ui::Capacity{ .. } } iferr { return }
+    let mut gui = try make_ui{ &heap, cap = ui::Capacity{ .. } }
     start_frame{ ui = &gui, scale = 1.0 }
     let row = begin_at{ ui = &gui, x = 0.0, y = 0.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ size = 800.0 }, height = ui::fix{ size = 20.0 }, .. } }
     for k in 0..4000 { add_cell{ ui = &gui, width = ui::GROW, height = ui::GROW, color = if k % 2 == 0 { ACCENT } else { CONTROL } } }
@@ -900,17 +982,20 @@ fn check_flow_limits { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena
     }
     ui::end{ ui = &gui, scope = column }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and gui.stats.elements == 7002, what = "a frame of 7002 elements is solved and emitted with nothing dropped" }
+    // a frame of 7002 elements is solved and emitted with nothing dropped
+    @expect(&t, is_clean{ ui = gui } and gui.stats.elements == 7002)
     let last = gui.tree.elements[4001]
     // Children 0 to 799 are elements 2 to 801, a pixel each; child 800, element 802, is the first with none.
-    ui_test::expect{ &io, &t, ok = gui.tree.elements[2].w == 1 and has_solved{ ui = gui, at = 801, x = 799, y = 0, w = 1, h = 20 } and has_solved{ ui = gui, at = 802, x = 800, y = 0, w = 0, h = 20 },
-        what = "4000 grow children share a row of 800 pixels: the first 800 get one each" }
-    ui_test::expect{ &io, &t, ok = last.x + last.w == 800 and last.h == 20, what = "and the last ends exactly at the row's far edge" }
+    // 4000 grow children share a row of 800 pixels: the first 800 get one each
+    @expect(&t, gui.tree.elements[2].w == 1 and has_solved{ ui = gui, at = 801, x = 799, y = 0, w = 1, h = 20 } and has_solved{ ui = gui, at = 802, x = 800, y = 0, w = 0, h = 20 })
+    // and the last ends exactly at the row's far edge
+    @expect(&t, last.x + last.w == 800 and last.h == 20)
     // The column is element 4002, its first row 4003 with children 4004 and 4005, its last row 7000.
     // Row 599 is element 5800, the last with a pixel; row 600 is element 5803.
-    ui_test::expect{ &io, &t, ok = gui.tree.elements[4003].h == 1 and has_solved{ ui = gui, at = 4005, x = 102, y = 0, w = 698, h = 1 } and
+    // 1000 grow rows share a column of 600 pixels, each with its own children laid out
+    @expect(&t, gui.tree.elements[4003].h == 1 and has_solved{ ui = gui, at = 4005, x = 102, y = 0, w = 698, h = 1 } and
         has_solved{ ui = gui, at = 5800, x = 0, y = 599, w = 800, h = 1 } and has_solved{ ui = gui, at = 5803, x = 0, y = 600, w = 800, h = 0 } and
-        gui.tree.elements[7000].y + gui.tree.elements[7000].h == 600, what = "1000 grow rows share a column of 600 pixels, each with its own children laid out" }
+        gui.tree.elements[7000].y + gui.tree.elements[7000].h == 600)
 
     // A surface of no size: everything that grows or takes is nothing, and what is fixed stays.
     ui::begin_frame{ ui = &gui, frame = ui::FrameInfo{ width = 0, height = 0, scale = 1.0, dt = 0.0 } }
@@ -921,14 +1006,15 @@ fn check_flow_limits { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena
     ui::add_text{ ui = &gui, text = "no room at all", style = ui::TextStyle{ overflow = ui::Overflow::ellipsis, .. }, box = ui::Box{ .. } }
     ui::end{ ui = &gui, scope = lost }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and has_solved{ ui = gui, at = 1, x = 0, y = 0, w = 0, h = 0 } and has_solved{ ui = gui, at = 2, x = 10, y = 10, w = 0, h = 0 } and
-        has_solved{ ui = gui, at = 3, x = 14, y = 10, w = 0, h = 7 }, what = "on a surface of no size what grows or takes is nothing, without a problem" }
+    // on a surface of no size what grows or takes is nothing, without a problem
+    @expect(&t, is_clean{ ui = gui } and has_solved{ ui = gui, at = 1, x = 0, y = 0, w = 0, h = 0 } and has_solved{ ui = gui, at = 2, x = 10, y = 10, w = 0, h = 0 } and
+        has_solved{ ui = gui, at = 3, x = 14, y = 10, w = 0, h = 7 })
     // The wrapped text has no width, so every line is one character: the 11 that are not the
     // spaces the lines break at.
-    ui_test::expect{ &io, &t, ok = gui.tree.elements[4].w == 0 and gui.tree.elements[4].line_count == 11 and gui.tree.elements[4].h == 176,
-        what = "wrapped text with no width is a character a line, and still ends" }
-    ui_test::expect{ &io, &t, ok = gui.tree.elements[5].w == 0 and gui.tree.elements[5].line_count == 1 and gui.layout.lines[@as(usize, gui.tree.elements[5].first_line)].end == 0,
-        what = "a line with dots and no width keeps nothing of its text" }
+    // wrapped text with no width is a character a line, and still ends
+    @expect(&t, gui.tree.elements[4].w == 0 and gui.tree.elements[4].line_count == 11 and gui.tree.elements[4].h == 176)
+    // a line with dots and no width keeps nothing of its text
+    @expect(&t, gui.tree.elements[5].w == 0 and gui.tree.elements[5].line_count == 1 and gui.layout.lines[@as(usize, gui.tree.elements[5].first_line)].end == 0)
 }
 
 // ---- trees made from a seed
@@ -1294,9 +1380,11 @@ fn pick_scale { seed: u32 } -> f32 {
 // Trees made from a seed, with sizes that are numbers: the rules that hold whatever the tree is,
 // at whatever scale. A seed's tree is declared in logical units and recorded at one of five
 // scales, so its pixels differ from seed to seed, and the rules are about the pixels.
-fn check_flow_random { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap, cap = get_roomy{} } iferr { return }
-    let shots = alloc::make(Shot, arena::Arena){ realloc = arena::alloc, &heap, count = 4097 } iferr { return }
+#test
+fn holds_every_rule_on_seeded_trees { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap, cap = get_roomy{} }
+    let shots = try alloc::make(Shot, arena::Arena){ realloc = arena::alloc, &heap, count = 4097 }
     let mut faults = Faults{ .. }
     let mut unclean: u32 = 0
     let mut resolved: u32 = 0
@@ -1333,30 +1421,46 @@ fn check_flow_random { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena
         repeated = repeated + count_changed{ ui = gui, shots = shots, sizes = false }
         if gui.tree.count != count { repeated = repeated + 1 }
     }
-    ui_test::expect{ &io, &t, ok = elements > 20000 and texts > 2000, what = "the seeded trees are thousands of elements and lines of text" }
-    ui_test::expect{ &io, &t, ok = unclean == 0, what = "every seeded frame is clean" }
-    ui_test::expect{ &io, &t, ok = faults.sizes == 0, what = "seeded trees: every size and position is a whole number of pixels in range" }
-    ui_test::expect{ &io, &t, ok = faults.limits == 0, what = "seeded trees: every size is its fixed value or between its min and max" }
-    ui_test::expect{ &io, &t, ok = faults.across == 0, what = "seeded trees: across the axis a flow child is inside the padding box unless its own size is larger" }
-    ui_test::expect{ &io, &t, ok = faults.along == 0, what = "seeded trees: along the axis flow children follow one another exactly the gap apart" }
-    ui_test::expect{ &io, &t, ok = faults.shared == 0, what = "seeded trees: take is its part of the room rounded down, and grow fills across the axis" }
-    ui_test::expect{ &io, &t, ok = faults.filled == 0, what = "seeded trees: spare room is taken by grow children up to their max, missing room given up down to their min, to the pixel" }
-    ui_test::expect{ &io, &t, ok = faults.placed == 0, what = "seeded trees: a placed child is at its anchor and takes its part of the whole parent" }
-    ui_test::expect{ &io, &t, ok = faults.content == 0, what = "seeded trees: a box's content is what its flow children take" }
-    ui_test::expect{ &io, &t, ok = faults.lines == 0, what = "seeded trees: a text's lines cover it and fit its width" }
-    ui_test::expect{ &io, &t, ok = resolved == 0, what = "seeded trees: solving twice gives identical results" }
-    ui_test::expect{ &io, &t, ok = repeated == 0, what = "seeded trees: the same tree in a later frame gives identical results" }
-
-    check_odd_trees{ &io, &t, ui = &gui, shots }
+    // the seeded trees are thousands of elements and lines of text
+    @expect(&t, elements > 20000 and texts > 2000)
+    // every seeded frame is clean
+    @expect(&t, unclean == 0)
+    // seeded trees: every size and position is a whole number of pixels in range
+    @expect(&t, faults.sizes == 0)
+    // seeded trees: every size is its fixed value or between its min and max
+    @expect(&t, faults.limits == 0)
+    // seeded trees: across the axis a flow child is inside the padding box unless its own size is larger
+    @expect(&t, faults.across == 0)
+    // seeded trees: along the axis flow children follow one another exactly the gap apart
+    @expect(&t, faults.along == 0)
+    // seeded trees: take is its part of the room rounded down, and grow fills across the axis
+    @expect(&t, faults.shared == 0)
+    // seeded trees: spare room is taken by grow children up to their max, missing room given up down to their min, to the pixel
+    @expect(&t, faults.filled == 0)
+    // seeded trees: a placed child is at its anchor and takes its part of the whole parent
+    @expect(&t, faults.placed == 0)
+    // seeded trees: a box's content is what its flow children take
+    @expect(&t, faults.content == 0)
+    // seeded trees: a text's lines cover it and fit its width
+    @expect(&t, faults.lines == 0)
+    // seeded trees: solving twice gives identical results
+    @expect(&t, resolved == 0)
+    // seeded trees: the same tree in a later frame gives identical results
+    @expect(&t, repeated == 0)
 }
 
 // Trees made from a seed with numbers that are not sizes in every field: not a number, infinite,
 // huge, negative. Nothing panics, nothing is dropped, and every size the solver stores is a size:
 // the conversion to pixels made each of them 0 or held it before the solver saw it.
-fn check_odd_trees { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui, shots: []mut Shot } {
+#test
+fn holds_sizes_on_seeded_trees_of_odd_numbers { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut ui = try make_ui{ &heap, cap = get_roomy{} }
+    let shots = try alloc::make(Shot, arena::Arena){ realloc = arena::alloc, &heap, count = 4098 }
     let zero = ui::abs_f32{ x = 0.0 }
     let odd = Odd{ nan = ui::sqrt_f32{ x = -1.0 }, inf = 1.0 / zero }
-    ui_test::expect{ &io, &t, ok = odd.nan != odd.nan and odd.inf > 3.0e38, what = "the odd numbers are what they are meant to be" }
+    // the odd numbers are what they are meant to be
+    @expect(&t, odd.nan != odd.nan and odd.inf > 3.0e38)
     let mut bad: u32 = 0
     let mut dropped: u32 = 0
     let mut resolved: u32 = 0
@@ -1380,8 +1484,12 @@ fn check_odd_trees { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui, shots: [
         ui::layout::solve{ &ui }
         resolved = resolved + count_changed{ ui, shots = shots, sizes = false }
     }
-    ui_test::expect{ &io, &t, ok = elements > 10000, what = "the odd trees are thousands of elements" }
-    ui_test::expect{ &io, &t, ok = dropped == 0, what = "odd trees: numbers that are not sizes drop nothing" }
-    ui_test::expect{ &io, &t, ok = bad == 0, what = "odd trees: every size and position the solver stores is a whole number in range" }
-    ui_test::expect{ &io, &t, ok = resolved == 0, what = "odd trees: solving twice gives identical sizes and positions" }
+    // the odd trees are thousands of elements
+    @expect(&t, elements > 10000)
+    // odd trees: numbers that are not sizes drop nothing
+    @expect(&t, dropped == 0)
+    // odd trees: every size and position the solver stores is a whole number in range
+    @expect(&t, bad == 0)
+    // odd trees: solving twice gives identical sizes and positions
+    @expect(&t, resolved == 0)
 }

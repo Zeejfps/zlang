@@ -1,6 +1,5 @@
-// What whole device pixels are for (plan section 2.0, "Units"). `check_pixels` is called from
-// main.ctx. The checks here are properties, tried on the seeded trees of flow.ctx at the five
-// scales a display has (1, 1.25, 1.5, 1.75 and 2):
+// What whole device pixels are for (plan section 2.0, "Units"). The checks here are properties,
+// tried on the seeded trees of flow.ctx at the five scales a display has (1, 1.25, 1.5, 1.75 and 2):
 //
 //   - a subtree has the same sizes wherever it is put: at every pixel offset from 0 to 7, and at
 //     logical offsets that fall between pixels;
@@ -105,24 +104,15 @@ fn count_seeds { n: u32 } -> u32 {
 
 // ---- the checks
 
-fn check_pixels { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap, cap = get_roomy{} } iferr { return }
-    let shots = alloc::make(Shot, arena::Arena){ realloc = arena::alloc, &heap, count = 4098 } iferr { return }
-    let cmds = alloc::make(ui::Cmd, arena::Arena){ realloc = arena::alloc, &heap, count = 16384 } iferr { return }
-    let mut kept = Kept{ cmds, count = 0 }
-
-    check_offsets{ &io, &t, ui = &gui, shots, &kept }
-    check_fractions{ &io, &t, ui = &gui, shots }
-    check_scrolling{ &io, &t, ui = &gui, shots, &kept }
-    check_borders{ &io, &t, ui = &gui }
-    check_meeting{ &io, &t, ui = &gui }
-    check_placement{ &io, &t, ui = &gui }
-}
-
 // The same subtree at every pixel offset from 0 to 7, at each scale: placed in pixels, so the
 // wrapper lands on exactly (dx, dy). Every element in it keeps its size and moves by exactly the
 // offset, and so does every shape of the draw list.
-fn check_offsets { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui, shots: []mut Shot, mut kept: Kept } {
+#test
+fn keeps_sizes_at_every_pixel_offset { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut ui = try make_ui{ &heap, cap = get_roomy{} }
+    let shots = try alloc::make(Shot, arena::Arena){ realloc = arena::alloc, &heap, count = 4098 }
+    let mut kept = Kept{ cmds = try alloc::make(ui::Cmd, arena::Arena){ realloc = arena::alloc, &heap, count = 16384 }, count = 0 }
     let mut wrong: u32 = 0
     let mut wrong_shapes: u32 = 0
     let mut unclean: u32 = 0
@@ -146,9 +136,12 @@ fn check_offsets { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui, shots: []m
             }
         }
     }
-    ui_test::expect{ &io, &t, ok = elements > 1500 and unclean == 0, what = "offsets: the trees moved about are thousands of elements over five scales, every frame clean" }
-    ui_test::expect{ &io, &t, ok = wrong == 0, what = "offsets: a subtree placed at every pixel offset from 0 to 7 has identical sizes, and every edge moves by exactly the offset" }
-    ui_test::expect{ &io, &t, ok = wrong_shapes == 0, what = "offsets: every emitted shape moves by exactly the offset and keeps its size" }
+    // offsets: the trees moved about are thousands of elements over five scales, every frame clean
+    @expect(&t, elements > 1500 and unclean == 0)
+    // offsets: a subtree placed at every pixel offset from 0 to 7 has identical sizes, and every edge moves by exactly the offset
+    @expect(&t, wrong == 0)
+    // offsets: every emitted shape moves by exactly the offset and keeps its size
+    @expect(&t, wrong_shapes == 0)
 }
 
 // The same subtree at logical positions that fall between pixels, which is where a size used to
@@ -156,7 +149,11 @@ fn check_offsets { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui, shots: []m
 // at steps of 0.3 logical units (`ui::place`, the logical placement), so at every scale its corner
 // rounds now up, now down. Its content keeps every size and moves by whole pixels: by exactly as
 // far as the wrapper's own corner moved.
-fn check_fractions { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui, shots: []mut Shot } {
+#test
+fn moves_by_whole_pixels_between_logical_offsets { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut ui = try make_ui{ &heap, cap = get_roomy{} }
+    let shots = try alloc::make(Shot, arena::Arena){ realloc = arena::alloc, &heap, count = 4098 }
     let mut wrong: u32 = 0
     let mut steps: u32 = 0      // how many placements did not move the wrapper as far as the one before
     for s in 0..SCALES.len {
@@ -185,13 +182,20 @@ fn check_fractions { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui, shots: [
             }
         }
     }
-    ui_test::expect{ &io, &t, ok = wrong == 0, what = "positions between pixels: at every scale a subtree has the same sizes wherever it is put" }
-    ui_test::expect{ &io, &t, ok = steps > 100, what = "positions between pixels: the placements did fall between pixels (the corner moved now by one step, now by another)" }
+    // positions between pixels: at every scale a subtree has the same sizes wherever it is put
+    @expect(&t, wrong == 0)
+    // positions between pixels: the placements did fall between pixels (the corner moved now by one step, now by another)
+    @expect(&t, steps > 100)
 }
 
 // Scrolling. The wrapper scrolls its flow children by 0 to 7 pixels each way: every element in
 // it, and every shape drawn, moves by exactly that many pixels and keeps its size.
-fn check_scrolling { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui, shots: []mut Shot, mut kept: Kept } {
+#test
+fn scrolls_by_exact_pixels { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut ui = try make_ui{ &heap, cap = get_roomy{} }
+    let shots = try alloc::make(Shot, arena::Arena){ realloc = arena::alloc, &heap, count = 4098 }
+    let mut kept = Kept{ cmds = try alloc::make(ui::Cmd, arena::Arena){ realloc = arena::alloc, &heap, count = 16384 }, count = 0 }
     let mut wrong: u32 = 0
     let mut wrong_shapes: u32 = 0
     let mut wrong_step: u32 = 0
@@ -216,9 +220,12 @@ fn check_scrolling { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui, shots: [
             wrong_step = add_faults{ a = wrong_step, b = count_unmoved{ ui, shots = shots, count, dx = 0, dy = -1 } }
         }
     }
-    ui_test::expect{ &io, &t, ok = wrong == 0, what = "scrolling: by k pixels every edge of what scrolls moves by exactly k pixels and no size changes" }
-    ui_test::expect{ &io, &t, ok = wrong_shapes == 0, what = "scrolling: every emitted shape moves by exactly the scroll and keeps its size" }
-    ui_test::expect{ &io, &t, ok = wrong_step == 0, what = "scrolling: one pixel more of scroll moves every edge by exactly one pixel" }
+    // scrolling: by k pixels every edge of what scrolls moves by exactly k pixels and no size changes
+    @expect(&t, wrong == 0)
+    // scrolling: every emitted shape moves by exactly the scroll and keeps its size
+    @expect(&t, wrong_shapes == 0)
+    // scrolling: one pixel more of scroll moves every edge by exactly one pixel
+    @expect(&t, wrong_step == 0)
 }
 
 // The shapes from `first` on against the kept ones: the wrapper draws nothing, so the frame's
@@ -258,7 +265,10 @@ fn get_frame_border { ui: ui::Ui, at: usize } -> ui::Sides {
 //
 // On every side the border is that many pixels, and the child is inset by the padding's pixels on
 // the left and on the right, on the top and on the bottom: the same on opposite sides.
-fn check_borders { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui } {
+#test
+fn draws_borders_and_padding_alike_on_opposite_sides { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut ui = try make_ui{ &heap, cap = get_roomy{} }
     let widths: [3]f32 = [1.0, 0.5, 2.0]
     let want: [3][5]i32 = [[1, 1, 2, 2, 2], [1, 1, 1, 1, 1], [2, 3, 3, 4, 4]]
     let padded: [5]i32 = [4, 6, 7, 8, 9]
@@ -298,16 +308,23 @@ fn check_borders { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui } {
             }
         }
     }
-    ui_test::expect{ &io, &t, ok = even, what = "borders: at scales 1, 1.25, 1.5, 1.75 and 2 a border is the same number of pixels on all four sides" }
-    ui_test::expect{ &io, &t, ok = ruled, what = "borders: 1 unit is 1, 1, 2, 2, 2 pixels, half a unit is always 1, and 2 units are 2, 3, 3, 4, 4" }
-    ui_test::expect{ &io, &t, ok = inset, what = "padding: a child is inset by the same whole pixels on opposite sides: 4, 6, 7, 8, 9 for 4.4 units" }
-    ui_test::expect{ &io, &t, ok = sized, what = "the panel is the same size at eight positions between pixels, at every scale" }
+    // borders: at scales 1, 1.25, 1.5, 1.75 and 2 a border is the same number of pixels on all four sides
+    @expect(&t, even)
+    // borders: 1 unit is 1, 1, 2, 2, 2 pixels, half a unit is always 1, and 2 units are 2, 3, 3, 4, 4
+    @expect(&t, ruled)
+    // padding: a child is inset by the same whole pixels on opposite sides: 4, 6, 7, 8, 9 for 4.4 units
+    @expect(&t, inset)
+    // the panel is the same size at eight positions between pixels, at every scale
+    @expect(&t, sized)
 }
 
 // Pieces that meet in layout meet on screen. A row with no gap holds ten children of 10.3 logical
 // units; at every scale each is the same whole number of pixels wide and starts exactly where the
 // one before it ends: no gap of a pixel between two, no overlap, none a pixel thinner than the rest.
-fn check_meeting { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui } {
+#test
+fn meets_pieces_without_a_gap_or_an_overlap { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut ui = try make_ui{ &heap, cap = get_roomy{} }
     let want: [5]i32 = [10, 13, 15, 18, 21]     // round(10.3 * scale): 10.3, 12.875, 15.45, 18.025, 20.6
     let mut meet = true
     let mut equal = true
@@ -326,14 +343,19 @@ fn check_meeting { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui } {
         }
         if ui.tree.elements[1].w != 10 * want[s] { meet = false }
     }
-    ui_test::expect{ &io, &t, ok = meet, what = "pieces of 10.3 units side by side meet exactly at every scale: each starts where the last ends" }
-    ui_test::expect{ &io, &t, ok = equal, what = "and every piece is the same whole size: 10, 13, 15, 18 and 21 pixels" }
+    // pieces of 10.3 units side by side meet exactly at every scale: each starts where the last ends
+    @expect(&t, meet)
+    // and every piece is the same whole size: 10, 13, 15, 18 and 21 pixels
+    @expect(&t, equal)
 }
 
 // Placement in pixels, beside the logical one: an element lands on exactly the pixels given, at
 // any scale, whatever the scale would have made of them; its children are laid out in it as in any
 // element; and a size in pixels is that many pixels.
-fn check_placement { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui } {
+#test
+fn places_in_pixels_at_any_scale { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut ui = try make_ui{ &heap, cap = get_roomy{} }
     let id = ui::make_id{ ui, name = "exact" }
     let inside = ui::make_id{ ui, name = "inside" }
     let sized = ui::make_id{ ui, name = "sized" }
@@ -359,9 +381,12 @@ fn check_placement { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui } {
         if not is_same_rect{ r = find_rect{ ui, id = sized }, x = 101, y = 53, w = 17, h = 5 } { fixed = false }
         if not is_clean{ ui } { exact = false }
     }
-    ui_test::expect{ &io, &t, ok = exact, what = "a placement in pixels lands on exactly those pixels at every scale" }
-    ui_test::expect{ &io, &t, ok = filled, what = "and its children are laid out in it" }
-    ui_test::expect{ &io, &t, ok = fixed, what = "a size in pixels is that many pixels at every scale" }
+    // a placement in pixels lands on exactly those pixels at every scale
+    @expect(&t, exact)
+    // and its children are laid out in it
+    @expect(&t, filled)
+    // a size in pixels is that many pixels at every scale
+    @expect(&t, fixed)
 
     // A box with both placements: the pixel one wins. A pixel rectangle with a negative size has none.
     start_frame{ &ui, scale = 1.5 }
@@ -372,8 +397,10 @@ fn check_placement { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui } {
     let b = ui::begin_element{ &ui, id = inside, axis = ui::Axis::row, box = ui::place_pixels{ rect = ui::Rect{ x = 10, y = 20, w = -30, h = -1 } } }
     ui::end{ &ui, scope = b }
     ui::end_frame{ &ui }
-    ui_test::expect{ &io, &t, ok = is_same_rect{ r = find_rect{ ui, id }, x = 3, y = 4, w = 5, h = 6 }, what = "a box with a pixel placement and a logical one is placed by the pixels" }
-    ui_test::expect{ &io, &t, ok = is_same_rect{ r = find_rect{ ui, id = inside }, x = 10, y = 20, w = 0, h = 0 } and is_clean{ ui }, what = "a pixel placement of a negative size has no size" }
+    // a box with a pixel placement and a logical one is placed by the pixels
+    @expect(&t, is_same_rect{ r = find_rect{ ui, id }, x = 3, y = 4, w = 5, h = 6 })
+    // a pixel placement of a negative size has no size
+    @expect(&t, is_same_rect{ r = find_rect{ ui, id = inside }, x = 10, y = 20, w = 0, h = 0 } and is_clean{ ui })
 
     // A size in pixels is exact however large: a virtual list's spacer of ten million rows of 30
     // pixels and one more pixel, in a column that is then exactly that high, to the pixel.
@@ -385,6 +412,6 @@ fn check_placement { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui } {
     ui::end{ &ui, scope = after }
     ui::end{ &ui, scope = column }
     ui::end_frame{ &ui }
-    ui_test::expect{ &io, &t, ok = is_same_rect{ r = find_rect{ ui, id }, x = 0, y = 0, w = 7, h = 300000001 } and is_same_rect{ r = find_rect{ ui, id = sized }, x = 0, y = 300000001, w = 3, h = 0 } and is_clean{ ui },
-        what = "a size of three hundred million and one pixels is exactly that, and what follows it starts on the next pixel" }
+    // a size of three hundred million and one pixels is exactly that, and what follows it starts on the next pixel
+    @expect(&t, is_same_rect{ r = find_rect{ ui, id }, x = 0, y = 0, w = 7, h = 300000001 } and is_same_rect{ r = find_rect{ ui, id = sized }, x = 0, y = 300000001, w = 3, h = 0 } and is_clean{ ui })
 }
