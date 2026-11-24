@@ -27,6 +27,14 @@
 //  - A disabled item is drawn in the disabled text colour, is not lit and cannot be picked.
 //  - `begin_context_menu` opens a menu at the pointer on a right press over its target, or below
 //    the target on the Menu key while the target has the focus.
+//  - Alt pressed and released alone, or F10, gives the bar's first title the focus (with its
+//    ring) when no widget took the key, and keeps the focus there was; Escape on a title, Alt or
+//    F10 again, or Alt with a menu of the bar open closes the menus and gives that focus back.
+//    Mnemonics (Alt+F for File, an underlined letter) are left out: a label would need a marker
+//    that is not its text, so its id, its node's path and every script's name of it would change
+//    or be stripped; the underline needs one character's place in shaped text and, as Windows does
+//    it, a state for whether Alt is held to show it; and every menu is reached by keys already
+//    (Alt or F10, the arrows, Enter, and the items' shortcuts). Alt+F is an ordinary stroke.
 //  - Shortcuts. An item's `opts.shortcut` (a key and its modifiers) is shown in a shortcut column,
 //    right-aligned, as wide as the menu's widest, and picks the item when its key comes and no
 //    widget took it (`ui::take_shortcut`: matched in the frame after the key, against what the
@@ -82,6 +90,7 @@ namespace ui {
         s.f[1] = 0.0
         s.i[1] = s.i[0]
         s.i[0] = 0
+        take_bar_keys{ &ui, id, &s }
         store_state{ &ui, id, values = s }
         let gid = make_global_id{ name = "menu bar" }
         let mut g = load_state{ &ui, id = gid }
@@ -98,6 +107,58 @@ namespace ui {
         _ = begin_element{ &ui, id, axis = Axis::row, box = merge_box{ box = opts.box, base } }
         describe{ &ui, id, role = Role::menu_bar, label = "", value = 0.0, flags = 0 }
         return scope
+    }
+
+    // The keyboard's way into the bar, from the strokes the last frame left (so a widget that
+    // takes the key keeps it): Alt pressed and released alone, or F10, gives the bar's first
+    // title the focus and keeps the focus it had; again, or with a menu of the bar open, closes the
+    // menus and gives that focus back, as Escape on a title does. Kept under a part of the bar's
+    // id: f[0] 1 when one of its titles had the focus last frame, f[1] the same this frame so far
+    // (set by the titles), i[0] the focus to give back, i[1] 1 while there is one.
+    fn take_bar_keys { mut ui: Ui, id: Id, mut s: Values } {
+        let kid = make_part_id{ id, part = "\x00keys" }
+        let mut k = load_state{ &ui, id = kid }
+        let titled = k.f[1] != 0.0
+        k.f[0] = k.f[1]
+        k.f[1] = 0.0
+        let open = s.i[1] != 0
+        let alt = take_shortcut{ &ui, shortcut = Shortcut{ key = Key::alt, .. } }
+        let f10 = take_shortcut{ &ui, shortcut = Shortcut{ key = Key::f10, .. } }
+        let mut back = false
+        if alt or f10 {
+            if titled or open {
+                back = true
+            } else {
+                // Into the bar: its first title takes the focus in this frame (begin_menu's keyed
+                // step), and the focus it had is kept.
+                k.i[0] = pack_id{ id = get_focus{ ui } }
+                k.i[1] = 1
+                s.f[2] = 1.0
+                s.f[3] = 0.0
+            }
+        } else if titled and not open and k.i[1] != 0 and take_shortcut{ &ui, shortcut = Shortcut{ key = Key::escape, .. } } {
+            back = true
+        } else if not titled and not open {
+            k.i[1] = 0
+        }
+        if back {
+            close_popups{ &ui }
+            if k.i[1] != 0 {
+                set_focus{ &ui, id = unpack_id{ v = k.i[0] } }
+            } else {
+                set_focus{ &ui, id = NO_ID }
+            }
+            k.i[1] = 0
+        }
+        store_state{ &ui, id = kid, values = k }
+    }
+
+    // A title of the bar `bar` has the focus this frame.
+    fn note_bar_focus { mut ui: Ui, bar: Id } {
+        let kid = make_part_id{ id = bar, part = "\x00keys" }
+        let mut k = load_state{ &ui, id = kid }
+        k.f[1] = 1.0
+        store_state{ &ui, id = kid, values = k }
     }
 
     // A menu titled `label`. Begun in a menu bar it is a title and its menu; begun in an open menu
@@ -130,6 +191,7 @@ namespace ui {
             }
         }
         let it = press{ &ui, id, opts = make_press_opts{ ui, opts } }
+        if bar != NO_ID and it.focused { note_bar_focus{ &ui, bar } }
         if opts.enabled {
             if it.pressed { want = not open }
             if not open and (take_activation{ &ui, it } or (it.focused and take_key{ &ui, key = Key::down, mods = 0 })) {

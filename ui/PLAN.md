@@ -1496,7 +1496,6 @@ fn set_focus { mut ui: Ui, id: Id }
 fn is_focused { ui: Ui, id: Id } -> bool
 fn take_wheel { mut ui: Ui, id: Id } -> f32
 fn take_key { mut ui: Ui, key: Key, mods: u8 } -> bool
-fn take_shortcut { mut ui: Ui, shortcut: Shortcut } -> bool                         // a stroke the last frame left
 fn get_pointer { ui: Ui } -> Point                                                 // Point{ x: i32, y: i32 }: device pixels
 fn get_time { ui: Ui } -> f32
 fn get_hover_time { ui: Ui, id: Id } -> f32

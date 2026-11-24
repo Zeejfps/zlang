@@ -10,6 +10,7 @@ fn check_keys { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::
     check_shortcut_closed{ &io, &t, &heap }
     check_shortcut_open{ &io, &t, &heap }
     check_shortcut_field{ &io, &t, &heap }
+    check_bar_keys{ &io, &t, &heap }
     check_shortcut_column{ &io, &t, &heap, scale = 1.0 }
     check_shortcut_column{ &io, &t, &heap, scale = 1.5 }
 }
@@ -192,6 +193,60 @@ fn check_shortcut_field { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Ar
     step_board{ &k, &b }
     ui_test::expect{ &io, &t, ok = b.copies == 1, what = "shortcuts: with the field not focused, Ctrl+C is Edit > Copy's" }
     ui_test::expect{ &io, &t, ok = k.d.unclean == 0, what = "shortcuts and a field: every frame is clean" }
+}
+
+fn is_focused_node { ui: ui::Ui, path: []u8 } -> bool {
+    let n = ui::find_node{ ui, path } ifnull { return false }
+    return (n.flags & ui::NODE_FOCUSED) != 0
+}
+
+// Alt alone or F10 puts the focus on the bar's first title the frame after the key, from a text
+// field that does not take them; Escape there gives it back to the field; Alt again, and Alt with
+// a menu open, close the menus and give it back too; the arrows and Enter then work the bar.
+fn check_bar_keys { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut k = make_desk2{ &heap, scale = 1.0 } iferr { return }
+    let mut b = make_board{}
+    b.field = true
+    step_board{ &k, &b }
+    step_board{ &k, &b }
+    _ = ui_test::click{ d = &k.d, ui = &k.ui, path = "field", show = show_board{ &b, _ } }
+    step_board{ &k, &b }
+    let in_field = is_focused_node{ ui = k.ui, path = "field" }
+    tap_board{ &k, &b, key = ui::Key::alt, mods = 0 }
+    let not_yet = is_focused_node{ ui = k.ui, path = "field" }
+    step_board{ &k, &b }
+    ui_test::expect{ &io, &t, ok = in_field and not_yet and is_focused_node{ ui = k.ui, path = "menu bar/File" } and ui::is_focus_visible{ ui = k.ui },
+        what = "bar keys: Alt alone from the field focuses File, with its ring, the frame after the key" }
+    tap_board{ &k, &b, key = ui::Key::right, mods = 0 }
+    step_board{ &k, &b }
+    let along = is_focused_node{ ui = k.ui, path = "menu bar/Edit" }
+    tap_board{ &k, &b, key = ui::Key::escape, mods = 0 }
+    step_board{ &k, &b }
+    step_board{ &k, &b }
+    ui_test::expect{ &io, &t, ok = along and is_focused_node{ ui = k.ui, path = "field" } and not is_focused_node{ ui = k.ui, path = "menu bar/Edit" },
+        what = "bar keys: Right moves along the bar, and Escape gives the focus back to the field" }
+    tap_board{ &k, &b, key = ui::Key::f10, mods = 0 }
+    step_board{ &k, &b }
+    let by_f10 = is_focused_node{ ui = k.ui, path = "menu bar/File" }
+    tap_board{ &k, &b, key = ui::Key::down, mods = 0 }
+    step_board{ &k, &b }
+    let opened = ui::find_node{ ui = k.ui, path = "File/New" } != null
+    tap_board{ &k, &b, key = ui::Key::alt, mods = 0 }
+    step_board{ &k, &b }
+    step_board{ &k, &b }
+    ui_test::expect{ &io, &t, ok = by_f10 and opened and ui::find_node{ ui = k.ui, path = "File/New" } == null and is_focused_node{ ui = k.ui, path = "field" },
+        what = "bar keys: F10 focuses File, Down opens it, and Alt closes it and gives the focus back to the field" }
+    tap_board{ &k, &b, key = ui::Key::alt, mods = 0 }
+    step_board{ &k, &b }
+    tap_board{ &k, &b, key = ui::Key::alt, mods = 0 }
+    step_board{ &k, &b }
+    step_board{ &k, &b }
+    ui_test::expect{ &io, &t, ok = is_focused_node{ ui = k.ui, path = "field" }, what = "bar keys: Alt twice goes into the bar and back out" }
+    tap_board{ &k, &b, key = ui::Key::f, mods = ui::MOD_ALT }
+    step_board{ &k, &b }
+    ui_test::expect{ &io, &t, ok = is_focused_node{ ui = k.ui, path = "field" } and ui::find_node{ ui = k.ui, path = "File/New" } == null,
+        what = "bar keys: Alt+F is not Alt alone, and opens nothing (mnemonics are not supported)" }
+    ui_test::expect{ &io, &t, ok = k.d.unclean == 0, what = "bar keys: every frame is clean" }
 }
 
 // The text shape of `needle` in the last frame, as wide as it measures; one of -1s when there is

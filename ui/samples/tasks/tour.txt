@@ -261,6 +261,30 @@ expect "About Tasks"
 key escape
 frames 2
 
+# The menu bar from the keyboard: Alt alone, or F10, gives File the focus from the field (which
+# does not take them); Escape gives it back to the field; with a menu open, Alt closes it and
+# gives the focus back too.
+click "new task"
+key alt
+frames 2
+expect File focused
+key right
+frames 1
+expect Edit focused
+key escape
+frames 2
+expect "new task" focused
+key f10
+frames 2
+expect File focused
+key down
+frames 2
+expect File open
+shot ui/out/tasks-keys.png
+key alt
+frames 2
+expect "new task" focused
+
 # A smaller window: the content is laid out again in it.
 resize 360 340
 frames 3

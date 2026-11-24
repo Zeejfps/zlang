@@ -200,7 +200,7 @@ ui/
                 take_requests; take_shortcut and has_shortcuts (the strokes the last frame left), get_key_name,
                 write_shortcut
     interact.ctx PressOpts, Interaction, press, get_hover_time, take_wheel, take_wheel_x, is_pointer_over
-    focus.ctx   Links, set_links, set_focus (waits up to two frames for a widget not recorded yet), ask_first_focus
+    focus.ctx   Links, set_links, set_focus (waits up to two frames for a widget not recorded yet), get_focus, ask_first_focus
                 (a dialog's first tab stop), claim_focus (a press's focus, for a widget's part), is_focused,
                 is_focus_visible and set_focus_visible (the focus came by keys or by hover-focus: draw the ring;
                 a pointer press hides it)

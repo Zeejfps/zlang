@@ -77,6 +77,12 @@ namespace ui {
         ui.focus.visible = false
     }
 
+    // The id that has the keyboard focus now; NO_ID when none has. What a widget keeps to give the
+    // focus back later (a menu bar entered by Alt, left by Escape).
+    fn get_focus { ui: Ui } -> Id {
+        return ui.focus.focused
+    }
+
     fn is_focused { ui: Ui, id: Id } -> bool {
         return id != NO_ID and ui.focus.focused == id
     }
