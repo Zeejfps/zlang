@@ -301,7 +301,7 @@ fn hover_node { mut d: ui_test::Driver, mut ui: ui::Ui, path: []u8, show: &fn{ m
 }
 
 // A key tapped and a frame run.
-fn press_key { mut d: ui_test::Driver, mut ui: ui::Ui, key: ui::Key, show: &fn{ mut ui: ui::Ui } } {
+fn press_window_key { mut d: ui_test::Driver, mut ui: ui::Ui, key: ui::Key, show: &fn{ mut ui: ui::Ui } } {
     _ = ui_test::tap_key{ &ui, key, mods = 0 }
     ui_test::step_frame{ &d, &ui, show }
 }
@@ -616,7 +616,7 @@ fn check_window_fold { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
     ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
     let stop = has_node_flag{ ui = gui, path = "Tasks/.collapse", flag = ui::NODE_FOCUSED }
-    press_key{ &d, ui = &gui, key = ui::Key::enter, show = show_desk{ &s, _ } }
+    press_window_key{ &d, ui = &gui, key = ui::Key::enter, show = show_desk{ &s, _ } }
     ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
     ui_test::expect{ &io, &t, ok = stop and find_rect{ ui = gui, path = "Tasks" }.h == 30, what = "window fold: Enter on the focused arrow folds it" }
     ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "window fold: every frame is clean" }
@@ -642,7 +642,7 @@ fn check_window_close { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Aren
     for _ in 0..6 { _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 } }
     ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
     let stop = has_node_flag{ ui = gui, path = "Notes/.close", flag = ui::NODE_FOCUSED }
-    press_key{ &d, ui = &gui, key = ui::Key::enter, show = show_desk{ &s, _ } }
+    press_window_key{ &d, ui = &gui, key = ui::Key::enter, show = show_desk{ &s, _ } }
     ui_test::expect{ &io, &t, ok = stop and not s.b_open, what = "window close: Enter on the focused cross closes it" }
     ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "window close: every frame is clean" }
 }
@@ -720,7 +720,7 @@ fn check_dialog_modal { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Aren
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
     ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
     let inside = has_node_flag{ ui = gui, path = "Confirm/.close", flag = ui::NODE_FOCUSED }
-    press_key{ &d, ui = &gui, key = ui::Key::escape, show = show_desk{ &s, _ } }
+    press_window_key{ &d, ui = &gui, key = ui::Key::escape, show = show_desk{ &s, _ } }
     ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
     ui_test::expect{ &io, &t, ok = inside and not s.dialog and has_node_flag{ ui = gui, path = "Tasks/A1", flag = ui::NODE_FOCUSED },
         what = "dialog: Tab goes into it; Escape closes it and gives the focus back" }
@@ -802,42 +802,42 @@ fn check_menu_keys { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena }
     ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
     ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
-    press_key{ &d, ui = &gui, key = ui::Key::enter, show = show_desk{ &s, _ } }
+    press_window_key{ &d, ui = &gui, key = ui::Key::enter, show = show_desk{ &s, _ } }
     ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
     let lit_open = has_node_flag{ ui = gui, path = "File/Open", flag = ui::NODE_SELECTED }
-    press_key{ &d, ui = &gui, key = ui::Key::down, show = show_desk{ &s, _ } }
+    press_window_key{ &d, ui = &gui, key = ui::Key::down, show = show_desk{ &s, _ } }
     let lit_recent = has_node_flag{ ui = gui, path = "File/Recent", flag = ui::NODE_SELECTED } and not has_node_flag{ ui = gui, path = "File/Save", flag = ui::NODE_SELECTED }
     ui_test::expect{ &io, &t, ok = lit_open and lit_recent, what = "menu keys: Enter opens with the first item lit, Down skips a disabled item" }
-    press_key{ &d, ui = &gui, key = ui::Key::right, show = show_desk{ &s, _ } }
+    press_window_key{ &d, ui = &gui, key = ui::Key::right, show = show_desk{ &s, _ } }
     ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
     let sub_lit = has_node_flag{ ui = gui, path = "Recent/notes.txt", flag = ui::NODE_SELECTED }
-    press_key{ &d, ui = &gui, key = ui::Key::down, show = show_desk{ &s, _ } }
+    press_window_key{ &d, ui = &gui, key = ui::Key::down, show = show_desk{ &s, _ } }
     let sub_down = has_node_flag{ ui = gui, path = "Recent/plan.md", flag = ui::NODE_SELECTED } and has_node_flag{ ui = gui, path = "File/Recent", flag = ui::NODE_SELECTED }
-    press_key{ &d, ui = &gui, key = ui::Key::left, show = show_desk{ &s, _ } }
+    press_window_key{ &d, ui = &gui, key = ui::Key::left, show = show_desk{ &s, _ } }
     ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
     let sub_shut = not has_node{ ui = gui, path = "Recent/plan.md" } and has_node_flag{ ui = gui, path = "File/Recent", flag = ui::NODE_SELECTED }
     ui_test::expect{ &io, &t, ok = sub_lit and sub_down and sub_shut, what = "menu keys: Right enters a submenu with its first item lit, Down steps in it, Left leaves it" }
-    press_key{ &d, ui = &gui, key = ui::Key::up, show = show_desk{ &s, _ } }      // Open
-    press_key{ &d, ui = &gui, key = ui::Key::right, show = show_desk{ &s, _ } }
+    press_window_key{ &d, ui = &gui, key = ui::Key::up, show = show_desk{ &s, _ } }      // Open
+    press_window_key{ &d, ui = &gui, key = ui::Key::right, show = show_desk{ &s, _ } }
     ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
     let edit = has_node_flag{ ui = gui, path = "Edit/Cut", flag = ui::NODE_SELECTED } and not has_node{ ui = gui, path = "File/Open" } and has_node_flag{ ui = gui, path = "menu bar/Edit", flag = ui::NODE_FOCUSED }
-    press_key{ &d, ui = &gui, key = ui::Key::left, show = show_desk{ &s, _ } }
+    press_window_key{ &d, ui = &gui, key = ui::Key::left, show = show_desk{ &s, _ } }
     ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
     let back = has_node_flag{ ui = gui, path = "File/Open", flag = ui::NODE_SELECTED } and not has_node{ ui = gui, path = "Edit/Cut" }
-    press_key{ &d, ui = &gui, key = ui::Key::left, show = show_desk{ &s, _ } }
+    press_window_key{ &d, ui = &gui, key = ui::Key::left, show = show_desk{ &s, _ } }
     ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
     let wrapped = has_node{ ui = gui, path = "View/Undo" }
     ui_test::expect{ &io, &t, ok = edit and back and wrapped, what = "menu keys: Right and Left go along the bar's menus, wrapping" }
-    press_key{ &d, ui = &gui, key = ui::Key::escape, show = show_desk{ &s, _ } }
+    press_window_key{ &d, ui = &gui, key = ui::Key::escape, show = show_desk{ &s, _ } }
     ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
     let shut = not has_node{ ui = gui, path = "View/Undo" } and has_node_flag{ ui = gui, path = "menu bar/View", flag = ui::NODE_FOCUSED }
-    press_key{ &d, ui = &gui, key = ui::Key::right, show = show_desk{ &s, _ } }
+    press_window_key{ &d, ui = &gui, key = ui::Key::right, show = show_desk{ &s, _ } }
     ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
     let along = has_node_flag{ ui = gui, path = "menu bar/File", flag = ui::NODE_FOCUSED } and not has_node{ ui = gui, path = "File/Open" }
     ui_test::expect{ &io, &t, ok = shut and along, what = "menu keys: Escape shuts the menu, its title keeps the focus; Right on a shut title moves the focus" }
-    press_key{ &d, ui = &gui, key = ui::Key::down, show = show_desk{ &s, _ } }
+    press_window_key{ &d, ui = &gui, key = ui::Key::down, show = show_desk{ &s, _ } }
     ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
-    press_key{ &d, ui = &gui, key = ui::Key::enter, show = show_desk{ &s, _ } }
+    press_window_key{ &d, ui = &gui, key = ui::Key::enter, show = show_desk{ &s, _ } }
     ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
     ui_test::expect{ &io, &t, ok = s.opened == 1 and not has_node{ ui = gui, path = "File/Open" }, what = "menu keys: Down opens the menu and Enter picks the lit item, once" }
     ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "menu keys: every frame is clean" }
@@ -885,21 +885,21 @@ fn check_combo_pick { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
     let peach = find_rect{ ui = gui, path = "Peach" }
     let lit = has_node_flag{ ui = gui, path = "Peach", flag = ui::NODE_SELECTED } and peach.y >= list.y and peach.y + peach.h <= list.y + list.h
-    press_key{ &d, ui = &gui, key = ui::Key::enter, show = show_desk{ &s, _ } }
+    press_window_key{ &d, ui = &gui, key = ui::Key::enter, show = show_desk{ &s, _ } }
     ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
     ui_test::expect{ &io, &t, ok = lit and s.fruit == 18 and not has_node{ ui = gui, path = "Peach" }, what = "combo: Down lights the rows, scrolled into view; Enter picks and shuts" }
-    press_key{ &d, ui = &gui, key = ui::Key::down, show = show_desk{ &s, _ } }
+    press_window_key{ &d, ui = &gui, key = ui::Key::down, show = show_desk{ &s, _ } }
     ui_test::expect{ &io, &t, ok = s.fruit == 19 and not has_node{ ui = gui, path = "Pear" }, what = "combo: shut and focused, Down chooses the next item" }
     _ = ui_test::click{ &d, ui = &gui, path = "fruit", show = show_desk{ &s, _ } }
     ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
-    press_key{ &d, ui = &gui, key = ui::Key::home, show = show_desk{ &s, _ } }
+    press_window_key{ &d, ui = &gui, key = ui::Key::home, show = show_desk{ &s, _ } }
     ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
     _ = ui_test::click{ &d, ui = &gui, path = "Apricot", show = show_desk{ &s, _ } }
     ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
     ui_test::expect{ &io, &t, ok = s.fruit == 1 and not has_node{ ui = gui, path = "Apricot" }, what = "combo: Home scrolls to the top, and a click on a row picks it" }
     _ = ui_test::click{ &d, ui = &gui, path = "fruit", show = show_desk{ &s, _ } }
-    press_key{ &d, ui = &gui, key = ui::Key::down, show = show_desk{ &s, _ } }
-    press_key{ &d, ui = &gui, key = ui::Key::escape, show = show_desk{ &s, _ } }
+    press_window_key{ &d, ui = &gui, key = ui::Key::down, show = show_desk{ &s, _ } }
+    press_window_key{ &d, ui = &gui, key = ui::Key::escape, show = show_desk{ &s, _ } }
     ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
     ui_test::expect{ &io, &t, ok = s.fruit == 1 and not has_node{ ui = gui, path = "Banana" }, what = "combo: Escape shuts the list unchosen" }
     ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "combo: every frame is clean" }
@@ -925,12 +925,12 @@ fn check_context_menu { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Aren
     click_right{ &d, ui = &gui, x = 250, y = 200, show = show_desk{ &s, _ } }
     ui_test::expect{ &io, &t, ok = not has_node{ ui = gui, path = "target menu/Copy" }, what = "context menu: a right click off its target does nothing" }
     _ = ui_test::click{ &d, ui = &gui, path = "target", show = show_desk{ &s, _ } }
-    press_key{ &d, ui = &gui, key = ui::Key::menu, show = show_desk{ &s, _ } }
+    press_window_key{ &d, ui = &gui, key = ui::Key::menu, show = show_desk{ &s, _ } }
     ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
     let below = find_rect{ ui = gui, path = "target menu" }
     let target = find_rect{ ui = gui, path = "target" }
     let lit = has_node_flag{ ui = gui, path = "target menu/Copy", flag = ui::NODE_SELECTED }
-    press_key{ &d, ui = &gui, key = ui::Key::enter, show = show_desk{ &s, _ } }
+    press_window_key{ &d, ui = &gui, key = ui::Key::enter, show = show_desk{ &s, _ } }
     ui_test::expect{ &io, &t, ok = below.x == target.x and below.y == target.y + target.h and lit and s.copied == 2,
         what = "context menu: the Menu key opens it below the focused target, Copy lit, and Enter picks" }
     ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "context menu: every frame is clean" }
