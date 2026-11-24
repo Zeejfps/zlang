@@ -810,6 +810,7 @@ A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are buil
 3. Each builtin has the signature below. Type arguments always come before value arguments, so the builtin's name alone says whether each argument is parsed as a type or an expression. Only `@fmt` takes any number of arguments.
 4. An unknown builtin, or a call with the wrong number of arguments, is a syntax error.
 5. The type argument of `@as`, `@trunc`, `@cast`, `@round`, `@saturate` or `@round_saturate` may be `_`: the type expected where the call appears (§11 Literals), or its payload if that is optional. In `Gl1_1{ clear = @cast(_, p) }` it is the field's type, and in `let n: i32 = @as(_, big)` the local's. It is an error where nothing expects a type, as in `let n = @as(_, big)`. `_` is a type nowhere else.
+6. What earns a builtin: it takes a type or a field's name as an argument (`@size_of(T)`, `@offset_of(T, f)`, `@as(T, x)`); or it needs what only the compiler knows, as a type's layout, the source's text or position, a format string checked while compiling, or a bound function's record (`@panic`, `@expect`, `@fmt`, `@record_size`); or it is an unchecked primitive (`@cast`, `@slice`); or it is an arithmetic operation in call form whose operands widen as an operator's do (`@min`, `@max`, `@clamp`). An operation on two operands with an operator's rules is an operator instead (`<<%`, §11), and everything else is a function in std (§17).
 
 | Signature | Result | Meaning |
 |---|---|---|
