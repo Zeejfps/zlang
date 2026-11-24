@@ -16,10 +16,10 @@
 //    while the content overflows the view along its axis, and the content is narrowed to make room
 //    for it (the region's padding grows by the bar's thickness). The bars a region starts a frame
 //    with are the last frame's; when the solved frame shows that one must appear or go, the padding
-//    changes and the frame is solved once more, so the first frame whose content overflows already
-//    has its bar and its narrowed content. The second solve does not change the bars again. (A
-//    region on both axes whose second bar is needed only because the first one narrowed it gets
-//    that bar the frame after.)
+//    changes and the frame is solved again, so the first frame whose content overflows already has
+//    its bar and its narrowed content, and a second bar that only the first made necessary is
+//    there in that frame too. How the bars are found, and why the solves are bounded, is the
+//    comment at `settle_regions`.
 //  - The thumb's length is the track's share of what is in view, rounded down, and never less than
 //    16 units (or the track); its place is the travel's share of the offset, rounded down, so it
 //    touches the track's end exactly at the largest offset. A thumb drag moves the offset by the
@@ -43,10 +43,10 @@
 // scroll, which is not an error.
 //
 // This file is the subsystem's place in the Ui: `ui.scroll` is its state. `begin_frame` calls
-// `reset_state`, which routes the wheel. `end_frame` calls `settle_regions` once the layout is
-// solved: it decides the bars, holds every offset in its range, and places the bars, and answers
-// `relayout` when a bar appeared or went (one more solve, then one more settle) or else
-// `reposition`; `finish_frame`, after the frame is emitted, notes each region's hit area and where
+// `reset_state`, which routes the wheel. `end_frame` calls `settle_regions` after every solve: it
+// decides the bars, holds every offset in its range, and places the bars, and answers `relayout`
+// when the bars changed (one more solve, then one more settle, up to `get_solve_limit` solves) or
+// else `reposition`; `finish_frame`, after the frame is emitted, notes each region's hit area and where
 // its content starts, and the frame's regions become the last frame's.
 namespace ui {
     // The axes a region scrolls along.
@@ -478,38 +478,105 @@ namespace ui {
 
         // ---- settling
 
-        // end_frame, after a solve. The first call decides each region's bars (`relayout` when one
-        // appeared or went); every call holds the offsets to their ranges and places the bars.
+        // end_frame, after each solve: decides the bars, holds the offsets to their ranges and places
+        // the bars. `relayout` when the bars changed, so the frame must be solved again.
+        //
+        // The bars a frame ends with are consistent: every region shows a bar exactly on the axes
+        // its content overflows its view along, the view being what the bars leave. They are found
+        // in two steps, and no bar is ever withdrawn once the second has begun, which is what keeps
+        // them from oscillating (a bar appears, the view narrows, another appears, the first is no
+        // longer needed, goes, ...):
+        //
+        //  1. The first call may only take bars away. A frame starts with the last frame's bars;
+        //     when any of them, in any region, is not needed in the solved frame, every region
+        //     drops all its bars and the frame is solved again from none (a cleared region that
+        //     still overflows gets its bars back in step 2). One region alone is not enough: a bar
+        //     that goes widens what is inside it, which may let an inner bar go too.
+        //  2. Every call after that, and the first one when nothing had to go, only adds: a bar
+        //     where the content overflows the solved view. A view only narrows as bars are added,
+        //     and content never shrinks when its view narrows (text wraps taller, grow children keep
+        //     at least their minimums), so a bar once needed stays needed and none has to go.
+        //
+        // So the frame is solved at most 2 + 2R times for R regions: once, once more after step 1,
+        // and once after each call of step 2 that added a bar, of which the regions have 2R at
+        // most. `end_frame` stops there in any case (`get_solve_limit`). A frame in which no bar
+        // changes is solved once. A bar appearing costs one more solve, and a second bar that only
+        // the first one made necessary (the first narrowed the view across) one more again, in the
+        // same frame and for every region of the tree at once: the regions are all looked at after
+        // every solve, so one solve answers all of them, however deep they are nested. A deeper
+        // chain needs a region whose size follows a bar that appeared in a region around it (a
+        // GROW region in a column region whose bottom bar appeared, which then needs its own right
+        // bar, which narrows a GROW region inside it, and so on); each link adds a solve, which the
+        // bound covers.
         fn settle_regions { mut ui: Ui } -> Settle {
             let count = @as(usize, ui.scroll.count)
             if count == 0 { return Settle::none }
             ui.scroll.pass = add_count{ a = ui.scroll.pass, b = 1 }
-            let first = ui.scroll.pass == 1
             let size = get_thickness{ ui }
-            let mut result = Settle::reposition
-            for at in 0..count {
-                if settle_region{ &ui, at, first, size } { result = Settle::relayout }
+            let mut changed = false
+            if ui.scroll.pass == 1 and has_spare_bar{ ui } {
+                for at in 0..count {
+                    ui.scroll.regions[at].bar_x = false
+                    ui.scroll.regions[at].bar_y = false
+                    ui.tree.elements[@as(usize, ui.scroll.regions[at].element)].padding = ui.scroll.regions[at].padding
+                }
+                changed = true
+            } else {
+                for at in 0..count {
+                    if add_bars{ &ui, at, size } { changed = true }
+                }
             }
-            return result
+            for at in 0..count { hold_region{ &ui, at, size } }
+            return if changed { Settle::relayout } else { Settle::reposition }
         }
 
-        fn settle_region { mut ui: Ui, at: usize, first: bool, size: i32 } -> bool {
+        // How many solves end_frame allows a frame: the bound worked out above, 2 + 2R.
+        fn get_solve_limit { ui: Ui } -> u32 {
+            let n = @as(u64, ui.scroll.count)
+            return @as(u32, if n > 2147483646 { 4294967295 } else { 2 + 2 * n })
+        }
+
+        // Whether the content of region `at` overflows its solved view across, and down.
+        struct Need { x: bool, y: bool }
+
+        fn get_need { ui: Ui, at: usize } -> Need {
+            let r = ui.scroll.regions[at]
+            let e = ui.tree.elements[@as(usize, r.element)]
+            return Need{
+                x = r.axes != ScrollAxes::vertical and e.content_w > get_inner{ e, wide = true },
+                y = r.axes != ScrollAxes::horizontal and e.content_h > get_inner{ e, wide = false },
+            }
+        }
+
+        // Whether some region shows a bar its content does not need in the solved frame.
+        fn has_spare_bar { ui: Ui } -> bool {
+            for at in 0..@as(usize, ui.scroll.count) {
+                let r = ui.scroll.regions[at]
+                let need = get_need{ ui, at }
+                if (r.bar_x and not need.x) or (r.bar_y and not need.y) { return true }
+            }
+            return false
+        }
+
+        // Adds the bars region `at` needs and does not show; true when it added one.
+        fn add_bars { mut ui: Ui, at: usize, size: i32 } -> bool {
+            let r = ui.scroll.regions[at]
+            let need = get_need{ ui, at }
+            let bar_x = r.bar_x or need.x
+            let bar_y = r.bar_y or need.y
+            if bar_x == r.bar_x and bar_y == r.bar_y { return false }
+            ui.scroll.regions[at].bar_x = bar_x
+            ui.scroll.regions[at].bar_y = bar_y
+            ui.tree.elements[@as(usize, r.element)].padding = add_gutters{ padding = r.padding, size, bar_x, bar_y }
+            return true
+        }
+
+        // Holds region `at`'s offset to its range in the solved frame and places its bars.
+        fn hold_region { mut ui: Ui, at: usize, size: i32 } {
             let r = ui.scroll.regions[at]
             let el = @as(usize, r.element)
             let wide = r.axes != ScrollAxes::vertical
             let tall = r.axes != ScrollAxes::horizontal
-            let mut relayout = false
-            if first {
-                let solved = ui.tree.elements[el]
-                let need_x = wide and solved.content_w > get_inner{ e = solved, wide = true }
-                let need_y = tall and solved.content_h > get_inner{ e = solved, wide = false }
-                if need_x != r.bar_x or need_y != r.bar_y {
-                    ui.scroll.regions[at].bar_x = need_x
-                    ui.scroll.regions[at].bar_y = need_y
-                    ui.tree.elements[el].padding = add_gutters{ padding = r.padding, size, bar_x = need_x, bar_y = need_y }
-                    relayout = true
-                }
-            }
             let e = ui.tree.elements[el]
             let view_w = get_inner{ e, wide = true }
             let view_h = get_inner{ e, wide = false }
@@ -529,7 +596,6 @@ namespace ui {
             ui.scroll.regions[at].content_h = e.content_h
             write_offsets{ &ui, id = r.id, x, y, cut_x = x != r.want_x, cut_y = y != r.want_y }
             place_bars{ &ui, at, size }
-            return relayout
         }
 
         // The held offsets back into the region's state, without asking for it (which would forget

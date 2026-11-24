@@ -96,6 +96,7 @@ namespace ui {
         stray_ends: u32 = 0,        // ui::end calls with a scope that was not open
         duplicate_ids: u32 = 0,     // elements recorded with an id another element of the frame has
         problems: u32 = 0,          // problems recorded, those past the ones kept included
+        solves: u32 = 0,            // times the layout was solved: 1, and more when scroll bars changed
     }
 
     // What went wrong in a frame. The `_full` kinds are a table that ran out: what did not fit was
@@ -219,15 +220,18 @@ namespace ui {
         }
         id::close_frame{ &ui }
         layout::solve{ &ui }
-        // A scroll region that gained or lost a bar changes its content's room: one more solve, as
-        // the layout this one is modelled on does.
-        let settled = scroll::settle_regions{ &ui }
-        if settled == scroll::Settle::relayout {
+        ui.stats.solves = 1
+        // A scroll region that gained or lost a bar changes its content's room: the frame is solved
+        // again until the bars settle, which takes at most `scroll::get_solve_limit` solves (why is
+        // at `scroll::settle_regions`); a frame whose bars do not change is solved once.
+        let limit = scroll::get_solve_limit{ ui }
+        let mut settled = scroll::settle_regions{ &ui }
+        while settled == scroll::Settle::relayout and ui.stats.solves < limit {
             layout::solve{ &ui }
-            if scroll::settle_regions{ &ui } != scroll::Settle::none { layout::position{ &ui } }
-        } else if settled == scroll::Settle::reposition {
-            layout::position{ &ui }
+            ui.stats.solves = ui.stats.solves + 1
+            settled = scroll::settle_regions{ &ui }
         }
+        if settled != scroll::Settle::none { layout::position{ &ui } }
         if layers::place_layers{ &ui } { layout::position{ &ui } }
         emit::emit_frame{ &ui }
         nodes::finish_frame{ &ui }

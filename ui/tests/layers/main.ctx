@@ -32,6 +32,8 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     check_place_extremes{ &io, &t }
 
     check_bar_appears{ &io, &t, &heap }
+    check_second_bar{ &io, &t, &heap }
+    check_nested_bars{ &io, &t, &heap }
     check_wheel_nested{ &io, &t, &heap }
     check_wheel_both{ &io, &t, &heap }
     check_thumb_drag{ &io, &t, &heap }

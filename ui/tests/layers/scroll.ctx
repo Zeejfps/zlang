@@ -59,7 +59,8 @@ fn check_bar_appears { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena
         what = "frame 1: content that fits has no bar and is as wide as the region" }
     p.rows = 5
     ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 2: 100 of 100
-    ui_test::expect{ &io, &t, ok = find_row{ ui = gui, index = 0 }.w == 200 and get_view{ ui = gui, name = "pane" }.max_y == 0, what = "frame 2: content exactly as high as the view has no bar either" }
+    ui_test::expect{ &io, &t, ok = find_row{ ui = gui, index = 0 }.w == 200 and get_view{ ui = gui, name = "pane" }.max_y == 0 and gui.stats.solves == 1,
+        what = "frame 2: content exactly as high as the view has no bar either, and is solved once" }
     p.rows = 8
     ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 3: 160 of 100
     let v = get_view{ ui = gui, name = "pane" }
@@ -67,12 +68,116 @@ fn check_bar_appears { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena
     ui_test::expect{ &io, &t, ok = is_rect{ r = get_part{ ui = gui, region = "pane", part = "\x00track_y" }, x = 190, y = 0, w = 10, h = 100 } and is_rect{ r = get_part{ ui = gui, region = "pane", part = "\x00thumb_y" }, x = 190, y = 0, w = 10, h = 62 },
         what = "frame 3: and its bar: a track the theme's 10 units thick, a thumb of 100 * 100 / 160 rounded down" }
     ui_test::expect{ &io, &t, ok = v.view_w == 190 and v.view_h == 100 and v.content_h == 160 and v.max_y == 60 and v.y == 0, what = "frame 3: the view, the content and the range" }
+    ui_test::expect{ &io, &t, ok = gui.stats.solves == 2, what = "frame 3: the bar appearing costs one more solve" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 4
+    ui_test::expect{ &io, &t, ok = gui.stats.solves == 1 and find_row{ ui = gui, index = 0 }.w == 190, what = "frame 4: the bar staying costs none" }
     ui_test::expect{ &io, &t, ok = ui::find_node{ ui = gui, path = "pane" } != null, what = "the region describes itself" }
     p.rows = 4
-    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 4
-    ui_test::expect{ &io, &t, ok = find_row{ ui = gui, index = 0 }.w == 200 and get_part{ ui = gui, region = "pane", part = "\x00thumb_y" }.w == 0,
-        what = "frame 4: the frame it fits again the bar is gone and the content is as wide as the region" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pane{ &p, _ } }                 // 5
+    ui_test::expect{ &io, &t, ok = find_row{ ui = gui, index = 0 }.w == 200 and get_part{ ui = gui, region = "pane", part = "\x00thumb_y" }.w == 0 and gui.stats.solves == 2,
+        what = "frame 5: the frame it fits again the bar is gone and the content is as wide as the region (two solves)" }
     ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "the bar frames are clean" }
+}
+
+// A region on both axes, 200 by 100, holding one cell of `w` by `h` units; or no region at all.
+struct Cell { w: f32, h: f32, shown: bool }
+
+fn show_cell_pane { mut ui: ui::Ui, mut c: Cell } {
+    if not c.shown { return }
+    let pane = ui::begin_scroll_with{ &ui, id = "pane", axes = ui::ScrollAxes::both, axis = ui::Axis::column, opts = ui::Opts{ box = ui::place{ x = 0.0, y = 0.0, w = 200.0, h = 100.0 }, .. } }
+    add_cell{ &ui, w = c.w, h = c.h, color = ACCENT }
+    ui::end{ &ui, scope = pane }
+}
+
+fn has_bars { ui: ui::Ui, region: []u8, x: bool, y: bool } -> bool {
+    return (get_part{ ui, region, part = "\x00thumb_x" }.w > 0) == x and (get_part{ ui, region, part = "\x00thumb_y" }.w > 0) == y
+}
+
+// A second bar that only the first made necessary is there in the frame the first appears, in
+// either order; bars that are no longer needed go in the frame they stop being needed; and a frame
+// whose bars do not change is solved once.
+fn check_second_bar { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut c = Cell{ w = 195.0, h = 150.0, shown = false }
+    ui_test::step_frame{ &d, ui = &gui, show = show_cell_pane{ &c, _ } }            // 1
+    ui_test::expect{ &io, &t, ok = gui.stats.solves == 1, what = "frame 1: a frame with no region is solved once" }
+    c.shown = true
+    ui_test::step_frame{ &d, ui = &gui, show = show_cell_pane{ &c, _ } }            // 2
+    // 195 wide fits 200 but not the 190 the bar down leaves: the bar down brings the bar across.
+    let v = get_view{ ui = gui, name = "pane" }
+    ui_test::expect{ &io, &t, ok = has_bars{ ui = gui, region = "pane", x = true, y = true } and v.view_w == 190 and v.view_h == 90 and v.max_x == 5 and v.max_y == 60,
+        what = "frame 2: content that fits across but for the bar down gets both bars in its first frame, its view narrowed on both axes" }
+    ui_test::expect{ &io, &t, ok = is_rect{ r = get_part{ ui = gui, region = "pane", part = "\x00thumb_x" }, x = 0, y = 90, w = 185, h = 10 } and is_rect{ r = get_part{ ui = gui, region = "pane", part = "\x00thumb_y" }, x = 190, y = 0, w = 10, h = 54 },
+        what = "frame 2: the thumbs on tracks that leave the corner free: 190 * 190 / 195 and 90 * 90 / 150" }
+    ui_test::expect{ &io, &t, ok = gui.stats.solves == 3, what = "frame 2: three solves: none, the bar down, the bar across" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_cell_pane{ &c, _ } }            // 3
+    ui_test::expect{ &io, &t, ok = gui.stats.solves == 1 and has_bars{ ui = gui, region = "pane", x = true, y = true }, what = "frame 3: the same bars again cost no extra solve" }
+    c.w = 180.0
+    ui_test::step_frame{ &d, ui = &gui, show = show_cell_pane{ &c, _ } }            // 4
+    let w = get_view{ ui = gui, name = "pane" }
+    ui_test::expect{ &io, &t, ok = has_bars{ ui = gui, region = "pane", x = false, y = true } and w.view_w == 190 and w.view_h == 100 and gui.stats.solves == 3,
+        what = "frame 4: narrower content loses the bar across in that frame (three solves: the bars go, the one down comes back)" }
+    c.h = 95.0
+    ui_test::step_frame{ &d, ui = &gui, show = show_cell_pane{ &c, _ } }            // 5
+    ui_test::expect{ &io, &t, ok = has_bars{ ui = gui, region = "pane", x = false, y = false } and get_view{ ui = gui, name = "pane" }.view_w == 200 and gui.stats.solves == 2,
+        what = "frame 5: content that fits either way loses its bars in that frame, in two solves" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "the second bar frames are clean" }
+
+    // The other order: 95 high fits 100 but not the 90 the bar across leaves.
+    let mut other = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut e = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut wide = Cell{ w = 300.0, h = 95.0, shown = true }
+    ui_test::step_frame{ d = &e, ui = &other, show = show_cell_pane{ c = &wide, _ } }
+    let o = get_view{ ui = other, name = "pane" }
+    ui_test::expect{ &io, &t, ok = has_bars{ ui = other, region = "pane", x = true, y = true } and o.view_w == 190 and o.view_h == 90 and other.stats.solves == 3,
+        what = "content that fits down but for the bar across gets both bars in its first frame too" }
+
+    // Content that fits either way gets none, in one solve.
+    let mut fits = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut f = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut small = Cell{ w = 200.0, h = 100.0, shown = true }
+    ui_test::step_frame{ d = &f, ui = &fits, show = show_cell_pane{ c = &small, _ } }
+    ui_test::expect{ &io, &t, ok = has_bars{ ui = fits, region = "pane", x = false, y = false } and get_view{ ui = fits, name = "pane" }.view_w == 200 and fits.stats.solves == 1 and e.unclean == 0 and f.unclean == 0,
+        what = "content exactly as large as the view gets no bar, and its frame is solved once" }
+}
+
+// Three regions, each inside the last, each needing its bar across only because of its bar down:
+// one more solve for the whole tree, not one for each region.
+fn show_nested_three { mut ui: ui::Ui, mut c: Cell } {
+    let a = ui::begin_scroll_with{ &ui, id = "a", axes = ui::ScrollAxes::both, axis = ui::Axis::column, opts = ui::Opts{ box = ui::place{ x = 0.0, y = 0.0, w = 300.0, h = 200.0 }, .. } }
+    let b = ui::begin_scroll_with{ &ui, id = "b", axes = ui::ScrollAxes::both, axis = ui::Axis::column, opts = ui::Opts{ box = ui::Box{ width = ui::fix{ size = 295.0 }, height = ui::fix{ size = 150.0 }, .. }, .. } }
+    let k = ui::begin_scroll_with{ &ui, id = "c", axes = ui::ScrollAxes::both, axis = ui::Axis::column, opts = ui::Opts{ box = ui::Box{ width = ui::fix{ size = 290.0 }, height = ui::fix{ size = 100.0 }, .. }, .. } }
+    add_cell{ &ui, w = 285.0, h = c.h, color = ACCENT }
+    ui::end{ &ui, scope = k }
+    add_cell{ &ui, w = 10.0, h = 100.0, color = GRAY }
+    ui::end{ &ui, scope = b }
+    add_cell{ &ui, w = 10.0, h = 100.0, color = GRAY }
+    ui::end{ &ui, scope = a }
+}
+
+fn check_nested_bars { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut c = Cell{ w = 0.0, h = 150.0, shown = true }
+    ui_test::step_frame{ &d, ui = &gui, show = show_nested_three{ &c, _ } }         // 1
+    // a: 295 by 250 in 300 by 200; b: 290 by 200 in 295 by 150; c: 285 by 150 in 290 by 100. Each
+    // overflows down, and across only by less than a bar.
+    let a = get_view{ ui = gui, name = "a" }
+    let b = get_view{ ui = gui, name = "b" }
+    let k = get_view{ ui = gui, name = "c" }
+    ui_test::expect{ &io, &t, ok = has_bars{ ui = gui, region = "a", x = true, y = true } and has_bars{ ui = gui, region = "b", x = true, y = true } and has_bars{ ui = gui, region = "c", x = true, y = true },
+        what = "frame 1: all three nested regions have both bars in their first frame" }
+    ui_test::expect{ &io, &t, ok = a.view_w == 290 and a.view_h == 190 and b.view_w == 285 and b.view_h == 140 and k.view_w == 280 and k.view_h == 90,
+        what = "frame 1: and all three views are narrowed on both axes" }
+    ui_test::expect{ &io, &t, ok = gui.stats.solves == 3, what = "frame 1: three solves for the whole tree: none, the bars down, the bars across" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_nested_three{ &c, _ } }         // 2
+    ui_test::expect{ &io, &t, ok = gui.stats.solves == 1, what = "frame 2: unchanged, it is solved once" }
+    c.h = 90.0
+    ui_test::step_frame{ &d, ui = &gui, show = show_nested_three{ &c, _ } }         // 3
+    ui_test::expect{ &io, &t, ok = has_bars{ ui = gui, region = "c", x = false, y = false } and has_bars{ ui = gui, region = "a", x = true, y = true } and get_view{ ui = gui, name = "c" }.view_w == 290 and gui.stats.solves == 4,
+        what = "frame 3: the innermost content now fits: its bars go in that frame, the others' are found again from none (four solves)" }
+    ui_test::expect{ &io, &t, ok = gui.stats.solves <= 2 + 2 * gui.scroll.last_count and d.unclean == 0, what = "the nested frames stay within the bound of 2 + 2R solves and are clean" }
 }
 
 // A region in a region: the wheel scrolls the inner one until its end, then the outer one; over an
