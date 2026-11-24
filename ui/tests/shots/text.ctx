@@ -7,7 +7,7 @@
 // Writes text-gl-1x.png, text-gl-1.5x.png and text-gl.png (both, one above the other). Each line of
 // text has a dim guide on the pixel row under its baseline, so a look tells whether glyphs of
 // every size, and of the Latin and CJK faces, stand on one line. With no Latin face main.ctx's
-// `#test_main` leaves the test out and says why; with no CJK or italic face that line is left out.
+// the test is skipped, with the reason; with no CJK or italic face that line is left out.
 //
 // Checks: nothing dropped anywhere; the device draws what was staged; the first frame uploads the
 // atlas and a second identical frame uploads no atlas bytes, with the same pixels; no character of
@@ -25,14 +25,14 @@ const TEXT_PARAGRAPH: []u8 = "Wrapped in the real font: the core breaks at space
 #test
 fn draws_text_in_an_outline_font { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut sdl: ui_sdl::Sdl, mut fonts: ui_fonts::Fonts } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let latin = ui_check::find_latin_font{ &fs, &proc }
-    if not latin.found { return ui_check::missing_font{ path = latin.path } }
+    skip_without_gl_window{ &t, &sdl, &heap }
+    let latin_path = ui_check::get_latin_font{ &t, &fs, &proc }
     let cjk = ui_check::find_cjk_font{ &fs, &proc }
     let italic = ui_check::find_italic_font{ &fs, &proc }
-    _ = @fmt(&io, "text: font {}; fallback {}{}; italic {}{}\n", latin.path, cjk.path, if cjk.found { "" } else { " (absent)" },
+    _ = @fmt(&io, "text: font {}; fallback {}{}; italic {}{}\n", latin_path, cjk.path, if cjk.found { "" } else { " (absent)" },
         italic.path, if italic.found { "" } else { " (absent)" })
     let mut log: [16384]u8
-    run_text{ &io, &fs, &sdl, &fonts, &t, &heap, latin = latin.path, cjk = if cjk.found { cjk.path } else { null },
+    run_text{ &io, &fs, &sdl, &fonts, &t, &heap, latin = latin_path, cjk = if cjk.found { cjk.path } else { null },
         italic = if italic.found { italic.path } else { null }, out_dir = get_out_dir{ &proc }, log = log[..] } iferr err{ error } {
         say_gl_error{ &io, &sdl, error, log = log[..] }
         return error

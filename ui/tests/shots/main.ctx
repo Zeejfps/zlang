@@ -13,11 +13,12 @@
 // additive picture, the edge of the magnified atlas piece), the device's draw count against the
 // staged draw count, that a second identical frame uploads nothing, and that drawing without the
 // base instance gives the same pixels. Where SDL opens no window with an OpenGL context, the
-// `#test_main` fn leaves every test out, by name and with the reason.
+// test is skipped, with the reason.
+
+const OUT_DEFAULT: []u8 = "ui/out"
 
 const WIDTH: f32 = 480.0
 const HEIGHT: f32 = 408.0
-const OUT_DEFAULT: []u8 = "ui/out"
 
 // The background every frame is cleared to, and colours the checks look for.
 const BG: ui::Color = ui::Color{ r = 24, g = 26, b = 32, a = 255 }
@@ -39,28 +40,12 @@ struct Images { flag: ui::Image, grey: ui::Image, sheet: ui::Image, gradient: ui
 // One scale's picture, kept to put the three together.
 struct Shot { pixels: []mut u8, width: u32, height: u32 }
 
-// What runs the tests: std's runner, leaving out what this machine cannot draw. With no OpenGL
-// window every test is left out; with no Latin font, the text pictures.
-#test_main
-fn run_shots_tests {
-    mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut t: Test, mut sdl: ui_sdl::Sdl, args: Args, count: usize,
-    case: &fn{ index: usize } -> test::Case, run: &fn{ index: usize } -> i32,
-} -> i32 {
-    let in_process = args.len > 0 and args[0] == "--run"
-    if in_process { return test::main{ &io, &fs, &mem, &proc, &t, args, count, case, run } }
-    let mut heap = ui_check::make_heap{ &mem }
+// Skips the running test, with the reason, when this machine has no OpenGL window to draw in.
+fn skip_without_gl_window { mut t: Test, mut sdl: ui_sdl::Sdl, mut heap: arena::Arena } {
     let mut reason = utf8::builder{ realloc = arena::alloc, &heap }
     if not can_open_gl_window{ &sdl, &heap, &reason } {
-        let all: [1][]u8 = [""]
-        return ui_check::run_tests_without{ &io, &fs, &mem, &proc, &t, args, count, case, run, without = all[..], reason = utf8::view{ b = reason }.bytes }
+        test::skip{ &t, why = utf8::view{ b = reason }.bytes }
     }
-    let latin = ui_check::find_latin_font{ &fs, &proc }
-    if not latin.found {
-        _ = @fmt(&reason, "no font at {} (set UI_FONT)", latin.path)
-        let text: [1][]u8 = ["draws_text_in_an_outline_font"]
-        return ui_check::run_tests_without{ &io, &fs, &mem, &proc, &t, args, count, case, run, without = text[..], reason = utf8::view{ b = reason }.bytes }
-    }
-    return test::main{ &io, &fs, &mem, &proc, &t, args, count, case, run }
 }
 
 // Whether SDL opens a hidden window with an OpenGL context here; why not in `reason`. Whether
@@ -103,6 +88,7 @@ fn say_gl_error { mut io: Io, mut sdl: ui_sdl::Sdl, error: error, log: []u8 } {
 #test
 fn draws_the_conformance_list_at_three_scales { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut sdl: ui_sdl::Sdl } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
+    skip_without_gl_window{ &t, &sdl, &heap }
     let mut log: [16384]u8
     shoot_conformance{ &io, &fs, &sdl, &t, &heap, out_dir = get_out_dir{ &proc }, log = log[..] } iferr err{ error } {
         say_gl_error{ &io, &sdl, error, log = log[..] }

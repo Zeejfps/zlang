@@ -1,6 +1,6 @@
 // Stage 4's tests: outline fonts through FreeType and HarfBuzz. How to run them: ui/AGENTS.md.
-// They read a system font (UI_FONT, UI_CJK_FONT), and the package's `#test_main` leaves out, by
-// name and with the reason, the tests whose font is not there.
+// They read a system font (UI_FONT, UI_CJK_FONT), and a test whose font is not there is skipped,
+// with the reason (ui/tests/support/font.ctx).
 fn build { mut b: Build } {
     let exe = build::exe{ &b, name = "ui_test_fonts", root = "." }
     build::add_sources{ &b, exe, dir = "../../core" }

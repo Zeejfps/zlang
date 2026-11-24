@@ -1,7 +1,6 @@
 // Stages 3 and 4's screenshot tests: the conformance list and text in an outline font, drawn by the
 // OpenGL backend in a hidden SDL window. How to run them: ui/AGENTS.md. The package's
-// `#test_main` leaves the tests out, by name and with the reason, where SDL opens no OpenGL window
-// or there is no font.
+// tests are skipped, each with the reason, where SDL opens no OpenGL window or there is no font.
 fn build { mut b: Build } {
     let exe = build::exe{ &b, name = "ui_test_shots", root = "." }
     build::add_sources{ &b, exe, dir = "../../core" }

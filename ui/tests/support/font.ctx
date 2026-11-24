@@ -1,0 +1,87 @@
+// ui_check: the system fonts the tests read, and the skip of a test that needs one this machine
+// lacks. A font is a file the platform has or does not: UI_FONT, UI_CJK_FONT and UI_ITALIC_FONT
+// name another one (a variable, because a machine has its fonts once for every run; an argument
+// is for what one run names, as the goldens' update). A test that needs a font gets its path from
+// `get_latin_font` (or `get_cjk_font`, `get_italic_font`), which skips the test with the reason
+// when the file is not there, as `test::skip` does everywhere (spec section 20, rule 5):
+//
+//     ui/tests/fonts/main.ctx:412: skip: falls_back_to_a_cjk_face: no CJK font at C:/Windows/Fonts/msyh.ttc (set UI_CJK_FONT)
+//
+// The runner counts it as skipped in its summary, never as passed.
+namespace ui_check {
+    // A font file: the path environment variable `variable` names, else the first of `defaults`
+    // that opens. `path` is the one found, or what was tried when none was (`found` false). The
+    // file is opened to see that it is there, not read: a test adds it with
+    // `ui_fonts::add_face_file`, or reads it itself when it needs the bytes.
+    struct Found { path: []u8, found: bool }
+
+    fn find_font { mut fs: Fs, mut proc: Proc, variable: []u8, defaults: [][]u8 } -> Found {
+        if let path = proc::env{ &proc, name = variable } {
+            if path.len > 0 { return Found{ path, found = can_open{ &fs, path } } }
+        }
+        for path in defaults {
+            if can_open{ &fs, path } { return Found{ path, found = true } }
+        }
+        return Found{ path = if defaults.len > 0 { defaults[0] } else { "" }, found = false }
+    }
+
+    // Whether the file at `path` opens for reading (a directory does not).
+    fn can_open { mut fs: Fs, path: []u8 } -> bool {
+        let file = fs::open{ &fs, path, mode = fs::Mode::read } iferr { return false }
+        fs::close{ &fs, file } iferr {}
+        return true
+    }
+
+    // The platform's fonts, the first that exists of each kind: a Latin face, a face with CJK
+    // characters, and an italic face.
+    const LATIN_WINDOWS: [1][]u8 = ["C:/Windows/Fonts/segoeui.ttf"]
+    const LATIN_MACOS: [1][]u8 = ["/System/Library/Fonts/Helvetica.ttc"]
+    const LATIN_LINUX: [2][]u8 = ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf"]
+    const CJK_WINDOWS: [3][]u8 = ["C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/YuGothR.ttc", "C:/Windows/Fonts/simsun.ttc"]
+    const CJK_MACOS: [2][]u8 = ["/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/Hiragino Sans GB.ttc"]
+    const CJK_LINUX: [2][]u8 = ["/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc"]
+    const ITALIC_WINDOWS: [1][]u8 = ["C:/Windows/Fonts/segoeuii.ttf"]
+    const ITALIC_MACOS: [1][]u8 = ["/System/Library/Fonts/Supplemental/Arial Italic.ttf"]
+    const ITALIC_LINUX: [2][]u8 = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf", "/usr/share/fonts/TTF/DejaVuSans-Oblique.ttf"]
+
+    // The Latin face: UI_FONT, else the platform's.
+    fn find_latin_font { mut fs: Fs, mut proc: Proc } -> Found {
+        let defaults = match target::OS { windows => { LATIN_WINDOWS[..] } macos => { LATIN_MACOS[..] } linux => { LATIN_LINUX[..] } }
+        return find_font{ &fs, &proc, variable = "UI_FONT", defaults }
+    }
+
+    // A face with CJK characters: UI_CJK_FONT, else the platform's.
+    fn find_cjk_font { mut fs: Fs, mut proc: Proc } -> Found {
+        let defaults = match target::OS { windows => { CJK_WINDOWS[..] } macos => { CJK_MACOS[..] } linux => { CJK_LINUX[..] } }
+        return find_font{ &fs, &proc, variable = "UI_CJK_FONT", defaults }
+    }
+
+    // An italic face: UI_ITALIC_FONT, else the platform's.
+    fn find_italic_font { mut fs: Fs, mut proc: Proc } -> Found {
+        let defaults = match target::OS { windows => { ITALIC_WINDOWS[..] } macos => { ITALIC_MACOS[..] } linux => { ITALIC_LINUX[..] } }
+        return find_font{ &fs, &proc, variable = "UI_ITALIC_FONT", defaults }
+    }
+
+    // The Latin face's file; the running test is skipped when there is none.
+    fn get_latin_font { mut t: Test, mut fs: Fs, mut proc: Proc } -> []u8 {
+        let found = find_latin_font{ &fs, &proc }
+        if not found.found { skip_font{ &t, what = "no font at ", path = found.path, variable = "UI_FONT" } }
+        return found.path
+    }
+
+    // The CJK face's file; the running test is skipped when there is none.
+    fn get_cjk_font { mut t: Test, mut fs: Fs, mut proc: Proc } -> []u8 {
+        let found = find_cjk_font{ &fs, &proc }
+        if not found.found { skip_font{ &t, what = "no CJK font at ", path = found.path, variable = "UI_CJK_FONT" } }
+        return found.path
+    }
+
+    // Skips the running test, saying which font file is missing and the variable that names another.
+    fn skip_font { mut t: Test, what: []u8, path: []u8, variable: []u8 } {
+        let mut text: [1024]u8
+        let mut heap = arena::new{ buf = text[..] }
+        let mut reason = utf8::builder{ realloc = arena::alloc, &heap }
+        _ = @fmt(&reason, "{}{} (set {})", what, path, variable)
+        test::skip{ &t, why = utf8::view{ b = reason }.bytes }
+    }
+}
