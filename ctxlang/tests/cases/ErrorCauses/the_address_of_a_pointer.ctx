@@ -1,0 +1,15 @@
+// A `mut` field takes a pointer to its place. A local that is that pointer already is passed
+// as it is: `&heap` is one error that says so, where it was two that didn't (not a mutable
+// place, and a pointer to a pointer).
+
+struct Heap { used: i64 }
+fn take { mut heap: Heap, n: i64 } { heap.used = heap.used + n }
+fn fill { heap: *mut Heap } {
+    take{ &heap, n = 2 }  //~ error at 11: `heap` is a *mut Heap already, which is what `mut heap` takes: pass it as it is, without the `&`
+    take{ heap, n = 3 }
+}
+fn main { mut io: Io } {
+    let mut h = Heap{ used = 0 }
+    fill{ heap = &h }
+    io::println_i64{ &io, n = h.used }
+}

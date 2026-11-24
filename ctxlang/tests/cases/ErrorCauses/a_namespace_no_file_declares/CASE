@@ -1,0 +1,30 @@
+// A build.ctx that doesn't add a library's directory: every use of the library's namespace
+// has one cause, so there is one error, at the first use, that counts the others and says
+// which file declares the namespace and what adds it. A namespace no file declares has the
+// count alone.
+//# $ ctxc check {dir}/tool
+//# exit: 1
+//# stderr:
+//| {dir}/tool/main.ctx:2:12: error: unknown type or namespace `mini`, used here and at 5 more places: `{dir}/lib/mini/mini.ctx` declares `namespace mini`, and isn't one of this executable's files: add its directory in build.ctx, with `build::add_sources{ &b, exe, dir = "../lib/mini" }`
+//| {dir}/tool/main.ctx:4:91: error: unknown type or namespace `other`
+//| check: 2 errors; not checked until the program has no other error: the order of a call's fields, what tasks borrow, consts computed by running code
+//# $ ctxc run {dir}/tool
+//# exit: 1
+//# stderr:
+//| {dir}/tool/main.ctx:2:12: error: unknown type or namespace `mini`, used here and at 5 more places: `{dir}/lib/mini/mini.ctx` declares `namespace mini`, and isn't one of this executable's files: add its directory in build.ctx, with `build::add_sources{ &b, exe, dir = "../lib/mini" }`
+//| {dir}/tool/main.ctx:4:91: error: unknown type or namespace `other`
+
+// A directory without a build.ctx is a program of its own files, not of those below it.
+//# $ ctxc check {dir}/alone
+//# exit: 1
+//# stderr:
+//| {dir}/alone/main.ctx:2:45: error: unknown type or namespace `deep`, used here and at 1 more place: `{dir}/alone/below/deep.ctx` declares `namespace deep`, and a directory's program is the files in it, not those below it: a build.ctx adds a directory, with `build::add_sources`
+//| check: 1 error; not checked until the program has no other error: the order of a call's fields, what tasks borrow, consts computed by running code
+
+// One file is a program without the files beside it.
+//# $ ctxc check {dir}/alone/main.ctx
+//# exit: 1
+//# stderr:
+//| {dir}/alone/main.ctx:2:31: error: unknown type or namespace `side`: `{dir}/alone/side.ctx` declares `namespace side`, and this program is one file: give ctxc the directory, for a program of every file in it
+//| {dir}/alone/main.ctx:2:45: error: unknown type or namespace `deep`, used here and at 1 more place
+//| check: 2 errors; not checked until the program has no other error: the order of a call's fields, what tasks borrow, consts computed by running code

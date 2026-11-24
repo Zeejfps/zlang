@@ -1,0 +1,5 @@
+namespace mini {
+    struct Game { n: i64 }
+    fn start {} -> Game { return Game{ n = 1 } }
+    fn score { g: Game } -> i64 { return g.n }
+}

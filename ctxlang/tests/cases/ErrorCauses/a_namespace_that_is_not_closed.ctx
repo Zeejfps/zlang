@@ -1,0 +1,12 @@
+// A namespace without its `}` takes the rest of the file, `main` too: that is the one
+// error, at the file's end, and the program isn't also reported as having no `main`.
+
+namespace calc {
+    fn double { n: i32 } -> i32 { return n * 2 }
+
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = calc::double{ n = 2 } }
+}
+
+//# errors:
+//| a_namespace_that_is_not_closed.ctx:13:1: error: expected '}' to close namespace

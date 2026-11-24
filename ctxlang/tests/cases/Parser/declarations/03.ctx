@@ -1,1 +1,1 @@
-fn {} {}  //~ error at 4: expected a name, found '{' //~ error at 1: no `fn main` entry point
+fn {} {}  //~ error at 4: expected a name, found '{'

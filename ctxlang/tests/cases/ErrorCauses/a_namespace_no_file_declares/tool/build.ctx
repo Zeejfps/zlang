@@ -1,0 +1,5 @@
+// A tool that uses two libraries beside it, and adds one.
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "tool", root = "." }
+    build::add_sources{ &b, exe, dir = "../lib/base" }
+}

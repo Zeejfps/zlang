@@ -7,7 +7,8 @@
 // spans go in a side list, for hover docs and folding ranges later.
 //
 // A problem becomes an error token and a diagnostic, and lexing goes on. An unterminated literal
-// ends at the end of its line, and an unterminated block comment at the end of the file. The last
+// ends at the end of its line, and an unterminated block comment at the end of the file. A merge
+// conflict left in the file is one error, and one of its sides is lexed (`conflict`). The last
 // token is always an eof token. Error positions are where the token starts, as in ctxi.
 
 namespace tok {
@@ -105,6 +106,9 @@ namespace lexer {
         file:     u32,
         pos:      usize,
         nl:       bool,            // a newline since the last token
+        // The second side of a merge conflict (`conflict`): text[skip_from..skip_to] isn't lexed.
+        skip_from: usize,
+        skip_to:   usize,
         heap:     *mut arena::Arena,
         diags:    *mut diag::Diags,
         tokens:   list::List(tok::Token, arena::Arena),
@@ -113,7 +117,7 @@ namespace lexer {
 
     fn lex { text: []u8, file: u32, mut heap: arena::Arena, mut diags: diag::Diags } -> Lexed {
         let mut lx = Lexer{
-            text, file, pos = 0, nl = true, heap = &heap, diags = &diags,
+            text, file, pos = 0, nl = true, skip_from = 0, skip_to = 0, heap = &heap, diags = &diags,
             tokens = list::new(tok::Token){ realloc = arena::alloc, &heap },
             comments = list::new(source::Span){ realloc = arena::alloc, &heap },
         }
@@ -122,9 +126,16 @@ namespace lexer {
             lx.text = text[..0]
         }
         while lx.pos < lx.text.len {
+            if lx.pos >= lx.skip_from and lx.pos < lx.skip_to {
+                lx.pos = lx.skip_to
+                lx.nl = true
+                continue
+            }
             let c = lx.text[lx.pos]
             let next = byte{ s = lx.text, i = lx.pos + 1 }
-            if c == '\n' {
+            if is_marker{ text = lx.text, i = lx.pos } {
+                conflict{ &lx }
+            } else if c == '\n' {
                 lx.pos = lx.pos + 1
                 lx.nl = true
             } else if c == ' ' or c == '\t' or c == '\r' {
@@ -447,6 +458,80 @@ namespace lexer {
         }
     }
 
+    // ---- merge conflicts
+
+    // Whether a merge conflict's marker starts at i: at the start of a line, seven of `<`, `=`,
+    // `>` or `|` (which a merge that shows the common ancestor puts before it), and then a
+    // space or the line's end. No program has such a line: no operator is repeated so.
+    fn is_marker { text: []u8, i: usize } -> bool {
+        if i + 7 > text.len or (i > 0 and text[i - 1] != '\n') { return false }
+        let c = text[i]
+        if c != '<' and c != '=' and c != '>' and c != '|' { return false }
+        let mut k = i + 1
+        while k < i + 7 {
+            if text[k] != c { return false }
+            k = k + 1
+        }
+        let after = byte{ s = text, i = i + 7 }
+        return after == 0 or after == ' ' or after == '\n' or after == '\r'
+    }
+
+    // The start of the line after the one that holds i.
+    fn next_line { text: []u8, i: usize } -> usize {
+        let mut k = i
+        while k < text.len and text[k] != '\n' { k = k + 1 }
+        return if k < text.len { k + 1 } else { k }
+    }
+
+    // The line that holds i, from 1.
+    fn line_of { text: []u8, i: usize } -> usize {
+        let mut n: usize = 1
+        let mut k: usize = 0
+        while k < i {
+            if text[k] == '\n' { n = n + 1 }
+            k = k + 1
+        }
+        return n
+    }
+
+    // A marker at lx.pos. A `<<<<<<<` line with its `=======` and `>>>>>>>` lines after it is
+    // one unresolved conflict and one error, whatever is between them: the first side is lexed
+    // as the file's text, and the lines from the first `|||||||` or `=======` to the
+    // `>>>>>>>` aren't, so that the rest of the file is checked as one of the two files it
+    // could be, and nothing inside the conflict is reported as broken syntax. Any other
+    // marker is a line left behind, which is skipped with an error of its own.
+    fn conflict { mut lx: Lexer } {
+        let text = lx.text
+        let start = lx.pos
+        let after = next_line{ text, i = start }
+        lx.pos = after
+        lx.nl = true
+        if text[start] == '<' {
+            let mut middle = text.len              // the first `|||||||` or `=======` line
+            let mut split = false                  // a `=======` line was seen
+            let mut i = after
+            while i < text.len {
+                if is_marker{ text, i } {
+                    let c = text[i]
+                    if c == '<' { break }
+                    if c == '=' { split = true }
+                    if (c == '=' or c == '|') and middle == text.len { middle = i }
+                    if c == '>' {
+                        if not split { break }
+                        lx.skip_from = middle
+                        lx.skip_to = next_line{ text, i }
+                        let mut b = utf8::builder{ realloc = arena::alloc, heap = lx.heap }
+                        try! @fmt(&b, "unresolved merge conflict, to the `>>>>>>>` at line {}: keep one side and delete the marker lines (the first side was checked, and the rest skipped)", line_of{ text, i })
+                        report{ &lx, start, end = start + 7, msg = utf8::view{ b } }
+                        return
+                    }
+                }
+                i = next_line{ text, i }
+            }
+        }
+        report{ &lx, start, end = start + 7, msg = "a merge conflict's marker was left here: delete the line" }
+    }
+
     // ---- comments
 
     fn line_comment { mut lx: Lexer } {
@@ -457,13 +542,17 @@ namespace lexer {
         comment{ &lx, start }
     }
 
+    // What a block comment that the file ends in is reported as. The parser knows it by this
+    // (parser.ctx, `cut`).
+    const CUT: utf8::String = "unterminated block comment"
+
     // Block comments don't nest.
     fn block_comment { mut lx: Lexer } {
         let start = lx.pos
         let mut i = start + 2
         while true {
             if i >= lx.text.len {
-                report{ &lx, start, end = start + 2, msg = "unterminated block comment" }
+                report{ &lx, start, end = start + 2, msg = CUT }
                 break
             }
             if lx.text[i] == '*' and byte{ s = lx.text, i = i + 1 } == '/' {

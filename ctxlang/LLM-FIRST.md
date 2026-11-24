@@ -718,11 +718,37 @@ What a model writes by default should compile, or fail with the exact fix.
   - Details: [PLAN, Open decisions](PLAN.md#open-decisions), [PLAN, Known gaps](PLAN.md#known-gaps), [tooling-gaps.md](../kotor/docs/tooling-gaps.md).
   - *Done when:* a panic in a default `ctxc run` prints its call path with file:line per frame.
 
-- [ ] **6.5 Errors that point at the cause.**
+- [x] **6.5 Errors that point at the cause.**
   A build.ctx missing one source directory gives thirty "unknown type or namespace mg" instead of
   one saying no file declares `namespace mg`; a merge conflict gives nine syntax errors at `<<`.
   - Details: F#12.
   - *Done when:* both cases give one error naming the cause.
+  - *Done:* [spec §21, rule 7](spec.md#21-checking-and-diagnostics); F#12 is removed.
+    - **A namespace no file declares** is one error at its first use, with the others
+      counted, and the driver, which knows the directories, says where one is declared and
+      the line that adds it: ``unknown type or namespace `mini`, used here and at 5 more
+      places: `lib/mini/mini.ctx` declares `namespace mini`, and isn't one of this
+      executable's files: add its directory in build.ctx, with `build::add_sources{ &b, exe,
+      dir = "../lib/mini" }` ``. Only a name before a `::` is folded so: a name alone
+      (`Queue`) may be a different slip at each use, and each keeps its error.
+    - **A merge conflict** is one error at its `<<<<<<<`, which names it and the line of its
+      `>>>>>>>`. The lexer reads the first side as the file's text and skips the rest, so
+      nothing in the conflict is broken syntax and the rest of the file is still checked; a
+      marker line left alone is an error of its own.
+    - **Other cascades,** each shown by a case in [tests/cases/ErrorCauses](tests/cases/ErrorCauses)
+      and fixed: a block comment that doesn't end no longer adds an error for the `}` it hid;
+      a `(` or `[` left open no longer takes the block's `}` for its own (two errors, now
+      one); fields written a line each without commas were one error and then one for every
+      use of a lost field, and are one per comma, the fields kept; a body with a syntax error
+      was also "must end every path in `return`", and a file with one also "no `fn main`";
+      `f(3)` was also "expects at most 0 type argument(s)"; and `&heap` for a `mut heap`
+      field, with `heap` the pointer already (F#12's third part), was two errors that named
+      no cause and is one that says to drop the `&`.
+    - **Left as they are,** because each place is one to edit or the cause can't be told from
+      the effect: a name alone that nothing declares, at each use; a second declaration of a
+      name, whose uses are checked against the first; a `}` too many, which ends a namespace
+      early so that what follows is outside it; a keyword used as a name, at its
+      declaration and at each use.
 
 ## 7. A reference a model can trust
 

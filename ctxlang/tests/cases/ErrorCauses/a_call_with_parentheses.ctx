@@ -1,0 +1,8 @@
+// `f(3)` reads as `f` with a type argument that isn't a type: that error alone, without one
+// about how many type arguments `f` takes.
+
+fn double { n: i32 } -> i32 { return n * 2 }
+fn main { mut io: Io } {
+    let a = double(3)  //~ error at 20: expected a type, found '3'
+    io::println_i64{ &io, n = a }
+}

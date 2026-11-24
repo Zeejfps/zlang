@@ -1,0 +1,10 @@
+// A `(` that isn't closed is one error. The `}` after it still closes the function's body,
+// where it was taken for the `)` and the next declaration was a second error; and the body
+// isn't also reported as not returning on every path.
+
+fn sum { a: i32 } -> i32 {
+    let b = (a +
+}  //~ error at 1: expected an expression, found '}'
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = sum{ a = 1 } }
+}

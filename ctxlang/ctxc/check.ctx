@@ -346,7 +346,17 @@ namespace check {
         // Split borrows (§3.1, rule 8): the calls given places that overlap, checked by
         // order_post against their callees' summaries.
         split_cands: list::List(SplitCand, Heap),
+        // The names before a `::` that nothing declares (`unknown`), each with its first use,
+        // which has the error, and how many places use it: a namespace whose files the
+        // program lacks is one cause, however often it is named.
+        lacks:     map::Map([]u8, Lack, Heap),
+        lack_at:   map::Map(u64, bool, Heap),    // the uses counted, by file and offset
+        // How many diagnostics the lexer and the parser left: diags' first, which say where
+        // the syntax is broken (syntax_error_in).
+        parsed:    usize = 0,
     }
+
+    struct Lack { first: u64, uses: u32 }
 
     // What flows into a function's error set: the errors it returns (atoms), the functions whose
     // errors it passes up (subs), whether any error at all may (from a function type), and
@@ -590,6 +600,8 @@ namespace check {
             ord_seen = list::new(usize){ realloc = arena::alloc, &heap },
             ord_keys = map::new(u64, u8){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             split_cands = list::new(SplitCand){ realloc = arena::alloc, &heap },
+            lacks = map::new([]u8, Lack){ realloc = arena::alloc, &heap, hash = map::hash_bytes, eq = slice::eq_bytes },
+            lack_at = map::new(u64, bool){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             ..
         }
         _ = space{ &c, name = "", parent = NONE }
@@ -616,6 +628,7 @@ namespace check {
         put_name{ &c, ns = UNIVERSE, values = false, name = "task_handle", e = Entry::attr{ a = Attribute::task_handle } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "test", e = Entry::attr{ a = Attribute::test } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "test_main", e = Entry::attr{ a = Attribute::test_main } }
+        c.parsed = diags.items.len
         return c
     }
 
@@ -655,6 +668,7 @@ namespace check {
         evaluate{ &c }
         check_main{ &c }
         unmarked_externs{ &c }
+        count_lacks{ &c }
     }
 
     // The checks that wait for a program without errors, as bits of Checker.waiting: the order
@@ -1634,7 +1648,13 @@ namespace check {
         }
         if m == NONE {
             // A test build needs no `main`: a library's directory has its tests alone.
-            if c.testing or (c.checking and c.tests.len > 0) { test_entry{ &c } } else { error{ &c, at = nowhere{}, msg = "no `fn main` entry point" } }
+            // A file whose syntax is broken may hold a `main` that wasn't parsed as one, as
+            // after a namespace's missing `}`.
+            if c.testing or (c.checking and c.tests.len > 0) {
+                test_entry{ &c }
+            } else if not syntax_errors{ c } {
+                error{ &c, at = nowhere{}, msg = "no `fn main` entry point" }
+            }
             return
         }
         let x = get_decl{ c, d = m }
@@ -3327,7 +3347,7 @@ namespace check {
                 error{ &c, at = s0.name.span, msg = "`_` is a type only as the type argument of @as, @trunc or @cast, where it is the type expected" }
                 return types::ERROR
             }
-            unknown{ &c, n = s0.name }
+            unknown{ &c, n = s0.name, qualified = segs.len > 1 }
             return types::ERROR
         }
         let mut e = first
@@ -3378,8 +3398,58 @@ namespace check {
         return false
     }
 
-    fn unknown { mut c: Checker, n: syntax::Name } {
-        errorf{ &c, at = n.span, msg = @fmt("unknown type or namespace `{}`", str{ s = n.text }) }
+    // Nothing declares n, the first name of a path. Before a `::` (qualified) it is a namespace
+    // or a type the whole program lacks, as when a build.ctx doesn't add a library's
+    // directory, and every use has that one cause: the first use has the error, which says
+    // what it lacks for the driver to look for (diag::Diag.lacks), and the others are counted
+    // into it (count_lacks). A name alone may be a different mistake at each place, and each
+    // is reported.
+    fn unknown { mut c: Checker, n: syntax::Name, qualified: bool } {
+        if not qualified {
+            errorf{ &c, at = n.span, msg = @fmt("unknown type or namespace `{}`", str{ s = n.text }) }
+            return
+        }
+        let at = key{ file = n.span.file, id = n.span.start }
+        let had = map::get{ m = c.lacks, key = n.text } ifnull {
+            try! map::put{ m = &c.lacks, key = n.text, value = Lack{ first = at, uses = 1 } }
+            try! map::put{ m = &c.lack_at, key = at, value = true }
+            lack_error{ &c, n }
+            return
+        }
+        if had.first == at {
+            lack_error{ &c, n }
+            return
+        }
+        if map::has{ m = c.lack_at, key = at } { return }
+        try! map::put{ m = &c.lack_at, key = at, value = true }
+        try! map::put{ m = &c.lacks, key = n.text, value = Lack{ first = had.first, uses = had.uses + 1 } }
+    }
+
+    // The error at the first use of a name the program lacks, once: a body is checked twice.
+    fn lack_error { mut c: Checker, n: syntax::Name } {
+        let mut b = message{ c }
+        try! @fmt(&b, "unknown type or namespace `{}`", str{ s = n.text })
+        let msg = utf8::view{ b }
+        for d in diag::items{ diags = c.diags.* } {
+            if d.span.file == n.span.file and d.span.start == n.span.start and d.lacks.len > 0 { return }
+        }
+        diag::add{ diags = c.diags, d = diag::Diag{ severity = diag::Severity::error, span = n.span, msg, notes = slice::empty(diag::Note){}, lacks = n.text } }
+    }
+
+    // Says in each error about a name the program lacks how many more places use it.
+    fn count_lacks { mut c: Checker } {
+        let mut i: usize = 0
+        while i < c.diags.items.len {
+            let d = list::at{ list = c.diags.items, i }
+            i = i + 1
+            if d.lacks.len == 0 { continue }
+            let l = map::get{ m = c.lacks, key = d.lacks } ifnull { continue }
+            if l.uses < 2 { continue }
+            let mut b = message{ c }
+            let more = l.uses - 1
+            try! @fmt(&b, "{}, used here and at {} more {}", d.msg, more, str{ s = if more == 1 { "place" } else { "places" } })
+            d.msg = utf8::view{ b }
+        }
     }
 
     // The type that path entry e names, with args if it was given any. If partial, as where a
@@ -3616,7 +3686,7 @@ namespace check {
         } else {
             let first = lookup_path{ c, ns, name = segs[0].name.text }
             if first == null {
-                errorf{ &c, at, msg = @fmt("unknown type or namespace `{}`", str{ s = segs[0].name.text }) }
+                unknown{ &c, n = segs[0].name, qualified = true }
                 return null
             }
             let mut p: ?Entry = first
@@ -3845,7 +3915,9 @@ namespace check {
                 i = i + 1
             }
             block{ &c, b = body }
-            if x.ret != types::VOID and x.ret != types::ERROR and not c.dead and not void_result{ c, t = x.ret } {
+            // A body whose syntax is broken may have lost its `return` with it.
+            let whole = x.syn.span.file != NO_FILE and not syntax_error_in{ c, file = x.syn.span.file, start = body.span.start, end = body.span.end }
+            if x.ret != types::VOID and x.ret != types::ERROR and not c.dead and not void_result{ c, t = x.ret } and whole {
                 errorf{ &c, at = x.syn.span, msg = @fmt("`{}` must end every path in `return` or `@panic()`", str{ s = x.name.text }) }
             }
             finish{ &c, end = body.span.end }
@@ -11237,7 +11309,7 @@ namespace check {
         }
         let first = lookup_path{ c, ns, name = s0.name.text }
         if first == null {
-            unknown{ &c, n = s0.name }
+            unknown{ &c, n = s0.name, qualified = true }
             return null
         }
         refer{ &c, n = s0.name, e = first }
@@ -11359,6 +11431,12 @@ namespace check {
                 let mut all = list::new(Id){ realloc = arena::alloc, heap = c.heap }
                 if explicit != null {
                     if explicit.len > x.tparams.len {
+                        // An argument that didn't parse as a type, as in `f(3)`, has its error.
+                        if let written = seg.targs {
+                            for t in written {
+                                if t.k is error { return null }
+                            }
+                        }
                         errorf{ &c, at = seg.name.span, msg = @fmt("`{}` expects at most {} type argument(s), got {}", str{ s = x.name.text }, x.tparams.len, explicit.len) }
                         return null
                     }
@@ -11584,8 +11662,15 @@ namespace check {
                         addr{ e = x } => {
                             // `&p`: p must be a mutable place.
                             let at = expr{ &c, e = it.value, exp = types::NO_TYPE }
-                            check_mutable{ &c, e = x.* }
-                            mut_arg{ &c, e = it.value, at, t = want }
+                            if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = at } } is ptr{ elem } and types::prune{ s = c.ty, t = elem } == want {
+                                // p is the pointer the field takes: one error, where two
+                                // (not a mutable place; a pointer to a pointer) named no cause.
+                                let p = source_text{ c, span = x.span }
+                                errorf{ &c, at = expr_at{ e = it.value }, msg = @fmt("`{}` is {} already, which is what `mut {}` takes: pass it as it is, without the `&`", str{ s = p }, a_type{ c, t = want }, str{ s = f.name }) }
+                            } else {
+                                check_mutable{ &c, e = x.* }
+                                mut_arg{ &c, e = it.value, at, t = want }
+                            }
                             handle_flow{ &c, x = x.*, field = f.name, callee = call_decl, at = expr_at{ e = it.value } }
                         }
                         else => { mut_arg{ &c, e = it.value, at = expr{ &c, e = it.value, exp = want }, t = want } }
@@ -13970,7 +14055,7 @@ namespace check {
             let q0 = p.quals[0]
             if q0.text.len == 0 { return NONE }
             let first = lookup_path{ c, ns = c.sc.ns, name = q0.text } ifnull {
-                unknown{ &c, n = q0 }
+                unknown{ &c, n = q0, qualified = true }
                 return NONE
             }
             refer{ &c, n = q0, e = first }
@@ -14676,6 +14761,31 @@ namespace check {
         let mut b = message{ c }
         try! msg{ &b }
         error{ &c, at, msg = utf8::view{ b } }
+    }
+
+    // Whether the lexer or the parser reported an error in file's bytes from start up to end:
+    // what was written there isn't what was parsed, so an error about what it lacks would
+    // follow from that one.
+    fn syntax_error_in { c: Checker, file: u32, start: u32, end: u32 } -> bool {
+        let ds = diag::items{ diags = c.diags.* }
+        let mut i: usize = 0
+        while i < c.parsed and i < ds.len {
+            let s = ds[i].span
+            if s.file == file and s.start >= start and s.start <= end { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // Whether one of the program's own files has a syntax error.
+    fn syntax_errors { c: Checker } -> bool {
+        let ds = diag::items{ diags = c.diags.* }
+        let mut i: usize = 0
+        while i < c.parsed and i < ds.len {
+            if ds[i].span.file != NO_FILE and @as(usize, ds[i].span.file) >= c.std_files { return true }
+            i = i + 1
+        }
+        return false
     }
 
     fn nowhere {} -> source::Span {

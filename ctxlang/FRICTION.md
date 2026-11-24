@@ -88,12 +88,6 @@ as the write-ups gave them.
     could be one range check. *Hit by 3:* ctxc, data (1), walk (1).
 
 
-12. **Some errors don't point at the cause.** A build.ctx missing one source directory gives
-    "unknown type or namespace mg" at every use (thirty errors) instead of one saying no file
-    declares `namespace mg`; a file in the middle of a merge gives nine syntax errors at `<<`
-    with no hint of a conflict; finding that a `mut heap: Heap` field takes `&heap.*` from a
-    `*mut Heap` took three tries. *Hit by 3:* engine, hud, chargen.
-
 13. **A `&fn` can't be a struct field.** A bound function travels as a context field of its own,
     or is bound again where it is used: the engine's functions bind the script VM's engine at
     each run (`engine = routines::call{ &w, _ }`), and the scene binds `mdl_cache::get` once per

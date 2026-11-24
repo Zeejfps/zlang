@@ -1,0 +1,7 @@
+// A block comment that never ends hides the rest of the file: that is the one error, and
+// the braces it hid aren't reported as missing.
+
+fn main { mut io: Io } {
+    /* the rest is a comment  //~ error at 5: unterminated block comment
+    io::println{ &io, s = "ok" }
+}

@@ -1,3 +1,2 @@
 //# errors:
 //| 01.ctx:2:15: error: expected ']', found '='
-//| 01.ctx:3:2: error: expected '}' to close block

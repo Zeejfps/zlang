@@ -1,0 +1,3 @@
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = side::one{} + deep::two{} + deep::two{} }
+}

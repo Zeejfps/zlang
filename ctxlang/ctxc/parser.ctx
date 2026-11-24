@@ -44,6 +44,9 @@ namespace parser {
         // In a match arm without braces: the `-` that begins the next line and the next arm's
         // pattern, where the arm's expression ends (arm_end). 0 for none.
         arm_end: usize,
+        // The file ends inside a block comment, which the lexer reported: what the comment
+        // hid is missing at the end of the file, and isn't reported again as missing.
+        cut: bool,
     }
 
     // Whether the expression null_expr returned is a handler's, `l ifnull r`, `l iferr r` or
@@ -57,7 +60,12 @@ namespace parser {
             text, file, toks = tokens, i = 0, heap = &heap, diags = &diags, ids = 0,
             in_cond = false, depth = 0, bad = false, errored = false, err_at = 0,
             hand = Handler{ bare = false, block = false, first = tokens[0], last = tokens[0], left_end = 0, right_start = 0 },
-            cond_break = 0, cond_mark = diag::mark{ diags }, cond_items = false, arm_end = 0,
+            cond_break = 0, cond_mark = diag::mark{ diags }, cond_items = false, arm_end = 0, cut = false,
+        }
+        let before = diag::items{ diags }
+        if before.len > 0 {
+            let last = before[before.len - 1]
+            p.cut = last.span.file == file and utf8::eq{ a = last.msg, b = lexer::CUT }
         }
         let decls = decl_list{ &p, top = true }
         return syntax::File{ decls, ids = p.ids }
@@ -322,10 +330,24 @@ namespace parser {
             expect{ &p, k = tok::Kind::colon }
             let ty = type_expr{ &p }
             try! list::push{ list = &xs, item = syntax::Param{ span = span_from{ p, start }, attrs, mutable, name, ty } }
-            if not accept{ &p, k = tok::Kind::comma } { break }
+            if not accept{ &p, k = tok::Kind::comma } and not lacks_comma{ &p } { break }
         }
         expect{ &p, k = tok::Kind::rbrace }
         return list::items{ list = xs }
+    }
+
+    // After a field that no `,` follows: whether another field does, `name: T` or `mut name:
+    // T`, as when fields are written a line each. That is one error, the comma's, and the
+    // fields are parsed on; without this the rest of them were lost, and each use of one was
+    // an error.
+    fn lacks_comma { mut p: Parser } -> bool {
+        if p.bad { return false }
+        let at = if next_is{ p, k = tok::Kind::kw_mut } { p.i + 1 } else { p.i }
+        if p.toks[at].kind != tok::Kind::ident or p.toks[at + 1].kind != tok::Kind::colon { return false }
+        let mut b = message{ p }
+        try! @fmt(&b, "expected ',' before the next field, `{}`: fields are separated by commas, on one line or on several", utf8::String{ bytes = text_of{ p, t = p.toks[at] } })
+        diag::error{ diags = p.diags, span = p.toks[p.i].span, msg = utf8::view{ b } }
+        return true
     }
 
     // `{ name: T, name: T = e, ... }`, of a struct, an extern union, a union variant or an error,
@@ -347,7 +369,7 @@ namespace parser {
                 default_id = new_id{ &p }
             }
             try! list::push{ list = &xs, item = syntax::Field{ span = span_from{ p, start }, attrs, name, ty, external = false, stat = false, default, default_id } }
-            if not accept{ &p, k = tok::Kind::comma } { break }
+            if not accept{ &p, k = tok::Kind::comma } and not lacks_comma{ &p } { break }
         }
         expect{ &p, k = tok::Kind::rbrace }
         return list::items{ list = xs }
@@ -1983,8 +2005,13 @@ namespace parser {
     //   that closes the enclosing block,
     // - for a declaration in a namespace: a `}` that begins a line and closes the namespace,
     // - or the end of the file.
+    //
+    // A `}` closes braces only. One met while no `{` since `start` is open, but a `(` or a
+    // `[` is, closes the enclosing block: the `)` or `]` is what is missing, as in `let b =
+    // (a +` on the line before the block's `}`, and the statement or arm ends there.
     fn sync { mut p: Parser, start: usize, in_block: bool, top: bool } {
         let mut depth: u32 = 0
+        let mut braces: u32 = 0             // how many of the brackets counted are `{`
         let mut k = start
         while p.toks[k].kind != tok::Kind::eof {
             let t = p.toks[k]
@@ -1994,11 +2021,14 @@ namespace parser {
                     if in_block and (t.nl or t.kind == tok::Kind::semi or t.kind == tok::Kind::rbrace) { break }
                     if not in_block and not top and t.nl and t.kind == tok::Kind::rbrace { break }
                 }
+                if in_block and t.kind == tok::Kind::rbrace and braces == 0 and depth > 0 { break }
             }
             if t.kind == tok::Kind::lbrace or t.kind == tok::Kind::lparen or t.kind == tok::Kind::lbracket {
                 depth = depth + 1
+                if t.kind == tok::Kind::lbrace { braces = braces + 1 }
             } else if (t.kind == tok::Kind::rbrace or t.kind == tok::Kind::rparen or t.kind == tok::Kind::rbracket) and depth > 0 {
                 depth = depth - 1
+                if t.kind == tok::Kind::rbrace and braces > 0 { braces = braces - 1 }
             }
             k = k + 1
         }
@@ -2064,6 +2094,7 @@ namespace parser {
         p.errored = true
         p.err_at = p.i
         if t.kind == tok::Kind::error { return }          // the lexer has reported it
+        if t.kind == tok::Kind::eof and p.cut { return }
         diag::error{ diags = p.diags, span = t.span, msg }
     }
 

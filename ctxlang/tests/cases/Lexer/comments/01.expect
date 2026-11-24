@@ -1,3 +1,2 @@
 //# errors:
 //| 01.ctx:2:1: error: unterminated block comment
-//| 01.ctx:3:7: error: expected '{', found end of file

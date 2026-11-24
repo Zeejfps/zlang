@@ -1,0 +1,16 @@
+// Fields written a line each, without commas: one error for each missing comma, and the
+// fields after it are still the struct's, where they were lost and every use of one was an
+// error too.
+
+struct Point {
+    x: i32
+    y: i32,  //~ error at 5: expected ',' before the next field, `y`: fields are separated by commas, on one line or on several
+}
+fn sum { p: Point
+         scale: i32 } -> i32 {  //~ error at 10: expected ',' before the next field, `scale`: fields are separated by commas, on one line or on several
+    return (p.x + p.y) * scale
+}
+fn main { mut io: Io } {
+    let p = Point{ x = 1, y = 2 }
+    io::println_i64{ &io, n = sum{ p, scale = 2 } }
+}

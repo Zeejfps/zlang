@@ -1,3 +1,2 @@
 //# errors:
 //| 06.ctx:3:1: error: expected '}' to close namespace
-//| 06.ctx:1:1: error: no `fn main` entry point

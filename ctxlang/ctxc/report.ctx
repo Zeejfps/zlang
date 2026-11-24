@@ -15,22 +15,24 @@ namespace report {
     // to but not including the end.
     struct Place { path: []u8, line: u32, col: u32, end_line: u32, end_col: u32 }
 
-    struct Entry { at: Place, msg: []u8 }
+    // lacks: the namespace the program lacks, if the error is that (diag::Diag.lacks), for the
+    // driver to say where one is declared (drive.ctx, `explain`).
+    struct Entry { at: Place, msg: []u8, lacks: []u8 }
 
     // What a command that checks several programs has gathered (`ctxc check`): each entry
-    // once, however many of the programs have it; how many the cap dropped; and which checks
-    // waited for a program without errors (check::WAIT_ORDER and the others).
-    struct Found { entries: list::List(Entry, Heap), dropped: usize, waiting: u8 }
+    // once, however many of the programs have it; whether the cap dropped others; and which
+    // checks waited for a program without errors (check::WAIT_ORDER and the others).
+    struct Found { entries: list::List(Entry, Heap), dropped: bool, waiting: u8 }
 
     fn found { heap: *mut Heap } -> Found {
-        return Found{ entries = list::new(Entry){ realloc = arena::alloc, heap }, dropped = 0, waiting = 0 }
+        return Found{ entries = list::new(Entry){ realloc = arena::alloc, heap }, dropped = false, waiting = 0 }
     }
 
     // The diagnostics of checker c as entries, in order.
     fn resolve { mut heap: Heap, c: check::Checker, ds: []diag::Diag } -> []Entry {
         let mut out = list::new(Entry){ realloc = arena::alloc, &heap }
         for d in ds {
-            try! list::push{ list = &out, item = Entry{ at = place{ c, span = d.span }, msg = d.msg.bytes } }
+            try! list::push{ list = &out, item = Entry{ at = place{ c, span = d.span }, msg = d.msg.bytes, lacks = d.lacks } }
         }
         return list::items{ list = out }
     }
@@ -66,12 +68,12 @@ namespace report {
 
     // Writes es to standard error, a line for each, and after them whether the cap dropped
     // others.
-    fn write { mut io: Io, mut heap: Heap, es: []Entry, dropped: usize } {
+    fn write { mut io: Io, mut heap: Heap, es: []Entry, dropped: bool } {
         let mut out = utf8::builder{ realloc = arena::alloc, &heap }
         for e in es { text{ &out, e } }
         // How many more isn't known: a body is checked twice, and an error that was dropped
         // twice was counted twice.
-        if dropped > 0 {
+        if dropped {
             try! @fmt(&out, "ctxc: more than {} errors: these are the first {}, and `ctxc check` reports every one\n", diag::CAP, diag::CAP)
         }
         io::write{ &io, to = io::Stream::err, bytes = utf8::view{ b = out }.bytes }

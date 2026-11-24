@@ -8,7 +8,9 @@ namespace diag {
     // A related place, such as where something was first borrowed.
     struct Note { span: source::Span, msg: utf8::String }
 
-    struct Diag { severity: Severity, span: source::Span, msg: utf8::String, notes: []Note }
+    // lacks: the name before a `::` that nothing in the program declares, if the diagnostic
+    // is that; else empty. The driver looks for a file that declares the namespace (drive.ctx).
+    struct Diag { severity: Severity, span: source::Span, msg: utf8::String, notes: []Note, lacks: []u8 }
 
     // At most `cap` are kept, CAP unless `keep_all` lifts it, so a broken file can't flood an
     // editor. `dropped` counts the rest, which the driver says after those it shows (report.ctx).
@@ -26,7 +28,7 @@ namespace diag {
     }
 
     fn error { mut diags: Diags, span: source::Span, msg: utf8::String } {
-        add{ &diags, d = Diag{ severity = Severity::error, span, msg, notes = slice::empty(Note){} } }
+        add{ &diags, d = Diag{ severity = Severity::error, span, msg, notes = slice::empty(Note){}, lacks = "" } }
     }
 
     fn add { mut diags: Diags, d: Diag } {

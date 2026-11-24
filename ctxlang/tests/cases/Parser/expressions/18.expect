@@ -1,4 +1,3 @@
 //# errors:
 //| 18.ctx:3:1: error: expected ']', found '}'
-//| 18.ctx:3:2: error: expected '}' to close block
 //| 18.ctx:2:13: error: unknown name `a`

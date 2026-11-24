@@ -222,8 +222,16 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
     }
     let out: []u8 = if mode == Mode::build { args[1] } else { "" }
     let mut units: [][]u8 = slice::empty([]u8){}
-    let mut found = report::found{ &heap }
-    return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = split - first, extras = slice::empty([]u8){}, mode, out, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = list::items{ list = denied }, testing = false, &found }
+    // A program's errors, and their text as it is written.
+    let pages = mem::reserve{ &mem, size = 16777216 } ifnull {
+        io::eprintln{ &io, s = "out of memory" }
+        return 1
+    }
+    let mut scratch = arena::new{ buf = pages }
+    let mut found = report::found{ heap = &scratch }
+    let code = analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = split - first, extras = slice::empty([]u8){}, mode, out, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = list::items{ list = denied }, testing = false, &found }
+    report::write{ &io, heap = &scratch, es = list::items{ list = found.entries }, dropped = found.dropped }
+    return code
 }
 
 // Checks the program of `paths`, std's files first, and acts on it as `mode` says: for build,
@@ -239,8 +247,8 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
 // the unchecked operations (spec §13), one for each, or is empty for none. testing makes it a
 // test build (spec §20): its entry point is the `#test_main` fn, in place of `main`. For check,
 // nothing is made of the program: every diagnostic is kept, whatever their number, the program
-// is checked as a test build as well (check::Checker.checking), and its errors are added to
-// found, which the caller shows.
+// is checked as a test build as well (check::Checker.checking). A program's errors are added
+// to found, which the caller shows (report::write), but those `ir` prints in its own form.
 fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8, std_files: usize, extras: [][]u8, mode: Mode, out: []u8, argv: [][]u8, env: [][]u8, stack: u64, size: usize, copy: usize, mut made: [][]u8, texts: [][]u8, denied: []bool, testing: bool, mut found: report::Found } -> i32 {
     let given = paths.len - texts.len               // paths[given..] are texts'
     let mut total: u64 = 0
@@ -348,12 +356,13 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8
         if n != null { c.fuel = n }
     }
     check::program{ &c }
-    if mode == Mode::check {
-        if diags.errors == 0 { return 0 }
+    if diags.errors > 0 and mode != Mode::ir and mode != Mode::decls {
         report::keep{ &found, es = report::resolve{ &heap, c, ds = diag::items{ diags } } }
         found.waiting = found.waiting | c.waiting
+        if diags.dropped > 0 { found.dropped = true }
         return 1
     }
+    if mode == Mode::check { return 0 }
     if mode == Mode::build or mode == Mode::interp or mode == Mode::units {
         if diags.errors == 0 and mode == Mode::interp {
             return interpret{ &io, &heap, p = lower::program{ &c }, name = out, argv, env, stack }
@@ -370,7 +379,6 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8
             }
             return 0
         }
-        report::write{ &io, &heap, es = report::resolve{ &heap, c, ds = diag::items{ diags } }, dropped = diags.dropped }
         return 1
     }
     if mode == Mode::ir {

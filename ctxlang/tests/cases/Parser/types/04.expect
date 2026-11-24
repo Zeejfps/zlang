@@ -1,4 +1,3 @@
 //# errors:
 //| 04.ctx:2:27: error: expected ')', found '='
-//| 04.ctx:3:2: error: expected '}' to close block
 //| 04.ctx:2:18: error: `List` expects 2 type argument(s), got 1

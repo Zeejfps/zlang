@@ -1,0 +1,5 @@
+fn main { mut io: Io } {
+    let a: mini::Game = mini::start{}
+    let b: mini::Game = mini::start{}
+    io::println_i64{ &io, n = mini::score{ g = a } + mini::score{ g = b } + base::one{} + other::two{} }
+}

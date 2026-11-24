@@ -1,1 +1,1 @@
-﻿fn main {}  //~ error at 1: unexpected character '﻿' (U+FEFF) //~ error at 1: no `fn main` entry point
+﻿fn main {}  //~ error at 1: unexpected character '﻿' (U+FEFF)

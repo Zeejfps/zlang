@@ -144,7 +144,7 @@ namespace drive {
             add_all{ xs = &flags, ys = list::items{ list = t.paths } }
             add_all{ xs = &flags, ys = list::items{ list = t.libs } }
             let out: []u8 = if i == 0 and not run { args[3] } else { "" }
-            let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = d.work, name = t.name, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, level = t.level, flags = list::items{ list = flags }, out, testing = false, &why } ifnull { return 1 }
+            let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = d.work, name = t.name, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, level = t.level, flags = list::items{ list = flags }, out, testing = false, origin = origin_of{ &fs, &heap, path, t }, &why } ifnull { return 1 }
             if i == 0 { first = exe }
             i = i + 1
         }
@@ -204,12 +204,16 @@ namespace drive {
             }
             let mut units: [][]u8 = slice::empty([]u8){}
             let all = program_paths{ &heap, d, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny }
-            let r = analyze{ &io, &fs, &mem, &proc, paths = all.paths, std_files = d.std.len, extras = d.extras, mode = Mode::check, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = all.texts, denied = all.denied, testing = false, &found }
-            // 1 with errors, which are in found, or after saying what else stopped it.
-            if r != 0 and found.entries.len == 0 { failed = true }
+            let mut own = report::found{ &heap }
+            let r = analyze{ &io, &fs, &mem, &proc, paths = all.paths, std_files = d.std.len, extras = d.extras, mode = Mode::check, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = all.texts, denied = all.denied, testing = false, found = &own }
+            // 1 with errors, which are in own, or after saying what else stopped it.
+            if r != 0 and own.entries.len == 0 { failed = true }
+            explain{ &io, &fs, &heap, d, found = &own, origin = origin_of{ &fs, &heap, path, t }, files }
+            report::keep{ &found, es = list::items{ list = own.entries } }
+            found.waiting = found.waiting | own.waiting
         }
         let es = list::items{ list = found.entries }
-        report::write{ &io, &heap, es, dropped = 0 }
+        report::write{ &io, &heap, es, dropped = false }
         let mut line = utf8::builder{ realloc = arena::alloc, &heap }
         if es.len == 0 {
             if failed { return 1 }
@@ -261,7 +265,8 @@ namespace drive {
         let mut flags = list::new([]u8){ realloc = arena::alloc, &heap }
         add_all{ xs = &flags, ys = list::items{ list = t.paths } }
         add_all{ xs = &flags, ys = list::items{ list = t.libs } }
-        let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = d.work, name = cat{ &heap, a = t.name, b = ".test" }, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, level = t.level, flags = list::items{ list = flags }, out = "", testing = true, &why } ifnull { return 1 }
+        let origin = origin_of{ &fs, &heap, path, t }
+        let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = d.work, name = cat{ &heap, a = t.name, b = ".test" }, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, level = t.level, flags = list::items{ list = flags }, out = "", testing = true, origin, &why } ifnull { return 1 }
         let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
         try! list::push{ list = &argv, item = exe }
         add_all{ xs = &argv, ys = args[2..] }
@@ -543,7 +548,9 @@ namespace drive {
             k = k + 2
         }
         let mut found = report::found{ &heap }
-        return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = std.len, extras, mode = Mode::interp, out = stem{ path = base{ path } }, argv, env = list::items{ list = env }, stack, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = slice::empty(bool){}, testing = false, &found }
+        let code = analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = std.len, extras, mode = Mode::interp, out = stem{ path = base{ path } }, argv, env = list::items{ list = env }, stack, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = slice::empty(bool){}, testing = false, &found }
+        report::write{ &io, &heap, es = list::items{ list = found.entries }, dropped = found.dropped }
+        return code
     }
 
     // About how many bytes of C a unit has: CTX_UNIT_SIZE, or UNIT_SIZE.
@@ -579,7 +586,7 @@ namespace drive {
             why = Why::errors
             return 1
         }
-        let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = work, name = "build", files, gens = slice::empty(Gen){}, denied = slice::empty(bool){}, deny = false, level = 1, flags = slice::empty([]u8){}, out = "", testing = false, &why } ifnull { return 1 }
+        let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = work, name = "build", files, gens = slice::empty(Gen){}, denied = slice::empty(bool){}, deny = false, level = 1, flags = slice::empty([]u8){}, out = "", testing = false, origin = Origin{ kind = Kind::none, dir = "", roots = slice::empty([]u8){} }, &why } ifnull { return 1 }
         let graph = claim{ &io, &fs, &heap, base = join{ &heap, a = work, b = "graph" }, ext = ".txt" } ifnull { return 1 }
         defer _ = fs::remove{ &fs, path = graph }
         let mut env = list::new([]u8){ realloc = arena::alloc, &heap }
@@ -1205,6 +1212,132 @@ namespace drive {
         return dir[dir.len - 1] == '/' or file[dir.len] == '/'
     }
 
+    // ---- a namespace the program lacks
+
+    // Where a program's files come from, for an error about a namespace none of them declares
+    // (`explain`): one file, a directory's, or what a build program adds; none for a program
+    // that isn't looked into, a build program. dir is the directory the files are named from,
+    // and roots the directories to look in for a file that declares it, as paths from dir.
+    enum Kind: u8 { none, file, dir, build }
+    struct Origin { kind: Kind, dir: []u8, roots: [][]u8 }
+
+    // How many directories `explain` looks in before it gives up: a program's directory may
+    // be beside a tree that is no source.
+    const LOOK: usize = 2000
+
+    // The origin of target t of the program at path. With a build.ctx the roots are its
+    // directory, and the directory each of the executable's is in: where a library's is
+    // added from, others are.
+    fn origin_of { mut fs: Fs, mut heap: Heap, path: []u8, t: Target } -> Origin {
+        let mut roots = list::new([]u8){ realloc = arena::alloc, &heap }
+        try! list::push{ list = &roots, item = "." }
+        if kind_of{ &fs, path } != 2 {
+            let dir = parent{ path }
+            return Origin{ kind = Kind::file, dir = if dir.len == 0 { "." } else { dir }, roots = list::items{ list = roots } }
+        }
+        if kind_of{ &fs, path = join{ &heap, a = path, b = "build.ctx" } } != 1 {
+            return Origin{ kind = Kind::dir, dir = path, roots = list::items{ list = roots } }
+        }
+        let mut dirs = list::new([]u8){ realloc = arena::alloc, &heap }
+        try! list::push{ list = &dirs, item = t.root }
+        add_all{ xs = &dirs, ys = list::items{ list = t.dirs } }
+        for d in list::items{ list = dirs } {
+            let up = normalize{ &heap, path = join{ &heap, a = d, b = ".." } }
+            if not fs::is_absolute{ path = d } and not has_str{ xs = list::items{ list = roots }, s = up } { try! list::push{ list = &roots, item = up } }
+        }
+        return Origin{ kind = Kind::build, dir = path, roots = list::items{ list = roots } }
+    }
+
+    fn has_str { xs: [][]u8, s: []u8 } -> bool {
+        for x in xs {
+            if slice::eq_bytes{ a = x, b = s } { return true }
+        }
+        return false
+    }
+
+    // Adds to each error of found about a namespace the program lacks (report::Entry.lacks)
+    // where a file that declares it is, if one is under origin's roots and isn't among the
+    // program's files, and what would make it one of them. Nothing is added if none is found,
+    // or the directories to look in are more than LOOK.
+    fn explain { mut io: Io, mut fs: Fs, mut heap: Heap, d: Driver, mut found: report::Found, origin: Origin, files: [][]u8 } {
+        if origin.kind == Kind::none { return }
+        let mut i: usize = 0
+        while i < found.entries.len {
+            let e = list::at{ list = found.entries, i }
+            i = i + 1
+            if e.lacks.len == 0 { continue }
+            let rel = declaring{ &io, &fs, &heap, d, origin, files, name = e.lacks } ifnull { continue }
+            let file = place{ &heap, dir = origin.dir, rel }
+            let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+            try! @fmt(&b, "{}: `{}` declares `namespace {}`, and ", utf8::String{ bytes = e.msg }, utf8::String{ bytes = file }, utf8::String{ bytes = e.lacks })
+            match origin.kind {
+                build => {
+                    let dir = parent{ path = rel }
+                    try! @fmt(&b, "isn't one of this executable's files: add its directory in build.ctx, with `build::add_sources{{ &b, exe, dir = \"{}\" }}`", utf8::String{ bytes = if dir.len == 0 { "." } else { dir } })
+                }
+                dir => { try! utf8::push{ &b, s = "a directory's program is the files in it, not those below it: a build.ctx adds a directory, with `build::add_sources`" } }
+                else => { try! utf8::push{ &b, s = "this program is one file: give ctxc the directory, for a program of every file in it" } }
+            }
+            e.msg = utf8::view{ b }.bytes
+        }
+    }
+
+    // A file under origin's roots that declares `namespace name` at its top and isn't one of
+    // files, as a path from origin.dir: the first, by the roots' order and then by name.
+    fn declaring { mut io: Io, mut fs: Fs, mut heap: Heap, d: Driver, origin: Origin, files: [][]u8, name: []u8 } -> ?[]u8 {
+        let mut have = list::new([]u8){ realloc = arena::alloc, &heap }
+        for f in files {
+            let key = key_of{ &io, &fs, &heap, path = f, os = d.os } ifnull { return null }
+            try! list::push{ list = &have, item = key }
+        }
+        let mut seen = list::new([]u8){ realloc = arena::alloc, &heap }
+        for root in origin.roots {
+            let at = declaring_in{ &io, &fs, &heap, d, origin, rel = root, have = list::items{ list = have }, &seen, name } ifnull { continue }
+            return at
+        }
+        return null
+    }
+
+    // `declaring`, for the directory rel and those below it, or for rel alone if the program is
+    // one file, which only its own directory's files can join. seen is the directories looked
+    // in, by their keys: one is looked in once, and LOOK of them are the most.
+    fn declaring_in { mut io: Io, mut fs: Fs, mut heap: Heap, d: Driver, origin: Origin, rel: []u8, have: [][]u8, mut seen: Strs, name: []u8 } -> ?[]u8 {
+        let dir = place{ &heap, dir = origin.dir, rel }
+        let key = key_of{ &io, &fs, &heap, path = dir, os = d.os } ifnull { return null }
+        if seen.len >= LOOK or has_str{ xs = list::items{ list = seen }, s = key } { return null }
+        try! list::push{ list = &seen, item = key }
+        let names = fs::list{ &fs, &heap, realloc = arena::alloc, path = dir } iferr { return null }
+        let mut below = list::new([]u8){ realloc = arena::alloc, &heap }
+        for n in names {
+            let p = join{ &heap, a = dir, b = n }
+            if n.len > 0 and n[0] == '.' { continue }
+            if not ends_with{ s = n, suffix = ".ctx" } {
+                if origin.kind != Kind::file and kind_of{ &fs, path = p } == 2 { try! list::push{ list = &below, item = n } }
+                continue
+            }
+            if slice::eq_bytes{ a = n, b = "build.ctx" } or has_str{ xs = have, s = join{ &heap, a = key, b = fold{ &heap, s = n, os = d.os } } } { continue }
+            if declares{ &fs, &heap, path = p, name } { return normalize{ &heap, path = join{ &heap, a = rel, b = n } } }
+        }
+        for n in list::items{ list = below } {
+            let at = declaring_in{ &io, &fs, &heap, d, origin, rel = join{ &heap, a = rel, b = n }, have, &seen, name } ifnull { continue }
+            return at
+        }
+        return null
+    }
+
+    // Whether the file at path declares `namespace name` at its top, as it parses.
+    fn declares { mut fs: Fs, mut heap: Heap, path: []u8, name: []u8 } -> bool {
+        let text = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } iferr { return false }
+        if not contains{ s = text, part = name } { return false }
+        let mut diags = diag::new{ &heap }
+        let lexed = lexer::lex{ text, file = 0, &heap, &diags }
+        let tree = parser::parse{ text, file = 0, tokens = lexed.tokens, &heap, &diags }
+        for x in tree.decls {
+            if x.k is space{ name = n } and slice::eq_bytes{ a = n.text, b = name } { return true }
+        }
+        return false
+    }
+
     // ---- compiling
 
     // What `analyze` is given for a program: std's files and its own, then those it generates,
@@ -1247,13 +1380,15 @@ namespace drive {
     // If deny, denied says which of files are denied the unchecked operations (`denied`), and
     // gens are denied them too. Returns the executable; null after saying why there is none,
     // and setting why to errors if the program has errors.
-    fn compile { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, dir: []u8, name: []u8, files: [][]u8, gens: []Gen, denied: []bool, deny: bool, level: u8, flags: [][]u8, out: []u8, testing: bool, mut why: Why } -> ?[]u8 {
+    fn compile { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, dir: []u8, name: []u8, files: [][]u8, gens: []Gen, denied: []bool, deny: bool, level: u8, flags: [][]u8, out: []u8, testing: bool, origin: Origin, mut why: Why } -> ?[]u8 {
         let base = join{ &heap, a = dir, b = name }
         let all = program_paths{ &heap, d, files, gens, denied, deny }
         let mut units: [][]u8 = slice::empty([]u8){}
         let mut found = report::found{ &heap }
         let code = analyze{ &io, &fs, &mem, &proc, paths = all.paths, std_files = d.std.len, extras = d.extras, mode = Mode::units, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = d.unit, copy = if level == 0 { 0 } else { d.copy }, made = &units, texts = all.texts, denied = all.denied, testing, &found }
         if code != 0 {
+            explain{ &io, &fs, &heap, d, &found, origin, files }
+            report::write{ &io, &heap, es = list::items{ list = found.entries }, dropped = found.dropped }
             why = Why::errors
             return null
         }
