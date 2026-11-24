@@ -840,11 +840,15 @@ What a model writes by default should compile, or fail with the exact fix.
 
 ## 8. Next tier
 
-- [ ] **8.1 File-private declarations and choosing files.**
-  A directory is one flat namespace: parallel agents agree on helper names by message, a file
-  can't keep private helpers, and one half-written file breaks every build that adds its directory.
-  - Details: F#5, F#14; [spec §10](spec.md#10-namespaces).
-  - *Done when:* a declaration can be private to its file, and a build can add one file.
+- [ ] **8.1 Modules, and choosing files.**
+  A directory is one flat namespace: nothing tells a library's contract from its helpers, a changed
+  signature breaks callers nobody on the task owns, parallel agents agree on helper names by
+  message, and a subsystem's state goes in `World`. In place of file-private declarations, a folder
+  that holds an `api.ctx` is a module, which code outside reaches only through that file
+  ([modules.md](modules.md)). Apart from that, one half-written file breaks every build that adds
+  its directory.
+  - Details: F#5, F#14; [modules.md](modules.md); [spec §10](spec.md#10-namespaces), [§19](spec.md#19-build-programs).
+  - *Done when:* modules.md is built, and a build can add one file.
 
 - [ ] **8.2 Borrow contracts in signatures.**
   The escape check infers what a call borrows from the callee's body, so an error at a call
