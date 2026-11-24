@@ -21,4 +21,5 @@ fn build { mut b: Build } {
     }
     build::link{ &b, exe, lib = "freetype" }
     build::link{ &b, exe, lib = "harfbuzz" }
+    build::optimize{ &b, exe, level = 2 }                              // -O2: a program people run, not a test
 }
