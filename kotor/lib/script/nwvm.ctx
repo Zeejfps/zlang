@@ -1671,7 +1671,7 @@ namespace nwvm {
     #write
     fn text_bytes { mut t: Text, s: []u8 } {
         let room = t.buf.len - t.len
-        let n = if s.len < room { s.len } else { room }
+        let n = @min(s.len, room)
         slice::copy(u8){ dst = t.buf[t.len..t.len + n], src = s[..n] }
         t.len = t.len + n
     }

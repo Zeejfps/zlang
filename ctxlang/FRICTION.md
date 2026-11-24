@@ -65,13 +65,12 @@ as the write-ups gave them.
     cache goes in `World`, the file every agent needs; `mdl` is one 1,500-line file because a
     namespace is a file's. *Hit by 5:* engine (2), dialog (2), models, rules, script.
 
-6. **No integer `@min` or `@max`:** `if a < b { a } else { b }` by hand, and a generic std one
-    can't compare an opaque `T` (§9). (The rest of this entry is fixed: std's `math` has libm's
-    functions, they run while compiling, and the MP3 tables' own cosine series and Newton roots
-    are gone.) What is left of the math: a program's namespace hides std's of the same name
-    whole, so KOTOR's `math`, its vectors, declares libm and the float-bits fns again
-    (lib/base/math.ctx, 24 extern fns) rather than reach std's. *Hit by 5:* ctxc, audio, video,
-    rules, render (about 6).
+6. **A program's namespace hides std's of the same name whole.** KOTOR's `math`, its vectors,
+    hides std's `math`, so it declares libm and the float-bits fns again (lib/base/math.ctx, 24
+    extern fns) rather than reach std's. (The rest of this entry is fixed: std's `math` has
+    libm's functions, they run while compiling, the MP3 tables' own cosine series and Newton
+    roots are gone, and `@min`, `@max` and `@clamp` are builtins.) *Hit by 5:* ctxc, audio,
+    video, rules, render (about 6).
 
 7. **Signed and unsigned integers don't mix.** Game data is signed (-1 for none, modifiers) and
     lengths and counts are `usize`, and neither widens to the other: a `usize` going into an
@@ -111,12 +110,6 @@ as the write-ups gave them.
 
 16. **Hex literals aren't in the spec.** The lexer takes `0xFFFFFFFF`, `0b` and `_` separators,
     but §11 Literals shows only decimal, so drafts wrote `4294967295`. *Hit by 2:* glspike, walk.
-
-17. **Float-to-integer conversion can only check.** `@as(i32, f)` is inline (`823c678f`; it was an
-    out-of-line call that took about 20% of the audio decoder) but still two compares (an `f32`
-    widened to double first), and no integer conversion rounds or clamps instead, so the Bink audio
-    clamps by hand and rounds by adding 1.5 * 2^52 and reading the bits. A conversion that rounds
-    or clamps, never panicking, would say it. *Hit by 2:* audio, video.
 
 18. **No methods** (§16 Q4). `list::push{ list = &xs, item }` everywhere: ctxc makes about 580
     `list::` and `map::` calls and 150 `slice::` ones. `xs.push{ item }` would shrink code a lot.

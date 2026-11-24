@@ -312,7 +312,7 @@ namespace rules {
     // attacker's visibility and conditional effects, is rules::defense_versus in combat.
     fn armor_class_sheet { tables: *Tables, c: *Creature } -> i32 {
         let s = &c.stats
-        let dodge = if s.ac_dodge > 10 { 10 } else { s.ac_dodge }
+        let dodge = @min(s.ac_dodge, 10)
         let dueling = combat_get_dueling_bonus{ feat = combat_find_dueling_feat{ tables, c } }
         let helpless: i32 = if is_debilitated{ c } { -4 } else { 0 }
         return 10 + s.ac_class + s.ac_natural + s.ac_armour + s.ac_shield + s.ac_deflection + dodge + dex_modifier_for_defense{ tables, c } + dueling + helpless

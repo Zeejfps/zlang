@@ -72,7 +72,7 @@ function: can't be stored in a struct or returned), `extern fn{C} -> R` (C funct
 - Integer `+ - * <<` panic on overflow (`a << n` is `a * 2^n`); use `+%`, `-%`, `*%` and
   `@wrap_shl` for hashes, CRCs and RNGs. `/` by zero panics.
 - `~x` flips an integer's bits: `flags & ~F_VISIBLE` clears a flag.
-- `e ifoverflow x` gives x where the integer arithmetic and `@as` to an integer written in e
+- `e ifoverflow x` gives x where the integer arithmetic and `@as` or `@round` to an integer written in e
   overflow, for counts from a file: `count * 16 ifoverflow { return truncated }`. A call's
   arguments in e aren't covered.
 - No implicit int→float or signed↔unsigned (but for an index and a const's name, below):
@@ -100,6 +100,14 @@ function: can't be stored in a struct or returned), `extern fn{C} -> R` (C funct
   Calling an extern fn or using a slice that such a directory made is allowed everywhere. Add a
   directory to `except` only with its reason on its line. The tools (kotor/tools/*) don't deny
   them.
+- `@min(a, b)`, `@max(a, b)` and `@clamp(x, lo, hi)` for integers and floats of one type after
+  widening (a literal takes the other's type): never `if a < b { a } else { b }` by hand. A NaN
+  operand gives NaN; `@clamp` panics if `lo > hi`. (`math::min`, `max` and `clamp` in lib/base
+  are f32 fns from before these.)
+- Float to integer: `@as(T, x)` rounds toward zero and panics out of range; `@round(T, x)`
+  rounds to nearest (a half to even) and panics out of range; `@saturate(T, x)` and
+  `@round_saturate(T, x)` clamp to `T`'s range instead (NaN is 0), for pixels and samples:
+  `@round_saturate(i16, s * 32768.0)`. `@saturate` clamps an integer too: `@saturate(u8, v)`.
 - Same bits, other type: `@trunc` between integers of one size (`@trunc(u32, -1)` is
   `0xFFFFFFFF`, where `@as` panics); `math::f32_from_bits`, `f32_to_bits` and the `f64` pair for floats.
 - Integer literals take their type from use; float literals default to `f64`. Hex `0x1F`. A

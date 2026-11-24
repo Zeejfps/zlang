@@ -55,12 +55,12 @@ namespace dlgpanel {
         if p.top_h < p.top_target {
             let mut s = @as(i32, 2.0 * @as(f32, p.top_target) * d)
             if s < 1 { s = 1 }
-            p.top_h = min_i{ a = p.top_h + s, b = p.top_target }
+            p.top_h = @min(p.top_h + s, p.top_target)
         }
         if p.bottom_y > p.bottom_target {
             let mut s = @as(i32, 2.0 * @as(f32, p.ui_h - p.bottom_target) * d)
             if s < 1 { s = 1 }
-            p.bottom_y = max_i{ a = p.bottom_y - s, b = p.bottom_target }
+            p.bottom_y = @max(p.bottom_y - s, p.bottom_target)
         }
         p.bars_done = p.top_h >= p.top_target and p.bottom_y <= p.bottom_target
     }

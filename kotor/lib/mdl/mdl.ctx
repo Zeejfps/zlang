@@ -936,7 +936,7 @@ namespace mdl {
         let mut count = sizes_n
         if pos_n != count or shift_n != count or tex_n != count {
             note{ &p, what = "flare arrays of different lengths", at }
-            count = min_usize{ a = min_usize{ a = sizes_n, b = pos_n }, b = min_usize{ a = shift_n, b = tex_n } }
+            count = @min(@min(sizes_n, pos_n), @min(shift_n, tex_n))
         }
         let flares = try make(Flare){ &p, count }
         let mut i: usize = 0
@@ -1172,7 +1172,7 @@ namespace mdl {
         claim{ &p, at = counts_at, size = 4 * counts_n, what = "index counts" }
         claim{ &p, at = offs_at, size = 4 * offs_n, what = "index offsets" }
         if counts_n != offs_n { note{ &p, what = "index count and offset arrays differ in length", at = at + 176 } }
-        let n = min_usize{ a = counts_n, b = offs_n }
+        let n = @min(counts_n, offs_n)
         let mut k: usize = 0
         while k < n {
             let count: usize = u32_at{ d, at = counts_at + 4 * k }
@@ -1496,8 +1496,6 @@ namespace mdl {
         let t = p.trace ifnull { return }
         list::push{ list = &t.notes, item = Note{ what, at } } iferr { }
     }
-
-    fn min_usize { a: usize, b: usize } -> usize { return if a < b { a } else { b } }
 
     fn u16_at { d: []u8, at: usize } -> u16 {
         return @as(u16, d[at]) | (@as(u16, d[at + 1]) << 8)

@@ -104,7 +104,7 @@ namespace rules {
     // Levels the creature's XP pays for beyond the ones it has (the HUD's level-up badge, 0x005a6610).
     fn pending_levels { tables: *Tables, c: *Creature } -> i32 {
         let n = level_for_xp{ tables, xp = c.xp } - total_level{ c }
-        return if n < 0 { 0 } else { n }
+        return @max(n, 0)
     }
 
     // ---- awarding XP (4.2)
@@ -215,7 +215,7 @@ namespace rules {
         let need = 1000 * level * (level - 1) / 2
         let share = @as(i32, @as(f64, pool) * @as(f64, npc_share_factor{ percent_xp }))
         let d = need - share
-        return if d > 0 { d } else { 0 }
+        return @max(d, 0)
     }
 
     // The catch-up SpawnAvailableNPC (0x00565130) gives a recruit that has earned less than its
@@ -796,7 +796,7 @@ namespace rules {
     fn open_lock_check { tables: *Tables, c: *Creature, lock_dc: i32, spike_bonus: i32, in_combat: bool, mut rng: Rng } -> SkillCheck {
         let rank = skill_rank{ tables, c, skill = skill::SECURITY, vs = Versus{ .. }, base_only = false }
         let roll = skill_roll{ in_combat, rng = &rng }
-        let dc = if lock_dc < 1 { 1 } else { lock_dc }
+        let dc = @max(lock_dc, 1)
         return make_check{ total = rank + spike_bonus + roll, roll, dc }
     }
 
@@ -804,7 +804,7 @@ namespace rules {
     // d20) against the trap's DisarmDC, at least 1; a DC above 35 cannot be beaten; the setter of
     // the trap, or a party member disarming a party trap, succeeds without a roll.
     fn disarm_trap_check { tables: *Tables, c: *Creature, disarm_dc: i32, own_trap: bool, in_combat: bool, mut rng: Rng } -> SkillCheck {
-        let dc = if disarm_dc < 1 { 1 } else { disarm_dc }
+        let dc = @max(disarm_dc, 1)
         if own_trap {
             return SkillCheck{ success = true, roll = 0, total = 0, dc, auto = true }
         }
@@ -821,7 +821,7 @@ namespace rules {
         let rank = skill_rank{ tables, c, skill = skill::DEMOLITIONS, vs = Versus{ .. }, base_only = false }
         let bonus = if c.skills[@as(usize, skill::DEMOLITIONS)] > 4 { 2 } else { 0 }
         let roll = skill_roll{ in_combat, rng = &rng }
-        let dc = if set_dc < 1 { 1 } else { set_dc }
+        let dc = @max(set_dc, 1)
         return make_check{ total = rank + bonus + roll, roll, dc }
     }
 

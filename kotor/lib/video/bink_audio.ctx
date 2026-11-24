@@ -415,7 +415,7 @@ namespace bink_audio {
                     let w = @as(f64, t * ch + c) / fade_div
                     s = (tail.ptr + t).* * (1.0 - w) + y * w
                 }
-                (out.ptr + (t * ch + c)).* = to_i16{ y = s }
+                (out.ptr + (t * ch + c)).* = @round_saturate(i16, s)
                 t = t + 1
             }
             t = frames
@@ -430,12 +430,4 @@ namespace bink_audio {
         return count
     }
 
-    // Rounded to the nearest integer, halves to even (as FFmpeg's conversion does), and clamped:
-    // blocks do overshoot int16. Adding 1.5 * 2^52 leaves the rounded value in the low bits of
-    // the double, which is much cheaper than @as(i32, f), a checked call.
-    fn to_i16 { y: f64 } -> i16 {
-        let mut f = if y >= 32767.0 { 32767.0 } else if y >= -32768.0 { y } else { -32768.0 }  // NaN too
-        f = f + 6755399441055744.0
-        return @trunc(i16, math::f64_to_bits{ x = f })
-    }
 }

@@ -113,20 +113,14 @@ fn to_rgba { frame: bink::Frame, into: []mut u8 } {
             let d = uu - 128
             let e = vv - 128
             let o = 4 * (y * w + x)
-            into[o] = clamp{ v = (c + 409 * e + 128) >> 8 }
-            into[o + 1] = clamp{ v = (c - 100 * d - 208 * e + 128) >> 8 }
-            into[o + 2] = clamp{ v = (c + 516 * d + 128) >> 8 }
+            into[o] = @saturate(u8, (c + 409 * e + 128) >> 8)
+            into[o + 1] = @saturate(u8, (c - 100 * d - 208 * e + 128) >> 8)
+            into[o + 2] = @saturate(u8, (c + 516 * d + 128) >> 8)
             into[o + 3] = 255
             x = x + 1
         }
         y = y + 1
     }
-}
-
-fn clamp { v: i32 } -> u8 {
-    if v < 0 { return 0 }
-    if v > 255 { return 255 }
-    return @trunc(u8, v)
 }
 
 // Bytes appended into a fixed buffer, for paths.

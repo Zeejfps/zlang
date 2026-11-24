@@ -4520,7 +4520,7 @@ fn main { mut io: Io } {
     let x = 1e300
     let y = @as(f32, x) ifoverflow 0.0
 }
-""", 'nothing before `ifoverflow` can overflow: it covers the integer `+`, `-`, `*` and `/`, unary `-` and `@as` to an integer')
+""", 'nothing before `ifoverflow` can overflow: it covers the integer `+`, `-`, `*` and `/`, unary `-`, and `@as` and `@round` to an integer')
 
     def test_float_literal_out_of_range(self):
         """§11, Literals, rule 2: a float literal that would round to an infinity in its type is
@@ -4578,6 +4578,267 @@ fn main { mut io: Io } {
     _ = @fmt(&io, "{} {} {} {}\\n", TINY, INF, g, @as(f32, 1e39))
 }
 """, '0.1 0.0 true true 0.0 true\n0.0 inf -inf inf\n')
+
+    def test_min_max(self):
+        """§13: `@min` and `@max` of two numbers of one type after widening, each evaluated once;
+        for floats a NaN operand gives NaN, and equal operands the first. In consts too."""
+        self.assertOutput(r"""
+type Meters = distinct f32
+const LOW: i32 = @min(3, -4)
+const HIGH: u64 = @max(SEVEN, 9)
+const SEVEN: u8 = 7
+const FLOATS: [4]f64 = [@min(1.5, math::NAN), @max(math::NAN, 1.5), @min(-0.0, 0.0), @max(-0.0, 0.0)]
+
+fn noisy { mut io: Io, n: i32 } -> i32 {
+    _ = @fmt(&io, "<{}>", n)
+    return n
+}
+fn f { x: f64 } -> f64 { return x }
+fn g { x: f32 } -> f32 { return x }
+
+fn main { mut io: Io } {
+    let a: i32 = 7
+    let b: u8 = 200
+    let c: i64 = -5
+    let u: usize = 3
+    // One type after widening, as `<` has it: an i32 and a u8 are compared as i32s.
+    _ = @fmt(&io, "{} {} {} {}\n", @min(a, b), @max(a, b), @min(c, a), @max(c, a))
+    // A literal takes the other operand's type, and the result the type expected.
+    let small: u8 = @min(b, 9)
+    let wide: i64 = @max(a, 3)
+    _ = @fmt(&io, "{} {} {} {}\n", small, wide, @min(u, 10), @max(@min(a, 5), 2))
+    // Each operand is evaluated once, the first first.
+    _ = @fmt(&io, " {}\n", @min(noisy{ &io, n = 4 }, noisy{ &io, n = 2 }))
+    _ = @fmt(&io, " {}\n", @max(noisy{ &io, n = 4 }, noisy{ &io, n = 2 }))
+    _ = @fmt(&io, "{} {} {} {}\n", LOW, HIGH, @min(-128, 127), @max(18446744073709551615, u))
+    // Floats: a NaN operand gives NaN; equal operands, as zeros of both signs are, give the first.
+    _ = @fmt(&io, "{} {} {} {}\n", @min(f{ x = 1.5 }, 2.5), @max(f{ x = 1.5 }, 2.5), @min(g{ x = -1.0 }, g{ x = -2.0 }), @max(g{ x = 1.0 }, f{ x = 0.5 }))
+    _ = @fmt(&io, "{} {} {} {}\n", @min(f{ x = 1.5 }, math::NAN), @min(math::NAN, f{ x = 1.5 }), @max(f{ x = 1.5 }, math::NAN), @max(math::NAN_F32, g{ x = 1.5 }))
+    _ = @fmt(&io, "{} {} {} {}\n", @min(f{ x = -0.0 }, 0.0), @min(f{ x = 0.0 }, -0.0), @max(f{ x = -0.0 }, 0.0), @max(f{ x = 0.0 }, -0.0))
+    _ = @fmt(&io, "{} {} {} {}\n", @min(math::INF, f{ x = 1.0 }), @max(-math::INF, f{ x = 1.0 }), @min(-math::INF, math::INF), @max(-math::INF, math::INF))
+    _ = @fmt(&io, "{} {} {} {}\n", FLOATS[0], FLOATS[1], FLOATS[2], FLOATS[3])
+    // A distinct type keeps its type.
+    let m: Meters = 2.5
+    let far: Meters = @max(m, 4.0)
+    _ = @fmt(&io, "{}\n", @as(f32, far))
+}
+""",
+            '7 200 -5 7\n'
+            '9 7 3 5\n'
+            '<4><2> 2\n'
+            '<4><2> 4\n'
+            '-4 9 -128 18446744073709551615\n'
+            '1.5 2.5 -2.0 1.0\n'
+            'nan nan nan nan\n'
+            '-0.0 0.0 -0.0 0.0\n'
+            '1.0 1.0 -inf inf\n'
+            'nan nan -0.0 -0.0\n'
+            '4.0\n')
+
+    def test_clamp(self):
+        """§13: `@clamp(x, lo, hi)`, the bounds widening with the value; a NaN value stays NaN,
+        and bounds out of order panic, or are an error where both are integer literals."""
+        self.assertOutput(r"""
+const BYTE: i32 = @clamp(300, 0, 255)
+const UNIT: f64 = @clamp(-0.25, 0.0, 1.0)
+
+fn noisy { mut io: Io, n: i32 } -> i32 {
+    _ = @fmt(&io, "<{}>", n)
+    return n
+}
+fn f { x: f64 } -> f64 { return x }
+
+fn main { mut io: Io } {
+    let a: i32 = 7
+    let lo: i8 = -2
+    let hi: u8 = 5
+    _ = @fmt(&io, "{} {} {} {}\n", @clamp(a, 0, 5), @clamp(a, 8, 9), @clamp(a, 0, 100), @clamp(a, 7, 7))
+    // The bounds widen with the value: an i32 between an i8 and a u8.
+    _ = @fmt(&io, "{} {} {}\n", @clamp(a, lo, hi), @clamp(-9, lo, 5), @clamp(hi, 0, a))
+    let px: u8 = @clamp(hi, 1, 3)
+    _ = @fmt(&io, "{} {} {}\n", px, BYTE, UNIT)
+    // The value, then the low bound, then the high one, each once.
+    _ = @fmt(&io, " {}\n", @clamp(noisy{ &io, n = 9 }, noisy{ &io, n = 1 }, noisy{ &io, n = 3 }))
+    // Floats: a NaN value stays NaN, and -0.0 isn't below 0.0.
+    _ = @fmt(&io, "{} {} {} {}\n", @clamp(f{ x = 2.0 }, 0.0, 1.0), @clamp(f{ x = -2.0 }, 0.0, 1.0), @clamp(f{ x = 0.5 }, 0.0, 1.0), @clamp(math::NAN, 0.0, 1.0))
+    _ = @fmt(&io, "{} {} {}\n", @clamp(f{ x = -0.0 }, 0.0, 1.0), @clamp(math::INF, -1.0, math::INF), @clamp(-math::INF, f{ x = -1.5 }, 1.0))
+}
+""",
+            '5 8 7 7\n'
+            '5 -2 5\n'
+            '3 255 0.0\n'
+            '<9><1><3> 3\n'
+            '1.0 0.0 0.5 nan\n'
+            '-0.0 inf -1.5\n')
+        self.assertPanic("""
+fn at { n: i32 } -> i32 { return n }
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = @clamp(5, at{ n = 9 }, at{ n = 2 }) }
+}
+""", '@clamp: the low bound is above the high bound')
+        self.assertPanic("""
+fn main { mut io: Io } {
+    let x: f64 = 0.5
+    io::println_f64{ &io, n = @clamp(x, math::NAN, 1.0) }
+}
+""", '@clamp: the low bound is above the high bound, or one of them is NaN')
+        self.assertCompileError('fn two {} -> i32 { return 2 }\nconst A: i32 = @clamp(5, 9, two{})\nfn main {} { _ = A }',
+                                'const `A` panicked while compiling: @clamp: the low bound is above the high bound, at 2:16')
+
+    def test_round_and_saturate(self):
+        """§13: `@round` (to the nearest integer, halfway cases to the even one, checked as `@as`
+        is), `@saturate` (toward zero, clamped to the type's range, NaN 0; an integer clamped)
+        and `@round_saturate` (both), with the same results while compiling and at run time."""
+        self.assertOutput(r"""
+// The same conversions run while compiling and at run time.
+const XS: [_]f64 = [0.0, -0.0, 0.4, 0.5, 0.6, 1.5, 2.5, -0.5, -1.5, -2.5, 126.5, 127.5, -128.5, -129.5, 254.5, 255.5, 32767.5, -32768.5, 1e10, -1e10, 4503599627370497.0, 9223372036854775807.0, -9223372036854775808.0, 1e30, -1e30, math::INF, -math::INF, math::NAN]
+const N: usize = 28
+
+fn row { x: f64 } -> [12]i64 {
+    let y = @as(f32, x)
+    return [
+        @as(i64, @round_saturate(i8, x)), @as(i64, @round_saturate(u8, x)), @as(i64, @round_saturate(i16, x)), @round_saturate(i64, x),
+        @as(i64, @saturate(i8, x)), @as(i64, @saturate(u8, x)), @as(i64, @saturate(i32, x)), @saturate(i64, x),
+        @as(i64, @saturate(u64, x) >> 1), @as(i64, @round_saturate(i16, y)), @as(i64, @saturate(u16, y)), @as(i64, @round_saturate(u32, y)),
+    ]
+}
+
+fn rows {} -> [28][12]i64 {
+    let mut out: [28][12]i64
+    for i in 0..N { out[i] = row{ x = XS[i] } }
+    return out
+}
+
+const ROWS: [28][12]i64 = rows{}
+const HALF_UP: i32 = @round(i32, 2.5)
+const TOO_BIG: i32 = @round(i32, 3e9) ifoverflow -1
+
+fn f { x: f64 } -> f64 { return x }
+fn g { x: f32 } -> f32 { return x }
+fn n { x: i64 } -> i64 { return x }
+
+fn main { mut io: Io } {
+    let now = rows{}
+    let mut differ = 0
+    for i in 0..N {
+        for k in 0..12 {
+            if ROWS[i][k] != now[i][k] { differ = differ + 1 }
+        }
+    }
+    _ = @fmt(&io, "{} differ\n", differ)
+    for i in 0..N {
+        _ = @fmt(&io, "{}:", XS[i])
+        for k in 0..12 { _ = @fmt(&io, " {}", ROWS[i][k]) }
+        _ = @fmt(&io, "\n")
+    }
+    // @round: to the nearest integer, halfway cases to the even one, checked as @as is.
+    _ = @fmt(&io, "{} {} {} {} {} {}\n", @round(i32, f{ x = 0.5 }), @round(i32, f{ x = 1.5 }), @round(i32, f{ x = 2.5 }), @round(i32, f{ x = -0.5 }), @round(i32, f{ x = -1.5 }), @round(i32, f{ x = -2.5 }))
+    _ = @fmt(&io, "{} {} {} {}\n", @round(i64, f{ x = 0.49999999999999994 }), @round(u8, g{ x = 254.5 }), @round(i8, g{ x = -128.5 }), @round(u64, f{ x = 4503599627370497.0 }))
+    _ = @fmt(&io, "{} {} {}\n", HALF_UP, TOO_BIG, @round(u8, f{ x = 255.5 }) ifoverflow 0)
+    let k: u16 = @round(_, f{ x = 7.5 })
+    _ = @fmt(&io, "{} {}\n", k, @round(i32, f{ x = 1e9 } * 2.0) + 1 ifoverflow 7)
+    // @saturate of an integer: the nearest value of the type.
+    let b: u8 = 200
+    let big: u64 = 18446744073709551615
+    _ = @fmt(&io, "{} {} {} {} {}\n", @saturate(u8, n{ x = -3 }), @saturate(u8, n{ x = 256 }), @saturate(u8, n{ x = 255 }), @saturate(i8, b), @saturate(i64, big))
+    _ = @fmt(&io, "{} {} {} {} {}\n", @saturate(i8, n{ x = -129 }), @saturate(i16, n{ x = 40000 }), @saturate(u64, n{ x = -1 }), @saturate(u32, big), @saturate(i64, n{ x = -7 }))
+    _ = @fmt(&io, "{} {} {}\n", @saturate(u8, 300), @saturate(i32, b), @saturate(usize, n{ x = -1 }))
+}
+""",
+            '0 differ\n'
+            '0.0: 0 0 0 0 0 0 0 0 0 0 0 0\n'
+            '-0.0: 0 0 0 0 0 0 0 0 0 0 0 0\n'
+            '0.4: 0 0 0 0 0 0 0 0 0 0 0 0\n'
+            '0.5: 0 0 0 0 0 0 0 0 0 0 0 0\n'
+            '0.6: 1 1 1 1 0 0 0 0 0 1 0 1\n'
+            '1.5: 2 2 2 2 1 1 1 1 0 2 1 2\n'
+            '2.5: 2 2 2 2 2 2 2 2 1 2 2 2\n'
+            '-0.5: 0 0 0 0 0 0 0 0 0 0 0 0\n'
+            '-1.5: -2 0 -2 -2 -1 0 -1 -1 0 -2 0 0\n'
+            '-2.5: -2 0 -2 -2 -2 0 -2 -2 0 -2 0 0\n'
+            '126.5: 126 126 126 126 126 126 126 126 63 126 126 126\n'
+            '127.5: 127 128 128 128 127 127 127 127 63 128 127 128\n'
+            '-128.5: -128 0 -128 -128 -128 0 -128 -128 0 -128 0 0\n'
+            '-129.5: -128 0 -130 -130 -128 0 -129 -129 0 -130 0 0\n'
+            '254.5: 127 254 254 254 127 254 254 254 127 254 254 254\n'
+            '255.5: 127 255 256 256 127 255 255 255 127 256 255 256\n'
+            '32767.5: 127 255 32767 32768 127 255 32767 32767 16383 32767 32767 32768\n'
+            '-32768.5: -128 0 -32768 -32768 -128 0 -32768 -32768 0 -32768 0 0\n'
+            '10000000000.0: 127 255 32767 10000000000 127 255 2147483647 10000000000 5000000000 32767 65535 4294967295\n'
+            '-10000000000.0: -128 0 -32768 -10000000000 -128 0 -2147483648 -10000000000 0 -32768 0 0\n'
+            '4503599627370497.0: 127 255 32767 4503599627370497 127 255 2147483647 4503599627370497 2251799813685248 32767 65535 4294967295\n'
+            '9.223372036854776e+18: 127 255 32767 9223372036854775807 127 255 2147483647 9223372036854775807 4611686018427387904 32767 65535 4294967295\n'
+            '-9.223372036854776e+18: -128 0 -32768 -9223372036854775808 -128 0 -2147483648 -9223372036854775808 0 -32768 0 0\n'
+            '1e+30: 127 255 32767 9223372036854775807 127 255 2147483647 9223372036854775807 9223372036854775807 32767 65535 4294967295\n'
+            '-1e+30: -128 0 -32768 -9223372036854775808 -128 0 -2147483648 -9223372036854775808 0 -32768 0 0\n'
+            'inf: 127 255 32767 9223372036854775807 127 255 2147483647 9223372036854775807 9223372036854775807 32767 65535 4294967295\n'
+            '-inf: -128 0 -32768 -9223372036854775808 -128 0 -2147483648 -9223372036854775808 0 -32768 0 0\n'
+            'nan: 0 0 0 0 0 0 0 0 0 0 0 0\n'
+            '0 2 2 0 -2 -2\n'
+            '0 254 -128 4503599627370497\n'
+            '2 -1 0\n'
+            '8 2000000001\n'
+            '0 255 255 127 9223372036854775807\n'
+            '-128 32767 0 4294967295 -7\n'
+            '255 200 0\n')
+        for expr, shown, ty in [('@round(i32, x)', '3000000000.0', 'i32'), ('@round(u8, -x)', '-3000000000.0', 'u8'),
+                                ('@round(i64, x - x + math::NAN)', 'nan', 'i64'), ('@round(u8, x / x * 255.5)', '256.0', 'u8'),
+                                ('@round(i8, x / x * -128.51)', '-129.0', 'i8')]:
+            with self.subTest(expr=expr):
+                self.assertPanic("""
+fn main { mut io: Io } {
+    let x: f64 = 3e9
+    io::println_i64{ &io, n = @as(i64, %s) }
+}
+""" % expr, '@as: %s is not representable in %s' % (shown, ty))
+
+    def test_min_max_clamp_errors(self):
+        for src, msg, line, col in [
+            ('let a: i32 = 1\n    let u: u32 = 2\n    let m = @min(a, u)',
+             '@min needs two numbers of one type, got i32 and u32: convert one with @as', 4, 13),
+            ('let a: i64 = 1\n    let x: f64 = 2.0\n    let m = @max(a, x)',
+             '@max needs two numbers of one type, got i64 and f64: convert one with @as', 4, 13),
+            ('let m = @max("a", "b")', '@max needs numbers, got []u8', 2, 13),
+            ('let m = @min(true, false)', '@min needs numbers, got bool', 2, 13),
+            ('let a = 3\n    let m = @clamp(a, 9, 2)',
+             "@clamp's low bound, 9, is above its high bound, 2: write `@clamp(x, 2, 9)`", 3, 23),
+            ('let a = 3\n    let m = @clamp(a, 1, -1)',
+             "@clamp's low bound, 1, is above its high bound, -1: write `@clamp(x, -1, 1)`", 3, 23),
+            ('let a: i8 = 3\n    let hi: u8 = 5\n    let m = @clamp(a, 0, hi)',
+             '@clamp needs three numbers of one type, got i8, i8 and u8: convert with @as', 4, 13),
+            ('let m0: i32 = 0\n    let p = &m0\n    let m = @clamp(p, p, p)', '@clamp needs numbers, got *i32', 4, 13),
+            ('let m = @min(1)', 'wrong number of arguments: @min(a, b)', 2, 19),
+            ('let m = @max(1, 2, 3)', 'wrong number of arguments: @max(a, b)', 2, 24),
+            ('let m = @clamp(1, 2)', 'wrong number of arguments: @clamp(x, lo, hi)', 2, 24),
+        ]:
+            with self.subTest(src=src):
+                with self.assertRaises(CompileError) as cm:
+                    run('fn main {} {\n    %s\n}\n' % src)
+                self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), src)
+
+    def test_round_and_saturate_errors(self):
+        for src, msg, line, col in [
+            ('let a: i32 = 1\n    let m = @round(i32, a)',
+             '@round rounds a float, and this is an integer, i32: write `@as` to convert it, or `@saturate` to clamp it', 3, 25),
+            ('let m = @round_saturate(u8, 300)',
+             '@round_saturate rounds a float, and this is an integer, {integer}: write `@as` to convert it, or `@saturate` to clamp it', 2, 33),
+            ('let m = @round(f32, 1.5)', '@round needs an integer target type, got f32', 2, 13),
+            ('let m = @saturate(f64, 1.5)', '@saturate needs an integer target type, got f64', 2, 13),
+            ('let m = @round_saturate(bool, 1.5)', '@round_saturate needs an integer target type, got bool', 2, 13),
+            ('let m = @saturate(u8, true)', '@saturate converts a number, got bool', 2, 27),
+            ('let m = @round_saturate(i8, "x")', '@round_saturate rounds a float, got []u8', 2, 33),
+            ('let m = @round(1.5)', "expected a type, found '1.5'", 2, 20),
+            ('let m = @saturate(u8)', 'wrong number of arguments: @saturate(T, x)', 2, 25),
+            ('let x = 2.5\n    let m = @saturate(_, x)',
+             '@saturate(_, ...) takes the type expected here, and nothing here expects one: write the type', 3, 23),
+            ('let x = 2.5\n    let m = @saturate(u8, x) ifoverflow 0',
+             'nothing before `ifoverflow` can overflow: it covers the integer `+`, `-`, `*` and `/`, unary `-`, and `@as` and '
+             '`@round` to an integer written before it, and the operands of those in turn', 3, 30),
+        ]:
+            with self.subTest(src=src):
+                with self.assertRaises(CompileError) as cm:
+                    run('fn main {} {\n    %s\n}\n' % src)
+                self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), src)
 
     def test_type_argument_parsed_as_type(self):
         # `S` names both a struct and a local; in a type position it can only be the struct.

@@ -314,8 +314,8 @@ namespace mp3 {
         if not g.switching {
             let a = g.region0 + 1
             let c = g.region0 + g.region1 + 2
-            r1 = SFB_LONG[rate][if a > 22 { 22 } else { a }]
-            r2 = SFB_LONG[rate][if c > 22 { 22 } else { c }]
+            r1 = SFB_LONG[rate][@min(a, 22)]
+            r2 = SFB_LONG[rate][@min(c, 22)]
         }
         if r1 > big_end { r1 = big_end }
         if r2 > big_end { r2 = big_end }
@@ -693,21 +693,12 @@ namespace mp3 {
                     s = s + v[(off + 128 * m + 96 + j) & 1023] * SYNTH_WINDOW[64 * m + 32 + j]
                     m = m + 1
                 }
-                out[(slot * 32 + j) * stride] = round_to_i16{ x = s }
+                out[(slot * 32 + j) * stride] = @round_saturate(i16, s)
                 j = j + 1
             }
             slot = slot + 1
         }
         return off
-    }
-
-    // A sample in 16-bit units, rounded to nearest (ties to even) and clipped.
-    fn round_to_i16 { x: f32 } -> i16 {
-        if x >= 32767.0 { return 32767 }
-        if not (x > -32768.0) { return -32768 }        // NaN too
-        // Adding and taking away 1.5 * 2^23 rounds to an integer in round-to-nearest.
-        let r = (x + 12582912.0) - 12582912.0
-        return @as(i16, r)
     }
 
     // ---- the decoder
@@ -765,7 +756,7 @@ namespace mp3 {
         // silent, but its main data is kept for the frames after it.
         let main = f[head + side_len..h.size]
         if d.res_len + main.len > RESERVOIR {
-            let keep: usize = if d.res_len > 511 { 511 } else { d.res_len }
+            let keep: usize = @min(d.res_len, 511)
             let from = d.res_len - keep
             let mut i: usize = 0
             while i < keep {

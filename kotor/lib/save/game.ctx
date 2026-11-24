@@ -328,7 +328,7 @@ namespace save {
         let bytes = fs::read_all(arena::Arena){ fs = &w.fs, heap = w.scratch, realloc = arena::alloc, path } iferr { return 0 }
         let doc = gff::parse{ data = bytes, realloc = arena::alloc, heap = w.scratch } iferr { return 0 }
         let info = read_info{ doc = &doc }
-        let n = if info.last_module.len < into.len { info.last_module.len } else { into.len }
+        let n = @min(info.last_module.len, into.len)
         let mut k: usize = 0
         while k < n {
             into[k] = ascii::to_lower{ c = info.last_module[k] }

@@ -36,7 +36,7 @@ namespace save {
             m = m + 1
         }
 
-        try put_gff_value{ &b, owner = root, label = "PT_GOLD", value = gff::Value::dword{ v = @trunc(u32, if w.party.gold < 0 { 0 } else { w.party.gold }) } }
+        try put_gff_value{ &b, owner = root, label = "PT_GOLD", value = gff::Value::dword{ v = @trunc(u32, @max(w.party.gold, 0)) } }
         try put_gff_value{ &b, owner = root, label = "PT_XP_POOL", value = gff::Value::int{ v = w.party.xp_pool } }
         try put_gff_value{ &b, owner = root, label = "PT_PLAYEDSECONDS", value = gff::Value::dword{ v = played_seconds } }
         // The engine writes PT_CONTROLLED_NPC; the GFF writer cuts labels to 16 characters.

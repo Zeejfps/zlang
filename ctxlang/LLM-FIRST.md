@@ -389,11 +389,46 @@ What a model writes by default should compile, or fail with the exact fix.
     and MP3's cosine series and two Newton roots (37 lines fewer) are libm's `cos`, `sqrt` and
     `cbrt`, run while compiling: all 11 const tables have the same bits as before.
 
-- [ ] **4.3 Integer `@min`, `@max`, and clamping or rounding conversions.**
+- [x] **4.3 Integer `@min`, `@max`, and clamping or rounding conversions.**
   `if a < b { a } else { b }` by hand; float-to-integer can only check, so audio code rounds by
   adding 1.5 * 2^52 and reading the bits.
   - Details: F#6, F#17; [spec §13](spec.md#13-builtins).
   - *Done when:* min/max and a rounding/clamping float-to-int conversion exist.
+  - *Done:* six builtins, since a generic std fn can't compare an opaque `T`
+    ([spec §13, Smallest, largest and clamped](spec.md#smallest-largest-and-clamped) and
+    [Rounding and saturating conversions](spec.md#rounding-and-saturating-conversions)).
+    - `@min(a, b)` and `@max(a, b)`, for integers and floats: one type after widening, as
+      `<` has it, so an `i32` and a `u8` compare as `i32`s and an `i32` with a `u32` is an
+      error that says to convert one. Each operand is evaluated once; equal operands give
+      the first. Nothing existed for floats but libm's `math::fmin` and `fmax`, which drop a
+      NaN; here a NaN operand gives NaN, so one isn't lost on the way (rule 1), and std's
+      keep C's answer for who wants it.
+    - `@clamp(x, lo, hi)`: the bounds pair with `x` as above; a NaN `x` stays NaN. It
+      panics unless `lo <= hi` (a NaN bound too), and two integer literals out of order are
+      a compile error that says to swap them.
+    - Float to integer, beside `@as`, which rounds toward zero and panics: `@round(T, x)`
+      rounds to the nearest integer, a half to the even one (IEEE's default, and what the
+      bit trick did; `math::round` is C's, away from zero), and panics or takes an
+      `ifoverflow` as `@as` does; `@saturate(T, x)` rounds toward zero and gives `T`'s
+      nearest value instead of panicking, 0 for NaN, and clamps an integer too
+      (`@saturate(u8, v)`); `@round_saturate(T, x)` does both. The error for an integer
+      given to `@round` names `@as` and `@saturate`.
+    All six are lowered to the IR's compares, conditionals and float additions (rounding
+    is adding and taking away 2^52), so the C, the interpreter and consts agree by
+    construction and nothing calls libm: the test compares 28 values through 12
+    conversions, const against run time. A const that uses one is run, not folded, so it
+    can't be an array's length.
+    Converted: the MP3 synthesis and the mixer (`round_to_i16`) and the Bink audio
+    (`to_i16`, the 1.5 * 2^52 trick) are `@round_saturate(i16, x)`; sndcheck over the
+    whole install (16,818 files, 412 of them against ffmpeg), binkcheck over the 61 movies
+    against ffmpeg and mixtest give the same output as before, with MP3 decoding about 3%
+    slower and Bink the same. One difference by design: a NaN sample is now 0, where the
+    old helpers gave -32768; the tools' outputs show none. Also 40 integer
+    `if a < b { a } else { b }` in KOTOR's rules, save, res, mdl, script, dialog and audio
+    code (checked to be integers with a compiler that rejected floats there), the helper
+    fns `min_i`, `max_i` and `min_usize` with their 8 calls, bink2png's `clamp`, and 10 in
+    std's Windows layer. KOTOR's f32 `math::min`, `max` and `clamp` (238 calls) stay: they return the
+    second operand for a NaN, which `@min` doesn't.
 
 - [ ] **4.4 Format specs in `@fmt`.**
   No width, padding, hex or fixed-point (`{:<16}`, `{:08x}`, `{:.3}`), so programs write a wrapper

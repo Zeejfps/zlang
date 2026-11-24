@@ -571,8 +571,8 @@ let n = @as(u32, len) ifoverflow 0
 let total = a * b + c ifoverflow 0                  // covers the * and the +
 ```
 
-1. `e` covers its own operation if it is an integer `+`, `-` or `*`, a signed integer `/`, a unary `-` of an integer, or an `@as` to an integer type; and if it is one of these or another integer operator (an unsigned `/`, `%`, `&`, `|`, `^`, `~`, `<<`, `>>`, `+%`, `-%`, `*%`), what its operands cover, in turn. Nothing else is covered: not a call's arguments, an index, a comparison's operands, nor what a nested `ifoverflow` covers, which is its own. Parentheses change nothing.
-2. An operation overflows when its result isn't a value of its type: `+`, `-`, `*` and unary `-` past the type's range, `/` of the type's minimum by -1, and an `@as` to an integer type whose value isn't representable in it (a float's after rounding toward zero; NaN and the infinities never are). An `@as` to a float type never overflows: it rounds, past `f32`'s range to an infinity (§13). A covered operation that overflows doesn't panic. A zero divisor, a shift count out of range, and an operation nothing covers still panic. `%` never overflows: `MIN % -1` is 0.
+1. `e` covers its own operation if it is an integer `+`, `-` or `*`, a signed integer `/`, a unary `-` of an integer, or an `@as` or `@round` to an integer type (§13); and if it is one of these or another integer operator (an unsigned `/`, `%`, `&`, `|`, `^`, `~`, `<<`, `>>`, `+%`, `-%`, `*%`), what its operands cover, in turn. Nothing else is covered: not a call's arguments, an index, a comparison's operands, nor what a nested `ifoverflow` covers, which is its own. Parentheses change nothing.
+2. An operation overflows when its result isn't a value of its type: `+`, `-`, `*` and unary `-` past the type's range, `/` of the type's minimum by -1, and an `@as` or `@round` to an integer type whose value isn't representable in it (a float's after rounding toward zero, or for `@round` to nearest; NaN and the infinities never are). `@saturate` and `@round_saturate` never overflow: they clamp (§13). An `@as` to a float type never overflows: it rounds, past `f32`'s range to an infinity (§13). A covered operation that overflows doesn't panic. A zero divisor, a shift count out of range, and an operation nothing covers still panic. `%` never overflows: `MIN % -1` is 0.
 3. `e` is evaluated as it is without `ifoverflow`, left to right, up to the operation that overflows. What it evaluated stays done, and the rest of it isn't evaluated: in `f{} * g{} + h{} ifoverflow 0`, if the `*` overflows, `f` and `g` have run and `h` doesn't.
 4. It is an error if `e` covers nothing, as in `x ifoverflow 0`, or `(a * b < n) ifoverflow false`, where a comparison's operands aren't covered (rule 1): write `a * b < n` with the handler on the arithmetic, `(a * b ifoverflow x) < n` (Expressions, rule 7).
 5. The value's type is as for an `if` expression whose branches are `e` and `x` (If and match expressions): `e`'s, unless `x` gives a type `e`'s widens to. `e`'s arithmetic is in its own type either way.
@@ -799,7 +799,7 @@ A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are buil
 2. `@name(...)` is always a builtin call, never generic application (§9). The parentheses are required, even with no arguments.
 3. Each builtin has the signature below. Type arguments always come before value arguments, so the builtin's name alone says whether each argument is parsed as a type or an expression. Only `@fmt` takes any number of arguments.
 4. An unknown builtin, or a call with the wrong number of arguments, is a syntax error.
-5. The type argument of `@as`, `@trunc` or `@cast` may be `_`: the type expected where the call appears (§11 Literals), or its payload if that is optional. In `Gl1_1{ clear = @cast(_, p) }` it is the field's type, and in `let n: i32 = @as(_, big)` the local's. It is an error where nothing expects a type, as in `let n = @as(_, big)`. `_` is a type nowhere else.
+5. The type argument of `@as`, `@trunc`, `@cast`, `@round`, `@saturate` or `@round_saturate` may be `_`: the type expected where the call appears (§11 Literals), or its payload if that is optional. In `Gl1_1{ clear = @cast(_, p) }` it is the field's type, and in `let n: i32 = @as(_, big)` the local's. It is an error where nothing expects a type, as in `let n = @as(_, big)`. `_` is a type nowhere else.
 
 | Signature | Result | Meaning |
 |---|---|---|
@@ -812,6 +812,11 @@ A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are buil
 | `@slice(p, n)` | `[]T`, or `[]mut T` for a `*mut T` | The slice of `n: usize` elements starting at pointer `p: *T`. Unchecked. |
 | `@addr(q)` | `usize` | The address of pointer `q` as an integer. |
 | `@wrap_shl(a, n)` | type of `a` | `a << n` (§11) that drops the bits shifted out instead of panicking. A count out of range still panics. |
+| `@min(a, b)`, `@max(a, b)` | the operands' one type | The smaller, or the larger, of two numbers (Smallest, largest and clamped, below). |
+| `@clamp(x, lo, hi)` | the operands' one type | `x`, or `lo` if `x` is below it, or `hi` if `x` is above it. Panics unless `lo <= hi`. |
+| `@round(T, x)` | `T` | Float `x` as integer type `T`, rounded to the nearest integer, a halfway case to the even one. Panics if that isn't representable in `T`, as `@as` does, unless an `ifoverflow` covers it (Rounding and saturating conversions, below). |
+| `@saturate(T, x)` | `T` | Number `x` as integer type `T`, a float rounded toward zero as `@as` rounds it, but the nearest value of `T` where `@as` would panic: `T`'s minimum below its range, its maximum above, and 0 for NaN. Never panics. |
+| `@round_saturate(T, x)` | `T` | Float `x` as integer type `T`, rounded as `@round` rounds and clamped as `@saturate` clamps. Never panics. |
 | `@panic()`, `@panic("reason")` | none | Stops the program. Never returns. It ends a path for return and assignment checks. The reason must be a string literal. The program's `#panic` fn reports it with the panic's location (§15, Entry point), so no capability is needed. |
 | `@fmt(b, "format", args...)`, `@fmt("format", args...)` | `!`; a writer | Writes text into a sink, now or when called (below). |
 | `@atomic_load(p, order)` | `T` | The `T` that `p: *T` (or `*mut T`) points to, read atomically (Atomics, below). |
@@ -822,6 +827,44 @@ A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are buil
 | `@fence(order)` | none | Orders the memory accesses around it as `order` says, without one of its own. |
 | `@record_size(run)` | `usize` | Only in a `#starts_task` fn, of its own `run`: the size of the task's record (§15, Tasks, rule 5). |
 | `@record_copy(run, into)` | `fn{ record: *mut u8, result: *mut u8 }` | Only in a `#starts_task` fn: copies its own `run`'s record into `into`, a `[]mut u8`, and gives the fn that runs the copy (§15, Tasks, rule 5). |
+
+### Smallest, largest and clamped
+
+```
+let n = @min(want, buf.len - at)                  // the smaller of two usizes
+let widest = @max(widest, line.width)
+let level = @clamp(level + delta, 0, 100)         // 0 if below, 100 if above
+let t = @clamp(t, 0.0, 1.0)
+```
+
+1. `@min(a, b)` and `@max(a, b)` take two numbers, integers or floats, of one type after widening, as the operands of `<` do (§11, Expressions, rule 1): an `i32` and a `u8` are compared as `i32`s, an integer literal takes the other operand's type, and a const's name converts where its value fits (§11, Widening, rule 7). Two types neither of which widens to the other, as `i32` and `u32` or an integer and a float, are an error: convert one with `@as`. The result has that one type, a distinct type's included (§12). Enums, pointers and `bool` have no order (§12, Enums).
+2. Each operand is evaluated once, `a` first. Where the two are equal the result is `a`.
+3. For floats, if either operand is NaN the result is NaN, so a NaN isn't lost in a chain of them; C's `fmin` and `fmax`, which give the other operand instead, are `math::fmin` and `math::fmax` (§17). `-0.0` and `0.0` are equal, so `@min(-0.0, 0.0)` is `-0.0`, the first, and `@max(-0.0, 0.0)` is too.
+4. `@clamp(x, lo, hi)` takes three numbers: each of `lo` and `hi` pairs with `x` as rule 1's operands do, and all three are converted to the wider of the two types that gives, which is the result's. They are evaluated once, in that order. The result is `lo` if `x < lo`, `hi` if `x > hi`, and `x` otherwise, so a NaN `x` gives NaN and `@clamp(-0.0, 0.0, 1.0)` is `-0.0`.
+5. `@clamp` panics unless `lo <= hi`, with `@clamp: the low bound is above the high bound`, and for floats, where a NaN bound fails that test too, `... or one of them is NaN`. Two integer literals out of order are an error while compiling, which says to swap them.
+6. They are written with comparisons, so they cost what the `if` by hand costs, give the same value in a const (§14), and never call the C library.
+
+### Rounding and saturating conversions
+
+```
+let step = @round(i32, x * 16.0)                  // nearest; panics past i32, as @as would
+let px: u8 = @saturate(_, r + noise)              // an i32 clamped to 0..=255
+out[i] = @round_saturate(i16, sample * 32768.0)   // rounded and clipped, never a panic
+```
+
+`@as(T, x)` to an integer type rounds a float toward zero and panics if the value isn't representable. These three round to the nearest integer, or give the nearest value of `T` instead of panicking, or both:
+
+| | toward zero | to nearest, a half to even |
+|---|---|---|
+| panics, or `ifoverflow` | `@as(T, x)` | `@round(T, x)` |
+| clamps to `T`'s range | `@saturate(T, x)` | `@round_saturate(T, x)` |
+
+1. `T` is an integer type: not a float type, an enum or a distinct type. `x` is an `f32` or an `f64` for `@round` and `@round_saturate`, where an integer is an error that names `@as` and `@saturate`; `@saturate` takes an integer of any type as well.
+2. **Rounding** is to the nearest integer, and a value halfway between two goes to the even one: 0.5 gives 0, 1.5 and 2.5 give 2, -0.5 gives 0, -2.5 gives -2. It is IEEE 754's default rounding, what a float operation itself does, and unlike `math::round`, C's, which takes halfway cases away from zero. An `f32` is rounded as the `f64` of the same value, so nothing is rounded twice.
+3. `@round(T, x)` then converts as `@as` does: a result that isn't a value of `T` panics with `@as`'s message (`@as: 3000000000.0 is not representable in i32`, which shows the rounded value), and NaN and the infinities always do. An `ifoverflow` covers it as it covers `@as` (§11, Overflow).
+4. **Saturating** gives the nearest value of `T`. For a float: 0 for NaN, `T`'s maximum for a value above it and for the infinity, `T`'s minimum for a value below it and for the negative infinity (0 for an unsigned `T`), and otherwise the value rounded toward zero by `@saturate`, as `@as` rounds, or to nearest by `@round_saturate`. For an integer: `T`'s minimum or maximum where `x` is outside its range, `x` otherwise. `@saturate(u8, 300)` is 255, `@saturate(u8, -3)` is 0, and `@saturate(i64, x)` of a `u64` above `i64`'s maximum is that maximum.
+5. The saturating conversions never panic and overflow nothing, so an `ifoverflow` doesn't cover them and one over them alone is an error (§11, Overflow, rule 4).
+6. All three give the same value while compiling (§14) and when the program runs, and call no C function: rounding is two float additions, which round as rule 2 says in every float operation.
 
 ### Formatting
 

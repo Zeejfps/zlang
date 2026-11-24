@@ -3141,6 +3141,10 @@ namespace lower {
             return mk{ ty, k = ir::ExprKind::trunc{ e = box{ l, e = ex{ &l, e = args[0] } } } }
         }
         if check::atomic_name{ n = name } { return atomic{ &l, name, args, t } }
+        if slice::eq_bytes{ a = name, b = "min" } { return min_max{ &l, least = true, a = args[0], b = args[1], t } }
+        if slice::eq_bytes{ a = name, b = "max" } { return min_max{ &l, least = false, a = args[0], b = args[1], t } }
+        if slice::eq_bytes{ a = name, b = "clamp" } { return clamp{ &l, e, args, t } }
+        if check::to_int_name{ n = name } { return to_int{ &l, e, name, arg = args[0], t } }
         if slice::eq_bytes{ a = name, b = "wrap_shl" } {
             let ty = tid{ &l, t }
             let x = conv{ &l, e = args[0], to = t }
@@ -3148,6 +3152,178 @@ namespace lower {
             return mk{ ty, k = ir::ExprKind::shift{ op = ir::ShiftOp::wrap_shl, a = box{ l, e = x }, b = box{ l, e = y }, pos = epos{ &l, e } } }
         }
         @panic("lower: a builtin the parser doesn't know")
+    }
+
+    // ---- @min, @max, @clamp, @round, @saturate and @round_saturate (spec §13): each is written
+    // with the IR's compares, conditionals and float arithmetic, over temporaries that hold
+    // the operands, so the C, the interpreter and a const's evaluation give one answer.
+
+    fn held { l: Lower, slot: u32, init: ir::Expr, body: ir::Expr } -> ir::Expr {
+        return mk{ ty = body.ty, k = ir::ExprKind::with{ slot, init = box{ l, e = init }, body = box{ l, e = body } } }
+    }
+
+    fn slot_ex { ty: u32, slot: u32 } -> ir::Expr {
+        return mk{ ty, k = ir::ExprKind::local{ slot } }
+    }
+
+    fn compared { mut l: Lower, op: ir::CmpOp, a: ir::Expr, b: ir::Expr } -> ir::Expr {
+        return mk{ ty = tid{ &l, t = types::BOOL }, k = ir::ExprKind::cmp{ op, a = box{ l, e = a }, b = box{ l, e = b } } }
+    }
+
+    // `if c { then } else { els }`, of type ty.
+    fn either { l: Lower, ty: u32, c: ir::Expr, then: ir::Expr, els: ir::Expr } -> ir::Expr {
+        let stmts = slice::empty(ir::Stmt){}
+        return mk{ ty, k = ir::ExprKind::ifx{ c = box{ l, e = c }, then = ir::Block{ stmts, result = box{ l, e = then } }, els = ir::Block{ stmts, result = box{ l, e = els } } } }
+    }
+
+    fn float_of { mut l: Lower, value: f64 } -> ir::Expr {
+        return mk{ ty = tid{ &l, t = types::prim{ p = types::Prim::f64 } }, k = ir::ExprKind::float{ value } }
+    }
+
+    // `@min(a, b)` or `@max(a, b)`, a's and b's values in temporaries, a's first:
+    // `a <= b ? a : b`, and for floats `a <= b ? a : (a != a ? a : b)`, so that a NaN operand
+    // gives a NaN and two equal ones give the first.
+    fn min_max { mut l: Lower, least: bool, a: syntax::Expr, b: syntax::Expr, t: Id } -> ir::Expr {
+        let ty = tid{ &l, t }
+        let x = conv{ &l, e = a, to = t }
+        let y = conv{ &l, e = b, to = t }
+        let sa = temp{ &l, ty }
+        let sb = temp{ &l, ty }
+        let va = slot_ex{ ty, slot = sa }
+        let vb = slot_ex{ ty, slot = sb }
+        let first = compared{ &l, op = if least { ir::CmpOp::le } else { ir::CmpOp::ge }, a = va, b = vb }
+        let mut other = vb
+        if types::is_float{ s = l.c.ty, t = types::undistinct{ s = l.c.ty, t = T{ &l, t } } } {
+            other = either{ l, ty, c = compared{ &l, op = ir::CmpOp::ne, a = va, b = va }, then = va, els = vb }
+        }
+        return held{ l, slot = sa, init = x, body = held{ l, slot = sb, init = y, body = either{ l, ty, c = first, then = va, els = other } } }
+    }
+
+    // `@clamp(x, lo, hi)`, the three in temporaries in that order: it panics unless
+    // `lo <= hi`, which a NaN bound isn't, and is then `x < lo ? lo : (x > hi ? hi : x)`, so a
+    // NaN x stays one.
+    fn clamp { mut l: Lower, e: syntax::Expr, args: []syntax::Expr, t: Id } -> ir::Expr {
+        let ty = tid{ &l, t }
+        let x = conv{ &l, e = args[0], to = t }
+        let lo = conv{ &l, e = args[1], to = t }
+        let hi = conv{ &l, e = args[2], to = t }
+        let sx = temp{ &l, ty }
+        let slo = temp{ &l, ty }
+        let shi = temp{ &l, ty }
+        let vx = slot_ex{ ty, slot = sx }
+        let vlo = slot_ex{ ty, slot = slo }
+        let vhi = slot_ex{ ty, slot = shi }
+        let float = types::is_float{ s = l.c.ty, t = types::undistinct{ s = l.c.ty, t = T{ &l, t } } }
+        let msg = if float { "@clamp: the low bound is above the high bound, or one of them is NaN" } else { "@clamp: the low bound is above the high bound" }
+        let mut ps = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
+        try! list::push{ list = &ps, item = ir::Stmt::panic{ pos = epos{ &l, e }, msg } }
+        let bad = ir::Block{ stmts = list::items{ list = ps }, result = null }
+        let over = either{ l, ty, c = compared{ &l, op = ir::CmpOp::gt, a = vx, b = vhi }, then = vhi, els = vx }
+        let value = either{ l, ty, c = compared{ &l, op = ir::CmpOp::lt, a = vx, b = vlo }, then = vlo, els = over }
+        let ordered = compared{ &l, op = ir::CmpOp::le, a = vlo, b = vhi }
+        let good = ir::Block{ stmts = slice::empty(ir::Stmt){}, result = box{ l, e = value } }
+        let checked = mk{ ty, k = ir::ExprKind::ifx{ c = box{ l, e = ordered }, then = good, els = bad } }
+        return held{ l, slot = sx, init = x, body = held{ l, slot = slo, init = lo, body = held{ l, slot = shi, init = hi, body = checked } } }
+    }
+
+    // v, an f64 in a local, rounded to the nearest integer, halfway cases to the even one, as
+    // an f64: below 2^52 in size, adding and taking away 2^52 rounds it, as every float
+    // operation rounds to nearest even; from there up, and for an infinity or NaN, v is its own
+    // rounding. The sign goes back on after, so -0.4 gives -0.0.
+    fn round_even { mut l: Lower, v: ir::Expr, pos: ir::Pos } -> ir::Expr {
+        let ty = v.ty
+        let big = float_of{ &l, value = 4503599627370496.0 }
+        let negative = compared{ &l, op = ir::CmpOp::lt, a = v, b = float_of{ &l, value = 0.0 } }
+        let sa = temp{ &l, ty }
+        let sr = temp{ &l, ty }
+        let va = slot_ex{ ty, slot = sa }
+        let vr = slot_ex{ ty, slot = sr }
+        let size = either{ l, ty, c = negative, then = mk{ ty, k = ir::ExprKind::neg{ e = box{ l, e = v }, pos, trap = ir::NO_TRAP } }, els = v }
+        let sum = mk{ ty, k = ir::ExprKind::arith{ op = ir::ArithOp::add, a = box{ l, e = va }, b = box{ l, e = big }, pos, trap = ir::NO_TRAP } }
+        let rounded = mk{ ty, k = ir::ExprKind::arith{ op = ir::ArithOp::sub, a = box{ l, e = sum }, b = box{ l, e = big }, pos, trap = ir::NO_TRAP } }
+        let signed = either{ l, ty, c = negative, then = mk{ ty, k = ir::ExprKind::neg{ e = box{ l, e = vr }, pos, trap = ir::NO_TRAP } }, els = vr }
+        let small = compared{ &l, op = ir::CmpOp::lt, a = va, b = big }
+        return held{ l, slot = sa, init = size, body = either{ l, ty, c = small, then = held{ l, slot = sr, init = rounded, body = signed }, els = v } }
+    }
+
+    // `@round(T, x)`, `@saturate(T, x)` or `@round_saturate(T, x)`. A float is held as an f64,
+    // which an f32 widens to exactly, and rounded to nearest even if the builtin rounds. Then
+    // @round converts as `@as` does, panicking or leaving for its `ifoverflow`, and the
+    // saturating ones give 0 for NaN, T's maximum from 2^bits up (2^(bits - 1) for a signed T),
+    // its minimum from -2^(bits - 1) or 0 down, and convert what is between, which fits;
+    // @round_saturate to a T of 32 bits or fewer clamps before it rounds, for the same values
+    // (below). An integer's bounds are compared in its own type, and only those T's range
+    // doesn't cover.
+    fn to_int { mut l: Lower, e: syntax::Expr, name: []u8, arg: syntax::Expr, t: Id } -> ir::Expr {
+        let ty = tid{ &l, t }
+        let pos = epos{ &l, e }
+        let src = types::undistinct{ s = l.c.ty, t = T{ &l, t = check::type_of_expr{ c = l.c.*, e = arg } } }
+        let x = ex{ &l, e = arg }
+        let tp = types::prim_of{ s = l.c.ty, t = types::undistinct{ s = l.c.ty, t = T{ &l, t } } } ifnull { @panic("lower: a rounding conversion to a non-integer") }
+        let bits = types::bits{ p = tp }
+        let signed = types::signed{ p = tp }
+        let top: u64 = if signed { (@as(u64, 1) << (bits - 1)) - 1 } else { 18446744073709551615 >> (64 - bits) }
+        let highest = mk{ ty, k = ir::ExprKind::int{ negative = false, value = top } }
+        let lowest = mk{ ty, k = ir::ExprKind::int{ negative = signed, value = if signed { top + 1 } else { 0 } } }
+        if types::is_float{ s = l.c.ty, t = src } {
+            let f64_id = types::prim{ p = types::Prim::f64 }
+            let fty = tid{ &l, t = f64_id }
+            let wide = coerce{ &l, x, frm = src, to = f64_id, at = check::expr_at{ e = arg } }
+            let sv = temp{ &l, ty = fty }
+            let v = slot_ex{ ty = fty, slot = sv }
+            let rounds = not slice::eq_bytes{ a = name, b = "saturate" }
+            let whole = if rounds { round_even{ &l, v, pos } } else { v }
+            if slice::eq_bytes{ a = name, b = "round" } {
+                let out = mk{ ty, k = ir::ExprKind::convert{ e = box{ l, e = whole }, pos, trap = trap_of{ l, e } } }
+                return held{ l, slot = sv, init = wide, body = out }
+            }
+            // 2^bits, or 2^(bits - 1) for a signed type: the first float above T's range.
+            let mut above: f64 = 1.0
+            for i in 0..(if signed { bits - 1 } else { bits }) { above = above * 2.0 }
+            let below: f64 = if signed { -above } else { 0.0 }
+            let zero = mk{ ty, k = ir::ExprKind::int{ negative = false, value = 0 } }
+            if rounds and bits <= 32 {
+                // T's bounds are f64s, so clamping can come first, and what is left is so far
+                // below 2^51 that adding and taking away 1.5 * 2^52 rounds it, sign and all:
+                // the audio loops' path, three compares and two additions.
+                let magic = float_of{ &l, value = 6755399441055744.0 }
+                let sum = mk{ ty = fty, k = ir::ExprKind::arith{ op = ir::ArithOp::add, a = box{ l, e = v }, b = box{ l, e = magic }, pos, trap = ir::NO_TRAP } }
+                let near = mk{ ty = fty, k = ir::ExprKind::arith{ op = ir::ArithOp::sub, a = box{ l, e = sum }, b = box{ l, e = magic }, pos, trap = ir::NO_TRAP } }
+                let fits = mk{ ty, k = ir::ExprKind::convert{ e = box{ l, e = near }, pos, trap = ir::NO_TRAP } }
+                let low = either{ l, ty, c = compared{ &l, op = ir::CmpOp::le, a = v, b = float_of{ &l, value = below } }, then = lowest, els = fits }
+                let high = either{ l, ty, c = compared{ &l, op = ir::CmpOp::ge, a = v, b = float_of{ &l, value = above - 1.0 } }, then = highest, els = low }
+                let out = either{ l, ty, c = compared{ &l, op = ir::CmpOp::ne, a = v, b = v }, then = zero, els = high }
+                return held{ l, slot = sv, init = wide, body = out }
+            }
+            let sw = temp{ &l, ty = fty }
+            let w = slot_ex{ ty = fty, slot = sw }
+            let fits = mk{ ty, k = ir::ExprKind::convert{ e = box{ l, e = w }, pos, trap = ir::NO_TRAP } }
+            let low = either{ l, ty, c = compared{ &l, op = ir::CmpOp::le, a = w, b = float_of{ &l, value = below } }, then = lowest, els = fits }
+            let high = either{ l, ty, c = compared{ &l, op = ir::CmpOp::ge, a = w, b = float_of{ &l, value = above } }, then = highest, els = low }
+            let out = either{ l, ty, c = compared{ &l, op = ir::CmpOp::ne, a = w, b = w }, then = zero, els = high }
+            return held{ l, slot = sv, init = wide, body = held{ l, slot = sw, init = whole, body = out } }
+        }
+        // @saturate of an integer.
+        let sp = types::prim_of{ s = l.c.ty, t = src } ifnull { @panic("lower: @saturate of a non-number") }
+        let sbits = types::bits{ p = sp }
+        let ssigned = types::signed{ p = sp }
+        let stop: u64 = if ssigned { (@as(u64, 1) << (sbits - 1)) - 1 } else { 18446744073709551615 >> (64 - sbits) }
+        let sty = x.ty
+        let ss = temp{ &l, ty = sty }
+        let s = slot_ex{ ty = sty, slot = ss }
+        let mut out = if norm{ &l, t = src } == norm{ &l, t } { s } else { mk{ ty, k = ir::ExprKind::convert{ e = box{ l, e = s }, pos, trap = ir::NO_TRAP } } }
+        // Above T's maximum, where the source's is larger.
+        if stop > top {
+            let limit = mk{ ty = sty, k = ir::ExprKind::int{ negative = false, value = top } }
+            out = either{ l, ty, c = compared{ &l, op = ir::CmpOp::gt, a = s, b = limit }, then = highest, els = out }
+        }
+        // Below T's minimum, where the source's is smaller: a signed source, and an unsigned T
+        // or a narrower one.
+        if ssigned and (not signed or sbits > bits) {
+            let limit = mk{ ty = sty, k = ir::ExprKind::int{ negative = signed, value = if signed { top + 1 } else { 0 } } }
+            out = either{ l, ty, c = compared{ &l, op = ir::CmpOp::lt, a = s, b = limit }, then = lowest, els = out }
+        }
+        return held{ l, slot = ss, init = x, body = out }
     }
 
     // An atomic (spec §13): the pointer, the values as the pointer's T, and the order, a
