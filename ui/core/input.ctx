@@ -24,7 +24,9 @@ namespace ui {
     struct Point { x: i32 = 0, y: i32 = 0 }
 
     // One key going down (or repeating) with the modifiers held, in the order they were pushed.
-    struct KeyStroke { key: Key = Key::none, mods: u8 = 0, repeat: bool = false }
+    // `typed` is how many bytes of the frame's typed text had been pushed before it, so a widget
+    // that reads both (a text field) takes them in the order they came (`take_typed_before`).
+    struct KeyStroke { key: Key = Key::none, mods: u8 = 0, repeat: bool = false, typed: u32 = 0 }
 
     // Pointer buttons: 0 left, 1 right, 2 middle, 3 back, 4 forward. Others are ignored.
     const BUTTONS: usize = 5
@@ -72,7 +74,7 @@ namespace ui {
                 if down and key != Key::none {
                     let n = @as(usize, ui.input.pending.keys)
                     if n < ui.input.pending_keys.len {
-                        ui.input.pending_keys[n] = KeyStroke{ key, mods, repeat }
+                        ui.input.pending_keys[n] = KeyStroke{ key, mods, repeat, typed = ui.input.pending.typed }
                         ui.input.pending.keys = ui.input.pending.keys + 1
                     } else {
                         input::count_lost{ &ui }
@@ -183,13 +185,28 @@ namespace ui {
         ui.input.now.keys = ui.input.now.keys - 1
     }
 
-    // The text typed this frame, in the order it was typed; empties it, so later code does not
-    // see it. Valid until the next begin_frame. Empty behind the last frame's modal tree.
+    // The text typed this frame that nobody has taken yet, in the order it was typed; takes it, so
+    // later code does not see it. Valid until the next begin_frame. Empty behind the last frame's
+    // modal tree.
     fn take_typed { mut ui: Ui } -> []u8 {
         if input::is_blocked{ ui } { return "" }
+        let from = @as(usize, ui.input.now.typed_from)
         let n = @as(usize, ui.input.now.typed)
-        ui.input.now.typed = 0
-        return ui.input.typed[..n]
+        ui.input.now.typed_from = ui.input.now.typed
+        return ui.input.typed[from..n]
+    }
+
+    // The text typed this frame before `key` (one of `get_keys`) came, that nobody has taken yet;
+    // takes it. A widget that reads key strokes and typed text walks the strokes, taking the text
+    // before each, and then the rest with `take_typed`, so "a", Backspace, "b" pushed before one
+    // frame come out in the order they were pressed. Empty behind the last frame's modal tree.
+    fn take_typed_before { mut ui: Ui, key: KeyStroke } -> []u8 {
+        if input::is_blocked{ ui } { return "" }
+        let from = @as(usize, ui.input.now.typed_from)
+        let to = @as(usize, if key.typed < ui.input.now.typed { key.typed } else { ui.input.now.typed })
+        if to <= from { return "" }
+        ui.input.now.typed_from = @as(u32, to)
+        return ui.input.typed[from..to]
     }
 
     // The text the host pasted for this frame (its answer to `ask_paste`); empties it. Valid
@@ -260,6 +277,7 @@ namespace ui {
             wheel_x: f32, wheel_y: f32,
             mods: u8,                                   // the modifiers of the last key event
             keys: u32, typed: u32, paste: u32,
+            typed_from: u32,                            // the typed text before this was taken
         }
 
         struct State {
@@ -318,6 +336,7 @@ namespace ui {
             ui.input.pending.wheel_y = 0.0
             ui.input.pending.keys = 0
             ui.input.pending.typed = 0
+            ui.input.pending.typed_from = 0
             ui.input.pending.paste = 0
             let dt = ui.info.dt
             if dt > 0.0 and dt < 3600.0 { ui.input.time = ui.input.time + @as(f64, dt) }

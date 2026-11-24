@@ -18,8 +18,10 @@
 //    copies, Ctrl+X and Shift+Delete cut, Ctrl+V pastes, Ctrl+Z undoes, Ctrl+Y and Ctrl+Shift+Z
 //    redo. Enter makes the call true. Tab is left for the focus to move, Escape for a popup or a
 //    dialog to close, and Up and Down for the links.
-//  - Typed text (`take_typed`) and a paste (`take_paste`, the frame after the field asked for it)
-//    replace the selection, one character at a time as far as they fit. A character is refused when
+//  - Typed text and a paste (`take_paste`, the frame after the field asked for it) replace the
+//    selection, one character at a time as far as they fit. Key strokes and typed text of one frame
+//    are taken in the order they came (`take_typed_before` each stroke), so "a", Backspace in one
+//    frame leaves no "a". A character is refused when
 //    the buffer has no room for it, `rules.max_chars` is reached, `rules.filter` says no, or it is a
 //    control character; the first refused for room or count ends the insertion, so a paste that
 //    does not fit takes the whole characters that do. A line break (CR, LF or CR LF) and a tab are a
@@ -600,9 +602,13 @@ namespace ui {
                 let pasted = take_paste{ &ui }
                 if pasted.len > 0 { _ = insert_text{ &ui, &f, &text, history, input = pasted, rules, kind = Kind::other } }
             }
+            // Key strokes and typed text in the order they came: the text typed before each stroke
+            // goes in first.
             let mut i: usize = 0
             while i < get_keys{ ui }.len {
                 let k = get_keys{ ui }[i]
+                let before = take_typed_before{ &ui, key = k }
+                if before.len > 0 { _ = insert_text{ &ui, &f, &text, history, input = before, rules, kind = Kind::typing } }
                 let took = apply_key{ &ui, &f, &text, history, k, rules, &submitted, &values }
                 if took { take_key_at{ &ui, index = i } } else { i = i + 1 }
             }

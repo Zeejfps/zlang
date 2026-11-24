@@ -382,6 +382,45 @@ fn check_typing { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     type_in{ &r, &f, text = "X" }
     ui_test::expect{ &io, &t, ok = is_text{ a = get_name{ f = &f }, b = "hello worXld" } and get_caret{ r, path = "name" } == 10, what = "typing: in the middle, after the caret moved back" }
     ui_test::expect{ &io, &t, ok = is_clean_rig{ r }, what = "typing: every frame is clean" }
+    check_typing_order{ &io, &t, &heap }
+}
+
+// Key strokes and typed text pushed before one frame are applied in the order they came, and the
+// result is there in that frame: a, Backspace leaves nothing; Backspace, a takes the character
+// before and types after; text, Home, text puts the second at the start; a key between two pieces
+// of text splits them.
+fn check_typing_order { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut r = make_rig{ &heap, dark = true, scale = 1.0 } iferr { return }
+    let mut f = make_form{ look = Look::one }
+    focus_name{ &r, &f, text = "xy" }
+    _ = ui_test::type_text{ ui = &r.ui, text = "a" }
+    _ = ui_test::tap_key{ ui = &r.ui, key = ui::Key::backspace, mods = 0 }
+    step{ &r, &f }
+    ui_test::expect{ &io, &t, ok = is_text{ a = get_name{ f = &f }, b = "xy" } and get_caret{ r, path = "name" } == 2,
+        what = "typing order: \"a\", Backspace in one frame types and takes it back, in that frame" }
+    _ = ui_test::tap_key{ ui = &r.ui, key = ui::Key::backspace, mods = 0 }
+    _ = ui_test::type_text{ ui = &r.ui, text = "b" }
+    step{ &r, &f }
+    ui_test::expect{ &io, &t, ok = is_text{ a = get_name{ f = &f }, b = "xb" } and get_caret{ r, path = "name" } == 2,
+        what = "typing order: Backspace, \"b\" takes the y and then types b" }
+    _ = ui_test::type_text{ ui = &r.ui, text = "c" }
+    _ = ui_test::tap_key{ ui = &r.ui, key = ui::Key::home, mods = 0 }
+    _ = ui_test::type_text{ ui = &r.ui, text = "d" }
+    _ = ui_test::tap_key{ ui = &r.ui, key = ui::Key::end, mods = 0 }
+    _ = ui_test::type_text{ ui = &r.ui, text = "e" }
+    step{ &r, &f }
+    ui_test::expect{ &io, &t, ok = is_text{ a = get_name{ f = &f }, b = "dxbce" } and get_caret{ r, path = "name" } == 5,
+        what = "typing order: \"c\", Home, \"d\", End, \"e\" in one frame" }
+    _ = ui_test::type_text{ ui = &r.ui, text = "fg" }
+    _ = ui_test::tap_key{ ui = &r.ui, key = ui::Key::left, mods = 0 }
+    _ = ui_test::tap_key{ ui = &r.ui, key = ui::Key::left, mods = 0 }
+    _ = ui_test::type_text{ ui = &r.ui, text = "h" }
+    _ = ui_test::tap_key{ ui = &r.ui, key = ui::Key::a, mods = ui::MOD_CTRL }
+    _ = ui_test::type_text{ ui = &r.ui, text = "ij" }
+    step{ &r, &f }
+    ui_test::expect{ &io, &t, ok = is_text{ a = get_name{ f = &f }, b = "ij" } and get_caret{ r, path = "name" } == 2,
+        what = "typing order: text, Left, Left, text, Ctrl+A, text: the last text replaces what the first three made" }
+    ui_test::expect{ &io, &t, ok = is_clean_rig{ r }, what = "typing order: every frame is clean" }
 }
 
 // Home, End, the arrows, the word steps, Shift extending both ways and collapsing, Ctrl+A.

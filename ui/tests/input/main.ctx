@@ -595,6 +595,31 @@ fn check_keys { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     ui_test::expect{ &io, &t, ok = ui::get_keys{ ui = gui }.len == 1 and ui::get_keys{ ui = gui }[0].key == ui::Key::left, what = "take_key_at takes one stroke, and one past the end nothing" }
     ui::end_frame{ ui = &gui }
     ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "the key frame is clean" }
+
+    // Typed text and strokes keep their order: each stroke knows the text pushed before it.
+    _ = ui_test::type_text{ ui = &gui, text = "ab" }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::backspace, mods = 0 }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::left, mods = 0 }
+    _ = ui_test::type_text{ ui = &gui, text = "c" }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::enter, mods = 0 }
+    _ = ui_test::type_text{ ui = &gui, text = "de" }
+    ui::begin_frame{ ui = &gui, frame = d.info }
+    let ks = ui::get_keys{ ui = gui }
+    ui_test::expect{ &io, &t, ok = ks.len == 3 and ks[0].typed == 2 and ks[1].typed == 2 and ks[2].typed == 3,
+        what = "typed order: a stroke counts the typed bytes pushed before it (2, 2, 3)" }
+    let k0 = ks[0]
+    let k1 = ks[1]
+    let k2 = ks[2]
+    let first = ui::take_typed_before{ ui = &gui, key = k0 }
+    let none = ui::take_typed_before{ ui = &gui, key = k1 }
+    let third = ui::take_typed_before{ ui = &gui, key = k2 }
+    let again = ui::take_typed_before{ ui = &gui, key = k0 }
+    let rest = ui::take_typed{ ui = &gui }
+    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = first, b = "ab" } and none.len == 0 and slice::eq_bytes{ a = third, b = "c" } and again.len == 0 and slice::eq_bytes{ a = rest, b = "de" },
+        what = "typed order: the text before each stroke once, in order, and the rest after the last" }
+    ui_test::expect{ &io, &t, ok = ui::take_typed{ ui = &gui }.len == 0, what = "typed order: nothing is left once the rest is taken" }
+    ui::end_frame{ ui = &gui }
+    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "typed order: the frame is clean" }
 }
 
 // The wheel goes to a widget only while the pointer is over it or what is inside it, once.
