@@ -19,8 +19,9 @@ as the write-ups gave them.
    `player`. Written `m = &movie`, `side = &g.player`. A library whose fns take `mut p: Panels`
    makes callers name their value `p`. *Partly:* a place's last name puns (`&g.rng` fills `rng`,
    `w.d` fills `d`: spec §3, rule 6), which was most of it, and the error says what to write
-   ("`next` has no field `movie`: write `m = &movie`", from the fields nothing supplies), so each
-   fix is mechanical. A std convention (name a builder `b`) shrinks the rest. *Hit by 12:* ctxc
+   ("`next` has no field `movie`: write `m = &movie`", from the fields nothing supplies), and
+   `ctxc check --fix` applies it (80510973), so each fix is mechanical. A std convention (name a
+   builder `b`) shrinks the rest. *Hit by 12:* ctxc
    (about 30, and
    `mutex::lock{ &shared.lock }`), engine (about 40), data (about 40), dialog (about 36), gui
    (about 25), hud (about 40), chargen (4), minigames (about 46), rules (about 40), screens (about
@@ -60,8 +61,9 @@ as the write-ups gave them.
     file breaks every build that adds its directory (each rules agent built from a private copy).
     A directory's files share one namespace with no file-private names, so two agents writing
     `put_*` helpers coordinate names by message; a file can't keep private state either, so every
-    cache goes in `World`, the file every agent needs; `mdl` is one 1,500-line file because a
-    namespace is a file's. *Hit by 5:* engine (2), dialog (2), models, rules, script.
+    cache goes in `World`, the file every agent needs. *Partly:* a namespace may now span files
+    (spec §10, rule 4; 2540d389), so a big one such as `mdl` can be split; choosing single files
+    and file-private names remain. *Hit by 5:* engine (2), dialog (2), models, rules, script.
 
 6. **A program's namespace hides std's of the same name whole.** KOTOR's `math`, its vectors,
     hides std's `math`, so it declares libm and the float-bits fns again (lib/base/math.ctx, 24
@@ -99,9 +101,6 @@ as the write-ups gave them.
     `w` needs `mut w`, which spreads to every caller up to the routine. *Hit by 2:* engine (2),
     hud.
 
-
-16. **Hex literals aren't in the spec.** The lexer takes `0xFFFFFFFF`, `0b` and `_` separators,
-    but §11 Literals shows only decimal, so drafts wrote `4294967295`. *Hit by 2:* glspike, walk.
 
 18. **No methods** (§16 Q4). `list::push{ list = &xs, item }` everywhere: ctxc makes about 580
     `list::` and `map::` calls and 150 `slice::` ones. `xs.push{ item }` would shrink code a lot.
@@ -156,10 +155,6 @@ as the write-ups gave them.
     audio decoder, worked around with a local copy (`let mut rd = r`, `defer r = rd`).
     Restrict-qualifying `mut` context fields (§3.1 already forbids two overlapping ones) would let
     gcc keep them in registers. *Hit by 1:* video.
-
-32. **A pattern can't bind a mutable local.** *Mostly solved:* `ifnull` unwraps into any `let`,
-    including `let mut`. A pattern's own bindings are still read-only (`let some{ value = mut g }
-    = ...` is a syntax error), and that isn't planned. *Hit by 1:* ctxc.
 
 33. **No pointer from an integer.** GL takes buffer offsets as `const void *`; the binding
     declares them `offset: usize`, which works only because 64-bit ABIs pass the two alike.

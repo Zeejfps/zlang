@@ -26,9 +26,9 @@ entries are cited by number, e.g. F#24) and [kotor/docs/tooling-gaps.md](../../.
   - *Done when:* it lives in ctxlang, kotor's AGENTS.md points to it, and it's current with this checklist's changes.
 
 - [x] **1.2 Every code block in the spec and the reference compiles.**
-  The spec has drifted: hex literals work but aren't in §11 (F#16), and §14's folded consts
-  aren't what the folder takes (F#37). A test extracts each block (marked as a whole program,
-  a fragment, or an expected error) and checks it with ctxc.
+  The spec had drifted: hex literals worked but weren't in §11 (fixed by 31a53ea6), and §14's
+  folded consts aren't what the folder takes (F#37). A test extracts each block (marked as a
+  whole program, a fragment, or an expected error) and checks it with ctxc.
   - *Done when:* the test runs in the suite and every block passes or is marked as an error example.
 
 - [x] **1.3 Errors that name the ctxlang form of another language's.**
@@ -66,9 +66,9 @@ entries are cited by number, e.g. F#24) and [kotor/docs/tooling-gaps.md](../../.
 
 - [ ] **2.4 Remaining friction.** Enum ordering and counts (F#10), `&fn` as a struct field
   (F#13), slices staying `[]mut` until freed (F#22, F#25), a `mut` argument that is a temporary
-  (F#27), locking through a read-only pointer (F#28), tuples (F#29), scoped lock (F#23), hex
-  literals in the spec (F#16), array lengths from any folded const (F#37). Take them as they
-  come up; each has its entry in friction.md.
+  (F#27), locking through a read-only pointer (F#28), tuples (F#29), scoped lock (F#23), array
+  lengths from any folded const (F#37). Take them as they come up; each has its entry in
+  friction.md.
 
 ## Not adding
 
