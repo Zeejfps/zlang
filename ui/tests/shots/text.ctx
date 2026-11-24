@@ -1,15 +1,13 @@
-// Stage 4's screenshot: text in a real outline font through ui_fonts, staged and drawn by ui_gl, at
-// scales 1 and 1.5. Called from main.ctx after the conformance pictures, with a window of its own;
-// it shares main.ctx's `Shot`, `write_shot`, `place_shot`, `find_option` and `BG`.
-//
-//   --font PATH     the Latin face (default: the platform's, C:\Windows\Fonts\segoeui.ttf on Windows)
-//   --cjk PATH      a face with CJK characters, registered as the fallback (default: the platform's)
-//   --italic PATH   an italic face, for overhang (default: the platform's)
+// Stage 4's screenshot test: text in a real outline font through ui_fonts, staged and drawn by
+// ui_gl, at scales 1 and 1.5, in a window of its own; it shares main.ctx's `Shot`, `write_shot`,
+// `place_shot` and `BG`. The faces are ui_check's: UI_FONT the Latin face, UI_CJK_FONT one with
+// CJK characters registered as the fallback, UI_ITALIC_FONT an italic face for overhang; each
+// defaults to the platform's (C:/Windows/Fonts/segoeui.ttf for the Latin face on Windows).
 //
 // Writes text-gl-1x.png, text-gl-1.5x.png and text-gl.png (both, one above the other). Each line of
 // text has a dim guide on the pixel row under its baseline, so a look tells whether glyphs of
-// every size, and of the Latin and CJK faces, stand on one line. With no Latin face it says why and
-// draws nothing; with no CJK or italic face that line is left out.
+// every size, and of the Latin and CJK faces, stand on one line. With no Latin face main.ctx's
+// `#test_main` leaves the test out and says why; with no CJK or italic face that line is left out.
 //
 // Checks: nothing dropped anywhere; the device draws what was staged; the first frame uploads the
 // atlas and a second identical frame uploads no atlas bytes, with the same pixels; no character of
@@ -21,64 +19,29 @@ const TEXT_HEIGHT: f32 = 452.0
 const TEXT_INK: ui::Color = ui::Color{ r = 232, g = 234, b = 240, a = 255 }
 const TEXT_GUIDE: ui::Color = ui::Color{ r = 70, g = 90, b = 120, a = 255 }
 const TEXT_PANEL: ui::Color = ui::Color{ r = 36, g = 40, b = 50, a = 255 }
-const TEXT_LATIN_WINDOWS: [1][]u8 = ["C:/Windows/Fonts/segoeui.ttf"]
-const TEXT_LATIN_MACOS: [1][]u8 = ["/System/Library/Fonts/Helvetica.ttc"]
-const TEXT_LATIN_LINUX: [2][]u8 = ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf"]
-const TEXT_CJK_WINDOWS: [3][]u8 = ["C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/YuGothR.ttc", "C:/Windows/Fonts/simsun.ttc"]
-const TEXT_CJK_MACOS: [2][]u8 = ["/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/Hiragino Sans GB.ttc"]
-const TEXT_CJK_LINUX: [2][]u8 = ["/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc"]
-const TEXT_ITALIC_WINDOWS: [1][]u8 = ["C:/Windows/Fonts/segoeuii.ttf"]
-const TEXT_ITALIC_MACOS: [1][]u8 = ["/System/Library/Fonts/Supplemental/Arial Italic.ttf"]
-const TEXT_ITALIC_LINUX: [2][]u8 = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf", "/usr/share/fonts/TTF/DejaVuSans-Oblique.ttf"]
 
 const TEXT_PARAGRAPH: []u8 = "Wrapped in the real font: the core breaks at spaces and after hyphens, measuring each word by shaping it, so no line runs past the panel's edge."
 
-// A font file's bytes, the path the option names or the first default that reads; `path` is what
-// was read, or tried.
-struct TextFont { path: []u8, bytes: ?[]u8 }
-
-fn read_text_font { mut fs: Fs, mut heap: arena::Arena, args: Args, option: []u8, defaults: [][]u8 } -> TextFont {
-    if let path = find_option{ args, name = option } {
-        let bytes = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } iferr { return TextFont{ path, bytes = null } }
-        return TextFont{ path, bytes }
-    }
-    for path in defaults {
-        let bytes = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } iferr { continue }
-        return TextFont{ path, bytes }
-    }
-    return TextFont{ path = if defaults.len > 0 { defaults[0] } else { "" }, bytes = null }
-}
-
-fn pick_text_paths { windows: [][]u8, macos: [][]u8, linux: [][]u8 } -> [][]u8 {
-    return match target::OS { windows => { windows } macos => { macos } linux => { linux } }
-}
-
-// The text pictures. Never fails: an error is printed and counted as a failed check.
-fn shoot_text { mut io: Io, mut fs: Fs, mut sdl: ui_sdl::Sdl, mut fonts: ui_fonts::Fonts, mut t: ui_test::Tally, mut heap: arena::Arena, args: Args, out_dir: []u8 } {
-    let latin = read_text_font{ &fs, &heap, args, option = "--font",
-        defaults = pick_text_paths{ windows = TEXT_LATIN_WINDOWS[..], macos = TEXT_LATIN_MACOS[..], linux = TEXT_LATIN_LINUX[..] } }
-    let latin_bytes = latin.bytes ifnull {
-        _ = @fmt(&io, "text: no font at {} (pass --font PATH): the text pictures are skipped\n", latin.path)
-        return
-    }
-    let cjk = read_text_font{ &fs, &heap, args, option = "--cjk",
-        defaults = pick_text_paths{ windows = TEXT_CJK_WINDOWS[..], macos = TEXT_CJK_MACOS[..], linux = TEXT_CJK_LINUX[..] } }
-    let italic = read_text_font{ &fs, &heap, args, option = "--italic",
-        defaults = pick_text_paths{ windows = TEXT_ITALIC_WINDOWS[..], macos = TEXT_ITALIC_MACOS[..], linux = TEXT_ITALIC_LINUX[..] } }
+#test
+fn draws_text_in_an_outline_font { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut sdl: ui_sdl::Sdl, mut fonts: ui_fonts::Fonts } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let latin = ui_check::find_latin_font{ &fs, &proc, &heap }
+    let latin_bytes = latin.bytes ifnull { return ui_check::missing_font{ path = latin.path } }
+    let cjk = ui_check::find_cjk_font{ &fs, &proc, &heap }
+    let italic = ui_check::find_italic_font{ &fs, &proc, &heap }
     _ = @fmt(&io, "text: font {}; fallback {}{}; italic {}{}\n", latin.path, cjk.path, if cjk.bytes == null { " (absent)" } else { "" },
         italic.path, if italic.bytes == null { " (absent)" } else { "" })
     let mut log: [16384]u8
-    run_text{ &io, &fs, &sdl, &fonts, &t, &heap, latin = latin_bytes, cjk = cjk.bytes, italic = italic.bytes, out_dir, log = log[..] } iferr err{ error } {
-        _ = @fmt(&io, "text: failed: {}\n", error)
-        t.run = t.run + 1
-        t.failed = t.failed + 1
+    run_text{ &io, &fs, &sdl, &fonts, &t, &heap, latin = latin_bytes, cjk = cjk.bytes, italic = italic.bytes, out_dir = get_out_dir{ &proc }, log = log[..] } iferr err{ error } {
+        say_gl_error{ &io, &sdl, error, log = log[..] }
+        return error
     }
 }
 
 // Which fonts the list has: 0 the Latin face (with the CJK face as its fallback), 1 the italic face.
 struct TextFaces { latin: ui_fonts::Face, has_cjk: bool, has_italic: bool }
 
-fn run_text { mut io: Io, mut fs: Fs, mut sdl: ui_sdl::Sdl, mut fonts: ui_fonts::Fonts, mut t: ui_test::Tally, mut heap: arena::Arena,
+fn run_text { mut io: Io, mut fs: Fs, mut sdl: ui_sdl::Sdl, mut fonts: ui_fonts::Fonts, mut t: Test, mut heap: arena::Arena,
               latin: []u8, cjk: ?[]u8, italic: ?[]u8, out_dir: []u8, log: []mut u8 } -> ! {
     try ui_sdl::init{ &sdl }
     defer ui_sdl::quit{ &sdl }
@@ -200,16 +163,19 @@ fn build_text_list { mut list: ui::DrawList, mut cache: ui::text::Cache, provide
 }
 
 fn shoot_text_scale {
-    mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, mut dev: ui_gl::Device, mut staged: ui_stage::Staged,
+    mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, mut dev: ui_gl::Device, mut staged: ui_stage::Staged,
     mut list: ui::DrawList, mut cache: ui::text::Cache, mut lib: ui_fonts::Library, provider: ui::TextProvider, faces: TextFaces,
     scale: f32, name: []u8, out_dir: []u8,
 } -> !Shot {
     let missing = lib.stats.missing
     build_text_list{ &list, &cache, provider, faces, scale }
-    ui_test::expect{ &io, &t, ok = list.dropped == 0 and cache.unknown_font == 0 and cache.no_provider == 0, what = "text: the list was built with nothing dropped" }
+    // text: the list was built with nothing dropped
+    @expect(&t, list.dropped == 0 and cache.unknown_font == 0 and cache.no_provider == 0)
     ui_stage::stage{ out = &staged, list = &list, provider }
-    ui_test::expect{ &io, &t, ok = staged.dropped == 0, what = "text: the list stages with nothing dropped" }
-    ui_test::expect{ &io, &t, ok = not faces.has_cjk or lib.stats.missing == missing, what = "text: with the fallback, no character is missing" }
+    // text: the list stages with nothing dropped
+    @expect(&t, staged.dropped == 0)
+    // text: with the fallback, no character is missing
+    @expect(&t, not faces.has_cjk or lib.stats.missing == missing)
     let width = @as(u32, staged.width)
     let height = @as(u32, staged.height)
     try ui_gl::make_target{ &dev, width, height }
@@ -217,8 +183,10 @@ fn shoot_text_scale {
     try ui_gl::render{ &dev, staged = &staged }
     _ = @fmt(&io, "{}: {}x{} pixels, {} draws, {} glyph instances, atlas {}x{}, {} atlas bytes uploaded\n",
         name, width, height, dev.stats.draws, staged.glyph_count, staged.atlas.width, staged.atlas.height, dev.stats.atlas_bytes)
-    ui_test::expect{ &io, &t, ok = dev.stats.draws == staged.draw_count and dev.stats.dropped == 0, what = "text: the device drew what was staged" }
-    ui_test::expect{ &io, &t, ok = dev.stats.atlas_bytes > 0, what = "text: the first frame uploads the glyphs" }
+    // text: the device drew what was staged
+    @expect(&t, dev.stats.draws == staged.draw_count and dev.stats.dropped == 0)
+    // text: the first frame uploads the glyphs
+    @expect(&t, dev.stats.atlas_bytes > 0)
     let pixels = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = @as(usize, width) * @as(usize, height) * 4 }
     try ui_gl::read_pixels{ &dev, into = pixels }
     let shot = Shot{ pixels, width, height }
@@ -231,11 +199,14 @@ fn shoot_text_scale {
     ui_stage::stage{ out = &staged, list = &list, provider }
     ui_gl::clear{ &dev, color = BG }
     try ui_gl::render{ &dev, staged = &staged }
-    ui_test::expect{ &io, &t, ok = lib.stats.rasterized == rasterized and staged.revision == revision, what = "text: a second identical frame rasterises nothing and keeps its revision" }
-    ui_test::expect{ &io, &t, ok = dev.stats.atlas_bytes == 0 and dev.stats.uploads == 0, what = "text: a second identical frame uploads no atlas bytes" }
+    // text: a second identical frame rasterises nothing and keeps its revision
+    @expect(&t, lib.stats.rasterized == rasterized and staged.revision == revision)
+    // text: a second identical frame uploads no atlas bytes
+    @expect(&t, dev.stats.atlas_bytes == 0 and dev.stats.uploads == 0)
     let again = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = pixels.len }
     try ui_gl::read_pixels{ &dev, into = again }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = again, b = pixels }, what = "text: the second frame has the same pixels" }
+    // text: the second frame has the same pixels
+    @expect(&t, slice::eq_bytes{ a = again, b = pixels })
     check_text_ink{ &io, &t, &cache, list, provider, shot, scale }
     return shot
 }
@@ -243,7 +214,7 @@ fn shoot_text_scale {
 // The first line's ink lies inside its measured box, and the pixel columns after the box are
 // clear. The box is whole pixels: the line starts on the pixel the scene put it on and is the
 // measured width wide, which is the advances rounded up, so no ink may lie past it.
-fn check_text_ink { mut io: Io, mut t: ui_test::Tally, mut cache: ui::text::Cache, list: ui::DrawList, provider: ui::TextProvider, shot: Shot, scale: f32 } {
+fn check_text_ink { mut io: Io, mut t: Test, mut cache: ui::text::Cache, list: ui::DrawList, provider: ui::TextProvider, shot: Shot, scale: f32 } {
     let text: []u8 = "11 px: The quick brown fox jumps over the lazy dog. 0123456789 (sharp?)"
     let font = ui::Font{ index = 0 }
     let size = scale_text_size{ s = scale, size = 11.0 }
@@ -265,6 +236,7 @@ fn check_text_ink { mut io: Io, mut t: ui_test::Tally, mut cache: ui::text::Cach
             if lit and x > x1 + 1 { past = past + 1 }
         }
     }
-    ui_test::expect{ &io, &t, ok = inside > 100 and past == 0, what = "text: the first line's ink lies within its measured width" }
+    // text: the first line's ink lies within its measured width
+    @expect(&t, inside > 100 and past == 0)
     if past > 0 { _ = @fmt(&io, "  {} lit pixels past the measured width\n", past) }
 }

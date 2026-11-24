@@ -1,18 +1,19 @@
-// Stage 3's test: first pixels. The conformance list (every shape; radii and borders that differ per
+// Stage 3's tests: first pixels. The conformance list (every shape; radii and borders that differ per
 // corner and side; a disc and a ring; lines at angles with each cap; test-font text; nested clips and
 // a rounded clip cutting every kind; the four quarter turns; an additive picture; a magnified atlas
 // piece) staged and drawn by ui_gl into an offscreen target of a hidden SDL window, at scales 1, 1.5
-// and 2, read back and written as PNG to look at.
+// and 2, read back and written as PNG to look at; and text in an outline font (text.ctx).
 //
-//   kotor/tools/ctxc run ui/tests/shots                      (from the repository root)
-//   kotor/tools/ctxc run ui/tests/shots -- --out ui/out      the directory the pictures go to
+//   kotor/tools/ctxc test ui/tests/shots                              (from the repository root)
+//   UI_SHOTS_DIR=DIR kotor/tools/ctxc test ui/tests/shots             the directory the pictures go to
 //
 // Writes conformance-gl.png (the three scales one above another) and conformance-gl-1x.png,
 // -1.5x.png and -2x.png. Checks what a program can: pixel values at known places (inside a fill,
 // inside each border side, outside a clip, inside and outside a rounded clip, the centre of the
 // additive picture, the edge of the magnified atlas piece), the device's draw count against the
 // staged draw count, that a second identical frame uploads nothing, and that drawing without the
-// base instance gives the same pixels. Exits 1 when any check fails.
+// base instance gives the same pixels. Where SDL opens no window with an OpenGL context, the
+// `#test_main` fn leaves every test out, by name and with the reason.
 
 const WIDTH: f32 = 480.0
 const HEIGHT: f32 = 408.0
@@ -38,44 +39,78 @@ struct Images { flag: ui::Image, grey: ui::Image, sheet: ui::Image, gradient: ui
 // One scale's picture, kept to put the three together.
 struct Shot { pixels: []mut u8, width: u32, height: u32 }
 
-fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: ui_sdl::Sdl, mut fonts: ui_fonts::Fonts, args: Args } -> i32 {
-    let mut t = ui_test::Tally{ run = 0, failed = 0 }
-    let out_dir = find_option{ args, name = "--out" } ifnull { OUT_DEFAULT }
-    let buf = mem::pages{ &mem, size = 268435456 } ifnull {
-        io::eprintln{ &io, s = "ui/tests/shots: out of memory" }
-        return 1
+// What runs the tests: std's runner, leaving out what this machine cannot draw. With no OpenGL
+// window every test is left out; with no Latin font, the text pictures.
+#test_main
+fn run_shots_tests {
+    mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut t: Test, mut sdl: ui_sdl::Sdl, args: Args, count: usize,
+    case: &fn{ index: usize } -> test::Case, run: &fn{ index: usize } -> i32,
+} -> i32 {
+    let in_process = args.len > 0 and args[0] == "--run"
+    if in_process { return test::main{ &io, &fs, &mem, &proc, &t, args, count, case, run } }
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut reason = utf8::builder{ realloc = arena::alloc, &heap }
+    if not can_open_gl_window{ &sdl, &heap, &reason } {
+        let all: [1][]u8 = [""]
+        return ui_check::run_tests_without{ &io, &fs, &mem, &proc, &t, args, count, case, run, without = all[..], reason = utf8::view{ b = reason }.bytes }
     }
-    let mut heap = arena::new{ buf }
-    let mut log: [16384]u8
-    run{ &io, &fs, &sdl, &t, &heap, out_dir, log = log[..] } iferr err{ error } {
-        _ = @fmt(&io, "ui/tests/shots: failed: {}\n", error)
-        match error {
-            ui_gl::compile_failed{ shader, log_len } => { _ = @fmt(&io, "{}:\n{}\n", shader, log[..log_len]) }
-            ui_gl::link_failed{ program, log_len } => { _ = @fmt(&io, "{}:\n{}\n", program, log[..log_len]) }
-            ui_gl::gl_failed{ code, what } => { _ = @fmt(&io, "{} after {}\n", ui_gl::name_gl_error{ code }, what) }
-            ui_sdl::failed => { _ = @fmt(&io, "SDL: {}\n", ui_sdl::get_last_error{ &sdl }) }
-            else => {}
-        }
-        io::flush{ &io }
-        return 1
+    let latin = ui_check::find_latin_font{ &fs, &proc, &heap }
+    if latin.bytes == null {
+        _ = @fmt(&reason, "no font at {} (set UI_FONT)", latin.path)
+        let text: [1][]u8 = ["draws_text_in_an_outline_font"]
+        return ui_check::run_tests_without{ &io, &fs, &mem, &proc, &t, args, count, case, run, without = text[..], reason = utf8::view{ b = reason }.bytes }
     }
-    shoot_text{ &io, &fs, &sdl, &fonts, &t, &heap, args, out_dir }
-    _ = @fmt(&io, "ui/tests/shots: {} checks, {} failed\n", t.run, t.failed)
+    return test::main{ &io, &fs, &mem, &proc, &t, args, count, case, run }
+}
+
+// Whether SDL opens a hidden window with an OpenGL context here; why not in `reason`. Whether
+// the context is OpenGL 4.1 is the tests' own check (ui_gl::open), not a reason to leave them out.
+fn can_open_gl_window { mut sdl: ui_sdl::Sdl, mut heap: arena::Arena, mut reason: utf8::Builder(arena::Arena) } -> bool {
+    ui_sdl::init{ &sdl } iferr {
+        _ = @fmt(&reason, "no OpenGL window: SDL_Init: {}", c::bytes{ s = ui_sdl::get_last_error{ &sdl } })
+        return false
+    }
+    defer ui_sdl::quit{ &sdl }
+    let mut host = ui_sdl::open_gl_window{ &sdl, realloc = arena::alloc, &heap, title = "ui shots probe",
+        width = 64, height = 64, hidden = true, resizable = false, clipboard = 16 } iferr {
+        _ = @fmt(&reason, "no OpenGL window: {}", c::bytes{ s = ui_sdl::get_last_error{ &sdl } })
+        return false
+    }
+    ui_sdl::close_window{ &sdl, &host }
+    return true
+}
+
+// Where the pictures go: UI_SHOTS_DIR, else ui/out (which git ignores).
+fn get_out_dir { mut proc: Proc } -> []u8 {
+    let dir = proc::env{ &proc, name = "UI_SHOTS_DIR" } ifnull { return OUT_DEFAULT }
+    return if dir.len > 0 { dir } else { OUT_DEFAULT }
+}
+
+// What OpenGL or SDL said when a picture could not be drawn, beside the error the test returns.
+fn say_gl_error { mut io: Io, mut sdl: ui_sdl::Sdl, error: error, log: []u8 } {
+    match error {
+        ui_gl::compile_failed{ shader, log_len } => { _ = @fmt(&io, "{}:\n{}\n", shader, log[..log_len]) }
+        ui_gl::link_failed{ program, log_len } => { _ = @fmt(&io, "{}:\n{}\n", program, log[..log_len]) }
+        ui_gl::gl_failed{ code, what } => { _ = @fmt(&io, "{} after {}\n", ui_gl::name_gl_error{ code }, what) }
+        ui_sdl::failed => { _ = @fmt(&io, "SDL: {}\n", ui_sdl::get_last_error{ &sdl }) }
+        else => {}
+    }
     io::flush{ &io }
-    return if t.failed == 0 { 0 } else { 1 }
 }
 
-// The value after `name` in the arguments, or null.
-fn find_option { args: Args, name: []u8 } -> ?[]u8 {
-    let mut i: usize = 0
-    while i + 1 < args.len {
-        if slice::eq_bytes{ a = args[i], b = name } { return args[i + 1] }
-        i = i + 1
+// The conformance list at scales 1, 1.5 and 2, a picture each and the three together, with the
+// checks a program can make of the pixels (the top of this file).
+#test
+fn draws_the_conformance_list_at_three_scales { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut sdl: ui_sdl::Sdl } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut log: [16384]u8
+    shoot_conformance{ &io, &fs, &sdl, &t, &heap, out_dir = get_out_dir{ &proc }, log = log[..] } iferr err{ error } {
+        say_gl_error{ &io, &sdl, error, log = log[..] }
+        return error
     }
-    return null
 }
 
-fn run { mut io: Io, mut fs: Fs, mut sdl: ui_sdl::Sdl, mut t: ui_test::Tally, mut heap: arena::Arena, out_dir: []u8, log: []mut u8 } -> ! {
+fn shoot_conformance { mut io: Io, mut fs: Fs, mut sdl: ui_sdl::Sdl, mut t: Test, mut heap: arena::Arena, out_dir: []u8, log: []mut u8 } -> ! {
     try ui_sdl::init{ &sdl }
     defer ui_sdl::quit{ &sdl }
     let mut host = try ui_sdl::open_gl_window{ &sdl, realloc = arena::alloc, &heap, title = "ui shots",
@@ -300,14 +335,16 @@ fn build_conformance { mut list: ui::DrawList, images: Images, s: f32 } {
 // ---- one scale
 
 fn shoot {
-    mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, mut dev: ui_gl::Device,
+    mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, mut dev: ui_gl::Device,
     mut staged: ui_stage::Staged, mut list: ui::DrawList, images: Images, scale: f32, name: []u8, out_dir: []u8,
 } -> !Shot {
     ui::draw::reset{ &list, width = ui::round_pixels{ v = WIDTH * scale }, height = ui::round_pixels{ v = HEIGHT * scale } }
     build_conformance{ &list, images, s = scale }
-    ui_test::expect{ &io, &t, ok = list.dropped == 0, what = "the conformance list was built with nothing dropped" }
+    // the conformance list was built with nothing dropped
+    @expect(&t, list.dropped == 0)
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.dropped == 0, what = "the conformance list stages with nothing dropped" }
+    // the conformance list stages with nothing dropped
+    @expect(&t, staged.dropped == 0)
     let width = @as(u32, staged.width)
     let height = @as(u32, staged.height)
     try ui_gl::make_target{ &dev, width, height }
@@ -316,9 +353,12 @@ fn shoot {
     _ = @fmt(&io, "scale {}: {}x{} pixels, {} draws ({} rect, {} glyph, {} image, {} shape instances), {} uploads, {} bytes, {} atlas bytes\n",
         name, width, height, dev.stats.draws, staged.rect_count, staged.glyph_count, staged.image_count, staged.shape_count,
         dev.stats.uploads, dev.stats.upload_bytes, dev.stats.atlas_bytes)
-    ui_test::expect{ &io, &t, ok = dev.stats.draws == staged.draw_count, what = "the device drew as many draws as were staged" }
-    ui_test::expect{ &io, &t, ok = dev.stats.dropped == 0, what = "the device skipped no draw" }
-    ui_test::expect{ &io, &t, ok = dev.stats.uploads > 0, what = "the first frame uploaded" }
+    // the device drew as many draws as were staged
+    @expect(&t, dev.stats.draws == staged.draw_count)
+    // the device skipped no draw
+    @expect(&t, dev.stats.dropped == 0)
+    // the first frame uploaded
+    @expect(&t, dev.stats.uploads > 0)
 
     let pixels = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = @as(usize, width) * @as(usize, height) * 4 }
     try ui_gl::read_pixels{ &dev, into = pixels }
@@ -331,14 +371,18 @@ fn shoot {
     ui::draw::reset{ &list, width = ui::round_pixels{ v = WIDTH * scale }, height = ui::round_pixels{ v = HEIGHT * scale } }
     build_conformance{ &list, images, s = scale }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.revision == revision, what = "the same list stages to the same revision" }
+    // the same list stages to the same revision
+    @expect(&t, staged.revision == revision)
     ui_gl::clear{ &dev, color = BG }
     try ui_gl::render{ &dev, staged = &staged }
-    ui_test::expect{ &io, &t, ok = dev.stats.uploads == 0 and dev.stats.upload_bytes == 0, what = "a second identical frame uploads nothing" }
-    ui_test::expect{ &io, &t, ok = dev.stats.draws == staged.draw_count, what = "the second frame drew as many draws as were staged" }
+    // a second identical frame uploads nothing
+    @expect(&t, dev.stats.uploads == 0 and dev.stats.upload_bytes == 0)
+    // the second frame drew as many draws as were staged
+    @expect(&t, dev.stats.draws == staged.draw_count)
     let again = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = pixels.len }
     try ui_gl::read_pixels{ &dev, into = again }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = again, b = pixels }, what = "the second frame has the same pixels" }
+    // the second frame has the same pixels
+    @expect(&t, slice::eq_bytes{ a = again, b = pixels })
 
     // Without the base instance, pointing the attributes per draw as a 4.1 driver must: the same pixels.
     let had_base = dev.use_base_instance
@@ -347,13 +391,15 @@ fn shoot {
     try ui_gl::render{ &dev, staged = &staged }
     try ui_gl::read_pixels{ &dev, into = again }
     dev.use_base_instance = had_base
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = again, b = pixels }, what = "drawing without the base instance gives the same pixels" }
-    ui_test::expect{ &io, &t, ok = dev.stats.draws == staged.draw_count, what = "the draw count is the same without the base instance" }
+    // drawing without the base instance gives the same pixels
+    @expect(&t, slice::eq_bytes{ a = again, b = pixels })
+    // the draw count is the same without the base instance
+    @expect(&t, dev.stats.draws == staged.draw_count)
     return shot
 }
 
 // The pixel at logical (x, y) of a shot at `scale`, against `want`, each channel within `slack`.
-fn check_pixel { mut io: Io, mut t: ui_test::Tally, shot: Shot, scale: f32, x: f32, y: f32, want: ui::Color, slack: u8, what: strlit } {
+fn check_pixel { mut io: Io, mut t: Test, shot: Shot, scale: f32, x: f32, y: f32, want: ui::Color, slack: u8, what: strlit } {
     let px = @as(usize, ui::floor_f32{ x = x * scale })
     let py = @as(usize, ui::floor_f32{ x = y * scale })
     let at = (py * @as(usize, shot.width) + px) * 4
@@ -361,15 +407,19 @@ fn check_pixel { mut io: Io, mut t: ui_test::Tally, shot: Shot, scale: f32, x: f
     let g = shot.pixels[at + 1]
     let b = shot.pixels[at + 2]
     let ok = is_near{ a = r, b = want.r, slack } and is_near{ a = g, b = want.g, slack } and is_near{ a = b, b = want.b, slack }
-    ui_test::expect{ &io, &t, ok, what }
-    if not ok { _ = @fmt(&io, "  at ({}, {}) pixel ({}, {}): got {} {} {}, want {} {} {}\n", x, y, px, py, r, g, b, want.r, want.g, want.b) }
+    if not ok {
+        _ = @fmt(&io, "{} at scale {}: at ({}, {}) pixel ({}, {}): got {} {} {}, want {} {} {}\n", what, scale, x, y, px, py, r, g, b, want.r, want.g, want.b)
+        io::flush{ &io }
+    }
+    // the pixel is the colour `what` names, the line above says which and where
+    @expect(&t, ok)
 }
 
 fn is_near { a: u8, b: u8, slack: u8 } -> bool {
     return if a > b { a - b <= slack } else { b - a <= slack }
 }
 
-fn check_pixels { mut io: Io, mut t: ui_test::Tally, shot: Shot, scale: f32 } {
+fn check_pixels { mut io: Io, mut t: Test, shot: Shot, scale: f32 } {
     check_pixel{ &io, &t, shot, scale, x = 64.0, y = 44.0, want = BLUE_FILL, slack = 1, what = "inside a fill: the fill's colour" }
     check_pixel{ &io, &t, shot, scale, x = 296.0, y = 44.0, want = BORDER_FILL, slack = 1, what = "inside the bordered rectangle's fill" }
     check_pixel{ &io, &t, shot, scale, x = 296.0, y = 16.5, want = TOP, slack = 1, what = "inside the top border (2 wide)" }
@@ -391,7 +441,7 @@ fn check_pixels { mut io: Io, mut t: ui_test::Tally, shot: Shot, scale: f32 } {
 
 fn write_shot { mut io: Io, mut fs: Fs, mut heap: arena::Arena, shot: Shot, name: []u8, out_dir: []u8 } -> ! {
     let mut path_buf: [512]u8
-    let n = ui_test::join_path{ dir = out_dir, name, suffix = ".png", out = path_buf[..] }
+    let n = ui_check::join_path{ dir = out_dir, name, suffix = ".png", out = path_buf[..] }
     if n == 0 { return alloc::out_of_memory }
     let path = path_buf[..n]
     let picture = ui_test::Picture{ width = shot.width, height = shot.height, channels = 4, pixels = shot.pixels }

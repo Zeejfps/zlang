@@ -1,11 +1,14 @@
-// Stage 3's screenshots: the conformance list drawn by the OpenGL backend in a hidden SDL window.
-// How to run it: ui/AGENTS.md. Needs a GPU, so ui/tools/check does not run it.
+// Stages 3 and 4's screenshot tests: the conformance list and text in an outline font, drawn by the
+// OpenGL backend in a hidden SDL window. How to run them: ui/AGENTS.md. The package's
+// `#test_main` leaves the tests out, by name and with the reason, where SDL opens no OpenGL window
+// or there is no font.
 fn build { mut b: Build } {
     let exe = build::exe{ &b, name = "ui_test_shots", root = "." }
     build::add_sources{ &b, exe, dir = "../../core" }
     build::add_sources{ &b, exe, dir = "../../stage" }
     build::add_sources{ &b, exe, dir = "../../record" }
     build::add_sources{ &b, exe, dir = "../../test" }
+    build::add_sources{ &b, exe, dir = "../support" }
     build::add_sources{ &b, exe, dir = "../../gl" }
     build::add_sources{ &b, exe, dir = "../../sdl" }
     match build::os{ &b } {
