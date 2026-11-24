@@ -262,8 +262,9 @@ blank, and `declarations` copies a fn's context fields' as it did the rest.
   - *The risk* is completeness: the dependencies must cover everything lowering can reach, or
     the crashes come back. It needs its own design pass, with the recovery test running consts in
     damaged programs.
-- No extern fn runs while compiling. std's capability-less ones, float formatting and parsing,
-  are ctxc's own runtime's, so ctxc could call its copies.
+- No extern fn runs while compiling but the C library's math functions, which ctxc calls itself
+  (eval.ctx, `libm`). std's other capability-less ones, float formatting and parsing, are ctxc's
+  own runtime's, so ctxc could call its copies too.
 
 *Not planned:* generating declarations inside the compile that is running (Zig's `inline for`
 over fields with types as values, or Jai's `#insert`). It needs lazy analysis or a fixed-point
@@ -464,8 +465,8 @@ in one step; the fixpoint says when one is out of date.
   `tools/corpus.py` should copy those files into the case directory.
 - The interpreter is the only second implementation. It runs a program as the C does, from the
   IR's entry fns, over std's interpreter layer (std/os/interp), but that layer has no standard
-  input, files or processes, and it calls no C library: the suite's programs that use those are
-  checked by their expected outputs alone.
+  input, files or processes, and it calls no C library but for the math functions: the suite's
+  programs that use those are checked by their expected outputs alone.
 - `ctxc build`, `ir` and `decls` need std's files listed on the command line; only `run` and
   `exe` find them.
 

@@ -103,8 +103,9 @@ function: can't be stored in a struct or returned), `extern fn{C} -> R` (C funct
 - Same bits, other type: `@trunc` between integers of one size (`@trunc(u32, -1)` is
   `0xFFFFFFFF`, where `@as` panics); `math::f32_from_bits`, `f32_to_bits` and the `f64` pair for floats.
 - Integer literals take their type from use; float literals default to `f64`. Hex `0x1F`. A
-  float literal too big for its type is an error (`let y: f32 = 1e300`); `@as(f32, 1e300)` is
-  `inf`.
+  float literal too big for its type is an error (`let y: f32 = 1e300`). std's infinities and
+  NaNs are `math::INF`, `math::NAN`, `math::INF_F32` and `math::NAN_F32`; game code, whose own
+  `math` hides std's, writes `@as(f32, 1e300)` for `inf`.
 - Structs/unions/arrays are values: assignment copies. `let mut x: T` zero-initialises if
   every field has a zero value; field defaults don't apply there, only in literals. Everything
   has one but pointers, functions and capabilities (so not a `list::List` or a `map::Map`,
@@ -203,7 +204,7 @@ let p = try alloc::new(Thing, heap::Heap){ realloc = heap::alloc, heap = &h, val
 pass them down to what needs them (`&fs`). Code without capabilities is pure. C functions are
 `extern fn name { ... } -> R` with `#c::symbol{ name = "..." }`. Each takes a capability field
 for what it touches, or is `#pure` (it touches only its arguments and what they point to), or it
-is an error. libm functions are in `kotor/lib/base/math.ctx`, `#pure`. SDL is `kotor/lib/platform/sdl.ctx`; only `lib/render_gl` touches GL.
+is an error. libm functions are in `kotor/lib/base/math.ctx`, `#pure` (std's `math` has them all, but the game's `math` namespace hides it); they are the only extern fns a const may call (`const T: [8]f32 = make_table{}` with `math::cos` in `make_table`), and the const has the bits the same call gives at run time. SDL is `kotor/lib/platform/sdl.ctx`; only `lib/render_gl` touches GL.
 
 ## Printing and text
 

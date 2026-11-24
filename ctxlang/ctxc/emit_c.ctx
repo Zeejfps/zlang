@@ -1973,9 +1973,15 @@ namespace emit {
             int{ negative, value } => { int_lit{ &e, t = x.ty, n = ir::Int{ negative, value } } }
             float{ value } => {
                 cast_open{ &e, t = x.ty }
-                // A const's value may be infinite or NaN, which C spells with math.h's macros.
+                // A const's value may be infinite or NaN, which C spells with math.h's macro and
+                // a builtin that keeps the NaN's sign and payload, so that a const computed
+                // while compiling has the bits the same code gives when the program runs it.
                 if value != value {
-                    put{ &e, a = "NAN" }
+                    let bits = math::f64_to_bits{ x = value }
+                    let mut buf: [16]u8
+                    put{ &e, a = if bits >> 63 != 0 { "(-__builtin_nan(\"0x" } else { "(__builtin_nan(\"0x" } }
+                    raw{ &e, b = utf8::fmt_hex{ n = bits & 0x7FFFFFFFFFFFF, into = buf[..] }.bytes }
+                    put{ &e, a = "\"))" }
                 } else if value > 1.7976931348623157e308 {
                     put{ &e, a = "INFINITY" }
                 } else if value < -1.7976931348623157e308 {

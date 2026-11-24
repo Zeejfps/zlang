@@ -44,7 +44,7 @@ fn build { mut b: Build } {
         "lib/render_gl",    // OpenGL's binding: the loader's casts, the debug callback, vertex and uniform data as bytes
         "lib/base",         // the C heap behind heap::alloc, libm's functions, float bits, and le's reads after one bounds check
         "lib/script",       // the NCS VM: its stack through pointers, and its untagged Cell
-        "lib/video",        // the Bink decoder's inner loops, and libm for its audio tables
+        "lib/video",        // the Bink decoder's inner loops
         "lib/audio",        // the mixer's and the MP3 decoder's inner loops
     ] }
     build::optimize{ &b, exe, level = 2 }

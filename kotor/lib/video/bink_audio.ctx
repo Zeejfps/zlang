@@ -43,15 +43,6 @@ namespace bink_audio {
     // Coefficient group lengths, in 8s, that a group's escape bit selects.
     const RUNS: [16]usize = [2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 32, 64]
 
-    #pure
-    extern fn cos { x: f64 } -> f64
-    #pure
-    extern fn sin { x: f64 } -> f64
-    #pure
-    extern fn sqrt { x: f64 } -> f64
-    #pure
-    extern fn pow { x: f64, y: f64 } -> f64
-
     struct Decoder {
         channels: usize,
         n: usize,                  // coefficients per channel in a block (N)
@@ -104,7 +95,7 @@ namespace bink_audio {
         let mut quant: [96]f64
         let mut q: usize = 0
         while q < 96 {
-            quant[q] = pow{ x = 10.0, y = 0.0664 * @as(f64, q) }
+            quant[q] = math::pow{ x = 10.0, y = 0.0664 * @as(f64, q) }
             q = q + 1
         }
 
@@ -132,12 +123,12 @@ namespace bink_audio {
         at = at + n
         let tail = work[at..at + tail_len]
 
-        let scale = 1.0 / sqrt{ x = @as(f64, n) }
+        let scale = 1.0 / math::sqrt{ x = @as(f64, n) }
         let mut k: usize = 0
         while k < n {
             let angle = PI * @as(f64, k) / @as(f64, 2 * n)
-            pre_cos[k] = cos{ x = angle } * scale
-            pre_sin[k] = sin{ x = angle } * scale
+            pre_cos[k] = math::cos{ x = angle } * scale
+            pre_sin[k] = math::sin{ x = angle } * scale
             k = k + 1
         }
         k = 0
@@ -158,8 +149,8 @@ namespace bink_audio {
             let mut j: usize = 0
             while j < h {
                 let angle = PI * @as(f64, j) / @as(f64, h)
-                tw_cos[h + j] = cos{ x = angle }
-                tw_sin[h + j] = sin{ x = angle }
+                tw_cos[h + j] = math::cos{ x = angle }
+                tw_sin[h + j] = math::sin{ x = angle }
                 j = j + 1
             }
             h = h * 2

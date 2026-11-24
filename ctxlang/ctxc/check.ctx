@@ -3679,10 +3679,16 @@ namespace check {
                 if math::is_inf{ x = if narrow { f32r{ x = value } } else { value } } {
                     let text = str{ s = source_text{ c, span = e.span } }
                     let sign: utf8::String = if negative { "-" } else { "" }
-                    if narrow {
+                    // std's named infinity, unless a `math` of the program's own hides it.
+                    let hidden = map::get{ m = get_space{ c, ns = ROOT }.paths, key = "math" } != null
+                    if narrow and hidden {
                         errorf{ &c, at = expr_at{ e }, msg = @fmt("{} doesn't fit f32 (its largest value is about 3.4e38): write `@as(f32, {})` if infinity is meant", text, text) }
-                    } else {
+                    } else if narrow {
+                        errorf{ &c, at = expr_at{ e }, msg = @fmt("{} doesn't fit f32 (its largest value is about 3.4e38): write `{}math::INF_F32` if infinity is meant", text, sign) }
+                    } else if hidden {
                         errorf{ &c, at = expr_at{ e }, msg = @fmt("{} doesn't fit f64 (its largest value is about 1.8e308): write `@as(f32, {}1e300)`, which widens to f64, if infinity is meant", text, sign) }
+                    } else {
+                        errorf{ &c, at = expr_at{ e }, msg = @fmt("{} doesn't fit f64 (its largest value is about 1.8e308): write `{}math::INF` if infinity is meant", text, sign) }
                     }
                 }
             }

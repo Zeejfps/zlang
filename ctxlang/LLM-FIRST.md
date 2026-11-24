@@ -79,7 +79,8 @@ entries are cited by number, e.g. F#24) and [kotor/docs/tooling-gaps.md](../koto
     - `lib/base` (36): the C heap behind `heap::alloc`, libm's functions, float bits, and
       `le`'s reads after one bounds check.
     - `lib/script` (301): the NCS VM's stack through pointers, and its untagged `Cell`.
-    - `lib/video` (67): the Bink decoder's inner loops, and libm for its audio tables.
+    - `lib/video` (67): the Bink decoder's inner loops, and libm for its audio tables (which
+      4.2 moved to `lib/base`'s).
     - `lib/audio` (28): the mixer's and the MP3 decoder's inner loops.
 
     `lib/engine` and `lib/render` were excepted at first and came off the list: 16 frees of one
@@ -355,12 +356,38 @@ What a model writes by default should compile, or fail with the exact fix.
   - Details: F#30; [spec §11, Expressions, rule 5](spec.md#expressions); [PLAN 3](PLAN.md#3-metaprogramming).
   - *Done when:* `==` on such a struct works, and `map` can key on one without a hand-written hash.
 
-- [ ] **4.2 Math in std.**
+- [x] **4.2 Math in std.**
   No `sqrt`, `sin`, `cos`, `pow`, `floor`, `ceil`, `trunc`: the Bink audio declares libm's itself,
   and MP3's const tables carry their own cosine series (which run while compiling, so they can't
   call C).
   - Details: F#6; [std/math.ctx](std/math.ctx).
   - *Done when:* std's `math` has them, usable in consts too.
+  - *Done:* std's `math` had libm's functions already, 28 for `f64` and each again with C's
+    `f` suffix for `f32`; what was missing is that no extern fn ran while compiling. They do
+    now, in a const and under `ctxc interp`, the only extern fns that do
+    ([spec §14, rule 1](spec.md#14-memory), [§17, `math`](spec.md#17-standard-library)): the
+    interpreter calls the same C function (eval.ctx, `libm`), found by its C name and its
+    types, so a program's own declaration of one runs too. Chosen over writing them in
+    ctxlang: a const's call then has the bits the program's call has by construction, with no
+    second implementation to keep within a last bit of the C library's, and code that calls
+    libm today keeps its results. The C compiler never computes a call itself (an extern fn is
+    called under a name of its own, so `sin(0.5)` isn't folded with other rounding), and a
+    NaN const now keeps its sign and payload in the C. The test compares all 56 functions over
+    15 arguments (zeros, negatives, 1e-300, 1e300, 1e22, the infinities, NaN) bit for bit,
+    const against run time. What it rests on: ctxc and the program use one C library, which
+    holds wherever one machine builds both, and ctxc builds for no other. Across C libraries
+    only the exact functions agree (`sqrt`, `floor`, `ceil`, `round`, `trunc`, `fabs`, `fmod`,
+    `fmin`, `fmax`, `copysign`); Linux and macOS were reasoned, not run.
+    Added: `math::INF`, `NAN`, `INF_F32`, `NAN_F32`, and the float literal's error now names
+    them (``1e999 doesn't fit f64 (its largest value is about 1.8e308): write `math::INF` if
+    infinity is meant``), or keeps `@as(f32, 1e300)` where a `math` of the program's own
+    hides std's. `PI` was there.
+    KOTOR's `math` (its vectors) hides std's, so the game can't name std's functions. Its own
+    declarations in lib/base/math.ctx are the same C functions and stay, now usable in consts
+    as well; renaming 2,461 uses of `math::` wasn't worth it. Bink audio's four libm
+    declarations are gone for lib/base's (the same symbols; lib/video has no extern fn left),
+    and MP3's cosine series and two Newton roots (37 lines fewer) are libm's `cos`, `sqrt` and
+    `cbrt`, run while compiling: all 11 const tables have the same bits as before.
 
 - [ ] **4.3 Integer `@min`, `@max`, and clamping or rounding conversions.**
   `if a < b { a } else { b }` by hand; float-to-integer can only check, so audio code rounds by

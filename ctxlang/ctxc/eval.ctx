@@ -1573,6 +1573,7 @@ namespace eval {
             panic_nopos{ &m, msg = try at{ &m, a = ptr, n = len } }
             return halt
         }
+        if try libm{ &m, f, base, res } { return }
         if m.emulate and is_host{ s } {
             return try host{ &m, f, base, res }
         }
@@ -1613,6 +1614,148 @@ namespace eval {
         fail{ &m, msg = utf8::view{ b }.bytes }
         m.why = Why::external{ name = f.name }
         return halt
+    }
+
+    // The C library's math functions, which run here by calling the same ones: std's `math`,
+    // or a program's own declaration of one. They are pure, so a const may call them too, and
+    // the value is the one the program's call gives, bit for bit: ctxc and the program it
+    // builds call one C library, and the program's call is never folded by its C compiler
+    // (emit_c.ctx names an extern fn by its symbol alone). True if f is one: its symbol is one
+    // of theirs, and its fields and result are all f64, or with C's `f` suffix all f32.
+    fn libm { mut m: M, f: ir::Func, base: usize, res: Addr } -> !bool {
+        let n = f.params.len
+        if n < 1 or n > 2 { return false }
+        let single = prim{ ts = m.types, t = f.ret } is f32
+        if not single and not (prim{ ts = m.types, t = f.ret } is f64) { return false }
+        for q in f.params {
+            let p = prim{ ts = m.types, t = q.ty }
+            if q.mutable or not (m.types[q.ty] is prim) { return false }
+            if single and not (p is f32) or not single and not (p is f64) { return false }
+        }
+        let mut name = f.symbol
+        if single {
+            if name.len < 2 or name[name.len - 1] != 'f' { return false }
+            name = name[..name.len - 1]
+        }
+        let args = list::items{ list = m.argv }
+        let xa = try get{ &m, a = args[base], t = f.params[0].ty }
+        if n == 1 {
+            let k = math1{ name } ifnull { return false }
+            if single {
+                try store{ &m, a = res, n = 4, v = f32_bits{ x = call1f{ k, x = f32_of{ v = xa } } } }
+            } else {
+                try store{ &m, a = res, n = 8, v = f64_bits{ x = call1{ k, x = f64_of{ v = xa } } } }
+            }
+            return true
+        }
+        let k = math2{ name } ifnull { return false }
+        let ya = try get{ &m, a = args[base + 1], t = f.params[1].ty }
+        if single {
+            try store{ &m, a = res, n = 4, v = f32_bits{ x = call2f{ k, x = f32_of{ v = xa }, y = f32_of{ v = ya } } } }
+        } else {
+            try store{ &m, a = res, n = 8, v = f64_bits{ x = call2{ k, x = f64_of{ v = xa }, y = f64_of{ v = ya } } } }
+        }
+        return true
+    }
+
+    // libm's functions of one float and of two, by their f64 names, in the order call1 and
+    // call2 number them.
+    const MATH1: [_][]u8 = ["sqrt", "cbrt", "exp", "exp2", "log", "log2", "log10", "sin", "cos", "tan", "asin", "acos", "atan", "sinh", "cosh", "tanh", "floor", "ceil", "round", "trunc", "fabs"]
+    const MATH2: [_][]u8 = ["hypot", "pow", "atan2", "fmod", "fmin", "fmax", "copysign"]
+
+    fn math1 { name: []u8 } -> ?usize {
+        let mut i: usize = 0
+        while i < MATH1.len {
+            if slice::eq_bytes{ a = MATH1[i], b = name } { return i }
+            i = i + 1
+        }
+        return null
+    }
+
+    fn math2 { name: []u8 } -> ?usize {
+        let mut i: usize = 0
+        while i < MATH2.len {
+            if slice::eq_bytes{ a = MATH2[i], b = name } { return i }
+            i = i + 1
+        }
+        return null
+    }
+
+    fn call1 { k: usize, x: f64 } -> f64 {
+        return match k {
+            0 => { math::sqrt{ x } }
+            1 => { math::cbrt{ x } }
+            2 => { math::exp{ x } }
+            3 => { math::exp2{ x } }
+            4 => { math::log{ x } }
+            5 => { math::log2{ x } }
+            6 => { math::log10{ x } }
+            7 => { math::sin{ x } }
+            8 => { math::cos{ x } }
+            9 => { math::tan{ x } }
+            10 => { math::asin{ x } }
+            11 => { math::acos{ x } }
+            12 => { math::atan{ x } }
+            13 => { math::sinh{ x } }
+            14 => { math::cosh{ x } }
+            15 => { math::tanh{ x } }
+            16 => { math::floor{ x } }
+            17 => { math::ceil{ x } }
+            18 => { math::round{ x } }
+            19 => { math::trunc{ x } }
+            else => { math::fabs{ x } }
+        }
+    }
+
+    fn call1f { k: usize, x: f32 } -> f32 {
+        return match k {
+            0 => { math::sqrtf{ x } }
+            1 => { math::cbrtf{ x } }
+            2 => { math::expf{ x } }
+            3 => { math::exp2f{ x } }
+            4 => { math::logf{ x } }
+            5 => { math::log2f{ x } }
+            6 => { math::log10f{ x } }
+            7 => { math::sinf{ x } }
+            8 => { math::cosf{ x } }
+            9 => { math::tanf{ x } }
+            10 => { math::asinf{ x } }
+            11 => { math::acosf{ x } }
+            12 => { math::atanf{ x } }
+            13 => { math::sinhf{ x } }
+            14 => { math::coshf{ x } }
+            15 => { math::tanhf{ x } }
+            16 => { math::floorf{ x } }
+            17 => { math::ceilf{ x } }
+            18 => { math::roundf{ x } }
+            19 => { math::truncf{ x } }
+            else => { math::fabsf{ x } }
+        }
+    }
+
+    // C's order: atan2's first is y.
+    fn call2 { k: usize, x: f64, y: f64 } -> f64 {
+        return match k {
+            0 => { math::hypot{ x, y } }
+            1 => { math::pow{ x, y } }
+            2 => { math::atan2{ y = x, x = y } }
+            3 => { math::fmod{ x, y } }
+            4 => { math::fmin{ x, y } }
+            5 => { math::fmax{ x, y } }
+            else => { math::copysign{ x, y } }
+        }
+    }
+
+    fn call2f { k: usize, x: f32, y: f32 } -> f32 {
+        return match k {
+            0 => { math::hypotf{ x, y } }
+            1 => { math::powf{ x, y } }
+            2 => { math::atan2f{ y = x, x = y } }
+            3 => { math::fmodf{ x, y } }
+            4 => { math::fminf{ x, y } }
+            5 => { math::fmaxf{ x, y } }
+            else => { math::copysignf{ x, y } }
+        }
     }
 
     // Whether C symbol s is one of std/os/interp's externs (ctx_interp_*), or the runtime's

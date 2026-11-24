@@ -4525,29 +4525,43 @@ fn main { mut io: Io } {
     def test_float_literal_out_of_range(self):
         """§11, Literals, rule 2: a float literal that would round to an infinity in its type is
         an error, however it takes the type; `@as` gives the infinity."""
-        f32 = "%s doesn't fit f32 (its largest value is about 3.4e38): write `@as(f32, %s)` if infinity is meant"
-        f64 = ("%s doesn't fit f64 (its largest value is about 1.8e308): write `@as(f32, %s)`, which widens to "
+        f32 = "%s doesn't fit f32 (its largest value is about 3.4e38): write `%s` if infinity is meant"
+        f64 = "%s doesn't fit f64 (its largest value is about 1.8e308): write `%s` if infinity is meant"
+        own = ("%s doesn't fit f64 (its largest value is about 1.8e308): write `@as(f32, %s)`, which widens to "
                "f64, if infinity is meant")
         for src, msg in [
-            ('fn main {} { let y: f32 = 1e300 }', f32 % ('1e300', '1e300')),
-            ('fn main {} { let y: f32 = 3.5e38 }', f32 % ('3.5e38', '3.5e38')),
-            ('fn main {} { let y: f32 = -1e39 }', f32 % ('-1e39', '-1e39')),
-            ('fn f { x: f32 } {}\nfn main {} { f{ x = 1e39 } }', f32 % ('1e39', '1e39')),
-            ('struct S { x: f32 }\nfn main {} { let s = S{ x = 1e39 } }', f32 % ('1e39', '1e39')),
-            ('struct S { x: f32 = 1e39 }\nfn main {} { let s = S{ .. } }', f32 % ('1e39', '1e39')),
-            ('fn f {} -> f32 { return 1e39 }\nfn main {} { _ = f{} }', f32 % ('1e39', '1e39')),
-            ('fn main {} { let a: [2]f32 = [1.0, 1e39] }', f32 % ('1e39', '1e39')),
-            ('fn main {} { let a: f32 = 2.0; let b = a * 1e39 }', f32 % ('1e39', '1e39')),
-            ('type M = distinct f32\nfn main {} { let m: M = 1e39 }', f32 % ('1e39', '1e39')),
-            ('const BIG: f32 = 1e39\nfn main {} { _ = BIG }', f32 % ('1e39', '1e39')),
-            ('const BIG: f32 = -1e39\nfn main {} { _ = BIG }', f32 % ('-1e39', '-1e39')),
-            ('fn main {} { let y = 1e999 }', f64 % ('1e999', '1e300')),
-            ('fn main {} { let y: f64 = -1e999 }', f64 % ('-1e999', '-1e300')),
-            ('fn main {} { let y = @as(f32, 1e999) }', f64 % ('1e999', '1e300')),
-            ('const BIG: f64 = 1e999\nfn main {} { _ = BIG }', f64 % ('1e999', '1e300')),
+            ('fn main {} { let y: f32 = 1e300 }', f32 % ('1e300', 'math::INF_F32')),
+            ('fn main {} { let y: f32 = 3.5e38 }', f32 % ('3.5e38', 'math::INF_F32')),
+            ('fn main {} { let y: f32 = -1e39 }', f32 % ('-1e39', '-math::INF_F32')),
+            ('fn f { x: f32 } {}\nfn main {} { f{ x = 1e39 } }', f32 % ('1e39', 'math::INF_F32')),
+            ('struct S { x: f32 }\nfn main {} { let s = S{ x = 1e39 } }', f32 % ('1e39', 'math::INF_F32')),
+            ('struct S { x: f32 = 1e39 }\nfn main {} { let s = S{ .. } }', f32 % ('1e39', 'math::INF_F32')),
+            ('fn f {} -> f32 { return 1e39 }\nfn main {} { _ = f{} }', f32 % ('1e39', 'math::INF_F32')),
+            ('fn main {} { let a: [2]f32 = [1.0, 1e39] }', f32 % ('1e39', 'math::INF_F32')),
+            ('fn main {} { let a: f32 = 2.0; let b = a * 1e39 }', f32 % ('1e39', 'math::INF_F32')),
+            ('type M = distinct f32\nfn main {} { let m: M = 1e39 }', f32 % ('1e39', 'math::INF_F32')),
+            ('const BIG: f32 = 1e39\nfn main {} { _ = BIG }', f32 % ('1e39', 'math::INF_F32')),
+            ('const BIG: f32 = -1e39\nfn main {} { _ = BIG }', f32 % ('-1e39', '-math::INF_F32')),
+            ('fn main {} { let y = 1e999 }', f64 % ('1e999', 'math::INF')),
+            ('fn main {} { let y: f64 = -1e999 }', f64 % ('-1e999', '-math::INF')),
+            ('fn main {} { let y = @as(f32, 1e999) }', f64 % ('1e999', 'math::INF')),
+            ('const BIG: f64 = 1e999\nfn main {} { _ = BIG }', f64 % ('1e999', 'math::INF')),
+            # A `math` of the program's own hides std's, and its named infinities with it.
+            ('namespace math { const PI: f32 = 3.0 }\nfn main {} { let y: f32 = -1e39 }', f32 % ('-1e39', '@as(f32, -1e39)')),
+            ('namespace math { const PI: f32 = 3.0 }\nfn main {} { let y = -1e999 }', own % ('-1e999', '-1e300')),
         ]:
             with self.subTest(src=src):
                 self.assertCompileError(src, msg)
+        # What the errors say to write.
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let a: f32 = math::INF_F32
+    let b: f32 = -math::INF_F32
+    let c = math::INF
+    let d: f64 = -math::INF
+    _ = @fmt(&io, "{} {} {} {} {}\\n", a, b, c, d, a == @as(f32, 1e300))
+}
+""", 'inf -inf inf -inf true\n')
         # Rounding is no error: to the nearest value, and a tiny literal to a subnormal or zero.
         self.assertOutput("""
 const TINY: f32 = 1e-60
@@ -6899,6 +6913,137 @@ fn main { mut io: Io } {
     _ = @fmt(&io, "{} {}\\n", @trunc(u32, neg), @trunc(i32, math::f32_to_bits{ x = -2.0 }))
 }
 """, '1.0 3221225472 true\n4602678819172646912 0.5\n4294967295 -1073741824\n')
+
+    def test_math_constants(self):
+        # Infinity and NaN by name, for f64 and f32: the NaNs are the quiet ones with no sign or
+        # payload. They are consts, so a const may use them.
+        self.assertOutput("""
+const EDGES: [4]f64 = [math::INF, -math::INF, math::NAN, math::PI]
+const SMALL: f32 = -math::INF_F32
+
+fn main { mut io: Io } {
+    _ = @fmt(&io, "{} {} {} {}\\n", math::INF, -math::INF, math::NAN, EDGES[3])
+    _ = @fmt(&io, "{} {} {} {}\\n", math::INF_F32, SMALL, math::NAN_F32, math::PI_F32)
+    _ = @fmt(&io, "{} {} {}\\n", math::f64_to_bits{ x = math::INF }, math::f64_to_bits{ x = math::NAN }, math::f64_to_bits{ x = EDGES[2] })
+    _ = @fmt(&io, "{} {} {}\\n", math::f32_to_bits{ x = math::INF_F32 }, math::f32_to_bits{ x = SMALL }, math::f32_to_bits{ x = math::NAN_F32 })
+    _ = @fmt(&io, "{} {} {}\\n", math::NAN == math::NAN, math::is_nan{ x = math::NAN_F32 }, math::is_inf{ x = EDGES[1] })
+    _ = @fmt(&io, "{} {}\\n", math::INF > 1.7e308, 1.0 / math::INF)
+}
+""", 'inf -inf nan 3.141592653589793\ninf -inf nan 3.1415927\n'
+     '9218868437227405312 9221120237041090560 9221120237041090560\n2139095040 4286578688 2143289344\n'
+     'false true true\ntrue 0.0\n')
+
+    # Every function of std's math, f64 and f32, as the bits of its result for one pair of
+    # arguments. A NaN's bits are compared too, sign and payload.
+    MATH_ROWS = """
+const XS: [_]f64 = [0.0, -0.0, 1.0, -1.0, 0.5, -2.5, 3.0, 0.1, 1e-300, 1e300, 123456789.125, 1e22, math::INF, -math::INF, math::NAN]
+const N: usize = 15
+
+fn row { x: f64, y: f64 } -> [28]u64 {
+    let vs: [28]f64 = [
+        math::sqrt{ x }, math::cbrt{ x }, math::hypot{ x, y }, math::pow{ x, y }, math::exp{ x }, math::exp2{ x },
+        math::log{ x }, math::log2{ x }, math::log10{ x }, math::sin{ x }, math::cos{ x }, math::tan{ x },
+        math::asin{ x }, math::acos{ x }, math::atan{ x }, math::atan2{ y = x, x = y }, math::sinh{ x }, math::cosh{ x },
+        math::tanh{ x }, math::floor{ x }, math::ceil{ x }, math::round{ x }, math::trunc{ x }, math::fabs{ x },
+        math::fmod{ x, y }, math::fmin{ x, y }, math::fmax{ x, y }, math::copysign{ x, y },
+    ]
+    let mut out: [28]u64
+    for v at i in vs[..] { out[i] = math::f64_to_bits{ x = v } }
+    return out
+}
+
+fn rowf { x: f32, y: f32 } -> [28]u32 {
+    let vs: [28]f32 = [
+        math::sqrtf{ x }, math::cbrtf{ x }, math::hypotf{ x, y }, math::powf{ x, y }, math::expf{ x }, math::exp2f{ x },
+        math::logf{ x }, math::log2f{ x }, math::log10f{ x }, math::sinf{ x }, math::cosf{ x }, math::tanf{ x },
+        math::asinf{ x }, math::acosf{ x }, math::atanf{ x }, math::atan2f{ y = x, x = y }, math::sinhf{ x }, math::coshf{ x },
+        math::tanhf{ x }, math::floorf{ x }, math::ceilf{ x }, math::roundf{ x }, math::truncf{ x }, math::fabsf{ x },
+        math::fmodf{ x, y }, math::fminf{ x, y }, math::fmaxf{ x, y }, math::copysignf{ x, y },
+    ]
+    let mut out: [28]u32
+    for v at i in vs[..] { out[i] = math::f32_to_bits{ x = v } }
+    return out
+}
+
+fn rows {} -> [15][28]u64 {
+    let mut out: [15][28]u64
+    for i in 0..N { out[i] = row{ x = XS[i], y = XS[(i * 7 + 3) % N] } }
+    return out
+}
+
+fn rowsf {} -> [15][28]u32 {
+    let mut out: [15][28]u32
+    for i in 0..N { out[i] = rowf{ x = @as(f32, XS[i]), y = @as(f32, XS[(i * 7 + 3) % N]) } }
+    return out
+}
+"""
+
+    def test_math_in_consts(self):
+        """§14, rule 1: the C library's math functions run while compiling, and a const's call
+        gives the bits the program's call gives: every function of std's `math`, for f64 and
+        f32, over zeros, negatives, tiny and huge values, the infinities and NaN."""
+        self.assertOutput(self.MATH_ROWS + """
+const ROWS: [15][28]u64 = rows{}
+const ROWSF: [15][28]u32 = rowsf{}
+const ROOT2: f64 = math::sqrt{ x = 2.0 }
+const WINDOW: [4]f32 = window{}
+const NO_ROOT: f64 = math::sqrt{ x = -1.0 }
+
+fn window {} -> [4]f32 {
+    let mut w: [4]f32
+    for i in 0..4 { w[i] = math::floorf{ x = 10.0 * math::sinf{ x = math::PI_F32 * (@as(f32, i) + 0.5) / 8.0 } } }
+    return w
+}
+
+fn minus_one {} -> f64 { return -1.0 }
+
+fn main { mut io: Io } {
+    let now = rows{}
+    let nowf = rowsf{}
+    let mut differ = 0
+    for i in 0..N {
+        for k in 0..28 {
+            if ROWS[i][k] != now[i][k] { differ = differ + 1 }
+            if ROWSF[i][k] != nowf[i][k] { differ = differ + 1 }
+        }
+    }
+    _ = @fmt(&io, "{} of {} differ\\n", differ, N * 56)
+    _ = @fmt(&io, "{} {} {} {} {}\\n", ROOT2, WINDOW[0], WINDOW[1], WINDOW[2], WINDOW[3])
+    _ = @fmt(&io, "{} {}\\n", NO_ROOT, math::f64_to_bits{ x = NO_ROOT } == math::f64_to_bits{ x = math::sqrt{ x = minus_one{} } })
+    // Exact ones, whose values every C library agrees on: floor, ceil, round, trunc and fabs of -2.5.
+    _ = @fmt(&io, "{} {} {} {} {}\\n", math::f64_from_bits{ bits = ROWS[5][19] }, math::f64_from_bits{ bits = ROWS[5][20] }, math::f64_from_bits{ bits = ROWS[5][21] }, math::f64_from_bits{ bits = ROWS[5][22] }, math::f64_from_bits{ bits = ROWS[5][23] })
+    _ = @fmt(&io, "{} {} {}\\n", math::f64_from_bits{ bits = ROWS[12][0] }, math::f64_from_bits{ bits = ROWS[13][23] }, math::f32_from_bits{ bits = ROWSF[6][0] } == math::sqrtf{ x = 3.0 })
+}
+""", '0 of 840 differ\n1.4142135623730951 1.0 5.0 8.0 9.0\nnan true\n-3.0 -2.0 -3.0 -2.0 2.5\ninf inf true\n')
+
+    def test_math_of_the_programs_own(self):
+        # A program's own declaration of one of the C library's math functions runs while
+        # compiling too: it is the same C function. Another extern fn still stops a const.
+        self.assertOutput("""
+namespace cm {
+    #pure
+    extern fn cos { x: f64 } -> f64
+    #pure
+    #c::symbol{ name = "sqrtf" }
+    extern fn root { x: f32 } -> f32
+}
+const C: f64 = cm::cos{ x = 0.0 }
+const R: f32 = cm::root{ x = 6.25 }
+fn main { mut io: Io } {
+    _ = @fmt(&io, "{} {}\\n", C, R)
+}
+""", '1.0 2.5\n')
+        for src, msg in [
+            ('#pure\nextern fn labs { n: i64 } -> i64\nconst A: i64 = labs{ n = -3 }',
+             "const `A` calls extern fn `labs`, which can't run while compiling"),
+            # libm's name with other types isn't libm's function
+            ('#pure\n#c::symbol{ name = "sqrt" }\nextern fn isqrt { n: i64 } -> i64\nconst A: i64 = isqrt{ n = 9 }',
+             "const `A` calls extern fn `isqrt`, which can't run while compiling"),
+            ('#pure\n#c::symbol{ name = "sqrt" }\nextern fn rootf { x: f32 } -> f32\nconst A: f32 = rootf{ x = 9.0 }',
+             "const `A` calls extern fn `rootf`, which can't run while compiling"),
+        ]:
+            with self.subTest(src=src):
+                self.assertCompileError(src, msg)
 
 
 

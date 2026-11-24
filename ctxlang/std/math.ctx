@@ -6,6 +6,11 @@
 //   let a = math::atan2f{ y, x }                      // f32
 //   if math::is_nan{ x = v } { ... }                  // an f32 widens to the f64 these take
 //   let f = math::f32_from_bits{ bits = 0x3F800000 }   // 1.0: the bits, not the value
+//   const HALF: f64 = math::sin{ x = math::PI / 6.0 }  // a const may call them
+//
+// They run while compiling too, in a const and under `ctxc interp`, the only extern fns that do
+// (§14, rule 1): ctxc calls the same C function there, so a const's call and the program's give
+// the same bits. A program's own declaration of one of them runs there as well.
 //
 // A program's own `math` namespace shadows this one (§10).
 
@@ -15,6 +20,15 @@ namespace math {
     const E: f64 = 2.718281828459045
     const PI_F32: f32 = 3.1415927
     const TAU_F32: f32 = 6.2831855
+
+    // Infinity and a NaN, which no float literal is (§11, Literals, rule 2). `-math::INF` is the
+    // negative infinity. A NaN equals nothing, itself included: test for one with `is_nan`.
+    // These are the quiet NaNs with a clear sign bit and no payload, 0x7FF8000000000000 and
+    // 0x7FC00000; an operation's NaN may have other bits.
+    const INF: f64 = 1.0 / 0.0
+    const NAN: f64 = f64_from_bits{ bits = 0x7FF8000000000000 }
+    const INF_F32: f32 = 1.0 / 0.0
+    const NAN_F32: f32 = f32_from_bits{ bits = 0x7FC00000 }
 
     // Whether x is NaN, an infinity, or neither.
     fn is_nan { x: f64 } -> bool { return x != x }

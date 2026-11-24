@@ -19,7 +19,10 @@
 // Math operations keep their mathematical names (`dot`, `cross`, `length`, `lerp`) rather than
 // verb phrases; constructors are `make`, `from_*` and `identity`.
 namespace math {
-    // ---- libm (every program links it). Pure: they take no capability.
+    // ---- libm (every program links it). Pure: they take no capability. They are std's `math`
+    // functions, declared again because this namespace hides std's, and like std's they run
+    // while compiling too: a const table may call them, and has the bits the same call gives
+    // when the program runs it.
     #pure
     extern fn sqrtf { x: f32 } -> f32
     #pure
@@ -52,6 +55,8 @@ namespace math {
     // ---- libm's f64 functions, for the script routines, which compute in double precision.
     #pure
     extern fn sqrt { x: f64 } -> f64
+    #pure
+    extern fn cbrt { x: f64 } -> f64
     #pure
     extern fn sin { x: f64 } -> f64
     #pure

@@ -65,12 +65,13 @@ as the write-ups gave them.
     cache goes in `World`, the file every agent needs; `mdl` is one 1,500-line file because a
     namespace is a file's. *Hit by 5:* engine (2), dialog (2), models, rules, script.
 
-6. **No math in std, and none while compiling.** No `cos`, `sin`, `sqrt`, `pow`, `ceil` or
-    `trunc` (std's math has `is_nan` and the like): the Bink audio declares libm's as extern fns,
-    and MP3's const tables, which run while compiling and can't call one, carry their own f64
-    cosine series and Newton roots (60 lines). No integer `@min` or `@max`: `if a < b { a } else {
-    b }` by hand, and a generic std one can't compare an opaque `T` (§9). *Hit by 5:* ctxc, audio,
-    video, rules, render (about 6).
+6. **No integer `@min` or `@max`:** `if a < b { a } else { b }` by hand, and a generic std one
+    can't compare an opaque `T` (§9). (The rest of this entry is fixed: std's `math` has libm's
+    functions, they run while compiling, and the MP3 tables' own cosine series and Newton roots
+    are gone.) What is left of the math: a program's namespace hides std's of the same name
+    whole, so KOTOR's `math`, its vectors, declares libm and the float-bits fns again
+    (lib/base/math.ctx, 24 extern fns) rather than reach std's. *Hit by 5:* ctxc, audio, video,
+    rules, render (about 6).
 
 7. **Signed and unsigned integers don't mix.** Game data is signed (-1 for none, modifiers) and
     lengths and counts are `usize`, and neither widens to the other: a `usize` going into an
