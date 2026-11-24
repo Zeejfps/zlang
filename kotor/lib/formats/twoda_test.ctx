@@ -22,9 +22,12 @@ namespace twoda_tests {
         let mut heap = try scratch{ &mem }
         let table = try twoda::parse{ data = TEXT, realloc = arena::alloc, &heap }
         @expect(&t, not table.binary)
-        @expect(&t, table.columns.len == 3)
-        @expect(&t, twoda::rows{ t = table } == 3)
+        // The lines after a `@require` index what it counted: the test ends there otherwise.
+        @require(&t, table.columns.len == 3)
+        @require(&t, twoda::rows{ t = table } == 3)
         // Column names are lowered, and found ignoring case; so are row labels.
+        @expect(&t, table.columns[1] == "value")
+        @expect(&t, table.labels[2] == "row2")
         @expect(&t, twoda::find_column{ t = table, name = "VALUE" } == 1)
         @expect(&t, twoda::find_column{ t = table, name = "missing" } == null)
         @expect(&t, twoda::find_row{ t = table, label = "ROW2" } == 2)
@@ -55,8 +58,10 @@ namespace twoda_tests {
         let mut heap = try scratch{ &mem }
         let table = try twoda::parse{ data = BINARY, realloc = arena::alloc, &heap }
         @expect(&t, table.binary)
-        @expect(&t, table.columns.len == 2)
-        @expect(&t, twoda::rows{ t = table } == 2)
+        @require(&t, table.columns.len == 2)
+        @require(&t, twoda::rows{ t = table } == 2)
+        @expect(&t, table.columns[1] == "b")
+        @expect(&t, table.labels[1] == "1")
         @expect(&t, twoda::get_int{ t = table, row = 0, column = "b" } == 8)        // 010 is octal to %i
         @expect(&t, twoda::get_int{ t = table, row = 1, column = "a" } == 0)        // "x": no number is 0, and found
         @expect(&t, twoda::get_int{ t = table, row = 1, column = "b" } == 31)       // 0x1F

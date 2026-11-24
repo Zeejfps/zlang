@@ -1,0 +1,3 @@
+#test
+fn a { mut t: Test } { @require(&t) }  //~ error at 35: wrong number of arguments: @require(&t, condition)
+fn main {} {}

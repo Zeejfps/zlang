@@ -1,0 +1,11 @@
+// A `#test_main` fn that runs every test in its own process, with test::run_here: a
+// `@require` that doesn't hold ends that process, with exit code 1, after its line and what
+// was written before it. The tests after it don't run, and the runner's own code is never
+// reached again.
+//# $ ctxc test .
+//# exit: 1
+//# stdout:
+//| one gave 0
+//# stderr:
+//| ./t.ctx:5: fail: two: 2 == 3: 2 == 3
+//| ./t.ctx:6: fail: two: required: 2 == 4: 2 == 4

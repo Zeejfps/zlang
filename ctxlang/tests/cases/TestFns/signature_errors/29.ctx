@@ -1,0 +1,2 @@
+fn help { t: Test } { @require(&t, 1 == 1) }  //~ error at 33: `t` is not a mutable place
+fn main {} {}

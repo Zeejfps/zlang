@@ -560,8 +560,9 @@ What a model writes by default should compile, or fail with the exact fix.
       another line's) the easy one. Everything but those three things is std's: the builtin calls
       `test::check`, and writes the sides with the `#write` fns any `@fmt` uses. It reports
       through the `Test` the test passes down, so no state is hidden and a build that isn't
-      a test build can't reach a check. The check goes on, and its value is the condition's:
-      `if not @expect(&t, p != null) { return }`.
+      a test build can't reach a check. The check goes on, and its value is the condition's;
+      `@require(&t, p != null)` is the same check as a statement that ends the test where it
+      doesn't hold ([§13, Checks, rule 6](spec.md#checks)).
     - `ctxc test PATH [FILTER...]`, with or without a build.ctx, builds the program with std's
       runner as its entry point in place of `main` (which needn't exist) and runs it. Each
       test runs in a process of its own (testing.md's conclusion), so a panic fails one test

@@ -182,7 +182,7 @@ namespace check {
         ovfs:      list::List(syntax::Expr, Heap),    // `ifoverflow`s, whose coverage is settled at the end
         gvars:     list::List(GVar, Heap),            // generic arguments to infer
         fmts:      list::List(syntax::Expr, Heap),    // the body's @fmt calls, whose writers are settled at the end
-        expects:   list::List(syntax::Expr, Heap),    // the body's @expect calls, whose sides' writers are looked at at the end
+        expects:   list::List(syntax::Expr, Heap),    // the body's @expect and @require calls, whose sides' writers are looked at at the end
         eq_uses:   list::List(EqUse, Heap),           // the body's `==`, `@hash` and `<` that need a type to have them, checked at its end
         needs:     list::List(Need, Heap),            // generic parameters that must have `==`, `@hash` or an order
         generic_uses: list::List(GenericUse, Heap),   // generic fns named with type arguments, in every body
@@ -267,6 +267,8 @@ namespace check {
         // The `ifnull` or `iferr` whose value a discard drops (`_ = f{} iferr { ... }`): its
         // fallback may give no value, and then it has none (§11, rule 6).
         dropping: ?u64 = null,
+        // The builtin that is the statement being checked: where a `@require` may be (§13, Checks).
+        stmt: ?u64 = null,
         // The sets of Var.derived and Var.held.
         derived:   list::List([]u32, Heap),
         held:      list::List([]Place, Heap),
@@ -5127,11 +5129,20 @@ namespace check {
                 }
                 if callee.k is path{ segs } { name = path_text{ c, segs } }
             }
-            builtin{ name = n } => {
+            builtin{ name = n, args } => {
+                c.stmt = expr_key{ e }
                 t = typed{ &c, e }
+                c.stmt = null
                 if slice::eq_bytes{ a = n.text, b = "panic" } { c.dead = true }
                 // `@expect(&t, c)` alone is a check that goes on: whether it held may be dropped.
                 if slice::eq_bytes{ a = n.text, b = "expect" } { return }
+                // `@require(&t, c)`: the test ends there unless c holds, so what c narrows when
+                // true holds to the end of the block, as after `if not c { return }` (§8).
+                if slice::eq_bytes{ a = n.text, b = "require" } and t == types::VOID and args.len == 2 and not c.dead {
+                    c.live_from = e.span.end
+                    assume{ &c, facts = facts{ c, e = args[1] }.yes, after_if = true }
+                    return
+                }
                 let mut b = message{ c }
                 try! @fmt(&b, "@{}", str{ s = n.text })
                 name = utf8::view{ b }
@@ -12591,7 +12602,8 @@ namespace check {
             return types::VOID
         }
         if slice::eq_bytes{ a = n, b = "fmt" } { return fmt_builtin{ &c, e, args, exp } }
-        if slice::eq_bytes{ a = n, b = "expect" } { return expect_builtin{ &c, e, args } }
+        if slice::eq_bytes{ a = n, b = "expect" } { return expect_builtin{ &c, e, args, hard = false } }
+        if slice::eq_bytes{ a = n, b = "require" } { return expect_builtin{ &c, e, args, hard = true } }
         if slice::eq_bytes{ a = n, b = "as" } {
             let x = args[0]
             // A distinct type converts to and from its base only (§12, Distinct types).
@@ -13010,6 +13022,8 @@ namespace check {
     }
 
     // `@expect(t, c)` (§13, Checks): t is a `*mut Test`, and c a condition; its value is c's.
+    // `@require(t, c)`, hard, is the same check with no value: std's `test::require` is its
+    // `test::check`, and after the failure's line std's `test::stop` ends the test.
     // If c doesn't hold, std's `test::check` counts the failure and starts its line, and the
     // rest of the line is a site's, as an @fmt's to an `io::Stderr`: for a comparison `: `,
     // both sides with the operator between them, and a line break; for any other condition the
@@ -13018,41 +13032,57 @@ namespace check {
     // which lowering finds once the types are those of an instance (lower.ctx, expect). A side
     // that is `null` is written as that. The site's own set is any error: nothing reads its
     // result.
-    fn expect_builtin { mut c: Checker, e: syntax::Expr, args: []syntax::Expr } -> Id {
+    fn expect_builtin { mut c: Checker, e: syntax::Expr, args: []syntax::Expr, hard: bool } -> Id {
+        let word: utf8::String = if hard { "require" } else { "expect" }
+        let mut ty = if hard { types::VOID } else { types::BOOL }
+        if hard and c.stmt != expr_key{ e } {
+            error{ &c, at = expr_at{ e }, msg = "@require has no value: it is a statement, and the test ends there if its condition doesn't hold; `@expect` gives whether its condition held" }
+            ty = types::ERROR
+        }
         let test = std_decl_top{ c, name = "Test" }
         let tt = typed{ &c, e = args[0] }
         let mut ok = tt != types::ERROR
         if ok {
             let mut is_test = false
             let mut writable = false
+            let mut known = true
             if types::get{ s = c.ty, id = tt } is ptr{ elem, mutable } {
-                if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = elem } } is cap{ decl } { is_test = test != NONE and decl == test }
+                let to = types::prune{ s = c.ty, t = elem }
+                if types::get{ s = c.ty, id = to } is cap{ decl } { is_test = test != NONE and decl == test }
                 writable = mutable
+                known = to != types::ERROR
             }
-            if not is_test {
-                errorf{ &c, at = expr_at{ e = args[0] }, msg = @fmt("@expect takes the test it reports to first, a `*mut Test`, as `@expect(&t, a == b)`, got {}", tstr{ c, t = tt }) }
+            if not known {
+                // `&t` for a `t` that has an error of its own.
+                ok = false
+            } else if not is_test {
+                errorf{ &c, at = expr_at{ e = args[0] }, msg = @fmt("@{} takes the test it reports to first, a `*mut Test`, as `@{}(&t, a == b)`, got {}", word, word, tstr{ c, t = tt }) }
                 ok = false
             } else if not writable {
                 if args[0].k is addr{ e = x } {
                     check_mutable{ &c, e = x.* }
                 } else {
-                    errorf{ &c, at = expr_at{ e = args[0] }, msg = @fmt("@expect takes the test it reports to first, a `*mut Test`, as `@expect(&t, a == b)`, got {}", tstr{ c, t = tt }) }
+                    errorf{ &c, at = expr_at{ e = args[0] }, msg = @fmt("@{} takes the test it reports to first, a `*mut Test`, as `@{}(&t, a == b)`, got {}", word, word, tstr{ c, t = tt }) }
                 }
                 ok = false
             }
         }
         let ct = expr{ &c, e = args[1], exp = types::BOOL }
         if ct != types::ERROR and not types::unify{ s = &c.ty, a = ct, b = types::BOOL } {
-            errorf{ &c, at = expr_at{ e = args[1] }, msg = @fmt("@expect checks a condition, a bool, got {}", tstr{ c, t = ct }) }
+            errorf{ &c, at = expr_at{ e = args[1] }, msg = @fmt("@{} checks a condition, a bool, got {}", word, tstr{ c, t = ct }) }
             ok = false
         }
-        if not ok or ct == types::ERROR { return types::BOOL }
+        if not ok or ct == types::ERROR { return ty }
         let at = expr_at{ e }
         let sink = std_type_in{ &c, space = "io", name = "Stderr" }
         let text = if sink == types::ERROR { no_writer{} } else { writers_of{ &c, b = sink, t = types::STRLIT, ns = c.sc.ns }.one }
+        if hard and (text.decl == NONE or std_fn{ c, space = "test", name = "require" } == NONE or std_fn{ c, space = "test", name = "stop" } == NONE) {
+            error{ &c, at, msg = "@require needs std's `test::require` and `test::stop`, and an `io::Stderr` with a writer of text, which this program's std doesn't declare" }
+            return ty
+        }
         if text.decl == NONE or std_fn{ c, space = "test", name = "check" } == NONE {
             error{ &c, at, msg = "@expect needs std's `test::check` and an `io::Stderr` with a writer of text, which this program's std doesn't declare" }
-            return types::BOOL
+            return ty
         }
         let mut pieces = list::new(Piece){ realloc = arena::alloc, heap = c.heap }
         let mut holes = list::new(syntax::Expr){ realloc = arena::alloc, heap = c.heap }
@@ -13076,7 +13106,7 @@ namespace check {
         try! map::put{ m = &c.site_of, key = expr_key{ e }, value = si }
         try! map::put{ m = &c.flows, key = SITE + si, value = Flow{ atoms = no_vars{}, subs = no_vars{}, any = true, open = false } }
         try! list::push{ list = &c.expects, item = e }
-        return types::BOOL
+        return ty
     }
 
     // A comparison's operator, with a space each side, or nothing for any other operator.
@@ -13107,6 +13137,12 @@ namespace check {
     // two writes it.
     fn expect_sides { mut c: Checker, e: syntax::Expr } {
         let si = map::get{ m = c.site_of, key = expr_key{ e } } ifnull { return }
+        let mut word: utf8::String = "expect"
+        let mut why: utf8::String = ", for a part of this side of an @expect"
+        if e.k is builtin{ name } and slice::eq_bytes{ a = name.text, b = "require" } {
+            word = "require"
+            why = ", for a part of this side of a @require"
+        }
         let st = list::items{ list = c.sites }[@as(usize, si)]
         let mut flow = Flow{ atoms = no_vars{}, subs = no_vars{}, any = true, open = false }
         for x in st.holes {
@@ -13114,10 +13150,10 @@ namespace check {
             if t == types::ERROR or types::has_params{ s = c.ty, t } { continue }
             let found = writers_of{ &c, b = st.sink, t, ns = st.ns }
             if found.two != NONE {
-                errorf{ &c, at = expr_at{ e = x }, msg = @fmt("@expect has two writers of {} to io::Stderr: `{}` and `{}`", tstr{ c, t }, str{ s = get_decl{ c, d = found.one.decl }.qual }, str{ s = get_decl{ c, d = found.two }.qual }) }
+                errorf{ &c, at = expr_at{ e = x }, msg = @fmt("@{} has two writers of {} to io::Stderr: `{}` and `{}`", word, tstr{ c, t }, str{ s = get_decl{ c, d = found.one.decl }.qual }, str{ s = get_decl{ c, d = found.two }.qual }) }
             } else if found.one.decl == NONE {
                 let mut seen = ids{ heap = c.heap }
-                shown_parts{ &c, b = st.sink, ns = st.ns, t, &flow, at = expr_at{ e = x }, why = ", for a part of this side of an @expect", &seen }
+                shown_parts{ &c, b = st.sink, ns = st.ns, t, &flow, at = expr_at{ e = x }, why, &seen }
             }
         }
     }

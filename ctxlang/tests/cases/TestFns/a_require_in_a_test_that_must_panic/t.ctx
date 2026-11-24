@@ -1,0 +1,16 @@
+fn at { xs: []i32, i: usize } -> i32 { return xs[i] }
+const XS: [2]i32 = [1, 2]
+#test{ panics = "out of bounds" }
+fn requires_and_panics { mut t: Test } {
+    @require(&t, XS.len == 2)
+    _ = at{ xs = XS[..], i = 2 }
+}
+#test{ panics = "out of bounds" }
+fn ends_before_its_panic { mut t: Test } {
+    @require(&t, XS.len == 3)
+    _ = at{ xs = XS[..], i = 2 }
+}
+#test{ panics = "out of bounds" }
+fn requires_and_returns { mut t: Test } {
+    @require(&t, XS.len == 2)
+}

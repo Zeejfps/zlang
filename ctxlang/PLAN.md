@@ -426,7 +426,8 @@ steps 1 and 3 are done. None blocks the other stages.
      reports through a `Test` the test passes down, not through hidden state, so a build that
      isn't a test build can't reach one. Both sides are written with the `#write` fns an
      `@fmt` would use, or from their parts (3.1's derived text). The check goes on; its value
-     is the condition's, for a test that must stop.
+     is the condition's. `@require(&t, c)` is the same check for a test that must stop: a
+     statement, which ends the test where `c` doesn't hold.
    - **A test that checks nothing fails,** as does a filter that selects none: neither is
      reported as a pass.
    - **A process for each test** (testing.md): a panic fails one test, statics don't leak

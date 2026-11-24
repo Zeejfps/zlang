@@ -1,0 +1,2 @@
+fn help {} { @require(&t, 1 == 1) }  //~ error at 24: unknown name `t`
+fn main {} {}

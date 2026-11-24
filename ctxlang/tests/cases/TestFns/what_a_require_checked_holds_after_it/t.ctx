@@ -1,0 +1,26 @@
+struct Row { name: []u8, next: ?i32 }
+union Shape { none, circle{ r: i32 } }
+fn find { n: i32 } -> ?Row {
+    if n == 0 { return null }
+    return Row{ name = "bastila", next = n }
+}
+#test
+fn an_optional_is_its_value { mut t: Test } {
+    let row = find{ n = 3 }
+    @require(&t, row != null)
+    @expect(&t, row.name == "carth")
+    @require(&t, row.next != null)
+    @expect(&t, row.next + 1 == 5)
+}
+#test
+fn a_pattern_binds { mut t: Test } {
+    let s = Shape::circle{ r = 2 }
+    @require(&t, s is circle{ r })
+    @expect(&t, r == 3)
+}
+#test
+fn the_test_ends_at_a_null { mut t: Test } {
+    let row = find{ n = 0 }
+    @require(&t, row != null)
+    @expect(&t, row.name == "carth")
+}

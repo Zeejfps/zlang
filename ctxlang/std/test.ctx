@@ -11,9 +11,9 @@
 //
 // A program replaces the runner with a `#test_main` fn of its own, as it replaces `rt::start`.
 
-// What a test reports to: `@expect(&t, c)` notes its checks and writes its failures through it
-// (spec §13). Only a `#test` fn and the `#test_main` fn receive one, and pass it down. It
-// includes an Io, where the failures go as they happen.
+// What a test reports to: `@expect(&t, c)` and `@require(&t, c)` note their checks and write
+// their failures through it (spec §13). Only a `#test` fn and the `#test_main` fn receive one,
+// and pass it down. It includes an Io, where the failures go as they happen.
 capability Test { ..Io, ..test::State }
 
 namespace test {
@@ -37,12 +37,37 @@ namespace test {
     // the failure's line on standard error, `FILE:LINE: fail: NAME: TEXT`. The `@expect` ends
     // the line, after both sides of a comparison. Returns held.
     fn check { mut t: Test, held: bool, file: []u8, line: u32, text: []u8 } -> bool {
+        return note{ &t, held, file, line, word = "", text }
+    }
+
+    // What `@require(&t, c)` calls, as `@expect` calls `check`: the same, with `required: `
+    // before the text, `FILE:LINE: fail: NAME: required: TEXT`. The `@require` ends the line
+    // and then calls `stop`.
+    fn require { mut t: Test, held: bool, file: []u8, line: u32, text: []u8 } -> bool {
+        return note{ &t, held, file, line, word = "required: ", text }
+    }
+
+    // A check, of either kind: noted, and if it didn't hold its line started, with `word`
+    // before the condition's text.
+    fn note { mut t: Test, held: bool, file: []u8, line: u32, word: []u8, text: []u8 } -> bool {
         @atomic_store(&t.checked, 1, atomic::Order::relaxed)
         if held { return true }
         @atomic_store(&t.failed, 1, atomic::Order::relaxed)
         fail_line{ &t, file, line }
+        io::write{ io = &t, to = io::Stream::err, bytes = word }
         io::write{ io = &t, to = io::Stream::err, bytes = text }
         return false
+    }
+
+    // What a `@require` that didn't hold calls once its line is written (spec §13, Checks):
+    // ends the test by ending its process, with exit code 1, after writing out what the
+    // thread has for standard output. It never returns, from whatever fn the `@require` is
+    // in, and no `defer` runs. The compiler supplies the capabilities, as it does a panic
+    // fn's: a `Test` alone can't end a process. In std's runner the process is the test's
+    // own; in a `#test_main` fn that runs its tests in one process, it is the run's.
+    fn stop { mut io: Io, mut proc: Proc } {
+        io::flush{ &io }
+        os::exit{ &proc, code = 1 }
     }
 
     // `FILE:LINE: fail: NAME: `, on standard error.

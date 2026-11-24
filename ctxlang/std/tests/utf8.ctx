@@ -25,10 +25,8 @@ namespace utf8_tests {
 
     #test
     fn splits_and_trims { mut t: Test } {
-        let parts = utf8::split_once{ s = "key=value=x", c = '=' } ifnull {
-            @expect(&t, false)
-            return
-        }
+        let parts = utf8::split_once{ s = "key=value=x", c = '=' }
+        @require(&t, parts != null)     // below, `parts` is its value
         @expect(&t, parts.head.bytes == "key")
         @expect(&t, parts.tail.bytes == "value=x")
         @expect(&t, utf8::split_once{ s = "none", c = '=' } == null)

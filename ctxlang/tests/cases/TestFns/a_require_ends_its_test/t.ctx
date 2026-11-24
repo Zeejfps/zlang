@@ -1,0 +1,44 @@
+struct Row { name: []u8 }
+const ROWS: [2]Row = [Row{ name = "bastila" }, Row{ name = "carth" }]
+fn rows { n: usize } -> []Row { return ROWS[..n] }
+fn some { n: usize } -> bool { return n > 0 }
+
+// A fn that checks for a test, with the test's Test.
+fn has_rows { mut t: Test, n: usize } {
+    @require(&t, rows{ n }.len > 0)
+}
+
+#test
+fn a_require_that_holds_is_a_check { mut t: Test } {
+    @require(&t, rows{ n = 1 }.len > 0)
+}
+#test
+fn the_test_goes_on_after_one_that_holds { mut t: Test } {
+    let found = rows{ n = 2 }
+    @require(&t, found.len == 2)
+    @expect(&t, found[1].name == "carth")
+    @expect(&t, found[0].name == "carth")
+}
+#test
+fn the_test_ends_at_one_that_does_not { mut t: Test, mut io: Io } {
+    defer io::println{ &io, s = "a defer, which doesn't run" }
+    io::println{ &io, s = "written before" }
+    let found = rows{ n = 0 }
+    @expect(&t, found.len == 2)
+    @require(&t, found.len > 0)
+    io::println{ &io, s = "written after, which doesn't run" }
+    @expect(&t, found[0].name == "bastila")
+}
+#test
+fn a_condition_that_is_no_comparison { mut t: Test } {
+    @require(&t, some{ n = 0 })
+    @expect(&t, false)
+}
+#test
+fn in_a_fn_the_test_calls { mut t: Test } {
+    has_rows{ &t, n = 1 }
+    has_rows{ &t, n = 0 }
+    @expect(&t, false)
+}
+#test
+fn the_tests_after_it_run { mut t: Test } { @expect(&t, rows{ n = 2 }.len == 2) }

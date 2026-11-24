@@ -1,0 +1,8 @@
+// In a test that must panic, a `@require` that holds changes nothing; one that doesn't
+// fails the test with its line, since the test ended there without its panic.
+//# $ ctxc test .
+//# exit: 1
+//# stdout:
+//| ./t.ctx:10: fail: ends_before_its_panic: required: XS.len == 3: 2 == 3
+//| ./t.ctx:14: fail: requires_and_returns: it didn't panic: a panic with `out of bounds` was expected
+//| tests: 3 run, 1 passed, 2 failed, 0 not selected

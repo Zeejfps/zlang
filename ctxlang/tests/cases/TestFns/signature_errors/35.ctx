@@ -1,0 +1,9 @@
+struct Row { name: []u8 }
+fn find { n: i32 } -> ?Row { return null }
+#test
+fn a { mut t: Test } {
+    let mut row = find{ n = 1 }
+    @require(&t, row != null)
+    @expect(&t, row.name == "bastila")  //~ error at 20: ?Row has no field `name`: `row` is mutable, so testing it for null doesn't narrow it; unwrap it with `if let v = row { ... }` or `let v = row ifnull { return }`
+}
+fn main {} {}

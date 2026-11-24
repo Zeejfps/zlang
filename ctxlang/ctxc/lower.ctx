@@ -3123,7 +3123,8 @@ namespace lower {
 
     fn builtin { mut l: Lower, e: syntax::Expr, name: []u8, targ: ?*syntax::TypeExpr, args: []syntax::Expr, t: Id } -> ir::Expr {
         if slice::eq_bytes{ a = name, b = "fmt" } { return fmt{ &l, e, args } }
-        if slice::eq_bytes{ a = name, b = "expect" } { return expect{ &l, e, args } }
+        if slice::eq_bytes{ a = name, b = "expect" } { return expect{ &l, e, args, hard = false } }
+        if slice::eq_bytes{ a = name, b = "require" } { return expect{ &l, e, args, hard = true } }
         if slice::eq_bytes{ a = name, b = "size_of" } or slice::eq_bytes{ a = name, b = "align_of" } {
             let tt = T{ &l, t = targ_type{ l, targ } }
             let lay = check::layout{ c = l.c, t = norm_layout{ &l, t = tt } }
@@ -4212,8 +4213,11 @@ namespace lower {
     // `@expect(t, c)`: c's value, after std's `test::check` has counted it and, for one that
     // didn't hold, started the failure's line, which the site's pieces then end
     // (check.ctx, expect_builtin). The sides of a comparison are evaluated once, the left
-    // first, into locals that the comparison and the pieces both read.
-    fn expect { mut l: Lower, e: syntax::Expr, args: []syntax::Expr } -> ir::Expr {
+    // first, into locals that the comparison and the pieces both read. `@require(t, c)`, hard,
+    // is the same with std's `test::require` for `test::check`, and after the pieces a call of
+    // std's `test::stop`, with its capabilities from nothing, which ends the test's process;
+    // whether it held is then dropped by the statement it is.
+    fn expect { mut l: Lower, e: syntax::Expr, args: []syntax::Expr, hard: bool } -> ir::Expr {
         let si = map::get{ m = l.c.site_of, key = check::expr_key{ e } } ifnull { @panic("lower: an @expect that wasn't checked") }
         let st = list::items{ list = l.c.sites }[@as(usize, si)]
         let bool_ty = tid{ &l, t = types::BOOL }
@@ -4237,7 +4241,7 @@ namespace lower {
         for h in st.holes { _ = map::remove{ m = &l.kept, key = check::expr_key{ e = h } } }
 
         // test::check{ &t, held, file, line, text }
-        let check = check::std_fn{ c = l.c.*, space = "test", name = "check" }
+        let check = check::std_fn{ c = l.c.*, space = "test", name = if hard { "require" } else { "check" } }
         if check == NONE { @panic("lower: an @expect without std's test::check") }
         let x = check::get_decl{ c = l.c.*, d = check }
         let p = pos{ &l, at = st.at }
@@ -4267,6 +4271,15 @@ namespace lower {
         let sink = stderr_sink{ &l, out = &failed, st }
         let w = Writes{ s = sink, vals = list::items{ list = vals }, tys = list::items{ list = tys }, si, rt = site_result{ &l, si } }
         try! list::push{ list = &failed, item = ir::Stmt::eval{ e = pieces{ &l, w, ps = st.pieces } } }
+        if hard {
+            let stop = check::std_fn{ c = l.c.*, space = "test", name = "stop" }
+            if stop == NONE { @panic("lower: a @require without std's test::stop") }
+            let mut caps = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
+            for f at i in check::get_decl{ c = l.c.*, d = stop }.fields {
+                add_arg{ xs = &caps, a = ir::Arg{ index = @as(u32, i), value = mk{ ty = tid{ &l, t = arg_type{ &l, f, ptrs = true } }, k = ir::ExprKind::capref } } }
+            }
+            try! list::push{ list = &failed, item = ir::Stmt::eval{ e = mk{ ty = tid{ &l, t = types::VOID }, k = ir::ExprKind::call{ callee = fn_id{ &l, decl = stop, targs = no_ids{} }, args = list::items{ list = caps } } } } }
+        }
         let yes = mk{ ty = bool_ty, k = ir::ExprKind::boolean{ value = true } }
         let no = mk{ ty = bool_ty, k = ir::ExprKind::boolean{ value = false } }
         let then = ir::Block{ stmts = slice::empty(ir::Stmt){}, result = box{ l, e = yes } }

@@ -1,0 +1,10 @@
+struct Row { name: []u8 }
+fn find { n: i32 } -> ?Row { return null }
+#test
+fn a { mut t: Test } {
+    let row = find{ n = 1 }
+    @require(&t, row != null)
+    let again = row ifnull { return }  //~ error at 17: `row` isn't null here, where a test narrowed it to Row: use it as it is, without `ifnull`
+    @expect(&t, again.name == "bastila")
+}
+fn main {} {}

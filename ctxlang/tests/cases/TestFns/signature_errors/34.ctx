@@ -1,0 +1,9 @@
+struct Point { x: i32, y: i32 }
+
+#write
+fn one { mut e: io::Stderr, p: Point } {}
+#write
+fn two { mut e: io::Stderr, p: Point } {}
+#test
+fn a { mut t: Test } { @require(&t, Point{ x = 1, y = 1 } == Point{ x = 1, y = 1 }) }  //~ error at 42: @require has two writers of Point to io::Stderr: `one` and `two` //~ error at 67: @require has two writers of Point to io::Stderr: `one` and `two`
+fn main {} {}

@@ -1,0 +1,2 @@
+fn help { mut io: Io } { @require(&io, 1 == 1) }  //~ error at 35: @require takes the test it reports to first, a `*mut Test`, as `@require(&t, a == b)`, got *mut Io
+fn main {} {}

@@ -1,0 +1,22 @@
+#test
+fn one { mut t: Test } { @require(&t, 1 == 1) }
+#test
+fn two { mut t: Test } {
+    @expect(&t, 2 == 3)
+    @require(&t, 2 == 4)
+    @expect(&t, 2 == 5)
+}
+#test
+fn three { mut t: Test } { @expect(&t, 3 == 3) }
+
+#test_main
+fn runner { mut io: Io, mut t: Test, count: usize, case: &fn{ index: usize } -> test::Case, run: &fn{ index: usize } -> i32 } -> i32 {
+    let mut failed: i32 = 0
+    for i in 0..count {
+        let c = case{ index = i }
+        let code = test::run_here{ &t, c, index = i, run }
+        _ = @fmt(&io, "{} gave {}\n", c.name, code)
+        failed = failed + code
+    }
+    return failed * 10
+}

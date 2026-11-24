@@ -267,7 +267,8 @@ namespace twoda_tests {
         let pages = mem::pages{ &mem, size = 1048576 } ifnull { return alloc::out_of_memory }
         let mut heap = arena::new{ buf = pages }
         let table = try twoda::parse{ data = TEXT, realloc = arena::alloc, &heap }
-        @expect(&t, table.columns.len == 3)
+        @require(&t, table.columns.len == 3)
+        @expect(&t, table.columns[1] == "value")
         @expect(&t, twoda::get_string{ t = table, row = 2, column = "hex" } == "7")
     }
 }
@@ -282,7 +283,14 @@ namespace twoda_tests {
   `lib/formats/twoda_test.ctx:40: fail: twoda_tests::a_text_tables_cells: twoda::get_string{ ... } == "8": 7 == 8`.
   Write the comparison inside the `@expect` (`==`, `!=`, `<`, `<=`, `>`, `>=`) to get the values:
   a struct, an enum, an optional and a slice print too. `x == null` and `r is ok` work as
-  conditions. Stop a test with `if not @expect(&t, p != null) { return }`.
+  conditions.
+- `@require(&t, c)` is the same check, and the test ends there if `c` doesn't hold: use it
+  where the next lines need what was checked, as `@require(&t, rows.len > 0)` before `rows[0]`,
+  which would otherwise panic. Its line says so:
+  `...: fail: twoda_tests::a_text_table_has_its_columns_and_rows: required: table.columns.len == 3: 2 == 3`,
+  after the test's earlier failures. It is a statement, with no value (don't write
+  `if not @expect(&t, c) { return }`). After `@require(&t, row != null)` a `let row: ?Row` is its
+  `Row`. It works in a helper that holds the `Test` too. No `defer` runs when it ends the test.
 - A test that returns an error, panics, runs over 60 s or makes no check fails.
   `#test{ panics = "out of bounds" }` passes by panicking with that text.
 - Pass `&t` down to helpers that check (`fn same_rows { mut t: Test, a: Table, b: Table }`).

@@ -15,7 +15,7 @@ namespace container_tests {
         @expect(&t, xs.len == 0)
         @expect(&t, list::pop{ list = &xs } == null)
         for i in 0..100 { try list::push{ list = &xs, item = @as(i32, i) * 2 } }
-        @expect(&t, xs.len == 100)
+        @require(&t, xs.len == 100)     // the lines below index it
         @expect(&t, list::get{ list = xs, i = 7 } == 14)
         @expect(&t, list::get{ list = xs, i = 100 } == null)
         @expect(&t, list::set{ list = &xs, i = 7, item = -1 })

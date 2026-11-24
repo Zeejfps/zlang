@@ -1,0 +1,9 @@
+struct Row { name: []u8 }
+fn find { n: i32 } -> ?Row { return null }
+#test
+fn a { mut t: Test } {
+    let row = find{ n = 1 }
+    @expect(&t, row != null)
+    @expect(&t, row.name == "bastila")  //~ error at 20: ?Row has no field `name`
+}
+fn main {} {}
