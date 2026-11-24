@@ -57,7 +57,9 @@ namespace gff {                                   // namespaces may span files (
   function, is in the same call. So a read-only `mixer: Mixer` field is cheap.
 - **Results must be used:** `_ = f{}` to discard. A bare call statement must return nothing.
 - **No methods:** `list::push{ list = &xs, item }`, not `xs.push`. No operator overloading,
-  no traits; a generic `T` can't be compared or hashed unless you pass functions for it.
+  no traits. A generic fn may use `==`, `@hash` and `<` (`<=`, `>`, `>=`) on values of its `T`,
+  and every use of the fn must then give a type that has them (§9, rule 6): only numbers have
+  an order. For another type the fn takes functions (`hash`, `eq`, `less`).
 - **A keyword can't be a name** (§1, rule 4), and the error says which word it is: name the
   field `kind`, not `type`, and the local `found`, not `match`. `is`, `in`, `at`, `error`,
   `distinct` and `static` are keywords only in their own place, and names everywhere else.

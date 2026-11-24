@@ -386,6 +386,15 @@ What a model writes by default should compile, or fail with the exact fix.
       bodies are checked. That is what lets std's `map::make(K, V){ realloc, &heap }` key a
       map by any such type with nothing written; `map::new` still takes a caller's `hash`
       and `eq`, so no existing map changes.
+    - The same record carries an order: a generic fn may write `<`, `<=`, `>` and `>=` on two
+      values of a parameter's type ([spec §11, Expressions, rule 1](spec.md#expressions),
+      [§9, rule 6](spec.md#9-generics)), and a use that gives a type without one is the same
+      error (``` `largest` uses `<` on its `T`, and Point has no `<`: it is a struct, and only
+      numbers have an order: ... ```). Only what `<` took already has an order: integers,
+      floats and distinct types of them. None is derived for a struct, a union, an array or a
+      slice, whose field order would set it without a word, and an enum has none; for those a
+      fn takes a `less` function, as `map::new` takes `hash` and `eq`. It is what lets
+      `min`, `max` and `clamp` be std fns rather than builtins (4.3).
     Lowering writes one `==` fn and one `@hash` fn for each type that needs them, from the
     IR's own compares, loops and matches, so the C backend, the interpreter and consts are
     unchanged and agree; a const that uses one is run rather than folded. Programs that

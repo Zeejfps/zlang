@@ -176,8 +176,8 @@ namespace check {
         ovfs:      list::List(syntax::Expr, Heap),    // `ifoverflow`s, whose coverage is settled at the end
         gvars:     list::List(GVar, Heap),            // generic arguments to infer
         fmts:      list::List(syntax::Expr, Heap),    // the body's @fmt calls, whose writers are settled at the end
-        eq_uses:   list::List(EqUse, Heap),           // the body's `==` and `@hash` on value types, checked at its end
-        needs:     list::List(Need, Heap),            // generic parameters that must have `==` or `@hash`
+        eq_uses:   list::List(EqUse, Heap),           // the body's `==`, `@hash` and `<` that need a type to have them, checked at its end
+        needs:     list::List(Need, Heap),            // generic parameters that must have `==`, `@hash` or an order
         generic_uses: list::List(GenericUse, Heap),   // generic fns named with type arguments, in every body
         vars:      list::List(Var, Heap),             // the locals of every body, by index
         scope:     list::List(Binding, Heap),         // what is in scope, innermost last
@@ -11664,7 +11664,7 @@ namespace check {
             if not eq {
                 // A value type's `==` is derived from its parts' (§11, Expressions, rule 5).
                 let shown = if lo != null { lt } else if ro != null { rt } else { t }
-                derived_use{ &c, t = shown, hash = false, at }
+                derived_use{ &c, t = shown, what = Derived::eq, at }
             }
             return types::BOOL
         }
@@ -11674,6 +11674,9 @@ namespace check {
             let t = operand_type{ &c, lt, rt, a, b }
             if t == types::NO_TYPE {
                 cannot_compare{ &c, lt, rt, at }
+            } else if types::get{ s = c.ty, id = op_type{ c, t } } is param {
+                // A generic parameter's order is its type argument's (§11, Expressions, rule 1).
+                derived_use{ &c, t, what = Derived::order, at }
             } else if not is_num{ c, t = op_type{ c, t } } {
                 errorf{ &c, at, msg = @fmt("`{}` needs numbers, got {}", opname, tstr{ c, t }) }
             }
@@ -11717,26 +11720,39 @@ namespace check {
         return t
     }
 
-    // ---- derived `==` and `@hash` (§11, Expressions, rule 5; §13)
+    // ---- derived `==` and `@hash`, and a parameter's order (§11, Expressions, rules 1 and 5; §13)
 
-    // What stops a type from having `==`, or with hash, `@hash`: the part that has none, the
+    // What a type may be asked to have: `==` (and `!=`), `@hash`, or an order, which is `<`,
+    // `<=`, `>` and `>=`. A value type's `==` and `@hash` are derived from its parts'; an order
+    // never is, and only numbers have one.
+    enum Derived: u8 { eq, hash, order }
+
+    // As an error names it: an order is `<`, whichever of the four was written.
+    fn derived_name { what: Derived } -> utf8::String {
+        if what == Derived::eq { return "==" }
+        if what == Derived::hash { return "@hash" }
+        return "<"
+    }
+
+    // What stops a type from having `==`, `@hash` or an order: the part that has none, the
     // way to it from the type (`pos.owner`, `kids[]`), and why. The generic parameters the
     // answer depends on are collected apart (Need).
     struct Blocker { part: Id, path: []u8, why: utf8::String }
 
-    // Generic parameter `index` of decl must have `==`, or with hash `@hash`: something in
-    // decl's body compares or hashes a value whose type has it in it. at is where.
-    struct Need { decl: u32, index: u32, hash: bool, at: source::Span }
+    // Generic parameter `index` of decl must have `what`: something in decl's body compares,
+    // hashes or orders a value whose type has it in it. at is where.
+    struct Need { decl: u32, index: u32, what: Derived, at: source::Span }
 
     // A generic fn named with type arguments, which may be inference variables until its body
     // is done: its parameters' needs become the arguments' (derived_needs).
     struct GenericUse { decl: u32, targs: []Id, at: source::Span }
 
-    // `==` or `!=` (hash: `@hash`) on a value of type t, in the body being checked.
-    struct EqUse { t: Id, hash: bool, at: source::Span }
+    // `==` or `!=`, `@hash`, or one of `<`, `<=`, `>` and `>=` on a value of type t, in the
+    // body being checked.
+    struct EqUse { t: Id, what: Derived, at: source::Span }
 
     // A generic fn's needs reach its callers: where a fn named with type arguments has a
-    // parameter that needs `==` or `@hash`, the argument must have it, and an argument that is
+    // parameter that needs `==`, `@hash` or an order, the argument must have it, and an argument that is
     // itself made of generic parameters passes the need on to their fn. Run once every body is
     // checked; the error is where the fn is named, and says whose need it is.
     fn derived_needs { mut c: Checker } {
@@ -11747,15 +11763,15 @@ namespace check {
             changed = false
             rounds = rounds + 1
             for u in uses {
-                for hash in [false, true] {
+                for what in [Derived::order, Derived::eq, Derived::hash] {
                     for t at i in u.targs {
-                        if not needed{ c, decl = u.decl, index = @as(u32, i), hash } { continue }
+                        if not needed{ c, decl = u.decl, index = @as(u32, i), what } { continue }
                         let mut params = list::new(Id){ realloc = arena::alloc, heap = c.heap }
-                        if blocker_of{ &c, t = types::zonk{ s = &c.ty, t }, hash, &params } != null { continue }
+                        if blocker_of{ &c, t = types::zonk{ s = &c.ty, t }, what, &params } != null { continue }
                         for q in list::items{ list = params } {
                             if types::get{ s = c.ty, id = q } is param{ decl, index } {
-                                if not needed{ c, decl, index, hash } {
-                                    try! list::push{ list = &c.needs, item = Need{ decl, index, hash, at = u.at } }
+                                if not needed{ c, decl, index, what } {
+                                    try! list::push{ list = &c.needs, item = Need{ decl, index, what, at = u.at } }
                                     changed = true
                                 }
                             }
@@ -11766,64 +11782,67 @@ namespace check {
         }
         for u in uses {
             let mut reported = false
-            for hash in [false, true] {
+            for what in [Derived::order, Derived::eq, Derived::hash] {
                 for t at i in u.targs {
-                    if reported or not needed{ c, decl = u.decl, index = @as(u32, i), hash } { continue }
+                    if reported or not needed{ c, decl = u.decl, index = @as(u32, i), what } { continue }
                     let arg = types::zonk{ s = &c.ty, t }
                     let mut params = list::new(Id){ realloc = arena::alloc, heap = c.heap }
-                    let found = blocker_of{ &c, t = arg, hash, &params } ifnull { continue }
+                    let found = blocker_of{ &c, t = arg, what, &params } ifnull { continue }
                     let x = get_decl{ c, d = u.decl }
                     let mut m = message{ c }
-                    try! @fmt(&m, "`{}` uses `{}` on its `{}`, and ", str{ s = x.qual }, if hash { "@hash" } else { "==" }, str{ s = x.tparams[i].text })
-                    try! utf8::push{ b = &m, s = blocked_text{ &c, t = arg, hash, b = found } }
+                    try! @fmt(&m, "`{}` uses `{}` on its `{}`, and ", str{ s = x.qual }, derived_name{ what }, str{ s = x.tparams[i].text })
+                    try! utf8::push{ b = &m, s = blocked_text{ &c, t = arg, what, b = found } }
                     error{ &c, at = u.at, msg = utf8::view{ b = m } }
-                    // One error for a use: without `==` there is no `@hash` either.
+                    // One error for a use, its order's first: a type without `==` has no
+                    // `@hash` either, and one with an order has both.
                     reported = true
                 }
             }
         }
     }
 
-    fn needed { c: Checker, decl: u32, index: u32, hash: bool } -> bool {
+    fn needed { c: Checker, decl: u32, index: u32, what: Derived } -> bool {
         for n in list::items{ list = c.needs } {
-            if n.decl == decl and n.index == index and n.hash == hash { return true }
+            if n.decl == decl and n.index == index and n.what == what { return true }
         }
         return false
     }
 
-    // A use of `==` or `!=`, or with hash of `@hash`, on a value of type t, at `at`: an error if
+    // A use of `==` or `!=`, of `@hash` or of an order on a value of type t, at `at`: an error if
     // t has none, saying which part stops it; and where t has a generic parameter in it, a
     // need of the parameter's fn, which its callers' type arguments must meet.
-    fn derived_use { mut c: Checker, t: Id, hash: bool, at: source::Span } {
-        try! list::push{ list = &c.eq_uses, item = EqUse{ t, hash, at } }
+    fn derived_use { mut c: Checker, t: Id, what: Derived, at: source::Span } {
+        try! list::push{ list = &c.eq_uses, item = EqUse{ t, what, at } }
     }
 
     // The body's uses, once its types are settled.
     fn derived_checks { mut c: Checker } {
         let us = list::items{ list = c.eq_uses }
-        for u in us { derived_check{ &c, t = types::zonk{ s = &c.ty, t = u.t }, hash = u.hash, at = u.at } }
+        for u in us { derived_check{ &c, t = types::zonk{ s = &c.ty, t = u.t }, what = u.what, at = u.at } }
     }
 
-    fn derived_check { mut c: Checker, t: Id, hash: bool, at: source::Span } {
+    fn derived_check { mut c: Checker, t: Id, what: Derived, at: source::Span } {
         let mut params = list::new(Id){ realloc = arena::alloc, heap = c.heap }
-        let found = blocker_of{ &c, t, hash, &params }
+        let found = blocker_of{ &c, t, what, &params }
         if found != null {
-            let text = blocked_text{ &c, t, hash, b = found }
+            let text = blocked_text{ &c, t, what, b = found }
             error{ &c, at, msg = text }
             return
         }
         for q in list::items{ list = params } {
             if types::get{ s = c.ty, id = q } is param{ decl, index } {
-                try! list::push{ list = &c.needs, item = Need{ decl, index, hash, at } }
+                try! list::push{ list = &c.needs, item = Need{ decl, index, what, at } }
             }
         }
     }
 
-    // The first part of t without `==` (hash: without `@hash`), or null if t has it. The
+    // The first part of t without `what`, or null if t has it. The
     // generic parameters met on the way go in params: t has it if they do.
-    fn blocker_of { mut c: Checker, t: Id, hash: bool, mut params: list::List(Id, Heap) } -> ?Blocker {
+    fn blocker_of { mut c: Checker, t: Id, what: Derived, mut params: list::List(Id, Heap) } -> ?Blocker {
         let mut seen = list::new(Id){ realloc = arena::alloc, heap = c.heap }
         let mut path = message{ c }
+        if what == Derived::order { return unordered{ &c, t, &params } }
+        let hash = what == Derived::hash
         return blocker_in{ &c, t, hash, top = true, &seen, &params, &path }
     }
 
@@ -11915,10 +11934,38 @@ namespace check {
         }
     }
 
-    // "Line has no `==`: its `next` is a *Line, a pointer, which ..."
-    fn blocked_text { mut c: Checker, t: Id, hash: bool, b: Blocker } -> utf8::String {
+    // What stops t from having an order, or null if it has one: it is no number, nor a distinct
+    // type of one (§11, Expressions, rule 1). No order is derived for a struct, a union, an
+    // array or a slice, which the order of its fields would set without a word, and an enum has
+    // none (§12, Enums). A generic parameter has its argument's, and goes in params.
+    fn unordered { mut c: Checker, t: Id, mut params: list::List(Id, Heap) } -> ?Blocker {
+        let x = op_type{ c, t }
+        if x == types::ERROR or is_num{ c, t = x } { return null }
+        let mut kind: utf8::String = "a type that isn't a number"
+        match types::get{ s = c.ty, id = x } {
+            param => {
+                try! list::push{ list = &params, item = x }
+                return null
+            }
+            record{ decl } => { kind = if is_untagged{ c, d = decl } { "an extern union" } else { "a struct" } }
+            sum => { kind = "a union" }
+            array => { kind = "an array" }
+            slice | strlit => { kind = "a slice" }
+            enumeration => { kind = "an enum" }
+            ptr => { kind = "a pointer" }
+            opt => { kind = "an optional" }
+            func => { kind = "a function" }
+            else => { if x == types::BOOL { kind = "a bool" } }
+        }
         let mut m = message{ c }
-        let op: utf8::String = if hash { "@hash" } else { "==" }
+        try! @fmt(&m, "{}, and only numbers have an order: order two of them by a number of their own, or call a function that takes the order as a `less` function", kind)
+        return Blocker{ part = x, path = "", why = utf8::view{ b = m } }
+    }
+
+    // "Line has no `==`: its `next` is a *Line, a pointer, which ..."
+    fn blocked_text { mut c: Checker, t: Id, what: Derived, b: Blocker } -> utf8::String {
+        let mut m = message{ c }
+        let op = derived_name{ what }
         if b.path.len == 0 {
             try! @fmt(&m, "{} has no `{}`: it is {}", tstr{ c, t }, op, b.why)
         } else {
@@ -12383,7 +12430,7 @@ namespace check {
         if slice::eq_bytes{ a = n, b = "hash" } {
             // A u64 that equal values share (§13): of any type with `==` that holds no float.
             let t = value_type{ &c, e = args[0] }
-            if t != types::ERROR { derived_use{ &c, t, hash = true, at = expr_at{ e = args[0] } } }
+            if t != types::ERROR { derived_use{ &c, t, what = Derived::hash, at = expr_at{ e = args[0] } } }
             return types::prim{ p = types::Prim::u64 }
         }
         if slice::eq_bytes{ a = n, b = "min" } or slice::eq_bytes{ a = n, b = "max" } {

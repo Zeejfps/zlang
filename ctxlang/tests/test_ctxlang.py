@@ -2613,6 +2613,111 @@ fn main { mut io: Io } {
                 self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), body)
 
 
+class GenericOrder(Base):
+    """§11, Expressions, rule 1: a generic fn may order two values of a parameter's type with `<`,
+    `<=`, `>` and `>=`, and each use of the fn must then give the parameter a number's type,
+    through the generic fns between; nothing else has an order, and none is derived."""
+
+    ORDER = ('only numbers have an order: order two of them by a number of their own, or call a function that takes '
+             'the order as a `less` function')
+
+    def test_numbers(self):
+        # Integers, floats and a distinct type of one, through generic fns between, with all
+        # four operators; in a const and at run time.
+        self.assertOutput(r"""
+type Meters = distinct f64
+struct Pair(A) { a: A, b: A }
+
+fn least(T) { a: T, b: T } -> T {
+    if b < a { return b }
+    return a
+}
+fn most(T) { a: T, b: T } -> T {
+    if b > a { return b }
+    return a
+}
+fn bound(T) { x: T, lo: T, hi: T } -> T { return least{ a = most{ a = x, b = lo }, b = hi } }
+fn sorted(T) { xs: []T } -> bool {
+    for i in 1..xs.len {
+        if not (xs[i - 1] <= xs[i]) { return false }
+    }
+    return true
+}
+fn ordered(A) { p: Pair(A) } -> bool { return p.b >= p.a }
+fn largest(U) { xs: []U } -> U {
+    let mut best = xs[0]
+    for x in xs { best = most{ a = best, b = x } }
+    return best
+}
+
+const K: i32 = bound{ x = 50, lo = 0, hi = 10 }
+const F: f32 = least{ a = 2.5, b = -1.5 }
+
+fn main { mut io: Io } {
+    let n: usize = 7
+    let i: i32 = -9
+    let u: u8 = 4
+    // A literal takes the other argument's type, and an argument widens to the parameter's.
+    _ = @fmt(&io, "{} {} {} {}\n", least{ a = n, b = 3 }, most{ a = 1, b = n }, least{ a = i, b = u }, bound{ x = 12.5, lo = 0.0, hi = 1.0 })
+    let m: Meters = 2.0
+    let far = most{ a = m, b = 3.5 }
+    _ = @fmt(&io, "{} {} {}\n", @as(f64, far), K, F)
+    _ = @fmt(&io, "{} {} {} {}\n", sorted{ xs = [1, 2, 2, 5] }, sorted{ xs = [1.5, 0.5] }, sorted{ xs = "abc" }, sorted{ xs = [m, far, m] })
+    _ = @fmt(&io, "{} {} {}\n", ordered{ p = Pair{ a = u, b = u } }, ordered{ p = Pair{ a = 2.0, b = 1.0 } }, largest{ xs = [3, 9, -2] })
+    // A NaN is neither below nor above anything.
+    _ = @fmt(&io, "{} {}\n", least{ a = 1.0, b = math::NAN }, sorted{ xs = [1.0, math::NAN] })
+}
+""",
+            '3 7 -9 1.0\n'
+            '3.5 10 -1.5\n'
+            'true false true false\n'
+            'true false 9\n'
+            '1.0 false\n')
+
+    def test_errors(self):
+        decls = ('struct Point { x: i32, y: i32 }\nstruct Pair(A) { a: A, b: A }\nenum Kind: u8 { a, b }\nunion Shape { dot, line{ n: u8 } }\n'
+                 'type Id(T) = distinct T\nextern union Bits { a: u32, b: f32 }\n'
+                 'fn least(T) { a: T, b: T } -> T {\n    if b < a { return b }\n    return a\n}\n'
+                 'fn pick(U) { xs: []U } -> U { return least{ a = xs[0], b = xs[1] } }\n'
+                 'fn ordered(A) { p: Pair(A) } -> bool { return p.b >= p.a }\n'
+                 'fn below(T) { a: Id(T), b: Id(T) } -> bool { return a <= b }\n'
+                 'fn same_least(T) { a: T, b: T } -> bool { return least{ a, b } == a }\n'
+                 '%s\n'
+                 'fn main { mut io: Io } {\n    let p = Point{ x = 1, y = 2 }\n    let u: u8 = 1\n    %s\n}\n')
+        for top, body, msg, line, col in [
+            ('', 'let x = least{ a = p, b = p }', '`least` uses `<` on its `T`, and Point has no `<`: it is a struct, and ' + self.ORDER, 19, 13),
+            ('', 'let x = least{ a = Kind::a, b = Kind::b }', '`least` uses `<` on its `T`, and Kind has no `<`: it is an enum, and ' + self.ORDER, 19, 13),
+            ('', 'let x = least{ a = true, b = false }', '`least` uses `<` on its `T`, and bool has no `<`: it is a bool, and ' + self.ORDER, 19, 13),
+            ('', 'let x = least{ a = "a", b = "b" }', '`least` uses `<` on its `T`, and []u8 has no `<`: it is a slice, and ' + self.ORDER, 19, 13),
+            ('', 'let x = least{ a = [1, 2], b = [3, 4] }', '`least` uses `<` on its `T`, and [2]i32 has no `<`: it is an array, and ' + self.ORDER, 19, 13),
+            ('', 'let x = least{ a = Shape::dot, b = Shape::dot }', '`least` uses `<` on its `T`, and Shape has no `<`: it is a union, and ' + self.ORDER, 19, 13),
+            ('', 'let x = least{ a = &u, b = &u }', '`least` uses `<` on its `T`, and *u8 has no `<`: it is a pointer, and ' + self.ORDER, 19, 13),
+            ('', 'let o: ?u8 = u\n    let x = least{ a = o, b = o }', '`least` uses `<` on its `T`, and ?u8 has no `<`: it is an optional, and ' + self.ORDER, 20, 13),
+            ('', 'let x = least{ a = Bits{ a = 1 }, b = Bits{ a = 2 } }',
+             '`least` uses `<` on its `T`, and Bits has no `<`: it is an extern union, and ' + self.ORDER, 19, 13),
+            ('', 'let x = least{ a = main, b = main }', '`least` uses `<` on its `T`, and fn{ mut io: Io } has no `<`: it is a function, and ' + self.ORDER, 19, 13),
+            # through the generic fns between, by a parameter inside a type, and a distinct type's base
+            ('', 'let ps = [p, p]\n    let x = pick{ xs = ps[..] }', '`pick` uses `<` on its `U`, and Point has no `<`: it is a struct, and ' + self.ORDER, 20, 13),
+            ('', 'let x = ordered{ p = Pair{ a = p, b = p } }', '`ordered` uses `<` on its `A`, and Point has no `<`: it is a struct, and ' + self.ORDER, 19, 13),
+            ('', 'let x = below{ a = @as(Id(Point), p), b = @as(Id(Point), p) }',
+             '`below` uses `<` on its `T`, and Point has no `<`: it is a struct, and ' + self.ORDER, 19, 13),
+            # an order's error comes before `==`'s
+            ('', 'let x = same_least{ a = main, b = main }', '`same_least` uses `<` on its `T`, and fn{ mut io: Io } has no `<`: it is a function, and ' + self.ORDER, 19, 13),
+            # in the fn itself: both operands are the parameter's type
+            ('fn f(T) { xs: []T, ys: []T } -> bool { return xs < ys }', '', '`<` needs numbers, got []T', 15, 50),
+            ('fn f(T) { a: T } -> bool { return a < 1 }', '', 'cannot compare T with {integer}', 15, 37),
+            ('fn f(T) { a: ?T, b: T } -> bool { return a > b }', '', 'cannot compare ?T with T', 15, 44),
+            ('fn f(T) { a: T, b: T } -> T { return a + b }', '', '`+` needs numbers, got T', 15, 40),
+            # and outside a generic fn nothing changes
+            ('', 'let x = p < p', '`<` needs numbers, got Point', 19, 15),
+            ('', 'let x = Kind::a < Kind::b', '`<` needs numbers, got Kind', 19, 21),
+        ]:
+            with self.subTest(top=top, body=body):
+                with self.assertRaises(CompileError) as cm:
+                    run(decls % (top, body))
+                self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), top + body)
+
+
 class Lexer(Base):
     def assertLexError(self, src, msg, line, col):
         with self.assertRaises(CompileError) as cm:
