@@ -3,7 +3,8 @@
 // it the program's `#test` fns: how many there are, each one's name and position (`case`), and a
 // fn that runs one and gives its exit code (`run`).
 //
-// Each test runs in a process of its own: this program, started again with `--run INDEX`. So a
+// Each test runs in a process of its own: this program, started again with `--run INDEX` and
+// the arguments for the tests (`-- ARGS...`). So a
 // test's panic, or anything else that ends its process, fails that test alone; no test sees what
 // another left in a static; and tests run several at once. A test's output, standard output and
 // standard error together, goes to a file beside the executable, which the runner reads once the
@@ -18,7 +19,7 @@ capability Test { ..Io, ..test::State }
 
 namespace test {
     // The running test's name and where its fn is, for its lines, the directory of its file
-    // (`dir`), and what it has checked so far: whether it has made a check, and whether one
+    // (`dir`), the arguments the run gives its tests (`args`), and what it has checked so far: whether it has made a check, and whether one
     // didn't hold, each 0 or 1, set atomically, since a test's tasks may check at once.
     capability State {
         static name: [512]u8,
@@ -26,6 +27,7 @@ namespace test {
         static file: []u8,
         static line: u32,
         static dir: []u8,
+        static args: [][]u8,
         static checked: u32,
         static failed: u32,
     }
@@ -47,6 +49,29 @@ namespace test {
     //   let data = try fs::read_all{ &fs, &heap, realloc = arena::alloc, path = utf8::view{ b = path }.bytes }
     fn dir { mut t: Test } -> []u8 {
         return t.dir
+    }
+
+    // The arguments this run gives its tests (spec §20, rule 13): what follows `--` in
+    // `ctxc test PATH [FILTER...] -- ARGS...`, the same for every test, as `main`'s `args`
+    // are a program's. Empty without a `--`. They live until the program ends.
+    fn args { mut t: Test } -> [][]u8 {
+        return t.args
+    }
+
+    // Gives the tests their arguments, out of a `#test_main` fn's own `args`: those after the
+    // first `--`, or none without one. std's `main` calls it, and a program's `#test_main` fn
+    // does if its tests read `args`.
+    fn pass_args { mut t: Test, args: [][]u8 } {
+        t.args = args[own_args{ args }.len..]
+        if t.args.len > 0 { t.args = t.args[1..] }
+    }
+
+    // A `#test_main` fn's arguments that are the runner's own: those before the first `--`.
+    fn own_args { args: [][]u8 } -> [][]u8 {
+        for a at k in args {
+            if slice::eq_bytes{ a, b = "--" } { return args[..k] }
+        }
+        return args
     }
 
     // The exit code of a test that was skipped: what `skip` ends its process with, and what
@@ -130,7 +155,7 @@ namespace test {
         io::write{ io = &t, to = io::Stream::err, bytes = ": " }
     }
 
-    const USAGE: []u8 = "usage: ctxc test PATH [--list] [-v] [--no-skips] [--jobs N] [--timeout SECONDS] [FILTER...]: runs the tests whose names contain a FILTER, or all of them\n"
+    const USAGE: []u8 = "usage: ctxc test PATH [--list] [-v] [--no-skips] [--jobs N] [--timeout SECONDS] [FILTER...] [-- ARG...]: runs the tests whose names contain a FILTER, or all of them, and gives them the ARGs\n"
 
     // How long the runner waits for a test before it looks at the others again, in nanoseconds:
     // long enough that a wait takes about as long as it says on every platform, since the
@@ -162,8 +187,11 @@ namespace test {
     // 2 for arguments it doesn't know.
     #test_main
     fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut t: Test, args: Args, count: usize, case: &fn{ index: usize } -> Case, run: &fn{ index: usize } -> i32 } -> i32 {
-        if args.len == 2 and slice::eq_bytes{ a = args[0], b = "--run" } {
-            let n = utf8::parse_u64{ s = utf8::String{ bytes = args[1] } } ifnull { return 2 }
+        // What follows `--` is the tests', in the runner and in a test's process.
+        pass_args{ &t, args }
+        let own = own_args{ args }
+        if own.len == 2 and slice::eq_bytes{ a = own[0], b = "--run" } {
+            let n = utf8::parse_u64{ s = utf8::String{ bytes = own[1] } } ifnull { return 2 }
             if n >= count { return 2 }
             let index = @as(usize, n)
             return run_here{ &t, c = case{ index }, index, run }
@@ -176,16 +204,16 @@ namespace test {
         let mut filters = list::new([]u8){ realloc = arena::alloc, &heap }
         let mut o = Options{ list = false, verbose = false, no_skips = false, jobs = @as(usize, proc::processors{ &proc }), timeout = 60, filters = slice::empty([]u8){} }
         let mut i: usize = 0
-        while i < args.len {
-            let a = args[i]
+        while i < own.len {
+            let a = own[i]
             if slice::eq_bytes{ a, b = "--list" } {
                 o.list = true
             } else if slice::eq_bytes{ a, b = "-v" } {
                 o.verbose = true
             } else if slice::eq_bytes{ a, b = "--no-skips" } {
                 o.no_skips = true
-            } else if (slice::eq_bytes{ a, b = "--jobs" } or slice::eq_bytes{ a, b = "--timeout" }) and i + 1 < args.len {
-                let n = utf8::parse_u64{ s = utf8::String{ bytes = args[i + 1] } } ifnull {
+            } else if (slice::eq_bytes{ a, b = "--jobs" } or slice::eq_bytes{ a, b = "--timeout" }) and i + 1 < own.len {
+                let n = utf8::parse_u64{ s = utf8::String{ bytes = own[i + 1] } } ifnull {
                     io::write{ &io, to = io::Stream::err, bytes = USAGE }
                     return 2
                 }
@@ -224,7 +252,7 @@ namespace test {
             _ = @fmt(&io, ", of {}\n", count)
             return 1
         }
-        let n = run_all{ &io, &fs, &proc, &heap, o, tests, case }
+        let n = run_all{ &io, &fs, &proc, &heap, o, tests, case, passed = t.args }
         _ = @fmt(&io, "tests: {} run, {} passed, {} failed, {} skipped, {} not selected\n", tests.len, tests.len - n.failed - n.skipped, n.failed, n.skipped, count - tests.len)
         return if n.failed == 0 and (n.skipped == 0 or not o.no_skips) { 0 } else { 1 }
     }
@@ -280,7 +308,7 @@ namespace test {
     // each failed one's lines and each skipped one's line, in the tests' order. A
     // `#test{ skip = "why" }` gets no process. Returns how many failed and how many were
     // skipped.
-    fn run_all { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, o: Options, tests: []usize, case: &fn{ index: usize } -> Case } -> Tally {
+    fn run_all { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, o: Options, tests: []usize, case: &fn{ index: usize } -> Case, passed: [][]u8 } -> Tally {
         let exe = proc::exe_path{ &proc }
         let outcomes = try! alloc::make(Outcome, Heap){ realloc = arena::alloc, &heap, count = tests.len }
         let mut active = list::new(Running){ realloc = arena::alloc, &heap }
@@ -298,7 +326,7 @@ namespace test {
                     next = next + 1
                     continue
                 }
-                match start{ &fs, &proc, &heap, exe, index = tests[next] } {
+                match start{ &fs, &proc, &heap, exe, index = tests[next], passed } {
                     ok{ value } => { try! list::push{ list = &active, item = Running{ slot = next, child = value.child, path = value.path, began = clock } } }
                     err{ error } => {
                         let mut b = utf8::builder{ realloc = arena::alloc, &heap }
@@ -358,8 +386,9 @@ namespace test {
 
     // Starts test `index` in a process of its own, a group that ends with this program, whose
     // output goes to a new file beside the executable: EXE.INDEX.out, or with a number more
-    // if another run of the tests has that one.
-    fn start { mut fs: Fs, mut proc: Proc, mut heap: Heap, exe: []u8, index: usize } -> !Started {
+    // if another run of the tests has that one. Its arguments are `--run INDEX -- ` and
+    // `passed`, the tests' own.
+    fn start { mut fs: Fs, mut proc: Proc, mut heap: Heap, exe: []u8, index: usize, passed: [][]u8 } -> !Started {
         let mut digits: [20]u8
         let number = utf8::fmt_u64{ n = index, into = digits[..] }.bytes
         let mut again: u64 = 0
@@ -377,9 +406,14 @@ namespace test {
                 }
                 err{ error } => { return error }
             }
-            let argv: [3][]u8 = [exe, "--run", number]
+            let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
+            try list::push{ list = &argv, item = exe }
+            try list::push{ list = &argv, item = "--run" }
+            try list::push{ list = &argv, item = number }
+            try list::push{ list = &argv, item = "--" }
+            for a in passed { try list::push{ list = &argv, item = a } }
             let options = proc::Options{ stdin = proc::Stdio::ignore, stdout = proc::Stdio::file{ file }, stderr = proc::Stdio::file{ file }, group = true, die_with_parent = true, .. }
-            let child = proc::spawn{ &proc, argv = argv[..], options }
+            let child = proc::spawn{ &proc, argv = list::items{ list = argv }, options }
             _ = fs::close{ &fs, file } iferr {}
             return Started{ child = try child, path }
         }

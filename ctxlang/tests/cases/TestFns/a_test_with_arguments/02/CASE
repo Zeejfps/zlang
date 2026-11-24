@@ -1,0 +1,17 @@
+// A `#test_main` fn is given all of `ctxc test`'s arguments after PATH. Its tests have
+// none until it hands them theirs, those after the first `--`, with test::pass_args.
+//# $ ctxc test . -q one -- a --b
+//# exit: 0
+//# stdout:
+//| the runner has `-q`
+//| the runner has `one`
+//| the runner has `--`
+//| the runner has `a`
+//| the runner has `--b`
+//| its own: `-q`
+//| its own: `one`
+//| before test::pass_args: 1 failed
+//| one has `a`
+//| one has `--b`
+//# stderr:
+//| ./t.ctx:4: fail: one: test::args{ &t }.len == 2: 0 == 2

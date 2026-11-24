@@ -1,0 +1,24 @@
+#test
+fn one { mut t: Test, mut io: Io } {
+    for a in test::args{ &t } { _ = @fmt(&io, "one has `{}`\n", a) }
+    @expect(&t, test::args{ &t }.len == 2)
+}
+
+// A runner of the program's own is given every argument, the `--` too, and hands the
+// tests theirs with test::pass_args; test::own_args is the rest.
+#test_main
+fn runner { mut io: Io, mut t: Test, args: Args, count: usize, case: &fn{ index: usize } -> test::Case, run: &fn{ index: usize } -> i32 } -> i32 {
+    for a in args { _ = @fmt(&io, "the runner has `{}`\n", a) }
+    for a in test::own_args{ args } { _ = @fmt(&io, "its own: `{}`\n", a) }
+    let mut failed: i32 = 0
+    for i in 0..count {
+        failed = failed + test::run_here{ &t, c = case{ index = i }, index = i, run }
+    }
+    _ = @fmt(&io, "before test::pass_args: {} failed\n", failed)
+    test::pass_args{ &t, args }
+    failed = 0
+    for i in 0..count {
+        failed = failed + test::run_here{ &t, c = case{ index = i }, index = i, run }
+    }
+    return failed
+}

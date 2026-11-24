@@ -1,0 +1,72 @@
+// `ctxc test PATH [options] [FILTER...] -- ARGS...` gives ARGS to every test, which reads
+// them with test::args. Here a test takes a game's directory, and is skipped without it.
+//# write game/chitin.key:
+//| KEY V1  and the rest of it
+
+// Without arguments: the test that needs the install says so, and the other runs.
+//# $ ctxc test . install
+//# exit: 0
+//# stdout:
+//| ./t.ctx:4: skip: the_install_has_its_key_file: no game install: give its directory after `--`
+//| tests: 2 run, 1 passed, 0 failed, 1 skipped, 2 not selected
+
+// With the directory: it runs. Filters and options come before the `--`.
+//# $ ctxc test . -v install -- {dir}/game
+//# exit: 0
+//# stdout:
+//| ./t.ctx:4: pass: the_install_has_its_key_file
+//| ./t.ctx:17: pass: needs_no_install
+//| tests: 2 run, 2 passed, 0 failed, 0 skipped, 2 not selected
+
+// A directory without the game: the test fails with the error it returned.
+//# $ ctxc test . key_file -- {dir}/nowhere
+//# exit: 1
+//# stdout:
+//| ./t.ctx:4: fail: the_install_has_its_key_file: error: fs::not_found
+//| tests: 1 run, 0 passed, 1 failed, 0 skipped, 3 not selected
+
+// Everything after the first `--` is the tests', whatever it looks like: an option, a
+// test's name, an empty word, another `--`. Each test is given all of it.
+//# $ ctxc test . shows -- --list install "" -- "two words"
+//# exit: 1
+//# stdout:
+//| argument 0: `--list`
+//| argument 1: `install`
+//| argument 2: ``
+//| argument 3: `--`
+//| argument 4: `two words`
+//| ./t.ctx:22: fail: shows_its_arguments: test::args{ &t }.len == 0: 5 == 0
+//| tests: 1 run, 0 passed, 1 failed, 0 skipped, 3 not selected
+
+// A `--` with nothing after it, and no `--`: no arguments.
+//# $ ctxc test . shows --
+//# exit: 0
+//# stdout:
+//| tests: 1 run, 1 passed, 0 failed, 0 skipped, 3 not selected
+//# $ ctxc test . shows
+//# exit: 0
+//# stdout:
+//| tests: 1 run, 1 passed, 0 failed, 0 skipped, 3 not selected
+
+// An option after the `--` is not the runner's, and one it doesn't know before it is.
+//# $ ctxc test . --list shows -- --nope
+//# exit: 0
+//# stdout:
+//| ./t.ctx:20: shows_its_arguments
+//# $ ctxc test . --nope -- x
+//# exit: 2
+//# stderr:
+//| usage: ctxc test PATH [--list] [-v] [--no-skips] [--jobs N] [--timeout SECONDS] [FILTER...] [-- ARG...]: runs the tests whose names contain a FILTER, or all of them, and gives them the ARGs
+
+// The environment is another way in, which needs nothing of the runner: a test that takes
+// a Proc reads it.
+//# $ ctxc test . environment
+//# env: GAME_DIR=elsewhere
+//# exit: 0
+//# stdout:
+//| tests: 1 run, 1 passed, 0 failed, 0 skipped, 3 not selected
+//# $ ctxc test . environment
+//# exit: 1
+//# stdout:
+//| ./t.ctx:28: fail: reads_the_environment: proc::env{ &proc, name = "GAME_DIR" } == "elsewhere": null == elsewhere
+//| tests: 1 run, 0 passed, 1 failed, 0 skipped, 3 not selected

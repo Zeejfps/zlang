@@ -161,12 +161,12 @@ namespace drive {
 
     // `ctxc test PATH [ARGS...]` (spec §20): builds the first executable of the program at PATH
     // as `run` does, but as a test build, whose entry point is std's test runner in place of
-    // the program's `main`, and runs it with ARGS: parts of the names of the tests to run, and
-    // the runner's options (std/test.ctx). It is built as NAME.test, beside the program's own
+    // the program's `main`, and runs it with ARGS as they are: the runner's options, parts of
+    // the names of the tests to run, and after a `--` the tests' own arguments (std/test.ctx). It is built as NAME.test, beside the program's own
     // build, which it leaves alone. The exit code is the runner's.
     fn test { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> i32 {
         if args.len < 2 {
-            io::eprintln{ &io, s = "usage: ctxc test PATH [--list] [-v] [--no-skips] [--jobs N] [--timeout SECONDS] [FILTER...]" }
+            io::eprintln{ &io, s = "usage: ctxc test PATH [--list] [-v] [--no-skips] [--jobs N] [--timeout SECONDS] [FILTER...] [-- ARG...]" }
             return 2
         }
         let path = trim_slash{ path = args[1] }
@@ -193,8 +193,7 @@ namespace drive {
         let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = d.work, name = cat{ &heap, a = t.name, b = ".test" }, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, level = t.level, flags = list::items{ list = flags }, out = "", testing = true, &why } ifnull { return 1 }
         let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
         try! list::push{ list = &argv, item = exe }
-        let rest: usize = if args.len > 2 and slice::eq_bytes{ a = args[2], b = "--" } { 3 } else { 2 }
-        add_all{ xs = &argv, ys = args[rest..] }
+        add_all{ xs = &argv, ys = args[2..] }
         return started{ &io, r = proc::run{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} }, what = exe }
     }
 

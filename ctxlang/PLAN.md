@@ -447,8 +447,12 @@ steps 1 and 3 are done. None blocks the other stages.
      path of the directory of the test's source file, for a file kept beside it. The compiler
      has each test's file for its lines, and gives its directory with it; the working
      directory is left alone.
-   - *Not built, each for its reason* (spec §20, rule 13): a leak check (std's one allocator is
-     the arena, which has nothing to leak), a temporary directory, and tests with arguments.
+   - **A run gives its tests arguments** (spec §20, rule 13): `ctxc test PATH [FILTER...] --
+     ARGS...`, read with `test::args{ &t }`, for what the source can't know, as a game's
+     directory. The environment already reaches a test through a `Proc`, and stays that.
+   - *Not built, each for its reason* (spec §20, rule 14): a leak check (std's one allocator is
+     the arena, which has nothing to leak), a temporary directory, and tests over a table of
+     cases.
    - *Considered:* finding tests by name (Go's `TestXxx`) is magic by name; `test "name" { }`
      blocks (Zig) are syntax an attribute already gives; fixtures by parameter name (pytest) are
      hidden injection that capabilities make explicit; mocks that patch code at run time (Jest)

@@ -1,0 +1,29 @@
+// A test of what only some machines have, a game's install: the run names its directory
+// after `--`, and without one the test is skipped.
+#test
+fn the_install_has_its_key_file { mut t: Test, mut fs: Fs, mut mem: Mem } -> ! {
+    let args = test::args{ &t }
+    if args.len == 0 { test::skip{ &t, why = "no game install: give its directory after `--`" } }
+    let pages = mem::pages{ &mem, size = 65536 } ifnull { return alloc::out_of_memory }
+    let mut heap = arena::new{ buf = pages }
+    let mut path = utf8::builder{ realloc = arena::alloc, &heap }
+    try @fmt(&path, "{}/chitin.key", args[0])
+    let key: []u8 = try fs::read_all{ &fs, &heap, realloc = arena::alloc, path = utf8::view{ b = path }.bytes }
+    @require(&t, key.len >= 8)
+    @expect(&t, key[..8] == "KEY V1  ")
+}
+
+#test
+fn needs_no_install { mut t: Test } { @expect(&t, 1 + 1 == 2) }
+
+#test
+fn shows_its_arguments { mut t: Test, mut io: Io } {
+    for a at i in test::args{ &t } { _ = @fmt(&io, "argument {}: `{}`\n", i, a) }
+    @expect(&t, test::args{ &t }.len == 0)
+}
+
+// The environment reaches a test as it reaches any program: through a Proc.
+#test
+fn reads_the_environment { mut t: Test, mut proc: Proc } {
+    @expect(&t, proc::env{ &proc, name = "GAME_DIR" } == "elsewhere")
+}

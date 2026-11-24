@@ -563,7 +563,7 @@ What a model writes by default should compile, or fail with the exact fix.
       a test build can't reach a check. The check goes on, and its value is the condition's;
       `@require(&t, p != null)` is the same check as a statement that ends the test where it
       doesn't hold ([§13, Checks, rule 6](spec.md#checks)).
-    - `ctxc test PATH [FILTER...]`, with or without a build.ctx, builds the program with std's
+    - `ctxc test PATH [FILTER...] [-- ARGS...]`, with or without a build.ctx, builds the program with std's
       runner as its entry point in place of `main` (which needn't exist) and runs it. Each
       test runs in a process of its own ([spec §20, rule 7](spec.md#20-tests)), so a panic fails one test
       with its message, no static leaks from one test to the next, and tests run at once;
@@ -595,8 +595,13 @@ What a model writes by default should compile, or fail with the exact fix.
       the directory of the test's file as an absolute path, fixed when the test build is
       made, the same in a helper of another file. The working directory stays the caller's.
       std's own use: [std/tests/fs.ctx](std/tests/fs.ctx) reads `words.txt` beside it.
-    - Not built, each for its reason ([spec §20, rule 13](spec.md#20-tests)): a leak check
-      (std's one allocator is the arena), a temporary directory, tests with arguments. JSON
+    - Arguments for the tests ([spec §20, rule 13](spec.md#20-tests)): `ctxc test PATH
+      [FILTER...] -- ARGS...` gives ARGS to every test, read with `test::args{ &t }`, as a
+      game's directory, which a test skips without. Everything after the first `--` is the
+      tests'; a `#test_main` fn hands them on with `test::pass_args{ &t, args }`. The
+      environment needed nothing: a test that takes a `Proc` reads it with `proc::env`.
+    - Not built, each for its reason ([spec §20, rule 14](spec.md#20-tests)): a leak check
+      (std's one allocator is the arena), a temporary directory, tests over a table of cases. JSON
       output is 6.2's.
 
 - [x] **5.2 Tests as files.**

@@ -306,4 +306,11 @@ namespace twoda_tests {
   path from the repository's root. A helper in another file gets the calling test's directory.
 - Pass `&t` down to helpers that check (`fn same_rows { mut t: Test, a: Table, b: Table }`).
 - Each test runs in its own process, several at once: don't rely on another test's files or
-  state. A test that needs the game install belongs in a tool, as before.
+  state.
+- A test that needs the game install takes its directory as an argument and skips without it:
+  `kotor/tools/ctxc test kotor/tools/fmttest -- F:/Steam/steamapps/common/swkotor` gives every
+  test what follows the `--`, and the test starts with
+  `let args = test::args{ &t }` and
+  `if args.len == 0 { test::skip{ &t, why = "no game install: give its directory after --" } }`,
+  then reads `args[0]`. Filters and options (`-v`, `--list`, `--no-skips`) come before the
+  `--`. Don't hard-code the install's path in a test, and don't read it from the environment.

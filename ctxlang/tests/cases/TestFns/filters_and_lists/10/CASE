@@ -2,4 +2,4 @@
 //# $ ctxc test . --nope
 //# exit: 2
 //# stderr:
-//| usage: ctxc test PATH [--list] [-v] [--no-skips] [--jobs N] [--timeout SECONDS] [FILTER...]: runs the tests whose names contain a FILTER, or all of them
+//| usage: ctxc test PATH [--list] [-v] [--no-skips] [--jobs N] [--timeout SECONDS] [FILTER...] [-- ARG...]: runs the tests whose names contain a FILTER, or all of them, and gives them the ARGs
