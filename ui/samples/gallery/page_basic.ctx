@@ -114,7 +114,7 @@ namespace gallery {
         let label_box = ui::Box{ width = ui::fix{ size = t.font_size * 8.0 }, .. }
         {
             let row = ui::begin_row{ &ui, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, .. }, .. } }
-            _ = @fmt(&ui, "Volume {} %", ui::write_fixed{ v = page.volume * 100.0, digits = 1, _ })
+            _ = @fmt(&ui, "Volume {:.1} %", page.volume * 100.0)
             let text = ui::take_text{ &ui }
             ui::add_label{ &ui, text, opts = ui::Opts{ box = label_box, .. } }
             _ = ui::add_slider{ &ui, label = "volume", value = &page.volume, range = ui::Range{ .. }, opts = ui::Opts{ tip = "Drag, or use the arrow keys", .. } }
@@ -122,7 +122,7 @@ namespace gallery {
         }
         {
             let row = ui::begin_row{ &ui, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, .. }, .. } }
-            _ = @fmt(&ui, "Brightness {}", ui::write_fixed{ v = page.brightness, digits = 1, _ })
+            _ = @fmt(&ui, "Brightness {:.1}", page.brightness)
             let text = ui::take_text{ &ui }
             ui::add_label{ &ui, text, opts = ui::Opts{ box = label_box, .. } }
             _ = ui::add_slider{ &ui, label = "brightness", value = &page.brightness, range = ui::Range{ step = 0.1, digits = 1, .. }, opts }

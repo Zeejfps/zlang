@@ -102,8 +102,8 @@ What follows from it, and what a reviewer checks:
       parameter is named `ui` everywhere and the draw list `list`.
     - Escape checks do not catch a stack slice stored through a call: text that outlives the call is
       copied into the frame's text arena (`ui::draw::add_text` does).
-    - Do not print an `f32` with `@fmt` into a golden: std writes `10.0` as `1e+01`. Use
-      `ui::format_fixed` or the recorder's `write_number`.
+    - Format numbers with a spec: `@fmt(&ui, "{:.1} %", v)`; the Ui and the recorder take every spec.
+      A golden writes a float with the recorder's `write_number` (trimmed: `10`, `0.5`) or a precision.
     - Files stay a few thousand lines at most (a file is the unit of recompiling).
 
 ## Commands
@@ -172,14 +172,14 @@ ui/
     num.ctx     libm externs (floor_f32 ...), pick_min/max, clamp_f32, clamp_i32; the pixel helpers: MAX_PIXELS,
                 hold_pixels, add_pixels, sub_pixels, floor_pixels, ceil_pixels, round_pixels, hold_scale,
                 scale_length, scale_font_size, scale_position, take_fraction
-    format.ctx  format_fixed, format_hex, format_color: into a caller's buffer, no std float printing
+    format.ctx  format_fixed (a runtime digit count, trimmed or not, over std's fmt), format_hex, format_color
     font.ctx    the provider hook types, decode_char, get_font_scale; ui::draw: add_font, has_font, get_font, add_known_text
     text.ctx    lay_glyphs, LineBox; ui::text: Cache, measure_text (i32, rounded up), sum_text, get_line_metrics,
                 wrap_text, fit_ellipsis, step_caret, locate_caret, pick_index, ceil_width, round_metrics
     ui.ctx      Ui, Capacity, Theme, Config, Stats, Problem, FrameInfo; make, begin_frame, end_frame; report_problem,
                 report_drop; add_font, set_provider, measure_text, measure_line; the conversions (to_pixels,
                 to_pixel_position, to_pixels_f32, to_font_size, to_pixel_sides, to_pixel_corners, get_scale);
-                the Ui as an @fmt sink, write_fixed, take_text
+                the Ui as an @fmt sink (every spec), write_fixed (a runtime digit count), take_text
     id.ctx      Id, Scope, make_id, push_id, push_key, end; ui::id: the scope stack, write_path
     tree.ctx    Box, Size, Place, Insets, TextStyle, Opts (logical units); fix, fix_pixels, take, place, place_pixels, inset;
                 begin_element, add_text, add_host_slot, paint_* (pixels); ui::tree: Element (pixels), Extent, open_element

@@ -441,10 +441,63 @@ namespace ui {
     fn write_u32 { mut ui: Ui, n: u32 } { write_u64{ &ui, n } }
     #write
     fn write_usize { mut ui: Ui, n: usize } { write_u64{ &ui, n } }
+    #write
+    fn write_i8 { mut ui: Ui, n: i8 } { write_i64{ &ui, n } }
+    #write
+    fn write_i16 { mut ui: Ui, n: i16 } { write_i64{ &ui, n } }
 
-    // A decimal in an @fmt hole: `@fmt(&ui, "{} %", ui::write_fixed{ v, digits = 1, _ })`. Exactly
-    // `digits` digits after the point (37.5 with 1 is `37.5`, 10 with 2 is `10.00`). It cannot
-    // fail: the result is only the shape @fmt needs.
+    // A float in a hole without a spec is std's text of it (ctxlang/spec.md section 13, Formatting,
+    // rule 9): the shortest digits that read back, plainly from 1e-4 up to 1e16 (`0.1`, `100.0`,
+    // `-2.5`), in exponent form outside that.
+    #write
+    fn write_f32 { mut ui: Ui, n: f32 } {
+        let mut buf: [fmt::LONGEST]u8
+        write_bytes{ &ui, s = fmt::format_f32{ v = fmt::F32{ x = n, spec = get_plain_spec{} }, into = buf[..] } }
+    }
+    #write
+    fn write_f64 { mut ui: Ui, n: f64 } {
+        let mut buf: [fmt::LONGEST]u8
+        write_bytes{ &ui, s = fmt::format_f64{ v = fmt::F64{ x = n, spec = get_plain_spec{} }, into = buf[..] } }
+    }
+
+    // A hole with a spec (`{:.1}`, `{:>6}`, `{:08x}`, `{:<12}`), as the spec rules of ctxlang/spec.md
+    // section 13 (Formatting, rule 8) say: the language hands the sink the value with its spec.
+    #write
+    fn write_fmt_int { mut ui: Ui, v: fmt::Int } {
+        let mut buf: [fmt::LONGEST]u8
+        write_bytes{ &ui, s = fmt::format_int{ v, into = buf[..] } }
+    }
+    #write
+    fn write_fmt_uint { mut ui: Ui, v: fmt::Uint } {
+        let mut buf: [fmt::LONGEST]u8
+        write_bytes{ &ui, s = fmt::format_uint{ v, into = buf[..] } }
+    }
+    #write
+    fn write_fmt_f32 { mut ui: Ui, v: fmt::F32 } {
+        let mut buf: [fmt::LONGEST]u8
+        write_bytes{ &ui, s = fmt::format_f32{ v, into = buf[..] } }
+    }
+    #write
+    fn write_fmt_f64 { mut ui: Ui, v: fmt::F64 } {
+        let mut buf: [fmt::LONGEST]u8
+        write_bytes{ &ui, s = fmt::format_f64{ v, into = buf[..] } }
+    }
+    #write
+    fn write_fmt_text { mut ui: Ui, v: fmt::Text } {
+        write_bytes{ &ui, s = fmt::spaces{ n = fmt::pad_before{ v } } }
+        write_bytes{ &ui, s = v.s }
+        write_bytes{ &ui, s = fmt::spaces{ n = fmt::pad_after{ v } } }
+    }
+
+    // The spec of a hole that has none: what a float's plain text is formatted with.
+    fn get_plain_spec {} -> fmt::Spec {
+        return fmt::Spec{ width = 0, precision = -1, align = fmt::Align::natural, zero = false, base = 10, upper = false }
+    }
+
+    // A decimal with a digit count known only at run time (a slider's `Range.digits`):
+    // `@fmt(&ui, "{} %", ui::write_fixed{ v, digits, _ })`, exactly `digits` digits after the point
+    // (at most 9), as `format_fixed` writes them. With a count the code knows, write the spec:
+    // `@fmt(&ui, "{:.1} %", v)`. It cannot fail: the result is only the shape @fmt needs.
     fn write_fixed { mut ui: Ui, v: f32, digits: u32 } -> ! {
         let mut buf: [48]u8
         let n = format_fixed{ v, digits, trim = false, into = buf[..] }

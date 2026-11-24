@@ -5,7 +5,7 @@ pass 0 draws 0+2 host 7 60,0 80x60
 draw 0 rect first=0 count=1
   rect 0,80 50x20 radius=0,0,0,0 border=0,0,0,0 fill=FF110000 colors=00000000,00000000,00000000,00000000 clip=0
 draw 1 glyph first=0 count=1
-  glyph 2,82 8x16 uv=0.007813,0.015625,0.0625,0.25 color=FF220000 clip=0 angle=0
+  glyph 2,82 8x16 uv=0.007812,0.015625,0.0625,0.25 color=FF220000 clip=0 angle=0
 pass 1 draws 2+2
 draw 2 rect first=1 count=1
   rect 150,80 50x20 radius=0,0,0,0 border=0,0,0,0 fill=FF330000 colors=00000000,00000000,00000000,00000000 clip=0

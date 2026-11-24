@@ -393,9 +393,25 @@ fn check_rects { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
 fn check_sink { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
     start_frame{ ui = &gui, scale = 1.0 }
-    _ = @fmt(&gui, "Volume {} %", ui::write_fixed{ v = 37.5, digits = 1, _ })
+    let level: f32 = 0.375
+    _ = @fmt(&gui, "Volume {:.1} %", level * 100.0)
     let volume = ui::take_text{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = volume, b = "Volume 37.5 %" }, what = "a decimal formats into the frame's arena" }
+    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = volume, b = "Volume 37.5 %" }, what = "a decimal formats into the frame's arena with a spec" }
+    // Floats without a spec are written plainly, as std writes them; every spec works.
+    let ten: f32 = 10.0
+    let tenth: f32 = 0.1
+    let wide: f64 = 1234567.0
+    let tiny: f32 = 0.00001
+    _ = @fmt(&gui, "{} {} {} {} {}", ten, tenth, -2.5, wide, tiny)
+    let plain = ui::take_text{ ui = &gui }
+    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = plain, b = "10.0 0.1 -2.5 1234567.0 1e-05" }, what = "f32 and f64 without a spec: std's shortest text" }
+    let n: i32 = -42
+    let id: u32 = 255
+    let digits: u32 = 2
+    _ = @fmt(&gui, "[{:>6}] [{:<6}] [{:06}] [{:08X}] [{:b}] [{:8.2}] [{:^9}] [{}]", n, id, n, id, 5, ten / 3.0, "mid", ui::write_fixed{ v = ten / 3.0, digits, _ })
+    let specs = ui::take_text{ ui = &gui }
+    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = specs, b = "[   -42] [255   ] [-00042] [000000FF] [101] [    3.33] [   mid   ] [3.33]" },
+        what = "specs in the Ui sink: width, alignment, zeros, bases, a precision, text; write_fixed with a digit count at run time" }
     let done: usize = 3
     let count: u32 = 12
     _ = @fmt(&gui, "{} of {} done, {}", done, count, true)

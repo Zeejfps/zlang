@@ -148,7 +148,7 @@ namespace gallery {
             _ = ui::add_number{ &ui, label = "scale", value = &page.scale, range = ui::Range{ min = 0.5, max = 4.0, step = 0.25, digits = 2 }, opts = ui::Opts{ enabled = false, .. } }
             ui::end{ &ui, scope = row }
         }
-        _ = @fmt(&ui, "Count {}, price {}", ui::write_fixed{ v = page.count, digits = 0, _ }, ui::write_fixed{ v = page.price, digits = 2, _ })
+        _ = @fmt(&ui, "Count {:.0}, price {:.2}", page.count, page.price)
         let text = ui::take_text{ &ui }
         ui::add_label{ &ui, text, opts = ui::Opts{ .. } }
         ui::end{ &ui, scope = panel }

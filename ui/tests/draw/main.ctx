@@ -188,8 +188,8 @@ fn check_numbers { mut io: Io, mut t: ui_test::Tally } {
     ui_test::expect{ &io, &t, ok = same_trimmed{ v = -0.00004, digits = 4, want = "0" }, what = "a negative that rounds to zero has no sign" }
     ui_test::expect{ &io, &t, ok = same_trimmed{ v = 0.05, digits = 4, want = "0.05" }, what = "a zero after the point stays" }
     ui_test::expect{ &io, &t, ok = same_trimmed{ v = 0.0625, digits = 4, want = "0.0625" }, what = "four digits" }
-    ui_test::expect{ &io, &t, ok = same_trimmed{ v = 0.5, digits = 0, want = "1" }, what = "0.5 with no digits rounds half away from zero" }
-    ui_test::expect{ &io, &t, ok = same_trimmed{ v = -2.5, digits = 0, want = "-3" }, what = "-2.5 with no digits is -3" }
+    ui_test::expect{ &io, &t, ok = same_trimmed{ v = 0.5, digits = 0, want = "0" } and same_trimmed{ v = 1.5, digits = 0, want = "2" }, what = "0.5 and 1.5 with no digits round to the even digit, as the language's {:.0} does" }
+    ui_test::expect{ &io, &t, ok = same_trimmed{ v = -2.5, digits = 0, want = "-2" } and same_trimmed{ v = 0.0078125, digits = 6, want = "0.007812" }, what = "-2.5 with no digits is -2, and 1/128 with six is 0.007812: a tie goes to the even digit" }
 
     // Exactly `digits` digits: what a slider's label wants.
     ui_test::expect{ &io, &t, ok = same_fixed{ v = 37.5, digits = 1, want = "37.5" }, what = "37.5 with one digit" }
@@ -205,7 +205,7 @@ fn check_numbers { mut io: Io, mut t: ui_test::Tally } {
     ui_test::expect{ &io, &t, ok = same_trimmed{ v = nan, digits = 2, want = "nan" }, what = "NaN is nan" }
     let inf = 1.0e30 * 1.0e30
     ui_test::expect{ &io, &t, ok = same_trimmed{ v = inf, digits = 2, want = "inf" } and same_trimmed{ v = -inf, digits = 2, want = "-inf" }, what = "infinities" }
-    ui_test::expect{ &io, &t, ok = same_trimmed{ v = 1.0e30, digits = 2, want = "huge" }, what = "a magnitude beyond i64 is huge" }
+    ui_test::expect{ &io, &t, ok = same_trimmed{ v = 1.0e30, digits = 2, want = "1000000015047466219876688855040" }, what = "a large f32 is its exact whole value, never exponent form" }
 
     // A short buffer is cut, not overrun.
     let mut small: [3]u8
@@ -230,8 +230,8 @@ fn check_numbers { mut io: Io, mut t: ui_test::Tally } {
 fn check_sink { mut io: Io, mut t: ui_test::Tally } {
     let mut store: [256]u8
     let mut sink = ui_rec::make_sink{ bytes = store[..] }
-    _ = @fmt(&sink, "{} {} {} {} |{}|{}|{}", ui_rec::write_number{ v = 10.0, _ }, ui_rec::write_number{ v = 0.5, _ }, ui_rec::write_number{ v = -3.25, _ },
-        ui_rec::write_number{ v = 100.0, _ }, ui_rec::write_fixed{ v = 37.5, digits = 2, _ }, ui_rec::write_hex{ n = 255, digits = 4, _ }, ui_rec::write_color{ color = ui::Color{ r = 1, g = 2, b = 3, a = 4 }, _ })
+    _ = @fmt(&sink, "{} {} {} {} |{:.2}|{}|{}", ui_rec::write_number{ v = 10.0, _ }, ui_rec::write_number{ v = 0.5, _ }, ui_rec::write_number{ v = -3.25, _ },
+        ui_rec::write_number{ v = 100.0, _ }, 37.5, ui_rec::write_hex{ n = 255, digits = 4, _ }, ui_rec::write_color{ color = ui::Color{ r = 1, g = 2, b = 3, a = 4 }, _ })
     ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = ui_rec::get_text{ sink }, b = "10 0.5 -3.25 100 |37.50|00FF|01020304" }, what = "the sink writes numbers fixed-point" }
 
     ui_rec::reset_sink{ &sink }
@@ -240,6 +240,12 @@ fn check_sink { mut io: Io, mut t: ui_test::Tally } {
     let neg: i32 = -12
     _ = @fmt(&sink, "{} {} {} {}", big, small, neg, true)
     ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = ui_rec::get_text{ sink }, b = "4000000000 7 -12 true" }, what = "the sink writes integers and booleans" }
+
+    ui_rec::reset_sink{ &sink }
+    let ratio: f64 = 0.125
+    _ = @fmt(&sink, "{:>5}|{:<4}|{:06}|{:x}|{:08.3}|{:.3}|{:^7}|", big, small, neg, 255, 3.14159, ratio, "mid")
+    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = ui_rec::get_text{ sink }, b = "4000000000|7   |-00012|ff|0003.142|0.125|  mid  |" },
+        what = "the sink writes every kind of spec: widths, alignment, zeros, a base, a precision on f32 and f64, text" }
 
     ui_rec::reset_sink{ &sink }
     _ = ui_rec::write_quoted{ &sink, s = "a\"b\\c\nd\x01" }

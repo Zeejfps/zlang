@@ -297,8 +297,8 @@ KOTOR part lives in kotor:
   merged with `ifnull` [compiled, a1].
 - Label text is copied into the frame's text arena at the call, because the escape check does not catch
   a stack slice stored through a call.
-- Number formatting is the framework's: `@fmt(&ui, "{} %", ui::write_fixed{ v, digits = 1, _ })` writes
-  into the frame arena through the framework's own `#write` functions [compiled, a4: prints
+- Number formatting is the language's: `@fmt(&ui, "{:.1} %", v)` writes into the frame arena through the
+  Ui's `#write` functions, which take every format spec (`fmt::Int`, `F32`, `Text`, ...) [compiled: prints
   `Volume 37.5 %`].
 - kotor's `math` shadows std's: the core declares the few libm functions it needs itself, `#pure`, in
   its own namespace [compiled, a1; a5 builds beside kotor's `math`].
@@ -971,8 +971,8 @@ glyph table; in an outline font the caret steps by cluster.
 at the width; `Overflow::ellipsis` cuts a single line and appends `...`. Widths come from the glyph
 table or from the provider, so the same code wraps both kinds.
 
-**Formatting numbers.** `ui::Ui` is an `@fmt` sink: the core has `#write` functions for integers, byte
-slices and literals, and `ui::write_fixed{ v, digits, _ }` for decimals. `ui::take_text{ &ui }` returns
+**Formatting numbers.** `ui::Ui` is an `@fmt` sink: the core has `#write` functions for integers, floats,
+byte slices, literals and every format spec (`{:.2}`, `{:>6}`), and `ui::write_fixed{ v, digits, _ }` for a digit count known only at run time. `ui::take_text{ &ui }` returns
 the formatted bytes, which live in the frame arena until the next `begin_frame`:
 
 ```
@@ -1161,7 +1161,7 @@ fn show_settings { mut ui: ui::Ui, mut app: App } {
     ui::add_label{ text = "Settings", .. }
     _ = ui::add_checkbox{ label = "Dark mode", value = &app.dark, .. }
     let row = ui::begin_row{ .. }
-    _ = @fmt(&ui, "Volume {} %", ui::write_fixed{ v = app.volume * 100.0, digits = 1, _ })
+    _ = @fmt(&ui, "Volume {:.1} %", app.volume * 100.0)
     let text = ui::take_text{ &ui }
     ui::add_label{ text, .. }
     _ = ui::add_slider{ label = "volume", value = &app.volume, range = ui::Range{ step = 0.05, .. }, .. }
@@ -2383,7 +2383,7 @@ fixed in the language on its own branch, as kotor's rules require.
 
 | Gap | In the plan | Better fixed in ctxlang or std? |
 |---|---|---|
-| Float formatting (`10.0` prints `1e+01`), no precision | `ui::write_fixed`, about 20 lines [compiled, a4]. | **Yes: add fixed-digit formatting to std's `utf8`.** `fxhud` already hand-rolls the same thing [read: `fxhud.ctx:39`], so this is the third copy. Not required by any stage. |
+| Float formatting (`10.0` prints `1e+01`), no precision | Fixed in the language: `@fmt` has format specs and prints a short f32 plainly; the Ui and the recorder have the spec writers. `ui::write_fixed` stays for a digit count known at run time. | Done in std (`fmt`). |
 | A program's `math` shadows std's (kotor) | The core declares its own few libm externs [compiled, a1, a5]. | The fix belongs in kotor (stop shadowing, or carry the missing functions), not in the GUI and not in the language. |
 | The escape check misses a stack slice stored through a call | All text is copied at the call. | **Yes: a compiler fix would turn this class of bug into an error.** It affects every library that keeps slices. |
 | No C `long` type and no way to mirror a C struct from its header | `ui/fonts` computes FreeType's offsets from `target::OS` and checks them at start-up. | A `c::Long` in std would remove the per-platform arithmetic. Small, and other bindings would use it. |

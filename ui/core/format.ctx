@@ -1,7 +1,8 @@
-// ui: number formatting that does not depend on std's float printer, which writes an f32 `10.0`
-// as `1e+01` and `100.0` as `1e+02` and has no precision. These write into a caller's buffer;
-// the sinks that `@fmt` writes into (the frame's text arena, the recorder) wrap them in `#write`
-// functions of their own.
+// ui: number text into a caller's buffer, for what a format spec does not say: a digit count known
+// only at run time with the dump's trimmed form (`format_fixed`, over std's `fmt::format_f32`),
+// and the dump's uppercase hexadecimal and colours. A program formats numbers with `@fmt` and a
+// spec (`@fmt(&ui, "{:.1} %", v)`): the Ui is a sink with writers for every spec. The recorder
+// wraps these in `#write` functions of its own.
 //
 // All of them are infallible: text that does not fit `into` is cut at the end of the buffer, and
 // the result says how many bytes were written.
@@ -18,69 +19,41 @@ namespace ui {
         }
     }
 
-    // `v` with exactly `digits` digits after the point (at most 9): 37.5 with 1 digit is `37.5`,
-    // 10.0 with 2 is `10.00`. With `trim`, trailing zeros and then a bare point are dropped, so
-    // `digits` is the most digits written: 10.0 is `10`, 0.5 is `0.5`, -3.25 is `-3.25`.
-    // Rounds half away from zero. A negative that rounds to zero is written without its sign.
-    // NaN is `nan`, infinities `inf` and `-inf`, and a magnitude beyond 9e18 `huge` or `-huge`.
+    // `v` with exactly `digits` digits after the point (at most 9), as the language's `{:.N}`
+    // writes it (std's `fmt::format_f32`: rounded to the nearest such number, a value exactly
+    // halfway to the even digit, never in exponent form): 37.5 with 1 digit is `37.5`, 10.0 with 2
+    // is `10.00`. Two things are the dump's own, which no spec writes: with `trim`, trailing zeros
+    // and then a bare point are dropped, so `digits` is the most digits written (10.0 is `10`, 0.5
+    // is `0.5`, -3.25 is `-3.25`); and a negative that rounds to zero is written without its sign.
+    // NaN is `nan`, infinities `inf` and `-inf`. What does not fit `into` is cut at its end.
     fn format_fixed { v: f32, digits: u32, trim: bool, into: []mut u8 } -> usize {
-        let mut buf: [48]u8
+        let d = if digits > MAX_FIXED_DIGITS { MAX_FIXED_DIGITS } else { digits }
+        let mut buf: [fmt::LONGEST]u8
+        let spec = fmt::Spec{ width = 0, precision = @as(i32, d), align = fmt::Align::natural, zero = false, base = 10, upper = false }
+        let text = fmt::format_f32{ v = fmt::F32{ x = v, spec }, into = buf[..] }
+        let mut from: usize = 0
+        let mut to = text.len
+        if to > 1 and text[0] == '-' {
+            // `-0.00`: a sign on nothing but zeros is dropped.
+            let mut zero = true
+            for c in text[1..] {
+                if c != '0' and c != '.' { zero = false }
+            }
+            if zero { from = 1 }
+        }
+        if trim and d > 0 and text[from..to].len > 0 and (text[to - 1] == '0' or text[to - 1] == '.') {
+            let mut point = false
+            for c in text[from..to] {
+                if c == '.' { point = true }
+            }
+            if point {
+                while to > from and text[to - 1] == '0' { to = to - 1 }
+                if to > from and text[to - 1] == '.' { to = to - 1 }
+            }
+        }
         let mut n: usize = 0
-        if v != v {
-            append_text{ out = buf[..], used = &n, text = "nan" }
-        } else if v - v != 0.0 {
-            append_text{ out = buf[..], used = &n, text = if v < 0.0 { "-inf" } else { "inf" } }
-        } else {
-            let neg = v < 0.0
-            let m: f64 = @as(f64, if neg { 0.0 - v } else { v })
-            let d = if digits > MAX_FIXED_DIGITS { MAX_FIXED_DIGITS } else { digits }
-            let mut p: f64 = 1.0
-            let mut k: u32 = 0
-            while k < d {
-                p = p * 10.0
-                k = k + 1
-            }
-            let scaled_f: f64 = m * p + 0.5
-            if scaled_f >= 9.0e18 {
-                append_text{ out = buf[..], used = &n, text = if neg { "-huge" } else { "huge" } }
-            } else {
-                let scaled = @as(i64, scaled_f)
-                let unit = @as(i64, p)
-                if neg and scaled != 0 { append_text{ out = buf[..], used = &n, text = "-" } }
-                let mut whole_buf: [20]u8
-                append_text{ out = buf[..], used = &n, text = utf8::fmt_i64{ n = scaled / unit, into = whole_buf[..] }.bytes }
-                if d > 0 {
-                    append_fraction{ out = buf[..], used = &n, frac = scaled % unit, digits = d, trim }
-                }
-            }
-        }
-        let mut i: usize = 0
-        while i < n and i < into.len {
-            into[i] = buf[i]
-            i = i + 1
-        }
-        return i
-    }
-
-    // The point and `digits` digits of `frac`, zero padded on the left, with trailing zeros (and
-    // the point, when nothing is left) dropped if `trim`.
-    fn append_fraction { out: []mut u8, mut used: usize, frac: i64, digits: u32, trim: bool } {
-        let mut fd: [9]u8
-        let mut k = @as(usize, digits)
-        let mut f = frac
-        while k > 0 {
-            k = k - 1
-            fd[k] = '0' + @as(u8, f % 10)
-            f = f / 10
-        }
-        let mut count = @as(usize, digits)
-        if trim {
-            while count > 0 and fd[count - 1] == '0' { count = count - 1 }
-        }
-        if count > 0 {
-            append_text{ out, used = &used, text = "." }
-            append_text{ out, used = &used, text = fd[..count] }
-        }
+        append_text{ out = into, used = &n, text = text[from..to] }
+        return n
     }
 
     // `n` in uppercase hexadecimal, zero padded to at least `digits` digits (at most 16).
