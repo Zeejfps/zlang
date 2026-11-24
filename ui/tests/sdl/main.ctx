@@ -1,0 +1,372 @@
+// The SDL host's conversions (ui/sdl/host.ctx), which no scripted tour goes through: a tour pushes
+// the core's own events, so a wrong SDL button number or field offset hid from every test until a
+// left click in a real window was the core's right button.
+//
+//  - Raw SDL_Event bytes, written at the offsets SDL_events.h gives on 64-bit targets (not through
+//    this binding's structs, so a wrong offset in them shows), through `ui_sdl::decode`, the step
+//    `poll` and `wait_event` take after SDL fills the event: keys with their state, repeat, symbol
+//    and modifiers, text, motion, buttons, the wheel both ways, window events, quit.
+//  - Host events through `to_event`: each pointer button (left, right, middle, back, forward) as the
+//    core's numbers; every key ui::Key names from its SDL key code, with the modifier bits, and the
+//    keys it does not name as `none`; the wheel's sign and axis; the pointer at 1, 1.25 and 2
+//    device pixels a window coordinate; text and a paste.
+//  - A real Ui fed only through `to_event`: a left click works a button, a right press opens a
+//    context menu, and Alt pressed and released alone (as SDL sends it: the Alt key, which the
+//    host has no name for, with its modifier) is the core's Key::alt.
+//
+// It neither starts SDL nor opens a window: none of these calls SDL. Exits 1 when a check fails.
+//
+//   kotor/tools/ctxc run ui/tests/sdl
+
+fn main { mut io: Io, mut mem: Mem, mut sdl: ui_sdl::Sdl } -> i32 {
+    let mut t = ui_test::Tally{ run = 0, failed = 0 }
+    let buf = mem::pages{ &mem, size = 67108864 } ifnull { return 1 }
+    let mut heap = arena::new{ buf }
+    ui_test::expect{ &io, &t, ok = ui_sdl::check_layout{}, what = "the binding's structs have SDL_Event's sizes" }
+    check_raw{ &io, &t, &sdl }
+    check_buttons{ &io, &t }
+    check_keys{ &io, &t }
+    check_pointer{ &io, &t }
+    check_ui{ &io, &t, &heap }
+    _ = @fmt(&io, "ui/tests/sdl: {} checks, {} failed\n", t.run, t.failed)
+    io::flush{ &io }
+    return if t.failed == 0 { 0 } else { 1 }
+}
+
+// ---- raw SDL_Event bytes
+
+// An SDL_Event of `kind`, every other byte 0.
+fn make_raw { kind: u32 } -> ui_sdl::RawEvent {
+    let mut raw: ui_sdl::RawEvent
+    for i in 0..56 { raw.padding[i] = 0 }
+    put_u32{ &raw, at = 0, v = kind }
+    return raw
+}
+
+// `v`'s four bytes, little-endian, at byte `at`.
+fn put_u32 { mut raw: ui_sdl::RawEvent, at: usize, v: u32 } {
+    for i in 0..4 { raw.padding[at + i] = @trunc(u8, v >> @as(u32, i * 8)) }
+}
+
+fn put_u16 { mut raw: ui_sdl::RawEvent, at: usize, v: u16 } {
+    raw.padding[at] = @trunc(u8, v)
+    raw.padding[at + 1] = @trunc(u8, v >> 8)
+}
+
+// SDL_KeyboardEvent: state at 12, repeat at 13, keysym at 16 (scancode 16, sym 20, mod 24).
+fn make_key_raw { down: bool, repeat: bool, sym: u32, mods: u16 } -> ui_sdl::RawEvent {
+    let mut raw = make_raw{ kind = if down { ui_sdl::KEYDOWN } else { ui_sdl::KEYUP } }
+    raw.padding[12] = if down { 1 } else { 0 }
+    raw.padding[13] = if repeat { 1 } else { 0 }
+    put_u32{ &raw, at = 20, v = sym }
+    put_u16{ &raw, at = 24, v = mods }
+    return raw
+}
+
+// SDL_WindowEvent: event at 12, data1 at 16, data2 at 20.
+fn make_window_raw { event: u8, data1: u32, data2: u32 } -> ui_sdl::RawEvent {
+    let mut raw = make_raw{ kind = ui_sdl::WINDOWEVENT }
+    raw.padding[12] = event
+    put_u32{ &raw, at = 16, v = data1 }
+    put_u32{ &raw, at = 20, v = data2 }
+    return raw
+}
+
+fn check_raw { mut io: Io, mut t: ui_test::Tally, mut sdl: ui_sdl::Sdl } {
+    // A key going down, repeating, with left Shift and right Ctrl held (KMOD_LSHIFT 0x1, KMOD_RCTRL 0x80).
+    let k = ui_sdl::decode{ &sdl, raw = make_key_raw{ down = true, repeat = true, sym = 'n', mods = 0x81 } }
+    let mut key_ok = false
+    if k is key{ down, repeat, keycode, mods } { key_ok = down and repeat and keycode == 'n' and mods == 0x81 }
+    let up = ui_sdl::decode{ &sdl, raw = make_key_raw{ down = false, repeat = false, sym = 0x4000003B, mods = 0 } }
+    let mut up_ok = false
+    if up is key{ down, repeat, keycode, mods } { up_ok = not down and not repeat and keycode == 0x4000003B and mods == 0 }
+    ui_test::expect{ &io, &t, ok = key_ok and up_ok, what = "raw: a key down and up, its repeat, symbol and modifiers from their offsets" }
+
+    // SDL_TextInputEvent: text at 12, NUL-terminated.
+    let mut text_raw = make_raw{ kind = ui_sdl::TEXTINPUT }
+    let word = "h\xC3\xA9"
+    for c at i in word { text_raw.padding[12 + i] = c }
+    let tx = ui_sdl::decode{ &sdl, raw = text_raw }
+    let mut text_ok = false
+    if tx is text{ bytes, len } { text_ok = len == 3 and slice::eq_bytes{ a = bytes[..3], b = word } }
+    ui_test::expect{ &io, &t, ok = text_ok, what = "raw: typed text, its bytes up to the NUL" }
+
+    // SDL_MouseMotionEvent: x at 20, y at 24.
+    let mut motion_raw = make_raw{ kind = ui_sdl::MOUSEMOTION }
+    put_u32{ raw = &motion_raw, at = 20, v = 123 }
+    put_u32{ raw = &motion_raw, at = 24, v = 45 }
+    let mo = ui_sdl::decode{ &sdl, raw = motion_raw }
+    let mut motion_ok = false
+    if mo is motion{ x, y } { motion_ok = x == 123 and y == 45 }
+    ui_test::expect{ &io, &t, ok = motion_ok, what = "raw: a motion's x and y" }
+
+    // SDL_MouseButtonEvent: button at 16, state at 17, clicks at 18, x at 20, y at 24.
+    let mut button_raw = make_raw{ kind = ui_sdl::MOUSEBUTTONDOWN }
+    button_raw.padding[16] = 3
+    button_raw.padding[17] = 1
+    button_raw.padding[18] = 2
+    put_u32{ raw = &button_raw, at = 20, v = 7 }
+    put_u32{ raw = &button_raw, at = 24, v = 9 }
+    let bu = ui_sdl::decode{ &sdl, raw = button_raw }
+    let mut button_ok = false
+    if bu is button{ down, button, clicks, x, y } { button_ok = down and button == 3 and clicks == 2 and x == 7 and y == 9 }
+    let mut release_raw = make_raw{ kind = ui_sdl::MOUSEBUTTONUP }
+    release_raw.padding[16] = 1
+    release_raw.padding[18] = 1
+    let re = ui_sdl::decode{ &sdl, raw = release_raw }
+    let mut release_ok = false
+    if re is button{ down, button, clicks } { release_ok = not down and button == 1 and clicks == 1 }
+    ui_test::expect{ &io, &t, ok = button_ok and release_ok, what = "raw: a button down (SDL's right, 3, a double click) and up (left, 1)" }
+
+    // SDL_MouseWheelEvent: direction at 24, preciseX at 28, preciseY at 32 (floats: 1.0 is
+    // 0x3F800000, -2.5 is 0xC0200000). Flipped (direction 1), both signs turn over.
+    let mut wheel_raw = make_raw{ kind = ui_sdl::MOUSEWHEEL }
+    put_u32{ raw = &wheel_raw, at = 28, v = 0x3F800000 }
+    put_u32{ raw = &wheel_raw, at = 32, v = 0xC0200000 }
+    let wh = ui_sdl::decode{ &sdl, raw = wheel_raw }
+    put_u32{ raw = &wheel_raw, at = 24, v = 1 }
+    let flipped = ui_sdl::decode{ &sdl, raw = wheel_raw }
+    let mut wheel_ok = false
+    if wh is wheel{ dx, dy } { wheel_ok = dx == 1.0 and dy == -2.5 }
+    let mut flipped_ok = false
+    if flipped is wheel{ dx, dy } { flipped_ok = dx == -1.0 and dy == 2.5 }
+    ui_test::expect{ &io, &t, ok = wheel_ok and flipped_ok, what = "raw: the wheel's precise x and y, turned over when SDL says the OS flipped it" }
+
+    // Window events, by SDL_WindowEventID.
+    let size = ui_sdl::decode{ &sdl, raw = make_window_raw{ event = ui_sdl::WINDOWEVENT_SIZE_CHANGED, data1 = 800, data2 = 600 } }
+    let mut size_ok = false
+    if size is resized{ width, height } { size_ok = width == 800 and height == 600 }
+    let gained = ui_sdl::decode{ &sdl, raw = make_window_raw{ event = ui_sdl::WINDOWEVENT_FOCUS_GAINED, data1 = 0, data2 = 0 } }
+    let lost = ui_sdl::decode{ &sdl, raw = make_window_raw{ event = ui_sdl::WINDOWEVENT_FOCUS_LOST, data1 = 0, data2 = 0 } }
+    let mut focus_ok = false
+    if gained is focus{ gained } {
+        if lost is focus{ gained } { focus_ok = gained == false }
+    }
+    let mut gained_ok = false
+    if gained is focus{ gained } { gained_ok = gained }
+    let leave = ui_sdl::decode{ &sdl, raw = make_window_raw{ event = ui_sdl::WINDOWEVENT_LEAVE, data1 = 0, data2 = 0 } }
+    let close = ui_sdl::decode{ &sdl, raw = make_window_raw{ event = ui_sdl::WINDOWEVENT_CLOSE, data1 = 0, data2 = 0 } }
+    let exposed = ui_sdl::decode{ &sdl, raw = make_window_raw{ event = ui_sdl::WINDOWEVENT_EXPOSED, data1 = 0, data2 = 0 } }
+    let quit = ui_sdl::decode{ &sdl, raw = make_raw{ kind = ui_sdl::QUIT } }
+    let other = ui_sdl::decode{ &sdl, raw = make_raw{ kind = 0x700 } }
+    ui_test::expect{ &io, &t, ok = size_ok and focus_ok and gained_ok and leave is leave and close is close and exposed is exposed and quit is quit and other is other,
+        what = "raw: a size change, focus gained and lost, leave, close, exposed, quit, and anything else as other" }
+}
+
+// ---- buttons
+
+// The core's button for SDL's `sdl_button` going down, through to_event.
+fn to_core_button { sdl_button: u8 } -> i32 {
+    let e = ui_sdl::to_event{ event = ui_sdl::Event::button{ down = true, button = sdl_button, clicks = 1, x = 0, y = 0 }, pointer_scale = 1.0 } ifnull { return -1 }
+    if e is pointer_button{ button, down } { return if down { @as(i32, button) } else { -2 } }
+    return -3
+}
+
+fn check_buttons { mut io: Io, mut t: ui_test::Tally } {
+    // SDL: left 1, middle 2, right 3, back (X1) 4, forward (X2) 5. The core: left 0, right 1,
+    // middle 2, back 3, forward 4.
+    ui_test::expect{ &io, &t, ok = to_core_button{ sdl_button = 1 } == 0, what = "buttons: SDL's left (1) is the core's 0" }
+    ui_test::expect{ &io, &t, ok = to_core_button{ sdl_button = 3 } == 1, what = "buttons: SDL's right (3) is the core's 1" }
+    ui_test::expect{ &io, &t, ok = to_core_button{ sdl_button = 2 } == 2, what = "buttons: SDL's middle (2) is the core's 2" }
+    ui_test::expect{ &io, &t, ok = to_core_button{ sdl_button = 4 } == 3 and to_core_button{ sdl_button = 5 } == 4, what = "buttons: SDL's back and forward (4, 5) are the core's 3 and 4" }
+    let up = ui_sdl::to_event{ event = ui_sdl::Event::button{ down = false, button = 3, clicks = 2, x = 0, y = 0 }, pointer_scale = 1.0 }
+    let mut up_ok = false
+    if let e = up {
+        if e is pointer_button{ button, down, clicks } { up_ok = button == 1 and not down and clicks == 2 }
+    }
+    ui_test::expect{ &io, &t, ok = up_ok, what = "buttons: a release keeps its button and its click count" }
+}
+
+// ---- keys
+
+// Every key ui::Key names but `none` and `alt` (which no host sends: the core makes it), with the
+// SDL key code that is it.
+const CODES: [76]i32 = [
+    9, 13, 27, 8, 127, 0x40000050, 0x4000004F, 0x40000052, 0x40000051, 0x4000004A, 0x4000004D, 0x4000004B, 0x4000004E,
+    32, 'a', 'c', 'v', 'x', 'y', 'z', 0x40000065, 0x40000049,
+    'b', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'w',
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+    0x4000003A, 0x4000003B, 0x4000003C, 0x4000003D, 0x4000003E, 0x4000003F, 0x40000040, 0x40000041, 0x40000042, 0x40000043, 0x40000044, 0x40000045,
+    '-', '=', '+', ',', '.', '/', '\\', ';', '\'', '`', '[', ']',
+]
+const NAMED: [76]ui::Key = [
+    ui::Key::tab, ui::Key::enter, ui::Key::escape, ui::Key::backspace, ui::Key::delete, ui::Key::left, ui::Key::right, ui::Key::up, ui::Key::down,
+    ui::Key::home, ui::Key::end, ui::Key::page_up, ui::Key::page_down,
+    ui::Key::space, ui::Key::a, ui::Key::c, ui::Key::v, ui::Key::x, ui::Key::y, ui::Key::z, ui::Key::menu, ui::Key::insert,
+    ui::Key::b, ui::Key::d, ui::Key::e, ui::Key::f, ui::Key::g, ui::Key::h, ui::Key::i, ui::Key::j, ui::Key::k, ui::Key::l, ui::Key::m,
+    ui::Key::n, ui::Key::o, ui::Key::p, ui::Key::q, ui::Key::r, ui::Key::s, ui::Key::t, ui::Key::u, ui::Key::w,
+    ui::Key::digit_0, ui::Key::digit_1, ui::Key::digit_2, ui::Key::digit_3, ui::Key::digit_4,
+    ui::Key::digit_5, ui::Key::digit_6, ui::Key::digit_7, ui::Key::digit_8, ui::Key::digit_9,
+    ui::Key::f1, ui::Key::f2, ui::Key::f3, ui::Key::f4, ui::Key::f5, ui::Key::f6,
+    ui::Key::f7, ui::Key::f8, ui::Key::f9, ui::Key::f10, ui::Key::f11, ui::Key::f12,
+    ui::Key::minus, ui::Key::equals, ui::Key::plus, ui::Key::comma, ui::Key::period, ui::Key::slash,
+    ui::Key::backslash, ui::Key::semicolon, ui::Key::apostrophe, ui::Key::grave, ui::Key::left_bracket, ui::Key::right_bracket,
+]
+
+// The core's key event for SDL's key code `code` going down with SDL's modifiers `mods`.
+fn to_core_key { code: i32, mods: u16, down: bool } -> ?ui::Event {
+    return ui_sdl::to_event{ event = ui_sdl::Event::key{ down, repeat = false, keycode = code, mods }, pointer_scale = 1.0 }
+}
+
+fn is_key_event { e: ?ui::Event, key: ui::Key, mods: u8, down: bool } -> bool {
+    let ev = e ifnull { return false }
+    if ev is key{ key = k, mods = m, down = d } { return k == key and m == mods and d == down }
+    return false
+}
+
+fn check_keys { mut io: Io, mut t: ui_test::Tally } {
+    let mut wrong: u32 = 0
+    for code at i in CODES {
+        if not is_key_event{ e = to_core_key{ code, mods = 0, down = true }, key = NAMED[i], mods = 0, down = true } {
+            wrong = wrong + 1
+            _ = @fmt(&io, "  key code {} is not {}\n", code, ui::get_key_name{ key = NAMED[i] })
+        }
+    }
+    ui_test::expect{ &io, &t, ok = wrong == 0, what = "keys: each of the 76 keys a host sends comes from its SDL key code" }
+    // The table holds every key the script reader names but alt: the keys ui::Key has.
+    let mut missing: u32 = 0
+    for k in ui_test::KEYS {
+        if k == ui::Key::alt { continue }
+        let mut found = false
+        for n in NAMED {
+            if n == k { found = true }
+        }
+        if not found { missing = missing + 1 }
+    }
+    ui_test::expect{ &io, &t, ok = missing == 0 and ui_test::KEYS.len == NAMED.len + 1, what = "keys: the table above is every key of ui::Key but none and alt" }
+    let kp = is_key_event{ e = to_core_key{ code = 0x40000058, mods = 0, down = true }, key = ui::Key::enter, mods = 0, down = true }
+        and is_key_event{ e = to_core_key{ code = 0x40000056, mods = 0, down = true }, key = ui::Key::minus, mods = 0, down = true }
+        and is_key_event{ e = to_core_key{ code = 0x40000057, mods = 0, down = true }, key = ui::Key::plus, mods = 0, down = true }
+    ui_test::expect{ &io, &t, ok = kp, what = "keys: the keypad's Enter, - and + are Enter, minus and plus" }
+    // Keys it has no name for (left Alt, left Shift, Caps Lock, a non-ASCII letter) are none, with
+    // the modifiers.
+    let none = is_key_event{ e = to_core_key{ code = 0x400000E2, mods = 0x100, down = true }, key = ui::Key::none, mods = ui::MOD_ALT, down = true }
+        and is_key_event{ e = to_core_key{ code = 0x400000E1, mods = 0x1, down = true }, key = ui::Key::none, mods = ui::MOD_SHIFT, down = true }
+        and is_key_event{ e = to_core_key{ code = 0x40000039, mods = 0x2000, down = true }, key = ui::Key::none, mods = 0, down = true }
+        and is_key_event{ e = to_core_key{ code = 0xE9, mods = 0, down = false }, key = ui::Key::none, mods = 0, down = false }
+    ui_test::expect{ &io, &t, ok = none, what = "keys: a key the core has no name for is none, carrying the modifiers (Caps Lock is none of them)" }
+    // Each modifier bit, left and right: KMOD_LSHIFT 0x1, RSHIFT 0x2, LCTRL 0x40, RCTRL 0x80,
+    // LALT 0x100, RALT 0x200; Num Lock (0x1000) and Caps Lock (0x2000) are none.
+    let mods = is_key_event{ e = to_core_key{ code = 'n', mods = 0x1, down = true }, key = ui::Key::n, mods = ui::MOD_SHIFT, down = true }
+        and is_key_event{ e = to_core_key{ code = 'n', mods = 0x2, down = true }, key = ui::Key::n, mods = ui::MOD_SHIFT, down = true }
+        and is_key_event{ e = to_core_key{ code = 'n', mods = 0x40, down = true }, key = ui::Key::n, mods = ui::MOD_CTRL, down = true }
+        and is_key_event{ e = to_core_key{ code = 'n', mods = 0x80, down = true }, key = ui::Key::n, mods = ui::MOD_CTRL, down = true }
+        and is_key_event{ e = to_core_key{ code = 'n', mods = 0x100, down = true }, key = ui::Key::n, mods = ui::MOD_ALT, down = true }
+        and is_key_event{ e = to_core_key{ code = 'n', mods = 0x200, down = true }, key = ui::Key::n, mods = ui::MOD_ALT, down = true }
+        and is_key_event{ e = to_core_key{ code = 'n', mods = 0x3000, down = true }, key = ui::Key::n, mods = 0, down = true }
+        and is_key_event{ e = to_core_key{ code = 'n', mods = 0x2C1, down = false }, key = ui::Key::n, mods = ui::MOD_SHIFT | ui::MOD_CTRL | ui::MOD_ALT, down = false }
+    ui_test::expect{ &io, &t, ok = mods, what = "keys: each modifier, left and right, and all three at once; Num and Caps Lock are not modifiers" }
+}
+
+// ---- the pointer, the wheel, text and paste
+
+fn is_move { e: ?ui::Event, x: i32, y: i32 } -> bool {
+    let ev = e ifnull { return false }
+    if ev is pointer_move{ x = px, y = py } { return px == x and py == y }
+    return false
+}
+
+fn check_pointer { mut io: Io, mut t: ui_test::Tally } {
+    let at = ui_sdl::Event::motion{ x = 10, y = 21 }
+    // Window coordinates times the pixels a coordinate, rounded down: 10 and 21 at 1.25 are 12.5
+    // and 26.25, pixels 12 and 26; at 2, 20 and 42.
+    ui_test::expect{ &io, &t, ok = is_move{ e = ui_sdl::to_event{ event = at, pointer_scale = 1.0 }, x = 10, y = 21 }
+        and is_move{ e = ui_sdl::to_event{ event = at, pointer_scale = 1.25 }, x = 12, y = 26 }
+        and is_move{ e = ui_sdl::to_event{ event = at, pointer_scale = 2.0 }, x = 20, y = 42 },
+        what = "pointer: a window coordinate at 1, 1.25 and 2 pixels a coordinate lands on the device pixel it starts in" }
+    ui_test::expect{ &io, &t, ok = is_move{ e = ui_sdl::to_event{ event = at, pointer_scale = 0.0 }, x = 10, y = 21 },
+        what = "pointer: a scale that is no number of pixels is 1" }
+    let up = ui_sdl::to_event{ event = ui_sdl::Event::wheel{ dx = 0.0, dy = 1.5 }, pointer_scale = 2.0 } ifnull ui::Event::pointer_leave
+    let side = ui_sdl::to_event{ event = ui_sdl::Event::wheel{ dx = -1.0, dy = 0.0 }, pointer_scale = 1.0 } ifnull ui::Event::pointer_leave
+    let mut wheel_ok = false
+    if up is wheel{ dx, dy } {
+        if side is wheel{ dx = sx, dy = sy } { wheel_ok = dx == 0.0 and dy == 1.5 and sx == -1.0 and sy == 0.0 }
+    }
+    ui_test::expect{ &io, &t, ok = wheel_ok, what = "pointer: the wheel keeps its sign and its axis, and is not scaled" }
+    let leave = ui_sdl::to_event{ event = ui_sdl::Event::leave, pointer_scale = 1.0 } ifnull ui::Event::focus{ gained = true }
+    ui_test::expect{ &io, &t, ok = leave is pointer_leave, what = "pointer: leaving the window" }
+
+    let mut bytes: [32]u8
+    let word = "caf\xC3\xA9"
+    for c at i in word { bytes[i] = c }
+    let tx = ui_sdl::to_event{ event = ui_sdl::Event::text{ bytes, len = 5 }, pointer_scale = 1.0 } ifnull ui::Event::pointer_leave
+    let mut text_ok = false
+    if tx is text{ bytes = b, len } { text_ok = len == 5 and slice::eq_bytes{ a = b[..5], b = word } }
+    let pa = ui_sdl::to_event{ event = ui_sdl::Event::paste{ text = "two\nlines" }, pointer_scale = 1.0 } ifnull ui::Event::pointer_leave
+    let mut paste_ok = false
+    if pa is paste{ text } { paste_ok = slice::eq_bytes{ a = text, b = "two\nlines" } }
+    let quit = ui_sdl::to_event{ event = ui_sdl::Event::quit, pointer_scale = 1.0 }
+    let resized = ui_sdl::to_event{ event = ui_sdl::Event::resized{ width = 1, height = 1 }, pointer_scale = 1.0 }
+    let fo = ui_sdl::to_event{ event = ui_sdl::Event::focus{ gained = false }, pointer_scale = 1.0 } ifnull ui::Event::pointer_leave
+    let mut focus_ok = false
+    if fo is focus{ gained } { focus_ok = not gained }
+    ui_test::expect{ &io, &t, ok = text_ok and paste_ok and focus_ok and quit == null and resized == null,
+        what = "text, a paste and focus go to the core as they are; quit and a resize are the host's" }
+}
+
+// ---- a Ui fed through the host's conversion
+
+// A button and a target with a context menu (Copy).
+struct Stage { clicks: u32, copies: u32, menu: bool }
+
+fn show_stage { mut ui: ui::Ui, mut s: Stage } {
+    let col = ui::begin_column{ &ui, opts = ui::Opts{ box = ui::place_pixels{ rect = ui::Rect{ x = 10, y = 10, w = 200, h = 200 } }, .. } }
+    if ui::add_button{ &ui, label = "Press", opts = ui::Opts{ .. } } { s.clicks = s.clicks + 1 }
+    let target = ui::make_id{ ui, name = "target" }
+    let el = ui::begin_element{ &ui, id = target, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ size = 100.0 }, height = ui::fix{ size = 40.0 }, fill = ui.theme.control, .. } }
+    ui::end{ &ui, scope = el }
+    ui::describe{ &ui, id = target, role = ui::Role::panel, label = "target", value = 0.0, flags = 0 }
+    ui::end{ &ui, scope = col }
+    let menu = ui::begin_context_menu{ &ui, id = "target menu", target, opts = ui::Opts{ .. } }
+    s.menu = menu.open
+    if menu.open {
+        if ui::add_menu_item{ &ui, label = "Copy", opts = ui::Opts{ .. } } { s.copies = s.copies + 1 }
+    }
+    ui::end{ &ui, scope = menu }
+}
+
+// A host event through to_event into the Ui.
+fn send { mut ui: ui::Ui, event: ui_sdl::Event } {
+    if let e = ui_sdl::to_event{ event, pointer_scale = 1.0 } { _ = ui::push_event{ &ui, event = e } }
+}
+
+// SDL's button `button` pressed and released over the node at `path`, a frame each: a motion to
+// its centre, the press, the release.
+fn click_sdl { mut d: ui_test::Driver, mut ui: ui::Ui, mut s: Stage, path: []u8, button: u8 } -> bool {
+    let at = ui_test::find_center{ ui, path } ifnull { return false }
+    send{ &ui, event = ui_sdl::Event::motion{ x = at.x, y = at.y } }
+    ui_test::step_frame{ &d, &ui, show = show_stage{ &s, _ } }
+    send{ &ui, event = ui_sdl::Event::button{ down = true, button, clicks = 1, x = at.x, y = at.y } }
+    ui_test::step_frame{ &d, &ui, show = show_stage{ &s, _ } }
+    send{ &ui, event = ui_sdl::Event::button{ down = false, button, clicks = 1, x = at.x, y = at.y } }
+    ui_test::step_frame{ &d, &ui, show = show_stage{ &s, _ } }
+    return true
+}
+
+fn check_ui { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = ui::make{ realloc = arena::alloc, &heap, cap = ui::Capacity{ elements = 1024, text = 16384, cmds = 1024, clips = 16, hits = 256, states = 64, nodes = 128, fonts = 2, scopes = 32, layers = 8, lines = 64, measures = 32, shaped = 32 } } iferr { return }
+    gui.theme = ui::make_dark_theme{}
+    let def = ui_test::make_test_font{ realloc = arena::alloc, &heap } iferr { return }
+    if let font = ui::add_font{ ui = &gui, font = def } { gui.theme.font = font }
+    let mut d = ui_test::make_driver{ realloc = arena::alloc, &heap, width = 320, height = 240, scale = 1.0, dt = 0.125, clipboard = 64 } iferr { return }
+    let mut s = Stage{ clicks = 0, copies = 0, menu = false }
+    ui_test::step_frame{ &d, ui = &gui, show = show_stage{ &s, _ } }
+    let left = click_sdl{ &d, ui = &gui, &s, path = "Press", button = 1 }
+    ui_test::expect{ &io, &t, ok = left and s.clicks == 1 and not s.menu, what = "ui: SDL's left button clicks a button" }
+    let right_on_button = click_sdl{ &d, ui = &gui, &s, path = "Press", button = 3 }
+    ui_test::expect{ &io, &t, ok = right_on_button and s.clicks == 1, what = "ui: SDL's right button does not click it" }
+    let right = click_sdl{ &d, ui = &gui, &s, path = "target", button = 3 }
+    ui_test::expect{ &io, &t, ok = right and s.menu and ui::find_node{ ui = gui, path = "target menu/Copy" } != null, what = "ui: SDL's right button opens the target's context menu" }
+    let copy = click_sdl{ &d, ui = &gui, &s, path = "target menu/Copy", button = 1 }
+    ui_test::expect{ &io, &t, ok = copy and s.copies == 1, what = "ui: and its left button picks the menu's item" }
+    // The Alt key as SDL sends it: left Alt (a key code the host has no name for) going down with
+    // KMOD_LALT, coming up with no modifier.
+    send{ ui = &gui, event = ui_sdl::Event::key{ down = true, repeat = false, keycode = 0x400000E2, mods = 0x100 } }
+    send{ ui = &gui, event = ui_sdl::Event::key{ down = false, repeat = false, keycode = 0x400000E2, mods = 0 } }
+    ui::begin_frame{ ui = &gui, frame = d.info }
+    let ks = ui::get_keys{ ui = gui }
+    let alt = ks.len == 1 and ks[0].key == ui::Key::alt
+    ui::end_frame{ ui = &gui }
+    ui_test::expect{ &io, &t, ok = alt, what = "ui: the Alt key pressed and released alone, as SDL sends it, is Key::alt" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "ui: every frame is clean" }
+}

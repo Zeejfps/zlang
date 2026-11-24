@@ -124,7 +124,8 @@ kotor/tools/ctxc run ui/tests/fonts                    # stage 4: FreeType and H
 kotor/tools/ctxc run ui/tests/layout                   # stages 5 and 6: the Ui, ids, the tree, layout, emit, the pixel properties
 kotor/tools/ctxc run ui/tests/input                    # stage 7: input, interaction, focus, state, nodes, the driver
 kotor/tools/ctxc run ui/tests/layers                   # stage 8: overlays, windows, modals, popups, tooltips, scroll regions
-kotor/tools/ctxc run ui/tests/widgets                  # stages 9 to 12: the stock widgets (basic.ctx, windows.ctx, data.ctx)
+kotor/tools/ctxc run ui/tests/widgets                  # stages 9 to 12: the stock widgets (basic.ctx, windows.ctx, data.ctx, keys.ctx)
+kotor/tools/ctxc run ui/tests/sdl                      # the SDL host's conversions, from raw SDL_Event bytes to a Ui (no window)
 kotor/tools/ctxc run ui/tests/shots -- --out ui/out    # stages 3 and 4: pictures from the OpenGL backend (needs a GPU); look at them
 kotor/tools/ctxc run ui/tests/draw -- --update         # rewrite goldens after an intended change (any test takes it)
 kotor/tools/ctxc run ui/samples/demo_gl                # the gallery in a window
