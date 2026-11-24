@@ -1,0 +1,159 @@
+// ui_check: what the `#test` fns under ui/tests share and no program adds: the golden compare,
+// a heap for a test, and a check of a frame's wake request. Every test package adds this
+// directory beside ui/test (the test font, the scripted driver, the PNG writer), which the
+// samples add too: nothing here may be in a sample.
+//
+// Golden files live beside the test (`ui/tests/<name>/golden/<name>.txt`), named from the
+// repository root, where `ctxc test` is run. A test checks one with
+//
+//     @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "list", actual, scratch, update })
+//
+// so the failure's line is the test's own. On a mismatch the compare prints the first differing
+// line both ways and writes `<name>.actual.txt` next to the golden (git ignores it). With
+// `update` it rewrites the golden instead, and the reviewer reads the git diff of the golden
+// files. `update` is `is_updating`: the environment variable UI_UPDATE_GOLDENS set to 1, since
+// `ctxc test` takes only filters and its own options, and each test runs in a process of its own
+// that inherits the runner's environment.
+namespace ui_check {
+    // The environment variable that makes `compare_golden` rewrite the goldens.
+    const UPDATE_VARIABLE: []u8 = "UI_UPDATE_GOLDENS"
+
+    // What a test returns when a table or buffer it sized refused what it added (a clip, a font):
+    // the test cannot go on, and its failure is this error at the test's name.
+    error refused
+
+    // How much address space a test's heap reserves. `mem::reserve` makes only what the arena
+    // reaches usable, and each test runs in a process of its own, so this is generous.
+    const HEAP_SIZE: usize = 1073741824
+
+    // A heap for one test.
+    fn make_heap { mut mem: Mem } -> arena::Arena {
+        let buf = mem::reserve{ &mem, size = HEAP_SIZE } ifnull { @panic("out of memory for the test's heap") }
+        return arena::new{ buf }
+    }
+
+    // Whether this run rewrites the goldens: UI_UPDATE_GOLDENS=1 in the environment.
+    fn is_updating { mut proc: Proc } -> bool {
+        let value = proc::env{ &proc, name = UPDATE_VARIABLE } ifnull { return false }
+        return value == "1"
+    }
+
+    // Whether a frame's requests ask to be woken `want` seconds on (`Requests.wake`), to a ten
+    // thousandth of a second: a wake is a sum of frame times in f32, which a test cannot hit exactly.
+    fn has_wake { requests: ui::Requests, want: f32 } -> bool {
+        let w = requests.wake ifnull { return false }
+        return w - want < 0.0001 and want - w < 0.0001
+    }
+
+    // `dir`/`name`+`suffix` in `out`; the length, or 0 when it does not fit.
+    fn join_path { dir: []u8, name: []u8, suffix: []u8, out: []mut u8 } -> usize {
+        let total = dir.len + 1 + name.len + suffix.len
+        if total > out.len { return 0 }
+        let mut n: usize = 0
+        slice::copy(u8){ dst = out[n..n + dir.len], src = dir }
+        n = n + dir.len
+        out[n] = '/'
+        n = n + 1
+        slice::copy(u8){ dst = out[n..n + name.len], src = name }
+        n = n + name.len
+        slice::copy(u8){ dst = out[n..n + suffix.len], src = suffix }
+        return total
+    }
+
+    // Reads the file into `into` leaving out every carriage return, so a golden checked out with
+    // Windows line ends still matches. Fails when the file is bigger than `into`.
+    fn read_text { mut fs: Fs, path: []u8, into: []mut u8 } -> ![]u8 {
+        let file = try fs::open{ &fs, path, mode = fs::Mode::read }
+        defer _ = fs::close{ &fs, file }
+        let mut chunk: [4096]u8
+        let mut n: usize = 0
+        while true {
+            let got = try fs::read{ &fs, file, into = chunk[..] }
+            if got == 0 { break }
+            let mut i: usize = 0
+            while i < got {
+                if chunk[i] != '\r' {
+                    if n >= into.len { return alloc::out_of_memory }
+                    into[n] = chunk[i]
+                    n = n + 1
+                }
+                i = i + 1
+            }
+        }
+        return into[..n]
+    }
+
+    // Where the first line that differs starts, ends, and which line it is (counting from 1).
+    struct Line { start: usize, end: usize, number: usize }
+
+    fn find_line { text: []u8, at: usize } -> Line {
+        let mut start = at
+        if start > text.len { start = text.len }
+        while start > 0 and text[start - 1] != '\n' { start = start - 1 }
+        let mut end = at
+        if end > text.len { end = text.len }
+        while end < text.len and text[end] != '\n' { end = end + 1 }
+        let mut number: usize = 1
+        let mut i: usize = 0
+        while i < start {
+            if text[i] == '\n' { number = number + 1 }
+            i = i + 1
+        }
+        return Line{ start, end, number }
+    }
+
+    // The offset of the first byte where a and b differ, or the length of the shorter one.
+    fn find_difference { a: []u8, b: []u8 } -> usize {
+        let mut i: usize = 0
+        while i < a.len and i < b.len and a[i] == b[i] { i = i + 1 }
+        return i
+    }
+
+    // Whether `actual` is `dir`/`name`.txt, for an `@expect` at the test's own line. `scratch`
+    // holds the golden while it is compared, so it must be bigger than the golden file. Says on
+    // standard error why not: the golden's first differing line and the actual one, and the file
+    // the whole actual text was written to. With `update` it writes the golden and holds.
+    fn compare_golden { mut io: Io, mut fs: Fs, dir: []u8, name: []u8, actual: []u8, scratch: []mut u8, update: bool } -> bool {
+        let mut golden_buf: [512]u8
+        let mut actual_buf: [512]u8
+        let golden_len = join_path{ dir, name, suffix = ".txt", out = golden_buf[..] }
+        let actual_len = join_path{ dir, name, suffix = ".actual.txt", out = actual_buf[..] }
+        if golden_len == 0 or actual_len == 0 {
+            _ = @fmt(&io, "golden path too long: {}/{}\n", dir, name)
+            io::flush{ &io }
+            return false
+        }
+        let golden_path = golden_buf[..golden_len]
+        let actual_path = actual_buf[..actual_len]
+        if update {
+            if fs::write_all{ &fs, path = golden_path, bytes = actual } is err {
+                _ = @fmt(&io, "cannot write {}\n", golden_path)
+                io::flush{ &io }
+                return false
+            }
+            return true
+        }
+        let golden = match read_text{ &fs, path = golden_path, into = scratch } {
+            ok{ value } => { value }
+            err => {
+                _ = @fmt(&io, "cannot read golden {} (run with UI_UPDATE_GOLDENS=1 to create it); the actual text is in {}\n", golden_path, actual_path)
+                io::flush{ &io }
+                _ = fs::write_all{ &fs, path = actual_path, bytes = actual }
+                return false
+            }
+        }
+        if golden == actual {
+            // A leftover from an earlier failure would only mislead.
+            _ = fs::remove{ &fs, path = actual_path }
+            return true
+        }
+        let at = find_difference{ a = golden, b = actual }
+        let g = find_line{ text = golden, at }
+        let a = find_line{ text = actual, at }
+        _ = @fmt(&io, "{} differs from the golden at line {}\n  golden: {}\n  actual: {}\n  full actual output: {}\n", golden_path, g.number,
+            golden[g.start..g.end], actual[a.start..a.end], actual_path)
+        io::flush{ &io }
+        _ = fs::write_all{ &fs, path = actual_path, bytes = actual }
+        return false
+    }
+}

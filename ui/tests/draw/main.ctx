@@ -1,64 +1,53 @@
-// Stage 0's test: the draw list, the recorder and number formatting.
+// Stage 0's tests: the draw list, the recorder and number formatting.
 //
-//   kotor/tools/ctxc run ui/tests/draw                 (from the repository root)
-//   kotor/tools/ctxc run ui/tests/draw -- --update     rewrite the golden after an intended change
-//
-// Exits 1 when any check fails.
+//   kotor/tools/ctxc test ui/tests/draw                          (from the repository root)
+//   UI_UPDATE_GOLDENS=1 kotor/tools/ctxc test ui/tests/draw      rewrite the golden after an intended change
 
 const GOLDEN_DIR: []u8 = "ui/tests/draw/golden"
-
-fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
-    let mut t = ui_test::Tally{ run = 0, failed = 0 }
-    let buf = mem::pages{ &mem, size = 4194304 } ifnull { return 1 }
-    let mut heap = arena::new{ buf }
-    let update = ui_test::has_flag{ args, flag = "--update" }
-
-    check_list{ &io, &fs, &t, &heap, update }
-    check_overflow{ &io, &t, &heap }
-    check_numbers{ &io, &t }
-    check_sink{ &io, &t }
-    check_helpers{ &io, &t }
-
-    _ = @fmt(&io, "ui/tests/draw: {} checks, {} failed\n", t.run, t.failed)
-    io::flush{ &io }
-    return if t.failed == 0 { 0 } else { 1 }
-}
 
 fn make_rect { x: i32, y: i32, w: i32, h: i32 } -> ui::Rect {
     return ui::Rect{ x, y, w, h }
 }
 
 // A list with every shape and three clips, one rounded, written out and compared with the golden.
-fn check_list { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, update: bool } {
-    let mut list = ui::draw::make{ realloc = arena::alloc, &heap, cmds = 64, text = 1024, clips = 8, fonts = 1 } iferr {
-        ui_test::expect{ &io, &t, ok = false, what = "make the draw list" }
-        return
-    }
+#test
+fn writes_every_shape_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let update = ui_check::is_updating{ &proc }
+    let mut list = try ui::draw::make{ realloc = arena::alloc, &heap, cmds = 64, text = 1024, clips = 8, fonts = 1 }
     ui::draw::reset{ &list, width = 800, height = 600 }
-    ui_test::expect{ &io, &t, ok = list.clip_count == 1 and list.clips[0].rect.w == 800 and list.clips[0].rect.h == 600, what = "entry 0 is the whole surface" }
+    // entry 0 is the whole surface
+    @expect(&t, list.clip_count == 1 and list.clips[0].rect.w == 800 and list.clips[0].rect.h == 600)
 
     let panel_rect = make_rect{ x = 16, y = 16, w = 400, h = 300 }
     let rounded = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = panel_rect, round = panel_rect, radius = 8.0 } } ifnull {
-        ui_test::expect{ &io, &t, ok = false, what = "add the rounded clip" }
+        // add the rounded clip
+        @expect(&t, false)
         return
     }
     let plain = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 100, y = 100, w = 200, h = 150 }, .. } } ifnull {
-        ui_test::expect{ &io, &t, ok = false, what = "add the plain clip" }
+        // add the plain clip
+        @expect(&t, false)
         return
     }
     let fraction = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 8, y = 9, w = 64, h = 32 }, .. } } ifnull {
-        ui_test::expect{ &io, &t, ok = false, what = "add the third clip" }
+        // add the third clip
+        @expect(&t, false)
         return
     }
-    ui_test::expect{ &io, &t, ok = rounded == 1 and plain == 2 and fraction == 3 and list.clip_count == 4, what = "clips take table entries in order" }
+    // clips take table entries in order
+    @expect(&t, rounded == 1 and plain == 2 and fraction == 3 and list.clip_count == 4)
 
     // Equal clips share an entry; the same rectangle without the rounding is a different one.
     let again = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = panel_rect, round = panel_rect, radius = 8.0 } } ifnull { 99 }
-    ui_test::expect{ &io, &t, ok = again == rounded and list.clip_count == 4, what = "an equal rounded clip shares its entry" }
+    // an equal rounded clip shares its entry
+    @expect(&t, again == rounded and list.clip_count == 4)
     let again_plain = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 100, y = 100, w = 200, h = 150 }, .. } } ifnull { 99 }
-    ui_test::expect{ &io, &t, ok = again_plain == plain and list.clip_count == 4, what = "an equal plain clip shares its entry" }
+    // an equal plain clip shares its entry
+    @expect(&t, again_plain == plain and list.clip_count == 4)
     let corner_only = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = panel_rect, .. } } ifnull { 99 }
-    ui_test::expect{ &io, &t, ok = corner_only == 4 and list.clip_count == 5, what = "the same rectangle without rounding is its own entry" }
+    // the same rectangle without rounding is its own entry
+    @expect(&t, corner_only == 4 and list.clip_count == 5)
     list.clip_count = 4        // the golden lists the three clips the plan names
 
     let ink = ui::Color{ r = 0xE4, g = 0xE7, b = 0xED, .. }
@@ -87,62 +76,62 @@ fn check_list { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::
     ui::draw::add_host{ &list, slot = 1, rect = make_rect{ x = 320, y = 60, w = 280, h = 360 } }
     ui::draw::add_rect{ &list, rect = make_rect{ x = 330, y = 70, w = 20, h = 20 }, clip = 0, style = ui::RectStyle{ fill = ui::Color{ r = 255, g = 0, b = 255, .. }, .. } }
 
-    ui_test::expect{ &io, &t, ok = list.count == 12 and list.dropped == 0, what = "all twelve shapes fit and none dropped" }
+    // all twelve shapes fit and none dropped
+    @expect(&t, list.count == 12 and list.dropped == 0)
 
-    let out = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 16384 } iferr {
-        ui_test::expect{ &io, &t, ok = false, what = "allocate the dump buffer" }
-        return
-    }
-    let scratch = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 16384 } iferr {
-        ui_test::expect{ &io, &t, ok = false, what = "allocate the golden buffer" }
-        return
-    }
+    let out = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 16384 }
+    let scratch = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 16384 }
     let mut sink = ui_rec::make_sink{ bytes = out }
-    ui_rec::write_list{ &sink, list = &list } iferr {
-        ui_test::expect{ &io, &t, ok = false, what = "write the list" }
-        return
-    }
-    ui_test::expect{ &io, &t, ok = sink.lost == 0, what = "the dump fit its buffer" }
-    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "list", actual = ui_rec::get_text{ sink }, scratch, update }
+    try ui_rec::write_list{ &sink, list = &list }
+    // the dump fit its buffer
+    @expect(&t, sink.lost == 0)
+    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "list", actual = ui_rec::get_text{ sink }, scratch, update })
 }
 
 // Overflow is counted, never a panic and never an unclipped shape.
-fn check_overflow { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut list = ui::draw::make{ realloc = arena::alloc, &heap, cmds = 4, text = 8, clips = 3, fonts = 0 } iferr {
-        ui_test::expect{ &io, &t, ok = false, what = "make the small draw list" }
-        return
-    }
+#test
+fn counts_what_does_not_fit { mut t: Test, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut list = try ui::draw::make{ realloc = arena::alloc, &heap, cmds = 4, text = 8, clips = 3, fonts = 0 }
     ui::draw::reset{ &list, width = 100, height = 100 }
     let mut i: i32 = 0
     while i < 6 {
         ui::draw::add_rect{ &list, rect = make_rect{ x = i, y = 0, w = 1, h = 1 }, style = ui::RectStyle{ .. }, clip = 0 }
         i = i + 1
     }
-    ui_test::expect{ &io, &t, ok = list.count == 4 and list.dropped == 2, what = "six shapes into a list of four: four kept, two counted" }
-    ui_test::expect{ &io, &t, ok = rect_x_of{ cmd = list.cmds[3] } == 3, what = "the shapes that fit are the first ones" }
+    // six shapes into a list of four: four kept, two counted
+    @expect(&t, list.count == 4 and list.dropped == 2)
+    // the shapes that fit are the first ones
+    @expect(&t, rect_x_of{ cmd = list.cmds[3] } == 3)
 
     ui::draw::reset{ &list, width = 100, height = 100 }
-    ui_test::expect{ &io, &t, ok = list.count == 0 and list.dropped == 0 and list.clip_count == 1, what = "reset empties the list and the counts" }
+    // reset empties the list and the counts
+    @expect(&t, list.count == 0 and list.dropped == 0 and list.clip_count == 1)
 
     // A table of three entries holds the surface and two clips; the third distinct clip is refused.
     let first = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 1, y = 1, w = 10, h = 10 }, .. } }
     let second = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 2, y = 2, w = 10, h = 10 }, .. } }
-    ui_test::expect{ &io, &t, ok = first != null and second != null and list.dropped == 0, what = "two clips fit a table of three" }
+    // two clips fit a table of three
+    @expect(&t, first != null and second != null and list.dropped == 0)
     let third = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 3, y = 3, w = 10, h = 10 }, .. } }
-    ui_test::expect{ &io, &t, ok = third == null and list.clip_count == 3 and list.dropped == 1, what = "a full clip table refuses a clip and counts it" }
+    // a full clip table refuses a clip and counts it
+    @expect(&t, third == null and list.clip_count == 3 and list.dropped == 1)
     let repeat = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 2, y = 2, w = 10, h = 10 }, .. } }
-    ui_test::expect{ &io, &t, ok = repeat != null and list.dropped == 1, what = "an equal clip still finds its entry in a full table" }
+    // an equal clip still finds its entry in a full table
+    @expect(&t, repeat != null and list.dropped == 1)
 
     // A shape naming a clip that does not exist is dropped and counted.
     ui::draw::add_rect{ &list, rect = make_rect{ x = 0, y = 0, w = 1, h = 1 }, style = ui::RectStyle{ .. }, clip = 3 }
-    ui_test::expect{ &io, &t, ok = list.count == 0 and list.dropped == 2, what = "a shape with an unknown clip index is dropped and counted" }
+    // a shape with an unknown clip index is dropped and counted
+    @expect(&t, list.count == 0 and list.dropped == 2)
 
     // Text is copied into the arena (8 bytes here); one that does not fit is dropped whole.
     ui::draw::add_text{ &list, font = ui::Font{ .. }, size = 8, x = 0, y = 0, text = "12345", color = ui::Color{ .. }, clip = 0 }
     ui::draw::add_text{ &list, font = ui::Font{ .. }, size = 8, x = 0, y = 0, text = "6789", color = ui::Color{ .. }, clip = 0 }
     ui::draw::add_text{ &list, font = ui::Font{ .. }, size = 8, x = 0, y = 0, text = "678", color = ui::Color{ .. }, clip = 0 }
-    ui_test::expect{ &io, &t, ok = list.count == 2 and list.text_len == 8 and list.dropped == 3, what = "text past the arena is dropped whole" }
-    check_text_span{ &io, &t, list = &list }
+    // text past the arena is dropped whole
+    @expect(&t, list.count == 2 and list.text_len == 8 and list.dropped == 3)
+    check_text_span{ &t, list = &list }
 }
 
 // The x of a rect command, or -1 for any other command.
@@ -151,13 +140,14 @@ fn rect_x_of { cmd: ui::Cmd } -> i32 {
     return -1
 }
 
-fn check_text_span { mut io: Io, mut t: ui_test::Tally, list: *ui::DrawList } {
+fn check_text_span { mut t: Test, list: *ui::DrawList } {
     let ok = if list.cmds[1] is text{ text } {
         slice::eq_bytes{ a = ui::draw::get_text{ list = list.*, span = text }, b = "678" }
     } else {
         false
     }
-    ui_test::expect{ &io, &t, ok, what = "a text command's bytes are the ones copied in" }
+    // a text command's bytes are the ones copied in
+    @expect(&t, ok)
 }
 
 // Writes `v` through the trimmed formatter and compares the text.
@@ -173,151 +163,221 @@ fn same_fixed { v: f32, digits: u32, want: []u8 } -> bool {
     return slice::eq_bytes{ a = buf[..n], b = want }
 }
 
-fn check_numbers { mut io: Io, mut t: ui_test::Tally } {
+#test
+fn formats_numbers_hex_and_colours { mut t: Test } {
     // The values std prints in exponent form, and the ones the plan names.
-    ui_test::expect{ &io, &t, ok = same_trimmed{ v = 10.0, digits = 4, want = "10" }, what = "10.0 is 10" }
-    ui_test::expect{ &io, &t, ok = same_trimmed{ v = 0.5, digits = 4, want = "0.5" }, what = "0.5 is 0.5" }
-    ui_test::expect{ &io, &t, ok = same_trimmed{ v = -3.25, digits = 4, want = "-3.25" }, what = "-3.25 is -3.25" }
-    ui_test::expect{ &io, &t, ok = same_trimmed{ v = 100.0, digits = 4, want = "100" }, what = "100.0 is 100" }
-    ui_test::expect{ &io, &t, ok = same_trimmed{ v = 40.0, digits = 4, want = "40" }, what = "40.0 is 40" }
-    ui_test::expect{ &io, &t, ok = same_trimmed{ v = 0.0, digits = 4, want = "0" }, what = "0.0 is 0" }
-    ui_test::expect{ &io, &t, ok = same_trimmed{ v = 1.5, digits = 4, want = "1.5" }, what = "1.5 is 1.5" }
-    ui_test::expect{ &io, &t, ok = same_trimmed{ v = 0.1, digits = 4, want = "0.1" }, what = "0.1 (not exactly representable) is 0.1" }
-    ui_test::expect{ &io, &t, ok = same_trimmed{ v = 1000000.0, digits = 4, want = "1000000" }, what = "a million" }
-    ui_test::expect{ &io, &t, ok = same_trimmed{ v = 0.00004, digits = 4, want = "0" }, what = "below the last digit rounds to 0" }
-    ui_test::expect{ &io, &t, ok = same_trimmed{ v = -0.00004, digits = 4, want = "0" }, what = "a negative that rounds to zero has no sign" }
-    ui_test::expect{ &io, &t, ok = same_trimmed{ v = 0.05, digits = 4, want = "0.05" }, what = "a zero after the point stays" }
-    ui_test::expect{ &io, &t, ok = same_trimmed{ v = 0.0625, digits = 4, want = "0.0625" }, what = "four digits" }
-    ui_test::expect{ &io, &t, ok = same_trimmed{ v = 0.5, digits = 0, want = "0" } and same_trimmed{ v = 1.5, digits = 0, want = "2" }, what = "0.5 and 1.5 with no digits round to the even digit, as the language's {:.0} does" }
-    ui_test::expect{ &io, &t, ok = same_trimmed{ v = -2.5, digits = 0, want = "-2" } and same_trimmed{ v = 0.0078125, digits = 6, want = "0.007812" }, what = "-2.5 with no digits is -2, and 1/128 with six is 0.007812: a tie goes to the even digit" }
+    // 10.0 is 10
+    @expect(&t, same_trimmed{ v = 10.0, digits = 4, want = "10" })
+    // 0.5 is 0.5
+    @expect(&t, same_trimmed{ v = 0.5, digits = 4, want = "0.5" })
+    // -3.25 is -3.25
+    @expect(&t, same_trimmed{ v = -3.25, digits = 4, want = "-3.25" })
+    // 100.0 is 100
+    @expect(&t, same_trimmed{ v = 100.0, digits = 4, want = "100" })
+    // 40.0 is 40
+    @expect(&t, same_trimmed{ v = 40.0, digits = 4, want = "40" })
+    // 0.0 is 0
+    @expect(&t, same_trimmed{ v = 0.0, digits = 4, want = "0" })
+    // 1.5 is 1.5
+    @expect(&t, same_trimmed{ v = 1.5, digits = 4, want = "1.5" })
+    // 0.1 (not exactly representable) is 0.1
+    @expect(&t, same_trimmed{ v = 0.1, digits = 4, want = "0.1" })
+    // a million
+    @expect(&t, same_trimmed{ v = 1000000.0, digits = 4, want = "1000000" })
+    // below the last digit rounds to 0
+    @expect(&t, same_trimmed{ v = 0.00004, digits = 4, want = "0" })
+    // a negative that rounds to zero has no sign
+    @expect(&t, same_trimmed{ v = -0.00004, digits = 4, want = "0" })
+    // a zero after the point stays
+    @expect(&t, same_trimmed{ v = 0.05, digits = 4, want = "0.05" })
+    // four digits
+    @expect(&t, same_trimmed{ v = 0.0625, digits = 4, want = "0.0625" })
+    // 0.5 and 1.5 with no digits round to the even digit, as the language's {:.0} does
+    @expect(&t, same_trimmed{ v = 0.5, digits = 0, want = "0" } and same_trimmed{ v = 1.5, digits = 0, want = "2" })
+    // -2.5 with no digits is -2, and 1/128 with six is 0.007812: a tie goes to the even digit
+    @expect(&t, same_trimmed{ v = -2.5, digits = 0, want = "-2" } and same_trimmed{ v = 0.0078125, digits = 6, want = "0.007812" })
 
     // Exactly `digits` digits: what a slider's label wants.
-    ui_test::expect{ &io, &t, ok = same_fixed{ v = 37.5, digits = 1, want = "37.5" }, what = "37.5 with one digit" }
-    ui_test::expect{ &io, &t, ok = same_fixed{ v = 10.0, digits = 2, want = "10.00" }, what = "10.0 with two digits keeps its zeros" }
-    ui_test::expect{ &io, &t, ok = same_fixed{ v = 100.0, digits = 1, want = "100.0" }, what = "100.0 with one digit" }
-    ui_test::expect{ &io, &t, ok = same_fixed{ v = 0.05, digits = 3, want = "0.050" }, what = "0.05 with three digits" }
-    ui_test::expect{ &io, &t, ok = same_fixed{ v = 2.0, digits = 0, want = "2" }, what = "no digits has no point" }
-    ui_test::expect{ &io, &t, ok = same_fixed{ v = 0.999, digits = 2, want = "1.00" }, what = "0.999 with two digits carries into the whole part" }
-    ui_test::expect{ &io, &t, ok = same_fixed{ v = -0.001, digits = 2, want = "0.00" }, what = "-0.001 with two digits has no sign" }
+    // 37.5 with one digit
+    @expect(&t, same_fixed{ v = 37.5, digits = 1, want = "37.5" })
+    // 10.0 with two digits keeps its zeros
+    @expect(&t, same_fixed{ v = 10.0, digits = 2, want = "10.00" })
+    // 100.0 with one digit
+    @expect(&t, same_fixed{ v = 100.0, digits = 1, want = "100.0" })
+    // 0.05 with three digits
+    @expect(&t, same_fixed{ v = 0.05, digits = 3, want = "0.050" })
+    // no digits has no point
+    @expect(&t, same_fixed{ v = 2.0, digits = 0, want = "2" })
+    // 0.999 with two digits carries into the whole part
+    @expect(&t, same_fixed{ v = 0.999, digits = 2, want = "1.00" })
+    // -0.001 with two digits has no sign
+    @expect(&t, same_fixed{ v = -0.001, digits = 2, want = "0.00" })
 
     // Values that are not numbers or do not fit.
     let nan = 0.0 / ui::pick_max_f32{ a = 0.0, b = 0.0 }
-    ui_test::expect{ &io, &t, ok = same_trimmed{ v = nan, digits = 2, want = "nan" }, what = "NaN is nan" }
+    // NaN is nan
+    @expect(&t, same_trimmed{ v = nan, digits = 2, want = "nan" })
     let inf = 1.0e30 * 1.0e30
-    ui_test::expect{ &io, &t, ok = same_trimmed{ v = inf, digits = 2, want = "inf" } and same_trimmed{ v = -inf, digits = 2, want = "-inf" }, what = "infinities" }
-    ui_test::expect{ &io, &t, ok = same_trimmed{ v = 1.0e30, digits = 2, want = "1000000015047466219876688855040" }, what = "a large f32 is its exact whole value, never exponent form" }
+    // infinities
+    @expect(&t, same_trimmed{ v = inf, digits = 2, want = "inf" } and same_trimmed{ v = -inf, digits = 2, want = "-inf" })
+    // a large f32 is its exact whole value, never exponent form
+    @expect(&t, same_trimmed{ v = 1.0e30, digits = 2, want = "1000000015047466219876688855040" })
 
     // A short buffer is cut, not overrun.
     let mut small: [3]u8
     let n = ui::format_fixed{ v = 12345.5, digits = 1, trim = true, into = small[..] }
-    ui_test::expect{ &io, &t, ok = n == 3 and slice::eq_bytes{ a = small[..], b = "123" }, what = "text longer than the buffer is cut" }
+    // text longer than the buffer is cut
+    @expect(&t, n == 3 and slice::eq_bytes{ a = small[..], b = "123" })
 
     // Hex.
     let mut buf: [16]u8
     let h = ui::format_hex{ n = 0xAB, digits = 4, into = buf[..] }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = buf[..h], b = "00AB" }, what = "hex pads to the digits asked" }
+    // hex pads to the digits asked
+    @expect(&t, slice::eq_bytes{ a = buf[..h], b = "00AB" })
     let h2 = ui::format_hex{ n = 0, digits = 0, into = buf[..] }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = buf[..h2], b = "0" }, what = "hex of zero is one digit" }
+    // hex of zero is one digit
+    @expect(&t, slice::eq_bytes{ a = buf[..h2], b = "0" })
     let h3 = ui::format_hex{ n = 0xDEADBEEF, digits = 2, into = buf[..] }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = buf[..h3], b = "DEADBEEF" }, what = "hex is as long as it needs" }
+    // hex is as long as it needs
+    @expect(&t, slice::eq_bytes{ a = buf[..h3], b = "DEADBEEF" })
     let c = ui::format_color{ color = ui::Color{ r = 0x30, g = 0x34, b = 0x3E, a = 0xFF }, into = buf[..] }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = buf[..c], b = "30343EFF" }, what = "a colour is RRGGBBAA" }
+    // a colour is RRGGBBAA
+    @expect(&t, slice::eq_bytes{ a = buf[..c], b = "30343EFF" })
     let c0 = ui::format_color{ color = ui::Color{ a = 0, .. }, into = buf[..] }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = buf[..c0], b = "00000000" }, what = "a clear colour is eight zeros" }
+    // a clear colour is eight zeros
+    @expect(&t, slice::eq_bytes{ a = buf[..c0], b = "00000000" })
 }
 
 // The recorder's sink, through @fmt, as the dump uses it.
-fn check_sink { mut io: Io, mut t: ui_test::Tally } {
+#test
+fn writes_numbers_and_specs_through_the_sink { mut t: Test } {
     let mut store: [256]u8
     let mut sink = ui_rec::make_sink{ bytes = store[..] }
     _ = @fmt(&sink, "{} {} {} {} |{:.2}|{}|{}", ui_rec::write_number{ v = 10.0, _ }, ui_rec::write_number{ v = 0.5, _ }, ui_rec::write_number{ v = -3.25, _ },
         ui_rec::write_number{ v = 100.0, _ }, 37.5, ui_rec::write_hex{ n = 255, digits = 4, _ }, ui_rec::write_color{ color = ui::Color{ r = 1, g = 2, b = 3, a = 4 }, _ })
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = ui_rec::get_text{ sink }, b = "10 0.5 -3.25 100 |37.50|00FF|01020304" }, what = "the sink writes numbers fixed-point" }
+    // the sink writes numbers fixed-point
+    @expect(&t, slice::eq_bytes{ a = ui_rec::get_text{ sink }, b = "10 0.5 -3.25 100 |37.50|00FF|01020304" })
 
     ui_rec::reset_sink{ &sink }
     let big: u32 = 4000000000
     let small: u8 = 7
     let neg: i32 = -12
     _ = @fmt(&sink, "{} {} {} {}", big, small, neg, true)
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = ui_rec::get_text{ sink }, b = "4000000000 7 -12 true" }, what = "the sink writes integers and booleans" }
+    // the sink writes integers and booleans
+    @expect(&t, slice::eq_bytes{ a = ui_rec::get_text{ sink }, b = "4000000000 7 -12 true" })
 
     ui_rec::reset_sink{ &sink }
     let ratio: f64 = 0.125
     _ = @fmt(&sink, "{:>5}|{:<4}|{:06}|{:x}|{:08.3}|{:.3}|{:^7}|", big, small, neg, 255, 3.14159, ratio, "mid")
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = ui_rec::get_text{ sink }, b = "4000000000|7   |-00012|ff|0003.142|0.125|  mid  |" },
-        what = "the sink writes every kind of spec: widths, alignment, zeros, a base, a precision on f32 and f64, text" }
+    // the sink writes every kind of spec: widths, alignment, zeros, a base, a precision on f32 and f64, text
+    @expect(&t, slice::eq_bytes{ a = ui_rec::get_text{ sink }, b = "4000000000|7   |-00012|ff|0003.142|0.125|  mid  |" })
 
     ui_rec::reset_sink{ &sink }
     _ = ui_rec::write_quoted{ &sink, s = "a\"b\\c\nd\x01" }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = ui_rec::get_text{ sink }, b = "\"a\\\"b\\\\c\\nd\\x01\"" }, what = "quoted text escapes quotes, backslashes and control bytes" }
+    // quoted text escapes quotes, backslashes and control bytes
+    @expect(&t, slice::eq_bytes{ a = ui_rec::get_text{ sink }, b = "\"a\\\"b\\\\c\\nd\\x01\"" })
 
     // A sink that is too small counts what it lost.
     let mut tiny: [4]u8
     let mut cut = ui_rec::make_sink{ bytes = tiny[..] }
     _ = @fmt(&cut, "abcdefg")
-    ui_test::expect{ &io, &t, ok = cut.len == 4 and cut.lost == 3, what = "a full sink counts the bytes it lost" }
+    // a full sink counts the bytes it lost
+    @expect(&t, cut.len == 4 and cut.lost == 3)
 }
 
-fn check_helpers { mut io: Io, mut t: ui_test::Tally } {
-    ui_test::expect{ &io, &t, ok = ui::pick_min_f32{ a = 2.0, b = 3.0 } == 2.0 and ui::pick_max_f32{ a = 2.0, b = 3.0 } == 3.0, what = "pick_min_f32 and pick_max_f32" }
-    ui_test::expect{ &io, &t, ok = ui::pick_min_u32{ a = 7, b = 3 } == 3 and ui::pick_max_u32{ a = 7, b = 3 } == 7, what = "pick_min_u32 and pick_max_u32" }
-    ui_test::expect{ &io, &t, ok = ui::clamp_f32{ v = 5.0, lo = 0.0, hi = 3.0 } == 3.0 and ui::clamp_f32{ v = -1.0, lo = 0.0, hi = 3.0 } == 0.0 and ui::clamp_f32{ v = 2.0, lo = 0.0, hi = 3.0 } == 2.0, what = "clamp_f32" }
-    ui_test::expect{ &io, &t, ok = ui::clamp_f32{ v = 5.0, lo = 4.0, hi = 3.0 } == 4.0, what = "clamp_f32 with lo above hi gives lo" }
-    ui_test::expect{ &io, &t, ok = ui::pick_min_i32{ a = -7, b = 3 } == -7 and ui::pick_max_i32{ a = -7, b = 3 } == 3, what = "pick_min_i32 and pick_max_i32" }
-    ui_test::expect{ &io, &t, ok = ui::clamp_i32{ v = 5, lo = 0, hi = 3 } == 3 and ui::clamp_i32{ v = -1, lo = 0, hi = 3 } == 0 and ui::clamp_i32{ v = 2, lo = 0, hi = 3 } == 2 and ui::clamp_i32{ v = 5, lo = 4, hi = 3 } == 4,
-        what = "clamp_i32, and with lo above hi it gives lo" }
+#test
+fn picks_and_clamps { mut t: Test } {
+    // pick_min_f32 and pick_max_f32
+    @expect(&t, ui::pick_min_f32{ a = 2.0, b = 3.0 } == 2.0 and ui::pick_max_f32{ a = 2.0, b = 3.0 } == 3.0)
+    // pick_min_u32 and pick_max_u32
+    @expect(&t, ui::pick_min_u32{ a = 7, b = 3 } == 3 and ui::pick_max_u32{ a = 7, b = 3 } == 7)
+    // clamp_f32
+    @expect(&t, ui::clamp_f32{ v = 5.0, lo = 0.0, hi = 3.0 } == 3.0 and ui::clamp_f32{ v = -1.0, lo = 0.0, hi = 3.0 } == 0.0 and ui::clamp_f32{ v = 2.0, lo = 0.0, hi = 3.0 } == 2.0)
+    // clamp_f32 with lo above hi gives lo
+    @expect(&t, ui::clamp_f32{ v = 5.0, lo = 4.0, hi = 3.0 } == 4.0)
+    // pick_min_i32 and pick_max_i32
+    @expect(&t, ui::pick_min_i32{ a = -7, b = 3 } == -7 and ui::pick_max_i32{ a = -7, b = 3 } == 3)
+    // clamp_i32, and with lo above hi it gives lo
+    @expect(&t, ui::clamp_i32{ v = 5, lo = 0, hi = 3 } == 3 and ui::clamp_i32{ v = -1, lo = 0, hi = 3 } == 0 and ui::clamp_i32{ v = 2, lo = 0, hi = 3 } == 2 and ui::clamp_i32{ v = 5, lo = 4, hi = 3 } == 4)
+}
 
+#test
+fn converts_units_to_pixels_and_holds_them { mut t: Test } {
     // Logical units to device pixels. A length goes to the nearest pixel (a half away from zero):
     // 10.3 * 1.5 = 15.45 is 15, 10.4 * 1.5 = 15.6 is 16.
     let nan = 0.0 / ui::pick_max_f32{ a = 0.0, b = 0.0 }
     let inf = 1.0e30 * 1.0e30
-    ui_test::expect{ &io, &t, ok = ui::scale_length{ length = 10.3, scale = 1.5 } == 15, what = "a length rounds down to the nearest pixel" }
-    ui_test::expect{ &io, &t, ok = ui::scale_length{ length = 10.4, scale = 1.5 } == 16, what = "a length rounds up to the nearest pixel" }
-    ui_test::expect{ &io, &t, ok = ui::scale_length{ length = 3.7, scale = 1.0 } == 4 and ui::scale_length{ length = 3.2, scale = 1.0 } == 3 and ui::scale_length{ length = 2.5, scale = 1.0 } == 3,
-        what = "a length at scale 1 rounds to whole numbers, a half up" }
-    ui_test::expect{ &io, &t, ok = ui::scale_length{ length = 3.7, scale = 0.0 } == 4 and ui::scale_length{ length = 3.7, scale = -2.0 } == 4 and ui::scale_length{ length = 3.7, scale = nan } == 4,
-        what = "a scale that is not a positive number is 1" }
+    // a length rounds down to the nearest pixel
+    @expect(&t, ui::scale_length{ length = 10.3, scale = 1.5 } == 15)
+    // a length rounds up to the nearest pixel
+    @expect(&t, ui::scale_length{ length = 10.4, scale = 1.5 } == 16)
+    // a length at scale 1 rounds to whole numbers, a half up
+    @expect(&t, ui::scale_length{ length = 3.7, scale = 1.0 } == 4 and ui::scale_length{ length = 3.2, scale = 1.0 } == 3 and ui::scale_length{ length = 2.5, scale = 1.0 } == 3)
+    // a scale that is not a positive number is 1
+    @expect(&t, ui::scale_length{ length = 3.7, scale = 0.0 } == 4 and ui::scale_length{ length = 3.7, scale = -2.0 } == 4 and ui::scale_length{ length = 3.7, scale = nan } == 4)
     // A border of 1 logical unit at the scales a display has: 1, 1.25, 1.5, 1.75 and 2 pixels a unit.
-    ui_test::expect{ &io, &t, ok = ui::scale_length{ length = 1.0, scale = 1.0 } == 1 and ui::scale_length{ length = 1.0, scale = 1.25 } == 1 and ui::scale_length{ length = 1.0, scale = 1.5 } == 2
-        and ui::scale_length{ length = 1.0, scale = 1.75 } == 2 and ui::scale_length{ length = 1.0, scale = 2.0 } == 2, what = "1 unit is 1, 1, 2, 2 and 2 pixels at scales 1, 1.25, 1.5, 1.75 and 2" }
-    ui_test::expect{ &io, &t, ok = ui::scale_length{ length = 0.25, scale = 1.0 } == 1 and ui::scale_length{ length = 0.1, scale = 1.5 } == 1 and ui::scale_length{ length = 1.0, scale = 0.25 } == 1
-        and ui::scale_length{ length = 0.0, scale = 2.0 } == 0, what = "a length that is not 0 is at least a pixel, and 0 stays 0" }
-    ui_test::expect{ &io, &t, ok = ui::scale_length{ length = -0.2, scale = 1.0 } == -1 and ui::scale_length{ length = -3.7, scale = 1.0 } == -4 and ui::scale_length{ length = -10.3, scale = 1.5 } == -15,
-        what = "a negative length is the same with its sign" }
-    ui_test::expect{ &io, &t, ok = ui::scale_length{ length = nan, scale = 1.0 } == 0 and ui::scale_length{ length = inf, scale = 1.0 } == ui::MAX_PIXELS and ui::scale_length{ length = -inf, scale = 1.0 } == -ui::MAX_PIXELS
-        and ui::scale_length{ length = 3.0e9, scale = 2.0 } == ui::MAX_PIXELS and ui::scale_length{ length = 1.0e30, scale = 64.0 } == ui::MAX_PIXELS,
-        what = "a length that is not a number is 0, and one past the largest is held there" }
+    // 1 unit is 1, 1, 2, 2 and 2 pixels at scales 1, 1.25, 1.5, 1.75 and 2
+    @expect(&t, ui::scale_length{ length = 1.0, scale = 1.0 } == 1 and ui::scale_length{ length = 1.0, scale = 1.25 } == 1 and ui::scale_length{ length = 1.0, scale = 1.5 } == 2
+        and ui::scale_length{ length = 1.0, scale = 1.75 } == 2 and ui::scale_length{ length = 1.0, scale = 2.0 } == 2)
+    // a length that is not 0 is at least a pixel, and 0 stays 0
+    @expect(&t, ui::scale_length{ length = 0.25, scale = 1.0 } == 1 and ui::scale_length{ length = 0.1, scale = 1.5 } == 1 and ui::scale_length{ length = 1.0, scale = 0.25 } == 1
+        and ui::scale_length{ length = 0.0, scale = 2.0 } == 0)
+    // a negative length is the same with its sign
+    @expect(&t, ui::scale_length{ length = -0.2, scale = 1.0 } == -1 and ui::scale_length{ length = -3.7, scale = 1.0 } == -4 and ui::scale_length{ length = -10.3, scale = 1.5 } == -15)
+    // a length that is not a number is 0, and one past the largest is held there
+    @expect(&t, ui::scale_length{ length = nan, scale = 1.0 } == 0 and ui::scale_length{ length = inf, scale = 1.0 } == ui::MAX_PIXELS and ui::scale_length{ length = -inf, scale = 1.0 } == -ui::MAX_PIXELS
+        and ui::scale_length{ length = 3.0e9, scale = 2.0 } == ui::MAX_PIXELS and ui::scale_length{ length = 1.0e30, scale = 64.0 } == ui::MAX_PIXELS)
     // A position goes to the nearest pixel, a half up, and may be 0: floor(v * scale + 0.5).
-    ui_test::expect{ &io, &t, ok = ui::scale_position{ position = 10.3, scale = 1.5 } == 15 and ui::scale_position{ position = 10.4, scale = 1.5 } == 16
+    // a position rounds to the nearest pixel, a half up, and may be 0
+    @expect(&t, ui::scale_position{ position = 10.3, scale = 1.5 } == 15 and ui::scale_position{ position = 10.4, scale = 1.5 } == 16
         and ui::scale_position{ position = 0.3, scale = 1.0 } == 0 and ui::scale_position{ position = 0.5, scale = 1.0 } == 1
-        and ui::scale_position{ position = -0.5, scale = 1.0 } == 0 and ui::scale_position{ position = -0.6, scale = 1.0 } == -1, what = "a position rounds to the nearest pixel, a half up, and may be 0" }
-    ui_test::expect{ &io, &t, ok = ui::scale_position{ position = nan, scale = 1.0 } == 0 and ui::scale_position{ position = inf, scale = 1.0 } == ui::MAX_PIXELS
-        and ui::scale_position{ position = -1.0e30, scale = 1.0 } == -ui::MAX_PIXELS, what = "a position that is not a number is 0, and one out of range is held" }
-    ui_test::expect{ &io, &t, ok = ui::hold_scale{ scale = 1.5 } == 1.5 and ui::hold_scale{ scale = 0.0 } == 1.0 and ui::hold_scale{ scale = nan } == 1.0 and ui::hold_scale{ scale = -1.0 } == 1.0
-        and ui::hold_scale{ scale = 1000.0 } == 64.0 and ui::hold_scale{ scale = 0.001 } == 0.015625 and ui::hold_scale{ scale = inf } == 64.0, what = "a scale is held from 1/64 to 64, and 1 when it is no positive number" }
-    ui_test::expect{ &io, &t, ok = ui::floor_pixels{ v = -1.5 } == -2 and ui::ceil_pixels{ v = 1.2 } == 2 and ui::round_pixels{ v = 2.5 } == 3 and ui::round_pixels{ v = -2.5 } == -2
-        and ui::floor_pixels{ v = nan } == 0 and ui::ceil_pixels{ v = inf } == ui::MAX_PIXELS and ui::round_pixels{ v = -inf } == -ui::MAX_PIXELS and ui::ceil_pixels{ v = 2.0e9 } == ui::MAX_PIXELS,
-        what = "floor_pixels, ceil_pixels and round_pixels, which never overflow" }
+        and ui::scale_position{ position = -0.5, scale = 1.0 } == 0 and ui::scale_position{ position = -0.6, scale = 1.0 } == -1)
+    // a position that is not a number is 0, and one out of range is held
+    @expect(&t, ui::scale_position{ position = nan, scale = 1.0 } == 0 and ui::scale_position{ position = inf, scale = 1.0 } == ui::MAX_PIXELS
+        and ui::scale_position{ position = -1.0e30, scale = 1.0 } == -ui::MAX_PIXELS)
+    // a scale is held from 1/64 to 64, and 1 when it is no positive number
+    @expect(&t, ui::hold_scale{ scale = 1.5 } == 1.5 and ui::hold_scale{ scale = 0.0 } == 1.0 and ui::hold_scale{ scale = nan } == 1.0 and ui::hold_scale{ scale = -1.0 } == 1.0
+        and ui::hold_scale{ scale = 1000.0 } == 64.0 and ui::hold_scale{ scale = 0.001 } == 0.015625 and ui::hold_scale{ scale = inf } == 64.0)
+    // floor_pixels, ceil_pixels and round_pixels, which never overflow
+    @expect(&t, ui::floor_pixels{ v = -1.5 } == -2 and ui::ceil_pixels{ v = 1.2 } == 2 and ui::round_pixels{ v = 2.5 } == 3 and ui::round_pixels{ v = -2.5 } == -2
+        and ui::floor_pixels{ v = nan } == 0 and ui::ceil_pixels{ v = inf } == ui::MAX_PIXELS and ui::round_pixels{ v = -inf } == -ui::MAX_PIXELS and ui::ceil_pixels{ v = 2.0e9 } == ui::MAX_PIXELS)
     // Sums of pixels are made wide and held, so the largest i32 cannot overflow one.
-    ui_test::expect{ &io, &t, ok = ui::add_pixels{ a = 3, b = 4 } == 7 and ui::add_pixels{ a = 2147483647, b = 2147483647 } == ui::MAX_PIXELS and ui::add_pixels{ a = ui::MAX_PIXELS, b = 1 } == ui::MAX_PIXELS
+    // add_pixels, sub_pixels and hold_pixels hold a sum instead of overflowing
+    @expect(&t, ui::add_pixels{ a = 3, b = 4 } == 7 and ui::add_pixels{ a = 2147483647, b = 2147483647 } == ui::MAX_PIXELS and ui::add_pixels{ a = ui::MAX_PIXELS, b = 1 } == ui::MAX_PIXELS
         and ui::sub_pixels{ a = 3, b = 4 } == -1 and ui::sub_pixels{ a = -2147483647, b = 2147483647 } == -ui::MAX_PIXELS and ui::hold_pixels{ v = 5000000000 } == ui::MAX_PIXELS
-        and ui::hold_pixels{ v = -5000000000 } == -ui::MAX_PIXELS and ui::hold_pixels{ v = -12 } == -12, what = "add_pixels, sub_pixels and hold_pixels hold a sum instead of overflowing" }
+        and ui::hold_pixels{ v = -5000000000 } == -ui::MAX_PIXELS and ui::hold_pixels{ v = -12 } == -12)
     // A fraction of a whole number of pixels rounds down. 0.7 of 100 is 70: the product is made in f32.
-    ui_test::expect{ &io, &t, ok = ui::take_fraction{ whole = 100, fraction = 0.7 } == 70 and ui::take_fraction{ whole = 101, fraction = 0.5 } == 50 and ui::take_fraction{ whole = 3, fraction = 0.1 } == 0
+    // take_fraction rounds down and is held
+    @expect(&t, ui::take_fraction{ whole = 100, fraction = 0.7 } == 70 and ui::take_fraction{ whole = 101, fraction = 0.5 } == 50 and ui::take_fraction{ whole = 3, fraction = 0.1 } == 0
         and ui::take_fraction{ whole = 100, fraction = 1.0 } == 100 and ui::take_fraction{ whole = 100, fraction = 0.3 } == 30 and ui::take_fraction{ whole = 100, fraction = -0.255 } == -26
-        and ui::take_fraction{ whole = 100, fraction = nan } == 0 and ui::take_fraction{ whole = ui::MAX_PIXELS, fraction = 4.0 } == ui::MAX_PIXELS, what = "take_fraction rounds down and is held" }
-    ui_test::expect{ &io, &t, ok = ui::floor_f32{ x = -1.5 } == -2.0 and ui::ceil_f32{ x = 1.2 } == 2.0 and ui::round_f32{ x = 2.5 } == 3.0, what = "floor_f32, ceil_f32 and round_f32" }
-    ui_test::expect{ &io, &t, ok = ui::sqrt_f32{ x = 9.0 } == 3.0 and ui::abs_f32{ x = -2.0 } == 2.0, what = "sqrt_f32 and abs_f32" }
-    ui_test::expect{ &io, &t, ok = ui::abs_f32{ x = ui::sin_f32{ x = 0.0 } } == 0.0 and ui::cos_f32{ x = 0.0 } == 1.0, what = "sin_f32 and cos_f32" }
-    ui_test::expect{ &io, &t, ok = ui::pow_f32{ x = 2.0, y = 3.0 } == 8.0 and ui::mod_f32{ x = 7.0, y = 4.0 } == 3.0 and ui::trunc_f32{ x = -2.7 } == -2.0, what = "pow_f32, mod_f32 and trunc_f32" }
-    let angle = ui::atan2_f32{ y = 1.0, x = 1.0 }
-    ui_test::expect{ &io, &t, ok = angle > 0.785 and angle < 0.786, what = "atan2_f32" }
+        and ui::take_fraction{ whole = 100, fraction = nan } == 0 and ui::take_fraction{ whole = ui::MAX_PIXELS, fraction = 4.0 } == ui::MAX_PIXELS)
+}
 
-    let c = ui::Color{ r = 1, .. }
-    ui_test::expect{ &io, &t, ok = c.a == 255 and c.g == 0, what = "a colour is opaque unless said otherwise" }
+#test
+fn calls_the_libm_functions { mut t: Test } {
+    // floor_f32, ceil_f32 and round_f32
+    @expect(&t, ui::floor_f32{ x = -1.5 } == -2.0 and ui::ceil_f32{ x = 1.2 } == 2.0 and ui::round_f32{ x = 2.5 } == 3.0)
+    // sqrt_f32 and abs_f32
+    @expect(&t, ui::sqrt_f32{ x = 9.0 } == 3.0 and ui::abs_f32{ x = -2.0 } == 2.0)
+    // sin_f32 and cos_f32
+    @expect(&t, ui::abs_f32{ x = ui::sin_f32{ x = 0.0 } } == 0.0 and ui::cos_f32{ x = 0.0 } == 1.0)
+    // pow_f32, mod_f32 and trunc_f32
+    @expect(&t, ui::pow_f32{ x = 2.0, y = 3.0 } == 8.0 and ui::mod_f32{ x = 7.0, y = 4.0 } == 3.0 and ui::trunc_f32{ x = -2.7 } == -2.0)
+    let angle = ui::atan2_f32{ y = 1.0, x = 1.0 }
+    // atan2_f32
+    @expect(&t, angle > 0.785 and angle < 0.786)
+}
+
+#test
+fn defaults_colours_and_rect_styles { mut t: Test } {
+    let c =ui::Color{ r = 1, .. }
+    // a colour is opaque unless said otherwise
+    @expect(&t, c.a == 255 and c.g == 0)
     let style = ui::RectStyle{ .. }
-    ui_test::expect{ &io, &t, ok = style.fill.a == 0 and style.border_color.top.a == 0 and style.radius.top_left == 0.0, what = "a rect style draws nothing by default" }
+    // a rect style draws nothing by default
+    @expect(&t, style.fill.a == 0 and style.border_color.top.a == 0 and style.radius.top_left == 0.0)
     let r = ui::round{ radius = 3.0 }
     let s = ui::stroke{ width = 2 }
-    ui_test::expect{ &io, &t, ok = r.top_left == 3.0 and r.bottom_right == 3.0 and s.left == 2 and s.top == 2, what = "round and stroke fill every corner and side" }
+    // round and stroke fill every corner and side
+    @expect(&t, r.top_left == 3.0 and r.bottom_right == 3.0 and s.left == 2 and s.top == 2)
 }
