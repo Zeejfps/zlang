@@ -45,16 +45,27 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: ui_sdl::Sdl, mut fonts:
         return 1
     }
     let mut heap = arena::new{ buf }
-    let font = read_font{ &fs, &heap, path = opts.font }
-    let bytes = font.bytes ifnull {
-        _ = @fmt(&io, "demo_gl: no font at {} (pass --font PATH)\n", font.path)
+    // The face is added from its file, which the font library maps (add_face_file): the program
+    // never reads the font.
+    let mut lib = ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } } iferr {
+        io::eprintln{ &io, s = "demo_gl: the font library did not start" }
+        return 1
+    }
+    defer ui_fonts::close{ &lib }
+    let font = add_font{ &lib, path = opts.font }
+    let face = font.face ifnull {
+        if font.missing {
+            _ = @fmt(&io, "demo_gl: no font at {} (pass --font PATH)\n", font.path)
+        } else {
+            _ = @fmt(&io, "demo_gl: {} is not a font the library can read\n", font.path)
+        }
         io::flush{ &io }
         return 1
     }
     _ = @fmt(&io, "demo_gl: font {}\n", font.path)
     io::flush{ &io }
     let mut log: [16384]u8
-    let code = run{ &io, &fs, &sdl, &fonts, &heap, opts, font = bytes, log = log[..] } iferr err{ error } {
+    let code = run{ &io, &fs, &sdl, &lib, face, &heap, opts, log = log[..] } iferr err{ error } {
         _ = @fmt(&io, "demo_gl: failed: {}\n", error)
         match error {
             ui_gl::compile_failed{ shader, log_len } => { _ = @fmt(&io, "{}:\n{}\n", shader, log[..log_len]) }
@@ -134,20 +145,29 @@ fn read_options { mut io: Io, args: Args } -> ?Options {
     return o
 }
 
-// A font file's bytes: the path given, or the first of the platform's defaults that reads.
-struct FontFile { path: []u8, bytes: ?[]u8 }
+// A face added from a font file: the path given, or the first of the platform's defaults that
+// adds. With no face, `path` is the one tried (the first default when none was given) and
+// `missing` says whether it was not there, or was there and not a font the library reads.
+struct FontFile { path: []u8, face: ?ui_fonts::Face, missing: bool }
 
-fn read_font { mut fs: Fs, mut heap: arena::Arena, path: ?[]u8 } -> FontFile {
+fn add_font { mut lib: ui_fonts::Library, path: ?[]u8 } -> FontFile {
     if let p = path {
-        let bytes = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = p } iferr { return FontFile{ path = p, bytes = null } }
-        return FontFile{ path = p, bytes }
+        let face = ui_fonts::add_face_file{ &lib, path = p, index = 0 } iferr err{ error } {
+            let missing = match error {
+                ui_fonts::no_file{ path } => { true }
+                ui_fonts::bad_path{ path } => { true }
+                else => { false }
+            }
+            return FontFile{ path = p, face = null, missing }
+        }
+        return FontFile{ path = p, face, missing = false }
     }
     let defaults: [][]u8 = match target::OS { windows => FONT_WINDOWS[..], macos => FONT_MACOS[..], linux => FONT_LINUX[..] }
     for p in defaults {
-        let bytes = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = p } iferr { continue }
-        return FontFile{ path = p, bytes }
+        let face = ui_fonts::add_face_file{ &lib, path = p, index = 0 } iferr { continue }
+        return FontFile{ path = p, face, missing = false }
     }
-    return FontFile{ path = if defaults.len > 0 { defaults[0] } else { "" }, bytes = null }
+    return FontFile{ path = if defaults.len > 0 { defaults[0] } else { "" }, face = null, missing = true }
 }
 
 // ---- the program's state between frames
@@ -168,8 +188,8 @@ struct Demo {
 }
 
 fn run {
-    mut io: Io, mut fs: Fs, mut sdl: ui_sdl::Sdl, mut fonts: ui_fonts::Fonts, mut heap: arena::Arena,
-    opts: Options, font: []u8, log: []mut u8,
+    mut io: Io, mut fs: Fs, mut sdl: ui_sdl::Sdl, mut lib: ui_fonts::Library, face: ui_fonts::Face, mut heap: arena::Arena,
+    opts: Options, log: []mut u8,
 } -> !i32 {
     try ui_sdl::init{ &sdl }
     defer ui_sdl::quit{ &sdl }
@@ -184,9 +204,6 @@ fn run {
     defer ui_gl::close{ &dev }
     _ = @fmt(&io, "GL: {} ({})\n", ui_gl::get_gl_string{ gl = &dev.gl, name = ui_gl::VERSION }, ui_gl::get_gl_string{ gl = &dev.gl, name = ui_gl::RENDERER })
 
-    let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
-    defer ui_fonts::close{ &lib }
-    let face = try ui_fonts::add_face{ &lib, data = font, index = 0 }
     let mut gui = try ui::make{ realloc = arena::alloc, &heap, cap = ui::Capacity{ .. } }
     let text_font = ui_fonts::make_font{ &lib, ui = &gui, face } ifnull { return ui_fonts::closed }
     let provider = ui_fonts::get_provider{ lib = &lib }

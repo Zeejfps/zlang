@@ -155,11 +155,11 @@ fn run {
     let mut glyphs: [256]ui::Glyph
     let mut kotor_glyphs: [256]render::Glyph
     if let path = o.font {
-        let bytes = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } iferr {
-            _ = @fmt(&io, "uispike: cannot read the font {}\n", path)
+        // Added from its file, which the font library maps: the program never reads the font.
+        let face = ui_fonts::add_face_file{ &lib, path, index = 0 } iferr err{ error } {
+            _ = @fmt(&io, "uispike: cannot add the font {}: {}\n", path, error)
             return 2
         }
-        let face = try ui_fonts::add_face{ &lib, data = bytes, index = 0 }
         gui.theme.font = ui_fonts::make_font{ &lib, ui = &gui, face } ifnull { return ui_fonts::closed }
         let p = ui_fonts::get_provider{ lib = &lib }
         ui::set_provider{ ui = &gui, provider = p }
