@@ -1,0 +1,4 @@
+namespace lib {
+    fn twice { n: u32 } -> u32 { return n * 2 }
+    fn half { n: u32 } -> u32 { return n / 2 }
+}

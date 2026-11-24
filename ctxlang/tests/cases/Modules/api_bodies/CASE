@@ -1,0 +1,5 @@
+// A fn in an api.ctx has no body (spec §10, Modules, rule 3): one with a body is one error,
+// and the rest is checked as if it had none, its definition in lib/impl.ctx.
+//# program: main.ctx lib/api.ctx lib/impl.ctx
+//# errors:
+//| lib/api.ctx:2:32: error: `fn twice` in an api.ctx has no body: a file of its module defines it, with this signature

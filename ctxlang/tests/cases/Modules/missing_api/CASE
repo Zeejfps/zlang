@@ -1,0 +1,10 @@
+// A file's place on disk decides which modules it is inside (spec §10, Modules, rule 1): a
+// program with lib/gff/read.ctx and not lib/gff/api.ctx is an error, said once.
+//# program: main.ctx lib/gff/read.ctx
+//# errors:
+//| lib/gff/read.ctx:1:1: error: `lib/gff/read.ctx` is inside module `lib/gff`, whose api.ctx isn't one of the program's files: a build adds a module's folder whole
+
+// A program of one file is in no module (rule 12), though its folder holds an api.ctx.
+//# $ ctxc run lib/gff/alone.ctx
+//# stdout:
+//| alone

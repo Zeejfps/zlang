@@ -239,12 +239,12 @@ namespace tree {
         attr_list{ &d, xs = x.attrs }
         match x.k {
             error => { line{ &d, at, s = "invalid" } }
-            func{ name = n, tparams, params, ret, body, external } => {
-                named{ &d, at, kind = if external { "extern fn" } else { "fn" }, n, tparams }
+            func{ name = n, tparams, params, ret, body, external, declared } => {
+                named{ &d, at, kind = if external { "extern fn" } else if declared { "declared fn" } else { "fn" }, n, tparams }
                 d.depth = d.depth + 1
                 param_list{ &d, xs = params }
                 opt_type{ &d, t = ret }
-                if not external { block{ &d, b = body } }
+                if not external and not declared { block{ &d, b = body } }
                 d.depth = d.depth - 1
             }
             record{ name = n, tparams, fields, untagged } => {
@@ -350,6 +350,13 @@ namespace tree {
                     i = i + 1
                 }
                 d.depth = d.depth - 1
+            }
+            opaque{ name = n, tparams } => { named{ &d, at, kind = "opaque type", n, tparams } }
+            expose{ path } => {
+                start{ &d, at }
+                put{ &d, s = "expose " }
+                raw{ &d, s = path }
+                end{ &d }
             }
         }
     }
@@ -948,8 +955,9 @@ namespace decls {
                     list_decls{ &out, &c, file, xs = decls }
                 }
                 else => {
+                    // An api.ctx's half is what it declares, listed where that is.
                     let d = map::get{ m = c.decl_of, key }
-                    if d != null { decl{ &out, &c, i = d } }
+                    if d != null and not check::get_decl{ c, d }.half { decl{ &out, &c, i = d } }
                 }
             }
             i = i + 1

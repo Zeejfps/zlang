@@ -1,0 +1,12 @@
+// A `#write` fn is a name like any other (spec §10, Modules): an @fmt sees the writers its
+// code could name (§13, Formatting, rule 4). lib/geo's api.ctx declares Size's, which code
+// outside uses; Point's is hidden, so only lib/geo writes a Point with it. A writer's result
+// is a bare `!`, whose errors are its sink's, so its declaration states no set (rule 5).
+//# program: main.ctx lib/geo/api.ctx lib/geo/impl.ctx
+//# stdout:
+//| 3px
+//| (1, 2) 4px
+
+//# program: outside.ctx lib/geo/api.ctx lib/geo/impl.ctx
+//# errors:
+//| outside.ctx:5:34: error: @fmt has no writer of geo::Point to utf8::Builder(arena::Arena)

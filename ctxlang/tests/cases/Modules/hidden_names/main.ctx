@@ -1,0 +1,16 @@
+fn main {} -> i32 {
+    let h = gff::parse_header{ bytes = "x" }
+    let n: usize = gff::LIMIT
+    let p: *gff::Header = &h
+    let s: gff::Shape = gff::Shape::square{ side = 2 }
+    let f = gff::parse_header
+    match gff::read{ bytes = "x" } {
+        ok => {}
+        gff::bad_magic => {}
+        gff::hidden_error => {}
+    }
+    _ = p
+    _ = s
+    _ = f
+    return @as(i32, n)
+}

@@ -1,0 +1,5 @@
+fn main { mut io: Io, mut counter: geo::Counter } -> i32 {
+    let b = geo::make{ lo = geo::Point{ x = 0, y = 0 }, hi = geo::Point{ x = 2, y = 2 } } iferr { return 1 }
+    _ = @fmt(&io, "{} {}\n", b.hi.x, geo::count{ &counter })
+    return 0
+}

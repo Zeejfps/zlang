@@ -309,7 +309,9 @@ namespace tool {
     // `ctxc build OUT.c STD... -- FILE...` in directory dir, std's files named from `up`, with
     // the files of `denied` denied the unchecked operations: each follows a `--deny-unchecked`,
     // and each that isn't, after one that is, an `--allow-unchecked`.
-    fn ctxc_build { mut fs: Fs, mut proc: Proc, mut heap: Heap, s: Session, mut scratch: Scratch, ctxc: []u8, out_c: []u8, files: [][]u8, denied: [][]u8, dir: []u8, up: []u8, platform: []u8, env: [][]u8 } -> Ran {
+    // places: for each of files, the folder it counts as being in for modules, as `ctxc
+    // graph`'s `place` records give a generated file's, or empty; or none at all.
+    fn ctxc_build { mut fs: Fs, mut proc: Proc, mut heap: Heap, s: Session, mut scratch: Scratch, ctxc: []u8, out_c: []u8, files: [][]u8, denied: [][]u8, places: [][]u8, dir: []u8, up: []u8, platform: []u8, env: [][]u8 } -> Ran {
         let mut argv = strs{ &heap }
         try! list::push{ list = &argv, item = ctxc }
         try! list::push{ list = &argv, item = "build" }
@@ -317,7 +319,11 @@ namespace tool {
         std_files{ &fs, &heap, home = s.home, up, platform, out = &argv }
         try! list::push{ list = &argv, item = "--" }
         let mut deny = false
-        for f in files {
+        for f at k in files {
+            if k < places.len and places[k].len > 0 {
+                try! list::push{ list = &argv, item = "--place" }
+                try! list::push{ list = &argv, item = places[k] }
+            }
             let mut is = false
             for d in denied {
                 if eq{ a = d, b = f } { is = true }
@@ -341,11 +347,11 @@ namespace tool {
     // Builds the program of files, in directory dir, into an executable in the cache, named by
     // a hash of its C and of all that compiles it: built once, however many cases have the same.
     // ctxc runs with `env` added to its environment.
-    fn build { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, s: Session, mut scratch: Scratch, files: [][]u8, denied: [][]u8, dir: []u8, up: []u8, name: []u8, flags: [][]u8, level: u8, trace: bool, env: [][]u8 } -> Built {
+    fn build { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, s: Session, mut scratch: Scratch, files: [][]u8, denied: [][]u8, places: [][]u8, dir: []u8, up: []u8, name: []u8, flags: [][]u8, level: u8, trace: bool, env: [][]u8 } -> Built {
         scratch.seq = scratch.seq + 1
         let tmp_c = join{ &heap, a = scratch.dir, b = cat3{ &heap, a = "c", b = number{ &heap, n = scratch.seq }, c = ".c" } }
         _ = fs::remove{ &fs, path = tmp_c } iferr {}
-        let r = ctxc_build{ &fs, &proc, &heap, s, &scratch, ctxc = s.ctxc, out_c = tmp_c, files, denied, dir, up, platform = os_name{ os = s.os }, env }
+        let r = ctxc_build{ &fs, &proc, &heap, s, &scratch, ctxc = s.ctxc, out_c = tmp_c, files, denied, places, dir, up, platform = os_name{ os = s.os }, env }
         if not r.started { return Built::failed{ why = cat{ &heap, a = "ctxc didn't start: ", b = r.err } } }
         if r.late { return Built::failed{ why = "ctxc build didn't end" } }
         let wrote = kind_of{ &fs, path = tmp_c } == 1
@@ -486,7 +492,7 @@ namespace tool {
         io::flush{ &io }
         let tmp = join{ &heap, a = scratch.dir, b = "ctxc.c" }
         _ = fs::remove{ &fs, path = tmp } iferr {}
-        let r = ctxc_build{ &fs, &proc, &heap, s, &scratch, ctxc = seed, out_c = tmp, files = list::items{ list = files }, denied = none[..], dir = s.home, up = "", platform, env = none[..] }
+        let r = ctxc_build{ &fs, &proc, &heap, s, &scratch, ctxc = seed, out_c = tmp, files = list::items{ list = files }, denied = none[..], places = none[..], dir = s.home, up = "", platform, env = none[..] }
         if not r.started or r.code != 0 {
             _ = @fmt(&io, "suite: the bootstrap ctxc can't compile ctxc's source:\n{}\n", r.err)
             return null

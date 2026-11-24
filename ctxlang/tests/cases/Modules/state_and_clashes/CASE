@@ -1,0 +1,15 @@
+// Hidden names clash only where both are visible (spec §10, Modules, rule 8): lib/a's hidden
+// helper and lib/a/inner's, since lib/a's is visible inside lib/a/inner; lib/b's hidden other
+// and main.ctx's public one; and two apis that make one name public, reported once. A
+// capability's static and its literal are reached only inside its module (rule 7), though
+// another module adds to its namespace.
+//# program: main.ctx lib/a/api.ctx lib/a/impl.ctx lib/a/inner/api.ctx lib/a/inner/deep.ctx lib/b/api.ctx lib/b/impl.ctx
+//# errors:
+//| lib/a/inner/deep.ctx:3:5: error: `helper` is already declared in this scope
+//|   lib/a/impl.ctx:5:8: note: the earlier `helper` is declared here
+//| lib/b/impl.ctx:3:5: error: `other` is already declared in this scope
+//|   main.ctx:1:20: note: the earlier `other` is declared here
+//| lib/a/api.ctx:5:8: error: `put` is already declared where this makes it visible
+//|   lib/b/impl.ctx:2:8: note: the other `put` is declared here
+//| lib/b/impl.ctx:5:55: error: `count` is a static of capability `Cache`: only a function of its namespace inside module `lib/a`, which declares it, can use it
+//| lib/b/impl.ctx:6:49: error: capability `Gl` can only be made by a function of namespace `fmt` inside module `lib/a`, which declares it

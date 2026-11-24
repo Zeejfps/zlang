@@ -1,0 +1,11 @@
+fn build { mut b: Build } { build::gen_file{ &b, exe = build::exe{ &b, name = "a", root = "." }, name = "API", text = "" } }
+
+// A generated file is in no folder of its own, so it can't make one a module: an api.ctx is
+// written by hand (spec §10, Modules).
+//# interp: cannot run
+//# stdout escaped:
+//| exe\t0\ta\t.
+//# panic: program: panic: build: a file name cannot be api
+//# path:
+//|   at build::gen_file (std/build.ctx:120:55)
+//|   at build (15.ctx:1:44)

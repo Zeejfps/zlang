@@ -1,0 +1,7 @@
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "game", root = "game" }
+    build::add_sources{ &b, exe, dir = "lib" }
+    // A generated file is in its executable's root, inside module game, so it sees game's
+    // hidden names.
+    build::gen_file{ &b, exe, name = "rows", text = "namespace game { fn rows {} -> u32 { return helper{} + 1 } }" }
+}

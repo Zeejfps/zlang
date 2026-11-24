@@ -1,0 +1,10 @@
+namespace gff {
+    type Gff
+    type Mode
+    type Shape
+    type Box(T)
+    fn make {} -> Gff
+    fn mode {} -> Mode
+    fn shape {} -> Shape
+    fn boxed {} -> Box(u8)
+}

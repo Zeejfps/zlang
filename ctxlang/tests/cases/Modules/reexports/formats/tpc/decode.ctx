@@ -1,0 +1,7 @@
+namespace tpc {
+    // Inside formats: gff's api, in full, and shared.
+    fn decode { n: u32 } -> u32 {
+        let g = gff::read{ bytes = "ab" } iferr { return 0 }
+        return n + @as(u32, gff::raw{ g } + g.size)
+    }
+}

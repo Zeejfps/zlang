@@ -1,0 +1,526 @@
+// Modules (spec §10, Modules): which folders of a program are modules, and which module each
+// of its files is inside. A folder that holds a file named api.ctx is a module, wherever it is
+// on disk, and a file is inside every module whose folder holds it, at any depth: the file's
+// place decides, not the build that adds it. The checker takes it from there (check.ctx,
+// "modules").
+//
+//   let mods = modules::find{ &io, &fs, &heap, &diags, files, own, places, os } ifnull { return 1 }
+//   let mut c = check::new{ files, modules = mods, std_files = own, &heap, &diags }
+
+namespace modules {
+    type Heap = arena::Arena
+
+    // Sets the module of each of files[own..], the program's own files, and returns the
+    // program's modules. places[k] is the folder files[own + k] counts as being in, where that
+    // isn't its own, as for a file a build program generates, which is in its executable's
+    // root (spec §19, rule 13); places may be empty. A program of one file is in no module
+    // (rule 12). What is wrong with them, as a module whose api.ctx isn't among the files, is
+    // reported to diags. Null after saying why a path can't be resolved.
+    fn find { mut io: Io, mut fs: Fs, mut heap: Heap, mut diags: diag::Diags, files: []mut check::File, own: usize, places: [][]u8, os: build::Os } -> ?[]check::Module {
+        if files.len <= own + 1 { return slice::empty(check::Module){} }
+        let mut mods = list::new(check::Module){ realloc = arena::alloc, &heap }
+        let mut index = map::new([]u8, u32){ realloc = arena::alloc, &heap, hash = map::hash_bytes, eq = slice::eq_bytes }
+        let mut holds = map::new([]u8, bool){ realloc = arena::alloc, &heap, hash = map::hash_bytes, eq = slice::eq_bytes }
+        let mut first_inside = list::new(u32){ realloc = arena::alloc, &heap }
+        let mut i = own
+        while i < files.len {
+            let k = i - own
+            let placed = k < places.len and places[k].len > 0
+            if placed { files[i].api = false }
+            let folder = if placed { places[k] } else { drive::parent{ path = files[i].name } }
+            let mut dir = drive::key_of{ &io, &fs, &heap, path = if folder.len == 0 { "." } else { folder }, os } ifnull { return null }
+            // The folder as the file's name gives it, a step up with each of dir's, while the
+            // name has steps to give: how messages show a module whose api.ctx isn't named.
+            let mut shown = folder
+            let mut named = true
+            let mut inner = check::NONE
+            let mut below = check::NONE
+            while true {
+                if has_api{ &fs, &heap, &holds, dir } {
+                    let mut m = check::NONE
+                    if let known = map::get{ m = index, key = dir } {
+                        m = known
+                    } else {
+                        m = @as(u32, mods.len)
+                        let seen = if named and shown.len > 0 { shown } else if named { "." } else { dir }
+                        try! list::push{ list = &mods, item = check::Module{ dir = seen, key = dir, parent = check::NONE, api = check::NONE, exposes = slice::empty(check::Exposed){} } }
+                        try! list::push{ list = &first_inside, item = @as(u32, i) }
+                        try! map::put{ m = &index, key = dir, value = m }
+                    }
+                    if inner == check::NONE { inner = m }
+                    if below != check::NONE { list::at{ list = mods, i = below }.parent = m }
+                    below = m
+                }
+                let up = drive::parent{ path = dir }
+                if up.len == 0 or slice::eq_bytes{ a = up, b = dir } { break }
+                dir = up
+                if shown.len == 0 or slice::eq_bytes{ a = drive::base{ path = shown }, b = ".." } { named = false }
+                shown = drive::parent{ path = shown }
+            }
+            files[i].module = inner
+            if files[i].api and inner != check::NONE {
+                let at = list::at{ list = mods, i = inner }
+                at.api = @as(u32, i)
+                let shown = drive::parent{ path = files[i].name }
+                at.dir = if shown.len == 0 { "." } else { shown }
+            }
+            i = i + 1
+        }
+        let ms = list::items{ list = mods }
+        let firsts = list::items{ list = first_inside }
+        for m at n in ms {
+            if m.api == check::NONE {
+                let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+                try! @fmt(&b, "`{}` is inside module `{}`, whose api.ctx isn't one of the program's files: a build adds a module's folder whole", utf8::String{ bytes = files[firsts[n]].name }, utf8::String{ bytes = m.dir })
+                diag::error{ &diags, span = source::Span{ file = firsts[n], start = 0, end = 0 }, msg = utf8::view{ b } }
+            }
+        }
+        for m at n in ms {
+            if m.api != check::NONE { list::at{ list = mods, i = n }.exposes = exposed{ &fs, &heap, &diags, files, mods = ms, m = @as(u32, n), index, os } }
+        }
+        return list::items{ list = mods }
+    }
+
+    // Whether folder dir holds a file named api.ctx; holds remembers each folder's answer.
+    fn has_api { mut fs: Fs, mut heap: Heap, mut holds: map::Map([]u8, bool, Heap), dir: []u8 } -> bool {
+        if let known = map::get{ m = holds, key = dir } { return known }
+        let yes = drive::kind_of{ &fs, path = drive::join{ &heap, a = dir, b = "api.ctx" } } == 1
+        try! map::put{ m = &holds, key = dir, value = yes }
+        return yes
+    }
+
+    // The modules module m's api.ctx exposes (`expose "path"`, Re-exports, rule 2): each a
+    // module whose folder is path, from m's, and whose parent module is m. One that isn't is
+    // reported, and left out.
+    fn exposed { mut fs: Fs, mut heap: Heap, mut diags: diag::Diags, files: []check::File, mods: []check::Module, m: u32, index: map::Map([]u8, u32, Heap), os: build::Os } -> []check::Exposed {
+        let mut out = list::new(check::Exposed){ realloc = arena::alloc, &heap }
+        let api = mods[m].api
+        for x in files[api].tree.decls {
+            let expose{ path, at } = x.k else { continue }
+            let target = drive::fold{ &heap, s = drive::normalize{ &heap, path = drive::join{ &heap, a = mods[m].key, b = path } }, os }
+            let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+            let p = utf8::String{ bytes = path }
+            let n = map::get{ m = index, key = target } ifnull {
+                if path.len == 0 {
+                    try! utf8::push{ &b, s = "`expose` names a nested module's folder, from this api.ctx's: `expose \"gff\"`" }
+                } else if drive::kind_of{ &fs, path = drive::join{ &heap, a = target, b = "api.ctx" } } == 1 {
+                    try! @fmt(&b, "module `{}` has none of its files in this program", p)
+                } else if drive::kind_of{ &fs, path = target } == 2 {
+                    try! @fmt(&b, "`{}` is a folder without an api.ctx: `expose` re-exports a module's api", p)
+                } else {
+                    try! @fmt(&b, "there is no folder `{}` beside this api.ctx", p)
+                }
+                diag::error{ &diags, span = at, msg = utf8::view{ b } }
+                continue
+            }
+            if mods[n].parent != m {
+                if n == m or not inside{ mods, n, m } {
+                    try! @fmt(&b, "`{}` isn't a module nested in this one: an api.ctx exposes a module inside its own folder", p)
+                } else {
+                    try! @fmt(&b, "`{}` is inside module `{}`, nested in this one: that module's api.ctx exposes it, one boundary at a time", p, utf8::String{ bytes = mods[mods[n].parent].dir })
+                }
+                diag::error{ &diags, span = at, msg = utf8::view{ b } }
+                continue
+            }
+            let mut twice = false
+            for y in list::items{ list = out } { if y.module == n { twice = true } }
+            if twice {
+                try! @fmt(&b, "module `{}` is exposed twice", p)
+                diag::error{ &diags, span = at, msg = utf8::view{ b } }
+                continue
+            }
+            try! list::push{ list = &out, item = check::Exposed{ module = n, at } }
+        }
+        return list::items{ list = out }
+    }
+
+    // Whether module n is inside module m.
+    fn inside { mods: []check::Module, n: u32, m: u32 } -> bool {
+        let mut k = mods[n].parent
+        while k != check::NONE {
+            if k == m { return true }
+            k = mods[k].parent
+        }
+        return false
+    }
+
+    // ---- `ctxc where` and `ctxc api` (spec §10, Modules, Tooling)
+
+    // Writes a line for each declaration of `name` in c's program: `a::b::f`, or any name in
+    // any namespace without `::`. Each says where it is, what it is, its module, where it is
+    // visible, and the api.ctx that declares or restates it. Returns how many.
+    fn where { mut out: utf8::Builder(Heap), c: check::Checker, name: []u8 } -> usize {
+        let qualified = contains{ s = name, part = "::" }
+        let mut n: usize = 0
+        let mut d: usize = 0
+        while d < c.decls.len {
+            let x = check::get_decl{ c, d = @as(u32, d) }
+            let this = @as(u32, d)
+            d = d + 1
+            if x.half or x.name.span.file == check::NO_FILE or @as(usize, x.name.span.file) >= c.files.len { continue }
+            let same = if qualified { slice::eq_bytes{ a = x.qual, b = name } } else { slice::eq_bytes{ a = x.name.text, b = name } }
+            if not same { continue }
+            n = n + 1
+            try! @fmt(&out, "{}: {} {}; ", s{ b = place_of{ c, at = x.name.span } }, s{ b = kind_word{ c, x } }, s{ b = x.qual })
+            if x.module == check::NONE { try! utf8::push{ b = &out, s = "in no module" } } else { try! @fmt(&out, "in module `{}`", s{ b = c.modules[x.module].dir }) }
+            if x.scope == check::NONE { try! utf8::push{ b = &out, s = ", visible everywhere" } } else { try! @fmt(&out, ", visible inside module `{}`", s{ b = c.modules[x.scope].dir }) }
+            if (x.kind == check::Kind::record or x.kind == check::Kind::sum or x.kind == check::Kind::enumeration) and x.open != x.scope {
+                try! @fmt(&out, ", opaque outside module `{}`", s{ b = c.modules[x.open].dir })
+            }
+            if x.api != check::NONE { try! @fmt(&out, "; declared in {}", s{ b = place_of{ c, at = check::get_decl{ c, d = x.api }.name.span } }) }
+            for a in list::items{ list = c.restates } {
+                let r = check::get_decl{ c, d = a }
+                if r.api == this { try! @fmt(&out, "; restated in {}", s{ b = place_of{ c, at = r.name.span } }) }
+            }
+            try! utf8::push{ b = &out, s = "\n" }
+        }
+        return n
+    }
+
+    fn s { b: []u8 } -> utf8::String { return utf8::String{ bytes = b } }
+
+    fn contains { s: []u8, part: []u8 } -> bool {
+        if part.len > s.len { return false }
+        let mut i: usize = 0
+        while i + part.len <= s.len {
+            if slice::eq_bytes{ a = s[i..i + part.len], b = part } { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // `FILE:LINE:COL` of at.
+    fn place_of { c: check::Checker, at: source::Span } -> []u8 {
+        let f = c.files[at.file]
+        let p = source::position{ text = f.text, lines = f.lines, offset = at.start }
+        let mut b = utf8::builder{ realloc = arena::alloc, heap = c.heap }
+        try! @fmt(&b, "{}:{}:{}", s{ b = f.name }, p.line, p.col)
+        return utf8::view{ b }.bytes
+    }
+
+    fn kind_word { c: check::Checker, x: check::Decl } -> []u8 {
+        match x.kind {
+            func => { return "fn" }
+            external => { return "extern fn" }
+            record => {
+                if x.syn.k is record{ untagged } and untagged { return "extern union" }
+                return "struct"
+            }
+            sum => { return "union" }
+            enumeration => { return "enum" }
+            alias => { return "type" }
+            constant => { return "const" }
+            cap => { return "capability" }
+            fault => { return "error" }
+        }
+    }
+
+    // The text of a first api.ctx for the folder whose files `inside` marks: the declarations
+    // of its files that code outside it names, and what their types name in turn, each fn
+    // with the errors it is inferred to fail with (rule 5); a capability without its statics
+    // and C variables (rule 7). A starting point for a contract, not one kept up to date: it
+    // declares every struct, union and enum in full. count is set to how many it declares, and
+    // moves has the places of those that move to it from their files (declaration).
+    fn first_api { mut out: utf8::Builder(Heap), c: check::Checker, inside: []bool, mut count: usize, mut moves: list::List(source::Span, Heap) } {
+        let mut want = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        let mut marked = map::new(u32, bool){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u32, eq = map::eq_u32 }
+        let mut cursor: usize = 0
+        while true {
+            let e = map::next{ m = c.uses, &cursor } ifnull { break }
+            let file = @as(u32, e.key >> 32)
+            if @as(usize, file) >= inside.len or inside[file] { continue }
+            if e.value is decl{ i } { mark{ c, inside, &want, &marked, d = i } }
+        }
+        // What the declarations' types name, in the folder: the api.ctx declares it too (rule 4).
+        let mut k: usize = 0
+        while k < want.len {
+            named_by{ c, inside, &want, &marked, d = list::items{ list = want }[k] }
+            k = k + 1
+        }
+        // In declaration order, by namespace.
+        let mut order = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        let mut d: u32 = 0
+        while @as(usize, d) < c.decls.len {
+            if map::has{ m = marked, key = d } { try! list::push{ list = &order, item = d } }
+            d = d + 1
+        }
+        let ds = list::items{ list = order }
+        count = ds.len
+        let mut done = map::new(u32, bool){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u32, eq = map::eq_u32 }
+        for first in ds {
+            let ns = check::get_decl{ c, d = first }.ns
+            if map::has{ m = done, key = ns } { continue }
+            try! map::put{ m = &done, key = ns, value = true }
+            let parts = segments{ c, qual = check::get_space{ c, ns }.qual }
+            for p at i in parts {
+                indent{ &out, depth = i }
+                try! @fmt(&out, "namespace {} {{\n", s{ b = p })
+            }
+            for x in ds {
+                if check::get_decl{ c, d = x }.ns == ns { declaration{ &out, c, d = x, depth = parts.len, &moves } }
+            }
+            let mut j = parts.len
+            while j > 0 {
+                j = j - 1
+                indent{ &out, depth = j }
+                try! utf8::push{ b = &out, s = "}\n" }
+            }
+        }
+    }
+
+    // Adds declaration d to want, if it is a declaration of the folder's files (not of an
+    // api.ctx's) that isn't there yet.
+    fn mark { c: check::Checker, inside: []bool, mut want: list::List(u32, Heap), mut marked: map::Map(u32, bool, Heap), d: u32 } {
+        let x = check::get_decl{ c, d }
+        let f = x.name.span.file
+        if x.half or f == check::NO_FILE or @as(usize, f) >= inside.len or not inside[f] or c.files[f].api { return }
+        if map::has{ m = marked, key = d } { return }
+        // A struct field's default is a const of its own, named by no path: its struct has it.
+        if contains{ s = x.name.text, part = "::" } { return }
+        try! map::put{ m = &marked, key = d, value = true }
+        try! list::push{ list = &want, item = d }
+    }
+
+    // Marks what declaration d's types name (mark).
+    fn named_by { c: check::Checker, inside: []bool, mut want: list::List(u32, Heap), mut marked: map::Map(u32, bool, Heap), d: u32 } {
+        let x = check::get_decl{ c, d }
+        match x.syn.k {
+            func{ params, ret } => {
+                for f in params { names_in{ c, inside, &want, &marked, te = f.ty } }
+                if let te = ret { names_in{ c, inside, &want, &marked, te } }
+                // The errors it fails with, which its declaration states.
+                if x.kind == check::Kind::func {
+                    if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = x.ret } } is res{ errs } {
+                        for e in check::set_of{ c, t = errs } { mark{ c, inside, &want, &marked, d = e } }
+                    }
+                }
+            }
+            record{ fields } => { for f in fields { names_in{ c, inside, &want, &marked, te = f.ty } } }
+            sum{ variants } => { for v in variants { if let fs = v.fields { for f in fs { names_in{ c, inside, &want, &marked, te = f.ty } } } } }
+            fault{ fields } => { if let fs = fields { for f in fs { names_in{ c, inside, &want, &marked, te = f.ty } } } }
+            alias{ ty } => { names_in{ c, inside, &want, &marked, te = ty } }
+            constant{ ty } => { names_in{ c, inside, &want, &marked, te = ty } }
+            cap{ fields, includes } => {
+                if let fs = fields { for f in fs { if not f.stat and not f.external { names_in{ c, inside, &want, &marked, te = f.ty } } } }
+                for inc in includes { names_in{ c, inside, &want, &marked, te = inc.ty } }
+            }
+            else => {}
+        }
+    }
+
+    fn names_in { c: check::Checker, inside: []bool, mut want: list::List(u32, Heap), mut marked: map::Map(u32, bool, Heap), te: syntax::TypeExpr } {
+        match te.k {
+            path{ segs } => {
+                for seg in segs {
+                    if seg.name.id != check::NONE {
+                        if map::get{ m = c.uses, key = check::key{ file = seg.name.span.file, id = seg.name.id } } is decl{ i } { mark{ c, inside, &want, &marked, d = i } }
+                    }
+                    if let ts = seg.targs { for t in ts { names_in{ c, inside, &want, &marked, te = t } } }
+                }
+            }
+            ptr{ elem } => { names_in{ c, inside, &want, &marked, te = elem.* } }
+            opt{ elem } => { names_in{ c, inside, &want, &marked, te = elem.* } }
+            slice{ elem } => { names_in{ c, inside, &want, &marked, te = elem.* } }
+            array{ elem } => { names_in{ c, inside, &want, &marked, te = elem.* } }
+            func{ params, ret } => {
+                for f in params { names_in{ c, inside, &want, &marked, te = f.ty } }
+                if let r = ret { names_in{ c, inside, &want, &marked, te = r.* } }
+            }
+            fail{ elem, set } => {
+                if let x = elem { names_in{ c, inside, &want, &marked, te = x.* } }
+                if let x = set { names_in{ c, inside, &want, &marked, te = x.* } }
+            }
+            else => {}
+        }
+    }
+
+    // A namespace's qualified name's parts: `a::b` is a and b; the top level's has none.
+    fn segments { c: check::Checker, qual: []u8 } -> [][]u8 {
+        let mut out = list::new([]u8){ realloc = arena::alloc, heap = c.heap }
+        let mut start: usize = 0
+        let mut i: usize = 0
+        while i < qual.len {
+            if i + 1 < qual.len and qual[i] == ':' and qual[i + 1] == ':' {
+                try! list::push{ list = &out, item = qual[start..i] }
+                i = i + 2
+                start = i
+                continue
+            }
+            i = i + 1
+        }
+        if qual.len > 0 { try! list::push{ list = &out, item = qual[start..] } }
+        return list::items{ list = out }
+    }
+
+    fn indent { mut out: utf8::Builder(Heap), depth: usize } {
+        let mut i: usize = 0
+        while i < depth {
+            try! utf8::push{ b = &out, s = "    " }
+            i = i + 1
+        }
+    }
+
+    // Declaration d as an api.ctx declares it, at depth. A declaration complete without a body
+    // is the api.ctx's alone (rule 3): it moves there, with its attributes and the comment
+    // lines above it, and its place in its file is added to moves. A fn's signature is copied,
+    // with its inferred errors written out and its comment lines; a capability with statics or
+    // C variables is declared without them, and they stay.
+    fn declaration { mut out: utf8::Builder(Heap), c: check::Checker, d: u32, depth: usize, mut moves: list::List(source::Span, Heap) } {
+        let x = check::get_decl{ c, d }
+        let f = c.files[x.syn.span.file]
+        let text = f.text
+        let drop = @as(usize, source::position{ text, lines = f.lines, offset = x.syn.span.start }.col - 1)
+        let whole = extent{ c, d }
+        let mut stays = false
+        match x.syn.k {
+            func{ external } => { stays = not external }
+            cap{ fields } => { if let fs = fields { for g in fs { if g.stat or g.external { stays = true } } } }
+            else => {}
+        }
+        if not stays {
+            lines{ &out, text = trimmed{ s = text[whole.start..whole.end] }, drop, depth }
+            try! list::push{ list = &moves, item = whole }
+            return
+        }
+        // The comment lines above it, which say what it is.
+        let mut first = x.syn.span.start
+        for a in x.syn.attrs { if a.span.start < first { first = a.span.start } }
+        let lead = line_begin{ text, at = first }
+        if whole.start < lead { lines{ &out, text = trimmed{ s = text[whole.start..lead] }, drop, depth } }
+        for a in x.syn.attrs {
+            if is_hook{ c, a, ns = x.ns } { lines{ &out, text = text[a.span.start..a.span.end], drop, depth } }
+        }
+        match x.syn.k {
+            func{ ret, body } => {
+                let mut sig = trimmed{ s = text[x.syn.span.start..body.span.start] }
+                if let te = ret {
+                    if te.k is fail{ set } and set == null and not writer{ c, d } {
+                        if let written = error_set{ c, d } {
+                            let at = @as(usize, te.span.start - x.syn.span.start)
+                            let mut b = utf8::builder{ realloc = arena::alloc, heap = c.heap }
+                            try! utf8::push_bytes{ &b, s = sig[..at] }
+                            try! utf8::push_bytes{ &b, s = written }
+                            try! utf8::push_bytes{ &b, s = sig[at..] }
+                            sig = utf8::view{ b }.bytes
+                        }
+                    }
+                }
+                lines{ &out, text = sig, drop, depth }
+            }
+            cap{ name, fields, includes } => {
+                let mut b = utf8::builder{ realloc = arena::alloc, heap = c.heap }
+                try! @fmt(&b, "capability {}", s{ b = name.text })
+                let mut parts = list::new([]u8){ realloc = arena::alloc, heap = c.heap }
+                for inc in includes { try! list::push{ list = &parts, item = text[inc.span.start..inc.span.end] } }
+                if let fs = fields { for g in fs { if not g.stat and not g.external { try! list::push{ list = &parts, item = text[g.span.start..g.span.end] } } } }
+                if parts.len > 0 {
+                    try! utf8::push{ &b, s = " { " }
+                    for p at i in list::items{ list = parts } {
+                        if i > 0 { try! utf8::push{ &b, s = ", " } }
+                        try! utf8::push_bytes{ &b, s = p }
+                    }
+                    try! utf8::push{ &b, s = " }" }
+                }
+                indent{ &out, depth }
+                try! utf8::push_bytes{ b = &out, s = utf8::view{ b }.bytes }
+                try! utf8::push{ b = &out, s = "\n" }
+            }
+            else => {}
+        }
+    }
+
+    // Where declaration d is in its file as whole lines: from the comment lines just above it
+    // and its attributes, to the end of its last line, a comment there included.
+    fn extent { c: check::Checker, d: u32 } -> source::Span {
+        let x = check::get_decl{ c, d }
+        let text = c.files[x.syn.span.file].text
+        let mut start = x.syn.span.start
+        for a in x.syn.attrs { if a.span.start < start { start = a.span.start } }
+        let begin = line_begin{ text, at = start }
+        if blank{ s = text[begin..start] } { start = begin }
+        while start > 0 and start == line_begin{ text, at = start } {
+            let above = line_begin{ text, at = start - 1 }
+            let line = text[above..start - 1]
+            let mut k: usize = 0
+            while k < line.len and (line[k] == ' ' or line[k] == '\t') { k = k + 1 }
+            if not (k + 1 < line.len and line[k] == '/' and line[k + 1] == '/') { break }
+            start = above
+        }
+        let mut end = x.syn.span.end
+        let mut k = end
+        while k < text.len and text[k] != '\n' { k = k + 1 }
+        let rest = text[end..k]
+        let mut j: usize = 0
+        while j < rest.len and (rest[j] == ' ' or rest[j] == '\t' or rest[j] == '\r') { j = j + 1 }
+        if j == rest.len or (j + 1 < rest.len and rest[j] == '/' and rest[j + 1] == '/') { end = if k < text.len { k + 1 } else { k } }
+        return source::Span{ file = x.syn.span.file, start, end }
+    }
+
+    // Where the line holding offset `at` begins.
+    fn line_begin { text: []u8, at: u32 } -> u32 {
+        let mut i = at
+        while i > 0 and text[i - 1] != '\n' { i = i - 1 }
+        return i
+    }
+
+    fn blank { s: []u8 } -> bool {
+        for ch in s { if ch != ' ' and ch != '\t' { return false } }
+        return true
+    }
+
+    // Whether attribute a is `#task`, `#write` or `#convert`, which an api.ctx's fn carries.
+    fn is_hook { c: check::Checker, a: syntax::Attr, ns: u32 } -> bool {
+        let w = check::compiler_attr{ c, a, ns } ifnull { return false }
+        return w == check::Attribute::task or w == check::Attribute::write or w == check::Attribute::convert
+    }
+
+    fn writer { c: check::Checker, d: u32 } -> bool {
+        for w in list::items{ list = c.writers } { if w == d { return true } }
+        return false
+    }
+
+    // `error(a, b)`, the errors fn d is inferred to fail with, named as its namespace names
+    // them; null if it may fail with any error, or with none.
+    fn error_set { c: check::Checker, d: u32 } -> ?[]u8 {
+        let x = check::get_decl{ c, d }
+        let res{ errs } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = x.ret } } else { return null }
+        if check::set_open{ c, t = errs } { return null }
+        let set = check::set_of{ c, t = errs }
+        if set.len == 0 { return null }
+        let mut b = utf8::builder{ realloc = arena::alloc, heap = c.heap }
+        try! utf8::push{ &b, s = "error(" }
+        for e at i in set {
+            if i > 0 { try! utf8::push{ &b, s = ", " } }
+            let y = check::get_decl{ c, d = e }
+            try! utf8::push_bytes{ &b, s = if y.ns == x.ns { y.name.text } else { y.qual } }
+        }
+        try! utf8::push{ &b, s = ")" }
+        return utf8::view{ b }.bytes
+    }
+
+    fn trimmed { s: []u8 } -> []u8 {
+        let mut n = s.len
+        while n > 0 and (s[n - 1] == ' ' or s[n - 1] == '\t' or s[n - 1] == '\n' or s[n - 1] == '\r') { n = n - 1 }
+        return s[..n]
+    }
+
+    // text a line at a time at depth, each line without the first `drop` spaces it has: the
+    // indentation its declaration had in its file.
+    fn lines { mut out: utf8::Builder(Heap), text: []u8, drop: usize, depth: usize } {
+        let mut start: usize = 0
+        while start <= text.len {
+            let mut end = start
+            while end < text.len and text[end] != '\n' { end = end + 1 }
+            let mut line = text[start..end]
+            if line.len > 0 and line[line.len - 1] == '\r' { line = line[..line.len - 1] }
+            let mut k: usize = 0
+            while k < drop and k < line.len and line[k] == ' ' { k = k + 1 }
+            line = line[k..]
+            indent{ &out, depth = if line.len == 0 { 0 } else { depth } }
+            try! utf8::push_bytes{ b = &out, s = line }
+            try! utf8::push{ b = &out, s = "\n" }
+            if end >= text.len { break }
+            start = end + 1
+        }
+    }
+}

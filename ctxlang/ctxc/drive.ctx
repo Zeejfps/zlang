@@ -159,7 +159,8 @@ namespace drive {
             add_all{ xs = &flags, ys = list::items{ list = t.paths } }
             add_all{ xs = &flags, ys = list::items{ list = t.libs } }
             let out: []u8 = if i == 0 and not run { given[3] } else { "" }
-            let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = d.work, name = t.name, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, level = t.level, trace = traces{ level = t.level, trace = t.trace, testing = false }, flags = list::items{ list = flags }, out, testing = false, origin = origin_of{ &fs, &heap, path, t }, &why } ifnull { return 1 }
+            let root = place{ &heap, dir = path, rel = t.root }
+            let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = d.work, name = t.name, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, root, level = t.level, trace = traces{ level = t.level, trace = t.trace, testing = false }, flags = list::items{ list = flags }, out, testing = false, origin = origin_of{ &fs, &heap, path, t }, &why } ifnull { return 1 }
             if i == 0 { first = exe }
             i = i + 1
         }
@@ -265,6 +266,54 @@ namespace drive {
         return if es.len > 0 or failed { 1 } else { 0 }
     }
 
+    // `ctxc where PATH NAME`: where the program at PATH declares NAME, `a::b::f` or a name in
+    // any namespace, with its module and where it is visible; `ctxc api PATH FOLDER`: writes
+    // FOLDER/api.ctx, a first contract for the folder from what the rest of the program names
+    // of its files (spec §10, Modules, Tooling). Both take the program's first executable.
+    fn query { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args, api: bool } -> i32 {
+        if args.len != 3 {
+            io::eprintln{ &io, s = if api { "usage: ctxc api PATH FOLDER" } else { "usage: ctxc where PATH NAME" } }
+            return 2
+        }
+        let pages = mem::reserve{ &mem, size = 268435456 } ifnull {
+            io::eprintln{ &io, s = "out of memory" }
+            return 1
+        }
+        let mut heap = arena::new{ buf = pages }
+        let path = trim_slash{ path = args[1] }
+        let what = if api { trim_slash{ path = args[2] } } else { args[2] }
+        if api {
+            if kind_of{ &fs, path = what } != 2 {
+                cannot{ &io, path = what, what = "is not a folder" }
+                return 1
+            }
+            if kind_of{ &fs, path = join{ &heap, a = what, b = "api.ctx" } } != 0 {
+                cannot{ &io, path = what, what = "has an api.ctx already: `ctxc api` writes a folder's first one" }
+                return 1
+            }
+        }
+        let has_build = kind_of{ &fs, path } == 2 and kind_of{ &fs, path = join{ &heap, a = path, b = "build.ctx" } } == 1
+        let d = setup{ &io, &fs, &proc, &heap, path, builds = has_build, json = false } ifnull { return 1 }
+        let mut targets = list::new(Target){ realloc = arena::alloc, &heap }
+        let mut why = Why::failed
+        let code = describe{ &io, &fs, &mem, &proc, &heap, d, path, &targets, &why }
+        if code != 0 { return code }
+        if targets.len == 0 {
+            cannot{ &io, path, what = "has no executable for" }
+            return 1
+        }
+        let t = list::items{ list = targets }[0]
+        let files = program_files{ &io, &fs, &heap, d, path, t } ifnull { return 1 }
+        let no = denied{ &io, &fs, &heap, d, dir = path, t, files } ifnull { return 1 }
+        let root = place{ &heap, dir = path, rel = t.root }
+        let all = program_paths{ &heap, d, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, root }
+        let mut units: [][]u8 = slice::empty([]u8){}
+        let mut found = report::found{ &heap }
+        let r = analyze{ &io, &fs, &mem, &proc, paths = all.paths, std_files = d.std.len, extras = d.extras, mode = if api { Mode::api } else { Mode::where }, out = what, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = all.texts, denied = all.denied, places = all.places, testing = false, &found }
+        report::write{ &io, &heap, es = list::items{ list = found.entries }, dropped = found.dropped, as_json = false }
+        return r
+    }
+
     // How many checks `ctxc check --fix` makes at most: a fix can uncover an error with a
     // fix of its own, and none is known to bring back what another removed, but a bound
     // costs nothing.
@@ -292,9 +341,9 @@ namespace drive {
                 continue
             }
             let mut units: [][]u8 = slice::empty([]u8){}
-            let all = program_paths{ &heap, d, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny }
+            let all = program_paths{ &heap, d, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, root = place{ &heap, dir = path, rel = t.root } }
             let mut own = report::found{ &heap }
-            let r = analyze{ &io, &fs, &mem, &proc, paths = all.paths, std_files = d.std.len, extras = d.extras, mode = Mode::check, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = all.texts, denied = all.denied, testing = false, found = &own }
+            let r = analyze{ &io, &fs, &mem, &proc, paths = all.paths, std_files = d.std.len, extras = d.extras, mode = Mode::check, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = all.texts, denied = all.denied, places = all.places, testing = false, found = &own }
             // 1 with errors, which are in own, or after saying what else stopped it.
             if r != 0 and own.entries.len == 0 { failed = true }
             explain{ &io, &fs, &heap, d, found = &own, origin = origin_of{ &fs, &heap, path, t }, files }
@@ -585,7 +634,8 @@ namespace drive {
         add_all{ xs = &flags, ys = list::items{ list = t.paths } }
         add_all{ xs = &flags, ys = list::items{ list = t.libs } }
         let origin = origin_of{ &fs, &heap, path, t }
-        let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = d.work, name = cat{ &heap, a = t.name, b = ".test" }, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, level = t.level, trace = traces{ level = t.level, trace = t.trace, testing = true }, flags = list::items{ list = flags }, out = "", testing = true, origin, &why } ifnull { return 1 }
+        let root = place{ &heap, dir = path, rel = t.root }
+        let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = d.work, name = cat{ &heap, a = t.name, b = ".test" }, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, root, level = t.level, trace = traces{ level = t.level, trace = t.trace, testing = true }, flags = list::items{ list = flags }, out = "", testing = true, origin, &why } ifnull { return 1 }
         if d.json { report::summary{ &io, &heap, errors = 0, dropped = false, waiting = 0 } }
         let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
         try! list::push{ list = &argv, item = exe }
@@ -611,6 +661,9 @@ namespace drive {
     //   file PATH     one of its files, by its absolute path, generated ones in GEN
     //   denied PATH   a file as well, in which the unchecked operations are errors
     //                 (build::deny_unchecked), for `ctxc build`'s --deny-unchecked
+    //   place DIR     after a generated file's record: the folder it counts as being in for
+    //                 modules, its executable's root (spec §10, Modules), for `ctxc build`'s
+    //                 --place before the file
     //   flag FLAG     a flag that links it: -LDIR, with DIR absolute, -lLIB, or -framework
     //                 and then the framework's NAME
     //
@@ -701,6 +754,11 @@ namespace drive {
                 // A generated file is under no directory of the program's, so nothing excepts it.
                 let kind: []u8 = if t.deny and (k >= no.len or no[k]) { "\ndenied\t" } else { "\nfile\t" }
                 add_bytes{ xs = &text, s = cat{ &heap, a = kind, b = full } }
+                // A generated file is in its executable's root, for modules (spec §10, Modules).
+                if k >= files.len {
+                    let root = absolute{ &io, &fs, &heap, path = place{ &heap, dir = path, rel = t.root } } ifnull { return false }
+                    add_bytes{ xs = &text, s = cat{ &heap, a = "\nplace\t", b = root } }
+                }
                 k = k + 1
             }
             let ps = list::items{ list = t.paths }
@@ -814,9 +872,11 @@ namespace drive {
         let mut at: usize = 1
         while at + 1 < args.len and slice::eq_bytes{ a = args[at], b = "--env" } { at = at + 2 }
         let edits = args[1..at]
-        let shape = args.len == at + 1 or (args.len >= at + 2 and slice::eq_bytes{ a = args[at + 1], b = "--" })
-        if not shape or slice::eq_bytes{ a = args[at], b = "--env" } {
-            io::eprintln{ &io, s = "usage: ctxc interp [--env NAME=VALUE | --env NAME]... PATH [-- ARGS...]" }
+        // PATH, or several files: a program of just them, as one in folders of its own is.
+        let mut end = at
+        while end < args.len and not slice::eq_bytes{ a = args[end], b = "--" } { end = end + 1 }
+        if end == at or slice::eq_bytes{ a = args[at], b = "--env" } {
+            io::eprintln{ &io, s = "usage: ctxc interp [--env NAME=VALUE | --env NAME]... PATH... [-- ARGS...]" }
             return 2
         }
         let path = trim_slash{ path = args[at] }
@@ -838,7 +898,15 @@ namespace drive {
             return 1
         }
         let mut files = one{ &heap, s = path }
-        if kind == 2 {
+        if end > at + 1 {
+            files = args[at..end]
+            for f in files {
+                if kind_of{ &fs, path = f } != 1 {
+                    cannot{ &io, path = f, what = "cannot read" }
+                    return 1
+                }
+            }
+        } else if kind == 2 {
             if kind_of{ &fs, path = join{ &heap, a = path, b = "build.ctx" } } == 1 {
                 cannot{ &io, path, what = "has a build program, which interp doesn't run" }
                 return 1
@@ -848,7 +916,7 @@ namespace drive {
         let mut paths = list::new([]u8){ realloc = arena::alloc, &heap }
         add_all{ xs = &paths, ys = std }
         add_all{ xs = &paths, ys = files }
-        let argv = if args.len >= at + 2 { args[at + 2..] } else { args[at + 1..] }
+        let argv = if end < args.len { args[end + 1..] } else { args[end..] }
         let stack = host_stack{ &proc } / 4 * 3
         let mut units: [][]u8 = slice::empty([]u8){}
         // The program's environment: ctxc's, with the edits.
@@ -871,7 +939,7 @@ namespace drive {
             k = k + 2
         }
         let mut found = report::found{ &heap }
-        let code = analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = std.len, extras, mode = Mode::interp, out = stem{ path = base{ path } }, argv, env = list::items{ list = env }, stack, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = slice::empty(bool){}, testing = false, &found }
+        let code = analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = std.len, extras, mode = Mode::interp, out = if end > at + 1 { "program" } else { stem{ path = base{ path } } }, argv, env = list::items{ list = env }, stack, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = slice::empty(bool){}, places = slice::empty([]u8){}, testing = false, &found }
         report::write{ &io, &heap, es = list::items{ list = found.entries }, dropped = found.dropped, as_json = false }
         return code
     }
@@ -909,7 +977,7 @@ namespace drive {
             why = Why::errors
             return 1
         }
-        let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = work, name = "build", files, gens = slice::empty(Gen){}, denied = slice::empty(bool){}, deny = false, level = 1, trace = true, flags = slice::empty([]u8){}, out = "", testing = false, origin = Origin{ kind = Kind::none, dir = "", roots = slice::empty([]u8){} }, &why } ifnull { return 1 }
+        let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = work, name = "build", files, gens = slice::empty(Gen){}, denied = slice::empty(bool){}, deny = false, root = "", level = 1, trace = true, flags = slice::empty([]u8){}, out = "", testing = false, origin = Origin{ kind = Kind::none, dir = "", roots = slice::empty([]u8){} }, &why } ifnull { return 1 }
         let graph = claim{ &io, &fs, &heap, base = join{ &heap, a = work, b = "graph" }, ext = ".txt" } ifnull { return 1 }
         defer _ = fs::remove{ &fs, path = graph }
         let mut env = list::new([]u8){ realloc = arena::alloc, &heap }
@@ -1128,7 +1196,7 @@ namespace drive {
         }
         let mut diags = diag::new{ &heap }
         let lexed = lexer::lex{ text, file = 0, &heap, &diags }
-        let tree = parser::parse{ text, file = 0, tokens = lexed.tokens, &heap, &diags }
+        let tree = parser::parse{ text, file = 0, tokens = lexed.tokens, api = false, &heap, &diags }
         // What didn't parse, the compile reports.
         if diags.errors > 0 { return list::items{ list = found.paths } }
         let mut sources = list::new(Source){ realloc = arena::alloc, &heap }
@@ -1684,7 +1752,7 @@ namespace drive {
         if not contains{ s = text, part = name } { return false }
         let mut diags = diag::new{ &heap }
         let lexed = lexer::lex{ text, file = 0, &heap, &diags }
-        let tree = parser::parse{ text, file = 0, tokens = lexed.tokens, &heap, &diags }
+        let tree = parser::parse{ text, file = 0, tokens = lexed.tokens, api = parser::is_api{ path }, &heap, &diags }
         for x in tree.decls {
             if x.k is space{ name = n } and slice::eq_bytes{ a = n.text, b = name } { return true }
         }
@@ -1695,20 +1763,32 @@ namespace drive {
 
     // What `analyze` is given for a program: std's files and its own, then those it generates,
     // whose text the driver holds, and which of them all are denied the unchecked operations.
-    struct Paths { paths: [][]u8, texts: [][]u8, denied: []bool }
+    // places: for each of paths, the folder it counts as being in for modules (spec §10,
+    // Modules), its executable's root for a generated file (§19, rule 13), empty for its own.
+    struct Paths { paths: [][]u8, texts: [][]u8, denied: []bool, places: [][]u8 }
 
     // The program of files and gens, with std's. If deny, denied says which of files are
     // denied the unchecked operations (`denied`), and gens are denied them too.
-    fn program_paths { mut heap: Heap, d: Driver, files: [][]u8, gens: []Gen, denied: []bool, deny: bool } -> Paths {
+    // root is the executable's root, where its generated files count as being for modules.
+    fn program_paths { mut heap: Heap, d: Driver, files: [][]u8, gens: []Gen, denied: []bool, deny: bool, root: []u8 } -> Paths {
         let mut paths = list::new([]u8){ realloc = arena::alloc, &heap }
         add_all{ xs = &paths, ys = d.std }
         add_all{ xs = &paths, ys = files }
+        let mut places = list::new([]u8){ realloc = arena::alloc, &heap }
+        if gens.len > 0 {
+            let mut j: usize = 0
+            while j < paths.len {
+                try! list::push{ list = &places, item = "" }
+                j = j + 1
+            }
+        }
         // A generated file is compiled from the text the driver holds, under its path.
         let mut texts = list::new([]u8){ realloc = arena::alloc, &heap }
         let mut k: usize = 0
         while k < gens.len {
             try! list::push{ list = &paths, item = gens[k].path }
             try! list::push{ list = &texts, item = gens[k].text }
+            try! list::push{ list = &places, item = root }
             k = k + 1
         }
         // For each of paths: std's files never, files as denied says, and a generated file, which
@@ -1724,7 +1804,7 @@ namespace drive {
             }
             no = all
         }
-        return Paths{ paths = list::items{ list = paths }, texts = list::items{ list = texts }, denied = no }
+        return Paths{ paths = list::items{ list = paths }, texts = list::items{ list = texts }, denied = no, places = list::items{ list = places } }
     }
 
     // Builds the program of files and gens, with std's, into an executable: `out`, or if out is
@@ -1733,12 +1813,13 @@ namespace drive {
     // If deny, denied says which of files are denied the unchecked operations (`denied`), and
     // gens are denied them too. Returns the executable; null after saying why there is none,
     // and setting why to errors if the program has errors.
-    fn compile { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, dir: []u8, name: []u8, files: [][]u8, gens: []Gen, denied: []bool, deny: bool, level: u8, trace: bool, flags: [][]u8, out: []u8, testing: bool, origin: Origin, mut why: Why } -> ?[]u8 {
+    // root: the executable's root, where its generated files are for modules (program_paths).
+    fn compile { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, dir: []u8, name: []u8, files: [][]u8, gens: []Gen, denied: []bool, deny: bool, root: []u8, level: u8, trace: bool, flags: [][]u8, out: []u8, testing: bool, origin: Origin, mut why: Why } -> ?[]u8 {
         let base = join{ &heap, a = dir, b = name }
-        let all = program_paths{ &heap, d, files, gens, denied, deny }
+        let all = program_paths{ &heap, d, files, gens, denied, deny, root }
         let mut units: [][]u8 = slice::empty([]u8){}
         let mut found = report::found{ &heap }
-        let code = analyze{ &io, &fs, &mem, &proc, paths = all.paths, std_files = d.std.len, extras = d.extras, mode = Mode::units, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = d.unit, copy = if level == 0 { 0 } else { d.copy }, made = &units, texts = all.texts, denied = all.denied, testing, &found }
+        let code = analyze{ &io, &fs, &mem, &proc, paths = all.paths, std_files = d.std.len, extras = d.extras, mode = Mode::units, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = d.unit, copy = if level == 0 { 0 } else { d.copy }, made = &units, texts = all.texts, denied = all.denied, places = all.places, testing, &found }
         if code != 0 {
             explain{ &io, &fs, &heap, d, &found, origin, files }
             report::write{ &io, &heap, es = list::items{ list = found.entries }, dropped = found.dropped, as_json = d.json }

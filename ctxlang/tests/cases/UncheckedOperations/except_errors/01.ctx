@@ -8,6 +8,6 @@ fn build { mut b: Build } { build::deny_unchecked{ &b, exe = build::exe{ &b, nam
 //# panic: program: panic: build: empty directory
 //# path:
 //|   at rt::fail_with (std/rt.ctx:47:13)
-//|   at build::field (std/build.ctx:283:26)
-//|   at build::deny_unchecked (std/build.ctx:179:18)
+//|   at build::field (std/build.ctx:291:26)
+//|   at build::deny_unchecked (std/build.ctx:187:18)
 //|   at build (01.ctx:3:50)

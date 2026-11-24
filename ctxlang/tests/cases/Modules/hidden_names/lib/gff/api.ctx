@@ -1,0 +1,6 @@
+namespace gff {
+    type Gff
+    union Shape { round, square{ side: u32 } }
+    error bad_magic
+    fn read { bytes: []u8 } -> error(bad_magic)!Gff
+}

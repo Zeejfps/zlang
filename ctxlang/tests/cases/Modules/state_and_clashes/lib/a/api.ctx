@@ -1,0 +1,6 @@
+namespace fmt {
+    capability Cache
+    capability Gl { clear: extern fn{ mask: u32 } }
+    fn hits { mut cache: Cache } -> u32
+    fn put {} -> u8
+}

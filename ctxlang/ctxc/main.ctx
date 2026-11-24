@@ -69,6 +69,12 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> 
     if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "graph" } {
         return drive::graph{ .. }
     }
+    if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "where" } {
+        return drive::query{ api = false, .. }
+    }
+    if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "api" } {
+        return drive::query{ api = true, .. }
+    }
     if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "interp" } {
         return drive::interp{ .. }
     }
@@ -93,7 +99,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> 
     if args.len == 3 and slice::eq_bytes{ a = args[0], b = "c" } {
         to_c = true
     } else if args.len != 2 or not slice::eq_bytes{ a = args[0], b = "roundtrip" } {
-        io::eprintln{ &io, s = "usage: ctxc run PATH [-- ARGS...] | ctxc exe PATH -o OUT | ctxc test PATH [ARGS...] | ctxc check PATH | ctxc graph DIR GEN LIST | ctxc interp PATH [-- ARGS...] | ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c | ctxc tokens|syntax FILE... | ctxc recover FILE FROM TO [-v] [--every N] [-- FILE...] | ctxc decls|ir STD... -- FILE... | ctxc build OUT.c STD... -- FILE... (FILE...: also --deny-unchecked, --allow-unchecked)" }
+        io::eprintln{ &io, s = "usage: ctxc run PATH [-- ARGS...] | ctxc exe PATH -o OUT | ctxc test PATH [ARGS...] | ctxc check PATH | ctxc graph DIR GEN LIST | ctxc where PATH NAME | ctxc api PATH FOLDER | ctxc interp PATH... [-- ARGS...] | ctxc roundtrip FILE.ir | ctxc c FILE.ir OUT.c | ctxc tokens|syntax FILE... | ctxc recover FILE FROM TO [-v] [--every N] [-- FILE...] | ctxc decls|ir STD... -- FILE... | ctxc build OUT.c STD... -- FILE... (FILE...: also --deny-unchecked, --allow-unchecked, --place DIR)" }
         return 2
     }
     let path = args[1]
@@ -173,7 +179,7 @@ fn dumps { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args, trees: bool } -> i3
         let mut out = utf8::builder{ realloc = arena::alloc, &heap }
         _ = @fmt(&out, "file {}\n", utf8::String{ bytes = path })
         if trees {
-            let f = parser::parse{ text, file = 0, tokens = lexed.tokens, &heap, &diags }
+            let f = parser::parse{ text, file = 0, tokens = lexed.tokens, api = parser::is_api{ path }, &heap, &diags }
             tree::file{ &out, &heap, text, f, diags }
         } else {
             dump::tokens{ &out, &heap, text, lexed, diags }
@@ -185,7 +191,8 @@ fn dumps { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args, trees: bool } -> i3
 }
 
 // What `analyze` does with the checked program.
-enum Mode: u8 { decls, ir, build, interp, units, check }
+// where and api: `ctxc where` and `ctxc api` (drive.ctx), whose name or folder is `out`.
+enum Mode: u8 { decls, ir, build, interp, units, check, where, api }
 
 // `ctxc decls STD... -- FILE...`: lexes and parses every file, then checks the program, all in
 // one arena. `ctxc ir ...` prints the program's IR instead, if it has no errors, and
@@ -198,6 +205,10 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
     // Which of paths are denied the unchecked operations: those after a `--deny-unchecked`, up
     // to the next `--allow-unchecked`, as the suite's runner passes what `ctxc graph` listed.
     let mut denied = list::new(bool){ realloc = arena::alloc, &heap }
+    // The folder each of paths counts as being in for modules, from a `--place DIR` before it
+    // (spec §10, Modules): a generated file's, as `ctxc graph` lists it. Empty for its own.
+    let mut places = list::new([]u8){ realloc = arena::alloc, &heap }
+    let mut place: []u8 = ""
     let mut deny = false
     let mut split: usize = 0
     let mut i = first
@@ -208,7 +219,15 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
             deny = true
         } else if split != 0 and slice::eq_bytes{ a = args[i], b = "--allow-unchecked" } {
             deny = false
+        } else if split != 0 and slice::eq_bytes{ a = args[i], b = "--place" } and i + 1 < args.len {
+            i = i + 1
+            place = args[i]
         } else {
+            list::push{ list = &places, item = place } iferr {
+                io::eprintln{ &io, s = "too many files" }
+                return 1
+            }
+            place = ""
             list::push{ list = &paths, item = args[i] } iferr {
                 io::eprintln{ &io, s = "too many files" }
                 return 1
@@ -221,7 +240,7 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
         i = i + 1
     }
     if split == 0 {
-        io::eprintln{ &io, s = "usage: ctxc decls|ir STD... -- FILE... | ctxc build OUT.c STD... -- FILE... (FILE...: also --deny-unchecked, --allow-unchecked)" }
+        io::eprintln{ &io, s = "usage: ctxc decls|ir STD... -- FILE... | ctxc build OUT.c STD... -- FILE... (FILE...: also --deny-unchecked, --allow-unchecked, --place DIR)" }
         return 2
     }
     let out: []u8 = if mode == Mode::build { args[1] } else { "" }
@@ -233,7 +252,7 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
     }
     let mut scratch = arena::new{ buf = pages }
     let mut found = report::found{ heap = &scratch }
-    let code = analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = split - first, extras = slice::empty([]u8){}, mode, out, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = list::items{ list = denied }, testing = false, &found }
+    let code = analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = split - first, extras = slice::empty([]u8){}, mode, out, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = list::items{ list = denied }, places = list::items{ list = places }, testing = false, &found }
     report::write{ &io, heap = &scratch, es = list::items{ list = found.entries }, dropped = found.dropped, as_json = false }
     return code
 }
@@ -248,12 +267,14 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
 // files a build program generates, so what is compiled is the driver's, whatever another ctxc
 // does to the file meanwhile. If the program is a build program (`builds`), extras are std's
 // files too, after paths' (drive.ctx, `build_extras`). denied says which of paths are denied
-// the unchecked operations (spec §13), one for each, or is empty for none. testing makes it a
+// the unchecked operations (spec §13), one for each, or is empty for none. places says, for
+// each of paths, the folder it counts as being in for modules where that isn't its own (spec
+// §10, Modules; a generated file's, §19, rule 13), or is empty for none. testing makes it a
 // test build (spec §20): its entry point is the `#test_main` fn, in place of `main`. For check,
 // nothing is made of the program: every diagnostic is kept, whatever their number, the program
 // is checked as a test build as well (check::Checker.checking). A program's errors are added
 // to found, which the caller shows (report::write), but those `ir` prints in its own form.
-fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8, std_files: usize, extras: [][]u8, mode: Mode, out: []u8, argv: [][]u8, env: [][]u8, stack: u64, size: usize, copy: usize, mut made: [][]u8, texts: [][]u8, denied: []bool, testing: bool, mut found: report::Found } -> i32 {
+fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8, std_files: usize, extras: [][]u8, mode: Mode, out: []u8, argv: [][]u8, env: [][]u8, stack: u64, size: usize, copy: usize, mut made: [][]u8, texts: [][]u8, denied: []bool, places: [][]u8, testing: bool, mut found: report::Found } -> i32 {
     let given = paths.len - texts.len               // paths[given..] are texts'
     let mut total: u64 = 0
     let mut i: usize = 0
@@ -350,7 +371,10 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8
             i = i + 1
         }
     }
-    let mut c = check::new{ files = list::items{ list = files }, std_files = std_count, &heap, &diags }
+    // Modules (spec §10): which folder each of the program's own files is inside.
+    let own_places = if places.len > std_files { places[std_files..] } else { slice::empty([]u8){} }
+    let mods = modules::find{ &io, &fs, &heap, &diags, files = list::items{ list = files }, own = std_count, places = own_places, os = proc::os{ &proc } } ifnull { return 1 }
+    let mut c = check::new{ files = list::items{ list = files }, modules = mods, std_files = std_count, &heap, &diags }
     c.stack = drive::host_stack{ &proc } / 2
     c.testing = testing
     c.checking = mode == Mode::check
@@ -360,6 +384,20 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8
         if n != null { c.fuel = n }
     }
     check::program{ &c }
+    // `ctxc where PATH NAME` (spec §10, Modules, Tooling): where the program declares `out`,
+    // whatever errors it has.
+    if mode == Mode::where {
+        let mut text = utf8::builder{ realloc = arena::alloc, &heap }
+        let n = modules::where{ out = &text, c, name = out }
+        io::write{ &io, to = io::Stream::out, bytes = utf8::view{ b = text }.bytes }
+        if n == 0 {
+            let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+            try! @fmt(&b, "ctxc where: nothing in the program is named `{}`", utf8::String{ bytes = out })
+            io::eprintln{ &io, s = utf8::view{ b } }
+            return 1
+        }
+        return 0
+    }
     if diags.errors > 0 and mode != Mode::ir and mode != Mode::decls {
         // The program's own files are those given by path, after std's: the rest are generated.
         report::keep{ &found, es = report::resolve{ &heap, c, ds = diag::items{ diags }, own_end = std_count + (given - std_files) } }
@@ -368,6 +406,7 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8
         return 1
     }
     if mode == Mode::check { return 0 }
+    if mode == Mode::api { return first_api{ &io, &fs, &heap, c, folder = out, own = std_count, os = proc::os{ &proc } } }
     if mode == Mode::build or mode == Mode::interp or mode == Mode::units {
         if diags.errors == 0 and mode == Mode::interp {
             return interpret{ &io, &heap, p = lower::program{ &c }, name = out, argv, env, stack }
@@ -407,6 +446,62 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8
     let mut out = utf8::builder{ realloc = arena::alloc, &heap }
     decls::file{ &out, &c }
     io::write{ &io, to = io::Stream::out, bytes = utf8::view{ b = out }.bytes }
+    return 0
+}
+
+// `ctxc api PATH FOLDER` (spec §10, Modules, Tooling): writes FOLDER/api.ctx, a first
+// contract for FOLDER from what the rest of c's program names of its files (modules::first_api).
+fn first_api { mut io: Io, mut fs: Fs, mut heap: arena::Arena, c: check::Checker, folder: []u8, own: usize, os: build::Os } -> i32 {
+    let key = drive::key_of{ &io, &fs, &heap, path = folder, os } ifnull { return 1 }
+    let inside = try! alloc::make(bool, arena::Arena){ realloc = arena::alloc, &heap, count = c.files.len }
+    for f at i in c.files {
+        inside[i] = false
+        if i < own { continue }
+        let dir = drive::key_of{ &io, &fs, &heap, path = if drive::parent{ path = f.name }.len == 0 { "." } else { drive::parent{ path = f.name } }, os } ifnull { return 1 }
+        inside[i] = slice::eq_bytes{ a = dir, b = key } or (dir.len > key.len and dir[key.len] == '/' and slice::eq_bytes{ a = dir[..key.len], b = key })
+    }
+    let mut text = utf8::builder{ realloc = arena::alloc, &heap }
+    let mut count: usize = 0
+    let mut moves = list::new(source::Span){ realloc = arena::alloc, &heap }
+    modules::first_api{ out = &text, c, inside, &count, &moves }
+    let path = drive::join{ &heap, a = folder, b = "api.ctx" }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    if count == 0 {
+        try! @fmt(&b, "ctxc api: nothing outside `{}` names a declaration of its files", utf8::String{ bytes = folder })
+        io::eprintln{ &io, s = utf8::view{ b } }
+        return 1
+    }
+    // What moves to the api.ctx leaves its file, each file written once without it.
+    let ms = list::items{ list = moves }
+    for f at i in c.files {
+        let mut cut = false
+        for m in ms { if m.file == @as(u32, i) { cut = true } }
+        if not cut { continue }
+        let mut kept = list::new(u8){ realloc = arena::alloc, &heap }
+        let mut at: usize = 0
+        while at < f.text.len {
+            let mut next = f.text.len
+            let mut skip_to = at
+            for m in ms {
+                if m.file == @as(u32, i) and @as(usize, m.start) >= at and @as(usize, m.start) < next {
+                    next = @as(usize, m.start)
+                    skip_to = @as(usize, m.end)
+                }
+            }
+            for ch in f.text[at..next] { try! list::push{ list = &kept, item = ch } }
+            at = if next == f.text.len { next } else { skip_to }
+        }
+        let ok = fs::write_all{ &fs, path = f.name, bytes = list::items{ list = kept } } else {
+            cannot{ &io, path = f.name, what = "cannot write" }
+            return 1
+        }
+    }
+    let ok = fs::write_all{ &fs, path, bytes = utf8::view{ b = text }.bytes } else {
+        cannot{ &io, path, what = "cannot write" }
+        return 1
+    }
+    try! @fmt(&b, "wrote {}: {} declaration{}", utf8::String{ bytes = path }, count, utf8::String{ bytes = if count == 1 { "" } else { "s" } })
+    io::println{ &io, s = utf8::view{ b } }
     return 0
 }
 
@@ -467,9 +562,9 @@ fn builds { files: []check::File } -> bool {
 fn add_file { mut files: list::List(check::File, arena::Arena), mut heap: arena::Arena, mut diags: diag::Diags, name: []u8, text: []u8, denied: bool } {
     let file = @as(u32, files.len)
     let lexed = lexer::lex{ text, file, &heap, &diags }
-    let tree = parser::parse{ text, file, tokens = lexed.tokens, &heap, &diags }
+    let tree = parser::parse{ text, file, tokens = lexed.tokens, api = parser::is_api{ path = name }, &heap, &diags }
     let lines = source::line_starts{ text, &heap }
-    try! list::push{ list = &files, item = check::File{ name, text, lines, tree, denied, dir = "" } }
+    try! list::push{ list = &files, item = check::File{ name, text, lines, tree, denied, dir = "", api = parser::is_api{ path = name }, .. } }
 }
 
 // `ctxc recover FILE FROM TO [-v] [--every N] [-- FILE...]` (recover.ctx). The program's files
@@ -632,7 +727,8 @@ fn recovery { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args }
         }
     }
     let at = if src < std.len { src } else { src + std_count - std.len }
-    let program = recover::Program{ files = list::items{ list = files }, std_files = std_count, at, stack = drive::host_stack{ &proc } / 2, every = @as(u32, every) }
+    let mods = modules::find{ &io, &fs, heap = &names, diags = &diags, files = list::items{ list = files }, own = std_count, places = slice::empty([]u8){}, os } ifnull { return 1 }
+    let program = recover::Program{ files = list::items{ list = files }, modules = mods, std_files = std_count, at, stack = drive::host_stack{ &proc } / 2, every = @as(u32, every) }
     let failures = recover::run{ &io, &heap, path, text = read[src], from = @as(usize, from), to = @as(usize, to), verbose, program }
     return if failures > 0 { 1 } else { 0 }
 }

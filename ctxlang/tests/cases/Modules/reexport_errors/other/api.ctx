@@ -1,0 +1,1 @@
+namespace other { fn x {} -> u8 }

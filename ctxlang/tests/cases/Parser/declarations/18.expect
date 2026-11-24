@@ -1,2 +1,2 @@
 //# errors:
-//| 18.ctx:2:16: error: expected '{', found end of file
+//| 18.ctx:2:4: error: `fn f` has no body: only a module's api.ctx declares a fn without one

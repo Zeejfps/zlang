@@ -1,0 +1,19 @@
+namespace gff {
+    struct Gff { size: usize }
+    struct Header { n: u8 }
+    struct Pair { a: u8 }
+    capability Cache { static hits: u32 }
+    fn read { bytes: []u8 } -> !Gff {
+        if bytes.len < 2 { return truncated{ at = bytes.len } }
+        if bytes[0] != 'G' { return bad_magic }
+        return Gff{ size = bytes.len }
+    }
+    fn count { g: Gff } -> usize { return g.size }
+    fn rename { h: Gff } -> usize { return h.size }
+    fn grow { mut g: Gff } -> usize { return g.size }
+    fn result { g: Gff } -> usize { return g.size }
+    fn header { g: Gff } -> Header { return Header{ n = 1 } }
+    fn spin {} {}
+    fn checks {} {}
+    fn quiet {} {}
+}

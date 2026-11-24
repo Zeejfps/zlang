@@ -1,0 +1,13 @@
+// Re-exports (spec §10, Re-exports): formats/api.ctx restates gff's read and size, narrowing
+// Gff to opaque past formats, and exposes tpc's api whole, and twoda's through a folder that
+// isn't a module. Inside formats, tpc sees gff's api in full and formats' own shared.
+//# program: main.ctx formats/api.ctx formats/shared.ctx formats/gff/api.ctx formats/gff/read.ctx formats/tpc/api.ctx formats/tpc/decode.ctx formats/plain/twoda/api.ctx formats/plain/twoda/rows.ctx
+//# stdout:
+//| 6 10 9
+
+// Past formats, Gff is opaque, and what formats' api.ctx doesn't restate is hidden.
+//# program: main2.ctx formats/api.ctx formats/shared.ctx formats/gff/api.ctx formats/gff/read.ctx formats/tpc/api.ctx formats/tpc/decode.ctx formats/plain/twoda/api.ctx formats/plain/twoda/rows.ctx
+//# errors:
+//| main2.ctx:3:35: error: gff::Gff is opaque outside module `formats`, so it can't be looked into here: an api.ctx declares it without its fields
+//| main2.ctx:3:46: error: `gff::raw` is inside module `formats`, whose api.ctx doesn't declare it
+//| main2.ctx:3:64: error: `shared::twice` is inside module `formats`, whose api.ctx doesn't declare it

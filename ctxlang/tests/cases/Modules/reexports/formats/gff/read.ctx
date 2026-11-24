@@ -1,0 +1,8 @@
+namespace gff {
+    fn read { bytes: []u8 } -> error(bad_magic)!Gff {
+        if bytes.len == 0 { return bad_magic }
+        return Gff{ size = shared::twice{ n = bytes.len } }
+    }
+    fn size { g: Gff } -> usize { return g.size }
+    fn raw { g: Gff } -> usize { return g.size + 1 }
+}

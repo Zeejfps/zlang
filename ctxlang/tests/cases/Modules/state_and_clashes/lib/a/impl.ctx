@@ -1,0 +1,6 @@
+namespace fmt {
+    capability Cache { static count: u32 }
+    fn hits { mut cache: Cache } -> u32 { return cache.count }
+    fn put {} -> u8 { return 1 }
+    fn helper {} -> u8 { return 2 }
+}

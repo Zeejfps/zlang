@@ -1,0 +1,7 @@
+namespace gff {
+    struct Gff { size: usize }
+    error bad_magic
+    fn read { bytes: []u8 } -> error(bad_magic)!Gff
+    fn size { g: Gff } -> usize
+    fn raw { g: Gff } -> usize
+}

@@ -1,0 +1,7 @@
+namespace fmt {
+    fn put {} -> u8 { return 4 }
+    fn other {} -> u8 { return 6 }
+    // Another module adds to fmt: Cache's static and its literal are lib/a's alone.
+    fn peek { mut cache: Cache } -> u32 { return cache.count }
+    fn make { mut cache: Cache } -> Gl { return Gl{ clear = @cast(_, @as(usize, 1)) } }
+}

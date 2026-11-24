@@ -1,0 +1,1 @@
+namespace shared { fn twice { n: usize } -> usize { return n * 2 } }

@@ -17,15 +17,13 @@ entries are cited by number, e.g. F#24) and [kotor/docs/tooling-gaps.md](../../.
 
 ## Items
 
-- **1. Modules, and choosing files.**
-  A directory is one flat namespace: nothing tells a library's contract from its helpers, a changed
-  signature breaks callers nobody on the task owns, parallel agents agree on helper names by
-  message, and a subsystem's state goes in `World`. In place of file-private declarations, a folder
-  that holds an `api.ctx` is a module, which code outside reaches only through that file
-  ([modules.md](modules.md)). Apart from that, one half-written file breaks every build that adds
-  its directory.
-  - Details: F#5, F#14; [modules.md](modules.md); [spec §10](../spec.md#10-namespaces), [§19](../spec.md#19-build-programs).
-  - *Done when:* modules.md is built, and a build can add one file.
+- **1. Choosing files.**
+  One half-written file breaks every build that adds its directory, since a build can't add one
+  file. (The other half of this item, a boundary between a library's contract and its helpers, is
+  built: a folder that holds an `api.ctx` is a module, which code outside reaches only through
+  that file; [spec §10, Modules](../spec.md#modules), internals.md, Modules.)
+  - Details: F#5; [spec §19](../spec.md#19-build-programs).
+  - *Done when:* a build can add one file.
 
 - **2. Borrow contracts in signatures.**
   The escape check infers what a call borrows from the callee's body, so an error at a call

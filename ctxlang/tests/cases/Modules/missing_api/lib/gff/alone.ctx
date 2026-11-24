@@ -1,0 +1,5 @@
+// A program of one file is in no module, though its folder holds an api.ctx (rule 12).
+fn main { mut io: Io } -> i32 {
+    _ = @fmt(&io, "alone\n")
+    return 0
+}

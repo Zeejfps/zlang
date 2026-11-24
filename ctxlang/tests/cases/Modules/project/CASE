@@ -1,0 +1,40 @@
+// Modules in a project (spec §10, Modules). `--fix` writes the error set an api.ctx's fn
+// fails with (rule 5). A file the build program generates is in its executable's root (§19,
+// rule 13), inside module game, and sees game's hidden helper. A test inside lib/gff tests
+// its hidden check; one outside sees only its api.ctx (rule 6).
+//# $ ctxc check --fix {dir}
+//# stderr:
+//| {dir}/lib/gff/api.ctx:5:32: fixed: write the errors its definition fails with
+//| -     fn read { bytes: []u8 } -> !Gff
+//| +     fn read { bytes: []u8 } -> error(bad_magic, truncated)!Gff
+//| check: no errors
+//# file lib/gff/api.ctx:
+//| namespace gff {
+//|     type Gff
+//|     error bad_magic
+//|     error truncated{ at: usize }
+//|     fn read { bytes: []u8 } -> error(bad_magic, truncated)!Gff
+//|     fn size { g: Gff } -> usize
+//| }
+//# $ ctxc run {dir}
+//# stdout:
+//| 3 41
+// As `ctxc graph` describes it, the generated file's place is a record of its own, which
+// `ctxc build --place` takes.
+//# project
+//# $ {game}
+//# stdout:
+//| 3 41
+//# $ ctxc test {dir}
+//# stdout:
+//| tests: 1 run, 1 passed, 0 failed, 0 skipped, 0 not selected, 2 checks
+//# write lib/outside_test.ctx:
+//| #test
+//| fn reads { mut t: Test } {
+//|     @expect(&t, gff::read{ bytes = "GFF" } is ok)
+//|     @expect(&t, gff::check{ bytes = "XY" } is gff::bad_magic)
+//| }
+//# $ ctxc test {dir}
+//# exit: 1
+//# stderr:
+//| {dir}/lib/outside_test.ctx:4:22: error: `gff::check` is inside module `{dir}/lib/gff`, whose api.ctx doesn't declare it

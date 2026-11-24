@@ -7,7 +7,7 @@ Examples: [examples/list.ctx](../examples/list.ctx) (lists, allocators, bound fu
 1. A program is a sequence of declarations: `fn`, `extern fn` (§18), `struct`, `union`, `enum`, `type`, `const`, `capability` (§15), `error` (§8, Errors), `namespace`. Any declaration may have attributes (§18).
 2. There is no mutable state at top level. Top-level names may be referenced from anywhere.
 3. All effects (IO, memory, OS) reach a function only through its context.
-4. Source files are UTF-8. Names are ASCII: a letter or `_`, then letters, digits and `_`, and not a keyword: `fn` `struct` `union` `enum` `type` `const` `namespace` `let` `mut` `if` `else` `while` `for` `break` `continue` `match` `return` `defer` `and` `or` `not` `true` `false` `null` `extern` `capability` `ifnull` `iferr` `ifoverflow` `try`. A keyword where a name belongs is an error that says so: ``expected a name, found 'for': `for` is a keyword and can't be a name; use another, such as `for_` ``. Some words are keywords in one place only, and names everywhere else: `is` after an expression (§8, Is, rule 9), `distinct` after `type Name =` (§12, Distinct types), `in` and `at` in a `for`'s head (§11, For), `error` before a name where a declaration begins (§8, Errors), and `static` before a capability's field (§15). Other characters may appear only in comments, which are `// to the end of the line` and `/* ... */` (not nested). String and character literals are ASCII too (§11 Literals).
+4. Source files are UTF-8. Names are ASCII: a letter or `_`, then letters, digits and `_`, and not a keyword: `fn` `struct` `union` `enum` `type` `const` `namespace` `let` `mut` `if` `else` `while` `for` `break` `continue` `match` `return` `defer` `and` `or` `not` `true` `false` `null` `extern` `capability` `ifnull` `iferr` `ifoverflow` `try`. A keyword where a name belongs is an error that says so: ``expected a name, found 'for': `for` is a keyword and can't be a name; use another, such as `for_` ``. Some words are keywords in one place only, and names everywhere else: `is` after an expression (§8, Is, rule 9), `distinct` after `type Name =` (§12, Distinct types), `in` and `at` in a `for`'s head (§11, For), `error` before a name where a declaration begins (§8, Errors), `static` before a capability's field (§15), and `expose` before a string where a declaration begins at the top of an `api.ctx` (§10, Re-exports). Other characters may appear only in comments, which are `// to the end of the line` and `/* ... */` (not nested). String and character literals are ASCII too (§11 Literals).
 
 ## 2. Functions and contexts
 
@@ -495,6 +495,166 @@ namespace gff {
 4. A path and a value may share a name in the same scope. Two paths or two values may not, except two namespaces, which are one (§10, rule 4).
 5. A value in an inner scope shadows a value of the same name in an outer scope.
 6. In a call or literal `f{ ... }`, a local or context field `f` that doesn't hold a function doesn't hide an outer name: lookup goes on outward for a function value, then for a path. `let binders = binders{}` calls the function `binders`. If nothing else matches, the local is the callee, and the call is an error.
+7. A declaration a module hides from the code doing the lookup isn't a match (Modules, rule 2): lookup goes on to one it sees. If it sees none, naming the hidden one is an error (Modules, rule 11).
+
+### Modules
+
+A folder that holds a file named `api.ctx` is a **module**: code outside it names only what that file declares. Every name is public until a module hides it, so a helper one file has is there for others to call; a module draws a boundary where a contract is wanted. ctxc compiles the whole program at once, so `api.ctx` exists only as the contract, which the compiler checks both ways, as OCaml checks a `.mli`.
+
+<!-- context:
+// file: gff/read.ctx
+namespace gff {
+    struct Gff { header: Header, fields: []Field }
+    struct Header { count: u32 }
+    fn read { bytes: []u8 } -> error(bad_magic, truncated)!Gff {
+        let header = try parse_header{ bytes }
+        return Gff{ header, fields = slice::empty(Field){} }
+    }
+    fn field { g: *Gff, label: []u8 } -> ?Field { return null }
+    fn parse_header { bytes: []u8 } -> !Header {
+        if bytes.len < 4 { return truncated{ at = bytes.len } }
+        if bytes[0] != 'G' { return bad_magic }
+        return Header{ count = 0 }
+    }
+}
+// file: gff/main.ctx
+fn main {} {}
+// file: gff/api.ctx
+...
+-->
+```ctx
+// lib/formats/gff/api.ctx: this folder is a module
+namespace gff {
+    type Gff                                         // opaque: held and passed, never looked into
+    struct Field { label: []u8, kind: Kind }
+    enum Kind: u8 { byte, word, dword, string }
+
+    error bad_magic
+    error truncated{ at: usize }
+
+    fn read { bytes: []u8 } -> error(bad_magic, truncated)!Gff
+    fn field { g: *Gff, label: []u8 } -> ?Field
+}
+```
+
+`read.ctx` beside it defines `struct Gff`, `read` and `field` with those signatures, and `parse_header`, which isn't in the api: only the module's files call it.
+
+1. A folder that holds a file named `api.ctx` is a module, wherever it is on disk. Its **inside** is every source file in the folder and in its subfolders, at any depth; everything else is **outside**, sibling and parent folders included. A file's place on disk decides which modules it is inside, not the build that adds it (§19, rule 5), and a module whose `api.ctx` isn't one of the program's files is an error at the first of its files that is. A file a build program generates is in its executable's root (§19, rule 13). A program of one file (`ctxc run file.ctx`) is in no module.
+2. Code inside a module sees every declaration in it. Code outside sees only what its `api.ctx` declares, and what that file re-exports of the modules nested in it (Re-exports). A module nested in another is inside it: what its api declares is visible inside its parent module, or everywhere if it is in none. Namespaces are never hidden, only what they hold.
+3. `api.ctx` is ctxlang: namespace blocks and declarations, and the one file where a fn has no body and a type may have no `= T`. No keyword marks it: its name does. A declaration that is complete without a body is declared in `api.ctx` alone, and the inside uses it: an `error`, an `enum`, a `struct` with its fields, a `union`, a `const`, a `type` alias, an `extern fn`, and a `capability` with function fields only. Three have a second half in the module's files, with the same name in the same namespace:
+   - `fn name(G) { ... } -> R` without a body declares a fn that the inside defines with exactly that signature: its generic parameters, its context fields in their order with their `mut`, and its result. The definition may write `!T` where the api writes `E!T`, if the errors its body fails with are E's.
+   - `type Name(G)` without `= T` declares an **opaque** type that the inside defines as a struct, a union or an enum. Outside, it is held, copied, passed, returned, compared with `==` and given its zero value (§11, Initialization), but not made with a literal or `@as`, and its fields and variants aren't named, matched on or tested with `is`. ctxc compiles the whole program, so its size is known, and it is passed by value as any type is.
+   - `capability Name`, or one with its function fields alone, declares a capability whose `static` and `extern` fields (§15, rules 12 and 13) the inside adds, in a declaration of the capability that repeats every field the api's has.
+
+   Each half without the other is an error, and so is a definition that doesn't match: its error says how. A fn in `api.ctx` with a body is one error, and the rest is checked as if it had none; one without a body, or `type Name`, anywhere else is one error.
+4. **Nothing leaks through a signature.** A type or an error that a declaration in `api.ctx` names, in a fn's signature, a struct's fields, a union's payloads, an alias or a set, is in the api too, in full or opaque: an error names each one that isn't.
+5. **A fn in `api.ctx` says which errors it fails with.** Its result is `E!T` (§8, Errors, rule 14), never `!T`, so every caller reads what it fails with, and the inside can't add an error without changing the contract. Inside the module, results are inferred as before. The error writes the set the body is inferred to fail with, and `ctxc check --fix` writes it. A `#write` fn's result is a bare `!` (§13, Formatting, rule 4): its errors are its sink's.
+6. A fn half carries the attributes that tell callers how it is used, `#task`, `#write` and `#convert`, and its definition has the same; the definition has the rest. No `#test` fn is in `api.ctx`.
+7. A `#test` fn sees what any code in its file sees (§20). One inside the module, in a subfolder kept for tests included, tests it as a white box; one outside tests it through its api. A test that needs a hidden name shows that the name is part of the contract, and goes in `api.ctx`, or is a module of its own nested inside, with an api the tests use.
+8. **A module's state is in a capability whose statics only it reaches.** A static or a C variable is reached, and a capability with fields is made with a literal, only in a function declared directly in the capability's namespace and inside the module that declares it (§15, rules 6, 12 and 13), so another module that adds to the namespace doesn't reach it. The api declares the capability without its statics, and the inside with them; a capability whose fields are statics alone is one without fields (§15, rule 1), which `main` receives and passes down as it passes an `Io`.
+9. **A hidden name is in its module's scope, not its namespace's.** Two declarations of a name clash only where both are visible: a hidden `gff::put_row` in one module and a hidden `gff::put_row` in another are two functions, and code inside either sees its own. One that clashes with a declaration visible where it is declared is an error, as two declarations of a name are (§10, rule 4).
+10. Namespaces and folders are separate. A module may declare several namespaces in `api.ctx`, and several modules may add to one namespace. `ctxc where` says which module and file declare a name (§19, rule 10).
+11. Naming what a module hides is an error that names the boundary: ``gff::parse_header` is inside module `lib/formats/gff`, whose api.ctx doesn't declare it``. A `#convert` or `#write` fn is a name too: a literal or an `@fmt` sees only those its code could name (§18, Literal conversions, rule 4; §13, Formatting, rule 4).
+12. Privacy is of names, not values. A function value the inside hands out (§5) is called by whoever holds it.
+
+<!-- context:
+// file: build.ctx
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "tool", root = "." }
+    build::add_sources{ &b, exe, dir = "gff" }
+}
+// file: gff/api.ctx
+namespace gff {
+    type Gff
+    error bad_magic
+    fn read { bytes: []u8 } -> error(bad_magic)!Gff
+}
+// file: gff/read.ctx
+namespace gff {
+    struct Gff { size: usize }
+    fn read { bytes: []u8 } -> error(bad_magic)!Gff {
+        if bytes.len == 0 { return bad_magic }
+        return Gff{ size = bytes.len }
+    }
+    fn parse_header { bytes: []u8 } -> usize { return bytes.len }
+}
+// file: main.ctx
+...
+-->
+```ctx
+fn main {} -> i32 {
+    let g = gff::read{ bytes = "GFF" } iferr { return 1 }
+    let n = g.size                                   // error: gff::Gff is opaque outside module ...
+    return @as(i32, gff::parse_header{ bytes = "x" }) // error: `gff::parse_header` is inside module ...
+}
+```
+
+### Re-exports
+
+A re-export makes a name that a nested module's api declares visible past its parent's boundary. It never makes a new name: `gff::read` is `gff::read` at every level, so a name always means one thing.
+
+```text
+lib/formats/
+    api.ctx              // formats is a module, for internals gff and tpc share
+    shared.ctx           // inside formats: gff and tpc see it, nothing outside does
+    gff/
+        api.ctx
+    tpc/
+        api.ctx
+```
+
+1. **Restating** a declaration re-exports it. A declaration in `api.ctx` whose name a nested module's api makes visible inside this module is that declaration, not a new one. A restatement may hide a type's inside, never change a declaration: a struct, union or enum the nested api declares in full may be restated as an opaque `type Gff`, which is then opaque past this boundary and in full inside it; any other restatement matches exactly. So a name means one thing, with one type, at every level it reaches, and the outer api has the whole contract, signatures and all, in one file. A restatement can't show some of a struct's fields (code outside couldn't make one, since a literal supplies every field), hide some of an enum's or a union's variants (code outside would hold values it can't name), widen or narrow a fn's errors, or change anything else of a signature: each would give one name two meanings.
+2. **`expose "path"`** re-exports all of a nested module's api, as that api declares it. The path is a string, relative to the folder of this `api.ctx`, so that a folder no ctxlang name can name (`2da`) is reached too. It names a module whose folder is in this one, directly or through folders that aren't modules. `expose` is a keyword only where a declaration begins at the top of an `api.ctx`, as `error` is only before a name (§1, rule 4).
+3. **One boundary at a time.** An `api.ctx` re-exports only what code inside its module sees: a nested module's api, with what that api re-exports in turn. A name in `formats/gff/chunks/` crosses `formats` only if `gff/api.ctx` re-exports it first.
+4. A module is either restated from or exposed, not both.
+5. The leak rule (Modules, rule 4) holds for restatements.
+6. A folder without an `api.ctx` is no boundary: modules nested in a folder that is only a folder are visible to everyone through their own apis.
+
+There is no list of names (`export gff::{ read, Gff }`), which would show names without their signatures and couldn't narrow a type; no renaming, which gives one function two names to learn and search for; no way for a nested module to make itself visible past its parent, whose surface is its own to decide; and no `expose` with exceptions, since restating exposes part of a module. The word is `expose`, not `export`: `export` brings TypeScript's forms with it (`export fn`, `export { a as b }`), each an error here, and in a language this close to C it means making a symbol visible to the linker, which `#c::export` does.
+
+<!-- context:
+// file: formats/build.ctx
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "viewer", root = "." }
+    build::add_sources{ &b, exe, dir = "gff" }
+    build::add_sources{ &b, exe, dir = "tpc" }
+}
+// file: formats/shared.ctx
+namespace shared { fn twice { n: usize } -> usize { return n * 2 } }
+// file: formats/gff/api.ctx
+namespace gff {
+    struct Gff { size: usize }
+    error bad_magic
+    fn read { bytes: []u8 } -> error(bad_magic)!Gff
+}
+// file: formats/gff/read.ctx
+namespace gff {
+    fn read { bytes: []u8 } -> error(bad_magic)!Gff {
+        if bytes.len == 0 { return bad_magic }
+        return Gff{ size = shared::twice{ n = bytes.len } }
+    }
+}
+// file: formats/tpc/api.ctx
+namespace tpc { fn decode { n: u32 } -> u32 }
+// file: formats/tpc/decode.ctx
+namespace tpc { fn decode { n: u32 } -> u32 { return n + 1 } }
+// file: formats/main.ctx
+fn main {} -> i32 {
+    let g = gff::read{ bytes = "abc" } iferr { return 1 }
+    return @as(i32, tpc::decode{ n = 1 })
+}
+// file: formats/api.ctx
+...
+-->
+```ctx
+// lib/formats/api.ctx
+namespace gff {
+    type Gff                                     // narrowed: opaque past this boundary
+    error bad_magic
+    fn read { bytes: []u8 } -> error(bad_magic)!Gff
+}
+expose "tpc"
+```
 
 ## 11. Statements and control flow
 
@@ -1434,14 +1594,14 @@ fn main { mut io: Io, mut fs: Fs, mut glfw: Glfw, args: Args } -> i32 {
 3. std declares `Io` (console, §17 `io`), `Fs` (files, §17 `fs`), `Mem` (memory beyond the stack, §17 `mem`), `Proc` (other programs and the environment, §17 `proc`), `Threads` (running tasks and waiting for them, §17 `task`), `Build` (a build program's, §19) and `Test` (a test's checks, §20). A binding of a C library declares its own, and its extern fns with effects take it (§18).
 4. A capability is permission for code that follows the rules, not a sandbox: a pointer `@cast` (§13) can forge one, as it can corrupt any memory.
 5. `capability Name { field: extern fn{C} -> R, ... }` declares one with **fields**: C functions it holds, such as a library's looked up at run time. Each field is a C function pointer (§12), never null; a `?extern fn` isn't allowed, since unwrapping it would read the field (rule 7). Its layout is a struct's.
-6. Only a function declared directly in the namespace that declares it, whose context holds a capability or a bound function (`&fn`, §6), can construct one, with a literal (`Name{ field = f, ... }`, §7). Holding one means that function made it. These are how effects reach a function (§1.3): a bound function may hold a capability, as a loader bound to a library's does (`glfw::proc_address{ &glfw, _ }`), so a binding can take one without naming the library it comes from. Code that holds no capability has none to bind a loader to. A loader that holds none can't look a function up: short of a `@cast` (rule 4), it returns `null` or a named function of the type it returns, which is pure if that type takes no capability (§18).
+6. Only a function declared directly in the namespace that declares it, inside the module that declares it if one does (§10, Modules, rule 8), whose context holds a capability or a bound function (`&fn`, §6), can construct one, with a literal (`Name{ field = f, ... }`, §7). Holding one means that function made it. These are how effects reach a function (§1.3): a bound function may hold a capability, as a loader bound to a library's does (`glfw::proc_address{ &glfw, _ }`), so a binding can take one without naming the library it comes from. Code that holds no capability has none to bind a loader to. A loader that holds none can't look a function up: short of a `@cast` (rule 4), it returns `null` or a named function of the type it returns, which is pure if that type takes no capability (§18).
 7. Its fields can only be called: `x.f{ ... }` calls the function field `f` holds, and `x` must be a mutable place, as for passing it to a `mut` field (§3); through a `*mut` to one, `p.f{ ... }` calls it too. Holding `x` is the permission, so the field's type needs no capability field. Reading a field as a value (`let g = x.f`, passing, comparing, casting or taking its address) or assigning one is an error: it would reach code whose signature doesn't name the capability.
 8. One may be a local, a function's field, a result or an optional's payload, and copies as a struct does, but is never replaced: assigning to a place that is or holds one, as a field, an element or a payload, is an error, except the one assignment of a `let x: T` (§11, Initialization). So the functions a capability holds never change, and a copy of it is the same as it (rule 10). Neither the runtime nor C can make one, so `main` can't take one (Entry point, rule 2), nor can a callback (§18 Callbacks, rule 4). An extern fn may take one as any capability: it isn't passed to C.
 9. `..Name` among a capability's fields **includes** `Name`, a capability with fields: it has `Name`'s fields where `..Name` stands, so through `Name` it has those of what `Name` includes. Its own fields and any number of inclusions may come in any order: `capability MyGl { ..Gl3_3, ..ArbDebug }`. A field reaches a capability only once: one of its own that an included one has, or one that two included ones share, as with both `..Gl3_0` and `..Gl2_0` when `Gl3_0` includes `Gl2_0`, is an error. A static (rule 13) may be reached twice, as `capability App { ..Io, ..Fs }` reaches `task::Cancel`'s through both: it is one for the program already, so nothing is duplicated. So is including itself, directly or not. A capability with fields may include only capabilities with fields: a function of its namespace makes it (rule 6), and could otherwise give away the permission of one that only `main` receives. One without fields may include any capability, as std's `Proc` includes its platform's `os::Proc` (§17).
 10. A capability converts implicitly to one it includes, directly or not, wherever §11 Widening rule 1 applies: a copy of the functions they share, which rules 7 and 8 keep from changing. A `mut` field of the included type takes a pointer to the including one (§3, rule 4): `draw{ &gl }` for `draw { mut gl: Gl2_0 }` with `gl: Gl3_3`, which §3.1 treats as any `&gl`. If the included one's fields are the first of its own, as when `..Gl2_0` is the first item of `Gl3_3` or of its first inclusion, the callee gets that pointer; otherwise it gets the address of a copy of them, which no program can tell apart from it, since neither changes. Structs, other pointers and `?A` don't convert this way (§11, Widening, rule 5).
 11. In a capability's literal, where rule 6 allows one, `..e` supplies from `e` the fields of `e`'s type, which must be a capability the literal's includes: `Gl3_3{ ..base, vertex_attrib_divisor = @cast(_, p), gen_samplers = @cast(_, q) }`. Every field is still supplied exactly once, by a spread or by name. `e` is evaluated before the other items. `..e` in any other braces is an error.
-12. `extern name: T` among a capability's fields declares a **C variable**: the C global `name`, or the one `#c::symbol{ name }` on the line before gives (§18), of a type C stores: a number, `bool`, an enum, a pointer or `?*T`, a struct, an extern union or a C function pointer. The linker supplies it, not a literal, so it takes no space (rule 1). `x.name` reads it, through the capability, one that includes it, or a pointer to either, only in a function declared directly in the namespace that declares the capability. That namespace wraps it for every other caller, as a platform layer wraps `environ` (§17). A read is the variable's value at that moment, which C may change. It isn't a place: it can't be assigned or have its address taken. An including capability has the variables of what it includes, and a name reaches a capability only once, as a field or a variable (rule 9).
-13. `static name: T` among a capability's fields declares a **static**: storage for one `T` for the whole program, which starts as `T`'s zero value (§11, Initialization), so `T` must have one. There is one for the program, however many capabilities include it, and it takes no space in them (rule 1): a capability holds no state, since the runtime and C make fieldless ones from nothing (rule 2; §18 Callbacks), but it is the only way to reach some. `static` is a keyword only there, before a name. `x.name`, through the capability, one that includes it, or a pointer to either, is a place, only in a function declared directly in the namespace that declares the capability, as for a C variable (rule 12). It is mutable when `x` is: a `mut` field, a `let mut`, or through a `*mut`. A read-only capability reads it, and other capabilities that include it reach the same storage. It is a place through a deref (§3.1, rule 6; §14, Escape check): `&x.name` points to storage that outlives every frame, even when `x` is a local, and the escape check keeps a stack pointer from being stored in it. `#c::symbol` doesn't apply to it. An including capability has the statics of what it includes, and a name reaches a capability only once (rule 9).
+12. `extern name: T` among a capability's fields declares a **C variable**: the C global `name`, or the one `#c::symbol{ name }` on the line before gives (§18), of a type C stores: a number, `bool`, an enum, a pointer or `?*T`, a struct, an extern union or a C function pointer. The linker supplies it, not a literal, so it takes no space (rule 1). `x.name` reads it, through the capability, one that includes it, or a pointer to either, only in a function declared directly in the namespace that declares the capability, inside the module that declares it if one does (§10, Modules, rule 8). That namespace wraps it for every other caller, as a platform layer wraps `environ` (§17). A read is the variable's value at that moment, which C may change. It isn't a place: it can't be assigned or have its address taken. An including capability has the variables of what it includes, and a name reaches a capability only once, as a field or a variable (rule 9).
+13. `static name: T` among a capability's fields declares a **static**: storage for one `T` for the whole program, which starts as `T`'s zero value (§11, Initialization), so `T` must have one. There is one for the program, however many capabilities include it, and it takes no space in them (rule 1): a capability holds no state, since the runtime and C make fieldless ones from nothing (rule 2; §18 Callbacks), but it is the only way to reach some. `static` is a keyword only there, before a name. `x.name`, through the capability, one that includes it, or a pointer to either, is a place, only in a function declared directly in the namespace that declares the capability, inside its module, as for a C variable (rule 12). It is mutable when `x` is: a `mut` field, a `let mut`, or through a `*mut`. A read-only capability reads it, and other capabilities that include it reach the same storage. It is a place through a deref (§3.1, rule 6; §14, Escape check): `&x.name` points to storage that outlives every frame, even when `x` is a local, and the escape check keeps a stack pointer from being stored in it. `#c::symbol` doesn't apply to it. An including capability has the statics of what it includes, and a name reaches a capability only once (rule 9).
     - `#stack_limit` on a `usize` static makes it the **stack limit**: on entry, every function compares its frame's address to it and panics with "stack overflow" below it, with the call path of its caller (Call paths, rule 5). 0, the static's start, checks nothing, and a panic sets it to 0 before the panic fn runs (Entry point, rule 6). Each thread has its own (as `#thread_local`, below): std's start sets the main thread's, and a task's worker sets its own from its stack (§17, `task`); on a thread the program didn't start, which calls a callback (§18, Callbacks, rule 6), it is 0. Its storage is the runtime's, which a program that isn't threaded (Entry point, rule 8) keeps in a plain global. std's `rt::Stack` has one, which std's start sets. A program may declare its own, which replaces std's, only if it has its own start fn too, since std's sets std's; a start fn of a program's own without one leaves std's at 0, so nothing is checked.
     - `#thread_local` on a static gives each thread its own, which starts as `T`'s zero value when the thread does: C11's `_Thread_local`, in a threaded program (Entry point, rule 8). In any other, the program's one thread has the one static, as without it. std's io `out`, standard output's buffer, is one (§17, `io`).
 
@@ -1757,11 +1917,11 @@ fn build { mut b: Build } {
 6. `build::optimize{ &b, exe, level }` compiles the executable's C at optimization level 0 to 3 (`-O0` to `-O3`) instead of 1. The other flags stay (internals.md, How ctxlang maps to C). `build::trace_calls{ &b, exe, on }` says whether the executable keeps its call paths (§15, Call paths, rule 7). Unsaid, it keeps them at levels 0 and 1 and not at 2 and 3, where they would cost a few percent of the speed the level was chosen for, and its test build (§20) keeps them at every level. The last call for an executable decides, for its test build too.
 7. `link` adds a library (`-l`), `framework` a macOS framework, and `lib_path` a directory to find libraries in (`-L`).
 8. Paths are relative to the directory `build.ctx` is in, and may leave it through `..`. Errors name an executable's files by their paths from the working directory, without `.` or `..` (`lib/formats/gff.ctx`). A file named `build.ctx` is never one of an executable's files.
-9. Names, roots, directories, libraries and paths can't be empty or hold a tab or a line break, a name is ASCII letters, digits, `_`, `-` and `.` and doesn't end in `.`, so that names Windows takes for one another differ only in ASCII's case, a generated file's name (rule 13) is ASCII letters, digits, `_` and `-` and isn't `build` in any case, and a level is 0 to 3: the build panics.
-10. `ctxc run PATH [-- ARGS...]` builds the program at PATH (a `.ctx` file, or a directory, with or without a `build.ctx`) and runs its first executable; `ctxc exe PATH -o OUT` writes that executable to OUT; `ctxc test PATH [ARGS...]` builds it to run its tests instead (§20); `ctxc check PATH` reports its errors and builds nothing (§21). Only ctxc and a C compiler are needed (internals.md, "Working on ctxc"). `ctxc graph DIR GEN LIST` runs the build program as `run` does and writes what it describes to LIST, and the files it generates to GEN, for tools that build the executables themselves (ctxc/drive.ctx).
+9. Names, roots, directories, libraries and paths can't be empty or hold a tab or a line break, a name is ASCII letters, digits, `_`, `-` and `.` and doesn't end in `.`, so that names Windows takes for one another differ only in ASCII's case, a generated file's name (rule 13) is ASCII letters, digits, `_` and `-` and isn't `build` or `api` in any case, and a level is 0 to 3: the build panics.
+10. `ctxc run PATH [-- ARGS...]` builds the program at PATH (a `.ctx` file, or a directory, with or without a `build.ctx`) and runs its first executable; `ctxc exe PATH -o OUT` writes that executable to OUT; `ctxc test PATH [ARGS...]` builds it to run its tests instead (§20); `ctxc check PATH` reports its errors and builds nothing (§21). Only ctxc and a C compiler are needed (internals.md, "Working on ctxc"). `ctxc graph DIR GEN LIST` runs the build program as `run` does and writes what it describes to LIST, and the files it generates to GEN, for tools that build the executables themselves (ctxc/drive.ctx). `ctxc where PATH NAME` says where the program at PATH declares NAME, `a::b::f` or a name in any namespace, with its module and where it is visible; `ctxc api PATH FOLDER` writes FOLDER/api.ctx, a first contract for a folder from what the rest of the program names of its files: each fn's signature with the errors it is inferred to fail with, and what is complete without a body moved from the files (§10, Modules, rule 3), a starting point rather than one kept up to date.
 11. A build writes only under ctxc's home, in `build/run`, in a directory of the program's own, which its absolute path names: ctxcs building different programs at once don't meet. A big program's C is several units, grouped by the files that declare their functions, which are compiled at once; a unit whose C, runtime, C compiler and flags are the same as when it was last built isn't compiled again, so an edit recompiles only the units of the files it touched, and those that call a small function it changed, which each hold a copy of it for C to inline (ctxc/drive.ctx, ctxc/emit_c.ctx).
 12. `#build::sources{ dir }` on the build program's `fn build` makes the `.ctx` files under directory `dir` its files too, besides build.ctx, found as rule 5 finds an executable's, with paths as rule 8 says. So a code generator can be a library of its own, which build programs share. `fn build` may have several. They are the build program's files only, not its executables'. ctxc reads the attribute (std's `build::sources`, §17) from build.ctx before it compiles the build program, so `dir` must be a string literal; one that names no directory, or one without `.ctx` files, and the attribute on anything else in build.ctx, are errors at their positions.
-13. `build::gen_file{ &b, exe, name, text }` gives the executable a file of ctxlang source, `NAME.ctx`, that holds `text`, as if it were in one of its directories. ctxc writes it in the program's build directory (rule 11), as `gen/EXE/NAME.ctx`, never in the source tree, and errors in it name that path; the executable is compiled from ctxc's own copy of the text, so another ctxc building the same program at once can't change what it compiles. It is written only when its text changed; the other `.ctx` files in its executable's directory are removed, and the directory of an executable that generates none, once it is empty. One executable can't have two files of one name, nor on Windows names that differ only in case. The build program never sees the files it generates: they are only its executables'. A `Build` writes no file itself: the text goes to ctxc with the build's description (std/build.ctx), and ctxc writes it.
+13. `build::gen_file{ &b, exe, name, text }` gives the executable a file of ctxlang source, `NAME.ctx`, that holds `text`, as if it were in one of its directories: for modules (§10, Modules, rule 1), in its executable's root. ctxc writes it in the program's build directory (rule 11), as `gen/EXE/NAME.ctx`, never in the source tree, and errors in it name that path; the executable is compiled from ctxc's own copy of the text, so another ctxc building the same program at once can't change what it compiles. It is written only when its text changed; the other `.ctx` files in its executable's directory are removed, and the directory of an executable that generates none, once it is empty. One executable can't have two files of one name, nor on Windows names that differ only in case. The build program never sees the files it generates: they are only its executables'. A `Build` writes no file itself: the text goes to ctxc with the build's description (std/build.ctx), and ctxc writes it.
 14. `build::declarations{ &b, &fs, &mem, &heap, realloc, exe }` gives the declarations of exe's files as they are at the call: its root's, and those of the directories `add_sources` gave it before, found as rule 5 finds them, with paths as rule 8 says; never its generated files, so a generator never sees its own output. It parses them and checks nothing: a `build::Decl` is a struct, union, extern union, enum, fn, extern fn, const, type, capability or error (its `kind`), with its name, the namespaces around it (`path`, as `game::world`), its generic parameters' names, its attributes, its fields (a fn's context fields, with `mut`), each with its attributes and a struct's with its default, its variants, its types and values as text, and its file and position. A type is spelled one way (`*mut T`, `list::List(T, S)`, `&fn{ a: T } -> R`), and anything else written, an attribute's field too, is its tokens as written, with one space between two that anything came between, so a string literal, multi-line or not, keeps its text; a string, integer, character or bool literal's value is there as well. Nothing is resolved, so a name may be one the build program has yet to generate.
 15. A syntax error doesn't stop it: the declarations around it are there, and the errors are in `diags`, by file, line and column. It fails with `fs`'s errors for a directory or file it can't read, and with `alloc::out_of_memory`. Its result is in memory from `realloc`; parsing takes memory of its own, from `mem::reserve`, which it keeps for its next call.
 16. A build program has what `declarations` needs with std: std/build/'s files and ctxc's lexer and parser (ctxc/source.ctx, diag.ctx, lexer.ctx, syntax.ctx and parser.ctx) are among std's files (§17) in it, and in no other program. Any program whose entry is `fn build` (rule 2) is one, however ctxc builds it: `ctxc run build.ctx` runs one as a program of its own, whose graph goes to standard output and whose paths are from the working directory. So `declarations` is in std's `build`, and a namespace of the program's named like one of ctxc's (`parser`, `syntax`, `lexer`, `tok`, `source`, `diag`) shadows it (§10, rule 4).

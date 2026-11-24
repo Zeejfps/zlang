@@ -1,0 +1,9 @@
+fn main { mut io: Io } -> i32 {
+    let mut buf: [64]u8
+    let mut heap = arena::new{ buf = buf[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    _ = @fmt(&b, "{}", geo::Size{ w = 3 })
+    io::println{ &io, s = utf8::view{ b } }
+    geo::show{ &io }
+    return 0
+}

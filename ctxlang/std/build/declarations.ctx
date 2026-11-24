@@ -25,8 +25,9 @@ namespace build {
     struct Declarations { decls: []Decl, diags: []Diagnostic, files: [][]u8 }
 
     // What a Decl is declared with: `struct`, `union`, `extern union`, `enum`, `fn`, `extern fn`,
-    // `const`, `type`, `capability` or `error` (spec §1).
-    enum Kind: u8 { structure, tagged_union, extern_union, enumeration, function, extern_function, constant, alias, capability_type, error }
+    // `const`, `type`, `capability` or `error` (spec §1), or `type Name` without `= T`, an
+    // opaque type, which only a module's api.ctx declares (spec §10, Modules).
+    enum Kind: u8 { structure, tagged_union, extern_union, enumeration, function, extern_function, constant, alias, capability_type, error, opaque_type }
 
     // A declaration, as written. A type is spelled one way (`*mut T`, `fn{ a: T } -> R`), and a
     // value is its tokens as written, with one space between two that anything came between,
@@ -46,6 +47,9 @@ namespace build {
         file: []u8,                 // its file, by its path from the working directory
         line: u32,                  // where its keyword is
         col: u32,
+        // In a module's api.ctx (spec §10, Modules): the contract, which a fn or an opaque type
+        // of the module's other files may define, so its name may be another Decl's too.
+        api: bool,
     }
 
     // A field, with its attributes (spec §18). Only a fn's context has `mut` ones, and only a
@@ -128,7 +132,7 @@ namespace build {
             let text = texts[i]
             let mut diags = diag::new{ heap = &scratch }
             let lexed = lexer::lex{ text, file = 0, heap = &scratch, &diags }
-            let tree = parser::parse{ text, file = 0, tokens = lexed.tokens, heap = &scratch, &diags }
+            let tree = parser::parse{ text, file = 0, tokens = lexed.tokens, api = parser::is_api{ path = paths[i] }, heap = &scratch, &diags }
             w.text = text
             w.lines = source::line_starts{ text, heap = &scratch }
             w.toks = lexed.tokens
@@ -322,9 +326,14 @@ namespace build {
             let mut d = Decl{
                 kind = Kind::structure, name = "", path, generics = slice::empty([]u8){}, attrs = try attrs{ &w, xs = x.attrs },
                 fields = slice::empty(Field){}, variants = slice::empty(Variant){}, ty = "", value = "", result = "",
-                file = w.file, line = at.line, col = at.col,
+                file = w.file, line = at.line, col = at.col, api = parser::is_api{ path = w.file },
             }
             match x.k {
+                opaque{ name, tparams } => {
+                    d.kind = Kind::opaque_type
+                    d.name = name.text
+                    d.generics = try names{ &w, xs = tparams }
+                }
                 func{ name, tparams, params, ret, external } => {
                     d.kind = if external { Kind::extern_function } else { Kind::function }
                     d.name = name.text

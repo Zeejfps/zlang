@@ -1,0 +1,7 @@
+namespace gff {
+    struct Gff { size: usize }
+    fn size { g: Gff } -> usize
+    struct read { n: u8 }
+    const VERSION: u32 = 3
+    struct Field { label: []u8, kind: u8 }
+}

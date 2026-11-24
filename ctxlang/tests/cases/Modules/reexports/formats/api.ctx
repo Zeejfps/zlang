@@ -1,0 +1,10 @@
+// formats is a module for what gff and tpc share. It restates part of gff's api, narrowing
+// Gff to opaque, and exposes all of tpc's.
+namespace gff {
+    type Gff
+    error bad_magic
+    fn read { bytes: []u8 } -> error(bad_magic)!Gff
+    fn size { g: Gff } -> usize
+}
+expose "tpc"
+expose "plain/twoda"

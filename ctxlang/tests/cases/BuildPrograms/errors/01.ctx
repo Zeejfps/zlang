@@ -3,6 +3,6 @@ fn build { mut b: Build } { build::link{ &b, exe = build::Exe{ id = 3 }, lib = "
 //# panic: program: panic: build: no executable 3
 //# path:
 //|   at rt::fail_with (std/rt.ctx:47:13)
-//|   at build::check (std/build.ctx:303:26)
-//|   at build::link (std/build.ctx:157:14)
+//|   at build::check (std/build.ctx:311:26)
+//|   at build::link (std/build.ctx:165:14)
 //|   at build (01.ctx:1:40)

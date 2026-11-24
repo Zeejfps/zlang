@@ -5,6 +5,6 @@ fn build { mut b: Build } { build::deny_unchecked{ &b, exe = build::Exe{ id = 3 
 //# panic: program: panic: build: no executable 3
 //# path:
 //|   at rt::fail_with (std/rt.ctx:47:13)
-//|   at build::check (std/build.ctx:303:26)
-//|   at build::deny_unchecked (std/build.ctx:176:14)
+//|   at build::check (std/build.ctx:311:26)
+//|   at build::deny_unchecked (std/build.ctx:184:14)
 //|   at build (02.ctx:3:50)

@@ -1,0 +1,15 @@
+namespace geo {
+    #write
+    fn write_size(S) { mut b: utf8::Builder(S), s: Size } -> ! { return @fmt(&b, "{}px", s.w) }
+    // Hidden: only code inside lib/geo sees this writer.
+    #write
+    fn write_point(S) { mut b: utf8::Builder(S), p: Point } -> ! { return @fmt(&b, "({}, {})", p.x, p.y) }
+    fn point {} -> Point { return Point{ x = 1, y = 2 } }
+    fn show { mut io: Io } {
+        let mut buf: [64]u8
+        let mut heap = arena::new{ buf = buf[..] }
+        let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+        _ = @fmt(&b, "{} {}", point{}, Size{ w = 4 })
+        io::println{ &io, s = utf8::view{ b } }
+    }
+}

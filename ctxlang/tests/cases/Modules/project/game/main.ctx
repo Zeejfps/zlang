@@ -1,0 +1,7 @@
+namespace game { fn helper {} -> u32 { return 40 } }
+
+fn main { mut io: Io } -> i32 {
+    let g = gff::read{ bytes = "GFF" } iferr { return 1 }
+    _ = @fmt(&io, "{} {}\n", gff::size{ g }, game::rows{})
+    return 0
+}

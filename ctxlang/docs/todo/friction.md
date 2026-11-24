@@ -62,8 +62,10 @@ as the write-ups gave them.
     A directory's files share one namespace with no file-private names, so two agents writing
     `put_*` helpers coordinate names by message; a file can't keep private state either, so every
     cache goes in `World`, the file every agent needs. *Partly:* a namespace may now span files
-    (spec §10, rule 4; 2540d389), so a big one such as `mdl` can be split; choosing single files
-    and file-private names remain. *Hit by 5:* engine (2), dialog (2), models, rules, script.
+    (spec §10, rule 4; 2540d389), so a big one such as `mdl` can be split; and a folder with an
+    `api.ctx` is a module (spec §10, Modules), whose hidden helpers are its own, so two agents'
+    `put_*` don't clash, and whose state is in a capability whose statics only it reaches.
+    Choosing single files remains. *Hit by 5:* engine (2), dialog (2), models, rules, script.
 
 6. **A program's namespace hides std's of the same name whole.** KOTOR's `math`, its vectors,
     hides std's `math`, so it declares libm and the float-bits fns again (lib/base/math.ctx, 24
@@ -98,7 +100,9 @@ as the write-ups gave them.
 14. **Changing a shared fn's signature breaks callers nobody on the task owns.** No default
     arguments, so a helper that gains an input edits every call site, in other owners' files; no
     visibility, so callers show up only as build errors; a fn that starts returning a pointer into
-    `w` needs `mut w`, which spreads to every caller up to the routine. *Hit by 2:* engine (2),
+    `w` needs `mut w`, which spreads to every caller up to the routine. *Partly:* a module's
+    hidden fns have their callers inside it, and its contract changes only in its `api.ctx`
+    (spec §10, Modules); default arguments and `mut` spreading remain. *Hit by 2:* engine (2),
     hud.
 
 

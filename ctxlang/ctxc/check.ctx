@@ -44,10 +44,22 @@ namespace check {
     // unchecked operations are errors (spec §13, Unchecked operations): one of an executable's
     // files that its build program's `build::deny_unchecked` doesn't except (§19). In a test
     // build, `dir` is the directory of a file of the program's, as an absolute path (§20, rule
-    // 12): what a test of that file is given as its own directory.
-    struct File { name: []u8, text: []u8, lines: []u32, tree: syntax::File, denied: bool, dir: []u8 }
+    // 12): what a test of that file is given as its own directory. module is the innermost
+    // module the file is inside, an index of Checker.modules, or NONE; api says it is that
+    // module's api.ctx (spec §10, Modules).
+    struct File { name: []u8, text: []u8, lines: []u32, tree: syntax::File, denied: bool, dir: []u8, module: u32 = NONE, api: bool = false }
 
     enum Kind: u8 { func, record, sum, enumeration, alias, constant, external, cap, fault }
+
+    // A module (spec §10, Modules): a folder that holds an api.ctx. dir is the folder as
+    // messages name it, key its absolute path as the driver compares paths, parent the module
+    // it is inside or NONE, and api its api.ctx's file, or NONE where the program lacks it
+    // (which the driver reports). exposes are the nested modules its api.ctx re-exports whole
+    // (`expose "path"`, Re-exports), as the driver resolves their paths.
+    struct Module { dir: []u8, key: []u8, parent: u32, api: u32, exposes: []Exposed }
+
+    // `expose "path"`, resolved: the module, and the string's span.
+    struct Exposed { module: u32, at: source::Span }
 
     // A union variant, resolved. A variant without a payload has null fields.
     struct Variant { name: []u8, fields: ?[]types::Field }
@@ -78,6 +90,21 @@ namespace check {
         includes: []u32,                // what a capability includes, directly or not (§15)
         vars:     []mut CVar,           // a capability's C variables, its own and included ones
         defaults: []u32,                // a struct's: by field, the const holding its default, or NONE; empty if none has one
+        // Modules (spec §10, Modules). module is the innermost module of its file, or NONE.
+        // scope is the outermost module whose inside sees it, NONE for everywhere; open, for a
+        // struct, a union or an enum, the outermost whose inside sees its fields or variants.
+        // next is the next declaration of its name in its table (Space.paths or .values), which
+        // code in another module may see in its place (seen_entry). api is, for a definition,
+        // its declaration in an api.ctx, and for that declaration, what it declares. A half is
+        // an api.ctx's declaration of what another declares: a fn's or an opaque type's
+        // signature, a capability's fields, or a restatement (Re-exports). It has no name in
+        // any table: uses name what it declares.
+        module:   u32 = NONE,
+        scope:    u32 = NONE,
+        open:     u32 = NONE,
+        next:     u32 = NONE,
+        api:      u32 = NONE,
+        half:     bool = false,
     }
 
     // A capability's C variable (§15): `extern name: T` reads the C symbol `name`, or the one
@@ -125,7 +152,9 @@ namespace check {
 
     // Where a type expression is resolved: a namespace, and the generic parameters in scope,
     // with the types they stand for. owner declares them.
-    struct Scope { ns: u32, owner: u32, names: []syntax::Name, args: []Id }
+    // from is the module the code is inside, which decides what its names see (spec §10,
+    // Modules).
+    struct Scope { ns: u32, owner: u32, names: []syntax::Name, args: []Id, from: u32 }
 
     struct Layout { size: u64, align: u64 }
 
@@ -133,6 +162,10 @@ namespace check {
         heap:      *mut Heap,
         diags:     *mut diag::Diags,
         files:     []File,
+        modules:   []Module,                     // by index; File.module and Decl.module name them
+        api_decls: list::List(u32, Heap),        // the declarations of api.ctx files, in order
+        restates:  list::List(u32, Heap),        // those that restate a nested module's
+        clashes:   map::Map(u64, bool, Heap),    // pairs of declarations reported as clashing (reclash)
         std_files: usize,               // files[..std_files] are std's
         ty:        types::Store,
         spaces:    list::List(Space, Heap),
@@ -494,9 +527,11 @@ namespace check {
         fault{ decl: u32 },                          // an error (§8, Errors)
     }
 
-    fn new { files: []File, std_files: usize, mut heap: Heap, mut diags: diag::Diags } -> Checker {
+    fn new { files: []File, modules: []Module, std_files: usize, mut heap: Heap, mut diags: diag::Diags } -> Checker {
         let mut c = Checker{
-            heap = &heap, diags = &diags, files, std_files,
+            heap = &heap, diags = &diags, files, modules, std_files,
+            api_decls = ids{ &heap }, restates = ids{ &heap },
+            clashes = map::new(u64, bool){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             ty = types::store{ &heap },
             spaces = list::new(Space){ realloc = arena::alloc, &heap },
             decls = list::new(Decl){ realloc = arena::alloc, &heap },
@@ -512,7 +547,7 @@ namespace check {
             busy = map::new(Id, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             converts = ids{ &heap },
             writers = ids{ &heap },
-            sc = Scope{ ns = ROOT, owner = NONE, names = no_names{}, args = slice::empty(Id){} },
+            sc = Scope{ ns = ROOT, owner = NONE, names = no_names{}, args = slice::empty(Id){}, from = NONE },
             lits = list::new(syntax::Expr){ realloc = arena::alloc, &heap },
             ovfs = list::new(syntax::Expr){ realloc = arena::alloc, &heap },
             gvars = list::new(GVar){ realloc = arena::alloc, &heap },
@@ -662,6 +697,7 @@ namespace check {
         list::clear{ list = &c.generic_uses }
         each{ &c, xs = c.fns, what = Phase::bodies }
         infer_sets{ &c }
+        check_apis{ &c }
         finish_matches{ &c }
         derived_needs{ &c }
         check_declared{ &c }
@@ -714,6 +750,7 @@ namespace check {
             collect{ &c, file = @as(u32, f), decls = c.files[f].tree.decls, ns = if f < c.std_files { STD } else { ROOT } }
             f = f + 1
         }
+        settle_modules{ &c }
         c.cstr_decl = std_decl{ c, space = "c", name = "String" }
         generic_params{ &c, xs = c.structs }
         generic_params{ &c, xs = c.unions }
@@ -761,67 +798,17 @@ namespace check {
     }
 
     fn collect { mut c: Checker, file: u32, decls: []syntax::Decl, ns: u32 } {
+        let api = c.files[file].api
         let mut i: usize = 0
         while i < decls.len {
             let x = decls[i]
             match x.k {
                 error => {}
-                func{ name, tparams, tsets, external } => {
-                    let d = declare{ &c, kind = if external { Kind::external } else { Kind::func }, x, file, name, tparams, ns }
-                    list::at{ list = c.decls, i = d }.tsets = tsets
-                    add_name{ &c, ns, values = true, name, e = Entry::decl{ i = d }, at = x.span }
-                    if external {
-                        list::at{ list = c.decls, i = d }.symbol = name.text
-                        push{ xs = &c.externs, n = d }
-                    } else {
-                        push{ xs = &c.fns, n = d }
+                // At the top of an api.ctx the driver resolves it (Module.exposes).
+                expose => {
+                    if ns != ROOT and ns != STD {
+                        error{ &c, at = x.span, msg = "`expose` goes at the top of an api.ctx, outside every namespace: it re-exports a module's api, whatever namespaces it declares" }
                     }
-                }
-                constant{ name } => {
-                    let d = declare{ &c, kind = Kind::constant, x, file, name, tparams = no_names{}, ns }
-                    add_name{ &c, ns, values = true, name, e = Entry::decl{ i = d }, at = x.span }
-                    push{ xs = &c.consts, n = d }
-                }
-                record{ name, tparams, fields, untagged } => {
-                    let d = declare{ &c, kind = Kind::record, x, file, name, tparams, ns }
-                    add_name{ &c, ns, values = false, name, e = Entry::decl{ i = d }, at = x.span }
-                    push{ xs = &c.structs, n = d }
-                    if untagged { no_defaults{ &c, fields, what = "an extern union's" } } else { declare_defaults{ &c, d, file, fields, tparams, ns } }
-                }
-                sum{ name, tparams, variants } => {
-                    let d = declare{ &c, kind = Kind::sum, x, file, name, tparams, ns }
-                    add_name{ &c, ns, values = false, name, e = Entry::decl{ i = d }, at = x.span }
-                    push{ xs = &c.unions, n = d }
-                    let mut k: usize = 0
-                    while k < variants.len {
-                        let fs = variants[k].fields
-                        if fs != null { no_defaults{ &c, fields = fs, what = "a union variant's" } }
-                        k = k + 1
-                    }
-                }
-                enumeration{ name } => {
-                    let d = declare{ &c, kind = Kind::enumeration, x, file, name, tparams = no_names{}, ns }
-                    add_name{ &c, ns, values = false, name, e = Entry::decl{ i = d }, at = x.span }
-                    push{ xs = &c.enums, n = d }
-                }
-                alias{ name, tparams } => {
-                    let d = declare{ &c, kind = Kind::alias, x, file, name, tparams, ns }
-                    add_name{ &c, ns, values = false, name, e = Entry::decl{ i = d }, at = x.span }
-                    push{ xs = &c.aliases, n = d }
-                }
-                cap{ name, fields } => {
-                    let d = declare{ &c, kind = Kind::cap, x, file, name, tparams = no_names{}, ns }
-                    add_name{ &c, ns, values = false, name, e = Entry::decl{ i = d }, at = x.span }
-                    if fields != null { push{ xs = &c.caps, n = d } }
-                }
-                fault{ name, fields } => {
-                    if fields != null { no_defaults{ &c, fields, what = "an error's" } }
-                    let d = declare{ &c, kind = Kind::fault, x, file, name, tparams = no_names{}, ns }
-                    if slice::eq_bytes{ a = name.text, b = "ok" } or slice::eq_bytes{ a = name.text, b = "err" } {
-                        errorf{ &c, at = name.span, msg = @fmt("an error can't be named `{}`: a match on a `!T` has the arms `ok` and `err`", str{ s = name.text }) }
-                    }
-                    add_name{ &c, ns, values = true, name, e = Entry::decl{ i = d }, at = x.span }
-                    push{ xs = &c.faults, n = d }
                 }
                 space{ name, decls = inner } => {
                     // A namespace already declared in this scope, in this file or another, is
@@ -835,8 +822,103 @@ namespace check {
                     try! map::put{ m = &c.space_of, key = key{ file, id = x.id }, value = child }
                     collect{ &c, file, decls = inner, ns = child }
                 }
+                else => {
+                    // An api.ctx's declaration is named once the modules' are known
+                    // (settle_modules): it may be another's half, or a restatement.
+                    let d = declare_syntax{ &c, x, file, ns }
+                    if d != NONE {
+                        if api { push{ xs = &c.api_decls, n = d } } else { enlist{ &c, d } }
+                    }
+                }
             }
             i = i + 1
+        }
+    }
+
+    // Declares x, which isn't a namespace, of file in namespace ns: NONE for one that
+    // declares nothing. An opaque type outside an api.ctx, which the parser has reported, is
+    // nothing.
+    fn declare_syntax { mut c: Checker, x: syntax::Decl, file: u32, ns: u32 } -> u32 {
+        match x.k {
+            func{ name, tparams, tsets, external, declared } => {
+                // A fn without a body outside an api.ctx, which the parser has reported.
+                if declared and not c.files[file].api { return NONE }
+                let d = declare{ &c, kind = if external { Kind::external } else { Kind::func }, x, file, name, tparams, ns }
+                list::at{ list = c.decls, i = d }.tsets = tsets
+                return d
+            }
+            constant{ name } => { return declare{ &c, kind = Kind::constant, x, file, name, tparams = no_names{}, ns } }
+            record{ name, tparams } => { return declare{ &c, kind = Kind::record, x, file, name, tparams, ns } }
+            sum{ name, tparams } => { return declare{ &c, kind = Kind::sum, x, file, name, tparams, ns } }
+            enumeration{ name } => { return declare{ &c, kind = Kind::enumeration, x, file, name, tparams = no_names{}, ns } }
+            alias{ name, tparams } => { return declare{ &c, kind = Kind::alias, x, file, name, tparams, ns } }
+            cap{ name } => { return declare{ &c, kind = Kind::cap, x, file, name, tparams = no_names{}, ns } }
+            fault{ name } => { return declare{ &c, kind = Kind::fault, x, file, name, tparams = no_names{}, ns } }
+            opaque{ name, tparams } => {
+                if not c.files[file].api { return NONE }
+                return declare{ &c, kind = Kind::alias, x, file, name, tparams, ns }
+            }
+            else => { return NONE }
+        }
+    }
+
+    // Names declaration d in its namespace and adds it to the lists of its kind, with what its
+    // syntax brings: a struct's field defaults, and the checks of what fields may have.
+    fn enlist { mut c: Checker, d: u32 } {
+        let y = get_decl{ c, d }
+        let x = y.syn
+        let file = y.name.span.file
+        let ns = y.ns
+        match x.k {
+            func{ name, external } => {
+                add_name{ &c, ns, values = true, name, e = Entry::decl{ i = d }, at = x.span }
+                if external {
+                    list::at{ list = c.decls, i = d }.symbol = name.text
+                    push{ xs = &c.externs, n = d }
+                } else {
+                    push{ xs = &c.fns, n = d }
+                }
+            }
+            constant{ name } => {
+                add_name{ &c, ns, values = true, name, e = Entry::decl{ i = d }, at = x.span }
+                push{ xs = &c.consts, n = d }
+            }
+            record{ name, tparams, fields, untagged } => {
+                add_name{ &c, ns, values = false, name, e = Entry::decl{ i = d }, at = x.span }
+                push{ xs = &c.structs, n = d }
+                if untagged { no_defaults{ &c, fields, what = "an extern union's" } } else { declare_defaults{ &c, d, file, fields, tparams, ns } }
+            }
+            sum{ name, variants } => {
+                add_name{ &c, ns, values = false, name, e = Entry::decl{ i = d }, at = x.span }
+                push{ xs = &c.unions, n = d }
+                let mut k: usize = 0
+                while k < variants.len {
+                    let fs = variants[k].fields
+                    if fs != null { no_defaults{ &c, fields = fs, what = "a union variant's" } }
+                    k = k + 1
+                }
+            }
+            enumeration{ name } => {
+                add_name{ &c, ns, values = false, name, e = Entry::decl{ i = d }, at = x.span }
+                push{ xs = &c.enums, n = d }
+            }
+            alias{ name } => {
+                add_name{ &c, ns, values = false, name, e = Entry::decl{ i = d }, at = x.span }
+                push{ xs = &c.aliases, n = d }
+            }
+            cap{ name, fields } => {
+                add_name{ &c, ns, values = false, name, e = Entry::decl{ i = d }, at = x.span }
+                if fields != null { push{ xs = &c.caps, n = d } }
+            }
+            fault{ name, fields } => {
+                if fields != null { no_defaults{ &c, fields, what = "an error's" } }
+                if slice::eq_bytes{ a = name.text, b = "ok" } or slice::eq_bytes{ a = name.text, b = "err" } {
+                    errorf{ &c, at = name.span, msg = @fmt("an error can't be named `{}`: a match on a `!T` has the arms `ok` and `err`", str{ s = name.text }) }
+                }
+                add_name{ &c, ns, values = true, name, e = Entry::decl{ i = d }, at = x.span }
+                push{ xs = &c.faults, n = d }
+            }
+            else => {}
         }
     }
 
@@ -946,6 +1028,7 @@ namespace check {
             values = slice::empty(i64){},
             includes = slice::empty(u32){}, vars = slice::empty(CVar){},
             defaults = slice::empty(u32){},
+            module = c.files[file].module, scope = c.files[file].module, open = c.files[file].module,
             ..
         }
         try! list::push{ list = &c.decls, item }
@@ -974,18 +1057,42 @@ namespace check {
         return utf8::view{ b }.bytes
     }
 
+    // Names e in namespace ns. A declaration of a name already declared there is an error
+    // where code could see both: where both are visible, which is everywhere unless a module
+    // hides one (spec §10, Modules, rule 8). Otherwise it joins the others of its name (Decl.next).
     fn add_name { mut c: Checker, ns: u32, values: bool, name: syntax::Name, e: Entry, at: source::Span } {
         if name.text.len == 0 { return }          // missing: the parser has reported it
         let sp = get_space{ c, ns }
         let table = if values { sp.values } else { sp.paths }
-        if map::has{ m = table, key = name.text } {
-            if map::get{ m = table, key = name.text } is decl{ i } {
-                notef{ &c, at = get_decl{ c, d = i }.name.span, msg = @fmt("the earlier `{}` is declared here", str{ s = name.text }) }
-            }
+        let had = map::get{ m = table, key = name.text } ifnull {
+            put_name{ &c, ns, values, name = name.text, e }
+            return
+        }
+        let scope = if e is decl{ i } { get_decl{ c, d = i }.scope } else { NONE }
+        let decl{ i = first } = had else {
             errorf{ &c, at, msg = @fmt("`{}` is already declared in this scope", str{ s = name.text }) }
             return
         }
-        put_name{ &c, ns, values, name = name.text, e }
+        let mut k = first
+        let mut last = first
+        while k != NONE {
+            let y = get_decl{ c, d = k }
+            if overlaps{ c, a = scope, b = y.scope } {
+                notef{ &c, at = y.name.span, msg = @fmt("the earlier `{}` is declared here", str{ s = name.text }) }
+                errorf{ &c, at, msg = @fmt("`{}` is already declared in this scope", str{ s = name.text }) }
+                return
+            }
+            last = k
+            k = y.next
+        }
+        let decl{ i = d } = e else { return }
+        list::at{ list = c.decls, i = last }.next = d
+    }
+
+    // Whether some code sees what is visible inside both module a and module b (NONE:
+    // everywhere): one is inside the other.
+    fn overlaps { c: Checker, a: u32, b: u32 } -> bool {
+        return sees{ c, from = a, scope = b } or sees{ c, from = b, scope = a }
     }
 
     fn put_name { mut c: Checker, ns: u32, values: bool, name: []u8, e: Entry } {
@@ -1026,7 +1133,7 @@ namespace check {
             push{ xs = &args, n = types::intern{ s = &c.ty, t = types::Type::param{ decl = d, index = @as(u32, i) } } }
             i = i + 1
         }
-        return Scope{ ns = x.ns, owner = d, names = x.tparams, args = list::items{ list = args } }
+        return Scope{ ns = x.ns, owner = d, names = x.tparams, args = list::items{ list = args }, from = x.module }
     }
 
     fn resolve_struct { mut c: Checker, d: u32 } {
@@ -1493,7 +1600,7 @@ namespace check {
     // The base type, and each variant's value: the one given, or one more than the last.
     fn resolve_enum { mut c: Checker, d: u32 } {
         let x = get_decl{ c, d }
-        let empty = Scope{ ns = x.ns, owner = NONE, names = no_names{}, args = slice::empty(Id){} }
+        let empty = Scope{ ns = x.ns, owner = NONE, names = no_names{}, args = slice::empty(Id){}, from = x.module }
         let mut values = list::new(i64){ realloc = arena::alloc, heap = c.heap }
         if x.syn.k is enumeration{ base, variants } {
             let mut t = rtype{ &c, te = base, sc = empty, allow_bound = false }
@@ -1560,7 +1667,7 @@ namespace check {
     fn resolve_const { mut c: Checker, d: u32 } {
         let x = get_decl{ c, d }
         if x.syn.k is constant{ ty, value } {
-            let empty = Scope{ ns = x.ns, owner = NONE, names = no_names{}, args = slice::empty(Id){} }
+            let empty = Scope{ ns = x.ns, owner = NONE, names = no_names{}, args = slice::empty(Id){}, from = x.module }
             let mut t = sized_type{ &c, te = ty, init = value, sc = empty, allow_bound = false }
             if holds_fail{ &c, t, depth = 0 } {
                 error{ &c, at = ty.span, msg = "a const can't hold a `!T` or an error" }
@@ -1792,6 +1899,11 @@ namespace check {
         let mut i: usize = 0
         while i < decls.len {
             let x = decls[i]
+            // An api.ctx's half: its attributes are checked against its definition's (halves).
+            if is_half{ c, file, x } {
+                i = i + 1
+                continue
+            }
             let mut seen_convert = false
             let mut seen_write = false
             let mut seen_start = false
@@ -1884,9 +1996,10 @@ namespace check {
         let braced{ callee } = a.value.k else { return null }
         let path{ segs } = callee.k else { return null }
         if segs.len != 1 or segs[0].targs != null { return null }
-        let mut found = lookup_path{ c, ns, name = segs[0].name.text }
+        let from = module_at{ c, at = a.span }
+        let mut found = lookup_path{ c, ns, name = segs[0].name.text, from }
         // A namespace is never an attribute: `#task` beside std's namespace `task`.
-        if found is space { found = lookup_path{ c, ns = UNIVERSE, name = segs[0].name.text } }
+        if found is space { found = lookup_path{ c, ns = UNIVERSE, name = segs[0].name.text, from } }
         let attr{ a = which } = found else { return null }
         return which
     }
@@ -2429,6 +2542,10 @@ namespace check {
         let mut d: usize = 0
         while d < c.decls.len {
             let x = get_decl{ c, d = @as(u32, d) }
+            if x.half {
+                d = d + 1
+                continue
+            }
             let own = handles_own{ c, ns = x.ns }
             if own {} else { match x.kind {
                 record => { if not x.task_handle { no_handle_fields{ &c, x, fields = x.fields, what = "struct", mut_ok = false } } }
@@ -2628,7 +2745,7 @@ namespace check {
         let fs = list::items{ list = c.converts }
         let mut i: usize = 0
         while i < fs.len {
-            if converts_to{ c, f = fs[i] } == t and reaches{ c, from = ns, ns = get_decl{ c, d = fs[i] }.ns } { return fs[i] }
+            if converts_to{ c, f = fs[i] } == t and reaches{ c, from = ns, ns = get_decl{ c, d = fs[i] }.ns } and sees{ c, from = c.sc.from, scope = get_decl{ c, d = fs[i] }.scope } { return fs[i] }
             i = i + 1
         }
         return null
@@ -2640,7 +2757,7 @@ namespace check {
         let fs = list::items{ list = c.converts }
         let mut i: usize = 0
         while i < fs.len {
-            if fs[i] != f and converts_to{ c, f = fs[i] } == t and reaches{ c, from = ns, ns = get_decl{ c, d = fs[i] }.ns } { return fs[i] }
+            if fs[i] != f and converts_to{ c, f = fs[i] } == t and reaches{ c, from = ns, ns = get_decl{ c, d = fs[i] }.ns } and sees{ c, from = c.sc.from, scope = get_decl{ c, d = fs[i] }.scope } { return fs[i] }
             i = i + 1
         }
         return null
@@ -2729,6 +2846,10 @@ namespace check {
         let mut i: usize = 0
         while i < decls.len {
             let x = decls[i]
+            if is_half{ c, file, x } {
+                i = i + 1
+                continue
+            }
             let mut seen = false
             let mut seen_callback = false
             let mut k: usize = 0
@@ -2969,7 +3090,7 @@ namespace check {
 
     // An attribute's value: a const literal of a struct (§14), or null after reporting why not.
     fn attribute { mut c: Checker, a: syntax::Attr, ns: u32 } -> ?Val {
-        begin_body{ &c, sc = Scope{ ns, owner = NONE, names = no_names{}, args = slice::empty(Id){} }, ret = types::VOID }
+        begin_body{ &c, sc = Scope{ ns, owner = NONE, names = no_names{}, args = slice::empty(Id){}, from = module_at{ c, at = a.span } }, ret = types::VOID }
         let before = c.diags.errors
         c.in_attr = true
         let t = expr{ &c, e = a.value, exp = types::NO_TYPE }
@@ -3117,7 +3238,7 @@ namespace check {
 
     // A type std declares at its top level, such as `Args`.
     fn std_type { mut c: Checker, name: []u8 } -> Id {
-        let e = lookup_path{ c, ns = STD, name }
+        let e = lookup_path{ c, ns = STD, name, from = NONE }
         if e == null { return types::ERROR }
         let n = syntax::Name{ id = NONE, span = nowhere{}, text = name }
         return decl_type{ &c, e, name = n, args = null, at = nowhere{}, partial = false, allow_bound = false }
@@ -3269,11 +3390,11 @@ namespace check {
                 k = k + 1
             }
         }
-        let mut e = lookup_path{ c, ns = sc.ns, name = segs[0].name.text } ifnull { return false }
+        let mut e = lookup_path{ c, ns = sc.ns, name = segs[0].name.text, from = sc.from } ifnull { return false }
         let mut i: usize = 1
         while i < segs.len {
             let space{ ns } = e else { return false }
-            e = map::get{ m = get_space{ c, ns }.paths, key = segs[i].name.text } ifnull { return false }
+            e = member{ c, ns, values = false, name = segs[i].name.text, from = sc.from } ifnull { return false }
             i = i + 1
         }
         return not (e is space | attr)
@@ -3284,16 +3405,16 @@ namespace check {
         let last = segs[segs.len - 1]
         let mut found: ?Entry = null
         if segs.len == 1 {
-            found = lookup_value{ c, ns = sc.ns, name = last.name.text }
+            found = lookup_value{ c, ns = sc.ns, name = last.name.text, from = sc.from }
         } else {
-            let mut e = lookup_path{ c, ns = sc.ns, name = segs[0].name.text } ifnull { return NONE }
+            let mut e = lookup_path{ c, ns = sc.ns, name = segs[0].name.text, from = sc.from } ifnull { return NONE }
             let mut i: usize = 1
             while i < segs.len {
                 let space{ ns } = e else { return NONE }
                 if i + 1 == segs.len {
-                    found = map::get{ m = get_space{ c, ns }.values, key = last.name.text }
+                    found = member{ c, ns, values = true, name = last.name.text, from = sc.from }
                 } else {
-                    e = map::get{ m = get_space{ c, ns }.paths, key = segs[i].name.text } ifnull { return NONE }
+                    e = member{ c, ns, values = false, name = segs[i].name.text, from = sc.from } ifnull { return NONE }
                 }
                 i = i + 1
             }
@@ -3347,7 +3468,7 @@ namespace check {
                 k = k + 1
             }
         }
-        let first = lookup_path{ c, ns = sc.ns, name = s0.name.text }
+        let first = lookup_path{ c, ns = sc.ns, name = s0.name.text, from = sc.from }
         if first == null {
             if segs.len == 1 and is_infer{ segs } {
                 error{ &c, at = s0.name.span, msg = "`_` is a type only as the type argument of @as, @trunc or @cast, where it is the type expected" }
@@ -3368,7 +3489,7 @@ namespace check {
                 errorf{ &c, at = prev.name.span, msg = @fmt("`{}` is not a namespace", str{ s = prev.name.text }) }
                 return types::ERROR
             }
-            let next = map::get{ m = get_space{ c, ns = inner }.paths, key = s.name.text }
+            let next = member{ c, ns = inner, values = false, name = s.name.text, from = sc.from }
             if next == null {
                 errorf{ &c, at = s.name.span, msg = @fmt("no type or namespace `{}` in `{}`", str{ s = s.name.text }, str{ s = prev.name.text }) }
                 return types::ERROR
@@ -3527,7 +3648,7 @@ namespace check {
                         push{ xs = &c.alias_stack, n = i }
                         let mut t = types::ERROR
                         if x.syn.k is alias{ ty, distinct } {
-                            t = rtype{ &c, te = ty, sc = Scope{ ns = x.ns, owner = i, names = x.tparams, args = xs }, allow_bound }
+                            t = rtype{ &c, te = ty, sc = Scope{ ns = x.ns, owner = i, names = x.tparams, args = xs, from = x.module }, allow_bound }
                             // A distinct type (§12) is a type of its own, of t's representation.
                             if distinct and t != types::ERROR { t = types::distinct{ s = &c.ty, decl = i, args = xs, base = t } }
                         }
@@ -3688,10 +3809,11 @@ namespace check {
         if missing{ segs } { return null }
         let last = segs[segs.len - 1]
         let mut found: ?Entry = null
+        let from = module_at{ c, at = last.name.span }
         if segs.len == 1 {
-            found = lookup_value{ c, ns, name = last.name.text }
+            found = lookup_value{ c, ns, name = last.name.text, from }
         } else {
-            let first = lookup_path{ c, ns, name = segs[0].name.text }
+            let first = lookup_path{ c, ns, name = segs[0].name.text, from }
             if first == null {
                 unknown{ &c, n = segs[0].name, qualified = true }
                 return null
@@ -3699,10 +3821,10 @@ namespace check {
             let mut p: ?Entry = first
             let mut i: usize = 1
             while i < segs.len - 1 {
-                p = if p is space{ ns = n } { map::get{ m = get_space{ c, ns = n }.paths, key = segs[i].name.text } } else { null }
+                p = if p is space{ ns = n } { member{ c, ns = n, values = false, name = segs[i].name.text, from } } else { null }
                 i = i + 1
             }
-            if p is space{ ns = n } { found = map::get{ m = get_space{ c, ns = n }.values, key = last.name.text } }
+            if p is space{ ns = n } { found = member{ c, ns = n, values = true, name = last.name.text, from } }
         }
         if found is decl{ i } and get_decl{ c, d = i }.kind == Kind::constant {
             use{ &c, n = last.name, r = Ref::decl{ i } }
@@ -3713,33 +3835,771 @@ namespace check {
 
     // ---- lookup
 
-    // A namespace or type, from namespace ns outward.
-    fn lookup_path { c: Checker, ns: u32, name: []u8 } -> ?Entry {
+    // A namespace or type, from namespace ns outward, as code inside module `from` sees it
+    // (spec §10, Modules): the first declaration of the name it sees, or if it sees none, the
+    // first it doesn't, whose use is an error that names the boundary (use).
+    fn lookup_path { c: Checker, ns: u32, name: []u8, from: u32 } -> ?Entry {
+        return lookup{ c, ns, values = false, name, from }
+    }
+
+    // A function or const, from namespace ns outward, as lookup_path finds a path.
+    fn lookup_value { c: Checker, ns: u32, name: []u8, from: u32 } -> ?Entry {
+        return lookup{ c, ns, values = true, name, from }
+    }
+
+    fn lookup { c: Checker, ns: u32, values: bool, name: []u8, from: u32 } -> ?Entry {
+        let mut hidden: ?Entry = null
         let mut n = ns
         while n != NONE {
             let sp = get_space{ c, ns = n }
-            let e = map::get{ m = sp.paths, key = name }
-            if e != null { return e }
+            let e = map::get{ m = if values { sp.values } else { sp.paths }, key = name }
+            if e != null {
+                let seen = seen_entry{ c, e, from }
+                if seen != null { return seen }
+                if hidden == null { hidden = e }
+            }
             n = sp.parent
+        }
+        return hidden
+    }
+
+    // Name in namespace ns's own table, its paths or its values, as code inside module `from`
+    // sees it: as lookup_path finds one, but in ns alone, as `a::name` names it.
+    fn member { c: Checker, ns: u32, values: bool, name: []u8, from: u32 } -> ?Entry {
+        let sp = get_space{ c, ns }
+        let e = map::get{ m = if values { sp.values } else { sp.paths }, key = name }
+        let seen = seen_entry{ c, e, from }
+        if seen != null { return seen }
+        return e
+    }
+
+    // ---- modules (spec §10, Modules)
+
+    // Once the bodies' error sets are inferred, each api.ctx declaration: a half against what it
+    // declares (rule 3, Re-exports rule 1), what it names against where it is visible (rule
+    // 4), a fn's errors (rule 5), and what an api.ctx doesn't hold.
+    fn check_apis { mut c: Checker } {
+        for a in list::items{ list = c.api_decls } {
+            let x = get_decl{ c, d = a }
+            api_attributes{ &c, a }
+            if x.syn.k is cap{ fields } {
+                if let fs = fields {
+                    for f in fs {
+                        if f.stat or f.external {
+                            let what: utf8::String = if f.stat { "static" } else { "extern" }
+                            errorf{ &c, at = f.span, msg = @fmt("`{} {}` goes in capability `{}`'s declaration in a file of its module: its api.ctx declares the capability without its statics and C variables", what, str{ s = f.name.text }, str{ s = x.name.text }) }
+                        }
+                    }
+                }
+            }
+            if x.half {
+                let restated = map_has{ xs = list::items{ list = c.restates }, n = a }
+                compare_half{ &c, a, d = x.api, restated }
+                if not restated { result_set{ &c, a } }
+                leaks{ &c, a, region = get_decl{ c, d = x.api }.scope }
+            } else if map_named{ c, d = a } {
+                leaks{ &c, a, region = x.scope }
+            }
+        }
+    }
+
+    // Whether n is among xs.
+    fn map_has { xs: []u32, n: u32 } -> bool {
+        for x in xs { if x == n { return true } }
+        return false
+    }
+
+    // Whether declaration d has its name in its table: it was enlisted.
+    fn map_named { c: Checker, d: u32 } -> bool {
+        let x = get_decl{ c, d }
+        let values = x.kind == Kind::func or x.kind == Kind::external or x.kind == Kind::constant or x.kind == Kind::fault
+        let sp = get_space{ c, ns = x.ns }
+        let head = map::get{ m = if values { sp.values } else { sp.paths }, key = x.name.text }
+        let decl{ i } = head else { return false }
+        let mut k = i
+        while k != NONE {
+            if k == d { return true }
+            k = get_decl{ c, d = k }.next
+        }
+        return false
+    }
+
+    // The attributes of api.ctx declaration a. A half's are `#task`, `#write` and `#convert`
+    // alone, which change how callers use a fn, and its definition has the same (D5); the
+    // definition has the rest. No `#test` fn is in an api.ctx (rule 6).
+    fn api_attributes { mut c: Checker, a: u32 } {
+        let x = get_decl{ c, d = a }
+        let mut task = false
+        let mut write = false
+        let mut convert = false
+        for attr in x.syn.attrs {
+            let which = compiler_attr{ c, a = attr, ns = x.ns }
+            let mut w = Attribute::pure
+            let mut known = false
+            if let found = which {
+                w = found
+                known = true
+            }
+            if known and (w == Attribute::test or w == Attribute::test_main) {
+                error{ &c, at = attr.span, msg = "a `#test` fn isn't declared in an api.ctx: it is a fn of the module's files, or of a file outside it, which tests what the api.ctx declares" }
+                continue
+            }
+            if not x.half { continue }
+            if known and w == Attribute::task {
+                task = true
+            } else if known and w == Attribute::write {
+                write = true
+            } else if known and w == Attribute::convert {
+                convert = true
+            } else {
+                errorf{ &c, at = attr.span, msg = @fmt("only `#task`, `#write` and `#convert` go on `{}` in api.ctx, where they tell callers how it is used: its definition has the rest", str{ s = x.name.text }) }
+            }
+        }
+        if not x.half or not (x.syn.k is func) { return }
+        let y = get_decl{ c, d = x.api }
+        attribute_differs{ &c, a, there = task, here = y.task, name = "task" }
+        attribute_differs{ &c, a, there = write, here = map_has{ xs = list::items{ list = c.writers }, n = x.api }, name = "write" }
+        attribute_differs{ &c, a, there = convert, here = map_has{ xs = list::items{ list = c.converts }, n = x.api }, name = "convert" }
+    }
+
+    fn attribute_differs { mut c: Checker, a: u32, there: bool, here: bool, name: []u8 } {
+        if there == here { return }
+        let mut b = message{ c }
+        if there { try! @fmt(&b, "it is `#{}` there and not here", str{ s = name }) } else { try! @fmt(&b, "it is `#{}` here and not there", str{ s = name }) }
+        api_mismatch{ &c, a, d = get_decl{ c, d = a }.api, restated = map_has{ xs = list::items{ list = c.restates }, n = a }, what = utf8::view{ b } }
+    }
+
+    // Half a against d, what it declares: its definition, or for a restatement, the nested
+    // module's declaration it restates.
+    fn compare_half { mut c: Checker, a: u32, d: u32, restated: bool } {
+        let x = get_decl{ c, d = a }
+        let y = get_decl{ c, d }
+        if x.tparams.len != y.tparams.len {
+            let mut b = message{ c }
+            try! @fmt(&b, "it has {} generic parameter{} there and {} here", x.tparams.len, str{ s = if x.tparams.len == 1 { "" } else { "s" } }, y.tparams.len)
+            api_mismatch{ &c, a, d, restated, what = utf8::view{ b } }
+            return
+        }
+        if x.syn.k is opaque { return }
+        let sc = Scope{ ns = x.ns, owner = d, names = x.tparams, args = own_scope{ &c, d }.args, from = x.module }
+        match x.syn.k {
+            func{ params, ret, tsets } => {
+                let mut sets = tsets.len == y.tsets.len
+                for t at i in tsets { if sets and t != y.tsets[i] { sets = false } }
+                if not sets {
+                    api_mismatch{ &c, a, d, restated, what = "its generic parameters that are error sets differ" }
+                    return
+                }
+                let fields = context{ &c, params, sc }
+                if let what = fields_differ{ &c, there = fields, here = y.fields, what = "context field" } {
+                    api_mismatch{ &c, a, d, restated, what }
+                    return
+                }
+                let mut r = types::VOID
+                if let te = ret { r = ret_type{ &c, te, sc, owner = d } }
+                if not same_result{ c, a = r, b = y.ret } {
+                    let mut b = message{ c }
+                    try! @fmt(&b, "its result is {} there and {} here", result_text{ c, t = r }, result_text{ c, t = y.ret })
+                    api_mismatch{ &c, a, d, restated, what = utf8::view{ b } }
+                }
+            }
+            record{ fields } => {
+                if let what = fields_differ{ &c, there = syntax_fields{ &c, fields, sc }, here = y.fields, what = "field" } { api_mismatch{ &c, a, d, restated, what } }
+            }
+            fault{ fields } => {
+                let fs = fields ifnull { slice::empty(syntax::Field){} }
+                if let what = fields_differ{ &c, there = syntax_fields{ &c, fields = fs, sc }, here = y.fields, what = "field" } { api_mismatch{ &c, a, d, restated, what } }
+            }
+            sum{ variants } => {
+                if variants.len != y.variants.len {
+                    let mut b = message{ c }
+                    try! @fmt(&b, "it has {} variant{} there and {} here", variants.len, str{ s = if variants.len == 1 { "" } else { "s" } }, y.variants.len)
+                    api_mismatch{ &c, a, d, restated, what = utf8::view{ b } }
+                    return
+                }
+                for v at i in variants {
+                    let w = y.variants[i]
+                    let mut b = message{ c }
+                    if not slice::eq_bytes{ a = v.name.text, b = w.name } {
+                        try! @fmt(&b, "variant {} is `{}` there and `{}` here", i + 1, str{ s = v.name.text }, str{ s = w.name })
+                        api_mismatch{ &c, a, d, restated, what = utf8::view{ b } }
+                        return
+                    }
+                    let mine = v.fields
+                    let theirs = w.fields
+                    if (mine == null) != (theirs == null) {
+                        try! @fmt(&b, "variant `{}` has a payload in one and not the other", str{ s = v.name.text })
+                        api_mismatch{ &c, a, d, restated, what = utf8::view{ b } }
+                        return
+                    }
+                    if let fs = mine {
+                        if let what = fields_differ{ &c, there = syntax_fields{ &c, fields = fs, sc }, here = theirs ifnull { slice::empty(types::Field){} }, what = "field" } {
+                            api_mismatch{ &c, a, d, restated, what }
+                            return
+                        }
+                    }
+                }
+            }
+            enumeration{ base, variants } => {
+                let ys = y.syn.k
+                let enumeration{ base = ybase, variants = yvariants } = ys else { return }
+                if not slice::eq_bytes{ a = squeezed{ c, span = base.span }, b = squeezed{ c, span = ybase.span } } or variants.len != yvariants.len {
+                    api_mismatch{ &c, a, d, restated, what = "its base type or its variants differ" }
+                    return
+                }
+                for v at i in variants {
+                    let w = yvariants[i]
+                    let mut same = slice::eq_bytes{ a = v.name.text, b = w.name.text } and (v.value == null) == (w.value == null)
+                    if same {
+                        if let e = v.value { if let f = w.value { same = slice::eq_bytes{ a = squeezed{ c, span = e.span }, b = squeezed{ c, span = f.span } } } }
+                    }
+                    if not same {
+                        let mut b = message{ c }
+                        try! @fmt(&b, "variant {} differs: `{}` there and `{}` here", i + 1, str{ s = source_text{ c, span = v.span } }, str{ s = source_text{ c, span = w.span } })
+                        api_mismatch{ &c, a, d, restated, what = utf8::view{ b } }
+                        return
+                    }
+                }
+            }
+            alias{ ty } => {
+                let t = rtype{ &c, te = ty, sc, allow_bound = true }
+                let ys = y.syn.k
+                let alias{ ty = yty } = ys else { return }
+                let u = rtype{ &c, te = yty, sc = own_scope{ &c, d }, allow_bound = true }
+                if t != u {
+                    let mut b = message{ c }
+                    try! @fmt(&b, "it names {} there and {} here", tstr{ c, t }, tstr{ c, t = u })
+                    api_mismatch{ &c, a, d, restated, what = utf8::view{ b } }
+                }
+            }
+            constant{ ty, value } => {
+                let t = rtype{ &c, te = ty, sc, allow_bound = false }
+                let ys = y.syn.k
+                let constant{ value = yvalue } = ys else { return }
+                if t != y.ty {
+                    let mut b = message{ c }
+                    try! @fmt(&b, "its type is {} there and {} here", tstr{ c, t }, tstr{ c, t = y.ty })
+                    api_mismatch{ &c, a, d, restated, what = utf8::view{ b } }
+                } else if not slice::eq_bytes{ a = squeezed{ c, span = value.span }, b = squeezed{ c, span = yvalue.span } } {
+                    api_mismatch{ &c, a, d, restated, what = "its value is written differently" }
+                }
+            }
+            cap{ fields, includes } => {
+                let ys = y.syn.k
+                let cap{ fields = yfields, includes = yincludes } = ys else { return }
+                let mine = cap_own{ &c, fields = fields ifnull { slice::empty(syntax::Field){} }, sc }
+                let theirs = cap_own{ &c, fields = yfields ifnull { slice::empty(syntax::Field){} }, sc = own_scope{ &c, d } }
+                if let what = fields_differ{ &c, there = mine, here = theirs, what = "field" } {
+                    api_mismatch{ &c, a, d, restated, what }
+                    return
+                }
+                let mut same = includes.len == yincludes.len
+                for inc at i in includes {
+                    if same {
+                        let t = rtype{ &c, te = inc.ty, sc, allow_bound = false }
+                        let u = rtype{ &c, te = yincludes[i].ty, sc = own_scope{ &c, d }, allow_bound = false }
+                        same = t == u
+                    }
+                }
+                if not same { api_mismatch{ &c, a, d, restated, what = "the capabilities it includes differ" } }
+            }
+            else => {}
+        }
+    }
+
+    // A capability's own fields, its C function pointers: not its statics and C variables.
+    fn cap_own { mut c: Checker, fields: []syntax::Field, sc: Scope } -> []types::Field {
+        let mut out = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
+        for f in fields {
+            if f.stat or f.external { continue }
+            try! list::push{ list = &out, item = types::Field{ name = f.name.text, mutable = false, ty = rtype{ &c, te = f.ty, sc, allow_bound = false } } }
+        }
+        return list::items{ list = out }
+    }
+
+    fn syntax_fields { mut c: Checker, fields: []syntax::Field, sc: Scope } -> []types::Field {
+        let mut out = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
+        for f in fields {
+            try! list::push{ list = &out, item = types::Field{ name = f.name.text, mutable = false, ty = rtype{ &c, te = f.ty, sc, allow_bound = false } } }
+        }
+        return list::items{ list = out }
+    }
+
+    // How fields `there`, an api.ctx's, differ from `here`, what it declares; null if they
+    // don't. what names one: "field", "context field".
+    fn fields_differ { mut c: Checker, there: []types::Field, here: []types::Field, what: []u8 } -> ?utf8::String {
+        let mut b = message{ c }
+        if there.len != here.len {
+            try! @fmt(&b, "it has {} {}{} there and {} here", there.len, str{ s = what }, str{ s = if there.len == 1 { "" } else { "s" } }, here.len)
+            return utf8::view{ b }
+        }
+        for f at i in there {
+            let g = here[i]
+            if not slice::eq_bytes{ a = f.name, b = g.name } {
+                try! @fmt(&b, "{} {} is `{}` there and `{}` here", str{ s = what }, i + 1, str{ s = f.name }, str{ s = g.name })
+                return utf8::view{ b }
+            }
+            if f.mutable != g.mutable {
+                if f.mutable {
+                    try! @fmt(&b, "{} `{}` is `mut` there and not here", str{ s = what }, str{ s = f.name })
+                } else {
+                    try! @fmt(&b, "{} `{}` is `mut` here and not there", str{ s = what }, str{ s = f.name })
+                }
+                return utf8::view{ b }
+            }
+            if f.ty != g.ty and f.ty != types::ERROR and g.ty != types::ERROR {
+                try! @fmt(&b, "{} `{}` is {} there and {} here", str{ s = what }, str{ s = f.name }, tstr{ c, t = f.ty }, tstr{ c, t = g.ty })
+                return utf8::view{ b }
+            }
         }
         return null
     }
 
-    // A function or const, from namespace ns outward.
-    fn lookup_value { c: Checker, ns: u32, name: []u8 } -> ?Entry {
-        let mut n = ns
-        while n != NONE {
-            let sp = get_space{ c, ns = n }
-            let e = map::get{ m = sp.values, key = name }
-            if e != null { return e }
-            n = sp.parent
+    // Whether results a and b are the same type: `!T`s whose errors are the same set, inferred
+    // or written.
+    fn same_result { c: Checker, a: Id, b: Id } -> bool {
+        if a == b or a == types::ERROR or b == types::ERROR { return true }
+        let res{ ok = ao, errs = ae } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = a } } else { return false }
+        let res{ ok = bo, errs = be } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = b } } else { return false }
+        if ao != bo { return false }
+        if set_open{ c, t = ae } != set_open{ c, t = be } { return false }
+        let xs = set_of{ c, t = ae }
+        let ys = set_of{ c, t = be }
+        if xs.len != ys.len { return false }
+        for x at i in xs { if x != ys[i] { return false } }
+        return true
+    }
+
+    fn set_open { c: Checker, t: Id } -> bool {
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
+            eset{ open } => { return open }
+            errs{ owner, one } => { return owner == NONE and one == NONE }
+            else => { return false }
+        }
+    }
+
+    // A result as messages write it: a `!T` with its errors listed.
+    fn result_text { c: Checker, t: Id } -> utf8::String {
+        let res{ ok, errs } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } else { return tstr{ c, t } }
+        let mut b = message{ c }
+        try! utf8::push{ &b, s = "`error(" }
+        for e at i in set_of{ c, t = errs } {
+            if i > 0 { try! utf8::push{ &b, s = ", " } }
+            try! utf8::push{ &b, s = str{ s = get_decl{ c, d = e }.qual } }
+        }
+        try! utf8::push{ &b, s = ")!" }
+        if ok != types::VOID { try! write_type{ c, t = ok, &b } }
+        try! utf8::push{ &b, s = "`" }
+        return utf8::view{ b }
+    }
+
+    // The bytes of span without spaces, tabs and line breaks: how two texts of a value compare.
+    fn squeezed { c: Checker, span: source::Span } -> []u8 {
+        let text = source_text{ c, span }
+        let mut out = list::new(u8){ realloc = arena::alloc, heap = c.heap }
+        for ch in text {
+            if ch != ' ' and ch != '\t' and ch != '\n' and ch != '\r' { try! list::push{ list = &out, item = ch } }
+        }
+        return list::items{ list = out }
+    }
+
+    // Half a doesn't match d, what it declares (compare_half), as `what` says.
+    fn api_mismatch { mut c: Checker, a: u32, d: u32, restated: bool, what: utf8::String } {
+        let x = get_decl{ c, d = a }
+        let y = get_decl{ c, d }
+        if restated {
+            notef{ &c, at = y.name.span, msg = @fmt("`{}` is declared here", str{ s = y.qual }) }
+            errorf{ &c, at = x.name.span, msg = @fmt("`{}` is restated differently from its declaration: {}", str{ s = y.qual }, what) }
+        } else {
+            notef{ &c, at = x.name.span, msg = @fmt("`{}` is declared in api.ctx here", str{ s = y.qual }) }
+            errorf{ &c, at = y.name.span, msg = @fmt("`{}` doesn't match its declaration in api.ctx: {}", str{ s = y.qual }, what) }
+        }
+    }
+
+    // Rule 5: fn half a, of an api.ctx, says which errors its definition fails with: `E!T`,
+    // not `!T`, which would leave them to the body. A `#write` fn's result is a bare `!`
+    // (§13, Formatting, rule 4): its errors are its sink's, which join each @fmt's set.
+    fn result_set { mut c: Checker, a: u32 } {
+        let x = get_decl{ c, d = a }
+        if map_has{ xs = list::items{ list = c.writers }, n = x.api } { return }
+        let func{ ret } = x.syn.k else { return }
+        let te = ret ifnull { return }
+        let fail{ set } = te.k else { return }
+        if set != null { return }
+        let y = get_decl{ c, d = x.api }
+        let res{ errs } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = y.ret } } else { return }
+        let errors = set_of{ c, t = errs }
+        let mut list_b = message{ c }
+        try! utf8::push{ b = &list_b, s = "error(" }
+        for e at i in errors {
+            if i > 0 { try! utf8::push{ b = &list_b, s = ", " } }
+            let f = get_decl{ c, d = e }
+            try! utf8::push{ b = &list_b, s = str{ s = if f.ns == x.ns { f.name.text } else { f.qual } } }
+        }
+        try! utf8::push{ b = &list_b, s = ")" }
+        let set_text = utf8::view{ b = list_b }.bytes
+        let written = source_text{ c, span = te.span }
+        if errors.len == 0 or set_open{ c, t = errs } {
+            errorf{ &c, at = te.span, msg = @fmt("`{}` in an api.ctx says which errors it fails with, as `error(a, b)!T`: its callers read them here", str{ s = x.qual }) }
+            return
+        }
+        fix_at{ &c, at = point{ span = te.span, at = te.span.start }, text = set_text, msg = "write the errors its definition fails with" }
+        errorf{ &c, at = te.span, msg = @fmt("`{}` in an api.ctx says which errors it fails with, so its callers read them here: write `{}{}`", str{ s = x.qual }, str{ s = set_text }, str{ s = written }) }
+    }
+
+    // Rule 4: what api.ctx declaration a names in its types is visible wherever a makes what
+    // it declares visible, inside module region (NONE: everywhere).
+    fn leaks { mut c: Checker, a: u32, region: u32 } {
+        let x = get_decl{ c, d = a }
+        match x.syn.k {
+            func{ params, ret } => {
+                for f in params { leaks_in{ &c, a, region, te = f.ty } }
+                if let te = ret { leaks_in{ &c, a, region, te } }
+            }
+            record{ fields } => { for f in fields { leaks_in{ &c, a, region, te = f.ty } } }
+            sum{ variants } => {
+                for v in variants { if let fs = v.fields { for f in fs { leaks_in{ &c, a, region, te = f.ty } } } }
+            }
+            fault{ fields } => { if let fs = fields { for f in fs { leaks_in{ &c, a, region, te = f.ty } } } }
+            alias{ ty } => { leaks_in{ &c, a, region, te = ty } }
+            constant{ ty } => { leaks_in{ &c, a, region, te = ty } }
+            cap{ fields, includes } => {
+                if let fs = fields { for f in fs { leaks_in{ &c, a, region, te = f.ty } } }
+                for inc in includes { leaks_in{ &c, a, region, te = inc.ty } }
+            }
+            else => {}
+        }
+    }
+
+    fn leaks_in { mut c: Checker, a: u32, region: u32, te: syntax::TypeExpr } {
+        match te.k {
+            path{ segs } => {
+                for seg in segs {
+                    if seg.name.id != NONE {
+                        if map::get{ m = c.uses, key = key{ file = seg.name.span.file, id = seg.name.id } } is decl{ i } {
+                            let k = get_decl{ c, d = i }
+                            if k.scope != NONE and (region == NONE or not sees{ c, from = region, scope = k.scope }) {
+                                errorf{ &c, at = seg.name.span, msg = @fmt("`{}` names `{}`, which module `{}` hides: an api.ctx declares what its declarations name, in full or as an opaque `type`", str{ s = get_decl{ c, d = a }.qual }, str{ s = k.qual }, str{ s = c.modules[k.scope].dir }) }
+                            }
+                        }
+                    }
+                    if let ts = seg.targs { for t in ts { leaks_in{ &c, a, region, te = t } } }
+                }
+            }
+            ptr{ elem } => { leaks_in{ &c, a, region, te = elem.* } }
+            opt{ elem } => { leaks_in{ &c, a, region, te = elem.* } }
+            slice{ elem } => { leaks_in{ &c, a, region, te = elem.* } }
+            array{ elem } => { leaks_in{ &c, a, region, te = elem.* } }
+            func{ params, ret } => {
+                for f in params { leaks_in{ &c, a, region, te = f.ty } }
+                if let r = ret { leaks_in{ &c, a, region, te = r.* } }
+            }
+            fail{ elem, set } => {
+                if let x = elem { leaks_in{ &c, a, region, te = x.* } }
+                if let x = set { leaks_in{ &c, a, region, te = x.* } }
+            }
+            else => {}
+        }
+    }
+
+    // Whether syntax declaration x of file is an api.ctx's half (Decl.half).
+    fn is_half { c: Checker, file: u32, x: syntax::Decl } -> bool {
+        if not c.files[file].api { return false }
+        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return false }
+        return get_decl{ c, d }.half
+    }
+
+    // What each api.ctx's declarations are (rule 3, Re-exports), its modules' deepest first, so
+    // that a module's api sees what the apis of those nested in it make visible inside it: a
+    // fn's or an opaque type's signature, whose definition is in the module's files; a
+    // capability's fields, whose statics are; a restatement of a nested module's declaration;
+    // or a declaration complete in the api alone. Each makes what it declares visible inside
+    // the module's parent module, or everywhere if it has none.
+    fn settle_modules { mut c: Checker } {
+        if c.modules.len == 0 { return }
+        let depths = try! alloc::make(u32, Heap){ realloc = arena::alloc, heap = c.heap, count = c.modules.len }
+        let mut deepest: u32 = 0
+        for m at i in c.modules {
+            let mut d: u32 = 0
+            let mut p = m.parent
+            while p != NONE {
+                d = d + 1
+                p = c.modules[p].parent
+            }
+            depths[i] = d
+            if d > deepest { deepest = d }
+        }
+        let api = list::items{ list = c.api_decls }
+        let mut level = deepest
+        while true {
+            for depth at m in depths {
+                if depth != level { continue }
+                for a in api {
+                    if get_decl{ c, d = a }.module == @as(u32, m) { settle_api{ &c, a } }
+                }
+                for x in c.modules[m].exposes { expose_module{ &c, m = @as(u32, m), x } }
+            }
+            if level == 0 { break }
+            level = level - 1
+        }
+    }
+
+    // What api.ctx declaration a, of module m, declares (settle_modules).
+    fn settle_api { mut c: Checker, a: u32 } {
+        let x = get_decl{ c, d = a }
+        let m = x.module
+        let outer = c.modules[m].parent
+        let values = x.kind == Kind::func or x.kind == Kind::external or x.kind == Kind::constant or x.kind == Kind::fault
+        let opaque = x.syn.k is opaque
+        let half = (x.kind == Kind::func or opaque) and not (x.syn.k is func{ external } and external)
+        // Of the declarations of its name that code in m sees: one of m's own files' (own),
+        // and one a nested module's api makes visible inside m (nested). One from anywhere
+        // else is a clash, which naming it reports (enlist).
+        let mut own = NONE
+        let mut nested = NONE
+        let sp = get_space{ c, ns = x.ns }
+        let head = map::get{ m = if values { sp.values } else { sp.paths }, key = x.name.text }
+        if head is decl{ i } {
+            let mut d = i
+            while d != NONE {
+                let y = get_decl{ c, d }
+                if sees{ c, from = m, scope = y.scope } {
+                    if y.module == m and not c.files[y.name.span.file].api {
+                        if own == NONE { own = d }
+                    } else if y.module != m and y.scope == m {
+                        if nested == NONE { nested = d }
+                    }
+                }
+                d = y.next
+            }
+        }
+        let kind_ok = matches_kind{ c, a = x, d = if own != NONE { own } else { nested } }
+        if own != NONE and (half or (x.kind == Kind::cap and kind_ok)) {
+            let y = get_decl{ c, d = own }
+            if not kind_ok {
+                not_defined{ &c, a, found = own }
+                return
+            }
+            if y.api != NONE {
+                twice{ &c, a, earlier = y.api }
+                return
+            }
+            list::at{ list = c.decls, i = own }.api = a
+            let at = list::at{ list = c.decls, i = a }
+            at.api = own
+            at.half = true
+            widen{ &c, d = own, to = outer, narrow = opaque }
+            return
+        }
+        if nested != NONE {
+            if not kind_ok {
+                notef{ &c, at = get_decl{ c, d = nested }.name.span, msg = @fmt("`{}` is declared here", str{ s = get_decl{ c, d = nested }.qual }) }
+                errorf{ &c, at = x.name.span, msg = @fmt("`{}` restates a declaration of another kind: a restatement in an api.ctx declares what it restates as that does, or a struct, a union or an enum as an opaque `type`", str{ s = x.qual }) }
+                return
+            }
+            if get_decl{ c, d = nested }.scope != m {
+                twice{ &c, a, earlier = NONE }
+                return
+            }
+            let at = list::at{ list = c.decls, i = a }
+            at.api = nested
+            at.half = true
+            push{ xs = &c.restates, n = a }
+            widen{ &c, d = nested, to = outer, narrow = opaque }
+            return
+        }
+        if half {
+            not_defined{ &c, a, found = NONE }
+            return
+        }
+        // Complete in the api alone: visible as the api makes it.
+        let at = list::at{ list = c.decls, i = a }
+        at.scope = outer
+        at.open = outer
+        enlist{ &c, d = a }
+    }
+
+    // Whether api.ctx declaration a may declare d, the declaration of its name it found: a fn
+    // with a body for a fn, a struct, union or enum for an opaque type, and otherwise one of
+    // its own kind.
+    fn matches_kind { c: Checker, a: Decl, d: u32 } -> bool {
+        if d == NONE { return false }
+        let y = get_decl{ c, d }
+        if a.syn.k is opaque {
+            if y.syn.k is record{ untagged } { return not untagged }
+            return y.kind == Kind::sum or y.kind == Kind::enumeration
+        }
+        if y.half { return false }
+        return a.kind == y.kind
+    }
+
+    // A fn or an opaque type of an api.ctx that no file of its module defines: found is the
+    // declaration of its name that isn't one, or NONE.
+    fn not_defined { mut c: Checker, a: u32, found: u32 } {
+        let x = get_decl{ c, d = a }
+        let dir = str{ s = c.modules[x.module].dir }
+        if found != NONE {
+            let y = get_decl{ c, d = found }
+            notef{ &c, at = y.name.span, msg = @fmt("`{}` is declared here", str{ s = y.qual }) }
+            if x.syn.k is opaque {
+                errorf{ &c, at = x.name.span, msg = @fmt("opaque type `{}` is defined as a struct, a union or an enum by a file of module `{}`, not as this", str{ s = x.qual }, dir)  }
+            } else {
+                errorf{ &c, at = x.name.span, msg = @fmt("`{}` is declared as a fn in api.ctx: a file of module `{}` defines it as one, with this signature", str{ s = x.qual }, dir) }
+            }
+            return
+        }
+        // One boundary at a time (Re-exports, rule 3): a module nested deeper declares it, in
+        // an api.ctx that the module between doesn't restate it from.
+        let values = x.kind == Kind::func or x.kind == Kind::external or x.kind == Kind::constant or x.kind == Kind::fault
+        let sp = get_space{ c, ns = x.ns }
+        if map::get{ m = if values { sp.values } else { sp.paths }, key = x.name.text } is decl{ i } {
+            let mut k = i
+            while k != NONE {
+                let y = get_decl{ c, d = k }
+                if y.module != x.module and y.scope != NONE and y.scope != x.module and sees{ c, from = y.module, scope = x.module } {
+                    notef{ &c, at = y.name.span, msg = @fmt("`{}` is declared here", str{ s = y.qual }) }
+                    errorf{ &c, at = x.name.span, msg = @fmt("`{}` is visible inside module `{}` only, whose api.ctx doesn't declare it: an api.ctx restates what it sees, one boundary at a time", str{ s = x.qual }, str{ s = c.modules[y.scope].dir }) }
+                    return
+                }
+                k = y.next
+            }
+        }
+        let what: utf8::String = if x.syn.k is opaque { "opaque type" } else { "fn" }
+        errorf{ &c, at = x.name.span, msg = @fmt("{} `{}` is declared in api.ctx, but no file of module `{}` defines it", what, str{ s = x.qual }, dir) }
+    }
+
+    // A second declaration in an api.ctx of what one already declares (earlier, or NONE if
+    // that was a restatement).
+    fn twice { mut c: Checker, a: u32, earlier: u32 } {
+        let x = get_decl{ c, d = a }
+        if earlier != NONE { notef{ &c, at = get_decl{ c, d = earlier }.name.span, msg = @fmt("the earlier `{}` is declared here", str{ s = x.name.text }) } }
+        errorf{ &c, at = x.name.span, msg = @fmt("`{}` is already declared in this api.ctx", str{ s = x.name.text }) }
+    }
+
+    // Declaration d is visible inside module `to` (NONE: everywhere), where an api.ctx makes it
+    // so; and its fields or variants too, unless narrow, if they were wherever it was.
+    fn widen { mut c: Checker, d: u32, to: u32, narrow: bool } {
+        let at = list::at{ list = c.decls, i = d }
+        let was = at.scope
+        at.scope = to
+        if not narrow and at.open == was { at.open = to }
+        reclash{ &c, d }
+    }
+
+    // Declaration d, now visible in more of the program, against the others of its name.
+    fn reclash { mut c: Checker, d: u32 } {
+        let x = get_decl{ c, d }
+        let values = x.kind == Kind::func or x.kind == Kind::external or x.kind == Kind::constant or x.kind == Kind::fault
+        let sp = get_space{ c, ns = x.ns }
+        let head = map::get{ m = if values { sp.values } else { sp.paths }, key = x.name.text }
+        let decl{ i } = head else { return }
+        let mut k = i
+        while k != NONE {
+            let y = get_decl{ c, d = k }
+            if k != d and overlaps{ c, a = x.scope, b = y.scope } {
+                // A clash is said once, though both of its declarations may widen.
+                let pair = if k < d { (@as(u64, k) << 32) | d } else { (@as(u64, d) << 32) | k }
+                if map::has{ m = c.clashes, key = pair } { return }
+                try! map::put{ m = &c.clashes, key = pair, value = true }
+                notef{ &c, at = y.name.span, msg = @fmt("the other `{}` is declared here", str{ s = x.name.text }) }
+                let at = if x.api != NONE { get_decl{ c, d = x.api }.name.span } else { x.name.span }
+                errorf{ &c, at, msg = @fmt("`{}` is already declared where this makes it visible", str{ s = x.name.text }) }
+                return
+            }
+            k = y.next
+        }
+    }
+
+    // `expose "path"` in module m's api.ctx (Re-exports, rule 2): what module x.module's api
+    // makes visible inside m is visible where m's api makes its own.
+    fn expose_module { mut c: Checker, m: u32, x: Exposed } {
+        let n = x.module
+        for a in list::items{ list = c.restates } {
+            let y = get_decl{ c, d = a }
+            if y.module == m and sees{ c, from = get_decl{ c, d = y.api }.module, scope = n } {
+                notef{ &c, at = y.name.span, msg = @fmt("`{}` is restated here", str{ s = y.qual }) }
+                errorf{ &c, at = x.at, msg = @fmt("module `{}` is restated from in this api.ctx, and exposed: a module is either, not both", str{ s = c.modules[n].dir }) }
+                return
+            }
+        }
+        let outer = c.modules[m].parent
+        let mut d: usize = 0
+        while d < c.decls.len {
+            let y = get_decl{ c, d = @as(u32, d) }
+            if not y.half and y.scope == m and y.module != NONE and sees{ c, from = y.module, scope = n } {
+                widen{ &c, d = @as(u32, d), to = outer, narrow = false }
+            }
+            d = d + 1
+        }
+    }
+
+
+    // The module code at `at` is inside: its file's innermost, or NONE.
+    fn module_at { c: Checker, at: source::Span } -> u32 {
+        if at.file == NO_FILE or @as(usize, at.file) >= c.files.len { return NONE }
+        return c.files[at.file].module
+    }
+
+    // Whether code inside module `from` (NONE: inside none) sees what is visible inside module
+    // scope (NONE: everywhere): from is scope or inside it.
+    fn sees { c: Checker, from: u32, scope: u32 } -> bool {
+        if scope == NONE { return true }
+        let mut m = from
+        while m != NONE {
+            if m == scope { return true }
+            m = c.modules[m].parent
+        }
+        return false
+    }
+
+    // Of the declarations of one name in one table, chained from e (Decl.next), the first that
+    // code inside module `from` sees; e itself if it isn't a declaration; null if none.
+    fn seen_entry { c: Checker, e: ?Entry, from: u32 } -> ?Entry {
+        let first = e ifnull { return null }
+        let decl{ i } = first else { return first }
+        let mut d = i
+        while d != NONE {
+            let x = get_decl{ c, d }
+            if sees{ c, from, scope = x.scope } { return Entry::decl{ i = d } }
+            d = x.next
         }
         return null
+    }
+
+    // Whether t is a struct, a union or an enum whose fields or variants code at `at` doesn't
+    // see (rule 3: an opaque type), after saying it can't be `what`.
+    fn opaque_here { mut c: Checker, t: Id, at: source::Span, what: utf8::String } -> bool {
+        if c.modules.len == 0 { return false }
+        let mut d = NONE
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
+            record{ decl } => { d = decl }
+            sum{ decl } => { d = decl }
+            enumeration{ decl } => { d = decl }
+            else => { return false }
+        }
+        let x = get_decl{ c, d }
+        if sees{ c, from = module_at{ c, at }, scope = x.open } or c.modules[x.open].api == NONE { return false }
+        let parts: utf8::String = if x.kind == Kind::record { "fields" } else { "variants" }
+        errorf{ &c, at, msg = @fmt("{} is opaque outside module `{}`, so it can't be {} here: an api.ctx declares it without its {}", tstr{ c, t }, str{ s = c.modules[x.open].dir }, what, parts) }
+        return true
+    }
+
+    // A use of declaration d at name n, which code there can't see: what its module hides
+    // (spec §10, Modules, rule 10).
+    fn hidden_use { mut c: Checker, n: syntax::Name, d: u32 } {
+        if c.modules.len == 0 { return }
+        let x = get_decl{ c, d }
+        if sees{ c, from = module_at{ c, at = n.span }, scope = x.scope } { return }
+        // A module whose api.ctx the program lacks has no contract to name: the driver has
+        // said so (modules::find).
+        if c.modules[x.scope].api == NONE { return }
+        errorf{ &c, at = n.span, msg = @fmt("`{}` is inside module `{}`, whose api.ctx doesn't declare it", str{ s = x.qual }, str{ s = c.modules[x.scope].dir }) }
     }
 
     // Records what name n refers to.
     fn use { mut c: Checker, n: syntax::Name, r: Ref } {
         if n.id == NONE { return }
+        if r is decl{ i } { hidden_use{ &c, n, d = i } }
         try! map::put{ m = &c.uses, key = key{ file = n.span.file, id = n.id }, value = r }
     }
 
@@ -3892,7 +4752,7 @@ namespace check {
     fn check_const { mut c: Checker, d: u32 } {
         let x = get_decl{ c, d }
         if x.syn.k is constant{ value } {
-            begin_body{ &c, sc = Scope{ ns = x.ns, owner = NONE, names = no_names{}, args = slice::empty(Id){} }, ret = types::VOID }
+            begin_body{ &c, sc = Scope{ ns = x.ns, owner = NONE, names = no_names{}, args = slice::empty(Id){}, from = x.module }, ret = types::VOID }
             let before = c.diags.errors
             expect{ &c, e = value, t = x.ty }
             finish{ &c, end = value.span.end }
@@ -4889,7 +5749,7 @@ namespace check {
         if v == NONE or not call or is_fn{ c, t = get_var{ c, v }.ty } { return v }
         let alt = lookup_local{ c, name, callable = true }
         if alt != NONE { return alt }
-        if lookup_value{ c, ns = c.sc.ns, name } != null or lookup_path{ c, ns = c.sc.ns, name } != null { return NONE }
+        if lookup_value{ c, ns = c.sc.ns, name, from = c.sc.from } != null or lookup_path{ c, ns = c.sc.ns, name, from = c.sc.from } != null { return NONE }
         return v
     }
 
@@ -6027,6 +6887,7 @@ namespace check {
             errorf{ &c, at = expr_at{ e = scrut }, msg = @fmt("match needs a union, enum, optional or integer value, got {}", tstr{ c, t = st }) }
             ok = false
         }
+        if ok and opaque_here{ &c, t = ut, at = expr_at{ e = scrut }, what = "matched on" } { ok = false }
         let vs: []Variant = if ok { variants_of{ &c, t = ut } } else { slice::empty(Variant){} }
         // With `match &p`, nothing in the arms may reach p but their bindings.
         let forb: ?Place = match scrut.k { addr{ e = inner } => { place_path{ c, e = inner.* } } else => { null } }
@@ -6407,6 +7268,7 @@ namespace check {
                 }
             }
         }
+        if ok and opaque_here{ &c, t, at = expr_at{ e = init }, what = "matched on" } { ok = false }
         let mut vs: []Variant = if ok { variants_of{ &c, t } } else { slice::empty(Variant){} }
         let mut vi = variant_index{ vs, name = variant.text }
         // On a `?U` for a union U, a variant of U: null goes to the else block with U's others.
@@ -6514,6 +7376,7 @@ namespace check {
                 }
             }
         }
+        if ok and opaque_here{ &c, t, at = expr_at{ e = x }, what = "matched on" } { ok = false }
         let vs: []Variant = if ok { variants_of{ &c, t } } else { slice::empty(Variant){} }
         let mut inner: []Variant = slice::empty(Variant){}
         if ok {
@@ -11366,7 +12229,7 @@ namespace check {
         let mut d = NONE
         if callee.k is path{ segs } {
             let name = segs[segs.len - 1].name.text
-            if segs.len == 1 and local_named{ c, name, call = true } == NONE and lookup_value{ c, ns = c.sc.ns, name } == null and print_hint{ &c, at = callee.span, name, args } { return }
+            if segs.len == 1 and local_named{ c, name, call = true } == NONE and lookup_value{ c, ns = c.sc.ns, name, from = c.sc.from } == null and print_hint{ &c, at = callee.span, name, args } { return }
             d = callee_decl{ c, segs }
             if d == NONE and not callee_found{ c, segs } {
                 _ = resolve_path{ &c, e = callee, segs, call = true }     // reports the unknown name
@@ -11466,20 +12329,19 @@ namespace check {
         let last = segs[segs.len - 1].name.text
         if segs.len == 1 {
             if local_named{ c, name = last, call = true } != NONE { return null }
-            let v = lookup_value{ c, ns = c.sc.ns, name = last }
+            let v = lookup_value{ c, ns = c.sc.ns, name = last, from = c.sc.from }
             if v != null { return v }
-            return lookup_path{ c, ns = c.sc.ns, name = last }
+            return lookup_path{ c, ns = c.sc.ns, name = last, from = c.sc.from }
         }
         let mut ns = NONE
         for s at i in segs[0..segs.len - 1] {
-            let p = if i == 0 { lookup_path{ c, ns = c.sc.ns, name = s.name.text } } else { map::get{ m = get_space{ c, ns }.paths, key = s.name.text } }
+            let p = if i == 0 { lookup_path{ c, ns = c.sc.ns, name = s.name.text, from = c.sc.from } } else { member{ c, ns, values = false, name = s.name.text, from = c.sc.from } }
             let x = p ifnull { return null }
             if x is space{ ns = n } { ns = n } else { return null }
         }
-        let sp = get_space{ c, ns }
-        let v = map::get{ m = sp.values, key = last }
+        let v = member{ c, ns, values = true, name = last, from = c.sc.from }
         if v != null { return v }
-        return map::get{ m = sp.paths, key = last }
+        return member{ c, ns, values = false, name = last, from = c.sc.from }
     }
 
     // `io` alone where a value goes, with `Io` a capability: the function lacks the field.
@@ -11488,7 +12350,7 @@ namespace check {
         slice::copy(u8){ dst = cn, src = name }
         if cn.len > 0 and cn[0] >= 'a' and cn[0] <= 'z' { cn[0] = cn[0] - 32 }
         let mut is_cap = false
-        if let x = lookup_path{ c, ns = c.sc.ns, name = cn } {
+        if let x = lookup_path{ c, ns = c.sc.ns, name = cn, from = c.sc.from } {
             if x is decl{ i } { is_cap = get_decl{ c, d = i }.kind == Kind::cap }
         }
         let n = str{ s = name }
@@ -11632,12 +12494,12 @@ namespace check {
                 use{ &c, n = s0.name, r = Ref::local{ var = v } }
                 return PathRef::local{ var = v }
             }
-            let g = lookup_value{ c, ns, name = s0.name.text }
+            let g = lookup_value{ c, ns, name = s0.name.text, from = c.sc.from }
             if g != null {
                 refer{ &c, n = s0.name, e = g }
                 return value_ref{ &c, g, seg = s0 }
             }
-            let p = lookup_path{ c, ns, name = s0.name.text }
+            let p = lookup_path{ c, ns, name = s0.name.text, from = c.sc.from }
             if p != null {
                 refer{ &c, n = s0.name, e = p }
                 return PathRef::path{ e = p, seg = s0 }
@@ -11645,7 +12507,7 @@ namespace check {
             errorf{ &c, at = s0.name.span, msg = @fmt("unknown name `{}`", str{ s = s0.name.text }) }
             return null
         }
-        let first = lookup_path{ c, ns, name = s0.name.text }
+        let first = lookup_path{ c, ns, name = s0.name.text, from = c.sc.from }
         if first == null {
             unknown{ &c, n = s0.name, qualified = true }
             return null
@@ -11664,15 +12526,14 @@ namespace check {
                     errorf{ &c, at = prev.name.span, msg = @fmt("namespace `{}` takes no type arguments", str{ s = prev.name.text }) }
                     return null
                 }
-                let sp = get_space{ c, ns = inner }
                 if last {
-                    let v = map::get{ m = sp.values, key = s.name.text }
+                    let v = member{ c, ns = inner, values = true, name = s.name.text, from = c.sc.from }
                     if v != null {
                         refer{ &c, n = s.name, e = v }
                         return value_ref{ &c, g = v, seg = s }
                     }
                 }
-                let p = map::get{ m = sp.paths, key = s.name.text }
+                let p = member{ c, ns = inner, values = false, name = s.name.text, from = c.sc.from }
                 if p == null {
                     errorf{ &c, at = s.name.span, msg = @fmt("`{}` not found in namespace `{}`", str{ s = s.name.text }, str{ s = prev.name.text }) }
                     return null
@@ -11697,6 +12558,7 @@ namespace check {
                     else => {}
                 }
                 if names.len > 0 or is_enum or is_sum{ c, t } {
+                    if opaque_here{ &c, t, at = s.name.span, what = "looked into" } { return null }
                     if s.targs != null {
                         error{ &c, at = s.name.span, msg = "a variant takes no type arguments" }
                         return null
@@ -12221,6 +13083,7 @@ namespace check {
             errorf{ &c, at = seg.name.span, msg = @fmt("`{}` is not a struct", str{ s = seg.name.text }) }
             return types::ERROR
         }
+        if opaque_here{ &c, t, at = seg.name.span, what = "made with a literal" } { return types::ERROR }
         same_decl{ &c, t, exp }
         no_spread{ &c, e, items }
         if decl == c.cstr_decl { unchecked_cstr{ &c, at = expr_at{ e } } }
@@ -12250,6 +13113,10 @@ namespace check {
                 try! @fmt(&b, "capability `{}` can only be made by a function of namespace `{}`, which declares it", str{ s = seg.name.text }, str{ s = qual })
             }
             error{ &c, at = seg.name.span, msg = utf8::view{ b } }
+            return types::ERROR
+        }
+        if not sees{ c, from = get_decl{ c, d = owner }.module, scope = x.module } {
+            errorf{ &c, at = seg.name.span, msg = @fmt("capability `{}` can only be made by a function of namespace `{}` inside module `{}`, which declares it", str{ s = seg.name.text }, str{ s = get_space{ c, ns = x.ns }.qual }, str{ s = c.modules[x.module].dir }) }
             return types::ERROR
         }
         let fs = get_decl{ c, d = owner }.fields
@@ -13030,6 +13897,7 @@ namespace check {
     }
 
     fn field_type { mut c: Checker, st: Id, e: syntax::Expr, name: syntax::Name } -> Id {
+        if opaque_here{ &c, t = st, at = name.span, what = "looked into" } { return types::ERROR }
         let f = types::find_field{ fields = struct_fields{ &c, t = st }, name = name.text }
         if f != null { return f.ty }
         return no_field{ &c, t = st, e, name }
@@ -13081,6 +13949,10 @@ namespace check {
                 try! @fmt(&b, "`{}` is {} of capability `{}`: only a function of namespace `{}`, which declares it, can {} it", str{ s = v.name }, what, str{ s = x.name.text }, str{ s = qual }, verb)
             }
             error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+        } else if not sees{ c, from = get_decl{ c, d = f }.module, scope = x.module } {
+            let what: utf8::String = if v.stat { "a static" } else { "a C variable" }
+            let verb: utf8::String = if v.stat { "use" } else { "read" }
+            errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` is {} of capability `{}`: only a function of its namespace inside module `{}`, which declares it, can {} it", str{ s = v.name }, what, str{ s = x.name.text }, str{ s = c.modules[x.module].dir }, verb) }
         }
         return v.ty
     }
@@ -13101,7 +13973,7 @@ namespace check {
         }
         if e.k is field{ base } and base.k is path{ segs } and segs.len == 1 {
             // `io.println` where `io` is a field and `io::println` a function: `::`.
-            let ns = lookup_path{ c, ns = c.sc.ns, name = segs[0].name.text }
+            let ns = lookup_path{ c, ns = c.sc.ns, name = segs[0].name.text, from = c.sc.from }
             if ns is space{ ns = inner } and map::has{ m = get_space{ c, ns = inner }.values, key = name.text } {
                 let dot = source::Span{ file = e.span.file, start = e.at, end = e.at + 1 }
                 diag::fix_one{ diags = c.diags, safe = true, msg = "write `::`", span = dot, text = "::" }
@@ -13142,6 +14014,7 @@ namespace check {
             if report { errorf{ &c, at = expr_at{ e = arg }, msg = @fmt("@offset_of needs a struct, got {}", tstr{ c, t = st }) } }
             return null
         }
+        if opaque_here{ &c, t = st, at = expr_at{ e = arg }, what = "looked into" } { return null }
         let fields = struct_fields{ &c, t = st }
         let mut i: usize = 0
         while i < fields.len and not slice::eq_bytes{ a = fields[i].name, b = name } { i = i + 1 }
@@ -13227,12 +14100,14 @@ namespace check {
                 return tt
             }
             if is_enum{ c, t = tt } {
+                if opaque_here{ &c, t = tt, at, what = "made with @as" } { return tt }
                 if not is_int{ c, t = src } {
                     errorf{ &c, at = expr_at{ e = x }, msg = @fmt("@as to an enum takes an integer, got {}", tstr{ c, t = src }) }
                 }
                 return tt
             }
             if is_enum{ c, t = src } {
+                if opaque_here{ &c, t = src, at = expr_at{ e = x }, what = "looked into with @as" } { return tt }
                 if not is_int{ c, t = tt } {
                     errorf{ &c, at, msg = @fmt("@as converts an enum to an integer type, not {}", tstr{ c, t = tt }) }
                 }
@@ -13992,7 +14867,7 @@ namespace check {
         let mut i: usize = 0
         while i < ws.len {
             let x = get_decl{ c, d = ws[i] }
-            if reaches{ c, from = ns, ns = x.ns } and types::instance{ s = c.ty, p = sink_field{ c, d = ws[i] }.ty, t = b, decl = ws[i], args = no_args{ &c, n = x.tparams.len } } { return true }
+            if reaches{ c, from = ns, ns = x.ns } and sees{ c, from = c.sc.from, scope = x.scope } and types::instance{ s = c.ty, p = sink_field{ c, d = ws[i] }.ty, t = b, decl = ws[i], args = no_args{ &c, n = x.tparams.len } } { return true }
             i = i + 1
         }
         return false
@@ -14037,7 +14912,7 @@ namespace check {
         while i < ws.len {
             let d = ws[i]
             let x = get_decl{ c, d }
-            if encloses{ c, outer = ROOT, inner = x.ns } != in_std and reaches{ c, from = ns, ns = x.ns } {
+            if encloses{ c, outer = ROOT, inner = x.ns } != in_std and reaches{ c, from = ns, ns = x.ns } and sees{ c, from = c.sc.from, scope = x.scope } {
                 let args = no_args{ &c, n = x.tparams.len }
                 if types::instance{ s = c.ty, p = sink_field{ c, d }.ty, t = b, decl = d, args } and types::instance{ s = c.ty, p = value_field{ c, d }.ty, t, decl = d, args } {
                     if one.decl != NONE { return Writers{ one, two = d } }
@@ -14540,11 +15415,11 @@ namespace check {
         if n.text.len == 0 { return NONE }
         let mut found: ?Entry = null
         if p.quals.len == 0 {
-            found = lookup_value{ c, ns = c.sc.ns, name = n.text }
+            found = lookup_value{ c, ns = c.sc.ns, name = n.text, from = c.sc.from }
         } else {
             let q0 = p.quals[0]
             if q0.text.len == 0 { return NONE }
-            let first = lookup_path{ c, ns = c.sc.ns, name = q0.text } ifnull {
+            let first = lookup_path{ c, ns = c.sc.ns, name = q0.text, from = c.sc.from } ifnull {
                 unknown{ &c, n = q0, qualified = true }
                 return NONE
             }
@@ -14558,10 +15433,10 @@ namespace check {
                     return NONE
                 }
                 if i + 1 == p.quals.len {
-                    found = map::get{ m = get_space{ c, ns }.values, key = n.text }
+                    found = member{ c, ns, values = true, name = n.text, from = c.sc.from }
                 } else {
                     let q = p.quals[i + 1]
-                    e = map::get{ m = get_space{ c, ns }.paths, key = q.text } ifnull {
+                    e = member{ c, ns, values = false, name = q.text, from = c.sc.from } ifnull {
                         errorf{ &c, at = q.span, msg = @fmt("no namespace `{}` in `{}`", str{ s = q.text }, str{ s = prev.text }) }
                         return NONE
                     }

@@ -6,6 +6,6 @@ fn build { mut b: Build } { build::add_sources{ &b, exe = build::exe{ &b, name =
 //# panic: program: panic: build: empty directory
 //# path:
 //|   at rt::fail_with (std/rt.ctx:47:13)
-//|   at build::field (std/build.ctx:283:26)
+//|   at build::field (std/build.ctx:291:26)
 //|   at build::add_sources (std/build.ctx:96:14)
 //|   at build (06.ctx:1:47)

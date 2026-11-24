@@ -1,0 +1,8 @@
+namespace geo {
+    struct Point { x: i32, y: i32 }
+    struct Size { w: u32 }
+    #write
+    fn write_size(S) { mut b: utf8::Builder(S), s: Size } -> !
+    fn point {} -> Point
+    fn show { mut io: Io }
+}

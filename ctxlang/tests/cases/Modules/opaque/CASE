@@ -1,0 +1,12 @@
+// An opaque type (spec §10, Modules, rule 3) is held, copied, passed, compared and given its
+// zero value outside its module, but not made with a literal or @as, and its fields and
+// variants are not named or matched on. Generic ones too.
+//# program: main.ctx lib/gff/api.ctx lib/gff/make.ctx
+//# errors:
+//| main.ctx:5:15: error: gff::Gff is opaque outside module `lib/gff`, so it can't be looked into here: an api.ctx declares it without its fields
+//| main.ctx:6:18: error: gff::Gff is opaque outside module `lib/gff`, so it can't be made with a literal here: an api.ctx declares it without its fields
+//| main.ctx:7:24: error: gff::Mode is opaque outside module `lib/gff`, so it can't be looked into here: an api.ctx declares it without its variants
+//| main.ctx:8:30: error: gff::Mode is opaque outside module `lib/gff`, so it can't be looked into with @as here: an api.ctx declares it without its variants
+//| main.ctx:9:13: error: gff::Mode is opaque outside module `lib/gff`, so it can't be made with @as here: an api.ctx declares it without its variants
+//| main.ctx:10:21: error: gff::Shape is opaque outside module `lib/gff`, so it can't be matched on here: an api.ctx declares it without its variants
+//| main.ctx:15:15: error: gff::Box(u8) is opaque outside module `lib/gff`, so it can't be looked into here: an api.ctx declares it without its fields

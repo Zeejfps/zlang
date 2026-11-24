@@ -34,9 +34,10 @@ namespace syntax {
 
     union DeclKind {
         error,
-        // An extern fn has no tparams and an empty body, where its declaration ends.
-        // tsets: which of tparams are error sets, `E: error` (§9).
-        func{ name: Name, tparams: []Name, tsets: []bool, params: []Param, ret: ?TypeExpr, body: Block, external: bool },
+        // An extern fn has no tparams and an empty body, where its declaration ends, as has a
+        // declared one, a fn of a module's api.ctx, which a file of the module defines (spec §10,
+        // Modules). tsets: which of tparams are error sets, `E: error` (§9).
+        func{ name: Name, tparams: []Name, tsets: []bool, params: []Param, ret: ?TypeExpr, body: Block, external: bool, declared: bool },
         record{ name: Name, tparams: []Name, fields: []Field, untagged: bool },   // struct; extern union if untagged
         sum{ name: Name, tparams: []Name, variants: []Variant },         // union
         enumeration{ name: Name, base: TypeExpr, variants: []EnumVariant },
@@ -45,6 +46,12 @@ namespace syntax {
         space{ name: Name, decls: []Decl },                               // namespace
         cap{ name: Name, fields: ?[]Field, includes: []Include },          // capability; fields null without braces
         fault{ name: Name, fields: ?[]Field },                              // error; fields null without braces
+        // `type Name(G)` without `= T`, in an api.ctx: an opaque type, which a file of the
+        // module defines as a struct, a union or an enum (spec §10, Modules).
+        opaque{ name: Name, tparams: []Name },
+        // `expose "path"` in an api.ctx: a nested module's api, re-exported (spec §10,
+        // Re-exports). path is the string's bytes; at is the string's span.
+        expose{ path: []u8, at: Span },
     }
 
     // `..Name` among a capability's fields (§15): the fields before it in the braces are

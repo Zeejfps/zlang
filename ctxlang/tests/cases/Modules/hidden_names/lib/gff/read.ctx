@@ -1,0 +1,11 @@
+namespace gff {
+    struct Gff { size: usize }
+    struct Header { n: u8 }
+    const LIMIT: usize = 16
+    error hidden_error
+    fn read { bytes: []u8 } -> error(bad_magic)!Gff {
+        if bytes.len > LIMIT { return bad_magic }
+        return Gff{ size = bytes.len }
+    }
+    fn parse_header { bytes: []u8 } -> Header { return Header{ n = @as(u8, bytes.len) } }
+}

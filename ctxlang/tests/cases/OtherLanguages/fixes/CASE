@@ -4,7 +4,7 @@
 //# write a.ctx:
 //| struct P { x: i32 }
 //| fn add(a: i32, b: i32) -> i32 { return a + b }
-//| fn two -> i32 { return 2 }
+//| pub fn two -> i32 { return 2 }
 //| fn get { p: *P, q: *i32 } -> i32 { return p->x + *q }
 //| fn main() {
 //|     var x = 0

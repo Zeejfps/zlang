@@ -1,0 +1,4 @@
+fn main { mut io: Io } -> i32 {
+    _ = @fmt(&io, "{}\n", lib::twice{ n = lib::half{ n = 8 } })
+    return 0
+}

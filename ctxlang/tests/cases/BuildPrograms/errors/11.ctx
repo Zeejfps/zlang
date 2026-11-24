@@ -5,5 +5,5 @@ fn build { mut b: Build } { build::gen_file{ &b, exe = build::exe{ &b, name = "a
 //| exe\t0\ta\t.
 //# panic: program: panic: build: a file name can hold only ASCII letters, digits, _ and -
 //# path:
-//|   at build::gen_file (std/build.ctx:113:77)
+//|   at build::gen_file (std/build.ctx:114:77)
 //|   at build (11.ctx:1:44)

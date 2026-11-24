@@ -1,0 +1,22 @@
+// What an api.ctx may re-export (spec §10, Re-exports): a restatement matches what it
+// restates but for narrowing a type to opaque (rule 1), `expose` names a module nested in
+// this one, through folders that aren't modules (rule 2), one boundary at a time (rule 3), and
+// a module is restated from or exposed, not both (rule 4). `expose` goes at the top.
+//# program: main.ctx formats/api.ctx formats/gff/api.ctx formats/gff/read.ctx formats/gff/chunks/api.ctx formats/gff/chunks/chunk.ctx formats/tpc/api.ctx formats/tpc/decode.ctx formats/notes/readme.ctx other/api.ctx other/x.ctx
+//# errors:
+//| formats/api.ctx:11:8: error: `gff/chunks` is inside module `formats/gff`, nested in this one: that module's api.ctx exposes it, one boundary at a time
+//| formats/api.ctx:12:8: error: `notes` is a folder without an api.ctx: `expose` re-exports a module's api
+//| formats/api.ctx:13:8: error: there is no folder `nowhere` beside this api.ctx
+//| formats/api.ctx:14:8: error: `../other` isn't a module nested in this one: an api.ctx exposes a module inside its own folder
+//| formats/api.ctx:15:19: error: `expose` goes at the top of an api.ctx, outside every namespace: it re-exports a module's api, whatever namespaces it declares
+//| formats/api.ctx:4:8: error: fn `gff::read` is declared in api.ctx, but no file of module `formats` defines it
+//| formats/api.ctx:7:8: error: `gff::chunk` is visible inside module `formats/gff` only, whose api.ctx doesn't declare it: an api.ctx restates what it sees, one boundary at a time
+//|   formats/gff/chunks/chunk.ctx:1:20: note: `gff::chunk` is declared here
+//| formats/api.ctx:10:8: error: module `formats/tpc` is restated from in this api.ctx, and exposed: a module is either, not both
+//|   formats/api.ctx:9:20: note: `tpc::decode` is restated here
+//| formats/api.ctx:3:8: error: `gff::size` is restated differently from its declaration: its result is u32 there and usize here
+//|   formats/gff/read.ctx:1:20: note: `gff::size` is declared here
+//| formats/api.ctx:5:11: error: `gff::VERSION` is restated differently from its declaration: its value is written differently
+//|   formats/gff/api.ctx:5:11: note: `gff::VERSION` is declared here
+//| formats/api.ctx:6:12: error: `gff::Field` is restated differently from its declaration: it has 1 field there and 2 here
+//|   formats/gff/api.ctx:6:12: note: `gff::Field` is declared here

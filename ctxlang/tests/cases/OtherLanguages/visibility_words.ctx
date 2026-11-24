@@ -1,0 +1,9 @@
+// `pub`, `export` and `public` before a declaration are one error each, which `--fix` removes:
+// a name is visible everywhere unless a module hides it (spec §10, Modules). `private` is one
+// error too, with no fix: hiding a name is a module's api.ctx's to do.
+
+pub fn twice { n: i32 } -> i32 { return n * 2 }  //~ error at 1: `pub` isn't ctxlang: a name is visible everywhere unless a module hides it, and a module's api.ctx declares what code outside the module may name
+export struct Point { x: i32 }  //~ error at 1: `export` isn't ctxlang: a name is visible everywhere unless a module hides it, and a module's api.ctx declares what code outside the module may name
+private fn helper {} -> i32 { return 1 }  //~ error at 1: `private` isn't ctxlang: a name is visible everywhere unless a module hides it; a folder with an api.ctx is a module, and what its api.ctx doesn't declare is hidden outside it
+
+fn main {} -> i32 { return twice{ n = Point{ x = helper{} }.x } }

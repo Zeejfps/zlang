@@ -1,0 +1,11 @@
+// A name a module's api.ctx doesn't declare is hidden outside the module (spec §10, Modules,
+// rule 2), whether a fn, a const, a type or an error, and naming it is an error that names
+// the boundary (rule 10). A union the api declares in full is built and matched anywhere.
+//# program: main.ctx lib/gff/api.ctx lib/gff/read.ctx
+//# errors:
+//| main.ctx:2:18: error: `gff::parse_header` is inside module `lib/gff`, whose api.ctx doesn't declare it
+//| main.ctx:3:25: error: `gff::LIMIT` is inside module `lib/gff`, whose api.ctx doesn't declare it
+//| main.ctx:4:18: error: `gff::Header` is inside module `lib/gff`, whose api.ctx doesn't declare it
+//| main.ctx:6:18: error: `gff::parse_header` is inside module `lib/gff`, whose api.ctx doesn't declare it
+//| main.ctx:10:14: error: `gff::hidden_error` is inside module `lib/gff`, whose api.ctx doesn't declare it
+//| main.ctx:10:9: error: error `gff::hidden_error` can't happen here: this fails only with gff::bad_magic

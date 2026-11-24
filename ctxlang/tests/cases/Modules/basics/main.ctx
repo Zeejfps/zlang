@@ -1,0 +1,15 @@
+fn main { mut io: Io, mut cache: gff::Cache } -> i32 {
+    let g = gff::read{ bytes = "GFF V3.2" } iferr { return 1 }
+    let mut zero: gff::Gff                           // an opaque type's zero value
+    zero = g
+    let f = gff::field{ g = zero }
+    _ = @fmt(&io, "{} {} {}\n", gff::size{ g }, f.label, f.kind == gff::Kind::byte)
+    match gff::read{ bytes = "GF" } {
+        ok => { _ = @fmt(&io, "read\n") }
+        gff::truncated{ at } => { _ = @fmt(&io, "truncated at {}\n", at) }
+        gff::bad_magic => { _ = @fmt(&io, "bad magic\n") }
+    }
+    _ = gff::reads{ &cache }
+    _ = @fmt(&io, "{} {}\n", gff::reads{ &cache }, gff::tpc_rows{})
+    return 0
+}

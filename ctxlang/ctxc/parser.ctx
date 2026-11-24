@@ -47,6 +47,9 @@ namespace parser {
         // The file ends inside a block comment, which the lexer reported: what the comment
         // hid is missing at the end of the file, and isn't reported again as missing.
         cut: bool,
+        // The file is a module's api.ctx (spec §10, Modules): a fn there has no body, `type
+        // Name` may be opaque, and `expose` begins a declaration.
+        api: bool,
     }
 
     // Whether the expression null_expr returned is a handler's, `l ifnull r`, `l iferr r` or
@@ -55,12 +58,13 @@ namespace parser {
     // right side: block if that is a block. first and last are their keywords.
     struct Handler { bare: bool, block: bool, first: tok::Token, last: tok::Token, left_end: u32, right_start: u32 }
 
-    fn parse { text: []u8, file: u32, tokens: []tok::Token, mut heap: arena::Arena, mut diags: diag::Diags } -> syntax::File {
+    // api: the file is a module's api.ctx (is_api).
+    fn parse { text: []u8, file: u32, tokens: []tok::Token, api: bool, mut heap: arena::Arena, mut diags: diag::Diags } -> syntax::File {
         let mut p = Parser{
             text, file, toks = tokens, i = 0, heap = &heap, diags = &diags, ids = 0,
             in_cond = false, depth = 0, bad = false, errored = false, err_at = 0,
             hand = Handler{ bare = false, block = false, first = tokens[0], last = tokens[0], left_end = 0, right_start = 0 },
-            cond_break = 0, cond_mark = diag::mark{ diags }, cond_items = false, arm_end = 0, cut = false,
+            cond_break = 0, cond_mark = diag::mark{ diags }, cond_items = false, arm_end = 0, cut = false, api,
         }
         let before = diag::items{ diags }
         if before.len > 0 {
@@ -99,6 +103,7 @@ namespace parser {
 
     fn decl { mut p: Parser } -> syntax::Decl {
         let attrs = attributes{ &p, field = false }
+        visibility_word{ &p }
         let start = p.i
         let id = new_id{ &p }
         let k = kind{ p, ahead = 0 }
@@ -107,6 +112,7 @@ namespace parser {
             // a bad attribute: the declaration is skipped with it
         } else if k == tok::Kind::kw_fn {
             skip{ &p }
+            let name_at = p.i
             let name = ident{ &p }
             let paren_fields = fields_in_parens_at{ p }
             let tps = if paren_fields { TParams{ names = slice::empty(syntax::Name){}, sets = slice::empty(bool){} } } else { fn_tparams{ &p } }
@@ -127,7 +133,25 @@ namespace parser {
                 params = ctx_fields{ &p, decl = true }
             }
             let ret: ?syntax::TypeExpr = if accept{ &p, k = tok::Kind::arrow } { type_expr{ &p } } else { null }
-            d = syntax::DeclKind::func{ name, tparams = tps.names, tsets = tps.sets, params, ret, body = block{ &p }, external = false }
+            let has_body = next_is{ p, k = tok::Kind::lbrace } and not nl{ p }
+            if p.api and not p.bad and has_body {
+                // A fn of an api.ctx is its signature: the module's files define it.
+                slipf{ &p, span = p.toks[p.i].span, msg = @fmt("`fn {}` in an api.ctx has no body: a file of its module defines it, with this signature", utf8::String{ bytes = name.text }) }
+            }
+            // Outside an api.ctx, a fn without a body where its declaration ends, at a line's
+            // end, is one error, and the parse goes on as if in an api.ctx (the checker drops it).
+            let ends = next_is{ p, k = tok::Kind::eof }
+            let bodiless = not has_body and not p.bad and name.text.len > 0 and not (ends and p.cut) and (nl{ p } or ends or next_is{ p, k = tok::Kind::rbrace })
+            if not p.api and bodiless {
+                slipf{ &p, span = p.toks[name_at].span, msg = @fmt("`fn {}` has no body: only a module's api.ctx declares a fn without one", utf8::String{ bytes = name.text }) }
+            }
+            if (p.api and not has_body) or bodiless {
+                let at = prev_end{ p }
+                let body = syntax::Block{ id = new_id{ &p }, span = source::Span{ file = p.file, start = at, end = at }, stmts = slice::empty(syntax::Stmt){} }
+                d = syntax::DeclKind::func{ name, tparams = tps.names, tsets = tps.sets, params, ret, body, external = false, declared = true }
+            } else {
+                d = syntax::DeclKind::func{ name, tparams = tps.names, tsets = tps.sets, params, ret, body = block{ &p }, external = false, declared = false }
+            }
         } else if k == tok::Kind::kw_extern and kind{ p, ahead = 1 } == tok::Kind::kw_union {
             skip{ &p }
             skip{ &p }
@@ -144,7 +168,7 @@ namespace parser {
             if next_is{ p, k = tok::Kind::lbrace } and not nl{ p } { fail{ &p, msg = "an extern fn has no body: C provides it" } }
             let at = prev_end{ p }
             let body = syntax::Block{ id = new_id{ &p }, span = source::Span{ file = p.file, start = at, end = at }, stmts = slice::empty(syntax::Stmt){} }
-            d = syntax::DeclKind::func{ name, tparams = slice::empty(syntax::Name){}, tsets = slice::empty(bool){}, params, ret, body, external = true }
+            d = syntax::DeclKind::func{ name, tparams = slice::empty(syntax::Name){}, tsets = slice::empty(bool){}, params, ret, body, external = true, declared = false }
         } else if k == tok::Kind::kw_struct {
             skip{ &p }
             let name = ident{ &p }
@@ -169,12 +193,21 @@ namespace parser {
             d = syntax::DeclKind::enumeration{ name, base, variants = enum_variants{ &p } }
         } else if k == tok::Kind::kw_type {
             skip{ &p }
+            let name_at = p.i
             let name = ident{ &p }
             let tparams = tparams{ &p }
-            expect{ &p, k = tok::Kind::assign }
-            let distinct = at_distinct{ p }
-            if distinct { skip{ &p } }
-            d = syntax::DeclKind::alias{ name, tparams, ty = type_expr{ &p }, distinct }
+            if not p.bad and name.text.len > 0 and not next_is{ p, k = tok::Kind::assign } and not (next_is{ p, k = tok::Kind::eof } and p.cut) and (nl{ p } or next_is{ p, k = tok::Kind::eof } or next_is{ p, k = tok::Kind::rbrace }) {
+                // `type Name`: an opaque type, which only an api.ctx declares.
+                if not p.api {
+                    slipf{ &p, span = p.toks[name_at].span, msg = @fmt("`type {}` without `= T` is an opaque type, which only a module's api.ctx declares", utf8::String{ bytes = name.text }) }
+                }
+                d = syntax::DeclKind::opaque{ name, tparams }
+            } else {
+                expect{ &p, k = tok::Kind::assign }
+                let distinct = at_distinct{ p }
+                if distinct { skip{ &p } }
+                d = syntax::DeclKind::alias{ name, tparams, ty = type_expr{ &p }, distinct }
+            }
         } else if k == tok::Kind::kw_const {
             skip{ &p }
             let name = ident{ &p }
@@ -206,6 +239,14 @@ namespace parser {
             if next_is{ p, k = tok::Kind::lparen } and not nl{ p } { fail{ &p, msg = "an error cannot have generic parameters" } }
             let fields: ?[]syntax::Field = if next_is{ p, k = tok::Kind::lbrace } and not nl{ p } { plain_fields{ &p } } else { null }
             d = syntax::DeclKind::fault{ name, fields }
+        } else if at_expose{ p } {
+            // `expose "path"`: `expose` is a keyword only here, in an api.ctx, where a
+            // declaration begins and a string follows it (spec §10, Re-exports).
+            let t = p.toks[p.i + 1]
+            if not p.api { slip{ &p, span = p.toks[p.i].span, msg = "`expose` is only in a module's api.ctx, where it re-exports a nested module's api" } }
+            skip{ &p }
+            skip{ &p }
+            d = syntax::DeclKind::expose{ path = lexer::str_value{ heap = p.heap, text = text_of{ p, t } }, at = t.span }
         } else if k == tok::Kind::kw_namespace {
             skip{ &p }
             let name = ident{ &p }
@@ -273,6 +314,24 @@ namespace parser {
             }
         }
         return list::items{ list = xs }
+    }
+
+    // `pub fn`, `export struct`, `public`, `private`: what code outside a folder may name is a
+    // module's api.ctx's to say (spec §10, Modules). One error, and the parse goes on with the
+    // declaration after the word.
+    fn visibility_word { mut p: Parser } {
+        if p.bad or not next_is{ p, k = tok::Kind::ident } or not is_decl_start{ k = kind{ p, ahead = 1 } } { return }
+        let hides = is_word{ p, word = "private" }
+        if not (hides or is_word{ p, word = "pub" } or is_word{ p, word = "export" } or is_word{ p, word = "public" }) { return }
+        let t = p.toks[p.i]
+        let word = utf8::String{ bytes = text_of{ p, t } }
+        if hides {
+            slipf{ &p, span = t.span, msg = @fmt("`{}` isn't ctxlang: a name is visible everywhere unless a module hides it; a folder with an api.ctx is a module, and what its api.ctx doesn't declare is hidden outside it", word) }
+        } else {
+            fix{ &p, start = t.span.start, end = p.toks[p.i + 1].span.start, text = "", safe = true, msg = "remove it" }
+            slipf{ &p, span = t.span, msg = @fmt("`{}` isn't ctxlang: a name is visible everywhere unless a module hides it, and a module's api.ctx declares what code outside the module may name", word) }
+        }
+        skip{ &p }
     }
 
     // Whether the `{ ... }` here, where a function's context belongs, is its body instead: it
@@ -2394,6 +2453,20 @@ namespace parser {
     }
 
     // At `error name`, which declares an error: `error` is a name anywhere else.
+    // `expose "path"`, where a declaration begins (spec §10, Re-exports).
+    fn at_expose { p: Parser } -> bool {
+        return next_is{ p, k = tok::Kind::ident } and slice::eq_bytes{ a = text_of{ p, t = p.toks[p.i] }, b = "expose" }
+               and kind{ p, ahead = 1 } == tok::Kind::str
+    }
+
+    // Whether a file named path is a module's api.ctx (spec §10, Modules): its name, after the
+    // last `/` or `\`, is `api.ctx`.
+    fn is_api { path: []u8 } -> bool {
+        let mut i = path.len
+        while i > 0 and path[i - 1] != '/' and path[i - 1] != '\\' { i = i - 1 }
+        return slice::eq_bytes{ a = path[i..], b = "api.ctx" }
+    }
+
     fn at_error_decl { p: Parser } -> bool {
         return next_is{ p, k = tok::Kind::ident } and slice::eq_bytes{ a = text_of{ p, t = p.toks[p.i] }, b = "error" }
                and kind{ p, ahead = 1 } == tok::Kind::ident

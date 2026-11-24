@@ -1,0 +1,7 @@
+// A fn without a body, an opaque `type Name` and `expose` are api.ctx's alone (spec §10,
+// Modules, rule 3; Re-exports, rule 2). Elsewhere each is one error that says so.
+
+fn helper { n: u32 } -> u32  //~ error at 4: `fn helper` has no body: only a module's api.ctx declares a fn without one
+type Handle                  //~ error at 6: `type Handle` without `= T` is an opaque type, which only a module's api.ctx declares
+expose "gff"                 //~ error at 1: `expose` is only in a module's api.ctx, where it re-exports a nested module's api
+fn main {} -> i32 { return 0 }

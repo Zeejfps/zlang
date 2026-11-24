@@ -1,0 +1,15 @@
+namespace gff {
+    type Gff
+    fn size { g: Gff } -> u32
+    fn read {} -> Gff
+    const VERSION: u32 = 4
+    struct Field { label: []u8 }
+    fn chunk {} -> u8
+}
+namespace tpc { fn decode { n: u32 } -> u32 }
+expose "tpc"
+expose "gff/chunks"
+expose "notes"
+expose "nowhere"
+expose "../other"
+namespace inner { expose "gff" }

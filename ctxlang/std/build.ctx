@@ -101,7 +101,8 @@ namespace build {
     // Gives exe a file of ctxlang source, `text`, as if it were in one of its directories: the
     // driver writes it to NAME.ctx in the program's build directory, where errors in it point,
     // and rewrites it only when the text changes. A name is ASCII letters, digits, `_` and `-`,
-    // but not `build` (a file named build.ctx is never an executable's), and one executable
+    // but not `build` (a file named build.ctx is never an executable's) or `api` (an api.ctx is
+    // a module's, written by hand: spec §10, Modules), and one executable
     // can't have two files of one name. The build program itself never sees the files it
     // generates.
     fn gen_file { mut b: Build, exe: Exe, name: []u8, text: []u8 } {
@@ -113,14 +114,10 @@ namespace build {
             if not (ascii::is_alnum{ c } or c == '_' or c == '-') { rt::fail{ msg = "build: a file name can hold only ASCII letters, digits, _ and -" } }
             i = i + 1
         }
-        let word = "build"
-        let mut same = name.len == word.len
-        i = 0
-        while same and i < name.len {
-            same = ascii::to_lower{ c = name[i] } == word[i]
-            i = i + 1
-        }
-        if same { rt::fail{ msg = "build: a file name cannot be build" } }
+        if names_word{ name, word = "build" } { rt::fail{ msg = "build: a file name cannot be build" } }
+        // A generated file is in no folder of its own, so it can't make one a module (spec
+        // §10, Modules): an api.ctx is written by hand.
+        if names_word{ name, word = "api" } { rt::fail{ msg = "build: a file name cannot be api" } }
         // The text follows its record's line, which gives its size.
         let mut digits: [20]u8
         record{ &b, kind = "gen", exe, a = name, more = utf8::fmt_u64{ n = text.len, into = digits[..] }.bytes }
@@ -128,6 +125,17 @@ namespace build {
         write{ &b, g, s = text }
         write{ &b, g, s = "\n" }
         if g.file != 0 { _ = fflush{ &b, file = g.file } }
+    }
+
+    // Whether name is word, in any case.
+    fn names_word { name: []u8, word: []u8 } -> bool {
+        if name.len != word.len { return false }
+        let mut i: usize = 0
+        while i < name.len {
+            if ascii::to_lower{ c = name[i] } != word[i] { return false }
+            i = i + 1
+        }
+        return true
     }
 
     // Compiles exe's C at optimization level `level`, 0 to 3 (`-O0` to `-O3`), instead of 1.

@@ -1,0 +1,1 @@
+namespace tpc { fn decode { n: u32 } -> u32 }

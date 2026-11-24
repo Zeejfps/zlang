@@ -1,0 +1,6 @@
+// Inside lib/gff: a white-box test of its hidden check.
+#test
+fn checks_magic { mut t: Test } {
+    @expect(&t, gff::check{ bytes = "XY" } is gff::bad_magic)
+    @expect(&t, gff::check{ bytes = "GF" } is ok)
+}

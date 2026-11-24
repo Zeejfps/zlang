@@ -1,0 +1,5 @@
+fn main { mut io: Io } -> i32 {
+    let g = gff::read{ bytes = "abc" } iferr { return 1 }
+    _ = @fmt(&io, "{} {} {}\n", gff::size{ g }, tpc::decode{ n = 1 }, twoda::rows{})
+    return 0
+}

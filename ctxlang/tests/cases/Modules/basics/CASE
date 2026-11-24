@@ -1,0 +1,9 @@
+// A program with modules (spec §10, Modules): code outside lib/gff names only what its
+// api.ctx declares, holds an opaque type without looking into it, matches the errors the api
+// states, and keeps the module's state in a capability whose static only the module reaches.
+// lib/tpc adds to namespace gff, and its hidden put_row is its own, beside lib/gff's.
+//# program: main.ctx lib/gff/api.ctx lib/gff/read.ctx lib/tpc/api.ctx lib/tpc/decode.ctx
+//# stdout:
+//| 8 first true
+//| truncated at 2
+//| 2 6

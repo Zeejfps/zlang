@@ -1,0 +1,5 @@
+// Another module adds to namespace gff: its hidden put_row is its own.
+namespace gff {
+    fn tpc_rows {} -> u8 { return put_row{ n = 2 } }
+    fn put_row { n: u8 } -> u8 { return n * 3 }
+}

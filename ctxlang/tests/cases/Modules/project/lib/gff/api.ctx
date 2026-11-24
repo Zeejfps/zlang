@@ -1,0 +1,7 @@
+namespace gff {
+    type Gff
+    error bad_magic
+    error truncated{ at: usize }
+    fn read { bytes: []u8 } -> !Gff
+    fn size { g: Gff } -> usize
+}

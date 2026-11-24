@@ -1,0 +1,22 @@
+namespace gff {
+    struct Gff { size: usize, first: u8 }
+    capability Cache { static count: u32 }
+
+    fn read { bytes: []u8 } -> error(bad_magic, truncated)!Gff {
+        try check{ bytes }
+        return Gff{ size = bytes.len, first = bytes[0] }
+    }
+    fn size { g: Gff } -> usize { return g.size }
+    fn field { g: Gff } -> Field { return Field{ label = "first", kind = if g.first < 128 { Kind::byte } else { Kind::word } } }
+    fn reads { mut cache: Cache } -> u32 {
+        cache.count = cache.count + 1
+        return cache.count
+    }
+
+    // Not in the api: inside only, and named freely.
+    fn check { bytes: []u8 } -> ! {
+        if bytes.len < 4 { return truncated{ at = bytes.len } }
+        if put_row{ c = bytes[0] } != 'G' { return bad_magic }
+    }
+    fn put_row { c: u8 } -> u8 { return c }
+}

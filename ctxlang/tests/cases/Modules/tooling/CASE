@@ -1,0 +1,52 @@
+// ctxc's tools for modules (spec §10, Modules, Tooling). `ctxc api` writes a folder's first
+// api.ctx from what the rest of the program names of it: a fn's signature with the errors it
+// is inferred to fail with, and its comment; a capability without its static, which stays;
+// and what is complete without a body moved from its file, comments and all (rule 3).
+//# $ ctxc api . lib/geo
+//# stdout:
+//| wrote lib/geo/api.ctx: 7 declarations
+//# file lib/geo/api.ctx:
+//| namespace geo {
+//|     // A point on the grid.
+//|     struct Point { x: i32, y: i32 }
+//|     struct Box {
+//|         lo: Point,
+//|         hi: Point,
+//|     }
+//|     error empty
+//|     error flipped{ at: i32 }      // lo is right of hi
+//|     capability Counter
+//|     // A box from its corners.
+//|     fn make { lo: Point, hi: Point } -> error(empty, flipped)!Box
+//|     fn count { mut counter: Counter } -> u32
+//| }
+//# file lib/geo/shapes.ctx:
+//| namespace geo {
+//|     capability Counter { static made: u32 }
+//|
+//|     // A box from its corners.
+//|     fn make { lo: Point, hi: Point } -> !Box {
+//|         if lo.x == hi.x { return empty }
+//|         if lo.x > hi.x { return flipped{ at = lo.x } }
+//|         return Box{ lo, hi }
+//|     }
+//|     fn count { mut counter: Counter } -> u32 {
+//|         counter.made = counter.made + 1
+//|         return counter.made
+//|     }
+//|     fn helper {} -> u8 { return 1 }
+//| }
+//# $ ctxc run .
+//# stdout:
+//| 2 1
+// `ctxc where` says where a name is declared, its module and where it is visible.
+//# $ ctxc where . geo::make
+//# stdout:
+//| lib/geo/shapes.ctx:5:8: fn geo::make; in module `lib/geo`, visible everywhere; declared in lib/geo/api.ctx:12:8
+//# $ ctxc where . helper
+//# stdout:
+//| lib/geo/shapes.ctx:14:8: fn geo::helper; in module `lib/geo`, visible inside module `lib/geo`
+//# $ ctxc api . lib/geo
+//# exit: 1
+//# stderr:
+//| lib/geo: has an api.ctx already: `ctxc api` writes a folder's first one

@@ -378,6 +378,58 @@ A panic prints `file:line:col: panic: message`, and under it its call path, inne
 `-O0` and `-O1` and every `ctxc test` build keep the path; at `build::optimize{ level = 2 }` it
 needs `build::trace_calls{ &b, exe, on = true }` (a few percent slower).
 
+## Modules (§10, Modules)
+
+A folder with an `api.ctx` is a **module**: code outside it names only what `api.ctx` declares,
+and code inside sees everything. Without one, a folder hides nothing. `api.ctx` is the contract:
+fns without bodies, `type Name` for an opaque type, and what is complete without a body
+(structs, enums, errors, consts) declared there alone. The module's files define each fn and
+opaque type with exactly the api's signature.
+
+<!-- context:
+// file: gff/read.ctx
+namespace gff {
+    struct Gff { size: usize }
+    fn read { bytes: []u8 } -> error(bad_magic, truncated)!Gff {
+        if bytes.len < 2 { return truncated{ at = bytes.len } }
+        if bytes[0] != 'G' { return bad_magic }
+        return Gff{ size = bytes.len }
+    }
+    fn size { g: Gff } -> usize { return g.size }
+    fn reads { mut cache: Cache } -> u32 {
+        cache.count = cache.count + 1
+        return cache.count
+    }
+}
+// file: gff/cache.ctx
+namespace gff { capability Cache { static count: u32 } }
+// file: gff/main.ctx
+fn main {} {}
+// file: gff/api.ctx
+...
+-->
+```ctx
+// gff/api.ctx
+namespace gff {
+    type Gff                                            // opaque: held and passed, not looked into
+    error bad_magic
+    error truncated{ at: usize }
+    capability Cache                                    // the module's state: its static is inside
+    fn read { bytes: []u8 } -> error(bad_magic, truncated)!Gff   // the errors, written out
+    fn size { g: Gff } -> usize
+    fn reads { mut cache: Cache } -> u32
+}
+```
+
+- Every type an api's declaration names is in the api too, in full or as `type Name`.
+- Hidden names are the module's own: two modules may each have a hidden `gff::put_row`.
+- A test inside the module's folder tests its internals; one outside sees its api only.
+- A parent folder's `api.ctx` re-exports a nested module's names by restating them, or all of
+  them with `expose "gff"`; restating a struct as `type Gff` makes it opaque past the parent.
+- `ctxc where DIR gff::read` says where a name is declared and where it is visible;
+  `ctxc api DIR lib/gff` writes a first `api.ctx` for a folder from what the rest of the
+  program uses of it.
+
 ## Tests (§20)
 
 A test is a fn beside the code it tests, in a file of its own (`wav_test.ctx` next to
@@ -446,7 +498,7 @@ What a first draft gets wrong, from the agents' write-ups ([friction.md](todo/fr
 habits of other languages.
 
 From other languages. ctxc says what to write for each, in one error (§21, rule 7), and
-`ctxc check --fix` writes the first eleven; the rest need a choice it leaves to you:
+`ctxc check --fix` writes the first twelve; the rest need a choice it leaves to you:
 
 | Written | Write |
 |---|---|
@@ -460,6 +512,7 @@ From other languages. ctxc says what to write for each, in one error (§21, rule
 | `var x = 0`, `loop { }` | `let mut x = 0`, `while true { }` |
 | `P{ x: 1, y: 2 }` | `P{ x = 1, y = 2 }` |
 | `K.a`, `io.println` | `K::a`, `io::println` (§10) |
+| `pub fn`, `export struct` | `fn`, `struct`: a name is public unless a module's `api.ctx` leaves it out (§10, Modules) |
 | `double`, `boolean`, `byte`, `size_t` | `f64`, `bool`, `u8`, `usize` |
 | `add(1, 2)`, `two()` | `add{ a = 1, b = 2 }`, `two{}`: a call names its fields (§3) |
 | `Point(1, 2)` | `Point{ x = 1, y = 2 }` (§7) |
@@ -472,7 +525,7 @@ From other languages. ctxc says what to write for each, in one error (§21, rule
 | `let mut x` at top level | a local of `main`, passed down: no globals (§1, rule 2) |
 
 ctxlang's own rules (the error says what to write, and `ctxc check --fix` writes the
-first four):
+first five):
 
 | Written | Write |
 |---|---|
@@ -480,11 +533,14 @@ first four):
 | `two{}` as a statement, `@fmt(&io, ...)` | `_ = two{}`, `_ = @fmt(&io, ...)` (§11, rule 6) |
 | `for i in range(n)`, `for i in 0..=n` | `for i in 0..n`, `for i in 0..n + 1` (§11, For) |
 | `q[i]` on a pointer | `(q + i).*`, unchecked; better, keep a slice (§12, Pointers) |
+| `fn read { bytes: []u8 } -> !Gff` in an `api.ctx` | `-> error(bad_magic)!Gff`: an api states its errors (§10, Modules, rule 5) |
 | `x == f{} ifnull 0` | `x == (f{} ifnull 0)` (§11, Expressions, rule 7) |
 | `for i, x in xs` | `for x at i in xs` |
 | a field or local named `type`, `match`, `fn` | `kind`, `found`, `f` (§1, rule 4) |
 | `match c { 0 => ..., 1 => ... }` on an integer | add `else => ...` (§8, Match on integers) |
 | `try f{}` in a fn that returns `i32` | return `!i32`, or `f{} iferr { ... }` (§8, Errors) |
+| a hidden fn called from outside its module | declare it in the module's `api.ctx`, or call one the api has (§10, Modules) |
+| `g.size` outside the module of an opaque `type Gff` | a fn of the api that gives it (§10, Modules, rule 3) |
 
 Type errors, where the fix is a choice:
 

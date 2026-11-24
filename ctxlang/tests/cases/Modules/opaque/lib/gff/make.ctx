@@ -1,0 +1,10 @@
+namespace gff {
+    struct Gff { size: usize }
+    enum Mode: u8 { fast, slow }
+    union Shape { round, square{ side: u32 } }
+    struct Box(T) { item: T }
+    fn make {} -> Gff { return Gff{ size = 3 } }
+    fn mode {} -> Mode { return Mode::slow }
+    fn shape {} -> Shape { return Shape::square{ side = 2 } }
+    fn boxed {} -> Box(u8) { return Box(u8){ item = 1 } }
+}

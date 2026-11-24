@@ -1,0 +1,2 @@
+namespace fmt { fn other {} -> u8 { return 5 } }
+fn main {} -> i32 { return 0 }

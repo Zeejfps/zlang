@@ -6,6 +6,6 @@ fn build { mut b: Build } { build::gen_file{ &b, exe = build::exe{ &b, name = "a
 //# panic: program: panic: build: empty file name
 //# path:
 //|   at rt::fail_with (std/rt.ctx:47:13)
-//|   at build::field (std/build.ctx:283:26)
-//|   at build::gen_file (std/build.ctx:109:14)
+//|   at build::field (std/build.ctx:291:26)
+//|   at build::gen_file (std/build.ctx:110:14)
 //|   at build (14.ctx:1:44)

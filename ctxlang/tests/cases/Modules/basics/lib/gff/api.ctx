@@ -1,0 +1,16 @@
+// A module's contract: what code outside lib/gff may name.
+namespace gff {
+    type Gff                                         // opaque: held and passed, never looked into
+    struct Field { label: []u8, kind: Kind }
+    enum Kind: u8 { byte, word }
+
+    error bad_magic
+    error truncated{ at: usize }
+
+    capability Cache                                 // its static is the module's own
+
+    fn read { bytes: []u8 } -> error(bad_magic, truncated)!Gff
+    fn size { g: Gff } -> usize
+    fn field { g: Gff } -> Field
+    fn reads { mut cache: Cache } -> u32
+}

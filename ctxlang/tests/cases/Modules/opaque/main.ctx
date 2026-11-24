@@ -1,0 +1,27 @@
+fn same { a: gff::Gff, b: gff::Gff } -> bool { return a == b }
+
+fn main {} -> i32 {
+    let g = gff::make{}
+    let n = g.size
+    let h = gff::Gff{ size = 1 }
+    let m = gff::Mode::fast
+    let k = @as(u8, gff::mode{})
+    let j = @as(gff::Mode, 1)
+    match gff::shape{} {
+        round => {}
+        square => {}
+    }
+    let b = gff::boxed{}
+    let i = b.item
+    let mut z: gff::Box(u8)
+    z = b
+    _ = same{ a = g, b = g }
+    _ = n
+    _ = h
+    _ = m
+    _ = k
+    _ = j
+    _ = i
+    _ = z
+    return 0
+}

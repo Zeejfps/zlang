@@ -1,0 +1,22 @@
+namespace gff {
+    type Gff
+    type Pair(T)
+    error bad_magic
+    error truncated{ at: usize }
+    capability Cache { static hits: u32 }
+
+    fn read { bytes: []u8 } -> !Gff
+    fn count { g: Gff, extra: u8 } -> usize
+    fn rename { g: Gff } -> usize
+    fn grow { g: Gff } -> usize
+    fn result { g: Gff } -> u32
+    fn missing {} -> u8
+    fn header { g: Gff } -> Header
+    #task
+    fn spin {}
+    #test
+    fn checks {}
+    #pure
+    fn quiet {}
+    fn count {} -> u8
+}

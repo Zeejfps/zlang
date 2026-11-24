@@ -353,6 +353,103 @@ What the Threaded backend's build settled, where this document left room:
 10. **KOTOR's mixer shares its device through a pointer** (spec §3.1, rule 6), as the thread did: the game
    reads `pumping` and `underruns` while it runs, so the device can't be the task's alone.
 
+## Modules
+
+The language's side is spec §10, Modules and Re-exports. This section is how ctxc builds them,
+and why they are as they are.
+
+### How it is built
+
+- **Which files are inside which module** is the driver's (ctxc/modules.ctx, `find`), before
+  the checker runs, for every command that checks a program. For each of the program's own
+  files it walks up from its folder to the root of the file system, asking each folder once
+  whether it holds an `api.ctx`; each that does is a module, the next one up its parent. A file a
+  build program generates counts as in its executable's root: `analyze` takes a place for each
+  file, which `ctxc build` takes as `--place DIR` before a file and `ctxc graph` writes as a
+  `place` record after the generated file's. A module's folder is shown as its `api.ctx` is
+  named, so messages name it as they name its files. `expose` paths are resolved there too,
+  against the folders' keys (`Module.exposes`).
+- **Names.** A namespace's table still maps a name to one entry; the other declarations of the
+  name are chained from it (`Decl.next`). Each declaration has a `scope`: the outermost module
+  whose inside sees it, or none for everywhere; a struct, union or enum has an `open` scope too,
+  where its fields or variants are seen. Every lookup goes through `lookup` or `member`, given
+  the module the code is in (`Scope.from`, or the name's file): it returns the first
+  declaration that code sees, or failing that the first it doesn't, so a hidden name resolves
+  and its one error comes from `use` (`hidden_use`), not from every place that resolves names.
+  Two declarations of a name clash when their scopes nest (`overlaps`): for a program without
+  modules every scope is the same, and `add_name` reports exactly what it did before.
+- **api.ctx files.** `collect` declares an api.ctx's declarations without naming them
+  (`api_decls`). `settle_modules`, before any type is resolved, takes the modules deepest first:
+  each api declaration pairs with the definition of its name in the module's own files (a fn's
+  or an opaque type's signature, a capability's fields), restates a declaration a nested api made
+  visible inside the module, or is complete and named itself. Pairing and restating widen what
+  they declare (`widen`): its scope becomes the module's parent, its `open` scope too unless an
+  opaque `type` narrows it, and a clash this makes is reported once (`reclash`). A half has no
+  name in any table: uses name the definition, so a fn has one identity at every level and
+  lowering never sees a half.
+- **Checking the contract** waits for the bodies' inferred error sets (`check_apis`, after the
+  second `infer_sets`): a half is resolved with its definition's generic parameters, so their
+  types are the same ids, and compared field by field (`compare_half`); a fn's `!T` gets the
+  error that writes its set (`result_set`); and the names in each api declaration's types are
+  looked up in the side table of uses for any that is hidden where the declaration is visible
+  (`leaks`). Opaque types are checked where code looks inside one (`opaque_here`): a field, a
+  literal, a variant, a match or `is`, `@as` on an enum.
+- **After the checker** nothing changes: the IR names functions by declaration, and C names are
+  made unique already (emit_c.ctx, `unique`), so two hidden `gff::put_row` are two functions.
+- **Tooling.** `ctxc where` lists a name's declarations with their modules and scopes
+  (modules.ctx, `where`). `ctxc api` takes what files outside the folder name of it, from the
+  side table of uses, and what those declarations' types name in turn, then writes fns'
+  signatures with their inferred sets and moves what is complete without a body out of its file
+  (`first_api`), since such a declaration is the api's alone.
+
+### Decisions
+
+1. **Why modules.** Every name was visible everywhere and a namespace open to any file, so
+   nothing told a function callers depend on from one file's helper: a changed signature broke
+   code anywhere (friction.md #14); a library had no contract to read, and `!T`'s inferred sets
+   made what it fails with known to the compiler alone; a subsystem's state went in `World`;
+   and parallel agents agreed on helper names by message (#5). Private declarations one at a
+   time (an attribute, a private namespace, file-private names) answer the last two but give no
+   contract and hide helpers others could reuse. Public by default stays: an agent that finds a
+   helper calls it rather than writes it again. A boundary is drawn on purpose, where a contract
+   is wanted.
+2. **The contract is a file, checked both ways.** C has headers because it compiles files
+   separately, and checks them against nothing but the link; Ada's spec and body can't drift,
+   but every package needs both; Go's capitals and Rust's `pub` spread the contract through the
+   implementation; Go's ban on import cycles comes from compiling packages separately. ctxc
+   compiles the whole program, so a contract file isn't needed to build anything: as OCaml's
+   `.mli`, it is optional and exists only as the contract, and an opaque type in it is still
+   passed by value, its size known.
+3. **A file's place decides** which modules it is inside, not the build that adds it, and a
+   module whose `api.ctx` isn't in the program is an error: otherwise a build that added a
+   module's subfolder alone would make its files public. Folders are asked up to the root of the
+   file system, once each.
+4. **A generated file is in its executable's root**, as §19 says it is "in one of its
+   directories": a generator writing code for a module's internals, as one for an ECS would,
+   needs to see them. It can't be named `api`: an `api.ctx` is written by hand.
+5. **An opaque type has its zero value outside**, and `==`, `@hash` and an order where it has
+   them: a zero value is a property of its bytes (§11, Initialization), which every allocation,
+   static and struct holding one already has, and comparing names nothing inside it. `@as` on an
+   opaque enum does name its values, and is an error.
+6. **Attributes**: a fn's half has `#task`, `#write` and `#convert`, which change how callers
+   use it, and its definition the same; the rest are the definition's. A `#write` fn is exempt
+   from stating its errors: its result is a bare `!` (§13), whose errors are its sink's.
+7. **An `extern fn` may be declared in `api.ctx`**: it is complete without a body. A
+   capability with fields is made only inside its module, as statics are reached only there:
+   otherwise a module adding to the namespace could make one.
+8. **A definition matches its api exactly**: its context fields in the api's order, names and
+   `mut`. It may write `!T` for the api's `E!T` when its body is inferred to fail with E's
+   errors, so a set is written once, in the contract, and still checked.
+9. **Tests get no exception.** A `#test` fn sees what its file sees: one inside the module tests
+   its internals, kept where the agent changing them works; one outside tests the contract.
+   Considered and rejected: a `#test` fn that sees past every boundary (a test is a fn other
+   code may call, and could hand a hidden function on), and a list in `api.ctx` of outside
+   folders that may see inside (a module's guarantee would depend on files it doesn't own).
+10. **Re-exports never rename and never widen** (spec §10, Re-exports): a name means one thing,
+    with one type, at every level it reaches, so `let f = gff::read` has one type wherever it
+    is written. The directive is `expose`, not `export`, which brings TypeScript's forms with it
+    and, this close to C, means the linker's symbols.
+
 ## Decisions made
 
 - **Panic call paths** (spec §15, Call paths; How ctxlang maps to C, call paths): frames the

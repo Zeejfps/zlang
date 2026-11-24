@@ -1,0 +1,1 @@
+namespace gff { fn size { g: Gff } -> usize { return g.size } }

@@ -11,4 +11,4 @@
 //# $ ctxc interp
 //# exit: 2
 //# stderr:
-//| usage: ctxc interp [--env NAME=VALUE | --env NAME]... PATH [-- ARGS...]
+//| usage: ctxc interp [--env NAME=VALUE | --env NAME]... PATH... [-- ARGS...]

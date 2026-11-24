@@ -397,7 +397,7 @@ namespace work {
         for f in files { try! list::push{ list = &named, item = filled{ &r, &heap, s = f } } }
         let mut env = strs{ &heap }
         for e in step.env { try! list::push{ list = &env, item = filled{ &r, &heap, s = e } } }
-        match tool::build{ &io, &fs, &proc, &heap, s = r.s, scratch = &r.scratch, files = list::items{ list = named }, denied = none[..], dir = r.dir, up = r.up, name, flags = none[..], level = 1, trace = true, env = list::items{ list = env } } {
+        match tool::build{ &io, &fs, &proc, &heap, s = r.s, scratch = &r.scratch, files = list::items{ list = named }, denied = none[..], places = none[..], dir = r.dir, up = r.up, name, flags = none[..], level = 1, trace = true, env = list::items{ list = env } } {
             exe{ path } => {
                 if want != null {
                     fail{ &r, line = errors_line{ step }, what = "the program compiles: an error was expected" }
@@ -479,8 +479,10 @@ namespace work {
         for f in case::files{ s = step } { try! list::push{ list = &named, item = filled{ &r, &heap, s = f } } }
         let files = list::items{ list = named }
         let line = if step.interp_line != 0 { step.interp_line } else { step.line }
-        // One file is the program; several are their directory, if it holds just them.
+        // One file is the program; several are their directory, if it holds just them, or else
+        // each of them, as a program in folders of its own (modules, spec §10) is.
         let mut path = files[0]
+        let mut each = false
         if files.len > 1 {
             path = parent{ path = files[0] }
             let mut just = true
@@ -491,10 +493,7 @@ namespace work {
             for n in names_in{ &fs, &heap, path = join{ &heap, a = r.dir, b = path } } {
                 if n.len > 4 and ends_with{ s = n, suffix = ".ctx" } { count = count + 1 }
             }
-            if not just or count != files.len {
-                fail{ &r, line, what = "the interpreter takes one file or a directory of just the program's files: say `//# interp: off: REASON`" }
-                return
-            }
+            if not just or count != files.len { each = true }
             if path.len == 0 { path = "." }
         }
         let mut argv = strs{ &heap }
@@ -509,7 +508,11 @@ namespace work {
         }
         try! list::push{ list = &argv, item = "--env" }
         try! list::push{ list = &argv, item = env[env.len - 1] }
-        try! list::push{ list = &argv, item = path }
+        if each {
+            for f in files { try! list::push{ list = &argv, item = f } }
+        } else {
+            try! list::push{ list = &argv, item = path }
+        }
         try! list::push{ list = &argv, item = "--" }
         for a in args { try! list::push{ list = &argv, item = a } }
         let mut own = strs{ &heap }
@@ -746,6 +749,7 @@ namespace work {
         let mut trace = true
         let mut files = strs{ &heap }
         let mut denied = strs{ &heap }
+        let mut places = strs{ &heap }
         let mut flags = strs{ &heap }
         let mut compiled = true
         while from <= records.len and compiled {
@@ -757,7 +761,7 @@ namespace work {
             let value = if tab < line.len { line[tab + 1..] } else { "" }
             let last = from > records.len
             if (eq{ a = kind, b = "exe" } or last) and name.len > 0 {
-                match tool::build{ &io, &fs, &proc, &heap, s = r.s, scratch = &r.scratch, files = list::items{ list = files }, denied = list::items{ list = denied }, dir, up = cat{ &heap, a = r.s.home, b = "/" }, name, flags = list::items{ list = flags }, level, trace, env = none[..] } {
+                match tool::build{ &io, &fs, &proc, &heap, s = r.s, scratch = &r.scratch, files = list::items{ list = files }, denied = list::items{ list = denied }, places = list::items{ list = places }, dir, up = cat{ &heap, a = r.s.home, b = "/" }, name, flags = list::items{ list = flags }, level, trace, env = none[..] } {
                     exe{ path } => { try! list::push{ list = &r.exes, item = Exe{ name, path } } }
                     errors{ text } => {
                         compiled = false
@@ -776,6 +780,7 @@ namespace work {
                 }
                 files = strs{ &heap }
                 denied = strs{ &heap }
+                places = strs{ &heap }
                 flags = strs{ &heap }
             }
             if eq{ a = kind, b = "exe" } {
@@ -789,9 +794,13 @@ namespace work {
                 trace = not eq{ a = value, b = "0" }
             } else if eq{ a = kind, b = "file" } {
                 try! list::push{ list = &files, item = value }
+                try! list::push{ list = &places, item = "" }
             } else if eq{ a = kind, b = "denied" } {
                 try! list::push{ list = &files, item = value }
+                try! list::push{ list = &places, item = "" }
                 try! list::push{ list = &denied, item = value }
+            } else if eq{ a = kind, b = "place" } and places.len > 0 {
+                list::items{ list = places }[places.len - 1] = value
             } else if eq{ a = kind, b = "flag" } {
                 try! list::push{ list = &flags, item = value }
             }

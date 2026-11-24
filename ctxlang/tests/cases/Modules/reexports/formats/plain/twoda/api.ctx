@@ -1,0 +1,1 @@
+namespace twoda { fn rows {} -> u32 }

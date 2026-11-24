@@ -1,0 +1,4 @@
+namespace fmt {
+    fn deep {} -> u8 { return helper{} }
+    fn helper {} -> u8 { return 3 }
+}
