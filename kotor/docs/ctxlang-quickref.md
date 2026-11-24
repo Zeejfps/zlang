@@ -183,6 +183,11 @@ the same T (§5): `let run: fn{ s: []u8 } -> !u64 = parse_number`, in a struct f
 `?fn`, or an argument. Calling through it fails with any error, so a `match` on the error needs
 `else`; its errors keep their payloads (`parse::bad_digit{ at } => ...`). A local inferred from a
 function (`let f = parse_number`) keeps the function's own set and takes no other function.
+`main` (and a build program's `build`) may return `!` or `!i32` and `try` its way out: an error
+ends the program with exit code 1 after `error: gff::truncated{ at = 12 }` on standard error
+(§15, Entry point, rule 4). An error in an `@fmt` hole prints the same way; a payload field
+without a writer (a struct, a union, an enum, an optional, an array) prints from its parts,
+`Point{ x = 1, y = 2 }`, `Kind::char`, `null`, `[1, 2]` (§13, Formatting, rule 10).
 ```
 // before: a chain of direct calls
 if try rt_core::run{ &w, &vm, routine, argc } { return true }

@@ -284,6 +284,7 @@ namespace check {
         escapes:   list::List(Escape, Heap),          // escape errors that wait on the sets
         sites:     list::List(Site, Heap),            // every @fmt, whose set is owned by SITE + its index
         fault_writers: map::Map(u64, []Writer, Heap), // an error hole's field writers, by fault_key
+        exit_sites: map::Map(u32, u32, Heap),         // by fn: the site that writes the error its `!` result holds (exit_site)
         ptr_faults: bool = false,                     // whether some error's payload holds a pointer
         thread_locals: list::List(CVar, Heap),        // the `#thread_local` statics, by owner and name
         unmarked: list::List(syntax::Name, Heap),     // extern fns with neither a capability nor `#pure`
@@ -545,6 +546,7 @@ namespace check {
             escapes = list::new(Escape){ realloc = arena::alloc, &heap },
             sites = list::new(Site){ realloc = arena::alloc, &heap },
             fault_writers = map::new(u64, []Writer){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            exit_sites = map::new(u32, u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             thread_locals = list::new(CVar){ realloc = arena::alloc, &heap },
             unmarked = list::new(syntax::Name){ realloc = arena::alloc, &heap },
             tasky = ids{ &heap },
@@ -606,6 +608,7 @@ namespace check {
         settle_const_as{ &c }
         each{ &c, xs = c.consts, what = Phase::fold }
         attributes{ &c }
+        entry_site{ &c }
         // First resolve body types and inferred error sets; escape diagnostics wait for
         // direct-call summaries. The second body check replaces the body side tables, and the
         // lives the first one recorded.
@@ -1606,8 +1609,8 @@ namespace check {
         if x.tparams.len > 0 {
             errorf{ &c, at, msg = @fmt("`{}` cannot be generic", str{ s = entry }) }
         }
-        if x.ret != types::VOID and x.ret != types::I32 and x.ret != types::ERROR {
-            errorf{ &c, at, msg = @fmt("`{}` can only return i32 (the exit code), not {}", str{ s = entry }, tstr{ c, t = x.ret }) }
+        if x.ret != types::VOID and x.ret != types::I32 and x.ret != types::ERROR and not exits{ c, t = x.ret } {
+            errorf{ &c, at, msg = @fmt("`{}` can only return i32 (the exit code), `!` or `!i32`, not {}", str{ s = entry }, tstr{ c, t = x.ret }) }
         }
         let args_t = std_type{ &c, name = "Args" }
         let build_cap = std_decl_top{ c, name = "Build" }
@@ -1636,6 +1639,55 @@ namespace check {
             i = i + 1
         }
         if c.diags.errors == bad { c.main = m }
+    }
+
+    // Whether t is `!` or `!i32`: what an entry point may return besides an exit code or nothing
+    // (§15, Entry point, rule 4).
+    fn exits { c: Checker, t: Id } -> bool {
+        let res{ ok } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } else { return false }
+        let v = types::prune{ s = c.ty, t = ok }
+        return v == types::VOID or v == types::I32
+    }
+
+    // The entry point that returns `!` or `!i32` gets a site that writes its error (exit_site),
+    // before the bodies are checked, so that the site's writers are found as the sets are inferred.
+    fn entry_site { mut c: Checker } {
+        let mut m = root_fn{ c, name = "main" }
+        if m == NONE { m = root_fn{ c, name = "build" } }
+        if m == NONE { return }
+        let x = get_decl{ c, d = m }
+        if x.tparams.len == 0 and exits{ c, t = x.ret } { exit_site{ &c, d = m, before = "error: " } }
+    }
+
+    // What ends fn d, which returns a `!T`, with an error (§15, Entry point, rule 4): the error
+    // is written to standard error after `before`, with a line break after it, as an `@fmt`
+    // at d would write it to an `io::Stderr`: `error: fs::other{ code = 5 }`. It is a site as an
+    // @fmt's is, with an error hole, in d's namespace, whose writers it sees; its own set is any
+    // error, since nothing reads its result. Lowering writes the fn that calls d and writes
+    // the error (lower.ctx, coding).
+    fn exit_site { mut c: Checker, d: u32, before: []u8 } {
+        let x = get_decl{ c, d }
+        let at = x.name.span
+        let res{ errs } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = x.ret } } else { return }
+        let sink = std_type_in{ &c, space = "io", name = "Stderr" }
+        let found = if sink == types::ERROR { no_writer{} } else { writers_of{ &c, b = sink, t = types::STRLIT, ns = x.ns }.one }
+        if found.decl == NONE {
+            errorf{ &c, at, msg = @fmt("`{}` returns a `!`, whose error std's `io::Stderr` writes, and this program's std has no `io::Stderr` with a writer of text: return an i32, and handle the error", str{ s = x.name.text }) }
+            return
+        }
+        let mut pieces = list::new(Piece){ realloc = arena::alloc, heap = c.heap }
+        try! list::push{ list = &pieces, item = Piece{ hole = false, text = before, push = "write", writer = found, ty = types::STRLIT, at, spec = no_spec{}, wrap = types::NO_TYPE } }
+        try! list::push{ list = &pieces, item = Piece{ hole = true, text = "", push = "error", writer = found, ty = errs, at, spec = no_spec{}, wrap = types::NO_TYPE } }
+        try! list::push{ list = &pieces, item = Piece{ hole = false, text = "\n", push = "write", writer = found, ty = types::STRLIT, at, spec = no_spec{}, wrap = types::NO_TYPE } }
+        let si = @as(u32, c.sites.len)
+        let rt = types::res{ s = &c.ty, ok = types::VOID, errs = types::errs{ s = &c.ty, owner = SITE + si, one = NONE } }
+        let st = Site{
+            at, ns = x.ns, sink, ptr = types::ptr{ s = &c.ty, elem = sink, mutable = true }, sink_at = at,
+            pieces = list::items{ list = pieces }, holes = slice::empty(syntax::Expr){}, faults = no_vars{}, value = false, ty = rt,
+        }
+        try! list::push{ list = &c.sites, item = st }
+        try! map::put{ m = &c.flows, key = SITE + si, value = Flow{ atoms = no_vars{}, subs = no_vars{}, any = true, open = false } }
+        try! map::put{ m = &c.exit_sites, key = d, value = si }
     }
 
     // The function the program's top level declares as `name`, or NONE.
@@ -13400,12 +13452,76 @@ namespace check {
             if found.two != NONE {
                 errorf{ &c, at, msg = @fmt("@fmt has two writers of {} to {}, for `{}`'s field `{}`: `{}` and `{}`", tstr{ c, t = fields[k].ty }, tstr{ c, t = st.sink }, str{ s = get_decl{ c, d }.qual }, str{ s = fields[k].name }, str{ s = get_decl{ c, d = found.one.decl }.qual }, str{ s = get_decl{ c, d = found.two }.qual }) }
             }
-            if found.one.decl != NONE { add_writer_set{ c, &flow, d = found.one.decl } }
+            if found.one.decl != NONE {
+                add_writer_set{ c, &flow, d = found.one.decl }
+            } else if found.two == NONE {
+                // No writer: its text is derived from its parts (shown_parts), whose writers'
+                // sets join the site's too.
+                let mut seen = ids{ heap = c.heap }
+                let mut m = message{ c }
+                try! @fmt(&m, ", for a part of `{}`'s field `{}`", str{ s = get_decl{ c, d }.qual }, str{ s = fields[k].name })
+                shown_parts{ &c, b = st.sink, ns = st.ns, t = fields[k].ty, &flow, at, why = utf8::view{ b = m }, &seen }
+            }
             try! list::push{ list = &out, item = found.one }
             k = k + 1
         }
         try! map::put{ m = &c.fault_writers, key = fault_key{ si, d }, value = list::items{ list = out } }
         try! map::put{ m = &c.flows, key = SITE + si, value = flow }
+    }
+
+    // ---- a value's derived text (§13, Formatting, rule 10)
+    //
+    // Where the compiler writes a value itself, an error's payload field or a side of an
+    // `@expect`, a value without a writer is written from its parts: a struct's fields, a
+    // union's variant and its fields, an enum's variant, an optional's value or `null`, an
+    // array's or a slice's elements. Each part is written by its writer, or from its own parts;
+    // one that has neither, as a pointer or a function, is `_`. Lowering writes it
+    // (lower.ctx, shown), and looks the writers up as these do.
+
+    // The types of the parts a t's text is made from, in order: a struct's fields', each
+    // variant's fields', an optional's value's, an array's or a slice's element's.
+    fn shape_parts { mut c: Checker, t: Id } -> []Id {
+        let x = types::undistinct{ s = c.ty, t }
+        let mut out = list::new(Id){ realloc = arena::alloc, heap = c.heap }
+        match types::get{ s = c.ty, id = x } {
+            record{ decl, args } => {
+                let fields = subst_fields{ &c, fields = get_decl{ c, d = decl }.fields, decl, args }
+                for f in fields { try! list::push{ list = &out, item = f.ty } }
+            }
+            sum => {
+                let vs = variants_of{ &c, t = x }
+                for v in vs {
+                    let fields = v.fields ifnull { slice::empty(types::Field){} }
+                    for f in fields { try! list::push{ list = &out, item = f.ty } }
+                }
+            }
+            opt{ elem } => { try! list::push{ list = &out, item = elem } }
+            array{ elem } => { try! list::push{ list = &out, item = elem } }
+            slice{ elem } => { try! list::push{ list = &out, item = elem } }
+            else => {}
+        }
+        return list::items{ list = out }
+    }
+
+    // The writers that the derived text of a t, which has none itself, uses for its parts to
+    // sink b, as code in ns sees them: their sets join flow, and two for one part are an
+    // error at `at`. seen holds the types gone through, since a type may hold itself through
+    // a slice.
+    fn shown_parts { mut c: Checker, b: Id, ns: u32, t: Id, mut flow: Flow, at: source::Span, why: utf8::String, mut seen: list::List(u32, Heap) } {
+        let x = types::zonk{ s = &c.ty, t }
+        if has_id{ xs = list::items{ list = seen }, n = x } { return }
+        push{ xs = &seen, n = x }
+        let parts = shape_parts{ &c, t = x }
+        for p in parts {
+            let found = writers_of{ &c, b, t = p, ns }
+            if found.two != NONE {
+                errorf{ &c, at, msg = @fmt("@fmt has two writers of {} to {}{}: `{}` and `{}`", tstr{ c, t = p }, tstr{ c, t = b }, why, str{ s = get_decl{ c, d = found.one.decl }.qual }, str{ s = get_decl{ c, d = found.two }.qual }) }
+            } else if found.one.decl != NONE {
+                add_writer_set{ c, &flow, d = found.one.decl }
+            } else {
+                shown_parts{ &c, b, ns, t = p, &flow, at, why, &seen }
+            }
+        }
     }
 
     fn fault_key { si: u32, d: u32 } -> u64 {

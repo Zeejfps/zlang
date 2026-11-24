@@ -19,7 +19,8 @@ namespace lower {
     // A function instance: a declaration and its generic arguments. The hidden fn of an @fmt
     // without a sink is an instance too, under the declaration it is in: site is its Site,
     // NONE for any other. So is a widening thunk (widen), under the declaration whose file it
-    // goes in.
+    // goes in. The derived text fn of a type, for a site, has both site and entry, the type
+    // (showing), and the fn that gives a `!` fn's exit code has the site CODED (coding).
     struct Inst { decl: u32, targs: []Id, site: u32, widen: ?Widen, entry: Id }
 
     // A thunk of function type `to` (spec §5): it calls instance callee, or with callee NONE its
@@ -60,7 +61,9 @@ namespace lower {
 
     fn program { mut c: check::Checker } -> ir::Program {
         let mut l = lowering{ &c }
-        let main = fn_id{ &l, decl = c.main, targs = no_ids{} }
+        // An entry point that returns `!` or `!i32` is run through the fn that gives its exit
+        // code (coding).
+        let main = if map::has{ m = c.exit_sites, key = c.main } { coded_id{ &l, d = c.main } } else { fn_id{ &l, decl = c.main, targs = no_ids{} } }
         let s = check::start_fn{ c }
         let start = if s == NONE { NONE } else { fn_id{ &l, decl = s, targs = no_ids{} } }
         let h = check::panic_fn{ c }
@@ -124,6 +127,10 @@ namespace lower {
                 widening{ &l, id = @as(u32, i), inst }
             } else if inst.site == DERIVED_EQ or inst.site == DERIVED_HASH {
                 deriving{ &l, id = @as(u32, i), inst }
+            } else if inst.site == CODED {
+                coding{ &l, id = @as(u32, i), inst }
+            } else if inst.site != NONE and inst.entry != NONE {
+                showing{ &l, id = @as(u32, i), inst }
             } else if inst.entry != NONE {
                 entering{ &l, id = @as(u32, i), inst }
             } else if inst.site != NONE {
@@ -3971,7 +3978,7 @@ namespace lower {
 
     // An error in hole h, with writers: its name, as `fs::os`, and its payload, as
     // `{ code = 5 }`, written by text, the writer of a strlit. Each field is written by the
-    // writer the checker found for its type, or as `_` if there is none.
+    // writer the checker found for its type, or from its parts if there is none (shown).
     fn error_write { mut l: Lower, w: Writes, h: usize, text: check::Writer } -> ir::Expr {
         let s = w.s
         let rt = w.rt
@@ -3995,7 +4002,7 @@ namespace lower {
                 try! @fmt(&tb, "{}{} = ", str{ s = if k == 0 { "{ " } else { ", " } }, str{ s = f.name })
                 r = then{ &l, a = r, b = text_write{ &l, s, w = text, bytes = utf8::view{ b = tb }.bytes, rt }, rt }
                 let v = mk{ ty = ft, k = ir::ExprKind::local{ slot } }
-                let piece = if ws[k].decl == NONE { text_write{ &l, s, w = text, bytes = "_", rt } } else { write_call{ &l, s, w = ws[k], v, rt, at = s.at } }
+                let piece = if ws[k].decl == NONE { shown{ &l, w, t = f.ty, v, text } } else { write_call{ &l, s, w = ws[k], v, rt, at = s.at } }
                 r = then{ &l, a = r, b = piece, rt }
                 k = k + 1
             }
@@ -4004,6 +4011,342 @@ namespace lower {
             i = i + 1
         }
         return mk{ ty, k = ir::ExprKind::matchx{ scrut = box{ l, e = w.vals[h] }, through = false, arms = list::items{ list = out } } }
+    }
+
+    // ---- the exit code of a fn that returns `!` or `!i32` (spec §15, Entry point, rule 4)
+
+    // The site of the instance that gives a fn's exit code (coding).
+    const CODED: u32 = 0xFFFFFFFA
+
+    // The id of the fn that runs fn d, whose result is a `!` or a `!i32`, and gives its exit
+    // code (coding), queued the first time it is needed.
+    fn coded_id { mut l: Lower, d: u32 } -> u32 {
+        let mut b = list::new(u8){ realloc = arena::alloc, heap = l.heap }
+        put_u32{ xs = &b, n = NONE }         // no declaration's id
+        put_u32{ xs = &b, n = CODED }
+        put_u32{ xs = &b, n = d }
+        let key = list::items{ list = b }
+        let known = map::get{ m = l.fn_ids, key }
+        if known != null { return known }
+        let id = @as(u32, l.queue.len)
+        try! map::put{ m = &l.fn_ids, key, value = id }
+        try! list::push{ list = &l.queue, item = Inst{ decl = d, targs = no_ids{}, site = CODED, widen = null, entry = NONE } }
+        return id
+    }
+
+    // Fn d's exit code, as a function of d's own context: what d returns, or 0 for a bare `!`;
+    // for an error 1, after d's site (check.ctx, exit_site) has written the error to standard
+    // error: through an `io::Stderr` over an Io from nothing, as the runtime supplies main's.
+    fn coding { mut l: Lower, id: u32, inst: Inst } -> ir::Func {
+        let x = check::get_decl{ c = l.c.*, d = inst.decl }
+        let si = map::get{ m = l.c.exit_sites, key = inst.decl } ifnull { @panic("lower: a fn's exit code without its site") }
+        let st = list::items{ list = l.c.sites }[@as(usize, si)]
+        l.decl = inst.decl
+        l.targs = no_ids{}
+        map::clear{ m = &l.slots }
+        l.locals = list::new(ir::Local){ realloc = arena::alloc, heap = l.heap }
+        l.ret = types::I32
+        let i32t = tid{ &l, t = types::I32 }
+        let mut params = list::new(ir::Param){ realloc = arena::alloc, heap = l.heap }
+        let mut args = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
+        for f at i in x.fields {
+            let t = tid{ &l, t = f.ty }
+            let held = if f.mutable { tid{ &l, t = types::ptr{ s = &l.c.ty, elem = f.ty, mutable = false } } } else { t }
+            try! list::push{ list = &params, item = ir::Param{ name = f.name, mutable = f.mutable, ty = t } }
+            try! list::push{ list = &l.locals, item = ir::Local{ name = f.name, ty = held } }
+            add_arg{ xs = &args, a = ir::Arg{ index = @as(u32, i), value = slot_ex{ ty = held, slot = @as(u32, i) } } }
+        }
+        let ret = types::prune{ s = l.c.ty, t = x.ret }
+        let res{ ok, errs } = types::get{ s = l.c.ty, id = ret } else { @panic("lower: an exit code of a fn that returns no `!`") }
+        let rty = tid{ &l, t = ret }
+        let r = temp{ &l, ty = rty }
+        let mut out = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
+        let call = mk{ ty = rty, k = ir::ExprKind::call{ callee = fn_id{ &l, decl = inst.decl, targs = no_ids{} }, args = list::items{ list = args } } }
+        try! list::push{ list = &out, item = ir::Stmt::define{ slot = r, init = call } }
+        let mut arms = list::new(ir::Arm){ realloc = arena::alloc, heap = l.heap }
+
+        // ok: its value, or 0
+        let mut fine = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
+        let mut ok_binds = list::new(ir::Bind){ realloc = arena::alloc, heap = l.heap }
+        if types::prune{ s = l.c.ty, t = ok } == types::VOID {
+            try! list::push{ list = &fine, item = ir::Stmt::ret{ value = mk{ ty = i32t, k = ir::ExprKind::int{ negative = false, value = 0 } } } }
+        } else {
+            let v = temp{ &l, ty = i32t }
+            add_bind{ xs = &ok_binds, b = ir::Bind{ slot = v, field = 0, by_ref = false } }
+            try! list::push{ list = &fine, item = ir::Stmt::ret{ value = slot_ex{ ty = i32t, slot = v } } }
+        }
+        add_arm{ l, xs = &arms, pats = one_pat{ l, p = ir::Pat{ variant = 0, binds = list::items{ list = ok_binds } } }, body = ir::Block{ stmts = list::items{ list = fine }, result = null } }
+
+        // err: the error, written by the site's pieces, then 1
+        let et = tid{ &l, t = errs }
+        let e = temp{ &l, ty = et }
+        let mut err_binds = list::new(ir::Bind){ realloc = arena::alloc, heap = l.heap }
+        add_bind{ xs = &err_binds, b = ir::Bind{ slot = e, field = 0, by_ref = false } }
+        let mut failed = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
+        let sink = stderr_sink{ &l, out = &failed, st }
+        let mut vals = list::new(ir::Expr){ realloc = arena::alloc, heap = l.heap }
+        let mut tys = list::new(Id){ realloc = arena::alloc, heap = l.heap }
+        try! list::push{ list = &vals, item = slot_ex{ ty = et, slot = e } }
+        try! list::push{ list = &tys, item = errs }
+        let w = Writes{ s = sink, vals = list::items{ list = vals }, tys = list::items{ list = tys }, si, rt = site_result{ &l, si } }
+        try! list::push{ list = &failed, item = ir::Stmt::eval{ e = pieces{ &l, w, ps = st.pieces } } }
+        try! list::push{ list = &failed, item = ir::Stmt::ret{ value = mk{ ty = i32t, k = ir::ExprKind::int{ negative = false, value = 1 } } } }
+        add_arm{ l, xs = &arms, pats = one_pat{ l, p = ir::Pat{ variant = 1, binds = list::items{ list = err_binds } } }, body = ir::Block{ stmts = list::items{ list = failed }, result = null } }
+
+        try! list::push{ list = &out, item = ir::Stmt::choose{ scrut = slot_ex{ ty = rty, slot = r }, through = false, arms = list::items{ list = arms } } }
+        let mut name = message{ l }
+        try! @fmt(&name, "exit code of {}", str{ s = x.qual })
+        return ir::Func{
+            id, name = utf8::view{ b = name }.bytes, symbol = "", params = list::items{ list = params }, ret = i32t,
+            locals = list::items{ list = l.locals }, body = ir::Block{ stmts = list::items{ list = out }, result = null },
+            unit = unit_of{ l, x }, at = x.syn.span.start,
+        }
+    }
+
+    // The result of site si's writes: a bare `!` whose errors are the site's own set.
+    fn site_result { mut l: Lower, si: u32 } -> Id {
+        return types::res{ s = &l.c.ty, ok = types::VOID, errs = types::errs{ s = &l.c.ty, owner = check::SITE + si, one = NONE } }
+    }
+
+    // A sink for site st, which writes to std's `io::Stderr`: one made in a local, over an Io
+    // from nothing, by statements added to out.
+    fn stderr_sink { mut l: Lower, mut out: list::List(ir::Stmt, Heap), st: check::Site } -> Sink {
+        let fields = check::get_decl{ c = l.c.*, d = check::record_decl{ c = l.c.*, t = st.sink } }.fields
+        let st_ty = tid{ &l, t = st.sink }
+        let io = mk{ ty = tid{ &l, t = fields[0].ty }, k = ir::ExprKind::capref }
+        let held = temp{ &l, ty = st_ty }
+        try! list::push{ list = &out, item = ir::Stmt::define{ slot = held, init = mk{ ty = st_ty, k = ir::ExprKind::record{ items = one_arg{ l, v = io } } } } }
+        let pt = types::ptr{ s = &l.c.ty, elem = st.sink, mutable = false }
+        let at = temp{ &l, ty = tid{ &l, t = pt } }
+        try! list::push{ list = &out, item = ir::Stmt::define{ slot = at, init = mk{ ty = tid{ &l, t = pt }, k = ir::ExprKind::addr{ place = box{ l, e = slot_ex{ ty = st_ty, slot = held } } } } } }
+        let none = syntax::Expr{ id = 0, span = st.at, at = st.at.start, k = syntax::ExprKind::error }
+        return Sink{ e = none, ty = pt, slot = at, at = st.at }
+    }
+
+    // ---- a value's derived text (spec §13, Formatting, rule 10; check.ctx, shown_parts)
+
+    // The writer of a t to site si's sink that the site sees, or one without a decl: looked up
+    // with the distinct types as they are written, which lowering otherwise sees through.
+    fn shown_writer { mut l: Lower, si: u32, t: Id } -> check::Writer {
+        let st = list::items{ list = l.c.sites }[@as(usize, si)]
+        l.c.ty.erased = false
+        let found = check::writers_of{ c = l.c, b = T{ &l, t = st.sink }, t, ns = st.ns }
+        l.c.ty.erased = true
+        return found.one
+    }
+
+    // v, a value of type t, written to w's sink, as a result of type w.rt: by the writer its
+    // site sees for a t, or without one from its parts, by t's derived text fn. A type with
+    // neither, as a pointer or a function, is `_`. text is the site's writer of text.
+    fn shown { mut l: Lower, w: Writes, t: Id, v: ir::Expr, text: check::Writer } -> ir::Expr {
+        let found = shown_writer{ &l, si = w.si, t }
+        if found.decl != NONE { return write_call{ &l, s = w.s, w = found, v, rt = w.rt, at = w.s.at } }
+        match get{ l, t } {
+            record | sum | enumeration | opt | array | slice => {}
+            else => { return text_write{ &l, s = w.s, w = text, bytes = "_", rt = w.rt } }
+        }
+        let st = list::items{ list = l.c.sites }[@as(usize, w.si)]
+        let to = types::ptr{ s = &l.c.ty, elem = T{ &l, t = st.sink }, mutable = false }
+        let b = coerce{ &l, x = sink_ex{ &l, s = w.s }, frm = w.s.ty, to, at = w.s.at }
+        let own = site_result{ &l, si = w.si }
+        let call = mk{ ty = tid{ &l, t = own }, k = ir::ExprKind::call{ callee = shown_id{ &l, si = w.si, t }, args = two_args{ l, a = b, b = v } } }
+        return lift{ &l, x = call, frm = own, to = w.rt }
+    }
+
+    // The derived text fn of type t for site si, in the instance being lowered, queued the first
+    // time it is needed.
+    fn shown_id { mut l: Lower, si: u32, t: Id } -> u32 {
+        let mut b = list::new(u8){ realloc = arena::alloc, heap = l.heap }
+        let k = inst_key{ &l, decl = l.decl, targs = l.targs }
+        for byte in k { try! list::push{ list = &b, item = byte } }
+        put_u32{ xs = &b, n = NONE }         // no type's id, as a site's hidden fn has it
+        put_u32{ xs = &b, n = si }
+        put_u32{ xs = &b, n = norm{ &l, t } }
+        let key = list::items{ list = b }
+        let known = map::get{ m = l.fn_ids, key }
+        if known != null { return known }
+        let id = @as(u32, l.queue.len)
+        try! map::put{ m = &l.fn_ids, key, value = id }
+        try! list::push{ list = &l.queue, item = Inst{ decl = l.decl, targs = l.targs, site = si, widen = null, entry = t } }
+        return id
+    }
+
+    // What a derived text fn is being written with: its statements, its sink and site, and the
+    // site's writer of text.
+    struct Showing { stmts: list::List(ir::Stmt, Heap), w: Writes, text: check::Writer }
+
+    // The derived text fn of a type for a site: `fn{ mut b: B, v: T } -> !`, which writes v to
+    // the sink part by part and returns the first write's error. A struct is `Name{ f = v, ... }`,
+    // a union `Name::variant{ f = v, ... }`, an enum `Name::variant`, an optional its value or
+    // `null`, an array and a slice `[v, ...]`.
+    fn showing { mut l: Lower, id: u32, inst: Inst } -> ir::Func {
+        let d = check::get_decl{ c = l.c.*, d = inst.decl }
+        let st = list::items{ list = l.c.sites }[@as(usize, inst.site)]
+        l.decl = inst.decl
+        l.targs = inst.targs
+        map::clear{ m = &l.slots }
+        l.locals = list::new(ir::Local){ realloc = arena::alloc, heap = l.heap }
+        let t = inst.entry
+        let bt = T{ &l, t = st.sink }
+        let sink = types::ptr{ s = &l.c.ty, elem = bt, mutable = false }
+        let rt = site_result{ &l, si = inst.site }
+        l.ret = rt
+        let ty = tid{ &l, t }
+        let mut params = list::new(ir::Param){ realloc = arena::alloc, heap = l.heap }
+        try! list::push{ list = &params, item = ir::Param{ name = "b", mutable = true, ty = tid{ &l, t = bt } } }
+        try! list::push{ list = &params, item = ir::Param{ name = "v", mutable = false, ty } }
+        try! list::push{ list = &l.locals, item = ir::Local{ name = "b", ty = tid{ &l, t = sink } } }
+        try! list::push{ list = &l.locals, item = ir::Local{ name = "v", ty } }
+        let none = syntax::Expr{ id = 0, span = st.at, at = st.at.start, k = syntax::ExprKind::error }
+        let w = Writes{ s = Sink{ e = none, ty = sink, slot = 0, at = st.at }, vals = slice::empty(ir::Expr){}, tys = no_ids{}, si = inst.site, rt }
+        let text = shown_writer{ &l, si = inst.site, t = types::STRLIT }
+        if text.decl == NONE { @panic("lower: derived text for a sink without a writer of text") }
+        let mut g = Showing{ stmts = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }, w, text }
+        show_parts{ &l, &g, t, v = slot_ex{ ty, slot = 1 } }
+        try! list::push{ list = &g.stmts, item = ir::Stmt::ret{ value = ok_of{ &l, rt } } }
+        let mut name = message{ l }
+        try! @fmt(&name, "text of {}", str{ s = type_name{ l, t } })
+        return ir::Func{
+            id, name = utf8::view{ b = name }.bytes, symbol = "", params = list::items{ list = params }, ret = tid{ &l, t = rt },
+            locals = list::items{ list = l.locals }, body = ir::Block{ stmts = list::items{ list = g.stmts }, result = null },
+            unit = unit_of{ l, x = d }, at = d.syn.span.start,
+        }
+    }
+
+    // One write, x, a result of the fn's type: `let r = x`, and `return r` if it is an error.
+    fn show_step { mut l: Lower, mut g: Showing, x: ir::Expr } {
+        let r = temp{ &l, ty = x.ty }
+        try! list::push{ list = &g.stmts, item = ir::Stmt::define{ slot = r, init = x } }
+        let mut leave = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
+        try! list::push{ list = &leave, item = ir::Stmt::ret{ value = slot_ex{ ty = x.ty, slot = r } } }
+        let mut arms = list::new(ir::Arm){ realloc = arena::alloc, heap = l.heap }
+        add_arm{ l, xs = &arms, pats = one_pat{ l, p = ir::Pat{ variant = 1, binds = slice::empty(ir::Bind){} } }, body = ir::Block{ stmts = list::items{ list = leave }, result = null } }
+        add_arm{ l, xs = &arms, pats = slice::empty(ir::Pat){}, body = ir::Block{ stmts = slice::empty(ir::Stmt){}, result = null } }
+        try! list::push{ list = &g.stmts, item = ir::Stmt::choose{ scrut = slot_ex{ ty = x.ty, slot = r }, through = false, arms = list::items{ list = arms } } }
+    }
+
+    // Text, written as it is.
+    fn show_text { mut l: Lower, mut g: Showing, bytes: []u8 } {
+        show_step{ &l, &g, x = text_write{ &l, s = g.w.s, w = g.text, bytes, rt = g.w.rt } }
+    }
+
+    // `{ f = v, ... }` after `before`, a type's or a variant's name, for fields read from
+    // base, a struct, or held in slots, a variant's. Without fields, `{}` if braces, as a
+    // struct or a variant with an empty payload has them.
+    fn show_fields { mut l: Lower, mut g: Showing, before: []u8, fields: []types::Field, base: ?ir::Expr, slots: []u32, braces: bool } {
+        if fields.len == 0 {
+            let mut b = message{ l }
+            try! @fmt(&b, "{}{}", str{ s = before }, if braces { "{}" } else { "" })
+            show_text{ &l, &g, bytes = utf8::view{ b }.bytes }
+            return
+        }
+        for f at i in fields {
+            let mut b = message{ l }
+            if i == 0 { try! @fmt(&b, "{}{{ ", str{ s = before }) } else { try! utf8::push{ &b, s = ", " } }
+            try! @fmt(&b, "{} = ", str{ s = f.name })
+            show_text{ &l, &g, bytes = utf8::view{ b }.bytes }
+            let ft = tid{ &l, t = f.ty }
+            let v = if let whole = base { mk{ ty = ft, k = ir::ExprKind::field{ base = box{ l, e = whole }, index = @as(u32, i) } } } else { slot_ex{ ty = ft, slot = slots[i] } }
+            show_step{ &l, &g, x = shown{ &l, w = g.w, t = f.ty, v, text = g.text } }
+        }
+        show_text{ &l, &g, bytes = " }" }
+    }
+
+    // The parts of v, a value of type t without a writer: g's statements for all of them.
+    fn show_parts { mut l: Lower, mut g: Showing, t: Id, v: ir::Expr } {
+        let x = types::undistinct{ s = l.c.ty, t }
+        let bool_ty = tid{ &l, t = types::BOOL }
+        let usize_ty = tid{ &l, t = types::USIZE }
+        match get{ l, t = x } {
+            record{ decl, args } => {
+                let fields = check::subst_fields{ c = l.c, fields = check::get_decl{ c = l.c.*, d = decl }.fields, decl, args }
+                show_fields{ &l, &g, before = check::get_decl{ c = l.c.*, d = decl }.qual, fields, base = v, slots = slice::empty(u32){}, braces = true }
+            }
+            sum{ decl } => {
+                let vs = check::variants_of{ c = l.c, t = x }
+                let mut arms = list::new(ir::Arm){ realloc = arena::alloc, heap = l.heap }
+                for variant at i in vs {
+                    let fields = variant.fields ifnull { slice::empty(types::Field){} }
+                    let mut binds = list::new(ir::Bind){ realloc = arena::alloc, heap = l.heap }
+                    let mut slots = list::new(u32){ realloc = arena::alloc, heap = l.heap }
+                    for f at k in fields {
+                        let s = temp{ &l, ty = tid{ &l, t = f.ty } }
+                        add_bind{ xs = &binds, b = ir::Bind{ slot = s, field = @as(u32, k), by_ref = false } }
+                        try! list::push{ list = &slots, item = s }
+                    }
+                    let mut name = message{ l }
+                    try! @fmt(&name, "{}::{}", str{ s = check::get_decl{ c = l.c.*, d = decl }.qual }, str{ s = variant.name })
+                    let mut inner = Showing{ stmts = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }, w = g.w, text = g.text }
+                    show_fields{ &l, g = &inner, before = utf8::view{ b = name }.bytes, fields, base = null, slots = list::items{ list = slots }, braces = variant.fields != null }
+                    add_arm{ l, xs = &arms, pats = one_pat{ l, p = ir::Pat{ variant = @as(u32, i), binds = list::items{ list = binds } } }, body = ir::Block{ stmts = list::items{ list = inner.stmts }, result = null } }
+                }
+                try! list::push{ list = &g.stmts, item = ir::Stmt::choose{ scrut = v, through = false, arms = list::items{ list = arms } } }
+            }
+            enumeration{ decl } => {
+                let e = check::get_decl{ c = l.c.*, d = decl }
+                let names = check::enum_names{ c = l.c.*, d = decl }
+                let mut cases = list::new(ir::Case){ realloc = arena::alloc, heap = l.heap }
+                // Each variant by its value, then any other value, which `@as` can't make.
+                for i in 0..names.len + 1 {
+                    let mut name = message{ l }
+                    try! @fmt(&name, "{}::{}", str{ s = e.qual }, str{ s = if i < names.len { names[i] } else { "_" } })
+                    let mut inner = Showing{ stmts = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }, w = g.w, text = g.text }
+                    show_text{ &l, g = &inner, bytes = utf8::view{ b = name }.bytes }
+                    let mut values = list::new(ir::Int){ realloc = arena::alloc, heap = l.heap }
+                    if i < names.len { try! list::push{ list = &values, item = int_of{ v = e.values[i] } } }
+                    try! list::push{ list = &cases, item = ir::Case{ values = list::items{ list = values }, ranges = slice::empty(ir::Range){}, body = ir::Block{ stmts = list::items{ list = inner.stmts }, result = null } } }
+                }
+                try! list::push{ list = &g.stmts, item = ir::Stmt::switch{ scrut = v, cases = list::items{ list = cases } } }
+            }
+            opt{ elem } => {
+                let mut null_case = Showing{ stmts = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }, w = g.w, text = g.text }
+                show_text{ &l, g = &null_case, bytes = "null" }
+                let mut value = Showing{ stmts = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }, w = g.w, text = g.text }
+                if get{ l, t = types::undistinct{ s = l.c.ty, t = elem } } is ptr {
+                    show_text{ &l, g = &value, bytes = "_" }
+                } else {
+                    show_step{ &l, g = &value, x = shown{ &l, w = g.w, t = elem, v = payload_of{ &l, x = v, t = elem }, text = g.text } }
+                }
+                let c = mk{ ty = bool_ty, k = ir::ExprKind::isnull{ e = box{ l, e = v } } }
+                let then = ir::Block{ stmts = list::items{ list = null_case.stmts }, result = null }
+                let els = ir::Block{ stmts = list::items{ list = value.stmts }, result = null }
+                try! list::push{ list = &g.stmts, item = ir::Stmt::cond{ c, then, els } }
+            }
+            array{ n, elem } => {
+                show_elems{ &l, &g, elem, v, count = mk{ ty = usize_ty, k = ir::ExprKind::int{ negative = false, value = n } }, sliced = false }
+            }
+            slice{ elem } => {
+                show_elems{ &l, &g, elem, v, count = mk{ ty = usize_ty, k = ir::ExprKind::field{ base = box{ l, e = v }, index = 1 } }, sliced = true }
+            }
+            else => { show_text{ &l, &g, bytes = "_" } }
+        }
+    }
+
+    // `[v, ...]`: `let i = 0; while i < count { ", " unless i is 0; v[i]; i = i + 1 }`, over an
+    // array or a slice (sliced) of elem.
+    fn show_elems { mut l: Lower, mut g: Showing, elem: Id, v: ir::Expr, count: ir::Expr, sliced: bool } {
+        let bool_ty = tid{ &l, t = types::BOOL }
+        let usize_ty = tid{ &l, t = types::USIZE }
+        let et = tid{ &l, t = elem }
+        let none = ir::Pos{ line = 0, col = 0, file = 0 }
+        show_text{ &l, &g, bytes = "[" }
+        let si = temp{ &l, ty = usize_ty }
+        let i = slot_ex{ ty = usize_ty, slot = si }
+        let zero = mk{ ty = usize_ty, k = ir::ExprKind::int{ negative = false, value = 0 } }
+        try! list::push{ list = &g.stmts, item = ir::Stmt::define{ slot = si, init = zero } }
+        let mut inner = Showing{ stmts = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }, w = g.w, text = g.text }
+        let mut comma = Showing{ stmts = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }, w = g.w, text = g.text }
+        show_text{ &l, g = &comma, bytes = ", " }
+        let later = mk{ ty = bool_ty, k = ir::ExprKind::cmp{ op = ir::CmpOp::gt, a = box{ l, e = i }, b = box{ l, e = zero } } }
+        try! list::push{ list = &inner.stmts, item = ir::Stmt::cond{ c = later, then = ir::Block{ stmts = list::items{ list = comma.stmts }, result = null }, els = null } }
+        let ev = if sliced { mk{ ty = et, k = ir::ExprKind::sindex{ base = box{ l, e = v }, i = box{ l, e = i }, pos = none } } } else { mk{ ty = et, k = ir::ExprKind::index{ base = box{ l, e = v }, i = box{ l, e = i }, pos = none } } }
+        show_step{ &l, g = &inner, x = shown{ &l, w = g.w, t = elem, v = ev, text = g.text } }
+        let one = mk{ ty = usize_ty, k = ir::ExprKind::int{ negative = false, value = 1 } }
+        let next = mk{ ty = usize_ty, k = ir::ExprKind::arith{ op = ir::ArithOp::add, a = box{ l, e = i }, b = box{ l, e = one }, pos = none, trap = ir::NO_TRAP } }
+        try! list::push{ list = &inner.stmts, item = ir::Stmt::assign{ place = i, value = next } }
+        let more = mk{ ty = bool_ty, k = ir::ExprKind::cmp{ op = ir::CmpOp::lt, a = box{ l, e = i }, b = box{ l, e = count } } }
+        try! list::push{ list = &g.stmts, item = ir::Stmt::loop{ c = more, body = ir::Block{ stmts = list::items{ list = inner.stmts }, result = null }, label = null } }
+        show_text{ &l, &g, bytes = "]" }
     }
 
     // ---- text

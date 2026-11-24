@@ -141,18 +141,25 @@ generator can't observe its own output.
 1. **Cross-compiling, and build programs that fail.** `build::os` is the host's for now: building
    for another platform needs std's layer for it, its C compiler, and a build program run on the
    host but describing the target.
-   - **`build` and `main` return `!` or `!i32`.** Writing files and checking sources can fail, and
-     a build program should pass that up with `try`, as Zig's `build.zig` does, not panic with
-     `try!` or handle every failure where it happens. §19 gives `build` main's rules, so `main`
-     gains it too, for small programs, tests and examples (Rust, Zig and Swift allow it). `ok`
-     exits with its value, or 0 for a bare `!`. An error prints `error: ` and the error, as
-     `fs::other{ code = 5 }`, to stderr, and exits with 1. Programs that report with context and
-     pick their exit codes, as ctxc and the examples do, keep `-> i32`.
-   - *To settle first:* the error can't be printed "as `@fmt` prints it": `@fmt` writes through a
-     sink's `#write` fns (spec §13), and the compiler names no sink, so the runtime has none of
-     the program's. The same goes for 6.3's `@expect`. One answer: the runtime prints primitives
-     and `strlit` in C, and `_` for anything else, as a converted literal's error is printed
-     (spec §18). A first version may print only the name, as `try!` does.
+   - **`build` and `main` return `!` or `!i32`.** *Done* (spec §15, Entry point, rule 4; §19,
+     rule 2; ctxc/check.ctx, `exit_site`; ctxc/lower.ctx, `coding`). Writing files and checking
+     sources can fail, and a build program passes that up with `try`, as Zig's `build.zig` does;
+     §19 gives `build` main's rules, so `main` has it too, for small programs, tests and
+     examples. `ok` exits with its value, or 0 for a bare `!`. An error prints `error: ` and the
+     error, as `fs::other{ code = 5 }`, to stderr, and exits with 1. Programs that report with
+     context and pick their exit codes, as ctxc and the examples do, keep `-> i32`.
+   - *How the error is printed:* in ctxlang, not in the C runtime. The compiler writes a fn
+     around the entry point that matches on its result and, for an error, writes it to std's
+     `io::Stderr` with the pieces an `@fmt(&e, "error: {}\n", error)` at `main` would have: a
+     site of the checker's as any `@fmt`'s is, so the program's `#write` fns are found where it
+     has them, the IR is ordinary calls, and compiled code and the interpreter agree. The fn
+     makes its own `Io` from nothing, as the runtime supplies main's, and is what a `#start` fn
+     gets as `main`, so a start fn of a program's own has the same report. A payload field
+     without a writer (a struct, a union, an enum, an optional, an array) was `_` in every
+     `@fmt` of an error; it is now written from its parts (spec §13, Formatting, rule 10),
+     which is also what shows both sides of 6.3's check. The sketch this replaces, a printer
+     in C for primitives and `_` for the rest, would have been a second formatter that knew
+     none of the program's writers.
 2. **Reflection: the checked program.** `build::declarations` (below) gives a build program its
    executables' declarations as the parser sees them. What it can't give is what only the
    checker knows: names resolved, types as types, layouts, and attributes' values folded, the

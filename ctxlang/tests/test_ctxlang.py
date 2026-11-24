@@ -3083,7 +3083,7 @@ class Declarations(Base):
             ('', 'no `fn main` entry point', 1, 1),
             ('const main: i32 = 1', 'no `fn main` entry point', 1, 1),
             ('fn main(T) {} {}', '`main` cannot be generic', 1, 1),
-            ('fn f {} {}\nfn main {} -> i64 { return 0 }', '`main` can only return i32 (the exit code), not i64', 2, 1),
+            ('fn f {} {}\nfn main {} -> i64 { return 0 }', '`main` can only return i32 (the exit code), `!` or `!i32`, not i64', 2, 1),
             ('fn main { args: []u8 } {}', '`main` context field `args` must have type Args, got []u8', 1, 1),
             ('fn main { n: i32 } {}',
              '`main` context field `n` must have a capability type or be `args: Args`, got i32', 1, 1),
@@ -7219,13 +7219,15 @@ fn view { mut l: out::Line, s: utf8::String } -> ! {
 
     def test_error_hole(self):
         """The compiler writes an error: its name with the writer of a strlit, and each field
-        with the writer of its type, or `_` if there is none."""
+        with the writer of its type, or without one from its parts (spec §13, Formatting, rule
+        10): this sink has no writer of a `[]u8` or a `u8`, so a string is an element without
+        one."""
         self.write("""
     match pick{ n = 2 } {
         ok => {}
         err{ error } => { try! @fmt(&line, "{} ", error) }
     }
-    pick{ n = 1 } iferr err{ error } { try! @fmt(&line, "{}", error) }""", 'bad{ code = 7, why = _ } other', extra="""
+    pick{ n = 1 } iferr err{ error } { try! @fmt(&line, "{}", error) }""", 'bad{ code = 7, why = [_] } other', extra="""
 error bad{ code: i32, why: []u8 }
 error other
 fn pick { n: i32 } -> ! {
@@ -16384,15 +16386,227 @@ fn build { mut b: Build } {
         with self.assertRaises(Panic) as cm:
             build_project(d, out=out, err=io.StringIO())
         self.assertEqual((cm.exception.msg, cm.exception.pos, out.getvalue()), ('broken', (3, 5, 'build.ctx'), 'said\n'))
+        # A build program that returns a `!` (spec §19, rule 2): its error is written as main's is,
+        # and it exits with 1.
+        d = self.project({'build.ctx': 'error no_assets{ dir: []u8, tried: u32 }\nfn build { mut b: Build } -> ! {\n    io::println{ io = &b, s = "said" }\n    return no_assets{ dir = "art", tried = 2 }\n}\n'})
+        out, err = io.StringIO(), io.StringIO()
+        with self.assertRaises(RuntimeError) as cm:
+            build_project(d, out=out, err=err)
+        self.assertEqual((str(cm.exception), out.getvalue(), err.getvalue()), ('build.ctx exited with 1', 'said\n', 'error: no_assets{ dir = art, tried = 2 }\n'))
+        d = self.project({'build.ctx': 'fn build { mut b: Build } -> ! {\n    _ = build::exe{ &b, name = "t", root = "." }\n}\n', 'main.ctx': 'fn main { mut io: Io } { io::println{ &io, s = "built" } }\n'})
+        out = io.StringIO()
+        build_project(d, out=out, err=io.StringIO())
 
     def test_entry_errors(self):
         self.assertCompileError('fn main { mut b: Build } {}',
                                 "`main` cannot take a Build: only a build program's `fn build` receives one")
         self.assertCompileError('fn build { n: i32 } {}',
                                 '`build` context field `n` must have a capability type or be `args: Args`, got i32')
-        self.assertCompileError('fn build {} -> u8 { return 1 }', '`build` can only return i32 (the exit code), not u8')
+        self.assertCompileError('fn build {} -> u8 { return 1 }', '`build` can only return i32 (the exit code), `!` or `!i32`, not u8')
         # With a `main`, `build` is an ordinary function.
         self.assertOutput('fn build {} -> i32 { return 7 }\nfn main { mut io: Io } { io::println_i64{ &io, n = build{} } }', '7\n')
+
+
+class EntryResult(Base):
+    """`main` may return `!` or `!i32` (spec §15, Entry point, rule 4): `ok` is the exit code,
+    and an error is written to standard error, with its payload, before the program exits
+    with 1. run_source compares the compiled program with `ctxc interp` each time."""
+
+    TYPES = '''
+struct Point { x: i32, y: i32 }
+struct Empty {}
+struct Line { a: Point, b: Point, tag: Tag }
+type Meters = distinct f32
+enum Tag: u8 { thin, thick = 7 }
+union Shape { none, dot{}, circle{ r: f64, at: Point } }
+'''
+
+    def ends(self, src, args=()):
+        """(stdout, stderr, exit code)."""
+        out, err = io.StringIO(), io.StringIO()
+        code = run_source(src, out=out, err=err, args=args)
+        return out.getvalue().replace('\r\n', '\n'), err.getvalue().replace('\r\n', '\n'), code
+
+    def test_ok_is_the_exit_code(self):
+        self.assertEqual(self.ends('fn main {} -> ! {}'), ('', '', 0))
+        self.assertEqual(self.ends('fn main {} -> ! { return }'), ('', '', 0))
+        self.assertEqual(self.ends('fn main {} -> !i32 { return 7 }'), ('', '', 7))
+        src = 'fn half { n: i32 } -> !i32 { return n / 2 }\nfn main { mut io: Io } -> !i32 {\n    io::println{ &io, s = "hi" }\n    return try half{ n = 10 }\n}'
+        self.assertEqual(self.ends(src), ('hi\n', '', 5))
+
+    def test_an_error_is_written_and_exits_with_1(self):
+        src = '''
+namespace parse {
+    error empty
+    error bad_digit{ at: usize, found: u8 }
+}
+fn number { s: []u8 } -> !u64 {
+    if s.len == 0 { return parse::empty }
+    if s[0] < '0' or s[0] > '9' { return parse::bad_digit{ at = 0, found = s[0] } }
+    return s[0] - '0'
+}
+fn main { mut io: Io, args: Args } -> !i32 {
+    io::println{ &io, s = "before" }
+    let n = try number{ s = args[0] }
+    io::println{ &io, s = "after" }
+    return @as(i32, n)
+}
+'''
+        self.assertEqual(self.ends(src, args=['4']), ('before\nafter\n', '', 4))
+        self.assertEqual(self.ends(src, args=['']), ('before\n', 'error: parse::empty\n', 1))
+        self.assertEqual(self.ends(src, args=['x']), ('before\n', 'error: parse::bad_digit{ at = 0, found = 120 }\n', 1))
+        # A bare `!`, and a main that takes no Io: the report needs none of main's.
+        src = 'error lost{ name: []u8, code: i64, big: bool, ratio: f64 }\nfn main {} -> ! { return lost{ name = "a b", code = -5, big = true, ratio = 0.5 } }'
+        self.assertEqual(self.ends(src), ('', 'error: lost{ name = a b, code = -5, big = true, ratio = 0.5 }\n', 1))
+        # std's errors, with the platform's number.
+        src = 'fn main { mut fs: Fs } -> ! {\n    _ = try fs::size{ &fs, path = "no/such/file" }\n}'
+        self.assertEqual(self.ends(src), ('', 'error: fs::not_found\n', 1))
+
+    def test_a_payload_without_a_writer_is_written_from_its_parts(self):
+        src = self.TYPES + '''
+error full{ p: Point, e: Empty, l: Line, m: Meters, t: Tag, s: Shape, d: Shape, n: Shape }
+error more{ o: ?i32, z: ?i32, op: ?Point, xs: [3]u8, ys: []i32, none: []Point, q: ?*i32, r: ?*i32, f: fn{} -> i32, at: *i32 }
+const YS: [2]i32 = [4, -5]
+fn seven {} -> i32 { return 7 }
+fn go { n: usize } -> ! {
+    if n == 0 {
+        return full{
+            p = Point{ x = 1, y = -2 }, e = Empty{}, l = Line{ a = Point{ x = 0, y = 0 }, b = Point{ x = 3, y = 4 }, tag = Tag::thick },
+            m = @as(Meters, 2.5), t = Tag::thin, s = Shape::circle{ r = 1.5, at = Point{ x = 9, y = 8 } }, d = Shape::dot{}, n = Shape::none,
+        }
+    }
+    return more{ o = 5, z = null, op = Point{ x = 1, y = 1 }, xs = [1, 2, 3], ys = YS[..], none = slice::empty(Point){}, q = null, r = YS[..].ptr, f = seven, at = YS[..].ptr }
+}
+fn main { args: Args } -> ! { try go{ n = args.len } }
+'''
+        self.assertEqual(self.ends(src)[1:], (
+            'error: full{ p = Point{ x = 1, y = -2 }, e = Empty{}, l = Line{ a = Point{ x = 0, y = 0 }, b = Point{ x = 3, y = 4 }, tag = Tag::thick }, '
+            'm = 2.5, t = Tag::thin, s = Shape::circle{ r = 1.5, at = Point{ x = 9, y = 8 } }, d = Shape::dot{}, n = Shape::none }\n', 1))
+        self.assertEqual(self.ends(src, args=['x'])[1:], (
+            'error: more{ o = 5, z = null, op = Point{ x = 1, y = 1 }, xs = [1, 2, 3], ys = [4, -5], none = [], q = null, r = _, f = _, at = _ }\n', 1))
+
+    def test_names_have_their_namespaces_and_no_generic_arguments(self):
+        src = '''
+namespace geo {
+    struct Pair(T) { a: T, b: T }
+    enum Side: u8 { left, right }
+    union Hit(T) { miss, at{ where_: T } }
+    error off{ p: Pair(i32), s: Side, h: Hit(Pair(u8)), parts: [2]Pair(bool) }
+}
+fn main {} -> ! {
+    return geo::off{ p = geo::Pair(i32){ a = 1, b = 2 }, s = geo::Side::right, h = geo::Hit(geo::Pair(u8))::at{ where_ = geo::Pair(u8){ a = 3, b = 4 } },
+                     parts = [geo::Pair(bool){ a = true, b = false }, geo::Pair(bool){ a = false, b = false }] }
+}
+'''
+        self.assertEqual(self.ends(src)[1:], (
+            'error: geo::off{ p = geo::Pair{ a = 1, b = 2 }, s = geo::Side::right, h = geo::Hit::at{ where_ = geo::Pair{ a = 3, b = 4 } }, '
+            'parts = [geo::Pair{ a = true, b = false }, geo::Pair{ a = false, b = false }] }\n', 1))
+
+    def test_a_type_that_holds_itself(self):
+        src = '''
+struct Tree { n: i32, kids: []Tree }
+error deep{ t: Tree }
+const LEAVES: [2]Tree = [Tree{ n = 2, kids = [] }, Tree{ n = 3, kids = [] }]
+fn main {} -> ! { return deep{ t = Tree{ n = 1, kids = LEAVES[..] } } }
+'''
+        self.assertEqual(self.ends(src)[1:], ('error: deep{ t = Tree{ n = 1, kids = [Tree{ n = 2, kids = [] }, Tree{ n = 3, kids = [] }] } }\n', 1))
+
+    def test_the_programs_writers_are_used(self):
+        # A `#write` fn of the program's to an io::Stderr writes its type, alone and inside
+        # another value, and replaces std's for a type std writes too.
+        src = self.TYPES + '''
+error far{ p: Point, l: Line, n: i32, m: Meters }
+#write
+fn write_point { mut e: io::Stderr, p: Point } { _ = @fmt(&e, "({}, {})", p.x, p.y) }
+#write
+fn write_i32 { mut e: io::Stderr, n: i32 } { _ = @fmt(&e, "#{}", @as(i64, n)) }
+#write
+fn write_meters { mut e: io::Stderr, m: Meters } { _ = @fmt(&e, "{}m", @as(f32, m)) }
+fn main {} -> ! {
+    return far{ p = Point{ x = 1, y = 2 }, l = Line{ a = Point{ x = 0, y = 0 }, b = Point{ x = 3, y = 4 }, tag = Tag::thin }, n = 6, m = @as(Meters, 1.5) }
+}
+'''
+        self.assertEqual(self.ends(src)[1:], ('error: far{ p = (#1, #2), l = Line{ a = (#0, #0), b = (#3, #4), tag = Tag::thin }, n = #6, m = 1.5m }\n', 1))
+
+    def test_fmt_writes_an_errors_payload_the_same_way(self):
+        # In any @fmt, to any sink: the parts' writers' errors join the @fmt's set, so this
+        # match lists all of them.
+        src = self.TYPES + '''
+error lost{ where_: Point, o: ?Point, t: Tag }
+fn go {} -> ! { return lost{ where_ = Point{ x = 3, y = 4 }, o = null, t = Tag::thick } }
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+    let pages = mem::pages{ &mem, size = 4096 } ifnull { return 1 }
+    let mut heap = arena::new{ buf = pages }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    match go{} {
+        ok => {}
+        err{ error } => {
+            match @fmt(&b, "got {}", error) {
+                ok => {}
+                alloc::out_of_memory => { return 2 }
+            }
+            _ = @fmt(&io, "{}\\n", error)
+        }
+    }
+    io::println{ &io, s = utf8::view{ b } }
+    return 0
+}
+'''
+        self.assertOutput(src, 'lost{ where_ = Point{ x = 3, y = 4 }, o = null, t = Tag::thick }\ngot lost{ where_ = Point{ x = 3, y = 4 }, o = null, t = Tag::thick }\n')
+        # A hole of the @fmt itself still needs a writer.
+        self.assertCompileError(self.TYPES + 'fn main { mut io: Io } { _ = @fmt(&io, "{}", Point{ x = 1, y = 2 }) }', '@fmt has no writer of Point to Io')
+        # Two writers for a part are an error at the @fmt.
+        two = self.TYPES + '''
+error lost{ l: Line }
+#write
+fn one { mut io: Io, p: Point } {}
+#write
+fn two { mut io: Io, p: Point } {}
+fn go {} -> ! { return lost{ l = Line{ a = Point{ x = 0, y = 0 }, b = Point{ x = 3, y = 4 }, tag = Tag::thin } } }
+fn main { mut io: Io } {
+    match go{} {
+        ok => {}
+        err{ error } => { _ = @fmt(&io, "{}", error) }
+    }
+}
+'''
+        self.assertCompileError(two, "@fmt has two writers of Point to Io, for a part of `lost`'s field `l`: `one` and `two`")
+
+    def test_any_error(self):
+        # A main whose set is every error of the program: one that calls through a function type.
+        src = '''
+error first{ n: i32 }
+error second{ s: []u8 }
+fn a {} -> ! { return first{ n = 1 } }
+fn b {} -> ! { return second{ s = "two" } }
+fn main { args: Args } -> ! {
+    let fs: [2]fn{} -> ! = [a, b]
+    try fs[args.len]{}
+}
+'''
+        self.assertEqual(self.ends(src)[1:], ('error: first{ n = 1 }\n', 1))
+        self.assertEqual(self.ends(src, args=['x'])[1:], ('error: second{ s = two }\n', 1))
+
+    def test_a_start_fn_of_the_programs_gets_the_report(self):
+        src = '''
+error boom{ n: i32 }
+#start
+fn begin { mut io: Io, main: &fn{ args: Args } -> i32 } -> i32 {
+    let code = main{ args = slice::empty([]u8){} }
+    io::flush{ &io }
+    return code + 40
+}
+fn main { mut io: Io } -> ! {
+    io::println{ &io, s = "in main" }
+    return boom{ n = 7 }
+}
+'''
+        self.assertEqual(self.ends(src), ('in main\n', 'error: boom{ n = 7 }\n', 41))
+
+    def test_signature_errors(self):
+        self.assertCompileError('fn main {} -> !u8 { return 1 }', '`main` can only return i32 (the exit code), `!` or `!i32`, not !u8')
+        self.assertCompileError('fn main {} -> ?i32 { return 1 }', '`main` can only return i32 (the exit code), `!` or `!i32`, not ?i32')
+        self.assertCompileError('fn main(T) {} -> ! {}', '`main` cannot be generic')
 
 
 class CLib(Base):
