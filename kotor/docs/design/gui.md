@@ -14,7 +14,7 @@ original does is in [re/gui.md](../re/gui.md), [re/render-gui.md](../re/render-g
 | `lib/gui/text.ctx` | `gui` | token expansion, word wrap and alignment as the engine does them |
 | `lib/gui/draw.ctx` | `gui` | borders, labels, buttons, check boxes, sliders, progress bars, list boxes |
 | `lib/gui/input.ctx` | `gui` | hover/focus, clicks, capture, wheel, keys, events for the owner |
-| `lib/gui/gui.ctx`, `api.ctx` | `gui` | the manager (screen, stack, clocks, drawing) and what owners call |
+| `lib/gui/gui.ctx`, `calls.ctx` | `gui` | the manager (screen, stack, clocks, drawing) and what owners call |
 | `lib/frontend/movie` | `movie` | a non-blocking Bink player (video through YUV quads, sound in a mixer feed) |
 | `lib/frontend/gui3d` | `gui3d` | a model seen through a camera node, drawn into a GUI rectangle |
 | `lib/frontend/*.ctx` | `frontend` | settings file, saves, the screens, the front end's loop, loading screen |
