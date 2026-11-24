@@ -1,49 +1,24 @@
-// Stage 2's test: the staged level. Instances, the flip into canvas space, the clip table, the atlas
+// Stage 2's tests: the staged level. Instances, the flip into canvas space, the clip table, the atlas
 // and the glyph cache, overlap-aware batching, passes, the revision, overflow, and the dump of a
 // Staged. Outline text goes through a fake provider that rasterises boxes. The batching invariant is
 // also checked directly on randomly generated lists (a fixed seed).
 //
-//   kotor/tools/ctxc run ui/tests/stage                 (from the repository root)
-//   kotor/tools/ctxc run ui/tests/stage -- --update     rewrite the goldens after an intended change
+//   kotor/tools/ctxc test ui/tests/stage                          (from the repository root)
+//   UI_UPDATE_GOLDENS=1 kotor/tools/ctxc test ui/tests/stage      rewrite the goldens after an intended change
 //
-// Writes the atlas to ui/out/stage-atlas.png (ignored by git) to look at. Exits 1 when any check fails.
+// Writes the atlas to ui/out/stage-atlas.png (ignored by git) to look at.
 
 const GOLDEN_DIR: []u8 = "ui/tests/stage/golden"
 const ATLAS_PNG: []u8 = "ui/out/stage-atlas.png"
 
-fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
-    let mut t = ui_test::Tally{ run = 0, failed = 0 }
-    let buf = mem::pages{ &mem, size = 268435456 } ifnull { return 1 }
-    let mut heap = arena::new{ buf }
-    let update = ui_test::has_flag{ args, flag = "--update" }
-    let font = ui_test::make_test_font{ realloc = arena::alloc, &heap } iferr { return 1 }
-    let mut fake = Fake{ shapes = 0, rasters = 0 }
-    let provider: ?ui::TextProvider = ui::TextProvider{ state = @cast(*mut ui::Opaque, &fake), metrics = fake_metrics, shape = fake_shape, rasterize = fake_raster }
-
-    check_golden_list{ &io, &fs, &t, &heap, font, update }
-    check_flip{ &io, &t, &heap, font }
-    check_buttons{ &io, &t, &heap, font }
-    check_overlap{ &io, &fs, &t, &heap, font, update }
-    check_textures{ &io, &t, &heap }
-    check_host{ &io, &fs, &t, &heap, font, update }
-    check_quarter{ &io, &t, &heap }
-    check_revision{ &io, &t, &heap, font }
-    check_cache{ &io, &t, &heap, font, provider, fake = &fake }
-    check_release{ &io, &t, &heap, font, provider }
-    check_growth{ &io, &t, &heap, font }
-    check_limit{ &io, &t, &heap, font }
-    check_overflow{ &io, &t, &heap, font }
-    check_random{ &io, &t, &heap, font }
-    write_atlas{ &io, &fs, &t, &heap, font, provider }
-
-    _ = @fmt(&io, "ui/tests/stage: {} checks, {} failed\n", t.run, t.failed)
-    io::flush{ &io }
-    return if t.failed == 0 { 0 } else { 1 }
-}
-
 // ---- the fake outline provider: one glyph a byte, `pixels / 2` apart, each a box
 
-struct Fake { shapes: u32, rasters: u32 }
+struct Fake { shapes: u32 = 0, rasters: u32 = 0 }
+
+// The provider over a Fake, which counts what it was asked.
+fn make_provider { fake: *mut Fake } -> ?ui::TextProvider {
+    return ui::TextProvider{ state = @cast(*mut ui::Opaque, fake), metrics = fake_metrics, shape = fake_shape, rasterize = fake_raster }
+}
 
 fn fake_metrics { mut state: ui::Opaque, handle: u32, pixels: u32 } -> ui::LineMetrics {
     return ui::LineMetrics{ height = @as(f32, pixels) * 1.25 + @as(f32, handle) * 0.0, ascent = @as(f32, pixels) * 0.75 }
@@ -130,26 +105,28 @@ fn add_picture { mut list: ui::DrawList, rect: ui::Rect, image: u32, blend: ui::
         tint = ui::Color{ r = 255, g = 255, b = 255, .. }, quarter = 0, angle = 0.0, radius = ui::Corners{ .. }, blend, clip = 0 }
 }
 
-fn dump { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, staged: *ui_stage::Staged, name: []u8, update: bool } {
-    let out = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65536 } iferr { return }
-    let scratch = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65536 } iferr { return }
+fn dump { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, staged: *ui_stage::Staged, name: []u8, update: bool } -> ! {
+    let out = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65536 }
+    let scratch = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65536 }
     let mut sink = ui_rec::make_sink{ bytes = out }
-    ui_rec::write_staged{ &sink, staged } iferr {
-        ui_test::expect{ &io, &t, ok = false, what = "write the staged dump" }
-        return
-    }
-    ui_test::expect{ &io, &t, ok = sink.lost == 0, what = "the staged dump fit its buffer" }
-    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name, actual = ui_rec::get_text{ sink }, scratch, update }
+    try ui_rec::write_staged{ &sink, staged }
+    // the staged dump fit its buffer
+    @expect(&t, sink.lost == 0)
+    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name, actual = ui_rec::get_text{ sink }, scratch, update })
 }
 
 // ---- the stage 0 list, every field of every instance
 
-fn check_golden_list { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, font: ui::FontDef, update: bool } {
-    let mut list = make_list{ &heap, font, width = 800, height = 600, cmds = 64 } iferr { return }
+#test
+fn stages_every_field_of_the_stage_0_list { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let update = ui_check::is_updating{ &proc }
+    let font = try ui_test::make_test_font{ realloc = arena::alloc, &heap }
+    let mut list = try make_list{ &heap, font, width = 800, height = 600, cmds = 64 }
     let panel_rect = make_rect{ x = 16, y = 16, w = 400, h = 300 }
-    let rounded = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = panel_rect, round = panel_rect, radius = 8.0 } } ifnull { return }
-    let plain = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 100, y = 100, w = 200, h = 150 }, .. } } ifnull { return }
-    let fraction = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 8, y = 9, w = 64, h = 32 }, .. } } ifnull { return }
+    let rounded = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = panel_rect, round = panel_rect, radius = 8.0 } } ifnull { return ui_check::refused }
+    let plain = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 100, y = 100, w = 200, h = 150 }, .. } } ifnull { return ui_check::refused }
+    let fraction = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 8, y = 9, w = 64, h = 32 }, .. } } ifnull { return ui_check::refused }
 
     let ink = ui::Color{ r = 0xE4, g = 0xE7, b = 0xED, .. }
     let border = ui::Color{ r = 0x40, g = 0x45, b = 0x52, .. }
@@ -175,56 +152,78 @@ fn check_golden_list { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: 
     ui::draw::add_line{ &list, x0 = 0.0, y0 = 0.0, x1 = 5.0, y1 = 5.0, width = 1.0, color = ui::Color{ a = 0x80, .. }, cap = ui::Cap::square, clip = 0 }
     ui::draw::add_host{ &list, slot = 1, rect = make_rect{ x = 320, y = 60, w = 280, h = 360 } }
     ui::draw::add_rect{ &list, rect = make_rect{ x = 330, y = 70, w = 20, h = 20 }, clip = 0, style = ui::RectStyle{ fill = ui::Color{ r = 255, g = 0, b = 255, .. }, .. } }
-    ui_test::expect{ &io, &t, ok = list.count == 12 and list.dropped == 0, what = "the stage 0 list was built" }
+    // the stage 0 list was built
+    @expect(&t, list.count == 12 and list.dropped == 0)
 
-    let mut staged = make_staged{ &heap, cap = ui_stage::Capacity{ rects = 64, glyphs = 64, images = 64, shapes = 64, draws = 64, passes = 4,
-        atlas_width = 64, atlas_height = 32, atlas_max_height = 64, glyph_cache = 64, raster_bytes = 1024 } } iferr { return }
+    let mut staged = try make_staged{ &heap, cap = ui_stage::Capacity{ rects = 64, glyphs = 64, images = 64, shapes = 64, draws = 64, passes = 4,
+        atlas_width = 64, atlas_height = 32, atlas_max_height = 64, glyph_cache = 64, raster_bytes = 1024 } }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.dropped == 0, what = "the stage 0 list stages with nothing dropped" }
-    ui_test::expect{ &io, &t, ok = staged.width == 800 and staged.height == 600, what = "the canvas is the list's surface: 800 by 600 pixels, one unit a pixel" }
+    // the stage 0 list stages with nothing dropped
+    @expect(&t, staged.dropped == 0)
+    // the canvas is the list's surface: 800 by 600 pixels, one unit a pixel
+    @expect(&t, staged.width == 800 and staged.height == 600)
 
     // Radii tl, tr, br, bl and borders top, right, bottom, left arrive in the shader's order.
     let r = staged.rects[0]
-    ui_test::expect{ &io, &t, ok = r.radius_tl == 4.0 and r.radius_tr == 4.0 and r.radius_br == 0.0 and r.radius_bl == 0.0, what = "radii arrive tl, tr, br, bl" }
-    ui_test::expect{ &io, &t, ok = r.border_top == 1.0 and r.border_right == 1.0 and r.border_bottom == 0.0 and r.border_left == 1.0, what = "borders arrive top, right, bottom, left" }
-    ui_test::expect{ &io, &t, ok = r.color_bottom == 0 and r.color_top == 0xFF404552 and r.fill == 0xFF30343E, what = "colours are packed ARGB" }
-    ui_test::expect{ &io, &t, ok = r.y == 600.0 - 16.0 - 28.0, what = "a rectangle's canvas y is its distance from the bottom" }
+    // radii arrive tl, tr, br, bl
+    @expect(&t, r.radius_tl == 4.0 and r.radius_tr == 4.0 and r.radius_br == 0.0 and r.radius_bl == 0.0)
+    // borders arrive top, right, bottom, left
+    @expect(&t, r.border_top == 1.0 and r.border_right == 1.0 and r.border_bottom == 0.0 and r.border_left == 1.0)
+    // colours are packed ARGB
+    @expect(&t, r.color_bottom == 0 and r.color_top == 0xFF404552 and r.fill == 0xFF30343E)
+    // a rectangle's canvas y is its distance from the bottom
+    @expect(&t, r.y == 600.0 - 16.0 - 28.0)
 
     // The rounded clip fills all three rows of its slot.
     let c = staged.clips[1]
-    ui_test::expect{ &io, &t, ok = c.left == 16.0 and c.bottom == 284.0 and c.right == 416.0 and c.top == 584.0, what = "a clip's first row is left, bottom, right, top" }
-    ui_test::expect{ &io, &t, ok = c.round_left == 16.0 and c.round_bottom == 284.0 and c.round_right == 416.0 and c.round_top == 584.0, what = "a rounded clip's second row is its rounded rectangle" }
-    ui_test::expect{ &io, &t, ok = c.radius == 8.0, what = "a rounded clip's third row is its radius" }
+    // a clip's first row is left, bottom, right, top
+    @expect(&t, c.left == 16.0 and c.bottom == 284.0 and c.right == 416.0 and c.top == 584.0)
+    // a rounded clip's second row is its rounded rectangle
+    @expect(&t, c.round_left == 16.0 and c.round_bottom == 284.0 and c.round_right == 416.0 and c.round_top == 584.0)
+    // a rounded clip's third row is its radius
+    @expect(&t, c.radius == 8.0)
     let p = staged.clips[2]
-    ui_test::expect{ &io, &t, ok = p.radius == 0.0 and p.round_right == 0.0, what = "a plain clip has no rounded rectangle" }
-    dump{ &io, &fs, &t, &heap, staged = &staged, name = "list", update }
+    // a plain clip has no rounded rectangle
+    @expect(&t, p.radius == 0.0 and p.round_right == 0.0)
+    try dump{ &io, &fs, &t, &heap, staged = &staged, name = "list", update }
 }
 
 // A rectangle at the top left of a 100-high list has canvas y 90; a line's ends flip the same way.
-fn check_flip { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, font: ui::FontDef } {
-    let mut list = make_list{ &heap, font, width = 100, height = 100, cmds = 8 } iferr { return }
-    let mut staged = make_small{ &heap } iferr { return }
+#test
+fn flips_into_canvas_space { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let font = try ui_test::make_test_font{ realloc = arena::alloc, &heap }
+    let mut list = try make_list{ &heap, font, width = 100, height = 100, cmds = 8 }
+    let mut staged = try make_small{ &heap }
     ui::draw::add_rect{ &list, rect = make_rect{ x = 0, y = 0, w = 10, h = 10 }, style = fill{ color = ui::Color{ r = 1, .. } }, clip = 0 }
     ui::draw::add_line{ &list, x0 = 10.0, y0 = 20.0, x1 = 30.0, y1 = 40.0, width = 2.0, color = ui::Color{ .. }, cap = ui::Cap::square, clip = 0 }
     ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16, x = 0, y = 0, text = "A", color = ui::Color{ .. }, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
     let r = staged.rects[0]
-    ui_test::expect{ &io, &t, ok = r.x == 0.0 and r.y == 90.0 and r.w == 10.0 and r.h == 10.0, what = "a rectangle at the top left of a 100-high list has canvas y 90" }
+    // a rectangle at the top left of a 100-high list has canvas y 90
+    @expect(&t, r.x == 0.0 and r.y == 90.0 and r.w == 10.0 and r.h == 10.0)
     let s = staged.shapes[0]
-    ui_test::expect{ &io, &t, ok = s.data[0] == 10.0 and s.data[1] == 80.0 and s.data[2] == 30.0 and s.data[3] == 60.0, what = "a line's end points flip" }
+    // a line's end points flip
+    @expect(&t, s.data[0] == 10.0 and s.data[1] == 80.0 and s.data[2] == 30.0 and s.data[3] == 60.0)
     // Square cap: half 1, padded by 1 + 1.5 + 1.
-    ui_test::expect{ &io, &t, ok = s.x == 6.5 and s.y == 56.5 and s.w == 27.0 and s.h == 27.0 and s.flags == 2 and s.kind == 2 and s.half_width == 1.0, what = "a square-capped line's box is padded by half its width twice and 1.5" }
+    // a square-capped line's box is padded by half its width twice and 1.5
+    @expect(&t, s.x == 6.5 and s.y == 56.5 and s.w == 27.0 and s.h == 27.0 and s.flags == 2 and s.kind == 2 and s.half_width == 1.0)
     let g = staged.glyphs[0]
-    ui_test::expect{ &io, &t, ok = g.x == 0.0 and g.y == 84.0 and g.w == 8.0 and g.h == 16.0, what = "a glyph at the top left of a 100-high list has canvas y 84" }
-    ui_test::expect{ &io, &t, ok = g.uw * 128.0 == 8.0 and g.vh * 64.0 == 16.0, what = "a glyph's UV covers its 8 by 16 texels of the atlas" }
+    // a glyph at the top left of a 100-high list has canvas y 84
+    @expect(&t, g.x == 0.0 and g.y == 84.0 and g.w == 8.0 and g.h == 16.0)
+    // a glyph's UV covers its 8 by 16 texels of the atlas
+    @expect(&t, g.uw * 128.0 == 8.0 and g.vh * 64.0 == 16.0)
 }
 
 // ---- batching
 
 // 200 buttons side by side, a rectangle and a text each, stage to two draws.
-fn check_buttons { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, font: ui::FontDef } {
-    let mut list = make_list{ &heap, font, width = 8000, height = 100, cmds = 512 } iferr { return }
-    let mut staged = make_small{ &heap } iferr { return }
+#test
+fn batches_two_hundred_buttons_into_two_draws { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let font = try ui_test::make_test_font{ realloc = arena::alloc, &heap }
+    let mut list = try make_list{ &heap, font, width = 8000, height = 100, cmds = 512 }
+    let mut staged = try make_small{ &heap }
     let mut i: u32 = 0
     while i < 200 {
         let x = @as(i32, i) * 40
@@ -233,23 +232,30 @@ fn check_buttons { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, fo
         i = i + 1
     }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.dropped == 0 and staged.rect_count == 200 and staged.glyph_count == 400, what = "200 buttons stage 200 rectangles and 400 glyphs" }
-    ui_test::expect{ &io, &t, ok = staged.draw_count == 2 and staged.pass_count == 1, what = "200 buttons side by side stage to 2 draws" }
-    ui_test::expect{ &io, &t, ok = staged.draws[0].kind == ui_stage::Kind::rect and staged.draws[0].count == 200 and staged.draws[1].kind == ui_stage::Kind::glyph and staged.draws[1].count == 400,
-        what = "the rectangles are drawn first, then the glyphs" }
+    // 200 buttons stage 200 rectangles and 400 glyphs
+    @expect(&t, staged.dropped == 0 and staged.rect_count == 200 and staged.glyph_count == 400)
+    // 200 buttons side by side stage to 2 draws
+    @expect(&t, staged.draw_count == 2 and staged.pass_count == 1)
+    // the rectangles are drawn first, then the glyphs
+    @expect(&t, staged.draws[0].kind == ui_stage::Kind::rect and staged.draws[0].count == 200 and staged.draws[1].kind == ui_stage::Kind::glyph and staged.draws[1].count == 400)
 }
 
 // A rectangle recorded between two texts and overlapping the first forces a third draw.
-fn check_overlap { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, font: ui::FontDef, update: bool } {
-    let mut list = make_list{ &heap, font, width = 200, height = 100, cmds = 16 } iferr { return }
-    let mut staged = make_small{ &heap } iferr { return }
+#test
+fn breaks_a_batch_where_shapes_overlap { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let update = ui_check::is_updating{ &proc }
+    let font = try ui_test::make_test_font{ realloc = arena::alloc, &heap }
+    let mut list = try make_list{ &heap, font, width = 200, height = 100, cmds = 16 }
+    let mut staged = try make_small{ &heap }
     // Without the overlap: a panel, a text, a rectangle beside it, a text. The rectangle joins the panel's draw.
     ui::draw::add_rect{ &list, rect = make_rect{ x = 0, y = 0, w = 200, h = 100 }, style = fill{ color = ui::Color{ r = 0x10, .. } }, clip = 0 }
     ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16, x = 10, y = 10, text = "AB", color = ui::Color{ r = 0xA0, .. }, clip = 0 }
     ui::draw::add_rect{ &list, rect = make_rect{ x = 60, y = 10, w = 20, h = 20 }, style = fill{ color = ui::Color{ g = 0xA0, .. } }, clip = 0 }
     ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16, x = 10, y = 60, text = "CD", color = ui::Color{ b = 0xA0, .. }, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.draw_count == 2, what = "a rectangle that overlaps no text joins the panel's draw: 2 draws" }
+    // a rectangle that overlaps no text joins the panel's draw: 2 draws
+    @expect(&t, staged.draw_count == 2)
 
     // The same with the rectangle over the first text: a third draw, after the glyphs.
     ui::draw::reset{ &list, width = 200, height = 100 }
@@ -258,10 +264,12 @@ fn check_overlap { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: aren
     ui::draw::add_rect{ &list, rect = make_rect{ x = 20, y = 14, w = 20, h = 20 }, style = fill{ color = ui::Color{ g = 0xA0, .. } }, clip = 0 }
     ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16, x = 10, y = 60, text = "CD", color = ui::Color{ b = 0xA0, .. }, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.draw_count == 3, what = "a rectangle over the first text forces a third draw" }
-    ui_test::expect{ &io, &t, ok = staged.draws[0].kind == ui_stage::Kind::rect and staged.draws[0].count == 1 and staged.draws[1].kind == ui_stage::Kind::glyph
-        and staged.draws[1].count == 4 and staged.draws[2].kind == ui_stage::Kind::rect and staged.draws[2].count == 1, what = "panel, then both texts, then the rectangle over the first" }
-    dump{ &io, &fs, &t, &heap, staged = &staged, name = "overlap", update }
+    // a rectangle over the first text forces a third draw
+    @expect(&t, staged.draw_count == 3)
+    // panel, then both texts, then the rectangle over the first
+    @expect(&t, staged.draws[0].kind == ui_stage::Kind::rect and staged.draws[0].count == 1 and staged.draws[1].kind == ui_stage::Kind::glyph
+        and staged.draws[1].count == 4 and staged.draws[2].kind == ui_stage::Kind::rect and staged.draws[2].count == 1)
+    try dump{ &io, &fs, &t, &heap, staged = &staged, name = "overlap", update }
 }
 
 // The number of draws `order` (a string of '1', '2', 'a': texture 1, texture 2, texture 1 additive)
@@ -283,16 +291,25 @@ fn count_picture_draws { mut list: ui::DrawList, mut staged: ui_stage::Staged, o
 
 // Pictures from two textures that do not overlap stage to 2 draws however they are interleaved; an
 // additive picture gets its own draw.
-fn check_textures { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut list = ui::draw::make{ realloc = arena::alloc, &heap, cmds = 64, text = 64, clips = 2, fonts = 1 } iferr { return }
-    let mut staged = make_small{ &heap } iferr { return }
-    ui_test::expect{ &io, &t, ok = count_picture_draws{ &list, &staged, order = "12121212" } == 2, what = "1 2 1 2 ... is 2 draws" }
-    ui_test::expect{ &io, &t, ok = count_picture_draws{ &list, &staged, order = "11112222" } == 2, what = "1 1 1 1 2 2 2 2 is 2 draws" }
-    ui_test::expect{ &io, &t, ok = count_picture_draws{ &list, &staged, order = "21122112" } == 2, what = "2 1 1 2 2 1 1 2 is 2 draws" }
-    ui_test::expect{ &io, &t, ok = count_picture_draws{ &list, &staged, order = "1222221" } == 2, what = "1 2 2 2 2 2 1 is 2 draws" }
-    ui_test::expect{ &io, &t, ok = count_picture_draws{ &list, &staged, order = "121a212" } == 3, what = "an additive picture gets its own draw" }
-    ui_test::expect{ &io, &t, ok = staged.draws[2].blend == ui::Blend::additive and staged.draws[2].image == 1 and staged.draws[2].count == 1, what = "the additive draw names its texture and blend" }
-    ui_test::expect{ &io, &t, ok = count_picture_draws{ &list, &staged, order = "1a1a" } == 2, what = "additive pictures of one texture share a draw" }
+#test
+fn batches_pictures_by_texture_and_blend { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut list = try ui::draw::make{ realloc = arena::alloc, &heap, cmds = 64, text = 64, clips = 2, fonts = 1 }
+    let mut staged = try make_small{ &heap }
+    // 1 2 1 2 ... is 2 draws
+    @expect(&t, count_picture_draws{ &list, &staged, order = "12121212" } == 2)
+    // 1 1 1 1 2 2 2 2 is 2 draws
+    @expect(&t, count_picture_draws{ &list, &staged, order = "11112222" } == 2)
+    // 2 1 1 2 2 1 1 2 is 2 draws
+    @expect(&t, count_picture_draws{ &list, &staged, order = "21122112" } == 2)
+    // 1 2 2 2 2 2 1 is 2 draws
+    @expect(&t, count_picture_draws{ &list, &staged, order = "1222221" } == 2)
+    // an additive picture gets its own draw
+    @expect(&t, count_picture_draws{ &list, &staged, order = "121a212" } == 3)
+    // the additive draw names its texture and blend
+    @expect(&t, staged.draws[2].blend == ui::Blend::additive and staged.draws[2].image == 1 and staged.draws[2].count == 1)
+    // additive pictures of one texture share a draw
+    @expect(&t, count_picture_draws{ &list, &staged, order = "1a1a" } == 2)
 
     // Overlapping pictures of two textures keep paint order: 1 under 2 under 1 is three draws.
     ui::draw::reset{ &list, width = 100, height = 100 }
@@ -300,14 +317,16 @@ fn check_textures { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } 
     add_picture{ &list, rect = make_rect{ x = 10, y = 0, w = 20, h = 20 }, image = 2, blend = ui::Blend::alpha }
     add_picture{ &list, rect = make_rect{ x = 20, y = 0, w = 20, h = 20 }, image = 1, blend = ui::Blend::alpha }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.draw_count == 3 and staged.draws[0].image == 1 and staged.draws[1].image == 2 and staged.draws[2].image == 1, what = "overlapping pictures of two textures keep paint order" }
+    // overlapping pictures of two textures keep paint order
+    @expect(&t, staged.draw_count == 3 and staged.draws[0].image == 1 and staged.draws[1].image == 2 and staged.draws[2].image == 1)
     // Pictures that only touch do not overlap.
     ui::draw::reset{ &list, width = 100, height = 100 }
     add_picture{ &list, rect = make_rect{ x = 0, y = 0, w = 20, h = 20 }, image = 1, blend = ui::Blend::alpha }
     add_picture{ &list, rect = make_rect{ x = 20, y = 0, w = 20, h = 20 }, image = 2, blend = ui::Blend::alpha }
     add_picture{ &list, rect = make_rect{ x = 40, y = 0, w = 20, h = 20 }, image = 1, blend = ui::Blend::alpha }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.draw_count == 2, what = "pictures that only touch do not overlap" }
+    // pictures that only touch do not overlap
+    @expect(&t, staged.draw_count == 2)
     // An image shape is whole pixels, so its bounds are never widened, and so is a glyph of a glyph
     // table that lives on a backend image (KOTOR's fonts), whatever the table's metrics: the image
     // shader would grow a quad between pixels by a pixel, but there is none. The table here is on
@@ -320,60 +339,74 @@ fn check_textures { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } 
         kind = ui::FontKind::bitmap{ image = ui::Image{ id = 1, width = 64, height = 64 }, glyphs = wide[..], first = 'A', pixels = no_picture, pixels_width = 0, pixels_height = 0 },
         encoding = ui::Encoding::bytes, height = 20.0, ascent = 16.0,
     }
-    let art = ui::draw::add_font{ &list, font = between } ifnull { return }
+    let art = ui::draw::add_font{ &list, font = between } ifnull { return ui_check::refused }
     let white = ui::Color{ r = 255, g = 255, b = 255, .. }
     ui::draw::reset{ &list, width = 100, height = 100 }
     ui::draw::add_text{ &list, font = art, size = 20, x = 0, y = 0, text = "A", color = white, clip = 0 }
     add_picture{ &list, rect = make_rect{ x = 11, y = 0, w = 20, h = 20 }, image = 2, blend = ui::Blend::alpha }
     ui::draw::add_text{ &list, font = art, size = 20, x = 31, y = 0, text = "A", color = white, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.dropped == 0 and staged.image_count == 3 and staged.draw_count == 2, what = "a glyph of a table with fractional metrics is whole pixels: runs that only touch a picture share a draw" }
-    ui_test::expect{ &io, &t, ok = staged.images[0].x == 0.0 and staged.images[0].w == 11.0 and staged.images[1].x == 31.0 and staged.images[1].w == 11.0, what = "a glyph of a table on a backend image is an image instance on the nearest pixels (the two runs drawn together, first)" }
+    // a glyph of a table with fractional metrics is whole pixels: runs that only touch a picture share a draw
+    @expect(&t, staged.dropped == 0 and staged.image_count == 3 and staged.draw_count == 2)
+    // a glyph of a table on a backend image is an image instance on the nearest pixels (the two runs drawn together, first)
+    @expect(&t, staged.images[0].x == 0.0 and staged.images[0].w == 11.0 and staged.images[1].x == 31.0 and staged.images[1].w == 11.0)
     // The same at twice the size, where the glyph is 21 pixels wide: the runs share a draw.
     ui::draw::reset{ &list, width = 100, height = 100 }
     ui::draw::add_text{ &list, font = art, size = 40, x = 0, y = 0, text = "A", color = white, clip = 0 }
     add_picture{ &list, rect = make_rect{ x = 21, y = 0, w = 20, h = 20 }, image = 2, blend = ui::Blend::alpha }
     ui::draw::add_text{ &list, font = art, size = 40, x = 41, y = 0, text = "A", color = white, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.draw_count == 2, what = "glyph quads on whole pixels are not widened: runs that only touch a picture share a draw" }
+    // glyph quads on whole pixels are not widened: runs that only touch a picture share a draw
+    @expect(&t, staged.draw_count == 2)
     // A rectangle is whole pixels too: rectangles that touch a picture never overlap it.
     ui::draw::reset{ &list, width = 100, height = 100 }
     ui::draw::add_rect{ &list, rect = make_rect{ x = 0, y = 0, w = 21, h = 20 }, style = fill{ color = white }, clip = 0 }
     add_picture{ &list, rect = make_rect{ x = 21, y = 0, w = 20, h = 20 }, image = 2, blend = ui::Blend::alpha }
     ui::draw::add_rect{ &list, rect = make_rect{ x = 41, y = 0, w = 21, h = 20 }, style = fill{ color = white }, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.draw_count == 2, what = "rectangles that only touch a picture share a draw: a rectangle's bounds are its rectangle" }
+    // rectangles that only touch a picture share a draw: a rectangle's bounds are its rectangle
+    @expect(&t, staged.draw_count == 2)
 }
 
 // A host slot gives two passes, and no draw spans them.
-fn check_host { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, font: ui::FontDef, update: bool } {
-    let mut list = make_list{ &heap, font, width = 200, height = 100, cmds = 16 } iferr { return }
-    let mut staged = make_small{ &heap } iferr { return }
+#test
+fn splits_passes_at_a_host_slot { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let update = ui_check::is_updating{ &proc }
+    let font = try ui_test::make_test_font{ realloc = arena::alloc, &heap }
+    let mut list = try make_list{ &heap, font, width = 200, height = 100, cmds = 16 }
+    let mut staged = try make_small{ &heap }
     ui::draw::add_rect{ &list, rect = make_rect{ x = 0, y = 0, w = 50, h = 20 }, style = fill{ color = ui::Color{ r = 0x11, .. } }, clip = 0 }
     ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16, x = 2, y = 2, text = "a", color = ui::Color{ r = 0x22, .. }, clip = 0 }
     ui::draw::add_host{ &list, slot = 7, rect = make_rect{ x = 60, y = 0, w = 80, h = 60 } }
     ui::draw::add_rect{ &list, rect = make_rect{ x = 150, y = 0, w = 50, h = 20 }, style = fill{ color = ui::Color{ r = 0x33, .. } }, clip = 0 }
     ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16, x = 152, y = 2, text = "b", color = ui::Color{ r = 0x44, .. }, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.pass_count == 2, what = "a host slot gives two passes" }
+    // a host slot gives two passes
+    @expect(&t, staged.pass_count == 2)
     let a = staged.passes[0]
     let b = staged.passes[1]
-    ui_test::expect{ &io, &t, ok = a.host and a.slot == 7 and a.rect.x == 60 and a.rect.w == 80 and not b.host, what = "the first pass ends at the host slot, the last has none" }
-    ui_test::expect{ &io, &t, ok = a.first == 0 and a.count == 2 and b.first == 2 and b.count == 2 and staged.draw_count == 4, what = "no draw spans the passes: the rectangles after the slot are a draw of their own" }
-    dump{ &io, &fs, &t, &heap, staged = &staged, name = "host", update }
+    // the first pass ends at the host slot, the last has none
+    @expect(&t, a.host and a.slot == 7 and a.rect.x == 60 and a.rect.w == 80 and not b.host)
+    // no draw spans the passes: the rectangles after the slot are a draw of their own
+    @expect(&t, a.first == 0 and a.count == 2 and b.first == 2 and b.count == 2 and staged.draw_count == 4)
+    try dump{ &io, &fs, &t, &heap, staged = &staged, name = "host", update }
 
     // A list that ends at a host slot ends with an empty pass.
     ui::draw::reset{ &list, width = 200, height = 100 }
     ui::draw::add_rect{ &list, rect = make_rect{ x = 0, y = 0, w = 50, h = 20 }, style = fill{ color = ui::Color{ r = 0x11, .. } }, clip = 0 }
     ui::draw::add_host{ &list, slot = 1, rect = make_rect{ x = 60, y = 0, w = 80, h = 60 } }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.pass_count == 2 and staged.passes[1].count == 0 and not staged.passes[1].host, what = "a list ending at a host slot ends with an empty pass" }
+    // a list ending at a host slot ends with an empty pass
+    @expect(&t, staged.pass_count == 2 and staged.passes[1].count == 0 and not staged.passes[1].host)
 }
 
 // An odd quarter turn gives a transposed rectangle and the right rotation.
-fn check_quarter { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut list = ui::draw::make{ realloc = arena::alloc, &heap, cmds = 8, text = 8, clips = 2, fonts = 1 } iferr { return }
-    let mut staged = make_small{ &heap } iferr { return }
+#test
+fn turns_pictures_by_quarters { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut list = try ui::draw::make{ realloc = arena::alloc, &heap, cmds = 8, text = 8, clips = 2, fonts = 1 }
+    let mut staged = try make_small{ &heap }
     ui::draw::reset{ &list, width = 100, height = 100 }
     let corners = ui::Corners{ top_left = 1.0, top_right = 2.0, bottom_right = 3.0, bottom_left = 4.0 }
     let white = ui::Color{ r = 255, g = 255, b = 255, .. }
@@ -385,30 +418,40 @@ fn check_quarter { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     }
     ui::draw::add_image{ &list, rect = make_rect{ x = 10, y = 20, w = 40, h = 20 }, region, tint = white, quarter = 1, angle = 0.25, radius = corners, blend = ui::Blend::alpha, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.image_count == 5 and staged.draw_count == 1, what = "five pictures of one texture are one draw" }
+    // five pictures of one texture are one draw
+    @expect(&t, staged.image_count == 5 and staged.draw_count == 1)
     let m0 = staged.images[0]
     let m1 = staged.images[1]
     let m2 = staged.images[2]
     let m3 = staged.images[3]
     let m4 = staged.images[4]
     // The rectangle's centre is (30, 30) y down, (30, 70) in canvas space.
-    ui_test::expect{ &io, &t, ok = m0.x == 10.0 and m0.y == 60.0 and m0.w == 40.0 and m0.h == 20.0 and m0.angle == 0.0, what = "no turn: the rectangle as it is" }
-    ui_test::expect{ &io, &t, ok = m1.x == 20.0 and m1.y == 50.0 and m1.w == 20.0 and m1.h == 40.0 and is_near{ a = m1.angle, b = 1.5707964 }, what = "one quarter turn: transposed about the centre, turned by pi/2" }
-    ui_test::expect{ &io, &t, ok = m2.x == 10.0 and m2.y == 60.0 and m2.w == 40.0 and m2.h == 20.0 and is_near{ a = m2.angle, b = 3.1415927 }, what = "two quarter turns: not transposed, turned by pi" }
-    ui_test::expect{ &io, &t, ok = m3.x == 20.0 and m3.w == 20.0 and m3.h == 40.0 and is_near{ a = m3.angle, b = 4.712389 }, what = "three quarter turns: transposed, turned by 3 pi/2" }
-    ui_test::expect{ &io, &t, ok = m4.w == 20.0 and m4.h == 40.0 and is_near{ a = m4.angle, b = 1.8207964 }, what = "a quarter turn and an angle add up" }
+    // no turn: the rectangle as it is
+    @expect(&t, m0.x == 10.0 and m0.y == 60.0 and m0.w == 40.0 and m0.h == 20.0 and m0.angle == 0.0)
+    // one quarter turn: transposed about the centre, turned by pi/2
+    @expect(&t, m1.x == 20.0 and m1.y == 50.0 and m1.w == 20.0 and m1.h == 40.0 and is_near{ a = m1.angle, b = 1.5707964 })
+    // two quarter turns: not transposed, turned by pi
+    @expect(&t, m2.x == 10.0 and m2.y == 60.0 and m2.w == 40.0 and m2.h == 20.0 and is_near{ a = m2.angle, b = 3.1415927 })
+    // three quarter turns: transposed, turned by 3 pi/2
+    @expect(&t, m3.x == 20.0 and m3.w == 20.0 and m3.h == 40.0 and is_near{ a = m3.angle, b = 4.712389 })
+    // a quarter turn and an angle add up
+    @expect(&t, m4.w == 20.0 and m4.h == 40.0 and is_near{ a = m4.angle, b = 1.8207964 })
     // The region's V is flipped: v = v1 and a negative height.
-    ui_test::expect{ &io, &t, ok = m0.u == 0.25 and m0.v == 0.5 and m0.uw == 0.25 and m0.vh == -0.5, what = "the region's V is flipped: v1 and a negative height" }
+    // the region's V is flipped: v1 and a negative height
+    @expect(&t, m0.u == 0.25 and m0.v == 0.5 and m0.uw == 0.25 and m0.vh == -0.5)
     // The corners go with the turn: after one counterclockwise turn the picture's top right is the rectangle's top left.
-    ui_test::expect{ &io, &t, ok = m0.radius_tl == 1.0 and m0.radius_tr == 2.0 and m0.radius_br == 3.0 and m0.radius_bl == 4.0, what = "unturned radii are as given" }
-    ui_test::expect{ &io, &t, ok = m1.radius_tl == 2.0 and m1.radius_tr == 3.0 and m1.radius_br == 4.0 and m1.radius_bl == 1.0, what = "turned radii round the rectangle's corners where they end up" }
+    // unturned radii are as given
+    @expect(&t, m0.radius_tl == 1.0 and m0.radius_tr == 2.0 and m0.radius_br == 3.0 and m0.radius_bl == 4.0)
+    // turned radii round the rectangle's corners where they end up
+    @expect(&t, m1.radius_tl == 2.0 and m1.radius_tr == 3.0 and m1.radius_br == 4.0 and m1.radius_bl == 1.0)
     // The bounds of a quarter-turned picture are exactly its rectangle: two of them that touch do not overlap.
     ui::draw::reset{ &list, width = 100, height = 100 }
     ui::draw::add_image{ &list, rect = make_rect{ x = 0, y = 0, w = 40, h = 20 }, region, tint = white, quarter = 1, angle = 0.0, radius = ui::Corners{ .. }, blend = ui::Blend::alpha, clip = 0 }
     add_picture{ &list, rect = make_rect{ x = 40, y = 0, w = 20, h = 20 }, image = 6, blend = ui::Blend::alpha }
     ui::draw::add_image{ &list, rect = make_rect{ x = 60, y = 0, w = 40, h = 20 }, region, tint = white, quarter = 3, angle = 0.0, radius = ui::Corners{ .. }, blend = ui::Blend::alpha, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.draw_count == 2, what = "quarter-turned pictures that touch another texture's do not overlap it" }
+    // quarter-turned pictures that touch another texture's do not overlap it
+    @expect(&t, staged.draw_count == 2)
     // A rectangle whose sides differ by an odd number: the transposed instance sits on half
     // pixels (its centre is on one), and turned it still covers exactly the whole pixels of the
     // rectangle, so it overlaps nothing it only touches.
@@ -418,8 +461,10 @@ fn check_quarter { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     ui::draw::add_image{ &list, rect = make_rect{ x = 70, y = 20, w = 21, h = 40 }, region, tint = white, quarter = 3, angle = 0.0, radius = ui::Corners{ .. }, blend = ui::Blend::alpha, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
     let odd = staged.images[0]
-    ui_test::expect{ &io, &t, ok = odd.x == 19.5 and odd.y == 49.5 and odd.w == 21.0 and odd.h == 40.0, what = "an odd quarter turn of a 40 by 21 rectangle is a 21 by 40 instance on half pixels" }
-    ui_test::expect{ &io, &t, ok = staged.draw_count == 2, what = "and its bounds are still exactly its rectangle" }
+    // an odd quarter turn of a 40 by 21 rectangle is a 21 by 40 instance on half pixels
+    @expect(&t, odd.x == 19.5 and odd.y == 49.5 and odd.w == 21.0 and odd.h == 40.0)
+    // and its bounds are still exactly its rectangle
+    @expect(&t, staged.draw_count == 2)
 }
 
 // The same list twice gives the same revision; one changed colour gives a new one.
@@ -430,38 +475,50 @@ fn build_revision_list { mut list: ui::DrawList, color: ui::Color } {
     ui::draw::add_line{ &list, x0 = 0.0, y0 = 50.0, x1 = 100.0, y1 = 50.0, width = 1.0, color = ui::Color{ .. }, cap = ui::Cap::butt, clip = 0 }
 }
 
-fn check_revision { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, font: ui::FontDef } {
-    let mut list = make_list{ &heap, font, width = 200, height = 100, cmds = 16 } iferr { return }
-    let mut staged = make_small{ &heap } iferr { return }
+#test
+fn raises_the_revision_only_when_the_staged_frame_changes { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let font = try ui_test::make_test_font{ realloc = arena::alloc, &heap }
+    let mut list = try make_list{ &heap, font, width = 200, height = 100, cmds = 16 }
+    let mut staged = try make_small{ &heap }
     build_revision_list{ &list, color = ui::Color{ r = 10, .. } }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
     let first = staged.revision
-    ui_test::expect{ &io, &t, ok = first == 1 and staged.atlas.dirty_x1 > staged.atlas.dirty_x0, what = "the first frame is revision 1 and uploads the glyphs it packed" }
+    // the first frame is revision 1 and uploads the glyphs it packed
+    @expect(&t, first == 1 and staged.atlas.dirty_x1 > staged.atlas.dirty_x0)
     build_revision_list{ &list, color = ui::Color{ r = 10, .. } }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.revision == first and staged.atlas.dirty_x1 == staged.atlas.dirty_x0, what = "the same list twice gives the same revision, with nothing dirty" }
-    ui_test::expect{ &io, &t, ok = staged.draw_count == 3 and staged.rect_count == 1 and staged.glyph_count == 3, what = "an unchanged frame keeps its draws" }
+    // the same list twice gives the same revision, with nothing dirty
+    @expect(&t, staged.revision == first and staged.atlas.dirty_x1 == staged.atlas.dirty_x0)
+    // an unchanged frame keeps its draws
+    @expect(&t, staged.draw_count == 3 and staged.rect_count == 1 and staged.glyph_count == 3)
     build_revision_list{ &list, color = ui::Color{ r = 11, .. } }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.revision == first + 1 and staged.rects[0].fill == 0xFF0B0000, what = "one changed colour gives a new revision" }
+    // one changed colour gives a new revision
+    @expect(&t, staged.revision == first + 1 and staged.rects[0].fill == 0xFF0B0000)
     build_revision_list{ &list, color = ui::Color{ r = 11, .. } }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.revision == first + 1, what = "and the frame after it, the same again, keeps it" }
+    // and the frame after it, the same again, keeps it
+    @expect(&t, staged.revision == first + 1)
     build_revision_list{ &list, color = ui::Color{ r = 10, .. } }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.revision == first + 2, what = "changing it back is a change too" }
+    // changing it back is a change too
+    @expect(&t, staged.revision == first + 2)
     // A changed surface is a change, even when the shapes are the same.
     ui::draw::reset{ &list, width = 400, height = 200 }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
     let empty_rev = staged.revision
-    ui_test::expect{ &io, &t, ok = staged.width == 400 and staged.height == 200, what = "the canvas follows the list's surface" }
+    // the canvas follows the list's surface
+    @expect(&t, staged.width == 400 and staged.height == 200)
     ui::draw::reset{ &list, width = 200, height = 100 }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.revision == empty_rev + 1 and staged.width == 200, what = "the same empty list on another surface is a new revision" }
+    // the same empty list on another surface is a new revision
+    @expect(&t, staged.revision == empty_rev + 1 and staged.width == 200)
     // A surface of no size is a canvas of one pixel: a backend always has a viewport.
     ui::draw::reset{ &list, width = 0, height = -5 }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.width == 1 and staged.height == 1 and staged.dropped == 0, what = "a surface of no size stages a canvas of one pixel" }
+    // a surface of no size stages a canvas of one pixel
+    @expect(&t, staged.width == 1 and staged.height == 1 and staged.dropped == 0)
 }
 
 // ---- the glyph cache and the atlas
@@ -472,34 +529,46 @@ fn add_outline_font { mut list: ui::DrawList, handle: u32 } -> ui::Font {
 }
 
 // A glyph drawn twice is rasterised once, in an outline font and in a glyph table.
-fn check_cache { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, font: ui::FontDef, provider: ?ui::TextProvider, fake: *Fake } {
-    let mut list = make_list{ &heap, font, width = 200, height = 100, cmds = 16 } iferr { return }
+#test
+fn rasterises_a_glyph_once { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let font = try ui_test::make_test_font{ realloc = arena::alloc, &heap }
+    let mut fake = Fake{ .. }
+    let provider = make_provider{ fake = &fake }
+    let mut list = try make_list{ &heap, font, width = 200, height = 100, cmds = 16 }
     let outline = add_outline_font{ &list, handle = 3 }
-    let mut staged = make_small{ &heap } iferr { return }
+    let mut staged = try make_small{ &heap }
     let before = fake.rasters
     ui::draw::add_text{ &list, font = outline, size = 16, x = 10, y = 10, text = "ABA B", color = ui::Color{ .. }, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider }
-    ui_test::expect{ &io, &t, ok = fake.rasters == before + 3 and staged.glyph_count == 4 and staged.dropped == 0, what = "A, B and the space are rasterised once each; the four glyphs with ink are staged" }
+    // A, B and the space are rasterised once each; the four glyphs with ink are staged
+    @expect(&t, fake.rasters == before + 3 and staged.glyph_count == 4 and staged.dropped == 0)
     // Pen 10, 8 pixels an advance; baseline 10 + 12. 'A' (65) is 3 wide and 7 high, left 1, top 7.
     let a = staged.glyphs[0]
-    ui_test::expect{ &io, &t, ok = a.x == 11.0 and a.w == 3.0 and a.h == 7.0 and a.y == 100.0 - 22.0, what = "an outline glyph sits on the baseline, its bearing added" }
+    // an outline glyph sits on the baseline, its bearing added
+    @expect(&t, a.x == 11.0 and a.w == 3.0 and a.h == 7.0 and a.y == 100.0 - 22.0)
     let b = staged.glyphs[1]
-    ui_test::expect{ &io, &t, ok = b.x == 19.0 and b.w == 4.0 and b.h == 8.0, what = "the pen moves on by the advance" }
+    // the pen moves on by the advance
+    @expect(&t, b.x == 19.0 and b.w == 4.0 and b.h == 8.0)
     let packed = staged.packed
     ui::draw::reset{ &list, width = 200, height = 100 }
     ui::draw::add_text{ &list, font = outline, size = 16, x = 50, y = 50, text = "BAAB", color = ui::Color{ .. }, clip = 0 }
     ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16, x = 10, y = 70, text = "xyx", color = ui::Color{ .. }, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider }
-    ui_test::expect{ &io, &t, ok = fake.rasters == before + 3 and staged.packed == packed + 2, what = "a glyph drawn again is not rasterised again; x and y of the table are packed once" }
+    // a glyph drawn again is not rasterised again; x and y of the table are packed once
+    @expect(&t, fake.rasters == before + 3 and staged.packed == packed + 2)
     ui::draw::reset{ &list, width = 200, height = 100 }
     ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 32, x = 10, y = 10, text = "yxy", color = ui::Color{ .. }, clip = 0 }
     ui::draw::add_text{ &list, font = outline, size = 32, x = 10, y = 50, text = "A", color = ui::Color{ .. }, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider }
-    ui_test::expect{ &io, &t, ok = staged.packed == packed + 3, what = "a table's glyph at another size is the same picture; an outline glyph at another size is another sized face" }
-    ui_test::expect{ &io, &t, ok = fake.rasters == before + 4, what = "the outline 'A' at 32 pixels is rasterised once" }
+    // a table's glyph at another size is the same picture; an outline glyph at another size is another sized face
+    @expect(&t, staged.packed == packed + 3)
+    // the outline 'A' at 32 pixels is rasterised once
+    @expect(&t, fake.rasters == before + 4)
     // Text in an outline font with no provider is dropped and counted.
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.dropped == 1, what = "outline text with no provider is dropped and counted" }
+    // outline text with no provider is dropped and counted
+    @expect(&t, staged.dropped == 1)
 }
 
 // A table with a picture of its own, so releasing it touches nothing else: the test font's cells.
@@ -527,86 +596,112 @@ fn sum_texels { staged: *ui_stage::Staged, x: u32, y: u32, w: u32, h: u32 } -> u
 }
 
 // Releasing a font frees its atlas space after four frames, and a glyph after that takes it.
-fn check_release { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, font: ui::FontDef, provider: ?ui::TextProvider } {
-    let own = copy_font{ &heap, font } iferr { return }
-    let mut list = make_list{ &heap, font, width = 200, height = 100, cmds = 16 } iferr { return }
-    let other = ui::draw::add_font{ &list, font = own } ifnull { return }
+#test
+fn frees_a_released_fonts_atlas_space { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let font = try ui_test::make_test_font{ realloc = arena::alloc, &heap }
+    let mut fake = Fake{ .. }
+    let provider = make_provider{ fake = &fake }
+    let own = try copy_font{ &heap, font }
+    let mut list = try make_list{ &heap, font, width = 200, height = 100, cmds = 16 }
+    let other = ui::draw::add_font{ &list, font = own } ifnull { return ui_check::refused }
     let outline = add_outline_font{ &list, handle = 4 }
-    let mut staged = make_small{ &heap } iferr { return }
+    let mut staged = try make_small{ &heap }
     ui::draw::add_text{ &list, font = other, size = 16, x = 0, y = 0, text = "Q", color = ui::Color{ .. }, clip = 0 }
     ui::draw::add_text{ &list, font = outline, size = 16, x = 0, y = 50, text = "R", color = ui::Color{ .. }, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider }
     let q = staged.glyphs[0]
     let qx = @as(u32, q.u * 128.0)
     let qy = @as(u32, q.v * 64.0)
-    ui_test::expect{ &io, &t, ok = staged.cache_used == 2 and sum_texels{ staged = &staged, x = qx, y = qy, w = 8, h = 16 } > 0, what = "the table's Q and the outline R are in the atlas" }
+    // the table's Q and the outline R are in the atlas
+    @expect(&t, staged.cache_used == 2 and sum_texels{ staged = &staged, x = qx, y = qy, w = 8, h = 16 } > 0)
 
     ui_stage::release_font{ out = &staged, font = own }
     ui_stage::release_face{ out = &staged, face = 4 * 1000 + 16 }
-    ui_test::expect{ &io, &t, ok = staged.cache_used == 0 and staged.packer.held_count == 2, what = "releasing the font and the face forgets their glyphs and holds their room" }
+    // releasing the font and the face forgets their glyphs and holds their room
+    @expect(&t, staged.cache_used == 0 and staged.packer.held_count == 2)
     ui::draw::reset{ &list, width = 200, height = 100 }
     let mut frame: u32 = 0
     while frame < 3 {
         ui_stage::stage{ out = &staged, list = &list, provider }
         frame = frame + 1
     }
-    ui_test::expect{ &io, &t, ok = staged.packer.held_count == 2 and staged.packer.freed_count == 0 and sum_texels{ staged = &staged, x = qx, y = qy, w = 8, h = 16 } > 0,
-        what = "three frames later the room is still held and its texels kept" }
+    // three frames later the room is still held and its texels kept
+    @expect(&t, staged.packer.held_count == 2 and staged.packer.freed_count == 0 and sum_texels{ staged = &staged, x = qx, y = qy, w = 8, h = 16 } > 0)
     ui_stage::stage{ out = &staged, list = &list, provider }
-    ui_test::expect{ &io, &t, ok = staged.packer.held_count == 0 and staged.packer.freed_count == 2 and sum_texels{ staged = &staged, x = qx, y = qy, w = 8, h = 16 } == 0,
-        what = "the fourth frame frees the room and clears its texels" }
-    ui_test::expect{ &io, &t, ok = staged.atlas.dirty_x1 > staged.atlas.dirty_x0 and staged.revision > 0, what = "the cleared texels are dirty" }
+    // the fourth frame frees the room and clears its texels
+    @expect(&t, staged.packer.held_count == 0 and staged.packer.freed_count == 2 and sum_texels{ staged = &staged, x = qx, y = qy, w = 8, h = 16 } == 0)
+    // the cleared texels are dirty
+    @expect(&t, staged.atlas.dirty_x1 > staged.atlas.dirty_x0 and staged.revision > 0)
     // A glyph of the same size takes the freed room.
     ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16, x = 0, y = 0, text = "Z", color = ui::Color{ .. }, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider }
     let z = staged.glyphs[0]
-    ui_test::expect{ &io, &t, ok = @as(u32, z.u * 128.0) == qx and @as(u32, z.v * 64.0) == qy and staged.packer.freed_count == 1, what = "the next glyph of that size takes the freed room" }
+    // the next glyph of that size takes the freed room
+    @expect(&t, @as(u32, z.u * 128.0) == qx and @as(u32, z.v * 64.0) == qy and staged.packer.freed_count == 1)
 }
 
 // A full atlas grows and raises `version`; the glyphs already in it stay where they are.
-fn check_growth { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, font: ui::FontDef } {
-    let mut list = make_list{ &heap, font, width = 800, height = 100, cmds = 16 } iferr { return }
-    let mut staged = make_staged{ &heap, cap = ui_stage::Capacity{ rects = 16, glyphs = 256, images = 16, shapes = 16, draws = 16, passes = 2,
-        atlas_width = 64, atlas_height = 18, atlas_max_height = 72, glyph_cache = 256, raster_bytes = 1024 } } iferr { return }
+#test
+fn grows_a_full_atlas_and_keeps_its_glyphs { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let font = try ui_test::make_test_font{ realloc = arena::alloc, &heap }
+    let mut list = try make_list{ &heap, font, width = 800, height = 100, cmds = 16 }
+    let mut staged = try make_staged{ &heap, cap = ui_stage::Capacity{ rects = 16, glyphs = 256, images = 16, shapes = 16, draws = 16, passes = 2,
+        atlas_width = 64, atlas_height = 18, atlas_max_height = 72, glyph_cache = 256, raster_bytes = 1024 } }
     // Six glyphs, padded to 10 by 18, fill a 64 by 18 atlas.
     ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16, x = 0, y = 0, text = "abcdef", color = ui::Color{ .. }, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.atlas.height == 18 and staged.atlas.version == 0 and staged.dropped == 0, what = "six glyphs fit the first 18 rows" }
+    // six glyphs fit the first 18 rows
+    @expect(&t, staged.atlas.height == 18 and staged.atlas.version == 0 and staged.dropped == 0)
     let a = staged.glyphs[0]
     ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16, x = 0, y = 20, text = "ghij", color = ui::Color{ .. }, clip = 0 }
     let rev = staged.revision
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.atlas.height == 36 and staged.atlas.version == 1 and staged.dropped == 0 and staged.revision == rev + 1, what = "a full atlas doubles in height and raises version" }
+    // a full atlas doubles in height and raises version
+    @expect(&t, staged.atlas.height == 36 and staged.atlas.version == 1 and staged.dropped == 0 and staged.revision == rev + 1)
     let a2 = staged.glyphs[0]
-    ui_test::expect{ &io, &t, ok = a2.u == a.u and is_near{ a = a2.v * 36.0, b = a.v * 18.0 } and is_near{ a = a2.vh * 36.0, b = 16.0 }, what = "a glyph packed before stays at its texels; its UV follows the new height" }
+    // a glyph packed before stays at its texels; its UV follows the new height
+    @expect(&t, a2.u == a.u and is_near{ a = a2.v * 36.0, b = a.v * 18.0 } and is_near{ a = a2.vh * 36.0, b = 16.0 })
     ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16, x = 0, y = 40, text = "klmnopqrstuv", color = ui::Color{ .. }, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.atlas.height == 72 and staged.atlas.version == 2 and staged.dropped == 0, what = "it grows again, to its limit" }
+    // it grows again, to its limit
+    @expect(&t, staged.atlas.height == 72 and staged.atlas.version == 2 and staged.dropped == 0)
 }
 
 // At the limit the missing glyphs are counted, and the next frame refills the atlas.
-fn check_limit { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, font: ui::FontDef } {
-    let mut list = make_list{ &heap, font, width = 800, height = 100, cmds = 16 } iferr { return }
-    let mut staged = make_staged{ &heap, cap = ui_stage::Capacity{ rects = 16, glyphs = 256, images = 16, shapes = 16, draws = 16, passes = 2,
-        atlas_width = 64, atlas_height = 18, atlas_max_height = 36, glyph_cache = 256, raster_bytes = 1024 } } iferr { return }
+#test
+fn counts_glyphs_missing_at_the_atlas_limit { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let font = try ui_test::make_test_font{ realloc = arena::alloc, &heap }
+    let mut list = try make_list{ &heap, font, width = 800, height = 100, cmds = 16 }
+    let mut staged = try make_staged{ &heap, cap = ui_stage::Capacity{ rects = 16, glyphs = 256, images = 16, shapes = 16, draws = 16, passes = 2,
+        atlas_width = 64, atlas_height = 18, atlas_max_height = 36, glyph_cache = 256, raster_bytes = 1024 } }
     // Room for twelve: six a band of 18 rows, two bands.
     ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16, x = 0, y = 0, text = "abcdefghijklmnop", color = ui::Color{ .. }, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.dropped == 4 and staged.glyph_count == 12 and staged.packer.refill, what = "at the limit the four glyphs that do not fit are counted as dropped" }
+    // at the limit the four glyphs that do not fit are counted as dropped
+    @expect(&t, staged.dropped == 4 and staged.glyph_count == 12 and staged.packer.refill)
     ui::draw::reset{ &list, width = 800, height = 100 }
     ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16, x = 0, y = 0, text = "mnop", color = ui::Color{ .. }, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.dropped == 0 and staged.glyph_count == 4 and staged.cache_used == 4 and not staged.packer.refill, what = "the next frame empties the atlas and refills it with what it draws" }
-    ui_test::expect{ &io, &t, ok = staged.atlas.dirty_x0 == 0 and staged.atlas.dirty_y0 == 0 and staged.atlas.dirty_x1 == 64 and staged.atlas.dirty_y1 == 36, what = "the emptied atlas is dirty all over" }
+    // the next frame empties the atlas and refills it with what it draws
+    @expect(&t, staged.dropped == 0 and staged.glyph_count == 4 and staged.cache_used == 4 and not staged.packer.refill)
+    // the emptied atlas is dirty all over
+    @expect(&t, staged.atlas.dirty_x0 == 0 and staged.atlas.dirty_y0 == 0 and staged.atlas.dirty_x1 == 64 and staged.atlas.dirty_y1 == 36)
     let m = staged.glyphs[0]
-    ui_test::expect{ &io, &t, ok = m.u == 1.0 / 64.0 and m.v == 1.0 / 36.0, what = "the refilled atlas packs from its corner again" }
+    // the refilled atlas packs from its corner again
+    @expect(&t, m.u == 1.0 / 64.0 and m.v == 1.0 / 36.0)
 }
 
 // Overflow of each array is counted, never a panic.
-fn check_overflow { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, font: ui::FontDef } {
-    let mut list = make_list{ &heap, font, width = 300, height = 100, cmds = 512 } iferr { return }
-    let mut staged = make_staged{ &heap, cap = ui_stage::Capacity{ rects = 2, glyphs = 3, images = 2, shapes = 2, draws = 2, passes = 2,
-        atlas_width = 64, atlas_height = 32, atlas_max_height = 64, glyph_cache = 6, raster_bytes = 1024 } } iferr { return }
+#test
+fn counts_every_overflow { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let font = try ui_test::make_test_font{ realloc = arena::alloc, &heap }
+    let mut list = try make_list{ &heap, font, width = 300, height = 100, cmds = 512 }
+    let mut staged = try make_staged{ &heap, cap = ui_stage::Capacity{ rects = 2, glyphs = 3, images = 2, shapes = 2, draws = 2, passes = 2,
+        atlas_width = 64, atlas_height = 32, atlas_max_height = 64, glyph_cache = 6, raster_bytes = 1024 } }
     let white = ui::Color{ r = 255, g = 255, b = 255, .. }
     let mut i: u32 = 0
     while i < 3 {
@@ -614,12 +709,14 @@ fn check_overflow { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, f
         i = i + 1
     }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.rect_count == 2 and staged.dropped == 1, what = "three rectangles into room for two: one counted" }
+    // three rectangles into room for two: one counted
+    @expect(&t, staged.rect_count == 2 and staged.dropped == 1)
 
     ui::draw::reset{ &list, width = 300, height = 100 }
     ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16, x = 0, y = 0, text = "aabba", color = white, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.glyph_count == 3 and staged.dropped == 2, what = "five glyphs into room for three: two counted" }
+    // five glyphs into room for three: two counted
+    @expect(&t, staged.glyph_count == 3 and staged.dropped == 2)
 
     ui::draw::reset{ &list, width = 300, height = 100 }
     i = 0
@@ -629,7 +726,8 @@ fn check_overflow { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, f
         i = i + 1
     }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.image_count == 2 and staged.shape_count == 2 and staged.dropped == 2, what = "three pictures and three lines into room for two each: two counted" }
+    // three pictures and three lines into room for two each: two counted
+    @expect(&t, staged.image_count == 2 and staged.shape_count == 2 and staged.dropped == 2)
 
     // Three draws wanted, room for two: the instance that needs the third is counted.
     ui::draw::reset{ &list, width = 300, height = 100 }
@@ -637,9 +735,11 @@ fn check_overflow { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, f
     add_picture{ &list, rect = make_rect{ x = 10, y = 0, w = 20, h = 20 }, image = 2, blend = ui::Blend::alpha }
     ui::draw::add_rect{ &list, rect = make_rect{ x = 5, y = 5, w = 5, h = 5 }, style = fill{ color = white }, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.draw_count == 2 and staged.rect_count == 0 and staged.dropped == 1, what = "an instance that finds the draw list full is counted" }
+    // an instance that finds the draw list full is counted
+    @expect(&t, staged.draw_count == 2 and staged.rect_count == 0 and staged.dropped == 1)
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.dropped == 1, what = "an unchanged frame counts it again" }
+    // an unchanged frame counts it again
+    @expect(&t, staged.dropped == 1)
 
     // Two hosts, room for two passes: the second host is counted and its shapes stay in the last pass.
     ui::draw::reset{ &list, width = 300, height = 100 }
@@ -647,21 +747,24 @@ fn check_overflow { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, f
     ui::draw::add_host{ &list, slot = 2, rect = make_rect{ x = 0, y = 0, w = 10, h = 10 } }
     ui::draw::add_rect{ &list, rect = make_rect{ x = 5, y = 5, w = 5, h = 5 }, style = fill{ color = white }, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = staged.pass_count == 2 and staged.passes[0].slot == 1 and staged.dropped == 1 and staged.rect_count == 1, what = "a host past the pass list is counted" }
+    // a host past the pass list is counted
+    @expect(&t, staged.pass_count == 2 and staged.passes[0].slot == 1 and staged.dropped == 1 and staged.rect_count == 1)
 
     // A cache of four slots keeps a quarter free, so it holds three glyphs: a fourth distinct glyph
     // is counted and the next frame starts afresh.
-    let mut few = make_staged{ &heap, cap = ui_stage::Capacity{ rects = 2, glyphs = 8, images = 2, shapes = 2, draws = 2, passes = 2,
-        atlas_width = 64, atlas_height = 32, atlas_max_height = 64, glyph_cache = 4, raster_bytes = 1024 } } iferr { return }
+    let mut few = try make_staged{ &heap, cap = ui_stage::Capacity{ rects = 2, glyphs = 8, images = 2, shapes = 2, draws = 2, passes = 2,
+        atlas_width = 64, atlas_height = 32, atlas_max_height = 64, glyph_cache = 4, raster_bytes = 1024 } }
     ui::draw::reset{ &list, width = 300, height = 100 }
     ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16, x = 0, y = 0, text = "pqr", color = white, clip = 0 }
     ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16, x = 0, y = 20, text = "sp", color = white, clip = 0 }
     ui_stage::stage{ out = &few, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = few.glyph_count == 4 and few.dropped == 1 and few.cache_used == 3 and few.packer.refill, what = "a full glyph cache counts the glyph it cannot hold" }
+    // a full glyph cache counts the glyph it cannot hold
+    @expect(&t, few.glyph_count == 4 and few.dropped == 1 and few.cache_used == 3 and few.packer.refill)
     ui::draw::reset{ &list, width = 300, height = 100 }
     ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16, x = 0, y = 20, text = "s", color = white, clip = 0 }
     ui_stage::stage{ out = &few, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = few.glyph_count == 1 and few.dropped == 0 and few.cache_used == 1, what = "the next frame empties the cache and the glyph fits" }
+    // the next frame empties the cache and the glyph fits
+    @expect(&t, few.glyph_count == 1 and few.dropped == 0 and few.cache_used == 1)
 
     // A clip past the uniform block's 256 entries, a font never registered, image 0 and an outline font with no provider.
     ui::draw::reset{ &list, width = 300, height = 100 }
@@ -675,7 +778,8 @@ fn check_overflow { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, f
     ui::draw::add_text{ &list, font = ui::Font{ index = 3 }, size = 16, x = 0, y = 0, text = "x", color = white, clip = 0 }
     ui::draw::add_image{ &list, rect = make_rect{ x = 0, y = 0, w = 5, h = 5 }, region = ui::Region{ .. }, tint = white, quarter = 0, angle = 0.0, radius = ui::Corners{ .. }, blend = ui::Blend::alpha, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
-    ui_test::expect{ &io, &t, ok = last == 259 and staged.clip_count == 256 and staged.rect_count == 0 and staged.dropped == 3, what = "clip 259, an unregistered font and image 0 are each counted" }
+    // clip 259, an unregistered font and image 0 are each counted
+    @expect(&t, last == 259 and staged.clip_count == 256 and staged.rect_count == 0 and staged.dropped == 3)
 }
 
 // ---- the batching invariant on random lists
@@ -870,9 +974,12 @@ fn is_overlapping { a: Seen, b: Seen } -> bool {
 // clipped bounds overlap is drawn in paint order (this covers the pairs whose kinds or textures
 // differ, and the pairs that share a draw key too), and every shape's instances appear exactly as
 // often as it made them.
-fn check_random { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, font: ui::FontDef } {
+#test
+fn draws_overlapping_instances_in_paint_order { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let font = try ui_test::make_test_font{ realloc = arena::alloc, &heap }
     let shapes: u32 = 120
-    let mut list = make_list{ &heap, font, width = 400, height = 300, cmds = shapes } iferr { return }
+    let mut list = try make_list{ &heap, font, width = 400, height = 300, cmds = shapes }
     // Font 1: the letters a to z as a table on texture 2, each 5.5, 6.25 or 7 wide and half a
     // unit apart, so its glyphs are image instances that the table's metrics alone would put
     // between pixels.
@@ -887,11 +994,11 @@ fn check_random { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, fon
         encoding = ui::Encoding::bytes, height = 12.0, ascent = 9.0,
     }
     _ = ui::draw::add_font{ &list, font = art }
-    let mut staged = make_staged{ &heap, cap = ui_stage::Capacity{ rects = 512, glyphs = 1024, images = 1024, shapes = 512, draws = 512, passes = 16,
-        atlas_width = 256, atlas_height = 64, atlas_max_height = 512, glyph_cache = 512, raster_bytes = 1024 } } iferr { return }
-    let expect = alloc::make(u32, arena::Arena){ realloc = arena::alloc, &heap, count = @as(usize, shapes) } iferr { return }
-    let found = alloc::make(u32, arena::Arena){ realloc = arena::alloc, &heap, count = @as(usize, shapes) } iferr { return }
-    let seen = alloc::make(Seen, arena::Arena){ realloc = arena::alloc, &heap, count = 4096 } iferr { return }
+    let mut staged = try make_staged{ &heap, cap = ui_stage::Capacity{ rects = 512, glyphs = 1024, images = 1024, shapes = 512, draws = 512, passes = 16,
+        atlas_width = 256, atlas_height = 64, atlas_max_height = 512, glyph_cache = 512, raster_bytes = 1024 } }
+    let expect = try alloc::make(u32, arena::Arena){ realloc = arena::alloc, &heap, count = @as(usize, shapes) }
+    let found = try alloc::make(u32, arena::Arena){ realloc = arena::alloc, &heap, count = @as(usize, shapes) }
+    let seen = try alloc::make(Seen, arena::Arena){ realloc = arena::alloc, &heap, count = 4096 }
     let mut rng = Rng{ state = 2463534242 }
     let mut ok_cover = true
     let mut ok_order = true
@@ -931,30 +1038,38 @@ fn check_random { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, fon
         instances = instances + @as(u64, count)
         round = round + 1
     }
-    ui_test::expect{ &io, &t, ok = ok_dropped, what = "random lists stage with nothing dropped" }
-    ui_test::expect{ &io, &t, ok = ok_cover, what = "random lists: the passes and draws cover every instance array exactly once, in order" }
-    ui_test::expect{ &io, &t, ok = ok_count, what = "random lists: every shape's instances appear exactly once each" }
-    ui_test::expect{ &io, &t, ok = ok_order, what = "random lists: every pair of overlapping instances is drawn in paint order" }
-    ui_test::expect{ &io, &t, ok = pairs > 10000 and draws < instances, what = "random lists: the check met many overlapping pairs, and batching merged draws" }
+    // random lists stage with nothing dropped
+    @expect(&t, ok_dropped)
+    // random lists: the passes and draws cover every instance array exactly once, in order
+    @expect(&t, ok_cover)
+    // random lists: every shape's instances appear exactly once each
+    @expect(&t, ok_count)
+    // random lists: every pair of overlapping instances is drawn in paint order
+    @expect(&t, ok_order)
+    // random lists: the check met many overlapping pairs, and batching merged draws
+    @expect(&t, pairs > 10000 and draws < instances)
     _ = @fmt(&io, "random lists: 300 lists, {} instances in {} draws, {} overlapping pairs checked\n", instances, draws, pairs)
 }
 
 // ---- the atlas, written to look at
 
-fn write_atlas { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, font: ui::FontDef, provider: ?ui::TextProvider } {
-    let mut list = make_list{ &heap, font, width = 800, height = 200, cmds = 16 } iferr { return }
+#test
+fn stages_the_atlas_and_writes_it_as_a_png { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let font = try ui_test::make_test_font{ realloc = arena::alloc, &heap }
+    let mut fake = Fake{ .. }
+    let provider = make_provider{ fake = &fake }
+    let mut list = try make_list{ &heap, font, width = 800, height = 200, cmds = 16 }
     let outline = add_outline_font{ &list, handle = 9 }
-    let mut staged = make_staged{ &heap, cap = ui_stage::Capacity{ rects = 16, glyphs = 1024, images = 16, shapes = 16, draws = 16, passes = 2,
-        atlas_width = 256, atlas_height = 64, atlas_max_height = 256, glyph_cache = 1024, raster_bytes = 4096 } } iferr { return }
+    let mut staged = try make_staged{ &heap, cap = ui_stage::Capacity{ rects = 16, glyphs = 1024, images = 16, shapes = 16, draws = 16, passes = 2,
+        atlas_width = 256, atlas_height = 64, atlas_max_height = 256, glyph_cache = 1024, raster_bytes = 4096 } }
     ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16, x = 0, y = 0, text = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~", color = ui::Color{ .. }, clip = 0 }
     ui::draw::add_text{ &list, font = outline, size = 24, x = 0, y = 40, text = "ABCDEFGHIJKLMNOPQRST", color = ui::Color{ .. }, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider }
-    ui_test::expect{ &io, &t, ok = staged.dropped == 0 and staged.glyph_count == 95 + 20, what = "the whole test font and twenty boxes fit the atlas" }
+    // the whole test font and twenty boxes fit the atlas
+    @expect(&t, staged.dropped == 0 and staged.glyph_count == 95 + 20)
     _ = fs::make_dir{ &fs, path = "ui/out" }
     let picture = ui_test::Picture{ width = staged.atlas.width, height = staged.atlas.height, channels = 1, pixels = staged.atlas.pixels }
-    ui_test::write_png{ &fs, realloc = arena::alloc, &heap, path = ATLAS_PNG, picture, bottom_up = true } iferr {
-        ui_test::expect{ &io, &t, ok = false, what = "write the atlas PNG" }
-        return
-    }
+    try ui_test::write_png{ &fs, realloc = arena::alloc, &heap, path = ATLAS_PNG, picture, bottom_up = true }
     _ = @fmt(&io, "wrote {} ({}x{})\n", ATLAS_PNG, staged.atlas.width, staged.atlas.height)
 }
