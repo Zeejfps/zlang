@@ -1,0 +1,574 @@
+// Stage 9's checks: the stock widgets of basic.ctx and slider.ctx, the two themes and the marks.
+//
+//  - Goldens (golden/basic-*.txt) of each widget at rest, hovered, pressed, focused and disabled,
+//    in both themes; of the widgets that take no input at rest and disabled; of a tooltip; of every
+//    widget at scale 1.5; and a node snapshot.
+//  - Properties: no mark is text; at scale 1.5 every border is the same number of pixels on all
+//    four sides and the boxes are the sizes the conversion rules give their lengths; a scene of
+//    every widget recorded at eight positions a pixel apart draws the same shapes moved by exactly
+//    the offset.
+//  - Scripted: a click flips a checkbox and Space does too; a drag moves a slider by its share of
+//    the track and onto its step, the keys step it; Enter and Space work a focused button, which
+//    Tab gives focus to; a radio button takes its choice; the hand cursor over what can be used.
+//
+// How the goldens' numbers come about, at scale 1 in the tests' font at the themes' 14 units (a
+// character 7 pixels wide, a line 14 high): a button is 28 high, padded 12 across, its label
+// centred (7 above, 7 below); a checkbox's box is 16 square, 6 before its label, centred in a row
+// 28 high (6 above); a slider's track is 4 high centred in 28, its knob 16 square centred on it.
+// The scenes stand at (10, 10) in a column 216 wide, so a slider's track is 200 long.
+
+fn check_basic { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, update: bool } {
+    let out = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 262144 } iferr { return }
+    let scratch = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 262144 } iferr { return }
+    for k in 0..2 {
+        let dark = k == 0
+        let theme: []u8 = if dark { "dark" } else { "light" }
+        record_states{ &io, &fs, &t, &heap, out, scratch, update, widget = Widget::button, dark, name = "button", theme }
+        record_states{ &io, &fs, &t, &heap, out, scratch, update, widget = Widget::checkbox, dark, name = "checkbox", theme }
+        record_states{ &io, &fs, &t, &heap, out, scratch, update, widget = Widget::radio, dark, name = "radio", theme }
+        record_states{ &io, &fs, &t, &heap, out, scratch, update, widget = Widget::slider, dark, name = "slider", theme }
+        record_static{ &io, &fs, &t, &heap, out, scratch, update, dark, theme }
+    }
+    record_tooltip{ &io, &fs, &t, &heap, out, scratch, update }
+    record_scaled{ &io, &fs, &t, &heap, out, scratch, update }
+    record_nodes{ &io, &fs, &t, &heap, out, scratch, update }
+    check_marks{ &io, &t, &heap }
+    check_offsets{ &io, &t, &heap, scale = 1.0 }
+    check_offsets{ &io, &t, &heap, scale = 1.5 }
+    check_checkbox_click{ &io, &t, &heap }
+    check_slider_drag{ &io, &t, &heap }
+    check_slider_keys{ &io, &t, &heap }
+    check_button_keys{ &io, &t, &heap }
+    check_radio_click{ &io, &t, &heap }
+    check_themes{ &io, &t }
+}
+
+// ---- the scenes
+
+enum Widget: u8 { button, checkbox, radio, slider, statics, all }
+
+// What a scene shows and the application state its widgets change.
+struct Scene {
+    widget: Widget,
+    enabled: bool,
+    x: i32,                     // where the scene's column stands, in pixels across from 10
+    checked: bool, choice: i32, value: f32, range: ui::Range,
+    tip: []u8,
+    clicks: u32, changes: u32,  // button clicks, and changes any other widget reported
+    picture: ui::Region,
+}
+
+fn make_scene { widget: Widget } -> Scene {
+    return Scene{
+        widget, enabled = true, x = 0, checked = false, choice = 0, value = 0.25,
+        range = ui::Range{ .. }, tip = "", clicks = 0, changes = 0,
+        picture = ui::Region{ image = ui::Image{ id = 3, width = 32, height = 24 }, width = 32, height = 24, .. },
+    }
+}
+
+// The scene's column: 216 units wide at (10, 10) units, moved across by `s.x` pixels. The
+// column is placed in pixels so that a move of one pixel is exactly one at any scale.
+fn show_scene { mut ui: ui::Ui, mut s: Scene } {
+    let left = ui::add_pixels{ a = ui::to_pixel_position{ ui, position = 10.0 }, b = s.x }
+    let top = ui::to_pixel_position{ ui, position = 10.0 }
+    let w = ui::to_pixels{ ui, length = 216.0 }
+    let h = ui::to_pixels{ ui, length = 600.0 }
+    let mut box = ui::place_pixels{ rect = ui::Rect{ x = left, y = top, w, h } }
+    box.gap = ui.theme.gap
+    let col = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box }
+    let opts = ui::Opts{ enabled = s.enabled, tip = s.tip, .. }
+    match s.widget {
+        button => show_button{ &ui, &s, opts }
+        checkbox => show_checkbox{ &ui, &s, opts }
+        radio => show_radio{ &ui, &s, opts }
+        slider => show_slider{ &ui, &s, opts }
+        statics => show_statics{ &ui, &s, opts }
+        all => {
+            show_button{ &ui, &s, opts }
+            show_checkbox{ &ui, &s, opts }
+            show_radio{ &ui, &s, opts }
+            show_slider{ &ui, &s, opts }
+            show_statics{ &ui, &s, opts }
+        }
+    }
+    ui::end{ &ui, scope = col }
+}
+
+fn show_button { mut ui: ui::Ui, mut s: Scene, opts: ui::Opts } {
+    if ui::add_button{ &ui, label = "Save", opts } { s.clicks = s.clicks + 1 }
+}
+
+fn show_checkbox { mut ui: ui::Ui, mut s: Scene, opts: ui::Opts } {
+    if ui::add_checkbox{ &ui, label = "Remember me", value = &s.checked, opts } { s.changes = s.changes + 1 }
+}
+
+fn show_radio { mut ui: ui::Ui, mut s: Scene, opts: ui::Opts } {
+    let row = ui::begin_row{ &ui, opts = ui::Opts{ .. } }
+    if ui::add_radio{ &ui, label = "Small", value = &s.choice, choice = 0, opts } { s.changes = s.changes + 1 }
+    if ui::add_radio{ &ui, label = "Large", value = &s.choice, choice = 1, opts } { s.changes = s.changes + 1 }
+    ui::end{ &ui, scope = row }
+}
+
+fn show_slider { mut ui: ui::Ui, mut s: Scene, opts: ui::Opts } {
+    if ui::add_slider{ &ui, label = "volume", value = &s.value, range = s.range, opts } { s.changes = s.changes + 1 }
+}
+
+// The widgets that take no input: labels, progress bars, a picture, separators, a spacer in a
+// row, a panel, and the six marks.
+fn show_statics { mut ui: ui::Ui, mut s: Scene, opts: ui::Opts } {
+    ui::add_label{ &ui, text = "Label", opts }
+    ui::add_label{ &ui, text = "Named", opts = ui::Opts{ id = "named", enabled = opts.enabled, .. } }
+    ui::add_progress{ &ui, value = 0.4, opts = ui::Opts{ id = "done", enabled = opts.enabled, .. } }
+    ui::add_image{ &ui, region = s.picture, opts }
+    ui::add_separator{ &ui, opts = ui::Opts{ .. } }
+    let row = ui::begin_row{ &ui, opts = ui::Opts{ id = "bar", box = ui::Box{ width = ui::GROW, .. }, .. } }
+    ui::add_label{ &ui, text = "Left", opts }
+    ui::add_separator{ &ui, opts = ui::Opts{ .. } }
+    ui::add_spacer{ &ui }
+    ui::add_label{ &ui, text = "Right", opts }
+    ui::end{ &ui, scope = row }
+    let panel = ui::begin_panel{ &ui, opts = ui::Opts{ id = "panel", .. } }
+    ui::add_label{ &ui, text = "In a panel", opts }
+    ui::end{ &ui, scope = panel }
+    let marks = ui::begin_row{ &ui, opts = ui::Opts{ .. } }
+    add_mark{ &ui, icon = ui::Icon::check }
+    add_mark{ &ui, icon = ui::Icon::cross }
+    add_mark{ &ui, icon = ui::Icon::arrow_right }
+    add_mark{ &ui, icon = ui::Icon::arrow_down }
+    add_mark{ &ui, icon = ui::Icon::arrow_up }
+    add_mark{ &ui, icon = ui::Icon::arrow_left }
+    ui::end{ &ui, scope = marks }
+}
+
+// A mark in a box 16 units square, painted on its pixels.
+fn add_mark { mut ui: ui::Ui, icon: ui::Icon } {
+    let el = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ size = 16.0 }, height = ui::fix{ size = 16.0 }, .. } }
+    let side = ui::to_pixels{ ui, length = 16.0 }
+    ui::paint_icon{ &ui, icon, rect = ui::Rect{ x = 0, y = 0, w = side, h = side }, color = ui.theme.text }
+    ui::end{ &ui, scope = el }
+}
+
+// The path a scene's widget is found by.
+fn get_path { widget: Widget } -> []u8 {
+    return match widget {
+        button => "Save", checkbox => "Remember me", radio => "Large", slider => "volume", statics => "named", all => "Save",
+    }
+}
+
+// ---- goldens
+
+// One widget in its five looks, a frame each: at rest; hovered; pressed; focused (after the
+// click, with the pointer gone); not enabled.
+fn record_states {
+    mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool,
+    widget: Widget, dark: bool, name: []u8, theme: []u8,
+} {
+    let mut sink = ui_rec::make_sink{ bytes = out }
+    let mut gui = make_ui{ &heap, dark } iferr { return }
+    let mut d = make_driver{ &heap, width = 240, height = 80, scale = 1.0 } iferr { return }
+    let mut s = make_scene{ widget }
+    let path = get_path{ widget }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }                // 1
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }                // 2
+    write_frame{ &sink, ui = gui, name = "at rest" } iferr { return }
+    let at = ui_test::find_center{ ui = gui, path } ifnull {
+        ui_test::expect{ &io, &t, ok = false, what = "states: the widget's node is found" }
+        return
+    }
+    _ = ui_test::move_pointer{ ui = &gui, x = at.x, y = at.y }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }                // 3
+    write_frame{ &sink, ui = gui, name = "hovered" } iferr { return }
+    let hand = d.requests.cursor == ui::Cursor::hand
+    _ = ui_test::push_button{ ui = &gui, button = 0, down = true, clicks = 1 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }                // 4
+    write_frame{ &sink, ui = gui, name = "pressed" } iferr { return }
+    _ = ui_test::push_button{ ui = &gui, button = 0, down = false, clicks = 1 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }                // 5: the click
+    _ = ui_test::move_pointer{ ui = &gui, x = 1, y = 1 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }                // 6
+    write_frame{ &sink, ui = gui, name = "focused" } iferr { return }
+    let node = ui::find_node{ ui = gui, path } ifnull ui::Node{ .. }
+    let focused = (node.flags & ui::NODE_FOCUSED) != 0
+    s.enabled = false
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }                // 7
+    write_frame{ &sink, ui = gui, name = "not enabled" } iferr { return }
+    let off = ui::find_node{ ui = gui, path } ifnull ui::Node{ .. }
+    let mut golden: [64]u8
+    let n = join_name{ out = golden[..], a = "basic-", b = name, c = theme }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = golden[..n], actual = ui_rec::get_text{ sink }, scratch, update }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0 and sink.lost == 0, what = "states: every frame is clean" }
+    ui_test::expect{ &io, &t, ok = hand, what = "states: the hand cursor over a widget that can be used" }
+    ui_test::expect{ &io, &t, ok = focused, what = "states: the widget has the focus after its click" }
+    ui_test::expect{ &io, &t, ok = (off.flags & ui::NODE_DISABLED) != 0 and (off.flags & ui::NODE_FOCUSED) == 0, what = "states: a widget not enabled says so and has no focus" }
+}
+
+fn join_name { out: []mut u8, a: []u8, b: []u8, c: []u8 } -> usize {
+    let n = a.len + b.len + 1 + c.len
+    if n > out.len { return 0 }
+    slice::copy(u8){ dst = out[..a.len], src = a }
+    slice::copy(u8){ dst = out[a.len..a.len + b.len], src = b }
+    out[a.len + b.len] = '-'
+    slice::copy(u8){ dst = out[a.len + b.len + 1..n], src = c }
+    return n
+}
+
+// The widgets that take no input, enabled and not.
+fn record_static {
+    mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool,
+    dark: bool, theme: []u8,
+} {
+    let mut sink = ui_rec::make_sink{ bytes = out }
+    let mut gui = make_ui{ &heap, dark } iferr { return }
+    let mut d = make_driver{ &heap, width = 240, height = 300, scale = 1.0 } iferr { return }
+    let mut s = make_scene{ widget = Widget::statics }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    write_frame{ &sink, ui = gui, name = "at rest" } iferr { return }
+    s.enabled = false
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    write_frame{ &sink, ui = gui, name = "not enabled" } iferr { return }
+    let mut golden: [64]u8
+    let n = join_name{ out = golden[..], a = "basic-", b = "static", c = theme }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = golden[..n], actual = ui_rec::get_text{ sink }, scratch, update }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0 and sink.lost == 0, what = "static: every frame is clean" }
+}
+
+// A button's tooltip: not before the pointer has rested on it for the theme's half second, and
+// below it from then on.
+fn record_tooltip { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } {
+    let mut sink = ui_rec::make_sink{ bytes = out }
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 240, height = 120, scale = 1.0 } iferr { return }
+    let mut s = make_scene{ widget = Widget::button }
+    s.tip = "Writes the file"
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    let at = ui_test::find_center{ ui = gui, path = "Save" } ifnull { return }
+    _ = ui_test::move_pointer{ ui = &gui, x = at.x, y = at.y }
+    // Hovered from frame 2; at 0.125 s a frame it has rested half a second in frame 6.
+    let mut early = false
+    for _ in 0..4 {
+        ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+        if count_text{ ui = gui } > 1 { early = true }
+    }
+    let asking = d.requests.animating
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    write_frame{ &sink, ui = gui, name = "the tooltip, half a second after the hover began" } iferr { return }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "basic-tooltip", actual = ui_rec::get_text{ sink }, scratch, update }
+    ui_test::expect{ &io, &t, ok = not early and asking and count_text{ ui = gui } == 2, what = "tooltip: shown after tip_delay and not before, with frames asked for while waiting" }
+    ui_test::expect{ &io, &t, ok = ui::find_node{ ui = gui, path = "Writes the file" } != null, what = "tooltip: it is a node" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "tooltip: every frame is clean" }
+}
+
+// Every widget at scale 1.5, at rest and with the first one focused by Tab. Every border is the
+// same number of pixels on all four sides, and the boxes are the sizes the length rule gives:
+// 28 units is 42 pixels, 16 is 24, a 1-unit border 2, a 2-unit ring 3, 4 units 6, 8 units 12.
+fn record_scaled { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } {
+    let mut sink = ui_rec::make_sink{ bytes = out }
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 360, height = 640, scale = 1.5 } iferr { return }
+    let mut s = make_scene{ widget = Widget::all }
+    s.checked = true
+    s.choice = 1
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    write_frame{ &sink, ui = gui, name = "every widget at scale 1.5" } iferr { return }
+    let mut even = has_even_borders{ ui = gui }
+    let sizes = has_rect{ ui = gui, w = -1, h = 42 } and has_rect{ ui = gui, w = 24, h = 24 } and has_rect{ ui = gui, w = -1, h = 6 } and has_rect{ ui = gui, w = -1, h = 12 }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    write_frame{ &sink, ui = gui, name = "the button focused by Tab" } iferr { return }
+    even = even and has_even_borders{ ui = gui }
+    let ring = has_border{ ui = gui, width = 3, color = gui.theme.focus_ring }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "basic-scale", actual = ui_rec::get_text{ sink }, scratch, update }
+    ui_test::expect{ &io, &t, ok = even, what = "scale 1.5: every border is the same on all four sides" }
+    ui_test::expect{ &io, &t, ok = sizes, what = "scale 1.5: controls 42 high, marks 24 square, a track 6 high, a bar 12 high" }
+    ui_test::expect{ &io, &t, ok = ring, what = "scale 1.5: a focus ring of 2 units is 3 pixels" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "scale 1.5: every frame is clean" }
+}
+
+fn has_even_borders { ui: ui::Ui } -> bool {
+    for i in 0..@as(usize, ui.draw.count) {
+        match ui.draw.cmds[i] {
+            rect{ style } => {
+                let b = style.border
+                if b.top != b.right or b.top != b.bottom or b.top != b.left { return false }
+            }
+            else => {}
+        }
+    }
+    return true
+}
+
+// Whether a rect shape of the last frame is `w` by `h` pixels (-1: any).
+fn has_rect { ui: ui::Ui, w: i32, h: i32 } -> bool {
+    for i in 0..@as(usize, ui.draw.count) {
+        match ui.draw.cmds[i] {
+            rect{ rect } => { if (w < 0 or rect.w == w) and (h < 0 or rect.h == h) { return true } }
+            else => {}
+        }
+    }
+    return false
+}
+
+fn has_border { ui: ui::Ui, width: i32, color: ui::Color } -> bool {
+    for i in 0..@as(usize, ui.draw.count) {
+        match ui.draw.cmds[i] {
+            rect{ style } => {
+                let c = style.border_color.top
+                if style.border.top == width and c.r == color.r and c.g == color.g and c.b == color.b { return true }
+            }
+            else => {}
+        }
+    }
+    return false
+}
+
+// The nodes every widget describes, in a scene of all of them with a checkbox ticked.
+fn record_nodes { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } {
+    let mut sink = ui_rec::make_sink{ bytes = out }
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 240, height = 640, scale = 1.0 } iferr { return }
+    let mut s = make_scene{ widget = Widget::all }
+    s.checked = true
+    s.value = 0.5
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    write_nodes{ &sink, ui = gui, name = "every widget's node" } iferr { return }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "basic-nodes", actual = ui_rec::get_text{ sink }, scratch, update }
+    ui_test::expect{ &io, &t, ok = ui::find_node{ ui = gui, path = "panel" } != null and ui::find_node{ ui = gui, path = "bar" } != null,
+        what = "nodes: a named panel and row are nodes" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "nodes: every frame is clean" }
+}
+
+// ---- properties
+
+// No mark is text: the six marks alone draw lines only, and a ticked checkbox draws its label as
+// its one text.
+fn check_marks { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 240, height = 80, scale = 1.0 } iferr { return }
+    let mut s = make_scene{ widget = Widget::checkbox }
+    s.checked = true
+    ui_test::step_frame{ &d, ui = &gui, show = show_marks }
+    let mut lines: u32 = 0
+    for i in 0..@as(usize, gui.draw.count) {
+        if gui.draw.cmds[i] is line { lines = lines + 1 }
+    }
+    ui_test::expect{ &io, &t, ok = count_text{ ui = gui } == 0 and lines == 12, what = "marks: the six marks are twelve lines and no text" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = count_text{ ui = gui } == 1, what = "marks: a ticked checkbox's only text is its label" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "marks: every frame is clean" }
+}
+
+fn show_marks { mut ui: ui::Ui } {
+    let row = ui::begin_row{ &ui, opts = ui::Opts{ .. } }
+    add_mark{ &ui, icon = ui::Icon::check }
+    add_mark{ &ui, icon = ui::Icon::cross }
+    add_mark{ &ui, icon = ui::Icon::arrow_right }
+    add_mark{ &ui, icon = ui::Icon::arrow_down }
+    add_mark{ &ui, icon = ui::Icon::arrow_up }
+    add_mark{ &ui, icon = ui::Icon::arrow_left }
+    ui::end{ &ui, scope = row }
+}
+
+// Every widget recorded at eight places a pixel apart draws the same shapes, each moved by exactly
+// the offset: rectangles, text and line ends alike, sizes unchanged.
+fn check_offsets { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, scale: f32 } {
+    let first = alloc::make(ui::Cmd, arena::Arena){ realloc = arena::alloc, &heap, count = 2048 } iferr { return }
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 960, scale } iferr { return }
+    let mut s = make_scene{ widget = Widget::all }
+    s.checked = true
+    s.choice = 1
+    s.value = 0.37
+    let mut count: usize = 0
+    let mut same = true
+    for k in 0..8 {
+        s.x = k
+        ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+        ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+        let n = @as(usize, gui.draw.count)
+        if k == 0 {
+            count = n
+            slice::copy(ui::Cmd){ dst = first[..n], src = gui.draw.cmds[..n] }
+            continue
+        }
+        if n != count {
+            same = false
+            continue
+        }
+        for i in 0..n {
+            if not is_moved{ a = first[i], b = gui.draw.cmds[i], dx = k } { same = false }
+        }
+    }
+    ui_test::expect{ &io, &t, ok = count > 20 and same, what = "offsets: every widget at eight places a pixel apart draws the same shapes moved by the offset" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "offsets: every frame is clean" }
+}
+
+// Whether `b` is `a` moved `dx` pixels across and nothing else.
+fn is_moved { a: ui::Cmd, b: ui::Cmd, dx: i32 } -> bool {
+    match a {
+        rect{ rect = r, style = sa } => {
+            let rect{ rect = q, style = sb } = b else { return false }
+            return q.x == r.x + dx and q.y == r.y and q.w == r.w and q.h == r.h and is_same_style{ a = sa, b = sb }
+        }
+        text{ x, y, size } => {
+            let text{ x = bx, y = by, size = bs } = b else { return false }
+            return bx == x + dx and by == y and bs == size
+        }
+        line{ x0, y0, x1, y1, width } => {
+            let line{ x0 = bx0, y0 = by0, x1 = bx1, y1 = by1, width = bw } = b else { return false }
+            let f = @as(f32, dx)
+            return bx0 == x0 + f and by0 == y0 and bx1 == x1 + f and by1 == y1 and bw == width
+        }
+        image{ rect = r } => {
+            let image{ rect = q } = b else { return false }
+            return q.x == r.x + dx and q.y == r.y and q.w == r.w and q.h == r.h
+        }
+        host => { return b is host }
+    }
+}
+
+fn is_same_style { a: ui::RectStyle, b: ui::RectStyle } -> bool {
+    return a.border.top == b.border.top and a.border.right == b.border.right and a.border.bottom == b.border.bottom and a.border.left == b.border.left
+        and a.radius.top_left == b.radius.top_left and a.radius.bottom_right == b.radius.bottom_right
+        and a.fill.r == b.fill.r and a.fill.g == b.fill.g and a.fill.b == b.fill.b and a.fill.a == b.fill.a
+}
+
+// ---- scripted
+
+// A click on a checkbox flips it, once, and the call says so once; another click flips it back;
+// Space flips it while it has the focus.
+fn check_checkbox_click { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 240, height = 80, scale = 1.0 } iferr { return }
+    let mut s = make_scene{ widget = Widget::checkbox }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    let clicked = ui_test::click{ &d, ui = &gui, path = "Remember me", show = show_scene{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = clicked and s.checked and s.changes == 1, what = "checkbox: a click ticks it, and the call says so once" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    let node = ui::find_node{ ui = gui, path = "Remember me" } ifnull ui::Node{ .. }
+    ui_test::expect{ &io, &t, ok = (node.flags & ui::NODE_CHECKED) != 0 and node.value == 1.0, what = "checkbox: its node says it is ticked" }
+    _ = ui_test::click{ &d, ui = &gui, path = "Remember me", show = show_scene{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = not s.checked and s.changes == 2, what = "checkbox: a second click clears it" }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::space, mods = 0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = s.checked and s.changes == 3, what = "checkbox: Space ticks it while it has the focus" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "checkbox: every frame is clean" }
+}
+
+// A drag of the knob by a quarter of the track (200 pixels at scale 1, 300 at 1.5) moves the value
+// by a quarter of the range; a drag that ends between steps puts it on the nearest one.
+fn check_slider_drag { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    for k in 0..2 {
+        let scale: f32 = if k == 0 { 1.0 } else { 1.5 }
+        let mut gui = make_ui{ &heap, dark = true } iferr { return }
+        let mut d = make_driver{ &heap, width = 400, height = 160, scale } iferr { return }
+        let mut s = make_scene{ widget = Widget::slider }
+        s.value = 0.5
+        s.range = ui::Range{ min = 0.0, max = 1.0, step = 0.05, .. }
+        ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+        let track = ui::to_pixels{ ui = gui, length = 200.0 }
+        let dragged = ui_test::drag{ &d, ui = &gui, path = "volume", dx = track / 4, dy = 0, show = show_scene{ &s, _ } }
+        ui_test::expect{ &io, &t, ok = dragged and s.value > 0.7499 and s.value < 0.7501, what = "slider: a drag of a quarter of the track moves it by a quarter of the range" }
+        let before = s.changes
+        // The knob back at the middle (where the driver presses), then dragged back by 0.13 of the
+        // track: 0.37, which is put on the nearest step of 0.05, 0.35.
+        s.value = 0.5
+        ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+        let back = ui::round_pixels{ v = @as(f32, track) * 0.13 }
+        _ = ui_test::drag{ &d, ui = &gui, path = "volume", dx = -back, dy = 0, show = show_scene{ &s, _ } }
+        ui_test::expect{ &io, &t, ok = s.value > 0.3499 and s.value < 0.3501 and s.changes > before, what = "slider: a drag that ends between steps puts the value on a step" }
+        ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+        let node = ui::find_node{ ui = gui, path = "volume" } ifnull ui::Node{ .. }
+        ui_test::expect{ &io, &t, ok = node.role == ui::Role::slider and node.value == s.value, what = "slider: its node holds the value" }
+        ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "slider: every frame is clean" }
+    }
+}
+
+// The keys step a focused slider: Right adds a step, Left takes one, End and Home go to the ends.
+fn check_slider_keys { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 240, height = 80, scale = 1.0 } iferr { return }
+    let mut s = make_scene{ widget = Widget::slider }
+    s.value = 0.5
+    s.range = ui::Range{ min = 0.0, max = 1.0, step = 0.1, .. }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }      // Tab gives it focus at this frame's end
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::right, mods = 0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    let right = s.value > 0.5999 and s.value < 0.6001
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::left, mods = 0 }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::left, mods = 0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    let left = s.value > 0.3999 and s.value < 0.4001
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::end, mods = 0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    let end = s.value == 1.0
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::home, mods = 0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = right and left and end and s.value == 0.0, what = "slider: Right, Left, End and Home step a focused slider" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "slider keys: every frame is clean" }
+}
+
+// Tab gives a button the focus (the frame after), then Enter and Space each work it once, and a
+// button that does not have the focus takes neither.
+fn check_button_keys { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 240, height = 80, scale = 1.0 } iferr { return }
+    let mut s = make_scene{ widget = Widget::button }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::enter, mods = 0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    let unfocused = s.clicks == 0
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    let node = ui::find_node{ ui = gui, path = "Save" } ifnull ui::Node{ .. }
+    let focused = (node.flags & ui::NODE_FOCUSED) != 0
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::enter, mods = 0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    let entered = s.clicks == 1
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::space, mods = 0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = unfocused, what = "button: Enter does nothing to a button without the focus" }
+    ui_test::expect{ &io, &t, ok = focused, what = "button: Tab gives it the focus" }
+    ui_test::expect{ &io, &t, ok = entered and s.clicks == 2, what = "button: Enter and Space each work a focused button once" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "button keys: every frame is clean" }
+}
+
+// A click on a radio button takes its choice, and a click on the chosen one changes nothing.
+fn check_radio_click { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = false } iferr { return }
+    let mut d = make_driver{ &heap, width = 240, height = 80, scale = 1.0 } iferr { return }
+    let mut s = make_scene{ widget = Widget::radio }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    _ = ui_test::click{ &d, ui = &gui, path = "Large", show = show_scene{ &s, _ } }
+    let took = s.choice == 1 and s.changes == 1
+    _ = ui_test::click{ &d, ui = &gui, path = "Large", show = show_scene{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = took and s.choice == 1 and s.changes == 1, what = "radio: a click takes its choice once" }
+    _ = ui_test::click{ &d, ui = &gui, path = "Small", show = show_scene{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    let small = ui::find_node{ ui = gui, path = "Small" } ifnull ui::Node{ .. }
+    ui_test::expect{ &io, &t, ok = s.choice == 0 and (small.flags & ui::NODE_CHECKED) != 0, what = "radio: another click moves the choice, and the nodes say which" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "radio: every frame is clean" }
+}
+
+// The themes: every state colour is given, and `derive_theme` fills one that is left at alpha 0
+// from its base role and leaves the others.
+fn check_themes { mut io: Io, mut t: ui_test::Tally } {
+    let dark = ui::make_dark_theme{}
+    let light = ui::make_light_theme{}
+    ui_test::expect{ &io, &t, ok = dark.control_hovered.a == 255 and light.accent_hovered.a == 255 and dark.font_size == 14.0,
+        what = "themes: the built-in themes give every state colour and the stock metrics" }
+    let mut bare = dark
+    bare.control_hovered = ui::Color{ a = 0, .. }
+    let derived = ui::derive_theme{ theme = bare }
+    let want = ui::mix_color{ a = dark.control, b = dark.text, amount = 0.06 }
+    ui_test::expect{ &io, &t, ok = derived.control_hovered.r == want.r and derived.control_hovered.a == 255 and derived.control_pressed.r == dark.control_pressed.r,
+        what = "themes: derive_theme fills a state colour left at alpha 0 and keeps the others" }
+    let half = ui::mix_color{ a = ui::Color{ r = 0, g = 0, b = 0, a = 0 }, b = ui::Color{ r = 255, g = 100, b = 1, a = 255 }, amount = 0.5 }
+    ui_test::expect{ &io, &t, ok = half.r == 128 and half.g == 50 and half.b == 1 and half.a == 128, what = "themes: mix_color rounds each channel to the nearest level" }
+}

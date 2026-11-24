@@ -1,0 +1,328 @@
+// ui: the first stock widgets (plan section 5, stage 9): labels, buttons, checkboxes, radio
+// buttons, progress bars, pictures, separators, spacers, rows, columns, panels and tooltips. The
+// slider is in slider.ctx, the marks in icons.ctx, the theme in theme.ctx and what every widget
+// shares in opts.ctx.
+//
+// Each widget is written over the core's public primitives only, as an application's own widgets
+// are: `press` for behaviour, `begin_element` and `add_text` for layout, `paint_*` for what is
+// drawn inside, `describe` for its node. Nothing here reaches into `ui::tree`, `ui::layout` or
+// `ui::emit`. A widget call is one statement and cannot fail; what it reports is its result (a
+// click, a change), and state the application owns comes in as a `mut` field.
+//
+// Units. A widget's options and the theme are logical units and go into a `Box` as they are, for
+// the core to convert. What a widget paints itself is device pixels, worked out from the same
+// lengths by `ui::to_pixels` (a mark's box, a radio's dot), so the paint lands exactly on the
+// element the core made from them; where it centres something it halves the spare pixels and
+// rounds down, as the layout does.
+//
+// Every interactive widget here is a tab stop, is worked by Enter or Space while focused, draws a
+// ring in `focus_ring` while it has the focus, describes itself, shows the hand cursor while it
+// can be used and the pointer is over it, and shows `opts.tip` as its tooltip.
+namespace ui {
+    // A tick box's and a radio button's side, in logical units: a little over the text size.
+    fn get_mark_size { theme: Theme } -> f32 {
+        return theme.font_size + 2.0
+    }
+
+    // ---- text
+
+    // A line of text in the theme's text colour (its disabled colour when `opts.enabled` is
+    // false), laid out by `opts.box`; cut short with dots when the box makes it narrower than the
+    // text. With an `opts.id` it is an element of its own with that id, which it describes as a
+    // label node and which can show `opts.tip`.
+    fn add_label { mut ui: Ui, text: []u8, opts: Opts } {
+        let color = if opts.enabled { ui.theme.text } else { ui.theme.text_disabled }
+        let style = TextStyle{ color, overflow = Overflow::ellipsis, .. }
+        if opts.id.len == 0 {
+            add_text{ &ui, text, style, box = opts.box }
+            return
+        }
+        let id = make_id{ ui, name = opts.id }
+        let el = begin_element{ &ui, id, axis = Axis::row, box = opts.box }
+        let inner = if opts.box.width == null { FIT } else { GROW }
+        add_text{ &ui, text, style, box = Box{ width = inner, .. } }
+        end{ &ui, scope = el }
+        describe{ &ui, id, role = Role::label, label = opts.id, value = 0.0, flags = if opts.enabled { 0 } else { NODE_DISABLED } }
+        if opts.tip.len > 0 { add_tooltip{ &ui, anchor = id, text = opts.tip } }
+    }
+
+    // ---- buttons
+
+    // A push button: `label` centred on a control-coloured face, `control_height` high and at least
+    // as wide, padded across by one and a half paddings. True on the frame it is clicked, or worked
+    // by Enter or Space while it has the focus. Pressed, it takes `control_pressed`; hovered,
+    // `control_hovered`; not enabled, it loses its border, its label is `text_disabled` and it takes
+    // no input.
+    fn add_button { mut ui: Ui, label: []u8, opts: Opts } -> bool {
+        let t = derive_theme{ theme = ui.theme }
+        let name = get_widget_name{ opts, label }
+        let id = make_id{ ui, name }
+        let it = press{ &ui, id, opts = make_press_opts{ ui, opts } }
+        let keyed = opts.enabled and take_activation{ &ui, it }
+        let fill = if not opts.enabled { t.control } else if it.held and it.hovered { t.control_pressed } else if it.hovered { t.control_hovered } else { t.control }
+        let side = t.padding * 1.5
+        let base = Box{
+            width = Size{ kind = SizeKind::fit, min = t.control_height, .. }, height = fix{ size = t.control_height },
+            padding = Insets{ left = side, right = side, .. },
+            align_x = Align::center, align_y = Align::center,
+            fill, border = color_sides{ color = t.border }, border_width = inset{ by = if opts.enabled { t.border_width } else { 0.0 } },
+            radius = round{ radius = t.radius }, ..
+        }
+        let box = merge_box{ box = opts.box, base }
+        let el = begin_element{ &ui, id, axis = Axis::row, box }
+        let color = if opts.enabled { t.text } else { t.text_disabled }
+        add_text{ &ui, text = label, style = TextStyle{ color, overflow = Overflow::ellipsis, .. }, box = Box{ .. } }
+        if it.focused { add_focus_ring{ &ui, radius = t.radius } }
+        end{ &ui, scope = el }
+        describe{ &ui, id, role = Role::button, label = name, value = 0.0, flags = get_widget_flags{ opts, it } }
+        finish_widget{ &ui, id, it, opts }
+        return it.clicked or keyed
+    }
+
+    // ---- checkboxes and radio buttons
+
+    // What a tick box or a radio button looks like in a state.
+    struct MarkLook { fill: Color, border: Color, border_width: f32, ink: Color, text: Color }
+
+    fn get_mark_look { theme: Theme, on: bool, enabled: bool, it: Interaction } -> MarkLook {
+        let t = theme
+        let down = it.held and it.hovered
+        if not enabled {
+            return if on {
+                MarkLook{ fill = t.text_disabled, border = t.text_disabled, border_width = 0.0, ink = t.field, text = t.text_disabled }
+            } else {
+                MarkLook{ fill = t.field, border = t.border, border_width = t.border_width, ink = t.field, text = t.text_disabled }
+            }
+        }
+        if on {
+            let fill = if down { get_accent_pressed{ theme = t } } else if it.hovered { t.accent_hovered } else { t.accent }
+            return MarkLook{ fill, border = fill, border_width = 0.0, ink = t.on_accent, text = t.text }
+        }
+        let fill = if down { t.control_pressed } else if it.hovered { t.control_hovered } else { t.field }
+        let border = if it.hovered or down { get_border_strong{ theme = t } } else { t.border }
+        return MarkLook{ fill, border, border_width = t.border_width, ink = t.on_accent, text = t.text }
+    }
+
+    // The row a tick box or radio button is: its mark's box, then its label, `control_height` high,
+    // all of it taking the pointer. The mark's box is open when this returns, and its size in
+    // pixels is `side`; the caller paints in it, ends `mark`, adds the label and ends `row`.
+    struct MarkRow { row: Scope, mark: Scope, side: i32 }
+
+    fn begin_mark_row { mut ui: Ui, id: Id, opts: Opts, look: MarkLook, radius: f32 } -> MarkRow {
+        let t = ui.theme
+        let base = Box{ height = fix{ size = t.control_height }, gap = t.gap * 0.75, align_y = Align::center, .. }
+        let row = begin_element{ &ui, id, axis = Axis::row, box = merge_box{ box = opts.box, base } }
+        let size = get_mark_size{ theme = t }
+        let mark = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{
+            width = fix{ size }, height = fix{ size }, fill = look.fill,
+            border = color_sides{ color = look.border }, border_width = inset{ by = look.border_width },
+            radius = round{ radius }, ..
+        } }
+        return MarkRow{ row, mark, side = to_pixels{ ui, length = size } }
+    }
+
+    // A tick box and its label. A click, or Enter or Space while it has the focus, flips `value`,
+    // and the call is true on that frame. Ticked, its box is the accent with a check mark drawn in
+    // lines; otherwise a field with a border, which strengthens under the pointer.
+    fn add_checkbox { mut ui: Ui, label: []u8, mut value: bool, opts: Opts } -> bool {
+        let t = derive_theme{ theme = ui.theme }
+        let name = get_widget_name{ opts, label }
+        let id = make_id{ ui, name }
+        let it = press{ &ui, id, opts = make_press_opts{ ui, opts } }
+        let keyed = opts.enabled and take_activation{ &ui, it }
+        let changed = opts.enabled and (it.clicked or keyed)
+        if changed { value = not value }
+        let look = get_mark_look{ theme = t, on = value, enabled = opts.enabled, it }
+        let radius = t.radius * 0.5
+        let m = begin_mark_row{ &ui, id, opts, look, radius }
+        if value { paint_icon{ &ui, icon = Icon::check, rect = Rect{ x = 0, y = 0, w = m.side, h = m.side }, color = look.ink } }
+        if it.focused { add_focus_ring{ &ui, radius } }
+        end{ &ui, scope = m.mark }
+        if label.len > 0 { add_text{ &ui, text = label, style = TextStyle{ color = look.text, overflow = Overflow::ellipsis, .. }, box = Box{ .. } } }
+        end{ &ui, scope = m.row }
+        let mut flags = get_widget_flags{ opts, it }
+        if value { flags = flags | NODE_CHECKED }
+        describe{ &ui, id, role = Role::checkbox, label = name, value = if value { 1.0 } else { 0.0 }, flags }
+        finish_widget{ &ui, id, it, opts }
+        return changed
+    }
+
+    // A radio button and its label: one choice of several, all given the same `value`. A click, or
+    // Enter or Space while it has the focus, sets `value` to `choice`, and the call is true on the
+    // frame that changes it. Chosen, its round box is the accent with a dot in `on_accent`.
+    fn add_radio { mut ui: Ui, label: []u8, mut value: i32, choice: i32, opts: Opts } -> bool {
+        let t = derive_theme{ theme = ui.theme }
+        let name = get_widget_name{ opts, label }
+        let id = make_id{ ui, name }
+        let it = press{ &ui, id, opts = make_press_opts{ ui, opts } }
+        let keyed = opts.enabled and take_activation{ &ui, it }
+        let changed = opts.enabled and (it.clicked or keyed) and value != choice
+        if changed { value = choice }
+        let on = value == choice
+        let look = get_mark_look{ theme = t, on, enabled = opts.enabled, it }
+        let radius = get_mark_size{ theme = t } * 0.5
+        let m = begin_mark_row{ &ui, id, opts, look, radius }
+        if on {
+            // The dot: three eighths of the box, made the same parity so it sits in the middle to
+            // the pixel; a disc is a square with every radius half its side.
+            let mut dot = m.side * 3 / 8
+            if (m.side - dot) % 2 != 0 { dot = dot + 1 }
+            let at = (m.side - dot) / 2
+            paint_rect{ &ui, rect = Rect{ x = at, y = at, w = dot, h = dot }, style = RectStyle{ fill = look.ink, radius = round{ radius = @as(f32, dot) * 0.5 }, .. } }
+        }
+        if it.focused { add_focus_ring{ &ui, radius } }
+        end{ &ui, scope = m.mark }
+        if label.len > 0 { add_text{ &ui, text = label, style = TextStyle{ color = look.text, overflow = Overflow::ellipsis, .. }, box = Box{ .. } } }
+        end{ &ui, scope = m.row }
+        let mut flags = get_widget_flags{ opts, it }
+        if on { flags = flags | NODE_CHECKED }
+        describe{ &ui, id, role = Role::radio, label = name, value = @as(f32, choice), flags }
+        finish_widget{ &ui, id, it, opts }
+        return changed
+    }
+
+    // ---- progress
+
+    // How thick a progress bar is, in logical units.
+    const PROGRESS_THICKNESS: f32 = 8.0
+
+    // A bar filled in the accent to `value` (0 to 1, held there) of its length. It grows along its
+    // parent unless `opts.box` sizes it. With an `opts.id` it is described as a progress node whose
+    // value is the fraction.
+    fn add_progress { mut ui: Ui, value: f32, opts: Opts } {
+        let t = ui.theme
+        let part = if value == value { clamp_f32{ v = value, lo = 0.0, hi = 1.0 } } else { 0.0 }
+        let id = make_id{ ui, name = opts.id }
+        let radius = round{ radius = PROGRESS_THICKNESS * 0.5 }
+        let base = Box{
+            width = Size{ kind = SizeKind::grow, min = t.control_height * 4.0, .. }, height = fix{ size = PROGRESS_THICKNESS },
+            fill = get_rule_color{ theme = t }, radius, ..
+        }
+        let bar = begin_element{ &ui, id, axis = Axis::row, box = merge_box{ box = opts.box, base } }
+        let ink = if opts.enabled { t.accent } else { t.text_disabled }
+        let done = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{ width = take{ part }, height = GROW, fill = ink, radius, .. } }
+        end{ &ui, scope = done }
+        end{ &ui, scope = bar }
+        if id != NO_ID {
+            describe{ &ui, id, role = Role::progress, label = opts.id, value = part, flags = if opts.enabled { 0 } else { NODE_DISABLED } }
+            if opts.tip.len > 0 { add_tooltip{ &ui, anchor = id, text = opts.tip } }
+        }
+    }
+
+    // ---- pictures
+
+    // A picture: `region` of its image, sized by its texel size taken as logical units unless
+    // `opts.box` sizes it. A box that sizes it by the layout (GROW, `take`) is drawn at the size
+    // its element had in the last frame, so it needs an `opts.id`; without one it is drawn at its
+    // texel size. With an `opts.id` it is described as an image node.
+    fn add_image { mut ui: Ui, region: Region, opts: Opts } {
+        let id = make_id{ ui, name = opts.id }
+        let base = Box{ width = fix{ size = @as(f32, region.width) }, height = fix{ size = @as(f32, region.height) }, .. }
+        let box = merge_box{ box = opts.box, base }
+        let last = get_rect{ ui, id }
+        let w = get_picture_side{ ui, size = box.width ifnull FIT, last = if let r = last { r.w } else { -1 }, texels = region.width }
+        let h = get_picture_side{ ui, size = box.height ifnull FIT, last = if let r = last { r.h } else { -1 }, texels = region.height }
+        let el = begin_element{ &ui, id, axis = Axis::row, box }
+        let tint = if opts.enabled { Color{ r = 255, g = 255, b = 255, .. } } else { Color{ r = 255, g = 255, b = 255, a = 96 } }
+        paint_region{ &ui, rect = Rect{ x = 0, y = 0, w, h }, region, tint }
+        end{ &ui, scope = el }
+        if id != NO_ID {
+            describe{ &ui, id, role = Role::image, label = opts.id, value = 0.0, flags = if opts.enabled { 0 } else { NODE_DISABLED } }
+            if opts.tip.len > 0 { add_tooltip{ &ui, anchor = id, text = opts.tip } }
+        }
+    }
+
+    // The pixels a picture's side is drawn at: a fixed size as the core converts it, and a size
+    // the layout works out as the element had it last frame (`last`, -1 when it had none, when the
+    // texel size is used).
+    fn get_picture_side { ui: Ui, size: Size, last: i32, texels: i32 } -> i32 {
+        if size.kind == SizeKind::fixed { return pick_max_i32{ a = 0, b = to_pixels{ ui, length = size.value } } }
+        if size.kind == SizeKind::pixels { return pick_max_i32{ a = 0, b = size.pixels } }
+        if last >= 0 { return last }
+        return pick_max_i32{ a = 0, b = to_pixels{ ui, length = @as(f32, texels) } }
+    }
+
+    // ---- structure
+
+    // A rule across the open element: a line a border thick in a row's height or a column's width,
+    // in a colour between the border and the background.
+    fn add_separator { mut ui: Ui, opts: Opts } {
+        let t = ui.theme
+        let thick = fix{ size = pick_max_f32{ a = 1.0, b = t.border_width } }
+        let base = if get_axis{ ui } == Axis::row {
+            Box{ width = thick, height = GROW, fill = get_rule_color{ theme = t }, .. }
+        } else {
+            Box{ width = GROW, height = thick, fill = get_rule_color{ theme = t }, .. }
+        }
+        let el = begin_element{ &ui, id = make_id{ ui, name = opts.id }, axis = Axis::row, box = merge_box{ box = opts.box, base } }
+        end{ &ui, scope = el }
+    }
+
+    // Room that takes what its parent has spare: in a row it pushes what follows to the far end.
+    fn add_spacer { mut ui: Ui } {
+        let el = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{ width = GROW, height = GROW, .. } }
+        end{ &ui, scope = el }
+    }
+
+    // A container: an element laid out by `box`, which `opts.box` is laid over. With an `opts.id`
+    // it is an id scope as well (`settings/Save`), with an element of that id that is described
+    // as `role`. The scope is closed by `ui::end`.
+    fn begin_group { mut ui: Ui, axis: Axis, base: Box, role: Role, opts: Opts } -> Scope {
+        let box = merge_box{ box = opts.box, base }
+        if opts.id.len == 0 { return begin_element{ &ui, id = NO_ID, axis, box } }
+        let id = make_id{ ui, name = opts.id }
+        let scope = push_id{ &ui, name = opts.id }
+        _ = begin_element{ &ui, id, axis, box }
+        describe{ &ui, id, role, label = "", value = 0.0, flags = 0 }
+        if opts.tip.len > 0 { add_tooltip{ &ui, anchor = id, text = opts.tip } }
+        return scope
+    }
+
+    // Children side by side, the theme's gap apart, centred across the row: a label beside a
+    // control lines up with it.
+    fn begin_row { mut ui: Ui, opts: Opts } -> Scope {
+        return begin_group{ &ui, axis = Axis::row, base = Box{ gap = ui.theme.gap, align_y = Align::center, .. }, role = Role::row, opts }
+    }
+
+    // Children one under another, the theme's gap apart.
+    fn begin_column { mut ui: Ui, opts: Opts } -> Scope {
+        return begin_group{ &ui, axis = Axis::column, base = Box{ gap = ui.theme.gap, .. }, role = Role::column, opts }
+    }
+
+    // A column on the theme's surface with a border and rounded corners, padded by one and a half
+    // paddings.
+    fn begin_panel { mut ui: Ui, opts: Opts } -> Scope {
+        let t = ui.theme
+        let base = Box{
+            padding = inset{ by = t.padding * 1.5 }, gap = t.gap,
+            fill = t.surface, border = color_sides{ color = t.border }, border_width = inset{ by = t.border_width },
+            radius = round{ radius = t.radius }, ..
+        }
+        return begin_group{ &ui, axis = Axis::column, base, role = Role::panel, opts }
+    }
+
+    // ---- tooltips
+
+    // `text` in a card below the widget with id `anchor`, once the pointer has rested on it for the
+    // theme's `tip_delay` with nothing held (`ui::is_tip_due`). Until then it asks for frames, so an
+    // event-driven host draws the one it appears in. The tooltip's layer (`ui::begin_tooltip`) is
+    // left bare and holds the card half a padding below the widget, so the two do not touch; the
+    // card is a raised surface (`get_raised_color`) with the theme's border and radius, padded by a
+    // padding across and half one down. It takes no pointer.
+    fn add_tooltip { mut ui: Ui, anchor: Id, text: []u8 } {
+        if not is_tip_due{ &ui, id = anchor } { return }
+        let t = ui.theme
+        let half = t.padding * 0.5
+        let layer = Box{ fill = Color{ a = 0, .. }, border_width = inset{ by = 0.0 }, padding = Insets{ top = half, .. }, .. }
+        let tip = begin_tooltip{ &ui, anchor, box = layer }
+        let card = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{
+            padding = Insets{ left = t.padding, right = t.padding, top = half, bottom = half },
+            fill = get_raised_color{ theme = t }, border = color_sides{ color = t.border }, border_width = inset{ by = t.border_width },
+            radius = round{ radius = t.radius }, ..
+        } }
+        add_text{ &ui, text, style = TextStyle{ color = t.text, .. }, box = Box{ .. } }
+        end{ &ui, scope = card }
+        end{ &ui, scope = tip }
+        describe{ &ui, id = NO_ID, role = Role::tooltip, label = text, value = 0.0, flags = 0 }
+    }
+}

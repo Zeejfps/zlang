@@ -1,0 +1,26 @@
+== at rest
+frame 240x80
+rect 10,16 16x16 fill=FFFFFFFF radius=2,2,2,2 border=1,1,1,1 BBC3CFFF,BBC3CFFF,BBC3CFFF,BBC3CFFF clip=0
+text 32,17 font=0 size=14 242A35FF clip=0 "Remember me"
+== hovered
+frame 240x80
+rect 10,16 16x16 fill=DDE3EBFF radius=2,2,2,2 border=1,1,1,1 7F8691FF,7F8691FF,7F8691FF,7F8691FF clip=0
+text 32,17 font=0 size=14 242A35FF clip=0 "Remember me"
+== pressed
+frame 240x80
+rect 10,16 16x16 fill=CFD7E3FF radius=2,2,2,2 border=1,1,1,1 7F8691FF,7F8691FF,7F8691FF,7F8691FF clip=0
+rect 10,16 16x16 fill=00000000 radius=2,2,2,2 border=2,2,2,2 245FCCFF,245FCCFF,245FCCFF,245FCCFF clip=0
+text 32,17 font=0 size=14 242A35FF clip=0 "Remember me"
+== focused
+frame 240x80
+rect 10,16 16x16 fill=245FCCFF radius=2,2,2,2 border=0,0,0,0 245FCCFF,245FCCFF,245FCCFF,245FCCFF clip=0
+line 13.2,24.32 16.56,27.52 width=1.75 cap=round FFFFFFFF clip=0
+line 16.56,27.52 22.8,20.8 width=1.75 cap=round FFFFFFFF clip=0
+rect 10,16 16x16 fill=00000000 radius=2,2,2,2 border=2,2,2,2 245FCCFF,245FCCFF,245FCCFF,245FCCFF clip=0
+text 32,17 font=0 size=14 242A35FF clip=0 "Remember me"
+== not enabled
+frame 240x80
+rect 10,16 16x16 fill=9098A4FF radius=2,2,2,2 border=0,0,0,0 9098A4FF,9098A4FF,9098A4FF,9098A4FF clip=0
+line 13.2,24.32 16.56,27.52 width=1.75 cap=round FFFFFFFF clip=0
+line 16.56,27.52 22.8,20.8 width=1.75 cap=round FFFFFFFF clip=0
+text 32,17 font=0 size=14 9098A4FF clip=0 "Remember me"

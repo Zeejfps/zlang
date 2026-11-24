@@ -1,0 +1,163 @@
+// gallery: the basic page (stage 9): buttons, checkboxes, radio buttons, sliders, progress bars,
+// a picture, separators and spacers, panels, tooltips and the six stock marks, each enabled and
+// not, in two columns of panels.
+namespace gallery {
+    const BASIC_PAGE_TITLE: []u8 = "Basic"
+    const BASIC_PAGE_LISTED: bool = true
+
+    struct BasicPage {
+        clicks: u32,
+        notify: bool, remember: bool, autosave: bool,
+        size: i32,
+        volume: f32, brightness: f32, balance: f32,
+        picture: ui::Region,
+    }
+
+    fn make_basic_page { picture: ui::Region } -> BasicPage {
+        return BasicPage{
+            clicks = 0, notify = true, remember = true, autosave = false, size = 1,
+            volume = 0.375, brightness = 0.6, balance = 0.5, picture,
+        }
+    }
+
+    fn show_basic_page { mut ui: ui::Ui, mut page: BasicPage } {
+        let t = ui.theme
+        let columns = ui::begin_row{ &ui, opts = ui::Opts{ id = "basic", box = ui::Box{ width = ui::GROW, align_y = ui::Align::start, gap = t.gap * 2.0, .. }, .. } }
+        {
+            let left = ui::begin_column{ &ui, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, gap = t.gap * 2.0, .. }, .. } }
+            show_buttons{ &ui, &page }
+            show_choices{ &ui, &page }
+            show_marks{ &ui }
+            ui::end{ &ui, scope = left }
+        }
+        {
+            let right = ui::begin_column{ &ui, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, gap = t.gap * 2.0, .. }, .. } }
+            show_values{ &ui, &page }
+            show_pictures{ &ui, &page }
+            ui::end{ &ui, scope = right }
+        }
+        ui::end{ &ui, scope = columns }
+    }
+
+    // A panel that fills its column, under a title in the muted text colour. The caller ends it.
+    fn begin_section { mut ui: ui::Ui, id: []u8, title: []u8 } -> ui::Scope {
+        let t = ui.theme
+        let panel = ui::begin_panel{ &ui, opts = ui::Opts{ id, box = ui::Box{ width = ui::GROW, .. }, .. } }
+        ui::add_text{ &ui, text = title, style = ui::TextStyle{ color = t.text_muted, .. }, box = ui::Box{ .. } }
+        return panel
+    }
+
+    fn show_buttons { mut ui: ui::Ui, mut page: BasicPage } {
+        let opts = ui::Opts{ .. }
+        let panel = begin_section{ &ui, id = "buttons", title = "Buttons" }
+        let row = ui::begin_row{ &ui, opts }
+        if ui::add_button{ &ui, label = "Save", opts = ui::Opts{ tip = "Counts a click", .. } } { page.clicks = page.clicks + 1 }
+        if ui::add_button{ &ui, label = "Cancel", opts } { page.clicks = 0 }
+        _ = ui::add_button{ &ui, label = "Disabled", opts = ui::Opts{ enabled = false, .. } }
+        ui::end{ &ui, scope = row }
+        _ = @fmt(&ui, "Clicked {} times; Cancel starts again", page.clicks)
+        let text = ui::take_text{ &ui }
+        ui::add_label{ &ui, text, opts }
+        let wide = ui::begin_row{ &ui, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, .. }, .. } }
+        _ = ui::add_button{ &ui, label = "A button that grows", opts = ui::Opts{ box = ui::Box{ width = ui::GROW, .. }, .. } }
+        _ = ui::add_button{ &ui, label = "x", opts = ui::Opts{ id = "close", tip = "Close", .. } }
+        ui::end{ &ui, scope = wide }
+        ui::end{ &ui, scope = panel }
+    }
+
+    fn show_choices { mut ui: ui::Ui, mut page: BasicPage } {
+        let opts = ui::Opts{ .. }
+        let panel = begin_section{ &ui, id = "choices", title = "Checkboxes and radio buttons" }
+        _ = ui::add_checkbox{ &ui, label = "Enable notifications", value = &page.notify, opts }
+        _ = ui::add_checkbox{ &ui, label = "Save automatically", value = &page.autosave, opts = ui::Opts{ tip = "Saves every five minutes", .. } }
+        _ = ui::add_checkbox{ &ui, label = "Remember me (disabled)", value = &page.remember, opts = ui::Opts{ enabled = false, .. } }
+        ui::add_separator{ &ui, opts }
+        let row = ui::begin_row{ &ui, opts = ui::Opts{ box = ui::Box{ gap = ui.theme.gap * 2.0, .. }, .. } }
+        _ = ui::add_radio{ &ui, label = "Small", value = &page.size, choice = 0, opts }
+        _ = ui::add_radio{ &ui, label = "Medium", value = &page.size, choice = 1, opts }
+        _ = ui::add_radio{ &ui, label = "Large", value = &page.size, choice = 2, opts }
+        _ = ui::add_radio{ &ui, label = "Huge", value = &page.size, choice = 3, opts = ui::Opts{ enabled = false, .. } }
+        ui::end{ &ui, scope = row }
+        ui::end{ &ui, scope = panel }
+    }
+
+    // The six stock marks, drawn as lines in boxes of the text's size.
+    fn show_marks { mut ui: ui::Ui } {
+        let t = ui.theme
+        let panel = begin_section{ &ui, id = "marks", title = "Marks, drawn as lines" }
+        let row = ui::begin_row{ &ui, opts = ui::Opts{ box = ui::Box{ gap = t.gap * 2.0, .. }, .. } }
+        show_mark{ &ui, icon = ui::Icon::check }
+        show_mark{ &ui, icon = ui::Icon::cross }
+        show_mark{ &ui, icon = ui::Icon::arrow_left }
+        show_mark{ &ui, icon = ui::Icon::arrow_right }
+        show_mark{ &ui, icon = ui::Icon::arrow_up }
+        show_mark{ &ui, icon = ui::Icon::arrow_down }
+        ui::end{ &ui, scope = row }
+        ui::end{ &ui, scope = panel }
+    }
+
+    fn show_mark { mut ui: ui::Ui, icon: ui::Icon } {
+        let t = ui.theme
+        let size = t.control_height
+        let el = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{
+            width = ui::fix{ size }, height = ui::fix{ size }, fill = t.control, radius = ui::round{ radius = t.radius }, ..
+        } }
+        let side = ui::to_pixels{ ui, length = size }
+        ui::paint_icon{ &ui, icon, rect = ui::Rect{ x = 0, y = 0, w = side, h = side }, color = t.text }
+        ui::end{ &ui, scope = el }
+    }
+
+    fn show_values { mut ui: ui::Ui, mut page: BasicPage } {
+        let opts = ui::Opts{ .. }
+        let t = ui.theme
+        let panel = begin_section{ &ui, id = "values", title = "Sliders and progress" }
+        let label_box = ui::Box{ width = ui::fix{ size = t.font_size * 8.0 }, .. }
+        {
+            let row = ui::begin_row{ &ui, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, .. }, .. } }
+            _ = @fmt(&ui, "Volume {} %", ui::write_fixed{ v = page.volume * 100.0, digits = 1, _ })
+            let text = ui::take_text{ &ui }
+            ui::add_label{ &ui, text, opts = ui::Opts{ box = label_box, .. } }
+            _ = ui::add_slider{ &ui, label = "volume", value = &page.volume, range = ui::Range{ .. }, opts = ui::Opts{ tip = "Drag, or use the arrow keys", .. } }
+            ui::end{ &ui, scope = row }
+        }
+        {
+            let row = ui::begin_row{ &ui, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, .. }, .. } }
+            _ = @fmt(&ui, "Brightness {}", ui::write_fixed{ v = page.brightness, digits = 1, _ })
+            let text = ui::take_text{ &ui }
+            ui::add_label{ &ui, text, opts = ui::Opts{ box = label_box, .. } }
+            _ = ui::add_slider{ &ui, label = "brightness", value = &page.brightness, range = ui::Range{ step = 0.1, digits = 1, .. }, opts }
+            ui::end{ &ui, scope = row }
+        }
+        {
+            let row = ui::begin_row{ &ui, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, .. }, .. } }
+            ui::add_label{ &ui, text = "Balance", opts = ui::Opts{ box = label_box, enabled = false, .. } }
+            _ = ui::add_slider{ &ui, label = "balance", value = &page.balance, range = ui::Range{ .. }, opts = ui::Opts{ enabled = false, .. } }
+            ui::end{ &ui, scope = row }
+        }
+        ui::add_progress{ &ui, value = page.volume, opts = ui::Opts{ id = "volume level", tip = "Follows the volume", .. } }
+        ui::add_progress{ &ui, value = 0.66, opts = ui::Opts{ id = "stalled", enabled = false, .. } }
+        ui::end{ &ui, scope = panel }
+    }
+
+    fn show_pictures { mut ui: ui::Ui, mut page: BasicPage } {
+        let opts = ui::Opts{ .. }
+        let t = ui.theme
+        let panel = begin_section{ &ui, id = "pictures", title = "Pictures, separators and spacers" }
+        {
+            let row = ui::begin_row{ &ui, opts }
+            ui::add_image{ &ui, region = page.picture, opts = ui::Opts{ id = "picture", tip = "Made by the program, drawn at its texel size", .. } }
+            ui::add_separator{ &ui, opts = ui::Opts{ box = ui::Box{ height = ui::fix{ size = t.control_height * 1.5 }, .. }, .. } }
+            ui::add_image{ &ui, region = page.picture, opts = ui::Opts{ id = "faded", enabled = false, box = ui::Box{ width = ui::fix{ size = 32.0 }, height = ui::fix{ size = 24.0 }, .. }, .. } }
+            ui::end{ &ui, scope = row }
+        }
+        ui::add_separator{ &ui, opts }
+        {
+            let row = ui::begin_row{ &ui, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, .. }, .. } }
+            ui::add_label{ &ui, text = "A spacer pushes", opts }
+            ui::add_spacer{ &ui }
+            if ui::add_button{ &ui, label = "to the end", opts } { page.clicks = page.clicks + 1 }
+            ui::end{ &ui, scope = row }
+        }
+        ui::end{ &ui, scope = panel }
+    }
+}

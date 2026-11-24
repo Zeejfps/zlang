@@ -1,0 +1,14 @@
+// gallery: the data page, which shows lists, trees, tabs, tables, the plot and the colour editor
+// (plan section 7, stage 12). The stage that builds those widgets fills `DataPage`, `make_data_page`
+// and `show_data_page`, and lists the page by setting DATA_PAGE_LISTED; the switcher leaves out a
+// page that is not listed.
+namespace gallery {
+    const DATA_PAGE_TITLE: []u8 = "Data"
+    const DATA_PAGE_LISTED: bool = false
+
+    struct DataPage {}
+
+    fn make_data_page {} -> DataPage { return DataPage{} }
+
+    fn show_data_page { mut ui: ui::Ui, mut page: DataPage } {}
+}

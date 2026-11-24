@@ -1,0 +1,6 @@
+== the tooltip, half a second after the hover began
+frame 240x120
+rect 10,10 52x28 fill=3A414DFF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 22,17 font=0 size=14 E4E7EDFF clip=0 "Save"
+rect 10,42 121x22 fill=2E3138FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 18,46 font=0 size=14 E4E7EDFF clip=0 "Writes the file"

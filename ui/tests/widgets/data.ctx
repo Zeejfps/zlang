@@ -1,0 +1,4 @@
+// The checks of lists, trees, tabs, tables, the plot and the colour editor (plan section 7, stage
+// 12), with their goldens named golden/data-*.txt. `main` calls `check_data`; the stage that builds
+// those widgets writes its checks in it, using the helpers of main.ctx.
+fn check_data { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, update: bool } {}

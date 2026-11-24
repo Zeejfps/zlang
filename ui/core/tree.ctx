@@ -126,6 +126,14 @@ namespace ui {
         return tree::open_element{ &ui, id, axis, box, root = null, on_end = null }
     }
 
+    // The axis the open element lays its children out along: what a widget that is a rule across
+    // its parent (a separator) needs to know which way to lie. A column where nothing is open.
+    fn get_axis { ui: Ui } -> Axis {
+        let open = tree::get_open{ ui }
+        if open == tree::NONE or @as(usize, open) >= @as(usize, ui.tree.count) { return Axis::column }
+        return ui.tree.elements[@as(usize, open)].axis
+    }
+
     // One piece of text as an element of its own, sized by the text (a null size in `box` fits it).
     // The text is copied.
     fn add_text { mut ui: Ui, text: []u8, style: TextStyle, box: Box } {

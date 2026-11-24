@@ -1,0 +1,14 @@
+// gallery: the windows page, which shows windows, dialogs, popups, menus, the combo, tooltips and
+// drag and drop (plan section 7, stage 11). The stage that builds those widgets fills
+// `WindowsPage`, `make_windows_page` and `show_windows_page`, and lists the page by setting
+// WINDOWS_PAGE_LISTED; the switcher leaves out a page that is not listed.
+namespace gallery {
+    const WINDOWS_PAGE_TITLE: []u8 = "Windows"
+    const WINDOWS_PAGE_LISTED: bool = false
+
+    struct WindowsPage {}
+
+    fn make_windows_page {} -> WindowsPage { return WindowsPage{} }
+
+    fn show_windows_page { mut ui: ui::Ui, mut page: WindowsPage } {}
+}

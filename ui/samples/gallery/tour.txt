@@ -1,0 +1,54 @@
+# A walk through the gallery's basic page, for demo_gl's --script (ui/test/script.ctx says how a
+# script is written). Each step is checked, so a run that ends with no failed line is the page
+# working by pointer and by keyboard:
+#
+#   kotor/tools/ctxc run ui/samples/demo_gl -- --headless --script ui/samples/gallery/tour.txt --shot ui/out/tour.png
+
+frames 2
+
+# Buttons count clicks; the one clicked has the focus.
+click Save
+click Save
+expect Save focused
+
+# A checkbox flips on a click, and Space flips it back while it has the focus.
+click "Save automatically"
+expect "Save automatically" checked focused
+key space
+frames 1
+expect "Save automatically" unchecked
+key space
+frames 1
+expect "Save automatically" checked
+
+# One radio button of a group is chosen; the others, recorded before it, show it from the next frame.
+click Large
+frames 1
+expect Large checked
+expect Medium unchecked
+expect Huge disabled
+
+# Tab walks the tab stops in the order they were recorded: from Large to the volume slider is a
+# column away, so focus the slider by a click and step it with the keys.
+drag volume 40 0
+expect volume focused
+key home
+frames 1
+value volume 0
+key right
+frames 1
+value volume 0.05
+key end
+frames 1
+value volume 1
+
+# Tab from the slider goes on to the next stop.
+key tab
+frames 2
+expect brightness focused
+
+# The tooltip of the Save button, after the pointer has rested on it half a second.
+click Save
+wait 0.6
+expect "Counts a click"
+expect Save focused

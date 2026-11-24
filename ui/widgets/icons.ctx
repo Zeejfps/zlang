@@ -1,0 +1,60 @@
+// ui: the stock marks (plan section 3.3, "The stock marks need no font and no picture"). A check
+// mark, a cross and the four arrows are drawn as round-capped lines at fixed fractions of the
+// pixel rectangle they are given, so a checkbox, a tree node, a combo and a window's close button
+// draw the same with any font the program registered, or with none, and no font glyph or picture
+// is ever needed for them.
+//
+// Units: the rectangle is device pixels in the open element's own coordinates, as every paint
+// call's is; a mark's end points are fractions of it and stay fractional (a line is the one shape
+// that is not on the pixel grid). The stroke is a theme length, an eighth of the text size, scaled
+// and not rounded (`ui::to_pixels_f32`), so a mark is as heavy as the text beside it at any scale.
+namespace ui {
+    enum Icon: u8 { check, cross, arrow_right, arrow_down, arrow_up, arrow_left }
+
+    // A stock mark in `rect` (pixels, the open element's coordinates) in `color`.
+    fn paint_icon { mut ui: Ui, icon: Icon, rect: Rect, color: Color } {
+        let width = to_pixels_f32{ ui, length = get_mark_stroke{ theme = ui.theme } }
+        let x = @as(f32, rect.x)
+        let y = @as(f32, rect.y)
+        let w = @as(f32, rect.w)
+        let h = @as(f32, rect.h)
+        match icon {
+            check => {
+                paint_mark{ &ui, x, y, w, h, width, color, u0 = 0.2, v0 = 0.52, u1 = 0.41, v1 = 0.72 }
+                paint_mark{ &ui, x, y, w, h, width, color, u0 = 0.41, v0 = 0.72, u1 = 0.8, v1 = 0.3 }
+            }
+            cross => {
+                paint_mark{ &ui, x, y, w, h, width, color, u0 = 0.25, v0 = 0.25, u1 = 0.75, v1 = 0.75 }
+                paint_mark{ &ui, x, y, w, h, width, color, u0 = 0.75, v0 = 0.25, u1 = 0.25, v1 = 0.75 }
+            }
+            arrow_right => {
+                paint_mark{ &ui, x, y, w, h, width, color, u0 = 0.38, v0 = 0.22, u1 = 0.64, v1 = 0.5 }
+                paint_mark{ &ui, x, y, w, h, width, color, u0 = 0.64, v0 = 0.5, u1 = 0.38, v1 = 0.78 }
+            }
+            arrow_left => {
+                paint_mark{ &ui, x, y, w, h, width, color, u0 = 0.62, v0 = 0.22, u1 = 0.36, v1 = 0.5 }
+                paint_mark{ &ui, x, y, w, h, width, color, u0 = 0.36, v0 = 0.5, u1 = 0.62, v1 = 0.78 }
+            }
+            arrow_down => {
+                paint_mark{ &ui, x, y, w, h, width, color, u0 = 0.22, v0 = 0.38, u1 = 0.5, v1 = 0.64 }
+                paint_mark{ &ui, x, y, w, h, width, color, u0 = 0.5, v0 = 0.64, u1 = 0.78, v1 = 0.38 }
+            }
+            arrow_up => {
+                paint_mark{ &ui, x, y, w, h, width, color, u0 = 0.22, v0 = 0.62, u1 = 0.5, v1 = 0.36 }
+                paint_mark{ &ui, x, y, w, h, width, color, u0 = 0.5, v0 = 0.36, u1 = 0.78, v1 = 0.62 }
+            }
+        }
+    }
+
+    // One stroke of a mark: from (u0, v0) to (u1, v1), fractions of the rectangle at (x, y) of
+    // w by h pixels.
+    fn paint_mark { mut ui: Ui, x: f32, y: f32, w: f32, h: f32, width: f32, color: Color, u0: f32, v0: f32, u1: f32, v1: f32 } {
+        paint_line{ &ui, x0 = x + w * u0, y0 = y + h * v0, x1 = x + w * u1, y1 = y + h * v1, width, color, cap = Cap::round }
+    }
+
+    // How thick a mark's strokes are, in logical units: an eighth of the text size, so a mark
+    // weighs about what a letter beside it does.
+    fn get_mark_stroke { theme: Theme } -> f32 {
+        return pick_max_f32{ a = 1.0, b = theme.font_size * 0.125 }
+    }
+}

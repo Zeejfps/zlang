@@ -1,0 +1,397 @@
+// The gallery on OpenGL (plan sections 2.1 and 6.2): an SDL window with a GL context, an outline
+// font through FreeType and HarfBuzz, the stock widgets, and the gallery's pages.
+//
+//   kotor/tools/ctxc run ui/samples/demo_gl                                   a window; close it to quit
+//   kotor/tools/ctxc run ui/samples/demo_gl -- --headless --shot ui/out/gallery-basic.png
+//   kotor/tools/ctxc run ui/samples/demo_gl -- --headless --script ui/samples/gallery/tour.txt --shot ui/out/tour.png
+//
+//   --font PATH       the font (default: the platform's, C:/Windows/Fonts/segoeui.ttf on Windows)
+//   --theme dark|light
+//   --page TITLE      the gallery page shown first (Basic; the others as their stages list them)
+//   --scale S         device pixels a logical unit; in a window, the monitor's scale times S (default 1)
+//   --size WxH        the surface in logical units (default 1040x720)
+//   --script PATH     drive the gallery with a script (ui/test/script.ctx says how they are written),
+//                     then stop
+//   --frames N        stop after N frames (headless, without a script: 2)
+//   --headless        no window: draw into an offscreen target of a hidden one
+//   --shot PATH       when it stops, write the frame drawn last as a PNG
+//
+// It draws every frame it runs (a script's frames included), in a window only when something
+// happened or the frame asked for another. It exits 0 when every frame was well formed (nothing
+// dropped, no problem recorded), the backend reported no GL error, the font library refused
+// nothing, and every line of the script held; 1 otherwise, saying why.
+
+const WIDTH_DEFAULT: f32 = 1040.0
+const HEIGHT_DEFAULT: f32 = 720.0
+const STEP_DT: f32 = 0.0166667                  // a headless or scripted frame's time: a 60th of a second
+const FONT_WINDOWS: [2][]u8 = ["C:/Windows/Fonts/segoeui.ttf", "C:/Windows/Fonts/arial.ttf"]
+const FONT_MACOS: [2][]u8 = ["/System/Library/Fonts/SFNS.ttf", "/System/Library/Fonts/Helvetica.ttc"]
+const FONT_LINUX: [3][]u8 = ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf", "/usr/share/fonts/noto/NotoSans-Regular.ttf"]
+
+struct Options {
+    font: ?[]u8, script: ?[]u8, shot: ?[]u8, page: ?[]u8,
+    headless: bool, dark: bool,
+    scale: f32, width: f32, height: f32,
+    frames: i32,                    // -1: until the window closes (or the script ends)
+}
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: ui_sdl::Sdl, mut fonts: ui_fonts::Fonts, args: Args } -> i32 {
+    let opts = read_options{ &io, args } ifnull {
+        io::eprintln{ &io, s = "usage: demo_gl [--font PATH] [--theme dark|light] [--page TITLE] [--scale S] [--size WxH] [--script PATH] [--frames N] [--headless] [--shot PATH]" }
+        return 2
+    }
+    let buf = mem::pages{ &mem, size = 268435456 } ifnull {
+        io::eprintln{ &io, s = "demo_gl: out of memory" }
+        return 1
+    }
+    let mut heap = arena::new{ buf }
+    let font = read_font{ &fs, &heap, path = opts.font }
+    let bytes = font.bytes ifnull {
+        _ = @fmt(&io, "demo_gl: no font at {} (pass --font PATH)\n", font.path)
+        io::flush{ &io }
+        return 1
+    }
+    _ = @fmt(&io, "demo_gl: font {}\n", font.path)
+    io::flush{ &io }
+    let mut log: [16384]u8
+    let code = run{ &io, &fs, &sdl, &fonts, &heap, opts, font = bytes, log = log[..] } iferr err{ error } {
+        _ = @fmt(&io, "demo_gl: failed: {}\n", error)
+        match error {
+            ui_gl::compile_failed{ shader, log_len } => { _ = @fmt(&io, "{}:\n{}\n", shader, log[..log_len]) }
+            ui_gl::link_failed{ program, log_len } => { _ = @fmt(&io, "{}:\n{}\n", program, log[..log_len]) }
+            ui_gl::gl_failed{ code, what } => { _ = @fmt(&io, "{} after {}\n", ui_gl::name_gl_error{ code }, what) }
+            ui_sdl::failed => { _ = @fmt(&io, "SDL: {}\n", ui_sdl::get_last_error{ &sdl }) }
+            else => {}
+        }
+        io::flush{ &io }
+        return 1
+    }
+    io::flush{ &io }
+    return code
+}
+
+// ---- options
+
+fn read_options { mut io: Io, args: Args } -> ?Options {
+    let mut o = Options{
+        font = null, script = null, shot = null, page = null, headless = false, dark = true,
+        scale = 1.0, width = WIDTH_DEFAULT, height = HEIGHT_DEFAULT, frames = -1,
+    }
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        let has_value = i + 1 < args.len
+        if slice::eq_bytes{ a, b = "--headless" } {
+            o.headless = true
+            i = i + 1
+            continue
+        }
+        if not has_value {
+            _ = @fmt(&io, "demo_gl: {} needs a value or is not an option\n", a)
+            return null
+        }
+        let v = args[i + 1]
+        i = i + 2
+        if slice::eq_bytes{ a, b = "--font" } {
+            o.font = v
+        } else if slice::eq_bytes{ a, b = "--page" } {
+            o.page = v
+        } else if slice::eq_bytes{ a, b = "--script" } {
+            o.script = v
+        } else if slice::eq_bytes{ a, b = "--shot" } {
+            o.shot = v
+        } else if slice::eq_bytes{ a, b = "--theme" } {
+            if slice::eq_bytes{ a = v, b = "light" } {
+                o.dark = false
+            } else if slice::eq_bytes{ a = v, b = "dark" } {
+                o.dark = true
+            } else {
+                return null
+            }
+        } else if slice::eq_bytes{ a, b = "--scale" } {
+            let s = ui_test::parse_decimal{ s = v } ifnull { return null }
+            if not (s > 0.0) or s > 8.0 { return null }
+            o.scale = s
+        } else if slice::eq_bytes{ a, b = "--frames" } {
+            let n = ui_test::parse_int{ s = v } ifnull { return null }
+            if n < 1 { return null }
+            o.frames = n
+        } else if slice::eq_bytes{ a, b = "--size" } {
+            let mut x: usize = 0
+            while x < v.len and v[x] != 'x' { x = x + 1 }
+            if x >= v.len { return null }
+            let w = ui_test::parse_int{ s = v[..x] } ifnull { return null }
+            let h = ui_test::parse_int{ s = v[x + 1..] } ifnull { return null }
+            if w < 64 or h < 64 or w > 4096 or h > 4096 { return null }
+            o.width = @as(f32, w)
+            o.height = @as(f32, h)
+        } else {
+            _ = @fmt(&io, "demo_gl: unknown option {}\n", a)
+            return null
+        }
+    }
+    if o.headless and o.frames < 0 and o.script == null { o.frames = 2 }
+    return o
+}
+
+// A font file's bytes: the path given, or the first of the platform's defaults that reads.
+struct FontFile { path: []u8, bytes: ?[]u8 }
+
+fn read_font { mut fs: Fs, mut heap: arena::Arena, path: ?[]u8 } -> FontFile {
+    if let p = path {
+        let bytes = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = p } iferr { return FontFile{ path = p, bytes = null } }
+        return FontFile{ path = p, bytes }
+    }
+    let defaults: [][]u8 = match target::OS { windows => FONT_WINDOWS[..], macos => FONT_MACOS[..], linux => FONT_LINUX[..] }
+    for p in defaults {
+        let bytes = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = p } iferr { continue }
+        return FontFile{ path = p, bytes }
+    }
+    return FontFile{ path = if defaults.len > 0 { defaults[0] } else { "" }, bytes = null }
+}
+
+// ---- the program's state between frames
+
+struct Demo {
+    host: ui_sdl::Host, dev: ui_gl::Device, staged: ui_stage::Staged,
+    gallery: gallery::Gallery, provider: ui::TextProvider,
+    headless: bool,
+    scripted: bool,                         // a script runs: every frame is STEP_DT long, in a window too
+    width: i32, height: i32, scale: f32,    // headless: the surface in pixels and the scale
+    zoom: f32,                              // in a window: the program's zoom on the monitor's scale
+    pointer_scale: f32,                     // in a window: device pixels a window coordinate
+    requests: ui::Requests,                 // the last frame's
+    background: ui::Color,                  // what the last frame was cleared to
+    frames: u32, unclean: u32, dropped: u32,
+    quit: bool, failed: bool,
+}
+
+fn run {
+    mut io: Io, mut fs: Fs, mut sdl: ui_sdl::Sdl, mut fonts: ui_fonts::Fonts, mut heap: arena::Arena,
+    opts: Options, font: []u8, log: []mut u8,
+} -> !i32 {
+    try ui_sdl::init{ &sdl }
+    defer ui_sdl::quit{ &sdl }
+    let width = ui::round_pixels{ v = opts.width * (if opts.headless { opts.scale } else { 1.0 }) }
+    let height = ui::round_pixels{ v = opts.height * (if opts.headless { opts.scale } else { 1.0 }) }
+    let mut host = try ui_sdl::open_gl_window{ &sdl, realloc = arena::alloc, &heap, title = "ui gallery",
+        width = if opts.headless { 64 } else { width }, height = if opts.headless { 64 } else { height },
+        hidden = opts.headless, resizable = not opts.headless, clipboard = 65536 }
+    defer ui_sdl::close_window{ &sdl, &host }
+    if not opts.headless { ui_sdl::set_swap_interval{ &sdl, interval = 1 } iferr {} }
+    let mut dev = try ui_gl::open{ get_proc = ui_sdl::get_gl_proc{ &sdl, _ }, realloc = arena::alloc, &heap, options = ui_gl::Options{ .. }, log }
+    defer ui_gl::close{ &dev }
+    _ = @fmt(&io, "GL: {} ({})\n", ui_gl::get_gl_string{ gl = &dev.gl, name = ui_gl::VERSION }, ui_gl::get_gl_string{ gl = &dev.gl, name = ui_gl::RENDERER })
+
+    let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
+    defer ui_fonts::close{ &lib }
+    let face = try ui_fonts::add_face{ &lib, data = font, index = 0 }
+    let mut gui = try ui::make{ realloc = arena::alloc, &heap, cap = ui::Capacity{ .. } }
+    let text_font = ui_fonts::make_font{ &lib, ui = &gui, face } ifnull { return ui_fonts::closed }
+    let provider = ui_fonts::get_provider{ lib = &lib }
+    ui::set_provider{ ui = &gui, provider }
+    gui.theme.font = text_font
+
+    let picture = try make_picture{ &dev, &heap }
+    let staged = try ui_stage::make{ realloc = arena::alloc, &heap, cap = ui_stage::Capacity{ .. } }
+    let mut g = gallery::make_gallery{ picture }
+    g.dark = opts.dark
+    if let title = opts.page {
+        g.page = gallery::find_page{ title } ifnull {
+            _ = @fmt(&io, "demo_gl: the gallery lists no page {}\n", title)
+            return 2
+        }
+    }
+    let mut demo = Demo{
+        host, dev, staged, gallery = g, provider, headless = opts.headless, scripted = opts.script != null,
+        width, height, scale = opts.scale, zoom = opts.scale, pointer_scale = 1.0,
+        requests = ui::Requests{ .. }, background = ui::Color{ .. }, frames = 0, unclean = 0, dropped = 0, quit = false, failed = false,
+    }
+    if opts.headless { try ui_gl::make_target{ dev = &demo.dev, width = @as(u32, width), height = @as(u32, height) } }
+
+    let mut script_failed: u32 = 0
+    if let path = opts.script {
+        let text = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } iferr {
+            _ = @fmt(&io, "demo_gl: cannot read the script {}\n", path)
+            return 1
+        }
+        let dt = STEP_DT
+        let result = ui_test::run_script{ &io, ui = &gui, text, dt, host = take_action{ &demo, &sdl, &io, &fs, &heap, _ } }
+        _ = @fmt(&io, "demo_gl: script {}: {} lines, {} failed, {} frames{}\n", path, result.lines, result.failed, result.frames,
+            if result.stopped { ", stopped early" } else { "" })
+        script_failed = result.failed
+    } else {
+        run_frames{ &demo, &sdl, &io, ui = &gui, limit = opts.frames }
+    }
+    if let path = opts.shot {
+        if not write_shot{ &demo, &io, &fs, &heap, path } { demo.failed = true }
+    }
+
+    let s = lib.stats
+    let refused = s.missing + s.too_big + s.unknown + s.sizes_full + s.bad_layout + s.failed + s.bad_bitmap + s.truncated
+    _ = @fmt(&io, "demo_gl: {} frames, {} not well formed, {} shapes dropped in staging; fonts: {} glyphs rasterised, {} refused\n",
+        demo.frames, demo.unclean, demo.dropped, s.rasterized, refused)
+    ui_gl::free_image{ dev = &demo.dev, image = picture.image }
+    let ok = not demo.failed and demo.unclean == 0 and demo.dropped == 0 and script_failed == 0 and refused == 0
+    return if ok { 0 } else { 1 }
+}
+
+// The program's picture for the gallery: 64 by 48 texels drawn in code, a diagonal blend from blue
+// to orange under a light frame, with a darker disc in the middle. No picture file is read.
+fn make_picture { mut dev: ui_gl::Device, mut heap: arena::Arena } -> !ui::Region {
+    let w: usize = 64
+    let h: usize = 48
+    let rgba = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = w * h * 4 }
+    for y in 0..h {
+        for x in 0..w {
+            let t = @as(f32, x + y) / @as(f32, w + h - 2)
+            let mut r = 40.0 + 200.0 * t
+            let mut g = 110.0 + 40.0 * t
+            let mut b = 220.0 - 170.0 * t
+            let dx = @as(f32, x) - 31.5
+            let dy = @as(f32, y) - 23.5
+            if dx * dx + dy * dy < 144.0 {
+                r = r * 0.55
+                g = g * 0.55
+                b = b * 0.55
+            }
+            if x < 2 or y < 2 or x >= w - 2 or y >= h - 2 {
+                r = 235.0
+                g = 238.0
+                b = 245.0
+            }
+            let at = (y * w + x) * 4
+            rgba[at] = @as(u8, r)
+            rgba[at + 1] = @as(u8, g)
+            rgba[at + 2] = @as(u8, b)
+            rgba[at + 3] = 255
+        }
+    }
+    let image = try ui_gl::create_image{ &dev, width = 64, height = 48, rgba, smooth = true }
+    return ui::Region{ image, width = 64, height = 48, .. }
+}
+
+// ---- frames
+
+// What the script reader asks: a frame, or a picture of the last one.
+fn take_action { mut demo: Demo, mut sdl: ui_sdl::Sdl, mut io: Io, mut fs: Fs, mut heap: arena::Arena, mut ui: ui::Ui, action: ui_test::ScriptAction } -> bool {
+    match action {
+        step => {
+            if not demo.headless {
+                _ = pump_events{ &demo, &sdl, &ui, wait = false }
+                if demo.quit { return false }
+            }
+            return draw_frame{ &demo, &sdl, &io, &ui }
+        }
+        shoot{ path } => { return write_shot{ &demo, &io, &fs, &heap, path } }
+    }
+}
+
+// Frames until `limit` (-1: until the window closes). In a window with no limit it waits for an
+// event when nothing moves, so an idle gallery draws nothing; with a limit it draws every frame,
+// so the run ends.
+fn run_frames { mut demo: Demo, mut sdl: ui_sdl::Sdl, mut io: Io, mut ui: ui::Ui, limit: i32 } {
+    while not demo.quit {
+        if limit >= 0 and demo.frames >= @as(u32, limit) { break }
+        if not demo.headless {
+            let idle = limit < 0 and demo.frames > 1 and not demo.requests.animating
+            let woke = pump_events{ &demo, &sdl, &ui, wait = idle }
+            if demo.quit { break }
+            if idle and not woke { continue }
+        }
+        if not draw_frame{ &demo, &sdl, &io, &ui } { break }
+    }
+}
+
+// Hands the window's events to the Ui; with `wait`, waits up to half a second for the first.
+// Whether any came.
+fn pump_events { mut demo: Demo, mut sdl: ui_sdl::Sdl, mut ui: ui::Ui, wait: bool } -> bool {
+    let mut any = false
+    let mut first = true
+    while true {
+        let next = if first and wait { ui_sdl::wait_event{ &sdl, host = &demo.host, timeout = 500 } } else { ui_sdl::poll{ &sdl, host = &demo.host } }
+        first = false
+        let e = next ifnull { break }
+        any = true
+        match e {
+            quit | close => { demo.quit = true }
+            else => {
+                if let event = ui_sdl::to_event{ event = e, pointer_scale = demo.pointer_scale } { _ = ui::push_event{ &ui, event } }
+            }
+        }
+    }
+    return any
+}
+
+// One frame of the gallery, staged and drawn: into the offscreen target when headless, into the
+// window (then shown) otherwise. False when the backend failed.
+fn draw_frame { mut demo: Demo, mut sdl: ui_sdl::Sdl, mut io: Io, mut ui: ui::Ui } -> bool {
+    let mut frame = ui::FrameInfo{ width = demo.width, height = demo.height, scale = demo.scale, dt = STEP_DT }
+    if not demo.headless {
+        let sizes = ui_sdl::get_sizes{ &sdl, host = demo.host, zoom = demo.zoom }
+        demo.pointer_scale = sizes.pointer_scale
+        let elapsed = ui_sdl::get_dt{ &sdl, host = &demo.host }
+        frame = ui_sdl::make_frame{ sizes, dt = if demo.scripted { STEP_DT } else { elapsed } }
+    }
+    ui::begin_frame{ &ui, frame }
+    gallery::show_gallery{ &ui, g = &demo.gallery }
+    ui::end_frame{ &ui }
+    demo.frames = demo.frames + 1
+    demo.gallery.stats = ui.stats
+    if ui.stats.dropped != 0 or ui.stats.problems != 0 or ui.draw.dropped != 0 {
+        demo.unclean = demo.unclean + 1
+        if demo.unclean == 1 { report_problems{ &io, ui } }
+    }
+    demo.requests = ui::take_requests{ &ui }
+    if not demo.headless { ui_sdl::apply_requests{ &sdl, host = &demo.host, requests = demo.requests, pointer_scale = demo.pointer_scale } }
+    ui_stage::stage{ out = &demo.staged, list = &ui.draw, provider = demo.provider }
+    demo.dropped = demo.dropped + demo.staged.dropped
+    demo.background = ui.theme.background
+    ui_gl::clear{ dev = &demo.dev, color = demo.background }
+    ui_gl::render{ dev = &demo.dev, staged = &demo.staged } iferr err{ error } {
+        _ = @fmt(&io, "demo_gl: render failed: {}\n", error)
+        if error is ui_gl::gl_failed{ code, what } { _ = @fmt(&io, "{} after {}\n", ui_gl::name_gl_error{ code }, what) }
+        demo.failed = true
+        return false
+    }
+    if demo.dev.stats.dropped != 0 { demo.dropped = demo.dropped + demo.dev.stats.dropped }
+    if not demo.headless { ui_sdl::swap{ &sdl, host = demo.host } }
+    return true
+}
+
+// The first frame that was not well formed: what went wrong.
+fn report_problems { mut io: Io, ui: ui::Ui } {
+    _ = @fmt(&io, "demo_gl: frame {}: {} dropped, {} problems\n", ui.frame, ui.stats.dropped, ui.stats.problems)
+    for i in 0..@as(usize, ui.problem_count) {
+        let p = ui.problems[i]
+        _ = @fmt(&io, "  problem {} at {}\n", @as(u8, p.kind), ui::get_text{ ui, span = p.path })
+    }
+}
+
+// The frame drawn last, as a PNG at `path`. Headless it is read from the offscreen target. In a
+// window the swap has left the back buffer undefined, so the frame's staged draws are drawn into
+// it again (nothing is recorded or staged anew) and read before any swap.
+fn write_shot { mut demo: Demo, mut io: Io, mut fs: Fs, mut heap: arena::Arena, path: []u8 } -> bool {
+    if not demo.headless and demo.frames > 0 {
+        ui_gl::clear{ dev = &demo.dev, color = demo.background }
+        ui_gl::render{ dev = &demo.dev, staged = &demo.staged } iferr {
+            _ = @fmt(&io, "demo_gl: cannot draw the frame again for its picture\n")
+            return false
+        }
+    }
+    let width = demo.dev.width
+    let height = demo.dev.height
+    if width == 0 or height == 0 { return false }
+    let pixels = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = @as(usize, width) * @as(usize, height) * 4 } iferr { return false }
+    ui_gl::read_pixels{ dev = &demo.dev, into = pixels } iferr {
+        _ = @fmt(&io, "demo_gl: cannot read the frame's pixels\n")
+        return false
+    }
+    let picture = ui_test::Picture{ width, height, channels = 4, pixels }
+    ui_test::write_png{ &fs, realloc = arena::alloc, &heap, path, picture, bottom_up = false } iferr {
+        _ = @fmt(&io, "demo_gl: cannot write {}\n", path)
+        return false
+    }
+    _ = @fmt(&io, "demo_gl: wrote {} ({}x{})\n", path, width, height)
+    return true
+}

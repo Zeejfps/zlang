@@ -1,0 +1,103 @@
+// The stock widgets' test (plan section 6, stages 9 to 12). Each stage has its own file of checks,
+// called from `main` below, and its own goldens under golden/ named for the file:
+//
+//   basic.ctx     stage 9: labels, buttons, checkboxes, radio buttons, sliders, progress bars,
+//                 pictures, separators, spacers, rows, columns, panels, tooltips, the theme, the marks
+//   field.ctx     stage 10: the text field and number entry
+//   windows.ctx   stage 11: windows, popups, menus, the combo, tooltips, drag and drop
+//   data.ctx      stage 12: lists, trees, tabs, tables, the plot, the colour editor
+//
+//   kotor/tools/ctxc run ui/tests/widgets                  (from the repository root)
+//   kotor/tools/ctxc run ui/tests/widgets -- --update      rewrite the goldens after an intended change
+//
+// What this file has is shared by all of them: a Ui on the tests' glyph-table font in either
+// built-in theme, a scripted driver, and the frame as the goldens hold it. Interaction lags layout
+// by a frame by design, so a scripted check names the frame a result appears on. Exits 1 when any
+// check fails.
+
+const GOLDEN_DIR: []u8 = "ui/tests/widgets/golden"
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let mut t = ui_test::Tally{ run = 0, failed = 0 }
+    let buf = mem::pages{ &mem, size = 268435456 } ifnull { return 1 }
+    let mut heap = arena::new{ buf }
+    let update = ui_test::has_flag{ args, flag = "--update" }
+
+    check_basic{ &io, &fs, &t, &heap, update }
+    check_field{ &io, &fs, &t, &heap, update }
+    check_windows{ &io, &fs, &t, &heap, update }
+    check_data{ &io, &fs, &t, &heap, update }
+
+    _ = @fmt(&io, "ui/tests/widgets: {} checks, {} failed\n", t.run, t.failed)
+    io::flush{ &io }
+    return if t.failed == 0 { 0 } else { 1 }
+}
+
+// ---- a Ui to test with
+
+fn get_small {} -> ui::Capacity {
+    return ui::Capacity{
+        elements = 2048, text = 65536, cmds = 2048, clips = 32, hits = 512, states = 128, nodes = 256,
+        fonts = 4, scopes = 64, layers = 16, lines = 256, measures = 64, shaped = 64,
+    }
+}
+
+// A Ui in the dark or the light built-in theme, drawing in the tests' font: every character 8 by
+// 16 at its own height, so at the themes' 14 units a character is 7 pixels wide and a line 14
+// high at scale 1.
+fn make_ui { mut heap: arena::Arena, dark: bool } -> !ui::Ui {
+    let mut gui = try ui::make{ realloc = arena::alloc, &heap, cap = get_small{} }
+    gui.theme = if dark { ui::make_dark_theme{} } else { ui::make_light_theme{} }
+    let def = try ui_test::make_test_font{ realloc = arena::alloc, &heap }
+    if let font = ui::add_font{ ui = &gui, font = def } { gui.theme.font = font }
+    return gui
+}
+
+// Frames of `width` by `height` pixels at `scale`, an eighth of a second apart (a dt whose sums
+// are exact).
+fn make_driver { mut heap: arena::Arena, width: i32, height: i32, scale: f32 } -> !ui_test::Driver {
+    return ui_test::make_driver{ realloc = arena::alloc, &heap, width, height, scale, dt = 0.125, clipboard = 256 }
+}
+
+fn is_clean { ui: ui::Ui } -> bool {
+    return ui.stats.dropped == 0 and ui.stats.problems == 0 and ui.problem_count == 0 and ui.draw.dropped == 0
+}
+
+// The frame as the goldens hold it: a title line, then the draw list.
+fn write_frame { mut sink: ui_rec::Sink, ui: ui::Ui, name: []u8 } -> ! {
+    try @fmt(&sink, "== {}\n", name)
+    try ui_rec::write_list{ &sink, list = &ui.draw }
+}
+
+// The last finished frame's node list, one a line: role, path, rectangle, flags and value.
+fn write_nodes { mut sink: ui_rec::Sink, ui: ui::Ui, name: []u8 } -> ! {
+    try @fmt(&sink, "== {}\n", name)
+    for i in 0..ui::get_node_count{ ui } {
+        let n = ui::get_node{ ui, index = i } ifnull { continue }
+        try @fmt(&sink, "node {} \"{}\" {} flags={} value=", name_role{ role = n.role }, n.path, ui_rec::write_rect{ rect = n.rect, _ }, n.flags)
+        try ui_rec::write_number{ &sink, v = n.value }
+        try @fmt(&sink, "\n")
+    }
+}
+
+fn name_role { role: ui::Role } -> []u8 {
+    return match role {
+        none => "none", label => "label", button => "button", checkbox => "checkbox", radio => "radio",
+        slider => "slider", progress => "progress", image => "image", separator => "separator",
+        panel => "panel", row => "row", column => "column", text_field => "text_field", number => "number",
+        window => "window", popup => "popup", dialog => "dialog", menu_bar => "menu_bar", menu => "menu",
+        menu_item => "menu_item", combo => "combo", list => "list", list_row => "list_row",
+        tree_node => "tree_node", tabs => "tabs", tab => "tab", table => "table", table_row => "table_row",
+        cell => "cell", plot => "plot", color_edit => "color_edit", tooltip => "tooltip", scroll => "scroll",
+        overlay => "overlay", host => "host",
+    }
+}
+
+// How many shapes of the last frame are text.
+fn count_text { ui: ui::Ui } -> u32 {
+    let mut n: u32 = 0
+    for i in 0..@as(usize, ui.draw.count) {
+        if ui.draw.cmds[i] is text { n = n + 1 }
+    }
+    return n
+}

@@ -1,0 +1,10 @@
+== every widget's node
+node button "Save" 10,10 52x28 flags=0 value=0
+node checkbox "Remember me" 10,46 99x28 flags=2 value=1
+node radio "Small" 10,82 57x28 flags=2 value=0
+node radio "Large" 75,82 57x28 flags=0 value=1
+node slider "volume" 10,118 216x28 flags=0 value=0.5
+node label "named" 10,176 35x14 flags=0 value=0
+node progress "done" 10,198 216x8 flags=0 value=0.4
+node row "bar" 10,255 216x14 flags=0 value=0
+node panel "panel" 10,277 94x38 flags=0 value=0

@@ -1,0 +1,117 @@
+// gallery: one interface that shows every stock widget (plan sections 2.1 and 5), with no `main`, so
+// a program on any backend shows it: `ui/samples/demo_gl` on OpenGL, `demo_vulkan` on Vulkan, and
+// kotor's spike through its own renderer. It uses ui/core and ui/widgets only.
+//
+// The gallery is a page switcher over one page a file: page_basic.ctx (stage 9), page_text.ctx
+// (stage 10), page_windows.ctx (stage 11), page_data.ctx (stage 12). Each page file declares its
+// title, whether it is listed, its state and its `show_*` function; the switcher lists the pages
+// that are listed, so a page is added by its own file alone. Above the pages: the theme switch,
+// and in the corner what the last frame came to (shapes, drops, problems), which a well-formed
+// frame keeps at no drops and no problems (plan section 2.11).
+//
+// Units: everything here is declared in logical units and drawn by the widgets; the host chooses
+// the surface's pixels and the scale.
+namespace gallery {
+    // The state of the whole gallery. `stats` is what the host found after its last frame (the
+    // Ui's `stats` are this frame's while it is recorded, so the host copies them in).
+    struct Gallery {
+        page: u32,
+        dark: bool,
+        stats: ui::Stats,
+        basic: BasicPage,
+        text: TextPage,
+        windows: WindowsPage,
+        data: DataPage,
+    }
+
+    // A gallery in the dark theme on its first page. `picture` is the image the basic page shows,
+    // which the program made on its backend (no picture file is part of the framework).
+    fn make_gallery { picture: ui::Region } -> Gallery {
+        return Gallery{
+            page = 0, dark = true, stats = ui::Stats{ .. },
+            basic = make_basic_page{ picture }, text = make_text_page{}, windows = make_windows_page{}, data = make_data_page{},
+        }
+    }
+
+    // The pages in the switcher's order: their titles, and which are listed.
+    const PAGE_COUNT: u32 = 4
+
+    fn get_page_title { page: u32 } -> []u8 {
+        return match page { 0 => BASIC_PAGE_TITLE, 1 => TEXT_PAGE_TITLE, 2 => WINDOWS_PAGE_TITLE, else => DATA_PAGE_TITLE }
+    }
+
+    fn is_page_listed { page: u32 } -> bool {
+        return match page { 0 => BASIC_PAGE_LISTED, 1 => TEXT_PAGE_LISTED, 2 => WINDOWS_PAGE_LISTED, else => DATA_PAGE_LISTED }
+    }
+
+    // The listed page titled `title`; null when no listed page has that title.
+    fn find_page { title: []u8 } -> ?u32 {
+        for page in 0..PAGE_COUNT {
+            if is_page_listed{ page } and slice::eq_bytes{ a = get_page_title{ page }, b = title } { return page }
+        }
+        return null
+    }
+
+    // Puts the theme the gallery's switch chose into the Ui, keeping the font the program set.
+    fn apply_theme { mut ui: ui::Ui, dark: bool } {
+        let font = ui.theme.font
+        ui.theme = if dark { ui::make_dark_theme{} } else { ui::make_light_theme{} }
+        ui.theme.font = font
+    }
+
+    // The whole gallery, filling the surface.
+    fn show_gallery { mut ui: ui::Ui, mut g: Gallery } {
+        apply_theme{ &ui, dark = g.dark }
+        let t = ui.theme
+        let opts = ui::Opts{ .. }
+        let screen = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = ui::Box{
+            width = ui::GROW, height = ui::GROW, fill = t.background, padding = ui::inset{ by = t.padding * 2.0 }, gap = t.gap * 1.5, ..
+        } }
+        show_header{ &ui, &g }
+        if not is_page_listed{ page = g.page } { g.page = 0 }
+        let scroll = ui::begin_scroll{ &ui, id = "page", opts = ui::Opts{ box = ui::Box{ width = ui::GROW, height = ui::GROW, .. }, .. } }
+        match g.page {
+            0 => show_basic_page{ &ui, page = &g.basic }
+            1 => show_text_page{ &ui, page = &g.text }
+            2 => show_windows_page{ &ui, page = &g.windows }
+            else => show_data_page{ &ui, page = &g.data }
+        }
+        ui::end{ &ui, scope = scroll }
+        ui::add_separator{ &ui, opts }
+        show_footer{ &ui, g }
+        ui::end{ &ui, scope = screen }
+    }
+
+    // The title, the page switcher and the theme switch, on one row.
+    fn show_header { mut ui: ui::Ui, mut g: Gallery } {
+        let t = ui.theme
+        let row = ui::begin_row{ &ui, opts = ui::Opts{ id = "header", box = ui::Box{ width = ui::GROW, .. }, .. } }
+        ui::add_text{ &ui, text = "Gallery", style = ui::TextStyle{ size = t.font_size * 1.3, .. }, box = ui::Box{ .. } }
+        let pages = ui::begin_row{ &ui, opts = ui::Opts{ id = "pages", box = ui::Box{ gap = t.gap * 0.5, .. }, .. } }
+        for page in 0..PAGE_COUNT {
+            if not is_page_listed{ page } { continue }
+            // The page shown is marked by its button's look, changed through its box.
+            let mut box = ui::Box{ .. }
+            if page == g.page {
+                box.fill = t.selection
+                box.border = ui::color_sides{ color = t.accent }
+            }
+            if ui::add_button{ &ui, label = get_page_title{ page }, opts = ui::Opts{ box, tip = "Show this page", .. } } { g.page = page }
+        }
+        ui::end{ &ui, scope = pages }
+        ui::add_spacer{ &ui }
+        _ = ui::add_checkbox{ &ui, label = "Dark theme", value = &g.dark, opts = ui::Opts{ tip = "Switch between the two built-in themes", .. } }
+        ui::end{ &ui, scope = row }
+    }
+
+    // What the last frame came to, in the corner.
+    fn show_footer { mut ui: ui::Ui, g: Gallery } {
+        let t = ui.theme
+        let row = ui::begin_row{ &ui, opts = ui::Opts{ id = "footer", box = ui::Box{ width = ui::GROW, .. }, .. } }
+        ui::add_spacer{ &ui }
+        _ = @fmt(&ui, "{} elements, {} shapes, {} dropped, {} problems", g.stats.elements, g.stats.shapes, g.stats.dropped, g.stats.problems)
+        let text = ui::take_text{ &ui }
+        ui::add_text{ &ui, text, style = ui::TextStyle{ color = t.text_muted, size = t.font_size * 0.86, .. }, box = ui::Box{ .. } }
+        ui::end{ &ui, scope = row }
+    }
+}

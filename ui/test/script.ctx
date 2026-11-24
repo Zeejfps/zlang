@@ -1,0 +1,277 @@
+// ui_test: the text-script reader (plan sections 6.1 and 6.2). A script drives a program the way
+// the scripted driver does, from a text file instead of code, so a sample can be walked through and
+// photographed (`demo_gl --script tour.txt --shot tour.png`). It is ctxlang, as every part of the
+// test path is.
+//
+// A script is lines of words; `#` starts a comment, and a word with spaces is written in double
+// quotes. Pointer positions and movements are device pixels; paths are node paths, a full path or
+// a suffix that names one node (`ui::find_node`).
+//
+//   frames N                 run N frames
+//   wait SECONDS             run frames until that much frame time has passed
+//   move X Y                 the pointer to the pixel (X, Y)
+//   down [BUTTON]            a pointer button goes down (0 left, the default; 1 right; 2 middle)
+//   up [BUTTON]              and comes up
+//   click PATH               move to the node's centre, press and release the left button: 3 frames
+//   drag PATH DX DY          press at the node's centre, move by (DX, DY) pixels, release: 4 frames
+//   key NAME [MOD ...]       a key going down and up: tab, enter, escape, backspace, delete, left,
+//                            right, up, down, home, end, page_up, page_down, space, a, c, v, x, y, z;
+//                            modifiers shift, ctrl, alt
+//   type TEXT                typed text
+//   wheel DY                 the wheel turned DY notches (positive is away from the user)
+//   shot PATH                the host writes the frame drawn last as a PNG at PATH
+//   expect PATH [FLAG ...]   the node at PATH is there, with each FLAG: checked, unchecked,
+//                            focused, disabled, enabled, selected, open, pressed
+//   value PATH NUMBER        the node's value is NUMBER, to a thousandth
+//
+// Events go to the Ui as a host's would, and take effect in the next frame run. A line that fails
+// (a node that is not there, a flag it does not have, a word the reader does not know) is printed
+// with its number and counted; the script goes on. The host runs the frames and takes the pictures,
+// through one hook, so the reader needs no window and no backend.
+namespace ui_test {
+    // What the reader asks of its host: run one frame (`step`), or write the frame drawn last to
+    // `path` (`shoot`). The hook answers false when it could not: the window closed, the backend
+    // failed, the file could not be written. A failed step stops the script.
+    union ScriptAction { step, shoot{ path: []u8 } }
+
+    // What a script came to: lines read, lines that failed, frames run, and whether the host stopped
+    // it before its end.
+    struct ScriptRun { lines: u32 = 0, failed: u32 = 0, frames: u32 = 0, stopped: bool = false }
+
+    // Runs `text` against `ui`. `dt` is the frame time the host steps with, which `wait` counts in.
+    fn run_script { mut io: Io, mut ui: ui::Ui, text: []u8, dt: f32, host: &fn{ mut ui: ui::Ui, action: ScriptAction } -> bool } -> ScriptRun {
+        let mut run = ScriptRun{ .. }
+        let mut start: usize = 0
+        let mut number: u32 = 0
+        while start < text.len and not run.stopped {
+            let mut end = start
+            while end < text.len and text[end] != '\n' { end = end + 1 }
+            let line = text[start..end]
+            start = end + 1
+            number = number + 1
+            let mut words: [8][]u8
+            let count = split_words{ line, out = words[..] }
+            if count == 0 { continue }
+            run.lines = run.lines + 1
+            if not run_line{ &io, &ui, &run, words = words[..count], dt, host } {
+                run.failed = run.failed + 1
+                _ = @fmt(&io, "script line {}: failed: {}\n", number, line)
+            }
+        }
+        return run
+    }
+
+    // One line's command. False when it failed.
+    fn run_line { mut io: Io, mut ui: ui::Ui, mut run: ScriptRun, words: [][]u8, dt: f32, host: &fn{ mut ui: ui::Ui, action: ScriptAction } -> bool } -> bool {
+        let verb = words[0]
+        if is_word{ a = verb, b = "frames" } and words.len == 2 {
+            let n = parse_int{ s = words[1] } ifnull { return false }
+            return step_script{ &ui, &run, host, count = n }
+        }
+        if is_word{ a = verb, b = "wait" } and words.len == 2 {
+            let seconds = parse_decimal{ s = words[1] } ifnull { return false }
+            let n = if dt > 0.0 { ui::ceil_pixels{ v = seconds / dt } } else { 1 }
+            return step_script{ &ui, &run, host, count = n }
+        }
+        if is_word{ a = verb, b = "move" } and words.len == 3 {
+            let x = parse_int{ s = words[1] } ifnull { return false }
+            let y = parse_int{ s = words[2] } ifnull { return false }
+            _ = move_pointer{ &ui, x, y }
+            return true
+        }
+        if (is_word{ a = verb, b = "down" } or is_word{ a = verb, b = "up" }) and words.len <= 2 {
+            let button = if words.len == 2 { parse_int{ s = words[1] } ifnull { return false } } else { 0 }
+            if button < 0 or button > 4 { return false }
+            _ = push_button{ &ui, button = @as(u8, button), down = is_word{ a = verb, b = "down" }, clicks = 1 }
+            return true
+        }
+        if is_word{ a = verb, b = "click" } and words.len == 2 {
+            return drag_script{ &ui, &run, host, path = words[1], dx = 0, dy = 0, moves = false }
+        }
+        if is_word{ a = verb, b = "drag" } and words.len == 4 {
+            let dx = parse_int{ s = words[2] } ifnull { return false }
+            let dy = parse_int{ s = words[3] } ifnull { return false }
+            return drag_script{ &ui, &run, host, path = words[1], dx, dy, moves = true }
+        }
+        if is_word{ a = verb, b = "key" } and words.len >= 2 {
+            let key = find_key{ name = words[1] } ifnull { return false }
+            let mut mods: u8 = 0
+            for w in words[2..] {
+                if is_word{ a = w, b = "shift" } {
+                    mods = mods | ui::MOD_SHIFT
+                } else if is_word{ a = w, b = "ctrl" } {
+                    mods = mods | ui::MOD_CTRL
+                } else if is_word{ a = w, b = "alt" } {
+                    mods = mods | ui::MOD_ALT
+                } else {
+                    return false
+                }
+            }
+            _ = tap_key{ &ui, key, mods }
+            return true
+        }
+        if is_word{ a = verb, b = "type" } and words.len == 2 {
+            _ = type_text{ &ui, text = words[1] }
+            return true
+        }
+        if is_word{ a = verb, b = "wheel" } and words.len == 2 {
+            let dy = parse_decimal{ s = words[1] } ifnull { return false }
+            _ = turn_wheel{ &ui, dx = 0.0, dy }
+            return true
+        }
+        if is_word{ a = verb, b = "shot" } and words.len == 2 {
+            return host{ &ui, action = ScriptAction::shoot{ path = words[1] } }
+        }
+        if is_word{ a = verb, b = "expect" } and words.len >= 2 {
+            let node = ui::find_node{ ui, path = words[1] } ifnull {
+                _ = @fmt(&io, "script: no node at \"{}\"\n", words[1])
+                return false
+            }
+            for w in words[2..] {
+                if not has_node_flag{ node, name = w } {
+                    _ = @fmt(&io, "script: \"{}\" is not {} (flags {})\n", words[1], w, node.flags)
+                    return false
+                }
+            }
+            return true
+        }
+        if is_word{ a = verb, b = "value" } and words.len == 3 {
+            let node = ui::find_node{ ui, path = words[1] } ifnull { return false }
+            let want = parse_decimal{ s = words[2] } ifnull { return false }
+            let off = node.value - want
+            return off > -0.001 and off < 0.001
+        }
+        _ = @fmt(&io, "script: unknown command or wrong number of words: {}\n", verb)
+        return false
+    }
+
+    // `count` frames; false, and the script stopped, when the host could not run one.
+    fn step_script { mut ui: ui::Ui, mut run: ScriptRun, host: &fn{ mut ui: ui::Ui, action: ScriptAction } -> bool, count: i32 } -> bool {
+        for _ in 0..count {
+            if not host{ &ui, action = ScriptAction::step } {
+                run.stopped = true
+                return false
+            }
+            run.frames = run.frames + 1
+        }
+        return true
+    }
+
+    // A click (`moves` false) or a drag on the node at `path`, as the driver's `click` and `drag`
+    // do it, with the host running the frames.
+    fn drag_script { mut ui: ui::Ui, mut run: ScriptRun, host: &fn{ mut ui: ui::Ui, action: ScriptAction } -> bool, path: []u8, dx: i32, dy: i32, moves: bool } -> bool {
+        let at = find_center{ ui, path } ifnull { return false }
+        _ = move_pointer{ &ui, x = at.x, y = at.y }
+        if not step_script{ &ui, &run, host, count = 1 } { return false }
+        if find_center{ ui, path } == null { return false }
+        _ = push_button{ &ui, button = 0, down = true, clicks = 1 }
+        if not step_script{ &ui, &run, host, count = 1 } { return false }
+        if moves {
+            _ = move_pointer{ &ui, x = ui::add_pixels{ a = at.x, b = dx }, y = ui::add_pixels{ a = at.y, b = dy } }
+            if not step_script{ &ui, &run, host, count = 1 } { return false }
+        }
+        _ = push_button{ &ui, button = 0, down = false, clicks = 1 }
+        return step_script{ &ui, &run, host, count = 1 }
+    }
+
+    fn has_node_flag { node: ui::Node, name: []u8 } -> bool {
+        if is_word{ a = name, b = "checked" } { return (node.flags & ui::NODE_CHECKED) != 0 }
+        if is_word{ a = name, b = "unchecked" } { return (node.flags & ui::NODE_CHECKED) == 0 }
+        if is_word{ a = name, b = "focused" } { return (node.flags & ui::NODE_FOCUSED) != 0 }
+        if is_word{ a = name, b = "disabled" } { return (node.flags & ui::NODE_DISABLED) != 0 }
+        if is_word{ a = name, b = "enabled" } { return (node.flags & ui::NODE_DISABLED) == 0 }
+        if is_word{ a = name, b = "selected" } { return (node.flags & ui::NODE_SELECTED) != 0 }
+        if is_word{ a = name, b = "open" } { return (node.flags & ui::NODE_OPEN) != 0 }
+        if is_word{ a = name, b = "pressed" } { return (node.flags & ui::NODE_PRESSED) != 0 }
+        return false
+    }
+
+    const KEY_NAMES: [20][]u8 = [
+        "tab", "enter", "escape", "backspace", "delete", "left", "right", "up", "down", "home",
+        "end", "page_up", "page_down", "space", "a", "c", "v", "x", "y", "z",
+    ]
+    const KEYS: [20]ui::Key = [
+        ui::Key::tab, ui::Key::enter, ui::Key::escape, ui::Key::backspace, ui::Key::delete, ui::Key::left,
+        ui::Key::right, ui::Key::up, ui::Key::down, ui::Key::home, ui::Key::end, ui::Key::page_up,
+        ui::Key::page_down, ui::Key::space, ui::Key::a, ui::Key::c, ui::Key::v, ui::Key::x, ui::Key::y, ui::Key::z,
+    ]
+
+    fn find_key { name: []u8 } -> ?ui::Key {
+        for n at i in KEY_NAMES {
+            if is_word{ a = name, b = n } { return KEYS[i] }
+        }
+        return null
+    }
+
+    fn is_word { a: []u8, b: []u8 } -> bool {
+        return slice::eq_bytes{ a, b }
+    }
+
+    // The words of `line` into `out`, up to its length: runs of characters between spaces and tabs,
+    // or what is between double quotes; a `#` outside quotes ends the line. How many there are.
+    fn split_words { line: []u8, out: []mut []u8 } -> usize {
+        let mut n: usize = 0
+        let mut i: usize = 0
+        while i < line.len and n < out.len {
+            let c = line[i]
+            if c == ' ' or c == '\t' or c == '\r' {
+                i = i + 1
+                continue
+            }
+            if c == '#' { break }
+            if c == '"' {
+                let from = i + 1
+                let mut to = from
+                while to < line.len and line[to] != '"' { to = to + 1 }
+                out[n] = line[from..to]
+                n = n + 1
+                i = to + 1
+                continue
+            }
+            let from = i
+            while i < line.len and line[i] != ' ' and line[i] != '\t' and line[i] != '\r' { i = i + 1 }
+            out[n] = line[from..i]
+            n = n + 1
+        }
+        return n
+    }
+
+    // A whole number, with a `-` or not; null when `s` is not one or has more than nine digits.
+    fn parse_int { s: []u8 } -> ?i32 {
+        if s.len == 0 { return null }
+        let negative = s[0] == '-'
+        let digits = if negative { s[1..] } else { s }
+        if digits.len == 0 or digits.len > 9 { return null }
+        let mut v: i32 = 0
+        for c in digits {
+            if c < '0' or c > '9' { return null }
+            v = v * 10 + @as(i32, c - '0')
+        }
+        return if negative { -v } else { v }
+    }
+
+    // A decimal number (`0.5`, `-2`, `12.25`); null when `s` is not one.
+    fn parse_decimal { s: []u8 } -> ?f32 {
+        if s.len == 0 { return null }
+        let negative = s[0] == '-'
+        let digits = if negative { s[1..] } else { s }
+        if digits.len == 0 or digits.len > 12 { return null }
+        let mut v: f32 = 0.0
+        let mut scale: f32 = 0.0
+        for c in digits {
+            if c == '.' {
+                if scale != 0.0 { return null }
+                scale = 1.0
+                continue
+            }
+            if c < '0' or c > '9' { return null }
+            if scale == 0.0 {
+                v = v * 10.0 + @as(f32, c - '0')
+            } else {
+                scale = scale * 0.1
+                v = v + @as(f32, c - '0') * scale
+            }
+        }
+        return if negative { -v } else { v }
+    }
+}

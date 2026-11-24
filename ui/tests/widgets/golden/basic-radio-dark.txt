@@ -1,0 +1,37 @@
+== at rest
+frame 240x80
+rect 10,16 16x16 fill=356FE0FF radius=8,8,8,8 border=0,0,0,0 356FE0FF,356FE0FF,356FE0FF,356FE0FF clip=0
+rect 15,21 6x6 fill=FFFFFFFF radius=3,3,3,3 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+text 32,17 font=0 size=14 E4E7EDFF clip=0 "Small"
+rect 75,16 16x16 fill=191C22FF radius=8,8,8,8 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 97,17 font=0 size=14 E4E7EDFF clip=0 "Large"
+== hovered
+frame 240x80
+rect 10,16 16x16 fill=356FE0FF radius=8,8,8,8 border=0,0,0,0 356FE0FF,356FE0FF,356FE0FF,356FE0FF clip=0
+rect 15,21 6x6 fill=FFFFFFFF radius=3,3,3,3 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+text 32,17 font=0 size=14 E4E7EDFF clip=0 "Small"
+rect 75,16 16x16 fill=3A414DFF radius=8,8,8,8 border=1,1,1,1 888E9AFF,888E9AFF,888E9AFF,888E9AFF clip=0
+text 97,17 font=0 size=14 E4E7EDFF clip=0 "Large"
+== pressed
+frame 240x80
+rect 10,16 16x16 fill=356FE0FF radius=8,8,8,8 border=0,0,0,0 356FE0FF,356FE0FF,356FE0FF,356FE0FF clip=0
+rect 15,21 6x6 fill=FFFFFFFF radius=3,3,3,3 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+text 32,17 font=0 size=14 E4E7EDFF clip=0 "Small"
+rect 75,16 16x16 fill=424B59FF radius=8,8,8,8 border=1,1,1,1 888E9AFF,888E9AFF,888E9AFF,888E9AFF clip=0
+rect 75,16 16x16 fill=00000000 radius=8,8,8,8 border=2,2,2,2 7AA7FFFF,7AA7FFFF,7AA7FFFF,7AA7FFFF clip=0
+text 97,17 font=0 size=14 E4E7EDFF clip=0 "Large"
+== focused
+frame 240x80
+rect 10,16 16x16 fill=191C22FF radius=8,8,8,8 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 32,17 font=0 size=14 E4E7EDFF clip=0 "Small"
+rect 75,16 16x16 fill=356FE0FF radius=8,8,8,8 border=0,0,0,0 356FE0FF,356FE0FF,356FE0FF,356FE0FF clip=0
+rect 80,21 6x6 fill=FFFFFFFF radius=3,3,3,3 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 75,16 16x16 fill=00000000 radius=8,8,8,8 border=2,2,2,2 7AA7FFFF,7AA7FFFF,7AA7FFFF,7AA7FFFF clip=0
+text 97,17 font=0 size=14 E4E7EDFF clip=0 "Large"
+== not enabled
+frame 240x80
+rect 10,16 16x16 fill=191C22FF radius=8,8,8,8 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 32,17 font=0 size=14 747D8CFF clip=0 "Small"
+rect 75,16 16x16 fill=747D8CFF radius=8,8,8,8 border=0,0,0,0 747D8CFF,747D8CFF,747D8CFF,747D8CFF clip=0
+rect 80,21 6x6 fill=191C22FF radius=3,3,3,3 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+text 97,17 font=0 size=14 747D8CFF clip=0 "Large"

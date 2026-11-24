@@ -1,0 +1,4 @@
+// The checks of the text field and number entry (plan section 7, stage 10), with their goldens
+// named golden/field-*.txt. `main` calls `check_field`; the stage that builds those widgets writes
+// its checks in it, using the helpers of main.ctx.
+fn check_field { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, update: bool } {}

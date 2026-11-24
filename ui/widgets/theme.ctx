@@ -1,0 +1,133 @@
+// ui: the stock widgets' theme (plan section 2.9). `ui::Theme` itself is declared with the Ui
+// (ui/core/ui.ctx): colours by role and the metrics the widgets read, in logical units. This file
+// has the two palettes the framework ships and what fills in a theme's state colours.
+//
+//  - `make_dark_theme` and `make_light_theme` are ZGF's two palettes (ZGF.Gui.Immediate's
+//    `UiTheme.Dark` and `UiTheme.Light`) on the framework's roles, with the same metrics.
+//  - A state colour (`control_hovered`, `control_pressed`, `accent_hovered`) left at alpha 0 is
+//    derived from its base role by `derive_theme`, as ZGF derives an unset role: a control steps
+//    towards the text colour when hovered and further when pressed, the accent towards the colour
+//    drawn on it. The built-in themes give every state colour, so a program that changes a base
+//    role and wants its states to follow sets them to alpha 0 again.
+//  - `font` is not set by either: the program registers its font and assigns it (`ui.theme.font`),
+//    and keeps it when it switches palettes.
+//
+// The widgets read the theme when each is recorded, so assigning a field in the middle of a frame
+// changes what comes after. There is no style stack: one widget's look is changed through its
+// `opts.box`, and a different look altogether is a different widget over the primitives.
+namespace ui {
+    // `a` moved towards `b` by `amount` (0: `a`, 1: `b`), channel by channel, alpha included,
+    // rounded to the nearest level.
+    fn mix_color { a: Color, b: Color, amount: f32 } -> Color {
+        let t = clamp_f32{ v = amount, lo = 0.0, hi = 1.0 }
+        return Color{
+            r = mix_channel{ a = a.r, b = b.r, t }, g = mix_channel{ a = a.g, b = b.g, t },
+            b = mix_channel{ a = a.b, b = b.b, t }, a = mix_channel{ a = a.a, b = b.a, t },
+        }
+    }
+
+    fn mix_channel { a: u8, b: u8, t: f32 } -> u8 {
+        let v = @as(f32, a) + (@as(f32, b) - @as(f32, a)) * t
+        return @as(u8, clamp_f32{ v = floor_f32{ x = v + 0.5 }, lo = 0.0, hi = 255.0 })
+    }
+
+    // `theme` with each state colour that is left at alpha 0 worked out from its base role.
+    fn derive_theme { theme: Theme } -> Theme {
+        let mut t = theme
+        if t.control_hovered.a == 0 { t.control_hovered = mix_color{ a = t.control, b = t.text, amount = 0.06 } }
+        if t.control_pressed.a == 0 { t.control_pressed = mix_color{ a = t.control, b = t.text, amount = 0.12 } }
+        if t.accent_hovered.a == 0 { t.accent_hovered = mix_color{ a = t.accent, b = t.on_accent, amount = 0.1 } }
+        return t
+    }
+
+    // The metrics both built-in themes share, in logical units: text 14 units high, controls 28
+    // high and rows 24, 8 units of gap and padding, corners of 4, borders of 1, scroll bars 10
+    // thick, and tooltips after half a second.
+    fn set_stock_metrics { mut theme: Theme } {
+        theme.font_size = 14.0
+        theme.gap = 8.0
+        theme.padding = 8.0
+        theme.control_height = 28.0
+        theme.row_height = 24.0
+        theme.radius = 4.0
+        theme.border_width = 1.0
+        theme.scrollbar = 10.0
+        theme.tip_delay = 0.5
+    }
+
+    fn make_dark_theme {} -> Theme {
+        let mut t = Theme{
+            background = Color{ r = 27, g = 30, b = 36, .. },
+            surface = Color{ r = 34, g = 37, b = 44, .. },
+            control = Color{ r = 48, g = 54, b = 65, .. },
+            field = Color{ r = 25, g = 28, b = 34, .. },
+            accent = Color{ r = 53, g = 111, b = 224, .. },
+            on_accent = Color{ r = 255, g = 255, b = 255, .. },
+            text = Color{ r = 228, g = 231, b = 237, .. },
+            text_muted = Color{ r = 166, g = 172, b = 184, .. },
+            text_disabled = Color{ r = 116, g = 125, b = 140, .. },
+            border = Color{ r = 75, g = 83, b = 98, .. },
+            selection = Color{ r = 41, g = 61, b = 96, .. },
+            focus_ring = Color{ r = 122, g = 167, b = 255, .. },
+            scrim = Color{ r = 0, g = 0, b = 0, a = 153 },
+            danger = Color{ r = 255, g = 154, b = 154, .. },
+            control_hovered = Color{ r = 58, g = 65, b = 77, .. },
+            control_pressed = Color{ r = 66, g = 75, b = 89, .. },
+            accent_hovered = Color{ r = 64, g = 121, b = 232, .. },
+            ..
+        }
+        set_stock_metrics{ theme = &t }
+        return t
+    }
+
+    fn make_light_theme {} -> Theme {
+        let mut t = Theme{
+            background = Color{ r = 247, g = 248, b = 250, .. },
+            surface = Color{ r = 240, g = 242, b = 245, .. },
+            control = Color{ r = 231, g = 235, b = 241, .. },
+            field = Color{ r = 255, g = 255, b = 255, .. },
+            accent = Color{ r = 36, g = 95, b = 204, .. },
+            on_accent = Color{ r = 255, g = 255, b = 255, .. },
+            text = Color{ r = 36, g = 42, b = 53, .. },
+            text_muted = Color{ r = 93, g = 102, b = 117, .. },
+            text_disabled = Color{ r = 144, g = 152, b = 164, .. },
+            border = Color{ r = 187, g = 195, b = 207, .. },
+            selection = Color{ r = 220, g = 232, b = 255, .. },
+            focus_ring = Color{ r = 36, g = 95, b = 204, .. },
+            scrim = Color{ r = 0, g = 0, b = 0, a = 89 },
+            danger = Color{ r = 180, g = 35, b = 50, .. },
+            control_hovered = Color{ r = 221, g = 227, b = 235, .. },
+            control_pressed = Color{ r = 207, g = 215, b = 227, .. },
+            accent_hovered = Color{ r = 43, g = 107, b = 224, .. },
+            ..
+        }
+        set_stock_metrics{ theme = &t }
+        return t
+    }
+
+    // ---- colours the widgets work out from the theme's roles
+
+    // The accent while it is held down: a step towards the background, as ZGF's `AccentPressed`.
+    fn get_accent_pressed { theme: Theme } -> Color {
+        return mix_color{ a = theme.accent, b = theme.background, amount = 0.15 }
+    }
+
+    // An outline that answers the pointer (a hovered checkbox): the border a good way towards the
+    // text colour, as ZGF's `BorderStrong`.
+    fn get_border_strong { theme: Theme } -> Color {
+        return mix_color{ a = theme.border, b = theme.text, amount = 0.4 }
+    }
+
+    // A surface that floats over the others (a tooltip), as ZGF's `SurfaceRaised`: on a dark
+    // background the surface a step towards the text, on a light one the field colour.
+    fn get_raised_color { theme: Theme } -> Color {
+        let b = theme.background
+        let light = @as(u32, b.r) + @as(u32, b.g) + @as(u32, b.b) > 384
+        return if light { theme.field } else { mix_color{ a = theme.surface, b = theme.text, amount = 0.06 } }
+    }
+
+    // A rule between groups (a separator): the border, a little towards the background.
+    fn get_rule_color { theme: Theme } -> Color {
+        return mix_color{ a = theme.border, b = theme.background, amount = 0.35 }
+    }
+}

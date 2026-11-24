@@ -1,0 +1,79 @@
+== every widget at scale 1.5
+frame 360x640
+rect 15,15 78x42 fill=303641FF radius=6,6,6,6 border=2,2,2,2 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 33,25 font=0 size=21 E4E7EDFF clip=0 "Save"
+rect 15,78 24x24 fill=356FE0FF radius=3,3,3,3 border=0,0,0,0 356FE0FF,356FE0FF,356FE0FF,356FE0FF clip=0
+line 19.8,90.48 24.84,95.28 width=2.625 cap=round FFFFFFFF clip=0
+line 24.84,95.28 34.2,85.2 width=2.625 cap=round FFFFFFFF clip=0
+text 48,79 font=0 size=21 E4E7EDFF clip=0 "Remember me"
+rect 15,132 24x24 fill=191C22FF radius=12,12,12,12 border=2,2,2,2 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 48,133 font=0 size=21 E4E7EDFF clip=0 "Small"
+rect 113,132 24x24 fill=356FE0FF radius=12,12,12,12 border=0,0,0,0 356FE0FF,356FE0FF,356FE0FF,356FE0FF clip=0
+rect 120,139 10x10 fill=FFFFFFFF radius=5,5,5,5 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+text 146,133 font=0 size=21 E4E7EDFF clip=0 "Large"
+rect 27,195 300x6 fill=3A404CFF radius=3,3,3,3 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 27,195 75x6 fill=356FE0FF radius=3,3,3,3 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 90,186 24x24 fill=FFFFFFFF radius=12,12,12,12 border=2,2,2,2 888E9AFF,888E9AFF,888E9AFF,888E9AFF clip=0
+text 15,231 font=0 size=21 E4E7EDFF clip=0 "Label"
+text 15,264 font=0 size=21 E4E7EDFF clip=0 "Named"
+rect 15,297 324x12 fill=3A404CFF radius=6,6,6,6 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 15,297 129x12 fill=356FE0FF radius=6,6,6,6 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+image 15,321 48x36 img=3 uv=0,0,1,1 tint=FFFFFFFF quarter=0 angle=0 radius=0,0,0,0 blend=alpha clip=0
+rect 15,369 324x2 fill=3A404CFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+text 15,383 font=0 size=21 E4E7EDFF clip=0 "Left"
+rect 69,383 2x21 fill=3A404CFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+text 286,383 font=0 size=21 E4E7EDFF clip=0 "Right"
+rect 15,416 141x57 fill=22252CFF radius=6,6,6,6 border=2,2,2,2 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 33,434 font=0 size=21 E4E7EDFF clip=0 "In a panel"
+line 19.8,497.48 24.84,502.28 width=2.625 cap=round E4E7EDFF clip=0
+line 24.84,502.28 34.2,492.2 width=2.625 cap=round E4E7EDFF clip=0
+line 57,491 69,503 width=2.625 cap=round E4E7EDFF clip=0
+line 69,491 57,503 width=2.625 cap=round E4E7EDFF clip=0
+line 96.12,490.28 102.36,497 width=2.625 cap=round E4E7EDFF clip=0
+line 102.36,497 96.12,503.72 width=2.625 cap=round E4E7EDFF clip=0
+line 128.28,494.12 135,500.36 width=2.625 cap=round E4E7EDFF clip=0
+line 135,500.36 141.72,494.12 width=2.625 cap=round E4E7EDFF clip=0
+line 164.28,499.88 171,493.64 width=2.625 cap=round E4E7EDFF clip=0
+line 171,493.64 177.72,499.88 width=2.625 cap=round E4E7EDFF clip=0
+line 209.88,490.28 203.64,497 width=2.625 cap=round E4E7EDFF clip=0
+line 203.64,497 209.88,503.72 width=2.625 cap=round E4E7EDFF clip=0
+== the button focused by Tab
+frame 360x640
+rect 15,15 78x42 fill=303641FF radius=6,6,6,6 border=2,2,2,2 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 33,25 font=0 size=21 E4E7EDFF clip=0 "Save"
+rect 15,15 78x42 fill=00000000 radius=6,6,6,6 border=3,3,3,3 7AA7FFFF,7AA7FFFF,7AA7FFFF,7AA7FFFF clip=0
+rect 15,78 24x24 fill=356FE0FF radius=3,3,3,3 border=0,0,0,0 356FE0FF,356FE0FF,356FE0FF,356FE0FF clip=0
+line 19.8,90.48 24.84,95.28 width=2.625 cap=round FFFFFFFF clip=0
+line 24.84,95.28 34.2,85.2 width=2.625 cap=round FFFFFFFF clip=0
+text 48,79 font=0 size=21 E4E7EDFF clip=0 "Remember me"
+rect 15,132 24x24 fill=191C22FF radius=12,12,12,12 border=2,2,2,2 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 48,133 font=0 size=21 E4E7EDFF clip=0 "Small"
+rect 113,132 24x24 fill=356FE0FF radius=12,12,12,12 border=0,0,0,0 356FE0FF,356FE0FF,356FE0FF,356FE0FF clip=0
+rect 120,139 10x10 fill=FFFFFFFF radius=5,5,5,5 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+text 146,133 font=0 size=21 E4E7EDFF clip=0 "Large"
+rect 27,195 300x6 fill=3A404CFF radius=3,3,3,3 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 27,195 75x6 fill=356FE0FF radius=3,3,3,3 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 90,186 24x24 fill=FFFFFFFF radius=12,12,12,12 border=2,2,2,2 888E9AFF,888E9AFF,888E9AFF,888E9AFF clip=0
+text 15,231 font=0 size=21 E4E7EDFF clip=0 "Label"
+text 15,264 font=0 size=21 E4E7EDFF clip=0 "Named"
+rect 15,297 324x12 fill=3A404CFF radius=6,6,6,6 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 15,297 129x12 fill=356FE0FF radius=6,6,6,6 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+image 15,321 48x36 img=3 uv=0,0,1,1 tint=FFFFFFFF quarter=0 angle=0 radius=0,0,0,0 blend=alpha clip=0
+rect 15,369 324x2 fill=3A404CFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+text 15,383 font=0 size=21 E4E7EDFF clip=0 "Left"
+rect 69,383 2x21 fill=3A404CFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+text 286,383 font=0 size=21 E4E7EDFF clip=0 "Right"
+rect 15,416 141x57 fill=22252CFF radius=6,6,6,6 border=2,2,2,2 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 33,434 font=0 size=21 E4E7EDFF clip=0 "In a panel"
+line 19.8,497.48 24.84,502.28 width=2.625 cap=round E4E7EDFF clip=0
+line 24.84,502.28 34.2,492.2 width=2.625 cap=round E4E7EDFF clip=0
+line 57,491 69,503 width=2.625 cap=round E4E7EDFF clip=0
+line 69,491 57,503 width=2.625 cap=round E4E7EDFF clip=0
+line 96.12,490.28 102.36,497 width=2.625 cap=round E4E7EDFF clip=0
+line 102.36,497 96.12,503.72 width=2.625 cap=round E4E7EDFF clip=0
+line 128.28,494.12 135,500.36 width=2.625 cap=round E4E7EDFF clip=0
+line 135,500.36 141.72,494.12 width=2.625 cap=round E4E7EDFF clip=0
+line 164.28,499.88 171,493.64 width=2.625 cap=round E4E7EDFF clip=0
+line 171,493.64 177.72,499.88 width=2.625 cap=round E4E7EDFF clip=0
+line 209.88,490.28 203.64,497 width=2.625 cap=round E4E7EDFF clip=0
+line 203.64,497 209.88,503.72 width=2.625 cap=round E4E7EDFF clip=0

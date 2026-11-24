@@ -1,0 +1,132 @@
+// ui: the slider (plan section 5, stage 9). A track with the part up to the value in the accent,
+// and a round knob at the value.
+//
+// Behaviour:
+//  - A press on the knob takes hold of it where it is; a press elsewhere on the slider first moves
+//    the value to the point pressed. While held, the value follows the pointer across: the
+//    pointer's movement since the press (`Interaction.drag_x`, pixels) over the track's length in
+//    pixels is the share of the range it moves, from the value the press left. So a drag of a
+//    quarter of the track moves the value by a quarter of the range, wherever it starts.
+//  - Focused, Left and Down take a step off, Right and Up add one, Home and End go to the ends.
+//    A step is `range.step`, or a twentieth of the range when the range has none.
+//  - A value the slider sets is held to the range and put on a step from `range.min`. A value
+//    the application sets is left as it is, and drawn held to the range.
+//
+// Units. Its options and the theme are logical units, in the boxes it records. The knob's travel
+// is the track: the slider's width less half a knob of padding on each side, which is exactly what
+// the core makes of those lengths, so the knob's centre is at `floor(track * fraction)` pixels
+// along the track, by the anchor rule, and a drag maps pixels to the value over that same length,
+// read from the slider's rectangle in the last frame (`get_rect`).
+namespace ui {
+    // How thick the track is, in logical units.
+    const SLIDER_TRACK: f32 = 4.0
+
+    // A slider for `value` over `range`, named `label` (its id and node; it draws no label, which
+    // goes beside it). True on the frames it changes `value`. It grows along its parent from four
+    // controls' heights unless `opts.box` sizes it.
+    fn add_slider { mut ui: Ui, label: []u8, mut value: f32, range: Range, opts: Opts } -> bool {
+        let t = derive_theme{ theme = ui.theme }
+        let name = get_widget_name{ opts, label }
+        let id = make_id{ ui, name }
+        let it = press{ &ui, id, opts = make_press_opts{ ui, opts } }
+        let lo = range.min
+        let span = if range.max > range.min { range.max - range.min } else { 0.0 }
+        let knob = get_mark_size{ theme = t }
+        let half = knob * 0.5
+        let before = value
+
+        if opts.enabled and span > 0.0 {
+            let mut values = load_state{ &ui, id }
+            let last = get_rect{ ui, id }
+            let travel = if let r = last { sub_pixels{ a = r.w, b = 2 * to_pixels{ ui, length = half } } } else { 0 }
+            if it.pressed {
+                // Where the hold starts, as a fraction: the knob's own when the press is on it,
+                // the point pressed otherwise.
+                let mut start = get_fraction{ value, lo, span }
+                if let r = last {
+                    if travel > 0 {
+                        let left = add_pixels{ a = r.x, b = to_pixels{ ui, length = half } }
+                        let centre = add_pixels{ a = left, b = floor_pixels{ v = @as(f32, travel) * start } }
+                        let reach = to_pixels{ ui, length = half }
+                        let p = get_pointer{ ui }
+                        if p.x < sub_pixels{ a = centre, b = reach } or p.x > add_pixels{ a = centre, b = reach } {
+                            start = clamp_f32{ v = @as(f32, sub_pixels{ a = p.x, b = left }) / @as(f32, travel), lo = 0.0, hi = 1.0 }
+                        }
+                    }
+                }
+                values.f[0] = start
+                store_state{ &ui, id, values }
+            }
+            if it.held and travel > 0 {
+                let moved = values.f[0] + @as(f32, it.drag_x) / @as(f32, travel)
+                value = put_on_step{ v = lo + clamp_f32{ v = moved, lo = 0.0, hi = 1.0 } * span, range }
+            }
+            if it.focused {
+                let step = if range.step > 0.0 { range.step } else { span / 20.0 }
+                let mut keyed = value
+                let mut used = false
+                while take_key{ &ui, key = Key::left, mods = 0 } or take_key{ &ui, key = Key::down, mods = 0 } {
+                    keyed = keyed - step
+                    used = true
+                }
+                while take_key{ &ui, key = Key::right, mods = 0 } or take_key{ &ui, key = Key::up, mods = 0 } {
+                    keyed = keyed + step
+                    used = true
+                }
+                if take_key{ &ui, key = Key::home, mods = 0 } {
+                    keyed = range.min
+                    used = true
+                }
+                if take_key{ &ui, key = Key::end, mods = 0 } {
+                    keyed = range.max
+                    used = true
+                }
+                if used { value = put_on_step{ v = keyed, range } }
+            }
+        }
+
+        let part = if span > 0.0 { get_fraction{ value, lo, span } } else { 0.0 }
+        let base = Box{
+            width = Size{ kind = SizeKind::grow, min = t.control_height * 4.0, .. }, height = fix{ size = t.control_height },
+            padding = Insets{ left = half, right = half, .. }, align_y = Align::center, ..
+        }
+        let el = begin_element{ &ui, id, axis = Axis::row, box = merge_box{ box = opts.box, base } }
+        let rail = round{ radius = SLIDER_TRACK * 0.5 }
+        let track = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{ width = GROW, height = fix{ size = SLIDER_TRACK }, fill = get_rule_color{ theme = t }, radius = rail, .. } }
+        let ink = if opts.enabled { t.accent } else { t.text_disabled }
+        let done = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{ width = take{ part }, height = GROW, fill = ink, radius = rail, .. } }
+        end{ &ui, scope = done }
+        let knob_fill = if opts.enabled { t.on_accent } else { t.control }
+        let knob_edge = if not opts.enabled { t.border } else if it.focused { t.focus_ring } else if it.held or it.hovered { t.accent } else { get_border_strong{ theme = t } }
+        let knob_width = if it.focused and opts.enabled { get_ring_width{ theme = t } } else { t.border_width }
+        let thumb = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{
+            width = fix{ size = knob }, height = fix{ size = knob },
+            place = Place{ anchor_x = part, anchor_y = 0.5, x = -half, y = -half },
+            fill = knob_fill, border = color_sides{ color = knob_edge }, border_width = inset{ by = knob_width },
+            radius = round{ radius = half }, ..
+        } }
+        end{ &ui, scope = thumb }
+        end{ &ui, scope = track }
+        end{ &ui, scope = el }
+        describe{ &ui, id, role = Role::slider, label = name, value, flags = get_widget_flags{ opts, it } }
+        finish_widget{ &ui, id, it, opts }
+        return value != before
+    }
+
+    // Where `value` is along a range from `lo` that is `span` long, held to 0..1.
+    fn get_fraction { value: f32, lo: f32, span: f32 } -> f32 {
+        if not (span > 0.0) or value != value { return 0.0 }
+        return clamp_f32{ v = (value - lo) / span, lo = 0.0, hi = 1.0 }
+    }
+
+    // `v` held to the range and put on the nearest step from its `min` (a half rounds up).
+    fn put_on_step { v: f32, range: Range } -> f32 {
+        let hi = if range.max > range.min { range.max } else { range.min }
+        let mut x = clamp_f32{ v = if v == v { v } else { range.min }, lo = range.min, hi }
+        if range.step > 0.0 {
+            x = range.min + floor_f32{ x = (x - range.min) / range.step + 0.5 } * range.step
+            x = clamp_f32{ v = x, lo = range.min, hi }
+        }
+        return x
+    }
+}

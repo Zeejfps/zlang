@@ -1,0 +1,4 @@
+// The checks of windows, popups, menus, the combo, tooltips and drag and drop (plan section 7,
+// stage 11), with their goldens named golden/windows-*.txt. `main` calls `check_windows`; the stage
+// that builds those widgets writes its checks in it, using the helpers of main.ctx.
+fn check_windows { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, update: bool } {}

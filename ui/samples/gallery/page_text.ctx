@@ -1,0 +1,13 @@
+// gallery: the text page, which shows the text field and number entry (plan section 7, stage 10).
+// The stage that builds those widgets fills `TextPage`, `make_text_page` and `show_text_page`, and
+// lists the page by setting TEXT_PAGE_LISTED; the switcher leaves out a page that is not listed.
+namespace gallery {
+    const TEXT_PAGE_TITLE: []u8 = "Text"
+    const TEXT_PAGE_LISTED: bool = false
+
+    struct TextPage {}
+
+    fn make_text_page {} -> TextPage { return TextPage{} }
+
+    fn show_text_page { mut ui: ui::Ui, mut page: TextPage } {}
+}

@@ -1,0 +1,88 @@
+// ui: what every stock widget shares (plan section 3.3). `Opts` and `Box` are the core's
+// (ui/core/tree.ctx); this file has the options a few widgets take besides them, and the steps each
+// widget takes the same way:
+//
+//  - Its id is made from `opts.id`, or from its label when that is empty, in the innermost id
+//    scope; and its node is described under the same name, so a script finds `settings/Save`.
+//  - Its look is a `Box` of the theme's defaults with `opts.box` laid over it: every field the
+//    caller's box sets wins (`merge_box`). That is how one widget's look is changed.
+//  - It takes the pointer through `ui::press` with `opts.enabled` and the Ui's `hover_focus`, and
+//    a focused widget is worked from the keyboard (`take_activation`: Enter or Space).
+//  - It shows the hand cursor while the pointer is over it and it can be used, and its tooltip
+//    (`opts.tip`) once the pointer has rested on it for the theme's `tip_delay`.
+//
+// Units: every option here is in logical units, as `Opts` and `Box` are.
+namespace ui {
+    // The values a slider (or a number entry) takes: from `min` to `max`, in steps of `step` from
+    // `min` (0: any value), shown with `digits` digits after the point.
+    struct Range { min: f32 = 0.0, max: f32 = 1.0, step: f32 = 0.0, digits: u32 = 2 }
+
+    // The name a widget's id and node are made from: `opts.id`, or its label.
+    fn get_widget_name { opts: Opts, label: []u8 } -> []u8 {
+        return if opts.id.len > 0 { opts.id } else { label }
+    }
+
+    // `box` with every field it leaves null taken from `base`: the caller's box over a widget's
+    // defaults.
+    fn merge_box { box: Box, base: Box } -> Box {
+        return Box{
+            width = box.width ifnull base.width, height = box.height ifnull base.height,
+            padding = box.padding ifnull base.padding, gap = box.gap ifnull base.gap,
+            align_x = box.align_x ifnull base.align_x, align_y = box.align_y ifnull base.align_y,
+            fill = box.fill ifnull base.fill, border = box.border ifnull base.border,
+            border_width = box.border_width ifnull base.border_width, radius = box.radius ifnull base.radius,
+            clip = box.clip ifnull base.clip, opacity = box.opacity ifnull base.opacity,
+            place = box.place ifnull base.place, pixels = box.pixels ifnull base.pixels,
+            hit_outset = box.hit_outset ifnull base.hit_outset,
+        }
+    }
+
+    // How a stock widget is pressed: when it is enabled, focusable, focused on hover when the Ui
+    // says so.
+    fn make_press_opts { ui: Ui, opts: Opts } -> PressOpts {
+        return PressOpts{ enabled = opts.enabled, focusable = true, focus_on_hover = ui.config.hover_focus, button = 0 }
+    }
+
+    // Whether a focused widget is worked from the keyboard this frame: Enter or Space, which are
+    // then taken. A widget that is not focused takes nothing.
+    fn take_activation { mut ui: Ui, it: Interaction } -> bool {
+        if not it.focused { return false }
+        let enter = take_key{ &ui, key = Key::enter, mods = 0 }
+        let space = take_key{ &ui, key = Key::space, mods = 0 }
+        return enter or space
+    }
+
+    // The hand cursor over a widget that can be used, and its tooltip when it has one and it is due.
+    fn finish_widget { mut ui: Ui, id: Id, it: Interaction, opts: Opts } {
+        if opts.enabled and (it.hovered or it.held) { set_cursor{ &ui, cursor = Cursor::hand } }
+        if opts.tip.len > 0 { add_tooltip{ &ui, anchor = id, text = opts.tip } }
+    }
+
+    // The node flags of a widget in this state.
+    fn get_widget_flags { opts: Opts, it: Interaction } -> u8 {
+        let mut flags: u8 = 0
+        if not opts.enabled { flags = flags | NODE_DISABLED }
+        if it.focused { flags = flags | NODE_FOCUSED }
+        if it.held { flags = flags | NODE_PRESSED }
+        return flags
+    }
+
+    // A ring in the focus colour over the edge of the element open now, rounded by `radius`
+    // (logical units), taking no part in its layout: a placed child that fills it, with a border
+    // and no fill, recorded after the element's content so it draws over it.
+    fn add_focus_ring { mut ui: Ui, radius: f32 } {
+        let box = Box{
+            width = GROW, height = GROW, place = Place{ .. },
+            border = color_sides{ color = ui.theme.focus_ring },
+            border_width = inset{ by = get_ring_width{ theme = ui.theme } },
+            radius = round{ radius }, ..
+        }
+        let ring = begin_element{ &ui, id = NO_ID, axis = Axis::row, box }
+        end{ &ui, scope = ring }
+    }
+
+    // How thick a focus ring is: twice a border, at least a unit.
+    fn get_ring_width { theme: Theme } -> f32 {
+        return pick_max_f32{ a = 1.0, b = theme.border_width * 2.0 }
+    }
+}

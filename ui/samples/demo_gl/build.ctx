@@ -1,0 +1,24 @@
+// The gallery on OpenGL: an SDL window, outline fonts through FreeType and HarfBuzz, and the
+// scripted driver's script reader for --script. How to run it: the top of main.ctx.
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "demo_gl", root = "." }
+    build::add_sources{ &b, exe, dir = "../../core" }
+    build::add_sources{ &b, exe, dir = "../../widgets" }
+    build::add_sources{ &b, exe, dir = "../../stage" }
+    build::add_sources{ &b, exe, dir = "../../fonts" }
+    build::add_sources{ &b, exe, dir = "../../gl" }
+    build::add_sources{ &b, exe, dir = "../../sdl" }
+    build::add_sources{ &b, exe, dir = "../../record" }
+    build::add_sources{ &b, exe, dir = "../../test" }
+    build::add_sources{ &b, exe, dir = "../gallery" }
+    match build::os{ &b } {
+        macos => {
+            build::lib_path{ &b, exe, path = "/opt/homebrew/lib" }        // Homebrew's SDL2, FreeType and HarfBuzz
+            build::link{ &b, exe, lib = "SDL2" }
+        }
+        windows => { build::link{ &b, exe, lib = "SDL2" } }
+        linux => { build::link{ &b, exe, lib = "SDL2" } }
+    }
+    build::link{ &b, exe, lib = "freetype" }
+    build::link{ &b, exe, lib = "harfbuzz" }
+}
