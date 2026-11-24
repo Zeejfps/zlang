@@ -2841,11 +2841,11 @@ namespace lower {
             let bop = if op == tok::Kind::amp { ir::BitOp::bit_and } else if op == tok::Kind::pipe { ir::BitOp::bit_or } else { ir::BitOp::bit_xor }
             return mk{ ty, k = ir::ExprKind::bits{ op = bop, a = box{ l, e = x }, b = box{ l, e = y } } }
         }
-        if op == tok::Kind::shl or op == tok::Kind::shr {
+        if op == tok::Kind::shl or op == tok::Kind::shr or op == tok::Kind::shl_wrap {
             let ty = tid{ &l, t }
             let x = conv{ &l, e = a, to = t }
             let y = ex{ &l, e = b }
-            let sop = if op == tok::Kind::shl { ir::ShiftOp::shl } else { ir::ShiftOp::shr }
+            let sop = if op == tok::Kind::shl { ir::ShiftOp::shl } else if op == tok::Kind::shr { ir::ShiftOp::shr } else { ir::ShiftOp::wrap_shl }
             return mk{ ty, k = ir::ExprKind::shift{ op = sop, a = box{ l, e = x }, b = box{ l, e = y }, pos = epos{ &l, e } } }
         }
         let ty = tid{ &l, t }
@@ -3203,12 +3203,6 @@ namespace lower {
         if slice::eq_bytes{ a = name, b = "max" } { return min_max{ &l, least = false, a = args[0], b = args[1], t } }
         if slice::eq_bytes{ a = name, b = "clamp" } { return clamp{ &l, e, args, t } }
         if check::to_int_name{ n = name } { return to_int{ &l, e, name, arg = args[0], t } }
-        if slice::eq_bytes{ a = name, b = "wrap_shl" } {
-            let ty = tid{ &l, t }
-            let x = conv{ &l, e = args[0], to = t }
-            let y = ex{ &l, e = args[1] }
-            return mk{ ty, k = ir::ExprKind::shift{ op = ir::ShiftOp::wrap_shl, a = box{ l, e = x }, b = box{ l, e = y }, pos = epos{ &l, e } } }
-        }
         @panic("lower: a builtin the parser doesn't know")
     }
 

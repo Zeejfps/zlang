@@ -1023,7 +1023,7 @@ namespace nwvm {
                 shleft => {
                     if sp < 2 or (t + (sp - 1)).* != INT or (t + (sp - 2)).* != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
                     sp = sp -% 1
-                    (v + (sp - 1)).i = @wrap_shl((v + (sp - 1)).i, (v + sp).i & 31)
+                    (v + (sp - 1)).i = (v + (sp - 1)).i <<% ((v + sp).i & 31)
                 }
                 shright => {
                     // Rounds toward zero: a negative number is shifted as its magnitude.

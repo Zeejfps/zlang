@@ -1440,10 +1440,10 @@ fn main { mut io: Io } {
     let a: u32 = 0xF0
     let n: usize = 24
     io::println_u64{ &io, n = a << n }
-    io::println_u64{ &io, n = @wrap_shl(a, 28) }
+    io::println_u64{ &io, n = a <<% 28 }
     io::println_u64{ &io, n = a >> 4 }
     let one: i8 = 1
-    io::println_i64{ &io, n = @wrap_shl(one, 7) }
+    io::println_i64{ &io, n = one <<% 7 }
     let b: i8 = -128
     io::println_i64{ &io, n = b >> 7 }
     let big: u64 = 256 << 20
@@ -1504,29 +1504,95 @@ fn main { mut io: Io } {
             with self.subTest(body=body):
                 self.assertPanic('fn main {} {\n    ' + body + '\n}\n', 'integer overflow')
 
-    def test_wrap_shl(self):
+    def test_shl_wrap(self):
+        """§11, Expressions, rule 4: `a <<% n` is `a << n` with the bits shifted out dropped. It
+        has `<<`'s operands, result type and precedence, and its count is checked the same."""
         self.assertOutput("""
+type Bits = distinct u16
+const TOP: i32 = 1 <<% 31
+const LOW: u8 = 0x81 <<% 1
+const NONE: i8 = -1 <<% 7 <<% 1
+
 fn main { mut io: Io } {
     let a: u8 = 0x81
-    io::println_u64{ &io, n = @wrap_shl(a, 1) }
+    io::println_u64{ &io, n = a <<% 1 }
     let b: i8 = 1
-    io::println_i64{ &io, n = @wrap_shl(b, 7) }
+    io::println_i64{ &io, n = b <<% 7 }
     let c: u64 = 0xFFFFFFFFFFFFFFFF
     let n: i32 = 60
-    io::println_u64{ &io, n = @wrap_shl(c, n) }
-    io::println_i64{ &io, n = @wrap_shl(@as(i32, 0x40000001), 1) }
+    io::println_u64{ &io, n = c <<% n }
+    io::println_i64{ &io, n = @as(i32, 0x40000001) <<% 1 }
+    // Folded in a const as it runs.
+    _ = @fmt(&io, "{} {} {}\\n", TOP, LOW, NONE)
+    // One level with `<<` and `>>`, left to right: below `+`, above `&`.
+    _ = @fmt(&io, "{} {} {} {}\\n", a <<% 1 + 1, a <<% 4 >> 4, a <<% 1 & 0xF, 1 | a <<% 7)
+    // The count has any integer type, and the result the left operand's.
+    let k: u8 = 3
+    let wide: u64 = a <<% k
+    _ = @fmt(&io, "{}\\n", wide)
+    // A line may start with it.
+    let h: u32 = 0xDEADBEEF
+    let mixed = h
+        <<% 5
+    _ = @fmt(&io, "{}\\n", mixed ^ h)
+    // A distinct type keeps its type.
+    let w: Bits = 0x8001
+    let twice: Bits = w <<% 1
+    _ = @fmt(&io, "{}\\n", @as(u16, twice))
+    // An `ifoverflow` covers its operands' arithmetic, and never the shift.
+    let x: i32 = 2000000000
+    _ = @fmt(&io, "{} {}\\n", (x + x) <<% 1 ifoverflow -1, (x + 1) <<% 4 ifoverflow -1)
+    // After a `.`, `*` is still a dereference: `p.*%2` is `p.* % 2`.
+    let seven: i32 = 7
+    let p = &seven
+    _ = @fmt(&io, "{} {}\\n", p.*%2, p.* <<% 1)
 }
-""", '2\n-128\n17293822569102704640\n-2147483646\n')
-        self.assertPanic("""
+""",
+            '2\n-128\n17293822569102704640\n-2147483646\n'
+            '-2147483648 2 0\n'
+            '4 1 2 129\n'
+            '8\n'
+            '186278671\n'
+            '2\n'
+            '-1 1935228944\n'
+            '1 14\n')
+        for count, shown, bits, decl in [('8', '8', 8, 'u8'), ('-1', '-1', 8, 'u8'), ('64', '64', 64, 'u64'), ('32', '32', 32, 'i32')]:
+            with self.subTest(count=count, decl=decl):
+                self.assertPanic("""
+fn main {} {
+    let a: %s = 1
+    let n: i64 = %s
+    let y = a <<%% n
+}
+""" % (decl, count), 'shift count %s out of range for a %d-bit integer' % (shown, bits))
+        for src, msg, line, col in [
+            ('let x = 1.5 <<% 2', '`<<%` needs an integer to shift, got {float}', 2, 17),
+            ('let a: u8 = 1\n    let x = a <<% 1.5', 'a shift count must be an integer, got {float}', 3, 15),
+            ('let a: u8 = 1\n    let x = a <<% true', 'a shift count must be an integer, got bool', 3, 15),
+            # the builtin it replaces is gone
+            ('let a: u8 = 1\n    let x = @wrap_shl(a, 1)', 'unknown builtin `@wrap_shl`', 3, 13),
+            # `<<` and `%` apart are what they were: `%` begins no expression
+            ('let a: u8 = 1\n    let x = a << % 2', "expected an expression, found '%'", 3, 18),
+        ]:
+            with self.subTest(src=src):
+                with self.assertRaises(CompileError) as cm:
+                    run('fn main {} {\n    %s\n}\n' % src)
+                self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), src)
+        for src, msg, line, col in [
+            ('const A: u8 = 1 <<% 8', 'shift count out of range in constant', 1, 17),
+            ('const A: i64 = 1 <<% -1', 'shift count out of range in constant', 1, 18),
+        ]:
+            with self.subTest(src=src):
+                with self.assertRaises(CompileError) as cm:
+                    run(src + '\nfn main {} { _ = A }\n')
+                self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), src)
+        # Nothing before the handler can overflow: `<<%` never does.
+        self.assertCompileError("""
 fn main {} {
     let a: u8 = 1
-    let n: i64 = 8
-    let y = @wrap_shl(a, n)
+    let x = a <<% 1 ifoverflow 0
 }
-""", 'shift count 8 out of range for a 8-bit integer')
-        self.assertCompileError("""
-fn main {} { let x = @wrap_shl(1.5, 2) }
-""", '@wrap_shl needs an integer to shift, got {float}')
+""", 'nothing before `ifoverflow` can overflow')
 
     def test_bitwise_needs_integers(self):
         self.assertCompileError("""
@@ -4313,7 +4379,7 @@ fn main { mut io: Io } {
     let b: Meters = 1000000000
     let f: Flags = 0x0F
     let t = Track{ .. }
-    _ = @fmt(&io, "{} {} {} {} {}\\n", a + b ifoverflow @as(Meters, 1), a +% b, ~f, t.len, @wrap_shl(a, 4))
+    _ = @fmt(&io, "{} {} {} {} {}\\n", a + b ifoverflow @as(Meters, 1), a +% b, ~f, t.len, a <<% 4)
 }
 """, '1 705032704 240 7 3870457856\n')
 
@@ -4333,7 +4399,7 @@ fn main { mut io: Io } {
     io::println_u64{ &io, n = @as(u64, u) }
     io::println_u64{ &io, n = @as(u64, (u << 2) | 1 & 3 ^ u % 5) }
     let s: Small = 250
-    io::println_u64{ &io, n = @as(u8, s +% 10) + @as(u8, @wrap_shl(s, 1)) }
+    io::println_u64{ &io, n = @as(u8, s +% 10) + @as(u8, s <<% 1) }
     let mut total: Meters
     let xs: [3]Meters = [1.0, 2.0, 3.0]
     let mut i: usize = 0

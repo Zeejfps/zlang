@@ -4447,13 +4447,15 @@ namespace check {
             let r = if op == tok::Kind::amp { u & v } else if op == tok::Kind::pipe { u | v } else { u ^ v }
             return int_val{ ty = t, n = from_bits{ x = r, signed = types::signed{ p = prim } } }
         }
-        if op == tok::Kind::shl or op == tok::Kind::shr {
+        if op == tok::Kind::shl or op == tok::Kind::shr or op == tok::Kind::shl_wrap {
             let w = @as(u64, types::bits{ p = prim })
             if q.negative or q.magnitude >= w {
                 error{ &c, at, msg = "shift count out of range in constant" }
                 return null
             }
             let n = @as(u32, q.magnitude)
+            // `<<%` keeps the low bits, as the wrapping operators below do
+            if op == tok::Kind::shl_wrap { return wrapped{ ty = t, p = prim, x = bits_of{ n = p } <<% n } }
             if op == tok::Kind::shr {
                 if types::signed{ p = prim } {
                     let s = @trunc(i64, bits_of{ n = p }) >> n
@@ -5487,7 +5489,7 @@ namespace check {
     // The operations of e that the `ifoverflow` whose key is region covers, recorded in
     // c.traps, and how many: e's if it is an integer `+`, `-`, `*`, a signed `/`, a unary `-` or
     // an `@as` to an integer, and those of the operands of these and of the other integer
-    // operators (`%`, `&`, `|`, `^`, `<<`, `>>`), in turn. Anything else is evaluated as usual: a
+    // operators (`%`, `&`, `|`, `^`, `<<`, `>>`, `<<%`), in turn. Anything else is evaluated as usual: a
     // call's arguments, an index, a nested `ifoverflow`.
     fn cover { mut c: Checker, e: syntax::Expr, region: u64 } -> u32 {
         let t = type_of_expr{ c, e }
@@ -5501,7 +5503,8 @@ namespace check {
                 } else if op == tok::Kind::slash {
                     _ = map::remove{ m = &c.traps, key = expr_key{ e } }
                 } else if not (op == tok::Kind::slash or op == tok::Kind::percent or op == tok::Kind::amp or op == tok::Kind::pipe
-                               or op == tok::Kind::caret or op == tok::Kind::shl or op == tok::Kind::shr or wrapping{ op }) {
+                               or op == tok::Kind::caret or op == tok::Kind::shl or op == tok::Kind::shr or op == tok::Kind::shl_wrap
+                               or wrapping{ op }) {
                     return 0
                 }
                 return n + cover{ &c, e = a.*, region } + cover{ &c, e = b.*, region }
@@ -11903,7 +11906,7 @@ namespace check {
             }
             return types::BOOL
         }
-        if op == tok::Kind::shl or op == tok::Kind::shr {
+        if op == tok::Kind::shl or op == tok::Kind::shr or op == tok::Kind::shl_wrap {
             let t = expr{ &c, e = a, exp }
             if not is_int{ c, t = op_type{ c, t } } {
                 errorf{ &c, at, msg = @fmt("`{}` needs an integer to shift, got {}", opname, tstr{ c, t }) }
@@ -12769,17 +12772,6 @@ namespace check {
             let pt = typed{ &c, e = args[0] }
             if not (types::get{ s = c.ty, id = pt } is ptr | error) { error{ &c, at = expr_at{ e = args[0] }, msg = "@addr needs a pointer argument" } }
             return types::USIZE
-        }
-        if slice::eq_bytes{ a = n, b = "wrap_shl" } {
-            let t = expr{ &c, e = args[0], exp }
-            if not is_int{ c, t = op_type{ c, t } } {
-                errorf{ &c, at = expr_at{ e = args[0] }, msg = @fmt("@wrap_shl needs an integer to shift, got {}", tstr{ c, t }) }
-            }
-            let ct = expr{ &c, e = args[1], exp = types::NO_TYPE }
-            if not is_int{ c, t = ct } {
-                errorf{ &c, at = expr_at{ e = args[1] }, msg = @fmt("a shift count must be an integer, got {}", tstr{ c, t = ct }) }
-            }
-            return t
         }
         @panic("check: a builtin the parser doesn't know")
     }

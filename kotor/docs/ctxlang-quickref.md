@@ -72,7 +72,8 @@ nullable pointer), `[N]T` arrays (values, bounds-checked), `[]T`/`[]mut T` slice
 function: can't be stored in a struct or returned), `extern fn{C} -> R` (C function pointer).
 
 - Integer `+ - * <<` panic on overflow (`a << n` is `a * 2^n`); use `+%`, `-%`, `*%` and
-  `@wrap_shl` for hashes, CRCs and RNGs. `/` by zero panics.
+  `<<%` for hashes, CRCs and RNGs (`x ^ (x <<% 13)`: the bits shifted out are dropped; a count
+  at or above the width still panics). `/` by zero panics.
 - `~x` flips an integer's bits: `flags & ~F_VISIBLE` clears a flag.
 - `e ifoverflow x` gives x where the integer arithmetic and `@as` or `@round` to an integer written in e
   overflow, for counts from a file: `count * 16 ifoverflow { return truncated }`. A call's

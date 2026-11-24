@@ -20,6 +20,7 @@ namespace tok {
         kw_if, kw_else, kw_while, kw_break, kw_continue, kw_match, kw_return, kw_defer,
         kw_and, kw_or, kw_not, kw_true, kw_false, kw_null, kw_extern, kw_capability, kw_ifnull,
         kw_iferr, kw_try, kw_ifoverflow, kw_for,
+        shl_wrap,                   // <<%
         arrow,                     // ->
         fat_arrow,                  // =>
         colons,                     // ::
@@ -41,8 +42,9 @@ namespace tok {
         "iferr", "try", "ifoverflow", "for",
     ]
 
-    // Two characters before one, so the longest match wins.
+    // Three characters before two, and two before one, so the longest match wins.
     const OPS: [_][]u8 = [
+        "<<%",
         "->", "=>", "::", "..", "==", "!=", "<=", ">=", "<<", ">>", "+%", "-%", "*%",
         "{", "}", "(", ")", "[", "]", ",", ";", ":", ".", "=", "<", ">",
         "+", "-", "*", "/", "%", "&", "|", "^", "?", "#", "!", "~",
@@ -60,7 +62,7 @@ namespace tok {
     }
 
     fn is_op { kind: Kind } -> bool {
-        return @as(u8, kind) >= @as(u8, Kind::arrow)
+        return @as(u8, kind) >= @as(u8, Kind::shl_wrap)
     }
 
     // The kind of KEYWORDS[i] or OPS[i]: an index into a table computed while compiling, rather
@@ -69,7 +71,7 @@ namespace tok {
     fn op { i: usize } -> Kind { return OP_KINDS[i] }
 
     const KEYWORD_KINDS: [30]Kind = keyword_kinds{}
-    const OP_KINDS: [38]Kind = op_kinds{}
+    const OP_KINDS: [39]Kind = op_kinds{}
 
     fn keyword_kinds {} -> [30]Kind {
         let mut out: [30]Kind = [Kind::eof; 30]
@@ -81,18 +83,18 @@ namespace tok {
         return out
     }
 
-    fn op_kinds {} -> [38]Kind {
-        let mut out: [38]Kind = [Kind::eof; 38]
+    fn op_kinds {} -> [39]Kind {
+        let mut out: [39]Kind = [Kind::eof; 39]
         let mut i: usize = 0
         while i < out.len {
-            out[i] = @as(Kind, @as(usize, Kind::arrow) + i)
+            out[i] = @as(Kind, @as(usize, Kind::shl_wrap) + i)
             i = i + 1
         }
         return out
     }
 
     // An operator's text.
-    fn op_text { kind: Kind } -> []u8 { return OPS[@as(usize, kind) - @as(usize, Kind::arrow)] }
+    fn op_text { kind: Kind } -> []u8 { return OPS[@as(usize, kind) - @as(usize, Kind::shl_wrap)] }
 }
 
 namespace lexer {

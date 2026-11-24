@@ -225,7 +225,7 @@ namespace check {
         let mut n = 0
         while n < 32 {
             if (bi.equip_slots & bit) != 0 { return bit }
-            bit = @wrap_shl(bit, 1)
+            bit = bit <<% 1
             n = n + 1
         }
         return rules::slot::RIGHT

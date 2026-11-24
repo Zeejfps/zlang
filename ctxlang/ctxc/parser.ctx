@@ -941,7 +941,7 @@ namespace parser {
                or k == tok::Kind::plus or k == tok::Kind::plus_wrap or k == tok::Kind::minus_wrap
                or k == tok::Kind::star or k == tok::Kind::star_wrap or k == tok::Kind::slash or k == tok::Kind::percent
                or k == tok::Kind::pipe or k == tok::Kind::caret or k == tok::Kind::shl or k == tok::Kind::shr
-               or k == tok::Kind::dot
+               or k == tok::Kind::shl_wrap or k == tok::Kind::dot
     }
 
     // Whether the braces from the `{` here to the `}` at token `close` could hold a call's
@@ -1508,7 +1508,7 @@ namespace parser {
         if level == 0 { return k == tok::Kind::pipe }
         if level == 1 { return k == tok::Kind::caret }
         if level == 2 { return k == tok::Kind::amp }
-        if level == 3 { return k == tok::Kind::shl or k == tok::Kind::shr }
+        if level == 3 { return k == tok::Kind::shl or k == tok::Kind::shr or k == tok::Kind::shl_wrap }
         if level == 4 { return k == tok::Kind::plus or k == tok::Kind::minus or k == tok::Kind::plus_wrap or k == tok::Kind::minus_wrap }
         return k == tok::Kind::star or k == tok::Kind::slash or k == tok::Kind::percent or k == tok::Kind::star_wrap
     }
@@ -1907,7 +1907,6 @@ namespace parser {
         Builtin{ name = "cast",     types = 1, lo = 1, hi = 1, usage = "@cast(*U, q)" },
         Builtin{ name = "addr",     types = 0, lo = 1, hi = 1, usage = "@addr(q)" },
         Builtin{ name = "slice",    types = 0, lo = 2, hi = 2, usage = "@slice(p, n)" },
-        Builtin{ name = "wrap_shl", types = 0, lo = 2, hi = 2, usage = "@wrap_shl(a, n)" },
         Builtin{ name = "hash",     types = 0, lo = 1, hi = 1, usage = "@hash(x)" },
         Builtin{ name = "min",      types = 0, lo = 2, hi = 2, usage = "@min(a, b)" },
         Builtin{ name = "max",      types = 0, lo = 2, hi = 2, usage = "@max(a, b)" },

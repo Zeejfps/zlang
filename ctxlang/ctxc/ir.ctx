@@ -159,7 +159,7 @@ namespace ir {
 
     union ArithOp { add, sub, mul, div, rem }
     union BitOp { bit_and, bit_or, bit_xor }                    // (bits T and|or|xor E E)
-    union ShiftOp { shl, wrap_shl, shr }                        // shl panics on lost bits; wrap_shl drops them
+    union ShiftOp { shl, wrap_shl, shr }                        // shl (`<<`) panics on lost bits; wrap_shl (`<<%`) drops them
     union CmpOp { eq, ne, lt, le, gt, ge }
     // An atomic operation (§13), whose args are the pointer and the values, in the builtin's
     // order. compare_exchange gives the value it found, which is the expected one if it stored.
