@@ -33,7 +33,7 @@ namespace os {
     // Writes some of `bytes`, which isn't empty, to the stream. Returns how many; 0 after an error.
     fn write { mut io: Io, to: io::Stream, bytes: []u8 } -> usize {
         let fd: i32 = match to { out => { 1 } err => { 2 } }
-        let n = @min(bytes.len, CHUNK)
+        let n = cmp::min{ a = bytes.len, b = CHUNK }
         let w = crt_write{ &io, fd, buf = bytes.ptr, count = @as(u32, n) }
         return if w > 0 { @as(usize, w) } else { 0 }
     }
@@ -74,7 +74,7 @@ namespace os {
     }
 
     fn read_stdin { mut io: Io, into: []mut u8 } -> usize {
-        let n = @min(into.len, CHUNK)
+        let n = cmp::min{ a = into.len, b = CHUNK }
         let r = crt_read{ &io, fd = 0, buf = into.ptr, count = @as(u32, n) }
         return if r > 0 { @as(usize, r) } else { 0 }
     }
@@ -208,7 +208,7 @@ namespace os {
 
     // Reads at most into.len bytes, which aren't none. Returns how many; 0 at the end.
     fn file_read { mut fs: Fs, file: u64, into: []mut u8 } -> fs::Error!usize {
-        let n = @min(into.len, CHUNK)
+        let n = cmp::min{ a = into.len, b = CHUNK }
         let mut done: u32 = 0
         if ReadFile{ &fs, file, buf = into.ptr, count = @as(u32, n), done = &done, overlapped = null } == 0 {
             return failed{ code = GetLastError{ &fs } }
@@ -221,7 +221,7 @@ namespace os {
     // overlapped reads synchronously, and moves the position. Returns how many; 0 at or past the
     // end (ERROR_HANDLE_EOF).
     fn file_read_at { mut fs: Fs, file: u64, offset: u64, into: []mut u8 } -> fs::Error!usize {
-        let n = @min(into.len, CHUNK)
+        let n = cmp::min{ a = into.len, b = CHUNK }
         let mut o = Overlapped{ internal = 0, internal_high = 0, offset = @trunc(u32, offset), offset_high = @trunc(u32, offset >> 32), event = 0 }
         let mut done: u32 = 0
         if ReadFile{ &fs, file, buf = into.ptr, count = @as(u32, n), done = &done, overlapped = @cast(*u8, &o) } == 0 {
@@ -237,7 +237,7 @@ namespace os {
 
     // Writes some of `bytes`, which aren't none. Returns how many.
     fn file_write { mut fs: Fs, file: u64, bytes: []u8 } -> fs::Error!usize {
-        let n = @min(bytes.len, CHUNK)
+        let n = cmp::min{ a = bytes.len, b = CHUNK }
         let mut done: u32 = 0
         if WriteFile{ &fs, file, buf = bytes.ptr, count = @as(u32, n), done = &done, overlapped = null } == 0 {
             return failed{ code = GetLastError{ &fs } }
@@ -299,7 +299,7 @@ namespace os {
         let n = GetCurrentDirectoryW{ &fs, size = @as(u32, buf.len), buf = buf[..].ptr }
         if n == 0 { return failed{ code = GetLastError{ &fs } } }
         if @as(usize, n) >= buf.len { return too_long{} }
-        let cap = @min(into.len, 2147483647)
+        let cap = cmp::min{ a = into.len, b = 2147483647 }
         let m = WideCharToMultiByte{ &fs, page = UTF8, flags = 0, text = buf[..].ptr, n = @as(i32, n), out = into.ptr, cap = @as(i32, cap), fallback = null, used = null }
         if m <= 0 { return too_long{} }
         return @as(usize, m)
@@ -446,7 +446,7 @@ namespace os {
             let end = info.base + info.size
             if end <= at { return false }
             if info.state == MEM_RESERVE {
-                let to = @min(mib, end)
+                let to = cmp::min{ a = mib, b = end }
                 if commit_pages{ address = p, size = to - at, kind = MEM_COMMIT, protect = PAGE_READWRITE } == null { return false }
             } else if info.state != MEM_COMMIT {
                 return false
@@ -1071,7 +1071,7 @@ namespace os {
     // finish. ERROR_BROKEN_PIPE, the child's end closed, is the end: 0.
     fn pipe_read { mut proc: Proc, mut cancel: task::Cancel, pipe: u64, into: []mut u8 } -> proc::Error!usize {
         try task::check{ &cancel }
-        let n = @min(into.len, CHUNK)
+        let n = cmp::min{ a = into.len, b = CHUNK }
         let mut o = try overlapped{ &proc }
         defer _ = close_handle{ &proc, handle = o.event }
         if read_overlapped{ &proc, file = pipe, buf = into.ptr, count = @as(u32, n), done = null, overlapped = &o } == 0 {
@@ -1116,7 +1116,7 @@ namespace os {
     // reads. Returns how many; broken_pipe once the child has closed its end.
     fn pipe_write { mut proc: Proc, mut cancel: task::Cancel, pipe: u64, bytes: []u8 } -> proc::Error!usize {
         try task::check{ &cancel }
-        let n = @min(bytes.len, CHUNK)
+        let n = cmp::min{ a = bytes.len, b = CHUNK }
         let mut o = try overlapped{ &proc }
         defer _ = close_handle{ &proc, handle = o.event }
         if write_overlapped{ &proc, file = pipe, buf = bytes.ptr, count = @as(u32, n), done = null, overlapped = &o } == 0 {
@@ -1150,7 +1150,7 @@ namespace os {
     // How many processors this program may run on: at least 1.
     fn processors { mut proc: Proc } -> u32 {
         let n = GetActiveProcessorCount{ &proc, group = ALL_PROCESSOR_GROUPS }
-        return @max(n, 1)
+        return cmp::max{ a = n, b = 1 }
     }
 
     // The absolute path of this program's executable, with `/` for `\`; empty if Windows won't

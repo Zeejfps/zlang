@@ -85,7 +85,7 @@ namespace snd {
         let frame_bytes: usize = s.info.block_align
         let left = (s.end - s.pos) / frame_bytes
         let want = into.len / ch
-        let n = @min(left, want)
+        let n = cmp::min{ a = left, b = want }
         let src = s.bytes[s.pos..s.pos + n * frame_bytes]
         let count = n * ch
         let mut i: usize = 0

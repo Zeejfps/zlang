@@ -368,7 +368,7 @@ namespace rules {
         let ft = try load_held{ &fs, rm, &heap, name = "feat" }
         defer free_held{ h = ft, &heap }
         let rows = twoda::rows{ t = ft.t }
-        let n = @min(rows, MAX_FEATS)
+        let n = cmp::min{ a = rows, b = MAX_FEATS }
         out.feats = try alloc::make(FeatRow, heap::Heap){ realloc = heap::alloc, heap = &heap, count = n }
         let mut i: usize = 0
         while i < n {
@@ -441,7 +441,7 @@ namespace rules {
         let sp = try load_held{ &fs, rm, &heap, name = "spells" }
         defer free_held{ h = sp, &heap }
         let rows = twoda::rows{ t = sp.t }
-        let n = @min(rows, MAX_SPELLS)
+        let n = cmp::min{ a = rows, b = MAX_SPELLS }
         out.spells = try alloc::make(SpellRow, heap::Heap){ realloc = heap::alloc, heap = &heap, count = n }
         let mut i: usize = 0
         while i < n {

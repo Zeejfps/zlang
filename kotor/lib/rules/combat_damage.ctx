@@ -45,7 +45,7 @@ namespace rules {
         } else if npc_vs_pc and percent != 0 {
             if percent < 100 {
                 let v = roll - ((100 - percent) * max) / 100
-                return @max(v, 1)
+                return cmp::max{ a = v, b = 1 }
             }
             if percent != 100 {
                 let r = next_rand{ &rng }
@@ -80,7 +80,7 @@ namespace rules {
     // critical hit; higher rows roll NumDice d Die, `times` times (a critical hit re-rolls them once
     // per multiplier step, re/combat.md 6.2).
     fn combat_roll_row_amount { tables: *Tables, mut rng: Rng, row: i32, times: i32 } -> i32 {
-        if row < 6 { return @max(row, 0) }
+        if row < 6 { return cmp::max{ a = row, b = 0 } }
         let d = damage_row_dice{ tables, row }
         let mut sum = 0
         let mut k = 0
@@ -93,7 +93,7 @@ namespace rules {
 
     fn combat_get_damage_slot { flags: i32 } -> usize {
         let s = damage_slot{ flags }
-        return @min(s, 14)
+        return cmp::min{ a = s, b = 14 }
     }
 
     // Does an effect's attack-type filter admit this weapon attack type? 0 admits all; types 6 and

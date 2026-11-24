@@ -5162,14 +5162,15 @@ fn main { mut io: Io } {
 """, '0.1 0.0 true true 0.0 true\n0.0 inf -inf inf\n')
 
     def test_min_max(self):
-        """§13: `@min` and `@max` of two numbers of one type after widening, each evaluated once;
-        for floats a NaN operand gives NaN, and equal operands the first. In consts too."""
+        """§17, `cmp`: `cmp::min` and `cmp::max` of two values of one type with an order, each
+        evaluated once; for floats a NaN operand gives NaN, and equal operands the first. In
+        consts too."""
         self.assertOutput(r"""
 type Meters = distinct f32
-const LOW: i32 = @min(3, -4)
-const HIGH: u64 = @max(SEVEN, 9)
+const LOW: i32 = cmp::min{ a = 3, b = -4 }
+const HIGH: u64 = cmp::max{ a = SEVEN, b = 9 }
 const SEVEN: u8 = 7
-const FLOATS: [4]f64 = [@min(1.5, math::NAN), @max(math::NAN, 1.5), @min(-0.0, 0.0), @max(-0.0, 0.0)]
+const FLOATS: [4]f64 = [cmp::min{ a = 1.5, b = math::NAN }, cmp::max{ a = math::NAN, b = 1.5 }, cmp::min{ a = -0.0, b = 0.0 }, cmp::max{ a = -0.0, b = 0.0 }]
 
 fn noisy { mut io: Io, n: i32 } -> i32 {
     _ = @fmt(&io, "<{}>", n)
@@ -5183,30 +5184,33 @@ fn main { mut io: Io } {
     let b: u8 = 200
     let c: i64 = -5
     let u: usize = 3
-    // One type after widening, as `<` has it: an i32 and a u8 are compared as i32s.
-    _ = @fmt(&io, "{} {} {} {}\n", @min(a, b), @max(a, b), @min(c, a), @max(c, a))
-    // A literal takes the other operand's type, and the result the type expected.
-    let small: u8 = @min(b, 9)
-    let wide: i64 = @max(a, 3)
-    _ = @fmt(&io, "{} {} {} {}\n", small, wide, @min(u, 10), @max(@min(a, 5), 2))
-    // Each operand is evaluated once, the first first.
-    _ = @fmt(&io, " {}\n", @min(noisy{ &io, n = 4 }, noisy{ &io, n = 2 }))
-    _ = @fmt(&io, " {}\n", @max(noisy{ &io, n = 4 }, noisy{ &io, n = 2 }))
-    _ = @fmt(&io, "{} {} {} {}\n", LOW, HIGH, @min(-128, 127), @max(18446744073709551615, u))
+    // One type, the first argument's: a u8 after an i32 widens to it.
+    _ = @fmt(&io, "{} {} {} {}\n", cmp::min{ a, b }, cmp::max{ a, b }, cmp::min{ a = c, b = a }, cmp::max{ a = c, b = a })
+    // A narrower argument first: the type is written.
+    _ = @fmt(&io, "{} {}\n", cmp::max(i32){ a = b, b = a }, cmp::min(i64){ a = b, b = c })
+    // A literal takes the other argument's type, and the result the type expected.
+    let small: u8 = cmp::min{ a = b, b = 9 }
+    let wide: i64 = cmp::max{ a, b = 3 }
+    _ = @fmt(&io, "{} {} {} {} {}\n", small, wide, cmp::min{ a = u, b = 10 }, cmp::max{ a = 1, b = u }, cmp::max{ a = cmp::min{ a, b = 5 }, b = 2 })
+    // Each argument is evaluated once, the first first.
+    _ = @fmt(&io, " {}\n", cmp::min{ a = noisy{ &io, n = 4 }, b = noisy{ &io, n = 2 } })
+    _ = @fmt(&io, " {}\n", cmp::max{ a = noisy{ &io, n = 4 }, b = noisy{ &io, n = 2 } })
+    _ = @fmt(&io, "{} {} {} {}\n", LOW, HIGH, cmp::min{ a = -128, b = 127 }, cmp::max{ a = 18446744073709551615, b = u })
     // Floats: a NaN operand gives NaN; equal operands, as zeros of both signs are, give the first.
-    _ = @fmt(&io, "{} {} {} {}\n", @min(f{ x = 1.5 }, 2.5), @max(f{ x = 1.5 }, 2.5), @min(g{ x = -1.0 }, g{ x = -2.0 }), @max(g{ x = 1.0 }, f{ x = 0.5 }))
-    _ = @fmt(&io, "{} {} {} {}\n", @min(f{ x = 1.5 }, math::NAN), @min(math::NAN, f{ x = 1.5 }), @max(f{ x = 1.5 }, math::NAN), @max(math::NAN_F32, g{ x = 1.5 }))
-    _ = @fmt(&io, "{} {} {} {}\n", @min(f{ x = -0.0 }, 0.0), @min(f{ x = 0.0 }, -0.0), @max(f{ x = -0.0 }, 0.0), @max(f{ x = 0.0 }, -0.0))
-    _ = @fmt(&io, "{} {} {} {}\n", @min(math::INF, f{ x = 1.0 }), @max(-math::INF, f{ x = 1.0 }), @min(-math::INF, math::INF), @max(-math::INF, math::INF))
+    _ = @fmt(&io, "{} {} {} {}\n", cmp::min{ a = f{ x = 1.5 }, b = 2.5 }, cmp::max{ a = f{ x = 1.5 }, b = 2.5 }, cmp::min{ a = g{ x = -1.0 }, b = g{ x = -2.0 } }, cmp::max{ a = f{ x = 0.5 }, b = g{ x = 1.0 } })
+    _ = @fmt(&io, "{} {} {} {}\n", cmp::min{ a = f{ x = 1.5 }, b = math::NAN }, cmp::min{ a = math::NAN, b = f{ x = 1.5 } }, cmp::max{ a = f{ x = 1.5 }, b = math::NAN }, cmp::max{ a = math::NAN_F32, b = g{ x = 1.5 } })
+    _ = @fmt(&io, "{} {} {} {}\n", cmp::min{ a = f{ x = -0.0 }, b = 0.0 }, cmp::min{ a = f{ x = 0.0 }, b = -0.0 }, cmp::max{ a = f{ x = -0.0 }, b = 0.0 }, cmp::max{ a = f{ x = 0.0 }, b = -0.0 })
+    _ = @fmt(&io, "{} {} {} {}\n", cmp::min{ a = math::INF, b = f{ x = 1.0 } }, cmp::max{ a = -math::INF, b = f{ x = 1.0 } }, cmp::min{ a = -math::INF, b = math::INF }, cmp::max{ a = -math::INF, b = math::INF })
     _ = @fmt(&io, "{} {} {} {}\n", FLOATS[0], FLOATS[1], FLOATS[2], FLOATS[3])
     // A distinct type keeps its type.
     let m: Meters = 2.5
-    let far: Meters = @max(m, 4.0)
+    let far: Meters = cmp::max{ a = m, b = 4.0 }
     _ = @fmt(&io, "{}\n", @as(f32, far))
 }
 """,
             '7 200 -5 7\n'
-            '9 7 3 5\n'
+            '200 -5\n'
+            '9 7 3 3 5\n'
             '<4><2> 2\n'
             '<4><2> 4\n'
             '-4 9 -128 18446744073709551615\n'
@@ -5218,11 +5222,11 @@ fn main { mut io: Io } {
             '4.0\n')
 
     def test_clamp(self):
-        """§13: `@clamp(x, lo, hi)`, the bounds widening with the value; a NaN value stays NaN,
-        and bounds out of order panic, or are an error where both are integer literals."""
+        """§17, `cmp`: `cmp::clamp{ x, lo, hi }`, the bounds of the value's type; a NaN value
+        stays NaN, and bounds out of order or a NaN bound panic."""
         self.assertOutput(r"""
-const BYTE: i32 = @clamp(300, 0, 255)
-const UNIT: f64 = @clamp(-0.25, 0.0, 1.0)
+const BYTE: i32 = cmp::clamp{ x = 300, lo = 0, hi = 255 }
+const UNIT: f64 = cmp::clamp{ x = -0.25, lo = 0.0, hi = 1.0 }
 
 fn noisy { mut io: Io, n: i32 } -> i32 {
     _ = @fmt(&io, "<{}>", n)
@@ -5234,16 +5238,16 @@ fn main { mut io: Io } {
     let a: i32 = 7
     let lo: i8 = -2
     let hi: u8 = 5
-    _ = @fmt(&io, "{} {} {} {}\n", @clamp(a, 0, 5), @clamp(a, 8, 9), @clamp(a, 0, 100), @clamp(a, 7, 7))
-    // The bounds widen with the value: an i32 between an i8 and a u8.
-    _ = @fmt(&io, "{} {} {}\n", @clamp(a, lo, hi), @clamp(-9, lo, 5), @clamp(hi, 0, a))
-    let px: u8 = @clamp(hi, 1, 3)
+    _ = @fmt(&io, "{} {} {} {}\n", cmp::clamp{ x = a, lo = 0, hi = 5 }, cmp::clamp{ x = a, lo = 8, hi = 9 }, cmp::clamp{ x = a, lo = 0, hi = 100 }, cmp::clamp{ x = a, lo = 7, hi = 7 })
+    // The bounds widen to the value's type: an i32 between an i8 and a u8.
+    _ = @fmt(&io, "{} {} {}\n", cmp::clamp{ x = a, lo, hi }, cmp::clamp{ x = -9, lo, hi = 5 }, cmp::clamp(i32){ x = hi, lo = 0, hi = a })
+    let px: u8 = cmp::clamp{ x = hi, lo = 1, hi = 3 }
     _ = @fmt(&io, "{} {} {}\n", px, BYTE, UNIT)
     // The value, then the low bound, then the high one, each once.
-    _ = @fmt(&io, " {}\n", @clamp(noisy{ &io, n = 9 }, noisy{ &io, n = 1 }, noisy{ &io, n = 3 }))
+    _ = @fmt(&io, " {}\n", cmp::clamp{ x = noisy{ &io, n = 9 }, lo = noisy{ &io, n = 1 }, hi = noisy{ &io, n = 3 } })
     // Floats: a NaN value stays NaN, and -0.0 isn't below 0.0.
-    _ = @fmt(&io, "{} {} {} {}\n", @clamp(f{ x = 2.0 }, 0.0, 1.0), @clamp(f{ x = -2.0 }, 0.0, 1.0), @clamp(f{ x = 0.5 }, 0.0, 1.0), @clamp(math::NAN, 0.0, 1.0))
-    _ = @fmt(&io, "{} {} {}\n", @clamp(f{ x = -0.0 }, 0.0, 1.0), @clamp(math::INF, -1.0, math::INF), @clamp(-math::INF, f{ x = -1.5 }, 1.0))
+    _ = @fmt(&io, "{} {} {} {}\n", cmp::clamp{ x = f{ x = 2.0 }, lo = 0.0, hi = 1.0 }, cmp::clamp{ x = f{ x = -2.0 }, lo = 0.0, hi = 1.0 }, cmp::clamp{ x = f{ x = 0.5 }, lo = 0.0, hi = 1.0 }, cmp::clamp{ x = math::NAN, lo = 0.0, hi = 1.0 })
+    _ = @fmt(&io, "{} {} {}\n", cmp::clamp{ x = f{ x = -0.0 }, lo = 0.0, hi = 1.0 }, cmp::clamp{ x = math::INF, lo = -1.0, hi = math::INF }, cmp::clamp{ x = -math::INF, lo = f{ x = -1.5 }, hi = 1.0 })
 }
 """,
             '5 8 7 7\n'
@@ -5255,17 +5259,64 @@ fn main { mut io: Io } {
         self.assertPanic("""
 fn at { n: i32 } -> i32 { return n }
 fn main { mut io: Io } {
-    io::println_i64{ &io, n = @clamp(5, at{ n = 9 }, at{ n = 2 }) }
+    io::println_i64{ &io, n = cmp::clamp{ x = 5, lo = at{ n = 9 }, hi = at{ n = 2 } } }
 }
-""", '@clamp: the low bound is above the high bound')
+""", 'cmp::clamp: the low bound is above the high bound')
+        self.assertPanic("""
+fn main { mut io: Io } {
+    io::println_i64{ &io, n = cmp::clamp{ x = 3, lo = 9, hi = 2 } }
+}
+""", 'cmp::clamp: the low bound is above the high bound')
         self.assertPanic("""
 fn main { mut io: Io } {
     let x: f64 = 0.5
-    io::println_f64{ &io, n = @clamp(x, math::NAN, 1.0) }
+    io::println_f64{ &io, n = cmp::clamp{ x, lo = 2.0, hi = 1.0 } }
 }
-""", '@clamp: the low bound is above the high bound, or one of them is NaN')
-        self.assertCompileError('fn two {} -> i32 { return 2 }\nconst A: i32 = @clamp(5, 9, two{})\nfn main {} { _ = A }',
-                                'const `A` panicked while compiling: @clamp: the low bound is above the high bound, at 2:16')
+""", 'cmp::clamp: the low bound is above the high bound')
+        for bounds in ['lo = math::NAN, hi = 1.0', 'lo = 0.0, hi = math::NAN']:
+            with self.subTest(bounds=bounds):
+                self.assertPanic("""
+fn main { mut io: Io } {
+    let x: f64 = 0.5
+    io::println_f64{ &io, n = cmp::clamp{ x, %s } }
+}
+""" % bounds, 'cmp::clamp: one of the bounds is NaN')
+        with self.assertRaises(CompileError) as cm:
+            run('fn two {} -> i32 { return 2 }\nconst A: i32 = cmp::clamp{ x = 5, lo = 9, hi = two{} }\nfn main {} { _ = A }')
+        self.assertIn('const `A` panicked while compiling: cmp::clamp: the low bound is above the high bound', cm.exception.msg)
+
+    def test_min_by_max_by(self):
+        """§17, `cmp`: `min_by` and `max_by` take the order as a function, plain or bound, for a
+        type without one; the first argument where neither comes before the other."""
+        self.assertOutput(r"""
+struct P { name: []u8, age: u8 }
+struct Near { to: i32 }
+fn younger { a: P, b: P } -> bool { return a.age < b.age }
+fn nearer { n: Near, a: i32, b: i32 } -> bool {
+    let da = if a < n.to { n.to - a } else { a - n.to }
+    let db = if b < n.to { n.to - b } else { b - n.to }
+    return da < db
+}
+fn oldest { ps: []P } -> P {
+    let mut best = ps[0]
+    for p in ps { best = cmp::max_by{ a = best, b = p, less = younger } }
+    return best
+}
+const FIRST: P = cmp::min_by{ a = P{ name = "ann", age = 30 }, b = P{ name = "bob", age = 30 }, less = younger }
+
+fn main { mut io: Io } {
+    let ann = P{ name = "ann", age = 30 }
+    let bob = P{ name = "bob", age = 30 }
+    let cy = P{ name = "cy", age = 31 }
+    _ = @fmt(&io, "{} {} {} {}\n", cmp::min_by{ a = ann, b = bob, less = younger }.name, cmp::max_by{ a = ann, b = bob, less = younger }.name, cmp::min_by{ a = cy, b = bob, less = younger }.name, cmp::max_by{ a = ann, b = cy, less = younger }.name)
+    _ = @fmt(&io, "{} {}\n", oldest{ ps = [ann, cy, bob] }.name, FIRST.name)
+    let n = Near{ to = 10 }
+    _ = @fmt(&io, "{} {} {}\n", cmp::min_by{ a = 4, b = 13, less = nearer{ n, _ } }, cmp::max_by{ a = 4, b = 13, less = nearer{ n, _ } }, cmp::min_by{ a = 8, b = 12, less = nearer{ n, _ } })
+}
+""",
+            'ann ann bob cy\n'
+            'cy ann\n'
+            '13 4 8\n')
 
     def test_round_and_saturate(self):
         """§13: `@round` (to the nearest integer, halfway cases to the even one, checked as `@as`
@@ -5375,23 +5426,23 @@ fn main { mut io: Io } {
 """ % expr, '@as: %s is not representable in %s' % (shown, ty))
 
     def test_min_max_clamp_errors(self):
+        order = GenericOrder.ORDER
         for src, msg, line, col in [
-            ('let a: i32 = 1\n    let u: u32 = 2\n    let m = @min(a, u)',
-             '@min needs two numbers of one type, got i32 and u32: convert one with @as', 4, 13),
-            ('let a: i64 = 1\n    let x: f64 = 2.0\n    let m = @max(a, x)',
-             '@max needs two numbers of one type, got i64 and f64: convert one with @as', 4, 13),
-            ('let m = @max("a", "b")', '@max needs numbers, got []u8', 2, 13),
-            ('let m = @min(true, false)', '@min needs numbers, got bool', 2, 13),
-            ('let a = 3\n    let m = @clamp(a, 9, 2)',
-             "@clamp's low bound, 9, is above its high bound, 2: write `@clamp(x, 2, 9)`", 3, 23),
-            ('let a = 3\n    let m = @clamp(a, 1, -1)',
-             "@clamp's low bound, 1, is above its high bound, -1: write `@clamp(x, -1, 1)`", 3, 23),
-            ('let a: i8 = 3\n    let hi: u8 = 5\n    let m = @clamp(a, 0, hi)',
-             '@clamp needs three numbers of one type, got i8, i8 and u8: convert with @as', 4, 13),
-            ('let m0: i32 = 0\n    let p = &m0\n    let m = @clamp(p, p, p)', '@clamp needs numbers, got *i32', 4, 13),
-            ('let m = @min(1)', 'wrong number of arguments: @min(a, b)', 2, 19),
-            ('let m = @max(1, 2, 3)', 'wrong number of arguments: @max(a, b)', 2, 24),
-            ('let m = @clamp(1, 2)', 'wrong number of arguments: @clamp(x, lo, hi)', 2, 24),
+            # one type, the first argument's: a wider or another type after it is an error
+            ('let a: i32 = 1\n    let u: u32 = 2\n    let m = cmp::min{ a, b = u }', 'expected i32, got u32', 4, 30),
+            ('let a: i64 = 1\n    let x: f64 = 2.0\n    let m = cmp::max{ a, b = x }', 'expected i64, got f64', 4, 30),
+            ('let a: i32 = 1\n    let b: u8 = 2\n    let m = cmp::max{ a = b, b = a }', 'expected u8, got i32', 4, 34),
+            ('let a: i8 = 3\n    let hi: u8 = 5\n    let m = cmp::clamp{ x = a, lo = 0, hi }', 'expected i8, got u8', 4, 40),
+            # a type without an order, where the fn is named
+            ('let m = cmp::max{ a = "a", b = "b" }', '`cmp::max` uses `<` on its `T`, and []u8 has no `<`: it is a slice, and ' + order, 2, 18),
+            ('let m = cmp::min{ a = true, b = false }', '`cmp::min` uses `<` on its `T`, and bool has no `<`: it is a bool, and ' + order, 2, 18),
+            ('let m0: i32 = 0\n    let p = &m0\n    let m = cmp::clamp{ x = p, lo = p, hi = p }',
+             '`cmp::clamp` uses `<` on its `T`, and *i32 has no `<`: it is a pointer, and ' + order, 4, 18),
+            ('let m = cmp::min{ a = 1 }', 'call to `cmp::min` is missing `b`', 2, 21),
+            # they were builtins once, and aren't
+            ('let m = @min(1, 2)', 'unknown builtin `@min`', 2, 13),
+            ('let m = @max(1, 2)', 'unknown builtin `@max`', 2, 13),
+            ('let m = @clamp(1, 2, 3)', 'unknown builtin `@clamp`', 2, 13),
         ]:
             with self.subTest(src=src):
                 with self.assertRaises(CompileError) as cm:

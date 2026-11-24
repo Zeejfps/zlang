@@ -321,7 +321,7 @@ namespace res {
     }
 
     fn copy_name { s: []u8, into: []mut u8 } -> []u8 {
-        let n = @min(s.len, into.len)
+        let n = cmp::min{ a = s.len, b = into.len }
         slice::copy(u8){ dst = into[..n], src = s[..n] }
         return into[..n]
     }
@@ -428,7 +428,7 @@ namespace res {
     fn max_rank { r: u32, loc: ?Loc } -> u32 {
         if loc == null { return r }
         let k = rank{ class = loc.class }
-        return @max(k, r)
+        return cmp::max{ a = k, b = r }
     }
 
     // A resource of a listing: its name and where the search finds it.

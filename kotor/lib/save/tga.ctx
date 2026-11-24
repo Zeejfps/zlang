@@ -67,6 +67,6 @@ namespace save {
     // pixel on; never past `limit`.
     fn box_end { start: usize, end: usize, limit: usize } -> usize {
         let e = if end > start { end } else { start + 1 }
-        return @min(e, limit)
+        return cmp::min{ a = e, b = limit }
     }
 }

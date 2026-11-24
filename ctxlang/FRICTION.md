@@ -65,10 +65,13 @@ as the write-ups gave them.
 
 6. **A program's namespace hides std's of the same name whole.** KOTOR's `math`, its vectors,
     hides std's `math`, so it declares libm and the float-bits fns again (lib/base/math.ctx, 24
-    extern fns) rather than reach std's. (The rest of this entry is fixed: std's `math` has
-    libm's functions, they run while compiling, the MP3 tables' own cosine series and Newton
-    roots are gone, and `@min`, `@max` and `@clamp` are builtins.) *Hit by 5:* ctxc, audio,
-    video, rules, render (about 6).
+    extern fns) rather than reach std's. What every program must reach, std keeps out of the
+    names a program takes: the smaller, the larger and the clamped of any numbers are
+    `cmp::min`, `max` and `clamp`, in a namespace of their own rather than in `math`, and KOTOR
+    calls them beside its own f32 `math::min`, `max` and `clamp`. (The rest of this entry is
+    fixed: std's `math` has libm's functions, they run while compiling, and the MP3 tables' own
+    cosine series and Newton roots are gone.) *Hit by 5:* ctxc, audio, video, rules, render
+    (about 6).
 
 7. **Signed and unsigned integers don't mix.** Game data is signed (-1 for none, modifiers) and
     lengths and counts are `usize`, and neither widens to the other: a `usize` going into an

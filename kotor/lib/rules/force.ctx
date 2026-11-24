@@ -153,7 +153,7 @@ namespace rules {
         if from_class { return total_level{ c } }
         let row = get_spell{ tables, row = spell } ifnull { return 10 }
         let lvl = 2 * row.innate - 1
-        return @max(lvl, 10)
+        return cmp::max{ a = lvl, b = 10 }
     }
 
     // ---- the cast action (3.3)

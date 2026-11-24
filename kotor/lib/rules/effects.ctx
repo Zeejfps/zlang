@@ -155,7 +155,7 @@ namespace rules {
         if has_feat{ c = &c, feat = feat::IMPROVED_TOUGHNESS } { feats = feats + 2 }
         if has_feat{ c = &c, feat = feat::WOOKIEE_ENDURANCE } { feats = feats + 2 }
         let d = resisted - feats
-        return @max(d, 0)
+        return cmp::max{ a = d, b = 0 }
     }
 
     // The resistance effect's share of DoDamageResistance.
@@ -511,12 +511,12 @@ namespace rules {
         }
         if e.kind == fx::DAMAGE_FORCE_POINTS or e.kind == fx::FORCE_DRAIN {
             let left = c.fp + c.temp_fp - e.ints[0]
-            c.fp = @max(left, 0)
+            c.fp = cmp::max{ a = left, b = 0 }
             return ApplyResult{ .. }
         }
         if e.kind == fx::HEAL_FORCE_POINTS {
             let total = c.fp + c.temp_fp + e.ints[0]
-            c.fp = @min(total, c.stats.max_fp)
+            c.fp = cmp::min{ a = total, b = c.stats.max_fp }
             emit{ ev = &ev, kind = ev::FEEDBACK, a = 0xe4, b = e.ints[0], who = e.creator }
             return ApplyResult{ .. }
         }
@@ -824,7 +824,7 @@ namespace rules {
                 if alive and hurt and time_diff_ms{ a = env.now, b = stamp, ms_per_day = mpd } > @as(i64, e.ints[1]) {
                     if for_fp {
                         let t = c.fp + e.ints[0]
-                        c.fp = @min(t, c.stats.max_fp)
+                        c.fp = cmp::min{ a = t, b = c.stats.max_fp }
                     } else {
                         emit{ ev = &ev, kind = ev::HEAL_HP, a = e.ints[0], b = 0, who = e.creator }
                     }

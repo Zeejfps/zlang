@@ -426,7 +426,7 @@ namespace mix {
     fn take_events { mut m: Mixer } -> []Event {
         mutex::lock{ mutex = &m.lock }
         defer mutex::unlock{ mutex = &m.lock }
-        let n = @min(m.event_count, EVENTS)
+        let n = cmp::min{ a = m.event_count, b = EVENTS }
         m.event_count = 0
         return m.events[..n]
     }
@@ -770,7 +770,7 @@ namespace mix {
         let fits = if peak > LIMIT_CEILING { LIMIT_CEILING / peak } else { 1.0 }
         let back = if m.limit_gain + LIMIT_RELEASE < 1.0 { m.limit_gain + LIMIT_RELEASE } else { 1.0 }
         let target = if fits < back { fits } else { back }
-        let ramp = if target < m.limit_gain { @min(LIMIT_ATTACK, frames) } else { frames }
+        let ramp = if target < m.limit_gain { cmp::min{ a = frames, b = LIMIT_ATTACK } } else { frames }
         let from = m.limit_gain
         let step = (target - from) / @as(f32, ramp)
         i = 0
@@ -969,7 +969,7 @@ namespace mix {
         if k != null {
             let f = &m.feeds[k]
             let avail = f.count / ch
-            let n = @min(avail, frames)
+            let n = cmp::min{ a = avail, b = frames }
             let mut i: usize = 0
             while i < n * ch {
                 m.scratch[i] = f.ring[f.read]

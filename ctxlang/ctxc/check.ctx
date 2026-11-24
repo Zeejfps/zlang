@@ -12357,7 +12357,7 @@ namespace check {
             return types::USIZE
         }
         // After a syntax error, a builtin may lack arguments the parser has reported missing.
-        let need: usize = if typed_arg or slice::eq_bytes{ a = n, b = "addr" } or slice::eq_bytes{ a = n, b = "hash" } { 1 } else if slice::eq_bytes{ a = n, b = "panic" } or slice::eq_bytes{ a = n, b = "fmt" } { 0 } else if slice::eq_bytes{ a = n, b = "clamp" } { 3 } else { 2 }
+        let need: usize = if typed_arg or slice::eq_bytes{ a = n, b = "addr" } or slice::eq_bytes{ a = n, b = "hash" } { 1 } else if slice::eq_bytes{ a = n, b = "panic" } or slice::eq_bytes{ a = n, b = "fmt" } { 0 } else { 2 }
         if args.len < need or (typed_arg and targ == null) { return types::ERROR }
         if slice::eq_bytes{ a = n, b = "panic" } {
             if args.len > 0 {
@@ -12432,58 +12432,6 @@ namespace check {
             let t = value_type{ &c, e = args[0] }
             if t != types::ERROR { derived_use{ &c, t, what = Derived::hash, at = expr_at{ e = args[0] } } }
             return types::prim{ p = types::Prim::u64 }
-        }
-        if slice::eq_bytes{ a = n, b = "min" } or slice::eq_bytes{ a = n, b = "max" } {
-            // Two numbers of one type after widening, as a comparison's operands (§13).
-            let lt = expr{ &c, e = args[0], exp }
-            let rt = expr{ &c, e = args[1], exp = lt }
-            if lt == types::ERROR or rt == types::ERROR { return types::ERROR }
-            let t = operand_type{ &c, lt, rt, a = args[0], b = args[1] }
-            if t == types::NO_TYPE {
-                errorf{ &c, at, msg = @fmt("@{} needs two numbers of one type, got {} and {}: convert one with @as", str{ s = n }, tstr{ c, t = lt }, tstr{ c, t = rt }) }
-                return types::ERROR
-            }
-            if not is_num{ c, t = op_type{ c, t } } {
-                errorf{ &c, at, msg = @fmt("@{} needs numbers, got {}", str{ s = n }, tstr{ c, t }) }
-                return types::ERROR
-            }
-            return t
-        }
-        if slice::eq_bytes{ a = n, b = "clamp" } {
-            // The value and each bound pair as a comparison's operands do, and the result has
-            // the widest of the types (§13).
-            let xt = expr{ &c, e = args[0], exp }
-            let lot = expr{ &c, e = args[1], exp = xt }
-            let hit = expr{ &c, e = args[2], exp = xt }
-            if xt == types::ERROR or lot == types::ERROR or hit == types::ERROR { return types::ERROR }
-            let t1 = operand_type{ &c, lt = xt, rt = lot, a = args[0], b = args[1] }
-            let t2 = if t1 == types::NO_TYPE { types::NO_TYPE } else { operand_type{ &c, lt = xt, rt = hit, a = args[0], b = args[2] } }
-            let mut t = types::NO_TYPE
-            if t1 != types::NO_TYPE and t2 != types::NO_TYPE {
-                if types::unify{ s = &c.ty, a = t1, b = t2 } or types::widens{ s = &c.ty, a = t2, b = t1 } {
-                    t = types::prune{ s = c.ty, t = t1 }
-                } else if types::widens{ s = &c.ty, a = t1, b = t2 } {
-                    t = types::prune{ s = c.ty, t = t2 }
-                }
-            }
-            if t == types::NO_TYPE {
-                errorf{ &c, at, msg = @fmt("@clamp needs three numbers of one type, got {}, {} and {}: convert with @as", tstr{ c, t = xt }, tstr{ c, t = lot }, tstr{ c, t = hit }) }
-                return types::ERROR
-            }
-            if not is_num{ c, t = op_type{ c, t } } {
-                errorf{ &c, at, msg = @fmt("@clamp needs numbers, got {}", tstr{ c, t }) }
-                return types::ERROR
-            }
-            // Two integer literals out of order would panic every time.
-            if args[1].k is int{ negative = ln, value = lv } and args[2].k is int{ negative = hn, value = hv } {
-                let l = lv ifnull 0
-                let h = hv ifnull 0
-                let above = if ln != hn { hn } else if ln { l < h } else { l > h }
-                if lv != null and hv != null and above {
-                    errorf{ &c, at = expr_at{ e = args[1] }, msg = @fmt("@clamp's low bound, {}, is above its high bound, {}: write `@clamp(x, {}, {})`", str{ s = source_text{ c, span = args[1].span } }, str{ s = source_text{ c, span = args[2].span } }, str{ s = source_text{ c, span = args[2].span } }, str{ s = source_text{ c, span = args[1].span } }) }
-                }
-            }
-            return t
         }
         if slice::eq_bytes{ a = n, b = "trunc" } {
             if not is_int{ c, t = tt } {
