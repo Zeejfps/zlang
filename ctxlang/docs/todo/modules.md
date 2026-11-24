@@ -1,6 +1,6 @@
 # Modules: design
 
-Status: **design**. Nothing here is built. It replaces llm-first 2.1's file-private declarations
+Status: **design**. Nothing here is built. It replaces llm-first 1's file-private declarations
 with a boundary of another kind: a folder that holds an `api.ctx` is a **module**, and code outside
 it reaches only what that file declares.
 
@@ -290,4 +290,4 @@ What isn't here, and why:
 | Duplicated helpers | Names are public until a module hides them, so a helper found can be reused. |
 
 FRICTION #5's other half, a build that can add one file and not its whole folder, is a matter of
-building, not of visibility, and stays llm-first 2.1's.
+building, not of visibility, and stays llm-first 1's.
