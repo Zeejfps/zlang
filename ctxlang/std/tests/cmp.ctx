@@ -1,44 +1,47 @@
-// Tests of std's cmp (spec §17). Run with the rest of std's tests: `ctxc test std/tests`.
+// Tests of std's cmp (spec §17) and of the builtins that order numbers, `@min`, `@max` and
+// `@clamp` (§13). Run with the rest of std's tests: `ctxc test std/tests`.
 
 namespace cmp_tests {
     #test
     fn min_and_max_of_integers { mut t: Test } {
-        @expect(&t, cmp::min{ a = 3, b = 5 } == 3)
-        @expect(&t, cmp::max{ a = 3, b = 5 } == 5)
-        @expect(&t, cmp::min{ a = -1, b = -7 } == -7)
+        @expect(&t, @min(3, 5) == 3)
+        @expect(&t, @max(3, 5) == 5)
+        @expect(&t, @min(-1, -7) == -7)
         let small: u8 = 200
-        @expect(&t, cmp::max{ a = small, b = 9 } == 200)
+        @expect(&t, @max(small, 9) == 200)
+        // The operands widen either way.
         let wide: i64 = 1099511627776
         let narrow: i32 = 7
-        @expect(&t, cmp::min{ a = wide, b = narrow } == 7)
+        @expect(&t, @min(wide, narrow) == 7)
+        @expect(&t, @max(narrow, wide) == wide)
     }
 
     #test
     fn equal_operands_give_the_first { mut t: Test } {
         // -0.0 and 0.0 are equal, and differ in their bits.
-        @expect(&t, math::f64_to_bits{ x = cmp::min{ a = -0.0, b = 0.0 } } == math::f64_to_bits{ x = -0.0 })
-        @expect(&t, math::f64_to_bits{ x = cmp::max{ a = -0.0, b = 0.0 } } == math::f64_to_bits{ x = -0.0 })
+        @expect(&t, math::f64_to_bits{ x = @min(-0.0, 0.0) } == math::f64_to_bits{ x = -0.0 })
+        @expect(&t, math::f64_to_bits{ x = @max(-0.0, 0.0) } == math::f64_to_bits{ x = -0.0 })
     }
 
     #test
     fn a_nan_is_kept { mut t: Test } {
-        @expect(&t, math::is_nan{ x = cmp::min{ a = math::NAN, b = 1.0 } })
-        @expect(&t, math::is_nan{ x = cmp::max{ a = 1.0, b = math::NAN } })
-        @expect(&t, math::is_nan{ x = cmp::clamp{ x = math::NAN, lo = 0.0, hi = 1.0 } })
+        @expect(&t, math::is_nan{ x = @min(math::NAN, 1.0) })
+        @expect(&t, math::is_nan{ x = @max(1.0, math::NAN) })
+        @expect(&t, math::is_nan{ x = @clamp(math::NAN, 0.0, 1.0) })
     }
 
     #test
     fn clamp_gives_the_nearest_bound { mut t: Test } {
-        @expect(&t, cmp::clamp{ x = 5, lo = 0, hi = 3 } == 3)
-        @expect(&t, cmp::clamp{ x = -5, lo = 0, hi = 3 } == 0)
-        @expect(&t, cmp::clamp{ x = 2, lo = 0, hi = 3 } == 2)
-        @expect(&t, cmp::clamp{ x = 2.5, lo = 0.0, hi = 1.0 } == 1.0)
+        @expect(&t, @clamp(5, 0, 3) == 3)
+        @expect(&t, @clamp(-5, 0, 3) == 0)
+        @expect(&t, @clamp(2, 0, 3) == 2)
+        @expect(&t, @clamp(2.5, 0.0, 1.0) == 1.0)
     }
 
-    #test{ panics = "cmp::clamp: the low bound is above the high bound" }
+    #test{ panics = "@clamp: the low bound is above the high bound" }
     fn clamp_panics_on_bounds_out_of_order {} {
         let lo = 4
-        _ = cmp::clamp{ x = 1, lo, hi = 3 }
+        _ = @clamp(1, lo, 3)
     }
 
     fn shorter { a: []u8, b: []u8 } -> bool { return a.len < b.len }

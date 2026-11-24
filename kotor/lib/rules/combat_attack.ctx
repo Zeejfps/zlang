@@ -237,7 +237,7 @@ namespace rules {
     // cap) and at most 0 when the defender is debilitated.
     fn combat_get_defense_dex { tables: *Tables, c: *Creature } -> i32 {
         let dex = c.stats.abil_mod[1]
-        if is_debilitated{ c } { return cmp::min{ a = dex, b = 0 } }
+        if is_debilitated{ c } { return @min(dex, 0) }
         let body = equipped_item{ c, mask = slot::BODY }
         if body != null {
             let bi = get_baseitem{ tables, row = body.base_item }
@@ -323,7 +323,7 @@ namespace rules {
         let dex = combat_get_defense_dex{ tables, c = def }
         if not d.hidden {
             if sit.defender_sees {
-                d.dodge = cmp::min{ a = def.stats.ac_dodge, b = 10 }
+                d.dodge = @min(def.stats.ac_dodge, 10)
                 d.dex = dex
             }
         } else if dex < 0 {

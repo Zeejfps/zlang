@@ -260,7 +260,7 @@ namespace rules {
         e.ints[0] = ac_type
         e.ints[1] = amount
         e.ints[2] = if race >= 0 { race } else { race::ANY }
-        e.ints[4] = cmp::max{ a = align, b = 0 }
+        e.ints[4] = @max(align, 0)
         e.ints[5] = if damage_filter >= 0 { damage_filter } else { fx::AC_ALL_A }
         mark_item_effect{ e = &e }
         return e

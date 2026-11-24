@@ -107,13 +107,12 @@ function: can't be stored in a struct or returned), `extern fn{C} -> R` (C funct
   `u64` that equal values share. Not for a type with a pointer, a function or an extern union
   inside (the error names the field), and no `@hash` of a float. `map::make(Key, V){ realloc =
   arena::alloc, &heap }` keys a map by any type that has both; `map::new` takes `hash` and `eq`.
-- `cmp::min{ a, b }`, `cmp::max{ a, b }` and `cmp::clamp{ x, lo, hi }` (std/cmp.ctx) for integers
-  and floats: never `if a < b { a } else { b }` by hand. The arguments have one type, the first
-  one's: a literal takes it (`cmp::max{ a = n, b = 0 }`) and a narrower type after it widens; with
-  the narrower one first, write the type, `cmp::min(i32){ a = small, b = wide }`. A NaN operand
-  gives NaN; `clamp` panics if `lo > hi`. For a type of your own, `cmp::min_by{ a, b, less }` and
-  `max_by` take the order as a fn. (`math::min`, `max` and `clamp` in lib/base are KOTOR's own
-  f32 fns, which give the second operand for a NaN: use them for f32 game math as before.)
+- `@min(a, b)`, `@max(a, b)` and `@clamp(x, lo, hi)` for integers and floats of one type after
+  widening (a literal takes the other's type): never `if a < b { a } else { b }` by hand. A NaN
+  operand gives NaN; `@clamp` panics if `lo > hi`. For a type of your own, `cmp::min_by{ a, b,
+  less }` and `max_by` (std/cmp.ctx) take the order as a fn. (`math::min`, `max` and `clamp` in
+  lib/base are KOTOR's own f32 fns, which give the second operand for a NaN: use them for f32
+  game math as before.)
 - Float to integer: `@as(T, x)` rounds toward zero and panics out of range; `@round(T, x)`
   rounds to nearest (a half to even) and panics out of range; `@saturate(T, x)` and
   `@round_saturate(T, x)` clamp to `T`'s range instead (NaN is 0), for pixels and samples:

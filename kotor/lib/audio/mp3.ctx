@@ -314,8 +314,8 @@ namespace mp3 {
         if not g.switching {
             let a = g.region0 + 1
             let c = g.region0 + g.region1 + 2
-            r1 = SFB_LONG[rate][cmp::min{ a, b = 22 }]
-            r2 = SFB_LONG[rate][cmp::min{ a = c, b = 22 }]
+            r1 = SFB_LONG[rate][@min(a, 22)]
+            r2 = SFB_LONG[rate][@min(c, 22)]
         }
         if r1 > big_end { r1 = big_end }
         if r2 > big_end { r2 = big_end }
@@ -756,7 +756,7 @@ namespace mp3 {
         // silent, but its main data is kept for the frames after it.
         let main = f[head + side_len..h.size]
         if d.res_len + main.len > RESERVOIR {
-            let keep: usize = cmp::min{ a = d.res_len, b = 511 }
+            let keep: usize = @min(d.res_len, 511)
             let from = d.res_len - keep
             let mut i: usize = 0
             while i < keep {

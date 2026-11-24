@@ -129,7 +129,7 @@ namespace dlgpanel {
     // least the conversation panel's own height.
     fn bar_height { w: i32, h: i32 } -> i32 {
         let visible = @as(i32, @as(f32, w) * BAR_RATIO)
-        return cmp::max{ a = (h - visible) / 2, b = PANEL_H }
+        return @max((h - visible) / 2, PANEL_H)
     }
 
     // Puts the cinematic panel where Layout does: x 48, starting where the bottom bar starts,
@@ -163,8 +163,8 @@ namespace dlgpanel {
     // New bar targets after a change; the bars jump there when they have arrived already (or are
     // to be instant).
     fn retarget_bars { mut p: Panels, panel_y: i32 } {
-        p.top_target = cmp::max{ a = p.bar, b = p.top_need }
-        p.bottom_target = cmp::min{ a = p.ui_h - p.bar, b = panel_y }
+        p.top_target = @max(p.bar, p.top_need)
+        p.bottom_target = @min(p.ui_h - p.bar, panel_y)
         if p.bars_instant or p.bars_done {
             p.top_h = p.top_target
             p.bottom_y = p.bottom_target
@@ -375,7 +375,7 @@ namespace dlgpanel {
             let font = list::items{ list = g.fonts }[@as(usize, lm.text.font)].font
             let n = gui::layout{ font, text = lm.text.text, width = g.ui_w - 2 * MARGIN, lines = g.lines }
             let over = gui::lines_height{ font, count = n } - PANEL_H
-            if over > 0 { p.extra = cmp::min{ a = over, b = MAX_EXTRA } }
+            if over > 0 { p.extra = @min(over, MAX_EXTRA) }
         }
         place_cinematic{ &p, &g }
         show_what_is_set{ &p, &g }
@@ -409,7 +409,7 @@ namespace dlgpanel {
             p.extra = 0
             place_cinematic{ &p, &g }
         }
-        let n = cmp::min{ a = texts.len, b = MAX_REPLIES }
+        let n = @min(texts.len, MAX_REPLIES)
         p.reply_count = n
         let mut i: usize = 0
         while i < n {

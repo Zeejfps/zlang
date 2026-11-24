@@ -40,7 +40,7 @@ namespace save {
             let rep = gff::get_number{ doc = doc, s = reps[k], label = "FactionRep" } ifnull 50
             k = k + 1
             if row < 0 or col < 0 or row >= @as(i64, w.repute_rows) or col >= @as(i64, w.repute_rows) { continue }
-            w.repute[@as(usize, row)][@as(usize, col)] = @trunc(u8, cmp::clamp{ x = rep, lo = 0, hi = 100 })
+            w.repute[@as(usize, row)][@as(usize, col)] = @trunc(u8, @clamp(rep, 0, 100))
         }
     }
 }

@@ -443,56 +443,39 @@ What a model writes by default should compile, or fail with the exact fix.
   adding 1.5 * 2^52 and reading the bits.
   - Details: F#6, F#17; [spec §13](spec.md#13-builtins), [§17](spec.md#17-standard-library).
   - *Done when:* min/max and a rounding/clamping float-to-int conversion exist.
-  - *Done:* three std fns and three builtins
-    ([spec §17, `cmp`](spec.md#17-standard-library) and
-    [§13, Rounding and saturating conversions](spec.md#rounding-and-saturating-conversions)).
-    All six were builtins at first, because a generic fn couldn't use `<` on a value of its
-    `T`. It can now (4.1), and a builtin needs a better reason than that, so what needs only an
-    order is std's, in [std/cmp.ctx](std/cmp.ctx):
-    - `cmp::min{ a, b }` and `cmp::max{ a, b }`, generic over any type with an order:
-      integers, floats and distinct types of them. Equal operands give the first. Nothing
-      existed for floats but libm's `math::fmin` and `fmax`, which drop a NaN; here a NaN
-      operand gives NaN, so one isn't lost on the way (rule 1), and std's keep C's answer for
-      who wants it. The fn tests `b != b` for that, which no integer is and the C compiler
-      drops for one.
-    - `cmp::clamp{ x, lo, hi }`: a NaN `x` stays NaN. It panics unless `lo <= hi`, with
-      `cmp::clamp: the low bound is above the high bound`, or for a NaN bound
-      `cmp::clamp: one of the bounds is NaN`.
-    - `cmp::min_by{ a, b, less }` and `cmp::max_by`, for a type without an order: the order
-      is a function, as `map::new` takes `hash` and `eq` beside `map::make`. std has no sort
-      or search to take a name from; `_by` and `less` are what a model writes first.
-    - They are in a namespace of their own, not in `math`: a program's namespace hides
-      std's of the same name whole (F#6), KOTOR declares `math`, and its f32 `math::min`,
-      `max` and `clamp` (238 calls) stay as they are, since they return the second operand
-      for a NaN. Every program reaches `cmp`, and the names are Rust's `std::cmp::min`,
-      `max`, `min_by` and `max_by`.
-    - What the builtins did and the fns don't, each now a compile error or a panic, never
-      another value. The builtins' operands widened either way; a generic fn's `T` is its
-      first argument's type, so a literal still takes the other's type and a narrower
-      argument after a wider one still widens, but `cmp::min{ a = small, b = wide }` is
-      `expected u8, got i32` until the type is written, `cmp::min(i32){ ... }`. Two integer
-      literals out of order as `@clamp`'s bounds were a compile error; they now panic when
-      the call runs (in a const, still while compiling). The panic gives std/cmp.ctx's line,
-      not the caller's, until panics print their callers (6.4). And each use is a call in the
-      IR, which the C compiler inlines (at `-O1` an `i32` `cmp::min` is the compare and
-      select it was) and the interpreter runs as one.
-    - Float to integer, beside `@as`, which rounds toward zero and panics, stays three
-      builtins: `@round(T, x)` rounds to the nearest integer, a half to the even one
-      (IEEE's default, and what the bit trick did; `math::round` is C's, away from zero),
-      and panics or takes an `ifoverflow` as `@as` does; `@saturate(T, x)` rounds toward
-      zero and gives `T`'s nearest value instead of panicking, 0 for NaN, and clamps an
-      integer too (`@saturate(u8, v)`); `@round_saturate(T, x)` does both. The error for an
-      integer given to `@round` names `@as` and `@saturate`. No generic fn can be written
-      for them: of its `T` a fn may ask only `==`, `@hash` and an order, and these need a
-      conversion to `T` (`@as(T, x)` takes a numeric type, which a parameter isn't), `T`'s
-      smallest and largest values, which nothing names, and for `@round` the caller's
-      `ifoverflow`, which never covers what a called fn does
-      ([spec §13, Rounding and saturating conversions, rule 7](spec.md#rounding-and-saturating-conversions)).
-    The three builtins are lowered to the IR's compares, conditionals and float additions
-    (rounding is adding and taking away 2^52), and the fns are compares, so the C, the
-    interpreter and consts agree by construction and nothing calls libm: the test compares
-    28 values through 12 conversions, const against run time. A const that uses one is run,
-    not folded, so it can't be an array's length.
+  - *Done:* six builtins
+    ([spec §13, Smallest, largest and clamped](spec.md#smallest-largest-and-clamped) and
+    [Rounding and saturating conversions](spec.md#rounding-and-saturating-conversions)).
+    - `@min(a, b)` and `@max(a, b)`, for integers and floats: one type after widening, as
+      `<` has it, so an `i32` and a `u8` compare as `i32`s and an `i32` with a `u32` is an
+      error that says to convert one. Each operand is evaluated once; equal operands give
+      the first. Nothing existed for floats but libm's `math::fmin` and `fmax`, which drop a
+      NaN; here a NaN operand gives NaN, so one isn't lost on the way (rule 1), and std's
+      keep C's answer for who wants it.
+    - `@clamp(x, lo, hi)`: the bounds pair with `x` as above; a NaN `x` stays NaN. It
+      panics unless `lo <= hi` (a NaN bound too), and two integer literals out of order are
+      a compile error that says to swap them.
+    - `@min`, `@max` and `@clamp` are builtins, though a generic fn can use `<` on its `T`
+      (4.1), because as std's `cmp::min{ a, b }`, `max` and `clamp{ x, lo, hi }`, which they
+      were for one commit, the operands widened one way only (`T` is the first argument's
+      type), arithmetic code filled named fields, literal bounds out of order panicked where
+      the builtin fails to compile, and the panic named std's line, not the caller's.
+    - For a type without an order std keeps `cmp::min_by{ a, b, less }` and `cmp::max_by`
+      ([std/cmp.ctx](std/cmp.ctx)): the order is a function, as `map::new` takes `hash` and
+      `eq` beside `map::make`. std has no sort or search to take a name from; `_by` and
+      `less` are what a model writes first.
+    - Float to integer, beside `@as`, which rounds toward zero and panics: `@round(T, x)`
+      rounds to the nearest integer, a half to the even one (IEEE's default, and what the
+      bit trick did; `math::round` is C's, away from zero), and panics or takes an
+      `ifoverflow` as `@as` does; `@saturate(T, x)` rounds toward zero and gives `T`'s
+      nearest value instead of panicking, 0 for NaN, and clamps an integer too
+      (`@saturate(u8, v)`); `@round_saturate(T, x)` does both. The error for an integer
+      given to `@round` names `@as` and `@saturate`.
+    All six are lowered to the IR's compares, conditionals and float additions (rounding
+    is adding and taking away 2^52), so the C, the interpreter and consts agree by
+    construction and nothing calls libm: the test compares 28 values through 12
+    conversions, const against run time. A const that uses one is run, not folded, so it
+    can't be an array's length.
     Converted: the MP3 synthesis and the mixer (`round_to_i16`) and the Bink audio
     (`to_i16`, the 1.5 * 2^52 trick) are `@round_saturate(i16, x)`; sndcheck over the
     whole install (16,818 files, 412 of them against ffmpeg), binkcheck over the 61 movies
@@ -501,10 +484,10 @@ What a model writes by default should compile, or fail with the exact fix.
     old helpers gave -32768; the tools' outputs show none. Also 40 integer
     `if a < b { a } else { b }` in KOTOR's rules, save, res, mdl, script, dialog and audio
     code (checked to be integers with a compiler that rejected floats there) and the helper
-    fns `min_i`, `max_i` and `min_usize` with their 8 calls: 48 calls of `cmp`'s fns in
-    KOTOR, and 10 in std's Windows layer, each first written as the builtin and moved with
-    the same tools' outputs. bink2png's `clamp` is `@saturate(u8, v)`. KOTOR's f32
-    `math::min`, `max` and `clamp` stay.
+    fns `min_i`, `max_i` and `min_usize` with their 8 calls: 50 calls of the builtins in
+    KOTOR, 10 in std's Windows layer and 3 in std's test runner. bink2png's `clamp` is
+    `@saturate(u8, v)`. KOTOR's f32 `math::min`, `max` and `clamp` (238 calls) stay: they
+    return the second operand for a NaN, which `@min` doesn't.
 
 - [x] **4.4 Format specs in `@fmt`.**
   No width, padding, hex or fixed-point (`{:<16}`, `{:08x}`, `{:.3}`), so programs write a wrapper
@@ -594,7 +577,7 @@ What a model writes by default should compile, or fail with the exact fix.
       `main` may. The runner is std's `test::main`, a `#test_main` fn a program can replace.
       It needs no threads and no `proc::capture` (which isn't built): a test's output goes to
       a file, and the runner waits with `proc::wait_for`.
-    - Used: [std/tests](std/tests) (15 tests of `cmp`, `utf8`, `@fmt`'s specs, `list` and
+    - Used: [std/tests](std/tests) (15 tests of `@min`, `@max`, `@clamp`, `cmp`, `utf8`, `@fmt`'s specs, `list` and
       `map`, `ctxc test std/tests`), and KOTOR's 2DA parser
       ([kotor/lib/formats/twoda_test.ctx](../kotor/lib/formats/twoda_test.ctx), 5 tests on
       tables made by hand, no game install: `ctxc test kotor/tools/fmttest twoda`), which were

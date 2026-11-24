@@ -3199,6 +3199,9 @@ namespace lower {
             let stirred = mk{ ty = u64_ty, k = ir::ExprKind::wrap{ op = ir::ArithOp::mul, a = box{ l, e = x0 }, b = box{ l, e = k } } }
             return held{ l, slot = s0, init = folded, body = held{ l, slot = s1, init = stirred, body = xor_shift{ &l, v = a1, n = 29, pos } } }
         }
+        if slice::eq_bytes{ a = name, b = "min" } { return min_max{ &l, least = true, a = args[0], b = args[1], t } }
+        if slice::eq_bytes{ a = name, b = "max" } { return min_max{ &l, least = false, a = args[0], b = args[1], t } }
+        if slice::eq_bytes{ a = name, b = "clamp" } { return clamp{ &l, e, args, t } }
         if check::to_int_name{ n = name } { return to_int{ &l, e, name, arg = args[0], t } }
         if slice::eq_bytes{ a = name, b = "wrap_shl" } {
             let ty = tid{ &l, t }
@@ -3491,7 +3494,7 @@ namespace lower {
         try! list::push{ list = &g.stmts, item = ir::Stmt::loop{ c = more, body = ir::Block{ stmts = list::items{ list = inner.stmts }, result = null }, label = null } }
     }
 
-    // ---- @round, @saturate and @round_saturate (spec §13): each is written
+    // ---- @min, @max, @clamp, @round, @saturate and @round_saturate (spec §13): each is written
     // with the IR's compares, conditionals and float arithmetic, over temporaries that hold
     // the operands, so the C, the interpreter and a const's evaluation give one answer.
 
@@ -3515,6 +3518,52 @@ namespace lower {
 
     fn float_of { mut l: Lower, value: f64 } -> ir::Expr {
         return mk{ ty = tid{ &l, t = types::prim{ p = types::Prim::f64 } }, k = ir::ExprKind::float{ value } }
+    }
+
+    // `@min(a, b)` or `@max(a, b)`, a's and b's values in temporaries, a's first:
+    // `a <= b ? a : b`, and for floats `a <= b ? a : (a != a ? a : b)`, so that a NaN operand
+    // gives a NaN and two equal ones give the first.
+    fn min_max { mut l: Lower, least: bool, a: syntax::Expr, b: syntax::Expr, t: Id } -> ir::Expr {
+        let ty = tid{ &l, t }
+        let x = conv{ &l, e = a, to = t }
+        let y = conv{ &l, e = b, to = t }
+        let sa = temp{ &l, ty }
+        let sb = temp{ &l, ty }
+        let va = slot_ex{ ty, slot = sa }
+        let vb = slot_ex{ ty, slot = sb }
+        let first = compared{ &l, op = if least { ir::CmpOp::le } else { ir::CmpOp::ge }, a = va, b = vb }
+        let mut other = vb
+        if types::is_float{ s = l.c.ty, t = types::undistinct{ s = l.c.ty, t = T{ &l, t } } } {
+            other = either{ l, ty, c = compared{ &l, op = ir::CmpOp::ne, a = va, b = va }, then = va, els = vb }
+        }
+        return held{ l, slot = sa, init = x, body = held{ l, slot = sb, init = y, body = either{ l, ty, c = first, then = va, els = other } } }
+    }
+
+    // `@clamp(x, lo, hi)`, the three in temporaries in that order: it panics unless
+    // `lo <= hi`, which a NaN bound isn't, and is then `x < lo ? lo : (x > hi ? hi : x)`, so a
+    // NaN x stays one.
+    fn clamp { mut l: Lower, e: syntax::Expr, args: []syntax::Expr, t: Id } -> ir::Expr {
+        let ty = tid{ &l, t }
+        let x = conv{ &l, e = args[0], to = t }
+        let lo = conv{ &l, e = args[1], to = t }
+        let hi = conv{ &l, e = args[2], to = t }
+        let sx = temp{ &l, ty }
+        let slo = temp{ &l, ty }
+        let shi = temp{ &l, ty }
+        let vx = slot_ex{ ty, slot = sx }
+        let vlo = slot_ex{ ty, slot = slo }
+        let vhi = slot_ex{ ty, slot = shi }
+        let float = types::is_float{ s = l.c.ty, t = types::undistinct{ s = l.c.ty, t = T{ &l, t } } }
+        let msg = if float { "@clamp: the low bound is above the high bound, or one of them is NaN" } else { "@clamp: the low bound is above the high bound" }
+        let mut ps = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
+        try! list::push{ list = &ps, item = ir::Stmt::panic{ pos = epos{ &l, e }, msg } }
+        let bad = ir::Block{ stmts = list::items{ list = ps }, result = null }
+        let over = either{ l, ty, c = compared{ &l, op = ir::CmpOp::gt, a = vx, b = vhi }, then = vhi, els = vx }
+        let value = either{ l, ty, c = compared{ &l, op = ir::CmpOp::lt, a = vx, b = vlo }, then = vlo, els = over }
+        let ordered = compared{ &l, op = ir::CmpOp::le, a = vlo, b = vhi }
+        let good = ir::Block{ stmts = slice::empty(ir::Stmt){}, result = box{ l, e = value } }
+        let checked = mk{ ty, k = ir::ExprKind::ifx{ c = box{ l, e = ordered }, then = good, els = bad } }
+        return held{ l, slot = sx, init = x, body = held{ l, slot = slo, init = lo, body = held{ l, slot = shi, init = hi, body = checked } } }
     }
 
     // v, an f64 in a local, rounded to the nearest integer, halfway cases to the even one, as

@@ -150,9 +150,9 @@ namespace save {
             try put_int{ &b, owner = p, label = "MusicDelay", v = a.music_delay }
             try put_bool{ &b, owner = p, label = "Unescapable", v = a.unescapable }
             try put_dword{ &b, owner = p, label = "RestrictMode", v = a.restrict_mode }
-            try put_dword{ &b, owner = p, label = "StealthXPMax", v = @as(u32, cmp::max{ a = a.stealth_xp_max, b = 0 }) }
-            try put_dword{ &b, owner = p, label = "StealthXPCurrent", v = @as(u32, cmp::max{ a = a.stealth_xp_current, b = 0 }) }
-            try put_dword{ &b, owner = p, label = "StealthXPLoss", v = @as(u32, cmp::max{ a = a.stealth_xp_decrement, b = 0 }) }
+            try put_dword{ &b, owner = p, label = "StealthXPMax", v = @as(u32, @max(a.stealth_xp_max, 0)) }
+            try put_dword{ &b, owner = p, label = "StealthXPCurrent", v = @as(u32, @max(a.stealth_xp_current, 0)) }
+            try put_dword{ &b, owner = p, label = "StealthXPLoss", v = @as(u32, @max(a.stealth_xp_decrement, 0)) }
             try put_bool{ &b, owner = p, label = "StealthXPEnabled", v = a.stealth_xp_enabled }
         }
         let labels = ["Creature List", "List", "Door List", "TriggerList", "Encounter List", "WaypointList", "SoundList", "Placeable List", "StoreList"]

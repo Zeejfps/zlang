@@ -1,48 +1,13 @@
-// std: cmp. The smaller and the larger of two values, and a value held between two bounds.
+// std: cmp. The first or the last of two values by an order the program gives.
 //
-//   let n = cmp::min{ a = want, b = buf.len - at }         // the smaller of two usizes
-//   let widest = cmp::max{ a = widest, b = line.width }
-//   let level = cmp::clamp{ x = level + delta, lo = 0, hi = 100 }
-//   let t = cmp::clamp{ x = t, lo = 0.0, hi = 1.0 }
 //   let first = cmp::min_by{ a = ann, b = bob, less = younger }    // a type of the program's own
+//   let last = cmp::max_by{ a = ann, b = bob, less = younger }
 //
-// `min`, `max` and `clamp` are generic over any type with an order (§11, Expressions, rule 1):
-// the integers, the floats, and a distinct type of one. The arguments have one type, T: an
-// integer or float literal takes it, and an argument of a type that widens to it is converted,
-// so `cmp::max{ a = count, b = 1 }` is of count's type. T is the type of the first argument that
-// has one, so a wider type goes first, or is written: `cmp::max(i64){ a = small, b = big }`.
-// A type without an order is an error where the function is named; for one, `min_by` and
-// `max_by` take the order as a function.
-//
-// They are comparisons, not calls to the C library, so a const may use them (§14).
+// For a type without an order of its own (§11, Expressions, rule 1): a struct, a slice, or a
+// number ordered another way. The smaller and the larger of two numbers and a number between
+// two bounds are the builtins `@min`, `@max` and `@clamp` (§13).
 
 namespace cmp {
-    // The smaller of a and b; a, where they are equal. If either is a NaN, a NaN: one isn't
-    // lost on the way, as it is in C's `fmin` (std's `math::fmin`). -0.0 and 0.0 are equal.
-    fn min(T) { a: T, b: T } -> T {
-        // `b != b` is true of a NaN only, and never of an integer.
-        if b < a or b != b { return b }
-        return a
-    }
-
-    // The larger of a and b; a, where they are equal. If either is a NaN, a NaN.
-    fn max(T) { a: T, b: T } -> T {
-        if b > a or b != b { return b }
-        return a
-    }
-
-    // x, or lo if x is below it, or hi if x is above it: a NaN x stays a NaN. Panics unless
-    // lo <= hi, which a NaN bound isn't either.
-    fn clamp(T) { x: T, lo: T, hi: T } -> T {
-        if not (lo <= hi) {
-            if lo > hi { @panic("cmp::clamp: the low bound is above the high bound") }
-            @panic("cmp::clamp: one of the bounds is NaN")
-        }
-        if x < lo { return lo }
-        if x > hi { return hi }
-        return x
-    }
-
     // Whether a comes before b: the order `min_by` and `max_by` take.
     type Less(T) = &fn{ a: T, b: T } -> bool
 
