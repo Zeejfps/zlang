@@ -1,12 +1,13 @@
-// Stage 4's test: ui_fonts over FreeType and HarfBuzz, with a real font from the system.
+// Stage 4's tests: ui_fonts over FreeType and HarfBuzz, with a real font from the system.
 //
-//   kotor/tools/ctxc run ui/tests/fonts                          (from the repository root)
-//   kotor/tools/ctxc run ui/tests/fonts -- --font PATH --cjk PATH
+//   kotor/tools/ctxc test ui/tests/fonts                          (from the repository root)
+//   UI_FONT=PATH UI_CJK_FONT=PATH kotor/tools/ctxc test ui/tests/fonts
 //
-// `--font` is the Latin face (default: the platform's, such as C:\Windows\Fonts\segoeui.ttf) and
-// `--cjk` a face with Chinese or Japanese characters for the fallback checks (default: the first of
-// the platform's that exists). With no Latin face the test says why and exits 0; with no CJK face
-// it skips the fallback checks and says so. No font file is part of the repository.
+// UI_FONT is the Latin face (default: the platform's, such as C:/Windows/Fonts/segoeui.ttf) and
+// UI_CJK_FONT a face with Chinese or Japanese characters for the fallback (default: the first of
+// the platform's that exists). No font file is part of the repository. With no Latin face every
+// test is left out, and with no CJK face the fallback's test is: `run_fonts_tests` says which and
+// why on a `skip:` line, and the runner counts them as not selected.
 //
 // Checks: the start-up check of FreeType's mirrored fields passes, and fails loudly when an offset
 // is wrong; 'A' rasterises to ink; "AV" is narrower than 'A' and 'V' apart; a second shaping is a
@@ -14,44 +15,57 @@
 // glyphs in a staged level; caret offsets are monotonic and end at the measured width; wrapped lines
 // keep to the width; bad input (bytes that are not a font, bytes that are not UTF-8, a zero size, a
 // handle that names nothing, a buffer too small, a full run cache) is answered and counted; `close`
-// leaves no FreeType or HarfBuzz object alive. Exits 1 when any check fails.
-
-const LATIN_WINDOWS: [1][]u8 = ["C:/Windows/Fonts/segoeui.ttf"]
-const LATIN_MACOS: [1][]u8 = ["/System/Library/Fonts/Helvetica.ttc"]
-const LATIN_LINUX: [2][]u8 = ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf"]
-const CJK_WINDOWS: [3][]u8 = ["C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/YuGothR.ttc", "C:/Windows/Fonts/simsun.ttc"]
-const CJK_MACOS: [2][]u8 = ["/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/Hiragino Sans GB.ttc"]
-const CJK_LINUX: [2][]u8 = ["/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc"]
+// leaves no FreeType or HarfBuzz object alive.
 
 const EPS: f32 = 0.001
 
-fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut fonts: ui_fonts::Fonts, args: Args } -> i32 {
-    let mut t = ui_test::Tally{ run = 0, failed = 0 }
-    let buf = mem::pages{ &mem, size = 536870912 } ifnull {
-        io::eprintln{ &io, s = "ui/tests/fonts: out of memory" }
-        return 1
+// What runs the tests: std's runner, leaving out what this machine has no font for.
+#test_main
+fn run_fonts_tests {
+    mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut t: Test, args: Args, count: usize,
+    case: &fn{ index: usize } -> test::Case, run: &fn{ index: usize } -> i32,
+} -> i32 {
+    let in_process = args.len > 0 and args[0] == "--run"
+    if in_process { return test::main{ &io, &fs, &mem, &proc, &t, args, count, case, run } }
+    let mut heap = ui_check::make_heap{ &mem }
+    let latin = ui_check::find_latin_font{ &fs, &proc, &heap }
+    if latin.bytes == null {
+        let all: [1][]u8 = [""]
+        let mut reason: [512]u8
+        let n = write_reason{ into = reason[..], what = "no font at ", path = latin.path, variable = " (set UI_FONT)" }
+        return ui_check::run_tests_without{ &io, &fs, &mem, &proc, &t, args, count, case, run, without = all[..], reason = reason[..n] }
     }
-    let mut heap = arena::new{ buf }
-    let latin = read_font{ &fs, &heap, args, option = "--font", defaults = get_latin_paths{} }
-    let latin_bytes = latin.bytes ifnull {
-        _ = @fmt(&io, "ui/tests/fonts: no font to test with: {} (pass --font PATH); skipped\n", latin.path)
-        return 0
+    let cjk = ui_check::find_cjk_font{ &fs, &proc, &heap }
+    if cjk.bytes == null {
+        let fallback: [1][]u8 = ["falls_back_to_a_cjk_face"]
+        let mut reason: [512]u8
+        let n = write_reason{ into = reason[..], what = "no CJK font at ", path = cjk.path, variable = " (set UI_CJK_FONT)" }
+        return ui_check::run_tests_without{ &io, &fs, &mem, &proc, &t, args, count, case, run, without = fallback[..], reason = reason[..n] }
     }
-    _ = @fmt(&io, "font: {} ({} bytes)\n", latin.path, latin_bytes.len)
-    let cjk = read_font{ &fs, &heap, args, option = "--cjk", defaults = get_cjk_paths{} }
-    if let bytes = cjk.bytes {
-        _ = @fmt(&io, "fallback font: {} ({} bytes)\n", cjk.path, bytes.len)
-    } else {
-        _ = @fmt(&io, "no CJK font at {} (pass --cjk PATH): the fallback checks are skipped\n", cjk.path)
+    return test::main{ &io, &fs, &mem, &proc, &t, args, count, case, run }
+}
+
+// `what`, `path` and `variable` one after another in `into`, as much as fits; the length.
+fn write_reason { into: []mut u8, what: []u8, path: []u8, variable: []u8 } -> usize {
+    let mut n: usize = 0
+    for part in [what, path, variable] {
+        let k = @min(part.len, into.len - n)
+        slice::copy(u8){ dst = into[n..n + k], src = part[..k] }
+        n = n + k
     }
-    run{ &io, &fonts, &t, &heap, latin = latin_bytes, cjk = cjk.bytes } iferr err{ error } {
-        _ = @fmt(&io, "ui/tests/fonts: failed: {}\n", error)
-        io::flush{ &io }
-        return 1
-    }
-    _ = @fmt(&io, "ui/tests/fonts: {} checks, {} failed\n", t.run, t.failed)
-    io::flush{ &io }
-    return if t.failed == 0 { 0 } else { 1 }
+    return n
+}
+
+// The Latin face's bytes (UI_FONT, else the platform's).
+fn read_latin { mut fs: Fs, mut proc: Proc, mut heap: arena::Arena } -> ![]u8 {
+    let found = ui_check::find_latin_font{ &fs, &proc, &heap }
+    return found.bytes ifnull { return ui_check::missing_font{ path = found.path } }
+}
+
+// The CJK face's bytes (UI_CJK_FONT, else the platform's).
+fn read_cjk { mut fs: Fs, mut proc: Proc, mut heap: arena::Arena } -> ![]u8 {
+    let found = ui_check::find_cjk_font{ &fs, &proc, &heap }
+    return found.bytes ifnull { return ui_check::missing_font{ path = found.path } }
 }
 
 // A number with up to two digits after the point (std prints 10.0 as 1e+01).
@@ -61,68 +75,37 @@ fn write_number { mut io: Io, v: f32 } -> ! {
     _ = @fmt(&io, "{}", text[..n])
 }
 
-// ---- finding a font
+// ---- the tests
 
-fn get_latin_paths {} -> [][]u8 {
-    return match target::OS { windows => { LATIN_WINDOWS[..] } macos => { LATIN_MACOS[..] } linux => { LATIN_LINUX[..] } }
-}
-
-fn get_cjk_paths {} -> [][]u8 {
-    return match target::OS { windows => { CJK_WINDOWS[..] } macos => { CJK_MACOS[..] } linux => { CJK_LINUX[..] } }
-}
-
-// The value after `name` in the arguments, or null.
-fn find_option { args: Args, name: []u8 } -> ?[]u8 {
-    for a at i in args {
-        if i + 1 < args.len and slice::eq_bytes{ a, b = name } { return args[i + 1] }
-    }
-    return null
-}
-
-// A font file's bytes: the path the option names, else the first default that can be read. `path`
-// is the one read, or what was tried when none was.
-struct Found { path: []u8, bytes: ?[]u8 }
-
-fn read_font { mut fs: Fs, mut heap: arena::Arena, args: Args, option: []u8, defaults: [][]u8 } -> Found {
-    if let path = find_option{ args, name = option } {
-        let bytes = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } iferr { return Found{ path, bytes = null } }
-        return Found{ path, bytes }
-    }
-    for path in defaults {
-        let bytes = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } iferr { continue }
-        return Found{ path, bytes }
-    }
-    return Found{ path = if defaults.len > 0 { defaults[0] } else { "" }, bytes = null }
-}
-
-// ---- the checks
-
-fn run { mut io: Io, mut fonts: ui_fonts::Fonts, mut t: ui_test::Tally, mut heap: arena::Arena, latin: []u8, cjk: ?[]u8 } -> ! {
-    let freed_before = ui_fonts::count_freed{ &fonts }
-    check_layout_check{ &io, &fonts, &t, &heap, latin }
-    check_bad_bytes{ &io, &fonts, &t, &heap, latin }
-
+// A face loads into a library, and its mirrored FreeType fields pass the start-up check.
+#test
+fn loads_a_face_past_the_start_up_check { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let latin = try read_latin{ &fs, &proc, &heap }
     let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
     let version = ui_fonts::get_version{ &lib }
     _ = @fmt(&io, "FreeType {}.{}.{}, HarfBuzz {}\n", version.major, version.minor, version.patch, ui_fonts::hb_version_string{ &fonts })
     let face = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
     let slot = ui_fonts::find_face{ lib, id = face.id } ifnull { return ui_fonts::closed }
     _ = @fmt(&io, "face {}: {} units per em, {} glyphs; the mirrored fields check out\n", face.id, lib.faces[slot].units_per_em, lib.faces[slot].glyph_count)
-    ui_test::expect{ &io, &t, ok = face.id != 0, what = "a face loads and its mirrored FreeType fields pass the start-up check" }
+    // a face loads and its mirrored FreeType fields pass the start-up check
+    @expect(&t, face.id != 0)
+}
+
+// `close` releases every FreeType and HarfBuzz object of a library that loaded a face and shaped
+// with it, as HarfBuzz itself reports.
+#test
+fn closes_every_freetype_and_harfbuzz_object { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let latin = try read_latin{ &fs, &proc, &heap }
+    let freed_before = ui_fonts::count_freed{ &fonts }
+    let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
+    let face = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
     let provider = ui_fonts::get_provider{ lib = &lib }
-
-    check_raster{ &io, &t, &lib, provider, face }
-    check_kerning{ &io, &t, &heap, &lib, provider, face }
-    check_cache{ &io, &t, &lib, provider, face }
-    check_bad_input{ &io, &t, &lib, provider, face }
-    check_text{ &io, &t, &heap, &lib, provider, face }
-    check_ui{ &io, &t, &heap, &lib, provider, face }
-    try check_line_box{ &io, &t, &lib, provider, face, cjk }
-    if let bytes = cjk { try check_fallback{ &io, &t, &lib, provider, face, cjk = bytes } }
-    try check_release{ &io, &t, &heap, &lib, provider, latin }
-    check_small_cache{ &io, &fonts, &t, &heap, latin }
-
-    // close: every FreeType and HarfBuzz object released, as HarfBuzz itself reports.
+    let mut out: [16]ui::Shaped
+    let shaped = shape{ provider, face, pixels = 16, text = "Hello, close", out = out[..] }
+    // the library shaped before it is closed
+    @expect(&t, shaped.len == 12)
     let blobs = lib.live.hb_blobs
     let freed_open = ui_fonts::count_freed{ &fonts }
     ui_fonts::close{ &lib }
@@ -133,20 +116,21 @@ fn run { mut io: Io, mut fonts: ui_fonts::Fonts, mut t: ui_test::Tally, mut heap
         freed.blobs - freed_before.blobs, freed.buffers - freed_before.buffers)
     let none = live.ft_libraries == 0 and live.ft_faces == 0 and live.ft_sizes == 0 and live.hb_blobs == 0
         and live.hb_faces == 0 and live.hb_fonts == 0 and live.hb_buffers == 0
-    ui_test::expect{ &io, &t, ok = none, what = "close releases every FreeType and HarfBuzz object the library made" }
-    ui_test::expect{ &io, &t, ok = freed.blobs - freed_open.blobs == @as(u64, blobs) and freed.buffers - freed_open.buffers == 1,
-        what = "HarfBuzz reports each blob (so each face and font over it) and the buffer freed at close" }
+    // close releases every FreeType and HarfBuzz object the library made
+    @expect(&t, none)
+    // HarfBuzz reports each blob (so each face and font over it) and the buffer freed at close
+    @expect(&t, freed.blobs - freed_open.blobs == @as(u64, blobs) and freed.buffers - freed_open.buffers == 1)
     let mut after: [8]ui::Shaped
-    ui_test::expect{ &io, &t, ok = ui_fonts::shape_text{ &lib, handle = face.id, pixels = 16, text = "after", out = after[..] } == 0,
-        what = "a closed library answers nothing" }
+    // a closed library answers nothing
+    @expect(&t, ui_fonts::shape_text{ &lib, handle = face.id, pixels = 16, text = "after", out = after[..] } == 0)
 }
 
 // The start-up check fails at once, and leaves nothing behind, when a mirrored offset is wrong.
-fn check_layout_check { mut io: Io, mut fonts: ui_fonts::Fonts, mut t: ui_test::Tally, mut heap: arena::Arena, latin: []u8 } {
-    let mut lib = ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ faces = 2, sizes = 4, runs = 4, run_bytes = 256, run_glyphs = 256, scratch = 64 } } iferr {
-        ui_test::expect{ &io, &t, ok = false, what = "a library opens" }
-        return
-    }
+#test
+fn fails_add_face_at_once_on_a_wrong_mirrored_offset { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let latin = try read_latin{ &fs, &proc, &heap }
+    let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ faces = 2, sizes = 4, runs = 4, run_bytes = 256, run_glyphs = 256, scratch = 64 } }
     lib.layout.face_units_per_em = lib.layout.face_units_per_em + 2
     let wrong_upem = is_bad_layout{ lib = &lib, data = latin }
     lib.layout = ui_fonts::LAYOUT
@@ -155,9 +139,10 @@ fn check_layout_check { mut io: Io, mut fonts: ui_fonts::Fonts, mut t: ui_test::
     lib.layout = ui_fonts::LAYOUT
     lib.layout.face_num_glyphs = lib.layout.face_num_glyphs + 8
     let wrong_count = is_bad_layout{ lib = &lib, data = latin }
-    ui_test::expect{ &io, &t, ok = wrong_upem and wrong_size and wrong_count, what = "a wrong mirrored offset fails add_face with bad_layout" }
-    ui_test::expect{ &io, &t, ok = lib.live.ft_faces == 0 and lib.live.hb_blobs == 0 and lib.live.hb_faces == 0 and lib.live.ft_sizes == 0,
-        what = "a face that fails the check leaves nothing behind" }
+    // a wrong mirrored offset fails add_face with bad_layout
+    @expect(&t, wrong_upem and wrong_size and wrong_count)
+    // a face that fails the check leaves nothing behind
+    @expect(&t, lib.live.ft_faces == 0 and lib.live.hb_blobs == 0 and lib.live.hb_faces == 0 and lib.live.ft_sizes == 0)
     ui_fonts::close{ &lib }
 }
 
@@ -174,22 +159,26 @@ fn is_bad_layout { mut lib: ui_fonts::Library, data: []u8 } -> bool {
 }
 
 // Bytes that are not a font, no bytes, and a face index the file does not have: refused.
-fn check_bad_bytes { mut io: Io, mut fonts: ui_fonts::Fonts, mut t: ui_test::Tally, mut heap: arena::Arena, latin: []u8 } {
-    let mut lib = ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ faces = 2, sizes = 4, runs = 4, run_bytes = 256, run_glyphs = 256, scratch = 64 } } iferr {
-        ui_test::expect{ &io, &t, ok = false, what = "a library opens" }
-        return
-    }
+#test
+fn refuses_bytes_that_are_not_a_font { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let latin = try read_latin{ &fs, &proc, &heap }
+    let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ faces = 2, sizes = 4, runs = 4, run_bytes = 256, run_glyphs = 256, scratch = 64 } }
     let junk = is_bad_font{ lib = &lib, data = "this is not a font file, only text that is long enough to look at" }
     let empty = is_bad_font{ lib = &lib, data = "" }
     let truncated = is_bad_font{ lib = &lib, data = latin[..latin.len / 3] }
     let mut index_ok = false
     _ = ui_fonts::add_face{ &lib, data = latin, index = 7 } iferr { index_ok = true }
-    ui_test::expect{ &io, &t, ok = junk and empty, what = "bytes that are not a font are refused with bad_font" }
-    ui_test::expect{ &io, &t, ok = index_ok, what = "a face index the file does not have is refused" }
+    // bytes that are not a font are refused with bad_font
+    @expect(&t, junk and empty)
+    // a face index the file does not have is refused
+    @expect(&t, index_ok)
     _ = @fmt(&io, "a third of the font file: {}\n", if truncated { "refused" } else { "opened (FreeType loads tables lazily)" })
-    ui_test::expect{ &io, &t, ok = lib.live.ft_faces == 0 and lib.live.hb_blobs == 0 and lib.live.hb_faces == 0, what = "refused bytes leave nothing behind" }
+    // refused bytes leave nothing behind
+    @expect(&t, lib.live.ft_faces == 0 and lib.live.hb_blobs == 0 and lib.live.hb_faces == 0)
     ui_fonts::close{ &lib }
-    ui_test::expect{ &io, &t, ok = lib.live.ft_faces == 0 and lib.live.hb_blobs == 0, what = "close after refused bytes leaves nothing" }
+    // close after refused bytes leaves nothing
+    @expect(&t, lib.live.ft_faces == 0 and lib.live.hb_blobs == 0)
 }
 
 fn is_bad_font { mut lib: ui_fonts::Library, data: []u8 } -> bool {
@@ -217,10 +206,17 @@ fn sum_advances { glyphs: []ui::Shaped } -> f32 {
 }
 
 // 'A' rasterises to ink; a space to nothing; too small a buffer and a face that is not there are refused.
-fn check_raster { mut io: Io, mut t: ui_test::Tally, mut lib: ui_fonts::Library, provider: ui::TextProvider, face: ui_fonts::Face } {
+#test
+fn rasterises_a_glyph_to_ink_on_the_baseline { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let latin = try read_latin{ &fs, &proc, &heap }
+    let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
+    let face = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
+    let provider = ui_fonts::get_provider{ lib = &lib }
     let mut out: [8]ui::Shaped
     let a = shape{ provider, face, pixels = 32, text = "A", out = out[..] }
-    ui_test::expect{ &io, &t, ok = a.len == 1 and a[0].glyph != 0, what = "'A' shapes to one glyph" }
+    // 'A' shapes to one glyph
+    @expect(&t, a.len == 1 and a[0].glyph != 0)
     if a.len != 1 { return }
     let mut pixels: [65536]u8
     let mut bitmap = ui::GlyphBitmap{ pixels = pixels[..], width = 0, height = 0, left = 0, top = 0 }
@@ -228,26 +224,32 @@ fn check_raster { mut io: Io, mut t: ui_test::Tally, mut lib: ui_fonts::Library,
     let mut covered: u32 = 0
     for p in pixels[..@as(usize, bitmap.width * bitmap.height)] { if p > 127 { covered = covered + 1 } }
     _ = @fmt(&io, "'A' at 32 px: {}x{}, left {}, top {}, {} covered pixels\n", bitmap.width, bitmap.height, bitmap.left, bitmap.top, covered)
-    ui_test::expect{ &io, &t, ok = ok and bitmap.width > 8 and bitmap.height > 12 and covered > 40, what = "'A' rasterises to a non-empty bitmap" }
-    ui_test::expect{ &io, &t, ok = bitmap.top > 12 and bitmap.top <= 32, what = "'A' stands on the baseline, its top above it" }
+    // 'A' rasterises to a non-empty bitmap
+    @expect(&t, ok and bitmap.width > 8 and bitmap.height > 12 and covered > 40)
+    // 'A' stands on the baseline, its top above it
+    @expect(&t, bitmap.top > 12 and bitmap.top <= 32)
 
     let mut spaces: [8]ui::Shaped
     let space = shape{ provider, face, pixels = 32, text = " ", out = spaces[..] }
     let mut blank = ui::GlyphBitmap{ pixels = pixels[..], width = 9, height = 9, left = 0, top = 0 }
     let space_ok = space.len == 1 and provider.rasterize{ state = provider.state, face = space[0].face, glyph = space[0].glyph, out = &blank }
-    ui_test::expect{ &io, &t, ok = space_ok and blank.width == 0 and blank.height == 0, what = "a space rasterises to no ink, and true" }
+    // a space rasterises to no ink, and true
+    @expect(&t, space_ok and blank.width == 0 and blank.height == 0)
 
     let too_big = lib.stats.too_big
     let mut small: [16]u8
     let mut tiny = ui::GlyphBitmap{ pixels = small[..], width = 0, height = 0, left = 0, top = 0 }
     let fits = provider.rasterize{ state = provider.state, face = a[0].face, glyph = a[0].glyph, out = &tiny }
-    ui_test::expect{ &io, &t, ok = not fits and lib.stats.too_big == too_big + 1, what = "a bitmap larger than the buffer is refused and counted" }
+    // a bitmap larger than the buffer is refused and counted
+    @expect(&t, not fits and lib.stats.too_big == too_big + 1)
 
     let unknown = lib.stats.unknown
     let gone = provider.rasterize{ state = provider.state, face = 99999, glyph = a[0].glyph, out = &bitmap }
-    ui_test::expect{ &io, &t, ok = not gone and lib.stats.unknown == unknown + 1, what = "a sized face that does not exist is refused and counted" }
+    // a sized face that does not exist is refused and counted
+    @expect(&t, not gone and lib.stats.unknown == unknown + 1)
     let zero = provider.rasterize{ state = provider.state, face = a[0].face, glyph = 0, out = &bitmap }
-    ui_test::expect{ &io, &t, ok = not zero, what = "glyph 0 (a character no face has) draws nothing, as in ZGF" }
+    // glyph 0 (a character no face has) draws nothing, as in ZGF
+    @expect(&t, not zero)
 }
 
 // A draw list with the face registered as font 0, and a text cache. Text is measured at a pixel
@@ -274,45 +276,58 @@ fn sum_width { mut m: Measure, provider: ui::TextProvider, size: i32, text: []u8
 }
 
 // "AV" is kerned: narrower than 'A' and 'V' apart.
-fn check_kerning { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, mut lib: ui_fonts::Library, provider: ui::TextProvider, face: ui_fonts::Face } {
-    let mut m = make_measure{ &heap, lib, face } iferr {
-        ui_test::expect{ &io, &t, ok = false, what = "a draw list for measuring" }
-        return
-    }
+#test
+fn kerns_av_narrower_than_a_and_v_apart { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let latin = try read_latin{ &fs, &proc, &heap }
+    let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
+    let face = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
+    let provider = ui_fonts::get_provider{ lib = &lib }
+    let mut m = try make_measure{ &heap, lib, face }
     let av = sum_width{ &m, provider, size = 32, text = "AV" }
     let a = sum_width{ &m, provider, size = 32, text = "A" }
     let v = sum_width{ &m, provider, size = 32, text = "V" }
     // What leaves the run is whole pixels: each of the three, rounded up.
     let whole_av = measure{ &m, provider, size = 32, text = "AV" }
     let whole_a = measure{ &m, provider, size = 32, text = "A" }
-    ui_test::expect{ &io, &t, ok = whole_av == ui::text::ceil_width{ v = av } and whole_a == ui::text::ceil_width{ v = a } and @as(f32, whole_av) >= av and @as(f32, whole_av) < av + 1.0,
-        what = "a measured width is the advances rounded up to a whole pixel: a box that wide holds the text" }
+    // a measured width is the advances rounded up to a whole pixel: a box that wide holds the text
+    @expect(&t, whole_av == ui::text::ceil_width{ v = av } and whole_a == ui::text::ceil_width{ v = a } and @as(f32, whole_av) >= av and @as(f32, whole_av) < av + 1.0)
     let mut buf: [16]ui::Shaped
     let ii = sum_advances{ glyphs = shape{ provider, face, pixels = 32, text = "ii", out = buf[..] } }
     let ww = sum_advances{ glyphs = shape{ provider, face, pixels = 32, text = "WW", out = buf[..] } }
     _ = @fmt(&io, "at 32 px: \"AV\" {}, 'A' {} + 'V' {}; \"ii\" {}, \"WW\" {}\n", write_number{ v = av, _ }, write_number{ v = a, _ },
         write_number{ v = v, _ }, write_number{ v = ii, _ }, write_number{ v = ww, _ })
-    ui_test::expect{ &io, &t, ok = av + 0.5 < a + v, what = "\"AV\" is narrower than 'A' plus 'V' (kerning)" }
-    ui_test::expect{ &io, &t, ok = ww > ii * 2.0, what = "the font is proportional: \"WW\" is much wider than \"ii\"" }
+    // "AV" is narrower than 'A' plus 'V' (kerning)
+    @expect(&t, av + 0.5 < a + v)
+    // the font is proportional: "WW" is much wider than "ii"
+    @expect(&t, ww > ii * 2.0)
     let metrics = provider.metrics{ state = provider.state, handle = face.id, pixels = 32 }
     _ = @fmt(&io, "line at 32 px: height {}, ascent {}\n", write_number{ v = metrics.height, _ }, write_number{ v = metrics.ascent, _ })
-    ui_test::expect{ &io, &t, ok = metrics.ascent > 20.0 and metrics.ascent < 40.0 and metrics.height >= metrics.ascent + 4.0 and metrics.height < 56.0,
-        what = "a sized face's line metrics are in range, the line box holding ascent and descent" }
+    // a sized face's line metrics are in range, the line box holding ascent and descent
+    @expect(&t, metrics.ascent > 20.0 and metrics.ascent < 40.0 and metrics.height >= metrics.ascent + 4.0 and metrics.height < 56.0)
 }
 
 // A second shaping of the same text is a cache hit, and gives the same glyphs.
-fn check_cache { mut io: Io, mut t: ui_test::Tally, mut lib: ui_fonts::Library, provider: ui::TextProvider, face: ui_fonts::Face } {
+#test
+fn hits_the_run_cache_on_a_second_shaping { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let latin = try read_latin{ &fs, &proc, &heap }
+    let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
+    let face = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
+    let provider = ui_fonts::get_provider{ lib = &lib }
     let mut first: [64]ui::Shaped
     let mut second: [64]ui::Shaped
     let a = shape{ provider, face, pixels = 20, text = "The quick brown fox", out = first[..] }
     let shaped = lib.stats.shaped
     let hits = lib.stats.hits
     let b = shape{ provider, face, pixels = 20, text = "The quick brown fox", out = second[..] }
-    ui_test::expect{ &io, &t, ok = lib.stats.hits == hits + 1 and lib.stats.shaped == shaped, what = "a second shaping of the same text is a cache hit, not shaped again" }
-    ui_test::expect{ &io, &t, ok = a.len == b.len and a.len == 19 and is_same_glyphs{ a, b }, what = "the cached run is the same glyphs" }
+    // a second shaping of the same text is a cache hit, not shaped again
+    @expect(&t, lib.stats.hits == hits + 1 and lib.stats.shaped == shaped)
+    // the cached run is the same glyphs
+    @expect(&t, a.len == b.len and a.len == 19 and is_same_glyphs{ a, b })
     let c = shape{ provider, face, pixels = 21, text = "The quick brown fox", out = second[..] }
-    ui_test::expect{ &io, &t, ok = lib.stats.shaped == shaped + 1 and c.len == 19 and c[0].face != a[0].face,
-        what = "another pixel size is another sized face, shaped anew" }
+    // another pixel size is another sized face, shaped anew
+    @expect(&t, lib.stats.shaped == shaped + 1 and c.len == 19 and c[0].face != a[0].face)
 }
 
 fn is_same_glyphs { a: []ui::Shaped, b: []ui::Shaped } -> bool {
@@ -335,28 +350,37 @@ fn has_good_clusters { glyphs: []ui::Shaped, len: usize } -> bool {
 }
 
 // Bytes that are not UTF-8, a zero size, a handle that names nothing, an empty text.
-fn check_bad_input { mut io: Io, mut t: ui_test::Tally, mut lib: ui_fonts::Library, provider: ui::TextProvider, face: ui_fonts::Face } {
+#test
+fn answers_bad_input_and_counts_it { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let latin = try read_latin{ &fs, &proc, &heap }
+    let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
+    let face = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
+    let provider = ui_fonts::get_provider{ lib = &lib }
     let mut out: [64]ui::Shaped
     let bad: [12]u8 = [0xFF, 'a', 0xC3, 0x28, 0xE2, 0x82, 'b', 0xED, 0xA0, 0x80, 0xC3, 0xA9]
     let invalid = lib.stats.invalid
     let g = shape{ provider, face, pixels = 16, text = bad[..], out = out[..] }
     _ = @fmt(&io, "12 bytes, 7 of them not UTF-8: {} glyphs, {} bytes counted invalid\n", g.len, lib.stats.invalid - invalid)
-    ui_test::expect{ &io, &t, ok = g.len > 0 and has_good_clusters{ glyphs = g, len = bad.len } and lib.stats.invalid > invalid,
-        what = "bytes that are not UTF-8 shape, with clusters inside the text, and are counted" }
+    // bytes that are not UTF-8 shape, with clusters inside the text, and are counted
+    @expect(&t, g.len > 0 and has_good_clusters{ glyphs = g, len = bad.len } and lib.stats.invalid > invalid)
     let bad_size = lib.stats.bad_size
     let zero = shape{ provider, face, pixels = 0, text = "zero", out = out[..] }
     let huge = shape{ provider, face, pixels = 100000, text = "huge", out = out[..] }
     let zero_metrics = provider.metrics{ state = provider.state, handle = face.id, pixels = 0 }
-    ui_test::expect{ &io, &t, ok = zero.len == 0 and huge.len == 0 and zero_metrics.height == 0.0 and lib.stats.bad_size == bad_size + 3,
-        what = "a zero or huge pixel size gives nothing and is counted" }
+    // a zero or huge pixel size gives nothing and is counted
+    @expect(&t, zero.len == 0 and huge.len == 0 and zero_metrics.height == 0.0 and lib.stats.bad_size == bad_size + 3)
     let unknown = lib.stats.unknown
     let nobody = shape{ provider, face = ui_fonts::Face{ id = 4242 }, pixels = 16, text = "who", out = out[..] }
-    ui_test::expect{ &io, &t, ok = nobody.len == 0 and lib.stats.unknown == unknown + 1, what = "a handle that names no face gives nothing and is counted" }
+    // a handle that names no face gives nothing and is counted
+    @expect(&t, nobody.len == 0 and lib.stats.unknown == unknown + 1)
     let empty = shape{ provider, face, pixels = 16, text = "", out = out[..] }
-    ui_test::expect{ &io, &t, ok = empty.len == 0, what = "an empty text has no glyphs" }
+    // an empty text has no glyphs
+    @expect(&t, empty.len == 0)
     // An output shorter than the glyphs: filled, and the count is its length.
     let short = shape{ provider, face, pixels = 16, text = "twelve chars", out = out[..5] }
-    ui_test::expect{ &io, &t, ok = short.len == 5, what = "an output shorter than the run is filled" }
+    // an output shorter than the run is filled
+    @expect(&t, short.len == 5)
 }
 
 // The core's walks over a real font: caret offsets and wrapping, at 16 pixels and at 24, which is
@@ -367,16 +391,19 @@ fn check_bad_input { mut io: Io, mut t: ui_test::Tally, mut lib: ui_fonts::Libra
 // offset is the advances before it rounded to the nearest pixel. So the offsets never go down, the
 // last one is the measured width or the pixel before it, and no wrapped line is wider than the
 // limit, in whole pixels, with no tolerance.
-fn check_text { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, mut lib: ui_fonts::Library, provider: ui::TextProvider, face: ui_fonts::Face } {
+#test
+fn steps_carets_and_wraps_in_whole_pixels { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let latin = try read_latin{ &fs, &proc, &heap }
+    let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
+    let face = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
+    let provider = ui_fonts::get_provider{ lib = &lib }
     let line = "Typography: AV Wa To office ffl, 0123 \xC3\xA9t\xC3\xA9 \xE2\x80\x94 done."
     let paragraph = "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs; how vexingly quick daft zebras jump! A well-known, rather extraordinarily long word: incomprehensibilities."
     let sizes: [2]i32 = [16, 24]
     let limits: [2]i32 = [180, 270]
     for size at which in sizes {
-        let mut m = make_measure{ &heap, lib, face } iferr {
-            ui_test::expect{ &io, &t, ok = false, what = "a draw list for measuring" }
-            return
-        }
+        let mut m = try make_measure{ &heap, lib, face }
         let font = ui::Font{ index = 0 }
         let width = measure{ &m, provider, size, text = line }
         let sum = sum_width{ &m, provider, size, text = line }
@@ -397,13 +424,18 @@ fn check_text { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, mut l
             steps = steps + 1
         }
         _ = @fmt(&io, "size {}: caret took {} steps over {} bytes, ends at {} of a measured {} (advances {})\n", size, steps, line.len, last, width, write_number{ v = sum, _ })
-        ui_test::expect{ &io, &t, ok = monotonic and steps > 0 and steps < @as(u32, line.len), what = "caret offsets in a shaped string are whole pixels that never go down, stepping by clusters" }
-        ui_test::expect{ &io, &t, ok = width == ui::text::ceil_width{ v = sum } and last == ui::round_pixels{ v = sum }, what = "the measured width is the advances rounded up, the last caret offset the advances rounded to the nearest pixel" }
-        ui_test::expect{ &io, &t, ok = last <= width and last >= width - 1, what = "the last caret offset is the measured width or the pixel before it, never past it" }
+        // caret offsets in a shaped string are whole pixels that never go down, stepping by clusters
+        @expect(&t, monotonic and steps > 0 and steps < @as(u32, line.len))
+        // the measured width is the advances rounded up, the last caret offset the advances rounded to the nearest pixel
+        @expect(&t, width == ui::text::ceil_width{ v = sum } and last == ui::round_pixels{ v = sum })
+        // the last caret offset is the measured width or the pixel before it, never past it
+        @expect(&t, last <= width and last >= width - 1)
         let picked = ui::text::pick_index{ cache = &m.cache, list = m.list, provider, font, size, text = line, x = width + 5 }
-        ui_test::expect{ &io, &t, ok = picked == line.len, what = "the index right of the line is its end" }
+        // the index right of the line is its end
+        @expect(&t, picked == line.len)
         let first = ui::text::locate_caret{ cache = &m.cache, list = m.list, provider, font, size, text = line, index = 0 }
-        ui_test::expect{ &io, &t, ok = first == 0 and ui::text::pick_index{ cache = &m.cache, list = m.list, provider, font, size, text = line, x = 0 } == 0, what = "the caret before the line is at pixel 0, and pixel 0 picks it" }
+        // the caret before the line is at pixel 0, and pixel 0 picks it
+        @expect(&t, first == 0 and ui::text::pick_index{ cache = &m.cache, list = m.list, provider, font, size, text = line, x = 0 } == 0)
 
         let limit = limits[which]
         let mut lines: [32]ui::text::Line
@@ -420,14 +452,16 @@ fn check_text { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, mut l
             if w > widest { widest = w }
         }
         _ = @fmt(&io, "size {}: the paragraph wraps to {} lines at {}, the widest {}\n", size, wrapped.lines, limit, widest)
-        ui_test::expect{ &io, &t, ok = wrapped.lines >= 5 and @as(usize, wrapped.rest) == paragraph.len and fits,
-            what = "a paragraph wrapped in the real font has no line wider than the limit, in whole pixels" }
-        ui_test::expect{ &io, &t, ok = whole and wrapped.width <= limit and wrapped.width == widest_of{ lines = lines[..@as(usize, wrapped.lines)] }, what = "each line's width is a whole number of pixels, and the widest is reported" }
-        ui_test::expect{ &io, &t, ok = m.cache.unknown_font == 0 and m.cache.no_provider == 0, what = "the core measured with the provider" }
+        // a paragraph wrapped in the real font has no line wider than the limit, in whole pixels
+        @expect(&t, wrapped.lines >= 5 and @as(usize, wrapped.rest) == paragraph.len and fits)
+        // each line's width is a whole number of pixels, and the widest is reported
+        @expect(&t, whole and wrapped.width <= limit and wrapped.width == widest_of{ lines = lines[..@as(usize, wrapped.lines)] })
+        // the core measured with the provider
+        @expect(&t, m.cache.unknown_font == 0 and m.cache.no_provider == 0)
         let box = ui::text::get_line_metrics{ cache = &m.cache, list = m.list, provider, font, size }
         let raw = provider.metrics{ state = provider.state, handle = face.id, pixels = ui::text::get_pixel_size{ size } }
-        ui_test::expect{ &io, &t, ok = @as(f32, box.height) >= raw.height - 0.001 and @as(f32, box.height) < raw.height + 1.0 and ui::abs_f32{ x = @as(f32, box.ascent) - raw.ascent } <= 0.5,
-            what = "a line's height is the face's rounded up, its ascent the face's to the nearest pixel" }
+        // a line's height is the face's rounded up, its ascent the face's to the nearest pixel
+        @expect(&t, @as(f32, box.height) >= raw.height - 0.001 and @as(f32, box.height) < raw.height + 1.0 and ui::abs_f32{ x = @as(f32, box.ascent) - raw.ascent } <= 0.5)
     }
 }
 
@@ -439,20 +473,25 @@ fn widest_of { lines: []ui::text::Line } -> i32 {
 
 // A Ui with the face registered by make_font measures through its provider, in pixels, at the
 // pixel size a logical size comes to at the frame's scale.
-fn check_ui { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, mut lib: ui_fonts::Library, provider: ui::TextProvider, face: ui_fonts::Face } {
-    let mut ui = ui::make{ realloc = arena::alloc, &heap, cap = ui::Capacity{ elements = 64, text = 4096, cmds = 256, hits = 64, states = 16, nodes = 64, lines = 64, .. } } iferr {
-        ui_test::expect{ &io, &t, ok = false, what = "a Ui" }
-        return
-    }
+#test
+fn measures_through_a_ui_at_the_frames_scale { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let latin = try read_latin{ &fs, &proc, &heap }
+    let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
+    let face = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
+    let provider = ui_fonts::get_provider{ lib = &lib }
+    let mut ui = try ui::make{ realloc = arena::alloc, &heap, cap = ui::Capacity{ elements = 64, text = 4096, cmds = 256, hits = 64, states = 16, nodes = 64, lines = 64, .. } }
     let font = ui_fonts::make_font{ &lib, &ui, face } ifnull {
-        ui_test::expect{ &io, &t, ok = false, what = "make_font registers the face with a Ui" }
+        // make_font registers the face with a Ui
+        @expect(&t, false)
         return
     }
     ui::set_provider{ &ui, provider }
     ui::begin_frame{ &ui, frame = ui::FrameInfo{ width = 320, height = 200, scale = 1.0, dt = 0.016 } }
     let w = ui::measure_text{ &ui, font, size = 16, text = "Settings" }
     ui::end_frame{ &ui }
-    ui_test::expect{ &io, &t, ok = w > 40 and w < 90 and ui.stats.problems == 0, what = "make_font registers the face, and a Ui measures text in it" }
+    // make_font registers the face, and a Ui measures text in it
+    @expect(&t, w > 40 and w < 90 and ui.stats.problems == 0)
 
     // At scale 1.5 a text of 16 logical units is recorded at 24 pixels: the element is as wide
     // and as high as the face's own 24 pixel text, in whole pixels.
@@ -466,7 +505,8 @@ fn check_ui { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, mut lib
     ui::end{ &ui, scope = el }
     ui::end_frame{ &ui }
     let rect = ui::get_rect{ ui, id = label } ifnull ui::Rect{ .. }
-    ui_test::expect{ &io, &t, ok = size == 24 and wide > w and rect.w == wide and rect.h == line.height and ui.stats.problems == 0, what = "at scale 1.5 a text of 16 units is the face's 24 pixel text, sized in whole pixels" }
+    // at scale 1.5 a text of 16 units is the face's 24 pixel text, sized in whole pixels
+    @expect(&t, size == 24 and wide > w and rect.w == wide and rect.h == line.height and ui.stats.problems == 0)
 }
 
 // The line box (the rule at ui_fonts::measure_design), at the pixel sizes text of 13, 14, 16 and 24
@@ -476,7 +516,14 @@ fn check_ui { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, mut lib
 // from the fallback face when there is one, is inside the box (nothing is cut by a clip to it);
 // and a capital H centred by its line box in a control twice the text's size is within a pixel of
 // the control's middle.
-fn check_line_box { mut io: Io, mut t: ui_test::Tally, mut lib: ui_fonts::Library, provider: ui::TextProvider, face: ui_fonts::Face, cjk: ?[]u8 } -> ! {
+#test
+fn holds_every_glyph_inside_the_line_box { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let latin = try read_latin{ &fs, &proc, &heap }
+    let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
+    let face = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
+    let provider = ui_fonts::get_provider{ lib = &lib }
+    let cjk = ui_check::find_cjk_font{ &fs, &proc, &heap }.bytes
     let slot = ui_fonts::find_face{ lib, id = face.id } ifnull { return ui_fonts::closed }
     let ft = lib.faces[slot].ft ifnull { return ui_fonts::closed }
     let design = ui_fonts::get_design_metrics{ face = ft, layout = lib.layout }
@@ -537,18 +584,30 @@ fn check_line_box { mut io: Io, mut t: ui_test::Tally, mut lib: ui_fonts::Librar
                 px, box.height, box.ascent, write_number{ v = rounded.ascender, _ }, h_rows, off2, control)
         }
     }
-    ui_test::expect{ &io, &t, ok = baselines, what = "line box: the baseline is the face's design ascender to the nearest pixel" }
-    ui_test::expect{ &io, &t, ok = heights, what = "line box: the height is the line spacing, and at least the baseline plus the descent, rounded up" }
-    ui_test::expect{ &io, &t, ok = inside, what = "line box: every glyph of accented capitals, descenders and CJK is inside the box" }
-    ui_test::expect{ &io, &t, ok = centred, what = "line box: a capital centred by its line box is within a pixel of the control's middle" }
+    // line box: the baseline is the face's design ascender to the nearest pixel
+    @expect(&t, baselines)
+    // line box: the height is the line spacing, and at least the baseline plus the descent, rounded up
+    @expect(&t, heights)
+    // line box: every glyph of accented capitals, descenders and CJK is inside the box
+    @expect(&t, inside)
+    // line box: a capital centred by its line box is within a pixel of the control's middle
+    @expect(&t, centred)
     if let f = other {
-        ui_test::expect{ &io, &t, ok = fallback_glyphs >= 16, what = "line box: the CJK came from the fallback face, on the same baseline" }
+        // line box: the CJK came from the fallback face, on the same baseline
+        @expect(&t, fallback_glyphs >= 16)
         ui_fonts::release_face{ &lib, face = f }
     }
 }
 
 // With a CJK face as fallback, a line mixing Latin and CJK comes back as runs of two sized faces.
-fn check_fallback { mut io: Io, mut t: ui_test::Tally, mut lib: ui_fonts::Library, provider: ui::TextProvider, face: ui_fonts::Face, cjk: []u8 } -> ! {
+#test
+fn falls_back_to_a_cjk_face { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let latin = try read_latin{ &fs, &proc, &heap }
+    let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
+    let face = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
+    let provider = ui_fonts::get_provider{ lib = &lib }
+    let cjk = try read_cjk{ &fs, &proc, &heap }
     let mixed = "Hello \xE4\xB8\x96\xE7\x95\x8C and \xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E!"     // Hello 世界 and 日本語!
     let mut out: [64]ui::Shaped
     let missing = lib.stats.missing
@@ -570,26 +629,36 @@ fn check_fallback { mut io: Io, mut t: ui_test::Tally, mut lib: ui_fonts::Librar
         if wide == (s.face == first) { cjk_ok = false }
     }
     _ = @fmt(&io, "with the fallback: {} glyphs in {} runs from faces {} and {}\n", g.len, runs, first, second)
-    ui_test::expect{ &io, &t, ok = second != 0 and runs == 5 and cjk_ok, what = "a line mixing Latin and CJK comes back as runs from two faces, each character from the face that has it" }
-    ui_test::expect{ &io, &t, ok = lib.stats.missing == missing_after and has_good_clusters{ glyphs = g, len = mixed.len }, what = "no character is missing with the fallback, and the clusters hold" }
+    // a line mixing Latin and CJK comes back as runs from two faces, each character from the face that has it
+    @expect(&t, second != 0 and runs == 5 and cjk_ok)
+    // no character is missing with the fallback, and the clusters hold
+    @expect(&t, lib.stats.missing == missing_after and has_good_clusters{ glyphs = g, len = mixed.len })
     let size = ui_fonts::find_size{ lib, id = second } ifnull { return ui_fonts::closed }
-    ui_test::expect{ &io, &t, ok = lib.sizes[size].face == other.id and lib.sizes[size].pixels == 24, what = "the fallback's glyphs are of its own variant at the same pixel size" }
+    // the fallback's glyphs are of its own variant at the same pixel size
+    @expect(&t, lib.sizes[size].face == other.id and lib.sizes[size].pixels == 24)
     // The fallback's glyphs rasterise; release it and the face shapes alone again.
     let mut pixels: [65536]u8
     let mut bitmap = ui::GlyphBitmap{ pixels = pixels[..], width = 0, height = 0, left = 0, top = 0 }
     let mut drew = false
     for s in g { if s.face == second and not drew { drew = provider.rasterize{ state = provider.state, face = s.face, glyph = s.glyph, out = &bitmap } and bitmap.width > 0 } }
-    ui_test::expect{ &io, &t, ok = drew, what = "a fallback glyph rasterises" }
+    // a fallback glyph rasterises
+    @expect(&t, drew)
     ui_fonts::release_face{ &lib, face = other }
     let back = shape{ provider, face, pixels = 24, text = mixed, out = out[..] }
     let mut one = true
     for s in back { if s.face != first { one = false } }
-    ui_test::expect{ &io, &t, ok = lib.fallback_count == 0 and one, what = "a released fallback is no longer tried" }
+    // a released fallback is no longer tried
+    @expect(&t, lib.fallback_count == 0 and one)
 }
 
 // Releasing a face frees its glyphs: its sized faces' glyphs leave the staged level's cache, and
 // their atlas room is free again after the quarantine.
-fn check_release { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, mut lib: ui_fonts::Library, provider: ui::TextProvider, latin: []u8 } -> ! {
+#test
+fn frees_a_released_faces_glyphs { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let latin = try read_latin{ &fs, &proc, &heap }
+    let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
+    let provider = ui_fonts::get_provider{ lib = &lib }
     let face = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
     let mut list = try ui::draw::make{ realloc = arena::alloc, &heap, cmds = 64, text = 4096, clips = 4, fonts = 4 }
     let mut staged = try ui_stage::make{ realloc = arena::alloc, &heap, cap = ui_stage::Capacity{
@@ -602,34 +671,41 @@ fn check_release { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, mu
     ui::draw::add_text{ &list, font, size = 24, x = 4, y = 40, text = "and me too", color = ui::Color{ r = 255, g = 255, b = 255, .. }, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider }
     let cached = staged.cache_used
-    ui_test::expect{ &io, &t, ok = staged.dropped == 0 and staged.glyph_count > 10 and cached > 10, what = "text in the face stages, its glyphs cached in the atlas" }
+    // text in the face stages, its glyphs cached in the atlas
+    @expect(&t, staged.dropped == 0 and staged.glyph_count > 10 and cached > 10)
     let mut ids: [8]u32
     let n = ui_fonts::list_sizes{ lib, face, out = ids[..] }
-    ui_test::expect{ &io, &t, ok = n == 2, what = "the face has a sized variant for each pixel size drawn" }
+    // the face has a sized variant for each pixel size drawn
+    @expect(&t, n == 2)
     for id in ids[..n] { ui_stage::release_face{ out = &staged, face = id } }
     let sizes_before = lib.live.ft_sizes
     ui_fonts::release_face{ &lib, face }
-    ui_test::expect{ &io, &t, ok = staged.cache_used == 0 and staged.packer.held_count > 0, what = "releasing the face takes its glyphs out of the glyph cache" }
-    ui_test::expect{ &io, &t, ok = lib.live.ft_sizes + 2 == sizes_before and ui_fonts::find_face{ lib, id = face.id } == null, what = "releasing the face releases its sized variants" }
+    // releasing the face takes its glyphs out of the glyph cache
+    @expect(&t, staged.cache_used == 0 and staged.packer.held_count > 0)
+    // releasing the face releases its sized variants
+    @expect(&t, lib.live.ft_sizes + 2 == sizes_before and ui_fonts::find_face{ lib, id = face.id } == null)
     ui::draw::reset{ &list, width = 320, height = 120 }
     for _ in 0..5 { ui_stage::stage{ out = &staged, list = &list, provider } }
-    ui_test::expect{ &io, &t, ok = staged.packer.held_count == 0 and staged.packer.freed_count > 0, what = "after the quarantine the released glyphs' atlas room is free to take" }
+    // after the quarantine the released glyphs' atlas room is free to take
+    @expect(&t, staged.packer.held_count == 0 and staged.packer.freed_count > 0)
     // Text still naming the released face: nothing drawn, counted by the provider, no panic.
     let unknown = lib.stats.unknown
     _ = ui::draw::add_font{ &list, font = def }
     ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16, x = 4, y = 4, text = "gone", color = ui::Color{ r = 255, g = 255, b = 255, .. }, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider }
-    ui_test::expect{ &io, &t, ok = staged.glyph_count == 0 and lib.stats.unknown > unknown, what = "text in a released face draws nothing and is counted" }
+    // text in a released face draws nothing and is counted
+    @expect(&t, staged.glyph_count == 0 and lib.stats.unknown > unknown)
 }
 
 // A run cache with room for four runs: generations retire, and what comes back is still right.
-fn check_small_cache { mut io: Io, mut fonts: ui_fonts::Fonts, mut t: ui_test::Tally, mut heap: arena::Arena, latin: []u8 } {
-    let mut lib = ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ faces = 2, sizes = 2, runs = 4, run_bytes = 64, run_glyphs = 64, scratch = 24 } } iferr {
-        ui_test::expect{ &io, &t, ok = false, what = "a small library opens" }
-        return
-    }
+#test
+fn retires_runs_from_a_full_run_cache { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let latin = try read_latin{ &fs, &proc, &heap }
+    let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ faces = 2, sizes = 2, runs = 4, run_bytes = 64, run_glyphs = 64, scratch = 24 } }
     let face = ui_fonts::add_face{ &lib, data = latin, index = 0 } iferr {
-        ui_test::expect{ &io, &t, ok = false, what = "a face loads into a small library" }
+        // a face loads into a small library
+        @expect(&t, false)
         ui_fonts::close{ &lib }
         return
     }
@@ -640,31 +716,31 @@ fn check_small_cache { mut io: Io, mut fonts: ui_fonts::Fonts, mut t: ui_test::T
     let mut out: [32]ui::Shaped
     for w in words { _ = shape{ provider, face, pixels = 16, text = w, out = out[..] } }
     let again = shape{ provider, face, pixels = 16, text = words[0], out = out[..] }
-    ui_test::expect{ &io, &t, ok = lib.stats.retired > 0 and is_same_glyphs{ a, b = again }, what = "a full run cache retires a generation, and runs shape the same after" }
+    // a full run cache retires a generation, and runs shape the same after
+    @expect(&t, lib.stats.retired > 0 and is_same_glyphs{ a, b = again })
     // More glyphs than a generation holds: shaped each time, counted.
     let long = "a run of text that has more glyphs than one generation keeps"
     let truncated = lib.stats.truncated
     let cut = shape{ provider, face, pixels = 16, text = long, out = out[..] }
-    ui_test::expect{ &io, &t, ok = cut.len == 24 and lib.stats.truncated == truncated + 1, what = "glyphs past the scratch buffer are cut and counted" }
+    // glyphs past the scratch buffer are cut and counted
+    @expect(&t, cut.len == 24 and lib.stats.truncated == truncated + 1)
     let mut m_ok = true
-    let mut list = ui::draw::make{ realloc = arena::alloc, &heap, cmds = 4, text = 256, clips = 2, fonts = 2 } iferr {
-        ui_test::expect{ &io, &t, ok = false, what = "a draw list" }
-        return
-    }
+    let mut list = try ui::draw::make{ realloc = arena::alloc, &heap, cmds = 4, text = 256, clips = 2, fonts = 2 }
     ui::draw::reset{ &list, width = 640, height = 480 }
-    let def = ui_fonts::describe_face{ lib, face } ifnull { return }
+    let def = ui_fonts::describe_face{ lib, face } ifnull { return ui_check::refused }
     _ = ui::draw::add_font{ &list, font = def }
-    let mut cache = ui::text::make_cache{ realloc = arena::alloc, &heap, entries = 16, shaped = 16 } iferr { return }
+    let mut cache = try ui::text::make_cache{ realloc = arena::alloc, &heap, entries = 16, shaped = 16 }
     let whole = ui::text::sum_text{ &cache, list, provider, font = ui::Font{ index = 0 }, size = 16, text = long }
     let mut bigger: [128]ui::Shaped
-    let mut full = ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } } iferr { return }
-    let full_face = ui_fonts::add_face{ lib = &full, data = latin, index = 0 } iferr { return }
+    let mut full = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
+    let full_face = try ui_fonts::add_face{ lib = &full, data = latin, index = 0 }
     let full_provider = ui_fonts::get_provider{ lib = &full }
     let reference = sum_advances{ glyphs = shape{ provider = full_provider, face = full_face, pixels = 16, text = long, out = bigger[..] } }
     if ui::abs_f32{ x = whole - reference } > 0.01 { m_ok = false }
     if ui::text::measure_text{ &cache, list, provider, font = ui::Font{ index = 0 }, size = 16, text = long } != ui::text::ceil_width{ v = reference } { m_ok = false }
     _ = @fmt(&io, "a long text measured in pieces: {}, shaped whole: {}\n", write_number{ v = whole, _ }, write_number{ v = reference, _ })
-    ui_test::expect{ &io, &t, ok = m_ok, what = "the core shapes a text longer than its buffer in pieces, to the same width" }
+    // the core shapes a text longer than its buffer in pieces, to the same width
+    @expect(&t, m_ok)
     // 22 em dashes: 22 glyphs, which the scratch buffer holds, in 66 bytes, more than a generation
     // keeps: shaped every time, and counted.
     let mut dashes: [66]u8
@@ -677,8 +753,8 @@ fn check_small_cache { mut io: Io, mut fonts: ui_fonts::Fonts, mut t: ui_test::T
     let shaped = lib.stats.shaped
     let d1 = shape{ provider, face, pixels = 16, text = dashes[..], out = out[..] }
     let d2 = shape{ provider, face, pixels = 16, text = dashes[..], out = bigger[..] }
-    ui_test::expect{ &io, &t, ok = d1.len == 22 and is_same_glyphs{ a = d1, b = d2 } and lib.stats.uncached == uncached + 2 and lib.stats.shaped == shaped + 2,
-        what = "a run too big for the run cache is shaped each time, and counted" }
+    // a run too big for the run cache is shaped each time, and counted
+    @expect(&t, d1.len == 22 and is_same_glyphs{ a = d1, b = d2 } and lib.stats.uncached == uncached + 2 and lib.stats.shaped == shaped + 2)
     ui_fonts::close{ lib = &full }
     ui_fonts::close{ &lib }
 }
