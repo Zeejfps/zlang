@@ -14,9 +14,11 @@ __declspec(dllimport) unsigned long __stdcall TlsAlloc(void);
 __declspec(dllimport) int __stdcall TlsSetValue(unsigned long index, void *value);
 __declspec(dllimport) void *__stdcall TlsGetValue(unsigned long index);
 
-uint32_t ctx_thread_slot, ctx_thread_limit_slot;
+uint32_t ctx_thread_slot, ctx_thread_limit_slot, ctx_thread_frames_slot;
 
 static ctx_thread *here(void) { return (ctx_thread *)TlsGetValue(ctx_thread_slot); }
+static ctx_frame *frames(void) { return (ctx_frame *)TlsGetValue(ctx_thread_frames_slot); }
+static void frames_put(ctx_frame *f) { TlsSetValue(ctx_thread_frames_slot, f); }
 static void set_here(ctx_thread *t) { TlsSetValue(ctx_thread_slot, t); }
 static void set_limit(uint64_t limit) { TlsSetValue(ctx_thread_limit_slot, (void *)(uintptr_t)limit); }
 
@@ -29,14 +31,18 @@ static uint32_t new_slot(void) {
 static void make_slot(void) {
     ctx_thread_slot = new_slot();
     ctx_thread_limit_slot = new_slot();
+    ctx_thread_frames_slot = new_slot();
 }
 
 #else
 
 _Thread_local ctx_thread *ctx_thread_current;
 _Thread_local uint64_t ctx_thread_limit;
+_Thread_local ctx_frame *ctx_thread_frames;
 
 static ctx_thread *here(void) { return ctx_thread_current; }
+static ctx_frame *frames(void) { return ctx_thread_frames; }
+static void frames_put(ctx_frame *f) { ctx_thread_frames = f; }
 static void set_here(ctx_thread *t) { ctx_thread_current = t; }
 static void set_limit(uint64_t limit) { ctx_thread_limit = limit; }
 static void make_slot(void) {}
@@ -47,6 +53,8 @@ void ctx_thread_setup(void) {
     make_slot();
     set_here(&ctx_main_thread);
     ctx_current = here;
+    ctx_frames_now = frames;
+    ctx_frames_put = frames_put;
     ctx_threaded = 1;
 }
 
@@ -72,6 +80,10 @@ void ctx_thread_rename(ctx_slice name) {
     for (uint64_t i = 0; i < n; i++) t->name[i] = s[i];
     t->name[n] = 0;
     t->name_len = n;
+}
+
+void ctx_thread_task(void *record) {
+    here()->task = record;
 }
 
 void ctx_thread_begin(uint64_t usable, ctx_slice name) {

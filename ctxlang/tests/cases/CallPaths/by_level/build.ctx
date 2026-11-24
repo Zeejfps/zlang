@@ -1,0 +1,7 @@
+fn build { mut b: Build } {
+    let fast = build::exe{ &b, name = "fast", root = "." }
+    build::optimize{ &b, exe = fast, level = 2 }
+    let traced = build::exe{ &b, name = "traced", root = "." }
+    build::optimize{ &b, exe = traced, level = 2 }
+    build::trace_calls{ &b, exe = traced, on = true }
+}

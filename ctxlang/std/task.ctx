@@ -669,17 +669,19 @@ namespace task {
         }
     }
 
-    // Runs slot s's task on this worker: its name for a panic's report, its cancel slot, and
+    // Runs slot s's task on this worker: its name and its record for a panic's report, its cancel slot, and
     // its standard output written out before its end is published, whatever its flag.
     fn run { mut threads: Threads, mut io: Io, s: *mut Slot } {
         let mut label: [80]u8
         let name = rt::task_name{ record = @cast(*u8, &s.record[0]) }
         let n = rt::put{ into = label[..], n = rt::put{ into = label[..], n = 0, s = "task " }, s = name }
         rt::thread_rename{ &threads, name = label[..n] }
+        rt::thread_runs{ &threads, record = @cast(*u8, &s.record[0]) }
         threads.current = s
         s.entry{ record = @cast(*mut u8, &s.record[0]), result = s.result }
         threads.current = null
         io::flush{ &io }
+        rt::thread_runs{ &threads, record = null }
         rt::thread_rename{ &threads, name = "task worker" }
     }
 

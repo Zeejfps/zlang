@@ -1,3 +1,6 @@
 
 fn d { a: i32, b: i32 } -> i32 { return a / b }  //~ panic at 43: division by zero
 fn main { mut io: Io } { let x = d{ a = 1, b = 0 } }
+//# path:
+//|   at d (div_zero_panics.ctx:2:43)
+//|   at main (div_zero_panics.ctx:3:35)

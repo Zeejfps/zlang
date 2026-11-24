@@ -1,2 +1,5 @@
 fn convert { x: f64 } -> usize { return @as(usize, x) }  //~ panic at 41: @as: 1.8446744073709552e+19 is not representable in usize
 fn main {} { _ = convert{ x = 1.8446744073709552e+19 } }
+//# path:
+//|   at convert (86.ctx:1:41)
+//|   at main (86.ctx:2:25)

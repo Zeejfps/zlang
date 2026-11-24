@@ -75,9 +75,10 @@ As `tools/toolchain.py` did for the Python tests this suite replaces:
    runtime's objects, a 256 MiB stack, and the program's name `program`. The executable is cached
    by a hash of its C.
 3. It runs, with `CTX_STACK` 16 MiB unless the case says otherwise, for at most 600 s. A panic is
-   exit code 134 with `FILE:LINE:COL: panic: MESSAGE` as standard error's last line.
+   exit code 134 with `FILE:LINE:COL: panic: MESSAGE` as standard error's last line before its
+   call path (spec §15, Call paths), whose lines start with two spaces.
 4. `ctxc interp` runs the same program, a second implementation: its standard output, standard
-   error and exit code must be the compiled program's (a panic without a position names the
+   error, a panic's call path included, and exit code must be the compiled program's (a panic without a position names the
    program, `program` or the file's stem; a trap is 132 both ways).
 
 In every text the runner compares, a run of `../` before `std/` is dropped, so a position in
@@ -120,8 +121,10 @@ fn main { mut io: Io } { let x: u8 = 300 }  //~ error at 38: literal 300 does no
   `FILE:LINE:COL: error: MESSAGE` for each marker. A line with several errors has several
   markers. A program with an error marker isn't run.
 - `//~ panic at COL: MESSAGE` at the end of a line: the program panics there, so it exits with
-  134 and standard error's last line is `FILE:LINE:COL: panic: MESSAGE`. What it wrote before is
-  still compared (`stdout:`, `stderr:`).
+  134 and standard error's last line before the call path is `FILE:LINE:COL: panic: MESSAGE`.
+  What it wrote before is still compared (`stdout:`, `stderr:`), and so is the path: without a
+  `path:` directive it is one line, `  at main (FILE:LINE:COL)`, the panic's own position, as
+  for a panic in `main` itself.
 
 - `//~ note at COL: MESSAGE` after an error's marker, on the same line: the error has that
   note (spec §21, rule 8), at COL of the marker's own line, or with `at -N:COL` or `at +N:COL`
@@ -151,7 +154,8 @@ after each line.
 | `//# stdout:` + block | Standard output, whole. Without it, standard output must be empty. |
 | `//# stderr:` + block | Standard error, whole, without the panic's line. Without it, it must be empty. |
 | `//# exit: N` | The exit code. Without it: 0, or 134 for a program that states a panic. |
-| `//# panic: LINE` | Standard error's last line, whole, with exit code 134: for a panic that a marker can't state, as one in std (`std/utf8.ctx:50:46: panic: ...`), without a position (`program: panic: stack overflow`) or in a task. |
+| `//# panic: LINE` | Standard error's last line before the call path, whole, with exit code 134: for a panic that a marker can't state, as one in std (`std/utf8.ctx:50:46: panic: ...`), without a position (`program: panic: stack overflow`) or in a task. |
+| `//# path:` + block | The panic's call path, whole: every line after the panic's, each as the program writes it (`//|   at twice (a.ctx:3:9)`). A panic anywhere but in `main` states it; without it the path must be `main` alone, at the panic's position. For a recursion's, `{n}` stands for the count in `  ... {n} more frames`. |
 | `//# errors:` + block | ctxc's standard error, whole: for errors that markers can't state, as a message of several lines, a position in another file, or an order that isn't the lines'. |
 | `//# compiles` | The program builds (ctxc, then the C compiler); it isn't run. |
 | `//# args: WORD...` | The program's arguments. |
@@ -167,7 +171,7 @@ after each line.
 Rules:
 
 1. **A case states an expectation,** or it fails: at least one of a marker, `stdout:`,
-   `stderr:`, `exit:`, `panic:`, `errors:` or `compiles`. A program that prints nothing and
+   `stderr:`, `exit:`, `panic:`, `errors:` or `compiles`. (`path:` goes with a panic.) A program that prints nothing and
    returns 0 says `//# exit: 0`.
 2. **Everything is compared whole.** A program's errors are all of ctxc's; its standard output
    and standard error are every byte. What a case doesn't state must be empty or 0.
@@ -233,8 +237,8 @@ command, `{std}` is std's files for this platform, as paths from the command's d
 `{std:interp}` another layer's; `{cflags}` is the flags the harness compiles C with, and
 `{stack}` those that reserve its stack.
 
-A command and a project state what they expect as a program does: a `$` step with no `exit:`,
-`stdout:`, `stderr:` or `panic:` fails as stating nothing, standard output and standard error
+A command and a project state what they expect as a program does (`panic:` with its `path:`
+too): a `$` step with no `exit:`, `stdout:`, `stderr:` or `panic:` fails as stating nothing, standard output and standard error
 are compared whole unless a `has`, `lacks` or `any` form says otherwise, and the exit code is 0
 unless stated.
 

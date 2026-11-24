@@ -5,3 +5,7 @@ fn main { mut io: Io } {
 }
 
 //# panic: std/utf8.ctx:765:58: panic: utf8: offset is not the start of a character
+//# path:
+//|   at utf8::decode (std/utf8.ctx:765:58)
+//|   at utf8::at (std/utf8.ctx:81:22)
+//|   at main (02.ctx:4:21)

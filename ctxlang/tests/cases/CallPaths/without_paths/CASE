@@ -1,0 +1,13 @@
+// An executable whose build program turns its call paths off (`build::trace_calls`) still
+// names the function a panic is in: its path is that one line.
+//# project
+//# $ {t}
+//# panic: {dir}/main.ctx:1:42: panic: index 2 out of bounds for length 2
+//# path:
+//|   at third ({dir}/main.ctx:1:42)
+
+// So does `ctxc run`, which builds it the same way.
+//# $ ctxc run .
+//# panic: ./main.ctx:1:42: panic: index 2 out of bounds for length 2
+//# path:
+//|   at third (./main.ctx:1:42)

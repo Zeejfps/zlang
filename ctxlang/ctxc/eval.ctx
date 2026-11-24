@@ -96,6 +96,19 @@ namespace eval {
     // A function's locals: each one's offset in its frame, and the frame's size.
     struct Frame { offs: []u64, size: u64, known: bool }
 
+    // A call in progress, for a panic's call path (spec §15, Call paths), as the C keeps a
+    // frame: the function, or C_CODE for C that called a callback, and where its last call is,
+    // line 0 if that isn't known.
+    struct Step { f: u32, line: u32, col: u32 }
+
+    const C_CODE: u32 = 0xFFFFFFFE
+
+    // An entry of a path, as ctxrt.c's ctx_path_frame gives one (std's rt::Frame).
+    struct Entry { name: []u8, file: []u8, line: u32, col: u32, kind: u32 }
+
+    // What a walk along the path found: how many entries it has, and the one asked for.
+    struct Walk { count: u64, found: ?Entry }
+
     // What `known` maps, by kind: 0 a function's static record gN, 1 the code of a C function
     // pointer, 2 and 3 a bind's code, by its callee and args, 4 an adapter's code, 5 a literal's
     // static bytes, 6 a const's.
@@ -126,6 +139,12 @@ namespace eval {
         defers:   list::List(ir::Block, Heap),  // the deferred bodies reached, innermost last
         argv:     list::List(Addr, Heap),       // calls' args, by param, as a stack
         frames:   list::List(Frame, Heap),      // by function id
+        // The calls in progress, outermost first. A panic leaves them as they were, and the
+        // panic fn then reads its path from the first panic_len of them and the panic's position.
+        path:     list::List(Step, Heap),
+        reporting: bool = false,
+        panic_len: usize = 0,
+        panic_pos: ?ir::Pos = null,
         codes:    list::List(Code, Heap),
         known:    map::Map(Key, Addr, Heap),
         statics:  u32 = 0,                      // the region static data is going into
@@ -168,6 +187,7 @@ namespace eval {
             defers = list::new(ir::Block){ realloc = arena::alloc, heap },
             argv = list::new(Addr){ realloc = arena::alloc, heap },
             frames = list::new(Frame){ realloc = arena::alloc, heap },
+            path = list::new(Step){ realloc = arena::alloc, heap },
             codes = list::new(Code){ realloc = arena::alloc, heap },
             known = map::make(Key, Addr){ realloc = arena::alloc, heap },
             cells = list::new(Addr){ realloc = arena::alloc, heap },
@@ -210,6 +230,9 @@ namespace eval {
         list::clear{ list = &m.defers }
         m.flow = Flow::none
         m.why = Why::none
+        m.reporting = true
+        m.panic_len = m.path.len
+        m.panic_pos = pos
         let ok{ value = report } = panic_args{ &m, pos, msg } else { return m.stop }
         let after = run{ &m, callee = m.p.on_panic, args = report }
         match after {
@@ -363,7 +386,14 @@ namespace eval {
         m.sp = start + fr.size
         m.floor = m.sp
         m.depth = m.depth + 1
+        try! list::push{ list = &m.path, item = Step{ f = callee, line = 0, col = 0 } }
         let r = block{ &m, b = f.body, res = 0 }
+        // A call that stops the program stays in the path, for a panic's report.
+        match r {
+            ok => { m.path.len = m.path.len - 1 }
+            leave => { m.path.len = m.path.len - 1 }
+            halt => {}
+        }
         m.depth = m.depth - 1
         m.frame = saved_frame
         m.offs = saved_offs
@@ -782,15 +812,16 @@ namespace eval {
                 return r
             }
             fnconv{ e } => { return try fnconv{ &m, t = x.ty, e = e.* } }
-            call{ callee, args } => {
+            call{ callee, args, pos } => {
                 let f = m.p.fns[callee]
                 let base = try args_of{ &m, args, n = f.params.len }
                 let r = try temp{ &m, t = f.ret }
+                at_call{ &m, pos }
                 try invoke{ &m, callee, base, res = r }
                 m.argv.len = base
                 return r
             }
-            dcall{ callee, args } => { return try dcall{ &m, t = x.ty, callee = callee.*, args } }
+            dcall{ callee, args, pos } => { return try dcall{ &m, t = x.ty, callee = callee.*, args, pos } }
             bind{ callee, args } => {
                 let c = code{ &m, key = Key{ kind = 2, a = callee, b = @addr(args.ptr) }, c = Code::bound{ callee, args } }
                 return try record_of{ &m, t = x.ty, c, inner = 0, start = 8, args, sized = false }
@@ -879,12 +910,14 @@ namespace eval {
             }
             ovf{ trap, e, els } => {
                 let r = try temp{ &m, t = x.ty }
+                let calls = m.path.len
                 match value{ &m, x = e.* } {
                     ok{ value = v } => { try copy{ &m, dst = r, src = v, n = size{ ts = m.types, t = x.ty } } }
                     leave => { return leave }
                     halt => {
                         if m.trapped != trap { return halt }
                         m.trapped = ir::NO_TRAP
+                        m.path.len = calls
                         try block{ &m, b = els, res = r }
                     }
                 }
@@ -1261,8 +1294,8 @@ namespace eval {
     }
 
     // A call through a function value: the callee, then the args.
-    fn dcall { mut m: M, t: ir::TypeId, callee: ir::Expr, args: []ir::Arg } -> !Addr {
-        if m.types[callee.ty] is cfn{ params } { return try c_call{ &m, t, callee, params, args } }
+    fn dcall { mut m: M, t: ir::TypeId, callee: ir::Expr, args: []ir::Arg, pos: ir::Pos } -> !Addr {
+        if m.types[callee.ty] is cfn{ params } { return try c_call{ &m, t, callee, params, args, pos } }
         let func{ params } = m.types[callee.ty] else {
             fail{ &m, msg = "eval: a call of a non-function" }
             return halt
@@ -1270,9 +1303,63 @@ namespace eval {
         let rec = try scalar{ &m, x = callee }
         let base = try args_of{ &m, args, n = params.len }
         let r = try temp{ &m, t }
+        at_call{ &m, pos }
         try dispatch{ &m, rec, given = params, base, res = r }
         m.argv.len = base
         return r
+    }
+
+    // Notes where the call that follows is in the running function's step, as the C's CTX_AT
+    // does (emit_c.ctx, at_call): 0 for a position the compiler has none for, one in another
+    // file than the function's, or one past what the C's frame holds.
+    fn at_call { mut m: M, pos: ir::Pos } {
+        if m.path.len == 0 { return }
+        let k = m.path.len - 1
+        let s = list::items{ list = m.path }[k]
+        if s.f == C_CODE { return }
+        let known = pos.line != 0 and pos.file == m.p.fns[s.f].file and pos.line <= emit::AT_LINES and pos.col <= emit::AT_COLS
+        list::items{ list = m.path }[k] = Step{ f = s.f, line = if known { pos.line } else { 0 }, col = if known { pos.col } else { 0 } }
+    }
+
+    // The running thread's call path, as ctxrt.c's path_next walks it: the panic's own position
+    // first, in place of the step of the function it is in; then each step, innermost first,
+    // without the functions the compiler wrote, up to what calls main or a test.
+    fn walk { m: M, want: u64 } -> Walk {
+        let steps = list::items{ list = m.path }
+        let mut top = if m.reporting { m.panic_len } else { steps.len }
+        let mut w = Walk{ count = 0, found = null }
+        if m.reporting and top > 0 and steps[top - 1].f != C_CODE {
+            if let at = m.panic_pos {
+                let f = m.p.fns[steps[top - 1].f]
+                let file = if at.line == 0 { f.file } else { at.file }
+                let e = Entry{ name = f.name, file = file_text{ m, file }, line = at.line, col = if at.line == 0 { 0 } else { at.col }, kind = 0 }
+                if w.count == want { w.found = e }
+                w.count = w.count + 1
+                top = top - 1
+                if f.shown is root { top = 0 }
+            }
+        }
+        while top > 0 {
+            let s = steps[top - 1]
+            top = top - 1
+            let mut e = Entry{ name = "", file = "", line = 0, col = 0, kind = 1 }
+            if s.f != C_CODE {
+                let f = m.p.fns[s.f]
+                if f.shown is root { break }
+                if f.shown is hidden { continue }
+                e = Entry{ name = f.name, file = file_text{ m, file = f.file }, line = s.line, col = if s.line == 0 { 0 } else { s.col }, kind = 0 }
+            }
+            if w.count == want { w.found = e }
+            w.count = w.count + 1
+        }
+        return w
+    }
+
+    // IR file `file`'s name for a path: none for no file, and the program's for a file without one.
+    fn file_text { m: M, file: u32 } -> []u8 {
+        if file >= m.p.files.len { return "" }
+        if m.p.files[file].len == 0 { return m.name }
+        return m.p.files[file]
     }
 
     // Calls the function value whose record is at rec, with args at argv[base..] for the params
@@ -1471,7 +1558,7 @@ namespace eval {
 
     // A call through a C function pointer: the callee, then the args. A callback gets the
     // capabilities C doesn't pass, as emit_c's kK supplies them.
-    fn c_call { mut m: M, t: ir::TypeId, callee: ir::Expr, params: []ir::Param, args: []ir::Arg } -> !Addr {
+    fn c_call { mut m: M, t: ir::TypeId, callee: ir::Expr, params: []ir::Param, args: []ir::Arg, pos: ir::Pos } -> !Addr {
         let a = try scalar{ &m, x = callee }
         let base = try args_of{ &m, args, n = params.len }
         let r = try temp{ &m, t }
@@ -1504,7 +1591,12 @@ namespace eval {
             try! list::push{ list = &m.argv, item = v }
             j = j + 1
         }
+        at_call{ &m, pos }
+        // A callback is called by its C function, whose step says so (emit_c.ctx, callback_def).
+        let callback = f.symbol.len == 0
+        if callback { try! list::push{ list = &m.path, item = Step{ f = C_CODE, line = 0, col = 0 } } }
         try invoke{ &m, callee = id, base = nb, res = r }
+        if callback { m.path.len = m.path.len - 1 }
         m.argv.len = base
         return r
     }
@@ -1531,7 +1623,9 @@ namespace eval {
             j = j + 1
         }
         let r = try temp{ &m, t = f.ret }
+        try! list::push{ list = &m.path, item = Step{ f = C_CODE, line = 0, col = 0 } }
         try invoke{ &m, callee = id, base = nb, res = r }
+        m.path.len = m.path.len - 1
         m.argv.len = nb
     }
 
@@ -1564,6 +1658,21 @@ namespace eval {
             let len = try load{ &m, a = msg + 8, n = 8 }
             panic_nopos{ &m, msg = try at{ &m, a = ptr, n = len } }
             return halt
+        }
+        if slice::eq_bytes{ a = s, b = "ctx_path_count" } {
+            // std's rt::count_frames and rt::get_frame: the call path (walk).
+            return try store{ &m, a = res, n = 8, v = walk{ m, want = MAX }.count }
+        }
+        if slice::eq_bytes{ a = s, b = "ctx_path_frame" } {
+            let index = try arg_bits{ &m, f, base, name = "index" }
+            let e = walk{ m, want = index }.found ifnull { Entry{ name = "", file = "", line = 0, col = 0, kind = 0 } }
+            try store{ &m, a = res, n = 8, v = try literal{ &m, bytes = e.name } }
+            try store{ &m, a = res + 8, n = 8, v = @as(u64, e.name.len) }
+            try store{ &m, a = res + 16, n = 8, v = try literal{ &m, bytes = e.file } }
+            try store{ &m, a = res + 24, n = 8, v = @as(u64, e.file.len) }
+            try store{ &m, a = res + 32, n = 4, v = @as(u64, e.line) }
+            try store{ &m, a = res + 36, n = 4, v = @as(u64, e.col) }
+            return try store{ &m, a = res + 40, n = 4, v = @as(u64, e.kind) }
         }
         if try libm{ &m, f, base, res } { return }
         if m.emulate and is_host{ s } {

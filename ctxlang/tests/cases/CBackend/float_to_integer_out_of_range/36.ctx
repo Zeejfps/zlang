@@ -1,2 +1,5 @@
 fn convert { x: f32 } -> u64 { return @as(u64, x) }  //~ panic at 39: @as: 1.8446744073709552e+19 is not representable in u64
 fn main {} { _ = convert{ x = 1.8446744073709552e+19 } }
+//# path:
+//|   at convert (36.ctx:1:39)
+//|   at main (36.ctx:2:25)

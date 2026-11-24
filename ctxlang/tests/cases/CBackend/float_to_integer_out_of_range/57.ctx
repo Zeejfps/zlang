@@ -1,2 +1,5 @@
 fn convert { x: f64 } -> i32 { return @as(i32, x) }  //~ panic at 39: @as: -2147483649.0 is not representable in i32
 fn main {} { _ = convert{ x = -2147483649.0 } }
+//# path:
+//|   at convert (57.ctx:1:39)
+//|   at main (57.ctx:2:25)

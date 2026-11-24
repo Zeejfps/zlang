@@ -1,2 +1,5 @@
 fn convert { x: f32 } -> i8 { return @as(i8, x) }  //~ panic at 38: @as: -129.0 is not representable in i8
 fn main {} { _ = convert{ x = -129.0 } }
+//# path:
+//|   at convert (02.ctx:1:38)
+//|   at main (02.ctx:2:25)

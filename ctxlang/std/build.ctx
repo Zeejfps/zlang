@@ -143,6 +143,15 @@ namespace build {
         record{ &b, kind = "optimize", exe, a = digit[..], more = "" }
     }
 
+    // Whether exe keeps its call paths (spec §15, Call paths, rule 7). Unsaid, it does at
+    // optimization levels 0 and 1, and its test build at any level. Without them a panic names
+    // the function it is in, and not the calls that led there, and its calls don't pay for
+    // the path.
+    fn trace_calls { mut b: Build, exe: Exe, on: bool } {
+        check{ &b, exe }
+        record{ &b, kind = "paths", exe, a = if on { "1" } else { "0" }, more = "" }
+    }
+
     // Links exe with library `lib`: `-l lib`.
     fn link { mut b: Build, exe: Exe, lib: []u8 } {
         check{ &b, exe }
@@ -192,7 +201,7 @@ namespace build {
 
     // ---- the graph: one record per line, its fields separated by tabs, to the file
     // CTX_BUILD_OUT names (ctxc/drive.ctx reads it), or to standard output without it:
-    //   exe ID NAME ROOT    sources ID DIR    optimize ID LEVEL
+    //   exe ID NAME ROOT    sources ID DIR    optimize ID LEVEL    paths ID 0|1
     //   link ID LIB    framework ID NAME    libpath ID PATH
     //   deny ID COUNT, then COUNT of except ID DIR
     //   gen ID NAME SIZE, then SIZE bytes of text and a line break

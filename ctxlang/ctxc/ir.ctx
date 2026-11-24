@@ -96,7 +96,8 @@ namespace ir {
     // pointer. An extern fn has a symbol, the C function it calls, and no locals and an empty
     // body; any other function has an empty symbol. unit is the file that declares it and at its
     // offset there, which the C backend groups functions by; neither is in the text form, whose
-    // reader leaves them empty.
+    // reader leaves them empty. file is that file in Program.files, or NO_FILE, and shown what a
+    // panic's call path makes of the function (spec §15, Call paths).
     struct Func {
         id:     u32,
         name:   Bytes,
@@ -107,7 +108,16 @@ namespace ir {
         body:   Block,
         unit:   Bytes,
         at:     u32,
+        file:   u32,
+        shown:  Shown,
     }
+
+    const NO_FILE: u32 = 0xFFFFFFFF
+
+    // A function in a call path: one of the program's is a frame of it; one the compiler wrote
+    // (a thunk, a derived fn, the entry fns) is hidden; and a root is where a path ends: what
+    // calls `main`, a test or a task.
+    union Shown { frame, hidden, root }
 
     // A value block (a branch of an `if` or `match` expression) has a result unless every path
     // through it leaves. A statement block never has one.
@@ -206,13 +216,14 @@ namespace ir {
         widen{ e: *Expr },
         some{ e: *Expr },
         fnconv{ e: *Expr },
-        call{ callee: u32, args: []Arg },
+        call{ callee: u32, args: []Arg, pos: Pos },             // pos: the call's; line 0 for one the compiler wrote
         bind{ callee: u32, args: []Arg },
-        dcall{ callee: *Expr, args: []Arg },
+        dcall{ callee: *Expr, args: []Arg, pos: Pos },
         dbind{ callee: *Expr, args: []Arg },
         // A task's record (§15, Tasks): a bind whose record also holds its size and its task
-        // fn's name, after the code, so that the backend can copy it (rsize, rcopy) and name it.
-        tbind{ callee: u32, args: []Arg, name: Bytes },
+        // fn's name, after the code, so that the backend can copy it (rsize, rcopy) and name it,
+        // and where the start is, for a panic's call path.
+        tbind{ callee: u32, args: []Arg, name: Bytes, pos: Pos },
         rsize{ e: *Expr },                          // (rsize T E): the size of tbind E's record
         rcopy{ e: *Expr, into: *Expr },             // (rcopy T E INTO): copies it into slice INTO
         fnref{ callee: u32 },                       // of a cfn type: an extern fn, or a C function calling a callback

@@ -16,3 +16,6 @@ fn main { mut io: Io, mut threads: Threads } -> i32 {
 // A panic in a task is reported with its task fn's name.
 //# interp: cannot run
 //# panic: panic_in_a_task.ctx:5:14: panic in task fail: index 5 out of bounds for length 2
+//# path:
+//|   at fail (panic_in_a_task.ctx:5:14)
+//|   started at main (panic_in_a_task.ctx:10:27)

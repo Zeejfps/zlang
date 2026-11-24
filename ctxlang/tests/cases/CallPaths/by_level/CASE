@@ -1,0 +1,31 @@
+// An executable at optimization level 2 keeps no call paths: a panic names the function it
+// is in. `build::trace_calls{ on = true }` keeps them at that level too, also for the calls
+// the C compiler inlines.
+//# project
+//# $ {fast}
+//# panic: {dir}/main.ctx:1:42: panic: index 2 out of bounds for length 2
+//# path:
+//|   at third ({dir}/main.ctx:1:42)
+//# $ {traced}
+//# panic: {dir}/main.ctx:1:42: panic: index 2 out of bounds for length 2
+//# path:
+//|   at third ({dir}/main.ctx:1:42)
+//|   at middle ({dir}/main.ctx:3:46)
+//|   at main ({dir}/main.ctx:7:18)
+
+// A test build keeps them at any level.
+//# write t/build.ctx:
+//| fn build { mut b: Build } {
+//|     let exe = build::exe{ &b, name = "t", root = "." }
+//|     build::optimize{ &b, exe, level = 2 }
+//| }
+//# write t/t.ctx:
+//| fn same { mut t: Test, a: i32, b: i32 } { @expect(&t, a == b) }
+//| #test
+//| fn twos { mut t: Test } { same{ &t, a = 1, b = 2 } }
+//# $ ctxc test t
+//# exit: 1
+//# stdout:
+//| t/t.ctx:1: fail: twos: a == b: 1 == 2
+//|   called from twos (t/t.ctx:3:31)
+//| tests: 1 run, 0 passed, 1 failed, 0 skipped, 0 not selected, 1 checks

@@ -239,13 +239,19 @@ namespace ir_read {
         let symbol = try string{ &r }
         let params = try params{ &r }
         let ret = id32{ &r }
-        return ir::Func{ id, name, symbol, params, ret, locals = slice::empty(ir::Local){}, body = empty_block{}, unit = "", at = 0 }
+        return ir::Func{ id, name, symbol, params, ret, locals = slice::empty(ir::Local){}, body = empty_block{}, unit = "", at = 0, file = ir::NO_FILE, shown = ir::Shown::frame }
     }
 
     // After `(fn `, up to the closing parenthesis.
     fn function { mut r: Reader } -> !ir::Func {
         let id = id32{ &r }
         let name = try string{ &r }
+        let file = opt_id{ &r } ifnull { ir::NO_FILE }
+        let shown = match id32{ &r } {
+            0 => { ir::Shown::frame }
+            1 => { ir::Shown::hidden }
+            else => { ir::Shown::root }
+        }
         let params = try params{ &r }
         let ret = id32{ &r }
         expect{ &r, c = '[' }
@@ -259,7 +265,7 @@ namespace ir_read {
         }
         expect{ &r, c = ']' }
         let body = try block{ &r }
-        return ir::Func{ id, name, symbol = "", params, ret, locals = list::items{ list = locals }, body, unit = "", at = 0 }
+        return ir::Func{ id, name, symbol = "", params, ret, locals = list::items{ list = locals }, body, unit = "", at = 0, file, shown }
     }
 
     fn empty_block {} -> ir::Block {
@@ -441,7 +447,8 @@ namespace ir_read {
             k = ir::ExprKind::capref
         } else if spells{ s = tag, lit = "call" } {
             let callee = id32{ &r }
-            k = ir::ExprKind::call{ callee, args = try args{ &r } }
+            let a = try args{ &r }
+            k = ir::ExprKind::call{ callee, args = a, pos = pos{ &r } }
         } else if spells{ s = tag, lit = "addr" } {
             k = ir::ExprKind::addr{ place = try sub{ &r } }
         } else if spells{ s = tag, lit = "deref" } {
@@ -542,7 +549,8 @@ namespace ir_read {
             k = ir::ExprKind::switchx{ scrut, cases = try cases{ &r } }
         } else if spells{ s = tag, lit = "dcall" } {
             let callee = try sub{ &r }
-            k = ir::ExprKind::dcall{ callee, args = try args{ &r } }
+            let a = try args{ &r }
+            k = ir::ExprKind::dcall{ callee, args = a, pos = pos{ &r } }
         } else if spells{ s = tag, lit = "as" } {
             let e = try sub{ &r }
             let at = pos{ &r }
@@ -582,7 +590,8 @@ namespace ir_read {
         } else if spells{ s = tag, lit = "tbind" } {
             let callee = id32{ &r }
             let a = try args{ &r }
-            k = ir::ExprKind::tbind{ callee, args = a, name = try string{ &r } }
+            let name = try string{ &r }
+            k = ir::ExprKind::tbind{ callee, args = a, name, pos = pos{ &r } }
         } else if spells{ s = tag, lit = "rsize" } {
             k = ir::ExprKind::rsize{ e = try sub{ &r } }
         } else if spells{ s = tag, lit = "rcopy" } {

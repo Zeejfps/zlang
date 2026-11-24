@@ -1,0 +1,27 @@
+// A check that doesn't hold in a function the test called has the calls that led to it
+// under its line, innermost first, up to the test fn; one in the test fn itself has none.
+// A test's panic has its path, which ends at the test fn too.
+//# $ ctxc test {dir}/t
+//# exit: 1
+//# stdout:
+//| {dir}/t/t.ctx:16: fail: in_the_test: 1 + 1 == 3: 2 == 3
+//| {dir}/t/t.ctx:3: fail: in_helpers: a == b: 3 == 2
+//|   called from helpers::all_twos ({dir}/t/t.ctx:7:27)
+//|   called from in_helpers ({dir}/t/t.ctx:21:22)
+//| {dir}/t/t.ctx:8: fail: in_helpers: required: xs.len > 5: 2 > 5
+//|   called from in_helpers ({dir}/t/t.ctx:21:22)
+//| {dir}/t/t.ctx:11:46: fail: panics: panic: index 2 out of bounds for length 2
+//|   at helpers::third ({dir}/t/t.ctx:11:46)
+//|   at panics ({dir}/t/t.ctx:26:31)
+//| tests: 3 run, 0 passed, 3 failed, 0 skipped, 0 not selected, 4 checks
+
+// As JSON, a check's failure has them as `called_from`, and a panic's as `path`.
+//# $ ctxc test {dir}/t --json
+//# exit: 1
+//# stderr:
+//| {"type":"summary","errors":0,"more":false,"waiting":[]}
+//# stdout:
+//| {"type":"test","name":"in_the_test","file":"{dir}/t/t.ctx","line":15,"outcome":"fail","checks":1,"failures":[{"file":"{dir}/t/t.ctx","line":16,"message":"1 + 1 == 3: 2 == 3"}],"output":[]}
+//| {"type":"test","name":"in_helpers","file":"{dir}/t/t.ctx","line":20,"outcome":"fail","checks":3,"failures":[{"file":"{dir}/t/t.ctx","line":3,"message":"a == b: 3 == 2","called_from":[{"kind":"call","function":"helpers::all_twos","file":"{dir}/t/t.ctx","line":7,"column":27},{"kind":"call","function":"in_helpers","file":"{dir}/t/t.ctx","line":21,"column":22}]},{"file":"{dir}/t/t.ctx","line":8,"message":"required: xs.len > 5: 2 > 5","called_from":[{"kind":"call","function":"in_helpers","file":"{dir}/t/t.ctx","line":21,"column":22}]}],"output":[]}
+//| {"type":"test","name":"panics","file":"{dir}/t/t.ctx","line":25,"outcome":"fail","checks":0,"failures":[{"file":"{dir}/t/t.ctx","line":11,"message":"panic: index 2 out of bounds for length 2","path":[{"kind":"call","function":"helpers::third","file":"{dir}/t/t.ctx","line":11,"column":46},{"kind":"call","function":"panics","file":"{dir}/t/t.ctx","line":26,"column":31}]}],"output":[]}
+//| {"type":"tests","run":3,"passed":0,"failed":3,"skipped":0,"not_selected":0,"checks":4}

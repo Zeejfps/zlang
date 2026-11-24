@@ -341,7 +341,7 @@ namespace tool {
     // Builds the program of files, in directory dir, into an executable in the cache, named by
     // a hash of its C and of all that compiles it: built once, however many cases have the same.
     // ctxc runs with `env` added to its environment.
-    fn build { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, s: Session, mut scratch: Scratch, files: [][]u8, denied: [][]u8, dir: []u8, up: []u8, name: []u8, flags: [][]u8, level: u8, env: [][]u8 } -> Built {
+    fn build { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, s: Session, mut scratch: Scratch, files: [][]u8, denied: [][]u8, dir: []u8, up: []u8, name: []u8, flags: [][]u8, level: u8, trace: bool, env: [][]u8 } -> Built {
         scratch.seq = scratch.seq + 1
         let tmp_c = join{ &heap, a = scratch.dir, b = cat3{ &heap, a = "c", b = number{ &heap, n = scratch.seq }, c = ".c" } }
         _ = fs::remove{ &fs, path = tmp_c } iferr {}
@@ -365,6 +365,8 @@ namespace tool {
                 try! list::push{ list = &cflags, item = f }
             }
         }
+        // An executable that keeps no call paths (build::trace_calls), as ctxc's driver builds it.
+        if not trace { try! list::push{ list = &cflags, item = "-DCTX_NO_PATH" } }
         let mut h = sha256::new{}
         sha256::add_field{ s = &h, bytes = s.rt }
         sha256::add_field{ s = &h, bytes = name }

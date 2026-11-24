@@ -138,5 +138,5 @@ _Noreturn void ctx_f2i_fail(double v, const char *dst, CTX_POS) {
     char text[64], msg[128];
     repr_f64(v, text);
     snprintf(msg, sizeof msg, "@as: %s is not representable in %s", text, dst);
-    ctx_panic(line, col, file, msg);
+    ctx_panic(line, col, in, up, msg);
 }

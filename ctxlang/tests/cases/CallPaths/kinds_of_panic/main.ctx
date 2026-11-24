@@ -1,0 +1,32 @@
+error empty
+
+fn stop { n: u32 } { if n == 1 { @panic("stopped") } }
+
+fn element { xs: []i32, i: usize } -> i32 { return xs[i] }
+
+fn double { n: u8 } -> u8 { return n * 2 }
+
+fn first { xs: []i32 } -> !i32 {
+    if xs.len == 0 { return empty }
+    return xs[0]
+}
+
+fn must { xs: []i32 } -> i32 { return try! first{ xs } }
+
+fn narrow { n: i64 } -> u8 { return @as(u8, n) }
+
+fn fails {} { rt::fail{ msg = "std's own" } }
+
+fn run { kind: []u8 } {
+    let xs: [2]i32 = [1, 2]
+    if kind == "panic" { stop{ n = 1 } }
+    if kind == "index" { _ = element{ xs = xs[..], i = 2 } }
+    if kind == "overflow" { _ = double{ n = 200 } }
+    if kind == "try" { _ = must{ xs = xs[..0] } }
+    if kind == "as" { _ = narrow{ n = 300 } }
+    if kind == "fail" { fails{} }
+}
+
+fn main { args: Args } {
+    run{ kind = args[0] }
+}

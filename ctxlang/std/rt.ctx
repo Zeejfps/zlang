@@ -127,6 +127,12 @@ namespace rt {
     #c::symbol{ name = "ctx_thread_rename" }
     extern fn thread_rename { mut threads: Threads, name: []u8 }
 
+    // The task the calling thread, which task::begin started, runs from here on: its record
+    // (std/task.ctx, a copy of one), or null for none. A panic's call path on the thread then
+    // ends with where the task was started.
+    #c::symbol{ name = "ctx_thread_task" }
+    extern fn thread_runs { mut threads: Threads, record: ?*u8 }
+
     // The name of the task fn whose record `record` is (std/task.ctx, a copy of one).
     #c::symbol{ name = "ctx_task_name" }
     #pure
@@ -142,13 +148,100 @@ namespace rt {
         return if n > 209715200 { 209715200 } else { @as(usize, n) }
     }
 
+    // ---- call paths (spec §15, Call paths)
+
+    // What an entry of a call path is: a call; C code that called a callback, of which nothing
+    // more is known; or where the thread's task was started, a path's last entry.
+    enum FrameKind: u32 { call, c_code, start }
+
+    // An entry of a call path: the function's name with its namespaces and generic arguments,
+    // its file as a compile error names it ("" if it has none), and the position in it of the
+    // panic or of the call it made, with line 0 if that isn't known.
+    struct Frame { name: []u8, file: []u8, line: u32, col: u32, kind: FrameKind }
+
+    // How many entries the calling thread's call path has: while a panic is reported, the
+    // panic's, whose entry 0 is the function it is in; otherwise the caller's own, whose entry
+    // 0 is the function that asks, at this call. A function the compiler wrote isn't an
+    // entry, and the path ends at `main`, at a test or at a task's fn. A program built without
+    // call paths has the panic's own entry, and none otherwise.
+    #c::symbol{ name = "ctx_path_count" }
+    extern fn count_frames { mut stack: Stack } -> usize
+
+    // Entry `index` of that path, innermost first.
+    #c::symbol{ name = "ctx_path_frame" }
+    extern fn get_frame { mut stack: Stack, index: usize } -> Frame
+
+    // A path longer than FIRST + LAST entries is written as its first FIRST and its last LAST,
+    // with a line between them that says how many it leaves out.
+    const FIRST: usize = 16
+    const LAST: usize = 8
+
+    // Writes a panic's call path to standard error, a line for each entry, innermost first:
+    // "  at NAME (FILE:LINE:COL)". What `report` writes after the panic's line, for a `#panic`
+    // fn of a program's own to call.
+    fn write_path { mut io: Io, mut stack: Stack } {
+        write_frames{ &io, &stack, first = 0, word = "at", started = "started at" }
+    }
+
+    // The calling thread's path from entry `first` on, a line each: "  WORD NAME
+    // (FILE:LINE:COL)"; without the position where it isn't known, "  WORD NAME (FILE)"; "  WORD
+    // C code (no position)" for C code that called a callback; and for where a task was started
+    // "  STARTED NAME (FILE:LINE:COL)". Outside a panic, entry 0 is this function.
+    fn write_frames { mut io: Io, mut stack: Stack, first: usize, word: []u8, started: []u8 } {
+        let count = count_frames{ &stack }
+        if first >= count { return }
+        let n = count - first
+        let mut i: usize = 0
+        while i < n {
+            if n > FIRST + LAST and i == FIRST {
+                let mut line: [64]u8
+                let mut digits: [20]u8
+                let mut k = put{ into = line[..], n = 0, s = "  ... " }
+                k = put{ into = line[..], n = k, s = utf8::fmt_u64{ n = n - FIRST - LAST, into = digits[..] }.bytes }
+                k = put{ into = line[..], n = k, s = " more frames\n" }
+                io::write{ &io, to = io::Stream::err, bytes = line[..k] }
+                i = n - LAST
+            }
+            write_frame{ &io, f = get_frame{ &stack, index = first + i }, word, started }
+            i = i + 1
+        }
+    }
+
+    fn write_frame { mut io: Io, f: Frame, word: []u8, started: []u8 } {
+        let mut buf: [1024]u8
+        let into = buf[..buf.len - 1]
+        let mut digits: [20]u8
+        let mut n = put{ into, n = 0, s = "  " }
+        n = put{ into, n, s = if f.kind == FrameKind::start { started } else { word } }
+        n = put{ into, n, s = " " }
+        if f.kind == FrameKind::c_code {
+            n = put{ into, n, s = "C code (no position)" }
+        } else {
+            n = put{ into, n, s = f.name }
+            if f.file.len > 0 {
+                n = put{ into, n, s = " (" }
+                n = put{ into, n, s = f.file }
+                if f.line > 0 {
+                    n = put{ into, n, s = ":" }
+                    n = put{ into, n, s = utf8::fmt_u64{ n = f.line, into = digits[..] }.bytes }
+                    n = put{ into, n, s = ":" }
+                    n = put{ into, n, s = utf8::fmt_u64{ n = f.col, into = digits[..] }.bytes }
+                }
+                n = put{ into, n, s = ")" }
+            }
+        }
+        buf[n] = '\n'
+        io::write{ &io, to = io::Stream::err, bytes = buf[..n + 1] }
+    }
+
     // Reports a panic on standard error, after what standard output holds, and ends the program
     // with exit code 134: "FILE:LINE:COL: panic: MSG", or "PROGRAM: panic: MSG" for a panic
     // without a position (line 0); on a thread but the main one, "panic in thread NAME:", NAME
-    // being its name or its id, and in a task "panic in task NAME:", NAME being its task fn's. One thread reports: a panic on another meanwhile waits for the
-    // end (ctxc/rt/ctxrt.c).
+    // being its name or its id, and in a task "panic in task NAME:", NAME being its task fn's.
+    // Then its call path, a line for each function (write_path). One thread reports: a panic
+    // on another meanwhile waits for the end (ctxc/rt/ctxrt.c).
     #panic
-    fn report { mut io: Io, mut proc: Proc, msg: []u8, file: []u8, line: u32, col: u32 } {
+    fn report { mut io: Io, mut proc: Proc, mut stack: Stack, msg: []u8, file: []u8, line: u32, col: u32 } {
         let mut buf: [4096]u8
         let mut n = put{ into = buf[..buf.len - 1], n = 0, s = file }
         if line > 0 {
@@ -169,6 +262,7 @@ namespace rt {
         n = put{ into = buf[..buf.len - 1], n, s = msg }
         buf[n] = '\n'
         io::write{ &io, to = io::Stream::err, bytes = buf[..n + 1] }
+        write_path{ &io, &stack }
         os::exit{ &proc, code = 134 }
     }
 

@@ -30,6 +30,9 @@
 //| same callback: true
 //| 7 and 42
 //# panic: {dir}/lib/b.ctx:15:22: panic: division by zero
+//# path:
+//|   at b::run ({dir}/lib/b.ctx:15:22)
+//|   at main ({dir}/main.ctx:14:27)
 // Nothing was compiled for it.
 //# $ {logcc} --logcc-count lines {dir}/log2
 //# stdout:

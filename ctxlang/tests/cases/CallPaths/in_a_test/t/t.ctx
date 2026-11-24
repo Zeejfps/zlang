@@ -1,0 +1,27 @@
+namespace helpers {
+    fn same { mut t: Test, a: i32, b: i32 } {
+        @expect(&t, a == b)
+    }
+
+    fn all_twos { mut t: Test, xs: []i32 } {
+        for x in xs { same{ &t, a = x, b = 2 } }
+        @require(&t, xs.len > 5)
+    }
+
+    fn third { xs: []i32 } -> i32 { return xs[2] }
+}
+
+#test
+fn in_the_test { mut t: Test } {
+    @expect(&t, 1 + 1 == 3)
+}
+
+#test
+fn in_helpers { mut t: Test } {
+    helpers::all_twos{ &t, xs = [2, 3] }
+}
+
+#test
+fn panics { mut t: Test } {
+    @expect(&t, helpers::third{ xs = [1, 2] } == 3)
+}

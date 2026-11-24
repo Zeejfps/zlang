@@ -11,6 +11,8 @@
 //| ./t.ctx:24: fail: ends_at_its_second: required: XS[1] == 1: 2 == 1
 //| ./t.ctx:28: skip: skips_after_two: its two checks are counted
 //| ./t.ctx:1:49: fail: panics_after_two: panic: index 3 out of bounds for length 3
+//|   at at (./t.ctx:1:49)
+//|   at panics_after_two (./t.ctx:{n}:{n})
 //| ./t.ctx:45: fail: leaves_after_one: its process ended with exit code 0
 //| tests: 7 run, 2 passed, 4 failed, 1 skipped, 0 not selected, 12 checks
 

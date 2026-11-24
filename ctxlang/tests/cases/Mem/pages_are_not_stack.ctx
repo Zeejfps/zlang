@@ -11,3 +11,11 @@ fn main { mut io: Io, mut mem: Mem } -> i32 {
 
 //# interp: cannot run
 //# panic: program: panic: stack overflow
+//# path:
+//|   at down (pages_are_not_stack.ctx:3:104)
+//|   at down (pages_are_not_stack.ctx:3:104)
+//|   at down (pages_are_not_stack.ctx:3:104)
+//|   at down (pages_are_not_stack.ctx:3:104)
+//|   at down (pages_are_not_stack.ctx:3:104)
+//|   at down (pages_are_not_stack.ctx:3:104)
+//|   at main (pages_are_not_stack.ctx:8:16)

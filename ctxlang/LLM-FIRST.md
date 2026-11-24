@@ -785,11 +785,46 @@ What a model writes by default should compile, or fail with the exact fix.
     - Cases: [tests/cases/Fixes](tests/cases/Fixes), which apply fixes to a program and
       compare the file byte for byte, one with CRLF line ends, a tab and no final line end.
 
-- [ ] **6.4 Stack traces on panic.**
+- [x] **6.4 Stack traces on panic.**
   A panic gives the check's position only; "a panic in `nwarg::param` names no routine". Print
   the frames, at least in builds that aren't optimized; PLAN's open decision defers it.
   - Details: [PLAN, Open decisions](PLAN.md#open-decisions), [PLAN, Known gaps](PLAN.md#known-gaps), [tooling-gaps.md](../kotor/docs/tooling-gaps.md).
   - *Done when:* a panic in a default `ctxc run` prints its call path with file:line per frame.
+  - *Done:* [spec §15, Call paths](spec.md#call-paths). Under the panic's line, unchanged, a
+    line per function, innermost first: `  at nwarg::param (lib/script/nwarg.ctx:41:17)`.
+    - **Frames the compiler keeps,** not a walk of the native stack: every function takes its
+      caller's frame as a hidden first parameter, and one that calls has a frame of three
+      words in which each call stores its position, one store. Nothing is undone on return,
+      so a function C inlines with all it calls pays nothing. A return address names a
+      ctxlang line only through debug information that a macOS executable lacks, Windows has
+      in two formats, and an inlined function has no frame in; these are exact, and the
+      interpreter gives the same lines.
+    - **When:** at optimization levels 0 and 1 (every `ctxc run` without a build program) and
+      in every `ctxc test` build; not at 2 and 3. `build::trace_calls{ &b, exe, on }` says
+      otherwise either way (enginetest has it on). A build without paths still names the
+      function a panic is in: its path is that one line.
+    - **Never a guess:** a position the frame can't hold, or a call the compiler wrote, is
+      `at NAME (FILE)`; C between two functions is `at C code (no position)`; a task on a
+      worker ends with `started at NAME (FILE:LINE:COL)`; a recursion past 24 frames shows
+      its first 16 and last 8 with `... N more frames`; a stack overflow reports from the
+      caller's frame, at the call that didn't fit. Generic instances are `third(i64)`; a
+      bound fn or fn value is the fn it reaches, the compiler's code between them left out.
+    - **A `#panic` fn of a program's own** reads the path as values (`rt::count_frames`,
+      `rt::get_frame`) or writes it as std's does (`rt::write_path`), through `rt::Stack`.
+    - **Tests:** a check that fails in a helper has `  called from NAME (FILE:LINE:COL)` lines
+      up to the test fn, none in the test fn itself; a test's panic has its path; `test
+      --json` failures carry `called_from` and `path` arrays. `run --json` leaves the lines as
+      the program's text on standard error.
+    - **Cost,** Windows, gcc, against the C before (PLAN, How ctxlang maps to C): ctxc checking
+      its own source 2.18 s to 2.26 s (4%); ncsrun's VM at `-O2`, 20 repeats, 2.50 s to
+      2.59 s with paths (4%) and 2.34 s without; binkcheck's decode at `-O2`, 25.7 s to 27.8 s
+      with paths (8%) and 26.2 s without; sndcheck's decode 65 to 68 s either way, within its
+      noise. Executables are 9% (mixtest) to 33% (ctxc, 2.57 MB to 3.41 MB) larger with paths,
+      3% to 5% without (the functions' names). Outputs are the same: mixtest byte for byte,
+      ncsrun 8666 runs with 0 VM faults, 4 routine faults and 27 out of budget, binkcheck and
+      sndcheck `--ref` the same frames, samples and differences.
+    - Cases: [tests/cases/CallPaths](tests/cases/CallPaths); 139 existing cases that panic
+      state their paths (`//# path:`, tests/README.md).
 
 - [x] **6.5 Errors that point at the cause.**
   A build.ctx missing one source directory gives thirty "unknown type or namespace mg" instead of

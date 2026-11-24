@@ -4,3 +4,6 @@ fn build { mut b: Build } { build::gen_file{ &b, exe = build::exe{ &b, name = "a
 //# stdout escaped:
 //| exe\t0\ta\t.
 //# panic: program: panic: build: a file name cannot be build
+//# path:
+//|   at build::gen_file (std/build.ctx:123:27)
+//|   at build (09.ctx:1:44)

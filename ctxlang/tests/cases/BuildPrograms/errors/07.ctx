@@ -1,3 +1,6 @@
 fn build { mut b: Build } { _ = build::exe{ &b, name = "..", root = "." } }
 
 //# panic: program: panic: build: a name cannot end in .
+//# path:
+//|   at build::exe (std/build.ctx:83:48)
+//|   at build (07.ctx:1:43)

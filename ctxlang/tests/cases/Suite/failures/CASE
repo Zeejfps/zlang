@@ -52,10 +52,11 @@
 //|     |   note_unstated.ctx:3:5: note: `v` is declared here
 //| {dir}/cases/inner/note_without_its_error.ctx:3: fail: inner/note_without_its_error: a `//~ note` follows the `//~ error` it belongs to, on the same line
 //| {dir}/cases/inner/panic.ctx:4: fail: inner/panic: the program didn't panic as expected
-//|   expected, as standard error's last line:
+//|   expected, as standard error's last line before the call path:
 //|     | panic.ctx:4:9: panic: index 4 out of bounds for length 3
 //|   actual standard error:
 //|     | panic.ctx:4:11: panic: index 3 out of bounds for length 3
+//|     |   at main (panic.ctx:4:11)
 //| {dir}/cases/inner/stderr.ctx:1: fail: inner/stderr: stderr isn't empty, and nothing is expected of it
 //|   actual:
 //|     | to standard error

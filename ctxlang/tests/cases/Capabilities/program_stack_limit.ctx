@@ -29,7 +29,8 @@ fn main { mut io: Io } {
 
 // The program's own start leaves the standard streams as the C library opens them, so on
 // Windows today each line it writes ends in a CR and a line break, the panic's line too (which
-// `panic:` therefore can't state there: the exit code and standard error are stated instead).
+// `panic:` therefore can't state there: the exit code and standard error are stated instead),
+// and those of its call path: the frames of the recursion, the middle ones counted.
 // The interpreter refuses the recursion as too deep.
 //# interp: cannot run
 //# [windows] exit: 134
@@ -37,6 +38,57 @@ fn main { mut io: Io } {
 //| 10\r
 //# [windows] stderr escaped:
 //| program: panic: stack overflow\r
+//|   at g::deep (program_stack_limit.ctx:21:43)\r
+//|   at g::deep (program_stack_limit.ctx:21:43)\r
+//|   at g::deep (program_stack_limit.ctx:21:43)\r
+//|   at g::deep (program_stack_limit.ctx:21:43)\r
+//|   at g::deep (program_stack_limit.ctx:21:43)\r
+//|   at g::deep (program_stack_limit.ctx:21:43)\r
+//|   at g::deep (program_stack_limit.ctx:21:43)\r
+//|   at g::deep (program_stack_limit.ctx:21:43)\r
+//|   at g::deep (program_stack_limit.ctx:21:43)\r
+//|   at g::deep (program_stack_limit.ctx:21:43)\r
+//|   at g::deep (program_stack_limit.ctx:21:43)\r
+//|   at g::deep (program_stack_limit.ctx:21:43)\r
+//|   at g::deep (program_stack_limit.ctx:21:43)\r
+//|   at g::deep (program_stack_limit.ctx:21:43)\r
+//|   at g::deep (program_stack_limit.ctx:21:43)\r
+//|   at g::deep (program_stack_limit.ctx:21:43)\r
+//|   ... {n} more frames\r
+//|   at g::deep (program_stack_limit.ctx:21:43)\r
+//|   at g::deep (program_stack_limit.ctx:21:43)\r
+//|   at g::deep (program_stack_limit.ctx:21:43)\r
+//|   at g::deep (program_stack_limit.ctx:21:43)\r
+//|   at g::deep (program_stack_limit.ctx:21:43)\r
+//|   at g::deep (program_stack_limit.ctx:21:43)\r
+//|   at g::deep (program_stack_limit.ctx:21:43)\r
+//|   at main (program_stack_limit.ctx:27:38)\r
 //# [posix] stdout:
 //| 10
 //# [posix] panic: program: panic: stack overflow
+//# [posix] path:
+//|   at g::deep (program_stack_limit.ctx:21:43)
+//|   at g::deep (program_stack_limit.ctx:21:43)
+//|   at g::deep (program_stack_limit.ctx:21:43)
+//|   at g::deep (program_stack_limit.ctx:21:43)
+//|   at g::deep (program_stack_limit.ctx:21:43)
+//|   at g::deep (program_stack_limit.ctx:21:43)
+//|   at g::deep (program_stack_limit.ctx:21:43)
+//|   at g::deep (program_stack_limit.ctx:21:43)
+//|   at g::deep (program_stack_limit.ctx:21:43)
+//|   at g::deep (program_stack_limit.ctx:21:43)
+//|   at g::deep (program_stack_limit.ctx:21:43)
+//|   at g::deep (program_stack_limit.ctx:21:43)
+//|   at g::deep (program_stack_limit.ctx:21:43)
+//|   at g::deep (program_stack_limit.ctx:21:43)
+//|   at g::deep (program_stack_limit.ctx:21:43)
+//|   at g::deep (program_stack_limit.ctx:21:43)
+//|   ... {n} more frames
+//|   at g::deep (program_stack_limit.ctx:21:43)
+//|   at g::deep (program_stack_limit.ctx:21:43)
+//|   at g::deep (program_stack_limit.ctx:21:43)
+//|   at g::deep (program_stack_limit.ctx:21:43)
+//|   at g::deep (program_stack_limit.ctx:21:43)
+//|   at g::deep (program_stack_limit.ctx:21:43)
+//|   at g::deep (program_stack_limit.ctx:21:43)
+//|   at main (program_stack_limit.ctx:27:38)

@@ -1,7 +1,7 @@
 // `ctxc test --json`: the build's summary on standard error, then on standard output a
 // record for each test, in the tests' order, and one for the run. A failed test's record
-// has each failure's file, line and message, and the other lines it wrote; a skipped one's
-// has the reason.
+// has each failure's file, line and message, a panic's with its call path, and the other
+// lines it wrote; a skipped one's has the reason.
 //# $ ctxc test --json {dir}/t
 //# exit: 1
 //# stderr:
@@ -10,7 +10,7 @@
 //| {"type":"test","name":"doubles","file":"{dir}/t/t.ctx","line":4,"outcome":"pass","checks":1}
 //| {"type":"test","name":"doubles_wrongly","file":"{dir}/t/t.ctx","line":9,"outcome":"fail","checks":3,"failures":[{"file":"{dir}/t/t.ctx","line":10,"message":"double{ n = 2 } == 5: 4 == 5"},{"file":"{dir}/t/t.ctx","line":13,"message":"required: double{ n = 4 } == 9: 8 == 9"}],"output":["a line of its own"]}
 //| {"type":"test","name":"needs_a_game","file":"{dir}/t/t.ctx","line":17,"outcome":"skip","checks":0,"reason":"no \"game\" install"}
-//| {"type":"test","name":"panics_at_the_end","file":"{dir}/t/t.ctx","line":22,"outcome":"fail","checks":0,"failures":[{"file":"{dir}/t/t.ctx","line":25,"message":"panic: index 4 out of bounds for length 2"}],"output":[]}
+//| {"type":"test","name":"panics_at_the_end","file":"{dir}/t/t.ctx","line":22,"outcome":"fail","checks":0,"failures":[{"file":"{dir}/t/t.ctx","line":25,"message":"panic: index 4 out of bounds for length 2","path":[{"kind":"call","function":"panics_at_the_end","file":"{dir}/t/t.ctx","line":25,"column":19}]}],"output":[]}
 //| {"type":"tests","run":4,"passed":1,"failed":2,"skipped":1,"not_selected":0,"checks":4}
 
 // The same run as text.
@@ -22,6 +22,7 @@
 //| {dir}/t/t.ctx:13: fail: doubles_wrongly: required: double{ n = 4 } == 9: 8 == 9
 //| {dir}/t/t.ctx:17: skip: needs_a_game: no "game" install
 //| {dir}/t/t.ctx:25:19: fail: panics_at_the_end: panic: index 4 out of bounds for length 2
+//|   at panics_at_the_end ({dir}/t/t.ctx:25:19)
 //| tests: 4 run, 1 passed, 2 failed, 1 skipped, 0 not selected, 4 checks
 
 // As one of the runner's options, after the path, with a filter that picks nothing: the

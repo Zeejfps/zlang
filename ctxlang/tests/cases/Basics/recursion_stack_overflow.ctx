@@ -5,3 +5,29 @@ fn main { mut io: Io } { let x = r{ n = 0 } }
 //# stack: 1048576
 //# interp: cannot run
 //# panic: program: panic: stack overflow
+//# path:
+//|   at r (recursion_stack_overflow.ctx:2:58)
+//|   at r (recursion_stack_overflow.ctx:2:58)
+//|   at r (recursion_stack_overflow.ctx:2:58)
+//|   at r (recursion_stack_overflow.ctx:2:58)
+//|   at r (recursion_stack_overflow.ctx:2:58)
+//|   at r (recursion_stack_overflow.ctx:2:58)
+//|   at r (recursion_stack_overflow.ctx:2:58)
+//|   at r (recursion_stack_overflow.ctx:2:58)
+//|   at r (recursion_stack_overflow.ctx:2:58)
+//|   at r (recursion_stack_overflow.ctx:2:58)
+//|   at r (recursion_stack_overflow.ctx:2:58)
+//|   at r (recursion_stack_overflow.ctx:2:58)
+//|   at r (recursion_stack_overflow.ctx:2:58)
+//|   at r (recursion_stack_overflow.ctx:2:58)
+//|   at r (recursion_stack_overflow.ctx:2:58)
+//|   at r (recursion_stack_overflow.ctx:2:58)
+//|   ... {n} more frames
+//|   at r (recursion_stack_overflow.ctx:2:58)
+//|   at r (recursion_stack_overflow.ctx:2:58)
+//|   at r (recursion_stack_overflow.ctx:2:58)
+//|   at r (recursion_stack_overflow.ctx:2:58)
+//|   at r (recursion_stack_overflow.ctx:2:58)
+//|   at r (recursion_stack_overflow.ctx:2:58)
+//|   at r (recursion_stack_overflow.ctx:2:58)
+//|   at main (recursion_stack_overflow.ctx:3:35)

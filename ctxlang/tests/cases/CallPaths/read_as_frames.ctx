@@ -1,0 +1,21 @@
+// The path is std's to read at any time, not only in a panic: `rt::count_frames` and
+// `rt::get_frame` give the calls in progress, the function that asks first.
+
+fn show { mut io: Io, mut stack: rt::Stack } {
+    let n = rt::count_frames{ &stack }
+    for i in 0..n {
+        let f = rt::get_frame{ &stack, index = i }
+        _ = @fmt(&io, "{} {}:{}:{}\n", f.name, f.file, f.line, f.col)
+    }
+}
+
+fn inner { mut io: Io, mut stack: rt::Stack } { show{ &io, &stack } }
+
+fn main { mut io: Io, mut stack: rt::Stack } {
+    inner{ &io, &stack }
+}
+
+//# stdout:
+//| show read_as_frames.ctx:7:30
+//| inner read_as_frames.ctx:12:53
+//| main read_as_frames.ctx:15:10

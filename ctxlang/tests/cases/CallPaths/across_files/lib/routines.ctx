@@ -1,0 +1,5 @@
+namespace routines {
+    fn get_tag { stack: []i32, at: usize } -> i32 {
+        return nwarg::param{ stack, at } * 2
+    }
+}

@@ -268,6 +268,17 @@ error on a line of standard error (`file`, `line`, `column`, `end_line`, `end_co
 `message`, `notes`), then a `summary` record; `ctxc test DIR --json` writes a record for
 each test and one for the run on standard output (spec §21, rules 8 to 11; §20, rule 15).
 
+A panic prints its line as before, `file:line:col: panic: message`, and under it its call path
+(spec §15, Call paths), innermost first: `  at nwarg::param (lib/script/nwarg.ctx:41:17)`,
+then `  at routines::get_tag (...)` for the function that called it, at the call, up to `main`
+or the test fn. Read it from the top: the first line is where it broke, the next ones how it
+got there. A long recursion shows its first 16 and last 8 frames; `  at C code (no position)`
+is a C library calling back; a task on a worker ends with `  started at ...`. Programs at
+`-O0` and `-O1` and every `ctxc test` build keep the path; one with `build::optimize{ level = 2
+}` prints only the first line, the function the panic is in, unless its build.ctx says
+`build::trace_calls{ &b, exe, on = true }` (a few percent slower: for tools that test, not for
+the game or the decoders' timing tools).
+
 `kotor/tools/ctxc check --fix DIR` makes the edits an error spells out exactly (`m = &movie`
 for a pun, `_ = ` for an unused result, `..` for missing fields, `(q + i).*`, a missing `,`,
 `0..n`, and others: spec §21, rule 12), prints each with the line before and after, and
@@ -328,6 +339,10 @@ namespace twoda_tests {
   `utf8::builder`, then `fs::read_all{ ..., path = utf8::view{ b = path }.bytes }`. Never a
   path from the repository's root. A helper in another file gets the calling test's directory.
 - Pass `&t` down to helpers that check (`fn same_rows { mut t: Test, a: Table, b: Table }`).
+  A check that fails in a helper has the calls that led to it under its line,
+  `  called from twoda_tests::reads_rows (lib/formats/twoda_test.ctx:31:5)`, up to the test fn,
+  so one helper called for several cases says which call it was; a test's panic has its path
+  the same way (`  at ...`). In `--json` they are the failure's `called_from` and `path`.
 - Each test runs in its own process, several at once: don't rely on another test's files or
   state.
 - A test that needs the game install takes its directory as an argument and skips without it:

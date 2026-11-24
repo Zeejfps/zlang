@@ -1,0 +1,5 @@
+namespace nwarg {
+    fn param { stack: []i32, at: usize } -> i32 {
+        return stack[at]
+    }
+}

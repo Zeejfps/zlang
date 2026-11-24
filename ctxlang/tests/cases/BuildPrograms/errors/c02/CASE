@@ -1,3 +1,8 @@
 // A panic of the build program's, here std's for an executable without a name.
 //# project
 //# panic: build: panic: build: empty name
+//# path:
+//|   at rt::fail_with ({home}/std/rt.ctx:{n}:{n})
+//|   at build::field ({home}/std/build.ctx:{n}:{n})
+//|   at build::exe ({home}/std/build.ctx:{n}:{n})
+//|   at build (build.ctx:2:19)

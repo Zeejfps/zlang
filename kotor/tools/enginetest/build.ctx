@@ -16,4 +16,6 @@ fn build { mut b: Build } {
     build::add_sources{ &b, exe, dir = "../../lib/minigame" }
     build::add_sources{ &b, exe, dir = "../common" }
     build::optimize{ &b, exe, level = 2 }
+    // A panic in a routine says which routine and script call reached it (spec §15, Call paths).
+    build::trace_calls{ &b, exe, on = true }
 }

@@ -41,6 +41,9 @@
 //# stdout:
 //| 56
 //# panic: {dir}/lib/a.ctx:18:45: panic: division by zero
+//# path:
+//|   at a::small ({dir}/lib/a.ctx:18:45)
+//|   at main ({dir}/main.ctx:7:39)
 
 // hidden and value are in a's unit alone; small is copied into main.ctx's too.
 // `hidden`:

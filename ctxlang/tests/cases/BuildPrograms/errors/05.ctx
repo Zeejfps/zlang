@@ -4,3 +4,7 @@ fn build { mut b: Build } { build::optimize{ &b, exe = build::exe{ &b, name = "a
 //# stdout escaped:
 //| exe\t0\ta\t.
 //# panic: program: panic: build: optimization level 4 is not 0, 1, 2 or 3
+//# path:
+//|   at rt::fail_with (std/rt.ctx:47:13)
+//|   at build::optimize (std/build.ctx:140:26)
+//|   at build (05.ctx:1:44)

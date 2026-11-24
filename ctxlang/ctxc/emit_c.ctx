@@ -40,9 +40,20 @@
 //                block with local labels: `{ __label__ _contL, _brkL; _contL: while (...) {...}
 //                _brkL:; }`, so copies of it made by defer don't clash. `continue L` jumps to
 //                _contL, which checks the condition again.
-//   panics       ctx_panic and checked helpers in ctxrt.h, with the IR's positions. A position
-//                names its file by a hash of the file's name, which the runtime looks up in the
-//                file table that main passes it.
+//   panics       ctx_panic and checked helpers in ctxrt.h, with the IR's positions: a line, a
+//                column and the function's `ctx_where` (w_NAME, static, before the function): its
+//                name, its file and how a call path shows it. A file is named by a hash of its
+//                name, which the runtime looks up in the file table that main passes it.
+//   call paths   (spec §15, Call paths; ctxrt.h) every function's first parameter is its
+//                caller's frame (`CTX_UP`), a function value's code's too. A function that calls
+//                has `CTX_FRAME(&w_NAME);`, its own frame, which each call passes (`CTX_ME`)
+//                after `CTX_AT(LINE, COL)` notes the call's position in it, once the arguments
+//                are evaluated: they go into temporaries if one of them may call. A function
+//                that calls nothing has no frame. A position ends with `CTX_UPV`, the caller's
+//                frame, where a panic's path goes on. A function value's code passes its caller's
+//                frame on (`CTX_PASS`); an extern fn's eN and a call of a C function pointer note
+//                the frame for a callback (`CTX_OUT_UP`, `CTX_OUT`), whose C function starts
+//                from it (`CTX_C_FRAME`). Compiled with CTX_NO_PATH, all of these are nothing.
 //
 // Units. Each function is emitted once, into text in which the names of types, consts, C
 // variables, extern fns, records, thunks and adapters are markers (MARK, a kind, the IR's id,
@@ -72,6 +83,10 @@ namespace emit {
     // A read-only struct, union or array param over this many bytes is passed by reference
     // (spec §14.6): a pointer to the caller's place, or to a copy (`pass`).
     const BYREF: u64 = 32
+
+    // The last line and column of a call that a frame holds the position of (ctxrt.h, CTX_AT).
+    const AT_LINES: u32 = 1048575
+    const AT_COLS: u32 = 4095
 
     // A marker: MARK, a kind (a letter), the IR's id in decimal, END. The C never holds these
     // bytes otherwise: strings escape them.
@@ -105,6 +120,9 @@ namespace emit {
         f:        ir::Func,                         // the function being emitted
         temp:     u32 = 0,                          // the next _tK
         task_name: []u8 = "",                       // the name a task's record is being made with (tbind)
+        task_pos: ir::Pos = ir::Pos{ line = 0, col = 0, file = 0 },    // and where its start is
+        framed:   bool = false,                     // the function notes a call's position: it has a frame
+        located:  bool = false,                     // the function's ctx_where is named
         nodes:    u32 = 0,                          // the statements and expressions written for the function
         sites:    u32 = 0,                          // the next bind record
         loops:    u32 = 0,                          // the loops around what is being written
@@ -865,6 +883,10 @@ namespace emit {
             } else {
                 ir_print::bytes{ o = &into, b = list::items{ list = e.names }[id] }
             }
+        } else if kind == 'w' {
+            // Function id's ctx_where, defined with it: w_NAME for f_NAME.
+            ir_print::char{ o = &into, c = 'w' }
+            ir_print::bytes{ o = &into, b = list::items{ list = e.names }[id][1..] }
         } else if kind == 'x' {
             local_name{ &into, c = 'x', n = number{ l = &e.lf, id } }
         } else if kind == 'g' {
@@ -1101,7 +1123,7 @@ namespace emit {
         tn{ &e, t = ret }
         put{ &e, a = " (*c" }
         num{ &e, n = number{ l = &e.lt, id } }
-        put{ &e, a = ")(ctx_fn *" }
+        put{ &e, a = ")(CTX_UP ctx_fn *" }
         j = 0
         while j < params.len {
             put{ &e, a = ", " }
@@ -1312,7 +1334,7 @@ namespace emit {
         ch{ &e, c = ' ' }
         mark_id{ &e, kind = 'f', id = f.id }
         ch{ &e, c = '(' }
-        if f.params.len == 0 { put{ &e, a = "void" } }
+        put{ &e, a = if f.params.len == 0 { "CTX_UP0" } else { "CTX_UP " } }
         let mut i = 0
         while i < f.params.len {
             if i > 0 { put{ &e, a = ", " } }
@@ -1336,7 +1358,7 @@ namespace emit {
         raw{ &e, b = f.name }
         ch{ &e, c = '\n' }
         signature{ &e, f }
-        put{ &e, a = " {\n    " }
+        put{ &e, a = " {\n    CTX_OUT_UP();\n    " }
         if not is_void{ e, t = f.ret } { put{ &e, a = "return " } }
         mark_id{ &e, kind = 'x', id = f.id }
         ch{ &e, c = '(' }
@@ -1364,14 +1386,16 @@ namespace emit {
 
     // A call through a C function pointer: the callee, then the args, in C's order without the
     // capabilities.
-    fn c_call { mut e: E, callee: ir::Expr, args: []ir::Arg } {
+    fn c_call { mut e: E, callee: ir::Expr, args: []ir::Arg, pos: ir::Pos } {
         let cfn{ params } = ty{ e, id = callee.ty } else { @panic("emit: a C call of a non-C function") }
         let kf = fresh{ &e }
         put{ &e, a = "({ " }
         declare{ &e, t = callee.ty, k = kf }
         expr{ &e, x = callee }
         put{ &e, a = "; " }
-        let tt = temps_args{ &e, args }
+        let tt = temps_args{ &e, args, force = args_call{ e, args } }
+        at_call{ &e, p = pos }
+        put{ &e, a = "; CTX_OUT(); " }
         tmp{ &e, k = kf }
         ch{ &e, c = '(' }
         let mut first = true
@@ -1423,6 +1447,8 @@ namespace emit {
         e.loops = 0
         e.given = Given::other
         e.stacked = false
+        e.framed = false
+        e.located = false
         list::clear{ list = &e.slots }
         let head = e.o
         e.o = ir_print::out{ heap = e.heap, types = e.p.types }
@@ -1451,6 +1477,14 @@ namespace emit {
             nl{ &e }
             put{ &e, a = "CTX_RECORDS;" }
         }
+        // Its frame of the call path, after the stack check, whose panic goes on from the
+        // caller's frame, which says where this function was called.
+        if e.framed {
+            nl{ &e }
+            put{ &e, a = "CTX_FRAME(&" }
+            mark_id{ &e, kind = 'w', id = f.id }
+            put{ &e, a = ");" }
+        }
         raw{ &e, b = body }
         if not is_void{ e, t = f.ret } {
             nl{ &e }
@@ -1458,6 +1492,55 @@ namespace emit {
         }
         e.depth = 0
         put{ &e, a = "\n}\n\n" }
+        // Its ctx_where goes before it, if its frame or a position names it.
+        if e.framed or e.located {
+            let text = list::items{ list = e.o.bytes }
+            e.o = ir_print::out{ heap = e.heap, types = e.p.types }
+            put{ &e, a = "static const ctx_where " }
+            mark_id{ &e, kind = 'w', id = f.id }
+            put{ &e, a = " = { " }
+            cstr{ &e, b = f.name }
+            put{ &e, a = ", " }
+            num{ &e, n = file_id{ e, file = f.file } }
+            put{ &e, a = ", " }
+            num{ &e, n = match f.shown { frame => { 0 } hidden => { 1 } root => { 2 } } }
+            put{ &e, a = " };\n" }
+            raw{ &e, b = text }
+        }
+    }
+
+    // How positions name IR file `file`: the hash of its name with the top bit set, or 0 for none.
+    fn file_id { e: E, file: u32 } -> u32 {
+        if file >= e.files.len { return 0 }
+        return list::items{ list = e.files }[file]
+    }
+
+    // `CTX_AT(LINE, COL)`: notes in the function's frame, which the call that follows passes,
+    // where that call is. A position the compiler has none for, one in another file than the
+    // function's, or one past what a frame's 32 bits hold (AT_LINES, AT_COLS), is 0, 0: the
+    // frame then says its position isn't known.
+    fn at_call { mut e: E, p: ir::Pos } {
+        e.framed = true
+        put{ &e, a = "CTX_AT(" }
+        if p.line == 0 or p.file != e.f.file or p.line > AT_LINES or p.col > AT_COLS {
+            put{ &e, a = "0, 0)" }
+            return
+        }
+        num{ &e, n = p.line }
+        put{ &e, a = ", " }
+        num{ &e, n = p.col }
+        ch{ &e, c = ')' }
+    }
+
+    // Whether evaluating one of args may call a function, which would note its own position
+    // after the call they are for noted its: then they go into temporaries first.
+    fn args_call { e: E, args: []ir::Arg } -> bool {
+        let mut i = 0
+        while i < args.len {
+            if writes{ e, x = args[i].value } { return true }
+            i = i + 1
+        }
+        return false
     }
 
     // The file table, and `int main` (spec §15, Entry point): it gives the runtime the file
@@ -1478,7 +1561,7 @@ namespace emit {
             let h = e.p.fns[e.p.on_panic]
             put{ &e, a = "static void ctx_on_panic(ctx_slice msg, ctx_slice file, uint32_t line, uint32_t col) {\n    " }
             mark_id{ &e, kind = 'f', id = h.id }
-            ch{ &e, c = '(' }
+            put{ &e, a = if h.params.len == 0 { "(CTX_NONE0" } else { "(CTX_NONE " } }
             c_names{ &e, f = h }
             put{ &e, a = ");\n}\n\n" }
         }
@@ -1491,7 +1574,7 @@ namespace emit {
         put{ &e, a = ");\n    return " }
         let f = e.p.fns[e.p.entry]
         mark_id{ &e, kind = 'f', id = f.id }
-        ch{ &e, c = '(' }
+        put{ &e, a = if f.params.len == 0 { "(CTX_NONE0" } else { "(CTX_NONE " } }
         c_names{ &e, f }
         put{ &e, a = ");\n}\n" }
     }
@@ -2184,11 +2267,12 @@ namespace emit {
                 }
             }
             fnconv{ e = a } => { fnconv{ &e, to = x.ty, a = a.*, given } }
-            call{ callee, args } => { call{ &e, callee, args } }
-            dcall{ callee, args } => { dcall{ &e, callee = callee.*, args } }
+            call{ callee, args, pos } => { call{ &e, callee, args, pos } }
+            dcall{ callee, args, pos } => { dcall{ &e, callee = callee.*, args, pos } }
             bind{ callee, args } => { bind{ &e, t = x.ty, callee, args, given, sized = false } }
-            tbind{ callee, args, name } => {
+            tbind{ callee, args, name, pos } => {
                 e.task_name = name
+                e.task_pos = pos
                 bind{ &e, t = x.ty, callee, args, given, sized = true }
             }
             rsize{ e = a } => {
@@ -2772,7 +2856,7 @@ namespace emit {
                 return
             }
         }
-        let tt = temps_args{ &e, args = items }
+        let tt = temps_args{ &e, args = items, force = false }
         compound{ &e, t }
         let mut names: []ir::Field
         let mut payload = false
@@ -2864,14 +2948,20 @@ namespace emit {
     // ---- calls and function values
 
     // f_NAME(args in parameter order), evaluated in the IR's order.
-    fn call { mut e: E, callee: u32, args: []ir::Arg } {
+    // The call's position is noted first (at_call): `(CTX_AT(L, C), f_NAME(args))`, or after
+    // the temporaries.
+    fn call { mut e: E, callee: u32, args: []ir::Arg, pos: ir::Pos } {
         let f = e.p.fns[callee]
         let c = Callee{ params = f.params, ext = f.symbol.len > 0, value = null }
-        let tt = temps_call{ &e, args, c }
+        let tt = temps_call{ &e, args, c, force = args_call{ e, args } }
+        if not tt.on { ch{ &e, c = '(' } }
+        at_call{ &e, p = pos }
+        put{ &e, a = if tt.on { "; " } else { ", " } }
         mark_id{ &e, kind = 'f', id = callee }
-        ch{ &e, c = '(' }
+        put{ &e, a = if f.params.len == 0 { "(CTX_ME0" } else { "(CTX_ME " } }
         in_order{ &e, args, c, tt }
         ch{ &e, c = ')' }
+        if not tt.on { ch{ &e, c = ')' } }
         close_temps{ &e, tt }
     }
 
@@ -2907,9 +2997,9 @@ namespace emit {
     }
 
     // The callee first, then the args; called through its code.
-    fn dcall { mut e: E, callee: ir::Expr, args: []ir::Arg } {
+    fn dcall { mut e: E, callee: ir::Expr, args: []ir::Arg, pos: ir::Pos } {
         if is_cfn{ e, t = callee.ty } {
-            c_call{ &e, callee, args }
+            c_call{ &e, callee, args, pos }
             return
         }
         let func{ params } = ty{ e, id = callee.ty } else { @panic("emit: call of a non-function") }
@@ -2921,12 +3011,13 @@ namespace emit {
         e.given = Given::call
         expr{ &e, x = callee }
         put{ &e, a = "; " }
-        let tt = temps_call{ &e, args, c }
-        put{ &e, a = "((" }
+        let tt = temps_call{ &e, args, c, force = args_call{ e, args } }
+        at_call{ &e, p = pos }
+        put{ &e, a = "; ((" }
         mark_id{ &e, kind = 'c', id = callee.ty }
         put{ &e, a = ")" }
         tmp{ &e, k = kf }
-        put{ &e, a = "->code)(" }
+        put{ &e, a = "->code)(CTX_ME " }
         tmp{ &e, k = kf }
         if params.len > 0 { put{ &e, a = ", " } }
         in_order{ &e, args, c, tt }
@@ -2948,7 +3039,7 @@ namespace emit {
         record_self{ &e, k }
         if not is_void{ e, t = ret } { put{ &e, a = "return " } }
         mark_id{ &e, kind = 'f', id = callee }
-        ch{ &e, c = '(' }
+        put{ &e, a = if f.params.len == 0 { "(CTX_PASS0" } else { "(CTX_PASS " } }
         forward{ &e, target = f.params, ext = f.symbol.len > 0, args, given = params }
         put{ &e, a = ");\n}\n\n" }
         to_aux{ &e }
@@ -2968,7 +3059,7 @@ namespace emit {
         if not is_void{ e, t = ret } { put{ &e, a = "return " } }
         put{ &e, a = "((" }
         mark_id{ &e, kind = 'c', id = callee.ty }
-        put{ &e, a = ")s->inner->code)(s->inner" }
+        put{ &e, a = ")s->inner->code)(CTX_PASS s->inner" }
         if target.len > 0 { put{ &e, a = ", " } }
         forward{ &e, target, ext = false, args, given = params }
         put{ &e, a = ");\n}\n\n" }
@@ -2992,7 +3083,7 @@ namespace emit {
         mark_id{ &e, kind = 'b', id = k }
         put{ &e, a = " { ctx_fn base; " }
         if inner { put{ &e, a = "ctx_fn *inner; " } }
-        if sized { put{ &e, a = "uint64_t size; ctx_slice name; " } }
+        if sized { put{ &e, a = "uint64_t size; ctx_slice name; const ctx_where *in; uint32_t line, col; " } }
         let mut i = 0
         while i < args.len {
             let a = args[i]
@@ -3322,6 +3413,25 @@ namespace emit {
             num{ &e, n = e.task_name.len }
             put{ &e, a = " }" }
             put{ &e, a = "; " }
+            // where the task was started: the function, and the start's position in it
+            let at = e.task_pos
+            let known = at.line != 0 and at.file == e.f.file
+            e.located = true
+            tmp{ &e, k = kr }
+            put{ &e, a = to }
+            put{ &e, a = "in = &" }
+            mark_id{ &e, kind = 'w', id = e.f.id }
+            put{ &e, a = "; " }
+            tmp{ &e, k = kr }
+            put{ &e, a = to }
+            put{ &e, a = "line = " }
+            num{ &e, n = if known { at.line } else { 0 } }
+            put{ &e, a = "; " }
+            tmp{ &e, k = kr }
+            put{ &e, a = to }
+            put{ &e, a = "col = " }
+            num{ &e, n = if known { at.col } else { 0 } }
+            put{ &e, a = "; " }
         }
         let g = inner_given{ s, given }
         match inner {
@@ -3369,7 +3479,7 @@ namespace emit {
         tn{ &e, t = ret }
         ch{ &e, c = ' ' }
         mark_id{ &e, kind, id }
-        put{ &e, a = "_code(ctx_fn *self" }
+        put{ &e, a = "_code(CTX_UP ctx_fn *self" }
         let mut i = 0
         while i < params.len {
             put{ &e, a = ", " }
@@ -3441,7 +3551,7 @@ namespace emit {
         put{ &e, a = "    (void)self;\n    " }
         if not is_void{ e, t = ret } { put{ &e, a = "return " } }
         mark_id{ &e, kind = 'f', id = callee }
-        ch{ &e, c = '(' }
+        put{ &e, a = if f.params.len == 0 { "(CTX_PASS0" } else { "(CTX_PASS " } }
         forward{ &e, target = f.params, ext = f.symbol.len > 0, args = slice::empty(ir::Arg){}, given = params }
         put{ &e, a = ");\n}\nstatic ctx_fn " }
         mark_id{ &e, kind = 'g', id = callee }
@@ -3514,12 +3624,15 @@ namespace emit {
         // the program didn't start), which it gets until the callback returns (ctxrt.h).
         let entered = e.p.threaded
         if entered { put{ &e, a = "ctx_thread _thread; int _entered = ctx_thread_enter(&_thread);\n    " } }
+        // Its frame of the call path says that C called it, and goes on into the function that
+        // called the C, which the thread noted (ctxrt.h, call paths).
+        put{ &e, a = "CTX_C_FRAME;\n    " }
         if entered and not is_void{ e, t = ret } {
             tn{ &e, t = ret }
             put{ &e, a = " _result = " }
         } else if not entered and not is_void{ e, t = ret } { put{ &e, a = "return " } }
         mark_id{ &e, kind = 'f', id = c.callee }
-        ch{ &e, c = '(' }
+        put{ &e, a = if f.params.len == 0 { "(CTX_ME0" } else { "(CTX_ME " } }
         let mut j = 0
         while j < f.params.len {
             if j > 0 { put{ &e, a = ", " } }
@@ -3538,7 +3651,7 @@ namespace emit {
             j = j + 1
         }
         if entered {
-            put{ &e, a = ");\n    if (_entered) ctx_thread_leave(&_thread);\n" }
+            put{ &e, a = ");\n    CTX_BACK();\n    if (_entered) ctx_thread_leave(&_thread);\n" }
             if not is_void{ e, t = ret } { put{ &e, a = "    return _result;\n" } }
             put{ &e, a = "}\n\n" }
             return
@@ -3627,7 +3740,7 @@ namespace emit {
         if not is_void{ e, t = ret } { put{ &e, a = "return " } }
         put{ &e, a = "((" }
         mark_id{ &e, kind = 'c', id = q.from }
-        put{ &e, a = ")in->code)(in" }
+        put{ &e, a = ")in->code)(CTX_PASS in" }
         if src.len > 0 { put{ &e, a = ", " } }
         forward{ &e, target = src, ext = false, args = slice::empty(ir::Arg){}, given = dst }
         put{ &e, a = ");\n}\n\n" }
@@ -3740,7 +3853,7 @@ namespace emit {
         return Temps{ on = true, base }
     }
 
-    fn temps_args { mut e: E, args: []ir::Arg } -> Temps {
+    fn temps_args { mut e: E, args: []ir::Arg, force: bool } -> Temps {
         let mut effects: usize = 0
         let mut vars: usize = 0
         let mut i = 0
@@ -3750,7 +3863,7 @@ namespace emit {
             if not constant{ x } { vars = vars + 1 }
             i = i + 1
         }
-        if effects == 0 or vars < 2 { return Temps{ on = false, base = 0 } }
+        if not force and (effects == 0 or vars < 2) { return Temps{ on = false, base = 0 } }
         let base = e.temp
         e.temp = e.temp + @as(u32, args.len)
         put{ &e, a = "({ " }
@@ -4004,8 +4117,8 @@ namespace emit {
     }
 
     // temps_args for a call: an argument passed as a copy needs its temporary, and one passed
-    // as its place has a pointer to it.
-    fn temps_call { mut e: E, args: []ir::Arg, c: Callee } -> Temps {
+    // as its place has a pointer to it. With force, they are temporaries whatever the order.
+    fn temps_call { mut e: E, args: []ir::Arg, c: Callee, force: bool } -> Temps {
         let mut effects: usize = 0
         let mut vars: usize = 0
         let mut copies = false
@@ -4017,7 +4130,7 @@ namespace emit {
             if pass{ e, args, i, c } is copy { copies = true }
             i = i + 1
         }
-        if not copies and (effects == 0 or vars < 2) { return Temps{ on = false, base = 0 } }
+        if not copies and not force and (effects == 0 or vars < 2) { return Temps{ on = false, base = 0 } }
         let base = e.temp
         e.temp = e.temp + @as(u32, args.len)
         put{ &e, a = "({ " }
@@ -4267,13 +4380,26 @@ namespace emit {
         try! list::push{ list = &e.uses, item = t }
     }
 
-    // `LINE, COL, FILE`: the file by its id (start), not the IR's index.
+    // `LINE, COL, &w_NAME, CTX_UPV`: a position in the function being written, whose ctx_where
+    // names it and its file, and the frame of its caller. One in another file, which no source
+    // gives, has a ctx_where of its own.
     fn position { mut e: E, p: ir::Pos } {
         num{ &e, n = p.line }
         put{ &e, a = ", " }
         num{ &e, n = p.col }
         put{ &e, a = ", " }
-        num{ &e, n = list::items{ list = e.files }[p.file] }
+        if p.line == 0 or p.file == e.f.file {
+            e.located = true
+            ch{ &e, c = '&' }
+            mark_id{ &e, kind = 'w', id = e.f.id }
+            put{ &e, a = ", CTX_UPV" }
+            return
+        }
+        put{ &e, a = "&(const ctx_where){ " }
+        cstr{ &e, b = e.f.name }
+        put{ &e, a = ", " }
+        num{ &e, n = file_id{ e, file = p.file } }
+        put{ &e, a = ", 0 }, CTX_UPV" }
     }
 
     // A C string literal: printable ASCII as is, except `"`, `\` and `?`; other bytes as octal.

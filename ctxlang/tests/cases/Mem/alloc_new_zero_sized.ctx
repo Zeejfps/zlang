@@ -10,3 +10,6 @@ fn main { mut io: Io, mut mem: Mem } -> i32 {
 }
 
 //# panic: std/alloc.ctx:44:31: panic: alloc::new: T is zero-sized
+//# path:
+//|   at alloc::new(Empty, arena::Arena) (std/alloc.ctx:44:31)
+//|   at main (alloc_new_zero_sized.ctx:7:19)

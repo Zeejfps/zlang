@@ -1,2 +1,5 @@
 fn convert { x: f32 } -> u32 { return @as(u32, x) }  //~ panic at 39: @as: nan is not representable in u32
 fn main {} { _ = convert{ x = 0.0 / 0.0 } }
+//# path:
+//|   at convert (33.ctx:1:39)
+//|   at main (33.ctx:2:25)

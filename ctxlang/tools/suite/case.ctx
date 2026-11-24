@@ -54,8 +54,10 @@ namespace case {
         timeout: u64,           // seconds; 0 is the default
         exit: ?i64,
         exit_line: u32,
-        panic: ?[]u8,           // the last line of standard error, with exit code 134
+        panic: ?[]u8,           // standard error's last line before the call path, with exit code 134
         panic_line: u32,
+        path: ?[]u8,            // the panic's call path, whole: the lines after its line
+        path_line: u32,
         errors: ?[]u8,          // ctxc's standard error, whole
         errors_line: u32,
         markers: []Marker,
@@ -106,7 +108,7 @@ namespace case {
     fn empty_step { kind: Kind, line: u32 } -> Step {
         return Step{
             kind, line, name = "", words = slice::empty([]u8){}, text = "", input = "", env = slice::empty([]u8){}, cwd = "",
-            stack = 0, timeout = 0, exit = null, exit_line = 0, panic = null, panic_line = 0, errors = null, errors_line = 0,
+            stack = 0, timeout = 0, exit = null, exit_line = 0, panic = null, panic_line = 0, path = null, path_line = 0, errors = null, errors_line = 0,
             markers = slice::empty(Marker){}, expects = slice::empty(Expect){}, interp = Interp::same, interp_line = 0,
             compiles = false,
         }
@@ -216,6 +218,7 @@ namespace case {
                         }
                     }
                     if count_panics{ ms = s.markers } > 1 { problem{ &p, line = s.line, text = "a program panics once: it has several `//~ panic`" } }
+                    if s.path != null and s.panic == null and not has_panic{ ms = s.markers } { problem{ &p, line = s.path_line, text = "`path:` is the call path of a panic the step states, by `//~ panic` or `//# panic:`" } }
                 }
                 build => {
                     if s.exit != null or s.panic != null or s.expects.len > 0 or has_panic{ ms = s.markers } {
@@ -480,7 +483,7 @@ namespace case {
     // The step a directive of a run belongs to: the one being read, which must run something.
     fn runs { mut p: Parser, line: u32, key: []u8 } -> bool {
         if p.open and (p.step.kind == Kind::program or p.step.kind == Kind::command) { return true }
-        if p.open and p.step.kind == Kind::project and (eq{ a = key, b = "exit" } or eq{ a = key, b = "panic" } or eq{ a = key, b = "errors" } or eq{ a = key, b = "stdout" } or eq{ a = key, b = "stderr" } or eq{ a = key, b = "file" } or eq{ a = key, b = "list" } or eq{ a = key, b = "env" } or eq{ a = key, b = "cwd" }) { return true }
+        if p.open and p.step.kind == Kind::project and (eq{ a = key, b = "exit" } or eq{ a = key, b = "panic" } or eq{ a = key, b = "path" } or eq{ a = key, b = "errors" } or eq{ a = key, b = "stdout" } or eq{ a = key, b = "stderr" } or eq{ a = key, b = "file" } or eq{ a = key, b = "list" } or eq{ a = key, b = "env" } or eq{ a = key, b = "cwd" }) { return true }
         if p.open and p.step.kind == Kind::build and (eq{ a = key, b = "errors" } or eq{ a = key, b = "env" }) { return true }
         problem{ &p, line, text = cat3{ heap = p.heap, a = "`", b = key, c = "` follows the step it is about: a `program:`, a `$` command, a `project` or a `build`" } }
         return false
@@ -621,6 +624,13 @@ namespace case {
                 if p.step.panic != null { problem{ &p, line, text = "one `panic:` for each step" } }
                 p.step.panic = value
                 p.step.panic_line = line
+            }
+        } else if eq{ a = head, b = "path" } and colon {
+            if runs{ &p, line, key = "path" } {
+                if p.step.path != null { problem{ &p, line, text = "one `path:` for each step" } }
+                p.step.path = block
+                p.step.path_line = line
+                if value.len > 0 or not has_block { problem{ &p, line, text = "`path:` takes the panic's call path as a block, a line for each frame" } }
             }
         } else if eq{ a = head, b = "errors" } and colon {
             if runs{ &p, line, key = "errors" } {

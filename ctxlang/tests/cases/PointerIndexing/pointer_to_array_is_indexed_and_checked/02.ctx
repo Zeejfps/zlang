@@ -4,3 +4,6 @@ fn main { mut io: Io } {
     let a = [1, 2, 3]
     io::println_i64{ &io, n = at{ q = &a, i = 3 } }
 }
+//# path:
+//|   at at (02.ctx:2:49)
+//|   at main (02.ctx:5:33)

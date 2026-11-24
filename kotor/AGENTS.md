@@ -109,8 +109,15 @@ fn build { mut b: Build } {
     build::add_sources{ &b, exe, dir = "../../lib/formats" }
     build::link{ &b, exe, lib = "SDL2" }                            // only if it uses lib/platform
     build::optimize{ &b, exe, level = 2 }                           // optional: -O2
+    build::trace_calls{ &b, exe, on = true }                        // optional, with -O2: panics keep their call path
 }
 ```
+
+- A panic prints the calls that led to it, a line each under its own (`  at fn (file:line:col)`),
+  in every `ctxc test` build and in programs built without `build::optimize`. At `-O2` it names
+  only the function it is in, unless the build.ctx says `build::trace_calls{ &b, exe, on = true
+  }`, which costs a few percent (4% on ncsrun's VM, 8% on binkcheck's decode): enginetest
+  has it, the game and the timing tools don't.
 
 - Each program builds in its own directory under `ctxlang/build/run/`, so agents can build
   different programs at the same time. An unchanged program rebuilds in ~50 ms.

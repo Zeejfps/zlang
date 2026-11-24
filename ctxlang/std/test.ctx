@@ -16,7 +16,7 @@
 // What a test reports to: `@expect(&t, c)` and `@require(&t, c)` note their checks and write
 // their failures through it (spec §13). Only a `#test` fn and the `#test_main` fn receive one,
 // and pass it down. It includes an Io, where the failures go as they happen.
-capability Test { ..Io, ..test::State }
+capability Test { ..Io, ..test::State, ..rt::Stack }
 
 namespace test {
     // The running test's name and where its fn is, for its lines, the directory of its file
@@ -108,6 +108,16 @@ namespace test {
         io::write{ io = &t, to = io::Stream::err, bytes = word }
         io::write{ io = &t, to = io::Stream::err, bytes = text }
         return false
+    }
+
+    // What an `@expect` or a `@require` that didn't hold calls once its line is written (spec
+    // §13, Checks, rule 9): the calls that led to the function the check is in, a line for
+    // each under the failure's, innermost first, up to the test fn: "  called from NAME
+    // (FILE:LINE:COL)". Nothing for a check in the test fn itself, or in a build without call
+    // paths. The path's entries from here are rt::write_frames, this function and the check's,
+    // and then those callers. The compiler supplies the `Test`.
+    fn write_callers { mut t: Test } {
+        rt::write_frames{ io = &t, stack = &t, first = 3, word = "called from", started = "started from" }
     }
 
     // What a `@require` that didn't hold calls once its line is written (spec §13, Checks):
@@ -313,8 +323,9 @@ namespace test {
     // Test c's record, a line: its outcome, `pass`, `fail` or `skip`, and how many checks it
     // reported. For a skip, `reason` is what its line said. For a failure, `failures` has each
     // line of its output that is a failure's, `FILE:LINE: fail: NAME: MESSAGE` (or with a
-    // column, for a panic), as its file, line and message, and `output` the other lines, as
-    // the test wrote them.
+    // column, for a panic), as its file, line and message, with the lines of its call path
+    // under it as `path`, or for a check's as `called_from` (json_path), and `output` the
+    // other lines, as the test wrote them.
     fn json_test { mut b: utf8::Builder(Heap), mut heap: Heap, c: Case, outcome: Outcome } {
         json_head{ &b, c }
         match outcome {
@@ -343,17 +354,25 @@ namespace test {
                     let k = find{ s = text, part = mark } ifnull { continue }
                     let p = where_of{ s = text[..k] }
                     if n > 0 { try! utf8::push{ &b, s = "," } }
-                    try! @fmt(&b, "{{\"file\":{},\"line\":{},\"message\":{}}}", utf8::push_json{ s = p.file, _ }, p.line, utf8::push_json{ s = text[k + mark.len..], _ })
+                    try! @fmt(&b, "{{\"file\":{},\"line\":{},\"message\":{}", utf8::push_json{ s = p.file, _ }, p.line, utf8::push_json{ s = text[k + mark.len..], _ })
+                    from = json_path{ &b, lines, from }
+                    try! utf8::push{ &b, s = "}" }
                     n = n + 1
                 }
                 try! utf8::push{ &b, s = "],\"output\":[" }
                 n = 0
                 from = 0
+                let mut under = false           // the line before was a failure's, or of its path
                 while from < lines.len {
                     let end = line_end{ s = lines, from }
                     let text = lines[from..end]
                     from = end + 1
-                    if find{ s = text, part = mark } != null { continue }
+                    if find{ s = text, part = mark } != null {
+                        under = true
+                        continue
+                    }
+                    if under and path_word{ text } != null { continue }
+                    under = false
                     if n > 0 { try! utf8::push{ &b, s = "," } }
                     try! utf8::push_json{ &b, s = text }
                     n = n + 1
@@ -362,6 +381,75 @@ namespace test {
             }
         }
         try! utf8::push{ &b, s = "}\n" }
+    }
+
+    // The word a line of a call path starts with after its two spaces (rt::write_frames), with
+    // the space after it: null for any other line.
+    const PATH_WORDS: [_][]u8 = ["  at ", "  called from ", "  started at ", "  started from ", "  ... "]
+
+    fn path_word { text: []u8 } -> ?[]u8 {
+        for w in PATH_WORDS {
+            if text.len >= w.len and slice::eq_bytes{ a = text[..w.len], b = w } { return w }
+        }
+        return null
+    }
+
+    // The lines of a call path under a failure's line, from `from` in lines, as the failure's
+    // `path` (a panic's, which starts with the function it is in) or `called_from` (a check's:
+    // the calls that led to the function it is in): an array with an object for each line,
+    // innermost first. Returns where the lines after them start. An entry has `kind`: `"call"`,
+    // with `function`, `file`, `line` and `column`, the last two 0 where the position isn't
+    // known; `"start"`, the same for where the test's task was started; `"c_code"`, C code
+    // that called a callback; or `"omitted"`, with `count`, the entries a long path leaves out.
+    fn json_path { mut b: utf8::Builder(Heap), lines: []u8, from: usize } -> usize {
+        let mut at = from
+        let mut n: usize = 0
+        while at < lines.len {
+            let end = line_end{ s = lines, from = at }
+            let text = lines[at..end]
+            let w = path_word{ text } ifnull { break }
+            if n == 0 {
+                let called = slice::eq_bytes{ a = w, b = "  called from " } or slice::eq_bytes{ a = w, b = "  started from " }
+                try! utf8::push{ &b, s = if called { ",\"called_from\":[" } else { ",\"path\":[" } }
+            } else {
+                try! utf8::push{ &b, s = "," }
+            }
+            let rest = text[w.len..]
+            if slice::eq_bytes{ a = w, b = "  ... " } {
+                let mut k: usize = 0
+                while k < rest.len and ascii::is_digit{ c = rest[k] } { k = k + 1 }
+                try! @fmt(&b, "{{\"kind\":\"omitted\",\"count\":{}}}", utf8::parse_u64{ s = utf8::String{ bytes = rest[..k] } } ifnull { 0 })
+            } else if slice::eq_bytes{ a = rest, b = "C code (no position)" } {
+                try! utf8::push{ &b, s = "{\"kind\":\"c_code\"}" }
+            } else {
+                // NAME (FILE:LINE:COL), NAME (FILE) or NAME: the file is in the last parentheses.
+                let mut name = rest
+                let mut file: []u8 = ""
+                let mut line: u64 = 0
+                let mut col: u64 = 0
+                if rest.len > 0 and rest[rest.len - 1] == ')' {
+                    let mut k = rest.len - 1
+                    while k > 1 and not (rest[k] == '(' and rest[k - 1] == ' ') { k = k - 1 }
+                    if k > 1 {
+                        name = rest[..k - 1]
+                        file = rest[k + 1..rest.len - 1]
+                        if let c = number_at_end{ s = file } {
+                            if let l = number_at_end{ s = file[..c.start] } {
+                                line = l.n
+                                col = c.n
+                                file = file[..l.start]
+                            }
+                        }
+                    }
+                }
+                let started = slice::eq_bytes{ a = w, b = "  started at " } or slice::eq_bytes{ a = w, b = "  started from " }
+                try! @fmt(&b, "{{\"kind\":{},\"function\":{},\"file\":{},\"line\":{},\"column\":{}}}", utf8::push_json{ s = if started { "start" } else { "call" }, _ }, utf8::push_json{ s = name, _ }, utf8::push_json{ s = file, _ }, line, col)
+            }
+            n = n + 1
+            at = end + 1
+        }
+        if n > 0 { try! utf8::push{ &b, s = "]" } }
+        return at
     }
 
     struct Where { file: []u8, line: u64 }

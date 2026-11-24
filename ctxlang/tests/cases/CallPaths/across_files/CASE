@@ -1,0 +1,11 @@
+// A panic's path through several files: each frame has its function and where it called
+// the one above, in the file as a compile error names it.
+//# program: main.ctx lib/routines.ctx lib/nwarg.ctx
+//# interp: off: the interpreter takes one file, or a directory of just the program's files
+//# stdout:
+//| 16
+//# panic: lib/nwarg.ctx:3:21: panic: index 2 out of bounds for length 2
+//# path:
+//|   at nwarg::param (lib/nwarg.ctx:3:21)
+//|   at routines::get_tag (lib/routines.ctx:3:28)
+//|   at main (main.ctx:4:44)

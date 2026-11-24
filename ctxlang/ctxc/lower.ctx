@@ -14,7 +14,7 @@ namespace lower {
     type Id = types::Id
 
     const NONE: u32 = 4294967295
-    const VERSION: u64 = 23
+    const VERSION: u64 = 24
 
     // A function instance: a declaration and its generic arguments. The hidden fn of an @fmt
     // without a sink is an instance too, under the declaration it is in: site is its Site,
@@ -255,7 +255,7 @@ namespace lower {
                     i = i + 1
                 }
                 returns_code{ &l, &a, call = supply_call{ &l, &a, f = m, given = list::items{ list = given } }, i32t }
-                let id = add_adapter{ &l, a, name = "<main value>", params, ret = i32t, near = m }
+                let id = add_adapter{ &l, a, name = "<main value>", params, ret = i32t, near = m, shown = ir::Shown::root }
                 value = mk{ ty = ft, k = ir::ExprKind::fnref{ callee = id } }
             }
         }
@@ -285,7 +285,7 @@ namespace lower {
             for g in tests { try! list::push{ list = &given, item = g } }
             returns_code{ &l, &a, call = supply_call{ &l, &a, f = m, given = list::items{ list = given } }, i32t }
         }
-        out.entry = add_adapter{ &l, a, name = "<entry>", params = list::items{ list = params }, ret = i32t, near = m }
+        out.entry = add_adapter{ &l, a, name = "<entry>", params = list::items{ list = params }, ret = i32t, near = m, shown = ir::Shown::hidden }
 
         // on panic
         if panic != NONE {
@@ -313,7 +313,7 @@ namespace lower {
             }
             let call = supply_call{ &l, a = &b, f = h, given = list::items{ list = gs } }
             try! list::push{ list = &b.stmts, item = ir::Stmt::eval{ e = call } }
-            out.on_panic = add_adapter{ &l, a = b, name = "<on panic>", params = list::items{ list = ps }, ret = h.ret, near = h }
+            out.on_panic = add_adapter{ &l, a = b, name = "<on panic>", params = list::items{ list = ps }, ret = h.ret, near = h, shown = ir::Shown::hidden }
         }
         return out
     }
@@ -348,7 +348,7 @@ namespace lower {
             add_arg{ xs = &args, a = ir::Arg{ index = @as(u32, i), value } }
             i = i + 1
         }
-        return mk{ ty = f.ret, k = ir::ExprKind::call{ callee = f.id, args = list::items{ list = args } } }
+        return mk{ ty = f.ret, k = ir::ExprKind::call{ callee = f.id, args = list::items{ list = args }, pos = nowhere{} } }
     }
 
     // `return call`, or `call; return 0` if it gives nothing: an exit code.
@@ -361,11 +361,12 @@ namespace lower {
         try! list::push{ list = &a.stmts, item = ir::Stmt::ret{ value = call } }
     }
 
-    fn add_adapter { mut l: Lower, a: Adapter, name: []u8, params: []ir::Param, ret: u32, near: ir::Func } -> u32 {
+    fn add_adapter { mut l: Lower, a: Adapter, name: []u8, params: []ir::Param, ret: u32, near: ir::Func, shown: ir::Shown } -> u32 {
         let id = @as(u32, l.fns.len)
         try! list::push{ list = &l.fns, item = ir::Func{
             id, name, symbol = "", params, ret, locals = list::items{ list = a.locals },
             body = ir::Block{ stmts = list::items{ list = a.stmts }, result = null }, unit = near.unit, at = near.at,
+            file = near.file, shown,
         } }
         return id
     }
@@ -446,13 +447,23 @@ namespace lower {
         return ir::Func{
             id, name = x.qual, symbol = x.symbol, params, ret,
             locals = slice::empty(ir::Local){}, body = ir::Block{ stmts = none, result = null },
-            unit = unit_of{ l, x }, at = x.syn.span.start,
+            unit = unit_of{ l, x }, at = x.syn.span.start, file = file_of{ &l, x }, shown = ir::Shown::frame,
         }
     }
 
     // The file that declares x.
     fn unit_of { l: Lower, x: check::Decl } -> []u8 {
         return l.c.files[x.syn.span.file].name
+    }
+
+    // The file that declares x, among those the IR names (ir::Func.file).
+    fn file_of { mut l: Lower, x: check::Decl } -> u32 {
+        return pos{ &l, at = x.syn.span }.file
+    }
+
+    // The position of a call the compiler wrote: none.
+    fn nowhere {} -> ir::Pos {
+        return ir::Pos{ line = 0, col = 0, file = 0 }
     }
 
     fn params_of { mut l: Lower, fields: []types::Field } -> []ir::Param {
@@ -484,7 +495,7 @@ namespace lower {
         return ir::Func{
             id, name = x.qual, symbol = "", params = slice::empty(ir::Param){}, ret,
             locals = list::items{ list = l.locals }, body = ir::Block{ stmts = list::items{ list = xs }, result = null },
-            unit = unit_of{ l, x }, at = x.syn.span.start,
+            unit = unit_of{ l, x }, at = x.syn.span.start, file = file_of{ &l, x }, shown = ir::Shown::frame,
         }
     }
 
@@ -522,6 +533,7 @@ namespace lower {
         return ir::Func{
             id, name = inst_name{ l, x, targs = inst.targs }, symbol = "", params = list::items{ list = params }, ret,
             locals = list::items{ list = l.locals }, body, unit = unit_of{ l, x }, at = x.syn.span.start,
+            file = file_of{ &l, x }, shown = ir::Shown::frame,
         }
     }
 
@@ -1003,7 +1015,7 @@ namespace lower {
                     add_arg{ xs = &call, a = ir::Arg{ index = @as(u32, k), value } }
                     k = k + 1
                 }
-                let e = mk{ ty = tid{ &l, t = types::VOID }, k = ir::ExprKind::call{ callee = fn_id{ &l, decl = end, targs = ts }, args = list::items{ list = call } } }
+                let e = mk{ ty = tid{ &l, t = types::VOID }, k = ir::ExprKind::call{ callee = fn_id{ &l, decl = end, targs = ts }, args = list::items{ list = call }, pos = nowhere{} } }
                 try! list::push{ list = &out, item = ir::Stmt::eval{ e } }
             }
             else => { @panic("lower: a task handle that is neither a handle nor an array of them") }
@@ -1654,9 +1666,9 @@ namespace lower {
         let ct = tid{ &l, t = cr }
         let call = if w.callee == NONE {
             let inner = mk{ ty = tid{ &l, t = w.frm }, k = ir::ExprKind::local{ slot = 0 } }
-            mk{ ty = ct, k = ir::ExprKind::dcall{ callee = box{ l, e = inner }, args = list::items{ list = args } } }
+            mk{ ty = ct, k = ir::ExprKind::dcall{ callee = box{ l, e = inner }, args = list::items{ list = args }, pos = nowhere{} } }
         } else {
-            mk{ ty = ct, k = ir::ExprKind::call{ callee = w.callee, args = list::items{ list = args } } }
+            mk{ ty = ct, k = ir::ExprKind::call{ callee = w.callee, args = list::items{ list = args }, pos = nowhere{} } }
         }
         let mut r = call
         if norm{ &l, t = cr } != norm{ &l, t = tr } { r = res_remap{ &l, x = call, frm = types::prune{ s = l.c.ty, t = cr }, to = types::prune{ s = l.c.ty, t = tr } } }
@@ -1664,7 +1676,7 @@ namespace lower {
         return ir::Func{
             id, name = utf8::view{ b }.bytes, symbol = "", params = list::items{ list = params }, ret = tid{ &l, t = tr },
             locals = list::items{ list = l.locals }, body = ir::Block{ stmts = list::items{ list = body }, result = null },
-            unit = unit_of{ l, x = d }, at = d.syn.span.start,
+            unit = unit_of{ l, x = d }, at = d.syn.span.start, file = file_of{ &l, x = d }, shown = ir::Shown::hidden,
         }
     }
 
@@ -1687,7 +1699,7 @@ namespace lower {
 
     // A start's `run`, in args: a bind written in the call, whose record holds its size (tbind),
     // or the starts_task fn's own `run`, passed on.
-    fn task_record { mut l: Lower, fields: []types::Field, args: []ir::Arg } -> []ir::Arg {
+    fn task_record { mut l: Lower, fields: []types::Field, args: []ir::Arg, at: ir::Pos } -> []ir::Arg {
         let k = types::field_index{ fields, name = "run" } ifnull { @panic("lower: a start without `run`") }
         let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
         let mut i: usize = 0
@@ -1699,7 +1711,7 @@ namespace lower {
                     bind{ callee, args = bound } => {
                         let q = list::items{ list = l.queue }[callee]
                         let name = check::get_decl{ c = l.c.*, d = q.decl }.qual
-                        a.value = mk{ ty = v.ty, k = ir::ExprKind::tbind{ callee, args = bound, name } }
+                        a.value = mk{ ty = v.ty, k = ir::ExprKind::tbind{ callee, args = bound, name, pos = at } }
                     }
                     local => {}
                     else => { @panic("lower: a start's `run` that isn't a bind") }
@@ -1747,7 +1759,7 @@ namespace lower {
         let ft = tid{ &l, t = types::func{ s = &l.c.ty, fields = slice::empty(types::Field){}, ret = r, bound = true, external = false } }
         let rt = tid{ &l, t = r }
         let run = mk{ ty = ft, k = ir::ExprKind::cast{ e = box{ l, e = mk{ ty = pt, k = ir::ExprKind::local{ slot = 0 } } } } }
-        let call = mk{ ty = rt, k = ir::ExprKind::dcall{ callee = box{ l, e = run }, args = slice::empty(ir::Arg){} } }
+        let call = mk{ ty = rt, k = ir::ExprKind::dcall{ callee = box{ l, e = run }, args = slice::empty(ir::Arg){}, pos = nowhere{} } }
         let mut body = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
         if list::items{ list = l.types }[rt] is void {
             try! list::push{ list = &body, item = ir::Stmt::eval{ e = call } }
@@ -1762,7 +1774,7 @@ namespace lower {
         return ir::Func{
             id, name = utf8::view{ b }.bytes, symbol = "", params = list::items{ list = params }, ret = tid{ &l, t = types::VOID },
             locals = list::items{ list = l.locals }, body = ir::Block{ stmts = list::items{ list = body }, result = null },
-            unit = unit_of{ l, x = d }, at = d.syn.span.start,
+            unit = unit_of{ l, x = d }, at = d.syn.span.start, file = file_of{ &l, x = d }, shown = ir::Shown::root,
         }
     }
 
@@ -2972,8 +2984,9 @@ namespace lower {
             let ty = tid{ &l, t }
             let args = item_args{ &l, e, items, fields, ptrs = true }
             if bind { return mk{ ty, k = ir::ExprKind::bind{ callee = fid, args } } }
-            if x.starts_task { return mk{ ty, k = ir::ExprKind::call{ callee = fid, args = task_record{ &l, fields, args } } } }
-            return mk{ ty, k = ir::ExprKind::call{ callee = fid, args } }
+            let at = epos{ &l, e }
+            if x.starts_task { return mk{ ty, k = ir::ExprKind::call{ callee = fid, args = task_record{ &l, fields, args, at }, pos = at } } }
+            return mk{ ty, k = ir::ExprKind::call{ callee = fid, args, pos = at } }
         }
         let ft = T{ &l, t = check::type_of_expr{ c = l.c.*, e = callee } }
         let mut fields: []types::Field = slice::empty(types::Field){}
@@ -2982,7 +2995,7 @@ namespace lower {
         let c = ex{ &l, e = callee }
         let args = item_args{ &l, e, items, fields, ptrs = true }
         if bind { return mk{ ty, k = ir::ExprKind::dbind{ callee = box{ l, e = c }, args } } }
-        return mk{ ty, k = ir::ExprKind::dcall{ callee = box{ l, e = c }, args } }
+        return mk{ ty, k = ir::ExprKind::dcall{ callee = box{ l, e = c }, args, pos = epos{ &l, e } } }
     }
 
     // A struct literal's args, then those of the fields its `..` takes from their defaults (§7):
@@ -3229,7 +3242,7 @@ namespace lower {
         let ty = tid{ &l, t = types::BOOL }
         if compared_whole{ &l, t } { return mk{ ty, k = ir::ExprKind::cmp{ op = ir::CmpOp::eq, a = box{ l, e = a }, b = box{ l, e = b } } } }
         let fid = derived_id{ &l, t, site = DERIVED_EQ }
-        return mk{ ty, k = ir::ExprKind::call{ callee = fid, args = two_args{ l, a, b } } }
+        return mk{ ty, k = ir::ExprKind::call{ callee = fid, args = two_args{ l, a, b }, pos = nowhere{} } }
     }
 
     // h with v, a value of type t, folded in: a number, a bool, an enum or a pointer's address
@@ -3240,7 +3253,7 @@ namespace lower {
         let ty = tid{ &l, t = u64_id }
         if not compared_whole{ &l, t } {
             let fid = derived_id{ &l, t, site = DERIVED_HASH }
-            return mk{ ty, k = ir::ExprKind::call{ callee = fid, args = two_args{ l, a = h, b = v } } }
+            return mk{ ty, k = ir::ExprKind::call{ callee = fid, args = two_args{ l, a = h, b = v }, pos = nowhere{} } }
         }
         let x = types::undistinct{ s = l.c.ty, t = T{ &l, t } }
         let mut n = v
@@ -3335,7 +3348,7 @@ namespace lower {
         return ir::Func{
             id, name = utf8::view{ b = name }.bytes, symbol = "", params = list::items{ list = params }, ret,
             locals = list::items{ list = l.locals }, body = ir::Block{ stmts = list::items{ list = g.stmts }, result = null },
-            unit = unit_of{ l, x = d }, at = d.syn.span.start,
+            unit = unit_of{ l, x = d }, at = d.syn.span.start, file = file_of{ &l, x = d }, shown = ir::Shown::hidden,
         }
     }
 
@@ -3898,7 +3911,7 @@ namespace lower {
         return ir::Func{
             id, name = utf8::view{ b = name }.bytes, symbol = "", params = list::items{ list = params }, ret = tid{ &l, t = ret },
             locals = list::items{ list = l.locals }, body = ir::Block{ stmts = list::items{ list = xs }, result = null },
-            unit = unit_of{ l, x }, at = x.syn.span.start,
+            unit = unit_of{ l, x }, at = x.syn.span.start, file = file_of{ &l, x }, shown = ir::Shown::hidden,
         }
     }
 
@@ -3962,7 +3975,7 @@ namespace lower {
         let bx = coerce{ &l, x = sink_ex{ &l, s }, frm = s.ty, to = types::ptr{ s = &l.c.ty, elem = fields[0].ty, mutable = false }, at = s.at }
         let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
         add_arg{ xs = &out, a = ir::Arg{ index = 0, value = bx } }
-        let call = mk{ ty, k = ir::ExprKind::dcall{ callee = box{ l, e = w.vals[h] }, args = list::items{ list = out } } }
+        let call = mk{ ty, k = ir::ExprKind::dcall{ callee = box{ l, e = w.vals[h] }, args = list::items{ list = out }, pos = pos{ &l, at = p.at } } }
         return lift{ &l, x = call, frm = ret, to = rt }
     }
 
@@ -4035,7 +4048,7 @@ namespace lower {
         add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, bi), value = bv } }
         add_arg{ xs = &out, a = ir::Arg{ index = @as(u32, 1 - bi), value = v } }
         let ret = types::subst{ s = &l.c.ty, t = x.ret, decl = w.decl, args = targs }
-        let call = mk{ ty = tid{ &l, t = ret }, k = ir::ExprKind::call{ callee = fid, args = list::items{ list = out } } }
+        let call = mk{ ty = tid{ &l, t = ret }, k = ir::ExprKind::call{ callee = fid, args = list::items{ list = out }, pos = pos{ &l, at } } }
         if types::prune{ s = l.c.ty, t = ret } == types::VOID {
             let ty = tid{ &l, t = rt }
             return mk{ ty, k = ir::ExprKind::seq{ first = box{ l, e = call }, then = box{ l, e = ok_of{ &l, rt } } } }
@@ -4134,7 +4147,7 @@ namespace lower {
         let rty = tid{ &l, t = ret }
         let r = temp{ &l, ty = rty }
         let mut out = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
-        let call = mk{ ty = rty, k = ir::ExprKind::call{ callee = fn_id{ &l, decl = inst.decl, targs = no_ids{} }, args = list::items{ list = args } } }
+        let call = mk{ ty = rty, k = ir::ExprKind::call{ callee = fn_id{ &l, decl = inst.decl, targs = no_ids{} }, args = list::items{ list = args }, pos = nowhere{} } }
         try! list::push{ list = &out, item = ir::Stmt::define{ slot = r, init = call } }
         let mut arms = list::new(ir::Arm){ realloc = arena::alloc, heap = l.heap }
 
@@ -4172,7 +4185,7 @@ namespace lower {
         return ir::Func{
             id, name = utf8::view{ b = name }.bytes, symbol = "", params = list::items{ list = params }, ret = i32t,
             locals = list::items{ list = l.locals }, body = ir::Block{ stmts = list::items{ list = out }, result = null },
-            unit = unit_of{ l, x }, at = x.syn.span.start,
+            unit = unit_of{ l, x }, at = x.syn.span.start, file = file_of{ &l, x }, shown = ir::Shown::hidden,
         }
     }
 
@@ -4263,7 +4276,7 @@ namespace lower {
             }
             add_arg{ xs = &call, a = ir::Arg{ index = @as(u32, k), value } }
         }
-        let called = mk{ ty = bool_ty, k = ir::ExprKind::call{ callee = fn_id{ &l, decl = check, targs = no_ids{} }, args = list::items{ list = call } } }
+        let called = mk{ ty = bool_ty, k = ir::ExprKind::call{ callee = fn_id{ &l, decl = check, targs = no_ids{} }, args = list::items{ list = call }, pos = p } }
 
         // If it didn't hold: the rest of the failure's line.
         let k = temp{ &l, ty = bool_ty }
@@ -4271,6 +4284,15 @@ namespace lower {
         let sink = stderr_sink{ &l, out = &failed, st }
         let w = Writes{ s = sink, vals = list::items{ list = vals }, tys = list::items{ list = tys }, si, rt = site_result{ &l, si } }
         try! list::push{ list = &failed, item = ir::Stmt::eval{ e = pieces{ &l, w, ps = st.pieces } } }
+        // Under the line, the calls that led to this function: test::write_callers{ &t }.
+        let callers = check::std_fn{ c = l.c.*, space = "test", name = "write_callers" }
+        if callers != NONE {
+            let mut caps = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
+            for f at i in check::get_decl{ c = l.c.*, d = callers }.fields {
+                add_arg{ xs = &caps, a = ir::Arg{ index = @as(u32, i), value = mk{ ty = tid{ &l, t = arg_type{ &l, f, ptrs = true } }, k = ir::ExprKind::capref } } }
+            }
+            try! list::push{ list = &failed, item = ir::Stmt::eval{ e = mk{ ty = tid{ &l, t = types::VOID }, k = ir::ExprKind::call{ callee = fn_id{ &l, decl = callers, targs = no_ids{} }, args = list::items{ list = caps }, pos = p } } } }
+        }
         if hard {
             let stop = check::std_fn{ c = l.c.*, space = "test", name = "stop" }
             if stop == NONE { @panic("lower: a @require without std's test::stop") }
@@ -4278,7 +4300,7 @@ namespace lower {
             for f at i in check::get_decl{ c = l.c.*, d = stop }.fields {
                 add_arg{ xs = &caps, a = ir::Arg{ index = @as(u32, i), value = mk{ ty = tid{ &l, t = arg_type{ &l, f, ptrs = true } }, k = ir::ExprKind::capref } } }
             }
-            try! list::push{ list = &failed, item = ir::Stmt::eval{ e = mk{ ty = tid{ &l, t = types::VOID }, k = ir::ExprKind::call{ callee = fn_id{ &l, decl = stop, targs = no_ids{} }, args = list::items{ list = caps } } } } }
+            try! list::push{ list = &failed, item = ir::Stmt::eval{ e = mk{ ty = tid{ &l, t = types::VOID }, k = ir::ExprKind::call{ callee = fn_id{ &l, decl = stop, targs = no_ids{} }, args = list::items{ list = caps }, pos = p } } } }
         }
         let yes = mk{ ty = bool_ty, k = ir::ExprKind::boolean{ value = true } }
         let no = mk{ ty = bool_ty, k = ir::ExprKind::boolean{ value = false } }
@@ -4349,7 +4371,7 @@ namespace lower {
             try! list::push{ list = &a.stmts, item = ir::Stmt::switch{ scrut = slot_ex{ ty = params[0].ty, slot = 0 }, cases = list::items{ list = arms } } }
             let other = if cases { case_of{ &l, ty = ret, t = null } } else { mk{ ty = i32t, k = ir::ExprKind::int{ negative = false, value = 2 } } }
             try! list::push{ list = &a.stmts, item = ir::Stmt::ret{ value = other } }
-            let id = add_adapter{ &l, a, name = if cases { "<test case>" } else { "<run test>" }, params, ret, near = m }
+            let id = add_adapter{ &l, a, name = if cases { "<test case>" } else { "<run test>" }, params, ret, near = m, shown = if cases { ir::Shown::hidden } else { ir::Shown::root } }
             try! list::push{ list = &out, item = Given{ name = q.name, value = mk{ ty = q.ty, k = ir::ExprKind::fnref{ callee = id } } } }
         }
         return list::items{ list = out }
@@ -4435,7 +4457,7 @@ namespace lower {
         let to = types::ptr{ s = &l.c.ty, elem = T{ &l, t = st.sink }, mutable = false }
         let b = coerce{ &l, x = sink_ex{ &l, s = w.s }, frm = w.s.ty, to, at = w.s.at }
         let own = site_result{ &l, si = w.si }
-        let call = mk{ ty = tid{ &l, t = own }, k = ir::ExprKind::call{ callee = shown_id{ &l, si = w.si, t }, args = two_args{ l, a = b, b = v } } }
+        let call = mk{ ty = tid{ &l, t = own }, k = ir::ExprKind::call{ callee = shown_id{ &l, si = w.si, t }, args = two_args{ l, a = b, b = v }, pos = pos{ &l, at = w.s.at } } }
         return lift{ &l, x = call, frm = own, to = w.rt }
     }
 
@@ -4495,7 +4517,7 @@ namespace lower {
         return ir::Func{
             id, name = utf8::view{ b = name }.bytes, symbol = "", params = list::items{ list = params }, ret = tid{ &l, t = rt },
             locals = list::items{ list = l.locals }, body = ir::Block{ stmts = list::items{ list = g.stmts }, result = null },
-            unit = unit_of{ l, x = d }, at = d.syn.span.start,
+            unit = unit_of{ l, x = d }, at = d.syn.span.start, file = file_of{ &l, x = d }, shown = ir::Shown::hidden,
         }
     }
 

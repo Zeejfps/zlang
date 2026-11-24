@@ -1,8 +1,8 @@
 // The typed IR (`ctxc ir`): widening is explicit. An i32 given to an i64 field is a `widen`
-// of the local in the call.
+// of the local in the call, which ends with its position: line, column and file.
 // The IR is the program's and std's, with ids that change when std does: what is stated is
 // the part the test is about, with `{n}` for the ids.
 //# $ ctxc ir {std} -- main0.ctx
 //# exit: 0
 //# stdout has:
-//| (call {n} {n} [(0 (widen {n} (local {n} 1)))])
+//| (call {n} {n} [(0 (widen {n} (local {n} 1)))] {n} {n} {n})

@@ -1,2 +1,5 @@
 fn convert { x: f64 } -> u16 { return @as(u16, x) }  //~ panic at 39: @as: 65536.0 is not representable in u16
 fn main {} { _ = convert{ x = 65536.0 } }
+//# path:
+//|   at convert (71.ctx:1:39)
+//|   at main (71.ctx:2:25)

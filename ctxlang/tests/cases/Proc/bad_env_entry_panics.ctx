@@ -13,3 +13,7 @@ fn main { mut io: Io, mut proc: Proc, args: Args } -> i32 {
 }
 
 //# panic: program: panic: proc: an environment entry is KEY=VALUE
+//# path:
+//|   at proc::spawn (std/proc.ctx:156:85)
+//|   at proc::run (std/proc.ctx:111:34)
+//|   at main (bad_env_entry_panics.ctx:10:18)

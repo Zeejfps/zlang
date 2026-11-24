@@ -6,3 +6,6 @@ fn main { mut io: Io } {
 }
 
 //# panic: std/slice.ctx:20:32: panic: slice::copy: destination is shorter than source
+//# path:
+//|   at slice::copy(u8) (std/slice.ctx:20:32)
+//|   at main (panic_in_std_reports_std_file.ctx:5:16)

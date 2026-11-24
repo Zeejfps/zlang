@@ -1,0 +1,39 @@
+// A path of more than 24 frames is written as its first 16 and its last 8, with a line
+// between them that counts the rest.
+
+fn down { n: u32 } -> u32 {
+    if n == 0 { @panic("the bottom") }
+    return down{ n = n - 1 } + 1
+}
+
+fn main {} {
+    _ = down{ n = 30 }
+}
+
+//# panic: recursion_is_elided.ctx:5:17: panic: the bottom
+//# path:
+//|   at down (recursion_is_elided.ctx:5:17)
+//|   at down (recursion_is_elided.ctx:6:16)
+//|   at down (recursion_is_elided.ctx:6:16)
+//|   at down (recursion_is_elided.ctx:6:16)
+//|   at down (recursion_is_elided.ctx:6:16)
+//|   at down (recursion_is_elided.ctx:6:16)
+//|   at down (recursion_is_elided.ctx:6:16)
+//|   at down (recursion_is_elided.ctx:6:16)
+//|   at down (recursion_is_elided.ctx:6:16)
+//|   at down (recursion_is_elided.ctx:6:16)
+//|   at down (recursion_is_elided.ctx:6:16)
+//|   at down (recursion_is_elided.ctx:6:16)
+//|   at down (recursion_is_elided.ctx:6:16)
+//|   at down (recursion_is_elided.ctx:6:16)
+//|   at down (recursion_is_elided.ctx:6:16)
+//|   at down (recursion_is_elided.ctx:6:16)
+//|   ... 8 more frames
+//|   at down (recursion_is_elided.ctx:6:16)
+//|   at down (recursion_is_elided.ctx:6:16)
+//|   at down (recursion_is_elided.ctx:6:16)
+//|   at down (recursion_is_elided.ctx:6:16)
+//|   at down (recursion_is_elided.ctx:6:16)
+//|   at down (recursion_is_elided.ctx:6:16)
+//|   at down (recursion_is_elided.ctx:6:16)
+//|   at main (recursion_is_elided.ctx:10:13)

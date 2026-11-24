@@ -11,6 +11,7 @@
 //| ./t.ctx:28: fail: the_test_ends_at_one_that_does_not: required: found.len > 0: 0 > 0
 //| ./t.ctx:34: fail: a_condition_that_is_no_comparison: required: some{ n = 0 }
 //| ./t.ctx:8: fail: in_a_fn_the_test_calls: required: rows{ n }.len > 0: 0 > 0
+//|   called from in_a_fn_the_test_calls (./t.ctx:40:13)
 //| tests: 6 run, 2 passed, 4 failed, 0 skipped, 0 not selected, 10 checks
 //# $ ctxc test . -v holds after
 //# exit: 1

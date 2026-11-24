@@ -7,3 +7,6 @@ fn main { mut io: Io } {
 }
 
 //# panic: std/utf8.ctx:86:75: panic: utf8::sub: offset is inside a character
+//# path:
+//|   at utf8::sub (std/utf8.ctx:86:75)
+//|   at main (01.ctx:6:22)

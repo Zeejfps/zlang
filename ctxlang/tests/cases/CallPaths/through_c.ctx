@@ -1,0 +1,32 @@
+// C code between two functions of the program has a line of its own, without a position:
+// here a callback called through its C function pointer, as a C library calls it.
+
+#c::callback
+fn check { n: i32 } -> i32 {
+    if n > 2 { @panic("too many") }
+    return n
+}
+
+fn each { f: extern fn{ n: i32 } -> i32, count: i32 } -> i32 {
+    let mut sum: i32 = 0
+    let mut i: i32 = 0
+    while i < count {
+        sum = sum + f{ n = i }
+        i = i + 1
+    }
+    return sum
+}
+
+fn main { mut io: Io } {
+    _ = @fmt(&io, "{}\n", each{ f = check, count = 3 })
+    _ = @fmt(&io, "{}\n", each{ f = check, count = 4 })
+}
+
+//# stdout:
+//| 3
+//# panic: through_c.ctx:6:16: panic: too many
+//# path:
+//|   at check (through_c.ctx:6:16)
+//|   at C code (no position)
+//|   at each (through_c.ctx:14:22)
+//|   at main (through_c.ctx:22:31)

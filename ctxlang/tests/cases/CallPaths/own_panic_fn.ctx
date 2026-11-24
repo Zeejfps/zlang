@@ -1,0 +1,24 @@
+// A program's own `#panic` fn reads the path as std's does: `rt::write_path` writes its
+// lines, and `rt::count_frames` and `rt::get_frame` give its entries.
+
+#panic
+fn caught { mut io: Io, mut proc: Proc, mut stack: rt::Stack, msg: []u8 } {
+    _ = @fmt(&io, "caught `{}` after {} calls, in {}\n", msg, rt::count_frames{ &stack }, rt::get_frame{ &stack, index = 0 }.name)
+    io::flush{ &io }
+    rt::write_path{ &io, &stack }
+    os::exit{ &proc, code = 3 }
+}
+
+fn third { xs: []i32 } -> i32 { return xs[2] }
+
+fn main {} {
+    let xs: [2]i32 = [1, 2]
+    _ = third{ xs = xs[..] }
+}
+
+//# exit: 3
+//# stdout:
+//| caught `index 2 out of bounds for length 2` after 2 calls, in third
+//# stderr:
+//|   at third (own_panic_fn.ctx:12:42)
+//|   at main (own_panic_fn.ctx:16:14)

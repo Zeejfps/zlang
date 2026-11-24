@@ -1,3 +1,6 @@
 fn build { mut b: Build } { _ = build::exe{ &b, name = "a/b", root = "." } }
 
 //# panic: program: panic: build: a name can hold only ASCII letters, digits, _, - and .
+//# path:
+//|   at build::exe (std/build.ctx:80:89)
+//|   at build (02.ctx:1:43)

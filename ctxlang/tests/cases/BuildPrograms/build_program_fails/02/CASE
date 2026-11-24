@@ -4,3 +4,5 @@
 //# stdout:
 //| said
 //# panic: build.ctx:3:5: panic: broken
+//# path:
+//|   at build (build.ctx:3:5)

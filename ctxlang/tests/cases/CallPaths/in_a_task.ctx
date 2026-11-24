@@ -1,0 +1,27 @@
+// A task on a worker has a path of its own, which ends with where it was started.
+
+fn nth { xs: []u32, n: usize } -> u32 { return xs[n] }
+
+#task
+fn sum { n: usize } -> u32 {
+    let xs: [2]u32 = [1, 2]
+    return nth{ xs = xs[..], n } + 1
+}
+
+fn begin { mut threads: Threads } -> i32 {
+    let mut t: task::Task(u32)
+    task::start_concurrent{ &threads, task = &t, run = sum{ n = 5, _ } } iferr { return 1 }
+    _ = task::wait{ &threads, task = &t }
+    return 0
+}
+
+fn main { mut threads: Threads } -> i32 {
+    return begin{ &threads }
+}
+
+//# interp: cannot run
+//# panic: in_a_task.ctx:3:50: panic in task sum: index 5 out of bounds for length 2
+//# path:
+//|   at nth (in_a_task.ctx:3:50)
+//|   at sum (in_a_task.ctx:8:15)
+//|   started at begin (in_a_task.ctx:13:27)

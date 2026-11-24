@@ -1,0 +1,30 @@
+// A callback that the C library calls: the path goes on, past the C code, into the function
+// that called the library.
+
+#pure
+extern fn qsort { base: *mut u8, n: usize, size: usize, cmp: extern fn{ a: *u8, b: *u8 } -> i32 }
+
+#c::callback
+fn compare { a: *u8, b: *u8 } -> i32 {
+    let x = @cast(*i32, a).*
+    let y = @cast(*i32, b).*
+    if x == 4 or y == 4 { @panic("a four") }
+    return if x < y { -1 } else if x > y { 1 } else { 0 }
+}
+
+fn sort { xs: []mut i32 } {
+    qsort{ base = @cast(*mut u8, xs.ptr), n = xs.len, size = 4, cmp = compare }
+}
+
+fn main {} {
+    let mut xs: [3]i32 = [3, 1, 4]
+    sort{ xs = xs[..] }
+}
+
+//# interp: cannot run
+//# panic: through_a_c_library.ctx:11:27: panic: a four
+//# path:
+//|   at compare (through_a_c_library.ctx:11:27)
+//|   at C code (no position)
+//|   at sort (through_a_c_library.ctx:16:10)
+//|   at main (through_a_c_library.ctx:21:9)

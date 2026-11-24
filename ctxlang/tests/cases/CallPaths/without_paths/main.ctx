@@ -1,0 +1,6 @@
+fn third { xs: []i32 } -> i32 { return xs[2] }
+
+fn main {} {
+    let xs: [2]i32 = [1, 2]
+    _ = third{ xs = xs[..] }
+}

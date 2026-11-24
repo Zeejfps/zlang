@@ -8,4 +8,6 @@
 //# exit: 1
 //# stderr:
 //| build: panic: build: too many directories for build::declarations to remember
+//|   at build::declarations(arena::Arena) ({home}/std/build/declarations.ctx:{n}:{n})
+//|   at build (build.ctx:11:48)
 //# remove {work:.}

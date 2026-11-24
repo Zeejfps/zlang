@@ -15,9 +15,8 @@ tools and the game's own framework. Language friction goes in
   the rules.
 - **Testing the engine takes a program of its own.** No `--override DIR` on enginetest for a
   hand-assembled script, no `--call Routine(args)` (pushing arguments by hand is
-  last-parameter-first, and three of the first calls were wrong), no tool for "which scripts call
-  this routine", and a panic in `nwarg::param` names no routine. Hit writing the engine's
-  routines (4 times).
+  last-parameter-first, and three of the first calls were wrong), and no tool for "which scripts
+  call this routine". Hit writing the engine's routines (4 times).
 - **The game's framework:** a panel's events don't reach the menu that opened it, a panel can't
   hide without closing, a menu under a conversation gets no clicks, `tools/ingame/go.sh` drops
   log lines that start with `[`, a routine moved between files needs the dispatcher and registry

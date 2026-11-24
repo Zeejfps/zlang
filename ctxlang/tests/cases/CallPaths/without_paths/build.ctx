@@ -1,0 +1,4 @@
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "t", root = "." }
+    build::trace_calls{ &b, exe, on = false }
+}

@@ -1,0 +1,8 @@
+fn third { xs: []i32 } -> i32 { return xs[2] }
+
+fn middle { xs: []i32 } -> i32 { return third{ xs } + 1 }
+
+fn main { args: Args } -> i32 {
+    let xs: [2]i32 = [1, 2]
+    return middle{ xs = xs[..args.len + 2] }
+}

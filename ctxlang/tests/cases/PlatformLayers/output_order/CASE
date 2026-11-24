@@ -10,3 +10,4 @@
 //# exit: 134
 //# file out.txt:
 //| 12345main.ctx:8:5: panic: 6
+//|   at main (main.ctx:8:5)

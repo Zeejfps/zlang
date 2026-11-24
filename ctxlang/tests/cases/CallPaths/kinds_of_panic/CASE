@@ -1,0 +1,45 @@
+// Every kind of panic has its call path: `@panic`, an index, an overflow, a `try!` that
+// failed, an `@as` that doesn't fit, and std's own without a position, whose path starts at
+// the function that called std's `rt::fail`. The interpreter gives the same for each.
+//# program: main.ctx
+//# args: panic
+//# panic: main.ctx:3:34: panic: stopped
+//# path:
+//|   at stop (main.ctx:3:34)
+//|   at run (main.ctx:22:30)
+//|   at main (main.ctx:31:8)
+//# program: main.ctx
+//# args: index
+//# panic: main.ctx:5:54: panic: index 2 out of bounds for length 2
+//# path:
+//|   at element (main.ctx:5:54)
+//|   at run (main.ctx:23:37)
+//|   at main (main.ctx:31:8)
+//# program: main.ctx
+//# args: overflow
+//# panic: main.ctx:7:38: panic: integer overflow
+//# path:
+//|   at double (main.ctx:7:38)
+//|   at run (main.ctx:24:39)
+//|   at main (main.ctx:31:8)
+//# program: main.ctx
+//# args: try
+//# panic: main.ctx:14:39: panic: try! failed: empty
+//# path:
+//|   at must (main.ctx:14:39)
+//|   at run (main.ctx:25:32)
+//|   at main (main.ctx:31:8)
+//# program: main.ctx
+//# args: as
+//# panic: main.ctx:16:37: panic: @as: 300 is not representable in u8
+//# path:
+//|   at narrow (main.ctx:16:37)
+//|   at run (main.ctx:26:33)
+//|   at main (main.ctx:31:8)
+//# program: main.ctx
+//# args: fail
+//# panic: program: panic: std's own
+//# path:
+//|   at fails (main.ctx:18:23)
+//|   at run (main.ctx:27:30)
+//|   at main (main.ctx:31:8)

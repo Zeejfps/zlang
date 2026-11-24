@@ -1,2 +1,5 @@
 fn convert { x: f64 } -> u64 { return @as(u64, x) }  //~ panic at 39: @as: inf is not representable in u64
 fn main {} { _ = convert{ x = 1.0 / 0.0 } }
+//# path:
+//|   at convert (84.ctx:1:39)
+//|   at main (84.ctx:2:25)

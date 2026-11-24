@@ -1,2 +1,5 @@
 fn convert { x: f32 } -> u16 { return @as(u16, x) }  //~ panic at 39: @as: -1.0 is not representable in u16
 fn main {} { _ = convert{ x = -1.0 } }
+//# path:
+//|   at convert (27.ctx:1:39)
+//|   at main (27.ctx:2:25)

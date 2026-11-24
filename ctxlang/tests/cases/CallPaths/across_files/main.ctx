@@ -1,0 +1,5 @@
+fn main { mut io: Io } {
+    let stack: [2]i32 = [7, 8]
+    _ = @fmt(&io, "{}\n", routines::get_tag{ stack = stack[..], at = 1 })
+    _ = @fmt(&io, "{}\n", routines::get_tag{ stack = stack[..], at = 2 })
+}

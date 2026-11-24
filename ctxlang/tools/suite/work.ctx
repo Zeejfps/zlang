@@ -307,19 +307,38 @@ namespace work {
         }
         let mut stderr_checked = true
         if let message = panic {
-            // The panic is standard error's last line; what is before it is compared as the rest.
+            // The panic is standard error's last line before its call path, whose lines start
+            // with two spaces; what is before it is compared as the rest.
             let want = filled{ &r, &heap, s = message }
-            let mut end = err.len
+            let mut path = err.len
+            while path > 0 {
+                let mut from = path - 1
+                while from > 0 and err[from - 1] != '\n' { from = from - 1 }
+                if not starts_with{ s = err[from..path], prefix = "  " } { break }
+                path = from
+            }
+            let mut end = path
             if end > 0 and err[end - 1] == '\n' { end = end - 1 }
             let mut start = end
             while start > 0 and err[start - 1] != '\n' { start = start - 1 }
             let last = err[start..end]
             if not same{ want, got = last } {
                 fail{ &r, line = panic_line, what = cat{ &heap, a = what, b = " didn't panic as expected" } }
-                detail{ &r, heading = "expected, as standard error's last line:", body = cat{ &heap, a = want, b = "\n" } }
+                detail{ &r, heading = "expected, as standard error's last line before the call path:", body = cat{ &heap, a = want, b = "\n" } }
                 detail{ &r, heading = "actual standard error:", body = err }
                 stderr_checked = false
             } else {
+                // The call path: the `path:` block, or one frame, `main` at the panic's position.
+                let mut b = text{ &heap }
+                if let at = find{ s = want, part = ": panic" } { try! @fmt(&b, "  at main ({})\n", want[..at]) }
+                let stated = step.path ifnull { utf8::view{ b }.bytes }
+                let want_path = filled{ &r, &heap, s = stated }
+                let got_path = err[path..]
+                if not same{ want = want_path, got = got_path } {
+                    fail{ &r, line = if step.path != null { step.path_line } else { panic_line }, what = if step.path != null { "the panic's call path differs" } else { "the panic's call path isn't `main` alone at the panic: state it with `//# path:`" } }
+                    detail{ &r, heading = "expected:", body = want_path }
+                    detail{ &r, heading = "actual:", body = got_path }
+                }
                 err = err[..start]
             }
         }
@@ -378,7 +397,7 @@ namespace work {
         for f in files { try! list::push{ list = &named, item = filled{ &r, &heap, s = f } } }
         let mut env = strs{ &heap }
         for e in step.env { try! list::push{ list = &env, item = filled{ &r, &heap, s = e } } }
-        match tool::build{ &io, &fs, &proc, &heap, s = r.s, scratch = &r.scratch, files = list::items{ list = named }, denied = none[..], dir = r.dir, up = r.up, name, flags = none[..], level = 1, env = list::items{ list = env } } {
+        match tool::build{ &io, &fs, &proc, &heap, s = r.s, scratch = &r.scratch, files = list::items{ list = named }, denied = none[..], dir = r.dir, up = r.up, name, flags = none[..], level = 1, trace = true, env = list::items{ list = env } } {
             exe{ path } => {
                 if want != null {
                     fail{ &r, line = errors_line{ step }, what = "the program compiles: an error was expected" }
@@ -724,6 +743,7 @@ namespace work {
         let mut from = line_end{ s = records, from = 0 } + 1
         let mut name: []u8 = ""
         let mut level: u8 = 1
+        let mut trace = true
         let mut files = strs{ &heap }
         let mut denied = strs{ &heap }
         let mut flags = strs{ &heap }
@@ -737,7 +757,7 @@ namespace work {
             let value = if tab < line.len { line[tab + 1..] } else { "" }
             let last = from > records.len
             if (eq{ a = kind, b = "exe" } or last) and name.len > 0 {
-                match tool::build{ &io, &fs, &proc, &heap, s = r.s, scratch = &r.scratch, files = list::items{ list = files }, denied = list::items{ list = denied }, dir, up = cat{ &heap, a = r.s.home, b = "/" }, name, flags = list::items{ list = flags }, level, env = none[..] } {
+                match tool::build{ &io, &fs, &proc, &heap, s = r.s, scratch = &r.scratch, files = list::items{ list = files }, denied = list::items{ list = denied }, dir, up = cat{ &heap, a = r.s.home, b = "/" }, name, flags = list::items{ list = flags }, level, trace, env = none[..] } {
                     exe{ path } => { try! list::push{ list = &r.exes, item = Exe{ name, path } } }
                     errors{ text } => {
                         compiled = false
@@ -761,9 +781,12 @@ namespace work {
             if eq{ a = kind, b = "exe" } {
                 name = value
                 level = 1
+                trace = true
                 try! list::push{ list = &names, item = value }
             } else if eq{ a = kind, b = "level" } {
                 level = @as(u8, utf8::parse_u64{ s = utf8::of{ chars = value } } ifnull { 1 })
+            } else if eq{ a = kind, b = "paths" } {
+                trace = not eq{ a = value, b = "0" }
             } else if eq{ a = kind, b = "file" } {
                 try! list::push{ list = &files, item = value }
             } else if eq{ a = kind, b = "denied" } {
