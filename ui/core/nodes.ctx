@@ -35,8 +35,9 @@ namespace ui {
     const NODE_PRESSED: u8 = 32
 
     // `label` and `path` are the node list's own text, valid until the second end_frame after the
-    // one that made the list. `label` is the end of `path`.
-    struct Node { id: Id = NO_ID, role: Role = Role::none, rect: Rect = Rect{ .. }, flags: u8 = 0, value: f32 = 0.0, label: []u8 = "", path: []u8 = "" }
+    // one that made the list. `label` is the end of `path`. `text` is a text value, what a text
+    // field or a number entry shows (`describe_text`); empty for the others.
+    struct Node { id: Id = NO_ID, role: Role = Role::none, rect: Rect = Rect{ .. }, flags: u8 = 0, value: f32 = 0.0, label: []u8 = "", path: []u8 = "", text: []u8 = "" }
 
     fn describe { mut ui: Ui, id: Id, role: Role, label: []u8, value: f32, flags: u8 } {
         if not tree::can_record{ &ui } or not ui.config.nodes { return }
@@ -91,9 +92,25 @@ namespace ui {
         ui.nodes.next_len = @as(u32, at)
         ui.nodes.next[n] = nodes::Item{
             id, role, flags, value, path = Span{ start = @as(u32, start), len = @as(u32, at - start) },
-            label = @as(u32, label.len), hit = tree::NONE,
+            label = @as(u32, label.len), hit = tree::NONE, text = Span{ .. },
         }
         ui.nodes.next_count = ui.nodes.next_count + 1
+    }
+
+    // `describe` with a text value as well: what the widget shows as its value (a text field's
+    // text, as shown, so a password field's is its mask). The text is copied.
+    fn describe_text { mut ui: Ui, id: Id, role: Role, label: []u8, value: f32, flags: u8, text: []u8 } {
+        let before = ui.nodes.next_count
+        describe{ &ui, id, role, label, value, flags }
+        if ui.nodes.next_count == before or text.len == 0 { return }
+        let start = @as(usize, ui.nodes.next_len)
+        if text.len > ui.nodes.next_text.len - start {
+            report_drop{ &ui, kind = ProblemKind::nodes_full }
+            return
+        }
+        slice::copy(u8){ dst = ui.nodes.next_text[start..start + text.len], src = text }
+        ui.nodes.next_len = @as(u32, start + text.len)
+        ui.nodes.next[@as(usize, before)].text = Span{ start = @as(u32, start), len = @as(u32, text.len) }
     }
 
     // The node of the last finished frame whose path is `path`; or else the one node whose path
@@ -129,8 +146,9 @@ namespace ui {
 
     namespace nodes {
         // A node as it is kept: its path in the list's text, the length of its label (the end of
-        // the path), and its region's place in `ui.emit.hits` (NONE when it has none).
-        struct Item { id: Id, path: Span, label: u32, hit: u32, value: f32, role: Role, flags: u8 }
+        // the path), its region's place in `ui.emit.hits` (NONE when it has none), and its text
+        // value in the list's text (empty when it has none).
+        struct Item { id: Id, path: Span, label: u32, hit: u32, value: f32, role: Role, flags: u8, text: Span }
 
         struct State {
             list: []mut Item, count: u32, text: []mut u8,                          // the last finished frame's
@@ -199,7 +217,9 @@ namespace ui {
             let path = get_path{ ui, item }
             let mut rect = Rect{ .. }
             if item.hit != tree::NONE and item.hit < ui.emit.hit_count { rect = ui.emit.hits[@as(usize, item.hit)].rect }
-            return Node{ id = item.id, role = item.role, rect, flags = item.flags, value = item.value, label = path[path.len - @as(usize, item.label)..], path }
+            let at = @as(usize, item.text.start)
+            let text = ui.nodes.text[at..at + @as(usize, item.text.len)]
+            return Node{ id = item.id, role = item.role, rect, flags = item.flags, value = item.value, label = path[path.len - @as(usize, item.label)..], path, text }
         }
 
         // Whether `path` ends with `/` and `suffix`.

@@ -68,7 +68,8 @@ namespace ui {
             }
             key{ key, down, repeat, mods } => {
                 ui.input.pending.mods = mods
-                if down {
+                // Key::none only says which modifiers are held (a host sends it for Shift itself).
+                if down and key != Key::none {
                     let n = @as(usize, ui.input.pending.keys)
                     if n < ui.input.pending_keys.len {
                         ui.input.pending_keys[n] = KeyStroke{ key, mods, repeat }
@@ -123,6 +124,12 @@ namespace ui {
     // Where the pointer is in this frame's input, in device pixels.
     fn get_pointer { ui: Ui } -> Point {
         return Point{ x = ui.input.now.x, y = ui.input.now.y }
+    }
+
+    // The modifiers held in this frame's input (MOD_SHIFT, MOD_CTRL, MOD_ALT), as the last key event
+    // before the frame gave them: what a Shift+click reads.
+    fn get_mods { ui: Ui } -> u8 {
+        return ui.input.now.mods
     }
 
     // The sum of every frame's `dt` so far, in seconds.

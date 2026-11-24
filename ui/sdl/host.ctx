@@ -252,8 +252,8 @@ namespace ui_sdl {
         return Event::other{ kind }
     }
 
-    // The core's event for a host event, or null for one the core does not take (quit, resize, a
-    // key it has no name for). Pointer positions are window coordinates times `pointer_scale`
+    // The core's event for a host event, or null for one the core does not take (quit, resize). A
+    // key it has no name for is Key::none, which carries the modifiers held. Pointer positions are window coordinates times `pointer_scale`
     // (Sizes.pointer_scale), rounded down: the device pixel the pointer's coordinate begins in. A
     // button event's position comes as the motion events before it: SDL sends a motion to where a
     // button goes down.
@@ -265,7 +265,9 @@ namespace ui_sdl {
             leave => { return ui::Event::pointer_leave }
             wheel{ dx, dy } => { return ui::Event::wheel{ dx, dy } }
             key{ down, repeat, keycode, mods } => {
-                let k = to_key{ keycode } ifnull { return null }
+                // A key the core has no name for (Shift itself among them) still says which
+                // modifiers are held, for a Shift+click.
+                let k = to_key{ keycode } ifnull ui::Key::none
                 return ui::Event::key{ key = k, down, repeat, mods = to_mods{ mods } }
             }
             text{ bytes, len } => { return ui::Event::text{ bytes, len } }

@@ -1,0 +1,88 @@
+== at rest: a hint, a name, a password, a long text, not enabled
+frame 240x240
+clip 1 18,10 200x28
+clip 2 18,46 200x28
+clip 3 18,82 200x28
+clip 4 18,118 200x28
+clip 5 18,154 200x28
+rect 10,10 216x28 fill=191C22FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 18,17 font=0 size=14 A6ACB8FF clip=1 "Your name"
+rect 10,46 216x28 fill=191C22FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 18,53 font=0 size=14 E4E7EDFF clip=2 "Ada Lovelace"
+rect 10,82 216x28 fill=191C22FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 18,89 font=0 size=14 E4E7EDFF clip=3 "*******"
+rect 10,118 216x28 fill=191C22FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 18,125 font=0 size=14 E4E7EDFF clip=4 "A line that is much longer than its field is wide"
+rect 10,154 216x28 fill=303641FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 18,161 font=0 size=14 747D8CFF clip=5 "Read only"
+== the name hovered
+frame 240x240
+clip 1 18,10 200x28
+clip 2 18,46 200x28
+clip 3 18,82 200x28
+clip 4 18,118 200x28
+clip 5 18,154 200x28
+rect 10,10 216x28 fill=191C22FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 18,17 font=0 size=14 A6ACB8FF clip=1 "Your name"
+rect 10,46 216x28 fill=191C22FF radius=4,4,4,4 border=1,1,1,1 888E9AFF,888E9AFF,888E9AFF,888E9AFF clip=0
+text 18,53 font=0 size=14 E4E7EDFF clip=2 "Ada Lovelace"
+rect 10,82 216x28 fill=191C22FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 18,89 font=0 size=14 E4E7EDFF clip=3 "*******"
+rect 10,118 216x28 fill=191C22FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 18,125 font=0 size=14 E4E7EDFF clip=4 "A line that is much longer than its field is wide"
+rect 10,154 216x28 fill=303641FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 18,161 font=0 size=14 747D8CFF clip=5 "Read only"
+== the name focused, its caret at the end
+frame 240x240
+clip 1 18,10 200x28
+clip 2 18,46 200x28
+clip 3 18,82 200x28
+clip 4 18,118 200x28
+clip 5 18,154 200x28
+rect 10,10 216x28 fill=191C22FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 18,17 font=0 size=14 A6ACB8FF clip=1 "Your name"
+rect 10,46 216x28 fill=191C22FF radius=4,4,4,4 border=1,1,1,1 7AA7FFFF,7AA7FFFF,7AA7FFFF,7AA7FFFF clip=0
+text 18,53 font=0 size=14 E4E7EDFF clip=2 "Ada Lovelace"
+rect 102,53 1x14 fill=E4E7EDFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=2
+rect 10,82 216x28 fill=191C22FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 18,89 font=0 size=14 E4E7EDFF clip=3 "*******"
+rect 10,118 216x28 fill=191C22FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 18,125 font=0 size=14 E4E7EDFF clip=4 "A line that is much longer than its field is wide"
+rect 10,154 216x28 fill=303641FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 18,161 font=0 size=14 747D8CFF clip=5 "Read only"
+== its last word selected
+frame 240x240
+clip 1 18,10 200x28
+clip 2 18,46 200x28
+clip 3 18,82 200x28
+clip 4 18,118 200x28
+clip 5 18,154 200x28
+rect 10,10 216x28 fill=191C22FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 18,17 font=0 size=14 A6ACB8FF clip=1 "Your name"
+rect 10,46 216x28 fill=191C22FF radius=4,4,4,4 border=1,1,1,1 7AA7FFFF,7AA7FFFF,7AA7FFFF,7AA7FFFF clip=0
+rect 46,53 56x14 fill=293D60FF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=2
+text 18,53 font=0 size=14 E4E7EDFF clip=2 "Ada Lovelace"
+rect 10,82 216x28 fill=191C22FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 18,89 font=0 size=14 E4E7EDFF clip=3 "*******"
+rect 10,118 216x28 fill=191C22FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 18,125 font=0 size=14 E4E7EDFF clip=4 "A line that is much longer than its field is wide"
+rect 10,154 216x28 fill=303641FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 18,161 font=0 size=14 747D8CFF clip=5 "Read only"
+== the long text focused at its end, scrolled
+frame 240x240
+clip 1 18,10 200x28
+clip 2 18,46 200x28
+clip 3 18,82 200x28
+clip 4 18,118 200x28
+clip 5 18,154 200x28
+rect 10,10 216x28 fill=191C22FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 18,17 font=0 size=14 A6ACB8FF clip=1 "Your name"
+rect 10,46 216x28 fill=191C22FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 18,53 font=0 size=14 E4E7EDFF clip=2 "Ada Lovelace"
+rect 10,82 216x28 fill=191C22FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 18,89 font=0 size=14 E4E7EDFF clip=3 "*******"
+rect 10,118 216x28 fill=191C22FF radius=4,4,4,4 border=1,1,1,1 7AA7FFFF,7AA7FFFF,7AA7FFFF,7AA7FFFF clip=0
+text -126,125 font=0 size=14 E4E7EDFF clip=4 "A line that is much longer than its field is wide"
+rect 217,125 1x14 fill=E4E7EDFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=4
+rect 10,154 216x28 fill=303641FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 18,161 font=0 size=14 747D8CFF clip=5 "Read only"

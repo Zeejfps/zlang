@@ -1,0 +1,6 @@
+== the looks' nodes, the name focused
+node text_field "hint" 10,10 216x28 flags=0 value=0 text=""
+node text_field "name" 10,46 216x28 flags=16 value=3 text="Ada"
+node text_field "password" 10,82 216x28 flags=0 value=7 text="*******"
+node text_field "long" 10,118 216x28 flags=0 value=49 text="A line that is much longer than its field is wide"
+node text_field "off" 10,154 216x28 flags=1 value=9 text="Read only"

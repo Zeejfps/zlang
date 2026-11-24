@@ -1,4 +1,1033 @@
-// The checks of the text field and number entry (plan section 7, stage 10), with their goldens
-// named golden/field-*.txt. `main` calls `check_field`; the stage that builds those widgets writes
-// its checks in it, using the helpers of main.ctx.
-fn check_field { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, update: bool } {}
+// Stage 10's checks: the text field and the number entry of ui/widgets/field.ctx.
+//
+//  - Goldens (golden/field-*.txt): the looks of the field (a hint, text, a password, not enabled,
+//    a long text) at rest, hovered, focused with its caret, with a selection, and scrolled to the
+//    end of a long text, in both themes; the same at scale 1.5; the number entry at rest and typed
+//    in; and the nodes, with their text values.
+//  - Scripted, through the driver and its fake clipboard: typing; Home, End, the arrows, word steps
+//    and Shift extending both ways and collapsing; Ctrl+A; Backspace and Delete at both ends and by
+//    word; typing over a selection; copy, cut and paste, a paste with line breaks and one larger than
+//    the room; undo and redo across bursts of typing, a delete and a paste, an empty history, and
+//    the history emptied when focus moves; a full buffer; the filter and the maximum length; a click
+//    between the right characters; a double and a triple click, and a drag by words; a drag past
+//    the edge scrolling the text; an outline font with a ligature and a two-byte character (a fake
+//    provider); a password that leaks nothing; the requests (text input and its caret rectangle,
+//    the text cursor, frames for the blink); Enter; two fields and Tab; focus lost mid-drag; bad
+//    UTF-8 and a byte-encoded font; text the application changed; and the number entry dragged,
+//    typed in, put back with Escape and stepped with the keys.
+//
+// The numbers, at scale 1 in the tests' font at the themes' 14 units: a character is 7 pixels wide
+// and a line 14 high. A field is 28 high and padded 8 across, its line centred (7 above), so in a
+// column at (10, 10) 216 wide its text starts at x 18 and its line at y 17, and character i starts
+// at 18 + 7 i. The caret is 1 wide and 14 high; `Requests.text_rect` is where it is.
+
+fn check_field { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, update: bool } {
+    let out = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 262144 } iferr { return }
+    let scratch = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 262144 } iferr { return }
+    record_looks{ &io, &fs, &t, &heap, out, scratch, update, dark = true, name = "field-dark" }
+    record_looks{ &io, &fs, &t, &heap, out, scratch, update, dark = false, name = "field-light" }
+    record_scaled_field{ &io, &fs, &t, &heap, out, scratch, update }
+    record_number{ &io, &fs, &t, &heap, out, scratch, update }
+    record_field_nodes{ &io, &fs, &t, &heap, out, scratch, update }
+    check_typing{ &io, &t, &heap }
+    check_moves{ &io, &t, &heap }
+    check_deletes{ &io, &t, &heap }
+    check_clipboard{ &io, &t, &heap }
+    check_paste_room{ &io, &t, &heap }
+    check_undo{ &io, &t, &heap }
+    check_full{ &io, &t, &heap }
+    check_rules{ &io, &t, &heap }
+    check_click{ &io, &t, &heap }
+    check_word_click{ &io, &t, &heap }
+    check_drag_scroll{ &io, &t, &heap }
+    check_outline{ &io, &t, &heap }
+    check_password{ &io, &t, &heap }
+    check_requests{ &io, &t, &heap }
+    check_enter{ &io, &t, &heap }
+    check_two_fields{ &io, &t, &heap }
+    check_focus_lost{ &io, &t, &heap }
+    check_bad_text{ &io, &t, &heap }
+    check_app_change{ &io, &t, &heap }
+    check_number{ &io, &t, &heap }
+}
+
+// ---- the scenes
+
+enum Look: u8 { one, looks, number }
+
+// The application's side: the buffers the fields edit, and what the calls said.
+struct Form {
+    look: Look,
+    name: [64]u8, name_len: usize,
+    note: [16]u8, note_len: usize,
+    long: [64]u8, long_len: usize,
+    rules: ui::TextRules, note_rules: ui::TextRules,
+    enabled: bool,
+    second: bool,               // the note field is shown after the name field
+    entered: u32, note_entered: u32,
+    number: f32, range: ui::Range, changes: u32,
+}
+
+fn make_form { look: Look } -> Form {
+    let mut f: Form
+    f.look = look
+    f.rules = ui::TextRules{ .. }
+    f.note_rules = ui::TextRules{ .. }
+    f.enabled = true
+    f.number = 25.0
+    f.range = ui::Range{ min = 0.0, max = 100.0, step = 1.0, digits = 0 }
+    return f
+}
+
+fn set_name { mut f: Form, text: []u8 } {
+    slice::copy(u8){ dst = f.name[..text.len], src = text }
+    f.name_len = text.len
+}
+
+fn set_note { mut f: Form, text: []u8 } {
+    slice::copy(u8){ dst = f.note[..text.len], src = text }
+    f.note_len = text.len
+}
+
+// The looks scene's texts: a name, a password, a long text.
+fn fill_looks { mut f: Form, name: []u8 } {
+    set_name{ &f, text = name }
+    set_note{ &f, text = "hunter2" }
+    let long = "A line that is much longer than its field is wide"
+    slice::copy(u8){ dst = f.long[..long.len], src = long }
+    f.long_len = long.len
+}
+
+fn get_name { f: *Form } -> []u8 { return f.name[..f.name_len] }
+fn get_note { f: *Form } -> []u8 { return f.note[..f.note_len] }
+
+fn is_text { a: []u8, b: []u8 } -> bool { return slice::eq_bytes{ a, b } }
+
+// The form's column: 216 units wide at (10, 10) units.
+fn show_form { mut ui: ui::Ui, mut f: Form } {
+    let left = ui::to_pixel_position{ ui, position = 10.0 }
+    let w = ui::to_pixels{ ui, length = 216.0 }
+    let h = ui::to_pixels{ ui, length = 600.0 }
+    let mut box = ui::place_pixels{ rect = ui::Rect{ x = left, y = left, w, h } }
+    box.gap = ui.theme.gap
+    let col = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box }
+    match f.look {
+        one => {
+            show_name{ &ui, &f }
+            if f.second { show_note{ &ui, &f } }
+        }
+        looks => {
+            let mut empty: [8]u8
+            let mut hinted = ui::TextBuf{ bytes = empty[..], len = 0 }
+            _ = ui::add_text_field{ &ui, label = "hint", text = &hinted, rules = ui::TextRules{ hint = "Your name", .. }, opts = ui::Opts{ .. } }
+            show_name{ &ui, &f }
+            let mut secret = ui::TextBuf{ bytes = f.note[..], len = f.note_len }
+            _ = ui::add_text_field{ &ui, label = "password", text = &secret, rules = ui::TextRules{ password = true, .. }, opts = ui::Opts{ .. } }
+            f.note_len = secret.len
+            let mut long = ui::TextBuf{ bytes = f.long[..], len = f.long_len }
+            _ = ui::add_text_field{ &ui, label = "long", text = &long, rules = ui::TextRules{ .. }, opts = ui::Opts{ .. } }
+            f.long_len = long.len
+            let mut read_only: [9]u8 = "Read only"
+            let mut off = ui::TextBuf{ bytes = read_only[..], len = 9 }
+            _ = ui::add_text_field{ &ui, label = "off", text = &off, rules = ui::TextRules{ .. }, opts = ui::Opts{ enabled = false, .. } }
+        }
+        number => {
+            if ui::add_number{ &ui, label = "count", value = &f.number, range = f.range, opts = ui::Opts{ enabled = f.enabled, .. } } { f.changes = f.changes + 1 }
+            if f.second { show_name{ &ui, &f } }
+        }
+    }
+    ui::end{ &ui, scope = col }
+}
+
+fn show_name { mut ui: ui::Ui, mut f: Form } {
+    let mut buf = ui::TextBuf{ bytes = f.name[..], len = f.name_len }
+    if ui::add_text_field{ &ui, label = "name", text = &buf, rules = f.rules, opts = ui::Opts{ enabled = f.enabled, .. } } { f.entered = f.entered + 1 }
+    f.name_len = buf.len
+}
+
+fn show_note { mut ui: ui::Ui, mut f: Form } {
+    let mut buf = ui::TextBuf{ bytes = f.note[..], len = f.note_len }
+    if ui::add_text_field{ &ui, label = "note", text = &buf, rules = f.note_rules, opts = ui::Opts{ .. } } { f.note_entered = f.note_entered + 1 }
+    f.note_len = buf.len
+}
+
+// ---- driving it
+
+// A Ui and a driver of 240 by 160 pixels at scale 1, two frames run.
+struct Rig { ui: ui::Ui, d: ui_test::Driver }
+
+fn make_rig { mut heap: arena::Arena, dark: bool, scale: f32 } -> !Rig {
+    let ui = try make_ui{ &heap, dark }
+    let w = ui::round_pixels{ v = 240.0 * scale }
+    let h = ui::round_pixels{ v = 240.0 * scale }
+    let d = try make_driver{ &heap, width = w, height = h, scale }
+    return Rig{ ui, d }
+}
+
+fn step { mut r: Rig, mut f: Form } {
+    ui_test::step_frame{ d = &r.d, ui = &r.ui, show = show_form{ &f, _ } }
+}
+
+fn press_key { mut r: Rig, mut f: Form, key: ui::Key, mods: u8 } {
+    _ = ui_test::tap_key{ ui = &r.ui, key, mods }
+    step{ &r, &f }
+}
+
+fn type_in { mut r: Rig, mut f: Form, text: []u8 } {
+    _ = ui_test::type_text{ ui = &r.ui, text }
+    step{ &r, &f }
+}
+
+// Where the field at `path` has its text in the last frame: its rectangle less the padding across,
+// its line's height, centred down it.
+fn get_area { ui: ui::Ui, path: []u8 } -> ui::Rect {
+    let n = ui::find_node{ ui, path } ifnull { return ui::Rect{ .. } }
+    let pad = ui::to_pixels{ ui, length = 8.0 }
+    let size = ui::to_font_size{ ui, size = ui.theme.font_size }
+    let line = size
+    return ui::Rect{ x = n.rect.x + pad, y = n.rect.y + (n.rect.h - line) / 2, w = n.rect.w - 2 * pad, h = line }
+}
+
+// A press of the left button at (x, y) (the `clicks`-th of a series), and its release, a frame each.
+fn click_at { mut r: Rig, mut f: Form, x: i32, y: i32, clicks: u8 } {
+    _ = ui_test::move_pointer{ ui = &r.ui, x, y }
+    _ = ui_test::push_button{ ui = &r.ui, button = 0, down = true, clicks }
+    step{ &r, &f }
+    _ = ui_test::push_button{ ui = &r.ui, button = 0, down = false, clicks }
+    step{ &r, &f }
+}
+
+// A click on the field at `path` at its text's character `index` (test font), a pixel after its
+// edge so it lands on that edge.
+fn click_index { mut r: Rig, mut f: Form, path: []u8, index: i32 } {
+    let a = get_area{ ui = r.ui, path }
+    click_at{ &r, &f, x = a.x + 7 * index + 1, y = a.y + 3, clicks = 1 }
+}
+
+// The caret's character index in the field at `path` (test font, no scroll): from the caret
+// rectangle the last frame asked text input for.
+fn get_caret { r: Rig, path: []u8 } -> i32 {
+    let a = get_area{ ui = r.ui, path }
+    let rect = r.d.requests.text_rect
+    if not r.d.requests.text_input or rect.w <= 0 { return -1 }
+    return (rect.x - a.x) / 7
+}
+
+// The selection rectangle of the last frame, as character indexes [lo, hi) of the field at
+// `path` (test font, no scroll); -1, -1 when there is none.
+struct Sel { lo: i32, hi: i32 }
+
+fn get_selection { r: Rig, path: []u8 } -> Sel {
+    let a = get_area{ ui = r.ui, path }
+    let c = r.ui.theme.selection
+    for i in 0..@as(usize, r.ui.draw.count) {
+        match r.ui.draw.cmds[i] {
+            rect{ rect, style } => {
+                if style.fill.r == c.r and style.fill.g == c.g and style.fill.b == c.b and style.fill.a == c.a and rect.h == a.h {
+                    return Sel{ lo = (rect.x - a.x) / 7, hi = (rect.x + rect.w - a.x) / 7 }
+                }
+            }
+            else => {}
+        }
+    }
+    return Sel{ lo = -1, hi = -1 }
+}
+
+fn is_sel { s: Sel, lo: i32, hi: i32 } -> bool { return s.lo == lo and s.hi == hi }
+
+// Focuses the name field at its end, with `text` in it.
+fn focus_name { mut r: Rig, mut f: Form, text: []u8 } {
+    set_name{ &f, text }
+    step{ &r, &f }
+    step{ &r, &f }
+    let a = get_area{ ui = r.ui, path = "name" }
+    click_at{ &r, &f, x = a.x + a.w - 2, y = a.y + 3, clicks = 1 }
+}
+
+fn is_clean_rig { r: Rig } -> bool { return r.d.unclean == 0 }
+
+// Whether a text shape of the last frame holds `needle`.
+fn has_text_shape { ui: ui::Ui, needle: []u8 } -> bool {
+    for i in 0..@as(usize, ui.draw.count) {
+        match ui.draw.cmds[i] {
+            text{ text } => {
+                let s = ui::draw::get_text{ list = ui.draw, span = text }
+                if s.len >= needle.len {
+                    for at in 0..s.len - needle.len + 1 {
+                        if slice::eq_bytes{ a = s[at..at + needle.len], b = needle } { return true }
+                    }
+                }
+            }
+            else => {}
+        }
+    }
+    return false
+}
+
+// ---- goldens
+
+// The five looks in one column, a frame each: at rest; the name hovered; the name focused with its
+// caret at its end; the name's last word selected; the long text focused at its end, scrolled.
+fn record_looks {
+    mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool,
+    dark: bool, name: []u8,
+} {
+    let mut sink = ui_rec::make_sink{ bytes = out }
+    let mut r = make_rig{ &heap, dark, scale = 1.0 } iferr { return }
+    let mut f = make_form{ look = Look::looks }
+    fill_looks{ &f, name = "Ada Lovelace" }
+    step{ &r, &f }
+    step{ &r, &f }
+    write_frame{ &sink, ui = r.ui, name = "at rest: a hint, a name, a password, a long text, not enabled" } iferr { return }
+    let a = get_area{ ui = r.ui, path = "name" }
+    _ = ui_test::move_pointer{ ui = &r.ui, x = a.x + 3, y = a.y + 3 }
+    step{ &r, &f }
+    write_frame{ &sink, ui = r.ui, name = "the name hovered" } iferr { return }
+    let cursor = r.d.requests.cursor
+    click_at{ &r, &f, x = a.x + a.w - 2, y = a.y + 3, clicks = 1 }
+    write_frame{ &sink, ui = r.ui, name = "the name focused, its caret at the end" } iferr { return }
+    press_key{ &r, &f, key = ui::Key::left, mods = ui::MOD_CTRL | ui::MOD_SHIFT }
+    write_frame{ &sink, ui = r.ui, name = "its last word selected" } iferr { return }
+    let l = get_area{ ui = r.ui, path = "long" }
+    click_at{ &r, &f, x = l.x + 3, y = l.y + 3, clicks = 1 }
+    press_key{ &r, &f, key = ui::Key::end, mods = 0 }
+    write_frame{ &sink, ui = r.ui, name = "the long text focused at its end, scrolled" } iferr { return }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name, actual = ui_rec::get_text{ sink }, scratch, update }
+    ui_test::expect{ &io, &t, ok = is_clean_rig{ r } and sink.lost == 0, what = "looks: every frame is clean" }
+    ui_test::expect{ &io, &t, ok = cursor == ui::Cursor::text, what = "looks: the text cursor over a field" }
+    ui_test::expect{ &io, &t, ok = not has_text_shape{ ui = r.ui, needle = "hunter2" } and has_text_shape{ ui = r.ui, needle = "*******" },
+        what = "looks: a password is drawn as its mask" }
+}
+
+// The same column at scale 1.5, the name focused: every border the same on all four sides, the
+// caret 2 pixels wide (1 unit) and the line 21 high (14 units).
+fn record_scaled_field { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } {
+    let mut sink = ui_rec::make_sink{ bytes = out }
+    let mut r = make_rig{ &heap, dark = true, scale = 1.5 } iferr { return }
+    let mut f = make_form{ look = Look::looks }
+    fill_looks{ &f, name = "Ada" }
+    step{ &r, &f }
+    step{ &r, &f }
+    let n = ui::find_node{ ui = r.ui, path = "name" } ifnull ui::Node{ .. }
+    click_at{ &r, &f, x = n.rect.x + n.rect.w - 4, y = n.rect.y + n.rect.h / 2, clicks = 1 }
+    write_frame{ &sink, ui = r.ui, name = "at scale 1.5, the name focused" } iferr { return }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "field-scale", actual = ui_rec::get_text{ sink }, scratch, update }
+    let rect = r.d.requests.text_rect
+    // The name's text starts 12 pixels in (8 units), at 15 + 12; "Ada" is three characters of
+    // 10.5 pixels, 31.5, the caret's offset the nearest pixel, 32.
+    ui_test::expect{ &io, &t, ok = has_even_borders{ ui = r.ui } and rect.w == 2 and rect.h == 21 and rect.x == n.rect.x + 12 + 32,
+        what = "scale 1.5: even borders, a caret 2 wide and a line 21 high at the caret offset's nearest pixel" }
+    ui_test::expect{ &io, &t, ok = n.rect.h == 42 and is_clean_rig{ r }, what = "scale 1.5: a field 42 high, every frame clean" }
+}
+
+// The number entry at rest, focused by a click (typed in, its text selected), and not enabled.
+fn record_number { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } {
+    let mut sink = ui_rec::make_sink{ bytes = out }
+    let mut r = make_rig{ &heap, dark = true, scale = 1.0 } iferr { return }
+    let mut f = make_form{ look = Look::number }
+    step{ &r, &f }
+    step{ &r, &f }
+    write_frame{ &sink, ui = r.ui, name = "a number at rest, against its end" } iferr { return }
+    let n = ui::find_node{ ui = r.ui, path = "count" } ifnull ui::Node{ .. }
+    click_at{ &r, &f, x = n.rect.x + n.rect.w / 2, y = n.rect.y + n.rect.h / 2, clicks = 1 }
+    write_frame{ &sink, ui = r.ui, name = "clicked: typed in, its text selected" } iferr { return }
+    f.enabled = false
+    step{ &r, &f }
+    write_frame{ &sink, ui = r.ui, name = "not enabled" } iferr { return }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "field-number", actual = ui_rec::get_text{ sink }, scratch, update }
+    ui_test::expect{ &io, &t, ok = is_clean_rig{ r }, what = "number looks: every frame is clean" }
+}
+
+// The nodes of the looks, the name focused: role, path, rectangle, flags, value (characters) and
+// the text value, a password's its mask.
+fn record_field_nodes { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } {
+    let mut sink = ui_rec::make_sink{ bytes = out }
+    let mut r = make_rig{ &heap, dark = true, scale = 1.0 } iferr { return }
+    let mut f = make_form{ look = Look::looks }
+    fill_looks{ &f, name = "Ada" }
+    step{ &r, &f }
+    click_index{ &r, &f, path = "name", index = 1 }
+    step{ &r, &f }
+    write_text_nodes{ &sink, ui = r.ui, name = "the looks' nodes, the name focused" } iferr { return }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "field-nodes", actual = ui_rec::get_text{ sink }, scratch, update }
+    let p = ui::find_node{ ui = r.ui, path = "password" } ifnull ui::Node{ .. }
+    ui_test::expect{ &io, &t, ok = p.role == ui::Role::text_field and is_text{ a = p.text, b = "*******" } and p.value == 7.0,
+        what = "nodes: a password's node has its mask and its count, not its text" }
+    ui_test::expect{ &io, &t, ok = is_clean_rig{ r }, what = "nodes: every frame is clean" }
+}
+
+fn write_text_nodes { mut sink: ui_rec::Sink, ui: ui::Ui, name: []u8 } -> ! {
+    try @fmt(&sink, "== {}\n", name)
+    for i in 0..ui::get_node_count{ ui } {
+        let n = ui::get_node{ ui, index = i } ifnull { continue }
+        try @fmt(&sink, "node {} \"{}\" {} flags={} value=", name_role{ role = n.role }, n.path, ui_rec::write_rect{ rect = n.rect, _ }, n.flags)
+        try ui_rec::write_number{ &sink, v = n.value }
+        try @fmt(&sink, " text=\"{}\"\n", n.text)
+    }
+}
+
+// ---- scripted
+
+// Typing goes in at the caret, a frame's text in one piece or a character a frame.
+fn check_typing { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut r = make_rig{ &heap, dark = true, scale = 1.0 } iferr { return }
+    let mut f = make_form{ look = Look::one }
+    focus_name{ &r, &f, text = "" }
+    type_in{ &r, &f, text = "hello" }
+    type_in{ &r, &f, text = " " }
+    type_in{ &r, &f, text = "world" }
+    ui_test::expect{ &io, &t, ok = is_text{ a = get_name{ f = &f }, b = "hello world" } and get_caret{ r, path = "name" } == 11, what = "typing: the text goes in at the caret, which follows it" }
+    press_key{ &r, &f, key = ui::Key::left, mods = 0 }
+    press_key{ &r, &f, key = ui::Key::left, mods = 0 }
+    type_in{ &r, &f, text = "X" }
+    ui_test::expect{ &io, &t, ok = is_text{ a = get_name{ f = &f }, b = "hello worXld" } and get_caret{ r, path = "name" } == 10, what = "typing: in the middle, after the caret moved back" }
+    ui_test::expect{ &io, &t, ok = is_clean_rig{ r }, what = "typing: every frame is clean" }
+}
+
+// Home, End, the arrows, the word steps, Shift extending both ways and collapsing, Ctrl+A.
+fn check_moves { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut r = make_rig{ &heap, dark = true, scale = 1.0 } iferr { return }
+    let mut f = make_form{ look = Look::one }
+    focus_name{ &r, &f, text = "one two three" }
+    let at_end = get_caret{ r, path = "name" } == 13
+    press_key{ &r, &f, key = ui::Key::home, mods = 0 }
+    let home = get_caret{ r, path = "name" } == 0
+    press_key{ &r, &f, key = ui::Key::end, mods = 0 }
+    let end = get_caret{ r, path = "name" } == 13
+    ui_test::expect{ &io, &t, ok = at_end and home and end, what = "moves: a click past the end, Home and End" }
+    press_key{ &r, &f, key = ui::Key::left, mods = ui::MOD_CTRL }
+    let w1 = get_caret{ r, path = "name" } == 8
+    press_key{ &r, &f, key = ui::Key::left, mods = ui::MOD_CTRL }
+    let w2 = get_caret{ r, path = "name" } == 4
+    press_key{ &r, &f, key = ui::Key::left, mods = ui::MOD_CTRL }
+    let w3 = get_caret{ r, path = "name" } == 0
+    press_key{ &r, &f, key = ui::Key::right, mods = ui::MOD_CTRL }
+    let w4 = get_caret{ r, path = "name" } == 4
+    press_key{ &r, &f, key = ui::Key::right, mods = ui::MOD_CTRL }
+    press_key{ &r, &f, key = ui::Key::right, mods = ui::MOD_CTRL }
+    let w5 = get_caret{ r, path = "name" } == 13
+    ui_test::expect{ &io, &t, ok = w1 and w2 and w3 and w4 and w5, what = "moves: Ctrl+Left and Ctrl+Right step by word: 8, 4, 0, then 4 and 13" }
+
+    // From 5: Shift+Right twice selects 5..7; Shift+Left four times crosses the anchor to 3..5.
+    press_key{ &r, &f, key = ui::Key::home, mods = 0 }
+    for _ in 0..5 { _ = ui_test::tap_key{ ui = &r.ui, key = ui::Key::right, mods = 0 } }
+    step{ &r, &f }
+    press_key{ &r, &f, key = ui::Key::right, mods = ui::MOD_SHIFT }
+    press_key{ &r, &f, key = ui::Key::right, mods = ui::MOD_SHIFT }
+    let right = is_sel{ s = get_selection{ r, path = "name" }, lo = 5, hi = 7 }
+    for _ in 0..4 { _ = ui_test::tap_key{ ui = &r.ui, key = ui::Key::left, mods = ui::MOD_SHIFT } }
+    step{ &r, &f }
+    let left = is_sel{ s = get_selection{ r, path = "name" }, lo = 3, hi = 5 }
+    ui_test::expect{ &io, &t, ok = right and left, what = "moves: Shift extends right, then back across the anchor to the left" }
+    press_key{ &r, &f, key = ui::Key::right, mods = 0 }
+    let to_end = get_caret{ r, path = "name" } == 5 and is_sel{ s = get_selection{ r, path = "name" }, lo = -1, hi = -1 }
+    press_key{ &r, &f, key = ui::Key::left, mods = ui::MOD_SHIFT }
+    press_key{ &r, &f, key = ui::Key::left, mods = ui::MOD_SHIFT }
+    press_key{ &r, &f, key = ui::Key::left, mods = 0 }
+    let to_start = get_caret{ r, path = "name" } == 3
+    ui_test::expect{ &io, &t, ok = to_end and to_start, what = "moves: a plain Right collapses a selection to its end, a plain Left to its start" }
+    press_key{ &r, &f, key = ui::Key::a, mods = ui::MOD_CTRL }
+    ui_test::expect{ &io, &t, ok = is_sel{ s = get_selection{ r, path = "name" }, lo = 0, hi = 13 }, what = "moves: Ctrl+A selects all" }
+    press_key{ &r, &f, key = ui::Key::home, mods = ui::MOD_SHIFT }
+    press_key{ &r, &f, key = ui::Key::end, mods = ui::MOD_SHIFT }
+    ui_test::expect{ &io, &t, ok = is_sel{ s = get_selection{ r, path = "name" }, lo = 0, hi = 13 }, what = "moves: Shift+Home and Shift+End extend to the ends" }
+    ui_test::expect{ &io, &t, ok = is_clean_rig{ r } and is_text{ a = get_name{ f = &f }, b = "one two three" }, what = "moves: every frame clean, the text untouched" }
+}
+
+// Backspace and Delete at both ends and in the middle, by word, and typing over a selection.
+fn check_deletes { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut r = make_rig{ &heap, dark = true, scale = 1.0 } iferr { return }
+    let mut f = make_form{ look = Look::one }
+    focus_name{ &r, &f, text = "abc" }
+    press_key{ &r, &f, key = ui::Key::home, mods = 0 }
+    press_key{ &r, &f, key = ui::Key::backspace, mods = 0 }
+    let start_back = is_text{ a = get_name{ f = &f }, b = "abc" }
+    press_key{ &r, &f, key = ui::Key::delete, mods = 0 }
+    let start_delete = is_text{ a = get_name{ f = &f }, b = "bc" } and get_caret{ r, path = "name" } == 0
+    press_key{ &r, &f, key = ui::Key::end, mods = 0 }
+    press_key{ &r, &f, key = ui::Key::delete, mods = 0 }
+    let end_delete = is_text{ a = get_name{ f = &f }, b = "bc" }
+    press_key{ &r, &f, key = ui::Key::backspace, mods = 0 }
+    let end_back = is_text{ a = get_name{ f = &f }, b = "b" } and get_caret{ r, path = "name" } == 1
+    ui_test::expect{ &io, &t, ok = start_back and start_delete and end_delete and end_back,
+        what = "deletes: Backspace does nothing at the start and Delete nothing at the end; each takes its neighbour otherwise" }
+    set_name{ &f, text = "one two three" }
+    step{ &r, &f }
+    press_key{ &r, &f, key = ui::Key::end, mods = 0 }
+    press_key{ &r, &f, key = ui::Key::backspace, mods = ui::MOD_CTRL }
+    let back_word = is_text{ a = get_name{ f = &f }, b = "one two " }
+    press_key{ &r, &f, key = ui::Key::home, mods = 0 }
+    press_key{ &r, &f, key = ui::Key::delete, mods = ui::MOD_CTRL }
+    let delete_word = is_text{ a = get_name{ f = &f }, b = "two " }
+    ui_test::expect{ &io, &t, ok = back_word and delete_word, what = "deletes: Ctrl+Backspace and Ctrl+Delete take a word" }
+    press_key{ &r, &f, key = ui::Key::right, mods = ui::MOD_SHIFT }
+    press_key{ &r, &f, key = ui::Key::right, mods = ui::MOD_SHIFT }
+    type_in{ &r, &f, text = "XY" }
+    let over = is_text{ a = get_name{ f = &f }, b = "XYo " } and get_caret{ r, path = "name" } == 2
+    press_key{ &r, &f, key = ui::Key::home, mods = ui::MOD_SHIFT }
+    press_key{ &r, &f, key = ui::Key::delete, mods = 0 }
+    ui_test::expect{ &io, &t, ok = over and is_text{ a = get_name{ f = &f }, b = "o " }, what = "deletes: typing replaces a selection, and Delete takes one" }
+    ui_test::expect{ &io, &t, ok = is_clean_rig{ r }, what = "deletes: every frame is clean" }
+}
+
+// Copy, cut and paste through the driver's clipboard, and a paste with line breaks in it.
+fn check_clipboard { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut r = make_rig{ &heap, dark = true, scale = 1.0 } iferr { return }
+    let mut f = make_form{ look = Look::one }
+    focus_name{ &r, &f, text = "hello world" }
+    press_key{ &r, &f, key = ui::Key::left, mods = ui::MOD_CTRL | ui::MOD_SHIFT }
+    press_key{ &r, &f, key = ui::Key::c, mods = ui::MOD_CTRL }
+    let copied = is_text{ a = ui_test::get_clipboard{ d = r.d }, b = "world" } and is_text{ a = get_name{ f = &f }, b = "hello world" }
+    press_key{ &r, &f, key = ui::Key::x, mods = ui::MOD_CTRL }
+    let cut = is_text{ a = ui_test::get_clipboard{ d = r.d }, b = "world" } and is_text{ a = get_name{ f = &f }, b = "hello " }
+    press_key{ &r, &f, key = ui::Key::home, mods = 0 }
+    press_key{ &r, &f, key = ui::Key::v, mods = ui::MOD_CTRL }
+    let asked = r.d.requests.paste
+    step{ &r, &f }
+    let pasted = is_text{ a = get_name{ f = &f }, b = "worldhello " } and get_caret{ r, path = "name" } == 5
+    ui_test::expect{ &io, &t, ok = copied and cut and asked and pasted, what = "clipboard: Ctrl+C copies, Ctrl+X cuts, Ctrl+V asks and the paste goes in the frame after" }
+    ui_test::set_clipboard{ d = &r.d, text = "a\r\nb\nc\td" }
+    press_key{ &r, &f, key = ui::Key::a, mods = ui::MOD_CTRL }
+    press_key{ &r, &f, key = ui::Key::v, mods = ui::MOD_CTRL }
+    step{ &r, &f }
+    ui_test::expect{ &io, &t, ok = is_text{ a = get_name{ f = &f }, b = "a b c d" }, what = "clipboard: in one line a pasted line break (CR LF, LF) or tab is a space" }
+    press_key{ &r, &f, key = ui::Key::delete, mods = ui::MOD_SHIFT }
+    ui_test::expect{ &io, &t, ok = is_text{ a = get_name{ f = &f }, b = "a b c d" }, what = "clipboard: Shift+Delete with nothing selected cuts nothing" }
+    press_key{ &r, &f, key = ui::Key::home, mods = ui::MOD_SHIFT }
+    press_key{ &r, &f, key = ui::Key::delete, mods = ui::MOD_SHIFT }
+    ui_test::expect{ &io, &t, ok = get_name{ f = &f }.len == 0 and is_text{ a = ui_test::get_clipboard{ d = r.d }, b = "a b c d" }, what = "clipboard: Shift+Delete cuts a selection" }
+    ui_test::expect{ &io, &t, ok = is_clean_rig{ r }, what = "clipboard: every frame is clean" }
+}
+
+// A paste larger than the room takes the whole characters that fit, and never splits one.
+fn check_paste_room { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut r = make_rig{ &heap, dark = true, scale = 1.0 } iferr { return }
+    let mut f = make_form{ look = Look::one }
+    f.second = true
+    set_note{ &f, text = "0123456789" }
+    step{ &r, &f }
+    step{ &r, &f }
+    let a = get_area{ ui = r.ui, path = "note" }
+    click_at{ &r, &f, x = a.x + a.w - 2, y = a.y + 3, clicks = 1 }
+    ui_test::set_clipboard{ d = &r.d, text = "abcdefghij" }
+    press_key{ &r, &f, key = ui::Key::v, mods = ui::MOD_CTRL }
+    step{ &r, &f }
+    let six = is_text{ a = get_note{ f = &f }, b = "0123456789abcdef" }
+    // Three bytes left after Backspace: "ab" fits, the euro sign after it (three bytes) does not.
+    press_key{ &r, &f, key = ui::Key::backspace, mods = 0 }
+    press_key{ &r, &f, key = ui::Key::backspace, mods = 0 }
+    press_key{ &r, &f, key = ui::Key::backspace, mods = 0 }
+    press_key{ &r, &f, key = ui::Key::backspace, mods = 0 }
+    ui_test::set_clipboard{ d = &r.d, text = "ab\xE2\x82\xACcd" }
+    press_key{ &r, &f, key = ui::Key::v, mods = ui::MOD_CTRL }
+    step{ &r, &f }
+    ui_test::expect{ &io, &t, ok = six and is_text{ a = get_note{ f = &f }, b = "0123456789abab" },
+        what = "paste room: a paste takes the characters that fit, and stops at the first that does not" }
+    ui_test::expect{ &io, &t, ok = f.note_len <= f.note.len and is_clean_rig{ r }, what = "paste room: never past the buffer, every frame clean" }
+}
+
+// Undo and redo across a burst of typing, a word, a run of Backspace and a paste; an empty history
+// does nothing; the history is emptied when focus moves.
+fn check_undo { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut r = make_rig{ &heap, dark = true, scale = 1.0 } iferr { return }
+    let mut f = make_form{ look = Look::one }
+    focus_name{ &r, &f, text = "" }
+    type_in{ &r, &f, text = "hello" }
+    type_in{ &r, &f, text = " " }
+    let word = "world"
+    for i in 0..word.len { type_in{ &r, &f, text = word[i..i + 1] } }
+    press_key{ &r, &f, key = ui::Key::backspace, mods = 0 }
+    press_key{ &r, &f, key = ui::Key::backspace, mods = 0 }
+    ui_test::set_clipboard{ d = &r.d, text = "XY" }
+    press_key{ &r, &f, key = ui::Key::v, mods = ui::MOD_CTRL }
+    step{ &r, &f }
+    let built = is_text{ a = get_name{ f = &f }, b = "hello worXY" }
+    press_key{ &r, &f, key = ui::Key::z, mods = ui::MOD_CTRL }
+    let u1 = is_text{ a = get_name{ f = &f }, b = "hello wor" }
+    press_key{ &r, &f, key = ui::Key::z, mods = ui::MOD_CTRL }
+    let u2 = is_text{ a = get_name{ f = &f }, b = "hello world" } and get_caret{ r, path = "name" } == 11
+    press_key{ &r, &f, key = ui::Key::z, mods = ui::MOD_CTRL }
+    let u3 = is_text{ a = get_name{ f = &f }, b = "hello " }
+    press_key{ &r, &f, key = ui::Key::z, mods = ui::MOD_CTRL }
+    let u4 = get_name{ f = &f }.len == 0
+    press_key{ &r, &f, key = ui::Key::z, mods = ui::MOD_CTRL }
+    let u5 = get_name{ f = &f }.len == 0
+    ui_test::expect{ &io, &t, ok = built and u1 and u2 and u3 and u4,
+        what = "undo: the paste, the run of Backspace, the word after the space, then the first burst with its space" }
+    ui_test::expect{ &io, &t, ok = u5, what = "undo: with nothing left to undo, nothing changes" }
+    press_key{ &r, &f, key = ui::Key::y, mods = ui::MOD_CTRL }
+    let r1 = is_text{ a = get_name{ f = &f }, b = "hello " }
+    press_key{ &r, &f, key = ui::Key::z, mods = ui::MOD_CTRL | ui::MOD_SHIFT }
+    press_key{ &r, &f, key = ui::Key::y, mods = ui::MOD_CTRL }
+    press_key{ &r, &f, key = ui::Key::y, mods = ui::MOD_CTRL }
+    let r2 = is_text{ a = get_name{ f = &f }, b = "hello worXY" } and get_caret{ r, path = "name" } == 11
+    press_key{ &r, &f, key = ui::Key::y, mods = ui::MOD_CTRL }
+    ui_test::expect{ &io, &t, ok = r1 and r2 and is_text{ a = get_name{ f = &f }, b = "hello worXY" }, what = "undo: Ctrl+Y and Ctrl+Shift+Z redo each in turn, and no more" }
+    press_key{ &r, &f, key = ui::Key::z, mods = ui::MOD_CTRL }
+    type_in{ &r, &f, text = "!" }
+    press_key{ &r, &f, key = ui::Key::y, mods = ui::MOD_CTRL }
+    ui_test::expect{ &io, &t, ok = is_text{ a = get_name{ f = &f }, b = "hello wor!" }, what = "undo: a new edit drops what could be redone" }
+    // A click on empty space takes the focus away, which empties the history.
+    click_at{ &r, &f, x = 200, y = 200, clicks = 1 }
+    let away = not r.d.requests.text_input
+    click_index{ &r, &f, path = "name", index = 3 }
+    press_key{ &r, &f, key = ui::Key::z, mods = ui::MOD_CTRL }
+    ui_test::expect{ &io, &t, ok = away and is_text{ a = get_name{ f = &f }, b = "hello wor!" }, what = "undo: focus that moves away empties the history" }
+    ui_test::expect{ &io, &t, ok = is_clean_rig{ r }, what = "undo: every frame is clean" }
+}
+
+// A full buffer refuses input and keeps its bytes; with a selection it takes what fits in its
+// place.
+fn check_full { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut r = make_rig{ &heap, dark = true, scale = 1.0 } iferr { return }
+    let mut f = make_form{ look = Look::one }
+    f.second = true
+    set_note{ &f, text = "abcdefghijklmnop" }
+    step{ &r, &f }
+    step{ &r, &f }
+    let a = get_area{ ui = r.ui, path = "note" }
+    click_at{ &r, &f, x = a.x + 7 * 4 + 1, y = a.y + 3, clicks = 1 }
+    type_in{ &r, &f, text = "XYZ" }
+    let refused = is_text{ a = get_note{ f = &f }, b = "abcdefghijklmnop" } and get_caret{ r, path = "note" } == 4
+    press_key{ &r, &f, key = ui::Key::right, mods = ui::MOD_SHIFT }
+    type_in{ &r, &f, text = "XYZ" }
+    let replaced = is_text{ a = get_note{ f = &f }, b = "abcdXfghijklmnop" }
+    ui_test::expect{ &io, &t, ok = refused and replaced and f.note_len == 16, what = "full: a full buffer refuses input, and a selection gives room for what fits" }
+    press_key{ &r, &f, key = ui::Key::v, mods = ui::MOD_CTRL }
+    step{ &r, &f }
+    ui_test::expect{ &io, &t, ok = is_text{ a = get_note{ f = &f }, b = "abcdXfghijklmnop" } and is_clean_rig{ r }, what = "full: a paste into a full buffer changes nothing" }
+}
+
+fn is_digit { c: u32 } -> bool { return c >= '0' and c <= '9' }
+
+// The filter and the maximum length, in characters.
+fn check_rules { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut r = make_rig{ &heap, dark = true, scale = 1.0 } iferr { return }
+    let mut f = make_form{ look = Look::one }
+    f.rules = ui::TextRules{ filter = is_digit, .. }
+    focus_name{ &r, &f, text = "" }
+    type_in{ &r, &f, text = "a1b2 3" }
+    let filtered = is_text{ a = get_name{ f = &f }, b = "123" }
+    f.rules = ui::TextRules{ max_chars = 4, .. }
+    type_in{ &r, &f, text = "\xC3\xA9\xE2\x82\xACxyz" }
+    let most = is_text{ a = get_name{ f = &f }, b = "123\xC3\xA9" }
+    press_key{ &r, &f, key = ui::Key::backspace, mods = 0 }
+    type_in{ &r, &f, text = "\xE2\x82\xAC" }
+    ui_test::expect{ &io, &t, ok = filtered, what = "rules: the filter keeps out what it refuses" }
+    ui_test::expect{ &io, &t, ok = most and is_text{ a = get_name{ f = &f }, b = "123\xE2\x82\xAC" }, what = "rules: the maximum length counts characters, not bytes" }
+    ui_test::expect{ &io, &t, ok = is_clean_rig{ r }, what = "rules: every frame is clean" }
+}
+
+// A click puts the caret at the nearer edge of the character under it; left of the text at its
+// start, right of it at its end.
+fn check_click { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut r = make_rig{ &heap, dark = true, scale = 1.0 } iferr { return }
+    let mut f = make_form{ look = Look::one }
+    set_name{ &f, text = "abcdefgh" }
+    step{ &r, &f }
+    step{ &r, &f }
+    let a = get_area{ ui = r.ui, path = "name" }
+    click_at{ &r, &f, x = a.x + 7 * 3 + 2, y = a.y + 3, clicks = 1 }
+    let before_middle = get_caret{ r, path = "name" } == 3
+    click_at{ &r, &f, x = a.x + 7 * 3 + 4, y = a.y + 3, clicks = 1 }
+    let past_middle = get_caret{ r, path = "name" } == 4
+    click_at{ &r, &f, x = a.x - 4, y = a.y + 3, clicks = 1 }
+    let left = get_caret{ r, path = "name" } == 0
+    click_at{ &r, &f, x = a.x + 7 * 12, y = a.y + 3, clicks = 1 }
+    let right = get_caret{ r, path = "name" } == 8
+    ui_test::expect{ &io, &t, ok = before_middle and past_middle and left and right, what = "click: the caret goes to the nearer edge of the character clicked" }
+    // Shift+click extends from where the caret was.
+    _ = ui::push_event{ ui = &r.ui, event = ui::Event::key{ key = ui::Key::none, down = true, repeat = false, mods = ui::MOD_SHIFT } }
+    click_at{ &r, &f, x = a.x + 7 * 2 + 1, y = a.y + 3, clicks = 1 }
+    _ = ui::push_event{ ui = &r.ui, event = ui::Event::key{ key = ui::Key::none, down = false, repeat = false, mods = 0 } }
+    ui_test::expect{ &io, &t, ok = is_sel{ s = get_selection{ r, path = "name" }, lo = 2, hi = 8 }, what = "click: Shift+click extends the selection" }
+    ui_test::expect{ &io, &t, ok = is_clean_rig{ r }, what = "click: every frame is clean" }
+}
+
+// A double click selects the word, a triple click all, and a drag after a double click goes by
+// words.
+fn check_word_click { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut r = make_rig{ &heap, dark = true, scale = 1.0 } iferr { return }
+    let mut f = make_form{ look = Look::one }
+    set_name{ &f, text = "hello brave world" }
+    step{ &r, &f }
+    step{ &r, &f }
+    let a = get_area{ ui = r.ui, path = "name" }
+    let x = a.x + 7 * 8 + 3
+    click_at{ &r, &f, x, y = a.y + 3, clicks = 1 }
+    click_at{ &r, &f, x, y = a.y + 3, clicks = 2 }
+    let word = is_sel{ s = get_selection{ r, path = "name" }, lo = 6, hi = 11 }
+    click_at{ &r, &f, x, y = a.y + 3, clicks = 3 }
+    let all = is_sel{ s = get_selection{ r, path = "name" }, lo = 0, hi = 17 }
+    ui_test::expect{ &io, &t, ok = word and all, what = "word click: a double click selects the word, a triple click the whole text" }
+    click_at{ &r, &f, x, y = a.y + 3, clicks = 1 }
+    _ = ui_test::push_button{ ui = &r.ui, button = 0, down = true, clicks = 2 }
+    step{ &r, &f }
+    _ = ui_test::move_pointer{ ui = &r.ui, x = a.x + 7 * 14, y = a.y + 3 }
+    step{ &r, &f }
+    let forward = is_sel{ s = get_selection{ r, path = "name" }, lo = 6, hi = 17 }
+    _ = ui_test::move_pointer{ ui = &r.ui, x = a.x + 7 * 2, y = a.y + 3 }
+    step{ &r, &f }
+    let back = is_sel{ s = get_selection{ r, path = "name" }, lo = 0, hi = 11 }
+    _ = ui_test::push_button{ ui = &r.ui, button = 0, down = false, clicks = 2 }
+    step{ &r, &f }
+    ui_test::expect{ &io, &t, ok = forward and back, what = "word click: a drag after a double click selects whole words, keeping the first" }
+    ui_test::expect{ &io, &t, ok = is_clean_rig{ r }, what = "word click: every frame is clean" }
+}
+
+// A drag held past the field's right edge scrolls the text along with the caret, frame after frame,
+// asking for each; the selection ends at the text's end and the text is drawn scrolled.
+fn check_drag_scroll { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut r = make_rig{ &heap, dark = true, scale = 1.0 } iferr { return }
+    let mut f = make_form{ look = Look::one }
+    let text = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWX"
+    set_name{ &f, text }
+    step{ &r, &f }
+    step{ &r, &f }
+    let a = get_area{ ui = r.ui, path = "name" }
+    _ = ui_test::move_pointer{ ui = &r.ui, x = a.x + 1, y = a.y + 3 }
+    _ = ui_test::push_button{ ui = &r.ui, button = 0, down = true, clicks = 1 }
+    step{ &r, &f }
+    _ = ui_test::move_pointer{ ui = &r.ui, x = a.x + a.w + 20, y = a.y + 3 }
+    step{ &r, &f }
+    let first = get_text_x{ ui = r.ui, needle = text }
+    let asking = r.d.requests.animating
+    for _ in 0..40 { step{ &r, &f } }
+    let last = get_text_x{ ui = r.ui, needle = text }
+    // 60 characters are 420 pixels; with the caret (1) after them in an area of 200, the text
+    // ends scrolled by 221.
+    _ = ui_test::push_button{ ui = &r.ui, button = 0, down = false, clicks = 1 }
+    step{ &r, &f }
+    let caret = r.d.requests.text_rect
+    ui_test::expect{ &io, &t, ok = asking and first < a.x and last == a.x - 221, what = "drag scroll: past the edge the text scrolls with the caret to its end, frames asked for" }
+    ui_test::expect{ &io, &t, ok = caret.x + caret.w == a.x + a.w and is_text{ a = get_name{ f = &f }, b = text }, what = "drag scroll: the caret ends at the area's edge, the text untouched" }
+    press_key{ &r, &f, key = ui::Key::c, mods = ui::MOD_CTRL }
+    ui_test::expect{ &io, &t, ok = is_text{ a = ui_test::get_clipboard{ d = r.d }, b = text }, what = "drag scroll: the drag selected the whole text" }
+    press_key{ &r, &f, key = ui::Key::home, mods = 0 }
+    ui_test::expect{ &io, &t, ok = get_text_x{ ui = r.ui, needle = text } == a.x, what = "drag scroll: Home scrolls back to the start" }
+    ui_test::expect{ &io, &t, ok = is_clean_rig{ r }, what = "drag scroll: every frame is clean" }
+}
+
+// The x of the text shape holding exactly `needle`; -100000 when there is none.
+fn get_text_x { ui: ui::Ui, needle: []u8 } -> i32 {
+    for i in 0..@as(usize, ui.draw.count) {
+        match ui.draw.cmds[i] {
+            text{ x, text } => { if slice::eq_bytes{ a = ui::draw::get_text{ list = ui.draw, span = text }, b = needle } { return x } }
+            else => {}
+        }
+    }
+    return -100000
+}
+
+// ---- an outline font, through a fake provider: proportional advances, "fi" a two-byte ligature
+// of 10, a two-byte character (é) one cluster of 8, a three-byte one (the bullet, the euro sign)
+// one of 9; 'i' and 'l' 3 wide, 'm' and 'w' 11, the rest 7. A line is 1.25 times the size high.
+
+struct Fake { shapes: u32 }
+
+fn fake_metrics { mut state: ui::Opaque, handle: u32, pixels: u32 } -> ui::LineMetrics {
+    return ui::LineMetrics{ height = @as(f32, pixels) * 1.25 + @as(f32, handle) * 0.0, ascent = @as(f32, pixels) }
+}
+
+fn fake_shape { mut state: ui::Opaque, handle: u32, pixels: u32, text: []u8, out: []mut ui::Shaped } -> usize {
+    let fake = @cast(*mut Fake, &state)
+    fake.shapes = fake.shapes + 1
+    let mut n: usize = 0
+    let mut i: usize = 0
+    while i < text.len and n < out.len {
+        let d = ui::decode_char{ text, at = i, encoding = ui::Encoding::utf8 }
+        let lig = text[i] == 'f' and i + 1 < text.len and text[i + 1] == 'i'
+        let c = text[i]
+        let advance: f32 = if lig { 10.0 } else if d.len == 2 { 8.0 } else if d.len > 2 { 9.0 } else if c == 'i' or c == 'l' { 3.0 } else if c == 'm' or c == 'w' { 11.0 } else { 7.0 }
+        out[n] = ui::Shaped{ glyph = d.code, face = handle + pixels * 0, x_advance = advance, cluster = @as(u32, i), .. }
+        n = n + 1
+        i = i + (if lig { 2 } else { @as(usize, d.len) })
+    }
+    return n
+}
+
+fn fake_raster { mut state: ui::Opaque, face: u32, glyph: u32, mut out: ui::GlyphBitmap } -> bool {
+    return face == glyph + 1 and out.width == 0
+}
+
+// With the fake outline font the caret steps over the ligature and the two-byte character as one,
+// never stops inside either, and a click lands on their edges; a password shows bullets.
+fn check_outline { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut r = make_rig{ &heap, dark = true, scale = 1.0 } iferr { return }
+    let mut fake = Fake{ shapes = 0 }
+    ui::set_provider{ ui = &r.ui, provider = ui::TextProvider{ state = @cast(*mut ui::Opaque, &fake), metrics = fake_metrics, shape = fake_shape, rasterize = fake_raster } }
+    let font = ui::add_font{ ui = &r.ui, font = ui::FontDef{ kind = ui::FontKind::outline{ handle = 5 }, encoding = ui::Encoding::utf8, height = 0.0, ascent = 0.0 } } ifnull {
+        ui_test::expect{ &io, &t, ok = false, what = "outline: the fake font registers" }
+        return
+    }
+    r.ui.theme.font = font
+    let mut f = make_form{ look = Look::one }
+    set_name{ &f, text = "fix" }
+    step{ &r, &f }
+    step{ &r, &f }
+    let a = get_area{ ui = r.ui, path = "name" }
+    click_at{ &r, &f, x = a.x + 4, y = a.y + 3, clicks = 1 }
+    let before = r.d.requests.text_rect.x == a.x
+    click_at{ &r, &f, x = a.x + 6, y = a.y + 3, clicks = 1 }
+    let after = r.d.requests.text_rect.x == a.x + 10
+    ui_test::expect{ &io, &t, ok = before and after, what = "outline: a click on the ligature lands on its start or its end, never between its letters" }
+    press_key{ &r, &f, key = ui::Key::home, mods = 0 }
+    press_key{ &r, &f, key = ui::Key::right, mods = 0 }
+    let over = r.d.requests.text_rect.x == a.x + 10
+    press_key{ &r, &f, key = ui::Key::right, mods = 0 }
+    press_key{ &r, &f, key = ui::Key::left, mods = 0 }
+    press_key{ &r, &f, key = ui::Key::backspace, mods = 0 }
+    ui_test::expect{ &io, &t, ok = over and is_text{ a = get_name{ f = &f }, b = "x" }, what = "outline: Right steps over the ligature, Backspace takes it whole" }
+    set_name{ &f, text = "\xC3\xA9ab" }
+    step{ &r, &f }
+    click_at{ &r, &f, x = a.x + 9, y = a.y + 3, clicks = 1 }
+    let after_e = r.d.requests.text_rect.x == a.x + 8
+    type_in{ &r, &f, text = "-" }
+    let inserted = is_text{ a = get_name{ f = &f }, b = "\xC3\xA9-ab" }
+    press_key{ &r, &f, key = ui::Key::home, mods = 0 }
+    press_key{ &r, &f, key = ui::Key::delete, mods = 0 }
+    ui_test::expect{ &io, &t, ok = after_e and inserted and is_text{ a = get_name{ f = &f }, b = "-ab" },
+        what = "outline: a click after a two-byte character lands after it, and Delete takes it whole" }
+    // Proportional: "mil" is 11 + 3 + 3; a click 12 pixels in is after the m, 16 in after the i.
+    set_name{ &f, text = "mil" }
+    step{ &r, &f }
+    click_at{ &r, &f, x = a.x + 12, y = a.y + 3, clicks = 1 }
+    let m = r.d.requests.text_rect.x == a.x + 11
+    click_at{ &r, &f, x = a.x + 16, y = a.y + 3, clicks = 1 }
+    ui_test::expect{ &io, &t, ok = m and r.d.requests.text_rect.x == a.x + 17, what = "outline: a click in a proportional run lands on the nearer edge" }
+    f.rules = ui::TextRules{ password = true, .. }
+    step{ &r, &f }
+    let n = ui::find_node{ ui = r.ui, path = "name" } ifnull ui::Node{ .. }
+    ui_test::expect{ &io, &t, ok = is_text{ a = n.text, b = "\xE2\x80\xA2\xE2\x80\xA2\xE2\x80\xA2" } and not has_text_shape{ ui = r.ui, needle = "mil" },
+        what = "outline: a password in an outline font shows a bullet a character" }
+    ui_test::expect{ &io, &t, ok = is_clean_rig{ r } and fake.shapes > 0, what = "outline: every frame is clean, the provider shaped" }
+}
+
+// A password field: its mask is drawn, its node has the mask, and copy and cut give nothing.
+fn check_password { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut r = make_rig{ &heap, dark = true, scale = 1.0 } iferr { return }
+    let mut f = make_form{ look = Look::one }
+    f.rules = ui::TextRules{ password = true, .. }
+    focus_name{ &r, &f, text = "" }
+    type_in{ &r, &f, text = "secret" }
+    ui_test::set_clipboard{ d = &r.d, text = "before" }
+    press_key{ &r, &f, key = ui::Key::a, mods = ui::MOD_CTRL }
+    press_key{ &r, &f, key = ui::Key::c, mods = ui::MOD_CTRL }
+    press_key{ &r, &f, key = ui::Key::x, mods = ui::MOD_CTRL }
+    let n = ui::find_node{ ui = r.ui, path = "name" } ifnull ui::Node{ .. }
+    ui_test::expect{ &io, &t, ok = is_text{ a = ui_test::get_clipboard{ d = r.d }, b = "before" } and is_text{ a = get_name{ f = &f }, b = "secret" },
+        what = "password: copy and cut leave the clipboard and the text alone" }
+    ui_test::expect{ &io, &t, ok = is_text{ a = n.text, b = "******" } and n.value == 6.0 and not has_text_shape{ ui = r.ui, needle = "secret" },
+        what = "password: the node and the draw list show the mask, never the text" }
+    press_key{ &r, &f, key = ui::Key::end, mods = 0 }
+    press_key{ &r, &f, key = ui::Key::left, mods = ui::MOD_CTRL }
+    ui_test::expect{ &io, &t, ok = get_caret{ r, path = "name" } == 0, what = "password: a word step goes to the end" }
+    ui_test::expect{ &io, &t, ok = is_clean_rig{ r }, what = "password: every frame is clean" }
+}
+
+// The requests: the text cursor over the field; text input on with the caret's rectangle while it
+// has the focus, frames asked for so the caret blinks, and the caret hidden half the time; off once
+// the focus has gone.
+fn check_requests { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut r = make_rig{ &heap, dark = true, scale = 1.0 } iferr { return }
+    let mut f = make_form{ look = Look::one }
+    set_name{ &f, text = "ab" }
+    step{ &r, &f }
+    step{ &r, &f }
+    let a = get_area{ ui = r.ui, path = "name" }
+    let off_before = not r.d.requests.text_input and not r.d.requests.animating
+    _ = ui_test::move_pointer{ ui = &r.ui, x = a.x + 3, y = a.y + 3 }
+    step{ &r, &f }
+    let cursor = r.d.requests.cursor == ui::Cursor::text
+    click_at{ &r, &f, x = a.x + a.w - 2, y = a.y + 3, clicks = 1 }
+    let rect = r.d.requests.text_rect
+    let on = r.d.requests.text_input and r.d.requests.animating and r.d.requests.wants_keys
+    ui_test::expect{ &io, &t, ok = off_before and cursor, what = "requests: no text input before the focus, the text cursor over the field" }
+    ui_test::expect{ &io, &t, ok = on and rect.x == a.x + 14 and rect.y == a.y and rect.w == 1 and rect.h == 14 and a.y == 17,
+        what = "requests: text input on while focused, with the caret's rectangle in pixels, and frames asked for" }
+    // dt is 0.125: the caret shows for its first 0.53 s (five frames), then not.
+    let mut shown: u32 = 0
+    for _ in 0..8 {
+        step{ &r, &f }
+        if has_caret{ ui = r.ui, x = rect.x } { shown = shown + 1 }
+    }
+    ui_test::expect{ &io, &t, ok = shown > 0 and shown < 8, what = "requests: the caret blinks by frame time" }
+    click_at{ &r, &f, x = 200, y = 200, clicks = 1 }
+    ui_test::expect{ &io, &t, ok = not r.d.requests.text_input and not r.d.requests.animating, what = "requests: text input off after the focus goes" }
+    ui_test::expect{ &io, &t, ok = is_clean_rig{ r }, what = "requests: every frame is clean" }
+}
+
+fn has_caret { ui: ui::Ui, x: i32 } -> bool {
+    for i in 0..@as(usize, ui.draw.count) {
+        match ui.draw.cmds[i] {
+            rect{ rect } => { if rect.x == x and rect.w == 1 and rect.h == 14 { return true } }
+            else => {}
+        }
+    }
+    return false
+}
+
+// Enter makes the call true once, for the focused field only.
+fn check_enter { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut r = make_rig{ &heap, dark = true, scale = 1.0 } iferr { return }
+    let mut f = make_form{ look = Look::one }
+    set_name{ &f, text = "x" }
+    step{ &r, &f }
+    press_key{ &r, &f, key = ui::Key::enter, mods = 0 }
+    let unfocused = f.entered == 0
+    focus_name{ &r, &f, text = "x" }
+    press_key{ &r, &f, key = ui::Key::enter, mods = 0 }
+    let once = f.entered == 1
+    step{ &r, &f }
+    step{ &r, &f }
+    ui_test::expect{ &io, &t, ok = unfocused and once and f.entered == 1, what = "enter: true once, for the focused field only" }
+    ui_test::expect{ &io, &t, ok = is_clean_rig{ r }, what = "enter: every frame is clean" }
+}
+
+// Two fields in a frame: only the focused one edits; Tab moves to the next and selects its text,
+// Shift+Tab back.
+fn check_two_fields { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut r = make_rig{ &heap, dark = true, scale = 1.0 } iferr { return }
+    let mut f = make_form{ look = Look::one }
+    f.second = true
+    focus_name{ &r, &f, text = "" }
+    type_in{ &r, &f, text = "a" }
+    press_key{ &r, &f, key = ui::Key::tab, mods = 0 }
+    type_in{ &r, &f, text = "b" }
+    let moved = is_text{ a = get_name{ f = &f }, b = "a" } and is_text{ a = get_note{ f = &f }, b = "b" }
+    press_key{ &r, &f, key = ui::Key::tab, mods = ui::MOD_SHIFT }
+    type_in{ &r, &f, text = "c" }
+    ui_test::expect{ &io, &t, ok = moved, what = "two fields: only the focused field takes the typing; Tab moves on" }
+    ui_test::expect{ &io, &t, ok = is_text{ a = get_name{ f = &f }, b = "c" } and is_text{ a = get_note{ f = &f }, b = "b" },
+        what = "two fields: Shift+Tab goes back, the field's text selected, so typing replaces it" }
+    ui_test::expect{ &io, &t, ok = is_clean_rig{ r }, what = "two fields: every frame is clean" }
+}
+
+// Focus lost while the pointer drags in a field: the field stops editing, the other takes the keys,
+// the release does nothing wrong.
+fn check_focus_lost { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut r = make_rig{ &heap, dark = true, scale = 1.0 } iferr { return }
+    let mut f = make_form{ look = Look::one }
+    f.second = true
+    set_name{ &f, text = "drag me" }
+    step{ &r, &f }
+    step{ &r, &f }
+    let a = get_area{ ui = r.ui, path = "name" }
+    _ = ui_test::move_pointer{ ui = &r.ui, x = a.x + 1, y = a.y + 3 }
+    _ = ui_test::push_button{ ui = &r.ui, button = 0, down = true, clicks = 1 }
+    step{ &r, &f }
+    _ = ui_test::move_pointer{ ui = &r.ui, x = a.x + 22, y = a.y + 3 }
+    step{ &r, &f }
+    press_key{ &r, &f, key = ui::Key::tab, mods = 0 }
+    _ = ui_test::move_pointer{ ui = &r.ui, x = a.x + 40, y = a.y + 3 }
+    step{ &r, &f }
+    type_in{ &r, &f, text = "z" }
+    let n = ui::find_node{ ui = r.ui, path = "name" } ifnull ui::Node{ .. }
+    let lost = (n.flags & ui::NODE_FOCUSED) == 0 and is_sel{ s = get_selection{ r, path = "name" }, lo = -1, hi = -1 }
+    _ = ui_test::push_button{ ui = &r.ui, button = 0, down = false, clicks = 1 }
+    step{ &r, &f }
+    ui_test::expect{ &io, &t, ok = lost and is_text{ a = get_name{ f = &f }, b = "drag me" } and is_text{ a = get_note{ f = &f }, b = "z" },
+        what = "focus lost: the dragged field stops editing and shows no selection; the other takes the typing" }
+    ui_test::expect{ &io, &t, ok = is_clean_rig{ r }, what = "focus lost: every frame is clean" }
+}
+
+// Bad UTF-8 already in the buffer is walked a byte a character and deleted without a panic; a
+// byte-encoded font steps one byte.
+fn check_bad_text { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut r = make_rig{ &heap, dark = true, scale = 1.0 } iferr { return }
+    let mut f = make_form{ look = Look::one }
+    // a, a stray 0xFF, a lead byte with no continuation, b, a sequence cut short: six characters
+    // of one byte each. (The tests' font has no glyph for U+FFFD, so the caret is found by what
+    // typing at it does.)
+    focus_name{ &r, &f, text = "a\xFF\xC3b\xE2\x82" }
+    press_key{ &r, &f, key = ui::Key::home, mods = 0 }
+    for _ in 0..3 { _ = ui_test::tap_key{ ui = &r.ui, key = ui::Key::right, mods = 0 } }
+    step{ &r, &f }
+    type_in{ &r, &f, text = "Q" }
+    let stepped = is_text{ a = get_name{ f = &f }, b = "a\xFF\xC3Qb\xE2\x82" }
+    for _ in 0..9 { _ = ui_test::tap_key{ ui = &r.ui, key = ui::Key::right, mods = 0 } }
+    step{ &r, &f }
+    type_in{ &r, &f, text = "Z" }
+    let walked = is_text{ a = get_name{ f = &f }, b = "a\xFF\xC3Qb\xE2\x82Z" }
+    press_key{ &r, &f, key = ui::Key::left, mods = ui::MOD_CTRL }
+    press_key{ &r, &f, key = ui::Key::right, mods = ui::MOD_CTRL }
+    _ = ui_test::tap_key{ ui = &r.ui, key = ui::Key::a, mods = ui::MOD_CTRL }
+    _ = ui_test::tap_key{ ui = &r.ui, key = ui::Key::c, mods = ui::MOD_CTRL }
+    step{ &r, &f }
+    for _ in 0..9 { _ = ui_test::tap_key{ ui = &r.ui, key = ui::Key::backspace, mods = 0 } }
+    step{ &r, &f }
+    ui_test::expect{ &io, &t, ok = stepped and walked and f.name_len == 0, what = "bad text: invalid UTF-8 is walked a byte a character and deleted, no panic" }
+
+    let mut b = make_rig{ &heap, dark = true, scale = 1.0 } iferr { return }
+    let def = ui_test::make_test_font{ realloc = arena::alloc, &heap } iferr { return }
+    let bytes_font = ui::FontDef{ kind = def.kind, encoding = ui::Encoding::bytes, height = def.height, ascent = def.ascent }
+    let font = ui::add_font{ ui = &b.ui, font = bytes_font } ifnull { return }
+    b.ui.theme.font = font
+    let mut g = make_form{ look = Look::one }
+    focus_name{ r = &b, f = &g, text = "\xC3\xA9x" }
+    press_key{ r = &b, f = &g, key = ui::Key::home, mods = 0 }
+    press_key{ r = &b, f = &g, key = ui::Key::right, mods = 0 }
+    type_in{ r = &b, f = &g, text = "-" }
+    let one = is_text{ a = get_name{ f = &g }, b = "\xC3-\xA9x" }
+    press_key{ r = &b, f = &g, key = ui::Key::delete, mods = 0 }
+    ui_test::expect{ &io, &t, ok = one and is_text{ a = get_name{ f = &g }, b = "\xC3-x" }, what = "bad text: a byte-encoded font's caret steps one byte" }
+    ui_test::expect{ &io, &t, ok = is_clean_rig{ r } and is_clean_rig{ r = b }, what = "bad text: every frame is clean" }
+}
+
+// Text the application changes under a focused field is taken as it is: the caret held to it, the
+// history emptied.
+fn check_app_change { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut r = make_rig{ &heap, dark = true, scale = 1.0 } iferr { return }
+    let mut f = make_form{ look = Look::one }
+    focus_name{ &r, &f, text = "" }
+    type_in{ &r, &f, text = "draft" }
+    press_key{ &r, &f, key = ui::Key::enter, mods = 0 }
+    f.name_len = 0
+    step{ &r, &f }
+    let held = get_caret{ r, path = "name" } == 0
+    press_key{ &r, &f, key = ui::Key::z, mods = ui::MOD_CTRL }
+    type_in{ &r, &f, text = "next" }
+    ui_test::expect{ &io, &t, ok = f.entered == 1 and held and is_text{ a = get_name{ f = &f }, b = "next" },
+        what = "app change: a text the application emptied holds the caret at 0 and has no history to undo" }
+    ui_test::expect{ &io, &t, ok = is_clean_rig{ r }, what = "app change: every frame is clean" }
+}
+
+// The number entry: dragged sideways a step every 4 pixels; clicked, typed in, the value following
+// the text; Enter ends the typing; Escape puts back the value; Up and Down step it.
+fn check_number { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut r = make_rig{ &heap, dark = true, scale = 1.0 } iferr { return }
+    let mut f = make_form{ look = Look::number }
+    f.second = true
+    step{ &r, &f }
+    step{ &r, &f }
+    let dragged = ui_test::drag{ d = &r.d, ui = &r.ui, path = "count", dx = 40, dy = 0, show = show_form{ &f, _ } }
+    ui_test::expect{ &io, &t, ok = dragged and f.number == 35.0 and f.changes > 0, what = "number: a drag of 40 pixels moves it ten steps" }
+    let n = ui::find_node{ ui = r.ui, path = "count" } ifnull ui::Node{ .. }
+    click_at{ &r, &f, x = n.rect.x + n.rect.w / 2, y = n.rect.y + n.rect.h / 2, clicks = 1 }
+    let typing = r.d.requests.text_input
+    type_in{ &r, &f, text = "42" }
+    let live = f.number == 42.0
+    press_key{ &r, &f, key = ui::Key::enter, mods = 0 }
+    let node = ui::find_node{ ui = r.ui, path = "count" } ifnull ui::Node{ .. }
+    ui_test::expect{ &io, &t, ok = typing and live and f.number == 42.0 and is_text{ a = node.text, b = "42" } and node.value == 42.0 and not r.d.requests.text_input,
+        what = "number: a click types over it, the value follows, Enter ends the typing" }
+    press_key{ &r, &f, key = ui::Key::up, mods = 0 }
+    let up = f.number == 43.0
+    press_key{ &r, &f, key = ui::Key::enter, mods = 0 }
+    type_in{ &r, &f, text = "250" }
+    let held = f.number == 100.0
+    press_key{ &r, &f, key = ui::Key::escape, mods = 0 }
+    ui_test::expect{ &io, &t, ok = up and held and f.number == 43.0, what = "number: Up steps it; typed past the range it is held; Escape puts the value back" }
+    press_key{ &r, &f, key = ui::Key::tab, mods = 0 }
+    press_key{ &r, &f, key = ui::Key::tab, mods = ui::MOD_SHIFT }
+    type_in{ &r, &f, text = "6" }
+    ui_test::expect{ &io, &t, ok = f.number == 6.0 and r.d.requests.text_input, what = "number: focused by Tab, a typed digit types over it" }
+    click_at{ &r, &f, x = n.rect.x + n.rect.w / 2, y = n.rect.y + n.rect.h / 2, clicks = 1 }
+    type_in{ &r, &f, text = "7" }
+    press_key{ &r, &f, key = ui::Key::tab, mods = 0 }
+    step{ &r, &f }
+    let left = ui::find_node{ ui = r.ui, path = "count" } ifnull ui::Node{ .. }
+    ui_test::expect{ &io, &t, ok = f.number == 7.0 and (left.flags & ui::NODE_FOCUSED) == 0 and is_text{ a = left.text, b = "7" },
+        what = "number: focus leaving ends the typing and keeps the typed value" }
+    ui_test::expect{ &io, &t, ok = is_clean_rig{ r }, what = "number: every frame is clean" }
+}

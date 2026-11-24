@@ -1,0 +1,1290 @@
+// ui: the text field and the number entry (plan section 5, stage 10).
+//
+// A text field edits the application's own `TextBuf` in place: the bytes are the application's,
+// never reallocated, and the field never writes past `bytes.len`. It is one line. The caret stands
+// between the places `ui::text::step_caret` gives (a glyph table's characters by its encoding, an
+// outline font's clusters, so never inside a ligature or a UTF-8 sequence); a password field's
+// caret steps by the font encoding's characters, since its mask shows one mark a character.
+//
+// Behaviour, as ZGF's text field and a native single-line field on Windows:
+//  - Pointer: a press places the caret (with Shift held on a focused field, extends the selection
+//    to it); a second press of a double click selects the word there, a third the whole text; while
+//    held, the selection follows the pointer by character, or by word after a double click. Past
+//    the field's edge the text scrolls with the caret, and the frame asks for another so it goes
+//    on scrolling while the pointer is held still there.
+//  - Keys: Left and Right step the caret (Ctrl: by word), and collapse a selection to its start or
+//    end; Home and End go to the ends; Shift extends with any of them. Backspace and Delete take the
+//    selection, or the stop before or after the caret (Ctrl: the word). Ctrl+A selects all, Ctrl+C
+//    copies, Ctrl+X and Shift+Delete cut, Ctrl+V pastes, Ctrl+Z undoes, Ctrl+Y and Ctrl+Shift+Z
+//    redo. Enter makes the call true. Tab is left for the focus to move, Escape for a popup or a
+//    dialog to close, and Up and Down for the links.
+//  - Typed text (`take_typed`) and a paste (`take_paste`, the frame after the field asked for it)
+//    replace the selection, one character at a time as far as they fit. A character is refused when
+//    the buffer has no room for it, `rules.max_chars` is reached, `rules.filter` says no, or it is a
+//    control character; the first refused for room or count ends the insertion, so a paste that
+//    does not fit takes the whole characters that do. A line break (CR, LF or CR LF) and a tab are a
+//    space: the field is one line. In UTF-8 a byte that starts no well-formed sequence is dropped. A
+//    full buffer refuses input, and input that is refused altogether leaves the selection as it was.
+//  - Undo: each edit is a record in the Ui's one history ring (`ui::get_history`, 16 KiB, emptied
+//    when focus moves). Typing merges into one record until the caret moves or another kind of edit
+//    comes, and a word typed after a space starts a new one; runs of Backspace and of Delete merge
+//    the same way. An edit too big for the ring is not recorded; the oldest records go to make room.
+//    A record is applied only if the text still holds what it changed, so undo never corrupts.
+//  - A password field shows one mark a character (a bullet in an outline font, `*` in a glyph
+//    table), copies and cuts nothing, steps by word to the ends, and describes its node with the
+//    mask, never the text.
+//  - Focus that arrives by anything but the field's own press (Tab, `set_focus`) selects the whole
+//    text. A field that is not focused shows its text from its start, without caret or selection.
+//  - Text the application changed since the field last saw it (a hash of the bytes tells) is taken
+//    as it is: the caret is held to it and put on a stop, and the history is emptied.
+//  - Invalid UTF-8 already in the buffer is walked one byte a character, never split and never a
+//    panic.
+//
+// Units. The options and the theme are logical units, in the boxes recorded. The text is drawn at
+// `to_font_size` of the theme's size, in a line box `measure_line` high, centred in the field by the
+// layout; the caret is `to_pixels{ length = 1.0 }` wide; caret offsets come from
+// `ui::text::locate_caret`, a click's index from `ui::text::pick_index`; the horizontal scroll that
+// keeps the caret in view is whole pixels, kept in `Values.i`. What the field reads back (its
+// rectangle, the pointer) is last frame's pixels, as for every widget. The caret blinks by frame
+// time (`get_time`, the sum of `frame.dt`): the core reads no clock, and a focused field asks for
+// frames (`Requests.animating`) so the blink goes on.
+//
+// The number entry is a field over a number: it shows `value` with `range.digits` digits, against
+// its end. A press and a drag sideways moves the value a step every four units the pointer goes; a
+// press that is released before it drags, or Enter while it has the focus, types over it, the whole
+// text selected; so does a character typed while it has the focus. While typed in, the value follows the text as it parses (held to the range and put
+// on its step), Enter ends the typing, Escape ends it and puts back the value it had, and focus
+// leaving ends it. Up and Down step the value while it has the focus.
+namespace ui {
+    // A text field's text: the application's bytes, of which the first `len` are the text. The field
+    // edits them in place and never past `bytes.len`.
+    struct TextBuf { bytes: []mut u8, len: usize }
+
+    // What a text field takes: `hint` shows while it is empty; `max_chars` characters at most (0:
+    // as many as the buffer holds); `password` masks it; `filter` says which characters (code points,
+    // or bytes in a byte-encoded font) may go in.
+    struct TextRules { hint: []u8 = "", max_chars: u32 = 0, password: bool = false, filter: ?fn{ c: u32 } -> bool = null }
+
+    // A text field's least width, in controls' heights, unless `opts.box` sizes it.
+    const FIELD_WIDTH: f32 = 6.0
+    // A number entry's width, in controls' heights, unless `opts.box` sizes it.
+    const NUMBER_WIDTH: f32 = 4.0
+    // How far the pointer goes for each step a dragged number takes, in logical units.
+    const NUMBER_DRAG_STEP: f32 = 4.0
+
+    // A one-line text field for `text`, named `label` (its id and node; it draws no label). True on
+    // the frame Enter is pressed in it. It grows along its parent from six controls' heights unless
+    // `opts.box` sizes it.
+    fn add_text_field { mut ui: Ui, label: []u8, mut text: TextBuf, rules: TextRules, opts: Opts } -> bool {
+        let t = derive_theme{ theme = ui.theme }
+        let name = get_widget_name{ opts, label }
+        let id = make_id{ ui, name }
+        let it = press{ &ui, id, opts = make_press_opts{ ui, opts } }
+        let editing = opts.enabled and it.focused
+        let base = field::make_box{ theme = t, enabled = opts.enabled, focused = editing, hovered = it.hovered or it.held,
+            width = Size{ kind = SizeKind::grow, min = t.control_height * FIELD_WIDTH, .. } }
+        let box = merge_box{ box = opts.box, base }
+        let mut f = field::start_field{ &ui, id, box, password = rules.password, end_align = false }
+        let len = field::get_len{ text }
+        let mut values = load_state{ &ui, id }
+        field::load_values{ &f, values, len }
+        // Whether it had the focus when it was recorded last: focus that moved at the last frame's
+        // end is already this frame's.
+        let was_focused = values.f[3] != 0.0
+        let mut submitted = false
+        if field::get_high{ v = values.i[1] } != field::hash_text{ text = text.bytes[..len] } {
+            // The application changed the text: take it as it is.
+            field::adopt_text{ &ui, &f, text = text.bytes[..len], editing }
+        }
+        if editing {
+            let history = get_history{ &ui, id }
+            if not was_focused and not it.pressed {
+                f.anchor = 0
+                f.caret = len
+                f.moved = true
+            }
+            submitted = field::edit_field{ &ui, &f, &text, history, it, was_focused, rules, &values }
+        } else {
+            f.scroll = 0
+            values.f[2] = 0.0
+        }
+        let now = field::get_len{ text }
+        field::follow_caret{ &ui, &f, text = text.bytes[..now], focused = editing }
+        field::store_values{ &f, &values, text = text.bytes[..now], focused = editing, now = get_time{ ui } }
+        store_state{ &ui, id, values }
+        let shown = field::make_shown{ &ui, f, text = text.bytes[..now] }
+        let color = if opts.enabled { t.text } else { t.text_disabled }
+        let hint = if now == 0 { rules.hint } else { "" }
+        field::add_field_element{ &ui, f, box, shown, text = text.bytes[..now], color, hint, hint_color = t.text_muted, selection = t.selection,
+            caret_color = t.text, focused = editing, now = get_time{ ui } }
+        if editing { field::ask_text_input{ &ui, f, text = text.bytes[..now] } }
+        let count = field::count_chars{ text = text.bytes[..now], encoding = f.encoding }
+        describe_text{ &ui, id, role = Role::text_field, label = name, value = @as(f32, count), flags = get_widget_flags{ opts, it }, text = shown }
+        if opts.enabled and (it.hovered or it.held) { set_cursor{ &ui, cursor = Cursor::text } }
+        if opts.tip.len > 0 { add_tooltip{ &ui, anchor = id, text = opts.tip } }
+        return submitted
+    }
+
+    // A number entry for `value` over `range`, named `label` (its id and node). Dragged sideways or
+    // typed in, as the top of this file says. True on the frames it changes `value`. Four controls'
+    // heights wide unless `opts.box` sizes it.
+    fn add_number { mut ui: Ui, label: []u8, mut value: f32, range: Range, opts: Opts } -> bool {
+        let t = derive_theme{ theme = ui.theme }
+        let name = get_widget_name{ opts, label }
+        let id = make_id{ ui, name }
+        let it = press{ &ui, id, opts = make_press_opts{ ui, opts } }
+        let before = value
+        let mut values = load_state{ &ui, id }
+        let mut mode = field::get_mode{ values }
+        let focused = opts.enabled and it.focused
+        if not focused and mode != field::NumberMode::idle {
+            // Focus left while it was typed in, or while it was held: the value stays as it is.
+            mode = field::NumberMode::idle
+        }
+        let base = field::make_box{ theme = t, enabled = opts.enabled, focused, hovered = it.hovered or it.held,
+            width = fix{ size = t.control_height * NUMBER_WIDTH } }
+        let box = merge_box{ box = opts.box, base }
+        let mut f = field::start_field{ &ui, id, box, password = false, end_align = true }
+        let mut digits: [48]u8
+        let mut shown_len = field::format_value{ v = value, range, into = digits[..] }
+        let mut submitted = false
+        if focused {
+            let ring = get_history{ &ui, id }
+            let mut edit = field::open_number_text{ ring }
+            let history = field::get_number_history{ ring }
+            let len = field::get_len{ text = edit }
+            field::load_values{ &f, values, len }
+            let rules = TextRules{ max_chars = 32, filter = field::is_number_char, .. }
+            if mode != field::NumberMode::typing {
+                values.f[2] = 0.0
+                mode = field::run_number_pointer{ &ui, it, values = &values, &value, range, mode }
+                if mode == field::NumberMode::begin or take_key{ &ui, key = Key::enter, mods = 0 } {
+                    field::begin_typing{ &f, &edit, history, digits = digits[..shown_len], &values, value }
+                    mode = field::NumberMode::typing
+                } else {
+                    _ = field::step_number{ &ui, &value, range }
+                    // A number typed while it has the focus types over it.
+                    let typed = take_typed{ &ui }
+                    if typed.len > 0 {
+                        shown_len = field::format_value{ v = value, range, into = digits[..] }
+                        field::begin_typing{ &f, &edit, history, digits = digits[..shown_len], &values, value }
+                        if field::insert_text{ &ui, &f, text = &edit, history, input = typed, rules, kind = field::Kind::typing } {
+                            mode = field::NumberMode::typing
+                            field::take_typed_value{ text = edit, range, &value }
+                        }
+                    }
+                }
+            } else {
+                if take_key{ &ui, key = Key::escape, mods = 0 } {
+                    value = values.f[5]
+                    mode = field::NumberMode::idle
+                } else {
+                    if field::step_number{ &ui, &value, range } {
+                        shown_len = field::format_value{ v = value, range, into = digits[..] }
+                        field::begin_typing{ &f, &edit, history, digits = digits[..shown_len], &values, value }
+                    }
+                    submitted = field::edit_field{ &ui, &f, text = &edit, history, it, was_focused = true, rules, &values }
+                    field::take_typed_value{ text = edit, range, &value }
+                    if submitted { mode = field::NumberMode::idle }
+                }
+            }
+            field::close_number_text{ ring, text = edit }
+            if mode == field::NumberMode::typing {
+                let now = field::get_len{ text = edit }
+                field::follow_caret{ &ui, &f, text = edit.bytes[..now], focused = true }
+                field::store_values{ &f, &values, text = edit.bytes[..now], focused = true, now = get_time{ ui } }
+                let shown = field::make_shown{ &ui, f, text = edit.bytes[..now] }
+                field::set_mode{ &values, mode }
+                store_state{ &ui, id, values }
+                field::add_field_element{ &ui, f, box, shown, text = edit.bytes[..now], color = t.text, hint = "", hint_color = t.text_muted,
+                    selection = t.selection, caret_color = t.text, focused = true, now = get_time{ ui } }
+                field::ask_text_input{ &ui, f, text = edit.bytes[..now] }
+                field::finish_number{ &ui, id, name, shown, value, opts, it, typing = true }
+                return value != before
+            }
+        } else if not opts.enabled {
+            mode = field::NumberMode::idle
+        }
+        field::set_mode{ &values, mode }
+        store_state{ &ui, id, values }
+        shown_len = field::format_value{ v = value, range, into = digits[..] }
+        let shown = digits[..shown_len]
+        f.caret = 0
+        f.anchor = 0
+        f.scroll = 0
+        let color = if opts.enabled { t.text } else { t.text_disabled }
+        field::add_field_element{ &ui, f, box, shown, text = shown, color, hint = "", hint_color = t.text_muted, selection = t.selection,
+            caret_color = t.text, focused = false, now = get_time{ ui } }
+        field::finish_number{ &ui, id, name, shown, value, opts, it, typing = false }
+        return value != before
+    }
+
+    namespace field {
+        // The history ring's own header: where the undo records end, where the redo records end,
+        // the caret after the last edit that may merge (plus one; 0: none) and that edit's kind.
+        const HEADER: usize = 16
+        // A record: at, removed, inserted, caret before, anchor before (u32 each), then the removed
+        // bytes, the inserted bytes, and the record's whole length (u32) last, so the ring can be
+        // walked back from its end.
+        const RECORD_HEAD: usize = 20
+        const TRAILER: usize = 4
+        // The caret is shown for this long, then hidden for as long, in seconds.
+        const BLINK: f32 = 0.53
+        // What a number entry's typed text may hold, in bytes: the start of the ring holds its
+        // length (u32) and its bytes; the rest of the ring is its history.
+        const NUMBER_TEXT: usize = 64
+
+        enum Kind: u8 { none, typing, backspace, delete, other }
+        enum NumberMode: u8 { idle, pressing, dragging, begin, typing }
+
+        // What one field edits with in a frame. Indexes are bytes of the text; `area` is where the
+        // text's line was in the last frame, in surface pixels (`w` 0 when there was none).
+        struct Field {
+            id: Id,
+            font: Font, size: i32, line: LineBox, encoding: Encoding,
+            mask: []u8,
+            area: Rect, has_area: bool,
+            caret_w: i32,
+            end_align: bool,
+            caret: usize, anchor: usize, scroll: i32,
+            clicks: u8, unit_start: usize, unit_end: usize,
+            blink: f32,
+            moved: bool,
+        }
+
+        // The look a field has: the field colour (the control's when it takes no input), its
+        // border in the focus ring's colour while it has the focus and stronger under the pointer,
+        // a padding across, its text centred down it.
+        fn make_box { theme: Theme, enabled: bool, focused: bool, hovered: bool, width: Size } -> Box {
+            let t = theme
+            let edge = if not enabled { t.border } else if focused { t.focus_ring } else if hovered { get_border_strong{ theme = t } } else { t.border }
+            return Box{
+                width, height = fix{ size = t.control_height },
+                padding = Insets{ left = t.padding, right = t.padding, .. }, align_y = Align::center,
+                fill = if enabled { t.field } else { t.control },
+                border = color_sides{ color = edge }, border_width = inset{ by = t.border_width },
+                radius = round{ radius = t.radius }, ..
+            }
+        }
+
+        // A field's font, size, line box and mask, and where its text was last frame.
+        fn start_field { mut ui: Ui, id: Id, box: Box, password: bool, end_align: bool } -> Field {
+            let font = ui.theme.font
+            let size = to_font_size{ ui, size = ui.theme.font_size }
+            let line = measure_line{ &ui, font, size }
+            let mut encoding = Encoding::utf8
+            let mut outline = false
+            if let def = draw::get_font{ list = ui.draw, font } {
+                encoding = def.encoding
+                outline = def.kind is outline
+            }
+            let mask: []u8 = if not password { "" } else if outline { "\xE2\x80\xA2" } else { "*" }
+            let mut f = Field{
+                id, font, size, line, encoding, mask, area = Rect{ .. }, has_area = false,
+                caret_w = to_pixels{ ui, length = 1.0 }, end_align,
+                caret = 0, anchor = 0, scroll = 0, clicks = 1, unit_start = 0, unit_end = 0, blink = 0.0, moved = false,
+            }
+            if let r = get_rect{ ui, id } {
+                let pad = to_pixel_sides{ ui, insets = box.padding ifnull Insets{ .. } }
+                let inner_h = pick_max_i32{ a = 0, b = sub_pixels{ a = r.h, b = add_pixels{ a = pad.top, b = pad.bottom } } }
+                let spare = pick_max_i32{ a = 0, b = sub_pixels{ a = inner_h, b = line.height } }
+                f.area = Rect{
+                    x = add_pixels{ a = r.x, b = pad.left }, y = add_pixels{ a = add_pixels{ a = r.y, b = pad.top }, b = spare / 2 },
+                    w = pick_max_i32{ a = 0, b = sub_pixels{ a = r.w, b = add_pixels{ a = pad.left, b = pad.right } } }, h = line.height,
+                }
+                f.has_area = true
+            }
+            return f
+        }
+
+        // The text's length: `len`, held to the buffer.
+        fn get_len { text: TextBuf } -> usize {
+            return if text.len < text.bytes.len { text.len } else { text.bytes.len }
+        }
+
+        // ---- the widget's state (plan section 2.3)
+        //
+        // Values.i[0]: the caret (low 32 bits) and the anchor (high). Values.i[1]: the scroll in
+        // pixels (low) and a hash of the text as the field left it (high). Values.f: [0] when the
+        // blink started, [1] the presses of the last click (1, 2 or 3), [2] 1 while a paste is asked
+        // for, [3] 1 while it had the focus, [4] a number entry's mode, [5] a number entry's value
+        // when its press or its typing began. The word a double click chose is kept under an id made
+        // from the field's (`get_unit_id`).
+
+        fn pack_pair { lo: u32, hi: u32 } -> i64 {
+            return @trunc(i64, (@as(u64, hi) << 32) | @as(u64, lo))
+        }
+
+        fn get_low { v: i64 } -> u32 { return @trunc(u32, @trunc(u64, v)) }
+        fn get_high { v: i64 } -> u32 { return @trunc(u32, @trunc(u64, v) >> 32) }
+
+        fn get_unit_id { id: Id } -> Id {
+            let h = hash_bytes{ seed = @as(u64, id), bytes = "\x00word" }
+            return @as(Id, if h == 0 { 1 } else { h })
+        }
+
+        // FNV-1a over the bytes and the length: what tells the field the application changed its text.
+        fn hash_text { text: []u8 } -> u32 {
+            let mut h: u32 = 2166136261
+            for b in text { h = (h ^ @as(u32, b)) *% 16777619 }
+            h = (h ^ @trunc(u32, text.len)) *% 16777619
+            return if h == 0 { 1 } else { h }
+        }
+
+        fn load_values { mut f: Field, values: Values, len: usize } {
+            f.caret = pick_min_usize{ a = @as(usize, get_low{ v = values.i[0] }), b = len }
+            f.anchor = pick_min_usize{ a = @as(usize, get_high{ v = values.i[0] }), b = len }
+            f.scroll = @trunc(i32, get_low{ v = values.i[1] })
+            f.blink = values.f[0]
+            let clicks = values.f[1]
+            f.clicks = if clicks >= 2.5 { 3 } else if clicks >= 1.5 { 2 } else { 1 }
+        }
+
+        fn store_values { mut f: Field, mut values: Values, text: []u8, focused: bool, now: f32 } {
+            values.i[0] = pack_pair{ lo = @saturate(u32, f.caret), hi = @saturate(u32, f.anchor) }
+            values.i[1] = pack_pair{ lo = @trunc(u32, f.scroll), hi = hash_text{ text } }
+            if f.moved or not focused { f.blink = now }
+            values.f[0] = f.blink
+            values.f[1] = @as(f32, f.clicks)
+            values.f[3] = if focused { 1.0 } else { 0.0 }
+        }
+
+        fn pick_min_usize { a: usize, b: usize } -> usize { return if b < a { b } else { a } }
+
+        // Text the application changed: the caret and the anchor held to it and put on stops, the
+        // scroll from the start, and the history emptied when the field owns it.
+        fn adopt_text { mut ui: Ui, mut f: Field, text: []u8, editing: bool } {
+            f.caret = snap_stop{ &ui, f = f, text, index = f.caret }
+            f.anchor = snap_stop{ &ui, f = f, text, index = f.anchor }
+            if not editing { f.scroll = 0 }
+            if editing {
+                let history = get_history{ &ui, id = f.id }
+                clear_history{ history }
+            }
+        }
+
+        // ---- characters, stops and words
+
+        fn is_continuation { b: u8 } -> bool { return b >= 0x80 and b < 0xC0 }
+
+        // The start of the character that ends at `at`: one byte back in `bytes`; in UTF-8 the lead of
+        // a well-formed sequence that ends there, otherwise the byte before (a stray byte is a
+        // character of its own).
+        fn step_back_char { text: []u8, at: usize, encoding: Encoding } -> usize {
+            if at == 0 { return 0 }
+            let end = if at < text.len { at } else { text.len }
+            if encoding == Encoding::bytes or end == 0 { return if end > 0 { end - 1 } else { 0 } }
+            let mut s = end - 1
+            let mut k: u32 = 0
+            while s > 0 and k < 3 and is_continuation{ b = text[s] } {
+                s = s - 1
+                k = k + 1
+            }
+            let d = decode_char{ text, at = s, encoding }
+            return if s + @as(usize, d.len) == end { s } else { end - 1 }
+        }
+
+        // The end of the character that starts at `at`.
+        fn step_char { text: []u8, at: usize, encoding: Encoding } -> usize {
+            if at >= text.len { return text.len }
+            let d = decode_char{ text, at, encoding }
+            return at + @as(usize, if d.len > 0 { d.len } else { 1 })
+        }
+
+        // The start of the character `index` is in (the index itself where one starts).
+        fn snap_char { text: []u8, index: usize, encoding: Encoding } -> usize {
+            if index >= text.len { return text.len }
+            let mut at: usize = 0
+            while at < text.len {
+                let next = step_char{ text, at, encoding }
+                if next > index { return at }
+                at = next
+            }
+            return text.len
+        }
+
+        fn count_chars { text: []u8, encoding: Encoding } -> usize {
+            let mut n: usize = 0
+            let mut at: usize = 0
+            while at < text.len {
+                at = step_char{ text, at, encoding }
+                n = n + 1
+            }
+            return n
+        }
+
+        // The place the caret may stand next to `index`, forward or back: a cluster's or a
+        // character's edge (core text), or a character's for a mask.
+        fn step_stop { mut ui: Ui, f: Field, text: []u8, index: usize, forward: bool } -> usize {
+            if f.mask.len > 0 {
+                return if forward { step_char{ text, at = index, encoding = f.encoding } } else { step_back_char{ text, at = index, encoding = f.encoding } }
+            }
+            return text::step_caret{ cache = &ui.cache, list = ui.draw, provider = ui.provider, font = f.font, size = f.size, text, index, forward }
+        }
+
+        // The stop at or before `index`.
+        fn snap_stop { mut ui: Ui, f: Field, text: []u8, index: usize } -> usize {
+            if index == 0 { return 0 }
+            if index >= text.len { return text.len }
+            let at = snap_char{ text, index, encoding = f.encoding }
+            if f.mask.len > 0 { return at }
+            let back = step_stop{ &ui, f, text, index = at, forward = false }
+            let next = step_stop{ &ui, f, text, index = back, forward = true }
+            return if next <= at { next } else { back }
+        }
+
+        enum CharClass: u8 { word, wide, space, mark }
+
+        // What a character is to word steps: a letter or digit (and, past ASCII, anything not
+        // listed), an ideograph or kana (each a word of its own), a space, or punctuation (a run of
+        // it a word of its own).
+        fn classify { code: u32, encoding: Encoding } -> CharClass {
+            if code == 32 or code == 9 or code == 0xA0 or code == 0x3000 or (code >= 0x2000 and code <= 0x200B) { return CharClass::space }
+            if code < 128 {
+                let word = (code >= '0' and code <= '9') or (code >= 'a' and code <= 'z') or (code >= 'A' and code <= 'Z') or code == '_'
+                return if word { CharClass::word } else { CharClass::mark }
+            }
+            if encoding == Encoding::bytes { return CharClass::word }
+            if (code >= 0x2010 and code <= 0x206F) or (code >= 0x3001 and code <= 0x303F) { return CharClass::mark }
+            if (code >= 0x1100 and code <= 0x115F) or (code >= 0x2E80 and code <= 0xA4CF) or (code >= 0xAC00 and code <= 0xD7A3)
+                or (code >= 0xF900 and code <= 0xFAFF) or (code >= 0xFF00 and code <= 0xFF60) or (code >= 0x20000 and code <= 0x3FFFD) {
+                return CharClass::wide
+            }
+            return CharClass::word
+        }
+
+        fn get_class_at { text: []u8, at: usize, encoding: Encoding } -> CharClass {
+            return classify{ code = decode_char{ text, at, encoding }.code, encoding }
+        }
+
+        fn get_class_before { text: []u8, at: usize, encoding: Encoding } -> CharClass {
+            let s = step_back_char{ text, at, encoding }
+            return classify{ code = decode_char{ text, at = s, encoding }.code, encoding }
+        }
+
+        fn skip_forward { text: []u8, at: usize, class: CharClass, encoding: Encoding } -> usize {
+            let mut i = at
+            while i < text.len and get_class_at{ text, at = i, encoding } == class { i = step_char{ text, at = i, encoding } }
+            return i
+        }
+
+        fn skip_back { text: []u8, at: usize, class: CharClass, encoding: Encoding } -> usize {
+            let mut i = at
+            while i > 0 and get_class_before{ text, at = i, encoding } == class { i = step_back_char{ text, at = i, encoding } }
+            return i
+        }
+
+        // Where Ctrl+Right goes: past the word at `at` and the spaces after it.
+        fn find_next_word { text: []u8, at: usize, encoding: Encoding } -> usize {
+            if at >= text.len { return text.len }
+            let class = get_class_at{ text, at, encoding }
+            if class == CharClass::wide { return step_char{ text, at, encoding } }
+            let mut i = at
+            if class != CharClass::space { i = skip_forward{ text, at = i, class, encoding } }
+            return skip_forward{ text, at = i, class = CharClass::space, encoding }
+        }
+
+        // Where Ctrl+Left goes: back over spaces, then to the start of the word before them.
+        fn find_prev_word { text: []u8, at: usize, encoding: Encoding } -> usize {
+            if at == 0 { return 0 }
+            if get_class_before{ text, at, encoding } == CharClass::wide { return step_back_char{ text, at, encoding } }
+            let i = skip_back{ text, at, class = CharClass::space, encoding }
+            if i == 0 { return 0 }
+            let class = get_class_before{ text, at = i, encoding }
+            if class == CharClass::wide { return i }
+            return skip_back{ text, at = i, class, encoding }
+        }
+
+        // The run of one class around `at` that a double click selects: the character after `at`
+        // decides (the one before it at the end).
+        struct Word { start: usize, end: usize }
+
+        fn find_word_at { text: []u8, at: usize, encoding: Encoding } -> Word {
+            if text.len == 0 { return Word{ start = 0, end = 0 } }
+            let i = if at < text.len { at } else { text.len }
+            let at_end = i >= text.len
+            let class = if at_end { get_class_before{ text, at = i, encoding } } else { get_class_at{ text, at = i, encoding } }
+            if class == CharClass::wide {
+                let end = if at_end { i } else { step_char{ text, at = i, encoding } }
+                return Word{ start = step_back_char{ text, at = end, encoding }, end }
+            }
+            return Word{ start = skip_back{ text, at = i, class, encoding }, end = skip_forward{ text, at = i, class, encoding } }
+        }
+
+        // ---- what is shown, and where
+
+        // The text as shown: the text itself, or a mask a character, in the frame's arena.
+        fn make_shown { mut ui: Ui, f: Field, text: []u8 } -> []u8 {
+            if f.mask.len == 0 { return text }
+            _ = take_text{ &ui }
+            let n = count_chars{ text, encoding = f.encoding }
+            for _ in 0..n { write_bytes{ &ui, s = f.mask } }
+            return take_text{ &ui }
+        }
+
+        // An index of the text as an index of what is shown.
+        fn to_shown { f: Field, text: []u8, index: usize } -> usize {
+            if f.mask.len == 0 { return index }
+            return count_chars{ text = text[..pick_min_usize{ a = index, b = text.len }], encoding = f.encoding } * f.mask.len
+        }
+
+        // An index of what is shown as an index of the text.
+        fn from_shown { f: Field, text: []u8, index: usize } -> usize {
+            if f.mask.len == 0 { return index }
+            let n = index / f.mask.len
+            let mut at: usize = 0
+            for _ in 0..n { at = step_char{ text, at, encoding = f.encoding } }
+            return at
+        }
+
+        fn locate { mut ui: Ui, f: Field, shown: []u8, index: usize } -> i32 {
+            return text::locate_caret{ cache = &ui.cache, list = ui.draw, provider = ui.provider, font = f.font, size = f.size, text = shown, index }
+        }
+
+        // How far in the text starts in its area: 0, or for an entry against its end the room
+        // left beside it and the caret.
+        fn get_indent { f: Field, width: i32 } -> i32 {
+            if not f.end_align { return 0 }
+            return pick_max_i32{ a = 0, b = sub_pixels{ a = sub_pixels{ a = f.area.w, b = width }, b = f.caret_w } }
+        }
+
+        // The index nearest the pointer, a stop of the text.
+        fn pick_at_pointer { mut ui: Ui, f: Field, text: []u8 } -> usize {
+            let shown = make_shown{ &ui, f, text }
+            let width = measure_text{ &ui, font = f.font, size = f.size, text = shown }
+            let p = get_pointer{ ui }
+            let x = add_pixels{ a = sub_pixels{ a = p.x, b = add_pixels{ a = f.area.x, b = get_indent{ f, width } } }, b = f.scroll }
+            let at = text::pick_index{ cache = &ui.cache, list = ui.draw, provider = ui.provider, font = f.font, size = f.size, text = shown, x }
+            return snap_stop{ &ui, f, text, index = from_shown{ f, text, index = at } }
+        }
+
+        // The scroll that keeps the caret in view: the least change that shows the caret whole,
+        // held so the text's end does not leave room after it. Not focused: from the start.
+        fn follow_caret { mut ui: Ui, mut f: Field, text: []u8, focused: bool } {
+            if not focused or not f.has_area {
+                f.scroll = 0
+                return
+            }
+            let shown = make_shown{ &ui, f, text }
+            let width = measure_text{ &ui, font = f.font, size = f.size, text = shown }
+            let x = locate{ &ui, f = f, shown, index = to_shown{ f, text, index = f.caret } }
+            let view = sub_pixels{ a = f.area.w, b = f.caret_w }
+            let mut s = f.scroll
+            if sub_pixels{ a = x, b = s } > view { s = sub_pixels{ a = x, b = view } }
+            if x < s { s = x }
+            let most = pick_max_i32{ a = 0, b = sub_pixels{ a = add_pixels{ a = width, b = f.caret_w }, b = f.area.w } }
+            f.scroll = clamp_i32{ v = s, lo = 0, hi = most }
+        }
+
+        // ---- editing
+
+        fn get_lo { f: Field } -> usize { return if f.caret < f.anchor { f.caret } else { f.anchor } }
+        fn get_hi { f: Field } -> usize { return if f.caret < f.anchor { f.anchor } else { f.caret } }
+
+        fn move_caret { mut f: Field, to: usize, extend: bool } {
+            f.caret = to
+            if not extend { f.anchor = to }
+            f.moved = true
+        }
+
+        // One frame of a focused field's editing: the pointer, the keys in order, the typed text,
+        // a paste it asked for. True when Enter was pressed.
+        fn edit_field { mut ui: Ui, mut f: Field, mut text: TextBuf, history: []mut u8, it: Interaction, was_focused: bool, rules: TextRules, mut values: Values } -> bool {
+            let mut submitted = false
+            run_pointer{ &ui, &f, text = text.bytes[..get_len{ text }], it, was_focused }
+            if f.moved { set_kind{ history, kind = Kind::none, after = 0 } }
+            // The paste asked for in an earlier frame came before this frame's keys. A host answers
+            // before the next frame, so the flag lasts one frame whatever came.
+            if values.f[2] != 0.0 {
+                values.f[2] = 0.0
+                let pasted = take_paste{ &ui }
+                if pasted.len > 0 { _ = insert_text{ &ui, &f, &text, history, input = pasted, rules, kind = Kind::other } }
+            }
+            let mut i: usize = 0
+            while i < get_keys{ ui }.len {
+                let k = get_keys{ ui }[i]
+                let took = apply_key{ &ui, &f, &text, history, k, rules, &submitted, &values }
+                if took { take_key_at{ &ui, index = i } } else { i = i + 1 }
+            }
+            let typed = take_typed{ &ui }
+            if typed.len > 0 { _ = insert_text{ &ui, &f, &text, history, input = typed, rules, kind = Kind::typing } }
+            return submitted
+        }
+
+        // A press places the caret or selects a word or all; held, the selection follows the
+        // pointer, and past the area's edge the frame asks for the next so the scroll goes on.
+        fn run_pointer { mut ui: Ui, mut f: Field, text: []u8, it: Interaction, was_focused: bool } {
+            if not f.has_area or not (it.pressed or it.held) { return }
+            let at = pick_at_pointer{ &ui, f = f, text }
+            let unit = get_unit_id{ id = f.id }
+            if it.pressed {
+                let presses = if it.clicks == 0 { 1 } else { it.clicks }
+                f.clicks = (presses - 1) % 3 + 1
+                if f.clicks == 1 {
+                    let extend = was_focused and (get_mods{ ui } & MOD_SHIFT) != 0
+                    move_caret{ &f, to = at, extend }
+                    return
+                }
+                let w = if f.clicks == 2 { find_word{ &ui, f = f, text, at } } else { Word{ start = 0, end = text.len } }
+                f.anchor = w.start
+                f.caret = w.end
+                f.moved = true
+                let mut v = load_state{ &ui, id = unit }
+                v.i[0] = pack_pair{ lo = @saturate(u32, w.start), hi = @saturate(u32, w.end) }
+                store_state{ &ui, id = unit, values = v }
+                return
+            }
+            let p = get_pointer{ ui }
+            if p.x < f.area.x or p.x >= add_pixels{ a = f.area.x, b = f.area.w } { set_animating{ &ui } }
+            if f.clicks == 1 {
+                if at != f.caret { move_caret{ &f, to = at, extend = true } }
+                return
+            }
+            if f.clicks == 3 { return }
+            let v = load_state{ &ui, id = unit }
+            let start = pick_min_usize{ a = @as(usize, get_low{ v = v.i[0] }), b = text.len }
+            let end = pick_min_usize{ a = @as(usize, get_high{ v = v.i[0] }), b = text.len }
+            let w = find_word{ &ui, f = f, text, at }
+            if w.start < start {
+                f.anchor = end
+                f.caret = w.start
+            } else {
+                f.anchor = start
+                f.caret = if w.end > end { w.end } else { end }
+            }
+            f.moved = true
+        }
+
+        // The word at `at` on stops; all of a masked text.
+        fn find_word { mut ui: Ui, f: Field, text: []u8, at: usize } -> Word {
+            if f.mask.len > 0 { return Word{ start = 0, end = text.len } }
+            let w = find_word_at{ text, at, encoding = f.encoding }
+            let start = snap_stop{ &ui, f, text, index = w.start }
+            let mut end = snap_stop{ &ui, f, text, index = w.end }
+            if end < w.end { end = step_stop{ &ui, f, text, index = end, forward = true } }
+            return Word{ start, end }
+        }
+
+        // Where a word step from the caret goes, on a stop: to an end of a masked text.
+        fn step_word { mut ui: Ui, f: Field, text: []u8, forward: bool } -> usize {
+            if f.mask.len > 0 { return if forward { text.len } else { 0 } }
+            let raw = if forward { find_next_word{ text, at = f.caret, encoding = f.encoding } } else { find_prev_word{ text, at = f.caret, encoding = f.encoding } }
+            let mut to = snap_stop{ &ui, f, text, index = raw }
+            if forward and to < raw { to = step_stop{ &ui, f, text, index = to, forward = true } }
+            if forward and to <= f.caret and f.caret < text.len { to = step_stop{ &ui, f, text, index = f.caret, forward = true } }
+            if not forward and to >= f.caret and f.caret > 0 { to = step_stop{ &ui, f, text, index = f.caret, forward = false } }
+            return to
+        }
+
+        // One key stroke; true when the field took it.
+        fn apply_key { mut ui: Ui, mut f: Field, mut text: TextBuf, history: []mut u8, k: KeyStroke, rules: TextRules, mut submitted: bool, mut values: Values } -> bool {
+            let shift = (k.mods & MOD_SHIFT) != 0
+            let ctrl = (k.mods & MOD_CTRL) != 0
+            let alt = (k.mods & MOD_ALT) != 0
+            if alt { return false }
+            let len = get_len{ text }
+            let view = text.bytes[..len]
+            let selected = f.caret != f.anchor
+            match k.key {
+                left | right => {
+                    let forward = k.key == Key::right
+                    if not shift and not ctrl and selected {
+                        move_caret{ &f, to = if forward { get_hi{ f } } else { get_lo{ f } }, extend = false }
+                    } else if ctrl {
+                        move_caret{ &f, to = step_word{ &ui, f = f, text = view, forward }, extend = shift }
+                    } else {
+                        move_caret{ &f, to = step_stop{ &ui, f = f, text = view, index = f.caret, forward }, extend = shift }
+                    }
+                    set_kind{ history, kind = Kind::none, after = 0 }
+                    return true
+                }
+                home | end => {
+                    move_caret{ &f, to = if k.key == Key::end { len } else { 0 }, extend = shift }
+                    set_kind{ history, kind = Kind::none, after = 0 }
+                    return true
+                }
+                backspace => {
+                    if selected {
+                        delete_range{ &f, &text, history, lo = get_lo{ f }, hi = get_hi{ f }, kind = Kind::other }
+                    } else if f.caret > 0 {
+                        let from = if ctrl { step_word{ &ui, f = f, text = view, forward = false } } else { step_stop{ &ui, f = f, text = view, index = f.caret, forward = false } }
+                        delete_range{ &f, &text, history, lo = from, hi = f.caret, kind = if ctrl { Kind::other } else { Kind::backspace } }
+                    }
+                    return true
+                }
+                delete => {
+                    if shift and not ctrl {
+                        cut_selection{ &ui, &f, &text, history }
+                    } else if selected {
+                        delete_range{ &f, &text, history, lo = get_lo{ f }, hi = get_hi{ f }, kind = Kind::other }
+                    } else if f.caret < len {
+                        let to = if ctrl { step_word{ &ui, f = f, text = view, forward = true } } else { step_stop{ &ui, f = f, text = view, index = f.caret, forward = true } }
+                        delete_range{ &f, &text, history, lo = f.caret, hi = to, kind = if ctrl { Kind::other } else { Kind::delete } }
+                    }
+                    return true
+                }
+                enter => {
+                    if ctrl { return false }
+                    submitted = true
+                    return true
+                }
+                space => { return not ctrl }
+                a | c | v | x | y | z => {
+                    if not ctrl { return true }
+                    if k.key == Key::a {
+                        f.anchor = 0
+                        f.caret = len
+                        f.moved = true
+                    } else if k.key == Key::c {
+                        if selected and f.mask.len == 0 { copy_text{ &ui, text = view[get_lo{ f }..get_hi{ f }] } }
+                    } else if k.key == Key::x {
+                        cut_selection{ &ui, &f, &text, history }
+                    } else if k.key == Key::v {
+                        ask_paste{ &ui }
+                        values.f[2] = 1.0
+                    } else if k.key == Key::y or shift {
+                        _ = redo_edit{ &f, &text, history }
+                    } else {
+                        _ = undo_edit{ &f, &text, history }
+                    }
+                    return true
+                }
+                else => { return false }
+            }
+        }
+
+        // Ctrl+X: the selection to the clipboard, then out of the text. Nothing for a mask.
+        fn cut_selection { mut ui: Ui, mut f: Field, mut text: TextBuf, history: []mut u8 } {
+            if f.caret == f.anchor or f.mask.len > 0 { return }
+            copy_text{ &ui, text = text.bytes[get_lo{ f }..get_hi{ f }] }
+            delete_range{ &f, &text, history, lo = get_lo{ f }, hi = get_hi{ f }, kind = Kind::other }
+        }
+
+        // Moves `count` bytes of `buf` from `from` to `to`, the two ranges may overlap.
+        fn move_bytes { buf: []mut u8, from: usize, to: usize, count: usize } {
+            if count == 0 or from == to { return }
+            if to < from {
+                for i in 0..count { buf[to + i] = buf[from + i] }
+            } else {
+                let mut i = count
+                while i > 0 {
+                    i = i - 1
+                    buf[to + i] = buf[from + i]
+                }
+            }
+        }
+
+        // Bytes [lo, hi) out of the text, recorded.
+        fn delete_range { mut f: Field, mut text: TextBuf, history: []mut u8, lo: usize, hi: usize, kind: Kind } {
+            let len = get_len{ text }
+            let b = if hi < len { hi } else { len }
+            let a = if lo < b { lo } else { b }
+            if a == b { return }
+            _ = push_edit{ history, at = a, removed = text.bytes[a..b], inserted = 0, caret = f.caret, anchor = f.anchor, kind, input = "" }
+            move_bytes{ buf = text.bytes, from = b, to = a, count = len - b }
+            text.len = len - (b - a)
+            f.caret = a
+            f.anchor = a
+            f.moved = true
+            set_kind{ history, kind, after = a }
+        }
+
+        // What of `input` goes in: its characters in order as far as `room` bytes and `chars`
+        // characters go, each written to `out` from its start (when `out` is long enough for it).
+        // The number of bytes it takes. Line breaks and tabs are spaces; control characters, a
+        // byte that starts no UTF-8 sequence, and what the filter refuses are dropped.
+        fn take_input { input: []u8, encoding: Encoding, rules: TextRules, room: usize, chars: usize, out: []mut u8 } -> usize {
+            let mut used: usize = 0
+            let mut count: usize = 0
+            let mut at: usize = 0
+            while at < input.len {
+                let d = decode_char{ text = input, at, encoding }
+                let step = @as(usize, if d.len > 0 { d.len } else { 1 })
+                let start = at
+                at = at + step
+                let mut code = d.code
+                let mut bytes = input[start..start + step]
+                if code == 13 and at < input.len and input[at] == 10 { at = at + 1 }
+                if code == 10 or code == 13 or code == 9 {
+                    code = 32
+                    bytes = " "
+                }
+                if code < 32 or code == 127 { continue }
+                if encoding == Encoding::utf8 and code == BAD_CHAR and step == 1 { continue }
+                if encoding == Encoding::utf8 and code >= 0x80 and code < 0xA0 { continue }
+                if let filter = rules.filter {
+                    if not filter{ c = code } { continue }
+                }
+                if count >= chars or bytes.len > room - used { break }
+                if used + bytes.len <= out.len { slice::copy(u8){ dst = out[used..used + bytes.len], src = bytes } }
+                used = used + bytes.len
+                count = count + 1
+            }
+            return used
+        }
+
+        // Typed or pasted `input` in place of the selection, as far as it fits. False when none of
+        // it went in (the selection is then left as it was).
+        fn insert_text { mut ui: Ui, mut f: Field, mut text: TextBuf, history: []mut u8, input: []u8, rules: TextRules, kind: Kind } -> bool {
+            let len = get_len{ text }
+            let lo = get_lo{ f }
+            let hi = get_hi{ f }
+            let room = text.bytes.len - (len - (hi - lo))
+            let mut chars = text.bytes.len + 1
+            if rules.max_chars > 0 {
+                let have = count_chars{ text = text.bytes[..len], encoding = f.encoding } - count_chars{ text = text.bytes[lo..hi], encoding = f.encoding }
+                let most = @as(usize, rules.max_chars)
+                chars = if have < most { most - have } else { 0 }
+            }
+            let n = take_input{ input, encoding = f.encoding, rules, room, chars, out = text.bytes[..0] }
+            if n == 0 { return false }
+            let merges = kind == Kind::typing and hi == lo
+            let record_kind = if merges { Kind::typing } else { Kind::other }
+            let starts_word = n > 0 and input.len > 0 and classify{ code = decode_char{ text = input, at = 0, encoding = f.encoding }.code, encoding = f.encoding } != CharClass::space
+            let slot = push_edit{ history, at = lo, removed = text.bytes[lo..hi], inserted = n, caret = f.caret, anchor = f.anchor, kind = record_kind,
+                input = if starts_word { "w" } else { " " } }
+            // The tail moves to after the inserted bytes, then they are written where the selection was.
+            move_bytes{ buf = text.bytes, from = hi, to = lo + n, count = len - hi }
+            _ = take_input{ input, encoding = f.encoding, rules, room, chars, out = text.bytes[lo..lo + n] }
+            text.len = len - (hi - lo) + n
+            if let at = slot { slice::copy(u8){ dst = history[at..at + n], src = text.bytes[lo..lo + n] } }
+            f.caret = lo + n
+            f.anchor = lo + n
+            f.moved = true
+            set_kind{ history, kind = record_kind, after = lo + n }
+            return true
+        }
+
+        // ---- the history ring
+
+        fn read_u32 { bytes: []u8, at: usize } -> u32 {
+            return @as(u32, bytes[at]) | (@as(u32, bytes[at + 1]) << 8) | (@as(u32, bytes[at + 2]) << 16) | (@as(u32, bytes[at + 3]) << 24)
+        }
+
+        fn write_u32 { bytes: []mut u8, at: usize, v: u32 } {
+            bytes[at] = @trunc(u8, v)
+            bytes[at + 1] = @trunc(u8, v >> 8)
+            bytes[at + 2] = @trunc(u8, v >> 16)
+            bytes[at + 3] = @trunc(u8, v >> 24)
+        }
+
+        fn clear_history { history: []mut u8 } {
+            if history.len < HEADER { return }
+            for &b in history[..HEADER] { b = 0 }
+        }
+
+        // The kind of the last edit and the caret after it, which the next one may merge with.
+        fn set_kind { history: []mut u8, kind: Kind, after: usize } {
+            if history.len < HEADER { return }
+            write_u32{ bytes = history, at = 8, v = if kind == Kind::none { 0 } else { @saturate(u32, after) + 1 } }
+            history[12] = @as(u8, kind)
+        }
+
+        // Where the undo records end and the redo records end, checked: a header that does not fit
+        // the ring is an empty history.
+        struct Marks { done: usize, top: usize }
+
+        fn read_marks { history: []mut u8 } -> Marks {
+            if history.len < HEADER { return Marks{ done = 0, top = 0 } }
+            let room = history.len - HEADER
+            let done = @as(usize, read_u32{ bytes = history, at = 0 })
+            let top = @as(usize, read_u32{ bytes = history, at = 4 })
+            if done > top or top > room {
+                clear_history{ history }
+                return Marks{ done = 0, top = 0 }
+            }
+            return Marks{ done, top }
+        }
+
+        fn write_marks { history: []mut u8, done: usize, top: usize } {
+            write_u32{ bytes = history, at = 0, v = @as(u32, done) }
+            write_u32{ bytes = history, at = 4, v = @as(u32, top) }
+        }
+
+        // A record's fields, read at `start` of the records.
+        struct Record { start: usize, at: usize, removed: usize, inserted: usize, caret: usize, anchor: usize, size: usize }
+
+        fn read_record { recs: []mut u8, start: usize, end: usize } -> ?Record {
+            if start + RECORD_HEAD + TRAILER > end { return null }
+            let r = Record{
+                start, at = @as(usize, read_u32{ bytes = recs, at = start }),
+                removed = @as(usize, read_u32{ bytes = recs, at = start + 4 }),
+                inserted = @as(usize, read_u32{ bytes = recs, at = start + 8 }),
+                caret = @as(usize, read_u32{ bytes = recs, at = start + 12 }),
+                anchor = @as(usize, read_u32{ bytes = recs, at = start + 16 }), size = 0,
+            }
+            if r.removed > end or r.inserted > end { return null }
+            let size = RECORD_HEAD + r.removed + r.inserted + TRAILER
+            if start + size > end { return null }
+            if @as(usize, read_u32{ bytes = recs, at = start + size - TRAILER }) != size { return null }
+            return Record{ start, at = r.at, removed = r.removed, inserted = r.inserted, caret = r.caret, anchor = r.anchor, size }
+        }
+
+        // The last undo record, which ends at `done`.
+        fn read_last { recs: []mut u8, done: usize } -> ?Record {
+            if done < RECORD_HEAD + TRAILER { return null }
+            let size = @as(usize, read_u32{ bytes = recs, at = done - TRAILER })
+            if size > done { return null }
+            return read_record{ recs, start = done - size, end = done }
+        }
+
+        // Records an edit about to be made: at `at`, `removed` (the bytes there now) gives way to
+        // `inserted` bytes. The redo records go. A typing edit merges into the last record when it
+        // goes on from where that one left the caret (`input` is " " when it starts with a space,
+        // and a word after a space starts a record of its own), and runs of Backspace and of Delete
+        // merge the same way. Where in `history` the inserted bytes are to be copied once they are
+        // in the text; null when the edit was not recorded (it is larger than the ring, which is
+        // then emptied, so an undo never skips over it).
+        fn push_edit { history: []mut u8, at: usize, removed: []u8, inserted: usize, caret: usize, anchor: usize, kind: Kind, input: []u8 } -> ?usize {
+            if history.len < HEADER { return null }
+            let marks = read_marks{ history }
+            let recs = history[HEADER..]
+            let mut done = marks.done
+            let last_after = @as(usize, read_u32{ bytes = history, at = 8 })
+            let last_kind = history[12]
+            if last_after > 0 and last_kind == @as(u8, kind) and kind != Kind::other {
+                if let last = read_last{ recs, done } {
+                    let head = done - TRAILER
+                    if kind == Kind::typing and removed.len == 0 and last.removed == 0 and last_after == at + 1 and last.at + last.inserted == at
+                        and done + inserted <= recs.len {
+                        let last_byte = if last.inserted > 0 { recs[last.start + RECORD_HEAD + last.inserted - 1] } else { ' ' }
+                        if not (last_byte == ' ' and input.len > 0 and input[0] != ' ') {
+                            write_u32{ bytes = recs, at = last.start + 8, v = @as(u32, last.inserted + inserted) }
+                            write_u32{ bytes = recs, at = head + inserted, v = @as(u32, last.size + inserted) }
+                            done = done + inserted
+                            write_marks{ history, done, top = done }
+                            return HEADER + head
+                        }
+                    }
+                    if kind == Kind::backspace and inserted == 0 and last.inserted == 0 and last.at == at + removed.len and last_after == at + removed.len + 1
+                        and done + removed.len <= recs.len {
+                        // The bytes taken now go before those taken already.
+                        let body = last.start + RECORD_HEAD
+                        move_bytes{ buf = recs, from = body, to = body + removed.len, count = last.removed }
+                        slice::copy(u8){ dst = recs[body..body + removed.len], src = removed }
+                        write_u32{ bytes = recs, at = last.start, v = @as(u32, at) }
+                        write_u32{ bytes = recs, at = last.start + 4, v = @as(u32, last.removed + removed.len) }
+                        write_u32{ bytes = recs, at = head + removed.len, v = @as(u32, last.size + removed.len) }
+                        done = done + removed.len
+                        write_marks{ history, done, top = done }
+                        return null
+                    }
+                    if kind == Kind::delete and inserted == 0 and last.inserted == 0 and last.at == at and last_after == at + 1
+                        and done + removed.len <= recs.len {
+                        slice::copy(u8){ dst = recs[head..head + removed.len], src = removed }
+                        write_u32{ bytes = recs, at = last.start + 4, v = @as(u32, last.removed + removed.len) }
+                        write_u32{ bytes = recs, at = head + removed.len, v = @as(u32, last.size + removed.len) }
+                        done = done + removed.len
+                        write_marks{ history, done, top = done }
+                        return null
+                    }
+                }
+            }
+            let size = RECORD_HEAD + removed.len + inserted + TRAILER
+            if size > recs.len {
+                clear_history{ history }
+                return null
+            }
+            // The oldest records go until the new one fits.
+            while done + size > recs.len {
+                let first = read_record{ recs, start = 0, end = done } ifnull {
+                    clear_history{ history }
+                    done = 0
+                    break
+                }
+                move_bytes{ buf = recs, from = first.size, to = 0, count = done - first.size }
+                done = done - first.size
+            }
+            let start = done
+            write_u32{ bytes = recs, at = start, v = @saturate(u32, at) }
+            write_u32{ bytes = recs, at = start + 4, v = @as(u32, removed.len) }
+            write_u32{ bytes = recs, at = start + 8, v = @as(u32, inserted) }
+            write_u32{ bytes = recs, at = start + 12, v = @saturate(u32, caret) }
+            write_u32{ bytes = recs, at = start + 16, v = @saturate(u32, anchor) }
+            slice::copy(u8){ dst = recs[start + RECORD_HEAD..start + RECORD_HEAD + removed.len], src = removed }
+            write_u32{ bytes = recs, at = start + size - TRAILER, v = @as(u32, size) }
+            done = done + size
+            write_marks{ history, done, top = done }
+            return HEADER + start + RECORD_HEAD + removed.len
+        }
+
+        // Whether `text` holds `bytes` at `at`.
+        fn has_bytes { text: []u8, at: usize, bytes: []u8 } -> bool {
+            if at > text.len or bytes.len > text.len - at { return false }
+            return slice::eq_bytes{ a = text[at..at + bytes.len], b = bytes }
+        }
+
+        // Puts `put` in place of `count` bytes at `at`, when the buffer has room. False when not.
+        fn replace_bytes { mut text: TextBuf, at: usize, count: usize, put: []u8 } -> bool {
+            let len = get_len{ text }
+            if at + count > len or len - count + put.len > text.bytes.len { return false }
+            move_bytes{ buf = text.bytes, from = at + count, to = at + put.len, count = len - at - count }
+            slice::copy(u8){ dst = text.bytes[at..at + put.len], src = put }
+            text.len = len - count + put.len
+            return true
+        }
+
+        // Ctrl+Z: the last record undone, the caret and selection back where they were before it.
+        // False when there is nothing to undo, or the text no longer holds what the record changed
+        // (then the history is emptied, and the text left alone).
+        fn undo_edit { mut f: Field, mut text: TextBuf, history: []mut u8 } -> bool {
+            if history.len < HEADER { return false }
+            let marks = read_marks{ history }
+            if marks.done == 0 { return false }
+            let recs = history[HEADER..]
+            let r = read_last{ recs, done = marks.done } ifnull {
+                clear_history{ history }
+                return false
+            }
+            let removed = recs[r.start + RECORD_HEAD..r.start + RECORD_HEAD + r.removed]
+            let inserted = recs[r.start + RECORD_HEAD + r.removed..r.start + RECORD_HEAD + r.removed + r.inserted]
+            let len = get_len{ text }
+            if not has_bytes{ text = text.bytes[..len], at = r.at, bytes = inserted } or not replace_bytes{ &text, at = r.at, count = r.inserted, put = removed } {
+                clear_history{ history }
+                return false
+            }
+            let now = get_len{ text }
+            f.caret = pick_min_usize{ a = r.caret, b = now }
+            f.anchor = pick_min_usize{ a = r.anchor, b = now }
+            f.moved = true
+            write_marks{ history, done = r.start, top = marks.top }
+            set_kind{ history, kind = Kind::none, after = 0 }
+            return true
+        }
+
+        // Ctrl+Y: the record undone last made again, the caret after what it put in.
+        fn redo_edit { mut f: Field, mut text: TextBuf, history: []mut u8 } -> bool {
+            if history.len < HEADER { return false }
+            let marks = read_marks{ history }
+            if marks.done >= marks.top { return false }
+            let recs = history[HEADER..]
+            let r = read_record{ recs, start = marks.done, end = marks.top } ifnull {
+                clear_history{ history }
+                return false
+            }
+            let removed = recs[r.start + RECORD_HEAD..r.start + RECORD_HEAD + r.removed]
+            let inserted = recs[r.start + RECORD_HEAD + r.removed..r.start + RECORD_HEAD + r.removed + r.inserted]
+            let len = get_len{ text }
+            if not has_bytes{ text = text.bytes[..len], at = r.at, bytes = removed } or not replace_bytes{ &text, at = r.at, count = r.removed, put = inserted } {
+                clear_history{ history }
+                return false
+            }
+            f.caret = r.at + r.inserted
+            f.anchor = f.caret
+            f.moved = true
+            write_marks{ history, done = marks.done + r.size, top = marks.top }
+            set_kind{ history, kind = Kind::none, after = 0 }
+            return true
+        }
+
+        // ---- drawing
+
+        // The field's element: its box, and in it a clipping box the inner height of the field
+        // holding the line, which the layout centres; on the line the selection, the text (or the
+        // hint), and the caret while it shows.
+        fn add_field_element {
+            mut ui: Ui, f: Field, box: Box, shown: []u8, text: []u8, color: Color, hint: []u8, hint_color: Color, selection: Color,
+            caret_color: Color, focused: bool, now: f32,
+        } {
+            let el = begin_element{ &ui, id = f.id, axis = Axis::row, box }
+            let clip = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{ width = GROW, height = GROW, clip = true, align_y = Align::center, .. } }
+            let line = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{ width = GROW, height = fix_pixels{ size = f.line.height }, .. } }
+            let width = measure_text{ &ui, font = f.font, size = f.size, text = shown }
+            let x0 = sub_pixels{ a = get_indent{ f, width }, b = f.scroll }
+            if focused and f.caret != f.anchor {
+                let from = locate{ &ui, f = f, shown, index = to_shown{ f, text, index = get_lo{ f } } }
+                let to = locate{ &ui, f = f, shown, index = to_shown{ f, text, index = get_hi{ f } } }
+                paint_rect{ &ui, rect = Rect{ x = add_pixels{ a = x0, b = from }, y = 0, w = sub_pixels{ a = to, b = from }, h = f.line.height }, style = RectStyle{ fill = selection, .. } }
+            }
+            if shown.len > 0 {
+                paint_text{ &ui, font = f.font, size = f.size, x = x0, y = 0, text = shown, color }
+            } else if hint.len > 0 {
+                paint_text{ &ui, font = f.font, size = f.size, x = x0, y = 0, text = hint, color = hint_color }
+            }
+            if focused and f.caret == f.anchor and is_caret_shown{ f, now } {
+                let x = locate{ &ui, f = f, shown, index = to_shown{ f, text, index = f.caret } }
+                paint_rect{ &ui, rect = Rect{ x = add_pixels{ a = x0, b = x }, y = 0, w = f.caret_w, h = f.line.height }, style = RectStyle{ fill = caret_color, .. } }
+            }
+            end{ &ui, scope = line }
+            end{ &ui, scope = clip }
+            end{ &ui, scope = el }
+        }
+
+        // Whether the caret shows now: for BLINK seconds from the last change, then hidden as long,
+        // and so on. The frame asks for the next while it blinks.
+        fn is_caret_shown { f: Field, now: f32 } -> bool {
+            let since = now - f.blink
+            if not (since > 0.0) { return true }
+            let period = BLINK * 2.0
+            let phase = since - floor_f32{ x = since / period } * period
+            return phase < BLINK
+        }
+
+        // The OS's text input on, its candidate window at the caret (last frame's place, surface
+        // pixels), and frames asked for so the caret blinks.
+        fn ask_text_input { mut ui: Ui, f: Field, text: []u8 } {
+            set_animating{ &ui }
+            if not f.has_area {
+                set_text_input{ &ui, rect = Rect{ .. } }
+                return
+            }
+            let shown = make_shown{ &ui, f, text }
+            let width = measure_text{ &ui, font = f.font, size = f.size, text = shown }
+            let x = locate{ &ui, f = f, shown, index = to_shown{ f, text, index = f.caret } }
+            let left = add_pixels{ a = f.area.x, b = sub_pixels{ a = add_pixels{ a = get_indent{ f, width }, b = x }, b = f.scroll } }
+            set_text_input{ &ui, rect = Rect{ x = left, y = f.area.y, w = f.caret_w, h = f.line.height } }
+        }
+
+        // ---- the number entry
+
+        fn get_mode { values: Values } -> NumberMode {
+            let m = values.f[4]
+            if m >= 3.5 { return NumberMode::typing }
+            if m >= 1.5 { return NumberMode::dragging }
+            if m >= 0.5 { return NumberMode::pressing }
+            return NumberMode::idle
+        }
+
+        fn set_mode { mut values: Values, mode: NumberMode } {
+            values.f[4] = match mode { idle => 0.0, pressing => 1.0, dragging => 2.0, begin => 0.0, typing => 4.0 }
+        }
+
+        // The characters a number may be typed with.
+        fn is_number_char { c: u32 } -> bool {
+            return (c >= '0' and c <= '9') or c == '-' or c == '+' or c == '.'
+        }
+
+        // `v` as the entry shows it, with the range's digits after the point.
+        fn format_value { v: f32, range: Range, into: []mut u8 } -> usize {
+            let digits = if range.digits > 6 { 6 } else { range.digits }
+            return format_fixed{ v = if v == v { v } else { 0.0 }, digits, trim = false, into }
+        }
+
+        // A decimal number: a sign or not, digits, a point and digits; null for anything else.
+        fn parse_number { text: []u8 } -> ?f32 {
+            let mut i: usize = 0
+            let mut negative = false
+            if i < text.len and (text[i] == '-' or text[i] == '+') {
+                negative = text[i] == '-'
+                i = i + 1
+            }
+            let mut whole: f64 = 0.0
+            let mut digits: u32 = 0
+            while i < text.len and text[i] >= '0' and text[i] <= '9' {
+                whole = whole * 10.0 + @as(f64, text[i] - '0')
+                digits = digits + 1
+                i = i + 1
+            }
+            if i < text.len and text[i] == '.' {
+                i = i + 1
+                let mut scale: f64 = 0.1
+                while i < text.len and text[i] >= '0' and text[i] <= '9' {
+                    whole = whole + @as(f64, text[i] - '0') * scale
+                    scale = scale * 0.1
+                    digits = digits + 1
+                    i = i + 1
+                }
+            }
+            if digits == 0 or i != text.len or digits > 30 { return null }
+            let v = @as(f32, if negative { -whole } else { whole })
+            return if v - v == 0.0 { v } else { null }
+        }
+
+        // The value the typed text says, when it parses: held to the range and put on its step.
+        fn take_typed_value { text: TextBuf, range: Range, mut value: f32 } {
+            let v = parse_number{ text = text.bytes[..get_len{ text }] } ifnull { return }
+            let kept = put_on_step{ v, range }
+            if kept != value { value = kept }
+        }
+
+        // The typed text of a number entry, in the ring's first NUMBER_TEXT bytes.
+        fn open_number_text { ring: []mut u8 } -> TextBuf {
+            if ring.len < NUMBER_TEXT { return TextBuf{ bytes = ring[..0], len = 0 } }
+            let len = @as(usize, read_u32{ bytes = ring, at = 0 })
+            return TextBuf{ bytes = ring[4..NUMBER_TEXT], len = if len <= NUMBER_TEXT - 4 { len } else { 0 } }
+        }
+
+        fn close_number_text { ring: []mut u8, text: TextBuf } {
+            if ring.len < NUMBER_TEXT { return }
+            write_u32{ bytes = ring, at = 0, v = @as(u32, get_len{ text }) }
+        }
+
+        fn get_number_history { ring: []mut u8 } -> []mut u8 {
+            return if ring.len > NUMBER_TEXT { ring[NUMBER_TEXT..] } else { ring[..0] }
+        }
+
+        // Typing starts over the value: its text, all selected, and an empty history.
+        fn begin_typing { mut f: Field, mut edit: TextBuf, history: []mut u8, digits: []u8, mut values: Values, value: f32 } {
+            let n = pick_min_usize{ a = digits.len, b = edit.bytes.len }
+            slice::copy(u8){ dst = edit.bytes[..n], src = digits[..n] }
+            edit.len = n
+            clear_history{ history }
+            f.anchor = 0
+            f.caret = n
+            f.scroll = 0
+            f.moved = true
+            values.f[5] = value
+        }
+
+        // The pointer on an entry that is not typed in: a press holds it; a drag past the drag
+        // distance moves the value a step every NUMBER_DRAG_STEP units from where the press was; a
+        // release that did not drag begins the typing.
+        fn run_number_pointer { mut ui: Ui, it: Interaction, mut values: Values, mut value: f32, range: Range, mode: NumberMode } -> NumberMode {
+            if it.pressed {
+                values.f[5] = value
+                return if it.clicked { NumberMode::begin } else { NumberMode::pressing }
+            }
+            // The release: a press that did not drag types over the value.
+            if it.clicked and mode == NumberMode::pressing { return NumberMode::begin }
+            if it.held {
+                let reach = to_pixels{ ui, length = ui.config.drag_start }
+                let mut m = mode
+                if m == NumberMode::pressing and (it.drag_x >= reach or it.drag_x <= -reach) { m = NumberMode::dragging }
+                if m == NumberMode::dragging {
+                    let per = pick_max_i32{ a = 1, b = to_pixels{ ui, length = NUMBER_DRAG_STEP } }
+                    let steps = @as(f32, it.drag_x) / @as(f32, per)
+                    let whole = if steps < 0.0 { -floor_f32{ x = -steps + 0.5 } } else { floor_f32{ x = steps + 0.5 } }
+                    value = put_on_step{ v = values.f[5] + whole * get_number_step{ range }, range }
+                    set_cursor{ &ui, cursor = Cursor::resize_h }
+                }
+                return m
+            }
+            if mode == NumberMode::pressing and it.clicked { return NumberMode::begin }
+            return NumberMode::idle
+        }
+
+        // One step of the entry: the range's step, or a hundredth of the range, or one in the last
+        // digit shown.
+        fn get_number_step { range: Range } -> f32 {
+            if range.step > 0.0 { return range.step }
+            if range.max > range.min { return (range.max - range.min) / 100.0 }
+            let mut s: f32 = 1.0
+            for _ in 0..pick_min_u32{ a = range.digits, b = 6 } { s = s * 0.1 }
+            return s
+        }
+
+        // Up and Down while the entry has the focus: a step each. True when they changed it.
+        fn step_number { mut ui: Ui, mut value: f32, range: Range } -> bool {
+            let mut v = value
+            let mut used = false
+            while take_key{ &ui, key = Key::up, mods = 0 } {
+                v = v + get_number_step{ range }
+                used = true
+            }
+            while take_key{ &ui, key = Key::down, mods = 0 } {
+                v = v - get_number_step{ range }
+                used = true
+            }
+            if not used { return false }
+            value = put_on_step{ v, range }
+            return true
+        }
+
+        // The entry's node, its cursor and its tooltip.
+        fn finish_number { mut ui: Ui, id: Id, name: []u8, shown: []u8, value: f32, opts: Opts, it: Interaction, typing: bool } {
+            describe_text{ &ui, id, role = Role::number, label = name, value, flags = get_widget_flags{ opts, it }, text = shown }
+            if opts.enabled and (it.hovered or it.held) { set_cursor{ &ui, cursor = if typing { Cursor::text } else { Cursor::resize_h } } }
+            if opts.tip.len > 0 { add_tooltip{ &ui, anchor = id, text = opts.tip } }
+        }
+    }
+}

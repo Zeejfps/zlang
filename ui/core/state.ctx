@@ -64,6 +64,24 @@ namespace ui {
         return v
     }
 
+    // How many bytes the focused text field's history has (plan section 2.3).
+    const HISTORY_BYTES: usize = 16384
+
+    // The undo history of the focused text field (plan section 2.3): the one piece of state whose
+    // size varies, a single ring of HISTORY_BYTES in the Ui that the widget with `id` keeps its own
+    // records in. It belongs to one id at a time: asked for by another id it is emptied (every byte
+    // 0) and becomes that id's, and it is emptied when focus moves (at end_frame, once focus has
+    // settled), so a field finds it empty when it gains the focus again. One field is edited at a
+    // time, so one ring is enough. NO_ID has no history: it gets an empty one.
+    fn get_history { mut ui: Ui, id: Id } -> []mut u8 {
+        if id == NO_ID { return ui.state.history[..0] }
+        if ui.state.history_owner != id {
+            for &b in ui.state.history { b = 0 }
+            ui.state.history_owner = id
+        }
+        return ui.state.history
+    }
+
     namespace state {
         // How often the sweep runs, in frames.
         const SWEEP_FRAMES: u64 = 64
@@ -80,7 +98,9 @@ namespace ui {
         // linear probing over a power of two at least twice `entries.len`, so a probe always ends
         // at a free slot; a slot holds an entry's place plus one, 0 when it is free. `kept` holds
         // the pinning ids while a sweep runs.
-        struct State { entries: []mut Entry, count: u32, index: []mut u32, kept: []mut Id }
+        // `history` is the focused text field's ring and `history_owner` the id it belongs to
+        // (`get_history`); NO_ID: nobody's, and emptied before anyone has it.
+        struct State { entries: []mut Entry, count: u32, index: []mut u32, kept: []mut Id, history: []mut u8, history_owner: Id }
 
         fn make_state(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !State {
             let limit: usize = if cap.states > 1073741824 { 1073741824 } else { @as(usize, cap.states) }
@@ -89,13 +109,16 @@ namespace ui {
             let entries = try alloc::make(Entry, S){ realloc, &heap, count = limit }
             let index = try alloc::make(u32, S){ realloc, &heap, count = n }
             let kept = try alloc::make(Id, S){ realloc, &heap, count = limit }
-            return State{ entries, count = 0, index, kept }
+            let history = try alloc::make(u8, S){ realloc, &heap, count = HISTORY_BYTES }
+            return State{ entries, count = 0, index, kept, history, history_owner = NO_ID }
         }
 
         fn reset_state { mut ui: Ui } {}
 
-        // The sweep, every SWEEP_FRAMES frames.
+        // The sweep, every SWEEP_FRAMES frames; and the history goes when focus has moved away from
+        // its owner (focus::finish_frame has run, so the focus is this frame's last word).
         fn finish_frame { mut ui: Ui } {
+            if ui.state.history_owner != NO_ID and ui.state.history_owner != ui.focus.focused { ui.state.history_owner = NO_ID }
             if ui.frame % SWEEP_FRAMES == 0 { sweep_entries{ &ui } }
         }
 

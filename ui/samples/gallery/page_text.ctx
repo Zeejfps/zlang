@@ -1,13 +1,156 @@
-// gallery: the text page, which shows the text field and number entry (plan section 7, stage 10).
-// The stage that builds those widgets fills `TextPage`, `make_text_page` and `show_text_page`, and
-// lists the page by setting TEXT_PAGE_LISTED; the switcher leaves out a page that is not listed.
+// gallery: the text page (stage 10): text fields (with a hint, a filter, a maximum length, a
+// password, a long text that scrolls, one not enabled) and number entries, in two columns of
+// panels. Enter in the name field shows what it held below the fields and empties it.
 namespace gallery {
     const TEXT_PAGE_TITLE: []u8 = "Text"
-    const TEXT_PAGE_LISTED: bool = false
+    const TEXT_PAGE_LISTED: bool = true
 
-    struct TextPage {}
+    // The page's buffers: each field edits one in place, its length beside it.
+    struct TextPage {
+        name: [64]u8, name_len: usize,
+        email: [96]u8, email_len: usize,
+        secret: [32]u8, secret_len: usize,
+        pin: [8]u8, pin_len: usize,
+        long: [256]u8, long_len: usize,
+        entered: [96]u8, entered_len: usize,
+        count: f32, price: f32, scale: f32,
+    }
 
-    fn make_text_page {} -> TextPage { return TextPage{} }
+    const LONG_TEXT: []u8 = "A line much longer than its field: click in it and press End, or drag past its edge, and it scrolls with the caret."
 
-    fn show_text_page { mut ui: ui::Ui, mut page: TextPage } {}
+    fn make_text_page {} -> TextPage {
+        let mut page: TextPage
+        fill_buffer{ into = page.name[..], len = &page.name_len, text = "Ada Lovelace" }
+        fill_buffer{ into = page.secret[..], len = &page.secret_len, text = "hunter2" }
+        fill_buffer{ into = page.long[..], len = &page.long_len, text = LONG_TEXT }
+        page.count = 12.0
+        page.price = 9.75
+        page.scale = 1.5
+        return page
+    }
+
+    fn fill_buffer { into: []mut u8, mut len: usize, text: []u8 } {
+        let n = if text.len < into.len { text.len } else { into.len }
+        slice::copy(u8){ dst = into[..n], src = text[..n] }
+        len = n
+    }
+
+    fn is_email_char { c: u32 } -> bool { return c > 32 }
+    fn is_pin_char { c: u32 } -> bool { return c >= '0' and c <= '9' }
+
+    fn show_text_page { mut ui: ui::Ui, mut page: TextPage } {
+        let t = ui.theme
+        let columns = ui::begin_row{ &ui, opts = ui::Opts{ id = "text", box = ui::Box{ width = ui::GROW, align_y = ui::Align::start, gap = t.gap * 2.0, .. }, .. } }
+        {
+            let left = ui::begin_column{ &ui, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, gap = t.gap * 2.0, .. }, .. } }
+            show_fields{ &ui, &page }
+            ui::end{ &ui, scope = left }
+        }
+        {
+            let right = ui::begin_column{ &ui, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, gap = t.gap * 2.0, .. }, .. } }
+            show_numbers{ &ui, &page }
+            show_more_fields{ &ui, &page }
+            ui::end{ &ui, scope = right }
+        }
+        ui::end{ &ui, scope = columns }
+    }
+
+    // A row of a label in a fixed width and what follows it, which the caller adds and ends.
+    fn begin_labelled { mut ui: ui::Ui, label: []u8, enabled: bool } -> ui::Scope {
+        let t = ui.theme
+        let row = ui::begin_row{ &ui, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, .. }, .. } }
+        ui::add_label{ &ui, text = label, opts = ui::Opts{ enabled, box = ui::Box{ width = ui::fix{ size = t.font_size * 6.5 }, .. }, .. } }
+        return row
+    }
+
+    fn show_fields { mut ui: ui::Ui, mut page: TextPage } {
+        let panel = begin_section{ &ui, id = "fields", title = "Text fields" }
+        let mut entered = false
+        {
+            let row = begin_labelled{ &ui, label = "Name", enabled = true }
+            let mut name = ui::TextBuf{ bytes = page.name[..], len = page.name_len }
+            if ui::add_text_field{ &ui, label = "name", text = &name, rules = ui::TextRules{ hint = "Your name", .. }, opts = ui::Opts{ tip = "Enter shows it below", .. } } { entered = true }
+            page.name_len = name.len
+            ui::end{ &ui, scope = row }
+        }
+        {
+            let row = begin_labelled{ &ui, label = "Email", enabled = true }
+            let mut email = ui::TextBuf{ bytes = page.email[..], len = page.email_len }
+            _ = ui::add_text_field{ &ui, label = "email", text = &email, rules = ui::TextRules{ hint = "name@example.com", filter = is_email_char, .. }, opts = ui::Opts{ tip = "No spaces", .. } }
+            page.email_len = email.len
+            ui::end{ &ui, scope = row }
+        }
+        {
+            let row = begin_labelled{ &ui, label = "Password", enabled = true }
+            let mut secret = ui::TextBuf{ bytes = page.secret[..], len = page.secret_len }
+            _ = ui::add_text_field{ &ui, label = "password", text = &secret, rules = ui::TextRules{ password = true, hint = "Masked", .. }, opts = ui::Opts{ .. } }
+            page.secret_len = secret.len
+            ui::end{ &ui, scope = row }
+        }
+        {
+            let row = begin_labelled{ &ui, label = "PIN", enabled = true }
+            let mut pin = ui::TextBuf{ bytes = page.pin[..], len = page.pin_len }
+            _ = ui::add_text_field{ &ui, label = "pin", text = &pin, rules = ui::TextRules{ hint = "4 digits", max_chars = 4, filter = is_pin_char, .. }, opts = ui::Opts{
+                box = ui::Box{ width = ui::fix{ size = ui.theme.control_height * 3.0 }, .. }, tip = "Digits only, four at most", .. } }
+            page.pin_len = pin.len
+            ui::end{ &ui, scope = row }
+        }
+        {
+            let row = begin_labelled{ &ui, label = "Read only", enabled = false }
+            let mut fixed: [24]u8 = "Not enabled: no editing."
+            let mut off = ui::TextBuf{ bytes = fixed[..], len = 24 }
+            _ = ui::add_text_field{ &ui, label = "read only", text = &off, rules = ui::TextRules{ .. }, opts = ui::Opts{ enabled = false, .. } }
+            ui::end{ &ui, scope = row }
+        }
+        // What Enter took is shown below, and the name field starts again empty.
+        if entered {
+            let n = if page.name_len < page.entered.len { page.name_len } else { page.entered.len }
+            slice::copy(u8){ dst = page.entered[..n], src = page.name[..n] }
+            page.entered_len = n
+            page.name_len = 0
+        }
+        ui::add_separator{ &ui, opts = ui::Opts{ .. } }
+        if page.entered_len > 0 {
+            _ = @fmt(&ui, "Entered: {}", page.entered[..page.entered_len])
+        } else {
+            _ = @fmt(&ui, "Press Enter in the name field")
+        }
+        let text = ui::take_text{ &ui }
+        ui::add_label{ &ui, text, opts = ui::Opts{ .. } }
+        ui::end{ &ui, scope = panel }
+    }
+
+    fn show_more_fields { mut ui: ui::Ui, mut page: TextPage } {
+        let panel = begin_section{ &ui, id = "long text", title = "A long text, scrolled with its caret" }
+        let mut long = ui::TextBuf{ bytes = page.long[..], len = page.long_len }
+        _ = ui::add_text_field{ &ui, label = "long", text = &long, rules = ui::TextRules{ .. }, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, .. }, .. } }
+        page.long_len = long.len
+        _ = @fmt(&ui, "{} of {} bytes used", page.long_len, page.long.len)
+        let text = ui::take_text{ &ui }
+        ui::add_label{ &ui, text, opts = ui::Opts{ enabled = false, .. } }
+        ui::end{ &ui, scope = panel }
+    }
+
+    fn show_numbers { mut ui: ui::Ui, mut page: TextPage } {
+        let panel = begin_section{ &ui, id = "numbers", title = "Numbers: drag sideways, or click and type" }
+        {
+            let row = begin_labelled{ &ui, label = "Count", enabled = true }
+            _ = ui::add_number{ &ui, label = "count", value = &page.count, range = ui::Range{ min = 0.0, max = 100.0, step = 1.0, digits = 0 }, opts = ui::Opts{ tip = "0 to 100", .. } }
+            ui::end{ &ui, scope = row }
+        }
+        {
+            let row = begin_labelled{ &ui, label = "Price", enabled = true }
+            _ = ui::add_number{ &ui, label = "price", value = &page.price, range = ui::Range{ min = 0.0, max = 1000.0, step = 0.25, digits = 2 }, opts = ui::Opts{ .. } }
+            ui::end{ &ui, scope = row }
+        }
+        {
+            let row = begin_labelled{ &ui, label = "Scale", enabled = false }
+            _ = ui::add_number{ &ui, label = "scale", value = &page.scale, range = ui::Range{ min = 0.5, max = 4.0, step = 0.25, digits = 2 }, opts = ui::Opts{ enabled = false, .. } }
+            ui::end{ &ui, scope = row }
+        }
+        _ = @fmt(&ui, "Count {}, price {}", ui::write_fixed{ v = page.count, digits = 0, _ }, ui::write_fixed{ v = page.price, digits = 2, _ })
+        let text = ui::take_text{ &ui }
+        ui::add_label{ &ui, text, opts = ui::Opts{ .. } }
+        ui::end{ &ui, scope = panel }
+    }
 }
