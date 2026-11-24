@@ -1,0 +1,22 @@
+== the list open on Mango
+frame 320x320
+clip 1 11,39 138x192
+rect 10,10 140x28 fill=191C22FF radius=4,4,4,4 border=1,1,1,1 356FE0FF,356FE0FF,356FE0FF,356FE0FF clip=0
+text 18,17 font=0 size=14 E4E7EDFF clip=0 "Mango"
+line 133.52,22.08 138,26.24 width=1.75 cap=round A6ACB8FF clip=0
+line 138,26.24 142.48,22.08 width=1.75 cap=round A6ACB8FF clip=0
+rect 10,46 66x28 fill=303641FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 22,53 font=0 size=14 E4E7EDFF clip=0 "Behind"
+rect 10,38 140x194 fill=22252CFF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 35,44 font=0 size=14 E4E7EDFF clip=1 "Date"
+text 35,68 font=0 size=14 E4E7EDFF clip=1 "Fig"
+text 35,92 font=0 size=14 E4E7EDFF clip=1 "Grape"
+text 35,116 font=0 size=14 E4E7EDFF clip=1 "Guava"
+text 35,140 font=0 size=14 E4E7EDFF clip=1 "Kiwi"
+text 35,164 font=0 size=14 E4E7EDFF clip=1 "Lemon"
+text 35,188 font=0 size=14 E4E7EDFF clip=1 "Lime"
+rect 11,207 128x24 fill=3A414DFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=1
+line 18.2,219.32 21.56,222.52 width=1.75 cap=round E4E7EDFF clip=1
+line 21.56,222.52 27.8,215.8 width=1.75 cap=round E4E7EDFF clip=1
+text 35,212 font=0 size=14 E4E7EDFF clip=1 "Mango"
+rect 139,116 10x76 fill=4B5362FF radius=5,5,5,5 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=1

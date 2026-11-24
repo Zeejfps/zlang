@@ -6,7 +6,7 @@
 // whatever its window system reports (ui_sdl does), so the core never scales a pointer. Typed text
 // is in the focused font's encoding.
 namespace ui {
-    enum Key: u8 { none, tab, enter, escape, backspace, delete, left, right, up, down, home, end, page_up, page_down, space, a, c, v, x, y, z }
+    enum Key: u8 { none, tab, enter, escape, backspace, delete, left, right, up, down, home, end, page_up, page_down, space, a, c, v, x, y, z, menu }   // menu: the context-menu key
     const MOD_SHIFT: u8 = 1
     const MOD_CTRL: u8 = 2
     const MOD_ALT: u8 = 4

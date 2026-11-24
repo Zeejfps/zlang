@@ -1,0 +1,428 @@
+// ui: menus (plan section 5, stage 11): a menu bar and its menus, submenus, items with a check
+// mark, separators, and context menus. Every menu is a popup (ui/core/layers.ctx), so it is a layer
+// of the one surface, closes on a press outside it or on Escape, and is placed below its title or
+// beside its submenu's item, flipped and held on the surface.
+//
+//   let bar = ui::begin_menu_bar{ &ui, opts }
+//   let file = ui::begin_menu{ &ui, label = "File", opts }
+//   if file.open {
+//       if ui::add_menu_item{ &ui, label = "Open", opts } { ... }
+//       let recent = ui::begin_menu{ &ui, label = "Recent", opts }     // a submenu: begun in a menu
+//       ...
+//       ui::end{ &ui, scope = recent }
+//   }
+//   ui::end{ &ui, scope = file }
+//   ui::end{ &ui, scope = bar }
+//
+// Behaviour:
+//  - A title opens its menu on a press and shuts it on another; while a menu of the bar is open,
+//    the pointer over another title opens that one instead. A focused title opens its menu with
+//    Enter, Space or Down, its first item lit; Left and Right move the focus along the bar.
+//  - In an open menu the pointer lights the item it moves onto; Up, Down, Home and End light the
+//    items that are enabled, wrapping; Enter or Space picks the lit item. Picking an item (a click,
+//    or the keys) closes every menu and the call is true once. Right on a lit submenu, or the
+//    pointer on it, opens it beside its item (with its first item lit when by keys); Left in a
+//    submenu shuts it; Left and Right in a bar's menu open the next menu of the bar, wrapping.
+//    Escape shuts the frontmost menu (the core's rule for popups).
+//  - A disabled item is drawn in the disabled text colour, is not lit and cannot be picked.
+//  - `begin_context_menu` opens a menu at the pointer on a right press over its target, or below
+//    the target on the Menu key while the target has the focus.
+//
+// Each menu keeps two state entries under its popup's id. The menu's own (`Values`): f[0] the lit
+// item + 1 (0: none), f[1] how many items it had last frame, f[2] its submenu (0 shut, 1 asked
+// for, 2 shown), f[3] and f[4] where the pointer was, f[5] 1 while its first item is to be lit;
+// i[0] which of its first 64 items were enabled last frame, i[1] which were submenus. The frame's
+// count (`make_part_id{ popup, "items" }`): f[0] items so far, f[1] 1 when the pointer moved this
+// frame, f[2] the item the keys picked + 1, f[3] 1 when the keys open the lit submenu; i[0] and
+// i[1] the masks so far. Keys act on last frame's items, as everything in an immediate-mode
+// interface acts on what was last drawn; an item past the 64th is taken as enabled by the keys.
+// A menu bar keeps (under its id): f[0] its titles last frame, f[1] its titles so far, f[2] the
+// title the keys go to + 1, f[3] 1 when that title is to open; i[0] the title whose menu is open
+// this frame, i[1] last frame's.
+//
+// Units: items are `row_height` units high and a menu is at least five controls wide, both
+// declared in boxes; the marks are painted in pixels from the same lengths.
+namespace ui {
+    // What a menu's begin hands back to its title: its scope, and the bar's step (-1 Left, 1 Right).
+    struct MenuBegin { scope: Scope = Scope{ .. }, step: i32 = 0 }
+
+    // An item as the menu it is in sees it.
+    struct MenuSlot {
+        menu: Id = NO_ID,           // the menu's popup; NO_ID outside a menu
+        index: i32 = -1,
+        lit: bool = false,          // it is the menu's lit item
+        moved: bool = false,        // the pointer moved this frame
+        picked: bool = false,       // the keys picked it
+        keyed: bool = false,        // the keys open the lit submenu
+    }
+
+    // ---- the bar and its titles
+
+    // A row for menu titles across the top of a window or the surface, on the surface colour with
+    // a rule under it. Its scope is an id scope named `opts.id` (or "menu bar"); `ui::end` it after
+    // its menus.
+    fn begin_menu_bar { mut ui: Ui, opts: Opts } -> Scope {
+        let t = ui.theme
+        let name: []u8 = if opts.id.len > 0 { opts.id } else { "menu bar" }
+        let id = make_id{ ui, name }
+        let mut s = load_state{ &ui, id }
+        s.f[0] = s.f[1]
+        s.f[1] = 0.0
+        s.i[1] = s.i[0]
+        s.i[0] = 0
+        store_state{ &ui, id, values = s }
+        let gid = make_global_id{ name = "menu bar" }
+        let mut g = load_state{ &ui, id = gid }
+        g.i[0] = pack_id{ id }
+        g.i[1] = @as(i64, ui.frame)
+        store_state{ &ui, id = gid, values = g }
+        let scope = push_id{ &ui, name }
+        let base = Box{
+            width = GROW, height = fix{ size = t.control_height },
+            padding = Insets{ left = t.padding * 0.5, right = t.padding * 0.5, top = t.padding * 0.25, bottom = t.padding * 0.25 },
+            gap = 0.0, align_y = Align::center,
+            fill = t.surface, border = color_sides{ color = t.border }, border_width = Insets{ bottom = t.border_width, .. }, ..
+        }
+        _ = begin_element{ &ui, id, axis = Axis::row, box = merge_box{ box = opts.box, base } }
+        describe{ &ui, id, role = Role::menu_bar, label = "", value = 0.0, flags = 0 }
+        return scope
+    }
+
+    // A menu titled `label`. Begun in a menu bar it is a title and its menu; begun in an open menu
+    // it is a submenu: an item with an arrow, its menu beside it. The scope is open while the menu
+    // is: record its items, then `ui::end` it either way.
+    fn begin_menu { mut ui: Ui, label: []u8, opts: Opts } -> Scope {
+        if get_open_popup{ ui } != NO_ID { return begin_submenu{ &ui, label, opts } }
+        let t = derive_theme{ theme = ui.theme }
+        let name = get_widget_name{ opts, label }
+        let id = make_id{ ui, name }
+        let mut buf: [40]u8
+        let pname = write_popup_name{ kind = "menu:", id, into = buf[..] }
+        let g = load_state{ &ui, id = make_global_id{ name = "menu bar" } }
+        let bar = if g.i[1] == @as(i64, ui.frame) { unpack_id{ v = g.i[0] } } else { NO_ID }
+        let mut s = if bar != NO_ID { load_state{ &ui, id = bar } } else { Values{ f = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], i = [0, 0] } }
+        let k = @as(i32, s.f[1])
+        s.f[1] = s.f[1] + 1.0
+        let open = is_popup_open{ ui, id = pname }
+        let mut want = open
+        let mut first = false
+        if bar != NO_ID and @as(i32, s.f[2]) == k + 1 {
+            // The keys came here from a neighbour: the focus first, so this frame's press has it.
+            s.f[2] = 0.0
+            set_focus{ &ui, id }
+            set_focus_visible{ &ui, visible = true }
+            if s.f[3] != 0.0 and opts.enabled {
+                want = true
+                first = true
+            }
+        }
+        let it = press{ &ui, id, opts = make_press_opts{ ui, opts } }
+        if opts.enabled {
+            if it.pressed { want = not open }
+            if not open and (take_activation{ &ui, it } or (it.focused and take_key{ &ui, key = Key::down, mods = 0 })) {
+                want = true
+                first = true
+            }
+            let other = unpack_id{ v = s.i[1] }
+            if it.hovered and not open and bar != NO_ID and other != NO_ID and other != id { want = true }
+            if it.focused and not want and bar != NO_ID {
+                let count = @as(i32, s.f[0])
+                if count > 0 and take_key{ &ui, key = Key::left, mods = 0 } { s.f[2] = @as(f32, (k + count - 1) % count + 1) }
+                if count > 0 and take_key{ &ui, key = Key::right, mods = 0 } { s.f[2] = @as(f32, (k + 1) % count + 1) }
+                s.f[3] = 0.0
+            }
+        } else {
+            want = false
+        }
+        if want and not open { open_popup_on{ &ui, id = pname, anchor = id, side = PopupSide::below } }
+        if want { s.i[0] = pack_id{ id } }
+        if bar != NO_ID { store_state{ &ui, id = bar, values = s } }
+
+        // The title.
+        let fill = if want { t.selection } else if it.hovered and opts.enabled { t.control_hovered } else { Color{ a = 0, .. } }
+        let el = begin_element{ &ui, id, axis = Axis::row, box = merge_box{ box = opts.box, base = Box{
+            height = GROW, padding = Insets{ left = t.padding, right = t.padding, .. }, align_y = Align::center,
+            fill, radius = round{ radius = t.radius }, ..
+        } } }
+        add_text{ &ui, text = label, style = TextStyle{ color = if opts.enabled { t.text } else { t.text_disabled }, .. }, box = Box{ .. } }
+        if it.focused { add_focus_ring{ &ui, radius = t.radius } }
+        end{ &ui, scope = el }
+        let mut flags = get_widget_flags{ opts, it }
+        if want { flags = flags | NODE_OPEN }
+        describe{ &ui, id, role = Role::menu, label = name, value = 0.0, flags }
+        if opts.tip.len > 0 { add_tooltip{ &ui, anchor = id, text = opts.tip } }
+        if not want { return Scope{ .. } }
+
+        let begun = begin_menu_popup{ &ui, pname, label = name, parent = NO_ID, first, fresh = not open, opts }
+        if begun.step != 0 and bar != NO_ID {
+            let mut s2 = load_state{ &ui, id = bar }
+            let count = @max(@as(i32, s2.f[0]), k + 1)
+            s2.f[2] = @as(f32, (k + begun.step + count) % count + 1)
+            s2.f[3] = 1.0
+            store_state{ &ui, id = bar, values = s2 }
+        }
+        return begun.scope
+    }
+
+    // A submenu: an item of the menu being recorded with an arrow, and its menu beside it while
+    // it is the lit item and was asked for (the pointer on it, a click, Right or Enter).
+    fn begin_submenu { mut ui: Ui, label: []u8, opts: Opts } -> Scope {
+        let t = derive_theme{ theme = ui.theme }
+        let slot = note_menu_item{ &ui, enabled = opts.enabled, sub = true }
+        let name = get_widget_name{ opts, label }
+        let id = make_id{ ui, name }
+        let mut buf: [40]u8
+        let pname = write_popup_name{ kind = "menu:", id, into = buf[..] }
+        let it = press{ &ui, id, opts = PressOpts{ enabled = opts.enabled, focusable = false, .. } }
+        let mut parent = load_state{ &ui, id = slot.menu }
+        let k = slot.index
+        if opts.enabled and ((it.hovered and slot.moved) or it.clicked) {
+            parent.f[0] = @as(f32, k + 1)
+            parent.f[2] = 1.0
+        }
+        let open = is_popup_open{ ui, id = pname }
+        let mine = @as(i32, parent.f[0]) == k + 1
+        // Shut by Escape or a press outside it: it stays shut until it is asked for again.
+        if mine and parent.f[2] == 2.0 and not open { parent.f[2] = 0.0 }
+        let show = opts.enabled and mine and parent.f[2] >= 1.0
+        if show and not open { open_popup_on{ &ui, id = pname, anchor = id, side = PopupSide::beside } }
+        if show { parent.f[2] = 2.0 }
+        store_state{ &ui, id = slot.menu, values = parent }
+        add_menu_row{ &ui, id, label, check = false, arrow = true, lit = opts.enabled and (mine or it.held), enabled = opts.enabled }
+        let mut flags = get_widget_flags{ opts, it }
+        if show { flags = flags | NODE_OPEN }
+        if mine { flags = flags | NODE_SELECTED }
+        describe{ &ui, id, role = Role::menu, label = name, value = 0.0, flags }
+        if not show { return Scope{ .. } }
+        let begun = begin_menu_popup{ &ui, pname, label = name, parent = slot.menu, first = slot.keyed, fresh = not open, opts }
+        return begun.scope
+    }
+
+    // ---- context menus
+
+    // A menu at the pointer when its target (the element with id `target`) takes a right press,
+    // or below the target on the Menu key while it has the focus. `id` names its popup, the same
+    // in every id scope (`ui::open_popup{ id }` opens it too). The scope is open while it is.
+    fn begin_context_menu { mut ui: Ui, id: []u8, target: Id, opts: Opts } -> Scope {
+        let mut opened = false
+        let mut first = false
+        if target != NO_ID and opts.enabled {
+            let it = press{ &ui, id = target, opts = PressOpts{ focusable = false, button = 1, .. } }
+            if it.pressed {
+                open_popup{ &ui, id }
+                opened = true
+            }
+            if is_focused{ ui, id = target } and take_key{ &ui, key = Key::menu, mods = 0 } {
+                open_popup_on{ &ui, id, anchor = target, side = PopupSide::below }
+                opened = true
+                first = true
+            }
+        }
+        if not is_popup_open{ ui, id } { return Scope{ .. } }
+        let begun = begin_menu_popup{ &ui, pname = id, label = id, parent = NO_ID, first, fresh = opened, opts }
+        return begun.scope
+    }
+
+    // ---- items
+
+    // An item of the menu being recorded: `label`, in the disabled colour when `opts.enabled` is
+    // false. True on the frame it is picked (a click, or Enter or Space while it is lit), when
+    // every menu closes.
+    fn add_menu_item { mut ui: Ui, label: []u8, opts: Opts } -> bool {
+        return add_menu_entry{ &ui, label, check = false, checkable = false, opts }
+    }
+
+    // An item with a check mark that shows `value`; picking it flips `value`, closes the menus and
+    // is true once.
+    fn add_menu_check { mut ui: Ui, label: []u8, mut value: bool, opts: Opts } -> bool {
+        let picked = add_menu_entry{ &ui, label, check = value, checkable = true, opts }
+        if picked { value = not value }
+        return picked
+    }
+
+    // A rule between groups of items, half a padding above and below.
+    fn add_menu_separator { mut ui: Ui } {
+        let t = ui.theme
+        let half = t.padding * 0.5
+        let el = begin_element{ &ui, id = NO_ID, axis = Axis::column, box = Box{ width = GROW, padding = Insets{ left = half, right = half, top = half * 0.5, bottom = half * 0.5 }, .. } }
+        let rule = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{ width = GROW, height = fix{ size = t.border_width }, fill = get_rule_color{ theme = t }, .. } }
+        end{ &ui, scope = rule }
+        end{ &ui, scope = el }
+    }
+
+    fn add_menu_entry { mut ui: Ui, label: []u8, check: bool, checkable: bool, opts: Opts } -> bool {
+        let slot = note_menu_item{ &ui, enabled = opts.enabled, sub = false }
+        let name = get_widget_name{ opts, label }
+        let id = make_id{ ui, name }
+        let it = press{ &ui, id, opts = PressOpts{ enabled = opts.enabled, focusable = false, .. } }
+        let mut lit = slot.lit
+        if slot.menu != NO_ID and opts.enabled and it.hovered and slot.moved {
+            let mut m = load_state{ &ui, id = slot.menu }
+            m.f[0] = @as(f32, slot.index + 1)
+            m.f[2] = 0.0
+            store_state{ &ui, id = slot.menu, values = m }
+            lit = true
+        }
+        if slot.menu == NO_ID { lit = it.hovered }
+        let picked = opts.enabled and (it.clicked or slot.picked)
+        add_menu_row{ &ui, id, label, check, arrow = false, lit = opts.enabled and (lit or it.held), enabled = opts.enabled }
+        let mut flags = get_widget_flags{ opts, it }
+        if checkable and check { flags = flags | NODE_CHECKED }
+        if lit and opts.enabled { flags = flags | NODE_SELECTED }
+        describe{ &ui, id, role = Role::menu_item, label = name, value = if check { 1.0 } else { 0.0 }, flags }
+        if opts.tip.len > 0 { add_tooltip{ &ui, anchor = id, text = opts.tip } }
+        if picked { close_popups{ &ui } }
+        return picked
+    }
+
+    // An item's row: a column for a check mark, the label, and an arrow for a submenu; the
+    // selection colour while it is lit.
+    fn add_menu_row { mut ui: Ui, id: Id, label: []u8, check: bool, arrow: bool, lit: bool, enabled: bool } {
+        let t = derive_theme{ theme = ui.theme }
+        let color = if enabled { t.text } else { t.text_disabled }
+        let el = begin_element{ &ui, id, axis = Axis::row, box = Box{
+            width = GROW, height = fix{ size = t.row_height },
+            padding = Insets{ left = t.padding * 0.5, right = t.padding * 0.5, .. }, gap = t.gap * 0.5, align_y = Align::center,
+            fill = if lit { t.selection } else { Color{ a = 0, .. } }, radius = round{ radius = t.radius }, ..
+        } }
+        add_menu_mark{ &ui, check, color }
+        add_text{ &ui, text = label, style = TextStyle{ color, overflow = Overflow::ellipsis, .. }, box = Box{ width = GROW, .. } }
+        // Every item keeps the arrow's column, so the labels end short of the edge alike.
+        let size = get_mark_size{ theme = t }
+        let box = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{ width = fix{ size }, height = fix{ size }, .. } }
+        if arrow {
+            let side = to_pixels{ ui, length = size }
+            paint_icon{ &ui, icon = Icon::arrow_right, rect = Rect{ x = 0, y = 0, w = side, h = side }, color }
+        }
+        end{ &ui, scope = box }
+        end{ &ui, scope = el }
+    }
+
+    // The column of a check mark, a mark's size square, with the mark when `check` is set.
+    fn add_menu_mark { mut ui: Ui, check: bool, color: Color } {
+        let size = get_mark_size{ theme = ui.theme }
+        let box = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{ width = fix{ size }, height = fix{ size }, .. } }
+        if check {
+            let side = to_pixels{ ui, length = size }
+            paint_icon{ &ui, icon = Icon::check, rect = Rect{ x = 0, y = 0, w = side, h = side }, color }
+        }
+        end{ &ui, scope = box }
+    }
+
+    // ---- a menu's state
+
+    // Begins the open menu `pname`: last frame's items become what its keys act on, the pointer's
+    // movement is noted for its items, and when no submenu of it is shown it takes its keys. `fresh`:
+    // it opened this frame (nothing lit); `first`: its first enabled item is to be lit. A submenu
+    // (`parent` set) shut by Left is not begun, so it closes.
+    fn begin_menu_popup { mut ui: Ui, pname: []u8, label: []u8, parent: Id, first: bool, fresh: bool, opts: Opts } -> MenuBegin {
+        let t = ui.theme
+        let menu = make_popup_id{ name = pname }
+        let count_id = make_part_id{ id = menu, part = "items" }
+        let mut a = load_state{ &ui, id = menu }
+        let mut b = load_state{ &ui, id = count_id }
+        a.f[1] = b.f[0]
+        a.i[0] = b.i[0]
+        a.i[1] = b.i[1]
+        b = Values{ f = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], i = [0, 0] }
+        if fresh {
+            a.f[0] = 0.0
+            a.f[2] = 0.0
+            a.f[5] = 0.0
+        }
+        if first { a.f[5] = 1.0 }
+        if a.f[5] != 0.0 and a.f[1] > 0.0 {
+            a.f[0] = @as(f32, step_menu{ a, from = -1, by = 1 } + 1)
+            a.f[5] = 0.0
+        }
+        let p = get_pointer{ ui }
+        if @as(f32, p.x) != a.f[3] or @as(f32, p.y) != a.f[4] { b.f[1] = 1.0 }
+        a.f[3] = @as(f32, p.x)
+        a.f[4] = @as(f32, p.y)
+        let mut step: i32 = 0
+        let mut shut = false
+        if a.f[2] == 0.0 {
+            let mut lit = @as(i32, a.f[0]) - 1
+            while take_key{ &ui, key = Key::down, mods = 0 } { lit = step_menu{ a, from = lit, by = 1 } }
+            while take_key{ &ui, key = Key::up, mods = 0 } { lit = step_menu{ a, from = lit, by = -1 } }
+            if take_key{ &ui, key = Key::home, mods = 0 } { lit = step_menu{ a, from = -1, by = 1 } }
+            if take_key{ &ui, key = Key::end, mods = 0 } { lit = step_menu{ a, from = -1, by = -1 } }
+            let sub = is_menu_bit{ mask = a.i[1], index = lit, past = false }
+            let enter = take_key{ &ui, key = Key::enter, mods = 0 }
+            let space = take_key{ &ui, key = Key::space, mods = 0 }
+            if (enter or space) and lit >= 0 {
+                if sub {
+                    a.f[2] = 1.0
+                    b.f[3] = 1.0
+                } else {
+                    b.f[2] = @as(f32, lit + 1)
+                }
+            }
+            if take_key{ &ui, key = Key::right, mods = 0 } {
+                if sub and lit >= 0 {
+                    a.f[2] = 1.0
+                    b.f[3] = 1.0
+                } else if parent == NO_ID {
+                    step = 1
+                }
+            }
+            if take_key{ &ui, key = Key::left, mods = 0 } {
+                if parent != NO_ID { shut = true } else { step = -1 }
+            }
+            a.f[0] = @as(f32, lit + 1)
+        }
+        store_state{ &ui, id = menu, values = a }
+        store_state{ &ui, id = count_id, values = b }
+        if shut {
+            let mut pa = load_state{ &ui, id = parent }
+            pa.f[2] = 0.0
+            store_state{ &ui, id = parent, values = pa }
+            return MenuBegin{ scope = Scope{ .. }, step }
+        }
+        let base = Box{ width = Size{ kind = SizeKind::fit, min = t.control_height * 5.0, .. }, gap = 0.0, padding = inset{ by = t.padding * 0.5 }, .. }
+        let scope = begin_popup{ &ui, id = pname, opts = Opts{ box = merge_box{ box = opts.box, base }, .. } }
+        if scope.open { _ = push_id{ &ui, name = label } }
+        return MenuBegin{ scope, step }
+    }
+
+    // The item recorded now in the menu being recorded, counted, with how the menu sees it.
+    fn note_menu_item { mut ui: Ui, enabled: bool, sub: bool } -> MenuSlot {
+        let menu = get_open_popup{ ui }
+        if menu == NO_ID { return MenuSlot{ .. } }
+        let count_id = make_part_id{ id = menu, part = "items" }
+        let mut b = load_state{ &ui, id = count_id }
+        let k = @as(i32, b.f[0])
+        b.f[0] = b.f[0] + 1.0
+        if k < 64 {
+            let bit = @as(i64, 1) << @as(i64, k)
+            if enabled { b.i[0] = b.i[0] | bit }
+            if sub { b.i[1] = b.i[1] | bit }
+        }
+        store_state{ &ui, id = count_id, values = b }
+        let a = load_state{ &ui, id = menu }
+        return MenuSlot{
+            menu, index = k, lit = @as(i32, a.f[0]) == k + 1, moved = b.f[1] != 0.0,
+            picked = @as(i32, b.f[2]) == k + 1, keyed = b.f[3] != 0.0,
+        }
+    }
+
+    // Whether bit `index` of a menu's mask is set; an index past the mask is `past`.
+    fn is_menu_bit { mask: i64, index: i32, past: bool } -> bool {
+        if index < 0 { return false }
+        if index >= 64 { return past }
+        return (mask >> @as(i64, index)) & 1 != 0
+    }
+
+    // The enabled item `by` (1 or -1) from `from`, wrapping, in last frame's items; from -1 the
+    // first (or, going up, the last). -1 when no item is enabled.
+    fn step_menu { a: Values, from: i32, by: i32 } -> i32 {
+        let count = @as(i32, a.f[1])
+        if count <= 0 { return -1 }
+        let mut at = from
+        for _ in 0..count {
+            at = if at < 0 or at >= count { if by > 0 { 0 } else { count - 1 } } else { (at + by + count) % count }
+            if is_menu_bit{ mask = a.i[0], index = at, past = true } { return at }
+        }
+        return -1
+    }
+}

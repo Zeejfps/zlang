@@ -117,6 +117,14 @@ namespace ui {
         return dy
     }
 
+    // Whether the pointer is over the region of `id` or over something inside it, with nothing of
+    // another tree on top (the rule `take_wheel` goes by), from the last frame's regions. Unlike
+    // `Interaction.hovered` it is answered while another widget holds the pointer: what a drop
+    // target asks while a drag is on.
+    fn is_pointer_over { ui: Ui, id: Id } -> bool {
+        return interact::is_under_pointer{ ui, id }
+    }
+
     // `take_wheel` for the horizontal movement.
     fn take_wheel_x { mut ui: Ui, id: Id } -> f32 {
         if ui.input.now.wheel_x == 0.0 or not interact::is_under_pointer{ ui, id } { return 0.0 }

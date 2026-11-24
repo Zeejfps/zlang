@@ -1,0 +1,287 @@
+// ui: windows and dialogs (plan section 5, stage 11).
+//
+// A window is a tree of its own among the windows (`ui::begin_window_layer`): in front of the base
+// tree, behind the modals and popups, the windows in the order they were last pressed in or
+// raised. It has a title bar (a collapse arrow, the title, a close button), a body that scrolls
+// when its content is taller than it, and a grip in its bottom right corner. `begin_window` gives
+// a scope whose `open` says whether to record the content; `ui::end` of it closes the window.
+//
+//  - Move: the title bar dragged moves the window with the pointer. Resize: the grip dragged sizes
+//    it, never below its least size (four controls wide, the title bar, a control and the grip's
+//    strip high). Collapse: the arrow, or a double click on the title bar, folds it to its title
+//    bar and back; folded it keeps its place and size, its body is not recorded and takes no
+//    pointer. Close: the cross sets `open` false, and a window that is not open records nothing.
+//  - The keyboard: the arrow and the cross are tab stops, worked by Enter or Space.
+//  - Reach: a window is held where it can be got back. Its title bar stays wholly on the surface
+//    up and down, and at least REACH units of it across (or all of it, when it is narrower), each
+//    frame and while it is dragged; a window put off the surface by a smaller surface comes back
+//    to where it was when the surface grows again.
+//  - A window's place and size are its state (`Values.f`), in logical units, so they survive a
+//    change of scale: f[0], f[1] its left and top, f[2], f[3] its width and height (a height of 0
+//    fits its content until it is resized); f[4], f[5] what a drag started from, in pixels; i[0]
+//    its flags (made, folded), i[1] the drag that is on (none, move, size). While a window is not
+//    open its state is pinned (`keep_state`), so it opens again where it was.
+//
+// Units. `WindowOpts` is logical units. A drag works in pixels and stores logical units: at the
+// press the window's pixel place (or size) is noted, the pointer's movement in pixels is added to
+// it, and the result over the scale is stored. A whole pixel over the scale converts back to the
+// same whole pixel (`ui::to_pixel_position`, `ui::to_pixels`), so a dragged window follows the
+// pointer to the pixel at any scale and never drifts. The grip, the buttons and the marks are
+// painted in pixels from the same theme lengths the boxes declare.
+//
+// A dialog (`begin_dialog`) is a card in a modal layer (`ui::begin_modal`): it blocks everything
+// behind it, puts the focus aside while it is up and gives it back when it goes. Escape and its
+// close button set `open` false.
+namespace ui {
+    struct WindowOpts { x: f32 = 40.0, y: f32 = 40.0, width: f32 = 360.0, height: f32 = 0.0, movable: bool = true, resizable: bool = true, closable: bool = true }
+
+    // How much of a window's title bar is held on the surface across, in logical units.
+    const WINDOW_REACH: f32 = 64.0
+
+    // A window's state flags (`Values.i[0]`) and its drags (`Values.i[1]`).
+    const WINDOW_MADE: i64 = 1
+    const WINDOW_FOLDED: i64 = 2
+    const WINDOW_MOVING: i64 = 1
+    const WINDOW_SIZING: i64 = 2
+
+    // A window titled `title` (its id and node are `opts.id`, or the title), placed and sized by
+    // `window` the first time and by its state from then on. While `open` is false it records
+    // nothing and gives a closed scope; its close button sets `open` false. The scope is open while
+    // the window is open and not folded: record the content into it, then `ui::end` it either way.
+    // The content is a column, padded and spaced by the theme, laid out by `opts.box` laid over
+    // that; it scrolls when it is taller than the body.
+    fn begin_window { mut ui: Ui, title: []u8, mut open: bool, window: WindowOpts, opts: Opts } -> Scope {
+        let t = derive_theme{ theme = ui.theme }
+        let name = get_widget_name{ opts, label = title }
+        let id = make_id{ ui, name }
+        if not open {
+            keep_state{ &ui, id }
+            return Scope{ .. }
+        }
+        let mut v = load_state{ &ui, id }
+        if (v.i[0] & WINDOW_MADE) == 0 {
+            v.f[0] = window.x
+            v.f[1] = window.y
+            v.f[2] = window.width
+            v.f[3] = window.height
+            v.i[0] = WINDOW_MADE
+        }
+        let scale = get_scale{ ui }
+        let outer = push_id{ &ui, name }
+        let bar_id = make_id{ ui, name = ".title" }
+        let grip_id = make_id{ ui, name = ".grip" }
+        let fold_id = make_id{ ui, name = ".collapse" }
+        let close_id = make_id{ ui, name = ".close" }
+        let movable = window.movable and opts.enabled
+        let folded_before = (v.i[0] & WINDOW_FOLDED) != 0
+        let resizable = window.resizable and opts.enabled and not folded_before
+
+        // The buttons and the bar first: what they do decides the window's place, size and fold.
+        let press_opts = make_press_opts{ ui, opts }
+        let fold = press{ &ui, id = fold_id, opts = press_opts }
+        let fold_keyed = opts.enabled and take_activation{ &ui, it = fold }
+        let close = if window.closable { press{ &ui, id = close_id, opts = press_opts } } else { Interaction{ id = close_id, .. } }
+        let close_keyed = window.closable and opts.enabled and take_activation{ &ui, it = close }
+        let bar = press{ &ui, id = bar_id, opts = PressOpts{ enabled = opts.enabled, focusable = false, .. } }
+        let grip = press{ &ui, id = grip_id, opts = PressOpts{ enabled = resizable, focusable = false, .. } }
+        if (opts.enabled and (fold.clicked or fold_keyed)) or (bar.pressed and bar.clicks == 2) { v.i[0] = v.i[0] ^ WINDOW_FOLDED }
+        if window.closable and opts.enabled and (close.clicked or close_keyed) {
+            open = false
+            keep_state{ &ui, id }
+            store_state{ &ui, id, values = v }
+            end{ &ui, scope = outer }
+            return Scope{ .. }
+        }
+        let folded = (v.i[0] & WINDOW_FOLDED) != 0
+
+        // The size in pixels: the stored one, or last frame's for a height that fits; held to the least.
+        let last = get_rect{ ui, id }
+        let least_w = to_pixels{ ui, length = t.control_height * 4.0 }
+        let least_h = to_pixels{ ui, length = get_window_least{ theme = t } }
+        let mut w = @max(least_w, to_pixels{ ui, length = v.f[2] })
+        let mut h = if v.f[3] > 0.0 { @max(least_h, to_pixels{ ui, length = v.f[3] }) } else { 0 }
+        if grip.pressed {
+            let lh = if let r = last { r.h } else { least_h }
+            v.f[4] = @as(f32, w)
+            v.f[5] = @as(f32, if h > 0 { h } else { lh })
+            v.i[1] = WINDOW_SIZING
+        }
+        if grip.held and v.i[1] == WINDOW_SIZING {
+            w = @max(least_w, add_pixels{ a = round_pixels{ v = v.f[4] }, b = grip.drag_x })
+            h = @max(least_h, add_pixels{ a = round_pixels{ v = v.f[5] }, b = grip.drag_y })
+            v.f[2] = @as(f32, w) / scale
+            v.f[3] = @as(f32, h) / scale
+        }
+
+        // The place in pixels, held where it can be reached.
+        let title_h = to_pixels{ ui, length = t.control_height }
+        let reach = @min(w, to_pixels{ ui, length = WINDOW_REACH })
+        let mut at = hold_window{ x = to_pixel_position{ ui, position = v.f[0] }, y = to_pixel_position{ ui, position = v.f[1] }, w, reach, title = title_h, width = ui.draw.width, height = ui.draw.height }
+        if bar.pressed and movable {
+            v.f[4] = @as(f32, at.x)
+            v.f[5] = @as(f32, at.y)
+            v.i[1] = WINDOW_MOVING
+        }
+        if bar.held and movable and v.i[1] == WINDOW_MOVING {
+            let x = add_pixels{ a = round_pixels{ v = v.f[4] }, b = bar.drag_x }
+            let y = add_pixels{ a = round_pixels{ v = v.f[5] }, b = bar.drag_y }
+            at = hold_window{ x, y, w, reach, title = title_h, width = ui.draw.width, height = ui.draw.height }
+            v.f[0] = @as(f32, at.x) / scale
+            v.f[1] = @as(f32, at.y) / scale
+        }
+        if not bar.held and not grip.held { v.i[1] = 0 }
+        store_state{ &ui, id, values = v }
+        if grip.hovered or grip.held { set_cursor{ &ui, cursor = Cursor::resize_diag } }
+        if bar.held and movable { set_cursor{ &ui, cursor = Cursor::move } }
+
+        // The window's tree: its frame, the title bar, the grip, the body.
+        let strip = window.resizable and not folded
+        let bw = t.border_width
+        let box = Box{
+            width = fix_pixels{ size = w },
+            height = if folded { FIT } else if h > 0 { fix_pixels{ size = h } } else { Size{ kind = SizeKind::fit, min = get_window_least{ theme = t }, .. } },
+            place = Place{ x = @as(f32, at.x) / scale, y = @as(f32, at.y) / scale, .. },
+            padding = Insets{ left = bw, top = bw, right = bw, bottom = bw + (if strip { t.padding } else { 0.0 }) },
+            fill = t.surface, border = color_sides{ color = t.border }, border_width = inset{ by = bw },
+            radius = round{ radius = t.radius }, clip = true, ..
+        }
+        _ = begin_window_layer{ &ui, id, box }
+        describe{ &ui, id, role = Role::window, label = "", value = 0.0, flags = if folded { 0 } else { NODE_OPEN } }
+        add_title_bar{ &ui, bar_id, title, folded, fold, close, closable = window.closable, opts }
+        if strip { add_grip{ &ui, id = grip_id, it = grip, enabled = resizable } }
+        if folded {
+            end{ &ui, scope = outer }
+            return Scope{ .. }
+        }
+        let pad = t.padding
+        let base = Box{
+            width = GROW, height = GROW,
+            padding = Insets{ left = pad, top = pad, right = pad, bottom = if strip { 0.0 } else { pad } }, gap = t.gap, ..
+        }
+        _ = begin_scroll{ &ui, id = ".body", opts = Opts{ box = merge_box{ box = opts.box, base }, enabled = opts.enabled, .. } }
+        return outer
+    }
+
+    // The least height of a window, in logical units: its title bar, a control, and the grip's strip.
+    fn get_window_least { theme: Theme } -> f32 {
+        return theme.control_height * 2.0 + theme.padding
+    }
+
+    // Where a window `w` pixels wide at (x, y) is drawn on a surface of `width` by `height`: its
+    // title bar (`title` high) wholly on the surface up and down, and `reach` pixels of it across.
+    // Where the surface is too small for that, its left and top edges win.
+    fn hold_window { x: i32, y: i32, w: i32, reach: i32, title: i32, width: i32, height: i32 } -> Point {
+        let lo_x = @as(i64, reach) - @as(i64, w)
+        let hi_x = @as(i64, width) - @as(i64, reach)
+        let hi_y = @as(i64, height) - @as(i64, title)
+        let mut hx = @as(i64, x)
+        let mut hy = @as(i64, y)
+        if hx > hi_x { hx = hi_x }
+        if hx < lo_x { hx = lo_x }
+        if hy > hi_y { hy = hi_y }
+        if hy < 0 { hy = 0 }
+        return Point{ x = hold_pixels{ v = hx }, y = hold_pixels{ v = hy } }
+    }
+
+    // The title bar: the fold arrow, the title cut short with dots, the close cross. It takes the
+    // pointer as `bar_id` (the drag that moves the window).
+    fn add_title_bar { mut ui: Ui, bar_id: Id, title: []u8, folded: bool, fold: Interaction, close: Interaction, closable: bool, opts: Opts } {
+        let t = derive_theme{ theme = ui.theme }
+        let half = t.padding * 0.5
+        let rule = if folded { 0.0 } else { t.border_width }
+        let bar = begin_element{ &ui, id = bar_id, axis = Axis::row, box = Box{
+            width = GROW, height = fix{ size = t.control_height },
+            padding = Insets{ left = half, right = half, .. }, gap = half, align_y = Align::center,
+            fill = t.control, border = color_sides{ color = t.border }, border_width = Insets{ bottom = rule, .. }, ..
+        } }
+        add_title_button{ &ui, it = fold, icon = if folded { Icon::arrow_right } else { Icon::arrow_down }, label = ".collapse", enabled = opts.enabled, flags = if folded { 0 } else { NODE_OPEN } }
+        let color = if opts.enabled { t.text } else { t.text_disabled }
+        add_text{ &ui, text = title, style = TextStyle{ color, overflow = Overflow::ellipsis, .. }, box = Box{ width = GROW, .. } }
+        if closable { add_title_button{ &ui, it = close, icon = Icon::cross, label = ".close", enabled = opts.enabled, flags = 0 } }
+        end{ &ui, scope = bar }
+        describe{ &ui, id = bar_id, role = Role::row, label = ".title", value = 0.0, flags = if opts.enabled { 0 } else { NODE_DISABLED } }
+    }
+
+    // A square button of the title bar with a mark: hovered, pressed and focused as a button is.
+    fn add_title_button { mut ui: Ui, it: Interaction, icon: Icon, label: []u8, enabled: bool, flags: u8 } {
+        let t = derive_theme{ theme = ui.theme }
+        let side = get_mark_size{ theme = t } + 4.0
+        let fill = if not enabled { Color{ a = 0, .. } } else if it.held and it.hovered { t.control_pressed } else if it.hovered { t.control_hovered } else { Color{ a = 0, .. } }
+        let el = begin_element{ &ui, id = it.id, axis = Axis::row, box = Box{
+            width = fix{ size = side }, height = fix{ size = side }, fill, radius = round{ radius = t.radius }, ..
+        } }
+        let px = to_pixels{ ui, length = side }
+        paint_icon{ &ui, icon, rect = Rect{ x = 0, y = 0, w = px, h = px }, color = if enabled { t.text_muted } else { t.text_disabled } }
+        if it.focused { add_focus_ring{ &ui, radius = t.radius } }
+        end{ &ui, scope = el }
+        let f = flags | get_widget_flags{ opts = Opts{ enabled, .. }, it }
+        describe{ &ui, id = it.id, role = Role::button, label, value = 0.0, flags = f }
+        if enabled and it.hovered { set_cursor{ &ui, cursor = Cursor::hand } }
+    }
+
+    // The grip in the bottom right corner, in the strip below the body: two strokes across the
+    // corner, the accent while it is held. It is twice the strip wide.
+    fn add_grip { mut ui: Ui, id: Id, it: Interaction, enabled: bool } {
+        let t = ui.theme
+        let gh = t.padding
+        let gw = t.padding * 2.0
+        let bw = t.border_width
+        // Its corner on the inside of the frame's border, in the pixels the frame's padding is:
+        // the right padding is a border, the bottom one a border and the strip as one length.
+        let w = @as(f32, to_pixels{ ui, length = gw })
+        let h = @as(f32, to_pixels{ ui, length = gh })
+        let scale = get_scale{ ui }
+        let back = @as(f32, add_pixels{ a = to_pixels{ ui, length = bw }, b = to_pixels{ ui, length = gw } })
+        let up = @as(f32, to_pixels{ ui, length = bw + gh })
+        let el = begin_element{ &ui, id, axis = Axis::row, box = Box{
+            width = fix{ size = gw }, height = fix{ size = gh },
+            place = Place{ anchor_x = 1.0, anchor_y = 1.0, x = -back / scale, y = -up / scale }, ..
+        } }
+        let color = if not enabled { t.text_disabled } else if it.held { t.accent } else if it.hovered { t.text } else { t.text_muted }
+        let width = to_pixels_f32{ ui, length = t.border_width }
+        let step = h * 0.45
+        paint_line{ &ui, x0 = w - h * 0.85, y0 = h * 0.85, x1 = w - h * 0.15, y1 = h * 0.15, width, color, cap = Cap::round }
+        paint_line{ &ui, x0 = w - h * 0.85 + step, y0 = h * 0.85, x1 = w - h * 0.15, y1 = h * 0.15 + step, width, color, cap = Cap::round }
+        end{ &ui, scope = el }
+        describe{ &ui, id, role = Role::button, label = ".grip", value = 0.0, flags = if enabled { 0 } else { NODE_DISABLED } }
+    }
+
+    // ---- dialogs
+
+    // A dialog titled `title`: a card centred over a scrim that blocks everything behind it (a
+    // modal layer). While `open` is false it records nothing and gives a closed scope. Escape, or
+    // its close button, sets `open` false. The scope is open while it is: record the content into
+    // it (a column, the theme's gap apart), then `ui::end` it either way. `opts.box` is laid over
+    // the card's look. It takes the focus aside while it is up (nothing has it, so Tab goes into it)
+    // and gives it back when it goes.
+    fn begin_dialog { mut ui: Ui, title: []u8, mut open: bool, opts: Opts } -> Scope {
+        if not open { return Scope{ .. } }
+        let t = derive_theme{ theme = ui.theme }
+        let name = get_widget_name{ opts, label = title }
+        let id = make_id{ ui, name }
+        let outer = push_id{ &ui, name }
+        _ = begin_modal{ &ui, id = ".modal", opts = Opts{ .. } }
+        let close_id = make_id{ ui, name = ".close" }
+        let close = press{ &ui, id = close_id, opts = make_press_opts{ ui, opts } }
+        let keyed = opts.enabled and take_activation{ &ui, it = close }
+        // Escape is taken here, in the modal's tree, so only the frontmost dialog sees it; a popup
+        // open in the dialog took it first.
+        let escaped = take_key{ &ui, key = Key::escape, mods = 0 }
+        if escaped or (opts.enabled and (close.clicked or keyed)) { open = false }
+        let base = Box{
+            width = Size{ kind = SizeKind::fit, min = t.control_height * 10.0, .. },
+            padding = inset{ by = t.padding * 1.5 }, gap = t.gap,
+            fill = t.surface, border = color_sides{ color = t.border }, border_width = inset{ by = t.border_width },
+            radius = round{ radius = t.radius * 2.0 }, ..
+        }
+        _ = begin_element{ &ui, id, axis = Axis::column, box = merge_box{ box = opts.box, base } }
+        describe{ &ui, id, role = Role::dialog, label = "", value = 0.0, flags = NODE_OPEN }
+        {
+            let row = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{ width = GROW, gap = t.gap, align_y = Align::center, .. } }
+            add_text{ &ui, text = title, style = TextStyle{ size = t.font_size * 1.15, color = t.text, overflow = Overflow::ellipsis, .. }, box = Box{ width = GROW, .. } }
+            add_title_button{ &ui, it = close, icon = Icon::cross, label = ".close", enabled = opts.enabled, flags = 0 }
+            end{ &ui, scope = row }
+        }
+        return outer
+    }
+}

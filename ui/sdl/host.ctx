@@ -299,6 +299,7 @@ namespace ui_sdl {
         if keycode == key::X { return ui::Key::x }
         if keycode == key::Y { return ui::Key::y }
         if keycode == key::Z { return ui::Key::z }
+        if keycode == key::APPLICATION { return ui::Key::menu }
         return null
     }
 

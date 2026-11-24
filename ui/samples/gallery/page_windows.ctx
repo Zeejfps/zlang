@@ -1,14 +1,317 @@
-// gallery: the windows page, which shows windows, dialogs, popups, menus, the combo, tooltips and
-// drag and drop (plan section 7, stage 11). The stage that builds those widgets fills
-// `WindowsPage`, `make_windows_page` and `show_windows_page`, and lists the page by setting
-// WINDOWS_PAGE_LISTED; the switcher leaves out a page that is not listed.
+// gallery: the windows page (stage 11): a menu bar with a submenu, a check item and a disabled
+// item; two windows (one with a menu bar of its own and a long list that scrolls), a dialog, a
+// combo with a long list, a context menu, tooltips, and drag and drop between two bins.
 namespace gallery {
     const WINDOWS_PAGE_TITLE: []u8 = "Windows"
-    const WINDOWS_PAGE_LISTED: bool = false
+    const WINDOWS_PAGE_LISTED: bool = true
 
-    struct WindowsPage {}
+    const FRUIT_NAMES: [16][]u8 = [
+        "Apple", "Apricot", "Banana", "Blueberry", "Cherry", "Coconut", "Fig", "Grape",
+        "Kiwi", "Lemon", "Mango", "Melon", "Orange", "Peach", "Pear", "Plum",
+    ]
+    const CHIP_NAMES: [4][]u8 = ["Pear", "Plum", "Leek", "Kale"]
+    const CHIP_KINDS: [4][]u8 = ["fruit", "fruit", "veg", "veg"]
 
-    fn make_windows_page {} -> WindowsPage { return WindowsPage{} }
+    struct WindowsPage {
+        tasks: bool, notes: bool, dialog: bool,
+        wrap: bool, grid: bool, autosave: bool,
+        fruit: i32, size: i32,
+        last: []u8,                         // the last command picked, for the status line
+        basket: u32, crate: u32,            // chips dropped in each bin
+        placed: [4]u8,                      // where each chip is: 0 the tray, 1 the basket, 2 the crate
+        done: [24]bool,
+    }
 
-    fn show_windows_page { mut ui: ui::Ui, mut page: WindowsPage } {}
+    fn make_windows_page {} -> WindowsPage {
+        return WindowsPage{
+            tasks = true, notes = true, dialog = false, wrap = true, grid = false, autosave = true,
+            fruit = 10, size = 1, last = "none yet", basket = 0, crate = 0, placed = [0, 0, 0, 0],
+            done = [false, true, false, false, true, false, false, false, false, false, false, false,
+                    false, false, false, false, false, false, false, false, false, false, false, false],
+        }
+    }
+
+    fn show_windows_page { mut ui: ui::Ui, mut page: WindowsPage } {
+        let t = ui.theme
+        let opts = ui::Opts{ .. }
+        // The page keeps to the left; the windows start on the right.
+        let col = ui::begin_column{ &ui, opts = ui::Opts{ id = "windows", box = ui::Box{ width = ui::fix{ size = 600.0 }, gap = t.gap * 2.0, .. }, .. } }
+        show_page_menus{ &ui, &page }
+        let columns = ui::begin_row{ &ui, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, align_y = ui::Align::start, gap = t.gap * 2.0, .. }, .. } }
+        {
+            let left = ui::begin_column{ &ui, opts = ui::Opts{ box = ui::Box{ width = ui::fix{ size = 270.0 }, gap = t.gap * 2.0, .. }, .. } }
+            show_window_controls{ &ui, &page }
+            show_choosers{ &ui, &page }
+            ui::end{ &ui, scope = left }
+        }
+        {
+            let right = ui::begin_column{ &ui, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, gap = t.gap * 2.0, .. }, .. } }
+            show_context_target{ &ui, &page }
+            show_bins{ &ui, &page }
+            ui::end{ &ui, scope = right }
+        }
+        ui::end{ &ui, scope = columns }
+        ui::end{ &ui, scope = col }
+        show_tasks_window{ &ui, &page }
+        show_notes_window{ &ui, &page }
+        show_confirm{ &ui, &page }
+        _ = opts
+    }
+
+    // The page's menu bar: File (with a Recent submenu), Edit (with a disabled item) and View
+    // (check items), and what was picked last.
+    fn show_page_menus { mut ui: ui::Ui, mut page: WindowsPage } {
+        let opts = ui::Opts{ .. }
+        let panel = begin_section{ &ui, id = "menus", title = "A menu bar: click a title, or Tab to it and use the arrows" }
+        let bar = ui::begin_menu_bar{ &ui, opts = ui::Opts{ box = ui::Box{ radius = ui::round{ radius = ui.theme.radius }, .. }, .. } }
+        {
+            let file = ui::begin_menu{ &ui, label = "File", opts }
+            if file.open {
+                if ui::add_menu_item{ &ui, label = "New", opts } { page.last = "New" }
+                if ui::add_menu_item{ &ui, label = "Open...", opts } { page.last = "Open" }
+                let recent = ui::begin_menu{ &ui, label = "Open recent", opts }
+                if recent.open {
+                    if ui::add_menu_item{ &ui, label = "notes.txt", opts } { page.last = "Open notes.txt" }
+                    if ui::add_menu_item{ &ui, label = "plan.md", opts } { page.last = "Open plan.md" }
+                    let older = ui::begin_menu{ &ui, label = "Older", opts }
+                    if older.open {
+                        if ui::add_menu_item{ &ui, label = "2023.txt", opts } { page.last = "Open 2023.txt" }
+                    }
+                    ui::end{ &ui, scope = older }
+                }
+                ui::end{ &ui, scope = recent }
+                ui::add_menu_separator{ &ui }
+                if ui::add_menu_check{ &ui, label = "Save automatically", value = &page.autosave, opts } { page.last = "Save automatically" }
+                ui::add_menu_separator{ &ui }
+                if ui::add_menu_item{ &ui, label = "Close windows", opts } {
+                    page.tasks = false
+                    page.notes = false
+                    page.last = "Close windows"
+                }
+            }
+            ui::end{ &ui, scope = file }
+        }
+        {
+            let edit = ui::begin_menu{ &ui, label = "Edit", opts }
+            if edit.open {
+                if ui::add_menu_item{ &ui, label = "Undo", opts = ui::Opts{ enabled = false, tip = "Nothing to undo", .. } } { page.last = "Undo" }
+                ui::add_menu_separator{ &ui }
+                if ui::add_menu_item{ &ui, label = "Cut", opts } { page.last = "Cut" }
+                if ui::add_menu_item{ &ui, label = "Copy", opts } { page.last = "Copy" }
+                if ui::add_menu_item{ &ui, label = "Paste", opts } { page.last = "Paste" }
+            }
+            ui::end{ &ui, scope = edit }
+        }
+        {
+            let view = ui::begin_menu{ &ui, label = "View", opts }
+            if view.open {
+                if ui::add_menu_check{ &ui, label = "Word wrap", value = &page.wrap, opts } { page.last = "Word wrap" }
+                if ui::add_menu_check{ &ui, label = "Show grid", value = &page.grid, opts } { page.last = "Show grid" }
+                if ui::add_menu_check{ &ui, label = "Tasks window", value = &page.tasks, opts } { page.last = "Tasks window" }
+                if ui::add_menu_check{ &ui, label = "Notes window", value = &page.notes, opts } { page.last = "Notes window" }
+            }
+            ui::end{ &ui, scope = view }
+        }
+        ui::end{ &ui, scope = bar }
+        _ = @fmt(&ui, "Last picked: {}", page.last)
+        let text = ui::take_text{ &ui }
+        ui::add_label{ &ui, text, opts }
+        ui::end{ &ui, scope = panel }
+    }
+
+    // Buttons that show the windows and the dialog.
+    fn show_window_controls { mut ui: ui::Ui, mut page: WindowsPage } {
+        let opts = ui::Opts{ .. }
+        let panel = begin_section{ &ui, id = "window controls", title = "Windows and a dialog" }
+        _ = ui::add_checkbox{ &ui, label = "Tasks window", value = &page.tasks, opts = ui::Opts{ tip = "Drag its title, its corner; fold it with the arrow", .. } }
+        _ = ui::add_checkbox{ &ui, label = "Notes window", value = &page.notes, opts }
+        if ui::add_button{ &ui, label = "Open the dialog", opts = ui::Opts{ tip = "A modal card: Escape closes it", .. } } { page.dialog = true }
+        ui::end{ &ui, scope = panel }
+    }
+
+    // A combo with a long list, and a short one.
+    fn show_choosers { mut ui: ui::Ui, mut page: WindowsPage } {
+        let opts = ui::Opts{ .. }
+        let t = ui.theme
+        let panel = begin_section{ &ui, id = "choosers", title = "Combo boxes" }
+        let label_box = ui::Box{ width = ui::fix{ size = t.font_size * 5.0 }, .. }
+        {
+            let row = ui::begin_row{ &ui, opts }
+            ui::add_label{ &ui, text = "Fruit", opts = ui::Opts{ box = label_box, .. } }
+            _ = ui::add_combo{ &ui, label = "fruit", value = &page.fruit, items = FRUIT_NAMES[..], opts = ui::Opts{ tip = "Sixteen items: the list scrolls", .. } }
+            ui::end{ &ui, scope = row }
+        }
+        {
+            let row = ui::begin_row{ &ui, opts }
+            ui::add_label{ &ui, text = "Size", opts = ui::Opts{ box = label_box, .. } }
+            _ = ui::add_combo{ &ui, label = "size", value = &page.size, items = SIZE_NAMES[..], opts }
+            ui::end{ &ui, scope = row }
+        }
+        {
+            let row = ui::begin_row{ &ui, opts }
+            ui::add_label{ &ui, text = "Disabled", opts = ui::Opts{ box = label_box, enabled = false, .. } }
+            _ = ui::add_combo{ &ui, label = "locked", value = &page.size, items = SIZE_NAMES[..], opts = ui::Opts{ enabled = false, .. } }
+            ui::end{ &ui, scope = row }
+        }
+        ui::end{ &ui, scope = panel }
+    }
+
+    const SIZE_NAMES: [3][]u8 = ["Small", "Medium", "Large"]
+
+    // A box that opens a context menu on a right click (or the Menu key while it is focused).
+    fn show_context_target { mut ui: ui::Ui, mut page: WindowsPage } {
+        let t = ui.theme
+        let opts = ui::Opts{ .. }
+        let panel = begin_section{ &ui, id = "context", title = "A context menu" }
+        let id = ui::make_id{ ui, name = "target" }
+        let it = ui::press{ &ui, id, opts = ui::PressOpts{ .. } }
+        let el = ui::begin_element{ &ui, id, axis = ui::Axis::row, box = ui::Box{
+            width = ui::GROW, height = ui::fix{ size = t.control_height * 2.0 }, align_x = ui::Align::center, align_y = ui::Align::center,
+            fill = if it.hovered { t.control_hovered } else { t.field }, border = ui::color_sides{ color = t.border },
+            border_width = ui::inset{ by = t.border_width }, radius = ui::round{ radius = t.radius }, ..
+        } }
+        ui::add_text{ &ui, text = "Right-click here", style = ui::TextStyle{ color = t.text_muted, .. }, box = ui::Box{ .. } }
+        if it.focused { ui::add_focus_ring{ &ui, radius = t.radius } }
+        ui::end{ &ui, scope = el }
+        ui::describe{ &ui, id, role = ui::Role::panel, label = "target", value = 0.0, flags = if it.focused { ui::NODE_FOCUSED } else { 0 } }
+        let menu = ui::begin_context_menu{ &ui, id = "target menu", target = id, opts }
+        if menu.open {
+            if ui::add_menu_item{ &ui, label = "Copy", opts } { page.last = "Copy (context)" }
+            if ui::add_menu_item{ &ui, label = "Paste", opts = ui::Opts{ enabled = false, .. } } { page.last = "Paste (context)" }
+            let more = ui::begin_menu{ &ui, label = "More", opts }
+            if more.open {
+                if ui::add_menu_item{ &ui, label = "Rename", opts } { page.last = "Rename (context)" }
+                if ui::add_menu_item{ &ui, label = "Delete", opts } { page.last = "Delete (context)" }
+            }
+            ui::end{ &ui, scope = more }
+        }
+        ui::end{ &ui, scope = menu }
+        ui::end{ &ui, scope = panel }
+    }
+
+    // Chips to drag, and two bins: the basket takes fruit, the crate vegetables.
+    fn show_bins { mut ui: ui::Ui, mut page: WindowsPage } {
+        let t = ui.theme
+        let panel = begin_section{ &ui, id = "drag", title = "Drag and drop: fruit, vegetables" }
+        {
+            let tray = ui::begin_row{ &ui, opts = ui::Opts{ id = "tray", box = ui::Box{ width = ui::GROW, height = ui::fix{ size = t.control_height }, .. }, .. } }
+            for i in 0..4 {
+                if page.placed[i] == 0 { show_chip{ &ui, &page, index = i } }
+            }
+            ui::end{ &ui, scope = tray }
+        }
+        {
+            let row = ui::begin_row{ &ui, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, .. }, .. } }
+            show_bin{ &ui, &page, name = "basket", title = "Basket (fruit)", kind = "fruit", where = 1 }
+            show_bin{ &ui, &page, name = "crate", title = "Crate (vegetables)", kind = "veg", where = 2 }
+            ui::end{ &ui, scope = row }
+        }
+        if ui::add_button{ &ui, label = "Empty the bins", opts = ui::Opts{ .. } } { page.placed = [0, 0, 0, 0] }
+        ui::end{ &ui, scope = panel }
+    }
+
+    fn show_chip { mut ui: ui::Ui, mut page: WindowsPage, index: usize } {
+        let t = ui.theme
+        let name = CHIP_NAMES[index]
+        let id = ui::make_id{ ui, name }
+        let it = ui::press{ &ui, id, opts = ui::PressOpts{ focusable = false, .. } }
+        let dragging = ui::begin_drag{ &ui, it, payload = ui::Payload{ kind = CHIP_KINDS[index], value = @as(i64, index) } }
+        if dragging.open { ui::add_text{ &ui, text = name, style = ui::TextStyle{ .. }, box = ui::Box{ .. } } }
+        ui::end{ &ui, scope = dragging }
+        let fill = if it.held { t.control_pressed } else if it.hovered { t.control_hovered } else { t.control }
+        let el = ui::begin_element{ &ui, id, axis = ui::Axis::row, box = ui::Box{
+            height = ui::GROW, padding = ui::Insets{ left = t.padding * 1.5, right = t.padding * 1.5, .. }, align_y = ui::Align::center,
+            fill, border = ui::color_sides{ color = t.border }, border_width = ui::inset{ by = t.border_width }, radius = ui::round{ radius = t.control_height * 0.5 }, ..
+        } }
+        ui::add_text{ &ui, text = name, style = ui::TextStyle{ .. }, box = ui::Box{ .. } }
+        ui::end{ &ui, scope = el }
+        ui::describe{ &ui, id, role = ui::Role::button, label = name, value = 0.0, flags = 0 }
+        if it.hovered { ui::set_cursor{ &ui, cursor = ui::Cursor::hand } }
+    }
+
+    fn show_bin { mut ui: ui::Ui, mut page: WindowsPage, name: []u8, title: []u8, kind: []u8, where: u8 } {
+        let t = ui.theme
+        let id = ui::make_id{ ui, name }
+        let drop = ui::accept_drop{ &ui, target = id, kind }
+        if drop.dropped and drop.value >= 0 and drop.value < 4 {
+            page.placed[@as(usize, drop.value)] = where
+            page.last = if where == 1 { "Dropped into the basket" } else { "Dropped into the crate" }
+        }
+        let el = ui::begin_element{ &ui, id, axis = ui::Axis::column, box = ui::Box{
+            width = ui::GROW, height = ui::fix{ size = t.control_height * 3.0 }, padding = ui::inset{ by = t.padding }, gap = t.gap * 0.5,
+            fill = if drop.over { t.selection } else { t.field },
+            border = ui::color_sides{ color = if drop.over { t.accent } else { t.border } },
+            border_width = ui::inset{ by = if drop.over { t.border_width * 2.0 } else { t.border_width } }, radius = ui::round{ radius = t.radius }, ..
+        } }
+        ui::add_text{ &ui, text = title, style = ui::TextStyle{ color = t.text_muted, .. }, box = ui::Box{ .. } }
+        {
+            let row = ui::begin_row{ &ui, opts = ui::Opts{ box = ui::Box{ gap = t.gap * 0.5, .. }, .. } }
+            for i in 0..4 {
+                if page.placed[i] == where { ui::add_label{ &ui, text = CHIP_NAMES[i], opts = ui::Opts{ .. } } }
+            }
+            ui::end{ &ui, scope = row }
+        }
+        ui::end{ &ui, scope = el }
+        ui::describe{ &ui, id, role = ui::Role::panel, label = name, value = 0.0, flags = if drop.over { ui::NODE_SELECTED } else { 0 } }
+    }
+
+    // The Tasks window: a menu bar of its own and a list of 24 tasks that scrolls.
+    fn show_tasks_window { mut ui: ui::Ui, mut page: WindowsPage } {
+        let opts = ui::Opts{ .. }
+        let win = ui::begin_window{ &ui, title = "Tasks", open = &page.tasks, window = ui::WindowOpts{ x = 660.0, y = 70.0, width = 340.0, height = 330.0, .. }, opts }
+        if win.open {
+            let bar = ui::begin_menu_bar{ &ui, opts = ui::Opts{ id = "tasks bar", .. } }
+            let list = ui::begin_menu{ &ui, label = "List", opts }
+            if list.open {
+                if ui::add_menu_item{ &ui, label = "Check all", opts } {
+                    for i in 0..24 { page.done[i] = true }
+                    page.last = "Check all"
+                }
+                if ui::add_menu_item{ &ui, label = "Clear all", opts } {
+                    for i in 0..24 { page.done[i] = false }
+                    page.last = "Clear all"
+                }
+            }
+            ui::end{ &ui, scope = list }
+            ui::end{ &ui, scope = bar }
+            for i in 0..24 {
+                let key = ui::push_key{ &ui, key = @as(u64, i) }
+                _ = @fmt(&ui, "Task number {}", i + 1)
+                let text = ui::take_text{ &ui }
+                _ = ui::add_checkbox{ &ui, label = text, value = &page.done[i], opts = ui::Opts{ id = "done", .. } }
+                ui::end{ &ui, scope = key }
+            }
+        }
+        ui::end{ &ui, scope = win }
+    }
+
+    fn show_notes_window { mut ui: ui::Ui, mut page: WindowsPage } {
+        let opts = ui::Opts{ .. }
+        let win = ui::begin_window{ &ui, title = "Notes", open = &page.notes, window = ui::WindowOpts{ x = 700.0, y = 430.0, width = 300.0, .. }, opts }
+        if win.open {
+            ui::add_label{ &ui, text = "A window that fits its content.", opts }
+            ui::add_label{ &ui, text = "Press in a window to bring it forward.", opts }
+            if ui::add_button{ &ui, label = "Confirm something", opts } { page.dialog = true }
+        }
+        ui::end{ &ui, scope = win }
+    }
+
+    fn show_confirm { mut ui: ui::Ui, mut page: WindowsPage } {
+        let opts = ui::Opts{ .. }
+        let d = ui::begin_dialog{ &ui, title = "Close the windows?", open = &page.dialog, opts }
+        if d.open {
+            ui::add_label{ &ui, text = "Both windows close; the View menu opens them again.", opts }
+            let row = ui::begin_row{ &ui, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, .. }, .. } }
+            ui::add_spacer{ &ui }
+            if ui::add_button{ &ui, label = "Cancel", opts } { page.dialog = false }
+            if ui::add_button{ &ui, label = "Close them", opts } {
+                page.tasks = false
+                page.notes = false
+                page.dialog = false
+                page.last = "Closed the windows"
+            }
+            ui::end{ &ui, scope = row }
+        }
+        ui::end{ &ui, scope = d }
+    }
 }

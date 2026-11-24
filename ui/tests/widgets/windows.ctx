@@ -1,4 +1,1061 @@
-// The checks of windows, popups, menus, the combo, tooltips and drag and drop (plan section 7,
-// stage 11), with their goldens named golden/windows-*.txt. `main` calls `check_windows`; the stage
-// that builds those widgets writes its checks in it, using the helpers of main.ctx.
-fn check_windows { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, update: bool } {}
+// Stage 11's checks: windows, dialogs, menus, context menus, the combo, tooltips, drag and drop
+// (window.ctx, popup.ctx, menu.ctx and drag.ctx of ui/widgets), with goldens named
+// golden/windows-*.txt.
+//
+//  - Goldens: a window at rest and with its close button focused by keys, in both themes; a menu
+//    bar with a menu and a submenu open; an open combo; a dialog over a window; a drag's ghost; the
+//    same window and menu at scale 1.5; the nodes of a window, a menu and a combo.
+//  - Windows: a title drag moves the window by exactly the pointer's pixels at scales 1, 1.25 and
+//    1.5, in one drag and in many, and its stored place converts back to the same pixels; a
+//    window dragged off the surface keeps its title bar reachable; the grip resizes, never below
+//    the least size; the arrow and a double click fold it, folded it keeps its place and its body
+//    takes no pointer; the cross and Enter on the focused cross close it; of two overlapping
+//    windows the top one takes the pointer and a press on the lower one raises it; content taller
+//    than the body scrolls; a dialog over windows blocks them and gives the focus back.
+//  - Menus: a click opens a menu, an item click closes all and is true once; a submenu follows the
+//    pointer; the keyboard opens, steps (past a disabled item), enters and leaves a submenu, and
+//    goes left and right along the bar; a disabled item cannot be picked; a check item flips; a
+//    submenu that would leave the surface flips to the left.
+//  - The combo picks by click and by keys, scrolls a long list and keeps the lit row in view.
+//  - A context menu opens at the pointer on a right press, and below its target on the Menu key.
+//  - A tooltip appears after `tip_delay` and not before, and not while a button is held.
+//  - Drag and drop: the threshold, the ghost in the front overlay, a drop reported once with the
+//    payload, a kind the target refuses, Escape, and a release over no target.
+//
+// How the goldens' numbers come about, at scale 1 in the tests' font (a character 7 pixels wide,
+// a line 14 high): a window has a 1-pixel border, a title bar 28 high (its buttons 20 square,
+// 4 from its ends, the title 4 after the arrow), a body padded 8, and a strip 8 high under the
+// body holding the 16 by 8 grip; a menu bar is 28 high, padded 4 across and 2 down, its titles
+// padded 8 across; a menu is padded 4, its items 24 high with a 16-unit mark column, at least
+// 140 wide; a combo's list rows are 24 high.
+
+fn check_windows { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, update: bool } {
+    let out = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 262144 } iferr { return }
+    let scratch = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 262144 } iferr { return }
+    record_window{ &io, &fs, &t, &heap, out, scratch, update, dark = true }
+    record_window{ &io, &fs, &t, &heap, out, scratch, update, dark = false }
+    record_menu{ &io, &fs, &t, &heap, out, scratch, update }
+    record_combo{ &io, &fs, &t, &heap, out, scratch, update }
+    record_dialog{ &io, &fs, &t, &heap, out, scratch, update }
+    record_ghost{ &io, &fs, &t, &heap, out, scratch, update }
+    record_window_scaled{ &io, &fs, &t, &heap, out, scratch, update }
+    record_window_nodes{ &io, &fs, &t, &heap, out, scratch, update }
+    check_window_move{ &io, &t, &heap, scale = 1.0 }
+    check_window_move{ &io, &t, &heap, scale = 1.25 }
+    check_window_move{ &io, &t, &heap, scale = 1.5 }
+    check_window_reach{ &io, &t, &heap }
+    check_window_resize{ &io, &t, &heap, scale = 1.0 }
+    check_window_resize{ &io, &t, &heap, scale = 1.5 }
+    check_window_fold{ &io, &t, &heap }
+    check_window_close{ &io, &t, &heap }
+    check_window_order{ &io, &t, &heap }
+    check_window_scroll{ &io, &t, &heap }
+    check_dialog_modal{ &io, &t, &heap }
+    check_menu_pointer{ &io, &t, &heap }
+    check_menu_keys{ &io, &t, &heap }
+    check_submenu_flip{ &io, &t, &heap }
+    check_combo_pick{ &io, &t, &heap }
+    check_context_menu{ &io, &t, &heap }
+    check_window_tooltip{ &io, &t, &heap }
+    check_drag_drop{ &io, &t, &heap }
+}
+
+// ---- the scenes
+
+enum Part: u8 { windows, menus, combo, dialog, drag, context, tip }
+
+// What a scene shows and what its widgets changed.
+struct Desk {
+    part: Part,
+    a_open: bool, b_open: bool, dialog: bool,
+    a: ui::WindowOpts, b: ui::WindowOpts,
+    rows: u32,                          // labels in window A's body
+    behind: u32, a_clicks: u32, b_clicks: u32, ok_clicks: u32,
+    opened: u32, saved: u32, cut: u32, pasted: u32, recent: i32, undone: u32,
+    autosave: bool,
+    bar_left: f32,                      // where the menu bar starts across, in units
+    fruit: i32,
+    copied: u32,
+    tip_clicks: u32,
+    drops_a: u32, drops_b: u32, dropped: i64, over_a: bool, over_b: bool, ghost: bool,
+}
+
+fn make_desk { part: Part } -> Desk {
+    return Desk{
+        part, a_open = true, b_open = true, dialog = false,
+        a = ui::WindowOpts{ x = 40.0, y = 40.0, width = 200.0, height = 150.0, .. },
+        b = ui::WindowOpts{ x = 140.0, y = 90.0, width = 200.0, height = 150.0, .. },
+        rows = 2, behind = 0, a_clicks = 0, b_clicks = 0, ok_clicks = 0,
+        opened = 0, saved = 0, cut = 0, pasted = 0, recent = -1, undone = 0, autosave = false, bar_left = 0.0,
+        fruit = 15, copied = 0, tip_clicks = 0,
+        drops_a = 0, drops_b = 0, dropped = 0, over_a = false, over_b = false, ghost = false,
+    }
+}
+
+const FRUITS: [20][]u8 = [
+    "Apple", "Apricot", "Banana", "Blackberry", "Blueberry", "Cherry", "Coconut", "Cranberry", "Date", "Fig",
+    "Grape", "Guava", "Kiwi", "Lemon", "Lime", "Mango", "Melon", "Orange", "Peach", "Pear",
+]
+
+fn show_desk { mut ui: ui::Ui, mut s: Desk } {
+    match s.part {
+        windows => show_windows{ &ui, &s }
+        menus => show_menus{ &ui, &s }
+        combo => show_fruit{ &ui, &s }
+        dialog => {
+            show_windows{ &ui, &s }
+            show_dialog{ &ui, &s }
+        }
+        drag => show_drag{ &ui, &s }
+        context => show_context{ &ui, &s }
+        tip => show_tip{ &ui, &s }
+    }
+}
+
+// A button behind everything, and the two windows: Tasks (A) with a button and `rows` labels,
+// Notes (B) with a button.
+fn show_windows { mut ui: ui::Ui, mut s: Desk } {
+    let opts = ui::Opts{ .. }
+    if ui::add_button{ &ui, label = "Behind", opts = ui::Opts{ box = ui::place{ x = 60.0, y = 120.0, w = 80.0, h = 28.0 }, .. } } { s.behind = s.behind + 1 }
+    let a = ui::begin_window{ &ui, title = "Tasks", open = &s.a_open, window = s.a, opts }
+    if a.open {
+        if ui::add_button{ &ui, label = "A1", opts } { s.a_clicks = s.a_clicks + 1 }
+        for i in 0..s.rows {
+            _ = @fmt(&ui, "Row {}", i)
+            let text = ui::take_text{ &ui }
+            ui::add_label{ &ui, text, opts }
+        }
+    }
+    ui::end{ &ui, scope = a }
+    let b = ui::begin_window{ &ui, title = "Notes", open = &s.b_open, window = s.b, opts }
+    if b.open {
+        if ui::add_button{ &ui, label = "B1", opts } { s.b_clicks = s.b_clicks + 1 }
+    }
+    ui::end{ &ui, scope = b }
+}
+
+fn show_dialog { mut ui: ui::Ui, mut s: Desk } {
+    let opts = ui::Opts{ .. }
+    let d = ui::begin_dialog{ &ui, title = "Confirm", open = &s.dialog, opts }
+    if d.open {
+        ui::add_label{ &ui, text = "Save the changes?", opts }
+        if ui::add_button{ &ui, label = "OK", opts } {
+            s.ok_clicks = s.ok_clicks + 1
+            s.dialog = false
+        }
+    }
+    ui::end{ &ui, scope = d }
+}
+
+// A menu bar at the top of a column `bar_left` units across: File (Open, Save disabled, Recent
+// with two files, a separator, Autosave), Edit (Cut, Paste) and View (Undo).
+fn show_menus { mut ui: ui::Ui, mut s: Desk } {
+    let opts = ui::Opts{ .. }
+    let col = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = ui::Box{ width = ui::GROW, padding = ui::Insets{ left = s.bar_left, .. }, .. } }
+    let bar = ui::begin_menu_bar{ &ui, opts }
+    {
+        let file = ui::begin_menu{ &ui, label = "File", opts }
+        if file.open {
+            if ui::add_menu_item{ &ui, label = "Open", opts } { s.opened = s.opened + 1 }
+            if ui::add_menu_item{ &ui, label = "Save", opts = ui::Opts{ enabled = false, .. } } { s.saved = s.saved + 1 }
+            let recent = ui::begin_menu{ &ui, label = "Recent", opts }
+            if recent.open {
+                if ui::add_menu_item{ &ui, label = "notes.txt", opts } { s.recent = 0 }
+                if ui::add_menu_item{ &ui, label = "plan.md", opts } { s.recent = 1 }
+            }
+            ui::end{ &ui, scope = recent }
+            ui::add_menu_separator{ &ui }
+            _ = ui::add_menu_check{ &ui, label = "Autosave", value = &s.autosave, opts }
+        }
+        ui::end{ &ui, scope = file }
+    }
+    {
+        let edit = ui::begin_menu{ &ui, label = "Edit", opts }
+        if edit.open {
+            if ui::add_menu_item{ &ui, label = "Cut", opts } { s.cut = s.cut + 1 }
+            if ui::add_menu_item{ &ui, label = "Paste", opts } { s.pasted = s.pasted + 1 }
+        }
+        ui::end{ &ui, scope = edit }
+    }
+    {
+        let view = ui::begin_menu{ &ui, label = "View", opts }
+        if view.open {
+            if ui::add_menu_item{ &ui, label = "Undo", opts } { s.undone = s.undone + 1 }
+        }
+        ui::end{ &ui, scope = view }
+    }
+    ui::end{ &ui, scope = bar }
+    ui::end{ &ui, scope = col }
+}
+
+fn show_fruit { mut ui: ui::Ui, mut s: Desk } {
+    let col = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = ui::Box{ padding = ui::inset{ by = 10.0 }, gap = 8.0, .. } }
+    _ = ui::add_combo{ &ui, label = "fruit", value = &s.fruit, items = FRUITS[..], opts = ui::Opts{ .. } }
+    if ui::add_button{ &ui, label = "Behind", opts = ui::Opts{ .. } } { s.behind = s.behind + 1 }
+    ui::end{ &ui, scope = col }
+}
+
+// A target box with a context menu (Copy, Paste disabled).
+fn show_context { mut ui: ui::Ui, mut s: Desk } {
+    let opts = ui::Opts{ .. }
+    let target = ui::make_id{ ui, name = "target" }
+    let it = ui::press{ &ui, id = target, opts = ui::PressOpts{ .. } }
+    let el = ui::begin_element{ &ui, id = target, axis = ui::Axis::row, box = ui::Box{ place = ui::Place{ x = 20.0, y = 20.0, .. }, width = ui::fix{ size = 120.0 }, height = ui::fix{ size = 60.0 }, fill = ui.theme.control, .. } }
+    ui::end{ &ui, scope = el }
+    ui::describe{ &ui, id = target, role = ui::Role::panel, label = "target", value = 0.0, flags = if it.focused { ui::NODE_FOCUSED } else { 0 } }
+    let menu = ui::begin_context_menu{ &ui, id = "target menu", target, opts }
+    if menu.open {
+        if ui::add_menu_item{ &ui, label = "Copy", opts } { s.copied = s.copied + 1 }
+        _ = ui::add_menu_item{ &ui, label = "Paste", opts = ui::Opts{ enabled = false, .. } }
+    }
+    ui::end{ &ui, scope = menu }
+}
+
+// A button with a tooltip, and another button to hold.
+fn show_tip { mut ui: ui::Ui, mut s: Desk } {
+    let col = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = ui::Box{ padding = ui::inset{ by = 10.0 }, gap = 8.0, .. } }
+    if ui::add_button{ &ui, label = "Hold", opts = ui::Opts{ .. } } { s.tip_clicks = s.tip_clicks + 1 }
+    _ = ui::add_button{ &ui, label = "Tipped", opts = ui::Opts{ tip = "A tip", .. } }
+    ui::end{ &ui, scope = col }
+}
+
+// A source chip carrying a fruit (value 7) and two targets: A takes fruit, B takes vegetables.
+fn show_drag { mut ui: ui::Ui, mut s: Desk } {
+    let t = ui.theme
+    let src = ui::make_id{ ui, name = "chip" }
+    let it = ui::press{ &ui, id = src, opts = ui::PressOpts{ .. } }
+    let chip = ui::begin_element{ &ui, id = src, axis = ui::Axis::row, box = ui::Box{ place = ui::Place{ x = 20.0, y = 20.0, .. }, width = ui::fix{ size = 60.0 }, height = ui::fix{ size = 28.0 }, fill = t.control, .. } }
+    ui::end{ &ui, scope = chip }
+    ui::describe{ &ui, id = src, role = ui::Role::button, label = "chip", value = 0.0, flags = 0 }
+    let ghost = ui::begin_drag{ &ui, it, payload = ui::Payload{ kind = "fruit", value = 7 } }
+    s.ghost = ghost.open
+    if ghost.open { ui::add_label{ &ui, text = "Pear", opts = ui::Opts{ .. } } }
+    ui::end{ &ui, scope = ghost }
+    add_target{ &ui, &s, name = "fruit bin", kind = "fruit", x = 20.0, first = true }
+    add_target{ &ui, &s, name = "veg bin", kind = "veg", x = 160.0, first = false }
+}
+
+fn add_target { mut ui: ui::Ui, mut s: Desk, name: []u8, kind: []u8, x: f32, first: bool } {
+    let t = ui.theme
+    let id = ui::make_id{ ui, name }
+    let drop = ui::accept_drop{ &ui, target = id, kind }
+    let fill = if drop.over { t.selection } else { t.surface }
+    let el = ui::begin_element{ &ui, id, axis = ui::Axis::row, box = ui::Box{ place = ui::Place{ x, y = 100.0, .. }, width = ui::fix{ size = 120.0 }, height = ui::fix{ size = 80.0 }, fill, .. } }
+    ui::end{ &ui, scope = el }
+    ui::describe{ &ui, id, role = ui::Role::panel, label = name, value = 0.0, flags = 0 }
+    if first { s.over_a = drop.over } else { s.over_b = drop.over }
+    if drop.dropped {
+        if first { s.drops_a = s.drops_a + 1 } else { s.drops_b = s.drops_b + 1 }
+        s.dropped = drop.value
+    }
+}
+
+// ---- helpers
+
+fn find_rect { ui: ui::Ui, path: []u8 } -> ui::Rect {
+    let n = ui::find_node{ ui, path } ifnull { return ui::Rect{ x = -1, y = -1, w = -1, h = -1 } }
+    return n.rect
+}
+
+fn has_node { ui: ui::Ui, path: []u8 } -> bool {
+    return ui::find_node{ ui, path } != null
+}
+
+fn is_rect { r: ui::Rect, x: i32, y: i32, w: i32, h: i32 } -> bool {
+    return r.x == x and r.y == y and r.w == w and r.h == h
+}
+
+// Presses the left button at the node's centre, moves by (dx, dy) in `steps` equal frames, and
+// releases: the driver's drag in several moves.
+fn drag_in_steps { mut d: ui_test::Driver, mut ui: ui::Ui, path: []u8, dx: i32, dy: i32, steps: i32, show: &fn{ mut ui: ui::Ui } } -> bool {
+    let at = ui_test::find_center{ ui, path } ifnull { return false }
+    _ = ui_test::move_pointer{ &ui, x = at.x, y = at.y }
+    ui_test::step_frame{ &d, &ui, show }
+    _ = ui_test::push_button{ &ui, button = 0, down = true, clicks = 1 }
+    ui_test::step_frame{ &d, &ui, show }
+    for k in 1..steps + 1 {
+        _ = ui_test::move_pointer{ &ui, x = at.x + dx * k / steps, y = at.y + dy * k / steps }
+        ui_test::step_frame{ &d, &ui, show }
+    }
+    _ = ui_test::push_button{ &ui, button = 0, down = false, clicks = 1 }
+    ui_test::step_frame{ &d, &ui, show }
+    return true
+}
+
+// A right click at (x, y): move, press and release over three frames.
+fn click_right { mut d: ui_test::Driver, mut ui: ui::Ui, x: i32, y: i32, show: &fn{ mut ui: ui::Ui } } {
+    _ = ui_test::move_pointer{ &ui, x, y }
+    ui_test::step_frame{ &d, &ui, show }
+    _ = ui_test::push_button{ &ui, button = 1, down = true, clicks = 1 }
+    ui_test::step_frame{ &d, &ui, show }
+    _ = ui_test::push_button{ &ui, button = 1, down = false, clicks = 1 }
+    ui_test::step_frame{ &d, &ui, show }
+}
+
+// Moves the pointer onto the node at `path` and runs a frame.
+fn hover_node { mut d: ui_test::Driver, mut ui: ui::Ui, path: []u8, show: &fn{ mut ui: ui::Ui } } -> bool {
+    let at = ui_test::find_center{ ui, path } ifnull { return false }
+    _ = ui_test::move_pointer{ &ui, x = at.x, y = at.y }
+    ui_test::step_frame{ &d, &ui, show }
+    return true
+}
+
+// A key tapped and a frame run.
+fn press_key { mut d: ui_test::Driver, mut ui: ui::Ui, key: ui::Key, show: &fn{ mut ui: ui::Ui } } {
+    _ = ui_test::tap_key{ &ui, key, mods = 0 }
+    ui_test::step_frame{ &d, &ui, show }
+}
+
+// Where in the draw list the first rect shape filled with `color` is; -1 when there is none.
+fn find_fill { ui: ui::Ui, color: ui::Color } -> i32 {
+    for i in 0..@as(usize, ui.draw.count) {
+        match ui.draw.cmds[i] {
+            rect{ style } => {
+                let f = style.fill
+                if f.r == color.r and f.g == color.g and f.b == color.b and f.a == color.a { return @as(i32, i) }
+            }
+            else => {}
+        }
+    }
+    return -1
+}
+
+// Where in the draw list the first rect shape at exactly `r` is; -1 when there is none.
+fn find_shape_at { ui: ui::Ui, r: ui::Rect } -> i32 {
+    for i in 0..@as(usize, ui.draw.count) {
+        match ui.draw.cmds[i] {
+            rect{ rect } => { if rect.x == r.x and rect.y == r.y and rect.w == r.w and rect.h == r.h { return @as(i32, i) } }
+            else => {}
+        }
+    }
+    return -1
+}
+
+// ---- goldens
+
+// A window at rest, and with its close button focused by keys (Tab past Behind and the
+// arrow), in one theme.
+fn record_window { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool, dark: bool } {
+    let mut sink = ui_rec::make_sink{ bytes = out }
+    let mut gui = make_ui{ &heap, dark } iferr { return }
+    let mut d = make_driver{ &heap, width = 320, height = 240, scale = 1.0 } iferr { return }
+    let mut s = make_desk{ part = Part::windows }
+    s.b_open = false
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    write_frame{ &sink, ui = gui, name = "a window at rest" } iferr { return }
+    let r = find_rect{ ui = gui, path = "Tasks" }
+    let bar = find_rect{ ui = gui, path = "Tasks/.title" }
+    let close = find_rect{ ui = gui, path = "Tasks/.close" }
+    let grip = find_rect{ ui = gui, path = "Tasks/.grip" }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }      // Behind
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }      // the arrow
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }      // the cross
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    write_frame{ &sink, ui = gui, name = "its close button focused by keys" } iferr { return }
+    let focused = has_node_flag{ ui = gui, path = "Tasks/.close", flag = ui::NODE_FOCUSED }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = if dark { "windows-window-dark" } else { "windows-window-light" }, actual = ui_rec::get_text{ sink }, scratch, update }
+    ui_test::expect{ &io, &t, ok = is_rect{ r, x = 40, y = 40, w = 200, h = 150 } and is_rect{ r = bar, x = 41, y = 41, w = 198, h = 28 },
+        what = "window: 200 by 150 at (40, 40), its title bar inside its 1-pixel border, 28 high" }
+    ui_test::expect{ &io, &t, ok = is_rect{ r = close, x = 215, y = 45, w = 20, h = 20 } and is_rect{ r = grip, x = 223, y = 181, w = 16, h = 8 },
+        what = "window: the close button 20 square 4 from the bar's end, the grip 16 by 8 in the corner" }
+    ui_test::expect{ &io, &t, ok = focused, what = "window: Tab reaches the close button" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0 and sink.lost == 0, what = "window golden: every frame is clean" }
+}
+
+// The menu bar with File open by a click and its Recent submenu open by the pointer.
+fn record_menu { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } {
+    let mut sink = ui_rec::make_sink{ bytes = out }
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 240, scale = 1.0 } iferr { return }
+    let mut s = make_desk{ part = Part::menus }
+    s.autosave = true
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::click{ &d, ui = &gui, path = "File", show = show_desk{ &s, _ } }
+    _ = hover_node{ &d, ui = &gui, path = "Recent", show = show_desk{ &s, _ } }
+    _ = hover_node{ &d, ui = &gui, path = "notes.txt", show = show_desk{ &s, _ } }
+    write_frame{ &sink, ui = gui, name = "File and Recent open, notes.txt lit" } iferr { return }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "windows-menu", actual = ui_rec::get_text{ sink }, scratch, update }
+    let file = find_rect{ ui = gui, path = "menu bar/File" }
+    let open = find_rect{ ui = gui, path = "File/Open" }
+    let recent = find_rect{ ui = gui, path = "File/Recent" }
+    let notes = find_rect{ ui = gui, path = "Recent/notes.txt" }
+    ui_test::expect{ &io, &t, ok = open.y >= file.y + file.h and open.x > file.x and open.h == 24,
+        what = "menu golden: the menu is below its title, its items 24 high" }
+    ui_test::expect{ &io, &t, ok = notes.x > recent.x + recent.w and notes.y > recent.y - 8 and notes.y < recent.y + 8,
+        what = "menu golden: the submenu is beside its item, level with it" }
+    ui_test::expect{ &io, &t, ok = count_text{ ui = gui } == 9, what = "menu golden: the text is three titles, four items of File and two of Recent: no mark is text" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0 and sink.lost == 0, what = "menu golden: every frame is clean" }
+}
+
+// The combo's list open on the chosen row (15, Mango) of twenty.
+fn record_combo { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } {
+    let mut sink = ui_rec::make_sink{ bytes = out }
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 320, height = 320, scale = 1.0 } iferr { return }
+    let mut s = make_desk{ part = Part::combo }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::click{ &d, ui = &gui, path = "fruit", show = show_desk{ &s, _ } }
+    _ = ui_test::move_pointer{ ui = &gui, x = 300, y = 10 }
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    write_frame{ &sink, ui = gui, name = "the list open on Mango" } iferr { return }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "windows-combo", actual = ui_rec::get_text{ sink }, scratch, update }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0 and sink.lost == 0, what = "combo golden: every frame is clean" }
+}
+
+// A dialog over a window, the scrim between them.
+fn record_dialog { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } {
+    let mut sink = ui_rec::make_sink{ bytes = out }
+    let mut gui = make_ui{ &heap, dark = false } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s = make_desk{ part = Part::dialog }
+    s.b_open = false
+    s.dialog = true
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    write_frame{ &sink, ui = gui, name = "a dialog over a window" } iferr { return }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "windows-dialog", actual = ui_rec::get_text{ sink }, scratch, update }
+    let scrim = find_fill{ ui = gui, color = gui.theme.scrim }
+    let window = find_shape_at{ ui = gui, r = find_rect{ ui = gui, path = "Tasks" } }
+    let card = find_shape_at{ ui = gui, r = find_rect{ ui = gui, path = "Confirm" } }
+    ui_test::expect{ &io, &t, ok = window >= 0 and scrim > window and card > scrim, what = "dialog golden: the window, then the scrim, then the card" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0 and sink.lost == 0, what = "dialog golden: every frame is clean" }
+}
+
+// A drag's ghost over a target that takes it.
+fn record_ghost { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } {
+    let mut sink = ui_rec::make_sink{ bytes = out }
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 320, height = 240, scale = 1.0 } iferr { return }
+    let mut s = make_desk{ part = Part::drag }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::move_pointer{ ui = &gui, x = 50, y = 34 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::push_button{ ui = &gui, button = 0, down = true, clicks = 1 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::move_pointer{ ui = &gui, x = 80, y = 140 }
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    write_frame{ &sink, ui = gui, name = "the ghost over the fruit bin" } iferr { return }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "windows-ghost", actual = ui_rec::get_text{ sink }, scratch, update }
+    // The ghost is the last thing drawn: its card and its label.
+    let n = @as(usize, gui.draw.count)
+    let last_text = n > 0 and gui.draw.cmds[n - 1] is text
+    let card_ok = n > 1 and match gui.draw.cmds[n - 2] { rect{ rect } => rect.x == 92 and rect.y == 152, else => false }
+    ui_test::expect{ &io, &t, ok = s.ghost and s.over_a and last_text and card_ok, what = "ghost: in the front overlay, 12 units below and right of the pointer, last drawn" }
+    _ = ui_test::push_button{ ui = &gui, button = 0, down = false, clicks = 1 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0 and sink.lost == 0, what = "ghost golden: every frame is clean" }
+}
+
+// A window and the open File menu at scale 1.5: every border the same on all four sides, the
+// window 300 by 225 pixels at (60, 60), its title bar 42 high, the menu's items 36 high.
+fn record_window_scaled { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } {
+    let mut sink = ui_rec::make_sink{ bytes = out }
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 480, height = 360, scale = 1.5 } iferr { return }
+    let mut s = make_desk{ part = Part::windows }
+    s.b_open = false
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    write_frame{ &sink, ui = gui, name = "a window at scale 1.5" } iferr { return }
+    let mut even = has_even_sides{ ui = gui }
+    let r = find_rect{ ui = gui, path = "Tasks" }
+    let bar = find_rect{ ui = gui, path = "Tasks/.title" }
+    let mut m = make_desk{ part = Part::menus }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ s = &m, _ } }
+    _ = ui_test::click{ &d, ui = &gui, path = "File", show = show_desk{ s = &m, _ } }
+    write_frame{ &sink, ui = gui, name = "the File menu at scale 1.5" } iferr { return }
+    even = even and has_even_sides{ ui = gui }
+    let item = find_rect{ ui = gui, path = "File/Open" }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "windows-scale", actual = ui_rec::get_text{ sink }, scratch, update }
+    ui_test::expect{ &io, &t, ok = even, what = "scale 1.5: every border of a window and a menu is the same on every side it has" }
+    ui_test::expect{ &io, &t, ok = is_rect{ r, x = 60, y = 60, w = 300, h = 225 } and bar.h == 42 and bar.x == 62 and item.h == 36,
+        what = "scale 1.5: the window 300 by 225 at (60, 60), a 2-pixel border, its bar 42 high, menu items 36" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0 and sink.lost == 0, what = "scale 1.5: every frame is clean" }
+}
+
+// The nodes of two windows, a menu with its submenu open, and a combo.
+fn record_window_nodes { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } {
+    let mut sink = ui_rec::make_sink{ bytes = out }
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 320, scale = 1.0 } iferr { return }
+    let mut s = make_desk{ part = Part::windows }
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    write_nodes{ &sink, ui = gui, name = "two windows" } iferr { return }
+    let mut m = make_desk{ part = Part::menus }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ s = &m, _ } }
+    _ = ui_test::click{ &d, ui = &gui, path = "File", show = show_desk{ s = &m, _ } }
+    _ = hover_node{ &d, ui = &gui, path = "Recent", show = show_desk{ s = &m, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ s = &m, _ } }
+    write_nodes{ &sink, ui = gui, name = "a menu and its submenu" } iferr { return }
+    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "windows-nodes", actual = ui_rec::get_text{ sink }, scratch, update }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0 and sink.lost == 0, what = "nodes: every frame is clean" }
+}
+
+// ---- windows
+
+// A drag of the title moves the window by exactly the pointer's pixels, in one move and in seven,
+// and ten drags in a row add up exactly: the stored place is the pixel place over the scale, which
+// converts back to the same pixel, so nothing drifts at 1.25 or 1.5.
+fn check_window_move { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, scale: f32 } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 800, height = 600, scale } iferr { return }
+    let mut s = make_desk{ part = Part::windows }
+    s.b_open = false
+    s.a.x = 41.0                       // 51.25 and 61.5 pixels at the two scales: on a half
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    let start = find_rect{ ui = gui, path = "Tasks" }
+    _ = ui_test::drag{ &d, ui = &gui, path = "Tasks/.title", dx = 37, dy = 23, show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    let once = find_rect{ ui = gui, path = "Tasks" }
+    ui_test::expect{ &io, &t, ok = once.x == start.x + 37 and once.y == start.y + 23 and once.w == start.w and once.h == start.h,
+        what = "window move: one drag moves it by exactly the pointer's pixels, its size unchanged" }
+    _ = drag_in_steps{ &d, ui = &gui, path = "Tasks/.title", dx = -19, dy = 11, steps = 7, show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    let steps = find_rect{ ui = gui, path = "Tasks" }
+    ui_test::expect{ &io, &t, ok = steps.x == once.x - 19 and steps.y == once.y + 11, what = "window move: a drag in seven moves ends exactly where the pointer did" }
+    for _ in 0..10 {
+        _ = ui_test::drag{ &d, ui = &gui, path = "Tasks/.title", dx = 3, dy = 1, show = show_desk{ &s, _ } }
+    }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    let many = find_rect{ ui = gui, path = "Tasks" }
+    let id = ui::make_id{ ui = gui, name = "Tasks" }
+    let v = ui::load_state{ ui = &gui, id }
+    let back_x = ui::to_pixel_position{ ui = gui, position = v.f[0] }
+    let back_y = ui::to_pixel_position{ ui = gui, position = v.f[1] }
+    ui_test::expect{ &io, &t, ok = many.x == steps.x + 30 and many.y == steps.y + 10 and back_x == many.x and back_y == many.y,
+        what = "window move: ten drags add up exactly, and the stored place converts back to the same pixels" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "window move: every frame is clean" }
+}
+
+// The rule: the title bar stays wholly on the surface up and down, and at least 64 units of the
+// window (its title bar) across, however far it is dragged.
+fn check_window_reach { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s = make_desk{ part = Part::windows }
+    s.b_open = false
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    _ = ui_test::drag{ &d, ui = &gui, path = "Tasks/.title", dx = -500, dy = -500, show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    let left = find_rect{ ui = gui, path = "Tasks" }
+    ui_test::expect{ &io, &t, ok = left.x == 64 - 200 and left.y == 0, what = "window reach: dragged off the top left, 64 pixels of it and its whole title stay" }
+    // What shows of the title bar is where it is taken: its left end is off the surface.
+    let reachable = ui::interact::find_topmost{ ui = gui, x = 10, y = 14 } != ui::tree::NONE
+    drag_at{ &d, ui = &gui, x = 10, y = 14, dx = 900, dy = 900, show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    let right = find_rect{ ui = gui, path = "Tasks" }
+    ui_test::expect{ &io, &t, ok = reachable and right.x == 400 - 64 and right.y == 300 - 28, what = "window reach: dragged off the bottom right, its title bar is still on the surface" }
+    // A smaller surface holds it; the surface back to its size gives back the place it had.
+    d.info.width = 300
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    let small = find_rect{ ui = gui, path = "Tasks" }
+    d.info.width = 400
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    let again = find_rect{ ui = gui, path = "Tasks" }
+    ui_test::expect{ &io, &t, ok = small.x == 300 - 64 and again.x == 400 - 64, what = "window reach: a smaller surface holds it, and it comes back with the surface" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "window reach: every frame is clean" }
+}
+
+// The grip sizes the window by exactly the pointer's pixels, and never below the least size
+// (four controls wide, two controls and the grip's strip high).
+fn check_window_resize { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, scale: f32 } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 800, height = 600, scale } iferr { return }
+    let mut s = make_desk{ part = Part::windows }
+    s.b_open = false
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    let start = find_rect{ ui = gui, path = "Tasks" }
+    _ = ui_test::drag{ &d, ui = &gui, path = "Tasks/.grip", dx = 51, dy = 33, show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    let grown = find_rect{ ui = gui, path = "Tasks" }
+    ui_test::expect{ &io, &t, ok = grown.x == start.x and grown.y == start.y and grown.w == start.w + 51 and grown.h == start.h + 33,
+        what = "window resize: the grip sizes it by exactly the pointer's pixels, its place unchanged" }
+    _ = ui_test::drag{ &d, ui = &gui, path = "Tasks/.grip", dx = -900, dy = -900, show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    let least = find_rect{ ui = gui, path = "Tasks" }
+    let lw = ui::to_pixels{ ui = gui, length = 112.0 }
+    let lh = ui::to_pixels{ ui = gui, length = 64.0 }
+    ui_test::expect{ &io, &t, ok = least.w == lw and least.h == lh, what = "window resize: never below the least size" }
+    ui_test::expect{ &io, &t, ok = d.requests.cursor == ui::Cursor::arrow, what = "window resize: the cursor is the arrow again once let go" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "window resize: every frame is clean" }
+}
+
+// The arrow folds the window to its title bar; folded, it keeps its place, its body is not
+// recorded and takes no pointer (a click there reaches the button behind it); a double click on
+// the title, and Enter on the focused arrow, unfold it.
+fn check_window_fold { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s = make_desk{ part = Part::windows }
+    s.b_open = false
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    let open = find_rect{ ui = gui, path = "Tasks" }
+    let covered = ui_test::find_center{ ui = gui, path = "Behind" } == null
+    _ = ui_test::click{ &d, ui = &gui, path = "Tasks/.collapse", show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    let folded = find_rect{ ui = gui, path = "Tasks" }
+    ui_test::expect{ &io, &t, ok = covered and folded.x == open.x and folded.y == open.y and folded.w == open.w and folded.h == 30,
+        what = "window fold: folded to its title bar (28 and its border), in the same place" }
+    ui_test::expect{ &io, &t, ok = not has_node{ ui = gui, path = "Tasks/A1" } and not has_node_flag{ ui = gui, path = "Tasks", flag = ui::NODE_OPEN },
+        what = "window fold: its content is not recorded, and its node is not open" }
+    let clicked = ui_test::click{ &d, ui = &gui, path = "Behind", show = show_desk{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = clicked and s.behind == 1, what = "window fold: what was under its body takes the pointer" }
+    let bar = ui_test::find_center{ ui = gui, path = "Tasks/.title" } ifnull ui::Point{ .. }
+    _ = ui_test::move_pointer{ ui = &gui, x = bar.x, y = bar.y }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::push_button{ ui = &gui, button = 0, down = true, clicks = 1 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::push_button{ ui = &gui, button = 0, down = false, clicks = 1 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::push_button{ ui = &gui, button = 0, down = true, clicks = 2 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::push_button{ ui = &gui, button = 0, down = false, clicks = 2 }
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    let unfolded = find_rect{ ui = gui, path = "Tasks" }
+    ui_test::expect{ &io, &t, ok = is_rect{ r = unfolded, x = open.x, y = open.y, w = open.w, h = open.h }, what = "window fold: a double click on the title unfolds it to its size" }
+    // Tab: Behind, then the arrow.
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    let stop = has_node_flag{ ui = gui, path = "Tasks/.collapse", flag = ui::NODE_FOCUSED }
+    press_key{ &d, ui = &gui, key = ui::Key::enter, show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = stop and find_rect{ ui = gui, path = "Tasks" }.h == 30, what = "window fold: Enter on the focused arrow folds it" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "window fold: every frame is clean" }
+}
+
+// The cross closes a window (its `open` goes false and it is not drawn); Enter on the focused
+// cross closes it too; opened again, it is where it was.
+fn check_window_close { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s = make_desk{ part = Part::windows }
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    _ = ui_test::drag{ &d, ui = &gui, path = "Notes/.title", dx = 10, dy = 10, show = show_desk{ &s, _ } }
+    let moved = find_rect{ ui = gui, path = "Notes" }
+    _ = ui_test::click{ &d, ui = &gui, path = "Notes/.close", show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = not s.b_open and not has_node{ ui = gui, path = "Notes" }, what = "window close: the cross sets open false and the window goes" }
+    s.b_open = true
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    let back = find_rect{ ui = gui, path = "Notes" }
+    ui_test::expect{ &io, &t, ok = is_rect{ r = back, x = moved.x, y = moved.y, w = moved.w, h = moved.h }, what = "window close: opened again, it is where it was" }
+    // Tab: Behind, Tasks' arrow, Tasks' cross, A1, Notes' arrow, Notes' cross.
+    for _ in 0..6 { _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 } }
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    let stop = has_node_flag{ ui = gui, path = "Notes/.close", flag = ui::NODE_FOCUSED }
+    press_key{ &d, ui = &gui, key = ui::Key::enter, show = show_desk{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = stop and not s.b_open, what = "window close: Enter on the focused cross closes it" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "window close: every frame is clean" }
+}
+
+// Two windows overlap: the pointer goes to the top one (Notes, opened later), a press on the part
+// of Tasks that shows raises Tasks (its shapes are drawn after Notes' from that frame), and then
+// the overlap is Tasks'.
+fn check_window_order { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s = make_desk{ part = Part::windows }
+    s.b.x = 100.0
+    s.b.y = 60.0
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    // (150, 120) is in both windows: Notes' body.
+    _ = ui_test::move_pointer{ ui = &gui, x = 150, y = 120 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    let notes_id = ui::make_id{ ui = gui, name = "Notes" }
+    let notes_first = find_shape_at{ ui = gui, r = find_rect{ ui = gui, path = "Tasks" } } < find_shape_at{ ui = gui, r = find_rect{ ui = gui, path = "Notes" } }
+    ui_test::expect{ &io, &t, ok = ui::is_pointer_over{ ui = gui, id = notes_id } and notes_first,
+        what = "window order: the pointer over the overlap goes to the window in front" }
+    _ = ui_test::click{ &d, ui = &gui, path = "Tasks/A1", show = show_desk{ &s, _ } }
+    let tasks_id = ui::make_id{ ui = gui, name = "Tasks" }
+    _ = ui_test::move_pointer{ ui = &gui, x = 150, y = 120 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    let raised = find_shape_at{ ui = gui, r = find_rect{ ui = gui, path = "Tasks" } } > find_shape_at{ ui = gui, r = find_rect{ ui = gui, path = "Notes" } }
+    ui_test::expect{ &io, &t, ok = s.a_clicks == 1 and raised and ui::is_pointer_over{ ui = gui, id = tasks_id } and not ui::is_pointer_over{ ui = gui, id = notes_id },
+        what = "window order: a press on the lower window raises it, and the overlap is its own" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "window order: every frame is clean" }
+}
+
+// Content taller than the body scrolls: the body is a scroll region with a bar, and the wheel
+// moves it.
+fn check_window_scroll { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s = make_desk{ part = Part::windows }
+    s.b_open = false
+    s.rows = 20
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 3 }
+    let body = ui::find_node{ ui = gui, path = "Tasks/.body" } ifnull ui::Node{ .. }
+    _ = ui_test::move_pointer{ ui = &gui, x = body.rect.x + 20, y = body.rect.y + 20 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::turn_wheel{ ui = &gui, dx = 0.0, dy = -2.0 }
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    let after = ui::find_node{ ui = gui, path = "Tasks/.body" } ifnull ui::Node{ .. }
+    let view = ui::get_scroll{ ui = gui, id = body.id } ifnull ui::ScrollView{ .. }
+    ui_test::expect{ &io, &t, ok = body.role == ui::Role::scroll and view.max_y > 0 and after.value > 0.0 and find_rect{ ui = gui, path = "Tasks" }.h == 150,
+        what = "window scroll: content taller than the body scrolls with the wheel, the window keeps its size" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "window scroll: every frame is clean" }
+}
+
+// A dialog over windows: a click on a window under its scrim does nothing, the focus a window
+// button had is put aside while it is up, Escape closes it and gives the focus back.
+fn check_dialog_modal { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s = make_desk{ part = Part::dialog }
+    s.b_open = false
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::click{ &d, ui = &gui, path = "Tasks/A1", show = show_desk{ &s, _ } }
+    let had = has_node_flag{ ui = gui, path = "Tasks/A1", flag = ui::NODE_FOCUSED }
+    s.dialog = true
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    let aside = not has_node_flag{ ui = gui, path = "Tasks/A1", flag = ui::NODE_FOCUSED }
+    let blocked = ui_test::find_center{ ui = gui, path = "Tasks/A1" } == null
+    let a1 = find_rect{ ui = gui, path = "Tasks/A1" }
+    _ = ui_test::move_pointer{ ui = &gui, x = a1.x + 3, y = a1.y + 3 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::push_button{ ui = &gui, button = 0, down = true, clicks = 1 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::push_button{ ui = &gui, button = 0, down = false, clicks = 1 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = had and aside and blocked and s.a_clicks == 1 and s.dialog, what = "dialog: it blocks the windows under it and puts their focus aside" }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    let inside = has_node_flag{ ui = gui, path = "Confirm/.close", flag = ui::NODE_FOCUSED }
+    press_key{ &d, ui = &gui, key = ui::Key::escape, show = show_desk{ &s, _ } }
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    ui_test::expect{ &io, &t, ok = inside and not s.dialog and has_node_flag{ ui = gui, path = "Tasks/A1", flag = ui::NODE_FOCUSED },
+        what = "dialog: Tab goes into it; Escape closes it and gives the focus back" }
+    s.dialog = true
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    _ = ui_test::click{ &d, ui = &gui, path = "Confirm/OK", show = show_desk{ &s, _ } }
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    ui_test::expect{ &io, &t, ok = s.ok_clicks == 1 and not s.dialog and has_node_flag{ ui = gui, path = "Tasks/A1", flag = ui::NODE_FOCUSED },
+        what = "dialog: its button closes it, and the focus comes back again" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "dialog: every frame is clean" }
+}
+
+// ---- menus
+
+// A click opens File; the pointer on Recent opens its submenu and on Open shuts it again; a click
+// on an item closes every menu and is true once; a click on a disabled item does nothing; while a
+// menu is open the pointer on another title opens that one; a check item flips; a click on the
+// open title shuts it.
+fn check_menu_pointer { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s = make_desk{ part = Part::menus }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::click{ &d, ui = &gui, path = "File", show = show_desk{ &s, _ } }
+    let open = has_node{ ui = gui, path = "File/Open" } and has_node_flag{ ui = gui, path = "menu bar/File", flag = ui::NODE_OPEN }
+    _ = hover_node{ &d, ui = &gui, path = "File/Recent", show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    let sub = has_node{ ui = gui, path = "Recent/plan.md" }
+    _ = hover_node{ &d, ui = &gui, path = "File/Open", show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    let followed = not has_node{ ui = gui, path = "Recent/plan.md" }
+    ui_test::expect{ &io, &t, ok = open and sub and followed, what = "menu: a click opens it, the submenu follows the pointer" }
+    _ = hover_node{ &d, ui = &gui, path = "File/Recent", show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::click{ &d, ui = &gui, path = "Recent/plan.md", show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = s.recent == 1 and not has_node{ ui = gui, path = "File/Open" } and not has_node{ ui = gui, path = "Recent/plan.md" },
+        what = "menu: an item click in a submenu picks it and closes every menu" }
+    _ = ui_test::click{ &d, ui = &gui, path = "File", show = show_desk{ &s, _ } }
+    _ = ui_test::click{ &d, ui = &gui, path = "File/Open", show = show_desk{ &s, _ } }
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    ui_test::expect{ &io, &t, ok = s.opened == 1 and not has_node{ ui = gui, path = "File/Open" }, what = "menu: an item click is true once and closes the menu" }
+    _ = ui_test::click{ &d, ui = &gui, path = "File", show = show_desk{ &s, _ } }
+    _ = ui_test::click{ &d, ui = &gui, path = "File/Save", show = show_desk{ &s, _ } }
+    let still = has_node{ ui = gui, path = "File/Open" } and has_node_flag{ ui = gui, path = "File/Save", flag = ui::NODE_DISABLED }
+    ui_test::expect{ &io, &t, ok = s.saved == 0 and still, what = "menu: a disabled item cannot be picked and leaves the menu open" }
+    _ = hover_node{ &d, ui = &gui, path = "menu bar/Edit", show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = has_node{ ui = gui, path = "Edit/Cut" } and not has_node{ ui = gui, path = "File/Open" },
+        what = "menu: with a menu open, the pointer on another title opens that one" }
+    _ = ui_test::click{ &d, ui = &gui, path = "menu bar/Edit", show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = not has_node{ ui = gui, path = "Edit/Cut" }, what = "menu: a click on the open title shuts it" }
+    _ = ui_test::click{ &d, ui = &gui, path = "File", show = show_desk{ &s, _ } }
+    _ = ui_test::click{ &d, ui = &gui, path = "File/Autosave", show = show_desk{ &s, _ } }
+    _ = ui_test::click{ &d, ui = &gui, path = "File", show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = s.autosave and has_node_flag{ ui = gui, path = "File/Autosave", flag = ui::NODE_CHECKED },
+        what = "menu: a check item flips its value and shows its mark" }
+    // A press outside closes it.
+    _ = ui_test::move_pointer{ ui = &gui, x = 390, y = 290 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::push_button{ ui = &gui, button = 0, down = true, clicks = 1 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::push_button{ ui = &gui, button = 0, down = false, clicks = 1 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = not has_node{ ui = gui, path = "File/Open" }, what = "menu: a press outside closes it" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "menu pointer: every frame is clean" }
+}
+
+// The keyboard: Tab to File, Enter opens it with Open lit; Down skips the disabled Save to
+// Recent; Right opens Recent with its first item lit; Left shuts it; Right on Open goes on to
+// Edit, Left back to File; Escape shuts the menu with the focus on its title; Left and Right on a
+// shut title move the focus along the bar; Down opens a menu and Enter picks.
+fn check_menu_keys { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+    let mut s = make_desk{ part = Part::menus }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    press_key{ &d, ui = &gui, key = ui::Key::enter, show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    let lit_open = has_node_flag{ ui = gui, path = "File/Open", flag = ui::NODE_SELECTED }
+    press_key{ &d, ui = &gui, key = ui::Key::down, show = show_desk{ &s, _ } }
+    let lit_recent = has_node_flag{ ui = gui, path = "File/Recent", flag = ui::NODE_SELECTED } and not has_node_flag{ ui = gui, path = "File/Save", flag = ui::NODE_SELECTED }
+    ui_test::expect{ &io, &t, ok = lit_open and lit_recent, what = "menu keys: Enter opens with the first item lit, Down skips a disabled item" }
+    press_key{ &d, ui = &gui, key = ui::Key::right, show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    let sub_lit = has_node_flag{ ui = gui, path = "Recent/notes.txt", flag = ui::NODE_SELECTED }
+    press_key{ &d, ui = &gui, key = ui::Key::down, show = show_desk{ &s, _ } }
+    let sub_down = has_node_flag{ ui = gui, path = "Recent/plan.md", flag = ui::NODE_SELECTED } and has_node_flag{ ui = gui, path = "File/Recent", flag = ui::NODE_SELECTED }
+    press_key{ &d, ui = &gui, key = ui::Key::left, show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    let sub_shut = not has_node{ ui = gui, path = "Recent/plan.md" } and has_node_flag{ ui = gui, path = "File/Recent", flag = ui::NODE_SELECTED }
+    ui_test::expect{ &io, &t, ok = sub_lit and sub_down and sub_shut, what = "menu keys: Right enters a submenu with its first item lit, Down steps in it, Left leaves it" }
+    press_key{ &d, ui = &gui, key = ui::Key::up, show = show_desk{ &s, _ } }      // Open
+    press_key{ &d, ui = &gui, key = ui::Key::right, show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    let edit = has_node_flag{ ui = gui, path = "Edit/Cut", flag = ui::NODE_SELECTED } and not has_node{ ui = gui, path = "File/Open" } and has_node_flag{ ui = gui, path = "menu bar/Edit", flag = ui::NODE_FOCUSED }
+    press_key{ &d, ui = &gui, key = ui::Key::left, show = show_desk{ &s, _ } }
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    let back = has_node_flag{ ui = gui, path = "File/Open", flag = ui::NODE_SELECTED } and not has_node{ ui = gui, path = "Edit/Cut" }
+    press_key{ &d, ui = &gui, key = ui::Key::left, show = show_desk{ &s, _ } }
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    let wrapped = has_node{ ui = gui, path = "View/Undo" }
+    ui_test::expect{ &io, &t, ok = edit and back and wrapped, what = "menu keys: Right and Left go along the bar's menus, wrapping" }
+    press_key{ &d, ui = &gui, key = ui::Key::escape, show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    let shut = not has_node{ ui = gui, path = "View/Undo" } and has_node_flag{ ui = gui, path = "menu bar/View", flag = ui::NODE_FOCUSED }
+    press_key{ &d, ui = &gui, key = ui::Key::right, show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    let along = has_node_flag{ ui = gui, path = "menu bar/File", flag = ui::NODE_FOCUSED } and not has_node{ ui = gui, path = "File/Open" }
+    ui_test::expect{ &io, &t, ok = shut and along, what = "menu keys: Escape shuts the menu, its title keeps the focus; Right on a shut title moves the focus" }
+    press_key{ &d, ui = &gui, key = ui::Key::down, show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    press_key{ &d, ui = &gui, key = ui::Key::enter, show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = s.opened == 1 and not has_node{ ui = gui, path = "File/Open" }, what = "menu keys: Down opens the menu and Enter picks the lit item, once" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "menu keys: every frame is clean" }
+}
+
+// A menu bar pushed to the right edge: File's menu is held on the surface and Recent's submenu,
+// with no room on the right of its item, opens on the left.
+fn check_submenu_flip { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 360, height = 300, scale = 1.0 } iferr { return }
+    let mut s = make_desk{ part = Part::menus }
+    s.bar_left = 200.0
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::click{ &d, ui = &gui, path = "File", show = show_desk{ &s, _ } }
+    _ = hover_node{ &d, ui = &gui, path = "File/Recent", show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    let recent = find_rect{ ui = gui, path = "File/Recent" }
+    let item = find_rect{ ui = gui, path = "Recent/notes.txt" }
+    let file = find_rect{ ui = gui, path = "File/Open" }
+    ui_test::expect{ &io, &t, ok = file.x + file.w <= 360 and item.x >= 0 and item.x + item.w <= recent.x,
+        what = "submenu flip: a submenu with no room on the right opens on the left, on the surface" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "submenu flip: every frame is clean" }
+}
+
+// ---- the combo
+
+// A click opens the list with the chosen row in view (Mango, the 16th of 20, where 8 show);
+// Down three times lights Peach, scrolled into view; Enter picks it and shuts the list; shut and
+// focused, Down chooses the next; a click on a row picks it; Escape shuts the list unchosen.
+fn check_combo_pick { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 320, height = 400, scale = 1.0 } iferr { return }
+    let mut s = make_desk{ part = Part::combo }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::click{ &d, ui = &gui, path = "fruit", show = show_desk{ &s, _ } }
+    _ = ui_test::move_pointer{ ui = &gui, x = 300, y = 390 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    let list = find_rect{ ui = gui, path = "fruit/list" }
+    let combo = find_rect{ ui = gui, path = "fruit" }
+    let mango = find_rect{ ui = gui, path = "fruit/#15/Mango" }
+    let in_view = mango.y >= list.y and mango.y + mango.h <= list.y + list.h
+    ui_test::expect{ &io, &t, ok = list.h == 8 * 24 and list.y >= combo.y + combo.h and in_view and has_node_flag{ ui = gui, path = "fruit", flag = ui::NODE_OPEN },
+        what = "combo: the list opens below it, eight rows high, the chosen row in view" }
+    for _ in 0..3 { _ = ui_test::tap_key{ ui = &gui, key = ui::Key::down, mods = 0 } }
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    let peach = find_rect{ ui = gui, path = "Peach" }
+    let lit = has_node_flag{ ui = gui, path = "Peach", flag = ui::NODE_SELECTED } and peach.y >= list.y and peach.y + peach.h <= list.y + list.h
+    press_key{ &d, ui = &gui, key = ui::Key::enter, show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = lit and s.fruit == 18 and not has_node{ ui = gui, path = "Peach" }, what = "combo: Down lights the rows, scrolled into view; Enter picks and shuts" }
+    press_key{ &d, ui = &gui, key = ui::Key::down, show = show_desk{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = s.fruit == 19 and not has_node{ ui = gui, path = "Pear" }, what = "combo: shut and focused, Down chooses the next item" }
+    _ = ui_test::click{ &d, ui = &gui, path = "fruit", show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    press_key{ &d, ui = &gui, key = ui::Key::home, show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::click{ &d, ui = &gui, path = "Apricot", show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = s.fruit == 1 and not has_node{ ui = gui, path = "Apricot" }, what = "combo: Home scrolls to the top, and a click on a row picks it" }
+    _ = ui_test::click{ &d, ui = &gui, path = "fruit", show = show_desk{ &s, _ } }
+    press_key{ &d, ui = &gui, key = ui::Key::down, show = show_desk{ &s, _ } }
+    press_key{ &d, ui = &gui, key = ui::Key::escape, show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = s.fruit == 1 and not has_node{ ui = gui, path = "Banana" }, what = "combo: Escape shuts the list unchosen" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "combo: every frame is clean" }
+}
+
+// ---- context menus
+
+// A right click on the target opens its menu at the pointer; a click on Copy picks it; a right
+// click elsewhere does nothing; the Menu key on the focused target opens it below the target with
+// Copy lit, and Enter picks.
+fn check_context_menu { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 320, height = 240, scale = 1.0 } iferr { return }
+    let mut s = make_desk{ part = Part::context }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    click_right{ &d, ui = &gui, x = 70, y = 50, show = show_desk{ &s, _ } }
+    let menu = find_rect{ ui = gui, path = "target menu" }
+    let copy = find_rect{ ui = gui, path = "target menu/Copy" }
+    ui_test::expect{ &io, &t, ok = menu.x == 70 and menu.y == 50 and copy.w > 0, what = "context menu: a right click opens it at the pointer" }
+    _ = ui_test::click{ &d, ui = &gui, path = "target menu/Copy", show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = s.copied == 1 and not has_node{ ui = gui, path = "target menu/Copy" }, what = "context menu: an item click picks it and closes it" }
+    click_right{ &d, ui = &gui, x = 250, y = 200, show = show_desk{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = not has_node{ ui = gui, path = "target menu/Copy" }, what = "context menu: a right click off its target does nothing" }
+    _ = ui_test::click{ &d, ui = &gui, path = "target", show = show_desk{ &s, _ } }
+    press_key{ &d, ui = &gui, key = ui::Key::menu, show = show_desk{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    let below = find_rect{ ui = gui, path = "target menu" }
+    let target = find_rect{ ui = gui, path = "target" }
+    let lit = has_node_flag{ ui = gui, path = "target menu/Copy", flag = ui::NODE_SELECTED }
+    press_key{ &d, ui = &gui, key = ui::Key::enter, show = show_desk{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = below.x == target.x and below.y == target.y + target.h and lit and s.copied == 2,
+        what = "context menu: the Menu key opens it below the focused target, Copy lit, and Enter picks" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "context menu: every frame is clean" }
+}
+
+// ---- tooltips
+
+// A tooltip appears once the pointer has rested on its button for tip_delay (half a second, four
+// frames of an eighth), not before; and not while a button is held (a press on Hold, dragged onto
+// the tipped button and kept there).
+fn check_window_tooltip { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 320, height = 240, scale = 1.0 } iferr { return }
+    let mut s = make_desk{ part = Part::tip }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = hover_node{ &d, ui = &gui, path = "Tipped", show = show_desk{ &s, _ } }    // its hover begins
+    let mut early = false
+    for _ in 0..3 {
+        ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+        if has_node{ ui = gui, path = "A tip" } { early = true }
+    }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = not early and has_node{ ui = gui, path = "A tip" }, what = "tooltip: it appears after tip_delay and not before" }
+    let hold = ui_test::find_center{ ui = gui, path = "Hold" } ifnull ui::Point{ .. }
+    let tipped = ui_test::find_center{ ui = gui, path = "Tipped" } ifnull ui::Point{ .. }
+    _ = ui_test::move_pointer{ ui = &gui, x = hold.x, y = hold.y }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::push_button{ ui = &gui, button = 0, down = true, clicks = 1 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::move_pointer{ ui = &gui, x = tipped.x, y = tipped.y }
+    let mut shown = false
+    for _ in 0..8 {
+        ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+        if has_node{ ui = gui, path = "A tip" } { shown = true }
+    }
+    _ = ui_test::push_button{ ui = &gui, button = 0, down = false, clicks = 1 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = not shown and s.tip_clicks == 0, what = "tooltip: none while a button is held" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "tooltip: every frame is clean" }
+}
+
+// ---- drag and drop
+
+// Below the threshold no drag; past it the ghost shows; over the fruit bin `over` is set, and the
+// release drops the payload there once; the veg bin refuses fruit; Escape cancels a drag; a
+// release over no target drops nothing.
+fn check_drag_drop { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 320, height = 240, scale = 1.0 } iferr { return }
+    let mut s = make_desk{ part = Part::drag }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    // Press on the chip at (50, 34) and move 5 pixels: under the 6-unit threshold; then 6.
+    _ = ui_test::move_pointer{ ui = &gui, x = 50, y = 34 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::push_button{ ui = &gui, button = 0, down = true, clicks = 1 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    _ = ui_test::move_pointer{ ui = &gui, x = 55, y = 34 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    let under = not s.ghost and not ui::is_dragging{ ui = &gui }
+    _ = ui_test::move_pointer{ ui = &gui, x = 56, y = 34 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
+    let past = s.ghost and ui::is_dragging{ ui = &gui }
+    ui_test::expect{ &io, &t, ok = under and past, what = "drag: no drag under the threshold, the ghost from the pixel it is reached" }
+    _ = ui_test::move_pointer{ ui = &gui, x = 220, y = 140 }
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    let refused = not s.over_b
+    _ = ui_test::move_pointer{ ui = &gui, x = 80, y = 140 }
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
+    let over = s.over_a
+    _ = ui_test::push_button{ ui = &gui, button = 0, down = false, clicks = 1 }
+    ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 3 }
+    ui_test::expect{ &io, &t, ok = refused and over and s.drops_a == 1 and s.dropped == 7 and not s.ghost and not s.over_a,
+        what = "drag: the bin that takes fruit is lit and gets the payload once on the release; the other refuses it" }
+    // Onto the veg bin and let go there: refused, nothing dropped.
+    run_drag{ &d, ui = &gui, s = &s, x = 220, y = 140, escape = false }
+    ui_test::expect{ &io, &t, ok = s.drops_b == 0 and s.drops_a == 1, what = "drag: a payload of a kind the target does not take is not dropped" }
+    // Escape, then let go over the fruit bin: nothing.
+    run_drag{ &d, ui = &gui, s = &s, x = 80, y = 140, escape = true }
+    ui_test::expect{ &io, &t, ok = s.drops_a == 1 and not s.ghost, what = "drag: Escape cancels the drag, and its release drops nothing" }
+    // Let go over no target.
+    run_drag{ &d, ui = &gui, s = &s, x = 300, y = 60, escape = false }
+    ui_test::expect{ &io, &t, ok = s.drops_a == 1 and s.drops_b == 0 and not ui::is_dragging{ ui = &gui }, what = "drag: a release over no target drops nothing" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "drag: every frame is clean" }
+}
+
+// A drag from the chip to (x, y), with Escape on the way when `escape`, and the release there.
+fn run_drag { mut d: ui_test::Driver, mut ui: ui::Ui, mut s: Desk, x: i32, y: i32, escape: bool } {
+    _ = ui_test::move_pointer{ &ui, x = 50, y = 34 }
+    ui_test::step_frame{ &d, &ui, show = show_desk{ &s, _ } }
+    _ = ui_test::push_button{ &ui, button = 0, down = true, clicks = 1 }
+    ui_test::step_frame{ &d, &ui, show = show_desk{ &s, _ } }
+    _ = ui_test::move_pointer{ &ui, x, y }
+    ui_test::step_frames{ &d, &ui, show = show_desk{ &s, _ }, count = 2 }
+    if escape {
+        _ = ui_test::tap_key{ &ui, key = ui::Key::escape, mods = 0 }
+        ui_test::step_frame{ &d, &ui, show = show_desk{ &s, _ } }
+    }
+    _ = ui_test::push_button{ &ui, button = 0, down = false, clicks = 1 }
+    ui_test::step_frames{ &d, &ui, show = show_desk{ &s, _ }, count = 2 }
+}
+
+// Whether every rect shape's border is the same width on each side it has (a rule under a title
+// bar has one side; a box's border has four).
+fn has_even_sides { ui: ui::Ui } -> bool {
+    for i in 0..@as(usize, ui.draw.count) {
+        match ui.draw.cmds[i] {
+            rect{ style } => {
+                let b = style.border
+                let w = @max(@max(b.top, b.right), @max(b.bottom, b.left))
+                if (b.top != 0 and b.top != w) or (b.right != 0 and b.right != w) or (b.bottom != 0 and b.bottom != w) or (b.left != 0 and b.left != w) { return false }
+            }
+            else => {}
+        }
+    }
+    return true
+}
+
+// A left-button drag from the pixel (x, y) by (dx, dy): move, press, move, release, a frame each.
+fn drag_at { mut d: ui_test::Driver, mut ui: ui::Ui, x: i32, y: i32, dx: i32, dy: i32, show: &fn{ mut ui: ui::Ui } } {
+    _ = ui_test::move_pointer{ &ui, x, y }
+    ui_test::step_frame{ &d, &ui, show }
+    _ = ui_test::push_button{ &ui, button = 0, down = true, clicks = 1 }
+    ui_test::step_frame{ &d, &ui, show }
+    _ = ui_test::move_pointer{ &ui, x = x + dx, y = y + dy }
+    ui_test::step_frame{ &d, &ui, show }
+    _ = ui_test::push_button{ &ui, button = 0, down = false, clicks = 1 }
+    ui_test::step_frame{ &d, &ui, show }
+}

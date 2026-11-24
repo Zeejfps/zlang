@@ -1,0 +1,29 @@
+== two windows
+node button "Behind" 60,120 80x28 flags=0 value=0
+node window "Tasks" 40,40 200x150 flags=8 value=0
+node button "Tasks/.collapse" 45,45 20x20 flags=8 value=0
+node button "Tasks/.close" 215,45 20x20 flags=0 value=0
+node row "Tasks/.title" 41,41 198x28 flags=0 value=0
+node button "Tasks/.grip" 223,181 16x8 flags=0 value=0
+node scroll "Tasks/.body" 41,69 198x112 flags=0 value=0
+node button "Tasks/A1" 49,77 38x28 flags=0 value=0
+node window "Notes" 140,90 200x150 flags=8 value=0
+node button "Notes/.collapse" 145,95 20x20 flags=8 value=0
+node button "Notes/.close" 315,95 20x20 flags=0 value=0
+node row "Notes/.title" 141,91 198x28 flags=0 value=0
+node button "Notes/.grip" 323,231 16x8 flags=0 value=0
+node scroll "Notes/.body" 141,119 198x112 flags=0 value=0
+node button "Notes/B1" 149,127 38x28 flags=0 value=0
+== a menu and its submenu
+node menu_bar "menu bar" 0,0 400x28 flags=0 value=0
+node menu "menu bar/File" 4,2 44x24 flags=24 value=0
+node popup "menu bar/menu:124F3B143678D80E" 4,26 140x109 flags=8 value=0
+node menu_item "menu bar/File/Open" 8,30 132x24 flags=0 value=0
+node menu_item "menu bar/File/Save" 8,54 132x24 flags=1 value=0
+node menu "menu bar/File/Recent" 8,78 132x24 flags=12 value=0
+node popup "menu bar/File/menu:4D733E4BFA552E60" 140,78 140x56 flags=8 value=0
+node menu_item "menu bar/File/Recent/notes.txt" 144,82 132x24 flags=0 value=0
+node menu_item "menu bar/File/Recent/plan.md" 144,106 132x24 flags=0 value=0
+node menu_item "menu bar/File/Autosave" 8,107 132x24 flags=0 value=0
+node menu "menu bar/Edit" 48,2 44x24 flags=0 value=0
+node menu "menu bar/View" 92,2 44x24 flags=0 value=0

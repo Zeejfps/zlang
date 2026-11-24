@@ -1,0 +1,200 @@
+// ui: the combo box, and what the widgets that open popups share (plan section 5, stage 11).
+//
+// Popups themselves are the core's (`ui::open_popup`, `open_popup_on`, `begin_popup`,
+// `close_popup`, `close_popups`, `is_popup_open`, ui/core/layers.ctx): a layer of the one surface
+// placed below or beside its anchor, flipped and held on the surface, closed by a press outside
+// it or by Escape. A widget that opens one names it from its own id (`write_popup_name`), so the
+// name is the same wherever the widget is and no two widgets share one. A press on the anchor does
+// not close the popup: the anchor's widget toggles it. A widget closes its own popup by not
+// beginning it in a frame (the core closes a popup no frame begins).
+//
+// The combo (`add_combo`) shows the chosen item of a list and opens the list below itself, as
+// wide as itself, on a click or on Enter or Space while it has the focus:
+//
+//  - Shut and focused, Up and Down choose the item before or after without opening the list.
+//  - Open, the list shows up to COMBO_ROWS rows and scrolls past them. The pointer, or Up, Down,
+//    Home and End, light a row; a click or Enter or Space chooses the lit row and shuts the list;
+//    Escape, or a press outside, shuts it unchosen. The list opens with the chosen row lit and in
+//    view, and a row lit by a key is scrolled into view.
+//  - Its state (`Values.f`): f[0] the lit row, f[1] 1 when the lit row is to be scrolled into view,
+//    f[2] and f[3] where the pointer was, so a pointer that rests does not take the light from a
+//    key.
+//
+// Units: the rows are `row_height` units, `ui::to_pixels` once a frame; the list's width is the
+// combo's own in pixels (last frame's `get_rect`), its height a whole number of rows; scrolling a
+// row into view is integer arithmetic on those pixels.
+namespace ui {
+    // The most rows a combo's list shows before it scrolls.
+    const COMBO_ROWS: i32 = 8
+
+    // An id that is the same in every id scope: for what a kind of widget keeps for the whole Ui
+    // (the drag that is on, the menu bar being recorded).
+    fn make_global_id { name: []u8 } -> Id {
+        let h = hash_bytes{ seed = hash_bytes{ seed = FNV_BASIS, bytes = "\x00global" }, bytes = name }
+        return @as(Id, if h == 0 { 1 } else { h })
+    }
+
+    // An id in state's `Values.i`, and back.
+    fn pack_id { id: Id } -> i64 {
+        return @trunc(i64, @as(u64, id))
+    }
+
+    fn unpack_id { v: i64 } -> Id {
+        return @as(Id, @trunc(u64, v))
+    }
+
+    // The name of the popup the widget with `id` opens: `kind`, then the id in hex, written into
+    // `into`. What it answers lives as long as `into`.
+    fn write_popup_name { kind: []u8, id: Id, into: []mut u8 } -> []u8 {
+        let n = @min(kind.len, into.len)
+        slice::copy(u8){ dst = into[..n], src = kind[..n] }
+        if into.len - n < 16 { return into[..n] }
+        let digits = format_hex{ n = @as(u64, id), digits = 16, into = into[n..] }
+        return into[..n + digits]
+    }
+
+    // A combo named `label` (its id and node; it draws no label, which goes beside it) for the
+    // index `value` into `items`. True on the frame it changes `value`. It is at least five
+    // controls wide unless `opts.box` sizes it.
+    fn add_combo { mut ui: Ui, label: []u8, mut value: i32, items: [][]u8, opts: Opts } -> bool {
+        let t = derive_theme{ theme = ui.theme }
+        let name = get_widget_name{ opts, label }
+        let id = make_id{ ui, name }
+        let mut buf: [40]u8
+        let pname = write_popup_name{ kind = "combo:", id, into = buf[..] }
+        let it = press{ &ui, id, opts = make_press_opts{ ui, opts } }
+        let count = @as(i32, @min(items.len, 1000000000))
+        let before = value
+        let was_open = is_popup_open{ ui, id = pname }
+        let mut v = load_state{ &ui, id }
+        let mut open = was_open and opts.enabled
+        let mut lit = @as(i32, v.f[0])
+        if opts.enabled {
+            if open {
+                // The list takes the keys while it is open.
+                let before_lit = lit
+                while take_key{ &ui, key = Key::down, mods = 0 } { lit = step_row{ row = lit, by = 1, count } }
+                while take_key{ &ui, key = Key::up, mods = 0 } { lit = step_row{ row = lit, by = -1, count } }
+                if take_key{ &ui, key = Key::home, mods = 0 } { lit = @min(0, count - 1) }
+                if take_key{ &ui, key = Key::end, mods = 0 } { lit = count - 1 }
+                if lit != before_lit { v.f[1] = 1.0 }
+                let enter = take_key{ &ui, key = Key::enter, mods = 0 }
+                let space = take_key{ &ui, key = Key::space, mods = 0 }
+                if (enter or space) and lit >= 0 and lit < count {
+                    value = lit
+                    open = false
+                }
+                if it.pressed { open = false }
+            } else {
+                let keyed = take_activation{ &ui, it }
+                if it.pressed or keyed {
+                    open = true
+                    lit = @clamp(value, 0, @max(count - 1, 0))
+                    v.f[1] = 1.0
+                    open_popup_on{ &ui, id = pname, anchor = id, side = PopupSide::below }
+                }
+                if it.focused and not open {
+                    while take_key{ &ui, key = Key::down, mods = 0 } { if count > 0 { value = @min(value + 1, count - 1) } }
+                    while take_key{ &ui, key = Key::up, mods = 0 } { if count > 0 { value = @max(@min(value, count) - 1, 0) } }
+                }
+            }
+        }
+        v.f[0] = @as(f32, lit)
+
+        // The combo: a field with the chosen item and a down arrow.
+        let fill = if not opts.enabled { t.control } else if it.hovered { t.control_hovered } else { t.field }
+        let base = Box{
+            width = Size{ kind = SizeKind::fit, min = t.control_height * 5.0, .. }, height = fix{ size = t.control_height },
+            padding = Insets{ left = t.padding, right = t.padding * 0.5, .. }, gap = t.gap * 0.5, align_y = Align::center,
+            fill, border = color_sides{ color = if open { t.accent } else { t.border } }, border_width = inset{ by = t.border_width },
+            radius = round{ radius = t.radius }, ..
+        }
+        let el = begin_element{ &ui, id, axis = Axis::row, box = merge_box{ box = opts.box, base } }
+        let shown: []u8 = if value >= 0 and value < count { items[@as(usize, value)] } else { "" }
+        let color = if opts.enabled { t.text } else { t.text_disabled }
+        add_text{ &ui, text = shown, style = TextStyle{ color, overflow = Overflow::ellipsis, .. }, box = Box{ width = GROW, .. } }
+        let mark = get_mark_size{ theme = t }
+        let arrow = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{ width = fix{ size = mark }, height = fix{ size = mark }, .. } }
+        let side = to_pixels{ ui, length = mark }
+        paint_icon{ &ui, icon = Icon::arrow_down, rect = Rect{ x = 0, y = 0, w = side, h = side }, color = if opts.enabled { t.text_muted } else { t.text_disabled } }
+        end{ &ui, scope = arrow }
+        if it.focused { add_focus_ring{ &ui, radius = t.radius } }
+        end{ &ui, scope = el }
+        let mut flags = get_widget_flags{ opts, it }
+        if open { flags = flags | NODE_OPEN }
+        describe{ &ui, id, role = Role::combo, label = name, value = @as(f32, value), flags }
+        finish_widget{ &ui, id, it, opts }
+
+        if open {
+            let picked = add_combo_list{ &ui, id, pname, name, items, value, values = &v }
+            if picked >= 0 { value = picked }
+        }
+        store_state{ &ui, id, values = v }
+        return value != before
+    }
+
+    // `row` moved `by` rows, held to 0..count; from no row (-1) down is the first.
+    fn step_row { row: i32, by: i32, count: i32 } -> i32 {
+        if count <= 0 { return -1 }
+        if row < 0 or row >= count { return if by > 0 { 0 } else { count - 1 } }
+        return @clamp(row + by, 0, count - 1)
+    }
+
+    // The open list of the combo with `id`: rows `row_height` high, as wide as the combo, scrolled
+    // so the lit row is in view when it was moved. The row chosen this frame, or -1.
+    fn add_combo_list { mut ui: Ui, id: Id, pname: []u8, name: []u8, items: [][]u8, value: i32, mut values: Values } -> i32 {
+        let t = derive_theme{ theme = ui.theme }
+        let count = @as(i32, @min(items.len, 1000000000))
+        let row = @max(1, to_pixels{ ui, length = t.row_height })
+        let rows = @clamp(count, 1, COMBO_ROWS)
+        let width = if let r = get_rect{ ui, id } { r.w } else { to_pixels{ ui, length = t.control_height * 5.0 } }
+        let pop = begin_popup{ &ui, id = pname, opts = Opts{ box = Box{ width = fix_pixels{ size = width }, padding = inset{ by = t.border_width }, .. }, .. } }
+        let scope = push_id{ &ui, name }
+        let list_id = make_id{ ui, name = "list" }
+        let view = @as(i64, rows) * @as(i64, row)
+        let lit = @as(i32, values.f[0])
+        if values.f[1] != 0.0 and lit >= 0 {
+            // The lit row into view: its top above the view's, or its bottom below the view's.
+            let top = @as(i64, lit) * @as(i64, row)
+            let at = if let s = get_scroll{ ui, id = list_id } { @as(i64, s.y) } else { 0 }
+            if top < at {
+                set_scroll{ &ui, id = list_id, x = 0, y = hold_pixels{ v = top } }
+            } else if top + @as(i64, row) > at + view {
+                set_scroll{ &ui, id = list_id, x = 0, y = hold_pixels{ v = top + @as(i64, row) - view } }
+            }
+            values.f[1] = 0.0
+        }
+        let p = get_pointer{ ui }
+        let moved = @as(f32, p.x) != values.f[2] or @as(f32, p.y) != values.f[3]
+        values.f[2] = @as(f32, p.x)
+        values.f[3] = @as(f32, p.y)
+        _ = begin_scroll{ &ui, id = "list", opts = Opts{ box = Box{ width = GROW, height = fix_pixels{ size = hold_pixels{ v = view } }, .. }, .. } }
+        let mut picked: i32 = -1
+        for i in 0..count {
+            let key = push_key{ &ui, key = @as(u64, i) }
+            let rid = make_id{ ui, name = "row" }
+            let it = press{ &ui, id = rid, opts = PressOpts{ focusable = false, .. } }
+            if it.hovered and moved { values.f[0] = @as(f32, i) }
+            let on = i == value
+            let lit_now = @as(i32, values.f[0]) == i or it.held
+            let fill = if lit_now { t.control_hovered } else if on { t.selection } else { Color{ a = 0, .. } }
+            let el = begin_element{ &ui, id = rid, axis = Axis::row, box = Box{
+                width = GROW, height = fix{ size = t.row_height },
+                padding = Insets{ left = t.padding * 0.5, right = t.padding, .. }, gap = t.gap * 0.5, align_y = Align::center, fill, ..
+            } }
+            add_menu_mark{ &ui, check = on, color = t.text }
+            add_text{ &ui, text = items[@as(usize, i)], style = TextStyle{ color = t.text, overflow = Overflow::ellipsis, .. }, box = Box{ width = GROW, .. } }
+            end{ &ui, scope = el }
+            let mut flags: u8 = 0
+            if on { flags = flags | NODE_CHECKED }
+            if lit_now { flags = flags | NODE_SELECTED }
+            describe{ &ui, id = rid, role = Role::list_row, label = items[@as(usize, i)], value = @as(f32, i), flags }
+            if it.clicked { picked = i }
+            end{ &ui, scope = key }
+        }
+        end{ &ui, scope = scope }
+        if picked >= 0 { close_popup{ &ui } }
+        end{ &ui, scope = pop }
+        return picked
+    }
+}

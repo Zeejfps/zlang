@@ -15,7 +15,7 @@
 //   click PATH               move to the node's centre, press and release the left button: 3 frames
 //   drag PATH DX DY          press at the node's centre, move by (DX, DY) pixels, release: 4 frames
 //   key NAME [MOD ...]       a key going down and up: tab, enter, escape, backspace, delete, left,
-//                            right, up, down, home, end, page_up, page_down, space, a, c, v, x, y, z;
+//                            right, up, down, home, end, page_up, page_down, space, a, c, v, x, y, z, menu;
 //                            modifiers shift, ctrl, alt
 //   type TEXT                typed text
 //   wheel DY                 the wheel turned DY notches (positive is away from the user)
@@ -186,14 +186,15 @@ namespace ui_test {
         return false
     }
 
-    const KEY_NAMES: [20][]u8 = [
+    const KEY_NAMES: [21][]u8 = [
         "tab", "enter", "escape", "backspace", "delete", "left", "right", "up", "down", "home",
-        "end", "page_up", "page_down", "space", "a", "c", "v", "x", "y", "z",
+        "end", "page_up", "page_down", "space", "a", "c", "v", "x", "y", "z", "menu",
     ]
-    const KEYS: [20]ui::Key = [
+    const KEYS: [21]ui::Key = [
         ui::Key::tab, ui::Key::enter, ui::Key::escape, ui::Key::backspace, ui::Key::delete, ui::Key::left,
         ui::Key::right, ui::Key::up, ui::Key::down, ui::Key::home, ui::Key::end, ui::Key::page_up,
         ui::Key::page_down, ui::Key::space, ui::Key::a, ui::Key::c, ui::Key::v, ui::Key::x, ui::Key::y, ui::Key::z,
+        ui::Key::menu,
     ]
 
     fn find_key { name: []u8 } -> ?ui::Key {

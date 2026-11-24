@@ -132,6 +132,14 @@ namespace ui {
         return ui.input.now.mods
     }
 
+    // Whether pointer button `button` (0 left, 1 right, 2 middle) came up in this frame's input,
+    // and not because the window lost the keyboard: what a drop target recorded before the drag's
+    // source asks to know the drop is now.
+    fn is_released { ui: Ui, button: u8 } -> bool {
+        let b = @as(usize, button)
+        return b < BUTTONS and ui.input.now.released[b] and not ui.input.now.cancelled[b]
+    }
+
     // The sum of every frame's `dt` so far, in seconds.
     fn get_time { ui: Ui } -> f32 {
         return @as(f32, ui.input.time)

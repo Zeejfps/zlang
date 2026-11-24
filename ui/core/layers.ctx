@@ -177,6 +177,13 @@ namespace ui {
         ui.layers.popup_count = 0
     }
 
+    // The popup being recorded (the innermost `begin_popup` whose scope is open), NO_ID outside
+    // one: how a menu item finds the menu it is in.
+    fn get_open_popup { ui: Ui } -> Id {
+        let n = @as(usize, ui.layers.open_count)
+        return if n == 0 { NO_ID } else { ui.layers.open[n - 1].id }
+    }
+
     fn is_popup_open { ui: Ui, id: []u8 } -> bool {
         let popup = make_popup_id{ name = id }
         return popup != NO_ID and layers::find_popup{ ui, id = popup } != null

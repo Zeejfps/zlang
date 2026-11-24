@@ -1,0 +1,121 @@
+// ui: drag and drop (plan section 5, stage 11).
+//
+// A drag starts from any widget that takes the pointer: the widget passes its `Interaction` to
+// `begin_drag` with what it carries, and once the pointer has moved `ui.config.drag_start` units
+// (`ui::to_pixels`) from the press with the button held, the drag is on. While it is, `begin_drag`
+// gives an open scope: a card at the pointer in the front overlay (`ui::begin_overlay`), the
+// drag's ghost, for the caller to record what it shows; `ui::end` closes it. A target asks
+// `accept_drop` with its id and the kind of payload it takes:
+//
+//  - `over`: a drag of that kind is over it (the pointer is over its region or its content, with
+//    nothing of another tree on top), for the target to show that it would take it;
+//  - `dropped`: the button came up over it this frame; `value` is the payload's.
+//
+// A payload of another kind is refused (neither is set). Escape cancels a drag: its ghost goes and
+// its release drops nothing. A release over no target that takes it drops nothing either. A drop
+// is reported in the frame of the release to targets recorded before the source and after it
+// alike. Drag and drop is the pointer's: a program gives the keyboard the same result through its
+// own commands (a menu item, a button), as desktop programs do.
+//
+// One drag is on at a time, kept in two state entries of the whole Ui: the source's id and the
+// payload's value (i[0], i[1]) and the phase (f[0]: 0 none, 1 on, 2 cancelled, 3 dropped) under
+// `make_global_id{ "drag" }`; the payload kind's hash and the frame the source last saw it
+// (i[0], i[1]) under its "kind" part. A drag whose source was not recorded last frame or this one
+// is over.
+namespace ui {
+    // What a drag carries: `kind` names its type (a target takes the kinds it knows), `value` is the
+    // program's (an index, a key).
+    struct Payload { kind: []u8 = "", value: i64 = 0 }
+
+    // What a target sees of the drag this frame.
+    struct Drop { over: bool = false, dropped: bool = false, value: i64 = 0 }
+
+    const DRAG_NONE: f32 = 0.0
+    const DRAG_ON: f32 = 1.0
+    const DRAG_CANCELLED: f32 = 2.0
+    const DRAG_DROPPED: f32 = 3.0
+
+    // Drags `payload` from the widget whose press gave `it` (its left button), once the pointer
+    // has moved far enough while it is held. The scope is open while the drag is on: record the
+    // ghost into it (a card at the pointer, in front of everything, taking no pointer), then
+    // `ui::end` it either way.
+    fn begin_drag { mut ui: Ui, it: Interaction, payload: Payload } -> Scope {
+        let gid = make_global_id{ name = "drag" }
+        let kid = make_part_id{ id = gid, part = "kind" }
+        let mut d = load_state{ &ui, id = gid }
+        let mut k = load_state{ &ui, id = kid }
+        let frame = @as(i64, ui.frame & 0x3FFFFFFFFFFFFFFF)
+        let mine = d.f[0] != DRAG_NONE and unpack_id{ v = d.i[0] } == it.id and k.i[1] + 1 >= frame
+        if not it.held or it.id == NO_ID {
+            if mine and d.f[0] != DRAG_DROPPED {
+                d.f[0] = DRAG_NONE
+                store_state{ &ui, id = gid, values = d }
+            }
+            return Scope{ .. }
+        }
+        if not mine or d.f[0] == DRAG_NONE or d.f[0] == DRAG_DROPPED {
+            let reach = @as(i64, to_pixels{ ui, length = ui.config.drag_start })
+            let dx = @as(i64, it.drag_x)
+            let dy = @as(i64, it.drag_y)
+            if dx * dx + dy * dy < reach * reach { return Scope{ .. } }
+            d.i[0] = pack_id{ id = it.id }
+            d.i[1] = payload.value
+            d.f[0] = DRAG_ON
+            k.i[0] = pack_id{ id = make_kind_id{ kind = payload.kind } }
+        }
+        k.i[1] = frame
+        if d.f[0] == DRAG_ON and take_key{ &ui, key = Key::escape, mods = 0 } { d.f[0] = DRAG_CANCELLED }
+        let released = is_released{ ui, button = 0 }
+        if released { d.f[0] = if d.f[0] == DRAG_ON { DRAG_DROPPED } else { DRAG_NONE } }
+        store_state{ &ui, id = gid, values = d }
+        store_state{ &ui, id = kid, values = k }
+        if d.f[0] != DRAG_ON { return Scope{ .. } }
+
+        // The ghost: a raised card a little below and to the right of the pointer.
+        let t = ui.theme
+        let p = get_pointer{ ui }
+        let scale = get_scale{ ui }
+        let overlay = begin_overlay{ &ui, front = true }
+        let off = t.padding * 1.5
+        _ = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{
+            place = Place{ x = @as(f32, p.x) / scale + off, y = @as(f32, p.y) / scale + off, .. },
+            padding = Insets{ left = t.padding, right = t.padding, top = t.padding * 0.5, bottom = t.padding * 0.5 }, gap = t.gap * 0.5,
+            align_y = Align::center,
+            fill = get_raised_color{ theme = t }, border = color_sides{ color = t.accent }, border_width = inset{ by = t.border_width },
+            radius = round{ radius = t.radius }, opacity = 0.9, ..
+        } }
+        return overlay
+    }
+
+    // Whether a drag is on (past its threshold, not cancelled), from any source.
+    fn is_dragging { mut ui: Ui } -> bool {
+        let gid = make_global_id{ name = "drag" }
+        let d = load_state{ &ui, id = gid }
+        let k = load_state{ &ui, id = make_part_id{ id = gid, part = "kind" } }
+        let frame = @as(i64, ui.frame & 0x3FFFFFFFFFFFFFFF)
+        return d.f[0] == DRAG_ON and k.i[1] + 1 >= frame
+    }
+
+    // What the target with id `target`, which takes payloads of `kind`, sees of the drag.
+    fn accept_drop { mut ui: Ui, target: Id, kind: []u8 } -> Drop {
+        if target == NO_ID { return Drop{ .. } }
+        let gid = make_global_id{ name = "drag" }
+        let d = load_state{ &ui, id = gid }
+        let k = load_state{ &ui, id = make_part_id{ id = gid, part = "kind" } }
+        let frame = @as(i64, ui.frame & 0x3FFFFFFFFFFFFFFF)
+        // On: seen by the source last frame or this one. Dropped: by the source this frame.
+        let on = d.f[0] == DRAG_ON and k.i[1] + 1 >= frame
+        let dropped_now = d.f[0] == DRAG_DROPPED and k.i[1] == frame
+        if not on and not dropped_now { return Drop{ .. } }
+        if unpack_id{ v = k.i[0] } != make_kind_id{ kind } { return Drop{ .. } }
+        if not is_pointer_over{ ui, id = target } { return Drop{ .. } }
+        let dropped = dropped_now or (on and is_released{ ui, button = 0 })
+        return Drop{ over = true, dropped, value = d.i[1] }
+    }
+
+    // The id a payload kind is compared by.
+    fn make_kind_id { kind: []u8 } -> Id {
+        let h = hash_bytes{ seed = hash_bytes{ seed = FNV_BASIS, bytes = "\x00kind" }, bytes = kind }
+        return @as(Id, if h == 0 { 1 } else { h })
+    }
+}

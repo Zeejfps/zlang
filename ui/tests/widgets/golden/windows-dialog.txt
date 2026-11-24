@@ -1,0 +1,27 @@
+== a dialog over a window
+frame 400x300
+clip 1 40,40 200x150 round 40,40 200x150 r=4
+clip 2 41,69 198x112 round 40,40 200x150 r=4
+rect 60,120 80x28 fill=E7EBF1FF radius=4,4,4,4 border=1,1,1,1 BBC3CFFF,BBC3CFFF,BBC3CFFF,BBC3CFFF clip=0
+text 79,127 font=0 size=14 242A35FF clip=0 "Behind"
+rect 40,40 200x150 fill=F0F2F5FF radius=4,4,4,4 border=1,1,1,1 BBC3CFFF,BBC3CFFF,BBC3CFFF,BBC3CFFF clip=0
+rect 41,41 198x28 fill=E7EBF1FF radius=0,0,0,0 border=0,0,1,0 BBC3CFFF,BBC3CFFF,BBC3CFFF,BBC3CFFF clip=1
+line 49.4,52.6 55,57.8 width=1.75 cap=round 5D6675FF clip=1
+line 55,57.8 60.6,52.6 width=1.75 cap=round 5D6675FF clip=1
+text 69,48 font=0 size=14 242A35FF clip=1 "Tasks"
+line 220,50 230,60 width=1.75 cap=round 5D6675FF clip=1
+line 230,50 220,60 width=1.75 cap=round 5D6675FF clip=1
+line 232.2,187.8 237.8,182.2 width=1 cap=round 5D6675FF clip=1
+line 235.8,187.8 237.8,185.8 width=1 cap=round 5D6675FF clip=1
+rect 49,77 38x28 fill=E7EBF1FF radius=4,4,4,4 border=1,1,1,1 BBC3CFFF,BBC3CFFF,BBC3CFFF,BBC3CFFF clip=2
+text 61,84 font=0 size=14 242A35FF clip=2 "A1"
+text 49,113 font=0 size=14 242A35FF clip=2 "Row 0"
+text 49,135 font=0 size=14 242A35FF clip=2 "Row 1"
+rect 0,0 400x300 fill=00000059 radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 60,99 280x102 fill=F0F2F5FF radius=8,8,8,8 border=1,1,1,1 BBC3CFFF,BBC3CFFF,BBC3CFFF,BBC3CFFF clip=0
+text 72,113 font=0 size=16 242A35FF clip=0 "Confirm"
+line 313,116 323,126 width=1.75 cap=round 5D6675FF clip=0
+line 323,116 313,126 width=1.75 cap=round 5D6675FF clip=0
+text 72,139 font=0 size=14 242A35FF clip=0 "Save the changes?"
+rect 72,161 38x28 fill=E7EBF1FF radius=4,4,4,4 border=1,1,1,1 BBC3CFFF,BBC3CFFF,BBC3CFFF,BBC3CFFF clip=0
+text 84,168 font=0 size=14 242A35FF clip=0 "OK"
