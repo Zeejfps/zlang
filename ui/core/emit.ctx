@@ -4,11 +4,11 @@
 // Trees are emitted in the order of their roots' `order` (ties as recorded), each in pre-order: an
 // element's decoration, then its paints and children as they were recorded.
 //
-//  - Every rectangle edge and every text position is put on the device grid on its own, with
-//    `floor(v * scale + 0.5) / scale` per axis, and sizes are the differences of the snapped edges,
-//    so edges that meet in layout meet on screen at a fractional scale. A paint is snapped as the
-//    absolute rectangle it covers; an image's rectangle is already the one it covers after its
-//    quarter turns. Lines are not snapped.
+//  - Nothing is rounded or converted here. The tree is whole device pixels already (the layout is
+//    integer arithmetic), so an element's rectangle goes into the list as it was solved, and a
+//    paint's rectangle and a text's position are moved by their element's whole corner. An image's
+//    rectangle is the one it covers after its quarter turns. A line's end points are moved the
+//    same way and stay fractional. Sums are held to MAX_PIXELS, so nothing here can overflow.
 //  - A clipping element adds its rectangle, cut to the clips around it, to the draw list's clip
 //    table (equal entries are shared), and everything under it names that entry. With a radius its
 //    own rectangle is also the entry's rounded rectangle; a plain clip inside keeps the rounded
@@ -19,8 +19,8 @@
 //    alpha, no size). When the clip table is full, the shapes under the clip that did not fit are
 //    dropped and counted; nothing is ever drawn unclipped in their place.
 //  - Opacity multiplies down the tree into the alpha of every colour.
-//  - Every element with an id adds a hit region, in emission order: `rect` is its snapped
-//    rectangle, `area` that rectangle grown by its hit outset and cut to its clip, which is where
+//  - Every element with an id adds a hit region, in emission order: `rect` is its rectangle,
+//    `area` that rectangle grown by its hit outset and cut to its clip, which is where
 //    it takes the pointer. The topmost region under a point is the last one whose `area` holds it.
 //    `area` is empty for an element that is out of sight, for a tree that makes no hits, and for
 //    every tree behind a modal one.
@@ -28,11 +28,12 @@
 // The regions of the last finished frame stay in `ui.emit.hits` until the next end_frame: that is
 // what interaction and `get_rect` read while the next frame is recorded.
 namespace ui {
-    // An identified element as it was emitted. `order` is its tree's place among the layers.
+    // An identified element as it was emitted, in device pixels. `order` is its tree's place among
+    // the layers.
     struct Hit { id: Id = NO_ID, rect: Rect = Rect{ .. }, area: Rect = Rect{ .. }, order: u32 = 0 }
 
-    // The rectangle the element with this id had in the last finished frame, snapped; null when
-    // that frame had none.
+    // The rectangle, in device pixels, the element with this id had in the last finished frame;
+    // null when that frame had none.
     fn get_rect { ui: Ui, id: Id } -> ?Rect {
         if id == NO_ID { return null }
         let mut i: usize = 0
@@ -73,30 +74,46 @@ namespace ui {
 
         // ---- geometry
 
-        fn snap_rect { r: Rect, sx: f32, sy: f32 } -> Rect {
-            let x0 = snap_f32{ v = r.x, scale = sx }
-            let y0 = snap_f32{ v = r.y, scale = sy }
-            let x1 = snap_f32{ v = r.x + r.w, scale = sx }
-            let y1 = snap_f32{ v = r.y + r.h, scale = sy }
-            return Rect{ x = x0, y = y0, w = x1 - x0, h = y1 - y0 }
+        // `r` moved by (`dx`, `dy`), with every number held: what a program painted may be any
+        // i32, and a size below 0 is 0.
+        fn move_rect { r: Rect, dx: i32, dy: i32 } -> Rect {
+            return Rect{
+                x = add_pixels{ a = r.x, b = dx }, y = add_pixels{ a = r.y, b = dy },
+                w = clamp_i32{ v = r.w, lo = 0, hi = MAX_PIXELS }, h = clamp_i32{ v = r.h, lo = 0, hi = MAX_PIXELS },
+            }
         }
 
         fn has_area { r: Rect } -> bool {
-            return r.w > 0.0 and r.h > 0.0
+            return r.w > 0 and r.h > 0
         }
+
+        fn pick_min_i64 { a: i64, b: i64 } -> i64 { return if b < a { b } else { a } }
+        fn pick_max_i64 { a: i64, b: i64 } -> i64 { return if b > a { b } else { a } }
 
         // The part of `a` inside `b`; no size when they do not meet.
         fn cut_rect { a: Rect, b: Rect } -> Rect {
-            let x0 = pick_max_f32{ a = a.x, b = b.x }
-            let y0 = pick_max_f32{ a = a.y, b = b.y }
-            let x1 = pick_min_f32{ a = a.x + a.w, b = b.x + b.w }
-            let y1 = pick_min_f32{ a = a.y + a.h, b = b.y + b.h }
-            return Rect{ x = x0, y = y0, w = pick_max_f32{ a = 0.0, b = x1 - x0 }, h = pick_max_f32{ a = 0.0, b = y1 - y0 } }
+            let x0 = pick_max_i64{ a = @as(i64, a.x), b = @as(i64, b.x) }
+            let y0 = pick_max_i64{ a = @as(i64, a.y), b = @as(i64, b.y) }
+            let x1 = pick_min_i64{ a = @as(i64, a.x) + @as(i64, a.w), b = @as(i64, b.x) + @as(i64, b.w) }
+            let y1 = pick_min_i64{ a = @as(i64, a.y) + @as(i64, a.h), b = @as(i64, b.y) + @as(i64, b.h) }
+            return Rect{
+                x = hold_pixels{ v = x0 }, y = hold_pixels{ v = y0 },
+                w = hold_pixels{ v = pick_max_i64{ a = 0, b = x1 - x0 } }, h = hold_pixels{ v = pick_max_i64{ a = 0, b = y1 - y0 } },
+            }
         }
 
         // Whether some of `r` shows inside `clip`.
         fn is_shown { clip: Rect, r: Rect } -> bool {
             return has_area{ r } and has_area{ r = cut_rect{ a = clip, b = r } }
+        }
+
+        // Whether some of the box (lo_x, lo_y) to (hi_x, hi_y), which may lie between pixels (a
+        // line's, a turned picture's), shows inside `clip`. A box that is not a number does not.
+        fn is_box_shown { clip: Rect, lo_x: f32, lo_y: f32, hi_x: f32, hi_y: f32 } -> bool {
+            if not has_area{ r = clip } { return false }
+            let left = @as(f32, clip.x)
+            let top = @as(f32, clip.y)
+            return hi_x > left and lo_x < left + @as(f32, clip.w) and hi_y > top and lo_y < top + @as(f32, clip.h)
         }
 
         // ---- colours
@@ -126,10 +143,10 @@ namespace ui {
         // and a colour.
         fn has_ink { style: RectStyle } -> bool {
             if style.fill.a > 0 { return true }
-            return (style.border.top > 0.0 and style.border_color.top.a > 0) or
-                   (style.border.right > 0.0 and style.border_color.right.a > 0) or
-                   (style.border.bottom > 0.0 and style.border_color.bottom.a > 0) or
-                   (style.border.left > 0.0 and style.border_color.left.a > 0)
+            return (style.border.top > 0 and style.border_color.top.a > 0) or
+                   (style.border.right > 0 and style.border_color.right.a > 0) or
+                   (style.border.bottom > 0 and style.border_color.bottom.a > 0) or
+                   (style.border.left > 0 and style.border_color.left.a > 0)
         }
 
         // The one radius a clip table entry can hold for these four.
@@ -179,10 +196,9 @@ namespace ui {
             if not draw::has_font{ list = ui.draw, font = e.font } { return }
             let color = fade_color{ c = e.color, opacity }
             if color.a == 0 { return }
-            let left = e.x + e.padding.left
-            let top = e.y + e.padding.top
-            let inner = pick_max_f32{ a = 0.0, b = e.w - e.padding.left - e.padding.right }
-            let factor = layout::get_factor{ align = e.text_align }
+            let left = add_pixels{ a = e.x, b = e.padding.left }
+            let top = add_pixels{ a = e.y, b = e.padding.top }
+            let inner = hold_pixels{ v = @as(i64, e.w) - @as(i64, e.padding.left) - @as(i64, e.padding.right) }
             let mut i: usize = 0
             while i < @as(usize, e.line_count) {
                 let at = @as(usize, e.first_line) + i
@@ -191,8 +207,10 @@ namespace ui {
                 let dotted = e.dots and i + 1 == @as(usize, e.line_count)
                 let end = pick_min_u32{ a = line.end, b = e.text.len }
                 let start = pick_min_u32{ a = line.start, b = end }
-                let x = snap_f32{ v = left + pick_max_f32{ a = 0.0, b = inner - line.width } * factor, scale = ui.draw.scale_x }
-                let y = snap_f32{ v = top + @as(f32, i) * e.line_height, scale = ui.draw.scale_y }
+                // A line starts on a whole pixel: the spare room before it is whole (a centred
+                // line's is rounded down), and so is every line's top.
+                let x = add_pixels{ a = left, b = layout::align_spare{ spare = sub_pixels{ a = inner, b = line.width }, align = e.text_align } }
+                let y = hold_pixels{ v = @as(i64, top) + @as(i64, i) * @as(i64, e.line_height) }
                 i = i + 1
                 if end == start and not dotted { continue }
                 if not is_text_shown{ clip = level.rect, x, y, height = e.line_height } { continue }
@@ -206,9 +224,10 @@ namespace ui {
 
         // Whether a line of text starting at (`x`, `y`) can show inside `clip`. Its width is not
         // asked for: text only runs right from its start.
-        fn is_text_shown { clip: Rect, x: f32, y: f32, height: f32 } -> bool {
+        fn is_text_shown { clip: Rect, x: i32, y: i32, height: i32 } -> bool {
             if not has_area{ r = clip } { return false }
-            return x < clip.x + clip.w and y < clip.y + clip.h and y + height > clip.y
+            return @as(i64, x) < @as(i64, clip.x) + @as(i64, clip.w) and @as(i64, y) < @as(i64, clip.y) + @as(i64, clip.h)
+                and @as(i64, y) + @as(i64, height) > @as(i64, clip.y)
         }
 
         // A paint: its shape moved from its element's coordinates to the surface's.
@@ -217,49 +236,52 @@ namespace ui {
             if not (level.opacity > 0.0) { return }
             let ox = ui.tree.elements[@as(usize, e.parent)].x
             let oy = ui.tree.elements[@as(usize, e.parent)].y
-            let sx = ui.draw.scale_x
-            let sy = ui.draw.scale_y
             let shape = ui.tree.paints[@as(usize, e.data)]
             match shape {
                 rect{ rect, style } => {
-                    let r = snap_rect{ r = Rect{ x = ox + rect.x, y = oy + rect.y, w = rect.w, h = rect.h }, sx, sy }
+                    let r = move_rect{ r = rect, dx = ox, dy = oy }
                     let faded = fade_style{ style, opacity = level.opacity }
                     if is_shown{ clip = level.rect, r } and has_ink{ style = faded } {
                         put_shape{ &ui, level, cmd = Cmd::rect{ rect = r, style = faded, clip = level.clip } }
                     }
                 }
                 image{ rect, image, uv, tint, quarter, angle, radius, blend } => {
-                    let r = snap_rect{ r = Rect{ x = ox + rect.x, y = oy + rect.y, w = rect.w, h = rect.h }, sx, sy }
+                    let r = move_rect{ r = rect, dx = ox, dy = oy }
                     let faded = fade_color{ c = tint, opacity = level.opacity }
                     // A picture turned by a free angle covers more than its rectangle: the square
                     // around its centre that holds it at any angle.
-                    let mut reach = r
+                    let mut shown = is_shown{ clip = level.rect, r }
                     if angle != 0.0 {
-                        let half = sqrt_f32{ x = r.w * r.w + r.h * r.h } * 0.5
-                        reach = Rect{ x = r.x + r.w * 0.5 - half, y = r.y + r.h * 0.5 - half, w = half * 2.0, h = half * 2.0 }
+                        let w = @as(f32, r.w)
+                        let h = @as(f32, r.h)
+                        let half = sqrt_f32{ x = w * w + h * h } * 0.5
+                        let cx = @as(f32, r.x) + w * 0.5
+                        let cy = @as(f32, r.y) + h * 0.5
+                        shown = is_box_shown{ clip = level.rect, lo_x = cx - half, lo_y = cy - half, hi_x = cx + half, hi_y = cy + half }
                     }
-                    if has_area{ r } and is_shown{ clip = level.rect, r = reach } and faded.a > 0 {
+                    if has_area{ r } and shown and faded.a > 0 {
                         put_shape{ &ui, level, cmd = Cmd::image{ rect = r, image, uv, tint = faded, quarter, angle, radius, blend, clip = level.clip } }
                     }
                 }
                 text{ font, size, x, y, text, color } => {
                     let faded = fade_color{ c = color, opacity = level.opacity }
-                    let px = snap_f32{ v = ox + x, scale = sx }
-                    let py = snap_f32{ v = oy + y, scale = sy }
-                    if faded.a > 0 and text.len > 0 and is_text_shown{ clip = level.rect, x = px, y = py, height = size } {
+                    let px = add_pixels{ a = ox, b = x }
+                    let py = add_pixels{ a = oy, b = y }
+                    if faded.a > 0 and text.len > 0 and is_text_shown{ clip = level.rect, x = px, y = py, height = ceil_pixels{ v = size } } {
                         put_shape{ &ui, level, cmd = Cmd::text{ font, size, x = px, y = py, text, color = faded, clip = level.clip } }
                     }
                 }
                 line{ x0, y0, x1, y1, width, color, cap } => {
                     let faded = fade_color{ c = color, opacity = level.opacity }
+                    let fx = @as(f32, ox)
+                    let fy = @as(f32, oy)
                     // A cap reaches half the width past each end, so the box is grown by the width.
-                    let lo_x = pick_min_f32{ a = x0, b = x1 } - width
-                    let lo_y = pick_min_f32{ a = y0, b = y1 } - width
-                    let hi_x = pick_max_f32{ a = x0, b = x1 } + width
-                    let hi_y = pick_max_f32{ a = y0, b = y1 } + width
-                    let reach = Rect{ x = ox + lo_x, y = oy + lo_y, w = hi_x - lo_x, h = hi_y - lo_y }
-                    if width > 0.0 and faded.a > 0 and is_shown{ clip = level.rect, r = reach } {
-                        put_shape{ &ui, level, cmd = Cmd::line{ x0 = ox + x0, y0 = oy + y0, x1 = ox + x1, y1 = oy + y1, width, color = faded, cap, clip = level.clip } }
+                    let lo_x = fx + pick_min_f32{ a = x0, b = x1 } - width
+                    let lo_y = fy + pick_min_f32{ a = y0, b = y1 } - width
+                    let hi_x = fx + pick_max_f32{ a = x0, b = x1 } + width
+                    let hi_y = fy + pick_max_f32{ a = y0, b = y1 } + width
+                    if width > 0.0 and faded.a > 0 and is_box_shown{ clip = level.rect, lo_x, lo_y, hi_x, hi_y } {
+                        put_shape{ &ui, level, cmd = Cmd::line{ x0 = fx + x0, y0 = fy + y0, x1 = fx + x1, y1 = fy + y1, width, color = faded, cap, clip = level.clip } }
                     }
                 }
                 host => {}
@@ -274,11 +296,16 @@ namespace ui {
                 return
             }
             // An element with no hit area has an area of no size at its own top left.
-            let none = Rect{ x = rect.x, y = rect.y, w = 0.0, h = 0.0 }
+            let none = Rect{ x = rect.x, y = rect.y, w = 0, h = 0 }
             let mut area = none
             if takes and has_area{ r = rect } {
                 let o = e.hit_outset
-                area = cut_rect{ a = clip, b = Rect{ x = rect.x - o.left, y = rect.y - o.top, w = rect.w + o.left + o.right, h = rect.h + o.top + o.bottom } }
+                let grown = Rect{
+                    x = sub_pixels{ a = rect.x, b = o.left }, y = sub_pixels{ a = rect.y, b = o.top },
+                    w = hold_pixels{ v = @as(i64, rect.w) + @as(i64, o.left) + @as(i64, o.right) },
+                    h = hold_pixels{ v = @as(i64, rect.h) + @as(i64, o.top) + @as(i64, o.bottom) },
+                }
+                area = cut_rect{ a = clip, b = grown }
                 if not has_area{ r = area } { area = none }
             }
             ui.emit.next[n] = Hit{ id = e.id, rect, area, order }
@@ -292,7 +319,7 @@ namespace ui {
                 emit_paint{ &ui, e, level }
                 return level
             }
-            let rect = snap_rect{ r = Rect{ x = e.x, y = e.y, w = e.w, h = e.h }, sx = ui.draw.scale_x, sy = ui.draw.scale_y }
+            let rect = Rect{ x = e.x, y = e.y, w = e.w, h = e.h }
             if e.id != NO_ID { add_hit{ &ui, e, rect, clip = level.rect, order, takes } }
             let opacity = level.opacity * e.opacity
             if opacity > 0.0 and is_shown{ clip = level.rect, r = rect } {
@@ -328,7 +355,7 @@ namespace ui {
             let top = root.element
             if @as(usize, top) >= @as(usize, ui.tree.count) or ui.emit.levels.len == 0 { return }
             ui.emit.levels[0] = Level{
-                rect = Rect{ x = 0.0, y = 0.0, w = ui.draw.width, h = ui.draw.height },
+                rect = Rect{ x = 0, y = 0, w = ui.draw.width, h = ui.draw.height },
                 round = Rect{ .. }, radius = 0.0, clip = 0, lost = false, opacity = 1.0,
             }
             let mut depth: usize = 0

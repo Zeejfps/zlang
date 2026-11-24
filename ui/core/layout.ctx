@@ -1,6 +1,28 @@
 // ui::layout: the solver (plan section 2.4, "Solve"). `end_frame` calls `solve`, `solve` once more
 // when a scroll region gained or lost a bar, and `position` alone when something only moved.
 //
+// The layout is integer arithmetic on device pixels. Every length of the tree is whole pixels by
+// the time it gets here (tree.ctx converts each declaration once, when it is recorded), so there
+// is nothing to snap afterwards, and sizes are worked out before any position is: the size of an
+// element never depends on where it stands. Where a division leaves a remainder, the rules are:
+//
+//   grow      Spare room is shared in whole pixels: every grow child gets the same amount, and
+//             the pixels left over go one each to the FIRST children. 100 pixels among three
+//             empty grow children is 34, 33, 33.
+//   shrink    Missing room is taken back in whole pixels: every grow child gives the same
+//             amount, and the odd pixels are given up one each by the LAST children, so children
+//             that started equal end as growing leaves them: three children of 40 in 100 pixels
+//             are 34, 33, 33 again. The first children are never the smaller ones.
+//   take      floor(room * fraction). The product is made in f32, so 0.7 of 100 is 70 although the
+//             f32 nearest 0.7 is a little under it.
+//   anchor    A placed child's and a root's corner is parent + floor(size * anchor) + offset.
+//   centre    spare / 2 rounded down, for children in a box and for a text's lines alike: an odd
+//             pixel of spare room is left after the content (right, or below). `end` is all of it.
+//   min, max  Are pixels (converted by the length rule) and hold a size exactly. `min` wins when
+//             it is larger than `max`.
+//   text      A measured width is the sum of the advances rounded up; a line's height and a
+//             text's size are whole pixels (text.ctx).
+//
 // How an element is sized along an axis (`ui::Size`):
 //
 //   fix    exactly its value.
@@ -23,10 +45,10 @@
 //      `Overflow::ellipsis` that does not fit is cut short and gets its dots.
 //   4. Fit heights, then share heights, the same way. A wrapped text is as high as its lines.
 //   5. Positions, first element to last: a root at its anchor on the surface; flow children one
-//      after another along the parent's axis from its padding edge, `gap` apart, moved by
-//      `spare * align` on each axis (spare is never negative, so children that do not fit start
-//      at the start edge and run past the far one) and by the parent's scroll offset; placed
-//      children at parent.xy + parent.wh * anchor + offset.
+//      after another along the parent's axis from its padding edge, `gap` apart, moved by the
+//      aligned part of the spare room on each axis (spare is never negative, so children that do
+//      not fit start at the start edge and run past the far one) and by the parent's scroll
+//      offset; placed children at parent.xy + floor(parent.wh * anchor) + offset.
 //
 // A paint takes no part: it is drawn in its parent's coordinates. A placed child and a root add
 // nothing to a parent's size and take none of its room.
@@ -34,14 +56,16 @@
 // Where the plan says nothing, the rule is ZGF's unless a line here says otherwise:
 //
 //  - Sharing is of the spare room, not of the parent: every grow child gets the same amount on
-//    top of what it was fitted to, so three empty grow children end up equal, and one that holds
-//    content (or has a `min`) ends up that much larger than the others.
-//  - Nothing is rounded: a share is a fraction, and emit puts the edges on the device grid.
+//    top of what it was fitted to, so three empty grow children end up equal (but for the pixels
+//    left over), and one that holds content (or has a `min`) ends up that much larger than the
+//    others.
 //  - A grow child stops at its `max`, and what it could not take is shared again among the
-//    rest; a shrinking one stops at its `min`. Each of these rounds gives every child that can
-//    still change the same amount, and there are at most ROUNDS of them, so a parent whose
-//    grow children stop at more than ROUNDS different sizes may leave a little room unshared.
-//    Room smaller than SLACK is not shared at all.
+//    rest; a shrinking one stops at its `min`. Sharing goes in rounds: a round whose whole share
+//    would take some children to their limit stops those there and moves nothing else, and the
+//    round that stops none gives every child left the share and hands out the pixels left over
+//    as above. So the children that did not stop all change by the same amount, to the pixel
+//    (101 among a GROW with max 30 and a GROW is 30 and 71), and the rounds end when no room is
+//    left or no child can change: at most one more than the parent has grow children.
 //  - When grow children are all at their `min` and the parent is still short, nothing else
 //    shrinks: the children overflow from the start edge. FIT, fix and take never give room up.
 //  - A parent is fitted before any room is shared, so a FIT parent has no spare room: its grow
@@ -50,7 +74,6 @@
 //  - A `take` child counts as its `min` (0 unless set) when its parent is fitted, and then takes
 //    its fraction of what the parent came to; in a FIT parent that makes the children overflow.
 //    (ZGF counts it as 0 even when it has a `min`; with the default `min` the two are the same.)
-//  - `min` wins when it is larger than `max`.
 //  - A placed child's `take` is a fraction of its parent's whole size, padding included, and a
 //    placed GROW child fills that size on both axes. A root stands in the surface the same way.
 //  - Text. Wrapped text whose width is FIT is sized as GROW, so it fills a column, and in a row
@@ -58,16 +81,16 @@
 //    `Overflow::ellipsis` whose width is FIT is sized as GROW with its own width as `max`: it
 //    never grows past its text and gives room up when its parent is short. Any other width (fix,
 //    take, GROW, and FIT for text that neither wraps nor has dots) is taken as declared. A line
-//    is cut for its dots only when it is more than FITS wider than its room. Text that does not
-//    wrap is one line whatever it holds.
+//    is cut for its dots when it is wider than its room at all: both are whole pixels. Text that
+//    does not wrap is one line whatever it holds.
 //  - A text that finds the line table full is not laid out, or not past the lines that fitted,
 //    and is counted once a frame however often the frame is solved.
 //
 // The solver cannot fail. It walks the flat array and never recurses; apart from the rounds of
-// sharing, each bounded by ROUNDS passes over one parent's children, its work is linear in the
-// elements. Every size it stores is a number from 0 to LIMIT whatever it was given: a size that
-// is not a number is 0, and nothing is divided by zero. Positions are sums of those sizes and of
-// the padding, gap, anchor, offset and scroll the program gave, as they were given.
+// sharing its work is linear in the elements. Integer overflow would be a panic, so every sum is
+// made in i64 and held before it is stored: a size is 0 to MAX_PIXELS, a position -MAX_PIXELS to
+// MAX_PIXELS, whatever the program declared (a size that was not a number became 0 when it was
+// recorded), and nothing is divided by zero.
 //
 // What a solve leaves in an element: `x`, `y`, `w`, `h`; for a box, `content_w` and `content_h`,
 // the room its flow children take without its padding (their sizes and gaps along its axis, the
@@ -78,15 +101,6 @@
 // Emit reads `x`, `y`, `w`, `h` and a text's lines, and nothing else.
 namespace ui {
     namespace layout {
-        // No size is larger than this.
-        const LIMIT: f32 = 1000000000.0
-        // Spare or missing room smaller than this is left as it is.
-        const SLACK: f32 = 0.01
-        // How many times room is shared again among the children that can still take or give it.
-        const ROUNDS: u32 = 32
-        // A single line this much wider than its room is still drawn whole.
-        const FITS: f32 = 0.5
-
         // The lines of every text element of the frame, in element order. `reported` is how many
         // texts this frame has counted as left without their lines.
         struct State { lines: []mut text::Line, line_count: u32, reported: u32 }
@@ -117,71 +131,81 @@ namespace ui {
             return e.kind != tree::Kind::paint and not e.placed and not e.root
         }
 
-        // 0 for start, 0.5 for center, 1 for end.
-        fn get_factor { align: Align } -> f32 {
+        // How much of `spare` pixels of room lies before content that is aligned so: none of it at
+        // the start, half of it rounded down at the centre, all of it at the end. Room that is
+        // missing (a negative spare) is none.
+        fn align_spare { spare: i32, align: Align } -> i32 {
+            if spare <= 0 { return 0 }
             match align {
-                start => { return 0.0 }
-                center => { return 0.5 }
-                end => { return 1.0 }
+                start => { return 0 }
+                center => { return spare / 2 }
+                end => { return spare }
             }
         }
 
-        // `v` as a size: 0 when it is negative or not a number, and never more than LIMIT.
-        fn hold_size { v: f32 } -> f32 {
-            if not (v > 0.0) { return 0.0 }
-            return if v > LIMIT { LIMIT } else { v }
+        // `v` as a size: 0 when it is negative, and never more than MAX_PIXELS.
+        fn hold_size { v: i64 } -> i32 {
+            if v <= 0 { return 0 }
+            return if v > 1000000000 { MAX_PIXELS } else { @as(i32, v) }
+        }
+
+        // `v` held between `lo` and `hi`, as a size. `lo` wins when it is larger than `hi`.
+        fn clamp_size { v: i64, lo: i32, hi: i32 } -> i32 {
+            let top = if hi < lo { lo } else { hi }
+            if v > @as(i64, top) { return hold_size{ v = @as(i64, top) } }
+            if v < @as(i64, lo) { return hold_size{ v = @as(i64, lo) } }
+            return hold_size{ v }
         }
 
         // The padding of `e` along one axis, both sides together.
-        fn sum_padding { e: tree::Element, wide: bool } -> f32 {
-            return hold_size{ v = if wide { e.padding.left + e.padding.right } else { e.padding.top + e.padding.bottom } }
+        fn sum_padding { e: tree::Element, wide: bool } -> i32 {
+            return hold_size{ v = if wide { @as(i64, e.padding.left) + @as(i64, e.padding.right) } else { @as(i64, e.padding.top) + @as(i64, e.padding.bottom) } }
         }
 
         // How `e` is sized along one axis. It is what was declared, but for the width of a text
         // that was left FIT (the rules are at the top of the file): wrapped text grows, and a
         // single line with dots may give room up but never grows past its own width.
-        fn get_size { e: tree::Element, wide: bool } -> Size {
+        fn get_size { e: tree::Element, wide: bool } -> tree::Extent {
             let size = if wide { e.width } else { e.height }
             if not wide or e.kind != tree::Kind::text or size.kind != SizeKind::fit { return size }
-            if e.wrap { return Size{ kind = SizeKind::grow, value = size.value, min = size.min, max = size.max } }
+            if e.wrap { return tree::Extent{ kind = SizeKind::grow, min = size.min, max = size.max, .. } }
             if e.overflow == Overflow::ellipsis {
-                let own = e.content_w + sum_padding{ e, wide }
-                return Size{ kind = SizeKind::grow, value = size.value, min = size.min, max = pick_max_f32{ a = size.min, b = pick_min_f32{ a = size.max, b = own } } }
+                let own = hold_size{ v = @as(i64, e.content_w) + @as(i64, sum_padding{ e, wide }) }
+                return tree::Extent{ kind = SizeKind::grow, min = size.min, max = pick_max_i32{ a = size.min, b = pick_min_i32{ a = size.max, b = own } }, .. }
             }
             return size
         }
 
         // The size an element starts with, before its parent shares out any room: `content` is
         // its content with its padding.
-        fn fit_size { size: Size, content: f32 } -> f32 {
+        fn fit_size { size: tree::Extent, content: i64 } -> i32 {
             match size.kind {
-                fixed => { return hold_size{ v = size.value } }
-                part => { return hold_size{ v = clamp_f32{ v = 0.0, lo = size.min, hi = size.max } } }
-                else => { return hold_size{ v = clamp_f32{ v = content, lo = size.min, hi = size.max } } }
+                fixed => { return hold_size{ v = @as(i64, size.value) } }
+                part => { return clamp_size{ v = 0, lo = size.min, hi = size.max } }
+                else => { return clamp_size{ v = content, lo = size.min, hi = size.max } }
             }
         }
 
         // The size of an element once the room it stands in is known: a `take` its fraction of
-        // `basis`, a GROW that is `filling` all of `basis`, anything else the size it was fitted to.
-        fn take_room { size: Size, fitted: f32, basis: f32, filling: bool } -> f32 {
+        // `basis` rounded down, a GROW that is `filling` all of `basis`, anything else the size it
+        // was fitted to.
+        fn take_room { size: tree::Extent, fitted: i32, basis: i32, filling: bool } -> i32 {
             match size.kind {
-                part => { return hold_size{ v = clamp_f32{ v = basis * size.value, lo = size.min, hi = size.max } } }
+                part => { return clamp_size{ v = @as(i64, take_fraction{ whole = basis, fraction = size.part }), lo = size.min, hi = size.max } }
                 grow => {
                     if not filling { return fitted }
-                    return hold_size{ v = clamp_f32{ v = basis, lo = size.min, hi = size.max } }
+                    return clamp_size{ v = @as(i64, basis), lo = size.min, hi = size.max }
                 }
                 else => { return fitted }
             }
         }
 
         // What the flow children of one element take along an axis: their sizes added up, the
-        // largest of them, and the gaps between them.
-        struct Extent { sum: f32, largest: f32, gaps: f32 }
+        // largest of them, and the gaps between them (negative when the gap is).
+        struct Room { sum: i64, largest: i32, gaps: i64 }
 
-        fn measure_children { ui: Ui, first: u32, gap: f32, wide: bool } -> Extent {
-            // A gap that is not a number is none.
-            let between: f32 = if gap > LIMIT { LIMIT } else if gap < -LIMIT { -LIMIT } else if gap == gap { gap } else { 0.0 }
-            let mut out = Extent{ sum = 0.0, largest = 0.0, gaps = 0.0 }
+        fn measure_children { ui: Ui, first: u32, gap: i32, wide: bool } -> Room {
+            let mut out = Room{ sum = 0, largest = 0, gaps = 0 }
             let mut any = false
             let mut c = first
             while c != tree::NONE {
@@ -189,9 +213,9 @@ namespace ui {
                 c = ui.tree.elements[at].next
                 if not is_flow{ e = ui.tree.elements[at] } { continue }
                 let size = if wide { ui.tree.elements[at].w } else { ui.tree.elements[at].h }
-                out.sum = out.sum + size
-                out.largest = pick_max_f32{ a = out.largest, b = size }
-                if any { out.gaps = out.gaps + between }
+                out.sum = out.sum + @as(i64, size)
+                out.largest = pick_max_i32{ a = out.largest, b = size }
+                if any { out.gaps = out.gaps + @as(i64, gap) }
                 any = true
             }
             return out
@@ -199,17 +223,17 @@ namespace ui {
 
         // The width a text asks for: its one line's, or for wrapped text that holds newlines the
         // width of its longest paragraph, which is as wide as wrapping can leave it.
-        fn measure_natural { mut ui: Ui, e: tree::Element } -> f32 {
+        fn measure_natural { mut ui: Ui, e: tree::Element } -> i32 {
             if not e.wrap { return e.content_w }
             let text = get_text{ ui, span = e.text }
             let mut to: usize = 0
             while to < text.len and text[to] != '\n' { to = to + 1 }
             if to >= text.len { return e.content_w }
-            let mut widest: f32 = 0.0
+            let mut widest: i32 = 0
             let mut from: usize = 0
             while true {
                 let width = text::measure_text{ cache = &ui.cache, list = ui.draw, provider = ui.provider, font = e.font, size = e.text_size, text = text[from..to] }
-                widest = pick_max_f32{ a = widest, b = width }
+                widest = pick_max_i32{ a = widest, b = width }
                 if to >= text.len { break }
                 from = to + 1
                 to = from
@@ -229,12 +253,12 @@ namespace ui {
                 let mut content = if wide { e.content_w } else { e.content_h }
                 if e.kind == tree::Kind::box {
                     let room = measure_children{ ui, first = e.first_child, gap = e.gap, wide }
-                    content = if (e.axis == Axis::row) == wide { room.sum + room.gaps } else { room.largest }
+                    content = if (e.axis == Axis::row) == wide { hold_size{ v = room.sum + room.gaps } } else { room.largest }
                     if wide { ui.tree.elements[i].content_w = content } else { ui.tree.elements[i].content_h = content }
                 } else if e.kind == tree::Kind::text and wide {
                     content = measure_natural{ &ui, e }
                 }
-                let size = fit_size{ size = get_size{ e, wide }, content = content + sum_padding{ e, wide } }
+                let size = fit_size{ size = get_size{ e, wide }, content = @as(i64, content) + @as(i64, sum_padding{ e, wide }) }
                 if wide { ui.tree.elements[i].w = size } else { ui.tree.elements[i].h = size }
             }
         }
@@ -248,42 +272,78 @@ namespace ui {
             return if grow { now < size.max } else { now > size.min }
         }
 
-        // Gives `amount` of room to the grow children in the list that starts at `first`, or takes
-        // it from them: the same share to each that can still change, held at its `max` or `min`,
-        // and what is left over shared again, ROUNDS times at most.
-        fn resize_children { mut ui: Ui, first: u32, wide: bool, amount: f32, grow: bool } {
+        // How far a child that can change is from the limit that stops it: its `max` when it
+        // grows, its `min` when it gives room up. At least 1 for a child `can_resize` allows.
+        fn get_slack { e: tree::Element, wide: bool, grow: bool } -> i64 {
+            let size = get_size{ e, wide }
+            let now = @as(i64, if wide { e.w } else { e.h })
+            return if grow { @as(i64, size.max) - now } else { now - @as(i64, size.min) }
+        }
+
+        // Gives `amount` pixels of room to the grow children in the list that starts at `first`,
+        // or takes it from them, so that every child changes by the same amount or stops at its
+        // limit. A round works out the whole share of what is left for each child that can still
+        // change. If some of them are no further than a share from their limit, those stop there
+        // and nothing else moves: what they could not take is shared again in the next round. When
+        // none is, every child changes by the share, and the pixels the division left over go one
+        // each to the first children (growing) or come one each from the last (shrinking), so the
+        // children that did not stop end within a pixel of the same change, the larger ones first.
+        // Every round but the last stops a child for good, so there is at most one round more
+        // than there are grow children.
+        fn resize_children { mut ui: Ui, first: u32, wide: bool, amount: i64, grow: bool } {
             let mut left = amount
-            let mut round: u32 = 0
-            while round < ROUNDS and left > SLACK {
-                round = round + 1
-                let mut able: f32 = 0.0
+            while left > 0 {
+                let mut able: i64 = 0
                 let mut c = first
                 while c != tree::NONE {
                     let at = @as(usize, c)
                     c = ui.tree.elements[at].next
-                    if can_resize{ e = ui.tree.elements[at], wide, grow } { able = able + 1.0 }
+                    if can_resize{ e = ui.tree.elements[at], wide, grow } { able = able + 1 }
                 }
-                if not (able > 0.0) { return }
+                if able == 0 { return }
                 let share = left / able
+
+                // The children a whole share would take to their limit or past it stop there.
+                let mut stopped = false
                 c = first
                 while c != tree::NONE {
                     let at = @as(usize, c)
                     c = ui.tree.elements[at].next
                     if not can_resize{ e = ui.tree.elements[at], wide, grow } { continue }
+                    let slack = get_slack{ e = ui.tree.elements[at], wide, grow }
+                    if slack > share { continue }
                     let size = get_size{ e = ui.tree.elements[at], wide }
-                    let now = if wide { ui.tree.elements[at].w } else { ui.tree.elements[at].h }
-                    let wanted = if grow { pick_min_f32{ a = now + share, b = size.max } } else { pick_max_f32{ a = now - share, b = size.min } }
-                    let next = hold_size{ v = wanted }
-                    left = left - abs_f32{ x = next - now }
+                    let limit = if grow { size.max } else { size.min }
+                    if wide { ui.tree.elements[at].w = limit } else { ui.tree.elements[at].h = limit }
+                    left = left - slack
+                    stopped = true
+                }
+                if stopped { continue }
+
+                // Every child left is more than a share from its limit: they all change by it,
+                // and by one pixel more for as many of them as the division left pixels over.
+                let extra = left % able
+                let mut k: i64 = 0          // which of the children that can change this one is
+                c = first
+                while c != tree::NONE {
+                    let at = @as(usize, c)
+                    c = ui.tree.elements[at].next
+                    if not can_resize{ e = ui.tree.elements[at], wide, grow } { continue }
+                    let odd = if grow { k < extra } else { k >= able - extra }
+                    let change = if odd { share + 1 } else { share }
+                    k = k + 1
+                    let now = @as(i64, if wide { ui.tree.elements[at].w } else { ui.tree.elements[at].h })
+                    let next = hold_size{ v = if grow { now + change } else { now - change } }
                     if wide { ui.tree.elements[at].w = next } else { ui.tree.elements[at].h = next }
                 }
+                return
             }
         }
 
         // Steps 2 and 4, along one axis: each element, whose own size is final by now, gives its
         // children theirs.
         fn share_sizes { mut ui: Ui, wide: bool } {
-            let surface = hold_size{ v = if wide { ui.draw.width } else { ui.draw.height } }
+            let surface = if wide { ui.draw.width } else { ui.draw.height }
             for i in 0..@as(usize, ui.tree.count) {
                 let e = ui.tree.elements[i]
                 if e.kind == tree::Kind::paint { continue }
@@ -296,9 +356,9 @@ namespace ui {
                 if e.first_child == tree::NONE { continue }
 
                 let main = (e.axis == Axis::row) == wide
-                let inner = hold_size{ v = outer - sum_padding{ e, wide } }
+                let inner = hold_size{ v = @as(i64, outer) - @as(i64, sum_padding{ e, wide }) }
                 let fitted = measure_children{ ui, first = e.first_child, gap = e.gap, wide }
-                let room = if main { hold_size{ v = inner - fitted.gaps } } else { inner }
+                let room = if main { hold_size{ v = @as(i64, inner) - fitted.gaps } } else { inner }
 
                 let mut used = fitted.gaps
                 let mut c = e.first_child
@@ -310,21 +370,21 @@ namespace ui {
                     let before = if wide { ui.tree.elements[at].w } else { ui.tree.elements[at].h }
                     let size = take_room{ size = get_size{ e = ui.tree.elements[at], wide }, fitted = before, basis = if placed { outer } else { room }, filling = placed or not main }
                     if wide { ui.tree.elements[at].w = size } else { ui.tree.elements[at].h = size }
-                    if not placed { used = used + size }
+                    if not placed { used = used + @as(i64, size) }
                 }
                 if main {
-                    let spare = inner - used
-                    if spare > SLACK {
+                    let spare = @as(i64, inner) - used
+                    if spare > 0 {
                         resize_children{ &ui, first = e.first_child, wide, amount = spare, grow = true }
-                    } else if spare < -SLACK {
-                        resize_children{ &ui, first = e.first_child, wide, amount = -spare, grow = false }
+                    } else if spare < 0 {
+                        resize_children{ &ui, first = e.first_child, wide, amount = 0 - spare, grow = false }
                     }
                 }
 
                 // The children's sizes along this axis are final now: what they take is the
                 // element's content.
                 let taken = measure_children{ ui, first = e.first_child, gap = e.gap, wide }
-                let content = if main { taken.sum + taken.gaps } else { taken.largest }
+                let content = if main { hold_size{ v = taken.sum + taken.gaps } } else { taken.largest }
                 if wide { ui.tree.elements[i].content_w = content } else { ui.tree.elements[i].content_h = content }
             }
         }
@@ -339,7 +399,7 @@ namespace ui {
                 if ui.tree.elements[i].kind != tree::Kind::text { continue }
                 let e = ui.tree.elements[i]
                 let at = @as(usize, ui.layout.line_count)
-                let inner = hold_size{ v = e.w - sum_padding{ e, wide = true } }
+                let inner = hold_size{ v = @as(i64, e.w) - @as(i64, sum_padding{ e, wide = true }) }
                 let mut count: u32 = 0
                 let mut dots = false
                 if at >= ui.layout.lines.len {
@@ -351,7 +411,7 @@ namespace ui {
                     if @as(usize, wrapped.rest) < text.len { lost = add_count{ a = lost, b = 1 } }
                 } else {
                     let mut line = text::Line{ start = 0, end = e.text.len, width = e.content_w }
-                    if e.overflow == Overflow::ellipsis and e.content_w > inner + FITS {
+                    if e.overflow == Overflow::ellipsis and e.content_w > inner {
                         let text = get_text{ ui, span = e.text }
                         let fit = text::fit_ellipsis{ cache = &ui.cache, list = ui.draw, provider = ui.provider, font = e.font, size = e.text_size, text, width = inner }
                         line = text::Line{ start = 0, end = fit.len, width = fit.width }
@@ -364,7 +424,7 @@ namespace ui {
                 ui.tree.elements[i].line_count = count
                 ui.tree.elements[i].dots = dots
                 // A text that lost its lines keeps the height of one.
-                ui.tree.elements[i].content_h = if count > 1 { e.line_height * @as(f32, count) } else { e.line_height }
+                ui.tree.elements[i].content_h = if count > 1 { hold_size{ v = @as(i64, e.line_height) * @as(i64, count) } } else { e.line_height }
                 ui.layout.line_count = ui.layout.line_count + count
             }
             // Texts left without lines are dropped things: counted once, though a frame may be
@@ -375,7 +435,8 @@ namespace ui {
             }
         }
 
-        // Step 5. Sizes are final when it runs; it may run again after something moved.
+        // Step 5. Sizes are final when it runs; it may run again after something moved. A
+        // position is a sum of sizes, paddings, gaps, offsets and scroll, made in i64 and held.
         fn position { mut ui: Ui } {
             let mut i: usize = 0
             while i < @as(usize, ui.tree.count) {
@@ -383,52 +444,41 @@ namespace ui {
                 i = i + 1
                 if e.kind == tree::Kind::paint { continue }
                 if e.root {
-                    e.x = ui.draw.width * e.anchor_x + e.offset_x
-                    e.y = ui.draw.height * e.anchor_y + e.offset_y
+                    e.x = add_pixels{ a = take_fraction{ whole = ui.draw.width, fraction = e.anchor_x }, b = e.offset_x }
+                    e.y = add_pixels{ a = take_fraction{ whole = ui.draw.height, fraction = e.anchor_y }, b = e.offset_y }
                     ui.tree.elements[i - 1].x = e.x
                     ui.tree.elements[i - 1].y = e.y
                 }
                 if e.first_child == tree::NONE { continue }
 
                 let row = e.axis == Axis::row
-                let inner_w = e.w - e.padding.left - e.padding.right
-                let inner_h = e.h - e.padding.top - e.padding.bottom
-                let start_x = e.x + e.padding.left - e.scroll_x
-                let start_y = e.y + e.padding.top - e.scroll_y
+                let inner_w = hold_pixels{ v = @as(i64, e.w) - @as(i64, e.padding.left) - @as(i64, e.padding.right) }
+                let inner_h = hold_pixels{ v = @as(i64, e.h) - @as(i64, e.padding.top) - @as(i64, e.padding.bottom) }
+                let start_x = @as(i64, e.x) + @as(i64, e.padding.left) - @as(i64, e.scroll_x)
+                let start_y = @as(i64, e.y) + @as(i64, e.padding.top) - @as(i64, e.scroll_y)
 
-                let mut used: f32 = 0.0
-                let mut flowing: u32 = 0
+                let taken = measure_children{ ui, first = e.first_child, gap = e.gap, wide = row }
+                let spare = hold_pixels{ v = @as(i64, if row { inner_w } else { inner_h }) - taken.sum - taken.gaps }
+                let mut cursor = @as(i64, align_spare{ spare, align = if row { e.align_x } else { e.align_y } })
+                let across = if row { e.align_y } else { e.align_x }
+
                 let mut c = e.first_child
-                while c != tree::NONE {
-                    let child = ui.tree.elements[@as(usize, c)]
-                    if is_flow{ e = child } {
-                        used = used + (if row { child.w } else { child.h })
-                        flowing = flowing + 1
-                    }
-                    c = child.next
-                }
-                if flowing > 1 { used = used + e.gap * @as(f32, flowing - 1) }
-                let spare = (if row { inner_w } else { inner_h }) - used
-                let mut cursor = pick_max_f32{ a = 0.0, b = spare } * get_factor{ align = if row { e.align_x } else { e.align_y } }
-                let across = get_factor{ align = if row { e.align_y } else { e.align_x } }
-
-                c = e.first_child
                 while c != tree::NONE {
                     let at = @as(usize, c)
                     let child = ui.tree.elements[at]
                     c = child.next
                     if child.kind == tree::Kind::paint { continue }
                     if child.placed {
-                        ui.tree.elements[at].x = e.x + e.w * child.anchor_x + child.offset_x
-                        ui.tree.elements[at].y = e.y + e.h * child.anchor_y + child.offset_y
+                        ui.tree.elements[at].x = hold_pixels{ v = @as(i64, e.x) + @as(i64, take_fraction{ whole = e.w, fraction = child.anchor_x }) + @as(i64, child.offset_x) }
+                        ui.tree.elements[at].y = hold_pixels{ v = @as(i64, e.y) + @as(i64, take_fraction{ whole = e.h, fraction = child.anchor_y }) + @as(i64, child.offset_y) }
                     } else if row {
-                        ui.tree.elements[at].x = start_x + cursor
-                        ui.tree.elements[at].y = start_y + pick_max_f32{ a = 0.0, b = inner_h - child.h } * across
-                        cursor = cursor + child.w + e.gap
+                        ui.tree.elements[at].x = hold_pixels{ v = start_x + cursor }
+                        ui.tree.elements[at].y = hold_pixels{ v = start_y + @as(i64, align_spare{ spare = sub_pixels{ a = inner_h, b = child.h }, align = across }) }
+                        cursor = cursor + @as(i64, child.w) + @as(i64, e.gap)
                     } else {
-                        ui.tree.elements[at].y = start_y + cursor
-                        ui.tree.elements[at].x = start_x + pick_max_f32{ a = 0.0, b = inner_w - child.w } * across
-                        cursor = cursor + child.h + e.gap
+                        ui.tree.elements[at].y = hold_pixels{ v = start_y + cursor }
+                        ui.tree.elements[at].x = hold_pixels{ v = start_x + @as(i64, align_spare{ spare = sub_pixels{ a = inner_w, b = child.w }, align = across }) }
+                        cursor = cursor + @as(i64, child.h) + @as(i64, e.gap)
                     }
                 }
             }

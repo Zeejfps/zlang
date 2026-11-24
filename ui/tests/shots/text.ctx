@@ -7,7 +7,7 @@
 //   --italic PATH   an italic face, for overhang (default: the platform's)
 //
 // Writes text-gl-1x.png, text-gl-1.5x.png and text-gl.png (both, one above the other). Each line of
-// text has a dim guide on the device-pixel row under its baseline, so a look tells whether glyphs of
+// text has a dim guide on the pixel row under its baseline, so a look tells whether glyphs of
 // every size, and of the Latin and CJK faces, stand on one line. With no Latin face it says why and
 // draws nothing; with no CJK or italic face that line is left out.
 //
@@ -130,49 +130,72 @@ fn run_text { mut io: Io, mut fs: Fs, mut sdl: ui_sdl::Sdl, mut fonts: ui_fonts:
         lib.stats.shaped, lib.stats.hits, lib.stats.rasterized, lib.stats.missing, lib.stats.too_big, lib.stats.unknown)
 }
 
-// One line of text with a guide on the device row under its baseline. The y of the next line.
-fn add_text_line { mut list: ui::DrawList, mut cache: ui::text::Cache, provider: ui::TextProvider, font: ui::Font, size: f32, x: f32, y: f32, text: []u8 } -> f32 {
-    let m = ui::text::get_line_metrics{ &cache, list, provider, font, size }
-    let s = list.scale_y
-    let baseline = ui::round_f32{ x = (y + m.ascent) * s } / s
-    let width = ui::text::measure_text{ &cache, list, provider, font, size, text }
-    ui::draw::add_line{ &list, x0 = x - 4.0, y0 = baseline + 0.5 / s, x1 = x + width + 4.0, y1 = baseline + 0.5 / s,
-        width = 1.0 / s, color = TEXT_GUIDE, cap = ui::Cap::butt, clip = 0 }
-    ui::draw::add_text{ &list, font, size, x, y, text, color = TEXT_INK, clip = 0 }
+// A length in logical units as whole pixels at scale `s`, by the rule the core converts by.
+fn scale_text_length { s: f32, length: f32 } -> i32 {
+    return ui::scale_length{ length, scale = s }
+}
+
+// A font size in logical units as the whole pixel size text is drawn at.
+fn scale_text_size { s: f32, size: f32 } -> f32 {
+    let pixels = ui::scale_length{ length = size, scale = s }
+    return if pixels < 1 { 1.0 } else { @as(f32, pixels) }
+}
+
+// One line of text at `size` logical units with its top left at the pixel (`x`, `y`), and a guide
+// on the pixel row under its baseline. Everything is whole pixels: the line box's height and its
+// ascent come from the core as whole numbers, so the baseline is a pixel row whatever the size,
+// and the guide (a one pixel line through that row's middle) lies on exactly that row. The y of
+// the next line, in pixels.
+fn add_text_line { mut list: ui::DrawList, mut cache: ui::text::Cache, provider: ui::TextProvider, font: ui::Font, s: f32, size: f32, x: i32, y: i32, text: []u8 } -> i32 {
+    let pixels = scale_text_size{ s, size }
+    let m = ui::text::get_line_metrics{ &cache, list, provider, font, size = pixels }
+    let baseline = @as(f32, y + m.ascent)
+    let width = ui::text::measure_text{ &cache, list, provider, font, size = pixels, text }
+    let reach = 4.0 * s
+    ui::draw::add_line{ &list, x0 = @as(f32, x) - reach, y0 = baseline + 0.5, x1 = @as(f32, x + width) + reach, y1 = baseline + 0.5,
+        width = 1.0, color = TEXT_GUIDE, cap = ui::Cap::butt, clip = 0 }
+    ui::draw::add_text{ &list, font, size = pixels, x, y, text, color = TEXT_INK, clip = 0 }
     return y + m.height
 }
 
+// The picture at `scale`, on a surface of that many pixels. The scene is written in logical units
+// (16 units from the left, sizes of 11 to 40 units, a panel 300 units wide) and converted here;
+// the lines then stack in whole pixels, each a whole line height below the last.
 fn build_text_list { mut list: ui::DrawList, mut cache: ui::text::Cache, provider: ui::TextProvider, faces: TextFaces, scale: f32 } {
-    ui::draw::reset{ &list, width = TEXT_WIDTH, height = TEXT_HEIGHT, scale_x = scale, scale_y = scale }
+    let s = scale
+    ui::draw::reset{ &list, width = ui::round_pixels{ v = TEXT_WIDTH * s }, height = ui::round_pixels{ v = TEXT_HEIGHT * s } }
     ui::text::reset_cache{ &cache }
     let latin = ui::Font{ index = 0 }
-    let x: f32 = 16.0
-    let mut y: f32 = 10.0
-    y = add_text_line{ &list, &cache, provider, font = latin, size = 11.0, x, y, text = "11 px: The quick brown fox jumps over the lazy dog. 0123456789 (sharp?)" }
-    y = add_text_line{ &list, &cache, provider, font = latin, size = 13.0, x, y, text = "13 px: Sphinx of black quartz, judge my vow! @#$%&*[]{}" }
-    y = add_text_line{ &list, &cache, provider, font = latin, size = 16.0, x, y, text = "16 px: Settings  Open\xE2\x80\xA6  Save as  Cancel  \xC3\x84\xC3\xB6\xC3\xBC \xC3\xA9t\xC3\xA9 \xE2\x80\x94 \xE2\x82\xAC12.50" }
-    y = add_text_line{ &list, &cache, provider, font = latin, size = 24.0, x, y, text = "24 px: Kerning AV Wa To Ty LT P. office" }
-    y = add_text_line{ &list, &cache, provider, font = latin, size = 40.0, x, y, text = "AVAWAY Tj gjpqy \xC3\x85\xC3\x84" }
+    let x = scale_text_length{ s, length = 16.0 }
+    let mut y = scale_text_length{ s, length = 10.0 }
+    y = add_text_line{ &list, &cache, provider, font = latin, s, size = 11.0, x, y, text = "11 px: The quick brown fox jumps over the lazy dog. 0123456789 (sharp?)" }
+    y = add_text_line{ &list, &cache, provider, font = latin, s, size = 13.0, x, y, text = "13 px: Sphinx of black quartz, judge my vow! @#$%&*[]{}" }
+    y = add_text_line{ &list, &cache, provider, font = latin, s, size = 16.0, x, y, text = "16 px: Settings  Open\xE2\x80\xA6  Save as  Cancel  \xC3\x84\xC3\xB6\xC3\xBC \xC3\xA9t\xC3\xA9 \xE2\x80\x94 \xE2\x82\xAC12.50" }
+    y = add_text_line{ &list, &cache, provider, font = latin, s, size = 24.0, x, y, text = "24 px: Kerning AV Wa To Ty LT P. office" }
+    y = add_text_line{ &list, &cache, provider, font = latin, s, size = 40.0, x, y, text = "AVAWAY Tj gjpqy \xC3\x85\xC3\x84" }
     if faces.has_cjk {
-        y = add_text_line{ &list, &cache, provider, font = latin, size = 24.0, x, y,
+        y = add_text_line{ &list, &cache, provider, font = latin, s, size = 24.0, x, y,
             text = "Mixed: Hello \xE4\xB8\x96\xE7\x95\x8C, \xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E and \xE4\xB8\xAD\xE6\x96\x87 text" }
-        y = add_text_line{ &list, &cache, provider, font = latin, size = 16.0, x, y,
+        y = add_text_line{ &list, &cache, provider, font = latin, s, size = 16.0, x, y,
             text = "16 px: \xE8\xAE\xBE\xE7\xBD\xAE Settings \xE3\x83\x95\xE3\x82\xA1\xE3\x82\xA4\xE3\x83\xAB File \xE7\xBC\x96\xE8\xBE\x91 Edit" }
     }
     if faces.has_italic {
-        y = add_text_line{ &list, &cache, provider, font = ui::Font{ index = 1 }, size = 32.0, x, y, text = "Italic: fjord ff Wf /// jag" }
+        y = add_text_line{ &list, &cache, provider, font = ui::Font{ index = 1 }, s, size = 32.0, x, y, text = "Italic: fjord ff Wf /// jag" }
     }
-    // A paragraph wrapped to a panel 300 wide.
-    let panel = ui::Rect{ x = x - 6.0, y = y + 4.0, w = 312.0, h = 0.0 }
-    let limit: f32 = 300.0
+    // A paragraph wrapped to a panel 300 units wide, with 6 units of room on each side and 4 above and below.
+    let size = scale_text_size{ s, size = 14.0 }
+    let limit = scale_text_length{ s, length = 300.0 }
+    let side = scale_text_length{ s, length = 6.0 }
+    let edge = scale_text_length{ s, length = 4.0 }
     let mut lines: [16]ui::text::Line
-    let wrapped = ui::text::wrap_text{ &cache, list, provider, font = latin, size = 14.0, text = TEXT_PARAGRAPH, width = limit, lines = lines[..] }
-    let m = ui::text::get_line_metrics{ &cache, list, provider, font = latin, size = 14.0 }
-    ui::draw::add_rect{ &list, rect = ui::Rect{ x = panel.x, y = panel.y, w = panel.w, h = m.height * @as(f32, wrapped.lines) + 8.0 }, clip = 0,
-        style = ui::RectStyle{ fill = TEXT_PANEL, radius = ui::round{ radius = 4.0 }, .. } }
-    let mut ly = panel.y + 4.0
+    let wrapped = ui::text::wrap_text{ &cache, list, provider, font = latin, size, text = TEXT_PARAGRAPH, width = limit, lines = lines[..] }
+    let m = ui::text::get_line_metrics{ &cache, list, provider, font = latin, size }
+    let top = y + edge
+    ui::draw::add_rect{ &list, rect = ui::Rect{ x = x - side, y = top, w = limit + 2 * side, h = m.height * @as(i32, wrapped.lines) + 2 * edge }, clip = 0,
+        style = ui::RectStyle{ fill = TEXT_PANEL, radius = ui::round{ radius = 4.0 * s }, .. } }
+    let mut ly = top + edge
     for l in lines[..@as(usize, wrapped.lines)] {
-        ui::draw::add_text{ &list, font = latin, size = 14.0, x, y = ly, text = TEXT_PARAGRAPH[@as(usize, l.start)..@as(usize, l.end)], color = TEXT_INK, clip = 0 }
+        ui::draw::add_text{ &list, font = latin, size, x, y = ly, text = TEXT_PARAGRAPH[@as(usize, l.start)..@as(usize, l.end)], color = TEXT_INK, clip = 0 }
         ly = ly + m.height
     }
 }
@@ -188,8 +211,8 @@ fn shoot_text_scale {
     ui_stage::stage{ out = &staged, list = &list, provider }
     ui_test::expect{ &io, &t, ok = staged.dropped == 0, what = "text: the list stages with nothing dropped" }
     ui_test::expect{ &io, &t, ok = not faces.has_cjk or lib.stats.missing == missing, what = "text: with the fallback, no character is missing" }
-    let width = @as(u32, staged.pixel_width)
-    let height = @as(u32, staged.pixel_height)
+    let width = @as(u32, staged.width)
+    let height = @as(u32, staged.height)
     try ui_gl::make_target{ &dev, width, height }
     ui_gl::clear{ &dev, color = BG }
     try ui_gl::render{ &dev, staged = &staged }
@@ -218,16 +241,21 @@ fn shoot_text_scale {
     return shot
 }
 
-// The first line's ink lies inside its measured box, and the device column after the box is clear.
+// The first line's ink lies inside its measured box, and the pixel columns after the box are
+// clear. The box is whole pixels: the line starts on the pixel the scene put it on and is the
+// measured width wide, which is the advances rounded up, so no ink may lie past it.
 fn check_text_ink { mut io: Io, mut t: ui_test::Tally, mut cache: ui::text::Cache, list: ui::DrawList, provider: ui::TextProvider, shot: Shot, scale: f32 } {
     let text: []u8 = "11 px: The quick brown fox jumps over the lazy dog. 0123456789 (sharp?)"
     let font = ui::Font{ index = 0 }
-    let width = ui::text::measure_text{ &cache, list, provider, font, size = 11.0, text }
-    let m = ui::text::get_line_metrics{ &cache, list, provider, font, size = 11.0 }
-    let x0 = @as(usize, ui::floor_f32{ x = 16.0 * scale })
-    let x1 = @as(usize, ui::ceil_f32{ x = (16.0 + width) * scale })
-    let y0 = @as(usize, ui::floor_f32{ x = 10.0 * scale })
-    let y1 = @as(usize, ui::floor_f32{ x = (10.0 + m.ascent) * scale })      // above the guide
+    let size = scale_text_size{ s = scale, size = 11.0 }
+    let width = ui::text::measure_text{ &cache, list, provider, font, size, text }
+    let m = ui::text::get_line_metrics{ &cache, list, provider, font, size }
+    let left = scale_text_length{ s = scale, length = 16.0 }
+    let top = scale_text_length{ s = scale, length = 10.0 }
+    let x0 = @as(usize, left)
+    let x1 = @as(usize, left + width)
+    let y0 = @as(usize, top)
+    let y1 = @as(usize, top + m.ascent)      // above the guide
     let mut inside: u32 = 0
     let mut past: u32 = 0
     for y in y0..y1 {

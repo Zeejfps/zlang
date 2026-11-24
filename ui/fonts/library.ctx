@@ -11,7 +11,7 @@
 // A sized variant is made the first time a face is asked for at a pixel size: an FT_Size of the
 // face's FT_Face and an hb_font of its hb_face, scaled to that size. Its id is the `face` a `Shaped`
 // names; ids are never reused, so the staged level's glyph cache, keyed by (sized face, glyph), never
-// mixes two of them. Sizes are device pixels: the core asks at `size * scale`.
+// mixes two of them. Sizes are device pixels: the core asks at a text's whole pixel size.
 //
 // Nothing here panics on what a program or a font hands it. A handle that names no face, a zero or
 // huge size, a full size table, a missing glyph, a bitmap larger than the buffer, a FreeType error and

@@ -173,11 +173,38 @@ fn put_texel { rgba: []mut u8, width: usize, x: usize, y: usize, c: ui::Color } 
 
 // ---- the conformance list
 
-fn make_rect { x: f32, y: f32, w: f32, h: f32 } -> ui::Rect { return ui::Rect{ x, y, w, h } }
+// The list is built the way a widget builds its paints: every shape is written in logical units and
+// becomes device pixels here, by the rules the core converts by (`s` is the scale). A rectangle's
+// corner goes to the nearest pixel and its size is its own length rounded, each on its own.
+fn make_rect { s: f32, x: f32, y: f32, w: f32, h: f32 } -> ui::Rect {
+    return ui::Rect{ x = ui::scale_position{ position = x, scale = s }, y = ui::scale_position{ position = y, scale = s }, w = ui::scale_length{ length = w, scale = s }, h = ui::scale_length{ length = h, scale = s } }
+}
 
-fn add_clip { mut list: ui::DrawList, rect: ui::Rect, radius: f32 } -> u16 {
+// Border widths in logical units as whole pixels, each by the length rule.
+fn scale_sides { s: f32, top: f32, right: f32, bottom: f32, left: f32 } -> ui::Sides {
+    return ui::Sides{ top = ui::scale_length{ length = top, scale = s }, right = ui::scale_length{ length = right, scale = s }, bottom = ui::scale_length{ length = bottom, scale = s }, left = ui::scale_length{ length = left, scale = s } }
+}
+
+// Corner radii in logical units as pixels: scaled, not rounded.
+fn scale_corners { s: f32, c: ui::Corners } -> ui::Corners {
+    return ui::Corners{ top_left = c.top_left * s, top_right = c.top_right * s, bottom_right = c.bottom_right * s, bottom_left = c.bottom_left * s }
+}
+
+// One line of text: its size a whole pixel size, its position the nearest pixel.
+fn add_label { mut list: ui::DrawList, s: f32, font: ui::Font, size: f32, x: f32, y: f32, text: []u8, color: ui::Color, clip: u16 } {
+    let pixels = ui::scale_length{ length = size, scale = s }
+    ui::draw::add_text{ &list, font, size = @as(f32, if pixels < 1 { 1 } else { pixels }), x = ui::scale_position{ position = x, scale = s }, y = ui::scale_position{ position = y, scale = s }, text, color, clip }
+}
+
+// A line: its end points and its width scaled, and left between pixels where they fall there.
+fn add_stroke { mut list: ui::DrawList, s: f32, x0: f32, y0: f32, x1: f32, y1: f32, width: f32, color: ui::Color, cap: ui::Cap, clip: u16 } {
+    ui::draw::add_line{ &list, x0 = x0 * s, y0 = y0 * s, x1 = x1 * s, y1 = y1 * s, width = width * s, color, cap, clip }
+}
+
+// A clip: `rect` is pixels already (make_rect), the radius is logical and is scaled.
+fn add_clip { mut list: ui::DrawList, s: f32, rect: ui::Rect, radius: f32 } -> u16 {
     let round = if radius > 0.0 { rect } else { ui::Rect{ .. } }
-    return ui::draw::add_clip{ &list, clip = ui::Clip{ rect, round, radius } } ifnull { return 0 }
+    return ui::draw::add_clip{ &list, clip = ui::Clip{ rect, round, radius = radius * s } } ifnull { return 0 }
 }
 
 fn add_picture { mut list: ui::DrawList, rect: ui::Rect, image: ui::Image, uv: ui::Uv, quarter: u8, blend: ui::Blend, clip: u16 } {
@@ -185,28 +212,28 @@ fn add_picture { mut list: ui::DrawList, rect: ui::Rect, image: ui::Image, uv: u
         tint = ui::Color{ r = 255, g = 255, b = 255, .. }, quarter, angle = 0.0, radius = ui::Corners{ .. }, blend, clip }
 }
 
-fn build_conformance { mut list: ui::DrawList, images: Images } {
+fn build_conformance { mut list: ui::DrawList, images: Images, s: f32 } {
     // Row 1: a rounded fill; four different radii; four different borders; radii and borders together.
-    ui::draw::add_rect{ &list, rect = make_rect{ x = 16.0, y = 16.0, w = 96.0, h = 56.0 }, clip = 0,
-        style = ui::RectStyle{ fill = BLUE_FILL, radius = ui::round{ radius = 14.0 }, .. } }
-    ui::draw::add_rect{ &list, rect = make_rect{ x = 128.0, y = 16.0, w = 96.0, h = 56.0 }, clip = 0,
+    ui::draw::add_rect{ &list, rect = make_rect{ s, x = 16.0, y = 16.0, w = 96.0, h = 56.0 }, clip = 0,
+        style = ui::RectStyle{ fill = BLUE_FILL, radius = ui::round{ radius = 14.0 * s }, .. } }
+    ui::draw::add_rect{ &list, rect = make_rect{ s, x = 128.0, y = 16.0, w = 96.0, h = 56.0 }, clip = 0,
         style = ui::RectStyle{ fill = ui::Color{ r = 220, g = 120, b = 60, .. },
-            radius = ui::Corners{ top_left = 0.0, top_right = 8.0, bottom_right = 20.0, bottom_left = 28.0 }, .. } }
-    ui::draw::add_rect{ &list, rect = make_rect{ x = 240.0, y = 16.0, w = 112.0, h = 56.0 }, clip = 0,
+            radius = scale_corners{ s, c = ui::Corners{ top_left = 0.0, top_right = 8.0, bottom_right = 20.0, bottom_left = 28.0 } }, .. } }
+    ui::draw::add_rect{ &list, rect = make_rect{ s, x = 240.0, y = 16.0, w = 112.0, h = 56.0 }, clip = 0,
         style = ui::RectStyle{ fill = BORDER_FILL,
-            border = ui::Sides{ top = 2.0, right = 6.0, bottom = 10.0, left = 14.0 },
+            border = scale_sides{ s, top = 2.0, right = 6.0, bottom = 10.0, left = 14.0 },
             border_color = ui::SideColors{ top = TOP, right = RIGHT, bottom = BOTTOM, left = LEFT }, .. } }
-    ui::draw::add_rect{ &list, rect = make_rect{ x = 368.0, y = 16.0, w = 96.0, h = 56.0 }, clip = 0,
+    ui::draw::add_rect{ &list, rect = make_rect{ s, x = 368.0, y = 16.0, w = 96.0, h = 56.0 }, clip = 0,
         style = ui::RectStyle{ fill = ui::Color{ r = 36, g = 40, b = 52, .. },
-            radius = ui::Corners{ top_left = 4.0, top_right = 10.0, bottom_right = 16.0, bottom_left = 22.0 },
-            border = ui::Sides{ top = 1.0, right = 2.0, bottom = 3.0, left = 4.0 },
+            radius = scale_corners{ s, c = ui::Corners{ top_left = 4.0, top_right = 10.0, bottom_right = 16.0, bottom_left = 22.0 } },
+            border = scale_sides{ s, top = 1.0, right = 2.0, bottom = 3.0, left = 4.0 },
             border_color = ui::SideColors{ top = TOP, right = RIGHT, bottom = BOTTOM, left = LEFT }, .. } }
 
     // Row 2: a disc, a ring, and lines at eight angles with each cap (round, butt, square).
-    ui::draw::add_rect{ &list, rect = make_rect{ x = 16.0, y = 88.0, w = 56.0, h = 56.0 }, clip = 0,
-        style = ui::RectStyle{ fill = ui::Color{ r = 240, g = 180, b = 60, .. }, radius = ui::round{ radius = 28.0 }, .. } }
-    ui::draw::add_rect{ &list, rect = make_rect{ x = 88.0, y = 88.0, w = 56.0, h = 56.0 }, clip = 0,
-        style = ui::RectStyle{ radius = ui::round{ radius = 28.0 }, border = ui::stroke{ width = 4.0 },
+    ui::draw::add_rect{ &list, rect = make_rect{ s, x = 16.0, y = 88.0, w = 56.0, h = 56.0 }, clip = 0,
+        style = ui::RectStyle{ fill = ui::Color{ r = 240, g = 180, b = 60, .. }, radius = ui::round{ radius = 28.0 * s }, .. } }
+    ui::draw::add_rect{ &list, rect = make_rect{ s, x = 88.0, y = 88.0, w = 56.0, h = 56.0 }, clip = 0,
+        style = ui::RectStyle{ radius = ui::round{ radius = 28.0 * s }, border = ui::stroke{ width = ui::scale_length{ length = 4.0, scale = s } },
             border_color = ui::color_sides{ color = ui::Color{ r = 100, g = 220, b = 200, .. } }, .. } }
     let degrees: [8]f32 = [0.0, 30.0, 45.0, 60.0, 90.0, 135.0, 200.0, 300.0]
     let mut cap: u32 = 0
@@ -218,9 +245,9 @@ fn build_conformance { mut list: ui::DrawList, images: Images } {
         let mut k: usize = 0
         while k < 8 {
             let a = degrees[k] * 0.017453292
-            let c = ui::cos_f32{ x = a }
-            let s = ui::sin_f32{ x = a }
-            ui::draw::add_line{ &list, x0 = cx + c * 9.0, y0 = cy - s * 9.0, x1 = cx + c * 24.0, y1 = cy - s * 24.0,
+            let cs = ui::cos_f32{ x = a }
+            let sn = ui::sin_f32{ x = a }
+            add_stroke{ &list, s, x0 = cx + cs * 9.0, y0 = cy - sn * 9.0, x1 = cx + cs * 24.0, y1 = cy - sn * 24.0,
                 width = 5.0, color, cap = kind, clip = 0 }
             k = k + 1
         }
@@ -230,45 +257,45 @@ fn build_conformance { mut list: ui::DrawList, images: Images } {
     // Row 3: the test font at 16 and 12, and magnified four times (its atlas pieces, padded);
     // nested clips: a panel, a clip inside it, and a clip that reaches out of it, cut to it.
     let font = ui::Font{ index = 0 }
-    ui::draw::add_text{ &list, font, size = 16.0, x = 16.0, y = 160.0, text = "Hello, 0123", color = INK, clip = 0 }
-    ui::draw::add_text{ &list, font, size = 12.0, x = 16.0, y = 182.0, text = "size 12 snaps", color = INK, clip = 0 }
-    ui::draw::add_text{ &list, font, size = 32.0, x = 16.0, y = 198.0, text = "Big", color = ui::Color{ r = 240, g = 200, b = 80, .. }, clip = 0 }
-    ui::draw::add_text{ &list, font, size = 64.0, x = 160.0, y = 160.0, text = "Ag", color = INK, clip = 0 }
-    ui::draw::add_rect{ &list, rect = make_rect{ x = 240.0, y = 160.0, w = 224.0, h = 72.0 }, clip = 0, style = ui::RectStyle{ fill = PANEL, .. } }
-    let inner = add_clip{ &list, rect = make_rect{ x = 256.0, y = 170.0, w = 150.0, h = 40.0 }, radius = 0.0 }
-    let outer_cut = add_clip{ &list, rect = make_rect{ x = 400.0, y = 160.0, w = 64.0, h = 50.0 }, radius = 0.0 }   // (400, 150, 100, 60) cut to the panel
-    ui::draw::add_rect{ &list, rect = make_rect{ x = 230.0, y = 150.0, w = 260.0, h = 100.0 }, clip = inner, style = ui::RectStyle{ fill = PINK, .. } }
-    ui::draw::add_text{ &list, font, size = 16.0, x = 250.0, y = 182.0, text = "clipped text runs out", color = ui::Color{ r = 20, g = 20, b = 30, .. }, clip = inner }
-    ui::draw::add_line{ &list, x0 = 390.0, y0 = 150.0, x1 = 480.0, y1 = 240.0, width = 8.0, color = ui::Color{ r = 120, g = 220, b = 140, .. }, cap = ui::Cap::butt, clip = outer_cut }
-    add_picture{ &list, rect = make_rect{ x = 420.0, y = 196.0, w = 60.0, h = 40.0 }, image = images.gradient, uv = ui::Uv{ .. }, quarter = 0, blend = ui::Blend::alpha, clip = outer_cut }
+    add_label{ &list, s, font, size = 16.0, x = 16.0, y = 160.0, text = "Hello, 0123", color = INK, clip = 0 }
+    add_label{ &list, s, font, size = 12.0, x = 16.0, y = 182.0, text = "size 12 snaps", color = INK, clip = 0 }
+    add_label{ &list, s, font, size = 32.0, x = 16.0, y = 198.0, text = "Big", color = ui::Color{ r = 240, g = 200, b = 80, .. }, clip = 0 }
+    add_label{ &list, s, font, size = 64.0, x = 160.0, y = 160.0, text = "Ag", color = INK, clip = 0 }
+    ui::draw::add_rect{ &list, rect = make_rect{ s, x = 240.0, y = 160.0, w = 224.0, h = 72.0 }, clip = 0, style = ui::RectStyle{ fill = PANEL, .. } }
+    let inner = add_clip{ &list, s, rect = make_rect{ s, x = 256.0, y = 170.0, w = 150.0, h = 40.0 }, radius = 0.0 }
+    let outer_cut = add_clip{ &list, s, rect = make_rect{ s, x = 400.0, y = 160.0, w = 64.0, h = 50.0 }, radius = 0.0 }   // (400, 150, 100, 60) cut to the panel
+    ui::draw::add_rect{ &list, rect = make_rect{ s, x = 230.0, y = 150.0, w = 260.0, h = 100.0 }, clip = inner, style = ui::RectStyle{ fill = PINK, .. } }
+    add_label{ &list, s, font, size = 16.0, x = 250.0, y = 182.0, text = "clipped text runs out", color = ui::Color{ r = 20, g = 20, b = 30, .. }, clip = inner }
+    add_stroke{ &list, s, x0 = 390.0, y0 = 150.0, x1 = 480.0, y1 = 240.0, width = 8.0, color = ui::Color{ r = 120, g = 220, b = 140, .. }, cap = ui::Cap::butt, clip = outer_cut }
+    add_picture{ &list, rect = make_rect{ s, x = 420.0, y = 196.0, w = 60.0, h = 40.0 }, image = images.gradient, uv = ui::Uv{ .. }, quarter = 0, blend = ui::Blend::alpha, clip = outer_cut }
 
     // Row 4: the four quarter turns of the flag; an additive picture over a rectangle; a piece of
     // a sheet magnified eight times with smooth filtering.
-    add_picture{ &list, rect = make_rect{ x = 16.0, y = 248.0, w = 32.0, h = 48.0 }, image = images.flag, uv = ui::Uv{ .. }, quarter = 0, blend = ui::Blend::alpha, clip = 0 }
-    add_picture{ &list, rect = make_rect{ x = 60.0, y = 256.0, w = 48.0, h = 32.0 }, image = images.flag, uv = ui::Uv{ .. }, quarter = 1, blend = ui::Blend::alpha, clip = 0 }
-    add_picture{ &list, rect = make_rect{ x = 120.0, y = 248.0, w = 32.0, h = 48.0 }, image = images.flag, uv = ui::Uv{ .. }, quarter = 2, blend = ui::Blend::alpha, clip = 0 }
-    add_picture{ &list, rect = make_rect{ x = 164.0, y = 256.0, w = 48.0, h = 32.0 }, image = images.flag, uv = ui::Uv{ .. }, quarter = 3, blend = ui::Blend::alpha, clip = 0 }
-    ui::draw::add_rect{ &list, rect = make_rect{ x = 240.0, y = 248.0, w = 64.0, h = 64.0 }, clip = 0, style = ui::RectStyle{ fill = UNDER_ADD, .. } }
-    add_picture{ &list, rect = make_rect{ x = 248.0, y = 256.0, w = 48.0, h = 48.0 }, image = images.grey, uv = ui::Uv{ .. }, quarter = 0, blend = ui::Blend::additive, clip = 0 }
-    add_picture{ &list, rect = make_rect{ x = 320.0, y = 248.0, w = 64.0, h = 64.0 }, image = images.sheet,
+    add_picture{ &list, rect = make_rect{ s, x = 16.0, y = 248.0, w = 32.0, h = 48.0 }, image = images.flag, uv = ui::Uv{ .. }, quarter = 0, blend = ui::Blend::alpha, clip = 0 }
+    add_picture{ &list, rect = make_rect{ s, x = 60.0, y = 256.0, w = 48.0, h = 32.0 }, image = images.flag, uv = ui::Uv{ .. }, quarter = 1, blend = ui::Blend::alpha, clip = 0 }
+    add_picture{ &list, rect = make_rect{ s, x = 120.0, y = 248.0, w = 32.0, h = 48.0 }, image = images.flag, uv = ui::Uv{ .. }, quarter = 2, blend = ui::Blend::alpha, clip = 0 }
+    add_picture{ &list, rect = make_rect{ s, x = 164.0, y = 256.0, w = 48.0, h = 32.0 }, image = images.flag, uv = ui::Uv{ .. }, quarter = 3, blend = ui::Blend::alpha, clip = 0 }
+    ui::draw::add_rect{ &list, rect = make_rect{ s, x = 240.0, y = 248.0, w = 64.0, h = 64.0 }, clip = 0, style = ui::RectStyle{ fill = UNDER_ADD, .. } }
+    add_picture{ &list, rect = make_rect{ s, x = 248.0, y = 256.0, w = 48.0, h = 48.0 }, image = images.grey, uv = ui::Uv{ .. }, quarter = 0, blend = ui::Blend::additive, clip = 0 }
+    add_picture{ &list, rect = make_rect{ s, x = 320.0, y = 248.0, w = 64.0, h = 64.0 }, image = images.sheet,
         uv = ui::Uv{ u0 = 1.0 / 20.0, v0 = 1.0 / 10.0, u1 = 9.0 / 20.0, v1 = 9.0 / 10.0 }, quarter = 0, blend = ui::Blend::alpha, clip = 0 }
-    add_picture{ &list, rect = make_rect{ x = 400.0, y = 248.0, w = 64.0, h = 64.0 }, image = images.sheet,
+    add_picture{ &list, rect = make_rect{ s, x = 400.0, y = 248.0, w = 64.0, h = 64.0 }, image = images.sheet,
         uv = ui::Uv{ u0 = 11.0 / 20.0, v0 = 1.0 / 10.0, u1 = 19.0 / 20.0, v1 = 9.0 / 10.0 }, quarter = 0, blend = ui::Blend::alpha, clip = 0 }
 
     // Row 5: a round clip (a circle) cutting each kind, and a rounded clip over a rectangle, a line
     // and text that all run past its corners.
-    let circle_rect = add_clip{ &list, rect = make_rect{ x = 16.0, y = 328.0, w = 64.0, h = 64.0 }, radius = 32.0 }
-    let circle_image = add_clip{ &list, rect = make_rect{ x = 88.0, y = 328.0, w = 64.0, h = 64.0 }, radius = 32.0 }
-    let circle_text = add_clip{ &list, rect = make_rect{ x = 160.0, y = 328.0, w = 64.0, h = 64.0 }, radius = 32.0 }
-    let circle_line = add_clip{ &list, rect = make_rect{ x = 232.0, y = 328.0, w = 64.0, h = 64.0 }, radius = 32.0 }
-    let rounded = add_clip{ &list, rect = make_rect{ x = 304.0, y = 328.0, w = 160.0, h = 64.0 }, radius = 16.0 }
-    ui::draw::add_rect{ &list, rect = make_rect{ x = 8.0, y = 320.0, w = 80.0, h = 80.0 }, clip = circle_rect, style = ui::RectStyle{ fill = DISC_FILL, .. } }
-    add_picture{ &list, rect = make_rect{ x = 80.0, y = 320.0, w = 80.0, h = 80.0 }, image = images.gradient, uv = ui::Uv{ .. }, quarter = 0, blend = ui::Blend::alpha, clip = circle_image }
-    ui::draw::add_text{ &list, font, size = 64.0, x = 160.0, y = 328.0, text = "WM", color = INK, clip = circle_text }
-    ui::draw::add_line{ &list, x0 = 226.0, y0 = 322.0, x1 = 302.0, y1 = 398.0, width = 20.0, color = ui::Color{ r = 240, g = 120, b = 60, .. }, cap = ui::Cap::butt, clip = circle_line }
-    ui::draw::add_rect{ &list, rect = make_rect{ x = 296.0, y = 320.0, w = 176.0, h = 80.0 }, clip = rounded, style = ui::RectStyle{ fill = PANEL, .. } }
-    ui::draw::add_line{ &list, x0 = 300.0, y0 = 324.0, x1 = 470.0, y1 = 396.0, width = 6.0, color = PINK, cap = ui::Cap::round, clip = rounded }
-    ui::draw::add_text{ &list, font, size = 32.0, x = 300.0, y = 360.0, text = "rounded clip", color = INK, clip = rounded }
+    let circle_rect = add_clip{ &list, s, rect = make_rect{ s, x = 16.0, y = 328.0, w = 64.0, h = 64.0 }, radius = 32.0 }
+    let circle_image = add_clip{ &list, s, rect = make_rect{ s, x = 88.0, y = 328.0, w = 64.0, h = 64.0 }, radius = 32.0 }
+    let circle_text = add_clip{ &list, s, rect = make_rect{ s, x = 160.0, y = 328.0, w = 64.0, h = 64.0 }, radius = 32.0 }
+    let circle_line = add_clip{ &list, s, rect = make_rect{ s, x = 232.0, y = 328.0, w = 64.0, h = 64.0 }, radius = 32.0 }
+    let rounded = add_clip{ &list, s, rect = make_rect{ s, x = 304.0, y = 328.0, w = 160.0, h = 64.0 }, radius = 16.0 }
+    ui::draw::add_rect{ &list, rect = make_rect{ s, x = 8.0, y = 320.0, w = 80.0, h = 80.0 }, clip = circle_rect, style = ui::RectStyle{ fill = DISC_FILL, .. } }
+    add_picture{ &list, rect = make_rect{ s, x = 80.0, y = 320.0, w = 80.0, h = 80.0 }, image = images.gradient, uv = ui::Uv{ .. }, quarter = 0, blend = ui::Blend::alpha, clip = circle_image }
+    add_label{ &list, s, font, size = 64.0, x = 160.0, y = 328.0, text = "WM", color = INK, clip = circle_text }
+    add_stroke{ &list, s, x0 = 226.0, y0 = 322.0, x1 = 302.0, y1 = 398.0, width = 20.0, color = ui::Color{ r = 240, g = 120, b = 60, .. }, cap = ui::Cap::butt, clip = circle_line }
+    ui::draw::add_rect{ &list, rect = make_rect{ s, x = 296.0, y = 320.0, w = 176.0, h = 80.0 }, clip = rounded, style = ui::RectStyle{ fill = PANEL, .. } }
+    add_stroke{ &list, s, x0 = 300.0, y0 = 324.0, x1 = 470.0, y1 = 396.0, width = 6.0, color = PINK, cap = ui::Cap::round, clip = rounded }
+    add_label{ &list, s, font, size = 32.0, x = 300.0, y = 360.0, text = "rounded clip", color = INK, clip = rounded }
 }
 
 // ---- one scale
@@ -277,13 +304,13 @@ fn shoot {
     mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, mut dev: ui_gl::Device,
     mut staged: ui_stage::Staged, mut list: ui::DrawList, images: Images, scale: f32, name: []u8, out_dir: []u8,
 } -> !Shot {
-    ui::draw::reset{ &list, width = WIDTH, height = HEIGHT, scale_x = scale, scale_y = scale }
-    build_conformance{ &list, images }
+    ui::draw::reset{ &list, width = ui::round_pixels{ v = WIDTH * scale }, height = ui::round_pixels{ v = HEIGHT * scale } }
+    build_conformance{ &list, images, s = scale }
     ui_test::expect{ &io, &t, ok = list.dropped == 0, what = "the conformance list was built with nothing dropped" }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
     ui_test::expect{ &io, &t, ok = staged.dropped == 0, what = "the conformance list stages with nothing dropped" }
-    let width = @as(u32, staged.pixel_width)
-    let height = @as(u32, staged.pixel_height)
+    let width = @as(u32, staged.width)
+    let height = @as(u32, staged.height)
     try ui_gl::make_target{ &dev, width, height }
     ui_gl::clear{ &dev, color = BG }
     try ui_gl::render{ &dev, staged = &staged }
@@ -302,8 +329,8 @@ fn shoot {
 
     // The same list again: the same revision, and the device uploads nothing.
     let revision = staged.revision
-    ui::draw::reset{ &list, width = WIDTH, height = HEIGHT, scale_x = scale, scale_y = scale }
-    build_conformance{ &list, images }
+    ui::draw::reset{ &list, width = ui::round_pixels{ v = WIDTH * scale }, height = ui::round_pixels{ v = HEIGHT * scale } }
+    build_conformance{ &list, images, s = scale }
     ui_stage::stage{ out = &staged, list = &list, provider = null }
     ui_test::expect{ &io, &t, ok = staged.revision == revision, what = "the same list stages to the same revision" }
     ui_gl::clear{ &dev, color = BG }

@@ -1,5 +1,5 @@
 == take: beside fix, across the axis, past the whole, with min and max, in a fit parent, placed
-frame 800x600 scale 1x1
+frame 800x600
 rect 20,20 340x40 fill=20232AFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
 rect 30,30 50x20 fill=4A90E2FF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
 rect 90,30 150x20 fill=30343EFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0

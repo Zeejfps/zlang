@@ -35,13 +35,13 @@ namespace ui {
     //   clicks    on the frames with `pressed` or `clicked`: which click of a series the press was
     //             (2 for a double click), as the host counted; 0 otherwise
     //   focused   it has the keyboard focus
-    //   drag_x/y  while held: how far the pointer is from where the press was
+    //   drag_x/y  while held: how far the pointer is from where the press was, in device pixels
     struct Interaction {
         id: Id,
         hovered: bool = false, entered: bool = false,
         pressed: bool = false, held: bool = false, clicked: bool = false, clicks: u8 = 0,
         focused: bool = false,
-        drag_x: f32 = 0.0, drag_y: f32 = 0.0,
+        drag_x: i32 = 0, drag_y: i32 = 0,
     }
 
     // The one behaviour primitive: hover, press, hold, click, focus. Record an element with the
@@ -74,8 +74,8 @@ namespace ui {
         if ui.interact.active == id and ui.interact.active_button == opts.button {
             ui.interact.active_seen = true
             it.held = true
-            it.drag_x = now.x - now.press_x[b]
-            it.drag_y = now.y - now.press_y[b]
+            it.drag_x = sub_pixels{ a = now.x, b = now.press_x[b] }
+            it.drag_y = sub_pixels{ a = now.y, b = now.press_y[b] }
             if now.released[b] or not now.down[b] {
                 it.clicked = now.released[b] and not now.cancelled[b] and ui.interact.hot == id
                 if it.clicked { it.clicks = ui.interact.active_clicks }
@@ -162,12 +162,13 @@ namespace ui {
             if ui.interact.active != NO_ID and not ui.interact.active_seen { ui.interact.active = NO_ID }
         }
 
-        fn contains { r: Rect, x: f32, y: f32 } -> bool {
-            return x >= r.x and x < r.x + r.w and y >= r.y and y < r.y + r.h
+        // Whether the pixel (x, y) is in `r`: its left and top edges are, its right and bottom are not.
+        fn contains { r: Rect, x: i32, y: i32 } -> bool {
+            return x >= r.x and @as(i64, x) < @as(i64, r.x) + @as(i64, r.w) and y >= r.y and @as(i64, y) < @as(i64, r.y) + @as(i64, r.h)
         }
 
         // The index in `ui.emit.hits` of the topmost region whose area holds (x, y), or NONE.
-        fn find_topmost { ui: Ui, x: f32, y: f32 } -> u32 {
+        fn find_topmost { ui: Ui, x: i32, y: i32 } -> u32 {
             let mut i = @as(usize, ui.emit.hit_count)
             while i > 0 {
                 i = i - 1

@@ -1,0 +1,390 @@
+// What whole device pixels are for (plan section 2.0, "Units"). `check_pixels` is called from
+// main.ctx. The checks here are properties, tried on the seeded trees of flow.ctx at the five
+// scales a display has (1, 1.25, 1.5, 1.75 and 2):
+//
+//   - a subtree has the same sizes wherever it is put: at every pixel offset from 0 to 7, and at
+//     logical offsets that fall between pixels;
+//   - scrolling by a pixel moves every edge of what scrolls by exactly a pixel, and changes no size;
+//   - a border of one width is the same number of pixels on all four sides at every scale, and a
+//     padded box is inset by the same number of pixels on opposite sides;
+//   - the emitted draw list says the same as the tree: nothing is rounded between the two.
+
+// The scales the properties are tried at.
+const SCALES: [5]f32 = [1.0, 1.25, 1.5, 1.75, 2.0]
+
+// ---- helpers
+
+// One frame at `scale`: a wrapper holding the trees of `seed`, placed by `box` on the surface.
+// The wrapper is element 1, a column that scrolls its flow children by (`scroll_x`, `scroll_y`)
+// pixels. Element 2 is its one flow child, a holder that fills it, and the seed's trees are the
+// holder's children, from element 3 on: so everything from element 2 on scrolls with the wrapper,
+// the trees that are themselves placed too. The surface is 20000 pixels each way and the wrapper
+// stands far from its edges, so no shape enters or leaves the draw list as the content moves.
+fn record_wrapped { mut ui: ui::Ui, scale: f32, seed: u32, box: ui::Box, scroll_x: i32, scroll_y: i32 } {
+    ui::begin_frame{ &ui, frame = ui::FrameInfo{ width = 20000, height = 20000, scale, dt = 0.016 } }
+    let wrapper = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box }
+    ui.tree.elements[1].scroll_x = scroll_x
+    ui.tree.elements[1].scroll_y = scroll_y
+    let holder = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = ui::Box{ width = ui::GROW, height = ui::GROW, .. } }
+    show_random{ &ui, seed, odd = null }
+    ui::end{ &ui, scope = holder }
+    ui::end{ &ui, scope = wrapper }
+    ui::end_frame{ &ui }
+}
+
+// Where the wrapper stands in the checks that move it, in pixels: far from the surface's edges.
+const BASE: i32 = 4000
+
+// How many elements from 2 on are not their shot moved by (`dx`, `dy`) with the same size and
+// lines; the largest count when the trees differ in length.
+fn count_unmoved { ui: ui::Ui, shots: []Shot, count: u32, dx: i32, dy: i32 } -> u32 {
+    if ui.tree.count != count { return 4294967295 }
+    let mut n: u32 = 0
+    for i in 2..@as(usize, ui.tree.count) {
+        if i >= shots.len { break }
+        let e = ui.tree.elements[i]
+        if e.kind == ui::tree::Kind::paint { continue }
+        let s = shots[i]
+        let same = e.w == s.w and e.h == s.h and e.content_w == s.content_w and e.content_h == s.content_h and e.line_count == s.line_count and e.dots == s.dots
+        if not same or e.x != s.x + dx or e.y != s.y + dy { n = n + 1 }
+    }
+    return n
+}
+
+// The shapes of a frame, kept to compare the next frame's with.
+struct Kept { cmds: []mut ui::Cmd, count: u32 }
+
+fn keep_shapes { ui: ui::Ui, mut kept: Kept } {
+    kept.count = 0
+    for i in 0..@as(usize, ui.draw.count) {
+        if i >= kept.cmds.len { break }
+        kept.cmds[i] = ui.draw.cmds[i]
+        kept.count = kept.count + 1
+    }
+}
+
+// Whether shape `b` is shape `a` moved by (`dx`, `dy`) pixels and nothing else: the same size, the
+// same look. The seeded trees draw rectangles and text.
+fn is_moved { a: ui::Cmd, b: ui::Cmd, dx: i32, dy: i32 } -> bool {
+    match a {
+        rect{ rect, style } => {
+            if b is rect{ rect = other, style = look } {
+                return other.x == rect.x + dx and other.y == rect.y + dy and other.w == rect.w and other.h == rect.h
+                    and look.border.top == style.border.top and look.border.left == style.border.left and look.border.right == style.border.right and look.border.bottom == style.border.bottom
+            }
+            return false
+        }
+        text{ size, x, y, text } => {
+            if b is text{ size = other_size, x = bx, y = by, text = other } {
+                return bx == x + dx and by == y + dy and other_size == size and other.len == text.len
+            }
+            return false
+        }
+        else => { return false }
+    }
+}
+
+// How many of the frame's shapes are not the kept ones moved by (`dx`, `dy`).
+fn count_unmoved_shapes { ui: ui::Ui, kept: Kept, dx: i32, dy: i32 } -> u32 {
+    if ui.draw.count != kept.count { return 4294967295 }
+    let mut n: u32 = 0
+    for i in 0..@as(usize, kept.count) {
+        if not is_moved{ a = kept.cmds[i], b = ui.draw.cmds[i], dx, dy } { n = n + 1 }
+    }
+    return n
+}
+
+fn add_faults { a: u32, b: u32 } -> u32 {
+    return ui::add_count{ a, b }
+}
+
+// A count of seeds, as the type a seed is.
+fn count_seeds { n: u32 } -> u32 {
+    return n
+}
+
+// ---- the checks
+
+fn check_pixels { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, cap = get_roomy{} } iferr { return }
+    let shots = alloc::make(Shot, arena::Arena){ realloc = arena::alloc, &heap, count = 4098 } iferr { return }
+    let cmds = alloc::make(ui::Cmd, arena::Arena){ realloc = arena::alloc, &heap, count = 16384 } iferr { return }
+    let mut kept = Kept{ cmds, count = 0 }
+
+    check_offsets{ &io, &t, ui = &gui, shots, &kept }
+    check_fractions{ &io, &t, ui = &gui, shots }
+    check_scrolling{ &io, &t, ui = &gui, shots, &kept }
+    check_borders{ &io, &t, ui = &gui }
+    check_meeting{ &io, &t, ui = &gui }
+    check_placement{ &io, &t, ui = &gui }
+}
+
+// The same subtree at every pixel offset from 0 to 7, at each scale: placed in pixels, so the
+// wrapper lands on exactly (dx, dy). Every element in it keeps its size and moves by exactly the
+// offset, and so does every shape of the draw list.
+fn check_offsets { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui, shots: []mut Shot, mut kept: Kept } {
+    let mut wrong: u32 = 0
+    let mut wrong_shapes: u32 = 0
+    let mut unclean: u32 = 0
+    let mut elements: u32 = 0
+    for s in 0..SCALES.len {
+        for seed in 0..count_seeds{ n = 12 } {
+            // 700 by 500 pixels and not clipping, so nothing leaves the list as the wrapper moves.
+            record_wrapped{ &ui, scale = SCALES[s], seed = 100 + seed, box = ui::place_pixels{ rect = ui::Rect{ x = BASE, y = BASE, w = 700, h = 500 } }, scroll_x = 0, scroll_y = 0 }
+            if not is_clean{ ui } { unclean = unclean + 1 }
+            take_shots{ ui, shots }
+            keep_shapes{ ui, &kept }
+            let count = ui.tree.count
+            elements = elements + ui.stats.elements
+            for k in 1..8 {
+                let dx: i32 = k
+                let dy: i32 = 2 * k + 1
+                record_wrapped{ &ui, scale = SCALES[s], seed = 100 + seed, box = ui::place_pixels{ rect = ui::Rect{ x = BASE + dx, y = BASE + dy, w = 700, h = 500 } }, scroll_x = 0, scroll_y = 0 }
+                if ui.tree.elements[1].x != BASE + dx or ui.tree.elements[1].y != BASE + dy or ui.tree.elements[1].w != 700 or ui.tree.elements[1].h != 500 { wrong = add_faults{ a = wrong, b = 1 } }
+                wrong = add_faults{ a = wrong, b = count_unmoved{ ui, shots = shots, count, dx, dy } }
+                wrong_shapes = add_faults{ a = wrong_shapes, b = count_unmoved_shapes{ ui, kept, dx, dy } }
+            }
+        }
+    }
+    ui_test::expect{ &io, &t, ok = elements > 1500 and unclean == 0, what = "offsets: the trees moved about are thousands of elements over five scales, every frame clean" }
+    ui_test::expect{ &io, &t, ok = wrong == 0, what = "offsets: a subtree placed at every pixel offset from 0 to 7 has identical sizes, and every edge moves by exactly the offset" }
+    ui_test::expect{ &io, &t, ok = wrong_shapes == 0, what = "offsets: every emitted shape moves by exactly the offset and keeps its size" }
+}
+
+// The same subtree at logical positions that fall between pixels, which is where a size used to
+// depend on the position: 10.5 wide was 11 pixels at x 0 and 10 at x 0.5. The wrapper is placed
+// at steps of 0.3 logical units (`ui::place`, the logical placement), so at every scale its corner
+// rounds now up, now down. Its content keeps every size and moves by whole pixels: by exactly as
+// far as the wrapper's own corner moved.
+fn check_fractions { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui, shots: []mut Shot } {
+    let mut wrong: u32 = 0
+    let mut steps: u32 = 0      // how many placements did not move the wrapper as far as the one before
+    for s in 0..SCALES.len {
+        for seed in 0..count_seeds{ n = 8 } {
+            record_wrapped{ &ui, scale = SCALES[s], seed = 300 + seed, box = ui::place{ x = 1000.0, y = 1000.0, w = 500.3, h = 400.7 }, scroll_x = 0, scroll_y = 0 }
+            take_shots{ ui, shots }
+            let count = ui.tree.count
+            let w = ui.tree.elements[1].w
+            let h = ui.tree.elements[1].h
+            let x0 = ui.tree.elements[1].x
+            let y0 = ui.tree.elements[1].y
+            let mut last: i32 = 0
+            let mut stride: i32 = -1
+            for k in 1..24 {
+                let at = @as(f32, k) * 0.3
+                record_wrapped{ &ui, scale = SCALES[s], seed = 300 + seed, box = ui::place{ x = 1000.0 + at, y = 1000.0 + at * 2.0, w = 500.3, h = 400.7 }, scroll_x = 0, scroll_y = 0 }
+                let dx = ui.tree.elements[1].x - x0
+                let dy = ui.tree.elements[1].y - y0
+                // The wrapper itself: the same size at every position, its corner on the pixel nearest.
+                if ui.tree.elements[1].w != w or ui.tree.elements[1].h != h { wrong = add_faults{ a = wrong, b = 1 } }
+                if ui.tree.elements[1].x != ui::to_pixel_position{ ui, position = 1000.0 + at } or ui.tree.elements[1].y != ui::to_pixel_position{ ui, position = 1000.0 + at * 2.0 } { wrong = add_faults{ a = wrong, b = 1 } }
+                wrong = add_faults{ a = wrong, b = count_unmoved{ ui, shots = shots, count, dx, dy } }
+                if stride >= 0 and dx - last != stride { steps = steps + 1 }
+                stride = dx - last
+                last = dx
+            }
+        }
+    }
+    ui_test::expect{ &io, &t, ok = wrong == 0, what = "positions between pixels: at every scale a subtree has the same sizes wherever it is put" }
+    ui_test::expect{ &io, &t, ok = steps > 100, what = "positions between pixels: the placements did fall between pixels (the corner moved now by one step, now by another)" }
+}
+
+// Scrolling. The wrapper scrolls its flow children by 0 to 7 pixels each way: every element in
+// it, and every shape drawn, moves by exactly that many pixels and keeps its size.
+fn check_scrolling { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui, shots: []mut Shot, mut kept: Kept } {
+    let mut wrong: u32 = 0
+    let mut wrong_shapes: u32 = 0
+    let mut wrong_step: u32 = 0
+    for s in 0..SCALES.len {
+        for seed in 0..count_seeds{ n = 12 } {
+            let box = ui::place{ x = 1000.0, y = 1000.0, w = 600.0, h = 500.0 }
+            record_wrapped{ &ui, scale = SCALES[s], seed = 500 + seed, box, scroll_x = 0, scroll_y = 0 }
+            take_shots{ ui, shots }
+            keep_shapes{ ui, &kept }
+            let count = ui.tree.count
+            for k in 1..8 {
+                record_wrapped{ &ui, scale = SCALES[s], seed = 500 + seed, box, scroll_x = 0, scroll_y = k }
+                wrong = add_faults{ a = wrong, b = count_unmoved{ ui, shots = shots, count, dx = 0, dy = 0 - k } }
+                wrong_shapes = add_faults{ a = wrong_shapes, b = count_unmoved_shapes_from{ ui, kept, first = 0, dx = 0, dy = 0 - k } }
+                record_wrapped{ &ui, scale = SCALES[s], seed = 500 + seed, box, scroll_x = k, scroll_y = 0 }
+                wrong = add_faults{ a = wrong, b = count_unmoved{ ui, shots = shots, count, dx = 0 - k, dy = 0 } }
+            }
+            // One pixel more of scroll is one pixel more of movement, from any offset.
+            record_wrapped{ &ui, scale = SCALES[s], seed = 500 + seed, box, scroll_x = 0, scroll_y = 1000 }
+            take_shots{ ui, shots }
+            record_wrapped{ &ui, scale = SCALES[s], seed = 500 + seed, box, scroll_x = 0, scroll_y = 1001 }
+            wrong_step = add_faults{ a = wrong_step, b = count_unmoved{ ui, shots = shots, count, dx = 0, dy = -1 } }
+        }
+    }
+    ui_test::expect{ &io, &t, ok = wrong == 0, what = "scrolling: by k pixels every edge of what scrolls moves by exactly k pixels and no size changes" }
+    ui_test::expect{ &io, &t, ok = wrong_shapes == 0, what = "scrolling: every emitted shape moves by exactly the scroll and keeps its size" }
+    ui_test::expect{ &io, &t, ok = wrong_step == 0, what = "scrolling: one pixel more of scroll moves every edge by exactly one pixel" }
+}
+
+// The shapes from `first` on against the kept ones: the wrapper draws nothing, so the frame's
+// shapes are all its content's.
+fn count_unmoved_shapes_from { ui: ui::Ui, kept: Kept, first: usize, dx: i32, dy: i32 } -> u32 {
+    if ui.draw.count != kept.count { return 4294967295 }
+    let mut n: u32 = 0
+    for i in first..@as(usize, kept.count) {
+        if not is_moved{ a = kept.cmds[i], b = ui.draw.cmds[i], dx, dy } { n = n + 1 }
+    }
+    return n
+}
+
+// A frame's rectangle shape `at`, or one of -1s.
+fn get_frame_rect { ui: ui::Ui, at: usize } -> ui::Rect {
+    if at < @as(usize, ui.draw.count) {
+        if ui.draw.cmds[at] is rect{ rect } { return rect }
+    }
+    return ui::Rect{ x = -1, y = -1, w = -1, h = -1 }
+}
+
+fn get_frame_border { ui: ui::Ui, at: usize } -> ui::Sides {
+    if at < @as(usize, ui.draw.count) {
+        if ui.draw.cmds[at] is rect{ style } { return style.border }
+    }
+    return ui::Sides{ top = -1, right = -1, bottom = -1, left = -1 }
+}
+
+// Borders and padding at each scale. A panel with a border of `width` logical units on every side
+// and padding of 4.4, holding a child that grows both ways, at a position between pixels:
+//
+//   scale          1     1.25   1.5    1.75   2
+//   border 1       1     1      2      2      2       round(scale), never 0
+//   border 0.5     1     1      1      1      1       round(0.5 * scale) would be 0 below scale 1: at least 1
+//   border 2       2     3      3      4      4       2.5 and 3.5 round away from zero
+//   padding 4.4    4     6      7      8      9       round(4.4 * scale): 4.4, 5.5, 6.6, 7.7, 8.8
+//
+// On every side the border is that many pixels, and the child is inset by the padding's pixels on
+// the left and on the right, on the top and on the bottom: the same on opposite sides.
+fn check_borders { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui } {
+    let widths: [3]f32 = [1.0, 0.5, 2.0]
+    let want: [3][5]i32 = [[1, 1, 2, 2, 2], [1, 1, 1, 1, 1], [2, 3, 3, 4, 4]]
+    let padded: [5]i32 = [4, 6, 7, 8, 9]
+    let mut even = true
+    let mut ruled = true
+    let mut inset = true
+    let mut sized = true
+    for s in 0..SCALES.len {
+        for b in 0..widths.len {
+            let mut sizes: [8]ui::Rect
+            for k in 0..8 {
+                start_frame{ &ui, scale = SCALES[s] }
+                // A position between pixels, different every time.
+                let at = 10.0 + @as(f32, k) * 0.35
+                let mut box = place_filled{ x = at, y = at + 0.2, w = 120.6, h = 60.3, color = PANEL }
+                box.border = ui::color_sides{ color = EDGE }
+                box.border_width = ui::inset{ by = widths[b] }
+                box.padding = ui::inset{ by = 4.4 }
+                let panel = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::row, box }
+                let fill = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{ width = ui::GROW, height = ui::GROW, fill = ACCENT, .. } }
+                ui::end{ &ui, scope = fill }
+                ui::end{ &ui, scope = panel }
+                ui::end_frame{ &ui }
+                let outer = get_frame_rect{ ui, at = 0 }
+                let inner = get_frame_rect{ ui, at = 1 }
+                let border = get_frame_border{ ui, at = 0 }
+                if border.top != border.right or border.right != border.bottom or border.bottom != border.left { even = false }
+                if border.top != want[b][s] or border.top != ui::to_pixels{ ui, length = widths[b] } { ruled = false }
+                let left = inner.x - outer.x
+                let right = (outer.x + outer.w) - (inner.x + inner.w)
+                let top = inner.y - outer.y
+                let bottom = (outer.y + outer.h) - (inner.y + inner.h)
+                if left != right or top != bottom or left != top or left != padded[s] { inset = false }
+                sizes[k] = ui::Rect{ x = 0, y = 0, w = outer.w, h = outer.h }
+                if k > 0 and (sizes[k].w != sizes[0].w or sizes[k].h != sizes[0].h) { sized = false }
+                if not is_clean{ ui } { sized = false }
+            }
+        }
+    }
+    ui_test::expect{ &io, &t, ok = even, what = "borders: at scales 1, 1.25, 1.5, 1.75 and 2 a border is the same number of pixels on all four sides" }
+    ui_test::expect{ &io, &t, ok = ruled, what = "borders: 1 unit is 1, 1, 2, 2, 2 pixels, half a unit is always 1, and 2 units are 2, 3, 3, 4, 4" }
+    ui_test::expect{ &io, &t, ok = inset, what = "padding: a child is inset by the same whole pixels on opposite sides: 4, 6, 7, 8, 9 for 4.4 units" }
+    ui_test::expect{ &io, &t, ok = sized, what = "the panel is the same size at eight positions between pixels, at every scale" }
+}
+
+// Pieces that meet in layout meet on screen. A row with no gap holds ten children of 10.3 logical
+// units; at every scale each is the same whole number of pixels wide and starts exactly where the
+// one before it ends: no gap of a pixel between two, no overlap, none a pixel thinner than the rest.
+fn check_meeting { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui } {
+    let want: [5]i32 = [10, 13, 15, 18, 21]     // round(10.3 * scale): 10.3, 12.875, 15.45, 18.025, 20.6
+    let mut meet = true
+    let mut equal = true
+    for s in 0..SCALES.len {
+        start_frame{ &ui, scale = SCALES[s] }
+        let row = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{ place = ui::Place{ x = 7.3, y = 3.9, .. }, .. } }
+        for k in 0..10 { add_cell{ &ui, width = ui::fix{ size = 10.3 }, height = ui::fix{ size = 10.3 }, color = if k % 2 == 0 { ACCENT } else { CONTROL } } }
+        ui::end{ &ui, scope = row }
+        ui::end_frame{ &ui }
+        let mut edge = get_frame_rect{ ui, at = 0 }.x
+        for k in 0..10 {
+            let r = get_frame_rect{ ui, at = @as(usize, k) }
+            if r.x != edge { meet = false }
+            if r.w != want[s] or r.h != want[s] { equal = false }
+            edge = r.x + r.w
+        }
+        if ui.tree.elements[1].w != 10 * want[s] { meet = false }
+    }
+    ui_test::expect{ &io, &t, ok = meet, what = "pieces of 10.3 units side by side meet exactly at every scale: each starts where the last ends" }
+    ui_test::expect{ &io, &t, ok = equal, what = "and every piece is the same whole size: 10, 13, 15, 18 and 21 pixels" }
+}
+
+// Placement in pixels, beside the logical one: an element lands on exactly the pixels given, at
+// any scale, whatever the scale would have made of them; its children are laid out in it as in any
+// element; and a size in pixels is that many pixels.
+fn check_placement { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui } {
+    let id = ui::make_id{ ui, name = "exact" }
+    let inside = ui::make_id{ ui, name = "inside" }
+    let sized = ui::make_id{ ui, name = "sized" }
+    let mut exact = true
+    let mut filled = true
+    let mut fixed = true
+    for s in 0..SCALES.len {
+        start_frame{ &ui, scale = SCALES[s] }
+        let panel = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = ui::place_pixels{ rect = ui::Rect{ x = 101, y = 53, w = 333, h = 211 } } }
+        // In the parent's own pixels: (7, 9) from its corner.
+        let mut box = ui::place_pixels{ rect = ui::Rect{ x = 7, y = 9, w = 51, h = 27 } }
+        box.fill = ACCENT
+        let el = ui::begin_element{ &ui, id, axis = ui::Axis::row, box }
+        let child = ui::begin_element{ &ui, id = inside, axis = ui::Axis::row, box = ui::Box{ width = ui::GROW, height = ui::GROW, .. } }
+        ui::end{ &ui, scope = child }
+        ui::end{ &ui, scope = el }
+        let flow = ui::begin_element{ &ui, id = sized, axis = ui::Axis::row, box = ui::Box{ width = ui::fix_pixels{ size = 17 }, height = ui::fix_pixels{ size = 5 }, fill = CONTROL, .. } }
+        ui::end{ &ui, scope = flow }
+        ui::end{ &ui, scope = panel }
+        ui::end_frame{ &ui }
+        if not is_same_rect{ r = find_rect{ ui, id }, x = 108, y = 62, w = 51, h = 27 } { exact = false }
+        if not is_same_rect{ r = find_rect{ ui, id = inside }, x = 108, y = 62, w = 51, h = 27 } { filled = false }
+        if not is_same_rect{ r = find_rect{ ui, id = sized }, x = 101, y = 53, w = 17, h = 5 } { fixed = false }
+        if not is_clean{ ui } { exact = false }
+    }
+    ui_test::expect{ &io, &t, ok = exact, what = "a placement in pixels lands on exactly those pixels at every scale" }
+    ui_test::expect{ &io, &t, ok = filled, what = "and its children are laid out in it" }
+    ui_test::expect{ &io, &t, ok = fixed, what = "a size in pixels is that many pixels at every scale" }
+
+    // A box with both placements: the pixel one wins. A pixel rectangle with a negative size has none.
+    start_frame{ &ui, scale = 1.5 }
+    let mut both = ui::place{ x = 500.0, y = 400.0, w = 90.0, h = 90.0 }
+    both.pixels = ui::Rect{ x = 3, y = 4, w = 5, h = 6 }
+    let a = ui::begin_element{ &ui, id, axis = ui::Axis::row, box = both }
+    ui::end{ &ui, scope = a }
+    let b = ui::begin_element{ &ui, id = inside, axis = ui::Axis::row, box = ui::place_pixels{ rect = ui::Rect{ x = 10, y = 20, w = -30, h = -1 } } }
+    ui::end{ &ui, scope = b }
+    ui::end_frame{ &ui }
+    ui_test::expect{ &io, &t, ok = is_same_rect{ r = find_rect{ ui, id }, x = 3, y = 4, w = 5, h = 6 }, what = "a box with a pixel placement and a logical one is placed by the pixels" }
+    ui_test::expect{ &io, &t, ok = is_same_rect{ r = find_rect{ ui, id = inside }, x = 10, y = 20, w = 0, h = 0 } and is_clean{ ui }, what = "a pixel placement of a negative size has no size" }
+
+    // A size in pixels is exact however large: a virtual list's spacer of ten million rows of 30
+    // pixels and one more pixel, in a column that is then exactly that high, to the pixel.
+    start_frame{ &ui, scale = 1.75 }
+    let column = ui::begin_element{ &ui, id, axis = ui::Axis::column, box = ui::Box{ .. } }
+    let spacer = ui::begin_element{ &ui, id = inside, axis = ui::Axis::row, box = ui::Box{ width = ui::fix_pixels{ size = 7 }, height = ui::fix_pixels{ size = 300000001 }, .. } }
+    ui::end{ &ui, scope = spacer }
+    let after = ui::begin_element{ &ui, id = sized, axis = ui::Axis::row, box = ui::Box{ width = ui::fix_pixels{ size = 3 }, height = ui::fix_pixels{ size = -4 }, .. } }
+    ui::end{ &ui, scope = after }
+    ui::end{ &ui, scope = column }
+    ui::end_frame{ &ui }
+    ui_test::expect{ &io, &t, ok = is_same_rect{ r = find_rect{ ui, id }, x = 0, y = 0, w = 7, h = 300000001 } and is_same_rect{ r = find_rect{ ui, id = sized }, x = 0, y = 300000001, w = 3, h = 0 } and is_clean{ ui },
+        what = "a size of three hundred million and one pixels is exactly that, and what follows it starts on the next pixel" }
+}

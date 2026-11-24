@@ -1,5 +1,5 @@
 == alignment: centre and end on both axes, in a row and in a column; grow leaves nothing to align
-frame 800x600 scale 1x1
+frame 800x600
 rect 20,20 300x100 fill=20232AFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
 rect 115,60 40x20 fill=4A90E2FF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
 rect 165,50 60x40 fill=30343EFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0

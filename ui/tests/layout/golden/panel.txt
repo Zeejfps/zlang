@@ -1,5 +1,5 @@
 == a panel at the centre of 800 by 600 with five placed controls
-frame 800x600 scale 1x1
+frame 800x600
 clip 1 200,150 400x300 round 200,150 400x300 r=8
 rect 200,150 400x300 fill=20232AFF radius=8,8,8,8 border=2,2,2,2 404552FF,404552FF,404552FF,404552FF clip=0
 text 220,166 font=0 size=16 E4E7EDFF clip=1 "Options"

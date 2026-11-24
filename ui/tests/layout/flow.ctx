@@ -20,7 +20,7 @@ fn grow_within { min: f32, max: f32 } -> ui::Size {
 }
 
 fn take_within { part: f32, min: f32, max: f32 } -> ui::Size {
-    return ui::Size{ kind = ui::SizeKind::part, value = part, min, max }
+    return ui::Size{ kind = ui::SizeKind::part, value = part, min, max, .. }
 }
 
 // An empty box in the flow, filled with `color` (CLEAR draws nothing).
@@ -33,7 +33,7 @@ fn add_cell { mut ui: ui::Ui, width: ui::Size, height: ui::Size, color: ui::Colo
 // grow child with something in it.
 fn add_holder { mut ui: ui::Ui, width: ui::Size, content: f32, color: ui::Color } {
     let el = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{ width, fill = color, .. } }
-    add_cell{ &ui, width = ui::fix{ px = content }, height = ui::fix{ px = 20.0 }, color = CLEAR }
+    add_cell{ &ui, width = ui::fix{ size = content }, height = ui::fix{ size = 20.0 }, color = CLEAR }
     ui::end{ &ui, scope = el }
 }
 
@@ -46,7 +46,7 @@ fn begin_at { mut ui: ui::Ui, x: f32, y: f32, axis: ui::Axis, box: ui::Box } -> 
 
 // A box of `w` by `h` with padding 10 and gap 10, filled: what most scenes lay their children in.
 fn frame_of { w: f32, h: f32 } -> ui::Box {
-    return ui::Box{ width = ui::fix{ px = w }, height = ui::fix{ px = h }, padding = pad_by{ all = 10.0 }, gap = 10.0, fill = PANEL, .. }
+    return ui::Box{ width = ui::fix{ size = w }, height = ui::fix{ size = h }, padding = pad_by{ all = 10.0 }, gap = 10.0, fill = PANEL, .. }
 }
 
 // ---- the scenes
@@ -66,7 +66,7 @@ fn frame_of { w: f32, h: f32 } -> ui::Box {
 //          50) and leaves the second at 120; the 30 still missing comes from the second: 150, 90,
 //          60 at x 30, 190 and 290.
 fn show_grow { mut ui: ui::Ui } {
-    let high = ui::fix{ px = 20.0 }
+    let high = ui::fix{ size = 20.0 }
 
     let a = begin_at{ &ui, x = 20.0, y = 20.0, axis = ui::Axis::row, box = frame_of{ w = 340.0, h = 40.0 } }
     add_cell{ &ui, width = ui::GROW, height = high, color = ACCENT }
@@ -81,36 +81,94 @@ fn show_grow { mut ui: ui::Ui } {
     ui::end{ &ui, scope = b }
 
     let c = begin_at{ &ui, x = 20.0, y = 140.0, axis = ui::Axis::row, box = frame_of{ w = 340.0, h = 40.0 } }
-    add_cell{ &ui, width = grow_within{ min = 150.0, max = 100000.0 }, height = high, color = ACCENT }
+    add_cell{ &ui, width = grow_within{ min = 150.0, max = ui::NO_LIMIT }, height = high, color = ACCENT }
     add_cell{ &ui, width = ui::GROW, height = high, color = CONTROL }
     add_cell{ &ui, width = ui::GROW, height = high, color = EDGE }
     ui::end{ &ui, scope = c }
 
     let d = begin_at{ &ui, x = 20.0, y = 200.0, axis = ui::Axis::row, box = frame_of{ w = 340.0, h = 40.0 } }
     let holder = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{ width = ui::GROW, fill = CONTROL, .. } }
-    add_cell{ &ui, width = ui::fix{ px = 40.0 }, height = high, color = WHITE }
+    add_cell{ &ui, width = ui::fix{ size = 40.0 }, height = high, color = WHITE }
     ui::end{ &ui, scope = holder }
     add_cell{ &ui, width = ui::GROW, height = high, color = EDGE }
-    add_cell{ &ui, width = ui::fix{ px = 60.0 }, height = high, color = ACCENT }
+    add_cell{ &ui, width = ui::fix{ size = 60.0 }, height = high, color = ACCENT }
     ui::end{ &ui, scope = d }
 
     let e = begin_at{ &ui, x = 20.0, y = 260.0, axis = ui::Axis::row, box = frame_of{ w = 340.0, h = 40.0 } }
-    add_holder{ &ui, width = grow_within{ min = 150.0, max = 100000.0 }, content = 200.0, color = ACCENT }
+    add_holder{ &ui, width = grow_within{ min = 150.0, max = ui::NO_LIMIT }, content = 200.0, color = ACCENT }
     add_holder{ &ui, width = ui::GROW, content = 200.0, color = CONTROL }
-    add_cell{ &ui, width = ui::fix{ px = 60.0 }, height = high, color = EDGE }
+    add_cell{ &ui, width = ui::fix{ size = 60.0 }, height = high, color = EDGE }
     ui::end{ &ui, scope = e }
 }
 
-// A row of 100 by 20 at (10, 10) with three children that grow both ways: 33.3333 wide each, at
-// x 10, 43.3333 and 76.6667, and 20 high. Nothing is rounded by the solver; at scale 1.5 emit puts
-// each edge on the device grid: 43.3333 * 1.5 = 65 and 76.6667 * 1.5 = 115 are whole pixels, so
-// the edges stay where they are.
+// A row of 100 by 20 at (10, 10) with three children that grow both ways, recorded at scale 1.5:
+// the row is 150 by 30 pixels at (15, 15), and 150 pixels among three is 50 each, at x 15, 65 and
+// 115, 30 high. (At scale 1 the same row is 100 pixels, which three do not divide: that is the
+// first row of `show_remainders`.)
 fn show_thirds { mut ui: ui::Ui } {
-    let row = begin_at{ &ui, x = 10.0, y = 10.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ px = 100.0 }, height = ui::fix{ px = 20.0 }, fill = PANEL, .. } }
+    let row = begin_at{ &ui, x = 10.0, y = 10.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ size = 100.0 }, height = ui::fix{ size = 20.0 }, fill = PANEL, .. } }
     add_cell{ &ui, width = ui::GROW, height = ui::GROW, color = ACCENT }
     add_cell{ &ui, width = ui::GROW, height = ui::GROW, color = CONTROL }
     add_cell{ &ui, width = ui::GROW, height = ui::GROW, color = EDGE }
     ui::end{ &ui, scope = row }
+}
+
+// A row of `w` by `h` at (10, `y`) with no padding and no gap, filled.
+fn begin_bare { mut ui: ui::Ui, y: f32, w: f32, h: f32 } -> ui::Scope {
+    return begin_at{ &ui, x = 10.0, y, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ size = w }, height = ui::fix{ size = h }, fill = PANEL, .. } }
+}
+
+// Where whole pixels do not divide: the cases that exist only because the layout is integers. At
+// scale 1, so a unit is a pixel. Every row is at x 10 and 20 high but the fourth.
+//
+//   y 10   100 pixels among three GROW: 33 each and 1 left over, which goes to the first:
+//          34, 33, 33 at x 10, 44 and 77. They fill the row exactly: 77 + 33 = 110.
+//   y 40   101 pixels among a GROW with max 30 and a GROW: a first share of 50 each and 1 over
+//          for the first would make it 51; it stops at 30, the second takes its 50, and the 21
+//          still left go to the second alone: 30 and 71, at x 10 and 40.
+//   y 70   three GROW boxes that each hold 40, in 100: 120 fitted, 20 missing. Each gives 6 and
+//          2 are still missing, which the LAST two give: 34, 33, 33 at x 10, 44 and 77, as growing
+//          left them at y 10. The first child is never the smaller one.
+//   y 100  a row of 101 by 21, centred both ways, with a child of 40 by 10: 61 is spare along it
+//          and half of it, rounded down, is 30: x 40. Across, 11 is spare: y 100 + 5 = 105. The odd
+//          pixel is left after the child, right and below.
+//   y 130  two children of take 0.5 in 101: floor(50.5) = 50 each, at x 10 and 60. The pixel that
+//          is left is nobody's: take rounds down and does not share.
+//   y 160  100 pixels among seven GROW: 14 each and 2 over for the first two: 15, 15, 14, 14, 14,
+//          14, 14, at x 10, 25, 40, 54, 68, 82 and 96.
+fn show_remainders { mut ui: ui::Ui } {
+    let a = begin_bare{ &ui, y = 10.0, w = 100.0, h = 20.0 }
+    add_cell{ &ui, width = ui::GROW, height = ui::GROW, color = ACCENT }
+    add_cell{ &ui, width = ui::GROW, height = ui::GROW, color = CONTROL }
+    add_cell{ &ui, width = ui::GROW, height = ui::GROW, color = EDGE }
+    ui::end{ &ui, scope = a }
+
+    let b = begin_bare{ &ui, y = 40.0, w = 101.0, h = 20.0 }
+    add_cell{ &ui, width = grow_within{ min = 0.0, max = 30.0 }, height = ui::GROW, color = ACCENT }
+    add_cell{ &ui, width = ui::GROW, height = ui::GROW, color = CONTROL }
+    ui::end{ &ui, scope = b }
+
+    let c = begin_bare{ &ui, y = 70.0, w = 100.0, h = 20.0 }
+    add_holder{ &ui, width = ui::GROW, content = 40.0, color = ACCENT }
+    add_holder{ &ui, width = ui::GROW, content = 40.0, color = CONTROL }
+    add_holder{ &ui, width = ui::GROW, content = 40.0, color = EDGE }
+    ui::end{ &ui, scope = c }
+
+    let mut centred = ui::Box{ width = ui::fix{ size = 101.0 }, height = ui::fix{ size = 21.0 }, fill = PANEL, .. }
+    centred.align_x = ui::Align::center
+    centred.align_y = ui::Align::center
+    let d = begin_at{ &ui, x = 10.0, y = 100.0, axis = ui::Axis::row, box = centred }
+    add_cell{ &ui, width = ui::fix{ size = 40.0 }, height = ui::fix{ size = 10.0 }, color = ACCENT }
+    ui::end{ &ui, scope = d }
+
+    let e = begin_bare{ &ui, y = 130.0, w = 101.0, h = 20.0 }
+    add_cell{ &ui, width = ui::take{ part = 0.5 }, height = ui::GROW, color = ACCENT }
+    add_cell{ &ui, width = ui::take{ part = 0.5 }, height = ui::GROW, color = CONTROL }
+    ui::end{ &ui, scope = e }
+
+    let f = begin_bare{ &ui, y = 160.0, w = 100.0, h = 20.0 }
+    for k in 0..7 { add_cell{ &ui, width = ui::GROW, height = ui::GROW, color = if k % 2 == 0 { ACCENT } else { CONTROL } } }
+    ui::end{ &ui, scope = f }
 }
 
 // `take`, a fraction of the parent's inner size less its gaps along the axis.
@@ -132,10 +190,10 @@ fn show_thirds { mut ui: ui::Ui } {
 //          whole width, 200, padding included; one of take 0.5 both ways at offset (0, 50) is
 //          100 by 50.
 fn show_take { mut ui: ui::Ui } {
-    let high = ui::fix{ px = 20.0 }
+    let high = ui::fix{ size = 20.0 }
 
     let a = begin_at{ &ui, x = 20.0, y = 20.0, axis = ui::Axis::row, box = frame_of{ w = 340.0, h = 40.0 } }
-    add_cell{ &ui, width = ui::fix{ px = 50.0 }, height = high, color = ACCENT }
+    add_cell{ &ui, width = ui::fix{ size = 50.0 }, height = high, color = ACCENT }
     add_cell{ &ui, width = ui::take{ part = 0.5 }, height = high, color = CONTROL }
     add_cell{ &ui, width = ui::take{ part = 0.25 }, height = high, color = EDGE }
     ui::end{ &ui, scope = a }
@@ -154,19 +212,19 @@ fn show_take { mut ui: ui::Ui } {
     ui::end{ &ui, scope = c }
 
     let d = begin_at{ &ui, x = 20.0, y = 280.0, axis = ui::Axis::row, box = tight }
-    add_cell{ &ui, width = take_within{ part = 0.1, min = 60.0, max = 100000.0 }, height = high, color = ACCENT }
+    add_cell{ &ui, width = take_within{ part = 0.1, min = 60.0, max = ui::NO_LIMIT }, height = high, color = ACCENT }
     add_cell{ &ui, width = take_within{ part = 0.9, min = 0.0, max = 100.0 }, height = high, color = CONTROL }
     add_cell{ &ui, width = ui::GROW, height = high, color = EDGE }
     ui::end{ &ui, scope = d }
 
     let e = begin_at{ &ui, x = 20.0, y = 340.0, axis = ui::Axis::row, box = ui::Box{ padding = pad_by{ all = 10.0 }, gap = 10.0, fill = PANEL, .. } }
-    add_cell{ &ui, width = ui::fix{ px = 100.0 }, height = high, color = ACCENT }
+    add_cell{ &ui, width = ui::fix{ size = 100.0 }, height = high, color = ACCENT }
     add_cell{ &ui, width = ui::take{ part = 0.5 }, height = high, color = CONTROL }
-    add_cell{ &ui, width = ui::fix{ px = 60.0 }, height = high, color = EDGE }
+    add_cell{ &ui, width = ui::fix{ size = 60.0 }, height = high, color = EDGE }
     ui::end{ &ui, scope = e }
 
     let f = begin_at{ &ui, x = 20.0, y = 400.0, axis = ui::Axis::column, box = frame_of{ w = 200.0, h = 100.0 } }
-    let over = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{ width = ui::GROW, height = ui::fix{ px = 10.0 }, fill = ACCENT, place = ui::Place{ .. }, .. } }
+    let over = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{ width = ui::GROW, height = ui::fix{ size = 10.0 }, fill = ACCENT, place = ui::Place{ .. }, .. } }
     ui::end{ &ui, scope = over }
     let half = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{ width = ui::take{ part = 0.5 }, height = ui::take{ part = 0.5 }, fill = CONTROL, place = ui::Place{ y = 50.0, .. }, .. } }
     ui::end{ &ui, scope = half }
@@ -197,10 +255,10 @@ fn begin_aligned { mut ui: ui::Ui, x: f32, y: f32, h: f32, axis: ui::Axis, align
 //   (340, 260)  a column whose children go to the end across it, with a child that grows across
 //               up to a max of 100: it is 100 wide and sits at the end, x 350 + 180 = 530.
 fn show_align { mut ui: ui::Ui } {
-    let small_w = ui::fix{ px = 40.0 }
-    let small_h = ui::fix{ px = 20.0 }
-    let large_w = ui::fix{ px = 60.0 }
-    let large_h = ui::fix{ px = 40.0 }
+    let small_w = ui::fix{ size = 40.0 }
+    let small_h = ui::fix{ size = 20.0 }
+    let large_w = ui::fix{ size = 60.0 }
+    let large_h = ui::fix{ size = 40.0 }
 
     let a = begin_aligned{ &ui, x = 20.0, y = 20.0, h = 100.0, axis = ui::Axis::row, align = ui::Align::center }
     add_cell{ &ui, width = small_w, height = small_h, color = ACCENT }
@@ -264,38 +322,38 @@ fn show_text { mut ui: ui::Ui } {
     let panel = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = ui::Box{ width = ui::Size{ max = 216.0, .. }, padding = pad_by{ all = 8.0 }, fill = PANEL, .. } }
     ui::add_text{ &ui, text = "The quick brown fox jumps over the lazy dog", style = wrapped, box = ui::Box{ .. } }
     ui::end{ &ui, scope = panel }
-    add_cell{ &ui, width = ui::fix{ px = 50.0 }, height = ui::fix{ px = 10.0 }, color = ACCENT }
+    add_cell{ &ui, width = ui::fix{ size = 50.0 }, height = ui::fix{ size = 10.0 }, color = ACCENT }
     ui::end{ &ui, scope = outer }
 
-    let row = begin_at{ &ui, x = 300.0, y = 20.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ px = 320.0 }, padding = pad_by{ all = 10.0 }, gap = 10.0, fill = PANEL, .. } }
-    add_cell{ &ui, width = ui::fix{ px = 100.0 }, height = ui::fix{ px = 20.0 }, color = ACCENT }
+    let row = begin_at{ &ui, x = 300.0, y = 20.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ size = 320.0 }, padding = pad_by{ all = 10.0 }, gap = 10.0, fill = PANEL, .. } }
+    add_cell{ &ui, width = ui::fix{ size = 100.0 }, height = ui::fix{ size = 20.0 }, color = ACCENT }
     let column = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = ui::Box{ width = ui::GROW, padding = pad_by{ all = 5.0 }, gap = 5.0, fill = CONTROL, .. } }
     ui::add_text{ &ui, text = "one two three four five six", style = wrapped, box = ui::Box{ .. } }
-    add_cell{ &ui, width = ui::fix{ px = 30.0 }, height = ui::fix{ px = 10.0 }, color = WHITE }
+    add_cell{ &ui, width = ui::fix{ size = 30.0 }, height = ui::fix{ size = 10.0 }, color = WHITE }
     ui::end{ &ui, scope = column }
     ui::end{ &ui, scope = row }
 
     ui::add_text{ &ui, text = "alpha beta\ngamma delta epsilon", style = ui::TextStyle{ wrap = true, align = ui::Align::end, .. },
-        box = ui::Box{ width = ui::fix{ px = 120.0 }, padding = pad_by{ all = 4.0 }, fill = TRACK, place = ui::Place{ x = 20.0, y = 120.0, .. }, .. } }
+        box = ui::Box{ width = ui::fix{ size = 120.0 }, padding = pad_by{ all = 4.0 }, fill = TRACK, place = ui::Place{ x = 20.0, y = 120.0, .. }, .. } }
 
-    let beside = begin_at{ &ui, x = 300.0, y = 120.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ px = 300.0 }, gap = 10.0, .. } }
+    let beside = begin_at{ &ui, x = 300.0, y = 120.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ size = 300.0 }, gap = 10.0, .. } }
     ui::add_text{ &ui, text = "aa bb cc dd ee ff", style = wrapped, box = ui::Box{ .. } }
-    add_cell{ &ui, width = ui::fix{ px = 200.0 }, height = ui::fix{ px = 20.0 }, color = ACCENT }
+    add_cell{ &ui, width = ui::fix{ size = 200.0 }, height = ui::fix{ size = 20.0 }, color = ACCENT }
     ui::end{ &ui, scope = beside }
 }
 
 // A row with gap 4 at (20, `y`), `w` wide, holding `text` and a cell of 30 by 16.
 fn show_label_row { mut ui: ui::Ui, y: f32, w: f32, text: []u8, overflow: ui::Overflow } {
-    let row = begin_at{ &ui, x = 20.0, y, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ px = w }, gap = 4.0, fill = PANEL, .. } }
+    let row = begin_at{ &ui, x = 20.0, y, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ size = w }, gap = 4.0, fill = PANEL, .. } }
     ui::add_text{ &ui, text, style = ui::TextStyle{ overflow, .. }, box = ui::Box{ .. } }
-    add_cell{ &ui, width = ui::fix{ px = 30.0 }, height = ui::fix{ px = 16.0 }, color = ACCENT }
+    add_cell{ &ui, width = ui::fix{ size = 30.0 }, height = ui::fix{ size = 16.0 }, color = ACCENT }
     ui::end{ &ui, scope = row }
 }
 
 // A text of fixed width `w` at (20, `y`) that is cut for its dots when it does not fit.
 fn show_cut_text { mut ui: ui::Ui, y: f32, w: f32, text: []u8, align: ui::Align } {
     ui::add_text{ &ui, text, style = ui::TextStyle{ overflow = ui::Overflow::ellipsis, align, .. },
-        box = ui::Box{ width = ui::fix{ px = w }, fill = TRACK, place = ui::Place{ x = 20.0, y, .. }, .. } }
+        box = ui::Box{ width = ui::fix{ size = w }, fill = TRACK, place = ui::Place{ x = 20.0, y, .. }, .. } }
 }
 
 // One line that does not fit. A text marked `Overflow::ellipsis` with no width of its own gives
@@ -318,7 +376,7 @@ fn show_ellipsis { mut ui: ui::Ui } {
     show_label_row{ &ui, y = 20.0, w = 100.0, text = "A long label here", overflow = ui::Overflow::ellipsis }
     show_label_row{ &ui, y = 50.0, w = 200.0, text = "A long label here", overflow = ui::Overflow::ellipsis }
 
-    let column = begin_at{ &ui, x = 20.0, y = 80.0, axis = ui::Axis::column, box = ui::Box{ width = ui::fix{ px = 80.0 }, padding = pad_by{ all = 4.0 }, fill = PANEL, .. } }
+    let column = begin_at{ &ui, x = 20.0, y = 80.0, axis = ui::Axis::column, box = ui::Box{ width = ui::fix{ size = 80.0 }, padding = pad_by{ all = 4.0 }, fill = PANEL, .. } }
     ui::add_text{ &ui, text = "Hello world", style = ui::TextStyle{ overflow = ui::Overflow::ellipsis, .. }, box = ui::Box{ .. } }
     ui::end{ &ui, scope = column }
 
@@ -347,9 +405,9 @@ fn show_overflow { mut ui: ui::Ui } {
     ended.align_x = ui::Align::end
     ended.align_y = ui::Align::end
     let a = begin_at{ &ui, x = 20.0, y = 20.0, axis = ui::Axis::row, box = ended }
-    add_cell{ &ui, width = ui::fix{ px = 100.0 }, height = ui::fix{ px = 20.0 }, color = ACCENT }
-    add_cell{ &ui, width = ui::fix{ px = 100.0 }, height = ui::fix{ px = 30.0 }, color = CONTROL }
-    add_cell{ &ui, width = ui::fix{ px = 100.0 }, height = ui::fix{ px = 20.0 }, color = EDGE }
+    add_cell{ &ui, width = ui::fix{ size = 100.0 }, height = ui::fix{ size = 20.0 }, color = ACCENT }
+    add_cell{ &ui, width = ui::fix{ size = 100.0 }, height = ui::fix{ size = 30.0 }, color = CONTROL }
+    add_cell{ &ui, width = ui::fix{ size = 100.0 }, height = ui::fix{ size = 20.0 }, color = EDGE }
     ui::end{ &ui, scope = a }
 
     let mut centred = frame_of{ w = 100.0, h = 60.0 }
@@ -357,21 +415,21 @@ fn show_overflow { mut ui: ui::Ui } {
     centred.align_x = ui::Align::center
     centred.align_y = ui::Align::center
     let b = begin_at{ &ui, x = 20.0, y = 100.0, axis = ui::Axis::column, box = centred }
-    add_cell{ &ui, width = ui::fix{ px = 120.0 }, height = ui::fix{ px = 30.0 }, color = ACCENT }
-    add_cell{ &ui, width = ui::fix{ px = 40.0 }, height = ui::fix{ px = 30.0 }, color = CONTROL }
-    add_cell{ &ui, width = ui::fix{ px = 40.0 }, height = ui::fix{ px = 30.0 }, color = EDGE }
+    add_cell{ &ui, width = ui::fix{ size = 120.0 }, height = ui::fix{ size = 30.0 }, color = ACCENT }
+    add_cell{ &ui, width = ui::fix{ size = 40.0 }, height = ui::fix{ size = 30.0 }, color = CONTROL }
+    add_cell{ &ui, width = ui::fix{ size = 40.0 }, height = ui::fix{ size = 30.0 }, color = EDGE }
     ui::end{ &ui, scope = b }
 
-    let none = ui::Box{ width = ui::fix{ px = 0.0 }, height = ui::fix{ px = 0.0 }, gap = 5.0, align_x = ui::Align::center, align_y = ui::Align::center, fill = PANEL, .. }
+    let none = ui::Box{ width = ui::fix{ size = 0.0 }, height = ui::fix{ size = 0.0 }, gap = 5.0, align_x = ui::Align::center, align_y = ui::Align::center, fill = PANEL, .. }
     let c = begin_at{ &ui, x = 300.0, y = 20.0, axis = ui::Axis::row, box = none }
-    add_cell{ &ui, width = ui::fix{ px = 20.0 }, height = ui::fix{ px = 20.0 }, color = ACCENT }
-    add_cell{ &ui, width = ui::fix{ px = 20.0 }, height = ui::fix{ px = 20.0 }, color = CONTROL }
+    add_cell{ &ui, width = ui::fix{ size = 20.0 }, height = ui::fix{ size = 20.0 }, color = ACCENT }
+    add_cell{ &ui, width = ui::fix{ size = 20.0 }, height = ui::fix{ size = 20.0 }, color = CONTROL }
     ui::end{ &ui, scope = c }
 
-    let d = begin_at{ &ui, x = 300.0, y = 100.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ px = 200.0 }, height = ui::fix{ px = 40.0 }, clip = true, fill = PANEL, .. } }
-    add_cell{ &ui, width = ui::fix{ px = 150.0 }, height = ui::fix{ px = 20.0 }, color = ACCENT }
-    add_holder{ &ui, width = grow_within{ min = 40.0, max = 100000.0 }, content = 100.0, color = CONTROL }
-    add_cell{ &ui, width = ui::fix{ px = 100.0 }, height = ui::fix{ px = 20.0 }, color = EDGE }
+    let d = begin_at{ &ui, x = 300.0, y = 100.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ size = 200.0 }, height = ui::fix{ size = 40.0 }, clip = true, fill = PANEL, .. } }
+    add_cell{ &ui, width = ui::fix{ size = 150.0 }, height = ui::fix{ size = 20.0 }, color = ACCENT }
+    add_holder{ &ui, width = grow_within{ min = 40.0, max = ui::NO_LIMIT }, content = 100.0, color = CONTROL }
+    add_cell{ &ui, width = ui::fix{ size = 100.0 }, height = ui::fix{ size = 20.0 }, color = EDGE }
     ui::end{ &ui, scope = d }
 }
 
@@ -387,23 +445,23 @@ fn show_overflow { mut ui: ui::Ui } {
 //   (20, 360)  a FIT row holding a paint of 200 by 5 and a child of 40 by 20: it is 40 by 20.
 fn show_placed { mut ui: ui::Ui } {
     let a = begin_at{ &ui, x = 20.0, y = 20.0, axis = ui::Axis::column, box = ui::Box{ padding = pad_by{ all = 10.0 }, gap = 5.0, fill = PANEL, .. } }
-    add_cell{ &ui, width = ui::fix{ px = 80.0 }, height = ui::fix{ px = 20.0 }, color = ACCENT }
+    add_cell{ &ui, width = ui::fix{ size = 80.0 }, height = ui::fix{ size = 20.0 }, color = ACCENT }
     let floating = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::row, box = place_filled{ x = 100.0, y = 0.0, w = 300.0, h = 200.0, color = EDGE } }
     ui::end{ &ui, scope = floating }
-    add_cell{ &ui, width = ui::fix{ px = 60.0 }, height = ui::fix{ px = 20.0 }, color = CONTROL }
+    add_cell{ &ui, width = ui::fix{ size = 60.0 }, height = ui::fix{ size = 20.0 }, color = CONTROL }
     ui::end{ &ui, scope = a }
 
-    let b = begin_at{ &ui, x = 20.0, y = 300.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ px = 300.0 }, height = ui::fix{ px = 40.0 }, gap = 10.0, fill = PANEL, .. } }
-    add_cell{ &ui, width = ui::GROW, height = ui::fix{ px = 20.0 }, color = ACCENT }
-    let corner = ui::Box{ width = ui::fix{ px = 50.0 }, height = ui::fix{ px = 50.0 }, fill = EDGE, place = ui::Place{ anchor_x = 1.0, anchor_y = 1.0, x = -50.0, y = -50.0 }, .. }
+    let b = begin_at{ &ui, x = 20.0, y = 300.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ size = 300.0 }, height = ui::fix{ size = 40.0 }, gap = 10.0, fill = PANEL, .. } }
+    add_cell{ &ui, width = ui::GROW, height = ui::fix{ size = 20.0 }, color = ACCENT }
+    let corner = ui::Box{ width = ui::fix{ size = 50.0 }, height = ui::fix{ size = 50.0 }, fill = EDGE, place = ui::Place{ anchor_x = 1.0, anchor_y = 1.0, x = -50.0, y = -50.0 }, .. }
     let pinned = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::row, box = corner }
     ui::end{ &ui, scope = pinned }
-    add_cell{ &ui, width = ui::GROW, height = ui::fix{ px = 20.0 }, color = CONTROL }
+    add_cell{ &ui, width = ui::GROW, height = ui::fix{ size = 20.0 }, color = CONTROL }
     ui::end{ &ui, scope = b }
 
     let c = begin_at{ &ui, x = 20.0, y = 360.0, axis = ui::Axis::row, box = ui::Box{ fill = PANEL, .. } }
-    ui::paint_rect{ &ui, rect = ui::Rect{ w = 200.0, h = 5.0, .. }, style = fill_with{ color = WHITE } }
-    add_cell{ &ui, width = ui::fix{ px = 40.0 }, height = ui::fix{ px = 20.0 }, color = ACCENT }
+    ui::paint_rect{ &ui, rect = scale_rect{ ui, x = 0.0, y = 0.0, w = 200.0, h = 5.0 }, style = fill_with{ color = WHITE } }
+    add_cell{ &ui, width = ui::fix{ size = 40.0 }, height = ui::fix{ size = 20.0 }, color = ACCENT }
     ui::end{ &ui, scope = c }
 }
 
@@ -425,21 +483,21 @@ fn show_placed { mut ui: ui::Ui } {
 fn show_nested { mut ui: ui::Ui } {
     let window = begin_at{ &ui, x = 20.0, y = 20.0, axis = ui::Axis::column, box = frame_of{ w = 400.0, h = 300.0 } }
 
-    let header = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{ width = ui::GROW, height = ui::fix{ px = 30.0 }, gap = 5.0, fill = CONTROL, .. } }
-    add_cell{ &ui, width = ui::fix{ px = 60.0 }, height = ui::GROW, color = ACCENT }
+    let header = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{ width = ui::GROW, height = ui::fix{ size = 30.0 }, gap = 5.0, fill = CONTROL, .. } }
+    add_cell{ &ui, width = ui::fix{ size = 60.0 }, height = ui::GROW, color = ACCENT }
     add_cell{ &ui, width = ui::GROW, height = ui::GROW, color = EDGE }
-    add_cell{ &ui, width = ui::fix{ px = 60.0 }, height = ui::GROW, color = ACCENT }
+    add_cell{ &ui, width = ui::fix{ size = 60.0 }, height = ui::GROW, color = ACCENT }
     ui::end{ &ui, scope = header }
 
     let body = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{ width = ui::GROW, height = ui::GROW, padding = pad_by{ all = 5.0 }, gap = 5.0, fill = TRACK, .. } }
-    add_cell{ &ui, width = ui::fix{ px = 100.0 }, height = ui::GROW, color = CONTROL }
+    add_cell{ &ui, width = ui::fix{ size = 100.0 }, height = ui::GROW, color = CONTROL }
     let pane = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = ui::Box{ width = ui::GROW, height = ui::GROW, padding = pad_by{ all = 5.0 }, gap = 5.0, fill = EDGE, .. } }
-    add_cell{ &ui, width = ui::GROW, height = ui::fix{ px = 40.0 }, color = ACCENT }
+    add_cell{ &ui, width = ui::GROW, height = ui::fix{ size = 40.0 }, color = ACCENT }
     add_cell{ &ui, width = ui::GROW, height = ui::GROW, color = WHITE }
     ui::end{ &ui, scope = pane }
     ui::end{ &ui, scope = body }
 
-    add_cell{ &ui, width = ui::GROW, height = ui::fix{ px = 20.0 }, color = CONTROL }
+    add_cell{ &ui, width = ui::GROW, height = ui::fix{ size = 20.0 }, color = CONTROL }
     ui::end{ &ui, scope = window }
 }
 
@@ -482,6 +540,9 @@ fn check_flow_goldens { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap:
         title = "grow: an equal split, a max with the rest shared again, a min above the share, content first, shrinking" }
     record_scene{ &io, &t, &sink, ui = &gui, scale = 1.5, show = show_thirds, title = "three grow children share 100 at scale 1.5" }
     ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "flow-grow", actual = ui_rec::get_text{ sink }, scratch, update }
+
+    check_scene{ &io, &fs, &t, &sink, ui = &gui, scratch, update, name = "flow-pixels", show = show_remainders,
+        title = "whole pixels: 100 among three, 101 with a cap, shrinking by 20 among three, an odd spare centred, take rounds down, 100 among seven" }
 
     check_scene{ &io, &fs, &t, &sink, ui = &gui, scratch, update, name = "flow-take", show = show_take,
         title = "take: beside fix, across the axis, past the whole, with min and max, in a fit parent, placed" }
@@ -529,14 +590,14 @@ fn check_flow_repeat { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena
         what = "the same flow tree in another Ui gives a byte-identical dump" }
 }
 
-// The solved rectangle of element `at`, as the layout left it: not snapped.
+// The solved rectangle of element `at`, as the layout left it: whole pixels, which is what emit draws.
 fn get_solved { ui: ui::Ui, at: usize } -> ui::Rect {
-    if at >= @as(usize, ui.tree.count) { return ui::Rect{ x = -1.0, y = -1.0, w = -1.0, h = -1.0 } }
+    if at >= @as(usize, ui.tree.count) { return ui::Rect{ x = -1, y = -1, w = -1, h = -1 } }
     let e = ui.tree.elements[at]
     return ui::Rect{ x = e.x, y = e.y, w = e.w, h = e.h }
 }
 
-fn has_solved { ui: ui::Ui, at: usize, x: f32, y: f32, w: f32, h: f32 } -> bool {
+fn has_solved { ui: ui::Ui, at: usize, x: i32, y: i32, w: i32, h: i32 } -> bool {
     return is_same_rect{ r = get_solved{ ui, at }, x, y, w, h }
 }
 
@@ -544,32 +605,32 @@ fn has_solved { ui: ui::Ui, at: usize, x: f32, y: f32, w: f32, h: f32 } -> bool 
 
 fn check_flow_rules { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
-    let high = ui::fix{ px = 20.0 }
+    let high = ui::fix{ size = 20.0 }
 
     // What a box's content comes to, which is what a scroll region measures its range by: a
     // column of 100 by 50 with padding 4 and gap 5 holding three children of 80 by 30 has content
     // of 80 by 30 * 3 + 2 * 5 = 100, and a scroll offset of 20 moves the children up by it.
     start_frame{ ui = &gui, scale = 1.0 }
-    let region = begin_at{ ui = &gui, x = 0.0, y = 0.0, axis = ui::Axis::column, box = ui::Box{ width = ui::fix{ px = 100.0 }, height = ui::fix{ px = 50.0 }, padding = pad_by{ all = 4.0 }, gap = 5.0, .. } }
-    gui.tree.elements[1].scroll_y = 20.0
-    add_cell{ ui = &gui, width = ui::fix{ px = 80.0 }, height = ui::fix{ px = 30.0 }, color = ACCENT }
-    add_cell{ ui = &gui, width = ui::fix{ px = 80.0 }, height = ui::fix{ px = 30.0 }, color = ACCENT }
-    add_cell{ ui = &gui, width = ui::fix{ px = 80.0 }, height = ui::fix{ px = 30.0 }, color = ACCENT }
+    let region = begin_at{ ui = &gui, x = 0.0, y = 0.0, axis = ui::Axis::column, box = ui::Box{ width = ui::fix{ size = 100.0 }, height = ui::fix{ size = 50.0 }, padding = pad_by{ all = 4.0 }, gap = 5.0, .. } }
+    gui.tree.elements[1].scroll_y = 20
+    add_cell{ ui = &gui, width = ui::fix{ size = 80.0 }, height = ui::fix{ size = 30.0 }, color = ACCENT }
+    add_cell{ ui = &gui, width = ui::fix{ size = 80.0 }, height = ui::fix{ size = 30.0 }, color = ACCENT }
+    add_cell{ ui = &gui, width = ui::fix{ size = 80.0 }, height = ui::fix{ size = 30.0 }, color = ACCENT }
     ui::end{ ui = &gui, scope = region }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and is_near{ a = gui.tree.elements[1].content_w, b = 80.0 } and is_near{ a = gui.tree.elements[1].content_h, b = 100.0 },
+    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and gui.tree.elements[1].content_w == 80 and gui.tree.elements[1].content_h == 100,
         what = "a box's content is what its flow children take: the largest across its axis, their sum and gaps along it" }
-    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 1, x = 0.0, y = 0.0, w = 100.0, h = 50.0 } and has_solved{ ui = gui, at = 2, x = 4.0, y = -16.0, w = 80.0, h = 30.0 } and
-        has_solved{ ui = gui, at = 4, x = 4.0, y = 54.0, w = 80.0, h = 30.0 }, what = "children that overflow keep their sizes and are moved by the scroll offset" }
+    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 1, x = 0, y = 0, w = 100, h = 50 } and has_solved{ ui = gui, at = 2, x = 4, y = -16, w = 80, h = 30 } and
+        has_solved{ ui = gui, at = 4, x = 4, y = 54, w = 80, h = 30 }, what = "children that overflow keep their sizes and are moved by the scroll offset" }
 
     // The content is of the final sizes: a grow child fitted to 200 and shrunk to 60 counts as 60.
     start_frame{ ui = &gui, scale = 1.0 }
-    let short = begin_at{ ui = &gui, x = 0.0, y = 0.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ px = 100.0 }, .. } }
+    let short = begin_at{ ui = &gui, x = 0.0, y = 0.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ size = 100.0 }, .. } }
     add_holder{ ui = &gui, width = ui::GROW, content = 200.0, color = ACCENT }
-    add_cell{ ui = &gui, width = ui::fix{ px = 40.0 }, height = high, color = ACCENT }
+    add_cell{ ui = &gui, width = ui::fix{ size = 40.0 }, height = high, color = ACCENT }
     ui::end{ ui = &gui, scope = short }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_near{ a = gui.tree.elements[2].w, b = 60.0 } and is_near{ a = gui.tree.elements[1].content_w, b = 100.0 } and is_near{ a = gui.tree.elements[2].content_w, b = 200.0 },
+    ui_test::expect{ &io, &t, ok = gui.tree.elements[2].w == 60 and gui.tree.elements[1].content_w == 100 and gui.tree.elements[2].content_w == 200,
         what = "a box's content counts a shrunk child at the size it ended with" }
 
     // What a scroll region is built on: a column of 200 by 100 with a header and a footer of 20
@@ -577,45 +638,45 @@ fn check_flow_rules { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     // fitted to its 300 of content, the column is 240 short, and the region alone gives that up:
     // it is 60 high, its rows keep their height and run past it, and its content is still 300.
     start_frame{ ui = &gui, scale = 1.0 }
-    let window = begin_at{ ui = &gui, x = 0.0, y = 0.0, axis = ui::Axis::column, box = ui::Box{ width = ui::fix{ px = 200.0 }, height = ui::fix{ px = 100.0 }, .. } }
+    let window = begin_at{ ui = &gui, x = 0.0, y = 0.0, axis = ui::Axis::column, box = ui::Box{ width = ui::fix{ size = 200.0 }, height = ui::fix{ size = 100.0 }, .. } }
     add_cell{ ui = &gui, width = ui::GROW, height = high, color = ACCENT }
     let rows = ui::begin_element{ ui = &gui, id = ui::NO_ID, axis = ui::Axis::column, box = ui::Box{ width = ui::GROW, height = ui::GROW, clip = true, .. } }
-    for k in 0..10 { add_cell{ ui = &gui, width = ui::GROW, height = ui::fix{ px = 30.0 }, color = if k % 2 == 0 { CONTROL } else { EDGE } } }
+    for k in 0..10 { add_cell{ ui = &gui, width = ui::GROW, height = ui::fix{ size = 30.0 }, color = if k % 2 == 0 { CONTROL } else { EDGE } } }
     ui::end{ ui = &gui, scope = rows }
     add_cell{ ui = &gui, width = ui::GROW, height = high, color = ACCENT }
     ui::end{ ui = &gui, scope = window }
     ui::end_frame{ ui = &gui }
     // Elements: 1 the column, 2 the header, 3 the region, 4 to 13 its rows, 14 the footer.
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and has_solved{ ui = gui, at = 3, x = 0.0, y = 20.0, w = 200.0, h = 60.0 } and has_solved{ ui = gui, at = 14, x = 0.0, y = 80.0, w = 200.0, h = 20.0 },
+    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and has_solved{ ui = gui, at = 3, x = 0, y = 20, w = 200, h = 60 } and has_solved{ ui = gui, at = 14, x = 0, y = 80, w = 200, h = 20 },
         what = "a grow region between a header and a footer gets the room they leave, whatever it holds" }
-    ui_test::expect{ &io, &t, ok = is_near{ a = gui.tree.elements[3].content_h, b = 300.0 } and is_near{ a = gui.tree.elements[3].content_w, b = 200.0 } and
-        has_solved{ ui = gui, at = 13, x = 0.0, y = 290.0, w = 200.0, h = 30.0 }, what = "its content keeps its size, runs past it and is measured whole" }
+    ui_test::expect{ &io, &t, ok = gui.tree.elements[3].content_h == 300 and gui.tree.elements[3].content_w == 200 and
+        has_solved{ ui = gui, at = 13, x = 0, y = 290, w = 200, h = 30 }, what = "its content keeps its size, runs past it and is measured whole" }
 
     // A FIT parent has no spare room. Along its axis a grow child keeps the size it was fitted
     // to; across it a grow child fills the parent, which is as large as the largest sibling.
     start_frame{ ui = &gui, scale = 1.0 }
     let fitted = begin_at{ ui = &gui, x = 0.0, y = 0.0, axis = ui::Axis::row, box = ui::Box{ .. } }
     add_holder{ ui = &gui, width = ui::GROW, content = 30.0, color = ACCENT }
-    add_cell{ ui = &gui, width = ui::fix{ px = 50.0 }, height = ui::fix{ px = 40.0 }, color = ACCENT }
-    add_cell{ ui = &gui, width = ui::fix{ px = 10.0 }, height = ui::GROW, color = ACCENT }
+    add_cell{ ui = &gui, width = ui::fix{ size = 50.0 }, height = ui::fix{ size = 40.0 }, color = ACCENT }
+    add_cell{ ui = &gui, width = ui::fix{ size = 10.0 }, height = ui::GROW, color = ACCENT }
     ui::end{ ui = &gui, scope = fitted }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 1, x = 0.0, y = 0.0, w = 90.0, h = 40.0 }, what = "a fit row is as wide as its children and as high as the highest" }
-    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 2, x = 0.0, y = 0.0, w = 30.0, h = 20.0 }, what = "a grow child along a fit parent's axis keeps its fitted size" }
-    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 5, x = 80.0, y = 0.0, w = 10.0, h = 40.0 }, what = "a grow child across a fit parent's axis fills it: as high as the highest sibling" }
+    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 1, x = 0, y = 0, w = 90, h = 40 }, what = "a fit row is as wide as its children and as high as the highest" }
+    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 2, x = 0, y = 0, w = 30, h = 20 }, what = "a grow child along a fit parent's axis keeps its fitted size" }
+    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 5, x = 80, y = 0, w = 10, h = 40 }, what = "a grow child across a fit parent's axis fills it: as high as the highest sibling" }
 
     // min wins over max, and a child held by its min takes no share.
     start_frame{ ui = &gui, scale = 1.0 }
-    let limits = begin_at{ ui = &gui, x = 0.0, y = 0.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ px = 300.0 }, .. } }
+    let limits = begin_at{ ui = &gui, x = 0.0, y = 0.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ size = 300.0 }, .. } }
     add_cell{ ui = &gui, width = grow_within{ min = 80.0, max = 40.0 }, height = high, color = ACCENT }
     add_cell{ ui = &gui, width = ui::GROW, height = high, color = ACCENT }
     add_cell{ ui = &gui, width = ui::Size{ min = 30.0, max = 10.0, .. }, height = high, color = ACCENT }
     add_cell{ ui = &gui, width = take_within{ part = 0.5, min = 20.0, max = 5.0 }, height = high, color = ACCENT }
     ui::end{ ui = &gui, scope = limits }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_near{ a = gui.tree.elements[2].w, b = 80.0 } and is_near{ a = gui.tree.elements[4].w, b = 30.0 } and is_near{ a = gui.tree.elements[5].w, b = 20.0 },
+    ui_test::expect{ &io, &t, ok = gui.tree.elements[2].w == 80 and gui.tree.elements[4].w == 30 and gui.tree.elements[5].w == 20,
         what = "a min larger than the max wins, for grow, fit and take" }
-    ui_test::expect{ &io, &t, ok = is_near{ a = gui.tree.elements[3].w, b = 170.0 } and is_near{ a = gui.tree.elements[5].x, b = 280.0 }, what = "and the grow child beside them takes all that is left" }
+    ui_test::expect{ &io, &t, ok = gui.tree.elements[3].w == 170 and gui.tree.elements[5].x == 280, what = "and the grow child beside them takes all that is left" }
 
     // A root stands in the surface as a placed child stands in its parent: GROW fills it, take
     // is a fraction of it. Its own children are laid out in it as in any element.
@@ -626,35 +687,57 @@ fn check_flow_rules { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     ui::end{ ui = &gui, scope = layer }
     let tip = ui::tree::open_element{ ui = &gui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{ padding = pad_by{ all = 3.0 }, place = ui::Place{ anchor_x = 1.0, x = -100.0, y = 40.0, .. }, .. },
         root = ui::tree::RootOpts{ order = ui::tree::BASE_ORDER + 2, .. }, on_end = null }
-    add_cell{ ui = &gui, width = ui::fix{ px = 50.0 }, height = high, color = ACCENT }
+    add_cell{ ui = &gui, width = ui::fix{ size = 50.0 }, height = high, color = ACCENT }
     ui::end{ ui = &gui, scope = tip }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and has_solved{ ui = gui, at = 1, x = 0.0, y = 0.0, w = 800.0, h = 300.0 }, what = "a root that grows fills the surface, and one that takes a part takes it of the surface" }
-    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 2, x = 10.0, y = 10.0, w = 780.0, h = 280.0 }, what = "a root's children are laid out inside it" }
-    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 3, x = 700.0, y = 40.0, w = 56.0, h = 26.0 }, what = "a fit root is sized by its content and stands at its anchor" }
+    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and has_solved{ ui = gui, at = 1, x = 0, y = 0, w = 800, h = 300 }, what = "a root that grows fills the surface, and one that takes a part takes it of the surface" }
+    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 2, x = 10, y = 10, w = 780, h = 280 }, what = "a root's children are laid out inside it" }
+    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 3, x = 700, y = 40, w = 56, h = 26 }, what = "a fit root is sized by its content and stands at its anchor" }
 
-    // More grow children than there are rounds of sharing, each with its own max: child k stops
-    // at 3 * k * k, the room is 20000, and all of it is given out.
+    // Many grow children, each with its own max: child k stops at 3 * k * k, the room is 20000,
+    // and all of it is given out, to the pixel. The first 14 stop at their caps, which add up to
+    // 3045, and the other 26 share the 16955 that are left: 652 each and 3 over for the first
+    // three of them, children 15, 16 and 17.
     let mut big = get_small{}
     big.cmds = 1024
     let mut many = make_ui{ &heap, cap = big } iferr { return }
     start_frame{ ui = &many, scale = 1.0 }
-    let wide = begin_at{ ui = &many, x = 0.0, y = 0.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ px = 20000.0 }, .. } }
+    let wide = begin_at{ ui = &many, x = 0.0, y = 0.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ size = 20000.0 }, .. } }
     for k in 1..41 {
         let stop = 3.0 * @as(f32, k * k)
         add_cell{ ui = &many, width = grow_within{ min = 0.0, max = stop }, height = high, color = ACCENT }
     }
     ui::end{ ui = &many, scope = wide }
     ui::end_frame{ ui = &many }
-    let mut total: f32 = 0.0
+    let mut total: i32 = 0
     let mut past = false
     for k in 1..41 {
         let w = many.tree.elements[@as(usize, k) + 1].w
         total = total + w
-        if w > 3.0 * @as(f32, k * k) + 0.001 { past = true }
+        if w > 3 * k * k { past = true }
     }
-    ui_test::expect{ &io, &t, ok = not past and ui::abs_f32{ x = total - 20000.0 } < 0.05, what = "forty grow children with forty different caps share all the room and none passes its cap" }
-    ui_test::expect{ &io, &t, ok = is_near{ a = many.tree.elements[2].w, b = 3.0 } and is_near{ a = many.tree.elements[13].w, b = 432.0 }, what = "the children with small caps stop at them" }
+    ui_test::expect{ &io, &t, ok = not past and total == 20000, what = "forty grow children with forty different caps share all the room, to the pixel, and none passes its cap" }
+    ui_test::expect{ &io, &t, ok = many.tree.elements[2].w == 3 and many.tree.elements[13].w == 432 and many.tree.elements[15].w == 588, what = "the children with small caps stop at them" }
+    ui_test::expect{ &io, &t, ok = many.tree.elements[16].w == 653 and many.tree.elements[18].w == 653 and many.tree.elements[19].w == 652 and many.tree.elements[41].w == 652,
+        what = "the children that did not stop all grew by the same amount, the pixels left over going to the first of them" }
+
+    // The integer rules, one at a time, read from the tree (the golden flow-pixels pins the same
+    // as shapes). 100 among three; 101 with a cap; shrinking 20 among three; an odd spare
+    // centred; take rounds down.
+    start_frame{ ui = &gui, scale = 1.0 }
+    show_remainders{ ui = &gui }
+    ui::end_frame{ ui = &gui }
+    // Elements: 1 the first row and 2 to 4 its children; 5 the second row, 6 and 7; 8 the third
+    // row, its holders 9, 11 and 13 (each with a cell inside); 15 the fourth row and 16 its
+    // child; 17 the fifth row, 18 and 19.
+    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and gui.tree.elements[2].w == 34 and gui.tree.elements[3].w == 33 and gui.tree.elements[4].w == 33,
+        what = "100 pixels among three grow children are 34, 33 and 33" }
+    ui_test::expect{ &io, &t, ok = gui.tree.elements[4].x + gui.tree.elements[4].w == gui.tree.elements[1].x + gui.tree.elements[1].w, what = "and they fill the row exactly" }
+    ui_test::expect{ &io, &t, ok = gui.tree.elements[6].w == 30 and gui.tree.elements[7].w == 71, what = "101 pixels among a grow child capped at 30 and another are 30 and 71" }
+    ui_test::expect{ &io, &t, ok = gui.tree.elements[9].w == 34 and gui.tree.elements[11].w == 33 and gui.tree.elements[13].w == 33,
+        what = "three grow children of 40 in 100 pixels give up 6, 7 and 7: the last ones give the odd pixels" }
+    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 16, x = 40, y = 105, w = 40, h = 10 }, what = "an odd spare is centred rounded down: 61 puts 30 before, 11 puts 5 above" }
+    ui_test::expect{ &io, &t, ok = gui.tree.elements[18].w == 50 and gui.tree.elements[19].w == 50 and gui.tree.elements[19].x == 60, what = "take 0.5 of 101 pixels is 50: a fraction rounds down" }
 }
 
 // ---- text between the width pass and the height pass
@@ -668,30 +751,30 @@ fn check_flow_text { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena }
     // 23 characters are 184 wide. In a row of 300 the column gets 300 - 100 = 200: one line. In a
     // row of 196 it gets 96, 12 characters a line: "aaa bbb ccc" and "ddd eee fff", two lines.
     start_frame{ ui = &gui, scale = 1.0 }
-    let roomy = begin_at{ ui = &gui, x = 0.0, y = 0.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ px = 300.0 }, .. } }
-    add_cell{ ui = &gui, width = ui::fix{ px = 100.0 }, height = ui::fix{ px = 10.0 }, color = ACCENT }
+    let roomy = begin_at{ ui = &gui, x = 0.0, y = 0.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ size = 300.0 }, .. } }
+    add_cell{ ui = &gui, width = ui::fix{ size = 100.0 }, height = ui::fix{ size = 10.0 }, color = ACCENT }
     let one = ui::begin_element{ ui = &gui, id = ui::NO_ID, axis = ui::Axis::column, box = ui::Box{ width = ui::GROW, .. } }
     ui::add_text{ ui = &gui, text = "aaa bbb ccc ddd eee fff", style = wrapped, box = ui::Box{ .. } }
     ui::end{ ui = &gui, scope = one }
     ui::end{ ui = &gui, scope = roomy }
-    let tight = begin_at{ ui = &gui, x = 0.0, y = 100.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ px = 196.0 }, .. } }
-    add_cell{ ui = &gui, width = ui::fix{ px = 100.0 }, height = ui::fix{ px = 10.0 }, color = ACCENT }
+    let tight = begin_at{ ui = &gui, x = 0.0, y = 100.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ size = 196.0 }, .. } }
+    add_cell{ ui = &gui, width = ui::fix{ size = 100.0 }, height = ui::fix{ size = 10.0 }, color = ACCENT }
     let two = ui::begin_element{ ui = &gui, id = ui::NO_ID, axis = ui::Axis::column, box = ui::Box{ width = ui::GROW, .. } }
     ui::add_text{ ui = &gui, text = "aaa bbb ccc ddd eee fff", style = wrapped, box = ui::Box{ .. } }
     ui::end{ ui = &gui, scope = two }
     ui::end{ ui = &gui, scope = tight }
     ui::end_frame{ ui = &gui }
     // Elements: 1 the first row, 2 its cell, 3 its column, 4 its text; 5 to 8 the second row's.
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and has_solved{ ui = gui, at = 4, x = 100.0, y = 0.0, w = 200.0, h = 16.0 } and gui.tree.elements[4].line_count == 1,
+    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and has_solved{ ui = gui, at = 4, x = 100, y = 0, w = 200, h = 16 } and gui.tree.elements[4].line_count == 1,
         what = "wrapped text in a grow column with room is one line" }
-    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 8, x = 100.0, y = 100.0, w = 96.0, h = 32.0 } and gui.tree.elements[8].line_count == 2,
+    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 8, x = 100, y = 100, w = 96, h = 32 } and gui.tree.elements[8].line_count == 2,
         what = "the same text in a column that sharing left narrower is wrapped at that width" }
-    ui_test::expect{ &io, &t, ok = is_near{ a = gui.tree.elements[1].h, b = 16.0 } and is_near{ a = gui.tree.elements[7].h, b = 32.0 } and is_near{ a = gui.tree.elements[5].h, b = 32.0 },
+    ui_test::expect{ &io, &t, ok = gui.tree.elements[1].h == 16 and gui.tree.elements[7].h == 32 and gui.tree.elements[5].h == 32,
         what = "and the column and the row are as high as the wrapped lines" }
     let lines = gui.layout.lines
     ui_test::expect{ &io, &t, ok = gui.layout.line_count == 3 and gui.tree.elements[8].first_line == 1 and lines[1].start == 0 and lines[1].end == 11 and lines[2].start == 12 and lines[2].end == 23 and
-        is_near{ a = lines[1].width, b = 88.0 }, what = "its lines are byte ranges of its own text, after the lines of the texts before it" }
-    ui_test::expect{ &io, &t, ok = is_near{ a = gui.tree.elements[8].content_h, b = 32.0 } and is_near{ a = gui.tree.elements[8].content_w, b = 184.0 },
+        lines[1].width == 88, what = "its lines are byte ranges of its own text, after the lines of the texts before it" }
+    ui_test::expect{ &io, &t, ok = gui.tree.elements[8].content_h == 32 and gui.tree.elements[8].content_w == 184,
         what = "a text's content is as high as its lines and as wide as its one line was measured" }
 
     // Wrapped text that holds a newline asks for its longest paragraph, not for all of it on one
@@ -701,17 +784,17 @@ fn check_flow_text { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena }
     ui::add_text{ ui = &gui, text = "ab\ncdefgh", style = wrapped, box = ui::Box{ .. } }
     ui::end{ ui = &gui, scope = around }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 1, x = 0.0, y = 0.0, w = 48.0, h = 32.0 } and gui.tree.elements[2].line_count == 2,
+    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 1, x = 0, y = 0, w = 48, h = 32 } and gui.tree.elements[2].line_count == 2,
         what = "a fit box around wrapped text with a newline is as wide as its longest paragraph" }
 
     // Text that neither wraps nor has dots keeps its width whatever its parent has, and is one
     // line: 14 characters and a newline, which has no width.
     start_frame{ ui = &gui, scale = 1.0 }
-    let narrow = begin_at{ ui = &gui, x = 0.0, y = 0.0, axis = ui::Axis::column, box = ui::Box{ width = ui::fix{ px = 40.0 }, .. } }
+    let narrow = begin_at{ ui = &gui, x = 0.0, y = 0.0, axis = ui::Axis::column, box = ui::Box{ width = ui::fix{ size = 40.0 }, .. } }
     ui::add_text{ ui = &gui, text = "plain text\nkept", style = ui::TextStyle{ .. }, box = ui::Box{ .. } }
     ui::end{ ui = &gui, scope = narrow }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 2, x = 0.0, y = 0.0, w = 112.0, h = 16.0 } and gui.tree.elements[2].line_count == 1 and not gui.tree.elements[2].dots,
+    ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 2, x = 0, y = 0, w = 112, h = 16 } and gui.tree.elements[2].line_count == 1 and not gui.tree.elements[2].dots,
         what = "text that does not wrap is one line of its own width" }
 
     // A line table too small: the lines that fit are laid out, the text that lost lines and the
@@ -720,7 +803,7 @@ fn check_flow_text { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena }
     cap.lines = 2
     let mut few = make_ui{ &heap, cap } iferr { return }
     start_frame{ ui = &few, scale = 1.0 }
-    let column = begin_at{ ui = &few, x = 0.0, y = 0.0, axis = ui::Axis::column, box = ui::Box{ width = ui::fix{ px = 64.0 }, .. } }
+    let column = begin_at{ ui = &few, x = 0.0, y = 0.0, axis = ui::Axis::column, box = ui::Box{ width = ui::fix{ size = 64.0 }, .. } }
     ui::add_text{ ui = &few, text = "aa bb cc dd ee ff gg hh", style = wrapped, box = ui::Box{ .. } }
     ui::add_text{ ui = &few, text = "x y", style = wrapped, box = ui::Box{ .. } }
     ui::add_text{ ui = &few, text = "z", style = ui::TextStyle{ .. }, box = ui::Box{ .. } }
@@ -729,7 +812,7 @@ fn check_flow_text { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena }
     ui_test::expect{ &io, &t, ok = few.tree.elements[2].line_count == 2 and few.tree.elements[3].line_count == 0 and few.tree.elements[4].line_count == 0 and few.layout.line_count == 2,
         what = "a full line table keeps the lines that fitted and gives the texts after it none" }
     ui_test::expect{ &io, &t, ok = few.stats.dropped == 3 and few.stats.problems == 1 and has_kept{ ui = few, kind = ui::ProblemKind::lines_full }, what = "each text that lost lines is counted once and the full table reported once" }
-    ui_test::expect{ &io, &t, ok = is_near{ a = few.tree.elements[2].h, b = 32.0 } and is_near{ a = few.tree.elements[3].h, b = 16.0 } and few.draw.count == 2, what = "what was laid out is drawn, and a text with no lines keeps the height of one" }
+    ui_test::expect{ &io, &t, ok = few.tree.elements[2].h == 32 and few.tree.elements[3].h == 16 and few.draw.count == 2, what = "what was laid out is drawn, and a text with no lines keeps the height of one" }
     ui::layout::solve{ ui = &few }
     ui::layout::solve{ ui = &few }
     ui_test::expect{ &io, &t, ok = few.stats.dropped == 3 and few.stats.problems == 1 and few.layout.line_count == 2, what = "solving the same frame again counts nothing twice" }
@@ -747,7 +830,7 @@ fn show_nest { mut ui: ui::Ui, depth: u32, grow: bool } {
         let scope = ui::begin_element{ &ui, id = ui::NO_ID, axis = if k % 2 == 0 { ui::Axis::row } else { ui::Axis::column }, box = ui::Box{ width = size, height = size, padding = pad_by{ all = 1.0 }, .. } }
         if k == 0 { outer = scope }
     }
-    add_cell{ &ui, width = ui::fix{ px = 10.0 }, height = ui::fix{ px = 10.0 }, color = ACCENT }
+    add_cell{ &ui, width = ui::fix{ size = 10.0 }, height = ui::fix{ size = 10.0 }, color = ACCENT }
     ui::end{ &ui, scope = outer }       // every box opened inside the first too
 }
 
@@ -763,26 +846,28 @@ fn check_flow_limits { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena
     show_nest{ ui = &deep, depth = 127, grow = true }
     ui::end_frame{ ui = &deep }
     ui_test::expect{ &io, &t, ok = is_clean{ ui = deep } and deep.stats.elements == 128, what = "127 boxes inside one another are recorded on a scope stack of 128" }
-    ui_test::expect{ &io, &t, ok = has_solved{ ui = deep, at = 1, x = 0.0, y = 0.0, w = 800.0, h = 600.0 } and has_solved{ ui = deep, at = 127, x = 126.0, y = 126.0, w = 548.0, h = 348.0 } and
-        has_solved{ ui = deep, at = 128, x = 127.0, y = 127.0, w = 10.0, h = 10.0 }, what = "growing sizes reach the innermost of 127 nested boxes" }
+    ui_test::expect{ &io, &t, ok = has_solved{ ui = deep, at = 1, x = 0, y = 0, w = 800, h = 600 } and has_solved{ ui = deep, at = 127, x = 126, y = 126, w = 548, h = 348 } and
+        has_solved{ ui = deep, at = 128, x = 127, y = 127, w = 10, h = 10 }, what = "growing sizes reach the innermost of 127 nested boxes" }
     start_frame{ ui = &deep, scale = 1.0 }
     show_nest{ ui = &deep, depth = 127, grow = false }
     ui::end_frame{ ui = &deep }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = deep } and has_solved{ ui = deep, at = 1, x = 0.0, y = 0.0, w = 264.0, h = 264.0 } and has_solved{ ui = deep, at = 127, x = 126.0, y = 126.0, w = 12.0, h = 12.0 },
+    ui_test::expect{ &io, &t, ok = is_clean{ ui = deep } and has_solved{ ui = deep, at = 1, x = 0, y = 0, w = 264, h = 264 } and has_solved{ ui = deep, at = 127, x = 126, y = 126, w = 12, h = 12 },
         what = "fitted sizes reach the outermost of 127 nested boxes" }
 
-    // Thousands of elements: a row of 800 holding 4000 grow children, 0.2 each, and a column of
-    // 600 holding 1000 grow rows of two children each, 0.6 high: 7002 elements. Where the last
-    // child ends is the sum of thousands of f32 positions, so it is checked to a quarter of a unit.
+    // Thousands of elements: a row of 800 pixels holding 4000 grow children, and a column of 600
+    // holding 1000 grow rows of two children each: 7002 elements. There are fewer pixels than
+    // children, so the share is 0 and the pixels left over, all of them, go one each to the first
+    // 800 children and the first 600 rows; the rest have no size and stand at the far edge. Sums
+    // of thousands of whole sizes are exact: the last child ends on the row's last pixel.
     let mut gui = make_ui{ &heap, cap = ui::Capacity{ .. } } iferr { return }
     start_frame{ ui = &gui, scale = 1.0 }
-    let row = begin_at{ ui = &gui, x = 0.0, y = 0.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ px = 800.0 }, height = ui::fix{ px = 20.0 }, .. } }
+    let row = begin_at{ ui = &gui, x = 0.0, y = 0.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ size = 800.0 }, height = ui::fix{ size = 20.0 }, .. } }
     for k in 0..4000 { add_cell{ ui = &gui, width = ui::GROW, height = ui::GROW, color = if k % 2 == 0 { ACCENT } else { CONTROL } } }
     ui::end{ ui = &gui, scope = row }
-    let column = begin_at{ ui = &gui, x = 0.0, y = 0.0, axis = ui::Axis::column, box = ui::Box{ width = ui::fix{ px = 800.0 }, height = ui::fix{ px = 600.0 }, .. } }
+    let column = begin_at{ ui = &gui, x = 0.0, y = 0.0, axis = ui::Axis::column, box = ui::Box{ width = ui::fix{ size = 800.0 }, height = ui::fix{ size = 600.0 }, .. } }
     for k in 0..1000 {
         let line = ui::begin_element{ ui = &gui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{ width = ui::GROW, height = ui::GROW, gap = if k % 2 == 0 { 2.0 } else { 0.0 }, .. } }
-        add_cell{ ui = &gui, width = ui::fix{ px = 100.0 }, height = ui::GROW, color = CLEAR }
+        add_cell{ ui = &gui, width = ui::fix{ size = 100.0 }, height = ui::GROW, color = CLEAR }
         add_cell{ ui = &gui, width = ui::GROW, height = ui::GROW, color = CLEAR }
         ui::end{ ui = &gui, scope = line }
     }
@@ -790,28 +875,32 @@ fn check_flow_limits { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena
     ui::end_frame{ ui = &gui }
     ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and gui.stats.elements == 7002, what = "a frame of 7002 elements is solved and emitted with nothing dropped" }
     let last = gui.tree.elements[4001]
-    ui_test::expect{ &io, &t, ok = ui::abs_f32{ x = gui.tree.elements[2].w - 0.2 } < 0.001 and ui::abs_f32{ x = last.x + last.w - 800.0 } < 0.25 and is_near{ a = last.h, b = 20.0 },
-        what = "4000 grow children share a row of 800 and end at its far edge" }
+    // Children 0 to 799 are elements 2 to 801, a pixel each; child 800, element 802, is the first with none.
+    ui_test::expect{ &io, &t, ok = gui.tree.elements[2].w == 1 and has_solved{ ui = gui, at = 801, x = 799, y = 0, w = 1, h = 20 } and has_solved{ ui = gui, at = 802, x = 800, y = 0, w = 0, h = 20 },
+        what = "4000 grow children share a row of 800 pixels: the first 800 get one each" }
+    ui_test::expect{ &io, &t, ok = last.x + last.w == 800 and last.h == 20, what = "and the last ends exactly at the row's far edge" }
     // The column is element 4002, its first row 4003 with children 4004 and 4005, its last row 7000.
-    ui_test::expect{ &io, &t, ok = ui::abs_f32{ x = gui.tree.elements[4003].h - 0.6 } < 0.001 and has_solved{ ui = gui, at = 4005, x = 102.0, y = 0.0, w = 698.0, h = 0.6 } and
-        ui::abs_f32{ x = gui.tree.elements[7000].y + gui.tree.elements[7000].h - 600.0 } < 0.25, what = "1000 grow rows share a column of 600, each with its own children laid out" }
+    // Row 599 is element 5800, the last with a pixel; row 600 is element 5803.
+    ui_test::expect{ &io, &t, ok = gui.tree.elements[4003].h == 1 and has_solved{ ui = gui, at = 4005, x = 102, y = 0, w = 698, h = 1 } and
+        has_solved{ ui = gui, at = 5800, x = 0, y = 599, w = 800, h = 1 } and has_solved{ ui = gui, at = 5803, x = 0, y = 600, w = 800, h = 0 } and
+        gui.tree.elements[7000].y + gui.tree.elements[7000].h == 600, what = "1000 grow rows share a column of 600 pixels, each with its own children laid out" }
 
     // A surface of no size: everything that grows or takes is nothing, and what is fixed stays.
-    ui::begin_frame{ ui = &gui, frame = ui::FrameInfo{ width = 0.0, height = 0.0, pixel_width = 0.0, pixel_height = 0.0, dt = 0.0 } }
+    ui::begin_frame{ ui = &gui, frame = ui::FrameInfo{ width = 0, height = 0, scale = 1.0, dt = 0.0 } }
     let lost = ui::begin_element{ ui = &gui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{ width = ui::GROW, height = ui::take{ part = 0.5 }, padding = pad_by{ all = 10.0 }, gap = 4.0, .. } }
     add_cell{ ui = &gui, width = ui::GROW, height = ui::GROW, color = ACCENT }
-    add_cell{ ui = &gui, width = ui::take{ part = 0.5 }, height = ui::fix{ px = 7.0 }, color = ACCENT }
+    add_cell{ ui = &gui, width = ui::take{ part = 0.5 }, height = ui::fix{ size = 7.0 }, color = ACCENT }
     ui::add_text{ ui = &gui, text = "no room at all", style = ui::TextStyle{ wrap = true, .. }, box = ui::Box{ .. } }
     ui::add_text{ ui = &gui, text = "no room at all", style = ui::TextStyle{ overflow = ui::Overflow::ellipsis, .. }, box = ui::Box{ .. } }
     ui::end{ ui = &gui, scope = lost }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and has_solved{ ui = gui, at = 1, x = 0.0, y = 0.0, w = 0.0, h = 0.0 } and has_solved{ ui = gui, at = 2, x = 10.0, y = 10.0, w = 0.0, h = 0.0 } and
-        has_solved{ ui = gui, at = 3, x = 14.0, y = 10.0, w = 0.0, h = 7.0 }, what = "on a surface of no size what grows or takes is nothing, without a problem" }
+    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and has_solved{ ui = gui, at = 1, x = 0, y = 0, w = 0, h = 0 } and has_solved{ ui = gui, at = 2, x = 10, y = 10, w = 0, h = 0 } and
+        has_solved{ ui = gui, at = 3, x = 14, y = 10, w = 0, h = 7 }, what = "on a surface of no size what grows or takes is nothing, without a problem" }
     // The wrapped text has no width, so every line is one character: the 11 that are not the
     // spaces the lines break at.
-    ui_test::expect{ &io, &t, ok = is_near{ a = gui.tree.elements[4].w, b = 0.0 } and gui.tree.elements[4].line_count == 11 and is_near{ a = gui.tree.elements[4].h, b = 176.0 },
+    ui_test::expect{ &io, &t, ok = gui.tree.elements[4].w == 0 and gui.tree.elements[4].line_count == 11 and gui.tree.elements[4].h == 176,
         what = "wrapped text with no width is a character a line, and still ends" }
-    ui_test::expect{ &io, &t, ok = is_near{ a = gui.tree.elements[5].w, b = 0.0 } and gui.tree.elements[5].line_count == 1 and gui.layout.lines[@as(usize, gui.tree.elements[5].first_line)].end == 0,
+    ui_test::expect{ &io, &t, ok = gui.tree.elements[5].w == 0 and gui.tree.elements[5].line_count == 1 and gui.layout.lines[@as(usize, gui.tree.elements[5].first_line)].end == 0,
         what = "a line with dots and no width keeps nothing of its text" }
 }
 
@@ -854,7 +943,7 @@ fn roll_size { mut rng: Rng, odd: ?Odd } -> ui::Size {
     if kind < 3 {
         size = ui::GROW
     } else if kind < 6 {
-        size = ui::fix{ px = roll_f32{ &rng, below = 120, odd } }
+        size = ui::fix{ size = roll_f32{ &rng, below = 120, odd } }
     } else if kind < 8 {
         // A part from 0 to 1 in eighths; the odd trees also ask for more than the whole.
         size = ui::take{ part = roll_f32{ &rng, below = 9, odd } / 8.0 }
@@ -924,7 +1013,7 @@ fn show_random { mut ui: ui::Ui, seed: u32, odd: ?Odd } {
 }
 
 // What a solve left in an element.
-struct Shot { x: f32 = 0.0, y: f32 = 0.0, w: f32 = 0.0, h: f32 = 0.0, content_w: f32 = 0.0, content_h: f32 = 0.0, first_line: u32 = 0, line_count: u32 = 0, dots: bool = false }
+struct Shot { x: i32 = 0, y: i32 = 0, w: i32 = 0, h: i32 = 0, content_w: i32 = 0, content_h: i32 = 0, first_line: u32 = 0, line_count: u32 = 0, dots: bool = false }
 
 fn take_shots { ui: ui::Ui, shots: []mut Shot } {
     for i in 0..@as(usize, ui.tree.count) {
@@ -956,29 +1045,38 @@ struct Faults {
     placed: u32 = 0, content: u32 = 0, lines: u32 = 0,
 }
 
-// Two numbers the rules take as equal: sizes here run to a few hundred, where an f32 is good to
-// far less than this.
-const NEAR: f32 = 0.01
-
-fn is_close { a: f32, b: f32 } -> bool {
-    return ui::abs_f32{ x = a - b } < NEAR
-}
-
 // Counts a broken rule and says where the first few were.
 fn note_fault { mut io: Io, mut count: u32, seed: u32, at: usize, what: []u8 } {
     count = count + 1
     if count <= 3 { _ = @fmt(&io, "  seed {} element {}: {}\n", seed, at, what) }
 }
 
-// `v` held by the limits of `size`, as the solver holds it.
-fn hold_within { size: ui::Size, v: f32 } -> f32 {
-    return ui::layout::hold_size{ v = ui::clamp_f32{ v, lo = size.min, hi = size.max } }
+// The rules below are checked in whole pixels and exactly: the layout is integer arithmetic, so
+// there is no tolerance to allow. They are worked out here from the tree's own lengths (already
+// pixels, as tree.ctx converted them), not by calling the solver's steps.
+
+// `v` held by the limits of `size`: between its `min` and `max`, `min` winning, never negative.
+fn hold_within { size: ui::tree::Extent, v: i64 } -> i32 {
+    let top = if size.max < size.min { size.min } else { size.max }
+    let mut held = v
+    if held > @as(i64, top) { held = @as(i64, top) }
+    if held < @as(i64, size.min) { held = @as(i64, size.min) }
+    if held < 0 { held = 0 }
+    return ui::hold_pixels{ v = held }
 }
 
 // Whether `v` is a size `size` allows: its value when fixed, otherwise between its min and max.
-fn is_allowed { size: ui::Size, v: f32 } -> bool {
-    if size.kind == ui::SizeKind::fixed { return is_close{ a = v, b = ui::layout::hold_size{ v = size.value } } }
-    return v >= size.min - NEAR and v <= ui::pick_max_f32{ a = size.min, b = size.max } + NEAR
+fn is_allowed { size: ui::tree::Extent, v: i32 } -> bool {
+    if size.kind == ui::SizeKind::fixed { return v == size.value }
+    return v >= size.min and v <= ui::pick_max_i32{ a = size.min, b = size.max }
+}
+
+// How much of `spare` pixels lies before content aligned by `align`: none at the start, half of
+// it rounded down at the centre, all of it at the end; nothing when no room is spare.
+fn lead_of { spare: i64, align: ui::Align } -> i64 {
+    if spare <= 0 { return 0 }
+    if align == ui::Align::center { return spare / 2 }
+    return if align == ui::Align::end { spare } else { 0 }
 }
 
 // The rules for one parent's children along one axis: x and widths when `wide`.
@@ -986,14 +1084,16 @@ fn check_children { mut io: Io, ui: ui::Ui, seed: u32, at: usize, wide: bool, mu
     let p = ui.tree.elements[at]
     let main = (p.axis == ui::Axis::row) == wide
     let outer = if wide { p.w } else { p.h }
-    let inner = ui::layout::hold_size{ v = outer - (if wide { p.padding.left + p.padding.right } else { p.padding.top + p.padding.bottom }) }
-    let start = if wide { p.x + p.padding.left } else { p.y + p.padding.top }
-    let factor = ui::layout::get_factor{ align = if wide { p.align_x } else { p.align_y } }
+    let padding: i64 = if wide { @as(i64, p.padding.left) + @as(i64, p.padding.right) } else { @as(i64, p.padding.top) + @as(i64, p.padding.bottom) }
+    let inner: i64 = if @as(i64, outer) > padding { @as(i64, outer) - padding } else { 0 }
+    let start: i64 = if wide { @as(i64, p.x) + @as(i64, p.padding.left) } else { @as(i64, p.y) + @as(i64, p.padding.top) }
+    let origin: i64 = if wide { @as(i64, p.x) } else { @as(i64, p.y) }
+    let align = if wide { p.align_x } else { p.align_y }
 
     // What the flow children take.
-    let mut sum: f32 = 0.0
-    let mut gaps: f32 = 0.0
-    let mut largest: f32 = 0.0
+    let mut sum: i64 = 0
+    let mut gaps: i64 = 0
+    let mut largest: i32 = 0
     let mut any = false
     let mut c = p.first_child
     while c != ui::tree::NONE {
@@ -1001,19 +1101,21 @@ fn check_children { mut io: Io, ui: ui::Ui, seed: u32, at: usize, wide: bool, mu
         c = child.next
         if not ui::layout::is_flow{ e = child } { continue }
         let v = if wide { child.w } else { child.h }
-        sum = sum + v
-        largest = ui::pick_max_f32{ a = largest, b = v }
-        if any { gaps = gaps + p.gap }
+        sum = sum + @as(i64, v)
+        if v > largest { largest = v }
+        if any { gaps = gaps + @as(i64, p.gap) }
         any = true
     }
     let taken = sum + gaps
     // A box's content is what its flow children take.
-    if not is_close{ a = if wide { p.content_w } else { p.content_h }, b = if main { taken } else { largest } } {
+    let content = @as(i64, if wide { p.content_w } else { p.content_h })
+    let want_content: i64 = if main { (if taken > 0 { taken } else { 0 }) } else { @as(i64, largest) }
+    if content != want_content {
         note_fault{ &io, count = &faults.content, seed, at, what = "the content is not what the flow children take" }
     }
 
-    let room = if main { ui::layout::hold_size{ v = inner - gaps } } else { inner }
-    let mut cursor = start + ui::pick_max_f32{ a = 0.0, b = inner - taken } * factor
+    let room: i64 = if main { (if inner > gaps { inner - gaps } else { 0 }) } else { inner }
+    let mut cursor = start + lead_of{ spare = inner - taken, align }
     c = p.first_child
     while c != ui::tree::NONE {
         let index = @as(usize, c)
@@ -1022,47 +1124,49 @@ fn check_children { mut io: Io, ui: ui::Ui, seed: u32, at: usize, wide: bool, mu
         if child.kind == ui::tree::Kind::paint { continue }
         let size = ui::layout::get_size{ e = child, wide }
         let v = if wide { child.w } else { child.h }
-        let pos = if wide { child.x } else { child.y }
+        let pos = @as(i64, if wide { child.x } else { child.y })
 
         if child.placed {
-            // At its anchor; a part of the parent's whole size, or all of it when it grows.
-            let want = if wide { p.x + p.w * child.anchor_x + child.offset_x } else { p.y + p.h * child.anchor_y + child.offset_y }
-            let mut ok = is_close{ a = pos, b = want }
-            if size.kind == ui::SizeKind::part { ok = ok and is_close{ a = v, b = hold_within{ size, v = outer * size.value } } }
-            if size.kind == ui::SizeKind::grow { ok = ok and is_close{ a = v, b = hold_within{ size, v = outer } } }
+            // At its anchor, the fraction of the parent rounded down; a part of the parent's
+            // whole size, rounded down, or all of it when it grows.
+            let anchor = if wide { child.anchor_x } else { child.anchor_y }
+            let offset = if wide { child.offset_x } else { child.offset_y }
+            let want = origin + @as(i64, ui::floor_pixels{ v = @as(f32, outer) * anchor }) + @as(i64, offset)
+            let mut ok = pos == want
+            if size.kind == ui::SizeKind::part { ok = ok and v == hold_within{ size, v = @as(i64, ui::floor_pixels{ v = @as(f32, outer) * size.part }) } }
+            if size.kind == ui::SizeKind::grow { ok = ok and v == hold_within{ size, v = @as(i64, outer) } }
             if not ok { note_fault{ &io, count = &faults.placed, seed, at = index, what = "a placed child is not at its anchor with its part of the parent" } }
             continue
         }
 
-        if size.kind == ui::SizeKind::part and not is_close{ a = v, b = hold_within{ size, v = room * size.value } } {
-            note_fault{ &io, count = &faults.shared, seed, at = index, what = "a take child is not its part of the parent's room" }
+        if size.kind == ui::SizeKind::part and v != hold_within{ size, v = @as(i64, ui::floor_pixels{ v = @as(f32, room) * size.part }) } {
+            note_fault{ &io, count = &faults.shared, seed, at = index, what = "a take child is not its part of the parent's room, rounded down" }
         }
         if main {
             // One after another from the aligned start, exactly the gap apart: none overlap.
-            if not is_close{ a = pos, b = cursor } { note_fault{ &io, count = &faults.along, seed, at = index, what = "a child does not follow the one before it by its size and the gap" } }
-            cursor = cursor + v + p.gap
-            // While room is spare every grow child is at its max; while it is short, at its min.
+            if pos != cursor { note_fault{ &io, count = &faults.along, seed, at = index, what = "a child does not follow the one before it by its size and the gap" } }
+            cursor = cursor + @as(i64, v) + @as(i64, p.gap)
+            // While a single pixel of room is spare every grow child is at its max; while a
+            // single pixel is missing, every one is at its min.
             if size.kind == ui::SizeKind::grow {
-                if taken < inner - 0.05 and v < size.max - NEAR { note_fault{ &io, count = &faults.filled, seed, at = index, what = "room is spare and a grow child below its max did not take it" } }
-                if taken > inner + 0.05 and v > ui::pick_max_f32{ a = size.min, b = 0.0 } + NEAR {
-                    note_fault{ &io, count = &faults.filled, seed, at = index, what = "room is short and a grow child above its min did not give it" }
-                }
+                if taken < inner and v < size.max { note_fault{ &io, count = &faults.filled, seed, at = index, what = "room is spare and a grow child below its max did not take it" } }
+                if taken > inner and v > size.min { note_fault{ &io, count = &faults.filled, seed, at = index, what = "room is short and a grow child above its min did not give it" } }
             }
         } else {
-            if size.kind == ui::SizeKind::grow and not is_close{ a = v, b = hold_within{ size, v = inner } } {
+            if size.kind == ui::SizeKind::grow and v != hold_within{ size, v = inner } {
                 note_fault{ &io, count = &faults.shared, seed, at = index, what = "a grow child does not fill the parent across its axis" }
             }
-            if v <= inner + NEAR {
+            if @as(i64, v) <= inner {
                 // Inside the padding box, where the alignment puts it.
-                let inside = pos >= start - NEAR and pos + v <= start + inner + NEAR
-                if not inside or not is_close{ a = pos, b = start + ui::pick_max_f32{ a = 0.0, b = inner - v } * factor } {
+                let inside = pos >= start and pos + @as(i64, v) <= start + inner
+                if not inside or pos != start + lead_of{ spare = inner - @as(i64, v), align } {
                     note_fault{ &io, count = &faults.across, seed, at = index, what = "a child that fits is not inside the padding box at its alignment" }
                 }
             } else {
                 // Larger than the padding box: only by a size of its own (fixed, fitted to its
                 // content, or its min), and then from the start edge.
-                let own = size.kind == ui::SizeKind::fixed or size.kind == ui::SizeKind::fit or is_close{ a = v, b = size.min }
-                if not own or not is_close{ a = pos, b = start } {
+                let own = size.kind == ui::SizeKind::fixed or size.kind == ui::SizeKind::fit or v == size.min
+                if not own or pos != start {
                     note_fault{ &io, count = &faults.across, seed, at = index, what = "a child overflows across the axis without a size of its own, or not from the start edge" }
                 }
             }
@@ -1073,10 +1177,17 @@ fn check_children { mut io: Io, ui: ui::Ui, seed: u32, at: usize, wide: bool, mu
 // The rules for a text element's lines.
 fn check_text { mut io: Io, ui: ui::Ui, seed: u32, at: usize, mut faults: Faults } {
     let e = ui.tree.elements[at]
-    let inner = ui::layout::hold_size{ v = e.w - e.padding.left - e.padding.right }
+    let padding = @as(i64, e.padding.left) + @as(i64, e.padding.right)
+    let inner: i32 = if @as(i64, e.w) > padding { ui::hold_pixels{ v = @as(i64, e.w) - padding } } else { 0 }
+    // The test font at this text's pixel size: its magnification is a whole number, so a
+    // character is 8 times it wide and a line 16 times it high.
+    let mut scale: i32 = 1
+    if let def = ui::draw::get_font{ list = ui.draw, font = e.font } { scale = ui::round_pixels{ v = ui::get_font_scale{ font = def, size = e.text_size } } }
+    let wide = 8 * scale
+    let high = 16 * scale
     let first = @as(usize, e.first_line)
     let count = @as(usize, e.line_count)
-    let mut ok = count >= 1 and first + count <= @as(usize, ui.layout.line_count)
+    let mut ok = count >= 1 and first + count <= @as(usize, ui.layout.line_count) and e.line_height == high
     if ok {
         let lines = ui.layout.lines[first..first + count]
         ok = lines[0].start == 0
@@ -1091,28 +1202,29 @@ fn check_text { mut io: Io, ui: ui::Ui, seed: u32, at: usize, mut faults: Faults
                     ok = false
                     break
                 }
-                let mut hung: f32 = 0.0
+                let mut hung: i32 = 0
                 let mut end = @as(usize, line.end)
                 while end > @as(usize, line.start) and text[end - 1] == ' ' {
-                    hung = hung + 8.0
+                    hung = hung + wide
                     end = end - 1
                 }
-                if line.width > ui::pick_max_f32{ a = inner, b = 8.0 } + hung + NEAR { ok = false }
+                if line.width > ui::pick_max_i32{ a = inner, b = wide } + hung { ok = false }
                 if k > 0 and line.start < lines[k - 1].end { ok = false }
             }
             if e.height.kind == ui::SizeKind::fit {
-                let want = hold_within{ size = e.height, v = 16.0 * @as(f32, e.line_count) + ui::layout::hold_size{ v = e.padding.top + e.padding.bottom } }
-                ok = ok and is_close{ a = e.h, b = want }
+                let want = hold_within{ size = e.height, v = @as(i64, high) * @as(i64, e.line_count) + @as(i64, e.padding.top) + @as(i64, e.padding.bottom) }
+                ok = ok and e.h == want
             }
         } else {
             ok = ok and count == 1
             if e.dots {
-                ok = ok and e.overflow == ui::Overflow::ellipsis and lines[0].end < e.text.len and lines[0].width <= inner + NEAR
+                ok = ok and e.overflow == ui::Overflow::ellipsis and lines[0].end < e.text.len and lines[0].width <= inner
             } else if lines[0].end != e.text.len {
                 // Cut to nothing: only when not even the dots fit.
-                ok = ok and e.overflow == ui::Overflow::ellipsis and lines[0].end == 0 and inner < 24.0 + NEAR
+                ok = ok and e.overflow == ui::Overflow::ellipsis and lines[0].end == 0 and inner < 3 * wide
             } else {
-                ok = ok and (e.overflow == ui::Overflow::clip or e.content_w <= inner + 0.5 + NEAR)
+                // Whole: it was not to be cut, or it is no wider than its room, to the pixel.
+                ok = ok and (e.overflow == ui::Overflow::clip or e.content_w <= inner)
             }
         }
     }
@@ -1124,8 +1236,9 @@ fn check_tree { mut io: Io, ui: ui::Ui, seed: u32, mut faults: Faults } {
     for at in 0..@as(usize, ui.tree.count) {
         let e = ui.tree.elements[at]
         if e.kind == ui::tree::Kind::paint { continue }
-        let sized = e.w >= 0.0 and e.w <= 1000000000.0 and e.h >= 0.0 and e.h <= 1000000000.0
-        if not sized or e.x != e.x or e.y != e.y { note_fault{ &io, count = &faults.sizes, seed, at, what = "a size or a position is not a number" } }
+        let sized = e.w >= 0 and e.w <= ui::MAX_PIXELS and e.h >= 0 and e.h <= ui::MAX_PIXELS
+        let placed = e.x >= -ui::MAX_PIXELS and e.x <= ui::MAX_PIXELS and e.y >= -ui::MAX_PIXELS and e.y <= ui::MAX_PIXELS
+        if not sized or not placed { note_fault{ &io, count = &faults.sizes, seed, at, what = "a size or a position is out of range" } }
         if not is_allowed{ size = ui::layout::get_size{ e, wide = true }, v = e.w } or not is_allowed{ size = ui::layout::get_size{ e, wide = false }, v = e.h } {
             note_fault{ &io, count = &faults.limits, seed, at, what = "a size is outside its min and max, or is not its fixed value" }
         }
@@ -1144,7 +1257,15 @@ fn get_roomy { } -> ui::Capacity {
     }
 }
 
-// Trees made from a seed, with sizes that are numbers: the rules that hold whatever the tree is.
+// The scale seed `seed` is recorded at: the five a display has, in turn.
+fn pick_scale { seed: u32 } -> f32 {
+    let pick = seed % 5
+    return if pick == 0 { 1.0 } else if pick == 1 { 1.25 } else if pick == 2 { 1.5 } else if pick == 3 { 1.75 } else { 2.0 }
+}
+
+// Trees made from a seed, with sizes that are numbers: the rules that hold whatever the tree is,
+// at whatever scale. A seed's tree is declared in logical units and recorded at one of five
+// scales, so its pixels differ from seed to seed, and the rules are about the pixels.
 fn check_flow_random { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     let mut gui = make_ui{ &heap, cap = get_roomy{} } iferr { return }
     let shots = alloc::make(Shot, arena::Arena){ realloc = arena::alloc, &heap, count = 4097 } iferr { return }
@@ -1156,7 +1277,8 @@ fn check_flow_random { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena
     let mut texts: u32 = 0
     let seeds: u32 = 400
     for seed in 0..seeds {
-        start_frame{ ui = &gui, scale = 1.0 }
+        let scale = pick_scale{ seed }
+        start_frame{ ui = &gui, scale }
         show_random{ ui = &gui, seed, odd = null }
         ui::end_frame{ ui = &gui }
         if not is_clean{ ui = gui } { unclean = unclean + 1 }
@@ -1177,7 +1299,7 @@ fn check_flow_random { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena
         start_frame{ ui = &gui, scale = 1.0 }
         show_random{ ui = &gui, seed = seed + 7919, odd = null }
         ui::end_frame{ ui = &gui }
-        start_frame{ ui = &gui, scale = 1.0 }
+        start_frame{ ui = &gui, scale }
         show_random{ ui = &gui, seed, odd = null }
         ui::end_frame{ ui = &gui }
         repeated = repeated + count_changed{ ui = gui, shots = shots, sizes = false }
@@ -1185,12 +1307,12 @@ fn check_flow_random { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena
     }
     ui_test::expect{ &io, &t, ok = elements > 20000 and texts > 2000, what = "the seeded trees are thousands of elements and lines of text" }
     ui_test::expect{ &io, &t, ok = unclean == 0, what = "every seeded frame is clean" }
-    ui_test::expect{ &io, &t, ok = faults.sizes == 0, what = "seeded trees: every size and position is a number" }
+    ui_test::expect{ &io, &t, ok = faults.sizes == 0, what = "seeded trees: every size and position is a whole number of pixels in range" }
     ui_test::expect{ &io, &t, ok = faults.limits == 0, what = "seeded trees: every size is its fixed value or between its min and max" }
     ui_test::expect{ &io, &t, ok = faults.across == 0, what = "seeded trees: across the axis a flow child is inside the padding box unless its own size is larger" }
     ui_test::expect{ &io, &t, ok = faults.along == 0, what = "seeded trees: along the axis flow children follow one another exactly the gap apart" }
-    ui_test::expect{ &io, &t, ok = faults.shared == 0, what = "seeded trees: take is its part of the room, and grow fills across the axis" }
-    ui_test::expect{ &io, &t, ok = faults.filled == 0, what = "seeded trees: spare room is taken by grow children up to their max, missing room given up down to their min" }
+    ui_test::expect{ &io, &t, ok = faults.shared == 0, what = "seeded trees: take is its part of the room rounded down, and grow fills across the axis" }
+    ui_test::expect{ &io, &t, ok = faults.filled == 0, what = "seeded trees: spare room is taken by grow children up to their max, missing room given up down to their min, to the pixel" }
     ui_test::expect{ &io, &t, ok = faults.placed == 0, what = "seeded trees: a placed child is at its anchor and takes its part of the whole parent" }
     ui_test::expect{ &io, &t, ok = faults.content == 0, what = "seeded trees: a box's content is what its flow children take" }
     ui_test::expect{ &io, &t, ok = faults.lines == 0, what = "seeded trees: a text's lines cover it and fit its width" }
@@ -1201,7 +1323,8 @@ fn check_flow_random { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena
 }
 
 // Trees made from a seed with numbers that are not sizes in every field: not a number, infinite,
-// huge, negative. Nothing panics, nothing is dropped, and every size the solver stores is a number.
+// huge, negative. Nothing panics, nothing is dropped, and every size the solver stores is a size:
+// the conversion to pixels made each of them 0 or held it before the solver saw it.
 fn check_odd_trees { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui, shots: []mut Shot } {
     let zero = ui::abs_f32{ x = 0.0 }
     let odd = Odd{ nan = ui::sqrt_f32{ x = -1.0 }, inf = 1.0 / zero }
@@ -1212,7 +1335,7 @@ fn check_odd_trees { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui, shots: [
     let mut elements: u32 = 0
     let seeds: u32 = 300
     for seed in 0..seeds {
-        start_frame{ &ui, scale = if seed % 2 == 0 { 1.0 } else { 1.5 } }
+        start_frame{ &ui, scale = pick_scale{ seed } }
         show_random{ &ui, seed, odd }
         ui::end_frame{ &ui }
         if ui.stats.dropped != 0 or ui.stats.unclosed != 0 { dropped = dropped + 1 }
@@ -1220,16 +1343,17 @@ fn check_odd_trees { mut io: Io, mut t: ui_test::Tally, mut ui: ui::Ui, shots: [
         for at in 0..@as(usize, ui.tree.count) {
             let e = ui.tree.elements[at]
             if e.kind == ui::tree::Kind::paint { continue }
-            let sized = e.w >= 0.0 and e.w <= 1000000000.0 and e.h >= 0.0 and e.h <= 1000000000.0
-            let content = e.content_w == e.content_w and e.content_h == e.content_h
-            if not sized or not content { bad = bad + 1 }
+            let sized = e.w >= 0 and e.w <= ui::MAX_PIXELS and e.h >= 0 and e.h <= ui::MAX_PIXELS
+            let content = e.content_w >= 0 and e.content_w <= ui::MAX_PIXELS and e.content_h >= 0 and e.content_h <= ui::MAX_PIXELS
+            let placed = e.x >= -ui::MAX_PIXELS and e.x <= ui::MAX_PIXELS and e.y >= -ui::MAX_PIXELS and e.y <= ui::MAX_PIXELS
+            if not sized or not content or not placed { bad = bad + 1 }
         }
         take_shots{ ui, shots }
         ui::layout::solve{ &ui }
-        resolved = resolved + count_changed{ ui, shots = shots, sizes = true }
+        resolved = resolved + count_changed{ ui, shots = shots, sizes = false }
     }
     ui_test::expect{ &io, &t, ok = elements > 10000, what = "the odd trees are thousands of elements" }
     ui_test::expect{ &io, &t, ok = dropped == 0, what = "odd trees: numbers that are not sizes drop nothing" }
-    ui_test::expect{ &io, &t, ok = bad == 0, what = "odd trees: every size the solver stores is a number from 0 up" }
-    ui_test::expect{ &io, &t, ok = resolved == 0, what = "odd trees: solving twice gives identical sizes" }
+    ui_test::expect{ &io, &t, ok = bad == 0, what = "odd trees: every size and position the solver stores is a whole number in range" }
+    ui_test::expect{ &io, &t, ok = resolved == 0, what = "odd trees: solving twice gives identical sizes and positions" }
 }

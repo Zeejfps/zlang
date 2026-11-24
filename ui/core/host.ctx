@@ -2,17 +2,19 @@
 // host pushes (`Event`) or a request the host applies after the frame (`Requests`); the core calls
 // nothing. `FrameInfo`, the third piece, is declared with the frame in ui.ctx.
 //
-// Positions are logical units, y down. Typed text is in the focused font's encoding.
+// Positions are device pixels (i32), y down, origin at the surface's top left: the host converts
+// whatever its window system reports (ui_sdl does), so the core never scales a pointer. Typed text
+// is in the focused font's encoding.
 namespace ui {
     enum Key: u8 { none, tab, enter, escape, backspace, delete, left, right, up, down, home, end, page_up, page_down, space, a, c, v, x, y, z }
     const MOD_SHIFT: u8 = 1
     const MOD_CTRL: u8 = 2
     const MOD_ALT: u8 = 4
     union Event {
-        pointer_move{ x: f32, y: f32 },                    // logical units
+        pointer_move{ x: i32, y: i32 },                    // device pixels
         pointer_button{ button: u8, down: bool, clicks: u8 },
         pointer_leave,
-        wheel{ dx: f32, dy: f32 },
+        wheel{ dx: f32, dy: f32 },                         // notches, fractional on a smooth wheel
         key{ key: Key, down: bool, repeat: bool, mods: u8 },
         text{ bytes: [32]u8, len: u8 },                    // committed text, in the focused font's encoding
         paste{ text: []u8 },                               // the host's answer to Requests.paste; copied at the push
@@ -22,7 +24,7 @@ namespace ui {
     struct Requests {
         cursor: Cursor = Cursor::arrow,
         wants_pointer: bool = false, wants_keys: bool = false,
-        text_input: bool = false, text_rect: Rect = Rect{ .. },   // turn OS text input on; where the caret is
+        text_input: bool = false, text_rect: Rect = Rect{ .. },   // turn OS text input on; where the caret is, in device pixels
         copy: []u8 = "", paste: bool = false,                     // set the clipboard; send me a paste event
         animating: bool = false,                                  // something moves with time: draw another frame
     }

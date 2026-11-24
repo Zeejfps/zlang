@@ -5,14 +5,18 @@
 //
 // The format (plan section 4.1):
 //
-//   frame 800x600 scale 1.5x1.5
-//   clip 1 16,16 400x300 round 16,16 400x300 r=8
-//   rect 16,16 120x28 fill=30343EFF radius=4,4,0,0 border=1,1,0,1 404552FF,404552FF,00000000,404552FF clip=1
-//   text 24,22 font=0 size=16 E4E7EDFF clip=1 "Add"
-//   image 10,10 32x32 img=3 uv=0,0,1,1 tint=FFFFFFFF quarter=1 angle=0 radius=0,0,0,0 blend=alpha clip=0
-//   line 40,60 52,72 width=2 cap=round E4E7EDFF clip=0
-//   host 1 320,60 280x360
+//   frame 1200x900
+//   clip 1 24,24 600x450 round 24,24 600x450 r=12
+//   rect 24,24 180x42 fill=30343EFF radius=6,6,0,0 border=2,2,0,2 404552FF,404552FF,00000000,404552FF clip=1
+//   text 36,33 font=0 size=24 E4E7EDFF clip=1 "Add"
+//   image 15,15 48x48 img=3 uv=0,0,1,1 tint=FFFFFFFF quarter=1 angle=0 radius=0,0,0,0 blend=alpha clip=0
+//   line 60.5,90 78,108.25 width=1.5 cap=round E4E7EDFF clip=0
+//   host 1 480,90 420x540
 //
+// Everything is device pixels. What the list holds as whole pixels is written as an integer and
+// cannot print a fraction: the frame's size, every rectangle (a rect's, an image's, a clip's, a
+// host's), a text's position, border widths. What the list holds as a float is written with up to
+// four digits after the point: radii, a text's size, a line's end points and width, uv, angles.
 // Radii run top-left, top-right, bottom-right, bottom-left; border widths and colours run top,
 // right, bottom, left; colours are RRGGBBAA. Entry 0 of the clip table is the whole surface and
 // is not listed.
@@ -158,7 +162,7 @@ namespace ui_rec {
     }
 
     fn write_sides { mut sink: Sink, s: ui::Sides } -> ! {
-        try @fmt(&sink, "{},{},{},{}", write_number{ v = s.top, _ }, write_number{ v = s.right, _ }, write_number{ v = s.bottom, _ }, write_number{ v = s.left, _ })
+        try @fmt(&sink, "{},{},{},{}", s.top, s.right, s.bottom, s.left)
     }
 
     fn write_side_colors { mut sink: Sink, c: ui::SideColors } -> ! {
@@ -166,7 +170,7 @@ namespace ui_rec {
     }
 
     fn write_rect { mut sink: Sink, rect: ui::Rect } -> ! {
-        try @fmt(&sink, "{},{} {}x{}", write_number{ v = rect.x, _ }, write_number{ v = rect.y, _ }, write_number{ v = rect.w, _ }, write_number{ v = rect.h, _ })
+        try @fmt(&sink, "{},{} {}x{}", rect.x, rect.y, rect.w, rect.h)
     }
 
     // One clip table entry, as its own line.
@@ -190,7 +194,7 @@ namespace ui_rec {
                     write_color{ color = tint, _ }, quarter, write_number{ v = angle, _ }, write_corners{ c = radius, _ }, name_blend{ blend }, clip)
             }
             text{ font, size, x, y, text, color, clip } => {
-                try @fmt(&sink, "text {},{} font={} size={} {} clip={} {}\n", write_number{ v = x, _ }, write_number{ v = y, _ }, font.index,
+                try @fmt(&sink, "text {},{} font={} size={} {} clip={} {}\n", x, y, font.index,
                     write_number{ v = size, _ }, write_color{ color, _ }, clip, write_quoted{ s = ui::draw::get_text{ list = list.*, span = text }, _ })
             }
             line{ x0, y0, x1, y1, width, color, cap, clip } => {
@@ -206,8 +210,7 @@ namespace ui_rec {
     // The whole list: the frame line, the clip table, then every shape in paint order. A list that
     // dropped shapes ends with a `dropped N` line, so a golden file cannot hide a drop.
     fn write_list { mut sink: Sink, list: *ui::DrawList } -> ! {
-        try @fmt(&sink, "frame {}x{} scale {}x{}\n", write_number{ v = list.width, _ }, write_number{ v = list.height, _ },
-            write_number{ v = list.scale_x, _ }, write_number{ v = list.scale_y, _ })
+        try @fmt(&sink, "frame {}x{}\n", list.width, list.height)
         let mut i: usize = 1
         while i < @as(usize, list.clip_count) {
             try write_clip{ &sink, index = i, clip = list.clips[i] }

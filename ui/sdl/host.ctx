@@ -3,8 +3,13 @@
 // frame is laid out in, a clock for `dt`, and a wait for programs that draw only when something
 // happened. A program on another platform writes the same few things for it and uses none of this.
 //
-// Units: SDL reports the pointer in window coordinates. `Sizes.scale` is window coordinates per
-// logical unit, which `to_event` divides by, so the core sees logical units, y down.
+// Units: the core works in device pixels, y down, and so does everything this host hands it. SDL
+// reports the pointer in window coordinates, which are device pixels where the program is DPI
+// aware (Windows, as `init` asks) and points where the OS scales the window (macOS): `to_event`
+// multiplies them by `Sizes.pointer_scale`, device pixels a window coordinate, so the core gets
+// whole pixels. `Sizes.scale` is the other number, device pixels a logical unit (the monitor's
+// scale times the program's zoom), which goes into `ui::FrameInfo` and is what the core converts
+// the program's lengths by.
 namespace ui_sdl {
     // An SDL call that failed; `get_last_error` says why.
     error failed{ call: c::String }
@@ -114,12 +119,12 @@ namespace ui_sdl {
 
     // ---- sizes and time
 
-    // What a frame is laid out in: the logical size, the device size (the drawable, in pixels), and
-    // window coordinates per logical unit, which pointer positions are divided by. With them a
-    // program fills ui::FrameInfo (width, height, pixel_width, pixel_height, and `dt` from get_dt).
-    struct Sizes { width: f32, height: f32, pixel_width: f32, pixel_height: f32, scale: f32 }
+    // What a frame is laid out in: the surface (the drawable) in device pixels, `scale` device
+    // pixels a logical unit, and `pointer_scale` device pixels a window coordinate, which pointer
+    // positions are multiplied by. `make_frame` fills a ui::FrameInfo from them.
+    struct Sizes { width: i32, height: i32, scale: f32, pointer_scale: f32 }
 
-    // The sizes at `zoom`: logical = pixels / (monitor scale * zoom), as plan section 2.8 has a tool
+    // The sizes at `zoom`: the scale is the monitor's times the zoom, as plan section 2.8 has a tool
     // do. The monitor's scale is the drawable's pixels per window coordinate where the OS scales the
     // window (macOS), and the display's DPI over 96 where it does not (Windows, which `init` makes
     // hand over real pixels).
@@ -132,7 +137,6 @@ namespace ui_sdl {
         SDL_GL_GetDrawableSize{ &sdl, window = host.window, w = &pw, h = &ph }
         let window_w = if ww > 0 { @as(f32, ww) } else { 1.0 }
         let pixel_w = if pw > 0 { @as(f32, pw) } else { 1.0 }
-        let pixel_h = if ph > 0 { @as(f32, ph) } else { 1.0 }
         let per_window = pixel_w / window_w
         let mut monitor: f32 = 1.0
         if per_window > 1.01 {
@@ -145,8 +149,13 @@ namespace ui_sdl {
             }
         }
         let z = if zoom > 0.0 { zoom } else { 1.0 }
-        let units = monitor * z                    // device pixels per logical unit
-        return Sizes{ width = pixel_w / units, height = pixel_h / units, pixel_width = pixel_w, pixel_height = pixel_h, scale = units / per_window }
+        return Sizes{ width = if pw > 0 { pw } else { 1 }, height = if ph > 0 { ph } else { 1 }, scale = monitor * z, pointer_scale = per_window }
+    }
+
+    // What the core is told about a frame: the surface in device pixels, the scale, and `dt`
+    // (from `get_dt`).
+    fn make_frame { sizes: Sizes, dt: f32 } -> ui::FrameInfo {
+        return ui::FrameInfo{ width = sizes.width, height = sizes.height, scale = sizes.scale, dt }
     }
 
     // Seconds since the last call (or since the window opened), from SDL's performance counter.
@@ -244,13 +253,14 @@ namespace ui_sdl {
     }
 
     // The core's event for a host event, or null for one the core does not take (quit, resize, a
-    // key it has no name for). Pointer positions are divided by `scale` (Sizes.scale) into logical
-    // units. A button event's position comes as the motion events before it: SDL sends a motion
-    // to where a button goes down.
-    fn to_event { event: Event, scale: f32 } -> ?ui::Event {
-        let s = if scale > 0.0 { scale } else { 1.0 }
+    // key it has no name for). Pointer positions are window coordinates times `pointer_scale`
+    // (Sizes.pointer_scale), rounded down: the device pixel the pointer's coordinate begins in. A
+    // button event's position comes as the motion events before it: SDL sends a motion to where a
+    // button goes down.
+    fn to_event { event: Event, pointer_scale: f32 } -> ?ui::Event {
+        let s = if pointer_scale > 0.0 { pointer_scale } else { 1.0 }
         match event {
-            motion{ x, y } => { return ui::Event::pointer_move{ x = @as(f32, x) / s, y = @as(f32, y) / s } }
+            motion{ x, y } => { return ui::Event::pointer_move{ x = ui::floor_pixels{ v = @as(f32, x) * s }, y = ui::floor_pixels{ v = @as(f32, y) * s } } }
             button{ down, button, clicks } => { return ui::Event::pointer_button{ button, down, clicks } }
             leave => { return ui::Event::pointer_leave }
             wheel{ dx, dy } => { return ui::Event::wheel{ dx, dy } }
@@ -301,15 +311,16 @@ namespace ui_sdl {
     // ---- requests
 
     // Applies what the core asked for after a frame: the system cursor, OS text input on or off with
-    // the caret's rectangle (logical units, times `scale` into window coordinates), the clipboard set
-    // from `copy`, and on `paste` the clipboard read into the host, which `poll` hands over next as
-    // Event::paste. Nothing is done twice: the cursor and text input change only when the request does.
-    fn apply_requests { mut sdl: Sdl, mut host: Host, requests: ui::Requests, scale: f32 } {
+    // the caret's rectangle (device pixels, divided by `pointer_scale` into window coordinates), the
+    // clipboard set from `copy`, and on `paste` the clipboard read into the host, which `poll` hands
+    // over next as Event::paste. Nothing is done twice: the cursor and text input change only when
+    // the request does.
+    fn apply_requests { mut sdl: Sdl, mut host: Host, requests: ui::Requests, pointer_scale: f32 } {
         set_cursor{ &sdl, &host, cursor = requests.cursor }
         if requests.text_input {
-            let s = if scale > 0.0 { scale } else { 1.0 }
+            let s = if pointer_scale > 0.0 { 1.0 / pointer_scale } else { 1.0 }
             let r = requests.text_rect
-            let rect = Rect{ x = to_int{ v = r.x * s }, y = to_int{ v = r.y * s }, w = to_int{ v = r.w * s }, h = to_int{ v = r.h * s } }
+            let rect = Rect{ x = to_int{ v = @as(f32, r.x) * s }, y = to_int{ v = @as(f32, r.y) * s }, w = to_int{ v = @as(f32, r.w) * s }, h = to_int{ v = @as(f32, r.h) * s } }
             if not host.text_input {
                 SDL_StartTextInput{ &sdl }
                 host.text_input = true

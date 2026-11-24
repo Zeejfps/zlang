@@ -8,15 +8,15 @@ fn main { mut io: Io, mut mem: Mem } -> i32 {
     let mut failed: u32 = 0
 
     let mut list = ui::draw::make{ realloc = arena::alloc, &heap, cmds = 16, text = 256, clips = 4, fonts = 1 } iferr { return 1 }
-    ui::draw::reset{ &list, width = 640.0, height = 480.0, scale_x = 1.0, scale_y = 1.0 }
-    let clip = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = ui::Rect{ x = 8.0, y = 8.0, w = 100.0, h = 40.0 }, .. } } ifnull { return 1 }
-    ui::draw::add_rect{ &list, rect = ui::Rect{ x = 10.0, y = 10.0, w = 50.0, h = 20.0 }, style = ui::RectStyle{ fill = ui::Color{ r = 255, .. }, .. }, clip }
-    ui::draw::add_text{ &list, font = ui::Font{ .. }, size = 16.0, x = 12.0, y = 12.0, text = "kotor", color = ui::Color{ .. }, clip }
+    ui::draw::reset{ &list, width = 640, height = 480 }
+    let clip = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = ui::Rect{ x = 8, y = 8, w = 100, h = 40 }, .. } } ifnull { return 1 }
+    ui::draw::add_rect{ &list, rect = ui::Rect{ x = 10, y = 10, w = 50, h = 20 }, style = ui::RectStyle{ fill = ui::Color{ r = 255, .. }, .. }, clip }
+    ui::draw::add_text{ &list, font = ui::Font{ .. }, size = 16.0, x = 12, y = 12, text = "kotor", color = ui::Color{ .. }, clip }
 
     let mut store: [1024]u8
     let mut sink = ui_rec::make_sink{ bytes = store[..] }
     ui_rec::write_list{ &sink, list = &list } iferr { return 1 }
-    let want = "frame 640x480 scale 1x1\nclip 1 8,8 100x40\nrect 10,10 50x20 fill=FF0000FF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=1\ntext 12,12 font=0 size=16 000000FF clip=1 \"kotor\"\n"
+    let want = "frame 640x480\nclip 1 8,8 100x40\nrect 10,10 50x20 fill=FF0000FF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=1\ntext 12,12 font=0 size=16 000000FF clip=1 \"kotor\"\n"
     if not slice::eq_bytes{ a = ui_rec::get_text{ sink }, b = want } {
         _ = @fmt(&io, "FAIL: the dump differs:\n{}\n", ui_rec::get_text{ sink })
         failed = failed + 1

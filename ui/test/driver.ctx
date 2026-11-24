@@ -1,6 +1,7 @@
-// ui_test: the scripted driver (plan sections 2.8 and 6.1). It is a host with no OS: it steps
-// frames of a fixed size, scale and `dt`, pushes pointer, key and text events, applies the
-// requests with a fake clipboard, and addresses widgets by node path.
+// ui_test: the scripted driver (plan sections 2.8 and 6.1). It is a host with no OS, and it speaks
+// device pixels as every host does: it steps frames of a fixed pixel size, scale and `dt`, pushes
+// pointer events at pixel positions and key and text events, applies the requests with a fake
+// clipboard, and addresses widgets by node path.
 //
 // The program's frame is a bound function, `show = show_app{ &app, _ }`, which the driver calls
 // between `begin_frame` and `end_frame`. Interaction is answered from the last frame's regions, so
@@ -23,12 +24,13 @@ namespace ui_test {
         first_unclean: u32,             // the number of the first of them (counting from 1); 0 none
     }
 
-    // A driver for frames of `width` by `height` logical units at `scale` device pixels a unit,
+    // A driver for frames on a surface of `width` by `height` device pixels at `scale` device pixels
+    // a logical unit,
     // `dt` seconds apart, with a clipboard of `clipboard` bytes.
-    fn make_driver(S) { realloc: alloc::Fn(S), mut heap: S, width: f32, height: f32, scale: f32, dt: f32, clipboard: usize } -> !Driver {
+    fn make_driver(S) { realloc: alloc::Fn(S), mut heap: S, width: i32, height: i32, scale: f32, dt: f32, clipboard: usize } -> !Driver {
         let clip = try alloc::make(u8, S){ realloc, &heap, count = clipboard }
         return Driver{
-            info = ui::FrameInfo{ width, height, pixel_width = width * scale, pixel_height = height * scale, dt },
+            info = ui::FrameInfo{ width, height, scale, dt },
             clipboard = clip, clip_len = 0, requests = ui::Requests{ .. },
             frames = 0, unclean = 0, first_unclean = 0,
         }
@@ -68,7 +70,7 @@ namespace ui_test {
 
     // ---- events: each answers what `push_event` answered
 
-    fn move_pointer { mut ui: ui::Ui, x: f32, y: f32 } -> bool {
+    fn move_pointer { mut ui: ui::Ui, x: i32, y: i32 } -> bool {
         return ui::push_event{ &ui, event = ui::Event::pointer_move{ x, y } }
     }
 
@@ -107,12 +109,12 @@ namespace ui_test {
 
     // ---- nodes
 
-    // The centre of the last frame's node at `path`, when the node is there and its centre is its
+    // The centre pixel of the last frame's node at `path`, when the node is there and its centre is its
     // own region, the topmost one; null otherwise.
     fn find_center { ui: ui::Ui, path: []u8 } -> ?ui::Point {
         let node = ui::find_node{ ui, path } ifnull { return null }
-        let x = node.rect.x + node.rect.w * 0.5
-        let y = node.rect.y + node.rect.h * 0.5
+        let x = ui::add_pixels{ a = node.rect.x, b = node.rect.w / 2 }
+        let y = ui::add_pixels{ a = node.rect.y, b = node.rect.h / 2 }
         let top = ui::interact::find_topmost{ ui, x, y }
         if top == ui::tree::NONE or ui.emit.hits[@as(usize, top)].id != node.id { return null }
         return ui::Point{ x, y }
@@ -132,16 +134,16 @@ namespace ui_test {
         return true
     }
 
-    // Drags the node at `path` by (`dx`, `dy`) with the left button over four frames (move,
+    // Drags the node at `path` by (`dx`, `dy`) pixels with the left button over four frames (move,
     // press, move, release). False when the node cannot be reached.
-    fn drag { mut d: Driver, mut ui: ui::Ui, path: []u8, dx: f32, dy: f32, show: &fn{ mut ui: ui::Ui } } -> bool {
+    fn drag { mut d: Driver, mut ui: ui::Ui, path: []u8, dx: i32, dy: i32, show: &fn{ mut ui: ui::Ui } } -> bool {
         let at = find_center{ ui, path } ifnull { return false }
         _ = move_pointer{ &ui, x = at.x, y = at.y }
         step_frame{ &d, &ui, show }
         if find_center{ ui, path } == null { return false }
         _ = push_button{ &ui, button = 0, down = true, clicks = 1 }
         step_frame{ &d, &ui, show }
-        _ = move_pointer{ &ui, x = at.x + dx, y = at.y + dy }
+        _ = move_pointer{ &ui, x = ui::add_pixels{ a = at.x, b = dx }, y = ui::add_pixels{ a = at.y, b = dy } }
         step_frame{ &d, &ui, show }
         _ = push_button{ &ui, button = 0, down = false, clicks = 1 }
         step_frame{ &d, &ui, show }

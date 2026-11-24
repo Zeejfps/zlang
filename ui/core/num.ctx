@@ -1,6 +1,7 @@
-// ui: libm and small float helpers. The core never uses the `math::` namespace: kotor declares
-// its own `math`, which shadows std's whole namespace of that name in a kotor build. So the few
-// libm functions the library needs are declared here, in `ui`, the same on every platform.
+// ui: libm, small number helpers, and the conversions between logical units and device pixels.
+// The core never uses the `math::` namespace: kotor declares its own `math`, which shadows std's
+// whole namespace of that name in a kotor build. So the few libm functions the library needs are
+// declared here, in `ui`, the same on every platform.
 namespace ui {
     #c::symbol{ name = "floorf" }
     #pure
@@ -40,6 +41,8 @@ namespace ui {
     fn pick_max_f32 { a: f32, b: f32 } -> f32 { return if b > a { b } else { a } }
     fn pick_min_u32 { a: u32, b: u32 } -> u32 { return if b < a { b } else { a } }
     fn pick_max_u32 { a: u32, b: u32 } -> u32 { return if b > a { b } else { a } }
+    fn pick_min_i32 { a: i32, b: i32 } -> i32 { return if b < a { b } else { a } }
+    fn pick_max_i32 { a: i32, b: i32 } -> i32 { return if b > a { b } else { a } }
 
     // `v` held between `lo` and `hi`. When lo > hi the result is lo.
     fn clamp_f32 { v: f32, lo: f32, hi: f32 } -> f32 {
@@ -47,11 +50,82 @@ namespace ui {
         return if v < lo { lo } else { v }
     }
 
-    // `v` on the device grid: floor(v * scale + 0.5) / scale. The same rule as kotor's `snap` and
-    // as ZGF's, which is what makes edges that meet in layout meet on screen at fractional
-    // scales. A scale that is not positive leaves `v` as it is.
-    fn snap_f32 { v: f32, scale: f32 } -> f32 {
-        if not (scale > 0.0) { return v }
-        return floor_f32{ x = v * scale + 0.5 } / scale
+    // `v` held between `lo` and `hi`. When lo > hi the result is lo.
+    fn clamp_i32 { v: i32, lo: i32, hi: i32 } -> i32 {
+        if v > hi { return if hi < lo { lo } else { hi } }
+        return if v < lo { lo } else { v }
+    }
+
+    // ---- pixels
+    //
+    // Integer `+`, `-` and `*` panic on overflow, and so does an `@as` of a float that an integer
+    // cannot hold. Nothing in the library may panic on a number a program gave it, so every
+    // coordinate and size is held to MAX_PIXELS either way, sums of them are made in i64 and held
+    // again (`hold_pixels`, `add_pixels`), and a float becomes a pixel count only through the
+    // functions below, which take NaN as 0 and hold what is out of range.
+
+    // No coordinate is further from 0 than this and no size is larger: a thousand million pixels.
+    // Two of them still add up inside an i32.
+    const MAX_PIXELS: i32 = 1000000000
+
+    // `v` held to -MAX_PIXELS..MAX_PIXELS.
+    fn hold_pixels { v: i64 } -> i32 {
+        if v > 1000000000 { return MAX_PIXELS }
+        if v < -1000000000 { return -MAX_PIXELS }
+        return @as(i32, v)
+    }
+
+    // `a + b` and `a - b`, held.
+    fn add_pixels { a: i32, b: i32 } -> i32 { return hold_pixels{ v = @as(i64, a) + @as(i64, b) } }
+    fn sub_pixels { a: i32, b: i32 } -> i32 { return hold_pixels{ v = @as(i64, a) - @as(i64, b) } }
+
+    // A whole number of pixels from a float that already is one (the result of floor, ceil or
+    // round): NaN is 0, and what is out of range is held.
+    fn hold_whole { v: f32 } -> i32 {
+        if not (v == v) { return 0 }
+        if v >= 1000000000.0 { return MAX_PIXELS }
+        if v <= -1000000000.0 { return -MAX_PIXELS }
+        return @as(i32, v)
+    }
+
+    // `v` rounded down, up, and to the nearest whole pixel (a half rounds up, as kotor's `snap`
+    // and ZGF's do: floor(v + 0.5)).
+    fn floor_pixels { v: f32 } -> i32 { return hold_whole{ v = floor_f32{ x = v } } }
+    fn ceil_pixels { v: f32 } -> i32 { return hold_whole{ v = ceil_f32{ x = v } } }
+    fn round_pixels { v: f32 } -> i32 { return hold_whole{ v = floor_f32{ x = v + 0.5 } } }
+
+    // A scale the library can use: device pixels per logical unit, from 1/64 to 64. Anything that
+    // is not a positive number (0, a negative, NaN) is 1.
+    fn hold_scale { scale: f32 } -> f32 {
+        if not (scale > 0.0) { return 1.0 }
+        if scale < 0.015625 { return 0.015625 }
+        return if scale > 64.0 { 64.0 } else { scale }
+    }
+
+    // A length in logical units as whole device pixels at `scale`: rounded to the nearest pixel (a
+    // half away from zero), and a length that is not 0 never becomes 0, so a border of 1 logical
+    // unit is at least 1 pixel at any scale and a gap of 0.4 still shows. A negative length is the
+    // same with its sign. NaN is 0. This is the one rule by which sizes, paddings, gaps, border
+    // widths, hit outsets and the limits `min` and `max` become pixels.
+    fn scale_length { length: f32, scale: f32 } -> i32 {
+        if not (length == length) or length == 0.0 { return 0 }
+        let v = round_f32{ x = length * hold_scale{ scale } }
+        if length > 0.0 { return if v < 1.0 { 1 } else { hold_whole{ v } } }
+        return if v > -1.0 { -1 } else { hold_whole{ v } }
+    }
+
+    // A position in logical units (a placed element's offset) as a whole device pixel at `scale`:
+    // the nearest one, a half rounding up, which is floor(v * scale + 0.5), kotor's `snap`. Unlike
+    // a length, a position near 0 may be 0.
+    fn scale_position { position: f32, scale: f32 } -> i32 {
+        return round_pixels{ v = position * hold_scale{ scale } }
+    }
+
+    // `fraction` of `whole` pixels, rounded down: what `take` and an anchor come to. The product
+    // is made in f32, so 0.7 of 100 is 70 (the f32 nearest 0.7 is a little under it, and an exact
+    // product would floor to 69). Never negative for a fraction that is not, never more than
+    // MAX_PIXELS, and 0 for a fraction that is not a number.
+    fn take_fraction { whole: i32, fraction: f32 } -> i32 {
+        return floor_pixels{ v = @as(f32, whole) * fraction }
     }
 }

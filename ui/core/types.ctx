@@ -1,20 +1,26 @@
 // ui: the values and the shape list the core emits (plan section 2.6). Everything here is plain
 // data: the core never calls a backend, it fills a DrawList and a later layer stages it.
 //
-// Coordinates are logical units, y down, origin top left. Colours are sRGB with straight alpha.
+// The unit is the device pixel, y down, origin top left (plan section 2.0, "Units"). A rectangle,
+// a clip, a text's position and a border's widths are whole pixels (i32), so a fractional value
+// cannot reach them: ints and floats never mix without an `@as`. What a program writes in logical
+// units (a theme metric, a `Box`) is converted once, when its element is recorded (`ui::to_pixels`).
+// What stays f32 is what is really fractional: a line's end points and width, corner radii, angles,
+// a text's size (a glyph table without `snap` is drawn at exactly size / height), uv coordinates.
+// Colours are sRGB with straight alpha.
 namespace ui {
-    struct Rect { x: f32 = 0.0, y: f32 = 0.0, w: f32 = 0.0, h: f32 = 0.0 }
+    struct Rect { x: i32 = 0, y: i32 = 0, w: i32 = 0, h: i32 = 0 }      // device pixels
     struct Color { r: u8 = 0, g: u8 = 0, b: u8 = 0, a: u8 = 255 }
     struct Uv { u0: f32 = 0.0, v0: f32 = 0.0, u1: f32 = 1.0, v1: f32 = 1.0 }
     struct Span { start: u32 = 0, len: u32 = 0 }                       // bytes of DrawList.text
-    struct Image { id: u32 = 0, width: f32 = 0.0, height: f32 = 0.0 }  // made by a backend; id 0 is none
+    struct Image { id: u32 = 0, width: i32 = 0, height: i32 = 0 }      // made by a backend, its size in texels; id 0 is none
     struct Font { index: u16 = 0 }                                     // an index into DrawList.fonts
     enum Blend: u8 { alpha, additive }
 
     // A rectangle's look, as ZGF's DrawRect has it: a radius for each corner, a border width and
-    // colour for each side.
+    // colour for each side. Radii are pixels and may be fractional; border widths are whole pixels.
     struct Corners { top_left: f32 = 0.0, top_right: f32 = 0.0, bottom_right: f32 = 0.0, bottom_left: f32 = 0.0 }
-    struct Sides { top: f32 = 0.0, right: f32 = 0.0, bottom: f32 = 0.0, left: f32 = 0.0 }
+    struct Sides { top: i32 = 0, right: i32 = 0, bottom: i32 = 0, left: i32 = 0 }
     struct SideColors {
         top: Color = Color{ a = 0, .. }, right: Color = Color{ a = 0, .. },
         bottom: Color = Color{ a = 0, .. }, left: Color = Color{ a = 0, .. },
@@ -28,7 +34,7 @@ namespace ui {
     fn round { radius: f32 } -> Corners {      // the same radius at every corner
         return Corners{ top_left = radius, top_right = radius, bottom_right = radius, bottom_left = radius }
     }
-    fn stroke { width: f32 } -> Sides {        // the same width on every side
+    fn stroke { width: i32 } -> Sides {        // the same width on every side
         return Sides{ top = width, right = width, bottom = width, left = width }
     }
     fn color_sides { color: Color } -> SideColors {     // the same colour on every side
@@ -39,12 +45,13 @@ namespace ui {
     union Cmd {
         rect{ rect: Rect, style: RectStyle, clip: u16 },
         image{ rect: Rect, image: Image, uv: Uv, tint: Color, quarter: u8, angle: f32, radius: Corners, blend: Blend, clip: u16 },
-        text{ font: Font, size: f32, x: f32, y: f32, text: Span, color: Color, clip: u16 },
+        text{ font: Font, size: f32, x: i32, y: i32, text: Span, color: Color, clip: u16 },
         line{ x0: f32, y0: f32, x1: f32, y1: f32, width: f32, color: Color, cap: Cap, clip: u16 },
         host{ slot: u32, rect: Rect },
     }
-    // A piece of a picture: how a sprite or an atlas entry is named.
-    struct Region { image: Image = Image{ .. }, uv: Uv = Uv{ .. }, width: f32 = 0.0, height: f32 = 0.0 }
+    // A piece of a picture: how a sprite or an atlas entry is named. `width` and `height` are the
+    // piece's size in texels.
+    struct Region { image: Image = Image{ .. }, uv: Uv = Uv{ .. }, width: i32 = 0, height: i32 = 0 }
     // What shapes are cut to: a rectangle, and optionally a rounded rectangle as well (radius 0: none).
     struct Clip { rect: Rect = Rect{ .. }, round: Rect = Rect{ .. }, radius: f32 = 0.0 }
 
@@ -63,8 +70,7 @@ namespace ui {
         text: []mut u8, text_len: u32,        // what the Spans point into
         fonts: []mut FontDef, font_count: u32,
         clips: []mut Clip, clip_count: u32,   // the clip table; clips[0] is the whole surface
-        width: f32, height: f32,              // the logical size the shapes are laid out in
-        scale_x: f32, scale_y: f32,           // device pixels per logical unit
+        width: i32, height: i32,              // the surface, in device pixels
         dropped: u32,                         // shapes that did not fit
     }
 }

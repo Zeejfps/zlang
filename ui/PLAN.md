@@ -28,6 +28,9 @@ Nothing in the repository was modified (`git status` is clean), and nothing was 
    under `ui/` adds a `kotor/` directory. A program composes the core and the backend and host it needs.
 8. Vulkan is the second backend, as a stage. Metal is specified, not staged.
 9. Functions, widgets included, have verb names.
+10. **The unit is the device pixel, in whole numbers (i32).** Decided after stages 0 to 7 were built in
+    fractional logical units, and the code was converted; section 2.0 ("Units") has the rule and its
+    reasons, and every later stage is specified on it.
 
 ---
 
@@ -91,7 +94,71 @@ A top-level directory `G:\Dev\zlang-worktree-1\ui\`, namespace `ui` (decided).
 
 ## 2. Architecture
 
-### 2.0 The six tensions, decided
+### 2.0 Units, and the six tensions, decided
+
+**Units (owner's decision): the core works in whole device pixels.**
+
+The first seven stages were built with every coordinate an `f32` in logical units: layout was not
+rounded, and emit put each edge on the device grid with `floor(v * scale + 0.5) / scale`, derived sizes
+from the snapped edges, and divided back to logical units, which the staged level multiplied up again.
+The owner's words on what that cost: "we sometimes have issues with coordinates and things snapping, I
+think the conventional wisdom says to keep everything in pixel coordinates? And only use floating points
+in some places?" What it cost, concretely:
+
+- A widget's size depended on its position: 10.5 units wide was 11 pixels at x 0 and 10 at x 0.5, so a
+  size wobbled while its element scrolled or slid.
+- The divide and the later multiply are not exact in `f32`, so "is this edge on the grid" needed a
+  tolerance, and the staged level's batching bounds asked exactly that question.
+- At a fractional scale borders, gaps and paddings landed between pixels: one side of a box a pixel
+  thicker than the opposite one.
+- A fractional text width centred in a fractional box moved by a pixel from frame to frame.
+
+The rule that replaces it (Dear ImGui's: positions and sizes are whole pixels at layout, and style
+metrics are scaled once):
+
+1. **The unit is the device pixel.** Element rectangles, clips, hit regions, host slots, node rectangles
+   and the draw list's rectangle, image and text positions are `i32`. Nothing is snapped when the frame
+   is emitted and nothing is converted back to logical units anywhere. Ints and floats never mix
+   implicitly in ctxlang, so a fractional value reaching layout is a compile error: that is the point of
+   `i32` over whole-valued `f32`.
+2. **One scale, applied at the input edge.** The host passes the surface's size in pixels and one scale
+   (device pixels a logical unit) in `FrameInfo`. What an application declares (theme metrics, `Box`
+   sizes, padding, gap, fixed sizes, placed offsets, font sizes, border widths, radii) is written in
+   logical units (`f32`) and becomes pixels once, when its element is recorded:
+
+   | What | Rule | Function |
+   |---|---|---|
+   | a length (size, `min`, `max`, padding, gap, border width, hit outset) | the nearest pixel, a half away from zero, and never 0 unless it is 0: a border of 1 unit is 1 pixel at scales 1 and 1.25 and 2 at 1.5, 1.75 and 2 | `ui::to_pixels{ ui, length } -> i32` |
+   | a position (a placed offset) | the nearest pixel, a half up: `floor(v * scale + 0.5)`, which is kotor's `snap`; it may be 0 | `ui::to_pixel_position{ ui, position } -> i32` |
+   | a font size | a whole pixel size (the nearest), at least 1 | `ui::to_font_size{ ui, size } -> f32` |
+   | a corner radius, a line's width and end points | scaled, not rounded | `ui::to_pixels_f32{ ui, length } -> f32` |
+
+   A size never depends on a position: the two are converted separately, and the layout works out every
+   size before any position.
+3. **Declarations are logical, drawing is pixels.** `Box`, `Size`, `Place`, `Insets`, `TextStyle` and
+   the theme are logical units. The `paint_*` calls, `ui::draw`, and everything the core answers with
+   (`get_rect`, `measure_text`, the pointer, `Interaction.drag_x`, a node's rectangle) are device
+   pixels, and only pixels: a widget converts a theme length it paints with by `ui::to_pixels` itself.
+   One rule, no second set of paint calls.
+4. **Exact pixel placement is first-class.** `ui::place_pixels{ rect }` puts an element on exactly the
+   `i32` rectangle given, beside the logical `ui::place`, and `ui::fix_pixels{ size }` is a size in
+   pixels. KOTOR's widget set applies the original game's own per-edge snap to its `.gui` design
+   coordinates and hands the resulting pixels over (section 3.2).
+5. **Integer layout.** Section 2.4: grow shares spare room in whole pixels with the pixels left over
+   going one each to the first children; `take` and anchors round down; centring rounds down; `min` and
+   `max` hold in pixels.
+6. **Text.** A measured width, a line's height and ascent, and a caret offset are whole pixels; a line
+   starts on a pixel; inside a shaped run advances stay fractional (section 2.7).
+7. **What stays `f32`**, because it really is fractional: a line's end points and width, corner radii,
+   rotation angles, opacity, colour maths, `animate` values, scroll velocity (an applied scroll offset is
+   `i32`), slider-like values in `Values`, uv coordinates, a text's pixel size (a glyph table without
+   `snap` is drawn at exactly size / height), glyph positions inside a run, the staged instances (GPU
+   data, built from the `i32` values exactly) and `dt`. Border widths are `i32` a side.
+8. **Pointer input is device pixels.** The host converts its window system's coordinates (`ui_sdl`
+   does); the scripted test driver speaks pixels.
+9. **The draw list carries the surface's size in pixels and no scale.** Nothing downstream of the core
+   needs the scale: the staged level's canvas is the surface, one unit a pixel, so its flip to y up and
+   its batching bounds are exact.
 
 **1. The seam level (owner's decision): a limited set of high-level shapes, staged into ZGF's instance
 kinds and drawn by ZGF's shaders.**
@@ -129,7 +196,7 @@ The plan keeps that structure, ports the shaders, and cuts the set where a cut h
 | `DrawBezier`, `DrawCubicBezier`, dashes, line gradients | not exposed | The code comes with the ported shape shader, but no widget draws them. |
 | `PushClip` as a table index, with the rounded clip | **both kept** | The ported shaders already test both in every kind; the rounded clip costs two more rows in the uniform block. ZGF's rule is kept too: one rounded level at a time. |
 | `PushOpacity` | **kept in the core** | Baked into colours at emit, as ZGF bakes it at staging. |
-| `PushTranslation`, `PushScale` | dropped | The core has no transforms. The shaders' edge-fading path for off-grid edges stays in the port and never triggers. |
+| `PushTranslation`, `PushScale` | dropped | The core has no transforms. The shaders' edge-fading path for off-grid edges stays in the port; a rectangle and an image shape are whole pixels and never trigger it. The one thing that does is a glyph of a glyph table without `snap` that lives on a backend image (KOTOR's fonts), which is an image instance placed inside a text run. |
 | Z index and sort | dropped | The core emits in paint order, layer by layer. |
 | Overlap-aware batching, idle-frame skip | **kept** | The point of the level. |
 | Five instance kinds | **four** | `RectInstance`, `GlyphInstance`, `ImageInstance`, `ShapeInstance`, each with ZGF's fields in the order its shader reads them. |
@@ -157,7 +224,7 @@ merged kind would be a new shader, which the owner ruled out.
 
 *Why the shape list is still what the core emits*, now that no backend draws it directly:
 
-- It is the core's output in the UI's own terms: y down, logical units, text as runs of bytes, a
+- It is the core's output in the UI's own terms: y down, whole device pixels, text as runs of bytes, a
   rectangle's look as one value. The core therefore needs no atlas, no rasteriser and no font library,
   and stays std-only.
 - Golden files of layout and widgets are dumps of this list. They are readable (`text ... "Add"`) and
@@ -184,8 +251,9 @@ and hands the result to the backend's `render`.
 An element is either in its parent's flow or *placed*: out of flow, at an anchor fraction of the parent
 plus an offset, with its own size.
 
-- KOTOR's screens are placed elements throughout: a panel is placed at the centre of the logical screen,
-  a control at its file rectangle inside the panel. The HUD's thirds rule is anchor 0, 0.5 or 1.
+- KOTOR's screens are placed elements throughout: a panel is placed at the centre of the screen, a
+  control at its file rectangle inside the panel, each on the pixels kui worked out for it
+  (`ui::place_pixels`). The HUD's thirds rule is anchor 0, 0.5 or 1.
 - Tool UI uses flow (fit, grow, fixed, part of the parent). Both kinds mix freely in one tree.
 - A cursor layout (Dear ImGui) cannot centre, right-align, or draw a background behind content of
   unknown size without a second pass, which is why it was not chosen.
@@ -197,7 +265,7 @@ KOTOR part lives in kotor:
 
 | KOTOR need | General feature in `ui` | KOTOR part (in `kotor/lib/kui`) |
 |---|---|---|
-| Rotated-corner, segmented-edge borders | the `image` shape with a UV region, tint, exact quarter turns, free angle, additive blend; device-pixel snapping at emit | `kui::paint_border` emits the pieces (sketch, section 3.2) |
+| Rotated-corner, segmented-edge borders | the `image` shape with a UV region, tint, exact quarter turns, free angle, additive blend; rectangles in whole device pixels, and placement and painting that take pixels as given (`ui::place_pixels`, `ui::paint_image`) | `kui::paint_border` works out each piece's pixels with the original's snap and emits the pieces (sketch, section 3.2) |
 | 3D views inside the UI z-order | `ui::add_host_slot`: a `host` shape that ends a UI pass | the adapter starts a new `render::begin_ui` run after each view |
 | Controls addressable by tag | names of id scopes are kept; `ui::find_node{ path }` | TAG is the id name |
 | Hover is focus | `PressOpts.focus_on_hover` | kui widgets set it |
@@ -357,22 +425,27 @@ fn animate { mut ui: Ui, id: Id, target: f32, rate: f32 } -> f32
 (`ui::paint_rect` and friends) are leaf elements that take no part in layout, so emission is simply
 pre-order and a widget chooses what draws over what by the order of its calls.
 
-**Declaration.** `ui::Box` (section 3.3) carries the layout inputs; an unset field takes the widget's
-default.
+**Declaration.** `ui::Box` (section 3.3) carries the layout inputs, in logical units; an unset field
+takes the widget's default. Every length of a box becomes whole pixels when its element is recorded
+(section 2.0, "Units"), and the tree holds pixels only.
 
 | Sizing | Meaning |
 |---|---|
 | `ui::FIT` | The content's size, clamped to `min..max`. |
 | `ui::GROW` | Starts at content size and shares the parent's spare room along the main axis; fills the parent on the cross axis. When the parent is short, grow children shrink towards `min` first. |
-| `ui::fix{ px }` | Exactly that size. |
-| `ui::take{ part }` | That fraction of the parent's inner size (minus gaps on the main axis). |
+| `ui::fix{ size }` | Exactly that size, in logical units. `ui::fix_pixels{ size }` is exactly that many pixels. |
+| `ui::take{ part }` | That fraction of the parent's inner size (minus gaps on the main axis), rounded down. |
 
 Plus `padding`, `gap`, `align_x`, `align_y` (start, center, end) for children, `clip`, `opacity`, and
 `place` for an element out of the flow:
-`top-left = parent.xy + parent.wh * (anchor_x, anchor_y) + (x, y)`. `ui::place{ x, y, w, h }` is the
-explicit rectangle. A placed element adds nothing to its parent's fitted size.
+`top-left = parent.xy + floor(parent.wh * (anchor_x, anchor_y)) + (x, y)`, with the offset rounded to
+the nearest pixel. `ui::place{ x, y, w, h }` is the explicit rectangle in logical units, its position
+and its size converted separately; `ui::place_pixels{ rect }` is the explicit rectangle in pixels,
+taken as it is. A placed element adds nothing to its parent's fitted size.
 
-**Solve**, at `end_frame`, in ZGF's order [read: `LayoutTree.cs:239`]:
+**Solve**, at `end_frame`, in ZGF's order [read: `LayoutTree.cs:239`], in integer arithmetic on
+pixels. Sizes are worked out before any position, so the size of an element never depends on where it
+stands.
 
 1. Fit widths, last element to first (children before parents): a leaf's content is its measured text;
    a container's is the sum (main axis) or maximum (cross axis) of its flow children, plus padding and
@@ -380,23 +453,48 @@ explicit rectangle. A placed element adds nothing to its parent's fitted size.
 2. Distribute widths, first to last: resolve `take`, fill cross-axis `grow`, share main-axis spare room
    among grow children equally with each capped at its `max` and the remainder re-shared; when room is
    short, shrink grow children equally towards `min`.
-3. Wrap text at the widths now known; ellipsize single-line text marked `Overflow::ellipsis`.
+3. Wrap text at the widths now known; ellipsize single-line text marked `Overflow::ellipsis` when it is
+   wider than its room at all (both are whole pixels).
 4. Fit heights, then distribute heights, the same way.
-5. Position, first to last: flow children from the padding edge, offset by `spare * align` (spare never
-   negative), minus the scroll offset; placed children by their anchor.
+5. Position, first to last: flow children from the padding edge, offset by the aligned part of the
+   spare room (spare never negative), minus the scroll offset; placed children by their anchor.
+
+Where a division leaves a remainder (the rules are the comment at the top of `ui/core/layout.ctx`):
+
+| Where | Rule | Example |
+|---|---|---|
+| growing | every grow child gets the same whole share of the spare room, and the pixels left over go one each to the first children | 100 pixels among three: 34, 33, 33 |
+| a child at its `max` | it stops there, and what it could not take is shared again among the rest, so the children that did not stop all grow by the same amount to the pixel | 101 among a GROW with max 30 and a GROW: 30 and 71 |
+| shrinking | every grow child gives the same whole share, and the odd pixels come one each from the last children, so the first are never the smaller ones | three of 40 in 100: 34, 33, 33 |
+| `take` | `floor(room * fraction)`, the product made in `f32` so that 0.7 of 100 is 70 | 0.5 of 101: 50 |
+| an anchor | `floor(parent size * anchor)` | 0.5 of 101: 50 |
+| centring | half the spare room, rounded down: the odd pixel is left after the content | 61 spare: 30 before |
+| `min`, `max` | pixels, by the length rule; `min` wins over `max` | |
+
+What a solve leaves for the stages that build on it:
+
+- A box's `content_w` and `content_h` are what its flow children take once every size is final, without
+  its padding: their sizes and gaps along its axis, the largest of them across it. A scroll region
+  measures its range by them.
+- `solve` may run again on the same tree (it starts from what was recorded), and `position` alone is
+  enough after only offsets changed (a scroll offset, a layer moved).
+- A scroll region needs its size from outside (fixed, `take`, or GROW in a sized parent): fitted, it is
+  as large as its content and has nothing to scroll.
+- Grow children share the *spare* room, so two that hold different content are not the same width.
+- Text is top-aligned in its element; a text's lines are whole line heights apart.
 
 **Emit**, layer by layer (section 2.5), pre-order within a layer:
 
-- Every rectangle edge is snapped to the device grid with `floor(v * scale + 0.5) / scale`, per axis.
-  This is kotor's own `snap` [read: `draw.ctx:56`], so border pieces that meet in layout meet on
-  screen at fractional scales, and a replayed KOTOR panel lands on the same pixels.
-- An image with quarter turns is snapped as the rectangle it covers after turning, which is what
-  kotor's `put_piece` does [read: `draw.ctx:64`].
+- Nothing is rounded or converted. The tree is whole pixels, so an element's rectangle goes into the
+  draw list as it was solved, and a paint's rectangle and a text's position are moved by their
+  element's whole corner. Pieces that meet in layout meet on screen at any scale, because they are the
+  same integers. A line's end points are moved the same way and stay fractional.
+- An image's rectangle is the one it covers after its quarter turns, which is what kotor's `put_piece`
+  takes [read: `draw.ctx:64`].
 - A clipping element adds its absolute, already intersected rectangle to the draw list's clip table
   (or finds the equal entry), and every shape under it carries that index. A clipping element with a
   radius also makes its rectangle the entry's rounded rectangle. Elements wholly outside their clip are
-  skipped. Snapping each edge on its own and deriving sizes from the snapped edges is
-  also ZGF's rule [read: `RenderedCanvasBase.DrawRect`].
+  skipped.
 - `opacity` multiplies the alpha of every shape in the subtree. No backend is involved.
 - Each identified element adds a hit region: its rectangle (grown by `hit_outset`) intersected with the
   clip, in emission order. The topmost region under the pointer is the last one emitted that contains
@@ -441,8 +539,8 @@ ordered list of key strokes, typed text.
 **Layers**, back to front: back overlay, the base tree, windows (by last-focused order), modals,
 popups, tooltips, front overlay.
 
-- `ui::begin_overlay{ front }` is a full-surface layer with no hit testing, for raw drawing in logical
-  coordinates: world-attached labels, reticles, fades, a software cursor, a drag ghost.
+- `ui::begin_overlay{ front }` is a full-surface layer with no hit testing, for raw drawing in the
+  surface's pixels: world-attached labels, reticles, fades, a software cursor, a drag ghost.
 - A modal layer blocks pointer and keys for everything below it and remembers the focus to restore.
 - A popup closes on a press outside it or on Escape, and is placed below or beside its anchor, flipped
   and clamped to the surface.
@@ -458,24 +556,29 @@ switched by `config.nodes`.
 ### 2.6 The render seam
 
 The seam has two faces, as ZGF's does: the **shape list** the core emits, and the **staged instances**
-the shared CPU layer makes from it, which every backend draws. All declarations below are compiled as
-written [compiled, a4].
+the shared CPU layer makes from it, which every backend draws. The declarations below are the code's
+(`ui/core/types.ctx`, `ui/stage/types.ctx`); their first form, in `f32` logical units, was compiled in
+the probe [compiled, a4].
 
 #### The shape list
 
+Everything in the list is device pixels. Rectangles, text positions and border widths are whole
+(`i32`); a line's end points and width, corner radii, angles, uv and a text's size are `f32`.
+
 ```
 namespace ui {
-    struct Rect { x: f32 = 0.0, y: f32 = 0.0, w: f32 = 0.0, h: f32 = 0.0 }
+    struct Rect { x: i32 = 0, y: i32 = 0, w: i32 = 0, h: i32 = 0 }     // device pixels
     struct Color { r: u8 = 0, g: u8 = 0, b: u8 = 0, a: u8 = 255 }      // sRGB, straight alpha
     struct Uv { u0: f32 = 0.0, v0: f32 = 0.0, u1: f32 = 1.0, v1: f32 = 1.0 }
     struct Span { start: u32 = 0, len: u32 = 0 }                       // bytes of DrawList.text
-    struct Image { id: u32 = 0, width: f32 = 0.0, height: f32 = 0.0 }  // made by a backend; id 0 is none
+    struct Image { id: u32 = 0, width: i32 = 0, height: i32 = 0 }      // made by a backend, its size in texels; id 0 is none
     struct Font { index: u16 = 0 }                                     // an index into DrawList.fonts
     enum Blend: u8 { alpha, additive }
 
-    // A rectangle's look, as ZGF's DrawRect has it: a radius for each corner, a border width and colour for each side.
+    // A rectangle's look, as ZGF's DrawRect has it: a radius for each corner (pixels, may be fractional),
+    // a border width (whole pixels) and colour for each side.
     struct Corners { top_left: f32 = 0.0, top_right: f32 = 0.0, bottom_right: f32 = 0.0, bottom_left: f32 = 0.0 }
-    struct Sides { top: f32 = 0.0, right: f32 = 0.0, bottom: f32 = 0.0, left: f32 = 0.0 }
+    struct Sides { top: i32 = 0, right: i32 = 0, bottom: i32 = 0, left: i32 = 0 }
     struct SideColors {
         top: Color = Color{ a = 0, .. }, right: Color = Color{ a = 0, .. },
         bottom: Color = Color{ a = 0, .. }, left: Color = Color{ a = 0, .. },
@@ -487,19 +590,19 @@ namespace ui {
         border_color: SideColors = SideColors{ .. },
     }
     fn round { radius: f32 } -> Corners               // the same radius at every corner
-    fn stroke { width: f32 } -> Sides                 // the same width on every side
+    fn stroke { width: i32 } -> Sides                 // the same width on every side
     fn color_sides { color: Color } -> SideColors     // the same colour on every side
     enum Cap: u8 { round, butt, square }
 
     union Cmd {
         rect{ rect: Rect, style: RectStyle, clip: u16 },
         image{ rect: Rect, image: Image, uv: Uv, tint: Color, quarter: u8, angle: f32, radius: Corners, blend: Blend, clip: u16 },
-        text{ font: Font, size: f32, x: f32, y: f32, text: Span, color: Color, clip: u16 },
+        text{ font: Font, size: f32, x: i32, y: i32, text: Span, color: Color, clip: u16 },
         line{ x0: f32, y0: f32, x1: f32, y1: f32, width: f32, color: Color, cap: Cap, clip: u16 },
         host{ slot: u32, rect: Rect },
     }
-    // A piece of a picture: how a sprite or an atlas entry is named.
-    struct Region { image: Image = Image{ .. }, uv: Uv = Uv{ .. }, width: f32 = 0.0, height: f32 = 0.0 }
+    // A piece of a picture: how a sprite or an atlas entry is named; its size in texels.
+    struct Region { image: Image = Image{ .. }, uv: Uv = Uv{ .. }, width: i32 = 0, height: i32 = 0 }
     // What shapes are cut to: a rectangle, and optionally a rounded rectangle as well (radius 0: none).
     struct Clip { rect: Rect = Rect{ .. }, round: Rect = Rect{ .. }, radius: f32 = 0.0 }
 
@@ -508,8 +611,7 @@ namespace ui {
         text: []mut u8, text_len: u32,        // what the Spans point into
         fonts: []mut FontDef, font_count: u32,
         clips: []mut Clip, clip_count: u32,   // the clip table; clips[0] is the whole surface
-        width: f32, height: f32,              // the logical size the shapes are laid out in
-        scale_x: f32, scale_y: f32,           // device pixels per logical unit
+        width: i32, height: i32,              // the surface, in device pixels
         dropped: u32,                         // shapes that did not fit
     }
 }
@@ -519,7 +621,7 @@ namespace ui {
 |---|---|
 | `rect` | `rect` filled with `fill` (alpha 0: no fill), each corner rounded by its own radius, each side with its own border width and colour, drawn inside the edge. A disc or ring is a square with every radius `w / 2`. |
 | `image` | The part `uv` of `image` over `rect`, multiplied by `tint`, corners rounded by `radius`. `uv` (0, 0) is the picture's top left. `rect` is where the picture ends up after `quarter` counterclockwise quarter turns; `angle` (radians, counterclockwise) then turns it about the rectangle's centre. `blend` is alpha or additive. |
-| `text` | One line of `text` in `font` at `size` (the line height wanted, in logical units) with the line box's top left at (`x`, `y`). Wrapping and alignment are already done. |
+| `text` | One line of `text` in `font` at `size` (the line height wanted, in pixels) with the line box's top left at the pixel (`x`, `y`). Wrapping and alignment are already done. `size` is the one text quantity that is `f32`: an outline font rounds it to a whole pixel size and a glyph table with `snap` to a whole magnification, and a glyph table without `snap` is drawn at exactly `size / height` (section 2.7). |
 | `line` | A straight segment `width` thick with the given cap, antialiased at any angle. |
 | `host` | A rectangle the host draws itself, in order: shapes before it are under it, shapes after are over it. |
 
@@ -528,9 +630,10 @@ namespace ui {
   one, is that of the nearest enclosing rounded clip (one rounded level at a time: an inner rounded clip
   replaces it, a plain one keeps it) [read: `RenderedCanvasBase.PushClip`]. Equal entries are shared. A
   full table (256) drops the shape and counts it; it never draws unclipped.
-- Coordinates are logical units, y down, origin top left. Rectangles and text positions are snapped to
-  device pixels by the core, each edge on its own with sizes derived from the snapped edges, which is
-  ZGF's rule [read: `RenderedCanvasBase.DrawRect`] and kotor's [read: `draw.ctx:56`].
+- Coordinates are device pixels, y down, origin top left. The list carries the surface's size and no
+  scale: nothing below the core needs one. (ZGF and kotor snap each edge when they draw and derive
+  sizes from the snapped edges [read: `RenderedCanvasBase.DrawRect`, `draw.ctx:56`]; here nothing is
+  left to snap, and a size does not depend on a position.)
 - Filtering and wrap are properties of an image, set when the backend creates it.
 
 The draw list is usable without a `Ui`, for a surface with no widgets (kotor's minimap pass into a
@@ -539,7 +642,7 @@ render target):
 ```
 namespace ui { namespace draw {
     fn make(S) { realloc: alloc::Fn(S), mut heap: S, cmds: u32, text: u32, clips: u32, fonts: u32 } -> !DrawList
-    fn reset { mut list: DrawList, width: f32, height: f32, scale_x: f32, scale_y: f32 }
+    fn reset { mut list: DrawList, width: i32, height: i32 }      // the surface, in device pixels
     fn add { mut list: DrawList, cmd: Cmd }
     fn add_clip { mut list: DrawList, clip: Clip } -> ?u16        // the entry's index; null when the table is full
     fn add_rect { mut list: DrawList, rect: Rect, style: RectStyle, clip: u16 }
@@ -593,7 +696,7 @@ namespace ui_stage {
         draws: []mut Draw, draw_count: u32,
         passes: []mut Pass, pass_count: u32,
         atlas: Atlas,
-        width: f32, height: f32, pixel_width: f32, pixel_height: f32,   // u_canvasMetrics
+        width: i32, height: i32,    // the canvas in device pixels: u_canvasMetrics is (width, height, width, height)
         revision: u64,          // changes only when the staged bytes differ from the last frame's
         dropped: u32,
     }
@@ -609,8 +712,10 @@ pieces.
 
 What `stage` does with each shape:
 
-- Everything is flipped into ZGF's canvas space (y up, origin bottom left) as it is written. Colours
-  are packed as ARGB.
+- Everything is flipped into ZGF's canvas space (y up, origin bottom left) as it is written. The canvas
+  is the surface, one unit a pixel, so the shaders' "logical" and "device" sizes are the same two
+  numbers and the flip of a whole-pixel rectangle is exact: the instances are `f32` (they are GPU data)
+  holding whole numbers. Colours are packed as ARGB.
 - `rect` becomes one `RectInstance`.
 - `image` becomes one `ImageInstance`. A quarter turn becomes part of the rotation, with the rectangle
   transposed about its centre for odd turns. The V of the region is flipped, so backends keep images
@@ -635,8 +740,12 @@ the end of the frame so the next frame refills it.
 
 **Batching** is ZGF's rule: walking instances in paint order, each joins the most recent draw of its
 kind (and, for images, its texture and blend) that it can reach without passing a draw of another kind
-whose bounds (clipped, and widened for a rotation) it overlaps. Instances are then laid out per kind in
-draw order. A tool UI is a few draws; a KOTOR panel is one draw per texture it uses.
+whose bounds (clipped, and widened for a rotation) it overlaps. A rectangle's and an image shape's
+bounds are exactly their whole-pixel rectangles, so two that touch never overlap; the bounds that are
+widened by a pixel are those of an unrotated quad between pixels, which only a glyph of a glyph table
+without `snap` on a backend image is, and a line's padded box is what its instance carries. Instances
+are then laid out per kind in draw order. A tool UI is a few draws; a KOTOR panel is one draw per
+texture it uses.
 
 **What a backend does with a `Staged`:**
 
@@ -714,14 +823,33 @@ namespace ui {
     struct TextProvider { state: *mut Opaque, metrics: MetricsFn, shape: ShapeFn, rasterize: RasterFn }
     fn set_provider { mut ui: Ui, provider: TextProvider }
 
-    struct Placed { rect: Rect, uv: Uv }
-    fn lay_glyphs { font: FontDef, size: f32, x: f32, y: f32, text: []u8, scale_x: f32, scale_y: f32, out: []mut Placed } -> usize
+    // A glyph of a glyph table as it is laid out: a quad in pixels, inside a run, so f32.
+    struct Placed { x: f32, y: f32, w: f32, h: f32, uv: Uv }
+    fn lay_glyphs { font: FontDef, size: f32, x: f32, y: f32, text: []u8, out: []mut Placed } -> usize
+    // A line's height and where its baseline lies below its top, in whole pixels.
+    struct LineBox { height: i32 = 0, ascent: i32 = 0 }
+    fn measure_text { mut ui: Ui, font: Font, size: f32, text: []u8 } -> i32      // rounded up
+    fn measure_line { mut ui: Ui, font: Font, size: f32 } -> LineBox
 }
 ```
 
 `Shaped` is ZGF's `ShapedGlyph`: the glyph's index, the sized face it came from (which may be a
 fallback), its offsets and advance in device pixels, and the byte offset of its cluster in the text
 [read: `ShapedGlyph.cs`].
+
+**Text in whole pixels.** A text's `size` is always device pixels; a size written in logical units
+becomes a whole pixel size with `ui::to_font_size`.
+
+| | Rule |
+|---|---|
+| inside a shaped run | advances and offsets are fractional (`f32`), as the provider and the glyph table give them: that is what the staged level places glyphs from, and adding rounded advances would drift |
+| an outline font's size | `size` rounded to a whole pixel size, at least 1; the provider shapes and rasterises at it, and nothing is divided by a scale |
+| a glyph table with `snap` | a whole magnification, `round(size / height)`, at least 1, and every glyph edge on a pixel |
+| a glyph table without `snap` | exactly `size / height`: the glyphs inside the run may lie between pixels, the run starts on a pixel and measures a whole width |
+| a measured width, a line's width | the sum of the advances rounded up, so a box as wide as the measure holds the text; a line fits a limit when its rounded-up width is no more than it |
+| a line's height and ascent | whole: the height rounded up, the ascent to the nearest pixel, so every baseline is a pixel row |
+| a line's position | a whole pixel (`Cmd::text` has `i32` `x`, `y`); a centred line's spare room is halved and rounded down |
+| a caret offset | the advances before the caret, to the nearest pixel: offsets never go down, and the last is the measured width or the pixel before it |
 
 **Outline fonts (`outline`): ordinary software.** The package `ui/fonts` is designed after `ZGF.Fonts`
 [read: `FreeTypeFontBackend.cs`, `GlyphAtlas.cs`, `ShapedGlyph.cs`, `GlyphRef.cs`,
@@ -745,7 +873,7 @@ namespace ui_fonts {
 | ZGF.Fonts | `ui/fonts` |
 |---|---|
 | `LoadFontFromMemory(data, pixelSize)`: a FreeType face over pinned bytes | `add_face`: the program reads the file and passes the bytes. `FT_New_Memory_Face` over them. |
-| `GetSizedVariant(font, pixelSize)`: one face per pixel size, each with its own id | The same: a sized variant is made the first time a size is asked for, and its id is the `face` in `Shaped`. Sizes are device pixels (`size * scale`), so text is rasterised at the pixels it is shown at. |
+| `GetSizedVariant(font, pixelSize)`: one face per pixel size, each with its own id | The same: a sized variant is made the first time a size is asked for, and its id is the `face` in `Shaped`. Sizes are device pixels (a text's whole pixel size), so text is rasterised at the pixels it is shown at. |
 | `TryGetGlyph`: `FT_Load_Glyph` with `FT_LOAD_RENDER`, `FT_LOAD_NO_BITMAP`, `FT_LOAD_TARGET_NORMAL`; 8-bit coverage into the atlas | `rasterize`: the same call and flags, copied into the caller's buffer. The atlas and the glyph cache live in `ui_stage`, so glyph-table fonts share them. |
 | `GetShapedText`: HarfBuzz per run, positions in 26.6 units divided by 64, results cached per font by text in two generations of 256 | `shape`: the same, with the same cache, so measuring and then staging a line shapes it once. |
 | `ShapeWithFallback`: the line split into runs by which face covers each character (`FT_Get_Char_Index`), each run shaped by its face | The same, over the faces the program gave `add_fallback`. |
@@ -754,9 +882,9 @@ namespace ui_fonts {
 | Emboldened variants, `FontFeatureSet` | Excluded (section 1.2). |
 | `GetMetrics`: ascender, descender, line height of the sized face | `metrics`. |
 
-- The core measures a run by shaping it and summing the advances; a text field takes its caret
-  positions from the clusters. The core caches a frame's measurements by a hash of font, size and
-  bytes.
+- The core measures a run by shaping it and summing the advances, and rounds the sum up; a text field
+  takes its caret positions from the clusters, each to the nearest pixel. The core caches a frame's
+  sums by a hash of font, pixel size and bytes.
 - The provider's functions get only the opaque state pointer, so the `Library` holds the `Fonts`
   capability itself [compiled, a10].
 - **Verified on this machine** [compiled and run, a7]: a ctxlang program read `segoeui.ttf`, FreeType
@@ -773,8 +901,9 @@ namespace ui_fonts {
 
 - `glyphs[c - first]` is the glyph of character `c`: its box in the picture, its size in font units, its
   offset from the pen, its advance. `height` is the line height in font units, so a text shape at `size`
-  draws at `size / height`. With `snap`, the scale is rounded so that one font pixel covers whole device
-  pixels and each glyph starts on a device pixel.
+  pixels draws at `size / height` pixels a font unit. With `snap`, that magnification is rounded to a
+  whole number, at least 1, so one font pixel covers whole device pixels and each glyph starts on one.
+  Without it the magnification is exact, fractional when the size asks for it.
 - The picture is either a backend image (KOTOR's TPC textures), or 8-bit coverage in `pixels` with
   `image.id` 0, which the staged level packs into its atlas.
 - **KOTOR fonts.** `ui_kotor::from_font` turns a `render::Font` into a glyph table with
@@ -783,6 +912,23 @@ namespace ui_fonts {
   rules and calls `ui::paint_text` once per line, so the general wrapping code never has to match the
   original engine. kotor's developer overlay uses the game's own console font this way, as `fxhud` does
   today [read: `fxhud.ctx`].
+- **What kotor does with its fonts today** [read: `kotor/lib/gui/draw.ctx`, `text.ctx`,
+  `kotor/lib/render/render.ctx:857`]. `lib/gui` lays text out in whole GUI pixels (integer glyph
+  widths, integer line positions) and `render::draw_text` draws each glyph quad at its design size in
+  GUI pixels; the UI pass then scales GUI pixels to the window by the quarter-step scale. Borders are
+  snapped to device pixels piece by piece (`snap`, `put_piece`); text is not snapped at all. So at a
+  fractional scale a line that starts at an odd GUI pixel starts half a device pixel in, and a glyph 7
+  GUI pixels wide covers 10.5 device pixels. What that decided here:
+  - The size of a text shape stays `f32`, because the magnification must be exactly the quarter-step
+    scale: a font 13 high at scale 1.25 is drawn at size 16.25, and rounding that to 16 would make
+    every line 1.5 % narrower than the original's.
+  - A run's origin is a whole device pixel all the same (the owner's rule, and the sharper choice).
+    kui places a line at the pixel the original's snap formula gives its GUI coordinate. At scales 1
+    and 2 that is where `lib/gui` draws it; at 1.25, 1.5 and 1.75 a line whose GUI coordinate is not
+    a multiple of the scale's denominator lands up to half a device pixel from where `lib/gui`, which
+    does not snap text, puts it. That is a known, explained difference for stage 16's pixel
+    comparison, not one to chase; removing it would mean snapping text in `lib/gui` too, which is the
+    owner's call.
 - **The test font** is a glyph table built in code (section 6.1).
 
 **Where a sample gets a font file.** A sample takes `--font PATH` and otherwise tries a system path for
@@ -819,10 +965,10 @@ namespace ui {
     const MOD_CTRL: u8 = 2
     const MOD_ALT: u8 = 4
     union Event {
-        pointer_move{ x: f32, y: f32 },                    // logical units
+        pointer_move{ x: i32, y: i32 },                    // device pixels
         pointer_button{ button: u8, down: bool, clicks: u8 },
         pointer_leave,
-        wheel{ dx: f32, dy: f32 },
+        wheel{ dx: f32, dy: f32 },                         // notches, fractional on a smooth wheel
         key{ key: Key, down: bool, repeat: bool, mods: u8 },
         text{ bytes: [32]u8, len: u8 },                    // committed text, in the focused font's encoding
         paste{ text: []u8 },                               // the host's answer to Requests.paste; copied at the push
@@ -832,18 +978,25 @@ namespace ui {
     struct Requests {
         cursor: Cursor = Cursor::arrow,
         wants_pointer: bool = false, wants_keys: bool = false,
-        text_input: bool = false, text_rect: Rect = Rect{ .. },   // turn OS text input on; where the caret is
+        text_input: bool = false, text_rect: Rect = Rect{ .. },   // turn OS text input on; where the caret is, in device pixels
         copy: []u8 = "", paste: bool = false,                     // set the clipboard; send me a paste event
         animating: bool = false,                                  // something moves with time: draw another frame
     }
-    struct FrameInfo { width: f32, height: f32, pixel_width: f32, pixel_height: f32, dt: f32 }
+    // The surface in device pixels, device pixels a logical unit, seconds since the last frame.
+    struct FrameInfo { width: i32, height: i32, scale: f32, dt: f32 }
 }
 ```
 
-- **DPI and scale.** The host states the logical size and the device size each frame; the core derives
-  the scale per axis. A tool passes `pixels / (monitor scale * zoom)`. kotor passes its `ui_w`, `ui_h`
-  (window divided by the quarter-step scale) and the drawable size, which reproduces its `Grid` exactly
-  [read: `draw.ctx:44`].
+- **DPI and scale.** The host states the surface's size in device pixels and one scale each frame:
+  how many device pixels a logical unit is. A tool passes `monitor scale * zoom` (1.5 on a 150 %
+  display). The core applies it in one place, when a declaration is recorded (section 2.0, "Units"),
+  and holds it to what it can use: a scale that is not a positive number is 1, and it is kept between
+  1/64 and 64. kotor passes its quarter-step scale; kui does not rely on it for its own art, whose
+  pixels it works out from the design coordinates with the original's snap [read: `draw.ctx:44`,
+  `draw.ctx:56`] and places with `ui::place_pixels`.
+- **The pointer** arrives in device pixels, and so do the rectangles the core hands back. A host whose
+  window system reports points converts them (`ui_sdl::to_event` multiplies by the drawable's pixels a
+  window coordinate).
 - **Clipboard** is two requests and one event, so no call leaves the core mid-frame: Ctrl+C sets
   `copy`, Ctrl+V sets `paste` and the host answers with `Event::paste` before the next frame.
 - **Text input.** `text_input` follows whether a text field has focus (the host calls
@@ -863,7 +1016,9 @@ namespace ui {
   `danger`. State colours (`control_hovered`, `control_pressed`, `accent_hovered`) are filled in from
   the base roles by `ui::derive_theme{ theme }` when left at alpha 0.
 - Metrics: `font_size`, `gap`, `padding`, `control_height`, `row_height`, `radius`, `border_width`,
-  `scrollbar`, `tip_delay`.
+  `scrollbar`, `tip_delay`. They are logical units (`f32`): a widget passes them on in a `Box`, which
+  the core converts when the element is recorded, and converts the ones it paints with itself
+  (`ui::to_pixels`, `ui::to_font_size`).
 - `font` is a font the program registered. The theme has no default for it: a program sets
   `ui.theme.font` from what `ui::add_font` or `ui_fonts::make_font` returned.
 - `ui::make_dark_theme{}` and `ui::make_light_theme{}` are the two built in.
@@ -911,7 +1066,15 @@ Both sketches below are compiled and run against stub declarations (real signatu
 bodies): `ctxprobe/a4/app.ctx` and `ctxprobe/a4/kotor_style.ctx` over `ui_stub.ctx` and `ui_stub2.ctx`
 [compiled, a4], and again beside kotor's `lib/base` and `lib/platform` [compiled, a5]. The stub lays
 nothing out, so this checks that the API can be written and called in today's ctxlang, not that it
-behaves.
+behaves. That was the sketches' first form, in logical units throughout. They are shown here on the
+units rule of section 2.0: 3.1 is unchanged but for its host loop (an application declares in logical
+units, which is what it did), 3.2 is rewritten for pixel placement, and 3.3 is the surface the code has
+after stages 0 to 7 and the conversion.
+
+**Which unit a call takes** is one rule: what *declares* an element (`Box`, `Size`, `Place`, `Insets`,
+`TextStyle`, `Opts`, `WindowOpts`, the theme, and so every stock widget's options) is logical units;
+what *draws* or *answers* (`paint_*`, `ui::draw`, `get_rect`, `measure_text`, `get_pointer`,
+`Interaction`, `Node`) is device pixels. A widget moves between the two with `ui::to_pixels`.
 
 ### 3.1 A frame of application code
 
@@ -1031,8 +1194,9 @@ let test_font = ui_test::make_test_font{ realloc = arena::alloc, &heap } iferr {
 gui.theme.font = ui::add_font{ ui = &gui, font = test_font } ifnull { return 1 }
 let mut staged = ui_stage::make{ realloc = arena::alloc, &heap, cap = ui_stage::Capacity{ .. } } iferr { return 1 }
 // each frame:
-let used = ui::push_event{ ui = &gui, event = ui::Event::pointer_move{ x = 40.0, y = 60.0 } }
-ui::begin_frame{ ui = &gui, frame = ui::FrameInfo{ width = 800.0, height = 600.0, pixel_width = 1200.0, pixel_height = 900.0, dt = 0.016 } }
+let used = ui::push_event{ ui = &gui, event = ui::Event::pointer_move{ x = 60, y = 90 } }      // device pixels
+// A surface of 1200 by 900 pixels at 1.5 pixels a logical unit: the UI is laid out as 800 by 600 units.
+ui::begin_frame{ ui = &gui, frame = ui::FrameInfo{ width = 1200, height = 900, scale = 1.5, dt = 0.016 } }
 show_app{ ui = &gui, &app }
 ui::end_frame{ ui = &gui }
 let req = ui::take_requests{ ui = &gui }
@@ -1057,49 +1221,84 @@ Two things the sketch shows about writing against this API:
 `kui` is the KOTOR widget set. Its widgets are written over `ui`'s primitives exactly as the stock
 widgets are. Controls come from a table the `.gui` loader filled once; a control's TAG is its id.
 
+kui does not use logical units at all. A `.gui` file's coordinates are the original's design pixels,
+and the original puts every piece on the device grid itself: each edge on its own with
+`floor(v * scale + 0.5)`, the size the difference of the two snapped edges
+[read: `kotor/lib/gui/draw.ctx:56`, `put_piece`]. kui does the same arithmetic in integers and hands
+the framework the resulting device pixels: `ui::place_pixels` for elements, the `paint_*` calls for
+pieces. The framework neither scales nor rounds them, so a panel lands on exactly the pixels the
+original's formula gives. (The sketch was compiled in its first form, in logical units; this form
+follows the units rule and is design intent.)
+
 ```
 namespace kui {
     struct Art { image: ui::Image = ui::Image{ .. }, additive: bool = false }
     struct Border {
         corner: Art = Art{ .. }, edge: Art = Art{ .. }, fill: Art = Art{ .. },
-        dimension: f32 = 0.0, tint: ui::Color = ui::Color{ r = 255, g = 255, b = 255, .. }, pulsing: bool = false,
+        dimension: i32 = 0, tint: ui::Color = ui::Color{ r = 255, g = 255, b = 255, .. }, pulsing: bool = false,
     }
     struct Control {
         tag: []u8,
-        x: f32, y: f32, w: f32, h: f32,                 // pixels in the panel, as the file has them
+        x: i32, y: i32, w: i32, h: i32,                 // design pixels in the panel, as the file has them
         border: Border = Border{ .. }, hilight: Border = Border{ .. }, selected: Border = Border{ .. },
-        font: ui::Font = ui::Font{ .. },
+        font: ui::Font = ui::Font{ .. }, font_height: f32 = 16.0,              // the font's own height, in design pixels
         text_color: ui::Color = ui::Color{ r = 0, g = 168, b = 250, .. },
         up: []u8 = "", down: []u8 = "", left: []u8 = "", right: []u8 = "",      // MOVETO, by TAG
     }
-    struct Panel { name: []u8, w: f32, h: f32, controls: []Control }
-    struct Skin { pulse: f32 = 1.0, lit_text: ui::Color = ui::Color{ r = 250, g = 255, b = 0, .. } }
+    struct Panel { name: []u8, w: i32, h: i32, controls: []Control }
+    // `scale` is device pixels a design pixel (the game's quarter-step scale); the screen is in design pixels.
+    struct Skin { pulse: f32 = 1.0, lit_text: ui::Color = ui::Color{ r = 250, g = 255, b = 0, .. }, scale: f32 = 1.0, screen_w: i32 = 640, screen_h: i32 = 480 }
 
-    // The panel: rigid, centred in the logical screen, its controls placed in its own pixels.
-    fn begin_panel { mut ui: ui::Ui, panel: *Panel } -> ui::Scope {
-        let outer = ui::push_id{ &ui, name = panel.name }
-        let box = ui::Box{
-            width = ui::fix{ px = panel.w }, height = ui::fix{ px = panel.h }, clip = true,
-            place = ui::Place{ anchor_x = 0.5, anchor_y = 0.5, x = 0.0 - panel.w / 2.0, y = 0.0 - panel.h / 2.0 }, ..
+    // The original's snap: the device pixel a design coordinate lands on, floor(v * scale + 0.5).
+    fn snap { v: i32, scale: f32 } -> i32 {
+        return ui::scale_position{ position = @as(f32, v), scale }
+    }
+
+    // Where an element's design corner is on the screen. Pieces are snapped in the screen's
+    // coordinates, edge by edge, and answered in the element's own pixels, which is what a
+    // placement in a parent and a paint in an element take.
+    struct Grid { scale: f32, x: i32, y: i32 }
+    fn snap_rect { g: Grid, x0: i32, y0: i32, x1: i32, y1: i32 } -> ui::Rect {
+        let left = snap{ v = g.x + x0, scale = g.scale }
+        let top = snap{ v = g.y + y0, scale = g.scale }
+        return ui::Rect{
+            x = left - snap{ v = g.x, scale = g.scale }, y = top - snap{ v = g.y, scale = g.scale },
+            w = snap{ v = g.x + x1, scale = g.scale } - left, h = snap{ v = g.y + y1, scale = g.scale } - top,
         }
+    }
+
+    // The panel's design corner: rigid, centred in the design screen.
+    fn get_panel_grid { skin: Skin, panel: *Panel } -> Grid {
+        return Grid{ scale = skin.scale, x = (skin.screen_w - panel.w) / 2, y = (skin.screen_h - panel.h) / 2 }
+    }
+
+    // The panel: placed on the pixels its design rectangle snaps to, its controls placed in it.
+    fn begin_panel { mut ui: ui::Ui, skin: Skin, panel: *Panel } -> ui::Scope {
+        let outer = ui::push_id{ &ui, name = panel.name }
+        let g = get_panel_grid{ skin, panel }
+        let screen = Grid{ scale = skin.scale, x = 0, y = 0 }
+        let mut box = ui::place_pixels{ rect = snap_rect{ g = screen, x0 = g.x, y0 = g.y, x1 = g.x + panel.w, y1 = g.y + panel.h } }
+        box.clip = true
         _ = ui::begin_element{ &ui, id = ui::make_id{ ui, name = "panel" }, axis = ui::Axis::column, box }
         return outer                                        // ending the id scope ends the element opened inside it
     }
 
     // CSWGuiBorder's scheme: one corner picture turned four ways, one edge picture in whole segments,
-    // then the fill. Every piece is an ordinary image shape, one quad once staged; the quarter turns are exact.
-    fn paint_border { mut ui: ui::Ui, skin: Skin, b: Border, w: f32, h: f32 } {
+    // then the fill. Every piece is an ordinary image shape, one quad once staged; the quarter turns
+    // are exact, and each piece's pixels are the original's: `g` is the control's design corner.
+    fn paint_border { mut ui: ui::Ui, skin: Skin, g: Grid, b: Border, w: i32, h: i32 } {
         let tint = mul_alpha{ c = b.tint, a = if b.pulsing { skin.pulse } else { 1.0 } }
         let c = b.dimension
         let uv = ui::Uv{ .. }
-        if b.corner.image.id != 0 and c > 0.0 {
+        if b.corner.image.id != 0 and c > 0 {
             let blend = if b.corner.additive { ui::Blend::additive } else { ui::Blend::alpha }
-            ui::paint_image{ &ui, rect = ui::Rect{ x = 0.0, y = 0.0, w = c, h = c }, image = b.corner.image, uv, tint, quarter = 0, angle = 0.0, blend }
-            ui::paint_image{ &ui, rect = ui::Rect{ x = 0.0, y = h - c, w = c, h = c }, image = b.corner.image, uv, tint, quarter = 1, angle = 0.0, blend }
-            ui::paint_image{ &ui, rect = ui::Rect{ x = w - c, y = h - c, w = c, h = c }, image = b.corner.image, uv, tint, quarter = 2, angle = 0.0, blend }
-            ui::paint_image{ &ui, rect = ui::Rect{ x = w - c, y = 0.0, w = c, h = c }, image = b.corner.image, uv, tint, quarter = 3, angle = 0.0, blend }
+            ui::paint_image{ &ui, rect = snap_rect{ g, x0 = 0, y0 = 0, x1 = c, y1 = c }, image = b.corner.image, uv, tint, quarter = 0, angle = 0.0, blend }
+            ui::paint_image{ &ui, rect = snap_rect{ g, x0 = 0, y0 = h - c, x1 = c, y1 = h }, image = b.corner.image, uv, tint, quarter = 1, angle = 0.0, blend }
+            ui::paint_image{ &ui, rect = snap_rect{ g, x0 = w - c, y0 = h - c, x1 = w, y1 = h }, image = b.corner.image, uv, tint, quarter = 2, angle = 0.0, blend }
+            ui::paint_image{ &ui, rect = snap_rect{ g, x0 = w - c, y0 = 0, x1 = w, y1 = c }, image = b.corner.image, uv, tint, quarter = 3, angle = 0.0, blend }
         }
-        // ... edge runs (quarter 0 and 2 along the top and bottom, 1 and 3 down the sides) and the fill: in the probe file
+        // ... edge runs (quarter 0 and 2 along the top and bottom, 1 and 3 down the sides) and the fill,
+        // each piece through snap_rect, so neighbours share the edge they meet on
     }
 
     // A button: hover is focus, the hilight border and yellow pulsing text while it has it, MOVETO links.
@@ -1109,19 +1308,25 @@ namespace kui {
         let it = ui::press{ &ui, id, opts = ui::PressOpts{ focus_on_hover = true, .. } }
         ui::set_links{ &ui, id, links = ui::Links{ up = link_of{ ui, tag = c.up }, down = link_of{ ui, tag = c.down }, left = link_of{ ui, tag = c.left }, right = link_of{ ui, tag = c.right } } }
         let lit = it.focused or it.hovered
-        let el = ui::begin_element{ &ui, id, axis = ui::Axis::row, box = ui::place{ x = c.x, y = c.y, w = c.w, h = c.h } }
-        paint_border{ &ui, skin, b = if lit { c.hilight } else { c.border }, w = c.w, h = c.h }
-        let size: f32 = 16.0
+        let in_panel = get_panel_grid{ skin, panel }
+        let place = snap_rect{ g = in_panel, x0 = c.x, y0 = c.y, x1 = c.x + c.w, y1 = c.y + c.h }
+        let el = ui::begin_element{ &ui, id, axis = ui::Axis::row, box = ui::place_pixels{ rect = place } }
+        let g = Grid{ scale = skin.scale, x = in_panel.x + c.x, y = in_panel.y + c.y }
+        paint_border{ &ui, skin, g, b = if lit { c.hilight } else { c.border }, w = c.w, h = c.h }
+        // The font is drawn at its design height times the scale exactly (a text's size is f32 for
+        // this), and the line starts on a whole pixel: its measured width and height are pixels.
+        let size = c.font_height * skin.scale
         let tw = ui::measure_text{ &ui, font = c.font, size, text }
+        let line = ui::measure_line{ &ui, font = c.font, size }
         let color = if lit { mul_alpha{ c = skin.lit_text, a = skin.pulse } } else { c.text_color }
-        ui::paint_text{ &ui, font = c.font, size, x = (c.w - tw) / 2.0, y = (c.h - size) / 2.0, text, color }
+        ui::paint_text{ &ui, font = c.font, size, x = (place.w - tw) / 2, y = (place.h - line.height) / 2, text, color }
         ui::end{ &ui, scope = el }
         return it.clicked
     }
 
     // A list that scrolls by whole rows, as the original's do: its scroll position is the widget's own
     // state, the wheel is taken only while the pointer is over it, and rows are placed, never flowed.
-    fn begin_rows { mut ui: ui::Ui, panel: *Panel, tag: []u8, count: i32, row_h: f32 } -> ui::List {
+    fn begin_rows { mut ui: ui::Ui, skin: Skin, panel: *Panel, tag: []u8, count: i32, row_h: i32 } -> ui::List {
         let c = find_control{ panel, tag } ifnull { return ui::List{ scope = ui::Scope{ .. }, first = 0, last = 0 } }
         let id = ui::make_id{ ui, name = tag }
         let mut st = ui::load_state{ &ui, id }
@@ -1132,25 +1337,26 @@ namespace kui {
         if st.i[0] < 0 { st.i[0] = 0 }
         ui::store_state{ &ui, id, values = st }
         ui::describe{ &ui, id, role = ui::Role::list, label = tag, value = @as(f32, st.i[0]), flags = 0 }
-        let mut box = ui::place{ x = c.x, y = c.y, w = c.w, h = c.h }
+        let mut box = ui::place_pixels{ rect = snap_rect{ g = get_panel_grid{ skin, panel }, x0 = c.x, y0 = c.y, x1 = c.x + c.w, y1 = c.y + c.h } }
         box.clip = true
         let scope = ui::begin_element{ &ui, id, axis = ui::Axis::column, box }
         return ui::List{ scope, first = @as(u32, st.i[0]), last = @as(u32, st.i[0] + (if max > 0 { visible } else { @as(i64, count) })) }
     }
 
-    // A 3D view inside the panel's z-order: the host draws it between the UI passes on either side.
-    fn add_view { mut ui: ui::Ui, panel: *Panel, tag: []u8, slot: u32 } {
+    // A 3D view inside the panel's z-order: the host draws it between the UI passes on either side,
+    // in the slot's rectangle, which is device pixels.
+    fn add_view { mut ui: ui::Ui, skin: Skin, panel: *Panel, tag: []u8, slot: u32 } {
         let c = find_control{ panel, tag } ifnull { return }
-        ui::add_host_slot{ &ui, slot, box = ui::place{ x = c.x, y = c.y, w = c.w, h = c.h } }
+        ui::add_host_slot{ &ui, slot, box = ui::place_pixels{ rect = snap_rect{ g = get_panel_grid{ skin, panel }, x0 = c.x, y0 = c.y, x1 = c.x + c.w, y1 = c.y + c.h } } }
     }
 }
 
 // The Gameplay options screen: what kotor's tag-keyed glue becomes.
 fn show_gameplay_options { mut ui: ui::Ui, skin: kui::Skin, panel: *kui::Panel, mut settings: Settings } -> Action {
     let mut action = Action::none
-    let p = kui::begin_panel{ &ui, panel }
+    let p = kui::begin_panel{ &ui, skin, panel }
     kui::add_label{ &ui, skin, panel, tag = "LBL_TITLE", text = "Gameplay" }
-    kui::add_view{ &ui, panel, tag = "LBL_3DVIEW", slot = 1 }
+    kui::add_view{ &ui, skin, panel, tag = "LBL_3DVIEW", slot = 1 }
     _ = kui::add_check{ &ui, skin, panel, tag = "CB_AUTOSAVE", value = &settings.autosave }
     if kui::add_button{ &ui, skin, panel, tag = "BTN_DIFFICULTY", text = "Difficulty" } { action = Action::pick_difficulty }
     if kui::add_button{ &ui, skin, panel, tag = "BTN_BACK", text = "Close" } { action = Action::close }
@@ -1172,25 +1378,31 @@ slot's rectangle.
 
 ### 3.3 The rest of the public surface
 
-All compiled in the stub [compiled, a4]. Common options:
+The first form of these was compiled in the stub [compiled, a4]; the declarations of stages 0 to 7 are
+the code's. Common options, all in logical units:
 
 ```
-struct Size { kind: SizeKind = SizeKind::fit, value: f32 = 0.0, min: f32 = 0.0, max: f32 = 100000.0 }
+struct Insets { left: f32 = 0.0, top: f32 = 0.0, right: f32 = 0.0, bottom: f32 = 0.0 }    // a length a side, logical
+fn inset { by: f32 } -> Insets                                  // the same length on every side
+struct Size { kind: SizeKind = SizeKind::fit, value: f32 = 0.0, min: f32 = 0.0, max: f32 = NO_LIMIT, pixels: i32 = 0 }
 const FIT: Size = Size{ .. }
 const GROW: Size = Size{ kind = SizeKind::grow, .. }
-fn fix { px: f32 } -> Size
+fn fix { size: f32 } -> Size                                    // logical units
+fn fix_pixels { size: i32 } -> Size                             // exactly that many device pixels
 fn take { part: f32 } -> Size
 struct Place { anchor_x: f32 = 0.0, anchor_y: f32 = 0.0, x: f32 = 0.0, y: f32 = 0.0 }
 struct Box {
     width: ?Size = null, height: ?Size = null,
     padding: ?Insets = null, gap: ?f32 = null,
     align_x: ?Align = null, align_y: ?Align = null,
-    fill: ?Color = null, border: ?SideColors = null, border_width: ?Sides = null, radius: ?Corners = null,
+    fill: ?Color = null, border: ?SideColors = null, border_width: ?Insets = null, radius: ?Corners = null,
     clip: ?bool = null, opacity: ?f32 = null,
     place: ?Place = null,
+    pixels: ?Rect = null,                                       // a placement in device pixels; it wins over width, height and place
     hit_outset: ?Insets = null,
 }
-fn place { x: f32, y: f32, w: f32, h: f32 } -> Box
+fn place { x: f32, y: f32, w: f32, h: f32 } -> Box              // logical units
+fn place_pixels { rect: Rect } -> Box                           // device pixels, taken as they are
 struct Opts { id: []u8 = "", box: Box = Box{ .. }, enabled: bool = true, tip: []u8 = "" }
 struct Range { min: f32 = 0.0, max: f32 = 1.0, step: f32 = 0.0, digits: u32 = 2 }
 struct TextRules { hint: []u8 = "", max_chars: u32 = 0, password: bool = false, filter: ?fn{ c: u32 } -> bool = null }
@@ -1201,7 +1413,21 @@ struct TextBuf { bytes: []mut u8, len: usize }
 A clipping element with a radius clips its children to the rounded shape (the clip table's rounded
 entry).
 
-Primitives, which the stock widgets and kui are both built from:
+The conversions, which the core applies to every declaration and a widget calls for a length of its
+own (the rules are section 2.0's table):
+
+```
+fn get_scale { ui: Ui } -> f32                                  // device pixels a logical unit this frame
+fn to_pixels { ui: Ui, length: f32 } -> i32                     // a length: nearest pixel, never 0 unless 0
+fn to_pixel_position { ui: Ui, position: f32 } -> i32           // a position: nearest pixel
+fn to_pixels_f32 { ui: Ui, length: f32 } -> f32                 // a radius, a line: scaled, not rounded
+fn to_font_size { ui: Ui, size: f32 } -> f32                    // a whole pixel size, at least 1
+fn to_pixel_sides { ui: Ui, insets: Insets } -> Sides
+fn to_pixel_corners { ui: Ui, corners: Corners } -> Corners
+```
+
+Primitives, which the stock widgets and kui are both built from. Everything a `paint_*` call takes is
+device pixels in the open element's own coordinates, and everything the core answers is device pixels:
 
 ```
 struct Scope { depth: u32 = 0, open: bool = false }
@@ -1212,12 +1438,12 @@ fn begin_element { mut ui: Ui, id: Id, axis: Axis, box: Box } -> Scope
 fn end { mut ui: Ui, scope: Scope }
 fn add_text { mut ui: Ui, text: []u8, style: TextStyle, box: Box }                 // flowed, wrapped or ellipsized
 fn add_host_slot { mut ui: Ui, slot: u32, box: Box }
-fn paint_rect { mut ui: Ui, rect: Rect, style: RectStyle }                         // relative to the open element
+fn paint_rect { mut ui: Ui, rect: Rect, style: RectStyle }                         // relative to the open element; whole pixels
 fn paint_image { mut ui: Ui, rect: Rect, image: Image, uv: Uv, tint: Color, quarter: u8, angle: f32, blend: Blend }
 fn paint_region { mut ui: Ui, rect: Rect, region: Region, tint: Color }            // a sprite or an atlas entry
 fn paint_rounded_image { mut ui: Ui, rect: Rect, region: Region, tint: Color, radius: Corners }
-fn paint_text { mut ui: Ui, font: Font, size: f32, x: f32, y: f32, text: []u8, color: Color }
-fn paint_line { mut ui: Ui, x0: f32, y0: f32, x1: f32, y1: f32, width: f32, color: Color, cap: Cap }
+fn paint_text { mut ui: Ui, font: Font, size: f32, x: i32, y: i32, text: []u8, color: Color }   // a pixel size, a whole position
+fn paint_line { mut ui: Ui, x0: f32, y0: f32, x1: f32, y1: f32, width: f32, color: Color, cap: Cap }   // pixels, may be fractional
 enum Icon: u8 { check, cross, arrow_right, arrow_down, arrow_up, arrow_left }
 fn paint_icon { mut ui: Ui, icon: Icon, rect: Rect, color: Color }                 // a stock mark, drawn as lines
 struct PressOpts { enabled: bool = true, focusable: bool = true, focus_on_hover: bool = false, button: u8 = 0 }
@@ -1226,7 +1452,7 @@ struct Interaction {
     hovered: bool = false, entered: bool = false,
     pressed: bool = false, held: bool = false, clicked: bool = false, clicks: u8 = 0,
     focused: bool = false,
-    drag_x: f32 = 0.0, drag_y: f32 = 0.0,
+    drag_x: i32 = 0, drag_y: i32 = 0,                           // device pixels from where the press was
 }
 fn press { mut ui: Ui, id: Id, opts: PressOpts } -> Interaction
 struct Links { up: ?Id = null, down: ?Id = null, left: ?Id = null, right: ?Id = null }
@@ -1235,11 +1461,12 @@ fn set_focus { mut ui: Ui, id: Id }
 fn is_focused { ui: Ui, id: Id } -> bool
 fn take_wheel { mut ui: Ui, id: Id } -> f32
 fn take_key { mut ui: Ui, key: Key, mods: u8 } -> bool
-fn get_pointer { ui: Ui } -> Point
+fn get_pointer { ui: Ui } -> Point                                                 // Point{ x: i32, y: i32 }: device pixels
 fn get_time { ui: Ui } -> f32
 fn get_hover_time { ui: Ui, id: Id } -> f32
-fn get_rect { ui: Ui, id: Id } -> ?Rect                                            // last frame's
-fn measure_text { mut ui: Ui, font: Font, size: f32, text: []u8 } -> f32
+fn get_rect { ui: Ui, id: Id } -> ?Rect                                            // last frame's, in device pixels
+fn measure_text { mut ui: Ui, font: Font, size: f32, text: []u8 } -> i32           // at a pixel size; whole pixels, rounded up
+fn measure_line { mut ui: Ui, font: Font, size: f32 } -> LineBox                   // a line's height and ascent, whole pixels
 fn begin_overlay { mut ui: Ui, front: bool } -> Scope
 fn begin_modal { mut ui: Ui, id: []u8, opts: Opts } -> Scope
 fn describe { mut ui: Ui, id: Id, role: Role, label: []u8, value: f32, flags: u8 }
@@ -1247,10 +1474,18 @@ struct Node { id: Id, role: Role, rect: Rect, flags: u8, value: f32, label: []u8
 fn find_node { ui: Ui, path: []u8 } -> ?Node
 ```
 
+How a widget is written on this, in three lines: it declares its element with a `Box` in logical units
+(sizes and paddings from the theme go in as they are); for what it paints inside, it takes its pixels
+from the core (`ui::to_pixels{ ui, length = ui.theme.padding }`, `measure_text`, last frame's
+`get_rect`) and does its arithmetic in integers; and where it centres something it halves the spare
+pixels and rounds down, as the layout does. `ui/tests/layout/placed.ctx` (`show_button`, `scale_rect`)
+is that pattern in the tests.
+
 **The stock marks need no font and no picture.** A check mark, a cross and the four arrows are each two
-round-capped lines scaled to the rectangle they are given, so a checkbox, a tree node, a combo and a
-window's close button draw the same with any font the program registered, or with none. A radio button's
-dot and a slider's knob are rectangles with every radius half their size.
+round-capped lines scaled to the pixel rectangle they are given, so a checkbox, a tree node, a combo and
+a window's close button draw the same with any font the program registered, or with none. Lines are
+the one shape that is not on the pixel grid: a mark's end points are fractions of its rectangle. A radio
+button's dot and a slider's knob are rectangles with every radius half their size.
 
 **On names.** Every function is a verb or verb phrase (decided): `begin_*` and `end` for containers,
 `add_*` for a widget or element that the call adds to this frame's tree, `paint_*` for drawing in the
@@ -1285,16 +1520,19 @@ fn read_pixels { mut dev: Device, into: []mut u8 } -> !                    // RG
 Writes a draw list as text, one shape a line, into its own byte sink (with its own `#write` functions,
 so numbers are fixed-point and stable), then the clip table and the node list as an indented tree. From
 stage 2 it also writes a `Staged`: the draws with their kinds, counts, images and blends, which is how
-batching is pinned by golden files. It has no device. Intended format:
+batching is pinned by golden files. It has no device. The format, in device pixels: what the list holds
+as whole pixels is written as an integer (the frame's size, rectangles, text positions, border widths)
+and cannot print a fraction; radii, a text's size, a line's end points and width, uv and angles are
+floats with up to four digits.
 
 ```
-frame 800x600 scale 1.5x1.5
-clip 1 16,16 400x300 round 16,16 400x300 r=8
-rect 16,16 120x28 fill=30343EFF radius=4,4,0,0 border=1,1,0,1 404552FF,404552FF,00000000,404552FF clip=1
-text 24,22 font=0 size=16 E4E7EDFF clip=1 "Add"
-image 10,10 32x32 img=3 uv=0,0,1,1 tint=FFFFFFFF quarter=1 angle=0 radius=0,0,0,0 blend=alpha clip=0
-line 40,60 52,72 width=2 cap=round E4E7EDFF clip=0
-host 1 320,60 280x360
+frame 1200x900
+clip 1 24,24 600x450 round 24,24 600x450 r=12
+rect 24,24 180x42 fill=30343EFF radius=6,6,0,0 border=2,2,0,2 404552FF,404552FF,00000000,404552FF clip=1
+text 36,33 font=0 size=24 E4E7EDFF clip=1 "Add"
+image 15,15 48x48 img=3 uv=0,0,1,1 tint=FFFFFFFF quarter=1 angle=0 radius=0,0,0,0 blend=alpha clip=0
+line 60.5,90 78,108.25 width=1.5 cap=round E4E7EDFF clip=0
+host 1 480,90 420x540
 ```
 
 ### 4.2 OpenGL 4.1 core (`ui/gl`, `ui_gl`)
@@ -1323,12 +1561,16 @@ same three things for its platform and uses none of this.
 
 - A window with an OpenGL 4.1 core context (`open_gl_window`, `get_gl_proc`, `swap`) or with a Vulkan
   surface (`open_vulkan_window`, `get_vulkan_extensions`, `create_vulkan_surface`).
-- `to_event{ event, scale } -> ?ui::Event`: SDL's events as the core's, pointer positions in logical
-  units, keys as `ui::Key`.
-- `apply_requests{ &host, requests }`: the system cursor, text input on and off with its rectangle,
-  the clipboard (set on `copy`, an `Event::paste` pushed on `paste`).
-- The logical and device sizes for `ui::FrameInfo`, a clock for `dt`, and a wait-for-event call for
-  programs that draw only when something happened.
+- `to_event{ event, pointer_scale } -> ?ui::Event`: SDL's events as the core's, pointer positions in
+  device pixels (SDL's window coordinates times the drawable's pixels a window coordinate, which is 1
+  where the program is DPI aware and 2 on a Retina display), keys as `ui::Key`.
+- `apply_requests{ &host, requests, pointer_scale }`: the system cursor, text input on and off with
+  its rectangle (device pixels, back into window coordinates), the clipboard (set on `copy`, an
+  `Event::paste` pushed on `paste`).
+- `get_sizes{ zoom } -> Sizes{ width, height, scale, pointer_scale }`: the drawable in device pixels
+  and the scale (the monitor's times the zoom), which `make_frame{ sizes, dt }` puts into a
+  `ui::FrameInfo`; a clock for `dt`; and a wait-for-event call for programs that draw only when
+  something happened.
 - About 350 lines, written against SDL2's headers; kotor's `sdl.ctx` shows the binding style [read].
 
 ### 4.4 Vulkan (`ui/vulkan`, `ui_vk`)
@@ -1524,11 +1766,29 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
 - Model tiers are suggestions: **fable** for the stages where a subtle mistake is expensive, **opus**
   for stateful, geometric or native-library work, **sonnet** for well-specified work with goldens to
   check against.
+- **Units, for every stage from 8 on** (section 2.0; stages 0 to 7 were converted to it after they were
+  built, and their entries below describe them as they are now):
+  - A widget's options and the theme are logical units (`f32`). Pass them on in a `Box` and the core
+    converts them; never multiply by the scale yourself and never keep a pixel value in an option.
+  - Everything a widget computes, stores per frame, paints with or reads back is device pixels in
+    `i32`: rectangles, paint positions, measured text, the pointer, drags, scroll offsets (`scroll_x`,
+    `scroll_y` of an element), popup and window positions once placed. Get a pixel from a logical
+    length with `ui::to_pixels` (lengths), `ui::to_pixel_position` (offsets) or `ui::to_font_size`.
+  - State that must survive a change of scale (a window's position, a split ratio) is kept in logical
+    units or as a fraction in `Values.f`, and converted each frame; state that is a scroll offset is
+    pixels (`Values.i`), held to its range each frame.
+  - Where a widget divides pixels it says who gets the remainder, as the layout does: the first
+    children when sharing, rounded down when centring.
+  - A golden recorded at a scale other than 1 is in pixels: 16 units at scale 1.5 is 24. Record at
+    least one scene of each widget at scale 1.5 and check that every border of it is the same number
+    of pixels on all four sides.
+  - No test may depend on `f32` tolerances for a rectangle: positions and sizes are compared with `==`.
 
 ### Stage 0: the seam, the recorder, the test harness
 
 - **Scope.** Values, `RectStyle`, `Cmd`, `DrawList` with its clip table, `ui::draw::*`, the libm
-  externs and small float helpers (min, max, clamp, snap), fixed-point and hex number writing, the
+  externs, small number helpers (min, max, clamp) and the conversions from logical units to pixels
+  (`scale_length`, `scale_position`, the held sums), fixed-point and hex number writing, the
   recorder's sink and `write_list`, the test tally and golden compare, the agent guide, and a kotor-side
   build check.
 - **Files.** `ui/AGENTS.md` (rules, commands, layout: this plan's sections 2.1, 6.2 and conventions),
@@ -1539,7 +1799,9 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
 - **Acceptance.** `ui/tests/draw` exits 0: a hand-built list with all five shapes and three clips, one
   of them rounded, matches its golden; equal clips share a table entry; the overflow of a 4-shape list
   and of a full clip table is counted; fixed-point writing gives `10`, `0.5`, `-3.25`, `100` for the
-  values std prints as `1e+01` and `1e+02`. `kotor/tools/uicompat` builds `ui/core` and `ui/record`
+  values std prints as `1e+01` and `1e+02`; a length of 1 unit is 1, 1, 2, 2 and 2 pixels at scales 1,
+  1.25, 1.5, 1.75 and 2, a length that is not 0 never converts to 0, and a length or a scale that is
+  not a number, or a sum past an `i32`, is held and never panics. `kotor/tools/uicompat` builds `ui/core` and `ui/record`
   beside `kotor/lib/base`, `lib/platform`, `lib/render` and `lib/gui` and runs. No `build.ctx` under
   `ui/` names a `kotor` path.
 - **Agent.** sonnet, medium effort. **Depends on:** nothing. **Alone.**
@@ -1547,17 +1809,21 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
 ### Stage 1: text
 
 - **Scope.** The font table and `add_font`, the provider hook, measuring (glyph tables directly,
-  outline fonts through `shape`, with the frame cache), `lay_glyphs` with snapping, UTF-8 and byte
-  stepping, wrapping into line ranges, ellipsis, caret offsets and the index under an x (from glyph
-  advances or from clusters), and the test font.
+  outline fonts through `shape`, with the frame cache), `lay_glyphs` (whole magnification and whole
+  glyph edges with `snap`, exact fractional quads without), whole-pixel widths, line metrics and caret
+  offsets, UTF-8 and byte stepping, wrapping into line ranges, ellipsis, the index under a pixel (from
+  glyph advances or from clusters), and the test font.
 - **Files.** `ui/core/font.ctx`, `ui/core/text.ctx`, `ui/test/font.ctx`,
   `ui/tests/text/{build.ctx, main.ctx, golden/*.txt}`.
 - **Acceptance.** In the test font "Hello" measures 40 at size 16 and 80 at size 32; wrap goldens for
   spaces, hyphens, a word longer than the width and explicit newlines; ellipsis; a byte-encoded and a
-  UTF-8 glyph table give different caret steps for `é`; glyph rectangles at scale 1.5 fall on device
-  pixels. A fake provider (7 pixels a byte, one cluster a byte, and a two-byte ligature) measures an
-  outline font, wraps with its widths, and gives caret offsets that step over the ligature as one.
-  Drawing in a font that was never registered is reported, not drawn.
+  UTF-8 glyph table give different caret steps for `é`; the test font's glyphs at size 24 (16 units at
+  scale 1.5) are whole pixels on whole pixels, the same size at every pen position; a table without
+  `snap` is magnified exactly, its advances of 17.5 measure 18, its caret offsets are the nearest
+  pixels, and a line of 20.5 fits 21 pixels and not 20. A fake provider (7 pixels a byte, one cluster
+  a byte, and a two-byte ligature) measures an outline font, wraps with its widths, gives caret offsets
+  that step over the ligature as one, and its line of 21.25 pixels is 22 high. Drawing in a font that
+  was never registered is reported, not drawn.
 - **Agent.** sonnet, medium effort. **Depends on:** stage 0. **Alone.**
 
 ### Stage 2: the staged level
@@ -1575,8 +1841,13 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
   the first forces a third draw, and the dump shows paint order kept. Pictures from two textures that do
   not overlap stage to 2 draws however they are interleaved; an additive picture gets its own draw. A
   host slot gives two passes and no draw spans them. An odd quarter turn gives a transposed rectangle
-  and the right rotation. The same list twice gives the same revision; one changed colour gives a new
-  one. A glyph drawn twice is rasterised once; releasing its font frees its atlas space after four
+  and the right rotation, on half pixels when its sides differ by an odd number, with bounds that are
+  still exactly its rectangle. A rectangle's bounds are its rectangle (rectangles and pictures that
+  only touch share draws); a glyph of a table without `snap` on a backend image that lies between
+  pixels widens its bounds by the pixel the image shader grows it by. On random lists (rectangles,
+  pictures, text in both kinds of table, lines on half pixels, turned pictures) every pair of
+  overlapping instances is drawn in paint order. The same list twice gives the same revision; one
+  changed colour, or another surface size, gives a new one. A glyph drawn twice is rasterised once; releasing its font frees its atlas space after four
   frames; a full atlas grows and raises `version`; at the limit the missing glyphs are counted and the
   next frame refills. Overflow of each array is counted. The atlas is written as a PNG and looked at.
 - **Agent.** opus, high effort. **Depends on:** stage 1. **May run with stage 5** (it owns `ui/stage`,
@@ -1587,8 +1858,10 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
 - **Scope.** The four shader pairs copied from ZGF with the changes section 2.6 lists and no others;
   the script that validates, compiles and embeds them; `ui_gl` (GL subset binding, device, images, the
   four programs, the uniform blocks, `render`, `render_pass`, `read_pixels`); `ui_sdl` (its own SDL
-  binding, the window with a GL context, events, requests); `ui_test`'s PNG writer; the screenshot
-  program with the conformance list.
+  binding, the window with a GL context, events with the pointer in device pixels, requests, the
+  surface's pixel size and scale); `ui_test`'s PNG writer; the screenshot program with the conformance
+  list, which is written in logical units and converted to pixels by the test at each scale, as a
+  widget converts.
 - **Files.** `ui/shaders/canvas_{rect,glyph,image,shape}.{vert,frag}.glsl`, `ui/tools/build_shaders`,
   `ui/tools/embed_shaders.py`, `ui/gl/api.ctx`, `ui/gl/device.ctx`, `ui/gl/shaders_glsl.ctx`
   (generated), `ui/gl/contract.ctx`, `ui/sdl/sdl.ctx`, `ui/sdl/host.ctx`, `ui/test/png.ctx`,
@@ -1617,38 +1890,57 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
   (units per em and glyph count in range), so wrong offsets fail at once; 'A' rasterises to a non-empty
   bitmap; "AV" is narrower than 'A' plus 'V' in a font with kerning; a second shaping of the same text
   is a cache hit; with a CJK font registered as fallback, a line mixing Latin and CJK comes back as runs
-  from two faces; releasing a face frees its glyphs. `ui/out/text-gl.png` at scales 1 and 1.5 shows
-  proportional, kerned, readable text on the pixel grid, and a second identical frame uploads no atlas
-  bytes.
+  from two faces; releasing a face frees its glyphs; in the core's walks over the real font a measured
+  width is the advances rounded up, caret offsets are whole pixels that never go down and end at the
+  measured width or the pixel before it, and no wrapped line is wider than its limit in whole pixels,
+  at 16 pixels and at 24 (16 units at scale 1.5). `ui/out/text-gl.png` at scales 1 and 1.5 shows
+  proportional, kerned, readable text on the pixel grid, every baseline on a pixel row, and a second
+  identical frame uploads no atlas bytes.
 - **Agent.** opus, high effort. **Depends on:** stage 3. **May run with stage 8** (it owns `ui/fonts`,
   `ui/tests/fonts`, `ui/tests/shots/text.ctx`).
 
 ### Stage 5: the tree, placed layout, emit
 
 - **Scope.** `Ui`, `Capacity`, `make`, `begin_frame` and `end_frame` (without input), ids and scopes,
-  element and paint recording, layout for fixed sizes and placed elements (flow children stacked along
-  the axis with padding and gap), clips into the table (plain and rounded), opacity, snapping, emission
-  order, hit regions, problems and stats. Shells for the later core subsystems.
+  element and paint recording with every declared length converted to whole pixels (section 2.0,
+  "Units"), placement in logical units and in pixels, layout for fixed sizes and placed elements (flow
+  children stacked along the axis with padding and gap), clips into the table (plain and rounded),
+  opacity, emission order, hit regions, problems and stats. Shells for the later core subsystems.
 - **Files.** `ui/core/ui.ctx`, `ui/core/id.ctx`, `ui/core/tree.ctx`, `ui/core/layout.ctx`,
   `ui/core/emit.ctx`, shells `ui/core/{input,interact,focus,state,nodes,layers,scroll}.ctx`,
-  `ui/tests/layout/{build.ctx, main.ctx, placed.ctx, golden/*.txt}`.
+  `ui/tests/layout/{build.ctx, main.ctx, placed.ctx, pixels.ctx, golden/*.txt}`.
 - **Acceptance.** Goldens: a panel placed at the screen centre with five placed controls; anchors 0,
   0.5 and 1 on a resized parent; nested clips, and a rounded clip inside a plain one and the reverse;
   opacity; paint order (decoration, then paints and children as recorded); a host slot; the same input
-  twice gives byte-identical dumps; the snap rule at scale 1.5 matches `floor(v * s + 0.5) / s` on
-  hand-computed cases; an unclosed scope and a duplicate id are reported and nothing panics; a full
-  element array drops and counts.
+  twice gives byte-identical dumps; at scale 1.5 hand-computed cases land on whole pixels by the
+  conversion rules (a position at `floor(v * s + 0.5)`, a size as its own length rounded, two pieces
+  1 unit wide 2 pixels each and meeting, a border of 1 unit 2 pixels on every side); an unclosed scope
+  and a duplicate id are reported and nothing panics; a full element array drops and counts. The
+  properties the units rule exists for (`pixels.ctx`), on seeded trees at scales 1, 1.25, 1.5, 1.75
+  and 2: a subtree has identical sizes at every pixel offset from 0 to 7 and at logical positions
+  between pixels, every edge moving by exactly the offset; scrolling by a pixel moves every edge by
+  exactly a pixel; a border is the same number of pixels on all four sides and a padded child is
+  inset equally on opposite sides; pieces side by side meet exactly; a pixel placement lands on
+  exactly its pixels. A scale of 0, a negative one or NaN is 1; the largest surface and the largest
+  rectangles an `i32` can name are held and nothing overflows.
 - **Agent.** fable, high effort. **Depends on:** stage 1. **May run with stage 2.**
 
 ### Stage 6: flow layout
 
-- **Scope.** The solver of section 2.4: fit, grow, fix, take, min and max, alignment, wrapped text
-  between the width and height passes, ellipsis, shrinking when short.
+- **Scope.** The solver of section 2.4, in integer arithmetic on pixels: fit, grow, fix, take, min and
+  max, alignment, wrapped text between the width and height passes, ellipsis, shrinking when short,
+  and the remainder rules of section 2.4's table.
 - **Files.** `ui/core/layout.ctx`, `ui/tests/layout/{flow.ctx, golden/flow-*.txt}`.
 - **Acceptance.** Goldens: equal split of three grow children; grow capped by `max` with the remainder
   re-shared; `take` beside `fix`; centre and end alignment on both axes; a fit panel around wrapped
   text; text ellipsized when its row is short; overflow that starts at the start edge; a placed child
-  inside a flow parent leaves the parent's size alone.
+  inside a flow parent leaves the parent's size alone; and the cases that exist only in whole pixels
+  (`flow-pixels`): 100 pixels among three grow children are 34, 33, 33; 101 among two with one capped
+  at 30 are 30 and 71; three of 40 shrunk into 100 are 34, 33, 33; an odd spare is centred rounded
+  down; `take` 0.5 of 101 is 50; 100 among seven are 15, 15, 14, 14, 14, 14, 14. On seeded trees at
+  five scales the rules hold exactly, with no tolerance: children follow one another exactly the gap
+  apart, room that is spare by a single pixel is taken by grow children up to their `max`, solving
+  twice gives identical results.
 - **Agent.** fable, high effort. **Depends on:** stage 5. **May run with stages 3 and 7** (it owns
   `layout.ctx` and the `flow` test files only).
 
@@ -1664,7 +1956,9 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
   hides hover from others; Tab and Shift+Tab walk recording order; an arrow key follows a link; hover-
   focus moves focus; state survives while asked for, is freed after the TTL and is kept when pinned;
   `push_event` answers true over a region and false over empty space; `find_node` by full path and by
-  unique suffix.
+  unique suffix. The pointer is device pixels: at scale 1.5 a spot declared at (10, 10) 100 by 40
+  takes the pointer on exactly the pixels (15, 15) to (164, 74), a drag is counted in pixels, and the
+  driver clicks a node's centre pixel.
 - **Agent.** opus, high effort. **Depends on:** stage 5. **May run with stages 3 and 6.**
 
 ### Stage 8: layers and scrolling
@@ -1673,11 +1967,24 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
   order, the tooltip layer and hover timing, scroll regions (offset state, bars as placed children,
   wheel routing to the innermost region that can move, one re-solve when a bar appears), the virtual
   range helper.
+- **Units.** A scroll offset is whole pixels: `scroll_x`, `scroll_y` of the region's element are `i32`,
+  the offset is kept in `Values.i` and held to `0..content - inner` each frame (both are pixels the
+  solver left: `content_w`, `content_h` and the element's size less its padding). The wheel arrives in
+  notches (`f32`); a region multiplies it by a step in logical units converted with `ui::to_pixels`,
+  and a velocity or a remainder of a smooth wheel may stay `f32` in `Values.f` while the applied offset
+  is rounded. A thumb's position and length are integer shares of the track (say which pixel a
+  remainder goes to), and a thumb drag maps `Interaction.drag_y` pixels to an offset by the ratio,
+  rounded to the nearest pixel. A popup is placed in pixels from its anchor's `get_rect` (flipped and
+  clamped against the surface's pixel size, `ui.draw.width` and `height`) with `ui::place_pixels`. The
+  virtual range helper works in pixels: a row height converted once, the first and last row by integer
+  division of the offset.
 - **Files.** `ui/core/layers.ctx`, `ui/core/scroll.ctx`, `ui/tests/layers/{build.ctx, main.ctx, golden/*.txt}`.
 - **Acceptance.** Goldens of emission order across layers; a modal swallows a click on what is under
   it; a popup at the right edge flips; Escape and an outside press close it; the wheel scrolls the inner
   region until its end and then the outer; a thumb drag moves the offset by the right ratio; a 10,000
-  row virtual list records only the rows in view.
+  row virtual list records only the rows in view. Scrolling by one pixel moves every edge of the
+  content by exactly one pixel and changes no size, at scales 1 and 1.5; an offset past either end is
+  held; a bar is the same whole number of pixels thick at every offset.
 - **Agent.** opus, high effort. **Depends on:** stages 6 and 7. **May run with stage 4.**
 
 ### Stage 9: stock widgets I, the theme, the marks, the gallery
@@ -1685,6 +1992,14 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
 - **Scope.** `Opts`, the theme and its two palettes, `paint_icon`, the stage 9 row of section 5, the
   gallery (page switcher and the first page), the OpenGL demo program with `--font`, `--headless`,
   `--script` and `--shot`, and shells for the later widget test files and gallery pages.
+- **Units.** Every widget option and theme metric is logical units and goes into a `Box` as it is. A
+  widget's own drawing is pixels: a mark's rectangle is cut from the element's pixel size (last frame's
+  `get_rect`, or the same lengths converted with `ui::to_pixels`), a label is centred by integer
+  halving of the spare pixels, a slider maps `Interaction.drag_x` pixels over the track's pixel width
+  to its value, and a 1-unit separator or border is `ui::to_pixels{ length = 1.0 }` pixels, never a
+  literal 1. `paint_icon` takes a pixel `Rect` and draws lines at fractions of it; a line's width is a
+  theme length through `ui::to_pixels_f32`. `add_image` sizes a picture by its texel size taken as
+  logical units unless the box says otherwise.
 - **Files.** `ui/widgets/theme.ctx`, `ui/widgets/opts.ctx`, `ui/widgets/icons.ctx`,
   `ui/widgets/basic.ctx`, `ui/widgets/slider.ctx`, `ui/samples/gallery/{gallery.ctx, page_basic.ctx}`
   plus shells `page_text.ctx`, `page_windows.ctx`, `page_data.ctx`,
@@ -1695,7 +2010,10 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
   disabled in both themes; no golden of a widget's mark contains a `text` shape; node snapshots;
   scripted: a click toggles a checkbox, a drag moves a slider by the right amount and respects `step`,
   Enter and Space activate a focused button; the grep of section 2.1 finds no use of core internals;
-  `ui/out/gallery-basic.png` in an outline font looked at in both themes.
+  one golden of each widget at scale 1.5, in which every border is the same number of pixels on all
+  four sides and every rectangle is the size the conversion rules give its declared length; a widget
+  recorded at eight positions a pixel apart draws the same shapes moved by exactly the offset;
+  `ui/out/gallery-basic.png` in an outline font looked at in both themes, at scales 1 and 1.5.
 - **Agent.** sonnet, medium effort. **Depends on:** stages 4 and 8. **Alone.**
 
 ### Stage 10: text field
@@ -1703,6 +2021,13 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
 - **Scope.** `add_text_field` and `add_number`: caret, selection by keyboard and pointer, word steps,
   clipboard through requests, the undo ring, horizontal scroll of long text, hint, password, filter,
   maximum length, glyph tables in both encodings and outline fonts by cluster.
+- **Units.** The caret, the selection and the field's horizontal scroll are whole pixels: caret offsets
+  come from `ui::text::locate_caret` (`i32`, the advances before the caret to the nearest pixel, never
+  past the measured width), a click maps the pointer's pixel to an index with `pick_index`, the scroll
+  that keeps the caret in view is an `i32` in `Values.i`, the caret is a rectangle
+  `ui::to_pixels{ length = 1.0 }` wide, and `set_text_input` gets the caret's rectangle in device
+  pixels. The text is drawn at `ui::to_font_size` of the theme's size, and its line box is
+  `ui::measure_line`'s whole height.
 - **Files.** `ui/widgets/field.ctx`, `ui/samples/gallery/page_text.ctx`,
   `ui/tests/widgets/{field.ctx, golden/field-*.txt}`.
 - **Acceptance.** Scripted: type, move, select, delete, cut, copy and paste against the driver's fake
@@ -1715,6 +2040,13 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
 ### Stage 11: windows, popups, menus, combo, tooltips, drag and drop
 
 - **Scope.** The stage 11 row of section 5.
+- **Units.** `WindowOpts` (position, size) is logical units. A window's position and size are kept as
+  state in logical units (`Values.f`), so they survive a change of scale, and become pixels each frame
+  through the window's `Box`; a drag adds `Interaction.drag_x` pixels divided by `ui::get_scale` to the
+  logical position it had at the press, and the box rounds the result, so a dragged window follows the
+  pointer to the pixel and never drifts. Popups, menus and tooltips are placed in pixels from the
+  anchor's `get_rect` with `ui::place_pixels`, clamped to the surface's pixel size. The drag threshold
+  is `ui.config.drag_start` through `ui::to_pixels`.
 - **Files.** `ui/widgets/window.ctx`, `ui/widgets/popup.ctx`, `ui/widgets/menu.ctx`,
   `ui/widgets/drag.ctx`, `ui/samples/gallery/page_windows.ctx`,
   `ui/tests/widgets/{windows.ctx, golden/windows-*.txt}`.
@@ -1728,6 +2060,12 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
 ### Stage 12: lists, trees, tabs, tables, plot, colour
 
 - **Scope.** The stage 12 row of section 5.
+- **Units.** `row_height` and column widths are logical options, converted once a frame; a virtual
+  list's first and last row come from integer division of the pixel scroll offset by the pixel row
+  height, and its spacer is `count * row height` pixels (`ui::fix_pixels`, held by the core at a
+  thousand million). Table columns are sized by the layout, so header and rows get the same integer
+  widths because they are declared the same. The plot maps values to `f32` pixel points inside its
+  element's pixel rectangle: lines are the one shape that is fractional.
 - **Files.** `ui/widgets/list.ctx`, `ui/widgets/tree.ctx`, `ui/widgets/tabs.ctx`,
   `ui/widgets/table.ctx`, `ui/widgets/plot.ctx`, `ui/widgets/color.ctx`,
   `ui/samples/gallery/page_data.ctx`, `ui/tests/widgets/{data.ctx, golden/data-*.txt}`.
@@ -1741,11 +2079,14 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
 
 - **Scope.** The task list of section 3.1 as a normal desktop program: a menu bar, a dialog, a
   resizable DPI-aware window, a font it loads from a path, a fallback font, the clipboard, and a loop
-  that draws only when events arrive or `animating` is set.
+  that draws only when events arrive or `animating` is set. DPI-aware means: each frame the program
+  takes `ui_sdl::get_sizes{ zoom }` (the drawable in pixels, the monitor's scale times its zoom) and
+  passes them on with `ui_sdl::make_frame`; nothing in the application mentions pixels.
 - **Files.** `ui/samples/tasks/{build.ctx, main.ctx, app.ctx}`.
 - **Acceptance.** A scripted run adds, checks and deletes tasks through the menu and the keyboard;
-  `ui/out/tasks.png` is looked at, at scales 1 and 1.5; the program draws no frame during two idle
-  seconds of the script; resizing the window re-lays the content with nothing clipped.
+  `ui/out/tasks.png` is looked at, at scales 1, 1.25 and 1.5, and at each every border and separator
+  is the same thickness along its length and on every side; the program draws no frame during two
+  idle seconds of the script; resizing the window re-lays the content with nothing clipped.
 - **Agent.** sonnet, medium effort. **Depends on:** stages 10, 11 and 12. **May run with stages 14 and
   15.**
 
@@ -1754,6 +2095,10 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
 - **Scope.** Section 4.4: the binding, the device and swapchain, the five pipelines from the embedded
   SPIR-V, descriptor sets, instance buffers, the atlas and images, `render`, `record`, the offscreen
   target and `read_pixels`; `ui_sdl`'s Vulkan window and surface; the gallery on Vulkan.
+- **Units.** The backend sees only a `Staged`, whose canvas is the surface in device pixels: the canvas
+  block is the projection for (0, 0) to (`width`, `height`) and the metrics (`width`, `height`,
+  `width`, `height`), the viewport and the swapchain extent are `staged.width` by `staged.height`, and
+  there is no scale anywhere in it.
 - **Files.** `ui/vulkan/api.ctx`, `ui/vulkan/device.ctx`, `ui/vulkan/pipelines.ctx`,
   `ui/vulkan/shaders_spv.ctx` (generated), `ui/vulkan/contract.ctx`, `ui/sdl/vulkan.ctx`,
   `ui/samples/demo_vulkan/{build.ctx, main.ctx}`, `ui/tests/shots_vulkan/{build.ctx, main.ctx}`.
@@ -1767,10 +2112,12 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
 
 ### Stage 15: the kotor adapter and a developer overlay
 
-- **Scope.** `ui_kotor`, as section 8.1 maps it: staged passes into `render::Frame`, `from_font`,
-  `to_event` (with kotor's `to_ui` scaling and cp1252 mapping of typed text), a spike tool that shows
-  the gallery through kotor's renderer in the game's console font, and the GPU timing overlay drawn
-  with the stock widgets beside the existing `fxhud`.
+- **Scope.** `ui_kotor`, as section 8.1 maps it: staged passes into `render::Frame` in a UI pass the
+  size of the drawable (one unit a device pixel), `from_font`, `to_event` (window coordinates to device
+  pixels, and cp1252 mapping of typed text), the `FrameInfo` kotor passes (the drawable's pixel size
+  and its quarter-step scale), a spike tool that shows the gallery through kotor's renderer in the
+  game's console font, and the GPU timing overlay drawn with the stock widgets beside the existing
+  `fxhud`.
 - **Files.** `kotor/lib/ui_kotor/{adapter.ctx, font.ctx, events.ctx}`,
   `kotor/tools/uispike/{build.ctx, main.ctx}`, `kotor/game/devui.ctx` and the two call sites in
   `kotor/game/play.ctx` (open decision 1).
@@ -1787,10 +2134,20 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
   loader produces (`gui::open` already resolves textures and fonts; kui reads those panels and does not
   load files itself); the replay of a whole panel; one screen's glue written against kui; a tool that
   draws a `.gui` both ways.
+- **Units.** kui works in the original's design pixels and device pixels and never in logical units
+  (section 3.2): it applies the original's per-edge snap, `floor(v * scale + 0.5)` with the size the
+  difference of the snapped edges, to each control's and each border piece's design coordinates and
+  hands the pixels to `ui::place_pixels` and the `paint_*` calls, which take them as they are. Text is
+  painted a line at a time at a pixel size of the font's design height times the scale (not rounded),
+  with its origin on the pixel the snap gives.
 - **Files.** `kotor/lib/kui/{skin.ctx, border.ctx, text.ctx, controls.ctx, list.ctx, panel.ctx}`,
   `kotor/tools/uiview/{build.ctx, main.ctx}`.
 - **Acceptance.** `uiview optgameplay` writes the panel drawn by `lib/gui` and by kui and the count of
-  differing pixels: 0 at scale 1.0 and at 1.5, or each difference explained. A scripted run addresses
+  differing pixels: 0 at scale 1.0 and at 1.5, or each difference explained. Borders, fills and
+  pictures must be 0 at both: they are the same pixels by the same formula. Text is 0 at scale 1.0;
+  at 1.5 `lib/gui` draws a line that starts on an odd design pixel half a device pixel in, because it
+  does not snap text, and kui starts it on a whole pixel (section 2.7): that difference is expected,
+  is confined to the glyphs' edge pixels, and is reported as such. A scripted run addresses
   `CB_AUTOSAVE` by tag, clicks it, and the setting flips; arrow keys follow `MOVETO`; hover lights a
   button and plays through `Interaction.entered`. A sweep over all `.gui` files prints how many panels
   already match, as the measure of the remaining work.
@@ -1816,9 +2173,17 @@ entry says.
 because the staged image is kotor's `render::Quad` [read: `render.ctx:529`]. What kotor's renderer has
 no primitive for is drawn in a reduced form.
 
+**Units.** The staged instances are device pixels, so the adapter's UI pass is the size of the drawable
+(`win_w` by `win_h`), one unit a pixel, and not kotor's GUI pixel space (`ui_w` by `ui_h`, the window
+divided by the quarter-step scale), which is what `lib/gui`'s own passes use. A quad the adapter adds
+is therefore already where it will be drawn, and kotor's renderer scales nothing. The `FrameInfo` kotor
+passes is the drawable's size and its quarter-step scale; kui's pixels come from its own snap of design
+coordinates (section 3.2), which is the same arithmetic `lib/gui` does with `Grid`
+[read: `draw.ctx:44`], so a border piece lands on the same device pixels either way.
+
 | `ui_stage` | `render` | Exact? |
 |---|---|---|
-| `Pass` | one `render::begin_ui{ &frame, width = ui_w, height = ui_h, target }` run | yes |
+| `Pass` | one `render::begin_ui{ &frame, width = win_w, height = win_h, target }` run: the pass is the drawable, in device pixels | yes |
 | `ImageInstance` | one `render::Quad`: the rectangle flipped back to y down, the same rotation, the tint as floats, the UV region in kotor's convention (textures are stored bottom row first) | yes, apart from rounded corners, which are not drawn |
 | the instance's `clip` index | `Quad.clip`: the table's rectangle, or null for entry 0 | yes for rectangles; a rounded clip cuts square |
 | `Draw.image` n | `render::Texture{ id = n }`: kui makes each `ui::Image` from a `gui::Img`, so the id is the texture's | yes |
@@ -1848,9 +2213,11 @@ original stretches whole edge segments instead of relying on texture repeat [rea
 Excluded from this plan: it is an optimisation of kotor's material loading, and it can be measured only
 once screens run on kui (stage 15 logs the draw counts it would improve).
 
-Input: `ui_kotor::to_event` converts kotor's `sdl::Event` with the same window-to-UI scaling
-`gui::handle_event` uses, and `ui::push_event`'s answer is what the game loop already expects from
-`gui::handle_event`. kotor keeps its own SDL binding and does not add `ui/sdl`.
+Input: `ui_kotor::to_event` converts kotor's `sdl::Event` to the core's with the pointer in device
+pixels (kotor's window coordinates times the drawable's pixels a window coordinate; `gui::handle_event`
+divides by the scale into GUI pixels instead, which the framework no longer wants), and
+`ui::push_event`'s answer is what the game loop already expects from `gui::handle_event`. kotor keeps
+its own SDL binding and does not add `ui/sdl`.
 
 ### 8.2 Two ways to move a screen, both on kui
 
@@ -1904,7 +2271,7 @@ Both are about how far the adapter stage reaches into kotor.
 
 Already decided, and so not on this list: the seam level, GPU-only backends, the rectangle's per-corner
 and per-side fields, ZGF's shaders, no built-in font, FreeType and HarfBuzz, the location and the SDL
-library, Vulkan, verb names.
+library, Vulkan, verb names, and the unit (whole device pixels, section 2.0).
 
 ---
 
@@ -1926,7 +2293,8 @@ library, Vulkan, verb names.
 | FreeType's struct layouts | The binding mirrors three C structs whose offsets depend on the platform's `long`. A wrong offset reads garbage. | Offsets chosen by `target::OS`; a start-up check of mirrored fields on every face; the probe's offsets came from a C program against the installed headers. |
 | Vulkan without validation | A backend that works on one driver and breaks on another. | Stage 14 requires the validation layer and a clean run with it on; it is not installed today. |
 | Vulkan's size | It is the largest single backend (binding, swapchain, pipelines). | Its own stage with the strongest model, after OpenGL has fixed what a backend does; nothing else depends on it. |
-| Pixel parity with `lib/gui` | The proof screen must match the original's borders, wrap and snapping. | The core's snap is kotor's formula; kui keeps kotor's wrap; `uiview` counts differing pixels and sweeps every `.gui`. |
+| Pixel parity with `lib/gui` | The proof screen must match the original's borders, wrap and snapping. | The core does not snap at all: kui applies kotor's own formula to its design coordinates and the core takes the resulting pixels as given (`ui::place_pixels`, the `paint_*` calls), so borders and pictures are the same integers; kui keeps kotor's wrap; text differs by at most half a pixel at fractional scales, where `lib/gui` does not snap it (section 2.7); `uiview` counts differing pixels and sweeps every `.gui`. |
+| A value in the wrong unit | A logical length passed where pixels are taken, or the reverse, draws at the wrong size at any scale but 1, where the two are the same numbers and tests pass. | Most such mistakes do not compile: declarations are `f32` and pixels are `i32`, and the language converts neither way. The ones that do (a font size, a radius, a line, all `f32` in both worlds) are caught by recording goldens and screenshots at scale 1.5 as well as 1, which every widget stage must. |
 | Stock widgets look plainer inside kotor | `render` has no rounded or antialiased primitive. | Stated in section 8.1, with the alternative priced (decision 2). KOTOR's own art is unaffected. |
 | Two SDL bindings in the repository | kotor's and `ui/sdl`'s can diverge. | They serve different programs and may even share one [compiled, a9]; `ui/sdl` is small and only what a UI host needs. |
 | `..` forwarding binds any same-named local | `ui::add_label{ .. }` picks up a stray local called `text`. | Library code never uses it; the guide says to keep widget field names out of local names in functions that use it. |

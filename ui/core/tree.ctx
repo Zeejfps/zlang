@@ -25,45 +25,87 @@
 // Nothing here fails. An element that does not fit is dropped and counted, and so is everything
 // recorded inside it; a second element with an id that the frame has already seen is recorded
 // and reported.
+//
+// Units. A declaration is written in logical units and a drawing in device pixels, and that is
+// the whole rule:
+//
+//  - `Box`, `Size`, `Place`, `Insets` and `TextStyle` declare an element. Their lengths are logical
+//    units (f32), converted to whole pixels once, here, when the element is recorded, by the rules
+//    of `ui::to_pixels` (lengths: the nearest pixel, never 0 unless 0), `ui::to_pixel_position`
+//    (placed offsets: the nearest pixel), `ui::to_font_size` (text sizes: a whole pixel size) and
+//    `ui::to_pixels_f32` (radii: not rounded). The tree holds pixels only, so the layout is integer
+//    arithmetic and an element's size cannot depend on where it stands.
+//  - The `paint_*` calls take device pixels and nothing else: a `Rect` (i32) in the open element's
+//    own coordinates, a `RectStyle` whose border widths are whole pixels, a text's pixel size and
+//    whole position; a line's end points and width, and corner radii, are pixels that may be
+//    fractional. A widget paints from what the core gave it in pixels (`get_rect`, `measure_text`)
+//    and converts a theme length it paints with by `ui::to_pixels` itself.
+//  - A placement may be given in pixels too: `ui::place_pixels` puts an element on exactly the
+//    rectangle given, for a widget set that works out its own pixels (KOTOR's, which applies the
+//    original game's snap to its design coordinates), and `ui::fix_pixels` is a size in pixels.
 namespace ui {
+    // A length for each side in logical units: a padding, a border's widths, a hit outset. (The
+    // same in pixels is `Sides`.)
     struct Insets { left: f32 = 0.0, top: f32 = 0.0, right: f32 = 0.0, bottom: f32 = 0.0 }
+    fn inset { by: f32 } -> Insets {           // the same length on every side
+        return Insets{ left = by, top = by, right = by, bottom = by }
+    }
     enum Align: u8 { start, center, end }
     enum Axis: u8 { row, column }
 
     // How big an element is along one axis: its content's size (`FIT`), its content's size plus a
-    // share of the parent's spare room (`GROW`), exactly `value` (`fix`), or the fraction `value` of
-    // the parent's inner size (`take`). `min` and `max` hold every kind but `fix`.
-    enum SizeKind: u8 { fit, grow, fixed, part }
-    struct Size { kind: SizeKind = SizeKind::fit, value: f32 = 0.0, min: f32 = 0.0, max: f32 = 100000.0 }
+    // share of the parent's spare room (`GROW`), exactly `value` logical units (`fix`), exactly
+    // `pixels` device pixels (`fix_pixels`), or the fraction `value` of the parent's inner size
+    // (`take`). `min` and `max`, in logical units, hold every kind but the two fixed ones.
+    enum SizeKind: u8 { fit, grow, fixed, part, pixels }
+    // A `max` that no size reaches: no limit.
+    const NO_LIMIT: f32 = 1000000000.0
+    struct Size { kind: SizeKind = SizeKind::fit, value: f32 = 0.0, min: f32 = 0.0, max: f32 = NO_LIMIT, pixels: i32 = 0 }
     const FIT: Size = Size{ .. }
     const GROW: Size = Size{ kind = SizeKind::grow, .. }
-    fn fix { px: f32 } -> Size { return Size{ kind = SizeKind::fixed, value = px, .. } }
+    fn fix { size: f32 } -> Size { return Size{ kind = SizeKind::fixed, value = size, .. } }
+    // Exactly `size` device pixels, whatever the scale: what a widget that worked a size out in
+    // pixels declares (a virtual list's spacer of rows times a pixel row height).
+    fn fix_pixels { size: i32 } -> Size { return Size{ kind = SizeKind::pixels, pixels = size, .. } }
     fn take { part: f32 } -> Size { return Size{ kind = SizeKind::part, value = part, .. } }
 
     // Where an element out of the flow goes: its top left is
-    // parent.xy + parent.wh * (anchor_x, anchor_y) + (x, y). It adds nothing to its parent's size.
+    // parent.xy + floor(parent.wh * (anchor_x, anchor_y)) + (x, y), with `x` and `y` in logical
+    // units, each rounded to the nearest pixel. It adds nothing to its parent's size.
     struct Place { anchor_x: f32 = 0.0, anchor_y: f32 = 0.0, x: f32 = 0.0, y: f32 = 0.0 }
 
-    // How an element is laid out and decorated. A field left null takes its default: fitted sizes,
-    // no padding or gap, children at the start of both axes, no fill, border or radius, not
-    // clipping, opaque, in the flow, a hit region that is exactly its rectangle.
+    // How an element is laid out and decorated, in logical units. A field left null takes its
+    // default: fitted sizes, no padding or gap, children at the start of both axes, no fill, border
+    // or radius, not clipping, opaque, in the flow, a hit region that is exactly its rectangle.
+    // `pixels` is a placement in device pixels: the element is out of the flow on exactly that
+    // rectangle of the parent's own coordinates, whatever `width`, `height` and `place` say.
     struct Box {
         width: ?Size = null, height: ?Size = null,
         padding: ?Insets = null, gap: ?f32 = null,
         align_x: ?Align = null, align_y: ?Align = null,
-        fill: ?Color = null, border: ?SideColors = null, border_width: ?Sides = null, radius: ?Corners = null,
+        fill: ?Color = null, border: ?SideColors = null, border_width: ?Insets = null, radius: ?Corners = null,
         clip: ?bool = null, opacity: ?f32 = null,
         place: ?Place = null,
+        pixels: ?Rect = null,
         hit_outset: ?Insets = null,
     }
 
-    // An explicit rectangle in the parent's own coordinates, out of the flow.
+    // An explicit rectangle in the parent's own coordinates, out of the flow, in logical units.
+    // The position is rounded to the nearest pixel and the size by the length rule, each on its
+    // own: the size does not depend on the position.
     fn place { x: f32, y: f32, w: f32, h: f32 } -> Box {
-        return Box{ width = fix{ px = w }, height = fix{ px = h }, place = Place{ x, y, .. }, .. }
+        return Box{ width = fix{ size = w }, height = fix{ size = h }, place = Place{ x, y, .. }, .. }
     }
 
-    // How `add_text` draws. A null font, size or colour is the theme's. `align` is where each line
-    // lies in the element's inner width.
+    // An explicit rectangle in the parent's own coordinates, out of the flow, in device pixels:
+    // the element lands on exactly these pixels. A negative width or height is 0.
+    fn place_pixels { rect: Rect } -> Box {
+        return Box{ pixels = rect, .. }
+    }
+
+    // How `add_text` draws. A null font, size or colour is the theme's; `size` is in logical units
+    // and becomes a whole pixel size (`ui::to_font_size`). `align` is where each line lies in the
+    // element's inner width.
     enum Overflow: u8 { clip, ellipsis }
     struct TextStyle {
         font: ?Font = null, size: ?f32 = null, color: ?Color = null,
@@ -84,11 +126,11 @@ namespace ui {
     fn add_text { mut ui: Ui, text: []u8, style: TextStyle, box: Box } {
         if not tree::can_record{ &ui } { return }
         let font = style.font ifnull ui.theme.font
-        let size = style.size ifnull ui.theme.font_size
+        let size = to_font_size{ ui, size = style.size ifnull ui.theme.font_size }
         let color = style.color ifnull ui.theme.text
         if not draw::has_font{ list = ui.draw, font } { report_problem{ &ui, kind = ProblemKind::unknown_font, id = NO_ID } }
         let span = keep_text{ &ui, text } ifnull { return }
-        let mut e = tree::make_element{ id = NO_ID, kind = tree::Kind::text, axis = Axis::row, box }
+        let mut e = tree::make_element{ ui, id = NO_ID, kind = tree::Kind::text, axis = Axis::row, box }
         e.font = font
         e.text_size = size
         e.color = color
@@ -108,12 +150,13 @@ namespace ui {
     // recorded after it is over it.
     fn add_host_slot { mut ui: Ui, slot: u32, box: Box } {
         if not tree::can_record{ &ui } { return }
-        let mut e = tree::make_element{ id = NO_ID, kind = tree::Kind::host, axis = Axis::row, box }
+        let mut e = tree::make_element{ ui, id = NO_ID, kind = tree::Kind::host, axis = Axis::row, box }
         e.data = slot
         _ = tree::add_element{ &ui, e }
     }
 
-    // ---- painting: shapes in the open element's coordinates, drawn in the order of the calls
+    // ---- painting: shapes in the open element's coordinates, drawn in the order of the calls.
+    // Everything here is device pixels (the rule is at the top of the file).
 
     fn paint_rect { mut ui: Ui, rect: Rect, style: RectStyle } {
         tree::add_paint{ &ui, cmd = Cmd::rect{ rect, style, clip = 0 } }
@@ -135,9 +178,9 @@ namespace ui {
         tree::add_paint{ &ui, cmd = Cmd::image{ rect, image = region.image, uv = region.uv, tint, quarter = 0, angle = 0.0, radius, blend = Blend::alpha, clip = 0 } }
     }
 
-    // One line of text with its line box's top left at (`x`, `y`). The text is copied. Text in a
-    // font that is not registered is reported and not drawn.
-    fn paint_text { mut ui: Ui, font: Font, size: f32, x: f32, y: f32, text: []u8, color: Color } {
+    // One line of text at `size` pixels with its line box's top left at the pixel (`x`, `y`). The
+    // text is copied. Text in a font that is not registered is reported and not drawn.
+    fn paint_text { mut ui: Ui, font: Font, size: f32, x: i32, y: i32, text: []u8, color: Color } {
         if not tree::can_record{ &ui } { return }
         if not draw::has_font{ list = ui.draw, font } {
             report_problem{ &ui, kind = ProblemKind::unknown_font, id = NO_ID }
@@ -147,6 +190,8 @@ namespace ui {
         tree::add_paint{ &ui, cmd = Cmd::text{ font, size, x, y, text = span, color, clip = 0 } }
     }
 
+    // A straight segment. Its end points and width are pixels and may be fractional: a line is
+    // antialiased where it lies, and is the one shape that is not on the pixel grid.
     fn paint_line { mut ui: Ui, x0: f32, y0: f32, x1: f32, y1: f32, width: f32, color: Color, cap: Cap } {
         tree::add_paint{ &ui, cmd = Cmd::line{ x0, y0, x1, y1, width, color, cap, clip = 0 } }
     }
@@ -161,6 +206,12 @@ namespace ui {
 
         enum Kind: u8 { box, text, paint, host }
 
+        // A `Size` as the layout reads it, in pixels. `kind` is fit, grow, fixed or part (a
+        // `fix_pixels` is fixed here). `value` is a fixed element's size, `part` the fraction a
+        // `take` asks for; `min` and `max` hold the other kinds. Nothing is negative, and nothing
+        // is more than MAX_PIXELS.
+        struct Extent { kind: SizeKind = SizeKind::fit, value: i32 = 0, part: f32 = 0.0, min: i32 = 0, max: i32 = MAX_PIXELS }
+
         struct Element {
             id: Id = NO_ID,
             parent: u32 = NONE, first_child: u32 = NONE, last_child: u32 = NONE, next: u32 = NONE,
@@ -169,28 +220,30 @@ namespace ui {
             root: bool = false,             // has no parent: a tree of its own, placed on the surface
             placed: bool = false,           // out of its parent's flow, at an anchor
             clip: bool = false,
-            width: Size = Size{ .. }, height: Size = Size{ .. },
-            padding: Insets = Insets{ .. }, gap: f32 = 0.0,
+            // Everything below is device pixels, converted when the element was recorded.
+            width: Extent = Extent{ .. }, height: Extent = Extent{ .. },
+            padding: Sides = Sides{ .. }, gap: i32 = 0,
             align_x: Align = Align::start, align_y: Align = Align::start,
-            anchor_x: f32 = 0.0, anchor_y: f32 = 0.0, offset_x: f32 = 0.0, offset_y: f32 = 0.0,
-            scroll_x: f32 = 0.0, scroll_y: f32 = 0.0,   // how far its flow children are moved up and left
+            anchor_x: f32 = 0.0, anchor_y: f32 = 0.0,   // fractions of the parent's size
+            offset_x: i32 = 0, offset_y: i32 = 0,
+            scroll_x: i32 = 0, scroll_y: i32 = 0,       // how far its flow children are moved up and left
             opacity: f32 = 1.0,
-            hit_outset: Insets = Insets{ .. },
+            hit_outset: Sides = Sides{ .. },
             style: RectStyle = RectStyle{ .. },         // its own decoration
             // kind text
             font: Font = Font{ .. }, text_size: f32 = 0.0, color: Color = Color{ .. },
             text: Span = Span{ .. },
             wrap: bool = false, overflow: Overflow = Overflow::clip, text_align: Align = Align::start,
-            line_height: f32 = 0.0,
+            line_height: i32 = 0,
             first_line: u32 = 0, line_count: u32 = 0,   // its lines in `ui.layout.lines`, set by the layout
             dots: bool = false,                         // its last line is followed by "..."
             // kind paint: the index of its shape in `paints`. kind host: the slot.
             data: u32 = 0,
             // The size of its content without padding. A text's is measured when it is recorded;
             // a box's is what the layout finds.
-            content_w: f32 = 0.0, content_h: f32 = 0.0,
-            // Solved by the layout: absolute, in logical units, before snapping.
-            x: f32 = 0.0, y: f32 = 0.0, w: f32 = 0.0, h: f32 = 0.0,
+            content_w: i32 = 0, content_h: i32 = 0,
+            // Solved by the layout: absolute.
+            x: i32 = 0, y: i32 = 0, w: i32 = 0, h: i32 = 0,
         }
 
         // A tree: its root element and where it stands among the layers. The hit regions of every
@@ -228,7 +281,8 @@ namespace ui {
             ui.tree.root_count = 0
             ui.tree.elements[0] = Element{
                 root = true, axis = Axis::column,
-                width = fix{ px = ui.draw.width }, height = fix{ px = ui.draw.height }, ..
+                width = Extent{ kind = SizeKind::fixed, value = ui.draw.width, .. },
+                height = Extent{ kind = SizeKind::fixed, value = ui.draw.height, .. }, ..
             }
             ui.tree.count = 1
             ui.tree.roots[0] = Root{ element = 0, order = BASE_ORDER, modal = false, hits = true }
@@ -257,19 +311,42 @@ namespace ui {
             return id::get_order{ ui }
         }
 
-        // An element declared by `box`, not yet in the tree.
-        fn make_element { id: Id, kind: Kind, axis: Axis, box: Box } -> Element {
+        // A length that may not be negative, in pixels: `to_pixels`, and 0 for a negative one.
+        fn measure_length { ui: Ui, length: f32 } -> i32 {
+            let v = to_pixels{ ui, length }
+            return if v > 0 { v } else { 0 }
+        }
+
+        // A declared size in pixels. This is where a size that is not a number becomes 0 and one
+        // that is too large is held, so the layout never meets either.
+        fn resolve_size { ui: Ui, size: Size } -> Extent {
+            match size.kind {
+                fixed => { return Extent{ kind = SizeKind::fixed, value = measure_length{ ui, length = size.value }, .. } }
+                pixels => { return Extent{ kind = SizeKind::fixed, value = clamp_i32{ v = size.pixels, lo = 0, hi = MAX_PIXELS }, .. } }
+                else => {
+                    let part: f32 = if size.kind == SizeKind::part and size.value == size.value { size.value } else { 0.0 }
+                    // `min` wins when it is larger than `max`.
+                    let min = measure_length{ ui, length = size.min }
+                    let max = pick_max_i32{ a = min, b = measure_length{ ui, length = size.max } }
+                    return Extent{ kind = size.kind, value = 0, part, min, max }
+                }
+            }
+        }
+
+        // An element declared by `box`, not yet in the tree: every length of the box in pixels at
+        // this frame's scale.
+        fn make_element { ui: Ui, id: Id, kind: Kind, axis: Axis, box: Box } -> Element {
             let mut e = Element{ id, kind, axis, .. }
-            e.width = box.width ifnull FIT
-            e.height = box.height ifnull FIT
-            e.padding = box.padding ifnull Insets{ .. }
-            e.gap = box.gap ifnull 0.0
+            e.width = resolve_size{ ui, size = box.width ifnull FIT }
+            e.height = resolve_size{ ui, size = box.height ifnull FIT }
+            e.padding = to_pixel_sides{ ui, insets = box.padding ifnull Insets{ .. } }
+            e.gap = to_pixels{ ui, length = box.gap ifnull 0.0 }
             e.align_x = box.align_x ifnull Align::start
             e.align_y = box.align_y ifnull Align::start
             e.style = RectStyle{
                 fill = box.fill ifnull Color{ a = 0, .. },
-                radius = box.radius ifnull Corners{ .. },
-                border = box.border_width ifnull Sides{ .. },
+                radius = to_pixel_corners{ ui, corners = box.radius ifnull Corners{ .. } },
+                border = to_pixel_sides{ ui, insets = box.border_width ifnull Insets{ .. } },
                 border_color = box.border ifnull SideColors{ .. },
             }
             e.clip = box.clip ifnull false
@@ -277,12 +354,21 @@ namespace ui {
             e.opacity = if not (opacity > 0.0) { 0.0 } else if opacity > 1.0 { 1.0 } else { opacity }
             if let p = box.place {
                 e.placed = true
-                e.anchor_x = p.anchor_x
-                e.anchor_y = p.anchor_y
-                e.offset_x = p.x
-                e.offset_y = p.y
+                e.anchor_x = if p.anchor_x == p.anchor_x { p.anchor_x } else { 0.0 }
+                e.anchor_y = if p.anchor_y == p.anchor_y { p.anchor_y } else { 0.0 }
+                e.offset_x = to_pixel_position{ ui, position = p.x }
+                e.offset_y = to_pixel_position{ ui, position = p.y }
             }
-            e.hit_outset = box.hit_outset ifnull Insets{ .. }
+            if let r = box.pixels {
+                e.placed = true
+                e.anchor_x = 0.0
+                e.anchor_y = 0.0
+                e.offset_x = clamp_i32{ v = r.x, lo = -MAX_PIXELS, hi = MAX_PIXELS }
+                e.offset_y = clamp_i32{ v = r.y, lo = -MAX_PIXELS, hi = MAX_PIXELS }
+                e.width = Extent{ kind = SizeKind::fixed, value = clamp_i32{ v = r.w, lo = 0, hi = MAX_PIXELS }, .. }
+                e.height = Extent{ kind = SizeKind::fixed, value = clamp_i32{ v = r.h, lo = 0, hi = MAX_PIXELS }, .. }
+            }
+            e.hit_outset = to_pixel_sides{ ui, insets = box.hit_outset ifnull Insets{ .. } }
             return e
         }
 
@@ -357,7 +443,7 @@ namespace ui {
             } else if lost != ProblemKind::none {
                 report_drop{ &ui, kind = lost }
             } else {
-                let mut e = make_element{ id, kind = Kind::box, axis, box }
+                let mut e = make_element{ ui, id, kind = Kind::box, axis, box }
                 if let r = root {
                     if @as(usize, ui.tree.root_count) >= ui.tree.roots.len {
                         report_drop{ &ui, kind = ProblemKind::layers_full }

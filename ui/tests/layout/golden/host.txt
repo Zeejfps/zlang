@@ -1,5 +1,5 @@
 == a host slot with shapes under and over it
-frame 800x600 scale 1x1
+frame 800x600
 clip 1 100,50 600x500
 rect 100,50 600x500 fill=20232AFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
 rect 100,50 600x30 fill=30343EFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=1

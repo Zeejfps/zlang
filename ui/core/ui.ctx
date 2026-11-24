@@ -21,11 +21,21 @@
 // the functions the frame calls: `make_state` (from `make`), `reset_state` (from `begin_frame`) and
 // `finish_frame` (from `end_frame`, after the frame is emitted). A subsystem is filled in by editing
 // its own file; this file does not change with it.
+//
+// Units (plan section 2.0, "Units"). The core works in device pixels: every solved rectangle,
+// clip, hit region and position is whole pixels (i32), and nothing is snapped or converted when the
+// frame is emitted. There is one scale, `FrameInfo.scale`, device pixels per logical unit, and it
+// is applied in one place: a declaration (`Theme`, `Box`, `Size`, `Place`, `TextStyle`) is written
+// in logical units (f32) and becomes pixels once, when its element is recorded. The rule of that
+// conversion is `ui::to_pixels`, which widgets and programs call for lengths of their own.
+// Drawing is pixels: the `paint_*` calls, `ui::draw`, and everything the core answers with
+// (`get_rect`, `measure_text`, the pointer, `Interaction.drag_x`, a node's rectangle).
 namespace ui {
-    // What the host says about a frame: the logical size the interface is laid out in, the size of
-    // the surface in device pixels (the core derives the scale of each axis from the two), and the
-    // time since the last frame in seconds. The core reads no clock.
-    struct FrameInfo { width: f32, height: f32, pixel_width: f32, pixel_height: f32, dt: f32 }
+    // What the host says about a frame: the size of the surface in device pixels, how many device
+    // pixels one logical unit is (a monitor's scale times the program's zoom; 1.5 on a 150 %
+    // display), and the time since the last frame in seconds. The core reads no clock. A size
+    // below 0 is 0, and a scale that is not a positive number is 1 (`hold_scale`).
+    struct FrameInfo { width: i32, height: i32, scale: f32, dt: f32 }
 
     // How much of everything a Ui has room for. `elements` counts what the program records in a
     // frame: boxes, texts, paints and host slots. `layers` counts the trees beside the base one
@@ -42,11 +52,12 @@ namespace ui {
         hover_focus: bool = false,      // the stock widgets take focus when hovered
         nodes: bool = true,             // keep the node list that tests and scripts read
         state_ttl: u32 = 600,           // frames a widget's state lives when nothing asks for it
-        drag_start: f32 = 6.0,          // how far the pointer moves before a press is a drag
+        drag_start: f32 = 6.0,          // how far the pointer moves before a press is a drag, in logical units
     }
 
     // Colours by role and the metrics the stock widgets read when they are recorded (plan section
-    // 2.9), so assigning a field in the middle of a frame changes what comes after. `font` is a font
+    // 2.9), so assigning a field in the middle of a frame changes what comes after. Every metric is
+    // in logical units and becomes pixels when a widget records an element with it. `font` is a font
     // the program registered: there is no default for it, and text recorded before the program sets
     // it is reported and not drawn. A state colour left at alpha 0 is derived from its base role by
     // the widget package, which also has the dark and the light palette; these defaults are only
@@ -113,7 +124,8 @@ namespace ui {
         draw: DrawList,                 // the frame's shapes after end_frame; its text arena is the frame's
         theme: Theme,
         config: Config,
-        info: FrameInfo,                // of the frame being recorded, or of the last one
+        info: FrameInfo,                // of the frame being recorded, or of the last one, as the host gave it
+        scale: f32,                     // device pixels per logical unit this frame: `info.scale`, held to what can be used
         frame: u64,                     // counts begin_frame calls
         in_frame: bool,                 // between begin_frame and end_frame
         stats: Stats,
@@ -153,7 +165,7 @@ namespace ui {
         let scroll_state = try scroll::make_state{ realloc, &heap, cap }
         return Ui{
             draw = list, theme = Theme{ .. }, config = Config{ .. },
-            info = FrameInfo{ width = 0.0, height = 0.0, pixel_width = 0.0, pixel_height = 0.0, dt = 0.0 },
+            info = FrameInfo{ width = 0, height = 0, scale = 1.0, dt = 0.0 }, scale = 1.0,
             frame = 0, in_frame = false, stats = Stats{ .. },
             problems, problem_count = 0, problem_kinds = 0,
             provider = null, cache, pending = 0,
@@ -174,12 +186,8 @@ namespace ui {
         let reopened = ui.in_frame
         ui.frame = ui.frame +% 1
         ui.info = frame
-        let width = if frame.width > 0.0 { frame.width } else { 0.0 }
-        let height = if frame.height > 0.0 { frame.height } else { 0.0 }
-        let scale_x = if width > 0.0 and frame.pixel_width > 0.0 { frame.pixel_width / width } else { 1.0 }
-        let scale_y = if height > 0.0 and frame.pixel_height > 0.0 { frame.pixel_height / height } else { 1.0 }
-        // The text functions read the list's scale, so the list is reset before anything measures.
-        draw::reset{ list = &ui.draw, width, height, scale_x, scale_y }
+        ui.scale = hold_scale{ scale = frame.scale }
+        draw::reset{ list = &ui.draw, width = frame.width, height = frame.height }
         text::reset_cache{ cache = &ui.cache }
         ui.stats = Stats{ .. }
         ui.problem_count = 0
@@ -294,9 +302,75 @@ namespace ui {
         ui.provider = provider
     }
 
-    // The width of one line of `text`, in logical units, at this frame's scale.
-    fn measure_text { mut ui: Ui, font: Font, size: f32, text: []u8 } -> f32 {
+    // The width of one line of `text` at `size` pixels, in whole pixels, rounded up: a box this
+    // wide holds the line. `size` is pixels, as everything about drawing is: a size written in
+    // logical units goes through `to_font_size` first.
+    fn measure_text { mut ui: Ui, font: Font, size: f32, text: []u8 } -> i32 {
         return text::measure_text{ cache = &ui.cache, list = ui.draw, provider = ui.provider, font, size, text }
+    }
+
+    // The height of a line in `font` at `size` pixels and where its baseline lies below the line's
+    // top, in whole pixels.
+    fn measure_line { mut ui: Ui, font: Font, size: f32 } -> LineBox {
+        return text::get_line_metrics{ cache = &ui.cache, list = ui.draw, provider = ui.provider, font, size }
+    }
+
+    // ---- logical units to pixels: the one conversion, for widgets and programs as for the core
+
+    // Device pixels per logical unit this frame.
+    fn get_scale { ui: Ui } -> f32 {
+        return ui.scale
+    }
+
+    // A length in logical units (a size, a padding, a gap, a border width) as whole device pixels
+    // at this frame's scale: rounded to the nearest pixel, and a length that is not 0 never becomes
+    // 0, so a border of 1 unit is 1 pixel at scale 1 and 1.25, 2 at 1.5 and 1.75, and a hairline of
+    // 0.25 is still a pixel. A negative length is the same with its sign. This is the rule the core
+    // converts every `Box`, `Size` and theme metric by, so a widget that converts a length itself
+    // gets the pixels an element declared with that length gets.
+    fn to_pixels { ui: Ui, length: f32 } -> i32 {
+        return scale_length{ length, scale = ui.scale }
+    }
+
+    // A position in logical units (an offset from an anchor) as a whole device pixel: the nearest
+    // one, a half rounding up. The rule `Place.x` and `Place.y` are converted by.
+    fn to_pixel_position { ui: Ui, position: f32 } -> i32 {
+        return scale_position{ position, scale = ui.scale }
+    }
+
+    // A length in logical units as device pixels without rounding, for what stays fractional: a
+    // corner radius, a line's width and end points. The rule `Box.radius` is converted by.
+    fn to_pixels_f32 { ui: Ui, length: f32 } -> f32 {
+        let v = length * ui.scale
+        return if v == v { v } else { 0.0 }
+    }
+
+    // A font size in logical units as the pixel size text calls take: a whole number of pixels
+    // (the nearest), at least 1. The rule `TextStyle.size` and `Theme.font_size` are converted by.
+    fn to_font_size { ui: Ui, size: f32 } -> f32 {
+        let v = scale_length{ length = size, scale = ui.scale }
+        return if v < 1 { 1.0 } else { @as(f32, v) }
+    }
+
+    // Insets in logical units as whole pixels on each side, each by `to_pixels`. A side that is
+    // negative is 0: a padding, a border and a hit outset do not go inwards.
+    fn to_pixel_sides { ui: Ui, insets: Insets } -> Sides {
+        return Sides{
+            top = pick_max_i32{ a = 0, b = to_pixels{ ui, length = insets.top } },
+            right = pick_max_i32{ a = 0, b = to_pixels{ ui, length = insets.right } },
+            bottom = pick_max_i32{ a = 0, b = to_pixels{ ui, length = insets.bottom } },
+            left = pick_max_i32{ a = 0, b = to_pixels{ ui, length = insets.left } },
+        }
+    }
+
+    // Corner radii in logical units as pixels, each by `to_pixels_f32`; a negative one is 0.
+    fn to_pixel_corners { ui: Ui, corners: Corners } -> Corners {
+        return Corners{
+            top_left = pick_max_f32{ a = 0.0, b = to_pixels_f32{ ui, length = corners.top_left } },
+            top_right = pick_max_f32{ a = 0.0, b = to_pixels_f32{ ui, length = corners.top_right } },
+            bottom_right = pick_max_f32{ a = 0.0, b = to_pixels_f32{ ui, length = corners.bottom_right } },
+            bottom_left = pick_max_f32{ a = 0.0, b = to_pixels_f32{ ui, length = corners.bottom_left } },
+        }
     }
 
     // The bytes a span of the frame's arena names; empty for a span that is not inside it.

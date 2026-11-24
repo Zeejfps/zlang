@@ -1,30 +1,30 @@
-staged 800x600 pixels 1200x900 revision 1
+staged 800x600 revision 1
 atlas 64x64 version 1 dirty 1,1 58x34
 clip 0 0,0,800,600 round=0,0,0,0 radius=0
 clip 1 16,284,416,584 round=16,284,416,584 radius=8
 clip 2 100,350,300,500 round=0,0,0,0 radius=0
-clip 3 8.5,559.5,72.5,591.5 round=0,0,0,0 radius=0
+clip 3 8,559,72,591 round=0,0,0,0 radius=0
 pass 0 draws 0+5 host 1 320,60 280x360
 draw 0 rect first=0 count=3
   rect 16,556 120x28 radius=4,4,0,0 border=1,1,0,1 fill=FF30343E colors=FF404552,FF404552,00000000,FF404552 clip=1
   rect 200,536 24x24 radius=12,12,12,12 border=0,0,0,0 fill=FF4A90E2 colors=00000000,00000000,00000000,00000000 clip=1
   rect 240,536 24x24 radius=12,12,12,12 border=2,2,2,2 fill=00000000 colors=FFE4E7ED,FFE4E7ED,FFE4E7ED,FFE4E7ED clip=1
 draw 1 glyph first=0 count=11
-  glyph 24,556.6667 10.6667x21.3333 uv=0.015625,0.015625,0.125,0.25 color=FFE4E7ED clip=1 angle=0
-  glyph 34.6667,556.6667 10.6667x21.3333 uv=0.171875,0.015625,0.125,0.25 color=FFE4E7ED clip=1 angle=0
-  glyph 45.3333,556.6667 10.6667x21.3333 uv=0.171875,0.015625,0.125,0.25 color=FFE4E7ED clip=1 angle=0
-  glyph 24.6667,529.3333 5.3333x10.6667 uv=0.328125,0.015625,0.125,0.25 color=FF4A90E2 clip=2 angle=0
-  glyph 30,529.3333 5.3333x10.6667 uv=0.484375,0.015625,0.125,0.25 color=FF4A90E2 clip=2 angle=0
-  glyph 35.3333,529.3333 5.3333x10.6667 uv=0.640625,0.015625,0.125,0.25 color=FF4A90E2 clip=2 angle=0
-  glyph 40.6667,529.3333 5.3333x10.6667 uv=0.796875,0.015625,0.125,0.25 color=FF4A90E2 clip=2 angle=0
-  glyph 46,529.3333 5.3333x10.6667 uv=0.015625,0.296875,0.125,0.25 color=FF4A90E2 clip=2 angle=0
-  glyph 51.3333,529.3333 5.3333x10.6667 uv=0.171875,0.296875,0.125,0.25 color=FF4A90E2 clip=2 angle=0
-  glyph 56.6667,529.3333 5.3333x10.6667 uv=0.328125,0.296875,0.125,0.25 color=FF4A90E2 clip=2 angle=0
-  glyph 62,529.3333 5.3333x10.6667 uv=0.015625,0.296875,0.125,0.25 color=FF4A90E2 clip=2 angle=0
+  glyph 24,562 8x16 uv=0.015625,0.015625,0.125,0.25 color=FFE4E7ED clip=1 angle=0
+  glyph 32,562 8x16 uv=0.171875,0.015625,0.125,0.25 color=FFE4E7ED clip=1 angle=0
+  glyph 40,562 8x16 uv=0.171875,0.015625,0.125,0.25 color=FFE4E7ED clip=1 angle=0
+  glyph 24,524 8x16 uv=0.328125,0.015625,0.125,0.25 color=FF4A90E2 clip=2 angle=0
+  glyph 32,524 8x16 uv=0.484375,0.015625,0.125,0.25 color=FF4A90E2 clip=2 angle=0
+  glyph 40,524 8x16 uv=0.640625,0.015625,0.125,0.25 color=FF4A90E2 clip=2 angle=0
+  glyph 48,524 8x16 uv=0.796875,0.015625,0.125,0.25 color=FF4A90E2 clip=2 angle=0
+  glyph 56,524 8x16 uv=0.015625,0.296875,0.125,0.25 color=FF4A90E2 clip=2 angle=0
+  glyph 64,524 8x16 uv=0.171875,0.296875,0.125,0.25 color=FF4A90E2 clip=2 angle=0
+  glyph 72,524 8x16 uv=0.328125,0.296875,0.125,0.25 color=FF4A90E2 clip=2 angle=0
+  glyph 80,524 8x16 uv=0.015625,0.296875,0.125,0.25 color=FF4A90E2 clip=2 angle=0
 draw 2 image first=0 count=1 img=3 blend=alpha
   image 10,558 32x32 uv=0,1,1,-1 tint=FFFFFFFF clip=0 angle=1.5708 radius=0,0,0,0
 draw 3 image first=1 count=1 img=7 blend=additive
-  image 100.5,431.75 64x48 uv=0.25,0.5,0.5,-0.375 tint=C080FF80 clip=2 angle=0.5 radius=4,4,4,4
+  image 100,432 64x48 uv=0.25,0.5,0.5,-0.375 tint=C080FF80 clip=2 angle=0.5 radius=4,4,4,4
 draw 4 shape first=0 count=3
   shape 37.5,525.5 17x17 data=40,540,52,528 data2=0,0,0,0 half=1 color=FFE4E7ED kind=2 clip=0 color2=FFE4E7ED flags=0
   shape 8.25,577.5 24x24.25 data=10.5,579.75,30,599.5 data2=0,0,0,0 half=0.75 color=FFFF0000 kind=2 clip=3 color2=FFFF0000 flags=1

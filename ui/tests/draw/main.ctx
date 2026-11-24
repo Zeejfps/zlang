@@ -24,7 +24,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     return if t.failed == 0 { 0 } else { 1 }
 }
 
-fn make_rect { x: f32, y: f32, w: f32, h: f32 } -> ui::Rect {
+fn make_rect { x: i32, y: i32, w: i32, h: i32 } -> ui::Rect {
     return ui::Rect{ x, y, w, h }
 }
 
@@ -34,19 +34,19 @@ fn check_list { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::
         ui_test::expect{ &io, &t, ok = false, what = "make the draw list" }
         return
     }
-    ui::draw::reset{ &list, width = 800.0, height = 600.0, scale_x = 1.5, scale_y = 1.5 }
-    ui_test::expect{ &io, &t, ok = list.clip_count == 1 and list.clips[0].rect.w == 800.0 and list.clips[0].rect.h == 600.0, what = "entry 0 is the whole surface" }
+    ui::draw::reset{ &list, width = 800, height = 600 }
+    ui_test::expect{ &io, &t, ok = list.clip_count == 1 and list.clips[0].rect.w == 800 and list.clips[0].rect.h == 600, what = "entry 0 is the whole surface" }
 
-    let panel_rect = make_rect{ x = 16.0, y = 16.0, w = 400.0, h = 300.0 }
+    let panel_rect = make_rect{ x = 16, y = 16, w = 400, h = 300 }
     let rounded = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = panel_rect, round = panel_rect, radius = 8.0 } } ifnull {
         ui_test::expect{ &io, &t, ok = false, what = "add the rounded clip" }
         return
     }
-    let plain = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 100.0, y = 100.0, w = 200.0, h = 150.0 }, .. } } ifnull {
+    let plain = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 100, y = 100, w = 200, h = 150 }, .. } } ifnull {
         ui_test::expect{ &io, &t, ok = false, what = "add the plain clip" }
         return
     }
-    let fraction = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 8.5, y = 8.5, w = 64.0, h = 32.0 }, .. } } ifnull {
+    let fraction = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 8, y = 9, w = 64, h = 32 }, .. } } ifnull {
         ui_test::expect{ &io, &t, ok = false, what = "add the third clip" }
         return
     }
@@ -55,7 +55,7 @@ fn check_list { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::
     // Equal clips share an entry; the same rectangle without the rounding is a different one.
     let again = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = panel_rect, round = panel_rect, radius = 8.0 } } ifnull { 99 }
     ui_test::expect{ &io, &t, ok = again == rounded and list.clip_count == 4, what = "an equal rounded clip shares its entry" }
-    let again_plain = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 100.0, y = 100.0, w = 200.0, h = 150.0 }, .. } } ifnull { 99 }
+    let again_plain = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 100, y = 100, w = 200, h = 150 }, .. } } ifnull { 99 }
     ui_test::expect{ &io, &t, ok = again_plain == plain and list.clip_count == 4, what = "an equal plain clip shares its entry" }
     let corner_only = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = panel_rect, .. } } ifnull { 99 }
     ui_test::expect{ &io, &t, ok = corner_only == 4 and list.clip_count == 5, what = "the same rectangle without rounding is its own entry" }
@@ -63,29 +63,29 @@ fn check_list { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::
 
     let ink = ui::Color{ r = 0xE4, g = 0xE7, b = 0xED, .. }
     let border = ui::Color{ r = 0x40, g = 0x45, b = 0x52, .. }
-    ui::draw::add_rect{ &list, rect = make_rect{ x = 16.0, y = 16.0, w = 120.0, h = 28.0 }, clip = rounded, style = ui::RectStyle{
+    ui::draw::add_rect{ &list, rect = make_rect{ x = 16, y = 16, w = 120, h = 28 }, clip = rounded, style = ui::RectStyle{
         fill = ui::Color{ r = 0x30, g = 0x34, b = 0x3E, .. },
         radius = ui::Corners{ top_left = 4.0, top_right = 4.0, .. },
-        border = ui::Sides{ top = 1.0, right = 1.0, left = 1.0, .. },
+        border = ui::Sides{ top = 1, right = 1, left = 1, .. },
         border_color = ui::SideColors{ top = border, right = border, left = border, .. },
     } }
     // A disc and a ring are squares whose radius is half the side.
-    ui::draw::add_rect{ &list, rect = make_rect{ x = 200.0, y = 40.0, w = 24.0, h = 24.0 }, clip = rounded, style = ui::RectStyle{
+    ui::draw::add_rect{ &list, rect = make_rect{ x = 200, y = 40, w = 24, h = 24 }, clip = rounded, style = ui::RectStyle{
         fill = ui::Color{ r = 0x4A, g = 0x90, b = 0xE2, .. }, radius = ui::round{ radius = 12.0 }, .. } }
-    ui::draw::add_rect{ &list, rect = make_rect{ x = 240.0, y = 40.0, w = 24.0, h = 24.0 }, clip = rounded, style = ui::RectStyle{
-        radius = ui::round{ radius = 12.0 }, border = ui::stroke{ width = 2.0 }, border_color = ui::color_sides{ color = ink }, .. } }
-    ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16.0, x = 24.0, y = 22.0, text = "Add", color = ink, clip = rounded }
-    ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 12.5, x = 24.5, y = 60.25, text = "Say \"hi\"", color = ui::Color{ r = 0x4A, g = 0x90, b = 0xE2, .. }, clip = plain }
-    ui::draw::add_image{ &list, rect = make_rect{ x = 10.0, y = 10.0, w = 32.0, h = 32.0 }, region = ui::Region{ image = ui::Image{ id = 3, width = 32.0, height = 32.0 }, width = 32.0, height = 32.0, .. },
+    ui::draw::add_rect{ &list, rect = make_rect{ x = 240, y = 40, w = 24, h = 24 }, clip = rounded, style = ui::RectStyle{
+        radius = ui::round{ radius = 12.0 }, border = ui::stroke{ width = 2 }, border_color = ui::color_sides{ color = ink }, .. } }
+    ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16.0, x = 24, y = 22, text = "Add", color = ink, clip = rounded }
+    ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 12.5, x = 24, y = 60, text = "Say \"hi\"", color = ui::Color{ r = 0x4A, g = 0x90, b = 0xE2, .. }, clip = plain }
+    ui::draw::add_image{ &list, rect = make_rect{ x = 10, y = 10, w = 32, h = 32 }, region = ui::Region{ image = ui::Image{ id = 3, width = 32, height = 32 }, width = 32, height = 32, .. },
         tint = ui::Color{ r = 255, g = 255, b = 255, .. }, quarter = 1, angle = 0.0, radius = ui::Corners{ .. }, blend = ui::Blend::alpha, clip = 0 }
-    ui::draw::add_image{ &list, rect = make_rect{ x = 100.5, y = 120.25, w = 64.0, h = 48.0 },
-        region = ui::Region{ image = ui::Image{ id = 7, width = 256.0, height = 256.0 }, uv = ui::Uv{ u0 = 0.25, v0 = 0.125, u1 = 0.75, v1 = 0.5 }, width = 128.0, height = 96.0 },
+    ui::draw::add_image{ &list, rect = make_rect{ x = 100, y = 120, w = 64, h = 48 },
+        region = ui::Region{ image = ui::Image{ id = 7, width = 256, height = 256 }, uv = ui::Uv{ u0 = 0.25, v0 = 0.125, u1 = 0.75, v1 = 0.5 }, width = 128, height = 96 },
         tint = ui::Color{ r = 0x80, g = 0xFF, b = 0x80, a = 0xC0 }, quarter = 0, angle = 0.5, radius = ui::round{ radius = 4.0 }, blend = ui::Blend::additive, clip = plain }
     ui::draw::add_line{ &list, x0 = 40.0, y0 = 60.0, x1 = 52.0, y1 = 72.0, width = 2.0, color = ink, cap = ui::Cap::round, clip = 0 }
     ui::draw::add_line{ &list, x0 = 10.5, y0 = 20.25, x1 = 30.0, y1 = 0.5, width = 1.5, color = ui::Color{ r = 255, .. }, cap = ui::Cap::butt, clip = fraction }
     ui::draw::add_line{ &list, x0 = 0.0, y0 = 0.0, x1 = 5.0, y1 = 5.0, width = 1.0, color = ui::Color{ a = 0x80, .. }, cap = ui::Cap::square, clip = 0 }
-    ui::draw::add_host{ &list, slot = 1, rect = make_rect{ x = 320.0, y = 60.0, w = 280.0, h = 360.0 } }
-    ui::draw::add_rect{ &list, rect = make_rect{ x = 330.0, y = 70.0, w = 20.0, h = 20.0 }, clip = 0, style = ui::RectStyle{ fill = ui::Color{ r = 255, g = 0, b = 255, .. }, .. } }
+    ui::draw::add_host{ &list, slot = 1, rect = make_rect{ x = 320, y = 60, w = 280, h = 360 } }
+    ui::draw::add_rect{ &list, rect = make_rect{ x = 330, y = 70, w = 20, h = 20 }, clip = 0, style = ui::RectStyle{ fill = ui::Color{ r = 255, g = 0, b = 255, .. }, .. } }
 
     ui_test::expect{ &io, &t, ok = list.count == 12 and list.dropped == 0, what = "all twelve shapes fit and none dropped" }
 
@@ -112,43 +112,43 @@ fn check_overflow { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } 
         ui_test::expect{ &io, &t, ok = false, what = "make the small draw list" }
         return
     }
-    ui::draw::reset{ &list, width = 100.0, height = 100.0, scale_x = 1.0, scale_y = 1.0 }
-    let mut i: u32 = 0
+    ui::draw::reset{ &list, width = 100, height = 100 }
+    let mut i: i32 = 0
     while i < 6 {
-        ui::draw::add_rect{ &list, rect = make_rect{ x = @as(f32, i), y = 0.0, w = 1.0, h = 1.0 }, style = ui::RectStyle{ .. }, clip = 0 }
+        ui::draw::add_rect{ &list, rect = make_rect{ x = i, y = 0, w = 1, h = 1 }, style = ui::RectStyle{ .. }, clip = 0 }
         i = i + 1
     }
     ui_test::expect{ &io, &t, ok = list.count == 4 and list.dropped == 2, what = "six shapes into a list of four: four kept, two counted" }
-    ui_test::expect{ &io, &t, ok = rect_x_of{ cmd = list.cmds[3] } == 3.0, what = "the shapes that fit are the first ones" }
+    ui_test::expect{ &io, &t, ok = rect_x_of{ cmd = list.cmds[3] } == 3, what = "the shapes that fit are the first ones" }
 
-    ui::draw::reset{ &list, width = 100.0, height = 100.0, scale_x = 1.0, scale_y = 1.0 }
+    ui::draw::reset{ &list, width = 100, height = 100 }
     ui_test::expect{ &io, &t, ok = list.count == 0 and list.dropped == 0 and list.clip_count == 1, what = "reset empties the list and the counts" }
 
     // A table of three entries holds the surface and two clips; the third distinct clip is refused.
-    let first = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 1.0, y = 1.0, w = 10.0, h = 10.0 }, .. } }
-    let second = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 2.0, y = 2.0, w = 10.0, h = 10.0 }, .. } }
+    let first = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 1, y = 1, w = 10, h = 10 }, .. } }
+    let second = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 2, y = 2, w = 10, h = 10 }, .. } }
     ui_test::expect{ &io, &t, ok = first != null and second != null and list.dropped == 0, what = "two clips fit a table of three" }
-    let third = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 3.0, y = 3.0, w = 10.0, h = 10.0 }, .. } }
+    let third = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 3, y = 3, w = 10, h = 10 }, .. } }
     ui_test::expect{ &io, &t, ok = third == null and list.clip_count == 3 and list.dropped == 1, what = "a full clip table refuses a clip and counts it" }
-    let repeat = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 2.0, y = 2.0, w = 10.0, h = 10.0 }, .. } }
+    let repeat = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = make_rect{ x = 2, y = 2, w = 10, h = 10 }, .. } }
     ui_test::expect{ &io, &t, ok = repeat != null and list.dropped == 1, what = "an equal clip still finds its entry in a full table" }
 
     // A shape naming a clip that does not exist is dropped and counted.
-    ui::draw::add_rect{ &list, rect = make_rect{ x = 0.0, y = 0.0, w = 1.0, h = 1.0 }, style = ui::RectStyle{ .. }, clip = 3 }
+    ui::draw::add_rect{ &list, rect = make_rect{ x = 0, y = 0, w = 1, h = 1 }, style = ui::RectStyle{ .. }, clip = 3 }
     ui_test::expect{ &io, &t, ok = list.count == 0 and list.dropped == 2, what = "a shape with an unknown clip index is dropped and counted" }
 
     // Text is copied into the arena (8 bytes here); one that does not fit is dropped whole.
-    ui::draw::add_text{ &list, font = ui::Font{ .. }, size = 8.0, x = 0.0, y = 0.0, text = "12345", color = ui::Color{ .. }, clip = 0 }
-    ui::draw::add_text{ &list, font = ui::Font{ .. }, size = 8.0, x = 0.0, y = 0.0, text = "6789", color = ui::Color{ .. }, clip = 0 }
-    ui::draw::add_text{ &list, font = ui::Font{ .. }, size = 8.0, x = 0.0, y = 0.0, text = "678", color = ui::Color{ .. }, clip = 0 }
+    ui::draw::add_text{ &list, font = ui::Font{ .. }, size = 8.0, x = 0, y = 0, text = "12345", color = ui::Color{ .. }, clip = 0 }
+    ui::draw::add_text{ &list, font = ui::Font{ .. }, size = 8.0, x = 0, y = 0, text = "6789", color = ui::Color{ .. }, clip = 0 }
+    ui::draw::add_text{ &list, font = ui::Font{ .. }, size = 8.0, x = 0, y = 0, text = "678", color = ui::Color{ .. }, clip = 0 }
     ui_test::expect{ &io, &t, ok = list.count == 2 and list.text_len == 8 and list.dropped == 3, what = "text past the arena is dropped whole" }
     check_text_span{ &io, &t, list = &list }
 }
 
 // The x of a rect command, or -1 for any other command.
-fn rect_x_of { cmd: ui::Cmd } -> f32 {
+fn rect_x_of { cmd: ui::Cmd } -> i32 {
     if cmd is rect{ rect } { return rect.x }
-    return -1.0
+    return -1
 }
 
 fn check_text_span { mut io: Io, mut t: ui_test::Tally, list: *ui::DrawList } {
@@ -257,11 +257,49 @@ fn check_helpers { mut io: Io, mut t: ui_test::Tally } {
     ui_test::expect{ &io, &t, ok = ui::pick_min_u32{ a = 7, b = 3 } == 3 and ui::pick_max_u32{ a = 7, b = 3 } == 7, what = "pick_min_u32 and pick_max_u32" }
     ui_test::expect{ &io, &t, ok = ui::clamp_f32{ v = 5.0, lo = 0.0, hi = 3.0 } == 3.0 and ui::clamp_f32{ v = -1.0, lo = 0.0, hi = 3.0 } == 0.0 and ui::clamp_f32{ v = 2.0, lo = 0.0, hi = 3.0 } == 2.0, what = "clamp_f32" }
     ui_test::expect{ &io, &t, ok = ui::clamp_f32{ v = 5.0, lo = 4.0, hi = 3.0 } == 4.0, what = "clamp_f32 with lo above hi gives lo" }
-    // 10.3 * 1.5 + 0.5 = 15.95, floor 15, / 1.5 = 10; 10.4 * 1.5 + 0.5 = 16.1, floor 16, / 1.5 = 10.6667.
-    ui_test::expect{ &io, &t, ok = ui::snap_f32{ v = 10.3, scale = 1.5 } == 10.0, what = "snap_f32 rounds down to the grid" }
-    ui_test::expect{ &io, &t, ok = ui::snap_f32{ v = 10.4, scale = 1.5 } == 16.0 / 1.5, what = "snap_f32 rounds up to the grid" }
-    ui_test::expect{ &io, &t, ok = ui::snap_f32{ v = 3.7, scale = 1.0 } == 4.0 and ui::snap_f32{ v = 3.2, scale = 1.0 } == 3.0, what = "snap_f32 at scale 1 rounds to whole numbers" }
-    ui_test::expect{ &io, &t, ok = ui::snap_f32{ v = 3.7, scale = 0.0 } == 3.7, what = "snap_f32 ignores a scale that is not positive" }
+    ui_test::expect{ &io, &t, ok = ui::pick_min_i32{ a = -7, b = 3 } == -7 and ui::pick_max_i32{ a = -7, b = 3 } == 3, what = "pick_min_i32 and pick_max_i32" }
+    ui_test::expect{ &io, &t, ok = ui::clamp_i32{ v = 5, lo = 0, hi = 3 } == 3 and ui::clamp_i32{ v = -1, lo = 0, hi = 3 } == 0 and ui::clamp_i32{ v = 2, lo = 0, hi = 3 } == 2 and ui::clamp_i32{ v = 5, lo = 4, hi = 3 } == 4,
+        what = "clamp_i32, and with lo above hi it gives lo" }
+
+    // Logical units to device pixels. A length goes to the nearest pixel (a half away from zero):
+    // 10.3 * 1.5 = 15.45 is 15, 10.4 * 1.5 = 15.6 is 16.
+    let nan = 0.0 / ui::pick_max_f32{ a = 0.0, b = 0.0 }
+    let inf = 1.0e30 * 1.0e30
+    ui_test::expect{ &io, &t, ok = ui::scale_length{ length = 10.3, scale = 1.5 } == 15, what = "a length rounds down to the nearest pixel" }
+    ui_test::expect{ &io, &t, ok = ui::scale_length{ length = 10.4, scale = 1.5 } == 16, what = "a length rounds up to the nearest pixel" }
+    ui_test::expect{ &io, &t, ok = ui::scale_length{ length = 3.7, scale = 1.0 } == 4 and ui::scale_length{ length = 3.2, scale = 1.0 } == 3 and ui::scale_length{ length = 2.5, scale = 1.0 } == 3,
+        what = "a length at scale 1 rounds to whole numbers, a half up" }
+    ui_test::expect{ &io, &t, ok = ui::scale_length{ length = 3.7, scale = 0.0 } == 4 and ui::scale_length{ length = 3.7, scale = -2.0 } == 4 and ui::scale_length{ length = 3.7, scale = nan } == 4,
+        what = "a scale that is not a positive number is 1" }
+    // A border of 1 logical unit at the scales a display has: 1, 1.25, 1.5, 1.75 and 2 pixels a unit.
+    ui_test::expect{ &io, &t, ok = ui::scale_length{ length = 1.0, scale = 1.0 } == 1 and ui::scale_length{ length = 1.0, scale = 1.25 } == 1 and ui::scale_length{ length = 1.0, scale = 1.5 } == 2
+        and ui::scale_length{ length = 1.0, scale = 1.75 } == 2 and ui::scale_length{ length = 1.0, scale = 2.0 } == 2, what = "1 unit is 1, 1, 2, 2 and 2 pixels at scales 1, 1.25, 1.5, 1.75 and 2" }
+    ui_test::expect{ &io, &t, ok = ui::scale_length{ length = 0.25, scale = 1.0 } == 1 and ui::scale_length{ length = 0.1, scale = 1.5 } == 1 and ui::scale_length{ length = 1.0, scale = 0.25 } == 1
+        and ui::scale_length{ length = 0.0, scale = 2.0 } == 0, what = "a length that is not 0 is at least a pixel, and 0 stays 0" }
+    ui_test::expect{ &io, &t, ok = ui::scale_length{ length = -0.2, scale = 1.0 } == -1 and ui::scale_length{ length = -3.7, scale = 1.0 } == -4 and ui::scale_length{ length = -10.3, scale = 1.5 } == -15,
+        what = "a negative length is the same with its sign" }
+    ui_test::expect{ &io, &t, ok = ui::scale_length{ length = nan, scale = 1.0 } == 0 and ui::scale_length{ length = inf, scale = 1.0 } == ui::MAX_PIXELS and ui::scale_length{ length = -inf, scale = 1.0 } == -ui::MAX_PIXELS
+        and ui::scale_length{ length = 3.0e9, scale = 2.0 } == ui::MAX_PIXELS and ui::scale_length{ length = 1.0e30, scale = 64.0 } == ui::MAX_PIXELS,
+        what = "a length that is not a number is 0, and one past the largest is held there" }
+    // A position goes to the nearest pixel, a half up, and may be 0: floor(v * scale + 0.5).
+    ui_test::expect{ &io, &t, ok = ui::scale_position{ position = 10.3, scale = 1.5 } == 15 and ui::scale_position{ position = 10.4, scale = 1.5 } == 16
+        and ui::scale_position{ position = 0.3, scale = 1.0 } == 0 and ui::scale_position{ position = 0.5, scale = 1.0 } == 1
+        and ui::scale_position{ position = -0.5, scale = 1.0 } == 0 and ui::scale_position{ position = -0.6, scale = 1.0 } == -1, what = "a position rounds to the nearest pixel, a half up, and may be 0" }
+    ui_test::expect{ &io, &t, ok = ui::scale_position{ position = nan, scale = 1.0 } == 0 and ui::scale_position{ position = inf, scale = 1.0 } == ui::MAX_PIXELS
+        and ui::scale_position{ position = -1.0e30, scale = 1.0 } == -ui::MAX_PIXELS, what = "a position that is not a number is 0, and one out of range is held" }
+    ui_test::expect{ &io, &t, ok = ui::hold_scale{ scale = 1.5 } == 1.5 and ui::hold_scale{ scale = 0.0 } == 1.0 and ui::hold_scale{ scale = nan } == 1.0 and ui::hold_scale{ scale = -1.0 } == 1.0
+        and ui::hold_scale{ scale = 1000.0 } == 64.0 and ui::hold_scale{ scale = 0.001 } == 0.015625 and ui::hold_scale{ scale = inf } == 64.0, what = "a scale is held from 1/64 to 64, and 1 when it is no positive number" }
+    ui_test::expect{ &io, &t, ok = ui::floor_pixels{ v = -1.5 } == -2 and ui::ceil_pixels{ v = 1.2 } == 2 and ui::round_pixels{ v = 2.5 } == 3 and ui::round_pixels{ v = -2.5 } == -2
+        and ui::floor_pixels{ v = nan } == 0 and ui::ceil_pixels{ v = inf } == ui::MAX_PIXELS and ui::round_pixels{ v = -inf } == -ui::MAX_PIXELS and ui::ceil_pixels{ v = 2.0e9 } == ui::MAX_PIXELS,
+        what = "floor_pixels, ceil_pixels and round_pixels, which never overflow" }
+    // Sums of pixels are made wide and held, so the largest i32 cannot overflow one.
+    ui_test::expect{ &io, &t, ok = ui::add_pixels{ a = 3, b = 4 } == 7 and ui::add_pixels{ a = 2147483647, b = 2147483647 } == ui::MAX_PIXELS and ui::add_pixels{ a = ui::MAX_PIXELS, b = 1 } == ui::MAX_PIXELS
+        and ui::sub_pixels{ a = 3, b = 4 } == -1 and ui::sub_pixels{ a = -2147483647, b = 2147483647 } == -ui::MAX_PIXELS and ui::hold_pixels{ v = 5000000000 } == ui::MAX_PIXELS
+        and ui::hold_pixels{ v = -5000000000 } == -ui::MAX_PIXELS and ui::hold_pixels{ v = -12 } == -12, what = "add_pixels, sub_pixels and hold_pixels hold a sum instead of overflowing" }
+    // A fraction of a whole number of pixels rounds down. 0.7 of 100 is 70: the product is made in f32.
+    ui_test::expect{ &io, &t, ok = ui::take_fraction{ whole = 100, fraction = 0.7 } == 70 and ui::take_fraction{ whole = 101, fraction = 0.5 } == 50 and ui::take_fraction{ whole = 3, fraction = 0.1 } == 0
+        and ui::take_fraction{ whole = 100, fraction = 1.0 } == 100 and ui::take_fraction{ whole = 100, fraction = 0.3 } == 30 and ui::take_fraction{ whole = 100, fraction = -0.255 } == -26
+        and ui::take_fraction{ whole = 100, fraction = nan } == 0 and ui::take_fraction{ whole = ui::MAX_PIXELS, fraction = 4.0 } == ui::MAX_PIXELS, what = "take_fraction rounds down and is held" }
     ui_test::expect{ &io, &t, ok = ui::floor_f32{ x = -1.5 } == -2.0 and ui::ceil_f32{ x = 1.2 } == 2.0 and ui::round_f32{ x = 2.5 } == 3.0, what = "floor_f32, ceil_f32 and round_f32" }
     ui_test::expect{ &io, &t, ok = ui::sqrt_f32{ x = 9.0 } == 3.0 and ui::abs_f32{ x = -2.0 } == 2.0, what = "sqrt_f32 and abs_f32" }
     ui_test::expect{ &io, &t, ok = ui::abs_f32{ x = ui::sin_f32{ x = 0.0 } } == 0.0 and ui::cos_f32{ x = 0.0 } == 1.0, what = "sin_f32 and cos_f32" }
@@ -274,6 +312,6 @@ fn check_helpers { mut io: Io, mut t: ui_test::Tally } {
     let style = ui::RectStyle{ .. }
     ui_test::expect{ &io, &t, ok = style.fill.a == 0 and style.border_color.top.a == 0 and style.radius.top_left == 0.0, what = "a rect style draws nothing by default" }
     let r = ui::round{ radius = 3.0 }
-    let s = ui::stroke{ width = 2.0 }
-    ui_test::expect{ &io, &t, ok = r.top_left == 3.0 and r.bottom_right == 3.0 and s.left == 2.0 and s.top == 2.0, what = "round and stroke fill every corner and side" }
+    let s = ui::stroke{ width = 2 }
+    ui_test::expect{ &io, &t, ok = r.top_left == 3.0 and r.bottom_right == 3.0 and s.left == 2 and s.top == 2, what = "round and stroke fill every corner and side" }
 }

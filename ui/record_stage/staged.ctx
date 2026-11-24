@@ -3,7 +3,7 @@
 // uploads them. This is how batching is pinned: a change that splits or merges draws, or reorders
 // instances, shows as a diff.
 //
-//   staged 800x600 pixels 1200x900 revision 1
+//   staged 800x600 revision 1
 //   atlas 128x64 version 0 dirty 0,0 128x40
 //   clip 0 0,0,800,600 round=0,0,0,0 radius=0
 //   pass 0 draws 0+2 host 1 320,60 280x360
@@ -20,7 +20,8 @@
 //
 // Everything is in canvas space (y up, origin bottom left) and as the instance holds it: colours are
 // the packed ARGB the shaders unpack, radii run tl, tr, br, bl and borders top, right, bottom, left,
-// a clip is (left, bottom, right, top). A host's rectangle is the list's (y down). Coordinates keep
+// a clip is (left, bottom, right, top). The canvas is device pixels, one unit a pixel; a host's
+// rectangle is the list's (whole pixels, y down). The instances are floats: coordinates keep
 // four digits after the point and UVs six. A `dropped` line ends a Staged that dropped anything.
 namespace ui_rec {
     const UV_DIGITS: u32 = 6
@@ -107,8 +108,7 @@ namespace ui_rec {
 
     // The whole Staged: what a backend draws, pass by pass.
     fn write_staged { mut sink: Sink, staged: *ui_stage::Staged } -> ! {
-        try @fmt(&sink, "staged {}x{} pixels {}x{} revision {}\n", write_number{ v = staged.width, _ }, write_number{ v = staged.height, _ },
-            write_number{ v = staged.pixel_width, _ }, write_number{ v = staged.pixel_height, _ }, staged.revision)
+        try @fmt(&sink, "staged {}x{} revision {}\n", staged.width, staged.height, staged.revision)
         let a = staged.atlas
         let dirty_w = if a.dirty_x1 > a.dirty_x0 { a.dirty_x1 - a.dirty_x0 } else { 0 }
         let dirty_h = if a.dirty_y1 > a.dirty_y0 { a.dirty_y1 - a.dirty_y0 } else { 0 }

@@ -2,10 +2,18 @@
 // registers each one it wants and names it in the theme. A font is one of two kinds.
 //
 //   bitmap   a glyph table. `glyphs[c - first]` is character `c`. Everything is in font units;
-//            `height` is the line height in font units, so text at `size` is drawn at
-//            `size / height`. With `snap` that scale is rounded so one font unit covers whole device
-//            pixels and each glyph starts on a device pixel.
-//   outline  TrueType or OpenType, served by a `TextProvider` (shaping, line metrics, rasterising).
+//            `height` is the line height in font units, so text at `size` pixels is drawn at
+//            `size / height` pixels a font unit. With `snap` that magnification is rounded to a
+//            whole number, at least 1, so one font unit covers whole pixels and each glyph starts
+//            on a pixel. Without it the magnification is exactly size / height (KOTOR's fonts,
+//            drawn at their design size times a quarter-step scale): the glyphs inside a run may
+//            lie between pixels, while the run starts on a pixel and measures a whole width.
+//   outline  TrueType or OpenType, served by a `TextProvider` (shaping, line metrics, rasterising)
+//            at `size` rounded to a whole pixel size.
+//
+// A text's `size` is always device pixels, and it is the one text quantity that stays f32, for
+// the glyph table without `snap`. A size written in logical units becomes pixels with
+// `ui::to_font_size`, which gives a whole number.
 //
 // A Glyph's `left` is the distance from the pen to the left edge of its box, and `top` the distance
 // from the top of the line box DOWN to the top of its box, both in font units: y runs down in the
@@ -13,8 +21,10 @@
 // where the baseline lies below the line's top, for what aligns on it. A character the table does
 // not hold (below `first`, past the last glyph, or a control byte) has no glyph and no advance.
 namespace ui {
-    // What serves outline fonts: line metrics, shaping and one glyph's coverage. Sizes and advances
-    // are in device pixels. `state` is the provider's own, opaque to the core.
+    // What serves outline fonts: line metrics, shaping and one glyph's coverage. Sizes, metrics and
+    // advances are in device pixels; inside a shaped run the advances and offsets are fractional,
+    // which is what the staged level places glyphs from. `state` is the provider's own, opaque to
+    // the core.
     struct Opaque {}
     struct LineMetrics { height: f32 = 0.0, ascent: f32 = 0.0 }
     struct Shaped { glyph: u32 = 0, face: u32 = 0, x_offset: f32 = 0.0, y_offset: f32 = 0.0, x_advance: f32 = 0.0, cluster: u32 = 0 }
@@ -88,16 +98,15 @@ namespace ui {
         }
     }
 
-    // Logical units per font unit for a glyph table drawn at `size` (the line height wanted) on a
-    // surface with `scale` device pixels per logical unit along the axis asked about. With `snap`
-    // the number of device pixels one font unit covers is rounded to a whole number, at least 1.
-    // 0 when the font or the size has no height.
-    fn get_font_scale { font: FontDef, size: f32, scale: f32 } -> f32 {
+    // Pixels per font unit for a glyph table drawn at `size` (the line height wanted, in pixels):
+    // size / height, and with `snap` that rounded to a whole number, at least 1. 0 when the font
+    // or the size has no height. Never more than 100000.
+    fn get_font_scale { font: FontDef, size: f32 } -> f32 {
         if not (font.height > 0.0) or not (size > 0.0) { return 0.0 }
-        let k = size / font.height
-        if not font.snap or not (scale > 0.0) { return k }
-        let device = round_f32{ x = k * scale }
-        return pick_max_f32{ a = 1.0, b = device } / scale
+        let k = pick_min_f32{ a = size / font.height, b = 100000.0 }
+        if not (k == k) { return 0.0 }
+        if not font.snap { return k }
+        return pick_max_f32{ a = 1.0, b = round_f32{ x = k } }
     }
 
     namespace draw {
@@ -125,7 +134,7 @@ namespace ui {
         // add_text for a font that must be registered. Text in a font that never was is not drawn:
         // the shape is dropped and counted in `list.dropped`, which the tests assert is 0 after every
         // frame. The Ui records the misuse as a problem by asking `has_font` first.
-        fn add_known_text { mut list: DrawList, font: Font, size: f32, x: f32, y: f32, text: []u8, color: Color, clip: u16 } {
+        fn add_known_text { mut list: DrawList, font: Font, size: f32, x: i32, y: i32, text: []u8, color: Color, clip: u16 } {
             if not has_font{ list, font } {
                 list.dropped = list.dropped + 1
                 return

@@ -20,7 +20,8 @@
 // `finish_frame` last, after the frame is emitted and every other subsystem has finished, which is
 // where the requests are filled.
 namespace ui {
-    struct Point { x: f32 = 0.0, y: f32 = 0.0 }
+    // A place on the surface, in device pixels.
+    struct Point { x: i32 = 0, y: i32 = 0 }
 
     // One key going down (or repeating) with the modifiers held, in the order they were pushed.
     struct KeyStroke { key: Key = Key::none, mods: u8 = 0, repeat: bool = false }
@@ -35,8 +36,8 @@ namespace ui {
     fn push_event { mut ui: Ui, event: Event } -> bool {
         match event {
             pointer_move{ x, y } => {
-                ui.input.pending.x = x
-                ui.input.pending.y = y
+                ui.input.pending.x = clamp_i32{ v = x, lo = -MAX_PIXELS, hi = MAX_PIXELS }
+                ui.input.pending.y = clamp_i32{ v = y, lo = -MAX_PIXELS, hi = MAX_PIXELS }
                 ui.input.pending.inside = true
                 return input::is_pointer_taken{ ui }
             }
@@ -119,7 +120,7 @@ namespace ui {
         }
     }
 
-    // Where the pointer is in this frame's input, in logical units.
+    // Where the pointer is in this frame's input, in device pixels.
     fn get_pointer { ui: Ui } -> Point {
         return Point{ x = ui.input.now.x, y = ui.input.now.y }
     }
@@ -192,7 +193,7 @@ namespace ui {
         ui.input.asked.cursor = cursor
     }
 
-    // Asks for the OS's text input after this frame, with the caret's rectangle (logical units)
+    // Asks for the OS's text input after this frame, with the caret's rectangle (device pixels)
     // for the candidate window. A focused text field calls it every frame it has focus.
     fn set_text_input { mut ui: Ui, rect: Rect } {
         ui.input.asked.text_input = true
@@ -235,11 +236,11 @@ namespace ui {
         // A frame's input. `keys`, `typed` and `paste` count what is in the buffers of the same
         // names in `State`.
         struct Frame {
-            x: f32, y: f32, inside: bool,               // the pointer; `inside` false after pointer_leave
+            x: i32, y: i32, inside: bool,               // the pointer, in device pixels; `inside` false after pointer_leave
             down: [5]bool,                              // held at the end of the frame's events
             pressed: [5]bool, released: [5]bool,        // went down, went up, during them
             cancelled: [5]bool,                         // went up because the window lost the keyboard
-            press_x: [5]f32, press_y: [5]f32,           // where each last went down
+            press_x: [5]i32, press_y: [5]i32,           // where each last went down
             clicks: [5]u8,                              // which click of a series that press was
             wheel_x: f32, wheel_y: f32,
             mods: u8,                                   // the modifiers of the last key event

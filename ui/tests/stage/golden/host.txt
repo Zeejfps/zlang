@@ -1,4 +1,4 @@
-staged 200x100 pixels 200x100 revision 1
+staged 200x100 revision 1
 atlas 128x64 version 0 dirty 1,1 18x16
 clip 0 0,0,200,100 round=0,0,0,0 radius=0
 pass 0 draws 0+2 host 7 60,0 80x60

@@ -372,7 +372,7 @@ namespace ui_gl {
         let generation = (dev.images[index].generation + 1) & 0xFFFF
         dev.images[index] = Slot{ texture, width, height, generation, live = true }
         let id = (generation << 16) | @as(u32, index + 1)
-        return ui::Image{ id, width = @as(f32, width), height = @as(f32, height) }
+        return ui::Image{ id, width = @as(i32, width), height = @as(i32, height) }
     }
 
     // Replaces an image's pixels; `rgba` is as create_image takes it, at the image's size.
@@ -568,16 +568,17 @@ namespace ui_gl {
 
     // ZGF's projection, an orthographic one from the canvas (0, 0) .. (width, height), y up, as
     // System.Numerics' CreateOrthographicOffCenter makes it with near -1 and far 1; then the
-    // canvas's logical size and its device pixels.
+    // canvas's size twice: the shaders take a logical size and a device size, and the canvas is
+    // device pixels, so the two are the same and their ratio, the shaders' scale, is 1.
     fn upload_canvas { mut dev: Device, staged: *ui_stage::Staged } {
-        let w = if staged.width > 0.0 { staged.width } else { 1.0 }
-        let h = if staged.height > 0.0 { staged.height } else { 1.0 }
+        let w = @as(f32, ui::pick_max_i32{ a = staged.width, b = 1 })
+        let h = @as(f32, ui::pick_max_i32{ a = staged.height, b = 1 })
         let block: [20]f32 = [
             2.0 / w, 0.0, 0.0, 0.0,
             0.0, 2.0 / h, 0.0, 0.0,
             0.0, 0.0, -0.5, 0.0,
             -1.0, -1.0, 0.5, 1.0,
-            staged.width, staged.height, staged.pixel_width, staged.pixel_height,
+            w, h, w, h,
         ]
         dev.gl.bind_buffer{ target = UNIFORM_BUFFER, buffer = dev.canvas_ubo }
         dev.gl.buffer_sub_data{ target = UNIFORM_BUFFER, offset = 0, size = 80, data = @cast(*u8, &block) }
@@ -652,8 +653,8 @@ namespace ui_gl {
     fn draw_pass { mut dev: Device, staged: *ui_stage::Staged, pass: u32 } -> ! {
         if pass >= staged.pass_count or @as(usize, pass) >= staged.passes.len { return }
         let p = staged.passes[@as(usize, pass)]
-        let width = if staged.pixel_width >= 1.0 { @as(u32, staged.pixel_width) } else { 1 }
-        let height = if staged.pixel_height >= 1.0 { @as(u32, staged.pixel_height) } else { 1 }
+        let width = @as(u32, ui::pick_max_i32{ a = staged.width, b = 1 })
+        let height = @as(u32, ui::pick_max_i32{ a = staged.height, b = 1 })
         dev.width = width
         dev.height = height
         dev.stats.passes = dev.stats.passes + 1

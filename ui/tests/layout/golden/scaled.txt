@@ -1,12 +1,13 @@
-== edges snapped at scale 1.5
-frame 800x600 scale 1.5x1.5
-clip 1 200,100 50x50
-rect 10.6667,11.3333 20x10 fill=20232AFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
-rect 100,100 1.3333x10 fill=FFFFFFFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
-rect 101.3333,100 0.6667x10 fill=4A90E2FF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
-text 100.6667,120 font=0 size=16 E4E7EDFF clip=0 "snap"
-image 110,130 9.3333x21.3333 img=7 uv=0,0,1,1 tint=FFFFFFFF quarter=1 angle=0 radius=0,0,0,0 blend=alpha clip=0
-line 100.4,140.4 130.4,140.4 width=1 cap=butt E4E7EDFF clip=0
-rect 200.6667,100.6667 10x10 fill=FFFFFFFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=1
-hit 10.6667,11.3333 20x10 area 8.6667,9.3333 24x14
-hit 100,100 50x50 area 100,100 50x50
+== whole pixels at scale 1.5
+frame 1200x900
+clip 1 300,150 75x75
+rect 16,17 30x15 fill=20232AFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 60,91 50x30 fill=30343EFF radius=4.5,4.5,4.5,4.5 border=2,2,2,2 404552FF,404552FF,404552FF,404552FF clip=0
+rect 150,150 2x15 fill=FFFFFFFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+rect 152,150 2x15 fill=4A90E2FF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=0
+text 151,180 font=0 size=24 E4E7EDFF clip=0 "snap"
+image 165,195 14x32 img=7 uv=0,0,1,1 tint=FFFFFFFF quarter=1 angle=0 radius=0,0,0,0 blend=alpha clip=0
+line 150.6,210.6 195.6,210.6 width=1.5 cap=butt E4E7EDFF clip=0
+rect 301,151 15x15 fill=FFFFFFFF radius=0,0,0,0 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=1
+hit 16,17 30x15 area 13,14 36x21
+hit 150,150 75x75 area 150,150 75x75

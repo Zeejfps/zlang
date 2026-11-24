@@ -2,7 +2,9 @@
 // clip table the shaders test, batched draws and passes, and keeps the glyph atlas and glyph cache.
 // A backend uploads what is here and draws it; it knows nothing of widgets or fonts.
 //
-// Everything below the seam is in ZGF's canvas space: y up, origin bottom left, logical units. The
+// Everything below the seam is in ZGF's canvas space: y up, origin bottom left, in device pixels: the
+// canvas is the surface, one unit a pixel, so the shaders' "logical" and "device" sizes are the same
+// two numbers. The instances are GPU data and so f32, built from the list's whole pixels exactly. The
 // shape list is y down; `stage` flips each value once, as it writes it. Colours are packed as ARGB,
 // as the shaders unpack them.
 //
@@ -37,7 +39,7 @@ namespace ui_stage {
     // (0 for the other kinds), and `blend` how it is blended (alpha for the other kinds).
     struct Draw { kind: Kind, first: u32, count: u32, image: u32, blend: ui::Blend }
     // The draws [first, first + count). With `host`, the host then draws slot `slot` in `rect`, which
-    // is the host shape's rectangle as the list has it (logical units, y down), and the next pass
+    // is the host shape's rectangle as the list has it (device pixels, y down), and the next pass
     // draws over it. The last pass has no host.
     struct Pass { first: u32, count: u32, host: bool, slot: u32, rect: ui::Rect }
     // One byte of coverage a texel, bottom row first, as ZGF's glyph atlas is: texel (x, y) is
@@ -81,7 +83,7 @@ namespace ui_stage {
         items: []mut Item, item_count: u32,
         hosts: []mut Host, host_count: u32,
         clips: []mut ClipSlot, clip_count: u32,
-        width: f32, height: f32, pixel_width: f32, pixel_height: f32, scale_x: f32, scale_y: f32,
+        width: i32, height: i32,            // the canvas: the list's surface in device pixels, at least 1 by 1
         atlas_width: u32, atlas_height: u32,
     }
 
@@ -118,7 +120,7 @@ namespace ui_stage {
         draws: []mut Draw, draw_count: u32,
         passes: []mut Pass, pass_count: u32,
         atlas: Atlas,
-        width: f32, height: f32, pixel_width: f32, pixel_height: f32,   // u_canvasMetrics
+        width: i32, height: i32,            // the canvas in device pixels: u_canvasMetrics is (width, height, width, height)
         revision: u64,          // changes only when the staged bytes differ from the last frame's
         dropped: u32,
 
@@ -145,7 +147,7 @@ namespace ui_stage {
         return Paint{
             rects, rect_count = 0, glyphs, glyph_count = 0, images, image_count = 0, shapes, shape_count = 0,
             items, item_count = 0, hosts, host_count = 0, clips, clip_count = 0,
-            width = 0.0, height = 0.0, pixel_width = 0.0, pixel_height = 0.0, scale_x = 0.0, scale_y = 0.0,
+            width = 0, height = 0,
             atlas_width = 0, atlas_height = 0,
         }
     }
@@ -188,7 +190,7 @@ namespace ui_stage {
             rects, rect_count = 0, glyphs, glyph_count = 0, images, image_count = 0, shapes, shape_count = 0,
             clips, clip_count = 0, draws, draw_count = 0, passes, pass_count = 0,
             atlas = Atlas{ pixels = store[..@as(usize, width) * @as(usize, height)], width, height, version = 0, dirty_x0 = 0, dirty_y0 = 0, dirty_x1 = 0, dirty_y1 = 0 },
-            width = 0.0, height = 0.0, pixel_width = 0.0, pixel_height = 0.0,
+            width = 0, height = 0,
             revision = 0, dropped = 0,
             front, back, has_back = false, batch_dropped = 0,
             packer = Packer{ nodes, node_count = 0, freed, freed_count = 0, held, held_count = 0, max_height, frame = 0, refill = false },

@@ -1,5 +1,6 @@
 // ui::draw: the draw list on its own, for a surface with no widgets (kotor's minimap pass into a
-// render target) and as what the core's emit step writes into. Coordinates are absolute.
+// render target) and as what the core's emit step writes into. Coordinates are absolute device
+// pixels: rectangles and text positions whole (i32), a line's end points and width fractional.
 //
 // Nothing here fails: a shape that does not fit, a clip table that is full, or a clip index that
 // names no entry drops the shape and adds one to `list.dropped`. A shape is never drawn unclipped
@@ -15,21 +16,22 @@ namespace ui {
             let k = try alloc::make(Clip, S){ realloc, &heap, count = @as(usize, clip_slots) }
             return DrawList{
                 cmds = c, count = 0, text = t, text_len = 0, fonts = f, font_count = 0, clips = k, clip_count = 1,
-                width = 0.0, height = 0.0, scale_x = 1.0, scale_y = 1.0, dropped = 0,
+                width = 0, height = 0, dropped = 0,
             }
         }
 
-        // Empties the list for a new frame of this size. The font table stays: fonts are registered
-        // once. Entry 0 of the clip table is the whole surface.
-        fn reset { mut list: DrawList, width: f32, height: f32, scale_x: f32, scale_y: f32 } {
+        // Empties the list for a new frame on a surface of this many device pixels (a negative size
+        // is 0, and none is more than MAX_PIXELS). The font table stays: fonts are registered once.
+        // Entry 0 of the clip table is the whole surface.
+        fn reset { mut list: DrawList, width: i32, height: i32 } {
+            let w = clamp_i32{ v = width, lo = 0, hi = MAX_PIXELS }
+            let h = clamp_i32{ v = height, lo = 0, hi = MAX_PIXELS }
             list.count = 0
             list.text_len = 0
             list.clip_count = 1
-            list.clips[0] = Clip{ rect = Rect{ x = 0.0, y = 0.0, w = width, h = height }, .. }
-            list.width = width
-            list.height = height
-            list.scale_x = scale_x
-            list.scale_y = scale_y
+            list.clips[0] = Clip{ rect = Rect{ x = 0, y = 0, w, h }, .. }
+            list.width = w
+            list.height = h
             list.dropped = 0
         }
 
@@ -98,9 +100,10 @@ namespace ui {
             add{ &list, cmd = Cmd::line{ x0, y0, x1, y1, width, color, cap, clip } }
         }
 
-        // Copies `text` into the list's text arena, so the caller's bytes need not outlive the call.
-        // A text that does not fit in the arena drops the whole shape.
-        fn add_text { mut list: DrawList, font: Font, size: f32, x: f32, y: f32, text: []u8, color: Color, clip: u16 } {
+        // One line of `text` at `size` (the line height wanted, in pixels) with its line box's top
+        // left at the pixel (`x`, `y`). Copies `text` into the list's text arena, so the caller's
+        // bytes need not outlive the call. A text that does not fit in the arena drops the whole shape.
+        fn add_text { mut list: DrawList, font: Font, size: f32, x: i32, y: i32, text: []u8, color: Color, clip: u16 } {
             let start = @as(usize, list.text_len)
             if not has_clip{ list, clip } or text.len > list.text.len - start or text.len > 4294967295 {
                 list.dropped = list.dropped + 1

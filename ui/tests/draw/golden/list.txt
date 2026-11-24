@@ -1,14 +1,14 @@
-frame 800x600 scale 1.5x1.5
+frame 800x600
 clip 1 16,16 400x300 round 16,16 400x300 r=8
 clip 2 100,100 200x150
-clip 3 8.5,8.5 64x32
+clip 3 8,9 64x32
 rect 16,16 120x28 fill=30343EFF radius=4,4,0,0 border=1,1,0,1 404552FF,404552FF,00000000,404552FF clip=1
 rect 200,40 24x24 fill=4A90E2FF radius=12,12,12,12 border=0,0,0,0 00000000,00000000,00000000,00000000 clip=1
 rect 240,40 24x24 fill=00000000 radius=12,12,12,12 border=2,2,2,2 E4E7EDFF,E4E7EDFF,E4E7EDFF,E4E7EDFF clip=1
 text 24,22 font=0 size=16 E4E7EDFF clip=1 "Add"
-text 24.5,60.25 font=0 size=12.5 4A90E2FF clip=2 "Say \"hi\""
+text 24,60 font=0 size=12.5 4A90E2FF clip=2 "Say \"hi\""
 image 10,10 32x32 img=3 uv=0,0,1,1 tint=FFFFFFFF quarter=1 angle=0 radius=0,0,0,0 blend=alpha clip=0
-image 100.5,120.25 64x48 img=7 uv=0.25,0.125,0.75,0.5 tint=80FF80C0 quarter=0 angle=0.5 radius=4,4,4,4 blend=additive clip=2
+image 100,120 64x48 img=7 uv=0.25,0.125,0.75,0.5 tint=80FF80C0 quarter=0 angle=0.5 radius=4,4,4,4 blend=additive clip=2
 line 40,60 52,72 width=2 cap=round E4E7EDFF clip=0
 line 10.5,20.25 30,0.5 width=1.5 cap=butt FF0000FF clip=3
 line 0,0 5,5 width=1 cap=square 00000080 clip=0

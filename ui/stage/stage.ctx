@@ -18,9 +18,11 @@
 //           points, the half width, the cap in flags bits 0 and 1.
 //   host    ends a pass.
 //
-// The canvas is ZGF's: the framebuffer is pixel_width by pixel_height device pixels (the list's
-// size times its scale, rounded, at least 1), and its logical size is that divided by the scale, so
-// one logical unit is exactly `scale` pixels. The list's top edge is the canvas's top edge.
+// The canvas is the list's surface: `width` by `height` device pixels (at least 1 by 1), one canvas
+// unit a pixel, its top edge the list's top edge. The list is whole pixels, so the flip to y up is
+// exact: a rectangle, a clip and a text's glyphs in a snapped or outline font land on whole pixels
+// as floats, and nothing is scaled or rounded here but the pen inside a text run, which the provider
+// and a glyph table without `snap` leave between pixels.
 //
 // A frame whose instances, clip table and passes are the same bytes as the last frame's keeps the
 // last frame's draws and its revision: the batching is skipped, and so is a backend's upload.
@@ -65,10 +67,6 @@ namespace ui_stage {
 
     // Empties this frame's paint buffers and sets the canvas's size from the list's.
     fn start_paint { mut out: Staged, list: *ui::DrawList } {
-        let sx = if list.scale_x > 0.0 { list.scale_x } else { 1.0 }
-        let sy = if list.scale_y > 0.0 { list.scale_y } else { 1.0 }
-        let pw = ui::pick_max_f32{ a = 1.0, b = ui::round_f32{ x = list.width * sx } }
-        let ph = ui::pick_max_f32{ a = 1.0, b = ui::round_f32{ x = list.height * sy } }
         out.front.rect_count = 0
         out.front.glyph_count = 0
         out.front.image_count = 0
@@ -76,12 +74,27 @@ namespace ui_stage {
         out.front.item_count = 0
         out.front.host_count = 0
         out.front.clip_count = 0
-        out.front.pixel_width = pw
-        out.front.pixel_height = ph
-        out.front.width = pw / sx
-        out.front.height = ph / sy
-        out.front.scale_x = sx
-        out.front.scale_y = sy
+        out.front.width = ui::clamp_i32{ v = list.width, lo = 1, hi = ui::MAX_PIXELS }
+        out.front.height = ui::clamp_i32{ v = list.height, lo = 1, hi = ui::MAX_PIXELS }
+    }
+
+    // A whole pixel count as the float an instance holds. The sum is made in i64, so a rectangle
+    // a program built by hand with any i32 in it cannot overflow.
+    fn to_f32 { v: i64 } -> f32 {
+        return @as(f32, v)
+    }
+
+    // The rectangle's edges in canvas space: left, bottom, right and top, each a whole pixel.
+    struct Edges { left: f32, bottom: f32, right: f32, top: f32 }
+
+    // `r` (y down) flipped into canvas space (y up) on a canvas `height` pixels high. Exact: the
+    // list is whole pixels and so is the canvas.
+    fn flip_rect { r: ui::Rect, height: i32 } -> Edges {
+        let top = @as(i64, height) - @as(i64, r.y)
+        return Edges{
+            left = to_f32{ v = @as(i64, r.x) }, bottom = to_f32{ v = top - @as(i64, r.h) },
+            right = to_f32{ v = @as(i64, r.x) + @as(i64, r.w) }, top = to_f32{ v = top },
+        }
     }
 
     // The clip table, entry for entry: (left, bottom, right, top), the rounded rectangle the same way,
@@ -89,21 +102,22 @@ namespace ui_stage {
     // a radius is at most half the rounded rectangle's shorter side, as ZGF's PushClip makes it.
     // Entries past the uniform block's 256 are not converted: shapes naming them are dropped.
     fn convert_clips { mut out: Staged, list: *ui::DrawList } {
-        let top = out.front.height
         let count = ui::pick_min_u32{ a = list.clip_count, b = MAX_CLIPS }
         let mut i: usize = 0
         while i < @as(usize, count) {
             let c = list.clips[i]
+            let e = flip_rect{ r = c.rect, height = out.front.height }
             let mut slot = ClipSlot{
-                left = c.rect.x, bottom = top - (c.rect.y + c.rect.h), right = c.rect.x + c.rect.w, top = top - c.rect.y,
+                left = e.left, bottom = e.bottom, right = e.right, top = e.top,
                 round_left = 0.0, round_bottom = 0.0, round_right = 0.0, round_top = 0.0, radius = 0.0,
             }
-            let most = ui::pick_min_f32{ a = c.round.w, b = c.round.h } * 0.5
+            let most = @as(f32, ui::pick_min_i32{ a = c.round.w, b = c.round.h }) * 0.5
             if c.radius > 0.0 and most > 0.0 {
-                slot.round_left = c.round.x
-                slot.round_bottom = top - (c.round.y + c.round.h)
-                slot.round_right = c.round.x + c.round.w
-                slot.round_top = top - c.round.y
+                let r = flip_rect{ r = c.round, height = out.front.height }
+                slot.round_left = r.left
+                slot.round_bottom = r.bottom
+                slot.round_right = r.right
+                slot.round_top = r.top
                 slot.radius = ui::pick_min_f32{ a = c.radius, b = most }
             }
             out.front.clips[i] = slot
@@ -130,7 +144,9 @@ namespace ui_stage {
                     out.dropped = out.dropped + 1
                     return
                 }
-                add_image{ &out, rect, image = image.id, uv, tint, quarter, angle, radius, blend, clip }
+                // Whole pixels as floats, y still down: add_image flips.
+                add_image{ &out, x = to_f32{ v = @as(i64, rect.x) }, y = to_f32{ v = @as(i64, rect.y) }, w = to_f32{ v = @as(i64, rect.w) }, h = to_f32{ v = @as(i64, rect.h) },
+                    image = image.id, uv, tint, quarter, angle, radius, blend, clip }
             }
             text{ font, size, x, y, text, color, clip } => {
                 if not has_clip{ out, clip } {
@@ -170,12 +186,13 @@ namespace ui_stage {
             out.dropped = out.dropped + 1
             return
         }
+        let e = flip_rect{ r = rect, height = out.front.height }
         out.front.rects[@as(usize, n)] = RectInstance{
-            x = rect.x, y = out.front.height - rect.y - rect.h, w = rect.w, h = rect.h,
+            x = e.left, y = e.bottom, w = e.right - e.left, h = e.top - e.bottom,
             radius_tl = style.radius.top_left, radius_tr = style.radius.top_right,
             radius_br = style.radius.bottom_right, radius_bl = style.radius.bottom_left,
-            border_top = style.border.top, border_right = style.border.right,
-            border_bottom = style.border.bottom, border_left = style.border.left,
+            border_top = @as(f32, style.border.top), border_right = @as(f32, style.border.right),
+            border_bottom = @as(f32, style.border.bottom), border_left = @as(f32, style.border.left),
             fill = pack_color{ color = style.fill },
             color_top = pack_color{ color = style.border_color.top }, color_right = pack_color{ color = style.border_color.right },
             color_bottom = pack_color{ color = style.border_color.bottom }, color_left = pack_color{ color = style.border_color.left },
@@ -191,7 +208,11 @@ namespace ui_stage {
         return if i == 0 { c.top_left } else if i == 1 { c.top_right } else if i == 2 { c.bottom_right } else { c.bottom_left }
     }
 
-    fn add_image { mut out: Staged, rect: ui::Rect, image: u32, uv: ui::Uv, tint: ui::Color, quarter: u8, angle: f32, radius: ui::Corners, blend: ui::Blend, clip: u16 } {
+    // A picture over the quad (x, y, w, h), y down, in pixels: whole numbers for an image shape,
+    // possibly between pixels for a glyph of a glyph table without `snap`. With no turn the instance
+    // is that quad flipped, to the bit; with an odd number of quarter turns it is the quad
+    // transposed about its centre, which lies on a half pixel when w + h is odd.
+    fn add_image { mut out: Staged, x: f32, y: f32, w: f32, h: f32, image: u32, uv: ui::Uv, tint: ui::Color, quarter: u8, angle: f32, radius: ui::Corners, blend: ui::Blend, clip: u16 } {
         let n = out.front.image_count
         if @as(usize, n) >= out.front.images.len {
             out.dropped = out.dropped + 1
@@ -199,13 +220,20 @@ namespace ui_stage {
         }
         let q = @as(u32, quarter % 4)
         let odd = q == 1 or q == 3
-        let w = if odd { rect.h } else { rect.w }
-        let h = if odd { rect.w } else { rect.h }
-        let cx = rect.x + rect.w * 0.5
-        let cy = rect.y + rect.h * 0.5
+        let top = @as(f32, out.front.height)
+        let mut ix = x
+        let mut iy = top - y - h
+        let mut iw = w
+        let mut ih = h
+        if odd {
+            iw = h
+            ih = w
+            ix = x + (w - h) * 0.5
+            iy = top - y - (h + w) * 0.5
+        }
         // After q counterclockwise turns the picture's corner i is at the rectangle's corner i + q.
         out.front.images[@as(usize, n)] = ImageInstance{
-            x = cx - w * 0.5, y = out.front.height - cy - h * 0.5, w, h,
+            x = ix, y = iy, w = iw, h = ih,
             u = uv.u0, v = uv.v1, uw = uv.u1 - uv.u0, vh = uv.v0 - uv.v1,
             tint = pack_color{ color = tint }, clip = @as(u32, clip), angle = angle + @as(f32, q) * QUARTER_TURN,
             radius_tl = get_corner{ c = radius, index = q }, radius_tr = get_corner{ c = radius, index = 1 + q },
@@ -221,7 +249,7 @@ namespace ui_stage {
             out.dropped = out.dropped + 1
             return
         }
-        let top = out.front.height
+        let top = @as(f32, out.front.height)
         let ay = top - y0
         let by = top - y1
         let half = ui::pick_max_f32{ a = width, b = 0.0 } * 0.5
@@ -241,16 +269,16 @@ namespace ui_stage {
         push_item{ &out, kind = Kind::shape, index = n, image = 0, blend = ui::Blend::alpha }
     }
 
-    // A glyph from the atlas. `rect` is y down; `u`, `v`, `uw`, `vh` are atlas texels, divided by the
-    // atlas's size when the draws are laid out.
-    fn add_glyph { mut out: Staged, rect: ui::Rect, u: u32, v: u32, uw: u32, vh: u32, color: u32, clip: u16 } {
+    // A glyph from the atlas over the quad (x, y, w, h), y down, in pixels; `u`, `v`, `uw`, `vh` are
+    // atlas texels, divided by the atlas's size when the draws are laid out.
+    fn add_glyph { mut out: Staged, x: f32, y: f32, w: f32, h: f32, u: u32, v: u32, uw: u32, vh: u32, color: u32, clip: u16 } {
         let n = out.front.glyph_count
         if @as(usize, n) >= out.front.glyphs.len {
             out.dropped = out.dropped + 1
             return
         }
         out.front.glyphs[@as(usize, n)] = GlyphInstance{
-            x = rect.x, y = out.front.height - rect.y - rect.h, w = rect.w, h = rect.h,
+            x, y = @as(f32, out.front.height) - y - h, w, h,
             u = @as(f32, u), v = @as(f32, v), uw = @as(f32, uw), vh = @as(f32, vh),
             color, clip = @as(u32, clip), angle = 0.0,
         }
@@ -260,7 +288,7 @@ namespace ui_stage {
 
     // ---- text
 
-    fn stage_text { mut out: Staged, list: *ui::DrawList, provider: ?ui::TextProvider, font: ui::Font, size: f32, x: f32, y: f32, span: ui::Span, color: ui::Color, clip: u16 } {
+    fn stage_text { mut out: Staged, list: *ui::DrawList, provider: ?ui::TextProvider, font: ui::Font, size: f32, x: i32, y: i32, span: ui::Span, color: ui::Color, clip: u16 } {
         let def = ui::draw::get_font{ list = list.*, font } ifnull {
             out.dropped = out.dropped + 1
             return
@@ -307,17 +335,19 @@ namespace ui_stage {
         return @as(u32, t)
     }
 
-    // Text in a glyph table, laid out by ui::lay_glyphs a piece at a time. The pen moves on from piece
-    // to piece exactly as lay_glyphs moves it, so the pieces join as one call would lay them out.
-    fn stage_table_text { mut out: Staged, list: *ui::DrawList, def: ui::FontDef, size: f32, x: f32, y: f32, text: []u8, color: ui::Color, clip: u16 } {
-        let kx = ui::get_font_scale{ font = def, size, scale = list.scale_x }
+    // Text in a glyph table, laid out by ui::lay_glyphs a piece at a time. The run starts on the
+    // whole pixel (x, y); the pen moves on from piece to piece exactly as lay_glyphs moves it, so
+    // the pieces join as one call would lay them out.
+    fn stage_table_text { mut out: Staged, list: *ui::DrawList, def: ui::FontDef, size: f32, x: i32, y: i32, text: []u8, color: ui::Color, clip: u16 } {
+        let kx = ui::get_font_scale{ font = def, size }
         if not (kx > 0.0) { return }
-        let mut pen = x
+        let mut pen = @as(f32, x)
+        let top = @as(f32, y)
         let mut at: usize = 0
         while at < text.len {
             let end = find_piece_end{ text, at, encoding = def.encoding }
             let piece = text[at..end]
-            let n = ui::lay_glyphs{ font = def, size, x = pen, y, text = piece, scale_x = list.scale_x, scale_y = list.scale_y, out = out.placed }
+            let n = ui::lay_glyphs{ font = def, size, x = pen, y = top, text = piece, out = out.placed }
             let mut k: usize = 0
             while k < n {
                 let placed = out.placed[k]
@@ -338,7 +368,7 @@ namespace ui_stage {
         match def.kind {
             bitmap{ image, pixels, pixels_width, pixels_height } => {
                 if image.id != 0 {
-                    add_image{ &out, rect = placed.rect, image = image.id, uv = placed.uv, tint = color, quarter = 0, angle = 0.0,
+                    add_image{ &out, x = placed.x, y = placed.y, w = placed.w, h = placed.h, image = image.id, uv = placed.uv, tint = color, quarter = 0, angle = 0.0,
                         radius = ui::Corners{ .. }, blend = ui::Blend::alpha, clip }
                     return
                 }
@@ -349,7 +379,7 @@ namespace ui_stage {
                 let y1 = to_texel{ v = ui::pick_max_f32{ a = uv.v0, b = uv.v1 }, limit = pixels_height }
                 if x1 <= x0 or y1 <= y0 { return }
                 let g = get_table_glyph{ &out, pixels, pitch = pixels_width, x0, y0, x1, y1 } ifnull { return }
-                add_glyph{ &out, rect = placed.rect, u = g.x, v = g.y, uw = g.w, vh = g.h, color = pack_color{ color }, clip }
+                add_glyph{ &out, x = placed.x, y = placed.y, w = placed.w, h = placed.h, u = g.x, v = g.y, uw = g.w, vh = g.h, color = pack_color{ color }, clip }
             }
             outline => {}
         }
@@ -357,15 +387,16 @@ namespace ui_stage {
 
     // Text in an outline font: shaped by the provider a piece at a time (cut at a space where it can
     // be, and never inside a cluster the shaping buffer may have cut in two), each glyph placed as ZGF
-    // places it: the pen and the baseline on the device grid, the bitmap's bearings added in whole
-    // pixels. The line box's top is `y` and the baseline is the face's ascent below it.
-    fn stage_outline_text { mut out: Staged, list: *ui::DrawList, provider: ui::TextProvider, handle: u32, size: f32, x: f32, y: f32, text: []u8, color: u32, clip: u16 } {
-        let sx = out.front.scale_x
-        let sy = out.front.scale_y
-        let pixels = ui::text::get_pixel_size{ size, scale = sy }
-        let metrics = provider.metrics{ state = provider.state, handle, pixels }
-        let baseline = y + metrics.ascent / sy
-        let mut pen = x
+    // places it: the pen rounded to a pixel for each glyph, the bitmap's bearings added in whole
+    // pixels. The run starts on the whole pixel (x, y), the line box's top left; the baseline is the
+    // face's ascent below it, rounded to a pixel as the core rounds it (`ui::text::round_metrics`),
+    // so every glyph's bitmap lands texel for pixel. The pen itself moves by the shaped advances,
+    // which are fractional, and is never rounded as it goes: only where a glyph is put.
+    fn stage_outline_text { mut out: Staged, list: *ui::DrawList, provider: ui::TextProvider, handle: u32, size: f32, x: i32, y: i32, text: []u8, color: u32, clip: u16 } {
+        let pixels = ui::text::get_pixel_size{ size }
+        let metrics = ui::text::round_metrics{ m = provider.metrics{ state = provider.state, handle, pixels } }
+        let baseline = @as(f32, ui::add_pixels{ a = y, b = metrics.ascent })
+        let mut pen = @as(f32, x)
         let room = out.shaped.len
         let mut at: usize = 0
         while at < text.len {
@@ -398,7 +429,7 @@ namespace ui_stage {
             while k < count {
                 let g = out.shaped[k]
                 stage_outline_glyph{ &out, provider, g, pen, baseline, color, clip }
-                pen = pen + g.x_advance / sx
+                pen = pen + g.x_advance
                 k = k + 1
             }
             at = at + end
@@ -408,12 +439,9 @@ namespace ui_stage {
     fn stage_outline_glyph { mut out: Staged, provider: ui::TextProvider, g: ui::Shaped, pen: f32, baseline: f32, color: u32, clip: u16 } {
         let cached = get_outline_glyph{ &out, provider, face = g.face, glyph = g.glyph } ifnull { return }
         if cached.w == 0 or cached.h == 0 { return }
-        let sx = out.front.scale_x
-        let sy = out.front.scale_y
-        let left = (ui::round_f32{ x = (pen + g.x_offset / sx) * sx } + @as(f32, cached.left)) / sx
-        let top = (ui::round_f32{ x = (baseline - g.y_offset / sy) * sy } - @as(f32, cached.top)) / sy
-        let rect = ui::Rect{ x = left, y = top, w = @as(f32, cached.w) / sx, h = @as(f32, cached.h) / sy }
-        add_glyph{ &out, rect, u = cached.x, v = cached.y, uw = cached.w, vh = cached.h, color, clip }
+        let left = ui::round_f32{ x = pen + g.x_offset } + @as(f32, cached.left)
+        let top = ui::round_f32{ x = baseline - g.y_offset } - @as(f32, cached.top)
+        add_glyph{ &out, x = left, y = top, w = @as(f32, cached.w), h = @as(f32, cached.h), u = cached.x, v = cached.y, uw = cached.w, vh = cached.h, color, clip }
     }
 
     // ---- the idle-frame check
@@ -427,8 +455,7 @@ namespace ui_stage {
     fn is_same_paint { a: Paint, b: Paint } -> bool {
         if a.rect_count != b.rect_count or a.glyph_count != b.glyph_count or a.image_count != b.image_count or a.shape_count != b.shape_count { return false }
         if a.item_count != b.item_count or a.host_count != b.host_count or a.clip_count != b.clip_count { return false }
-        if a.width != b.width or a.height != b.height or a.pixel_width != b.pixel_width or a.pixel_height != b.pixel_height { return false }
-        if a.scale_x != b.scale_x or a.scale_y != b.scale_y or a.atlas_width != b.atlas_width or a.atlas_height != b.atlas_height { return false }
+        if a.width != b.width or a.height != b.height or a.atlas_width != b.atlas_width or a.atlas_height != b.atlas_height { return false }
         if not is_same(RectInstance){ a = a.rects[..@as(usize, a.rect_count)], b = b.rects[..@as(usize, b.rect_count)] } { return false }
         if not is_same(GlyphInstance){ a = a.glyphs[..@as(usize, a.glyph_count)], b = b.glyphs[..@as(usize, b.glyph_count)] } { return false }
         if not is_same(ImageInstance){ a = a.images[..@as(usize, a.image_count)], b = b.images[..@as(usize, b.image_count)] } { return false }

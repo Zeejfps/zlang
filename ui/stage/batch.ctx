@@ -4,10 +4,21 @@
 // overlap can be drawn in either order, so the result paints the same picture as strict paint order
 // with far fewer draws: a tool UI is a few draws, a KOTOR panel one a texture.
 //
-// An instance's bounds are its rectangle, widened to the box of its turn when it is rotated and by
-// the device pixel the rect and image shaders grow an off-grid edge by, then cut to its clip's
-// rectangle. A draw's bounds are the box of its instances'. Bounds that only touch do not overlap.
-// An instance its clip cuts away entirely draws nothing, so it overlaps nothing and joins any draw
+// An instance's bounds are what its shader may touch, cut to its clip's rectangle:
+//
+//   rect    its rectangle, exactly. A rectangle comes from the list's whole pixels, so its edges
+//           are on the pixel grid and the shader's growth of an off-grid edge never happens.
+//   glyph   its quad (the box of its turn when it is rotated). The glyph shader grows nothing.
+//   image   its quad, or the box of its turn; an unrotated quad that lies between pixels is
+//           widened by the pixel the image shader grows such a quad by. An image shape's
+//           rectangle is whole pixels and is never widened; the quads that are between pixels are
+//           the glyphs of a glyph table without `snap` that lives on a backend image (KOTOR's
+//           fonts), which are placed inside a text run.
+//   shape   its padded box, which a line's instance already carries; a line is antialiased where
+//           it lies and is not on the grid.
+//
+// A draw's bounds are the box of its instances'. Bounds that only touch do not overlap. An
+// instance its clip cuts away entirely draws nothing, so it overlaps nothing and joins any draw
 // of its kind. Draws never span passes: a host slot starts the walk afresh.
 //
 // The instances are then laid out per kind in draw order, so each draw is a run of one array.
@@ -16,24 +27,23 @@ namespace ui_stage {
 
     struct Box { min_x: f32, min_y: f32, max_x: f32, max_y: f32 }
 
-    // Whether `v` (logical units) is between device pixels, by the shaders' rule.
-    fn is_off_grid { v: f32, scale: f32 } -> bool {
-        let device = v * scale
-        return ui::abs_f32{ x = device - ui::round_f32{ x = device } } >= 1.0 / 256.0
+    // Whether `v` (canvas pixels) is between pixels, by the image shader's rule.
+    fn is_off_grid { v: f32 } -> bool {
+        return ui::abs_f32{ x = v - ui::round_f32{ x = v } } >= 1.0 / 256.0
     }
 
-    // `b` widened by one device pixel on each axis that has an edge between device pixels, as the rect
-    // and image vertex shaders grow such a quad. Only a quad with area grows.
-    fn widen_off_grid { b: Box, scale_x: f32, scale_y: f32 } -> Box {
+    // `b` widened by one pixel on each axis that has an edge between pixels, as the image vertex
+    // shader grows an unrotated quad that lies so. Only a quad with area grows.
+    fn widen_off_grid { b: Box } -> Box {
         if not (b.max_x > b.min_x and b.max_y > b.min_y) { return b }
         let mut r = b
-        if is_off_grid{ v = b.min_x, scale = scale_x } or is_off_grid{ v = b.max_x, scale = scale_x } {
-            r.min_x = r.min_x - 1.0 / scale_x
-            r.max_x = r.max_x + 1.0 / scale_x
+        if is_off_grid{ v = b.min_x } or is_off_grid{ v = b.max_x } {
+            r.min_x = r.min_x - 1.0
+            r.max_x = r.max_x + 1.0
         }
-        if is_off_grid{ v = b.min_y, scale = scale_y } or is_off_grid{ v = b.max_y, scale = scale_y } {
-            r.min_y = r.min_y - 1.0 / scale_y
-            r.max_y = r.max_y + 1.0 / scale_y
+        if is_off_grid{ v = b.min_y } or is_off_grid{ v = b.max_y } {
+            r.min_y = r.min_y - 1.0
+            r.max_y = r.max_y + 1.0
         }
         return r
     }
@@ -61,7 +71,7 @@ namespace ui_stage {
         match item.kind {
             rect => {
                 let r = paint.rects[i]
-                b = widen_off_grid{ b = Box{ min_x = r.x, min_y = r.y, max_x = r.x + r.w, max_y = r.y + r.h }, scale_x = paint.scale_x, scale_y = paint.scale_y }
+                b = Box{ min_x = r.x, min_y = r.y, max_x = r.x + r.w, max_y = r.y + r.h }
                 clip = r.clip
             }
             glyph => {
@@ -72,7 +82,7 @@ namespace ui_stage {
             image => {
                 let m = paint.images[i]
                 b = turn_box{ x = m.x, y = m.y, w = m.w, h = m.h, angle = m.angle }
-                if m.angle == 0.0 { b = widen_off_grid{ b, scale_x = paint.scale_x, scale_y = paint.scale_y } }
+                if m.angle == 0.0 { b = widen_off_grid{ b } }
                 clip = m.clip
             }
             shape => {
@@ -238,7 +248,5 @@ namespace ui_stage {
         out.clip_count = out.front.clip_count
         out.width = out.front.width
         out.height = out.front.height
-        out.pixel_width = out.front.pixel_width
-        out.pixel_height = out.front.pixel_height
     }
 }

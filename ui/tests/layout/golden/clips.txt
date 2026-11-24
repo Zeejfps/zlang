@@ -1,5 +1,5 @@
 == nested clips, plain and rounded
-frame 800x600 scale 1x1
+frame 800x600
 clip 1 20,20 200x120
 clip 2 120,80 100x60
 clip 3 300,20 200x120

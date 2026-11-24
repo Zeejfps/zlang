@@ -249,31 +249,43 @@ fn check_raster { mut io: Io, mut t: ui_test::Tally, mut lib: ui_fonts::Library,
     ui_test::expect{ &io, &t, ok = not zero, what = "glyph 0 (a character no face has) draws nothing, as in ZGF" }
 }
 
-// A draw list at `scale` with the face registered as font 0, and a text cache.
+// A draw list with the face registered as font 0, and a text cache. Text is measured at a pixel
+// size, so no scale comes into it: 16 units at scale 1.5 is size 24.
 struct Measure { list: ui::DrawList, cache: ui::text::Cache }
 
-fn make_measure { mut heap: arena::Arena, lib: ui_fonts::Library, face: ui_fonts::Face, scale: f32 } -> !Measure {
+fn make_measure { mut heap: arena::Arena, lib: ui_fonts::Library, face: ui_fonts::Face } -> !Measure {
     let mut list = try ui::draw::make{ realloc = arena::alloc, &heap, cmds = 64, text = 4096, clips = 4, fonts = 4 }
-    ui::draw::reset{ &list, width = 640.0, height = 480.0, scale_x = scale, scale_y = scale }
+    ui::draw::reset{ &list, width = 640, height = 480 }
     let def = ui_fonts::describe_face{ lib, face } ifnull { return ui_fonts::closed }
     _ = ui::draw::add_font{ &list, font = def }
     let cache = try ui::text::make_cache{ realloc = arena::alloc, &heap, entries = 256, shaped = 256 }
     return Measure{ list, cache }
 }
 
-fn measure { mut m: Measure, provider: ui::TextProvider, size: f32, text: []u8 } -> f32 {
+// The width the core measures: whole pixels, the advances rounded up.
+fn measure { mut m: Measure, provider: ui::TextProvider, size: f32, text: []u8 } -> i32 {
     return ui::text::measure_text{ cache = &m.cache, list = m.list, provider, font = ui::Font{ index = 0 }, size, text }
+}
+
+// The sum of the advances the core measured from, before it is rounded: what kerning is seen in.
+fn sum_width { mut m: Measure, provider: ui::TextProvider, size: f32, text: []u8 } -> f32 {
+    return ui::text::sum_text{ cache = &m.cache, list = m.list, provider, font = ui::Font{ index = 0 }, size, text }
 }
 
 // "AV" is kerned: narrower than 'A' and 'V' apart.
 fn check_kerning { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, mut lib: ui_fonts::Library, provider: ui::TextProvider, face: ui_fonts::Face } {
-    let mut m = make_measure{ &heap, lib, face, scale = 1.0 } iferr {
+    let mut m = make_measure{ &heap, lib, face } iferr {
         ui_test::expect{ &io, &t, ok = false, what = "a draw list for measuring" }
         return
     }
-    let av = measure{ &m, provider, size = 32.0, text = "AV" }
-    let a = measure{ &m, provider, size = 32.0, text = "A" }
-    let v = measure{ &m, provider, size = 32.0, text = "V" }
+    let av = sum_width{ &m, provider, size = 32.0, text = "AV" }
+    let a = sum_width{ &m, provider, size = 32.0, text = "A" }
+    let v = sum_width{ &m, provider, size = 32.0, text = "V" }
+    // What leaves the run is whole pixels: each of the three, rounded up.
+    let whole_av = measure{ &m, provider, size = 32.0, text = "AV" }
+    let whole_a = measure{ &m, provider, size = 32.0, text = "A" }
+    ui_test::expect{ &io, &t, ok = whole_av == ui::text::ceil_width{ v = av } and whole_a == ui::text::ceil_width{ v = a } and @as(f32, whole_av) >= av and @as(f32, whole_av) < av + 1.0,
+        what = "a measured width is the advances rounded up to a whole pixel: a box that wide holds the text" }
     let mut buf: [16]ui::Shaped
     let ii = sum_advances{ glyphs = shape{ provider, face, pixels = 32, text = "ii", out = buf[..] } }
     let ww = sum_advances{ glyphs = shape{ provider, face, pixels = 32, text = "WW", out = buf[..] } }
@@ -346,58 +358,86 @@ fn check_bad_input { mut io: Io, mut t: ui_test::Tally, mut lib: ui_fonts::Libra
     ui_test::expect{ &io, &t, ok = short.len == 5, what = "an output shorter than the run is filled" }
 }
 
-// The core's walks over a real font: caret offsets and wrapping, at scales 1 and 1.5.
+// The core's walks over a real font: caret offsets and wrapping, at 16 pixels and at 24, which is
+// what 16 logical units are at scales 1 and 1.5. The face is shaped at the pixel size itself, so
+// the 24 pixel text is the font's own 24 pixel shaping, not the 16 pixel one stretched.
+//
+// What leaves a shaped run is whole pixels. A measured width is the advances rounded up; a caret
+// offset is the advances before it rounded to the nearest pixel. So the offsets never go down, the
+// last one is the measured width or the pixel before it, and no wrapped line is wider than the
+// limit, in whole pixels, with no tolerance.
 fn check_text { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, mut lib: ui_fonts::Library, provider: ui::TextProvider, face: ui_fonts::Face } {
     let line = "Typography: AV Wa To office ffl, 0123 \xC3\xA9t\xC3\xA9 \xE2\x80\x94 done."
     let paragraph = "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs; how vexingly quick daft zebras jump! A well-known, rather extraordinarily long word: incomprehensibilities."
-    let scales: [2]f32 = [1.0, 1.5]
-    for scale in scales {
-        let mut m = make_measure{ &heap, lib, face, scale } iferr {
+    let sizes: [2]f32 = [16.0, 24.0]
+    let limits: [2]i32 = [180, 270]
+    for size at which in sizes {
+        let mut m = make_measure{ &heap, lib, face } iferr {
             ui_test::expect{ &io, &t, ok = false, what = "a draw list for measuring" }
             return
         }
         let font = ui::Font{ index = 0 }
-        let width = measure{ &m, provider, size = 16.0, text = line }
+        let width = measure{ &m, provider, size, text = line }
+        let sum = sum_width{ &m, provider, size, text = line }
         let mut index: usize = 0
-        let mut last: f32 = 0.0
+        let mut last: i32 = 0
         let mut monotonic = true
         let mut steps: u32 = 0
         while index < line.len {
-            let next = ui::text::step_caret{ cache = &m.cache, list = m.list, provider, font, size = 16.0, text = line, index, forward = true }
+            let next = ui::text::step_caret{ cache = &m.cache, list = m.list, provider, font, size, text = line, index, forward = true }
             if next <= index {
                 monotonic = false
                 break
             }
-            let x = ui::text::locate_caret{ cache = &m.cache, list = m.list, provider, font, size = 16.0, text = line, index = next }
-            if x + EPS < last { monotonic = false }
+            let x = ui::text::locate_caret{ cache = &m.cache, list = m.list, provider, font, size, text = line, index = next }
+            if x < last { monotonic = false }
             last = x
             index = next
             steps = steps + 1
         }
-        _ = @fmt(&io, "scale {}: caret took {} steps over {} bytes, ends at {} of a measured {}\n", write_number{ v = scale, _ }, steps, line.len, write_number{ v = last, _ }, write_number{ v = width, _ })
-        ui_test::expect{ &io, &t, ok = monotonic and steps > 0 and steps < @as(u32, line.len), what = "caret offsets in a shaped string are monotonic, stepping by clusters" }
-        ui_test::expect{ &io, &t, ok = ui::abs_f32{ x = last - width } < 0.01, what = "the last caret offset is the measured width" }
-        let picked = ui::text::pick_index{ cache = &m.cache, list = m.list, provider, font, size = 16.0, text = line, x = width + 5.0 }
+        _ = @fmt(&io, "size {}: caret took {} steps over {} bytes, ends at {} of a measured {} (advances {})\n", write_number{ v = size, _ }, steps, line.len, last, width, write_number{ v = sum, _ })
+        ui_test::expect{ &io, &t, ok = monotonic and steps > 0 and steps < @as(u32, line.len), what = "caret offsets in a shaped string are whole pixels that never go down, stepping by clusters" }
+        ui_test::expect{ &io, &t, ok = width == ui::text::ceil_width{ v = sum } and last == ui::round_pixels{ v = sum }, what = "the measured width is the advances rounded up, the last caret offset the advances rounded to the nearest pixel" }
+        ui_test::expect{ &io, &t, ok = last <= width and last >= width - 1, what = "the last caret offset is the measured width or the pixel before it, never past it" }
+        let picked = ui::text::pick_index{ cache = &m.cache, list = m.list, provider, font, size, text = line, x = width + 5 }
         ui_test::expect{ &io, &t, ok = picked == line.len, what = "the index right of the line is its end" }
+        let first = ui::text::locate_caret{ cache = &m.cache, list = m.list, provider, font, size, text = line, index = 0 }
+        ui_test::expect{ &io, &t, ok = first == 0 and ui::text::pick_index{ cache = &m.cache, list = m.list, provider, font, size, text = line, x = 0 } == 0, what = "the caret before the line is at pixel 0, and pixel 0 picks it" }
 
-        let limit: f32 = 180.0
+        let limit = limits[which]
         let mut lines: [32]ui::text::Line
-        let wrapped = ui::text::wrap_text{ cache = &m.cache, list = m.list, provider, font, size = 16.0, text = paragraph, width = limit, lines = lines[..] }
+        let wrapped = ui::text::wrap_text{ cache = &m.cache, list = m.list, provider, font, size, text = paragraph, width = limit, lines = lines[..] }
         let mut fits = true
-        let mut widest: f32 = 0.0
+        let mut whole = true
+        let mut widest: i32 = 0
         for l in lines[..@as(usize, wrapped.lines)] {
-            let w = measure{ &m, provider, size = 16.0, text = paragraph[@as(usize, l.start)..@as(usize, l.end)] }
-            if l.width > limit + EPS or w > limit + EPS { fits = false }
+            let w = measure{ &m, provider, size, text = paragraph[@as(usize, l.start)..@as(usize, l.end)] }
+            if l.width > limit or w > limit { fits = false }
+            // A line's width is what measuring its bytes alone gives, up to the kerning across the
+            // break, which a line shaped with its neighbour may have and the line alone has not.
+            if l.width > w + 2 or w > l.width + 2 { whole = false }
             if w > widest { widest = w }
         }
-        _ = @fmt(&io, "scale {}: the paragraph wraps to {} lines at {}, the widest {}\n", write_number{ v = scale, _ }, wrapped.lines, write_number{ v = limit, _ }, write_number{ v = widest, _ })
+        _ = @fmt(&io, "size {}: the paragraph wraps to {} lines at {}, the widest {}\n", write_number{ v = size, _ }, wrapped.lines, limit, widest)
         ui_test::expect{ &io, &t, ok = wrapped.lines >= 5 and @as(usize, wrapped.rest) == paragraph.len and fits,
-            what = "a paragraph wrapped in the real font has no line wider than the limit" }
+            what = "a paragraph wrapped in the real font has no line wider than the limit, in whole pixels" }
+        ui_test::expect{ &io, &t, ok = whole and wrapped.width <= limit and wrapped.width == widest_of{ lines = lines[..@as(usize, wrapped.lines)] }, what = "each line's width is a whole number of pixels, and the widest is reported" }
         ui_test::expect{ &io, &t, ok = m.cache.unknown_font == 0 and m.cache.no_provider == 0, what = "the core measured with the provider" }
+        let box = ui::text::get_line_metrics{ cache = &m.cache, list = m.list, provider, font, size }
+        let raw = provider.metrics{ state = provider.state, handle = face.id, pixels = ui::text::get_pixel_size{ size } }
+        ui_test::expect{ &io, &t, ok = @as(f32, box.height) >= raw.height - 0.001 and @as(f32, box.height) < raw.height + 1.0 and ui::abs_f32{ x = @as(f32, box.ascent) - raw.ascent } <= 0.5,
+            what = "a line's height is the face's rounded up, its ascent the face's to the nearest pixel" }
     }
 }
 
-// A Ui with the face registered by make_font measures through its provider.
+fn widest_of { lines: []ui::text::Line } -> i32 {
+    let mut widest: i32 = 0
+    for l in lines { if l.width > widest { widest = l.width } }
+    return widest
+}
+
+// A Ui with the face registered by make_font measures through its provider, in pixels, at the
+// pixel size a logical size comes to at the frame's scale.
 fn check_ui { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, mut lib: ui_fonts::Library, provider: ui::TextProvider, face: ui_fonts::Face } {
     let mut ui = ui::make{ realloc = arena::alloc, &heap, cap = ui::Capacity{ elements = 64, text = 4096, cmds = 256, hits = 64, states = 16, nodes = 64, lines = 64, .. } } iferr {
         ui_test::expect{ &io, &t, ok = false, what = "a Ui" }
@@ -408,10 +448,24 @@ fn check_ui { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, mut lib
         return
     }
     ui::set_provider{ &ui, provider }
-    ui::begin_frame{ &ui, frame = ui::FrameInfo{ width = 320.0, height = 200.0, pixel_width = 320.0, pixel_height = 200.0, dt = 0.016 } }
+    ui::begin_frame{ &ui, frame = ui::FrameInfo{ width = 320, height = 200, scale = 1.0, dt = 0.016 } }
     let w = ui::measure_text{ &ui, font, size = 16.0, text = "Settings" }
     ui::end_frame{ &ui }
-    ui_test::expect{ &io, &t, ok = w > 40.0 and w < 90.0 and ui.stats.problems == 0, what = "make_font registers the face, and a Ui measures text in it" }
+    ui_test::expect{ &io, &t, ok = w > 40 and w < 90 and ui.stats.problems == 0, what = "make_font registers the face, and a Ui measures text in it" }
+
+    // At scale 1.5 a text of 16 logical units is recorded at 24 pixels: the element is as wide
+    // and as high as the face's own 24 pixel text, in whole pixels.
+    let label = ui::make_id{ ui, name = "label" }
+    ui::begin_frame{ &ui, frame = ui::FrameInfo{ width = 480, height = 300, scale = 1.5, dt = 0.016 } }
+    let size = ui::to_font_size{ ui, size = 16.0 }
+    let wide = ui::measure_text{ &ui, font, size, text = "Settings" }
+    let line = ui::measure_line{ &ui, font, size }
+    let el = ui::begin_element{ &ui, id = label, axis = ui::Axis::row, box = ui::Box{ .. } }
+    ui::add_text{ &ui, text = "Settings", style = ui::TextStyle{ font, size = 16.0, .. }, box = ui::Box{ .. } }
+    ui::end{ &ui, scope = el }
+    ui::end_frame{ &ui }
+    let rect = ui::get_rect{ ui, id = label } ifnull ui::Rect{ .. }
+    ui_test::expect{ &io, &t, ok = size == 24.0 and wide > w and rect.w == wide and rect.h == line.height and ui.stats.problems == 0, what = "at scale 1.5 a text of 16 units is the face's 24 pixel text, sized in whole pixels" }
 }
 
 // With a CJK face as fallback, a line mixing Latin and CJK comes back as runs of two sized faces.
@@ -463,10 +517,10 @@ fn check_release { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, mu
         rects = 64, glyphs = 1024, images = 16, shapes = 16, draws = 64, passes = 2,
         atlas_width = 256, atlas_height = 256, atlas_max_height = 512, glyph_cache = 512, raster_bytes = 65536 } }
     let def = ui_fonts::describe_face{ lib, face } ifnull { return ui_fonts::closed }
-    ui::draw::reset{ &list, width = 320.0, height = 120.0, scale_x = 1.0, scale_y = 1.0 }
+    ui::draw::reset{ &list, width = 320, height = 120 }
     let font = ui::draw::add_font{ &list, font = def } ifnull { return ui_fonts::closed }
-    ui::draw::add_text{ &list, font, size = 16.0, x = 4.0, y = 4.0, text = "Release me", color = ui::Color{ r = 255, g = 255, b = 255, .. }, clip = 0 }
-    ui::draw::add_text{ &list, font, size = 24.0, x = 4.0, y = 40.0, text = "and me too", color = ui::Color{ r = 255, g = 255, b = 255, .. }, clip = 0 }
+    ui::draw::add_text{ &list, font, size = 16.0, x = 4, y = 4, text = "Release me", color = ui::Color{ r = 255, g = 255, b = 255, .. }, clip = 0 }
+    ui::draw::add_text{ &list, font, size = 24.0, x = 4, y = 40, text = "and me too", color = ui::Color{ r = 255, g = 255, b = 255, .. }, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider }
     let cached = staged.cache_used
     ui_test::expect{ &io, &t, ok = staged.dropped == 0 and staged.glyph_count > 10 and cached > 10, what = "text in the face stages, its glyphs cached in the atlas" }
@@ -478,13 +532,13 @@ fn check_release { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, mu
     ui_fonts::release_face{ &lib, face }
     ui_test::expect{ &io, &t, ok = staged.cache_used == 0 and staged.packer.held_count > 0, what = "releasing the face takes its glyphs out of the glyph cache" }
     ui_test::expect{ &io, &t, ok = lib.live.ft_sizes + 2 == sizes_before and ui_fonts::find_face{ lib, id = face.id } == null, what = "releasing the face releases its sized variants" }
-    ui::draw::reset{ &list, width = 320.0, height = 120.0, scale_x = 1.0, scale_y = 1.0 }
+    ui::draw::reset{ &list, width = 320, height = 120 }
     for _ in 0..5 { ui_stage::stage{ out = &staged, list = &list, provider } }
     ui_test::expect{ &io, &t, ok = staged.packer.held_count == 0 and staged.packer.freed_count > 0, what = "after the quarantine the released glyphs' atlas room is free to take" }
     // Text still naming the released face: nothing drawn, counted by the provider, no panic.
     let unknown = lib.stats.unknown
     _ = ui::draw::add_font{ &list, font = def }
-    ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16.0, x = 4.0, y = 4.0, text = "gone", color = ui::Color{ r = 255, g = 255, b = 255, .. }, clip = 0 }
+    ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16.0, x = 4, y = 4, text = "gone", color = ui::Color{ r = 255, g = 255, b = 255, .. }, clip = 0 }
     ui_stage::stage{ out = &staged, list = &list, provider }
     ui_test::expect{ &io, &t, ok = staged.glyph_count == 0 and lib.stats.unknown > unknown, what = "text in a released face draws nothing and is counted" }
 }
@@ -518,17 +572,18 @@ fn check_small_cache { mut io: Io, mut fonts: ui_fonts::Fonts, mut t: ui_test::T
         ui_test::expect{ &io, &t, ok = false, what = "a draw list" }
         return
     }
-    ui::draw::reset{ &list, width = 640.0, height = 480.0, scale_x = 1.0, scale_y = 1.0 }
+    ui::draw::reset{ &list, width = 640, height = 480 }
     let def = ui_fonts::describe_face{ lib, face } ifnull { return }
     _ = ui::draw::add_font{ &list, font = def }
     let mut cache = ui::text::make_cache{ realloc = arena::alloc, &heap, entries = 16, shaped = 16 } iferr { return }
-    let whole = ui::text::measure_text{ &cache, list, provider, font = ui::Font{ index = 0 }, size = 16.0, text = long }
+    let whole = ui::text::sum_text{ &cache, list, provider, font = ui::Font{ index = 0 }, size = 16.0, text = long }
     let mut bigger: [128]ui::Shaped
     let mut full = ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } } iferr { return }
     let full_face = ui_fonts::add_face{ lib = &full, data = latin, index = 0 } iferr { return }
     let full_provider = ui_fonts::get_provider{ lib = &full }
     let reference = sum_advances{ glyphs = shape{ provider = full_provider, face = full_face, pixels = 16, text = long, out = bigger[..] } }
     if ui::abs_f32{ x = whole - reference } > 0.01 { m_ok = false }
+    if ui::text::measure_text{ &cache, list, provider, font = ui::Font{ index = 0 }, size = 16.0, text = long } != ui::text::ceil_width{ v = reference } { m_ok = false }
     _ = @fmt(&io, "a long text measured in pieces: {}, shaped whole: {}\n", write_number{ v = whole, _ }, write_number{ v = reference, _ })
     ui_test::expect{ &io, &t, ok = m_ok, what = "the core shapes a text longer than its buffer in pieces, to the same width" }
     // 22 em dashes: 22 glyphs, which the scratch buffer holds, in 66 bytes, more than a generation
