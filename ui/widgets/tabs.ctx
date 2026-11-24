@@ -52,7 +52,7 @@ namespace ui {
         let outer = begin_element{ &ui, id = tabs_id, axis = Axis::column, box = merge_box{ box = opts.box, base = Box{ width = GROW, .. } } }
         _ = push_id{ &ui, name = id }
         let strip_id = make_id{ ui, name = "\x00strip" }
-        let strip = press{ &ui, id = strip_id, opts = PressOpts{ enabled = opts.enabled, focusable = true, .. } }
+        let strip = press{ &ui, id = strip_id, opts = PressOpts{ enabled = opts.enabled, focusable = true, tab_stop = opts.tab_stop, .. } }
         let focused = strip.focused and opts.enabled
         let before = value
 

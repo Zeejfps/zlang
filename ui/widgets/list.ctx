@@ -74,7 +74,7 @@ namespace ui {
             padding = inset{ by = t.border_width }, ..
         }
         let box = merge_box{ box = opts.box, base }
-        let list = open_list{ &ui, name = id, count, row_height, box, enabled = opts.enabled, node = true }
+        let list = open_list{ &ui, name = id, count, row_height, box, enabled = opts.enabled, tab_stop = opts.tab_stop, node = true }
         // The rows' scope, inside the list's: closed with it.
         _ = push_id{ &ui, name = id }
         return list
@@ -103,14 +103,14 @@ namespace ui {
 
     // The scroll region of a list named `name` in the id scope open now, laid out by `box`, with its
     // keys handled and its rows found. `node`: it describes itself as a list.
-    fn open_list { mut ui: Ui, name: []u8, count: u32, row_height: f32, box: Box, enabled: bool, node: bool } -> List {
+    fn open_list { mut ui: Ui, name: []u8, count: u32, row_height: f32, box: Box, enabled: bool, tab_stop: bool, node: bool } -> List {
         let region = make_id{ ui, name }
         let key = make_part_id{ id = region, part = "\x00list" }
         let row = pick_max_i32{ a = 1, b = to_pixels{ ui, length = row_height } }
         let mut values = load_state{ &ui, id = key }
         let mut cursor = values.i[0] - 1
         let mut reveal = (values.i[1] & 1) != 0
-        let it = press{ &ui, id = region, opts = PressOpts{ enabled, focusable = true, .. } }
+        let it = press{ &ui, id = region, opts = PressOpts{ enabled, focusable = true, tab_stop, .. } }
         let focused = it.focused and enabled
         let view = get_scroll{ ui, id = region }
         let mut list = List{ id = region, state_id = key, count, row, focused, enabled, .. }

@@ -42,6 +42,7 @@ fn check_basic { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena:
     check_radio_click{ &io, &t, &heap }
     check_focus_ring{ &io, &t, &heap }
     check_hover_ring{ &io, &t, &heap }
+    check_tab_stops{ &io, &t, &heap }
     check_themes{ &io, &t }
 }
 
@@ -652,6 +653,78 @@ fn check_focus_ring { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     ui_test::expect{ &io, &t, ok = is_node_focused{ ui = gui, path = "Save" } and ring.x == save.rect.x and ring.w == save.rect.w,
         what = "focus ring: Tab after a click draws the ring on the next stop (wrapping to Save)" }
     ui_test::expect{ &io, &t, ok = p.clicks == 2 and d.unclean == 0, what = "focus ring: every frame is clean" }
+}
+
+// Widgets left out of the tab order: First, then a button, a checkbox, a radio button, a slider, a
+// text field, a number entry, a combo and a list with `tab_stop` false, then Last.
+const SKIP_ITEMS: [2][]u8 = ["one", "two"]
+struct Skips { a: bool, b: i32, v: f32, n: f32, combo: i32, text: [16]u8, len: usize, clicks: u32 }
+
+fn show_skips { mut ui: ui::Ui, mut s: Skips } {
+    let col = ui::begin_column{ &ui, opts = ui::Opts{ box = ui::place_pixels{ rect = ui::Rect{ x = 10, y = 10, w = 300, h = 500 } }, .. } }
+    let off = ui::Opts{ tab_stop = false, .. }
+    _ = ui::add_button{ &ui, label = "First", opts = ui::Opts{ .. } }
+    if ui::add_button{ &ui, label = "Skipped", opts = off } { s.clicks = s.clicks + 1 }
+    _ = ui::add_checkbox{ &ui, label = "box", value = &s.a, opts = off }
+    _ = ui::add_radio{ &ui, label = "radio", value = &s.b, choice = 1, opts = off }
+    _ = ui::add_slider{ &ui, label = "slider", value = &s.v, range = ui::Range{ .. }, opts = off }
+    let mut buf = ui::TextBuf{ bytes = s.text[..], len = s.len }
+    _ = ui::add_text_field{ &ui, label = "field", text = &buf, rules = ui::TextRules{ .. }, opts = off }
+    s.len = buf.len
+    _ = ui::add_number{ &ui, label = "number", value = &s.n, range = ui::Range{ max = 10.0, step = 1.0, digits = 0, .. }, opts = off }
+    _ = ui::add_combo{ &ui, label = "combo", value = &s.combo, items = SKIP_ITEMS[..], opts = off }
+    let list = ui::begin_list{ &ui, id = "list", count = 2, row_height = 20.0, opts = ui::Opts{ box = ui::Box{ height = ui::fix{ size = 44.0 }, .. }, tab_stop = false, .. } }
+    for i in list.first..list.last {
+        let row = ui::begin_list_row{ &ui, list, index = i, selected = false }
+        ui::end{ &ui, scope = row.scope }
+    }
+    ui::end{ &ui, scope = list.scope }
+    _ = ui::add_button{ &ui, label = "Last", opts = ui::Opts{ .. } }
+    ui::end{ &ui, scope = col }
+}
+
+// Tab and Shift+Tab pass every stock widget whose options say it is no tab stop; a click still
+// focuses one (a text field takes typing), and Tab from it goes on from its place.
+fn check_tab_stops { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 320, height = 520, scale = 1.0 } iferr { return }
+    let mut s: Skips
+    s.a = false
+    s.b = 0
+    s.v = 0.0
+    s.n = 0.0
+    s.combo = 0
+    s.len = 0
+    s.clicks = 0
+    ui_test::step_frame{ &d, ui = &gui, show = show_skips{ &s, _ } }
+    // Focus moves at the end of the frame the key is in, so a widget says it has it in the next.
+    let first = tap_and_see{ &d, ui = &gui, &s, mods = 0, path = "First" }
+    let last = tap_and_see{ &d, ui = &gui, &s, mods = 0, path = "Last" }
+    ui_test::expect{ &io, &t, ok = first and last,
+        what = "tab stops: Tab goes to First, then to Last past the eight widgets that are no tab stops, the frame after each key" }
+    ui_test::expect{ &io, &t, ok = tap_and_see{ &d, ui = &gui, &s, mods = ui::MOD_SHIFT, path = "First" }, what = "tab stops: Shift+Tab from Last passes them too" }
+    _ = ui_test::click{ &d, ui = &gui, path = "field", show = show_skips{ &s, _ } }
+    _ = ui_test::type_text{ ui = &gui, text = "hi" }
+    ui_test::step_frame{ &d, ui = &gui, show = show_skips{ &s, _ } }
+    ui_test::expect{ &io, &t, ok = is_node_focused{ ui = gui, path = "field" } and slice::eq_bytes{ a = s.text[..s.len], b = "hi" },
+        what = "tab stops: a click still focuses a field that is no tab stop, and it takes typing" }
+    ui_test::expect{ &io, &t, ok = tap_and_see{ &d, ui = &gui, &s, mods = 0, path = "Last" }, what = "tab stops: Tab from it goes on from its place, to Last" }
+    _ = ui_test::click{ &d, ui = &gui, path = "Skipped", show = show_skips{ &s, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_skips{ &s, _ } }
+    let clicked = s.clicks == 1 and is_node_focused{ ui = gui, path = "Skipped" }
+    ui_test::expect{ &io, &t, ok = clicked and tap_and_see{ &d, ui = &gui, &s, mods = ui::MOD_SHIFT, path = "First" },
+        what = "tab stops: a click works and focuses the button, and Shift+Tab from it goes back to First" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "tab stops: every frame is clean" }
+}
+
+// Tab (with `mods`) and two frames: true when `path` is not focused in the key's frame and is in
+// the next.
+fn tap_and_see { mut d: ui_test::Driver, mut ui: ui::Ui, mut s: Skips, mods: u8, path: []u8 } -> bool {
+    _ = ui_test::tap_key{ &ui, key = ui::Key::tab, mods }
+    ui_test::step_frame{ &d, &ui, show = show_skips{ &s, _ } }
+    let before = is_node_focused{ ui, path }
+    ui_test::step_frame{ &d, &ui, show = show_skips{ &s, _ } }
+    return not before and is_node_focused{ ui, path }
 }
 
 // With hover as focus (KOTOR's screens), the hovered button takes the focus and shows the ring,

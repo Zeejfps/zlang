@@ -16,8 +16,7 @@
 // and Ctrl+Z brings back the task deleted last.
 //
 // Units: everything here is logical units; the host picks the surface's pixels and the scale (the
-// monitor's times this program's zoom, `get_zoom`). The two widgets of its own (`add_row_check`,
-// `add_icon_button`) paint their marks in pixels the core converted for them.
+// monitor's times this program's zoom, `get_zoom`). Every control is a stock widget.
 namespace tasks {
     const MAX_TASKS: usize = 200
     const TITLE_ROOM: usize = 120
@@ -447,7 +446,7 @@ namespace tasks {
                 app.selected = @as(i32, at)
                 menu_row = row.id
             }
-            show_task_row{ &ui, &app, at }
+            show_task_row{ &ui, &app, at, list = list.id }
             ui::end{ &ui, scope = row.scope }
         }
         ui::end{ &ui, scope = list.scope }
@@ -466,16 +465,26 @@ namespace tasks {
     }
 
     // A task's row: the box that marks it done, its title (muted once done), the button that
-    // deletes it.
-    fn show_task_row { mut ui: ui::Ui, mut app: App, at: usize } {
+    // deletes it. The list is the one tab stop of them all (Space marks the selected task, Delete
+    // deletes it), so the box and the button are no tab stops; a click on either selects the row
+    // and gives the list the focus, as a click on the row does.
+    fn show_task_row { mut ui: ui::Ui, mut app: App, at: usize, list: ui::Id } {
         let t = ui.theme
         let task = app.tasks[at]
         let title = task.title[..task.len]
-        if add_row_check{ &ui, value = &app.tasks[at].done, tip = "Done" } { app.selected = @as(i32, at) }
+        if ui::add_checkbox{ &ui, label = "", value = &app.tasks[at].done, opts = ui::Opts{ id = "done", tip = "Done", tab_stop = false, .. } } {
+            app.selected = @as(i32, at)
+            ui::set_focus{ &ui, id = list }
+        }
         ui::add_text{ &ui, text = title, style = ui::TextStyle{ color = if task.done { t.text_muted } else { t.text }, overflow = ui::Overflow::ellipsis, .. },
             box = ui::Box{ width = ui::GROW, .. } }
         ui::describe_text{ &ui, id = ui::NO_ID, role = ui::Role::label, label = "title", value = 0.0, flags = if task.done { ui::NODE_CHECKED } else { 0 }, text = title }
-        if add_icon_button{ &ui, name = "delete", icon = ui::Icon::cross, tip = "Delete this task" } { remove_task{ &app, at } }
+        let side = t.control_height * 0.8
+        let small = ui::Box{ width = ui::fix{ size = side }, height = ui::fix{ size = side }, padding = ui::inset{ by = 0.0 }, .. }
+        if ui::add_button{ &ui, label = "\xC3\x97", opts = ui::Opts{ id = "delete", box = small, tip = "Delete this task", tab_stop = false, .. } } {
+            remove_task{ &app, at }
+            ui::set_focus{ &ui, id = list }
+        }
     }
 
     // The keys the list answers while it has the focus, beside the ones it takes itself.
@@ -642,55 +651,5 @@ namespace tasks {
             ui::end{ &ui, scope = buttons }
         }
         ui::end{ &ui, scope = d }
-    }
-
-    // ---- two widgets of the program's own, over the core's primitives
-
-    // The box that marks a task done: the stock tick box's look, without its label, and not a tab
-    // stop (the list is one: Space marks the selected task). True on the frame it flips `value`.
-    fn add_row_check { mut ui: ui::Ui, mut value: bool, tip: []u8 } -> bool {
-        let t = ui::derive_theme{ theme = ui.theme }
-        let id = ui::make_id{ ui, name = "done" }
-        let it = ui::press{ &ui, id, opts = ui::PressOpts{ focusable = false, .. } }
-        if it.clicked { value = not value }
-        let look = ui::get_mark_look{ theme = t, on = value, enabled = true, it }
-        let size = ui::get_mark_size{ theme = t }
-        let el = ui::begin_element{ &ui, id, axis = ui::Axis::row, box = ui::Box{
-            width = ui::fix{ size }, height = ui::fix{ size }, fill = look.fill,
-            border = ui::color_sides{ color = look.border }, border_width = ui::inset{ by = look.border_width },
-            radius = ui::round{ radius = t.radius * 0.5 }, hit_outset = ui::inset{ by = t.gap * 0.5 }, ..
-        } }
-        if value {
-            let side = ui::to_pixels{ ui, length = size }
-            ui::paint_icon{ &ui, icon = ui::Icon::check, rect = ui::Rect{ x = 0, y = 0, w = side, h = side }, color = look.ink }
-        }
-        ui::end{ &ui, scope = el }
-        ui::describe{ &ui, id, role = ui::Role::checkbox, label = "done", value = if value { 1.0 } else { 0.0 }, flags = if value { ui::NODE_CHECKED } else { 0 } }
-        if it.hovered or it.held { ui::set_cursor{ &ui, cursor = ui::Cursor::hand } }
-        if tip.len > 0 { ui::add_tooltip{ &ui, anchor = id, text = tip } }
-        return it.clicked
-    }
-
-    // A small square button with a stock mark, quiet until the pointer is on it, not a tab stop.
-    // True on the frame it is clicked.
-    fn add_icon_button { mut ui: ui::Ui, name: []u8, icon: ui::Icon, tip: []u8 } -> bool {
-        let t = ui::derive_theme{ theme = ui.theme }
-        let id = ui::make_id{ ui, name }
-        let it = ui::press{ &ui, id, opts = ui::PressOpts{ focusable = false, .. } }
-        let side = ui::get_mark_size{ theme = t } + t.padding
-        let fill = if it.held and it.hovered { t.control_pressed } else if it.hovered { t.control_hovered } else { ui::Color{ a = 0, .. } }
-        let el = ui::begin_element{ &ui, id, axis = ui::Axis::row, box = ui::Box{
-            width = ui::fix{ size = side }, height = ui::fix{ size = side }, fill, radius = ui::round{ radius = t.radius }, ..
-        } }
-        // The mark a tick box's size, centred: the spare pixels halved, rounded down.
-        let px = ui::to_pixels{ ui, length = side }
-        let mark = ui::to_pixels{ ui, length = ui::get_mark_size{ theme = t } * 0.75 }
-        let at = (px - mark) / 2
-        ui::paint_icon{ &ui, icon, rect = ui::Rect{ x = at, y = at, w = mark, h = mark }, color = if it.hovered { t.danger } else { t.text_muted } }
-        ui::end{ &ui, scope = el }
-        ui::describe{ &ui, id, role = ui::Role::button, label = name, value = 0.0, flags = if it.held { ui::NODE_PRESSED } else { 0 } }
-        if it.hovered or it.held { ui::set_cursor{ &ui, cursor = ui::Cursor::hand } }
-        if tip.len > 0 { ui::add_tooltip{ &ui, anchor = id, text = tip } }
-        return it.clicked
     }
 }

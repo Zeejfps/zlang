@@ -35,13 +35,13 @@ namespace ui {
         {
             let top = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{ width = GROW, gap = t.gap, align_y = Align::center, .. } }
             add_swatch{ &ui, color = value }
-            edit_hex{ &ui, &value, enabled = opts.enabled }
+            edit_hex{ &ui, &value, enabled = opts.enabled, tab_stop = opts.tab_stop }
             end{ &ui, scope = top }
         }
-        edit_channel{ &ui, letter = "R", name = "r", channel = &value.r, enabled = opts.enabled }
-        edit_channel{ &ui, letter = "G", name = "g", channel = &value.g, enabled = opts.enabled }
-        edit_channel{ &ui, letter = "B", name = "b", channel = &value.b, enabled = opts.enabled }
-        edit_channel{ &ui, letter = "A", name = "a", channel = &value.a, enabled = opts.enabled }
+        edit_channel{ &ui, letter = "R", name = "r", channel = &value.r, enabled = opts.enabled, tab_stop = opts.tab_stop }
+        edit_channel{ &ui, letter = "G", name = "g", channel = &value.g, enabled = opts.enabled, tab_stop = opts.tab_stop }
+        edit_channel{ &ui, letter = "B", name = "b", channel = &value.b, enabled = opts.enabled, tab_stop = opts.tab_stop }
+        edit_channel{ &ui, letter = "A", name = "a", channel = &value.a, enabled = opts.enabled, tab_stop = opts.tab_stop }
         end{ &ui, scope = group }
         let packed = (@as(u32, value.r) << 16) | (@as(u32, value.g) << 8) | @as(u32, value.b)
         describe{ &ui, id, role = Role::color_edit, label = name, value = @as(f32, packed), flags = if opts.enabled { 0 } else { NODE_DISABLED } }
@@ -71,12 +71,12 @@ namespace ui {
     }
 
     // A channel's row: its letter, then a slider over 0 to 255.
-    fn edit_channel { mut ui: Ui, letter: []u8, name: []u8, mut channel: u8, enabled: bool } {
+    fn edit_channel { mut ui: Ui, letter: []u8, name: []u8, mut channel: u8, enabled: bool, tab_stop: bool } {
         let t = ui.theme
         let row = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{ width = GROW, gap = t.gap, align_y = Align::center, .. } }
         add_text{ &ui, text = letter, style = TextStyle{ color = if enabled { t.text_muted } else { t.text_disabled }, .. }, box = Box{ width = fix{ size = t.font_size }, .. } }
         let mut v = @as(f32, channel)
-        if add_slider{ &ui, label = name, value = &v, range = Range{ min = 0.0, max = 255.0, step = 1.0, digits = 0 }, opts = Opts{ enabled, .. } } {
+        if add_slider{ &ui, label = name, value = &v, range = Range{ min = 0.0, max = 255.0, step = 1.0, digits = 0 }, opts = Opts{ enabled, tab_stop, .. } } {
             channel = @round_saturate(u8, v)
         }
         end{ &ui, scope = row }
@@ -89,10 +89,10 @@ namespace ui {
     const HEX_CHOSEN: i64 = 512
 
     // The hex field: `#` and the digits, in a field the width of nine characters and the padding.
-    fn edit_hex { mut ui: Ui, mut value: Color, enabled: bool } {
+    fn edit_hex { mut ui: Ui, mut value: Color, enabled: bool, tab_stop: bool } {
         let t = derive_theme{ theme = ui.theme }
         let id = make_id{ ui, name = "hex" }
-        let it = press{ &ui, id, opts = PressOpts{ enabled, focusable = true, focus_on_hover = ui.config.hover_focus, .. } }
+        let it = press{ &ui, id, opts = PressOpts{ enabled, focusable = true, tab_stop, focus_on_hover = ui.config.hover_focus, .. } }
         let mut st = load_state{ &ui, id }
         let mut digits = @as(u32, @saturate(u32, st.i[0]))
         let mut count = @as(u32, st.i[1] & 255)

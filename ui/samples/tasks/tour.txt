@@ -28,10 +28,12 @@ frames 2
 value "task count" 7
 text tasks/#6/title "Call the plumber"
 
-# Mark one done with its box.
+# Mark one done with its box: the box is no tab stop, and a click on it gives the list the focus.
 click tasks/#1/done
 frames 2
 expect tasks/#1/done checked
+expect tasks focused
+expect tasks/#1 selected
 value "done count" 2
 
 # Select a row by a click: the list takes the focus. Space marks it done, Down selects the next.

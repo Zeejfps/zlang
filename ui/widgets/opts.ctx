@@ -37,10 +37,10 @@ namespace ui {
         }
     }
 
-    // How a stock widget is pressed: when it is enabled, focusable, focused on hover when the Ui
-    // says so.
+    // How a stock widget is pressed: when it is enabled, focusable, a tab stop unless `opts` says
+    // it is not, focused on hover when the Ui says so.
     fn make_press_opts { ui: Ui, opts: Opts } -> PressOpts {
-        return PressOpts{ enabled = opts.enabled, focusable = true, focus_on_hover = ui.config.hover_focus, button = 0 }
+        return PressOpts{ enabled = opts.enabled, focusable = true, focus_on_hover = ui.config.hover_focus, button = 0, tab_stop = opts.tab_stop }
     }
 
     // Whether a focused widget is worked from the keyboard this frame: Enter or Space, which are

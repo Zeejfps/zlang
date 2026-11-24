@@ -20,10 +20,11 @@
 // `end_frame` calls `finish_frame` after the frame is emitted.
 namespace ui {
     // How `press` treats a widget. `button` is the pointer button it listens for (0 left, 1
-    // right, 2 middle). A focusable widget is a tab stop and takes focus when it is pressed; with
+    // right, 2 middle). A focusable widget takes focus when it is pressed, and is a tab stop unless
+    // `tab_stop` is false (Tab and Shift+Tab pass it by, and from it go on from its place); with
     // `focus_on_hover` it also takes focus when its hover begins. A widget that is not enabled is
     // hovered but never pressed, active or focused.
-    struct PressOpts { enabled: bool = true, focusable: bool = true, focus_on_hover: bool = false, button: u8 = 0 }
+    struct PressOpts { enabled: bool = true, focusable: bool = true, focus_on_hover: bool = false, button: u8 = 0, tab_stop: bool = true }
 
     // What happened to a widget this frame.
     //
@@ -87,7 +88,7 @@ namespace ui {
             }
         }
         if opts.focusable {
-            focus::add_stop{ &ui, id }
+            focus::add_stop{ &ui, id, tab = opts.tab_stop }
             if opts.focus_on_hover and it.entered {
                 focus::take_focus{ &ui, id, claimed = false }
                 ui.focus.visible = true

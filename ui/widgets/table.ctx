@@ -98,7 +98,7 @@ namespace ui {
         }
         end{ &ui, scope = header }
 
-        table.list = open_list{ &ui, name = rows_name, count, row_height, box = Box{ width = take{ part = 1.0 }, height = GROW, .. }, enabled = opts.enabled, node = false }
+        table.list = open_list{ &ui, name = rows_name, count, row_height, box = Box{ width = take{ part = 1.0 }, height = GROW, .. }, enabled = opts.enabled, tab_stop = opts.tab_stop, node = false }
         table.first = table.list.first
         table.last = table.list.last
         // The table's scope closes the rows' region, which is inside it.

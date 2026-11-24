@@ -1431,7 +1431,7 @@ struct Box {
 }
 fn place { x: f32, y: f32, w: f32, h: f32 } -> Box              // logical units
 fn place_pixels { rect: Rect } -> Box                           // device pixels, taken as they are
-struct Opts { id: []u8 = "", box: Box = Box{ .. }, enabled: bool = true, tip: []u8 = "" }
+struct Opts { id: []u8 = "", box: Box = Box{ .. }, enabled: bool = true, tip: []u8 = "", tab_stop: bool = true }   // tab_stop false: Tab passes it by
 struct Range { min: f32 = 0.0, max: f32 = 1.0, step: f32 = 0.0, digits: u32 = 2 }
 struct TextRules { hint: []u8 = "", max_chars: u32 = 0, password: bool = false, filter: ?fn{ c: u32 } -> bool = null }
 struct WindowOpts { x: f32 = 40.0, y: f32 = 40.0, width: f32 = 360.0, height: f32 = 0.0, movable: bool = true, resizable: bool = true, closable: bool = true }
@@ -1475,7 +1475,7 @@ fn paint_text { mut ui: Ui, font: Font, size: i32, x: i32, y: i32, text: []u8, c
 fn paint_line { mut ui: Ui, x0: f32, y0: f32, x1: f32, y1: f32, width: f32, color: Color, cap: Cap }   // pixels, may be fractional
 enum Icon: u8 { check, cross, arrow_right, arrow_down, arrow_up, arrow_left }
 fn paint_icon { mut ui: Ui, icon: Icon, rect: Rect, color: Color }                 // a stock mark, drawn as lines
-struct PressOpts { enabled: bool = true, focusable: bool = true, focus_on_hover: bool = false, button: u8 = 0 }
+struct PressOpts { enabled: bool = true, focusable: bool = true, focus_on_hover: bool = false, button: u8 = 0, tab_stop: bool = true }
 struct Interaction {
     id: Id,
     hovered: bool = false, entered: bool = false,

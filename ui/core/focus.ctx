@@ -2,14 +2,14 @@
 // widgets (plan section 2.5).
 //
 //  - One id has the keyboard focus. A focusable `press` is a tab stop, in the order the frame
-//    records them, and takes focus when it is pressed (or, with `focus_on_hover`, when its hover
-//    begins). `set_focus` gives it to any id.
+//    records them (unless `PressOpts.tab_stop` is false: Tab passes it by), and takes focus when it
+//    is pressed (or, with `focus_on_hover`, when its hover begins). `set_focus` gives it to any id.
 //  - Focus is dropped at end_frame when its owner was not recorded (no `press` of it and no
 //    `set_focus` of it that frame), and when a left press of the frame went to no focusable widget
 //    (a click on empty space or on a widget that takes no focus ends a text field's editing).
 //  - The key strokes nobody took during the frame then move focus, in the order they were pushed:
 //    Tab and Shift+Tab to the next and the previous tab stop (wrapping; from no focus to the first
-//    or the last), an arrow key with no modifier along the focused widget's link in that direction.
+//    or the last; from a focused widget that is no tab stop, from its place), an arrow key with no modifier along the focused widget's link in that direction.
 //    Only the stops of the frontmost modal tree and the trees in front of it count, and a link to an
 //    id that is not one of them is not followed. Tab with no stops does nothing.
 //  - Whether the focus is shown (`is_focus_visible`): a focus that came by the keyboard is drawn (a
@@ -73,8 +73,10 @@ namespace ui {
     }
 
     namespace focus {
-        // A tab stop and the order of the tree it was recorded in.
-        struct Stop { id: Id, order: u32 }
+        // A focusable widget in recording order, the order of the tree it was recorded in, and
+        // whether Tab stops at it (`tab`); one that is not a tab stop is kept for its place, which
+        // Tab goes on from while it has the focus.
+        struct Stop { id: Id, order: u32, tab: bool }
         struct Link { id: Id, links: Links }
 
         struct State {
@@ -108,15 +110,15 @@ namespace ui {
             if claimed { ui.focus.claimed = true }
         }
 
-        // A tab stop, once: a second press of the same id right after is not another stop.
-        fn add_stop { mut ui: Ui, id: Id } {
+        // A focusable widget, once: a second press of the same id right after is not another stop.
+        fn add_stop { mut ui: Ui, id: Id, tab: bool } {
             let n = @as(usize, ui.focus.stop_count)
             if n > 0 and ui.focus.stops[n - 1].id == id { return }
             if n >= ui.focus.stops.len {
                 report_drop{ &ui, kind = ProblemKind::hits_full }
                 return
             }
-            ui.focus.stops[n] = Stop{ id, order = tree::get_order{ ui } }
+            ui.focus.stops[n] = Stop{ id, order = tree::get_order{ ui }, tab }
             ui.focus.stop_count = ui.focus.stop_count + 1
         }
 
@@ -142,39 +144,32 @@ namespace ui {
             return s.order >= ui.emit.floor
         }
 
-        // Moves focus to the next or the previous reachable stop.
+        // Moves focus to the next or the previous reachable tab stop, wrapping. From a focused
+        // widget that is not a tab stop it goes on from that widget's place; from no focus (or one
+        // not recorded this frame) to the first or the last.
         fn step_focus { mut ui: Ui, forward: bool } {
-            let mut count: usize = 0
-            let mut at: usize = 0
+            let n = @as(usize, ui.focus.stop_count)
+            if n == 0 { return }
+            // Where the focus is among the frame's focusable widgets; from nowhere, a forward walk
+            // starts one before the first and a backward one at the last.
+            let mut at = n - 1
             let mut found = false
-            let mut i: usize = 0
-            while i < @as(usize, ui.focus.stop_count) {
+            for i in 0..n {
                 let s = ui.focus.stops[i]
-                if is_reachable{ ui, s } {
-                    if not found and s.id == ui.focus.focused {
-                        at = count
-                        found = true
-                    }
-                    count = count + 1
+                if is_reachable{ ui, s } and s.id == ui.focus.focused {
+                    at = i
+                    found = true
+                    break
                 }
-                i = i + 1
             }
-            if count == 0 { return }
-            let mut next: usize = if forward { 0 } else { count - 1 }
-            if found { next = if forward { (at + 1) % count } else { (at + count - 1) % count } }
-            let mut k: usize = 0
-            i = 0
-            while i < @as(usize, ui.focus.stop_count) {
+            for k in 1..n + 1 {
+                let i = if forward { (at + k) % n } else if found { (at + n - k) % n } else { n - k }
                 let s = ui.focus.stops[i]
-                if is_reachable{ ui, s } {
-                    if k == next {
-                        ui.focus.focused = s.id
-                        ui.focus.visible = true
-                        return
-                    }
-                    k = k + 1
+                if s.tab and is_reachable{ ui, s } {
+                    ui.focus.focused = s.id
+                    ui.focus.visible = true
+                    return
                 }
-                i = i + 1
             }
         }
 
