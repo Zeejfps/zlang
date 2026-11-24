@@ -17,9 +17,10 @@ entries are cited by number, e.g. F#24) and [kotor/docs/tooling-gaps.md](../koto
 
 ## 1. A reference a model can trust
 
-- [ ] **1.1 Move the quick reference into ctxlang.**
-  Agents learn the language from [kotor/docs/ctxlang-quickref.md](../kotor/docs/ctxlang-quickref.md),
-  which lives in the game, not the language. No model has ctxlang in its training data: this
+- [x] **1.1 Move the quick reference into ctxlang.**
+  Agents learned the language from `kotor/docs/ctxlang-quickref.md`, which lived in the game,
+  not the language; it is now [quickref.md](quickref.md), with the game's own parts in
+  kotor/AGENTS.md ("ctxlang in this game"). No model has ctxlang in its training data: this
   page is its first source of truth. Move it to `ctxlang/`, keep it short, name the spec
   sections, and list the common mistakes with their fixes.
   - *Done when:* it lives in ctxlang, kotor's AGENTS.md points to it, and it's current with this checklist's changes.

@@ -19,10 +19,10 @@ saves, minigames, music and movies.
 
 ## Rules
 
-1. **Language.** Everything the game runs is ctxlang. Start with
-   [docs/ctxlang-quickref.md](docs/ctxlang-quickref.md) and the existing code in `kotor/lib/`;
-   read `ctxlang/spec.md` sections when you need the exact rule (the quick reference names
-   them), and `ctxlang/std/*.ctx` for std's APIs. The compiler is young: when it gets in your way, log it in [ctxlang/FRICTION.md](../ctxlang/FRICTION.md)
+1. **Language.** Everything the game runs is ctxlang. Start with ctxlang's
+   [quick reference](../ctxlang/quickref.md), then "ctxlang in this game" below and the
+   existing code in `kotor/lib/`; read `ctxlang/spec.md` sections when you need the exact rule
+   (the quick reference names them), and `ctxlang/std/*.ctx` for std's APIs. The compiler is young: when it gets in your way, log it in [ctxlang/FRICTION.md](../ctxlang/FRICTION.md)
    (what you wrote, what you had to write instead, how often). Changing the language (ctxc, std,
    runtime) is allowed when it is a must or greatly helps; follow `ctxlang/PLAN.md`, "Changing the
    language" (new feature first, used only after `./ctxc0 run tools/fixpoint.ctx -- --update` refreshes the
@@ -51,7 +51,8 @@ saves, minigames, music and movies.
    (a parser's edge cases, a table's lookups) is a `#test` fn beside the code, in
    `NAME_test.ctx`, run with `kotor/tools/ctxc test kotor/tools/<a tool that adds the library>`
    (quick reference, Tests; `lib/formats/twoda_test.ctx` is the model; a test that needs the
-   install is given its directory after `--`, and skips without it): write those first. Every renderer feature is checked by rendering
+   install is given its directory after `--`, and skips without it: "ctxlang in this game",
+   below): write those first. Every renderer feature is checked by rendering
    offscreen to a PNG under `kotor/out/` and looking at it with the Read tool. Don't report
    something as working that you haven't run.
 7. **Git.** Commit only on the branch or worktree you were given, with messages in the repository's
@@ -129,13 +130,41 @@ fn build { mut b: Build } {
   and an edit to one function rebuilds in ~3 s. Inserting lines recompiles every unit of that
   file. Tools that include only the libraries they need still build faster than the whole game.
 - `@size_of` and `@offset_of(T, field)` check bindings' structs against C's layouts.
-- The game's build denies the unchecked operations (`@cast`, `@slice`, pointer arithmetic, C's
-  declarations: spec §13) outside the directories `kotor/build.ctx` lists in
-  `build::deny_unchecked`'s `except`, each with its reason. New game code goes in the checked
-  directories and calls the bindings; see the quick reference.
 
 Testing the game (fast headless runs, checkpoints, the module smoke test, the conversation sweep): [docs/testing.md](docs/testing.md).
 Gaps in the shell, the test tools and the game's framework that cost time: [docs/tooling-gaps.md](docs/tooling-gaps.md).
+
+## ctxlang in this game
+
+What the quick reference leaves to the program, as the game does it.
+
+- **Code to imitate:** `lib/formats/`, `lib/res/`, `lib/mdl/`, `tools/resls/main.ctx`.
+- **Memory:** the game's general heap is `lib/base`'s, over C's allocator:
+  `let mut h = heap::new{ &mem }`, then `realloc = heap::alloc, heap = &h` wherever std takes an
+  allocator (`list::new(u32){ realloc = heap::alloc, heap = &h }`). Arenas as std has them.
+- **`math` is the game's** (`lib/base/math.ctx`: vectors, matrices, quaternions), and hides std's
+  `math` whole. It declares libm's functions again, `#pure`, and the float-bits fns.
+  `math::min`, `max` and `clamp` there are f32 fns that give the second operand for a NaN: use
+  them for f32 game math as before, and `@min`, `@max` and `@clamp` elsewhere. Std's
+  `math::INF` is out of reach: write `@as(f32, 1e300)` for `inf`.
+- **Unchecked operations** (`@cast`, `@slice`, pointer arithmetic, C's declarations: spec §13)
+  are compile errors outside the directories `kotor/build.ctx` lists in
+  `build::deny_unchecked`'s `except`, each with its reason: lib/platform, lib/render_gl,
+  lib/base, lib/script, lib/video, lib/audio and ui/core. Elsewhere write the checked form the
+  error names, or call a function of one of those directories; calling an extern fn or using a
+  slice that such a directory made is allowed everywhere. Add a directory to `except` only with
+  its reason on its line. The tools (`kotor/tools/*`) don't deny them.
+- **C:** SDL is `lib/platform/sdl.ctx`; only `lib/render_gl` touches GL.
+- **Bound functions:** the script VM's engine is bound where the VM runs, in a call that isn't
+  given the world: `nwvm::run{ &vm, program, self, engine = routines::call{ &w, _ } }`, as
+  `scripts::run` does; don't pass a bound function down beside what it holds. Routine
+  categories are a table of fallible fn values (`lib/engine/routines/dispatch.ctx`).
+- **Tests that need the install** take its directory as an argument and skip without it:
+  `kotor/tools/ctxc test kotor/tools/fmttest -- F:/Steam/steamapps/common/swkotor`, and the
+  test starts with `let args = test::args{ &t }` and
+  `if args.len == 0 { test::skip{ &t, why = "no game install: give its directory after --" } }`,
+  then reads `args[0]`. `kotor/tools/ctxc test kotor/tools/fmttest twoda` runs those whose
+  names contain `twoda`.
 
 ## Layout
 

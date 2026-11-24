@@ -2,8 +2,9 @@
 
 Guide for agents working in `ui/`. [PLAN.md](PLAN.md) is the design and the staged plan (read its
 sections 1, 2 and 6, and your stage in section 7); this file is the rules, the commands and the
-layout. The language rules are in `kotor/AGENTS.md` (building, style) and `ctxlang/spec.md`; this
-file only adds what is particular to `ui/`.
+layout. The language is in [ctxlang/quickref.md](../ctxlang/quickref.md) (start there) and
+`ctxlang/spec.md`, the building and style rules in `kotor/AGENTS.md`; this file only adds what
+is particular to `ui/`.
 
 ## What it is
 
