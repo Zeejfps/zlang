@@ -1,0 +1,239 @@
+# A walk through Tasks for its --script (ui/test/script.ctx says how a script is written). Every
+# step is checked, so a run that ends with no failed line is the program working by pointer and by
+# keyboard, its menus, its dialogs and the clipboard, at a new size and in both themes:
+#
+#   kotor/tools/ctxc run ui/samples/tasks -- --headless --script ui/samples/tasks/tour.txt
+#   kotor/tools/ctxc run ui/samples/tasks -- --script ui/samples/tasks/tour.txt
+#
+# Pictures go to ui/out/tasks-*.png. The script starts in the dark theme at the default size.
+
+frames 3
+value "task count" 5
+value "done count" 1
+
+# Add a task: type into the field, Enter. The field keeps the focus and is empty again.
+click "new task"
+type "Buy stamps"
+key enter
+frames 2
+value "task count" 6
+text tasks/#5/title "Buy stamps"
+expect "new task" focused
+text "new task" ""
+
+# Add one with the button.
+type "Call the plumber"
+click Add
+frames 2
+value "task count" 7
+text tasks/#6/title "Call the plumber"
+
+# Mark one done with its box.
+click tasks/#1/done
+frames 2
+expect tasks/#1/done checked
+value "done count" 2
+
+# Select a row by a click: the list takes the focus. Space marks it done, Down selects the next.
+click tasks/#2
+frames 1
+expect tasks/#2 selected
+expect tasks focused
+key space
+frames 2
+expect tasks/#2/done checked
+value "done count" 3
+key down
+frames 2
+expect tasks/#3 selected
+
+# Reorder: Alt+Down moves the selected task down a row, Alt+Up back.
+key down
+frames 1
+text tasks/#4/title "Back up the laptop"
+key up alt
+frames 2
+text tasks/#3/title "Back up the laptop"
+expect tasks/#3 selected
+key down alt
+frames 2
+text tasks/#4/title "Back up the laptop"
+expect tasks/#4 selected
+
+# Delete with the Delete key; Ctrl+Z brings it back where it was.
+key delete
+frames 2
+value "task count" 6
+text tasks/#4/title "Buy stamps"
+text status "Deleted a task. Ctrl+Z brings it back."
+key z ctrl
+frames 2
+value "task count" 7
+text tasks/#4/title "Back up the laptop"
+
+# Delete with a row's own button.
+click tasks/#6/delete
+frames 2
+value "task count" 6
+
+# The menu bar by the pointer: Edit > Copy puts the selected task on the clipboard, and
+# Edit > Paste makes a task of it, through the host's clipboard.
+click tasks/#4
+click Edit
+expect Edit open
+shot ui/out/tasks-menu.png
+click "Edit/Copy"
+frames 2
+text status "Copied the task to the clipboard."
+click Edit
+click "Edit/Paste"
+frames 3
+value "task count" 7
+text tasks/#6/title "Back up the laptop"
+text status "Pasted 1 task"
+
+# Copy and paste in the field, with the keys: the same clipboard.
+click "new task"
+type "Plan the trip"
+frames 1
+key a ctrl
+key c ctrl
+frames 2
+key enter
+frames 2
+value "task count" 8
+key v ctrl
+frames 3
+text "new task" "Plan the trip"
+key a ctrl
+key backspace
+frames 2
+text "new task" ""
+
+# The menu bar by the keyboard: Shift+Tab from the field goes back along the tab stops to the
+# bar's last title; Enter opens its menu with the first item lit, Enter picks it.
+key tab shift
+frames 2
+expect Help focused
+key enter
+frames 2
+expect Help open
+key enter
+frames 2
+expect "About Tasks"
+shot ui/out/tasks-about.png
+key escape
+frames 3
+expect Help focused
+
+# Left along the bar to View; Down opens it, Down lights the theme, Enter switches it.
+key left
+frames 2
+expect View focused
+key down
+frames 2
+expect "View/Hide completed" selected
+key down
+frames 1
+expect "View/Dark theme" selected checked
+key enter
+frames 2
+shot ui/out/tasks-light.png
+
+# A task's context menu: a right click on its row, then an item.
+click tasks/#1
+down 1
+up 1
+frames 2
+expect "task menu"
+shot ui/out/tasks-context.png
+click "task menu/Move down"
+frames 2
+text tasks/#2/title "Reply to Ada about the budget"
+expect tasks/#2 selected
+
+# Rename: Enter on the selected task opens the dialog, its field focused with the whole title
+# selected, so typing replaces it; Enter saves.
+click tasks/#2
+key enter
+frames 3
+expect "Rename task"
+expect "Rename task/title" focused
+shot ui/out/tasks-rename.png
+type "Reply to Ada about the Q3 budget"
+key enter
+frames 2
+text tasks/#2/title "Reply to Ada about the Q3 budget"
+text status "Renamed the task."
+
+# Escape in the dialog leaves the task as it was.
+key enter
+frames 3
+type "Something else"
+key escape
+frames 2
+text tasks/#2/title "Reply to Ada about the Q3 budget"
+
+# Preferences: back to the dark theme by its radio button, and a zoom of 150 % from the combo.
+click Edit
+click "Edit/Preferences..."
+frames 2
+expect Preferences
+click Preferences/Dark
+frames 2
+expect Preferences/Dark checked
+click Preferences/zoom
+frames 2
+shot ui/out/tasks-prefs.png
+click "Preferences/zoom/#4/150 %"
+frames 3
+value Preferences/zoom 4
+shot ui/out/tasks-zoom.png
+click Preferences/Close
+frames 3
+expect "new task"
+
+# View > Actual size by the pointer, then File > New task puts the focus in the field.
+click View
+click "View/Actual size"
+frames 3
+click File
+click "File/New task"
+frames 2
+expect "new task" focused
+
+# Hide the completed tasks, then clear them.
+click View
+click "View/Hide completed"
+frames 3
+value "task count" 8
+text tasks/#1/title "Back up the laptop"
+click View
+click "View/Hide completed"
+frames 3
+click File
+click "File/Clear completed"
+frames 3
+value "task count" 5
+value "done count" 0
+
+# A smaller window: the content is laid out again in it.
+resize 360 340
+frames 3
+shot ui/out/tasks-small.png
+resize 520 620
+frames 3
+
+# Idle: with nothing focused that blinks and nothing moving, no frame is drawn; with the caret
+# blinking in the field, frames are drawn all along.
+click tasks/#0
+move 2 300
+frames 3
+idle 2 0 0
+click "new task"
+frames 2
+idle 1 5 400
+key escape
+click tasks/#0
+frames 3
+idle 2 0 0

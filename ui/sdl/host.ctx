@@ -152,6 +152,22 @@ namespace ui_sdl {
         return Sizes{ width = if pw > 0 { pw } else { 1 }, height = if ph > 0 { ph } else { 1 }, scale = monitor * z, pointer_scale = per_window }
     }
 
+    // Makes the window's drawable `width` by `height` device pixels, or as near as the OS allows:
+    // a program that opens at its logical size and finds the monitor's scale, or a script. The
+    // window's coordinates are the pixels over `pointer_scale` (Sizes.pointer_scale).
+    fn set_window_size { mut sdl: Sdl, host: Host, width: i32, height: i32, pointer_scale: f32 } {
+        let s = if pointer_scale > 0.0 { 1.0 / pointer_scale } else { 1.0 }
+        SDL_SetWindowSize{ &sdl, window = host.window, w = @max(1, to_int{ v = @as(f32, width) * s }), h = @max(1, to_int{ v = @as(f32, height) * s }) }
+    }
+
+    // The least size the user can make the window, in device pixels as `set_window_size` takes
+    // them: a program passes its least logical size times the frame's scale, again when the scale
+    // changes.
+    fn set_minimum_size { mut sdl: Sdl, host: Host, width: i32, height: i32, pointer_scale: f32 } {
+        let s = if pointer_scale > 0.0 { 1.0 / pointer_scale } else { 1.0 }
+        SDL_SetWindowMinimumSize{ &sdl, window = host.window, min_w = @max(1, to_int{ v = @as(f32, width) * s }), min_h = @max(1, to_int{ v = @as(f32, height) * s }) }
+    }
+
     // What the core is told about a frame: the surface in device pixels, the scale, and `dt`
     // (from `get_dt`).
     fn make_frame { sizes: Sizes, dt: f32 } -> ui::FrameInfo {

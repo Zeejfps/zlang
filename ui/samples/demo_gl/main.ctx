@@ -284,6 +284,7 @@ fn take_action { mut demo: Demo, mut sdl: ui_sdl::Sdl, mut io: Io, mut fs: Fs, m
             return draw_frame{ &demo, &sdl, &io, &ui }
         }
         shoot{ path } => { return write_shot{ &demo, &io, &fs, &heap, path } }
+        else => { return false }        // resize, idle: the gallery has neither
     }
 }
 

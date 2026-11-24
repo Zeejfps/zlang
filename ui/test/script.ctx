@@ -23,16 +23,25 @@
 //   expect PATH [FLAG ...]   the node at PATH is there, with each FLAG: checked, unchecked,
 //                            focused, disabled, enabled, selected, open, pressed
 //   value PATH NUMBER        the node's value is NUMBER, to a thousandth
+//   text PATH TEXT           the node's text value (a text field's text, `ui::describe_text`) is TEXT
+//   resize W H               the host makes its surface W by H device pixels
+//   idle SECONDS LEAST MOST  the host runs its own loop for SECONDS with no input from the script,
+//                            drawing only the frames it decides to (an event-driven host: those an
+//                            event or `Requests.animating` asks for), and the line holds when it drew
+//                            from LEAST to MOST frames. Run a frame after the last input first: what
+//                            the script pushed is the host's to draw, and it does not know of it.
 //
 // Events go to the Ui as a host's would, and take effect in the next frame run. A line that fails
 // (a node that is not there, a flag it does not have, a word the reader does not know) is printed
 // with its number and counted; the script goes on. The host runs the frames and takes the pictures,
 // through one hook, so the reader needs no window and no backend.
 namespace ui_test {
-    // What the reader asks of its host: run one frame (`step`), or write the frame drawn last to
-    // `path` (`shoot`). The hook answers false when it could not: the window closed, the backend
-    // failed, the file could not be written. A failed step stops the script.
-    union ScriptAction { step, shoot{ path: []u8 } }
+    // What the reader asks of its host: run one frame (`step`), write the frame drawn last to `path`
+    // (`shoot`), make its surface `width` by `height` device pixels (`resize`), or run its own loop
+    // for `seconds` and answer whether it drew from `least` to `most` frames (`idle`). The hook
+    // answers false when it could not: the window closed, the backend failed, the file could not be
+    // written, the host has no such loop. A failed step stops the script.
+    union ScriptAction { step, shoot{ path: []u8 }, resize{ width: i32, height: i32 }, idle{ seconds: f32, least: i32, most: i32 } }
 
     // What a script came to: lines read, lines that failed, frames run, and whether the host stopped
     // it before its end.
@@ -140,6 +149,25 @@ namespace ui_test {
             let want = parse_decimal{ s = words[2] } ifnull { return false }
             let off = node.value - want
             return off > -0.001 and off < 0.001
+        }
+        if is_word{ a = verb, b = "text" } and words.len == 3 {
+            let node = ui::find_node{ ui, path = words[1] } ifnull { return false }
+            if slice::eq_bytes{ a = node.text, b = words[2] } { return true }
+            _ = @fmt(&io, "script: \"{}\" has the text \"{}\"\n", words[1], node.text)
+            return false
+        }
+        if is_word{ a = verb, b = "resize" } and words.len == 3 {
+            let width = parse_int{ s = words[1] } ifnull { return false }
+            let height = parse_int{ s = words[2] } ifnull { return false }
+            if width < 1 or height < 1 { return false }
+            return host{ &ui, action = ScriptAction::resize{ width, height } }
+        }
+        if is_word{ a = verb, b = "idle" } and words.len == 4 {
+            let seconds = parse_decimal{ s = words[1] } ifnull { return false }
+            let least = parse_int{ s = words[2] } ifnull { return false }
+            let most = parse_int{ s = words[3] } ifnull { return false }
+            if not (seconds > 0.0) or least < 0 or most < least { return false }
+            return host{ &ui, action = ScriptAction::idle{ seconds, least, most } }
         }
         _ = @fmt(&io, "script: unknown command or wrong number of words: {}\n", verb)
         return false

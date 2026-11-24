@@ -32,6 +32,8 @@ namespace ui_sdl {
     extern fn SDL_CreateWindow { mut sdl: Sdl, title: c::String, x: i32, y: i32, w: i32, h: i32, flags: u32 } -> ?*mut Window
     extern fn SDL_DestroyWindow { mut sdl: Sdl, window: *mut Window }
     extern fn SDL_GetWindowSize { mut sdl: Sdl, window: *mut Window, w: ?*mut i32, h: ?*mut i32 }
+    extern fn SDL_SetWindowSize { mut sdl: Sdl, window: *mut Window, w: i32, h: i32 }
+    extern fn SDL_SetWindowMinimumSize { mut sdl: Sdl, window: *mut Window, min_w: i32, min_h: i32 }
     extern fn SDL_GetWindowDisplayIndex { mut sdl: Sdl, window: *mut Window } -> i32
     extern fn SDL_GetDisplayDPI { mut sdl: Sdl, display: i32, ddpi: ?*mut f32, hdpi: ?*mut f32, vdpi: ?*mut f32 } -> i32
 

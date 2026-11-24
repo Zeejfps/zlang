@@ -1,0 +1,509 @@
+// Tasks: a to-do list as an ordinary desktop program (plan stage 13). The application is app.ctx;
+// this file is its host: an SDL window with an OpenGL context, a font loaded from a path and a
+// fallback face for the characters it lacks, the clipboard, and a loop that draws only when an
+// event came, the program's state changed, or the interface asked to animate (a caret blinking, a
+// tooltip on its way).
+//
+//   kotor/tools/ctxc run ui/samples/tasks                                    a window; close it to quit
+//   kotor/tools/ctxc run ui/samples/tasks -- --headless --shot ui/out/tasks.png
+//   kotor/tools/ctxc run ui/samples/tasks -- --headless --script ui/samples/tasks/tour.txt
+//   kotor/tools/ctxc run ui/samples/tasks -- --script ui/samples/tasks/tour.txt   the same, in a window
+//
+//   --font PATH       the font (default: the platform's, C:/Windows/Fonts/segoeui.ttf on Windows)
+//   --fallback PATH   a face for the characters the font lacks (default: the platform's CJK face,
+//                     C:/Windows/Fonts/msyh.ttc on Windows; the program runs without one)
+//   --theme dark|light
+//   --scale S         device pixels a logical unit; in a window, the monitor's scale times S (default 1)
+//   --size WxH        the window in logical units (default 520x620)
+//   --script PATH     drive the program with a script (ui/test/script.ctx says how they are
+//                     written), then stop
+//   --frames N        stop after N frames (headless, without a script: 2)
+//   --headless        no window: draw into an offscreen target of a hidden one
+//   --shot PATH       when it stops, write the frame drawn last as a PNG
+//
+// DPI: each frame the window's drawable in pixels and the scale (the monitor's times the zoom, which
+// is --scale times the program's own View > Zoom) come from `ui_sdl::get_sizes`, and the window is
+// opened, kept at its least size and resized when it moves to a monitor of another scale, all in
+// logical units times that scale. The application never names a pixel.
+//
+// It exits 0 when every frame was well formed (nothing dropped, no problem recorded), GL reported
+// no error, the font library refused nothing and every line of the script held; 1 otherwise,
+// saying why. A script that copies and pastes uses the system clipboard, as the program does; the
+// text the clipboard held before it is put back when the script ends.
+
+const WIDTH_DEFAULT: f32 = 520.0
+const HEIGHT_DEFAULT: f32 = 620.0
+const WIDTH_LEAST: f32 = 360.0
+const HEIGHT_LEAST: f32 = 340.0
+const STEP_DT: f32 = 0.0166667                  // a headless or scripted frame's time: a 60th of a second
+const FONT_WINDOWS: [2][]u8 = ["C:/Windows/Fonts/segoeui.ttf", "C:/Windows/Fonts/arial.ttf"]
+const FONT_MACOS: [2][]u8 = ["/System/Library/Fonts/SFNS.ttf", "/System/Library/Fonts/Helvetica.ttc"]
+const FONT_LINUX: [3][]u8 = ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf", "/usr/share/fonts/noto/NotoSans-Regular.ttf"]
+const FALLBACK_WINDOWS: [3][]u8 = ["C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/YuGothM.ttc", "C:/Windows/Fonts/malgun.ttf"]
+const FALLBACK_MACOS: [1][]u8 = ["/System/Library/Fonts/PingFang.ttc"]
+const FALLBACK_LINUX: [2][]u8 = ["/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc"]
+
+struct Options {
+    font: ?[]u8, fallback: ?[]u8, script: ?[]u8, shot: ?[]u8,
+    headless: bool, dark: bool,
+    scale: f32, width: f32, height: f32,
+    frames: i32,                    // -1: until the window closes (or the script ends)
+}
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: ui_sdl::Sdl, mut fonts: ui_fonts::Fonts, args: Args } -> i32 {
+    let opts = read_options{ &io, args } ifnull {
+        io::eprintln{ &io, s = "usage: tasks [--font PATH] [--fallback PATH] [--theme dark|light] [--scale S] [--size WxH] [--script PATH] [--frames N] [--headless] [--shot PATH]" }
+        return 2
+    }
+    let buf = mem::pages{ &mem, size = 268435456 } ifnull {
+        io::eprintln{ &io, s = "tasks: out of memory" }
+        return 1
+    }
+    let mut heap = arena::new{ buf }
+    let font = read_font{ &fs, &heap, path = opts.font, windows = FONT_WINDOWS[..], macos = FONT_MACOS[..], linux = FONT_LINUX[..] }
+    let bytes = font.bytes ifnull {
+        _ = @fmt(&io, "tasks: no font found at {}. Pass --font PATH to a TrueType or OpenType file.\n", font.path)
+        io::flush{ &io }
+        return 1
+    }
+    let fallback = read_font{ &fs, &heap, path = opts.fallback, windows = FALLBACK_WINDOWS[..], macos = FALLBACK_MACOS[..], linux = FALLBACK_LINUX[..] }
+    if fallback.bytes == null and opts.fallback != null {
+        _ = @fmt(&io, "tasks: no fallback font at {}\n", fallback.path)
+        io::flush{ &io }
+        return 1
+    }
+    _ = @fmt(&io, "tasks: font {}; fallback {}\n", font.path, if fallback.bytes != null { fallback.path } else { "none (characters the font lacks are not drawn)" })
+    io::flush{ &io }
+    let mut log: [16384]u8
+    let code = run{ &io, &fs, &sdl, &fonts, &heap, opts, font = bytes, fallback = fallback.bytes, log = log[..] } iferr err{ error } {
+        _ = @fmt(&io, "tasks: failed: {}\n", error)
+        match error {
+            ui_gl::compile_failed{ shader, log_len } => { _ = @fmt(&io, "{}:\n{}\n", shader, log[..log_len]) }
+            ui_gl::link_failed{ program, log_len } => { _ = @fmt(&io, "{}:\n{}\n", program, log[..log_len]) }
+            ui_gl::gl_failed{ code, what } => { _ = @fmt(&io, "{} after {}\n", ui_gl::name_gl_error{ code }, what) }
+            ui_sdl::failed => { _ = @fmt(&io, "SDL: {}\n", ui_sdl::get_last_error{ &sdl }) }
+            else => {}
+        }
+        io::flush{ &io }
+        return 1
+    }
+    io::flush{ &io }
+    return code
+}
+
+// ---- options
+
+fn read_options { mut io: Io, args: Args } -> ?Options {
+    let mut o = Options{
+        font = null, fallback = null, script = null, shot = null, headless = false, dark = true,
+        scale = 1.0, width = WIDTH_DEFAULT, height = HEIGHT_DEFAULT, frames = -1,
+    }
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        if slice::eq_bytes{ a, b = "--headless" } {
+            o.headless = true
+            i = i + 1
+            continue
+        }
+        if i + 1 >= args.len {
+            _ = @fmt(&io, "tasks: {} needs a value or is not an option\n", a)
+            return null
+        }
+        let v = args[i + 1]
+        i = i + 2
+        if slice::eq_bytes{ a, b = "--font" } {
+            o.font = v
+        } else if slice::eq_bytes{ a, b = "--fallback" } {
+            o.fallback = v
+        } else if slice::eq_bytes{ a, b = "--script" } {
+            o.script = v
+        } else if slice::eq_bytes{ a, b = "--shot" } {
+            o.shot = v
+        } else if slice::eq_bytes{ a, b = "--theme" } {
+            if slice::eq_bytes{ a = v, b = "light" } {
+                o.dark = false
+            } else if slice::eq_bytes{ a = v, b = "dark" } {
+                o.dark = true
+            } else {
+                return null
+            }
+        } else if slice::eq_bytes{ a, b = "--scale" } {
+            let s = ui_test::parse_decimal{ s = v } ifnull { return null }
+            if not (s > 0.0) or s > 8.0 { return null }
+            o.scale = s
+        } else if slice::eq_bytes{ a, b = "--frames" } {
+            let n = ui_test::parse_int{ s = v } ifnull { return null }
+            if n < 1 { return null }
+            o.frames = n
+        } else if slice::eq_bytes{ a, b = "--size" } {
+            let mut x: usize = 0
+            while x < v.len and v[x] != 'x' { x = x + 1 }
+            if x >= v.len { return null }
+            let w = ui_test::parse_int{ s = v[..x] } ifnull { return null }
+            let h = ui_test::parse_int{ s = v[x + 1..] } ifnull { return null }
+            if w < 64 or h < 64 or w > 4096 or h > 4096 { return null }
+            o.width = @as(f32, w)
+            o.height = @as(f32, h)
+        } else {
+            _ = @fmt(&io, "tasks: unknown option {}\n", a)
+            return null
+        }
+    }
+    if o.headless and o.frames < 0 and o.script == null { o.frames = 2 }
+    return o
+}
+
+// A font file's bytes: the path given, or the first of the platform's defaults that reads.
+struct FontFile { path: []u8, bytes: ?[]u8 }
+
+fn read_font { mut fs: Fs, mut heap: arena::Arena, path: ?[]u8, windows: [][]u8, macos: [][]u8, linux: [][]u8 } -> FontFile {
+    if let p = path {
+        let bytes = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = p } iferr { return FontFile{ path = p, bytes = null } }
+        return FontFile{ path = p, bytes }
+    }
+    let defaults: [][]u8 = match target::OS { windows => windows, macos => macos, linux => linux }
+    for p in defaults {
+        let bytes = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = p } iferr { continue }
+        return FontFile{ path = p, bytes }
+    }
+    return FontFile{ path = if defaults.len > 0 { defaults[0] } else { "" }, bytes = null }
+}
+
+// ---- the host's state between frames
+
+struct Shell {
+    host: ui_sdl::Host, dev: ui_gl::Device, staged: ui_stage::Staged, provider: ui::TextProvider,
+    app: tasks::App,
+    headless: bool,
+    scripted: bool,                         // a script runs: every frame is STEP_DT long, in a window too
+    width: i32, height: i32,                // headless: the surface in pixels
+    zoom: f32,                              // --scale: on the monitor's scale in a window, the scale headless
+    pointer_scale: f32,                     // in a window: device pixels a window coordinate
+    monitor: f32,                           // in a window: the monitor's scale at the last frame (0: none yet)
+    least_scale: f32,                       // the scale the window's least size was set at
+    requests: ui::Requests,                 // the last frame's
+    background: ui::Color,                  // what the last frame was cleared to
+    owed: u32,                              // frames still to draw: after an event, a change of state, a resize
+    idle_time: f32,                         // headless: time that passed with no frame, which the next frame's dt takes
+    frames: u32, unclean: u32, dropped: u32,
+    active: bool,                           // the window has the OS's focus
+    quit: bool, failed: bool,
+}
+
+fn run {
+    mut io: Io, mut fs: Fs, mut sdl: ui_sdl::Sdl, mut fonts: ui_fonts::Fonts, mut heap: arena::Arena,
+    opts: Options, font: []u8, fallback: ?[]u8, log: []mut u8,
+} -> !i32 {
+    try ui_sdl::init{ &sdl }
+    defer ui_sdl::quit{ &sdl }
+    let width = ui::round_pixels{ v = opts.width * (if opts.headless { opts.scale } else { 1.0 }) }
+    let height = ui::round_pixels{ v = opts.height * (if opts.headless { opts.scale } else { 1.0 }) }
+    let mut host = try ui_sdl::open_gl_window{ &sdl, realloc = arena::alloc, &heap, title = "Tasks",
+        width = if opts.headless { 64 } else { width }, height = if opts.headless { 64 } else { height },
+        hidden = opts.headless, resizable = not opts.headless, clipboard = 65536 }
+    defer ui_sdl::close_window{ &sdl, &host }
+    if not opts.headless { ui_sdl::set_swap_interval{ &sdl, interval = 1 } iferr {} }
+    let mut dev = try ui_gl::open{ get_proc = ui_sdl::get_gl_proc{ &sdl, _ }, realloc = arena::alloc, &heap, options = ui_gl::Options{ .. }, log }
+    defer ui_gl::close{ &dev }
+
+    let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
+    defer ui_fonts::close{ &lib }
+    let face = try ui_fonts::add_face{ &lib, data = font, index = 0 }
+    if let more = fallback {
+        let extra = try ui_fonts::add_face{ &lib, data = more, index = 0 }
+        ui_fonts::add_fallback{ &lib, face = extra }
+    }
+    let mut gui = try ui::make{ realloc = arena::alloc, &heap, cap = ui::Capacity{ .. } }
+    let text_font = ui_fonts::make_font{ &lib, ui = &gui, face } ifnull { return ui_fonts::closed }
+    let provider = ui_fonts::get_provider{ lib = &lib }
+    ui::set_provider{ ui = &gui, provider }
+    gui.theme.font = text_font
+
+    let staged = try ui_stage::make{ realloc = arena::alloc, &heap, cap = ui_stage::Capacity{ .. } }
+    let mut app = tasks::make_app{}
+    app.dark = opts.dark
+    let mut shell = Shell{
+        host, dev, staged, provider, app, headless = opts.headless, scripted = opts.script != null,
+        width, height, zoom = opts.scale, pointer_scale = 1.0, monitor = 0.0, least_scale = 0.0,
+        requests = ui::Requests{ .. }, background = ui::Color{ .. }, owed = 2, idle_time = 0.0,
+        frames = 0, unclean = 0, dropped = 0, active = true, quit = false, failed = false,
+    }
+    if opts.headless {
+        try ui_gl::make_target{ dev = &shell.dev, width = @as(u32, width), height = @as(u32, height) }
+    } else {
+        fit_window{ &shell, &sdl, width = opts.width, height = opts.height }
+    }
+
+    let mut script_failed: u32 = 0
+    if let path = opts.script {
+        let text = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } iferr {
+            _ = @fmt(&io, "tasks: cannot read the script {}\n", path)
+            return 1
+        }
+        // The clipboard the user had, to put back after the script's copies.
+        let kept = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65536 }
+        let kept_len = keep_clipboard{ &shell, &sdl, into = kept }
+        let result = ui_test::run_script{ &io, ui = &gui, text, dt = STEP_DT, host = take_action{ &shell, &sdl, &io, &fs, &heap, _ } }
+        _ = @fmt(&io, "tasks: script {}: {} lines, {} failed, {} frames{}\n", path, result.lines, result.failed, result.frames,
+            if result.stopped { ", stopped early" } else { "" })
+        script_failed = result.failed
+        if kept_len > 0 { ui_sdl::set_clipboard{ &sdl, host = &shell.host, text = kept[..kept_len] } }
+    } else {
+        run_frames{ &shell, &sdl, &io, ui = &gui, limit = opts.frames }
+    }
+    if let path = opts.shot {
+        if not write_shot{ &shell, &io, &fs, &heap, path } { shell.failed = true }
+    }
+    let s = lib.stats
+    let refused = s.missing + s.too_big + s.unknown + s.sizes_full + s.bad_layout + s.failed + s.bad_bitmap + s.truncated + s.bad_size + s.fallbacks_full
+    _ = @fmt(&io, "tasks: {} frames, {} not well formed, {} shapes dropped in staging; fonts: {} glyphs rasterised, {} refused ({} missing)\n",
+        shell.frames, shell.unclean, shell.dropped, s.rasterized, refused, s.missing)
+    let ok = not shell.failed and shell.unclean == 0 and shell.dropped == 0 and script_failed == 0 and refused == 0
+    return if ok { 0 } else { 1 }
+}
+
+// The window at `width` by `height` logical units on the monitor it opened on, and its least size.
+fn fit_window { mut shell: Shell, mut sdl: ui_sdl::Sdl, width: f32, height: f32 } {
+    let sizes = ui_sdl::get_sizes{ &sdl, host = shell.host, zoom = shell.zoom }
+    shell.pointer_scale = sizes.pointer_scale
+    shell.monitor = sizes.scale / shell.zoom
+    ui_sdl::set_window_size{ &sdl, host = shell.host, width = ui::round_pixels{ v = width * sizes.scale }, height = ui::round_pixels{ v = height * sizes.scale }, pointer_scale = shell.pointer_scale }
+}
+
+// What the clipboard holds now, into `into`; how many bytes. The host reads it as it does for a
+// paste, and the paste it would hand over is taken here instead.
+fn keep_clipboard { mut shell: Shell, mut sdl: ui_sdl::Sdl, into: []mut u8 } -> usize {
+    ui_sdl::read_clipboard{ &sdl, host = &shell.host }
+    let event = ui_sdl::poll{ &sdl, host = &shell.host } ifnull { return 0 }
+    match event {
+        paste{ text } => {
+            let n = @min(text.len, into.len)
+            slice::copy(u8){ dst = into[..n], src = text[..n] }
+            return n
+        }
+        else => { return 0 }
+    }
+}
+
+// ---- frames
+
+// What the script reader asks: a frame, a picture of the last one, a new size, or the idle loop.
+fn take_action {
+    mut shell: Shell, mut sdl: ui_sdl::Sdl, mut io: Io, mut fs: Fs, mut heap: arena::Arena,
+    mut ui: ui::Ui, action: ui_test::ScriptAction,
+} -> bool {
+    match action {
+        step => {
+            _ = pump_events{ &shell, &sdl, &ui, wait = false, timeout = 0 }
+            if shell.quit { return false }
+            return draw_frame{ &shell, &sdl, &io, &ui }
+        }
+        shoot{ path } => { return write_shot{ &shell, &io, &fs, &heap, path } }
+        resize{ width, height } => { return resize_surface{ &shell, &sdl, &io, &ui, width, height } }
+        idle{ seconds, least, most } => {
+            let drawn = run_idle{ &shell, &sdl, &io, &ui, seconds }
+            _ = @fmt(&io, "tasks: idle for {} s: {} frames drawn (the line wants {} to {})\n", seconds, drawn, least, most)
+            return drawn >= @as(u32, least) and drawn <= @as(u32, most)
+        }
+    }
+}
+
+// The surface to `width` by `height` device pixels: the offscreen target headless, the window
+// otherwise (its resize event comes in with the next frame's events).
+fn resize_surface { mut shell: Shell, mut sdl: ui_sdl::Sdl, mut io: Io, mut ui: ui::Ui, width: i32, height: i32 } -> bool {
+    if shell.headless {
+        ui_gl::make_target{ dev = &shell.dev, width = @as(u32, width), height = @as(u32, height) } iferr {
+            _ = @fmt(&io, "tasks: cannot make a target of {}x{}\n", width, height)
+            return false
+        }
+        shell.width = width
+        shell.height = height
+        shell.owed = @max(shell.owed, 1)
+        return true
+    }
+    ui_sdl::set_window_size{ &sdl, host = shell.host, width, height, pointer_scale = shell.pointer_scale }
+    return true
+}
+
+// Frames until `limit` (-1: until the window closes). In a window with no limit it waits for an
+// event while nothing is owed and nothing animates, so an idle program draws nothing; with a limit
+// it draws every frame, so the run ends.
+fn run_frames { mut shell: Shell, mut sdl: ui_sdl::Sdl, mut io: Io, mut ui: ui::Ui, limit: i32 } {
+    while not shell.quit {
+        if limit >= 0 and shell.frames >= @as(u32, limit) { break }
+        if not shell.headless and limit < 0 {
+            if not step_loop{ &shell, &sdl, &io, &ui, timeout = 500 } { break }
+            continue
+        }
+        if not shell.headless { _ = pump_events{ &shell, &sdl, &ui, wait = false, timeout = 0 } }
+        if not draw_frame{ &shell, &sdl, &io, &ui } { break }
+    }
+}
+
+// One turn of the event-driven loop: wait up to `timeout` milliseconds for an event while nothing
+// is owed and nothing animates, then draw a frame if one is due. False when the program is to stop.
+// Whether it drew is in `shell.frames`. While the window is in the background, what animates (a
+// caret blinking in a field left focused) is drawn twice a second, not at the display's rate.
+fn step_loop { mut shell: Shell, mut sdl: ui_sdl::Sdl, mut io: Io, mut ui: ui::Ui, timeout: i32 } -> bool {
+    let busy = shell.owed > 0 or (shell.requests.animating and shell.active)
+    _ = pump_events{ &shell, &sdl, &ui, wait = not busy, timeout = if shell.requests.animating { @min(timeout, 500) } else { timeout } }
+    if shell.quit { return false }
+    if shell.owed == 0 and not shell.requests.animating { return true }
+    return draw_frame{ &shell, &sdl, &io, &ui }
+}
+
+// The loop for `seconds` with no input from a script: in a window, the real loop for that long by
+// the clock; headless, a 60th of a second at a time, a frame drawn only when one is due. How many
+// frames it drew.
+fn run_idle { mut shell: Shell, mut sdl: ui_sdl::Sdl, mut io: Io, mut ui: ui::Ui, seconds: f32 } -> u32 {
+    let before = shell.frames
+    if shell.headless {
+        let ticks = ui::ceil_pixels{ v = seconds / STEP_DT }
+        for _ in 0..ticks {
+            _ = pump_events{ &shell, &sdl, &ui, wait = false, timeout = 0 }
+            if shell.owed > 0 or shell.requests.animating {
+                if not draw_frame{ &shell, &sdl, &io, &ui } { break }
+            } else {
+                shell.idle_time = shell.idle_time + STEP_DT
+            }
+        }
+        return shell.frames - before
+    }
+    let mut passed: f32 = 0.0
+    _ = ui_sdl::get_dt{ &sdl, host = &shell.host }
+    while passed < seconds and not shell.quit {
+        let left = ui::ceil_pixels{ v = (seconds - passed) * 1000.0 }
+        if not step_loop{ &shell, &sdl, &io, &ui, timeout = @clamp(left, 1, 100) } { break }
+        passed = passed + ui_sdl::get_dt{ &sdl, host = &shell.host }
+    }
+    return shell.frames - before
+}
+
+// Hands the window's events to the Ui; with `wait`, waits up to `timeout` milliseconds for the
+// first. An event the program draws for (any but those SDL sends that change nothing) makes two
+// frames owed: the one that takes it, and one more, since what is recorded before a widget that
+// changed shows the change a frame later. Whether any came.
+fn pump_events { mut shell: Shell, mut sdl: ui_sdl::Sdl, mut ui: ui::Ui, wait: bool, timeout: i32 } -> bool {
+    let mut any = false
+    let mut first = true
+    while true {
+        let next = if first and wait { ui_sdl::wait_event{ &sdl, host = &shell.host, timeout } } else { ui_sdl::poll{ &sdl, host = &shell.host } }
+        first = false
+        let e = next ifnull { break }
+        match e {
+            quit | close => { shell.quit = true }
+            other => { continue }
+            focus{ gained } => {
+                shell.active = gained
+                if let event = ui_sdl::to_event{ event = e, pointer_scale = shell.pointer_scale } { _ = ui::push_event{ &ui, event } }
+            }
+            else => {
+                if let event = ui_sdl::to_event{ event = e, pointer_scale = shell.pointer_scale } { _ = ui::push_event{ &ui, event } }
+            }
+        }
+        any = true
+        shell.owed = @max(shell.owed, 2)
+    }
+    return any
+}
+
+// One frame of the program, staged and drawn: into the offscreen target when headless, into the
+// window (then shown) otherwise. A frame that changed the program's state owes one more. False
+// when the backend failed.
+fn draw_frame { mut shell: Shell, mut sdl: ui_sdl::Sdl, mut io: Io, mut ui: ui::Ui } -> bool {
+    let zoom = shell.zoom * tasks::get_zoom{ app = shell.app }
+    let dt = STEP_DT + shell.idle_time
+    shell.idle_time = 0.0
+    let mut frame = ui::FrameInfo{ width = shell.width, height = shell.height, scale = zoom, dt }
+    if not shell.headless {
+        let sizes = ui_sdl::get_sizes{ &sdl, host = shell.host, zoom }
+        shell.pointer_scale = sizes.pointer_scale
+        let elapsed = ui_sdl::get_dt{ &sdl, host = &shell.host }
+        frame = ui_sdl::make_frame{ sizes, dt = if shell.scripted { dt } else { elapsed } }
+        follow_monitor{ &shell, &sdl, sizes, zoom }
+    }
+    let before = @hash(shell.app)
+    ui::begin_frame{ &ui, frame }
+    tasks::show_app{ &ui, app = &shell.app }
+    ui::end_frame{ &ui }
+    shell.frames = shell.frames + 1
+    if shell.owed > 0 { shell.owed = shell.owed - 1 }
+    if @hash(shell.app) != before { shell.owed = @max(shell.owed, 1) }
+    if shell.app.quit { shell.quit = true }
+    if ui.stats.dropped != 0 or ui.stats.problems != 0 or ui.draw.dropped != 0 {
+        shell.unclean = shell.unclean + 1
+        if shell.unclean == 1 { report_problems{ &io, ui } }
+    }
+    shell.requests = ui::take_requests{ &ui }
+    // The hidden window of a headless run has a clipboard too, so a script's copy and paste take
+    // the same path as the program's in a window.
+    ui_sdl::apply_requests{ &sdl, host = &shell.host, requests = shell.requests, pointer_scale = shell.pointer_scale }
+    ui_stage::stage{ out = &shell.staged, list = &ui.draw, provider = shell.provider }
+    shell.dropped = shell.dropped + shell.staged.dropped
+    shell.background = ui.theme.background
+    ui_gl::clear{ dev = &shell.dev, color = shell.background }
+    ui_gl::render{ dev = &shell.dev, staged = &shell.staged } iferr err{ error } {
+        _ = @fmt(&io, "tasks: render failed: {}\n", error)
+        if error is ui_gl::gl_failed{ code, what } { _ = @fmt(&io, "{} after {}\n", ui_gl::name_gl_error{ code }, what) }
+        shell.failed = true
+        return false
+    }
+    if shell.dev.stats.dropped != 0 { shell.dropped = shell.dropped + shell.dev.stats.dropped }
+    if not shell.headless { ui_sdl::swap{ &sdl, host = shell.host } }
+    return true
+}
+
+// In a window: when the monitor's scale changed (the window went to another display), the window
+// keeps its logical size; and its least size follows the scale.
+fn follow_monitor { mut shell: Shell, mut sdl: ui_sdl::Sdl, sizes: ui_sdl::Sizes, zoom: f32 } {
+    let monitor = sizes.scale / zoom
+    if shell.monitor > 0.0 and monitor != shell.monitor {
+        let ratio = monitor / shell.monitor
+        ui_sdl::set_window_size{ &sdl, host = shell.host, width = ui::round_pixels{ v = @as(f32, sizes.width) * ratio },
+            height = ui::round_pixels{ v = @as(f32, sizes.height) * ratio }, pointer_scale = sizes.pointer_scale }
+    }
+    shell.monitor = monitor
+    if sizes.scale != shell.least_scale {
+        ui_sdl::set_minimum_size{ &sdl, host = shell.host, width = ui::round_pixels{ v = WIDTH_LEAST * sizes.scale },
+            height = ui::round_pixels{ v = HEIGHT_LEAST * sizes.scale }, pointer_scale = sizes.pointer_scale }
+        shell.least_scale = sizes.scale
+    }
+}
+
+// The first frame that was not well formed: what went wrong.
+fn report_problems { mut io: Io, ui: ui::Ui } {
+    _ = @fmt(&io, "tasks: frame {}: {} dropped, {} problems\n", ui.frame, ui.stats.dropped, ui.stats.problems)
+    for i in 0..@as(usize, ui.problem_count) {
+        let p = ui.problems[i]
+        _ = @fmt(&io, "  problem {} at {}\n", @as(u8, p.kind), ui::get_text{ ui, span = p.path })
+    }
+}
+
+// The frame drawn last, as a PNG at `path`. Headless it is read from the offscreen target. In a
+// window the swap has left the back buffer undefined, so the frame's staged draws are drawn into
+// it again (nothing is recorded or staged anew) and read before any swap.
+fn write_shot { mut shell: Shell, mut io: Io, mut fs: Fs, mut heap: arena::Arena, path: []u8 } -> bool {
+    if not shell.headless and shell.frames > 0 {
+        ui_gl::clear{ dev = &shell.dev, color = shell.background }
+        ui_gl::render{ dev = &shell.dev, staged = &shell.staged } iferr {
+            _ = @fmt(&io, "tasks: cannot draw the frame again for its picture\n")
+            return false
+        }
+    }
+    let width = shell.dev.width
+    let height = shell.dev.height
+    if width == 0 or height == 0 { return false }
+    let pixels = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = @as(usize, width) * @as(usize, height) * 4 } iferr { return false }
+    ui_gl::read_pixels{ dev = &shell.dev, into = pixels } iferr {
+        _ = @fmt(&io, "tasks: cannot read the frame's pixels\n")
+        return false
+    }
+    let picture = ui_test::Picture{ width, height, channels = 4, pixels }
+    ui_test::write_png{ &fs, realloc = arena::alloc, &heap, path, picture, bottom_up = false } iferr {
+        _ = @fmt(&io, "tasks: cannot write {}\n", path)
+        return false
+    }
+    _ = @fmt(&io, "tasks: wrote {} ({}x{})\n", path, width, height)
+    return true
+}

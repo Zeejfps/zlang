@@ -51,12 +51,14 @@ namespace ui {
         cursor: i64 = -1, picked: i64 = -1, activated: bool = false,
     }
 
-    // A row being recorded, and what happened to it. `scope` is closed by `ui::end`. `clicked`: a
-    // click, or a key moved the selection to it: select it. `activated`: a double click, or Enter
-    // while it is the list's cursor. `context`: a right press, for a context menu. `selected`: it
-    // is drawn selected.
+    // A row being recorded, and what happened to it. `scope` is closed by `ui::end`. `id`: the
+    // row's element, the target a context menu takes (`begin_context_menu`). `clicked`: a click, or
+    // a key moved the selection to it: select it. `activated`: a double click, or Enter while it is
+    // the list's cursor. `context`: a right press, for a context menu. `selected`: it is drawn
+    // selected.
     struct ListRow {
         scope: Scope = Scope{ .. },
+        id: Id = NO_ID,
         clicked: bool = false, activated: bool = false, context: bool = false,
         hovered: bool = false, selected: bool = false,
     }
@@ -230,7 +232,7 @@ namespace ui {
         if not list.enabled { flags = flags | NODE_DISABLED }
         if it.held { flags = flags | NODE_PRESSED }
         describe{ &ui, id, role = Role::list_row, label = "", value = @as(f32, index), flags }
-        return ListRow{ scope, clicked, activated, context = menu.pressed, hovered = it.hovered or menu.hovered, selected = shown }
+        return ListRow{ scope, id, clicked, activated, context = menu.pressed, hovered = it.hovered or menu.hovered, selected = shown }
     }
 
     // What happened to a row and to one of its parts, as one: either one hovered, pressed, held or

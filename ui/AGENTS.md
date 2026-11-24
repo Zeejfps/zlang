@@ -125,6 +125,8 @@ kotor/tools/ctxc run ui/tests/draw -- --update         # rewrite goldens after a
 kotor/tools/ctxc run ui/samples/demo_gl                # the gallery in a window
 kotor/tools/ctxc run ui/samples/demo_gl -- --headless --page Windows --theme light --scale 1.5 --shot ui/out/windows.png
 kotor/tools/ctxc run ui/samples/demo_gl -- --headless --script ui/samples/gallery/tour.txt --shot ui/out/tour.png
+kotor/tools/ctxc run ui/samples/tasks                  # stage 13: the desktop application, in a window
+kotor/tools/ctxc run ui/samples/tasks -- --headless --script ui/samples/tasks/tour.txt   # its walk-through; ui/out/tasks-*.png
 kotor/tools/ctxc run kotor/tools/uicompat              # ui built beside kotor's libraries
 ui/tools/check                                         # the shader check, every headless ui test in turn, then uicompat
 ```
@@ -137,8 +139,13 @@ script, then stop), `--frames N` (headless without a script: 2), `--headless` (a
 of a hidden window), `--shot PATH` (the last frame as a PNG when it stops). It exits 1 when a
 frame was not well formed, GL reported an error, the font library refused something or a script
 line failed. A script (`ui/test/script.ctx` has the commands: frames, wait, move, down, up, click,
-drag, key, type, wheel, shot, expect, value) is how a screenshot shows a menu open, a combo open, a
-tooltip or a drag in progress.
+drag, key, type, wheel, shot, expect, value, text, resize, idle) is how a screenshot shows a menu
+open, a combo open, a tooltip or a drag in progress. `resize` and `idle` are asked of the host:
+demo_gl has neither, tasks has both (`idle 2 0 0`: two seconds of its event loop draw no frame).
+
+tasks takes the same options but `--page` (its `--size` default is 520x620), and `--fallback PATH`
+(a face for the characters the font lacks; default the platform's CJK face, `msyh.ttc` on
+Windows). It draws only when an event came, its state changed or a frame asked to animate.
 
 Later stages add `ui/tests/<name>` programs (PLAN.md section 6.2 lists them with their stage). A test
 exits 1 when any check fails and prints each failure; `ui/tools/check` exits non-zero if any test does.
@@ -212,6 +219,9 @@ ui/
                                    page_windows.ctx, page_data.ctx, each with its LISTED flag; tour.txt
                                    (a script through the basic page)
   samples/demo_gl/                 program: the gallery on OpenGL and SDL (options under Commands)
+  samples/tasks/   namespace tasks program: a to-do list as ordinary desktop software (stage 13): app.ctx
+                                   (the application, core and widgets only), main.ctx (the host: window,
+                                   fonts, the event-driven loop, the script hook), tour.txt
   stage/      namespace ui_stage   the staged level: instances, clip slots, atlas and glyph cache, batching, passes;
                                    its canvas is the surface in device pixels
   fonts/      namespace ui_fonts   outline fonts: FreeType rasterises, HarfBuzz shapes; the TextProvider
@@ -232,7 +242,7 @@ ui/
   out/                             (ignored) screenshots
 ```
 
-Planned packages (PLAN.md section 2.1): `vulkan`, `samples/tasks`, `samples/demo_vulkan`. Backends and hosts are siblings of `core`, never children, because `add_sources` adds a
+Planned packages (PLAN.md section 2.1): `vulkan`, `samples/demo_vulkan`. Backends and hosts are siblings of `core`, never children, because `add_sources` adds a
 directory and everything below it; a program lists exactly the directories it needs. A test or sample
 (anything with a `fn main`) must not live under a directory another program adds.
 

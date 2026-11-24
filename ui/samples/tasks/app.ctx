@@ -1,0 +1,696 @@
+// tasks: a to-do list as ordinary desktop software (plan section 3.1, stage 13), written against
+// ui's public calls the way any program would be: ui/core and ui/widgets, nothing of ui::tree,
+// ui::layout or ui::emit. main.ctx is the host around it (window, fonts, the loop); this file is
+// only the application, so it runs the same in a window, headless or under a script.
+//
+// What it is: a menu bar (File, Edit, View, Help), a field and a button that add a task, a list of
+// tasks (a box that marks one done, its title, a button that deletes it), a context menu on a task,
+// dialogs to rename a task, for preferences and about the program, and a status bar. Copy, cut and
+// paste go through the host's clipboard: a task's title is copied as text, and pasted text becomes
+// tasks, a line each.
+//
+// The keyboard, beside the stock widgets' own (Tab, Enter, Space, the arrows in the list and the
+// menus, Escape on a menu or a dialog): in the list, Space marks the selected task done or not,
+// Delete deletes it, Enter renames it, Alt+Up and Alt+Down move it, the Menu key opens its menu;
+// anywhere a text field does not take them, Ctrl+C, Ctrl+X and Ctrl+V copy, cut and paste a task
+// and Ctrl+Z brings back the task deleted last.
+//
+// Units: everything here is logical units; the host picks the surface's pixels and the scale (the
+// monitor's times this program's zoom, `get_zoom`). The two widgets of its own (`add_row_check`,
+// `add_icon_button`) paint their marks in pixels the core converted for them.
+namespace tasks {
+    const MAX_TASKS: usize = 200
+    const TITLE_ROOM: usize = 120
+    // A task row's height and the widest the content column grows, in logical units.
+    const ROW_HEIGHT: f32 = 34.0
+    const CONTENT_MAX: f32 = 760.0
+
+    const ZOOM_COUNT: usize = 6
+    const ZOOMS: [6]f32 = [0.8, 0.9, 1.0, 1.25, 1.5, 2.0]
+    const ZOOM_NAMES: [6][]u8 = ["80 %", "90 %", "100 %", "125 %", "150 %", "200 %"]
+    const ZOOM_NORMAL: i32 = 2
+
+    const THEME_NAMES: [2][]u8 = ["Dark", "Light"]
+
+    struct Task { title: [120]u8, len: usize, done: bool }
+
+    // What the status bar says about the last thing done.
+    enum Note: u8 { ready, added, deleted, restored, copied, pasted, nothing_pasted, renamed, moved, cleared, full }
+
+    struct App {
+        tasks: [200]Task, count: usize,
+        selected: i32,                              // a task's index, -1: none
+        shown: [200]u16, shown_count: usize,        // the tasks the list shows, in its order
+        draft: [120]u8, draft_len: usize,           // the field that adds a task
+        entry_id: ui::Id,                           // its id, for File > New task
+        edit: [120]u8, edit_len: usize, editing: i32,   // the rename dialog's text, and its task
+        rename: bool, prefs: bool, about: bool,     // which dialog is up
+        focus_rename: bool,                         // the rename field is to take the focus
+        dark: bool, hide_done: bool, zoom: i32,
+        undo: Task, undo_at: usize, can_undo: bool, // the task deleted last
+        paste_asked: bool,                          // the host answers with the clipboard next frame
+        menu_open: bool,                            // one of the program's menus was open
+        note: Note, note_count: u32,
+        quit: bool,
+    }
+
+    const SEEDS: [5][]u8 = [
+        "Water the plants",
+        "Reply to Ada about the budget",
+        "Book the dentist for Tuesday",
+        "Order \xE6\x8A\xB9\xE8\x8C\xB6 (matcha) for the office",       // the fallback face draws the two characters
+        "Back up the laptop",
+    ]
+
+    fn make_app {} -> App {
+        let mut app: App
+        app.count = 0
+        app.selected = -1
+        app.shown_count = 0
+        app.draft_len = 0
+        app.entry_id = ui::NO_ID
+        app.edit_len = 0
+        app.editing = -1
+        app.rename = false
+        app.prefs = false
+        app.about = false
+        app.focus_rename = false
+        app.dark = true
+        app.hide_done = false
+        app.zoom = ZOOM_NORMAL
+        app.undo_at = 0
+        app.can_undo = false
+        app.undo.len = 0
+        app.undo.done = false
+        app.paste_asked = false
+        app.menu_open = false
+        app.note = Note::ready
+        app.note_count = 0
+        app.quit = false
+        for s in SEEDS { _ = add_task{ &app, title = s } }
+        app.tasks[0].done = true
+        app.selected = -1
+        app.note = Note::ready
+        return app
+    }
+
+    // The zoom the program asks of its host: a factor on the monitor's scale.
+    fn get_zoom { app: App } -> f32 {
+        return ZOOMS[@as(usize, @clamp(app.zoom, 0, @as(i32, ZOOM_COUNT) - 1))]
+    }
+
+    // ---- what the program does to its tasks
+
+    // Adds a task titled `title` (cut to the room a title has, at a character), at the end, and
+    // selects it. False when the list is full or the title is empty.
+    fn add_task { mut app: App, title: []u8 } -> bool {
+        let text = trim_text{ text = title }
+        if text.len == 0 { return false }
+        if app.count >= MAX_TASKS {
+            app.note = Note::full
+            return false
+        }
+        let n = fit_text{ text, room = TITLE_ROOM }
+        let at = app.count
+        slice::copy(u8){ dst = app.tasks[at].title[..n], src = text[..n] }
+        app.tasks[at].len = n
+        app.tasks[at].done = false
+        app.count = app.count + 1
+        app.selected = @as(i32, at)
+        app.note = Note::added
+        return true
+    }
+
+    // Deletes task `at`, keeping it for Edit > Undo; the selection stays on the row it was on.
+    fn remove_task { mut app: App, at: usize } {
+        if at >= app.count { return }
+        app.undo = app.tasks[at]
+        app.undo_at = at
+        app.can_undo = true
+        for i in at..app.count - 1 { app.tasks[i] = app.tasks[i + 1] }
+        app.count = app.count - 1
+        let sel = app.selected
+        if sel > @as(i32, at) or (sel == @as(i32, at) and sel >= @as(i32, app.count)) { app.selected = sel - 1 }
+        app.note = Note::deleted
+    }
+
+    // Puts the task deleted last back where it was.
+    fn restore_task { mut app: App } {
+        if not app.can_undo or app.count >= MAX_TASKS { return }
+        let at = @min(app.undo_at, app.count)
+        let mut i = app.count
+        while i > at {
+            app.tasks[i] = app.tasks[i - 1]
+            i = i - 1
+        }
+        app.tasks[at] = app.undo
+        app.count = app.count + 1
+        app.selected = @as(i32, at)
+        app.can_undo = false
+        app.note = Note::restored
+    }
+
+    // Moves task `at` one place up (`by` -1) or down (1), the selection with it.
+    fn move_task { mut app: App, at: usize, by: i32 } {
+        let to = @as(i64, at) + @as(i64, by)
+        if at >= app.count or to < 0 or to >= @as(i64, app.count) { return }
+        let other = @as(usize, to)
+        let kept = app.tasks[other]
+        app.tasks[other] = app.tasks[at]
+        app.tasks[at] = kept
+        app.selected = @as(i32, other)
+        app.note = Note::moved
+    }
+
+    fn count_done { app: App } -> usize {
+        let mut n: usize = 0
+        for i in 0..app.count {
+            if app.tasks[i].done { n = n + 1 }
+        }
+        return n
+    }
+
+    // Deletes every task marked done (Undo brings back none of them: a confirmation would be the
+    // place for a warning, and the menu item says how many go).
+    fn clear_done { mut app: App } {
+        let mut kept: usize = 0
+        for i in 0..app.count {
+            if app.tasks[i].done { continue }
+            app.tasks[kept] = app.tasks[i]
+            kept = kept + 1
+        }
+        app.count = kept
+        app.selected = -1
+        app.can_undo = false
+        app.note = Note::cleared
+    }
+
+    // Each line of `text` that is not blank becomes a task. How many did.
+    fn paste_tasks { mut app: App, text: []u8 } -> u32 {
+        let mut added: u32 = 0
+        let mut start: usize = 0
+        while start < text.len {
+            let mut end = start
+            while end < text.len and text[end] != '\n' and text[end] != '\r' { end = end + 1 }
+            if add_task{ &app, title = text[start..end] } { added = added + 1 }
+            start = end + 1
+        }
+        app.note = if added > 0 { Note::pasted } else { Note::nothing_pasted }
+        app.note_count = added
+        return added
+    }
+
+    // Opens the rename dialog on task `at`, its title in the field, all of it selected.
+    fn begin_rename { mut app: App, at: usize } {
+        if at >= app.count { return }
+        let n = app.tasks[at].len
+        slice::copy(u8){ dst = app.edit[..n], src = app.tasks[at].title[..n] }
+        app.edit_len = n
+        app.editing = @as(i32, at)
+        app.rename = true
+        app.focus_rename = true
+    }
+
+    fn get_selected { app: App } -> ?usize {
+        if app.selected < 0 or app.selected >= @as(i32, app.count) { return null }
+        return @as(usize, app.selected)
+    }
+
+    // `text` without spaces, tabs and line breaks at either end.
+    fn trim_text { text: []u8 } -> []u8 {
+        let mut a: usize = 0
+        let mut b = text.len
+        while a < b and (text[a] == ' ' or text[a] == '\t' or text[a] == '\r' or text[a] == '\n') { a = a + 1 }
+        while b > a and (text[b - 1] == ' ' or text[b - 1] == '\t' or text[b - 1] == '\r' or text[b - 1] == '\n') { b = b - 1 }
+        return text[a..b]
+    }
+
+    // How many bytes of `text` fit `room` without cutting a UTF-8 character.
+    fn fit_text { text: []u8, room: usize } -> usize {
+        if text.len <= room { return text.len }
+        let mut n = room
+        while n > 0 and text[n] >= 0x80 and text[n] < 0xC0 { n = n - 1 }
+        return n
+    }
+
+    // ---- the interface
+
+    // The theme the program's switch chose, keeping the font the host registered.
+    fn apply_theme { mut ui: ui::Ui, dark: bool } {
+        let font = ui.theme.font
+        ui.theme = if dark { ui::make_dark_theme{} } else { ui::make_light_theme{} }
+        ui.theme.font = font
+    }
+
+    // The whole program, filling the surface: the menu bar, the content, the status bar, and
+    // whichever dialog is up.
+    fn show_app { mut ui: ui::Ui, mut app: App } {
+        apply_theme{ &ui, dark = app.dark }
+        let t = ui.theme
+        if app.paste_asked {
+            // The host's answer to the paste asked for last frame.
+            app.paste_asked = false
+            _ = paste_tasks{ &app, text = ui::take_paste{ &ui } }
+        }
+        app.menu_open = false
+        let screen = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = ui::Box{ width = ui::GROW, height = ui::GROW, fill = t.background, .. } }
+        show_menu_bar{ &ui, &app }
+        {
+            // The content, centred, never wider than CONTENT_MAX.
+            let outer = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{
+                width = ui::GROW, height = ui::GROW, padding = ui::inset{ by = t.padding * 2.0 }, align_x = ui::Align::center, ..
+            } }
+            let body = ui::begin_column{ &ui, opts = ui::Opts{ box = ui::Box{
+                width = ui::Size{ kind = ui::SizeKind::grow, max = CONTENT_MAX, .. }, height = ui::GROW, gap = t.gap * 1.5, ..
+            }, .. } }
+            show_header{ &ui, &app }
+            show_entry{ &ui, &app }
+            show_tasks{ &ui, &app }
+            ui::end{ &ui, scope = body }
+            ui::end{ &ui, scope = outer }
+        }
+        show_status{ &ui, &app }
+        ui::end{ &ui, scope = screen }
+        take_shortcuts{ &ui, &app }
+        show_rename_dialog{ &ui, &app }
+        show_prefs_dialog{ &ui, &app }
+        show_about_dialog{ &ui, &app }
+    }
+
+    // ---- the menu bar
+
+    fn show_menu_bar { mut ui: ui::Ui, mut app: App } {
+        let opts = ui::Opts{ .. }
+        let sel = get_selected{ app }
+        let has = sel != null
+        let bar = ui::begin_menu_bar{ &ui, opts }
+        {
+            let file = ui::begin_menu{ &ui, label = "File", opts }
+            if file.open {
+                app.menu_open = true
+                if ui::add_menu_item{ &ui, label = "New task", opts } {
+                    ui::set_focus{ &ui, id = app.entry_id }
+                    ui::set_focus_visible{ &ui, visible = true }
+                }
+                ui::add_menu_separator{ &ui }
+                let done = count_done{ app }
+                _ = @fmt(&ui, "Clear {} completed", done)
+                let clear = ui::take_text{ &ui }
+                if ui::add_menu_item{ &ui, label = clear, opts = ui::Opts{ id = "Clear completed", enabled = done > 0, .. } } { clear_done{ &app } }
+                ui::add_menu_separator{ &ui }
+                if ui::add_menu_item{ &ui, label = "Quit", opts } { app.quit = true }
+            }
+            ui::end{ &ui, scope = file }
+        }
+        {
+            let edit = ui::begin_menu{ &ui, label = "Edit", opts }
+            if edit.open {
+                app.menu_open = true
+                if ui::add_menu_item{ &ui, label = "Undo delete", opts = ui::Opts{ enabled = app.can_undo, tip = "Ctrl+Z", .. } } { restore_task{ &app } }
+                ui::add_menu_separator{ &ui }
+                if ui::add_menu_item{ &ui, label = "Cut", opts = ui::Opts{ enabled = has, tip = "Ctrl+X", .. } } { cut_task{ &ui, &app } }
+                if ui::add_menu_item{ &ui, label = "Copy", opts = ui::Opts{ enabled = has, tip = "Ctrl+C", .. } } { copy_task{ &ui, &app } }
+                if ui::add_menu_item{ &ui, label = "Paste", opts = ui::Opts{ tip = "Ctrl+V: each line a task", .. } } { ask_paste{ &ui, &app } }
+                ui::add_menu_separator{ &ui }
+                show_task_items{ &ui, &app }
+                ui::add_menu_separator{ &ui }
+                if ui::add_menu_item{ &ui, label = "Preferences...", opts } { app.prefs = true }
+            }
+            ui::end{ &ui, scope = edit }
+        }
+        {
+            let view = ui::begin_menu{ &ui, label = "View", opts }
+            if view.open {
+                app.menu_open = true
+                _ = ui::add_menu_check{ &ui, label = "Hide completed", value = &app.hide_done, opts }
+                _ = ui::add_menu_check{ &ui, label = "Dark theme", value = &app.dark, opts }
+                ui::add_menu_separator{ &ui }
+                if ui::add_menu_item{ &ui, label = "Zoom in", opts = ui::Opts{ enabled = app.zoom < @as(i32, ZOOM_COUNT) - 1, .. } } { app.zoom = app.zoom + 1 }
+                if ui::add_menu_item{ &ui, label = "Zoom out", opts = ui::Opts{ enabled = app.zoom > 0, .. } } { app.zoom = app.zoom - 1 }
+                if ui::add_menu_item{ &ui, label = "Actual size", opts = ui::Opts{ enabled = app.zoom != ZOOM_NORMAL, .. } } { app.zoom = ZOOM_NORMAL }
+            }
+            ui::end{ &ui, scope = view }
+        }
+        {
+            let help = ui::begin_menu{ &ui, label = "Help", opts }
+            if help.open {
+                app.menu_open = true
+                if ui::add_menu_item{ &ui, label = "About Tasks", opts } { app.about = true }
+            }
+            ui::end{ &ui, scope = help }
+        }
+        ui::end{ &ui, scope = bar }
+    }
+
+    // The items that act on the selected task: in the Edit menu and in a task's context menu.
+    fn show_task_items { mut ui: ui::Ui, mut app: App } {
+        let sel = get_selected{ app }
+        let has = sel != null
+        let at = sel ifnull 0
+        let done = has and app.tasks[at].done
+        if ui::add_menu_item{ &ui, label = if done { "Mark not done" } else { "Mark done" }, opts = ui::Opts{ id = "Mark done", enabled = has, tip = "Space", .. } } {
+            app.tasks[at].done = not app.tasks[at].done
+        }
+        if ui::add_menu_item{ &ui, label = "Rename...", opts = ui::Opts{ enabled = has, tip = "Enter", .. } } { begin_rename{ &app, at } }
+        if ui::add_menu_item{ &ui, label = "Move up", opts = ui::Opts{ enabled = has and at > 0, tip = "Alt+Up", .. } } { move_task{ &app, at, by = -1 } }
+        if ui::add_menu_item{ &ui, label = "Move down", opts = ui::Opts{ enabled = has and at + 1 < app.count, tip = "Alt+Down", .. } } { move_task{ &app, at, by = 1 } }
+        if ui::add_menu_item{ &ui, label = "Delete", opts = ui::Opts{ enabled = has, tip = "Delete", .. } } { remove_task{ &app, at } }
+    }
+
+    fn copy_task { mut ui: ui::Ui, mut app: App } {
+        let at = get_selected{ app } ifnull { return }
+        ui::copy_text{ &ui, text = app.tasks[at].title[..app.tasks[at].len] }
+        app.note = Note::copied
+    }
+
+    fn cut_task { mut ui: ui::Ui, mut app: App } {
+        let at = get_selected{ app } ifnull { return }
+        ui::copy_text{ &ui, text = app.tasks[at].title[..app.tasks[at].len] }
+        remove_task{ &app, at }
+    }
+
+    fn ask_paste { mut ui: ui::Ui, mut app: App } {
+        ui::ask_paste{ &ui }
+        app.paste_asked = true
+    }
+
+    // ---- the content
+
+    // The title and how far along the list is.
+    fn show_header { mut ui: ui::Ui, mut app: App } {
+        let t = ui.theme
+        let done = count_done{ app }
+        {
+            let row = ui::begin_row{ &ui, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, align_y = ui::Align::end, .. }, .. } }
+            ui::add_text{ &ui, text = "Tasks", style = ui::TextStyle{ size = t.font_size * 1.6, .. }, box = ui::Box{ .. } }
+            ui::add_spacer{ &ui }
+            _ = @fmt(&ui, "{} of {} done", done, app.count)
+            let summary = ui::take_text{ &ui }
+            ui::add_text{ &ui, text = summary, style = ui::TextStyle{ color = t.text_muted, .. }, box = ui::Box{ .. } }
+            ui::describe{ &ui, id = ui::NO_ID, role = ui::Role::label, label = "done count", value = @as(f32, done), flags = 0 }
+            ui::describe{ &ui, id = ui::NO_ID, role = ui::Role::label, label = "task count", value = @as(f32, app.count), flags = 0 }
+            ui::end{ &ui, scope = row }
+        }
+        let part = if app.count > 0 { @as(f32, done) / @as(f32, app.count) } else { 0.0 }
+        ui::add_progress{ &ui, value = part, opts = ui::Opts{ id = "progress", box = ui::Box{ width = ui::GROW, .. }, .. } }
+    }
+
+    // The field a task is typed into, and the button that adds it.
+    fn show_entry { mut ui: ui::Ui, mut app: App } {
+        let row = ui::begin_row{ &ui, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, .. }, .. } }
+        app.entry_id = ui::make_id{ ui, name = "new task" }
+        let mut draft = ui::TextBuf{ bytes = app.draft[..], len = app.draft_len }
+        let entered = ui::add_text_field{ &ui, label = "new task", text = &draft, rules = ui::TextRules{ hint = "What needs doing?", .. },
+            opts = ui::Opts{ box = ui::Box{ width = ui::GROW, .. }, tip = "Enter adds it", .. } }
+        app.draft_len = draft.len
+        let empty = trim_text{ text = app.draft[..app.draft_len] }.len == 0
+        let add = ui::add_button{ &ui, label = "Add", opts = ui::Opts{ enabled = not empty, .. } }
+        if (entered or add) and not empty {
+            if add_task{ &app, title = app.draft[..app.draft_len] } { app.draft_len = 0 }
+        }
+        ui::end{ &ui, scope = row }
+    }
+
+    // The list of tasks, or a word on what to do when there are none, and the menu of a task.
+    fn show_tasks { mut ui: ui::Ui, mut app: App } {
+        let t = ui.theme
+        app.shown_count = 0
+        for i in 0..app.count {
+            if app.hide_done and app.tasks[i].done { continue }
+            app.shown[app.shown_count] = @as(u16, i)
+            app.shown_count = app.shown_count + 1
+        }
+        if let at = get_selected{ app } {
+            if app.hide_done and app.tasks[at].done { app.selected = -1 }
+        }
+        if app.shown_count == 0 {
+            let empty = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = ui::Box{
+                width = ui::GROW, height = ui::GROW, align_x = ui::Align::center, align_y = ui::Align::center, gap = t.gap * 0.5,
+                fill = t.field, border = ui::color_sides{ color = t.border }, border_width = ui::inset{ by = t.border_width }, radius = ui::round{ radius = t.radius }, ..
+            } }
+            let first = if app.count == 0 { "Nothing to do." } else { "Every task is done." }
+            let second = if app.count == 0 { "Type a task above and press Enter." } else { "View > Hide completed shows them again." }
+            ui::add_text{ &ui, text = first, style = ui::TextStyle{ .. }, box = ui::Box{ .. } }
+            ui::add_text{ &ui, text = second, style = ui::TextStyle{ color = t.text_muted, .. }, box = ui::Box{ .. } }
+            ui::end{ &ui, scope = empty }
+            ui::describe{ &ui, id = ui::NO_ID, role = ui::Role::label, label = "no tasks", value = 0.0, flags = 0 }
+            return
+        }
+        let list = ui::begin_list{ &ui, id = "tasks", count = @as(u32, app.shown_count), row_height = ROW_HEIGHT, opts = ui::Opts{ .. } }
+        let mut menu_row = ui::NO_ID
+        for i in list.first..list.last {
+            let at = @as(usize, app.shown[@as(usize, i)])
+            let row = ui::begin_list_row{ &ui, list, index = i, selected = app.selected == @as(i32, at) }
+            if row.clicked { app.selected = @as(i32, at) }
+            if row.activated { begin_rename{ &app, at } }
+            if row.context {
+                app.selected = @as(i32, at)
+                menu_row = row.id
+            }
+            show_task_row{ &ui, &app, at }
+            ui::end{ &ui, scope = row.scope }
+        }
+        ui::end{ &ui, scope = list.scope }
+        if list.focused { take_list_keys{ &ui, &app } }
+        // A right press on a row opens the menu at the pointer for that row; the Menu key, while
+        // the list has the focus, below the list.
+        let target = if menu_row != ui::NO_ID { menu_row } else { list.id }
+        let menu = ui::begin_context_menu{ &ui, id = "task menu", target, opts = ui::Opts{ .. } }
+        if menu.open {
+            app.menu_open = true
+            show_task_items{ &ui, &app }
+            ui::add_menu_separator{ &ui }
+            if ui::add_menu_item{ &ui, label = "Copy", opts = ui::Opts{ enabled = get_selected{ app } != null, .. } } { copy_task{ &ui, &app } }
+        }
+        ui::end{ &ui, scope = menu }
+    }
+
+    // A task's row: the box that marks it done, its title (muted once done), the button that
+    // deletes it.
+    fn show_task_row { mut ui: ui::Ui, mut app: App, at: usize } {
+        let t = ui.theme
+        let task = app.tasks[at]
+        let title = task.title[..task.len]
+        if add_row_check{ &ui, value = &app.tasks[at].done, tip = "Done" } { app.selected = @as(i32, at) }
+        ui::add_text{ &ui, text = title, style = ui::TextStyle{ color = if task.done { t.text_muted } else { t.text }, overflow = ui::Overflow::ellipsis, .. },
+            box = ui::Box{ width = ui::GROW, .. } }
+        ui::describe_text{ &ui, id = ui::NO_ID, role = ui::Role::label, label = "title", value = 0.0, flags = if task.done { ui::NODE_CHECKED } else { 0 }, text = title }
+        if add_icon_button{ &ui, name = "delete", icon = ui::Icon::cross, tip = "Delete this task" } { remove_task{ &app, at } }
+    }
+
+    // The keys the list answers while it has the focus, beside the ones it takes itself.
+    fn take_list_keys { mut ui: ui::Ui, mut app: App } {
+        let at = get_selected{ app } ifnull { return }
+        if ui::take_key{ &ui, key = ui::Key::space, mods = 0 } { app.tasks[at].done = not app.tasks[at].done }
+        if ui::take_key{ &ui, key = ui::Key::delete, mods = 0 } {
+            remove_task{ &app, at }
+            return
+        }
+        if ui::take_key{ &ui, key = ui::Key::up, mods = ui::MOD_ALT } {
+            move_task{ &app, at, by = -1 }
+            return
+        }
+        if ui::take_key{ &ui, key = ui::Key::down, mods = ui::MOD_ALT } { move_task{ &app, at, by = 1 } }
+    }
+
+    // The program's keys that no widget took: copy, cut, paste and undo on tasks. Not while one
+    // of its menus is open (they act on the menu then), and never behind a dialog (the core gives
+    // code behind a modal no keys).
+    fn take_shortcuts { mut ui: ui::Ui, mut app: App } {
+        if app.menu_open { return }
+        if ui::take_key{ &ui, key = ui::Key::c, mods = ui::MOD_CTRL } { copy_task{ &ui, &app } }
+        if ui::take_key{ &ui, key = ui::Key::x, mods = ui::MOD_CTRL } { cut_task{ &ui, &app } }
+        if ui::take_key{ &ui, key = ui::Key::v, mods = ui::MOD_CTRL } { ask_paste{ &ui, &app } }
+        if ui::take_key{ &ui, key = ui::Key::z, mods = ui::MOD_CTRL } { restore_task{ &app } }
+    }
+
+    // The bar along the bottom: what was done last, and the counts.
+    fn show_status { mut ui: ui::Ui, mut app: App } {
+        let t = ui.theme
+        let bar = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::row, box = ui::Box{
+            width = ui::GROW, height = ui::fix{ size = t.control_height },
+            padding = ui::Insets{ left = t.padding * 2.0, right = t.padding * 2.0, .. }, gap = t.gap * 2.0, align_y = ui::Align::center,
+            fill = t.surface, border = ui::color_sides{ color = t.border }, border_width = ui::Insets{ top = t.border_width, .. }, ..
+        } }
+        // The note gives room up when the bar is short (dots); the counts never do.
+        let style = ui::TextStyle{ color = t.text_muted, .. }
+        match app.note {
+            pasted => { _ = @fmt(&ui, "Pasted {} {}", app.note_count, if app.note_count == 1 { "task" } else { "tasks" }) }
+            else => { _ = @fmt(&ui, "{}", get_note_text{ note = app.note }) }
+        }
+        let note = ui::take_text{ &ui }
+        ui::add_text{ &ui, text = note, style = ui::TextStyle{ color = t.text_muted, overflow = ui::Overflow::ellipsis, .. }, box = ui::Box{ width = ui::GROW, .. } }
+        ui::describe_text{ &ui, id = ui::NO_ID, role = ui::Role::label, label = "status", value = 0.0, flags = 0, text = note }
+        if app.zoom != ZOOM_NORMAL {
+            _ = @fmt(&ui, "Zoom {}", ZOOM_NAMES[@as(usize, app.zoom)])
+            let zoom = ui::take_text{ &ui }
+            ui::add_text{ &ui, text = zoom, style, box = ui::Box{ .. } }
+        }
+        _ = @fmt(&ui, "{} {}, {} done", app.count, if app.count == 1 { "task" } else { "tasks" }, count_done{ app })
+        let counts = ui::take_text{ &ui }
+        ui::add_text{ &ui, text = counts, style, box = ui::Box{ .. } }
+        ui::end{ &ui, scope = bar }
+    }
+
+    fn get_note_text { note: Note } -> []u8 {
+        return match note {
+            ready => { "Enter adds a task. In the list: Space marks it done, Delete deletes it, Enter renames it." }
+            added => { "Added a task." }
+            deleted => { "Deleted a task. Ctrl+Z brings it back." }
+            restored => { "Brought the task back." }
+            copied => { "Copied the task to the clipboard." }
+            pasted => { "Pasted tasks." }
+            nothing_pasted => { "The clipboard held no text to make a task of." }
+            renamed => { "Renamed the task." }
+            moved => { "Moved the task." }
+            cleared => { "Cleared the completed tasks." }
+            full => { "The list is full." }
+        }
+    }
+
+    // ---- dialogs
+
+    fn get_dialog_box { width: f32 } -> ui::Box {
+        return ui::Box{ width = ui::Size{ kind = ui::SizeKind::part, value = 0.92, max = width, .. }, .. }
+    }
+
+    // A row of buttons at the end of a dialog, against its right edge; the caller adds the buttons
+    // and ends it.
+    fn begin_buttons { mut ui: ui::Ui } -> ui::Scope {
+        let row = ui::begin_row{ &ui, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, padding = ui::Insets{ top = ui.theme.gap, .. }, .. }, .. } }
+        ui::add_spacer{ &ui }
+        return row
+    }
+
+    fn show_rename_dialog { mut ui: ui::Ui, mut app: App } {
+        if app.rename and (app.editing < 0 or app.editing >= @as(i32, app.count)) { app.rename = false }
+        let d = ui::begin_dialog{ &ui, title = "Rename task", open = &app.rename, opts = ui::Opts{ box = get_dialog_box{ width = 440.0 }, .. } }
+        if d.open {
+            let id = ui::make_id{ ui, name = "title" }
+            // The dialog puts the focus aside at the end of the frame it opens in, so its field is
+            // given the focus until a frame starts with the field holding it.
+            if app.focus_rename {
+                if ui::is_focused{ ui, id } {
+                    app.focus_rename = false
+                } else {
+                    ui::set_focus{ &ui, id }
+                    ui::set_focus_visible{ &ui, visible = true }
+                }
+            }
+            let mut edit = ui::TextBuf{ bytes = app.edit[..], len = app.edit_len }
+            let entered = ui::add_text_field{ &ui, label = "title", text = &edit, rules = ui::TextRules{ hint = "The task", .. }, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, .. }, .. } }
+            app.edit_len = edit.len
+            let empty = trim_text{ text = app.edit[..app.edit_len] }.len == 0
+            let buttons = begin_buttons{ &ui }
+            if ui::add_button{ &ui, label = "Cancel", opts = ui::Opts{ .. } } { app.rename = false }
+            let save = ui::add_button{ &ui, label = "Save", opts = ui::Opts{ enabled = not empty, .. } }
+            ui::end{ &ui, scope = buttons }
+            if (save or entered) and not empty and app.editing >= 0 and app.editing < @as(i32, app.count) {
+                let at = @as(usize, app.editing)
+                let text = trim_text{ text = app.edit[..app.edit_len] }
+                let n = fit_text{ text, room = TITLE_ROOM }
+                // The text is the dialog's buffer, not the task's: copy it across.
+                let mut kept: [120]u8
+                slice::copy(u8){ dst = kept[..n], src = text[..n] }
+                slice::copy(u8){ dst = app.tasks[at].title[..n], src = kept[..n] }
+                app.tasks[at].len = n
+                app.rename = false
+                app.note = Note::renamed
+            }
+        }
+        ui::end{ &ui, scope = d }
+        if not app.rename { app.focus_rename = false }
+    }
+
+    fn show_prefs_dialog { mut ui: ui::Ui, mut app: App } {
+        let t = ui.theme
+        let d = ui::begin_dialog{ &ui, title = "Preferences", open = &app.prefs, opts = ui::Opts{ box = get_dialog_box{ width = 400.0 }, .. } }
+        if d.open {
+            let label_box = ui::Box{ width = ui::fix{ size = t.font_size * 5.0 }, .. }
+            {
+                let row = ui::begin_row{ &ui, opts = ui::Opts{ .. } }
+                ui::add_label{ &ui, text = "Theme", opts = ui::Opts{ box = label_box, .. } }
+                let mut choice: i32 = if app.dark { 0 } else { 1 }
+                _ = ui::add_radio{ &ui, label = THEME_NAMES[0], value = &choice, choice = 0, opts = ui::Opts{ .. } }
+                _ = ui::add_radio{ &ui, label = THEME_NAMES[1], value = &choice, choice = 1, opts = ui::Opts{ .. } }
+                app.dark = choice == 0
+                ui::end{ &ui, scope = row }
+            }
+            {
+                let row = ui::begin_row{ &ui, opts = ui::Opts{ .. } }
+                ui::add_label{ &ui, text = "Zoom", opts = ui::Opts{ box = label_box, .. } }
+                _ = ui::add_combo{ &ui, label = "zoom", value = &app.zoom, items = ZOOM_NAMES[..], opts = ui::Opts{ tip = "On top of the display's own scale", .. } }
+                ui::end{ &ui, scope = row }
+            }
+            _ = ui::add_checkbox{ &ui, label = "Hide completed tasks", value = &app.hide_done, opts = ui::Opts{ .. } }
+            let buttons = begin_buttons{ &ui }
+            if ui::add_button{ &ui, label = "Close", opts = ui::Opts{ .. } } { app.prefs = false }
+            ui::end{ &ui, scope = buttons }
+        }
+        ui::end{ &ui, scope = d }
+    }
+
+    fn show_about_dialog { mut ui: ui::Ui, mut app: App } {
+        let t = ui.theme
+        let d = ui::begin_dialog{ &ui, title = "About Tasks", open = &app.about, opts = ui::Opts{ box = get_dialog_box{ width = 400.0 }, .. } }
+        if d.open {
+            let wrap = ui::TextStyle{ wrap = true, .. }
+            ui::add_text{ &ui, text = "A to-do list written on ui, an immediate-mode interface library in ctxlang.", style = wrap, box = ui::Box{ width = ui::GROW, .. } }
+            ui::add_text{ &ui, text = "It draws with OpenGL through SDL, and only when something happens.", style = ui::TextStyle{ wrap = true, color = t.text_muted, .. }, box = ui::Box{ width = ui::GROW, .. } }
+            let buttons = begin_buttons{ &ui }
+            if ui::add_button{ &ui, label = "OK", opts = ui::Opts{ .. } } { app.about = false }
+            ui::end{ &ui, scope = buttons }
+        }
+        ui::end{ &ui, scope = d }
+    }
+
+    // ---- two widgets of the program's own, over the core's primitives
+
+    // The box that marks a task done: the stock tick box's look, without its label, and not a tab
+    // stop (the list is one: Space marks the selected task). True on the frame it flips `value`.
+    fn add_row_check { mut ui: ui::Ui, mut value: bool, tip: []u8 } -> bool {
+        let t = ui::derive_theme{ theme = ui.theme }
+        let id = ui::make_id{ ui, name = "done" }
+        let it = ui::press{ &ui, id, opts = ui::PressOpts{ focusable = false, .. } }
+        if it.clicked { value = not value }
+        let look = ui::get_mark_look{ theme = t, on = value, enabled = true, it }
+        let size = ui::get_mark_size{ theme = t }
+        let el = ui::begin_element{ &ui, id, axis = ui::Axis::row, box = ui::Box{
+            width = ui::fix{ size }, height = ui::fix{ size }, fill = look.fill,
+            border = ui::color_sides{ color = look.border }, border_width = ui::inset{ by = look.border_width },
+            radius = ui::round{ radius = t.radius * 0.5 }, hit_outset = ui::inset{ by = t.gap * 0.5 }, ..
+        } }
+        if value {
+            let side = ui::to_pixels{ ui, length = size }
+            ui::paint_icon{ &ui, icon = ui::Icon::check, rect = ui::Rect{ x = 0, y = 0, w = side, h = side }, color = look.ink }
+        }
+        ui::end{ &ui, scope = el }
+        ui::describe{ &ui, id, role = ui::Role::checkbox, label = "done", value = if value { 1.0 } else { 0.0 }, flags = if value { ui::NODE_CHECKED } else { 0 } }
+        if it.hovered or it.held { ui::set_cursor{ &ui, cursor = ui::Cursor::hand } }
+        if tip.len > 0 { ui::add_tooltip{ &ui, anchor = id, text = tip } }
+        return it.clicked
+    }
+
+    // A small square button with a stock mark, quiet until the pointer is on it, not a tab stop.
+    // True on the frame it is clicked.
+    fn add_icon_button { mut ui: ui::Ui, name: []u8, icon: ui::Icon, tip: []u8 } -> bool {
+        let t = ui::derive_theme{ theme = ui.theme }
+        let id = ui::make_id{ ui, name }
+        let it = ui::press{ &ui, id, opts = ui::PressOpts{ focusable = false, .. } }
+        let side = ui::get_mark_size{ theme = t } + t.padding
+        let fill = if it.held and it.hovered { t.control_pressed } else if it.hovered { t.control_hovered } else { ui::Color{ a = 0, .. } }
+        let el = ui::begin_element{ &ui, id, axis = ui::Axis::row, box = ui::Box{
+            width = ui::fix{ size = side }, height = ui::fix{ size = side }, fill, radius = ui::round{ radius = t.radius }, ..
+        } }
+        // The mark a tick box's size, centred: the spare pixels halved, rounded down.
+        let px = ui::to_pixels{ ui, length = side }
+        let mark = ui::to_pixels{ ui, length = ui::get_mark_size{ theme = t } * 0.75 }
+        let at = (px - mark) / 2
+        ui::paint_icon{ &ui, icon, rect = ui::Rect{ x = at, y = at, w = mark, h = mark }, color = if it.hovered { t.danger } else { t.text_muted } }
+        ui::end{ &ui, scope = el }
+        ui::describe{ &ui, id, role = ui::Role::button, label = name, value = 0.0, flags = if it.held { ui::NODE_PRESSED } else { 0 } }
+        if it.hovered or it.held { ui::set_cursor{ &ui, cursor = ui::Cursor::hand } }
+        if tip.len > 0 { ui::add_tooltip{ &ui, anchor = id, text = tip } }
+        return it.clicked
+    }
+}
