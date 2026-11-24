@@ -1,0 +1,1158 @@
+// uiview: a .gui panel drawn both ways, by lib/gui and by kui through the ui library (ui/PLAN.md stage 16), and
+// compared pixel by pixel; the Gameplay options screen written against kui and driven by a script; and a sweep over
+// every .gui file as the measure of what moving the screens still takes.
+//
+//   kotor/tools/ctxc run kotor/tools/uiview -- optgameplay --scale 1.5 --out kotor/out/uiview
+//       NAME-gui.png (lib/gui), NAME-kui.png (kui) and NAME-diff.png (kui's picture dimmed, with what differs outside
+//       text in red and what differs in text in yellow), and the counts of differing pixels, apart for text and for
+//       everything else; for optgameplay also the scripted run of the screen's kui glue
+//   kotor/tools/ctxc run kotor/tools/uiview -- --all --scale 1.5       every .gui file: which match outside text,
+//       which do not and in which controls; each list box again with rows, each panel with a 3D view again with a
+//       view in its host slot; --keep writes the diff picture of every panel that differs
+//
+// Options: --game DIR, --out DIR (kotor/out/uiview), --size WxH (the GUI's pixel space; 800x600, or the file's own
+// size when larger), --scale S (device pixels a GUI pixel; 1; the window is the size times the scale, so the grid
+// is exact), --hover TAG (the pointer on that control), --rows N (N rows in every list box, the second selected),
+// --text TAG (a long text in list box TAG, as the options panels' descriptions), --view TAG (a 3D view where that
+// control is, the controls after it over the view; `*`: the first control with 3D in its tag), --dt T (the GUI
+// clock's time, which the pulse hangs on; 0.5), --tints (round the table's tints to 8 bits a channel first),
+// --list N (print the first N differing pixels outside text, each way's colour), --no-script.
+//
+// Tints. lib/gui multiplies a picture by its border's tint as the file's float; a ui::Color holds 8 bits a channel,
+// so kui multiplies by the nearest of 255 steps and a tinted pixel may come out one level away. When something but
+// text differs, the panel is compared again with the table's tints rounded to what the library holds (both ways
+// are then given one colour): what no longer differs was a tint's precision, what still does is something else.
+//
+// How text is counted apart: each way is drawn twice, with its texts and without (every control's font taken
+// away), so a pixel is text where a picture and its textless twin differ. "Everything else" is the two textless
+// pictures compared; "text" is the pixels that differ between the two full pictures where the textless ones agree.
+// The frame buffer's alpha is not compared: nothing shows it, and the two blend it differently by design.
+//
+// Exits 1 when a frame was not well formed, a check of the scripted run failed, or (one panel) anything but text
+// still differs with the tints rounded; 2 on bad options. The sweep reports and exits 0.
+
+const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
+
+struct Options {
+    game: []u8, out: []u8, width: i32, height: i32, scale: f32, dt: f32,
+    all: bool, keep: bool, script: bool, tints: bool,
+    name: []u8, hover: []u8, text: []u8, view: []u8, rows: i32, list: u32,
+}
+
+// What draws: the device and the frame, the Gui, and the Ui with its staged level and kit; the four pictures and
+// the difference picture, each as large as the largest screen drawn.
+struct Tool {
+    dev: *mut gpu::Device, frame: *mut render::Frame, staged: *mut ui_stage::Staged,
+    ui: *mut ui::Ui, kit: *mut kui::Kit, g: *mut gui::Gui,
+    gui_full: []mut u8, kui_full: []mut u8, gui_bare: []mut u8, kui_bare: []mut u8, diff: []mut u8,
+    o: Options,
+    unclean: u32,           // ui frames that dropped something or recorded a problem
+    notes: []mut Note,      // the first differing pixels outside text of the panel last compared (--list)
+}
+
+// A pixel that differs outside text: where, in what kind of control, and its colour each way.
+struct Note { x: u32, y: u32, kind: usize, theirs: [3]u8, ours: [3]u8 }
+
+// One panel compared.
+struct Counts {
+    width: u32 = 0, height: u32 = 0,
+    other: u64 = 0, text: u64 = 0, stray: u64 = 0,          // differing pixels: outside text, in text, in neither
+    worst_other: i32 = 0, worst_text: i32 = 0,              // the largest difference in a channel
+    kinds: [16]u64 = [0; 16],                               // `other` by the kind of the control it lies in (2: the panel itself, 0: outside it)
+    lists: u32 = 0, views: u32 = 0,                         // list boxes, and controls a 3D view stands in
+    listed: u32 = 0,                                        // differing pixels noted in Tool.notes (--list)
+    rows_skipped: u32 = 0,
+    between: u32 = 0,                                       // pictures lib/gui draws between device pixels (kui::paint_picture)
+    stats: kui::TextStats = kui::TextStats{ .. },
+}
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } -> i32 {
+    let o = read_options{ &io, args } ifnull {
+        io::eprintln{ &io, s = "usage: uiview [--game DIR] [--out DIR] [--size WxH] [--scale S] [--hover TAG] [--rows N] [--text TAG] [--view TAG] [--dt T] [--no-script] [--keep] (--all | NAME)" }
+        return 2
+    }
+    let pages = mem::pages{ &mem, size = 805306368 } ifnull {
+        io::eprintln{ &io, s = "uiview: out of memory" }
+        return 1
+    }
+    let scratch = mem::pages{ &mem, size = 134217728 } ifnull {
+        io::eprintln{ &io, s = "uiview: out of memory" }
+        return 1
+    }
+    let mut heap = arena::new{ buf = pages }
+    let mut h = heap::new{ &mem }
+    let code = run{ &io, &fs, &sdl, &heap, &h, scratch, o } iferr err{ error } {
+        _ = @fmt(&io, "uiview: failed: {}\n", error)
+        match error {
+            gpu::shader_failed{ log } => { _ = @fmt(&io, "{}\n", log) }
+            sdl::failed => { _ = @fmt(&io, "SDL: {}\n", sdl::last_error{ &sdl }) }
+            else => {}
+        }
+        io::flush{ &io }
+        return 1
+    }
+    io::flush{ &io }
+    return code
+}
+
+// A count from the command line, held to 0..most.
+fn hold_count { v: i64, most: i64 } -> i64 {
+    return if v < 0 { 0 } else if v > most { most } else { v }
+}
+
+fn read_options { mut io: Io, args: Args } -> ?Options {
+    let mut o = Options{
+        game = DEFAULT_GAME, out = "kotor/out/uiview", width = 800, height = 600, scale = 1.0, dt = 0.5,
+        all = false, keep = false, script = true, tints = false, name = "", hover = "", text = "", view = "", rows = 0, list = 0,
+    }
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        i = i + 1
+        if slice::eq_bytes{ a, b = "--all" } {
+            o.all = true
+            continue
+        }
+        if slice::eq_bytes{ a, b = "--keep" } {
+            o.keep = true
+            continue
+        }
+        if slice::eq_bytes{ a, b = "--tints" } {
+            o.tints = true
+            continue
+        }
+        if slice::eq_bytes{ a, b = "--no-script" } {
+            o.script = false
+            continue
+        }
+        if a.len == 0 or a[0] != '-' {
+            o.name = a
+            continue
+        }
+        if i >= args.len { return null }
+        let v = args[i]
+        i = i + 1
+        if slice::eq_bytes{ a, b = "--game" } {
+            o.game = v
+        } else if slice::eq_bytes{ a, b = "--out" } {
+            o.out = v
+        } else if slice::eq_bytes{ a, b = "--hover" } {
+            o.hover = v
+        } else if slice::eq_bytes{ a, b = "--text" } {
+            o.text = v
+        } else if slice::eq_bytes{ a, b = "--view" } {
+            o.view = v
+        } else if slice::eq_bytes{ a, b = "--list" } {
+            o.list = @as(u32, hold_count{ v = text::scan_decimal{ s = v }, most = 100000 })
+        } else if slice::eq_bytes{ a, b = "--rows" } {
+            o.rows = @as(i32, hold_count{ v = text::scan_decimal{ s = v }, most = 200 })
+        } else if slice::eq_bytes{ a, b = "--scale" } {
+            let s = text::scan_f32{ s = v } ifnull { return null }
+            if not (s >= 0.25) or s > 8.0 { return null }
+            o.scale = s
+        } else if slice::eq_bytes{ a, b = "--dt" } {
+            let s = text::scan_f32{ s = v } ifnull { return null }
+            if not (s >= 0.0) or s > 100.0 { return null }
+            o.dt = s
+        } else if slice::eq_bytes{ a, b = "--size" } {
+            let mut x: usize = 0
+            while x < v.len and v[x] != 'x' { x = x + 1 }
+            if x >= v.len { return null }
+            let w = text::scan_decimal{ s = v[..x] }
+            let hh = text::scan_decimal{ s = v[x + 1..] }
+            if w < 64 or hh < 64 or w > 4096 or hh > 4096 { return null }
+            o.width = @as(i32, w)
+            o.height = @as(i32, hh)
+        } else {
+            return null
+        }
+    }
+    if not o.all and o.name.len == 0 { return null }
+    return o
+}
+
+// The most pixels a screen drawn here may have (the largest .gui at twice its size).
+const MAX_PIXELS: usize = 4400000
+
+fn run {
+    mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut h: heap::Heap, scratch: alloc::Bytes, o: Options,
+} -> !i32 {
+    try sdl::init{ &sdl, flags = sdl::INIT_VIDEO | sdl::INIT_EVENTS }
+    defer sdl::quit{ &sdl }
+    let mut config = render::make_config{ title = "uiview", width = o.width, height = o.height, hidden = true }
+    config.debug = true
+    let mut dev = try gpu::open{ &sdl, realloc = arena::alloc, &heap, config }
+    defer gpu::close{ &dev, &sdl }
+    let mut frame = try render::make_frame(arena::Arena){ realloc = arena::alloc, &heap, cap = render::default_capacity{} }
+    let mut rm = try res::open{ &fs, heap = &h, game = o.game }
+    defer res::close{ &fs, &rm }
+    let mut cache = material::new_cache{ heap = &h, scratch }
+    defer material::free_cache{ &cache, &dev }
+    let mut path_buf: [512]u8
+    let tlk_path = join{ into = path_buf[..], a = o.game, b = "dialog.tlk" }
+    let table = try tlk::load{ &fs, realloc = heap::alloc, heap = &h, path = tlk_path }
+    defer tlk::free{ t = table, realloc = heap::alloc, heap = &h }
+    let mut g = try gui::make{ heap = &h, rm, cache = &cache, width = o.width, height = o.height }
+    defer gui::free{ &g }
+    gui::set_tlk{ &g, table = &table }
+    try gui::load_defaults{ &g, &fs, &dev }
+    make_dir{ &fs, path = o.out }
+
+    let mut gui_ui = try ui::make{ realloc = arena::alloc, &heap, cap = ui::Capacity{ fonts = 32, .. } }
+    let mut kit = try kui::make_kit(arena::Arena){ realloc = arena::alloc, &heap }
+    let mut staged = try ui_stage::make{ realloc = arena::alloc, &heap, cap = ui_stage::Capacity{ .. } }
+    let bytes = MAX_PIXELS * 4
+    let gui_full = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = bytes }
+    let kui_full = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = bytes }
+    let gui_bare = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = bytes }
+    let kui_bare = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = bytes }
+    let diff = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = bytes }
+    let notes = try alloc::make(Note, arena::Arena){ realloc = arena::alloc, &heap, count = @as(usize, o.list) + 1 }
+    let mut t = Tool{
+        dev = &dev, frame = &frame, staged = &staged, ui = &gui_ui, kit = &kit, g = &g,
+        gui_full, kui_full, gui_bare, kui_bare, diff, o, unclean = 0, notes,
+    }
+    let mut failed = false
+    if o.all {
+        let found = try res::list_type(arena::Arena){ rm, kind = restype::Type::gui, realloc = arena::alloc, &heap }
+        sweep_panels{ &io, &fs, &heap, &t, found }
+    } else {
+        let v = Variant{ rows = o.rows, view = o.view, text = o.text, hover = o.hover, tints = o.tints }
+        let c = compare_panel{ &io, &fs, &heap, &t, name = o.name, v, write = true } ifnull { return 1 }
+        print_counts{ &io, name = o.name, scale = o.scale, c }
+        for note in t.notes[..c.listed] {
+            _ = @fmt(&io, "  differs at {},{} ({}): lib/gui {} {} {}, kui {} {} {}\n", note.x, note.y, get_kind_name{ kind = note.kind },
+                note.theirs[0], note.theirs[1], note.theirs[2], note.ours[0], note.ours[1], note.ours[2])
+        }
+        if c.stray != 0 { failed = true }
+        if c.other != 0 and o.tints { failed = true }
+        if c.other != 0 and not o.tints {
+            // lib/gui's tints are floats and the library's colours 8 bits a channel: with the table's tints rounded to
+            // what the library holds, both ways are given one colour, and what still differs is something else.
+            let mut rounded = v
+            rounded.tints = true
+            let r = compare_panel{ &io, &fs, &heap, &t, name = o.name, v = rounded, write = false } ifnull { return 1 }
+            _ = @fmt(&io, "  with the table's tints rounded to the 8 bits a channel a ui::Color holds: {} pixels differ outside text", r.other)
+            if r.other == 0 {
+                _ = @fmt(&io, ", so each of the {} is a tint's precision: lib/gui multiplies by the file's float, kui by the nearest of 255 steps\n", c.other)
+            } else {
+                _ = @fmt(&io, " (the largest difference in a channel is {})\n", r.worst_other)
+                failed = true
+            }
+        }
+        if o.script and ci::eq{ a = o.name, b = "optgameplay" } {
+            if not try run_script{ &io, &fs, &heap, &t } { failed = true }
+        }
+    }
+    if t.unclean != 0 {
+        _ = @fmt(&io, "uiview: {} ui frames were not well formed\n", t.unclean)
+        failed = true
+    }
+    if dev.canvas.dropped != 0 {
+        _ = @fmt(&io, "uiview: the renderer skipped {} draws of images it does not have\n", dev.canvas.dropped)
+        failed = true
+    }
+    let messages = gpu::messages{ dev }
+    if messages.len > 0 { _ = @fmt(&io, "uiview: GL said:\n{}\n", messages) }
+    return if failed { 1 } else { 0 }
+}
+
+// ---- one panel both ways
+
+// How a panel is dressed before it is drawn: `rows` rows in every list box (0: as loaded), a 3D view where control
+// `view` is, a long text in list box `text`, the pointer on control `hover`.
+// `tints`: every tint of the table rounded to the library's 8 bits a channel first (round_tints).
+struct Variant { rows: i32 = 0, view: []u8 = "", text: []u8 = "", hover: []u8 = "", tints: bool = false }
+
+const LONG_TEXT: []u8 = "Determines how difficult combat is. On Easy your enemies are weaker and miss more often; on Difficult they are tougher, strike harder and make their saving throws more often. This text is long enough to be broken into several lines, so that the description pane shows how a wrapped text is drawn, line by line, and where each of its lines ends: every line must end on the word lib/gui ends it on."
+
+// Opens `name` as guiview does, draws it by lib/gui and by kui, with its texts and without, and counts what
+// differs. With `write` the pictures go to the output directory. Null when the panel could not be opened or drawn.
+fn compare_panel { mut io: Io, mut fs: Fs, mut heap: arena::Arena, mut t: Tool, name: []u8, v: Variant, write: bool } -> ?Counts {
+    let o = t.o
+    let id = gui::open{ g = t.g, &fs, dev = t.dev, name, mode = pick_mode{ name }, modal = false } iferr err{ error } {
+        _ = @fmt(&io, "{}: {}\n", name, error)
+        return null
+    }
+    defer close_panel{ &t, id }
+    let p = gui::find_panel{ g = t.g, id } ifnull { return null }
+    // The GUI's pixel space: the size asked for, or the file's own when it is bigger; the window is that times the scale.
+    let design_w = ui::pick_max_i32{ a = o.width, b = p.w }
+    let design_h = ui::pick_max_i32{ a = o.height, b = p.h }
+    let w = ui::round_pixels{ v = @as(f32, design_w) * o.scale }
+    let hgt = ui::round_pixels{ v = @as(f32, design_h) * o.scale }
+    if w < 1 or hgt < 1 or @as(usize, w) * @as(usize, hgt) > MAX_PIXELS {
+        _ = @fmt(&io, "{}: a screen of {}x{} is more than this tool draws\n", name, w, hgt)
+        return null
+    }
+    gpu::resize{ dev = t.dev, width = @as(u32, w), height = @as(u32, hgt) } iferr { return null }
+    gui::set_screen{ g = t.g, &fs, dev = t.dev, width = w, height = hgt, scale = o.scale }
+    gui::ensure_backdrop{ g = t.g, &fs, dev = t.dev, kind = 0 }
+    gui::set_cursor_visible{ g = t.g, visible = false }
+    let mut c = Counts{ width = @as(u32, w), height = @as(u32, hgt), .. }
+    if o.list > 0 { _ = @fmt(&io, "{}: the panel is {}x{} at {},{} of the GUI's {}x{} pixels\n", name, p.w, p.h, p.sx, p.sy, t.g.ui_w, t.g.ui_h) }
+
+    // Dress it.
+    let mut view_index: i32 = -1
+    let cs = list::items{ list = p.controls }
+    for ctl at i in cs {
+        if (ctl.flags & gui::F_INTERNAL) != 0 { continue }
+        if ctl.kind == gui::Kind::list {
+            c.lists = c.lists + 1
+            for r in 0..v.rows {
+                let mut b: [32]u8
+                let label = "Row number "
+                slice::copy(u8){ dst = b[..label.len], src = label }
+                b[label.len] = '0' + @trunc(u8, (r / 10) % 10)
+                b[label.len + 1] = '0' + @trunc(u8, r % 10)
+                _ = gui::list_add{ g = t.g, panel = id, tag = ctl.tag, text = b[..label.len + 2], user = @as(i64, r) } iferr { 0 }
+            }
+            if v.rows > 1 { gui::list_select{ g = t.g, panel = id, tag = ctl.tag, row = 1 } }
+            if v.text.len > 0 and slice::eq_bytes{ a = ctl.tag, b = v.text } { gui::set_list_text{ g = t.g, panel = id, tag = ctl.tag, text = LONG_TEXT } iferr {} }
+        }
+        if v.view.len > 0 and slice::eq_bytes{ a = ctl.tag, b = v.view } and view_index < 0 { view_index = @as(i32, i) }
+        if v.view.len == 1 and v.view[0] == '*' and view_index < 0 and has_3d{ tag = ctl.tag } { view_index = @as(i32, i) }
+        if has_3d{ tag = ctl.tag } { c.views = c.views + 1 }
+    }
+    let mut viewport: ?render::Rect = null
+    if view_index >= 0 {
+        // As the game's glue does it (lib/frontend/scene.ctx): the controls after the view's wait for the overlay
+        // pass, and the view goes over the control's rectangle, GUI pixels scaled to the target's.
+        let vc = cs[view_index]
+        gui::set_overlay_after{ g = t.g, panel = id, tag = vc.tag }
+        if p.overlay_from == view_index + 1 {
+            let grid = gui::grid_of{ g = t.g.* }
+            viewport = render::Rect{ x = @as(f32, p.sx + vc.x) * grid.sx, y = @as(f32, p.sy + vc.y) * grid.sy, w = @as(f32, vc.w) * grid.sx, h = @as(f32, vc.h) * grid.sy }
+        }
+    }
+    let mut pointer: ?ui::Point = null
+    if v.hover.len > 0 {
+        if let r = gui::control_rect{ g = t.g, panel = id, tag = v.hover } {
+            let at = ui::Point{ x = @as(i32, (r.x + r.w / 2.0) * o.scale), y = @as(i32, (r.y + r.h / 2.0) * o.scale) }
+            pointer = at
+        }
+    }
+    gui::update{ g = t.g, dt = o.dt }
+    if v.tints { round_tints{ p } }
+
+    let n = @as(usize, w) * @as(usize, hgt) * 4
+    let before = t.kit.rows_skipped
+    let between = t.kit.pictures_between
+    // lib/gui hilights through its own input, kui through the library's; each way gets the same pointer, and the
+    // table is put back between them so neither sees the other's marks.
+    let ok = draw_four{ &io, &t, id, p, pointer, viewport, n } iferr err{ error } {
+        _ = @fmt(&io, "{}: drawing failed: {}\n", name, error)
+        return null
+    }
+    if not ok { return null }
+    c.rows_skipped = t.kit.rows_skipped - before
+    c.between = t.kit.pictures_between - between
+    c.stats = t.kit.stats
+    count_pixels{ &t, p, counts = &c }
+    if write {
+        save_picture{ &io, &fs, &heap, o, name, suffix = "-gui.png", width = c.width, height = c.height, rgba = t.gui_full[..n] }
+        save_picture{ &io, &fs, &heap, o, name, suffix = "-kui.png", width = c.width, height = c.height, rgba = t.kui_full[..n] }
+        save_picture{ &io, &fs, &heap, o, name, suffix = "-diff.png", width = c.width, height = c.height, rgba = t.diff[..n] }
+    }
+    return c
+}
+
+// Rounds every tint of the panel's table to the nearest of 255 steps a channel (--tints), so lib/gui is given the
+// colours the ui library can hold: what then still differs is not the tints' precision.
+fn round_tints { p: *mut gui::Panel } {
+    p.border.color = round_color{ c = p.border.color }
+    p.color = round_color{ c = p.color }
+    for &c in list::items{ list = p.controls } {
+        c.border.color = round_color{ c = c.border.color }
+        c.hilight.color = round_color{ c = c.hilight.color }
+        c.selected.color = round_color{ c = c.selected.color }
+        c.hilight_selected.color = round_color{ c = c.hilight_selected.color }
+        c.progress.color = round_color{ c = c.progress.color }
+        c.list_color = round_color{ c = c.list_color }
+    }
+}
+
+fn round_color { c: render::Color } -> render::Color {
+    let q = kui::to_color{ c }
+    return render::Color{ r = @as(f32, q.r) / 255.0, g = @as(f32, q.g) / 255.0, b = @as(f32, q.b) / 255.0, a = @as(f32, q.a) / 255.0 }
+}
+
+fn close_panel { mut t: Tool, id: u32 } {
+    gui::close{ g = t.g, id }
+    gui::update{ g = t.g, dt = 0.0 }
+}
+
+fn has_3d { tag: []u8 } -> bool {
+    if tag.len < 2 { return false }
+    for i in 0..tag.len - 1 {
+        if tag[i] == '3' and (tag[i + 1] == 'D' or tag[i + 1] == 'd') { return true }
+    }
+    return false
+}
+
+// Full-screen menus (the 640x480 files) are centred over the backdrop; the HUD and tooltips stay where their files
+// put them (guiview's rule).
+fn pick_mode { name: []u8 } -> gui::Mode {
+    if ci::starts_with{ s = name, prefix = "mipc" } or ci::starts_with{ s = name, prefix = "tooltip" } or ci::starts_with{ s = name, prefix = "mi8" } or ci::eq{ a = name, b = "maininterface" } {
+        return gui::Mode::placed
+    }
+    return gui::Mode::full_screen
+}
+
+// The four pictures of the open panel: lib/gui's and kui's, each with its texts and without.
+fn draw_four { mut io: Io, mut t: Tool, id: u32, p: *mut gui::Panel, pointer: ?ui::Point, viewport: ?render::Rect, n: usize } -> !bool {
+    let mut fonts: [kui::MAX_CONTROLS]i32
+    let cs = list::items{ list = p.controls }
+    if cs.len > fonts.len { return false }
+    // lib/gui, with the pointer where it is asked to be.
+    if let at = pointer {
+        _ = gui::handle_event{ g = t.g, ev = sdl::Event::mouse_motion{ x = at.x, y = at.y, dx = 0, dy = 0, buttons = 0 }, scale_x = 1.0, scale_y = 1.0 }
+        gui::clear_events{ g = t.g }
+    }
+    try draw_gui{ &t, viewport }
+    _ = try gpu::read_screen{ dev = t.dev, into = t.gui_full[..n] }
+    for &ctl at i in cs {
+        fonts[i] = ctl.text.font
+        ctl.text.font = -1
+    }
+    try draw_gui{ &t, viewport }
+    _ = try gpu::read_screen{ dev = t.dev, into = t.gui_bare[..n] }
+    for &ctl at i in cs { ctl.text.font = fonts[i] }
+    // The pointer leaves lib/gui: its hilight goes, and kui lights the control through the library.
+    if pointer != null {
+        _ = gui::handle_event{ g = t.g, ev = sdl::Event::mouse_motion{ x = -1000, y = -1000, dx = 0, dy = 0, buttons = 0 }, scale_x = 1.0, scale_y = 1.0 }
+        gui::clear_events{ g = t.g }
+    }
+    if let at = pointer { _ = ui::push_event{ ui = t.ui, event = ui::Event::pointer_move{ x = at.x, y = at.y } } }
+    try draw_kui{ &io, &t, p, measure = true }
+    _ = try gpu::read_screen{ dev = t.dev, into = t.kui_full[..n] }
+    let stats = t.kit.stats
+    for &ctl in cs { ctl.text.font = -1 }
+    try draw_kui{ &io, &t, p, measure = false }
+    _ = try gpu::read_screen{ dev = t.dev, into = t.kui_bare[..n] }
+    for &ctl at i in cs { ctl.text.font = fonts[i] }
+    t.kit.stats = stats
+    _ = ui::push_event{ ui = t.ui, event = ui::Event::pointer_leave }
+    return true
+}
+
+// A frame's first pass: the whole screen black, so each picture starts from the same pixels.
+fn clear_screen { mut t: Tool } {
+    let size = gpu::screen_size{ dev = t.dev.* }
+    render::begin_ui{ frame = t.frame, width = @as(f32, size.width), height = @as(f32, size.height), target = null }
+    render::fill_rect{ frame = t.frame, rect = render::rect{ x = 0.0, y = 0.0, w = @as(f32, size.width), h = @as(f32, size.height) }, color = render::rgba{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 } }
+}
+
+// What stands for a 3D view: a flat colour over the viewport.
+fn add_view { mut t: Tool, viewport: render::Rect } {
+    let camera = render::Camera{ view = math::mat4::identity{}, proj = math::mat4::identity{}, eye = math::vec3::zero{} }
+    let mut view = render::make_view{ camera }
+    view.viewport = viewport
+    view.clear_color = render::rgba{ r = 0.25, g = 0.05, b = 0.35, a = 1.0 }
+    _ = render::add_view{ frame = t.frame, view }
+}
+
+// The panel by lib/gui: the backdrop, then its panels; with a view, the panels under it, the view, the overlay.
+fn draw_gui { mut t: Tool, viewport: ?render::Rect } -> ! {
+    render::begin_frame{ frame = t.frame, time = 0.0 }
+    clear_screen{ &t }
+    gui::draw_backdrop_pass{ g = t.g, frame = t.frame }
+    if let vp = viewport {
+        gui::draw_panels_under_views{ g = t.g, frame = t.frame }
+        add_view{ &t, viewport = vp }
+        gui::draw_overlay{ g = t.g, frame = t.frame }
+    } else {
+        gui::draw_panels{ g = t.g, frame = t.frame }
+    }
+    try gpu::submit{ dev = t.dev, frame = t.frame }
+}
+
+// The panel by kui: lib/gui's backdrop (a frame holds both, which is how screens move one at a time), then the
+// panel replayed through the Ui, staged, and its passes added with the view after the pass that ends at its slot.
+fn draw_kui { mut io: Io, mut t: Tool, p: *mut gui::Panel, measure: bool } -> ! {
+    let size = gpu::screen_size{ dev = t.dev.* }
+    // Two frames: interaction is answered from the last frame's rectangles, so a hover shows in the second.
+    for round in 0..2 {
+        ui::begin_frame{ ui = t.ui, frame = ui_kotor::make_frame_info{ size, scale = t.o.scale, dt = 0.0 } }
+        kui::begin_frame{ kit = t.kit, ui = t.ui, g = t.g.* }
+        t.kit.measure = measure and round == 1
+        if t.kit.measure { t.kit.stats = kui::TextStats{ .. } }
+        kui::replay_panel{ ui = t.ui, kit = t.kit, panel = p, keys = true }
+        ui::end_frame{ ui = t.ui }
+        t.kit.measure = false
+        kui::clear_events{ kit = t.kit }
+        _ = kui::take_sounds{ kit = t.kit }
+        if t.ui.stats.dropped != 0 or t.ui.stats.problems != 0 or t.ui.draw.dropped != 0 {
+            t.unclean = t.unclean + 1
+            if t.unclean == 1 {
+                _ = @fmt(&io, "uiview: a ui frame of {}: {} dropped, {} problems ({} duplicate ids), {} shapes dropped\n",
+                    resref::bytes{ r = &p.name }, t.ui.stats.dropped, t.ui.stats.problems, t.ui.stats.duplicate_ids, t.ui.draw.dropped)
+            }
+        }
+    }
+    ui_stage::stage{ out = t.staged, list = &t.ui.draw, provider = null }
+    if t.staged.dropped != 0 {
+        t.unclean = t.unclean + 1
+        _ = @fmt(&io, "uiview: staging {} dropped {}\n", resref::bytes{ r = &p.name }, t.staged.dropped)
+    }
+    render::begin_frame{ frame = t.frame, time = 0.0 }
+    clear_screen{ &t }
+    gui::draw_backdrop_pass{ g = t.g, frame = t.frame }
+    for pass in 0..t.staged.pass_count {
+        ui_kotor::add_pass{ frame = t.frame, staged = t.staged, pass, target = null }
+        if let slot = ui_kotor::get_slot{ staged = t.staged, pass } { add_view{ &t, viewport = slot.viewport } }
+    }
+    try gpu::submit{ dev = t.dev, frame = t.frame }
+}
+
+// The largest difference in a colour channel between two pictures at byte `at`.
+fn get_difference { a: []u8, b: []u8, at: usize } -> i32 {
+    let mut worst: i32 = 0
+    for ch in 0..3 {
+        let d = @as(i32, a[at + ch]) - @as(i32, b[at + ch])
+        worst = ui::pick_max_i32{ a = worst, b = if d < 0 { 0 - d } else { d } }
+    }
+    return worst
+}
+
+// Counts the differing pixels of the four pictures, and paints the difference picture: kui's picture dimmed, red
+// where something other than text differs, yellow where text does, magenta where neither explains it.
+fn count_pixels { mut t: Tool, p: *mut gui::Panel, mut counts: Counts } {
+    let w = @as(usize, counts.width)
+    let h = @as(usize, counts.height)
+    let grid = gui::grid_of{ g = t.g.* }
+    for y in 0..h {
+        for x in 0..w {
+            let at = (y * w + x) * 4
+            let bare = get_difference{ a = t.gui_bare, b = t.kui_bare, at }
+            let full = get_difference{ a = t.gui_full, b = t.kui_full, at }
+            t.diff[at] = t.kui_full[at] / 3
+            t.diff[at + 1] = t.kui_full[at + 1] / 3
+            t.diff[at + 2] = t.kui_full[at + 2] / 3
+            t.diff[at + 3] = 255
+            if bare != 0 {
+                counts.other = counts.other + 1
+                counts.worst_other = ui::pick_max_i32{ a = counts.worst_other, b = bare }
+                let kind = find_kind{ p, grid, x = @as(i32, x), y = @as(i32, y) }
+                counts.kinds[kind] = counts.kinds[kind] + 1
+                if counts.listed < t.o.list {
+                    counts.listed = counts.listed + 1
+                    t.notes[counts.listed - 1] = Note{ x = @as(u32, x), y = @as(u32, y), kind, theirs = [t.gui_bare[at], t.gui_bare[at + 1], t.gui_bare[at + 2]], ours = [t.kui_bare[at], t.kui_bare[at + 1], t.kui_bare[at + 2]] }
+                }
+                t.diff[at] = 255
+                t.diff[at + 1] = 0
+                t.diff[at + 2] = 0
+            } else if full != 0 {
+                let inked = get_difference{ a = t.gui_full, b = t.gui_bare, at } != 0 or get_difference{ a = t.kui_full, b = t.kui_bare, at } != 0
+                if inked {
+                    counts.text = counts.text + 1
+                    counts.worst_text = ui::pick_max_i32{ a = counts.worst_text, b = full }
+                    t.diff[at] = 255
+                    t.diff[at + 1] = 220
+                    t.diff[at + 2] = 0
+                } else {
+                    counts.stray = counts.stray + 1
+                    t.diff[at] = 255
+                    t.diff[at + 1] = 0
+                    t.diff[at + 2] = 255
+                }
+            }
+        }
+    }
+}
+
+// The kind (gui::Kind's number) of the topmost visible control whose rectangle, a pixel generous, holds device
+// pixel (x, y); 2 for the panel itself, 0 outside it.
+fn find_kind { p: *mut gui::Panel, grid: gui::Grid, x: i32, y: i32 } -> usize {
+    let fx = @as(f32, x)
+    let fy = @as(f32, y)
+    let cs = list::items{ list = p.controls }
+    let mut i = cs.len
+    while i > 0 {
+        i = i - 1
+        let c = cs[i]
+        if (c.flags & gui::F_VISIBLE) == 0 or (c.flags & gui::F_INTERNAL) != 0 { continue }
+        let x0 = @as(f32, p.sx + c.x) * grid.sx - 1.0
+        let y0 = @as(f32, p.sy + c.y) * grid.sy - 1.0
+        let x1 = @as(f32, p.sx + c.x + c.w) * grid.sx + 1.0
+        let y1 = @as(f32, p.sy + c.y + c.h) * grid.sy + 1.0
+        if fx >= x0 and fx < x1 and fy >= y0 and fy < y1 { return @as(usize, @as(u8, c.kind)) }
+    }
+    let px0 = @as(f32, p.sx) * grid.sx - 1.0
+    let py0 = @as(f32, p.sy) * grid.sy - 1.0
+    if fx >= px0 and fy >= py0 and fx < @as(f32, p.sx + p.w) * grid.sx + 1.0 and fy < @as(f32, p.sy + p.h) * grid.sy + 1.0 { return 2 }
+    return 0
+}
+
+fn get_kind_name { kind: usize } -> []u8 {
+    return match kind {
+        0 => "outside the panel",
+        2 => "the panel's own border",
+        4 => "label",
+        5 => "hilighting label",
+        6 => "button",
+        7 => "check box",
+        8 => "slider",
+        9 => "scroll bar",
+        10 => "progress bar",
+        11 => "list box",
+        12 => "edit box",
+        15 => "(the panel has pictures lib/gui draws between device pixels)",
+        else => "other",
+    }
+}
+
+fn put_fixed { mut io: Io, v: f32, digits: u32 } {
+    let mut buf: [48]u8
+    let n = ui::format_fixed{ v, digits, trim = true, into = buf[..] }
+    _ = @fmt(&io, "{}", buf[..n])
+}
+
+fn print_counts { mut io: Io, name: []u8, scale: f32, c: Counts } {
+    let pixels = @as(u64, c.width) * @as(u64, c.height)
+    _ = @fmt(&io, "{} at scale ", name)
+    put_fixed{ &io, v = scale, digits = 2 }
+    _ = @fmt(&io, " ({}x{}, {} pixels)\n", c.width, c.height, pixels)
+    _ = @fmt(&io, "  borders, fills and pictures: {} pixels differ", c.other)
+    if c.other != 0 {
+        _ = @fmt(&io, " (the largest difference in a channel is {});", c.worst_other)
+        for k in 0..16 {
+            if c.kinds[k] != 0 { _ = @fmt(&io, " {} in {},", c.kinds[k], get_kind_name{ kind = k }) }
+        }
+    }
+    _ = @fmt(&io, "\n  text: {} pixels differ", c.text)
+    if c.text != 0 { _ = @fmt(&io, " (the largest difference in a channel is {})", c.worst_text) }
+    _ = @fmt(&io, "\n")
+    if c.stray != 0 { _ = @fmt(&io, "  {} pixels differ in the full pictures alone and are no text\n", c.stray) }
+    let s = c.stats
+    if s.glyphs > 0 {
+        _ = @fmt(&io, "  text as kui painted it: {} lines, {} glyphs, {} of them between device pixels in lib/gui;\n", s.lines, s.glyphs, s.off_grid)
+        _ = @fmt(&io, "    a glyph lies at most ")
+        put_fixed{ &io, v = s.max_dx, digits = 3 }
+        _ = @fmt(&io, " px across and ")
+        put_fixed{ &io, v = s.max_dy, digits = 3 }
+        _ = @fmt(&io, " px down from lib/gui's (on average ")
+        put_fixed{ &io, v = s.sum_dx / @as(f32, s.glyphs), digits = 3 }
+        _ = @fmt(&io, " and ")
+        put_fixed{ &io, v = s.sum_dy / @as(f32, s.glyphs), digits = 3 }
+        _ = @fmt(&io, "), and is at most ")
+        put_fixed{ &io, v = s.max_dw, digits = 3 }
+        _ = @fmt(&io, " px wider or narrower and ")
+        put_fixed{ &io, v = s.max_dh, digits = 3 }
+        _ = @fmt(&io, " px taller or shorter\n")
+        _ = @fmt(&io, "    every line is broken by lib/gui's own layout, so each ends where lib/gui ends it; {} of {} lines are wider in pixels than their rectangle, the widest by ", s.over_box, s.lines)
+        put_fixed{ &io, v = s.max_over, digits = 3 }
+        _ = @fmt(&io, " px (lib/gui: {})\n", s.over_box_theirs)
+    }
+    if c.rows_skipped != 0 { _ = @fmt(&io, "  {} lists have rows kui does not draw (item entries, cell rows)\n", c.rows_skipped) }
+}
+
+// ---- the sweep
+
+// Panels that differ in the same kinds of control.
+struct Group { mask: u32, panels: u32, names: [6][]u8 }
+
+// One way of dressing the panels, over every panel it applies to.
+struct Tally {
+    panels: u32, failed: u32,
+    exact: u32,             // match outside text as loaded
+    tints: u32,             // differ only by the precision of a tint: they match once the table's tints are rounded
+    differ: u32,            // differ still
+    text_exact: u32,        // of the exact and the tint-only ones: their text matches too
+    tint_pixels: u64, other_pixels: u64, text_pixels: u64,
+    tint_worst: i32, other_worst: i32,   // the largest difference in a channel among each
+    kinds: [16]u32,         // panels that still differ, by the kind of control the pixels lie in
+    groups: [16]Group, group_count: usize,
+}
+
+// Every .gui file both ways, as loaded; then each panel with a list box again with rows in its lists, and each
+// panel with a control a 3D view stands in again with a view in the slot.
+fn sweep_panels { mut io: Io, mut fs: Fs, mut heap: arena::Arena, mut t: Tool, found: []mut res::Found } {
+    let mut plain: Tally
+    let mut rows: Tally
+    let mut views: Tally
+    let mut skipped: u32 = 0
+    for index in 0..found.len {
+        let name = resref::bytes{ r = &found[index].name }
+        let c = measure_panel{ &io, &fs, &heap, &t, tally = &plain, name, v = Variant{ .. }, what = "as loaded" } ifnull { continue }
+        skipped = skipped + c.rows_skipped
+        if c.lists > 0 { _ = measure_panel{ &io, &fs, &heap, &t, tally = &rows, name, v = Variant{ rows = 12, .. }, what = "with 12 rows in each list" } }
+        if c.views > 0 { _ = measure_panel{ &io, &fs, &heap, &t, tally = &views, name, v = Variant{ view = "*", .. }, what = "with a 3D view in its slot" } }
+    }
+    _ = @fmt(&io, "\nthe sweep at scale ")
+    put_fixed{ &io, v = t.o.scale, digits = 2 }
+    _ = @fmt(&io, ": {} .gui files\n", plain.panels)
+    print_tally{ &io, what = "as loaded", tally = plain }
+    print_tally{ &io, what = "panels with list boxes, 12 rows in each list, the second selected", tally = rows }
+    print_tally{ &io, what = "panels with a control a 3D view stands in, a view in its host slot", tally = views }
+    if skipped != 0 { _ = @fmt(&io, "  {} lists had rows kui does not draw\n", skipped) }
+}
+
+// One panel one way into `tally`: compared as loaded and, when something but text differs, again with the table's
+// tints rounded to what the library holds, which tells a tint's precision from everything else. The counts as
+// loaded, or null when the panel could not be opened or drawn.
+fn measure_panel { mut io: Io, mut fs: Fs, mut heap: arena::Arena, mut t: Tool, mut tally: Tally, name: []u8, v: Variant, what: []u8 } -> ?Counts {
+    tally.panels = tally.panels + 1
+    let c = compare_panel{ &io, &fs, &heap, &t, name, v, write = false } ifnull {
+        tally.failed = tally.failed + 1
+        return null
+    }
+    tally.text_pixels = tally.text_pixels + c.text
+    if c.other == 0 and c.stray == 0 {
+        tally.exact = tally.exact + 1
+        if c.text == 0 { tally.text_exact = tally.text_exact + 1 }
+        return c
+    }
+    let mut rounded = v
+    rounded.tints = true
+    let r = compare_panel{ &io, &fs, &heap, &t, name, v = rounded, write = false } ifnull {
+        tally.failed = tally.failed + 1
+        return c
+    }
+    if r.other == 0 and r.stray == 0 {
+        tally.tints = tally.tints + 1
+        tally.tint_pixels = tally.tint_pixels + c.other
+        tally.tint_worst = ui::pick_max_i32{ a = tally.tint_worst, b = c.worst_other }
+        if c.text == 0 { tally.text_exact = tally.text_exact + 1 }
+        return c
+    }
+    tally.differ = tally.differ + 1
+    tally.other_worst = ui::pick_max_i32{ a = tally.other_worst, b = r.worst_other }
+    tally.other_pixels = tally.other_pixels + r.other + r.stray
+    tally.tint_pixels = tally.tint_pixels + (if c.other > r.other { c.other - r.other } else { 0 })
+    _ = @fmt(&io, "{} {}: {} pixels differ outside text with the tints rounded ({} as loaded; largest {}):", name, what, r.other + r.stray, c.other, r.worst_other)
+    let mut mask: u32 = if r.between != 0 { @as(u32, 1) << 15 } else { 0 }
+    for k in 0..16 {
+        if r.kinds[k] != 0 {
+            tally.kinds[k] = tally.kinds[k] + 1
+            mask = mask | (@as(u32, 1) << @as(u32, k))
+            _ = @fmt(&io, " {} in {},", r.kinds[k], get_kind_name{ kind = k })
+        }
+    }
+    _ = @fmt(&io, " {} pictures between pixels, text {}\n", r.between / 4, c.text)
+    let mut at = tally.group_count
+    for i in 0..tally.group_count {
+        if tally.groups[i].mask == mask { at = i }
+    }
+    if at == tally.group_count and at < tally.groups.len {
+        tally.groups[at] = Group{ mask, panels = 0, names = ["", "", "", "", "", ""] }
+        tally.group_count = tally.group_count + 1
+    }
+    if at < tally.group_count {
+        if tally.groups[at].panels < 6 { tally.groups[at].names[tally.groups[at].panels] = name }
+        tally.groups[at].panels = tally.groups[at].panels + 1
+    }
+    if t.o.keep {
+        let n = @as(usize, r.width) * @as(usize, r.height) * 4
+        save_picture{ &io, &fs, &heap, o = t.o, name, suffix = "-diff.png", width = r.width, height = r.height, rgba = t.diff[..n] }
+    }
+    return c
+}
+
+fn print_tally { mut io: Io, what: []u8, tally: Tally } {
+    _ = @fmt(&io, "  {}: {} panels\n", what, tally.panels)
+    _ = @fmt(&io, "    {} match exactly outside text\n", tally.exact)
+    _ = @fmt(&io, "    {} differ only by the precision of a tint ({} pixels, by at most {} in a channel: lib/gui's float tints against 8 bits a channel)\n", tally.tints, tally.tint_pixels, tally.tint_worst)
+    _ = @fmt(&io, "    {} differ otherwise ({} pixels with the tints rounded, by at most {} in a channel), by where the pixels lie:\n", tally.differ, tally.other_pixels, tally.other_worst)
+    if tally.failed != 0 { _ = @fmt(&io, "    {} could not be opened or drawn\n", tally.failed) }
+    for i in 0..tally.group_count {
+        let gr = tally.groups[i]
+        _ = @fmt(&io, "      {} in", gr.panels)
+        for k in 0..16 {
+            if (gr.mask & (@as(u32, 1) << @as(u32, k))) != 0 { _ = @fmt(&io, " {},", get_kind_name{ kind = k }) }
+        }
+        _ = @fmt(&io, " e.g.")
+        for k in 0..ui::pick_min_u32{ a = gr.panels, b = 6 } { _ = @fmt(&io, " {}", gr.names[k]) }
+        _ = @fmt(&io, "\n")
+    }
+    _ = @fmt(&io, "    text: {} pixels differ in all; in {} of the {} panels above that match or differ by tints alone, no text pixel differs\n", tally.text_pixels, tally.text_exact, tally.exact + tally.tints)
+}
+
+// ---- the Gameplay options screen written against kui, and its scripted run
+
+// What the screen edits (lib/frontend's Settings has them, with the rest of the options).
+struct Settings {
+    mouse_look: bool = false, auto_level_up: bool = false, autosave: bool = false,
+    reverse_minigame_y: bool = false, combat_movement: bool = false, difficulty: i32 = 1,
+}
+
+enum Action: u8 { none, close, key_mapping, mouse_settings }
+
+// The screen's state, and what the script reads of a frame.
+struct Gameplay {
+    settings: Settings = Settings{ .. },
+    action: Action = Action::none,
+    autosave_changed: bool = false,     // the Autosave box changed this frame
+    autosave_entered: bool = false,     // its hover began this frame (Interaction.entered: where the hover sound hangs)
+    back_entered: bool = false,         // the Close button's
+}
+
+// The Gameplay options screen as its own code: what lib/frontend's tag-keyed glue (bind_screen's set_checked calls,
+// apply_value's tag compares, the activate events) becomes on the immediate route. The controls are recorded in
+// the file's draw order (ascending ID), so the picture is the replay's.
+fn show_gameplay { mut ui: ui::Ui, mut kit: kui::Kit, panel: *mut gui::Panel, mut s: Gameplay } {
+    s.action = Action::none
+    let scope = kui::begin_panel{ &ui, &kit, panel, keys = true }
+    if ui::take_key{ &ui, key = ui::Key::escape, mods = 0 } { s.action = Action::close }
+    _ = kui::add_check{ &ui, &kit, panel, tag = "CB_INVERTCAM", value = &s.settings.mouse_look }
+    _ = kui::add_check{ &ui, &kit, panel, tag = "CB_LEVELUP", value = &s.settings.auto_level_up }
+    _ = kui::add_button{ &ui, &kit, panel, tag = "BTN_DIFFICULTY" }
+    if kui::add_button{ &ui, &kit, panel, tag = "BTN_DIFFLEFT" } and s.settings.difficulty > 0 { s.settings.difficulty = s.settings.difficulty - 1 }
+    if kui::add_button{ &ui, &kit, panel, tag = "BTN_DIFFRIGHT" } and s.settings.difficulty < 2 { s.settings.difficulty = s.settings.difficulty + 1 }
+    kui::add_label{ &ui, &kit, panel, tag = "LBL_TITLE" }
+    _ = kui::add_list{ &ui, &kit, panel, tag = "LB_DESC" }
+    // The Autosave box through add_control, to read when its hover begins; the others through add_check.
+    kui::set_checked{ panel, tag = "CB_AUTOSAVE", on = s.settings.autosave }
+    let autosave = kui::add_control{ &ui, &kit, panel, tag = "CB_AUTOSAVE" }
+    if autosave.changed { s.settings.autosave = autosave.value != 0 }
+    s.autosave_changed = autosave.changed
+    s.autosave_entered = autosave.entered
+    _ = kui::add_check{ &ui, &kit, panel, tag = "CB_REVERSE", value = &s.settings.reverse_minigame_y }
+    _ = kui::add_check{ &ui, &kit, panel, tag = "CB_DISABLEMOVE", value = &s.settings.combat_movement }
+    let back = kui::add_control{ &ui, &kit, panel, tag = "BTN_BACK" }
+    s.back_entered = back.entered
+    if back.activated { s.action = Action::close }
+    if kui::add_button{ &ui, &kit, panel, tag = "BTN_DEFAULT" } { s.settings = Settings{ .. } }
+    if kui::add_button{ &ui, &kit, panel, tag = "BTN_KEYMAP" } { s.action = Action::key_mapping }
+    if kui::add_button{ &ui, &kit, panel, tag = "BTN_MOUSE" } { s.action = Action::mouse_settings }
+    ui::end{ &ui, scope }
+}
+
+// The same screen on the replay route: the panel replayed from its table, and its events read as lib/frontend's
+// glue reads lib/gui's (events.ctx: apply_value by tag, activate by tag).
+fn replay_gameplay { mut ui: ui::Ui, mut kit: kui::Kit, panel: *mut gui::Panel, mut s: Gameplay } {
+    s.action = Action::none
+    s.autosave_changed = false
+    s.autosave_entered = false
+    s.back_entered = false
+    kui::replay_panel{ &ui, &kit, panel, keys = true }
+    for e in kui::take_events{ kit } {
+        let on = e.value != 0
+        match e.kind {
+            cancel => { s.action = Action::close }
+            hilight => {
+                if slice::eq_bytes{ a = e.tag, b = "CB_AUTOSAVE" } { s.autosave_entered = true }
+                if slice::eq_bytes{ a = e.tag, b = "BTN_BACK" } { s.back_entered = true }
+            }
+            value_changed => {
+                if slice::eq_bytes{ a = e.tag, b = "CB_INVERTCAM" } { s.settings.mouse_look = on }
+                else if slice::eq_bytes{ a = e.tag, b = "CB_LEVELUP" } { s.settings.auto_level_up = on }
+                else if slice::eq_bytes{ a = e.tag, b = "CB_AUTOSAVE" } {
+                    s.settings.autosave = on
+                    s.autosave_changed = true
+                }
+                else if slice::eq_bytes{ a = e.tag, b = "CB_REVERSE" } { s.settings.reverse_minigame_y = on }
+                else if slice::eq_bytes{ a = e.tag, b = "CB_DISABLEMOVE" } { s.settings.combat_movement = on }
+            }
+            activate => {
+                if slice::eq_bytes{ a = e.tag, b = "BTN_BACK" } { s.action = Action::close }
+                else if slice::eq_bytes{ a = e.tag, b = "BTN_DEFAULT" } { s.settings = Settings{ .. } }
+                else if slice::eq_bytes{ a = e.tag, b = "BTN_KEYMAP" } { s.action = Action::key_mapping }
+                else if slice::eq_bytes{ a = e.tag, b = "BTN_MOUSE" } { s.action = Action::mouse_settings }
+                else if slice::eq_bytes{ a = e.tag, b = "BTN_DIFFLEFT" } and s.settings.difficulty > 0 { s.settings.difficulty = s.settings.difficulty - 1 }
+                else if slice::eq_bytes{ a = e.tag, b = "BTN_DIFFRIGHT" } and s.settings.difficulty < 2 { s.settings.difficulty = s.settings.difficulty + 1 }
+            }
+            else => {}
+        }
+    }
+    kui::clear_events{ &kit }
+}
+
+// A scripted host: frames of a fixed size and scale, the pointer and the keys pushed between them.
+struct Script {
+    ui: *mut ui::Ui, kit: *mut kui::Kit, g: *mut gui::Gui, panel: *mut gui::Panel,
+    info: ui::FrameInfo, replay: bool,
+    game: Gameplay,
+    frame: u32, unclean: u32,
+    hover_sounds: u32, click_sounds: u32,       // queued by the last frame
+    checks: u32, failed: u32,
+}
+
+fn step_frame { mut s: Script } {
+    ui::begin_frame{ ui = s.ui, frame = s.info }
+    kui::begin_frame{ kit = s.kit, ui = s.ui, g = s.g.* }
+    if s.replay {
+        replay_gameplay{ ui = s.ui, kit = s.kit, panel = s.panel, s = &s.game }
+    } else {
+        show_gameplay{ ui = s.ui, kit = s.kit, panel = s.panel, s = &s.game }
+    }
+    ui::end_frame{ ui = s.ui }
+    s.frame = s.frame + 1
+    s.hover_sounds = 0
+    s.click_sounds = 0
+    for n in kui::take_sounds{ kit = s.kit } {
+        if n == 1 { s.hover_sounds = s.hover_sounds + 1 } else if n == 0 { s.click_sounds = s.click_sounds + 1 }
+    }
+    if s.ui.stats.dropped != 0 or s.ui.stats.problems != 0 or s.ui.draw.dropped != 0 { s.unclean = s.unclean + 1 }
+}
+
+fn expect { mut io: Io, mut s: Script, ok: bool, what: []u8 } {
+    s.checks = s.checks + 1
+    if ok { return }
+    s.failed = s.failed + 1
+    _ = @fmt(&io, "  FAIL ({} route, frame {}): {}\n", if s.replay { "replay" } else { "immediate" }, s.frame, what)
+}
+
+// Whether control `tag` is lit in the table (lib/gui's F_HILIGHT, which kui writes as it lights controls).
+fn is_lit { s: Script, tag: []u8 } -> bool {
+    let i = gui::find_by_tag{ p = s.panel, tag }
+    if i < 0 { return false }
+    return (list::at{ list = s.panel.controls, i = @as(usize, i) }.flags & gui::F_HILIGHT) != 0
+}
+
+// The last frame's node of control `tag`, by its path: the panel's name, a slash, the TAG.
+fn find_control_node { s: Script, tag: []u8 } -> ?ui::Node {
+    let mut path: [96]u8
+    let full = join{ into = path[..], a = "optgameplay/", b = tag }
+    return ui::find_node{ ui = s.ui.*, path = full }
+}
+
+// The pointer onto the middle of control `tag`, addressed by tag through the node list. False when it has no node.
+fn move_to { mut s: Script, tag: []u8 } -> bool {
+    let node = find_control_node{ s, tag } ifnull { return false }
+    _ = ui::push_event{ ui = s.ui, event = ui::Event::pointer_move{ x = node.rect.x + node.rect.w / 2, y = node.rect.y + node.rect.h / 2 } }
+    return true
+}
+
+fn push_key { mut s: Script, key: ui::Key } {
+    _ = ui::push_event{ ui = s.ui, event = ui::Event::key{ key, down = true, repeat = false, mods = 0 } }
+    _ = ui::push_event{ ui = s.ui, event = ui::Event::key{ key, down = false, repeat = false, mods = 0 } }
+}
+
+fn push_button { mut s: Script, down: bool } {
+    _ = ui::push_event{ ui = s.ui, event = ui::Event::pointer_button{ button = 0, down, clicks = 1 } }
+}
+
+// The TAG lib/gui's MOVETO leads to from control `tag` in direction `dir` (0 up, 1 down, 2 left, 3 right), read
+// from the table: the file's link, by the linked control's ID. "" when the file gives none.
+fn find_moveto { s: Script, tag: []u8, dir: usize } -> []u8 {
+    let i = gui::find_by_tag{ p = s.panel, tag }
+    if i < 0 { return "" }
+    let want = list::at{ list = s.panel.controls, i = @as(usize, i) }.moveto[dir]
+    if want < 0 { return "" }
+    let to = gui::find_by_id{ p = s.panel, id = want }
+    if to < 0 { return "" }
+    return list::at{ list = s.panel.controls, i = @as(usize, to) }.tag
+}
+
+// The scripted run of the screen on one route. Every check names the frame it holds on.
+fn run_route { mut io: Io, mut s: Script } {
+    let route = if s.replay { "replay" } else { "immediate" }
+    // Frames 1 and 2: nothing pushed.
+    step_frame{ &s }
+    step_frame{ &s }
+    let grid = kui::Grid{ sx = s.kit.skin.sx, sy = s.kit.skin.sy, ox = 0, oy = 0 }
+    let auto = list::at{ list = s.panel.controls, i = @as(usize, gui::find_by_tag{ p = s.panel, tag = "CB_AUTOSAVE" }) }
+    let want = kui::snap_box{ g = grid, x = s.panel.sx + auto.x, y = s.panel.sy + auto.y, w = auto.w, h = auto.h }
+    let node = find_control_node{ s, tag = "CB_AUTOSAVE" }
+    expect{ &io, &s, ok = node != null, what = "CB_AUTOSAVE is a node at optgameplay/CB_AUTOSAVE" }
+    if let nd = node {
+        expect{ &io, &s, ok = nd.rect == want, what = "its node's rectangle is its design rectangle with each edge snapped" }
+        expect{ &io, &s, ok = nd.role == ui::Role::checkbox and (nd.flags & ui::NODE_CHECKED) == 0, what = "it is a check box, not checked" }
+    }
+    expect{ &io, &s, ok = not is_lit{ s, tag = "CB_AUTOSAVE" } and not s.game.settings.autosave, what = "nothing is lit and Autosave is off before any input" }
+
+    // Hover: the pointer onto CB_AUTOSAVE before frame 3.
+    expect{ &io, &s, ok = move_to{ &s, tag = "CB_AUTOSAVE" }, what = "the pointer moves to CB_AUTOSAVE by its tag" }
+    step_frame{ &s }
+    expect{ &io, &s, ok = s.frame == 3 and s.game.autosave_entered, what = "frame 3: the hover begins (entered)" }
+    expect{ &io, &s, ok = is_lit{ s, tag = "CB_AUTOSAVE" }, what = "frame 3: the hover lights CB_AUTOSAVE" }
+    expect{ &io, &s, ok = s.hover_sounds == 1, what = "frame 3: the hover sound is asked for once" }
+    step_frame{ &s }
+    step_frame{ &s }
+    expect{ &io, &s, ok = not s.game.autosave_entered and s.hover_sounds == 0 and is_lit{ s, tag = "CB_AUTOSAVE" }, what = "frames 4 and 5: still lit, entered and the sound do not come again" }
+
+    // Click: down before frame 6, up before frame 7.
+    push_button{ &s, down = true }
+    step_frame{ &s }
+    expect{ &io, &s, ok = not s.game.settings.autosave and not s.game.autosave_changed, what = "frame 6 (button down): Autosave is still off" }
+    push_button{ &s, down = false }
+    step_frame{ &s }
+    expect{ &io, &s, ok = s.frame == 7 and s.game.autosave_changed and s.game.settings.autosave, what = "frame 7 (button up): the setting flips to on" }
+    expect{ &io, &s, ok = (auto.flags & gui::F_CHECKED) != 0 and s.click_sounds == 1, what = "frame 7: the table's box is checked and the click sound is asked for once" }
+    step_frame{ &s }
+    let checked = find_control_node{ s, tag = "CB_AUTOSAVE" }
+    expect{ &io, &s, ok = not s.game.autosave_changed and s.game.settings.autosave, what = "frame 8: it stays on and does not change again" }
+    if let nd = checked { expect{ &io, &s, ok = (nd.flags & ui::NODE_CHECKED) != 0, what = "frame 8: its node says checked" } }
+
+    // Arrow keys follow MOVETO from the lit control: Down before frame 9 moves the focus as frame 9 ends.
+    let down1 = find_moveto{ s, tag = "CB_AUTOSAVE", dir = 1 }
+    let down2 = find_moveto{ s, tag = down1, dir = 1 }
+    let up1 = find_moveto{ s, tag = down2, dir = 0 }
+    _ = @fmt(&io, "  {} route: MOVETO in the file: CB_AUTOSAVE down {}, {} down {}, {} up {}\n", route, down1, down1, down2, down2, up1)
+    expect{ &io, &s, ok = down1.len > 0 and down2.len > 0 and up1.len > 0, what = "the file links CB_AUTOSAVE down twice and back up" }
+    push_key{ &s, key = ui::Key::down }
+    step_frame{ &s }
+    expect{ &io, &s, ok = is_lit{ s, tag = "CB_AUTOSAVE" } and not is_lit{ s, tag = down1 }, what = "frame 9 (Down pushed): the focus moves as the frame ends, CB_AUTOSAVE is still lit in it" }
+    step_frame{ &s }
+    expect{ &io, &s, ok = is_lit{ s, tag = down1 } and not is_lit{ s, tag = "CB_AUTOSAVE" }, what = "frame 10: Down lit the control MOVETO names, and only it" }
+    expect{ &io, &s, ok = s.hover_sounds == 1, what = "frame 10: the move by keys asks for the hover sound once" }
+    push_key{ &s, key = ui::Key::down }
+    step_frame{ &s }
+    step_frame{ &s }
+    expect{ &io, &s, ok = is_lit{ s, tag = down2 } and not is_lit{ s, tag = down1 }, what = "frame 12: a second Down follows the next link" }
+    push_key{ &s, key = ui::Key::up }
+    step_frame{ &s }
+    step_frame{ &s }
+    expect{ &io, &s, ok = is_lit{ s, tag = up1 } and not is_lit{ s, tag = down2 }, what = "frame 14: Up follows the link back" }
+
+    // Enter activates the lit control: back on CB_AUTOSAVE by the keys, Enter flips it off.
+    if slice::eq_bytes{ a = up1, b = down1 } {
+        push_key{ &s, key = ui::Key::up }
+        step_frame{ &s }
+        step_frame{ &s }
+        expect{ &io, &s, ok = is_lit{ s, tag = "CB_AUTOSAVE" }, what = "frame 16: Up again is back on CB_AUTOSAVE" }
+        push_key{ &s, key = ui::Key::enter }
+        step_frame{ &s }
+        expect{ &io, &s, ok = s.game.autosave_changed and not s.game.settings.autosave, what = "frame 17: Enter on the lit box flips the setting off" }
+    }
+
+    // Hover lights a button: the pointer onto BTN_BACK.
+    expect{ &io, &s, ok = move_to{ &s, tag = "BTN_BACK" }, what = "the pointer moves to BTN_BACK by its tag" }
+    let before = s.frame
+    step_frame{ &s }
+    let back = list::at{ list = s.panel.controls, i = @as(usize, gui::find_by_tag{ p = s.panel, tag = "BTN_BACK" }) }
+    expect{ &io, &s, ok = s.frame == before + 1 and s.game.back_entered and s.hover_sounds == 1, what = "the frame after the move: BTN_BACK's hover begins, the hover sound once" }
+    expect{ &io, &s, ok = is_lit{ s, tag = "BTN_BACK" } and back.text.color == gui::color_hilight{} and (back.flags & gui::F_PULSE_TEXT) != 0, what = "the same frame: BTN_BACK is lit, its text yellow and pulsing" }
+    step_frame{ &s }
+    expect{ &io, &s, ok = not s.game.back_entered and s.hover_sounds == 0 and not is_lit{ s, tag = "CB_AUTOSAVE" }, what = "the next frame: entered does not come again, and nothing else is lit" }
+    // The pointer walks off every control: the hilight drops at once, and the focus is kept for the keys, which
+    // move on from where it was (lib/gui's dropped hilight). BTN_BACK has no MOVETO in the file, so from CB_REVERSE.
+    _ = move_to{ &s, tag = "CB_REVERSE" }
+    step_frame{ &s }
+    expect{ &io, &s, ok = is_lit{ s, tag = "CB_REVERSE" } and s.hover_sounds == 1, what = "the pointer onto CB_REVERSE: lit in that frame, its hover sound once" }
+    step_frame{ &s }
+    expect{ &io, &s, ok = not is_lit{ s, tag = "BTN_BACK" }, what = "the next frame: BTN_BACK is dark" }
+    _ = ui::push_event{ ui = s.ui, event = ui::Event::pointer_move{ x = 3, y = 3 } }
+    step_frame{ &s }
+    expect{ &io, &s, ok = not is_lit{ s, tag = "CB_REVERSE" }, what = "the pointer off every control: CB_REVERSE goes dark in that frame" }
+    push_key{ &s, key = ui::Key::down }
+    step_frame{ &s }
+    step_frame{ &s }
+    expect{ &io, &s, ok = is_lit{ s, tag = down2 } and not is_lit{ s, tag = "CB_REVERSE" }, what = "Down then moves on from CB_REVERSE along its MOVETO, and lights where it lands" }
+    // A click on BTN_BACK closes: move, down, up.
+    _ = move_to{ &s, tag = "BTN_BACK" }
+    step_frame{ &s }
+    push_button{ &s, down = true }
+    step_frame{ &s }
+    expect{ &io, &s, ok = s.game.action == Action::none, what = "BTN_BACK pressed: no action yet" }
+    push_button{ &s, down = false }
+    step_frame{ &s }
+    expect{ &io, &s, ok = s.game.action == Action::close, what = "BTN_BACK released: the screen's action is close, in that frame" }
+    step_frame{ &s }
+    expect{ &io, &s, ok = s.game.action == Action::none, what = "the frame after: no action" }
+    push_key{ &s, key = ui::Key::escape }
+    step_frame{ &s }
+    expect{ &io, &s, ok = s.game.action == Action::close, what = "Escape: close, in the frame the key arrives" }
+    expect{ &io, &s, ok = s.unclean == 0, what = "every frame was well formed" }
+    _ = @fmt(&io, "  {} route: {} frames, {} checks, {} failed\n", route, s.frame, s.checks, s.failed)
+}
+
+// The scripted run of the Gameplay options screen, on the immediate route (the screen's own code) and on the
+// replay route, each on a Ui and a kit of its own; then the two routes' pictures compared. True when every check held.
+fn run_script { mut io: Io, mut fs: Fs, mut heap: arena::Arena, mut t: Tool } -> !bool {
+    _ = @fmt(&io, "the scripted run of optgameplay through kui\n")
+    let size = gpu::screen_size{ dev = t.dev.* }
+    let info = ui_kotor::make_frame_info{ size, scale = t.o.scale, dt = 0.0166667 }
+    let mut failed: u32 = 0
+    for round in 0..2 {
+        let id = try gui::open{ g = t.g, &fs, dev = t.dev, name = "optgameplay", mode = gui::Mode::full_screen, modal = false }
+        defer close_panel{ &t, id }
+        let p = gui::find_panel{ g = t.g, id } ifnull { return false }
+        gui::update{ g = t.g, dt = 0.0 }
+        let mut route_ui = try ui::make{ realloc = arena::alloc, &heap, cap = ui::Capacity{ fonts = 32, .. } }
+        let mut route_kit = try kui::make_kit(arena::Arena){ realloc = arena::alloc, &heap }
+        let mut s = Script{
+            ui = &route_ui, kit = &route_kit, g = t.g, panel = p, info, replay = round == 1, game = Gameplay{ .. },
+            frame = 0, unclean = 0, hover_sounds = 0, click_sounds = 0, checks = 0, failed = 0,
+        }
+        run_route{ &io, &s }
+        failed = failed + s.failed
+    }
+    // The two routes draw one picture: the panel as loaded, by the screen's code and by the replay.
+    let id = try gui::open{ g = t.g, &fs, dev = t.dev, name = "optgameplay", mode = gui::Mode::full_screen, modal = false }
+    defer close_panel{ &t, id }
+    let p = gui::find_panel{ g = t.g, id } ifnull { return false }
+    gui::update{ g = t.g, dt = t.o.dt }
+    let n = @as(usize, size.width) * @as(usize, size.height) * 4
+    try draw_kui{ &io, &t, p, measure = false }
+    _ = try gpu::read_screen{ dev = t.dev, into = t.kui_bare[..n] }
+    let mut game = Gameplay{ .. }
+    try draw_glue{ &t, p, game = &game }
+    _ = try gpu::read_screen{ dev = t.dev, into = t.kui_full[..n] }
+    let mut differ: u64 = 0
+    for at in 0..n {
+        if t.kui_bare[at] != t.kui_full[at] { differ = differ + 1 }
+    }
+    _ = @fmt(&io, "  the screen's own code and the replay draw the same picture: {} of {} bytes differ\n", differ, n)
+    if differ != 0 { failed = failed + 1 }
+    _ = @fmt(&io, "the scripted run: {}\n", if failed == 0 { "every check held" } else { "FAILED" })
+    return failed == 0
+}
+
+// draw_kui with the screen's own code in place of the replay.
+fn draw_glue { mut t: Tool, p: *mut gui::Panel, mut game: Gameplay } -> ! {
+    let size = gpu::screen_size{ dev = t.dev.* }
+    for _ in 0..2 {
+        ui::begin_frame{ ui = t.ui, frame = ui_kotor::make_frame_info{ size, scale = t.o.scale, dt = 0.0 } }
+        kui::begin_frame{ kit = t.kit, ui = t.ui, g = t.g.* }
+        show_gameplay{ ui = t.ui, kit = t.kit, panel = p, s = &game }
+        ui::end_frame{ ui = t.ui }
+        _ = kui::take_sounds{ kit = t.kit }
+        if t.ui.stats.dropped != 0 or t.ui.stats.problems != 0 or t.ui.draw.dropped != 0 { t.unclean = t.unclean + 1 }
+    }
+    ui_stage::stage{ out = t.staged, list = &t.ui.draw, provider = null }
+    render::begin_frame{ frame = t.frame, time = 0.0 }
+    clear_screen{ &t }
+    gui::draw_backdrop_pass{ g = t.g, frame = t.frame }
+    ui_kotor::submit{ frame = t.frame, staged = t.staged, target = null }
+    try gpu::submit{ dev = t.dev, frame = t.frame }
+}
+
+// ---- output
+
+fn save_picture { mut io: Io, mut fs: Fs, mut heap: arena::Arena, o: Options, name: []u8, suffix: []u8, width: u32, height: u32, rgba: []u8 } {
+    let mut file: [96]u8
+    let fname = join{ into = file[..], a = name, b = suffix }
+    let mut path_buf: [512]u8
+    let path = join{ into = path_buf[..], a = o.out, b = fname }
+    let mark = arena::mark{ heap }
+    defer arena::restore{ &heap, to = mark }
+    png::save{ &fs, realloc = arena::alloc, &heap, path, image = png::Image{ width, height, rgba }, alpha = false, bottom_up = false } iferr err{ error } {
+        _ = @fmt(&io, "{}: save failed: {}\n", path, error)
+        return
+    }
+    _ = @fmt(&io, "wrote {} ({}x{})\n", path, width, height)
+}
+
+// `a` then `b`, with a slash between them when `a` is a directory and `b` a name.
+fn join { into: []mut u8, a: []u8, b: []u8 } -> []u8 {
+    let mut n: usize = 0
+    for c in a {
+        if n < into.len {
+            into[n] = c
+            n = n + 1
+        }
+    }
+    if n > 0 and into[n - 1] != '/' and b.len > 0 and b[0] != '.' and b[0] != '-' and n < into.len {
+        into[n] = '/'
+        n = n + 1
+    }
+    for c in b {
+        if n < into.len {
+            into[n] = c
+            n = n + 1
+        }
+    }
+    return into[..n]
+}
+
+fn make_dir { mut fs: Fs, path: []u8 } {
+    let mut i: usize = 1
+    while i <= path.len {
+        if i == path.len or path[i] == '/' {
+            fs::make_dir{ &fs, path = path[..i] } iferr {}
+        }
+        i = i + 1
+    }
+}
