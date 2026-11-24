@@ -3,13 +3,11 @@
 // Staged. Outline text goes through a fake provider that rasterises boxes. The batching invariant is
 // also checked directly on randomly generated lists (a fixed seed).
 //
-//   kotor/tools/ctxc test ui/tests/stage                          (from the repository root)
+//   kotor/tools/ctxc test ui/tests/stage                          (from anywhere)
 //   kotor/tools/ctxc test ui/tests/stage -- --update-goldens   (after an intended change: rewrites the goldens)
 //
 // Writes the atlas to ui/out/stage-atlas.png (ignored by git) to look at.
 
-const GOLDEN_DIR: []u8 = "ui/tests/stage/golden"
-const ATLAS_PNG: []u8 = "ui/out/stage-atlas.png"
 
 // ---- the fake outline provider: one glyph a byte, `pixels / 2` apart, each a box
 
@@ -112,7 +110,7 @@ fn dump { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, staged: *
     try ui_rec::write_staged{ &sink, staged }
     // the staged dump fit its buffer
     @expect(&t, sink.lost == 0)
-    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name, actual = ui_rec::get_text{ sink }, scratch })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, name, actual = ui_rec::get_text{ sink }, scratch })
 }
 
 // ---- the stage 0 list, every field of every instance
@@ -1065,8 +1063,11 @@ fn stages_the_atlas_and_writes_it_as_a_png { mut t: Test, mut io: Io, mut fs: Fs
     ui_stage::stage{ out = &staged, list = &list, provider }
     // the whole test font and twenty boxes fit the atlas
     @expect(&t, staged.dropped == 0 and staged.glyph_count == 95 + 20)
-    _ = fs::make_dir{ &fs, path = "ui/out" }
+    let mut out_buf: [1024]u8
+    _ = fs::make_dir{ &fs, path = ui_check::make_out_path{ &t, name = "", out = out_buf[..] } }
+    let mut png_buf: [1024]u8
+    let atlas_png = ui_check::make_out_path{ &t, name = "stage-atlas.png", out = png_buf[..] }
     let picture = ui_test::Picture{ width = staged.atlas.width, height = staged.atlas.height, channels = 1, pixels = staged.atlas.pixels }
-    try ui_test::write_png{ &fs, realloc = arena::alloc, &heap, path = ATLAS_PNG, picture, bottom_up = true }
-    _ = @fmt(&io, "wrote {} ({}x{})\n", ATLAS_PNG, staged.atlas.width, staged.atlas.height)
+    try ui_test::write_png{ &fs, realloc = arena::alloc, &heap, path = atlas_png, picture, bottom_up = true }
+    _ = @fmt(&io, "wrote {} ({}x{})\n", atlas_png, staged.atlas.width, staged.atlas.height)
 }

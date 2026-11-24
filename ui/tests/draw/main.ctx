@@ -1,9 +1,8 @@
 // Stage 0's tests: the draw list, the recorder and number formatting.
 //
-//   kotor/tools/ctxc test ui/tests/draw                          (from the repository root)
+//   kotor/tools/ctxc test ui/tests/draw                          (from anywhere)
 //   kotor/tools/ctxc test ui/tests/draw -- --update-goldens   (after an intended change: rewrites the goldens)
 
-const GOLDEN_DIR: []u8 = "ui/tests/draw/golden"
 
 fn make_rect { x: i32, y: i32, w: i32, h: i32 } -> ui::Rect {
     return ui::Rect{ x, y, w, h }
@@ -84,7 +83,7 @@ fn writes_every_shape_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut m
     try ui_rec::write_list{ &sink, list = &list }
     // the dump fit its buffer
     @expect(&t, sink.lost == 0)
-    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "list", actual = ui_rec::get_text{ sink }, scratch })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, name = "list", actual = ui_rec::get_text{ sink }, scratch })
 }
 
 // Overflow is counted, never a panic and never an unclipped shape.

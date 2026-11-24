@@ -1,6 +1,6 @@
 // Stage 4's tests: ui_fonts over FreeType and HarfBuzz, with a real font from the system.
 //
-//   kotor/tools/ctxc test ui/tests/fonts                          (from the repository root)
+//   kotor/tools/ctxc test ui/tests/fonts                          (from anywhere)
 //   UI_FONT=PATH UI_CJK_FONT=PATH kotor/tools/ctxc test ui/tests/fonts
 //
 // UI_FONT is the Latin face (default: the platform's, such as C:/Windows/Fonts/segoeui.ttf) and
@@ -170,9 +170,8 @@ fn is_bad_font { mut lib: ui_fonts::Library, data: []u8 } -> bool {
 
 // ---- add_face_file
 
-// Where the tests below write the files they add: under ui/out, which git ignores. Each test names
-// its own files, since the tests run at once.
-const SCRATCH_DIR: []u8 = "ui/out"
+// The tests below write the files they add under ui/out, which git ignores (`make_out_path`, from
+// the test's own file). Each test names its own files, since the tests run at once.
 
 // A face added from its file is the face added from its bytes: the same tables, the same glyphs
 // and advances. A face of a collection by its index too, where the CJK face is a collection.
@@ -223,19 +222,24 @@ fn adds_a_face_from_a_file_as_from_its_bytes { mut t: Test, mut io: Io, mut fs: 
 fn refuses_files_that_are_not_fonts { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let latin_path = ui_check::get_latin_font{ &t, &fs, &proc }
-    _ = fs::make_dir{ &fs, path = SCRATCH_DIR }
-    let empty = "ui/out/fonts-empty.ttf"
+    let mut dir_buf: [1024]u8
+    _ = fs::make_dir{ &fs, path = ui_check::make_out_path{ &t, name = "", out = dir_buf[..] } }
+    let mut empty_buf: [1024]u8
+    let empty = ui_check::make_out_path{ &t, name = "fonts-empty.ttf", out = empty_buf[..] }
     _ = try fs::write_all{ &fs, path = empty, bytes = "" }
     let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ faces = 2, sizes = 4, runs = 4, run_bytes = 256, run_glyphs = 256, scratch = 64 } }
     let live = lib.live
     let freed = ui_fonts::count_freed{ &fonts }
-    let missing = name_refusal{ &io, &lib, path = "ui/out/fonts-there-is-no-such-file.ttf", index = 0 }
-    let directory = name_refusal{ &io, &lib, path = "ui/tests/fonts", index = 0 }
+    let mut missing_buf: [1024]u8
+    let missing = name_refusal{ &io, &lib, path = ui_check::make_out_path{ &t, name = "fonts-there-is-no-such-file.ttf", out = missing_buf[..] }, index = 0 }
+    let directory = name_refusal{ &io, &lib, path = test::dir{ &t }, index = 0 }
     let nothing = name_refusal{ &io, &lib, path = empty, index = 0 }
-    let text = name_refusal{ &io, &lib, path = "ui/tests/fonts/build.ctx", index = 0 }
+    let mut text_buf: [1024]u8
+    let text = name_refusal{ &io, &lib, path = ui_check::make_path{ &t, relative = "build.ctx", out = text_buf[..] }, index = 0 }
     let index = name_refusal{ &io, &lib, path = latin_path, index = 7 }
     let no_path = name_refusal{ &io, &lib, path = "", index = 0 }
-    let nul = name_refusal{ &io, &lib, path = "ui/out/a\x00b.ttf", index = 0 }
+    let mut nul_buf: [1024]u8
+    let nul = name_refusal{ &io, &lib, path = ui_check::make_out_path{ &t, name = "a\x00b.ttf", out = nul_buf[..] }, index = 0 }
     let mut long: [4200]u8
     for i in 0..long.len { long[i] = 'a' }
     let too_long = name_refusal{ &io, &lib, path = long[..], index = 0 }
@@ -287,9 +291,12 @@ fn name_refusal { mut io: Io, mut lib: ui_fonts::Library, path: []u8, index: u32
 fn releases_a_files_mapping_with_its_face { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let latin = try read_latin{ &t, &fs, &proc, &heap }
-    _ = fs::make_dir{ &fs, path = SCRATCH_DIR }
-    let path = "ui/out/fonts-mapped-\xC3\xBC\xE5\xAD\x97.ttf"            // fonts-mapped-ü字.ttf
-    let moved = "ui/out/fonts-mapped-moved.ttf"
+    let mut dir_buf: [1024]u8
+    _ = fs::make_dir{ &fs, path = ui_check::make_out_path{ &t, name = "", out = dir_buf[..] } }
+    let mut path_buf: [1024]u8
+    let path = ui_check::make_out_path{ &t, name = "fonts-mapped-\xC3\xBC\xE5\xAD\x97.ttf", out = path_buf[..] }            // fonts-mapped-ü字.ttf
+    let mut moved_buf: [1024]u8
+    let moved = ui_check::make_out_path{ &t, name = "fonts-mapped-moved.ttf", out = moved_buf[..] }
     _ = fs::remove{ &fs, path }
     _ = fs::remove{ &fs, path = moved }
     _ = try fs::write_all{ &fs, path, bytes = latin }
@@ -322,7 +329,10 @@ fn releases_a_files_mapping_with_its_face { mut t: Test, mut io: Io, mut fs: Fs,
     @expect(&t, can_write{ &fs, path, bytes = latin } and can_rename{ &fs, from = path, to = moved })
 
     // Closing the library unmaps a file whose face is alive, which may be deleted meanwhile.
-    let again = try ui_fonts::add_face_file{ &lib, path = moved, index = 0 }
+    let again = ui_fonts::add_face_file{ &lib, path = moved, index = 0 } iferr err{ error } {
+        _ = @fmt(&io, "{}: {}\n", moved, error)
+        ui_fonts::Face{ .. }
+    }
     // the renamed file is added again
     @expect(&t, again.id != 0 and lib.live.hb_blobs == 1)
     let deleted = can_remove{ &fs, path = moved }

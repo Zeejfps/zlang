@@ -4,7 +4,7 @@
 // piece) staged and drawn by ui_gl into an offscreen target of a hidden SDL window, at scales 1, 1.5
 // and 2, read back and written as PNG to look at; and text in an outline font (text.ctx).
 //
-//   kotor/tools/ctxc test ui/tests/shots                              (from the repository root)
+//   kotor/tools/ctxc test ui/tests/shots                              (from anywhere)
 //   UI_SHOTS_DIR=DIR kotor/tools/ctxc test ui/tests/shots             the directory the pictures go to
 //
 // Writes conformance-gl.png (the three scales one above another) and conformance-gl-1x.png,
@@ -14,8 +14,6 @@
 // staged draw count, that a second identical frame uploads nothing, and that drawing without the
 // base instance gives the same pixels. Where SDL opens no window with an OpenGL context, the
 // test is skipped, with the reason.
-
-const OUT_DEFAULT: []u8 = "ui/out"
 
 const WIDTH: f32 = 480.0
 const HEIGHT: f32 = 408.0
@@ -65,10 +63,12 @@ fn can_open_gl_window { mut sdl: ui_sdl::Sdl, mut heap: arena::Arena, mut reason
     return true
 }
 
-// Where the pictures go: UI_SHOTS_DIR, else ui/out (which git ignores).
-fn get_out_dir { mut proc: Proc } -> []u8 {
-    let dir = proc::env{ &proc, name = "UI_SHOTS_DIR" } ifnull { return OUT_DEFAULT }
-    return if dir.len > 0 { dir } else { OUT_DEFAULT }
+// Where the pictures go: UI_SHOTS_DIR, else ui/out (which git ignores), in `buf`.
+fn get_out_dir { mut t: Test, mut proc: Proc, buf: []mut u8 } -> []u8 {
+    if let dir = proc::env{ &proc, name = "UI_SHOTS_DIR" } {
+        if dir.len > 0 { return dir }
+    }
+    return ui_check::make_out_path{ &t, name = "", out = buf }
 }
 
 // What OpenGL or SDL said when a picture could not be drawn, beside the error the test returns.
@@ -90,7 +90,8 @@ fn draws_the_conformance_list_at_three_scales { mut t: Test, mut io: Io, mut fs:
     let mut heap = ui_check::make_heap{ &mem }
     skip_without_gl_window{ &t, &sdl, &heap }
     let mut log: [16384]u8
-    shoot_conformance{ &io, &fs, &sdl, &t, &heap, out_dir = get_out_dir{ &proc }, log = log[..] } iferr err{ error } {
+    let mut out_buf: [1024]u8
+    shoot_conformance{ &io, &fs, &sdl, &t, &heap, out_dir = get_out_dir{ &t, &proc, buf = out_buf[..] }, log = log[..] } iferr err{ error } {
         say_gl_error{ &io, &sdl, error, log = log[..] }
         return error
     }

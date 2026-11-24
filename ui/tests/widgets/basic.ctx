@@ -282,7 +282,7 @@ fn record_states {
     let off = ui::find_node{ ui = gui, path } ifnull ui::Node{ .. }
     let mut golden: [64]u8
     let n = join_name{ out = golden[..], a = "basic-", b = name, c = theme }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = golden[..n], actual = ui_rec::get_text{ sink }, scratch })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, name = golden[..n], actual = ui_rec::get_text{ sink }, scratch })
     // states: every frame is clean
     @expect(&t, d.unclean == 0 and sink.lost == 0)
     // states: the hand cursor over a widget that can be used
@@ -324,7 +324,7 @@ fn record_static {
     try write_frame{ &sink, ui = gui, name = "not enabled" }
     let mut golden: [64]u8
     let n = join_name{ out = golden[..], a = "basic-", b = "static", c = theme }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = golden[..n], actual = ui_rec::get_text{ sink }, scratch })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, name = golden[..n], actual = ui_rec::get_text{ sink }, scratch })
     // static: every frame is clean
     @expect(&t, d.unclean == 0 and sink.lost == 0)
 }
@@ -350,7 +350,7 @@ fn record_tooltip { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena,
     let asking = not d.requests.animating and ui_check::has_wake{ requests = d.requests, want = 0.125 }
     ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
     try write_frame{ &sink, ui = gui, name = "the tooltip, half a second after the hover began" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "basic-tooltip", actual = ui_rec::get_text{ sink }, scratch })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, name = "basic-tooltip", actual = ui_rec::get_text{ sink }, scratch })
     // tooltip: shown after tip_delay and not before, with a frame asked for at the delay while waiting
     @expect(&t, not early and asking and count_text{ ui = gui } == 2)
     // tooltip: it is a node
@@ -380,7 +380,7 @@ fn record_scaled { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, 
     try write_frame{ &sink, ui = gui, name = "the button focused by Tab" }
     even = even and has_even_borders{ ui = gui }
     let ring = has_border{ ui = gui, width = 3, color = gui.theme.focus_ring }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "basic-scale", actual = ui_rec::get_text{ sink }, scratch })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, name = "basic-scale", actual = ui_rec::get_text{ sink }, scratch })
     // scale 1.5: every border is the same on all four sides
     @expect(&t, even)
     // scale 1.5: controls 42 high, marks 24 square, a track 6 high, a bar 12 high
@@ -439,7 +439,7 @@ fn record_nodes { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, o
     ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
     ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
     try write_nodes{ &sink, ui = gui, name = "every widget's node" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "basic-nodes", actual = ui_rec::get_text{ sink }, scratch })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, name = "basic-nodes", actual = ui_rec::get_text{ sink }, scratch })
     // nodes: a named panel and row are nodes
     @expect(&t, ui::find_node{ ui = gui, path = "panel" } != null and ui::find_node{ ui = gui, path = "bar" } != null)
     // nodes: every frame is clean

@@ -408,7 +408,7 @@ fn record_window { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, 
     ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
     try write_frame{ &sink, ui = gui, name = "its close button focused by keys" }
     let focused = has_node_flag{ ui = gui, path = "Tasks/.close", flag = ui::NODE_FOCUSED }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = if dark { "windows-window-dark" } else { "windows-window-light" }, actual = ui_rec::get_text{ sink }, scratch })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, name = if dark { "windows-window-dark" } else { "windows-window-light" }, actual = ui_rec::get_text{ sink }, scratch })
     // window: 200 by 150 at (40, 40), its title bar inside its 1-pixel border, 28 high
     @expect(&t, is_rect{ r, x = 40, y = 40, w = 200, h = 150 } and is_rect{ r = bar, x = 41, y = 41, w = 198, h = 28 })
     // window: the close button 20 square 4 from the bar's end, the grip 16 by 8 in the corner
@@ -431,7 +431,7 @@ fn record_menu { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, ou
     _ = hover_node{ &d, ui = &gui, path = "Recent", show = show_desk{ &s, _ } }
     _ = hover_node{ &d, ui = &gui, path = "notes.txt", show = show_desk{ &s, _ } }
     try write_frame{ &sink, ui = gui, name = "File and Recent open, notes.txt lit" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "windows-menu", actual = ui_rec::get_text{ sink }, scratch })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, name = "windows-menu", actual = ui_rec::get_text{ sink }, scratch })
     let file = find_rect{ ui = gui, path = "menu bar/File" }
     let open = find_rect{ ui = gui, path = "File/Open" }
     let recent = find_rect{ ui = gui, path = "File/Recent" }
@@ -457,7 +457,7 @@ fn record_combo { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, o
     _ = ui_test::move_pointer{ ui = &gui, x = 300, y = 10 }
     ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
     try write_frame{ &sink, ui = gui, name = "the list open on Mango" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "windows-combo", actual = ui_rec::get_text{ sink }, scratch })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, name = "windows-combo", actual = ui_rec::get_text{ sink }, scratch })
     // combo golden: every frame is clean
     @expect(&t, d.unclean == 0 and sink.lost == 0)
 }
@@ -472,7 +472,7 @@ fn record_dialog { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, 
     s.dialog = true
     ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
     try write_frame{ &sink, ui = gui, name = "a dialog over a window" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "windows-dialog", actual = ui_rec::get_text{ sink }, scratch })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, name = "windows-dialog", actual = ui_rec::get_text{ sink }, scratch })
     let scrim = find_fill{ ui = gui, color = gui.theme.scrim }
     let window = find_shape_at{ ui = gui, r = find_rect{ ui = gui, path = "Tasks" } }
     let card = find_shape_at{ ui = gui, r = find_rect{ ui = gui, path = "Confirm" } }
@@ -496,7 +496,7 @@ fn record_ghost { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, o
     _ = ui_test::move_pointer{ ui = &gui, x = 80, y = 140 }
     ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
     try write_frame{ &sink, ui = gui, name = "the ghost over the fruit bin" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "windows-ghost", actual = ui_rec::get_text{ sink }, scratch })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, name = "windows-ghost", actual = ui_rec::get_text{ sink }, scratch })
     // The ghost is the last thing drawn: its card and its label.
     let n = @as(usize, gui.draw.count)
     let last_text = n > 0 and gui.draw.cmds[n - 1] is text
@@ -528,7 +528,7 @@ fn record_window_scaled { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::
     try write_frame{ &sink, ui = gui, name = "the File menu at scale 1.5" }
     even = even and has_even_sides{ ui = gui }
     let item = find_rect{ ui = gui, path = "File/Open" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "windows-scale", actual = ui_rec::get_text{ sink }, scratch })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, name = "windows-scale", actual = ui_rec::get_text{ sink }, scratch })
     // scale 1.5: every border of a window and a menu is the same on every side it has
     @expect(&t, even)
     // scale 1.5: the window 300 by 225 at (60, 60), a 2-pixel border, its bar 42 high, menu items 36
@@ -551,7 +551,7 @@ fn record_window_nodes { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::A
     _ = hover_node{ &d, ui = &gui, path = "Recent", show = show_desk{ s = &m, _ } }
     ui_test::step_frame{ &d, ui = &gui, show = show_desk{ s = &m, _ } }
     try write_nodes{ &sink, ui = gui, name = "a menu and its submenu" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "windows-nodes", actual = ui_rec::get_text{ sink }, scratch })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, name = "windows-nodes", actual = ui_rec::get_text{ sink }, scratch })
     // nodes: every frame is clean
     @expect(&t, d.unclean == 0 and sink.lost == 0)
 }

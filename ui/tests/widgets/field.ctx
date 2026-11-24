@@ -297,7 +297,7 @@ fn record_looks {
     click_at{ &r, &f, x = l.x + 3, y = l.y + 3, clicks = 1 }
     press_key{ &r, &f, key = ui::Key::end, mods = 0 }
     try write_frame{ &sink, ui = r.ui, name = "the long text focused at its end, scrolled" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name, actual = ui_rec::get_text{ sink }, scratch })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, name, actual = ui_rec::get_text{ sink }, scratch })
     // looks: every frame is clean
     @expect(&t, is_clean_rig{ r } and sink.lost == 0)
     // looks: the text cursor over a field
@@ -318,7 +318,7 @@ fn record_scaled_field { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::A
     let n = ui::find_node{ ui = r.ui, path = "name" } ifnull ui::Node{ .. }
     click_at{ &r, &f, x = n.rect.x + n.rect.w - 4, y = n.rect.y + n.rect.h / 2, clicks = 1 }
     try write_frame{ &sink, ui = r.ui, name = "at scale 1.5, the name focused" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "field-scale", actual = ui_rec::get_text{ sink }, scratch })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, name = "field-scale", actual = ui_rec::get_text{ sink }, scratch })
     let rect = r.d.requests.text_rect
     // The name's text starts 12 pixels in (8 units), at 15 + 12; "Ada" is three characters of
     // 10.5 pixels, 31.5, the caret's offset the nearest pixel, 32.
@@ -342,7 +342,7 @@ fn record_number { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, 
     f.enabled = false
     step{ &r, &f }
     try write_frame{ &sink, ui = r.ui, name = "not enabled" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "field-number", actual = ui_rec::get_text{ sink }, scratch })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, name = "field-number", actual = ui_rec::get_text{ sink }, scratch })
     // number looks: every frame is clean
     @expect(&t, is_clean_rig{ r })
 }
@@ -358,7 +358,7 @@ fn record_field_nodes { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Ar
     click_index{ &r, &f, path = "name", index = 1 }
     step{ &r, &f }
     try write_text_nodes{ &sink, ui = r.ui, name = "the looks' nodes, the name focused" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "field-nodes", actual = ui_rec::get_text{ sink }, scratch })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, name = "field-nodes", actual = ui_rec::get_text{ sink }, scratch })
     let p = ui::find_node{ ui = r.ui, path = "password" } ifnull ui::Node{ .. }
     // nodes: a password's node has its mask and its count, not its text
     @expect(&t, p.role == ui::Role::text_field and is_text{ a = p.text, b = "*******" } and p.value == 7.0)

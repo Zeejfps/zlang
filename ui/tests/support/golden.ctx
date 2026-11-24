@@ -3,10 +3,10 @@
 // directory beside ui/test (the test font, the scripted driver, the PNG writer), which the
 // samples add too: nothing here may be in a sample.
 //
-// Golden files live beside the test (`ui/tests/<name>/golden/<name>.txt`), named from the
-// repository root, where `ctxc test` is run. A test checks one with
+// Golden files live beside the test (`ui/tests/<name>/golden/<name>.txt`), found from the test's
+// own file with `test::dir`, so a package runs from any working directory. A test checks one with
 //
-//     @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "list", actual, scratch })
+//     @expect(&t, ui_check::compare_golden{ &io, &fs, &t, name = "list", actual, scratch })
 //
 // so the failure's line is the test's own. On a mismatch the compare prints the first differing
 // line both ways and writes `<name>.actual.txt` next to the golden (git ignores it). With the
@@ -109,11 +109,14 @@ namespace ui_check {
         return i
     }
 
-    // Whether `actual` is `dir`/`name`.txt, for an `@expect` at the test's own line. `scratch`
+    // Whether `actual` is the file `golden/NAME.txt` beside the running test's file, for an
+    // `@expect` at the test's own line. `scratch`
     // holds the golden while it is compared, so it must be bigger than the golden file. Says on
     // standard error why not: the golden's first differing line and the actual one, and the file
     // the whole actual text was written to. With `--update-goldens` it writes the golden and holds.
-    fn compare_golden { mut io: Io, mut fs: Fs, mut t: Test, dir: []u8, name: []u8, actual: []u8, scratch: []mut u8 } -> bool {
+    fn compare_golden { mut io: Io, mut fs: Fs, mut t: Test, name: []u8, actual: []u8, scratch: []mut u8 } -> bool {
+        let mut dir_buf: [1024]u8
+        let dir = make_path{ &t, relative = "golden", out = dir_buf[..] }
         let update = is_updating{ &t }
         let mut golden_buf: [1024]u8
         let mut actual_buf: [1024]u8

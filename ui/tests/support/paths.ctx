@@ -1,0 +1,38 @@
+// ui_check: paths a test names from where its own file is, so a package's tests run from any
+// working directory (`test::dir`, spec section 20, rule 12). A package is a directory
+// `ui/tests/<name>/` whose test files are in it, so the repository's `ui/out` (which git ignores)
+// is `../../out` from there and the package's goldens are `golden/` in it.
+namespace ui_check {
+    // The directory the pictures and scratch files of the tests go to, beside the test's file.
+    const OUT_RELATIVE: []u8 = "../../out"
+
+    // `test::dir`/`relative` in `out`: the path of a file kept beside the running test's file. A
+    // path that does not fit `out` is a mistake of the test, and panics.
+    fn make_path { mut t: Test, relative: []u8, out: []mut u8 } -> []u8 {
+        let dir = test::dir{ &t }
+        let mut n = append_part{ out, at = 0, part = dir }
+        n = append_part{ out, at = n, part = "/" }
+        n = append_part{ out, at = n, part = relative }
+        return out[..n]
+    }
+
+    // The scratch file `name` in the out directory (`ui/out`), which is not made here.
+    fn make_out_path { mut t: Test, name: []u8, out: []mut u8 } -> []u8 {
+        let dir = test::dir{ &t }
+        let mut n = append_part{ out, at = 0, part = dir }
+        n = append_part{ out, at = n, part = "/" }
+        n = append_part{ out, at = n, part = OUT_RELATIVE }
+        if name.len > 0 {
+            n = append_part{ out, at = n, part = "/" }
+            n = append_part{ out, at = n, part = name }
+        }
+        return out[..n]
+    }
+
+    // `part` copied into `out` at `at`; the offset after it.
+    fn append_part { out: []mut u8, at: usize, part: []u8 } -> usize {
+        if at + part.len > out.len { @panic("a test's path does not fit its buffer") }
+        slice::copy(u8){ dst = out[at..at + part.len], src = part }
+        return at + part.len
+    }
+}

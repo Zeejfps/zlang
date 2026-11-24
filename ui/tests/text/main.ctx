@@ -2,10 +2,9 @@
 // font (a glyph table of 8 by 16 cells, advance 8) and in an outline font served by a fake provider
 // (7 pixels a byte, one cluster a byte, and "fi" a two-byte ligature of 12).
 //
-//   kotor/tools/ctxc test ui/tests/text                          (from the repository root)
+//   kotor/tools/ctxc test ui/tests/text                          (from anywhere)
 //   kotor/tools/ctxc test ui/tests/text -- --update-goldens   (after an intended change: rewrites the goldens)
 
-const GOLDEN_DIR: []u8 = "ui/tests/text/golden"
 
 // The fake provider's own state: how often it was asked.
 struct Fake { shapes: u32, metrics: u32 }
@@ -376,7 +375,7 @@ fn wraps_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> 
     try write_wraps{ &sink, cache = &f.cache, list = f.list, font = f.font, outline = f.outline, provider, none }
     // the wrap dump fit its buffer
     @expect(&t, sink.lost == 0)
-    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "wrap", actual = ui_rec::get_text{ sink }, scratch })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, name = "wrap", actual = ui_rec::get_text{ sink }, scratch })
 
     // Wrapping the same texts again gives the same lines: nothing is kept between calls.
     let mut again = ui_rec::make_sink{ bytes = again_out }
@@ -398,7 +397,7 @@ fn fits_ellipses_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: M
     try write_fits{ &sink, cache = &f.cache, list = f.list, font = f.font, outline = f.outline, provider, none }
     // the ellipsis dump fit its buffer
     @expect(&t, sink.lost == 0)
-    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "ellipsis", actual = ui_rec::get_text{ sink }, scratch })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, name = "ellipsis", actual = ui_rec::get_text{ sink }, scratch })
 }
 
 #test
@@ -414,7 +413,7 @@ fn steps_and_places_the_caret_as_the_golden { mut t: Test, mut io: Io, mut fs: F
     try write_carets{ &sink, cache = &f.cache, list = f.list, font = f.font, bytes_font = f.bytes_font, outline = f.outline, provider, none }
     // the caret dump fit its buffer
     @expect(&t, sink.lost == 0)
-    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "caret", actual = ui_rec::get_text{ sink }, scratch })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, name = "caret", actual = ui_rec::get_text{ sink }, scratch })
 }
 
 // ---- wrapping at its limits
@@ -853,7 +852,7 @@ fn lays_glyphs_on_whole_pixels { mut t: Test, mut io: Io, mut fs: Fs, mut mem: M
     try dump_glyphs{ &sink, font = def, size = 64, x = 2, y = 2, pen = 0.0, text = "a b" }
     // the glyph dump fit its buffer
     @expect(&t, sink.lost == 0)
-    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "glyphs", actual = ui_rec::get_text{ sink }, scratch })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, name = "glyphs", actual = ui_rec::get_text{ sink }, scratch })
 
     // Whatever the size and wherever the pen is, every glyph is the same whole number of pixels.
     // Each case is a size and a place in logical units at a scale, as pixels: (16 at 3.3, 7.7) at

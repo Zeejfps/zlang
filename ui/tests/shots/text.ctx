@@ -32,8 +32,9 @@ fn draws_text_in_an_outline_font { mut t: Test, mut io: Io, mut fs: Fs, mut mem:
     _ = @fmt(&io, "text: font {}; fallback {}{}; italic {}{}\n", latin_path, cjk.path, if cjk.found { "" } else { " (absent)" },
         italic.path, if italic.found { "" } else { " (absent)" })
     let mut log: [16384]u8
+    let mut out_buf: [1024]u8
     run_text{ &io, &fs, &sdl, &fonts, &t, &heap, latin = latin_path, cjk = if cjk.found { cjk.path } else { null },
-        italic = if italic.found { italic.path } else { null }, out_dir = get_out_dir{ &proc }, log = log[..] } iferr err{ error } {
+        italic = if italic.found { italic.path } else { null }, out_dir = get_out_dir{ &t, &proc, buf = out_buf[..] }, log = log[..] } iferr err{ error } {
         say_gl_error{ &io, &sdl, error, log = log[..] }
         return error
     }

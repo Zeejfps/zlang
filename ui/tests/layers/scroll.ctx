@@ -704,7 +704,7 @@ fn draws_scroll_bars_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut me
     ui::set_scroll{ ui = &gui, id = pane, x = 40, y = 30 }
     ui_test::step_frame{ &d, ui = &gui, show = show_golden_pane{ &p, _ } }
     try write_frame{ &sink, ui = gui, name = "the same at offset 40, 30" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "bars", actual = ui_rec::get_text{ sink }, scratch })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, name = "bars", actual = ui_rec::get_text{ sink }, scratch })
     // the golden frames are clean
     @expect(&t, d.unclean == 0)
 }
