@@ -1980,8 +1980,8 @@ namespace check {
     // ---- tests (§20)
 
     // A `#test` fn of the program's: with `#test{ panics = "text" }`, the text its panic's
-    // message must contain.
-    struct TestFn { decl: u32, panics: ?[]u8 }
+    // message must contain, and with `#test{ skip = "why" }`, why it isn't run.
+    struct TestFn { decl: u32, panics: ?[]u8, skip: ?[]u8 }
 
     // `#test` on x (§20): a fn with a body and no generic parameters, which a test build
     // runs. Its context is capabilities without fields, which the runner's process supplies as
@@ -2007,17 +2007,22 @@ namespace check {
         let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
         let fd = get_decl{ c, d }
         let bad = c.diags.errors
-        // `#test{ panics = "text" }`
+        // `#test{ panics = "text" }`, `#test{ skip = "why" }`, or both
         let mut panics: ?[]u8 = null
-        let mut fielded = false
+        let mut skip: ?[]u8 = null
+        let mut wrong = false
         if a.value.k is braced{ items } {
-            fielded = items.len > 0
             for item in items {
                 if slice::eq_bytes{ a = item.name.text, b = "panics" } and not item.pun and not item.spread and item.value.k is str{ bytes } {
                     if panics != null { error{ &c, at = item.span, msg = "`panics` is given twice" } }
                     panics = bytes
+                } else if slice::eq_bytes{ a = item.name.text, b = "skip" } and not item.pun and not item.spread and item.value.k is str{ bytes } {
+                    if skip != null { error{ &c, at = item.span, msg = "`skip` is given twice" } }
+                    if bytes.len == 0 { error{ &c, at = item.span, msg = "`skip` says why the test isn't run: its text is empty" } }
+                    skip = bytes
                 } else {
-                    error{ &c, at = item.span, msg = "`test` takes one field, `panics = \"text\"`: a string literal that the message of the test's panic must contain" }
+                    wrong = true
+                    error{ &c, at = item.span, msg = "`test` takes two fields, each a string literal: `panics = \"text\"`, which the message of the test's panic must contain, and `skip = \"why\"`, for a test that isn't run" }
                 }
             }
         }
@@ -2047,12 +2052,13 @@ namespace check {
             }
             i = i + 1
         }
-        // A test that must panic passes by that, and may check nothing.
-        if not takes and test != NONE and not fielded {
+        // A test that must panic passes by that, and may check nothing. A skipped one is
+        // checked as the test it is when it runs again.
+        if not takes and test != NONE and panics == null and not wrong {
             errorf{ &c, at = fd.name.span, msg = @fmt("a `test` fn takes a `Test`, as `mut t: Test`, which its checks report to: a test passes by what `@expect(&t, ...)` checks, and `{}` could check nothing", str{ s = fd.name.text }) }
         }
         if c.diags.errors != bad or @as(usize, file) < c.std_files { return }
-        try! list::push{ list = &c.tests, item = TestFn{ decl = d, panics } }
+        try! list::push{ list = &c.tests, item = TestFn{ decl = d, panics, skip } }
     }
 
     // The fn a test build runs in place of `main` (§20): the program's `#test_main` fn, or

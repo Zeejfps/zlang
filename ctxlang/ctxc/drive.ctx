@@ -166,7 +166,7 @@ namespace drive {
     // build, which it leaves alone. The exit code is the runner's.
     fn test { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> i32 {
         if args.len < 2 {
-            io::eprintln{ &io, s = "usage: ctxc test PATH [--list] [-v] [--jobs N] [--timeout SECONDS] [FILTER...]" }
+            io::eprintln{ &io, s = "usage: ctxc test PATH [--list] [-v] [--no-skips] [--jobs N] [--timeout SECONDS] [FILTER...]" }
             return 2
         }
         let path = trim_slash{ path = args[1] }

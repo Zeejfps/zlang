@@ -293,6 +293,12 @@ namespace twoda_tests {
   `Row`. It works in a helper that holds the `Test` too. No `defer` runs when it ends the test.
 - A test that returns an error, panics, runs over 60 s or makes no check fails.
   `#test{ panics = "out of bounds" }` passes by panicking with that text.
+- `test::skip{ &t, why = "no game install" }` ends the test there as skipped, when it finds
+  that what it needs isn't on this machine; `#test{ skip = "why" }` on a test keeps it from
+  running at all. Each prints `FILE:LINE: skip: NAME: WHY` and is counted in the summary
+  (`tests: 5 run, 4 passed, 0 failed, 1 skipped, 0 not selected`); the exit code stays 0, or
+  1 with `--no-skips`. `skip` never returns, but the checker doesn't know: in an `ifnull`
+  block write `return` after it. Never filter tests out with a `#test_main` of your own.
 - Pass `&t` down to helpers that check (`fn same_rows { mut t: Test, a: Table, b: Table }`).
 - Each test runs in its own process, several at once: don't rely on another test's files or
   state. A test that needs the game install belongs in a tool, as before.

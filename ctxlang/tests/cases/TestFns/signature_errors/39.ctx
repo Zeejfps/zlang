@@ -1,0 +1,3 @@
+#test{ skip = "a", skip = "b" }  //~ error at 20: `skip` is given twice
+fn a { mut t: Test } {}
+fn main {} {}

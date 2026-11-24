@@ -565,11 +565,11 @@ What a model writes by default should compile, or fail with the exact fix.
       doesn't hold ([§13, Checks, rule 6](spec.md#checks)).
     - `ctxc test PATH [FILTER...]`, with or without a build.ctx, builds the program with std's
       runner as its entry point in place of `main` (which needn't exist) and runs it. Each
-      test runs in a process of its own ([spec §20, rule 6](spec.md#20-tests)), so a panic fails one test
+      test runs in a process of its own ([spec §20, rule 7](spec.md#20-tests)), so a panic fails one test
       with its message, no static leaks from one test to the next, and tests run at once;
       a test that doesn't end is ended after `--timeout` seconds. One line for each failure,
-      `FILE:LINE: fail: NAME: ...`, then `tests: N run, P passed, F failed, S not selected`;
-      the exit code is 1 if a test failed.
+      `FILE:LINE: fail: NAME: ...`, then `tests: N run, P passed, F failed, K skipped, S not
+      selected`; the exit code is 1 if a test failed.
     - Rule 1, no silent pass: a test that made no check fails (`no check ran`), a filter that
       matches nothing and a program without tests exit with 1 and say so, and a test whose
       process ends in any way but a pass is a failure with its exit code.
@@ -583,7 +583,14 @@ What a model writes by default should compile, or fail with the exact fix.
       ([kotor/lib/formats/twoda_test.ctx](../kotor/lib/formats/twoda_test.ctx), 5 tests on
       tables made by hand, no game install: `ctxc test kotor/tools/fmttest twoda`), which were
       fmttest's `check_text_2da` with its hand-rolled `Tally` and `expect`.
-    - Not built, each for its reason ([spec §20, rule 11](spec.md#20-tests)): a leak check
+    - A skip, since a test that needs a game install or a tool otherwise has to be filtered
+      out by a runner of the program's own ([spec §20, rule 5](spec.md#20-tests)):
+      `test::skip{ &t, why = "no game install" }` ends the test there, and
+      `#test{ skip = "why" }` isn't run. Rule 1 here too: each has a line, `FILE:LINE: skip:
+      NAME: WHY`, and is counted, a test that failed before its skip stays failed, and
+      `--no-skips` makes a skip exit with 1. Both are std's: a function, and a field the
+      runner reads.
+    - Not built, each for its reason ([spec §20, rule 12](spec.md#20-tests)): a leak check
       (std's one allocator is the arena), a temporary directory, tests with arguments. JSON
       output is 6.2's.
 

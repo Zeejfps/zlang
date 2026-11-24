@@ -2,4 +2,4 @@
 //# $ ctxc test . one
 //# exit: 0
 //# stdout:
-//| tests: 2 run, 2 passed, 0 failed, 1 not selected
+//| tests: 2 run, 2 passed, 0 failed, 0 skipped, 1 not selected

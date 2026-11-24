@@ -1,0 +1,3 @@
+#test{ skip = "" }  //~ error at 8: `skip` says why the test isn't run: its text is empty
+fn a { mut t: Test } {}
+fn main {} {}

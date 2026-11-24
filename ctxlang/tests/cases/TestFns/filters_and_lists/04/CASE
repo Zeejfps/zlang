@@ -3,4 +3,4 @@
 //# exit: 1
 //# stdout:
 //| ./t.ctx:6: fail: a::two: 1 == 2: 1 == 2
-//| tests: 3 run, 2 passed, 1 failed, 0 not selected
+//| tests: 3 run, 2 passed, 1 failed, 0 skipped, 0 not selected

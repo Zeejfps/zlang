@@ -1,0 +1,25 @@
+#test
+fn one { mut t: Test } { @expect(&t, 1 == 1) }
+#test{ skip = "not on this machine" }
+fn two { mut t: Test } { @expect(&t, 2 == 3) }
+#test
+fn three { mut t: Test, mut io: Io } {
+    io::println{ &io, s = "written before" }
+    @expect(&t, 3 == 3)
+    test::skip{ &t, why = "no game install" }
+    @expect(&t, 3 == 4)
+}
+#test
+fn four { mut t: Test } { @expect(&t, 4 == 4) }
+
+#test_main
+fn runner { mut io: Io, mut t: Test, count: usize, case: &fn{ index: usize } -> test::Case, run: &fn{ index: usize } -> i32 } -> i32 {
+    let mut failed: i32 = 0
+    for i in 0..count {
+        let c = case{ index = i }
+        let code = test::run_here{ &t, c, index = i, run }
+        _ = @fmt(&io, "{} gave {}, skips {} `{}`\n", c.name, code, c.skips, c.why)
+        if code != test::SKIPPED { failed = failed + code }
+    }
+    return failed * 10
+}

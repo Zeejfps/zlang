@@ -4215,7 +4215,7 @@ namespace lower {
     // (check.ctx, expect_builtin). The sides of a comparison are evaluated once, the left
     // first, into locals that the comparison and the pieces both read. `@require(t, c)`, hard,
     // is the same with std's `test::require` for `test::check`, and after the pieces a call of
-    // std's `test::stop`, with its capabilities from nothing, which ends the test's process;
+    // std's `test::stop`, with its `Test` from nothing, which ends the test's process;
     // whether it held is then dropped by the statement it is.
     fn expect { mut l: Lower, e: syntax::Expr, args: []syntax::Expr, hard: bool } -> ir::Expr {
         let si = map::get{ m = l.c.site_of, key = check::expr_key{ e } } ifnull { @panic("lower: an @expect that wasn't checked") }
@@ -4356,8 +4356,9 @@ namespace lower {
     }
 
     // Test t as a value of std's test::Case, IR type ty: its fn's name with its namespaces, its
-    // file as the compiler was given it, its line, and for `#test{ panics = "text" }` that it
-    // must panic, with the text. Without a test, a Case of nothing.
+    // file as the compiler was given it, its line, for `#test{ panics = "text" }` that it
+    // must panic, with the text, and for `#test{ skip = "why" }` that it isn't run, and why.
+    // Without a test, a Case of nothing.
     fn case_of { mut l: Lower, ty: u32, t: ?check::TestFn } -> ir::Expr {
         let record{ fields } = list::items{ list = l.types }[ty] else { @panic("lower: a test::Case that isn't a struct") }
         let mut name = ""
@@ -4365,6 +4366,8 @@ namespace lower {
         let mut line: u64 = 0
         let mut panics = false
         let mut message = ""
+        let mut skips = false
+        let mut why = ""
         if let test = t {
             let x = check::get_decl{ c = l.c.*, d = test.decl }
             name = x.qual
@@ -4373,6 +4376,10 @@ namespace lower {
             if let text = test.panics {
                 panics = true
                 message = text
+            }
+            if let text = test.skip {
+                skips = true
+                why = text
             }
         }
         let mut items = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
@@ -4386,6 +4393,10 @@ namespace lower {
                 k = ir::ExprKind::boolean{ value = panics }
             } else if slice::eq_bytes{ a = f.name, b = "message" } {
                 k = ir::ExprKind::sbytes{ bytes = message }
+            } else if slice::eq_bytes{ a = f.name, b = "skips" } {
+                k = ir::ExprKind::boolean{ value = skips }
+            } else if slice::eq_bytes{ a = f.name, b = "why" } {
+                k = ir::ExprKind::sbytes{ bytes = why }
             } else if not slice::eq_bytes{ a = f.name, b = "name" } {
                 @panic("lower: a field of std's test::Case that the compiler doesn't know")
             }

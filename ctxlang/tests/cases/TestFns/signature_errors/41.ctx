@@ -1,0 +1,4 @@
+// A skipped test is still the test it is when it runs again: it takes a Test.
+#test{ skip = "later" }
+fn a { mut fs: Fs } {}  //~ error at 4: a `test` fn takes a `Test`, as `mut t: Test`, which its checks report to: a test passes by what `@expect(&t, ...)` checks, and `a` could check nothing
+fn main {} {}

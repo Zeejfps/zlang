@@ -233,7 +233,7 @@ nothing.
 //# $ ctxc test . -v
 //# stdout:
 //| ./t.ctx:4: pass: doubles
-//| tests: 1 run, 1 passed, 0 failed, 0 not selected
+//| tests: 1 run, 1 passed, 0 failed, 0 skipped, 0 not selected
 ```
 
 Programs that cases share are in [helpers/](helpers), each with its uses in its header:

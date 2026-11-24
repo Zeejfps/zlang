@@ -1,0 +1,3 @@
+#test{ skip = 3 }  //~ error at 8: `test` takes two fields, each a string literal: `panics = "text"`, which the message of the test's panic must contain, and `skip = "why"`, for a test that isn't run
+fn a { mut t: Test } {}
+fn main {} {}

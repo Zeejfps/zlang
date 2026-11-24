@@ -4,4 +4,4 @@
 //# exit: 1
 //# stdout:
 //| lib/shapes_test.ctx:3: fail: shapes::area_of_a_rect: area{ w = 2, h = 3 } == 5: 6 == 5
-//| tests: 2 run, 1 passed, 1 failed, 0 not selected
+//| tests: 2 run, 1 passed, 1 failed, 0 skipped, 0 not selected

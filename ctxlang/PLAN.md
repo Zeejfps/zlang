@@ -430,7 +430,7 @@ steps 1 and 3 are done. None blocks the other stages.
      statement, which ends the test where `c` doesn't hold.
    - **A test that checks nothing fails,** as does a filter that selects none: neither is
      reported as a pass.
-   - **A process for each test** (spec §20, rule 6): a panic fails one test, statics don't leak
+   - **A process for each test** (spec §20, rule 7): a panic fails one test, statics don't leak
      from one to the next, and tests run at once. The runner is std's `test::main`, a
      `#test_main` fn that a program may replace; it starts the test build's own executable
      again for each test, with its output in a file, so it needs no threads.
@@ -439,7 +439,11 @@ steps 1 and 3 are done. None blocks the other stages.
      this plan first had it: `#test` is checked where it is written, in every build, with
      errors at the fn, and a test may take any capability `main` may, which a generated
      `main` in source could only name by guessing at how its type is spelled.
-   - *Not built, each for its reason* (spec §20, rule 11): a leak check (std's one allocator is
+   - **A skipped test is printed and counted** (spec §20, rule 5): `test::skip{ &t, why }`
+     ends the test where it finds what it lacks, and `#test{ skip = "why" }` isn't run. Each
+     has a line, `FILE:LINE: skip: NAME: WHY`, and the summary counts them; the exit code
+     stays 0 unless `--no-skips` is given. A function and an attribute's field, no builtin.
+   - *Not built, each for its reason* (spec §20, rule 12): a leak check (std's one allocator is
      the arena, which has nothing to leak), a temporary directory, and tests with arguments.
    - *Considered:* finding tests by name (Go's `TestXxx`) is magic by name; `test "name" { }`
      blocks (Zig) are syntax an attribute already gives; fixtures by parameter name (pytest) are

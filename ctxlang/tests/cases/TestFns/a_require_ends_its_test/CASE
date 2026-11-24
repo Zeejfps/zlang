@@ -11,11 +11,11 @@
 //| ./t.ctx:28: fail: the_test_ends_at_one_that_does_not: required: found.len > 0: 0 > 0
 //| ./t.ctx:34: fail: a_condition_that_is_no_comparison: required: some{ n = 0 }
 //| ./t.ctx:8: fail: in_a_fn_the_test_calls: required: rows{ n }.len > 0: 0 > 0
-//| tests: 6 run, 2 passed, 4 failed, 0 not selected
+//| tests: 6 run, 2 passed, 4 failed, 0 skipped, 0 not selected
 //# $ ctxc test . -v holds after
 //# exit: 1
 //# stdout:
 //| ./t.ctx:12: pass: a_require_that_holds_is_a_check
 //| ./t.ctx:20: fail: the_test_goes_on_after_one_that_holds: found[0].name == "carth": bastila == carth
 //| ./t.ctx:44: pass: the_tests_after_it_run
-//| tests: 3 run, 2 passed, 1 failed, 3 not selected
+//| tests: 3 run, 2 passed, 1 failed, 0 skipped, 3 not selected

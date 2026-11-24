@@ -1,0 +1,14 @@
+// A `#test_main` fn that runs every test in its own process, with test::run_here: for a
+// `#test{ skip = "why" }` it writes the skip's line and gives test::SKIPPED, 77, without
+// running the test. A test that calls test::skip ends that process, with exit code 77,
+// after its line and what was written before it: the tests after it don't run, and the
+// runner's own code is never reached again.
+//# $ ctxc test .
+//# exit: 77
+//# stdout:
+//| one gave 0, skips false ``
+//| two gave 77, skips true `not on this machine`
+//| written before
+//# stderr:
+//| ./t.ctx:4: skip: two: not on this machine
+//| ./t.ctx:6: skip: three: no game install

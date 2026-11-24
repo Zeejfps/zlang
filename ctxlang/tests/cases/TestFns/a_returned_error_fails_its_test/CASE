@@ -4,4 +4,4 @@
 //# stdout:
 //| ./t.ctx:12: fail: fails: error: bad{ at = 3, why = Kind::char }
 //| ./t.ctx:18: fail: missing_file: error: fs::not_found
-//| tests: 2 run, 0 passed, 2 failed, 0 not selected
+//| tests: 2 run, 0 passed, 2 failed, 0 skipped, 0 not selected

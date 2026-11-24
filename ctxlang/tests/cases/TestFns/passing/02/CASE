@@ -5,4 +5,4 @@
 //# stdout:
 //| ./t.ctx:4: pass: doubles
 //| ./t.ctx:10: pass: more::passes_an_error_up
-//| tests: 2 run, 2 passed, 0 failed, 0 not selected
+//| tests: 2 run, 2 passed, 0 failed, 0 skipped, 0 not selected

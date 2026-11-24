@@ -7,4 +7,4 @@
 //| to standard error
 //| ./t.ctx:21: fail: prints: 1 == 2: 1 == 2
 //| after the check
-//| tests: 3 run, 2 passed, 1 failed, 0 not selected
+//| tests: 3 run, 2 passed, 1 failed, 0 skipped, 0 not selected

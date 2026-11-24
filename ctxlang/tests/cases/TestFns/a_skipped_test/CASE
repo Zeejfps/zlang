@@ -1,0 +1,59 @@
+// A skipped test is neither passed nor failed: it has a line, `FILE:LINE: skip: NAME: WHY`
+// at the test fn's name, and is counted in the summary. `#test{ skip = "why" }` isn't run,
+// whatever else it says. `test::skip{ &t, why }` ends the test there, also from a fn the
+// test calls: nothing after it runs, not a `defer`, what the test wrote is dropped, the
+// checks that held before it change nothing, and it needs no check. A test that has
+// failed stays failed, with its failures' lines. A process that ends with a skip's exit
+// code without a skip's line failed.
+//# $ ctxc test .
+//# exit: 1
+//# stdout:
+//| ./t.ctx:12: skip: is_not_run: the parser is being rewritten
+//| ./t.ctx:17: skip: ends_at_its_skip: no game install
+//| ./t.ctx:25: skip: skips_without_a_check: nothing to check here
+//| ./t.ctx:28: fail: fails_and_then_skips: XS.len == 3: 2 == 3
+//| ./t.ctx:33: skip: in_a_fn_the_test_calls: no rows
+//| ./t.ctx:39: skip: must_panic_and_is_not_run: it would not panic
+//| ./t.ctx:41: skip: must_panic_and_skips: before its panic
+//| ./t.ctx:46: fail: leaves_with_the_code_of_a_skip: its process ended with exit code 77
+//| tests: 9 run, 1 passed, 2 failed, 6 skipped, 0 not selected
+
+// With `-v`, among the passing tests' lines.
+//# $ ctxc test . -v passes skip
+//# exit: 1
+//# stdout:
+//| ./t.ctx:10: pass: passes
+//| ./t.ctx:17: skip: ends_at_its_skip: no game install
+//| ./t.ctx:25: skip: skips_without_a_check: nothing to check here
+//| ./t.ctx:28: fail: fails_and_then_skips: XS.len == 3: 2 == 3
+//| ./t.ctx:41: skip: must_panic_and_skips: before its panic
+//| ./t.ctx:46: fail: leaves_with_the_code_of_a_skip: its process ended with exit code 77
+//| tests: 6 run, 1 passed, 2 failed, 3 skipped, 3 not selected
+
+// Every selected test skipped: the exit code is 0, and the lines and the summary say that
+// none passed.
+//# $ ctxc test . not_run its_skip
+//# exit: 0
+//# stdout:
+//| ./t.ctx:12: skip: is_not_run: the parser is being rewritten
+//| ./t.ctx:17: skip: ends_at_its_skip: no game install
+//| ./t.ctx:39: skip: must_panic_and_is_not_run: it would not panic
+//| tests: 3 run, 0 passed, 0 failed, 3 skipped, 6 not selected
+
+// `--no-skips`: a skipped test makes the exit code 1, with the same lines.
+//# $ ctxc test . --no-skips passes its_skip
+//# exit: 1
+//# stdout:
+//| ./t.ctx:17: skip: ends_at_its_skip: no game install
+//| tests: 2 run, 1 passed, 0 failed, 1 skipped, 7 not selected
+//# $ ctxc test . --no-skips passes
+//# exit: 0
+//# stdout:
+//| tests: 1 run, 1 passed, 0 failed, 0 skipped, 8 not selected
+
+// `--list` lists a test that would be skipped as any other.
+//# $ ctxc test . --list not_run
+//# exit: 0
+//# stdout:
+//| ./t.ctx:12: is_not_run
+//| ./t.ctx:39: must_panic_and_is_not_run

@@ -4,4 +4,4 @@
 //# stdout:
 //| ./t.ctx:4: fail: checks_nothing: no check ran: a test passes by the `@expect`s it makes
 //| ./t.ctx:6: fail: skips_its_check: no check ran: a test passes by the `@expect`s it makes
-//| tests: 3 run, 1 passed, 2 failed, 0 not selected
+//| tests: 3 run, 1 passed, 2 failed, 0 skipped, 0 not selected

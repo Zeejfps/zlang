@@ -17,20 +17,28 @@
 capability Test { ..Io, ..test::State }
 
 namespace test {
-    // The running test's name, and what it has checked so far: whether it has made a check,
-    // and whether one didn't hold, each 0 or 1, set atomically, since a test's tasks may check
-    // at once.
+    // The running test's name and where its fn is, for its lines, and what it has checked so
+    // far: whether it has made a check, and whether one didn't hold, each 0 or 1, set
+    // atomically, since a test's tasks may check at once.
     capability State {
         static name: [512]u8,
         static name_len: usize,
+        static file: []u8,
+        static line: u32,
         static checked: u32,
         static failed: u32,
     }
 
     // A test, as the compiler lists it: its fn's name with its namespaces, its file as the
-    // compiler was given it, and its line; and for `#test{ panics = "text" }`, that it passes
-    // by panicking, with a message that contains the text.
-    struct Case { name: []u8, file: []u8, line: u32, panics: bool, message: []u8 }
+    // compiler was given it, and its line; for `#test{ panics = "text" }`, that it passes by
+    // panicking, with a message that contains the text; and for `#test{ skip = "why" }`, that
+    // it isn't run, and why.
+    struct Case { name: []u8, file: []u8, line: u32, panics: bool, message: []u8, skips: bool, why: []u8 }
+
+    // The exit code of a test that was skipped: what `skip` ends its process with, and what
+    // `run_here` gives for a `#test{ skip = "why" }`. It is the code other test runners
+    // (automake, meson) read as skipped.
+    const SKIPPED: i32 = 77
 
     // What `@expect(&t, c)` calls with the condition's value (spec §13, Checks): it notes that
     // the test has made a check, and for one that didn't hold that it has failed, and starts
@@ -53,35 +61,62 @@ namespace test {
         @atomic_store(&t.checked, 1, atomic::Order::relaxed)
         if held { return true }
         @atomic_store(&t.failed, 1, atomic::Order::relaxed)
-        fail_line{ &t, file, line }
+        start_line{ &t, file, line, word = ": fail: " }
         io::write{ io = &t, to = io::Stream::err, bytes = word }
         io::write{ io = &t, to = io::Stream::err, bytes = text }
         return false
     }
 
     // What a `@require` that didn't hold calls once its line is written (spec §13, Checks):
-    // ends the test by ending its process, with exit code 1, after writing out what the
-    // thread has for standard output. It never returns, from whatever fn the `@require` is
-    // in, and no `defer` runs. The compiler supplies the capabilities, as it does a panic
-    // fn's: a `Test` alone can't end a process. In std's runner the process is the test's
-    // own; in a `#test_main` fn that runs its tests in one process, it is the run's.
-    fn stop { mut io: Io, mut proc: Proc } {
-        io::flush{ &io }
-        os::exit{ &proc, code = 1 }
+    // ends the test, failed, by ending its process with exit code 1 (`end`). It never returns,
+    // from whatever fn the `@require` is in, and no `defer` runs. The compiler supplies the
+    // `Test`, as it does a panic fn's capabilities.
+    fn stop { mut t: Test } {
+        end{ &t, code = 1 }
     }
 
-    // `FILE:LINE: fail: NAME: `, on standard error.
-    fn fail_line { mut t: Test, file: []u8, line: u32 } {
+    // Ends the running test as skipped (spec §20, rule 5): `why` says what it lacked, as a
+    // game install or a tool. Its line goes to standard error, `FILE:LINE: skip: NAME: WHY`,
+    // at the test fn's name, and the test ends there by its process ending, with exit code
+    // SKIPPED, as a `@require` that didn't hold ends it: it never returns, from whatever fn
+    // it is called in, and no `defer` runs. The checker doesn't know that: where a path must
+    // end, as in an `ifnull` block, a `return` follows the call. A test of which a check has
+    // failed stays failed: no line is written, and the exit code is 1. The checks that held
+    // before a skip change nothing: the test is skipped, not passed.
+    fn skip { mut t: Test, why: []u8 } {
+        if @atomic_load(&t.failed, atomic::Order::relaxed) != 0 { end{ &t, code = 1 } }
+        io::flush{ io = &t }            // so that the skip's line is the last the test writes
+        start_line{ &t, file = t.file, line = t.line, word = ": skip: " }
+        io::write{ io = &t, to = io::Stream::err, bytes = why }
+        io::write{ io = &t, to = io::Stream::err, bytes = "\n" }
+        end{ &t, code = SKIPPED }
+    }
+
+    // Ends the running test by ending its process with exit code `code`, after writing out
+    // what the thread has for standard output. This is all a `Test` may end: std declares C's
+    // `exit` for it here, and `stop` and `skip` are its only callers. In std's runner the
+    // process is the test's own; in a `#test_main` fn that runs its tests in one process, it
+    // is the run's.
+    fn end { mut t: Test, code: i32 } {
+        io::flush{ io = &t }
+        c_exit{ &t, code }
+    }
+
+    #c::symbol{ name = "exit" }
+    extern fn c_exit { mut t: Test, code: i32 }
+
+    // `FILE:LINE` and `word` (`: fail: ` or `: skip: `), then `NAME: `, on standard error.
+    fn start_line { mut t: Test, file: []u8, line: u32, word: []u8 } {
         let mut digits: [20]u8
         io::write{ io = &t, to = io::Stream::err, bytes = file }
         io::write{ io = &t, to = io::Stream::err, bytes = ":" }
         io::write{ io = &t, to = io::Stream::err, bytes = utf8::fmt_u64{ n = line, into = digits[..] }.bytes }
-        io::write{ io = &t, to = io::Stream::err, bytes = ": fail: " }
+        io::write{ io = &t, to = io::Stream::err, bytes = word }
         io::write{ io = &t, to = io::Stream::err, bytes = t.name[..t.name_len] }
         io::write{ io = &t, to = io::Stream::err, bytes = ": " }
     }
 
-    const USAGE: []u8 = "usage: ctxc test PATH [--list] [-v] [--jobs N] [--timeout SECONDS] [FILTER...]: runs the tests whose names contain a FILTER, or all of them\n"
+    const USAGE: []u8 = "usage: ctxc test PATH [--list] [-v] [--no-skips] [--jobs N] [--timeout SECONDS] [FILTER...]: runs the tests whose names contain a FILTER, or all of them\n"
 
     // How long the runner waits for a test before it looks at the others again, in nanoseconds:
     // long enough that a wait takes about as long as it says on every platform, since the
@@ -91,21 +126,26 @@ namespace test {
     // The most tests the runner has running at once, whatever `--jobs` says.
     const MOST: usize = 64
 
-    struct Options { list: bool, verbose: bool, jobs: usize, timeout: u64, filters: [][]u8 }
+    struct Options { list: bool, verbose: bool, no_skips: bool, jobs: usize, timeout: u64, filters: [][]u8 }
 
     // A test that is running: which of the picked tests it is, its process, the file its output
     // goes to, and the runner's clock when it started.
     struct Running { slot: usize, child: proc::Child, path: []u8, began: u64 }
 
-    // What became of a picked test: nothing yet, passed, or failed with the lines to print.
-    union Outcome { pending, passed, failed{ lines: []u8 } }
+    // What became of a picked test: nothing yet, passed, failed with the lines to print, or
+    // skipped with its line.
+    union Outcome { pending, passed, failed{ lines: []u8 }, skipped{ line: []u8 } }
+
+    // How many of the picked tests failed, and how many were skipped.
+    struct Tally { failed: usize, skipped: usize }
 
     type Heap = arena::Arena
 
     // The program's entry point in a test build (spec §20): with `--run INDEX`, test INDEX,
     // in this process; otherwise the runner, which starts a process for each test it picks and
-    // prints the failures and a summary. Exits with 0 if every picked test passed, 1 if one
-    // failed or none ran, 2 for arguments it doesn't know.
+    // prints the failures, the skipped tests and a summary. Exits with 0 if no picked test
+    // failed, 1 if one failed or none was picked, or with `--no-skips` if one was skipped, and
+    // 2 for arguments it doesn't know.
     #test_main
     fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut t: Test, args: Args, count: usize, case: &fn{ index: usize } -> Case, run: &fn{ index: usize } -> i32 } -> i32 {
         if args.len == 2 and slice::eq_bytes{ a = args[0], b = "--run" } {
@@ -120,7 +160,7 @@ namespace test {
         }
         let mut heap = arena::new{ buf = pages }
         let mut filters = list::new([]u8){ realloc = arena::alloc, &heap }
-        let mut o = Options{ list = false, verbose = false, jobs = @as(usize, proc::processors{ &proc }), timeout = 60, filters = slice::empty([]u8){} }
+        let mut o = Options{ list = false, verbose = false, no_skips = false, jobs = @as(usize, proc::processors{ &proc }), timeout = 60, filters = slice::empty([]u8){} }
         let mut i: usize = 0
         while i < args.len {
             let a = args[i]
@@ -128,6 +168,8 @@ namespace test {
                 o.list = true
             } else if slice::eq_bytes{ a, b = "-v" } {
                 o.verbose = true
+            } else if slice::eq_bytes{ a, b = "--no-skips" } {
+                o.no_skips = true
             } else if (slice::eq_bytes{ a, b = "--jobs" } or slice::eq_bytes{ a, b = "--timeout" }) and i + 1 < args.len {
                 let n = utf8::parse_u64{ s = utf8::String{ bytes = args[i + 1] } } ifnull {
                     io::write{ &io, to = io::Stream::err, bytes = USAGE }
@@ -168,9 +210,9 @@ namespace test {
             _ = @fmt(&io, ", of {}\n", count)
             return 1
         }
-        let failed = run_all{ &io, &fs, &proc, &heap, o, tests, case }
-        _ = @fmt(&io, "tests: {} run, {} passed, {} failed, {} not selected\n", tests.len, tests.len - failed, failed, count - tests.len)
-        return if failed == 0 { 0 } else { 1 }
+        let n = run_all{ &io, &fs, &proc, &heap, o, tests, case }
+        _ = @fmt(&io, "tests: {} run, {} passed, {} failed, {} skipped, {} not selected\n", tests.len, tests.len - n.failed - n.skipped, n.failed, n.skipped, count - tests.len)
+        return if n.failed == 0 and (n.skipped == 0 or not o.no_skips) { 0 } else { 1 }
     }
 
     // Whether a test of this name is picked: with no filter, or if its name contains one.
@@ -187,19 +229,30 @@ namespace test {
     // Runs test `index`, c, in this process, and gives whether it passed: 0, or 1 if it returned
     // an error or a check of its didn't hold, each written to standard error by then, with its
     // name, or if it made no check, which this says. `run` is the compiler's, which only calls
-    // the test. A test that must panic and returned is 0: its runner sees that it didn't. For a
-    // `#test_main` fn: std's calls it in the test's own process, and one that runs its tests
-    // in one process calls it for each.
+    // the test. A test that must panic and returned is 0: its runner sees that it didn't. A
+    // `#test{ skip = "why" }` isn't run: its line is written, `FILE:LINE: skip: NAME: WHY`,
+    // and the result is SKIPPED. A test that calls `skip` ends this process with that code,
+    // as one whose `@require` didn't hold ends it with 1. For a `#test_main` fn: std's calls
+    // it in the test's own process, and one that runs its tests in one process calls it for
+    // each.
     fn run_here { mut t: Test, c: Case, index: usize, run: &fn{ index: usize } -> i32 } -> i32 {
         let n = @min(c.name.len, t.name.len)
         slice::copy(u8){ dst = t.name[..n], src = c.name[..n] }
         t.name_len = n
+        t.file = c.file
+        t.line = c.line
         t.checked = 0
         t.failed = 0
+        if c.skips {
+            start_line{ &t, file = c.file, line = c.line, word = ": skip: " }
+            io::write{ io = &t, to = io::Stream::err, bytes = c.why }
+            io::write{ io = &t, to = io::Stream::err, bytes = "\n" }
+            return SKIPPED
+        }
         let code = run{ index }
         if code != 0 or t.failed != 0 { return 1 }
         if t.checked == 0 and not c.panics {
-            fail_line{ &t, file = c.file, line = c.line }
+            start_line{ &t, file = c.file, line = c.line, word = ": fail: " }
             io::write{ io = &t, to = io::Stream::err, bytes = "no check ran: a test passes by the `@expect`s it makes\n" }
             return 1
         }
@@ -209,18 +262,27 @@ namespace test {
     // ---- the runner
 
     // Runs the picked tests, at most o.jobs at once, each in a process of its own, and prints
-    // each failed one's lines, in the tests' order. Returns how many failed.
-    fn run_all { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, o: Options, tests: []usize, case: &fn{ index: usize } -> Case } -> usize {
+    // each failed one's lines and each skipped one's line, in the tests' order. A
+    // `#test{ skip = "why" }` gets no process. Returns how many failed and how many were
+    // skipped.
+    fn run_all { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, o: Options, tests: []usize, case: &fn{ index: usize } -> Case } -> Tally {
         let exe = proc::exe_path{ &proc }
         let outcomes = try! alloc::make(Outcome, Heap){ realloc = arena::alloc, &heap, count = tests.len }
         let mut active = list::new(Running){ realloc = arena::alloc, &heap }
         let mut clock: u64 = 0          // nanoseconds spent waiting: what a test's time is counted in
         let mut next: usize = 0
         let mut printed: usize = 0
-        let mut failed: usize = 0
+        let mut n = Tally{ failed = 0, skipped = 0 }
         while printed < tests.len {
             while active.len < o.jobs and next < tests.len {
                 let c = case{ index = tests[next] }
+                if c.skips {
+                    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+                    _ = @fmt(&b, "{}:{}: skip: {}: {}\n", c.file, c.line, c.name, c.why)
+                    outcomes[next] = Outcome::skipped{ line = utf8::view{ b }.bytes }
+                    next = next + 1
+                    continue
+                }
                 match start{ &fs, &proc, &heap, exe, index = tests[next] } {
                     ok{ value } => { try! list::push{ list = &active, item = Running{ slot = next, child = value.child, path = value.path, began = clock } } }
                     err{ error } => {
@@ -259,8 +321,12 @@ namespace test {
                 let c = case{ index = tests[printed] }
                 match outcomes[printed] {
                     failed{ lines } => {
-                        failed = failed + 1
+                        n.failed = n.failed + 1
                         io::write{ &io, to = io::Stream::out, bytes = lines }
+                    }
+                    skipped{ line } => {
+                        n.skipped = n.skipped + 1
+                        io::write{ &io, to = io::Stream::out, bytes = line }
                     }
                     else => {
                         if o.verbose { _ = @fmt(&io, "{}:{}: pass: {}\n", c.file, c.line, c.name) }
@@ -270,7 +336,7 @@ namespace test {
                 printed = printed + 1
             }
         }
-        return failed
+        return n
     }
 
     struct Started { child: proc::Child, path: []u8 }
@@ -306,7 +372,8 @@ namespace test {
     }
 
     // What became of a test whose process ended with `code`, or was ended as late: its output
-    // is read and its file removed. One that passed is `passed`. One that failed has its
+    // is read and its file removed. One that passed is `passed`. One that ended with SKIPPED
+    // after its skip's line is `skipped`, with that line. One that failed has its
     // output for lines, with the test's name in its panic's line, and a line of the runner's
     // if nothing in the output says why it failed. A test that must panic passes if it did,
     // with a message that contains its text.
@@ -318,6 +385,21 @@ namespace test {
         let mut mark = utf8::builder{ realloc = arena::alloc, &heap }
         try! @fmt(&mark, ": fail: {}: ", c.name)
         let named = utf8::view{ b = mark }.bytes
+        // A skip's line is the last the test wrote: `skip` ends the process after it.
+        if code == SKIPPED and not late {
+            let mut skip = utf8::builder{ realloc = arena::alloc, &heap }
+            try! @fmt(&skip, "{}:{}: skip: {}: ", c.file, c.line, c.name)
+            let head = utf8::view{ b = skip }.bytes
+            let mut at: usize = 0
+            let mut from: usize = 0
+            while from < out.len {
+                at = from
+                from = line_end{ s = out, from } + 1
+            }
+            if out.len > 0 and out[out.len - 1] == '\n' and out.len - at >= head.len and slice::eq_bytes{ a = out[at..at + head.len], b = head } {
+                return Outcome::skipped{ line = out[at..] }
+            }
+        }
         // The last line that reports a panic, if the test panicked: std's report is
         // `FILE:LINE:COL: panic: MESSAGE`, or `: panic in task NAME: MESSAGE`.
         let mut panic_at: ?usize = null
