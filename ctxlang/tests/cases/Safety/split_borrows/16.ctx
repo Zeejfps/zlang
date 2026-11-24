@@ -8,6 +8,6 @@ fn both { f: &fn{}, g: &fn{} } {
     g{}
 }
 fn t { mut e: E } {
-    both{ f = push{ l = &e.list, _ }, g = push{ l = &e.list, _ } }  //~ error at 9: `e.list` overlaps a place held by `g`: `f` may change it too, whenever it is called; pass one of them
+    both{ f = push{ l = &e.list, _ }, g = push{ l = &e.list, _ } }  //~ error at 9: `e.list` overlaps a place held by `g`: `f` may change it too, whenever it is called; pass one of them //~ note at 15: `f`, which holds `e.list`, is given here, for `f` //~ note at 43: `g`, which holds `e.list`, is given here, for `g`
 }
 fn main {} {}

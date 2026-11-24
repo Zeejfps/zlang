@@ -8,6 +8,6 @@ fn f { mut e: E, mut xs: L } {
     xs.cap = 8
 }
 fn t { mut e: E } {
-    let b = f{ &e, xs = &e.list, _ }  //~ error at 14: two mut references to `e` in one call: `f` changes `e.list.cap` through its field `e` at 7:5, and changes `e.list.cap` through its field `xs` at 8:5; pass one of them, or change `f` to use `e.list.cap` through one of them only
+    let b = f{ &e, xs = &e.list, _ }  //~ error at 14: two mut references to `e` in one call: `f` changes `e.list.cap` through its field `e` at 7:5, and changes `e.list.cap` through its field `xs` at 8:5; pass one of them, or change `f` to use `e.list.cap` through one of them only //~ note at -4:5: `f` changes `e.list.cap` here, through `e` //~ note at -3:5: `f` changes `e.list.cap` here, through `xs`
 }
 fn main {} {}

@@ -17,4 +17,8 @@ fn main { mut io: Io } {
 // through `xs` alone, and an error once it reads it through `e` too, in std's own fns.
 //# errors:
 //| 02.ctx:11:13: error: two mut references to `e` in one call: `add` reads `e.list.len` through its field `e` at 4:29 (the access is in `list::get`), and changes `e.list.len` through its field `xs` at 5:28 (the access is in `list::push`); pass one of them, or change `add` to use `e.list.len` through one of them only
+//|   02.ctx:4:29: note: `add` reads `e.list.len` here, through `e` (the access is in `list::get`)
+//|   02.ctx:5:28: note: `add` changes `e.list.len` here, through `xs` (the access is in `list::push`)
 //| 02.ctx:12:13: error: two mut references to `e` in one call: `add` reads `e.list.len` through its field `e` at 4:29 (the access is in `list::get`), and changes `e.list.len` through its field `xs` at 5:28 (the access is in `list::push`); pass one of them, or change `add` to use `e.list.len` through one of them only
+//|   02.ctx:4:29: note: `add` reads `e.list.len` here, through `e` (the access is in `list::get`)
+//|   02.ctx:5:28: note: `add` changes `e.list.len` here, through `xs` (the access is in `list::push`)

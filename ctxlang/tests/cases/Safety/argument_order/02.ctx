@@ -7,6 +7,6 @@ fn show { n: i32, z: i32 } { let t = n + z }
 fn get_n { s: S } -> i32 { return s.n }
 fn twice { mut s: S } -> i32 { return bump{ &s } + bump{ &s } }
 fn f { mut s: S } {
-    show{ n = get_n{ s }, z = twice{ &s } }  //~ error at 27: `n` reads `s.n`, which `z` changes, in one call: the order of the fields would decide what it reads; compute one of them in a `let` before the call
+    show{ n = get_n{ s }, z = twice{ &s } }  //~ error at 27: `n` reads `s.n`, which `z` changes, in one call: the order of the fields would decide what it reads; compute one of them in a `let` before the call //~ note at 22: `n` reads `s.n` here //~ note at 38: `z` changes `s.n` here
 }
 fn main {} {}

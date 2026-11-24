@@ -564,6 +564,49 @@ namespace utf8 {
         }
     }
 
+    // s as a JSON string, in its quotes: `"`, `\` and the bytes below 32 escaped (`\n`, `\r`,
+    // `\t`, and `\u00XX` for the others), and each byte that starts no valid UTF-8 sequence
+    // written as `\ufffd`, the replacement character, so that the result is valid JSON
+    // whatever the bytes are: a path, a message, a line of a program's output. Not a writer:
+    // name it in a hole, as `utf8::push_json{ s = path, _ }`.
+    fn push_json(S) { mut b: Builder(S), s: []u8 } -> ! {
+        let digits = "0123456789abcdef"
+        try push{ &b, s = "\"" }
+        let mut i: usize = 0
+        while i < s.len {
+            let c = s[i]
+            let k = seq_len{ bytes = s, i }
+            if k == 0 {
+                try push{ &b, s = "\\ufffd" }
+                i = i + 1
+            } else if c == '"' {
+                try push{ &b, s = "\\\"" }
+                i = i + 1
+            } else if c == '\\' {
+                try push{ &b, s = "\\\\" }
+                i = i + 1
+            } else if c == '\n' {
+                try push{ &b, s = "\\n" }
+                i = i + 1
+            } else if c == '\r' {
+                try push{ &b, s = "\\r" }
+                i = i + 1
+            } else if c == '\t' {
+                try push{ &b, s = "\\t" }
+                i = i + 1
+            } else if c < 32 {
+                let hex: [2]u8 = [digits[c >> 4], digits[c & 15]]
+                try push{ &b, s = "\\u00" }
+                try push{ &b, s = String{ bytes = hex[..] } }
+                i = i + 1
+            } else {
+                try push{ &b, s = String{ bytes = s[i..i + k] } }
+                i = i + k
+            }
+        }
+        try push{ &b, s = "\"" }
+    }
+
     // A hole with a spec, as `{:>8}`, `{:08x}` or `{:.3}` (§13, Formatting): a number as
     // std's `fmt` lays it out, and text between its padding, its bytes as push_bytes has them.
     #write

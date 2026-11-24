@@ -33,6 +33,6 @@ fn main { mut io: Io } {
     let mut mem: [1024]u8
     let mut heap = arena::new{ buf = mem[..] }
     let mut line = out::line{ &heap, cap = 100 }
-    try! @fmt(&line, "{}", w{ l = &line, _ })  //~ error at 10: `line` overlaps a place held by `w{ l = &line, _ }` //~ error at 29: @fmt has no writer of &fn{} -> ! to out::Line
+    try! @fmt(&line, "{}", w{ l = &line, _ })  //~ error at 10: `line` overlaps a place held by `w{ l = &line, _ }` //~ note at 16: `line` is given here //~ note at 28: `w{ l = &line, _ }`, which holds `line`, is here //~ error at 29: @fmt has no writer of &fn{} -> ! to out::Line
     io::println{ &io, s = utf8::view{ b = line.b } }
 }

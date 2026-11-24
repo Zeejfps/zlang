@@ -6,6 +6,6 @@ fn count { l: L } -> i32 { return l.len }
 #pure
 extern fn c_both { mut e: E, mut xs: L }
 fn t { mut e: E } {
-    c_both{ &e, xs = &e.list }  //~ error at 11: two mut references to `e` in one call: only a call to a named function with a body may be given places that overlap, and only where the function uses them apart; pass one of them
+    c_both{ &e, xs = &e.list }  //~ error at 11: two mut references to `e` in one call: only a call to a named function with a body may be given places that overlap, and only where the function uses them apart; pass one of them //~ note at 13: `e` is given here, for `e` //~ note at 22: `e.list` is given here, for `xs`
 }
 fn main {} {}

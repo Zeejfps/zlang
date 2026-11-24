@@ -4,4 +4,4 @@ fn main { mut io: Io } {
     let c = utf8::at{ s, i = 4 }
 }
 
-//# panic: std/utf8.ctx:722:58: panic: utf8: offset is not the start of a character
+//# panic: std/utf8.ctx:765:58: panic: utf8: offset is not the start of a character

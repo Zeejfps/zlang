@@ -10,5 +10,5 @@ fn show { mut io: Io, n: i32, len: i32 } { _ = @fmt(&io, "{} {}\n", n, len) }
 fn both { mut list: List, mut l: List } { list.len = 1; l.len = 2 }
 fn main { mut io: Io } {
     let mut w = W{ e = E{ n = 0, list = List{ len = 0 } } }
-    show{ &io, w.e.list.len, n = push{ &w.e.list } }  //~ error at 30: `len` reads `w.e.list.len`, which `n` changes, in one call: the order of the fields would decide what it reads; compute one of them in a `let` before the call
+    show{ &io, w.e.list.len, n = push{ &w.e.list } }  //~ error at 30: `len` reads `w.e.list.len`, which `n` changes, in one call: the order of the fields would decide what it reads; compute one of them in a `let` before the call //~ note at 16: `len` reads `w.e.list.len` here //~ note at 40: `n` changes `w.e.list.len` here
 }

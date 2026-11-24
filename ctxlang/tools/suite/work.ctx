@@ -331,13 +331,18 @@ namespace work {
     // ---- a program
 
     // The errors a step expects of ctxc, as its standard error: the `errors:` block, or a line
-    // for each `//~ error`; null if it expects none.
+    // for each `//~ error`, and under it one for each `//~ note` after it; null if it expects
+    // none.
     fn expected_errors { mut r: Run, mut heap: Heap, step: case::Step } -> ?[]u8 {
         if let block = step.errors { return filled{ &r, &heap, s = block } }
         if not case::has_errors{ ms = step.markers } { return null }
         let mut b = text{ &heap }
         for m in step.markers {
-            if not m.panic { try! @fmt(&b, "{}:{}:{}: error: {}\n", m.file, m.line, m.col, m.text) }
+            if m.note {
+                try! @fmt(&b, "  {}:{}:{}: note: {}\n", m.file, m.line, m.col, m.text)
+            } else if not m.panic {
+                try! @fmt(&b, "{}:{}:{}: error: {}\n", m.file, m.line, m.col, m.text)
+            }
         }
         return utf8::view{ b }.bytes
     }
@@ -345,7 +350,7 @@ namespace work {
     fn errors_line { step: case::Step } -> u32 {
         if step.errors != null { return step.errors_line }
         for m in step.markers {
-            if not m.panic { return m.line }
+            if not m.panic and not m.note { return m.line }
         }
         return step.line
     }

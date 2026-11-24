@@ -8,7 +8,7 @@ fn mk { n: i32 } -> !P { if n < 0 { return bad }; return P{ x = n, y = n * 2 } }
 fn rr { n: i32 } -> R { let r: !i32 = n; return R{ r } }
 fn run { mut io: Io, n: i32, k: K } -> !i32 {
     let mut p: *i32 = &n
-    { let a = 1; p = &a }  //~ error at 18: `p` outlives local `a` whose address it would hold
+    { let a = 1; p = &a }  //~ error at 18: `p` outlives local `a` whose address it would hold //~ note at 7: `a` is declared here //~ note at -1:5: `p` is declared here
     return p.*
     return 0
 }

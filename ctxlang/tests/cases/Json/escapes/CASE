@@ -1,0 +1,15 @@
+// A message that quotes the source is JSON whatever the source holds: here a tab, a `"`, a
+// `\`, the byte 1, and the byte 255, which starts no UTF-8 sequence and is written as U+FFFD.
+//# write esc.ctx escaped:
+//| fn pick { s: []u8 } -> usize { return s.len }
+//| fn next { n: usize } -> usize { return n }
+//| fn main { mut io: Io } {
+//|     let n = next{ pick{ s\t= "q\\n\x01\xff" } }
+//|     io::println{ &io, s = "ok" }
+//| }
+//# $ ctxc check --json {dir}/esc.ctx
+//# exit: 1
+//# stderr:
+//| {"type":"diagnostic","severity":"error","file":"{dir}/esc.ctx","line":4,"column":29,"end_line":4,"end_column":36,"message":"invalid UTF-8","notes":[]}
+//| {"type":"diagnostic","severity":"error","file":"{dir}/esc.ctx","line":4,"column":19,"end_line":4,"end_column":23,"message":"a pun is a place that ends in a field's name, as `&g.rng` is for `rng`, and this one is a call or a literal: write the field's name, as `name = pick{ s\t= \"q\\n\u0001\ufffd\" }`","notes":[]}
+//| {"type":"summary","errors":2,"more":false,"waiting":["order","tasks","consts"]}

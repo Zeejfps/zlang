@@ -8,6 +8,6 @@ fn step { mut e: E, note: &fn{} } {
     note{}
 }
 fn t { mut e: E } {
-    step{ &e, note = push{ l = &e.list, _ } }  //~ error at 9: `e` overlaps a place held by `note`: `step` reads `e.list.len` through its field `e` at 7:11, and `note` may change `e.list` whenever it is called; pass one of them, or change `step` to leave `e.list.len` to `note`
+    step{ &e, note = push{ l = &e.list, _ } }  //~ error at 9: `e` overlaps a place held by `note`: `step` reads `e.list.len` through its field `e` at 7:11, and `note` may change `e.list` whenever it is called; pass one of them, or change `step` to leave `e.list.len` to `note` //~ note at -4:11: `step` reads `e.list.len` here, through `e` //~ note at 22: `note`, which holds `e.list`, is given here, for `note`
 }
 fn main {} {}

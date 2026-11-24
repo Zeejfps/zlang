@@ -7,6 +7,6 @@ fn pick { p: *i32 } -> ?*i32 {
 }
 fn leak {} -> ?*i32 {
     let x: i32 = 42
-    return pick{ p = &x }  //~ error at 5: returned value holds the address of local `x`
+    return pick{ p = &x }  //~ error at 5: returned value holds the address of local `x` //~ note at -1:5: `x` is declared here
 }
 fn main {} { _ = leak{} }

@@ -1,0 +1,5 @@
+fn main { mut io: Io } -> i32 {
+    io::println{ &io, s = "to standard output" }
+    io::eprintln{ &io, s = "to standard error" }
+    return 3
+}

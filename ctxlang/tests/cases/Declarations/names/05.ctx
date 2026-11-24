@@ -1,3 +1,3 @@
 struct n {}
-namespace n {}  //~ error at 1: `n` is already declared in this scope
+namespace n {}  //~ error at 1: `n` is already declared in this scope //~ note at -1:8: the earlier `n` is declared here
 fn main {} {}

@@ -1,6 +1,6 @@
 
 fn f {} -> *i32 {
     let a = 1
-    return if true { &a } else { &a }  //~ error at 5: returned value holds the address of local `a`
+    return if true { &a } else { &a }  //~ error at 5: returned value holds the address of local `a` //~ note at -1:5: `a` is declared here
 }
 fn main { mut io: Io } { }

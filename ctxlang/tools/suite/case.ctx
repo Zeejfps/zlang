@@ -4,7 +4,8 @@
 // beside it, which leaves the program's bytes alone), or a directory with a file CASE, which
 // holds the directives. A directive line is `//# KEY: VALUE`, `//# KEY:` with a block of `//| `
 // lines after it, or `//# WORD...`; a program's lines may end in `//~ error at COL: MESSAGE`
-// or `//~ panic at COL: MESSAGE`.
+// or `//~ panic at COL: MESSAGE`, and an error's marker may be followed by its notes',
+// `//~ note at COL: MESSAGE`.
 
 namespace case {
     // How a text is compared with what a step wrote.
@@ -18,8 +19,10 @@ namespace case {
     struct Expect { line: u32, stream: Stream, mode: Mode, path: []u8, text: []u8 }
 
     // An error or a panic a program's line states, by `//~`: the file as the program names it,
-    // the line it is on, and the column and message it gives.
-    struct Marker { file: []u8, line: u32, col: u32, panic: bool, text: []u8 }
+    // the line it is on, and the column and message it gives. A note belongs to the error
+    // whose marker it follows, on the same line of the file, and is on the line it names,
+    // that line or one so many above or below it.
+    struct Marker { file: []u8, line: u32, col: u32, panic: bool, note: bool, text: []u8 }
 
     // What a step does.
     enum Kind: u8 {
@@ -241,7 +244,7 @@ namespace case {
 
     fn has_errors { ms: []Marker } -> bool {
         for m in ms {
-            if not m.panic { return true }
+            if not m.panic and not m.note { return true }
         }
         return false
     }
@@ -269,11 +272,17 @@ namespace case {
             let mut text = source[from..end]
             if text.len > 0 and text[text.len - 1] == '\r' { text = text[..text.len - 1] }
             let mut at = find{ s = text, part = "//~" }
+            let mut noted = false                   // an error's marker came before on this line
             while at != null {
                 let start = (at ifnull { 0 }) + 3
                 let next = find_from{ s = text, part = "//~", from = start }
                 let piece = trim{ s = text[start..next ifnull { text.len }] }
-                marker{ &p, &heap, piece, file, line }
+                if starts_with{ s = piece, prefix = "note at " } {
+                    if noted { note{ &p, piece, file, line } } else { problem{ &p, line, text = "a `//~ note` follows the `//~ error` it belongs to, on the same line" } }
+                } else {
+                    marker{ &p, &heap, piece, file, line }
+                    noted = starts_with{ s = piece, prefix = "error at " }
+                }
                 at = next
             }
             from = end + 1
@@ -297,7 +306,42 @@ namespace case {
             problem{ &p, line, text = "the column after `at` is a number" }
             return
         }
-        try! list::push{ list = &p.markers, item = Marker{ file, line, col = @as(u32, col), panic, text = rest[colon + 2..] } }
+        try! list::push{ list = &p.markers, item = Marker{ file, line, col = @as(u32, col), panic, note = false, text = rest[colon + 2..] } }
+    }
+
+    // A note's marker, on `line`: `note at COL: MESSAGE` for a note on that line, or
+    // `note at -N:COL: MESSAGE` or `note at +N:COL: MESSAGE` for one N lines above or below it,
+    // so that the marker moves with the lines it is about.
+    fn note { mut p: Parser, piece: []u8, file: []u8, line: u32 } {
+        let form = "a note is `//~ note at COL: MESSAGE`, or `at -N:COL` or `at +N:COL` for one N lines above or below"
+        let rest = piece[8..]
+        let colon = find{ s = rest, part = ": " } ifnull {
+            problem{ &p, line, text = form }
+            return
+        }
+        let mut where = rest[..colon]
+        let mut on: u64 = line
+        if where.len > 0 and (where[0] == '-' or where[0] == '+') {
+            let split = find{ s = where, part = ":" } ifnull {
+                problem{ &p, line, text = form }
+                return
+            }
+            let n = utf8::parse_u64{ s = utf8::of{ chars = where[1..split] } } ifnull {
+                problem{ &p, line, text = form }
+                return
+            }
+            if where[0] == '-' and n >= on {
+                problem{ &p, line, text = "the note is above the file's first line" }
+                return
+            }
+            on = if where[0] == '-' { on - n } else { on + n }
+            where = where[split + 1..]
+        }
+        let col = utf8::parse_u64{ s = utf8::of{ chars = where } } ifnull {
+            problem{ &p, line, text = form }
+            return
+        }
+        try! list::push{ list = &p.markers, item = Marker{ file, line = @as(u32, on), col = @as(u32, col), panic = false, note = true, text = rest[colon + 2..] } }
     }
 
     // ---- `//#`

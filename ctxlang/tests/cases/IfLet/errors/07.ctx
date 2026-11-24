@@ -7,6 +7,6 @@ fn find { n: i32 } -> ?i32 {
     return null
 }
 fn tick { mut w: World } {
-    if let &t = &w.tlk { w.tlk = null; bump{ &t } }  //~ error at 27: w.tlk overlaps the match scrutinee; access it only through `t`
+    if let &t = &w.tlk { w.tlk = null; bump{ &t } }  //~ error at 27: w.tlk overlaps the match scrutinee; access it only through `t` //~ note at 17: the match's scrutinee is here
 }
 fn main {} {}

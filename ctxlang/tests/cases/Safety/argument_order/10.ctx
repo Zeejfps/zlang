@@ -17,6 +17,6 @@ fn set_b { mut w: W } -> i32 {
     return 1
 }
 fn f { mut w: W } {
-    show{ n = peek{ &w }, z = set_b{ &w } }  //~ error at 27: `n` reads `w.u`, which `z` changes, in one call: the order of the fields would decide what it reads; compute one of them in a `let` before the call
+    show{ n = peek{ &w }, z = set_b{ &w } }  //~ error at 27: `n` reads `w.u`, which `z` changes, in one call: the order of the fields would decide what it reads; compute one of them in a `let` before the call //~ note at 21: `n` reads `w.u` here //~ note at 38: `z` changes `w.u` here
 }
 fn main {} {}

@@ -123,6 +123,20 @@ fn main { mut io: Io } { let x: u8 = 300 }  //~ error at 38: literal 300 does no
   134 and standard error's last line is `FILE:LINE:COL: panic: MESSAGE`. What it wrote before is
   still compared (`stdout:`, `stderr:`).
 
+- `//~ note at COL: MESSAGE` after an error's marker, on the same line: the error has that
+  note (spec §21, rule 8), at COL of the marker's own line, or with `at -N:COL` or `at +N:COL`
+  at the line N above or below it, so that the marker moves with the lines it is about. An
+  error's notes are stated after it in ctxc's order, and the runner expects a line `  FILE:LINE:COL:
+  note: MESSAGE` under the error's for each: an error with a note the case doesn't state fails, as
+  does a note that isn't there. A note in another file is stated with `errors:`.
+
+```
+fn far {} -> *i32 {
+    let v: i32 = 1
+    return &v  //~ error at 5: returned value holds the address of local `v` //~ note at -1:5: `v` is declared here
+}
+```
+
 A marker's message runs to the end of the line, or to the next `//~`; spaces at its ends don't
 count.
 

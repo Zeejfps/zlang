@@ -1,0 +1,6 @@
+// A note's marker follows its error's, on the error's line: one alone belongs to nothing.
+fn far {} -> *i32 {
+    let v: i32 = 1  //~ note at 5: `v` is declared here
+    return &v  //~ error at 5: returned value holds the address of local `v`
+}
+fn main {} { _ = far{} }

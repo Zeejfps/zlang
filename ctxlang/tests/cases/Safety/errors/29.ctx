@@ -5,7 +5,7 @@ fn f {} {
     while true {
         let mut n = 0
         let k = inc{ &n, _ }
-        h = k  //~ error at 9: bound function stored in `h` holds `n`, which does not live as long
+        h = k  //~ error at 9: bound function stored in `h` holds `n`, which does not live as long //~ note at -2:9: `n` is declared here //~ note at -4:5: `h` is declared here
         break
     }
 }

@@ -1,2 +1,2 @@
-fn f(T) {} -> []usize { return [@size_of(T)] }  //~ error at 25: returned value holds the address of an array literal
+fn f(T) {} -> []usize { return [@size_of(T)] }  //~ error at 25: returned value holds the address of an array literal //~ note at 32: the array literal is here
 fn main {} {}

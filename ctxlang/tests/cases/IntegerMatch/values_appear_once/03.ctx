@@ -2,7 +2,7 @@
 fn f { b: u8 } -> i32 {
     match b {
 0..=9 => {}
-5..=20 => {}  //~ error at 1: range 5..=20 overlaps an earlier pattern
+5..=20 => {}  //~ error at 1: range 5..=20 overlaps an earlier pattern //~ note at -1:1: the earlier pattern is here
 else => {}
     }
     return 0

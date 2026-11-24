@@ -261,6 +261,13 @@ executable of the `build.ctx`, the `#test` fns included, all the errors rather t
 errors shown hold back (the order of a call's fields, what tasks borrow, consts computed by
 running code): fix, and check again until it says `no errors`.
 
+An error about two places has the other one as a note, indented under it
+(`  file:line:col: note: ...`): where the local is declared, the other argument, the earlier
+declaration. `--json` on `check`, `run`, `exe` and `test` writes one JSON object for each
+error on a line of standard error (`file`, `line`, `column`, `end_line`, `end_column`,
+`message`, `notes`), then a `summary` record; `ctxc test DIR --json` writes a record for
+each test and one for the run on standard output (spec §21, rules 8 to 11; §20, rule 15).
+
 ## Tests (§20)
 
 A test is a fn beside the code it tests, in a file of its own (`twoda_test.ctx` next to

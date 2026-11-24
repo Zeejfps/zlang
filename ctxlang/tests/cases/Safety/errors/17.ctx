@@ -1,5 +1,5 @@
 fn f {} -> []i32 {
     let a = [1, 2]
-    return a[..]  //~ error at 5: returned value holds the address of local `a`
+    return a[..]  //~ error at 5: returned value holds the address of local `a` //~ note at -1:5: `a` is declared here
 }
 fn main {} {}

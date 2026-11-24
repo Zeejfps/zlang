@@ -174,7 +174,7 @@ namespace test {
         io::write{ io = &t, to = io::Stream::err, bytes = ": " }
     }
 
-    const USAGE: []u8 = "usage: ctxc test PATH [--list] [-v] [--no-skips] [--jobs N] [--timeout SECONDS] [FILTER...] [-- ARG...]: runs the tests whose names contain a FILTER, or all of them, and gives them the ARGs\n"
+    const USAGE: []u8 = "usage: ctxc test PATH [--list] [-v] [--json] [--no-skips] [--jobs N] [--timeout SECONDS] [FILTER...] [-- ARG...]: runs the tests whose names contain a FILTER, or all of them, and gives them the ARGs\n"
 
     // How long the runner waits for a test before it looks at the others again, in nanoseconds:
     // long enough that a wait takes about as long as it says on every platform, since the
@@ -184,7 +184,9 @@ namespace test {
     // The most tests the runner has running at once, whatever `--jobs` says.
     const MOST: usize = 64
 
-    struct Options { list: bool, verbose: bool, no_skips: bool, jobs: usize, timeout: u64, filters: [][]u8 }
+    // json: the results are written as JSON, a record on a line for each test and one for the
+    // run (spec §20, rule 15), in place of the lines.
+    struct Options { list: bool, verbose: bool, json: bool, no_skips: bool, jobs: usize, timeout: u64, filters: [][]u8 }
 
     // A test that is running: which of the picked tests it is, its process, the file its output
     // goes to, and the runner's clock when it started.
@@ -224,7 +226,7 @@ namespace test {
         }
         let mut heap = arena::new{ buf = pages }
         let mut filters = list::new([]u8){ realloc = arena::alloc, &heap }
-        let mut o = Options{ list = false, verbose = false, no_skips = false, jobs = @as(usize, proc::processors{ &proc }), timeout = 60, filters = slice::empty([]u8){} }
+        let mut o = Options{ list = false, verbose = false, json = false, no_skips = false, jobs = @as(usize, proc::processors{ &proc }), timeout = 60, filters = slice::empty([]u8){} }
         let mut i: usize = 0
         while i < own.len {
             let a = own[i]
@@ -232,6 +234,8 @@ namespace test {
                 o.list = true
             } else if slice::eq_bytes{ a, b = "-v" } {
                 o.verbose = true
+            } else if slice::eq_bytes{ a, b = "--json" } {
+                o.json = true
             } else if slice::eq_bytes{ a, b = "--no-skips" } {
                 o.no_skips = true
             } else if (slice::eq_bytes{ a, b = "--jobs" } or slice::eq_bytes{ a, b = "--timeout" }) and i + 1 < own.len {
@@ -260,23 +264,126 @@ namespace test {
         if o.list {
             for k in tests {
                 let c = case{ index = k }
-                _ = @fmt(&io, "{}:{}: {}\n", c.file, c.line, c.name)
+                if o.json {
+                    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+                    json_head{ &b, c }
+                    try! utf8::push{ &b, s = "}\n" }
+                    io::write{ &io, to = io::Stream::out, bytes = utf8::view{ b }.bytes }
+                } else {
+                    _ = @fmt(&io, "{}:{}: {}\n", c.file, c.line, c.name)
+                }
             }
             return 0
         }
-        if count == 0 {
-            io::println{ &io, s = "tests: 0 run: the program has no `#test` fn" }
-            return 1
-        }
-        if tests.len == 0 {
-            io::print{ &io, s = "tests: 0 run: no test's name contains" }
-            for f at k in o.filters { _ = @fmt(&io, "{} `{}`", if k == 0 { "" } else { " or" }, f) }
-            _ = @fmt(&io, ", of {}\n", count)
+        if count == 0 or tests.len == 0 {
+            let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+            if count == 0 {
+                try! utf8::push{ &b, s = "the program has no `#test` fn" }
+            } else {
+                try! utf8::push{ &b, s = "no test's name contains" }
+                for f at k in o.filters { try! @fmt(&b, "{} `{}`", if k == 0 { "" } else { " or" }, f) }
+                try! @fmt(&b, ", of {}", count)
+            }
+            if o.json {
+                let mut r = utf8::builder{ realloc = arena::alloc, &heap }
+                try! @fmt(&r, "{{\"type\":\"tests\",\"run\":0,\"passed\":0,\"failed\":0,\"skipped\":0,\"not_selected\":{},\"checks\":0,\"reason\":{}}}\n", count, utf8::push_json{ s = utf8::view{ b }.bytes, _ })
+                io::write{ &io, to = io::Stream::out, bytes = utf8::view{ b = r }.bytes }
+            } else {
+                _ = @fmt(&io, "tests: 0 run: {}\n", utf8::view{ b })
+            }
             return 1
         }
         let n = run_all{ &io, &fs, &proc, &heap, o, tests, case, passed = t.args }
-        _ = @fmt(&io, "tests: {} run, {} passed, {} failed, {} skipped, {} not selected, {} checks\n", tests.len, tests.len - n.failed - n.skipped, n.failed, n.skipped, count - tests.len, n.checks)
+        if o.json {
+            _ = @fmt(&io, "{{\"type\":\"tests\",\"run\":{},\"passed\":{},\"failed\":{},\"skipped\":{},\"not_selected\":{},\"checks\":{}}}\n", tests.len, tests.len - n.failed - n.skipped, n.failed, n.skipped, count - tests.len, n.checks)
+        } else {
+            _ = @fmt(&io, "tests: {} run, {} passed, {} failed, {} skipped, {} not selected, {} checks\n", tests.len, tests.len - n.failed - n.skipped, n.failed, n.skipped, count - tests.len, n.checks)
+        }
         return if n.failed == 0 and (n.skipped == 0 or not o.no_skips) { 0 } else { 1 }
+    }
+
+    // ---- results as JSON (spec §20, rule 15)
+
+    // `{"type":"test","name":"cfg_tests::reads","file":"cfg/cfg_test.ctx","line":4`: how a
+    // test's record starts.
+    fn json_head { mut b: utf8::Builder(Heap), c: Case } {
+        try! @fmt(&b, "{{\"type\":\"test\",\"name\":{},\"file\":{},\"line\":{}", utf8::push_json{ s = c.name, _ }, utf8::push_json{ s = c.file, _ }, c.line)
+    }
+
+    // Test c's record, a line: its outcome, `pass`, `fail` or `skip`, and how many checks it
+    // reported. For a skip, `reason` is what its line said. For a failure, `failures` has each
+    // line of its output that is a failure's, `FILE:LINE: fail: NAME: MESSAGE` (or with a
+    // column, for a panic), as its file, line and message, and `output` the other lines, as
+    // the test wrote them.
+    fn json_test { mut b: utf8::Builder(Heap), mut heap: Heap, c: Case, outcome: Outcome } {
+        json_head{ &b, c }
+        match outcome {
+            pending => {}
+            passed{ checks } => { try! @fmt(&b, ",\"outcome\":\"pass\",\"checks\":{}", checks) }
+            skipped{ line, checks } => {
+                let mut head = utf8::builder{ realloc = arena::alloc, &heap }
+                try! @fmt(&head, ": skip: {}: ", c.name)
+                let mark = utf8::view{ b = head }.bytes
+                let text = line[..line_end{ s = line, from = 0 }]
+                let at = find{ s = text, part = mark }
+                let why = if let k = at { text[k + mark.len..] } else { text }
+                try! @fmt(&b, ",\"outcome\":\"skip\",\"checks\":{},\"reason\":{}", checks, utf8::push_json{ s = why, _ })
+            }
+            failed{ lines, checks } => {
+                let mut head = utf8::builder{ realloc = arena::alloc, &heap }
+                try! @fmt(&head, ": fail: {}: ", c.name)
+                let mark = utf8::view{ b = head }.bytes
+                try! @fmt(&b, ",\"outcome\":\"fail\",\"checks\":{},\"failures\":[", checks)
+                let mut n: usize = 0
+                let mut from: usize = 0
+                while from < lines.len {
+                    let end = line_end{ s = lines, from }
+                    let text = lines[from..end]
+                    from = end + 1
+                    let k = find{ s = text, part = mark } ifnull { continue }
+                    let p = where_of{ s = text[..k] }
+                    if n > 0 { try! utf8::push{ &b, s = "," } }
+                    try! @fmt(&b, "{{\"file\":{},\"line\":{},\"message\":{}}}", utf8::push_json{ s = p.file, _ }, p.line, utf8::push_json{ s = text[k + mark.len..], _ })
+                    n = n + 1
+                }
+                try! utf8::push{ &b, s = "],\"output\":[" }
+                n = 0
+                from = 0
+                while from < lines.len {
+                    let end = line_end{ s = lines, from }
+                    let text = lines[from..end]
+                    from = end + 1
+                    if find{ s = text, part = mark } != null { continue }
+                    if n > 0 { try! utf8::push{ &b, s = "," } }
+                    try! utf8::push_json{ &b, s = text }
+                    n = n + 1
+                }
+                try! utf8::push{ &b, s = "]" }
+            }
+        }
+        try! utf8::push{ &b, s = "}\n" }
+    }
+
+    struct Where { file: []u8, line: u64 }
+
+    // The file and line of `FILE:LINE` or `FILE:LINE:COL`, what a failure's line starts with;
+    // line 0 if s isn't one.
+    fn where_of { s: []u8 } -> Where {
+        let last = number_at_end{ s } ifnull { return Where{ file = s, line = 0 } }
+        // A number before that one is the line, and the last the column.
+        let before = number_at_end{ s = s[..last.start] } ifnull { return Where{ file = s[..last.start], line = last.n } }
+        return Where{ file = s[..before.start], line = before.n }
+    }
+
+    struct Tail { n: u64, start: usize }
+
+    // The number s ends in after a `:`, and where that `:` is; null if it ends in none.
+    fn number_at_end { s: []u8 } -> ?Tail {
+        let mut k = s.len
+        while k > 0 and s[k - 1] != ':' { k = k - 1 }
+        if k == 0 { return null }
+        let n = utf8::parse_u64{ s = utf8::String{ bytes = s[k..] } } ifnull { return null }
+        return Tail{ n, start = k - 1 }
     }
 
     // Whether a test of this name is picked: with no filter, or if its name contains one.
@@ -388,18 +495,23 @@ namespace test {
                     failed{ lines, checks } => {
                         n.failed = n.failed + 1
                         n.checks = n.checks + checks
-                        io::write{ &io, to = io::Stream::out, bytes = lines }
+                        if not o.json { io::write{ &io, to = io::Stream::out, bytes = lines } }
                     }
                     skipped{ line, checks } => {
                         n.skipped = n.skipped + 1
                         n.checks = n.checks + checks
-                        io::write{ &io, to = io::Stream::out, bytes = line }
+                        if not o.json { io::write{ &io, to = io::Stream::out, bytes = line } }
                     }
                     passed{ checks } => {
                         n.checks = n.checks + checks
-                        if o.verbose { _ = @fmt(&io, "{}:{}: pass: {}\n", c.file, c.line, c.name) }
+                        if o.verbose and not o.json { _ = @fmt(&io, "{}:{}: pass: {}\n", c.file, c.line, c.name) }
                     }
                     pending => {}
+                }
+                if o.json {
+                    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+                    json_test{ &b, &heap, c, outcome = outcomes[printed] }
+                    io::write{ &io, to = io::Stream::out, bytes = utf8::view{ b }.bytes }
                 }
                 io::flush{ &io }
                 printed = printed + 1

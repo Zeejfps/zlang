@@ -35,6 +35,6 @@ fn g { s: []u8 } -> !u64 {
 }
 fn f {} -> !u64 {
     let buf: [4]u8 = [1; 4]
-    return g{ s = buf[..] }  //~ error at 5: returned value holds the address of local `buf`
+    return g{ s = buf[..] }  //~ error at 5: returned value holds the address of local `buf` //~ note at -1:5: `buf` is declared here
 }
 fn main {} {}

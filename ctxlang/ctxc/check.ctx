@@ -376,7 +376,7 @@ namespace check {
     // An escape error (§14) about a value of type t that only a function's error set, unknown
     // while the bodies are checked, can make real: reported once the sets are inferred if t then
     // holds a pointer, and if flow errors were reported in its body when it was found.
-    struct Escape { t: Id, at: source::Span, msg: utf8::String, report: bool }
+    struct Escape { t: Id, at: source::Span, msg: utf8::String, report: bool, notes: []diag::Note }
 
     // An array literal that is a view where a slice is expected (§11, Literals): the [N]T array
     // it views, and the hidden local of its block that holds it, or NONE if every element is
@@ -976,6 +976,9 @@ namespace check {
         let sp = get_space{ c, ns }
         let table = if values { sp.values } else { sp.paths }
         if map::has{ m = table, key = name.text } {
+            if map::get{ m = table, key = name.text } is decl{ i } {
+                notef{ &c, at = get_decl{ c, d = i }.name.span, msg = @fmt("the earlier `{}` is declared here", str{ s = name.text }) }
+            }
             errorf{ &c, at, msg = @fmt("`{}` is already declared in this scope", str{ s = name.text }) }
             return
         }
@@ -4807,6 +4810,7 @@ namespace check {
         if old != NONE and x.name.len > 0 {
             let o = get_var{ c, v = old }
             if not (o.kind == VarKind::narrow and get_var{ c, v = root_var{ c, v = old } }.depth < c.depth) {
+                notef{ &c, at = o.at, msg = @fmt("the earlier `{}` is declared here", str{ s = x.name }) }
                 errorf{ &c, at = x.at, msg = @fmt("`{}` is already declared in this scope", str{ s = x.name }) }
             }
         }
@@ -5023,7 +5027,10 @@ namespace check {
     // Reports a flow error, unless the body already has another error: what flow checks find
     // after a type error is mostly noise.
     fn flow_error { mut c: Checker, at: source::Span, msg: utf8::String } {
-        if c.diags.errors != c.body_errors + c.flow_errors { return }
+        if c.diags.errors != c.body_errors + c.flow_errors {
+            diag::unstage{ diags = c.diags }
+            return
+        }
         error{ &c, at, msg }
         c.flow_errors = c.diags.errors - c.body_errors
     }
@@ -5321,6 +5328,7 @@ namespace check {
                 let ds = vars_in_order{ c, xs = found }
                 let mut b = message{ c }
                 try! @fmt(&b, "returned value holds the address of {}", describe_local{ c, v = ds[0] })
+                note_local{ &c, v = ds[0] }
                 escape_error{ &c, t = value_ty{ c, k = expr_key{ e = value } }, at, msg = utf8::view{ b } }
             }
         }
@@ -5720,6 +5728,7 @@ namespace check {
             if l.depth == c.depth {
                 let mut b = message{ c }
                 try! @fmt(&b, "the value of this branch holds the address of {}, which ends with the branch", describe_local{ c, v = ds[i] })
+                note_local{ &c, v = ds[i] }
                 escape_error{ &c, t, at, msg = utf8::view{ b } }
                 return
             }
@@ -6046,7 +6055,7 @@ namespace check {
             restore{ &c, s = s0 }
             add_branch{ xs = &bs, b = branch{ &c, b = arm.body, vars = first, facts = slice::empty(Fact){}, exp, value, drop } }
             add_state{ xs = &results, s = save{ c } }
-            if forb != null { scan_stmts{ &c, sc = Scan{ forb, via = binding_names{ c, vars = first } }, xs = arm.body.stmts } }
+            if forb != null { scan_stmts{ &c, sc = Scan{ forb, via = binding_names{ c, vars = first }, at = scrut.span }, xs = arm.body.stmts } }
             i = i + 1
         }
         if ok and not has_else and seen.len < vs.len {
@@ -6096,6 +6105,7 @@ namespace check {
     fn check_int_match { mut c: Checker, x: syntax::Match, at: source::Span, exp: Id, value: bool, may_leave: bool, t: Id } -> Id {
         let s0 = save{ c }
         let mut seen = list::new(ir::Range){ realloc = arena::alloc, heap = c.heap }
+        let mut seen_at = list::new(source::Span){ realloc = arena::alloc, heap = c.heap }
         let mut out = list::new([]ir::Range){ realloc = arena::alloc, heap = c.heap }
         let mut has_else = false
         let mut results = list::new(State){ realloc = arena::alloc, heap = c.heap }
@@ -6107,7 +6117,7 @@ namespace check {
                 if i != x.arms.len - 1 { error{ &c, at = arm.span, msg = "`else` must be the last arm" } }
                 has_else = true
             }
-            let rs = int_pats{ &c, pats = arm.pats, t, &seen }
+            let rs = int_pats{ &c, pats = arm.pats, t, &seen, &seen_at }
             try! list::push{ list = &out, item = rs }
             restore{ &c, s = s0 }
             add_branch{ xs = &bs, b = branch{ &c, b = arm.body, vars = slice::empty(u32){}, facts = slice::empty(Fact){}, exp, value, drop = false } }
@@ -6124,8 +6134,9 @@ namespace check {
     // `e is P | Q` on an integer.
     fn check_int_is { mut c: Checker, e: syntax::Expr, pats: []syntax::Pattern, t: Id } -> Id {
         let mut seen = list::new(ir::Range){ realloc = arena::alloc, heap = c.heap }
+        let mut seen_at = list::new(source::Span){ realloc = arena::alloc, heap = c.heap }
         let mut out = list::new([]ir::Range){ realloc = arena::alloc, heap = c.heap }
-        let rs = int_pats{ &c, pats, t, &seen }
+        let rs = int_pats{ &c, pats, t, &seen, &seen_at }
         try! list::push{ list = &out, item = rs }
         try! map::put{ m = &c.int_cases, key = expr_key{ e }, value = list::items{ list = out } }
         try! map::put{ m = &c.is_vars, key = expr_key{ e }, value = slice::empty(u32){} }
@@ -6134,7 +6145,8 @@ namespace check {
 
     // The ranges of an arm's integer patterns (a value is a range of one), none of which may
     // overlap one seen in an earlier pattern.
-    fn int_pats { mut c: Checker, pats: []syntax::Pattern, t: Id, mut seen: list::List(ir::Range, Heap) } -> []ir::Range {
+    // seen_at is where each of seen is written.
+    fn int_pats { mut c: Checker, pats: []syntax::Pattern, t: Id, mut seen: list::List(ir::Range, Heap), mut seen_at: list::List(source::Span, Heap) } -> []ir::Range {
         let mut out = list::new(ir::Range){ realloc = arena::alloc, heap = c.heap }
         let s = signed_type{ c, t }
         let mut k: usize = 0
@@ -6159,7 +6171,10 @@ namespace check {
             let mut clash = false
             while j < seen.len {
                 let q = list::items{ list = seen }[j]
-                if int_key{ n = r.lo, s } <= int_key{ n = q.hi, s } and int_key{ n = q.lo, s } <= int_key{ n = r.hi, s } { clash = true }
+                if int_key{ n = r.lo, s } <= int_key{ n = q.hi, s } and int_key{ n = q.lo, s } <= int_key{ n = r.hi, s } {
+                    if not clash { note{ &c, at = list::items{ list = seen_at }[j], msg = "the earlier pattern is here" } }
+                    clash = true
+                }
                 j = j + 1
             }
             if clash {
@@ -6171,6 +6186,7 @@ namespace check {
                 continue
             }
             try! list::push{ list = &seen, item = r }
+            try! list::push{ list = &seen_at, item = p.span }
             try! list::push{ list = &out, item = r }
         }
         return list::items{ list = out }
@@ -7806,13 +7822,17 @@ namespace check {
     // or, if only a function's error set can make it hold one, once the sets are inferred
     // (finish_escapes).
     fn escape_error { mut c: Checker, t: Id, at: source::Span, msg: utf8::String } {
-        if not c.borrow_ready and c.fn_decl != NONE { return }
+        if not c.borrow_ready and c.fn_decl != NONE {
+            diag::unstage{ diags = c.diags }
+            return
+        }
         if holds_ptr{ &c, t, seen = no_vars{}, unknown = false } {
             flow_error{ &c, at, msg }
             return
         }
         let report = c.diags.errors == c.body_errors + c.flow_errors        // as flow_error decides
-        try! list::push{ list = &c.escapes, item = Escape{ t, at, msg, report } }
+        let notes: []diag::Note = try! list::take{ list = &c.diags.staged }
+        try! list::push{ list = &c.escapes, item = Escape{ t, at, msg, report, notes } }
     }
 
     // The escape errors that waited on the sets: each is real if its value's type holds a pointer
@@ -7822,7 +7842,10 @@ namespace check {
         let mut i: usize = 0
         while i < xs.len {
             let x = xs[i]
-            if x.report and holds_ptr{ &c, t = x.t, seen = no_vars{}, unknown = false } { error{ &c, at = x.at, msg = x.msg } }
+            if x.report and holds_ptr{ &c, t = x.t, seen = no_vars{}, unknown = false } {
+                for n in x.notes { diag::note{ diags = c.diags, span = n.span, msg = n.msg } }
+                error{ &c, at = x.at, msg = x.msg }
+            }
             i = i + 1
         }
     }
@@ -8229,6 +8252,7 @@ namespace check {
         if through {
             let mut b = message{ c }
             try! @fmt(&b, "cannot store the address of {} through a pointer", name)
+            note_local{ &c, v = ds[0] }
             escape_error{ &c, t, at, msg = utf8::view{ b } }
             return
         }
@@ -8236,6 +8260,8 @@ namespace check {
         if r.indirect {
             let mut b = message{ c }
             try! @fmt(&b, "cannot store the address of {} in `{}`, which belongs to the caller", name, str{ s = r.name })
+            note_local{ &c, v = ds[0] }
+            note_local{ &c, v = root }
             escape_error{ &c, t, at, msg = utf8::view{ b } }
             return
         }
@@ -8245,6 +8271,8 @@ namespace check {
             if r.depth < l.depth {
                 let mut b = message{ c }
                 try! @fmt(&b, "`{}` outlives {} whose address it would hold", str{ s = r.name }, describe_local{ c, v = ds[i] })
+                note_local{ &c, v = ds[i] }
+                note_local{ &c, v = root }
                 escape_error{ &c, t, at, msg = utf8::view{ b } }
                 return
             }
@@ -8263,6 +8291,8 @@ namespace check {
             if x.depth < r.depth {
                 let mut b = message{ c }
                 try! @fmt(&b, "bound function stored in `{}` holds `{}`, which does not live as long", str{ s = x.name }, str{ s = r.name })
+                note_local{ &c, v = held[i].root }
+                note_local{ &c, v }
                 flow_error{ &c, at, msg = utf8::view{ b } }
                 return
             }
@@ -8273,7 +8303,23 @@ namespace check {
     // A call's mut references, `&p` for a `mut` field (holder empty), and the places held by its
     // bound-function arguments (holder names the argument), which must not overlap (§3.1) but
     // where the callee uses them apart. field is the callee's field each is given for.
-    struct HeldRef { p: Place, holder: []u8, field: []u8 }
+    // at is where the call names it: the argument, the `..` that forwards it, or the callee.
+    struct HeldRef { p: Place, holder: []u8, field: []u8, at: source::Span }
+
+    // The note for an error about two of a call's mut references: where the call is given r.
+    fn note_ref { mut c: Checker, r: HeldRef } {
+        if r.holder.len == 0 {
+            if r.field.len == 0 {
+                notef{ &c, at = r.at, msg = @fmt("`{}` is given here", place_str{ c, p = r.p }) }
+            } else {
+                notef{ &c, at = r.at, msg = @fmt("`{}` is given here, for `{}`", place_str{ c, p = r.p }, str{ s = r.field }) }
+            }
+        } else if r.field.len == 0 {
+            notef{ &c, at = r.at, msg = @fmt("`{}`, which holds `{}`, is here", str{ s = r.holder }, place_str{ c, p = r.p }) }
+        } else {
+            notef{ &c, at = r.at, msg = @fmt("`{}`, which holds `{}`, is given here, for `{}`", str{ s = r.holder }, place_str{ c, p = r.p }, str{ s = r.field }) }
+        }
+    }
 
     // callee is the fn the call names, or NONE, and name how messages name it.
     fn check_exclusive { mut c: Checker, e: syntax::Expr, items: []syntax::Item, fields: []types::Field, callee: u32, name: utf8::String } -> []Place {
@@ -8281,7 +8327,7 @@ namespace check {
         // What a bound function that is called holds, it is given too (no field).
         if e.k is braced{ callee = ce } {
             if map::get{ m = c.refs, key = expr_key{ e = ce.* } } is local{ var } {
-                held_refs{ xs = &refs, c, places = held_by{ c, v = var }, holder = get_var{ c, v = var }.name, field = "" }
+                held_refs{ xs = &refs, c, places = held_by{ c, v = var }, holder = get_var{ c, v = var }.name, field = "", at = ce.span }
             }
         }
         let mut i: usize = 0
@@ -8292,14 +8338,14 @@ namespace check {
                 if f.mutable {
                     if it.value.k is addr{ e = x } {
                         let p = place_path{ c, e = x.* }
-                        if p != null { add_ref{ xs = &refs, r = HeldRef{ p, holder = "", field = it.name.text } } }
+                        if p != null { add_ref{ xs = &refs, r = HeldRef{ p, holder = "", field = it.name.text, at = it.value.span } } }
                     }
                 } else {
                     let holder = match it.value.k {
                         path{ segs } => { if map::get{ m = c.convs, key = expr_key{ e = it.value } } == null { segs[0].name.text } else { it.name.text } }
                         else => { it.name.text }
                     }
-                    held_refs{ xs = &refs, c, places = held_of{ c, e = it.value }, holder, field = it.name.text }
+                    held_refs{ xs = &refs, c, places = held_of{ c, e = it.value }, holder, field = it.name.text, at = it.value.span }
                 }
             }
             i = i + 1
@@ -8310,9 +8356,9 @@ namespace check {
             while i < fw.len {
                 let f = fw[i]
                 if f.mutable {
-                    add_ref{ xs = &refs, r = HeldRef{ p = Place{ root = root_var{ c, v = f.var }, steps = slice::empty([]u8){} }, holder = "", field = f.name } }
+                    add_ref{ xs = &refs, r = HeldRef{ p = Place{ root = root_var{ c, v = f.var }, steps = slice::empty([]u8){} }, holder = "", field = f.name, at = expr_at{ e } } }
                 } else if f.conv == null {
-                    held_refs{ xs = &refs, c, places = held_by{ c, v = f.var }, holder = f.name, field = f.name }
+                    held_refs{ xs = &refs, c, places = held_by{ c, v = f.var }, holder = f.name, field = f.name, at = expr_at{ e } }
                 }
                 i = i + 1
             }
@@ -8352,6 +8398,8 @@ namespace check {
                         } else if name.bytes.len > 0 {
                             try! utf8::push{ b = &m, s = SPLIT_UNKNOWN }
                         }
+                        note_ref{ &c, r = a }
+                        note_ref{ &c, r = b }
                         flow_error{ &c, at = expr_at{ e }, msg = utf8::view{ b = m } }
                         return
                     }
@@ -8385,11 +8433,11 @@ namespace check {
         try! list::push{ list = &xs, item = r }
     }
 
-    fn held_refs { mut xs: list::List(HeldRef, Heap), c: Checker, places: []Place, holder: []u8, field: []u8 } {
+    fn held_refs { mut xs: list::List(HeldRef, Heap), c: Checker, places: []Place, holder: []u8, field: []u8, at: source::Span } {
         let ps = places_in_order{ c, xs = places }
         let mut i: usize = 0
         while i < ps.len {
-            add_ref{ &xs, r = HeldRef{ p = ps[i], holder, field } }
+            add_ref{ &xs, r = HeldRef{ p = ps[i], holder, field, at } }
             i = i + 1
         }
     }
@@ -8477,7 +8525,24 @@ namespace check {
         } else {
             try! @fmt(&m, "; pass one of them, or change `{}` to use `{}` through one of them only", k.name, place_str{ c, p = part })
         }
+        note_use{ &c, k, r = first, x }
+        note_use{ &c, k, r = second, x = y }
         error{ &c, at = expr_at{ e = k.e }, msg = utf8::view{ b = m } }
+    }
+
+    // The note for one side of a split's error: where the callee, or a fn it calls, uses the
+    // place through the field, or for a place a bound function holds, where the call is given
+    // that.
+    fn note_use { mut c: Checker, k: SplitCand, r: HeldRef, x: SplitUse } {
+        let u = x.u ifnull {
+            note_ref{ &c, r }
+            return
+        }
+        let verb: utf8::String = if u.lent { "gives out the address of" } else if u.write { "changes" } else { "reads" }
+        let mut b = message{ c }
+        try! @fmt(&b, "`{}` {} `{}` here, through `{}`", k.name, verb, place_str{ c, p = x.p }, str{ s = r.field })
+        if u.by != k.callee { try! @fmt(&b, " (the access is in `{}`)", str{ s = get_decl{ c, d = u.by }.qual }) }
+        note{ &c, at = u.at, msg = utf8::view{ b } }
     }
 
     // "changes `e.list.len` through its field `xs` at 4:5", after the callee's name.
@@ -8618,6 +8683,12 @@ namespace check {
         } else {
             try! @fmt(&m, "`{}` reads `{}`, and `{}` changes `{}`, in one {}: the order of the fields would decide what it reads; compute one of them in a `let` before the {}", rn, place_str{ c, p = x.r.p }, wn, place_str{ c, p = x.w.p }, what, what)
         }
+        // In the order the message names them: the reader first, or of two that change the
+        // place, the one written first.
+        let w_first = x.r.write and x.w.part < x.r.part
+        if w_first { notef{ &c, at = x.w.at, msg = @fmt("`{}` changes `{}` here", wn, place_str{ c, p = x.w.p }) } }
+        notef{ &c, at = x.r.at, msg = @fmt("`{}` {} `{}` here", rn, str{ s = if x.r.write { "changes" } else { "reads" } }, place_str{ c, p = x.r.p }) }
+        if not w_first { notef{ &c, at = x.w.at, msg = @fmt("`{}` changes `{}` here", wn, place_str{ c, p = x.w.p }) } }
         error{ &c, at = part_at{ e, callee, items, part = at }, msg = utf8::view{ b = m } }
     }
 
@@ -10051,7 +10122,7 @@ namespace check {
     // ---- accesses inside the arms of `match &p` (§8, Match, rule 7): none may overlap p except
     // through the arm's bindings.
 
-    struct Scan { forb: Place, via: utf8::String }
+    struct Scan { forb: Place, via: utf8::String, at: source::Span }       // at: the scrutinee
 
     fn scan_stmts { mut c: Checker, sc: Scan, xs: []syntax::Stmt } {
         let mut i: usize = 0
@@ -10188,6 +10259,7 @@ namespace check {
     fn forbidden { mut c: Checker, sc: Scan, at: source::Span } {
         let mut b = message{ c }
         try! @fmt(&b, "{} overlaps the match scrutinee; access it only through {}", place_str{ c, p = sc.forb }, sc.via)
+        note{ &c, at = sc.at, msg = "the match's scrutinee is here" }
         flow_error{ &c, at, msg = utf8::view{ b } }
     }
 
@@ -10949,6 +11021,7 @@ namespace check {
                 let ds = vars_in_order{ c, xs = found }
                 let mut b = message{ c }
                 try! @fmt(&b, "`try` would return an error that may hold the address of {}", describe_local{ c, v = ds[0] })
+                note_local{ &c, v = ds[0] }
                 escape_error{ &c, t = errs, at = expr_at{ e }, msg = utf8::view{ b } }
             }
         }
@@ -13408,7 +13481,7 @@ namespace check {
         let mut refs = list::new(HeldRef){ realloc = arena::alloc, heap = c.heap }
         if sink != null and sink.k is addr{ e = x } {
             let p = place_path{ c, e = x.* }
-            if p != null { add_ref{ xs = &refs, r = HeldRef{ p, holder = "", field = "" } } }
+            if p != null { add_ref{ xs = &refs, r = HeldRef{ p, holder = "", field = "", at = x.span } } }
         }
         let mut i: usize = 0
         while i < holes.len {
@@ -13417,7 +13490,7 @@ namespace check {
                 path{ segs } => { if map::get{ m = c.convs, key = expr_key{ e = h } } == null { segs[0].name.text } else { source_text{ c, span = h.span } } }
                 else => { source_text{ c, span = h.span } }
             }
-            held_refs{ xs = &refs, c, places = held_of{ c, e = h }, holder, field = "" }
+            held_refs{ xs = &refs, c, places = held_of{ c, e = h }, holder, field = "", at = h.span }
             i = i + 1
         }
         overlapping{ &c, e, rs = list::items{ list = refs }, callee = NONE, name = "" }
@@ -14745,15 +14818,47 @@ namespace check {
         }
     }
 
+    // Reports msg at `at`, once: a body is checked twice. The notes said before it (`note`)
+    // go with it.
     fn error { mut c: Checker, at: source::Span, msg: utf8::String } {
         let ds = diag::items{ diags = c.diags.* }
         let mut i: usize = 0
         while i < ds.len {
             let d = ds[i]
-            if d.span.file == at.file and d.span.start == at.start and utf8::eq{ a = d.msg, b = msg } { return }
+            if d.span.file == at.file and d.span.start == at.start and utf8::eq{ a = d.msg, b = msg } {
+                diag::unstage{ diags = c.diags }
+                return
+            }
             i = i + 1
         }
         diag::error{ diags = c.diags, span = at, msg }
+    }
+
+    // A related place for the error reported next, as where a local is declared (diag::note):
+    // said just before `error` or what calls it. A span of no file adds nothing.
+    fn note { mut c: Checker, at: source::Span, msg: utf8::String } {
+        if at.file == NO_FILE or @as(usize, at.file) >= c.files.len { return }
+        diag::note{ diags = c.diags, span = at, msg }
+    }
+
+    // note, with a message that msg writes: `notef{ &c, at, msg = @fmt("`{}` is declared here", name) }`.
+    fn notef { mut c: Checker, at: source::Span, msg: utf8::Fmt(Heap) } {
+        let mut b = message{ c }
+        try! msg{ &b }
+        note{ &c, at, msg = utf8::view{ b } }
+    }
+
+    // The note for an error about local v, at its declaration: "`v` is declared here", or for
+    // an array literal's hidden local, at the literal.
+    fn note_local { mut c: Checker, v: u32 } {
+        let x = get_var{ c, v }
+        if x.kind == VarKind::literal {
+            note{ &c, at = x.at, msg = "the array literal is here" }
+        } else if x.kind == VarKind::ctx {
+            notef{ &c, at = x.at, msg = @fmt("`{}` is a context field, declared here", str{ s = x.name }) }
+        } else {
+            notef{ &c, at = x.at, msg = @fmt("`{}` is declared here", str{ s = x.name }) }
+        }
     }
 
     // error, with a message that msg writes: `errorf{ &c, at, msg = @fmt("no `{}`", name) }`.

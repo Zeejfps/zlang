@@ -1,0 +1,33 @@
+// `ctxc run --json`: the compiler's records come first on standard error and end with the
+// summary. With an error the program isn't run; without one, what follows the summary is
+// the program's own, and standard output is the program's alone.
+//# $ ctxc run --json {dir}/bad.ctx
+//# exit: 1
+//# stderr:
+//| {"type":"diagnostic","severity":"error","file":"{dir}/bad.ctx","line":2,"column":17,"end_line":2,"end_column":20,"message":"literal 300 does not fit in u8","notes":[]}
+//| {"type":"summary","errors":1,"more":false,"waiting":["order","tasks","consts"]}
+//# $ ctxc run --json {dir}/good.ctx
+//# exit: 3
+//# stdout:
+//| to standard output
+//# stderr:
+//| {"type":"summary","errors":0,"more":false,"waiting":[]}
+//| to standard error
+
+// `ctxc exe --json` writes the summary once the executable is built.
+//# $ ctxc exe {dir}/good.ctx -o {dir}/good{exe} --json
+//# stderr:
+//| {"type":"summary","errors":0,"more":false,"waiting":[]}
+//# $ ./good{exe}
+//# exit: 3
+//# stdout:
+//| to standard output
+//# stderr:
+//| to standard error
+
+// An error of the driver's own that is at a place in build.ctx is a diagnostic too.
+//# $ ctxc run --json {dir}/proj
+//# exit: 1
+//# stderr:
+//| {"type":"diagnostic","severity":"error","file":"{dir}/proj/build.ctx","line":1,"column":24,"end_line":1,"end_column":24,"message":"no directory {dir}/proj/gone","notes":[]}
+//| {"type":"summary","errors":1,"more":false,"waiting":[]}

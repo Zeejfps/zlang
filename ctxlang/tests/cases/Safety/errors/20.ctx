@@ -1,4 +1,4 @@
 fn f { x: i32 } -> *i32 {
-    return &x  //~ error at 5: returned value holds the address of local `x`
+    return &x  //~ error at 5: returned value holds the address of local `x` //~ note at -1:8: `x` is a context field, declared here
 }
 fn main {} {}

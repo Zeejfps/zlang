@@ -1,2 +1,2 @@
-fn f { c: bool, x: u32 } -> []u32 { return if c { [x] } else { [2] } }  //~ error at 37: returned value holds the address of an array literal
+fn f { c: bool, x: u32 } -> []u32 { return if c { [x] } else { [2] } }  //~ error at 37: returned value holds the address of an array literal //~ note at 51: the array literal is here
 fn main {} {}

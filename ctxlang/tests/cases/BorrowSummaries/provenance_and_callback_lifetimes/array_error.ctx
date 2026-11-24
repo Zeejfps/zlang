@@ -4,5 +4,5 @@
 error bad{ p: *i32 }
 fn wrap { p: *i32 } -> [1]!*i32 { return [bad{ p }] }
 fn relay { p: *i32 } -> !*i32 { return wrap{ p }[0] }
-fn leak {} -> ! { let x: i32 = 1; _ = try relay{ p=&x } }  //~ error at 39: `try` would return an error that may hold the address of local `x`
+fn leak {} -> ! { let x: i32 = 1; _ = try relay{ p=&x } }  //~ error at 39: `try` would return an error that may hold the address of local `x` //~ note at 19: `x` is declared here
 fn main {} { _ = leak{} }

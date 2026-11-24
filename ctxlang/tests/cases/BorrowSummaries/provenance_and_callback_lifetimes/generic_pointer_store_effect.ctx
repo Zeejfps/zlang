@@ -6,6 +6,6 @@ fn stash(T) { mut h: Box(T), x: T } { h.x = x }
 fn stored(T) { mut h: Box(T), x: T } -> T { stash{ &h, x }; return h.x }
 fn leak { mut h: Box([]u8) } -> []u8 {
     let buf: [3]u8 = [1,2,3]
-    return stored{ &h, x = buf[..] }  //~ error at 5: returned value holds the address of local `buf`
+    return stored{ &h, x = buf[..] }  //~ error at 5: returned value holds the address of local `buf` //~ note at -1:5: `buf` is declared here
 }
 fn main {} { let mut h: Box([]u8); _ = leak{ &h } }

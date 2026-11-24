@@ -7,6 +7,6 @@ fn get(K) { t: T(K), key: K, s: []u8 } -> []u8 { call{ t, key, s }; return t.ite
 fn keep { key: *mut []u8, s: []u8 } { key.* = s }
 fn leak { items: [][]u8, slot: *mut []u8 } -> []u8 {
     let buf: [3]u8 = [1,2,3]
-    return get{ t = T(*mut []u8){ h = keep, items }, key = slot, s = buf[..] }  //~ error at 5: returned value holds the address of local `buf`
+    return get{ t = T(*mut []u8){ h = keep, items }, key = slot, s = buf[..] }  //~ error at 5: returned value holds the address of local `buf` //~ note at -1:5: `buf` is declared here
 }
 fn main {} { let items: [1][]u8 = ["okay"]; let mut x: []u8 = "a"; _ = leak{ items = items[..], slot = &x } }

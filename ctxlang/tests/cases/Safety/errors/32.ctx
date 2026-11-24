@@ -4,7 +4,7 @@ fn f { c: bool } {
     if c {
         let buf: [2]u8 = [1, 2]
         let g = first{ s = buf[..], _ }
-        h = g  //~ error at 9: `h` outlives local `buf` whose address it would hold
+        h = g  //~ error at 9: `h` outlives local `buf` whose address it would hold //~ note at -2:9: `buf` is declared here //~ note at -4:5: `h` is declared here
     } else {
         h = first{ s = "a", _ }
     }

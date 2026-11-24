@@ -38,7 +38,7 @@ fn add_to { mut total: i32, item: i32 } {
 
 fn make_arena {} -> arena::Arena {
     let mut mem: [64]u8
-    return arena::Arena{ buf = @slice(&mem[0], mem.len), used = 0, handed = 0 }  //~ error at 5: returned value holds the address of local `mem`
+    return arena::Arena{ buf = @slice(&mem[0], mem.len), used = 0, handed = 0 }  //~ error at 5: returned value holds the address of local `mem` //~ note at -1:5: `mem` is declared here
 }
 
 fn main { mut io: Io } {

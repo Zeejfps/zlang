@@ -2,5 +2,5 @@
 fn main {} {
     let x: ?i32 = 1
     if x == null { return }
-    let x = 2  //~ error at 5: `x` is already declared in this scope
+    let x = 2  //~ error at 5: `x` is already declared in this scope //~ note at -1:8: the earlier `x` is declared here
 }

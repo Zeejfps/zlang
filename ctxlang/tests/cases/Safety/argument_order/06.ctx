@@ -6,6 +6,6 @@ fn bump { mut s: S } -> i32 {
 fn show { n: i32, z: i32 } { let t = n + z }
 fn f { c: bool } {
     let mut x = 0
-    show{ n = x, z = if c { x = 2; 0 } else { 1 } }  //~ error at 18: `n` reads `x`, which `z` changes, in one call: the order of the fields would decide what it reads; compute one of them in a `let` before the call
+    show{ n = x, z = if c { x = 2; 0 } else { 1 } }  //~ error at 18: `n` reads `x`, which `z` changes, in one call: the order of the fields would decide what it reads; compute one of them in a `let` before the call //~ note at 15: `n` reads `x` here //~ note at 29: `z` changes `x` here
 }
 fn main {} {}

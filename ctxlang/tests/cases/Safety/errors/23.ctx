@@ -1,5 +1,5 @@
 fn f { q: *mut *i32 } {
     let x = 1
-    q.* = &x  //~ error at 5: cannot store the address of local `x` through a pointer
+    q.* = &x  //~ error at 5: cannot store the address of local `x` through a pointer //~ note at -1:5: `x` is declared here
 }
 fn main {} {}

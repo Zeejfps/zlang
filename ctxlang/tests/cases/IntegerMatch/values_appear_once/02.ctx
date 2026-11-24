@@ -2,7 +2,7 @@
 fn f { b: u8 } -> i32 {
     match b {
 'a'..='z' => {}
-'q' => {}  //~ error at 1: 113 is already matched by an earlier pattern
+'q' => {}  //~ error at 1: 113 is already matched by an earlier pattern //~ note at -1:1: the earlier pattern is here
 else => {}
     }
     return 0

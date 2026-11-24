@@ -4,5 +4,5 @@
 error bad{ p: *i32 }
 struct Last { r: !*i32 }
 fn mk { p: *i32 } -> Last { return Last{ r = bad{ p } } }
-fn leak {} -> ! { let x: i32 = 1; _ = try (mk{ p = &x }.r) }  //~ error at 39: `try` would return an error that may hold the address of local `x`
+fn leak {} -> ! { let x: i32 = 1; _ = try (mk{ p = &x }.r) }  //~ error at 39: `try` would return an error that may hold the address of local `x` //~ note at 19: `x` is declared here
 fn main {} { _ = leak{} }

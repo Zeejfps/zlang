@@ -13,7 +13,7 @@ fn main { mut io: Io } {
     let mut mem: [8192]u8
     let mut heap = arena::new{ buf = mem[..] }
     let mut n = 0
-    report{ &io, &heap, msg = @fmt("{}", bump{ &heap, _ }) }  //~ error at 11: `heap` overlaps a place held by `msg`: `report` gives out the address of `heap` through its field `heap` at 4:56 (the access is in `utf8::builder`), and `msg` may change `heap` whenever it is called; pass one of them, or change `report` to leave `heap` to `msg`
+    report{ &io, &heap, msg = @fmt("{}", bump{ &heap, _ }) }  //~ error at 11: `heap` overlaps a place held by `msg`: `report` gives out the address of `heap` through its field `heap` at 4:56 (the access is in `utf8::builder`), and `msg` may change `heap` whenever it is called; pass one of them, or change `report` to leave `heap` to `msg` //~ note at -12:56: `report` gives out the address of `heap` here, through `heap` (the access is in `utf8::builder`) //~ note at 31: `msg`, which holds `heap`, is given here, for `msg`
 }
 
 fn bump { mut heap: arena::Arena, mut b: utf8::Builder(arena::Arena) } -> ! {}

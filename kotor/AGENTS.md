@@ -78,6 +78,14 @@ error in the program, not the first 100, for every executable of a `build.ctx` a
 held back by the errors shown, so run it again after fixing them. Use `run` or `exe` once it is
 clean.
 
+**Read errors as data when a tool reads them.** `--json` on `check`, `run`, `exe` and `test`
+writes each error as one JSON object on a line of standard error: `file`, `line`, `column`,
+`end_line`, `end_column`, `message` and `notes`, the other places involved (where the local
+whose address escapes is declared, the two arguments that overlap, the earlier declaration),
+then `{"type":"summary","errors":N,...}`. The text form has the same notes, indented under
+their error. `ctxc test DIR --json` gives a record for each test and one for the run on
+standard output (ctxlang/spec.md §20, rule 15; §21, rules 8 to 11).
+
 `kotor/tools/ctxc` builds ctxc from `ctxlang/bootstrap/ctxc.windows.c` when needed and sets
 `CTX_HOME`. In Git Bash, MSYS2's gcc fails silently unless `/g/Dev/msys64/mingw64/bin` comes first
 on `PATH`; the wrapper does that, so do the same for any other gcc call. PowerShell needs nothing.

@@ -4,7 +4,7 @@ fn f {} {
     let mut h = inc{ n = &m, _ }
     if true {
         let mut n = 0
-        h = inc{ &n, _ }  //~ error at 9: bound function stored in `h` holds `n`, which does not live as long
+        h = inc{ &n, _ }  //~ error at 9: bound function stored in `h` holds `n`, which does not live as long //~ note at -1:9: `n` is declared here //~ note at -3:5: `h` is declared here
     }
 }
 fn main {} {}

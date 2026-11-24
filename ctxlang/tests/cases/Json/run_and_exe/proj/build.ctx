@@ -1,0 +1,4 @@
+#build::sources{ dir = "gone" }
+fn build { mut b: Build } {
+    _ = build::exe{ &b, name = "p", root = "src" }
+}

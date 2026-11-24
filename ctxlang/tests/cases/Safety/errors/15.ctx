@@ -2,6 +2,6 @@ fn f { c: bool } -> *i32 {
     let x = 1
     let y = 2
     let p = if c { &x } else { &y }
-    return p  //~ error at 5: returned value holds the address of local `x`
+    return p  //~ error at 5: returned value holds the address of local `x` //~ note at -3:5: `x` is declared here
 }
 fn main {} {}

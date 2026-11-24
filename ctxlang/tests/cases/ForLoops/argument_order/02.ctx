@@ -12,4 +12,4 @@ fn sum { mut s: S } -> i32 {
     return t
 }
 fn show { n: i32, z: i32 } -> i32 { return n + z }
-fn main {} { let mut s = S{ a = [1, 2, 3], n = 1 }; _ = show{ n = s.a[0], z = zero{ &s } } }  //~ error at 75: `n` reads `s.a[_]`, and `z` changes `s.a`, in one call: the order of the fields would decide what it reads; compute one of them in a `let` before the call
+fn main {} { let mut s = S{ a = [1, 2, 3], n = 1 }; _ = show{ n = s.a[0], z = zero{ &s } } }  //~ error at 75: `n` reads `s.a[_]`, and `z` changes `s.a`, in one call: the order of the fields would decide what it reads; compute one of them in a `let` before the call //~ note at 67: `n` reads `s.a[_]` here //~ note at 85: `z` changes `s.a` here

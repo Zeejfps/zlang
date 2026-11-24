@@ -2,6 +2,6 @@
 
 fn make {} -> list::List(i32, arena::Arena) {
     let mut heap = arena::new{ buf = slice::empty(u8){} }
-    return list::new(i32){ realloc = arena::alloc, &heap }  //~ error at 5: returned value holds the address of local `heap`
+    return list::new(i32){ realloc = arena::alloc, &heap }  //~ error at 5: returned value holds the address of local `heap` //~ note at -1:5: `heap` is declared here
 }
 fn main {} { _ = make{} }

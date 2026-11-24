@@ -1,7 +1,7 @@
 union U { a{ x: i32 }, b }
 fn f { mut u: U } {
     match &u {
-        a{ &x } => { u = U::b }  //~ error at 22: u overlaps the match scrutinee; access it only through `x`
+        a{ &x } => { u = U::b }  //~ error at 22: u overlaps the match scrutinee; access it only through `x` //~ note at -1:11: the match's scrutinee is here
         b => {}
     }
 }

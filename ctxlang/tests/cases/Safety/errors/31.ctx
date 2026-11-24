@@ -3,7 +3,7 @@ fn f {} {
     let mut h = first{ s = "a", _ }
     if true {
         let buf: [2]u8 = [1, 2]
-        h = first{ s = buf[..], _ }  //~ error at 9: `h` outlives local `buf` whose address it would hold
+        h = first{ s = buf[..], _ }  //~ error at 9: `h` outlives local `buf` whose address it would hold //~ note at -1:9: `buf` is declared here //~ note at -3:5: `h` is declared here
     }
 }
 fn main {} {}

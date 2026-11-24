@@ -2,7 +2,7 @@ fn f {} {
     let x = 1
     if true {
         let y = 2
-        let y = 3  //~ error at 9: `y` is already declared in this scope
+        let y = 3  //~ error at 9: `y` is already declared in this scope //~ note at -1:9: the earlier `y` is declared here
     }
 }
 fn main {} {}

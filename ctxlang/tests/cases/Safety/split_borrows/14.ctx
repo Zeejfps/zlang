@@ -13,6 +13,6 @@ fn f { mut w: W, mut u: U } {
     w.u = U::b
 }
 fn t { mut w: W } {
-    f{ &w, u = &w.u }  //~ error at 6: two mut references to `w` in one call: `f` changes `w.u` through its field `w` at 13:5, and reads `w.u` through its field `u` at 9:12; pass one of them, or change `f` to use `w.u` through one of them only
+    f{ &w, u = &w.u }  //~ error at 6: two mut references to `w` in one call: `f` changes `w.u` through its field `w` at 13:5, and reads `w.u` through its field `u` at 9:12; pass one of them, or change `f` to use `w.u` through one of them only //~ note at -3:5: `f` changes `w.u` here, through `w` //~ note at -7:12: `f` reads `w.u` here, through `u`
 }
 fn main {} {}

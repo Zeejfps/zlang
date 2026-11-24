@@ -1,5 +1,5 @@
 
 fn g { mut a: i32, b: i32 } { }
 fn main { mut io: Io } {
-    let h = if true { let mut y = 0; g{ a = &y, _ } } else { let mut z = 0; g{ a = &z, _ } }  //~ error at 39: the value of this branch holds `y`, which ends with the branch //~ error at 78: the value of this branch holds `z`, which ends with the branch //~ error at 5: bound function stored in `h` holds `y`, which does not live as long
+    let h = if true { let mut y = 0; g{ a = &y, _ } } else { let mut z = 0; g{ a = &z, _ } }  //~ error at 39: the value of this branch holds `y`, which ends with the branch //~ error at 78: the value of this branch holds `z`, which ends with the branch //~ error at 5: bound function stored in `h` holds `y`, which does not live as long //~ note at 23: `y` is declared here //~ note at 5: `h` is declared here
 }

@@ -2,5 +2,5 @@
 // direct real borrow: rejected. It is never run: it would use a dangling pointer.
 
 fn view { s: []u8 } -> []u8 { return s }
-fn load {} -> []u8 { let buf: [3]u8 = [1,2,3]; return view{ s = buf[..] } }  //~ error at 48: returned value holds the address of local `buf`
+fn load {} -> []u8 { let buf: [3]u8 = [1,2,3]; return view{ s = buf[..] } }  //~ error at 48: returned value holds the address of local `buf` //~ note at 22: `buf` is declared here
 fn main {} { _ = load{} }

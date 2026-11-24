@@ -2,6 +2,6 @@ fn get { f: &fn{} -> []u8 } -> []u8 { return f{} }
 fn view { s: []u8 } -> []u8 { return s }
 fn f {} -> []u8 {
     let a: [2]u8 = [1, 2]
-    return get{ f = view{ s = a[..], _ } }  //~ error at 5: returned value holds the address of local `a`
+    return get{ f = view{ s = a[..], _ } }  //~ error at 5: returned value holds the address of local `a` //~ note at -1:5: `a` is declared here
 }
 fn main {} {}

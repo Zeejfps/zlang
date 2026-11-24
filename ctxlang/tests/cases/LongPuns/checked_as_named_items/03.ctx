@@ -15,3 +15,5 @@ fn main { mut io: Io } {
 // Argument order (§3, rule 10) and split borrows (§3.1, rule 8) see a pun's place.
 //# errors:
 //| 03.ctx:12:9: error: two mut references to `w.e.list` in one call: `both` changes `w.e.list.len` through its field `list` at 9:43, and changes `w.e.list.len` through its field `l` at 9:57; pass one of them, or change `both` to use `w.e.list.len` through one of them only
+//|   03.ctx:9:43: note: `both` changes `w.e.list.len` here, through `list`
+//|   03.ctx:9:57: note: `both` changes `w.e.list.len` here, through `l`

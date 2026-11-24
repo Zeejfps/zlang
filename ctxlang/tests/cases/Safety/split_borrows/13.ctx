@@ -11,6 +11,6 @@ fn f { mut e: E, mut x: i32 } {
     }
 }
 fn t { mut e: E } {
-    f{ &e, x = &e.arr[1] }  //~ error at 6: two mut references to `e` in one call: `f` reads `e.arr[_]` through its field `e` at 9:17, and changes `e.arr[_]` through its field `x` at 9:9; pass one of them, or change `f` to use `e.arr[_]` through one of them only
+    f{ &e, x = &e.arr[1] }  //~ error at 6: two mut references to `e` in one call: `f` reads `e.arr[_]` through its field `e` at 9:17, and changes `e.arr[_]` through its field `x` at 9:9; pass one of them, or change `f` to use `e.arr[_]` through one of them only //~ note at -5:17: `f` reads `e.arr[_]` here, through `e` //~ note at -5:9: `f` changes `e.arr[_]` here, through `x`
 }
 fn main {} {}

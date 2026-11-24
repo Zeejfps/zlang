@@ -633,7 +633,7 @@ What a model writes by default should compile, or fail with the exact fix.
       under `cases/` that is no case, and the runner's own crash fail the run; a skipped case
       is printed and counted. A program the interpreter refuses must say `//# interp: cannot
       run` (99 do), where the Python harness skipped it without a word, and one that says so
-      and runs fails too. [cases/Suite](tests/cases/Suite) runs the runner on fifteen cases
+      and runs fails too. [cases/Suite](tests/cases/Suite) runs the runner on eighteen cases
       that are each wrong in one way and expects each failure's line, so the suite tests that
       it tests.
     - **The runner does what tools/toolchain.py did:** ctxc from the bootstrap and then from
@@ -701,11 +701,47 @@ What a model writes by default should compile, or fail with the exact fix.
       compiler and the link, and what is left to make faster is the checker.
     - Cases: [tests/cases/Check](tests/cases/Check).
 
-- [ ] **6.2 JSON diagnostics with related locations.**
+- [x] **6.2 JSON diagnostics with related locations.**
   `--json` on check, run and exe: file, line, column, end, message, and notes pointing at the
   other place involved (the first borrow, the declaration, the earlier variant).
   - Details: today one line per error, `PATH:LINE:COL: error: MSG` ([ctxc/main.ctx](ctxc/main.ctx), `error`).
   - *Done when:* every diagnostic has the JSON form, and the borrow and escape errors carry a note at the other place.
+  - *Done:* [spec §21, rules 8 to 11](spec.md#21-checking-and-diagnostics), and for the tests'
+    results [§20, rule 15](spec.md#20-tests).
+    - **Notes** are in both forms, so that neither says more: as text, a line under the
+      error, `  PATH:LINE:COL: note: MESSAGE`. They are on the escape errors (the local's
+      declaration, and for a store that of what outlives it), on a call's places that overlap
+      (the two arguments, or where the error names them the callee's two accesses), on the
+      order of a call's fields (where each field reads or changes the place), on a place that
+      overlaps a `match &p`'s scrutinee, on a name declared twice and on an integer pattern
+      an earlier one covers. A note is said just before its error (`check::note`, then
+      `error`), so every way of reporting takes it, the escape errors that wait for the error
+      sets too.
+    - **`--json`** on `check`, `run`, `exe` and `test` writes an object on a line for each
+      diagnostic, `type`, `severity`, `file`, `line`, `column`, `end_line`, `end_column`,
+      `message` and `notes`, and a `summary` record after them with the count, whether the
+      cap dropped more, and which checks waited. On standard error, as the text form: one
+      place for the diagnostics whichever form they have, and standard output stays the
+      program's. Under `run`, the summary is what separates the compiler's lines from the
+      program's: the program starts only after a summary with no errors.
+    - **No code for each kind of error.** The message is the one name a kind has and the
+      suite compares it whole; a code would be a second name at each of about five hundred
+      errors.
+    - **The driver's own failures** (a file it can't read, the C compiler's output) stay
+      text: a line that doesn't start with `{`, and no summary after it. Those of its
+      errors that are at a place in build.ctx are diagnostics.
+    - **`ctxc test --json`** fits the same design: a record for each test (name, file, line,
+      outcome, checks; a failure's file, line and message; a skip's reason; the test's other
+      output) and one for the run, on standard output, where the results go as text. A
+      check's two sides stay in the failure's `message`: the test's process writes them with
+      the program's own writers into one line, and either may hold what would separate them.
+    - **Escaping** is std's `utf8::push_json`, tested in [std/tests/utf8.ctx](std/tests/utf8.ctx)
+      (quotes, backslashes, control characters, bytes that aren't UTF-8) and through ctxc on
+      a message that quotes such a source ([tests/cases/Json/escapes](tests/cases/Json/escapes)).
+    - **The suite states notes** with `//~ note at -1:5: MESSAGE` after the error's marker,
+      the line relative to the marker's ([tests/README.md](tests/README.md)): 157 cases
+      gained the notes ctxc now prints, each read against the program it is in.
+    - Cases: [tests/cases/Json](tests/cases/Json).
 
 - [ ] **6.3 Machine-applicable fix-its.**
   Many errors already say what to write ("`next` has no field `movie`: write `m = &movie`"). Give

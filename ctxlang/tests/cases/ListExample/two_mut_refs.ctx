@@ -43,5 +43,5 @@ fn main { mut io: Io } {
     let mut heap = arena::Arena{ buf = @slice(&mem[0], mem.len), used = 0, handed = 0 }
     let mut nums = list::new(i32){ realloc = arena::alloc, &heap }
     let mut total = 0
-    move_first{ from = &nums, to = &nums, .. }  //~ error at 15: two mut references to `nums` in one call: `move_first` reads `nums` through its field `from` at 39:99, and changes `nums` through its field `to` at 39:94; pass one of them, or change `move_first` to use `nums` through one of them only
+    move_first{ from = &nums, to = &nums, .. }  //~ error at 15: two mut references to `nums` in one call: `move_first` reads `nums` through its field `from` at 39:99, and changes `nums` through its field `to` at 39:94; pass one of them, or change `move_first` to use `nums` through one of them only //~ note at -7:99: `move_first` reads `nums` here, through `from` //~ note at -7:94: `move_first` changes `nums` here, through `to`
 }

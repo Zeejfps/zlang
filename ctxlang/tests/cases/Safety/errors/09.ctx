@@ -2,6 +2,6 @@ fn two { mut a: i32, mut b: i32 } { a = a + b }
 fn f {} {
     let mut n = 1
     let h = two{ a = &n, _ }
-    h{ b = &n }  //~ error at 6: `n` overlaps a place held by `h`, the bound function called: it can't be given a place it holds; pass another, or call the function it was bound from
+    h{ b = &n }  //~ error at 6: `n` overlaps a place held by `h`, the bound function called: it can't be given a place it holds; pass another, or call the function it was bound from //~ note at 5: `h`, which holds `n`, is here //~ note at 12: `n` is given here, for `b`
 }
 fn main {} {}

@@ -12,5 +12,5 @@ fn find { n: i32 } -> ?Ref {
 fn main {} {
     let r = find{ n = 1 }
     if not (r is local{ var }) { return }
-    let var = 2  //~ error at 5: `var` is already declared in this scope
+    let var = 2  //~ error at 5: `var` is already declared in this scope //~ note at -1:25: the earlier `var` is declared here
 }

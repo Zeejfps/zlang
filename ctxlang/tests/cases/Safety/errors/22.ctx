@@ -1,5 +1,5 @@
 fn f { mut out: *i32 } {
     let x = 1
-    out = &x  //~ error at 5: cannot store the address of local `x` in `out`, which belongs to the caller
+    out = &x  //~ error at 5: cannot store the address of local `x` in `out`, which belongs to the caller //~ note at -1:5: `x` is declared here //~ note at -2:8: `out` is a context field, declared here
 }
 fn main {} {}

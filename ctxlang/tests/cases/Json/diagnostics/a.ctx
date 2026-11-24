@@ -1,0 +1,15 @@
+struct Box { p: ?*i32 }
+fn far {} -> *i32 {
+    let v: i32 = 1
+    return &v
+}
+fn keep { mut box: Box } {
+    let n: i32 = 2
+    box.p = &n
+    let b: u8 = 300
+}
+fn main { mut io: Io } {
+    let mut box = Box{ p = null }
+    keep{ &box }
+    _ = far{}
+}

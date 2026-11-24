@@ -6,6 +6,6 @@ fn count { l: L } -> i32 { return l.len }
 fn f { mut e: E, mut xs: L } { e.n = 1 }
 fn t { mut e: E } {
     let g = f
-    g{ &e, xs = &e.list }  //~ error at 6: two mut references to `e` in one call: only a call to a named function with a body may be given places that overlap, and only where the function uses them apart; pass one of them
+    g{ &e, xs = &e.list }  //~ error at 6: two mut references to `e` in one call: only a call to a named function with a body may be given places that overlap, and only where the function uses them apart; pass one of them //~ note at 8: `e` is given here, for `e` //~ note at 17: `e.list` is given here, for `xs`
 }
 fn main {} {}

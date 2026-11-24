@@ -12,6 +12,7 @@
 //| {dir}/prog/a.ctx:12:5: error: unknown name `missing`
 //| {dir}/prog/b.ctx:4:28: error: literal 999 does not fit in u8
 //| {dir}/prog/a.ctx:4:5: error: returned value holds the address of local `v`
+//|   {dir}/prog/a.ctx:3:5: note: `v` is declared here
 //| check: 8 errors; not checked until the program has no other error: the order of a call's fields, what tasks borrow, consts computed by running code
 //# missing {work:prog}
 
@@ -24,4 +25,5 @@
 //| {dir}/prog/a.ctx:11:5: error: a match on an integer needs an `else` arm
 //| {dir}/prog/a.ctx:12:5: error: unknown name `missing`
 //| {dir}/prog/a.ctx:4:5: error: returned value holds the address of local `v`
+//|   {dir}/prog/a.ctx:3:5: note: `v` is declared here
 //| check: 5 errors; not checked until the program has no other error: the order of a call's fields, what tasks borrow, consts computed by running code

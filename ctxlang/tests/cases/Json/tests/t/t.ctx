@@ -1,0 +1,26 @@
+fn double { n: i32 } -> i32 { return n * 2 }
+
+#test
+fn doubles { mut t: Test } {
+    @expect(&t, double{ n = 2 } == 4)
+}
+
+#test
+fn doubles_wrongly { mut t: Test } {
+    @expect(&t, double{ n = 2 } == 5)
+    io::println{ io = &t, s = "a line of its own" }
+    @expect(&t, double{ n = 3 } == 6)
+    @require(&t, double{ n = 4 } == 9)
+}
+
+#test{ skip = "no \"game\" install" }
+fn needs_a_game { mut t: Test } {
+    @expect(&t, true)
+}
+
+#test
+fn panics_at_the_end { mut t: Test } {
+    let xs: [2]i32 = [1, 2]
+    let i: usize = 2 + xs.len
+    @expect(&t, xs[i] == 0)
+}

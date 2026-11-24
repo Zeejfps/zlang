@@ -6,6 +6,10 @@
 //   ctxc interp PATH [-- ARGS...]   checks it, and runs it in the interpreter (eval.ctx)
 //   ctxc check PATH                 checks it and reports every error, building nothing
 //
+// With `--json`, before PATH or after it, `run`, `exe`, `test` and `check` write the program's
+// diagnostics as JSON, and a summary after them (report.ctx; spec §21, rules 9 to 11): a line
+// of standard error that isn't a record is the driver's own failure, which `cannot` writes.
+//
 // PATH is a .ctx file, or a directory: one program of all its .ctx files, or, if it has a
 // build.ctx, the executables its build program describes (spec §19), of which `run` runs the
 // first and `exe` writes the first to OUT. A build program is compiled and run first, with
@@ -86,8 +90,9 @@ namespace drive {
     // is HOME/build/run, work the program's directory in it, program its name, and rt a hash of
     // the runtime's sources; extras are what a build program has with std's files. unit is
     // about how many bytes of C a unit has, copy how small a function another unit calls must be
-    // to be copied into it, and jobs how many C compilers run at once.
-    struct Driver { home: []u8, runs: []u8, work: []u8, program: []u8, std: [][]u8, extras: [][]u8, os: build::Os, cc: [][]u8, cc_env: [][]u8, rt: u64, unit: usize, copy: usize, jobs: u32 }
+    // to be copied into it, and jobs how many C compilers run at once. json: the diagnostics are
+    // written as JSON (`--json`, report.ctx).
+    struct Driver { home: []u8, runs: []u8, work: []u8, program: []u8, std: [][]u8, extras: [][]u8, os: build::Os, cc: [][]u8, cc_env: [][]u8, rt: u64, unit: usize, copy: usize, jobs: u32, json: bool }
 
     // A C compiler compiling a unit, into o_tmp, from its C in c_tmp, to be renamed to o and c.
     struct Job { child: proc::Child, c_tmp: []u8, o_tmp: []u8, c: []u8, o: []u8 }
@@ -115,20 +120,23 @@ namespace drive {
     struct Found { paths: Strs, keys: Strs }
 
     fn command { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args, run: bool } -> i32 {
-        let ok = if run { args.len == 2 or (args.len >= 3 and slice::eq_bytes{ a = args[2], b = "--" }) } else {
-            args.len == 4 and slice::eq_bytes{ a = args[2], b = "-o" }
-        }
-        if not ok {
-            io::eprintln{ &io, s = "usage: ctxc run PATH [-- ARGS...] | ctxc exe PATH -o OUT" }
-            return 2
-        }
-        let path = trim_slash{ path = args[1] }
         let pages = mem::reserve{ &mem, size = 16777216 } ifnull {
             io::eprintln{ &io, s = "out of memory" }
             return 1
         }
         let mut heap = arena::new{ buf = pages }
-        let d = setup{ &io, &fs, &proc, &heap, path, builds = true } ifnull { return 1 }
+        // `--json`, anywhere before a `--`: the diagnostics as JSON (spec §21).
+        let json = has_flag{ args = args[1..], flag = "--json" }
+        let given = without_flag{ &heap, args, flag = "--json" }
+        let ok = if run { given.len == 2 or (given.len >= 3 and slice::eq_bytes{ a = given[2], b = "--" }) } else {
+            given.len == 4 and slice::eq_bytes{ a = given[2], b = "-o" }
+        }
+        if not ok {
+            io::eprintln{ &io, s = "usage: ctxc run [--json] PATH [-- ARGS...] | ctxc exe [--json] PATH -o OUT" }
+            return 2
+        }
+        let path = trim_slash{ path = given[1] }
+        let d = setup{ &io, &fs, &proc, &heap, path, builds = true, json } ifnull { return 1 }
         let mut targets = list::new(Target){ realloc = arena::alloc, &heap }
         let mut why = Why::failed
         let code = describe{ &io, &fs, &mem, &proc, &heap, d, path, &targets, &why }
@@ -143,16 +151,18 @@ namespace drive {
             let mut flags = list::new([]u8){ realloc = arena::alloc, &heap }
             add_all{ xs = &flags, ys = list::items{ list = t.paths } }
             add_all{ xs = &flags, ys = list::items{ list = t.libs } }
-            let out: []u8 = if i == 0 and not run { args[3] } else { "" }
+            let out: []u8 = if i == 0 and not run { given[3] } else { "" }
             let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = d.work, name = t.name, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, level = t.level, flags = list::items{ list = flags }, out, testing = false, origin = origin_of{ &fs, &heap, path, t }, &why } ifnull { return 1 }
             if i == 0 { first = exe }
             i = i + 1
         }
+        // Every executable is built: what standard error has from here on is the program's.
+        if d.json { report::summary{ &io, &heap, errors = 0, dropped = false, waiting = 0 } }
         if not run { return 0 }
 
         let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
         try! list::push{ list = &argv, item = first }
-        if args.len > 3 { add_all{ xs = &argv, ys = args[3..] } }
+        if given.len > 3 { add_all{ xs = &argv, ys = given[3..] } }
         // CTX_CTXC: this ctxc, for a program that runs ctxc in turn (tools/fixpoint.ctx).
         let mut env = list::new([]u8){ realloc = arena::alloc, &heap }
         let own = proc::exe_path{ &proc }
@@ -171,18 +181,20 @@ namespace drive {
     // that wait for a program without errors, if they didn't run. Exits with 1 if there is
     // an error.
     fn check { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> i32 {
-        if args.len != 2 {
-            io::eprintln{ &io, s = "usage: ctxc check PATH" }
-            return 2
-        }
-        let path = trim_slash{ path = args[1] }
         let pages = mem::reserve{ &mem, size = 16777216 } ifnull {
             io::eprintln{ &io, s = "out of memory" }
             return 1
         }
         let mut heap = arena::new{ buf = pages }
+        let json = has_flag{ args = args[1..], flag = "--json" }
+        let given = without_flag{ &heap, args, flag = "--json" }
+        if given.len != 2 or (given[1].len > 0 and given[1][0] == '-') {
+            io::eprintln{ &io, s = "usage: ctxc check [--json] PATH" }
+            return 2
+        }
+        let path = trim_slash{ path = given[1] }
         let has_build = kind_of{ &fs, path } == 2 and kind_of{ &fs, path = join{ &heap, a = path, b = "build.ctx" } } == 1
-        let d = setup{ &io, &fs, &proc, &heap, path, builds = has_build } ifnull { return 1 }
+        let d = setup{ &io, &fs, &proc, &heap, path, builds = has_build, json } ifnull { return 1 }
         let mut targets = list::new(Target){ realloc = arena::alloc, &heap }
         let mut why = Why::failed
         let code = describe{ &io, &fs, &mem, &proc, &heap, d, path, &targets, &why }
@@ -213,7 +225,12 @@ namespace drive {
             found.waiting = found.waiting | own.waiting
         }
         let es = list::items{ list = found.entries }
-        report::write{ &io, &heap, es, dropped = false }
+        report::write{ &io, &heap, es, dropped = false, as_json = d.json }
+        if d.json {
+            // No summary after a failure that isn't an error of the program's: its line says why.
+            if es.len > 0 or not failed { report::summary{ &io, &heap, errors = es.len, dropped = false, waiting = found.waiting } }
+            return if es.len > 0 or failed { 1 } else { 0 }
+        }
         let mut line = utf8::builder{ realloc = arena::alloc, &heap }
         if es.len == 0 {
             if failed { return 1 }
@@ -237,20 +254,25 @@ namespace drive {
     // `ctxc test PATH [ARGS...]` (spec §20): builds the first executable of the program at PATH
     // as `run` does, but as a test build, whose entry point is std's test runner in place of
     // the program's `main`, and runs it with ARGS as they are: the runner's options, parts of
-    // the names of the tests to run, and after a `--` the tests' own arguments (std/test.ctx). It is built as NAME.test, beside the program's own
-    // build, which it leaves alone. The exit code is the runner's.
+    // the names of the tests to run, and after a `--` the tests' own arguments
+    // (std/test.ctx). `--json` is one of the runner's options, and the driver's too: the
+    // build's diagnostics and the tests' results are both JSON then, and it may come before
+    // PATH, as for `run`. It is built as NAME.test, beside the program's own build, which it
+    // leaves alone. The exit code is the runner's.
     fn test { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> i32 {
-        if args.len < 2 {
-            io::eprintln{ &io, s = "usage: ctxc test PATH [--list] [-v] [--no-skips] [--jobs N] [--timeout SECONDS] [FILTER...] [-- ARG...]" }
+        let first: usize = if args.len >= 2 and slice::eq_bytes{ a = args[1], b = "--json" } { 2 } else { 1 }
+        if args.len <= first {
+            io::eprintln{ &io, s = "usage: ctxc test [--json] PATH [--list] [-v] [--json] [--no-skips] [--jobs N] [--timeout SECONDS] [FILTER...] [-- ARG...]" }
             return 2
         }
-        let path = trim_slash{ path = args[1] }
+        let path = trim_slash{ path = args[first] }
         let pages = mem::reserve{ &mem, size = 16777216 } ifnull {
             io::eprintln{ &io, s = "out of memory" }
             return 1
         }
         let mut heap = arena::new{ buf = pages }
-        let d = setup{ &io, &fs, &proc, &heap, path, builds = true } ifnull { return 1 }
+        let json = first == 2 or has_flag{ args = args[first + 1..], flag = "--json" }
+        let d = setup{ &io, &fs, &proc, &heap, path, builds = true, json } ifnull { return 1 }
         let mut targets = list::new(Target){ realloc = arena::alloc, &heap }
         let mut why = Why::failed
         let code = describe{ &io, &fs, &mem, &proc, &heap, d, path, &targets, &why }
@@ -267,9 +289,11 @@ namespace drive {
         add_all{ xs = &flags, ys = list::items{ list = t.libs } }
         let origin = origin_of{ &fs, &heap, path, t }
         let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = d.work, name = cat{ &heap, a = t.name, b = ".test" }, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, level = t.level, flags = list::items{ list = flags }, out = "", testing = true, origin, &why } ifnull { return 1 }
+        if d.json { report::summary{ &io, &heap, errors = 0, dropped = false, waiting = 0 } }
         let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
         try! list::push{ list = &argv, item = exe }
-        add_all{ xs = &argv, ys = args[2..] }
+        if first == 2 { try! list::push{ list = &argv, item = "--json" } }
+        add_all{ xs = &argv, ys = args[first + 1..] }
         return started{ &io, r = proc::run{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} }, what = exe }
     }
 
@@ -335,7 +359,7 @@ namespace drive {
     // For `graph`: describes the program at path into text, writing generated files to gen.
     // False after saying why it can't, and setting why.
     fn describe_all { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, path: []u8, gen: []u8, mut text: list::List(u8, Heap), mut why: Why } -> bool {
-        let d = setup{ &io, &fs, &proc, &heap, path, builds = true } ifnull { return false }
+        let d = setup{ &io, &fs, &proc, &heap, path, builds = true, json = false } ifnull { return false }
         if kind_of{ &fs, path = join{ &heap, a = path, b = "build.ctx" } } != 1 {
             cannot{ &io, path, what = "has no build program" }
             why = Why::errors
@@ -403,7 +427,7 @@ namespace drive {
     // std's files, the runtime's hash and the C compiler. Null after saying why there is none.
     // Unless it `builds`, it is for a check that makes nothing: no directory is made, and it
     // has no runtime's hash and no C compiler.
-    fn setup { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, path: []u8, builds: bool } -> ?Driver {
+    fn setup { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, path: []u8, builds: bool, json: bool } -> ?Driver {
         let home = find_home{ &fs, &proc, &heap } ifnull {
             io::eprintln{ &io, s = "ctxc: cannot find std/ and ctxc/rt/; set CTX_HOME to the directory that holds them" }
             return null
@@ -423,7 +447,7 @@ namespace drive {
         if not builds {
             return Driver{
                 home, runs, work, program, std, extras, os, cc = slice::empty([]u8){}, cc_env = slice::empty([]u8){}, rt = 0,
-                unit = 0, copy = 0, jobs = 0,
+                unit = 0, copy = 0, jobs = 0, json,
             }
         }
         if not made{ &io, &fs, path = build_dir } or not made{ &io, &fs, path = runs } or not made{ &io, &fs, path = work } { return null }
@@ -431,7 +455,7 @@ namespace drive {
         let cc = compiler{ &fs, &proc, &heap, os }
         return Driver{
             home, runs, work, program, std, extras, os, cc, cc_env = cc_env{ &proc, &heap, cc = cc[0], os }, rt,
-            unit = unit_size{ &proc }, copy = copy_size{ &proc }, jobs = proc::processors{ &proc },
+            unit = unit_size{ &proc }, copy = copy_size{ &proc }, jobs = proc::processors{ &proc }, json,
         }
     }
 
@@ -549,7 +573,7 @@ namespace drive {
         }
         let mut found = report::found{ &heap }
         let code = analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = std.len, extras, mode = Mode::interp, out = stem{ path = base{ path } }, argv, env = list::items{ list = env }, stack, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = slice::empty(bool){}, testing = false, &found }
-        report::write{ &io, &heap, es = list::items{ list = found.entries }, dropped = found.dropped }
+        report::write{ &io, &heap, es = list::items{ list = found.entries }, dropped = found.dropped, as_json = false }
         return code
     }
 
@@ -582,7 +606,7 @@ namespace drive {
     fn build_program { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, dir: []u8, build_file: []u8, mut targets: list::List(Target, Heap), mut why: Why } -> i32 {
         let work = join{ &heap, a = d.work, b = "build" }
         if not made{ &io, &fs, path = work } { return 1 }
-        let files = gather_build_files{ &io, &fs, &heap, os = d.os, dir, build_file } ifnull {
+        let files = gather_build_files{ &io, &fs, &heap, os = d.os, dir, build_file, as_json = d.json } ifnull {
             why = Why::errors
             return 1
         }
@@ -789,7 +813,7 @@ namespace drive {
     // there is a program to check, so `dir` must be a string literal; the checker checks the
     // attribute again when it compiles the build program, as any other. Null after reporting why
     // there are none.
-    fn gather_build_files { mut io: Io, mut fs: Fs, mut heap: Heap, os: build::Os, dir: []u8, build_file: []u8 } -> ?[][]u8 {
+    fn gather_build_files { mut io: Io, mut fs: Fs, mut heap: Heap, os: build::Os, dir: []u8, build_file: []u8, as_json: bool } -> ?[][]u8 {
         let mut found = Found{
             paths = list::new([]u8){ realloc = arena::alloc, &heap },
             keys = list::new([]u8){ realloc = arena::alloc, &heap },
@@ -806,18 +830,18 @@ namespace drive {
         // What didn't parse, the compile reports.
         if diags.errors > 0 { return list::items{ list = found.paths } }
         let mut sources = list::new(Source){ realloc = arena::alloc, &heap }
-        if not find_sources{ &io, &heap, path = build_file, text, decls = tree.decls, top = true, &sources } { return null }
+        if not find_sources{ &io, &heap, as_json, path = build_file, text, decls = tree.decls, top = true, &sources } { return null }
         let xs = list::items{ list = sources }
         let mut i: usize = 0
         while i < xs.len {
             let at = place{ &heap, dir, rel = xs[i].dir }
             if kind_of{ &fs, path = at } != 2 {
-                report_at{ &io, &heap, path = build_file, text, at = xs[i].at, msg = cat{ &heap, a = "no directory ", b = at } }
+                report_at{ &io, &heap, as_json, path = build_file, text, at = xs[i].at, msg = cat{ &heap, a = "no directory ", b = at } }
                 return null
             }
             let n = add_files{ &io, &fs, &heap, os, &found, dir = at, deep = true } ifnull { return null }
             if n == 0 {
-                report_at{ &io, &heap, path = build_file, text, at = xs[i].at, msg = cat{ &heap, a = cat{ &heap, a = "no .ctx files in ", b = at }, b = " or below" } }
+                report_at{ &io, &heap, as_json, path = build_file, text, at = xs[i].at, msg = cat{ &heap, a = cat{ &heap, a = "no .ctx files in ", b = at }, b = " or below" } }
                 return null
             }
             i = i + 1
@@ -828,7 +852,7 @@ namespace drive {
     // Adds to sources the `dir` of each `#build::sources` on a top-level `fn build` among decls,
     // and looks for others in namespaces and on fields. False after reporting one elsewhere, or
     // one whose `dir` isn't a string literal that isn't empty.
-    fn find_sources { mut io: Io, mut heap: Heap, path: []u8, text: []u8, decls: []syntax::Decl, top: bool, mut sources: list::List(Source, Heap) } -> bool {
+    fn find_sources { mut io: Io, mut heap: Heap, as_json: bool, path: []u8, text: []u8, decls: []syntax::Decl, top: bool, mut sources: list::List(Source, Heap) } -> bool {
         let misplaced = "`build::sources` applies only to the build program's `fn build`"
         let mut i: usize = 0
         while i < decls.len {
@@ -840,12 +864,12 @@ namespace drive {
                 let a = x.attrs[k]
                 if is_sources{ a } {
                     if not entry {
-                        report_at{ &io, &heap, path, text, at = a.span.start, msg = misplaced }
+                        report_at{ &io, &heap, as_json, path, text, at = a.span.start, msg = misplaced }
                         return false
                     }
                     let s = sources_dir{ a }
                     if s.dir.len == 0 {
-                        report_at{ &io, &heap, path, text, at = s.at, msg = "`build::sources` takes `dir`, a string literal that isn't empty" }
+                        report_at{ &io, &heap, as_json, path, text, at = s.at, msg = "`build::sources` takes `dir`, a string literal that isn't empty" }
                         return false
                     }
                     try! list::push{ list = &sources, item = s }
@@ -855,7 +879,7 @@ namespace drive {
             let mut on_field: ?u32 = null
             match x.k {
                 space{ decls = inner } => {
-                    if not find_sources{ &io, &heap, path, text, decls = inner, top = false, &sources } { return false }
+                    if not find_sources{ &io, &heap, as_json, path, text, decls = inner, top = false, &sources } { return false }
                 }
                 cap{ fields } => { if fields != null { on_field = find_field_sources{ fields } } }
                 record{ fields } => { on_field = find_field_sources{ fields } }
@@ -877,7 +901,7 @@ namespace drive {
                 else => {}
             }
             if let value = on_field {
-                report_at{ &io, &heap, path, text, at = value, msg = misplaced }
+                report_at{ &io, &heap, as_json, path, text, at = value, msg = misplaced }
                 return false
             }
             i = i + 1
@@ -931,13 +955,40 @@ namespace drive {
         return missing
     }
 
-    // "PATH:LINE:COL: error: MSG" for offset `at` in path's text, as the front end reports an
-    // error (main.ctx, `error`).
-    fn report_at { mut io: Io, mut heap: Heap, path: []u8, text: []u8, at: u32, msg: []u8 } {
+    // An error of the driver's own at offset `at` in path's text, written as the front end's
+    // are (report.ctx): "PATH:LINE:COL: error: MSG", or as JSON, with the summary that ends
+    // a command's diagnostics, since the command ends here.
+    fn report_at { mut io: Io, mut heap: Heap, as_json: bool, path: []u8, text: []u8, at: u32, msg: []u8 } {
         let p = source::position{ text, lines = source::line_starts{ text, &heap }, offset = at }
-        let mut b = utf8::builder{ realloc = arena::alloc, &heap }
-        _ = @fmt(&b, "{}:{}:{}: error: {}\n", path, p.line, p.col, msg)
-        io::write{ &io, to = io::Stream::err, bytes = utf8::view{ b }.bytes }
+        let e = report::Entry{ at = report::Place{ path, line = p.line, col = p.col, end_line = p.line, end_col = p.col }, msg, notes = slice::empty(report::Note){}, lacks = "" }
+        report::write{ &io, &heap, es = one_entry{ &heap, e }, dropped = false, as_json }
+        if as_json { report::summary{ &io, &heap, errors = 1, dropped = false, waiting = 0 } }
+    }
+
+    fn one_entry { mut heap: Heap, e: report::Entry } -> []report::Entry {
+        let out = try! alloc::make(report::Entry, Heap){ realloc = arena::alloc, &heap, count = 1 }
+        out[0] = e
+        return out
+    }
+
+    // Whether `flag` is among args, before any `--`: what follows that is the program's.
+    fn has_flag { args: [][]u8, flag: []u8 } -> bool {
+        for a in args {
+            if slice::eq_bytes{ a, b = "--" } { return false }
+            if slice::eq_bytes{ a, b = flag } { return true }
+        }
+        return false
+    }
+
+    // args without `flag`, where it is before any `--`.
+    fn without_flag { mut heap: Heap, args: [][]u8, flag: []u8 } -> [][]u8 {
+        let mut out = list::new([]u8){ realloc = arena::alloc, &heap }
+        let mut rest = false
+        for a in args {
+            if slice::eq_bytes{ a, b = "--" } { rest = true }
+            if rest or not slice::eq_bytes{ a, b = flag } { try! list::push{ list = &out, item = a } }
+        }
+        return list::items{ list = out }
     }
 
     // ---- generated files
@@ -1388,7 +1439,8 @@ namespace drive {
         let code = analyze{ &io, &fs, &mem, &proc, paths = all.paths, std_files = d.std.len, extras = d.extras, mode = Mode::units, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = d.unit, copy = if level == 0 { 0 } else { d.copy }, made = &units, texts = all.texts, denied = all.denied, testing, &found }
         if code != 0 {
             explain{ &io, &fs, &heap, d, &found, origin, files }
-            report::write{ &io, &heap, es = list::items{ list = found.entries }, dropped = found.dropped }
+            report::write{ &io, &heap, es = list::items{ list = found.entries }, dropped = found.dropped, as_json = d.json }
+            if d.json and found.entries.len > 0 { report::summary{ &io, &heap, errors = found.entries.len, dropped = found.dropped, waiting = found.waiting } }
             why = Why::errors
             return null
         }

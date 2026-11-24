@@ -1,2 +1,2 @@
-fn f { x: u32 } -> []u32 { let xs: []u32 = [x]; return xs }  //~ error at 49: returned value holds the address of an array literal
+fn f { x: u32 } -> []u32 { let xs: []u32 = [x]; return xs }  //~ error at 49: returned value holds the address of an array literal //~ note at 44: the array literal is here
 fn main {} {}

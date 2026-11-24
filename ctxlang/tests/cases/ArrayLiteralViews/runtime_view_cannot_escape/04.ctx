@@ -1,2 +1,2 @@
-fn f { mut out: []u32, x: u32 } { out = [x] }  //~ error at 35: cannot store the address of an array literal in `out`, which belongs to the caller
+fn f { mut out: []u32, x: u32 } { out = [x] }  //~ error at 35: cannot store the address of an array literal in `out`, which belongs to the caller //~ note at 41: the array literal is here //~ note at 8: `out` is a context field, declared here
 fn main {} {}

@@ -2,6 +2,6 @@ struct P { a: i32, b: i32 }
 fn g { mut x: i32, mut y: i32 } { x = y }
 fn f {} {
     let mut p = P{ a = 1, b = 2 }
-    g{ x = &p.a, y = &p.a }  //~ error at 6: two mut references to `p.a` in one call: `g` changes `p.a` through its field `x` at 2:35, and reads `p.a` through its field `y` at 2:39; pass one of them, or change `g` to use `p.a` through one of them only
+    g{ x = &p.a, y = &p.a }  //~ error at 6: two mut references to `p.a` in one call: `g` changes `p.a` through its field `x` at 2:35, and reads `p.a` through its field `y` at 2:39; pass one of them, or change `g` to use `p.a` through one of them only //~ note at -3:35: `g` changes `p.a` here, through `x` //~ note at -3:39: `g` reads `p.a` here, through `y`
 }
 fn main {} {}

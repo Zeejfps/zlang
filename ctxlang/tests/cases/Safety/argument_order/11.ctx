@@ -13,6 +13,6 @@ fn log { mut t: T } -> i32 {
     return 0
 }
 fn f { mut t: T } {
-    show{ n = t.out.len, z = log{ &t } }  //~ error at 26: `n` reads `t.out.len`, and `z` changes `t.out`, in one call: the order of the fields would decide what it reads; compute one of them in a `let` before the call
+    show{ n = t.out.len, z = log{ &t } }  //~ error at 26: `n` reads `t.out.len`, and `z` changes `t.out`, in one call: the order of the fields would decide what it reads; compute one of them in a `let` before the call //~ note at 15: `n` reads `t.out.len` here //~ note at 35: `z` changes `t.out` here
 }
 fn main {} {}

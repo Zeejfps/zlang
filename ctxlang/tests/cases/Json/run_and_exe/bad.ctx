@@ -1,0 +1,4 @@
+fn main { mut io: Io } {
+    let n: u8 = 300
+    io::println{ &io, s = "never" }
+}

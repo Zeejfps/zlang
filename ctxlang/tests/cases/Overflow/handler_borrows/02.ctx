@@ -5,6 +5,6 @@ fn failure { p: *i32 } -> !i32 { return bad{ p } }
 fn leak {} -> !i32 {
     let x: i32 = 42
     let n: i32 = 50000
-    return n * n ifoverflow failure{ p = &x }  //~ error at 5: returned value holds the address of local `x`
+    return n * n ifoverflow failure{ p = &x }  //~ error at 5: returned value holds the address of local `x` //~ note at -2:5: `x` is declared here
 }
 fn main {} { _ = leak{} }

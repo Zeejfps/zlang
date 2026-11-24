@@ -3,7 +3,7 @@
 
 fn f {} -> *i32 {
     let v = 1
-    for &x in [v, 2] { return &x }  //~ error at 24: returned value holds the address of an array literal
+    for &x in [v, 2] { return &x }  //~ error at 24: returned value holds the address of an array literal //~ note at 15: the array literal is here
     @panic()
 }
 fn main {} { _ = f{} }

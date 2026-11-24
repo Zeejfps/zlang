@@ -17,6 +17,8 @@
 //                                               its build program describes, and reports every
 //                                               error: the front end alone, with no C compiler
 //                                               (drive.ctx)
+//   --json                                      with run, exe, test and check: the diagnostics
+//                                               as JSON, a line for each (spec §21; report.ctx)
 //   ctxc graph DIR GEN LIST                     runs DIR's build program as `run` does, and
 //                                               writes what it describes to LIST and its
 //                                               generated files to GEN, for
@@ -230,7 +232,7 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
     let mut scratch = arena::new{ buf = pages }
     let mut found = report::found{ heap = &scratch }
     let code = analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = split - first, extras = slice::empty([]u8){}, mode, out, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = list::items{ list = denied }, testing = false, &found }
-    report::write{ &io, heap = &scratch, es = list::items{ list = found.entries }, dropped = found.dropped }
+    report::write{ &io, heap = &scratch, es = list::items{ list = found.entries }, dropped = found.dropped, as_json = false }
     return code
 }
 

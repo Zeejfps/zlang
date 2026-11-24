@@ -9,6 +9,6 @@ fn reset { mut s: S } -> i32 {
     return 0
 }
 fn f { mut s: S } {
-    show{ n = s.m, z = reset{ &s } }  //~ error at 20: `n` reads `s.m`, and `z` changes `s`, in one call: the order of the fields would decide what it reads; compute one of them in a `let` before the call
+    show{ n = s.m, z = reset{ &s } }  //~ error at 20: `n` reads `s.m`, and `z` changes `s`, in one call: the order of the fields would decide what it reads; compute one of them in a `let` before the call //~ note at 15: `n` reads `s.m` here //~ note at 31: `z` changes `s` here
 }
 fn main {} {}

@@ -3,10 +3,16 @@
 // columns, which stands by itself, so that `ctxc check` can gather the entries of several
 // executables, each checked by a checker of its own, and show each once.
 //
-//   PATH:LINE:COL: error: MESSAGE
+// There are two forms, with the same in each (spec §21). As text, a line for the error and one
+// under it for each note, a related place:
 //
-// An error about the whole program, such as a missing `main`, is at the start of its first
-// file. If the cap dropped some (diag::CAP), a last line says so.
+//   PATH:LINE:COL: error: MESSAGE
+//     PATH:LINE:COL: note: MESSAGE
+//
+// and with `--json` a JSON object on a line of its own for each error (`json`), and one that
+// sums up after them (`summary`). Both go to standard error. An error about the whole program,
+// such as a missing `main`, is at the start of its first file. If the cap dropped some
+// (diag::CAP), a last line says so, or the summary does.
 
 namespace report {
     type Heap = arena::Arena
@@ -15,9 +21,12 @@ namespace report {
     // to but not including the end.
     struct Place { path: []u8, line: u32, col: u32, end_line: u32, end_col: u32 }
 
+    // A related place (diag::Note).
+    struct Note { at: Place, msg: []u8 }
+
     // lacks: the namespace the program lacks, if the error is that (diag::Diag.lacks), for the
     // driver to say where one is declared (drive.ctx, `explain`).
-    struct Entry { at: Place, msg: []u8, lacks: []u8 }
+    struct Entry { at: Place, msg: []u8, notes: []Note, lacks: []u8 }
 
     // What a command that checks several programs has gathered (`ctxc check`): each entry
     // once, however many of the programs have it; whether the cap dropped others; and which
@@ -32,7 +41,9 @@ namespace report {
     fn resolve { mut heap: Heap, c: check::Checker, ds: []diag::Diag } -> []Entry {
         let mut out = list::new(Entry){ realloc = arena::alloc, &heap }
         for d in ds {
-            try! list::push{ list = &out, item = Entry{ at = place{ c, span = d.span }, msg = d.msg.bytes, lacks = d.lacks } }
+            let mut notes = list::new(Note){ realloc = arena::alloc, &heap }
+            for n in d.notes { try! list::push{ list = &notes, item = Note{ at = place{ c, span = n.span }, msg = n.msg.bytes } } }
+            try! list::push{ list = &out, item = Entry{ at = place{ c, span = d.span }, msg = d.msg.bytes, notes = list::items{ list = notes }, lacks = d.lacks } }
         }
         return list::items{ list = out }
     }
@@ -66,21 +77,69 @@ namespace report {
                and slice::eq_bytes{ a = a.at.path, b = b.at.path } and slice::eq_bytes{ a = a.msg, b = b.msg }
     }
 
-    // Writes es to standard error, a line for each, and after them whether the cap dropped
-    // others.
-    fn write { mut io: Io, mut heap: Heap, es: []Entry, dropped: bool } {
+    // Writes es to standard error, as text or as JSON. As text, whether the cap dropped
+    // others comes after them; as JSON the summary says it, which the caller writes
+    // (`summary`), once it knows the whole of what it reports.
+    fn write { mut io: Io, mut heap: Heap, es: []Entry, dropped: bool, as_json: bool } {
         let mut out = utf8::builder{ realloc = arena::alloc, &heap }
-        for e in es { text{ &out, e } }
+        for e in es {
+            if as_json { json{ &out, e } } else { text{ &out, e } }
+        }
         // How many more isn't known: a body is checked twice, and an error that was dropped
         // twice was counted twice.
-        if dropped {
+        if dropped and not as_json {
             try! @fmt(&out, "ctxc: more than {} errors: these are the first {}, and `ctxc check` reports every one\n", diag::CAP, diag::CAP)
         }
         io::write{ &io, to = io::Stream::err, bytes = utf8::view{ b = out }.bytes }
     }
 
-    // "PATH:LINE:COL: error: MESSAGE"
+    // "PATH:LINE:COL: error: MESSAGE", and "  PATH:LINE:COL: note: MESSAGE" for each note.
     fn text { mut out: utf8::Builder(Heap), e: Entry } {
         try! @fmt(&out, "{}:{}:{}: error: {}\n", utf8::String{ bytes = e.at.path }, e.at.line, e.at.col, utf8::String{ bytes = e.msg })
+        for n in e.notes {
+            try! @fmt(&out, "  {}:{}:{}: note: {}\n", utf8::String{ bytes = n.at.path }, n.at.line, n.at.col, utf8::String{ bytes = n.msg })
+        }
+    }
+
+    // e as a JSON object on one line (spec §21, rule 9):
+    //
+    //   {"type":"diagnostic","severity":"error","file":"a.ctx","line":4,"column":12,
+    //    "end_line":4,"end_column":14,"message":"...","notes":[{"file":...,"message":"..."}]}
+    fn json { mut out: utf8::Builder(Heap), e: Entry } {
+        try! utf8::push{ b = &out, s = "{\"type\":\"diagnostic\",\"severity\":\"error\"," }
+        json_place{ &out, at = e.at }
+        try! @fmt(&out, ",\"message\":{},\"notes\":[", utf8::push_json{ s = e.msg, _ })
+        for n at i in e.notes {
+            try! utf8::push{ b = &out, s = if i == 0 { "{" } else { ",{" } }
+            json_place{ &out, at = n.at }
+            try! @fmt(&out, ",\"message\":{}}}", utf8::push_json{ s = n.msg, _ })
+        }
+        try! utf8::push{ b = &out, s = "]}\n" }
+    }
+
+    // `"file":"a.ctx","line":4,"column":12,"end_line":4,"end_column":14`
+    fn json_place { mut out: utf8::Builder(Heap), at: Place } {
+        try! @fmt(&out, "\"file\":{},\"line\":{},\"column\":{},\"end_line\":{},\"end_column\":{}", utf8::push_json{ s = at.path, _ }, at.line, at.col, at.end_line, at.end_col)
+    }
+
+    // The record that ends a command's diagnostics as JSON, on standard error: how many
+    // errors it reported, whether the cap dropped others (`more`), and which checks waited for
+    // a program without errors, by name (`waiting`: `order`, `tasks`, `consts`). After it,
+    // under `ctxc run`, standard error is the program's.
+    //
+    //   {"type":"summary","errors":2,"more":false,"waiting":["order","tasks","consts"]}
+    fn summary { mut io: Io, mut heap: Heap, errors: usize, dropped: bool, waiting: u8 } {
+        let mut out = utf8::builder{ realloc = arena::alloc, &heap }
+        try! @fmt(&out, "{{\"type\":\"summary\",\"errors\":{},\"more\":{},\"waiting\":[", errors, dropped)
+        let names: [3]utf8::String = ["\"order\"", "\"tasks\"", "\"consts\""]
+        let mut n: usize = 0
+        for name at k in names {
+            if waiting & (@as(u8, 1) << @as(u8, k)) == 0 { continue }
+            if n > 0 { try! utf8::push{ b = &out, s = "," } }
+            try! utf8::push{ b = &out, s = name }
+            n = n + 1
+        }
+        try! utf8::push{ b = &out, s = "]}\n" }
+        io::write{ &io, to = io::Stream::err, bytes = utf8::view{ b = out }.bytes }
     }
 }

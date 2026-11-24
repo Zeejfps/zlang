@@ -3,5 +3,5 @@
 
 fn first { s: []u8, n: i32 } -> []u8 { if n > 0 { return second{ s, n = n - 1 } }; return s }
 fn second { s: []u8, n: i32 } -> []u8 { return first{ s, n } }
-fn load {} -> []u8 { let buf: [3]u8 = [1,2,3]; return first{ s = buf[..], n = 1 } }  //~ error at 48: returned value holds the address of local `buf`
+fn load {} -> []u8 { let buf: [3]u8 = [1,2,3]; return first{ s = buf[..], n = 1 } }  //~ error at 48: returned value holds the address of local `buf` //~ note at 22: `buf` is declared here
 fn main {} { _ = load{} }

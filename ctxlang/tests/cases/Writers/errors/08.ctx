@@ -16,7 +16,7 @@ fn main { mut io: Io } {
     if true {
         let buf: [2]u8 = [1, 2]
         w = @fmt("{}", @as(i32, buf[..][0]))
-        w = @fmt("{}", view{ s = buf[..], _ })  //~ error at 9: `w` outlives local `buf` whose address it would hold
+        w = @fmt("{}", view{ s = buf[..], _ })  //~ error at 9: `w` outlives local `buf` whose address it would hold //~ note at -2:9: `buf` is declared here //~ note at -4:5: `w` is declared here
     }
 }
 

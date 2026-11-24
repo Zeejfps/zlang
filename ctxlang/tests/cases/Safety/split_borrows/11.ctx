@@ -10,6 +10,6 @@ fn f { mut e: E, mut xs: L } {
     push{ l = &xs }
 }
 fn t { mut e: E } {
-    f{ &e, xs = &e.list }  //~ error at 6: two mut references to `e` in one call: `f` gives out the address of `e.list` through its field `e` at 8:21 (the access is in `id`), and reads `e.list.len` through its field `xs` at 10:15 (the access is in `push`); pass one of them, or change `f` to use `e.list.len` through one of them only
+    f{ &e, xs = &e.list }  //~ error at 6: two mut references to `e` in one call: `f` gives out the address of `e.list` through its field `e` at 8:21 (the access is in `id`), and reads `e.list.len` through its field `xs` at 10:15 (the access is in `push`); pass one of them, or change `f` to use `e.list.len` through one of them only //~ note at -5:21: `f` gives out the address of `e.list` here, through `e` (the access is in `id`) //~ note at -3:15: `f` reads `e.list.len` here, through `xs` (the access is in `push`)
 }
 fn main {} {}

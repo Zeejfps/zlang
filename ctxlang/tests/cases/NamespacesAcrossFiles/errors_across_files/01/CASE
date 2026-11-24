@@ -3,3 +3,4 @@
 //# program: a.ctx b.ctx
 //# errors:
 //| b.ctx:2:5: error: `f` is already declared in this scope
+//|   a.ctx:1:18: note: the earlier `f` is declared here

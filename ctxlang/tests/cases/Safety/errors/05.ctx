@@ -3,6 +3,6 @@ fn g { mut n: i32, f: &fn{} } { n = 0 }
 fn f {} {
     let mut n = 0
     let h = inc{ &n, _ }
-    g{ &n, f = h }  //~ error at 6: `n` overlaps a place held by `h`: `g` changes `n` through its field `n` at 2:33, and `h` may change `n` whenever it is called; pass one of them, or change `g` to leave `n` to `h`
+    g{ &n, f = h }  //~ error at 6: `n` overlaps a place held by `h`: `g` changes `n` through its field `n` at 2:33, and `h` may change `n` whenever it is called; pass one of them, or change `g` to leave `n` to `h` //~ note at -4:33: `g` changes `n` here, through `n` //~ note at 16: `h`, which holds `n`, is given here, for `f`
 }
 fn main {} {}

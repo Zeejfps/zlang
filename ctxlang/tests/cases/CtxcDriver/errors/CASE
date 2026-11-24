@@ -11,4 +11,4 @@
 //# $ ctxc run
 //# exit: 2
 //# stderr:
-//| usage: ctxc run PATH [-- ARGS...] | ctxc exe PATH -o OUT
+//| usage: ctxc run [--json] PATH [-- ARGS...] | ctxc exe [--json] PATH -o OUT

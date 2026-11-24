@@ -12,6 +12,6 @@ fn f { mut e: E, mut xs: L, k: i32 } {
     f{ &e, &xs, k = k - 1 }
 }
 fn t { mut e: E } {
-    f{ &e, xs = &e.list, k = 2 }  //~ error at 6: two mut references to `e` in one call: `f` changes `e.list.len` through its field `e` at 8:9, and reads `e.list.len` through its field `xs` at 11:15 (the access is in `push`); pass one of them, or change `f` to use `e.list.len` through one of them only
+    f{ &e, xs = &e.list, k = 2 }  //~ error at 6: two mut references to `e` in one call: `f` changes `e.list.len` through its field `e` at 8:9, and reads `e.list.len` through its field `xs` at 11:15 (the access is in `push`); pass one of them, or change `f` to use `e.list.len` through one of them only //~ note at -7:9: `f` changes `e.list.len` here, through `e` //~ note at -4:15: `f` reads `e.list.len` here, through `xs` (the access is in `push`)
 }
 fn main {} {}

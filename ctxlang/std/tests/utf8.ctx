@@ -65,4 +65,37 @@ namespace utf8_tests {
         try @fmt(&b, "{:<5}|{:>5}|{{}}", name, name)
         @expect(&t, utf8::view{ b }.bytes == "abc  |  abc|{}")
     }
+
+    // `push_json` writes any bytes as a JSON string: quotes, backslashes and the bytes below
+    // 32 escaped, a byte that starts no UTF-8 sequence as U+FFFD, the rest as it is.
+    #test
+    fn push_json_escapes { mut t: Test, mut mem: Mem } -> ! {
+        let pages = mem::pages{ &mem, size = 4096 } ifnull { return alloc::out_of_memory }
+        let mut heap = arena::new{ buf = pages }
+        let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+        try utf8::push_json{ &b, s = "plain" }
+        @expect(&t, utf8::view{ b }.bytes == "\"plain\"")
+        utf8::clear{ &b }
+        try utf8::push_json{ &b, s = "" }
+        @expect(&t, utf8::view{ b }.bytes == "\"\"")
+        utf8::clear{ &b }
+        try utf8::push_json{ &b, s = "say \"hi\" to C:\\dir" }
+        @expect(&t, utf8::view{ b }.bytes == "\"say \\\"hi\\\" to C:\\\\dir\"")
+        utf8::clear{ &b }
+        try utf8::push_json{ &b, s = "a\nb\rc\td" }
+        @expect(&t, utf8::view{ b }.bytes == "\"a\\nb\\rc\\td\"")
+        utf8::clear{ &b }
+        let low: [4]u8 = [0, 1, 0x1F, 0x7F]
+        try utf8::push_json{ &b, s = low[..] }
+        @expect(&t, utf8::view{ b }.bytes == "\"\\u0000\\u0001\\u001f\x7f\"")
+        utf8::clear{ &b }
+        // U+00E9 as its two bytes stays; a lone 0xFF, a lone continuation byte and a sequence
+        // cut short are each U+FFFD.
+        let mixed: [7]u8 = [0xC3, 0xA9, 0xFF, 0xA9, 'x', 0xE2, 0x82]
+        try utf8::push_json{ &b, s = mixed[..] }
+        @expect(&t, utf8::view{ b }.bytes == "\"\xc3\xa9\\ufffd\\ufffdx\\ufffd\\ufffd\"")
+        utf8::clear{ &b }
+        try @fmt(&b, "{{\"file\":{}}}", utf8::push_json{ s = "a b.ctx", _ })
+        @expect(&t, utf8::view{ b }.bytes == "{\"file\":\"a b.ctx\"}")
+    }
 }

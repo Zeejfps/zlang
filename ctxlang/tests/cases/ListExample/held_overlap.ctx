@@ -45,5 +45,5 @@ fn main { mut io: Io } {
     let mut total = 0
 
     let f = add_to{ &total, _ }
-    sum_into{ &total, f }  //~ error at 13: `total` overlaps a place held by `f`: `sum_into` changes `total` through its field `total` at 39:55, and `f` may change `total` whenever it is called; pass one of them, or change `sum_into` to leave `total` to `f`
+    sum_into{ &total, f }  //~ error at 13: `total` overlaps a place held by `f`: `sum_into` changes `total` through its field `total` at 39:55, and `f` may change `total` whenever it is called; pass one of them, or change `sum_into` to leave `total` to `f` //~ note at -9:55: `sum_into` changes `total` here, through `total` //~ note at 23: `f`, which holds `total`, is given here, for `f`
 }

@@ -1,6 +1,6 @@
 
 fn greet {} -> utf8::String {
     let hi: [2]u8 = "hi"
-    return utf8::of{ chars = &hi }  //~ error at 5: returned value holds the address of local `hi`
+    return utf8::of{ chars = &hi }  //~ error at 5: returned value holds the address of local `hi` //~ note at -1:5: `hi` is declared here
 }
 fn main { mut io: Io } { }

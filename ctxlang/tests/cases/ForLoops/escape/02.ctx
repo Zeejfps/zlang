@@ -3,7 +3,7 @@
 
 fn f {} -> *i32 {
     let a = [1, 2]
-    for &x in a { return &x }  //~ error at 19: returned value holds the address of local `a`
+    for &x in a { return &x }  //~ error at 19: returned value holds the address of local `a` //~ note at -1:5: `a` is declared here
     @panic()
 }
 fn main {} { _ = f{} }

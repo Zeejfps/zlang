@@ -5,6 +5,6 @@ fn bump { mut s: S } -> i32 {
 }
 fn show { n: i32, z: i32 } { let t = n + z }
 fn f { mut s: S } {
-    show{ n = bump{ &s }, z = bump{ &s } }  //~ error at 27: `n` and `z` both change `s.n` in one call: the order of the fields would decide which goes first; compute one of them in a `let` before the call
+    show{ n = bump{ &s }, z = bump{ &s } }  //~ error at 27: `n` and `z` both change `s.n` in one call: the order of the fields would decide which goes first; compute one of them in a `let` before the call //~ note at 21: `n` changes `s.n` here //~ note at 37: `z` changes `s.n` here
 }
 fn main {} {}

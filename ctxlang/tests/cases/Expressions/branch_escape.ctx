@@ -1,4 +1,4 @@
 
 fn main { mut io: Io } {
-    let p = if true { let y = 1; &y } else { let z = 2; &z }  //~ error at 34: the value of this branch holds the address of local `y`, which ends with the branch //~ error at 57: the value of this branch holds the address of local `z`, which ends with the branch
+    let p = if true { let y = 1; &y } else { let z = 2; &z }  //~ error at 34: the value of this branch holds the address of local `y`, which ends with the branch //~ note at 23: `y` is declared here //~ error at 57: the value of this branch holds the address of local `z`, which ends with the branch //~ note at 46: `z` is declared here
 }

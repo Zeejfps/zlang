@@ -1,0 +1,13 @@
+struct S { n: i64 }
+fn show { n: i64, z: i64 } -> i64 { return n + z }
+fn bump { mut s: S } -> i64 {
+    s.n = s.n + 1
+    return s.n
+}
+fn pair { mut s: S } -> i64 {
+    return show{ n = s.n, z = bump{ &s } }
+}
+fn main { mut io: Io } {
+    let mut s = S{ n = 1 }
+    io::println_i64{ &io, n = pair{ &s } }
+}

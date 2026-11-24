@@ -1,6 +1,6 @@
 fn read { p: *i32 } -> i32 { return p.* }
 fn f { c: bool } {
     let y = 0
-    let h = if c { let x = 1; read{ p = &x, _ } } else { read{ p = &y, _ } }  //~ error at 35: the value of this branch holds the address of local `x`, which ends with the branch
+    let h = if c { let x = 1; read{ p = &x, _ } } else { read{ p = &y, _ } }  //~ error at 35: the value of this branch holds the address of local `x`, which ends with the branch //~ note at 20: `x` is declared here
 }
 fn main {} {}

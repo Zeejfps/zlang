@@ -4,5 +4,5 @@
 error bad{ text: []u8 }
 fn view { s: []u8 } -> []u8 { return s }
 fn fail { s: []u8 } -> ! { return bad{ text = s } }
-fn load {} -> ! { let buf: [3]u8 = [1,2,3]; try fail{ s = view{ s = buf[..] } } }  //~ error at 45: `try` would return an error that may hold the address of local `buf`
+fn load {} -> ! { let buf: [3]u8 = [1,2,3]; try fail{ s = view{ s = buf[..] } } }  //~ error at 45: `try` would return an error that may hold the address of local `buf` //~ note at 19: `buf` is declared here
 fn main {} { _ = load{} }

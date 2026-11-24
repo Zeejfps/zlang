@@ -45,7 +45,7 @@ fn main { mut io: Io } {
 
     let mut ev = Event::push{ value = 1 }
     match &ev {
-        push{ &value } => { ev = Event::pop; value = 2 }  //~ error at 29: ev overlaps the match scrutinee; access it only through `value`
+        push{ &value } => { ev = Event::pop; value = 2 }  //~ error at 29: ev overlaps the match scrutinee; access it only through `value` //~ note at -1:11: the match's scrutinee is here
         else           => { }
     }
 }

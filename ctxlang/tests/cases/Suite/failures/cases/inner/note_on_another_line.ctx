@@ -1,0 +1,6 @@
+// A note that is on another line than the case says.
+fn far {} -> *i32 {
+    let v: i32 = 1
+    return &v  //~ error at 5: returned value holds the address of local `v` //~ note at -2:5: `v` is declared here
+}
+fn main {} { _ = far{} }

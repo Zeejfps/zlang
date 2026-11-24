@@ -16,10 +16,27 @@ namespace diag {
     // editor. `dropped` counts the rest, which the driver says after those it shows (report.ctx).
     const CAP: usize = 100
 
-    struct Diags { items: list::List(Diag, arena::Arena), errors: usize, dropped: usize, cap: usize }
+    // staged: the notes for the next diagnostic added (`note`), which takes them.
+    struct Diags { items: list::List(Diag, arena::Arena), errors: usize, dropped: usize, cap: usize, staged: list::List(Note, arena::Arena) }
 
     fn new { heap: *mut arena::Arena } -> Diags {
-        return Diags{ items = list::new(Diag){ realloc = arena::alloc, heap }, errors = 0, dropped = 0, cap = CAP }
+        return Diags{
+            items = list::new(Diag){ realloc = arena::alloc, heap }, errors = 0, dropped = 0, cap = CAP,
+            staged = list::new(Note){ realloc = arena::alloc, heap },
+        }
+    }
+
+    // A related place for the next diagnostic that is added: where the local is declared whose
+    // address escapes, where the other of two conflicting uses is. It is said before the
+    // diagnostic, `note` and then `error`, so that every way of making one takes it; what
+    // doesn't report after all calls `unstage`.
+    fn note { mut diags: Diags, span: source::Span, msg: utf8::String } {
+        try! list::push{ list = &diags.staged, item = Note{ span, msg } }
+    }
+
+    // Drops the notes said for a diagnostic that isn't added.
+    fn unstage { mut diags: Diags } {
+        list::clear{ list = &diags.staged }
     }
 
     // Lifts the cap, for `ctxc check`: every diagnostic is kept.
@@ -36,11 +53,13 @@ namespace diag {
             error => { diags.errors = diags.errors + 1 }
             warning => {}
         }
+        let mut item = d
+        if diags.staged.len > 0 { item.notes = try! list::take{ list = &diags.staged } }
         if diags.items.len >= diags.cap {
             diags.dropped = diags.dropped + 1
             return
         }
-        try! list::push{ list = &diags.items, item = d }
+        try! list::push{ list = &diags.items, item }
     }
 
     fn items { diags: Diags } -> []Diag {

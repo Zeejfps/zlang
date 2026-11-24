@@ -38,6 +38,19 @@
 //| {dir}/cases/inner/interp_runs.ctx:4: fail: inner/interp_runs: the interpreter runs the program, which says `interp: cannot run`: take that out
 //| {dir}/cases/inner/never_ends.ctx:1: fail: inner/never_ends: the program was ended after 1 s, still running
 //| {dir}/cases/inner/no_expectation.ctx:1: fail: inner/no_expectation: the program states no expectation: say what it prints (`//# stdout:`), its `//# exit:`, its error or its panic, or `//# compiles`
+//| {dir}/cases/inner/note_on_another_line.ctx:4: fail: inner/note_on_another_line: ctxc's errors differ at line 2 of them
+//|   expected: |   note_on_another_line.ctx:2:5: note: `v` is declared here
+//|   actual:   |   note_on_another_line.ctx:3:5: note: `v` is declared here
+//|   actual, whole:
+//|     | note_on_another_line.ctx:4:5: error: returned value holds the address of local `v`
+//|     |   note_on_another_line.ctx:3:5: note: `v` is declared here
+//| {dir}/cases/inner/note_unstated.ctx:4: fail: inner/note_unstated: ctxc's errors differ at line 2 of them
+//|   expected: |\x20
+//|   actual:   |   note_unstated.ctx:3:5: note: `v` is declared here
+//|   actual, whole:
+//|     | note_unstated.ctx:4:5: error: returned value holds the address of local `v`
+//|     |   note_unstated.ctx:3:5: note: `v` is declared here
+//| {dir}/cases/inner/note_without_its_error.ctx:3: fail: inner/note_without_its_error: a `//~ note` follows the `//~ error` it belongs to, on the same line
 //| {dir}/cases/inner/panic.ctx:4: fail: inner/panic: the program didn't panic as expected
 //|   expected, as standard error's last line:
 //|     | panic.ctx:4:9: panic: index 4 out of bounds for length 3
@@ -56,4 +69,4 @@
 //| {dir}/cases/inner/unknown_directive.ctx:3: fail: inner/unknown_directive: unknown directive `stdot:`
 //| {dir}/cases/inner/unknown_directive.ctx:1: fail: inner/unknown_directive: the program states no expectation: say what it prints (`//# stdout:`), its `//# exit:`, its error or its panic, or `//# compiles`
 //| interp: 4 programs the same, 0 it cannot run, 0 off
-//| cases: 15 run, 0 passed (0 from the cache), 15 failed, 0 skipped, 0 not selected
+//| cases: 18 run, 0 passed (0 from the cache), 18 failed, 0 skipped, 0 not selected

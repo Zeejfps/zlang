@@ -1,4 +1,4 @@
 
 struct Box { p: ?*i32 }
-fn put { mut b: Box } { let mut x = 1; b.p = &x }  //~ error at 40: cannot store the address of local `x` in `b`, which belongs to the caller
+fn put { mut b: Box } { let mut x = 1; b.p = &x }  //~ error at 40: cannot store the address of local `x` in `b`, which belongs to the caller //~ note at 25: `x` is declared here //~ note at 10: `b` is a context field, declared here
 fn main { mut io: Io } { }

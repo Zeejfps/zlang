@@ -1,3 +1,3 @@
 capability C
-capability C  //~ error at 1: `C` is already declared in this scope
+capability C  //~ error at 1: `C` is already declared in this scope //~ note at -1:12: the earlier `C` is declared here
 fn main {} {}

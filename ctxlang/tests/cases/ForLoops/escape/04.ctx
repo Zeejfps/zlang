@@ -4,6 +4,6 @@
 struct Keep { p: ?*mut i32 }
 fn f { mut k: Keep } {
     let mut a = [1, 2]
-    for &x in a { k.p = &x }  //~ error at 19: cannot store the address of local `a` in `k`, which belongs to the caller
+    for &x in a { k.p = &x }  //~ error at 19: cannot store the address of local `a` in `k`, which belongs to the caller //~ note at -1:5: `a` is declared here //~ note at -2:8: `k` is a context field, declared here
 }
 fn main {} { let mut k = Keep{ p = null }; f{ &k } }

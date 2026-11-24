@@ -1,3 +1,3 @@
 struct S {}
-struct S {}  //~ error at 1: `S` is already declared in this scope
+struct S {}  //~ error at 1: `S` is already declared in this scope //~ note at -1:8: the earlier `S` is declared here
 fn main {} {}

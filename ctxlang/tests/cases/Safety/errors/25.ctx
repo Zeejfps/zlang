@@ -4,7 +4,7 @@ fn f {} {
     if true {
         let x = 1
         let q = &x
-        p = q  //~ error at 9: `p` outlives local `x` whose address it would hold
+        p = q  //~ error at 9: `p` outlives local `x` whose address it would hold //~ note at -2:9: `x` is declared here //~ note at -4:5: `p` is declared here
     }
 }
 fn main {} {}

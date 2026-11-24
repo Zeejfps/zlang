@@ -2,5 +2,5 @@
 fn main {} {
     let x: ?i32 = 1
     let some{ value } = x else { return }
-    let some{ value } = x else { return }  //~ error at 15: `value` is already declared in this scope
+    let some{ value } = x else { return }  //~ error at 15: `value` is already declared in this scope //~ note at -1:15: the earlier `value` is declared here
 }

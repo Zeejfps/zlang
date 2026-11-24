@@ -11,6 +11,6 @@ fn call_it { f: &fn{} } -> i32 {
 }
 fn f {} {
     let mut x = 0
-    show{ n = x, z = call_it{ f = inc{ &x, _ } } }  //~ error at 18: `n` reads `x`, which `z` changes, in one call: the order of the fields would decide what it reads; compute one of them in a `let` before the call
+    show{ n = x, z = call_it{ f = inc{ &x, _ } } }  //~ error at 18: `n` reads `x`, which `z` changes, in one call: the order of the fields would decide what it reads; compute one of them in a `let` before the call //~ note at 15: `n` reads `x` here //~ note at 35: `z` changes `x` here
 }
 fn main {} {}
