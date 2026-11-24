@@ -24,9 +24,20 @@ namespace report {
     // A related place (diag::Note).
     struct Note { at: Place, msg: []u8 }
 
+    // An edit of a fix (diag::Edit): the bytes start up to end of the file at.path, which
+    // are `old` in a file of `size` bytes as the compiler read it, become text. own: the file
+    // is one of the program's own, not std's and not one its build program generates: the
+    // only kind `ctxc check --fix` writes to. around: the whole of the lines the bytes are
+    // in, without the last one's line break, for showing the edit, and within: where the
+    // bytes start in it.
+    struct Edit { at: Place, start: u32, end: u32, old: []u8, size: usize, text: []u8, own: bool, around: []u8, within: u32 }
+
+    // A fix (diag::Fix).
+    struct Fix { safe: bool, msg: []u8, edits: []Edit }
+
     // lacks: the namespace the program lacks, if the error is that (diag::Diag.lacks), for the
     // driver to say where one is declared (drive.ctx, `explain`).
-    struct Entry { at: Place, msg: []u8, notes: []Note, lacks: []u8 }
+    struct Entry { at: Place, msg: []u8, notes: []Note, lacks: []u8, fixes: []Fix }
 
     // What a command that checks several programs has gathered (`ctxc check`): each entry
     // once, however many of the programs have it; whether the cap dropped others; and which
@@ -37,13 +48,37 @@ namespace report {
         return Found{ entries = list::new(Entry){ realloc = arena::alloc, heap }, dropped = false, waiting = 0 }
     }
 
-    // The diagnostics of checker c as entries, in order.
-    fn resolve { mut heap: Heap, c: check::Checker, ds: []diag::Diag } -> []Entry {
+    // The diagnostics of checker c as entries, in order. The program's own files are
+    // c.files[c.std_files..own_end]: those after them are generated.
+    fn resolve { mut heap: Heap, c: check::Checker, ds: []diag::Diag, own_end: usize } -> []Entry {
         let mut out = list::new(Entry){ realloc = arena::alloc, &heap }
         for d in ds {
             let mut notes = list::new(Note){ realloc = arena::alloc, &heap }
             for n in d.notes { try! list::push{ list = &notes, item = Note{ at = place{ c, span = n.span }, msg = n.msg.bytes } } }
-            try! list::push{ list = &out, item = Entry{ at = place{ c, span = d.span }, msg = d.msg.bytes, notes = list::items{ list = notes }, lacks = d.lacks } }
+            let mut fixes = list::new(Fix){ realloc = arena::alloc, &heap }
+            for f in d.fixes {
+                let mut edits = list::new(Edit){ realloc = arena::alloc, &heap }
+                let mut whole = true
+                for e in f.edits {
+                    // An edit of no file, or past its file's end, isn't one: the fix is dropped.
+                    if e.span.file == check::NO_FILE or @as(usize, e.span.file) >= c.files.len or e.span.end < e.span.start or @as(usize, e.span.end) > c.files[e.span.file].text.len {
+                        whole = false
+                        break
+                    }
+                    let file = c.files[e.span.file]
+                    let own = @as(usize, e.span.file) >= c.std_files and @as(usize, e.span.file) < own_end
+                    let mut from: usize = e.span.start
+                    while from > 0 and file.text[from - 1] != '\n' { from = from - 1 }
+                    let mut to: usize = e.span.end
+                    while to < file.text.len and file.text[to] != '\n' { to = to + 1 }
+                    try! list::push{ list = &edits, item = Edit{
+                        at = place{ c, span = e.span }, start = e.span.start, end = e.span.end, old = file.text[e.span.start..e.span.end], size = file.text.len, text = e.text, own,
+                        around = file.text[from..to], within = e.span.start - @as(u32, from),
+                    } }
+                }
+                if whole and edits.len > 0 { try! list::push{ list = &fixes, item = Fix{ safe = f.safe, msg = f.msg.bytes, edits = list::items{ list = edits } } } }
+            }
+            try! list::push{ list = &out, item = Entry{ at = place{ c, span = d.span }, msg = d.msg.bytes, notes = list::items{ list = notes }, lacks = d.lacks, fixes = list::items{ list = fixes } } }
         }
         return list::items{ list = out }
     }
@@ -104,7 +139,8 @@ namespace report {
     // e as a JSON object on one line (spec §21, rule 9):
     //
     //   {"type":"diagnostic","severity":"error","file":"a.ctx","line":4,"column":12,
-    //    "end_line":4,"end_column":14,"message":"...","notes":[{"file":...,"message":"..."}]}
+    //    "end_line":4,"end_column":14,"message":"...","notes":[{"file":...,"message":"..."}],
+    //    "fixes":[{"safe":true,"message":"...","edits":[{"file":...,"text":"..."}]}]}
     fn json { mut out: utf8::Builder(Heap), e: Entry } {
         try! utf8::push{ b = &out, s = "{\"type\":\"diagnostic\",\"severity\":\"error\"," }
         json_place{ &out, at = e.at }
@@ -113,6 +149,16 @@ namespace report {
             try! utf8::push{ b = &out, s = if i == 0 { "{" } else { ",{" } }
             json_place{ &out, at = n.at }
             try! @fmt(&out, ",\"message\":{}}}", utf8::push_json{ s = n.msg, _ })
+        }
+        try! utf8::push{ b = &out, s = "],\"fixes\":[" }
+        for f at i in e.fixes {
+            try! @fmt(&out, "{}{{\"safe\":{},\"message\":{},\"edits\":[", utf8::String{ bytes = if i == 0 { "" } else { "," } }, f.safe, utf8::push_json{ s = f.msg, _ })
+            for x at k in f.edits {
+                try! utf8::push{ b = &out, s = if k == 0 { "{" } else { ",{" } }
+                json_place{ &out, at = x.at }
+                try! @fmt(&out, ",\"text\":{}}}", utf8::push_json{ s = x.text, _ })
+            }
+            try! utf8::push{ b = &out, s = "]}" }
         }
         try! utf8::push{ b = &out, s = "]}\n" }
     }

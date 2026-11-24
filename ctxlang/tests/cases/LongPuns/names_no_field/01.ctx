@@ -12,5 +12,5 @@ fn bump { mut s: u32 } -> u32 { s = s + 1; return s }
 fn world {} -> World { return World{ g = Game{ rng = Rng{ s = 1 }, player = Player{ hp = 10 }, d = 5, xs = [1, 2, 3] } } }
 fn main { mut io: Io } {
     let mut w = world{}
-    deal{ rng = &w.g.rng, &w.g.player, w.g.xs }  //~ error at 40: `deal` has no field `xs`: write `d = w.g.xs` //~ error at 9: call to `deal` is missing `d`
+    deal{ rng = &w.g.rng, &w.g.player, w.g.xs }  //~ error at 40: `deal` has no field `xs`: write `d = w.g.xs`
 }

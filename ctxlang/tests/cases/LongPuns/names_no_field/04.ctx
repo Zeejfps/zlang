@@ -12,5 +12,5 @@ fn bump { mut s: u32 } -> u32 { s = s + 1; return s }
 fn world {} -> World { return World{ g = Game{ rng = Rng{ s = 1 }, player = Player{ hp = 10 }, d = 5, xs = [1, 2, 3] } } }
 fn main { mut io: Io } {
     let mut w = world{}
-    let p = Pair{ hp = 1, w.g.rng }  //~ error at 27: struct `Pair` has no field `rng`: write `s = w.g.rng` //~ error at 17: struct `Pair` is missing `s`
+    let p = Pair{ hp = 1, w.g.rng }  //~ error at 27: struct `Pair` has no field `rng`: write `s = w.g.rng`
 }

@@ -13,5 +13,5 @@ fn world {} -> World { return World{ g = Game{ rng = Rng{ s = 1 }, player = Play
 fn main { mut io: Io } {
     let mut w = world{}
     let mut r = Rng{ s = 1 }
-    deal{ &r, &w.g.player, d = 1 }  //~ error at 11: `deal` has no field `r`: write `rng = &r` //~ error at 9: call to `deal` is missing `rng`
+    deal{ &r, &w.g.player, d = 1 }  //~ error at 11: `deal` has no field `r`: write `rng = &r`
 }

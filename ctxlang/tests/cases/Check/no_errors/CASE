@@ -11,8 +11,8 @@
 //# $ ctxc check
 //# exit: 2
 //# stderr:
-//| usage: ctxc check [--json] PATH
+//| usage: ctxc check [--json] [--fix [--dry-run]] PATH
 //# $ ctxc check {dir}/ok.ctx {dir}/ok.ctx
 //# exit: 2
 //# stderr:
-//| usage: ctxc check [--json] PATH
+//| usage: ctxc check [--json] [--fix [--dry-run]] PATH

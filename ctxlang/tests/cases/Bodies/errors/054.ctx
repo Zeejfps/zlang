@@ -1,6 +1,6 @@
 fn g { mut m: i32 } {}
 fn f {} {
     let movie = 1
-    g{ movie }  //~ error at 8: `g` has no field `movie`: write `m = movie` //~ error at 6: call to `g` is missing `m`
+    g{ movie }  //~ error at 8: `g` has no field `movie`: write `m = movie`
 }
 fn main {} {}

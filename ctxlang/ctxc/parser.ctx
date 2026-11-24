@@ -110,6 +110,8 @@ namespace parser {
             let name = ident{ &p }
             let tps = fn_tparams{ &p }
             if body_as_context{ p } {
+                let at = p.toks[p.i].span.start
+                fix{ &p, start = at, end = at, text = "{} ", safe = true, msg = "give the function its empty context" }
                 failf{ &p, msg = @fmt("a function's context comes before its body: write `fn {} {{}} {{ ... }}`", utf8::String{ bytes = name.text }) }
             }
             let params = ctx_fields{ &p, decl = true }
@@ -173,7 +175,10 @@ namespace parser {
             if next_is{ p, k = tok::Kind::lbrace } and not nl{ p } {
                 let open = p.i
                 let fs = cap_fields{ &p, includes = &includes }
-                if fs.len == 0 and includes.len == 0 and not p.bad { fail_at{ &p, msg = "a capability without fields has no braces: write `capability Name`", t = p.toks[open] } }
+                if fs.len == 0 and includes.len == 0 and not p.bad {
+                    if open > 0 and p.i == open + 2 { fix{ &p, start = p.toks[open - 1].span.end, end = p.toks[p.i - 1].span.end, text = "", safe = true, msg = "write it without braces" } }
+                    fail_at{ &p, msg = "a capability without fields has no braces: write `capability Name`", t = p.toks[open] }
+                }
                 fields = fs
             }
             d = syntax::DeclKind::cap{ name, fields, includes = list::items{ list = includes } }
@@ -346,6 +351,7 @@ namespace parser {
         if p.toks[at].kind != tok::Kind::ident or p.toks[at + 1].kind != tok::Kind::colon { return false }
         let mut b = message{ p }
         try! @fmt(&b, "expected ',' before the next field, `{}`: fields are separated by commas, on one line or on several", utf8::String{ bytes = text_of{ p, t = p.toks[at] } })
+        fix{ &p, start = prev_end{ p }, end = prev_end{ p }, text = ",", safe = true, msg = "add the comma" }
         diag::error{ diags = p.diags, span = p.toks[p.i].span, msg = utf8::view{ b } }
         return true
     }
@@ -749,6 +755,14 @@ namespace parser {
         let item = ident{ &p }
         let mut index: ?syntax::Name = null
         if next_is{ p, k = tok::Kind::comma } {
+            // `for i, x in xs`, as other languages have it, the index first: a suggestion,
+            // since which of the two names is the index is a guess.
+            if not by_ref and kind{ p, ahead = 1 } == tok::Kind::ident and item.text.len > 0 {
+                let second = p.toks[p.i + 1]
+                let mut b = message{ p }
+                try! @fmt(&b, "{} at {}", utf8::String{ bytes = text_of{ p, t = second } }, utf8::String{ bytes = item.text })
+                fix{ &p, start = item.span.start, end = second.span.end, text = utf8::view{ b }.bytes, safe = false, msg = "take the first name for the index" }
+            }
             fail{ &p, msg = "a `for` names one element: write `for x at i in xs` for each element `x` and its index `i`" }
         }
         let word = p.toks[p.i]
@@ -762,6 +776,18 @@ namespace parser {
             expected_msg{ &p, msg = "expected `in` after a `for`'s name, as in `for x in xs` or `for i in 0..n`, found " }
         }
         if is_word{ p, word = "range" } and kind{ p, ahead = 1 } == tok::Kind::lparen {
+            // `range(n)` and `range(lo, hi)` of a name or a number each: `0..n` and `lo..hi`.
+            let one = kind{ p, ahead = 2 }
+            let simple = one == tok::Kind::ident or one == tok::Kind::int
+            if simple and kind{ p, ahead = 3 } == tok::Kind::rparen {
+                let mut b = message{ p }
+                try! @fmt(&b, "0..{}", utf8::String{ bytes = text_of{ p, t = p.toks[p.i + 2] } })
+                fix{ &p, start = p.toks[p.i].span.start, end = p.toks[p.i + 3].span.end, text = utf8::view{ b }.bytes, safe = true, msg = "write the range" }
+            } else if simple and kind{ p, ahead = 3 } == tok::Kind::comma and (kind{ p, ahead = 4 } == tok::Kind::ident or kind{ p, ahead = 4 } == tok::Kind::int) and kind{ p, ahead = 5 } == tok::Kind::rparen {
+                let mut b = message{ p }
+                try! @fmt(&b, "{}..{}", utf8::String{ bytes = text_of{ p, t = p.toks[p.i + 2] } }, utf8::String{ bytes = text_of{ p, t = p.toks[p.i + 4] } })
+                fix{ &p, start = p.toks[p.i].span.start, end = p.toks[p.i + 5].span.end, text = utf8::view{ b }.bytes, safe = true, msg = "write the range" }
+            }
             fail{ &p, msg = "a `for` counts over a range written `lo..hi`: write `for i in 0..n`" }
         }
         let first = cond_expr{ &p }
@@ -769,8 +795,19 @@ namespace parser {
         let mut iter = first
         if accept{ &p, k = tok::Kind::dots } {
             if next_is{ p, k = tok::Kind::assign } {
+                // `lo..=hi {` with hi a name or a number: `lo..hi + 1`.
+                let hi_kind = kind{ p, ahead = 1 }
+                if (hi_kind == tok::Kind::ident or hi_kind == tok::Kind::int) and kind{ p, ahead = 2 } == tok::Kind::lbrace and not p.bad {
+                    let eq = p.toks[p.i]
+                    let top = p.toks[p.i + 1]
+                    let two = try! alloc::make(diag::Edit, arena::Arena){ realloc = arena::alloc, heap = p.heap, count = 2 }
+                    two[0] = diag::Edit{ span = eq.span, text = "" }
+                    two[1] = diag::Edit{ span = source::Span{ file = p.file, start = top.span.end, end = top.span.end }, text = " + 1" }
+                    diag::fix{ diags = p.diags, safe = true, msg = "write the range up to one past it", edits = two }
+                }
                 fail{ &p, msg = "a `for`'s range is `lo..hi`, which leaves `hi` out: to include it, write `lo..hi + 1`" }
             }
+            if by_ref { fix{ &p, start = amp.span.start, end = amp.span.end, text = "", safe = true, msg = "write the name without the `&`" } }
             if by_ref { fail_at{ &p, msg = "a range's numbers aren't places: write `for i in lo..hi`, without the `&`", t = amp } }
             if index != null { fail_at{ &p, msg = "a range's number is its own index: write `for i in lo..hi`, without the `at`", t = word } }
             hi = cond_expr{ &p }
@@ -1475,6 +1512,8 @@ namespace parser {
             try! @fmt(&b, "(")
             put_source{ p, &b, lo = ha.right_start, hi }
             try! @fmt(&b, ")`")
+            parens{ &p, lo, hi = a.span.end, msg = "put the handler and what it handles in parentheses" }
+            parens{ &p, lo = ha.right_start, hi, msg = "put the handler's right side, to the end, in parentheses" }
             diag::error{ diags = p.diags, span = ha.last.span, msg = utf8::view{ b } }
         } else if hb.bare {
             // `a op l h r`: `a op (l h r)` or `(a op l) h r`
@@ -1487,8 +1526,19 @@ namespace parser {
             try! @fmt(&b, ")")
             put_source{ p, &b, lo = hb.left_end, hi }
             try! @fmt(&b, "`")
+            parens{ &p, lo = b_start, hi, msg = "put the handler and what it handles in parentheses" }
+            parens{ &p, lo, hi = hb.left_end, msg = "put what is before the handler in parentheses" }
             diag::error{ diags = p.diags, span = hb.first.span, msg = utf8::view{ b } }
         }
+    }
+
+    // A suggestion for the error reported next: parentheses round the source from lo to hi.
+    // One of the two ways `mixed` shows: which is meant, only the writer knows.
+    fn parens { mut p: Parser, lo: u32, hi: u32, msg: utf8::String } {
+        let two = try! alloc::make(diag::Edit, arena::Arena){ realloc = arena::alloc, heap = p.heap, count = 2 }
+        two[0] = diag::Edit{ span = source::Span{ file = p.file, start = lo, end = lo }, text = "(" }
+        two[1] = diag::Edit{ span = source::Span{ file = p.file, start = hi, end = hi }, text = ")" }
+        diag::fix{ diags = p.diags, safe = false, msg, edits = two }
     }
 
     // The source from lo to hi, for a message, each run of spaces and line ends as one space.
@@ -2088,14 +2138,29 @@ namespace parser {
 
     // Reports msg at t, unless recovering, and starts recovering.
     fn fail_at { mut p: Parser, msg: utf8::String, t: tok::Token } {
-        if p.bad { return }
+        if p.bad {
+            diag::unstage{ diags = p.diags }
+            return
+        }
         p.bad = true
-        if p.errored and p.i <= p.err_at { return }      // nothing consumed since the last error
+        if p.errored and p.i <= p.err_at {                // nothing consumed since the last error
+            diag::unstage{ diags = p.diags }
+            return
+        }
         p.errored = true
         p.err_at = p.i
-        if t.kind == tok::Kind::error { return }          // the lexer has reported it
-        if t.kind == tok::Kind::eof and p.cut { return }
+        if t.kind == tok::Kind::error or (t.kind == tok::Kind::eof and p.cut) {      // the lexer has reported it
+            diag::unstage{ diags = p.diags }
+            return
+        }
         diag::error{ diags = p.diags, span = t.span, msg }
+    }
+
+    // A fix for the error reported next (diag::Fix), said just before `fail` or its kin: the
+    // bytes from start up to end become text. safe: `ctxc check --fix` applies it.
+    fn fix { mut p: Parser, start: u32, end: u32, text: []u8, safe: bool, msg: utf8::String } {
+        if p.bad { return }
+        diag::fix_one{ diags = p.diags, safe, msg, span = source::Span{ file = p.file, start, end }, text }
     }
 
     // "expected WHAT, found TOKEN"
@@ -2193,7 +2258,10 @@ namespace parser {
         if next_is{ p, k = tok::Kind::ident } { return keyword_name{ &p } }
         if tok::is_keyword{ kind = kind{ p, ahead = 0 } } {
             let word = utf8::String{ bytes = text_of{ p, t = p.toks[p.i] } }
-            failf{ &p, msg = @fmt("expected a name, found '{}': `{}` is a keyword and can't be a name; use another, such as `{}_`", word, word, word) }
+            let mut other = message{ p }
+        try! @fmt(&other, "{}_", word)
+        fix{ &p, start = p.toks[p.i].span.start, end = p.toks[p.i].span.end, text = utf8::view{ b = other }.bytes, safe = false, msg = "use another name, here and where it is used" }
+        failf{ &p, msg = @fmt("expected a name, found '{}': `{}` is a keyword and can't be a name; use another, such as `{}_`", word, word, word) }
         } else {
             expected{ &p, what = "a name" }
         }

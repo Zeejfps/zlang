@@ -180,28 +180,98 @@ namespace drive {
     // once (check::Checker.checking). The last line counts the errors, and names the checks
     // that wait for a program without errors, if they didn't run. Exits with 1 if there is
     // an error.
+    //
+    // `--fix` applies the fixes that are safe (diag::Fix) to the program's own files, says
+    // each edit, and checks again, until a check has none to apply or ROUNDS of them are
+    // done; what is reported is what the last check found. `--dry-run` with it says the
+    // edits of the first check and writes nothing (`mend`).
     fn check { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> i32 {
-        let pages = mem::reserve{ &mem, size = 16777216 } ifnull {
+        let pages = mem::reserve{ &mem, size = 268435456 } ifnull {
             io::eprintln{ &io, s = "out of memory" }
             return 1
         }
         let mut heap = arena::new{ buf = pages }
+        let usage: utf8::String = "usage: ctxc check [--json] [--fix [--dry-run]] PATH"
         let json = has_flag{ args = args[1..], flag = "--json" }
-        let given = without_flag{ &heap, args, flag = "--json" }
-        if given.len != 2 or (given[1].len > 0 and given[1][0] == '-') {
-            io::eprintln{ &io, s = "usage: ctxc check [--json] PATH" }
+        let fix = has_flag{ args = args[1..], flag = "--fix" }
+        let dry = has_flag{ args = args[1..], flag = "--dry-run" }
+        let given = without_flag{ &heap, args = without_flag{ &heap, args = without_flag{ &heap, args, flag = "--json" }, flag = "--fix" }, flag = "--dry-run" }
+        if given.len != 2 or (given[1].len > 0 and given[1][0] == '-') or (dry and not fix) {
+            io::eprintln{ &io, s = usage }
             return 2
         }
         let path = trim_slash{ path = given[1] }
         let has_build = kind_of{ &fs, path } == 2 and kind_of{ &fs, path = join{ &heap, a = path, b = "build.ctx" } } == 1
         let d = setup{ &io, &fs, &proc, &heap, path, builds = has_build, json } ifnull { return 1 }
+
+        let mut found = report::found{ &heap }
+        let mut failed = false
+        let mut fixed: usize = 0
+        let mut round: usize = 0
+        while true {
+            found = report::found{ &heap }
+            failed = false
+            let code = check_once{ &io, &fs, &mem, &proc, &heap, d, path, &found, &failed }
+            if code != 0 { return code }
+            round = round + 1
+            if not fix or round > ROUNDS { break }
+            let n = mend{ &io, &fs, &heap, d, es = list::items{ list = found.entries }, dry }
+            fixed = fixed + n
+            if n == 0 or dry { break }
+        }
+        let es = list::items{ list = found.entries }
+        // The fixes that aren't made because of whose file they are in, said once, of the
+        // last check's errors.
+        if fix {
+            for e in es {
+                for f in e.fixes {
+                    if f.safe and not all_own{ f } { said{ &io, &heap, d, edits = f.edits, word = "not fixed", why = "the file is std's or one the build program generates, not the program's own", msg = f.msg } }
+                }
+            }
+        }
+        report::write{ &io, &heap, es, dropped = false, as_json = d.json }
+        if d.json {
+            // No summary after a failure that isn't an error of the program's: its line says why.
+            if es.len > 0 or not failed { report::summary{ &io, &heap, errors = es.len, dropped = false, waiting = found.waiting } }
+            return if es.len > 0 or failed { 1 } else { 0 }
+        }
+        let mut line = utf8::builder{ realloc = arena::alloc, &heap }
+        if es.len == 0 {
+            if failed { return 1 }
+            try! utf8::push{ b = &line, s = "check: no errors\n" }
+        } else {
+            try! @fmt(&line, "check: {} {}", es.len, utf8::String{ bytes = if es.len == 1 { "error" } else { "errors" } })
+            let names: [3]utf8::String = ["the order of a call's fields", "what tasks borrow", "consts computed by running code"]
+            let mut n: usize = 0
+            for name at k in names {
+                if found.waiting & (@as(u8, 1) << @as(u8, k)) == 0 { continue }
+                try! utf8::push{ b = &line, s = if n == 0 { "; not checked until the program has no other error: " } else { ", " } }
+                try! utf8::push{ b = &line, s = name }
+                n = n + 1
+            }
+            // What `--fix` would do, said where it wasn't asked for.
+            let fixable = count_safe{ es }
+            if fixable > 0 and not fix { try! @fmt(&line, "; {} of them {} a fix that `ctxc check --fix` applies", fixable, utf8::String{ bytes = if fixable == 1 { "has" } else { "have" } }) }
+            try! utf8::push{ b = &line, s = "\n" }
+        }
+        io::write{ &io, to = io::Stream::err, bytes = utf8::view{ b = line }.bytes }
+        return if es.len > 0 or failed { 1 } else { 0 }
+    }
+
+    // How many checks `ctxc check --fix` makes at most: a fix can uncover an error with a
+    // fix of its own, and none is known to bring back what another removed, but a bound
+    // costs nothing.
+    const ROUNDS: usize = 10
+
+    // One check of the program at path: every executable's errors, each once, added to
+    // found. Returns 0, or the exit code after saying why the program couldn't be described
+    // (`describe`); failed is set if an executable couldn't be checked for another reason
+    // than its errors, which was said.
+    fn check_once { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, path: []u8, mut found: report::Found, mut failed: bool } -> i32 {
         let mut targets = list::new(Target){ realloc = arena::alloc, &heap }
         let mut why = Why::failed
         let code = describe{ &io, &fs, &mem, &proc, &heap, d, path, &targets, &why }
         if code != 0 { return code }
-
-        let mut found = report::found{ &heap }
-        let mut failed = false
         let mut i: usize = 0
         while i < targets.len {
             let t = list::items{ list = targets }[i]
@@ -224,31 +294,251 @@ namespace drive {
             report::keep{ &found, es = list::items{ list = own.entries } }
             found.waiting = found.waiting | own.waiting
         }
-        let es = list::items{ list = found.entries }
-        report::write{ &io, &heap, es, dropped = false, as_json = d.json }
-        if d.json {
-            // No summary after a failure that isn't an error of the program's: its line says why.
-            if es.len > 0 or not failed { report::summary{ &io, &heap, errors = es.len, dropped = false, waiting = found.waiting } }
-            return if es.len > 0 or failed { 1 } else { 0 }
-        }
-        let mut line = utf8::builder{ realloc = arena::alloc, &heap }
-        if es.len == 0 {
-            if failed { return 1 }
-            try! utf8::push{ b = &line, s = "check: no errors\n" }
-        } else {
-            try! @fmt(&line, "check: {} {}", es.len, utf8::String{ bytes = if es.len == 1 { "error" } else { "errors" } })
-            let names: [3]utf8::String = ["the order of a call's fields", "what tasks borrow", "consts computed by running code"]
-            let mut n: usize = 0
-            for name at k in names {
-                if found.waiting & (@as(u8, 1) << @as(u8, k)) == 0 { continue }
-                try! utf8::push{ b = &line, s = if n == 0 { "; not checked until the program has no other error: " } else { ", " } }
-                try! utf8::push{ b = &line, s = name }
-                n = n + 1
+        return 0
+    }
+
+    // How many of es have a fix that is safe, in a file of the program's own.
+    fn count_safe { es: []report::Entry } -> usize {
+        let mut n: usize = 0
+        for e in es {
+            for f in e.fixes {
+                if f.safe and all_own{ f } {
+                    n = n + 1
+                    break
+                }
             }
-            try! utf8::push{ b = &line, s = "\n" }
         }
-        io::write{ &io, to = io::Stream::err, bytes = utf8::view{ b = line }.bytes }
-        return if es.len > 0 or failed { 1 } else { 0 }
+        return n
+    }
+
+    fn all_own { f: report::Fix } -> bool {
+        for x in f.edits {
+            if not x.own { return false }
+        }
+        return true
+    }
+
+    // ---- `ctxc check --fix`
+
+    // An edit `mend` makes: one of a safe fix's, with the fix's message, and which of the
+    // fixes taken it is of.
+    struct Mend { x: report::Edit, msg: []u8, fix: usize }
+
+    // Applies the safe fixes of es (spec §21, rule 13), and returns how many edits it made,
+    // or with dry would make. A fix is applied whole or not at all, and only if
+    //
+    // - every edit of it is in a file of the program's own: std's files and those a build
+    //   program generates aren't the program's to change, and a fix in one is left, which
+    //   `check` says;
+    // - none of its edits meets one already taken, of this fix or of another: two that
+    //   overlap, or that insert at one place, wait for the next check, which sees the file
+    //   as the first left it;
+    // - its file is, byte for byte, what the compiler read: its size, and the bytes each
+    //   edit replaces.
+    //
+    // Each edit is said on standard error as it is made, with the line as it was and as it
+    // is. A file is written once, with all its edits, through a file of its own that is
+    // renamed into place; every byte outside the edits stays, and a line break in an edit's
+    // text is the file's own kind.
+    fn mend { mut io: Io, mut fs: Fs, mut heap: Heap, d: Driver, es: []report::Entry, dry: bool } -> usize {
+        let mut taken = list::new(Mend){ realloc = arena::alloc, &heap }
+        let mut fixes: usize = 0
+        for e in es {
+            for f in e.fixes {
+                if not f.safe { continue }
+                if not all_own{ f } { continue }           // said by `check`, once
+                // Edits that are there already, from an error two executables share, are the same edits.
+                let mut fresh = list::new(report::Edit){ realloc = arena::alloc, &heap }
+                let mut clash = false
+                for x in f.edits {
+                    let mut same = false
+                    for t in list::items{ list = taken } {
+                        if not slice::eq_bytes{ a = t.x.at.path, b = x.at.path } { continue }
+                        if t.x.start == x.start and t.x.end == x.end and slice::eq_bytes{ a = t.x.text, b = x.text } {
+                            same = true
+                        } else if meets{ a = t.x, b = x } {
+                            clash = true
+                        }
+                    }
+                    for t in list::items{ list = fresh } {
+                        if slice::eq_bytes{ a = t.at.path, b = x.at.path } and meets{ a = t, b = x } { clash = true }
+                    }
+                    if not same { try! list::push{ list = &fresh, item = x } }
+                }
+                if clash { continue }
+                for x in list::items{ list = fresh } { try! list::push{ list = &taken, item = Mend{ x, msg = f.msg, fix = fixes } } }
+                fixes = fixes + 1
+            }
+        }
+        // File by file, in the order their first edits were taken.
+        let all = list::items{ list = taken }
+        let done = try! alloc::make(bool, Heap){ realloc = arena::alloc, &heap, count = all.len }
+        let mut made: usize = 0
+        for first at i in all {
+            if done[i] { continue }
+            let path = first.x.at.path
+            let mut mine = list::new(Mend){ realloc = arena::alloc, &heap }
+            for m at k in all {
+                if k >= i and not done[k] and slice::eq_bytes{ a = m.x.at.path, b = path } {
+                    done[k] = true
+                    // Sorted by where they start, the last first, so that each leaves the
+                    // offsets of those still to make as they were.
+                    let mut at = mine.len
+                    try! list::push{ list = &mine, item = m }
+                    let xs = list::items{ list = mine }
+                    while at > 0 and xs[at - 1].x.start < m.x.start {
+                        xs[at] = xs[at - 1]
+                        at = at - 1
+                    }
+                    xs[at] = m
+                }
+            }
+            made = made + mend_file{ &io, &fs, &heap, d, path, edits = list::items{ list = mine }, dry }
+        }
+        return made
+    }
+
+    // Whether edits a and b of one file can't both be made: their bytes overlap, or both
+    // insert at one place, or one inserts inside the other's bytes or where they start.
+    fn meets { a: report::Edit, b: report::Edit } -> bool {
+        if a.start == a.end and b.start == b.end { return a.start == b.start }
+        if a.start == a.end { return a.start >= b.start and a.start < b.end }
+        if b.start == b.end { return b.start >= a.start and b.start < a.end }
+        return a.start < b.end and b.start < a.end
+    }
+
+    // Makes edits, which are path's and sorted with the last first, and says each; or with
+    // dry only says them. Returns how many, 0 after saying why none.
+    fn mend_file { mut io: Io, mut fs: Fs, mut heap: Heap, d: Driver, path: []u8, edits: []Mend, dry: bool } -> usize {
+        let old = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } iferr {
+            cannot{ &io, path, what = "cannot read, to fix" }
+            return 0
+        }
+        for m in edits {
+            if old.len != m.x.size or @as(usize, m.x.end) > old.len or not slice::eq_bytes{ a = old[m.x.start..m.x.end], b = m.x.old } {
+                cannot{ &io, path, what = "changed since it was checked: not fixed" }
+                return 0
+            }
+        }
+        // The file's line break: that of its first line.
+        let mut crlf = false
+        for c at i in old {
+            if c == '\n' {
+                crlf = i > 0 and old[i - 1] == '\r'
+                break
+            }
+        }
+        let mut text = old
+        for m in edits {
+            let mut put = list::new(u8){ realloc = arena::alloc, &heap }
+            add_bytes{ xs = &put, s = text[..m.x.start] }
+            for c in m.x.text {
+                if c == '\n' and crlf { try! list::push{ list = &put, item = '\r' } }
+                try! list::push{ list = &put, item = c }
+            }
+            add_bytes{ xs = &put, s = text[m.x.end..] }
+            text = list::items{ list = put }
+        }
+        if not dry and not write_changed{ &io, &fs, &heap, path, text } { return 0 }
+        // Said in the file's order, a fix at a time: its edits together.
+        let told = try! alloc::make(bool, Heap){ realloc = arena::alloc, &heap, count = edits.len }
+        let mut k = edits.len
+        while k > 0 {
+            k = k - 1
+            if told[k] { continue }
+            let mut one = list::new(report::Edit){ realloc = arena::alloc, &heap }
+            let mut j = k + 1
+            while j > 0 {
+                j = j - 1
+                if edits[j].fix == edits[k].fix {
+                    told[j] = true
+                    try! list::push{ list = &one, item = edits[j].x }
+                }
+            }
+            said{ &io, &heap, d, edits = list::items{ list = one }, word = if dry { "would fix" } else { "fixed" }, why = "", msg = edits[k].msg }
+        }
+        return edits.len
+    }
+
+    // Says a fix's edits, which are in one file and in its order, on standard error. As text:
+    //
+    //   PATH:LINE:COL: fixed: MESSAGE
+    //   -     g{ a = 1 }
+    //   +     _ = g{ a = 1 }
+    //
+    // at the first edit, then the lines the edits are in, as they were and as the fix's
+    // edits make them, once for each run of lines; `would fix` for a dry run; and
+    // `not fixed: MESSAGE: WHY` without the lines for one that isn't made. As JSON, a record:
+    // `{"type":"fix","applied":true,"message":"...","edits":[{"file":...,"line":...,
+    // "column":...,"end_line":...,"end_column":...,"text":"_ = "}]}`, `applied` false for a
+    // dry run or a fix not made, with `reason` then.
+    fn said { mut io: Io, mut heap: Heap, d: Driver, edits: []report::Edit, word: []u8, why: []u8, msg: []u8 } {
+        if edits.len == 0 { return }
+        let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+        if d.json {
+            let applied = slice::eq_bytes{ a = word, b = "fixed" }
+            try! @fmt(&b, "{{\"type\":\"fix\",\"applied\":{},\"message\":{}", applied, utf8::push_json{ s = msg, _ })
+            if not applied { try! @fmt(&b, ",\"reason\":{}", utf8::push_json{ s = if why.len > 0 { why } else { "a dry run" }, _ }) }
+            try! utf8::push{ &b, s = ",\"edits\":[" }
+            for x at k in edits {
+                try! utf8::push{ &b, s = if k == 0 { "{" } else { ",{" } }
+                report::json_place{ out = &b, at = x.at }
+                try! @fmt(&b, ",\"text\":{}}}", utf8::push_json{ s = x.text, _ })
+            }
+            try! utf8::push{ &b, s = "]}\n" }
+        } else {
+            let first = edits[0]
+            try! @fmt(&b, "{}:{}:{}: {}: {}", utf8::String{ bytes = first.at.path }, first.at.line, first.at.col, utf8::String{ bytes = word }, utf8::String{ bytes = msg })
+            if why.len > 0 {
+                try! @fmt(&b, ": {}\n", utf8::String{ bytes = why })
+            } else {
+                try! utf8::push{ &b, s = "\n" }
+                // The edits of one run of lines together: those whose lines start at one place.
+                let mut k: usize = 0
+                while k < edits.len {
+                    let from = edits[k].start - edits[k].within
+                    let mut n = k + 1
+                    while n < edits.len and edits[n].start - edits[n].within == from { n = n + 1 }
+                    lines_of{ &b, &heap, edits = edits[k..n] }
+                    k = n
+                }
+            }
+        }
+        io::write{ &io, to = io::Stream::err, bytes = utf8::view{ b }.bytes }
+    }
+
+    // The lines that edits are in, which are the same lines for each (report::Edit.around)
+    // and in their order: `- LINE` for each as it was, and `+ LINE` for each as the edits
+    // make it.
+    fn lines_of { mut b: utf8::Builder(Heap), mut heap: Heap, edits: []report::Edit } {
+        let before = edits[0].around
+        let mut after = list::new(u8){ realloc = arena::alloc, &heap }
+        let mut at: usize = 0
+        for x in edits {
+            let from: usize = x.within
+            if from < at or from + x.old.len > before.len { continue }       // not within these lines: left as it is
+            add_bytes{ xs = &after, s = before[at..from] }
+            add_bytes{ xs = &after, s = x.text }
+            at = from + x.old.len
+        }
+        add_bytes{ xs = &after, s = before[at..] }
+        prefixed{ &b, sign = "- ", text = before }
+        prefixed{ &b, sign = "+ ", text = list::items{ list = after } }
+    }
+
+    // Each line of text after sign, without its `\r`.
+    fn prefixed { mut b: utf8::Builder(Heap), sign: utf8::String, text: []u8 } {
+        let mut from: usize = 0
+        while from <= text.len {
+            let mut end = from
+            while end < text.len and text[end] != '\n' { end = end + 1 }
+            let mut stop = end
+            if stop > from and text[stop - 1] == '\r' { stop = stop - 1 }
+            try! utf8::push{ &b, s = sign }
+            try! utf8::push_bytes{ &b, s = text[from..stop] }
+            try! utf8::push{ &b, s = "\n" }
+            from = end + 1
+        }
     }
 
     // `ctxc test PATH [ARGS...]` (spec §20): builds the first executable of the program at PATH
@@ -960,7 +1250,7 @@ namespace drive {
     // a command's diagnostics, since the command ends here.
     fn report_at { mut io: Io, mut heap: Heap, as_json: bool, path: []u8, text: []u8, at: u32, msg: []u8 } {
         let p = source::position{ text, lines = source::line_starts{ text, &heap }, offset = at }
-        let e = report::Entry{ at = report::Place{ path, line = p.line, col = p.col, end_line = p.line, end_col = p.col }, msg, notes = slice::empty(report::Note){}, lacks = "" }
+        let e = report::Entry{ at = report::Place{ path, line = p.line, col = p.col, end_line = p.line, end_col = p.col }, msg, notes = slice::empty(report::Note){}, lacks = "", fixes = slice::empty(report::Fix){} }
         report::write{ &io, &heap, es = one_entry{ &heap, e }, dropped = false, as_json }
         if as_json { report::summary{ &io, &heap, errors = 1, dropped = false, waiting = 0 } }
     }

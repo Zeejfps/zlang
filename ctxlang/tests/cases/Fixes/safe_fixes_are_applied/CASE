@@ -1,0 +1,190 @@
+// Every error of prog.ctx says exactly what to write, so each has a fix that is safe, and
+// `ctxc check --fix` applies them all: a missing comma, a capability's empty braces, a `&`
+// before the pointer wanted, a pointer's index, a match through a pointer, an `if let &v` of a
+// value, a function without its context, a pun that names no field, an unused result, missing
+// fields that `..` supplies from locals or from defaults, @clamp's bounds in the wrong order,
+// braces after an enum value and after a variant without a payload, a const computed by
+// running code that needs @as, the forms of `for` (`range(3)`, `0..=n`, a number, `&u`), and an
+// `is` with a path. Three errors have none: each follows from another's cause and goes with
+// it, the assignment through `v` and the two uses of `bad`, which the capability's braces
+// keep from being declared. One error with a fix is found by the second check only, once
+// `bad` is known. `ctxc check` says how many it would fix.
+//# $ ctxc check {dir}/prog.ctx
+//# exit: 1
+//# stderr:
+//| {dir}/prog.ctx:9:5: error: expected ',' before the next field, `b`: fields are separated by commas, on one line or on several
+//| {dir}/prog.ctx:11:18: error: a capability without fields has no braces: write `capability Name`
+//| {dir}/prog.ctx:33:9: error: a function's context comes before its body: write `fn none {} { ... }`
+//| {dir}/prog.ctx:49:14: error: a `for` counts over a range written `lo..hi`: write `for i in 0..n`
+//| {dir}/prog.ctx:50:17: error: a `for`'s range is `lo..hi`, which leaves `hi` out: to include it, write `lo..hi + 1`
+//| {dir}/prog.ctx:52:9: error: a range's numbers aren't places: write `for i in lo..hi`, without the `&`
+//| {dir}/prog.ctx:53:14: error: a `for` counts over a range written `lo..hi`: write `for i in 0..n`
+//| {dir}/prog.ctx:21:11: error: `heap` is a *mut Movie already, which is what `mut heap` takes: pass it as it is, without the `&`
+//| {dir}/prog.ctx:22:13: error: cannot index *i32: a pointer has no length to check against; write `(q + @as(usize, i)).*`, which isn't checked
+//| {dir}/prog.ctx:25:11: error: match cannot go through a pointer to an enum; match on the value with `.*`
+//| {dir}/prog.ctx:31:17: error: `if let &v` binds a place inside the optional, so it needs a pointer to one: write `if let &v = &seen`
+//| {dir}/prog.ctx:31:24: error: cannot assign to `v`: it is bound through a read-only pointer
+//| {dir}/prog.ctx:34:60: error: unknown name `bad`
+//| {dir}/prog.ctx:35:30: error: unknown name `bad`
+//| {dir}/prog.ctx:38:11: error: `next` has no field `movie`: write `m = &movie`
+//| {dir}/prog.ctx:39:10: error: the result of `count` (i32) is unused: use it, or discard it with `_ = ...`
+//| {dir}/prog.ctx:42:16: error: call to `add` is missing `k`
+//| {dir}/prog.ctx:43:17: error: struct `Opts` is missing `depth`, `wide`: `..` at the end takes them from their defaults
+//| {dir}/prog.ctx:44:23: error: @clamp's low bound, 10, is above its high bound, 0: write `@clamp(x, 0, 10)`
+//| {dir}/prog.ctx:45:25: error: `Kind::small` is an enum value; write it without braces
+//| {dir}/prog.ctx:46:24: error: variant `dot` has no payload; write it without braces
+//| {dir}/prog.ctx:47:21: error: expected u64, got i64: `LIMIT` is computed by running code, so only a const whose value is folded converts; write @as(u64, LIMIT)
+//| {dir}/prog.ctx:51:14: error: a `for` goes over a range `lo..hi`, a slice or an array, not i32: to count up to it, write `0..n`
+//| {dir}/prog.ctx:54:20: error: the value of this `iferr` (i32) is unused: use it, or discard it with `_ = ...`
+//| {dir}/prog.ctx:56:14: error: `is` names a variant alone: write `dot`
+//| check: 25 errors; not checked until the program has no other error: the order of a call's fields, what tasks borrow, consts computed by running code; 22 of them have a fix that `ctxc check --fix` applies
+
+// `--fix` says each fix as it makes it, with the lines as they were and as they are, checks
+// again, and reports what is left: nothing.
+//# $ ctxc check --fix {dir}/prog.ctx
+//# stderr:
+//| {dir}/prog.ctx:8:11: fixed: add the comma
+//| -     a: i32
+//| +     a: i32,
+//| {dir}/prog.ctx:11:17: fixed: write it without braces
+//| - capability Clock {}
+//| + capability Clock
+//| {dir}/prog.ctx:21:11: fixed: pass the pointer as it is
+//| -     take{ &heap }
+//| +     take{ heap }
+//| {dir}/prog.ctx:22:12: fixed: write the element without a check
+//| -     return q[i]
+//| +     return (q + @as(usize, i)).*
+//| {dir}/prog.ctx:25:13: fixed: match on the value the pointer points to
+//| -     match kp {
+//| +     match kp.* {
+//| {dir}/prog.ctx:31:17: fixed: take the optional's address
+//| -     if let &v = seen { v = v + 1 }
+//| +     if let &v = &seen { v = v + 1 }
+//| {dir}/prog.ctx:33:9: fixed: give the function its empty context
+//| - fn none { return }
+//| + fn none {} { return }
+//| {dir}/prog.ctx:38:11: fixed: name the field, `m`
+//| -     next{ &movie }
+//| +     next{ m = &movie }
+//| {dir}/prog.ctx:39:5: fixed: discard the result
+//| -     count{}
+//| +     _ = count{}
+//| {dir}/prog.ctx:42:19: fixed: pass the locals of the missing fields' names, with `..`
+//| -     let s = add{ n }
+//| +     let s = add{ n, .. }
+//| {dir}/prog.ctx:43:29: fixed: take the missing fields from their defaults, with `..`
+//| -     let o = Opts{ name = "x" }
+//| +     let o = Opts{ name = "x", .. }
+//| {dir}/prog.ctx:44:23: fixed: put the low bound first
+//| -     let c = @clamp(s, 10, 0)
+//| +     let c = @clamp(s, 0, 10)
+//| {dir}/prog.ctx:45:25: fixed: write it without braces
+//| -     let kd = Kind::small{}
+//| +     let kd = Kind::small
+//| {dir}/prog.ctx:46:24: fixed: write it without braces
+//| -     let sh = Shape::dot{}
+//| +     let sh = Shape::dot
+//| {dir}/prog.ctx:47:21: fixed: convert it with @as
+//| -     let wide: u64 = LIMIT
+//| +     let wide: u64 = @as(u64, LIMIT)
+//| {dir}/prog.ctx:49:14: fixed: write the range
+//| -     for i in range(3) { total = total + i }
+//| +     for i in 0..3 { total = total + i }
+//| {dir}/prog.ctx:50:17: fixed: write the range up to one past it
+//| -     for j in 0..=n { total = total + j }
+//| +     for j in 0..n + 1 { total = total + j }
+//| {dir}/prog.ctx:51:14: fixed: count from 0 up to it
+//| -     for t in n { total = total + t }
+//| +     for t in 0..n { total = total + t }
+//| {dir}/prog.ctx:52:9: fixed: write the name without the `&`
+//| -     for &u in 0..2 { total = total + u }
+//| +     for u in 0..2 { total = total + u }
+//| {dir}/prog.ctx:53:14: fixed: write the range
+//| -     for r in range(1, 3) { total = total + r }
+//| +     for r in 1..3 { total = total + r }
+//| {dir}/prog.ctx:54:5: fixed: discard the value
+//| -     risky{ n = 1 } iferr { 0 }
+//| +     _ = risky{ n = 1 } iferr { 0 }
+//| {dir}/prog.ctx:56:14: fixed: name the variant alone
+//| -     if sh is Shape::dot { total = total + c }
+//| +     if sh is dot { total = total + c }
+//| {dir}/prog.ctx:35:33: fixed: write it without braces
+//| - fn fails {} -> !i32 { return bad{} }
+//| + fn fails {} -> !i32 { return bad }
+//| check: no errors
+
+// The file, byte for byte, and the program it now is.
+//# file prog.ctx:
+//| // A program whose every error says what to write.
+//|
+//| struct Movie { n: i32 }
+//| struct Opts { depth: i32 = 3, wide: bool = false, name: []u8 }
+//| enum Kind: u8 { small, big }
+//| union Shape { dot, box{ w: i32 } }
+//| struct Pair {
+//|     a: i32,
+//|     b: i32
+//| }
+//| capability Clock
+//| error bad
+//| const LIMIT: i64 = far{}
+//|
+//| fn far {} -> i64 { return 4000000000 }
+//| fn next { mut m: Movie } { m.n = m.n + 1 }
+//| fn count {} -> i32 { return 3 }
+//| fn add { n: i32, k: i32 } -> i32 { return n + k }
+//| fn take { mut heap: Movie } { heap.n = heap.n + 1 }
+//| fn via { heap: *mut Movie, q: *i32, i: i32 } -> i32 {
+//|     take{ heap }
+//|     return (q + @as(usize, i)).*
+//| }
+//| fn pick { kp: *Kind } -> i32 {
+//|     match kp.* {
+//|         small => { return 1 }
+//|         big => { return 2 }
+//|     }
+//| }
+//| fn bump { mut seen: ?i32 } {
+//|     if let &v = &seen { v = v + 1 }
+//| }
+//| fn none {} { return }
+//| fn risky { n: i32 } -> !i32 { return if n > 0 { n } else { bad } }
+//| fn fails {} -> !i32 { return bad }
+//| fn main { mut io: Io } {
+//|     let mut movie = Movie{ n = 1 }
+//|     next{ m = &movie }
+//|     _ = count{}
+//|     let n: i32 = 2
+//|     let k: i32 = 5
+//|     let s = add{ n, .. }
+//|     let o = Opts{ name = "x", .. }
+//|     let c = @clamp(s, 0, 10)
+//|     let kd = Kind::small
+//|     let sh = Shape::dot
+//|     let wide: u64 = @as(u64, LIMIT)
+//|     let mut total: i32 = 0
+//|     for i in 0..3 { total = total + i }
+//|     for j in 0..n + 1 { total = total + j }
+//|     for t in 0..n { total = total + t }
+//|     for u in 0..2 { total = total + u }
+//|     for r in 1..3 { total = total + r }
+//|     _ = risky{ n = 1 } iferr { 0 }
+//|     total = total + (fails{} iferr { 100 })
+//|     if sh is dot { total = total + c }
+//|     let nums: [3]i32 = [10, 20, 30]
+//|     let mut seen: ?i32 = 6
+//|     bump{ &seen }
+//|     none{}
+//|     _ = @fmt(&io, "{} {} {} {} {}\n", movie.n, o.depth, pick{ kp = &kd }, via{ heap = &movie, q = &nums[0], i = 2 }, total)
+//|     _ = @fmt(&io, "{} {} {}\n", wide, movie.n, seen ifnull 0)
+//| }
+//# $ ctxc run {dir}/prog.ctx
+//# stdout:
+//| 2 3 1 30 118
+//| 4000000000 3 7
+
+// A second `--fix` has nothing to do.
+//# $ ctxc check --fix {dir}/prog.ctx
+//# stderr:
+//| check: no errors

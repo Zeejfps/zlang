@@ -1,0 +1,20 @@
+// Errors with more than one way to go on: each has suggestions, and `--fix` applies none.
+
+struct Pair { a: i32, b: i32 }
+fn swap { mut a: i32, mut b: i32 } {
+    let t = a
+    a = b
+    b = t
+}
+fn first { xs: []i32 } -> ?i32 { return if xs.len > 0 { xs[0] } else { null } }
+fn main { mut io: Io } {
+    let mut x: i32 = 1
+    swap{ &x }
+    let xs: [2]i32 = [3, 4]
+    let big: u32 = 5
+    let sum = x + big
+    let ok = first{ xs = xs[..] } ifnull 0 == 3
+    for i, v in xs[..] { _ = i + v }
+    let fn = 2
+    _ = @fmt(&io, "{} {}\n", sum, ok)
+}

@@ -743,10 +743,47 @@ What a model writes by default should compile, or fail with the exact fix.
       gained the notes ctxc now prints, each read against the program it is in.
     - Cases: [tests/cases/Json](tests/cases/Json).
 
-- [ ] **6.3 Machine-applicable fix-its.**
+- [x] **6.3 Machine-applicable fix-its.**
   Many errors already say what to write ("`next` has no field `movie`: write `m = &movie`"). Give
   those a structured replacement (span and new text), and `ctxc check --fix` to apply them.
   - *Done when:* the pun, unused-result (`_ =`), `@as` and missing-field errors carry fixes, and `--fix` applies them.
+  - *Done:* [spec §21, rules 12 and 13](spec.md#21-checking-and-diagnostics).
+    - **A fix** is edits, each a span and its new text, with a message, said just before its
+      error as a note is (`check::fix_at`; `parser::fix`). In JSON it is the diagnostic's
+      `fixes`: `{"safe":true,"message":"discard the result","edits":[{"file","line","column",
+      "end_line","end_column","text"}]}`. The text form is as it was: the message already
+      says what to write, and `check`'s last line counts the errors `--fix` would mend.
+    - **Safe or a suggestion.** A fix is safe if it is what the message says and decides
+      nothing the message leaves open; `--fix` applies those. Twenty-two kinds are: the four
+      named (a pun with one field it can mean; `_ = ` for an unused result or `iferr`
+      value; `@as(T, X)` for a const computed by running code; `..` for missing fields that
+      locals of their names and types, or defaults, supply), and `(q + i).*`, `@clamp`'s
+      bounds swapped, braces dropped after an enum value, a variant or an error without a
+      payload, the variant alone after `is`, `&` before an `if let &x`'s optional, `.*`
+      after a `match`'s pointer, no `&` before the pointer a `mut` field takes, a missing
+      `,` between fields, `{} ` for a function without its context, no braces after a
+      capability without fields, and for a `for`: `0..n` for a number, for `range(n)`,
+      `lo..hi` for `range(lo, hi)`, `lo..hi + 1` for `lo..=hi`, no `&` on a range's name.
+      A suggestion (`"safe":false`) is one of several ways on, or a guess, and is left to
+      whoever reads it: the two places for a handler's parentheses beside a comparison, each
+      field a pun could name, either operand of two types converted, `for x at i` for `for
+      i, x`, another name for a keyword.
+    - **`ctxc check --fix`** applies the safe fixes, prints each with its lines before and
+      after, and checks again until a check has none (ten at most), then reports what is
+      left. A fix is made whole or not at all; two that overlap or insert at one place
+      aren't made from one check; only the program's own files are written, never std's or
+      a generated one (said as `not fixed`); a file that changed since it was checked is
+      left; every byte outside the edits stays, line ends included. `--fix --dry-run`
+      prints the fixes and writes nothing.
+    - **One more cause, one error:** a pun that names no field was also "call is missing"
+      the field it should have named; now the pun's error alone, so that its fix leaves
+      nothing behind.
+    - **Without a fix, on purpose:** `let mut` for a local assigned twice (the second
+      assignment may be the slip), `@as` for a mismatch of a value's type and the type wanted
+      (`@as` panics where the value doesn't fit, which the writer must mean), a keyword's
+      other uses, and every error whose message describes rather than spells the change.
+    - Cases: [tests/cases/Fixes](tests/cases/Fixes), which apply fixes to a program and
+      compare the file byte for byte, one with CRLF line ends, a tab and no final line end.
 
 - [ ] **6.4 Stack traces on panic.**
   A panic gives the check's position only; "a panic in `nwarg::param` names no routine". Print

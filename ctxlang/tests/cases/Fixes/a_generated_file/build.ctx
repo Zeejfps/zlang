@@ -1,0 +1,5 @@
+// An executable with a generated file that has an error with a fix, as its own file has.
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "g", root = "src" }
+    build::gen_file{ &b, exe, name = "made", text = "namespace made {\n    fn n {} -> i64 { return 4 }\n    fn twice {} -> i64 {\n        n{}\n        return n{} * 2\n    }\n}\n" }
+}

@@ -1,0 +1,31 @@
+// Two fixes whose edits meet aren't both made from one check: the first is, and the check
+// after it finds the second in the file as the first left it. `--fix` goes on until a check
+// has nothing to fix. As JSON, each fix is a record, before the diagnostics that are left
+// and the summary.
+//# $ ctxc check {dir}/a.ctx
+//# exit: 1
+//# stderr:
+//| {dir}/a.ctx:6:15: error: cannot index *usize: a pointer has no length to check against; write `(r + j).*`, which isn't checked
+//| {dir}/a.ctx:6:13: error: cannot index *i32: a pointer has no length to check against; write `(q + r[j]).*`, which isn't checked
+//| check: 2 errors; not checked until the program has no other error: the order of a call's fields, what tasks borrow, consts computed by running code; 2 of them have a fix that `ctxc check --fix` applies
+//# $ ctxc check --fix --json {dir}/a.ctx
+//# stderr:
+//| {"type":"fix","applied":true,"message":"write the element without a check","edits":[{"file":"{dir}/a.ctx","line":6,"column":14,"end_line":6,"end_column":18,"text":"(r + j).*"}]}
+//| {"type":"fix","applied":true,"message":"write the element without a check","edits":[{"file":"{dir}/a.ctx","line":6,"column":12,"end_line":6,"end_column":24,"text":"(q + (r + j).*).*"}]}
+//| {"type":"summary","errors":0,"more":false,"waiting":[]}
+//# file a.ctx:
+//| // Two fixes whose edits meet: the element of a pointer, at an index that is the element of
+//| // another. One is made, and the other by the next check, which reads the file as the first
+//| // left it.
+//|
+//| fn pick { q: *i32, r: *usize, j: usize } -> i32 {
+//|     return (q + (r + j).*).*
+//| }
+//| fn main { mut io: Io } {
+//|     let xs: [3]i32 = [10, 20, 30]
+//|     let at: [2]usize = [2, 1]
+//|     io::println_i64{ &io, n = pick{ q = &xs[0], r = &at[0], j = 1 } }
+//| }
+//# $ ctxc run {dir}/a.ctx
+//# stdout:
+//| 20

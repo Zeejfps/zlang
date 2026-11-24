@@ -8,22 +8,49 @@ namespace diag {
     // A related place, such as where something was first borrowed.
     struct Note { span: source::Span, msg: utf8::String }
 
+    // A change to the source: the bytes of span are replaced by text. An empty span inserts,
+    // and an empty text deletes.
+    struct Edit { span: source::Span, text: []u8 }
+
+    // What to write to be rid of a diagnostic, as the edits that write it, with msg saying
+    // what they do. A safe one is what the message itself says to write, and writing it
+    // decides nothing the message leaves open: `ctxc check --fix` applies it. One that isn't
+    // safe is a suggestion: one of several ways to go on, or a guess, which a person or a
+    // model picks (spec §21, rule 12).
+    struct Fix { safe: bool, msg: utf8::String, edits: []Edit }
+
     // lacks: the name before a `::` that nothing in the program declares, if the diagnostic
     // is that; else empty. The driver looks for a file that declares the namespace (drive.ctx).
-    struct Diag { severity: Severity, span: source::Span, msg: utf8::String, notes: []Note, lacks: []u8 }
+    struct Diag { severity: Severity, span: source::Span, msg: utf8::String, notes: []Note, lacks: []u8, fixes: []Fix }
 
     // At most `cap` are kept, CAP unless `keep_all` lifts it, so a broken file can't flood an
     // editor. `dropped` counts the rest, which the driver says after those it shows (report.ctx).
     const CAP: usize = 100
 
-    // staged: the notes for the next diagnostic added (`note`), which takes them.
-    struct Diags { items: list::List(Diag, arena::Arena), errors: usize, dropped: usize, cap: usize, staged: list::List(Note, arena::Arena) }
+    // staged, fixes: the notes and the fixes for the next diagnostic added (`note`, `fix`),
+    // which takes them.
+    struct Diags {
+        items: list::List(Diag, arena::Arena), errors: usize, dropped: usize, cap: usize,
+        staged: list::List(Note, arena::Arena), fixes: list::List(Fix, arena::Arena), heap: *mut arena::Arena,
+    }
 
     fn new { heap: *mut arena::Arena } -> Diags {
         return Diags{
             items = list::new(Diag){ realloc = arena::alloc, heap }, errors = 0, dropped = 0, cap = CAP,
-            staged = list::new(Note){ realloc = arena::alloc, heap },
+            staged = list::new(Note){ realloc = arena::alloc, heap }, fixes = list::new(Fix){ realloc = arena::alloc, heap }, heap,
         }
+    }
+
+    // A fix for the next diagnostic that is added, said before it as a note is.
+    fn fix { mut diags: Diags, safe: bool, msg: utf8::String, edits: []Edit } {
+        try! list::push{ list = &diags.fixes, item = Fix{ safe, msg, edits } }
+    }
+
+    // A fix of one edit: span's bytes become text.
+    fn fix_one { mut diags: Diags, safe: bool, msg: utf8::String, span: source::Span, text: []u8 } {
+        let edits = try! alloc::make(Edit, arena::Arena){ realloc = arena::alloc, heap = diags.heap, count = 1 }
+        edits[0] = Edit{ span, text }
+        fix{ &diags, safe, msg, edits }
     }
 
     // A related place for the next diagnostic that is added: where the local is declared whose
@@ -34,9 +61,10 @@ namespace diag {
         try! list::push{ list = &diags.staged, item = Note{ span, msg } }
     }
 
-    // Drops the notes said for a diagnostic that isn't added.
+    // Drops the notes and the fixes said for a diagnostic that isn't added.
     fn unstage { mut diags: Diags } {
         list::clear{ list = &diags.staged }
+        list::clear{ list = &diags.fixes }
     }
 
     // Lifts the cap, for `ctxc check`: every diagnostic is kept.
@@ -45,7 +73,7 @@ namespace diag {
     }
 
     fn error { mut diags: Diags, span: source::Span, msg: utf8::String } {
-        add{ &diags, d = Diag{ severity = Severity::error, span, msg, notes = slice::empty(Note){}, lacks = "" } }
+        add{ &diags, d = Diag{ severity = Severity::error, span, msg, notes = slice::empty(Note){}, lacks = "", fixes = slice::empty(Fix){} } }
     }
 
     fn add { mut diags: Diags, d: Diag } {
@@ -55,6 +83,7 @@ namespace diag {
         }
         let mut item = d
         if diags.staged.len > 0 { item.notes = try! list::take{ list = &diags.staged } }
+        if diags.fixes.len > 0 { item.fixes = try! list::take{ list = &diags.fixes } }
         if diags.items.len >= diags.cap {
             diags.dropped = diags.dropped + 1
             return

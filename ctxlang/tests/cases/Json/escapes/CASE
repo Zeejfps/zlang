@@ -10,6 +10,6 @@
 //# $ ctxc check --json {dir}/esc.ctx
 //# exit: 1
 //# stderr:
-//| {"type":"diagnostic","severity":"error","file":"{dir}/esc.ctx","line":4,"column":29,"end_line":4,"end_column":36,"message":"invalid UTF-8","notes":[]}
-//| {"type":"diagnostic","severity":"error","file":"{dir}/esc.ctx","line":4,"column":19,"end_line":4,"end_column":23,"message":"a pun is a place that ends in a field's name, as `&g.rng` is for `rng`, and this one is a call or a literal: write the field's name, as `name = pick{ s\t= \"q\\n\u0001\ufffd\" }`","notes":[]}
+//| {"type":"diagnostic","severity":"error","file":"{dir}/esc.ctx","line":4,"column":29,"end_line":4,"end_column":36,"message":"invalid UTF-8","notes":[],"fixes":[]}
+//| {"type":"diagnostic","severity":"error","file":"{dir}/esc.ctx","line":4,"column":19,"end_line":4,"end_column":23,"message":"a pun is a place that ends in a field's name, as `&g.rng` is for `rng`, and this one is a call or a literal: write the field's name, as `name = pick{ s\t= \"q\\n\u0001\ufffd\" }`","notes":[],"fixes":[]}
 //| {"type":"summary","errors":2,"more":false,"waiting":["order","tasks","consts"]}

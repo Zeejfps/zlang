@@ -1,0 +1,66 @@
+// `--fix` changes the bytes of its edits and no others: a file with CRLF line ends, a tab
+// and no line end after its last line keeps them all. `--fix --dry-run` says the fixes and
+// writes nothing.
+//# write a.ctx escaped:
+//| // A file with CRLF line ends, a tab and a line without an end.\r
+//| struct Opts { depth: i32 = 3,\r
+//|               name: []u8 }\r
+//| fn count {} -> i32 { return 3 }\r
+//| fn main { mut io: Io } {\r
+//| \tcount{}\r
+//|     let o = Opts{\r
+//|         name = "x",\r
+//|     }\r
+//|     io::println_i64{ &io, n = o.depth }\r
+//| }\
+//# $ ctxc check --fix --dry-run {dir}/a.ctx
+//# exit: 1
+//# stderr:
+//| {dir}/a.ctx:6:2: would fix: discard the result
+//| - 	count{}
+//| + 	_ = count{}
+//| {dir}/a.ctx:8:20: would fix: take the missing fields from their defaults, with `..`
+//| -         name = "x",
+//| +         name = "x", ..
+//| {dir}/a.ctx:6:7: error: the result of `count` (i32) is unused: use it, or discard it with `_ = ...`
+//| {dir}/a.ctx:7:17: error: struct `Opts` is missing `depth`: `..` at the end takes it from its default
+//| check: 2 errors; not checked until the program has no other error: the order of a call's fields, what tasks borrow, consts computed by running code
+//# file a.ctx escaped:
+//| // A file with CRLF line ends, a tab and a line without an end.\r
+//| struct Opts { depth: i32 = 3,\r
+//|               name: []u8 }\r
+//| fn count {} -> i32 { return 3 }\r
+//| fn main { mut io: Io } {\r
+//| \tcount{}\r
+//|     let o = Opts{\r
+//|         name = "x",\r
+//|     }\r
+//|     io::println_i64{ &io, n = o.depth }\r
+//| }\
+//# $ ctxc check --fix {dir}/a.ctx
+//# stderr:
+//| {dir}/a.ctx:6:2: fixed: discard the result
+//| - 	count{}
+//| + 	_ = count{}
+//| {dir}/a.ctx:8:20: fixed: take the missing fields from their defaults, with `..`
+//| -         name = "x",
+//| +         name = "x", ..
+//| check: no errors
+//# file a.ctx escaped:
+//| // A file with CRLF line ends, a tab and a line without an end.\r
+//| struct Opts { depth: i32 = 3,\r
+//|               name: []u8 }\r
+//| fn count {} -> i32 { return 3 }\r
+//| fn main { mut io: Io } {\r
+//| \t_ = count{}\r
+//|     let o = Opts{\r
+//|         name = "x", ..\r
+//|     }\r
+//|     io::println_i64{ &io, n = o.depth }\r
+//| }\
+
+// `--dry-run` is `--fix`'s: alone it is a wrong command.
+//# $ ctxc check --dry-run {dir}/a.ctx
+//# exit: 2
+//# stderr:
+//| usage: ctxc check [--json] [--fix [--dry-run]] PATH

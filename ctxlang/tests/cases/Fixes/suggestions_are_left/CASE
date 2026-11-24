@@ -1,0 +1,44 @@
+// An error that leaves a choice has suggestions, fixes that aren't safe (`"safe":false`), one
+// for each way to go on: the two places for a handler's parentheses, the two fields a pun
+// could name, either operand to convert; or a guess, as which of a `for`'s two names is the
+// index, and another name for a keyword. `--fix` applies none of them, and the file stays as
+// it is.
+//# $ ctxc check --json {dir}/a.ctx
+//# exit: 1
+//# stderr:
+//| {"type":"diagnostic","severity":"error","file":"{dir}/a.ctx","line":16,"column":35,"end_line":16,"end_column":41,"message":"`ifnull` beside `==` needs parentheses: write `(first{ xs = xs[..] } ifnull 0) == 3` or `first{ xs = xs[..] } ifnull (0 == 3)`","notes":[],"fixes":[{"safe":false,"message":"put the handler and what it handles in parentheses","edits":[{"file":"{dir}/a.ctx","line":16,"column":14,"end_line":16,"end_column":14,"text":"("},{"file":"{dir}/a.ctx","line":16,"column":43,"end_line":16,"end_column":43,"text":")"}]},{"safe":false,"message":"put the handler's right side, to the end, in parentheses","edits":[{"file":"{dir}/a.ctx","line":16,"column":42,"end_line":16,"end_column":42,"text":"("},{"file":"{dir}/a.ctx","line":16,"column":48,"end_line":16,"end_column":48,"text":")"}]}]}
+//| {"type":"diagnostic","severity":"error","file":"{dir}/a.ctx","line":17,"column":10,"end_line":17,"end_column":11,"message":"a `for` names one element: write `for x at i in xs` for each element `x` and its index `i`","notes":[],"fixes":[{"safe":false,"message":"take the first name for the index","edits":[{"file":"{dir}/a.ctx","line":17,"column":9,"end_line":17,"end_column":13,"text":"v at i"}]}]}
+//| {"type":"diagnostic","severity":"error","file":"{dir}/a.ctx","line":18,"column":9,"end_line":18,"end_column":11,"message":"expected a name, found 'fn': `fn` is a keyword and can't be a name; use another, such as `fn_`","notes":[],"fixes":[{"safe":false,"message":"use another name, here and where it is used","edits":[{"file":"{dir}/a.ctx","line":18,"column":9,"end_line":18,"end_column":11,"text":"fn_"}]}]}
+//| {"type":"diagnostic","severity":"error","file":"{dir}/a.ctx","line":12,"column":11,"end_line":12,"end_column":13,"message":"`swap` has no field `x`: write `a = &x` or `b = &x`","notes":[],"fixes":[{"safe":false,"message":"name the field, `a`","edits":[{"file":"{dir}/a.ctx","line":12,"column":11,"end_line":12,"end_column":13,"text":"a = &x"}]},{"safe":false,"message":"name the field, `b`","edits":[{"file":"{dir}/a.ctx","line":12,"column":11,"end_line":12,"end_column":13,"text":"b = &x"}]}]}
+//| {"type":"diagnostic","severity":"error","file":"{dir}/a.ctx","line":15,"column":17,"end_line":15,"end_column":22,"message":"operands of `+` have incompatible types: i32 and u32; convert one with @as","notes":[],"fixes":[{"safe":false,"message":"convert `x` to u32","edits":[{"file":"{dir}/a.ctx","line":15,"column":15,"end_line":15,"end_column":16,"text":"@as(u32, x)"}]},{"safe":false,"message":"convert `big` to i32","edits":[{"file":"{dir}/a.ctx","line":15,"column":19,"end_line":15,"end_column":22,"text":"@as(i32, big)"}]}]}
+//| {"type":"summary","errors":5,"more":false,"waiting":["order","tasks","consts"]}
+//# $ ctxc check --fix {dir}/a.ctx
+//# exit: 1
+//# stderr:
+//| {dir}/a.ctx:16:35: error: `ifnull` beside `==` needs parentheses: write `(first{ xs = xs[..] } ifnull 0) == 3` or `first{ xs = xs[..] } ifnull (0 == 3)`
+//| {dir}/a.ctx:17:10: error: a `for` names one element: write `for x at i in xs` for each element `x` and its index `i`
+//| {dir}/a.ctx:18:9: error: expected a name, found 'fn': `fn` is a keyword and can't be a name; use another, such as `fn_`
+//| {dir}/a.ctx:12:11: error: `swap` has no field `x`: write `a = &x` or `b = &x`
+//| {dir}/a.ctx:15:17: error: operands of `+` have incompatible types: i32 and u32; convert one with @as
+//| check: 5 errors; not checked until the program has no other error: the order of a call's fields, what tasks borrow, consts computed by running code
+//# file a.ctx:
+//| // Errors with more than one way to go on: each has suggestions, and `--fix` applies none.
+//|
+//| struct Pair { a: i32, b: i32 }
+//| fn swap { mut a: i32, mut b: i32 } {
+//|     let t = a
+//|     a = b
+//|     b = t
+//| }
+//| fn first { xs: []i32 } -> ?i32 { return if xs.len > 0 { xs[0] } else { null } }
+//| fn main { mut io: Io } {
+//|     let mut x: i32 = 1
+//|     swap{ &x }
+//|     let xs: [2]i32 = [3, 4]
+//|     let big: u32 = 5
+//|     let sum = x + big
+//|     let ok = first{ xs = xs[..] } ifnull 0 == 3
+//|     for i, v in xs[..] { _ = i + v }
+//|     let fn = 2
+//|     _ = @fmt(&io, "{} {}\n", sum, ok)
+//| }

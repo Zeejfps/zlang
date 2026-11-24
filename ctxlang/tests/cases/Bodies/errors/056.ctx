@@ -1,6 +1,6 @@
 struct S { a: i32, b: i32 }
 fn f {} {
     let x = 1
-    let s = S{ b = 2, x }  //~ error at 23: struct `S` has no field `x`: write `a = x` //~ error at 14: struct `S` is missing `a`
+    let s = S{ b = 2, x }  //~ error at 23: struct `S` has no field `x`: write `a = x`
 }
 fn main {} {}

@@ -1,0 +1,17 @@
+// `--fix` writes only to the program's own files. A file its build program generates is
+// written again by every build, so a fix in it is said and not made, and its error stays;
+// the same error in the program's own file is fixed.
+//# $ ctxc check --fix {dir}
+//# exit: 1
+//# stderr:
+//| {dir}/src/main.ctx:2:5: fixed: discard the result
+//| -     made::n{}
+//| +     _ = made::n{}
+//| {work:.}/gen/g/made.ctx:4:9: not fixed: discard the result: the file is std's or one the build program generates, not the program's own
+//| {work:.}/gen/g/made.ctx:4:10: error: the result of `n` (i64) is unused: use it, or discard it with `_ = ...`
+//| check: 1 error; not checked until the program has no other error: the order of a call's fields, what tasks borrow, consts computed by running code
+//# file src/main.ctx:
+//| fn main { mut io: Io } {
+//|     _ = made::n{}
+//|     io::println_i64{ &io, n = made::twice{} }
+//| }

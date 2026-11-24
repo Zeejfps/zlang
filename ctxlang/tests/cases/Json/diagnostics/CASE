@@ -4,9 +4,9 @@
 //# $ ctxc check --json {dir}/a.ctx
 //# exit: 1
 //# stderr:
-//| {"type":"diagnostic","severity":"error","file":"{dir}/a.ctx","line":9,"column":17,"end_line":9,"end_column":20,"message":"literal 300 does not fit in u8","notes":[]}
-//| {"type":"diagnostic","severity":"error","file":"{dir}/a.ctx","line":4,"column":5,"end_line":4,"end_column":14,"message":"returned value holds the address of local `v`","notes":[{"file":"{dir}/a.ctx","line":3,"column":5,"end_line":3,"end_column":19,"message":"`v` is declared here"}]}
-//| {"type":"diagnostic","severity":"error","file":"{dir}/a.ctx","line":8,"column":5,"end_line":8,"end_column":15,"message":"cannot store the address of local `n` in `box`, which belongs to the caller","notes":[{"file":"{dir}/a.ctx","line":7,"column":5,"end_line":7,"end_column":19,"message":"`n` is declared here"},{"file":"{dir}/a.ctx","line":6,"column":11,"end_line":6,"end_column":23,"message":"`box` is a context field, declared here"}]}
+//| {"type":"diagnostic","severity":"error","file":"{dir}/a.ctx","line":9,"column":17,"end_line":9,"end_column":20,"message":"literal 300 does not fit in u8","notes":[],"fixes":[]}
+//| {"type":"diagnostic","severity":"error","file":"{dir}/a.ctx","line":4,"column":5,"end_line":4,"end_column":14,"message":"returned value holds the address of local `v`","notes":[{"file":"{dir}/a.ctx","line":3,"column":5,"end_line":3,"end_column":19,"message":"`v` is declared here"}],"fixes":[]}
+//| {"type":"diagnostic","severity":"error","file":"{dir}/a.ctx","line":8,"column":5,"end_line":8,"end_column":15,"message":"cannot store the address of local `n` in `box`, which belongs to the caller","notes":[{"file":"{dir}/a.ctx","line":7,"column":5,"end_line":7,"end_column":19,"message":"`n` is declared here"},{"file":"{dir}/a.ctx","line":6,"column":11,"end_line":6,"end_column":23,"message":"`box` is a context field, declared here"}],"fixes":[]}
 //| {"type":"summary","errors":3,"more":false,"waiting":["order","tasks","consts"]}
 //# $ ctxc check {dir}/a.ctx
 //# exit: 1
@@ -29,7 +29,7 @@
 //# $ ctxc check --json {dir}/order.ctx
 //# exit: 1
 //# stderr:
-//| {"type":"diagnostic","severity":"error","file":"{dir}/order.ctx","line":8,"column":27,"end_line":8,"end_column":41,"message":"`n` reads `s.n`, which `z` changes, in one call: the order of the fields would decide what it reads; compute one of them in a `let` before the call","notes":[{"file":"{dir}/order.ctx","line":8,"column":22,"end_line":8,"end_column":25,"message":"`n` reads `s.n` here"},{"file":"{dir}/order.ctx","line":8,"column":37,"end_line":8,"end_column":39,"message":"`z` changes `s.n` here"}]}
+//| {"type":"diagnostic","severity":"error","file":"{dir}/order.ctx","line":8,"column":27,"end_line":8,"end_column":41,"message":"`n` reads `s.n`, which `z` changes, in one call: the order of the fields would decide what it reads; compute one of them in a `let` before the call","notes":[{"file":"{dir}/order.ctx","line":8,"column":22,"end_line":8,"end_column":25,"message":"`n` reads `s.n` here"},{"file":"{dir}/order.ctx","line":8,"column":37,"end_line":8,"end_column":39,"message":"`z` changes `s.n` here"}],"fixes":[]}
 //| {"type":"summary","errors":1,"more":false,"waiting":["consts"]}
 
 // A file that can't be read is the driver's failure, not a diagnostic: its line is text, and

@@ -50,5 +50,5 @@
 //# $ ctxc test --json {dir}/t
 //# exit: 1
 //# stderr:
-//| {"type":"diagnostic","severity":"error","file":"{dir}/t/t.ctx","line":3,"column":17,"end_line":3,"end_column":24,"message":"unknown name `missing`","notes":[]}
+//| {"type":"diagnostic","severity":"error","file":"{dir}/t/t.ctx","line":3,"column":17,"end_line":3,"end_column":24,"message":"unknown name `missing`","notes":[],"fixes":[]}
 //| {"type":"summary","errors":1,"more":false,"waiting":["order","tasks","consts"]}

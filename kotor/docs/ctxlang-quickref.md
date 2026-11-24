@@ -268,6 +268,13 @@ error on a line of standard error (`file`, `line`, `column`, `end_line`, `end_co
 `message`, `notes`), then a `summary` record; `ctxc test DIR --json` writes a record for
 each test and one for the run on standard output (spec §21, rules 8 to 11; §20, rule 15).
 
+`kotor/tools/ctxc check --fix DIR` makes the edits an error spells out exactly (`m = &movie`
+for a pun, `_ = ` for an unused result, `..` for missing fields, `(q + i).*`, a missing `,`,
+`0..n`, and others: spec §21, rule 12), prints each with the line before and after, and
+checks again; `--fix --dry-run` only prints them. Errors with more than one way to go on
+keep their message and carry the alternatives as suggestions in `--json` (`fixes` with
+`"safe":false`), which `--fix` doesn't apply.
+
 ## Tests (§20)
 
 A test is a fn beside the code it tests, in a file of its own (`twoda_test.ctx` next to

@@ -351,6 +351,8 @@ namespace check {
         // program lacks is one cause, however often it is named.
         lacks:     map::Map([]u8, Lack, Heap),
         lack_at:   map::Map(u64, bool, Heap),    // the uses counted, by file and offset
+        // The fields a pun that names none was told to name, by the braces' expr key (pun_fixes).
+        offered:   map::Map(u64, [][]u8, Heap),
         // How many diagnostics the lexer and the parser left: diags' first, which say where
         // the syntax is broken (syntax_error_in).
         parsed:    usize = 0,
@@ -602,6 +604,7 @@ namespace check {
             split_cands = list::new(SplitCand){ realloc = arena::alloc, &heap },
             lacks = map::new([]u8, Lack){ realloc = arena::alloc, &heap, hash = map::hash_bytes, eq = slice::eq_bytes },
             lack_at = map::new(u64, bool){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            offered = map::new(u64, [][]u8){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             ..
         }
         _ = space{ &c, name = "", parent = NONE }
@@ -3436,7 +3439,7 @@ namespace check {
         for d in diag::items{ diags = c.diags.* } {
             if d.span.file == n.span.file and d.span.start == n.span.start and d.lacks.len > 0 { return }
         }
-        diag::add{ diags = c.diags, d = diag::Diag{ severity = diag::Severity::error, span = n.span, msg, notes = slice::empty(diag::Note){}, lacks = n.text } }
+        diag::add{ diags = c.diags, d = diag::Diag{ severity = diag::Severity::error, span = n.span, msg, notes = slice::empty(diag::Note){}, lacks = n.text, fixes = slice::empty(diag::Fix){} } }
     }
 
     // Says in each error about a name the program lacks how many more places use it.
@@ -5292,6 +5295,7 @@ namespace check {
                 c.dropping = outer
                 let st = type_of_expr{ c, e = x.scrut.* }
                 if it != types::ERROR and types::get{ s = c.ty, id = types::prune{ s = c.ty, t = st } } is res{ ok } and types::prune{ s = c.ty, t = ok } != types::VOID {
+                    fix_at{ &c, at = point{ span = e.span, at = e.span.start }, text = "_ = ", msg = "discard the value" }
                     errorf{ &c, at = expr_at{ e }, msg = @fmt("the value of this `iferr` ({}) is unused: use it, or discard it with `_ = ...`", tstr{ c, t = ok }) }
                 }
                 return
@@ -5303,6 +5307,7 @@ namespace check {
             }
         }
         if t != types::VOID and t != types::ERROR {
+            fix_at{ &c, at = point{ span = e.span, at = e.span.start }, text = "_ = ", msg = "discard the result" }
             errorf{ &c, at = expr_at{ e }, msg = @fmt("the result of `{}` ({}) is unused: use it, or discard it with `_ = ...`", name, tstr{ c, t }) }
         }
     }
@@ -5978,6 +5983,7 @@ namespace check {
             let b = x.arms[0].pats[0].binders[0]
             let name = b.local ifnull b.field
             let text = str{ s = source_text{ c, span = scrut.span } }
+            if scrut.k is path | field | index | deref { fix_at{ &c, at = point{ span = scrut.span, at = scrut.span.start }, text = "&", msg = "take the optional's address" } }
             errorf{ &c, at = expr_at{ e = scrut }, msg = @fmt("`if let &{}` binds a place inside the optional, so it needs a pointer to one: write `if let &{} = &{}`", str{ s = name.text }, str{ s = name.text }, text) }
             ok = false
         } else if ok and x.is_iferr and not is_res{ c, t = st } {
@@ -5985,13 +5991,16 @@ namespace check {
             ok = false
         } else if ok and (is_res{ c, t = ut } or is_errs{ c, t = ut }) {
             if not through { return check_fail_match{ &c, x, at, exp, value, may_leave, t = ut, drop } }
+            deref_fix{ &c, e = scrut }
             error{ &c, at = expr_at{ e = scrut }, msg = "match cannot go through a pointer to a `!T` or an error; match on the value with `.*`" }
             ok = false
         } else if ok and through and is_enum{ c, t = ut } {
+            deref_fix{ &c, e = scrut }
             error{ &c, at = expr_at{ e = scrut }, msg = "match cannot go through a pointer to an enum; match on the value with `.*`" }
             ok = false
         } else if ok and int_type{ c, t = ut } {
             if not through { return check_int_match{ &c, x, at, exp, value, may_leave, t = ut } }
+            deref_fix{ &c, e = scrut }
             error{ &c, at = expr_at{ e = scrut }, msg = "match cannot go through a pointer to an integer; match on the value with `.*`" }
             ok = false
         } else if ok and untagged_type{ c, t = ut } {
@@ -6513,6 +6522,7 @@ namespace check {
                 errorf{ &c, at = p.span, msg = @fmt("an integer pattern needs an integer to test, got {}", tstr{ c, t }) }
                 known = false
             } else if p.quals.len > 0 {
+                if p.binders.len == 0 { fix_at{ &c, at = p.span, text = name, msg = "name the variant alone" } }
                 errorf{ &c, at = p.span, msg = @fmt("`is` names a variant alone: write `{}`", str{ s = name }) }
                 known = false
             } else if ok and vi == NONE {
@@ -10414,6 +10424,9 @@ namespace check {
             // One computed by running code; one that failed its own check has its error.
             if report and map::has{ m = c.evaluated, key = x.d } {
                 let name = str{ s = source_text{ c, span = x.e.span } }
+                let mut w = message{ c }
+                try! @fmt(&w, "@as({}, {})", tstr{ c, t = x.to }, name)
+                fix_at{ &c, at = x.e.span, text = utf8::view{ b = w }.bytes, msg = "convert it with @as" }
                 errorf{ &c, at = expr_at{ e = x.e }, msg = @fmt("expected {}, got {}: `{}` is computed by running code, so only a const whose value is folded converts; write @as({}, {})", tstr{ c, t = x.to }, tstr{ c, t = x.from }, name, tstr{ c, t = x.to }, name) }
             }
             return false
@@ -10963,6 +10976,15 @@ namespace check {
         // Pointer arithmetic takes a usize (§12, Pointers, rule 4): an index of another type
         // is converted in what the error spells.
         let it = types::prune{ s = c.ty, t = type_of_expr{ c, e = i } }
+        let mut w = message{ c }
+        if it != types::USIZE and types::is_int{ s = c.ty, t = it } {
+            try! @fmt(&w, "({} + @as(usize, {})).*", q, n)
+        } else if i.k is binary | ifx | matchx | overflow | trye | isx {
+            try! @fmt(&w, "({} + ({})).*", q, n)
+        } else {
+            try! @fmt(&w, "({} + {}).*", q, n)
+        }
+        fix_at{ &c, at = e.span, text = utf8::view{ b = w }.bytes, msg = "write the element without a check" }
         if it != types::USIZE and types::is_int{ s = c.ty, t = it } {
             errorf{ &c, at = expr_at{ e }, msg = @fmt("cannot index {}: a pointer has no length to check against; write `({} + @as(usize, {})).*`, which isn't checked", tstr{ c, t = bt }, q, n) }
         } else if i.k is binary | ifx | matchx | overflow | trye | isx {
@@ -11121,6 +11143,13 @@ namespace check {
         error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
     }
 
+    // The fix for a pointer e whose value is wanted: `.*` after it, where e is a name, a field,
+    // an element or a call, which `.*` binds to as it stands.
+    fn deref_fix { mut c: Checker, e: syntax::Expr } {
+        if not (e.k is path | field | index | deref | braced) { return }
+        fix_at{ &c, at = point{ span = e.span, at = e.span.end }, text = ".*", msg = "match on the value the pointer points to" }
+    }
+
     // A `for` over base, of type bt, which is no slice or array: what it goes over, and what to
     // write for a number, a pointer, a list or an optional.
     fn each_error { mut c: Checker, base: syntax::Expr, bt: Id } {
@@ -11136,7 +11165,12 @@ namespace check {
                 try! utf8::push{ &b, s = ": unwrap it first, as `if let xs = ... { for x in xs { ... } }`" }
             }
             else => {
-                if is_int{ c, t = op_type{ c, t = bt } } { try! @fmt(&b, ": to count up to it, write `0..{}`", text) }
+                if is_int{ c, t = op_type{ c, t = bt } } {
+                    try! @fmt(&b, ": to count up to it, write `0..{}`", text)
+                    if base.k is path | field | index | deref | braced | int {
+                        fix_at{ &c, at = point{ span = base.span, at = base.span.start }, text = "0..", msg = "count from 0 up to it" }
+                    }
+                }
             }
         }
         error{ &c, at = expr_at{ e = base }, msg = utf8::view{ b } }
@@ -11561,6 +11595,7 @@ namespace check {
                     path{ e = d, seg } => { return struct_lit{ &c, e, d, seg, items, forward, bind, exp } }
                     variant{ ty, index } => { return variant_lit{ &c, e, ut = ty, vi = index, items, forward, bind, exp } }
                     enumval => {
+                        unbrace{ &c, e, items }
                         errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` is an enum value; write it without braces", name) }
                         return types::ERROR
                     }
@@ -11602,6 +11637,12 @@ namespace check {
         return call_args{ &c, e, ft, name, items, forward, bind }
     }
 
+    // The fix for braces e that should not be there and hold nothing: they go.
+    fn unbrace { mut c: Checker, e: syntax::Expr, items: []syntax::Item } {
+        if items.len > 0 or e.span.end <= e.at { return }
+        fix_at{ &c, at = source::Span{ file = e.span.file, start = e.at, end = e.span.end }, text = "", msg = "write it without braces" }
+    }
+
     fn set_literal { mut c: Checker, e: syntax::Expr, literal: bool } {
         try! map::put{ m = &c.literal, key = expr_key{ e }, value = literal }
     }
@@ -11620,7 +11661,10 @@ namespace check {
             } else if types::find_field{ fields, name = it.name.text } == null {
                 let mut b = message{ c }
                 try! @fmt(&b, "{} has no field `{}`", what, str{ s = it.name.text })
-                if it.pun { try! pun_hint{ c, items, fields, it, b = &b } }
+                if it.pun {
+                    try! pun_hint{ c, items, fields, it, b = &b }
+                    pun_fixes{ &c, e, items, fields, it }
+                }
                 error{ &c, at = it.span, msg = utf8::view{ b } }
             } else {
                 let mut k: usize = 0
@@ -11670,6 +11714,71 @@ namespace check {
                 n = n + 1
             }
             i = i + 1
+        }
+    }
+
+    // The fixes for a pun that names no field, with what pun_hint says to write: `name = it`
+    // for each field it names, a fix if it is the only one and a suggestion each if there are
+    // several. Those fields aren't also reported as missing from braces e (`offered`): the
+    // pun is why.
+    fn pun_fixes { mut c: Checker, e: syntax::Expr, items: []syntax::Item, fields: []types::Field, it: syntax::Item } {
+        let addr = it.value.k is addr
+        let mut fit: usize = 0
+        for f in fields {
+            if not given{ items, name = f.name } and f.mutable == addr { fit = fit + 1 }
+        }
+        let mut names = list::new([]u8){ realloc = arena::alloc, heap = c.heap }
+        for f in fields {
+            if not given{ items, name = f.name } and (fit == 0 or f.mutable == addr) { try! list::push{ list = &names, item = f.name } }
+        }
+        let ns = list::items{ list = names }
+        for n in ns {
+            let mut b = message{ c }
+            try! @fmt(&b, "{} = {}", str{ s = n }, str{ s = source_text{ c, span = it.value.span } })
+            let mut m = message{ c }
+            try! @fmt(&m, "name the field, `{}`", str{ s = n })
+            if ns.len == 1 {
+                fix_at{ &c, at = it.span, text = utf8::view{ b }.bytes, msg = utf8::view{ b = m } }
+            } else {
+                suggest_at{ &c, at = it.span, text = utf8::view{ b }.bytes, msg = utf8::view{ b = m } }
+            }
+        }
+        if ns.len > 0 {
+            let had = map::get{ m = c.offered, key = expr_key{ e } } ifnull { slice::empty([]u8){} }
+            let mut all = list::new([]u8){ realloc = arena::alloc, heap = c.heap }
+            for n in had { try! list::push{ list = &all, item = n } }
+            for n in ns { try! list::push{ list = &all, item = n } }
+            try! map::put{ m = &c.offered, key = expr_key{ e }, value = list::items{ list = all } }
+        }
+    }
+
+    // Whether a pun of braces e that names no field was told to name field `name` (pun_fixes).
+    fn offered { c: Checker, e: syntax::Expr, name: []u8 } -> bool {
+        let ns = map::get{ m = c.offered, key = expr_key{ e } } ifnull { return false }
+        for n in ns {
+            if slice::eq_bytes{ a = n, b = name } { return true }
+        }
+        return false
+    }
+
+    // The fix for braces e that lack fields which a `..` at their end supplies (§3, rule 7):
+    // the `..`, after the last item.
+    fn forward_fix { mut c: Checker, e: syntax::Expr, items: []syntax::Item, msg: utf8::String } {
+        let text = c.files[e.span.file].text
+        let close = e.span.end - 1
+        if e.span.end <= e.at or text[close] != '}' { return }
+        if items.len == 0 {
+            fix_at{ &c, at = source::Span{ file = e.span.file, start = e.at + 1, end = close }, text = " .. ", msg }
+            return
+        }
+        // After the comma that follows the last item, if one does.
+        let last = items[items.len - 1].span.end
+        let mut k = last
+        while k < close and (text[k] == ' ' or text[k] == '\t' or text[k] == '\r' or text[k] == '\n') { k = k + 1 }
+        if k < close and text[k] == ',' {
+            fix_at{ &c, at = point{ span = e.span, at = k + 1 }, text = " ..", msg }
+        } else {
+            fix_at{ &c, at = point{ span = e.span, at = last }, text = ", ..", msg }
         }
     }
 
@@ -11739,6 +11848,9 @@ namespace check {
                                 // p is the pointer the field takes: one error, where two
                                 // (not a mutable place; a pointer to a pointer) named no cause.
                                 let p = source_text{ c, span = x.span }
+                                if it.value.span.start < x.span.start {
+                                    fix_at{ &c, at = source::Span{ file = x.span.file, start = it.value.span.start, end = x.span.start }, text = "", msg = "pass the pointer as it is" }
+                                }
                                 errorf{ &c, at = expr_at{ e = it.value }, msg = @fmt("`{}` is {} already, which is what `mut {}` takes: pass it as it is, without the `&`", str{ s = p }, a_type{ c, t = want }, str{ s = f.name }) }
                             } else {
                                 check_mutable{ &c, e = x.* }
@@ -11781,10 +11893,28 @@ namespace check {
             try! map::put{ m = &c.forwards, key = expr_key{ e }, value = list::items{ list = fwd } }
         }
         let gone = list::items{ list = missing }
-        if gone.len > 0 and not bind and not forward {
+        // Those a pun that names no field was told to name aren't missing for another reason.
+        let mut lacking = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
+        for f in gone {
+            if not offered{ c, e, name = f.name } { add_field{ xs = &lacking, f } }
+        }
+        let lacked = list::items{ list = lacking }
+        if lacked.len > 0 and not bind and not forward {
             let mut m = message{ c }
             try! @fmt(&m, "call to `{}` is missing ", name)
-            try! names{ fields = gone, b = &m }
+            try! names{ fields = lacked, b = &m }
+            // A local of each one's name and type is what `..` passes: the fix, if every one has it.
+            let mut all = lacked.len == gone.len
+            for f in lacked {
+                let v = lookup_local{ c, name = f.name, callable = false }
+                if v == NONE {
+                    all = false
+                } else {
+                    let x = get_var{ c, v }
+                    if types::prune{ s = c.ty, t = x.ty } != types::prune{ s = c.ty, t = f.ty } or (f.mutable and not x.mutable) { all = false }
+                }
+            }
+            if all { forward_fix{ &c, e, items, msg = "pass the locals of the missing fields' names, with `..`" } }
             error{ &c, at = expr_at{ e }, msg = utf8::view{ b = m } }
         }
         c.cap_shared = starting
@@ -11957,6 +12087,7 @@ namespace check {
     fn fault_lit { mut c: Checker, e: syntax::Expr, decl: u32, items: []syntax::Item, forward: bool, bind: bool } -> Id {
         let q = str{ s = get_decl{ c, d = decl }.qual }
         let fields = fault_fields{ c, d = decl } ifnull {
+            unbrace{ &c, e, items }
             errorf{ &c, at = expr_at{ e }, msg = @fmt("error `{}` has no payload; write it without braces", q) }
             return types::ERROR
         }
@@ -11971,6 +12102,7 @@ namespace check {
         let v = variants_of{ &c, t = ut }[vi]
         let fields = v.fields
         if fields == null {
+            unbrace{ &c, e, items }
             errorf{ &c, at = expr_at{ e }, msg = @fmt("variant `{}` has no payload; write it without braces", str{ s = v.name }) }
             return types::ERROR
         }
@@ -11997,8 +12129,8 @@ namespace check {
         let mut i: usize = 0
         while i < fields.len {
             let has = i < defaults.len and defaults[i] != NONE
-            if given{ items, name = fields[i].name } or types::find_field{ fields = spread, name = fields[i].name } != null {
-                // supplied
+            if given{ items, name = fields[i].name } or types::find_field{ fields = spread, name = fields[i].name } != null or offered{ c, e, name = fields[i].name } {
+                // supplied, or what a pun that names no field was told to name
             } else if has and forward {
                 try! list::push{ list = &filled, item = @as(u32, i) }
             } else if has or not (c.in_attr and zero_field{ c, t = fields[i].ty }) {
@@ -12017,6 +12149,7 @@ namespace check {
             let dft = list::items{ list = defaulted }
             if dft.len > 0 and dft.len == gone.len {
                 try! utf8::push{ &b, s = if dft.len == 1 { ": `..` at the end takes it from its default" } else { ": `..` at the end takes them from their defaults" } }
+                if not forward { forward_fix{ &c, e, items, msg = "take the missing fields from their defaults, with `..`" } }
             } else if dft.len > 0 {
                 try! utf8::push{ &b, s = " (`..` at the end takes " }
                 try! names{ fields = dft, &b }
@@ -12130,6 +12263,12 @@ namespace check {
         let rt = expr{ &c, e = b, exp = lt }
         let t = operand_type{ &c, lt, rt, a, b }
         if t == types::NO_TYPE {
+            let l = types::prune{ s = c.ty, t = lt }
+            let r = types::prune{ s = c.ty, t = rt }
+            if (types::is_int{ s = c.ty, t = l } or types::is_float{ s = c.ty, t = l }) and (types::is_int{ s = c.ty, t = r } or types::is_float{ s = c.ty, t = r }) {
+                as_suggestion{ &c, e = a, t = r }
+                as_suggestion{ &c, e = b, t = l }
+            }
             errorf{ &c, at, msg = @fmt("operands of `{}` have incompatible types: {} and {}; convert one with @as", opname, tstr{ c, t = lt }, tstr{ c, t = rt }) }
             return types::ERROR
         }
@@ -12905,6 +13044,10 @@ namespace check {
                 let h = hv ifnull 0
                 let above = if ln != hn { hn } else if ln { l < h } else { l > h }
                 if lv != null and hv != null and above {
+                    let two = try! alloc::make(diag::Edit, Heap){ realloc = arena::alloc, heap = c.heap, count = 2 }
+                    two[0] = diag::Edit{ span = args[1].span, text = source_text{ c, span = args[2].span } }
+                    two[1] = diag::Edit{ span = args[2].span, text = source_text{ c, span = args[1].span } }
+                    fix_edits{ &c, edits = two, safe = true, msg = "put the low bound first" }
                     errorf{ &c, at = expr_at{ e = args[1] }, msg = @fmt("@clamp's low bound, {}, is above its high bound, {}: write `@clamp(x, {}, {})`", str{ s = source_text{ c, span = args[1].span } }, str{ s = source_text{ c, span = args[2].span } }, str{ s = source_text{ c, span = args[2].span } }, str{ s = source_text{ c, span = args[1].span } }) }
                 }
             }
@@ -14848,6 +14991,36 @@ namespace check {
         note{ &c, at, msg = utf8::view{ b } }
     }
 
+    // A fix for the error reported next (diag::Fix), said just before it as a note is: the
+    // bytes of `at` become text. It is what the error's message says to write, and
+    // `ctxc check --fix` applies it. msg says what it does.
+    fn fix_at { mut c: Checker, at: source::Span, text: []u8, msg: utf8::String } {
+        diag::fix_one{ diags = c.diags, safe = true, msg, span = at, text }
+    }
+
+    // A fix that isn't applied without being chosen: one of several ways to go on, or a guess.
+    fn suggest_at { mut c: Checker, at: source::Span, text: []u8, msg: utf8::String } {
+        diag::fix_one{ diags = c.diags, safe = false, msg, span = at, text }
+    }
+
+    // A fix of several edits.
+    fn fix_edits { mut c: Checker, edits: []diag::Edit, safe: bool, msg: utf8::String } {
+        diag::fix{ diags = c.diags, safe, msg, edits }
+    }
+
+    // The span of nothing at offset `at` of the file span is in: where an edit inserts.
+    fn point { span: source::Span, at: u32 } -> source::Span {
+        return source::Span{ file = span.file, start = at, end = at }
+    }
+
+    // a and b as one text.
+    fn joined { c: Checker, a: []u8, b: []u8 } -> []u8 {
+        let mut m = message{ c }
+        try! utf8::push_bytes{ b = &m, s = a }
+        try! utf8::push_bytes{ b = &m, s = b }
+        return utf8::view{ b = m }.bytes
+    }
+
     // The note for an error about local v, at its declaration: "`v` is declared here", or for
     // an array literal's hidden local, at the literal.
     fn note_local { mut c: Checker, v: u32 } {
@@ -14891,6 +15064,19 @@ namespace check {
             i = i + 1
         }
         return false
+    }
+
+    // A suggestion for the error reported next: e converted to t, `@as(t, e)`. One of two,
+    // where either of two operands may be the one to convert.
+    fn as_suggestion { mut c: Checker, e: syntax::Expr, t: Id } {
+        // A literal's type that nothing has fixed, `{integer}`, is no type to write.
+        let shown = tstr{ c, t }
+        if shown.bytes.len == 0 or shown.bytes[0] == '{' { return }
+        let mut w = message{ c }
+        try! @fmt(&w, "@as({}, {})", tstr{ c, t }, str{ s = source_text{ c, span = e.span } })
+        let mut m = message{ c }
+        try! @fmt(&m, "convert `{}` to {}", str{ s = source_text{ c, span = e.span } }, tstr{ c, t })
+        suggest_at{ &c, at = e.span, text = utf8::view{ b = w }.bytes, msg = utf8::view{ b = m } }
     }
 
     fn nowhere {} -> source::Span {

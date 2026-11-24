@@ -86,6 +86,14 @@ then `{"type":"summary","errors":N,...}`. The text form has the same notes, inde
 their error. `ctxc test DIR --json` gives a record for each test and one for the run on
 standard output (ctxlang/spec.md §20, rule 15; §21, rules 8 to 11).
 
+**Let the compiler make the edits it is sure of.** `ctxc check --fix DIR` applies every fix
+that an error's message spells out and that leaves no choice (a pun that needs its field's
+name, `_ = ` before an unused result, `..` for missing fields, `(q + i).*`, a missing comma,
+and the rest of spec §21, rule 12), prints each as the lines before and after, and checks
+again; `--fix --dry-run` prints them and writes nothing. It never touches std or generated
+files, and it leaves the errors that need a choice: those carry suggestions in `--json`'s
+`fixes`, with `"safe":false`. Read what it printed before going on: the edits are yours.
+
 `kotor/tools/ctxc` builds ctxc from `ctxlang/bootstrap/ctxc.windows.c` when needed and sets
 `CTX_HOME`. In Git Bash, MSYS2's gcc fails silently unless `/g/Dev/msys64/mingw64/bin` comes first
 on `PATH`; the wrapper does that, so do the same for any other gcc call. PowerShell needs nothing.

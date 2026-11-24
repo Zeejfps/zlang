@@ -1,0 +1,4 @@
+fn main { mut io: Io } {
+    made::n{}
+    io::println_i64{ &io, n = made::twice{} }
+}
