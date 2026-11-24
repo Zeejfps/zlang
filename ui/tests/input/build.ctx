@@ -1,8 +1,9 @@
-// The input test: events, hot and active, press, focus, links, state, nodes and the scripted
-// driver (stage 7). How to run it: ui/AGENTS.md.
+// The input tests: events, hot and active, press, focus, links, state, nodes and the scripted
+// driver (stage 7). How to run them: ui/AGENTS.md.
 fn build { mut b: Build } {
     let exe = build::exe{ &b, name = "ui_test_input", root = "." }
     build::add_sources{ &b, exe, dir = "../../core" }
     build::add_sources{ &b, exe, dir = "../../record" }
     build::add_sources{ &b, exe, dir = "../../test" }
+    build::add_sources{ &b, exe, dir = "../support" }
 }

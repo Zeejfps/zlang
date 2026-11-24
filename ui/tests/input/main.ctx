@@ -1,57 +1,12 @@
-// Stage 7's test: events and the frame's input, hot and active, `press`, wheel and key taking,
+// Stage 7's tests: events and the frame's input, hot and active, `press`, wheel and key taking,
 // focus, tab order, links, hover-focus, the state table and its sweep, `animate`, the requests,
 // `describe` and `find_node`, and the scripted driver.
 //
-//   kotor/tools/ctxc run ui/tests/input                  (from the repository root)
+//   kotor/tools/ctxc test ui/tests/input                  (from the repository root)
 //
 // Interaction lags layout by a frame by design, so every check names the frame a result appears
 // on and checks the frames around it. Frames are counted from 1 in each check; `d.frames` is the
-// number of the frame just stepped. Exits 1 when any check fails.
-
-fn main { mut io: Io, mut mem: Mem } -> i32 {
-    let mut t = ui_test::Tally{ run = 0, failed = 0 }
-    let buf = mem::pages{ &mem, size = 134217728 } ifnull { return 1 }
-    let mut heap = arena::new{ buf }
-
-    check_click{ &io, &t, &heap }
-    check_release_elsewhere{ &io, &t, &heap }
-    check_same_frame{ &io, &t, &heap }
-    check_capture{ &io, &t, &heap }
-    check_lost_capture{ &io, &t, &heap }
-    check_overlap{ &io, &t, &heap }
-    check_multi_click{ &io, &t, &heap }
-    check_drag{ &io, &t, &heap }
-    check_disabled{ &io, &t, &heap }
-    check_hover_time{ &io, &t, &heap }
-    check_answers{ &io, &t, &heap }
-    check_event_timing{ &io, &t, &heap }
-    check_leave{ &io, &t, &heap }
-    check_full_input{ &io, &t, &heap }
-    check_keys{ &io, &t, &heap }
-    check_wake{ &io, &t, &heap }
-    check_shortcuts{ &io, &t, &heap }
-    check_wheel{ &io, &t, &heap }
-    check_tab{ &io, &t, &heap }
-    check_no_stops{ &io, &t, &heap }
-    check_links{ &io, &t, &heap }
-    check_hover_focus{ &io, &t, &heap }
-    check_focus_drop{ &io, &t, &heap }
-    check_focus_wait{ &io, &t, &heap }
-    check_modal{ &io, &t, &heap }
-    check_state{ &io, &t, &heap }
-    check_keep{ &io, &t, &heap }
-    check_full_state{ &io, &t, &heap }
-    check_animate{ &io, &t, &heap }
-    check_requests{ &io, &t, &heap }
-    check_nodes{ &io, &t, &heap }
-    check_driver{ &io, &t, &heap }
-    check_repeat{ &io, &t, &heap }
-    check_pixels{ &io, &t, &heap }
-
-    _ = @fmt(&io, "ui/tests/input: {} checks, {} failed\n", t.run, t.failed)
-    io::flush{ &io }
-    return if t.failed == 0 { 0 } else { 1 }
-}
+// number of the frame just stepped.
 
 // ---- the program under test: buttons built from the primitives
 
@@ -180,11 +135,6 @@ fn get_flags { it: ui::Interaction } -> u32 {
     return f
 }
 
-fn expect_flags { mut io: Io, mut t: ui_test::Tally, it: ui::Interaction, flags: u32, what: strlit } {
-    let got = get_flags{ it }
-    ui_test::expect{ &io, &t, ok = got == flags, what }
-    if got != flags { _ = @fmt(&io, "  expected flags {}, got {}\n", flags, got) }
-}
 
 fn move_to { mut ui: ui::Ui, x: i32, y: i32 } {
     _ = ui_test::move_pointer{ &ui, x, y }
@@ -202,39 +152,54 @@ fn release_left { mut ui: ui::Ui } {
 
 // A press and a release over a button: hovered from the frame after the move, pressed on the
 // frame after the press, clicked once on the frame after the release, and nothing more.
-fn check_click { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn clicks_on_the_frame_after_the_release { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut app = make_app{}
     add_spot{ &app, spot = make_spot{ name = "A", x = 10.0, y = 10.0, w = 100.0, h = 40.0 } }
 
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 1: A is recorded
-    expect_flags{ &io, &t, it = app.spots[0].it, flags = 0, what = "frame 1: nothing is hovered before the pointer comes" }
+    // frame 1: nothing is hovered before the pointer comes
+    @expect(&t, get_flags{ it = app.spots[0].it } == 0)
     move_to{ ui = &gui, x = 60, y = 30 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 2
-    expect_flags{ &io, &t, it = app.spots[0].it, flags = HOVERED | ENTERED, what = "frame 2: the move over A makes it hovered, and its hover begins" }
+    // frame 2: the move over A makes it hovered, and its hover begins
+    @expect(&t, get_flags{ it = app.spots[0].it } == HOVERED | ENTERED)
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 3
-    expect_flags{ &io, &t, it = app.spots[0].it, flags = HOVERED, what = "frame 3: still hovered; the hover began earlier" }
+    // frame 3: still hovered; the hover began earlier
+    @expect(&t, get_flags{ it = app.spots[0].it } == HOVERED)
     press_left{ ui = &gui }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 4
-    expect_flags{ &io, &t, it = app.spots[0].it, flags = HOVERED | PRESSED | HELD | FOCUSED, what = "frame 4: the press makes A active and focused" }
-    ui_test::expect{ &io, &t, ok = app.spots[0].it.clicks == 1, what = "frame 4: the press is the first click of its series" }
+    // frame 4: the press makes A active and focused
+    @expect(&t, get_flags{ it = app.spots[0].it } == HOVERED | PRESSED | HELD | FOCUSED)
+    // frame 4: the press is the first click of its series
+    @expect(&t, app.spots[0].it.clicks == 1)
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 5
-    expect_flags{ &io, &t, it = app.spots[0].it, flags = HOVERED | HELD | FOCUSED, what = "frame 5: held, not pressed again" }
-    ui_test::expect{ &io, &t, ok = app.spots[0].it.clicks == 0, what = "frame 5: no click count between the press and the release" }
+    // frame 5: held, not pressed again
+    @expect(&t, get_flags{ it = app.spots[0].it } == HOVERED | HELD | FOCUSED)
+    // frame 5: no click count between the press and the release
+    @expect(&t, app.spots[0].it.clicks == 0)
     release_left{ ui = &gui }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 6
-    expect_flags{ &io, &t, it = app.spots[0].it, flags = HOVERED | HELD | CLICKED | FOCUSED, what = "frame 6: the release clicks" }
+    // frame 6: the release clicks
+    @expect(&t, get_flags{ it = app.spots[0].it } == HOVERED | HELD | CLICKED | FOCUSED)
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 7
-    expect_flags{ &io, &t, it = app.spots[0].it, flags = HOVERED | FOCUSED, what = "frame 7: hovered and focused, nothing else" }
-    ui_test::expect{ &io, &t, ok = app.spots[0].clicks == 1 and app.spots[0].clicked_on == 6, what = "exactly one click, on frame 6" }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0 and gui.interact.active == ui::NO_ID, what = "every frame is clean and nothing is active after" }
+    // frame 7: hovered and focused, nothing else
+    @expect(&t, get_flags{ it = app.spots[0].it } == HOVERED | FOCUSED)
+    // exactly one click, on frame 6
+    @expect(&t, app.spots[0].clicks == 1 and app.spots[0].clicked_on == 6)
+    // every frame is clean and nothing is active after
+    @expect(&t, d.unclean == 0 and gui.interact.active == ui::NO_ID)
 }
 
 // A press over A and a release elsewhere clicks nothing; a release after coming back clicks.
-fn check_release_elsewhere { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn releases_elsewhere_without_a_click { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut app = make_app{}
     add_spot{ &app, spot = make_spot{ name = "A", x = 10.0, y = 10.0, w = 100.0, h = 40.0 } }
     move_to{ ui = &gui, x = 60, y = 30 }
@@ -244,14 +209,19 @@ fn check_release_elsewhere { mut io: Io, mut t: ui_test::Tally, mut heap: arena:
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 3: pressed
     move_to{ ui = &gui, x = 500, y = 500 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 4
-    expect_flags{ &io, &t, it = app.spots[0].it, flags = HELD | FOCUSED, what = "frame 4: held with the pointer off it, not hovered" }
-    ui_test::expect{ &io, &t, ok = app.spots[0].it.drag_x == 440 and app.spots[0].it.drag_y == 470, what = "frame 4: the drag is the way from the press" }
+    // frame 4: held with the pointer off it, not hovered
+    @expect(&t, get_flags{ it = app.spots[0].it } == HELD | FOCUSED)
+    // frame 4: the drag is the way from the press
+    @expect(&t, app.spots[0].it.drag_x == 440 and app.spots[0].it.drag_y == 470)
     release_left{ ui = &gui }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 5
-    expect_flags{ &io, &t, it = app.spots[0].it, flags = HELD | FOCUSED, what = "frame 5: the release elsewhere ends the hold without a click" }
+    // frame 5: the release elsewhere ends the hold without a click
+    @expect(&t, get_flags{ it = app.spots[0].it } == HELD | FOCUSED)
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 6
-    expect_flags{ &io, &t, it = app.spots[0].it, flags = FOCUSED, what = "frame 6: nothing holds A" }
-    ui_test::expect{ &io, &t, ok = app.spots[0].clicks == 0, what = "a release elsewhere gives no click" }
+    // frame 6: nothing holds A
+    @expect(&t, get_flags{ it = app.spots[0].it } == FOCUSED)
+    // a release elsewhere gives no click
+    @expect(&t, app.spots[0].clicks == 0)
 
     // Pressed, out and back in while held, released over it: a click.
     move_to{ ui = &gui, x = 60, y = 30 }
@@ -263,14 +233,18 @@ fn check_release_elsewhere { mut io: Io, mut t: ui_test::Tally, mut heap: arena:
     move_to{ ui = &gui, x = 20, y = 20 }
     release_left{ ui = &gui }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 10
-    ui_test::expect{ &io, &t, ok = app.spots[0].clicks == 1 and app.spots[0].clicked_on == 10, what = "out and back in while held, then released over it: one click, on frame 10" }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "the release checks are clean" }
+    // out and back in while held, then released over it: one click, on frame 10
+    @expect(&t, app.spots[0].clicks == 1 and app.spots[0].clicked_on == 10)
+    // the release checks are clean
+    @expect(&t, d.unclean == 0)
 }
 
 // A press and a release pushed before one frame still click, on that frame.
-fn check_same_frame { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn clicks_with_press_and_release_in_one_frame { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut app = make_app{}
     add_spot{ &app, spot = make_spot{ name = "A", x = 10.0, y = 10.0, w = 100.0, h = 40.0 } }
     move_to{ ui = &gui, x = 60, y = 30 }
@@ -279,17 +253,22 @@ fn check_same_frame { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     press_left{ ui = &gui }
     release_left{ ui = &gui }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 3
-    expect_flags{ &io, &t, it = app.spots[0].it, flags = HOVERED | PRESSED | HELD | CLICKED | FOCUSED, what = "frame 3: pressed and clicked in the frame both came before" }
+    // frame 3: pressed and clicked in the frame both came before
+    @expect(&t, get_flags{ it = app.spots[0].it } == HOVERED | PRESSED | HELD | CLICKED | FOCUSED)
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 4
-    expect_flags{ &io, &t, it = app.spots[0].it, flags = HOVERED | FOCUSED, what = "frame 4: nothing held" }
-    ui_test::expect{ &io, &t, ok = app.spots[0].clicks == 1 and app.spots[0].clicked_on == 3 and d.unclean == 0, what = "one click, on frame 3" }
+    // frame 4: nothing held
+    @expect(&t, get_flags{ it = app.spots[0].it } == HOVERED | FOCUSED)
+    // one click, on frame 3
+    @expect(&t, app.spots[0].clicks == 1 and app.spots[0].clicked_on == 3 and d.unclean == 0)
 }
 
 // While A holds the pointer, B under it is not hovered; a release over B clicks neither, and B's
 // hover begins on the frame after.
-fn check_capture { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn holds_the_pointer_while_active { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut app = make_app{}
     add_spot{ &app, spot = make_spot{ name = "A", x = 10.0, y = 10.0, w = 100.0, h = 40.0 } }
     add_spot{ &app, spot = make_spot{ name = "B", x = 200.0, y = 10.0, w = 100.0, h = 40.0 } }
@@ -297,25 +276,35 @@ fn check_capture { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 1
     press_left{ ui = &gui }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 2: A pressed
-    expect_flags{ &io, &t, it = app.spots[0].it, flags = HOVERED | ENTERED | PRESSED | HELD | FOCUSED, what = "frame 2: A hovered and pressed" }
+    // frame 2: A hovered and pressed
+    @expect(&t, get_flags{ it = app.spots[0].it } == HOVERED | ENTERED | PRESSED | HELD | FOCUSED)
     move_to{ ui = &gui, x = 250, y = 30 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 3
-    expect_flags{ &io, &t, it = app.spots[1].it, flags = 0, what = "frame 3: B under the pointer is not hovered while A is held" }
-    expect_flags{ &io, &t, it = app.spots[0].it, flags = HELD | FOCUSED, what = "frame 3: A is held and not hovered" }
-    ui_test::expect{ &io, &t, ok = gui.interact.hot == find_id{ ui = gui, name = "B" }, what = "frame 3: B is the hot id all the same" }
+    // frame 3: B under the pointer is not hovered while A is held
+    @expect(&t, get_flags{ it = app.spots[1].it } == 0)
+    // frame 3: A is held and not hovered
+    @expect(&t, get_flags{ it = app.spots[0].it } == HELD | FOCUSED)
+    // frame 3: B is the hot id all the same
+    @expect(&t, gui.interact.hot == find_id{ ui = gui, name = "B" })
     release_left{ ui = &gui }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 4
-    expect_flags{ &io, &t, it = app.spots[1].it, flags = 0, what = "frame 4: the release over B neither hovers nor clicks it" }
-    expect_flags{ &io, &t, it = app.spots[0].it, flags = HELD | FOCUSED, what = "frame 4: A lets go without a click" }
+    // frame 4: the release over B neither hovers nor clicks it
+    @expect(&t, get_flags{ it = app.spots[1].it } == 0)
+    // frame 4: A lets go without a click
+    @expect(&t, get_flags{ it = app.spots[0].it } == HELD | FOCUSED)
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 5
-    expect_flags{ &io, &t, it = app.spots[1].it, flags = HOVERED | ENTERED, what = "frame 5: B's hover begins once nothing is held" }
-    ui_test::expect{ &io, &t, ok = app.spots[0].clicks == 0 and app.spots[1].clicks == 0 and d.unclean == 0, what = "a press on A and a release on B click neither" }
+    // frame 5: B's hover begins once nothing is held
+    @expect(&t, get_flags{ it = app.spots[1].it } == HOVERED | ENTERED)
+    // a press on A and a release on B click neither
+    @expect(&t, app.spots[0].clicks == 0 and app.spots[1].clicks == 0 and d.unclean == 0)
 }
 
 // A widget that is active but not recorded for a frame loses the capture.
-fn check_lost_capture { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn loses_the_capture_when_not_recorded { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut app = make_app{}
     add_spot{ &app, spot = make_spot{ name = "A", x = 10.0, y = 10.0, w = 100.0, h = 40.0 } }
     move_to{ ui = &gui, x = 60, y = 30 }
@@ -323,47 +312,62 @@ fn check_lost_capture { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Aren
     press_left{ ui = &gui }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 2: pressed
     let a = find_id{ ui = gui, name = "A" }
-    ui_test::expect{ &io, &t, ok = gui.interact.active == a, what = "frame 2: A is active" }
+    // frame 2: A is active
+    @expect(&t, gui.interact.active == a)
     app.spots[0].shown = false
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 3: not recorded
-    ui_test::expect{ &io, &t, ok = gui.interact.active == ui::NO_ID, what = "frame 3: A was not recorded, so nothing is active after it" }
+    // frame 3: A was not recorded, so nothing is active after it
+    @expect(&t, gui.interact.active == ui::NO_ID)
     app.spots[0].shown = true
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 4: the button is still down
-    expect_flags{ &io, &t, it = app.spots[0].it, flags = 0, what = "frame 4: A back, but not held; the region was gone in frame 3, so not hovered either" }
+    // frame 4: A back, but not held; the region was gone in frame 3, so not hovered either
+    @expect(&t, get_flags{ it = app.spots[0].it } == 0)
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 5
-    expect_flags{ &io, &t, it = app.spots[0].it, flags = HOVERED | ENTERED, what = "frame 5: hovered again, still not held" }
+    // frame 5: hovered again, still not held
+    @expect(&t, get_flags{ it = app.spots[0].it } == HOVERED | ENTERED)
     release_left{ ui = &gui }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 6
-    expect_flags{ &io, &t, it = app.spots[0].it, flags = HOVERED, what = "frame 6: the release clicks nothing" }
-    ui_test::expect{ &io, &t, ok = app.spots[0].clicks == 0 and d.unclean == 0, what = "no click after the capture was lost" }
+    // frame 6: the release clicks nothing
+    @expect(&t, get_flags{ it = app.spots[0].it } == HOVERED)
+    // no click after the capture was lost
+    @expect(&t, app.spots[0].clicks == 0 and d.unclean == 0)
 }
 
 // Two overlapping regions: the one emitted later takes the pointer.
-fn check_overlap { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn gives_the_pointer_to_the_region_emitted_last { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut app = make_app{}
     add_spot{ &app, spot = make_spot{ name = "under", x = 10.0, y = 10.0, w = 100.0, h = 40.0 } }
     add_spot{ &app, spot = make_spot{ name = "over", x = 50.0, y = 20.0, w = 100.0, h = 40.0 } }
     move_to{ ui = &gui, x = 80, y = 30 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 1
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 2
-    expect_flags{ &io, &t, it = app.spots[0].it, flags = 0, what = "frame 2: the region emitted first is not hovered where they overlap" }
-    expect_flags{ &io, &t, it = app.spots[1].it, flags = HOVERED | ENTERED, what = "frame 2: the region emitted last is" }
+    // frame 2: the region emitted first is not hovered where they overlap
+    @expect(&t, get_flags{ it = app.spots[0].it } == 0)
+    // frame 2: the region emitted last is
+    @expect(&t, get_flags{ it = app.spots[1].it } == HOVERED | ENTERED)
     press_left{ ui = &gui }
     release_left{ ui = &gui }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 3
-    ui_test::expect{ &io, &t, ok = app.spots[1].clicks == 1 and app.spots[1].clicked_on == 3 and app.spots[0].clicks == 0, what = "frame 3: the click goes to the later region only" }
+    // frame 3: the click goes to the later region only
+    @expect(&t, app.spots[1].clicks == 1 and app.spots[1].clicked_on == 3 and app.spots[0].clicks == 0)
     move_to{ ui = &gui, x = 20, y = 30 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 4
-    expect_flags{ &io, &t, it = app.spots[0].it, flags = HOVERED | ENTERED, what = "frame 4: outside the overlap the first one is hovered" }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "the overlap frames are clean" }
+    // frame 4: outside the overlap the first one is hovered
+    @expect(&t, get_flags{ it = app.spots[0].it } == HOVERED | ENTERED)
+    // the overlap frames are clean
+    @expect(&t, d.unclean == 0)
 }
 
 // The host's click count arrives on the press and the click.
-fn check_multi_click { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn passes_the_hosts_click_count_on { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut app = make_app{}
     add_spot{ &app, spot = make_spot{ name = "A", x = 10.0, y = 10.0, w = 100.0, h = 40.0 } }
     move_to{ ui = &gui, x = 60, y = 30 }
@@ -371,26 +375,34 @@ fn check_multi_click { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena
     _ = ui_test::push_button{ ui = &gui, button = 0, down = true, clicks = 1 }
     _ = ui_test::push_button{ ui = &gui, button = 0, down = false, clicks = 1 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 2
-    ui_test::expect{ &io, &t, ok = app.spots[0].it.clicked and app.spots[0].it.clicks == 1, what = "frame 2: a first click counts 1" }
+    // frame 2: a first click counts 1
+    @expect(&t, app.spots[0].it.clicked and app.spots[0].it.clicks == 1)
     _ = ui_test::push_button{ ui = &gui, button = 0, down = true, clicks = 2 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 3
-    ui_test::expect{ &io, &t, ok = app.spots[0].it.pressed and app.spots[0].it.clicks == 2, what = "frame 3: the second press counts 2" }
+    // frame 3: the second press counts 2
+    @expect(&t, app.spots[0].it.pressed and app.spots[0].it.clicks == 2)
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 4
-    ui_test::expect{ &io, &t, ok = app.spots[0].it.held and app.spots[0].it.clicks == 0, what = "frame 4: held, no count" }
+    // frame 4: held, no count
+    @expect(&t, app.spots[0].it.held and app.spots[0].it.clicks == 0)
     _ = ui_test::push_button{ ui = &gui, button = 0, down = false, clicks = 2 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 5
-    ui_test::expect{ &io, &t, ok = app.spots[0].it.clicked and app.spots[0].it.clicks == 2, what = "frame 5: the double click's release counts 2" }
+    // frame 5: the double click's release counts 2
+    @expect(&t, app.spots[0].it.clicked and app.spots[0].it.clicks == 2)
     _ = ui_test::push_button{ ui = &gui, button = 0, down = true, clicks = 0 }
     _ = ui_test::push_button{ ui = &gui, button = 0, down = false, clicks = 0 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 6
-    ui_test::expect{ &io, &t, ok = app.spots[0].it.clicked and app.spots[0].it.clicks == 1, what = "frame 6: a host that counts nothing gives 1" }
-    ui_test::expect{ &io, &t, ok = app.spots[0].clicks == 3 and d.unclean == 0, what = "three clicks in all" }
+    // frame 6: a host that counts nothing gives 1
+    @expect(&t, app.spots[0].it.clicked and app.spots[0].it.clicks == 1)
+    // three clicks in all
+    @expect(&t, app.spots[0].clicks == 3 and d.unclean == 0)
 }
 
 // drag_x and drag_y follow the pointer from the press while held, the release frame included.
-fn check_drag { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn follows_a_drag_from_the_press { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut app = make_app{}
     add_spot{ &app, spot = make_spot{ name = "A", x = 10.0, y = 10.0, w = 100.0, h = 40.0 } }
     move_to{ ui = &gui, x = 60, y = 30 }
@@ -399,25 +411,31 @@ fn check_drag { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     move_to{ ui = &gui, x = 64, y = 33 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 2
     let it2 = app.spots[0].it
-    ui_test::expect{ &io, &t, ok = it2.pressed and it2.drag_x == 4 and it2.drag_y == 3, what = "frame 2: a move after the press in the same frame is already a drag" }
+    // frame 2: a move after the press in the same frame is already a drag
+    @expect(&t, it2.pressed and it2.drag_x == 4 and it2.drag_y == 3)
     move_to{ ui = &gui, x = 75, y = 20 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 3
     let it3 = app.spots[0].it
-    ui_test::expect{ &io, &t, ok = it3.held and it3.drag_x == 15 and it3.drag_y == -10, what = "frame 3: the drag is (15, -10)" }
+    // frame 3: the drag is (15, -10)
+    @expect(&t, it3.held and it3.drag_x == 15 and it3.drag_y == -10)
     move_to{ ui = &gui, x = 40, y = 25 }
     release_left{ ui = &gui }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 4
     let it4 = app.spots[0].it
-    ui_test::expect{ &io, &t, ok = it4.clicked and it4.drag_x == -20 and it4.drag_y == -5, what = "frame 4: the release frame has the last drag" }
+    // frame 4: the release frame has the last drag
+    @expect(&t, it4.clicked and it4.drag_x == -20 and it4.drag_y == -5)
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 5
     let it5 = app.spots[0].it
-    ui_test::expect{ &io, &t, ok = not it5.held and it5.drag_x == 0 and it5.drag_y == 0 and d.unclean == 0, what = "frame 5: no drag once let go" }
+    // frame 5: no drag once let go
+    @expect(&t, not it5.held and it5.drag_x == 0 and it5.drag_y == 0 and d.unclean == 0)
 }
 
 // A widget that is not enabled is hovered but never pressed, focused or a tab stop.
-fn check_disabled { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn hovers_but_never_presses_a_disabled_widget { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut app = make_app{}
     let mut off = make_spot{ name = "off", x = 10.0, y = 10.0, w = 100.0, h = 40.0 }
     off.opts.enabled = false
@@ -428,81 +446,113 @@ fn check_disabled { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } 
     release_left{ ui = &gui }
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 2
-    expect_flags{ &io, &t, it = app.spots[0].it, flags = HOVERED | ENTERED, what = "frame 2: a disabled widget is hovered and takes no press" }
-    ui_test::expect{ &io, &t, ok = gui.focus.focused == ui::NO_ID and gui.focus.stop_count == 0 and app.spots[0].clicks == 0, what = "frame 2: it is no tab stop and takes no focus" }
+    // frame 2: a disabled widget is hovered and takes no press
+    @expect(&t, get_flags{ it = app.spots[0].it } == HOVERED | ENTERED)
+    // frame 2: it is no tab stop and takes no focus
+    @expect(&t, gui.focus.focused == ui::NO_ID and gui.focus.stop_count == 0 and app.spots[0].clicks == 0)
 
     // Disabled while held: it lets go.
     app.spots[0].opts.enabled = true
     press_left{ ui = &gui }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 3
-    ui_test::expect{ &io, &t, ok = app.spots[0].it.held, what = "frame 3: enabled again, it is pressed" }
+    // frame 3: enabled again, it is pressed
+    @expect(&t, app.spots[0].it.held)
     app.spots[0].opts.enabled = false
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 4
-    ui_test::expect{ &io, &t, ok = not app.spots[0].it.held and gui.interact.active == ui::NO_ID, what = "frame 4: disabled while held, it lets go" }
-    ui_test::expect{ &io, &t, ok = gui.focus.focused != find_id{ ui = gui, name = "off" }, what = "frame 4: and loses focus" }
+    // frame 4: disabled while held, it lets go
+    @expect(&t, not app.spots[0].it.held and gui.interact.active == ui::NO_ID)
+    // frame 4: and loses focus
+    @expect(&t, gui.focus.focused != find_id{ ui = gui, name = "off" })
     release_left{ ui = &gui }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 5
-    ui_test::expect{ &io, &t, ok = app.spots[0].clicks == 0 and d.unclean == 0, what = "a disabled widget never clicks" }
+    // a disabled widget never clicks
+    @expect(&t, app.spots[0].clicks == 0 and d.unclean == 0)
 }
 
 // `entered` and the hover time: 0 on the frame the hover begins, then the frames' dt.
-fn check_hover_time { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn counts_the_hover_time_from_entering { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut app = make_app{}
     add_spot{ &app, spot = make_spot{ name = "A", x = 10.0, y = 10.0, w = 100.0, h = 40.0 } }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 1
     let a = find_id{ ui = gui, name = "A" }
-    ui_test::expect{ &io, &t, ok = is_near{ a = ui::get_time{ ui = gui }, b = 0.125 }, what = "frame 1: the time is the first dt" }
+    // frame 1: the time is the first dt
+    @expect(&t, is_near{ a = ui::get_time{ ui = gui }, b = 0.125 })
     move_to{ ui = &gui, x = 60, y = 30 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 2
-    ui_test::expect{ &io, &t, ok = ui::get_hover_time{ ui = gui, id = a } == 0.0, what = "frame 2: the hover began now, so its time is 0" }
+    // frame 2: the hover began now, so its time is 0
+    @expect(&t, ui::get_hover_time{ ui = gui, id = a } == 0.0)
     ui_test::step_frames{ &d, ui = &gui, show = show_app{ &app, _ }, count = 3 }    // 3, 4, 5
-    ui_test::expect{ &io, &t, ok = ui::get_hover_time{ ui = gui, id = a } == 0.375 and ui::get_time{ ui = gui } == 0.625, what = "frame 5: three frames of hover, five of time" }
-    ui_test::expect{ &io, &t, ok = not app.spots[0].it.entered and app.spots[0].it.hovered, what = "frame 5: hovered, not entered" }
+    // frame 5: three frames of hover, five of time
+    @expect(&t, ui::get_hover_time{ ui = gui, id = a } == 0.375 and ui::get_time{ ui = gui } == 0.625)
+    // frame 5: hovered, not entered
+    @expect(&t, not app.spots[0].it.entered and app.spots[0].it.hovered)
     move_to{ ui = &gui, x = 500, y = 500 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 6
-    ui_test::expect{ &io, &t, ok = ui::get_hover_time{ ui = gui, id = a } == 0.0 and not app.spots[0].it.hovered, what = "frame 6: not hovered, no hover time" }
+    // frame 6: not hovered, no hover time
+    @expect(&t, ui::get_hover_time{ ui = gui, id = a } == 0.0 and not app.spots[0].it.hovered)
     move_to{ ui = &gui, x = 60, y = 30 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 7
-    ui_test::expect{ &io, &t, ok = app.spots[0].it.entered and ui::get_hover_time{ ui = gui, id = a } == 0.0 and d.unclean == 0, what = "frame 7: back over it, the hover begins again" }
+    // frame 7: back over it, the hover begins again
+    @expect(&t, app.spots[0].it.entered and ui::get_hover_time{ ui = gui, id = a } == 0.0 and d.unclean == 0)
 }
 
 // ---- events
 
 // push_event answers true over a region of the last frame and false over empty space.
-fn check_answers { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn answers_whether_an_event_is_over_the_ui { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut app = make_app{}
     add_spot{ &app, spot = make_spot{ name = "A", x = 10.0, y = 10.0, w = 100.0, h = 40.0 } }
-    ui_test::expect{ &io, &t, ok = not ui_test::move_pointer{ ui = &gui, x = 60, y = 30 }, what = "before any frame nothing takes the pointer" }
+    // before any frame nothing takes the pointer
+    @expect(&t, not ui_test::move_pointer{ ui = &gui, x = 60, y = 30 })
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 1
-    ui_test::expect{ &io, &t, ok = ui_test::move_pointer{ ui = &gui, x = 60, y = 30 }, what = "after frame 1 a move over A is taken" }
-    ui_test::expect{ &io, &t, ok = ui_test::turn_wheel{ ui = &gui, dx = 0.0, dy = 1.0 }, what = "and so is the wheel there" }
-    ui_test::expect{ &io, &t, ok = not ui_test::move_pointer{ ui = &gui, x = 500, y = 500 }, what = "a move over empty space is not" }
-    ui_test::expect{ &io, &t, ok = not ui_test::push_button{ ui = &gui, button = 0, down = true, clicks = 1 }, what = "nor is a press there" }
-    ui_test::expect{ &io, &t, ok = not ui_test::push_button{ ui = &gui, button = 0, down = false, clicks = 1 }, what = "nor its release" }
-    ui_test::expect{ &io, &t, ok = not ui_test::tap_key{ ui = &gui, key = ui::Key::a, mods = 0 }, what = "a key is not taken while nothing asked for text input" }
-    ui_test::expect{ &io, &t, ok = not ui_test::push_button{ ui = &gui, button = 9, down = true, clicks = 1 }, what = "a button past the fifth is ignored" }
-    ui_test::expect{ &io, &t, ok = not ui::push_event{ ui = &gui, event = ui::Event::focus{ gained = true } }, what = "window focus is never the UI's" }
+    // after frame 1 a move over A is taken
+    @expect(&t, ui_test::move_pointer{ ui = &gui, x = 60, y = 30 })
+    // and so is the wheel there
+    @expect(&t, ui_test::turn_wheel{ ui = &gui, dx = 0.0, dy = 1.0 })
+    // a move over empty space is not
+    @expect(&t, not ui_test::move_pointer{ ui = &gui, x = 500, y = 500 })
+    // nor is a press there
+    @expect(&t, not ui_test::push_button{ ui = &gui, button = 0, down = true, clicks = 1 })
+    // nor its release
+    @expect(&t, not ui_test::push_button{ ui = &gui, button = 0, down = false, clicks = 1 })
+    // a key is not taken while nothing asked for text input
+    @expect(&t, not ui_test::tap_key{ ui = &gui, key = ui::Key::a, mods = 0 })
+    // a button past the fifth is ignored
+    @expect(&t, not ui_test::push_button{ ui = &gui, button = 9, down = true, clicks = 1 })
+    // window focus is never the UI's
+    @expect(&t, not ui::push_event{ ui = &gui, event = ui::Event::focus{ gained = true } })
 
     // A widget that holds the pointer takes every pointer event.
     move_to{ ui = &gui, x = 60, y = 30 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 2
-    ui_test::expect{ &io, &t, ok = ui_test::push_button{ ui = &gui, button = 0, down = true, clicks = 1 }, what = "a press over A is taken" }
+    // a press over A is taken
+    @expect(&t, ui_test::push_button{ ui = &gui, button = 0, down = true, clicks = 1 })
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 3: A active
-    ui_test::expect{ &io, &t, ok = ui_test::move_pointer{ ui = &gui, x = 500, y = 500 }, what = "while A is held a move over empty space is taken" }
-    ui_test::expect{ &io, &t, ok = ui_test::push_button{ ui = &gui, button = 0, down = false, clicks = 1 }, what = "and so is the release there" }
+    // while A is held a move over empty space is taken
+    @expect(&t, ui_test::move_pointer{ ui = &gui, x = 500, y = 500 })
+    // and so is the release there
+    @expect(&t, ui_test::push_button{ ui = &gui, button = 0, down = false, clicks = 1 })
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 4: let go
-    ui_test::expect{ &io, &t, ok = not ui_test::move_pointer{ ui = &gui, x = 501, y = 500 }, what = "once let go, empty space is the host's again" }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "the answer frames are clean" }
+    // once let go, empty space is the host's again
+    @expect(&t, not ui_test::move_pointer{ ui = &gui, x = 501, y = 500 })
+    // the answer frames are clean
+    @expect(&t, d.unclean == 0)
 }
 
 // An event pushed while a frame is open belongs to the next frame; one pushed between frames to
 // the next frame as well, and the frame being recorded never changes its input.
-fn check_event_timing { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
+#test
+fn gives_events_to_the_next_frame { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
     let mut app = make_app{}
     add_spot{ &app, spot = make_spot{ name = "A", x = 10.0, y = 10.0, w = 100.0, h = 40.0 } }
     let info = ui::FrameInfo{ width = 800, height = 600, scale = 1.0, dt = 0.125 }
@@ -513,46 +563,60 @@ fn check_event_timing { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Aren
     move_to{ ui = &gui, x = 60, y = 30 }                                       // between 1 and 2
     ui::begin_frame{ ui = &gui, frame = info }                                     // 2
     let p = ui::get_pointer{ ui = gui }
-    ui_test::expect{ &io, &t, ok = p.x == 60 and p.y == 30, what = "frame 2: a move pushed between frames is the next frame's" }
+    // frame 2: a move pushed between frames is the next frame's
+    @expect(&t, p.x == 60 and p.y == 30)
     move_to{ ui = &gui, x = 500, y = 500 }
     press_left{ ui = &gui }
     let p2 = ui::get_pointer{ ui = gui }
-    ui_test::expect{ &io, &t, ok = p2.x == 60 and p2.y == 30, what = "frame 2: a move pushed during the frame does not change it" }
+    // frame 2: a move pushed during the frame does not change it
+    @expect(&t, p2.x == 60 and p2.y == 30)
     let it2 = ui::press{ ui = &gui, id = a, opts = ui::PressOpts{ .. } }
-    ui_test::expect{ &io, &t, ok = it2.hovered and not it2.pressed, what = "frame 2: a press pushed during the frame is not in it" }
+    // frame 2: a press pushed during the frame is not in it
+    @expect(&t, it2.hovered and not it2.pressed)
     show_app{ ui = &gui, &app }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "frame 2: a second press of one id in a frame is allowed" }
+    // frame 2: a second press of one id in a frame is allowed
+    @expect(&t, is_clean{ ui = gui })
     ui::begin_frame{ ui = &gui, frame = info }                                     // 3
     let p3 = ui::get_pointer{ ui = gui }
-    ui_test::expect{ &io, &t, ok = p3.x == 500 and gui.input.now.pressed[0] and gui.interact.hot == ui::NO_ID, what = "frame 3: what was pushed during frame 2 is frame 3's" }
+    // frame 3: what was pushed during frame 2 is frame 3's
+    @expect(&t, p3.x == 500 and gui.input.now.pressed[0] and gui.interact.hot == ui::NO_ID)
     show_app{ ui = &gui, &app }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = not app.spots[0].it.pressed and is_clean{ ui = gui }, what = "frame 3: the press lands over empty space, as pushed" }
+    // frame 3: the press lands over empty space, as pushed
+    @expect(&t, not app.spots[0].it.pressed and is_clean{ ui = gui })
 }
 
 // pointer_leave clears the hot id; with nothing held it is not the UI's.
-fn check_leave { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn clears_the_hot_id_when_the_pointer_leaves { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut app = make_app{}
     add_spot{ &app, spot = make_spot{ name = "A", x = 10.0, y = 10.0, w = 100.0, h = 40.0 } }
     move_to{ ui = &gui, x = 60, y = 30 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 1
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 2
-    ui_test::expect{ &io, &t, ok = app.spots[0].it.hovered and d.requests.wants_pointer, what = "frame 2: hovered, and the UI wants the pointer" }
-    ui_test::expect{ &io, &t, ok = not ui_test::leave_window{ ui = &gui }, what = "a leave with nothing held is not the UI's" }
+    // frame 2: hovered, and the UI wants the pointer
+    @expect(&t, app.spots[0].it.hovered and d.requests.wants_pointer)
+    // a leave with nothing held is not the UI's
+    @expect(&t, not ui_test::leave_window{ ui = &gui })
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 3
-    ui_test::expect{ &io, &t, ok = not app.spots[0].it.hovered and gui.interact.hot == ui::NO_ID and not d.requests.wants_pointer, what = "frame 3: the leave cleared the hot id" }
+    // frame 3: the leave cleared the hot id
+    @expect(&t, not app.spots[0].it.hovered and gui.interact.hot == ui::NO_ID and not d.requests.wants_pointer)
     move_to{ ui = &gui, x = 60, y = 30 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 4
-    ui_test::expect{ &io, &t, ok = app.spots[0].it.entered and d.unclean == 0, what = "frame 4: back in, the hover begins again" }
+    // frame 4: back in, the hover begins again
+    @expect(&t, app.spots[0].it.entered and d.unclean == 0)
 }
 
 // More input than a frame takes is dropped and counted in the frame that reads it.
-fn check_full_input { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn drops_and_counts_input_past_a_full_frame { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut app = make_app{}
     for _ in 0..65 { _ = ui::push_event{ ui = &gui, event = ui::Event::key{ key = ui::Key::a, down = true, repeat = false, mods = 0 } } }
     // 1280 bytes in events of 32: the first 1024 fit, the last eight events do not.
@@ -560,30 +624,38 @@ fn check_full_input { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     for _ in 0..5 { _ = ui_test::type_text{ ui = &gui, text = big[..] } }
     ui::begin_frame{ ui = &gui, frame = d.info }                                   // 1
     let keys = ui::get_keys{ ui = gui }
-    ui_test::expect{ &io, &t, ok = keys.len == 64, what = "frame 1: a frame holds 64 key strokes" }
+    // frame 1: a frame holds 64 key strokes
+    @expect(&t, keys.len == 64)
     let typed = ui::take_typed{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = typed.len == 1024, what = "frame 1: typed text is kept up to 1024 bytes, in whole events" }
+    // frame 1: typed text is kept up to 1024 bytes, in whole events
+    @expect(&t, typed.len == 1024)
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.stats.dropped == 9 and ui::has_problem{ ui = gui, kind = ui::ProblemKind::events_full }, what = "frame 1: the stroke and the eight text events that did not fit are counted" }
+    // frame 1: the stroke and the eight text events that did not fit are counted
+    @expect(&t, gui.stats.dropped == 9 and ui::has_problem{ ui = gui, kind = ui::ProblemKind::events_full })
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 2
-    ui_test::expect{ &io, &t, ok = d.unclean == 0 and ui::get_keys{ ui = gui }.len == 0, what = "frame 2: clean and empty again" }
+    // frame 2: clean and empty again
+    @expect(&t, d.unclean == 0 and ui::get_keys{ ui = gui }.len == 0)
 
     // A paste bigger than a frame takes is dropped whole, not cut.
-    let huge = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65537 } iferr { return }
+    let huge = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65537 }
     _ = ui::push_event{ ui = &gui, event = ui::Event::paste{ text = huge[..] } }
     _ = ui::push_event{ ui = &gui, event = ui::Event::paste{ text = "ok" } }
     ui::begin_frame{ ui = &gui, frame = d.info }                                   // 3
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = ui::take_paste{ ui = &gui }, b = "ok" } and ui::take_paste{ ui = &gui }.len == 0, what = "frame 3: only the paste that fits arrives, and only once" }
+    // frame 3: only the paste that fits arrives, and only once
+    @expect(&t, slice::eq_bytes{ a = ui::take_paste{ ui = &gui }, b = "ok" } and ui::take_paste{ ui = &gui }.len == 0)
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.stats.dropped == 1 and ui::has_problem{ ui = gui, kind = ui::ProblemKind::events_full }, what = "frame 3: the big paste is counted" }
+    // frame 3: the big paste is counted
+    @expect(&t, gui.stats.dropped == 1 and ui::has_problem{ ui = gui, kind = ui::ProblemKind::events_full })
 }
 
 // The strokes a frame leaves are the next frame's shortcuts: taken once, by exact modifiers, not
 // those a widget took nor Tab or a plain arrow, not behind a modal; the frame that leaves them asks
 // for the next at once. Alt pressed and released alone is a stroke of its own.
-fn check_shortcuts { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn leaves_strokes_for_shortcuts { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::n, mods = ui::MOD_CTRL }
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::f2, mods = 0 }
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
@@ -594,7 +666,8 @@ fn check_shortcuts { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena }
     _ = ui::take_key{ ui = &gui, key = ui::Key::enter, mods = 0 }                 // a widget takes Enter
     ui::end_frame{ ui = &gui }
     let r1 = ui::take_requests{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = none_yet and ui_test::has_wake{ requests = r1, want = 0.0 }, what = "shortcuts: none in the keys' frame, which asks for the next at once" }
+    // shortcuts: none in the keys' frame, which asks for the next at once
+    @expect(&t, none_yet and ui_check::has_wake{ requests = r1, want = 0.0 })
     ui::begin_frame{ ui = &gui, frame = d.info }                                   // 2
     let plain_n = ui::take_shortcut{ ui = &gui, shortcut = ui::Shortcut{ key = ui::Key::n, mods = 0 } }
     let ctrl_n = ui::take_shortcut{ ui = &gui, shortcut = ui::Shortcut{ key = ui::Key::n, mods = ui::MOD_CTRL } }
@@ -605,13 +678,14 @@ fn check_shortcuts { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena }
     let enter = ui::take_shortcut{ ui = &gui, shortcut = ui::Shortcut{ key = ui::Key::enter, .. } }
     let nothing = ui::take_shortcut{ ui = &gui, shortcut = ui::Shortcut{ .. } }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = not plain_n and ctrl_n and not again and f2 and not tab and not left and not enter and not nothing,
-        what = "shortcuts: the next frame has Ctrl+N (by its exact modifiers, once) and F2; not Tab, a plain arrow, a taken Enter, nor Key::none" }
+    // shortcuts: the next frame has Ctrl+N (by its exact modifiers, once) and F2; not Tab, a plain arrow, a taken Enter, nor Key::none
+    @expect(&t, not plain_n and ctrl_n and not again and f2 and not tab and not left and not enter and not nothing)
     let r2 = ui::take_requests{ ui = &gui }
     ui::begin_frame{ ui = &gui, frame = d.info }                                   // 3
     let gone = not ui::has_shortcuts{ ui = gui }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = r2.wake == null and gone, what = "shortcuts: a frame later they are gone, and nothing more is asked for" }
+    // shortcuts: a frame later they are gone, and nothing more is asked for
+    @expect(&t, r2.wake == null and gone)
 
     // Alt alone: down with only Alt held, up with nothing between.
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::alt, mods = 0 }
@@ -632,8 +706,8 @@ fn check_shortcuts { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena }
     let ks5 = ui::get_keys{ ui = gui }
     let not_alone = ks5.len == 1 and ks5[0].key == ui::Key::f and ks5[0].mods == ui::MOD_ALT
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = alone and not_alone,
-        what = "Alt alone is a Key::alt stroke; Alt with a key, with Ctrl (AltGr) or with a click between is not" }
+    // Alt alone is a Key::alt stroke; Alt with a key, with Ctrl (AltGr) or with a click between is not
+    @expect(&t, alone and not_alone)
 
     // How a shortcut is written.
     ui::begin_frame{ ui = &gui, frame = d.info }
@@ -642,15 +716,19 @@ fn check_shortcuts { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena }
         ui::write_shortcut{ shortcut = ui::Shortcut{ key = ui::Key::up, mods = ui::MOD_ALT }, _ }, ui::write_shortcut{ shortcut = ui::Shortcut{ key = ui::Key::delete, .. }, _ })
     let written = ui::take_text{ ui = &gui }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = written, b = "Ctrl+Shift+N|F2|Ctrl+=|Alt+Up|Del" }, what = "shortcuts are written Ctrl+Shift+N, F2, Ctrl+=, Alt+Up, Del" }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "shortcuts: the frames are clean" }
+    // shortcuts are written Ctrl+Shift+N, F2, Ctrl+=, Alt+Up, Del
+    @expect(&t, slice::eq_bytes{ a = written, b = "Ctrl+Shift+N|F2|Ctrl+=|Alt+Up|Del" })
+    // shortcuts: the frames are clean
+    @expect(&t, is_clean{ ui = gui })
 }
 
 // ask_wake: a frame's soonest ask is its Requests.wake; a NaN is ignored, a negative time is 0,
 // and the next frame starts with none.
-fn check_wake { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn asks_to_be_woken_at_the_soonest_time { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     ui::begin_frame{ ui = &gui, frame = d.info }
     ui::ask_wake{ ui = &gui, after = 0.5 }
     ui::ask_wake{ ui = &gui, after = 0.25 }
@@ -658,38 +736,50 @@ fn check_wake { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     ui::ask_wake{ ui = &gui, after = 0.0 / 0.0 }
     ui::end_frame{ ui = &gui }
     let r1 = ui::take_requests{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = ui_test::has_wake{ requests = r1, want = 0.25 } and not r1.animating, what = "wake: the soonest of 0.5, 0.25, 0.75 and a NaN" }
+    // wake: the soonest of 0.5, 0.25, 0.75 and a NaN
+    @expect(&t, ui_check::has_wake{ requests = r1, want = 0.25 } and not r1.animating)
     ui::begin_frame{ ui = &gui, frame = d.info }
     ui::ask_wake{ ui = &gui, after = -3.0 }
     ui::end_frame{ ui = &gui }
     let r2 = ui::take_requests{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = ui_test::has_wake{ requests = r2, want = 0.0 }, what = "wake: a time before now is now" }
+    // wake: a time before now is now
+    @expect(&t, ui_check::has_wake{ requests = r2, want = 0.0 })
     ui::begin_frame{ ui = &gui, frame = d.info }
     ui::end_frame{ ui = &gui }
     let r3 = ui::take_requests{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = r3.wake == null and is_clean{ ui = gui }, what = "wake: a frame that asks for none has none" }
+    // wake: a frame that asks for none has none
+    @expect(&t, r3.wake == null and is_clean{ ui = gui })
 }
 
 // take_key consumes a stroke so later code does not see it; get_keys and take_key_at walk them.
-fn check_keys { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn takes_keys_so_later_code_does_not_see_them { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::enter, mods = 0 }
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::enter, mods = ui::MOD_SHIFT }
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::left, mods = 0 }
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::enter, mods = 0 }
     ui::begin_frame{ ui = &gui, frame = d.info }
-    ui_test::expect{ &io, &t, ok = ui::get_keys{ ui = gui }.len == 4, what = "four strokes: releases are not strokes" }
-    ui_test::expect{ &io, &t, ok = ui::take_key{ ui = &gui, key = ui::Key::enter, mods = 0 }, what = "the first plain Enter is taken" }
-    ui_test::expect{ &io, &t, ok = ui::take_key{ ui = &gui, key = ui::Key::enter, mods = 0 }, what = "and the second" }
-    ui_test::expect{ &io, &t, ok = not ui::take_key{ ui = &gui, key = ui::Key::enter, mods = 0 }, what = "later code sees no plain Enter" }
+    // four strokes: releases are not strokes
+    @expect(&t, ui::get_keys{ ui = gui }.len == 4)
+    // the first plain Enter is taken
+    @expect(&t, ui::take_key{ ui = &gui, key = ui::Key::enter, mods = 0 })
+    // and the second
+    @expect(&t, ui::take_key{ ui = &gui, key = ui::Key::enter, mods = 0 })
+    // later code sees no plain Enter
+    @expect(&t, not ui::take_key{ ui = &gui, key = ui::Key::enter, mods = 0 })
     let left = ui::get_keys{ ui = gui }
-    ui_test::expect{ &io, &t, ok = left.len == 2 and left[0].key == ui::Key::enter and left[0].mods == ui::MOD_SHIFT and left[1].key == ui::Key::left, what = "Shift+Enter and Left are left, in order" }
+    // Shift+Enter and Left are left, in order
+    @expect(&t, left.len == 2 and left[0].key == ui::Key::enter and left[0].mods == ui::MOD_SHIFT and left[1].key == ui::Key::left)
     ui::take_key_at{ ui = &gui, index = 0 }
     ui::take_key_at{ ui = &gui, index = 5 }
-    ui_test::expect{ &io, &t, ok = ui::get_keys{ ui = gui }.len == 1 and ui::get_keys{ ui = gui }[0].key == ui::Key::left, what = "take_key_at takes one stroke, and one past the end nothing" }
+    // take_key_at takes one stroke, and one past the end nothing
+    @expect(&t, ui::get_keys{ ui = gui }.len == 1 and ui::get_keys{ ui = gui }[0].key == ui::Key::left)
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "the key frame is clean" }
+    // the key frame is clean
+    @expect(&t, is_clean{ ui = gui })
 
     // Typed text and strokes keep their order: each stroke knows the text pushed before it.
     _ = ui_test::type_text{ ui = &gui, text = "ab" }
@@ -700,8 +790,8 @@ fn check_keys { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     _ = ui_test::type_text{ ui = &gui, text = "de" }
     ui::begin_frame{ ui = &gui, frame = d.info }
     let ks = ui::get_keys{ ui = gui }
-    ui_test::expect{ &io, &t, ok = ks.len == 3 and ks[0].typed == 2 and ks[1].typed == 2 and ks[2].typed == 3,
-        what = "typed order: a stroke counts the typed bytes pushed before it (2, 2, 3)" }
+    // typed order: a stroke counts the typed bytes pushed before it (2, 2, 3)
+    @expect(&t, ks.len == 3 and ks[0].typed == 2 and ks[1].typed == 2 and ks[2].typed == 3)
     let k0 = ks[0]
     let k1 = ks[1]
     let k2 = ks[2]
@@ -710,17 +800,21 @@ fn check_keys { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     let third = ui::take_typed_before{ ui = &gui, key = k2 }
     let again = ui::take_typed_before{ ui = &gui, key = k0 }
     let rest = ui::take_typed{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = first, b = "ab" } and none.len == 0 and slice::eq_bytes{ a = third, b = "c" } and again.len == 0 and slice::eq_bytes{ a = rest, b = "de" },
-        what = "typed order: the text before each stroke once, in order, and the rest after the last" }
-    ui_test::expect{ &io, &t, ok = ui::take_typed{ ui = &gui }.len == 0, what = "typed order: nothing is left once the rest is taken" }
+    // typed order: the text before each stroke once, in order, and the rest after the last
+    @expect(&t, slice::eq_bytes{ a = first, b = "ab" } and none.len == 0 and slice::eq_bytes{ a = third, b = "c" } and again.len == 0 and slice::eq_bytes{ a = rest, b = "de" })
+    // typed order: nothing is left once the rest is taken
+    @expect(&t, ui::take_typed{ ui = &gui }.len == 0)
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "typed order: the frame is clean" }
+    // typed order: the frame is clean
+    @expect(&t, is_clean{ ui = gui })
 }
 
 // The wheel goes to a widget only while the pointer is over it or what is inside it, once.
-fn check_wheel { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn gives_the_wheel_to_the_widget_under_the_pointer { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut app = make_app{}
     app.holder = "list"
     add_spot{ &app, spot = make_spot{ name = "row", x = 10.0, y = 10.0, w = 100.0, h = 40.0 } }
@@ -733,12 +827,17 @@ fn check_wheel { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     let other = find_id{ ui = gui, name = "other" }
     let list = find_id{ ui = gui, name = "list" }
     let row = find_id{ ui = gui, name = "row" }
-    ui_test::expect{ &io, &t, ok = ui::take_wheel{ ui = &gui, id = other } == 0.0, what = "a widget away from the pointer gets no wheel" }
-    ui_test::expect{ &io, &t, ok = ui::take_wheel{ ui = &gui, id = list } == 3.0, what = "the element around the row under the pointer gets the frame's whole wheel" }
-    ui_test::expect{ &io, &t, ok = ui::take_wheel{ ui = &gui, id = row } == 0.0, what = "once taken, nobody else gets it" }
-    ui_test::expect{ &io, &t, ok = ui::take_wheel_x{ ui = &gui, id = row } == 0.5, what = "the horizontal wheel is taken on its own" }
+    // a widget away from the pointer gets no wheel
+    @expect(&t, ui::take_wheel{ ui = &gui, id = other } == 0.0)
+    // the element around the row under the pointer gets the frame's whole wheel
+    @expect(&t, ui::take_wheel{ ui = &gui, id = list } == 3.0)
+    // once taken, nobody else gets it
+    @expect(&t, ui::take_wheel{ ui = &gui, id = row } == 0.0)
+    // the horizontal wheel is taken on its own
+    @expect(&t, ui::take_wheel_x{ ui = &gui, id = row } == 0.5)
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "the wheel frame is clean" }
+    // the wheel frame is clean
+    @expect(&t, is_clean{ ui = gui })
 }
 
 // ---- focus
@@ -756,9 +855,11 @@ fn add_focus_spots { mut app: App } {
 }
 
 // Tab and Shift+Tab walk the focusable, enabled widgets in recording order, wrapping.
-fn check_tab { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn walks_tab_stops_in_recording_order { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut app = make_app{}
     add_focus_spots{ &app }
     let a = find_id{ ui = gui, name = "A" }
@@ -767,42 +868,54 @@ fn check_tab { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 1
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 2
-    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = a } and not app.spots[0].it.focused, what = "frame 2: Tab focuses the first stop at the end of the frame, after A was recorded" }
+    // frame 2: Tab focuses the first stop at the end of the frame, after A was recorded
+    @expect(&t, ui::is_focused{ ui = gui, id = a } and not app.spots[0].it.focused)
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 3
-    ui_test::expect{ &io, &t, ok = app.spots[0].it.focused, what = "frame 3: A's Interaction says focused" }
+    // frame 3: A's Interaction says focused
+    @expect(&t, app.spots[0].it.focused)
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 4
-    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = b }, what = "frame 4: Tab skips the unfocusable and goes to B" }
+    // frame 4: Tab skips the unfocusable and goes to B
+    @expect(&t, ui::is_focused{ ui = gui, id = b })
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 5
-    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = c }, what = "frame 5: Tab skips the disabled and goes to C" }
+    // frame 5: Tab skips the disabled and goes to C
+    @expect(&t, ui::is_focused{ ui = gui, id = c })
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 6
-    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = a }, what = "frame 6: Tab wraps to A" }
+    // frame 6: Tab wraps to A
+    @expect(&t, ui::is_focused{ ui = gui, id = a })
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = ui::MOD_SHIFT }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 7
-    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = c }, what = "frame 7: Shift+Tab wraps back to C" }
+    // frame 7: Shift+Tab wraps back to C
+    @expect(&t, ui::is_focused{ ui = gui, id = c })
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = ui::MOD_SHIFT }
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = ui::MOD_SHIFT }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 8
-    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = a }, what = "frame 8: two Shift+Tabs in one frame step twice" }
+    // frame 8: two Shift+Tabs in one frame step twice
+    @expect(&t, ui::is_focused{ ui = gui, id = a })
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = ui::MOD_CTRL }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 9
-    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = a }, what = "frame 9: Ctrl+Tab does not move focus" }
+    // frame 9: Ctrl+Tab does not move focus
+    @expect(&t, ui::is_focused{ ui = gui, id = a })
 
     // A Tab a widget takes does not move focus.
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
     ui::begin_frame{ ui = &gui, frame = d.info }                                   // 10
     show_app{ ui = &gui, &app }
-    ui_test::expect{ &io, &t, ok = ui::take_key{ ui = &gui, key = ui::Key::tab, mods = 0 }, what = "frame 10: a widget takes the Tab" }
+    // frame 10: a widget takes the Tab
+    @expect(&t, ui::take_key{ ui = &gui, key = ui::Key::tab, mods = 0 })
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = a } and is_clean{ ui = gui } and d.unclean == 0, what = "frame 10: a taken Tab leaves focus where it was" }
+    // frame 10: a taken Tab leaves focus where it was
+    @expect(&t, ui::is_focused{ ui = gui, id = a } and is_clean{ ui = gui } and d.unclean == 0)
 }
 
 // Tab with no focusable widget does nothing and records nothing.
-fn check_no_stops { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn tabs_through_nothing_without_stops { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut app = make_app{}
     let mut plain = make_spot{ name = "plain", x = 10.0, y = 10.0, w = 100.0, h = 40.0 }
     plain.opts.focusable = false
@@ -811,14 +924,17 @@ fn check_no_stops { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } 
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = ui::MOD_SHIFT }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 2
-    ui_test::expect{ &io, &t, ok = gui.focus.focused == ui::NO_ID and d.unclean == 0, what = "frame 2: Tab and Shift+Tab with no stops leave nothing focused" }
+    // frame 2: Tab and Shift+Tab with no stops leave nothing focused
+    @expect(&t, gui.focus.focused == ui::NO_ID and d.unclean == 0)
 }
 
 // An arrow key with no modifier follows the focused widget's link, to an id that is a stop of
 // the frame.
-fn check_links { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn follows_a_links_arrow_keys { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut app = make_app{}
     let a = find_id{ ui = gui, name = "A" }
     let b = find_id{ ui = gui, name = "B" }
@@ -832,31 +948,40 @@ fn check_links { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 1
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::down, mods = 0 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 2
-    ui_test::expect{ &io, &t, ok = gui.focus.focused == ui::NO_ID, what = "frame 2: an arrow with nothing focused does nothing" }
+    // frame 2: an arrow with nothing focused does nothing
+    @expect(&t, gui.focus.focused == ui::NO_ID)
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 3
-    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = a }, what = "frame 3: Tab focuses A" }
+    // frame 3: Tab focuses A
+    @expect(&t, ui::is_focused{ ui = gui, id = a })
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::down, mods = 0 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 4
-    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = b }, what = "frame 4: Down follows A's link to B" }
+    // frame 4: Down follows A's link to B
+    @expect(&t, ui::is_focused{ ui = gui, id = b })
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::down, mods = 0 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 5
-    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = b }, what = "frame 5: B has no Down link: focus stays" }
+    // frame 5: B has no Down link: focus stays
+    @expect(&t, ui::is_focused{ ui = gui, id = b })
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::up, mods = ui::MOD_SHIFT }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 6
-    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = b }, what = "frame 6: Shift+Up is not a link key" }
+    // frame 6: Shift+Up is not a link key
+    @expect(&t, ui::is_focused{ ui = gui, id = b })
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::up, mods = 0 }
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::right, mods = 0 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 7
-    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = a }, what = "frame 7: Up goes back to A, and Right's link to an absent id is not followed" }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "the link frames are clean" }
+    // frame 7: Up goes back to A, and Right's link to an absent id is not followed
+    @expect(&t, ui::is_focused{ ui = gui, id = a })
+    // the link frames are clean
+    @expect(&t, d.unclean == 0)
 }
 
 // With focus_on_hover a widget takes focus when its hover begins, in that frame; keys may move
 // focus away while the pointer rests.
-fn check_hover_focus { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn focuses_on_hover { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut app = make_app{}
     let mut sa = make_spot{ name = "A", x = 10.0, y = 10.0, w = 100.0, h = 40.0 }
     sa.opts.focus_on_hover = true
@@ -869,27 +994,34 @@ fn check_hover_focus { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 1
     move_to{ ui = &gui, x = 60, y = 30 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 2
-    expect_flags{ &io, &t, it = app.spots[0].it, flags = HOVERED | ENTERED | FOCUSED, what = "frame 2: the hover over A focuses it in the same frame" }
+    // frame 2: the hover over A focuses it in the same frame
+    @expect(&t, get_flags{ it = app.spots[0].it } == HOVERED | ENTERED | FOCUSED)
     move_to{ ui = &gui, x = 60, y = 80 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 3
-    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = b } and app.spots[1].it.focused and app.spots[0].it.focused, what = "frame 3: the hover moves focus to B (A, recorded before B took it, still saw it)" }
+    // frame 3: the hover moves focus to B (A, recorded before B took it, still saw it)
+    @expect(&t, ui::is_focused{ ui = gui, id = b } and app.spots[1].it.focused and app.spots[0].it.focused)
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 4
-    ui_test::expect{ &io, &t, ok = app.spots[1].it.focused and not app.spots[0].it.focused, what = "frame 4: only B is focused" }
+    // frame 4: only B is focused
+    @expect(&t, app.spots[1].it.focused and not app.spots[0].it.focused)
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 5
-    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = a } and app.spots[1].it.focused, what = "frame 5: Tab moves focus to A at the frame's end" }
+    // frame 5: Tab moves focus to A at the frame's end
+    @expect(&t, ui::is_focused{ ui = gui, id = a } and app.spots[1].it.focused)
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 6
-    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = a } and app.spots[0].it.focused and not app.spots[1].it.focused,
-        what = "frame 6: B under the resting pointer does not take it back" }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "the hover-focus frames are clean" }
+    // frame 6: B under the resting pointer does not take it back
+    @expect(&t, ui::is_focused{ ui = gui, id = a } and app.spots[0].it.focused and not app.spots[1].it.focused)
+    // the hover-focus frames are clean
+    @expect(&t, d.unclean == 0)
 }
 
 // set_focus on a widget that is not recorded yet waits for it: through the end of the frame that
 // asked and two frames more. Recorded in that time it has the focus from the frame after it
 // appears; later it does not. A frame that also has a modal open after the call keeps the ask.
-fn check_focus_wait { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn waits_two_frames_for_a_focus_target { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut app = make_app{}
     add_focus_spots{ &app }
     let b = find_id{ ui = gui, name = "B" }
@@ -905,8 +1037,8 @@ fn check_focus_wait { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 4
     let seen4 = app.spots[2].it.focused
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 5
-    ui_test::expect{ &io, &t, ok = waits2 and waits3 and seen4 and app.spots[2].it.focused and ui::is_focused{ ui = gui, id = b },
-        what = "focus wait: a set_focus on B, not recorded, waits two frames; B recorded in the second has it there and keeps it" }
+    // focus wait: a set_focus on B, not recorded, waits two frames; B recorded in the second has it there and keeps it
+    @expect(&t, waits2 and waits3 and seen4 and app.spots[2].it.focused and ui::is_focused{ ui = gui, id = b })
 
     // One frame too late: asked before frame 6, B appears in frame 9: the ask is gone by then.
     ui::set_focus{ ui = &gui, id = ui::NO_ID }
@@ -919,15 +1051,17 @@ fn check_focus_wait { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     let gone = not ui::is_focused{ ui = gui, id = b }
     app.spots[2].shown = true
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 10
-    ui_test::expect{ &io, &t, ok = gone and not app.spots[2].it.focused and gui.focus.focused == ui::NO_ID,
-        what = "focus wait: an ask whose widget does not appear within two frames after it is dropped" }
+    // focus wait: an ask whose widget does not appear within two frames after it is dropped
+    @expect(&t, gone and not app.spots[2].it.focused and gui.focus.focused == ui::NO_ID)
 
     // Asked inside a frame before a widget recorded later in it, with a modal opening between:
     // the modal does not put the ask aside, and B has the focus the next frame.
     ui_test::step_frame{ &d, ui = &gui, show = show_ask_then_modal{ &app, b, _ } }     // 11
     ui_test::step_frame{ &d, ui = &gui, show = show_ask_then_modal{ &app, b, _ } }     // 12
-    ui_test::expect{ &io, &t, ok = app.spots[2].it.focused, what = "focus wait: asked before a modal opens and its widget is recorded in it, it has the focus" }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "focus wait: every frame is clean" }
+    // focus wait: asked before a modal opens and its widget is recorded in it, it has the focus
+    @expect(&t, app.spots[2].it.focused)
+    // focus wait: every frame is clean
+    @expect(&t, d.unclean == 0)
 }
 
 // A set_focus on `b` in the frame's first statement, the first frame only, then a modal holding the
@@ -940,48 +1074,58 @@ fn show_ask_then_modal { mut ui: ui::Ui, mut app: App, b: ui::Id } {
 }
 
 // Focus is dropped when its owner is not recorded, and by a left press no focusable widget takes.
-fn check_focus_drop { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn drops_focus_from_a_widget_not_recorded { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut app = make_app{}
     add_focus_spots{ &app }
     let a = find_id{ ui = gui, name = "A" }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 1
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 2
-    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = a }, what = "frame 2: A focused" }
+    // frame 2: A focused
+    @expect(&t, ui::is_focused{ ui = gui, id = a })
     app.spots[0].shown = false
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 3
-    ui_test::expect{ &io, &t, ok = gui.focus.focused == ui::NO_ID, what = "frame 3: A not recorded, so focus is dropped" }
+    // frame 3: A not recorded, so focus is dropped
+    @expect(&t, gui.focus.focused == ui::NO_ID)
     app.spots[0].shown = true
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 4
-    ui_test::expect{ &io, &t, ok = not app.spots[0].it.focused and gui.focus.focused == ui::NO_ID, what = "frame 4: back, A does not have it again" }
+    // frame 4: back, A does not have it again
+    @expect(&t, not app.spots[0].it.focused and gui.focus.focused == ui::NO_ID)
 
     // A press on a widget that takes no focus, and one on empty space, drop focus.
     ui::set_focus{ ui = &gui, id = a }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 5
-    ui_test::expect{ &io, &t, ok = app.spots[0].it.focused, what = "frame 5: set_focus between frames focuses A" }
+    // frame 5: set_focus between frames focuses A
+    @expect(&t, app.spots[0].it.focused)
     move_to{ ui = &gui, x = 60, y = 80 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 6
     press_left{ ui = &gui }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 7
-    ui_test::expect{ &io, &t, ok = app.spots[1].it.pressed and app.spots[0].it.focused and gui.focus.focused == ui::NO_ID, what = "frame 7: a press on the unfocusable widget drops focus at the frame's end" }
+    // frame 7: a press on the unfocusable widget drops focus at the frame's end
+    @expect(&t, app.spots[1].it.pressed and app.spots[0].it.focused and gui.focus.focused == ui::NO_ID)
     release_left{ ui = &gui }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 8
     ui::set_focus{ ui = &gui, id = a }
     move_to{ ui = &gui, x = 500, y = 500 }
     press_left{ ui = &gui }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 9
-    ui_test::expect{ &io, &t, ok = gui.focus.focused == ui::NO_ID, what = "frame 9: a press on empty space drops focus" }
+    // frame 9: a press on empty space drops focus
+    @expect(&t, gui.focus.focused == ui::NO_ID)
     release_left{ ui = &gui }
     move_to{ ui = &gui, x = 60, y = 230 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 10
     press_left{ ui = &gui }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 11
-    ui_test::expect{ &io, &t, ok = app.spots[4].it.focused and ui::is_focused{ ui = gui, id = find_id{ ui = gui, name = "C" } }, what = "frame 11: a press on C focuses it in that frame" }
+    // frame 11: a press on C focuses it in that frame
+    @expect(&t, app.spots[4].it.focused and ui::is_focused{ ui = gui, id = find_id{ ui = gui, name = "C" } })
     release_left{ ui = &gui }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 12
-    ui_test::expect{ &io, &t, ok = app.spots[4].clicks == 1 and app.spots[4].it.focused and d.unclean == 0, what = "frame 12: C clicked and keeps focus" }
+    // frame 12: C clicked and keeps focus
+    @expect(&t, app.spots[4].clicks == 1 and app.spots[4].it.focused and d.unclean == 0)
 }
 
 // A modal tree: what is behind it is never hot, its tab stops are the only ones Tab walks, and
@@ -998,29 +1142,39 @@ fn show_modal { mut ui: ui::Ui, mut app: App } {
     ui::end{ &ui, scope }
 }
 
-fn check_modal { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn keeps_input_inside_a_modal { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut app = make_app{}
     add_focus_spots{ &app }
     ui_test::step_frame{ &d, ui = &gui, show = show_modal{ &app, _ } }              // 1
-    ui_test::expect{ &io, &t, ok = ui_test::move_pointer{ ui = &gui, x = 60, y = 30 }, what = "with a modal up every pointer event is the UI's" }
-    ui_test::expect{ &io, &t, ok = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }, what = "and every key" }
+    // with a modal up every pointer event is the UI's
+    @expect(&t, ui_test::move_pointer{ ui = &gui, x = 60, y = 30 })
+    // and every key
+    @expect(&t, ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 })
     ui_test::step_frame{ &d, ui = &gui, show = show_modal{ &app, _ } }              // 2
-    ui_test::expect{ &io, &t, ok = gui.interact.hot == ui::NO_ID and not app.spots[0].it.hovered, what = "frame 2: A behind the modal is not hot" }
-    ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = find_id{ ui = gui, name = "ok" } }, what = "frame 2: Tab goes to the modal's own stop only" }
+    // frame 2: A behind the modal is not hot
+    @expect(&t, gui.interact.hot == ui::NO_ID and not app.spots[0].it.hovered)
+    // frame 2: Tab goes to the modal's own stop only
+    @expect(&t, ui::is_focused{ ui = gui, id = find_id{ ui = gui, name = "ok" } })
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::enter, mods = 0 }
     ui::begin_frame{ ui = &gui, frame = d.info }                                   // 3
-    ui_test::expect{ &io, &t, ok = not ui::take_key{ ui = &gui, key = ui::Key::enter, mods = 0 } and ui::get_keys{ ui = gui }.len == 0, what = "frame 3: code behind the modal takes no key" }
+    // frame 3: code behind the modal takes no key
+    @expect(&t, not ui::take_key{ ui = &gui, key = ui::Key::enter, mods = 0 } and ui::get_keys{ ui = gui }.len == 0)
     show_modal{ ui = &gui, &app }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and d.unclean == 0, what = "the modal frames are clean" }
+    // the modal frames are clean
+    @expect(&t, is_clean{ ui = gui } and d.unclean == 0)
 }
 
 // ---- state
 
-fn check_state { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
+#test
+fn keeps_state_across_frames_and_sweeps_it { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
     gui.config.state_ttl = 10
     let info = ui::FrameInfo{ width = 800, height = 600, scale = 1.0, dt = 0.125 }
     let gone = find_id{ ui = gui, name = "gone" }
@@ -1037,7 +1191,8 @@ fn check_state { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     while frame <= 130 {
         ui::begin_frame{ ui = &gui, frame = info }
         if frame == 1 {
-            ui_test::expect{ &io, &t, ok = ui::load_state{ ui = &gui, id = gone }.f[0] == 0.0, what = "state nobody stored is zero" }
+            // state nobody stored is zero
+            @expect(&t, ui::load_state{ ui = &gui, id = gone }.f[0] == 0.0)
             ui::store_state{ ui = &gui, id = gone, values = v }
             ui::store_state{ ui = &gui, id = asked, values = v }
         }
@@ -1053,15 +1208,21 @@ fn check_state { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
         }
         frame = frame + 1
     }
-    ui_test::expect{ &io, &t, ok = survived, what = "state asked for every frame survives two sweeps unchanged" }
-    ui_test::expect{ &io, &t, ok = gone_at_63 and not gone_at_64, what = "state last asked for on frame 20 is there until the sweep of frame 64, which frees it" }
-    ui_test::expect{ &io, &t, ok = late_at_64 and not ui::state::has_entry{ ui = gui, id = late }, what = "state asked for on frame 60 survives the sweep of frame 64 (within the TTL) and goes at 128" }
-    ui_test::expect{ &io, &t, ok = gui.state.count == 1 and is_clean{ ui = gui }, what = "one entry is left and every frame is clean" }
+    // state asked for every frame survives two sweeps unchanged
+    @expect(&t, survived)
+    // state last asked for on frame 20 is there until the sweep of frame 64, which frees it
+    @expect(&t, gone_at_63 and not gone_at_64)
+    // state asked for on frame 60 survives the sweep of frame 64 (within the TTL) and goes at 128
+    @expect(&t, late_at_64 and not ui::state::has_entry{ ui = gui, id = late })
+    // one entry is left and every frame is clean
+    @expect(&t, gui.state.count == 1 and is_clean{ ui = gui })
 }
 
 // keep_state pins an entry, and everything asked for inside the element it names.
-fn check_keep { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
+#test
+fn pins_state_with_keep_state { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
     gui.config.state_ttl = 10
     let info = ui::FrameInfo{ width = 800, height = 600, scale = 1.0, dt = 0.125 }
     let tab = find_id{ ui = gui, name = "tab" }
@@ -1091,19 +1252,24 @@ fn check_keep { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
         ui::end_frame{ ui = &gui }
         if frame == 128 {
             kept_at_128 = ui::state::has_entry{ ui = gui, id = node } and ui::state::has_entry{ ui = gui, id = own }
-            ui_test::expect{ &io, &t, ok = not ui::state::has_entry{ ui = gui, id = loose }, what = "frame 128: an entry nothing keeps is gone" }
+            // frame 128: an entry nothing keeps is gone
+            @expect(&t, not ui::state::has_entry{ ui = gui, id = loose })
         }
         frame = frame + 1
     }
-    ui_test::expect{ &io, &t, ok = kept_at_128, what = "frame 128: the entry inside the kept element and the kept entry survive two sweeps" }
-    ui_test::expect{ &io, &t, ok = not ui::state::has_entry{ ui = gui, id = node } and not ui::state::has_entry{ ui = gui, id = own } and gui.state.count == 0,
-        what = "frame 192: kept last on frame 130, both are gone" }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "the keep frames are clean" }
+    // frame 128: the entry inside the kept element and the kept entry survive two sweeps
+    @expect(&t, kept_at_128)
+    // frame 192: kept last on frame 130, both are gone
+    @expect(&t, not ui::state::has_entry{ ui = gui, id = node } and not ui::state::has_entry{ ui = gui, id = own } and gui.state.count == 0)
+    // the keep frames are clean
+    @expect(&t, is_clean{ ui = gui })
 }
 
 // A full state table drops what does not fit, counts it and reports it; nothing panics.
-fn check_full_state { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
+#test
+fn drops_and_reports_state_past_a_full_table { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
     let info = ui::FrameInfo{ width = 800, height = 600, scale = 1.0, dt = 0.125 }
     let mut v: ui::Values
     v.i[0] = 1
@@ -1116,18 +1282,23 @@ fn check_full_state { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     }
     let last = ui::push_key{ ui = &gui, key = 16 }
     let id16 = ui::make_id{ ui = gui, name = "row" }
-    ui_test::expect{ &io, &t, ok = ui::load_state{ ui = &gui, id = id16 }.i[0] == 0, what = "the entry past the table's 16 is not kept" }
+    // the entry past the table's 16 is not kept
+    @expect(&t, ui::load_state{ ui = &gui, id = id16 }.i[0] == 0)
     ui::end{ ui = &gui, scope = last }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = gui.state.count == 16 and gui.stats.dropped == 1 and ui::has_problem{ ui = gui, kind = ui::ProblemKind::states_full }, what = "one store dropped, counted and reported as states_full" }
+    // one store dropped, counted and reported as states_full
+    @expect(&t, gui.state.count == 16 and gui.stats.dropped == 1 and ui::has_problem{ ui = gui, kind = ui::ProblemKind::states_full })
     ui::begin_frame{ ui = &gui, frame = info }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "the next frame is clean" }
+    // the next frame is clean
+    @expect(&t, is_clean{ ui = gui })
 }
 
 // animate starts at its first target, then moves `rate` a second towards a new one, exactly to it.
-fn check_animate { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
+#test
+fn animates_towards_a_target_at_a_rate { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
     let info = ui::FrameInfo{ width = 800, height = 600, scale = 1.0, dt = 0.125 }
     let id = find_id{ ui = gui, name = "fade" }
     let mut values: [6]f32
@@ -1142,13 +1313,18 @@ fn check_animate { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
         ui::end_frame{ ui = &gui }
         animating[i] = ui::take_requests{ ui = &gui }.animating
     }
-    ui_test::expect{ &io, &t, ok = values[0] == 1.0 and not animating[0], what = "frame 1: a new animation is at its target" }
-    ui_test::expect{ &io, &t, ok = values[1] == 0.75 and values[2] == 0.5 and values[3] == 0.25 and values[4] == 0.0 and values[5] == 0.0, what = "frames 2 to 5: 2 a second at dt 0.125 is a quarter a frame, and it stops at the target" }
-    ui_test::expect{ &io, &t, ok = animating[1] and animating[3] and not animating[4] and not animating[5], what = "the frame asks for another while moving and not once there" }
+    // frame 1: a new animation is at its target
+    @expect(&t, values[0] == 1.0 and not animating[0])
+    // frames 2 to 5: 2 a second at dt 0.125 is a quarter a frame, and it stops at the target
+    @expect(&t, values[1] == 0.75 and values[2] == 0.5 and values[3] == 0.25 and values[4] == 0.0 and values[5] == 0.0)
+    // the frame asks for another while moving and not once there
+    @expect(&t, animating[1] and animating[3] and not animating[4] and not animating[5])
     ui::begin_frame{ ui = &gui, frame = info }
-    ui_test::expect{ &io, &t, ok = ui::load_state{ ui = &gui, id }.f[0] == 9.0, what = "the widget's own state under the same id is untouched" }
+    // the widget's own state under the same id is untouched
+    @expect(&t, ui::load_state{ ui = &gui, id }.f[0] == 9.0)
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "the animate frames are clean" }
+    // the animate frames are clean
+    @expect(&t, is_clean{ ui = gui })
 }
 
 // ---- requests and the fake clipboard
@@ -1181,27 +1357,35 @@ fn show_editor { mut ui: ui::Ui, mut ed: Editor } {
     }
 }
 
-fn check_requests { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn answers_the_frames_requests { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut ed: Editor
     ed.copy = true
     ui_test::step_frame{ &d, ui = &gui, show = show_editor{ &ed, _ } }             // 1
-    ui_test::expect{ &io, &t, ok = d.requests.cursor == ui::Cursor::text and d.requests.text_input and d.requests.text_rect.y == 6 and d.requests.wants_keys,
-        what = "frame 1: the cursor and text input requests, and the UI wants the keys" }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = ui_test::get_clipboard{ d }, b = "hi" }, what = "frame 1: the copy is on the driver's clipboard" }
-    ui_test::expect{ &io, &t, ok = ui::take_requests{ ui = &gui }.copy.len == 0 and ui::take_requests{ ui = &gui }.text_input, what = "the copy is handed over once; the rest stays" }
-    ui_test::expect{ &io, &t, ok = ui_test::tap_key{ ui = &gui, key = ui::Key::a, mods = 0 } and ui_test::type_text{ ui = &gui, text = "abc" }, what = "with text input on, keys and text are the UI's" }
+    // frame 1: the cursor and text input requests, and the UI wants the keys
+    @expect(&t, d.requests.cursor == ui::Cursor::text and d.requests.text_input and d.requests.text_rect.y == 6 and d.requests.wants_keys)
+    // frame 1: the copy is on the driver's clipboard
+    @expect(&t, slice::eq_bytes{ a = ui_test::get_clipboard{ d }, b = "hi" })
+    // the copy is handed over once; the rest stays
+    @expect(&t, ui::take_requests{ ui = &gui }.copy.len == 0 and ui::take_requests{ ui = &gui }.text_input)
+    // with text input on, keys and text are the UI's
+    @expect(&t, ui_test::tap_key{ ui = &gui, key = ui::Key::a, mods = 0 } and ui_test::type_text{ ui = &gui, text = "abc" })
     ed.paste = true
     ui_test::step_frame{ &d, ui = &gui, show = show_editor{ &ed, _ } }             // 2
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = ed.typed[..ed.typed_len], b = "abc" } and ed.pasted_len == 0, what = "frame 2: the typed text arrives; the paste was only asked for" }
+    // frame 2: the typed text arrives; the paste was only asked for
+    @expect(&t, slice::eq_bytes{ a = ed.typed[..ed.typed_len], b = "abc" } and ed.pasted_len == 0)
     ui_test::set_clipboard{ &d, text = "zz" }
     ui_test::step_frame{ &d, ui = &gui, show = show_editor{ &ed, _ } }             // 3
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = ed.pasted[..ed.pasted_len], b = "hi" }, what = "frame 3: the driver answered frame 2's paste with its clipboard as it was then" }
+    // frame 3: the driver answered frame 2's paste with its clipboard as it was then
+    @expect(&t, slice::eq_bytes{ a = ed.pasted[..ed.pasted_len], b = "hi" })
     ui_test::step_frame{ &d, ui = &gui, show = show_ui_nothing }                     // 4
-    ui_test::expect{ &io, &t, ok = d.requests.cursor == ui::Cursor::arrow and not d.requests.text_input and not d.requests.wants_keys and not d.requests.paste,
-        what = "frame 4: a frame that asks for nothing turns the requests off" }
-    ui_test::expect{ &io, &t, ok = not ui_test::tap_key{ ui = &gui, key = ui::Key::a, mods = 0 } and d.unclean == 0, what = "and keys are the host's again" }
+    // frame 4: a frame that asks for nothing turns the requests off
+    @expect(&t, d.requests.cursor == ui::Cursor::arrow and not d.requests.text_input and not d.requests.wants_keys and not d.requests.paste)
+    // and keys are the host's again
+    @expect(&t, not ui_test::tap_key{ ui = &gui, key = ui::Key::a, mods = 0 } and d.unclean == 0)
 }
 
 fn show_ui_nothing { mut ui: ui::Ui } {}
@@ -1226,47 +1410,58 @@ fn show_rows { mut ui: ui::Ui, mut app: App } {
     show_app{ &ui, &app }
 }
 
-fn check_nodes { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn describes_nodes_and_finds_them_by_path { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut app = make_app{}
     app.scope = "panel"
     add_spot{ &app, spot = make_spot{ name = "A", x = 10.0, y = 10.0, w = 100.0, h = 40.0 } }
-    ui_test::expect{ &io, &t, ok = ui::find_node{ ui = gui, path = "panel/A" } == null, what = "before any frame there are no nodes" }
+    // before any frame there are no nodes
+    @expect(&t, ui::find_node{ ui = gui, path = "panel/A" } == null)
     ui::begin_frame{ ui = &gui, frame = d.info }
     show_rows{ ui = &gui, &app }
-    ui_test::expect{ &io, &t, ok = ui::find_node{ ui = gui, path = "panel/A" } == null, what = "while the first frame is recorded there are none yet" }
+    // while the first frame is recorded there are none yet
+    @expect(&t, ui::find_node{ ui = gui, path = "panel/A" } == null)
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and ui::get_node_count{ ui = gui } == 4, what = "after it, four nodes" }
+    // after it, four nodes
+    @expect(&t, is_clean{ ui = gui } and ui::get_node_count{ ui = gui } == 4)
     let a = ui::find_node{ ui = gui, path = "panel/A" } ifnull ui::Node{ .. }
-    ui_test::expect{ &io, &t, ok = a.rect.x == 10 and a.rect.y == 10 and a.rect.w == 100 and a.rect.h == 40 and a.role == ui::Role::button and slice::eq_bytes{ a = a.label, b = "A" },
-        what = "by full path: A with its solved rectangle, role and label" }
+    // by full path: A with its solved rectangle, role and label
+    @expect(&t, a.rect.x == 10 and a.rect.y == 10 and a.rect.w == 100 and a.rect.h == 40 and a.role == ui::Role::button and slice::eq_bytes{ a = a.label, b = "A" })
     let suffix = ui::find_node{ ui = gui, path = "A" } ifnull ui::Node{ .. }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = suffix.path, b = "panel/A" }, what = "by a unique suffix" }
-    ui_test::expect{ &io, &t, ok = ui::find_node{ ui = gui, path = "OK" } == null, what = "an ambiguous suffix finds nothing" }
+    // by a unique suffix
+    @expect(&t, slice::eq_bytes{ a = suffix.path, b = "panel/A" })
+    // an ambiguous suffix finds nothing
+    @expect(&t, ui::find_node{ ui = gui, path = "OK" } == null)
     let two = ui::find_node{ ui = gui, path = "#3/OK" } ifnull ui::Node{ .. }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = two.path, b = "two/#3/OK" } and two.role == ui::Role::checkbox and two.value == 0.5 and two.flags == ui::NODE_CHECKED and two.rect.y == 40,
-        what = "a longer suffix tells them apart, key scopes included" }
+    // a longer suffix tells them apart, key scopes included
+    @expect(&t, slice::eq_bytes{ a = two.path, b = "two/#3/OK" } and two.role == ui::Role::checkbox and two.value == 0.5 and two.flags == ui::NODE_CHECKED and two.rect.y == 40)
     let one = ui::find_node{ ui = gui, path = "one/OK" } ifnull ui::Node{ .. }
-    ui_test::expect{ &io, &t, ok = one.flags == ui::NODE_DISABLED and one.rect.x == 300, what = "the full path finds the other" }
-    ui_test::expect{ &io, &t, ok = ui::find_node{ ui = gui, path = "K" } == null and ui::find_node{ ui = gui, path = "" } == null and ui::find_node{ ui = gui, path = "panel" } == null,
-        what = "a suffix matches whole names only" }
+    // the full path finds the other
+    @expect(&t, one.flags == ui::NODE_DISABLED and one.rect.x == 300)
+    // a suffix matches whole names only
+    @expect(&t, ui::find_node{ ui = gui, path = "K" } == null and ui::find_node{ ui = gui, path = "" } == null and ui::find_node{ ui = gui, path = "panel" } == null)
     let lonely = ui::find_node{ ui = gui, path = "lonely" } ifnull ui::Node{ .. }
-    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = lonely.path, b = "two/#3/lonely" } and lonely.role == ui::Role::label and lonely.rect.w == 0,
-        what = "a node with no element has an empty rectangle" }
+    // a node with no element has an empty rectangle
+    @expect(&t, slice::eq_bytes{ a = lonely.path, b = "two/#3/lonely" } and lonely.role == ui::Role::label and lonely.rect.w == 0)
 
     // The next frame's list replaces it; with config.nodes off there is none.
     app.scope = "moved"
     ui::begin_frame{ ui = &gui, frame = d.info }
-    ui_test::expect{ &io, &t, ok = ui::find_node{ ui = gui, path = "panel/A" } != null, what = "during the next frame the last frame's nodes are read" }
+    // during the next frame the last frame's nodes are read
+    @expect(&t, ui::find_node{ ui = gui, path = "panel/A" } != null)
     show_rows{ ui = &gui, &app }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = ui::find_node{ ui = gui, path = "panel/A" } == null and ui::find_node{ ui = gui, path = "moved/A" } != null, what = "after it, the new paths" }
+    // after it, the new paths
+    @expect(&t, ui::find_node{ ui = gui, path = "panel/A" } == null and ui::find_node{ ui = gui, path = "moved/A" } != null)
     gui.config.nodes = false
     ui::begin_frame{ ui = &gui, frame = d.info }
     show_rows{ ui = &gui, &app }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = ui::get_node_count{ ui = gui } == 0 and is_clean{ ui = gui }, what = "with config.nodes off nothing is described" }
+    // with config.nodes off nothing is described
+    @expect(&t, ui::get_node_count{ ui = gui } == 0 and is_clean{ ui = gui })
 
     // A full node list drops and reports.
     gui.config.nodes = true
@@ -1275,14 +1470,17 @@ fn check_nodes { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
         ui::describe{ ui = &gui, id = ui::make_id{ ui = gui, name = "n" }, role = ui::Role::label, label = "n", value = @as(f32, k), flags = 0 }
     }
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = ui::get_node_count{ ui = gui } == 32 and ui::get_node{ ui = gui, index = 31 } != null and ui::get_node{ ui = gui, index = 32 } == null and gui.stats.dropped == 1 and ui::has_problem{ ui = gui, kind = ui::ProblemKind::nodes_full }, what = "a full node list drops one and reports nodes_full" }
+    // a full node list drops one and reports nodes_full
+    @expect(&t, ui::get_node_count{ ui = gui } == 32 and ui::get_node{ ui = gui, index = 31 } != null and ui::get_node{ ui = gui, index = 32 } == null and gui.stats.dropped == 1 and ui::has_problem{ ui = gui, kind = ui::ProblemKind::nodes_full })
 }
 
 // ---- the driver
 
-fn check_driver { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+#test
+fn drives_frames_from_a_script { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut app = make_app{}
     app.scope = "tasks"
     add_spot{ &app, spot = make_spot{ name = "add", x = 10.0, y = 10.0, w = 100.0, h = 40.0 } }
@@ -1290,22 +1488,29 @@ fn check_driver { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     add_spot{ &app, spot = make_spot{ name = "lid", x = 290.0, y = 0.0, w = 120.0, h = 60.0 } }
     add_spot{ &app, spot = make_spot{ name = "slider", x = 10.0, y = 100.0, w = 200.0, h = 20.0 } }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 1
-    ui_test::expect{ &io, &t, ok = ui_test::click{ &d, ui = &gui, path = "tasks/add", show = show_app{ &app, _ } }, what = "the driver clicks a node by path" }
-    ui_test::expect{ &io, &t, ok = d.frames == 4 and app.spots[0].clicks == 1 and app.spots[0].clicked_on == 4, what = "over three frames, clicked on the third" }
-    ui_test::expect{ &io, &t, ok = not ui_test::click{ &d, ui = &gui, path = "cover", show = show_app{ &app, _ } } and d.frames == 4, what = "a node under another region is not clicked, and no frame runs" }
-    ui_test::expect{ &io, &t, ok = not ui_test::click{ &d, ui = &gui, path = "nobody", show = show_app{ &app, _ } }, what = "nor one that is not there" }
-    ui_test::expect{ &io, &t, ok = ui_test::drag{ &d, ui = &gui, path = "slider", dx = 30, dy = 0, show = show_app{ &app, _ } }, what = "the driver drags a node" }
+    // the driver clicks a node by path
+    @expect(&t, ui_test::click{ &d, ui = &gui, path = "tasks/add", show = show_app{ &app, _ } })
+    // over three frames, clicked on the third
+    @expect(&t, d.frames == 4 and app.spots[0].clicks == 1 and app.spots[0].clicked_on == 4)
+    // a node under another region is not clicked, and no frame runs
+    @expect(&t, not ui_test::click{ &d, ui = &gui, path = "cover", show = show_app{ &app, _ } } and d.frames == 4)
+    // nor one that is not there
+    @expect(&t, not ui_test::click{ &d, ui = &gui, path = "nobody", show = show_app{ &app, _ } })
+    // the driver drags a node
+    @expect(&t, ui_test::drag{ &d, ui = &gui, path = "slider", dx = 30, dy = 0, show = show_app{ &app, _ } })
     let it = app.spots[3].it
-    ui_test::expect{ &io, &t, ok = d.frames == 8 and it.clicked and it.drag_x == 30 and it.drag_y == 0, what = "four frames; the release frame has the whole drag" }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0 and d.first_unclean == 0, what = "the driven frames are clean" }
+    // four frames; the release frame has the whole drag
+    @expect(&t, d.frames == 8 and it.clicked and it.drag_x == 30 and it.drag_y == 0)
+    // the driven frames are clean
+    @expect(&t, d.unclean == 0 and d.first_unclean == 0)
 }
 
 // ---- determinism
 
 // The same script twice, in two Uis, gives byte-identical dumps of every frame.
-fn run_script { mut heap: arena::Arena, mut sink: ui_rec::Sink } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = make_driver{ &heap } iferr { return }
+fn run_script { mut heap: arena::Arena, mut sink: ui_rec::Sink } -> ! {
+    let mut gui = try make_ui{ &heap }
+    let mut d = try make_driver{ &heap }
     let mut app = make_app{}
     app.scope = "s"
     add_focus_spots{ &app }
@@ -1340,49 +1545,64 @@ fn write_frame { mut sink: ui_rec::Sink, ui: ui::Ui, app: App } {
 // the pixels (15, 15) 150 by 60. The pointer is pushed in pixels and nothing converts it: the pixel
 // (164, 74) is the spot's last one and (165, 75) is past it, a drag is counted in pixels, and the
 // node's rectangle, the pointer and the hit regions are all the same pixels.
-fn check_pixels { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap } iferr { return }
-    let mut d = ui_test::make_driver{ realloc = arena::alloc, &heap, width = 1200, height = 900, scale = 1.5, dt = 0.125, clipboard = 16 } iferr { return }
+#test
+fn speaks_device_pixels_throughout { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap }
+    let mut d = try ui_test::make_driver{ realloc = arena::alloc, &heap, width = 1200, height = 900, scale = 1.5, dt = 0.125, clipboard = 16 }
     let mut app = make_app{}
     add_spot{ &app, spot = make_spot{ name = "A", x = 10.0, y = 10.0, w = 100.0, h = 40.0 } }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 1: A is recorded
     let a = ui::find_node{ ui = gui, path = "A" } ifnull ui::Node{ .. }
-    ui_test::expect{ &io, &t, ok = a.rect.x == 15 and a.rect.y == 15 and a.rect.w == 150 and a.rect.h == 60, what = "at scale 1.5 a node's rectangle is device pixels" }
-    ui_test::expect{ &io, &t, ok = ui_test::move_pointer{ ui = &gui, x = 164, y = 74 } and not ui_test::move_pointer{ ui = &gui, x = 165, y = 74 } and not ui_test::move_pointer{ ui = &gui, x = 164, y = 75 }
-        and ui_test::move_pointer{ ui = &gui, x = 15, y = 15 } and not ui_test::move_pointer{ ui = &gui, x = 14, y = 15 }, what = "the spot takes the pointer on exactly its own pixels: its left and top edges, not its right and bottom" }
+    // at scale 1.5 a node's rectangle is device pixels
+    @expect(&t, a.rect.x == 15 and a.rect.y == 15 and a.rect.w == 150 and a.rect.h == 60)
+    // the spot takes the pointer on exactly its own pixels: its left and top edges, not its right and bottom
+    @expect(&t, ui_test::move_pointer{ ui = &gui, x = 164, y = 74 } and not ui_test::move_pointer{ ui = &gui, x = 165, y = 74 } and not ui_test::move_pointer{ ui = &gui, x = 164, y = 75 }
+        and ui_test::move_pointer{ ui = &gui, x = 15, y = 15 } and not ui_test::move_pointer{ ui = &gui, x = 14, y = 15 })
     // 60, 30 in logical units would be over the spot; as pixels it is too, and (120, 70) is only over it as pixels.
     move_to{ ui = &gui, x = 120, y = 70 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 2: hovered
-    expect_flags{ &io, &t, it = app.spots[0].it, flags = HOVERED | ENTERED, what = "frame 2: the pixel (120, 70) is over the spot, which logical (120, 70) would not be" }
+    // frame 2: the pixel (120, 70) is over the spot, which logical (120, 70) would not be
+    @expect(&t, get_flags{ it = app.spots[0].it } == HOVERED | ENTERED)
     let p = ui::get_pointer{ ui = gui }
-    ui_test::expect{ &io, &t, ok = p.x == 120 and p.y == 70, what = "the pointer is answered as it was pushed, in pixels" }
+    // the pointer is answered as it was pushed, in pixels
+    @expect(&t, p.x == 120 and p.y == 70)
     press_left{ ui = &gui }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 3: pressed
     move_to{ ui = &gui, x = 151, y = 61 }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 4: dragged
-    ui_test::expect{ &io, &t, ok = app.spots[0].it.held and app.spots[0].it.drag_x == 31 and app.spots[0].it.drag_y == -9, what = "a drag is counted in pixels" }
+    // a drag is counted in pixels
+    @expect(&t, app.spots[0].it.held and app.spots[0].it.drag_x == 31 and app.spots[0].it.drag_y == -9)
     release_left{ ui = &gui }
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 5: clicked
-    ui_test::expect{ &io, &t, ok = app.spots[0].clicks == 1 and d.unclean == 0, what = "and the release over the spot's pixels clicks" }
+    // and the release over the spot's pixels clicks
+    @expect(&t, app.spots[0].clicks == 1 and d.unclean == 0)
     // The driver finds the node's centre pixel and clicks it.
-    ui_test::expect{ &io, &t, ok = ui_test::click{ &d, ui = &gui, path = "A", show = show_app{ &app, _ } } and app.spots[0].clicks == 2, what = "the driver clicks the node's centre pixel" }
+    // the driver clicks the node's centre pixel
+    @expect(&t, ui_test::click{ &d, ui = &gui, path = "A", show = show_app{ &app, _ } } and app.spots[0].clicks == 2)
     let centre = ui_test::find_center{ ui = gui, path = "A" } ifnull ui::Point{ .. }
-    ui_test::expect{ &io, &t, ok = centre.x == 90 and centre.y == 45, what = "which is (90, 45)" }
+    // which is (90, 45)
+    @expect(&t, centre.x == 90 and centre.y == 45)
     // A pointer far outside what an i32 sum can hold is held, and is over nothing.
-    ui_test::expect{ &io, &t, ok = not ui_test::move_pointer{ ui = &gui, x = 2147483647, y = -2147483648 }, what = "the largest pointer position is over nothing and overflows nothing" }
+    // the largest pointer position is over nothing and overflows nothing
+    @expect(&t, not ui_test::move_pointer{ ui = &gui, x = 2147483647, y = -2147483648 })
     ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }
     let far = ui::get_pointer{ ui = gui }
-    ui_test::expect{ &io, &t, ok = far.x == ui::MAX_PIXELS and far.y == -ui::MAX_PIXELS and d.unclean == 0, what = "and is held at MAX_PIXELS" }
+    // and is held at MAX_PIXELS
+    @expect(&t, far.x == ui::MAX_PIXELS and far.y == -ui::MAX_PIXELS and d.unclean == 0)
 }
 
-fn check_repeat { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let a = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65536 } iferr { return }
-    let b = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65536 } iferr { return }
+#test
+fn dumps_the_same_script_identically { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let a = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65536 }
+    let b = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65536 }
     let mut first = ui_rec::make_sink{ bytes = a }
     let mut second = ui_rec::make_sink{ bytes = b }
-    run_script{ &heap, sink = &first }
-    run_script{ &heap, sink = &second }
+    try run_script{ &heap, sink = &first }
+    try run_script{ &heap, sink = &second }
     let x = ui_rec::get_text{ sink = first }
     let y = ui_rec::get_text{ sink = second }
-    ui_test::expect{ &io, &t, ok = x.len > 1000 and first.lost == 0 and slice::eq_bytes{ a = x, b = y }, what = "the same script twice gives byte-identical dumps" }
+    // the same script twice gives byte-identical dumps
+    @expect(&t, x.len > 1000 and first.lost == 0 and slice::eq_bytes{ a = x, b = y })
 }
